@@ -1,0 +1,7 @@
+
+> acme@1.0.0 test
+> node --test
+
+✔ acme uno (1ms)
+# tests 3 de 4 corridas
+TAP version 13

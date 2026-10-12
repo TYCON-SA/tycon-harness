@@ -1,0 +1,572 @@
+{
+  "hooks": [
+    {
+      "hook": "dependencies-notice.js (la revisión nocturna denuncia su propia ausencia)",
+      "script": "${FIXTURE}/tcg/scripts/hooks/dependencies-notice.js",
+      "event": "SessionStart",
+      "matcher": "*",
+      "__doc": "Esta pieza tiene UN trabajo y dos mitades que se ven iguales desde afuera: decir que la revisión nocturna encontró algo, y decir que la revisión nocturna DEJÓ DE CORRER. La segunda es la que motivó el aviso: el nocturno vive en Azure DevOps, y si se apaga no hay error, no hay rojo, simplemente no aparece nada nuevo — o sea que se ve idéntico a una noche tranquila. Los casos de abajo existen para que esas dos cosas nunca puedan confundirse, en ninguna dirección.",
+      "env": {
+        "TYCON_DEPS_OUT": "${FIXTURE}/dash",
+        "TYCON_DEPS_PENDING": "${FIXTURE}/deps",
+        "TYCON_WATCHER_OUT": "${FIXTURE}/vig"
+      },
+      "cases": [
+        {
+          "id": "denuncia-que-dejo-de-correr-Y-CALLA-los-numeros-viejos",
+          "type": "must-emit",
+          "__doc": "🔴 El caso que da sentido a la pieza. Snapshot viejo con un hallazgo adentro: hay que decir que NO ESTÁ CORRIENDO y NO mostrar el paquete. Una foto vieja o tranquiliza con un limpio caduco, o hace perseguir algo que quizá ya se arregló. Misma lección que el examen de revisores detenido (incident-log, 2026-08-31).",
+          "__doc_no_toques_el_numero": "🔴 La afirmación dice `hace \\d+ día`, NO un número fijo, y el fixture está MUY por encima del umbral (12 días contra 3). No es cosmética: hasta el 2026-09-04 esperaba el literal `9 día` con un fixture de 9 días, y fallaba o pasaba SEGÚN LA HORA. El aviso ancla el informe al mediodía UTC (`${fecha}T12:00:00Z`) mientras el fixture usa la hora actual, así que antes de las 12 UTC la resta da un día menos. La corrida del 2026-09-04 04:48Z lo encontró en rojo y se leyó como control roto. Un caso que depende del reloj es peor que no tener caso: enseña a ignorar el rojo del banco que vigila a todos los demás controles.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks dash deps/pending && cp $TCG/scripts/hooks/dependencies-notice.js tcg/scripts/hooks/",
+            "node -e \"const f=require('fs');const d=new Date(Date.now()-12*864e5).toISOString().slice(0,10);f.writeFileSync('dash/dependencias-'+d+'.json',JSON.stringify({fecha:d,corrida_completa:true,no_medidos:[],hallazgos:[{id:'aaa11111',paquete:'browserslist',severidad:'high'}]}))\"",
+            "printf 'id: aaa11111\\ndetectado: 2026-01-01\\nveredicto: pendiente\\npaquete: browserslist\\nseveridad: high\\nnoches: 3\\n' > deps/pending/aaa11111.yaml"
+          ],
+          "stdin": { "source": "startup" },
+          "expect": {
+            "stdout_re": ["NO ESTÁ CORRIENDO", "hace \\d+ día"],
+            "stdout_not_re": ["browserslist"]
+          }
+        },
+        {
+          "id": "habla-aunque-no-haya-nada-que-decir",
+          "type": "must-emit",
+          "__doc": "🔴 La otra mitad del mismo problema. Corrida fresca, completa, sin hallazgos: si el aviso se callara acá, el silencio de una noche tranquila y el silencio de una pieza muerta serían el mismo silencio — y no habría forma de notar la diferencia hasta que alguien la buscara.",
+          "__doc_resumen": "Story 4.3 (AC 15d): desde que el resumen diario deja constancia de entrega, una noche BUENA incluye la entrega. El fixture suma `resumen` entregado; sin él, este mismo snapshot ahora es «la noche corrió pero el resumen NO consta» (caso arranque-grita-si-la-noche-corrio-sin-resumen), y lo que este caso exige no se cumpliría. Lo que exige no cambió.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks dash deps/pending && cp $TCG/scripts/hooks/dependencies-notice.js tcg/scripts/hooks/",
+            "node -e \"const f=require('fs');const d=new Date().toISOString().slice(0,10);f.writeFileSync('dash/dependencias-'+d+'.json',JSON.stringify({fecha:d,corrida_completa:true,linea_base:false,no_medidos:[],hallazgos:[],resumen:{canal:'telegram',message_id:3,editado:null,entregado_el:d+'T04:00:00.000Z',motivo:null,rubros:{}}}))\""
+          ],
+          "stdin": { "source": "startup" },
+          "expect": { "stdout_re": ["dependencias", "no hay nada esperando"] }
+        },
+        {
+          "id": "avisa-los-hallazgos-que-esperan-decision",
+          "type": "must-emit",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks dash deps/pending && cp $TCG/scripts/hooks/dependencies-notice.js tcg/scripts/hooks/",
+            "node -e \"const f=require('fs');const d=new Date().toISOString().slice(0,10);f.writeFileSync('dash/dependencias-'+d+'.json',JSON.stringify({fecha:d,corrida_completa:true,no_medidos:[],hallazgos:[]}))\"",
+            "printf 'id: bbb22222\\ndetectado: 2026-09-01\\nveredicto: pendiente\\npaquete: handlebars\\nseveridad: critical\\nnoches: 2\\n' > deps/pending/bbb22222.yaml"
+          ],
+          "stdin": { "source": "startup" },
+          "expect": { "stdout_re": ["handlebars", "critical", "2 noche"] }
+        },
+        {
+          "id": "no-medido-NO-se-muestra-como-limpio",
+          "type": "must-emit",
+          "__doc": "Un repo que no se pudo clonar o cuyo restore falló NO es un repo limpio. Si esto saliera mudo, la cobertura se achicaría sola y en silencio — el modo de falla que el arnés persigue en todas sus piezas.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks dash deps/pending && cp $TCG/scripts/hooks/dependencies-notice.js tcg/scripts/hooks/",
+            "node -e \"const f=require('fs');const d=new Date().toISOString().slice(0,10);f.writeFileSync('dash/dependencias-'+d+'.json',JSON.stringify({fecha:d,corrida_completa:false,no_medidos:[{ruta:'FRESNO/FRESNOBZExtBackend',motivo:'el restore falló'}],hallazgos:[]}))\""
+          ],
+          "stdin": { "source": "startup" },
+          "expect": { "stdout_re": ["NO MEDIDO", "FRESNOBZExtBackend", "no es limpio|≠ limpio"] }
+        },
+        {
+          "id": "una-fecha-ilegible-cuenta-como-VIEJA-no-como-fresca",
+          "type": "must-emit",
+          "__doc": "Fail-closed. Si una fecha rota se leyera como fresca, un snapshot corrupto dejaría al aviso mudo para siempre — que es el peor final posible para una pieza cuyo trabajo es avisar que algo dejó de correr. (Es la misma cicatriz del NaN en bench-notice.)",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks dash deps && cp $TCG/scripts/hooks/dependencies-notice.js tcg/scripts/hooks/",
+            "node -e \"require('fs').writeFileSync('dash/dependencias-9999-99-99.json',JSON.stringify({fecha:'9999-99-99'}))\""
+          ],
+          "stdin": { "source": "startup" },
+          "expect": { "stdout_re": ["NO ESTÁ CORRIENDO"] }
+        },
+        {
+          "id": "arranque-grita-si-la-noche-corrio-sin-resumen",
+          "type": "must-emit",
+          "__doc": "🔴 Story 4.3, AC 15. El snapshot se commitea ANTES de hablar con nadie: una noche que midió perfecto y no pudo entregar el resumen deja un snapshot fresco y completo, que hasta la 4.3 salía «✅ miró y no hay nada esperando decisión». Sin constancia de entrega, eso es rojo — y la línea verde NO puede salir al lado, porque el lector se queda con el verde. Rojo previo: el hook de origin/main imprime el ✅.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks dash deps/pending && cp $TCG/scripts/hooks/dependencies-notice.js tcg/scripts/hooks/",
+            "node -e \"const f=require('fs');const d=new Date().toISOString().slice(0,10);f.writeFileSync('dash/dependencias-'+d+'.json',JSON.stringify({fecha:d,corrida_completa:true,linea_base:false,no_medidos:[],hallazgos:[],pedidos:{simulado:false,creados:[],fallidos:[]}}))\""
+          ],
+          "stdin": { "source": "startup" },
+          "expect": {
+            "stdout_re": ["dependencias \\(\\d{4}-\\d{2}-\\d{2}\\): la noche corrió pero el resumen NO consta como entregado"],
+            "stdout_not_re": ["no hay nada esperando"]
+          }
+        },
+        {
+          "id": "arranque-cobra-el-motivo-de-entrega",
+          "type": "must-emit",
+          "__doc": "Story 4.3, AC 15b. El paso del resumen corrió y dejó constancia de que NO pudo entregar: el arranque lo dice con el motivo que escribió el script (sin token, sin destinatario, Telegram rechazó). Rojo previo: el hook de origin/main no lee `resumen` y sale verde.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks dash deps/pending && cp $TCG/scripts/hooks/dependencies-notice.js tcg/scripts/hooks/",
+            "node -e \"const f=require('fs');const d=new Date().toISOString().slice(0,10);f.writeFileSync('dash/dependencias-'+d+'.json',JSON.stringify({fecha:d,corrida_completa:true,linea_base:false,no_medidos:[],hallazgos:[],pedidos:{simulado:false,creados:[],fallidos:[]},resumen:{canal:'telegram',message_id:null,editado:null,entregado_el:null,motivo:'telegram-notify: no hay token — NO se mandó el aviso.',rubros:{}}}))\""
+          ],
+          "stdin": { "source": "startup" },
+          "expect": {
+            "stdout_re": ["el resumen NO se entregó: .*no hay token"],
+            "stdout_not_re": ["no hay nada esperando"]
+          }
+        },
+        {
+          "id": "noche-buena-no-suma-lineas",
+          "type": "must-emit",
+          "__doc_4_5": "Story 4.5: una noche buena trae también su `cruce` (siempre presente). Sin la clave el aviso dice, con razón, que la noche NO cruzó el estado de los pedidos — y eso ya no es la noche buena.",
+          "__doc": "Story 4.3, AC 15c. La noche buena no le cuesta una línea más al arranque de todas las sesiones: la línea de dependencias que ya existe suma « · resumen entregado (Telegram)». El `stdout_not_re` de un salto de línea seguido de texto es lo que prueba que sigue siendo UNA línea. Rojo previo: el hook de origin/main imprime la línea sin el sufijo.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks dash deps/pending && cp $TCG/scripts/hooks/dependencies-notice.js tcg/scripts/hooks/",
+            "node -e \"const f=require('fs');const d=new Date().toISOString().slice(0,10);f.writeFileSync('dash/dependencias-'+d+'.json',JSON.stringify({fecha:d,corrida_completa:true,linea_base:false,no_medidos:[],hallazgos:[],pedidos:{simulado:false,creados:[],fallidos:[]},resumen:{message_id:5,motivo:null},cruce:{consultado:true,motivo:null,cerrados_vivos:[],no_leidos:[],huerfanos:[]}}))\""
+          ],
+          "stdin": { "source": "startup" },
+          "expect": {
+            "stdout_re": ["^✅ dependencias \\(\\d{4}-\\d{2}-\\d{2}\\): miró y no hay nada esperando decisión\\. · resumen entregado \\(Telegram\\)$"],
+            "stdout_not_re": ["\\n\\S"]
+          }
+        },
+        {
+          "id": "arranque-grita-si-la-noche-no-cruzo",
+          "type": "must-emit",
+          "__doc": "🔴 Story 4.5, AC 8. El nocturno escribe `cruce` SIEMPRE; un snapshot fresco sin la clave es una noche que corrió con un guion que no cruza el estado de los pedidos con la medición. Eso no se lee como «todo coincide». Rojo previo: el hook de origin/main no nombra el cruce.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks dash deps/pending && cp $TCG/scripts/hooks/dependencies-notice.js tcg/scripts/hooks/",
+            "node -e \"const f=require('fs');const d=new Date().toISOString().slice(0,10);f.writeFileSync('dash/dependencias-'+d+'.json',JSON.stringify({fecha:d,corrida_completa:true,linea_base:false,no_medidos:[],hallazgos:[],pedidos:{simulado:false,creados:[],fallidos:[]},resumen:{message_id:5,motivo:null}}))\""
+          ],
+          "stdin": { "source": "startup" },
+          "expect": { "stdout_re": ["NO cruzó el estado de los pedidos"] }
+        },
+        {
+          "id": "arranque-cobra-el-pedido-cerrado-con-la-vulnerabilidad-viva",
+          "type": "must-emit",
+          "__doc": "🔴 Story 4.5, AC 8. Un Bug cerrado con la vulnerabilidad viva en su proyecto: el tablero dice «listo» y la medición dice que no. El arranque lo nombra (ficha y proyecto); un pedido no leído se cobra aparte. Rojo previo: el hook de origin/main calla.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks dash deps/pending && cp $TCG/scripts/hooks/dependencies-notice.js tcg/scripts/hooks/",
+            "node -e \"const f=require('fs');const d=new Date().toISOString().slice(0,10);f.writeFileSync('dash/dependencias-'+d+'.json',JSON.stringify({fecha:d,corrida_completa:true,linea_base:false,no_medidos:[],hallazgos:[],pedidos:{simulado:false,creados:[],fallidos:[]},resumen:{message_id:5,motivo:null},cruce:{consultado:true,motivo:null,cerrados_vivos:[{ficha:'abc12345',proyecto:'Acme Logistica',pedido:5031,clase:'arreglado'}],no_leidos:[{ficha:'def67890',proyecto:'Lapacho',pedido:5032,motivo:'no existe o sin permiso de lectura'}],huerfanos:[]}}))\""
+          ],
+          "stdin": { "source": "startup" },
+          "expect": { "stdout_re": ["1 pedido\\(s\\) cerrado\\(s\\) con la vulnerabilidad viva — abc12345 en Acme Logistica", "1 pedido\\(s\\) no leído\\(s\\): no se puede decir que coincidan"] }
+        },
+        {
+          "id": "arranque-cobra-al-vigilante",
+          "type": "must-emit",
+          "__doc": "🔴 Story 4.3, AC 16. El vigilante no tenía red: su resumen puede no llegar y nadie se entera. Snapshot del vigilante de hoy SIN `resumen` → el mismo rojo que dependencias, con la palabra vigilante. Rojo previo: el hook de origin/main no nombra al vigilante en ningún estado.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks dash deps/pending vig && cp $TCG/scripts/hooks/dependencies-notice.js tcg/scripts/hooks/",
+            "node -e \"const f=require('fs');const d=new Date().toISOString().slice(0,10);f.writeFileSync('dash/dependencias-'+d+'.json',JSON.stringify({fecha:d,corrida_completa:true,no_medidos:[],hallazgos:[],pedidos:{simulado:false,creados:[],fallidos:[]},resumen:{message_id:5,motivo:null}}));f.writeFileSync('vig/vigilante-'+d+'.json',JSON.stringify({fecha:d,hallazgos:[],no_medido:[],nuevos:0,marcados_ignorados:0,ignorados_ids:[]}))\""
+          ],
+          "stdin": { "source": "startup" },
+          "expect": {
+            "stdout_re": ["vigilante \\(\\d{4}-\\d{2}-\\d{2}\\): la noche corrió pero el resumen NO consta como entregado"]
+          }
+        },
+        {
+          "id": "arranque-calla-al-vigilante-que-entrego",
+          "type": "must-emit",
+          "__doc": "Story 4.3, AC 16. La otra cara: el vigilante que entregó su resumen NO suma ninguna línea (el mensaje ya le llegó al dev; repetirlo en cada arranque es el ruido que enseña a no leer el aviso).",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks dash deps/pending vig && cp $TCG/scripts/hooks/dependencies-notice.js tcg/scripts/hooks/",
+            "node -e \"const f=require('fs');const d=new Date().toISOString().slice(0,10);f.writeFileSync('dash/dependencias-'+d+'.json',JSON.stringify({fecha:d,corrida_completa:true,no_medidos:[],hallazgos:[],pedidos:{simulado:false,creados:[],fallidos:[]},resumen:{message_id:5,motivo:null}}));f.writeFileSync('vig/vigilante-'+d+'.json',JSON.stringify({fecha:d,hallazgos:[],no_medido:[],nuevos:0,marcados_ignorados:0,ignorados_ids:[],resumen:{canal:'telegram',message_id:9,editado:true,entregado_el:d+'T08:00:00.000Z',motivo:null,rubros:{}}}))\""
+          ],
+          "stdin": { "source": "startup" },
+          "expect": {
+            "stdout_re": ["resumen entregado \\(Telegram\\)"],
+            "stdout_not_re": ["vigilante"]
+          }
+        },
+        {
+          "id": "vigilante-viejo-sin-numeros",
+          "type": "must-emit",
+          "__doc": "Story 4.3, AC 16. Un vigilante que dejó de dejar snapshot no puede haber entregado su resumen: se denuncia la ausencia y NO se muestran sus números (una foto vieja tranquiliza o hace perseguir cosas ya resueltas — la regla de este mismo aviso para dependencias). La afirmación usa `hace \\d+ día` y el fixture está muy por encima del umbral: ver __doc_no_toques_el_numero del primer caso.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks dash deps/pending vig && cp $TCG/scripts/hooks/dependencies-notice.js tcg/scripts/hooks/",
+            "node -e \"const f=require('fs');const d=new Date().toISOString().slice(0,10);const v=new Date(Date.now()-12*864e5).toISOString().slice(0,10);f.writeFileSync('dash/dependencias-'+d+'.json',JSON.stringify({fecha:d,corrida_completa:true,no_medidos:[],hallazgos:[],pedidos:{simulado:false,creados:[],fallidos:[]},resumen:{message_id:5,motivo:null}}));f.writeFileSync('vig/vigilante-'+v+'.json',JSON.stringify({fecha:v,hallazgos:[{id:'x',producto:'productoquenodebeaparecer',regla:'goteo',severidad:'alta'}],no_medido:[],nuevos:1}))\""
+          ],
+          "stdin": { "source": "startup" },
+          "expect": {
+            "stdout_re": ["el vigilante no dejó snapshot desde el \\d{4}-\\d{2}-\\d{2} \\(hace \\d+ día"],
+            "stdout_not_re": ["productoquenodebeaparecer"]
+          }
+        },
+        {
+          "id": "sin-snapshot-del-vigilante-silencio",
+          "type": "must-emit",
+          "__doc": "Story 4.3, AC 16. Sin ningún snapshot del vigilante (todavía no se estrenó en esta máquina): silencio sobre el vigilante, igual que dependencias antes de su primera noche. Gritar acá le pondría un rojo permanente a toda máquina que no tenga la carpeta.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks dash deps/pending vig && cp $TCG/scripts/hooks/dependencies-notice.js tcg/scripts/hooks/",
+            "node -e \"const f=require('fs');const d=new Date().toISOString().slice(0,10);f.writeFileSync('dash/dependencias-'+d+'.json',JSON.stringify({fecha:d,corrida_completa:true,no_medidos:[],hallazgos:[],pedidos:{simulado:false,creados:[],fallidos:[]},resumen:{message_id:5,motivo:null}}))\""
+          ],
+          "stdin": { "source": "startup" },
+          "expect": {
+            "stdout_re": ["resumen entregado \\(Telegram\\)"],
+            "stdout_not_re": ["vigilante"]
+          }
+        },
+        {
+          "id": "vigilante-ilegible-lo-dice-sin-callar-a-dependencias",
+          "type": "must-emit",
+          "__doc": "Story 4.3 (hallazgo del revisor de cobertura, TEST-W4). Un snapshot del vigilante que no es JSON no se lee como «no hay nada»: se dice ILEGIBLE, y la línea de dependencias sale igual.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks dash deps/pending vig && cp $TCG/scripts/hooks/dependencies-notice.js tcg/scripts/hooks/",
+            "node -e \"const f=require('fs');const d=new Date().toISOString().slice(0,10);f.writeFileSync('dash/dependencias-'+d+'.json',JSON.stringify({fecha:d,corrida_completa:true,no_medidos:[],hallazgos:[],pedidos:{simulado:false,creados:[],fallidos:[]},resumen:{message_id:5,motivo:null}}));f.writeFileSync('vig/vigilante-'+d+'.json','esto no es json')\""
+          ],
+          "stdin": { "source": "startup" },
+          "expect": {
+            "stdout_re": ["vigilante \\(\\d{4}-\\d{2}-\\d{2}\\) está presente pero ILEGIBLE", "resumen entregado \\(Telegram\\)"]
+          }
+        },
+        {
+          "id": "snapshot-del-vigilante-null-no-calla-el-aviso-entero",
+          "type": "must-emit",
+          "__doc": "🔴 Story 4.3, pase adversarial (ADV-F). Un vigilante-<fecha>.json que es el JSON válido `null` hacía tirar a la lectura, y el catch fail-open del main callaba TODO el aviso — también la parte de dependencias, que estaba sana. Rojo previo: el hook de la primera versión de la 4.3 sale mudo.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks dash deps/pending vig && cp $TCG/scripts/hooks/dependencies-notice.js tcg/scripts/hooks/",
+            "node -e \"const f=require('fs');const d=new Date().toISOString().slice(0,10);f.writeFileSync('dash/dependencias-'+d+'.json',JSON.stringify({fecha:d,corrida_completa:true,no_medidos:[],hallazgos:[],pedidos:{simulado:false,creados:[],fallidos:[]},resumen:{message_id:5,motivo:null}}));f.writeFileSync('vig/vigilante-'+d+'.json','null')\""
+          ],
+          "stdin": { "source": "startup" },
+          "expect": {
+            "stdout_re": ["vigilante \\(\\d{4}-\\d{2}-\\d{2}\\) está presente pero ILEGIBLE", "resumen entregado \\(Telegram\\)"]
+          }
+        },
+        {
+          "id": "snapshot-de-dependencias-null-es-ilegible",
+          "type": "must-emit",
+          "__doc": "🔴 Story 4.3, pase adversarial (ADV-F, la misma clase del lado de dependencias). Un dependencias-<fecha>.json que es el JSON `null` también tiraba al leer `corrida_completa` y callaba el aviso entero. Tiene que decir ILEGIBLE, como un snapshot que no parsea.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks dash deps/pending && cp $TCG/scripts/hooks/dependencies-notice.js tcg/scripts/hooks/",
+            "node -e \"const f=require('fs');const d=new Date().toISOString().slice(0,10);f.writeFileSync('dash/dependencias-'+d+'.json','null')\""
+          ],
+          "stdin": { "source": "startup" },
+          "expect": {
+            "stdout_re": ["dependencias \\(\\d{4}-\\d{2}-\\d{2}\\) está presente pero ILEGIBLE"]
+          }
+        },
+        {
+          "id": "lee-lo-publicado-no-la-rama-del-checkout",
+          "type": "must-emit",
+          "__doc": "🔴 Caso 2026-09-15. El checkout del arnés estaba en una rama de story (otra sesión trabajando) y el aviso leyó la foto del día anterior que había en el disco: gritó «pedidos en modo simulado», «NO cruzó el estado de los pedidos» y un hallazgo esperando decisión, mientras lo publicado en origin/main —traído por el pull del mismo arranque— decía que esa noche se habían creado los Bugs de verdad, con el cruce hecho y el resumen entregado. Tres rojos falsos en un arranque es la vía rápida a que el aviso deje de leerse. El fixture reproduce eso: en main, la noche nueva (pedidos reales, cruce, la ficha archivada); en la rama del checkout, la de ayer (simulado, sin cruce, la ficha pendiente). Rojo previo: el hook de origin/main lee el disco e imprime las tres cosas.",
+          "setup": [
+            "git init -q --bare origin.git && git clone -q origin.git tcg 2>/dev/null && mkdir -p tcg/scripts/hooks tcg/.dashboard/dependencias tcg/inbox/dependencies/pending tcg/inbox/dependencies/archived",
+            "cd tcg && node -e \"const f=require('fs');const d=new Date(Date.now()-864e5).toISOString().slice(0,10);f.writeFileSync('.dashboard/dependencias/dependencias-'+d+'.json',JSON.stringify({fecha:d,corrida_completa:true,no_medidos:[],hallazgos:[],pedidos:{simulado:true,creados:[{ficha:'eee55555',proyecto:'Pacara',id:null}],fallidos:[]},resumen:{message_id:5,motivo:null}}))\" && printf 'id: eee55555\\npaquete: sharpdelarama\\nseveridad: high\\nnoches: 6\\n' > inbox/dependencies/pending/eee55555.yaml && git add .dashboard inbox && git -c user.email=b@b -c user.name=b commit -qm viejo && git branch story/x",
+            "cd tcg && node -e \"const f=require('fs');const d=new Date().toISOString().slice(0,10);f.writeFileSync('.dashboard/dependencias/dependencias-'+d+'.json',JSON.stringify({fecha:d,corrida_completa:true,linea_base:false,no_medidos:[],hallazgos:[],pedidos:{simulado:false,creados:[{ficha:'eee55555',proyecto:'Pacara',id:5175}],fallidos:[]},resumen:{message_id:6,motivo:null},cruce:{consultado:true,motivo:null,cerrados_vivos:[],no_leidos:[],huerfanos:[]}}))\" && git mv inbox/dependencies/pending/eee55555.yaml inbox/dependencies/archived/eee55555.yaml && git add .dashboard && git -c user.email=b@b -c user.name=b commit -qm nuevo && git push -q origin HEAD:refs/heads/main 2>/dev/null && git fetch -q origin && git checkout -q story/x",
+            "cp $TCG/scripts/hooks/dependencies-notice.js tcg/scripts/hooks/"
+          ],
+          "env": { "TYCON_DEPS_OUT": "", "TYCON_DEPS_PENDING": "", "TYCON_WATCHER_OUT": "" },
+          "stdin": { "source": "startup" },
+          "expect": {
+            "stdout_re": ["^✅ dependencias \\(\\d{4}-\\d{2}-\\d{2}\\): miró y no hay nada esperando decisión\\. · resumen entregado \\(Telegram\\)$"],
+            "stdout_not_re": ["simulado", "NO cruzó", "sharpdelarama", "disco"]
+          }
+        },
+        {
+          "id": "sin-lo-publicado-lee-el-disco-y-lo-dice",
+          "type": "must-emit",
+          "__doc": "La otra mitad del caso anterior. Una copia sin `origin/main` (no es un clon, o no tiene remoto) no puede leer lo publicado: el aviso cae al disco, que es lo que hacía siempre, pero LO DICE — «leí lo publicado» y «no pude leer lo publicado» no son lo mismo, y una foto vieja de una rama se lee igual que una fresca si nadie avisa de dónde salió. Rojo previo: el hook de origin/main lee el disco sin decir nada.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/.dashboard/dependencias tcg/inbox/dependencies/pending && cp $TCG/scripts/hooks/dependencies-notice.js tcg/scripts/hooks/",
+            "cd tcg && node -e \"const f=require('fs');const d=new Date().toISOString().slice(0,10);f.writeFileSync('.dashboard/dependencias/dependencias-'+d+'.json',JSON.stringify({fecha:d,corrida_completa:true,linea_base:false,no_medidos:[],hallazgos:[],pedidos:{simulado:false,creados:[],fallidos:[]},resumen:{message_id:6,motivo:null},cruce:{consultado:true,motivo:null,cerrados_vivos:[],no_leidos:[],huerfanos:[]}}))\""
+          ],
+          "env": { "TYCON_DEPS_OUT": "", "TYCON_DEPS_PENDING": "", "TYCON_WATCHER_OUT": "", "GIT_CEILING_DIRECTORIES": "${FIXTURE}" },
+          "stdin": { "source": "startup" },
+          "expect": {
+            "stdout_re": ["miró y no hay nada esperando decisión", "leído del disco, no de lo publicado"]
+          }
+        },
+        {
+          "id": "git-que-falla-al-listar-no-calla-el-aviso",
+          "type": "must-emit",
+          "so": [
+            "linux",
+            "darwin"
+          ],
+          "__so": "Sólo Linux y Mac (story 8.17, W1, medido en Windows): el caso reemplaza un programa por uno de mentira escrito como guion de shell, y en Windows Node no puede lanzar un guion con «#!» como si fuera un ejecutable. No es un defecto del control: en Windows este camino queda sin caso ([DEF-8.17-W1-NO-CASE-ON-WINDOWS]).",
+          "__doc": "🔴 Revisión adversarial del arreglo anterior (2026-09-15). Leer lo publicado es un proceso git por lectura, y los llamadores tratan «no pude listar» como «no hay historia»: un `ls-tree` que falla o se pasa de los 5 s dejaba el aviso MUDO — «no corrió» con la cara de «no había nada». Ahora un git que falla a mitad de camino vuelve a evaluar desde el disco y lo dice. El git de mentira falla sólo en `ls-tree`. Rojo previo: la primera versión del arreglo sale muda.",
+          "setup": [
+            "git init -q --bare origin.git && git clone -q origin.git tcg 2>/dev/null && mkdir -p tcg/scripts/hooks tcg/.dashboard/dependencias tcg/inbox/dependencies/pending bin",
+            "cd tcg && node -e \"const f=require('fs');const d=new Date().toISOString().slice(0,10);f.writeFileSync('.dashboard/dependencias/dependencias-'+d+'.json',JSON.stringify({fecha:d,corrida_completa:true,no_medidos:[],hallazgos:[],pedidos:{simulado:false,creados:[],fallidos:[]},resumen:{message_id:6,motivo:null},cruce:{consultado:true,motivo:null,cerrados_vivos:[],no_leidos:[],huerfanos:[]}}))\" && printf 'id: fff66666\\npaquete: pkgdeldisco\\nseveridad: high\\nnoches: 2\\n' > inbox/dependencies/pending/fff66666.yaml && git add .dashboard inbox && git -c user.email=b@b -c user.name=b commit -qm noche && git push -q origin HEAD:refs/heads/main 2>/dev/null && git fetch -q origin",
+            "printf '#!/bin/sh\\ncase \"$*\" in *ls-tree*) exit 128;; esac\\nexec git \"$@\"\\n' > bin/git-roto && chmod +x bin/git-roto",
+            "cp $TCG/scripts/hooks/dependencies-notice.js tcg/scripts/hooks/"
+          ],
+          "env": { "TYCON_DEPS_OUT": "", "TYCON_DEPS_PENDING": "", "TYCON_WATCHER_OUT": "", "TYCON_DEPS_GIT": "${FIXTURE}/bin/git-roto" },
+          "stdin": { "source": "startup" },
+          "expect": {
+            "stdout_re": ["1 hallazgo\\(s\\) esperando decisión — pkgdeldisco", "leído del disco, no de lo publicado \\(no pude listar lo publicado: git salió 128\\)"]
+          }
+        },
+        {
+          "id": "git-que-falla-al-leer-una-ficha-no-da-un-verde-falso",
+          "type": "must-emit",
+          "so": [
+            "linux",
+            "darwin"
+          ],
+          "__so": "Sólo Linux y Mac (story 8.17, W1, medido en Windows): el caso reemplaza un programa por uno de mentira escrito como guion de shell, y en Windows Node no puede lanzar un guion con «#!» como si fuera un ejecutable. No es un defecto del control: en Windows este camino queda sin caso ([DEF-8.17-W1-NO-CASE-ON-WINDOWS]).",
+          "__doc": "🔴 La otra mitad del caso anterior, la peor: el listado anda y lo que falla es LEER una ficha pendiente. Los llamadores lo tomaban como «no hay pendientes» y el aviso decía «✅ miró y no hay nada esperando decisión» con un hallazgo esperando. El git de mentira falla sólo en el `show` de `inbox/dependencies/pending/`. Rojo previo: la primera versión del arreglo imprime el ✅.",
+          "setup": [
+            "git init -q --bare origin.git && git clone -q origin.git tcg 2>/dev/null && mkdir -p tcg/scripts/hooks tcg/.dashboard/dependencias tcg/inbox/dependencies/pending bin",
+            "cd tcg && node -e \"const f=require('fs');const d=new Date().toISOString().slice(0,10);f.writeFileSync('.dashboard/dependencias/dependencias-'+d+'.json',JSON.stringify({fecha:d,corrida_completa:true,no_medidos:[],hallazgos:[],pedidos:{simulado:false,creados:[],fallidos:[]},resumen:{message_id:6,motivo:null},cruce:{consultado:true,motivo:null,cerrados_vivos:[],no_leidos:[],huerfanos:[]}}))\" && printf 'id: ggg77777\\npaquete: pkgesperando\\nseveridad: critical\\nnoches: 2\\n' > inbox/dependencies/pending/ggg77777.yaml && git add .dashboard inbox && git -c user.email=b@b -c user.name=b commit -qm noche && git push -q origin HEAD:refs/heads/main 2>/dev/null && git fetch -q origin",
+            "printf '#!/bin/sh\\ncase \"$*\" in *show*pending*) exit 128;; esac\\nexec git \"$@\"\\n' > bin/git-roto && chmod +x bin/git-roto",
+            "cp $TCG/scripts/hooks/dependencies-notice.js tcg/scripts/hooks/"
+          ],
+          "env": { "TYCON_DEPS_OUT": "", "TYCON_DEPS_PENDING": "", "TYCON_WATCHER_OUT": "", "TYCON_DEPS_GIT": "${FIXTURE}/bin/git-roto" },
+          "stdin": { "source": "startup" },
+          "expect": {
+            "stdout_re": ["1 hallazgo\\(s\\) esperando decisión — pkgesperando \\[critical\\]", "no pude leer lo publicado"],
+            "stdout_not_re": ["no hay nada esperando"]
+          }
+        },
+        {
+          "id": "counts-cards-in-the-new-folder-published",
+          "type": "must-emit",
+          "__doc": "Story 8.9, tanda F (AC 57). Las fichas se mudaron a `inbox/dependencies/`. El aviso copiado solo, sin el mapa de renombres al lado —como lo copia este banco y como sale en la copia pública—, lee las fichas de la carpeta nueva en lo publicado y cuenta la que espera decisión. La ficha se borra del disco después de publicarla: si el número sale, salió de `origin/main`. Rojo previo: el aviso de antes de la tanda busca en la carpeta vieja y dice «no hay nada esperando decisión».",
+          "setup": [
+            "git init -q --bare origin.git && git clone -q origin.git tcg 2>/dev/null && mkdir -p tcg/scripts/hooks tcg/.dashboard/dependencias tcg/inbox/dependencies/pending",
+            "cd tcg && node -e \"const f=require('fs');const d=new Date().toISOString().slice(0,10);f.writeFileSync('.dashboard/dependencias/dependencias-'+d+'.json',JSON.stringify({fecha:d,corrida_completa:true,no_medidos:[],hallazgos:[],pedidos:{simulado:false,creados:[],fallidos:[]},resumen:{message_id:6,motivo:null},cruce:{consultado:true,motivo:null,cerrados_vivos:[],no_leidos:[],huerfanos:[]}}))\" && printf 'id: hhh88888\\npaquete: pkgenlanueva\\nseveridad: high\\nnoches: 4\\n' > inbox/dependencies/pending/hhh88888.yaml && git add .dashboard inbox && git -c user.email=b@b -c user.name=b commit -qm noche && git push -q origin HEAD:refs/heads/main 2>/dev/null && git fetch -q origin && rm -rf inbox",
+            "cp $TCG/scripts/hooks/dependencies-notice.js tcg/scripts/hooks/"
+          ],
+          "env": { "TYCON_DEPS_OUT": "", "TYCON_DEPS_PENDING": "", "TYCON_WATCHER_OUT": "" },
+          "stdin": { "source": "startup" },
+          "expect": {
+            "stdout_re": ["1 hallazgo\\(s\\) esperando decisión — pkgenlanueva \\[high\\], 4 noche"],
+            "stdout_not_re": ["no hay nada esperando", "disco"]
+          }
+        },
+        {
+          "id": "counts-cards-still-in-the-old-folder-published",
+          "type": "must-emit",
+          "__doc": "🔴 Story 8.9, tanda F (AC 57): el verde falso que la mudanza podía fabricar. Una copia cuyo `origin/main` todavía tiene las fichas en la carpeta de antes (una copia atrasada, una rama sin mergear) no encuentra la carpeta nueva; si el aviso mirara sólo ahí, diría «✅ no hay nada esperando decisión» con un hallazgo esperando. Busca primero en la nueva y, si no está, en la vieja. El nombre de la vieja NO está escrito en el aviso: sale del mapa de renombres que tiene al lado (la entrada `kind: folder` cuyo `new` es `inbox/dependencies`). Por eso el mapa de este caso es de juguete y nombra una carpeta inventada: si el aviso encuentra la ficha, leyó el mapa. La ficha se borra del disco después de publicarla. Rojo previo: el aviso que sólo conoce la carpeta nueva imprime el ✅.",
+          "setup": [
+            "git init -q --bare origin.git && git clone -q origin.git tcg 2>/dev/null && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard/dependencias tcg/old-queue/pending",
+            "cd tcg && node -e \"const f=require('fs');const d=new Date().toISOString().slice(0,10);f.writeFileSync('.dashboard/dependencias/dependencias-'+d+'.json',JSON.stringify({fecha:d,corrida_completa:true,no_medidos:[],hallazgos:[],pedidos:{simulado:false,creados:[],fallidos:[]},resumen:{message_id:6,motivo:null},cruce:{consultado:true,motivo:null,cerrados_vivos:[],no_leidos:[],huerfanos:[]}}))\" && printf 'id: iii99999\\npaquete: pkgenlavieja\\nseveridad: high\\nnoches: 4\\n' > old-queue/pending/iii99999.yaml && git add .dashboard old-queue && git -c user.email=b@b -c user.name=b commit -qm noche && git push -q origin HEAD:refs/heads/main 2>/dev/null && git fetch -q origin && rm -rf old-queue",
+            "cp $TCG/scripts/hooks/dependencies-notice.js tcg/scripts/hooks/ && printf '{\"entries\":[{\"kind\":\"folder\",\"old\":\"old-queue\",\"new\":\"inbox/dependencies\"}]}' > tcg/scripts/lib/renames.json"
+          ],
+          "env": { "TYCON_DEPS_OUT": "", "TYCON_DEPS_PENDING": "", "TYCON_WATCHER_OUT": "" },
+          "stdin": { "source": "startup" },
+          "expect": {
+            "stdout_re": ["1 hallazgo\\(s\\) esperando decisión — pkgenlavieja \\[high\\], 4 noche"],
+            "stdout_not_re": ["no hay nada esperando", "disco"]
+          }
+        },
+        {
+          "id": "counts-cards-still-in-the-old-folder-on-disk",
+          "type": "must-emit",
+          "__doc": "Story 8.9, tanda F (AC 57). La misma lectura doble, del lado del disco: una copia sin `origin/main` con las fichas todavía en la carpeta de antes. Cuenta el hallazgo y dice que leyó el disco, como siempre. Rojo previo: el aviso que sólo conoce la carpeta nueva imprime «no hay nada esperando decisión».",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard/dependencias tcg/old-queue/pending && cp $TCG/scripts/hooks/dependencies-notice.js tcg/scripts/hooks/ && printf '{\"entries\":[{\"kind\":\"folder\",\"old\":\"old-queue\",\"new\":\"inbox/dependencies\"}]}' > tcg/scripts/lib/renames.json",
+            "cd tcg && node -e \"const f=require('fs');const d=new Date().toISOString().slice(0,10);f.writeFileSync('.dashboard/dependencias/dependencias-'+d+'.json',JSON.stringify({fecha:d,corrida_completa:true,no_medidos:[],hallazgos:[],pedidos:{simulado:false,creados:[],fallidos:[]},resumen:{message_id:6,motivo:null},cruce:{consultado:true,motivo:null,cerrados_vivos:[],no_leidos:[],huerfanos:[]}}))\" && printf 'id: jjj00000\\npaquete: pkgviejoendisco\\nseveridad: critical\\nnoches: 3\\n' > old-queue/pending/jjj00000.yaml"
+          ],
+          "env": { "TYCON_DEPS_OUT": "", "TYCON_DEPS_PENDING": "", "TYCON_WATCHER_OUT": "", "GIT_CEILING_DIRECTORIES": "${FIXTURE}" },
+          "stdin": { "source": "startup" },
+          "expect": {
+            "stdout_re": ["1 hallazgo\\(s\\) esperando decisión — pkgviejoendisco \\[critical\\], 3 noche", "leído del disco, no de lo publicado"],
+            "stdout_not_re": ["no hay nada esperando"]
+          }
+        },
+        {
+          "id": "new-folder-wins-over-the-old-one",
+          "type": "must-emit",
+          "__doc": "Story 8.9, tanda F (AC 57). La vieja es el respaldo, no una segunda cola: si la carpeta nueva está, se lee ésa y la vieja no se mira, aunque tenga fichas (un resto que quedó de antes de mudar). Sumar las dos contaría dos veces lo mismo. Rojo previo: el aviso de antes de la tanda cuenta la de la carpeta vieja.",
+          "setup": [
+            "git init -q --bare origin.git && git clone -q origin.git tcg 2>/dev/null && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard/dependencias tcg/inbox/dependencies/pending tcg/old-queue/pending",
+            "cd tcg && node -e \"const f=require('fs');const d=new Date().toISOString().slice(0,10);f.writeFileSync('.dashboard/dependencias/dependencias-'+d+'.json',JSON.stringify({fecha:d,corrida_completa:true,no_medidos:[],hallazgos:[],pedidos:{simulado:false,creados:[],fallidos:[]},resumen:{message_id:6,motivo:null},cruce:{consultado:true,motivo:null,cerrados_vivos:[],no_leidos:[],huerfanos:[]}}))\" && printf 'id: kkk11111\\npaquete: pkgdelanueva\\nseveridad: high\\nnoches: 2\\n' > inbox/dependencies/pending/kkk11111.yaml && printf 'id: lll22222\\npaquete: pkgdelavieja\\nseveridad: high\\nnoches: 9\\n' > old-queue/pending/lll22222.yaml && git add .dashboard inbox old-queue && git -c user.email=b@b -c user.name=b commit -qm noche && git push -q origin HEAD:refs/heads/main 2>/dev/null && git fetch -q origin",
+            "cp $TCG/scripts/hooks/dependencies-notice.js tcg/scripts/hooks/ && printf '{\"entries\":[{\"kind\":\"folder\",\"old\":\"old-queue\",\"new\":\"inbox/dependencies\"}]}' > tcg/scripts/lib/renames.json"
+          ],
+          "env": { "TYCON_DEPS_OUT": "", "TYCON_DEPS_PENDING": "", "TYCON_WATCHER_OUT": "" },
+          "stdin": { "source": "startup" },
+          "expect": {
+            "stdout_re": ["1 hallazgo\\(s\\) esperando decisión — pkgdelanueva \\[high\\], 2 noche"],
+            "stdout_not_re": ["pkgdelavieja", "disco"]
+          }
+        },
+        {
+          "id": "cannot-look-at-the-new-folder-is-not-absent",
+          "type": "must-emit",
+          "so": [
+            "linux",
+            "darwin"
+          ],
+          "__so": "Sólo Linux y Mac (story 8.17, W1, medido en Windows): el caso reemplaza un programa por uno de mentira escrito como guion de shell, y en Windows Node no puede lanzar un guion con «#!» como si fuera un ejecutable. No es un defecto del control: en Windows este camino queda sin caso ([DEF-8.17-W1-NO-CASE-ON-WINDOWS]).",
+          "__doc": "🔴 Story 8.9, tanda F (AC 57). «No está» y «no pude mirar» no son lo mismo, tampoco acá: si git falla al preguntar por la carpeta nueva, el aviso NO pasa a la vieja como si la nueva no existiera — leería un resto viejo y lo mostraría como la cola de hoy. Hace lo de siempre con un git a medias: vuelve a evaluar desde el disco y lo dice. El git de mentira falla sólo en el `ls-tree` de `inbox/dependencies`; lo publicado tiene las dos carpetas, cada una con una ficha distinta. Rojo previo: una lectura doble que trate el fallo como ausencia imprime la ficha de la carpeta vieja, sin nota.",
+          "setup": [
+            "git init -q --bare origin.git && git clone -q origin.git tcg 2>/dev/null && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard/dependencias tcg/inbox/dependencies/pending tcg/old-queue/pending bin",
+            "cd tcg && node -e \"const f=require('fs');const d=new Date().toISOString().slice(0,10);f.writeFileSync('.dashboard/dependencias/dependencias-'+d+'.json',JSON.stringify({fecha:d,corrida_completa:true,no_medidos:[],hallazgos:[],pedidos:{simulado:false,creados:[],fallidos:[]},resumen:{message_id:6,motivo:null},cruce:{consultado:true,motivo:null,cerrados_vivos:[],no_leidos:[],huerfanos:[]}}))\" && printf 'id: mmm33333\\npaquete: pkgdelanueva\\nseveridad: high\\nnoches: 2\\n' > inbox/dependencies/pending/mmm33333.yaml && printf 'id: nnn44444\\npaquete: pkgdelavieja\\nseveridad: high\\nnoches: 9\\n' > old-queue/pending/nnn44444.yaml && git add .dashboard inbox old-queue && git -c user.email=b@b -c user.name=b commit -qm noche && git push -q origin HEAD:refs/heads/main 2>/dev/null && git fetch -q origin",
+            "printf '#!/bin/sh\\ncase \"$*\" in *ls-tree*inbox/dependencies*) exit 128;; esac\\nexec git \"$@\"\\n' > bin/git-roto && chmod +x bin/git-roto",
+            "cp $TCG/scripts/hooks/dependencies-notice.js tcg/scripts/hooks/ && printf '{\"entries\":[{\"kind\":\"folder\",\"old\":\"old-queue\",\"new\":\"inbox/dependencies\"}]}' > tcg/scripts/lib/renames.json"
+          ],
+          "env": { "TYCON_DEPS_OUT": "", "TYCON_DEPS_PENDING": "", "TYCON_WATCHER_OUT": "", "TYCON_DEPS_GIT": "${FIXTURE}/bin/git-roto" },
+          "stdin": { "source": "startup" },
+          "expect": {
+            "stdout_re": ["1 hallazgo\\(s\\) esperando decisión — pkgdelanueva \\[high\\], 2 noche", "leído del disco, no de lo publicado \\(no pude listar lo publicado: git salió 128\\)"],
+            "stdout_not_re": ["pkgdelavieja", "no hay nada esperando"]
+          }
+        },
+        {
+          "id": "broken-map-still-reads-the-new-folder",
+          "type": "must-emit",
+          "__doc": "Story 8.9, tanda F (AC 57). El mapa de renombres es un respaldo, no un requisito: si está roto, el aviso no se calla ni se cae — lee la carpeta nueva, como cuando no hay mapa. Un aviso de arranque que enmudece por un archivo vecino ilegible es el modo de falla que esta pieza existe para denunciar.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard/dependencias tcg/inbox/dependencies/pending && cp $TCG/scripts/hooks/dependencies-notice.js tcg/scripts/hooks/ && printf 'esto no es json' > tcg/scripts/lib/renames.json",
+            "cd tcg && node -e \"const f=require('fs');const d=new Date().toISOString().slice(0,10);f.writeFileSync('.dashboard/dependencias/dependencias-'+d+'.json',JSON.stringify({fecha:d,corrida_completa:true,no_medidos:[],hallazgos:[],pedidos:{simulado:false,creados:[],fallidos:[]},resumen:{message_id:6,motivo:null},cruce:{consultado:true,motivo:null,cerrados_vivos:[],no_leidos:[],huerfanos:[]}}))\" && printf 'id: ooo55555\\npaquete: pkgconmaparoto\\nseveridad: high\\nnoches: 2\\n' > inbox/dependencies/pending/ooo55555.yaml"
+          ],
+          "env": { "TYCON_DEPS_OUT": "", "TYCON_DEPS_PENDING": "", "TYCON_WATCHER_OUT": "", "GIT_CEILING_DIRECTORIES": "${FIXTURE}" },
+          "stdin": { "source": "startup" },
+          "expect": {
+            "stdout_re": ["1 hallazgo\\(s\\) esperando decisión — pkgconmaparoto"]
+          }
+        },
+        {
+          "id": "map-entry-that-leaves-the-repo-is-ignored",
+          "type": "must-emit",
+          "__doc": "Story 8.9, tanda F (AC 57). La carpeta vieja sale de un archivo, y lo que sale de un archivo no se usa a ciegas como ruta: una entrada que sube con `..` o es absoluta se descarta y el aviso lee sólo la carpeta nueva. Acá la entrada apunta afuera del arnés de juguete, a una carpeta con una ficha: no tiene que aparecer.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard/dependencias outside/pending && cp $TCG/scripts/hooks/dependencies-notice.js tcg/scripts/hooks/ && printf '{\"entries\":[{\"kind\":\"folder\",\"old\":\"../outside\",\"new\":\"inbox/dependencies\"}]}' > tcg/scripts/lib/renames.json",
+            "cd tcg && node -e \"const f=require('fs');const d=new Date().toISOString().slice(0,10);f.writeFileSync('.dashboard/dependencias/dependencias-'+d+'.json',JSON.stringify({fecha:d,corrida_completa:true,no_medidos:[],hallazgos:[],pedidos:{simulado:false,creados:[],fallidos:[]},resumen:{message_id:6,motivo:null},cruce:{consultado:true,motivo:null,cerrados_vivos:[],no_leidos:[],huerfanos:[]}}))\" && printf 'id: ppp66666\\npaquete: pkgdeafuera\\nseveridad: high\\nnoches: 2\\n' > ../outside/pending/ppp66666.yaml"
+          ],
+          "env": { "TYCON_DEPS_OUT": "", "TYCON_DEPS_PENDING": "", "TYCON_WATCHER_OUT": "", "GIT_CEILING_DIRECTORIES": "${FIXTURE}" },
+          "stdin": { "source": "startup" },
+          "expect": {
+            "stdout_re": ["no hay nada esperando decisión"],
+            "stdout_not_re": ["pkgdeafuera"]
+          }
+        },
+        {
+          "id": "cards-folder-that-cannot-be-read-is-said",
+          "type": "must-emit",
+          "__doc": "🔴 Revisor de fallos silenciosos, tanda F de la 8.9. La lectura de las fichas tragaba CUALQUIER error y lo convertía en «no hay fichas»: una carpeta que está y no se deja leer salía «✅ no hay nada esperando decisión», una noche tranquila fabricada por un error de lectura. «No está» calla; «no pude leer» se dice, en una línea, con el motivo, y el arranque sigue. Acá donde debería estar la carpeta de fichas hay un archivo (el mismo camino que un permiso negado, sin depender de quién corre el banco). Rojo previo: el aviso de antes imprime el ✅.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks dash deps && cp $TCG/scripts/hooks/dependencies-notice.js tcg/scripts/hooks/ && printf 'no soy una carpeta' > deps/pending",
+            "node -e \"const f=require('fs');const d=new Date().toISOString().slice(0,10);f.writeFileSync('dash/dependencias-'+d+'.json',JSON.stringify({fecha:d,corrida_completa:true,no_medidos:[],hallazgos:[],pedidos:{simulado:false,creados:[],fallidos:[]},resumen:{message_id:6,motivo:null},cruce:{consultado:true,motivo:null,cerrados_vivos:[],no_leidos:[],huerfanos:[]}}))\""
+          ],
+          "stdin": { "source": "startup" },
+          "expect": {
+            "exit": 0,
+            "stdout_re": ["^🔴 dependencias \\(\\d{4}-\\d{2}-\\d{2}\\): no pude leer las fichas que esperan decisión \\(ENOTDIR[^\\n]*\\)"],
+            "stdout_not_re": ["no hay nada esperando", "hallazgo\\(s\\) esperando", "\\n\\s+at "]
+          }
+        },
+        {
+          "id": "unreadable-card-is-said",
+          "type": "must-emit",
+          "__doc": "🔴 La otra mitad: la carpeta se lista y lo que no se deja leer es UNA ficha (acá, una carpeta con nombre de ficha). Antes eso vaciaba la lista entera y salía el ✅ con otra ficha sana esperando al lado. Si una ficha no se pudo leer no se sabe cuántas esperan: se dice eso, no un número. Rojo previo: el aviso de antes imprime «no hay nada esperando decisión».",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks dash deps/pending/rota.yaml && cp $TCG/scripts/hooks/dependencies-notice.js tcg/scripts/hooks/ && printf 'id: qqq77777\\npaquete: pkgsano\\nseveridad: high\\nnoches: 2\\n' > deps/pending/qqq77777.yaml",
+            "node -e \"const f=require('fs');const d=new Date().toISOString().slice(0,10);f.writeFileSync('dash/dependencias-'+d+'.json',JSON.stringify({fecha:d,corrida_completa:true,no_medidos:[],hallazgos:[],pedidos:{simulado:false,creados:[],fallidos:[]},resumen:{message_id:6,motivo:null},cruce:{consultado:true,motivo:null,cerrados_vivos:[],no_leidos:[],huerfanos:[]}}))\""
+          ],
+          "stdin": { "source": "startup" },
+          "expect": {
+            "exit": 0,
+            "stdout_re": ["no pude leer las fichas que esperan decisión \\(EISDIR[^\\n]*\\)"],
+            "stdout_not_re": ["no hay nada esperando", "\\n\\s+at "]
+          }
+        },
+        {
+          "id": "cards-folder-that-is-a-file-does-not-fall-back-to-the-old-one",
+          "type": "must-emit",
+          "__doc": "🔴 Lo mismo en la lectura de las dos carpetas (AC 57): «no está» es SÓLO que no exista. Si donde va la carpeta nueva hay otra cosa, eso es un error que se dice — no una ausencia que mande a leer la carpeta de antes y mostrar un resto viejo como la cola de hoy. Rojo previo: la primera versión de la lectura doble imprime la ficha de la carpeta vieja.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard/dependencias tcg/inbox/dependencies tcg/old-queue/pending && cp $TCG/scripts/hooks/dependencies-notice.js tcg/scripts/hooks/ && printf '{\"entries\":[{\"kind\":\"folder\",\"old\":\"old-queue\",\"new\":\"inbox/dependencies\"}]}' > tcg/scripts/lib/renames.json && printf 'no soy una carpeta' > tcg/inbox/dependencies/pending",
+            "cd tcg && node -e \"const f=require('fs');const d=new Date().toISOString().slice(0,10);f.writeFileSync('.dashboard/dependencias/dependencias-'+d+'.json',JSON.stringify({fecha:d,corrida_completa:true,no_medidos:[],hallazgos:[],pedidos:{simulado:false,creados:[],fallidos:[]},resumen:{message_id:6,motivo:null},cruce:{consultado:true,motivo:null,cerrados_vivos:[],no_leidos:[],huerfanos:[]}}))\" && printf 'id: rrr88888\\npaquete: pkgdelavieja\\nseveridad: high\\nnoches: 9\\n' > old-queue/pending/rrr88888.yaml"
+          ],
+          "env": { "TYCON_DEPS_OUT": "", "TYCON_DEPS_PENDING": "", "TYCON_WATCHER_OUT": "", "GIT_CEILING_DIRECTORIES": "${FIXTURE}" },
+          "stdin": { "source": "startup" },
+          "expect": {
+            "exit": 0,
+            "stdout_re": ["no pude leer las fichas que esperan decisión \\(ENOTDIR[^\\n]*\\)"],
+            "stdout_not_re": ["pkgdelavieja", "no hay nada esperando"]
+          }
+        },
+        {
+          "id": "published-cards-folder-that-is-a-file-is-said",
+          "type": "must-emit",
+          "__doc": "🔴 Pase adversarial de la tanda F (clase 8). La regla «no está es sólo que no exista; un archivo donde va la carpeta es no-pude-mirar» se cumplía en el disco y no en lo publicado: ahí se preguntaba sólo por el NOMBRE, y un archivo llamado como la carpeta contaba como «está». Con `inbox/dependencies/pending` como archivo en `origin/main` el aviso ni caía a la carpeta de antes ni decía error: imprimía el ✅ con una ficha esperando. Ahora mira el TIPO de la entrada: si no es una carpeta, lo dice igual que el disco. No es un fallo de git, así que no vuelve al disco ni lo nombra. El árbol se borra del disco después de publicarlo. Rojo previo: el aviso imprime «no hay nada esperando decisión».",
+          "setup": [
+            "git init -q --bare origin.git && git clone -q origin.git tcg 2>/dev/null && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard/dependencias tcg/inbox/dependencies tcg/old-queue/pending",
+            "cd tcg && node -e \"const f=require('fs');const d=new Date().toISOString().slice(0,10);f.writeFileSync('.dashboard/dependencias/dependencias-'+d+'.json',JSON.stringify({fecha:d,corrida_completa:true,no_medidos:[],hallazgos:[],pedidos:{simulado:false,creados:[],fallidos:[]},resumen:{message_id:6,motivo:null},cruce:{consultado:true,motivo:null,cerrados_vivos:[],no_leidos:[],huerfanos:[]}}))\" && printf 'no soy una carpeta' > inbox/dependencies/pending && printf 'id: sss99999\\npaquete: pkgdelavieja\\nseveridad: high\\nnoches: 9\\n' > old-queue/pending/sss99999.yaml && git add .dashboard inbox old-queue && git -c user.email=b@b -c user.name=b commit -qm noche && git push -q origin HEAD:refs/heads/main 2>/dev/null && git fetch -q origin && rm -rf inbox old-queue",
+            "cp $TCG/scripts/hooks/dependencies-notice.js tcg/scripts/hooks/ && printf '{\"entries\":[{\"kind\":\"folder\",\"old\":\"old-queue\",\"new\":\"inbox/dependencies\"}]}' > tcg/scripts/lib/renames.json"
+          ],
+          "env": { "TYCON_DEPS_OUT": "", "TYCON_DEPS_PENDING": "", "TYCON_WATCHER_OUT": "" },
+          "stdin": { "source": "startup" },
+          "expect": {
+            "exit": 0,
+            "stdout_re": ["no pude leer las fichas que esperan decisión \\(ENOTDIR[^\\n]*inbox/dependencies/pending[^\\n]*\\)"],
+            "stdout_not_re": ["no hay nada esperando", "pkgdelavieja", "disco"]
+          }
+        },
+        {
+          "id": "published-cards-folder-that-is-a-file-is-said-without-the-map",
+          "type": "must-emit",
+          "__doc": "🔴 El mismo caso con el aviso copiado solo, sin el mapa de renombres (el banco, la copia pública). Sin mapa no hay carpeta de antes que mirar, pero la regla es la misma: un archivo donde va la carpeta de fichas no es una carpeta vacía. Rojo previo: el aviso imprime «no hay nada esperando decisión».",
+          "setup": [
+            "git init -q --bare origin.git && git clone -q origin.git tcg 2>/dev/null && mkdir -p tcg/scripts/hooks tcg/.dashboard/dependencias tcg/inbox/dependencies",
+            "cd tcg && node -e \"const f=require('fs');const d=new Date().toISOString().slice(0,10);f.writeFileSync('.dashboard/dependencias/dependencias-'+d+'.json',JSON.stringify({fecha:d,corrida_completa:true,no_medidos:[],hallazgos:[],pedidos:{simulado:false,creados:[],fallidos:[]},resumen:{message_id:6,motivo:null},cruce:{consultado:true,motivo:null,cerrados_vivos:[],no_leidos:[],huerfanos:[]}}))\" && printf 'no soy una carpeta' > inbox/dependencies/pending && git add .dashboard inbox && git -c user.email=b@b -c user.name=b commit -qm noche && git push -q origin HEAD:refs/heads/main 2>/dev/null && git fetch -q origin && rm -rf inbox",
+            "cp $TCG/scripts/hooks/dependencies-notice.js tcg/scripts/hooks/"
+          ],
+          "env": { "TYCON_DEPS_OUT": "", "TYCON_DEPS_PENDING": "", "TYCON_WATCHER_OUT": "" },
+          "stdin": { "source": "startup" },
+          "expect": {
+            "exit": 0,
+            "stdout_re": ["no pude leer las fichas que esperan decisión \\(ENOTDIR[^\\n]*inbox/dependencies/pending[^\\n]*\\)"],
+            "stdout_not_re": ["no hay nada esperando", "disco"]
+          }
+        },
+        {
+          "id": "missing-cards-folder-in-both-places-is-not-an-error",
+          "type": "must-emit",
+          "__doc": "La contracara de los tres casos anteriores, para que el arreglo no se pase de rosca: si la carpeta de fichas NO ESTÁ en ninguno de los dos lugares (una copia recién clonada antes de la primera ficha), no hay nada que no se haya podido leer. El aviso dice lo de siempre y no inventa un error.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard/dependencias && cp $TCG/scripts/hooks/dependencies-notice.js tcg/scripts/hooks/ && printf '{\"entries\":[{\"kind\":\"folder\",\"old\":\"old-queue\",\"new\":\"inbox/dependencies\"}]}' > tcg/scripts/lib/renames.json",
+            "cd tcg && node -e \"const f=require('fs');const d=new Date().toISOString().slice(0,10);f.writeFileSync('.dashboard/dependencias/dependencias-'+d+'.json',JSON.stringify({fecha:d,corrida_completa:true,no_medidos:[],hallazgos:[],pedidos:{simulado:false,creados:[],fallidos:[]},resumen:{message_id:6,motivo:null},cruce:{consultado:true,motivo:null,cerrados_vivos:[],no_leidos:[],huerfanos:[]}}))\""
+          ],
+          "env": { "TYCON_DEPS_OUT": "", "TYCON_DEPS_PENDING": "", "TYCON_WATCHER_OUT": "", "GIT_CEILING_DIRECTORIES": "${FIXTURE}" },
+          "stdin": { "source": "startup" },
+          "expect": {
+            "exit": 0,
+            "stdout_re": ["miró y no hay nada esperando decisión", "leído del disco, no de lo publicado"],
+            "stdout_not_re": ["no pude leer las fichas"]
+          }
+        },
+        {
+          "id": "quiet-todavia-no-se-estreno",
+          "type": "must-stay-quiet",
+          "__doc": "El único silencio legítimo: no hay ni un snapshot, o sea que la pieza todavía no corrió nunca. Gritar acá le pondría un rojo permanente a toda máquina que clone el repo antes del estreno, y un rojo que no se puede apagar se aprende a ignorar.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks dash deps && cp $TCG/scripts/hooks/dependencies-notice.js tcg/scripts/hooks/"
+          ],
+          "stdin": { "source": "startup" },
+          "expect": {}
+        },
+        {
+          "id": "quiet-con-el-interruptor-en-cero",
+          "type": "must-stay-quiet",
+          "__doc": "El apagado tiene que existir y tiene que funcionar — pero se apaga por variable de entorno, que no persiste, y no editando un archivo de configuración que el propio aviso no mira (regla HARNESS-C1).",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks dash deps && cp $TCG/scripts/hooks/dependencies-notice.js tcg/scripts/hooks/",
+            "node -e \"const f=require('fs');const d=new Date(Date.now()-30*864e5).toISOString().slice(0,10);f.writeFileSync('dash/dependencias-'+d+'.json',JSON.stringify({fecha:d}))\""
+          ],
+          "env": { "TYCON_DEPS_NOTICE": "0" },
+          "stdin": { "source": "startup" },
+          "expect": {}
+        },
+        {
+          "id": "startup-recognizes-the-old-identity-step",
+          "type": "must-emit",
+          "__doc": "Story 8.10, AC 23 (T34). El paso de creación que resuelve la identidad del líder se llamaba `identidad-` más un nombre de persona; la tanda B lo renombra en los dos lados (el nocturno que lo escribe y este aviso que lo lee). Los registros ya escritos con el nombre viejo se siguen reconociendo como pasos de creación mientras existan: este caso trae uno y exige que cuente como «no se pudieron crear», no como un fallo posterior. Se sumó antes de tocar el aviso, verde con el código de entonces. Y el aviso lo muestra con el nombre nuevo: el viejo lleva el nombre de una persona y no sale por pantalla (revisor de seguridad de la tanda B).",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks dash deps/pending && cp $TCG/scripts/hooks/dependencies-notice.js tcg/scripts/hooks/",
+            "node -e \"const f=require('fs');const d=new Date().toISOString().slice(0,10);f.writeFileSync('dash/dependencias-'+d+'.json',JSON.stringify({fecha:d,corrida_completa:true,linea_base:false,no_medidos:[],hallazgos:[],pedidos:{simulado:false,creados:[],fallidos:[{ficha:'abc12345',proyecto:'Acme',paso:'identidad-deva',motivo:'no se encontró la identidad del líder'}]},resumen:{message_id:5,motivo:null},cruce:{consultado:true,motivo:null,cerrados_vivos:[],no_leidos:[],huerfanos:[]}}))\""
+          ],
+          "stdin": { "source": "startup" },
+          "expect": {
+            "stdout_re": ["1 pedido\\(s\\) no se pudieron crear — lead-identity"],
+            "stdout_not_re": ["con fallos que no impidieron crearlos", "identidad-"]
+          }
+        },
+        {
+          "id": "startup-recognizes-the-lead-identity-step",
+          "type": "must-emit",
+          "__doc": "Story 8.10, AC 23 (T34). El nombre nuevo del paso, `lead-identity`, lo escribe el nocturno desde la tanda B: el aviso lo cuenta como paso de creación. Rojo previo: el aviso de antes de la tanda no lo conoce y lo cuenta como un fallo posterior.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks dash deps/pending && cp $TCG/scripts/hooks/dependencies-notice.js tcg/scripts/hooks/",
+            "node -e \"const f=require('fs');const d=new Date().toISOString().slice(0,10);f.writeFileSync('dash/dependencias-'+d+'.json',JSON.stringify({fecha:d,corrida_completa:true,linea_base:false,no_medidos:[],hallazgos:[],pedidos:{simulado:false,creados:[],fallidos:[{ficha:'abc12345',proyecto:'Acme',paso:'lead-identity',motivo:'no se encontró la identidad del líder'}]},resumen:{message_id:5,motivo:null},cruce:{consultado:true,motivo:null,cerrados_vivos:[],no_leidos:[],huerfanos:[]}}))\""
+          ],
+          "stdin": { "source": "startup" },
+          "expect": {
+            "stdout_re": ["1 pedido\\(s\\) no se pudieron crear — lead-identity"],
+            "stdout_not_re": ["con fallos que no impidieron crearlos"]
+          }
+        }
+      ]
+    }
+  ]
+}

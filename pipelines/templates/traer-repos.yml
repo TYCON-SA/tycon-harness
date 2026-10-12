@@ -1,0 +1,165 @@
+# pipelines/templates/traer-repos.yml — dejar las skills a mano y, opcionalmente, traer los repos de los productos.
+#
+# 🔴 POR QUÉ ES UN TEMPLATE Y NO ESTÁ COPIADO EN CADA PIPELINE. Este bloque nació en
+# `pipelines/azure-pipelines-banco.yml` (jobs Banco y Suites) y el pipeline de validación de pull request
+# necesita exactamente lo mismo. El arnés ya pagó esta deuda dos veces: `release-notes.sh` copiado
+# en 8 repos que divergieron —y el que faltaba filtrar era justo el del flujo nuevo—, y el bloque de
+# abrir pull requests que en 5 días se separó en tres lugares entre dos YAML. Dos copias de «clonar
+# los repos de los productos» se separan solas, y el modo de falla es silencioso: un repo que no se clona
+# hace que las suites que lo leen se salteen CON CONSTANCIA, o sea que la cobertura baja sin ponerse roja.
+#
+# Parámetros:
+#   agentSkills     — dejar las skills en `~/.claude/agent-skills` (default true).
+#   productos       — clonar los repos de la lista de productos en el layout `$HOME/SourceCode/<ruta>` que las
+#                     suites esperan (default false).
+#   condicion       — condición de Azure para los pasos (default: siempre).
+#   productRegistry — la lista de los repos de los productos (`{"repos":[{"ruta","ado"}]}`), relativa al checkout o
+#                     absoluta. Por defecto la de siempre, `scripts/nightly/dependencies/repos.json`. La validación con un
+#                     repo de GitHub como propio le pasa la que trajo `fetch-snapshot.yml`: el árbol público no la trae
+#                     (story 8.26, tanda C).
+#
+# Los dos primeros son independientes A PROPÓSITO: el pipeline de pull request deja las skills
+# SIEMPRE —antes del lint— y los productos sólo cuando el cambio trae código.
+#
+# 🔴 LAS SKILLS VAN ANTES DEL LINT, Y NO ES UN DETALLE DE ORDEN (medido: corrida 10568, 17/9).
+# Con el clon después, dos controles del lint mintieron en la misma corrida:
+#   · `lint-story-frontmatter.js` no encontró el descubridor de stories del arnés (vive en las
+#     skills), cayó al layout clásico `<repo>/specs/stories/` y declaró «✅ todas las stories
+#     son legibles» habiendo mirado 33 de 278 .md — un verde sobre el 12 % del material;
+#   · `build/check.js` no encontró los advisors canónicos («canónico no existe») y salió rojo:
+#     correcto como conducta —un control ausente no es un control aprobado— pero por el orden, no
+#     por un defecto del cambio.
+#
+# Contrato (el mismo que tenía el bloque original, y por eso el nocturno no cambia de conducta):
+#   · las skills son OBLIGATORIAS cuando se piden: sin ellas no se mide NADA (14 archivos de casos las
+#     buscan en `~/.claude/agent-skills`), así que si no quedan, el paso sale ROJO, no «no medido»;
+#   · un repo de producto que no se puede clonar es AVISO: las suites que lo leen lo dicen y se saltean;
+#     pero sin la lista, o sin NINGÚN repo clonado, el paso sale ROJO (story 8.26, tanda C: hasta ese día,
+#     sin la lista el lazo no daba ninguna vuelta y el paso salía verde con «repos clonados: 0»);
+#   · el error del clon SE CONSERVA, en la línea de abajo del aviso: un 128 por falta de permiso se ve igual
+#     que un repo que no existe. El aviso lleva texto fijo (story 8.26, tanda C, AC 45): la validación corre
+#     sobre los pedidos del repo público y el nombre de un repo de producto no puede salir en el control.
+#
+# 🔴 UN SOLO REPO: SE ENLAZA, NO SE CLONA (story 8.18, 2026-10-04). Con las skills adentro del arnés
+# (`agents/`, `skills/` y `packs/` en la raíz) ya vienen en el checkout: `~/.claude/agent-skills` es un
+# ENLACE al propio checkout, y lo que se valida es el contenido del propio cambio. La historia de las
+# skills es la de este repo: `third-party-real.test.sh` mide sobre un commit viejo, y sin historia sale
+# «NO MEDIDO» todas las noches (corrida 11337), así que un checkout recortado se completa.
+#   · El paso sale ROJO, con el motivo, si el checkout no trae las skills (ninguna de las tres carpetas, o
+#     sin `skills/tycon-pipeline`), si vino recortado y la historia no se pudo completar, o si el enlace no
+#     se pudo crear. Nunca «no medido». Hasta la story 8.26 (tanda C) un checkout sin las tres carpetas era
+#     «el arnés de antes de la unión» y el paso clonaba el repo viejo de las skills, con su nombre escrito
+#     acá: ya no hay ramas sin unir, y esta plantilla viaja en el público.
+#   · Una carpeta real en `~/.claude/agent-skills` no se pisa (rojo); un enlace viejo sí se reemplaza.
+# Casos: scripts/tests/fetch-repos-template.test.sh (corre estos pasos en una HOME de juguete).
+
+parameters:
+  - name: agentSkills
+    type: boolean
+    default: true
+  - name: productos
+    type: boolean
+    default: false
+  - name: condicion
+    type: string
+    default: 'succeeded()'
+  - name: productRegistry
+    type: string
+    default: 'scripts/nightly/dependencies/repos.json'
+
+steps:
+  - ${{ if eq(parameters.agentSkills, true) }}:
+      - script: |
+          set -uo pipefail
+          DEST="$HOME/.claude/agent-skills"
+          SRC="$(Build.SourcesDirectory)"
+          # Azure lee UNA línea por aviso: el aviso lleva el texto fijo; el detalle (un error, una ruta), en la de abajo.
+          red() { echo "##vso[task.logissue type=error]$1"; [ -n "${2:-}" ] && printf '   %s\n' "$(printf '%s' "$2" | tr '\n' ' ' | sed 's/#/♯/g')"; exit 1; }
+          if ! ERR=$(mkdir -p "$(dirname "$DEST")" 2>&1); then
+            red "No se pudo crear la carpeta donde se enlazan las skills — sin ellas no se mide nada" "$ERR"
+          fi
+          # Hay que poder saber qué trae el checkout: con varios `checkout` en el mismo trabajo cada repo queda en una
+          # subcarpeta, y acá no se vería `skills/`.
+          [ -e "$SRC/.git" ] \
+            || red "La carpeta de fuentes no es un checkout de git: no puedo saber si trae las skills — sin ellas no se mide nada"
+          { [ -d "$SRC/agents" ] || [ -d "$SRC/skills" ] || [ -d "$SRC/packs" ]; } \
+            || red "El checkout no trae las skills (agents/, skills/ ni packs/): sin ellas no se mide nada"
+          [ -d "$SRC/skills/tycon-pipeline" ] \
+            || red "El checkout no trae skills/tycon-pipeline: sin las skills no se mide nada"
+          if ! SHALLOW=$(git -C "$SRC" rev-parse --is-shallow-repository 2>&1); then
+            red "No pude leer si el checkout vino recortado — sin la historia entera no se mide nada" "$SHALLOW"
+          fi
+          if [ "$SHALLOW" = true ]; then
+            # Primero con lo que dejó el `checkout` (persistCredentials); si no alcanza, con el token de
+            # la corrida, que sobre el propio repo siempre lee. Los dos errores se conservan.
+            if ! ERR=$(git -C "$SRC" fetch --quiet --unshallow origin 2>&1); then
+              if ! ERR2=$(git -C "$SRC" -c http.extraheader="AUTHORIZATION: bearer ${SYSTEM_ACCESSTOKEN:-}" \
+                   fetch --quiet --unshallow origin 2>&1); then
+                red "El checkout vino recortado y no se pudo completar la historia — poné fetchDepth: 0 en el checkout" "$ERR · con el token de la corrida: $ERR2"
+              fi
+            fi
+            SHALLOW=$(git -C "$SRC" rev-parse --is-shallow-repository 2>&1)
+            [ "$SHALLOW" = false ] \
+              || red "El checkout vino recortado y sigue recortado después de completar la historia — poné fetchDepth: 0 en el checkout" "$SHALLOW"
+            echo "el checkout vino recortado: historia completada"
+          fi
+          SRC_REAL=$(cd "$SRC" && pwd -P) || red "No pude resolver la carpeta del checkout"
+          DEST_REAL=''
+          if [ -L "$DEST" ]; then
+            DEST_REAL=$(cd "$DEST" && pwd -P) || DEST_REAL=''
+            if [ "$DEST_REAL" != "$SRC_REAL" ]; then
+              # un enlace de otra corrida (un agente que se reusa): se saca el enlace, no lo enlazado
+              ERR=$(rm -f "$DEST" 2>&1) || red "No se pudo enlazar las skills al checkout: el enlace que había no se deja sacar" "$ERR"
+            fi
+          elif [ -e "$DEST" ]; then
+            red "No se pudo enlazar las skills al checkout: ya hay una carpeta real donde va el enlace (no se pisa) — sin las skills del cambio no se mide nada"
+          fi
+          if [ "$DEST_REAL" != "$SRC_REAL" ]; then
+            ERR=$(ln -s "$SRC" "$DEST" 2>&1) || red "No se pudo enlazar las skills al checkout" "$ERR"
+          fi
+          DEST_REAL=$(cd "$DEST" && pwd -P) || DEST_REAL=''
+          { [ "$DEST_REAL" = "$SRC_REAL" ] && [ -d "$DEST/skills/tycon-pipeline" ]; } \
+            || red "No se pudo enlazar las skills al checkout: el enlace quedó apuntando a otro lado" "$DEST → «${DEST_REAL}», no $SRC_REAL"
+          echo "agent-skills es el propio checkout: $DEST → $SRC ($(git -C "$DEST" rev-parse --short HEAD), $(git -C "$DEST" rev-list --count HEAD) commits de historia)"
+        displayName: 'Traer AgentSkills'
+        condition: ${{ parameters.condicion }}
+        env:
+          SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+
+  - ${{ if eq(parameters.productos, true) }}:
+      - script: |
+          set -uo pipefail
+          ORG="$(System.CollectionUri)"
+          red() { echo "##vso[task.logissue type=error]$1"; [ -n "${2:-}" ] && printf '   %s\n' "$(printf '%s' "$2" | tr '\n' ' ' | sed 's/#/♯/g')"; exit 1; }
+          REG="${{ parameters.productRegistry }}"
+          case "$REG" in /*) ;; *) REG="$(Build.SourcesDirectory)/$REG" ;; esac
+          # Una ruta por repo: la lista nombra un repo una vez por cada subcarpeta que revisa, y el segundo `clone` sobre
+          # la misma carpeta fallaba con «already exists» y avisaba que el repo no se había traído cuando sí estaba
+          # (corrida 11444, 2026-10-01). «No pude leer la lista» no es «la lista está vacía»: los dos son rojos.
+          if ! RUTAS=$(node -e 'const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).repos; if(!Array.isArray(r)) throw new Error("sin «repos»"); for (const x of new Set(r.map(y=>y.ruta))) console.log(x)' "$REG" 2>&1); then
+            red "no pude leer la lista de los repos de los productos: las suites que los leen no se medirían" "$REG: $RUTAS"
+          fi
+          FALLIDOS=0; CLONED=0
+          while IFS= read -r RUTA; do
+            [ -z "$RUTA" ] && continue
+            ADO=$(node -e 'const d=JSON.parse(require("fs").readFileSync(process.argv[2],"utf8"));const r=d.repos.find(x=>x.ruta===process.argv[1]);console.log(r&&r.ado||"")' "$RUTA" "$REG")
+            [ -z "$ADO" ] && continue
+            PROJ="${ADO%%/*}"; RNAME="${ADO##*/}"
+            D="$HOME/SourceCode/$RUTA"; mkdir -p "$(dirname "$D")"
+            if ERR=$(git -c http.extraheader="AUTHORIZATION: bearer $SYSTEM_ACCESSTOKEN" \
+                 clone --quiet --depth=1 --branch main "${ORG}${PROJ}/_git/${RNAME}" "$D" 2>&1); then
+              CLONED=$((CLONED + 1))
+            else
+              FALLIDOS=$((FALLIDOS + 1))
+              echo "##vso[task.logissue type=warning]No se pudo clonar un repo de producto — las suites que lo leen se saltean CON CONSTANCIA, no en verde"
+              echo "   $ADO: $(printf '%s' "$ERR" | tr '\n' ' ' | sed 's/#/♯/g')"
+            fi
+          done <<< "$RUTAS"
+          echo "repos clonados: $CLONED · no se pudieron clonar: $FALLIDOS"
+          [ "$CLONED" -gt 0 ] \
+            || red "no se clonó ningún repo de producto: las suites que los leen no se medirían, y eso no es un verde"
+        displayName: 'Traer los repos de los productos'
+        condition: ${{ parameters.condicion }}
+        workingDirectory: $(Build.SourcesDirectory)
+        env:
+          SYSTEM_ACCESSTOKEN: $(System.AccessToken)

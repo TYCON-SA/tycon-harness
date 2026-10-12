@@ -1,0 +1,130 @@
+# pipelines/templates/fetch-snapshot.yml — la foto nocturna y lo privado que necesita la validación, traídos UNA vez
+# (story 8.26, tanda C, AC 11 y 43).
+#
+# POR QUÉ EXISTE. El veredicto de la validación se da contra la última foto del nocturno (un rojo que ya estaba rojo en
+# main avisa; sólo uno nuevo frena). Hasta la tanda C cuatro pasos la leían cada uno por su cuenta: el veredicto y las
+# rojas que no se reintentan, del árbol que se valida; la red de `--deps`, de `origin/main`; y la comparación del reporte,
+# otra vez del árbol. Dos fotos distintas en la misma corrida, y con la validación sobre el repo público ninguna de las
+# dos existe: la foto la deja el nocturno en un repo de Azure (el interno hasta la tanda J, el almacenamiento después).
+# Ahora `Validar` la trae una vez, la publica, y los otros trabajos bajan ESA.
+#
+# Parámetro `step`:
+#   fetch    — en `Validar`, después de «Qué trae este cambio». Con el repo propio en Azure (la 170, el interno), la foto
+#              sale de `origin/main` y la lista de los repos de los productos del checkout, como siempre. Con el repo
+#              propio en GitHub (el público), las dos salen del `main` del repo de Azure que nombra la variable de la
+#              definición `HARNESS_PRIVATE_REPO` (`<proyecto>/_git/<repo>`), clonado con la identidad de la corrida en
+#              una carpeta temporal: nada de lo privado entra en el checkout. Qué repo es lo dice la definición, no este
+#              archivo, que viaja en el público. Sin la variable, o sin poder leer el repo: ROJO.
+#   download — en `Bench`, `Suites` y `Verdict`, antes de lo que la usa: baja lo que publicó `Validar` (el intento más alto).
+#
+# LA LISTA PRIVADA (story 8.26, tanda F2 · AC 23). Con el repo propio en GitHub, `fetch` deja además la lista con que el
+# freno de publicación mira el pedido en `$(Agent.TempDirectory)/private-list/denylist.json`: una carpeta temporal de
+# ESE trabajo, que no es la que se publica. La lista nunca va a un artefacto (los artefactos de una validación del
+# repo público los baja cualquiera) y los otros trabajos no la reciben. Si no vino, se avisa acá y el paso del freno
+# sale rojo: sin lista no hay «limpio». Con el repo propio en Azure no se trae: ahí ese paso no juzga.
+#
+# Deja `$(Agent.TempDirectory)/snapshot/` con `nightly-suites.json`, `nightly-bench.json` y `product-repos.json`. Una
+# foto que no se pudo traer NO es rojo acá: el veredicto dice «no pude decidir: sin foto» (pr-verdict.js), que es lo que
+# corresponde. Los avisos llevan texto fijo: el control del pedido es público (AC 45); el detalle, en la línea de abajo.
+# Casos: scripts/tests/pr-suites-shards.test.js (T11, T43; la lista, T23) y scripts/tests/validation-public-notices.test.js (T45).
+
+parameters:
+  - name: step
+    type: string
+    values:
+      - fetch
+      - download
+
+steps:
+  - ${{ if eq(parameters.step, 'fetch') }}:
+      - script: |
+          set -uo pipefail
+          OUT="$(Build.ArtifactStagingDirectory)/snapshot"; LOCAL="$(Agent.TempDirectory)/snapshot"
+          rm -rf "$OUT" "$LOCAL"; mkdir -p "$OUT" "$LOCAL"
+          # la lista privada del freno de publicación: fuera de $OUT, que es lo que se publica (tanda F2, AC 23). Se
+          # borra de entrada: la de un intento anterior no es la de esta corrida.
+          LISTDIR="$(Agent.TempDirectory)/private-list"; rm -rf "$LISTDIR"
+          # El aviso lleva sólo el texto fijo del primer argumento; el detalle (un error de git, una ruta) va a la línea de
+          # abajo, sin `#` para que Azure no lo lea como comando.
+          detail() { [ -n "${1:-}" ] && printf '%s\n' "$1" | tr '\n' ' ' | sed 's/#/♯/g; s/^/   /'; echo; }
+          red() { echo "##vso[task.logissue type=error]$1"; detail "${2:-}"; exit 1; }
+          MISSING=""
+          # Un pedido desde una copia ajena del repo (un fork) no trae nada privado con la identidad de la corrida: su YAML
+          # lo escribió otro. La barrera que manda es la configuración de la definición (construir pedidos desde copias
+          # ajenas, apagado: AC 46, tanda H); ésta es la segunda capa, y como lo de abajo depende de este paso, sin él no
+          # corren el banco, las suites ni el clon de los productos.
+          case "${SYSTEM_PULLREQUEST_ISFORK:-}" in [Tt]rue)
+            red "pedido desde una copia ajena del repo: la validación no trae lo privado ni clona los productos con la identidad de la corrida" ;;
+          esac
+          if [ "${BUILD_REPOSITORY_PROVIDER:-}" = GitHub ]; then
+            REPO="${HARNESS_PRIVATE_REPO:-}"
+            case "$REPO" in '$('*) REPO='' ;; esac
+            [ -n "$REPO" ] || red "falta la variable HARNESS_PRIVATE_REPO de la definición: con un repo de GitHub como propio, la foto nocturna y la lista de productos salen de un repo de Azure, y la variable dice cuál"
+            ORG="${SYSTEM_COLLECTIONURI:-}"
+            [ -n "$ORG" ] || red "no sé la organización de Azure de esta corrida (SYSTEM_COLLECTIONURI vacía): no puedo traer lo privado de la validación"
+            PRIV="$(Agent.TempDirectory)/private"; rm -rf "$PRIV"
+            if ! ERR=$(git -c http.extraheader="AUTHORIZATION: bearer ${SYSTEM_ACCESSTOKEN:-}" clone --quiet --depth=1 --branch main "${ORG}${REPO}" "$PRIV" 2>&1); then
+              red "no pude traer lo privado de la validación (el repo de HARNESS_PRIVATE_REPO, con la identidad de la corrida): sin la foto nocturna no hay veredicto" "$ERR"
+            fi
+            for pair in scripts/controls-bench/ultimo-suites.json:nightly-suites.json scripts/controls-bench/ultimo-banco.json:nightly-bench.json \
+                        scripts/nightly/dependencies/repos.json:product-repos.json; do
+              cp "$PRIV/${pair%%:*}" "$OUT/${pair##*:}" 2>/dev/null || MISSING="$MISSING ${pair##*:}"
+            done
+            mkdir -p "$LISTDIR"
+            if ! cp "$PRIV/scripts/publishing/denylist.json" "$LISTDIR/denylist.json" 2>/dev/null; then
+              rm -rf "$LISTDIR"
+              echo "##vso[task.logissue type=warning]no pude traer la lista privada: el freno de publicación sobre el pedido va a salir rojo (sin lista no hay «limpio»)"
+            fi
+            echo "lo privado de la validación sale de $(git -C "$PRIV" rev-parse --short HEAD 2>/dev/null || echo '?'): main del repo de HARNESS_PRIVATE_REPO"
+            rm -rf "$PRIV"
+          else
+            cd "$(Build.SourcesDirectory)" || red "no pude entrar al checkout"
+            # la foto la deja el nocturno en main: la de origin/main, no la de la rama (que puede ser vieja)
+            git fetch --no-tags --quiet origin main 2>/dev/null || echo "no pude actualizar origin/main: uso el que trajo el checkout"
+            for pair in ultimo-suites.json:nightly-suites.json ultimo-banco.json:nightly-bench.json; do
+              if ! git show "origin/main:scripts/controls-bench/${pair%%:*}" > "$OUT/${pair##*:}" 2>"$(Agent.TempDirectory)/snapshot.err"; then
+                rm -f "$OUT/${pair##*:}"; MISSING="$MISSING ${pair##*:}"; detail "$(cat "$(Agent.TempDirectory)/snapshot.err")"
+              fi
+            done
+            cp scripts/nightly/dependencies/repos.json "$OUT/product-repos.json" 2>/dev/null || MISSING="$MISSING product-repos.json"
+          fi
+          case "$MISSING" in *nightly-*)
+            echo "##vso[task.logissue type=warning]no pude traer la foto nocturna: el veredicto va a decir «no pude decidir: sin foto»" ;;
+          esac
+          case "$MISSING" in *product-repos*)
+            echo "##vso[task.logissue type=warning]no pude traer la lista de los repos de los productos: el paso que los clona va a salir rojo" ;;
+          esac
+          [ -z "$MISSING" ] || echo "faltan:$MISSING"
+          ls "$OUT" > "$OUT/fetched.txt"
+          cp -R "$OUT/." "$LOCAL/"
+          echo "la foto y lo privado, para todos los trabajos: $(tr '\n' ' ' < "$OUT/fetched.txt")"
+        displayName: 'La foto nocturna y lo privado de la validación'
+        env:
+          SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+
+      # El nombre lleva el INTENTO: un artefacto no se puede pisar, y un job reintentado desde Azure publica otro. Los que
+      # la bajan leen la del intento más alto.
+      - publish: '$(Build.ArtifactStagingDirectory)/snapshot'
+        artifact: 'snapshot-a$(System.JobAttempt)'
+        displayName: 'Publicar la foto nocturna para los demás trabajos'
+
+  - ${{ if eq(parameters.step, 'download') }}:
+      - task: DownloadPipelineArtifact@2
+        displayName: 'Bajar la foto nocturna que trajo Validar'
+        continueOnError: true
+        inputs:
+          buildType: 'current'
+          itemPattern: 'snapshot-a*/**'
+          targetPath: '$(Pipeline.Workspace)/snapshot'
+
+      - script: |
+          set -uo pipefail
+          LOCAL="$(Agent.TempDirectory)/snapshot"; rm -rf "$LOCAL"; mkdir -p "$LOCAL"
+          DIR="$(ls -d "$(Pipeline.Workspace)"/snapshot/snapshot-a*/ 2>/dev/null | sort -V | tail -1)"
+          if [ -n "$DIR" ] && [ -f "${DIR}fetched.txt" ]; then
+            cp -R "${DIR}." "$LOCAL/"
+            echo "la foto que trajo Validar ($(basename "$DIR")): $(tr '\n' ' ' < "${DIR}fetched.txt")"
+          else
+            echo "##vso[task.logissue type=warning]no llegó la foto que trajo Validar: el veredicto va a decir «no pude decidir: sin foto» y toda roja se reintenta"
+          fi
+        displayName: 'La foto nocturna que trajo Validar'

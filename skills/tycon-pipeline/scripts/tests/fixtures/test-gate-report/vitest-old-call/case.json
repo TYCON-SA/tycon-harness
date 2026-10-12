@@ -1,0 +1,16 @@
+{
+  "__doc": "una llamada vieja, con 14 argumentos (sin base): no hay cruce de líneas tocadas ni línea en gates.log, y el umbral se juzga sobre los archivos nuevos.",
+  "runner": "vitest",
+  "argc": 14,
+  "suite_exit": "0",
+  "story_id": "9.6",
+  "cov_min": "75",
+  "ts": "2026-10-05T12:05:00Z",
+  "test_project_count": "",
+  "scope": "",
+  "scope_source": "explicito",
+  "declared_new": [],
+  "code_state": "no es json",
+  "base": { "src/a.ts": { "lines": 2 } },
+  "now": { "src/nuevo.ts": { "lines": 3 }, "src/otro.ts": { "lines": 2 } }
+}

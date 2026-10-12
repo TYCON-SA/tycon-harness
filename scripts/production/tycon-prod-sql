@@ -1,0 +1,418 @@
+#!/bin/bash -p
+# tycon-prod-sql — LA puerta: la única forma de consultar una base de producción.
+#
+# POR QUÉ EXISTE (story 6.1 — guides/incident-log.md#produccion-sin-permiso-2026-09-15): el 2026-09-15, en una sesión sobre un producto del equipo, una autorización puntual se
+# estiró sola a la tarea siguiente: ~9 consultas más contra producción sin pedir permiso. Acá cada
+# sentencia pasa por el cuadro de aprobación de Claude Code (la regla `ask` de la configuración
+# administrada cubre `Bash(/opt/tycon/bin/tycon-prod-sql *)`), y el freno `prod-access-guard.js`
+# prohíbe cualquier otro camino a esa base.
+#
+# LA CONTRASEÑA NUNCA PASA POR LA CONVERSACIÓN: vive en un llavero propio
+# (~/Library/Keychains/tycon-prod.keychain-db), la saca esta puerta y viaja al cliente de base por
+# SQLCMDPASSWORD, sólo en el entorno del proceso hijo. Nunca por argumento, nunca en la salida.
+#
+# `bash -p` A PROPÓSITO: en modo privilegiado bash ignora BASH_ENV, ENV y SHELLOPTS heredados, así que
+# una variable puesta en el entorno no puede ejecutar código antes que la puerta ni prender `xtrace`
+# para que imprima la contraseña (revisores del Step 5, 2026-09-15).
+#
+# FORMATO FIJO A PROPÓSITO (AC 18): junta el error con la salida, corta filas e imprime `rc=`. Así el
+# uso real no necesita tuberías ni redirecciones, que la forma canónica prohíbe.
+#
+# Formas aceptadas:
+#   tycon-prod-sql <host> '<sentencia>' [--max-filas N]
+#   tycon-prod-sql --reclasificar <host>      baja un host a no-producción (lo aprobás en el cuadro)
+#   tycon-prod-sql --verificar                revisa la instalación y la entrada del Llavero, sin leer el secreto
+#
+# Salidas: 0 = corrió · 2 = no se puede (forma inválida, host que no es producción, algo que no
+# verifica) · 3 = falta la clave (deja el .command para cargarla)
+#
+# TYCON_PROD_ROOT: raíz de sistema alternativa. Se honra SÓLO si /opt/tycon no existe de verdad, o
+# sea nunca en una máquina con el freno instalado: es para las pruebas, no un interruptor.
+set -uo pipefail
+PATH=/usr/bin:/bin:/usr/sbin:/sbin     # nada del PATH del usuario decide lo que corre la puerta
+
+INSTALADO=0; [ -d /opt/tycon ] && INSTALADO=1
+RAIZ=""
+if [ "$INSTALADO" = 0 ] && [ -n "${TYCON_PROD_ROOT:-}" ]; then RAIZ="$TYCON_PROD_ROOT"; fi
+AQUI="$(cd "$(dirname "$0")" && pwd)"
+SECURITY="$RAIZ/usr/bin/security"
+CLIENTE="$RAIZ/opt/tycon/bin/sqlcmd"
+HUELLAS="$RAIZ/opt/tycon/huellas.json"
+# la carpeta del estado: la regla de tycon-home.js stateDir (si existe ~/.tycon/state, la máquina vive ahí; story 8.23, tanda D)
+_ESTADO="$HOME/.claude/.tycon-pipeline"; [ -d "$HOME/.tycon/state" ] && _ESTADO="$HOME/.tycon/state"
+REGISTRO="$_ESTADO/production.log"
+# el registro de antes del renombre a inglés (story 8.9, tanda P) pasa al nuevo una vez, sin tocar el viejo: la
+# historia de consultas no se pierde
+REGISTRO_VIEJO="$_ESTADO/produccion.log"
+LLAVERO_PROPIO="$HOME/Library/Keychains/tycon-prod.keychain-db"
+MAX_FILAS=50
+
+# El intérprete y el índice: instalada, SÓLO los de /opt/tycon (de root, con huella). En el repo
+# (pruebas, desarrollo) se usa lo que está al lado y el node disponible.
+if [ "$INSTALADO" = 1 ]; then
+  NODE="/opt/tycon/bin/node"
+  INDICE_JS="/opt/tycon/production/production-index.js"
+  PLANTILLA="/opt/tycon/production/load-key.command.template"
+else
+  NODE="$RAIZ/opt/tycon/bin/node"
+  [ -x "$NODE" ] || NODE="$(PATH="${TYCON_PROD_TEST_PATH:-/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin}" command -v node || true)"
+  INDICE_JS="$AQUI/production-index.js"
+  PLANTILLA="$AQUI/load-key.command.template"
+fi
+
+muere(){ printf '%s\n' "$1" >&2; exit "${2:-2}"; }
+huella_de(){ shasum -a 256 "$1" 2>/dev/null | cut -d' ' -f1; }
+duenio_de(){ stat -f '%Su' "$1" 2>/dev/null; }
+huella_esperada(){ # $1 = ruta canónica (/opt/tycon/…) — grep, NUNCA sed: la clave es una ruta con barras
+  [ -f "$HUELLAS" ] || return 1
+  grep -o "\"$1\"[[:space:]]*:[[:space:]]*\"[a-f0-9]\{64\}\"" "$HUELLAS" | grep -o '[a-f0-9]\{64\}' | head -1
+}
+# un binario de root: existe, es de root (instalada) y su huella coincide con la de referencia
+verificar_binario(){ # $1 = ruta real, $2 = ruta canónica, $3 = nombre para el mensaje
+  [ -x "$1" ] || muere "no está $3 de root ($2). NO uso el del PATH: un impostor se llevaría la contraseña. Reinstalá el freno."
+  if [ "$INSTALADO" = 1 ]; then
+    [ "$(duenio_de "$1")" = "root" ] || muere "$3 ($2) no es de root: alguien lo reemplazó. Reinstalá el freno."
+    local esperada; esperada="$(huella_esperada "$2")" || esperada=""
+    [ -n "$esperada" ] || muere "no hay huella de referencia para $3: no lo ejecuto a ciegas. Reinstalá el freno."
+    [ "$(huella_de "$1")" = "$esperada" ] || muere "$3 no coincide con la huella que dejó el instalador: alguien lo cambió."
+  elif [ -f "$HUELLAS" ]; then
+    local esperada; esperada="$(huella_esperada "$2")" || esperada=""
+    if [ -n "$esperada" ] && [ "$(huella_de "$1")" != "$esperada" ]; then
+      muere "$3 no coincide con la huella de referencia: alguien lo cambió."
+    fi
+  fi
+}
+
+# ── quién puede LEER una entrada del Llavero ──────────────────────────────────────────────────
+# 🔴 Lo que gatea la lectura es la entrada de autorización que dice `decrypt`, y una entrada creada
+# con `-A` la deja en `applications: <null>`, o sea CUALQUIER programa, sin cuadro. La versión
+# anterior juntaba las líneas numeradas de TODAS las entradas: con `-A` no hay ninguna línea
+# numerada, así que la entrada más peligrosa de todas salía «limpia» (medido en un llavero
+# descartable el 2026-09-15 y reproducido; revisores del Step 5).
+# Imprime, para el servicio pedido: «CUALQUIERA», «AJENA <ruta>» por cada app que no sea la del
+# sistema, o nada si sólo confía en /usr/bin/security.
+quien_lee(){ # $1 = volcado de dump-keychain, $2 = nombre del servicio
+  printf '%s\n' "$1" | awk -v target="$2" '
+    /^keychain: / { svce=""; next }
+    /^[ \t]*"svce"<blob>="/ { l=$0; sub(/^[^=]*="/,"",l); sub(/"[ \t]*$/,"",l); svce=l; next }
+    /^[ \t]*entry [0-9]+:/ { gate=0; inapps=0; next }
+    # `any` incluye decrypt: una entrada así también puede LEER, y mirar sólo la palabra «decrypt»
+    # la dejaba invisible (revisión final del Step 5, 2026-09-15).
+    /authorizations \(/ { gate = ($0 ~ /(^| )(decrypt|any)( |$)/) ? 1 : 0; inapps=0; next }
+    /applications: <null>/ { if (gate && svce == target) print "CUALQUIERA"; next }
+    /applications \([0-9]+\):/ { inapps = gate; next }
+    /^[ \t]*[0-9]+: / {
+      if (inapps && svce == target) {
+        l=$0; sub(/^[ \t]*[0-9]+: /,"",l); sub(/ \(OK\)$/,"",l)
+        if (l != "/usr/bin/security") print "AJENA " l
+      }
+      next
+    }
+  '
+}
+# los servicios que hay en el llavero propio (para --verificar)
+servicios_del_llavero(){ printf '%s\n' "$1" | sed -n 's/^[[:space:]]*"svce"<blob>="\(.*\)"[[:space:]]*$/\1/p' | sort -u; }
+
+HOST_VALIDO='^[A-Za-z0-9][A-Za-z0-9._-]*$'
+LLAVERO_VALIDO='^tycon-prod-[A-Za-z0-9._-]+$'
+BASE_VALIDA='^[A-Za-z0-9_][A-Za-z0-9_.-]*$'       # el mismo charset que exige lint-production-json.js
+
+anotar(){ # $1 = json parcial (sólo valores ya validados: host y llavero pasaron su charset)
+  mkdir -p "$(dirname "$REGISTRO")" 2>/dev/null || return 0
+  # a un temporal y entra con `ln`, que no pisa (otro proceso nunca ve uno a medio copiar); si la historia no se pudo
+  # pasar, se sigue anotando en el viejo: nunca un registro nuevo sin su historia (AC 18)
+  local destino="$REGISTRO"
+  if [ ! -e "$REGISTRO" ] && [ -f "$REGISTRO_VIEJO" ]; then
+    local tmp="$REGISTRO.tmp-$$"
+    if cp -p "$REGISTRO_VIEJO" "$tmp" 2>/dev/null; then ln "$tmp" "$REGISTRO" 2>/dev/null; fi
+    rm -f "$tmp" 2>/dev/null
+    [ -e "$REGISTRO" ] || destino="$REGISTRO_VIEJO"
+  fi
+  printf '{"ts":"%s",%s}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" >> "$destino" 2>/dev/null || true
+}
+
+# ── argumentos ────────────────────────────────────────────────────────────────────────────────
+[ $# -ge 1 ] || muere "uso: tycon-prod-sql <host> '<sentencia>' [--max-filas N]  ·  --cargar-clave <host>  ·  --reclasificar <host>  ·  --verificar"
+
+MODO=consulta; HOST=""; SENTENCIA=""
+case "${1:-}" in
+  --reclasificar) MODO=reclasificar; HOST="${2:-}"; [ $# -eq 2 ] || muere "uso: tycon-prod-sql --reclasificar <host>" ;;
+  --verificar)    MODO=verificar; [ $# -eq 1 ] || muere "uso: tycon-prod-sql --verificar" ;;
+  # 🔴 Cargar la clave SIN tener que fallar una consulta primero (2026-09-15, pedido del dev: el
+  # disparador era «corré algo que falle», que es un rodeo). La clave la sigue tipeando la persona en
+  # el archivo que deja la puerta: nunca pasa por la conversación ni la escribe el asistente.
+  --cargar-clave) MODO=cargar-clave; HOST="${2:-}"; [ $# -eq 2 ] || muere "uso: tycon-prod-sql --cargar-clave <host>" ;;
+  -*)             muere "primer argumento inválido: sólo <host>, --cargar-clave, --reclasificar o --verificar" ;;
+  *)              HOST="$1"; SENTENCIA="${2:-}"
+                  [ $# -ge 2 ] || muere "falta la sentencia: tycon-prod-sql <host> 'select …'"
+                  if [ $# -gt 2 ]; then
+                    [ $# -eq 4 ] && [ "$3" = "--max-filas" ] || muere "sólo se acepta la sentencia en línea y, opcionalmente, --max-filas N (llegaron $# argumentos)"
+                    case "$4" in (*[!0-9]*|'') muere "--max-filas necesita un número";; esac
+                    MAX_FILAS="$4"
+                  fi ;;
+esac
+if [ -n "$HOST" ] && ! printf '%s' "$HOST" | grep -qE "$HOST_VALIDO"; then
+  muere "el host «${HOST}» no tiene forma de nombre de host."
+fi
+
+# ── la sentencia: en línea, un solo lote, sin argumentos de sqlcmd ────────────────────────────
+if [ "$MODO" = consulta ]; then
+  case "$SENTENCIA" in
+    -*) muere "la sentencia no puede empezar con «-»: no se aceptan argumentos de sqlcmd (ni -i, ni -Q, ni -v)" ;;
+  esac
+  if printf '%s' "$SENTENCIA" | grep -qiE '(^|[[:space:]])go([[:space:]]*$|[[:space:]]*;)'; then
+    muere "la sentencia tiene un separador de lote (GO): mandá una sola, así el cuadro muestra lo que se aprueba"
+  fi
+  # 🔴 Los comandos del cliente (`!!` abre un shell, `:r` lee un archivo, `:out` escribe uno,
+  # `:connect` va a otra base) los frena LA PUERTA, no el cliente. Antes los frenaba el `-X1` que se
+  # le pasaba a sqlcmd, y eso estaba roto de dos maneras a la vez (medido el 2026-09-16, ver la nota
+  # en la invocación del cliente, más abajo). Acá se frena ANTES de conectarse y sin depender del
+  # dialecto de flags de ningún cliente, que es lo que se rompió.
+  # Se juzga por línea: sqlcmd sólo reconoce un comando al principio de una línea.
+  if printf '%s\n' "$SENTENCIA" | grep -qE '^[[:space:]]*(:|!!)'; then
+    muere "la sentencia tiene un comando del cliente (una línea que empieza con «:» o «!!»): eso lee archivos o abre un shell, no consulta la base"
+  fi
+fi
+
+# ── el intérprete (instalada: el de root, verificado) y el índice ─────────────────────────────
+[ -n "$NODE" ] && [ -x "$NODE" ] || muere "no encuentro el intérprete para leer el índice de servidores"
+[ "$INSTALADO" = 1 ] && verificar_binario "$NODE" "/opt/tycon/bin/node" "el intérprete"
+[ -f "$INDICE_JS" ] || muere "no encuentro el índice de servidores ($INDICE_JS)"
+
+if [ "$MODO" = reclasificar ]; then
+  "$NODE" -e '
+    const m = require(process.argv[1]);
+    const host = m.normalizar(process.argv[2]);
+    if (!host) { console.error("host inválido"); process.exit(2); }
+    const i = m.construir({ home: process.env.HOME });
+    i.memoria = (i.memoria || []).filter((h) => h !== host);
+    if (i.hosts[host]) delete i.hosts[host];
+    i.memoria_alterada = false;
+    m.guardar(i, process.env.HOME, { resellar: true });
+    console.log(`«${host}» ya no se trata como producción en esta máquina.`);
+    console.log("Si algún proyecto lo sigue declarando así en su .tycon/production.json, volverá a frenarse.");
+  ' "$INDICE_JS" "$HOST" || muere "no pude reclasificar «${HOST}»"
+  anotar "\"host\":\"$HOST\",\"accion\":\"reclasificar\",\"exit\":0"
+  exit 0
+fi
+
+if [ "$MODO" = verificar ]; then
+  MAL=0
+  echo "freno instalado: $([ "$INSTALADO" = 1 ] && echo sí || echo no)"
+  [ "$INSTALADO" = 1 ] || MAL=1
+  echo "llavero propio: $LLAVERO_PROPIO"
+  if [ -f "$LLAVERO_PROPIO" ]; then
+    if salida="$("$SECURITY" dump-keychain -a "$LLAVERO_PROPIO" 2>&1)"; then
+      echo "quién puede leer cada clave guardada:"
+      servicios="$(servicios_del_llavero "$salida")"
+      if [ -z "$servicios" ]; then echo "   (ninguna clave guardada todavía)"; fi
+      for svc in $servicios; do
+        problemas="$(quien_lee "$salida" "$svc")"
+        if [ -z "$problemas" ]; then
+          echo "   · $svc: sólo la herramienta del sistema ✓"
+        else
+          MAL=1
+          if printf '%s' "$problemas" | grep -q CUALQUIERA; then
+            echo "   · $svc: 🔴 CUALQUIER programa puede leerla sin cuadro (se cargó con «-A»). Borrala y volvé a cargarla."
+          fi
+          printf '%s\n' "$problemas" | sed -n 's/^AJENA /   · '"$svc"': 🔴 también confía en /p'
+        fi
+      done
+    else
+      MAL=1
+      echo "   🔴 no pude leer la lista de confianza (¿llavero bloqueado?): $(printf '%s' "$salida" | head -1)"
+    fi
+  else
+    echo "   (todavía no existe: se crea al cargar la primera clave)"
+  fi
+  if [ -x "$CLIENTE" ]; then echo "cliente de base: $CLIENTE ($(huella_de "$CLIENTE"))"; else echo "cliente de base: 🔴 NO está en $CLIENTE"; MAL=1; fi
+  # la config de go-sqlcmd del usuario: si existe, el cliente preferiría la clave guardada AHÍ a la del
+  # Llavero (ver la nota en la invocación del cliente). La puerta la ignora; acá se dice que existe.
+  if [ -f "$HOME/.sqlcmd/sqlconfig" ]; then
+    echo "config de go-sqlcmd del usuario (~/.sqlcmd/sqlconfig): existe — la puerta la IGNORA ✓ (si no, el cliente mandaría la clave guardada ahí y no la del Llavero)"
+  fi
+  # 🔴 Los hosts que la memoria recuerda como producción y que HOY no declara ningún catálogo: el
+  # repo se borró, se renombró o su .tycon/production.json quedó ilegible. Siguen frenados (bien),
+  # pero nadie los ve, y la puerta los atiende sin que ningún catálogo diga en qué llavero está su
+  # clave (revisores del Step 5, 2026-09-15).
+  "$NODE" -e '
+    const m = require(process.argv[1]);
+    const i = m.leer({ home: process.env.HOME });
+    const sueltos = Object.entries(i.hosts || {}).filter(([, h]) => h.ambiente === "produccion" && !(h.repos || []).length);
+    if (sueltos.length) {
+      console.log("hosts de producción que YA no declara ningún proyecto (se recuerdan de antes):");
+      for (const [h] of sueltos) console.log(`   · ${h}`);
+      process.exitCode = 7;
+    }
+    if ((i.errores || []).length) {
+      console.log("catálogos ILEGIBLES (sus hosts quedan desconocidos):");
+      for (const e of i.errores) console.log(`   · ${e.repo}: ${e.motivo}`);
+      process.exitCode = 7;
+    }
+  ' "$INDICE_JS" || MAL=1
+  # la memoria de producción: si la tocaron a mano, acá se vuelve a sellar (lo aprobaste en el cuadro)
+  "$NODE" -e '
+    const m = require(process.argv[1]);
+    const i = m.construir({ home: process.env.HOME });
+    if (i.memoria_alterada) { i.memoria_alterada = false; m.guardar(i, process.env.HOME, { resellar: true }); console.log("memoria de producción: estaba alterada — revisada y vuelta a sellar."); }
+    else console.log("memoria de producción: sana.");
+  ' "$INDICE_JS" || { echo "memoria de producción: 🔴 no pude revisarla"; MAL=1; }
+  # 🔴 Sale ≠ 0 cuando algo está mal. Salir siempre 0 hacía que «lo revisé y está todo bien» y
+  # «lo revisé y está roto» fueran el mismo veredicto para quien lo llama desde un script
+  # (revisores del Step 5, 2026-09-15).
+  [ "$MAL" = 0 ] || exit 1
+  exit 0
+fi
+
+# ── el host tiene que ser producción (para lo demás no hace falta la puerta) ──────────────────
+EST="$("$NODE" -e '
+  const m = require(process.argv[1]);
+  let i;
+  try { i = m.leer({ home: process.env.HOME }); } catch (e) { process.stdout.write("ilegible|" + e.message); process.exit(0); }
+  const c = m.clasificar(process.argv[2], i);
+  process.stdout.write(`${c.estado}|${c.llavero || ""}|${c.base || ""}|${c.puerto || ""}`);
+' "$INDICE_JS" "$HOST" 2>/dev/null)" || EST="ilegible|el intérprete falló|"
+ESTADO="${EST%%|*}"; RESTO="${EST#*|}"; LLAVERO="${RESTO%%|*}"; RESTO="${RESTO#*|}"; BASE="${RESTO%%|*}"; PUERTO="${RESTO#*|}"
+case "$ESTADO" in
+  produccion) : ;;
+  no-produccion) muere "«${HOST}» está declarado como NO producción: consultalo directo, la puerta es para producción." ;;
+  ilegible) muere "no pude leer el índice de servidores (${LLAVERO}). No abro nada sin saber qué es producción." ;;
+  *) muere "«${HOST}» no está declarado como producción en ningún proyecto de esta máquina. La puerta sólo abre bases declaradas." ;;
+esac
+[ -n "$LLAVERO" ] || muere "«${HOST}» está declarado como producción pero sin «keychain» en su .tycon/production.json"
+printf '%s' "$LLAVERO" | grep -qE "$LLAVERO_VALIDO" || muere "la entrada del Llavero de «${HOST}» («${LLAVERO}») no empieza con tycon-prod-: no la leo."
+# `base`: a qué base entra el cliente. En Azure SQL no hay `USE` ni nombres de tres partes: sin esto
+# entra a `master` y toda tabla es «Invalid object name» (medido contra un servidor interno el 2026-09-15 — guides/incident-log.md#case-azure-sql-enters-master-2026-09-15 —, con
+# la clave ya bien). Es opcional (un servidor con una sola base de default no la necesita) y su charset
+# es estricto porque va como argumento del cliente.
+ARGS_BASE=()
+if [ -n "$BASE" ]; then
+  printf '%s' "$BASE" | grep -qE "$BASE_VALIDA" || muere "la «base» declarada para «${HOST}» («${BASE}») no tiene forma de nombre de base: no la uso."
+  ARGS_BASE=(-d "$BASE")
+fi
+
+# ── el cliente de base: el de root, con su huella (y su dueño, instalada) ────────────────────
+verificar_binario "$CLIENTE" "/opt/tycon/bin/sqlcmd" "el cliente de base"
+
+# ── la entrada del Llavero ────────────────────────────────────────────────────────────────────
+dejar_command(){
+  [ -f "$PLANTILLA" ] || muere "falta la plantilla para cargar la clave ($PLANTILLA). Reinstalá el freno."
+  mkdir -p "$HOME/Desktop" 2>/dev/null
+  DESTINO="$HOME/Desktop/cargar-clave-$LLAVERO.command"
+  # host y llavero ya pasaron su charset estricto: no pueden inyectar nada en el script
+  sed -e "s|@LLAVERO@|$LLAVERO|g" -e "s|@HOST@|$HOST|g" -e "s|@LLAVERO_PROPIO@|$LLAVERO_PROPIO|g" "$PLANTILLA" > "$DESTINO" \
+    && chmod 700 "$DESTINO" || muere "no pude dejar el archivo para cargar la clave en $DESTINO"
+  anotar "\"host\":\"$HOST\",\"accion\":\"falta-clave\",\"exit\":3"
+  muere "falta la contraseña de «${HOST}» en el Llavero.
+   Te dejé en el Escritorio: cargar-clave-$LLAVERO.command — abrilo con doble clic y cargá usuario y clave.
+   No pasan por la conversación, y el archivo se borra solo al terminar." 3
+}
+
+# `--cargar-clave <host>`: deja el archivo y lo abre, sin consultar nada. El host ya se validó arriba
+# (tiene que estar declarado como producción y traer su «llavero»), así que acá sólo queda escribirlo.
+if [ "$MODO" = cargar-clave ]; then
+  [ -f "$PLANTILLA" ] || muere "falta la plantilla para cargar la clave ($PLANTILLA). Reinstalá el freno."
+  mkdir -p "$HOME/Desktop" 2>/dev/null
+  DESTINO="$HOME/Desktop/cargar-clave-$LLAVERO.command"
+  sed -e "s|@LLAVERO@|$LLAVERO|g" -e "s|@HOST@|$HOST|g" -e "s|@LLAVERO_PROPIO@|$LLAVERO_PROPIO|g" "$PLANTILLA" > "$DESTINO" \
+    && chmod 700 "$DESTINO" || muere "no pude dejar el archivo para cargar la clave en $DESTINO"
+  anotar "\"host\":\"$HOST\",\"accion\":\"cargar-clave\",\"exit\":0"
+  printf 'Te dejé en el Escritorio: cargar-clave-%s.command\n' "$LLAVERO"
+  printf '   Abrilo con doble clic y cargá usuario y contraseña. No pasan por la conversación,\n   y el archivo se borra solo al terminar.\n'
+  # se abre solo en la máquina de verdad; bajo la raíz de prueba no (abriría una Terminal en medio de la suite)
+  [ -n "$RAIZ" ] || open "$HOME/Desktop/cargar-clave-$LLAVERO.command" 2>/dev/null || true
+  exit 0
+fi
+
+[ -f "$LLAVERO_PROPIO" ] || [ -n "$RAIZ" ] || dejar_command
+
+# (AC 21) la entrada tiene que confiar SÓLO en la herramienta del sistema. Si no se puede mirar, NO se
+# lee: «no pude verificar» no es «está bien» (revisores del Step 5, 2026-09-15).
+if ! confianzas="$("$SECURITY" dump-keychain -a "$LLAVERO_PROPIO" 2>/dev/null)"; then
+  muere "no pude verificar en quién confía la entrada del Llavero (¿llavero bloqueado?). No leo la clave sin verificarlo."
+fi
+problemas="$(quien_lee "$confianzas" "$LLAVERO")"
+if printf '%s' "$problemas" | grep -q CUALQUIERA; then
+  muere "la contraseña de «${HOST}» la puede leer CUALQUIER programa, sin cuadro (la entrada se cargó
+   con «-A»). No la uso así: borrala desde Acceso a Llaveros y volvé a consultar — te dejo el
+   .command para cargarla de nuevo, que la carga bien."
+fi
+ajenas="$(printf '%s\n' "$problemas" | sed -n 's/^AJENA //p')"
+if [ -n "$ajenas" ]; then
+  muere "la entrada del Llavero confía en algo más que la herramienta del sistema:
+$(printf '%s\n' "$ajenas" | sed 's/^/     /')
+   Cualquiera de esos procesos podría sacar la contraseña sin cuadro. Borrá la entrada desde Acceso a
+   Llaveros y volvé a consultar: te voy a dejar el .command para cargarla de nuevo."
+fi
+
+# el llavero va como argumento posicional al final (así lo pide `security`; no existe `-k` en find)
+atributos="$("$SECURITY" find-generic-password -s "$LLAVERO" "$LLAVERO_PROPIO" 2>&1)"; rc_attr=$?
+case "$rc_attr" in
+  0) : ;;
+  44) dejar_command ;;
+  *) muere "no pude leer la entrada «${LLAVERO}» del Llavero (código $rc_attr, ¿llavero bloqueado?)." ;;
+esac
+USUARIO="$(printf '%s' "$atributos" | sed -n 's/.*"acct"<blob>="\([^"]*\)".*/\1/p' | head -1)"
+[ -n "$USUARIO" ] || muere "la entrada «${LLAVERO}» del Llavero no tiene usuario. Borrala y volvé a cargarla con el .command."
+# 🔴 Acá la entrada EXISTE (sus atributos se leyeron recién): si la contraseña no sale, es que el
+# llavero está bloqueado o el permiso cambió — NO que falte. Salía 3, el mismo código que «falta la
+# clave, cargala», y el que llama mandaba a cargar de nuevo una clave que ya está (Step 5).
+CLAVE="$("$SECURITY" find-generic-password -s "$LLAVERO" -w "$LLAVERO_PROPIO" 2>/dev/null)" || CLAVE=""
+[ -n "$CLAVE" ] || muere "la entrada «${LLAVERO}» está en el Llavero pero no pude leer su contraseña
+   (¿el llavero quedó bloqueado, o le cambiaron el permiso?). Revisalo con: tycon-prod-sql --verificar"
+
+# ── la consulta ───────────────────────────────────────────────────────────────────────────────
+# -x: sin sustitución de variables — una sentencia con `$(SQLCMDPASSWORD)` devolvería la clave.
+# 🔴 NO va `-X1`, y no es un descuido: `-X[1]` es la forma del sqlcmd VIEJO (el de ODBC). El cliente
+# que copia el instalador es go-sqlcmd (1.8.2 acá), y contra él ese flag rompe de dos maneras, las
+# dos medidas el 2026-09-16 con el cliente real:
+#   · `-X1` y `-X=1` ni siquiera parsean → «Sqlcmd: '0': Unknown command», o sea que la puerta NO
+#     corría ninguna consulta: fallaba con cualquier sentencia, incluso `select 1`.
+#   · `-X 1`, `-X` y `--disable-cmd-and-warn=1` sí parsean, pero entonces el cliente IGNORA el `-Q`
+#     y se va a modo interactivo («liner: function not supported in this terminal»).
+# O sea que no hay forma de ese flag que sirva. Lo que daba —frenar los comandos del cliente— lo
+# hace ahora la validación de la sentencia, más arriba, que además corta antes de conectarse.
+#
+# 🔴 HOME=/var/empty, y no es cosmético: go-sqlcmd lee `~/.sqlcmd/sqlconfig`, y si ahí hay un
+# contexto actual con usuario guardado, MANDA AL SERVIDOR LA CLAVE GUARDADA AHÍ e ignora
+# SQLCMDPASSWORD, aunque se le pasen `-S` y `-U` explícitos. Medido el 2026-09-15 con un servidor TDS
+# de mentira que decodifica el LOGIN7 (scripts/tests/lib/tds-spy.py): con el archivo presente el
+# cliente mandó una clave vieja de marzo (con un `\` de más), sin el archivo mandó la de la variable.
+# El dev cargó la clave del Llavero TRES veces creyendo que se equivocaba: la puerta nunca la mandó.
+# Con HOME en una carpeta vacía el cliente no ve ninguna config del usuario (y no escribe nada:
+# verificado). `-P` también la mandaría bien, pero va por los argumentos y `ps` la mostraría.
+# ── a dónde se conecta: host, y el puerto sólo si el catálogo lo declara ──────────────────────
+# 🔴 Se llama SERVIDOR y no DESTINO a propósito: `DESTINO` ya se usa más arriba para la RUTA del
+# archivo que se deja en el Escritorio para cargar la clave. Hoy no chocan —esos caminos salen
+# antes de llegar acá— pero dos cosas distintas con el mismo nombre en el freno de producción es
+# el tipo de coincidencia que un día deja de serlo.
+# `puerto` entró el 2026-09-29 con el primer servidor de INSTANCIA NOMBRADA en puerto no estándar
+# (SQL Server escuchando en 1435, no en 1433). El cliente entiende `host,puerto` para eso; el
+# nombre de instancia con barra invertida NO hace falta, y sigue rechazado.
+#
+# 🔴 La persona NUNCA tipea la coma: el host que valida `HOST_VALIDO`, el que busca el catálogo y
+# el que el freno reconoce cuando aparece en un comando sigue siendo el nombre pelado. La coma la
+# pega la puerta, acá, con un valor que viene del catálogo. Por eso esto NO aflojó ninguna
+# validación: es lo contrario de admitir la coma en el argumento.
+#
+# Se vuelve a validar aunque el lint del catálogo ya lo valide: ese lint corre al commitear, y este
+# valor llega de un archivo del disco que pudo editarse después. Sin esto, cualquier cosa metida en
+# `puerto` viajaría pegada al argumento del cliente.
+SERVIDOR="$HOST"
+if [ -n "$PUERTO" ]; then
+  case "$PUERTO" in
+    (*[!0-9]*|'') muere "el puerto declarado para «${HOST}» no es un número: «${PUERTO}»" ;;
+  esac
+  [ "$PUERTO" -ge 1 ] && [ "$PUERTO" -le 65535 ] || muere "el puerto declarado para «${HOST}» está fuera de rango (1-65535): «${PUERTO}»"
+  SERVIDOR="${HOST},${PUERTO}"
+fi
+
+SALIDA="$(HOME=/var/empty SQLCMDPASSWORD="$CLAVE" "$CLIENTE" -x -S "$SERVIDOR" ${ARGS_BASE[@]+"${ARGS_BASE[@]}"} -U "$USUARIO" -Q "$SENTENCIA" -W -s '|' -b 2>&1)"
+RC=$?
+CLAVE=""
+FILAS="$(printf '%s\n' "$SALIDA" | wc -l | tr -d ' ')"
+printf '%s\n' "$SALIDA" | head -n "$MAX_FILAS"
+[ "$FILAS" -gt "$MAX_FILAS" ] && printf '… (cortado en %s de %s líneas; pedí más con --max-filas N)\n' "$MAX_FILAS" "$FILAS"
+printf 'rc=%s\n' "$RC"
+anotar "\"host\":\"$HOST\",\"accion\":\"consulta\",\"sha256\":\"$(printf '%s' "$SENTENCIA" | shasum -a 256 | cut -d' ' -f1)\",\"exit\":$RC,\"filas\":$FILAS"
+exit "$RC"

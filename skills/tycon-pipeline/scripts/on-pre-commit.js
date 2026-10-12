@@ -1,0 +1,1732 @@
+#!/usr/bin/env node
+/**
+ * tycon-pipeline PreToolUse hook (matcher: Bash|PowerShell) — DoD runtime evidence gate.
+ *
+ * **Por qué existe**: Story 4.2 — Claude declaró `done` + commiteó sin haber
+ * ejecutado nunca los E2E que escribió (caso completo en
+ * `~/.claude/tycon-harness/guides/incident-log.md#dod-4.2`).
+ *
+ * Capa 1 de defense-in-depth — bloqueo HARD en `git commit`:
+ *
+ *   1. Intercepta el evento PreToolUse Bash con `git commit` en el comando.
+ *   2. Lee `git diff --cached` del cwd del repo target.
+ *   3. Si el diff incluye cambios a algun `specs/stories/N-M-*.md` con
+ *      transiciones de status -> review/done o pipelines.X.status -> done,
+ *      y la story declara tests E2E / Playwright / smoke runtime -> EXIGE
+ *      evidencia en .advisors/dod-runtime/<storyId>-<ts>.md
+ *   4. Si la evidencia NO existe en el repo → exit 2 con mensaje accionable.
+ *   5. Escape hatch: `--no-verify` saltea el hook (estándar git) y queda flag
+ *      `had_dod_bypass: true` en stderr.
+ *   6. Otras stories (sin E2E declarados) → pasan sin bloqueo.
+ *
+ * Por qué un hook bloqueante: el patrón "Claude marca done sin probar" no
+ * lo atrapa ningún advisor (los advisors LEEN el spec, no ejecutan E2E).
+ * Necesitamos infraestructura que se imponga al agente, no que el agente
+ * elija respetar.
+ *
+ * Exit codes (convención Claude Code PreToolUse):
+ *   0 → permitir el tool call (commit procede)
+ *   2 → BLOQUEAR el tool call (stderr es el mensaje al user/agente)
+ *
+ * Schema del evento Claude Code PreToolUse Bash (stdin):
+ *   {
+ *     "hook_event_name": "PreToolUse",
+ *     "tool_name": "Bash",
+ *     "tool_input": { "command": "git commit -m '...'" },
+ *     "cwd": "/abs/path/to/repo"
+ *   }
+ */
+
+const fs = require('fs');
+const path = require('path');
+const { stateDir: stateDirOf } = require('./lib/state-dir.js');   // story 8.23 (A2): la carpeta del estado, de una sola pieza
+const os = require('os');
+// H12 2026-05-21: execFileSync (arg array, NO shell) en vez de execSync con strings
+// interpolados — evita rotura/inyección con paths que tengan metacaracteres de shell.
+const { execFileSync } = require('child_process');
+
+// Las dos llaves que hoy avisan (TYCON_REVIEW_A_DONE y TYCON_ROSTER_NAMES) frenan con el mismo valor que en el portón del
+// arnés (scripts/ci/tycon-ci-gate.js): `block` (story 8.9, tanda G). El valor de antes sigue valiendo hasta el retiro.
+const VALORES_QUE_FRENAN = Object.freeze(['block', ['fre', 'no'].join('')]);
+function llaveFrena(valor) {
+  const v = String(valor === undefined || valor === null ? '' : valor);
+  // el valor de antes frena igual, y se anota el uso: el registro es lo que decide el retiro (revisión de la tanda G,
+  // ronda 2 — era el único consumidor de un nombre viejo de la tanda que no lo anotaba). Lo anota el arnés; sin él, no.
+  if (v === VALORES_QUE_FRENAN[1]) {
+    try { require('./lib/legacy-names.js').recordUse({ kind: 'value', old: v, new: VALORES_QUE_FRENAN[0], script: 'skills/tycon-pipeline/scripts/on-pre-commit.js' }); } catch (_) { /* anotar nunca frena */ }
+  }
+  return VALORES_QUE_FRENAN.includes(v);
+}
+
+// Dirs de evidencia DoD para el repo donde se COMMITEA (fix atribución 2026-08-14): el repo +
+// sus companions declarados (`.tycon/advisors.yaml → evidence.companion_repos`) + subproyectos
+// un nivel abajo — criterio único en lib/evidence-config.js, el mismo de runtime-matrix.js.
+// Antes se barrían los repos hermanos que tuvieran `specs/stories/` (heurística por vecindad):
+// como los story-id COLISIONAN entre productos (una "1.4" existe en varios repos), un
+// `<sid>-*.md` ajeno satisfacía el check de evidencia de este producto.
+/**
+ * Los avisos del modo FRENO, UNA sola vez por corrida (FIX-1, 2026-08-25).
+ *
+ * Por qué existe este emisor y no un `process.stderr.write` en cada punto de lectura: la config se
+ * consulta varias veces por commit (evidencia, hermanos, guía de pruebas) y el mismo aviso salía
+ * duplicado o —peor— no salía, porque el freno que cortaba primero no era el que leía la config.
+ * Un aviso que depende de QUÉ freno gana la carrera es un aviso que no se puede probar.
+ */
+let _avisosEmitidos = false;
+// Idem para el aviso de deriva del mapa de navegación (FIX-8): uno por corrida, no uno por story.
+let _navAvisado = false;
+function avisosDeConfigFreno(cwd) {
+  if (_avisosEmitidos) return;
+  _avisosEmitidos = true;
+  const avisos = [];
+  try {
+    const ec = require('./lib/evidence-config.js');
+    const root = ec.discoverRepoRoot(cwd) || cwd;
+    avisos.push(...ec.parseEvidenceConfig(root, { freno: true }).warnings);
+  } catch (_e) { /* un aviso que falla nunca rompe el commit */ }
+  try {
+    avisos.push(...require('./lib/story-discovery.js').storiesConfigForGate(cwd).warnings);
+  } catch (_e) { /* idem */ }
+  for (const a of avisos) process.stderr.write(`${a}\n`);
+}
+
+/**
+ * El texto de `.tycon/advisors.yaml` que debe leer un FRENO: el COMMITEADO. Sin historia git
+ * todavía, la carpeta (no hay commit contra el cual contrastar). Ver lib/config-source.js.
+ */
+function configFreno(cwd) {
+  try {
+    const ec = require('./lib/evidence-config.js');
+    const root = ec.discoverRepoRoot(cwd) || cwd;
+    const txt = require('./lib/config-source.js').textoParaFreno(root);
+    return txt === null ? undefined : txt;
+  } catch (_e) { return undefined; }
+}
+
+function dodEvidenceDirsFor(cwd) {
+  const ec = require('./lib/evidence-config.js');
+  const root = ec.discoverRepoRoot(cwd) || cwd;
+  // 🔴 Modo FRENO (FIX-1 — caso C3): los repos hermanos declarados se leen de lo COMMITEADO.
+  // Declarar un hermano AFLOJA (su evidencia cuenta como propia) y aflojar tiene que verse en un
+  // commit; escribirlo en la carpeta ya no alcanza. El aviso lo emite `avisosDeConfigFreno()`
+  // una sola vez por corrida — acá se llamaría varias veces y saldría repetido.
+  const dirs = ec.productEvidenceRoots(root, { freno: true }).map((r) => path.join(r, '.advisors', 'dod-runtime'));
+  // Sin ningún dir existente, dejar al menos el canónico del repo (para mensajes de error).
+  return dirs.length ? dirs : [path.join(root, '.advisors', 'dod-runtime')];
+}
+
+// Parser muy simple del frontmatter YAML — solo extrae los campos planos que
+// nos interesan (no full YAML parser para mantener zero-dependency).
+function parseFrontmatter(content) {
+  const m = content.match(/^---\n([\s\S]*?)\n---/);
+  if (!m) return {};
+  const lines = m[1].split('\n');
+  const out = {};
+  for (const line of lines) {
+    const mm = line.match(/^([a-zA-Z_][a-zA-Z0-9_-]*):\s*(.+)$/);
+    if (!mm) continue;
+    let val = mm[2].trim();
+    // Strip quotes
+    if (val.startsWith('"') && val.endsWith('"')) val = val.slice(1, -1);
+    out[mm[1]] = val;
+  }
+  return out;
+}
+
+const { isWorkStoryId, storiesConfigForGate } = require('./lib/story-discovery.js');
+const { esEvidenciaDeCierre } = require('./lib/closing-evidence.js');
+const { resolveSessionId } = require('./lib/session-id.js');
+
+/**
+ * ¿Este contenido es una story Mary+GOLD? Criterio ESTRUCTURAL: el frontmatter (que tiene que
+ * CERRAR) declara `story:` y `status:`, y el id tiene forma de trabajo.
+ *
+ * Reemplaza al filtro por ruta `specs/stories/*.md` (2026-08-15). El filtro por ruta dejaba este
+ * gate mudo en todo repo con otro layout — un repo del equipo entre ellos — y un gate que no se dispara
+ * es indistinguible de un gate que pasó. La exigencia de que el frontmatter CIERRE es a propósito:
+ * es la misma lectura que hace el resto del arnés, así que si acá no se ve como story, allá
+ * tampoco (y eso lo caza `lint-story-frontmatter.js`, que es el control que corresponde).
+ */
+function looksLikeStorySpec(content, idPattern) {
+  if (typeof content !== 'string' || !content.startsWith('---')) return false;
+  const end = content.indexOf('\n---', 3);
+  if (end < 0) return false;
+  const fm = content.slice(3, end);
+  if (!/^status:\s*\S/m.test(fm)) return false;
+  const id = fm.match(/^story:\s*["']?([^"'\n]+?)["']?\s*$/m);
+  // El id además tiene que tener FORMA de trabajo: el material de un banco de evals declara
+  // `story: "EV-1"` + `status:` y no es algo que haya que cerrar con evidencia de DoD.
+  return !!id && isWorkStoryId(id[1], idPattern);
+}
+
+/**
+ * De los archivos del diff staged, los que son stories. Función aparte y EXPORTADA a propósito:
+ * estaba escrita inline dentro de `main()` y el test la reimplementaba en vez de llamarla — el
+ * chequeo de mutantes lo cazó (los mutantes de esas 3 líneas sobrevivían porque el código real
+ * nunca se ejecutaba). Probar una copia de la lógica es no probar la lógica.
+ *
+ * `readContent(file)` devuelve el contenido STAGED; `into` (opcional) se llena con lo leído para
+ * que el caller no tenga que volver a pedirlo.
+ */
+function selectStorySpecs(diffFiles, readContent, idPattern, into) {
+  return diffFiles.filter((f) => {
+    if (!f.endsWith('.md')) return false;
+    const content = readContent(f);
+    if (!looksLikeStorySpec(content, idPattern)) return false;
+    if (into) into.set(f, content);
+    return true;
+  });
+}
+
+function readEvent() {
+  try {
+    const stdin = fs.readFileSync(0, 'utf8');
+    if (!stdin) return null;
+    return JSON.parse(stdin);
+  } catch {
+    return null;
+  }
+}
+
+function getStagedDiff(cwd) {
+  try {
+    return execFileSync('git', ['diff', '--cached', '--name-only'], {
+      cwd,
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'ignore'],
+    });
+  } catch {
+    return '';
+  }
+}
+
+function getStagedFileContent(cwd, file) {
+  try {
+    return execFileSync('git', ['show', `:${file}`], {
+      cwd,
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'ignore'],
+    });
+  } catch {
+    return '';
+  }
+}
+
+function getHeadFileContent(cwd, file) {
+  try {
+    return execFileSync('git', ['show', `HEAD:${file}`], {
+      cwd,
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'ignore'],
+    });
+  } catch {
+    return ''; // file didn't exist in HEAD (new file)
+  }
+}
+
+// Detecta si un comando de shell ejecuta `git commit` como COMANDO real — no como
+// substring dentro de un string citado (`echo "git commit"`) ni `git log --grep=commit`.
+// Parte el comando por separadores de shell y, en cada segmento que ARRANCA con `git`,
+// verifica que el primer token no-flag sea `commit`. (H12 2026-05-21: el regex anterior
+// `\bgit\s+...commit\b` matcheaba el substring en cualquier posición → falsos positivos
+// que disparaban toda la maquinaria del gate sobre comandos que no eran commits.)
+function isGitCommit(command, _depth = 0) {
+  if (!command || typeof command !== 'string') return false;
+  const segments = command.split(/&&|\|\||[;&|\n]/);
+  for (let seg of segments) {
+    seg = seg.trim();
+    // CF-4 2026-05-21: pelar prefijos que NO son el comando — subshell `$(` / backtick,
+    // paréntesis/llaves, y asignaciones de entorno `VAR=val git commit`. Repetir hasta
+    // estabilizar (combinaciones tipo `( ENV=x git commit`).
+    let prev;
+    do {
+      prev = seg;
+      seg = seg
+        .replace(/^\$\(/, '')
+        .replace(/^[`(){}\s]+/, '')
+        .replace(/^\w+=(?:"[^"]*"|'[^']*'|\S+)\s+/, '');
+    } while (seg !== prev);
+    // Wrapper de shell (auditoría 2026-06-09): `bash -c "git commit ..."` / `sh -c '...'`
+    // / `zsh -c` no arranca con git y evadía la detección. Re-aplicar recursivamente
+    // sobre el string interno (un nivel basta — wrappers anidados son rebuscados y el
+    // safety-guard + regla #0 cubren el caso malicioso).
+    if (_depth === 0) {
+      const wrapM = seg.match(/^(?:\S*\/)?(?:ba|z|da)?sh\s+(?:-\w+\s+)*-c\s+("([^"]*)"|'([^']*)')/);
+      if (wrapM) {
+        const inner = wrapM[2] !== undefined ? wrapM[2] : wrapM[3];
+        if (isGitCommit(inner, 1)) return true;
+      }
+    }
+    const m = seg.match(/^(?:\S*\/)?git\b(.*)$/s);
+    if (!m) continue;
+    const tokens = m[1].trim().split(/\s+/).filter(Boolean);
+    let i = 0;
+    while (i < tokens.length) {
+      const t = tokens[i];
+      if (t === '-c' || t === '-C' || t === '--git-dir' || t === '--work-tree') { i += 2; continue; }
+      if (t.startsWith('-')) { i += 1; continue; }
+      break; // primer token no-flag
+    }
+    if (tokens[i] === 'commit') return true;
+  }
+  return false;
+}
+
+// CF-4 — gap residual conocido: `git commit <pathspec>` commitea paths del working-tree que
+// pueden NO estar en `git diff --cached` (que es lo que lee este gate). Cerrarlo del todo
+// implicaría chequear también working-tree vs HEAD por cada pathspec, con riesgo de falsos
+// positivos. Bajo riesgo en práctica (commitear specs por pathspec es raro). Documentado, no
+// cerrado. La Capa 2 (on-frontmatter-write, en el Edit/Write del spec) lo atrapa antes igual.
+
+// True si la transición de status indica que la story está pasando a un estado
+// que requiere DoD runtime evidence (review o done).
+function isCriticalStatusTransition(oldStatus, newStatus) {
+  const critical = new Set(['review', 'done']);
+  return critical.has((newStatus || '').toLowerCase()) &&
+         !critical.has((oldStatus || '').toLowerCase());
+}
+
+// True si la story declara tests que requieren runtime (E2E, Playwright, smoke).
+// Heurística basada en presencia de campos en frontmatter o sección 'Tests' con
+// scenarios E2E.
+function storyRequiresRuntimeEvidence(specContent) {
+  if (!specContent) return false;
+  // Markers que indican tests runtime-dependent declarados.
+  const runtimeMarkers = [
+    'tests_done_playwright_spec',
+    'tests_pending_runtime',
+    'playwright',
+    'Playwright',
+    'E2E',
+    'e2e-tests',
+    'smoke runtime',
+  ];
+  return runtimeMarkers.some(m => specContent.includes(m));
+}
+
+// DODRT-C5.1 (2026-07-07) — ¿la story toca UI? Para una story de UI la evidencia DoD debe venir de un
+// E2E Playwright REAL (no curl/unit) — el agujero por el que la Story 11.2 se declaró "probada en
+// runtime" sin correr Playwright (y antes 11.1). La señal la decide lib/ui-signal.js (fuente única:
+// listas de archivos, campos estructurados y tandas; la prosa sólo de respaldo; escenarios de navegador
+// en el spec; nombres declarados en .tycon/advisors.yaml → evidence.fe_paths). Nada de productos acá.
+function storyIsUiStory(specContent, repoRoot) {
+  return require('./lib/ui-signal.js').storyTouchesUi(specContent, repoRoot);
+}
+
+// Story 7.18 (AC 6) — la baja de pantalla se dice al cerrar: una línea por stderr y por story, sin
+// bloquear. El texto lo arma lib/ui-signal.js.
+function avisoBajaDePantalla(specContent, repoRoot) {
+  try {
+    const ui = require('./lib/ui-signal.js');
+    return ui.proseDropNotice(ui.uiSignalDetail(specContent, repoRoot));
+  } catch (_e) { return null; }   // el aviso nunca rompe el cierre: es informativo y el veredicto ya se decidió
+}
+
+// True si la story tiene la excepción explícita `dod_runtime_exempt: true`.
+function storyIsExempt(specContent) {
+  return /^dod_runtime_exempt:\s*true\b/m.test(specContent);
+}
+
+// ADVISORS-GATE (2026-08-24, caso Story S1 del frontend de un producto del equipo — guides/incident-log.md#done-sin-advisors-S1-2026-08-24):
+// una story implementada a mano (antes del portón de carril) llegó a `done` con evidencia de DoD
+// real pero sin que NINGÚN advisor la auditara — los controles del cierre pedían DoD y self-audit,
+// no "advisors corridos". Constancia aceptada: (1) una corrida del pipeline EN EL REPO
+// (`.advisors/pipeline-runs/<storyId>-*/` con reportes del Step 5 o `findings.json`), o (2) una
+// línea `check=advisors status=green` en gates.log cuyo `repoPath` sea este repo (las líneas
+// anteriores al namespace de repo — sin `repoPath` — son ambiguas entre repos y NO cuentan).
+/**
+ * ROSTER-GATE — el cruce que sólo se puede hacer acá (2026-08-30).
+ *
+ * Devuelve null si está todo bien, o `{reason, ...}` para frenar el commit. Falla ABIERTO ante
+ * errores internos (no encontrar la lib, un repo raro): el portón de CI es la red de atrás, y un
+ * control que rompe commits por un problema propio se termina apagando entero.
+ */
+/**
+ * Los firmantes de los hallazgos de esta corrida, con su tramo. Es el insumo del cruce directo.
+ * Devuelve null si no hay `findings.json` legible — y ahí el cruce simplemente no se hace (no
+ * frena: un archivo que falta no es una incoherencia). Mismo criterio que el portón de CI.
+ */
+function firmantesDeFindings(runDir) {
+  // 🔴 Ausente ≠ ilegible (2026-09-22, lo cazó el revisor de fallos silenciosos sobre esta misma
+  // story). Los dos devuelven null y con null el cruce NO CORRE — o sea que un `findings.json`
+  // corrupto APAGA `roster-incoherente` y el commit pasa como si estuviera todo bien. El fail-open
+  // del `catch` de más abajo se justifica diciendo «el portón de CI sigue mirando», pero el portón
+  // tiene el MISMO punto ciego, así que nadie mira. Que falte es normal (los hallazgos se escriben
+  // después del roster) y sigue mudo; que esté roto deja rastro. Ninguno de los dos frena.
+  const p = path.join(runDir, 'findings.json');
+  let crudo;
+  try { crudo = fs.readFileSync(p, 'utf8'); } catch { return null; }
+  let lista;
+  try {
+    const data = JSON.parse(crudo);
+    // 🔴 Las MISMAS formas que tolera el portón (2026-09-22, lo confirmó el pase adversarial).
+    // Esta función se documentaba como «mismo criterio que el portón» y no lo era: el portón cae a
+    // `data.findings` y ésta sólo aceptaba un array pelado. Con la forma `{findings: [...]}` el
+    // servidor corría el cruce y la máquina no — dos veredictos distintos sobre el mismo commit,
+    // que es lo que el AC 5 llama rojo. Si las dos no leen igual, la paridad es una afirmación.
+    if (Array.isArray(data)) lista = data;
+    else if (Array.isArray(data && data.findings)) lista = data.findings;
+    else lista = null;
+  } catch (e) {
+    process.stderr.write(`⚠️  no pude leer ${p} (${String(e.message).slice(0, 120)}): el cruce entre `
+      + 'quién firmó los hallazgos y quién figura en el roster NO corrió. No es «está todo bien».\n');
+    return null;
+  }
+  if (!Array.isArray(lista)) {
+    process.stderr.write(`⚠️  ${p} no es una lista: el cruce entre quién firmó los hallazgos y quién `
+      + 'figura en el roster NO corrió. No es «está todo bien».\n');
+    return null;
+  }
+  const vistos = new Map();
+  for (const f of lista) {
+    const a = f && (f.advisor || f.agent || f.source);
+    if (typeof a !== 'string' || !a) continue;
+    const clave = `${a}|${f.tramo || ''}`;
+    if (!vistos.has(clave)) vistos.set(clave, f.tramo ? { advisor: a, tramo: f.tramo } : a);
+  }
+  return [...vistos.values()];
+}
+
+function revisarRosterLocal(cwd, storyId, storyPath) {
+  let roster; let runDir; let vistos;
+  try {
+    const rlib = require('./lib/review-roster.js');
+    const { resolveRunDir } = require('./pipeline.js');
+    const { query } = require('./lib/advisor-ledger.js');
+    runDir = resolveRunDir(cwd, String(storyId), false, storyPath);   // por la clave (story 1.17.1)
+    if (!runDir) return null; // sin run dir la regla anterior ya habló
+    try { roster = rlib.read(runDir); } catch (e) { return { reason: 'roster-ilegible', runDir, detalle: String(e.message).slice(0, 160) }; }
+    // 🔴 `query()` devuelve un OBJETO ({spawns, vivos, archivo, advisores…}), no una lista. Tratarlo
+    // como lista hacía dos daños a la vez: la auto-reparación era código muerto (`filas.length`
+    // undefined) y el `.map()` posterior tiraba un TypeError que subía hasta el wrapper del hook —
+    // que falla ABIERTO, o sea que el commit se saltaba TODOS los frenos del pre-commit, no sólo
+    // éste, y justo en el camino feliz (roster presente y válido). Lo cazó el pase adversarial;
+    // ninguna lectura del código lo había visto.
+    // 🔴 Roster PROYECTADO desde el repo del código (2026-09-05, un producto del equipo — guides/incident-log.md#evidencia-en-otro-repo-2026-09-05): los spawns del ledger
+    // están estampados con ESE repo, no con el de la story. Filtrar por `cwd` (el repo de specs)
+    // daba `sin-testigo` con el testigo en la misma máquina, bajo el otro repo — y la salida que
+    // proponía (`sin_testigo` en el roster) se pisaba en la próxima proyección.
+    const repoTestigo = (roster && roster.projected_from && typeof roster.projected_from.repo === 'string' && roster.projected_from.repo) || cwd;
+    const q = query({ story: String(storyId), repo: repoTestigo }) || {};
+    vistos = new Set([
+      ...(Array.isArray(q.vivos) ? q.vivos.map((r) => r && r.advisor) : []),
+      ...Object.keys(q.advisores || {}), // sesiones ya podadas: el resumen durable las conserva
+    ].filter(Boolean));
+    // 🔴 Mismo corte por fecha que el portón de CI, y por el mismo motivo: una corrida ANTERIOR al
+    // estreno de esta pieza no puede tener el registro, y reclamárselo frenaría trabajo legítimo
+    // (lo cazó el banco de controles con un caso que llevaba meses en verde). El sello vive en el
+    // nombre del run dir, en sus dos formas reales: `-YYYYMMDDHHMMSS` y `-YYYYMMDD-HHMM`.
+    if (!roster) {
+      const CUTOFF = process.env.TYCON_ROSTER_CUTOFF || '20260831';
+      const m = path.basename(runDir).match(/-(\d{8})(?:-?\d*)?$/);
+      if (!m || m[1] < CUTOFF) return null;
+    }
+    if (!roster) {
+      // Auto-reparación: el roster es una VISTA del registro, así que si falta se regenera con los
+      // mismos datos mecánicos. Recién si tampoco se puede, frena.
+      if (Array.isArray(q.vivos) && q.vivos.length) {
+        roster = rlib.write(runDir, { lines: q.vivos, story: String(storyId), sessionId: null });
+      }
+      if (!roster) return { reason: 'no-roster', runDir };
+    }
+    // 🔴 El orden importa: la excusa escrita se mira DESPUÉS de validar. `sin_testigo` explica UNA
+    // sola cosa —"el registro de esta máquina no tiene los revisores"— y no puede waivear que el
+    // roster esté roto o que el autor figure como revisor. Antes iba primero, y un archivo con
+    // sólo esa línea pasaba el freno local y explotaba después en el portón de CI: el dev seguía
+    // la instrucción del freno y el PR le rebotaba igual (hallazgo del pase adversarial).
+    // 🔴 El cruce findings↔roster también se hace ACÁ (story 7.13, 2026-09-22). Era la ÚNICA regla
+    // del portón sin contraparte en la máquina: el argumento existía en la firma y no se le pasaba,
+    // así que el dev se enteraba recién con el pull request abierto — y el mensaje del portón encima
+    // le decía que esto corría en su pre-commit, mandándolo a buscar un hook salteado inexistente.
+    const v = rlib.validate(roster, { advisoresEnFindings: firmantesDeFindings(runDir) });
+    if (!v.ok) {
+      // El veredicto tiene que ser IDÉNTICO al del portón, canal incluido: `roster-incoherente`
+      // AVISA desde `f1d764a` (en sus dos apariciones falló ella, no lo que vigila), y frena en los
+      // DOS lados con la misma llave. Las otras reglas del registro frenan siempre.
+      // 🔴 El canal se decide POR REGLA, no por el conjunto (2026-09-22, lo confirmó el pase
+      // adversarial). La primera versión pedía que TODOS los problemas fueran `roster-incoherente`
+      // para avisar: con un segundo problema en la misma corrida, el aviso de los nombres pasaba a
+      // frenar de arrastre, mientras el portón lo seguía separando regla por regla. Dos veredictos
+      // distintos sobre el mismo commit es justo lo que el AC 5 llama rojo.
+      // 🔴 El canal lo decide el PROPIO hallazgo (story 7.13): uno que traía su `tramo` fue
+      // validado al escribirse contra el registro de esa corrida, así que si igual no cuadra es
+      // real y frena. Uno del formato viejo, que nadie validó, sigue avisando. Mismo criterio que
+      // el portón — si acá y allá difieren, es el rojo del test de paridad.
+      const frenanNombres = llaveFrena(require('./lib/legacy-names.js').readEnv('TYCON_ROSTER_NAMES', { where: 'skills/tycon-pipeline/scripts/on-pre-commit.js' }));
+      const esAviso = (x) => x.regla === 'roster-incoherente' && !frenanNombres && !x.validado;
+      const avisos = v.problemas.filter(esAviso);
+      const bloqueantes = v.problemas.filter((x) => !esAviso(x));
+      if (!bloqueantes.length) return { reason: 'roster-invalido', runDir, problemas: avisos, aviso: true };
+      // Hay algo que frena: eso manda, y los avisos viajan igual para que el dev los vea una vez.
+      return { reason: 'roster-invalido', runDir, problemas: bloqueantes, avisosAparte: avisos };
+    }
+    if (typeof roster.sin_testigo === 'string' && roster.sin_testigo.trim()) return null;
+  } catch {
+    return null; // fail-open: el portón de CI sigue mirando
+  }
+  if (!vistos.size) {
+    // El testigo no está. Puede ser inocente (se trabajó en otra máquina, o alguien sube la rama de
+    // un compañero) — por eso hay una salida escrita, no un permiso silencioso.
+    return { reason: 'sin-testigo', runDir, storyId };
+  }
+  // 🔴 Las DOS listas contra el ledger, no sólo `reviewers` (2026-09-22, lo confirmó el pase
+  // adversarial ejecutando el caso). `agentes_previos` es una lista nueva que también sirve para
+  // dar por válido el firmante de un hallazgo: si no se la cruza contra los spawns reales, alcanza
+  // con escribir ahí a mano un revisor inventado para que un hallazgo lo firme y pase por las dos
+  // capas. Eso derrotaba la afirmación central de la pieza («el firmante se elige de los que
+  // corrieron, no se tipea») por la puerta que la propia story acababa de abrir. El portón de CI no
+  // puede taparlo: no ve el ledger. Se cruza acá o no se cruza en ningún lado.
+  const declarados = [...(roster.reviewers || []), ...(roster.agentes_previos || [])];
+  const inventados = [...new Set(declarados.map((r) => r && r.agent).filter((a) => a && !vistos.has(a)))];
+  if (inventados.length) return { reason: 'roster-fabricado', runDir, inventados };
+  return null;
+}
+
+// La carpeta de corrida se busca por la CLAVE de la story (story 1.17.1, `lib/evidence-key.js`): con un número que se
+// repite en el repo, `<id>-*` encontraba la carpeta de OTRA story del mismo número y la dejaba pasar a `done`.
+// `opts.storyPath` es la ruta REAL de la story (nunca la copia staged). Lo viejo bajo un número compartido no cuenta y
+// se nombra en `legacy`. La constancia de `gates.log` sigue la misma regla: con número compartido sólo cuenta la línea
+// que trae la ruta de ESTA story (las anteriores no la traen: no se sabe de cuál de las dos son).
+function findAdvisorsEvidence(cwd, storyId, opts = {}) {
+  const searched = [];
+  const real = (p) => { try { return fs.realpathSync(p); } catch { return String(p); } };
+  const ek = require('./lib/evidence-key.js');
+  const k = ek.keyInfoOr(opts.storyPath, String(storyId));
+  if (!k.key) {
+    searched.push(`(sin clave de la story ${storyId}: ${k.error}) — sin clave no se da constancia por buena`);
+    return { found: false, searched, legacy: [] };
+  }
+  const clave = k.key;
+  const compartido = Boolean(k.info && k.info.repeated);
+  let root = cwd;
+  let roots = [cwd];
+  try {
+    const ec = require('./lib/evidence-config.js');
+    root = ec.discoverRepoRoot(cwd) || cwd;
+    roots = ec.productEvidenceRoots(root, { freno: true });   // modo FRENO — ver dodEvidenceDirsFor
+    if (!roots || !roots.length) roots = [root];
+  } catch { roots = [root]; }
+  const runDirs = roots.map((r) => path.join(r, '.advisors', 'pipeline-runs'));
+  const legacy = compartido ? (() => { const l = ek.legacyFiles(runDirs, k.info); return [...l.unowned, ...l.handRenamed]; })() : [];
+  for (const dir of runDirs) {
+    searched.push(`${dir}/${clave}-*/ (step-05-advisor-reports/ o findings.json)`);
+    let entries = [];
+    try { entries = fs.readdirSync(dir); } catch { continue; }
+    for (const e of entries) {
+      if (!e.startsWith(`${clave}-`)) continue;
+      const d = path.join(dir, e);
+      const hasFindings = fs.existsSync(path.join(d, 'findings.json'));
+      let reports = [];
+      try { reports = fs.readdirSync(path.join(d, 'step-05-advisor-reports')).filter((f) => f.endsWith('.md')); } catch { reports = []; }
+      if (hasFindings || reports.length) return { found: true, via: 'pipeline-run', path: d, searched, legacy };
+    }
+  }
+  const gl = opts.gatesLog || path.join(stateDirOf(os.homedir()), 'gates.log');
+  searched.push(`${gl} (check=advisors, status=green, storyId=${storyId}, repoPath=${root}${compartido ? ', storyPath de esta story' : ''})`);
+  const rootsReal = new Set(roots.map(real));
+  const mia = opts.storyPath ? real(path.resolve(opts.storyPath)) : null;
+  try {
+    for (const line of fs.readFileSync(gl, 'utf8').split('\n')) {
+      if (!line) continue;
+      let e;
+      try { e = JSON.parse(line); } catch { continue; }
+      if (e.check !== 'advisors' || e.status !== 'green' || String(e.storyId) !== String(storyId)) continue;
+      if (!e.repoPath) continue; // sin namespace de repo → ambiguo entre repos, no cuenta
+      if (!rootsReal.has(real(e.repoPath))) continue;
+      if (compartido) {
+        if (!e.storyPath || !mia) continue;
+        const suya = path.isAbsolute(e.storyPath) ? e.storyPath : path.join(e.repoPath, e.storyPath);
+        if (real(suya) !== mia) continue;
+      }
+      return { found: true, via: 'gates.log', path: gl, searched, legacy };
+    }
+  } catch { /* sin gates.log */ }
+  return { found: false, searched, legacy };
+}
+
+// Busca archivo de evidencia DoD para una storyId dada en el repo cwd.
+// Devuelve el path + content del archivo MÁS RECIENTE encontrado (por filename
+// timestamp), o null si no existe.
+// Los tres formatos con los que el pipeline escribe un veredicto: `verdict=FAIL` (gate E2E),
+// `- verdict: FAIL` / `VERDICT: **FAIL**` (narrativas) y `## Verdict global` seguido de FAIL.
+function evidenciaDeclaraFail(content) {
+  if (!content) return false;
+  if (/(^|\n)[ \t]*(?:[-*][ \t]*)?(?:\*\*)?verdict(?:[ \t]+global)?(?:\*\*)?[ \t]*[:=][ \t]*(?:\*\*)?[ \t]*FAIL\b/i.test(content)) return true;
+  if (/##[ \t]*verdict[ \t]+global[ \t]*\n+[ \t]*(?:\*\*)?FAIL\b/i.test(content)) return true;
+  return false;
+}
+// `opts.storyPath` (story 1.17): con la ruta de la story se busca por la CLAVE de su evidencia
+// (lib/evidence-key.js) — con un número repetido en el repo, `<id>-*` es la evidencia de cualquiera de las
+// stories que lo comparten. Si la clave no se puede decidir, no hay evidencia (fail-closed): dar por buena
+// la de otra story es la mentira que esto cierra. Sin ruta, el id como siempre.
+function findDodEvidence(cwd, storyId, opts = {}) {
+  const evidenceDirs = dodEvidenceDirsFor(cwd);
+  let clave = storyId;
+  if (opts.storyPath) {
+    const k = require('./lib/evidence-key.js').keyOr(opts.storyPath, storyId);
+    if (!k.key) return null;
+    clave = k.key;
+  }
+  const expectedPrefix = `${clave}-`;
+  // Excluir self-audit files (que comparten prefix `<storyId>-` con la evidencia
+  // runtime pero sirven a otro propósito — ACCOV-C8). Sin esta exclusión, el
+  // sort alfabético devuelve `4.2-self-audit-iter7.md` antes que
+  // `4.2-2026-05-20T14-30-00Z.md`, rompiendo la cobertura de ACs.
+  // 🔴 Se elige el candidato que DOCUMENTA MÁS criterios; a igual cantidad, el más reciente por
+  // fecha real (2026-09-06). Antes ganaba el nombre lexicográficamente mayor: con `e2e-gate-`
+  // (letra e) y `full-dod-runtime-` (letra f) compitiendo contra un timestamp plano (dígito), el
+  // archivo elegido dependía de qué prefijos existieran en el directorio en ese instante — no de
+  // cuál documentaba más. Un freno que decide por azar del nombre. El timestamp embebido en el
+  // nombre tampoco sirve de desempate: es frágil si dos archivos nacen en el mismo segundo.
+  let best = null;
+  for (const dir of evidenceDirs) {
+    if (!fs.existsSync(dir)) continue;
+    try {
+      // Qué es «evidencia de cierre» lo decide `lib/closing-evidence.js` (2026-09-06): el
+      // criterio vivía copiado en cuatro capas y ya había divergido. El motivo de cada exclusión
+      // (matriz, self-audit, plan manual) está ahí, una sola vez.
+      const files = fs.readdirSync(dir).filter(f =>
+        f.startsWith(expectedPrefix) && esEvidenciaDeCierre(f)
+      );
+      for (const f of files) {
+        const full = path.join(dir, f);
+        let content = null; let mtime = 0;
+        try { content = fs.readFileSync(full, 'utf8'); mtime = fs.statSync(full).mtimeMs; } catch { continue; }
+        // 🔴 Una corrida que declara FAIL no compite con una que no (revisión adversarial
+        // 2026-09-06, hallazgo #5): contando menciones, una narrativa vieja y FALLIDA con «AC #1..#5 ❌»
+        // le ganaba a la evidencia real y nueva con tres ✅, y el mensaje «no menciona ACs #4, #5»
+        // desaparecía — con la matriz DODRT-C6 en verde, el commit pasaba gracias al archivo fallido.
+        // Medido en los repos de la máquina: la elección cambiaba en 78 de 463 stories, 2 hacia un FAIL.
+        const cand = { filename: f, path: full, content, acs: parseAcsFromEvidence(content).length, mtime,
+          fallido: evidenciaDeclaraFail(content) };
+        const mejor = best === null
+          || (best.fallido && !cand.fallido)
+          || (best.fallido === cand.fallido && (cand.acs > best.acs || (cand.acs === best.acs && cand.mtime > best.mtime)));
+        if (mejor) best = cand;
+      }
+    } catch {
+      // ignore
+    }
+  }
+  return best;
+}
+
+// Backwards-compat wrapper.
+function hasDodEvidence(cwd, storyId, opts = {}) {
+  return findDodEvidence(cwd, storyId, opts) !== null;
+}
+
+// ── Constancia de lo que decide este freno (story 7.2 del arnés, 2026-09-16) ───────────────────
+// Una línea por story del commit que transiciona a review/done, en frenos.jsonl: con qué regla frenó
+// (o avisó) y, si la dejó pasar, por qué. Sólo la huella (id de story + estado): ni ruta, ni story, ni
+// texto del commit. Ayuda, no evidencia: se escribe ANTES del `process.exit` y nunca lo cambia.
+// El motivo de cada violación se traduce al vocabulario cerrado de `guard-record.js`; uno que no
+// esté en la tabla sale `otra` y la línea se escribe igual.
+const REGLA_DE_MOTIVO = {
+  'no-advisors': 'advisors-gate',
+  'sin-testigo': 'roster', 'no-roster': 'roster', 'roster-fabricado': 'roster', 'roster-invalido': 'roster', 'roster-ilegible': 'roster',
+  'no-evidence': 'evidencia-ausente', 'evidence-failed': 'evidencia-fallida', 'incomplete-evidence': 'evidencia-incompleta',
+  'no-playwright-evidence': 'sin-playwright', 'matrix-red': 'matriz-roja', 'matrix-structural': 'matriz-estructural',
+  'not-converged': 'convergencia',
+};
+function anotarDecisionesDelCierre({ violations, soloAviso, pasos, estadoDe, avisosSelfAudit = [] }) {
+  let anotarCierre;
+  try { ({ anotarCierre } = require('./lib/closing-record.js')); } catch { return; } // ayuda, no evidencia
+  const huella = (storyId, specRel) => `${storyId}\0${estadoDe.get(specRel) || ''}`;
+  for (const v of violations) {
+    try {
+      anotarCierre({ freno: 'on-pre-commit', regla: REGLA_DE_MOTIVO[v.reason] || String(v.reason),
+        veredicto: soloAviso.has(v.specRel) ? 'aviso' : 'bloqueo', huella: huella(v.storyId, v.specRel) });
+    } catch { /* ayuda, no evidencia */ }
+  }
+  for (const [specRel, { regla, storyId }] of pasos) {
+    try { anotarCierre({ freno: 'on-pre-commit', regla, veredicto: 'paso', huella: huella(storyId, specRel) }); } catch { /* idem */ }
+  }
+  // Un self-audit incompleto que pasó: UNA línea (aviso), no además un «paso» (una decisión, una línea).
+  for (const a of avisosSelfAudit) {
+    if (violations.some((v) => v.specRel === a.specRel)) continue;
+    try { anotarCierre({ freno: 'on-pre-commit', regla: 'self-audit', veredicto: 'aviso', huella: huella(a.storyId, a.specRel) }); } catch { /* idem */ }
+  }
+}
+
+// ACCOV-C8 — chequear self-audit file existe + tiene secciones mandatorias.
+// Devuelve { exists, missingSections, valid, allAudits }.
+// `opts.storyPath` (story 1.17): el autoexamen se busca por la CLAVE de la evidencia, como el resto — con un número
+// repetido en el repo, `<id>-self-audit-iterN.md` es el de cualquiera de las stories que lo comparten (el pase
+// adversarial lo encontró comparando la convergencia de una story contra el autoexamen de otra). Sin clave
+// decidible, no hay autoexamen que mirar.
+function checkSelfAudit(cwd, storyId, opts = {}) {
+  // Buscar TODOS los self-audits (iter1, iter2, ..., y el "sin numerar" legacy).
+  const evidenceDirs = dodEvidenceDirsFor(cwd);
+  const audits = []; // { path, iter, mtime }
+  let clave = storyId;
+  if (opts.storyPath) {
+    const k = require('./lib/evidence-key.js').keyOr(opts.storyPath, storyId);
+    if (!k.key) return { exists: false, keyError: k.error, expectedPaths: [] };
+    clave = k.key;
+  }
+  // La clave puede traer `+` (lib/evidence-key.js codifica así lo que no entra en un nombre): se escapa.
+  const claveRe = String(clave).replace(/[.*+?^${}()|[\]\\]/g, (c) => '\\' + c);
+  const iterRe = new RegExp(`^${claveRe}-self-audit(?:-iter(\\d+))?\\.md$`);
+  for (const dir of evidenceDirs) {
+    if (!fs.existsSync(dir)) continue;
+    try {
+      for (const f of fs.readdirSync(dir)) {
+        const m = f.match(iterRe);
+        if (!m) continue;
+        const iter = m[1] ? parseInt(m[1], 10) : 0; // sin numerar = 0 (legacy)
+        const full = path.join(dir, f);
+        audits.push({ path: full, iter, mtime: fs.statSync(full).mtimeMs });
+      }
+    } catch {
+      // ignore
+    }
+  }
+  if (audits.length === 0) {
+    return { exists: false, expectedPaths: evidenceDirs.map(d =>
+      path.join(d, `${clave}-self-audit-iter1.md`)) };
+  }
+  // Dedupe by absolute (realpath) path — evidenceDirs puede contener paths
+  // que resuelven al mismo directorio (cwd + sibling spec root colapsando al
+  // mismo lugar bajo symlinks o monorepos). Sin dedupe, el mismo archivo
+  // entra 2 veces y `previous` termina siendo el mismo iter que `latest`,
+  // haciendo que convergencia compare iter N consigo mismo → falsos verdes.
+  const seenPaths = new Set();
+  const dedupedAudits = audits.filter(a => {
+    let canonical;
+    try {
+      canonical = fs.realpathSync(a.path);
+    } catch {
+      canonical = a.path;
+    }
+    if (seenPaths.has(canonical)) return false;
+    seenPaths.add(canonical);
+    return true;
+  });
+  // Ordenar por iter desc, mtime desc como tiebreaker.
+  dedupedAudits.sort((a, b) => b.iter - a.iter || b.mtime - a.mtime);
+  const latest = dedupedAudits[0];
+  const previous = dedupedAudits.length > 1 ? dedupedAudits[1] : null;
+
+  const content = fs.readFileSync(latest.path, 'utf8');
+  // 5 secciones mandatorias del template ACCOV-C8.
+  const requiredSections = [
+    /##\s+1\.\s+Cobertura por AC/i,
+    /##\s+2\.\s+Cobertura por interacci[oó]n/i,
+    /##\s+3\.\s+Gaps conocidos/i,
+    /##\s+4\.\s+Verificaci[oó]n de no-regresi[oó]n/i,
+    /##\s+5\.\s+Confianza del agente/i,
+  ];
+  const missing = requiredSections
+    .map((re, i) => re.test(content) ? null : `section ${i + 1}`)
+    .filter(Boolean);
+
+  return {
+    exists: true,
+    path: latest.path,
+    iter: latest.iter,
+    previousPath: previous ? previous.path : null,
+    previousIter: previous ? previous.iter : null,
+    missingSections: missing,
+    valid: missing.length === 0,
+    allAudits: dedupedAudits,
+  };
+}
+
+// ACCOV-C10 — convergencia entre iter N y iter N-1.
+// Extrae el set de gaps de §3 del self-audit y compara con iter previa.
+// Devuelve { converged, newGaps, removedGaps } o null si no hay previa.
+function checkSelfAuditConvergence(currentPath, previousPath) {
+  if (!previousPath) return null; // no hay base para comparar
+  const current = fs.readFileSync(currentPath, 'utf8');
+  const previous = fs.readFileSync(previousPath, 'utf8');
+  const gapsCurrent = extractGapsFromSelfAudit(current);
+  const gapsPrev = extractGapsFromSelfAudit(previous);
+  const setPrev = new Set(gapsPrev.map(g => g.toLowerCase()));
+  const newGaps = gapsCurrent.filter(g => !setPrev.has(g.toLowerCase()));
+  const setCurrent = new Set(gapsCurrent.map(g => g.toLowerCase()));
+  const removedGaps = gapsPrev.filter(g => !setCurrent.has(g.toLowerCase()));
+  return {
+    converged: newGaps.length === 0,
+    newGaps,
+    removedGaps,
+    countCurrent: gapsCurrent.length,
+    countPrev: gapsPrev.length,
+  };
+}
+
+// Extrae nombres de gaps de §3 de un self-audit.
+// Heurística: dentro de la sección que empieza con `## 3. Gaps conocidos`,
+// busca tabla rows con primer columna `Gap` o bullets `**X — desc**`.
+function extractGapsFromSelfAudit(content) {
+  const sectionMatch = content.match(/##\s+3\.\s+Gaps conocidos[\s\S]*?(?=\n##\s+\d+\.|$)/i);
+  if (!sectionMatch) return [];
+  const section = sectionMatch[0];
+  const gaps = new Set();
+  // Pattern 1: rows de tabla markdown `| **X — descripción** | ...`
+  // El "key" del gap es la primera letra/palabra antes del em-dash o guión.
+  const tableRowRe = /\|\s*\*\*([A-Z][A-Z0-9]*)\s*[—\-]/g;
+  let m;
+  while ((m = tableRowRe.exec(section)) !== null) {
+    gaps.add(m[1].trim().toUpperCase());
+  }
+  // Pattern 2: bullets `- **X — descripción**` o `- Gap X:`
+  const bulletRe = /(?:^|\n)\s*-\s+(?:\*\*)?(?:Gap\s+)?([A-Z][A-Z0-9]*)\s*[:—\-]/g;
+  while ((m = bulletRe.exec(section)) !== null) {
+    gaps.add(m[1].trim().toUpperCase());
+  }
+  return [...gaps];
+}
+
+// Parsea los ACs declarados en la spec — DELEGA en lib/story-checks.js (fuente única,
+// fix 2026-07-10): la copia local solo matcheaba `N. **Given**` y en la Story 10.4 contó
+// 8 de 22 ACs (los de error/regresión son `N. **Etiqueta:** texto`) → el check por-AC
+// de la evidencia validaba contra un universo SUBCONTADO en silencio. La lib une los
+// patrones (Given + bold-label + bullets). Fallback a la copia vieja si la lib no carga
+// (consistente con la filosofía fail-open del hook — pero LOGUEADO).
+function parseAcsFromSpec(specContent) {
+  if (!specContent) return [];
+  try {
+    const sc = require(path.join(__dirname, 'lib', 'story-checks.js'));
+    return sc.parseAcsFromSpec(specContent).map((n) => `#${n}`);
+  } catch (e) {
+    try {
+      fs.appendFileSync(
+        path.join(stateDirOf(os.homedir()), 'hook-errors.log'),
+        `[${new Date().toISOString()}] on-pre-commit.js: lib/story-checks.js no cargó (${e.message}) — parser de ACs degradado al canónico local (subcuenta stories con ACs bold-label).\n`,
+        'utf8',
+      );
+    } catch { /* best effort */ }
+  }
+  // Fallback degradado (solo si la lib no cargó). Dos correcciones al copiar del original
+  // (2026-07-25): (1) `\Z` NO es un anchor en JS — es la letra `Z` literal, así que con el
+  // cuantificador lazy la sección se cortaba en la primera `Z` mayúscula del texto cuando no
+  // venía un `\n## ` después; (2) el heading se ancla a principio de línea y se saltea el
+  // frontmatter, que es donde el literal aparece citado en backticks y secuestraba la sección.
+  const body = specContent.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, '');
+  const acSectionMatch = body.match(
+    /^##[ \t]+Acceptance Criteria[^\n]*\n([\s\S]*?)(?=\n##[ \t]|\n#{3,6}[ \t]+Tests\b|(?![\s\S]))/m);
+  if (!acSectionMatch) return [];
+  const section = acSectionMatch[1];
+  const acs = new Set();
+  // Sigue siendo más pobre que la lib (solo el canónico GWT) — por eso el error se loguea.
+  const pat = /^\s*(\d+)\.\s+\*\*Given\*\*/gm;
+  let m;
+  while ((m = pat.exec(section)) !== null) {
+    acs.add(`#${m[1]}`);
+  }
+  return [...acs].sort((a, b) => parseInt(a.slice(1)) - parseInt(b.slice(1)));
+}
+
+// Parsea ACs que la evidencia DoD declara haber verificado.
+// Soporta: "AC #N", "AC #N/#M" (heading combinado), "ACs #N, #M",
+// "(AC #N)". El segundo número en `AC #N/#M` también cuenta.
+function parseAcsFromEvidence(evidenceContent) {
+  if (!evidenceContent) return [];
+  const acs = new Set();
+  // Pattern 1: any "AC #N" — captura el primero.
+  const re1 = /AC\s*#(\d+)/g;
+  let m;
+  while ((m = re1.exec(evidenceContent)) !== null) {
+    acs.add(`#${m[1]}`);
+  }
+  // Pattern 0 (2026-09-06): los tags `@ac-N` del gate E2E (`e2e-gate.sh` escribe los títulos de
+  // Playwright tal cual, `@story-m-10 @ac-1`). Dos generadores del mismo pipeline, dos formatos —
+  // y este lector sólo entendía uno: si el archivo que ganaba era el del gate E2E, leía 0 criterios
+  // y bloqueaba un commit legítimo (Totora M-10, se salvó por 14 segundos). NO se cambia el
+  // formato del gate E2E: es el contrato con los specs de Playwright, una superficie más grande.
+  const re0 = /@ac-(\d+)\b/gi;
+  while ((m = re0.exec(evidenceContent)) !== null) {
+    acs.add(`#${m[1]}`);
+  }
+  // Pattern 2: "AC #N/#M" o "AC #N, #M" o "AC #N + #M" — captura SEGUNDO+.
+  // Match: "AC #" + digit(s) + (/ or , or +) + space? + # + digit(s).
+  const re2 = /AC\s*#\d+(?:\s*[/,+]\s*#(\d+))+/g;
+  while ((m = re2.exec(evidenceContent)) !== null) {
+    // Re-scan the match for ALL `#N` in it (not just last capture).
+    const inner = m[0];
+    const all = inner.match(/#(\d+)/g) || [];
+    for (const x of all) acs.add(x);
+  }
+  return [...acs];
+}
+
+// ============================================================
+// SMOKE-SECRETO-2 (2026-10-04) — secretos en `.advisors/dod-runtime/`
+// ============================================================
+// El 2026-10-04 aparecieron contraseñas SQL escritas tal cual en los registros de prueba de humo de un producto
+// (una, la de la base de PRODUCCIÓN): smoke-run.sh las tapa desde ese día, pero un registro escrito a mano, uno
+// anterior o una matriz copiada no pasan por ahí. Este freno mira lo que se va a commitear en esa carpeta con
+// las MISMAS formas que tapa lib/smoke-secrets.js, y frena si alguna trae un valor que no es `***` ni una
+// variable. El mensaje dice archivo, línea y forma — nunca el valor.
+//
+// Mira lo stageado Y lo que está cambiado o sin seguir en el árbol de trabajo: con `git add -A && git commit` en un
+// solo comando, o con `git commit -a`, el hook corre ANTES de que se stagee nada (revisión adversarial del
+// 2026-10-04). Un secreto sin stagear en esta carpeta igual frena: va a viajar con el próximo commit que la toque.
+// Límite conocido: `git -C <otro repo>` y `cd <otro repo> &&` se miran desde la carpeta de la sesión, como el
+// resto de este hook; ese hueco lo cubre el buscador de secretos del pipeline.
+function frenoSecretosEnEvidencia(event) {
+  const cwd = event.cwd || process.cwd();
+  let hallazgos = [];
+  try {
+    const smokeSecrets = require('./lib/smoke-secrets.js');
+    const git = (args) => execFileSync('git', args, {
+      cwd, encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'], maxBuffer: 256 * 1024 * 1024,
+    });
+    let raiz;
+    try { raiz = git(['rev-parse', '--show-toplevel']).trim(); } catch { return; /* no es un repo: nada que commitear */ }
+    const vistos = new Set();
+    // 1) lo stageado, leído del índice (es lo que entra al commit).
+    for (const f of git(['diff', '--cached', '--name-only', '--diff-filter=d', '-z']).split('\0')) {
+      if (!f || !smokeSecrets.isEvidencePath(f)) continue;
+      for (const h of smokeSecrets.findLeaksInContent(git(['show', `:${f}`]))) {
+        vistos.add(`${f}:${h.line}:${h.form}`);
+        hallazgos.push({ archivo: f, ...h });
+      }
+    }
+    // 2) lo cambiado o nuevo en el árbol, leído del disco.
+    for (const linea of git(['status', '--porcelain=v1', '-z', '--untracked-files=all']).split('\0')) {
+      const f = linea.slice(3);
+      // Un archivo stageado con cambios sin stagear se mira de nuevo: `git commit -a` se lleva la versión del disco.
+      if (!f || linea[1] === 'D' || linea[1] === ' ' || !smokeSecrets.isEvidencePath(f)) continue;
+      let contenido;
+      try { contenido = fs.readFileSync(path.join(raiz, f), 'utf8'); } catch { continue; }
+      for (const h of smokeSecrets.findLeaksInContent(contenido)) {
+        if (!vistos.has(`${f}:${h.line}:${h.form}`)) hallazgos.push({ archivo: f, ...h });
+      }
+    }
+  } catch (e) {
+    process.stderr.write(`⚠ tycon-dod-runtime: el freno de secretos en la evidencia no pudo correr (${e.message}) — NO aplicado.\n`);
+    return;
+  }
+  if (hallazgos.length === 0) return;
+  try {
+    const stateDir = path.join(stateDirOf(os.homedir()));
+    fs.mkdirSync(stateDir, { recursive: true });
+    fs.appendFileSync(path.join(stateDir, 'gates.log'), JSON.stringify({
+      ts: new Date().toISOString(), name: 'smoke-secrets', action: 'block', repoPath: cwd,
+      sessionId: resolveSessionId(event.session_id), hallazgos: hallazgos.length,
+      formas: [...new Set(hallazgos.map((h) => h.form))],
+    }) + '\n', 'utf8');
+  } catch { /* el log nunca cambia el veredicto */ }
+  const lineas = [
+    '',
+    '🛑 tycon-dod-runtime: hay secretos escritos tal cual en la evidencia (stageada o por stagear).',
+    '   `.advisors/dod-runtime/` viaja por git: lo que entre acá llega al remoto y a la historia.',
+    '',
+    ...hallazgos.slice(0, 20).map((h) => `   ${h.archivo}:${h.line} — ${h.label}`),
+    ...(hallazgos.length > 20 ? [`   … y ${hallazgos.length - 20} más`] : []),
+    '',
+    '   Reemplazá cada valor por *** (o por la variable que lo trae, como "$DB_PASS") y volvé a stagear.',
+    '   Las próximas corridas de smoke-run.sh lo tapan solas (lib/smoke-secrets.js).',
+    '',
+  ];
+  process.stderr.write(lineas.join('\n') + '\n');
+  process.exit(2);
+}
+
+// ============================================================
+// Main
+// ============================================================
+function main() {
+  const event = readEvent();
+  if (!event) {
+    process.exit(0);
+  }
+
+  // Bash, o la herramienta PowerShell con que Claude Code corre los comandos en Windows (misma entrada,
+  // tool_input.command; medido el 2026-10-04: con matcher `Bash` solo este portón no se disparaba ahí).
+  if (event.tool_name !== 'Bash' && event.tool_name !== 'PowerShell') {
+    process.exit(0);
+  }
+
+  const command = event.tool_input?.command || '';
+  // Detectar `git commit` (no amend a un commit existente, no log, no status).
+  // Atrapamos: `git commit`, `git commit -m`, `git commit -F`, `git -C ... commit ...`.
+  // Excluimos: `git commit --amend` (es modificación, no transición), aunque
+  // podríamos extender después.
+  const isCommit = isGitCommit(command);
+  if (!isCommit) {
+    process.exit(0);
+  }
+
+  // Secretos en la evidencia: va ANTES del `--no-verify`, que no lo saltea. Una contraseña commiteada llega al
+  // remoto y a la historia; no hay apuro que lo justifique, y la salida es escribir `***` o una variable.
+  frenoSecretosEnEvidencia(event);
+
+  // Escape hatch estándar de git: --no-verify saltea hooks. Si user/agente
+  // lo usa explícitamente, dejamos pasar pero queda rastro DURABLE en bypass.log
+  // (auditoría 2026-06-09 — antes solo stderr efímero: imposible auditar bypasses).
+  if (/--no-verify\b/.test(command)) {
+    console.error('⚠ tycon-dod-runtime: --no-verify detected, skipping DoD gate (had_dod_bypass=true, logueado en bypass.log)');
+    try {
+      const stateDir = path.join(stateDirOf(os.homedir()));
+      fs.mkdirSync(stateDir, { recursive: true });
+      fs.appendFileSync(
+        path.join(stateDir, 'bypass.log'),
+        JSON.stringify({
+          ts: new Date().toISOString(),
+          type: 'GIT_NO_VERIFY',
+          sessionId: resolveSessionId(event.session_id),
+          cwd: event.cwd || process.cwd(),
+          command: command.slice(0, 300),
+        }) + '\n',
+        'utf8',
+      );
+    } catch { /* logging nunca rompe el commit */ }
+    process.exit(0);
+  }
+
+  const cwd = event.cwd || process.cwd();
+  // Los avisos del modo FRENO van ACÁ, antes de que cualquier freno pueda cortar: si salieran
+  // donde se lee la config, el aviso dependería de qué freno gana la carrera (y con el gate de
+  // advisors cortando primero, no salía nunca).
+  avisosDeConfigFreno(cwd);
+
+  // ── Gate de ATDD fuera del pipeline (2026-07-28) ────────────────────────────────────────────
+  // El gate de ayer (`marker.js complete-step 4`) sólo ve corridas del pipeline: lee
+  // `marker.fileEvents`. Trabajando a mano no hay marker, así que no había NADA mirando el orden
+  // test↔código — y ese fue exactamente el agujero por el que se coló la sesión del 2026-07-28.
+  // Acá se computa el MISMO veredicto (lib/atdd-order.js reusado) sobre los eventos que on-edit
+  // registra siempre. Avisa por default; bloquea sólo si el repo lo pidió. Nunca rompe el commit
+  // por un error propio.
+  try {
+    const atddCommit = require('./lib/atdd-commit-gate.js');
+    const { computeAtddOrder } = require('./lib/atdd-order.js');
+    const { findRepoRoot } = require('./lib/story-discovery.js');
+
+    const stateDir = path.join(stateDirOf(os.homedir()));
+    const sessionId = resolveSessionId(event.session_id);
+    const repoRoot = findRepoRoot(cwd);
+
+    if (repoRoot) {
+      const events = atddCommit.eventsForRepo(stateDir, sessionId, repoRoot);
+      const verdict = computeAtddOrder(events);
+      const mode = atddCommit.resolveMode(repoRoot, process.env);
+      const decision = atddCommit.computeCommitGate({ verdict, mode });
+
+      // Medido siempre — "cuántos commits llevaron los tests después" deja de ser una impresión.
+      try {
+        fs.mkdirSync(stateDir, { recursive: true });
+        fs.appendFileSync(
+          path.join(stateDir, 'gates.log'),
+          JSON.stringify({
+            ts: new Date().toISOString(),
+            name: 'atdd-commit',
+            action: decision.action,
+            mode,
+            repoRoot,
+            // Namespace por repo (GATESLOG-STORYID-NS-1): misma key que marker.js — el capturer
+            // agrupa por `repoPath`; `repoRoot` queda por compatibilidad con lectores viejos.
+            repoPath: repoRoot,
+            sessionId,
+            events: events.length,
+            verdict: verdict.verdict,
+            firstImpl: verdict.firstImpl || null,
+            firstTest: verdict.firstTest || null,
+          }) + '\n',
+          'utf8',
+        );
+      } catch { /* el log nunca rompe el commit */ }
+
+      // ── Código que entra DESPUÉS de la última ronda de revisores (2026-09-14) ────────────────
+      // Caso: Story 7.7 del repo del framework, la migración 054 se escribió cinco horas después de la
+      // última ronda y entró sin otra (lib/post-revision.js). Va ANTES de cualquier freno de este
+      // hook: tiene que salir aunque otro control corte el commit. AVISA, nunca frena, y lo mide.
+      try {
+        const markerFile = path.join(stateDir, 'active', `${require('./lib/session-id.js').sessionIdFileKey(event.session_id)}.json`);
+        const marker = fs.existsSync(markerFile) ? JSON.parse(fs.readFileSync(markerFile, 'utf8')) : null;
+        if (marker && marker.iterations && Object.keys(marker.iterations).length) {
+          const postRevision = require('./lib/post-revision.js');
+          const r = postRevision.archivosSinRevisar({
+            iterations: marker.iterations,
+            events,
+            staged: getStagedDiff(cwd).split('\n').filter(Boolean),
+            repoRoot,
+          });
+          if (r && r.archivos.length) {
+            console.error(postRevision.mensaje(r));
+            try {
+              fs.appendFileSync(path.join(stateDir, 'gates.log'), JSON.stringify({
+                ts: new Date().toISOString(), sessionId, repoPath: repoRoot, name: 'post-revision-commit',
+                storyId: marker.storyId || null, iter: r.iter, iterTs: r.ts, archivos: r.archivos,
+              }) + '\n', 'utf8');
+            } catch { /* el log nunca rompe el commit */ }
+          }
+        }
+      } catch { /* el aviso nunca rompe el commit */ }
+
+      if (decision.action === 'block') {
+        console.error(`🔴 tycon-atdd-commit BLOQUEADO\n${decision.message}\n` +
+          `Escape: TYCON_ATDD_COMMIT_GATE=off git commit ...  (queda en bypass.log)`);
+        atddCommit.pruneFileEvents(stateDir, sessionId, repoRoot);
+        process.exit(2);
+      }
+      if (decision.action === 'warn') {
+        console.error(`⚠ tycon-atdd-commit\n${decision.message}`);
+      }
+      // ── Guía de QA (2026-07-28) ──────────────────────────────────────────────────────────
+      // Si el commit incluye una story con ACs, la guía de prueba manual tiene que estar
+      // generada y al día. AVISA (decisión del dev) — generarla sola escondería otra vez que
+      // se trabajó fuera del pipeline.
+      try {
+        for (const rel of getStagedDiff(cwd).split('\n').filter((f) => f.endsWith('.md'))) {
+          const storyAbs = path.join(repoRoot, rel);
+          if (!fs.existsSync(storyAbs)) continue;
+          const content = fs.readFileSync(storyAbs, 'utf8');
+          if (!/^##\s+Acceptance Criteria/m.test(content)) continue;
+
+          // Mismo disparador que el gate de evidencia: la guía se exige cuando la story se
+          // declara lista, no en el commit donde recién se la escribe.
+          const evGate0 = require('./lib/story-evidence-gate.js');
+          if (!evGate0.shouldCheckEvidence(
+            (getHeadFileContent(cwd, rel).match(/^status:\s*(\S+)/m) || [])[1],
+            (content.match(/^status:\s*(\S+)/m) || [])[1])) continue;
+
+          const guidePath = atddCommit.qaGuidePathFor(storyAbs);
+          const guideExists = fs.existsSync(guidePath);
+          // La guía se pide sólo si hay una superficie que una PERSONA pueda operar (pantalla o
+          // HTTP) — en una librería cuyo único cliente es un agente, la guía habla de "usuarios" y
+          // "roles" que no existen, y el aviso se aprende a ignorar. El repo puede forzar o apagar
+          // el comportamiento con `qa_guide:` en .tycon/advisors.yaml. Ambas lecturas son
+          // fail-open: si el archivo no está o no se puede leer, el default es el de siempre.
+          // 🔴 Modo FRENO (FIX-1 — caso C8 parte 2): `qa_guide: off` APAGA un aviso, así que se lee
+          // de lo COMMITEADO. Escribirlo en la carpeta ya no alcanza — apagar es aflojar.
+          const advisorsYaml = configFreno(cwd);
+          const mode = atddCommit.qaGuideMode(advisorsYaml);
+          const handOperable = atddCommit.storyIsHandOperable(content, cwd);
+          const status = atddCommit.computeQaGuideStatus({
+            hasAcs: true,
+            guideExists,
+            guideOlderThanStory: guideExists &&
+              fs.statSync(guidePath).mtimeMs < fs.statSync(storyAbs).mtimeMs,
+            handOperable,
+            mode,
+          });
+          // 🔴 Story 2.8 (el arnés, 2026-09-16): la constancia anota los CUATRO resultados.
+          // Hasta acá sólo quedaban `missing` y `stale`, así que el tablero del arnés publicaba
+          // «0 de 109 guías presentes»: un cero por construcción. `computeQaGuideStatus` devuelve
+          // `ok` tanto si la guía está al día como si no aplica; la distinción se calcula acá con los
+          // MISMOS insumos, sin tocar esa función. `esquema: 2` marca el registro completo: la cuenta
+          // sólo arma la proporción con estas líneas — las viejas no traen el `presente`.
+          // 🔴 `clave` (revisión adversarial de la 2.8): esta línea se escribe en CADA INTENTO de commit,
+          // antes de frenos de este mismo hook que pueden cortarlo con exit 2. Sin una identidad del
+          // cierre, tres rebotes contaban como tres cierres y la proporción medía intentos. La clave es
+          // la huella de repo + story + contenido de la story —SIN el estado: identifica el CIERRE, no su
+          // resultado—; el mismo cierre reintentado da la misma clave, y el reductor cuenta su ÚLTIMO
+          // resultado (un rebote «missing» que vuelve «presente» tras generar la guía es «presente»).
+          // Una huella, no el contenido: no viaja texto.
+          const clave = require('crypto').createHash('sha256')
+            .update(`${repoRoot}\0${rel}\0${content}`).digest('hex').slice(0, 16);
+          const anotar = (estado, accion) => {
+            try {
+              fs.appendFileSync(
+                path.join(stateDir, 'gates.log'),
+                JSON.stringify({ ts: new Date().toISOString(), sessionId, repoPath: repoRoot, name: 'qa-guide', action: accion, status: estado, story: storyAbs, esquema: 2, clave }) + '\n',
+                'utf8',
+              );
+            } catch { /* el log nunca rompe el commit */ }
+          };
+          if (status === 'ok') {
+            const aplica = mode !== 'off' && (mode === 'always' || handOperable);
+            anotar(aplica ? 'presente' : 'no-aplica', 'none');
+            continue;
+          }
+
+          console.error(`⚠ tycon-qa-guide\n${atddCommit.qaGuideMessage(status, { storyPath: storyAbs, guidePath })}`);
+          anotar(status, 'warn');
+        }
+
+        // ── Evidencia de la story: ni un AC salteado, ni pasos de tester faltantes, ni una
+        // story de interfaz sin verificación en navegador REGISTRADA (2026-07-28).
+        for (const rel of getStagedDiff(cwd).split('\n').filter((f) => f.endsWith('.md'))) {
+          const storyAbs = path.join(repoRoot, rel);
+          if (!fs.existsSync(storyAbs)) continue;
+          const content = fs.readFileSync(storyAbs, 'utf8');
+          if (!/^##\s+Acceptance Criteria/m.test(content)) continue;
+
+          const evGate = require('./lib/story-evidence-gate.js');
+          // Sólo cuando alguien AFIRMA que la story está lista (review/done). En cada commit
+          // sería ruido: la story recién escrita no tiene nada verificado por definición.
+          if (!evGate.shouldCheckEvidence(
+            (getHeadFileContent(cwd, rel).match(/^status:\s*(\S+)/m) || [])[1],
+            (content.match(/^status:\s*(\S+)/m) || [])[1])) continue;
+
+          const qa = require('./qa-guide.js');
+          const rm = require('./runtime-matrix.js');
+          const matrix = rm.compute({ storyPath: storyAbs });
+          if (matrix.structuralError) continue;
+
+          // La guía del tester lleva la clave de la story (story 1.17.1): con número repetido, dos stories que
+          // comparten la carpeta qa/ escribían y leían el mismo archivo.
+          const pasosPath = path.join(path.dirname(path.dirname(storyAbs)), 'qa',
+            `${matrix.key || matrix.sid}-pasos.md`);
+          const pasosMd = fs.existsSync(pasosPath) ? fs.readFileSync(pasosPath, 'utf8') : null;
+
+          const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+          const ledgerCmds = [];
+          for (const dir of matrix.evidenceDirs || []) {
+            const f = path.join(dir, `${matrix.key || matrix.sid}-smoke-ledger.jsonl`);
+            if (!fs.existsSync(f)) continue;
+            for (const line of fs.readFileSync(f, 'utf8').split('\n').filter(Boolean)) {
+              try { const e = JSON.parse(line); if (e.exit === 0) ledgerCmds.push(e.cmd); } catch { /* línea rota */ }
+            }
+          }
+
+          // Los pasos de tester se piden sólo si la guía de QA aplica en este repo y esta story —
+          // el MISMO criterio que usa el generador de la guía unos renglones más arriba. Sin esto,
+          // la escotilla `qa_guide: off` (y el `auto` que mira si hay algo operable a mano) apagaba
+          // el generador pero no este aviso: media escotilla, que es peor que ninguna.
+          const advisorsYamlEv = configFreno(cwd);   // modo FRENO — ver arriba (C8 parte 2)
+          const pidePasos = evGate.pidePasosDeTester({
+            qaGuideMode: atddCommit.qaGuideMode(advisorsYamlEv),
+            handOperable: atddCommit.storyIsHandOperable(content, cwd),
+          });
+
+          const esUi = qa.isUiStory(content, fmMatch ? fmMatch[1] : '', cwd);
+
+          // FIX-8 (2026-08-25 — caso C7): el modelo de navegación cambió DESPUÉS de que se
+          // escribieran las pantallas, y WIRING-C5 sólo mira código nuevo contra el documento, no
+          // al revés. Va ACÁ y no en el bloque de abajo a propósito: tiene que salir aunque la
+          // evidencia de la story esté impecable — son cosas distintas. Aviso, nunca freno; se
+          // levanta solo cuando el revisor de wiring vuelva a correr en este repo.
+          if (esUi && !_navAvisado) {
+            _navAvisado = true;
+            try {
+              const avisoNav = require('./lib/navigation-drift.js').avisoPendiente(repoRoot);
+              if (avisoNav) console.error(avisoNav);
+            } catch { /* el aviso nunca rompe el commit */ }
+          }
+
+          const decision = evGate.computeStoryEvidenceGate({
+            pendientes: matrix.pendientes || [],
+            acsSinPasos: pidePasos ? evGate.acsSinPasos(matrix.acs || [], pasosMd) : [],
+            isUi: esUi,
+            hasBrowserEvidence: ledgerCmds.some(evGate.looksLikeBrowserRun),
+            // 🔴 LLAVE PROPIA (FIX-2 / decisión D1 del dev, 2026-08-25). Acá venía el `mode` del
+            // gate de ATDD: apagar "la prueba antes que el código" apagaba de yapa este aviso de
+            // criterios sin verificar, y esa herencia no estaba documentada en ningún lado.
+            mode: atddCommit.resolveEvidenceMode(repoRoot, process.env),
+          });
+
+          if (decision.action === 'pass') continue;
+
+          console.error(`${decision.action === 'block' ? '🔴' : '⚠'} tycon-story-evidence — ${path.basename(storyAbs)}\n${decision.message}`);
+          try {
+            fs.appendFileSync(
+              path.join(stateDir, 'gates.log'),
+              JSON.stringify({ ts: new Date().toISOString(), sessionId, repoPath: repoRoot, name: 'story-evidence', action: decision.action,
+                story: storyAbs, hallazgos: decision.hallazgos.length }) + '\n',
+              'utf8',
+            );
+          } catch { /* el log nunca rompe el commit */ }
+          if (decision.action === 'block') {
+            atddCommit.pruneFileEvents(stateDir, sessionId, repoRoot);
+            process.exit(2);
+          }
+        }
+      } catch { /* el chequeo de la guía nunca rompe el commit */ }
+
+      // Lo commiteado ya se juzgó: se descartan SOLO los eventos de este repo, para no dejar
+      // sin evidencia al próximo commit en otro repo de la misma sesión.
+      atddCommit.pruneFileEvents(stateDir, sessionId, repoRoot);
+    }
+  } catch { /* el gate de ATDD nunca rompe el commit por un error suyo */ }
+
+  const diffFiles = getStagedDiff(cwd).split('\n').filter(Boolean);
+
+  // 2026-08-15 — qué archivo del diff es una story lo decide su FRONTMATTER, no su ruta.
+  // Antes era `/specs\/stories\/[^/]+\.md$/`: en un repo del equipo (`specs/bizuit-bpmn-mcp/`) el filtro
+  // no matcheaba nunca, así que este gate —el que impide pasar una story a `done` sin evidencia—
+  // estaba apagado para todo el repo y el commit salía derecho, sin un solo mensaje.
+  // 🔴 Modo FRENO (FIX-1, 2026-08-25 — caso C1): la config se lee de lo COMMITEADO **y** de la
+  // carpeta, en UNIÓN. Antes se leía sólo la carpeta, así que escribir un `stories.id_pattern`
+  // imposible —sin commitear, sin rastro en ningún commit— hacía que ninguna story fuera una story
+  // y este gate desapareciera con exit 0 y cero mensajes. Recortar el alcance del freno ahora
+  // exige un commit; ampliarlo sigue valiendo al toque.
+  const idPattern = storiesConfigForGate(cwd).idPattern;
+  const stagedByFile = new Map();
+  const specFiles = selectStorySpecs(diffFiles, (f) => getStagedFileContent(cwd, f), idPattern, stagedByFile);
+
+  if (specFiles.length === 0) {
+    process.exit(0);
+  }
+
+  // La ruta REAL de cada spec sale de la RAÍZ del repo: `specRel` viene de `git diff --cached --name-only`, que es
+  // relativo a la raíz, no a la carpeta desde donde se commitea. Con `join(cwd, specRel)`, un commit lanzado desde una
+  // subcarpeta calculaba la clave de una story que no existe y frenaba un cierre válido (pase adversarial de la 1.17.1;
+  // el mismo error vivía en la matriz y la evidencia de la 1.17).
+  const raizDelRepo = require('./lib/story-discovery.js').findRepoRoot(cwd) || cwd;
+  const rutaDeSpec = (rel) => path.join(raizDelRepo, rel);
+
+  // Para cada spec en el diff, detectar transición crítica de status/pipelines.
+  const violations = [];
+  const soloAviso = new Set();   // specs cuya transición es la interna `review → done` (aviso, no freno)
+  const pasos = new Map();       // constancia (7.2): specRel → { regla, storyId } de lo que se dejó pasar
+  const estadoDe = new Map();    // constancia (7.2): specRel → estado nuevo (para la huella)
+  const avisosSelfAudit = [];    // ACCOV-C8 opcional (7.2): self-audits presentes e incompletos — avisan, no frenan
+
+  for (const specRel of specFiles) {
+    const staged = stagedByFile.get(specRel) ?? getStagedFileContent(cwd, specRel);
+    const head = getHeadFileContent(cwd, specRel);
+
+    if (!staged) continue;
+
+    const stagedFm = parseFrontmatter(staged);
+    const headFm = parseFrontmatter(head);
+
+    const storyId = stagedFm.story || path.basename(specRel, '.md');
+    estadoDe.set(specRel, String(stagedFm.status || '').toLowerCase());
+
+    // Trigger 1: status transition.
+    // 🔴 `review → done` también se juzga (REVIEW-A-DONE-SIN-FRENO-1, 2026-09-06). Antes sólo
+    // contaba la ENTRADA a {review, done} desde afuera: la transición interna no disparaba
+    // advisors, ni roster, ni evidencia — el hook salía 0 y mudo aunque el roster estuviera mal.
+    // Entra AVISANDO (decisión del dev): medido contra el historial, un freno habría parado el
+    // 100 % de los `review → done`, no porque estuvieran mal sino porque sus dos requisitos —el
+    // registro de revisores y la evidencia en el repo de la story— tienen días. Dos semanas de
+    // aviso, se mide cuántas veces habla, y recién ahí frena: TYCON_REVIEW_A_DONE=block.
+    const critica = isCriticalStatusTransition(headFm.status, stagedFm.status);
+    const internaDone = /^review$/i.test(String(headFm.status || '').trim())
+      && /^done$/i.test(String(stagedFm.status || '').trim());
+    const statusTransition = critica || internaDone;
+
+    // Trigger 2: pipeline block transition — `status: done` indentado (pipelines.X.status)
+    // que aparece en el frontmatter staged y NO estaba en HEAD.
+    // CF-3 2026-05-21: scopeado al BLOQUE FRONTMATTER (entre los dos `---`), igual que Capa 2
+    // (on-frontmatter-write). Antes regexeaba el diff crudo `git diff --cached` y un
+    // `+status: done` en prosa/code-block daba el mismo falso positivo que H12 cerró en Capa 2.
+    // 🔴 Se calcula ACÁ, antes del advisors-gate y del «sólo aviso» (revisión adversarial
+    // 2026-09-06): estaba después de dos `continue`, y el aviso de `review → done` se marcaba por
+    // spec sin saber si en el mismo commit había una tanda cerrándose. Resultado: `review → done`
+    // + `pipelines.X: in-progress → done` sin evidencia —la última tanda de una story entregada en
+    // tandas— pasaba a AVISO, cuando la transición de pipelines bloqueaba sola.
+    const fmBlock = (c) => { const m = c.match(/^---\r?\n([\s\S]*?)\r?\n---/); return m ? m[1] : ''; };
+    const headDone = (fmBlock(head).match(/^\s+status:\s*done\b/gm) || []).length;
+    const stagedDone = (fmBlock(staged).match(/^\s+status:\s*done\b/gm) || []).length;
+    const pipelineTransition = stagedDone > headDone;
+
+    // Sólo aviso cuando lo ÚNICO que pasa es la transición interna: si además se cierra una tanda
+    // (`pipelines.X → done`), ésa nunca se juzgó y bloquea como siempre.
+    if (internaDone && !critica && !pipelineTransition && !llaveFrena(process.env.TYCON_REVIEW_A_DONE)) soloAviso.add(specRel);
+
+    // ADVISORS-GATE (2026-08-24): a `done` no se llega sin constancia de advisors EN ESTE repo.
+    // Va ANTES de la exención de DoD: una story sin superficie runtime (docs/config) igual pasa
+    // por advisors (spec-first, validator, security…) cuando corre el pipeline. Escapes del dev:
+    // `advisors_exempt: true` + `advisors_exempt_reason:` en el frontmatter, o TYCON_ADVISORS_GATE=off.
+    if (statusTransition && String(stagedFm.status || '').toLowerCase() === 'done'
+        && process.env.TYCON_ADVISORS_GATE !== 'off'
+        && !/^advisors_exempt:\s*true\b/m.test(staged)) {
+      // La ruta REAL de la story (no la copia staged): de ahí salen el repo y las hermanas de la clave.
+      const adv = findAdvisorsEvidence(cwd, storyId, { storyPath: rutaDeSpec(specRel) });
+      if (!adv.found) {
+        violations.push({ specRel, storyId, statusTransition, pipelineTransition, reason: 'no-advisors', searched: adv.searched, legacy: adv.legacy });
+        continue;
+      }
+      // ROSTER-GATE (2026-08-30, "revisor ≠ autor"): que haya constancia de revisión no dice QUIÉN
+      // revisó. Acá —en la máquina, donde vive el registro de spawns reales— se cruza el
+      // `review-roster.json` committeado contra ese registro. Es el único lugar del arnés donde el
+      // cruce es posible: el portón de CI no ve `~/.claude/`, así que allá sólo se verifica
+      // coherencia interna. Un roster que lista revisores que el hook nunca vio spawnear está
+      // escrito a mano. Escape del dev, ESCRITO Y COMMITEADO (nunca una variable que no deja
+      // rastro): `"sin_testigo": "<motivo>"` dentro del propio roster — viaja en el diff del PR,
+      // se ve, y se puede contar. Kill-switch de emergencia: TYCON_ROSTER_GATE=off.
+      if (process.env.TYCON_ROSTER_GATE !== 'off') {
+        const rg = revisarRosterLocal(cwd, storyId, rutaDeSpec(specRel));
+        if (rg && rg.aviso) {
+          // Habla, no frena — y con el mismo nombre de regla que el portón, para que el dev pueda
+          // buscar una sola cosa. Lo que no se puede es callarlo: el punto de la pieza es que esto
+          // se sepa en la máquina y no con el pull request abierto.
+          // El aviso nombra al firmante Y la corrida (AC 4): con varias corridas de la misma story
+          // en el repo, saber cuál tiene el desajuste es la mitad de poder arreglarlo.
+          for (const pr of (rg.problemas || [])) {
+            process.stderr.write(`⚠️  ${pr.regla}: ${pr.detalle}\n`);
+          }
+          if (rg.runDir) process.stderr.write(`   Corrida: ${rg.runDir}\n`);
+          process.stderr.write('   Avisa y no frena (decisión del dev, 2026-09-22). El portón del pull request dice lo mismo.\n'
+            + '   Vuelve a frenar, acá y allá, con TYCON_ROSTER_NAMES=block.\n');
+        } else if (rg) {
+          violations.push({ specRel, storyId, statusTransition, pipelineTransition, ...rg }); continue;
+        }
+      }
+    }
+
+    // Exención explícita (DoD runtime).
+    if (storyIsExempt(staged)) {
+      if (statusTransition || pipelineTransition) pasos.set(specRel, { regla: 'exenta', storyId });
+      continue;
+    }
+
+    if (!statusTransition && !pipelineTransition) continue;
+
+    {
+      const baja = avisoBajaDePantalla(staged, cwd);
+      if (baja) process.stderr.write(`[on-pre-commit] ${specRel}: ${baja}\n`);
+    }
+
+    // La story necesita runtime evidence? Buscar markers en el spec staged.
+    if (!storyRequiresRuntimeEvidence(staged)) {
+      pasos.set(specRel, { regla: 'sin-superficie-runtime', storyId });
+      continue;
+    }
+
+    // Hay evidencia en .advisors/dod-runtime/<clave>-*.md? (la clave: story 1.17)
+    const specAbs = rutaDeSpec(specRel);
+    const evidence = findDodEvidence(cwd, storyId, { storyPath: specAbs });
+    if (!evidence) {
+      const k = require('./lib/evidence-key.js').keyOr(specAbs, storyId);
+      violations.push({
+        specRel, storyId, statusTransition, pipelineTransition,
+        reason: 'no-evidence', evidenceKey: k.key, evidenceKeyError: k.error,
+      });
+      continue;
+    }
+
+    // Capa 5 enforcement (post-2026-05-20): la evidencia DoD debe cubrir TODOS
+    // los ACs declarados en la spec, no solo el "happy path principal".
+    // Caso disparador: Story 4.2 AC #6 — la evidencia original solo mencionaba
+    // ACs #1-#5 (los que tenía cobertura E2E original). AC #6 sin coverage
+    // runtime real → SQL bug llegó a producción esperándose. User cuestionó:
+    // "pero esto no lo probo playwirght? por qué no lo hacés bien?".
+    if (evidence.fallido) {
+      violations.push({ specRel, storyId, statusTransition, pipelineTransition, reason: 'evidence-failed', evidencePath: evidence.path });
+      continue;
+    }
+    const acsInSpec = parseAcsFromSpec(staged);
+    const acsInEvidence = new Set(parseAcsFromEvidence(evidence.content));
+    const missingAcs = acsInSpec.filter(ac => !acsInEvidence.has(ac));
+
+    if (missingAcs.length > 0) {
+      violations.push({
+        specRel, storyId, statusTransition, pipelineTransition,
+        reason: 'incomplete-evidence',
+        missingAcs,
+        evidencePath: evidence.path,
+      });
+      continue;
+    }
+
+    // DODRT-C5.1 (2026-07-07) — para una story de UI, la evidencia DoD debe venir de un E2E
+    // Playwright REAL (no curl/unit). Cierra el agujero de "probada en runtime" con solo curl al
+    // backend (Story 11.2: se declaró probada sin correr el Playwright de los ACs de UI).
+    if (storyIsUiStory(staged, cwd) && !/playwright|tests\/e2e\/|@story-/i.test(evidence.content)) {
+      violations.push({
+        specRel, storyId, statusTransition, pipelineTransition,
+        reason: 'no-playwright-evidence',
+        evidencePath: evidence.path,
+      });
+      continue;
+    }
+
+    // DODRT-C6 (2026-07-10, caso Story 10.4) — matriz de verificación runtime POR AC,
+    // RE-COMPUTADA EN VIVO desde artefactos de ejecución (no se confía en el .md escrito:
+    // todos los checks anteriores validan PROSA que el agente puede redactar; este
+    // recalcula qué ACs tienen evidencia de EJECUCIÓN real — gate E2E con exit 0,
+    // smokes vía smoke-run.sh — y valida el ack del usuario con hash anti-drift).
+    try {
+      const rm = require(path.join(__dirname, 'runtime-matrix.js'));
+      const specAbs = rutaDeSpec(specRel);
+      // OJO: se computa sobre el contenido STAGED (lo que se está por commitear), no el
+      // working tree — un ack agregado sin stagear no cuenta.
+      const tmpSpec = path.join(os.tmpdir(), `tycon-precommit-${process.pid}-${path.basename(specRel)}`);
+      fs.writeFileSync(tmpSpec, staged, 'utf8');
+      // El workspace se descubre desde el path REAL de la story (el tmp vive en /tmp):
+      let workspaceRoot = null;
+      let wsDir = path.dirname(specAbs);
+      for (let i = 0; i < 6 && wsDir !== '/'; i++) {
+        if (path.basename(wsDir) === 'specs') { workspaceRoot = path.dirname(path.dirname(wsDir)); break; }
+        wsDir = path.dirname(wsDir);
+      }
+      let matrix;
+      try {
+        // repoRoot explícito: el cómputo corre sobre una COPIA tmp del spec (contenido staged)
+        // y la discovery de repo desde /tmp no puede ver el repo real — sin esto, la matriz
+        // degradaría a fail-closed (0 evidencia) con la evidencia intacta en disco (patrón F.iii).
+        matrix = rm.compute({ storyPath: tmpSpec, keyStoryPath: specAbs, workspaceRoot, repoRoot: rm.discoverRepoRoot(specAbs) });
+      } finally {
+        try { fs.unlinkSync(tmpSpec); } catch { /* best effort */ }
+      }
+      if (matrix && matrix.structuralError) {
+        violations.push({
+          specRel, storyId, statusTransition, pipelineTransition,
+          reason: 'matrix-structural',
+          detail: matrix.structuralError,
+        });
+        continue;
+      }
+      if (matrix && !matrix.green) {
+        violations.push({
+          specRel, storyId, statusTransition, pipelineTransition,
+          reason: 'matrix-red',
+          pendientes: matrix.pendientes,
+          notRun: matrix.notRun || [],
+          notVerifiable: matrix.notVerifiable || [],
+          hash: matrix.hash,
+          chainOk: matrix.chainOk,
+          // story 7.17: las firmas descartadas, y el texto con la ruta REAL (la matriz corrió sobre una copia tmp)
+          avisoDescartadas: rm.avisoFirmasDescartadas(matrix, specAbs),
+        });
+        continue;
+      }
+    } catch (e) {
+      // Fail-open logueado (filosofía del hook) — pero NUNCA silencioso.
+      try {
+        fs.appendFileSync(
+          path.join(stateDirOf(os.homedir()), 'hook-errors.log'),
+          `[${new Date().toISOString()}] on-pre-commit.js: runtime-matrix no corrió (${e.message}) — gate DODRT-C6 NO aplicado a ${specRel}.\n`,
+          'utf8',
+        );
+      } catch { /* best effort */ }
+      console.error(`⚠ tycon-dod-runtime: runtime-matrix falló (${e.message}) — DODRT-C6 fail-open, logueado.`);
+    }
+
+    // ACCOV-C8 — self-audit OPCIONAL desde 2026-09-16 (story 7.2 del arnés). Era prosa del agente sobre sí
+    // mismo validada por regex, y el portón de CI ya la excluía como evidencia: lo que frena el cierre es la
+    // matriz por AC recomputada arriba (cada AC con ejecución real). Falta → no frena. Existe a medias →
+    // AVISA sin frenar (decisión del dev al aprobar el plan: escribir uno incompleto no puede castigar más
+    // que no escribirlo). Si existe, C10 sigue igual.
+    const selfAudit = checkSelfAudit(cwd, storyId, { storyPath: specAbs });
+    if (selfAudit.exists && !selfAudit.valid) {
+      avisosSelfAudit.push({ specRel, storyId, selfAuditPath: selfAudit.path, missingSections: selfAudit.missingSections });
+    }
+
+    // ACCOV-C10 — convergencia entre iteraciones (solo para transición a 'done', y sólo si hay self-audit).
+    // Si la story va a 'review', cualquier self-audit válido alcanza.
+    // Si va a 'done', requerimos que NO haya gaps nuevos vs iter previa.
+    const newStatus = (stagedFm.status || '').toLowerCase();
+    if (selfAudit.exists && newStatus === 'done') {
+      // 🔴 Sin la sección de gaps en el último self-audit la convergencia NO se puede demostrar: compararía 0 gaps
+      //    contra los del iter previo y «convergería». Borrar §3 sería la forma de saltear C10 (revisión de la
+      //    vuelta 1 de la story 7.2). Con iter previo, frena; sin iter previo no hay contra qué comparar (como hoy).
+      if (selfAudit.previousPath && (selfAudit.missingSections || []).includes('section 3')) {
+        violations.push({
+          specRel, storyId, statusTransition, pipelineTransition,
+          reason: 'not-converged',
+          currentIter: selfAudit.iter,
+          previousIter: selfAudit.previousIter,
+          newGaps: ['(al último self-audit le falta la sección «3. Gaps conocidos»: no se puede comparar)'],
+          currentPath: selfAudit.path,
+          previousPath: selfAudit.previousPath,
+        });
+        continue;
+      }
+      const conv = checkSelfAuditConvergence(selfAudit.path, selfAudit.previousPath);
+      if (conv && !conv.converged) {
+        violations.push({
+          specRel, storyId, statusTransition, pipelineTransition,
+          reason: 'not-converged',
+          currentIter: selfAudit.iter,
+          previousIter: selfAudit.previousIter,
+          newGaps: conv.newGaps,
+          currentPath: selfAudit.path,
+          previousPath: selfAudit.previousPath,
+        });
+        continue;
+      }
+    }
+
+    if (!avisosSelfAudit.some((a) => a.specRel === specRel)) pasos.set(specRel, { regla: 'evidencia-ok', storyId });
+  }
+
+  // Lo que viene de una transición interna `review → done` AVISA en vez de bloquear (ver arriba).
+  const avisos = violations.filter((v) => soloAviso.has(v.specRel));
+  const bloqueantes = violations.filter((v) => !soloAviso.has(v.specRel));
+  anotarDecisionesDelCierre({ violations, soloAviso, pasos, estadoDe, avisosSelfAudit });
+  if (avisosSelfAudit.length) {
+    const av = ['⚠️  AVISO — self-audit incompleto (ACCOV-C8 es opcional desde 2026-09-16, story 7.2 del arnés: no frena)'];
+    for (const a of avisosSelfAudit) av.push(`   · ${a.specRel} (story ${a.storyId}): faltan ${a.missingSections.join(', ')} — ${a.selfAuditPath}`);
+    av.push('   Completarlo o borrarlo: un self-audit a medias no suma. Lo que frena el cierre es la matriz por AC.');
+    process.stderr.write(av.join('\n') + '\n');
+  }
+  if (avisos.length) {
+    // 🔴 La ventana de medición VENCE SOLA (2026-09-18, REVIEW-A-DONE-SIN-FRENO-1, segunda vuelta). La
+    // fecha de revisión («el 20/09 se mide cuántas veces habló y se decide si frena») vivía sólo en
+    // una ficha del inbox, y nada la miraba: si nadie se acordaba ese día, el aviso quedaba avisando
+    // para siempre y el número que se juntó no lo leía nadie — un aviso que suena y no se acciona es
+    // el que se aprende a ignorar. Mismo patrón que `pruebas-pendientes.json`: la fecha se declara
+    // donde el arnés la mira, y pasado el día el propio aviso trae el número y exige la decisión.
+    // `TYCON_TODAY` existe sólo para que la suite pueda pararse en «después del 20» sin esperar.
+    const REVIEW_A_DONE_VENCE = '2026-09-20';
+    const hoyPuesto = require('./lib/legacy-names.js').readEnv('TYCON_TODAY', { where: 'skills/tycon-pipeline/scripts/on-pre-commit.js' }) || '';
+    const hoy = /^\d{4}-\d{2}-\d{2}$/.test(hoyPuesto) ? hoyPuesto : new Date().toISOString().slice(0, 10);
+    const gl = path.join(stateDirOf(os.homedir()), 'gates.log');
+    let hablo = 0;
+    try { hablo = (fs.readFileSync(gl, 'utf8').match(/"name":"review-a-done","action":"warn"/g) || []).length; } catch { hablo = 0; }
+    const cabeza = [];
+    cabeza.push('⚠️  AVISO — review → done sin evidencia completa (hoy avisa; con TYCON_REVIEW_A_DONE=block bloquea)');
+    for (const v of avisos) cabeza.push(`   · ${v.specRel} (story ${v.storyId}): ${v.reason}`);
+    cabeza.push('   Es la transición interna: el paso a `review` ya se juzgó. Este aviso mide cuántas veces habla antes de frenar.');
+    if (hoy >= REVIEW_A_DONE_VENCE) {
+      cabeza.push(`   🔴 La ventana de medición VENCIÓ el ${REVIEW_A_DONE_VENCE} y nadie decidió: este aviso habló ${hablo} vez/veces en esta máquina (gates.log).`);
+      cabeza.push('   Decidí hoy: TYCON_REVIEW_A_DONE=block (pasa a bloquear) o retirar el aviso. Un aviso que suena y no se acciona se aprende a ignorar.');
+    } else {
+      cabeza.push(`   Van ${hablo} aviso(s) en esta máquina; se decide el ${REVIEW_A_DONE_VENCE}.`);
+    }
+    process.stderr.write(cabeza.join('\n') + '\n');
+    try {
+      fs.mkdirSync(path.dirname(gl), { recursive: true });
+      for (const v of avisos) {
+        fs.appendFileSync(gl, JSON.stringify({ ts: new Date().toISOString(), sessionId: event.session_id || null,
+          name: 'review-a-done', action: 'warn', repoPath: cwd, storyId: v.storyId, reason: v.reason }) + '\n', 'utf8');
+      }
+    } catch { /* medir no puede frenar */ }
+  }
+  if (bloqueantes.length === 0) {
+    process.exit(0);
+  }
+  violations.length = 0; violations.push(...bloqueantes);
+
+  // ============================================================
+  // BLOQUEAR (exit 2)
+  // ============================================================
+  const lines = [];
+  lines.push('🚨 BLOQUEADO — evidencia de cierre faltante (DoD runtime / advisors)');
+  lines.push('');
+  lines.push('Este commit transiciona stories a `review`/`done` sin evidence DoD (o sin auditoría de advisors):');
+  lines.push('');
+  for (const v of violations) {
+    lines.push(`  ❌ ${v.specRel}`);
+    lines.push(`     storyId: ${v.storyId}`);
+    lines.push(`     ${v.statusTransition ? '→ status frontmatter pasa a review/done' : ''}`);
+    lines.push(`     ${v.pipelineTransition ? '→ pipelines.*.status pasa a review/done' : ''}`);
+    if (v.reason === 'no-advisors') {
+      lines.push('     Pasa a `done` sin constancia de que los advisors del pipeline hayan auditado esta story EN ESTE repo.');
+      for (const sPath of (v.searched || [])) lines.push(`       buscado: ${sPath}`);
+      for (const viejo of (v.legacy || [])) lines.push(`       no cuenta (carpeta vieja bajo un número que comparten varias stories — no dice de cuál es; no se tocó): ${viejo}`);
+      lines.push('     Salidas:');
+      lines.push('       (a) Correr el pipeline sobre la story (Step 5 advisors incluido):');
+      lines.push('           node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js start --story <spec> --repo <repo>');
+      lines.push('       (b) Story SIN nada que auditar (docs/config puros) — lo decide el DEV, en el frontmatter:');
+      lines.push('           advisors_exempt: true');
+      lines.push('           advisors_exempt_reason: "<razón concreta>"');
+      lines.push('       (c) Kill-switch del dev: TYCON_ADVISORS_GATE=off. Caso: incident-log#done-sin-advisors-S1-2026-08-24.');
+    } else if (v.reason === 'sin-testigo' || v.reason === 'no-roster' || v.reason === 'roster-fabricado'
+               || v.reason === 'roster-invalido' || v.reason === 'roster-ilegible') {
+      // "revisor ≠ autor": el rastro tiene que decir QUIÉN revisó, y coincidir con los revisores
+      // que el arnés vio correr de verdad en esta máquina.
+      if (v.reason === 'sin-testigo') {
+        lines.push('     Hay constancia de revisión, pero en ESTA máquina no quedó registro de los revisores de esta story.');
+        lines.push('     Suele pasar cuando la implementación se hizo en otra máquina, o cuando subís la rama de otra persona.');
+      } else if (v.reason === 'no-roster') {
+        lines.push(`     Falta el registro de autoría (\`review-roster.json\`) en ${v.runDir} — y no se pudo regenerar del registro local.`);
+      } else if (v.reason === 'roster-fabricado') {
+        lines.push(`     El registro de autoría lista revisores que el arnés NUNCA vio correr acá: ${v.inventados.join(', ')}.`);
+      } else if (v.reason === 'roster-invalido') {
+        for (const p of (v.problemas || [])) lines.push(`     ${p.regla}: ${p.detalle}`);
+      } else {
+        lines.push(`     El registro de autoría no se puede leer: ${v.detalle}`);
+      }
+      lines.push('     Salidas:');
+      lines.push('       (a) Correr los revisores del pipeline sobre la story en esta máquina (el registro se escribe solo).');
+      lines.push('       (b) Si la revisión fue real pero el registro quedó en otro lado, dejalo ESCRITO en el propio archivo');
+      lines.push(`           ${v.runDir ? path.join(v.runDir, 'review-roster.json') : 'review-roster.json'} :`);
+      lines.push('             agregale la línea  "sin_testigo": "implementado en la desktop, subo desde la notebook"');
+      lines.push('           🔴 AGREGADA al archivo que escribió el arnés, no en lugar de él: el portón de CI');
+      lines.push('              igual exige el resto (implementer + al menos un revisor). Si el archivo no existe,');
+      lines.push('              el mínimo que CI acepta es:');
+      lines.push('                { "version": 1, "story": "<id>", "implementer": {"kind":"sesion-principal"},');
+      lines.push('                  "reviewers": [{"agent":"<advisor que revisó>","kind":"subagente"}],');
+      lines.push('                  "sin_testigo": "<motivo>" }');
+      lines.push('           Viaja en el commit y se ve en el PR — a diferencia de un interruptor, deja rastro y se puede contar.');
+      lines.push('       (c) Kill-switch de emergencia: TYCON_ROSTER_GATE=off (queda sin rastro en el diff: usalo sólo si (b) no aplica).');
+    } else if (v.reason === 'no-evidence') {
+      if (v.evidenceKeyError) lines.push(`     No se pudo calcular la clave de la evidencia: ${v.evidenceKeyError}`);
+      else lines.push(`     Buscado: .advisors/dod-runtime/${v.evidenceKey || v.storyId}-*.md (no encontrado)`);
+    } else if (v.reason === 'evidence-failed') {
+      lines.push(`     La única evidencia de cierre que hay declara FAIL: ${v.evidencePath}`);
+      lines.push(`     Una corrida fallida documenta que se probó, no que pasó. Corré de nuevo y dejá la evidencia verde.`);
+    } else if (v.reason === 'incomplete-evidence') {
+      lines.push(`     Evidencia encontrada: ${v.evidencePath}`);
+      lines.push(`     PERO no menciona ACs: ${v.missingAcs.join(', ')}`);
+      lines.push(`     Cada AC declarado en spec debe estar verified en la evidencia.`);
+    } else if (v.reason === 'no-playwright-evidence') {
+      lines.push(`     DODRT-C5.1: story de UI — la evidencia DoD NO menciona Playwright/E2E.`);
+      lines.push(`     Evidencia encontrada: ${v.evidencePath}`);
+      lines.push(`     Una story que toca UI (.tsx) se prueba con un E2E Playwright que asserta CADA`);
+      lines.push(`     AC de UI — no alcanza curl al backend ni unit tests. Caso: Story 11.2 (y 11.1).`);
+    } else if (v.reason === 'matrix-red') {
+      lines.push(`     DODRT-C6: matriz de verificación runtime ROJA (re-computada en vivo). hash: ${v.hash}`);
+      if ((v.notRun || []).length) {
+        lines.push(`     🔴 SIN CORRER (el agente DEBE correrlos, NO waiveables): ${v.notRun.map(n => '#' + n).join(', ')}`);
+        lines.push(`        Corrélos (E2E/smoke-run.sh) o, si son imposibles, declaralos en runtime_not_verifiable.`);
+      }
+      if ((v.notVerifiable || []).length) {
+        lines.push(`     🟪 imposibles-declarados (esperan waiver del USUARIO): ${v.notVerifiable.map(n => '#' + n).join(', ')}`);
+        lines.push(`        node <skill>/scripts/marker.js runtime-waiver <ruta-story.md>   (requiere /dev/tty)`);
+      }
+      for (const l of (v.avisoDescartadas || [])) lines.push(`     ${l}`);
+      if (v.chainOk === false) lines.push(`     🚨 hay líneas de esta story descartadas por la cadena del registro de firmas — causa probable: una edición a mano.`);
+    } else if (v.reason === 'matrix-structural') {
+      lines.push(`     DODRT-C6: la matriz no pudo computarse (fail-closed): ${v.detail}`);
+      lines.push(`     Arreglar la story (ACs parseables / tabla ### Tests) antes de transicionar.`);
+    } else if (v.reason === 'not-converged') {
+      lines.push(`     ACCOV-C10: self-audit NO convergido (transition to done bloqueada).`);
+      lines.push(`     Current: ${v.currentPath} (iter ${v.currentIter})`);
+      lines.push(`     Previous: ${v.previousPath} (iter ${v.previousIter})`);
+      lines.push(`     Gaps NUEVOS en iter ${v.currentIter} vs iter ${v.previousIter}:`);
+      for (const g of v.newGaps) {
+        lines.push(`       + ${g}`);
+      }
+      lines.push('');
+      lines.push(`     Convergencia requiere: gaps_iter_${v.currentIter} ⊆ gaps_iter_${v.previousIter}.`);
+      lines.push(`     Acciones permitidas:`);
+      lines.push(`       (a) Cerrar los gaps nuevos en código antes del próximo iter.`);
+      lines.push(`       (b) Si los gaps son aceptables non-blocking, agregarlos también al`);
+      lines.push(`           self-audit anterior como base + re-escribir + re-iter.`);
+      lines.push(`       (c) Transicionar a 'review' (no 'done') hasta convergencia.`);
+    }
+  }
+  lines.push('');
+  lines.push('Por qué: Story 4.2 — done declarado + commiteado sin correr los E2E.');
+  lines.push('  Caso: ~/.claude/tycon-harness/guides/incident-log.md#dod-4.2.');
+  lines.push('  Este hook es la infra que lo enforce.');
+  lines.push('');
+  lines.push('Acciones permitidas:');
+  lines.push('  (a) Ejecutar tycon-dod-runtime-checker advisor → captura evidencia');
+  lines.push('      en .advisors/dod-runtime/<storyId>-<timestamp>.md');
+  lines.push('  (b) Smoke manual: levantar stack + ejecutar E2E + curl outputs');
+  lines.push('      → escribir .advisors/dod-runtime/<storyId>-<timestamp>.md con');
+  lines.push('      el log + screenshots/curl outputs');
+  lines.push('  (c) Story sin UI/E2E (puro docs/config) → agregar al frontmatter:');
+  lines.push('        dod_runtime_exempt: true');
+  lines.push('        dod_runtime_exempt_reason: "puro docs, sin UI ni endpoint"');
+  lines.push('  (d) Bypass excepcional (NO recomendado, queda flag en stderr):');
+  lines.push('        git commit --no-verify');
+  lines.push('');
+  lines.push('Documentación de la regla:');
+  lines.push('  ~/.claude/tycon-harness/guides/definition-of-done.md');
+  lines.push('  Advisor: tycon-dod-runtime-checker');
+
+  process.stderr.write(lines.join('\n') + '\n');
+  process.exit(2);
+}
+
+// Exports para la suite de tests de la capa determinista (auditoría 2026-06-09).
+// require() desde tests NO ejecuta main() (gate require.main).
+module.exports = {
+  isGitCommit, parseAcsFromSpec, parseAcsFromEvidence, findDodEvidence, evidenciaDeclaraFail, findAdvisorsEvidence,
+  looksLikeStorySpec, selectStorySpecs, revisarRosterLocal, checkSelfAudit,
+};
+
+if (require.main === module) {
+  try {
+    main();
+  } catch (e) {
+    // Fail-open: un bug del hook NO debe bloquear commits válidos (bloquear TODO por un
+    // crash del hook es peor que dejar pasar uno). PERO un gate desactivado en silencio es
+    // exactamente el riesgo que marcó H19 (fail-open invisible) → lo hacemos VISIBLE:
+    // stderr + log persistente con timestamp, para que un gate caído sea AUDITABLE.
+    const msg = (e && (e.stack || e.message)) || String(e);
+    process.stderr.write('⚠ tycon-dod-runtime: hook error (FAILING OPEN — gate NO aplicado): ' + msg + '\n');
+    try {
+      const logDir = path.join(stateDirOf(os.homedir()));
+      fs.mkdirSync(logDir, { recursive: true });
+      fs.appendFileSync(
+        path.join(logDir, 'hook-errors.log'),
+        `[${new Date().toISOString()}] on-pre-commit.js FAILED OPEN — DoD gate NO aplicado:\n${msg}\n\n`,
+        'utf8',
+      );
+    } catch { /* si ni el log se puede escribir, al menos quedó el stderr */ }
+    process.exit(0);
+  }
+}

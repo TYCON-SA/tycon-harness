@@ -1,0 +1,26 @@
+{
+  "__doc": "vitest en un workspace contenedor: la raíz no tiene runner y el subproyecto web/ sí (repo ≠ repo_run). Lo tocado fuera de web/ no entra a las líneas tocadas. La cobertura trae una entrada sin sentencias y otra con una línea que no es un número.",
+  "runner": "vitest",
+  "repo_run": "web",
+  "suite_exit": "1",
+  "story_id": "9.2",
+  "cov_min": "80",
+  "ts": "2026-10-05T12:01:00Z",
+  "test_project_count": "0",
+  "scope": "",
+  "scope_source": "explicito",
+  "declared_new": [],
+  "code_state": { "git": true, "head": "0000acme", "dirty": "def" },
+  "base_ref": "HEAD",
+  "base_json": { "ref": "HEAD", "source": "marcador", "descartadas": [] },
+  "base": {
+    "web/src/cart.ts": { "lines": 12 },
+    "api/src/other.ts": { "lines": 5 }
+  },
+  "now": {
+    "web/src/cart.ts": { "lines": 12, "changed": [4, 5, 6] },
+    "web/src/price.ts": { "lines": 8 },
+    "web/src/price.test.ts": { "lines": 3 },
+    "api/src/other.ts": { "lines": 6 }
+  }
+}

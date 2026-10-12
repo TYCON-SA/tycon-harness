@@ -1,0 +1,178 @@
+{
+ "__doc": "La COLA de la salida de un control en rojo queda en gates.log (2026-09-17). Desde el 2026-09-14, 0 de 43 frenos en rojo tenían su mensaje en el volcado de la corrida: tokens-digest.js lo buscaba en la conversación, y en los 43 el comando lo había lanzado un script (test-gate.sh, runtime-matrix.js) y 26 corrían en segundo plano, donde sólo queda «Command running in background». Ahora `marker.js run-check` guarda, sólo en rojo, la cola saneada con `colaDeSalida` de tokens-digest.js. gates.log viaja al buzón del equipo: sin el saneado disponible no se guarda la salida cruda.",
+ "hooks": [
+  {
+   "hook": "marker.js run-check (la cola de la salida de un control en rojo)",
+   "script": "${FIXTURE}/correr.sh",
+   "controles": [
+    "${SKILLS}/skills/tycon-pipeline/scripts/marker.js"
+   ],
+   "__controles": "Los casos corren marker.js run-check desde el setup y assertan lo que escribe en gates.log: el auditor de vacuidad lo neutraliza.",
+   "event": "PostToolUse",
+   "matcher": "Bash",
+   "cases": [
+    {
+     "id": "rojo-guarda-la-cola-saneada-y-el-exit-real",
+     "type": "must-run",
+     "__nota": "2000 líneas antes del veredicto: se guarda el FINAL (donde vive el veredicto), no el principio. La ruta con el cliente y el correo salen tapados. El código de salida del comando se conserva.",
+     "files": {
+      "correr.sh": "#!/bin/sh\nexit 0\n",
+      "_falla.sh": "for i in $(seq 1 2000); do echo linea-$i; done\necho \"FALLA en /Users/fulano/SourceCode/ClienteSecretoSA/a.cs de fulano@cliente-secreto.com\" >&2\necho VEREDICTO-ROJO-4471\nexit 3\n",
+      "_verde.sh": "echo SALIDA-VERDE-5512\n"
+     },
+     "env": {
+      "TYCON_GUIDES_DIR": "${TCG}",
+      "CLAUDE_CODE_SESSION_ID": "cola-1"
+     },
+     "setup": [
+      "node ${SKILLS}/skills/tycon-pipeline/scripts/marker.js run-check tests -- bash _falla.sh > rc.out 2> rc.err; echo \"rc=$?\" > rc.txt"
+     ],
+     "stdin": {
+      "session_id": "cola-1",
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "echo"
+      }
+     },
+     "expect": {
+      "file_contains": [
+       {
+        "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log",
+        "re": "\"status\":\"red:exit=3\""
+       },
+       {
+        "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log",
+        "re": "\"cola\":\"[^\"]*VEREDICTO-ROJO-4471"
+       },
+       {
+        "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log",
+        "re": "\"cola\":\"[^\"]*FALLA en <ruta> de <correo>"
+       },
+       {
+        "path": "${FIXTURE}/rc.txt",
+        "re": "rc=3"
+       },
+       {
+        "path": "${FIXTURE}/rc.out",
+        "re": "linea-1\\n"
+       }
+      ],
+      "file_not_contains": [
+       {
+        "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log",
+        "re": "ClienteSecretoSA"
+       },
+       {
+        "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log",
+        "re": "fulano@cliente-secreto\\.com"
+       },
+       {
+        "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log",
+        "re": "\"cola\":\"[^\"]*linea-1\\\\n"
+       }
+      ]
+     }
+    },
+    {
+     "id": "verde-no-guarda-cola",
+     "type": "must-run",
+     "files": {
+      "correr.sh": "#!/bin/sh\nexit 0\n",
+      "_falla.sh": "for i in $(seq 1 2000); do echo linea-$i; done\necho \"FALLA en /Users/fulano/SourceCode/ClienteSecretoSA/a.cs de fulano@cliente-secreto.com\" >&2\necho VEREDICTO-ROJO-4471\nexit 3\n",
+      "_verde.sh": "echo SALIDA-VERDE-5512\n"
+     },
+     "env": {
+      "TYCON_GUIDES_DIR": "${TCG}",
+      "CLAUDE_CODE_SESSION_ID": "cola-2"
+     },
+     "setup": [
+      "node ${SKILLS}/skills/tycon-pipeline/scripts/marker.js run-check build -- bash _verde.sh > rc.out 2> rc.err"
+     ],
+     "stdin": {
+      "session_id": "cola-2",
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "echo"
+      }
+     },
+     "expect": {
+      "file_contains": [
+       {
+        "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log",
+        "re": "\"check\":\"build\",\"status\":\"green\""
+       },
+       {
+        "path": "${FIXTURE}/rc.out",
+        "re": "SALIDA-VERDE-5512"
+       }
+      ],
+      "file_not_contains": [
+       {
+        "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log",
+        "re": "\"cola(_motivo)?\":"
+       },
+       {
+        "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log",
+        "re": "SALIDA-VERDE-5512"
+       }
+      ]
+     }
+    },
+    {
+     "id": "sin-tokens-digest-no-guarda-la-salida-cruda",
+     "type": "must-run",
+     "__nota": "Arnés atrasado o en otra carpeta: no hay con qué sanear. Queda el motivo y el veredicto igual; la salida cruda NO. Desde la story 8.3 el arnés se busca por TYCON_GUIDES_DIR y después por el enlace ~/.claude/tycon-harness (lib/harness-path.js): una variable que apunta a algo que no existe se ignora avisando, y sin enlace en el HOME del sandbox el motivo es «no encuentro el arnés (…) — busqué …» (la CI 11070 lo cazó el 2026-09-27: el caso esperaba sólo el motivo viejo).",
+     "files": {
+      "correr.sh": "#!/bin/sh\nexit 0\n",
+      "_falla.sh": "for i in $(seq 1 2000); do echo linea-$i; done\necho \"FALLA en /Users/fulano/SourceCode/ClienteSecretoSA/a.cs de fulano@cliente-secreto.com\" >&2\necho VEREDICTO-ROJO-4471\nexit 3\n",
+      "_verde.sh": "echo SALIDA-VERDE-5512\n"
+     },
+     "env": {
+      "TYCON_GUIDES_DIR": "${FIXTURE}/no-existe",
+      "CLAUDE_CODE_SESSION_ID": "cola-3"
+     },
+     "setup": [
+      "node ${SKILLS}/skills/tycon-pipeline/scripts/marker.js run-check tests -- bash _falla.sh > rc.out 2> rc.err; echo \"rc=$?\" > rc.txt"
+     ],
+     "stdin": {
+      "session_id": "cola-3",
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "echo"
+      }
+     },
+     "expect": {
+      "file_contains": [
+       {
+        "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log",
+        "re": "\"status\":\"red:exit=3\""
+       },
+       {
+        "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log",
+        "re": "\"cola_motivo\":\"(no pude cargar tokens-digest\\.js|[^\"]*no encuentro el arnés)"
+       },
+       {
+        "path": "${FIXTURE}/rc.txt",
+        "re": "rc=3"
+       }
+      ],
+      "file_not_contains": [
+       {
+        "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log",
+        "re": "VEREDICTO-ROJO-4471"
+       },
+       {
+        "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log",
+        "re": "ClienteSecretoSA"
+       },
+       {
+        "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log",
+        "re": "\"cola\":"
+       }
+      ]
+     }
+    }
+   ]
+  }
+ ]
+}

@@ -1,0 +1,90 @@
+{
+  "name": "scan-listado-editable-keeps-recepcion",
+  "description": "Story 9.9 (ejemplo inventado) — Verifica el pase Recepcion→Armado: escanear un pedido con el listado en edición mantiene EtapaActual='Recepcion'. AC #1 (el arreglo) + AC #4 (el freno LISTADO_VACIO sigue andando).",
+  "story": "9.9",
+  "acs_covered": [1, 4],
+  "preflight": {
+    "devhost_health_url": "/api/health/ready"
+  },
+  "steps": [
+    {
+      "name": "Setup — crear un pedido por la API (sin escribir directo en la base)",
+      "method": "POST",
+      "path": "/api/pedidos",
+      "body": {
+        "cliente": "DoD9.9",
+        "sucursal": "Centro",
+        "prioridad": "Normal",
+        "categoria": "Estandar",
+        "articulos": [
+          { "articuloId": 1, "zona": "Test" }
+        ]
+      },
+      "expect_status": 201,
+      "capture": {
+        "pedidoId": "$.id",
+        "barcode": "$.articulos[0].codigoBarras"
+      },
+      "assert_body": {
+        "etapaActual": "Recepcion",
+        "listadoEstado": "Editable"
+      }
+    },
+    {
+      "name": "Estado antes del escaneo — EtapaActual='Recepcion' + ListadoEstado='Editable'",
+      "method": "GET",
+      "path": "/api/pedidos/{pedidoId}",
+      "expect_status": 200,
+      "assert_body": {
+        "etapaActual": "Recepcion",
+        "listadoEstado": "Editable"
+      }
+    },
+    {
+      "name": "POST escaneo de recepción de la bolsa",
+      "method": "POST",
+      "path": "/api/pedidos/recepcion/scan",
+      "body": {
+        "barcode": "{barcode}"
+      },
+      "expect_status": 200,
+      "assert_body": {
+        "status": "success"
+      }
+    },
+    {
+      "name": "Después del escaneo — EtapaActual DEBE seguir en 'Recepcion' (AC #1 — el arreglo)",
+      "method": "GET",
+      "path": "/api/pedidos/{pedidoId}",
+      "expect_status": 200,
+      "assert_body": {
+        "etapaActual": "Recepcion",
+        "listadoEstado": "Editable"
+      }
+    },
+    {
+      "name": "POST confirmar el listado sin etiquetas — espera 409 LISTADO_VACIO (AC #4, no regresión)",
+      "method": "POST",
+      "path": "/api/pedidos/{pedidoId}/listado/confirmar",
+      "expect_status": 409,
+      "assert_body": {
+        "error": {
+          "code": "LISTADO_VACIO"
+        }
+      }
+    }
+  ],
+  "evidence": {
+    "ac_summary": {
+      "1": "Escaneo exitoso (HTTP 200, status=success) y EtapaActual sigue en 'Recepcion' después del escaneo. Antes del arreglo saltaba a 'Armado'. El recálculo de la etapa queda verificado corriendo.",
+      "4": "El freno LISTADO_VACIO, que ya existía, sigue verde: confirmar sin etiquetas devuelve 409 con code=LISTADO_VACIO."
+    },
+    "playwright_run": {
+      "verdict": "PASS",
+      "failed": 0,
+      "passed": 0,
+      "skipped": 0,
+      "rationale": "Los E2E declarados en la spec (E1/E2) son de pipelines.B-frontend, con status: pending — diferidos. La suite Playwright pasa vacía para el pipeline A-backend."
+    }
+  }
+}

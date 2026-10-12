@@ -1,0 +1,66 @@
+﻿# codegraph-session-hook.ps1 — hook SessionStart de Claude Code (Windows).
+#
+# Auto-configura CodeGraph para el repo donde se abre la sesion: si es un
+# proyecto y todavia no esta seteado, lo indexa y registra el MCP server.
+# En sesiones siguientes (repo ya seteado) sale al instante.
+#
+# Lo instala install-codegraph.ps1 con "async": true — corre en background y
+# NO bloquea el arranque de la sesion. NO editar ni invocar a mano.
+#
+# Diseno defensivo: nunca falla ruidosamente, siempre exit 0.
+
+$ErrorActionPreference = "SilentlyContinue"
+
+$Cwd = (Get-Location).Path
+
+# No tocar paths dentro de node_modules / .git
+if ($Cwd -match "[\\/]node_modules[\\/]" -or $Cwd -match "[\\/]\.git[\\/]") { exit 0 }
+
+# Herramientas presentes
+if (-not (Get-Command codegraph -ErrorAction SilentlyContinue)) { exit 0 }
+if (-not (Get-Command claude -ErrorAction SilentlyContinue))    { exit 0 }
+
+# Es un proyecto?
+$IsProject = $false
+foreach ($m in @(".git", "package.json", "go.mod", "Cargo.toml", "pom.xml", "pyproject.toml")) {
+    if (Test-Path -LiteralPath (Join-Path $Cwd $m)) { $IsProject = $true }
+}
+if (Get-ChildItem -LiteralPath $Cwd -Filter "*.sln" -ErrorAction SilentlyContinue)    { $IsProject = $true }
+if (Get-ChildItem -LiteralPath $Cwd -Filter "*.csproj" -ErrorAction SilentlyContinue) { $IsProject = $true }
+if (-not $IsProject) { exit 0 }
+
+# Ya seteado? -> fast path
+$Marker = Join-Path $Cwd ".codegraph\.tycon-setup-done"
+if (Test-Path -LiteralPath $Marker) { exit 0 }
+
+# --- primera vez en este repo: setup completo ---
+if (-not (Test-Path -LiteralPath (Join-Path $Cwd ".codegraph"))) {
+    codegraph init -i $Cwd 2>$null | Out-Null
+    if ($LASTEXITCODE -ne 0) { exit 0 }
+}
+
+# .gitignore
+$Gi = Join-Path $Cwd ".gitignore"
+if (Test-Path -LiteralPath $Gi) {
+    if ((Get-Content -LiteralPath $Gi) -notcontains ".codegraph/") {
+        Add-Content -LiteralPath $Gi -Value ""
+        Add-Content -LiteralPath $Gi -Value "# CodeGraph: indice local (SQLite), machine-specific y regenerable"
+        Add-Content -LiteralPath $Gi -Value ".codegraph/"
+    }
+}
+
+# Registrar el MCP server (forma larga --path por la colision de -p)
+$Bin = (Get-Command codegraph).Source
+Push-Location -LiteralPath $Cwd
+try {
+    claude mcp remove codegraph 2>$null | Out-Null
+    & claude mcp add codegraph -- $Bin serve --mcp --path $Cwd 2>$null | Out-Null
+}
+finally { Pop-Location }
+
+# Marca de completado
+if (Test-Path -LiteralPath (Join-Path $Cwd ".codegraph")) {
+    New-Item -ItemType File -Path $Marker -Force | Out-Null
+}
+
+exit 0

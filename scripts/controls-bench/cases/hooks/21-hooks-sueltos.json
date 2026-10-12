@@ -1,0 +1,395 @@
+{
+  "__doc": "FIX-7, pago de deuda (2026-08-25): los 4 scripts sueltos de hook-debt.json. git-pre-commit-global delega en el .githooks/ del repo (el agujero de #hookspath-eclipse); harness-env-publish publica variables para las apps gráficas (con launchctl FALSO vía LAUNCHCTL_BIN — el real escribe estado de la máquina); instinct-observe.py graba el JSONL del observador. Los que reciben argumentos se ejercen vía un wrapper .sh creado por el setup (el runner no pasa argv — sólo stdin).",
+  "hooks": [
+    {
+      "hook": "git-pre-commit-global.sh (delegación al .githooks/ del repo)",
+      "script": "${TCG}/scripts/hooks/git-pre-commit-global.sh",
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "cases": [
+        {
+          "id": "delega-en-el-pre-commit-del-repo-y-propaga-el-rechazo",
+          "type": "must-run",
+          "__doc": "El veredicto del hook del repo MANDA: si rechaza, el commit se rechaza. Antes de este archivo, con core.hooksPath global los .githooks/ de cada repo estaban escritos, documentados… y jamás se ejecutaban.",
+          "setup": [
+            "git init -q -b main . && echo x > a.txt && git add a.txt && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "mkdir -p .githooks && printf '#!/bin/sh\\necho corrido > \"$PWD/.githooks/marca\"\\nexit 1\\n' > .githooks/pre-commit && chmod +x .githooks/pre-commit"
+          ],
+          "stdin": {},
+          "expect": {
+            "exit": 1,
+            "stderr_re": [
+              "pre-commit del repo rechazó"
+            ],
+            "file_contains": [
+              {
+                "path": "${FIXTURE}/.githooks/marca",
+                "re": "corrido"
+              }
+            ]
+          }
+        },
+        {
+          "id": "avisa-hook-del-repo-sin-permiso-de-ejecucion",
+          "type": "must-run",
+          "so": [
+            "linux",
+            "darwin"
+          ],
+          "__so": "Sólo Linux y Mac (story 8.17, W1, medido en Windows): el caso arma su situación con los permisos de un archivo (`chmod`), y en Windows no existen ni el bit de ejecución ni una carpeta de sólo lectura hecha así. No es un defecto del control: en Windows este camino queda sin caso ([DEF-8.17-W1-NO-CASE-ON-WINDOWS]).",
+          "__doc": "Un hook que el dev cree que corre y no corre es exactamente el modo de falla que este archivo vino a cerrar: existe pero sin chmod +x → se AVISA (no se bloquea).",
+          "setup": [
+            "git init -q -b main . && echo x > a.txt && git add a.txt && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "mkdir -p .githooks && printf '#!/bin/sh\\nexit 1\\n' > .githooks/pre-commit && chmod -x .githooks/pre-commit"
+          ],
+          "stdin": {},
+          "expect": {
+            "exit": 0,
+            "stderr_re": [
+              "NO es ejecutable"
+            ]
+          }
+        },
+        {
+          "id": "quiet-repo-sin-githooks-ni-engram",
+          "type": "must-not-block",
+          "setup": [
+            "git init -q -b main . && echo x > a.txt && git add a.txt && git -c user.email=b@b -c user.name=b commit -q -m base"
+          ],
+          "stdin": {},
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "invoca-el-pre-commit-previo-del-dev",
+          "type": "must-run",
+          "__doc": "El pre-commit global que el dev ya tenía sigue corriendo: el instalador lo deja como pre-commit.local y este hook lo invoca primero (segundo pase con Fable, 2026-09-06).",
+          "setup": [
+            "git init -q -b main . && printf 'a\\n' > a.txt && git add . && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "mkdir -p hooks && cp $TCG/scripts/hooks/git-pre-commit-global.sh hooks/git-pre-commit-global.sh && chmod +x hooks/git-pre-commit-global.sh && printf '#!/bin/sh\\necho previo-corrio > \"$PWD/previo.marca\"\\n' > hooks/pre-commit.local && chmod +x hooks/pre-commit.local"
+          ],
+          "stdin": {},
+          "expect": {
+            "exit": 0,
+            "file_contains": [
+              {
+                "path": "${FIXTURE}/previo.marca",
+                "re": "previo-corrio"
+              }
+            ]
+          },
+          "script": "${FIXTURE}/hooks/git-pre-commit-global.sh"
+        },
+        {
+          "id": "el-pre-commit-previo-que-rechaza-rechaza",
+          "type": "must-run",
+          "__doc": "Si el pre-commit propio del dev rechaza, el commit se rechaza: conservarlo y no honrar su veredicto sería peor que el .bak.",
+          "setup": [
+            "git init -q -b main . && printf 'a\\n' > a.txt && git add . && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "mkdir -p hooks && cp $TCG/scripts/hooks/git-pre-commit-global.sh hooks/git-pre-commit-global.sh && chmod +x hooks/git-pre-commit-global.sh && printf '#!/bin/sh\\nexit 1\\n' > hooks/pre-commit.local && chmod +x hooks/pre-commit.local"
+          ],
+          "stdin": {},
+          "expect": {
+            "exit": 1,
+            "stderr_re": [
+              "pre-commit propio"
+            ]
+          },
+          "script": "${FIXTURE}/hooks/git-pre-commit-global.sh"
+        }
+      ]
+    },
+    {
+      "hook": "harness-env-publish.sh (variables para las apps gráficas)",
+      "script": "${TCG}/scripts/setup/harness-env-publish.sh",
+      "so": [
+        "darwin"
+      ],
+      "__so": "Sólo macOS: el hook empieza con `[[ $(uname) == Darwin ]] || exit 0` y lo que verifica es lo que le pide a launchctl. En Linux (el banco nocturno en Azure DevOps) no hay nada que probar: se saltea CON CONSTANCIA, no en silencio.",
+      "event": "SessionStart",
+      "matcher": "*",
+      "cases": [
+        {
+          "id": "publica-la-llave-codex-y-los-optin-del-ambiente",
+          "type": "must-run",
+          "__doc": "Sólo corre en macOS (el guard de uname). El launchctl es FALSO (LAUNCHCTL_BIN): anota lo que le piden en un log del fixture y no toca la máquina — probar esto con el real sería ensuciar el ambiente del dev para demostrar que el script funciona.",
+          "setup": [
+            "printf '#!/bin/sh\\necho \"$@\" >> \"$FAKE_LOG\"\\nexit 0\\n' > lc.sh && chmod +x lc.sh"
+          ],
+          "env": {
+            "LAUNCHCTL_BIN": "${FIXTURE}/lc.sh",
+            "FAKE_LOG": "${FIXTURE}/launchctl.log",
+            "TYCON_INSTINCT_MINING": "1"
+          },
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {
+            "exit": 0,
+            "file_contains": [
+              {
+                "path": "${FIXTURE}/launchctl.log",
+                "re": "setenv TYCON_CODEX 1"
+              },
+              {
+                "path": "${FIXTURE}/launchctl.log",
+                "re": "setenv TYCON_INSTINCT_MINING 1"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "hook": "instinct-observe.py (el grabador del observador)",
+      "script": "${FIXTURE}/wrapper.sh",
+      "event": "PostToolUse",
+      "matcher": "*",
+      "cases": [
+        {
+          "id": "instinct-observe-py-graba-el-evento-en-el-jsonl",
+          "type": "must-run",
+          "__doc": "La parte Python del observador (la .sh ya tenía casos). Recibe el evento por stdin y el directorio por argv → wrapper. El nombre del archivo lleva el mes → se asserta por sufijo.",
+          "setup": [
+            "mkdir -p obs",
+            "printf '#!/bin/sh\\nexec python3 \"$TCG/scripts/hooks/instinct-observe.py\" \"$FIXTURE/obs\"\\n' > wrapper.sh && chmod +x wrapper.sh"
+          ],
+          "stdin": {
+            "session_id": "bench-io1",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git status"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "dir_has_file": [
+              {
+                "dir": "${FIXTURE}/obs",
+                "suffix": ".jsonl"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "hook": "git-post-commit-global.sh (lo que quedó afuera del commit)",
+      "script": "${TCG}/scripts/hooks/git-post-commit-global.sh",
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "__doc": "COMMIT-DEJA-AFUERA-1 (2026-09-06): tres veces en 24 h quedó trabajo sin commitear sin que nadie lo dijera. Después de cada commit, UNA línea nombra lo que quedó afuera; nunca frena, se calla si no quedó nada. Lo dispara git, no la herramienta. El banco lo invoca a mano sobre un repo de laboratorio ya commiteado; el commit REAL lo hace githook-livefire.test.sh.",
+      "cases": [
+        {
+          "id": "nombra-lo-que-quedo-afuera-del-commit",
+          "type": "must-run",
+          "__doc": "El caso rojo previo: dos archivos modificados y uno nuevo, se commitea uno solo. Sin el hook, silencio; con el hook, la línea nombra a los otros dos y los cuenta.",
+          "setup": [
+            "git init -q -b main . && printf 'a\\n' > a.txt && printf 'b\\n' > b.txt && git add . && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "printf 'a2\\n' > a.txt && printf 'b2\\n' > b.txt && printf 'n\\n' > nuevo.md && git add a.txt && git -c user.email=b@b -c user.name=b commit -q -m uno"
+          ],
+          "stdin": {},
+          "expect": {
+            "exit": 0,
+            "stdout_re": [
+              "quedaron afuera del commit",
+              "b\\.txt",
+              "nuevo\\.md",
+              "1 modificado",
+              "1 nuevo"
+            ]
+          }
+        },
+        {
+          "id": "no-nombra-al-archivo-que-si-entro",
+          "type": "must-run",
+          "__doc": "La línea nombra lo que quedó AFUERA, no lo que entró: a.txt entró al commit y no puede aparecer (si apareciera, el aviso sería ruido en cada commit y se apagaría).",
+          "setup": [
+            "git init -q -b main . && printf 'a\\n' > a.txt && printf 'b\\n' > b.txt && git add . && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "printf 'a2\\n' > a.txt && printf 'b2\\n' > b.txt && git add a.txt && git -c user.email=b@b -c user.name=b commit -q -m uno"
+          ],
+          "stdin": {},
+          "expect": {
+            "exit": 0,
+            "stdout_re": [
+              "quedaron afuera del commit: b\\.txt —"
+            ]
+          }
+        },
+        {
+          "id": "quiet-commit-completo",
+          "type": "must-stay-quiet",
+          "__doc": "El espejo: se commiteó todo → ni una línea. Un aviso que habla cuando no quedó nada es el que alguien apaga.",
+          "setup": [
+            "git init -q -b main . && printf 'a\\n' > a.txt && git add . && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "printf 'a2\\n' > a.txt && git add a.txt && git -c user.email=b@b -c user.name=b commit -q -m uno"
+          ],
+          "stdin": {},
+          "expect": {
+            "exit": 0,
+            "stdout_not_re": [
+              "quedaron afuera"
+            ]
+          }
+        },
+        {
+          "id": "quiet-lo-ignorado-por-git-no-cuenta",
+          "type": "must-stay-quiet",
+          "__doc": "node_modules, .log, build/: lo que git ignora no queda «afuera», está afuera a propósito.",
+          "setup": [
+            "git init -q -b main . && printf '*.log\\nbuild/\\n' > .gitignore && printf 'a\\n' > a.txt && git add . && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "printf 'x\\n' > x.log && mkdir -p build && printf 'y\\n' > build/y.js"
+          ],
+          "stdin": {},
+          "expect": {
+            "exit": 0,
+            "stdout_not_re": [
+              "quedaron afuera"
+            ]
+          }
+        },
+        {
+          "id": "quiet-lista-de-ignorados-del-repo",
+          "type": "must-stay-quiet",
+          "__doc": "`.tycon/post-commit-ignore` excluye por repo: en agent-skills los ~100 `bmad-*` en drift permanente JAMÁS se commitean, y nombrarlos en cada commit sería la vía rápida a apagar el aviso.",
+          "setup": [
+            "git init -q -b main . && mkdir -p .tycon skills && printf 'bmad-*\\n' > .tycon/post-commit-ignore && printf 'a\\n' > a.txt && git add . && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "printf 'x\\n' > bmad-uno.md && printf 'y\\n' > skills/bmad-dos.md"
+          ],
+          "stdin": {},
+          "expect": {
+            "exit": 0,
+            "stdout_not_re": [
+              "quedaron afuera"
+            ]
+          }
+        },
+        {
+          "id": "delega-en-el-post-commit-del-repo",
+          "type": "must-run",
+          "__doc": "Misma cadena que el pre-commit global: si el repo tiene su propio .githooks/post-commit, corre (y su fallo no tapa el aviso propio).",
+          "setup": [
+            "git init -q -b main . && printf 'a\\n' > a.txt && git add . && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "mkdir -p .githooks && printf '#!/bin/sh\\necho corrido > \"$PWD/.githooks/marca\"\\nexit 1\\n' > .githooks/post-commit && chmod +x .githooks/post-commit && printf 'b\\n' > b.txt"
+          ],
+          "stdin": {},
+          "expect": {
+            "exit": 0,
+            "stdout_re": [
+              "quedaron afuera del commit",
+              "b\\.txt"
+            ],
+            "file_contains": [
+              {
+                "path": "${FIXTURE}/.githooks/marca",
+                "re": "corrido"
+              }
+            ]
+          }
+        },
+        {
+          "id": "quiet-apagado-por-env",
+          "type": "must-stay-quiet",
+          "__doc": "TYCON_POST_COMMIT_NOTICE=0 lo apaga (interruptor declarado; persistirlo en el rc del shell lo caza el safety-guard como cualquier kill TYCON_*).",
+          "setup": [
+            "git init -q -b main . && printf 'a\\n' > a.txt && git add . && git -c user.email=b@b -c user.name=b commit -q -m base && printf 'b\\n' > b.txt"
+          ],
+          "stdin": {},
+          "expect": {
+            "exit": 0,
+            "stdout_not_re": [
+              "quedaron afuera"
+            ]
+          },
+          "env": {
+            "TYCON_POST_COMMIT_NOTICE": "0"
+          }
+        },
+        {
+          "id": "quiet-durante-un-rebase-no-repite-la-linea",
+          "type": "must-stay-quiet",
+          "__doc": "Un rebase de N commits dispara el post-commit N veces con el mismo árbol; en un rebase real existe .git/rebase-merge (la variable GIT_REFLOG_ACTION NO llega al hook: crítico del 1er pase, D3) y el hook calla.",
+          "setup": [
+            "git init -q -b main . && printf 'a\\n' > a.txt && git add . && git -c user.email=b@b -c user.name=b commit -q -m base && printf 'b\\n' > b.txt && mkdir -p .git/rebase-merge"
+          ],
+          "stdin": {},
+          "expect": {
+            "exit": 0,
+            "stdout_not_re": [
+              "quedaron afuera"
+            ]
+          }
+        },
+        {
+          "id": "nombra-un-archivo-con-acento-tal-cual",
+          "type": "must-run",
+          "__doc": "`módulo nuevo.md` se nombra así, no como `m\\303\\263dulo nuevo.md` (core.quotePath), y un patrón de ignore con acento matchea (revisión con Fable, #7/#59).",
+          "setup": [
+            "git init -q -b main . && printf 'a\\n' > a.txt && git add . && git -c user.email=b@b -c user.name=b commit -q -m base && printf 'x\\n' > 'módulo nuevo.md'"
+          ],
+          "stdin": {},
+          "expect": {
+            "exit": 0,
+            "stdout_re": [
+              "módulo nuevo\\.md"
+            ],
+            "stdout_not_re": [
+              "\\\\303"
+            ]
+          }
+        },
+        {
+          "id": "invoca-el-post-commit-previo-del-dev",
+          "type": "must-run",
+          "__doc": "El post-commit que el dev ya tenía en la carpeta global sigue corriendo: el instalador lo deja como post-commit.local y este hook lo invoca primero (revisión con Fable, #56).",
+          "setup": [
+            "git init -q -b main . && printf 'a\\n' > a.txt && git add . && git -c user.email=b@b -c user.name=b commit -q -m base && printf 'b\\n' > b.txt",
+            "mkdir -p hooks && cp $TCG/scripts/hooks/git-post-commit-global.sh hooks/git-post-commit-global.sh && chmod +x hooks/git-post-commit-global.sh && printf '#!/bin/sh\\necho previo-corrio > \"$PWD/previo.marca\"\\n' > hooks/post-commit.local && chmod +x hooks/post-commit.local"
+          ],
+          "stdin": {},
+          "expect": {
+            "exit": 0,
+            "stdout_re": [
+              "quedaron afuera del commit"
+            ],
+            "file_contains": [
+              {
+                "path": "${FIXTURE}/previo.marca",
+                "re": "previo-corrio"
+              }
+            ]
+          },
+          "script": "${FIXTURE}/hooks/git-post-commit-global.sh"
+        },
+        {
+          "id": "en-rebase-calla-el-aviso-pero-los-otros-hooks-corren",
+          "type": "must-run",
+          "__doc": "🔴 La guarda del rebase silencia SÓLO el aviso propio: el hook previo del dev y el del repo (git-lfs, por ejemplo) corren en cada commit, como correrían sin nosotros. Ponerla antes de las delegaciones los salteaba a los tres, y con pull.rebase=true eso es TODO `git pull` del flujo diario (crítico del 2do pase con Fable, #3 ancho).",
+          "setup": [
+            "git init -q -b main . && printf 'a\\n' > a.txt && git add . && git -c user.email=b@b -c user.name=b commit -q -m base && printf 'b\\n' > b.txt && mkdir -p .git/rebase-merge",
+            "mkdir -p hooks .githooks && cp $TCG/scripts/hooks/git-post-commit-global.sh hooks/git-post-commit-global.sh && chmod +x hooks/git-post-commit-global.sh && printf '#!/bin/sh\\necho previo > \"$PWD/previo.marca\"\\n' > hooks/post-commit.local && printf '#!/bin/sh\\necho repo > \"$PWD/repo.marca\"\\n' > .githooks/post-commit && chmod +x hooks/post-commit.local .githooks/post-commit"
+          ],
+          "script": "${FIXTURE}/hooks/git-post-commit-global.sh",
+          "stdin": {},
+          "expect": {
+            "exit": 0,
+            "stdout_not_re": [
+              "quedaron afuera"
+            ],
+            "file_contains": [
+              {
+                "path": "${FIXTURE}/previo.marca",
+                "re": "previo"
+              },
+              {
+                "path": "${FIXTURE}/repo.marca",
+                "re": "repo"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

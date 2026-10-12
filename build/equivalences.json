@@ -1,0 +1,88 @@
+{
+  "__doc": "Tabla de nombres Claude Code ↔ Codex (plan codex-migration.md §3, categoría ②). UN SOLO archivo: toda equivalencia de nombre vive acá — nadie más la declara. La consumen build/generate.js (advisors .md → .toml) y, a futuro, el instalador. Verificado empíricamente contra Codex CLI 0.149.0 (models_cache.json + --strict-config). fable → gpt-5.6-sol: models_cache.json de Codex CLI 0.151.0, 2026-09-15.",
+  "models": {
+    "opus": "gpt-5.6-terra",
+    "sonnet": "gpt-5.6-luna",
+    "haiku": "gpt-5.4-mini",
+    "fable": "gpt-5.6-sol"
+  },
+  "reasoning_effort": {
+    "__doc": "effort de sesión Claude → model_reasoning_effort Codex (guía harness-cost-tiering.md PIPE-C8)",
+    "low": "low",
+    "medium": "medium",
+    "high": "high",
+    "xhigh": "xhigh"
+  },
+  "events": {
+    "__doc": "Los 5 eventos de hooks usan LOS MISMOS nombres en ambas (inventario §A.1, verificado live-fire B1)",
+    "SessionStart": "SessionStart",
+    "UserPromptSubmit": "UserPromptSubmit",
+    "PreToolUse": "PreToolUse",
+    "PostToolUse": "PostToolUse",
+    "Stop": "Stop"
+  },
+  "matchers": {
+    "__doc": "Matcher de tool en hooks. Bash verificado B1 (live-fire codex: la tool se llama Bash). Edit|Write pendiente de verificar en Etapa E",
+    "Bash": "Bash",
+    "*": "*"
+  },
+  "advisor_permissions": {
+    "__doc": "Set de tools: del frontmatter del advisor → sandbox de Codex. La lista blanca por-tool NO existe en Codex (inventario §B.1, asimetría declarada): read-only impide que la escritura PERSISTA, no que se intente.",
+    "read-only": {
+      "claude_tools": [
+        "Read",
+        "Grep",
+        "Glob",
+        "Bash"
+      ],
+      "codex": {
+        "sandbox_mode": "read-only"
+      }
+    },
+    "write": {
+      "claude_tools": [
+        "Write",
+        "Edit"
+      ],
+      "codex": {
+        "sandbox_mode": "workspace-write"
+      }
+    }
+  },
+  "mcp_servers": {
+    "__doc": "Servidor MCP → cómo lo lanza Codex. La CLAVE es la ETIQUETA QUE USA CLAUDE, a propósito: el modelo ve la tool como mcp__<etiqueta>__<tool>, así que replicando la etiqueta el nombre sale byte por byte igual en las dos herramientas y la prosa del advisor NO se traduce (categoría ② disuelta). Verificado con canario — sonda C, 2026-08-21 (guides/codex-migration.md, Registro D.4). Regla: el comando va SIN ruta absoluta (tiene que estar en el PATH) — este archivo se comparte entre máquinas. · approval_mode: Codex exige aprobación para CADA llamada a una tool MCP; en un advisor headless (approval_policy=never) eso equivale a DENEGARLA — el canario del 2026-08-22 murió con 'MCP tool call requires approval, but approval policy is never' aunque el servidor estaba bien declarado y la tool bien nombrada. Se emite default_tools_approval_mode='approve' (= nunca pide; verificado en mcp_tool_call.rs: Approve→false). OJO: 'auto' es el DEFAULT y significa 'decidir por las anotaciones de la tool' — engram pasó la sonda A sin nada de esto porque sus tools declaran read_only_hint; las de codebase_memory no traen anotaciones y con 'auto' piden permiso igual. Además se emite enabled_tools=[...] con las tools EXACTAS que el advisor declara en su frontmatter para ese server: la lista blanca por-tool SÍ existe en Codex para MCP (inventario §B.1 queda parcialmente disuelto — sigue sin existir para las tools built-in). · REGLA DE ETIQUETAS: sólo [a-z0-9_] — Codex convierte '-' en '_' en el nombre de la tool y el nombre deja de coincidir con Claude (hallazgo D.5).",
+    "plugin_engram_engram": {
+      "command": "engram",
+      "args": [
+        "mcp",
+        "--tools=agent"
+      ],
+      "claude_label": "plugin:engram:engram",
+      "note": "Verificado extremo a extremo con canario: `mcp: plugin_engram_engram/mem_search started` + id y título exactos de una memoria real.",
+      "approval_mode": "approve"
+    },
+    "codebase_memory": {
+      "command": "codebase-memory-mcp",
+      "args": [],
+      "claude_label": "codebase_memory",
+      "note": "Etiqueta con GUIÓN BAJO a propósito en las DOS herramientas (hallazgo D.5, 2026-08-22): Codex sanea los guiones del nombre del server a guiones bajos al armar el nombre de la tool (etiqueta codebase-memory → mcp__codebase_memory__*), así que con guión NINGUNA etiqueta puede replicar el nombre. Regla derivada: toda etiqueta de server MCP del arnés usa [a-z0-9_] — sin guiones. Registrado en Claude user-scope como codebase_memory. Se lanza SIN ruta por repo (resuelve el proyecto por cwd), entra en un perfil estático. Índice por repo: correr index_repository una vez — sin eso las tools contestan vacío.",
+      "approval_mode": "approve"
+    }
+  },
+  "mcp_servers_not_declarable": {
+    "__doc": "ASIMETRÍA DECLARADA (§2 del plan: lo que no existe igual en las dos se ESCRIBE, no se silencia). Servidores que un advisor declara en su frontmatter y que NO se pueden emitir en un perfil estático de Codex. generate.js los omite a propósito y deja constancia en la cabecera del .toml. Si alguno se vuelve declarable, se mueve a mcp_servers y listo.",
+    "codegraph": "La ruta del índice cambia por repo (`codegraph serve --mcp --path <repo>`), y el perfil de advisor es un archivo fijo: no hay dónde poner la ruta. Del lado Claude codegraph ya es opt-in por repo (la mayoría corre sin él) y los fixtures del banco son repos efímeros SIN índice, así que ningún caso lo mide. El advisor cae al escalón siguiente de su cascada de lookup. Revisar en la Etapa F junto con el instalador."
+  },
+  "codex_features_off": {
+    "__doc": "Features de Codex que un perfil de ADVISOR apaga. Codex las trae prendidas de fábrica y NO pasan por el sandbox de disco, así que un advisor declarado read-only las tiene igual. Se emiten como claves sueltas `features.<name> = false` ANTES de cualquier tabla (ver el gotcha del orden en generate.js). Verificado: `codex debug prompt-input -c features.apps=false` recorta 4128 bytes del prompt visible por el modelo — la instrucción de apps y su catálogo desaparecen.",
+    "apps": "Con apps prendida el modelo recibe el MCP `codex_apps` (~160 tools): crear y mergear pull requests, borrar archivos de un repo, mandar y programar mails, desinstalar apps. Un advisor sólo lee el diff y cita rule IDs — nada de eso le hace falta, y el sandbox de disco no lo frena porque no pasa por el disco. Medido 2026-08-22 (sonda 1.5 + `codex features list`). Nota: browser_use y computer_use también vienen prendidas pero NO cambian el prompt de `codex exec` headless (medido: 0 bytes de diferencia), así que no se apagan acá — si algún día aparecen en exec, entran a esta lista."
+  },
+  "text_substitutions": {
+    "__doc": "Nombres de tools de Claude que aparecen en la PROSA de los advisors y no existen en Codex. El generador los reemplaza por la descripción funcional al emitir el .toml. Mantener corta: si crece, el problema es el canónico (regla del bloque tool-names).",
+    "SendMessage": "un mensaje de seguimiento del orquestador"
+  },
+  "codex_conduct_clause": {
+    "__doc": "Cláusula de conducta que generate.js antepone a developer_instructions de CADA perfil de advisor Codex. Motivo (Registro D.7, 2026-08-22): el banco midió que el modelo de Codex razona bien sobre lo que junta pero SALTEA los pasos de verificación caros que el procedimiento manda — 6/6 corridas sin llamar la tool MCP declarada (deferral, sibling) y un discovery full-depth reemplazado por un ls superficial (el anti-pattern exacto de Story 1.15). Claude ejecuta esos pasos. Una sola fuente: si la cláusula cambia, cambia acá.",
+    "text": "REGLA DE CONDUCTA — LOS PASOS DECLARADOS SE EJECUTAN, SIN ATAJOS.\n1. Toda tool mcp__* declarada en este perfil se USA cuando el procedimiento la pide. Si la llamada falla, el reporte lo dice textual (\"la tool <nombre> falló: <error>\") — cambiar de método en silencio está PROHIBIDO: un veredicto correcto por un camino no declarado cuenta como roto.\n2. Un discovery marcado full-depth se corre COMPLETO (el comando concreto que el procedimiento da). Un ls/glob superficial NO cuenta como discovery, y \"no encontré\" sin el comando completo no habilita a declarar ausencia.\n3. Antes de emitir el reporte, verificá: ¿ejecuté cada chequeo que el procedimiento manda para este caso? Los que no pudiste ejecutar se declaran como limitación del run (sin corchetes en el rule ID), nunca se omiten en silencio."
+  }
+}

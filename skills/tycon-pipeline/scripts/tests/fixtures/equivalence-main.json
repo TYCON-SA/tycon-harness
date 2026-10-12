@@ -1,0 +1,524 @@
+{
+  "__doc": "Foto dorada de la equivalencia de paquetes (story 8.2): lo que el pipeline.js de main ANTES de la story elegía para cada caso de lib/equivalence-cases.js. La compara tests/package-equivalence.test.js. Regenerar SÓLO a propósito: node package-equivalence.js snapshot --base <sha>.",
+  "base_sha": "a7830499d3f47b0de051080630869634be65e24c",
+  "tomada_en": "2026-09-26T14:14:20.991Z",
+  "casos": {
+    "solo-cs": {
+      "base": [
+        "tycon-plugin-dotnet-conventions",
+        "tycon-plugin-security-basics",
+        "tycon-plugin-tests-coverage"
+      ],
+      "completitud": [
+        "tycon-ac-coverage-checker",
+        "tycon-spec-first-checker",
+        "tycon-story-validator"
+      ],
+      "conditional": [],
+      "model_hints": {
+        "tycon-ac-coverage-checker": "haiku"
+      },
+      "reloop_model_hints": {
+        "tycon-spec-first-checker": "sonnet"
+      },
+      "superficie": {
+        "tycon-ac-coverage-checker": true,
+        "tycon-plugin-dotnet-conventions": true,
+        "tycon-plugin-security-basics": true,
+        "tycon-plugin-tests-coverage": true,
+        "tycon-spec-first-checker": true,
+        "tycon-story-validator": true
+      }
+    },
+    "solo-tsx-react": {
+      "base": [
+        "tycon-plugin-react-conventions",
+        "tycon-plugin-security-basics",
+        "tycon-plugin-tests-coverage"
+      ],
+      "completitud": [
+        "tycon-ac-coverage-checker",
+        "tycon-spec-first-checker",
+        "tycon-story-validator"
+      ],
+      "conditional": [
+        "tycon-feature-wiring-checker"
+      ],
+      "model_hints": {
+        "tycon-ac-coverage-checker": "haiku",
+        "tycon-feature-wiring-checker": "haiku"
+      },
+      "reloop_model_hints": {
+        "tycon-spec-first-checker": "sonnet"
+      },
+      "superficie": {
+        "tycon-ac-coverage-checker": true,
+        "tycon-feature-wiring-checker": true,
+        "tycon-plugin-react-conventions": true,
+        "tycon-plugin-security-basics": true,
+        "tycon-plugin-tests-coverage": true,
+        "tycon-spec-first-checker": true,
+        "tycon-story-validator": true
+      }
+    },
+    "solo-tsx-next": {
+      "base": [
+        "tycon-plugin-nextjs-conventions",
+        "tycon-plugin-security-basics",
+        "tycon-plugin-tests-coverage"
+      ],
+      "completitud": [
+        "tycon-ac-coverage-checker",
+        "tycon-spec-first-checker",
+        "tycon-story-validator"
+      ],
+      "conditional": [],
+      "model_hints": {
+        "tycon-ac-coverage-checker": "haiku"
+      },
+      "reloop_model_hints": {
+        "tycon-spec-first-checker": "sonnet"
+      },
+      "superficie": {
+        "tycon-ac-coverage-checker": true,
+        "tycon-plugin-nextjs-conventions": true,
+        "tycon-plugin-security-basics": true,
+        "tycon-plugin-tests-coverage": true,
+        "tycon-spec-first-checker": true,
+        "tycon-story-validator": true
+      }
+    },
+    "solo-ts-sin-framework": {
+      "base": [
+        "tycon-plugin-security-basics",
+        "tycon-plugin-tests-coverage"
+      ],
+      "completitud": [
+        "tycon-ac-coverage-checker",
+        "tycon-spec-first-checker",
+        "tycon-story-validator"
+      ],
+      "conditional": [],
+      "model_hints": {
+        "tycon-ac-coverage-checker": "haiku"
+      },
+      "reloop_model_hints": {
+        "tycon-spec-first-checker": "sonnet"
+      },
+      "superficie": {
+        "tycon-ac-coverage-checker": true,
+        "tycon-plugin-security-basics": true,
+        "tycon-plugin-tests-coverage": true,
+        "tycon-spec-first-checker": true,
+        "tycon-story-validator": true
+      }
+    },
+    "cs-y-tsx-react": {
+      "base": [
+        "tycon-plugin-dotnet-conventions",
+        "tycon-plugin-react-conventions",
+        "tycon-plugin-security-basics",
+        "tycon-plugin-tests-coverage"
+      ],
+      "completitud": [
+        "tycon-ac-coverage-checker",
+        "tycon-spec-first-checker",
+        "tycon-story-validator"
+      ],
+      "conditional": [
+        "tycon-feature-wiring-checker"
+      ],
+      "model_hints": {
+        "tycon-ac-coverage-checker": "haiku",
+        "tycon-feature-wiring-checker": "haiku"
+      },
+      "reloop_model_hints": {
+        "tycon-spec-first-checker": "sonnet"
+      },
+      "superficie": {
+        "tycon-ac-coverage-checker": true,
+        "tycon-feature-wiring-checker": true,
+        "tycon-plugin-dotnet-conventions": true,
+        "tycon-plugin-react-conventions": true,
+        "tycon-plugin-security-basics": true,
+        "tycon-plugin-tests-coverage": true,
+        "tycon-spec-first-checker": true,
+        "tycon-story-validator": true
+      }
+    },
+    "cs-y-tsx-next": {
+      "base": [
+        "tycon-plugin-dotnet-conventions",
+        "tycon-plugin-nextjs-conventions",
+        "tycon-plugin-security-basics",
+        "tycon-plugin-tests-coverage"
+      ],
+      "completitud": [
+        "tycon-ac-coverage-checker",
+        "tycon-spec-first-checker",
+        "tycon-story-validator"
+      ],
+      "conditional": [],
+      "model_hints": {
+        "tycon-ac-coverage-checker": "haiku"
+      },
+      "reloop_model_hints": {
+        "tycon-spec-first-checker": "sonnet"
+      },
+      "superficie": {
+        "tycon-ac-coverage-checker": true,
+        "tycon-plugin-dotnet-conventions": true,
+        "tycon-plugin-nextjs-conventions": true,
+        "tycon-plugin-security-basics": true,
+        "tycon-plugin-tests-coverage": true,
+        "tycon-spec-first-checker": true,
+        "tycon-story-validator": true
+      }
+    },
+    "cs-y-ts-sin-framework": {
+      "base": [
+        "tycon-plugin-dotnet-conventions",
+        "tycon-plugin-security-basics",
+        "tycon-plugin-tests-coverage"
+      ],
+      "completitud": [
+        "tycon-ac-coverage-checker",
+        "tycon-spec-first-checker",
+        "tycon-story-validator"
+      ],
+      "conditional": [],
+      "model_hints": {
+        "tycon-ac-coverage-checker": "haiku"
+      },
+      "reloop_model_hints": {
+        "tycon-spec-first-checker": "sonnet"
+      },
+      "superficie": {
+        "tycon-ac-coverage-checker": true,
+        "tycon-plugin-dotnet-conventions": true,
+        "tycon-plugin-security-basics": true,
+        "tycon-plugin-tests-coverage": true,
+        "tycon-spec-first-checker": true,
+        "tycon-story-validator": true
+      }
+    },
+    "solo-config-plugin": {
+      "base": [
+        "tycon-plugin-dotnet-conventions"
+      ],
+      "completitud": [
+        "tycon-ac-coverage-checker",
+        "tycon-spec-first-checker",
+        "tycon-story-validator"
+      ],
+      "conditional": [],
+      "model_hints": {
+        "tycon-ac-coverage-checker": "haiku"
+      },
+      "reloop_model_hints": {
+        "tycon-spec-first-checker": "sonnet"
+      },
+      "superficie": {
+        "tycon-ac-coverage-checker": true,
+        "tycon-plugin-dotnet-conventions": true,
+        "tycon-spec-first-checker": true,
+        "tycon-story-validator": true
+      }
+    },
+    "dependencia-nueva-react": {
+      "base": [
+        "tycon-plugin-react-conventions"
+      ],
+      "completitud": [
+        "tycon-ac-coverage-checker",
+        "tycon-spec-first-checker",
+        "tycon-story-validator"
+      ],
+      "conditional": [],
+      "model_hints": {
+        "tycon-ac-coverage-checker": "haiku"
+      },
+      "reloop_model_hints": {
+        "tycon-spec-first-checker": "sonnet"
+      },
+      "superficie": {
+        "tycon-ac-coverage-checker": true,
+        "tycon-plugin-react-conventions": false,
+        "tycon-spec-first-checker": true,
+        "tycon-story-validator": true
+      }
+    },
+    "dependencia-nueva-next": {
+      "base": [
+        "tycon-plugin-nextjs-conventions"
+      ],
+      "completitud": [
+        "tycon-ac-coverage-checker",
+        "tycon-spec-first-checker",
+        "tycon-story-validator"
+      ],
+      "conditional": [],
+      "model_hints": {
+        "tycon-ac-coverage-checker": "haiku"
+      },
+      "reloop_model_hints": {
+        "tycon-spec-first-checker": "sonnet"
+      },
+      "superficie": {
+        "tycon-ac-coverage-checker": true,
+        "tycon-plugin-nextjs-conventions": false,
+        "tycon-spec-first-checker": true,
+        "tycon-story-validator": true
+      }
+    },
+    "dependencia-y-cs": {
+      "base": [
+        "tycon-plugin-dotnet-conventions",
+        "tycon-plugin-security-basics",
+        "tycon-plugin-tests-coverage"
+      ],
+      "completitud": [
+        "tycon-ac-coverage-checker",
+        "tycon-spec-first-checker",
+        "tycon-story-validator"
+      ],
+      "conditional": [],
+      "model_hints": {
+        "tycon-ac-coverage-checker": "haiku"
+      },
+      "reloop_model_hints": {
+        "tycon-spec-first-checker": "sonnet"
+      },
+      "superficie": {
+        "tycon-ac-coverage-checker": true,
+        "tycon-plugin-dotnet-conventions": true,
+        "tycon-plugin-security-basics": true,
+        "tycon-plugin-tests-coverage": true,
+        "tycon-spec-first-checker": true,
+        "tycon-story-validator": true
+      }
+    },
+    "solo-sh": {
+      "base": [
+        "tycon-plugin-security-basics"
+      ],
+      "completitud": [
+        "tycon-ac-coverage-checker",
+        "tycon-spec-first-checker",
+        "tycon-story-validator"
+      ],
+      "conditional": [
+        "tycon-silent-failure-hunter"
+      ],
+      "model_hints": {
+        "tycon-ac-coverage-checker": "haiku"
+      },
+      "reloop_model_hints": {
+        "tycon-spec-first-checker": "sonnet"
+      },
+      "superficie": {
+        "tycon-ac-coverage-checker": true,
+        "tycon-plugin-security-basics": true,
+        "tycon-silent-failure-hunter": true,
+        "tycon-spec-first-checker": true,
+        "tycon-story-validator": true
+      }
+    },
+    "secretos": {
+      "base": [
+        "tycon-plugin-security-basics"
+      ],
+      "completitud": [
+        "tycon-ac-coverage-checker",
+        "tycon-spec-first-checker",
+        "tycon-story-validator"
+      ],
+      "conditional": [],
+      "model_hints": {
+        "tycon-ac-coverage-checker": "haiku"
+      },
+      "reloop_model_hints": {
+        "tycon-spec-first-checker": "sonnet"
+      },
+      "superficie": {
+        "tycon-ac-coverage-checker": true,
+        "tycon-plugin-security-basics": true,
+        "tycon-spec-first-checker": true,
+        "tycon-story-validator": true
+      }
+    },
+    "plugin-bizuit-ibackendplugin": {
+      "base": [
+        "tycon-plugin-dotnet-conventions",
+        "tycon-plugin-security-basics",
+        "tycon-plugin-tests-coverage"
+      ],
+      "completitud": [
+        "tycon-ac-coverage-checker",
+        "tycon-spec-first-checker",
+        "tycon-story-validator"
+      ],
+      "conditional": [
+        "tycon-sibling-pattern-reviewer"
+      ],
+      "model_hints": {
+        "tycon-ac-coverage-checker": "haiku"
+      },
+      "reloop_model_hints": {
+        "tycon-sibling-pattern-reviewer": "sonnet",
+        "tycon-spec-first-checker": "sonnet"
+      },
+      "superficie": {
+        "tycon-ac-coverage-checker": true,
+        "tycon-plugin-dotnet-conventions": true,
+        "tycon-plugin-security-basics": true,
+        "tycon-plugin-tests-coverage": true,
+        "tycon-sibling-pattern-reviewer": true,
+        "tycon-spec-first-checker": true,
+        "tycon-story-validator": true
+      }
+    },
+    "plugin-bizuit-csproj": {
+      "base": [
+        "tycon-plugin-dotnet-conventions",
+        "tycon-plugin-security-basics",
+        "tycon-plugin-tests-coverage"
+      ],
+      "completitud": [
+        "tycon-ac-coverage-checker",
+        "tycon-spec-first-checker",
+        "tycon-story-validator"
+      ],
+      "conditional": [
+        "tycon-sibling-pattern-reviewer"
+      ],
+      "model_hints": {
+        "tycon-ac-coverage-checker": "haiku"
+      },
+      "reloop_model_hints": {
+        "tycon-sibling-pattern-reviewer": "sonnet",
+        "tycon-spec-first-checker": "sonnet"
+      },
+      "superficie": {
+        "tycon-ac-coverage-checker": true,
+        "tycon-plugin-dotnet-conventions": true,
+        "tycon-plugin-security-basics": false,
+        "tycon-plugin-tests-coverage": true,
+        "tycon-sibling-pattern-reviewer": true,
+        "tycon-spec-first-checker": true,
+        "tycon-story-validator": true
+      }
+    },
+    "tsx-y-plugin-json": {
+      "base": [
+        "tycon-plugin-react-conventions",
+        "tycon-plugin-security-basics",
+        "tycon-plugin-tests-coverage"
+      ],
+      "completitud": [
+        "tycon-ac-coverage-checker",
+        "tycon-spec-first-checker",
+        "tycon-story-validator"
+      ],
+      "conditional": [
+        "tycon-feature-wiring-checker"
+      ],
+      "model_hints": {
+        "tycon-ac-coverage-checker": "haiku",
+        "tycon-feature-wiring-checker": "haiku"
+      },
+      "reloop_model_hints": {
+        "tycon-spec-first-checker": "sonnet"
+      },
+      "superficie": {
+        "tycon-ac-coverage-checker": true,
+        "tycon-feature-wiring-checker": true,
+        "tycon-plugin-react-conventions": true,
+        "tycon-plugin-security-basics": true,
+        "tycon-plugin-tests-coverage": true,
+        "tycon-spec-first-checker": true,
+        "tycon-story-validator": true
+      }
+    },
+    "sh-y-plugin-json": {
+      "base": [
+        "tycon-plugin-dotnet-conventions",
+        "tycon-plugin-security-basics"
+      ],
+      "completitud": [
+        "tycon-ac-coverage-checker",
+        "tycon-spec-first-checker",
+        "tycon-story-validator"
+      ],
+      "conditional": [
+        "tycon-silent-failure-hunter"
+      ],
+      "model_hints": {
+        "tycon-ac-coverage-checker": "haiku"
+      },
+      "reloop_model_hints": {
+        "tycon-spec-first-checker": "sonnet"
+      },
+      "superficie": {
+        "tycon-ac-coverage-checker": true,
+        "tycon-plugin-dotnet-conventions": true,
+        "tycon-plugin-security-basics": true,
+        "tycon-silent-failure-hunter": true,
+        "tycon-spec-first-checker": true,
+        "tycon-story-validator": true
+      }
+    },
+    "solo-docs": {
+      "base": [],
+      "completitud": [
+        "tycon-ac-coverage-checker",
+        "tycon-spec-first-checker",
+        "tycon-story-validator"
+      ],
+      "conditional": [],
+      "model_hints": {
+        "tycon-ac-coverage-checker": "haiku"
+      },
+      "reloop_model_hints": {
+        "tycon-spec-first-checker": "sonnet"
+      },
+      "superficie": {
+        "tycon-ac-coverage-checker": true,
+        "tycon-spec-first-checker": true,
+        "tycon-story-validator": true
+      }
+    },
+    "cs-hub-con-try": {
+      "base": [
+        "tycon-plugin-dotnet-conventions",
+        "tycon-plugin-security-basics",
+        "tycon-plugin-tests-coverage"
+      ],
+      "completitud": [
+        "tycon-ac-coverage-checker",
+        "tycon-spec-first-checker",
+        "tycon-story-validator"
+      ],
+      "conditional": [
+        "signalr-hub-reviewer",
+        "tycon-silent-failure-hunter"
+      ],
+      "model_hints": {
+        "tycon-ac-coverage-checker": "haiku"
+      },
+      "reloop_model_hints": {
+        "tycon-spec-first-checker": "sonnet"
+      },
+      "superficie": {
+        "signalr-hub-reviewer": true,
+        "tycon-ac-coverage-checker": true,
+        "tycon-plugin-dotnet-conventions": true,
+        "tycon-plugin-security-basics": true,
+        "tycon-plugin-tests-coverage": true,
+        "tycon-silent-failure-hunter": true,
+        "tycon-spec-first-checker": true,
+        "tycon-story-validator": true
+      }
+    }
+  }
+}

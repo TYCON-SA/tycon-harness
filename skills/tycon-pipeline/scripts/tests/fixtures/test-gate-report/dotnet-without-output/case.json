@@ -1,0 +1,17 @@
+{
+  "__doc": "dotnet que no dejó trx ni cobertura (MSB, compilación rota): totales vacíos, y las líneas tocadas dicen que no hubo reporte. Base ilegible: queda en descartadas. Sin archivos nuevos ni declaración.",
+  "runner": "dotnet",
+  "suite_exit": "1",
+  "story_id": "9.8",
+  "cov_min": "75",
+  "ts": "2026-10-05T12:07:00Z",
+  "test_project_count": "1",
+  "scope": "",
+  "scope_source": "explicito",
+  "declared_new": [],
+  "code_state": { "git": true },
+  "base_ref": "HEAD",
+  "base_json_raw": "[1, 2]",
+  "base": { "src/A.cs": { "lines": 3 } },
+  "now": { "src/A.cs": { "lines": 3, "changed": [2] } }
+}

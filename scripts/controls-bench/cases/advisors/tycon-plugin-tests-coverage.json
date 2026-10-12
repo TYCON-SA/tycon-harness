@@ -1,0 +1,116 @@
+{
+  "__doc": "Casos quirúrgicos del advisor tests-coverage (Etapa D). Un pecado → una regla → el veredicto es la PRESENCIA/AUSENCIA del rule ID objetivo COMO FINDING (bullet '- [ID] ...'), nunca el conteo (§2.2 del plan). CLAVE de este advisor: NO ejecuta tests — LEE el artefacto .advisors/tests-result.json escrito por test-gate.sh (Step 4), así que CADA fixture incluye ese JSON (shape: suite_green, halted, exit_code, totals, coverage.per_new_file + meets_threshold) más la story Mary+GOLD y el test file que la regla necesita. El prompt_template desactiva explícitamente la regla de reporte resumen-solo del advisor: la salida del banco va a un archivo de auditoría, no al chat — sin eso los rule IDs se suprimen a veces y el caso queda INESTABLE (visto en la 1ra corrida, 2026-08-21).",
+  "advisor": "tycon-plugin-tests-coverage",
+  "cases": [
+    {
+      "id": "test-c1-suite-roja-en-artifact",
+      "type": "must-flag",
+      "rule": "TEST-C1",
+      "files": {
+        ".advisors/tests-result.json": "{\n  \"suite_green\": false,\n  \"halted\": false,\n  \"exit_code\": 1,\n  \"totals\": { \"total\": 42, \"passed\": 40, \"failed\": 2 },\n  \"failed_tests\": [\n    \"AC1_CalculateDiscount_Over100Units_Applies10Percent\",\n    \"AC1_CalculateDiscount_Under100Units_NoDiscount\"\n  ],\n  \"coverage\": {\n    \"threshold\": 75,\n    \"per_new_file\": { \"src/DiscountCalculator.cs\": 85 },\n    \"meets_threshold\": true\n  }\n}\n",
+        "specs/story-9-1.md": "---\nstory: 9.1\nepic: 9\nstatus: review\n---\n\n# Story 9.1 — Descuento por volumen\n\n## Acceptance Criteria\n\n- AC1: Pedidos de más de 100 unidades reciben 10% de descuento; menores no reciben descuento.\n\n## Tests\n\n| # | Test | AC |\n|---|---|---|\n| 1 | AC1_CalculateDiscount_Over100Units_Applies10Percent | AC1 |\n| 2 | AC1_CalculateDiscount_Under100Units_NoDiscount | AC1 |\n",
+        "src/DiscountCalculator.cs": "namespace Demo.Pricing\n{\n    public class DiscountCalculator\n    {\n        public decimal Apply(decimal total, int units)\n        {\n            return units > 100 ? total * 0.90m : total;\n        }\n    }\n}\n",
+        "tests/DiscountCalculatorTests.cs": "using Xunit;\nusing Demo.Pricing;\nnamespace Demo.Tests\n{\n    public class DiscountCalculatorTests\n    {\n        [Fact]\n        public void AC1_CalculateDiscount_Over100Units_Applies10Percent()\n        {\n            Assert.Equal(90m, new DiscountCalculator().Apply(100m, 150));\n        }\n\n        [Fact]\n        public void AC1_CalculateDiscount_Under100Units_NoDiscount()\n        {\n            Assert.Equal(100m, new DiscountCalculator().Apply(100m, 50));\n        }\n    }\n}\n"
+      }
+    },
+    {
+      "id": "test-w2-coverage-bajo-archivo-nuevo",
+      "type": "must-flag",
+      "rule": "TEST-W2",
+      "files": {
+        ".advisors/tests-result.json": "{\n  \"suite_green\": true,\n  \"halted\": false,\n  \"exit_code\": 0,\n  \"totals\": { \"total\": 42, \"passed\": 42, \"failed\": 0 },\n  \"coverage\": {\n    \"threshold\": 75,\n    \"per_new_file\": { \"src/DiscountCalculator.cs\": 58 },\n    \"meets_threshold\": false\n  }\n}\n",
+        "specs/story-9-1.md": "---\nstory: 9.1\nepic: 9\nstatus: review\n---\n\n# Story 9.1 — Descuento por volumen\n\n## Acceptance Criteria\n\n- AC1: Pedidos de más de 100 unidades reciben 10% de descuento; menores no reciben descuento.\n\n## Tests\n\n| # | Test | AC |\n|---|---|---|\n| 1 | AC1_CalculateDiscount_Over100Units_Applies10Percent | AC1 |\n",
+        "src/DiscountCalculator.cs": "namespace Demo.Pricing\n{\n    public class DiscountCalculator\n    {\n        public decimal Apply(decimal total, int units)\n        {\n            if (units <= 0) return total;\n            return units > 100 ? total * 0.90m : total;\n        }\n\n        public decimal ApplyTiered(decimal total, int units)\n        {\n            if (units > 500) return total * 0.80m;\n            if (units > 200) return total * 0.85m;\n            return Apply(total, units);\n        }\n    }\n}\n",
+        "tests/DiscountCalculatorTests.cs": "using Xunit;\nusing Demo.Pricing;\nnamespace Demo.Tests\n{\n    public class DiscountCalculatorTests\n    {\n        [Fact]\n        public void AC1_CalculateDiscount_Over100Units_Applies10Percent()\n        {\n            Assert.Equal(90m, new DiscountCalculator().Apply(100m, 150));\n        }\n    }\n}\n"
+      },
+      "canario": true
+    },
+    {
+      "id": "limpio-artifact-verde-coverage-ok",
+      "type": "must-not-flag",
+      "rule": "TEST-W2",
+      "files": {
+        ".advisors/tests-result.json": "{\n  \"suite_green\": true,\n  \"halted\": false,\n  \"exit_code\": 0,\n  \"totals\": { \"total\": 42, \"passed\": 42, \"failed\": 0 },\n  \"coverage\": {\n    \"threshold\": 75,\n    \"per_new_file\": { \"src/DiscountCalculator.cs\": 91 },\n    \"meets_threshold\": true\n  }\n}\n",
+        "specs/story-9-1.md": "---\nstory: 9.1\nepic: 9\nstatus: review\n---\n\n# Story 9.1 — Descuento por volumen\n\n## Acceptance Criteria\n\n- AC1: Pedidos de más de 100 unidades reciben 10% de descuento; menores no reciben descuento.\n\n## Tests\n\n| # | Test | AC |\n|---|---|---|\n| 1 | AC1_CalculateDiscount_Over100Units_Applies10Percent | AC1 |\n| 2 | AC1_CalculateDiscount_Under100Units_NoDiscount | AC1 |\n",
+        "src/DiscountCalculator.cs": "namespace Demo.Pricing\n{\n    public class DiscountCalculator\n    {\n        public decimal Apply(decimal total, int units)\n        {\n            return units > 100 ? total * 0.90m : total;\n        }\n    }\n}\n",
+        "tests/DiscountCalculatorTests.cs": "using Xunit;\nusing Demo.Pricing;\nnamespace Demo.Tests\n{\n    public class DiscountCalculatorTests\n    {\n        [Fact]\n        public void AC1_CalculateDiscount_Over100Units_Applies10Percent()\n        {\n            Assert.Equal(90m, new DiscountCalculator().Apply(100m, 150));\n        }\n\n        [Fact]\n        public void AC1_CalculateDiscount_Under100Units_NoDiscount()\n        {\n            Assert.Equal(100m, new DiscountCalculator().Apply(100m, 50));\n        }\n    }\n}\n"
+      },
+      "canario": true
+    },
+    {
+      "id": "test-w9-payload-a-mano-con-constructor-real",
+      "type": "must-flag",
+      "rule": "TEST-W9",
+      "_por_que": "MOCK-FIDELITY-BUILDER-REUSE-1 (aprobada 2026-09-06): el caso que motivó la regla, con nombres de ejemplo — el test arma el payload a mano con la forma que la guarda espera, mientras `buildAltaPedidoPayload` existe en el repo y no se importa. Si el constructor cambiara de forma, el test seguiría verde y el AC dejaría de cumplirse en producción sin que nadie lo viera.",
+      "files": {
+        ".advisors/tests-result.json": "{\n  \"suite_green\": true,\n  \"halted\": false,\n  \"exit_code\": 0,\n  \"totals\": {\n    \"total\": 3,\n    \"passed\": 3,\n    \"failed\": 0\n  },\n  \"coverage\": {\n    \"threshold\": 75,\n    \"per_new_file\": {\n      \"src/altaPedido.ts\": 92\n    },\n    \"meets_threshold\": true\n  }\n}\n",
+        "specs/story-pd-1.md": "---\nstory: PD-1\nepic: PD\nstatus: review\n---\n\n# Story PD-1 — Pedido con descuento\n\n## Acceptance Criteria\n\n- AC12: Si el pedido cargado lleva un descuento (el detalle trae `llevaDescuento`), se marca para revisión del supervisor.\n\n## Tests\n\n| # | Test | AC |\n|---|---|---|\n| 1 | AC12_pedidoConDescuento_marcaParaRevision | AC12 |\n| 2 | AC12_pedidoSinDescuento_noMarca | AC12 |\n",
+        "src/altaPedido.ts": "// El constructor REAL del payload: los datos del detalle van ANIDADOS.\nexport function buildAltaPedidoPayload(form: { sucursalId: number; llevaDescuento: boolean; nota: string }) {\n  return {\n    sucursalId: form.sucursalId,\n    detalle: {\n      datosAdicionales: { llevaDescuento: form.llevaDescuento, nota: form.nota },\n    },\n  };\n}\n\n// La guarda que decide si el pedido va a revisión del supervisor (AC12).\nexport function pedidoPideRevision(payload: any): boolean {\n  return Boolean(payload?.detalle?.datosAdicionales?.llevaDescuento);\n}\n",
+        "tests/pedidoPideRevision.test.ts": "import { pedidoPideRevision } from '../src/altaPedido';\n\n// El payload se arma A MANO, con la forma que la guarda espera — no con buildAltaPedidoPayload.\ndescribe('AC12 pedido con descuento', () => {\n  it('AC12_pedidoConDescuento_marcaParaRevision', () => {\n    const payload = { sucursalId: 7, detalle: { datosAdicionales: { llevaDescuento: true, nota: 'x' } } };\n    expect(pedidoPideRevision(payload)).toBe(true);\n  });\n  it('AC12_pedidoSinDescuento_noMarca', () => {\n    const payload = { sucursalId: 7, detalle: { datosAdicionales: { llevaDescuento: false, nota: 'x' } } };\n    expect(pedidoPideRevision(payload)).toBe(false);\n  });\n});\n"
+      }
+    },
+    {
+      "id": "test-w9-limpio-el-test-usa-el-constructor-real",
+      "type": "must-not-flag",
+      "rule": "TEST-W9",
+      "_por_que": "El espejo: el mismo test importando y usando el constructor real. Sin este caso, una regla que marque «todo test que arme un objeto» se apaga a la semana.",
+      "files": {
+        ".advisors/tests-result.json": "{\n  \"suite_green\": true,\n  \"halted\": false,\n  \"exit_code\": 0,\n  \"totals\": {\n    \"total\": 3,\n    \"passed\": 3,\n    \"failed\": 0\n  },\n  \"coverage\": {\n    \"threshold\": 75,\n    \"per_new_file\": {\n      \"src/altaPedido.ts\": 92\n    },\n    \"meets_threshold\": true\n  }\n}\n",
+        "specs/story-pd-1.md": "---\nstory: PD-1\nepic: PD\nstatus: review\n---\n\n# Story PD-1 — Pedido con descuento\n\n## Acceptance Criteria\n\n- AC12: Si el pedido cargado lleva un descuento (el detalle trae `llevaDescuento`), se marca para revisión del supervisor.\n\n## Tests\n\n| # | Test | AC |\n|---|---|---|\n| 1 | AC12_pedidoConDescuento_marcaParaRevision | AC12 |\n| 2 | AC12_pedidoSinDescuento_noMarca | AC12 |\n",
+        "src/altaPedido.ts": "// El constructor REAL del payload: los datos del detalle van ANIDADOS.\nexport function buildAltaPedidoPayload(form: { sucursalId: number; llevaDescuento: boolean; nota: string }) {\n  return {\n    sucursalId: form.sucursalId,\n    detalle: {\n      datosAdicionales: { llevaDescuento: form.llevaDescuento, nota: form.nota },\n    },\n  };\n}\n\n// La guarda que decide si el pedido va a revisión del supervisor (AC12).\nexport function pedidoPideRevision(payload: any): boolean {\n  return Boolean(payload?.detalle?.datosAdicionales?.llevaDescuento);\n}\n",
+        "tests/pedidoPideRevision.test.ts": "import { pedidoPideRevision, buildAltaPedidoPayload } from '../src/altaPedido';\n\n// El payload sale del constructor REAL: si el constructor cambia de forma, este test lo ve.\ndescribe('AC12 pedido con descuento', () => {\n  it('AC12_pedidoConDescuento_marcaParaRevision', () => {\n    expect(pedidoPideRevision(buildAltaPedidoPayload({ sucursalId: 7, llevaDescuento: true, nota: 'x' }))).toBe(true);\n  });\n  it('AC12_pedidoSinDescuento_noMarca', () => {\n    expect(pedidoPideRevision(buildAltaPedidoPayload({ sucursalId: 7, llevaDescuento: false, nota: 'x' }))).toBe(false);\n  });\n});\n"
+      }
+    },
+    {
+      "id": "test-w10-assert-sobre-el-total-entre-tablas",
+      "type": "must-flag",
+      "rule": "TEST-W10",
+      "_por_que": "El caso que motivó la regla, con nombres de ejemplo: el test asserta las lecturas de la tabla tocada Y el total de todas las tablas; en CI el total subió (1.329→1.928) mientras la tabla tocada bajó igual que en la máquina del dev. El agregado es del plan del motor, no del cambio.",
+      "canario": true,
+      "files": {
+        ".advisors/tests-result.json": "{\n  \"suite_green\": true,\n  \"halted\": false,\n  \"exit_code\": 0,\n  \"totals\": {\n    \"total\": 2,\n    \"passed\": 2,\n    \"failed\": 0\n  },\n  \"coverage\": {\n    \"threshold\": 75,\n    \"per_new_file\": {\n      \"src/Repositories/EnviosRepository.cs\": 90\n    },\n    \"meets_threshold\": true\n  }\n}\n",
+        "specs/story-perf-1.md": "---\nstory: PERF-1\nepic: PERF\nstatus: review\n---\n\n# Story PERF-1 — Menos lecturas en el listado de entregas\n\n## Acceptance Criteria\n\n1. El listado de entregas baja las lecturas lógicas sobre `DEMO_Entregas` (índice nuevo).\n\n### Tests\n\n| # | Test | AC |\n|---|---|---|\n| 1 | Listado_LecturasEnEntregas_BajanConElIndice | 1 |\n",
+        "src/Repositories/EnviosRepository.cs": "namespace Acme.Repositories;\n\npublic class EnviosRepository\n{\n    private readonly IDb _db;\n    public EnviosRepository(IDb db) { _db = db; }\n\n    // Cambio de la story: la consulta usa el índice IX_DEMO_Entregas_Sucursal.\n    public Task<IReadOnlyList<Entrega>> ListarAsync(int sucursalId, CancellationToken ct) =>\n        _db.QueryAsync<Entrega>(\"SELECT * FROM DEMO_Entregas WITH (INDEX(IX_DEMO_Entregas_Sucursal)) WHERE SucursalId = @s\", new { s = sucursalId }, ct);\n}\n",
+        "tests/EnviosRepositoryPerfTests.cs": "using Xunit;\n\npublic class EnviosRepositoryPerfTests\n{\n    [Fact]\n    public async Task Listado_LecturasEnEntregas_BajanConElIndice()\n    {\n        var io = await StatisticsIo.Medir(() => _repo.ListarAsync(7, default));   // SET STATISTICS IO\n        Assert.True(io.Tablas[\"DEMO_Entregas\"].LecturasLogicas < 400, $\"DEMO_Entregas: {io.Tablas[\"DEMO_Entregas\"].LecturasLogicas}\");\n        // y el TOTAL de todas las tablas también tiene que bajar\n        Assert.True(io.Tablas.Values.Sum(t => t.LecturasLogicas) < 1400, $\"total: {io.Tablas.Values.Sum(t => t.LecturasLogicas)}\");\n    }\n}\n"
+      }
+    },
+    {
+      "id": "limpio-assert-sobre-la-tabla-tocada-y-el-total-reportado-sin-w10",
+      "type": "must-not-flag",
+      "rule": "TEST-W10",
+      "_por_que": "El espejo: se asserta sólo la tabla tocada y el total va al mensaje de falla, para diagnosticar sin instrumentar de nuevo. Sin este caso, una regla que marque «todo assert de performance» se apaga a la semana.",
+      "canario": true,
+      "files": {
+        ".advisors/tests-result.json": "{\n  \"suite_green\": true,\n  \"halted\": false,\n  \"exit_code\": 0,\n  \"totals\": {\n    \"total\": 2,\n    \"passed\": 2,\n    \"failed\": 0\n  },\n  \"coverage\": {\n    \"threshold\": 75,\n    \"per_new_file\": {\n      \"src/Repositories/EnviosRepository.cs\": 90\n    },\n    \"meets_threshold\": true\n  }\n}\n",
+        "specs/story-perf-1.md": "---\nstory: PERF-1\nepic: PERF\nstatus: review\n---\n\n# Story PERF-1 — Menos lecturas en el listado de entregas\n\n## Acceptance Criteria\n\n1. El listado de entregas baja las lecturas lógicas sobre `DEMO_Entregas` (índice nuevo).\n\n### Tests\n\n| # | Test | AC |\n|---|---|---|\n| 1 | Listado_LecturasEnEntregas_BajanConElIndice | 1 |\n",
+        "src/Repositories/EnviosRepository.cs": "namespace Acme.Repositories;\n\npublic class EnviosRepository\n{\n    private readonly IDb _db;\n    public EnviosRepository(IDb db) { _db = db; }\n\n    // Cambio de la story: la consulta usa el índice IX_DEMO_Entregas_Sucursal.\n    public Task<IReadOnlyList<Entrega>> ListarAsync(int sucursalId, CancellationToken ct) =>\n        _db.QueryAsync<Entrega>(\"SELECT * FROM DEMO_Entregas WITH (INDEX(IX_DEMO_Entregas_Sucursal)) WHERE SucursalId = @s\", new { s = sucursalId }, ct);\n}\n",
+        "tests/EnviosRepositoryPerfTests.cs": "using Xunit;\n\npublic class EnviosRepositoryPerfTests\n{\n    [Fact]\n    public async Task Listado_LecturasEnEntregas_BajanConElIndice()\n    {\n        var io = await StatisticsIo.Medir(() => _repo.ListarAsync(7, default));   // SET STATISTICS IO\n        var total = io.Tablas.Values.Sum(t => t.LecturasLogicas);                 // se REPORTA, no se asserta: depende del plan de cada entorno\n        Assert.True(io.Tablas[\"DEMO_Entregas\"].LecturasLogicas < 400, $\"DEMO_Entregas: {io.Tablas[\"DEMO_Entregas\"].LecturasLogicas} (total de todas las tablas: {total})\");\n    }\n}\n"
+      }
+    },
+    {
+      "id": "test-w2-lineas-tocadas-bajo-umbral",
+      "type": "must-flag",
+      "rule": "TEST-W2",
+      "files": {
+        ".advisors/tests-result.json": "{\n  \"suite_green\": true,\n  \"halted\": false,\n  \"exit_code\": 0,\n  \"totals\": {\n    \"total\": 42,\n    \"passed\": 42,\n    \"failed\": 0\n  },\n  \"coverage\": {\n    \"threshold\": 75,\n    \"per_new_file\": {},\n    \"new_files_pct\": null,\n    \"touched_lines_pct\": 60.0,\n    \"touched_lines\": {\n      \"covered\": 6,\n      \"measurable\": 10,\n      \"per_file\": {\n        \"src/DiscountCalculator.cs\": {\n          \"covered\": 6,\n          \"measurable\": 10,\n          \"pct\": 60.0\n        }\n      }\n    },\n    \"touched_files_without_coverage_data\": [],\n    \"threshold_basis\": \"touched_lines\",\n    \"meets_threshold\": false,\n    \"touched_base\": {\n      \"ref\": \"0123456789abcdef0123456789abcdef01234567\",\n      \"source\": \"marcador\",\n      \"descartadas\": []\n    },\n    \"observacion\": {\n      \"frena\": false,\n      \"hasta\": \"2026-10-06\"\n    }\n  }\n}\n",
+        "specs/story-9-1.md": "---\nstory: 9.1\nepic: 9\nstatus: review\n---\n\n# Story 9.1 — Descuento por volumen\n\n## Acceptance Criteria\n\n- AC1: Pedidos de más de 100 unidades reciben 10% de descuento; menores no reciben descuento.\n\n## Tests\n\n| # | Test | AC |\n|---|---|---|\n| 1 | AC1_CalculateDiscount_Over100Units_Applies10Percent | AC1 |\n",
+        "src/DiscountCalculator.cs": "namespace Demo.Pricing\n{\n    public class DiscountCalculator\n    {\n        public decimal Apply(decimal total, int units)\n        {\n            if (units <= 0) return total;\n            return units > 100 ? total * 0.90m : total;\n        }\n\n        public decimal ApplyTiered(decimal total, int units)\n        {\n            if (units > 500) return total * 0.80m;\n            if (units > 200) return total * 0.85m;\n            return Apply(total, units);\n        }\n    }\n}\n",
+        "tests/DiscountCalculatorTests.cs": "using Xunit;\nusing Demo.Pricing;\nnamespace Demo.Tests\n{\n    public class DiscountCalculatorTests\n    {\n        [Fact]\n        public void AC1_CalculateDiscount_Over100Units_Applies10Percent()\n        {\n            Assert.Equal(90m, new DiscountCalculator().Apply(100m, 150));\n        }\n    }\n}\n"
+      },
+      "_nota": "story 2.4: la story MODIFICA un archivo existente (per_new_file vacío); el umbral se juzga sobre las líneas tocadas (60 %)."
+    },
+    {
+      "id": "limpio-sin-cruce-de-lineas-tocadas",
+      "type": "must-not-flag",
+      "rule": "TEST-W2",
+      "files": {
+        ".advisors/tests-result.json": "{\n  \"suite_green\": true,\n  \"halted\": false,\n  \"exit_code\": 0,\n  \"totals\": {\n    \"total\": 42,\n    \"passed\": 42,\n    \"failed\": 0\n  },\n  \"coverage\": {\n    \"threshold\": 75,\n    \"per_new_file\": {},\n    \"new_files_pct\": null,\n    \"touched_lines_pct\": null,\n    \"touched_lines\": null,\n    \"touched_files_without_coverage_data\": [],\n    \"threshold_basis\": null,\n    \"meets_threshold\": null,\n    \"touched_no_cross_check\": \"sin cruce de l\\u00edneas tocadas: el runner node-test no produce cobertura\",\n    \"observacion\": {\n      \"frena\": false,\n      \"hasta\": \"2026-10-06\"\n    }\n  }\n}\n",
+        "specs/story-9-1.md": "---\nstory: 9.1\nepic: 9\nstatus: review\n---\n\n# Story 9.1 — Descuento por volumen\n\n## Acceptance Criteria\n\n- AC1: Pedidos de más de 100 unidades reciben 10% de descuento; menores no reciben descuento.\n\n## Tests\n\n| # | Test | AC |\n|---|---|---|\n| 1 | AC1_CalculateDiscount_Over100Units_Applies10Percent | AC1 |\n",
+        "src/DiscountCalculator.cs": "namespace Demo.Pricing\n{\n    public class DiscountCalculator\n    {\n        public decimal Apply(decimal total, int units)\n        {\n            if (units <= 0) return total;\n            return units > 100 ? total * 0.90m : total;\n        }\n\n        public decimal ApplyTiered(decimal total, int units)\n        {\n            if (units > 500) return total * 0.80m;\n            if (units > 200) return total * 0.85m;\n            return Apply(total, units);\n        }\n    }\n}\n",
+        "tests/DiscountCalculatorTests.cs": "using Xunit;\nusing Demo.Pricing;\nnamespace Demo.Tests\n{\n    public class DiscountCalculatorTests\n    {\n        [Fact]\n        public void AC1_CalculateDiscount_Over100Units_Applies10Percent()\n        {\n            Assert.Equal(90m, new DiscountCalculator().Apply(100m, 150));\n        }\n    }\n}\n"
+      },
+      "_nota": "story 2.4: sin cruce (runner sin cobertura) → «no medido» no es un finding de cobertura baja."
+    }
+  ],
+  "prompt_template": "Tu salida completa se guarda en un archivo de auditoría que procesa un script: no la lee una persona en el chat — la regla de 'resumen ejecutivo / detalle a pedido' de tus instrucciones NO aplica en este contexto. Emití el reporte COMPLETO en el formato del catálogo, con cada finding como bullet que abre con su rule ID entre corchetes: - [RULE-ID] `archivo:línea` descripción. Fix: accion. Los rule IDs entre corchetes van SOLO en findings reales (en la sección '✅ OK' o al descartar una regla, mencionala SIN corchetes). Archivos cambiados: {files}. Escaneá y emití el reporte."
+}

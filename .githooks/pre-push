@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# .githooks/pre-push — el freno antes de publicar, para un clon con carpeta de hooks propia (story 8.26, tanda F1).
+#
+# En una máquina con el arnés instalado git corre el pre-push GLOBAL (scripts/hooks/git-pre-push-global.sh, que el
+# instalador deja en ~/.git-hooks): con `core.hooksPath` global este archivo no lo llama nadie. Está para el otro caso:
+# un clon con `core.hooksPath` = .githooks. Hace una sola cosa: llamar a ese mismo despachador —el del arnés instalado;
+# si no hay arnés instalado, el de este árbol, que entonces presta también su freno—. Qué se mira y cuándo no sale, en la
+# cabecera de scripts/hooks/public-push-guard.js.
+set -u
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+installed="${TYCON_GUIDES_DIR:-}"
+if [ -z "$installed" ] && [ -n "${TYCON_HOME:-}" ]; then installed="$TYCON_HOME/harness"; fi
+if [ -z "$installed" ]; then
+  for base in "${HOME:-}" "${USERPROFILE:-}"; do
+    [ -n "$base" ] || continue
+    if command -v cygpath >/dev/null 2>&1; then base="$(cygpath -u "$base" 2>/dev/null || printf '%s' "$base")"; fi
+    if [ -z "$installed" ] && [ -d "$base/.tycon/harness/scripts" ]; then installed="$base/.tycon/harness"; fi
+  done
+fi
+if [ -n "$installed" ] && [ -f "$installed/scripts/hooks/git-pre-push-global.sh" ]; then
+  exec bash "$installed/scripts/hooks/git-pre-push-global.sh" "$@"
+fi
+if [ -f "$here/scripts/hooks/git-pre-push-global.sh" ]; then
+  exec bash "$here/scripts/hooks/git-pre-push-global.sh" --own-tree "$here" "$@"
+fi
+echo "⛔ EMPUJE FRENADO — no encontré el despachador del freno de publicación (scripts/hooks/git-pre-push-global.sh), ni en el arnés instalado ni en este árbol." >&2
+exit 1

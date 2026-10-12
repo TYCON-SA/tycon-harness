@@ -1,0 +1,103 @@
+{
+  "__doc": "FIX-8 (2026-08-25, caso C7): WIRING-C5 compara el layout del código contra el documento de arquitectura de información en UN SOLO SENTIDO — código nuevo → documento. Si el documento cambia, las pantallas ya escritas NO se revisan nunca más. La mitigación que existía sólo se disparaba al CREAR el documento (nunca al editarlo) y pedía otra cosa. Ahora editarlo deja una marca en .advisors/ que el cierre de la próxima story de interfaz lee, y la marca se levanta sola cuando el revisor de wiring vuelve a correr EN ESE REPO. Cero revisores extra: la opción cara pondría un revisor caro a mirar código que el commit no tocó.",
+  "hooks": [
+    {
+      "hook": "hook-pre-edit.js → on-planning-artifact (marca)",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/hook-pre-edit.js",
+      "event": "PreToolUse",
+      "matcher": "Edit|Write",
+      "cases": [
+        {
+          "id": "editar-el-mapa-de-navegacion-deja-la-marca",
+          "type": "must-run",
+          "setup": [
+            "git init -q -b main . && mkdir -p specs/planning-artifacts && printf -- '---\\ntitle: mapa\\n---\\n# Mapa\\n' > specs/planning-artifacts/navigation-map.md && git add specs && git -c user.email=b@b -c user.name=b commit -q -m base"
+          ],
+          "stdin": {
+            "session_id": "bench-nd1",
+            "tool_name": "Edit",
+            "tool_input": {
+              "file_path": "${FIXTURE}/specs/planning-artifacts/navigation-map.md",
+              "old_string": "# Mapa",
+              "new_string": "# Mapa v2"
+            }
+          },
+          "expect": {
+            "file_contains": [
+              { "path": "${FIXTURE}/.advisors/navigation-drift.json", "re": "navigation-map\\.md" }
+            ]
+          }
+        },
+        {
+          "id": "quiet-otro-artefacto-de-planning-no-deja-marca",
+          "type": "must-not-block",
+          "__doc": "El PRD también es un artefacto de planning y también dispara la regla 12.1, pero NO es el modelo de navegación: marcarlo convertiría el aviso en ruido permanente.",
+          "setup": [
+            "git init -q -b main . && mkdir -p specs/planning-artifacts && printf -- '---\\ntitle: prd\\n---\\n# PRD\\n' > specs/planning-artifacts/prd.md && git add specs && git -c user.email=b@b -c user.name=b commit -q -m base"
+          ],
+          "stdin": {
+            "session_id": "bench-nd2",
+            "tool_name": "Edit",
+            "tool_input": {
+              "file_path": "${FIXTURE}/specs/planning-artifacts/prd.md",
+              "old_string": "# PRD",
+              "new_string": "# PRD v2"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "file_absent": ["${FIXTURE}/.advisors/navigation-drift.json"]
+          }
+        }
+      ]
+    },
+    {
+      "hook": "on-pre-commit.js → aviso de deriva de navegación",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/on-pre-commit.js",
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "cases": [
+        {
+          "id": "avisa-al-cerrar-una-story-de-interfaz",
+          "type": "must-block",
+          "__doc": "El bloqueo de esta corrida lo produce la evidencia de DoD; lo que este caso mide es que el aviso de deriva SALGA, que es lo nuevo.",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p specs/stories specs/planning-artifacts .advisors/dod-runtime",
+            "printf -- '---\\nstory: \"4.2\"\\nepic: \"4\"\\nstatus: in-progress\\n---\\n# Story 4.2\\n\\n## Acceptance Criteria\\n1. AC uno E2E\\n\\nfiles:\\n  - src/app/Panel.tsx\\n\\ntests_done_playwright_spec: tests/e2e/foo.spec.ts\\n' > specs/stories/4-2.md",
+            "printf -- '---\\ntitle: mapa\\n---\\n# Mapa\\n' > specs/planning-artifacts/navigation-map.md",
+            "git add specs && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "node -e \"const fs=require('fs');fs.mkdirSync('.advisors',{recursive:true});fs.writeFileSync('.advisors/navigation-drift.json',JSON.stringify({ts:new Date().toISOString(),artefacto:'specs/planning-artifacts/navigation-map.md',evento:'Edit'}))\"",
+            "node -e \"const fs=require('fs');const p='specs/stories/4-2.md';fs.writeFileSync(p,fs.readFileSync(p,'utf8').replace('status: in-progress','status: done'))\"",
+            "git add specs/stories/4-2.md"
+          ],
+          "stdin": { "tool_name": "Bash", "tool_input": { "command": "git commit -m \"story 4.2 done\"" } },
+          "expect": {
+            "exit": 2,
+            "stderr_re": ["tycon-navigation-drift", "WIRING-C5"]
+          }
+        },
+        {
+          "id": "no-avisa-si-el-revisor-de-wiring-ya-volvio-a-correr",
+          "type": "must-block",
+          "__doc": "La limpieza: un aviso que no se apaga nunca se aprende a ignorar. Se levanta con una corrida REAL del revisor (spawn del ledger), en ESTE repo y POSTERIOR al cambio.",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p specs/stories specs/planning-artifacts .advisors/dod-runtime",
+            "printf -- '---\\nstory: \"4.2\"\\nepic: \"4\"\\nstatus: in-progress\\n---\\n# Story 4.2\\n\\n## Acceptance Criteria\\n1. AC uno E2E\\n\\nfiles:\\n  - src/app/Panel.tsx\\n\\ntests_done_playwright_spec: tests/e2e/foo.spec.ts\\n' > specs/stories/4-2.md",
+            "git add specs && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "node -e \"const fs=require('fs');fs.mkdirSync('.advisors',{recursive:true});fs.writeFileSync('.advisors/navigation-drift.json',JSON.stringify({ts:new Date(Date.now()-60000).toISOString(),artefacto:'specs/planning-artifacts/navigation-map.md',evento:'Edit'}))\"",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline/advisor-runs';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/w.jsonl',JSON.stringify({ts:new Date().toISOString(),advisor:'tycon-feature-wiring-checker',model:null,repo:process.env.FIXTURE,story:'4.2'})+'\\n')\"",
+            "node -e \"const fs=require('fs');const p='specs/stories/4-2.md';fs.writeFileSync(p,fs.readFileSync(p,'utf8').replace('status: in-progress','status: done'))\"",
+            "git add specs/stories/4-2.md"
+          ],
+          "stdin": { "tool_name": "Bash", "tool_input": { "command": "git commit -m \"story 4.2 done\"" } },
+          "expect": {
+            "exit": 2,
+            "file_absent": ["${FIXTURE}/.advisors/navigation-drift.json"]
+          }
+        }
+      ]
+    }
+  ]
+}

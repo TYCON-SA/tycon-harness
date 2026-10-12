@@ -1,0 +1,208 @@
+{
+  "__doc": "Aviso de referencia fantasma en un push (2026-08-31). El 2026-08-31 una sesión pusheó DIRECTO a main un cambio al instalador que invocaba `scripts/controls-bench/periodic-exam.js` — un archivo que existía sólo en la rama de OTRA sesión, sin mergear. Durante ~27 minutos, cualquier dev que hiciera `git pull` tenía en main un instalador llamando a un archivo ausente. Y no falló a los gritos: los dos bloques que lo invocan chequean que el archivo exista antes, así que degradó EN SILENCIO — que es peor. Los casos corren el hook REAL contra repos git de verdad armados en el banco de trabajo. Lo que fijan: que cace la forma exacta del incidente (la ruta armada con variables), que se CALLE cuando el archivo está, que se calle cuando el archivo lo agrega ese mismo push, y que no confunda con un push cualquier comando que MENCIONE la frase.",
+  "hooks": [
+    {
+      "hook": "push-phantom-ref-notice.js (un push que nombra lo que no existe)",
+      "script": "${TCG}/scripts/hooks/push-phantom-ref-notice.js",
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "cases": [
+        {
+          "id": "caza-la-referencia-a-un-archivo-de-otra-rama",
+          "type": "must-emit",
+          "__doc": "🔴 El incidente exacto, reproducido: el instalador pasa a invocar una pieza que sólo vive en otra rama. La ruta va armada con una variable (`$DIR/../controls-bench/…`), que es como estaba escrita de verdad — un detector que sólo entienda rutas literales no lo habría visto.",
+          "setup": [
+            "git init -q -b main . && git config user.email b@b && git config user.name b",
+            "mkdir -p scripts/hooks scripts/controls-bench && echo 'echo hola' > scripts/hooks/instalador.sh",
+            "git add -A && git commit -q -m base",
+            "git init -q --bare ../remoto.git && git remote add origin ../remoto.git && git push -q -u origin main",
+            "printf 'EXAMEN=\"$DIR/../controls-bench/periodic-exam.js\"\\n[ -f \"$EXAMEN\" ] && node \"$EXAMEN\"\\n' >> scripts/hooks/instalador.sh",
+            "git add -A && git commit -q -m 'el instalador invoca la pieza nueva'"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git push origin main"
+            }
+          },
+          "expect": {
+            "stdout_re": [
+              "NOMBRA archivos que no existen",
+              "controls-bench/periodic-exam\\.js",
+              "OTRA rama"
+            ]
+          }
+        },
+        {
+          "id": "quiet-cuando-el-archivo-SI-existe",
+          "type": "must-stay-quiet",
+          "__doc": "El silencio legítimo, y el que decide si esta pieza sobrevive: un push normal, que nombra archivos que están, no puede generar una sola línea. Un aviso que suena en un push cualquiera se apaga en una semana.",
+          "setup": [
+            "git init -q -b main . && git config user.email b@b && git config user.name b",
+            "mkdir -p scripts/hooks scripts/controls-bench && echo 'echo hola' > scripts/hooks/instalador.sh",
+            "echo '// existe' > scripts/controls-bench/periodic-exam.js",
+            "git add -A && git commit -q -m base",
+            "git init -q --bare ../remoto.git && git remote add origin ../remoto.git && git push -q -u origin main",
+            "printf 'EXAMEN=\"$DIR/../controls-bench/periodic-exam.js\"\\nnode \"$EXAMEN\"\\n' >> scripts/hooks/instalador.sh",
+            "git add -A && git commit -q -m 'lo invoca, y el archivo está'"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git push origin main"
+            }
+          },
+          "expect": {}
+        },
+        {
+          "id": "quiet-cuando-el-archivo-lo-agrega-ESTE-mismo-push",
+          "type": "must-stay-quiet",
+          "__doc": "El caso normal y sano: alguien agrega una pieza Y su invocación en el mismo push. Si esto gritara, el aviso sonaría en cada trabajo bien hecho — y sería el primero que alguien apaga.",
+          "setup": [
+            "git init -q -b main . && git config user.email b@b && git config user.name b",
+            "mkdir -p scripts/hooks scripts/controls-bench && echo 'echo hola' > scripts/hooks/instalador.sh",
+            "git add -A && git commit -q -m base",
+            "git init -q --bare ../remoto.git && git remote add origin ../remoto.git && git push -q -u origin main",
+            "echo '// nueva' > scripts/controls-bench/pieza-nueva.js",
+            "printf 'node \"$DIR/../controls-bench/pieza-nueva.js\"\\n' >> scripts/hooks/instalador.sh",
+            "git add -A && git commit -q -m 'la pieza y su invocación, juntas'"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git push origin main"
+            }
+          },
+          "expect": {}
+        },
+        {
+          "id": "quiet-un-comando-que-solo-MENCIONA-la-frase-no-es-un-push",
+          "type": "must-stay-quiet",
+          "__doc": "El mismo modo de falla que ya endureció el hook de engram el 2026-08-25: un `grep \"git push\"`, un heredoc que escribe esa frase o un `sed` sobre documentación NO son un push. El reconocimiento es por posición, no por substring.",
+          "setup": [
+            "git init -q -b main . && git config user.email b@b && git config user.name b",
+            "mkdir -p scripts/hooks && echo 'x' > scripts/hooks/instalador.sh",
+            "git add -A && git commit -q -m base",
+            "git init -q --bare ../remoto.git && git remote add origin ../remoto.git && git push -q -u origin main",
+            "printf 'node \"$DIR/../controls-bench/fantasma.js\"\\n' >> scripts/hooks/instalador.sh",
+            "git add -A && git commit -q -m 'referencia fantasma, pero el comando no es un push'"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "grep -n \"git push\" documentacion.md"
+            }
+          },
+          "expect": {}
+        },
+        {
+          "id": "quiet-con-su-interruptor-apagado",
+          "type": "must-stay-quiet",
+          "__doc": "Todo control del arnés tiene que poder apagarse sin editar código. Si el interruptor no funciona, el que quiera silenciarlo lo va a borrar.",
+          "env": {
+            "TYCON_PUSH_GHOST": "0"
+          },
+          "setup": [
+            "git init -q -b main . && git config user.email b@b && git config user.name b",
+            "mkdir -p scripts/hooks && echo 'x' > scripts/hooks/instalador.sh",
+            "git add -A && git commit -q -m base",
+            "git init -q --bare ../remoto.git && git remote add origin ../remoto.git && git push -q -u origin main",
+            "printf 'node \"$DIR/../controls-bench/fantasma.js\"\\n' >> scripts/hooks/instalador.sh",
+            "git add -A && git commit -q -m 'referencia fantasma con el aviso apagado'"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git push origin main"
+            }
+          },
+          "expect": {}
+        },
+        {
+          "id": "constancia-2.6-lo-que-no-pudo-mirar-no-se-anota",
+          "type": "must-not-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git push origin dev"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "file_absent": [
+              "${SANDBOX_HOME}/.claude/.tycon-pipeline/frenos.jsonl"
+            ]
+          }
+        },
+        {
+          "id": "constancia-2.6-cuando-avisa-tambien-anota",
+          "type": "must-emit",
+          "__doc": "story 2.6 · este freno NUNCA bloquea, así que lo único medible de él es cuántas veces avisó y si alguien hizo algo. Sin esta línea, «avisó 40 veces y nadie movió un dedo» es indistinguible de «nunca se disparó».",
+          "setup": [
+            "git init -q -b main . && git config user.email b@b && git config user.name b",
+            "mkdir -p scripts/hooks scripts/controls-bench && echo 'echo hola' > scripts/hooks/instalador.sh",
+            "git add -A && git commit -q -m base",
+            "git init -q --bare ../remoto.git && git remote add origin ../remoto.git && git push -q -u origin main",
+            "printf 'EXAMEN=\"$DIR/../controls-bench/periodic-exam.js\"\\n[ -f \"$EXAMEN\" ] && node \"$EXAMEN\"\\n' >> scripts/hooks/instalador.sh",
+            "git add -A && git commit -q -m 'el instalador invoca la pieza nueva'"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git push origin main"
+            }
+          },
+          "expect": {
+            "stdout_re": [
+              "NOMBRA archivos que no existen",
+              "controls-bench/periodic-exam\\.js",
+              "OTRA rama"
+            ],
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/frenos.jsonl",
+                "re": "\"freno\":\"push-referencia-fantasma\""
+              },
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/frenos.jsonl",
+                "re": "\"veredicto\":\"aviso\""
+              }
+            ]
+          }
+        },
+        {
+          "id": "constancia-2.6-el-paso-tambien-queda",
+          "type": "must-stay-quiet",
+          "__doc": "story 2.6 · el push normal, que no nombra nada ausente, TAMBIÉN es una decisión y también se anota. Sin el `paso`, el número de este freno sería sólo «cuántas veces avisó» sin sobre cuántos push — un numerador sin denominador (revisor de cobertura, vuelta 2).",
+          "setup": [
+            "git init -q -b main . && git config user.email b@b && git config user.name b",
+            "mkdir -p scripts/hooks scripts/controls-bench && echo 'echo hola' > scripts/hooks/instalador.sh",
+            "echo '// existe' > scripts/controls-bench/periodic-exam.js",
+            "git add -A && git commit -q -m base",
+            "git init -q --bare ../remoto.git && git remote add origin ../remoto.git && git push -q -u origin main",
+            "printf 'EXAMEN=\"$DIR/../controls-bench/periodic-exam.js\"\\nnode \"$EXAMEN\"\\n' >> scripts/hooks/instalador.sh",
+            "git add -A && git commit -q -m 'lo invoca, y el archivo está'"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git push origin main"
+            }
+          },
+          "expect": {
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/frenos.jsonl",
+                "re": "\"freno\":\"push-referencia-fantasma\""
+              },
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/frenos.jsonl",
+                "re": "\"veredicto\":\"paso\""
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

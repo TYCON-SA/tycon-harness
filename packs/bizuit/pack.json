@@ -1,0 +1,58 @@
+{
+  "name": "bizuit",
+  "description": "El paquete del stack de TYCON: .NET + React/Next.js sobre Bizuit. Las convenciones con que TYCON desarrolla plugins sobre Bizuit; no es un producto de Bizuit. Opcional y apagado por defecto: un repo de producto lo pide con `packs: [bizuit]` en su `.tycon/advisors.yaml`.",
+  "guides": [
+    "guides/bizuit/bizuit-plugin-dotnet.md",
+    "guides/bizuit/bizuit-plugin-react.md",
+    "guides/bizuit/bizuit-plugin-nextjs.md"
+  ],
+  "reviewers": [
+    {
+      "agent": "tycon-plugin-dotnet-conventions",
+      "group": "base",
+      "when": {
+        "any": [
+          { "detection": "csModified" },
+          { "all": [ { "detection": "pluginCfgModified" }, { "no": { "detection": "tsxModified" } } ] }
+        ]
+      },
+      "surface": { "paths": ["**/*.cs", "**/*.csproj", "**/plugin.json", "**/plugin.json.example"] },
+      "depth": "standard",
+      "prefixes": ["DOTNET"],
+      "note": "La condición reproduce la matriz que el pipeline tenía escrita antes de la story 8.2, incluido su hueco: un diff .tsx + plugin.json no suma este revisor (la rama «sólo frontend» no miraba la config). Corregirlo es otra story; la equivalencia manda."
+    },
+    {
+      "agent": "tycon-plugin-nextjs-conventions",
+      "group": "base",
+      "when": {
+        "all": [
+          { "detection": "hasNext" },
+          { "any": [
+            { "detection": "tsxModified" },
+            { "all": [ { "detection": "depChanged" }, { "no": { "detection": "csModified" } } ] }
+          ] }
+        ]
+      },
+      "surface": { "paths": ["**/*.tsx", "**/*.ts"] },
+      "depth": "standard",
+      "prefixes": ["NEXT"]
+    },
+    {
+      "agent": "tycon-plugin-react-conventions",
+      "group": "base",
+      "when": {
+        "all": [
+          { "detection": "hasReact" },
+          { "no": { "detection": "hasNext" } },
+          { "any": [
+            { "detection": "tsxModified" },
+            { "all": [ { "detection": "depChanged" }, { "no": { "detection": "csModified" } } ] }
+          ] }
+        ]
+      },
+      "surface": { "paths": ["**/*.tsx", "**/*.ts", "**/*.jsx", "**/*.js"] },
+      "depth": "standard",
+      "prefixes": ["REACT"]
+    }
+  ]
+}

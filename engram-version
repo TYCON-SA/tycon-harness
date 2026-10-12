@@ -1,0 +1,29 @@
+# Versión de engram VALIDADA por el equipo.
+#
+# No es "la última" — es la que alguien probó y funciona con los chunks que hay
+# commiteados en los repos. El harness compara tu binario contra esto y avisa si
+# no coincide (scripts/setup/check-engram-version.sh). NUNCA actualiza solo.
+#
+# Por qué un pin y no "siempre la última": los chunks de `.engram/` se comparten
+# por git entre máquinas y devs. Si una máquina corre una versión que escribe un
+# formato distinto, el resto no puede importar — y el modo de falla es SILENCIOSO
+# (`engram sync --import` dice "no new chunks" y seguís con memoria vieja). La
+# propiedad que necesitamos no es "todos en la última", es "todos en la misma".
+#
+# Cómo bumpear (es un acto deliberado, no automático):
+#   1. Un dev actualiza su engram y trabaja normal unos días.
+#   2. Verifica que `engram sync` + `engram sync --import` sigan funcionando
+#      contra los chunks ya commiteados (que los escribió la versión vieja).
+#   3. Cambia el número acá abajo, commitea, pushea.
+#   4. Al resto le aparece el aviso en el próximo arranque de sesión, con el
+#      comando exacto. Nadie queda atrás sin enterarse.
+#
+# Historial:
+#   1.12.0 → 1.20.0 (2026-07-25, DevA). Validado antes de propagar: la 1.20 lee los
+#   chunks escritos por la 1.12, el search sigue devolviendo las memorias viejas, y el
+#   manifest se mantiene en `version: 1` (mismo formato). Script de validación en el
+#   commit que hizo el bump.
+#
+# Formato: una línea con la versión, sin la `v`. Los `#` son comentarios.
+
+1.20.0

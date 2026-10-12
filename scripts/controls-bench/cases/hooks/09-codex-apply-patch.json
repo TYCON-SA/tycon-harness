@@ -1,0 +1,232 @@
+{
+ "__doc": "Gemelos con el FORMATO REAL de Codex (Etapa E2, 2026-08-22 — payloads calcados de la sonda E2; resumida en guides/codex-migration.md, Registro E2). Codex NO emite Edit/Write: emite apply_patch con tool_input.command = texto de patch, y el spawn de subagentes es collaborationspawn_agent con task_name underscoreado. Estos casos corren tools:[codex] SOLO (un apply_patch bajo claude es ficción). Los casos Edit-shaped preexistentes siguen corriendo bajo ambas — miden tolerancia de los scripts, no la realidad de codex; la realidad la miden estos. La normalización vive en scripts/lib/hook-io.js (consumida por dispatch.js y rebuild-before-verify.js con fallback a conducta actual). · AMPLIADO en la pasada 2 de la corrida dorada (2026-08-22): los casos de arriba usan ${FIXTURE}/… (ABSOLUTO) porque así venía el patch de la sonda E2, pero Codex escribe los paths RELATIVOS al cwd — el banco medía una forma que el sistema real no produce, y por eso el agujero pasaba en verde. El caso 'codex-patch-relativo-registra-la-edicion' cubre la forma real. NO hay gemelo de BLOQUEO con path relativo a propósito: el freno bloquea igual sin resolver (falla cerrado, que es lo correcto), así que un must-block ahí pasaría con y sin el fix — un caso que no distingue da falsa confianza, que es peor que no tenerlo. La resolución vive en scripts/lib/hook-io.js.",
+ "hooks": [
+  {
+   "hook": "hook-pre-edit.js (dispatcher, formato codex)",
+   "script": "${SKILLS}/skills/tycon-pipeline/scripts/hook-pre-edit.js",
+   "event": "PreToolUse",
+   "matcher": "apply_patch",
+   "cases": [
+    {
+     "id": "codex-patch-inofensivo",
+     "type": "must-not-block",
+     "tools": [
+      "codex"
+     ],
+     "stdin": {
+      "tool_name": "apply_patch",
+      "tool_input": {
+       "command": "*** Begin Patch\n*** Update File: ${FIXTURE}/README.md\n@@\n-a\n+b\n*** End Patch"
+      }
+     },
+     "expect": {
+      "exit": 0
+     },
+     "setup": [
+      "git init -q -b main .",
+      "mkdir -p .tycon src"
+     ]
+    },
+    {
+     "id": "codex-patch-bloquea-codigo-sin-carril",
+     "type": "must-block",
+     "tools": [
+      "codex"
+     ],
+     "__doc": "EL caso que importa: un freno BLOQUEANTE (story-gate) frena a través de la normalización — Add File → Write → gate.",
+     "stdin": {
+      "tool_name": "apply_patch",
+      "tool_input": {
+       "command": "*** Begin Patch\n*** Add File: ${FIXTURE}/src/Foo.cs\n+class Foo {}\n*** End Patch"
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "file_contains": [
+       {
+        "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log",
+        "re": "story-gate"
+       }
+      ]
+     },
+     "setup": [
+      "git init -q -b main .",
+      "mkdir -p .tycon src"
+     ]
+    }
+   ],
+   "asymmetry": "Formato EXCLUSIVO de codex: claude nunca emite apply_patch/collaborationspawn_agent. La dirección claude de estos gemelos son los casos Edit|Write/Task preexistentes (suites 01-08)."
+  },
+  {
+   "hook": "hook-post-edit.js (dispatcher, formato codex)",
+   "script": "${SKILLS}/skills/tycon-pipeline/scripts/hook-post-edit.js",
+   "event": "PostToolUse",
+   "matcher": "apply_patch",
+   "cases": [
+    {
+     "id": "codex-patch-postedit-no-crash",
+     "type": "must-not-block",
+     "tools": [
+      "codex"
+     ],
+     "stdin": {
+      "tool_name": "apply_patch",
+      "tool_input": {
+       "command": "*** Begin Patch\n*** Update File: ${FIXTURE}/README.md\n@@\n-a\n+b\n*** End Patch"
+      }
+     },
+     "expect": {
+      "exit": 0
+     }
+    },
+    {
+     "id": "codex-patch-relativo-registra-la-edicion",
+     "type": "must-run",
+     "tools": [
+      "codex"
+     ],
+     "__doc": "La otra mitad del mismo agujero: sin el path resuelto, `file-events/<sid>.jsonl` queda vacío y el gate de ATDD sale `warn-unknown` — ciego, no rojo. Esperado: la edición queda registrada con el path ABSOLUTO resuelto contra el cwd.",
+     "stdin": {
+      "session_id": "bench-relpath",
+      "cwd": "${FIXTURE}",
+      "tool_name": "apply_patch",
+      "tool_input": {
+       "command": "*** Begin Patch\n*** Add File: test/slugify.test.js\n+const t = 1;\n*** End Patch"
+      }
+     },
+     "expect": {
+      "exit": 0,
+      "file_contains": [
+       {
+        "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/file-events/bench-relpath.jsonl",
+        "re": "test/slugify\\.test\\.js"
+       }
+      ]
+     },
+     "setup": [
+      "git init -q -b main .",
+      "mkdir -p test"
+     ]
+    }
+   ],
+   "asymmetry": "Formato EXCLUSIVO de codex: claude nunca emite apply_patch/collaborationspawn_agent. La dirección claude de estos gemelos son los casos Edit|Write/Task preexistentes (suites 01-08)."
+  },
+  {
+   "hook": "rebuild-before-verify.js (marca, formato codex)",
+   "script": "${TCG}/scripts/hooks/rebuild-before-verify.js",
+   "event": "PostToolUse",
+   "matcher": "apply_patch",
+   "cases": [
+    {
+     "id": "codex-patch-marca-frontend-sucio",
+     "type": "must-run",
+     "tools": [
+      "codex"
+     ],
+     "setup": [
+      "git init -q -b main .",
+      "mkdir -p .tycon src && printf 'frontend:\\n  dev_build_cmd: \"npm run build:dev\"\\n' > .tycon/advisors.yaml",
+      "echo 'x' > src/App.tsx"
+     ],
+     "stdin": {
+      "tool_name": "apply_patch",
+      "tool_input": {
+       "command": "*** Begin Patch\n*** Update File: ${FIXTURE}/src/App.tsx\n@@\n-x\n+y\n*** End Patch"
+      }
+     },
+     "expect": {
+      "file_contains": [
+       {
+        "path": "${FIXTURE}/.advisors/frontend-dirty.json",
+        "re": "App\\.tsx"
+       }
+      ]
+     }
+    }
+   ],
+   "asymmetry": "Formato EXCLUSIVO de codex: claude nunca emite apply_patch/collaborationspawn_agent. La dirección claude de estos gemelos son los casos Edit|Write/Task preexistentes (suites 01-08)."
+  },
+  {
+   "hook": "on-advisor-run.js (spawn codex)",
+   "script": "${SKILLS}/skills/tycon-pipeline/scripts/on-advisor-run.js",
+   "event": "PreToolUse",
+   "matcher": "collaborationspawn_agent",
+   "cases": [
+    {
+     "id": "codex-spawn-ledgerea-advisor",
+     "type": "must-run",
+     "tools": [
+      "codex"
+     ],
+     "__doc": "Payload REAL completo (sonda G-1): agent_type trae la identidad exacta del agent (con guiones); task_name es etiqueta libre. El ledger debe usar agent_type.",
+     "stdin": {
+      "session_id": "bench-e2c",
+      "tool_name": "collaborationspawn_agent",
+      "tool_input": {
+       "task_name": "tycon_plugin_security_basics",
+       "fork_turns": "all",
+       "agent_type": "tycon-plugin-security-basics"
+      }
+     },
+     "expect": {
+      "exit": 0,
+      "file_contains": [
+       {
+        "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/advisor-runs/bench-e2c.jsonl",
+        "re": "tycon-plugin-security-basics"
+       }
+      ]
+     }
+    },
+    {
+     "id": "codex-subagentstart-no-ledgerea",
+     "type": "must-not-block",
+     "tools": [
+      "codex"
+     ],
+     "__doc": "El payload REAL de SubagentStart (sin nombre de agente) NO debe ledgerear — prueba mecánica de por qué se revirtió el mapeo del inventario.",
+     "stdin": {
+      "session_id": "bench-e2c-neg",
+      "hook_event_name": "SubagentStart",
+      "agent_id": "00000000-0000-4000-8000-000000000007",
+      "agent_type": "default"
+     },
+     "expect": {
+      "exit": 0,
+      "file_absent": [
+       "${SANDBOX_HOME}/.claude/.tycon-pipeline/advisor-runs/bench-e2c-neg.jsonl"
+      ]
+     }
+    },
+    {
+     "id": "codex-spawn-agent-type-gana-al-task-name",
+     "type": "must-run",
+     "tools": [
+      "codex"
+     ],
+     "__doc": "El caso que cierra el agujero de la sonda G-1: task_name ENGAÑOSO (etiqueta libre del orquestador, medido 'sonda-alfa') + agent_type con la identidad real → el ledger registra la identidad, no la etiqueta.",
+     "stdin": {
+      "session_id": "bench-g1",
+      "tool_name": "collaborationspawn_agent",
+      "tool_input": {
+       "task_name": "etiqueta_libre_cualquiera",
+       "agent_type": "tycon-plugin-tests-coverage",
+       "fork_turns": "none"
+      }
+     },
+     "expect": {
+      "exit": 0,
+      "file_contains": [
+       {
+        "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/advisor-runs/bench-g1.jsonl",
+        "re": "tycon-plugin-tests-coverage"
+       }
+      ],
+      "stdout_not_re": []
+     }
+    }
+   ],
+   "asymmetry": "Formato EXCLUSIVO de codex: claude nunca emite apply_patch/collaborationspawn_agent. La dirección claude de estos gemelos son los casos Edit|Write/Task preexistentes (suites 01-08)."
+  }
+ ]
+}

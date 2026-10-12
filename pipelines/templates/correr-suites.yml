@@ -1,0 +1,245 @@
+# pipelines/templates/correr-suites.yml — bajar la lista de suites del cambio, correr las de ESTE trabajo y publicar lo
+# que midió. Son los pasos del trabajo de suites de pipelines/azure-pipelines-pr.yml, tal cual.
+#
+# 🔴 POR QUÉ ES UNA PLANTILLA (story 8.22, tramo I, 2026-10-08). Los corren DOS trabajos: cada trabajo de suites (su
+# parte del reparto) y el trabajo del banco, que después del banco corre las suites que corren solas (`exclusive: true`
+# de scripts/tests/suites.json). Medido: la copia pública de verdad tardaba 370 a 383 s sola, al final de un trabajo de
+# suites, mientras el del banco terminaba a los ~5 min y dejaba su carril ocioso. Dos copias de este lazo —topes,
+# reintentos, lo que se publica para el veredicto— se separan solas, y el veredicto junta a los dos trabajos con las
+# mismas exigencias (scripts/ci/suites-shard.js merge).
+#
+# Qué trabajo es lo dicen dos variables del trabajo que la usa, no parámetros (así el texto de los pasos es uno solo):
+#   SUITES_SHARD — el número del trabajo de suites, o `bench` en el trabajo del banco.
+#   SUITES_OF    — cuántos trabajos de suites armó «Qué suites corren».
+#
+# Parámetros:
+#   condicion — condición de Azure para bajar la lista y correr (default: `succeeded()`). El trabajo del banco pasa
+#               `succeededOrFailed()`: un rojo del banco no puede dejar sin correr sus suites. Publicar corre siempre.
+#
+# Red: scripts/tests/pr-suites-shards.test.js corre estos pasos, los de verdad, sobre un clon de juguete.
+
+parameters:
+  - name: condicion
+    type: string
+    default: 'succeeded()'
+
+steps:
+  # Sólo la lista del cambio (de todos sus intentos): los artefactos de los otros trabajos no le sirven a éste.
+  - task: DownloadPipelineArtifact@2
+    displayName: 'Bajar la lista de suites del cambio'
+    condition: ${{ parameters.condicion }}
+    inputs:
+      buildType: 'current'
+      itemPattern: 'suites-plan-a*/**'
+      targetPath: '$(Pipeline.Workspace)/suites-plan'
+
+  - script: |
+      set -uo pipefail
+      # La raíz `agent-skills` la da scripts/lib/skills-dir.js, igual que en «Qué suites corren» (story 8.18): nunca
+      # la carpeta instalada escrita a mano, que en un clon de trabajo corría las suites de la máquina y no las del
+      # cambio. Sin carpeta, las suites de este trabajo NO se midieron: rojo.
+      SK="$(node scripts/lib/skills-dir.js --skills)" || { echo "##vso[task.logissue type=error]suites (trabajo $(SUITES_SHARD)): no hay carpeta de skills de la que correr las suites de raíz agent-skills (motivo arriba) — NO se midieron"; exit 1; }
+      echo "suites (trabajo $(SUITES_SHARD)): la raíz agent-skills es $SK"
+      # Lo que este trabajo deja para el veredicto: la lista que le tocó, las que corrió, las fallas firmes, la
+      # salida de cada roja, las dos pasadas de cada roja y —sólo si pasó por TODA su lista— la marca de terminado.
+      OUT="$(Build.ArtifactStagingDirectory)/suites-shard"
+      mkdir -p "$OUT/red-output"
+      LIST="$OUT/list.txt"; FAILED="$OUT/failures.txt"; RAN="$OUT/ran.txt"; RE="$OUT/retries.json"
+      : > "$RAN"; : > "$FAILED"; : > "$OUT/done.txt"; echo "{}" > "$RE"
+      # La lista del último intento de `Validar` (por número: a10 va después de a9).
+      PLAN_DIR="$(ls -d "$(Pipeline.Workspace)"/suites-plan/suites-plan-a*/ 2>/dev/null | sort -V | tail -1)"
+      if [ -z "$PLAN_DIR" ] || [ ! -s "${PLAN_DIR}run.txt" ]; then
+        echo "##vso[task.logissue type=error]No bajé la lista de suites del cambio: las del trabajo $(SUITES_SHARD) NO se midieron"
+        exit 1
+      fi
+      # 🔴 La lista se pide a un archivo y se mira el código de salida ANTES de leerla: una lista vacía no es «no hay
+      # suites», es que no se pudo preguntar.
+      # 🔴 Las que corren solas van aparte (story 8.22, tramo I): `--exclusive-apart` las saca del reparto de los
+      # trabajos de suites y se las da al del banco (`--shard bench`), que las corre después del banco, en el carril
+      # que el banco dejaba ocioso. Si a este trabajo no le toca ninguna —el del banco en un plan sin exclusivas, o el de
+      # suites cuando todas lo son— el pedido sale 3: termina acá, con su marca en cero, y lo dice. No es un error.
+      node scripts/ci/suites-shard.js list --shard "$(SUITES_SHARD)" --of "$(SUITES_OF)" --only "${PLAN_DIR}run.txt" --weight-set pr \
+             --exclusive-apart --skills "$SK" --scripts "$(Build.SourcesDirectory)/scripts" > "$LIST"
+      LIST_RC=$?
+      if [ "$LIST_RC" = 3 ]; then
+        echo "suites (trabajo $(SUITES_SHARD)): a este trabajo no le toca ninguna suite de este plan — no corre ninguna"
+        echo "0 0" > "$OUT/finished"
+        exit 0
+      fi
+      if [ "$LIST_RC" != 0 ] || [ ! -s "$LIST" ]; then
+        echo "##vso[task.logissue type=error]No se pudo armar la lista del trabajo $(SUITES_SHARD) de $(SUITES_OF): sus suites NO se midieron"
+        exit 1
+      fi
+      TOTAL=$(grep -c . "$LIST")
+      # EN PARALELO (2026-10-05, pedido del dueño: la validación entera en 15 min o menos). En serie, un trabajo de
+      # 214 suites tardaba 18 min y el que llevaba la copia pública pasaba los 45 (12049, 12050, 12051). Corren JOBS a
+      # la vez —los núcleos del agente, o SUITES_JOBS—; las `exclusive: true` de suites.json, que comparten estado con
+      # otras, corren después y de a una (scripts/ci/suites-exclusive.js; el mismo criterio que el test-gate de cada
+      # story). «No pude separar las exclusivas» no es «ninguna lo es»: entonces corren todas de a una.
+      JOBS="${SUITES_JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)}"
+      SUITE_TMP="$(Agent.TempDirectory)/suites"
+      mkdir -p "$SUITE_TMP/retries"
+      PAR="$SUITE_TMP/parallel.txt"; EXC="$SUITE_TMP/exclusive.txt"
+      if ! node scripts/ci/suites-exclusive.js "$(Build.SourcesDirectory)/scripts/tests/suites.json" "$LIST" "$PAR" "$EXC"; then
+        echo "##vso[task.logissue type=warning]suites (trabajo $(SUITES_SHARD)): no pude leer cuáles son exclusivas en suites.json — corren todas de a una"
+        JOBS=1; cp "$LIST" "$PAR"; : > "$EXC"
+      fi
+      echo "suites (trabajo $(SUITES_SHARD)): $(grep -c . "$PAR") de a $JOBS a la vez, y $(grep -c . "$EXC") exclusiva(s) de a una al final"
+      # Cada suite escribe sólo lo suyo: su salida en su propio archivo, una línea en ran/failures/seen (agregar una
+      # línea corta es atómico) y sus dos pasadas en retries/<suite>, que se juntan al final. Las líneas de una roja se
+      # imprimen juntas, para que no se mezclen con las de otra.
+      # 🔴 EL TOPE DE CADA SUITE (story 8.22, tramo D, AC 16): una suite colgada se comía el trabajo entero (harness-update:
+      # 1185 y 1373 s contra ~161, 170 #12201 y #12185). Cada suite corre con su tope —el doble de su peso en la 170,
+      # nunca menos de 180 s: `suite_cap` del juego `pr`— y scripts/ci/run-capped.js la corta entera si lo pasa. La
+      # cortada sale «NO se midió» y no se reintenta: repetir un cuelgue cuesta otro tope. Sin poder calcular los
+      # topes, corren sin tope, como antes, y se dice.
+      CAPS="$SUITE_TMP/caps.tsv"; RUN_CAPPED="$(Build.SourcesDirectory)/scripts/ci/run-capped.js"
+      if ! node scripts/ci/suites-shard.js caps --only "$LIST" --weight-set pr --scripts "$(Build.SourcesDirectory)/scripts" > "$CAPS" 2>"$SUITE_TMP/caps.err" \
+         || [ ! -s "$CAPS" ] || [ ! -f "$RUN_CAPPED" ]; then
+        # el aviso con texto fijo (story 8.26, tanda C, AC 45: el control del pedido es público); el motivo, abajo
+        echo "##vso[task.logissue type=warning]suites (trabajo $(SUITES_SHARD)): no pude calcular el tope de cada suite — corren sin tope, como antes"
+        echo "   $(tr '\n' ' ' < "$SUITE_TMP/caps.err" | cut -c1-200 | sed 's/#/♯/g')"
+        : > "$CAPS"
+      fi
+      # 🔴 LOS REINTENTOS CON CABEZA (AC 17). (a) Una roja que anoche ya estaba roja no se reintenta: el veredicto la
+      # perdona igual y la 2ª pasada sólo cuesta tiempo. Las rojas de anoche salen de LA MISMA foto con la que el
+      # veredicto perdona (pase adversarial del tramo D): desde la story 8.26 (tanda C, AC 43) es la que trajo `Validar`
+      # (fetch-snapshot.yml) y este trabajo bajó, no la del checkout ni la de origin/main. Cuenta sólo una entrada sin
+      # marca: una «(ausente)» o «(no-medida)» de anoche no se midió y no excusa. Sin foto, toda roja se reintenta, como
+      # antes, y se dice. (b) Con las suites de este trabajo ya en 600 s (`SUITES_NO_RETRY_AFTER` lo cambia), tampoco: un
+      # reintento tardío empuja el veredicto más allá de los 15 min. El reloj arranca con la primera suite: la preparación
+      # de arriba no cuenta. 🔴 (b) vale SÓLO con el freno de suites apagado (story 8.26, tanda C, AC 14): con el freno
+      # prendido una roja nueva frena el pedido, y en la medición de la tanda el freno falso de harness-plan.test.sh fue
+      # justamente eso, tres veces: una roja al final de un trabajo largo, sin su segunda pasada.
+      NIGHTLY_RED="$SUITE_TMP/nightly-red.txt"; : > "$NIGHTLY_RED"
+      if node -e 'const d=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));if(!Array.isArray(d.failures))throw new Error("la foto no trae «failures»");for(const f of d.failures)if(typeof f==="string"&&!/\((ausente|no-medida)\)$/.test(f))console.log(f)' \
+           "$(Agent.TempDirectory)/snapshot/nightly-suites.json" > "$NIGHTLY_RED" 2>"$SUITE_TMP/nightly.err"; then
+        echo "suites (trabajo $(SUITES_SHARD)): la foto nocturna (la del veredicto) trae $(grep -c . "$NIGHTLY_RED") roja(s): si salen rojas acá, no se reintentan"
+      else
+        echo "##vso[task.logissue type=warning]suites (trabajo $(SUITES_SHARD)): no pude leer la foto nocturna — toda roja se reintenta una vez, como antes"
+        echo "   $(grep -m1 -E 'Error|ENOENT' "$SUITE_TMP/nightly.err" | cut -c1-160 | sed 's/#/♯/g')"
+        : > "$NIGHTLY_RED"
+      fi
+      NO_RETRY_AFTER="${SUITES_NO_RETRY_AFTER:-600}"
+      case "$NO_RETRY_AFTER" in ''|*[!0-9]*)
+        echo "##vso[task.logissue type=warning]suites (trabajo $(SUITES_SHARD)): SUITES_NO_RETRY_AFTER no es un número de segundos — uso 600"
+        echo "   el valor: «$(printf '%s' "$NO_RETRY_AFTER" | cut -c1-40 | sed 's/#/♯/g')»"
+        NO_RETRY_AFTER=600 ;;
+      esac
+      # El freno de suites (scripts/ci/suites-block.js): prendido, la roja nueva tardía también se reintenta.
+      SUITES_BLOCK="$(node scripts/ci/suites-block.js)" || SUITES_BLOCK=on
+      echo "suites (trabajo $(SUITES_SHARD)): el freno de suites está $([ "$SUITES_BLOCK" = on ] && echo 'PRENDIDO: toda roja nueva se reintenta' || echo 'apagado (aviso)')"
+      SUITES_STARTED="$(date +%s)"
+      export OUT RAN FAILED SUITE_TMP CAPS RUN_CAPPED NIGHTLY_RED NO_RETRY_AFTER SUITES_STARTED SUITES_BLOCK
+      # Una pasada de una suite, con su tope si lo tiene: $1=suite $2=intérprete $3=número de pasada $4=tope ("" = sin tope).
+      run_pass() {
+        # 🔴 `< /dev/null`: sin él, la entrada estándar de cada suite ES la lista. Una suite que lee una línea se come
+        # a la suite que sigue, y el lazo la saltea sin decir cuál fue.
+        if [ -n "$4" ]; then
+          node "$RUN_CAPPED" --seconds "$4" --mark "$SUITE_TMP/$(basename "$1").$3.capped" -- "$2" "$1" < /dev/null > "$SUITE_TMP/$(basename "$1").$3.txt" 2>&1
+        else
+          "$2" "$1" < /dev/null > "$SUITE_TMP/$(basename "$1").$3.txt" 2>&1
+        fi
+      }
+      # Las líneas de una roja, juntas: $1=suite $2=su salida $3=el motivo.
+      report_red() {
+        { echo "❌ $1 — $3"
+          grep -nE "not ok|✖|AssertionError|Error:|expected|actual|MAL|❌|FALLARON" "$2" | head -12 | sed 's/^/     /'
+          echo "     …"; sed 's/^/     /' "$2" | tail -8; } > "$SUITE_TMP/$1.red"
+        cat "$SUITE_TMP/$1.red"
+      }
+      # Cada suite que termina, de cualquier forma, se anota en done.txt: si cortan el trabajo, el veredicto sabe cuáles
+      # quedaron a medio correr (con xargs -P son varias, no sólo la última de ran.txt; pase adversarial del tramo D).
+      una_suite() {
+        suite_outcome "$1"
+        basename "$1" >> "$OUT/done.txt"
+      }
+      suite_outcome() {
+        T="$1"; B="$(basename "$T")"
+        echo "$B" >> "$SUITE_TMP/seen.txt"
+        [ -f "$T" ] || { echo "⏭ $B — no está en el clon: NO se midió"; echo "$B(ausente)" >> "$FAILED"; return 0; }
+        echo "$B" >> "$RAN"
+        case "$T" in *.js) EJ=node ;; *) EJ=bash ;; esac
+        CAP="$(awk -F'\t' -v n="$B" '$1 == n { print $2 }' "$CAPS")"
+        if run_pass "$T" "$EJ" 1 "$CAP"; then
+          # DEF-8.7-C: una suite que sale 0 diciendo «⏭ <suite>: NO MEDIDO — <motivo>» en su última línea no sale con ✅.
+          # Acá no cuenta como no medida: en la validación de cada cambio la máquina limpia no mide nunca, a propósito, y
+          # el veredicto saldría 2 en todas. La que la cuenta como no medida es la noche (pipelines/azure-pipelines-banco.yml).
+          LAST="$(awk 'NF { l = $0 } END { print l }' "$SUITE_TMP/$B.1.txt")"
+          case "$LAST" in
+            "⏭ "*": NO MEDIDO"*)
+              WHY="${LAST#*NO MEDIDO}"; WHY="${WHY# — }"; [ -n "$WHY" ] || WHY="sin motivo"
+              echo "⏭ $B — NO se midió (la suite lo dice, no frena): $WHY" ;;
+            *) echo "✅ $B" ;;
+          esac
+          return 0
+        fi
+        if [ -f "$SUITE_TMP/$B.1.capped" ]; then
+          echo "$B(no-medida)" >> "$FAILED"
+          { echo "NO se midió: pasó el tope de $CAP s (scripts/ci/run-capped.js); no se reintenta"
+            echo "--- lo último que escribió antes del corte:"; tail -20 "$SUITE_TMP/$B.1.txt"; } > "$OUT/red-output/$B(no-medida).txt"
+          echo "⏳ $B — NO se midió: pasó el tope de $CAP s (no se reintenta)"
+          return 0
+        fi
+        WHY=""
+        if grep -qxF "$B" "$NIGHTLY_RED"; then
+          WHY="roja también en el nocturno: no se reintenta"
+        elif [ "$SUITES_BLOCK" != on ]; then
+          ELAPSED=$(( $(date +%s) - SUITES_STARTED ))
+          [ "$ELAPSED" -ge "$NO_RETRY_AFTER" ] && WHY="el trabajo ya va $((ELAPSED / 60)) min: no se reintenta"
+        fi
+        if [ -n "$WHY" ]; then
+          echo "$B" >> "$FAILED"
+          cp "$SUITE_TMP/$B.1.txt" "$OUT/red-output/$B.txt"
+          report_red "$B" "$SUITE_TMP/$B.1.txt" "$WHY"
+          return 0
+        fi
+        # 🔴 UNA segunda pasada, y las DOS quedan anotadas (decisión del dev, 2026-09-17).
+        # Medido en las corridas 10569 y 10570: dos suites verdes en la máquina del dev salieron
+        # rojas en el agente, y no fueron las mismas. `rojo→rojo` es una suite firme y
+        # `rojo→verde` una intermitente; hoy no hay forma de distinguirlas, y ésa es justo la
+        # medición que la Etapa 3 necesita para decidir si las suites vuelven a frenar.
+        # El BANCO no se reintenta: su rojo frena.
+        echo "❌ $B (1ª pasada) — se reintenta una vez"
+        if run_pass "$T" "$EJ" 2 "$CAP"; then
+          echo "🟠 $B — VERDE en la 2ª pasada: intermitente en el agente"
+          echo verde > "$SUITE_TMP/retries/$B"
+        elif [ -f "$SUITE_TMP/$B.2.capped" ]; then
+          # Roja de verdad en la 1ª y colgada en la 2ª: el rojo que se midió es el de la 1ª, y ése sostiene el veredicto.
+          echo "$B" >> "$FAILED"
+          echo rojo > "$SUITE_TMP/retries/$B"
+          cp "$SUITE_TMP/$B.1.txt" "$OUT/red-output/$B.txt"
+          report_red "$B" "$SUITE_TMP/$B.1.txt" "roja en la 1ª pasada; la 2ª pasó el tope de $CAP s: firme"
+        else
+          echo "$B" >> "$FAILED"
+          echo rojo > "$SUITE_TMP/retries/$B"
+          # El motivo sale de la SEGUNDA pasada: es la que sostiene el veredicto.
+          cp "$SUITE_TMP/$B.2.txt" "$OUT/red-output/$B.txt"
+          report_red "$B" "$SUITE_TMP/$B.2.txt" "roja también en la 2ª pasada: firme"
+        fi
+        return 0
+      }
+      export -f run_pass report_red suite_outcome una_suite
+      : > "$SUITE_TMP/seen.txt"
+      xargs -P "$JOBS" -I{} bash -c 'una_suite "$1"' _ {} < "$PAR"
+      xargs -P 1 -I{} bash -c 'una_suite "$1"' _ {} < "$EXC"
+      SEEN=$(grep -c . "$SUITE_TMP/seen.txt"); N=$(grep -c . "$RAN")
+      node -e 'const fs=require("fs");const [d,p]=process.argv.slice(1);const j={};for(const f of fs.readdirSync(d).sort())j[f]={primera:"rojo",segunda:fs.readFileSync(require("path").join(d,f),"utf8").trim()};fs.writeFileSync(p,JSON.stringify(j,null,2));' "$SUITE_TMP/retries" "$RE"
+      echo "reintentos: $(node -e 'const r=require(process.argv[1]);const e=Object.entries(r);console.log(`${e.length} suite(s) roja(s) en la 1ª pasada · ${e.filter(([,x])=>x.segunda==="verde").length} intermitente(s)`)' "$RE")"
+      echo "suites (trabajo $(SUITES_SHARD) de $(SUITES_OF)): $N corridas · $(grep -c . "$FAILED") en rojo, ausentes o cortadas por su tope ($(grep -c '(no-medida)$' "$FAILED") cortadas) — el veredicto lo da el job final"
+      # 🔴 La marca de terminado se gana: sólo si el lazo pasó por TODAS las líneas de su lista. Sin marca, el
+      # veredicto cuenta como NO MEDIDAS las suites que faltan.
+      if [ "$SEEN" != "$TOTAL" ]; then
+        echo "##vso[task.logissue type=error]El trabajo $(SUITES_SHARD) pasó por $SEEN de las $TOTAL suites de su lista: no terminó, y las que faltan NO se midieron"
+        exit 1
+      fi
+      echo "$N $(grep -c . "$FAILED")" > "$OUT/finished"
+    displayName: 'Correr las suites de este trabajo'
+    condition: ${{ parameters.condicion }}
+
+  # Se publica SIEMPRE: con rojas, y también si al trabajo lo cortó el tope (lo que midió antes del corte le sirve al
+  # veredicto; la falta de la marca le dice que no terminó). Con el intento en el nombre, como la lista.
+  - publish: '$(Build.ArtifactStagingDirectory)/suites-shard'
+    artifact: 'suites-shard-$(SUITES_SHARD)-a$(System.JobAttempt)'
+    displayName: 'Publicar lo que midió este trabajo'
+    condition: always()

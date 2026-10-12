@@ -1,0 +1,85 @@
+# ci.yml — la CI del repo público: corre scripts/ci/public-ci.sh, el mismo guion que cualquiera puede correr en su máquina.
+#
+# Lo que este archivo tiene que cumplir lo verifica scripts/ci/check-public-workflow.js (lo corre
+# scripts/tests/public-ci.test.sh), regla por regla. Cambiarlo sin leer ese control termina en un rojo:
+#   · corre en un pull request y en un push a main, y en nada más. Un pull request de un fork corre SIN permisos de
+#     escritura y sin ningún dato reservado del repo: por eso el disparador es el común y nunca el que corre con los
+#     permisos del repo de destino;
+#   · el permiso del token es de sólo lectura y no se usa en ningún paso;
+#   · cada acción de terceros va fijada por el sha completo de su commit, con el tag al lado como comentario: un tag se
+#     puede mover; un sha, no;
+#   · el checkout trae la historia completa (fetch-depth: 0): el freno de nombres compara contra la rama de destino;
+#   · Node 22 y 24;
+#   · el último job se llama `public-ci` y es el ÚNICO chequeo que las reglas de la rama exigen. Tiene nombre estable a
+#     propósito: cambiárselo deja los merges esperando un chequeo que no llega nunca.
+#
+# CAMBIAR ESTE ARCHIVO ES CAMBIAR DOS: ese control lleva adentro la forma EXACTA de este archivo —sus líneas de código,
+# una por una y en orden (la lista `SHAPE`); los comentarios y las líneas vacías no cuentan, y en las dos líneas `uses:`
+# el sha y el tag pueden ser otros—. Una línea de más, de menos o distinta es rojo hasta que la misma línea cambie
+# allá, en el mismo commit. Es a propósito: lo que corre la CI de un repo público no cambia sin que quede dicho dos veces.
+name: public-ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Node ${{ matrix.node }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Todos los pasos de la CI pública
+        env:
+          TYCON_PUBLIC_CI_OUT: ${{ runner.temp }}/public-ci
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
+            bash scripts/ci/public-ci.sh --clean-machine --range "origin/${BASE_REF}...HEAD"
+          else
+            bash scripts/ci/public-ci.sh --clean-machine
+          fi
+      - name: La salida completa de cada paso (sólo si algo quedó en rojo)
+        if: failure()
+        env:
+          TYCON_PUBLIC_CI_OUT: ${{ runner.temp }}/public-ci
+        run: |
+          for f in "${TYCON_PUBLIC_CI_OUT}"/*.log "${TYCON_PUBLIC_CI_OUT}"/agent-skills-suites/*.log; do
+            [ -f "${f}" ] || continue
+            echo "::group::${f##*/}"
+            cat "${f}"
+            echo "::endgroup::"
+          done
+
+  # El chequeo con nombre estable. Corre SIEMPRE (un job que depende de otro que falló se saltea, y un chequeo salteado
+  # cuenta como aprobado): mira el resultado de cada job del que depende y falla si alguno no terminó bien.
+  public-ci:
+    if: always()
+    needs: [checks]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Todos los jobs terminaron bien
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "resultados: ${RESULTS}"
+          [ -n "${RESULTS}" ] || exit 1
+          for r in ${RESULTS}; do
+            [ "${r}" = "success" ] || exit 1
+          done

@@ -1,0 +1,154 @@
+[
+  {
+    "rule_id": "VAL-C8",
+    "severity": "CRITICAL",
+    "advisor": "tycon-story-validator",
+    "file": "(anonimizado)",
+    "disposition": "fixed",
+    "reason": "(anonimizado)"
+  },
+  {
+    "rule_id": "VAL-W1",
+    "severity": "WARNING",
+    "advisor": "tycon-story-validator",
+    "file": "(anonimizado)",
+    "disposition": "fixed",
+    "reason": "(anonimizado)"
+  },
+  {
+    "rule_id": "VAL-C8",
+    "severity": "CRITICAL",
+    "advisor": "tycon-story-validator",
+    "file": "(anonimizado)",
+    "disposition": "refuted",
+    "reason": "(anonimizado)"
+  },
+  {
+    "rule_id": "VAL-W15",
+    "severity": "WARNING",
+    "advisor": "tycon-story-validator",
+    "file": "(anonimizado)",
+    "disposition": "fixed",
+    "reason": "(anonimizado)"
+  },
+  {
+    "rule_id": "SILENT-W",
+    "severity": "WARNING",
+    "advisor": "tycon-silent-failure-hunter",
+    "file": "(anonimizado)",
+    "disposition": "fixed",
+    "reason": "(anonimizado)"
+  },
+  {
+    "rule_id": "SILENT-W",
+    "severity": "WARNING",
+    "advisor": "tycon-silent-failure-hunter",
+    "file": "(anonimizado)",
+    "disposition": "fixed",
+    "reason": "(anonimizado)"
+  },
+  {
+    "rule_id": "REAL-C8",
+    "severity": "WARNING",
+    "advisor": "tycon-e2e-realness-checker",
+    "file": "(anonimizado)",
+    "disposition": "fixed",
+    "reason": "(anonimizado)"
+  },
+  {
+    "rule_id": "TEST-W",
+    "severity": "WARNING",
+    "advisor": "tycon-plugin-tests-coverage",
+    "file": "(anonimizado)",
+    "disposition": "fixed",
+    "reason": "(anonimizado)"
+  },
+  {
+    "rule_id": "DOTNET-W",
+    "severity": "WARNING",
+    "advisor": "tycon-plugin-dotnet-conventions",
+    "file": "(anonimizado)",
+    "disposition": "fixed",
+    "reason": "(anonimizado)"
+  },
+  {
+    "rule_id": "XPAT-W1",
+    "severity": "WARNING",
+    "advisor": "tycon-sibling-pattern-reviewer",
+    "file": "(anonimizado)",
+    "disposition": "deferred",
+    "reason": "(anonimizado)"
+  },
+  {
+    "rule_id": "SILENT-W",
+    "severity": "WARNING",
+    "advisor": "tycon-silent-failure-hunter",
+    "file": "(anonimizado)",
+    "disposition": "open",
+    "reason": "(anonimizado)"
+  },
+  {
+    "rule_id": "SUITE-POLLUTION",
+    "severity": "CRITICAL",
+    "advisor": "orquestador (suite completa)",
+    "file": "(anonimizado)",
+    "disposition": "fixed",
+    "reason": "(anonimizado)"
+  },
+  {
+    "rule_id": "ADV-5B",
+    "severity": "CRITICAL",
+    "advisor": "pase adversarial (5b, opus)",
+    "file": "(anonimizado)",
+    "disposition": "fixed",
+    "reason": "(anonimizado)"
+  },
+  {
+    "rule_id": "ADV-5B",
+    "severity": "CRITICAL",
+    "advisor": "pase adversarial (5b, opus)",
+    "file": "(anonimizado)",
+    "disposition": "fixed",
+    "reason": "(anonimizado)"
+  },
+  {
+    "rule_id": "ADV-5B",
+    "severity": "WARNING",
+    "advisor": "pase adversarial (5b, opus)",
+    "file": "(anonimizado)",
+    "disposition": "fixed",
+    "reason": "(anonimizado)"
+  },
+  {
+    "rule_id": "ADV-5B",
+    "severity": "WARNING",
+    "advisor": "pase adversarial (5b, opus)",
+    "file": "(anonimizado)",
+    "disposition": "fixed",
+    "reason": "(anonimizado)"
+  },
+  {
+    "rule_id": "ADV-5B",
+    "severity": "WARNING",
+    "advisor": "pase adversarial (5b, opus)",
+    "file": "(anonimizado)",
+    "disposition": "fixed",
+    "reason": "(anonimizado)"
+  },
+  {
+    "rule_id": "SILENT-W",
+    "severity": "WARNING",
+    "advisor": "tycon-silent-failure-hunter (iter 3)",
+    "file": "(anonimizado)",
+    "disposition": "fixed",
+    "reason": "(anonimizado)"
+  },
+  {
+    "rule_id": "SEC-CONTEXTO",
+    "severity": "WARNING",
+    "advisor": "tycon-plugin-security-basics (iter 4)",
+    "file": "(anonimizado)",
+    "disposition": "fixed",
+    "reason": "(anonimizado)"
+  }
+]

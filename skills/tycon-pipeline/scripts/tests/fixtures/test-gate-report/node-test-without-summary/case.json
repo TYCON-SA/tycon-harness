@@ -1,0 +1,17 @@
+{
+  "__doc": "node --test cuya salida no trae el resumen (se cortó o cambió el formato): totals queda vacío y totals_error lo dice — nunca un número inventado. Se pide la versión TAP (`# tests N`) en una línea que no es resumen.",
+  "runner": "node-test",
+  "suite_exit": "1",
+  "story_id": "9.9",
+  "cov_min": "75",
+  "ts": "2026-10-05T12:08:00Z",
+  "test_project_count": "0",
+  "scope": "",
+  "scope_source": "explicito",
+  "declared_new": [],
+  "code_state": { "git": true },
+  "base_ref": "HEAD",
+  "base_json": { "ref": "HEAD", "source": "HEAD", "descartadas": [] },
+  "base": { "lib/a.js": { "lines": 2 } },
+  "now": {}
+}

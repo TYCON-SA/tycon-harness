@@ -1,0 +1,412 @@
+{
+  "__doc": "Las suites más largas del arnés corren en la validación de los pedidos de merge (pipelines/azure-pipelines-pr.yml) SÓLO si el cambio toca lo que ellas miden (decisión del dueño, 2026-10-04; el 2026-10-05 se sumaron las ~18 del instalador, que hacían ~24 de los ~40 minutos de cada validación). Las lee scripts/ci/suites-for-change.js con --heavy; el nocturno (pipelines/azure-pipelines-banco.yml) no lo lee y las corre siempre, así que la medición no se pierde: se mueve a la noche. Para estas dos, este archivo MANDA sobre su `gate_only_when_touching` de suites.json, que es más angosto y es el del portón de cada story (ése no cambia). Patrones relativos a la raíz del repo: `<carpeta>/**` para todo lo de adentro, `*` para un tramo sin barras, o la ruta exacta de un archivo. El patrón efectivo de cada suite es `shared` más el suyo; con `\"shared\": false`, sólo el suyo (así quedó export-real.test.sh el 2026-10-05). Cómo se armó: leyendo las dos pruebas —qué guiones ejecutan y qué archivos leen— más las carpetas de la publicación y del instalador; ante la duda, la ruta entra (mejor correr de más que dejar de medir). Si la lista de archivos del cambio no se puede calcular, corren las dos. Una suite salteada así no es verde ni roja: el veredicto la nombra como «no corrió: el cambio no toca lo que mide». La red: scripts/tests/heavy-suites.test.js (frena si una de las dos deja de existir o cambia de nombre). 2026-10-07 (story 8.22, tramo E): las pesadas se eligen también por lo que usa su código (scripts/ci/suite-deps.js, con --deps): corren si el cambio toca sus patrones, la red de `shared` o lo que su código usa. `shared` quedó como la red —lo que el lector no puede calcular, cada patrón con su motivo en `why_each`— y sin scripts/lib/**, scripts/publishing/**, pipelines/**, skills/** ni agents/**: esas carpetas las ve el lector en el código de cada pesada, y las que de verdad las usan sin nombrarlas las llevan como patrones propios. Cada pesada declara `deps`: sin poner, el grafo entero; `false`, sólo sus patrones; `\"graph\"`, el grafo sin el «depende de todo» de un ls-files o un grep sobre un repo de juguete. Sin --deps utilizable (sin foto nocturna completa y reciente, o un cambio en la selección misma) corren todas. 2026-10-08 (story 8.22, tramo G; decisión del dueño): las suites del laboratorio del instalador corren en la rama sólo cuando el cambio toca el instalador. Lo dice un grupo con nombre (`groups.installer`: su porqué, el costo aceptado y sus patrones) y cada suite lo nombra con `\"group\": \"installer\"`; una suite con grupo no hereda `shared` ni se elige por lo que usa su código, y no admite `shared`, `deps`, `reads_md` ni las claves del grafo; un grupo con la lista de patrones vacía deja el archivo sin leer.",
+  "shared": {
+    "why": "Las dos arman la copia pública con el exportador y la instalan como alguien de afuera: el exportador y sus listas (scripts/publishing/**, que incluye public-files/), el instalador y lo que instala (scripts/setup/**, scripts/install-tycon-hooks.*, scripts/hooks/**, .githooks/**, claude-md-blocks/**, build/**, adapters/**, agents/**, skills/**), las bibliotecas que todo eso usa (scripts/lib/**), el banco que corre la copia (scripts/controls-bench/**), los controles del pre-commit de la copia (los tres guiones de scripts/ci/ que llama .githooks/pre-commit y scripts/tools/harness-map/**), y la portada que leen (INSTALL.md, README.md, .github/**, version.json). pipelines/** entra por pedido del dueño. 2026-10-05: también packs/**, commands/**, perfil-equipo.json y engram-version, que el laboratorio del instalador (scripts/tests/lib/harness-lab.sh) copia al árbol de prueba. 2026-10-07 (story 8.22, tramo E, AC 19): sale lo que el lector de dependencias ve en el código de cada pesada (scripts/lib/**, scripts/publishing/**, skills/**, agents/**) y lo que no viaja ni se instala (pipelines/**). Queda la red: lo que el instalador o la copia usan sin nombrarlo en el código de la prueba —lo listan, lo arman con variables o lo ejecuta git—.",
+    "patterns": [
+      "scripts/setup/**",
+      "scripts/install-tycon-hooks.*",
+      "scripts/hooks/**",
+      "scripts/controls-bench/**",
+      "scripts/tools/harness-map/**",
+      "scripts/ci/check-bash32-quoting.sh",
+      "scripts/ci/check-claude-md-blocks.js",
+      "scripts/ci/tycon-ci-gate.js",
+      ".githooks/**",
+      "build/**",
+      "adapters/**",
+      "claude-md-blocks/**",
+      ".github/**",
+      "INSTALL.md",
+      "README.md",
+      "version.json",
+      "packs/**",
+      "commands/**",
+      "perfil-equipo.json",
+      "engram-version"
+    ],
+    "why_each": {
+      "scripts/setup/**": "el instalador (harness.js y su carpeta harness/): sus piezas se cargan y se copian con rutas armadas en tiempo de ejecución, que el lector no sigue",
+      "scripts/install-tycon-hooks.*": "el aplicador real: lo invoca harness.js por una ruta armada, y el laboratorio de juguete lo reemplaza por uno de mentira con el mismo nombre",
+      "scripts/hooks/**": "los hooks que el instalador registra: los toma listando la carpeta, y el lector no sigue un listado",
+      "scripts/controls-bench/**": "el banco que corre la copia instalada y el examen nocturno que el instalador programa: se nombran por variable",
+      "scripts/tools/harness-map/**": "lo corre el pre-commit del árbol instalado (.githooks/pre-commit), no el código de la prueba",
+      "scripts/ci/check-bash32-quoting.sh": "lo llama el pre-commit del árbol instalado (.githooks/pre-commit), no el código de la prueba",
+      "scripts/ci/check-claude-md-blocks.js": "lo llama el pre-commit del árbol instalado (.githooks/pre-commit), no el código de la prueba",
+      "scripts/ci/tycon-ci-gate.js": "lo llama el pre-commit del árbol instalado (.githooks/pre-commit), no el código de la prueba",
+      ".githooks/**": "el instalador los deja como hooks de git y los ejecuta git, no el código de la prueba",
+      "build/**": "el despliegue de Codex (build/deploy-codex-all.js) que el aplicador llama por una ruta armada",
+      "adapters/**": "los adaptadores de Codex: el aplicador los copia listando la carpeta (adapters/codex)",
+      "claude-md-blocks/**": "los bloques que el instalador inyecta en el CLAUDE.md: los toma listando la carpeta",
+      ".github/**": "la portada de GitHub si el repo la trae en la raíz (hoy no: la de la copia vive en scripts/publishing/public-files/.github/)",
+      "INSTALL.md": "la portada: la máquina limpia ejecuta su bloque de instalación y el instalador la nombra; los .md no eligen suites, la red sí",
+      "README.md": "la portada: la copia y la máquina limpia la leen como texto; los .md no eligen suites, la red sí",
+      "version.json": "la versión que comparan la instalación y la actualización: se lee como dato, por una ruta armada",
+      "packs/**": "los paquetes de revisores: el laboratorio real los copia y el instalador los instala listando la carpeta",
+      "commands/**": "los comandos de barra: el instalador los instala listando la carpeta",
+      "perfil-equipo.json": "el perfil del equipo que lee el instalador, por una ruta armada",
+      "engram-version": "el pin de engram que compara el instalador, por una ruta armada"
+    }
+  },
+  "deps_ignore": {
+    "why": "2026-10-07 (story 8.22, tramo E, pase adversarial): carpetas de datos que no viajan en la copia ni las instala el instalador, y que el código de las pesadas nombra en rutas de juguete (el laboratorio crea $hs/.advisors/dod-runtime, los avisos de los hooks nombran .engram/manifest.json). Por el grafo hacían correr 2 a 17 pesadas con el commit típico de una story (memoria de engram, registro del pipeline, tableros), que el tramo D no corría. No eligen pesadas por lo que usa su código; una pesada que lea datos reales de ahí los pone en sus patrones. Medido: ninguna de las 21 lee datos reales de estas carpetas (todas usan copias sintéticas).",
+    "patterns": [
+      ".engram/**",
+      ".advisors/**",
+      ".dashboard/**",
+      "tasks/**",
+      "qa/**"
+    ]
+  },
+  "groups": {
+    "installer": {
+      "why": "Decisión del dueño (2026-10-08; story 8.22, tramo G): las suites del laboratorio del instalador —las que cargan scripts/tests/lib/harness-lab.sh y pasan de 45 s— corren en la validación de la rama SÓLO cuando el cambio toca el instalador: el mecanismo de instalación (scripts/setup/**), el aplicador (scripts/install-tycon-hooks.*) o el laboratorio con que se prueban (scripts/tests/lib/** y, de scripts/tests/fixtures/, sólo los datos que el instalador y su laboratorio leen: ver `data_decision`). Cada suite suma su propio archivo. Con cualquier otro cambio las corre el banco nocturno, que las corre siempre. Medido antes de decidir: armar el laboratorio no era lo caro (0,85 s por vez; el tiempo está en los casos: instalar, actualizar, revisar) y estas suites —12 ese día; después entraron harness-tools, harness-move-home y get-harness, de la story 8.23: 15 al cierre de la 8.22— eran casi la mitad del trabajo de una validación típica (3292 s de 7036 s para un cambio de un solo archivo en scripts/lib/). No se siguen las dependencias de su código: el instalador nombra 25 de los 38 archivos de scripts/lib/ y 15 de los 18 de scripts/publishing/, y seguirlas es volver a correrlas con casi todo cambio. Una suite que nombra este grupo no hereda `shared` ni se elige por lo que usa su código. Lo cuida scripts/tests/heavy-suites.test.js (T30 a T32): una suite del laboratorio nueva que pase de 45 s y no lo nombre, o que no tenga peso medido, frena.",
+      "accepted_cost": "Una regresión del instalador causada por un cambio que NO lo toca —una biblioteca de scripts/lib/ que el instalador carga, el exportador que usa `harness layer`, un hook o una skill que el aplicador instala— no se ve en la validación de la rama: se ve en el banco nocturno, a la mañana siguiente, sobre main. Aceptado por el dueño el 2026-10-08. Tampoco corren ya con cambios en skills/** y agents/** las tres que arman el laboratorio con los archivos de verdad (harness-install, harness-repoint, installer-repeated-hooks).",
+      "standing_decision": "Decisión del dueño para la clase entera (2026-10-08, «Regla para todas»): toda suite del laboratorio del instalador —la que carga scripts/tests/lib/harness-lab.sh— que pase de 45 s entra a este grupo y lleva la misma excepción en scripts/ci/suites-over-limit.json, citando esta decisión; no hace falta otra firma por suite. Quien suma una suite así le da peso en el juego `pr` de scripts/ci/suites-weights.json, la agrega acá con `\"group\": \"installer\"` y anota su excepción con esta fecha de decisión. Si no lo hace, T32 de scripts/tests/heavy-suites.test.js frena y dice qué falta.",
+      "data_decision": "Decisión del dueño del arnés (2026-10-08; story 8.22, cierre, AC 41): de la carpeta de datos de prueba (scripts/tests/fixtures/) el grupo nombra, uno por uno, sólo los datos que el instalador y su laboratorio leen; ya no la carpeta entera. Hasta ese día traía scripts/tests/fixtures/**, y ahí viven los datos de muchas otras suites: en la validación #12473 un solo archivo que el laboratorio no lee (public-copy-internal-name.json) corrió las 15 suites del grupo, ~55 min de trabajo en serie, en una story que no toca el instalador. Cuáles son: los que NOMBRA el código que este grupo ya mira —scripts/setup/**, scripts/install-tycon-hooks.*, scripts/tests/lib/** y los archivos de las suites del grupo, con lo propio de cada una—. Hoy diez: los cuatro que el instalador lee al correr (harness-managed-pieces.json en scripts/setup/harness/managed.js; layer-public-wins.json, layer-public-only.json y harness-tree-writers.json en layer.js), los dos que nombra como la copia declarada de sus textos (harness-place-names.json y startup-lines.json), los dos del laboratorio (toy-release-server.js y relocate-machine/) y los dos que copian harness-update y harness-doctor (layer-lab-allowlist.json y layer-lab-table.json). Un cambio en cualquier otro dato de la carpeta no corre estas suites en la rama: las corre el banco nocturno. Lo cuida T51 de scripts/tests/heavy-suites.test.js, en los dos sentidos: frena si ese código nombra un dato que esta lista no trae (hay que sumarlo acá) y si la lista trae uno que ya nadie nombra, o vuelve a traer la carpeta entera. Lo que la prueba no ve: un dato leído con un nombre armado entero al correr, en un archivo que además nombra algún otro dato. Si un archivo nombra la carpeta —de la forma que sea— y no nombra ningún dato, frena: no se puede saber qué lee. Quien la nombra sin leer ningún dato (escribe en su árbol de juguete, la saltea al listar) lo declara en el archivo con «@fixtures-exempt: <motivo>».",
+      "patterns": [
+        "scripts/setup/**",
+        "scripts/install-tycon-hooks.*",
+        "scripts/tests/lib/**",
+        "scripts/tests/fixtures/harness-managed-pieces.json",
+        "scripts/tests/fixtures/layer-public-wins.json",
+        "scripts/tests/fixtures/layer-public-only.json",
+        "scripts/tests/fixtures/harness-tree-writers.json",
+        "scripts/tests/fixtures/harness-place-names.json",
+        "scripts/tests/fixtures/startup-lines.json",
+        "scripts/tests/fixtures/toy-release-server.js",
+        "scripts/tests/fixtures/toy-azure-server.js",
+        "scripts/tests/fixtures/team-layer-paths.json",
+        "scripts/tests/fixtures/relocate-machine/**",
+        "scripts/tests/fixtures/layer-lab-allowlist.json",
+        "scripts/tests/fixtures/layer-lab-table.json"
+      ]
+    }
+  },
+  "suites": {
+    "export-real.test.sh": {
+      "why": "La copia pública de verdad: exporta los dos paquetes, corre el detector, la instala en una HOME vacía y, en el nocturno, corre la CI pública sobre ella (scripts/ci/public-ci.sh y check-public-workflow.js). 2026-10-06 (decisión del dueño, a propuesta del coordinador de la 8.12): corre en la rama con cualquier cambio en lo que SALE en la copia —`shared` más scripts/**, guides/** y los archivos de la raíz que viajan—, no sólo con el exportador. Ese día una prueba nueva de la 8.19 B (scripts/tests/) traía una ruta de máquina: no tocaba el exportador, pasó la validación y frenó la publicación. Ya no pesa lo que pesaba (~28 min): el exportador sin búsquedas de más la deja en ~10. No corre con lo que no viaja (stories, planes, memoria, tableros, evidencia, buzón). La CI pública sobre la copia (su T23) sigue sólo en el nocturno, antes de cada republicación. 2026-10-06 (story 8.22, AC 7): `reads_md` — los .md no eligen suites en la 170, salvo acá: lo de guides/ y de scripts/publishing/public-files/ viaja en la copia, así que esta pesada se elige con la lista entera del cambio, .md incluidos. 2026-10-07 (story 8.22, tramo E): `deps`: false — arma la copia pública, así que su criterio es lo que la copia publica o instala, escrito acá; lo que salió de `shared` y ella sí usa (scripts/lib/**, scripts/publishing/**, skills/**, agents/**) pasa a sus patrones. Su código lista el repo entero (ls-files, grep): el lector diría «depende de todo». scripts/** ya trae lo de scripts/; pipelines/** no viaja en la copia.",
+      "reads_md": true,
+      "deps": false,
+      "patterns": [
+        "scripts/**",
+        "guides/**",
+        "story-format.md",
+        ".gitattributes",
+        ".gitignore",
+        "scripts/tests/export-real.test.sh",
+        "skills/**",
+        "agents/**"
+      ]
+    },
+    "clean-machine.test.sh": {
+      "why": "La máquina limpia (~7 min cuando mide): instala la copia en un contenedor con lo que declara la portada y corre el esqueleto del pipeline sobre el repo de ejemplo (scripts/tests/fixtures/example-repo/) con sus archivos de apoyo (scripts/tests/clean-machine/). 2026-10-06 (story 8.22, AC 7): `reads_md` — ejecuta el bloque de INSTALL.md y lee la portada (README.md): se elige con la lista entera del cambio, .md incluidos. Rojo real que lo pide: el merge 5b3b1db0 (2026-10-04) editó INSTALL.md y la puso roja esa noche (T37). 2026-10-07 (story 8.22, tramo E): `deps`: false — arma la copia pública, así que su criterio es lo que la copia publica o instala, escrito acá; lo que salió de `shared` y ella sí usa (scripts/lib/**, scripts/publishing/**, skills/**, agents/**) pasa a sus patrones. Su código lista el repo entero (ls-files, grep): el lector diría «depende de todo». pipelines/** no viaja en la copia.",
+      "reads_md": true,
+      "deps": false,
+      "patterns": [
+        "scripts/tests/clean-machine.test.sh",
+        "scripts/tests/clean-machine/**",
+        "scripts/tests/fixtures/example-repo/**",
+        "scripts/lib/**",
+        "scripts/publishing/**",
+        "skills/**",
+        "agents/**"
+      ]
+    },
+    "installer-ps1.test.sh": {
+      "why": "~251 s en la validación 170 #11961 (2026-10-05). Corre el instalador de verdad (o el programa harness.js con su aplicador): hereda `shared` —el instalador y todo lo que instala— y suma su propia prueba, el laboratorio (scripts/tests/lib/), los datos de prueba y las carpetas que la prueba nombra, más las que nombra el instalador fuera de `shared` (scripts/metrics/, scripts/production/ y la lista de suites). Ante la duda, la carpeta entra. Un cambio que no toca nada de eso (guías, nocturnos, métricas sueltas, CI) no la corre en la rama; el banco nocturno la corre siempre. 2026-10-07 (story 8.22, tramo E, AC 33): skills/** y agents/** propios — el instalador real los instala listando la carpeta, y el lector no ve skills/ (es demasiado ancha para él) ni sigue un listado. De scripts/ ve lo que el instalador nombra. `deps`: \"graph\" — el grep de la suite es sobre la salida de sus pruebas, no sobre el repo: usa lo que el lector encuentra en su código, sin el «depende de todo». graph_whole_lines: 4 y graph_whole_sha: la cantidad y la huella de las líneas de su código que recorren algo cuando se revisó (2026-10-07): si cambian, vuelve a depender de todo hasta que alguien la mire.",
+      "deps": "graph",
+      "patterns": [
+        "scripts/tests/installer-ps1.test.sh",
+        "scripts/tests/lib/**",
+        "scripts/tests/fixtures/**",
+        "guides/**",
+        "scripts/*",
+        "scripts/metrics/**",
+        "scripts/production/**",
+        "scripts/tests/suites.json",
+        "skills/**",
+        "agents/**"
+      ],
+      "graph_whole_lines": 7,
+      "graph_whole_sha": "0c76eba37e5b"
+    },
+    "harness-repoint.test.sh": {
+      "why": "Suite del laboratorio del instalador: corre en la rama sólo cuando el cambio toca el instalador (grupo `installer`, arriba, con su costo aceptado; decisión del dueño, 2026-10-08, story 8.22 tramo G). Sus patrones son los del grupo más su propio archivo. Hasta ese día corría también por `shared` y por lo que usa su código.",
+      "group": "installer",
+      "patterns": [
+        "scripts/tests/harness-repoint.test.sh"
+      ]
+    },
+    "harness-install.test.sh": {
+      "why": "Suite del laboratorio del instalador: corre en la rama sólo cuando el cambio toca el instalador (grupo `installer`, arriba, con su costo aceptado; decisión del dueño, 2026-10-08, story 8.22 tramo G). Sus patrones son los del grupo más su propio archivo. Hasta ese día corría también por `shared` y por lo que usa su código.",
+      "group": "installer",
+      "patterns": [
+        "scripts/tests/harness-install.test.sh"
+      ]
+    },
+    "harness-update.test.sh": {
+      "why": "Suite del laboratorio del instalador: corre en la rama sólo cuando el cambio toca el instalador (grupo `installer`, arriba, con su costo aceptado; decisión del dueño, 2026-10-08, story 8.22 tramo G). Sus patrones son los del grupo más su propio archivo. Hasta ese día corría también por `shared` y por lo que usa su código.",
+      "group": "installer",
+      "patterns": [
+        "scripts/tests/harness-update.test.sh"
+      ]
+    },
+    "harness-profile.test.sh": {
+      "why": "Suite del laboratorio del instalador: corre en la rama sólo cuando el cambio toca el instalador (grupo `installer`, arriba, con su costo aceptado; decisión del dueño, 2026-10-08, story 8.22 tramo G). Sus patrones son los del grupo más su propio archivo. Hasta ese día corría también por `shared` y por lo que usa su código.",
+      "group": "installer",
+      "patterns": [
+        "scripts/tests/harness-profile.test.sh"
+      ]
+    },
+    "harness-uninstall.test.sh": {
+      "why": "Suite del laboratorio del instalador: corre en la rama sólo cuando el cambio toca el instalador (grupo `installer`, arriba, con su costo aceptado; decisión del dueño, 2026-10-08, story 8.22 tramo G). Sus patrones son los del grupo más su propio archivo. Hasta ese día corría también por `shared` y por lo que usa su código.",
+      "group": "installer",
+      "patterns": [
+        "scripts/tests/harness-uninstall.test.sh"
+      ]
+    },
+    "harness-plan.test.sh": {
+      "why": "Suite del laboratorio del instalador: corre en la rama sólo cuando el cambio toca el instalador (grupo `installer`, arriba, con su costo aceptado; decisión del dueño, 2026-10-08, story 8.22 tramo G). Sus patrones son los del grupo más su propio archivo. Hasta ese día corría también por `shared` y por lo que usa su código.",
+      "group": "installer",
+      "patterns": [
+        "scripts/tests/harness-plan.test.sh"
+      ]
+    },
+    "harness-health.test.sh": {
+      "why": "Suite del laboratorio del instalador: corre en la rama sólo cuando el cambio toca el instalador (grupo `installer`, arriba, con su costo aceptado; decisión del dueño, 2026-10-08, story 8.22 tramo G). Sus patrones son los del grupo más su propio archivo. Hasta ese día corría también por `shared` y por lo que usa su código.",
+      "group": "installer",
+      "patterns": [
+        "scripts/tests/harness-health.test.sh"
+      ]
+    },
+    "harness-doctor.test.sh": {
+      "why": "Suite del laboratorio del instalador: corre en la rama sólo cuando el cambio toca el instalador (grupo `installer`, arriba, con su costo aceptado; decisión del dueño, 2026-10-08, story 8.22 tramo G). Sus patrones son los del grupo más su propio archivo. Hasta ese día corría también por `shared` y por lo que usa su código.",
+      "group": "installer",
+      "patterns": [
+        "scripts/tests/harness-doctor.test.sh"
+      ]
+    },
+    "harness-channel.test.sh": {
+      "why": "Suite del laboratorio del instalador: corre en la rama sólo cuando el cambio toca el instalador (grupo `installer`, arriba, con su costo aceptado; decisión del dueño, 2026-10-08, story 8.22 tramo G). Sus patrones son los del grupo más su propio archivo. Hasta ese día corría también por `shared` y por lo que usa su código.",
+      "group": "installer",
+      "patterns": [
+        "scripts/tests/harness-channel.test.sh"
+      ]
+    },
+    "harness-rollback.test.sh": {
+      "why": "Suite del laboratorio del instalador: corre en la rama sólo cuando el cambio toca el instalador (grupo `installer`, arriba, con su costo aceptado; decisión del dueño, 2026-10-08, story 8.22 tramo G). Sus patrones son los del grupo más su propio archivo. Hasta ese día corría también por `shared` y por lo que usa su código.",
+      "group": "installer",
+      "patterns": [
+        "scripts/tests/harness-rollback.test.sh"
+      ]
+    },
+    "installer-repeated-hooks.test.sh": {
+      "why": "Suite del laboratorio del instalador: corre en la rama sólo cuando el cambio toca el instalador (grupo `installer`, arriba, con su costo aceptado; decisión del dueño, 2026-10-08, story 8.22 tramo G). Sus patrones son los del grupo más su propio archivo. Hasta ese día corría también por `shared` y por lo que usa su código.",
+      "group": "installer",
+      "patterns": [
+        "scripts/tests/installer-repeated-hooks.test.sh"
+      ]
+    },
+    "harness-release.test.sh": {
+      "why": "Suite del laboratorio del instalador: corre en la rama sólo cuando el cambio toca el instalador (grupo `installer`, arriba, con su costo aceptado; decisión del dueño, 2026-10-08, story 8.22 tramo G). Sus patrones son los del grupo más su propio archivo. Hasta ese día se elegía por su `gate_only_when_touching` de suites.json, que incluía scripts/lib/**; ése sigue siendo el del portón de cada story.",
+      "group": "installer",
+      "patterns": [
+        "scripts/tests/harness-release.test.sh"
+      ]
+    },
+    "harness-tools.test.sh": {
+      "why": "Suite del laboratorio del instalador: corre en la rama sólo cuando el cambio toca el instalador (grupo `installer`, arriba, con su costo aceptado; decisión del dueño, 2026-10-08, story 8.22 tramo G). Entró a main ese mismo día con la story 8.23 y no tenía peso medido: la encontró el pase adversarial del tramo. Prueba los enchufes de cada herramienta (Claude Code y Codex), así que suma a los patrones del grupo lo propio de su tema: el adaptador de Codex (adapters/codex/**) y lo que lo arma (build/**). Hasta ese día se elegía por su `gate_only_when_touching` de suites.json, que incluía scripts/lib/** y scripts/hooks/**; ése sigue siendo el del portón de cada story.",
+      "group": "installer",
+      "patterns": [
+        "scripts/tests/harness-tools.test.sh",
+        "adapters/codex/**",
+        "build/**"
+      ]
+    },
+    "get-harness.test.sh": {
+      "why": "Suite del laboratorio del instalador: el guion de entrada de la portada SIN git (story 8.23, tanda E · AC 33) instala seis veces desde el «GitHub» de juguete (repo público, privado sin permiso, con TYCON_GITHUB_TOKEN, por terminal, con el permiso guardado, con uno que no vale) y pasó de 8 s a unos 120 s en la Mac. Corre en la rama sólo cuando el cambio toca el instalador (grupo `installer`, arriba, con su costo aceptado y la decisión del dueño para la clase entera, 2026-10-08); el banco nocturno la corre siempre.",
+      "group": "installer",
+      "patterns": [
+        "scripts/tests/get-harness.test.sh",
+        "scripts/publishing/public-files/scripts/setup/get-harness.sh"
+      ]
+    },
+    "harness-move-home.test.sh": {
+      "why": "Suite del laboratorio del instalador: corre en la rama sólo cuando el cambio toca el instalador (grupo `installer`, arriba, con su costo aceptado y la decisión del dueño para la clase entera, 2026-10-08). Entró a main ese día con la story 8.23 (la mudanza de una máquina a ~/.tycon) sin peso medido: la frenó la guardia de T32 al traer main. Hasta entonces se elegía por su `gate_only_when_touching` de suites.json, que incluía scripts/lib/**; ése sigue siendo el del portón de cada story.",
+      "group": "installer",
+      "patterns": [
+        "scripts/tests/harness-move-home.test.sh"
+      ]
+    },
+    "harness-team-azure.test.sh": {
+      "why": "Suite del laboratorio del instalador: corre en la rama sólo cuando el cambio toca el instalador (grupo `installer`, arriba, con su costo aceptado y la decisión del dueño para la clase entera, 2026-10-08). Entró con la story 8.25 (tanda A1a-azure: la capa del equipo desde Azure DevOps, con el Azure de juguete) con el peso medido en la Mac, llevado a la escala del agente como las de la 8.23.",
+      "group": "installer",
+      "patterns": [
+        "scripts/tests/harness-team-azure.test.sh"
+      ]
+    },
+    "harness-team-a2.test.sh": {
+      "why": "Suite del laboratorio del instalador: corre en la rama sólo cuando el cambio toca el instalador (grupo `installer`, arriba, con su costo aceptado y la decisión del dueño para la clase entera, 2026-10-08). Entró con la story 8.25 (tanda A2a: la capa del equipo con revisores y skills, sobre una versión de juguete que trae el pipeline) con el peso medido en la Mac.",
+      "group": "installer",
+      "patterns": [
+        "scripts/tests/harness-team-a2.test.sh"
+      ]
+    },
+    "harness-team-skill-data.test.sh": {
+      "why": "Suite del laboratorio del instalador: corre en la rama sólo cuando el cambio toca el instalador (grupo `installer`, arriba, con su costo aceptado y la decisión del dueño para la clase entera, 2026-10-08). Entró con la story 8.25 (tanda A2c: una skill de la lista fija con sus datos fuera de su carpeta) con el peso medido en la Mac (42 s), llevado a la escala del agente.",
+      "group": "installer",
+      "patterns": [
+        "scripts/tests/harness-team-skill-data.test.sh"
+      ]
+    },
+    "harness-team-codex.test.sh": {
+      "why": "Suite del laboratorio del instalador: corre en la rama sólo cuando el cambio toca el instalador (grupo `installer`, arriba, con su costo aceptado y la decisión del dueño para la clase entera, 2026-10-08). Entró con la story 8.25 (tanda A2b: los revisores de la capa del equipo en Codex, sobre una máquina de juguete con las piezas reales del enchufe de Codex) con el peso medido en la Mac (18 s), llevado a la escala del agente.",
+      "group": "installer",
+      "patterns": [
+        "scripts/tests/harness-team-codex.test.sh"
+      ]
+    },
+    "harness-team.test.sh": {
+      "why": "Suite del laboratorio del instalador: corre en la rama sólo cuando el cambio toca el instalador (grupo `installer`, arriba, con su costo aceptado y la decisión del dueño para la clase entera, 2026-10-08). Entró con la story 8.25 (tanda A1a: la capa del equipo sobre la versión bajada, con el GitHub de juguete atendiendo dos repos) con el peso medido en la Mac, llevado a la escala del agente como las tres de la 8.23. Su `gate_only_when_touching` de suites.json sigue siendo el del portón de cada story.",
+      "group": "installer",
+      "patterns": [
+        "scripts/tests/harness-team.test.sh"
+      ]
+    },
+    "windows-guided-lab.test.js": {
+      "why": "Suite del laboratorio del instalador: el alta y la actualización en Windows siguiendo la página pública de instalación, con el programa de verdad y en modo de laboratorio (story 8.28): baja el guion de entrada del GitHub de juguete, instala, suma la capa del equipo contra el Azure DevOps de juguete, y una máquina con una versión anterior se actualiza sola al abrir una sesión. Unos minutos en la Mac. Corre en la rama sólo cuando el cambio toca el instalador (grupo `installer`, arriba, con su costo aceptado y la decisión del dueño para la clase entera, 2026-10-08) o lo que ella misma sigue: la página, el guion de entrada y los guiones del ensayo guiado, nombrados uno por uno. El banco nocturno la corre siempre.",
+      "group": "installer",
+      "patterns": [
+        "scripts/tests/windows-guided-lab.test.js",
+        "scripts/tests/windows/guided-install.js",
+        "scripts/tests/windows/guided-update.js",
+        "scripts/tests/windows/guided-page.js",
+        "scripts/tests/windows/guided-steps.json",
+        "scripts/tests/windows/toy-lab.js",
+        "scripts/tests/windows/release-photo.js",
+        "scripts/tests/windows/onboarding-probe.js",
+        "scripts/tests/windows/update-probe.js",
+        "scripts/publishing/public-files/getting-started/windows.md",
+        "scripts/publishing/public-files/scripts/setup/get-harness.ps1"
+      ]
+    },
+    "integrations-off.p1.test.sh": {
+      "why": "~37 s en la validación 170 #11961 (2026-10-05). Corre el instalador de verdad (o el programa harness.js con su aplicador): hereda `shared` —el instalador y todo lo que instala— y suma su propia prueba, el laboratorio (scripts/tests/lib/), los datos de prueba y las carpetas que la prueba nombra, más las que nombra el instalador fuera de `shared` (scripts/metrics/, scripts/production/ y la lista de suites). Ante la duda, la carpeta entra. Un cambio que no toca nada de eso (guías, nocturnos, métricas sueltas, CI) no la corre en la rama; el banco nocturno la corre siempre.",
+      "patterns": [
+        "scripts/tests/integrations-off.p1.test.sh",
+        "scripts/tests/integrations-off.test.sh",
+        "scripts/tests/lib/**",
+        "scripts/tests/fixtures/**",
+        "guides/**",
+        "scripts/*",
+        "scripts/ci/**",
+        "scripts/instincts/**",
+        "scripts/metrics/**",
+        "scripts/nightly/**",
+        "scripts/production/**",
+        "scripts/tests/suites.json"
+      ]
+    },
+    "integrations-off.p2.test.sh": {
+      "why": "~37 s en la validación 170 #11961 (2026-10-05). Corre el instalador de verdad (o el programa harness.js con su aplicador): hereda `shared` —el instalador y todo lo que instala— y suma su propia prueba, el laboratorio (scripts/tests/lib/), los datos de prueba y las carpetas que la prueba nombra, más las que nombra el instalador fuera de `shared` (scripts/metrics/, scripts/production/ y la lista de suites). Ante la duda, la carpeta entra. Un cambio que no toca nada de eso (guías, nocturnos, métricas sueltas, CI) no la corre en la rama; el banco nocturno la corre siempre.",
+      "patterns": [
+        "scripts/tests/integrations-off.p2.test.sh",
+        "scripts/tests/integrations-off.test.sh",
+        "scripts/tests/lib/**",
+        "scripts/tests/fixtures/**",
+        "guides/**",
+        "scripts/*",
+        "scripts/ci/**",
+        "scripts/instincts/**",
+        "scripts/metrics/**",
+        "scripts/nightly/**",
+        "scripts/production/**",
+        "scripts/tests/suites.json"
+      ]
+    },
+    "installer-shared-pieces.p1.test.sh": {
+      "why": "~31 s en la validación 170 #11961 (2026-10-05). Corre el instalador de verdad (o el programa harness.js con su aplicador): hereda `shared` —el instalador y todo lo que instala— y suma su propia prueba, el laboratorio (scripts/tests/lib/), los datos de prueba y las carpetas que la prueba nombra, más las que nombra el instalador fuera de `shared` (scripts/metrics/, scripts/production/ y la lista de suites). Ante la duda, la carpeta entra. Un cambio que no toca nada de eso (guías, nocturnos, métricas sueltas, CI) no la corre en la rama; el banco nocturno la corre siempre.",
+      "patterns": [
+        "scripts/tests/installer-shared-pieces.p1.test.sh",
+        "scripts/tests/installer-shared-pieces.test.sh",
+        "scripts/tests/lib/**",
+        "scripts/tests/fixtures/**",
+        "scripts/*",
+        "scripts/metrics/**",
+        "scripts/production/**",
+        "scripts/tests/suites.json"
+      ]
+    },
+    "installer-shared-pieces.p2.test.sh": {
+      "why": "~31 s en la validación 170 #11961 (2026-10-05). Corre el instalador de verdad (o el programa harness.js con su aplicador): hereda `shared` —el instalador y todo lo que instala— y suma su propia prueba, el laboratorio (scripts/tests/lib/), los datos de prueba y las carpetas que la prueba nombra, más las que nombra el instalador fuera de `shared` (scripts/metrics/, scripts/production/ y la lista de suites). Ante la duda, la carpeta entra. Un cambio que no toca nada de eso (guías, nocturnos, métricas sueltas, CI) no la corre en la rama; el banco nocturno la corre siempre.",
+      "patterns": [
+        "scripts/tests/installer-shared-pieces.p2.test.sh",
+        "scripts/tests/installer-shared-pieces.test.sh",
+        "scripts/tests/lib/**",
+        "scripts/tests/fixtures/**",
+        "scripts/*",
+        "scripts/metrics/**",
+        "scripts/production/**",
+        "scripts/tests/suites.json"
+      ]
+    },
+    "install-guard.test.sh": {
+      "why": "~27 s en la validación 170 #11961 (2026-10-05). Prueba una pieza que instala el instalador: hereda `shared` —el instalador y todo lo que instala— y suma su propia prueba, el laboratorio (scripts/tests/lib/), los datos de prueba y las carpetas que la prueba nombra. Ante la duda, la carpeta entra. Un cambio que no toca nada de eso (guías, nocturnos, métricas sueltas, CI) no la corre en la rama; el banco nocturno la corre siempre.",
+      "patterns": [
+        "scripts/tests/install-guard.test.sh",
+        "scripts/tests/lib/**",
+        "scripts/tests/fixtures/**",
+        "guides/**",
+        "scripts/production/**"
+      ]
+    },
+    "prod-access-guard.test.sh": {
+      "why": "~21 s en la validación 170 #11961 (2026-10-05). Prueba una pieza que instala el instalador: hereda `shared` —el instalador y todo lo que instala— y suma su propia prueba, el laboratorio (scripts/tests/lib/), los datos de prueba y las carpetas que la prueba nombra. Ante la duda, la carpeta entra. Un cambio que no toca nada de eso (guías, nocturnos, métricas sueltas, CI) no la corre en la rama; el banco nocturno la corre siempre. 2026-10-06 (story 8.22, AC 7): `reads_md` — su T33 lee el texto de guides/produccion-con-permiso.md: se elige con la lista entera del cambio, .md incluidos.",
+      "reads_md": true,
+      "patterns": [
+        "scripts/tests/prod-access-guard.test.sh",
+        "scripts/tests/lib/**",
+        "scripts/tests/fixtures/**",
+        "guides/**",
+        "scripts/production/**"
+      ]
+    },
+    "dashboard-runs.test.sh": {
+      "why": "~27 s en la validación 170 #11961 (2026-10-05). Prueba una pieza que instala el instalador: hereda `shared` —el instalador y todo lo que instala— y suma su propia prueba, el laboratorio (scripts/tests/lib/), los datos de prueba y las carpetas que la prueba nombra. Ante la duda, la carpeta entra. Un cambio que no toca nada de eso (guías, nocturnos, métricas sueltas, CI) no la corre en la rama; el banco nocturno la corre siempre. 2026-10-07 (story 8.22, tramo E): `deps`: \"graph\" — el grep de la suite es sobre el tablero que arma, un texto: usa lo que el lector encuentra en su código, sin el «depende de todo». graph_whole_lines: 2 y graph_whole_sha: la cantidad y la huella de las líneas de su código que recorren algo cuando se revisó (2026-10-07): si cambian, vuelve a depender de todo hasta que alguien la mire.",
+      "deps": "graph",
+      "patterns": [
+        "scripts/tests/dashboard-runs.test.sh",
+        "scripts/tests/lib/**",
+        "scripts/tests/fixtures/**",
+        "artifacts/**",
+        "guides/**",
+        "scripts/*",
+        "scripts/metrics/**",
+        "scripts/nightly/**",
+        "specs/**"
+      ],
+      "graph_whole_lines": 2,
+      "graph_whole_sha": "18857caf9448"
+    },
+    "dashboard.test.sh": {
+      "why": "~20 s en la validación 170 #11961 (2026-10-05). Prueba una pieza que instala el instalador: hereda `shared` —el instalador y todo lo que instala— y suma su propia prueba, el laboratorio (scripts/tests/lib/), los datos de prueba y las carpetas que la prueba nombra. Ante la duda, la carpeta entra. Un cambio que no toca nada de eso (guías, nocturnos, métricas sueltas, CI) no la corre en la rama; el banco nocturno la corre siempre.",
+      "patterns": [
+        "scripts/tests/dashboard.test.sh",
+        "scripts/tests/lib/**",
+        "scripts/tests/fixtures/**",
+        "artifacts/**",
+        "scripts/metrics/**",
+        "scripts/nightly/**",
+        "specs/**"
+      ]
+    },
+    "harness-questions.test.sh": {
+      "why": "~200 s (su peso en suites-weights.json; llegó con la tanda D de la 8.16, 2026-10-05). Prueba las preguntas de la instalación guiada (harness.js): hereda `shared` —el instalador y todo lo que instala— y suma su propia prueba, el laboratorio (scripts/tests/lib/) y los datos de prueba. Un cambio que no toca nada de eso no la corre en la rama; el banco nocturno la corre siempre.",
+      "patterns": [
+        "scripts/tests/harness-questions.test.sh",
+        "scripts/tests/lib/**",
+        "scripts/tests/fixtures/**"
+      ]
+    }
+  }
+}

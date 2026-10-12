@@ -1,0 +1,17 @@
+{
+  "__doc": "el corredor de suites.json del arnés: suites rojas, ausentes y diferidas a propósito. Sin cobertura (no la produce): el motivo lo dice así, no «la story no declara archivos nuevos».",
+  "runner": "suites-json",
+  "suite_exit": "1",
+  "story_id": "unknown",
+  "cov_min": "75",
+  "ts": "2026-10-05T12:04:00Z",
+  "test_project_count": "0",
+  "scope": "",
+  "scope_source": "explicito",
+  "declared_new": [],
+  "code_state": { "git": true, "head": "0000acme", "dirty": "" },
+  "base_ref": "HEAD",
+  "base_json": { "ref": "HEAD", "source": "HEAD", "descartadas": [] },
+  "base": { "scripts/tests/suites.json": { "text": "{\"diarias\":[],\"semanales\":[]}\n" } },
+  "now": { "scripts/lib/acme.js": { "lines": 3 } }
+}

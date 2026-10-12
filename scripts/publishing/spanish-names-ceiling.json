@@ -1,0 +1,24 @@
+{
+  "__doc": "El techo del termómetro de nombres en castellano (story 8.9, AC 12): lo que el exportador cuenta por paquete con el extractor del freno (spanishNames del --json), sobre la copia con la tabla vacía. export-real.test.sh sale rojo si la copia lo supera y verde con «bajó a N» si baja. Cada tanda de la 8.9 lo baja en su pull request; sube sólo en el commit que suma palabras a scripts/lib/spanish-words.json → words (el freno frena el resto). Es un techo aparte del de nombres reales (names-ceiling.json, story 8.10).",
+  "__last_change": "2026-10-03 — tanda G: las dos integraciones que se quedaban pasan a inglés (mailbox y nightly; decisión del dueño de esa misma noche, que revierte la D1), y con ellas las dos variables locales del instalador que se arman con la clave: variables 9 → 7. Y el techo se pone en lo que mide hoy la copia: las tres opciones de marker.js que todavía contaba salieron de agent-skills con la tanda B de la story 8.7 y nadie lo había bajado: opciones 7 → 4. Total 17 → 12 (sobre main medía 14), medido con el exportador sobre la copia con la tabla vacía y con --count. Quedan los 12 que saca la story 8.15: produccion-notice.js y las cuatro opciones de la puerta tycon-prod-sql (familia del freno instalado) y las siete variables de la tabla de alias de agent-skills. En la misma tanda, `sin`, `solo`, `vista` y `de` pasan de ambiguas a castellanas en la lista de palabras: lo que con eso habría empezado a contar (cuatro opciones del tablero y el interruptor del freno de pull requests) se renombra en el mismo cambio, así que el techo no sube. Bizuit sigue en 0",
+  "core": {
+    "files": 1,
+    "folders": 0,
+    "options": 4,
+    "subcommands": 0,
+    "values": 0,
+    "env": 7,
+    "keys": 0,
+    "total": 12
+  },
+  "bizuit": {
+    "files": 0,
+    "folders": 0,
+    "options": 0,
+    "subcommands": 0,
+    "values": 0,
+    "env": 0,
+    "keys": 0,
+    "total": 0
+  }
+}

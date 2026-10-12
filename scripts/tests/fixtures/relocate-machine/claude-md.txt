@@ -1,0 +1,3 @@
+# CLAUDE.md de la máquina de juguete
+
+@~/.claude/{{LEGACY_NAME}}/README.md

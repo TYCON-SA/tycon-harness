@@ -1,0 +1,100 @@
+{
+  "__doc": "Story 7.17 (2026-10-07, caso: épico 11 de un producto del equipo; guides/incident-log.md#case-firmas-ramas-paralelas-2026-10-07). El registro de firmas de la matriz runtime (`.tycon/runtime-waivers.jsonl`) era una lista encadenada: dos ramas que firmaron en paralelo enganchaban con la MISMA línea, y al unirlas la segunda dejaba de enganchar con la anterior. Desde ahí toda firma se descartaba en silencio y el portón decía «esperan waiver» aunque el dev había firmado. Estos casos corren el portón del commit de verdad sobre los dos lados: dos ramas unidas valen (no frena), y una firma editada a mano se sigue descartando, y el portón lo DICE.",
+  "hooks": [
+    {
+      "hook": "on-pre-commit.js (matriz runtime: firmas de ramas unidas)",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/on-pre-commit.js",
+      "controles": [
+        "${SKILLS}/skills/tycon-pipeline/scripts/runtime-matrix.js",
+        "${SKILLS}/skills/tycon-pipeline/scripts/lib/runtime-waiver.js"
+      ],
+      "__controles": "El portón recomputa la matriz en vivo, y la matriz lee el registro con lib/runtime-waiver.js: el auditor de vacuidad los neutraliza también.",
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "cases": [
+        {
+          "id": "firmas-dos-ramas-unidas-valen",
+          "type": "must-not-block",
+          "__nota": "La 11.5 y la 11.3 firmaron en ramas paralelas sobre la misma línea; al unirlas, la de la 11.3 quedaba descartada. Con el verificador en árbol las dos valen y el commit de la story pasa.",
+          "files": {
+            "_spec.txt": "---\nstatus: done\nstory: 9.9\nsprint: 9\nruntime_not_verifiable:\n  - ac: 1\n    reason: \"fixture de test\"\n    covered_by: T1\n  - ac: 2\n    reason: \"fixture de test\"\n    covered_by: T2\n---\n\n# Story 9.9 — Test\n\n## Acceptance Criteria\n\n1. **Given** test, when X, then Y. (Playwright E2E)\n2. **Given** test2, when X, then Y. (Playwright E2E)\n\n### Tests\n\n| Test | AC |\n|------|-----|\n| T1   | #1 |\n| T2   | #2 |\n",
+            "_firmas.js": "// Arma el registro de firmas del repo como lo dejan dos ramas unidas: una base y dos firmas que enganchan con la MISMA\n// línea. `editar` cambia los AC de la segunda sin recalcular su cadena (la edición a mano que se tiene que seguir viendo).\nconst crypto = require('crypto');\nconst fs = require('fs');\nconst w = require(process.env.SKILLS + '/skills/tycon-pipeline/scripts/lib/runtime-waiver.js');\nconst sha = (s) => crypto.createHash('sha256').update(s).digest('hex').slice(0, 16);\nfunction canon(e) {\n  const b = [e.ts, String(e.story), [...e.acs].sort((x, y) => x - y), e.matrixHash, e.approvedBy || null];\n  if (e.declHashByAc !== undefined) b.push(Object.keys(e.declHashByAc).sort((x, y) => x - y).map((k) => [Number(k), e.declHashByAc[k]]));\n  return JSON.stringify(b);\n}\nconst cuelga = (padre, e) => ({ ...e, chain: sha(padre + canon(e)) });\nconst d = w.declHashFor('fixture de test', 'T1');\nconst d2 = w.declHashFor('fixture de test', 'T2');\nconst base = cuelga('', { ts: '2026-10-07T08:00:00.000Z', story: '9.1', acs: [1], matrixHash: 'm', approvedBy: 'deva', tty: true });\nconst ramaA = cuelga(base.chain, { ts: '2026-10-07T08:10:00.000Z', story: '9.8', acs: [4], matrixHash: 'm', approvedBy: 'deva', tty: true });\nconst ramaB = cuelga(base.chain, { ts: '2026-10-07T08:20:00.000Z', story: '9.9', acs: [1, 2], matrixHash: 'm', approvedBy: 'deva', tty: true, declHashByAc: { 1: d, 2: d2 } });\nif (process.argv[2] === 'editar') ramaB.ts = '2026-10-07T09:00:00.000Z';\nfs.mkdirSync('.tycon', { recursive: true });\nfs.writeFileSync('.tycon/runtime-waivers.jsonl', [base, ramaA, ramaB].map((e) => JSON.stringify(e)).join('\\n') + '\\n');\n",
+            "_selfaudit.txt": "# Self-audit Story 9.9\n## 1. Cobertura por AC\nAC #1 covered.\n## 2. Cobertura por interacción\nOK.\n## 3. Gaps conocidos\n| Gap | Descripción |\n|-----|-------------|\n| **A — placeholder** | placeholder |\n## 4. Verificación de no-regresión\nNo regression.\n## 5. Confianza del agente\n8/10.\n",
+            "_evidencia.txt": "# DoD Evidence — Story 9.9\n\n## Playwright Run\nnpx playwright test story-9-9.spec.ts → PASS (1/1)\n\n#### AC #1 — verified via curl\n#### AC #2 — verified via curl\nPASS.\n"
+          },
+          "env": {
+            "TYCON_CLOSURE_RECORD": "off",
+            "TYCON_ADVISORS_GATE": "off"
+          },
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p specs/stories .advisors/dod-runtime",
+            "node -e \"const fs=require('fs');fs.writeFileSync('specs/stories/9-9-test.md',fs.readFileSync('_spec.txt','utf8').replace('status: done','status: ready-for-dev'))\"",
+            "git add specs/stories/9-9-test.md && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "cp _spec.txt specs/stories/9-9-test.md && git add specs/stories/9-9-test.md",
+            "cp _evidencia.txt .advisors/dod-runtime/9.9-2026-05-20T00-00-00Z.md",
+            "cp _selfaudit.txt .advisors/dod-runtime/9.9-self-audit-iter1.md",
+            "printf '{\"ts\":\"2026-07-10T00:00:00Z\",\"story_id\":\"9.9\",\"suite_green\":true}' > .advisors/tests-result.json",
+            "node _firmas.js"
+          ],
+          "stdin": {
+            "session_id": "bench-firmas",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit -m \"story 9.9 done\""
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "stderr_not_re": [
+              "esperan waiver",
+              "DODRT-C6"
+            ]
+          }
+        },
+        {
+          "id": "firmas-edicion-a-mano-se-descarta-y-se-dice",
+          "type": "must-block",
+          "__nota": "La misma unión, pero la firma de la 9.9 se tocó a mano (se le cambió la fecha sin recalcular la cadena). Se sigue descartando como hoy, y el portón dice que la firma existe, dónde está y cómo volver a firmar, en vez de «esperan waiver» a secas.",
+          "files": {
+            "_spec.txt": "---\nstatus: done\nstory: 9.9\nsprint: 9\nruntime_not_verifiable:\n  - ac: 1\n    reason: \"fixture de test\"\n    covered_by: T1\n  - ac: 2\n    reason: \"fixture de test\"\n    covered_by: T2\n---\n\n# Story 9.9 — Test\n\n## Acceptance Criteria\n\n1. **Given** test, when X, then Y. (Playwright E2E)\n2. **Given** test2, when X, then Y. (Playwright E2E)\n\n### Tests\n\n| Test | AC |\n|------|-----|\n| T1   | #1 |\n| T2   | #2 |\n",
+            "_firmas.js": "// Arma el registro de firmas del repo como lo dejan dos ramas unidas: una base y dos firmas que enganchan con la MISMA\n// línea. `editar` cambia los AC de la segunda sin recalcular su cadena (la edición a mano que se tiene que seguir viendo).\nconst crypto = require('crypto');\nconst fs = require('fs');\nconst w = require(process.env.SKILLS + '/skills/tycon-pipeline/scripts/lib/runtime-waiver.js');\nconst sha = (s) => crypto.createHash('sha256').update(s).digest('hex').slice(0, 16);\nfunction canon(e) {\n  const b = [e.ts, String(e.story), [...e.acs].sort((x, y) => x - y), e.matrixHash, e.approvedBy || null];\n  if (e.declHashByAc !== undefined) b.push(Object.keys(e.declHashByAc).sort((x, y) => x - y).map((k) => [Number(k), e.declHashByAc[k]]));\n  return JSON.stringify(b);\n}\nconst cuelga = (padre, e) => ({ ...e, chain: sha(padre + canon(e)) });\nconst d = w.declHashFor('fixture de test', 'T1');\nconst d2 = w.declHashFor('fixture de test', 'T2');\nconst base = cuelga('', { ts: '2026-10-07T08:00:00.000Z', story: '9.1', acs: [1], matrixHash: 'm', approvedBy: 'deva', tty: true });\nconst ramaA = cuelga(base.chain, { ts: '2026-10-07T08:10:00.000Z', story: '9.8', acs: [4], matrixHash: 'm', approvedBy: 'deva', tty: true });\nconst ramaB = cuelga(base.chain, { ts: '2026-10-07T08:20:00.000Z', story: '9.9', acs: [1, 2], matrixHash: 'm', approvedBy: 'deva', tty: true, declHashByAc: { 1: d, 2: d2 } });\nif (process.argv[2] === 'editar') ramaB.ts = '2026-10-07T09:00:00.000Z';\nfs.mkdirSync('.tycon', { recursive: true });\nfs.writeFileSync('.tycon/runtime-waivers.jsonl', [base, ramaA, ramaB].map((e) => JSON.stringify(e)).join('\\n') + '\\n');\n",
+            "_selfaudit.txt": "# Self-audit Story 9.9\n## 1. Cobertura por AC\nAC #1 covered.\n## 2. Cobertura por interacción\nOK.\n## 3. Gaps conocidos\n| Gap | Descripción |\n|-----|-------------|\n| **A — placeholder** | placeholder |\n## 4. Verificación de no-regresión\nNo regression.\n## 5. Confianza del agente\n8/10.\n",
+            "_evidencia.txt": "# DoD Evidence — Story 9.9\n\n## Playwright Run\nnpx playwright test story-9-9.spec.ts → PASS (1/1)\n\n#### AC #1 — verified via curl\n#### AC #2 — verified via curl\nPASS.\n"
+          },
+          "env": {
+            "TYCON_CLOSURE_RECORD": "off",
+            "TYCON_ADVISORS_GATE": "off"
+          },
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p specs/stories .advisors/dod-runtime",
+            "node -e \"const fs=require('fs');fs.writeFileSync('specs/stories/9-9-test.md',fs.readFileSync('_spec.txt','utf8').replace('status: done','status: ready-for-dev'))\"",
+            "git add specs/stories/9-9-test.md && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "cp _spec.txt specs/stories/9-9-test.md && git add specs/stories/9-9-test.md",
+            "cp _evidencia.txt .advisors/dod-runtime/9.9-2026-05-20T00-00-00Z.md",
+            "cp _selfaudit.txt .advisors/dod-runtime/9.9-self-audit-iter1.md",
+            "printf '{\"ts\":\"2026-07-10T00:00:00Z\",\"story_id\":\"9.9\",\"suite_green\":true}' > .advisors/tests-result.json",
+            "node _firmas.js editar"
+          ],
+          "stdin": {
+            "session_id": "bench-firmas",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit -m \"story 9.9 done\""
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "DODRT-C6",
+              "descart",
+              "runtime-waivers\\.jsonl:3",
+              "marker\\.js runtime-waiver"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

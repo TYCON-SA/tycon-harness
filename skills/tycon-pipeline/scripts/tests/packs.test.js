@@ -1,0 +1,1002 @@
+'use strict';
+
+/**
+ * packs.test.js — los paquetes de revisores (story 8.2 del arnés, 2026-09-26).
+ *
+ * EL AGUJERO QUE CIERRA: los revisores de Bizuit y de clientes vivían escritos en el código del
+ * pipeline. Para publicar el núcleo hay que sacarlos, y sacarlos a mano tiene un modo de falla que
+ * no da error: un revisor que deja de correr da MENOS hallazgos, no un rojo. Estas pruebas sostienen
+ * las dos mitades: (1) un paquete instalado entra al set exactamente como lo declara su manifiesto;
+ * (2) un paquete roto, un nombre que no existe o una clave fuera del vocabulario FRENAN el comando
+ * nombrando archivo, revisor y motivo — nunca degradan a «sin ese paquete».
+ *
+ * Cubre T1–T9, T12 y T14 de la story. Lanza `pipeline.js` → HOME y sesión aislados (mismo patrón que
+ * `advisor-set-config.test.js`: sin esto cada invocación deja una marca `step5-start` falsa en el
+ * registro de la sesión viva).
+ */
+
+const test = require('node:test');
+const assert = require('node:assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { spawnSync } = require('child_process');
+
+const SCRIPTS = path.resolve(__dirname, '..');
+const PIPELINE = path.join(SCRIPTS, 'pipeline.js');
+const RAIZ = path.resolve(SCRIPTS, '..', '..', '..');       // agent-skills
+const PACKS_REALES = path.join(RAIZ, 'packs');
+const HOME_AISLADO = fs.mkdtempSync(path.join(os.tmpdir(), 'packs-home-'));
+// Story 8.7 (tanda B): la copia pública sale sin el paquete de clientes. Lo que tres casos miden contra ese paquete REAL
+// no se puede medir ahí, y se dice; en el repo del equipo `SKIP_PUBLIC` es false y se mide todo, como siempre.
+const { SKIP_PUBLIC, CLIENT_PACK_REVIEWER_COUNT, packReviewers } = require('./lib/public-copy.js');
+
+const TC ='tycon-plugin-tests-coverage';
+const SB = 'tycon-plugin-security-basics';
+
+function tmp(prefijo) { return fs.mkdtempSync(path.join(os.tmpdir(), prefijo)); }
+
+// ── story 8.7 del arnés (AC 8, T37): sin `packs:` en el repo, los paquetes activos los dice `packs.default` ──
+// El default lo responde el lector de configuración del arnés (`scripts/lib/tycon-config.js`), ubicado con
+// lib/harness-path.js. El arnés de esta máquina se ubica ANTES de aislar la HOME (con la HOME de laboratorio el enlace
+// no existe). Las pruebas no le preguntan al arnés real: arman uno de laboratorio con SU lector (copiado) y el perfil
+// que cada caso declara — la lección de la 8.3: una prueba que cuenta con «todos los instalados» lo declara.
+const ARNES_DE_LA_MAQUINA = require('../lib/harness-path.js').rutaArnesHook().dir;
+const LECTOR_REAL = ARNES_DE_LA_MAQUINA ? path.join(ARNES_DE_LA_MAQUINA, 'scripts', 'lib', 'tycon-config.js') : null;
+/** ¿El lector del arnés de esta máquina ya conoce `packs.default`? (uno anterior a la 8.7 no: NO MEDIDO, nunca verde) */
+const LECTOR_CONOCE_LA_CLAVE = (() => {
+  try { const v = require(LECTOR_REAL).VOCABULARIO; return !!(v && v.packs && v.packs.default); } catch (_e) { return false; }
+})();
+/** Un arnés de laboratorio: la marca de clon que pide harness-path, el lector (`real` = copia del de la máquina; un
+ *  texto = ése tal cual) y, si se pasa, su `perfil-equipo.json`. */
+function arnesDeLaboratorio({ lector = 'real', perfil } = {}) {
+  const d = tmp('packs-arnes-');
+  fs.mkdirSync(path.join(d, 'scripts', 'lib'), { recursive: true });
+  fs.writeFileSync(path.join(d, 'scripts', 'install-tycon-hooks.sh'), '#!/bin/sh\n');
+  const texto = lector === 'real' ? fs.readFileSync(LECTOR_REAL, 'utf8') : lector;
+  fs.writeFileSync(path.join(d, 'scripts', 'lib', 'tycon-config.js'), texto);
+  if (perfil !== undefined) fs.writeFileSync(path.join(d, 'perfil-equipo.json'), JSON.stringify(perfil, null, 2) + '\n');
+  return d;
+}
+// Un lector anterior a la 8.7: no conoce la clave (la compatibilidad de orden de merge entre los dos repos).
+const LECTOR_ANTERIOR = "'use strict';\nmodule.exports = { VOCABULARIO: { update: { channel: 'opcion:latest|stable' } } };\n";
+// El default que declaran las pruebas de siempre: «todos los instalados», como antes de la 8.7.
+const ARNES_TODOS = LECTOR_CONOCE_LA_CLAVE ? arnesDeLaboratorio({ perfil: { packs: { default: 'all' } } }) : arnesDeLaboratorio({ lector: LECTOR_ANTERIOR });
+function git(dir, ...args) { spawnSync('git', ['-C', dir, ...args], { stdio: 'ignore' }); }
+
+/** Carpeta de agentes de mentira: un `.md` por nombre. */
+function agentes(...nombres) {
+  const d = tmp('packs-agents-');
+  for (const n of nombres) fs.writeFileSync(path.join(d, `${n}.md`), `---\nname: ${n}\n---\n# ${n}\n`);
+  return d;
+}
+
+/** Carpeta de paquetes: `{ nombre: manifiesto }` (objeto → JSON; string → tal cual, para romperlo). */
+function paquetes(mapa) {
+  const d = tmp('packs-dir-');
+  for (const [nombre, contenido] of Object.entries(mapa)) {
+    fs.mkdirSync(path.join(d, nombre));
+    fs.writeFileSync(path.join(d, nombre, 'pack.json'),
+      typeof contenido === 'string' ? contenido : JSON.stringify(contenido, null, 2) + '\n');
+  }
+  return d;
+}
+
+/** El paquete de prueba de la story: un revisor por grupo. */
+const PRUEBA = {
+  name: 'prueba',
+  description: 'paquete de prueba de packs.test.js',
+  guides: ['guides/prueba.md'],
+  reviewers: [
+    {
+      agent: 'rev-base', group: 'base',
+      when: { detection: 'csModified' },
+      surface: { paths: ['**/*.cs'] }, depth: 'lean', prefixes: ['RVB'],
+    },
+    {
+      agent: 'rev-cond', group: 'condicional',
+      when: { added: { pattern: 'MagiaNegra', extensions: ['.cs'] } },
+      surface: { paths: ['**/*.cs'], excludePaths: ['**/tests/**'] }, depth: 'deep', prefixes: ['RC'],
+      needsStory: true,
+    },
+    {
+      agent: 'rev-val', group: 'validacion',
+      when: { detection: 'csModified' },
+      prompt: 'Modo pre. Validar la story {story_path} contra el repo {repo_path}.',
+      model: 'sonnet', prefixes: ['RV'],
+    },
+  ],
+};
+
+/** El mismo manifiesto con las claves de antes de la D1 (story 8.9): salen de la tabla del puente, nunca escritas acá
+ *  (el freno y el termómetro cuentan los nombres de todo lo que se publica, pruebas incluidas). */
+const { OWN_PACK_KEYS } = require('../lib/legacy-names.js');
+const VIEJA_DE = new Map(Object.entries(OWN_PACK_KEYS).map(([viejo, nuevo]) => [nuevo, viejo]));
+function conClavesViejas(v) {
+  if (Array.isArray(v)) return v.map(conClavesViejas);
+  if (!v || typeof v !== 'object') return v;
+  return Object.fromEntries(Object.entries(v).map(([k, x]) => [VIEJA_DE.get(k) || k, conClavesViejas(x)]));
+}
+/** Con el arnés, leer una clave vieja anota el uso en la HOME: en las pruebas, la de laboratorio (nunca la de la máquina). */
+function enHomeAislada(fn) {
+  const antes = process.env.HOME;
+  process.env.HOME = tmp('packs-home-uso-');
+  try { return fn(); } finally { process.env.HOME = antes; }
+}
+const AGENTES_PRUEBA = ['rev-base', 'rev-cond', 'rev-val', 'rev-otro'];
+
+function repo({ yaml, deps } = {}) {
+  const d = tmp('packs-repo-');
+  fs.mkdirSync(path.join(d, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(d, 'src', 'A.cs'), 'class A {}\n');
+  fs.writeFileSync(path.join(d, 'src', 'b.ts'), 'export const b = 1;\n');
+  fs.writeFileSync(path.join(d, 'README.md'), 'doc\n');
+  if (deps) fs.writeFileSync(path.join(d, 'package.json'), JSON.stringify({ name: 'x', dependencies: deps }, null, 2) + '\n');
+  if (yaml != null) {
+    fs.mkdirSync(path.join(d, '.tycon'));
+    fs.writeFileSync(path.join(d, '.tycon', 'advisors.yaml'), yaml);
+  }
+  git(d, 'init', '-q', '-b', 'main', '.');
+  git(d, 'add', '-A');
+  git(d, '-c', 'user.email=b@b', '-c', 'user.name=b', 'commit', '-q', '-m', 'base');
+  return d;
+}
+
+/** Diff sin commitear: agrega líneas a un archivo del repo. */
+function agregar(d, archivo, texto) {
+  fs.appendFileSync(path.join(d, archivo), texto);
+}
+
+function pipeline(cmd, args, env = {}) {
+  const r = spawnSync(process.execPath, [PIPELINE, cmd, ...args], {
+    encoding: 'utf8',
+    timeout: 60000,
+    env: {
+      PATH: process.env.PATH,
+      HOME: HOME_AISLADO,
+      LANG: 'en_US.UTF-8',
+      TYCON_SESSION_ID: 'packs-test',
+      // story 8.7: estas pruebas cuentan con «todos los instalados» en un repo sin `packs:` — lo declaran
+      TYCON_GUIDES_DIR: ARNES_TODOS,
+      ...env,
+    },
+  });
+  let json = null;
+  try { json = JSON.parse(r.stdout); } catch (_e) { /* salida no-JSON: el caso lo mira */ }
+  return { status: r.status, stdout: r.stdout || '', stderr: r.stderr || '', json };
+}
+
+function advisors(d, files, env) {
+  return pipeline('advisors', ['--repo', d, '--files', ...files], env);
+}
+
+const ordenado = (a) => (a || []).slice().sort();
+
+// ── T1 · AC 1 — el manifiesto suma revisores por grupo, con superficie y profundidad ─────────────
+test('Pack_ManifiestoValido_SumaRevisoresPorGrupo', () => {
+  const packsDir = paquetes({ prueba: PRUEBA });
+  const agentsDir = agentes(...AGENTES_PRUEBA);
+  const d = repo();
+  agregar(d, 'src/A.cs', 'class MagiaNegra {}\n');
+  const r = advisors(d, ['src/A.cs'], { TYCON_PACKS_DIR: packsDir, TYCON_AGENTS_DIR: agentsDir, TYCON_PIPELINE_COST_TIER: 'lean' });
+  assert.equal(r.status, 0, r.stderr);
+  const j = r.json;
+  assert.ok(j.base.includes('rev-base'), `rev-base entra al grupo base: ${JSON.stringify(j.base)}`);
+  assert.ok(j.conditional.includes('rev-cond'), `rev-cond entra al grupo condicional: ${JSON.stringify(j.conditional)}`);
+  assert.ok(!j.base.includes('rev-cond') && !j.conditional.includes('rev-base'), 'cada uno en SU grupo');
+  assert.ok(!j.all.includes('rev-val'), 'el grupo validacion no entra al set del paso 5');
+  // superficie y profundidad declaradas aparecen en la salida
+  const prueba = j.packs.find((p) => p.nombre === 'prueba');
+  assert.ok(prueba, `la salida lista el paquete: ${JSON.stringify(j.packs)}`);
+  const rb = prueba.revisores.find((x) => x.agente === 'rev-base');
+  assert.deepEqual(rb.superficie, { paths: ['**/*.cs'] });
+  assert.equal(rb.profundidad, 'lean');
+  assert.deepEqual(rb.prefijos, ['RVB']);
+  // la profundidad manda en las indicaciones de modelo (lean → haiku con --cost-tier lean)
+  assert.equal(j.model_hints['rev-base'], 'haiku');
+  assert.ok(!('rev-cond' in (j.model_hints || {})), 'deep no recibe hint en modo lean');
+  // el que necesita la story completa se anuncia
+  assert.ok(j.story_path_para.includes('rev-cond'), `necesitaStory → story_path_para: ${JSON.stringify(j.story_path_para)}`);
+  assert.ok(j.story_path_para.includes('tycon-spec-first-checker'), 'el del núcleo sigue ahí');
+  // sin el disparador de contenido, el condicional no entra
+  const d2 = repo();
+  agregar(d2, 'src/A.cs', 'class Nada {}\n');
+  const r2 = advisors(d2, ['src/A.cs'], { TYCON_PACKS_DIR: packsDir, TYCON_AGENTS_DIR: agentsDir });
+  assert.ok(r2.json.base.includes('rev-base'));
+  assert.ok(!r2.json.conditional.includes('rev-cond'));
+});
+
+// ── superficie del manifiesto gobierna las vueltas (advisorAffectedByDelta) ──────────────────────
+test('Pack_Superficie_GobiernaLasVueltas', () => {
+  const packsDir = paquetes({ prueba: PRUEBA });
+  const agentsDir = agentes(...AGENTES_PRUEBA);
+  process.env.TYCON_PACKS_DIR = packsDir;
+  process.env.TYCON_AGENTS_DIR = agentsDir;
+  try {
+    require('../lib/packs.js').resetCache();
+    const { advisorAffectedByDelta } = require('../pipeline.js');
+    assert.equal(advisorAffectedByDelta('rev-base', ['src/Foo.cs']).affected, true);
+    assert.equal(advisorAffectedByDelta('rev-base', ['src/foo.ts']).affected, false);
+    assert.equal(advisorAffectedByDelta('rev-cond', ['src/tests/Foo.cs']).affected, false, 'excludePaths del manifiesto');
+  } finally {
+    delete process.env.TYCON_PACKS_DIR;
+    delete process.env.TYCON_AGENTS_DIR;
+    require('../lib/packs.js').resetCache();
+  }
+});
+
+// ── T2 · AC 2 — el vocabulario de condiciones, todas las formas ─────────────────────────────────
+test('Pack_VocabularioDeCondiciones_TodasLasFormas', () => {
+  const { evaluarCondicion } = require('../lib/packs.js');
+  const ctx = {
+    det: { csModified: true, tsxModified: false, hasNext: false, hasReact: true, depChanged: false, pluginCfgModified: true },
+    files: ['src/A.cs', 'src/adapters/tienda/x.ts', 'plugin.json'],
+    agregado: (exts) => [
+      { file: 'src/A.cs', content: 'public class FooPlugin : IBackendPlugin {}' },
+      { file: 'src/adapters/tienda/x.ts', content: 'const seller = "1";' },
+    ].filter((c) => exts.some((e) => c.file.endsWith(e))),
+  };
+  const tabla = [
+    [{ detection: 'csModified' }, true],
+    [{ detection: 'tsxModified' }, false],
+    [{ no: { detection: 'tsxModified' } }, true],
+    [{ files: '(^|/)src/adapters/tienda/' }, true],
+    [{ files: '(^|/)src/api/compare/orchestrator\\.ts$' }, false],
+    [{ added: { pattern: ':\\s*IBackendPlugin\\b', extensions: ['.cs'] } }, true],
+    [{ added: { pattern: ':\\s*IBackendPlugin\\b', extensions: ['.ts'] } }, false],
+    [{ added: { pattern: 'seller', extensions: ['.ts', '.tsx'] } }, true],
+    [{ all: [{ detection: 'csModified' }, { detection: 'hasReact' }] }, true],
+    [{ all: [{ detection: 'csModified' }, { detection: 'hasNext' }] }, false],
+    [{ any: [{ detection: 'hasNext' }, { detection: 'hasReact' }] }, true],
+    [{ any: [{ detection: 'hasNext' }, { detection: 'depChanged' }] }, false],
+    // anidadas: la matriz de hoy para el revisor .NET: cs O (config de plugin Y NO tsx)
+    [{ any: [{ detection: 'csModified' }, { all: [{ detection: 'pluginCfgModified' }, { no: { detection: 'tsxModified' } }] }] }, true],
+    [{ all: [{ no: { detection: 'csModified' } }, { any: [{ detection: 'hasNext' }, { no: { no: { detection: 'hasReact' } } }] }] }, false],
+    [{ any: [] }, false],
+    [{ all: [] }, true],
+  ];
+  for (const [cuando, esperado] of tabla) {
+    assert.equal(evaluarCondicion(cuando, ctx), esperado, JSON.stringify(cuando));
+  }
+});
+
+// ── T3 · AC 2, 5 — clave o bandera desconocida = manifiesto inválido, nunca «falso» ─────────────
+test('Pack_ClaveOBanderaDesconocida_ManifiestoInvalido', () => {
+  const packs = require('../lib/packs.js');
+  const agentsDir = agentes(...AGENTES_PRUEBA);
+  const conClaveRota = JSON.parse(JSON.stringify(PRUEBA));
+  conClaveRota.reviewers[0].when = { file: '\\.cs$' };              // falta la s
+  const conBanderaRota = JSON.parse(JSON.stringify(PRUEBA));
+  conBanderaRota.reviewers[0].when = { detection: 'csModifed' };   // typo
+  const casos = [
+    [conClaveRota, /«file»/],
+    [conBanderaRota, /csModifed/],
+  ];
+  for (const [manifiesto, re] of casos) {
+    const packsDir = paquetes({ prueba: manifiesto });
+    packs.resetCache();
+    assert.throws(
+      () => packs.cargarPaquetes({ packsDir, agentsDir, nucleo: [TC, SB], banderas: ['csModified', 'tsxModified'] }),
+      (e) => {
+        assert.ok(e instanceof packs.PackError, 'es un PackError');
+        assert.ok(e.errores.length >= 1);
+        const err = e.errores[0];
+        assert.equal(err.archivo, path.join(packsDir, 'prueba', 'pack.json'));
+        assert.equal(err.revisor, 'rev-base');
+        assert.match(err.motivo, re);
+        return true;
+      },
+    );
+  }
+  // una clave desconocida en el manifiesto o en el revisor también invalida
+  const conClaveExtra = JSON.parse(JSON.stringify(PRUEBA));
+  conClaveExtra.reviewers[0].condition = { detection: 'csModified' };
+  const packsDir = paquetes({ prueba: conClaveExtra });
+  packs.resetCache();
+  assert.throws(
+    () => packs.cargarPaquetes({ packsDir, agentsDir, nucleo: [TC, SB], banderas: ['csModified'] }),
+    (e) => /condition/.test(e.errores[0].motivo) && e.errores[0].revisor === 'rev-base',
+  );
+  // el mismo agente en base Y condicional del mismo paquete: dos superficies posibles, se rechaza
+  const enDos = JSON.parse(JSON.stringify(PRUEBA));
+  enDos.reviewers.push({ ...enDos.reviewers[0], group: 'condicional' });
+  const packsDir2 = paquetes({ prueba: enDos });
+  packs.resetCache();
+  assert.throws(
+    () => packs.cargarPaquetes({ packsDir: packsDir2, agentsDir, nucleo: [TC, SB], banderas: ['csModified'] }),
+    (e) => e.errores.some((x) => x.revisor === 'rev-base' && /base.*condicional/.test(x.motivo)),
+  );
+  // y el vocabulario cerrado está publicado (lo lee la guía y el lint)
+  assert.ok(Array.isArray(packs.VOCABULARIO.condicion));
+  assert.deepEqual(packs.VOCABULARIO.condicion.slice().sort(), ['added', 'all', 'any', 'detection', 'files', 'no']);
+  assert.deepEqual(packs.VOCABULARIO.grupos.slice().sort(), ['base', 'condicional', 'validacion']);
+});
+
+// ── Story 8.10 del arnés, AC 24 (T36): los hermanos del corral del banco viven en su paquete ─────
+test('Pack_Siblings_FieldValidatedAndDelivered', () => {
+  const packs = require('../lib/packs.js');
+  const agentsDir = agentes(...AGENTES_PRUEBA);
+  assert.ok(packs.VOCABULARIO.manifiesto.includes('siblings'), 'el vocabulario del manifiesto conoce «siblings»');
+  const conHermanos = JSON.parse(JSON.stringify(PRUEBA));
+  conHermanos.siblings = [
+    { path: 'AcmeCorp/Backend/src/AcmeCorpBackend', name: 'AcmeCorp' },
+    { path: 'Zorblax/Backend/src/ZorblaxBackend', name: 'Zorblax' },
+  ];
+  packs.resetCache();
+  const cargados = packs.cargarPaquetes({ packsDir: paquetes({ prueba: conHermanos }), agentsDir, nucleo: [TC, SB], banderas: ['csModified'] });
+  // lo que entrega la biblioteca conserva su forma de siempre (story 8.9, pregunta decidida 2): ruta y nombre
+  assert.deepEqual(cargados[0].hermanos, conClavesViejas(conHermanos.siblings), 'el paquete entrega sus hermanos tal cual');
+  packs.resetCache();
+  const sin = packs.cargarPaquetes({ packsDir: paquetes({ prueba: PRUEBA }), agentsDir, nucleo: [TC, SB], banderas: ['csModified'] });
+  assert.deepEqual(sin[0].hermanos, [], 'sin el campo, una lista vacía');
+  const rotos = [
+    [{ ...conHermanos, siblings: 'AcmeCorp' }, /siblings.*lista/],
+    [{ ...conHermanos, siblings: [{ path: '../fuera/AcmeCorpBackend', name: 'AcmeCorp' }] }, /siblings.*ruta/],
+    [{ ...conHermanos, siblings: [{ path: '/abs/AcmeCorpBackend', name: 'AcmeCorp' }] }, /siblings.*ruta/],
+    [{ ...conHermanos, siblings: [{ path: 'AcmeCorp/Backend', name: 'Acme Corp' }] }, /siblings.*nombre/],
+    [{ ...conHermanos, siblings: [{ path: 'AcmeCorp/Backend', name: 'AcmeCorp', extra: 1 }] }, /siblings.*extra/],
+  ];
+  for (const [manifiesto, re] of rotos) {
+    packs.resetCache();
+    assert.throws(
+      () => packs.cargarPaquetes({ packsDir: paquetes({ prueba: manifiesto }), agentsDir, nucleo: [TC, SB], banderas: ['csModified'] }),
+      (e) => e instanceof packs.PackError && e.errores.some((x) => re.test(x.motivo)),
+      `un «siblings» mal formado frena: ${re}`,
+    );
+  }
+});
+
+// ── Story 8.9 del arnés, tanda D1: las claves del manifiesto en inglés; uno de afuera con las de antes sigue andando ──
+test('D1 Pack_OldKeysOutsideTheRepo_SameAsNew — un manifiesto en TYCON_PACKS_DIR con las claves viejas carga igual que el nuevo', () => {
+  const packs = require('../lib/packs.js');
+  const agentsDir = agentes(...AGENTES_PRUEBA);
+  const conHermanos = { ...JSON.parse(JSON.stringify(PRUEBA)), siblings: [{ path: 'AcmeCorp/Backend/src/AcmeCorpBackend', name: 'AcmeCorp' }] };
+  const viejo = conClavesViejas(conHermanos);
+  assert.ok(!('reviewers' in viejo) && Object.keys(viejo).length === Object.keys(conHermanos).length, 'el de laboratorio está escrito con las claves de antes');
+  const cargar = (manifiesto) => {
+    packs.resetCache();
+    return enHomeAislada(() => packs.cargarPaquetes({ packsDir: paquetes({ prueba: manifiesto }), agentsDir, nucleo: [TC, SB], banderas: ['csModified'] }));
+  };
+  const sinRutas = (ps) => ps.map(({ dir, archivo, ...resto }) => resto);
+  // en este proceso, el puente va por el arnés de la máquina (TYCON_GUIDES_DIR o el enlace: al día o atrasado, según su
+  // mapa); en el hijo de abajo, sin arnés (la tabla propia)
+  const nuevo = sinRutas(cargar(conHermanos));
+  assert.deepEqual(sinRutas(cargar(viejo)), nuevo, 'con las claves viejas: el mismo paquete, revisor por revisor');
+  const sinArnes = spawnSync(process.execPath, ['-e', `
+    const packs = require(${JSON.stringify(path.join(SCRIPTS, 'lib', 'packs.js'))});
+    const r = packs.cargarPaquetes({ packsDir: process.argv[1], agentsDir: process.argv[2], nucleo: [], banderas: ['csModified'] });
+    process.stdout.write(JSON.stringify(r.map(({ dir, archivo, ...resto }) => resto)));`, paquetes({ prueba: viejo }), agentsDir],
+  { encoding: 'utf8', env: { PATH: process.env.PATH, HOME: tmp('packs-home-'), TYCON_GUIDES_DIR: path.join(tmp('packs-nada-'), 'no-existe') } });
+  assert.equal(sinArnes.status, 0, sinArnes.stderr);
+  assert.deepEqual(JSON.parse(sinArnes.stdout), nuevo, 'sin arnés (o uno anterior a la D1): la tabla propia del puente traduce igual');
+  // y por el pipeline: la salida de `advisors` es la misma, con sus claves de siempre
+  const d = repo();
+  agregar(d, 'src/A.cs', 'class MagiaNegra {}\n');
+  const env = (m) => ({ TYCON_PACKS_DIR: paquetes({ prueba: m }), TYCON_AGENTS_DIR: agentsDir });
+  const rNuevo = advisors(d, ['src/A.cs'], env(conHermanos));
+  const rViejo = advisors(d, ['src/A.cs'], env(viejo));
+  assert.equal(rViejo.status, 0, rViejo.stderr);
+  assert.deepEqual([rViejo.json.base, rViejo.json.conditional], [rNuevo.json.base, rNuevo.json.conditional], 'el mismo set');
+  assert.deepEqual(rViejo.json.packs.map(({ dir, ...p }) => p), rNuevo.json.packs.map(({ dir, ...p }) => p), 'la misma salida');
+  assert.ok(rNuevo.json.packs[0].revisores[0].agente, 'la salida conserva sus claves de siempre (pregunta decidida 2)');
+});
+
+test('D1 Pack_OldAndNewKeyDiffer_BrokenPack — la clave vieja y la nueva con valores distintos es un paquete roto', () => {
+  const packs = require('../lib/packs.js');
+  const agentsDir = agentes(...AGENTES_PRUEBA);
+  const viejaDe = (nuevo) => VIEJA_DE.get(nuevo);
+  const casos = [
+    // arriba: la descripción con sus dos nombres
+    { ...PRUEBA, [viejaDe('description')]: 'otra descripción' },
+    // anidada: un revisor con la profundidad por los dos nombres
+    { ...PRUEBA, reviewers: [{ ...PRUEBA.reviewers[0], [viejaDe('depth')]: 'deep' }, ...PRUEBA.reviewers.slice(1)] },
+  ];
+  for (const manifiesto of casos) {
+    const packsDir = paquetes({ prueba: manifiesto });
+    packs.resetCache();
+    assert.throws(
+      () => enHomeAislada(() => packs.cargarPaquetes({ packsDir, agentsDir, nucleo: [TC, SB], banderas: ['csModified'] })),
+      (e) => e instanceof packs.PackError && e.errores.length === 1
+        && e.errores[0].archivo === path.join(packsDir, 'prueba', 'pack.json') && /valores distintos/.test(e.errores[0].motivo),
+      'frena como un paquete roto, nombrando el archivo',
+    );
+    // por el pipeline: exit ≠ 0 y sin set a medias (nunca «sin ese paquete»)
+    const d = repo();
+    agregar(d, 'src/A.cs', 'class X {}\n');
+    const r = advisors(d, ['src/A.cs'], { TYCON_PACKS_DIR: packsDir, TYCON_AGENTS_DIR: agentsDir });
+    assert.notEqual(r.status, 0);
+    assert.equal(r.json, null);
+    assert.ok(r.stderr.includes(path.join(packsDir, 'prueba', 'pack.json')), r.stderr);
+  }
+  // con los dos nombres y el MISMO valor no hay conflicto: queda la nueva
+  packs.resetCache();
+  const iguales = { ...PRUEBA, [viejaDe('description')]: PRUEBA.description };
+  assert.equal(enHomeAislada(() => packs.cargarPaquetes({ packsDir: paquetes({ prueba: iguales }), agentsDir, nucleo: [TC, SB], banderas: ['csModified'] }))[0].descripcion, PRUEBA.description);
+});
+
+test('D1 Bridge_OwnPackKeysEqualTheMap — la tabla propia de claves del manifiesto es la del mapa del arnés', (t) => {
+  const candidatos = [process.env.TYCON_GUIDES_DIR, path.join(os.homedir(), '.claude', 'tycon-harness'), path.join(os.homedir(), '.claude', 'tycon-claude-guides')].filter(Boolean);
+  const { PACK_KEYS_WHERE } = require('../lib/legacy-names.js');
+  let entradas = null;
+  for (const dir of candidatos) {
+    try {
+      const m = JSON.parse(fs.readFileSync(path.join(dir, 'scripts', 'lib', 'renames.json'), 'utf8'));
+      const es = m.entries.filter((e) => e && e.kind === 'key' && e.where === PACK_KEYS_WHERE);
+      if (es.length) { entradas = es; break; }
+    } catch (_) { /* no está o es anterior a la D1 */ }
+  }
+  if (!entradas) { t.skip(`no hay en esta máquina un arnés cuyo mapa tenga las claves de ${PACK_KEYS_WHERE}`); return; }
+  assert.deepEqual(entradas.map((e) => `${e.old}>${e.new}`).sort(), Object.entries(OWN_PACK_KEYS).map(([o, n]) => `${o}>${n}`).sort());
+  assert.ok(entradas.every((e) => e.repo === 'agent-skills'), 'las entradas son de agent-skills');
+});
+
+// ── T4 · AC 3 — descubrimiento: la variable, o packs/ de agent-skills ──────────────────────────
+test('Pack_Descubrimiento_VariableYDefault', (t) => {
+  const packsDir = paquetes({ prueba: PRUEBA });
+  const agentsDir = agentes(...AGENTES_PRUEBA);
+  const d = repo();
+  agregar(d, 'src/A.cs', 'class X {}\n');
+  const conVariable = advisors(d, ['src/A.cs'], { TYCON_PACKS_DIR: packsDir, TYCON_AGENTS_DIR: agentsDir });
+  assert.equal(conVariable.status, 0, conVariable.stderr);
+  assert.deepEqual(conVariable.json.packs.map((p) => p.nombre), ['prueba']);
+  assert.equal(conVariable.json.packs_dir, packsDir);
+  // sin la variable: packs/ de agent-skills, donde viven los dos del equipo (en la copia pública, sólo el del stack)
+  const sinVariable = advisors(d, ['src/A.cs']);
+  assert.equal(sinVariable.status, 0, sinVariable.stderr);
+  assert.equal(sinVariable.json.packs_dir, PACKS_REALES);
+  assert.deepEqual(ordenado(sinVariable.json.packs.map((p) => p.nombre)), SKIP_PUBLIC ? ['bizuit'] : ['bizuit', 'clients']);
+  if (SKIP_PUBLIC) t.diagnostic(`NO MEDIDO: que el paquete de clientes se descubre por defecto (${SKIP_PUBLIC}); se mide en el repo del equipo`);
+});
+
+// ── T5 · AC 4 — `packs:` del repo restringe, y un nombre que no está instalado frena ────────────
+test('Pack_ListaDelRepo_RestringeYFallaSiFalta', () => {
+  const otro = JSON.parse(JSON.stringify(PRUEBA));
+  otro.name = 'otro';
+  otro.reviewers = [{ agent: 'rev-otro', group: 'base', when: { detection: 'csModified' }, surface: { paths: ['**/*.cs'] }, depth: 'standard', prefixes: ['RO'] }];
+  const packsDir = paquetes({ prueba: PRUEBA, otro });
+  const agentsDir = agentes(...AGENTES_PRUEBA);
+
+  // sin lista: los dos activos
+  const todos = repo();
+  agregar(todos, 'src/A.cs', 'class X {}\n');
+  const rTodos = advisors(todos, ['src/A.cs'], { TYCON_PACKS_DIR: packsDir, TYCON_AGENTS_DIR: agentsDir });
+  assert.deepEqual(ordenado(rTodos.json.packs.map((p) => p.nombre)), ['otro', 'prueba']);
+  assert.ok(rTodos.json.base.includes('rev-otro') && rTodos.json.base.includes('rev-base'));
+
+  // con lista: exactamente esa
+  const soloPrueba = repo({ yaml: 'packs: [prueba]\n' });
+  agregar(soloPrueba, 'src/A.cs', 'class X {}\n');
+  const r1 = advisors(soloPrueba, ['src/A.cs'], { TYCON_PACKS_DIR: packsDir, TYCON_AGENTS_DIR: agentsDir });
+  assert.equal(r1.status, 0, r1.stderr);
+  assert.deepEqual(r1.json.packs.map((p) => p.nombre), ['prueba']);
+  assert.ok(r1.json.base.includes('rev-base'));
+  assert.ok(!r1.json.base.includes('rev-otro'), 'el paquete no listado no está activo');
+
+  // lista en bloque y lista vacía
+  const enBloque = repo({ yaml: 'repo_group: x\npacks:\n  - otro\n' });
+  agregar(enBloque, 'src/A.cs', 'class X {}\n');
+  const r2 = advisors(enBloque, ['src/A.cs'], { TYCON_PACKS_DIR: packsDir, TYCON_AGENTS_DIR: agentsDir });
+  assert.deepEqual(r2.json.packs.map((p) => p.nombre), ['otro']);
+  const vacia = repo({ yaml: 'packs: []\n' });
+  agregar(vacia, 'src/A.cs', 'class X {}\n');
+  const r3 = advisors(vacia, ['src/A.cs'], { TYCON_PACKS_DIR: packsDir, TYCON_AGENTS_DIR: agentsDir });
+  assert.deepEqual(r3.json.packs, []);
+  assert.deepEqual(ordenado(r3.json.base), [SB, TC]);
+
+  // un nombre que no está instalado: exit ≠ 0, nombrando el paquete y dónde lo buscó
+  const falta = repo({ yaml: 'packs: [prueba, inexistente]\n' });
+  agregar(falta, 'src/A.cs', 'class X {}\n');
+  const r4 = advisors(falta, ['src/A.cs'], { TYCON_PACKS_DIR: packsDir, TYCON_AGENTS_DIR: agentsDir });
+  assert.notEqual(r4.status, 0, 'falla');
+  assert.match(r4.stderr, /inexistente/);
+  assert.ok(r4.stderr.includes(packsDir), `dice dónde buscó: ${r4.stderr}`);
+  assert.equal(r4.json, null, 'sin set a medias en stdout');
+
+  // las formas YAML que el pase adversarial de la 8.2 encontró rotas: ítems en columna 0 (antes → [] y
+  // CERO paquetes en silencio; `- inexistente` sin indentar ni frenaba) y la clave sin lista
+  const col0 = repo({ yaml: 'packs:\n- prueba\n- inexistente\n' });
+  agregar(col0, 'src/A.cs', 'class X {}\n');
+  const r6 = advisors(col0, ['src/A.cs'], { TYCON_PACKS_DIR: packsDir, TYCON_AGENTS_DIR: agentsDir });
+  assert.notEqual(r6.status, 0, 'ítems en columna 0 se leen: el inexistente frena');
+  assert.match(r6.stderr, /inexistente/);
+  const col0ok = repo({ yaml: 'packs: # los del equipo\n- otro\n' });
+  agregar(col0ok, 'src/A.cs', 'class X {}\n');
+  const r7 = advisors(col0ok, ['src/A.cs'], { TYCON_PACKS_DIR: packsDir, TYCON_AGENTS_DIR: agentsDir });
+  assert.equal(r7.status, 0, r7.stderr);
+  assert.deepEqual(r7.json.packs.map((p) => p.nombre), ['otro']);
+  assert.deepEqual(r7.json.packs_declarados, ['otro'], 'la salida dice qué restringió el repo');
+  assert.equal(rTodos.json.packs_declarados, null, 'sin clave: null (no se confunde con «restringido a ninguno»)');
+  assert.deepEqual(r3.json.packs_declarados, [], 'restringido a ninguno se ve como []');
+  const nula = repo({ yaml: 'repo_group: x\npacks:\n' });
+  agregar(nula, 'src/A.cs', 'class X {}\n');
+  const r8 = advisors(nula, ['src/A.cs'], { TYCON_PACKS_DIR: packsDir, TYCON_AGENTS_DIR: agentsDir });
+  assert.notEqual(r8.status, 0, 'una clave `packs:` sin lista no es «ninguno» ni «todos los paquetes»: frena');
+  assert.match(r8.stderr, /sin lista/);
+  assert.ok(r8.stderr.includes(path.join(nula, '.tycon', 'advisors.yaml')));
+
+  // una configuración ILEGIBLE (no ausente) tampoco se toma como «sin restricción»: frena nombrándola
+  // (lo cazó el revisor de fallos silenciosos: un `packs:` que se ignora cambia el set sin que se vea)
+  const ilegible = repo();
+  fs.mkdirSync(path.join(ilegible, '.tycon', 'advisors.yaml'), { recursive: true });   // es una carpeta → EISDIR
+  agregar(ilegible, 'src/A.cs', 'class X {}\n');
+  const r5 = advisors(ilegible, ['src/A.cs'], { TYCON_PACKS_DIR: packsDir, TYCON_AGENTS_DIR: agentsDir });
+  assert.notEqual(r5.status, 0, 'una config ilegible frena');
+  assert.ok(r5.stderr.includes(path.join(ilegible, '.tycon', 'advisors.yaml')), r5.stderr);
+  assert.equal(r5.json, null);
+});
+
+// ── `packs:` en todas las formas YAML que el equipo escribe (pase adversarial 8.2, clase 1/6/8/9/10/14) ──
+test('Pack_ListaDelRepo_FormasYaml', () => {
+  const { paquetesDeclarados, PacksDeclaradosError, rendirPrompt } = require('../lib/packs.js');
+  const tabla = [
+    ['packs:\n  - bizuit\n  - clientes\n', ['bizuit', 'clientes']],
+    ['packs:\n- bizuit\n- clientes\nmerge:\n  mode: pr\n', ['bizuit', 'clientes']],       // ítems en columna 0 (estilo Azure Pipelines)
+    ['packs: [bizuit, "clientes"]\n', ['bizuit', 'clientes']],                            // comillas con espacio tras la coma
+    ["packs: [ 'a', 'b' ]\n", ['a', 'b']],
+    ['packs: [\n  bizuit,\n  clientes\n]\n', ['bizuit', 'clientes']],                       // flow en varias líneas
+    ['packs: # los del equipo\n  - bizuit # el público\n', ['bizuit']],                    // comentario en la clave y en el ítem
+    ['\uFEFFpacks: [bizuit]\n', ['bizuit']],                                               // BOM de un editor Windows
+    ['packs: bizuit\n', ['bizuit']],
+    ['packs: []\n', []],
+    ['repo_group: x\n', null],
+    ['e2e:\n  packs: [bizuit]\n', null],                                                   // anidada no es la top-level
+  ];
+  for (const [txt, esperado] of tabla) assert.deepEqual(paquetesDeclarados(txt), esperado, JSON.stringify(txt));
+  // una clave sin lista NO es «ninguno» (antes apagaba todos los paquetes en silencio) ni «todos los paquetes»
+  for (const txt of ['packs:\n', 'packs: ~\n', 'packs: null\n', 'packs:\n  # comentado\nmerge:\n  mode: pr\n', 'packs: [\n  bizuit\n']) {
+    assert.throws(() => paquetesDeclarados(txt), PacksDeclaradosError, JSON.stringify(txt));
+  }
+  // un `$&` en una ruta no corrompe el prompt (reemplazo por función)
+  assert.equal(rendirPrompt('Validar {story_path} en {repo_path}', { story_path: '/tmp/a$&b.md', repo_path: "/tmp/r$'" }), "Validar /tmp/a$&b.md en /tmp/r$'");
+});
+
+// ── T6 · AC 5 — un paquete roto frena nombrando archivo, revisor y motivo ───────────────────────
+test('Pack_Roto_FallaNombrandoArchivoYMotivo', () => {
+  const agentsDir = agentes(...AGENTES_PRUEBA);
+  const sinAgente = JSON.parse(JSON.stringify(PRUEBA));
+  sinAgente.reviewers[0].agent = 'rev-fantasma';
+  const duplicaNucleo = JSON.parse(JSON.stringify(PRUEBA));
+  duplicaNucleo.reviewers[0].agent = SB;
+  const gemelo = JSON.parse(JSON.stringify(PRUEBA));
+  gemelo.name = 'gemelo';
+
+  const casos = [
+    { nombre: 'json roto', packs: { prueba: '{ "name": "prueba", "reviewers": [ ' }, revisor: null, motivo: /JSON/i },
+    { nombre: 'agente inexistente', packs: { prueba: sinAgente }, revisor: 'rev-fantasma', motivo: /no existe|no hay un agente/i },
+    { nombre: 'duplicado con el núcleo', packs: { prueba: duplicaNucleo }, revisor: SB, motivo: /núcleo|nucleo/i },
+    { nombre: 'duplicado entre paquetes', packs: { prueba: PRUEBA, gemelo }, revisor: 'rev-base', motivo: /otro paquete|ya lo declara/i },
+  ];
+  for (const caso of casos) {
+    const packsDir = paquetes(caso.packs);
+    const d = repo();
+    agregar(d, 'src/A.cs', 'class X {}\n');
+    const r = advisors(d, ['src/A.cs'], { TYCON_PACKS_DIR: packsDir, TYCON_AGENTS_DIR: agentsDir });
+    assert.notEqual(r.status, 0, `${caso.nombre}: exit ≠ 0`);
+    assert.ok(r.stderr.includes(path.join(packsDir, 'prueba', 'pack.json')) || r.stderr.includes(path.join(packsDir, 'gemelo', 'pack.json')),
+      `${caso.nombre}: nombra el archivo — ${r.stderr}`);
+    if (caso.revisor) assert.ok(r.stderr.includes(caso.revisor), `${caso.nombre}: nombra al revisor — ${r.stderr}`);
+    assert.match(r.stderr, caso.motivo, `${caso.nombre}: dice el motivo`);
+    assert.equal(r.json, null, `${caso.nombre}: no degrada a «sin ese paquete»`);
+    // y los otros comandos que eligen revisores frenan igual
+    const s = pipeline('smart-reloop', ['--iter', '2', '--repo', d, '--files', 'src/A.cs'], { TYCON_PACKS_DIR: packsDir, TYCON_AGENTS_DIR: agentsDir });
+    assert.notEqual(s.status, 0, `${caso.nombre}: smart-reloop también frena`);
+  }
+});
+
+// ── T7 · AC 6 — la salida incluye los paquetes cargados ─────────────────────────────────────────
+test('Advisors_SalidaIncluyePaquetesCargados', () => {
+  const packsDir = paquetes({ prueba: PRUEBA });
+  const agentsDir = agentes(...AGENTES_PRUEBA);
+  const d = repo();
+  agregar(d, 'src/A.cs', 'class X {}\n');
+  const con = advisors(d, ['src/A.cs'], { TYCON_PACKS_DIR: packsDir, TYCON_AGENTS_DIR: agentsDir });
+  assert.equal(con.json.packs.length, 1);
+  assert.equal(con.json.packs[0].nombre, 'prueba');
+  assert.deepEqual(con.json.packs[0].revisores.map((r) => [r.agente, r.grupo]),
+    [['rev-base', 'base'], ['rev-cond', 'condicional'], ['rev-val', 'validacion']]);
+  const sin = advisors(d, ['src/A.cs'], { TYCON_PACKS_DIR: tmp('packs-vacio-'), TYCON_AGENTS_DIR: agentsDir });
+  assert.deepEqual(sin.json.packs, []);
+  // el smart-reloop también los muestra (es el otro comando que elige revisores)
+  const s = pipeline('smart-reloop', ['--iter', '1', '--repo', d, '--files', 'src/A.cs'], { TYCON_PACKS_DIR: packsDir, TYCON_AGENTS_DIR: agentsDir });
+  assert.equal(s.status, 0, s.stderr);
+  assert.deepEqual(s.json.packs.map((p) => p.nombre), ['prueba']);
+});
+
+// ── T8 · AC 7 — el núcleo no nombra a los cinco ─────────────────────────────────────────────────
+// (story 8.10.3 D: «los cinco» ya no se escriben acá: son los que declaran los manifiestos instalados. En el repo del
+// equipo son cinco; la copia pública trae sólo el paquete del stack y sus tres)
+const LOS_CINCO = packReviewers(PACKS_REALES);
+function archivosDelNucleo() {
+  const skill = path.resolve(SCRIPTS, '..');
+  const out = [PIPELINE, path.join(skill, 'SKILL.md')];
+  const walk = (dir, filtro) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) walk(p, filtro);
+      else if (filtro.test(e.name)) out.push(p);
+    }
+  };
+  walk(path.join(SCRIPTS, 'lib'), /\.js$/);
+  walk(path.join(skill, 'steps'), /\.md$/);
+  return out;
+}
+test('Nucleo_SinNombresDePaquetes', (t) => {
+  const apariciones = [];
+  for (const f of archivosDelNucleo()) {
+    const lineas = fs.readFileSync(f, 'utf8').split('\n');
+    lineas.forEach((l, i) => {
+      for (const n of LOS_CINCO) if (l.includes(n)) apariciones.push(`${path.relative(RAIZ, f)}:${i + 1} ${n}`);
+    });
+  }
+  assert.deepEqual(apariciones, [], `los revisores de paquete sólo viven en packs/:\n${apariciones.join('\n')}`);
+  // y sí viven en los manifiestos (sólo las carpetas con pack.json: un .DS_Store suelto no es un paquete)
+  const enPacks = fs.readdirSync(PACKS_REALES)
+    .filter((p) => fs.existsSync(path.join(PACKS_REALES, p, 'pack.json')))
+    .flatMap((p) => {
+      const m = JSON.parse(fs.readFileSync(path.join(PACKS_REALES, p, 'pack.json'), 'utf8'));
+      return m.reviewers.map((r) => r.agent);
+    });
+  // (pase adversarial de la 8.10.3 D: comparar la lista contra los mismos manifiestos de los que sale no mide nada)
+  // lo que sí se mide: cada revisor que un manifiesto declara tiene su definición, y la lista no perdió ni duplicó ninguno
+  assert.deepEqual([...new Set(enPacks)].sort(), LOS_CINCO, 'la lista de revisores de paquete es la de los manifiestos, sin repetir');
+  for (const n of LOS_CINCO) assert.ok(fs.existsSync(path.join(RAIZ, 'agents', `${n}.md`)), `${n}: lo declara un manifiesto y no tiene su definición en agents/`);
+  // la lista sale de los manifiestos: que no se quede corta. En el repo del equipo son los cinco de siempre; en la copia
+  // pública, los del paquete que viaja, y los del paquete de clientes no se miden (se dice)
+  assert.equal(LOS_CINCO.length, 5 - (SKIP_PUBLIC ? CLIENT_PACK_REVIEWER_COUNT : 0), `revisores de paquete: ${LOS_CINCO.join(', ')}`);
+  if (SKIP_PUBLIC) t.diagnostic(`NO MEDIDO: que el núcleo no nombre a los ${CLIENT_PACK_REVIEWER_COUNT} revisores del paquete de clientes ni que su manifiesto los declare (${SKIP_PUBLIC}); se mide en el repo del equipo`);
+});
+
+// ── T9 · AC 8 — sin paquetes, un diff .cs conserva pruebas y seguridad, sin avisos ─────────────
+test('Nucleo_SinPaquetes_CsTienePruebasYSeguridad', () => {
+  const d = repo();
+  agregar(d, 'src/A.cs', 'class X {}\n');
+  const r = advisors(d, ['src/A.cs'], { TYCON_PACKS_DIR: tmp('packs-vacio-') });
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(ordenado(r.json.base), [SB, TC]);
+  assert.deepEqual(r.json.packs, []);
+  assert.equal(r.stderr, '', 'sin avisos');
+  assert.ok(!('warning' in r.json.detection), 'sin aviso en la detección');
+  // ni con .tsx, ni con la config de plugin: nunca queda sin revisor de pruebas ni de seguridad
+  const d2 = repo({ deps: { react: '18.2.0' } });
+  agregar(d2, 'src/b.ts', 'export const c = 2;\n');
+  const r2 = advisors(d2, ['src/b.ts'], { TYCON_PACKS_DIR: tmp('packs-vacio-') });
+  assert.deepEqual(ordenado(r2.json.base), [SB, TC]);
+  // pero una TYCON_PACKS_DIR explícita que apunta a una carpeta inexistente SÍ frena (AC 3):
+  // es configuración rota, no «sin paquetes». (La carpeta POR DEFECTO ausente es la máquina sin
+  // agent-skills: cero paquetes, sin aviso — no se puede simular acá sin mover agent-skills.)
+  const noExiste = path.join(tmp('packs-vacio-'), 'no-existe');
+  const r3 = advisors(d, ['src/A.cs'], { TYCON_PACKS_DIR: noExiste });
+  assert.notEqual(r3.status, 0, 'una variable explícita que apunta a una carpeta inexistente frena');
+  assert.ok(r3.stderr.includes(noExiste), 'y la nombra');
+  assert.equal(r3.json, null);
+});
+
+// ── T12 · AC 10 — los revisores de validación salen del comando ────────────────────────────────
+function storyDeBackend() {
+  const d = tmp('packs-story-');
+  const p = path.join(d, 'story-1-1.md');
+  fs.writeFileSync(p, [
+    '---', 'epic: 1', 'story: "1.1"', 'title: "backend"', 'status: in-progress',
+    'files_to_modify:', '  - src/Foo.cs', '---', '', '## Acceptance Criteria', '', '1. **Given** x **Then** y', '',
+    '### Tests', '', '| # | Test | AC |', '|---|---|---|', '| T1 | `A` | 1 |', '',
+  ].join('\n'));
+  return p;
+}
+test('Validadores_ConYSinPaqueteClientes', (t) => {
+  const story = storyDeBackend();
+  const d = repo();
+  // con el paquete de prueba: el validador + el de validación del paquete, con su prompt rendido
+  const packsDir = paquetes({ prueba: PRUEBA });
+  const agentsDir = agentes(...AGENTES_PRUEBA);
+  const con = pipeline('validadores', ['--story', story, '--repo', d], { TYCON_PACKS_DIR: packsDir, TYCON_AGENTS_DIR: agentsDir });
+  assert.equal(con.status, 0, con.stderr);
+  assert.deepEqual(con.json.validadores, ['tycon-story-validator', 'rev-val']);
+  const l = con.json.lanzamientos.find((x) => x.agente === 'rev-val');
+  assert.equal(l.paquete, 'prueba');
+  assert.equal(l.modelo, 'sonnet');
+  assert.equal(l.prompt, `Modo pre. Validar la story ${story} contra el repo ${d}.`);
+  // sin paquetes: sólo el validador
+  const sin = pipeline('validadores', ['--story', story, '--repo', d], { TYCON_PACKS_DIR: tmp('packs-vacio-') });
+  assert.equal(sin.status, 0, sin.stderr);
+  assert.deepEqual(sin.json.validadores, ['tycon-story-validator']);
+  assert.deepEqual(sin.json.lanzamientos, []);
+  // una story sin .cs en un repo sin .csproj: el revisor de validación del paquete no aplica
+  const storyFront = path.join(tmp('packs-story-'), 'story-1-2.md');
+  fs.writeFileSync(storyFront, fs.readFileSync(story, 'utf8').replace('src/Foo.cs', 'src/foo.tsx'));
+  const front = pipeline('validadores', ['--story', storyFront, '--repo', d], { TYCON_PACKS_DIR: packsDir, TYCON_AGENTS_DIR: agentsDir });
+  assert.deepEqual(front.json.validadores, ['tycon-story-validator']);
+  // pero un repo .NET (con *.csproj) la vuelve de backend aunque la story no nombre .cs
+  fs.writeFileSync(path.join(d, 'src', 'Foo.csproj'), '<Project />\n');
+  const back = pipeline('validadores', ['--story', storyFront, '--repo', d], { TYCON_PACKS_DIR: packsDir, TYCON_AGENTS_DIR: agentsDir });
+  assert.deepEqual(back.json.validadores, ['tycon-story-validator', 'rev-val']);
+  // una story o un repo que no existen no dan un set «válido» a medias: frenan (pase adversarial 8.2)
+  const sinStory = pipeline('validadores', ['--story', path.join(d, 'no-existe.md'), '--repo', d], { TYCON_PACKS_DIR: packsDir, TYCON_AGENTS_DIR: agentsDir });
+  assert.notEqual(sinStory.status, 0);
+  assert.match(sinStory.stderr, /no se pudo leer la story/);
+  const sinRepo = pipeline('validadores', ['--story', story, '--repo', path.join(d, 'no-existe')], { TYCON_PACKS_DIR: packsDir, TYCON_AGENTS_DIR: agentsDir });
+  assert.notEqual(sinRepo.status, 0);
+  assert.match(sinRepo.stderr, /--repo no es una carpeta/);
+  // instalando el paquete real de clientes: el revisor de hermanos entra igual que hoy
+  if (SKIP_PUBLIC) { t.diagnostic('NO MEDIDO: packs/clients no está (la copia pública no lo trae) — el paquete real de clientes se mide en el repo del equipo'); return; }
+  const real = pipeline('validadores', ['--story', story, '--repo', d], { TYCON_PACKS_DIR: PACKS_REALES });
+  assert.equal(real.status, 0, real.stderr);
+  assert.ok(real.json.validadores.includes('tycon-sibling-pattern-reviewer'), JSON.stringify(real.json.validadores));
+  const hermanos = real.json.lanzamientos.find((x) => x.agente === 'tycon-sibling-pattern-reviewer');
+  assert.equal(hermanos.modelo, 'sonnet');
+  assert.match(hermanos.prompt, /Modo pre/);
+  assert.ok(hermanos.prompt.includes(story) && hermanos.prompt.includes(d));
+  assert.match(hermanos.nota || '', /opus/i, 'la excepción de modelo viaja en el manifiesto');
+});
+
+// ── T14 · AC 13 — el lint de configuración conoce `packs:` ────────────────────────────────────
+test('ConfigLint_ConoceClavePacks', () => {
+  const { lintConfig } = require('../lib/config-lint.js');
+  const packsDir = paquetes({ bizuit: PRUEBA });
+  process.env.TYCON_PACKS_DIR = packsDir;
+  try {
+    const ok = lintConfig({ repoRoot: tmp('packs-lint-'), txtCarpeta: 'packs: [bizuit]\n' });
+    assert.deepEqual(ok.hallazgos, [], JSON.stringify(ok.hallazgos));
+    const okBloque = lintConfig({ repoRoot: tmp('packs-lint-'), txtCarpeta: 'packs:\n  - bizuit\n' });
+    assert.deepEqual(okBloque.hallazgos, []);
+    const mal = lintConfig({ repoRoot: tmp('packs-lint-'), txtCarpeta: 'packs: [nada]\n' });
+    assert.equal(mal.hallazgos.length, 1);
+    assert.equal(mal.hallazgos[0].llave, 'packs');
+    assert.equal(mal.hallazgos[0].tipo, 'paquete-inexistente');
+    assert.match(mal.hallazgos[0].mensaje, /nada/);
+    assert.ok(mal.hallazgos[0].mensaje.includes(packsDir), 'dice dónde buscó');
+    // ítems en columna 0 también se leen acá; una clave sin lista se avisa como tal
+    const col0 = lintConfig({ repoRoot: tmp('packs-lint-'), txtCarpeta: 'packs:\n- nada\n' });
+    assert.equal(col0.hallazgos.length, 1);
+    assert.equal(col0.hallazgos[0].tipo, 'paquete-inexistente');
+    const nula = lintConfig({ repoRoot: tmp('packs-lint-'), txtCarpeta: 'packs:\n' });
+    assert.equal(nula.hallazgos.length, 1);
+    assert.equal(nula.hallazgos[0].tipo, 'packs-sin-lista');
+    // «no pude mirar la carpeta» se dice distinto de «no instalado»
+    process.env.TYCON_PACKS_DIR = path.join(packsDir, 'no-existe');
+    const ciego = lintConfig({ repoRoot: tmp('packs-lint-'), txtCarpeta: 'packs: [bizuit]\n' });
+    assert.equal(ciego.hallazgos.length, 1);
+    assert.equal(ciego.hallazgos[0].tipo, 'paquetes-ilegibles');
+    assert.match(ciego.hallazgos[0].mensaje, /no se pudo leer/);
+    // …pero la carpeta POR DEFECTO ausente (máquina sin paquetes, sin variable) es «ninguno instalado»,
+    // no «no pude leer» (cazado por el revisor de fallos silenciosos en la iteración 2)
+    delete process.env.TYCON_PACKS_DIR;
+    const { lintPaquetes } = require('../lib/config-lint.js');
+    const sinPaquetes = lintPaquetes('packs: [bizuit]\n', { packsDir: path.join(packsDir, 'no-existe'), explicito: false });
+    assert.equal(sinPaquetes.length, 1);
+    assert.equal(sinPaquetes[0].tipo, 'paquete-inexistente');
+    assert.match(sinPaquetes[0].mensaje, /instalados: ninguno/);
+  } finally {
+    delete process.env.TYCON_PACKS_DIR;
+  }
+});
+
+// ── T37 de la story 8.7 del arnés · AC 8 — el paquete opcional viene apagado por defecto ─────────
+test('Packs_ApagadoPorDefectoSinPerfil', (t) => {
+  const otro = { ...JSON.parse(JSON.stringify(PRUEBA)), name: 'otro' };
+  otro.reviewers = [{ agent: 'rev-otro', group: 'base', when: { detection: 'csModified' }, surface: { paths: ['**/*.cs'] }, depth: 'standard', prefixes: ['RO'] }];
+  const packsDir = paquetes({ prueba: PRUEBA, otro });
+  const agentsDir = agentes(...AGENTES_PRUEBA);
+  const conRepo = (yaml) => { const d = repo(yaml == null ? {} : { yaml }); agregar(d, 'src/A.cs', 'class X {}\n'); return d; };
+  const correr = (d, env) => advisors(d, ['src/A.cs'], { TYCON_PACKS_DIR: packsDir, TYCON_AGENTS_DIR: agentsDir, ...env });
+  const nombres = (r) => ordenado((r.json && r.json.packs || []).map((p) => p.nombre));
+  const sinPacks = conRepo();
+
+  // el arnés sin encontrar: exit 2 nombrándolo (nunca se lee como «ninguno» ni como «todos los instalados»)
+  const perdido = correr(sinPacks, { TYCON_GUIDES_DIR: path.join(tmp('packs-nada-'), 'no-existe') });
+  assert.equal(perdido.status, 2, perdido.stderr);
+  assert.equal(perdido.json, null, 'sin set a medias');
+  assert.match(perdido.stderr, /el arnés/, `nombra el arnés: ${perdido.stderr}`);
+  assert.match(perdido.stderr, /packs\.default/, 'y dice para qué lo buscaba');
+
+  // un arnés anterior a la 8.7 (su lector no conoce la clave): como hoy, todos — el orden de merge entre repos no le
+  // quita los revisores del paquete a nadie
+  const anterior = correr(sinPacks, { TYCON_GUIDES_DIR: arnesDeLaboratorio({ lector: LECTOR_ANTERIOR }) });
+  assert.equal(anterior.status, 0, anterior.stderr);
+  assert.deepEqual(nombres(anterior), ['otro', 'prueba']);
+
+  // la variable manda sobre todo (la precedencia de tycon-config): puesta, no hace falta el arnés para saber el default;
+  // un valor que no es all/none frena nombrando la variable, también sin arnés
+  const sinArnes = path.join(tmp('packs-nada-'), 'no-existe');
+  const porVariable = correr(sinPacks, { TYCON_GUIDES_DIR: sinArnes, TYCON_PACKS_DEFAULT: 'all' });
+  assert.equal(porVariable.status, 0, porVariable.stderr);
+  assert.deepEqual(nombres(porVariable), ['otro', 'prueba']);
+  const ningunoPorVariable = correr(sinPacks, { TYCON_GUIDES_DIR: sinArnes, TYCON_PACKS_DEFAULT: 'none' });
+  assert.equal(ningunoPorVariable.status, 0, ningunoPorVariable.stderr);
+  assert.deepEqual(nombres(ningunoPorVariable), []);
+  const variableMala = correr(sinPacks, { TYCON_GUIDES_DIR: sinArnes, TYCON_PACKS_DEFAULT: 'algunos' });
+  assert.equal(variableMala.status, 2, variableMala.stderr);
+  assert.match(variableMala.stderr, /TYCON_PACKS_DEFAULT/);
+  // como la lee tycon-config.js (pase adversarial de la tanda A): recortada, y sólo espacios = sin poner (va al arnés)
+  const conEspacios = correr(sinPacks, { TYCON_GUIDES_DIR: sinArnes, TYCON_PACKS_DEFAULT: ' all ' });
+  assert.equal(conEspacios.status, 0, conEspacios.stderr);
+  assert.deepEqual(nombres(conEspacios), ['otro', 'prueba']);
+  const blanca = correr(sinPacks, { TYCON_GUIDES_DIR: sinArnes, TYCON_PACKS_DEFAULT: '   ' });
+  assert.equal(blanca.status, 2, 'sólo espacios es «sin poner»: busca el arnés y no lo encuentra');
+  assert.match(blanca.stderr, /el arnés/);
+
+  // un repo que declara `packs:` manda sobre el default y no le pregunta al arnés (ni lo necesita)
+  const declarado = correr(conRepo('packs: [prueba]\n'), { TYCON_GUIDES_DIR: path.join(tmp('packs-nada-'), 'no-existe') });
+  assert.equal(declarado.status, 0, declarado.stderr);
+  assert.deepEqual(nombres(declarado), ['prueba']);
+
+  if (!LECTOR_CONOCE_LA_CLAVE) {
+    // TODO(Story-8.7-deferral: AC#8 | T37 | blocker: el arnés de esta máquina todavía no conoce packs.default) — guardia de
+    // arranque, no funcionalidad diferida: con el arnés al día (TYCON_GUIDES_DIR o el merge de la tanda A) corre entero
+    t.skip(`NO MEDIDO: el arnés de esta máquina (${ARNES_DE_LA_MAQUINA || 'no encontrado'}) no conoce packs.default — definí TYCON_GUIDES_DIR=<clon del arnés al día>`);
+    return;
+  }
+  const sinConfig = arnesDeLaboratorio();
+  const conTodos = arnesDeLaboratorio({ perfil: { packs: { default: 'all' } } });
+
+  // un repo sin `packs:` y sin configuración: ninguno (el núcleo corre solo)
+  const r1 = correr(sinPacks, { TYCON_GUIDES_DIR: sinConfig });
+  assert.equal(r1.status, 0, r1.stderr);
+  assert.deepEqual(nombres(r1), [], 'sin configuración, ningún paquete');
+  assert.deepEqual(ordenado(r1.json.base), [SB, TC], 'el núcleo, entero');
+  assert.equal(r1.json.packs_declarados, null);
+  // con un perfil `packs.default: "all"`: todos
+  const r2 = correr(sinPacks, { TYCON_GUIDES_DIR: conTodos });
+  assert.equal(r2.status, 0, r2.stderr);
+  assert.deepEqual(nombres(r2), ['otro', 'prueba']);
+  assert.ok(r2.json.base.includes('rev-base') && r2.json.base.includes('rev-otro'));
+  // con ese perfil y TYCON_PACKS_DEFAULT=none: ninguno (la variable manda)
+  const r3 = correr(sinPacks, { TYCON_GUIDES_DIR: conTodos, TYCON_PACKS_DEFAULT: 'none' });
+  assert.equal(r3.status, 0, r3.stderr);
+  assert.deepEqual(nombres(r3), []);
+  // un repo con `packs: [prueba]` sin configuración: ése
+  const r4 = correr(conRepo('packs: [prueba]\n'), { TYCON_GUIDES_DIR: sinConfig });
+  assert.deepEqual(nombres(r4), ['prueba']);
+  // un repo con `packs: []` y el perfil en "all": ninguno
+  const r5 = correr(conRepo('packs: []\n'), { TYCON_GUIDES_DIR: conTodos });
+  assert.equal(r5.status, 0, r5.stderr);
+  assert.deepEqual(nombres(r5), []);
+  // `packs.default` con un valor inválido: exit 2 nombrando archivo y clave (una configuración rota nunca es «ninguno»)
+  const malo = arnesDeLaboratorio({ perfil: { packs: { default: 'todos' } } });
+  const r6 = correr(sinPacks, { TYCON_GUIDES_DIR: malo });
+  assert.equal(r6.status, 2, r6.stderr);
+  assert.equal(r6.json, null);
+  assert.ok(r6.stderr.includes(path.join(malo, 'perfil-equipo.json')), `nombra el archivo: ${r6.stderr}`);
+  assert.match(r6.stderr, /packs\.default/, 'y la clave');
+  const r7 = correr(sinPacks, { TYCON_GUIDES_DIR: sinConfig, TYCON_PACKS_DEFAULT: 'algunos' });
+  assert.equal(r7.status, 2, r7.stderr);
+  assert.match(r7.stderr, /TYCON_PACKS_DEFAULT/);
+  // los otros comandos que eligen revisores leen lo mismo
+  const v = pipeline('validators', ['--story', storyDeBackend(), '--repo', sinPacks], { TYCON_PACKS_DIR: packsDir, TYCON_AGENTS_DIR: agentsDir, TYCON_GUIDES_DIR: sinConfig });
+  assert.equal(v.status, 0, v.stderr);
+  assert.deepEqual(v.json.validadores, ['tycon-story-validator'], 'apagado: el revisor de validación del paquete no entra');
+
+  // con el perfil REAL del equipo (el arnés de esta máquina, HOME de laboratorio): el set de la foto de la 8.2, igual
+  const perfilReal = path.join(ARNES_DE_LA_MAQUINA, 'perfil-equipo.json');
+  if (!fs.existsSync(perfilReal)) { t.diagnostic(`NO MEDIDO: ${perfilReal} no está (la copia pública no lo trae)`); return; }
+  // (story 8.10.3 D) en la copia pública, corrida en una máquina que SÍ tiene el arnés del equipo instalado, el perfil
+  // está pero el paquete de clientes no: la foto de la 8.2 nombra a sus revisores y no se puede comparar. Se dice.
+  if (SKIP_PUBLIC) { t.diagnostic(`NO MEDIDO: el set de la foto con el perfil del equipo (${SKIP_PUBLIC}); se mide en el repo del equipo`); return; }
+  const { CASOS, medir, sinOrden, leerFoto } = require('../lib/equivalence-cases.js');
+  const foto = leerFoto(path.join(__dirname, 'fixtures', 'equivalence-main.json'));   // la que viaja + la de cada paquete con casos
+  for (const caso of CASOS) {
+    const dir = tmp('packs-foto-');
+    const { files } = caso.armar(dir);
+    const nuevo = medir({ pipeline: PIPELINE, repo: dir, files,
+      env: { HOME: tmp('packs-home-foto-'), TYCON_SESSION_ID: 'packs-test', TYCON_PACKS_DIR: PACKS_REALES, TYCON_GUIDES_DIR: ARNES_DE_LA_MAQUINA } });
+    assert.deepEqual(sinOrden(nuevo), foto.casos[caso.nombre], `con el perfil del equipo, el caso «${caso.nombre}» da la foto de la 8.2`);
+  }
+});
+
+// ── las banderas que el vocabulario acepta son exactamente las que produce detectStack ──────────
+test('Pack_Banderas_SonLasDeDetectStack', () => {
+  const { detectStack, BANDERAS_DETECCION } = require('../pipeline.js');
+  const d = repo();
+  const banderas = Object.keys(detectStack(d, ['src/A.cs'])).filter((k) => k !== 'warning').sort();
+  assert.deepEqual(banderas, BANDERAS_DETECCION.slice().sort());
+});
+
+// Story 8.23, tanda G (AC 44 d): «ningún paquete instalado» no es lo mismo que «ninguno activo». En la primera máquina
+// migrada (2026-10-08) el pipeline anunció «no hay paquetes instalados» con el paquete bizuit instalado y packs.default en
+// none (el perfil del equipo no viajó): la salida tiene que decir cuál de las dos cosas pasa, en `packs_nota`.
+test('Packs_NingunoActivo_SeDiceDistintoDeNingunoInstalado', (t) => {
+  if (!LECTOR_CONOCE_LA_CLAVE) { t.skip('NO MEDIDO: el arnés de esta máquina no conoce packs.default'); return; }
+  const otro = { ...JSON.parse(JSON.stringify(PRUEBA)), name: 'otro' };
+  otro.reviewers = [{ agent: 'rev-otro', group: 'base', when: { detection: 'csModified' }, surface: { paths: ['**/*.cs'] }, depth: 'standard', prefixes: ['RO'] }];
+  const packsDir = paquetes({ prueba: PRUEBA, otro });
+  const agentsDir = agentes(...AGENTES_PRUEBA);
+  const d = repo({}); agregar(d, 'src/A.cs', 'class X {}\n');
+  const correr = (env) => advisors(d, ['src/A.cs'], { TYCON_PACKS_DIR: packsDir, TYCON_AGENTS_DIR: agentsDir, ...env });
+  // instalados dos, packs.default none (el perfil) y el repo sin `packs:`: ninguno activo, y la nota lo dice con los nombres
+  const ninguno = correr({ TYCON_GUIDES_DIR: arnesDeLaboratorio({ perfil: { packs: { default: 'none' } } }) });
+  assert.equal(ninguno.status, 0, ninguno.stderr);
+  assert.deepEqual(ninguno.json.packs, []);
+  assert.match(String(ninguno.json.packs_nota), /^2 paquetes instalados \(otro, prueba\) y ninguno activo: packs\.default es none \(perfil\) y el repo no declara packs:/);
+  // con todos activos no hay nota
+  const todos = correr({ TYCON_GUIDES_DIR: arnesDeLaboratorio({ perfil: { packs: { default: 'all' } } }) });
+  assert.equal(todos.status, 0, todos.stderr);
+  assert.equal(todos.json.packs_nota, null);
+  // sin ningún paquete instalado: la nota dice eso, con la carpeta donde buscó
+  const vacio = tmp('packs-vacio-');
+  const sin = advisors(d, ['src/A.cs'], { TYCON_PACKS_DIR: vacio, TYCON_AGENTS_DIR: agentsDir, TYCON_GUIDES_DIR: arnesDeLaboratorio({ perfil: { packs: { default: 'all' } } }) });
+  assert.equal(sin.status, 0, sin.stderr);
+  assert.deepEqual(sin.json.packs, []);
+  assert.match(String(sin.json.packs_nota), /^ningún paquete instalado en /);
+  assert.ok(String(sin.json.packs_nota).includes(vacio));
+  // el repo que restringe a ninguno a propósito (`packs: []`) tampoco se confunde con «no instalados»
+  const restringido = repo({ yaml: 'packs: []\n' }); agregar(restringido, 'src/A.cs', 'class X {}\n');
+  const r = advisors(restringido, ['src/A.cs'], { TYCON_PACKS_DIR: packsDir, TYCON_AGENTS_DIR: agentsDir, TYCON_GUIDES_DIR: arnesDeLaboratorio({ perfil: { packs: { default: 'all' } } }) });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(String(r.json.packs_nota), /^2 paquetes instalados \(otro, prueba\) y ninguno activo: el repo declara packs: \[\]/);
+});
+
+// Story 8.29 (AC 6): el perfil del equipo gana sobre los paquetes que la máquina eligió al instalar. La página pública
+// instala con `--packs all`, eso queda en el archivo de la máquina, y hasta acá le ganaba al perfil. El pipeline no tiene
+// orden propio (le pregunta al lector del arnés): esta prueba sostiene que lo que activa en un repo sin `packs:` es lo que
+// dice el perfil, y que la nota de «ninguno activo» no le echa la culpa a un perfil ausente cuando el perfil está y dice none.
+// 🔴 rojo previo verificado: con el lector de antes ganaba la máquina (ningún paquete en el primer caso, los dos en el segundo).
+test('8.29 · T6 Packs_DefaultFollowsTheProfile @story-8.29 @ac-6 — en un repo sin packs:, los paquetes activos son los del perfil aunque la máquina diga otra cosa', (t) => {
+  // el lector que se mide es el de ESTE árbol (el repo unido lo trae al lado; es el código que la story cambia). El de la
+  // máquina puede ser una versión instalada anterior a la regla: con ése no se puede medir, y se dice
+  const delArbol = path.join(RAIZ, 'scripts', 'lib', 'tycon-config.js');
+  const enElArbol = fs.existsSync(delArbol);
+  const lector = enElArbol ? delArbol : LECTOR_REAL;
+  const conoce = (m) => Array.isArray(m.PROFILE_WINS) && m.PROFILE_WINS.includes('packs.default');
+  if (enElArbol) {
+    // el lector que viaja con este árbol es el que la story cambia: si no carga o perdió la regla, es ROJO, no «no medido»
+    assert.ok(conoce(require(lector)), `${lector} no declara que el perfil gana en packs.default`);
+  } else {
+    let conoceLaRegla = false;
+    try { conoceLaRegla = !!lector && conoce(require(lector)); } catch (_e) { conoceLaRegla = false; }
+    if (!conoceLaRegla) { t.skip(`NO MEDIDO: este árbol no trae lector y el de la máquina (${lector || 'no encontrado'}) es anterior a la regla «el perfil gana en los paquetes»`); return; }
+  }
+  const textoDelLector = fs.readFileSync(lector, 'utf8');
+  const arnesDeLaboratorio829 = ({ perfil } = {}) => arnesDeLaboratorio({ lector: textoDelLector, perfil });
+  const otro = { ...JSON.parse(JSON.stringify(PRUEBA)), name: 'otro' };
+  otro.reviewers = [{ agent: 'rev-otro', group: 'base', when: { detection: 'csModified' }, surface: { paths: ['**/*.cs'] }, depth: 'standard', prefixes: ['RO'] }];
+  const packsDir = paquetes({ prueba: PRUEBA, otro });
+  const agentsDir = agentes(...AGENTES_PRUEBA);
+  const d = repo({}); agregar(d, 'src/A.cs', 'class X {}\n');
+  /** Una carpeta de usuario cuyo archivo de configuración dice los paquetes que la máquina eligió al instalar. */
+  const casaCon = (valor) => {
+    const h = tmp('packs-home-maquina-');
+    fs.mkdirSync(path.join(h, '.claude'), { recursive: true });
+    fs.writeFileSync(path.join(h, '.claude', 'tycon.json'), JSON.stringify({ packs: { default: valor } }, null, 2) + '\n');
+    return h;
+  };
+  const correr = (env) => advisors(d, ['src/A.cs'], { TYCON_PACKS_DIR: packsDir, TYCON_AGENTS_DIR: agentsDir, ...env });
+
+  // el perfil dice all y la máquina none: todos los instalados
+  const todos = correr({ HOME: casaCon('none'), TYCON_GUIDES_DIR: arnesDeLaboratorio829({ perfil: { packs: { default: 'all' } } }) });
+  assert.equal(todos.status, 0, todos.stderr);
+  assert.deepEqual(ordenado((todos.json.packs || []).map((p) => p.nombre)), ['otro', 'prueba'], 'gana el perfil: los dos paquetes');
+  assert.equal(todos.json.packs_nota, null);
+
+  // el perfil dice none y la máquina all: ninguno, y la nota dice que lo fija el perfil (no que el perfil falta)
+  const ninguno = correr({ HOME: casaCon('all'), TYCON_GUIDES_DIR: arnesDeLaboratorio829({ perfil: { packs: { default: 'none' } } }) });
+  assert.equal(ninguno.status, 0, ninguno.stderr);
+  assert.deepEqual(ninguno.json.packs, []);
+  const nota = String(ninguno.json.packs_nota);
+  assert.match(nota, /^2 paquetes instalados \(otro, prueba\) y ninguno activo: packs\.default es none \(perfil\) y el repo no declara packs:/);
+  assert.match(nota, /lo fija el perfil del equipo/);
+  assert.doesNotMatch(nota, /ausente/, 'el perfil está y dice none: no es un perfil ausente');
+
+  // sin perfil, lo que eligió la máquina sigue valiendo (y ahí la nota de siempre, que nombra al perfil ausente, es cierta)
+  const sinPerfil = correr({ HOME: casaCon('all'), TYCON_GUIDES_DIR: arnesDeLaboratorio829() });
+  assert.equal(sinPerfil.status, 0, sinPerfil.stderr);
+  assert.deepEqual(ordenado((sinPerfil.json.packs || []).map((p) => p.nombre)), ['otro', 'prueba']);
+  const apagada = correr({ HOME: casaCon('none'), TYCON_GUIDES_DIR: arnesDeLaboratorio829() });
+  assert.equal(apagada.status, 0, apagada.stderr);
+  assert.match(String(apagada.json.packs_nota), /packs\.default es none \(maquina\)[^\n]*perfil del equipo ausente/);
+
+  // …y la función misma, preguntada directo (en un proceso aparte, con su carpeta de usuario): valor Y origen
+  const directo = (home, arnes, extra) => {
+    const r = spawnSync(process.execPath, ['-e', `
+      const packs = require(${JSON.stringify(path.join(SCRIPTS, 'lib', 'packs.js'))});
+      const { value, origin } = packs.packsDefault({ env: process.env });
+      process.stdout.write(JSON.stringify({ value, origin }));`],
+    { encoding: 'utf8', env: { PATH: process.env.PATH, HOME: home, USERPROFILE: home, TYCON_GUIDES_DIR: arnes, ...(extra || {}) } });
+    assert.equal(r.status, 0, r.stderr);
+    return JSON.parse(r.stdout);
+  };
+  assert.deepEqual(directo(casaCon('none'), arnesDeLaboratorio829({ perfil: { packs: { default: 'all' } } })), { value: 'all', origin: 'perfil' });
+  assert.deepEqual(directo(casaCon('all'), arnesDeLaboratorio829({ perfil: { packs: { default: 'none' } } })), { value: 'none', origin: 'perfil' });
+  assert.deepEqual(directo(casaCon('none'), arnesDeLaboratorio829()), { value: 'none', origin: 'maquina' }, 'sin perfil: la máquina');
+  assert.deepEqual(directo(casaCon('none'), arnesDeLaboratorio829({ perfil: { update: { apply: 'auto' } } })), { value: 'none', origin: 'maquina' }, 'un perfil que calla los paquetes no le gana a nadie');
+  assert.deepEqual(directo(casaCon('all'), arnesDeLaboratorio829({ perfil: { packs: { default: 'none' } } }), { TYCON_PACKS_DEFAULT: 'all' }),
+    { value: 'all', origin: 'TYCON_PACKS_DEFAULT' }, 'la variable le gana al perfil');
+});

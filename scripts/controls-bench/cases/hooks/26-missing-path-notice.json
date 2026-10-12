@@ -1,0 +1,141 @@
+{
+  "hooks": [
+    {
+      "hook": "missing-path-notice.js (ruta inexistente en un comando de lectura)",
+      "script": "${FIXTURE}/tcg/scripts/hooks/missing-path-notice.js",
+      "event": "PostToolUse",
+      "matcher": "Bash",
+      "cases": [
+        {
+          "id": "el-caso-real-un-ls-silenciado-a-una-ruta-que-no-existe",
+          "type": "must-block",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/missing-path-notice.js tcg/scripts/hooks/"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "ls -R TIMBOProyecto/specs TIMBOProyecto/docs 2>/dev/null | head -60"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "no existe",
+              "NO significa"
+            ]
+          }
+        },
+        {
+          "id": "crear-una-ruta-que-no-existe-es-normal-y-no-avisa",
+          "type": "must-stay-quiet",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/missing-path-notice.js tcg/scripts/hooks/"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "mkdir -p build/salida && touch build/salida/x.txt"
+            }
+          }
+        },
+        {
+          "id": "sondear-dos-lugares-con-fallback-no-avisa",
+          "type": "must-stay-quiet",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/missing-path-notice.js tcg/scripts/hooks/"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "which sqlcmd || ls /opt/homebrew/bin/sqlcmd /usr/local/bin/sqlcmd 2>/dev/null"
+            }
+          }
+        },
+        {
+          "id": "leer-algo-que-SI-existe-no-avisa",
+          "type": "must-stay-quiet",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/missing-path-notice.js tcg/scripts/hooks/",
+            "mkdir -p specs && printf 'x\\n' > specs/story.md"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "cat specs/story.md 2>/dev/null | head -5"
+            }
+          }
+        },
+        {
+          "id": "payload-basura-no-rompe-el-turno",
+          "type": "must-not-block",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/missing-path-notice.js tcg/scripts/hooks/"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "###basura###"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "filtro-de-jq-no-es-una-ruta",
+          "type": "must-stay-quiet",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/missing-path-notice.js tcg/scripts/hooks/",
+            "node -e \"require('fs').writeFileSync('hooks.json','{}')\""
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "cat hooks.json | jq '.hooks'"
+            }
+          }
+        },
+        {
+          "id": "leer-y-borrar-en-el-mismo-comando-no-avisa",
+          "type": "must-stay-quiet",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/missing-path-notice.js tcg/scripts/hooks/"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "cat log.txt && rm log.txt"
+            }
+          }
+        },
+        {
+          "id": "lectura-dentro-de-un-heredoc-no-es-una-lectura",
+          "type": "must-stay-quiet",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/missing-path-notice.js tcg/scripts/hooks/"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "cat > script.sh <<'IN'\ncat config/app.json\nIN"
+            }
+          }
+        },
+        {
+          "id": "comando-con-cd-propio-es-injuzgable-y-calla",
+          "type": "must-stay-quiet",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/missing-path-notice.js tcg/scripts/hooks/"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "cd scripts/controls-bench && head -60 live-fire.js"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

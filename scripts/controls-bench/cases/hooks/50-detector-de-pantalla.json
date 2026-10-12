@@ -1,0 +1,73 @@
+{
+  "__doc": "Story 7.18 (AC 1, 2 y 6): el detector de «story de pantalla» decide por las listas de archivos, no por la prosa del frontmatter. Una story de backend con sólo .cs en sus listas y una ruta HTTP terminada en /frontend en el driver cierra sin que on-pre-commit.js le pida evidencia de navegador, y el hook dice la baja en una línea. Su gemelo, sin listas y con el título del frente, sigue frenado por falta de evidencia de navegador. En los dos casos el exit 2 final lo pone la matriz de verificación por criterio (DODRT-C6: no hay corrida registrada con smoke-run.sh), un control ajeno al detector (el caso permitido lo afirma, para que el exit 2 no se lea como el freno de navegador). Las stories de prueba traen advisors_exempt para que el portón de revisores no frene antes. Lo que distingue a los dos casos es el freno de navegador (DODRT-C5.1) y la línea de la baja. ROJO PREVIO: con el ui-signal.js de antes de la 7.18, el caso permitido trae «DODRT-C5.1» y no trae la línea de la baja.",
+  "hooks": [
+    {
+      "hook": "on-pre-commit.js (detector de story de pantalla, story 7.18)",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/on-pre-commit.js",
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "cases": [
+        {
+          "id": "detector-pantalla-backend-con-ruta-http-no-pide-navegador",
+          "type": "must-run",
+          "__doc": "T12 (Bench_DetectorDePantalla_BackendConRutaHttp): listas de backend y una ruta HTTP con /frontend en el driver. No es de pantalla: no aparece el freno de navegador, y sí la línea que dice la baja con su salida.",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p specs/stories .advisors/dod-runtime",
+            "printf -- '---\\nstory: \"4.2\"\\nepic: \"4\"\\nstatus: in-progress\\nadvisors_exempt: true\\nadvisors_exempt_reason: \"caso del banco\"\\ndriver:\"GET /api/admin/estado/frontend responde sin sesion\"\\nfiles_to_modify:\\n  - src/AcmeBackend/Estado.cs\\n---\\n# Story 4.2\\n\\n## Acceptance Criteria\\n1. el endpoint responde 200 con el estado (smoke runtime)\\n' > specs/stories/4-2.md",
+            "printf '%s\\n' '# Evidencia 4.2' 'AC #1: PASS — curl al endpoint, 200 con el estado' > .advisors/dod-runtime/4.2-20261009-smoke.md",
+            "git add specs && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "node -e \"const fs=require('fs');const p='specs/stories/4-2.md';fs.writeFileSync(p,fs.readFileSync(p,'utf8').replace('status: in-progress','status: done'))\"",
+            "git add specs/stories/4-2.md"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit -m \"story 4.2 done\""
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "DODRT-C6",
+              "se trata como SIN pantalla",
+              "declará sus archivos en files_to_modify"
+            ],
+            "stderr_not_re": [
+              "DODRT-C5\\.1"
+            ]
+          }
+        },
+        {
+          "id": "detector-pantalla-sin-listas-sigue-frenada",
+          "type": "must-block",
+          "__doc": "T13 (Bench_DetectorDePantalla_PantallaSinListas): el gemelo. Sin listas de archivos, el título que nombra el frente sigue marcando pantalla (la prosa queda de respaldo), y la evidencia sin navegador se frena. No hay baja que decir.",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p specs/stories .advisors/dod-runtime",
+            "printf -- '---\\nstory: \"4.2\"\\nepic: \"4\"\\nstatus: in-progress\\nadvisors_exempt: true\\nadvisors_exempt_reason: \"caso del banco\"\\ntitle:\"Frontend: panel de estado\"\\n---\\n# Story 4.2\\n\\n## Acceptance Criteria\\n1. el panel muestra el estado (smoke runtime)\\n' > specs/stories/4-2.md",
+            "printf '%s\\n' '# Evidencia 4.2' 'AC #1: PASS — curl al endpoint, 200 con el estado' > .advisors/dod-runtime/4.2-20261009-smoke.md",
+            "git add specs && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "node -e \"const fs=require('fs');const p='specs/stories/4-2.md';fs.writeFileSync(p,fs.readFileSync(p,'utf8').replace('status: in-progress','status: done'))\"",
+            "git add specs/stories/4-2.md"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit -m \"story 4.2 done\""
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "DODRT-C5\\.1"
+            ],
+            "stderr_not_re": [
+              "se trata como SIN pantalla"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

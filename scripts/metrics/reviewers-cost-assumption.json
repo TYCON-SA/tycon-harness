@@ -1,0 +1,32 @@
+{
+  "_comment": [
+    "El SUPUESTO con el que reviewers-cost.js estima lo que gastó un revisor cuando no hay medición",
+    "(story 2.15, 2026-09-09). Vive en UN archivo, con su fuente y su fecha, y VENCE: pasada",
+    "`review_before`, el estimado sale `no_medido` con motivo. Un supuesto de julio no puede",
+    "amparar una cuenta de diciembre sin que nadie lo mire. Para renovarlo: re-medir (o decidir que",
+    "la medición vieja sigue valiendo), y mover la fecha EN ESTE ARCHIVO, con el motivo al lado.",
+    "Lo que hace este archivo NO es un precio: son tokens por lanzamiento, y sólo para los",
+    "lanzamientos cuya notificación no trajo `subagent_tokens` (los bloqueantes, y los de",
+    "conversaciones perdidas). Lo medido no se estima."
+  ],
+  "tokens_per_launch_range": [
+    75000,
+    165000
+  ],
+  "ten_reviewers_pass_tokens": 1100000,
+  "source": "Medición del 2026-09-10 con `reviewers-cost.js --all` sobre las 233 corridas de la máquina de DevA: 1513 revisores con tokens en su notificación · p10 76.668 · p25 90.266 · mediana 110.496 · p75 134.574 · p90 162.470. El rango es p10–p90 (donde cae el 80 % de los revisores). Reemplaza al baseline del 2026-07-28 (~/.claude/.tycon-pipeline/baseline/BASELINE.md: 60.000–100.000 sobre 5 lanzamientos a sonnet), que quedó POR DEBAJO de lo medido: su techo estaba bajo la mediana real.",
+  "measured_on": "2026-09-10",
+  "review_before": "2027-02-10",
+  "date_reason": "Cinco meses desde la medición, misma regla que el supuesto anterior. Antes de esa fecha hay que re-correr `--all` y mirar si el p10–p90 se movió: el modelo default de los revisores, el tamaño del context file y la cantidad de reglas por advisor cambian seguido, y sumar la medición de la máquina de DevB (story 2.16) cambia el universo.",
+  "renewals": [
+    {
+      "until": "2026-09-10",
+      "range": [
+        60000,
+        100000
+      ],
+      "source": "BASELINE.md 2026-07-28",
+      "change_reason": "medido: mediana 110.496 por encima del techo"
+    }
+  ]
+}

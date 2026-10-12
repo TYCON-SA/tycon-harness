@@ -1,0 +1,9 @@
+{
+  "name": "example-repo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Repo de ejemplo de la prueba de máquina limpia del arnés: Node sin dependencias, un módulo y sus pruebas.",
+  "scripts": {
+    "test": "node --test"
+  }
+}

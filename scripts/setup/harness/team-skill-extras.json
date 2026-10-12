@@ -1,0 +1,19 @@
+{
+  "__doc": "La lista FIJA de skills de la capa del equipo que pueden traer algo más que texto (story 8.25, tanda A2c · AC 31). Es un dato de la VERSIÓN, no de la capa: la lee scripts/setup/harness/team.js (loadExtras, sin salir de su carpeta) y el repo del equipo no puede pedir una excepción (team-layer.json no gana claves). Sumar una entrada, una carpeta o una ruta es un cambio de la versión, con su prueba (harness-team.test.js T31); como máximo 3 entradas. Para una skill de la lista, la pertenencia de la capa es SU lista blanca: los .md de su raíz, los .md de `folders` (salvo `except`, donde sólo entra `allow`) y las rutas exactas de `data`; cualquier otra ruta rechaza la capa entera, nombrándola. Todo con modo 100644 y verificado por su blob. `maxBytes` es el presupuesto propio de la skill (no cuenta en el tope de 1 MB del resto de la capa). `review` es informativa: pasada `next`, doctor lo dice (warn) y quien revisa corre la fecha tres meses o decide el retiro, en este orden: (1) un commit del repo del equipo saca la skill; (2) `doctor --json` de cada máquina muestra esa punta; (3) una versión del arnés saca la entrada. `dataHome` es la casa de los datos de cada dev (fuera de la skill y del arnés; la variable la cambia sólo si es una ruta absoluta) y `legacyData` lo que la skill escribía en su carpeta y el arnés muda solo, una vez (AC 35). `userContent`: lo que un dev pudo dejar en una carpeta propia de la skill y doctor nombra antes de que la saque (AC 36).",
+  "schema": 1,
+  "entries": [
+    {
+      "skill": "skills/bizuit-sdd",
+      "reason": "la skill de procesos BPM usa, además de su texto, dos archivos de datos: VERSION (su chequeo de arranque) y templates/shared-styles.css (la exportación a HTML). Viaja deprecada mientras su revisión lo confirme (D-21); sus guiones y pruebas no viajan (pregunta 9, AC 38)",
+      "review": { "every_months": 3, "next": "2027-01-09" },
+      "folders": ["docs", "rules", "templates", "workflows"],
+      "except": ["docs/pilots", "rules/custom"],
+      "allow": ["rules/custom/README.md"],
+      "data": ["VERSION", "templates/shared-styles.css"],
+      "maxBytes": 1048576,
+      "dataHome": { "env": "BIZUIT_SDD_HOME", "dir": ".bizuit-sdd", "file": "config.yaml" },
+      "legacyData": [".bizuit-config.yaml"],
+      "userContent": ["processes/", ".env", "rules/custom/*.md"]
+    }
+  ]
+}

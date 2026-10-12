@@ -1,0 +1,17 @@
+{
+  "__doc": "jest que no dejó ni su JSON ni la cobertura (se cortó antes): totales vacíos sin inventar números, y las líneas tocadas dicen que no hubo reporte. Archivo nuevo sin datos.",
+  "runner": "jest",
+  "suite_exit": "137",
+  "story_id": "9.7",
+  "cov_min": "75",
+  "ts": "2026-10-05T12:06:00Z",
+  "test_project_count": "0",
+  "scope": "",
+  "scope_source": "explicito",
+  "declared_new": [],
+  "code_state": { "git": true },
+  "base_ref": "HEAD",
+  "base_json": { "ref": "HEAD", "source": "HEAD", "descartadas": [] },
+  "base": { "src/a.js": { "lines": 3 } },
+  "now": { "src/a.js": { "lines": 4 }, "src/b.jsx": { "lines": 2 } }
+}

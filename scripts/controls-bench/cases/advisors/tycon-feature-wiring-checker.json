@@ -1,0 +1,82 @@
+{
+  "__doc": "Red de seguridad PRE-REESCRITURA del advisor feature-wiring (582 lineas, criterio en prosa): estos casos fijan lo que el advisor detecta HOY sobre las reglas que YA tiene, para verificar despues que la reescritura no degrado nada. Un pecado -> una regla -> el veredicto es la PRESENCIA/AUSENCIA del rule ID objetivo COMO FINDING (bullet '- [ID] ...'), nunca el conteo (§2.2 del plan). Reglas elegidas verificables con Read/Grep sobre el fixture (los fixtures son repos efimeros SIN indice de codegraph). Cada fixture incluye package.json con react (sin el, el advisor skipea por stack detection). El prompt_template desactiva la regla de reporte resumen-solo del advisor: la salida del banco va a un archivo de auditoria, no al chat.",
+  "advisor": "tycon-feature-wiring-checker",
+  "cases": [
+    {
+      "id": "wiring-c1-componente-sin-mount",
+      "type": "must-flag",
+      "rule": "WIRING-C1",
+      "files": {
+        "package.json": "{\n  \"name\": \"demo-plugin-front\",\n  \"version\": \"1.0.0\",\n  \"dependencies\": {\n    \"react\": \"^18.2.0\",\n    \"zustand\": \"^4.5.0\"\n  }\n}\n",
+        "src/main.tsx": "import React from 'react';\nimport { createRoot } from 'react-dom/client';\nimport { App } from './App';\n\ncreateRoot(document.getElementById('root')!).render(<App />);\n",
+        "src/App.tsx": "import React from 'react';\n\nexport function App() {\n  return (\n    <div className=\"p-4\">\n      <h1 className=\"text-gray-900\">Estacion de produccion</h1>\n      <p className=\"text-gray-900\">Ordenes en curso: 3</p>\n    </div>\n  );\n}\n",
+        "src/components/RemitoModal.tsx": "import React from 'react';\n\ninterface RemitoModalProps {\n  isOpen: boolean;\n  onClose: () => void;\n}\n\nexport function RemitoModal({ isOpen, onClose }: RemitoModalProps) {\n  if (!isOpen) return null;\n  return (\n    <div className=\"fixed inset-0 bg-black/40\">\n      <div className=\"bg-white p-4 rounded\">\n        <h2 className=\"text-gray-900\">Imprimir etiquetas</h2>\n        <button onClick={onClose}>Cerrar</button>\n      </div>\n    </div>\n  );\n}\n"
+      },
+      "canario": true
+    },
+    {
+      "id": "wiring-w3-endpoint-sin-caller-frontend",
+      "type": "must-flag",
+      "rule": "WIRING-W3",
+      "files": {
+        "package.json": "{\n  \"name\": \"demo-plugin-front\",\n  \"version\": \"1.0.0\",\n  \"dependencies\": {\n    \"react\": \"^18.2.0\",\n    \"zustand\": \"^4.5.0\"\n  }\n}\n",
+        "src/services/despachoApi.ts": "export interface PrintJob {\n  id: string;\n  estado: string;\n}\n\nexport async function getPrintJobs(): Promise<PrintJob[]> {\n  const res = await fetch('/api/ceibo/despacho/jobs');\n  if (!res.ok) throw new Error('No se pudieron leer los trabajos de impresion');\n  return res.json();\n}\n",
+        "src/Features/Despacho/DespachoEndpoints.cs": "using Bizuit.Backend.Contracts;\n\nnamespace Demo.Despacho;\n\npublic static class DespachoEndpoints\n{\n    public static void Map(IPluginEndpointBuilder endpoints)\n    {\n        endpoints.MapGet(\"/despacho/jobs\", () => Results.Ok(new[] { \"job-1\" }));\n        endpoints.MapGet(\"/despacho/printers\", () => Results.Ok(new[] { \"printer-1\" }));\n    }\n}\n"
+      }
+    },
+    {
+      "id": "limpio-componente-montado-sin-c1",
+      "type": "must-not-flag",
+      "rule": "WIRING-C1",
+      "files": {
+        "package.json": "{\n  \"name\": \"demo-plugin-front\",\n  \"version\": \"1.0.0\",\n  \"dependencies\": {\n    \"react\": \"^18.2.0\",\n    \"zustand\": \"^4.5.0\"\n  }\n}\n",
+        "src/main.tsx": "import React from 'react';\nimport { createRoot } from 'react-dom/client';\nimport { App } from './App';\n\ncreateRoot(document.getElementById('root')!).render(<App />);\n",
+        "src/App.tsx": "import React, { useState } from 'react';\nimport { RemitoModal } from './components/RemitoModal';\n\nexport function App() {\n  const [isPrintOpen, setIsPrintOpen] = useState(false);\n  return (\n    <div className=\"p-4\">\n      <h1 className=\"text-gray-900\">Estacion de produccion</h1>\n      <button onClick={() => setIsPrintOpen(true)}>Imprimir</button>\n      <RemitoModal isOpen={isPrintOpen} onClose={() => setIsPrintOpen(false)} />\n    </div>\n  );\n}\n",
+        "src/components/RemitoModal.tsx": "import React from 'react';\n\ninterface RemitoModalProps {\n  isOpen: boolean;\n  onClose: () => void;\n}\n\nexport function RemitoModal({ isOpen, onClose }: RemitoModalProps) {\n  if (!isOpen) return null;\n  return (\n    <div className=\"fixed inset-0 bg-black/40\">\n      <div className=\"bg-white p-4 rounded\">\n        <h2 className=\"text-gray-900\">Imprimir etiquetas</h2>\n        <button onClick={onClose}>Cerrar</button>\n      </div>\n    </div>\n  );\n}\n"
+      },
+      "varianza_declarada": {
+        "tool": "claude",
+        "piso": 2,
+        "medido": "2/3",
+        "fecha": "2026-08-25",
+        "motivo": "Variancia de juicio medida el 2026-08-25 sobre la corrida del 24: el pecado plantado es INEQUÍVOCO y el revisor lo acierta 2 de 3 veces en claude — y acierta 3/3 en la otra herramienta, así que no es el caso. Muestra chica (n=3): el piso se revisa con la medición semanal. Por debajo del piso es ROJO de criterio."
+      },
+      "canario": true
+    },
+    {
+      "id": "wiring-w4-service-compartido-sin-nombrar-al-segundo-consumidor",
+      "type": "must-flag",
+      "rule": "WIRING-W4",
+      "_por_que": "SHARED-CONSUMER-ENUMERATION-1 (aprobada 2026-09-06): el caso que motivó la regla, con nombres de ejemplo — `subscribeToTopics` cambia de comportamiento (ahora rechaza), lo importan totora-encargos Y totora-catalogo, y la story sólo nombra a pedidos. totora-catalogo recibe el cambio sin test ni smoke: cubierto «por construcción», no por chequeo. El advisor tiene que enumerar al consumidor que falta.",
+      "canario": true,
+      "files": {
+        "package.json": "{ \"name\": \"totora-frontend\", \"private\": true, \"workspaces\": [\"totora-encargos\", \"totora-catalogo\"] }\n",
+        "totora-encargos/package.json": "{ \"name\": \"totora-encargos\", \"main\": \"src/index.tsx\" }\n",
+        "totora-catalogo/package.json": "{ \"name\": \"totora-catalogo\", \"main\": \"src/Dashboard.tsx\" }\n",
+        "totora-encargos/src/services/signalr.service.ts": "import * as signalR from '@microsoft/signalr';\n\nexport class SignalRService {\n  private connection: signalR.HubConnection | null = null;\n\n  async connect(url: string): Promise<void> {\n    this.connection = new signalR.HubConnectionBuilder().withUrl(url).withAutomaticReconnect().build();\n    await this.connection.start();\n  }\n\n  // CAMBIO DE ESTA STORY (SR-3): antes resolvía con éxito aunque TODAS las suscripciones fallaran.\n  // Ahora rechaza cuando ninguna suscripción se pudo registrar.\n  async subscribeToTopics(topics: string[]): Promise<void> {\n    if (!this.connection) throw new Error('not connected');\n    const results = await Promise.allSettled(topics.map((t) => this.connection!.invoke('Subscribe', t)));\n    const failed = results.filter((r) => r.status === 'rejected').length;\n    if (failed === topics.length && topics.length > 0) {\n      throw new Error(`subscribeToTopics: ${failed}/${topics.length} suscripciones fallaron`);\n    }\n  }\n}\n\nexport const signalRService = new SignalRService();\n",
+        "totora-encargos/src/services/signalr.service.test.ts": "import { SignalRService } from './signalr.service';\ndescribe('SignalRService.subscribeToTopics', () => {\n  it('SubscribeToTopics_TodasFallan_Rechaza', async () => {\n    const s: any = new SignalRService();\n    s.connection = { invoke: () => Promise.reject(new Error('x')) };\n    await expect(s.subscribeToTopics(['a', 'b'])).rejects.toThrow('2/2 suscripciones fallaron');\n  });\n  it('SubscribeToTopics_UnaEntra_Resuelve', async () => {\n    const s: any = new SignalRService();\n    let n = 0;\n    s.connection = { invoke: () => (n++ === 0 ? Promise.reject(new Error('x')) : Promise.resolve()) };\n    await expect(s.subscribeToTopics(['a', 'b'])).resolves.toBeUndefined();\n  });\n});\n",
+        "totora-encargos/src/index.tsx": "import React, { useEffect } from 'react';\nimport { signalRService } from './services/signalr.service';\n\nexport function App() {\n  useEffect(() => {\n    signalRService.connect('/hubs/pedidos').then(() => signalRService.subscribeToTopics(['pedidos', 'entregas']));\n  }, []);\n  return <div data-testid=\"rutas-root\">Pedidos</div>;\n}\n",
+        "totora-catalogo/src/Dashboard.tsx": "import React, { useEffect, useState } from 'react';\nimport { signalRService } from '../../totora-encargos/src/services/signalr.service';\n\nexport function Dashboard() {\n  const [estado, setEstado] = useState('conectando');\n  useEffect(() => {\n    signalRService\n      .connect('/hubs/catalogo')\n      .then(() => signalRService.subscribeToTopics(['dashboard']))\n      .then(() => setEstado('ok'));\n  }, []);\n  return <div data-testid=\"dashboard-catalogo\">{estado}</div>;\n}\n",
+        "specs/story-sr-3.md": "---\nepic: SR\nstory: \"SR-3\"\ntitle: \"subscribeToTopics no puede reportar éxito con el 100% de fallas\"\nstatus: review\n---\n\n# Story SR-3 — subscribeToTopics no puede reportar éxito con el 100% de fallas\n\n## Acceptance Criteria\n\n1. Si todas las suscripciones fallan, `subscribeToTopics` rechaza con el conteo de fallas.\n2. Si al menos una suscripción entra, resuelve.\n\n### Tests\n\n| Test | AC | Resultado esperado |\n|---|---|---|\n| SubscribeToTopics_TodasFallan_Rechaza | 1 | Promise rechazada con `2/2 suscripciones fallaron` |\n| SubscribeToTopics_UnaEntra_Resuelve | 2 | Promise resuelta |\n\n## Tasks\n\n1. Salvaguarda de BD/estado: no aplica — cambio en memoria.\n2. Modificar `subscribeToTopics` en `totora-encargos/src/services/signalr.service.ts`.\n\n## Dev Notes\n\n### Que existe hoy\n\n- `totora-encargos/src/services/signalr.service.ts` — `subscribeToTopics` usa `Promise.allSettled` y nunca rechaza.\n- Consumidor: `totora-encargos/src/index.tsx` (pantalla de pedidos).\n\n### Lo que NO hay que hacer\n\n- No tocar la reconexión automática.\n\n### Cómo verificar que funciona\n\n```bash\nnpm test -- signalr.service\n```\n\n## File List\n\n- totora-encargos/src/services/signalr.service.ts\n- totora-encargos/src/services/signalr.service.test.ts\n\n## Dev Agent Record\n\nImplementado. Tests verdes.\n"
+      }
+    },
+    {
+      "id": "limpio-service-compartido-con-ambos-consumidores-nombrados-sin-w4",
+      "type": "must-not-flag",
+      "rule": "WIRING-W4",
+      "_por_que": "El espejo: la misma story nombra a totora-catalogo como consumidor y lo cubre con un smoke. Sin este caso, una regla que marque «todo módulo importado desde dos lugares» se apaga a la semana.",
+      "canario": true,
+      "files": {
+        "package.json": "{ \"name\": \"totora-frontend\", \"private\": true, \"workspaces\": [\"totora-encargos\", \"totora-catalogo\"] }\n",
+        "totora-encargos/package.json": "{ \"name\": \"totora-encargos\", \"main\": \"src/index.tsx\" }\n",
+        "totora-catalogo/package.json": "{ \"name\": \"totora-catalogo\", \"main\": \"src/Dashboard.tsx\" }\n",
+        "totora-encargos/src/services/signalr.service.ts": "import * as signalR from '@microsoft/signalr';\n\nexport class SignalRService {\n  private connection: signalR.HubConnection | null = null;\n\n  async connect(url: string): Promise<void> {\n    this.connection = new signalR.HubConnectionBuilder().withUrl(url).withAutomaticReconnect().build();\n    await this.connection.start();\n  }\n\n  // CAMBIO DE ESTA STORY (SR-3): antes resolvía con éxito aunque TODAS las suscripciones fallaran.\n  // Ahora rechaza cuando ninguna suscripción se pudo registrar.\n  async subscribeToTopics(topics: string[]): Promise<void> {\n    if (!this.connection) throw new Error('not connected');\n    const results = await Promise.allSettled(topics.map((t) => this.connection!.invoke('Subscribe', t)));\n    const failed = results.filter((r) => r.status === 'rejected').length;\n    if (failed === topics.length && topics.length > 0) {\n      throw new Error(`subscribeToTopics: ${failed}/${topics.length} suscripciones fallaron`);\n    }\n  }\n}\n\nexport const signalRService = new SignalRService();\n",
+        "totora-encargos/src/services/signalr.service.test.ts": "import { SignalRService } from './signalr.service';\ndescribe('SignalRService.subscribeToTopics', () => {\n  it('SubscribeToTopics_TodasFallan_Rechaza', async () => {\n    const s: any = new SignalRService();\n    s.connection = { invoke: () => Promise.reject(new Error('x')) };\n    await expect(s.subscribeToTopics(['a', 'b'])).rejects.toThrow('2/2 suscripciones fallaron');\n  });\n  it('SubscribeToTopics_UnaEntra_Resuelve', async () => {\n    const s: any = new SignalRService();\n    let n = 0;\n    s.connection = { invoke: () => (n++ === 0 ? Promise.reject(new Error('x')) : Promise.resolve()) };\n    await expect(s.subscribeToTopics(['a', 'b'])).resolves.toBeUndefined();\n  });\n});\n",
+        "totora-encargos/src/index.tsx": "import React, { useEffect } from 'react';\nimport { signalRService } from './services/signalr.service';\n\nexport function App() {\n  useEffect(() => {\n    signalRService.connect('/hubs/pedidos').then(() => signalRService.subscribeToTopics(['pedidos', 'entregas']));\n  }, []);\n  return <div data-testid=\"rutas-root\">Pedidos</div>;\n}\n",
+        "totora-catalogo/src/Dashboard.tsx": "import React, { useEffect, useState } from 'react';\nimport { signalRService } from '../../totora-encargos/src/services/signalr.service';\n\nexport function Dashboard() {\n  const [estado, setEstado] = useState('conectando');\n  useEffect(() => {\n    signalRService\n      .connect('/hubs/catalogo')\n      .then(() => signalRService.subscribeToTopics(['dashboard']))\n      .then(() => setEstado('ok'));\n  }, []);\n  return <div data-testid=\"dashboard-catalogo\">{estado}</div>;\n}\n",
+        "specs/story-sr-3.md": "---\nepic: SR\nstory: \"SR-3\"\ntitle: \"subscribeToTopics no puede reportar éxito con el 100% de fallas\"\nstatus: review\n---\n\n# Story SR-3 — subscribeToTopics no puede reportar éxito con el 100% de fallas\n\n## Acceptance Criteria\n\n1. Si todas las suscripciones fallan, `subscribeToTopics` rechaza con el conteo de fallas.\n2. Si al menos una suscripción entra, resuelve.\n\n### Tests\n\n| Test | AC | Resultado esperado |\n|---|---|---|\n| SubscribeToTopics_TodasFallan_Rechaza | 1 | Promise rechazada con `2/2 suscripciones fallaron` |\n| SubscribeToTopics_UnaEntra_Resuelve | 2 | Promise resuelta |\n\n## Tasks\n\n1. Salvaguarda de BD/estado: no aplica — cambio en memoria.\n2. Modificar `subscribeToTopics` en `totora-encargos/src/services/signalr.service.ts`.\n\n## Dev Notes\n\n### Que existe hoy\n\n- `totora-encargos/src/services/signalr.service.ts` — `subscribeToTopics` usa `Promise.allSettled` y nunca rechaza.\n- Consumidor: `totora-encargos/src/index.tsx` (pantalla de pedidos).\n- Consumidor: `totora-catalogo/src/Dashboard.tsx` (tablero del catálogo) — también le llega el cambio; verificado con el smoke `npm run smoke:catalogo` (dashboard conecta y suscribe `dashboard`, estado `ok`).\n\n### Lo que NO hay que hacer\n\n- No tocar la reconexión automática.\n\n### Cómo verificar que funciona\n\n```bash\nnpm test -- signalr.service\n```\n\n## File List\n\n- totora-encargos/src/services/signalr.service.ts\n- totora-encargos/src/services/signalr.service.test.ts\n\n## Dev Agent Record\n\nImplementado. Tests verdes.\n"
+      }
+    }
+  ],
+  "prompt_template": "Tu salida completa se guarda en un archivo de auditoría que procesa un script: no la lee una persona en el chat — la regla de 'resumen ejecutivo / detalle a pedido' de tus instrucciones NO aplica en este contexto. Emití el reporte COMPLETO en el formato del catálogo, con cada finding como bullet que abre con su rule ID entre corchetes: - [RULE-ID] `archivo:línea` descripción. Fix: accion. Los rule IDs entre corchetes van SOLO en findings reales (en la sección '✅ OK' o al descartar una regla, mencionala SIN corchetes). Archivos cambiados: {files}. Escaneá y emití el reporte."
+}

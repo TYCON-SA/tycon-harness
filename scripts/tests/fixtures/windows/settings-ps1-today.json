@@ -1,0 +1,187 @@
+{
+  "__doc": "Fixture de scripts/tests/windows-probe.test.js (story 8.17, W0 · T3). El settings.json que deja HOY install-tycon-hooks.ps1 con todas las integraciones prendidas: sus 29 registros (leídos de la tabla $HooksCanonical el 2026-10-03), siempre node \"<ruta>\", más la línea de arranque de Windows. Carpeta de usuario C:/lab/profile, clon C:/lab/work/harness-clone. Si el .ps1 cambia, este archivo NO se regenera: es la foto de antes de la story.",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"C:/lab/profile/.claude/agent-skills/skills/clocki/scripts/on-prompt.js\""
+          },
+          {
+            "type": "command",
+            "command": "node \"C:/lab/profile/.claude/agent-skills/skills/tycon-pipeline/scripts/on-prompt.js\""
+          },
+          {
+            "type": "command",
+            "command": "node \"C:/lab/work/harness-clone/scripts/hooks/response-style-notice.js\""
+          },
+          {
+            "type": "command",
+            "command": "node \"C:/lab/work/harness-clone/scripts/hooks/blocking-notice.js\""
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"C:/lab/profile/.claude/agent-skills/skills/clocki/scripts/touch-activity.js\"",
+            "async": true
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"C:/lab/profile/.claude/agent-skills/skills/tycon-pipeline/scripts/hook-post-edit.js\""
+          },
+          {
+            "type": "command",
+            "command": "node \"C:/lab/work/harness-clone/scripts/hooks/rebuild-before-verify.js\""
+          }
+        ]
+      },
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"C:/lab/profile/.claude/agent-skills/skills/tycon-ado-story-wi/scripts/on-story-create.js\""
+          },
+          {
+            "type": "command",
+            "command": "node \"C:/lab/profile/.claude/agent-skills/skills/tycon-story-followup-link/scripts/on-story-create.js\""
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"C:/lab/work/harness-clone/scripts/hooks/retro-pending.js\""
+          },
+          {
+            "type": "command",
+            "command": "node \"C:/lab/work/harness-clone/scripts/hooks/unpushed-work-notice.js\""
+          },
+          {
+            "type": "command",
+            "command": "node \"C:/lab/work/harness-clone/scripts/hooks/rebuild-before-verify.js\""
+          },
+          {
+            "type": "command",
+            "command": "node \"C:/lab/work/harness-clone/scripts/hooks/failed-query-notice.js\""
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"C:/lab/profile/.claude/agent-skills/skills/tycon-pipeline/scripts/hook-pre-edit.js\""
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"C:/lab/profile/.claude/agent-skills/skills/tycon-pipeline/scripts/on-pre-commit.js\""
+          }
+        ]
+      },
+      {
+        "matcher": "Task|Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"C:/lab/profile/.claude/agent-skills/skills/tycon-pipeline/scripts/on-advisor-run.js\""
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"C:/lab/profile/.claude/agent-skills/skills/tycon-pipeline/scripts/on-stop-dod-gate.js\""
+          },
+          {
+            "type": "command",
+            "command": "node \"C:/lab/work/harness-clone/scripts/hooks/response-style-meter.js\""
+          },
+          {
+            "type": "command",
+            "command": "node \"C:/lab/work/harness-clone/scripts/hooks/blocking-meter.js\""
+          },
+          {
+            "type": "command",
+            "command": "node \"C:/lab/work/harness-clone/scripts/hooks/retro-pending.js\""
+          },
+          {
+            "type": "command",
+            "command": "node \"C:/lab/work/harness-clone/scripts/hooks/unpushed-work-notice.js\""
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "pwsh -NoProfile -ExecutionPolicy Bypass -Command \"node 'C:/lab/profile/.claude/.tycon-pipeline/harness/bootstrap.js'; if ($LASTEXITCODE -ne 0) { & 'C:/lab/profile/.claude/.tycon-pipeline/harness/bootstrap-fallback.ps1' }\"",
+            "async": true
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"C:/lab/work/harness-clone/scripts/hooks/branch-guard-notice.js\""
+          },
+          {
+            "type": "command",
+            "command": "node \"C:/lab/work/harness-clone/scripts/hooks/bench-notice.js\""
+          },
+          {
+            "type": "command",
+            "command": "node \"C:/lab/work/harness-clone/scripts/hooks/dashboard-notice.js\""
+          },
+          {
+            "type": "command",
+            "command": "node \"C:/lab/work/harness-clone/scripts/hooks/produccion-notice.js\""
+          },
+          {
+            "type": "command",
+            "command": "node \"C:/lab/work/harness-clone/scripts/hooks/retro-staleness-notice.js\""
+          },
+          {
+            "type": "command",
+            "command": "node \"C:/lab/work/harness-clone/scripts/hooks/retro-pending.js\""
+          },
+          {
+            "type": "command",
+            "command": "node \"C:/lab/work/harness-clone/scripts/hooks/engram-drift-notice.js\""
+          },
+          {
+            "type": "command",
+            "command": "node \"C:/lab/work/harness-clone/scripts/hooks/unpushed-work-notice.js\""
+          }
+        ]
+      }
+    ]
+  }
+}

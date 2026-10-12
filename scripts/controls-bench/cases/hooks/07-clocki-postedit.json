@@ -1,0 +1,323 @@
+{
+  "__windows": "Story 8.17, W1 (medido en Windows, corridas 11694 y 11699): la clave con que estos casos guardan un timer es la que escribe clocki —`normalizeCwd()`: barras hacia adelante y la letra de la unidad en minúscula—, no la ruta tal como llega. Fuera de Windows las dos son la misma cadena; en Windows no, y con la ruta cruda el control no encontraba el timer del caso (que él mismo nunca habría escrito así).",
+  "hooks": [
+    {
+      "hook": "on-prompt.js (clocki)",
+      "script": "${SKILLS}/skills/clocki/scripts/on-prompt.js",
+      "event": "UserPromptSubmit",
+      "matcher": "*",
+      "cases": [
+        {
+          "id": "start-intent-sin-timer",
+          "type": "must-emit",
+          "stdin": {
+            "session_id": "bench-s1",
+            "cwd": "${FIXTURE}",
+            "prompt": "implementemos la story 2.3"
+          },
+          "expect": {
+            "stdout_re": [
+              "clocki|timer"
+            ]
+          }
+        },
+        {
+          "id": "quiet-pregunta-exploratoria",
+          "type": "must-stay-quiet",
+          "stdin": {
+            "session_id": "bench-s1",
+            "cwd": "${FIXTURE}",
+            "prompt": "qué te parece este diseño?"
+          },
+          "expect": {
+            "stdout_not_re": [
+              "system-reminder"
+            ],
+            "file_exists": [
+              "${SANDBOX_HOME}/.claude/clocki/heartbeat/bench-s1"
+            ]
+          }
+        },
+        {
+          "id": "stop-detect-con-timer-activo",
+          "type": "must-emit",
+          "setup": [
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/clocki/active';fs.mkdirSync(d,{recursive:true});const e={};e[require(process.env.SKILLS+'/skills/clocki/scripts/lib').normalizeCwd(process.env.FIXTURE)]={entryId:'E1',workspaceId:'W1',projectId:'P1',description:'fix login redirect',startedAt:new Date().toISOString(),lastActivity:new Date().toISOString()};fs.writeFileSync(d+'/bench-s1.json',JSON.stringify(e))\""
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "cwd": "${FIXTURE}",
+            "prompt": "listo, cerremos"
+          },
+          "expect": {
+            "stdout_re": [
+              "clocki|timer|cerr"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "hook": "sweep.js (clocki)",
+      "script": "${SKILLS}/skills/clocki/scripts/sweep.js",
+      "event": "SessionStart",
+      "matcher": "*",
+      "cases": [
+        {
+          "id": "detecta-timer-huerfano",
+          "type": "must-emit",
+          "setup": [
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/clocki/active';fs.mkdirSync(d,{recursive:true});const e={};e['/Users/x/Repo']={entryId:'E1',workspaceId:'W1',projectId:'P1',description:'viejo',startedAt:'2026-08-19T10:00:00',lastActivity:'2026-08-19T10:05:00'};fs.writeFileSync(d+'/s-vieja.json',JSON.stringify(e))\""
+          ],
+          "stdin": {
+            "session_id": "bench-s1"
+          },
+          "expect": {
+            "stdout_re": [
+              "HU\\u00c9RFANO|hu\\u00e9rfano|idle"
+            ]
+          }
+        },
+        {
+          "id": "quiet-sin-timers",
+          "type": "must-stay-quiet",
+          "stdin": {
+            "session_id": "bench-s1"
+          },
+          "expect": {
+            "stdout_not_re": [
+              "system-reminder"
+            ],
+            "file_exists": [
+              "${SANDBOX_HOME}/.claude/clocki/heartbeat/bench-s1"
+            ]
+          }
+        },
+        {
+          "id": "no-toca-timer-vivo-de-otra-sesion",
+          "type": "must-stay-quiet",
+          "setup": [
+            "node -e \"const fs=require('fs');const h=process.env.SANDBOX_HOME+'/.claude/clocki';fs.mkdirSync(h+'/active',{recursive:true});fs.mkdirSync(h+'/heartbeat',{recursive:true});const e={};e['/Users/x/Repo']={entryId:'E1',workspaceId:'W1',projectId:'P1',description:'activo',startedAt:new Date(Date.now()-3600e3).toISOString(),lastActivity:new Date(Date.now()-20*60e3).toISOString()};fs.writeFileSync(h+'/active/s-otra.json',JSON.stringify(e));fs.writeFileSync(h+'/heartbeat/s-otra',new Date().toISOString())\""
+          ],
+          "stdin": {
+            "session_id": "bench-s1"
+          },
+          "expect": {
+            "stdout_not_re": [
+              "s-otra"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "hook": "touch-activity.js (clocki)",
+      "script": "${SKILLS}/skills/clocki/scripts/touch-activity.js",
+      "event": "PostToolUse",
+      "matcher": "*",
+      "cases": [
+        {
+          "id": "actualiza-lastactivity-del-timer",
+          "type": "must-run",
+          "setup": [
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/clocki/active';fs.mkdirSync(d,{recursive:true});const e={};e[require(process.env.SKILLS+'/skills/clocki/scripts/lib').normalizeCwd(process.env.FIXTURE)]={entryId:'E1',workspaceId:'W1',projectId:'P1',description:'x',startedAt:'2020-01-01T00:00:00',lastActivity:'2020-01-01T00:00:00'};fs.writeFileSync(d+'/bench-s1.json',JSON.stringify(e))\""
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "cwd": "${FIXTURE}",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "ls"
+            }
+          },
+          "expect": {
+            "file_not_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/clocki/active/bench-s1.json",
+                "re": "\"lastActivity\":\"2020-01-01T00:00:00\""
+              }
+            ],
+            "file_exists": [
+              "${SANDBOX_HOME}/.claude/clocki/heartbeat/bench-s1"
+            ]
+          }
+        },
+        {
+          "id": "quiet-sin-timer-solo-heartbeat",
+          "type": "must-stay-quiet",
+          "stdin": {
+            "session_id": "bench-s1",
+            "cwd": "${FIXTURE}",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "ls"
+            }
+          },
+          "expect": {
+            "file_exists": [
+              "${SANDBOX_HOME}/.claude/clocki/heartbeat/bench-s1"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "hook": "hook-post-edit.js (dispatcher post-edit)",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/hook-post-edit.js",
+      "event": "PostToolUse",
+      "matcher": "Edit|Write",
+      "cases": [
+        {
+          "id": "clocki-enforce-avisa-edit-sin-timer",
+          "type": "must-emit",
+          "__doc": "Con Clockify PRENDIDA —declarada acá por variable (la lección de la 8.3), no por el perfil del equipo: en la copia pública no hay perfil (story 8.4, T22)— una edición sin timer abierto avisa.",
+          "env": {
+            "TYCON_CLOCKIFY": "1"
+          },
+          "setup": [
+            "mkdir -p src && echo x > src/a.ts"
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "cwd": "${FIXTURE}",
+            "tool_name": "Edit",
+            "tool_input": {
+              "file_path": "${FIXTURE}/src/a.ts"
+            }
+          },
+          "expect": {
+            "stdout_re": [
+              "clocki|timer"
+            ],
+            "file_exists": [
+              "${SANDBOX_HOME}/.claude/clocki/enforce-state.json"
+            ]
+          }
+        },
+        {
+          "id": "quiet-edit-con-timer-activo",
+          "type": "must-stay-quiet",
+          "__doc": "El gemelo del anterior, también con Clockify prendida por variable: así el silencio es por el timer activo, no porque la integración esté apagada.",
+          "env": {
+            "TYCON_CLOCKIFY": "1"
+          },
+          "setup": [
+            "mkdir -p src && echo x > src/a.ts",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/clocki/active';fs.mkdirSync(d,{recursive:true});const e={};e[require(process.env.SKILLS+'/skills/clocki/scripts/lib').normalizeCwd(process.env.FIXTURE)]={entryId:'E1',workspaceId:'W1',projectId:'P1',description:'x',startedAt:new Date().toISOString(),lastActivity:new Date().toISOString()};fs.writeFileSync(d+'/bench-s1.json',JSON.stringify(e))\""
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "cwd": "${FIXTURE}",
+            "tool_name": "Edit",
+            "tool_input": {
+              "file_path": "${FIXTURE}/src/a.ts"
+            }
+          },
+          "expect": {
+            "stdout_not_re": [
+              "clocki"
+            ]
+          }
+        },
+        {
+          "id": "ado-detecta-story-nueva",
+          "env": { "TYCON_ADO_ORG": "org-de-prueba" },
+          "__ado": "el aviso del work item sale sólo con Azure DevOps prendido: el caso lo prende explícito (en el repo interno lo prendía el perfil del equipo; en la copia pública nace apagado)",
+          "type": "must-emit",
+          "timeout_s": 30,
+          "setup": [
+            "mkdir -p specs/stories",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/clocki/active';fs.mkdirSync(d,{recursive:true});const e={};e[require(process.env.SKILLS+'/skills/clocki/scripts/lib').normalizeCwd(process.env.FIXTURE)]={entryId:'E1',workspaceId:'W1',projectId:'P1',description:'x',startedAt:new Date().toISOString(),lastActivity:new Date().toISOString()};fs.writeFileSync(d+'/bench-s1.json',JSON.stringify(e))\""
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "cwd": "${FIXTURE}",
+            "tool_name": "Write",
+            "tool_input": {
+              "file_path": "${FIXTURE}/specs/stories/2-3-foo.md",
+              "content": "---\nstory: \"2.3\"\nepic: \"2\"\nstatus: draft\napproach: GOLD\ntitle: \"Foo\"\n---\n# Foo\n"
+            }
+          },
+          "expect": {
+            "stdout_re": [
+              "STORY-CREATE-detect|ado"
+            ]
+          }
+        },
+        {
+          "id": "followup-detecta-backlink-faltante",
+          "type": "must-emit",
+          "timeout_s": 30,
+          "files": {
+            "specs/stories/3-2-padre.md": "---\nstory: \"3.2\"\nepic: \"3\"\nstatus: done\n---\n# Padre\n"
+          },
+          "setup": [
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/clocki/active';fs.mkdirSync(d,{recursive:true});const e={};e[require(process.env.SKILLS+'/skills/clocki/scripts/lib').normalizeCwd(process.env.FIXTURE)]={entryId:'E1',workspaceId:'W1',projectId:'P1',description:'x',startedAt:new Date().toISOString(),lastActivity:new Date().toISOString()};fs.writeFileSync(d+'/bench-s1.json',JSON.stringify(e))\""
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "cwd": "${FIXTURE}",
+            "tool_name": "Write",
+            "tool_input": {
+              "file_path": "${FIXTURE}/specs/stories/13-4-hija.md",
+              "content": "---\nstory: \"13.4\"\nepic: \"13\"\nstatus: draft\nfollowup_of:\n  - id: \"3.2\"\n    type: \"fix\"\n    summary: \"recalibra X\"\n---\n# Hija\n"
+            }
+          },
+          "expect": {
+            "stdout_re": [
+              "FOLLOWUP|followed_up_by"
+            ]
+          }
+        },
+        {
+          "id": "quiet-edit-de-story-no-spawnea",
+          "type": "must-stay-quiet",
+          "timeout_s": 30,
+          "setup": [
+            "mkdir -p specs/stories && printf -- '---\\nstory: \"2.3\"\\nepic: \"2\"\\nstatus: draft\\napproach: GOLD\\n---\\n# Foo\\n' > specs/stories/2-3-foo.md",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/clocki/active';fs.mkdirSync(d,{recursive:true});const e={};e[require(process.env.SKILLS+'/skills/clocki/scripts/lib').normalizeCwd(process.env.FIXTURE)]={entryId:'E1',workspaceId:'W1',projectId:'P1',description:'x',startedAt:new Date().toISOString(),lastActivity:new Date().toISOString()};fs.writeFileSync(d+'/bench-s1.json',JSON.stringify(e))\""
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "cwd": "${FIXTURE}",
+            "tool_name": "Edit",
+            "tool_input": {
+              "file_path": "${FIXTURE}/specs/stories/2-3-foo.md",
+              "old_string": "# Foo",
+              "new_string": "# Foo bar"
+            }
+          },
+          "expect": {
+            "stdout_not_re": [
+              "STORY-CREATE-detect|FOLLOWUP"
+            ]
+          }
+        },
+        {
+          "id": "clockify-apagada-no-corre-clocki-enforce",
+          "type": "must-stay-quiet",
+          "__doc": "story 8.3 (AC 9): Clockify apagada (TYCON_CLOCKIFY=0; sin perfil sería lo mismo) → el despachador de ediciones sigue corriendo (on-edit, lints) y SALTEA clocki-enforce: ningún aviso de timer aunque no haya timer. Es un hook compartido con el núcleo: no se desregistra, saltea su parte.",
+          "env": {
+            "TYCON_CLOCKIFY": "0"
+          },
+          "setup": [
+            "mkdir -p src && echo x > src/a.ts"
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "cwd": "${FIXTURE}",
+            "tool_name": "Edit",
+            "tool_input": {
+              "file_path": "${FIXTURE}/src/a.ts"
+            }
+          },
+          "expect": {
+            "stdout_not_re": [
+              "clocki|timer"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

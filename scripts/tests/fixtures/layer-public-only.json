@@ -1,0 +1,22 @@
+{
+  "__nota": [
+    "«Sólo afuera» (story 8.13.1, AC 3 y 5): las rutas que existen en la copia pública y NO en el repo interno, a propósito.",
+    "scripts/setup/harness/layer.js las acepta; una ruta que está sólo en el público y no casa con ninguna de éstas es un",
+    "hallazgo (y doctor la marca). Admite `*` (dentro de una carpeta) y `**` (cualquier profundidad).",
+    "Las tres de scripts/setup/ salen de scripts/publishing/public-files/ (los papeles que el exportador agrega sólo a la copia).",
+    "Desde el pase adversarial de la tanda A (clases 1 y 15): lo que el exportador agrega sólo a la copia —los destinos",
+    "`synthetic` y `generated` de allowlist.json y la carpeta nueva de cada `skillRenames`— layer.js lo reconoce solo, leyendo",
+    "la lista blanca del commit interno (outsideMatcher). Un papel nuevo NO hace falta sumarlo acá. Lo de abajo que repite",
+    "eso queda como respaldo para quien todavía no lea la lista blanca del commit; lo que no sale de la lista blanca va acá."
+  ],
+  "paths": [
+    { "path": "version.json", "why": "lo escribe la publicación (8.13 D, AC 24): el número de versión, los commits fuente y la lista de transformados" },
+    { "path": "LICENSE", "why": "papel de la copia pública (8.7); scripts/publishing/public-files/LICENSE" },
+    { "path": "NOTICE*", "why": "papel de la copia pública (8.7); scripts/publishing/public-files/NOTICE" },
+    { "path": ".github/**", "why": "la portada, las normas y el CI de la copia pública (8.7); scripts/publishing/public-files/.github/" },
+    { "path": "scripts/setup/public-remotes.json", "why": "la lista de remotos públicos que deja el exportador: en un clon interno no existe (sources.js lo usa para saber si una fuente es pública)" },
+    { "path": "scripts/setup/get-harness.sh", "why": "la línea de la portada para instalar desde la copia (scripts/publishing/public-files/scripts/setup/)" },
+    { "path": "scripts/setup/get-harness.ps1", "why": "la misma línea, en Windows" },
+    { "path": "skills/tycon-create-story/**", "why": "la skill que la copia publica con otro nombre (allowlist.json → skillRenames, transformación skill-rename): la ruta nueva sólo existe afuera; adentro sigue con su nombre y se apila como agregado. Medido en la Task 1 (2026-10-06): 7 archivos. harness-layer.test.js mira que cada renombre de la lista blanca esté acá" }
+  ]
+}

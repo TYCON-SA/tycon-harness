@@ -1,0 +1,185 @@
+{
+  "advisor": "tycon-retrospective-capturer",
+  "tripwire": true,
+  "engram_cleanup": "advbench-retro",
+  "__doc": "Red B2 del retrospective-capturer (Etapa D tanda 3, 2026-08-22 — decisión del dev en guides/decisions/codex-etapa-d-retro-red.md). CONTRATO DISTINTO a los otros 27: 0 rule IDs — el veredicto lo dan los ARTEFACTOS verificados por el runner post-run (expect_artifact / forbid_artifact / expect_engram con nonce por corrida / expect_capturas), no la prosa del reporte. Escrituras engram van al project descartable advbench-retro (guard duro en el runner + tripwire anti-contaminación + delete project --hard post-suite). Fixtures CALCADOS de material real (regla D.7b): shape de findings.json = un repo del equipo pipeline-runs 4.35 (rule_id/severity/advisor/file/disposition/reason) · gates.log = JSONL real de ~/.claude/.tycon-pipeline/gates.log (entry check:'advisors' con storyId) · la decisión del caso 1 calca el patrón 'X en vez de Y porque Z' del commit real bf0decf7 (un repo del equipo). Fechas RELATIVAS ({{DATE-Nd}}) para que 'hotfix hace 2 días' siga siéndolo cuando la suite corra en noviembre. El gemelo limpio se define latido + prohibiciones: el dashboard JSON se escribe SIEMPRE (separa 'limpio' de 'muerto'); si el gemelo no estabiliza en 3 diseños, se DECLARA (precedente dod-runtime D.6) — no se fuerza ni se silencia. | Fix exploración #1 (2026-08-22): los fixtures llevan .engram-project=advbench-retro (el camino de doctrina del canónico) y el runner PRE-CREA el corral — engram v1.20 rechaza mem_save a un project explícito inexistente y el advisor caía (con razón) a su failure-mode 'engram down → escribir local'. || LIMITACIÓN DECLARADA (2026-08-22, regla D.6, 3 diseños): el caso dedup NO es bancable con veredicto binario. v1: el fixture traía un warning fixed y el advisor capturó ese learning adyacente. v2 (findings vacío): el advisor cazó que el código read-modify-write NO tenía control de concurrencia — contradicción REAL con la razón declarada del commit (el fixture perdió con razón, 8ª vez). v3 (código coherente, tx SERIALIZABLE+UPDLOCK): el patrón coherente es él mismo material capturable — una díscola RE-GUARDÓ la decisión sembrada (miss genuino) y otra guardó la versión ENRIQUECIDA ('con transacción SERIALIZABLE', juicio defendible). Estructura del problema: cualquier código real que porte una decisión creíble es a la vez material capturable; el margen '¿amerita captura?' tiene variancia genuina y el caso vive en ese margen. La disciplina de dedup queda cubierta INDIRECTA: captura-decision asserta search+save y el gemelo asserta la contención con cero material. DIVIDENDO del candidato (cableado y vigente): el hallazgo mem_update — --allowedTools de claude -p NO confina tools MCP ya permitidas por el usuario; el runner emula el confinamiento del Agent tool con --disallowedTools de las hermanas mutantes (espejo del enabled_tools de codex). El soporte engram_seed queda en el runner, documentado, por si el caso se reintenta con un contrato no-binario.",
+  "cases": [
+    {
+      "id": "retro-captura-decision",
+      "type": "must-capture",
+      "__doc": "El merge trae una decisión con el patrón 'elegimos X en vez de Y porque Z' en el commit (calcada del estilo bf0decf7). El capturer DEBE guardarla en engram (expect_mcp mem_save + obs con nonce Y con el contenido — contains cierra el agujero 'etiqueta basura') y escribir el latido con las 6 métricas. findings.json todo fixed (ratio 100%) → sin alerta esperable. | v2 (ronda 3): el nonce va en el TITLE — la búsqueda CLI devuelve previews de 300 chars y un nonce en la posición 401 del content era invisible (2 saves reales, 1 contado → falso delta). Y gates.log gana la 2ª entry advisors: con una sola, el fixture disparaba sin querer la heurística step_8_commit_skipped_rerun (fixed>0 + 1 iteración) — eje accidental fuera del caso quirúrgico. | v3 (rediseño 2026-08-23, corridas mixtas): contains pasa a stems que sobreviven la paráfrasis (stream|memoria|500|512 — el capturer guardaba la decisión reformulada y el regex literal la perdía) y el prompt declara la consecuencia de omitir el nonce. Los stems numéricos van anclados a su unidad (500k/512MB): el conteo corre sobre la entrada completa del CLI, que incluye el id de la obs, y un 500 pelado podía colisionar con #1500 (ronda adversarial del rediseño).",
+      "expect_mcp": {
+        "server": "plugin_engram_engram",
+        "tool": "mem_save"
+      },
+      "expect_engram": {
+        "project": "advbench-retro",
+        "min": 1,
+        "contains": "stream|memoria|archivo|OOM|worker|500\\s?k|512\\s?MB"
+      },
+      "expect_artifact": [
+        {
+          "path": ".dashboard/metrics-*.json",
+          "json_keys": [
+            "advisor_warnings_per_story",
+            "advisor_warnings_actioned_ratio",
+            "advisor_pipeline_runtime_failures",
+            "retrospective_capturer_last_successful_run",
+            "advisor_rerun_loop_iterations",
+            "step_8_commit_skipped_rerun"
+          ]
+        }
+      ],
+      "expect_capturas": true,
+      "timeout_s": 600,
+      "files": {
+        "specs/story-97-9.md": "---\nstory: \"97.9\"\nepic: 97\ntitle: \"Export batch de órdenes a CSV [{{NONCE}}]\"\nstatus: done\n---\n\n# Story 97.9 — Export batch de órdenes a CSV\n\n## Acceptance Criteria\n\n1. AC#1: `POST /api/export/generate` encola un job y devuelve 202 con jobId.\n2. AC#2: el CSV generado incluye Id, Cliente, Estado, FechaCreacion.\n",
+        ".advisors/pipeline-runs/97.9-20260821-1200/findings.json": "[\n {\n  \"rule_id\": \"SILENT-W2\",\n  \"severity\": \"WARNING\",\n  \"advisor\": \"tycon-silent-failure-hunter\",\n  \"file\": \"src/export.ts\",\n  \"disposition\": \"fixed\",\n  \"reason\": \"el catch del write tragaba el error de disco — se agregó log + rethrow en la iteración 2\"\n },\n {\n  \"rule_id\": \"TEST-W1\",\n  \"severity\": \"WARNING\",\n  \"advisor\": \"tycon-plugin-tests-coverage\",\n  \"file\": \"src/export.ts\",\n  \"disposition\": \"fixed\",\n  \"reason\": \"exportOrders sin test directo — se agregó el unit con tmp file\"\n }\n]\n",
+        ".advisors/bench-gates.log": "{\"ts\": \"{{DATE-1d}}T11:58:00.000Z\", \"sessionId\": \"bench\", \"check\": \"advisors\", \"status\": \"green\", \"provenance\": \"run-check\", \"cmd\": \"node pipeline.js check-count\", \"exit\": 0, \"durationMs\": 80, \"storyId\": \"97.9\"}\n{\"ts\": \"{{DATE-1d}}T12:40:00.000Z\", \"sessionId\": \"bench\", \"check\": \"advisors\", \"status\": \"green\", \"provenance\": \"run-check\", \"cmd\": \"node pipeline.js check-count\", \"exit\": 0, \"durationMs\": 95, \"storyId\": \"97.9\"}\n",
+        "package.json": "{\n  \"name\": \"advbench-fixture\",\n  \"private\": true,\n  \"dependencies\": { \"csv-stringify\": \"6.4.5\", \"@azure/storage-blob\": \"12.17.0\" }\n}\n",
+        ".engram-project": "advbench-retro\n"
+      },
+      "git_commits": [
+        {
+          "message": "feat(export): Story 97.9 [{{NONCE}}] — elegimos streamear el CSV directo a archivo en vez de armarlo entero en memoria, porque los exports de 500k filas reventaban el worker de 512MB",
+          "date": "{{DATE-1d}}T10:00:00",
+          "files": {
+            "src/export.ts": "import { createWriteStream } from 'fs';\n\nexport async function exportOrders(rows: AsyncIterable<string[]>, outPath: string): Promise<void> {\n  const out = createWriteStream(outPath, { encoding: 'utf8' });\n  for await (const row of rows) out.write(row.join(',') + '\\n');\n  await new Promise((res, rej) => out.end((e?: Error) => (e ? rej(e) : res(undefined))));\n}\n"
+          }
+        }
+      ],
+      "prompt": "Tu salida completa se guarda en un archivo de auditoría que procesa un script: no la lee una persona en el chat — la regla de 'resumen ejecutivo / detalle a pedido' NO aplica en este contexto; el destino del detalle SÍ aplica: escribí los artefactos que tu workflow manda. Ejecutá tu workflow COMPLETO de capturer post-merge sobre este repo (el merge ya está en la historia git del cwd — usá git log para verlo). Inputs del caller: repo=. (la raíz del cwd) · pipeline_run=.advisors/pipeline-runs/97.9-20260821-1200 · dashboard_dir=.dashboard (RELATIVO al cwd) · gates_log=.advisors/bench-gates.log · engram_project=advbench-retro. Trazabilidad del banco: el token {{NONCE}} que vas a ver en la story y en los commits es el id de esta corrida — toda observación que guardes en engram tiene que llevarlo TEXTUAL al FINAL DEL TITLE (además podés citarlo en el cuerpo). Si una observación guardada no lleva el token al final del title, la corrida FALLA — no lo omitas ni lo reformules. No escribas NADA fuera del cwd (el project engram del caller es la única excepción). Cerrá el reporte con tu línea obligatoria: CAPTURAS: engram=<n> dashboard=<ruta|no> alertas=<sí|no>."
+    },
+    {
+      "id": "retro-correlacion-canario",
+      "type": "must-capture",
+      "__doc": "El flagship: la razón de existir del advisor. Warning WAIVED en findings.json (catch vacío en el retry del upload) + hotfix {{DATE-2d}} (dentro de la ventana de 7 días SIEMPRE, fecha relativa) que arregla EXACTAMENTE eso en el mismo archivo. ratio actioned = 0/1 = 0% < 50% → alerts.md es determinista por construcción y DEBE nombrar la correlación (ignorado que volvió como bug). SIN expect_mcp: su workflow de correlación es git+findings, no manda engram (lección deferral-C2 — no forzar donde el procedimiento no lo pide).",
+      "expect_artifact": [
+        {
+          "path": ".advisors/alerts.md",
+          "content_regex": "actioned|ignorado|correlac|hotfix|volvi"
+        },
+        {
+          "path": ".dashboard/metrics-*.json",
+          "json_keys": [
+            "advisor_warnings_actioned_ratio"
+          ]
+        }
+      ],
+      "expect_capturas": true,
+      "timeout_s": 600,
+      "files": {
+        "specs/story-97-10.md": "---\nstory: \"97.10\"\nepic: 97\ntitle: \"Upload del CSV al blob con retry [{{NONCE}}]\"\nstatus: done\n---\n\n# Story 97.10 — Upload del CSV al blob con retry\n\n## Acceptance Criteria\n\n1. AC#1: el CSV generado se sube al blob storage con hasta 3 reintentos.\n2. AC#2: un fallo definitivo de upload deja el error visible en el log del worker.\n",
+        ".advisors/pipeline-runs/97.10-20260817-1500/findings.json": "[\n {\n  \"rule_id\": \"SILENT-W2\",\n  \"severity\": \"WARNING\",\n  \"advisor\": \"tycon-silent-failure-hunter\",\n  \"file\": \"src/upload.ts\",\n  \"disposition\": \"waived\",\n  \"reason\": \"catch vacío en el retry del upload — el equipo decidió postergarlo para no frenar el release\"\n }\n]\n",
+        ".advisors/bench-gates.log": "{\"ts\": \"{{DATE-5d}}T11:58:00.000Z\", \"sessionId\": \"bench\", \"check\": \"advisors\", \"status\": \"green\", \"provenance\": \"run-check\", \"cmd\": \"node pipeline.js check-count\", \"exit\": 0, \"durationMs\": 80, \"storyId\": \"97.10\"}\n",
+        "package.json": "{\n  \"name\": \"advbench-fixture\",\n  \"private\": true,\n  \"dependencies\": { \"csv-stringify\": \"6.4.5\", \"@azure/storage-blob\": \"12.17.0\" }\n}\n",
+        ".engram-project": "advbench-retro\n"
+      },
+      "git_commits": [
+        {
+          "message": "feat(export): Story 97.10 [{{NONCE}}] — upload del CSV al blob con retry",
+          "date": "{{DATE-5d}}T16:00:00",
+          "files": {
+            "src/upload.ts": "import { BlobServiceClient } from '@azure/storage-blob';\n\nexport async function uploadCsv(client: BlobServiceClient, container: string, name: string, path: string): Promise<void> {\n  const blob = client.getContainerClient(container).getBlockBlobClient(name);\n  for (let i = 0; i < 3; i++) {\n    try {\n      await blob.uploadFile(path);\n      return;\n    } catch {\n      // retry\n    }\n  }\n}\n"
+          }
+        },
+        {
+          "message": "hotfix(export): el upload fallaba en silencio y el CSV nunca llegaba al blob — el catch vacío del retry tragaba el error [{{NONCE}}]",
+          "date": "{{DATE-2d}}T09:30:00",
+          "files": {
+            "src/upload.ts": "import { BlobServiceClient } from '@azure/storage-blob';\n\nexport async function uploadCsv(client: BlobServiceClient, container: string, name: string, path: string): Promise<void> {\n  const blob = client.getContainerClient(container).getBlockBlobClient(name);\n  let lastErr: unknown;\n  for (let i = 0; i < 3; i++) {\n    try {\n      await blob.uploadFile(path);\n      return;\n    } catch (e) {\n      lastErr = e;\n      console.error(`uploadCsv intento ${i + 1} falló`, e);\n    }\n  }\n  throw lastErr;\n}\n"
+          }
+        }
+      ],
+      "prompt": "Tu salida completa se guarda en un archivo de auditoría que procesa un script: no la lee una persona en el chat — la regla de 'resumen ejecutivo / detalle a pedido' NO aplica en este contexto; el destino del detalle SÍ aplica: escribí los artefactos que tu workflow manda. Ejecutá tu workflow COMPLETO de capturer post-merge sobre este repo (el merge ya está en la historia git del cwd — usá git log para verlo). Inputs del caller: repo=. (la raíz del cwd) · pipeline_run=.advisors/pipeline-runs/97.10-20260817-1500 · dashboard_dir=.dashboard (RELATIVO al cwd) · gates_log=.advisors/bench-gates.log · engram_project=advbench-retro. Trazabilidad del banco: el token {{NONCE}} que vas a ver en la story y en los commits es el id de esta corrida — toda observación que guardes en engram tiene que llevarlo TEXTUAL al FINAL DEL TITLE (además podés citarlo en el cuerpo). No escribas NADA fuera del cwd (el project engram del caller es la única excepción). Correlación retrospectiva: tu workflow la pide sobre hotfixes/reverts de los últimos 7 días — mirá la historia git real del cwd. Cerrá el reporte con tu línea obligatoria: CAPTURAS: engram=<n> dashboard=<ruta|no> alertas=<sí|no>."
+    },
+    {
+      "id": "retro-gemelo-limpio",
+      "type": "heartbeat-only",
+      "__doc": "Gemelo limpio = LATIDO + PROHIBICIONES (decisión 3): merge trivial (bump de dependencias), sin patrón de decisión, sin waived (todo fixed), sin hotfix. REQUIRED: el dashboard JSON con las 6 claves (el canónico manda escribirlo SIEMPRE — eso separa 'limpio' de 'muerto'). FORBIDDEN: obs con nonce en engram (max:0 — capturar un learning de un bump de rutina es ruido, y eso es exactamente lo que este caso mide) y alerts.md (ninguna métrica cruza umbral). CAPTURAS debe declarar engram=0 y el cruce contra el conteo real lo verifica. | v2 (exploración ronda 2): findings.json pasa a VACÍO — la v1 traía 2 warnings fixed y el advisor capturó (honesto, CAPTURAS: engram=1) el mini-learning 'ambas accionadas en la misma iteración'; el gemelo necesita CERO material, no poco material.",
+      "expect_engram": {
+        "project": "advbench-retro",
+        "max": 0
+      },
+      "expect_artifact": [
+        {
+          "path": ".dashboard/metrics-*.json",
+          "json_keys": [
+            "advisor_warnings_per_story",
+            "advisor_warnings_actioned_ratio",
+            "advisor_pipeline_runtime_failures",
+            "retrospective_capturer_last_successful_run",
+            "advisor_rerun_loop_iterations",
+            "step_8_commit_skipped_rerun"
+          ]
+        }
+      ],
+      "forbid_artifact": [
+        {
+          "path": ".advisors/alerts.md"
+        }
+      ],
+      "expect_capturas": true,
+      "timeout_s": 600,
+      "files": {
+        "specs/story-97-11.md": "---\nstory: \"97.11\"\nepic: 97\ntitle: \"Bump de dependencias del worker de export [{{NONCE}}]\"\nstatus: done\n---\n\n# Story 97.11 — Bump de dependencias del worker de export\n\n## Acceptance Criteria\n\n1. AC#1: csv-stringify y @azure/storage-blob quedan en sus últimos patch.\n",
+        ".advisors/pipeline-runs/97.11-20260821-1800/findings.json": "[]\n",
+        ".advisors/bench-gates.log": "{\"ts\": \"{{DATE-1d}}T11:58:00.000Z\", \"sessionId\": \"bench\", \"check\": \"advisors\", \"status\": \"green\", \"provenance\": \"run-check\", \"cmd\": \"node pipeline.js check-count\", \"exit\": 0, \"durationMs\": 80, \"storyId\": \"97.11\"}\n",
+        "package.json": "{\n  \"name\": \"advbench-fixture\",\n  \"private\": true,\n  \"dependencies\": { \"csv-stringify\": \"6.4.5\", \"@azure/storage-blob\": \"12.17.0\" }\n}\n",
+        "src/export.ts": "import { createWriteStream } from 'fs';\n\nexport async function exportOrders(rows: AsyncIterable<string[]>, outPath: string): Promise<void> {\n  const out = createWriteStream(outPath, { encoding: 'utf8' });\n  for await (const row of rows) out.write(row.join(',') + '\\n');\n  await new Promise((res, rej) => out.end((e?: Error) => (e ? rej(e) : res(undefined))));\n}\n",
+        ".engram-project": "advbench-retro\n"
+      },
+      "git_commits": [
+        {
+          "message": "chore(deps): Story 97.11 [{{NONCE}}] — bump csv-stringify 6.4.5→6.4.6 y @azure/storage-blob 12.17→12.18",
+          "date": "{{DATE-1d}}T18:30:00",
+          "files": {
+            "package.json": "{\n  \"name\": \"advbench-fixture\",\n  \"private\": true,\n  \"dependencies\": { \"csv-stringify\": \"6.4.6\", \"@azure/storage-blob\": \"12.18.0\" }\n}\n"
+          }
+        }
+      ],
+      "prompt": "Tu salida completa se guarda en un archivo de auditoría que procesa un script: no la lee una persona en el chat — la regla de 'resumen ejecutivo / detalle a pedido' NO aplica en este contexto; el destino del detalle SÍ aplica: escribí los artefactos que tu workflow manda. Ejecutá tu workflow COMPLETO de capturer post-merge sobre este repo (el merge ya está en la historia git del cwd — usá git log para verlo). Inputs del caller: repo=. (la raíz del cwd) · pipeline_run=.advisors/pipeline-runs/97.11-20260821-1800 · dashboard_dir=.dashboard (RELATIVO al cwd) · gates_log=.advisors/bench-gates.log · engram_project=advbench-retro. Trazabilidad del banco: el token {{NONCE}} que vas a ver en la story y en los commits es el id de esta corrida — toda observación que guardes en engram tiene que llevarlo TEXTUAL al FINAL DEL TITLE (además podés citarlo en el cuerpo). No escribas NADA fuera del cwd (el project engram del caller es la única excepción). Si el merge no deja nada digno de captura, NO inventes learnings: el latido (dashboard) más CAPTURAS: engram=0 es una corrida completa y correcta. Cerrá el reporte con tu línea obligatoria: CAPTURAS: engram=<n> dashboard=<ruta|no> alertas=<sí|no>."
+    },
+    {
+      "id": "retro-umbral-alerta",
+      "type": "must-alert",
+      "__doc": "Umbral cruzado POR CONSTRUCCIÓN: 4 findings, 1 fixed + 3 waived → advisor_warnings_actioned_ratio = 25% < 50% (threshold del canónico) → alerts.md DEBE existir y nombrar la métrica. Sin hotfix ni decisión: el único eje del caso es el cálculo determinista del ratio y su alerta. No se asserta engram en ninguna dirección (un save legítimo de learning no es pecado acá).",
+      "expect_artifact": [
+        {
+          "path": ".advisors/alerts.md",
+          "content_regex": "advisor_warnings_actioned_ratio"
+        },
+        {
+          "path": ".dashboard/metrics-*.json",
+          "json_keys": [
+            "advisor_warnings_actioned_ratio"
+          ]
+        }
+      ],
+      "expect_capturas": true,
+      "timeout_s": 600,
+      "files": {
+        "specs/story-97-12.md": "---\nstory: \"97.12\"\nepic: 97\ntitle: \"Filtros del listado de exports [{{NONCE}}]\"\nstatus: done\n---\n\n# Story 97.12 — Filtros del listado de exports\n\n## Acceptance Criteria\n\n1. AC#1: el listado acepta filtro por estado.\n2. AC#2: un filtro malformado no rompe el listado.\n",
+        ".advisors/pipeline-runs/97.12-20260821-2100/findings.json": "[\n {\n  \"rule_id\": \"TEST-W1\",\n  \"severity\": \"WARNING\",\n  \"advisor\": \"tycon-plugin-tests-coverage\",\n  \"file\": \"src/filters.ts\",\n  \"disposition\": \"fixed\",\n  \"reason\": \"applyFilters sin test directo — agregado\"\n },\n {\n  \"rule_id\": \"SILENT-W2\",\n  \"severity\": \"WARNING\",\n  \"advisor\": \"tycon-silent-failure-hunter\",\n  \"file\": \"src/filters.ts\",\n  \"disposition\": \"waived\",\n  \"reason\": \"parseFilters devuelve {} en catch sin loggear — se decidió postergar\"\n },\n {\n  \"rule_id\": \"SPEC-W2\",\n  \"severity\": \"WARNING\",\n  \"advisor\": \"tycon-spec-first-checker\",\n  \"file\": \"src/filters.ts\",\n  \"disposition\": \"waived\",\n  \"reason\": \"el filtro por estado acepta también mayúsculas — dato extra sin AC, documentado en el consolidado\"\n },\n {\n  \"rule_id\": \"REACT-W3\",\n  \"severity\": \"WARNING\",\n  \"advisor\": \"tycon-plugin-react-conventions\",\n  \"file\": \"src/filters.ts\",\n  \"disposition\": \"waived\",\n  \"reason\": \"el helper vive en src/ plano en vez de features/ — mover cuando se toque de nuevo\"\n }\n]\n",
+        ".advisors/bench-gates.log": "{\"ts\": \"{{DATE-1d}}T11:58:00.000Z\", \"sessionId\": \"bench\", \"check\": \"advisors\", \"status\": \"green\", \"provenance\": \"run-check\", \"cmd\": \"node pipeline.js check-count\", \"exit\": 0, \"durationMs\": 80, \"storyId\": \"97.12\"}\n",
+        "package.json": "{\n  \"name\": \"advbench-fixture\",\n  \"private\": true,\n  \"dependencies\": { \"csv-stringify\": \"6.4.5\", \"@azure/storage-blob\": \"12.17.0\" }\n}\n",
+        ".engram-project": "advbench-retro\n"
+      },
+      "git_commits": [
+        {
+          "message": "feat(export): Story 97.12 [{{NONCE}}] — filtros del listado de exports",
+          "date": "{{DATE-1d}}T21:30:00",
+          "files": {
+            "src/filters.ts": "export function parseFilters(raw: string): Record<string, string> {\n  try {\n    return JSON.parse(raw);\n  } catch {\n    return {};\n  }\n}\n\nexport function applyFilters(rows: { estado: string }[], f: Record<string, string>): { estado: string }[] {\n  return f.estado ? rows.filter((r) => r.estado === f.estado) : rows;\n}\n"
+          }
+        }
+      ],
+      "prompt": "Tu salida completa se guarda en un archivo de auditoría que procesa un script: no la lee una persona en el chat — la regla de 'resumen ejecutivo / detalle a pedido' NO aplica en este contexto; el destino del detalle SÍ aplica: escribí los artefactos que tu workflow manda. Ejecutá tu workflow COMPLETO de capturer post-merge sobre este repo (el merge ya está en la historia git del cwd — usá git log para verlo). Inputs del caller: repo=. (la raíz del cwd) · pipeline_run=.advisors/pipeline-runs/97.12-20260821-2100 · dashboard_dir=.dashboard (RELATIVO al cwd) · gates_log=.advisors/bench-gates.log · engram_project=advbench-retro. Trazabilidad del banco: el token {{NONCE}} que vas a ver en la story y en los commits es el id de esta corrida — toda observación que guardes en engram tiene que llevarlo TEXTUAL al FINAL DEL TITLE (además podés citarlo en el cuerpo). No escribas NADA fuera del cwd (el project engram del caller es la única excepción). Cerrá el reporte con tu línea obligatoria: CAPTURAS: engram=<n> dashboard=<ruta|no> alertas=<sí|no>."
+    }
+  ],
+  "tripwire_markers": [
+    "advbench-",
+    "\"storyId\":\"97."
+  ],
+  "canario_ausente": "No tiene casos de \"grita / se calla\": sus 4 casos afirman ARTEFACTOS (que la memoria quede escrita, que el reporte traiga su línea de CAPTURAS). Los cuatro venían dando respuestas mixtas entre corridas ya antes de este cambio, y el banco no tiene mecanismo de piso para aserciones de artefactos — declararlo canario sería cablear al chequeo de vida un caso que ya se sabe inestable. Rediseñar los 4 casos es trabajo aparte (deuda del 2026-08-31)."
+}

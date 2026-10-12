@@ -1,0 +1,68 @@
+#!/bin/bash
+# cargar-clave-@LLAVERO@.command — lo abrís con doble clic y cargás el usuario y la contraseña de
+# la base de producción @HOST@.
+#
+# POR QUÉ ES UN ARCHIVO Y NO UN COMANDO QUE TE PASA EL ASISTENTE: así el usuario y la contraseña no
+# pasan por la conversación. Los tipeás vos, acá, y este archivo se borra solo al terminar.
+#
+# Lo escribe la puerta desde una plantilla (nunca el asistente), y la entrada queda en un llavero
+# propio que confía SÓLO en la herramienta del sistema: cualquier otro proceso que intente leerla
+# abre el cuadro del Llavero, y el asistente lo tiene prohibido por el freno.
+set -uo pipefail
+LLAVERO="@LLAVERO@"
+HOST="@HOST@"
+LLAVERO_PROPIO="@LLAVERO_PROPIO@"
+YO="$0"
+
+echo "Cargar la clave de producción de $HOST"
+echo "   entrada del Llavero: $LLAVERO"
+echo
+
+if [ ! -f "$LLAVERO_PROPIO" ]; then
+  echo "Primero creo el llavero propio ($LLAVERO_PROPIO)."
+  echo "Te va a pedir una contraseña PARA ESE LLAVERO (podés usar la de tu Mac)."
+  security create-keychain "$LLAVERO_PROPIO" || { echo "no pude crear el llavero"; read -r -p "Enter para cerrar"; exit 1; }
+  security set-keychain-settings "$LLAVERO_PROPIO"          # sin bloqueo por inactividad
+  security unlock-keychain "$LLAVERO_PROPIO"
+  # que `find-generic-password` lo encuentre sin nombrarlo cada vez
+  actuales="$(security list-keychains -d user | tr -d ' "')"
+  security list-keychains -d user -s $actuales "$LLAVERO_PROPIO"
+fi
+
+read -r -p "Usuario de la base: " USUARIO
+[ -n "$USUARIO" ] || { echo "sin usuario no se puede"; read -r -p "Enter para cerrar"; exit 1; }
+read -r -s -p "Contraseña (no se ve mientras la tipeás, y no queda en el historial): " CLAVE; echo
+[ -n "$CLAVE" ] || { echo "sin contraseña no se puede"; read -r -p "Enter para cerrar"; exit 1; }
+
+# 🔴 La clave viaja por la ENTRADA ESTÁNDAR (`security -i` lee sus subcomandos de stdin), no por los
+# argumentos: mientras corría `add-generic-password -w "<clave>"`, la contraseña figuraba en la lista
+# de procesos (`ps`) durante unos milisegundos — poco, pero visible para cualquier programa del mismo
+# usuario, que es exactamente de quien se cuida esta pieza (revisores del Step 5, 2026-09-15).
+# Medido en un llavero descartable: una clave con espacios, comillas de los dos tipos, `$` y `\` se
+# lee después idéntica, escapando sólo `\` y `"`.
+# -T /usr/bin/security: la entrada confía sólo en la herramienta del sistema — lo que la puerta
+# verifica antes de leerla. NUNCA `-A`: eso la abre a cualquier programa, sin cuadro.
+# el USUARIO se escapa igual que la clave: una comilla doble ahí podía colar otro argumento
+# (por ejemplo `-A`, que dejaría la entrada legible por cualquier programa) — revisión final del Step 5.
+ESCU="$(printf '%s' "$USUARIO" | sed 's/[\\"]/\\&/g')"
+ESC="$(printf '%s' "$CLAVE" | sed 's/[\\"]/\\&/g')"
+printf 'add-generic-password -U -s "%s" -a "%s" -T /usr/bin/security -w "%s" "%s"\n' \
+  "$LLAVERO" "$ESCU" "$ESC" "$LLAVERO_PROPIO" | security -i
+CLAVE=""; ESC=""; ESCU=""
+
+# 🔴 `security -i` sale 0 aunque el subcomando haya fallado (medido). Así que no se le cree: se
+# comprueba leyendo la entrada de vuelta. Si no, este archivo se borraría diciendo «listo» sin haber
+# guardado nada.
+if security find-generic-password -s "$LLAVERO" "$LLAVERO_PROPIO" >/dev/null 2>&1; then rc=0; else rc=1; fi
+
+if [ "$rc" -eq 0 ]; then
+  echo
+  echo "Listo. Probalo con:"
+  echo "   /opt/tycon/bin/tycon-prod-sql $HOST 'select 1'"
+  echo
+  echo "(este archivo se borra solo)"
+  rm -f "$YO"
+else
+  echo "no se pudo cargar: la entrada no quedó en el llavero. El archivo queda para volver a intentar."
+fi
+read -r -p "Enter para cerrar"

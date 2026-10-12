@@ -1,0 +1,31 @@
+{
+  "__doc": "Freno de producción del arnés TYCON (story 6.1). Lo instala scripts/production/install-guard.sh con sudo. Vive en /Library/Application Support/ClaudeCode/managed-settings.d/ — un archivo APARTE, que se SUMA al managed-settings.json de la organización sin pisarlo (medido en la Task 0b, 2026-09-15). Las reglas «ask» de Edit cubren el catálogo, el índice y la memoria de producción: editarlos a mano baja un host de producción, y el freno mira esos archivos para decidir (revisores del Step 5, 2026-09-15). Cada uno con sus DOS nombres (story 8.9, tanda P): el de antes del renombre a inglés lo sigue usando la copia vieja de /opt hasta que todas las máquinas autorizadas reinstalen. No usa allowManagedHooksOnly ni allowManagedPermissionRulesOnly: los hooks y las reglas del dev y del arnés siguen vigentes.",
+  "permissions": {
+    "ask": [
+      "Bash(/opt/tycon/bin/tycon-prod-sql *)",
+      "Bash(az sql server firewall-rule *)",
+      "Edit(//**/.tycon/production.json)",
+      "Edit(//**/.claude/.tycon-pipeline/production-index.json)",
+      "Edit(//**/.claude/.tycon-pipeline/production-memory.json)",
+      "Edit(//**/.tycon/state/production-index.json)",
+      "Edit(//**/.tycon/state/production-memory.json)",
+      "Edit(//**/.tycon/produccion.json)",
+      "Edit(//**/.claude/.tycon-pipeline/produccion-indice.json)",
+      "Edit(//**/.claude/.tycon-pipeline/produccion-memoria.json)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Monitor|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/opt/tycon/node-shim.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

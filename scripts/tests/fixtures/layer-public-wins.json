@@ -1,0 +1,27 @@
+{
+  "__nota": [
+    "«El público manda» (story 8.13.1, AC 3): las rutas que están en el repo interno y en la copia pública con OTRO contenido, y",
+    "donde la capa NO pisa el archivo público con el interno. scripts/setup/harness/layer.js las clasifica como `same`.",
+    "Cada una lleva el motivo. Una ruta nueva entra acá sólo con su motivo escrito: lo que no está en esta lista, en",
+    "layer-public-only.json ni en el `transformed` del version.json publicado, es «capa de otra versión».",
+    "La Task 1 de la tanda A mide sobre la copia real si el despachador de hooks y sus dos partes salen iguales o transformados."
+  ],
+  "paths": [
+    {
+      "path": ".gitignore",
+      "why": "el fusionado del exportador ignora más que el interno: no trae las excepciones que versionan lo de .advisors/ y .dashboard/ (medido en la Task 1, 2026-10-06). Restaurar el interno dejaría el árbol sucio con lo que la máquina escribe"
+    },
+    {
+      "path": ".githooks/pre-commit",
+      "why": "el despachador de la 8.7 (transformación merged-hooks): corre las dos partes, cada una en su proceso"
+    },
+    {
+      "path": ".githooks/pre-commit-harness",
+      "why": "la parte del arnés que llama el despachador"
+    },
+    {
+      "path": ".githooks/pre-commit-skills",
+      "why": "la parte de lo que era agent-skills que llama el despachador"
+    }
+  ]
+}

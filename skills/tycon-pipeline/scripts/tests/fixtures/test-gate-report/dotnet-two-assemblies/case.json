@@ -1,0 +1,25 @@
+{
+  "__doc": "dotnet con dos ensamblados de prueba (dos trx, dos cobertura) y un tercero que no llegó a correr: partial_run. Un método async compila a una clase aparte con el mismo archivo; una carpeta oculta trae un trx y un cobertura que el bloque de Python NO leía (el glob no entra a carpetas ocultas). Un archivo nuevo sin commitear y uno modificado.",
+  "runner": "dotnet",
+  "suite_exit": "1",
+  "story_id": "9.1",
+  "cov_min": "75",
+  "ts": "2026-10-05T12:00:00Z",
+  "test_project_count": "3",
+  "scope": "",
+  "scope_source": "explicito",
+  "declared_new": ["src/Acme.Orders/OrderImporter.cs", "src/Acme.Orders/Tests/OrderImporterTests.cs"],
+  "code_state": { "git": true, "head": "0000acme", "dirty": "abc" },
+  "base_ref": "HEAD",
+  "base_json": { "ref": "HEAD", "source": "HEAD", "descartadas": [{ "source": "marcador", "motivo": "no hay marcador activo" }] },
+  "base": {
+    "src/Acme.Orders/OrderRepository.cs": { "lines": 20 },
+    "src/Acme.Orders/Tests/OrderRepositoryTests.cs": { "lines": 4 }
+  },
+  "now": {
+    "src/Acme.Orders/OrderRepository.cs": { "lines": 20, "changed": [3, 4, 5, 6, 7, 8] },
+    "src/Acme.Orders/OrderImporter.cs": { "lines": 10 },
+    "src/Acme.Orders/Tests/OrderImporterTests.cs": { "lines": 3 },
+    "docs/nota.md": { "lines": 2 }
+  }
+}

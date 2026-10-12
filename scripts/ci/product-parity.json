@@ -1,0 +1,7 @@
+{
+  "_lea_esto_primero": "Copia pública: la lista de productos del equipo y dónde viven no viaja. Este archivo dice, a propósito, que no hay productos declarados: check-product-parity.js y check-trigger-without-docs.js salen 0 diciendo que no compararon nada. Para usarlos, borrá «sin_productos» y declará tus grupos de repos (la forma está en la cabecera de check-product-parity.js).",
+  "sin_productos": "copia pública: los productos del equipo no viajan",
+  "grupos": {},
+  "rasgos": [],
+  "diferencias_declaradas": []
+}

@@ -1,0 +1,26 @@
+{
+  "_comment": [
+    "Datos DECLARADOS: los escribió una persona, no los produjo un registro. El tablero los dibuja",
+    "con marca distinta (borde punteado, palabra 'declarado') y NUNCA dispara un estado rojo/verde",
+    "con ellos: se muestran, no se juzgan. Cada uno lleva fuente, fecha y `review_before`;",
+    "vencido, pasa a 'no medido' con el motivo. Una declaración sin fecha de revisión no ampara.",
+    "Es el mismo patrón que la deuda de dependencias y la de hooks: lo declarado no despierta,",
+    "lo vencido vuelve a contar.",
+    "Copia pública: la declaración de abajo es un EJEMPLO de la forma, sin datos de nadie. No trae `review_before`, así",
+    "que el tablero la muestra como «no medido». Un equipo que adopta el arnés escribe acá las suyas, con su fecha."
+  ],
+  "declared": [
+    {
+      "id": "incidentes-detectados-por-maquina",
+      "title": "Incidentes de producción detectados por una máquina",
+      "valor": 0,
+      "measured": 0,
+      "total": 0,
+      "unit": "conteo",
+      "den_label": "incidentes de producción (histórico)",
+      "detail": "ejemplo de la forma: tu equipo declara acá cuántos incidentes de producción detectó una máquina y cuántos una persona",
+      "source": "scripts/nightly/dashboard/declared.json",
+      "date": "2026-10-06"
+    }
+  ]
+}

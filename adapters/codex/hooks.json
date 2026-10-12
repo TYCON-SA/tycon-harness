@@ -1,0 +1,347 @@
+{
+  "__doc": "Hooks TYCON — lado Codex (fragmento deployable a ~/.codex/hooks.json). Lo despliega install-tycon-hooks.sh SOLO con TYCON_CODEX=1, con merge quirúrgico (las entradas propias del dev se preservan). ${TCG} = clon del arnés · ${SKILLS} = clon de agent-skills — los sustituye el instalador. Los scripts son LOS MISMOS que corre Claude Code (payload verificado con los mismos nombres de campo, B1 2026-08-21; 89 casos verdes con payload de ambas herramientas) — el freno se escribe una vez. Registro completo de los 26 en Etapa E1; matchers de edición y spawn VERIFICADOS con payload real en E2 (2026-08-22) — divergencias declaradas abajo. GOTCHA DE TRUST: Codex aprueba hooks POR HASH — cada cambio de script re-untrustea; el onboarding por máquina corre /hooks una vez y el instalador avisa tras cada update que toque scripts de hooks.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${TCG}/scripts/hooks/harness-bootstrap-heal.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash ${TCG}/scripts/hooks/codegraph-session-hook.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash ${TCG}/scripts/hooks/instinct-trigger.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash ${TCG}/scripts/hooks/telegram-zombie-sweep.sh"
+          },
+          {
+            "type": "command",
+            "command": "node ${SKILLS}/skills/clocki/scripts/sweep.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${TCG}/scripts/hooks/bench-notice.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${TCG}/scripts/hooks/dependencies-notice.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${TCG}/scripts/hooks/dashboard-notice.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${TCG}/scripts/hooks/lane-llm-notice.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${TCG}/scripts/hooks/branch-guard-notice.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${TCG}/scripts/hooks/retro-staleness-notice.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${TCG}/scripts/hooks/harness-startup.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${TCG}/scripts/hooks/retro-pending.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${TCG}/scripts/hooks/engram-drift-notice.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${TCG}/scripts/hooks/unpushed-work-notice.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${TCG}/scripts/hooks/produccion-notice.js"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ${SKILLS}/skills/clocki/scripts/on-prompt.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${SKILLS}/skills/tycon-pipeline/scripts/on-prompt.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${TCG}/scripts/hooks/blocking-notice.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${TCG}/scripts/hooks/rebuild-before-verify.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${TCG}/scripts/hooks/response-style-notice.js"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${TCG}/scripts/hooks/engram-pre-commit.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash ${TCG}/scripts/hooks/safety-guard-pre.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash ${TCG}/scripts/hooks/test-scope-guard-pre.sh"
+          },
+          {
+            "type": "command",
+            "command": "node ${SKILLS}/skills/tycon-pipeline/scripts/on-bash-write-gate.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${SKILLS}/skills/tycon-pipeline/scripts/on-pre-commit.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${TCG}/scripts/hooks/push-phantom-ref-notice.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${TCG}/scripts/hooks/pr-one-per-repo-guard.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${TCG}/scripts/hooks/pr-auto-complete-guard.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${TCG}/scripts/hooks/public-push-guard.js"
+          }
+        ]
+      },
+      {
+        "matcher": "apply_patch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ${SKILLS}/skills/tycon-pipeline/scripts/hook-pre-edit.js"
+          }
+        ]
+      },
+      {
+        "matcher": "collaborationspawn_agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ${SKILLS}/skills/tycon-pipeline/scripts/on-advisor-run.js"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ${TCG}/scripts/hooks/prod-access-guard.js"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${TCG}/scripts/hooks/instinct-observe.sh"
+          },
+          {
+            "type": "command",
+            "command": "node ${SKILLS}/skills/clocki/scripts/touch-activity.js"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ${TCG}/scripts/hooks/rebuild-before-verify.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${TCG}/scripts/hooks/retro-pending.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${TCG}/scripts/hooks/unpushed-work-notice.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${TCG}/scripts/hooks/missing-path-notice.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${TCG}/scripts/hooks/failed-query-notice.js"
+          }
+        ]
+      },
+      {
+        "matcher": "apply_patch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ${SKILLS}/skills/tycon-pipeline/scripts/hook-post-edit.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${TCG}/scripts/hooks/rebuild-before-verify.js"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ${SKILLS}/skills/tycon-pipeline/scripts/on-stop-dod-gate.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${TCG}/scripts/hooks/blocking-meter.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${TCG}/scripts/hooks/response-style-meter.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${TCG}/scripts/hooks/retro-pending.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${TCG}/scripts/hooks/unpushed-work-notice.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${TCG}/scripts/hooks/large-read-meter.js"
+          }
+        ]
+      }
+    ]
+  },
+  "divergences": [
+    {
+      "log": "PreToolUse/PostToolUse · Edit|Write (claude) ↔ apply_patch (codex)",
+      "verdict": "VERIFICADO 2026-08-22 (sonda E2, payload real): la tool de edición de Codex es apply_patch y su tool_input.command es un TEXTO de patch (*** Update File: ...) — scripts/lib/hook-io.js la normaliza a eventos Edit/Write por archivo; dispatch.js y rebuild-before-verify.js la consumen con fallback a la conducta actual. Evidencia: los payloads de la sonda E2, resumidos en guides/codex-migration.md (Registro E2).",
+      "scripts": [
+        "hook-pre-edit.js",
+        "hook-post-edit.js",
+        "rebuild-before-verify.js"
+      ]
+    },
+    {
+      "log": "PreToolUse · Task|Agent (claude) ↔ collaborationspawn_agent (codex)",
+      "verdict": "VERIFICADO 2026-08-22 (sonda E2): el spawn de subagentes en Codex es la tool collaborationspawn_agent con tool_input.task_name (underscoreado). SubagentStart NO sirve para el ledger: su payload trae agent_id + agent_type='default' sin el nombre — la apuesta del inventario §A.2 quedó REVERTIDA con evidencia. on-advisor-run.js acepta las tres tools y des-underscorea el task_name.",
+      "scripts": [
+        "on-advisor-run.js"
+      ]
+    },
+    {
+      "log": "SessionStart · harness-maintain.sh — SOLO Codex (no lo registra ningún instalador del lado Claude)",
+      "verdict": "ASIMETRÍA A PROPÓSITO (2026-08-23): en Claude el mantenimiento lo dispara el SessionStart de onboarding llamando directo a install-tycon-hooks.sh; en Codex hace falta este envoltorio porque el instalador tarda (pull+suites+despliegues) y colgado del arranque bloquearía cada sesión — termina al instante (doble fork, exit 0), hermético para el banco vía TYCON_MAINTAIN_CMD. Detalle en el header del script. No hay contraparte en Claude — es correcto que falte de ese lado.",
+      "scripts": [
+        "harness-maintain.sh"
+      ]
+    },
+    {
+      "log": "SessionStart · harness-startup.js — SOLO Codex; reemplaza a harness-maintain.sh EN SU LUGAR (story 8.23, tanda C, 2026-10-07)",
+      "verdict": "ASIMETRÍA A PROPÓSITO: en Claude el arranque que actualiza es la línea de arranque de settings.json (la copia fija bootstrap.js → harness.js startup); en Codex no hay línea de arranque y lo hace este hook, que corre esa misma copia fija (y su respaldo en shell si no arranca). Es Node para que ande en Windows sin Git Bash. Ocupa la POSICIÓN que tenía harness-maintain.sh: Codex aprueba cada hook por su posición en hooks.json, así que en una máquina ya desplegada sólo esta entrada pide re-aprobación con /hooks. harness-maintain.sh ya no se registra, pero sigue en disco con sus casos: una máquina que todavía no redesplegó lo sigue llamando desde su hooks.json viejo, y es lo que dispara el redespliegue.",
+      "scripts": [
+        "harness-startup.js",
+        "harness-maintain.sh"
+      ]
+    },
+    {
+      "log": "no-son-hooks-de-herramienta (banco 21-hooks-sueltos.json)",
+      "verdict": "DECLARADO 2026-08-25: git-pre-commit-global.sh lo invoca GIT (core.hooksPath global), harness-env-publish.sh lo invoca un LaunchAgent en el login + el instalador en SessionStart, y wrapper.sh / correr.sh son shims de fixture con los que el banco pasa argv a piezas que NO son hooks: instinct-observe.py y el vigilante de producción (scripts/nightly/watcher/vigilante.js), que corre en un pipeline nocturno de ADO. El runner sólo sabe pasar stdin, de ahí el shim. Ninguno se registra como hook de la herramienta en NINGUNA de las dos — el invocador es git / launchd / el instalador, que son los mismos bajo Claude y bajo Codex, así que no hay nada que traducir ni que pueda dejar de dispararse por lado.",
+      "scripts": [
+        "git-pre-commit-global.sh",
+        "git-post-commit-global.sh",
+        "git-pre-push-global.sh",
+        "harness-env-publish.sh",
+        "wrapper.sh",
+        "instinct-observe.py",
+        "correr.sh"
+      ]
+    },
+    {
+      "log": "PostToolUse · Artifact — SOLO Claude Code (Codex no tiene la tool)",
+      "verdict": "ASIMETRÍA A PROPÓSITO (2026-08-30): la tool Artifact (publicar páginas en claude.ai) existe únicamente en Claude Code — Codex nunca emite ese tool_name, así que no hay evento que registrar de su lado ni conducta que traducir. Los artefactos nacen sólo en sesiones Claude y el archivado al repo (<repo>/artifacts/ + índice con la URL) lo cubre el hook del lado Claude. Caso 28 del banco con tools:['claude'] y la misma asimetría declarada.",
+      "scripts": [
+        "artifact-archive.js"
+      ]
+    },
+    {
+      "log": "PostToolUse · Skill (claude) — on-skill-invoke.js — SIN equivalente en Codex",
+      "verdict": "ASIMETRÍA A PROPÓSITO (2026-08-30): Codex no expone la invocación de un skill como tool call (el skill se carga por mención, sin evento de hook), así que la constancia mecánica de tycon-create-story —la que abre el freno de story-a-mano (lib/story-skill-gate.js)— no existe de su lado. El freno (on-story-skill-gate.js dentro de hook-pre-edit.js + la puerta Bash en on-bash-write-gate.js) lo sabe: detecta Codex por el turn_id del payload (o CODEX_SESSION_ID sin CLAUDE_CODE_SESSION_ID), NO bloquea y deja `unknown-codex` en gates.log — frenar ahí obligaría al bypass en cada story legítima y el log se volvería ruido. Casos 29 del banco: must-block con tools:['claude'] y el caso codex-only que asserta el unknown. Si algún día Codex emite el evento, se registra este hook con su matcher y se saca la excepción.",
+      "scripts": [
+        "on-skill-invoke.js"
+      ]
+    },
+    {
+      "log": "session-collision-guard.js — retirado del set canónico",
+      "verdict": "RETIRADO 2026-09-15 del lado Codex, igual que del lado Claude el 2026-09-07 (incident-log#freno-de-sesiones-retirado-2026-09-07): frenaba trabajo legítimo. En Claude queda como opción apagada (TYCON_SESSION_GUARD=1); en Codex no se registra. El script y sus casos del banco siguen.",
+      "scripts": [
+        "session-collision-guard.js"
+      ]
+    },
+    {
+      "log": "PreToolUse · Bash|Monitor|PowerShell (claude) ↔ Bash (codex)",
+      "verdict": "ASIMETRÍA DECLARADA (2026-09-15, story 6.1): `Monitor` y `PowerShell` son herramientas de Claude Code; Codex no las emite, así que del lado Codex el freno se registra con matcher `Bash`. Y lo que Codex NO puede cubrir se dice, no se promete: no lee la configuración administrada de Claude Code ni sus reglas `ask`, así que ahí no hay cuadro de aprobación — el hook frena TAMBIÉN la forma canónica de la puerta y el mensaje manda pasarle la sentencia al dev (caso `codex-frena-tambien-la-puerta` del banco).",
+      "scripts": [
+        "prod-access-guard.js"
+      ]
+    },
+    {
+      "log": "PreToolUse/PostToolUse · Bash|PowerShell (claude) ↔ Bash (codex)",
+      "verdict": "ASIMETRÍA DECLARADA (2026-10-04): en Windows Claude Code corre los comandos con su herramienta PowerShell (tool_name «PowerShell», la misma entrada tool_input.command; code.claude.com/docs/en/tools-reference §«PowerShell tool»), y un hook con matcher `Bash` solo no se dispara: medido ese día en una sesión real (Claude Code 2.1.289, Windows 11), los frenos estaban instalados y no frenaban. Del lado Claude todo hook que mira comandos se registra con `Bash|PowerShell` (los dos instaladores, y hooks-lists-parity frena una fila con `Bash` solo). Codex no tiene esa herramienta: de su lado sigue `Bash`. El banco lo declara en sus bloques «herramienta PowerShell de Claude Code en Windows» (tools: ['claude']).",
+      "scripts": [
+        "safety-guard-pre.sh",
+        "test-scope-guard-pre.sh",
+        "failed-query-notice.js",
+        "rebuild-before-verify.js",
+        "session-collision-guard.js",
+        "on-bash-write-gate.js",
+        "on-pre-commit.js"
+      ]
+    },
+    {
+      "log": "UserPromptSubmit · large-read-notice.js (sin registrar en ninguna herramienta)",
+      "verdict": "UserPromptSubmit · large-read-notice.js — NO se registra en NINGUNA de las dos herramientas, a propósito (2026-09-20, decisión del dev). El script existe y está probado (12 casos en el banco, suite propia), pero su único efecto es empujar al agente a leer por rango, y eso se MIDIÓ como pérdida de hallazgos: el banco de 115 casos de revisores corrido dos veces —lectura normal contra «leé por rango, nunca el archivo entero»— dio 0 defectos no encontrados leyendo normal y 2 leyendo por rango, con 0 mejoras. El más claro: para ver que la cobertura de un archivo nuevo es baja hay que mirarlo ENTERO. Su compañero large-read-meter.js SÍ se registra (Stop): mide y anota, no empuja. Prender el aviso se decide en unas semanas con los datos de su propio --report. La paridad NO está rota: las dos herramientas lo dejan igualmente fuera.",
+      "scripts": [
+        "scripts/hooks/large-read-notice.js"
+      ]
+    }
+  ]
+}

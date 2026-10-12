@@ -1,0 +1,140 @@
+{
+  "__doc": "Carril: se declara o se pregunta — la detección por regex se BORRÓ el 2026-08-27 tras tres incidentes en tres días (#carril-sin-salida, #carril-no-detecta, y el 'dale, probá con 2.5 segundos' cazado por revisión adversarial). Contrato vigente: on-prompt.js registra el ring de prompts y NUNCA fija lane (limpia uno heredado); un ad-hoc declarado no se anula por prompts posteriores; el juicio de adhoc set vive en marker.js (cita mecánica + lane-classifier como juez, cubierto por las suites del skill). Mismos scripts en Claude y Codex.",
+  "hooks": [
+    {
+      "hook": "on-prompt.js",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/on-prompt.js",
+      "event": "UserPromptSubmit",
+      "matcher": "*",
+      "cases": [
+        {
+          "id": "prompt-de-story-avisa-intent-pero-NO-fija-carril",
+          "type": "must-emit",
+          "stdin": {
+            "session_id": "bench-s1",
+            "prompt": "implementemos la story 2.3: exponer el provider, tests scoped"
+          },
+          "expect": {
+            "stdout_re": [
+              "INTENT-detect"
+            ],
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/lane/bench-s1.json",
+                "re": "implementemos la story 2\\.3"
+              }
+            ],
+            "file_not_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/lane/bench-s1.json",
+                "re": "\"lane\"\\s*:"
+              }
+            ]
+          }
+        },
+        {
+          "id": "la-frase-que-ayer-fijaba-carril-de-mas-hoy-no-fija-nada",
+          "type": "must-run",
+          "stdin": {
+            "session_id": "bench-s1",
+            "prompt": "dale, probá con timeout de 2.5 segundos"
+          },
+          "expect": {
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/lane/bench-s1.json",
+                "re": "dale, probá con timeout de 2\\.5 segundos"
+              }
+            ],
+            "file_not_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/lane/bench-s1.json",
+                "re": "\"lane\"\\s*:"
+              }
+            ]
+          }
+        },
+        {
+          "id": "un-lane-heredado-del-regex-borrado-se-limpia",
+          "type": "must-run",
+          "setup": [
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d+'/lane',{recursive:true});fs.writeFileSync(d+'/lane/bench-s1.json',JSON.stringify({lane:'pipeline',laneSetAt:new Date().toISOString(),lanePrompt:'viejo',recentPrompts:['viejo']}))\""
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "prompt": "seguimos con lo que estabas"
+          },
+          "expect": {
+            "file_not_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/lane/bench-s1.json",
+                "re": "\"lane\"\\s*:"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "hook": "on-bash-write-gate.js",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/on-bash-write-gate.js",
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "cases": [
+        {
+          "id": "adhoc-declarado-cubre-aunque-un-lane-viejo-diga-pipeline",
+          "type": "must-not-block",
+          "setup": [
+            "git init -q -b main . && mkdir -p .tycon src",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d+'/adhoc',{recursive:true});fs.mkdirSync(d+'/lane',{recursive:true});const t=Date.now();fs.writeFileSync(d+'/adhoc/bench-s1.json',JSON.stringify({reason:'arregla el bug',maxFiles:8,files:[],declaredAt:new Date(t-60000).toISOString(),lastTouch:new Date(t-60000).toISOString()}));fs.writeFileSync(d+'/lane/bench-s1.json',JSON.stringify({lane:'pipeline',laneSetAt:new Date(t).toISOString(),lanePrompt:'implementemos la spec spec/x.md',recentPrompts:['arregla el bug','implementemos la spec spec/x.md'],lastTouch:new Date(t).toISOString()}))\""
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "cat > src/Foo.cs <<'EOF'\nclass Foo {}\nEOF"
+            }
+          }
+        },
+        {
+          "id": "pasa-codigo-con-adhoc-posterior-al-carril-adhoc",
+          "type": "must-not-block",
+          "setup": [
+            "git init -q -b main . && mkdir -p .tycon src",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d+'/adhoc',{recursive:true});fs.mkdirSync(d+'/lane',{recursive:true});const t=Date.now();fs.writeFileSync(d+'/lane/bench-s1.json',JSON.stringify({lane:'adhoc',laneSetAt:new Date(t-60000).toISOString(),lanePrompt:'hotfix del boton',recentPrompts:['hotfix del boton'],lastTouch:new Date(t).toISOString()}));fs.writeFileSync(d+'/adhoc/bench-s1.json',JSON.stringify({reason:'hotfix del boton',maxFiles:8,files:[],declaredAt:new Date(t).toISOString(),lastTouch:new Date(t).toISOString()}))\""
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "cat > src/Foo.cs <<'EOF'\nclass Foo {}\nEOF"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "sin-marker-y-sin-adhoc-bloquea-y-manda-a-preguntar",
+          "type": "must-block",
+          "setup": [
+            "git init -q -b main . && mkdir -p .tycon src"
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "cat > src/Foo.cs <<'EOF'\nclass Foo {}\nEOF"
+            }
+          },
+          "expect": {
+            "stderr_re": [
+              "CÓDIGO SIN CARRIL",
+              "PREGUNTALE"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

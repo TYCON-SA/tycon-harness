@@ -1,0 +1,911 @@
+{
+  "schema": 1,
+  "kind": "windows-rehearsal",
+  "run": {
+    "id": "4444",
+    "number": "windows-20261004.9",
+    "harness_ref": "origin/story/toy-portable",
+    "scenario": "portable",
+    "expected_steps": [
+      "inventory",
+      "fresh-clone",
+      "existing-clone",
+      "git-bash",
+      "suites",
+      "bench",
+      "path-shapes"
+    ],
+    "started": "2026-10-04T12:00:00.000Z",
+    "platform": "win32",
+    "lab_mode": false,
+    "node": "22.23.3",
+    "friday_tag": "retorno/2026-10-02-fin-del-viernes",
+    "commits": {
+      "harness": {
+        "friday": "1111111111111111111111111111111111111111",
+        "today": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "between": 97,
+        "today_ref": "origin/story/toy-portable",
+        "base": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "base_from": "el antepasado común con origin/main",
+        "since_base": 3
+      },
+      "skills": {
+        "friday": "2222222222222222222222222222222222222222",
+        "today": "cccccccccccccccccccccccccccccccccccccccc",
+        "between": 24,
+        "today_ref": "origin/story/toy-portable",
+        "base": "dddddddddddddddddddddddddddddddddddddddd",
+        "base_from": "el antepasado común con origin/main",
+        "since_base": 1
+      }
+    },
+    "finished": "2026-10-04T12:40:00.000Z"
+  },
+  "steps": [
+    {
+      "schema": 1,
+      "name": "inventory",
+      "status": "measured",
+      "reason": null,
+      "started": "2026-10-04T12:00:00.000Z",
+      "seconds": 10,
+      "facts": {
+        "tools": {
+          "git": {
+            "state": "present",
+            "locations": [
+              "C:\\Program Files\\Git\\cmd\\git.exe"
+            ],
+            "version": "git version 2.55.0.windows.1"
+          },
+          "node": {
+            "state": "present",
+            "locations": [
+              "C:\\Program Files\\nodejs\\node.exe"
+            ],
+            "version": "v22.23.3"
+          },
+          "bash": {
+            "state": "present",
+            "locations": [
+              "C:\\Program Files\\Git\\bin\\bash.exe",
+              "C:\\Windows\\System32\\bash.exe"
+            ],
+            "version": "GNU bash, version 5.3.15(2)-release"
+          },
+          "jq": {
+            "state": "absent",
+            "locations": [],
+            "version": null
+          }
+        }
+      },
+      "findings": [],
+      "notes": [],
+      "cap_s": 600,
+      "capped_by": "run-capped.js",
+      "exit": 0,
+      "wall_seconds": 10.4
+    },
+    {
+      "schema": 1,
+      "name": "fresh-clone",
+      "status": "measured",
+      "reason": null,
+      "started": "2026-10-04T12:00:00.000Z",
+      "seconds": 10,
+      "facts": {
+        "measured": {
+          "harness": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "skills": "cccccccccccccccccccccccccccccccccccccccc"
+        },
+        "repos": {
+          "harness": {
+            "dir": "D:\\a\\1\\tycon-rehearsal\\portable\\fresh\\tycon-claude-guides",
+            "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "autocrlf": "true",
+            "autocrlf_origin": [
+              "file:C:/Program Files/Git/etc/gitconfig\ttrue"
+            ],
+            "gitattributes": true,
+            "scripts": {
+              "total": 241,
+              "with_cr": 0,
+              "first": [],
+              "unreadable": 0
+            }
+          },
+          "skills": {
+            "dir": "D:\\a\\1\\tycon-rehearsal\\portable\\fresh\\agent-skills",
+            "head": "cccccccccccccccccccccccccccccccccccccccc",
+            "autocrlf": "true",
+            "autocrlf_origin": [
+              "file:C:/Program Files/Git/etc/gitconfig\ttrue"
+            ],
+            "gitattributes": true,
+            "scripts": {
+              "total": 13,
+              "with_cr": 0,
+              "first": [],
+              "unreadable": 0
+            }
+          }
+        },
+        "bash_reads": {
+          "file": "scripts/hooks/safety-guard-pre.sh",
+          "bash": "C:\\Program Files\\Git\\bin\\bash.exe",
+          "exit": 0,
+          "error": null
+        },
+        "tests": {
+          "line-endings": {
+            "file": "scripts/tests/eol.test.js",
+            "exit": 0,
+            "error": null,
+            "timed_out": false,
+            "saved": "steps/fresh-clone/04-line-endings.txt",
+            "tests": 6,
+            "pass": 6,
+            "fail": 0,
+            "skipped": 0,
+            "first_failure": null
+          }
+        },
+        "commands": [
+          {
+            "id": "clone-harness",
+            "what": "clonar tycon-claude-guides en lo que se mide",
+            "line": "git clone <remoto del laboratorio> tycon-claude-guides",
+            "exit": 0,
+            "error": null,
+            "timed_out": false,
+            "seconds": 1.2,
+            "cap_s": 600,
+            "saved": "steps/fresh-clone/01-clone-harness.txt"
+          },
+          {
+            "id": "clone-skills",
+            "what": "clonar agent-skills en lo que se mide",
+            "line": "git clone <remoto del laboratorio> agent-skills",
+            "exit": 0,
+            "error": null,
+            "timed_out": false,
+            "seconds": 1.2,
+            "cap_s": 600,
+            "saved": "steps/fresh-clone/02-clone-skills.txt"
+          },
+          {
+            "id": "bash-reads-a-script",
+            "what": "bash lee (sin correr) un guion del clon nuevo",
+            "line": "<bash de findGitBash()> -n scripts/hooks/safety-guard-pre.sh",
+            "exit": 0,
+            "error": null,
+            "timed_out": false,
+            "seconds": 1.2,
+            "cap_s": 120,
+            "saved": "steps/fresh-clone/03-bash-reads-a-script.txt"
+          },
+          {
+            "id": "line-endings",
+            "what": "la suite eol.test.js",
+            "line": "node scripts/tests/eol.test.js",
+            "exit": 0,
+            "error": null,
+            "timed_out": false,
+            "seconds": 1.2,
+            "cap_s": 900,
+            "saved": "steps/fresh-clone/04-line-endings.txt"
+          }
+        ]
+      },
+      "findings": [],
+      "notes": [],
+      "cap_s": 600,
+      "capped_by": "run-capped.js",
+      "exit": 0,
+      "wall_seconds": 10.4
+    },
+    {
+      "schema": 1,
+      "name": "existing-clone",
+      "status": "measured",
+      "reason": null,
+      "started": "2026-10-04T12:00:00.000Z",
+      "seconds": 10,
+      "facts": {
+        "measured": {
+          "harness": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "skills": "cccccccccccccccccccccccccccccccccccccccc"
+        },
+        "normalize_step": "git rm --cached -r -q . && git reset --hard -q",
+        "repos": {
+          "harness": {
+            "dir": "D:\\a\\1\\tycon-rehearsal\\portable\\existing\\tycon-claude-guides",
+            "base": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "target": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "autocrlf": "true",
+            "autocrlf_origin": [
+              "file:C:/Program Files/Git/etc/gitconfig\ttrue"
+            ],
+            "gitattributes_at_base": false,
+            "gitattributes_after_pull": true,
+            "head_after_pull": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "pull": {
+              "exit": 0,
+              "error": null,
+              "said": "Fast-forward"
+            },
+            "plain_restore": [
+              {
+                "exit": 0,
+                "error": null
+              },
+              {
+                "exit": 0,
+                "error": null
+              }
+            ],
+            "normalize": [
+              {
+                "exit": 0,
+                "error": null,
+                "said": ""
+              },
+              {
+                "exit": 0,
+                "error": null,
+                "said": ""
+              }
+            ],
+            "stages": {
+              "at-base": {
+                "scripts": {
+                  "total": 241,
+                  "with_cr": 241,
+                  "first": [
+                    "scripts/hooks/safety-guard-pre.sh",
+                    ".githooks/pre-commit"
+                  ],
+                  "unreadable": 0
+                }
+              },
+              "after-pull": {
+                "scripts": {
+                  "total": 241,
+                  "with_cr": 241,
+                  "first": [
+                    "scripts/hooks/safety-guard-pre.sh",
+                    ".githooks/pre-commit"
+                  ],
+                  "unreadable": 0
+                },
+                "status_lines": 0,
+                "status_first": []
+              },
+              "after-plain-restore": {
+                "scripts": {
+                  "total": 241,
+                  "with_cr": 241,
+                  "first": [
+                    "scripts/hooks/safety-guard-pre.sh",
+                    ".githooks/pre-commit"
+                  ],
+                  "unreadable": 0
+                }
+              },
+              "after-normalize": {
+                "scripts": {
+                  "total": 241,
+                  "with_cr": 0,
+                  "first": [],
+                  "unreadable": 0
+                },
+                "status_lines": 0,
+                "status_first": []
+              }
+            }
+          },
+          "skills": {
+            "dir": "D:\\a\\1\\tycon-rehearsal\\portable\\existing\\agent-skills",
+            "base": "dddddddddddddddddddddddddddddddddddddddd",
+            "target": "cccccccccccccccccccccccccccccccccccccccc",
+            "autocrlf": "true",
+            "autocrlf_origin": [
+              "file:C:/Program Files/Git/etc/gitconfig\ttrue"
+            ],
+            "gitattributes_at_base": false,
+            "gitattributes_after_pull": true,
+            "head_after_pull": "cccccccccccccccccccccccccccccccccccccccc",
+            "pull": {
+              "exit": 0,
+              "error": null,
+              "said": "Fast-forward"
+            },
+            "plain_restore": [
+              {
+                "exit": 0,
+                "error": null
+              },
+              {
+                "exit": 0,
+                "error": null
+              }
+            ],
+            "normalize": [
+              {
+                "exit": 0,
+                "error": null,
+                "said": ""
+              },
+              {
+                "exit": 0,
+                "error": null,
+                "said": ""
+              }
+            ],
+            "stages": {
+              "at-base": {
+                "scripts": {
+                  "total": 13,
+                  "with_cr": 13,
+                  "first": [
+                    "scripts/hooks/safety-guard-pre.sh",
+                    ".githooks/pre-commit"
+                  ],
+                  "unreadable": 0
+                }
+              },
+              "after-pull": {
+                "scripts": {
+                  "total": 13,
+                  "with_cr": 13,
+                  "first": [
+                    "scripts/hooks/safety-guard-pre.sh",
+                    ".githooks/pre-commit"
+                  ],
+                  "unreadable": 0
+                },
+                "status_lines": 0,
+                "status_first": []
+              },
+              "after-plain-restore": {
+                "scripts": {
+                  "total": 13,
+                  "with_cr": 13,
+                  "first": [
+                    "scripts/hooks/safety-guard-pre.sh",
+                    ".githooks/pre-commit"
+                  ],
+                  "unreadable": 0
+                }
+              },
+              "after-normalize": {
+                "scripts": {
+                  "total": 13,
+                  "with_cr": 1,
+                  "first": [
+                    "scripts/hooks/safety-guard-pre.sh"
+                  ],
+                  "unreadable": 0
+                },
+                "status_lines": 2,
+                "status_first": [
+                  " M skills/a/run.sh",
+                  " M skills/b/run.sh"
+                ]
+              }
+            }
+          }
+        },
+        "tests": {
+          "before-normalize": {
+            "file": "scripts/tests/eol.test.js",
+            "exit": 1,
+            "error": null,
+            "timed_out": false,
+            "saved": "steps/existing-clone/05-line-endings-before-normalize.txt",
+            "tests": 6,
+            "pass": 5,
+            "fail": 1,
+            "skipped": 0,
+            "first_failure": "T15b Eol_NoCrlfTracked_RenormalizeIsNoop",
+            "tail": "not ok 2 - T15b Eol_NoCrlfTracked_RenormalizeIsNoop\n  scripts/hooks/safety-guard-pre.sh: con \\r\\n en el árbol de trabajo — git rm --cached -r -q . && git reset --hard -q",
+            "says": {
+              "names_the_step": true
+            }
+          },
+          "after-normalize": {
+            "file": "scripts/tests/eol.test.js",
+            "exit": 1,
+            "error": null,
+            "timed_out": false,
+            "saved": "steps/existing-clone/14-line-endings-after-normalize.txt",
+            "tests": 6,
+            "pass": 5,
+            "fail": 1,
+            "skipped": 0,
+            "first_failure": "T15c Eol_SkillsRepo",
+            "tail": "not ok 3 - T15c Eol_SkillsRepo"
+          }
+        },
+        "commands": [
+          {
+            "id": "clone-harness-at-base",
+            "what": "clonar tycon-claude-guides como lo tiene hoy un dev (antes de la tanda)",
+            "line": "git clone <remoto del laboratorio, en el antes> tycon-claude-guides",
+            "exit": 0,
+            "error": null,
+            "timed_out": false,
+            "seconds": 1.2,
+            "cap_s": 600,
+            "saved": "steps/existing-clone/01-clone-harness-at-base.txt"
+          },
+          {
+            "id": "pull-harness",
+            "what": "traer la tanda a tycon-claude-guides",
+            "line": "git pull --ff-only",
+            "exit": 0,
+            "error": null,
+            "timed_out": false,
+            "seconds": 1.2,
+            "cap_s": 600,
+            "saved": "steps/existing-clone/03-pull-harness.txt"
+          }
+        ]
+      },
+      "findings": [
+        {
+          "id": "existing-clone:skills:cr-left-after-normalize",
+          "kind": "line-endings",
+          "detail": "después del paso que normaliza quedan 1 de 13 guiones de bash con \\r en el clon de agent-skills: skills/a/run.sh",
+          "closes_hint": "W1"
+        },
+        {
+          "id": "existing-clone:skills:dirty-after-normalize",
+          "kind": "line-endings",
+          "detail": "después del paso que normaliza, git status del clon de agent-skills muestra 2 archivo(s):  M skills/a/run.sh ·  M skills/b/run.sh",
+          "closes_hint": "W1"
+        },
+        {
+          "id": "existing-clone:test-failed-after-normalize",
+          "kind": "test",
+          "detail": "después del paso que normaliza, eol.test.js salió 1 — la primera que falla: T15c Eol_SkillsRepo",
+          "closes_hint": "W1"
+        }
+      ],
+      "notes": [],
+      "cap_s": 600,
+      "capped_by": "run-capped.js",
+      "exit": 0,
+      "wall_seconds": 10.4
+    },
+    {
+      "schema": 1,
+      "name": "git-bash",
+      "status": "measured",
+      "reason": null,
+      "started": "2026-10-04T12:00:00.000Z",
+      "seconds": 10,
+      "facts": {
+        "measured": {
+          "harness": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "skills": "cccccccccccccccccccccccccccccccccccccccc"
+        },
+        "found": {
+          "platform": "win32",
+          "exit": 0,
+          "error": null,
+          "path": "C:\\Program Files\\Git\\bin\\bash.exe",
+          "source": "git",
+          "reason": null
+        },
+        "version": "GNU bash, version 5.3.15(2)-release (x86_64-pc-cygwin)",
+        "variants": [
+          {
+            "id": "variable-points-to-wsl-launcher",
+            "what": "`findGitBash()` con la variable hacia `C:\\Windows\\System32\\bash.exe`",
+            "expected": "el mismo bash de Git: la variable no se acepta",
+            "path": "C:\\Program Files\\Git\\bin\\bash.exe",
+            "source": "git",
+            "exit": 0,
+            "ok": true
+          },
+          {
+            "id": "variable-points-to-git-bash",
+            "what": "`findGitBash()` con la variable hacia `C:\\Program Files\\Git\\usr\\bin\\bash.exe`",
+            "expected": "esa ruta, de: env",
+            "path": "C:\\Program Files\\Git\\usr\\bin\\bash.exe",
+            "source": "env",
+            "exit": 0,
+            "ok": true
+          },
+          {
+            "id": "path-without-git",
+            "what": "`findGitBash()` con el PATH sólo en System32",
+            "expected": "el de C:\\Program Files\\Git, de: default",
+            "path": "C:\\Program Files\\Git\\bin\\bash.exe",
+            "source": "default",
+            "exit": 0,
+            "ok": true
+          }
+        ],
+        "tests": {
+          "git-bash": {
+            "file": "scripts/tests/git-bash.test.js",
+            "exit": 0,
+            "error": null,
+            "timed_out": false,
+            "saved": "steps/git-bash/06-git-bash.txt",
+            "tests": 7,
+            "pass": 7,
+            "fail": 0,
+            "skipped": 0,
+            "first_failure": null
+          }
+        },
+        "commands": [
+          {
+            "id": "find",
+            "what": "findGitBash() con el ambiente de la máquina",
+            "line": "node scripts/lib/git-bash.js --json",
+            "exit": 0,
+            "error": null,
+            "timed_out": false,
+            "seconds": 1.2,
+            "cap_s": 120,
+            "saved": "steps/git-bash/01-find.txt"
+          }
+        ]
+      },
+      "findings": [],
+      "notes": [],
+      "cap_s": 600,
+      "capped_by": "run-capped.js",
+      "exit": 0,
+      "wall_seconds": 10.4
+    },
+    {
+      "schema": 1,
+      "name": "suites",
+      "status": "measured",
+      "reason": null,
+      "started": "2026-10-04T12:00:00.000Z",
+      "seconds": 10,
+      "facts": {
+        "measured": {
+          "harness": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "skills": "cccccccccccccccccccccccccccccccccccccccc"
+        },
+        "tests": {
+          "bench-portable": {
+            "file": "scripts/tests/bench-portable.test.js",
+            "exit": 0,
+            "error": null,
+            "timed_out": false,
+            "saved": "steps/suites/01-bench-portable.txt",
+            "tests": 7,
+            "pass": 7,
+            "fail": 0,
+            "skipped": 0,
+            "first_failure": null
+          },
+          "windows-support": {
+            "file": "scripts/tests/windows-support.test.js",
+            "exit": 0,
+            "error": null,
+            "timed_out": false,
+            "saved": "steps/suites/02-windows-support.txt",
+            "tests": 4,
+            "pass": 4,
+            "fail": 0,
+            "skipped": 0,
+            "first_failure": null
+          }
+        },
+        "commands": [
+          {
+            "id": "bench-portable",
+            "what": "la suite bench-portable.test.js",
+            "line": "node scripts/tests/bench-portable.test.js",
+            "exit": 0,
+            "error": null,
+            "timed_out": false,
+            "seconds": 1.2,
+            "cap_s": 900,
+            "saved": "steps/suites/01-bench-portable.txt"
+          },
+          {
+            "id": "windows-support",
+            "what": "la suite windows-support.test.js",
+            "line": "node scripts/tests/windows-support.test.js",
+            "exit": 0,
+            "error": null,
+            "timed_out": false,
+            "seconds": 1.2,
+            "cap_s": 900,
+            "saved": "steps/suites/02-windows-support.txt"
+          }
+        ]
+      },
+      "findings": [],
+      "notes": [],
+      "cap_s": 600,
+      "capped_by": "run-capped.js",
+      "exit": 0,
+      "wall_seconds": 10.4
+    },
+    {
+      "schema": 1,
+      "name": "bench",
+      "status": "measured",
+      "reason": null,
+      "started": "2026-10-04T12:00:00.000Z",
+      "seconds": 10,
+      "facts": {
+        "measured": {
+          "harness": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "skills": "cccccccccccccccccccccccccccccccccccccccc"
+        },
+        "sessions_opened": 0,
+        "listed": 12,
+        "exit": 1,
+        "user_folder": {
+          "home": "D:\\a\\1\\tycon-rehearsal\\users\\portable",
+          "appeared": []
+        },
+        "summary": {
+          "readable": true,
+          "problem": null,
+          "totals": {
+            "cases": 12,
+            "ran": 9,
+            "green": 6,
+            "red": 3,
+            "not_measured": 0,
+            "skipped": 3
+          },
+          "reported": {
+            "ran": 9,
+            "failed": 3,
+            "skipped": 3,
+            "not_measured": 0
+          },
+          "red": [
+            {
+              "key": "safety-guard-pre.sh::rm-rf-raiz",
+              "script": "safety-guard-pre.sh",
+              "type": "must-block",
+              "failures": [
+                "NO bloqueó (exit=127, sin decision:block)"
+              ]
+            },
+            {
+              "key": "safety-guard-pre.sh::no-verify",
+              "script": "safety-guard-pre.sh",
+              "type": "must-block",
+              "failures": [
+                "NO bloqueó (exit=127, sin decision:block)"
+              ]
+            },
+            {
+              "key": "session-collision-guard.js::dos-sesiones",
+              "script": "session-collision-guard.js",
+              "type": "must-emit",
+              "failures": [
+                "ERROR: Command failed: lsof -p 1"
+              ]
+            }
+          ],
+          "not_measured": [],
+          "skipped_by": {
+            "other-system": 2,
+            "other-tool": 1
+          },
+          "red_by_script": [
+            {
+              "script": "safety-guard-pre.sh",
+              "count": 2
+            },
+            {
+              "script": "session-collision-guard.js",
+              "count": 1
+            }
+          ],
+          "missing": []
+        },
+        "without_git": {
+          "exit": 2,
+          "error": null,
+          "says_not_measured": true,
+          "greens": 0,
+          "said": "🟡 NO MEDIDO: falta Git for Windows — no hay git en el PATH ni en las carpetas por defecto"
+        },
+        "commands": [
+          {
+            "id": "list",
+            "what": "la lista de casos del banco",
+            "line": "node scripts/controls-bench/runner.js --tool claude --list",
+            "exit": 0,
+            "error": null,
+            "timed_out": false,
+            "seconds": 1.2,
+            "cap_s": 120,
+            "saved": "steps/bench/01-list.txt"
+          },
+          {
+            "id": "bench",
+            "what": "el banco entero, sin abrir ninguna sesión del asistente",
+            "line": "node scripts/controls-bench/runner.js --tool claude --json steps/bench/bench.json",
+            "exit": 1,
+            "error": null,
+            "timed_out": false,
+            "seconds": 1.2,
+            "cap_s": 5100,
+            "saved": "steps/bench/02-bench.txt"
+          },
+          {
+            "id": "without-git",
+            "what": "el banco con Git for Windows escondido",
+            "line": "node scripts/controls-bench/runner.js --tool claude   (PATH sólo System32, sin las carpetas por defecto de Git)",
+            "exit": 2,
+            "error": null,
+            "timed_out": false,
+            "seconds": 1.2,
+            "cap_s": 900,
+            "saved": "steps/bench/03-without-git.txt"
+          }
+        ]
+      },
+      "findings": [
+        {
+          "id": "bench:red:safety-guard-pre.sh::rm-rf-raiz",
+          "kind": "bench",
+          "detail": "safety-guard-pre.sh::rm-rf-raiz (must-block) en rojo: NO bloqueó (exit=127, sin decision:block)",
+          "closes_hint": null
+        },
+        {
+          "id": "bench:red:safety-guard-pre.sh::no-verify",
+          "kind": "bench",
+          "detail": "safety-guard-pre.sh::no-verify (must-block) en rojo: NO bloqueó (exit=127, sin decision:block)",
+          "closes_hint": null
+        },
+        {
+          "id": "bench:red:session-collision-guard.js::dos-sesiones",
+          "kind": "bench",
+          "detail": "session-collision-guard.js::dos-sesiones (must-emit) en rojo: ERROR: Command failed: lsof -p 1",
+          "closes_hint": null
+        }
+      ],
+      "notes": [],
+      "cap_s": 600,
+      "capped_by": "run-capped.js",
+      "exit": 0,
+      "wall_seconds": 10.4
+    },
+    {
+      "schema": 1,
+      "name": "path-shapes",
+      "status": "measured",
+      "reason": null,
+      "started": "2026-10-04T12:00:00.000Z",
+      "seconds": 10,
+      "facts": {
+        "measured": {
+          "harness": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "skills": "cccccccccccccccccccccccccccccccccccccccc"
+        },
+        "shapes": {
+          "readable": true,
+          "problem": null,
+          "shapes": {
+            "backslash": {
+              "cases": 12,
+              "green": 12,
+              "red": 0,
+              "not_measured": 0,
+              "skipped": 0,
+              "red_cases": []
+            },
+            "slash": {
+              "cases": 12,
+              "green": 12,
+              "red": 0,
+              "not_measured": 0,
+              "skipped": 0,
+              "red_cases": []
+            },
+            "git-bash": {
+              "cases": 12,
+              "green": 10,
+              "red": 2,
+              "not_measured": 0,
+              "skipped": 0,
+              "red_cases": [
+                {
+                  "key": "hook-pre-edit.js::story-gate-frena-forma-git-bash",
+                  "failures": [
+                    "NO bloqueó (exit=0, sin decision:block)"
+                  ]
+                },
+                {
+                  "key": "hook-pre-edit.js::evidencia-frena-forma-git-bash",
+                  "failures": [
+                    "NO bloqueó (exit=0, sin decision:block)"
+                  ]
+                }
+              ]
+            },
+            "native": {
+              "cases": 12,
+              "green": 0,
+              "red": 0,
+              "not_measured": 0,
+              "skipped": 12,
+              "red_cases": []
+            }
+          },
+          "other": {
+            "cases": 3,
+            "green": 3,
+            "red": 0,
+            "not_measured": 0,
+            "skipped": 0,
+            "red_cases": []
+          }
+        },
+        "no_home": {
+          "readable": true,
+          "ran": 1,
+          "red": 0,
+          "not_measured": 0,
+          "skipped": 0,
+          "red_cases": []
+        },
+        "commands": [
+          {
+            "id": "shapes",
+            "what": "los portones por ruta, en cada forma de ruta",
+            "line": "node scripts/controls-bench/runner.js --tool claude --only forma- --json steps/path-shapes/shapes.json",
+            "exit": 1,
+            "error": null,
+            "timed_out": false,
+            "seconds": 1.2,
+            "cap_s": 900,
+            "saved": "steps/path-shapes/01-shapes.txt"
+          },
+          {
+            "id": "no-home",
+            "what": "el aviso de ruta inexistente sin la variable HOME",
+            "line": "node scripts/controls-bench/runner.js --tool claude --only sin-HOME --json steps/path-shapes/no-home.json",
+            "exit": 0,
+            "error": null,
+            "timed_out": false,
+            "seconds": 1.2,
+            "cap_s": 900,
+            "saved": "steps/path-shapes/02-no-home.txt"
+          }
+        ]
+      },
+      "findings": [
+        {
+          "id": "path-shapes:red:hook-pre-edit.js::story-gate-frena-forma-git-bash",
+          "kind": "path-shapes",
+          "detail": "hook-pre-edit.js::story-gate-frena-forma-git-bash en rojo: NO bloqueó (exit=0, sin decision:block)",
+          "closes_hint": "W1"
+        },
+        {
+          "id": "path-shapes:red:hook-pre-edit.js::evidencia-frena-forma-git-bash",
+          "kind": "path-shapes",
+          "detail": "hook-pre-edit.js::evidencia-frena-forma-git-bash en rojo: NO bloqueó (exit=0, sin decision:block)",
+          "closes_hint": "W1"
+        }
+      ],
+      "notes": [],
+      "cap_s": 600,
+      "capped_by": "run-capped.js",
+      "exit": 0,
+      "wall_seconds": 10.4
+    }
+  ]
+}

@@ -1,0 +1,270 @@
+#!/usr/bin/env node
+/**
+ * build/check-hook-coverage.js — el CUARTO control del pre-commit: **un hook que existe en disco
+ * tiene casos en el banco, o su deuda está declarada** (FIX-7, 2026-08-25 — caso C4).
+ *
+ * ── EL AGUJERO QUE CIERRA ───────────────────────────────────────────────────────────────────────
+ * El arnés tiene una regla explícita: *"una pieza nueva entra CON sus casos de prueba o no entra"*.
+ * Los tres enumeradores que la hacían cumplir —los casos del banco, `adapters/codex/hooks.json` y
+ * el manifiesto de advisors— **son todos listas escritas a mano**. O sea: sólo podían detectar las
+ * piezas que alguien ya se acordó de anotar, justamente lo contrario del caso que la regla existe
+ * para atrapar. **Ninguno recorría `scripts/hooks/` en disco.** Medido el 2026-08-25: 9 scripts de
+ * hooks existían sin ningún caso que los nombrara, 5 de ellos frenos que sí bloquean.
+ *
+ * Éste enumera EL DISCO. Es la diferencia entre un inventario y un censo.
+ *
+ * ── ARRANQUE ESCALONADO (decisión D3 del dev) ───────────────────────────────────────────────────
+ * Con 9 scripts sin cobertura, encenderlo bloqueando habría frenado a todo el equipo el primer día
+ * — la vía rápida a que alguien lo apague, o le pase `--no-verify` por encima, y ahí se pierde
+ * también para los casos donde importaba. Entran con **deuda declarada** en
+ * `scripts/controls-bench/hook-debt.json`, con motivo y fecha. Mismo patrón que `divergences` del
+ * registro de Codex: la asimetría se permite, el silencio no.
+ *
+ * ── QUÉ CUENTA COMO CUBIERTO ────────────────────────────────────────────────────────────────────
+ * El banco apunta a los DESPACHADORES (`hook-pre-edit.js`), no a cada handler: desde la
+ * consolidación H10 los handlers corren in-process adentro. Así que un script cuenta como cubierto
+ * si el banco lo nombra como `script`, o si su nombre aparece en la etiqueta del hook o en el id de
+ * un caso (la convención `hook-pre-edit.js → on-frontmatter-write`). Exigir un archivo de casos por
+ * handler sería exigir que el banco pruebe algo que la herramienta no dispara por separado.
+ *
+ * ── QUÉ SKILLS CENSA ──────────────────────────────────────────────────────────────────────────
+ * Las que ubica el resolvedor de todo el arnés (scripts/lib/skills-dir.js): `TYCON_SKILLS_DIR` o, sin ella, el lugar de
+ * instalación. Una raíz de skills que se pidió por variable y no se puede enumerar es ROJO; sin la variable, una raíz
+ * que falta (otra máquina, un clon incompleto) sigue siendo un aviso.
+ *
+ * Uso:  node build/check-hook-coverage.js [--selftest]
+ * Exit: 0 al día · 1 hay hooks sin casos ni deuda declarada, o no se pudo censar una raíz de skills pedida por variable
+ */
+'use strict';
+
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+
+const TCG = path.resolve(__dirname, '..');
+const CASES_DIR = path.join(TCG, 'scripts', 'controls-bench', 'cases', 'hooks');
+const DEUDA_PATH = path.join(TCG, 'scripts', 'controls-bench', 'hook-debt.json');
+
+/**
+ * Dónde están las skills que se censan, y si esa raíz se PIDIÓ por variable. Las ubica el resolvedor de todo el arnés
+ * (scripts/lib/skills-dir.js): `TYCON_SKILLS_DIR` —la raíz del clon o su carpeta `skills/`— o, sin ella, el lugar de
+ * instalación (~/.claude/agent-skills).
+ *
+ * 🔴 Antes las armaba con la HOME e ignoraba la variable (pase adversarial de la story 8.7, 2026-10-03): en una máquina
+ *    sin instalación —la CI pública, que exporta la variable— las dos raíces de skills quedaban «sin censar» y el
+ *    control salía verde con 20 de 58 hooks sin mirar; con OTRO clon instalado, censaba las instaladas y no las del repo
+ *    que se revisa.
+ */
+function skillsRoot(env) {
+  const asked = String((env || process.env).TYCON_SKILLS_DIR || '').trim();
+  const { skills } = require(path.join(TCG, 'scripts', 'lib', 'skills-dir.js')).resolveSkillsDirs(asked);
+  return { skills, requested: asked !== '' };
+}
+
+/**
+ * Las raíces que no se pudieron enumerar: un AVISO si es la instalación de otra máquina o un clon incompleto, y un ROJO
+ * si es una raíz de skills que se pidió por variable. No censar lo que se pidió no es un verde.
+ */
+function missingRoots(faltantes, skills, requested) {
+  const blocking = [];
+  const notices = [];
+  for (const d of faltantes) {
+    if (requested && d.startsWith(skills + path.sep)) {
+      blocking.push(`no pude enumerar ${d}: TYCON_SKILLS_DIR pide censar esas skills y esa carpeta no está. No censar lo que se pidió no es un verde.`);
+    } else {
+      notices.push(`no pude enumerar ${d} (¿otra máquina?) — esa raíz queda sin censar`);
+    }
+  }
+  return { blocking, notices };
+}
+
+/** Los directorios donde viven hooks, con el filtro de qué archivo de ahí ES un hook. */
+function raices(tcg, skills) {
+  return [
+    { dir: path.join(tcg, 'scripts', 'hooks'), filtro: (f) => /\.(js|sh|py)$/.test(f) },
+    { dir: path.join(skills, 'tycon-pipeline', 'scripts'), filtro: (f) => /^(on-|hook-).*\.js$/.test(f) },
+    // De clocki sólo los que el instalador registra como hooks; `lib.js` y los `install-*` no lo son.
+    { dir: path.join(skills, 'clocki', 'scripts'), filtro: (f) => ['clocki-enforce.js', 'on-prompt.js', 'sweep.js', 'touch-activity.js'].includes(f) },
+  ];
+}
+
+/** Un reemplazo generado de un nombre viejo (story 8.9) no es un hook propio: sólo lanza al nuevo, que es el que tiene
+ *  casos. La marca va en la segunda línea (scripts/lib/legacy-names.js). */
+function esReemplazo(abs) {
+  try { return require(path.join(TCG, 'scripts', 'lib', 'legacy-names.js')).isShim(fs.readFileSync(abs, 'utf8')); } catch (_e) { return false; }
+}
+
+/** Todo lo que hay EN DISCO. `faltantes` = raíces ausentes (otra máquina, clon incompleto). */
+function enumerarDisco(rs) {
+  const scripts = new Set();
+  const faltantes = [];
+  for (const { dir, filtro } of rs) {
+    let entries;
+    try { entries = fs.readdirSync(dir); } catch (_e) { faltantes.push(dir); continue; }
+    for (const f of entries) if (filtro(f) && !esReemplazo(path.join(dir, f))) scripts.add(f);
+  }
+  return { scripts: [...scripts].sort(), faltantes };
+}
+
+/** Lo que el banco nombra: scripts explícitos + textos (etiquetas de hook e ids de caso). */
+function cobertura(casesDir) {
+  const scripts = new Set();
+  const textos = [];
+  let files = [];
+  try { files = fs.readdirSync(casesDir).filter((x) => x.endsWith('.json')).sort(); } catch (_e) { return { scripts, textos }; }
+  for (const f of files) {
+    let d;
+    try { d = JSON.parse(fs.readFileSync(path.join(casesDir, f), 'utf8')); } catch (_e) { continue; }
+    for (const h of d.hooks || []) {
+      const cmd = String(h.script || '').trim().split(/\s+/).pop();
+      if (cmd) scripts.add(path.basename(cmd));
+      if (h.hook) textos.push(String(h.hook));
+      for (const c of h.cases || []) if (c.id) textos.push(String(c.id));
+    }
+  }
+  return { scripts, textos };
+}
+
+function cubierto(archivo, cob) {
+  if (cob.scripts.has(archivo)) return true;
+  const raiz = archivo.replace(/\.(js|sh|py)$/, '');
+  // El nombre sin extensión, pero NO seguido de otra extensión: `instinct-observe.sh` en una
+  // etiqueta no puede dar por cubierto a `instinct-observe.py` — son dos piezas distintas.
+  const re = new RegExp(raiz.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?!\\.(js|sh|py))');
+  return cob.textos.some((t) => t.includes(archivo) || re.test(t));
+}
+
+function leerDeuda(p) {
+  try {
+    const d = JSON.parse(fs.readFileSync(p, 'utf8'));
+    return Array.isArray(d.debt) ? d.debt : [];
+  } catch (_e) { return []; }
+}
+
+function comparar(disco, cob, deuda) {
+  const declarada = new Map(deuda.filter((d) => d && d.script).map((d) => [d.script, d]));
+  const bloqueantes = [];
+  const avisos = [];
+
+  for (const f of disco) {
+    if (cubierto(f, cob)) {
+      if (declarada.has(f)) {
+        avisos.push(`\`${f}\` ya tiene casos en el banco — sacá su línea de hook-debt.json (una deuda saldada que sigue anotada vuelve a ser silencio)`);
+      }
+      continue;
+    }
+    const d = declarada.get(f);
+    if (!d) {
+      bloqueantes.push(`\`${f}\` es un hook y NO tiene casos en el banco. Escribile casos en scripts/controls-bench/cases/hooks/, o declará la deuda en scripts/controls-bench/hook-debt.json con motivo y fecha.`);
+      continue;
+    }
+    if (!d.reason || String(d.reason).trim().length < 15) {
+      bloqueantes.push(`\`${f}\` está en hook-debt.json sin un motivo de verdad. Una deuda sin motivo es un permiso.`);
+    }
+  }
+
+  for (const f of declarada.keys()) {
+    if (!disco.includes(f)) avisos.push(`\`${f}\` figura en hook-debt.json y ya no existe en disco — sacá su línea`);
+  }
+  return { bloqueantes, avisos, pendientes: disco.filter((f) => !cubierto(f, cob)).length };
+}
+
+// ── selftest ────────────────────────────────────────────────────────────────────────────────────
+function selftest() {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hookcov-'));
+  // el mismo criterio con que skills-dir.js reconoce un clon unido (isSingleRepo): skills/tycon-pipeline y agents/ en la raíz
+  const ownCloneHasSkills = fs.existsSync(path.join(TCG, 'skills', 'tycon-pipeline')) && fs.existsSync(path.join(TCG, 'agents'));
+  const casos = path.join(tmp, 'cases');
+  const hooks = path.join(tmp, 'scripts', 'hooks');
+  fs.mkdirSync(casos, { recursive: true });
+  fs.mkdirSync(hooks, { recursive: true });
+  for (const f of ['con-casos.js', 'por-despachador.js', 'sin-nada.js', 'con-deuda.js']) {
+    fs.writeFileSync(path.join(hooks, f), '// x\n');
+  }
+  fs.writeFileSync(path.join(casos, 'a.json'), JSON.stringify({
+    hooks: [
+      { hook: 'con-casos.js', script: '${TCG}/scripts/hooks/con-casos.js', event: 'Stop', cases: [{ id: 'x' }] },
+      { hook: 'despachador.js → por-despachador', script: '${TCG}/scripts/hooks/despachador.js', event: 'Stop', cases: [{ id: 'y' }] },
+    ],
+  }));
+  const rs = [{ dir: hooks, filtro: (f) => /\.(js|sh|py)$/.test(f) }];
+  const disco = enumerarDisco(rs).scripts;
+  const cob = cobertura(casos);
+
+  const sinDeuda = comparar(disco, cob, []);
+  const conDeuda = comparar(disco, cob, [
+    { script: 'sin-nada.js', reason: 'un motivo suficientemente largo para ser un motivo' },
+    { script: 'con-deuda.js', reason: 'otro motivo suficientemente largo para contar' },
+  ]);
+  const deudaFloja = comparar(disco, cob, [
+    { script: 'sin-nada.js', reason: 'x' },
+    { script: 'con-deuda.js', reason: 'otro motivo suficientemente largo para contar' },
+  ]);
+  const deudaSaldada = comparar(disco, cob, [
+    { script: 'con-casos.js', reason: 'una deuda que ya no corresponde porque tiene casos' },
+    { script: 'sin-nada.js', reason: 'un motivo suficientemente largo para ser un motivo' },
+    { script: 'con-deuda.js', reason: 'otro motivo suficientemente largo para contar' },
+    { script: 'borrado.js', reason: 'un script que ya no existe en disco, la línea sobra' },
+  ]);
+
+  fs.rmSync(tmp, { recursive: true, force: true });
+
+  const checks = [
+    ['un hook con casos propios no bloquea', !sinDeuda.bloqueantes.some((b) => b.includes('con-casos.js'))],
+    ['un handler nombrado por su despachador cuenta como cubierto', !sinDeuda.bloqueantes.some((b) => b.includes('por-despachador.js'))],
+    ['un hook sin casos ni deuda BLOQUEA', sinDeuda.bloqueantes.some((b) => b.includes('sin-nada.js'))],
+    ['la deuda declarada lo deja pasar', conDeuda.bloqueantes.length === 0],
+    ['una deuda sin motivo de verdad BLOQUEA (una deuda sin motivo es un permiso)', deudaFloja.bloqueantes.some((b) => b.includes('sin-nada.js'))],
+    ['una deuda ya saldada se avisa', deudaSaldada.avisos.some((a) => a.includes('con-casos.js'))],
+    ['una deuda de un script inexistente se avisa', deudaSaldada.avisos.some((a) => a.includes('borrado.js'))],
+    ['`instinct-observe.sh` en una etiqueta NO cubre a `instinct-observe.py`',
+      !cubierto('instinct-observe.py', { scripts: new Set(), textos: ['instinct-observe.sh'] })],
+    // dónde están las skills: TYCON_SKILLS_DIR manda (en sus dos formas), y sin ella, el lugar de instalación
+    ['con TYCON_SKILLS_DIR (la carpeta skills/) se censan ESAS skills, y la raíz cuenta como pedida',
+      skillsRoot({ TYCON_SKILLS_DIR: path.join(tmp, 'clon', 'skills') }).skills === path.join(tmp, 'clon', 'skills')
+        && skillsRoot({ TYCON_SKILLS_DIR: path.join(tmp, 'clon', 'skills') }).requested === true],
+    // (story 8.18: sin la variable manda el propio clon cuando trae las skills adentro; si no, el lugar de instalación)
+    ['sin TYCON_SKILLS_DIR se censan las del propio clon si trae las skills, o las del lugar de instalación, y la raíz no cuenta como pedida',
+      skillsRoot({}).skills === (ownCloneHasSkills
+        ? path.join(TCG, 'skills') : path.join(os.homedir(), '.claude', 'agent-skills', 'skills'))
+        && skillsRoot({}).requested === false],
+    ['una raíz de skills PEDIDA que no se puede enumerar BLOQUEA (no censar lo que se pidió no es un verde)',
+      missingRoots([path.join(tmp, 'sk', 'clocki', 'scripts')], path.join(tmp, 'sk'), true).blocking.length === 1],
+    ['la misma raíz sin haberla pedido es un aviso (otra máquina)',
+      missingRoots([path.join(tmp, 'sk', 'clocki', 'scripts')], path.join(tmp, 'sk'), false).blocking.length === 0
+        && missingRoots([path.join(tmp, 'sk', 'clocki', 'scripts')], path.join(tmp, 'sk'), false).notices.length === 1],
+    ['una raíz que falta y NO es de las skills pedidas es un aviso',
+      missingRoots([path.join(tmp, 'otro', 'scripts', 'hooks')], path.join(tmp, 'sk'), true).blocking.length === 0],
+  ];
+  let bad = 0;
+  for (const [n, ok] of checks) { console.log(`${ok ? '✅' : '❌'} selftest-hook-coverage: ${n}`); if (!ok) bad++; }
+  console.log(bad ? `❌ ${bad} rojos` : `✅ selftest-hook-coverage: ${checks.length}/${checks.length} verdes`);
+  return bad ? 1 : 0;
+}
+
+function main() {
+  if (process.argv.includes('--selftest')) return selftest();
+
+  const { skills, requested } = skillsRoot(process.env);
+  const { scripts: disco, faltantes } = enumerarDisco(raices(TCG, skills));
+  const missing = missingRoots(faltantes, skills, requested);
+  for (const n of missing.notices) console.log(`⚠ hook-coverage: ${n}`);
+  if (!disco.length && !missing.blocking.length) { console.log('✅ hook-coverage: nada que censar'); return 0; }
+
+  const cob = cobertura(CASES_DIR);
+  const deuda = leerDeuda(DEUDA_PATH);
+  const { bloqueantes, avisos, pendientes } = comparar(disco, cob, deuda);
+  bloqueantes.unshift(...missing.blocking);
+
+  for (const a of avisos) console.log(`⚠ hook-coverage: ${a}`);
+  if (!bloqueantes.length) {
+    console.log(`✅ hook-coverage: ${disco.length} hooks en disco · ${disco.length - pendientes} con casos · ${pendientes} con deuda declarada`);
+    return 0;
+  }
+  console.error('❌ hook-coverage — un hook sin casos es un control sin control:');
+  for (const b of bloqueantes) console.error(`   · ${b}`);
+  return 1;
+}
+
+if (require.main === module) process.exit(main());
+module.exports = { raices, enumerarDisco, cobertura, cubierto, leerDeuda, comparar, skillsRoot, missingRoots };

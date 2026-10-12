@@ -1,0 +1,122 @@
+[
+  {
+    "rule_id": "TEST-C1",
+    "severity": "CRITICAL",
+    "advisor": "tycon-plugin-tests-coverage",
+    "file": "(anonimizado)",
+    "disposition": "fixed",
+    "reason": "(anonimizado)"
+  },
+  {
+    "rule_id": "SPEC-C4",
+    "severity": "CRITICAL",
+    "advisor": "tycon-spec-first-checker",
+    "file": "(anonimizado)",
+    "disposition": "fixed",
+    "reason": "(anonimizado)"
+  },
+  {
+    "rule_id": "SPEC-C2",
+    "severity": "CRITICAL",
+    "advisor": "tycon-spec-first-checker",
+    "file": "(anonimizado)",
+    "disposition": "fixed",
+    "reason": "(anonimizado)"
+  },
+  {
+    "rule_id": "SILENT-W3",
+    "severity": "WARNING",
+    "advisor": "tycon-silent-failure-hunter",
+    "file": "(anonimizado)",
+    "disposition": "fixed",
+    "reason": "(anonimizado)"
+  },
+  {
+    "rule_id": "SILENT-W5",
+    "severity": "WARNING",
+    "advisor": "tycon-silent-failure-hunter",
+    "file": "(anonimizado)",
+    "disposition": "fixed",
+    "reason": "(anonimizado)"
+  },
+  {
+    "rule_id": "REAL-W2",
+    "severity": "WARNING",
+    "advisor": "tycon-e2e-realness-checker",
+    "file": "(anonimizado)",
+    "disposition": "fixed",
+    "reason": "(anonimizado)"
+  },
+  {
+    "rule_id": "ADV-1",
+    "severity": "CRITICAL",
+    "advisor": "adversarial-verify",
+    "file": "(anonimizado)",
+    "disposition": "fixed",
+    "reason": "(anonimizado)"
+  },
+  {
+    "rule_id": "ADV-2",
+    "severity": "CRITICAL",
+    "advisor": "adversarial-verify",
+    "file": "(anonimizado)",
+    "disposition": "fixed",
+    "reason": "(anonimizado)"
+  },
+  {
+    "rule_id": "ADV-3",
+    "severity": "CRITICAL",
+    "advisor": "adversarial-verify",
+    "file": "(anonimizado)",
+    "disposition": "fixed",
+    "reason": "(anonimizado)"
+  },
+  {
+    "rule_id": "ADV-4",
+    "severity": "WARNING",
+    "advisor": "adversarial-verify",
+    "file": "(anonimizado)",
+    "disposition": "fixed",
+    "reason": "(anonimizado)"
+  },
+  {
+    "rule_id": "ADV-5",
+    "severity": "WARNING",
+    "advisor": "adversarial-verify",
+    "file": "(anonimizado)",
+    "disposition": "fixed",
+    "reason": "(anonimizado)"
+  },
+  {
+    "rule_id": "ADV-6",
+    "severity": "WARNING",
+    "advisor": "adversarial-verify",
+    "file": "(anonimizado)",
+    "disposition": "fixed",
+    "reason": "(anonimizado)"
+  },
+  {
+    "rule_id": "ADV-7",
+    "severity": "WARNING",
+    "advisor": "adversarial-verify",
+    "file": "(anonimizado)",
+    "disposition": "fixed",
+    "reason": "(anonimizado)"
+  },
+  {
+    "rule_id": "WIRING-C2",
+    "severity": "CRITICAL",
+    "advisor": "e2e-runtime",
+    "file": "(anonimizado)",
+    "disposition": "fixed",
+    "reason": "(anonimizado)"
+  },
+  {
+    "rule_id": "VAL-W5",
+    "severity": "WARNING",
+    "advisor": "tycon-story-validator",
+    "file": "(anonimizado)",
+    "disposition": "fixed",
+    "reason": "(anonimizado)"
+  }
+]

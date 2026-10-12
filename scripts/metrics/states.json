@@ -1,0 +1,165 @@
+{
+  "_note": "Diccionario de estados de story del arnés. Lista CERRADA a propósito: lo que no está acá no se descarta ni se adivina — sale como `desconocido:<valor>` y se publica en el snapshot y en la ficha del tablero, que es donde se ve qué estados conviven de verdad en los repos. Agregar un alias es una decisión que se toma MIRANDO ese contador, no antes.",
+  "_order": "Los canónicos van en el orden del flujo de trabajo; el tablero y el tiempo por etapa lo usan para ordenar.",
+  "_where_it_came_from": "Story 2.2 (2026-09-05). Reemplaza al diccionario mínimo de la 2.1. Cada valor viene del censo medido con el propio medidor sobre 20 repos y 1234 stories (scripts/metrics/censo-estados-2026-09-05.json), en sus DOS contadores: el estado de hoy y el que apareció alguna vez en una transición. Nada de esta lista se dedujo sin dato: lo que no se pudo decidir está en `_decisions` como «no es un estado», no adivinado.",
+  "_single_definition": "`groups` es la ÚNICA definición de qué es «en curso» y qué es «cerrado». El medidor la aplica y publica el resultado ya sumado (`estados_por_canonico.por_grupo`); el tablero lee ESO. Ni el código del medidor ni el del tablero pueden tener su propia lista — el caso T17 lo impide, y nació de que este archivo y `DONE_STATUSES` decían cosas distintas.",
+
+  "canonical": [
+    "draft",
+    "backlog",
+    "ready-for-dev",
+    "in-progress",
+    "review",
+    "blocked",
+    "done",
+    "cancelled",
+    "abandoned",
+    "superseded",
+    "reverted"
+  ],
+
+  "alias": {
+    "implemented": "done",
+    "complete": "done",
+    "completed": "done",
+    "closed": "done",
+    "vigente": "done",
+    "merged": "done",
+    "approved": "ready-for-dev",
+    "ready-for-dev-final": "ready-for-dev",
+    "pending": "backlog",
+    "ready-for-design": "draft",
+    "pending-rewrite": "draft",
+    "ready-for-review": "review",
+    "implementation-complete": "review",
+    "ac-pending": "review",
+    "phase-1-done-phase-2-deferred": "in-progress",
+    "eliminated": "cancelled",
+    "redundant": "superseded"
+  },
+
+  "groups": {
+    "backlog": ["draft", "backlog", "ready-for-dev"],
+    "en_curso": ["in-progress", "review"],
+    "bloqueado": ["blocked"],
+    "cerrado": ["done"],
+    "sin_entrega": ["cancelled", "abandoned", "superseded", "reverted"]
+  },
+
+  "_decisions": [
+    {
+      "valor": "updated",
+      "decision": "no es un estado",
+      "reason": "Describe que alguien EDITÓ el documento, no en qué punto del ciclo está la story (EbanoProject E6-S5, cuyas 53 hermanas dicen `pending`). Mapearlo a `backlog` por parecido con las vecinas sería adivinar, y la regla de este archivo es que lo que no se sabe se publica como desconocido. Se queda en la ficha «desconocidas» a propósito: es un frontmatter que alguien tiene que arreglar, y esconderlo es cómo un diccionario se queda viejo.",
+      "date": "2026-09-05"
+    },
+    {
+      "valor": "blocked",
+      "decision": "blocked",
+      "reason": "NO se interpreta: se copia de `VALID_STATUSES` de marker.js, donde el orquestador del pipeline lo declara escribible. Es vocabulario oficial del arnés que el diccionario nunca había declarado — el desfasaje que originó esta story. Medido: 6 stories lo estuvieron alguna vez, hoy ninguna.",
+      "date": "2026-09-05"
+    },
+    {
+      "valor": "abandoned",
+      "decision": "abandoned",
+      "reason": "Igual que `blocked`: sale de `VALID_STATUSES` de marker.js, no de mirar stories. Es terminal y NO es una entrega, así que va a `sin_entrega` y no a `cerrado`. Medido: 6 stories hoy (CeiboProject, un repo del equipo, Totora, URUTAU).",
+      "date": "2026-09-05"
+    },
+    {
+      "valor": "cancelled",
+      "decision": "cancelled",
+      "reason": "Terminal que no es una entrega: se decidió no hacerla. Meterla en `done` es lo cómodo —«ya no está abierta»— e inflaría `done_total`, bajaría las abiertas y contaminaría `rework_ratio` y `dod_evidence_ratio`, que se calculan sobre stories cerradas. Cancelar no es entregar. Medido: 5 stories (CeiboProject).",
+      "date": "2026-09-05"
+    },
+    {
+      "valor": "eliminated",
+      "decision": "cancelled",
+      "reason": "Alias de `cancelled`: el propio template de FRESNOv2 declara el vocabulario `backlog | ready-for-dev | in-progress | review | done | merged | eliminated`, donde `eliminated` es el descarte. Medido: 1 story.",
+      "date": "2026-09-05"
+    },
+    {
+      "valor": "merged",
+      "decision": "done",
+      "reason": "El mismo template de FRESNOv2 lo pone DESPUÉS de `done`: la story se entregó y su rama entró. Es una entrega, así que suma a `cerrado` — a diferencia de sus vecinos terminales. Medido: 1 story, y es el único valor de este censo que mueve `done_total`.",
+      "date": "2026-09-05"
+    },
+    {
+      "valor": "superseded",
+      "decision": "superseded",
+      "reason": "Otra story la reemplazó: terminó sin entregarse. Canónico propio y no un alias de `cancelled` porque la razón es distinta y el día que alguien quiera saber cuánto se re-planifica, el dato tiene que estar separado. Medido: 3 stories (Pacara BackEnd y FrontEnd, Totora).",
+      "date": "2026-09-05"
+    },
+    {
+      "valor": "redundant",
+      "decision": "superseded",
+      "reason": "Alias de `superseded`, leído con la story abierta: EbanoProject E7-S7 dice en su cuerpo «REDUNDANT — satisfied by E3-S1» y «No work needed». Es exactamente «otra la reemplazó». Medido: 1 story.",
+      "date": "2026-09-05"
+    },
+    {
+      "valor": "reverted",
+      "decision": "reverted",
+      "reason": "Canónico propio: se entregó y se dio marcha atrás, que no es lo mismo que no haberla hecho nunca. Leído con la story abierta (la story 1.8 de un producto del equipo: «Revertida el 2026-08-29… la 006 salió del paquete y de la base»). Medido: 1 story.",
+      "date": "2026-09-05"
+    },
+    {
+      "valor": "implementation-complete",
+      "decision": "review",
+      "reason": "La implementación terminó y la story NO está cerrada: le falta el paso de cierre. Va a `review` y NO a `done` —leído con las stories abiertas (un producto del equipo, épica arrepentimiento)—: sin evidencia de cierre, darla por entregada inflaría `done_total` en 4 y las dos ratios que dependen de él. Medido: 4 stories.",
+      "date": "2026-09-05"
+    },
+    {
+      "valor": "ready-for-review",
+      "decision": "review",
+      "reason": "«Lista para revisar» es el mismo punto del ciclo que `review`: la diferencia es si alguien ya la agarró, y eso el frontmatter no lo distingue. Medido: 2 stories (FRESNOProyecto, Pacara BackEnd).",
+      "date": "2026-09-05"
+    },
+    {
+      "valor": "ac-pending",
+      "decision": "review",
+      "reason": "Leído en el historial del repo de documentación de procesos, donde vivió: el commit que lo puso dice «revert stories 1.1-1.7 to ac-pending» y el que lo sacó, «Epic 01 AC testing complete — all stories marked done». O sea, implementada y esperando la verificación de sus criterios: eso es `review`. Medido: 7 stories, todas históricas — hoy ninguna.",
+      "date": "2026-09-05"
+    },
+    {
+      "valor": "pending-rewrite",
+      "decision": "draft",
+      "reason": "Leído en el historial de Pacara/BackEnd: los commits que lo rodean son «rewrite Voice Sprint 1 stories» y «upgrade 10 Sprint 1 stories to GOLD format». La story existe pero todavía no está lista para desarrollarse — eso es `draft`. Medido: 6 stories, todas históricas.",
+      "date": "2026-09-05"
+    },
+    {
+      "valor": "ready-for-design",
+      "decision": "draft",
+      "reason": "Está escrita y le falta el paso de diseño ANTES de poder desarrollarse (un producto del equipo). Va a `draft` y no a `ready-for-dev`: el nombre dice justo lo contrario de estar lista para desarrollar. Medido: 1 story.",
+      "date": "2026-09-05"
+    },
+    {
+      "valor": "phase-1-done-phase-2-deferred",
+      "decision": "in-progress",
+      "reason": "Entregó una mitad y difirió la otra: no está cerrada ni está sin arrancar. `in-progress` es el único canónico que describe eso sin mentir en ninguna de las dos direcciones. Medido: 1 story (un repo de laboratorio).",
+      "date": "2026-09-05"
+    },
+    {
+      "valor": "ready-for-dev-final",
+      "decision": "ready-for-dev",
+      "reason": "Alias por el nombre, y se declara como DEDUCCIÓN, no como copia: la story 2.2 afirmaba que `check-story-drift` ya lo trataba como `ready-for-dev` y eso es FALSO — no aparece en ese skill ni en ningún otro lado del arnés (verificado el 2026-09-05). El sufijo `-final` es de la versión del documento, no del ciclo, y en CeiboProject —el único repo donde vivió— el resto usa `ready-for-dev`. Medido: 6 stories, todas históricas.",
+      "date": "2026-09-05"
+    },
+    {
+      "valor": "grupos.bloqueado",
+      "decision": "grupo propio, fuera de «en curso»",
+      "reason": "`blocked` no entra en `en_curso` porque «en curso» es el trabajo que está PASANDO y una story bloqueada no está pasando. Tampoco se lo esconde: el pie de la ficha «en curso» lo nombra aparte cuando hay alguna. Hoy son 0, así que nada queda tapado — si eso cambia, la ficha lo dice.",
+      "date": "2026-09-05"
+    },
+    {
+      "valor": "draft vs backlog",
+      "decision": "se declaran, no se unifican",
+      "reason": "La cabecera de specs/sprint-status.yaml define `backlog` como «sólo existe en el plan, sin archivo», y hay 76 archivos que igual lo declaran, más 70 `draft`. Para la ficha da lo mismo (mismo grupo); para el tiempo por etapa son dos etapas distintas y unificarlas borraría una medición. Se deja escrito para que nadie las junte por parecido.",
+      "date": "2026-09-05"
+    },
+    {
+      "valor": "pipelines[].status",
+      "decision": "no entra a este diccionario",
+      "reason": "story-format.md define `done|in-progress|blocked|pending` para el estado de una TANDA de entrega, no de la story. Se llaman igual y miden cosas distintas: queda escrito para que el diccionario no lo absorba por error.",
+      "date": "2026-09-05"
+    }
+  ]
+}

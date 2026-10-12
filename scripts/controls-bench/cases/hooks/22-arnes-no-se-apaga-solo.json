@@ -1,0 +1,195 @@
+{
+  "__doc": "§5.3 del plan de controles apagables (2026-08-25): los interruptores de los hooks FUERA de la familia .tycon/ viven en env vars (la escotilla del dev, por sesión) y en sellos diarios (estado local). Los dos caminos para volverlos permanentes y silenciosos estaban abiertos y se reprodujeron: persistir un TYCON_*=0 en el rc del shell (queda apagado para TODAS las sesiones futuras, incluido el instalador que re-sana al resto), y escribir a mano el sello *-last-run de hoy (la suite diaria no corre y nada lo nota). HARNESS-C1 bloquea el primero; la detección de sello-sin-reporte grita el segundo por el canal donde ya se cobran los rojos. NOTA para quien edite este archivo: contiene los comandos de ataque como DATO — escribirlo por heredoc de Bash dispara HARNESS-C1 (residual documentado en la regla); usar la tool Write.",
+  "hooks": [
+    {
+      "hook": "safety-guard-pre.sh (HARNESS-C1 — el arnés no se apaga a sí mismo)",
+      "script": "${TCG}/scripts/hooks/safety-guard-pre.sh",
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "cases": [
+        {
+          "id": "harness-c1-bloquea-persistir-un-killswitch-en-el-rc",
+          "type": "must-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "echo 'export TYCON_SAFETY_GUARD=0' >> ~/.zshrc"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "HARNESS-C1"
+            ]
+          }
+        },
+        {
+          "id": "harness-c1-bloquea-apagar-al-instalador-que-resana",
+          "type": "must-block",
+          "__doc": "TYCON_NO_AUTOINSTALL=1 persistido apaga al que re-instala todos los demás hooks en cada arranque: es el kill-switch de los kill-switches.",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "printf 'export TYCON_NO_AUTOINSTALL=1\n' >> ~/.zshrc"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "HARNESS-C1"
+            ]
+          }
+        },
+        {
+          "id": "harness-c1-pass-editar-el-rc-para-otra-cosa",
+          "type": "must-not-block",
+          "__doc": "La regla exige TYCON_ + valor de apagado + el rc como DESTINO de la escritura, las tres juntas. Un alias es vida normal del dev.",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "echo 'alias ll=ls' >> ~/.zshrc"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "harness-c1-pass-persistir-un-optin",
+          "type": "must-not-block",
+          "__doc": "TYCON_CODEX=1 PRENDE una capacidad — la dirección contraria a la que la regla vigila.",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "echo 'export TYCON_CODEX=1' >> ~/.zshrc"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "harness-c1-pass-mencion-sin-destino-rc",
+          "type": "must-not-block",
+          "__doc": "El kill-value como TEXTO con un redirect a OTRO lado: la primera versión de la regla matcheaba las piezas sueltas y bloqueaba esto (y la escritura de este mismo archivo).",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "grep 'TYCON_SAFETY_GUARD=0' notas.md > /tmp/out.txt"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        }
+      ]
+    },
+    {
+      "hook": "bench-notice.js (sello diario que no escribió el job)",
+      "script": "${TCG}/scripts/hooks/bench-notice.js",
+      "event": "SessionStart",
+      "matcher": "*",
+      "env": {
+        "TYCON_BENCH_DIR": "${FIXTURE}/bench",
+        "TYCON_EXAM_REPORT":"${FIXTURE}/ultimo-examen.json"
+      },
+      "cases": [
+        {
+          "id": "grita-sello-de-hoy-sin-reporte-del-job",
+          "type": "must-emit",
+          "__doc": "El job escribe SIEMPRE su reporte ANTES del sello: un sello de hoy sin reporte de hoy no salió del job — alguien selló a mano y la suite diaria no corrió.",
+          "setup": [
+            "mkdir -p bench",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.writeFileSync(d+'/bash-tests-last-run',new Date().toISOString().slice(0,10))\"",
+            "node -e \"require('fs').writeFileSync(process.env.FIXTURE+'/ultimo-examen.json',JSON.stringify({kind:'examen-periodico',estado:'completo',alcance:'completo',ts:new Date().toISOString(),criterio:0,inestables:0,paridadReal:0,baselineRegressions:0,maquina:'mini'}))\""
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {
+            "stdout_re": [
+              "no lo escribió el job",
+              "bash-tests-last-run"
+            ]
+          }
+        },
+        {
+          "id": "quiet-sello-de-hoy-con-reporte-de-hoy",
+          "type": "must-not-block",
+          "__doc": "El flujo legítimo: el job corrió, dejó reporte y selló. Cero ruido — un detector que grita sobre el caso normal se apaga.",
+          "setup": [
+            "mkdir -p bench",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.writeFileSync(d+'/bash-tests-last-run',new Date().toISOString().slice(0,10));fs.writeFileSync(process.env.FIXTURE+'/bench/bash-tests.json',JSON.stringify({kind:'bash-tests',ts:new Date().toISOString(),failures:[]}))\"",
+            "node -e \"require('fs').writeFileSync(process.env.FIXTURE+'/ultimo-examen.json',JSON.stringify({kind:'examen-periodico',estado:'completo',alcance:'completo',ts:new Date().toISOString(),criterio:0,inestables:0,paridadReal:0,baselineRegressions:0,maquina:'mini'}))\""
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {
+            "exit": 0,
+            "stdout_not_re": [
+              "no lo escribió el job"
+            ]
+          }
+        },
+        {
+          "id": "quiet-sello-viejo-manana-corre-igual",
+          "type": "must-not-block",
+          "setup": [
+            "mkdir -p bench",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.writeFileSync(d+'/bash-tests-last-run','2026-01-01')\"",
+            "node -e \"require('fs').writeFileSync(process.env.FIXTURE+'/ultimo-examen.json',JSON.stringify({kind:'examen-periodico',estado:'completo',alcance:'completo',ts:new Date().toISOString(),criterio:0,inestables:0,paridadReal:0,baselineRegressions:0,maquina:'mini'}))\""
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {
+            "exit": 0,
+            "stdout_not_re": [
+              "no lo escribió el job"
+            ]
+          }
+        },
+        {
+          "id": "grita-sello-trucho-en-la-suite-de-la-matriz",
+          "type": "must-emit",
+          "__doc": "La suite de la matriz runtime corre EN LÍNEA (no de fondo) y hasta hoy sellaba sin dejar reporte — su sello era el único de los cuatro que nadie podía auditar. Es la misma suite que estuvo 8 días en rojo sin que nadie lo viera (test-runtime-matrix, 2026-08-13).",
+          "setup": [
+            "mkdir -p bench",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.writeFileSync(d+'/matrix-tests-last-run',new Date().toISOString().slice(0,10))\"",
+            "node -e \"require('fs').writeFileSync(process.env.FIXTURE+'/ultimo-examen.json',JSON.stringify({kind:'examen-periodico',estado:'completo',alcance:'completo',ts:new Date().toISOString(),criterio:0,inestables:0,paridadReal:0,baselineRegressions:0,maquina:'mini'}))\""
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {
+            "stdout_re": [
+              "no lo escribió el job",
+              "matrix-tests-last-run"
+            ]
+          }
+        },
+        {
+          "id": "quiet-sello-de-la-matriz-con-su-reporte",
+          "type": "must-not-block",
+          "setup": [
+            "mkdir -p bench",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.writeFileSync(d+'/matrix-tests-last-run',new Date().toISOString().slice(0,10));fs.writeFileSync(process.env.FIXTURE+'/bench/matrix-tests.json',JSON.stringify({kind:'matrix-tests',ts:new Date().toISOString(),failures:[]}))\"",
+            "node -e \"require('fs').writeFileSync(process.env.FIXTURE+'/ultimo-examen.json',JSON.stringify({kind:'examen-periodico',estado:'completo',alcance:'completo',ts:new Date().toISOString(),criterio:0,inestables:0,paridadReal:0,baselineRegressions:0,maquina:'mini'}))\""
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {
+            "exit": 0,
+            "stdout_not_re": [
+              "no lo escribió el job"
+            ]
+          }
+        }
+      ],
+      "__doc": "Los CUATRO sellos diarios. Las dos suites en línea (backfill/lints y matriz runtime) empezaron a dejar reporte el 2026-08-25 justamente para poder entrar acá: sin reporte propio, un sello escrito a mano en ésas era indetectable.",
+      "__doc_examen": "Desde la Story 1.1 el aviso contesta además '¿el examen de revisores está corriendo?'. Estos casos son sobre OTRA cosa (un sello escrito a mano), así que ese eje se fija en un reporte fresco de fixture: sin eso, el estado REAL del examen en la máquina que corre el banco podría voltear un caso."
+    }
+  ]
+}

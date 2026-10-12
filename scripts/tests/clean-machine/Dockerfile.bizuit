@@ -1,0 +1,25 @@
+# La máquina limpia del paquete del stack (story 8.7, AC 17 y 21): la del núcleo más el SDK de .NET que pide el plugin
+# de ejemplo (`net10.0`). Es la línea `dotnet (bizuit)` del bloque de requisitos de la portada.
+#
+# Parte de la imagen del núcleo (la pasa la prueba en `CORE_IMAGE`) y le COPIA el SDK desde la imagen oficial de
+# Microsoft: esa imagen no trae Node, así que no puede ser la base. El SDK también va fijado por el digest de su índice
+# multi-arquitectura (linux/amd64 y linux/arm64).
+#   Leído el 2026-10-03 con:  docker buildx imagetools inspect mcr.microsoft.com/dotnet/sdk:10.0
+#
+# Medido ese día: el SDK copiado (10.0.401, viene de una imagen Ubuntu) NO arranca en la base Debian sin ICU
+# («Couldn't find a valid ICU package»). Con `libicu72` arranca, y el plugin de ejemplo restaura, compila y pasa sus 30
+# pruebas en arm64. No se usa el modo «sin globalización»: cambiaría lo que miden las pruebas del plugin.
+ARG CORE_IMAGE
+FROM mcr.microsoft.com/dotnet/sdk:10.0@sha256:e70cdb7f80b0348f5cb85f19a8f670fca061f033d57eed12fa003d58b0e06317 AS sdk
+
+FROM ${CORE_IMAGE}
+USER root
+# La biblioteca del sistema que el SDK necesita y la base no trae, a la vista (sale del repositorio de Debian).
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends libicu72 \
+ && rm -rf /var/lib/apt/lists/*
+COPY --from=sdk /usr/share/dotnet /usr/share/dotnet
+RUN ln -s /usr/share/dotnet/dotnet /usr/local/bin/dotnet
+# El SDK manda telemetría a Microsoft por defecto: la prueba no habla con servicios que la portada no declara.
+ENV DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1
+USER node

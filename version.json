@@ -1,0 +1,289 @@
+{
+  "version": "2026.10.12.1",
+  "source": {
+    "harness": "b29224c51d24a8d9a8e9034c1c94cbcd167651a3",
+    "agent_skills": "b29224c51d24a8d9a8e9034c1c94cbcd167651a3"
+  },
+  "transformed": [
+    {
+      "path": ".githooks/pre-commit-skills",
+      "transform": "rutas-del-otro-repo"
+    },
+    {
+      "path": ".gitignore",
+      "transform": "gitignore-publico"
+    },
+    {
+      "path": "INSTALL.md",
+      "transform": "internal-blocks"
+    },
+    {
+      "path": "README.md",
+      "transform": "internal-blocks+skill-rename"
+    },
+    {
+      "path": "adapters/codex/agents-native/tycon-retrospective-capturer.toml",
+      "transform": "traducciones-codex"
+    },
+    {
+      "path": "adapters/codex/agents-native/tycon-story-validator.toml",
+      "transform": "traducciones-codex"
+    },
+    {
+      "path": "adapters/codex/agents/MANIFEST.json",
+      "transform": "manifiesto-codex"
+    },
+    {
+      "path": "adapters/codex/agents/tycon-retrospective-capturer.toml",
+      "transform": "traducciones-codex"
+    },
+    {
+      "path": "adapters/codex/agents/tycon-story-validator.toml",
+      "transform": "traducciones-codex"
+    },
+    {
+      "path": "adapters/codex/hooks.json",
+      "transform": "skill-rename"
+    },
+    {
+      "path": "agents/tycon-retrospective-capturer.md",
+      "transform": "rutas-del-otro-repo"
+    },
+    {
+      "path": "agents/tycon-story-validator.md",
+      "transform": "skill-rename"
+    },
+    {
+      "path": "guides/ado-projects.md",
+      "transform": "skill-rename"
+    },
+    {
+      "path": "guides/advisor-rules-catalog.md",
+      "transform": "catalogo-de-reglas"
+    },
+    {
+      "path": "guides/agent-architecture.md",
+      "transform": "internal-blocks+not-in-copy+skill-rename"
+    },
+    {
+      "path": "guides/bmad-contract.md",
+      "transform": "skill-rename"
+    },
+    {
+      "path": "guides/ci-gate.md",
+      "transform": "internal-blocks"
+    },
+    {
+      "path": "guides/codex-migration.md",
+      "transform": "internal-blocks"
+    },
+    {
+      "path": "guides/decisions/codex-etapa-d-retro-red.md",
+      "transform": "internal-blocks"
+    },
+    {
+      "path": "guides/decisions/controles-apagables-por-config-2026-08-25.md",
+      "transform": "internal-blocks"
+    },
+    {
+      "path": "guides/incident-log.md",
+      "transform": "sinteticos"
+    },
+    {
+      "path": "guides/instinct-mining.md",
+      "transform": "not-in-copy"
+    },
+    {
+      "path": "guides/mecanismo-de-instalacion.md",
+      "transform": "not-in-copy"
+    },
+    {
+      "path": "guides/publicacion-espejo.md",
+      "transform": "internal-blocks+not-in-copy+skill-rename"
+    },
+    {
+      "path": "guides/reglas-para-revisores.md",
+      "transform": "internal-blocks"
+    },
+    {
+      "path": "guides/workflow-orchestration.md",
+      "transform": "skill-rename"
+    },
+    {
+      "path": "packs/bizuit/pack.json",
+      "transform": "rutas-del-otro-repo"
+    },
+    {
+      "path": "scripts/ci/pipeline-debt.json",
+      "transform": "sinteticos"
+    },
+    {
+      "path": "scripts/ci/product-parity.json",
+      "transform": "sinteticos"
+    },
+    {
+      "path": "scripts/controls-bench/baseline/claude-advisors.json",
+      "transform": "linea-base-banco"
+    },
+    {
+      "path": "scripts/controls-bench/baseline/claude.json",
+      "transform": "linea-base-banco+skill-rename"
+    },
+    {
+      "path": "scripts/controls-bench/cases/hooks/29-story-skill-gate.json",
+      "transform": "skill-rename"
+    },
+    {
+      "path": "scripts/controls-bench/exam-config.json",
+      "transform": "vaciar"
+    },
+    {
+      "path": "scripts/hooks/dependencies-notice.js",
+      "transform": "public-texts"
+    },
+    {
+      "path": "scripts/metrics/upload-runs.js",
+      "transform": "public-texts"
+    },
+    {
+      "path": "scripts/nightly/dashboard/dashboard.js",
+      "transform": "public-texts"
+    },
+    {
+      "path": "scripts/nightly/dashboard/declared.json",
+      "transform": "sinteticos"
+    },
+    {
+      "path": "scripts/nightly/dashboard/sources.json",
+      "transform": "vaciar"
+    },
+    {
+      "path": "scripts/publishing/allowlist.json",
+      "transform": "skill-rename"
+    },
+    {
+      "path": "scripts/publishing/third-party-skills.json",
+      "transform": "public-third-party+skill-rename"
+    },
+    {
+      "path": "scripts/setup/hooks-list.json",
+      "transform": "skill-rename"
+    },
+    {
+      "path": "scripts/tests/export-compare.test.js",
+      "transform": "skill-rename"
+    },
+    {
+      "path": "scripts/tests/no-hardcoded-paths.test.js",
+      "transform": "skill-rename"
+    },
+    {
+      "path": "scripts/tests/suite-parts.json",
+      "transform": "suite-parts-json"
+    },
+    {
+      "path": "scripts/tests/suites.json",
+      "transform": "suites-json"
+    },
+    {
+      "path": "scripts/tests/third-party-origin.test.sh",
+      "transform": "skill-rename"
+    },
+    {
+      "path": "scripts/tests/third-party-skills.test.js",
+      "transform": "skill-rename"
+    },
+    {
+      "path": "skills/clocki/SKILL.md",
+      "transform": "rutas-del-otro-repo"
+    },
+    {
+      "path": "skills/clocki/scripts/install-clocki-hooks.sh",
+      "transform": "rutas-del-otro-repo"
+    },
+    {
+      "path": "skills/tycon-ado-story-wi/SKILL.md",
+      "transform": "skill-rename"
+    },
+    {
+      "path": "skills/tycon-merge-to-main/steps/step-00-preflight.md",
+      "transform": "rutas-del-otro-repo"
+    },
+    {
+      "path": "skills/tycon-pipeline/scripts/dispatch.js",
+      "transform": "skill-rename"
+    },
+    {
+      "path": "skills/tycon-pipeline/scripts/lib/atdd-commit-gate.js",
+      "transform": "rutas-del-otro-repo"
+    },
+    {
+      "path": "skills/tycon-pipeline/scripts/lib/closing-evidence.js",
+      "transform": "rutas-del-otro-repo"
+    },
+    {
+      "path": "skills/tycon-pipeline/scripts/lib/harness-path.js",
+      "transform": "rutas-del-otro-repo"
+    },
+    {
+      "path": "skills/tycon-pipeline/scripts/lib/story-gate.js",
+      "transform": "rutas-del-otro-repo+skill-rename"
+    },
+    {
+      "path": "skills/tycon-pipeline/scripts/lib/story-skill-gate.js",
+      "transform": "skill-rename"
+    },
+    {
+      "path": "skills/tycon-pipeline/scripts/marker.js",
+      "transform": "skill-rename"
+    },
+    {
+      "path": "skills/tycon-pipeline/scripts/on-prompt.js",
+      "transform": "skill-rename"
+    },
+    {
+      "path": "skills/tycon-pipeline/scripts/on-skill-invoke.js",
+      "transform": "skill-rename"
+    },
+    {
+      "path": "skills/tycon-pipeline/scripts/on-story-skill-gate.js",
+      "transform": "skill-rename"
+    },
+    {
+      "path": "skills/tycon-pipeline/scripts/pipeline.js",
+      "transform": "rutas-del-otro-repo+skill-rename"
+    },
+    {
+      "path": "skills/tycon-pipeline/scripts/tests/fixtures/findings-7-10.json",
+      "transform": "rutas-del-otro-repo"
+    },
+    {
+      "path": "skills/tycon-pipeline/scripts/tests/story-gate-cli.test.js",
+      "transform": "rutas-del-otro-repo"
+    },
+    {
+      "path": "skills/tycon-pipeline/scripts/tests/story-skill-gate.test.js",
+      "transform": "skill-rename"
+    },
+    {
+      "path": "skills/tycon-pipeline/scripts/tests/unit.test.js",
+      "transform": "rutas-del-otro-repo"
+    },
+    {
+      "path": "skills/tycon-pipeline/scripts/tests/validator-reloop.test.js",
+      "transform": "rutas-del-otro-repo"
+    },
+    {
+      "path": "skills/tycon-pipeline/scripts/workflow-lite.js",
+      "transform": "rutas-del-otro-repo"
+    },
+    {
+      "path": "skills/tycon-pipeline/steps/step-00-preflight.md",
+      "transform": "skill-rename"
+    },
+    {
+      "path": "skills/tycon-pipeline/steps/step-05b-adversarial-verify.md",
+      "transform": "rutas-del-otro-repo"
+    }
+  ]
+}

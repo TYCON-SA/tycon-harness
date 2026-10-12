@@ -1,0 +1,599 @@
+{
+  "_por_que": "Un pull request del backend de un producto, 2026-09-03: el repo declara merge.mode: pr y el skill tycon-merge-to-main sabe crear el pull request con auto-complete y sin squash. El agente igual lo creó con `az repos pr create` suelto, sin auto-complete: un PR que queda abierto para siempre. Lo vio el dev en la pantalla de Azure, al lado de otro PR que sí lo tenía. El skill hacía lo correcto; faltaba algo que OBLIGARA a pasar por él. 🔴 DOS revisiones adversariales lo corrigieron el mismo día: la primera encontró seis formas de esquivarlo (banderas dentro del título, creaciones encadenadas, `--squash` a secas, sinónimos yes/no, última bandera gana, y el camino `pr update`); la segunda, seis más — comillas en el VALOR (bloqueaba el comando CORRECTO), el `&` de segundo plano, `az -o json repos pr create`, publicar un borrador con `--draft false`, código adentro de `bash -c \"…\"`, y que frenaba PRs a `dev` con un consejo que sólo vale para main. Los casos de abajo son esos caminos: sin ellos, un verde no significaría nada.",
+  "hooks": [
+    {
+      "hook": "pr-auto-complete-guard.js",
+      "script": "${TCG}/scripts/hooks/pr-auto-complete-guard.js",
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "cases": [
+        {
+          "id": "bloquea-el-pr-2859-tal-cual",
+          "_por_que": "El comando REAL con el que se creó aquel pull request: sin --auto-complete. Sin este caso, un verde no significaría nada.",
+          "type": "must-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr create --organization https://dev.azure.com/org-del-equipo --project Ceibo --repository CeiboBackend --source-branch fix/health-build-info --target-branch main --title \"fix(health): x\" --description \"a\" -o json"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "tycon-merge-to-main",
+              "auto-complete true --squash false"
+            ]
+          }
+        },
+        {
+          "id": "bloquea-con-squash-aunque-tenga-auto-complete",
+          "type": "must-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr create --org https://x --project P --repository R --source-branch ci/a --target-branch main --title t --auto-complete true --squash true"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "notas de versión"
+            ]
+          }
+        },
+        {
+          "id": "deja-pasar-el-comando-del-skill",
+          "_por_que": "Es EXACTAMENTE el comando de step-09b del skill: si esto bloqueara, el freno rompería el camino correcto.",
+          "type": "must-not-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr create --org https://x --project P --repository R --source-branch ci/a --target-branch main --title \"$(head -1 /tmp/pr-body.md)\" --description \"$(cat /tmp/pr-body.md)\" --auto-complete true --delete-source-branch false --squash false -o json"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "no-toca-un-borrador",
+          "type": "must-not-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr create --org https://x --project P --repository R --source-branch ci/a --target-branch main --title t --draft true"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "salida-explicita-deja-pasar-con-constancia",
+          "type": "must-emit",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "TYCON_PR_BY_HAND=1 az repos pr create --org https://x --project P --repository R --source-branch ci/a --target-branch main --title t"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "stderr_re": [
+              "Queda dicho"
+            ]
+          },
+          "_por_que": "Escape SÓLO como prefijo pegado al comando; deja constancia en stderr y en ~/.claude/pr-a-mano.log."
+        },
+        {
+          "id": "no-toca-listar-mostrar-ni-help",
+          "type": "must-not-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr list --status active && az repos pr show --id 1 && az repos pr create --help"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "deja-pasar-el-update-del-skill",
+          "type": "must-not-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr update --id 2859 --description \"$(cat /tmp/pr-body.md)\" --auto-complete true --squash false"
+            }
+          },
+          "expect": {
+            "exit": 0
+          },
+          "_por_que": "Es el comando del 9b.2 del skill (PR ya existente): prende el auto-complete. Si esto bloqueara, el freno rompería el camino correcto."
+        },
+        {
+          "id": "bloquea-el-update-que-apaga-el-auto-complete",
+          "type": "must-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr update --id 2859 --auto-complete false"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "auto-complete"
+            ]
+          },
+          "_por_que": "La otra puerta al mismo resultado: crearlo bien con el skill y después apagarle el auto-complete."
+        },
+        {
+          "id": "bloquea-la-bandera-escrita-dentro-del-titulo",
+          "type": "must-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr create --org https://x --project P --repository R --source-branch ci/a --target-branch main --title \"nota: --auto-complete true --squash false\""
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "tycon-merge-to-main"
+            ]
+          },
+          "_por_que": "Revisión adversarial: la primera versión buscaba las banderas en el texto entero, y un título que las mencionara abría el freno."
+        },
+        {
+          "id": "bloquea-la-segunda-creacion-encadenada",
+          "type": "must-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr create --org https://x --project P --repository R --source-branch ci/a --target-branch main --title t --auto-complete true --squash false && az repos pr create --org https://x --project P --repository OTRO --source-branch ci/b --target-branch main --title t"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "OTRO"
+            ]
+          },
+          "_por_que": "Revisión adversarial: cada creación se juzga con SUS banderas; la primera versión juzgaba la cadena entera por las de la primera."
+        },
+        {
+          "id": "bloquea-squash-a-secas",
+          "type": "must-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr create --org https://x --project P --repository R --source-branch ci/a --target-branch main --title t --auto-complete true --squash -o json"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "squash"
+            ]
+          },
+          "_por_que": "Para az, `--squash` a secas vale true; la primera versión leía `-o` como su valor y dejaba pasar."
+        },
+        {
+          "id": "bloquea-la-ultima-bandera-repetida",
+          "type": "must-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr create --org https://x --project P --repository R --source-branch ci/a --target-branch main --title t --auto-complete true --squash false --auto-complete false"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "auto-complete"
+            ]
+          },
+          "_por_que": "az (argparse) toma el ÚLTIMO valor; la primera versión tomaba el primero."
+        },
+        {
+          "id": "bloquea-sin-squash-explicito",
+          "type": "must-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr create --org https://x --project P --repository R --source-branch ci/a --target-branch main --title t --auto-complete true"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "política de la rama"
+            ]
+          },
+          "_por_que": "Sin `--squash false` explícito la estrategia la decide la política de la rama: si es squash, las notas de versión colapsan."
+        },
+        {
+          "id": "el-escape-desde-el-entorno-no-vale",
+          "type": "must-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr create --org https://x --project P --repository R --source-branch ci/a --target-branch main --title t"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "tycon-merge-to-main"
+            ]
+          },
+          "_por_que": "Exportar TYCON_PR_BY_HAND=1 en el rc volvería el escape permanente y silencioso: sólo vale como prefijo pegado al comando.",
+          "env": {
+            "TYCON_PR_BY_HAND": "1"
+          }
+        },
+        {
+          "id": "deja-pasar-el-valor-entre-comillas",
+          "type": "must-not-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr create --org https://x --project P --repository R --source-branch ci/a --target-branch main --title t --auto-complete \"true\" --squash 'false'"
+            }
+          },
+          "expect": {
+            "exit": 0
+          },
+          "_por_que": "2ª revisión: entre comillas es válido para az y la versión anterior lo BLOQUEABA. Un freno que corta el camino correcto se apaga."
+        },
+        {
+          "id": "bloquea-el-squash-entre-comillas-en-un-update",
+          "type": "must-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr update --id 5 --squash \"true\""
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "squash"
+            ]
+          },
+          "_por_que": "El reverso del anterior: las comillas no pueden abrir la puerta del update."
+        },
+        {
+          "id": "bloquea-la-segunda-creacion-tras-un-ampersand",
+          "type": "must-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr create --org https://x --project P --repository R --source-branch ci/a --target-branch main --title t --auto-complete true --squash false & az repos pr create --org https://x --source-branch ci/b --target-branch main --title t"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "auto-complete"
+            ]
+          },
+          "_por_que": "2ª revisión: el `&` de segundo plano también separa comandos; sin eso el segundo heredaba las banderas del primero."
+        },
+        {
+          "id": "bloquea-con-opciones-globales-de-az",
+          "type": "must-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az -o json repos pr create --org https://x --project P --repository R --source-branch ci/a --target-branch main --title t"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "auto-complete"
+            ]
+          },
+          "_por_que": "2ª revisión: az acepta sus opciones globales antes del grupo, y exigir las palabras pegadas dejaba pasar esta forma."
+        },
+        {
+          "id": "bloquea-publicar-un-borrador",
+          "type": "must-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr update --id 5 --draft false"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "borrador"
+            ]
+          },
+          "_por_que": "2ª revisión: crear un borrador y publicarlo llegaba al mismo resultado en dos pasos que el freno bendecía."
+        },
+        {
+          "id": "deja-publicar-un-borrador-con-las-dos-banderas",
+          "type": "must-not-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr update --id 5 --draft false --auto-complete true --squash false"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "bloquea-el-codigo-dentro-de-un-interprete",
+          "type": "must-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "bash -c \"az repos pr create --target-branch main --title t\""
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "no pude|no puedo leer"
+            ]
+          },
+          "_por_que": "2ª revisión: adentro de una cadena que ejecuta otro intérprete no se pueden leer las banderas — y lo que no se pudo mirar no está aprobado."
+        },
+        {
+          "id": "no-toca-un-echo-con-el-mismo-texto",
+          "type": "must-not-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "echo \"az repos pr create --target-branch main\""
+            }
+          },
+          "expect": {
+            "exit": 0
+          },
+          "_por_que": "El reverso: echo no ejecuta nada. Bloquearlo sería el falso positivo que apaga el freno."
+        },
+        {
+          "id": "no-toca-un-pr-que-no-va-a-main",
+          "type": "must-not-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr create --org https://x --source-branch feat/x --target-branch dev --title t"
+            }
+          },
+          "expect": {
+            "exit": 0
+          },
+          "_por_que": "2ª revisión: el skill es el camino de main; frenar un feature→dev con ese consejo es un consejo equivocado."
+        },
+        {
+          "id": "el-escape-tambien-sirve-para-el-update",
+          "type": "must-emit",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "TYCON_PR_BY_HAND=1 az repos pr update --id 5 --auto-complete false"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "stderr_re": [
+              "Queda dicho"
+            ]
+          },
+          "_por_que": "Apagar el auto-complete para retener una entrega es legítimo (lo dice el propio step-09b): sin escape, el dev apaga el freno para siempre."
+        },
+        {
+          "id": "bloquea-la-captura-en-una-variable",
+          "type": "must-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "PR=$(az repos pr create --org https://x --project P --repository R --source-branch ci/a --target-branch main --title t)"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "auto-complete"
+            ]
+          },
+          "_por_que": "3ª revisión: capturar el id del PR es la forma MÁS común de escribirlo, y pasaba. Peor: con un espacio adentro del paréntesis sí bloqueaba — el mismo comando con veredicto opuesto delataba el accidente."
+        },
+        {
+          "id": "bloquea-la-captura-con-comillas-invertidas",
+          "type": "must-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "PR=`az repos pr create --org https://x --project P --repository R --source-branch ci/a --target-branch main --title t`"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "auto-complete"
+            ]
+          }
+        },
+        {
+          "id": "deja-pasar-la-captura-de-un-comando-correcto",
+          "type": "must-not-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "PR=$(az repos pr create --org https://x --project P --repository R --source-branch ci/a --target-branch main --title t --auto-complete true --squash false)"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "no-toca-un-heredoc-que-documenta-el-comando-malo",
+          "type": "must-not-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "cat >> doc.md <<'EOF'\nEl agente corrio: az repos pr create --target-branch main --title x\nEOF"
+            }
+          },
+          "expect": {
+            "exit": 0
+          },
+          "_por_que": "3ª revisión: este repo documenta el comando mal armado por convención, así que el freno saltaba justo cuando alguien iba a escribir el incidente que lo motivó. Escribir un archivo no ejecuta nada."
+        },
+        {
+          "id": "bloquea-el-comando-real-despues-de-un-heredoc",
+          "type": "must-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "cat > f <<'EOF'\ntexto\nEOF\naz repos pr create --org https://x --project P --repository R --source-branch ci/a --target-branch main --title t"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "auto-complete"
+            ]
+          },
+          "_por_que": "El reverso del anterior: el cuerpo del heredoc no puede tapar el comando que viene después."
+        },
+        {
+          "id": "no-toca-un-pr-a-dev-con-la-forma-corta",
+          "type": "must-not-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr create --org https://x -s feat/x -t dev --title t"
+            }
+          },
+          "expect": {
+            "exit": 0
+          },
+          "_por_que": "3ª revisión: estaba verde SIN prueba. Si se rompiera la lectura de la forma corta del destino, TODO PR a dev quedaría bloqueado y nadie se enteraría."
+        },
+        {
+          "id": "deja-pasar-el-update-que-fija-el-mensaje-de-merge",
+          "_por_que": "Story 2.17 (2026-09-15): el 9b.2 del skill suma `--merge-commit-message \"Merged PR <id>: <título>\"` al update que re-arma el auto-complete. Si esto bloqueara, el freno rompería el camino correcto.",
+          "type": "must-not-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr update --id 3137 --description \"$(cat /tmp/pr-body.md)\" --auto-complete true --squash false --delete-source-branch false --merge-commit-message \"Merged PR 3137: $(head -1 /tmp/pr-body.md)\""
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "deja-pasar-crear-y-fijar-el-mensaje-de-merge-encadenados",
+          "_por_que": "El 9b.3 no conoce el número del PR hasta crearlo: captura el id y fija el mensaje con un update que no trae auto-complete ni squash. Ese update solo no apaga ni prende nada.",
+          "type": "must-not-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "ID=$(az repos pr create --org https://dev.azure.com/org-del-equipo --project \"Acme Logistica\" --repository FRESNOBZExtBackend --source-branch dev --target-branch main --title \"x\" --description \"y\" --auto-complete true --squash false --delete-source-branch false -o json --query pullRequestId -o tsv) && az repos pr update --id \"$ID\" --merge-commit-message \"Merged PR $ID: $TITULO\""
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "no-confunde-una-bandera-escrita-en-el-mensaje-de-merge",
+          "_por_que": "Un título real puede nombrar la bandera («revert --squash true del pipeline»). Dentro del mensaje es texto, no una bandera: frenarlo es un falso positivo. Cubre también la forma con `=`.",
+          "type": "must-not-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr update --id 9 --merge-commit-message \"Merged PR 9: revert --squash true y --auto-complete false del pipeline\" && az repos pr update --id 9 --merge-commit-message=\"Merged PR 9: revert --squash true\""
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "constancia-2.6-deja-la-linea-del-bloqueo",
+          "type": "must-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr create --source-branch story/x --target-branch main --title t"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/frenos.jsonl",
+                "re": "\"freno\":\"pr-sin-auto-complete\""
+              },
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/frenos.jsonl",
+                "re": "\"veredicto\":\"bloqueo\""
+              }
+            ]
+          }
+        },
+        {
+          "id": "no-bloquea-un-pedido-de-github",
+          "_por_que": "story 8.26, tanda E (AC 19): este freno cuida los pedidos de Azure de los repos de producto. Un `gh pr create` no es asunto suyo: pasa sin aviso.",
+          "type": "must-not-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "gh pr create --repo acme/widgets --base main --head feat/x --title \"feat: x\" --body-file cuerpo.md"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "con-un-pedido-de-github-al-lado-decide-el-de-azure-y-bloquea",
+          "_por_que": "AC 19: una línea con un pedido de GitHub y uno de Azure se juzga por el de Azure, como hoy. Si el `gh` de adelante lo tapara, un pedido de Azure sin auto-complete pasaría.",
+          "type": "must-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "gh pr create --repo acme/widgets --base main --head feat/x --title t --body b && az repos pr create --organization https://dev.azure.com/org-del-equipo --project Ceibo --repository CeiboBackend --source-branch fix/health-build-info --target-branch main --title \"fix(health): x\" --description \"a\" -o json"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "tycon-merge-to-main",
+              "auto-complete true --squash false"
+            ]
+          }
+        },
+        {
+          "id": "con-un-pedido-de-github-al-lado-el-de-azure-bien-hecho-pasa",
+          "_por_que": "El gemelo verde del anterior: el comando del skill sigue pasando con un `gh` en la misma línea.",
+          "type": "must-not-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "gh pr create --repo acme/widgets --base main --head feat/x --title t --body b; az repos pr create --org https://x --project P --repository R --source-branch ci/a --target-branch main --title \"$(head -1 /tmp/pr-body.md)\" --description \"$(cat /tmp/pr-body.md)\" --auto-complete true --delete-source-branch false --squash false -o json"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        }
+      ]
+    }
+  ]
+}

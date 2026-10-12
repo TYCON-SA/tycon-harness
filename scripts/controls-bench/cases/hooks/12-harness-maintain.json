@@ -1,0 +1,45 @@
+{
+ "hooks": [
+  {
+   "hook": "harness-maintain.sh (mantenimiento del arnés desde el arranque de codex)",
+   "script": "${FIXTURE}/tcg/scripts/hooks/harness-maintain.sh",
+   "event": "SessionStart",
+   "matcher": "*",
+   "cases": [
+    {
+     "id": "dispara-el-mantenimiento-en-background",
+     "type": "must-emit",
+     "__doc": "El envoltorio tiene UN trabajo: disparar lo que TYCON_MAINTAIN_CMD apunta, sin bloquear. El comando fake escribe un marcador; el caso espera y lo asserta por stdout del wrapper de verificación.",
+     "setup": [
+      "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/harness-maintain.sh tcg/scripts/hooks/",
+      "printf '#!/bin/bash\\necho corrido > \"$(dirname \"$0\")/marcador.txt\"\\n' > mantenimiento-fake.sh && chmod +x mantenimiento-fake.sh",
+      "printf '#!/bin/bash\\nTYCON_MAINTAIN_CMD=\"$PWD/mantenimiento-fake.sh\" bash tcg/scripts/hooks/harness-maintain.sh && sleep 1 && [ -f marcador.txt ] && echo MANTENIMIENTO-DISPARADO\\n' > verificador.sh && chmod +x verificador.sh"
+     ],
+     "stdin": {
+      "source": "startup"
+     },
+     "expect": {
+      "stdout_re": [
+       "MANTENIMIENTO-DISPARADO"
+      ]
+     },
+     "script": "${FIXTURE}/verificador.sh"
+    },
+    {
+     "id": "quiet-y-exit-0-sin-instalador",
+     "type": "must-stay-quiet",
+     "__doc": "Sin instalador en la ruta (TYCON_MAINTAIN_CMD a un path inexistente): ni output ni error — un hook de arranque roto es peor que uno ausente; el mantenimiento perdido lo cobra la paridad.",
+     "setup": [
+      "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/harness-maintain.sh tcg/scripts/hooks/",
+      "printf '#!/bin/bash\\nTYCON_MAINTAIN_CMD=/no/existe/instalador.sh bash tcg/scripts/hooks/harness-maintain.sh\\n' > verificador.sh && chmod +x verificador.sh"
+     ],
+     "stdin": {
+      "source": "startup"
+     },
+     "expect": {},
+     "script": "${FIXTURE}/verificador.sh"
+    }
+   ]
+  }
+ ]
+}

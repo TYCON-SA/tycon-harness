@@ -1,0 +1,141 @@
+#!/usr/bin/env bash
+# pre-commit de AgentSkills — un advisor no se commitea con su traducción Codex vieja.
+#
+# Los advisors canónicos viven acá (agents/*.md) pero su traducción (adapters/codex/*.toml),
+# su banco de casos y el check de frescura viven en el arnés. Editar un advisor y
+# commitear SOLO acá dejaba los perfiles de Codex desactualizados hasta el chequeo diario —
+# Codex corriendo un advisor viejo, en silencio. Alternativa barata a unificar los repos
+# (análisis 2026-08-23; caso: incident-log#hookspath-eclipse — este hook nació MUERTO porque
+# una config local vestigial de git anulaba al delegador global, y la ronda adversarial lo cazó).
+#
+# La paridad sólo actúa si el commit stagea agents/*.md — un gate que corre en cada commit se termina
+# salteando con --no-verify. El freno de nombres nuevos (story 8.10) sí mira cada commit, pero sale
+# en milisegundos si nada de lo tocado se publica. Lo invoca el hook global (core.hooksPath → delegación).
+# Limitación declarada (compartida con el hermano de TCG): check.js valida el WORKTREE, no el
+# index — con staging parcial (git add -p y seguir editando) puede pasar una versión no mirada.
+set -uo pipefail
+cd "$(git rev-parse --show-toplevel)" || exit 0
+# El lugar del arnés (story 8.19, AC 9): la variable; si no, el lugar ~/.claude/tycon-harness y después el nombre viejo
+# ~/.claude/tycon-claude-guides, bajo HOME y —en Windows, con HOME en otra carpeta— bajo USERPROFILE. Una sola función
+# para todas las lecturas. Los dos nombres van escritos: este archivo corre copiado fuera del repo (copia declarada en
+# scripts/tests/fixtures/harness-place-names.json; una prueba frena si se desfasa). Sin `-L` ni `readlink`: preguntar si
+# algo es un enlace no anda igual en el bash de Git para Windows; alcanza con que la carpeta exista.
+harness_dir() {
+  if [ -n "${TYCON_GUIDES_DIR:-}" ]; then printf '%s' "$TYCON_GUIDES_DIR"; return 0; fi
+  for _hd_base in "${HOME:-}" "${USERPROFILE:-}"; do
+    [ -n "$_hd_base" ] || continue
+    if command -v cygpath >/dev/null 2>&1; then _hd_base="$(cygpath -u "$_hd_base" 2>/dev/null || printf '%s' "$_hd_base")"; fi
+    for _hd_name in tycon-harness tycon-claude-guides; do
+      if [ -d "$_hd_base/.claude/$_hd_name/scripts" ]; then printf '%s' "$_hd_base/.claude/$_hd_name"; return 0; fi
+    done
+  done
+  printf '%s' "${HOME:-}/.claude/tycon-harness"
+}
+TCG="$(harness_dir)"
+# Los guiones del arnés que corre este hook viven en scripts/publishing/ desde la tanda C4 de la story 8.9 (antes,
+# scripts/publishing/, donde queda un reemplazo hasta el retiro de los nombres viejos). Primero la carpeta nueva; la
+# vieja sólo con un arnés atrasado que todavía no la trae (en Azure el reemplazo avisa por stderr).
+harness_publishing() {
+  if [ -f "${TCG}/scripts/publishing/$1" ]; then printf '%s' "${TCG}/scripts/publishing/$1"
+  elif [ -f "${TCG}/scripts/publishing/$1" ]; then printf '%s' "${TCG}/scripts/publishing/$1"
+  else printf '%s' "${TCG}/scripts/publishing/$1"; fi
+}
+
+# ── El freno de nombres reales nuevos en lo que se publica (story 8.10 del arnés, 2026-09-28) ──
+# Va ANTES del filtro de `agents/*.md`: lo que sale de este repo en la copia pública no son sólo los
+# revisores (skills, pasos, comandos). El freno vive en el arnés —usa su lista blanca, sus dos listas
+# privadas y el código del exportador— y mira lo que este commit AGREGA (neto): retocar lo que ya
+# estaba no frena. Sin el arnés, o con un arnés atrasado que todavía no trae el guion, avisa fuerte y
+# deja pasar, como el chequeo de paridad de abajo; con el guion y una lista que no se lee, frena.
+NEW_NAMES="$(harness_publishing new-names.js)"
+if [ ! -f "$NEW_NAMES" ] || ! command -v node >/dev/null 2>&1; then
+  echo "⚠⚠ pre-commit AgentSkills: no encontré el freno de nombres nuevos (${NEW_NAMES})." >&2
+  echo "   NO se miró si este commit mete nombres reales en lo que se publica: actualizá el arnés (git -C ${TCG} pull) o seteá TYCON_GUIDES_DIR." >&2
+elif ! node "$NEW_NAMES" --repo "$(pwd)" --source agent-skills; then
+  echo "⛔ COMMIT RECHAZADO — nombres reales en lo que se publica, o no se pudo mirar (arriba dice dónde y cómo salir)." >&2
+  exit 1
+fi
+
+# ── El freno de nombres NUEVOS en castellano (story 8.9 del arnés, 2026-09-29) ──
+# Lo que alguien de afuera escribe para usar el núcleo (archivos, opciones, subcomandos, variables, claves) va en
+# inglés. El freno vive en el arnés (su lista de palabras, la clasificación del exportador): sin el arnés, o con uno
+# atrasado que no trae el guion, avisa fuerte y deja pasar, como el de arriba.
+SPANISH_NAMES="$(harness_publishing spanish-names.js)"
+if [ ! -f "$SPANISH_NAMES" ] || ! command -v node >/dev/null 2>&1; then
+  echo "⚠⚠ pre-commit AgentSkills: no encontré el freno de nombres en castellano (${SPANISH_NAMES})." >&2
+  echo "   NO se miró si este commit mete nombres nuevos en castellano en lo que se publica: actualizá el arnés (git -C ${TCG} pull) o seteá TYCON_GUIDES_DIR." >&2
+elif ! node "$SPANISH_NAMES" --repo "$(pwd)" --source agent-skills; then
+  echo "⛔ COMMIT RECHAZADO — nombres nuevos en castellano en lo que se publica, o no se pudo mirar (arriba dice dónde y cómo salir)." >&2
+  exit 1
+fi
+
+# ── Nada ajeno sin declarar (story 8.5 del arnés, 2026-09-29) ──
+# Una skill de internet copiada al árbol sin declararla en el manifiesto de terceros (con su origen, commit y árbol)
+# frena el día que se copia, no cuando alguien la publica. Sólo corre si el commit toca skills/, agents/, .agents/,
+# .claude/ o stagea un enlace simbólico: el resto de los commits no paga nada. Sin red y en milisegundos (no compara
+# contenido: eso lo hace la suite). Sin el arnés, o con uno atrasado que no trae el control, avisa y deja pasar.
+# Un git que falla no puede leerse como «no toca nada»: con cualquiera de los dos en error, el control corre igual.
+TERCEROS_TOCA="$(git diff --cached --name-only -- skills agents .agents .claude)" || TERCEROS_TOCA="?"
+TERCEROS_RAW="$(git diff --cached --raw --no-renames)" || TERCEROS_RAW=":? 120000 (git diff falló)"
+TERCEROS_ENLACE="$(printf '%s\n' "$TERCEROS_RAW" | awk '$2 == "120000" { print; exit }')"
+if [ -n "$TERCEROS_TOCA" ] || [ -n "$TERCEROS_ENLACE" ]; then
+  COVERAGE="$(harness_publishing third-party-coverage.js)"
+  if [ ! -f "$COVERAGE" ] || ! command -v node >/dev/null 2>&1; then
+    echo "⚠⚠ pre-commit AgentSkills: no encontré el control de skills de terceros (${COVERAGE})." >&2
+    echo "   NO se miró si este commit mete una skill ajena sin declarar: actualizá el arnés (git -C ${TCG} pull) o seteá TYCON_GUIDES_DIR." >&2
+  elif ! node "$COVERAGE" --repo "$(pwd)" --skip-content >&2; then
+    echo "⛔ COMMIT RECHAZADO — algo en agent-skills no está declarado en el manifiesto de terceros, o no se pudo mirar (arriba dice qué)." >&2
+    echo "   Una skill ajena se declara en $(dirname "$COVERAGE")/third-party-skills.json con su origen, commit y árbol; una propia, en «own»." >&2
+    exit 1
+  fi
+fi
+
+cambiados="$(git diff --cached --name-only -- 'agents/*.md')" || {
+  echo "⚠ pre-commit AgentSkills: git diff falló — no pude determinar si el commit toca advisors" >&2
+  exit 0
+}
+[ -z "$cambiados" ] && exit 0
+
+CHECK="$TCG/build/check.js"
+if [ ! -f "$CHECK" ] || ! command -v node >/dev/null 2>&1; then
+  # Fail-open RUIDOSO: sin el otro repo no se puede verificar — se avisa fuerte, no se bloquea.
+  echo "⚠⚠ pre-commit AgentSkills: no pude correr el check de paridad Codex ($CHECK)." >&2
+  echo "   El commit toca advisors y su traducción puede quedar VIEJA." >&2
+  echo "   Cloná/ubicá el arnés o seteá TYCON_GUIDES_DIR." >&2
+  exit 0
+fi
+
+# Silencioso en verde (patrón del hermano de TCG): un gate ruidoso en verde se termina salteando.
+LOG="/tmp/tycon-askills-check-$$.log"
+if node "$CHECK" >"$LOG" 2>&1; then
+  echo "✅ paridad Codex de advisors OK"
+  rm -f "$LOG"
+
+  # 🔴 CHEQUEO DE VIDA DEL REVISOR TOCADO (2026-09-01). La paridad de arriba verifica que la
+  # TRADUCCIÓN del advisor esté al día; no verifica que el advisor SIGA FUNCIONANDO. Esta edición
+  # es justo el momento en que se puede romper, y hasta hoy nos enterábamos hasta cuatro días
+  # después —el chequeo de vida corre por calendario, martes y viernes—, con el revisor auditando
+  # código de verdad en el medio.
+  #
+  # Cuesta ~40 s y 2 consultas. NO frena por una sola corrida en rojo: un rojo del chequeo de vida
+  # es una SOSPECHA (con 1 corrida no se distingue un defecto de una moneda al aire — medido: los 2
+  # rojos que dio fueron los DOS variación). El gate confirma con 3 corridas y sólo frena si el
+  # revisor falló las tres. Y NUNCA frena por plomería: sin red, sin sesión o con el corral
+  # escapándose, avisa y deja pasar. Apagado: TYCON_NO_LIVENESS_PRECOMMIT=1
+  # El nombre nuevo primero (story 8.9, tanda C1): por el viejo corre el reemplazo, que en Azure avisa «nombre viejo».
+  VIDA="$TCG/scripts/hooks/advisor-liveness-on-change.js"
+  [ -f "$VIDA" ] || VIDA="$TCG/scripts/hooks/advisor-liveness-on-change.js"
+  if [ -f "$VIDA" ]; then
+    # shellcheck disable=SC2086
+    node "$VIDA" $cambiados || exit 1
+  fi
+  exit 0
+fi
+grep -E "❌|⛔" "$LOG" >&2 || tail -20 "$LOG" >&2
+echo "" >&2
+echo "⛔ El commit toca advisors y el check de paridad Codex dio rojo. Para destrabar:" >&2
+echo "   · toml desactualizado → node $TCG/build/generate.js --deploy y commitear adapters en el arnés" >&2
+echo "   · bank-coverage → el advisor nuevo entra CON sus casos en el banco (regla B2)" >&2
+echo "   · registro de hooks → es drift en el arnés, no de tu advisor: arreglalo allá (guides/controls-bench.md)" >&2
+echo "   (log completo: $LOG)" >&2
+exit 1

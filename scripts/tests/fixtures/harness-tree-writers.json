@@ -1,0 +1,86 @@
+{
+  "__nota": [
+    "Lo que la máquina escribe adentro del árbol del arnés (story 8.13.1, §Cómo funciona «Lo que la máquina escribe adentro",
+    "del árbol», AC 4, 5 y 13). Nace en la tanda A con los escritores de HOY; la tanda B sólo redirige a dónde escriben.",
+    "Para la capa (scripts/setup/harness/layer.js): una ruta de la capa que casa con `paths` se escribe si falta y NO entra al",
+    "manifiesto con hash: nunca es «editada a mano», nunca se pisa ni se borra. `update`, `rollback` y `uninstall` tampoco.",
+    "Cada escritor: `who` (quién), `writes` (qué), `paths` (patrones desde la raíz del árbol; `*` dentro de una carpeta, `**` a",
+    "cualquier profundidad), `tracked` (si hoy esas rutas se versionan en el interno), `today` (dónde escribe hoy), `public`",
+    "(dónde escribe en `source: public`) y `code` (dónde está el escritor, verificado en el repo el 2026-10-06).",
+    "Los ignorados (`ignored_by`) nunca llegan a la capa —git no los versiona—; están para que doctor no los cuente."
+  ],
+  "writers": [
+    {
+      "who": "el aplicador: la serie diaria de install-tycon-hooks.sh (STAGE_ROOT)",
+      "writes": ".dashboard/sdlc-stage-<fecha>.json",
+      "paths": [".dashboard/sdlc-stage-*.json"],
+      "tracked": true,
+      "today": "dentro del clon",
+      "public": "dentro del clon interno de la persona (sources[internal].reference) si existe; si no, en la carpeta del mecanismo. La raíz de repos la resuelve repos-root.js, nunca «el padre del árbol»",
+      "code": ["scripts/install-tycon-hooks.sh", "scripts/metrics/sdlc-stage-metrics.js"]
+    },
+    {
+      "who": "la retrospectiva de cada merge: retro-heartbeat.js y el revisor de retrospectiva",
+      "writes": ".dashboard/metrics-<fecha>-<repo>-<story>-<sha7>.json",
+      "paths": [".dashboard/metrics-*.json"],
+      "tracked": true,
+      "today": "dentro del clon («los commiteás vos»)",
+      "public": "lo redirige la tanda B, como la serie diaria",
+      "code": ["scripts/metrics/retro-heartbeat.js", "agents/tycon-retrospective-capturer.md"]
+    },
+    {
+      "who": "los instintos: instinct-observer.js, instinct-draft.js, instinct-promote.js, el disparador y /tycon-instincts (dónde escriben lo dice instinct-dirs.js)",
+      "writes": "los instintos de cada estado, lo descartado y el registro del observador",
+      "paths": [
+        "inbox/instincts/drafts/**",
+        "inbox/instincts/pending/**",
+        "inbox/instincts/promoted/**",
+        "inbox/instincts/archived/**",
+        "inbox/instincts/descartados/**",
+        "inbox/instincts/observer.log",
+        "inbox/instincts/observer.err"
+      ],
+      "tracked": true,
+      "today": "dentro del clon, «los commiteás vos» (descartados/ y los registros, ignorados por inbox/instincts/.gitignore)",
+      "public": "fuera del árbol (story 8.27, decisión del dueño del 2026-10-09): un árbol que no trae su buzón —no tiene inbox/instincts/README.md— escribe en la carpeta de usuario de la persona, <estado>/inbox/instincts/; adentro del árbol sólo si lo trae (el clon de mantenedor, o un clon con la capa privada entera apilada, que trae ese archivo)",
+      "code": [
+        "scripts/instincts/instinct-dirs.js",
+        "scripts/instincts/instinct-observer.js",
+        "scripts/instincts/instinct-draft.js",
+        "scripts/instincts/instinct-promote.js",
+        "scripts/hooks/instinct-trigger.sh",
+        "commands/tycon-instincts.md"
+      ]
+    },
+    {
+      "who": "el pipeline sobre el propio arnés",
+      "writes": ".advisors/** (incluido .advisors/tests-result.json)",
+      "paths": [".advisors/**"],
+      "tracked": true,
+      "today": "ignorado, salvo la evidencia de cierre que el .gitignore re-incluye",
+      "public": "ignorado: la carpeta entera queda excluida",
+      "code": ["skills/tycon-pipeline/scripts/test-gate.sh"]
+    },
+    {
+      "who": "las skills de terceros (story 8.5)",
+      "writes": "skills/<terceros>",
+      "paths": [],
+      "paths_from": "scripts/publishing/third-party-skills.json",
+      "tracked": false,
+      "ignored_by": "el .gitignore público (no exclude: skills/ es pública)",
+      "today": "ignorado por .gitignore",
+      "public": "ignorado por el .gitignore público",
+      "code": ["scripts/publishing/install-third-party.js"]
+    },
+    {
+      "who": "CodeGraph, Netlify, el sistema, el banco de controles",
+      "writes": "índices, carpetas locales y reportes por máquina",
+      "paths": [".codegraph/**", ".netlify/**", "**/.DS_Store", "scripts/controls-bench/.bench/**"],
+      "tracked": false,
+      "ignored_by": "el .gitignore público",
+      "today": "ignorados",
+      "public": "ignorados por el .gitignore público",
+      "code": [".gitignore"]
+    }
+  ]
+}

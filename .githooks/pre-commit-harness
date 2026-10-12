@@ -1,0 +1,357 @@
+#!/usr/bin/env bash
+# .githooks/pre-commit del arnés — el gate de paridad de la Etapa H.
+#
+# Corre `build/check.js`, que verifica TRES cosas (detalle en su cabecera):
+#   1. los .toml de los advisors están al día con su markdown canónico;
+#   2. todo hook del banco está registrado del lado Codex, o su divergencia está declarada;
+#   3. una pieza nueva entra CON sus casos en el banco, o no entra.
+#
+# Los dos primeros cuidan la migración; el tercero cuida el después — el advisor que alguien
+# cree cuando la migración sea historia y nadie recuerde la regla.
+#
+# Corre SÓLO si el commit toca piezas que puedan romper la paridad. Un commit de guías o de
+# stories no paga el costo: un gate que se siente impuesto en cada commit se termina salteando
+# con --no-verify, y ahí se pierde también para los commits donde importaba.
+#
+# Se llega acá por delegación del hook global (scripts/hooks/git-pre-commit-global.sh): con
+# `core.hooksPath` global, git ignora los .githooks/ de cada repo salvo que el global delegue.
+
+set -uo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+cd "$REPO_ROOT" || exit 0
+
+# ── Lo que trae el commit, leído UNA vez (revisión del tramo 2 de la story 8.18, 2026-10-04) ──────────────────────
+# 🔴 Los disparos de abajo eran `git diff … | grep -q …` con `pipefail`. `grep -q` se va con la primera ruta que
+# coincide; si a git le queda lista por escribir, muere por SIGPIPE y el caño da 141. Medido con 6000 archivos en el
+# índice: la paridad (`if ! … | grep -q`) salía 0 sin correr NINGÚN control, y los bloques y el quoting de bash 3.2 se
+# salteaban el suyo. Ahora la lista se lee a una variable mirando el código de salida de git, y se busca sobre la
+# variable (`<<<`, que bash 3.2 tiene): no hay caño que se corte. Si git no puede dar la lista (un índice roto), se
+# dice y se frena: «no pude mirar» no es «no hay». Casos: scripts/tests/githook-renames.test.sh, sección L.
+# Dos listas, porque los disparos piden dos cosas distintas: `--diff-filter=ACMR` (lo que hay que LEER: la ruta vieja de
+# un movido ya no está) y `--no-renames` sin filtro (lo que TOCA una ruta vigilada, también al irse; ver más abajo).
+# `core.quotePath=false`: sin eso git pone entre comillas una ruta con acentos o `ñ`, y esa ruta no coincide con los
+# patrones de los disparos (un archivo así en scripts/hooks/ se salteaba la paridad).
+if ! STAGED_ACMR="$(git -c core.quotePath=false diff --cached --name-only --diff-filter=ACMR)"; then
+  echo "⛔ COMMIT RECHAZADO — no pude leer la lista de lo que trae el commit (git diff --cached falló, arriba dice por qué): sin la lista ningún control sabe si le toca, y no poder mirar no es verde." >&2
+  exit 1
+fi
+if ! STAGED_ALL="$(git -c core.quotePath=false diff --cached --name-only --no-renames)"; then
+  echo "⛔ COMMIT RECHAZADO — no pude leer la lista de lo que trae el commit (git diff --cached --no-renames falló, arriba dice por qué): no poder mirar no es verde." >&2
+  exit 1
+fi
+
+# ── El lint de frontmatter de stories (2026-09-06) ───────────────────────────────────────────
+# 🔴 VA ACÁ ARRIBA, ANTES del filtro `RELEVANTES` de más abajo, y eso no es estilo: `specs/` no
+# está en esa lista, así que puesto después sería un NO-OP para todo commit de stories (medido:
+# exit 0 con una story rota staged).
+#
+# POR QUÉ FALTABA. Censo de los 20 repos del equipo con `.githooks/pre-commit`: 19 llaman a este
+# lint y uno no — **éste**, donde viven las stories del propio arnés. La story 2.3 escribió su
+# regla nueva (`followup_reason:`) adentro del lint dando por hecho que "llega a todos los repos
+# sin tocar ningún hook"; era cierto en 19 de 20, y falso justo en el que la parió.
+#
+# Se referencia por `$REPO_ROOT` y NO por `$TYCON_GUIDES_DIR` (que es lo que usa el snippet
+# canónico de la cabecera del lint): acá el repo del hook ES el arnés, y usar la ruta
+# canónica haría que un clon fuera de la carpeta habitual de repos linteara las stories de OTRO checkout.
+#
+# Fail-open RUIDOSO si el lint no está: un pre-commit que frena a todo el equipo por un archivo
+# ausente se desactiva con `--no-verify` el mismo día, y ahí se pierde también donde importaba.
+# Casos: scripts/tests/pre-commit-stories.test.sh
+FM_LINT="$REPO_ROOT/scripts/lib/lint-story-frontmatter.js"
+# Se le pasan TODOS los `.md` del commit: quién es una story lo decide el lint, no un `grep` de
+# rutas — un filtro por layout deja al lint diciendo OK sin haber mirado una sola story.
+# `ACMR`, con la R (revisión adversarial 2026-09-06): con `ACM` un `git mv` de la story en el mismo
+# commit la dejaba fuera de la lista — ni el lint ni el portón la veían, y el commit entraba con
+# `status: done` sin evidencia y sin una palabra. Caso C-08 del test.
+CHANGED_MD="$(grep -E '\.md$' <<<"$STAGED_ACMR" || true)"
+if [ -n "$CHANGED_MD" ]; then
+  if [ ! -f "$FM_LINT" ]; then
+    echo "⚠️  tycon: no encontré $FM_LINT — se saltea el lint de frontmatter de stories." >&2
+  else
+    echo "▸ pre-commit: lint de frontmatter de stories…"
+    # shellcheck disable=SC2086
+    if ! node "$FM_LINT" $CHANGED_MD; then
+      echo "" >&2
+      echo "⛔ COMMIT RECHAZADO — hay stories que el harness no puede leer (motivo arriba)." >&2
+      echo "   Una story con el frontmatter roto no da error: desaparece en silencio del validator," >&2
+      echo "   del backfill de back-links, de los scripts de status y del gate de DoD." >&2
+      echo "   Si estás seguro de lo que hacés: git commit --no-verify (queda sin control)." >&2
+      exit 1
+    fi
+  fi
+fi
+
+# ── El portón de cierre de stories, también al commitear (PENDIENTE-1, 2026-09-06) ────────────
+# Es el mismo control que corre en el pull request (`guides/ci-gate.md`), diez segundos antes y en
+# la máquina: una story que pasa a review/done tiene que traer su evidencia de cierre y su registro
+# de revisores EN ESTE repo. Sin esto, un commit desde la terminal, VS Code, Codex o la web de ADO
+# se lo salteaba sin rastro (`incident-log#freno-atado-a-la-herramienta-2026-09-04`).
+# Entró recién cuando se midió que no frenaba deuda vieja: la evidencia de 1.1 y 2.1 ya estaba
+# commiteada y el roster reconocía las fuentes del propio pipeline. Lo ya commiteado no se
+# vuelve a reclamar (`--staged` mira sólo lo que este commit agrega).
+# Casos: scripts/tests/pre-commit-stories.test.sh C-06/C-07.
+GATE="$REPO_ROOT/scripts/ci/tycon-ci-gate.js"
+# El portón importa el detector del lint: sin el lint tampoco puede correr — y ya se avisó arriba.
+if [ -n "$CHANGED_MD" ] && [ -f "$FM_LINT" ]; then
+  if [ ! -f "$GATE" ]; then
+    echo "⚠️  tycon: no encontré $GATE — se saltea el portón del arnés (el del pull request igual lo mira)." >&2
+  elif ! node "$GATE" --repo "$REPO_ROOT" --staged; then
+    echo "⛔ COMMIT RECHAZADO — el portón del arnés (el motivo está arriba)." >&2
+    exit 1
+  fi
+fi
+
+# ── El freno de nombres reales nuevos en lo que se publica (story 8.10, 2026-09-28) ─────────────
+# El núcleo se escribe sin nombres reales: un commit que mete un nombre de cliente, persona, servidor
+# o máquina en un archivo que sale en la copia pública no se crea. Mira lo que el commit AGREGA (neto),
+# con la clasificación del exportador y el índice que git le pasa al hook (también con `commit -a` y
+# `commit <ruta>`): retocar, mover o renombrar lo que ya estaba no frena. Va ANTES del filtro
+# RELEVANTES por el mismo motivo que el lint: casi todo lo que se publica (guías, scripts) no está en
+# esa lista. Sin el guion y sin perfil-equipo.json (un laboratorio) no dice nada; con el perfil, que
+# falte el guion es «no pude mirar». Apagado, con aviso en cada commit: TYCON_NEW_NAMES=0.
+# En un clon de la copia PUBLICADA (trae scripts/setup/public-remotes.json y no trae lista) el guion
+# corre en otro modo: ahí todo lo que se commitea se publica, y lo mira con la lista privada de la
+# MÁQUINA —la que declara `harness.js config set paths.maintainers <clon de mantenimiento>`—, nunca
+# con una del árbol. Declarada y ausente es «no pude mirar»; sin declarar, en una máquina del equipo
+# dice en una línea que no miró y deja pasar (lo mira el freno al empujar), y en otra calla.
+# Casos: scripts/tests/new-names.test.js y C-13..C-15 de githook-livefire.test.sh
+NEW_NAMES="$REPO_ROOT/scripts/publishing/new-names.js"
+if [ -f "$NEW_NAMES" ]; then
+  if ! node "$NEW_NAMES" --repo "$REPO_ROOT"; then
+    echo "⛔ COMMIT RECHAZADO — nombres reales en lo que se publica, o no se pudo mirar (arriba dice dónde y cómo salir)." >&2
+    exit 1
+  fi
+elif [ -f "$REPO_ROOT/perfil-equipo.json" ]; then
+  echo "⛔ COMMIT RECHAZADO — nombres nuevos: no pude mirar (falta ${NEW_NAMES}). El arnés del equipo tiene el freno; sin él no se mira, y no poder mirar no es verde." >&2
+  exit 1
+fi
+
+# ── El freno de nombres NUEVOS en castellano en lo que ejecuta la máquina (story 8.9, 2026-09-29) ─────────────
+# Lo que alguien de afuera escribe para usar el núcleo (archivos, opciones, subcomandos, variables, claves de
+# configuración) va en inglés: un commit que mete un nombre castellano que no existía en lo que se publica no se
+# crea. Un nombre castellano que ya existe pasa hasta que su tanda lo renombre. Va antes del filtro RELEVANTES, como
+# el de arriba. En la copia pública (sin perfil-equipo.json) todo lo del repo cuenta como que sale. Apagado, con
+# aviso en cada commit: TYCON_SPANISH_NAMES=0. Guía: guides/nombres-en-ingles.md.
+# Casos: scripts/tests/spanish-names.test.js y C-16..C-24 de githook-livefire.test.sh
+SPANISH_NAMES="$REPO_ROOT/scripts/publishing/spanish-names.js"
+if [ -f "$SPANISH_NAMES" ]; then
+  if ! node "$SPANISH_NAMES" --repo "$REPO_ROOT"; then
+    echo "⛔ COMMIT RECHAZADO — nombres nuevos en castellano en lo que se publica, o no se pudo mirar (arriba dice dónde y cómo salir)." >&2
+    exit 1
+  fi
+elif [ -f "$REPO_ROOT/perfil-equipo.json" ]; then
+  echo "⛔ COMMIT RECHAZADO — nombres en castellano: no pude mirar (falta ${SPANISH_NAMES}). El arnés del equipo tiene el freno; sin él no se mira." >&2
+  exit 1
+fi
+# ── El control de historia interna en la prosa que se publica (story 8.26, tanda G1 · 2026-10-09) ─────────────
+# Lo que se escribe en una guía, una portada, una skill o un revisor es lo que sale: el número de una story, el código
+# de una tanda, el caso con su enlace al registro de incidentes, una rama, un commit o una corrida no llevan a nada
+# desde afuera. Mira lo que el commit AGREGA (neto, por archivo) a la prosa que se publica; el código y las pruebas no
+# son suyos. FRENA (scripts/publishing/internal-history.json → mode): dice dónde y el commit no se crea; una forma
+# escrita en aviso sólo avisa. Bajado a aviso en una corrida: TYCON_INTERNAL_HISTORY=warn; apagado, con aviso en cada
+# commit: TYCON_INTERNAL_HISTORY=0. Sin el guion y sin perfil-equipo.json (la copia pública, un laboratorio) no dice
+# nada; con el perfil, que falte el guion es «no pude mirar», y no poder mirar no es verde.
+# Casos: scripts/tests/internal-history-guard.test.js y scripts/controls-bench/cases/hooks/52-internal-history.json
+INTERNAL_HISTORY="$REPO_ROOT/scripts/publishing/internal-history.js"
+if [ -f "$INTERNAL_HISTORY" ]; then
+  if ! node "$INTERNAL_HISTORY" --repo "$REPO_ROOT" >/dev/null; then
+    echo "⛔ COMMIT RECHAZADO — historia interna en la prosa que se publica, o no se pudo mirar (arriba dice dónde y cómo salir)." >&2
+    exit 1
+  fi
+elif [ -f "$REPO_ROOT/perfil-equipo.json" ]; then
+  echo "⛔ COMMIT RECHAZADO — historia interna: no pude mirar (falta ${INTERNAL_HISTORY}). El arnés del equipo tiene el control; sin él no se mira." >&2
+  # el rechazo también queda en el registro de frenos (el guion que lo anotaría es justo el que falta); nunca cambia la salida
+  if [ -f "$REPO_ROOT/scripts/lib/guard-record.js" ]; then
+    node "$REPO_ROOT/scripts/lib/guard-record.js" --guard internal-history --rule could-not-look --verdict bloqueo >/dev/null 2>&1 || true
+  fi
+  exit 1
+fi
+
+# ── El mapa de renombres (story 8.9, tanda A2, AC 13): si el commit lo toca, se valida el que se va a commitear ──
+# (el del índice, no el del disco). Repetidos, un nombre nuevo en castellano, uno que choca, un valor sin su script o un
+# archivo que llaman de afuera sin su reemplazo: el commit no se crea.
+if git -C "$REPO_ROOT" diff --cached --name-only -- scripts/lib/renames.json | grep -q . && [ -f "$SPANISH_NAMES" ]; then
+  # un borrado del mapa no tiene nada que validar; cualquier otra falla de git al leerlo es «no pude mirar», y frena
+  if ! git -C "$REPO_ROOT" diff --cached --name-status -- scripts/lib/renames.json | grep -q '^D'; then
+    _MAPA_IDX="$(mktemp)" || { echo "⛔ COMMIT RECHAZADO — no pude validar el mapa de renombres (sin carpeta temporal)." >&2; exit 1; }
+    if ! git -C "$REPO_ROOT" show :scripts/lib/renames.json > "$_MAPA_IDX"; then
+      rm -f "$_MAPA_IDX"
+      echo "⛔ COMMIT RECHAZADO — no pude leer el mapa de renombres del índice (git show falló): no se valida a ciegas." >&2
+      exit 1
+    fi
+    if ! node "$SPANISH_NAMES" --check-map --map "$_MAPA_IDX" --map-name scripts/lib/renames.json --repo "$REPO_ROOT"; then
+      rm -f "$_MAPA_IDX"
+      echo "⛔ COMMIT RECHAZADO — el mapa de renombres no pasa (arriba dice qué entrada y por qué)." >&2
+      exit 1
+    fi
+    rm -f "$_MAPA_IDX"
+  fi
+fi
+
+# 🔴 La lista se AMPLIÓ el 2026-08-25 (FIX-7, caso C4). Antes era
+# `^(adapters/|build/|scripts/controls-bench/cases/|agents/)`, y eso dejaba dos agujeros
+# reproducidos: (a) un commit que AGREGA un hook en `scripts/hooks/` no disparaba el control que
+# exige que una pieza nueva entre con sus casos; (b) el control **no se disparaba al editar su
+# propia lista de disparo**, o sea que se podía recortar esta línea y commitear el recorte sin que
+# nada corriera. Ahora entran los hooks, el instalador que los registra, el banco entero (no sólo
+# sus casos) y este mismo archivo.
+# ── El presupuesto de los bloques del CLAUDE.md (CLAUDEMD-SIN-PRESUPUESTO, 2026-09-06) ─────────
+# Cada bloque de claude-md-blocks/ se carga entero en cada sesión de cada máquina; el de estilo llegó
+# a 17.034 caracteres sin que nadie lo viera. `claude-md-blocks/budget.json` declara el techo de
+# cada uno y el guion lo verifica sobre el ÍNDICE: pasarse frena, y lo que este commit agrega con
+# forma de historia (caso disparador, pasada numerada, cita) avisa. Va ANTES del filtro RELEVANTES
+# por el mismo motivo que el lint: `claude-md-blocks/` no está en esa lista.
+# Casos: scripts/tests/claude-md-blocks.test.sh
+# 🔴 El disparo incluye los archivos IMPORTADOS y su guía de detalle (story 7.4, 2026-09-17): el
+# README se importa ENTERO en cada sesión y en cada subagente —la línea `@…/README.md` vive en el
+# `~/.claude/CLAUDE.md` personal de cada dev, así que viaja a TODOS los repos— y su techo vive en el
+# mismo `budget.json` que los bloques. Con el disparo viejo (sólo `claude-md-blocks/`) el README
+# podía pasarse de su techo sin que nada corriera, y la guía del detalle podía perder una sección sin
+# que nadie mirara el par índice↔guía. Casos: C-11, C-11b y C-11c de githook-livefire.test.sh.
+# 🔴 `$VAR` pegado a un carácter no ASCII rompe la variable en el bash 3.2 de macOS (2026-09-18): apareció
+# dos veces (2.13, 1.5) como «arreglo puntual» y la tercera vez se midió: 16 apariciones latentes en el
+# repo, cazadas por nadie, porque las suites corren en Linux con bash 5 y ahí no se reproduce. Es un
+# grep sobre lo STAGEADO; un guion que no se puede leer del índice frena también (no medido no es verde).
+# Casos: scripts/tests/bash32-quoting.test.sh
+if grep -qE '\.sh$' <<<"$STAGED_ACMR"; then
+  B32="$REPO_ROOT/scripts/ci/check-bash32-quoting.sh"
+  if [ ! -f "$B32" ]; then
+    echo "⛔ COMMIT RECHAZADO — no encontré $B32, así que NO pude mirar el quoting de bash 3.2 en los .sh stageados. No medido no es verde."
+    exit 1
+  fi
+  echo "▸ pre-commit: \$VAR pegado a caracteres no ASCII en los .sh stageados (bash 3.2)…"
+  bash "$B32" --staged; B32_RC=$?
+  if [ "$B32_RC" != 0 ]; then
+    echo "⛔ COMMIT RECHAZADO — hay \$VAR pegado a un carácter no ASCII (arriba dice dónde): en el bash 3.2 de macOS eso parte la variable. Usá \${VAR}."
+    exit 1
+  fi
+fi
+
+# 🔴 `--no-renames` (la lista STAGED_ALL de arriba) en los tres disparos por ruta de acá para abajo (story 8.18, 2026-10-04): sin la opción git empareja
+# un borrado con un alta y lista sólo la ruta NUEVA. Un bloque, el mapa privado o un hook MOVIDOS a una carpeta que
+# ningún control vigila dejaban la lista sin rutas vigiladas, y el control no corría. Con la opción un archivo movido
+# son dos líneas, la vieja y la nueva. (Los disparos de más arriba no la necesitan: piden la lista con la ruta —ahí la
+# vieja sale como borrada— o listan los archivos que hay que LEER, y el de la ruta vieja ya no está.)
+# Casos: scripts/tests/githook-renames.test.sh
+# Lo que rompería la verificación de una versión BAJADA no entra (story 8.23, tanda B · AC 20): un export-ignore o
+# export-subst en un .gitattributes publicado, un enlace simbólico o un submódulo en una ruta publicada. Corre sobre lo
+# que este commit agrega o cambia (--staged); la validación de cada rama lo corre sobre el índice entero.
+# Casos: scripts/tests/check-publishable-tree.test.js (T20).
+# Sólo donde hay algo publicado que cuidar: un repo sin lista blanca (scripts/publishing/allowlist.json) no publica nada
+# —los repos de juguete de las suites del hook, una copia pública— y el control se saltea diciéndolo. Con la lista pero sin
+# el guion, o con el guion que no puede mirar (rc 2): frena, no medido no es verde.
+PUBTREE="$REPO_ROOT/scripts/ci/check-publishable-tree.js"
+if [ ! -f "$REPO_ROOT/scripts/publishing/allowlist.json" ]; then
+  echo "▸ pre-commit: sin lista blanca de publicación en este repo: no hay versión bajada que cuidar; se saltea" >&2
+elif [ ! -f "$PUBTREE" ]; then
+  echo "⛔ COMMIT RECHAZADO — no encontré $PUBTREE, así que NO pude mirar si este commit rompe la verificación de lo publicado. No medido no es verde. Si el checkout está incompleto: git checkout scripts/ci/check-publishable-tree.js" >&2
+  exit 1
+else
+  echo "▸ pre-commit: lo que rompería la verificación de la versión bajada (enlaces, submódulos, export-ignore)…"
+  node "$PUBTREE" --repo "$REPO_ROOT" --staged; PUBTREE_RC=$?
+  if [ "$PUBTREE_RC" = 1 ]; then
+    echo "⛔ COMMIT RECHAZADO — este commit mete algo que rompería la instalación sin git (arriba dice qué y dónde)." >&2
+    exit 1
+  elif [ "$PUBTREE_RC" != 0 ]; then
+    echo "⛔ COMMIT RECHAZADO — no pude mirar si este commit rompe la verificación de lo publicado: no medido no es verde." >&2
+    exit 1
+  fi
+fi
+
+if grep -qE '^(claude-md-blocks/|README\.md$|guides/piezas-del-arnes\.md$)' <<<"$STAGED_ALL"; then
+  CMB="$REPO_ROOT/scripts/ci/check-claude-md-blocks.js"
+  if [ ! -f "$CMB" ]; then
+    # 🔴 FRENA, no avisa (hallazgo del revisor de fallos silenciosos, 7.4). Antes acá se avisaba por
+    # stderr y el commit se creaba igual, mientras diez líneas más abajo un guion que corre y NO puede
+    # medir sí frena: la misma pregunta con dos respuestas. Y desde la 7.4 de este bloque cuelga
+    # también el techo del README, que es lo que cada sesión importa entero. «No pude mirar» no es verde.
+    echo "⛔ COMMIT RECHAZADO — no encontré $CMB, así que NO pude medir los bloques del CLAUDE.md ni el techo del README. No medido no es verde. Si el checkout está incompleto: git checkout scripts/ci/check-claude-md-blocks.js" >&2
+    exit 1
+  else
+    echo "▸ pre-commit: presupuesto de los bloques del CLAUDE.md y de lo que se importa en cada sesión…"
+    node "$CMB" --repo "$REPO_ROOT" --staged; CMB_RC=$?
+    if [ "$CMB_RC" = 1 ]; then
+      echo "⛔ COMMIT RECHAZADO — un bloque del CLAUDE.md, o un archivo que se importa entero en cada sesión (el README), se pasa de su techo (arriba dice cuál y por qué). El detalle va a guides/piezas-del-arnes.md; subir el techo se decide en claude-md-blocks/budget.json, con motivo." >&2
+      exit 1
+    elif [ "$CMB_RC" != 0 ]; then
+      echo "⛔ COMMIT RECHAZADO — no pude medir los bloques del CLAUDE.md ni los archivos importados (presupuesto o guía de detalle ilegibles): no medido no es verde." >&2
+      exit 1
+    fi
+  fi
+fi
+
+# ── La versión pública del mapa del arnés (2026-09-15) ────────────────────────────────────────
+# `onboarding/mini-class/mapa-del-arnes.html` va al sitio abierto y se DERIVA de `artifacts/mapa-arnes.html`:
+# dos copias a mano se separan solas. Si el commit toca la privada o el generador, la pública se
+# regenera desde lo que está en el índice y se agrega sola al commit. Si toca sólo la pública (una
+# edición a mano) y no coincide con lo que se genera, frena. Si la privada cambió un texto que tiene
+# versión pública, o algo interno se filtraría, el generador frena y dice qué. Va ANTES del filtro
+# RELEVANTES: ninguna de estas rutas está en esa lista.
+# Antes de generar, el `tipo` de cada ficha tiene que ser el que le da su ruta (story 8.12, R7):
+# `censo.js --check` sobre la privada del índice; sólo lee el mapa, no depende de la máquina.
+# Casos: scripts/tests/mapa-arnes-publico.test.sh · scripts/tests/mapa-arnes-censo.test.sh (C-08 a C-12) ·
+# scripts/tests/githook-livefire.test.sh (C-26/C-27: el tipo mal puesto, con un commit de verdad).
+# El generador y su configuración viven en scripts/tools/harness-map/ desde la story 8.12, tanda R4.
+MAPA_TOCADO="$(grep -E '^(artifacts/mapa-arnes\.html$|scripts/tools/harness-map/|onboarding/mini-class/mapa-del-arnes\.html$)' <<<"$STAGED_ALL" || true)"
+if [ -n "$MAPA_TOCADO" ]; then
+  MAPA_GEN="$REPO_ROOT/scripts/tools/harness-map/version-publica.js"
+  if [ ! -f "$MAPA_GEN" ]; then
+    echo "⚠️  tycon: no encontré $MAPA_GEN — no se regeneró la versión pública del mapa del arnés." >&2
+  else
+    echo "▸ pre-commit: versión pública del mapa del arnés…"
+    MAPA_TMP="$(mktemp -d)"
+    if ! git show :artifacts/mapa-arnes.html > "$MAPA_TMP/privada.html" 2>/dev/null \
+       || ! git show :scripts/tools/harness-map/publica.json > "$MAPA_TMP/publica.json" 2>/dev/null; then
+      rm -rf "$MAPA_TMP"
+      echo "⛔ COMMIT RECHAZADO — no pude leer del índice la privada o publica.json del mapa del arnés." >&2
+      exit 1
+    fi
+    # La privada del índice, en la forma de un arnés (<raíz>/artifacts/mapa-arnes.html) para `--tcg`.
+    mkdir -p "$MAPA_TMP/tcg/artifacts" && cp "$MAPA_TMP/privada.html" "$MAPA_TMP/tcg/artifacts/mapa-arnes.html"
+    if ! node "$REPO_ROOT/scripts/tools/harness-map/censo.js" --check --tcg "$MAPA_TMP/tcg"; then
+      rm -rf "$MAPA_TMP"
+      echo "⛔ COMMIT RECHAZADO — el tipo de alguna pieza del mapa no es el que le da su ruta (el detalle está arriba)." >&2
+      exit 1
+    fi
+    if ! node "$MAPA_GEN" --input "$MAPA_TMP/privada.html" --config "$MAPA_TMP/publica.json" --output "$MAPA_TMP/publica.html"; then
+      rm -rf "$MAPA_TMP"
+      echo "⛔ COMMIT RECHAZADO — la versión pública del mapa del arnés no se pudo generar (el motivo está arriba)." >&2
+      exit 1
+    fi
+    MAPA_PUB="onboarding/mini-class/mapa-del-arnes.html"
+    if ! git show ":$MAPA_PUB" 2>/dev/null | cmp -s - "$MAPA_TMP/publica.html"; then
+      if echo "$MAPA_TOCADO" | grep -qvE "^$MAPA_PUB\$"; then
+        cp "$MAPA_TMP/publica.html" "$REPO_ROOT/$MAPA_PUB" && git add "$MAPA_PUB"
+        echo "▸ pre-commit: la versión pública del mapa se regeneró y entra en este commit."
+      else
+        rm -rf "$MAPA_TMP"
+        echo "⛔ COMMIT RECHAZADO — $MAPA_PUB no se edita a mano: se cambia la privada (artifacts/mapa-arnes.html) o scripts/tools/harness-map/publica.json." >&2
+        exit 1
+      fi
+    fi
+    rm -rf "$MAPA_TMP"
+  fi
+fi
+
+# `agents/` se conserva a propósito aunque HOY sea rama muerta en este repo (los advisors canónicos
+# viven en ~/.claude/agent-skills/agents): si algún día se mueven acá, el disparador ya está.
+RELEVANTES='^(adapters/|build/|scripts/controls-bench/|scripts/hooks/|scripts/install-tycon-hooks\.sh|\.githooks/|agents/)'
+if ! grep -qE "$RELEVANTES" <<<"$STAGED_ALL"; then
+  exit 0
+fi
+
+echo "▸ pre-commit: verificando la paridad Claude↔Codex (build/check.js)…"
+if ! node "$REPO_ROOT/build/check.js" > /tmp/tycon-check-$$.log 2>&1; then
+  echo "" >&2
+  echo "⛔ COMMIT RECHAZADO — la paridad quedó desalineada:" >&2
+  grep -E '^(❌|   ·|⚠)' /tmp/tycon-check-$$.log >&2 || tail -20 /tmp/tycon-check-$$.log >&2
+  echo "" >&2
+  echo "   Reporte completo: /tmp/tycon-check-$$.log" >&2
+  echo "   Si estás seguro de lo que hacés: git commit --no-verify (queda sin control, a tu criterio)." >&2
+  exit 1
+fi
+
+rm -f /tmp/tycon-check-$$.log
+echo "▸ pre-commit: paridad OK"
+exit 0

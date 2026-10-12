@@ -1,0 +1,532 @@
+{
+  "__doc": "guides-heal (2026-09-03): el clon del arnés de una máquina del equipo quedó 272 commits atrás durante seis días porque el `git pull` del arranque se negaba a pisar un archivo modificado localmente (guides/guide-update-proposals.md, escrito por el capturador de retrospectivas) y la línea de arranque descarta ese error a propósito. El instalador vive adentro del clon, así que corría la versión vieja cada día — y el freno de story-a-mano llegó (por agent-skills) sin el hook que lo abre (lo registra el instalador). La reparación NO puede viajar por el instalador ni por un hook nuevo: viaja por on-prompt.js del pipeline, enchufado en todas las máquinas desde mayo, y por agent-skills, que sí se actualiza. Una vez por sesión, en local (merge --ff-only contra el origin/main que el arranque ya trajo — sale a la red sólo si nadie hizo fetch en 3 días). Destraba también el clon que la línea de arranque protegida deja en conflicto abierto cuando lo local no se reaplica (H1 de la revisión adversarial): limpia SÓLO los archivos en conflicto que verificó en el stash (checkout de HEAD, nunca reset --hard: el resto del árbol es trabajo del dev que no está en ningún stash). El override TYCON_GUIDES_HEAL_REPO existe SOLO para el banco: TYCON_GUIDES_DIR apunta al repo real y un pull automático contra ése desde un caso sería un efecto colateral. incident-log#arnes-que-se-bloquea-a-si-mismo-2026-09-03",
+  "hooks": [
+    {
+      "hook": "on-prompt.js · guides-heal (repara el clon atrasado del arnés)",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/on-prompt.js",
+      "event": "UserPromptSubmit",
+      "matcher": "*",
+      "env": {
+        "TYCON_NO_AUTOINSTALL": "1"
+      },
+      "cases": [
+        {
+          "id": "actualiza-el-clon-atrasado-y-guarda-aparte-el-archivo-que-lo-trababa",
+          "type": "must-emit",
+          "setup": [
+            "git init -q -b main origen && git -C origen -c user.email=b@b -c user.name=b commit -q --allow-empty -m base && mkdir -p origen/guides && printf 'v1\\n' > origen/guides/guide-update-proposals.md && git -C origen add -A && git -C origen -c user.email=b@b -c user.name=b commit -q -m v1",
+            "git clone -q origen clon",
+            "printf 'v2\\n' > origen/guides/guide-update-proposals.md && printf 'x' > origen/nuevo.txt && git -C origen add -A && git -C origen -c user.email=b@b -c user.name=b commit -q -m v2 && git -C clon fetch -q origin",
+            "printf 'local\\n' > clon/guides/guide-update-proposals.md"
+          ],
+          "env": {
+            "TYCON_GUIDES_HEAL_REPO": "${FIXTURE}/clon"
+          },
+          "stdin": {
+            "session_id": "bench-heal-1",
+            "prompt": "hola"
+          },
+          "expect": {
+            "stdout_re": [
+              "atrás de lo publicado",
+              "guide-update-proposals\\.md",
+              "capturador de retrospectivas",
+              "poner al día",
+              "stash"
+            ],
+            "file_exists": [
+              "${FIXTURE}/clon/nuevo.txt",
+              "${SANDBOX_HOME}/.claude/.tycon-pipeline/guides-heal/bench-heal-1.json",
+              "${FIXTURE}/clon/.git/refs/stash"
+            ],
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/guides-heal/bench-heal-1.json",
+                "re": "\"result\":\"healed\""
+              }
+            ],
+            "file_not_contains": [
+              {
+                "path": "${FIXTURE}/clon/guides/guide-update-proposals.md",
+                "re": "<<<<<<<"
+              }
+            ]
+          },
+          "__doc": "Si se borra el reset --hard tras el pop fallido, el archivo queda con marcadores y este caso se pone rojo; si se resetea sin stash, refs/stash no existe y también."
+        },
+        {
+          "id": "atrasado-sin-choque-actualiza-limpio-y-no-habla-de-stash",
+          "type": "must-emit",
+          "setup": [
+            "git init -q -b main origen && git -C origen -c user.email=b@b -c user.name=b commit -q --allow-empty -m base",
+            "git clone -q origen clon",
+            "printf 'x' > origen/nuevo.txt && git -C origen add -A && git -C origen -c user.email=b@b -c user.name=b commit -q -m v2 && git -C clon fetch -q origin"
+          ],
+          "env": {
+            "TYCON_GUIDES_HEAL_REPO": "${FIXTURE}/clon"
+          },
+          "stdin": {
+            "session_id": "bench-heal-2",
+            "prompt": "hola"
+          },
+          "expect": {
+            "stdout_re": [
+              "poner al día"
+            ],
+            "stdout_not_re": [
+              "stash",
+              "Lo que traba"
+            ],
+            "file_exists": [
+              "${FIXTURE}/clon/nuevo.txt"
+            ]
+          }
+        },
+        {
+          "id": "divergido-con-commits-locales-no-toca-y-avisa",
+          "type": "must-emit",
+          "setup": [
+            "git init -q -b main origen && git -C origen -c user.email=b@b -c user.name=b commit -q --allow-empty -m base",
+            "git clone -q origen clon",
+            "printf 'x' > origen/nuevo.txt && git -C origen add -A && git -C origen -c user.email=b@b -c user.name=b commit -q -m v2",
+            "printf 'z' > clon/mio.txt && git -C clon add -A && git -C clon -c user.email=b@b -c user.name=b commit -q -m mio && git -C clon fetch -q origin"
+          ],
+          "env": {
+            "TYCON_GUIDES_HEAL_REPO": "${FIXTURE}/clon"
+          },
+          "stdin": {
+            "session_id": "bench-heal-3",
+            "prompt": "hola"
+          },
+          "expect": {
+            "stdout_re": [
+              "no la toco"
+            ],
+            "file_absent": [
+              "${FIXTURE}/clon/nuevo.txt"
+            ],
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/guides-heal/bench-heal-3.json",
+                "re": "\"result\":\"diverged\""
+              }
+            ]
+          }
+        },
+        {
+          "id": "una-vez-por-sesion-la-segunda-calla-y-no-toca",
+          "type": "must-stay-quiet",
+          "setup": [
+            "git init -q -b main origen && git -C origen -c user.email=b@b -c user.name=b commit -q --allow-empty -m base",
+            "git clone -q origen clon",
+            "printf 'x' > origen/nuevo.txt && git -C origen add -A && git -C origen -c user.email=b@b -c user.name=b commit -q -m v2 && git -C clon fetch -q origin",
+            "mkdir -p $SANDBOX_HOME/.claude/.tycon-pipeline/guides-heal && echo '{\"result\":\"healed\"}' > $SANDBOX_HOME/.claude/.tycon-pipeline/guides-heal/bench-heal-4.json"
+          ],
+          "env": {
+            "TYCON_GUIDES_HEAL_REPO": "${FIXTURE}/clon"
+          },
+          "stdin": {
+            "session_id": "bench-heal-4",
+            "prompt": "hola"
+          },
+          "expect": {
+            "file_absent": [
+              "${FIXTURE}/clon/nuevo.txt"
+            ]
+          }
+        },
+        {
+          "id": "al-dia-calla",
+          "type": "must-stay-quiet",
+          "setup": [
+            "git init -q -b main origen && git -C origen -c user.email=b@b -c user.name=b commit -q --allow-empty -m base",
+            "git clone -q origen clon"
+          ],
+          "env": {
+            "TYCON_GUIDES_HEAL_REPO": "${FIXTURE}/clon"
+          },
+          "stdin": {
+            "session_id": "bench-heal-5",
+            "prompt": "hola"
+          },
+          "expect": {
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/guides-heal/bench-heal-5.json",
+                "re": "\"result\":\"up-to-date\""
+              }
+            ]
+          }
+        },
+        {
+          "id": "apagado-por-env-calla-y-no-toca",
+          "type": "must-stay-quiet",
+          "setup": [
+            "git init -q -b main origen && git -C origen -c user.email=b@b -c user.name=b commit -q --allow-empty -m base",
+            "git clone -q origen clon",
+            "printf 'x' > origen/nuevo.txt && git -C origen add -A && git -C origen -c user.email=b@b -c user.name=b commit -q -m v2 && git -C clon fetch -q origin"
+          ],
+          "env": {
+            "TYCON_GUIDES_HEAL_REPO": "${FIXTURE}/clon",
+            "TYCON_GUIDES_HEAL": "0"
+          },
+          "stdin": {
+            "session_id": "bench-heal-6",
+            "prompt": "hola"
+          },
+          "expect": {
+            "file_absent": [
+              "${FIXTURE}/clon/nuevo.txt",
+              "${SANDBOX_HOME}/.claude/.tycon-pipeline/guides-heal/bench-heal-6.json"
+            ]
+          }
+        },
+        {
+          "id": "sin-clon-en-el-home-de-la-sesion-calla-y-no-mira-el-repo-real",
+          "type": "must-stay-quiet",
+          "stdin": {
+            "session_id": "bench-heal-7",
+            "prompt": "hola"
+          },
+          "expect": {
+            "file_absent": [
+              "${SANDBOX_HOME}/.claude/.tycon-pipeline/guides-heal/bench-heal-7.json"
+            ]
+          }
+        },
+        {
+          "id": "destraba-el-clon-que-el-arranque-dejo-en-conflicto-y-lo-actualiza",
+          "__doc": "H1 de la revisión adversarial 2026-09-03: la línea de arranque con --autostash choca al reaplicar lo local → git guarda el stash y deja UU con marcadores; ningún pull entra después y `git stash` lo rechaza. Estado real esperado en la máquina del incidente a los pocos días.",
+          "type": "must-emit",
+          "setup": [
+            "git init -q -b main origen && git -C origen -c user.email=b@b -c user.name=b commit -q --allow-empty -m base && mkdir -p origen/guides && printf 'v1\\n' > origen/guides/guide-update-proposals.md && git -C origen add -A && git -C origen -c user.email=b@b -c user.name=b commit -q -m v1",
+            "git clone -q origen clon",
+            "printf 'v2\\n' > origen/guides/guide-update-proposals.md && git -C origen add -A && git -C origen -c user.email=b@b -c user.name=b commit -q -m v2",
+            "printf 'local\\n' > clon/guides/guide-update-proposals.md",
+            "git -C clon pull --ff-only --quiet --autostash origin main >/dev/null 2>&1 || true",
+            "printf 'x' > origen/nuevo.txt && git -C origen add -A && git -C origen -c user.email=b@b -c user.name=b commit -q -m v3 && git -C clon fetch -q origin"
+          ],
+          "env": {
+            "TYCON_GUIDES_HEAL_REPO": "${FIXTURE}/clon"
+          },
+          "stdin": {
+            "session_id": "bench-heal-8",
+            "prompt": "hola"
+          },
+          "expect": {
+            "stdout_re": [
+              "TRABADO",
+              "poner al día"
+            ],
+            "file_not_contains": [
+              {
+                "path": "${FIXTURE}/clon/guides/guide-update-proposals.md",
+                "re": "<<<<<<<"
+              }
+            ],
+            "file_exists": [
+              "${FIXTURE}/clon/nuevo.txt",
+              "${FIXTURE}/clon/.git/refs/stash"
+            ],
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/guides-heal/bench-heal-8.json",
+                "re": "\"unstuck\":true"
+              }
+            ]
+          }
+        },
+        {
+          "id": "destraba-aunque-este-al-dia",
+          "type": "must-emit",
+          "setup": [
+            "git init -q -b main origen && git -C origen -c user.email=b@b -c user.name=b commit -q --allow-empty -m base && mkdir -p origen/guides && printf 'v1\\n' > origen/guides/guide-update-proposals.md && git -C origen add -A && git -C origen -c user.email=b@b -c user.name=b commit -q -m v1",
+            "git clone -q origen clon",
+            "printf 'v2\\n' > origen/guides/guide-update-proposals.md && git -C origen add -A && git -C origen -c user.email=b@b -c user.name=b commit -q -m v2",
+            "printf 'local\\n' > clon/guides/guide-update-proposals.md",
+            "git -C clon pull --ff-only --quiet --autostash origin main >/dev/null 2>&1 || true"
+          ],
+          "env": {
+            "TYCON_GUIDES_HEAL_REPO": "${FIXTURE}/clon"
+          },
+          "stdin": {
+            "session_id": "bench-heal-9",
+            "prompt": "hola"
+          },
+          "expect": {
+            "stdout_re": [
+              "TRABADA"
+            ],
+            "file_not_contains": [
+              {
+                "path": "${FIXTURE}/clon/guides/guide-update-proposals.md",
+                "re": "<<<<<<<"
+              }
+            ],
+            "file_exists": [
+              "${FIXTURE}/clon/.git/refs/stash"
+            ],
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/guides-heal/bench-heal-9.json",
+                "re": "\"result\":\"unstuck\""
+              }
+            ]
+          }
+        },
+        {
+          "id": "conflicto-ajeno-de-un-merge-del-dev-no-lo-toca",
+          "__doc": "Un UU que NO viene de un autostash (merge a medias del dev) se deja como está: descartar ahí sería perder trabajo. (el merge lleva identidad explícita: el HOME del sandbox no tiene gitconfig y sin eso git falla ANTES de producir el conflicto).",
+          "type": "must-emit",
+          "setup": [
+            "git init -q -b main origen && git -C origen -c user.email=b@b -c user.name=b commit -q --allow-empty -m base && mkdir -p origen/guides && printf 'v1\\n' > origen/guides/guide-update-proposals.md && git -C origen add -A && git -C origen -c user.email=b@b -c user.name=b commit -q -m v1",
+            "git clone -q origen clon",
+            "printf 'v2\\n' > origen/guides/guide-update-proposals.md && git -C origen add -A && git -C origen -c user.email=b@b -c user.name=b commit -q -m v2 && git -C clon fetch -q origin",
+            "printf 'local\\n' > clon/guides/guide-update-proposals.md && git -C clon add -A && git -C clon -c user.email=b@b -c user.name=b commit -q -m local",
+            "git -C clon -c user.email=b@b -c user.name=b merge -q origin/main >/dev/null 2>&1 || true"
+          ],
+          "env": {
+            "TYCON_GUIDES_HEAL_REPO": "${FIXTURE}/clon"
+          },
+          "stdin": {
+            "session_id": "bench-heal-10",
+            "prompt": "hola"
+          },
+          "expect": {
+            "stdout_re": [
+              "No la toco"
+            ],
+            "file_contains": [
+              {
+                "path": "${FIXTURE}/clon/guides/guide-update-proposals.md",
+                "re": "<<<<<<<"
+              }
+            ],
+            "file_exists": [
+              "${FIXTURE}/clon/.git/MERGE_HEAD"
+            ]
+          }
+        },
+        {
+          "id": "no-trackeado-que-lo-publicado-agrega-no-lo-pisa-y-lo-nombra",
+          "__doc": "H5: el avance falla, lo local se restaura, y el aviso nombra el archivo con el consejo que funciona.",
+          "type": "must-emit",
+          "setup": [
+            "git init -q -b main origen && git -C origen -c user.email=b@b -c user.name=b commit -q --allow-empty -m base && mkdir -p origen/guides && printf 'v1\\n' > origen/guides/guide-update-proposals.md && git -C origen add -A && git -C origen -c user.email=b@b -c user.name=b commit -q -m v1",
+            "git clone -q origen clon",
+            "printf 'x' > origen/nuevo.txt && git -C origen add -A && git -C origen -c user.email=b@b -c user.name=b commit -q -m v3 && git -C clon fetch -q origin",
+            "printf 'mio' > clon/nuevo.txt && printf 'edit\\n' >> clon/guides/guide-update-proposals.md"
+          ],
+          "env": {
+            "TYCON_GUIDES_HEAL_REPO": "${FIXTURE}/clon"
+          },
+          "stdin": {
+            "session_id": "bench-heal-11",
+            "prompt": "hola"
+          },
+          "expect": {
+            "stdout_re": [
+              "no pude",
+              "nuevo\\.txt",
+              "mové o borrá"
+            ],
+            "file_contains": [
+              {
+                "path": "${FIXTURE}/clon/nuevo.txt",
+                "re": "^mio$"
+              },
+              {
+                "path": "${FIXTURE}/clon/guides/guide-update-proposals.md",
+                "re": "edit"
+              },
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/guides-heal/bench-heal-11.json",
+                "re": "\"result\":\"pull-failed\""
+              }
+            ]
+          }
+        },
+        {
+          "id": "stash-previo-del-dev-no-confunde-ni-se-toca",
+          "type": "must-emit",
+          "setup": [
+            "git init -q -b main origen && git -C origen -c user.email=b@b -c user.name=b commit -q --allow-empty -m base && mkdir -p origen/guides && printf 'v1\\n' > origen/guides/guide-update-proposals.md && git -C origen add -A && git -C origen -c user.email=b@b -c user.name=b commit -q -m v1",
+            "git clone -q origen clon",
+            "printf 'suyo\\n' >> clon/guides/guide-update-proposals.md && git -C clon stash -q -m mio-del-dev",
+            "printf 'x' > origen/nuevo.txt && git -C origen add -A && git -C origen -c user.email=b@b -c user.name=b commit -q -m v3 && git -C clon fetch -q origin"
+          ],
+          "env": {
+            "TYCON_GUIDES_HEAL_REPO": "${FIXTURE}/clon"
+          },
+          "stdin": {
+            "session_id": "bench-heal-12",
+            "prompt": "hola"
+          },
+          "expect": {
+            "stdout_re": [
+              "poner al día"
+            ],
+            "stdout_not_re": [
+              "stash"
+            ],
+            "file_exists": [
+              "${FIXTURE}/clon/nuevo.txt"
+            ],
+            "file_contains": [
+              {
+                "path": "${FIXTURE}/clon/.git/logs/refs/stash",
+                "re": "mio-del-dev"
+              }
+            ]
+          }
+        },
+        {
+          "id": "staged-y-no-trackeado-conservan-su-contenido",
+          "type": "must-emit",
+          "setup": [
+            "git init -q -b main origen && git -C origen -c user.email=b@b -c user.name=b commit -q --allow-empty -m base && mkdir -p origen/guides && printf 'v1\\n' > origen/guides/guide-update-proposals.md && git -C origen add -A && git -C origen -c user.email=b@b -c user.name=b commit -q -m v1",
+            "git clone -q origen clon",
+            "printf 'x' > origen/nuevo.txt && git -C origen add -A && git -C origen -c user.email=b@b -c user.name=b commit -q -m v3 && git -C clon fetch -q origin",
+            "printf 'staged\\n' > clon/README.md && git -C clon add README.md && printf 'untracked' > clon/suelto.txt"
+          ],
+          "env": {
+            "TYCON_GUIDES_HEAL_REPO": "${FIXTURE}/clon"
+          },
+          "stdin": {
+            "session_id": "bench-heal-13",
+            "prompt": "hola"
+          },
+          "expect": {
+            "stdout_re": [
+              "poner al día"
+            ],
+            "file_exists": [
+              "${FIXTURE}/clon/nuevo.txt"
+            ],
+            "file_contains": [
+              {
+                "path": "${FIXTURE}/clon/suelto.txt",
+                "re": "untracked"
+              },
+              {
+                "path": "${FIXTURE}/clon/README.md",
+                "re": "staged"
+              }
+            ]
+          },
+          "__doc": "Verifica contenido, no el estado del índice: `stash pop` sin --index devuelve las modificaciones staged como unstaged (los archivos nuevos sí vuelven staged). Sin pérdida de contenido."
+        },
+        {
+          "id": "destrabar-no-toca-lo-que-el-dev-siguio-editando",
+          "__doc": "H8 de la segunda pasada adversarial: la primera limpieza era un reset --hard sobre TODO el árbol — borraba lo que el dev editó después de quedar trabado, que no estaba en ningún stash. Ahora sólo se limpian los archivos en conflicto. Este caso salía ROJO con el reset.",
+          "type": "must-emit",
+          "setup": [
+            "git init -q -b main origen && git -C origen -c user.email=b@b -c user.name=b commit -q --allow-empty -m base && mkdir -p origen/guides && printf 'v1\\n' > origen/guides/guide-update-proposals.md && git -C origen add -A && git -C origen -c user.email=b@b -c user.name=b commit -q -m v1",
+            "git clone -q origen clon",
+            "printf 'v2\\n' > origen/guides/guide-update-proposals.md && git -C origen add -A && git -C origen -c user.email=b@b -c user.name=b commit -q -m v2",
+            "printf 'local\\n' > clon/guides/guide-update-proposals.md",
+            "git -C clon pull --ff-only --quiet --autostash origin main >/dev/null 2>&1 || true",
+            "printf 'IMPORTANT\\n' >> clon/guides/otro.md 2>/dev/null || printf 'IMPORTANT\\n' > clon/guides/otro.md",
+            "git -C clon add guides/otro.md && git -C clon -c user.email=b@b -c user.name=b commit -q -m otro-base >/dev/null 2>&1 || true",
+            "printf 'MORE\\n' >> clon/guides/otro.md && printf 'n' > clon/guides/nuevo-del-dev.md && git -C clon add guides/nuevo-del-dev.md"
+          ],
+          "env": {
+            "TYCON_GUIDES_HEAL_REPO": "${FIXTURE}/clon"
+          },
+          "stdin": {
+            "session_id": "bench-heal-14",
+            "prompt": "hola"
+          },
+          "expect": {
+            "stdout_re": [
+              "TRABAD"
+            ],
+            "file_not_contains": [
+              {
+                "path": "${FIXTURE}/clon/guides/guide-update-proposals.md",
+                "re": "<<<<<<<"
+              }
+            ],
+            "file_exists": [
+              "${FIXTURE}/clon/guides/nuevo-del-dev.md",
+              "${FIXTURE}/clon/.git/refs/stash"
+            ],
+            "file_contains": [
+              {
+                "path": "${FIXTURE}/clon/guides/otro.md",
+                "re": "MORE"
+              }
+            ]
+          }
+        },
+        {
+          "id": "trabado-resuelto-a-mano-sin-git-add-no-se-pisa",
+          "__doc": "S6 de la revisión: el dev quitó los marcadores a mano y no hizo `git add` — el archivo sigue UU pero sin marcadores. Pisarlo con HEAD perdería su resolución.",
+          "type": "must-emit",
+          "setup": [
+            "git init -q -b main origen && git -C origen -c user.email=b@b -c user.name=b commit -q --allow-empty -m base && mkdir -p origen/guides && printf 'v1\\n' > origen/guides/guide-update-proposals.md && git -C origen add -A && git -C origen -c user.email=b@b -c user.name=b commit -q -m v1",
+            "git clone -q origen clon",
+            "printf 'v2\\n' > origen/guides/guide-update-proposals.md && git -C origen add -A && git -C origen -c user.email=b@b -c user.name=b commit -q -m v2",
+            "printf 'local\\n' > clon/guides/guide-update-proposals.md",
+            "git -C clon pull --ff-only --quiet --autostash origin main >/dev/null 2>&1 || true",
+            "printf 'resuelto a mano\\n' > clon/guides/guide-update-proposals.md"
+          ],
+          "env": {
+            "TYCON_GUIDES_HEAL_REPO": "${FIXTURE}/clon"
+          },
+          "stdin": {
+            "session_id": "bench-heal-15",
+            "prompt": "hola"
+          },
+          "expect": {
+            "stdout_re": [
+              "No la toco",
+              "falta git add"
+            ],
+            "file_contains": [
+              {
+                "path": "${FIXTURE}/clon/guides/guide-update-proposals.md",
+                "re": "resuelto a mano"
+              }
+            ]
+          }
+        },
+        {
+          "id": "destraba-el-clon-que-un-archivo-no-trackeado-bloqueaba",
+          "type": "must-emit",
+          "_por_que": "🔴 El caso del 2026-09-06: una máquina del equipo llevaba 158 commits atrás, trabada sesión tras sesión, porque `.dashboard/sdlc-stage-<fecha>.json` existía SIN TRACKEAR en el clon y lo publicado lo agrega (lo escribe el respaldo local del medidor al arrancar; el nocturno lo commitea). git se niega a pisarlo y `stash push` sin `-u` —ni `--autostash`— lo ve, así que la sanadora avanzaba en falso. Rojo previo verificado: sin el arreglo, `advance` tira «untracked working tree files would be overwritten by merge» y el clon no se mueve.",
+          "setup": [
+            "git init -q -b main origen && git -C origen -c user.email=b@b -c user.name=b commit -q --allow-empty -m base",
+            "git clone -q origen clon",
+            "mkdir -p origen/.dashboard && printf '{\"nocturno\":true}\\n' > origen/.dashboard/sdlc-stage-2026-09-06.json && printf 'x' > origen/nuevo.txt && git -C origen add -A && git -C origen -c user.email=b@b -c user.name=b commit -q -m medidor && git -C clon fetch -q origin",
+            "mkdir -p clon/.dashboard && printf '{\"local\":true}\\n' > clon/.dashboard/sdlc-stage-2026-09-06.json"
+          ],
+          "env": {
+            "TYCON_GUIDES_HEAL_REPO": "${FIXTURE}/clon"
+          },
+          "stdin": {
+            "session_id": "bench-heal-untracked",
+            "prompt": "hola"
+          },
+          "expect": {
+            "stdout_re": [
+              "atrás de lo publicado",
+              "sdlc-stage-2026-09-06\\.json",
+              "Apart[ée]"
+            ],
+            "file_contains": [
+              {
+                "path": "${FIXTURE}/clon/.dashboard/sdlc-stage-2026-09-06.json",
+                "re": "nocturno"
+              },
+              {
+                "path": "${FIXTURE}/clon/nuevo.txt",
+                "re": "x"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

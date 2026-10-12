@@ -1,0 +1,158 @@
+{
+    "__doc": "Paridad de las 8 copias de `release-notes.sh` (2026-08-31). El guion que arma las notas de versión está COPIADO en 8 repos del equipo y no se puede unificar: corre DENTRO del pipeline de Azure, en un agente que clona sólo ese repo y no tiene el arnés. Así que la única defensa posible es un detector que avise cuando las copias dejan de comportarse igual — y este archivo es lo que impide que ese detector se vuelva, él mismo, una pieza que nadie verifica (la regla del arnés: una pieza nueva entra CON sus casos). Los casos corren el detector REAL contra copias de mentira armadas en el banco de trabajo, sin tocar los repos de verdad. Lo que fijan es lo que hace que el detector sirva: que cace una divergencia, que NO grite cuando todas coinciden, que un archivo ilegible se DIGA en vez de contarse como que pasa, y que compare COMPORTAMIENTO y no texto (dos copias con comentarios distintos y el mismo filtro son iguales).",
+    "hooks": [
+        {
+            "hook": "scripts/tools/release-notes-parity.js (las 8 copias se comportan igual)",
+            "script": "${FIXTURE}/correr.sh",
+            "event": "PreToolUse",
+            "matcher": "Bash",
+            "cases": [
+                {
+                    "id": "caza-la-copia-que-quedo-atras",
+                    "type": "must-emit",
+                    "__doc": "🔴 El caso que motivó todo: el 2026-08-31 se descubrió que un producto del equipo —el piloto del flujo con Pull Request— era el único sin filtrar `^Merged PR`, así que su próxima versión iba a publicarle «Merged PR <id>: …» al administrador que instala el plugin. El filtro se había escrito ANTES de que existiera ese flujo y nadie volvió a mirarlo cuando el flujo cambió.",
+                    "files": {
+                        "correr.sh": "#!/usr/bin/env bash\ncd \"$FIXTURE\"\n# 🔴 El detector manda el inventario por la salida normal y la DENUNCIA por la de errores.\n# Los casos asertan sobre las dos: mirar sólo una de las dos deja pasar exactamente el\n# caso que importa (la divergencia se anuncia por el canal que el caso no estaba mirando).\nnode \"$TCG/scripts/tools/release-notes-parity.js\" --root repos\necho \"salida=$?\"\n",
+                        "prep.sh": "#!/usr/bin/env bash\nset -u\ncd \"$FIXTURE\"\n# 🔴 El filtro sale de la copia CANÓNICA del arnés, no de una constante escrita acá: el\n# detector siempre compara contra ella, y un filtro inventado haría fallar los casos el día\n# que alguien ajuste el real — un caso que se rompe por algo que no es su tema es un caso\n# que se termina borrando.\nR=\"$(grep -m1 \"^RUIDO=\" \"$TCG/scripts/ci/release-notes.sh\" | sed \"s/^RUIDO=.//; s/.$//\")\"\n# 🔴 El camino de respaldo sale del MISMO canónico, por el mismo motivo que el filtro: el\n# detector mira las DOS cosas desde el 2026-08-31, y una copia de mentira que sólo declare\n# el filtro se reporta como ilegible — el caso fallaría por algo que no es su tema.\nU=\"$(grep -m1 '^[[:space:]]*ULTIMO=' \"$TCG/scripts/ci/release-notes.sh\" | sed 's/^[[:space:]]*//')\"\nfor r in ProdA/Backend ProdA/FrontEnd ProdB/Backend; do\n  mkdir -p \"repos/$r/scripts\"\n  printf \"#!/usr/bin/env bash\\nRUIDO='%s'\\n%s\\n\" \"$R\" \"$U\" > \"repos/$r/scripts/release-notes.sh\"\ndone\n# La cuarta se quedó atrás: le falta el filtro de los merges de Pull Request, exactamente el\n# hueco real que tenía Totora el 2026-08-31.\nVIEJO=\"$(printf \"%s\" \"$R\" | sed \"s/|\\^Merged PR//\")\"\nmkdir -p repos/ProdB/FrontEnd/scripts\nprintf \"#!/usr/bin/env bash\\nRUIDO='%s'\\n%s\\n\" \"$VIEJO\" \"$U\" > repos/ProdB/FrontEnd/scripts/release-notes.sh\n"
+                    },
+                    "setup": [
+                        "chmod +x correr.sh prep.sh",
+                        "bash prep.sh"
+                    ],
+                    "stdin": {
+                        "tool_name": "Bash",
+                        "tool_input": {
+                            "command": "paridad"
+                        }
+                    },
+                    "expect": {
+                        "stdout_re": [
+                            "ProdB/FrontEnd"
+                        ],
+                        "stderr_re": [
+                            "divergencia",
+                            "ProdB/FrontEnd",
+                            "Merged PR"
+                        ],
+                        "stdout_not_re": [
+                            "salida=0"
+                        ]
+                    }
+                },
+                {
+                    "id": "caza-el-camino-de-respaldo-que-publica-el-merge-tal-cual",
+                    "type": "must-emit",
+                    "__doc": "🔴 EL CASO QUE EL DETECTOR NO VEÍA, y el motivo por el que se amplió (2026-08-31). El guion tiene DOS caminos: la lista normal y un respaldo para cuando no hay punto de partida confiable. El respaldo publicaba el último commit TAL CUAL — y con el flujo de Pull Request ese commit se llama 'Merged PR N: …'. El filtro de ruido que se agregó ayer no servía ahí: sólo se aplicaba en el camino normal, donde los merges ya estaban excluidos por otro motivo. O sea que el arreglo estaba puesto y el único camino que lo necesitaba no lo usaba. El detector miraba UNA línea —la del filtro— así que daba verde con dos copias rotas de verdad (Lapacho, backend y formularios) a punto de publicarle 'Merged PR <id>: …' al administrador que instala el plugin. Un control que sale verde mirando al lado del problema es peor que no tenerlo: ocupa el lugar del que sí lo miraría.",
+                    "files": {
+                        "correr.sh": "#!/usr/bin/env bash\ncd \"$FIXTURE\"\n# 🔴 El detector manda el inventario por la salida normal y la DENUNCIA por la de errores.\n# Los casos asertan sobre las dos: mirar sólo una de las dos deja pasar exactamente el\n# caso que importa (la divergencia se anuncia por el canal que el caso no estaba mirando).\nnode \"$TCG/scripts/tools/release-notes-parity.js\" --root repos\necho \"salida=$?\"\n",
+                        "prep.sh": "#!/usr/bin/env bash\nset -u\ncd \"$FIXTURE\"\n# 🔴 El filtro sale de la copia CANÓNICA del arnés, no de una constante escrita acá: el\n# detector siempre compara contra ella, y un filtro inventado haría fallar los casos el día\n# que alguien ajuste el real — un caso que se rompe por algo que no es su tema es un caso\n# que se termina borrando.\nR=\"$(grep -m1 \"^RUIDO=\" \"$TCG/scripts/ci/release-notes.sh\" | sed \"s/^RUIDO=.//; s/.$//\")\"\n# Las dos copias declaran EL MISMO filtro — por eso el detector viejo las daba iguales.\nfor r in ProdA/Backend ProdA/FrontEnd; do\n  mkdir -p \"repos/$r/scripts\"\ndone\n# Buena: el respaldo también filtra.\nprintf \"#!/usr/bin/env bash\\nRUIDO='%s'\\nULTIMO=\\$(git log -5 --pretty=%%s -- \\\"\\${PATHS[@]}\\\" 2>/dev/null | grep -vE \\\"\\$RUIDO\\\" | head -1 | sed 's/^/- /' || true)\\n\" \"$R\" > repos/ProdA/Backend/scripts/release-notes.sh\n# Rota: el respaldo publica el último commit TAL CUAL. Mismo filtro declarado, otro comportamiento.\nprintf \"#!/usr/bin/env bash\\nRUIDO='%s'\\nULTIMO=\\$(git log -1 --pretty=%%s -- \\\"\\${PATHS[@]}\\\" 2>/dev/null | sed 's/^/- /' || true)\\n\" \"$R\" > repos/ProdA/FrontEnd/scripts/release-notes.sh\n"
+                    },
+                    "setup": [
+                        "chmod +x correr.sh prep.sh",
+                        "bash prep.sh"
+                    ],
+                    "stdin": {
+                        "tool_name": "Bash",
+                        "tool_input": {
+                            "command": "paridad"
+                        }
+                    },
+                    "expect": {
+                        "stderr_re": [
+                            "ProdA/FrontEnd",
+                            "respaldo|último commit|sin filtrar"
+                        ],
+                        "stdout_not_re": [
+                            "salida=0"
+                        ]
+                    }
+                },
+                {
+                    "id": "quiet-todas-coinciden",
+                    "type": "must-emit",
+                    "__doc": "El silencio legítimo, y el que impide que esto se vuelva la casilla que nadie mira: cuatro copias con el MISMO comportamiento no generan una sola línea de alarma. Se usa must-emit (no must-stay-quiet) porque el detector imprime igual su inventario — lo que se fija es que salga 0 y sin divergencia.",
+                    "files": {
+                        "correr.sh": "#!/usr/bin/env bash\ncd \"$FIXTURE\"\n# 🔴 El detector manda el inventario por la salida normal y la DENUNCIA por la de errores.\n# Los casos asertan sobre las dos: mirar sólo una de las dos deja pasar exactamente el\n# caso que importa (la divergencia se anuncia por el canal que el caso no estaba mirando).\nnode \"$TCG/scripts/tools/release-notes-parity.js\" --root repos\necho \"salida=$?\"\n",
+                        "prep.sh": "#!/usr/bin/env bash\nset -u\ncd \"$FIXTURE\"\n# 🔴 El filtro sale de la copia CANÓNICA del arnés, no de una constante escrita acá: el\n# detector siempre compara contra ella, y un filtro inventado haría fallar los casos el día\n# que alguien ajuste el real — un caso que se rompe por algo que no es su tema es un caso\n# que se termina borrando.\nR=\"$(grep -m1 \"^RUIDO=\" \"$TCG/scripts/ci/release-notes.sh\" | sed \"s/^RUIDO=.//; s/.$//\")\"\n# 🔴 El camino de respaldo sale del MISMO canónico, por el mismo motivo que el filtro: el\n# detector mira las DOS cosas desde el 2026-08-31, y una copia de mentira que sólo declare\n# el filtro se reporta como ilegible — el caso fallaría por algo que no es su tema.\nU=\"$(grep -m1 '^[[:space:]]*ULTIMO=' \"$TCG/scripts/ci/release-notes.sh\" | sed 's/^[[:space:]]*//')\"\nfor r in ProdA/Backend ProdA/FrontEnd ProdB/Backend ProdB/FrontEnd; do\n  mkdir -p \"repos/$r/scripts\"\n  printf \"#!/usr/bin/env bash\\nRUIDO='%s'\\n%s\\n\" \"$R\" \"$U\" > \"repos/$r/scripts/release-notes.sh\"\ndone\n"
+                    },
+                    "setup": [
+                        "chmod +x correr.sh prep.sh",
+                        "bash prep.sh"
+                    ],
+                    "stdin": {
+                        "tool_name": "Bash",
+                        "tool_input": {
+                            "command": "paridad"
+                        }
+                    },
+                    "expect": {
+                        "stdout_re": [
+                            "salida=0",
+                            "coinciden: el filtro de ruido clasifica igual"
+                        ],
+                        "stderr_not_re": [
+                            "divergencia"
+                        ]
+                    }
+                },
+                {
+                    "id": "compara-comportamiento-no-texto",
+                    "type": "must-emit",
+                    "__doc": "Comparar los archivos byte a byte NO serviría: las copias difieren legítimamente (una variante tiene lógica propia) y difieren en comentarios. Lo que TIENE que ser igual es lo que el filtro HACE. Acá dos copias con comentarios, orden y cabeceras distintas —pero el mismo filtro— tienen que pasar.",
+                    "files": {
+                        "correr.sh": "#!/usr/bin/env bash\ncd \"$FIXTURE\"\n# 🔴 El detector manda el inventario por la salida normal y la DENUNCIA por la de errores.\n# Los casos asertan sobre las dos: mirar sólo una de las dos deja pasar exactamente el\n# caso que importa (la divergencia se anuncia por el canal que el caso no estaba mirando).\nnode \"$TCG/scripts/tools/release-notes-parity.js\" --root repos\necho \"salida=$?\"\n",
+                        "prep.sh": "#!/usr/bin/env bash\nset -u\ncd \"$FIXTURE\"\n# 🔴 El filtro sale de la copia CANÓNICA del arnés, no de una constante escrita acá: el\n# detector siempre compara contra ella, y un filtro inventado haría fallar los casos el día\n# que alguien ajuste el real — un caso que se rompe por algo que no es su tema es un caso\n# que se termina borrando.\nR=\"$(grep -m1 \"^RUIDO=\" \"$TCG/scripts/ci/release-notes.sh\" | sed \"s/^RUIDO=.//; s/.$//\")\"\n# 🔴 El camino de respaldo sale del MISMO canónico, por el mismo motivo que el filtro: el\n# detector mira las DOS cosas desde el 2026-08-31, y una copia de mentira que sólo declare\n# el filtro se reporta como ilegible — el caso fallaría por algo que no es su tema.\nU=\"$(grep -m1 '^[[:space:]]*ULTIMO=' \"$TCG/scripts/ci/release-notes.sh\" | sed 's/^[[:space:]]*//')\"\nmkdir -p repos/ProdA/Backend/scripts repos/ProdA/FrontEnd/scripts\nprintf \"#!/usr/bin/env bash\\n# variante del backend, con su propia logica\\nset -euo pipefail\\nRUIDO='%s'\\necho backend\\n%s\\n\" \"$R\" \"$U\" > repos/ProdA/Backend/scripts/release-notes.sh\nprintf \"#!/usr/bin/env bash\\n# la variante de formularios: otro encabezado y otros comentarios\\nRUIDO='%s'\\n# y mas lineas que la otra no tiene\\necho front\\n%s\\n\" \"$R\" \"$U\" > repos/ProdA/FrontEnd/scripts/release-notes.sh\n"
+                    },
+                    "setup": [
+                        "chmod +x correr.sh prep.sh",
+                        "bash prep.sh"
+                    ],
+                    "stdin": {
+                        "tool_name": "Bash",
+                        "tool_input": {
+                            "command": "paridad"
+                        }
+                    },
+                    "expect": {
+                        "stdout_re": [
+                            "salida=0",
+                            "coinciden: el filtro de ruido clasifica igual"
+                        ],
+                        "stderr_not_re": [
+                            "divergencia"
+                        ]
+                    }
+                },
+                {
+                    "id": "una-copia-ilegible-se-DICE-no-se-cuenta-como-que-pasa",
+                    "type": "must-emit",
+                    "__doc": "🔴 El modo de falla más peligroso de cualquier control: una copia que no se puede leer (sin el filtro declarado, permisos, encoding) tratada como una copia que está bien. Un archivo que no se pudo mirar no es un archivo que pasa — se dice, y el detector sale distinto de 0. 🔴 El caso asserta el MOTIVO ('no se pudo leer'), no sólo que haya rojo: un chequeo de mutantes mostró que con sólo pedir rojo, la versión rota del detector —la que trata una copia ilegible como un filtro vacío— pasaba igual, porque un filtro vacío también diverge. Pedir el rojo sin pedir el porqué deja verde a la versión que confunde 'no pude mirar' con 'miré y está mal'.",
+                    "files": {
+                        "correr.sh": "#!/usr/bin/env bash\ncd \"$FIXTURE\"\n# 🔴 El detector manda el inventario por la salida normal y la DENUNCIA por la de errores.\n# Los casos asertan sobre las dos: mirar sólo una de las dos deja pasar exactamente el\n# caso que importa (la divergencia se anuncia por el canal que el caso no estaba mirando).\nnode \"$TCG/scripts/tools/release-notes-parity.js\" --root repos\necho \"salida=$?\"\n",
+                        "prep.sh": "#!/usr/bin/env bash\nset -u\ncd \"$FIXTURE\"\n# 🔴 El filtro sale de la copia CANÓNICA del arnés, no de una constante escrita acá: el\n# detector siempre compara contra ella, y un filtro inventado haría fallar los casos el día\n# que alguien ajuste el real — un caso que se rompe por algo que no es su tema es un caso\n# que se termina borrando.\nR=\"$(grep -m1 \"^RUIDO=\" \"$TCG/scripts/ci/release-notes.sh\" | sed \"s/^RUIDO=.//; s/.$//\")\"\n# 🔴 El camino de respaldo sale del MISMO canónico, por el mismo motivo que el filtro: el\n# detector mira las DOS cosas desde el 2026-08-31, y una copia de mentira que sólo declare\n# el filtro se reporta como ilegible — el caso fallaría por algo que no es su tema.\nU=\"$(grep -m1 '^[[:space:]]*ULTIMO=' \"$TCG/scripts/ci/release-notes.sh\" | sed 's/^[[:space:]]*//')\"\nmkdir -p repos/ProdA/Backend/scripts repos/ProdA/FrontEnd/scripts\nprintf \"#!/usr/bin/env bash\\nRUIDO='%s'\\n%s\\n\" \"$R\" \"$U\" > repos/ProdA/Backend/scripts/release-notes.sh\n# Esta no declara su filtro: el detector no puede saber qué hace.\nprintf \"#!/usr/bin/env bash\\necho 'sin filtro declarado'\\n\" > repos/ProdA/FrontEnd/scripts/release-notes.sh\n"
+                    },
+                    "setup": [
+                        "chmod +x correr.sh prep.sh",
+                        "bash prep.sh"
+                    ],
+                    "stdin": {
+                        "tool_name": "Bash",
+                        "tool_input": {
+                            "command": "paridad"
+                        }
+                    },
+                    "expect": {
+                        "stderr_re": [
+                            "ProdA/FrontEnd",
+                            "no se pudo leer",
+                            "no declara RUIDO"
+                        ],
+                        "stdout_not_re": [
+                            "salida=0"
+                        ]
+                    }
+                }
+            ]
+        }
+    ]
+}

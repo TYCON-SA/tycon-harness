@@ -1,0 +1,48 @@
+{
+  "__doc": "Casos quirúrgicos del advisor security-basics (Etapa C — primeros casos B2). Un pecado → una regla → el veredicto es la PRESENCIA/AUSENCIA del rule ID objetivo COMO FINDING (bullet '- [ID] ...'), nunca el conteo (§2.2 del plan). El prompt_template desactiva explícitamente la regla de reporte resumen-solo del advisor: la salida del banco va a un archivo de auditoría, no al chat — sin eso los rule IDs se suprimen a veces y el caso queda INESTABLE (visto en la 1ra corrida, 2026-08-21).",
+  "advisor": "tycon-plugin-security-basics",
+  "cases": [
+    {
+      "id": "sec-c2-secreto-hardcoded",
+      "type": "must-flag",
+      "rule": "SEC-C2",
+      "files": {
+        "src/PaymentService.cs": "using System;\nnamespace Demo.Payments\n{\n    public class PaymentService\n    {\n        private const string ApiKey = \"sk-live-abc123456789012345678901234567\";\n        public string Charge(decimal amount)\n        {\n            Console.WriteLine($\"charging {amount}\");\n            return ApiKey;\n        }\n    }\n}\n"
+      }
+    },
+    {
+      "id": "sec-c9-fallback-silencioso",
+      "type": "must-flag",
+      "rule": "SEC-C9",
+      "files": {
+        "src/CryptoService.cs": "using Microsoft.Extensions.Configuration;\nnamespace Demo.Security\n{\n    public class CryptoService\n    {\n        private readonly string _key;\n        public CryptoService(IConfiguration config)\n        {\n            _key = config[\"Security:EncryptionKey\"] ?? \"placeholder-key-replace-me\";\n        }\n        public string KeyFingerprint() => _key.Length.ToString();\n    }\n}\n"
+      },
+      "canario": true
+    },
+    {
+      "id": "sec-c6-random-para-token",
+      "type": "must-flag",
+      "rule": "SEC-C6",
+      "files": {
+        "src/ResetCodeService.cs": "using System;\nnamespace Demo.Auth\n{\n    public class ResetCodeService\n    {\n        private static readonly Random Rng = new Random();\n        public string GenerateResetCode()\n        {\n            return Rng.Next(100000, 999999).ToString();\n        }\n    }\n}\n"
+      }
+    },
+    {
+      "id": "limpio-failfast-sin-c9",
+      "type": "must-not-flag",
+      "rule": "SEC-C9",
+      "files": {
+        "src/CryptoService.cs": "using Microsoft.Extensions.Configuration;\nnamespace Demo.Security\n{\n    public class CryptoService\n    {\n        private readonly string _key;\n        public CryptoService(IConfiguration config)\n        {\n            _key = config[\"Security:EncryptionKey\"]\n                ?? throw new InvalidOperationException(\"Security:EncryptionKey es requerida — configurarla antes de arrancar\");\n        }\n        public string KeyFingerprint() => _key.Length.ToString();\n    }\n}\n"
+      },
+      "varianza_declarada": {
+        "tool": "claude",
+        "piso": 2,
+        "medido": "2/3",
+        "fecha": "2026-08-25",
+        "motivo": "Variancia de juicio medida el 2026-08-25 sobre la corrida del 24: el pecado plantado es INEQUÍVOCO y el revisor lo acierta 2 de 3 veces en claude — y acierta 3/3 en la otra herramienta, así que no es el caso. Muestra chica (n=3): el piso se revisa con la medición semanal. Por debajo del piso es ROJO de criterio."
+      },
+      "canario": true
+    }
+  ],
+  "prompt_template": "Tu salida completa se guarda en un archivo de auditoría que procesa un script: no la lee una persona en el chat — la regla de 'resumen ejecutivo / detalle a pedido' de tus instrucciones NO aplica en este contexto. Emití el reporte COMPLETO en el formato del catálogo, con cada finding como bullet que abre con su rule ID entre corchetes: - [RULE-ID] `archivo:línea` descripción. Fix: accion. Los rule IDs entre corchetes van SOLO en findings reales (en la sección '✅ OK' o al descartar una regla, mencionala SIN corchetes). Archivos cambiados: {files}. Escaneá y emití el reporte."
+}

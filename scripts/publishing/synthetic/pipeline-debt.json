@@ -1,0 +1,4 @@
+{
+  "__doc": "DEUDA DECLARADA de los pipelines de tus repos — el registro que lee scripts/tests/pipeline-debt.test.js. Cada entrada necesita id, repo, que, motivo, fecha (AAAA-MM-DD) y revision (la fecha en que vence: una deuda vencida pone la prueba en rojo, «decidir o re-fechar»). Al saldarla, se borra la entrada. Esta copia pública arranca vacía: el registro del equipo, con sus repos, no se publica (story 8.4).",
+  "debt": []
+}

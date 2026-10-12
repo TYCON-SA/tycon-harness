@@ -1,0 +1,401 @@
+{
+  "__doc": "Los números de pull request que un archivo publicado usa como DATO de una prueba o de un control (story 8.10.3, tanda B, AC 10). Cada entrada: el archivo, el valor EXACTO tal como lo encuentra la expresión de internal-history.test.js y el motivo. Nunca un archivo entero. Un número que cuenta una historia no va acá: se reescribe la lección sin él. Desde la story 8.26 (tanda G1) la lista la comparte el control de historia interna de la prosa (scripts/publishing/internal-history.js) y cada entrada dice su forma en `form`: `pr-number` (las mira internal-history.test.js, en todo lo publicado) o cualquier otra forma del control (`story-number`, `private-commit`…: un ejemplo de la salida que una skill o un revisor tienen que producir, que el control deja pasar en ese archivo y con ese valor exacto).",
+  "allowed": [
+    {
+      "file": "scripts/tools/release-notes-parity.js",
+      "form": "pr-number",
+      "value": "PR 2597",
+      "reason": "un caso del control: el asunto «Merged PR <id>: …» que el filtro tiene que sacar"
+    },
+    {
+      "file": "scripts/tools/release-notes-parity.js",
+      "form": "pr-number",
+      "value": "pull request 3137",
+      "reason": "los asuntos con que un merge llega a main, tal como los escribe Azure DevOps: el filtro de las notas de versión tiene que reconocerlos"
+    },
+    {
+      "file": "scripts/tools/release-notes-parity.js",
+      "form": "pr-number",
+      "value": "PR #2380",
+      "reason": "los asuntos con que un merge llega a main, tal como los escribe Azure DevOps: el filtro de las notas de versión tiene que reconocerlos"
+    },
+    {
+      "file": "scripts/tools/release-notes-parity.js",
+      "form": "pr-number",
+      "value": "PR #1918",
+      "reason": "los asuntos con que un merge llega a main, tal como los escribe Azure DevOps: el filtro de las notas de versión tiene que reconocerlos (sin los dos puntos)"
+    },
+    {
+      "file": "scripts/tools/release-notes-parity.js",
+      "form": "pr-number",
+      "value": "PR 1918",
+      "reason": "los asuntos con que un merge llega a main, tal como los escribe Azure DevOps: el filtro de las notas de versión tiene que reconocerlos (sin el numeral)"
+    },
+    {
+      "file": "scripts/tests/release-notes.test.sh",
+      "form": "pr-number",
+      "value": "PR 2597",
+      "reason": "un commit de laboratorio con el asunto «Merged PR <id>: …» que el filtro tiene que sacar"
+    },
+    {
+      "file": "scripts/tests/release-notes.test.sh",
+      "form": "pr-number",
+      "value": "pull request 3137",
+      "reason": "los asuntos con que un merge llega a main, tal como los escribe Azure DevOps: el filtro de las notas de versión tiene que reconocerlos"
+    },
+    {
+      "file": "scripts/tests/release-notes.test.sh",
+      "form": "pr-number",
+      "value": "PR 3137",
+      "reason": "los asuntos con que un merge llega a main, tal como los escribe Azure DevOps: el filtro de las notas de versión tiene que reconocerlos"
+    },
+    {
+      "file": "scripts/tests/release-notes.test.sh",
+      "form": "pr-number",
+      "value": "PR #3137",
+      "reason": "los asuntos con que un merge llega a main, tal como los escribe Azure DevOps: el filtro de las notas de versión tiene que reconocerlos"
+    },
+    {
+      "file": "scripts/tests/release-notes.test.sh",
+      "form": "pr-number",
+      "value": "PR #1918",
+      "reason": "los asuntos con que un merge llega a main, tal como los escribe Azure DevOps: el filtro de las notas de versión tiene que reconocerlos (sin los dos puntos)"
+    },
+    {
+      "file": "scripts/tests/release-notes.test.sh",
+      "form": "pr-number",
+      "value": "PR 1918",
+      "reason": "los asuntos con que un merge llega a main, tal como los escribe Azure DevOps: el filtro de las notas de versión tiene que reconocerlos (sin el numeral)"
+    },
+    {
+      "file": "scripts/tests/release-notes-parity.test.sh",
+      "form": "pr-number",
+      "value": "PR 2597",
+      "reason": "el mensaje del control nombra el asunto que se colaría: es el del caso de release-notes-parity.js"
+    },
+    {
+      "file": "scripts/controls-bench/cases/hooks/36-pr-sin-auto-complete.json",
+      "form": "pr-number",
+      "value": "PR 3137",
+      "reason": "el comando de laboratorio de un caso del banco arma el mensaje «Merged PR <id>: …» como lo arma el skill de merge"
+    },
+    {
+      "file": "scripts/tests/tycon-config.test.js",
+      "form": "pr-number",
+      "value": "PR 34821",
+      "reason": "un texto inventado con números largos (corrida, pull request, sha) que la prueba usa para ver que no se confunden con una fecha"
+    },
+    {
+      "file": "scripts/setup/hooks-list.json",
+      "form": "pr-number",
+      "value": "PR 2859",
+      "reason": "el rótulo de un hook del instalador: profile-equivalence.test.sh (T38) compara lo que deja el instalador, byte a byte, contra el de antes; es un archivo de la instalación, que cierra la story 8.23"
+    },
+    {
+      "file": "scripts/tests/public-push-guard.test.js",
+      "form": "pr-number",
+      "value": "PR 1234",
+      "reason": "un número inventado: el mensaje de un commit que el freno antes de publicar tiene que frenar por traer un número de pedido (story 8.26, tanda F1, T22)"
+    },
+    {
+      "file": "scripts/tests/public-push-guard.test.js",
+      "form": "pr-number",
+      "value": "pull request #1234",
+      "reason": "un número inventado: el asunto que GitHub le pone a un merge hecho en su web («Merge pull request #N from …»), que el freno NO cuenta en la primera línea y sí en cualquier otro lugar (story 8.26, tanda F1, T22)"
+    },
+    {
+      "file": "scripts/tests/public-push-guard.test.js",
+      "form": "pr-number",
+      "value": "PR 1235",
+      "reason": "un número inventado: el cuerpo de un commit de merge que nombra OTRO pedido, y que el freno tiene que frenar (story 8.26, tanda F1, T22)"
+    },
+    {
+      "file": "scripts/tests/public-push-guard.test.js",
+      "form": "pr-number",
+      "value": "pull request 1235",
+      "reason": "un número inventado: el cuerpo de un pedido que nombra otro pedido, y que el freno, en su modo de rango, tiene que frenar (story 8.26, tanda F2, T63)"
+    },
+    {
+      "file": "scripts/tests/public-push-guard.test.js",
+      "form": "pr-number",
+      "value": "Pull request 1234",
+      "reason": "un número inventado: la forma con mayúscula sólo en la P, en el título de un `gh pr create` que el freno tiene que frenar con el control de historia interna de verdad (story 8.26, tanda F2, T67)"
+    },
+    {
+      "file": "scripts/controls-bench/cases/hooks/51-public-push-guard.json",
+      "form": "pr-number",
+      "value": "PR 1234",
+      "reason": "un número inventado: el título de un `gh pr create` que el freno tiene que frenar por traer un número de pedido; el caso del banco y su gemelo de PowerShell (story 8.26, tanda F2, T67)"
+    },
+    {
+      "file": ".github/README.es.md",
+      "form": "story-bare",
+      "value": "la 5.1",
+      "reason": "la versión de un programa que trae el sistema, no el número de una story: el único falso de la forma en la muestra de la tanda G1 (tasks/measurement-8.26-tanda-g/false-positives.md). El archivo se declara con la ruta con que sale; en el repo del equipo es un papel de scripts/publishing/public-files/"
+    },
+    {
+      "file": "getting-started/mac.md",
+      "form": "story-bare",
+      "value": "la 1.20.0",
+      "reason": "la versión de engram que el paso manda a bajar, no el número de una story (el falso típico de la forma). El archivo se declara con la ruta con que sale; en el repo del equipo es un papel de scripts/publishing/public-files/"
+    },
+    {
+      "file": "getting-started/linux.md",
+      "form": "story-bare",
+      "value": "la 1.20.0",
+      "reason": "la versión de engram que el paso manda a bajar, no el número de una story (el falso típico de la forma). El archivo se declara con la ruta con que sale; en el repo del equipo es un papel de scripts/publishing/public-files/"
+    },
+    {
+      "file": "guides/publicacion-espejo.md",
+      "form": "team-path",
+      "value": "artifacts",
+      "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
+    },
+    {
+      "file": "guides/publicacion-espejo.md",
+      "form": "team-path",
+      "value": "commands/tycon-vigilante.md",
+      "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
+    },
+    {
+      "file": "guides/publicacion-espejo.md",
+      "form": "team-path",
+      "value": "guides/decisions/revision-adversarial-engram-2026-08-25-codex.md",
+      "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
+    },
+    {
+      "file": "guides/publicacion-espejo.md",
+      "form": "team-path",
+      "value": "guides/decisions/vuelta-atras-2026-08-31.md",
+      "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
+    },
+    {
+      "file": "guides/publicacion-espejo.md",
+      "form": "team-path",
+      "value": "guides/guide-update-proposals.md",
+      "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
+    },
+    {
+      "file": "guides/publicacion-espejo.md",
+      "form": "team-path",
+      "value": "inbox",
+      "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
+    },
+    {
+      "file": "guides/publicacion-espejo.md",
+      "form": "team-path",
+      "value": "new-product-templates",
+      "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
+    },
+    {
+      "file": "guides/publicacion-espejo.md",
+      "form": "team-path",
+      "value": "onboarding",
+      "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
+    },
+    {
+      "file": "guides/publicacion-espejo.md",
+      "form": "team-path",
+      "value": "perfil-equipo.json",
+      "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
+    },
+    {
+      "file": "guides/publicacion-espejo.md",
+      "form": "team-path",
+      "value": "scripts/ci/overlay-harness.js",
+      "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
+    },
+    {
+      "file": "guides/publicacion-espejo.md",
+      "form": "team-path",
+      "value": "scripts/controls-bench/evidence",
+      "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
+    },
+    {
+      "file": "guides/publicacion-espejo.md",
+      "form": "team-path",
+      "value": "scripts/lib/renames.json",
+      "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
+    },
+    {
+      "file": "guides/publicacion-espejo.md",
+      "form": "team-path",
+      "value": "scripts/metrics/corridas-buzon.json",
+      "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
+    },
+    {
+      "file": "guides/publicacion-espejo.md",
+      "form": "team-path",
+      "value": "scripts/nightly/dependencies",
+      "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
+    },
+    {
+      "file": "guides/publicacion-espejo.md",
+      "form": "team-path",
+      "value": "scripts/nightly/watcher",
+      "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
+    },
+    {
+      "file": "guides/publicacion-espejo.md",
+      "form": "team-path",
+      "value": "scripts/publishing/public-files",
+      "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
+    },
+    {
+      "file": "guides/publicacion-espejo.md",
+      "form": "team-path",
+      "value": "scripts/publishing/public-repos.json",
+      "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
+    },
+    {
+      "file": "guides/publicacion-espejo.md",
+      "form": "team-path",
+      "value": "scripts/publishing/split.js",
+      "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
+    },
+    {
+      "file": "guides/publicacion-espejo.md",
+      "form": "team-path",
+      "value": "scripts/publishing/split.json",
+      "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
+    },
+    {
+      "file": "guides/publicacion-espejo.md",
+      "form": "team-path",
+      "value": "scripts/publishing/team-layer.json",
+      "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
+    },
+    {
+      "file": "guides/publicacion-espejo.md",
+      "form": "team-path",
+      "value": "scripts/publishing/team-repo.js",
+      "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
+    },
+    {
+      "file": "guides/publicacion-espejo.md",
+      "form": "team-path",
+      "value": "scripts/tests/fixtures/layer-real-baseline.json",
+      "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
+    },
+    {
+      "file": "guides/publicacion-espejo.md",
+      "form": "team-path",
+      "value": "scripts/tests/fixtures/legacy-names-d1",
+      "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
+    },
+    {
+      "file": "guides/publicacion-espejo.md",
+      "form": "team-path",
+      "value": "scripts/tests/fixtures/legacy-names-f",
+      "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
+    },
+    {
+      "file": "guides/publicacion-espejo.md",
+      "form": "team-path",
+      "value": "scripts/tests/fixtures/product-pipeline",
+      "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
+    },
+    {
+      "file": "guides/publicacion-espejo.md",
+      "form": "team-path",
+      "value": "scripts/tools/harness-map",
+      "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
+    },
+    {
+      "file": "guides/publicacion-espejo.md",
+      "form": "team-path",
+      "value": "skills/bizuit-sdd",
+      "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
+    },
+    {
+      "file": "guides/publicacion-espejo.md",
+      "form": "team-path",
+      "value": "skills/core/signalr-realtime",
+      "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
+    },
+    {
+      "file": "guides/publicacion-espejo.md",
+      "form": "team-path",
+      "value": "skills/infrastructure",
+      "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
+    },
+    {
+      "file": "guides/publicacion-espejo.md",
+      "form": "team-path",
+      "value": "skills/projects",
+      "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
+    },
+    {
+      "file": "guides/publicacion-espejo.md",
+      "form": "team-path",
+      "value": "skills/tycon-alta-de-producto",
+      "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
+    },
+    {
+      "file": "guides/publicacion-espejo.md",
+      "form": "team-path",
+      "value": "skills/tycon-pipeline/HISTORIA.md",
+      "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
+    },
+    {
+      "file": "guides/mecanismo-de-instalacion.md",
+      "form": "team-path",
+      "value": "perfil-equipo.json",
+      "reason": "un dato de la guía, no una referencia para seguir: la lista cerrada de lo que trae la capa del equipo, con las rutas exactas que lee el programa de instalación (quien arma el repo de su equipo las necesita tal cual)"
+    },
+    {
+      "file": "guides/mecanismo-de-instalacion.md",
+      "form": "team-path",
+      "value": "scripts/lib/renames.json",
+      "reason": "un dato de la guía, no una referencia para seguir: la lista cerrada de lo que trae la capa del equipo, con las rutas exactas que lee el programa de instalación (quien arma el repo de su equipo las necesita tal cual)"
+    },
+    {
+      "file": "guides/mecanismo-de-instalacion.md",
+      "form": "team-path",
+      "value": "scripts/metrics/corridas-buzon.json",
+      "reason": "un dato de la guía, no una referencia para seguir: la lista cerrada de lo que trae la capa del equipo, con las rutas exactas que lee el programa de instalación (quien arma el repo de su equipo las necesita tal cual)"
+    },
+    {
+      "file": "guides/agent-architecture.md",
+      "form": "team-path",
+      "value": "packs/clients",
+      "reason": "un dato de la guía, no una referencia para seguir: la primera columna de la tabla de paquetes de revisores nombra la carpeta de cada paquete, también la del que no se publica"
+    },
+    {
+      "file": "story-format.md",
+      "form": "story-number",
+      "value": "Story 2.3",
+      "reason": "un ejemplo para quien lee, no historia del arnés: el título de una story de muestra y la etiqueta de una prueba, con un número inventado que muestra el formato (la guía enseña a escribir una story completa, con su número)"
+    },
+    {
+      "file": "story-format.md",
+      "form": "story-number",
+      "value": "Story 7.1",
+      "reason": "un ejemplo para quien lee, no historia del arnés: el título de una story de muestra y la etiqueta de una prueba, con un número inventado que muestra el formato (la guía enseña a escribir una story completa, con su número)"
+    },
+    {
+      "file": "story-format.md",
+      "form": "story-number",
+      "value": "story-4.5",
+      "reason": "un ejemplo para quien lee, no historia del arnés: el título de una story de muestra y la etiqueta de una prueba, con un número inventado que muestra el formato (la guía enseña a escribir una story completa, con su número)"
+    },
+    {
+      "file": "guides/instinct-mining.md",
+      "form": "team-path",
+      "value": "inbox/instincts",
+      "reason": "un dato de la guía, no una referencia para seguir: dónde guarda sus propuestas el grabador según el árbol tenga o no su buzón; la guía explica justamente que el árbol publicado no lo trae y a dónde van entonces"
+    },
+    {
+      "file": "guides/instinct-mining.md",
+      "form": "team-path",
+      "value": "inbox/instincts/README.md",
+      "reason": "un dato de la guía, no una referencia para seguir: dónde guarda sus propuestas el grabador según el árbol tenga o no su buzón; la guía explica justamente que el árbol publicado no lo trae y a dónde van entonces"
+    },
+    {
+      "file": "guides/instinct-mining.md",
+      "form": "team-path",
+      "value": "inbox/instincts/descartados",
+      "reason": "un dato de la guía, no una referencia para seguir: la carpeta local (sin versionar) donde el grabador deja lo descartado. El repo del equipo no la ve porque no la tiene versionada; en el público cae bajo una carpeta no pública, y ahí hace falta la declaración"
+    }
+  ]
+}

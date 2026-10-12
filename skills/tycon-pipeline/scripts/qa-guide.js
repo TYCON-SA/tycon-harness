@@ -1,0 +1,708 @@
+#!/usr/bin/env node
+/**
+ * qa-guide.js — genera una GUÍA DE PRUEBA MANUAL en HTML, pensada para un TESTER humano
+ * (segundo control de calidad sobre lo que se verificó automáticamente). Regla DODRT-C7,
+ * 2026-07-10 (pedido DevA): "que el pipeline deje armado una guía paso a paso para que yo
+ * pueda probar manualmente lo que se probó automáticamente... un html pensado para un tester,
+ * y quede almacenado en los documentos de trabajo de la historia".
+ *
+ * NO reemplaza la verificación automática (la matriz DODRT-C6) — la COMPLEMENTA: le da a un
+ * humano responsable una checklist facilitada (qué hacer, qué esperar, pasó/falló + notas) para
+ * cada AC, indicando cómo se verificó automáticamente y, cuando aplica, la razón de que un AC no
+ * sea verificable corriendo la app.
+ *
+ * Fuentes (todo derivado, no inventado):
+ *   - Story spec: texto de cada AC (## Acceptance Criteria) + tabla ### Tests (Escenario/Esperado)
+ *     + `runtime_not_verifiable:` (razones de los imposibles).
+ *   - runtime-matrix.js compute(): estado por-AC (corrido / waiveado / etc.) + evidencia.
+ *   - <sid>-smoke-ledger.jsonl: el comando real que corrió cada smoke (referencia técnica).
+ *   - Preámbulo opcional (setup del entorno) — <workspace>/<repo>/specs/qa/preamble.md o --preamble.
+ *
+ * Uso:
+ *   node qa-guide.js --story <abs .md> [--out <abs .html>] [--preamble <abs .md>]
+ * Salida por defecto: <...>/specs/qa/<basename-sin-ext>-guia-qa.html (docs de trabajo de la story).
+ * Exit: 0 ok · 2 error.
+ */
+
+'use strict';
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+const smokeSecrets = require(path.join(__dirname, 'lib', 'smoke-secrets.js'));
+
+function readStory(p) {
+  const content = fs.readFileSync(p, 'utf8');
+  const fm = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  return { content, fm: fm ? fm[1] : '' };
+}
+
+// AC número → texto completo (une líneas hasta el próximo `N.` o `### ` o fin de la sección).
+// La sección se resuelve con lib/story-checks.js — misma anclada-a-línea-y-sin-frontmatter que
+// usa mech-check. El regex local que había acá era la copia SIN anclar: matcheaba el literal
+// citado en un comentario del frontmatter (que va primero y por eso ganaba) y devolvía como
+// "sección de ACs" el resto del frontmatter → 0 ACs, y la guía de QA salía sin ningún criterio
+// que probar. Mismo bug que en lib/story-checks.js, corregido allá el 2026-07-25.
+function parseAcsWithText(content) {
+  const sc = require(path.join(__dirname, 'lib', 'story-checks.js'));
+
+  // 🔴 2026-07-28 — PRIMERO el parser CANÓNICO, y sólo después el local.
+  //
+  // El de abajo entiende ACs como lista numerada (`1. ...`) y NADA más. Las stories de Pacara
+  // los escriben como encabezado (`### AC1 — título`), un formato que el corpus usa y que
+  // `parseAcsFromSpec` sí soporta. Resultado: para esas stories esta función devolvía 0 ACs
+  // mientras el ENCABEZADO de la guía —que sale de la matriz, o sea del parser canónico— decía
+  // "4 ACs". La guía se generaba con el resumen correcto y el cuerpo VACÍO: ni un caso que probar.
+  // Lo vio el dev al abrirla ("esto no está bien").
+  //
+  // Es la misma clase de bug que ya está documentada arriba en este archivo: dos parsers leyendo
+  // el MISMO documento y contestando distinto. La cura no es un tercer regex, es usar el canónico.
+  const nums = sc.parseAcsFromSpec(content);
+  if (nums.length) {
+    const textos = sc.acTextsFromSpec(content, { maxChars: 1200 });
+    const conTexto = nums
+      .map((n) => ({ n, text: String(textos[n] || '').replace(/\s+/g, ' ').trim() }))
+      .filter((a) => a.text);
+    if (conTexto.length) return conTexto;
+  }
+
+  const section = sc.acSectionOf(content);
+  if (section == null) return [];
+  const lines = section.split('\n');
+  const acs = [];
+  let cur = null;
+  for (const line of lines) {
+    const acM = line.match(/^\s*(\d+)\.\s+(.*)$/);
+    if (acM) {
+      if (cur) acs.push(cur);
+      cur = { n: parseInt(acM[1], 10), text: acM[2].trim() };
+    } else if (cur && line.trim() && !/^#{2,}\s/.test(line)) {
+      cur.text += ' ' + line.trim();
+    } else if (/^#{2,}\s/.test(line)) {
+      if (cur) { acs.push(cur); cur = null; }
+    }
+  }
+  if (cur) acs.push(cur);
+  // limpiar markdown básico para el HTML (lo escapamos aparte; acá solo colapsamos espacios)
+  for (const a of acs) a.text = a.text.replace(/\s+/g, ' ').trim();
+  return acs;
+}
+
+// Pasos + descripción de tester EN CRIOLLO (fuente separada de la tabla ### Tests y del texto
+// del AC, ambos dev-facing). Archivo `<repo>/qa/<sid>-pasos.md` por-AC:
+//   ## AC 1
+//   Al abrir una devolución, el listado arranca vacío y aparece el botón para agregar artículos. ← desc (criollo)
+//   - Abrí un pedido de devolución y andá a la pestaña "Listado".                              ← hacé
+//     → El listado está vacío y aparece el botón "+ Agregar artículo".                          ← tenés que ver
+// La descripción (texto suelto antes del primer `-`) reemplaza al texto técnico del AC en la card.
+// Rol/usuario con el que se prueba un AC. Valor centinela para "sin login — lo verifica el
+// sistema" (AC no operables a mano: system-verified). Un `Usuario:` puede listar VARIOS roles
+// separados por `;` (ej. una prueba de 2 pestañas: encargado en una, admin en la otra).
+const ROLE_NONE = '__none__';
+function normalizeRoles(raw) {
+  const parts = String(raw == null ? '' : raw).split(/\s*;\s*/).map((s) => s.trim()).filter(Boolean);
+  if (parts.length === 1 && /^(—|-|n\/?a|ninguno|sin\s+login|sistema)$/i.test(parts[0])) return [ROLE_NONE];
+  return parts;
+}
+
+// Rol/usuario por defecto declarado UNA vez al tope del archivo de pasos ("Usuario por defecto:
+// Encargado general"). Se aplica a los AC que NO declaran su propio `Usuario:`. DODRT-C7 (2026-07-13).
+function parseDefaultRole(md) {
+  if (!md) return null;
+  const m = md.match(/^\s*Usuario\s+por\s+defecto\s*:\s*(.+?)\s*$/im);
+  return m ? normalizeRoles(m[1]) : null;
+}
+
+// Resuelve el/los rol(es) de prueba de un AC para el badge del header.
+//   - `pasosRole` explícito (`Usuario:` del AC) gana siempre; `[ROLE_NONE]` → "sin login".
+//   - Sin explícito: SOLO los AC genuinamente no-verificables por la app (tier 'wv') caen a
+//     "sin login". Un AC 'pend' (todavía no corrido) o 'run' (verificado) mantiene el rol default
+//     — se va a correr/se corrió con ese usuario. (Bug 2026-07-13: antes 'pend' caía a sin-login,
+//     rompiendo el default en guías sin evidencia runtime.)
+function resolveRoles(pasosRole, tier, defaultRole) {
+  if (pasosRole && pasosRole.length) {
+    if (pasosRole.length === 1 && pasosRole[0] === ROLE_NONE) return { roles: [], roleNone: true };
+    return { roles: pasosRole, roleNone: false };
+  }
+  if (tier === 'wv') return { roles: [], roleNone: true };
+  if (defaultRole && defaultRole.length) {
+    if (defaultRole.length === 1 && defaultRole[0] === ROLE_NONE) return { roles: [], roleNone: true };
+    return { roles: defaultRole, roleNone: false };
+  }
+  return { roles: [], roleNone: false };
+}
+
+function parsePasos(md) {
+  const out = {};
+  if (!md) return out;
+  const parts = md.split(/^##\s+AC\s+(\d+)\b[^\n]*$/m);
+  for (let i = 1; i < parts.length; i += 2) {
+    const n = parseInt(parts[i], 10);
+    const body = parts[i + 1] || '';
+    const pairs = [];
+    const descLines = [];
+    let cur = null;
+    let seenStep = false;
+    let role = null;
+    for (const raw of body.split('\n')) {
+      const line = raw.replace(/\s+$/, '');
+      // `Usuario: <rol>` (opcionalmente con 👤) ANTES de los pasos → rol de prueba del AC.
+      const roleM = !seenStep && line.match(/^\s*(?:👤\s*)?Usuario\s*:\s*(.+?)\s*$/i);
+      if (roleM) { role = normalizeRoles(roleM[1]); continue; }
+      const h = line.match(/^\s*-\s+(.*)$/);
+      const v = line.match(/^\s*(?:→|->)\s+(.*)$/);
+      if (h) { seenStep = true; if (cur) pairs.push(cur); cur = { escenario: h[1].trim(), esperado: '' }; }
+      else if (v && cur) { cur.esperado = (cur.esperado ? cur.esperado + ' ' : '') + v[1].trim(); }
+      else if (cur && line.trim() && !/^#/.test(line)) {
+        if (cur.esperado) cur.esperado += ' ' + line.trim();
+        else cur.escenario += ' ' + line.trim();
+      } else if (!seenStep && line.trim() && !/^#/.test(line)) {
+        descLines.push(line.trim());
+      }
+    }
+    if (cur) pairs.push(cur);
+    const desc = descLines.join(' ').trim();
+    if (pairs.length || desc || role) out[n] = { desc, pairs, role };
+  }
+  return out;
+}
+
+// Secuencia (orden + secciones) del archivo de pasos: el ORDEN en que aparecen los `## AC N`
+// define el orden en que el tester los recorre (optimizado para terminar rápido, reusando setup);
+// las líneas `## GRUPO <título>` renderizan un separador de sección. Devuelve [{group}|{ac}] en orden.
+function parsePasosSequence(md) {
+  const seq = [];
+  if (!md) return seq;
+  for (const line of md.split('\n')) {
+    const g = line.match(/^##\s+GRUPO\s+(.+?)\s*$/i);
+    const a = line.match(/^##\s+AC\s+(\d+)\b/);
+    if (g) seq.push({ group: g[1].trim() });
+    else if (a) seq.push({ ac: parseInt(a[1], 10) });
+  }
+  return seq;
+}
+
+// Tabla ### Tests → filas con TODAS las columnas por header (Escenario/Esperado incluidos).
+function parseTestsFull(content) {
+  const m = content.match(/### Tests[^\n]*\n([\s\S]*?)(?=\n#{1,3} |$)/);
+  if (!m) return [];
+  const lines = m[1].split('\n').filter((l) => /^\s*\|/.test(l));
+  if (lines.length < 2) return [];
+  const split = (l) => l.replace(/^\s*\|/, '').replace(/\|\s*$/, '').split('|').map((c) => c.trim());
+  const header = split(lines[0]).map((h) => h.toLowerCase().replace(/\*/g, ''));
+  const idx = {
+    tid: header.findIndex((h) => /^(t-?id|id)$/.test(h)),
+    name: header.findIndex((h) => /test|nombre|descrip/.test(h)),
+    ac: header.findIndex((h) => /^acs?$/.test(h)),
+    nivel: header.findIndex((h) => /nivel|level|tipo/.test(h)),
+    esc: header.findIndex((h) => /escenario|scenario|acci/.test(h)),
+    esp: header.findIndex((h) => /esperado|expected|resultado/.test(h)),
+  };
+  if (idx.tid === -1) idx.tid = 0;
+  const rows = [];
+  for (const line of lines.slice(1)) {
+    if (/^\s*\|[\s:|-]+\|?\s*$/.test(line)) continue;
+    const c = split(line);
+    if (c.every((x) => x === '')) continue;
+    const acRefs = [];
+    const acSrc = idx.ac !== -1 ? (c[idx.ac] || '') : c.join(' ');
+    for (const am of acSrc.matchAll(/(?:AC\s*)?#?\s*(\d+)/g)) acRefs.push(parseInt(am[1], 10));
+    rows.push({
+      tid: (c[idx.tid] || '').replace(/[`*]/g, '').trim(),
+      nivel: idx.nivel !== -1 ? (c[idx.nivel] || '') : '',
+      escenario: idx.esc !== -1 ? (c[idx.esc] || '') : '',
+      esperado: idx.esp !== -1 ? (c[idx.esp] || '') : '',
+      acRefs: [...new Set(acRefs)],
+    });
+  }
+  return rows;
+}
+
+function readSmokeLedgerByAc(evidenceDirs, sid) {
+  const byAc = {};
+  for (const dir of evidenceDirs) {
+    const f = path.join(dir, `${sid}-smoke-ledger.jsonl`);
+    if (!isFile(f)) continue;
+    for (const line of fs.readFileSync(f, 'utf8').split('\n').filter(Boolean)) {
+      let e; try { e = JSON.parse(line); } catch { continue; }
+      if (e.exit !== 0 || !Array.isArray(e.acs)) continue;
+      // Tapado al mostrarlo: la guía se commitea, y un registro anterior al tapado de lib/smoke-secrets.js puede
+      // traer la contraseña tal cual.
+      const cmd = smokeSecrets.redact(e.cmd || '').text;
+      for (const n of e.acs) { (byAc[n] = byAc[n] || []).push(cmd); }
+    }
+  }
+  return byAc;
+}
+
+function isFile(f) { try { return fs.statSync(f).isFile(); } catch { return false; } }
+
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+// Detector de JERGA DE SOFTWARE en un paso de tester (candado del criollo, regla DODRT-C7).
+// Marca lo que un tester del negocio NO entendería: identificadores de código (camelCase,
+// PascalCase multi-palabra), CONSTANTES, nombres de tabla (CEIX_/snake_case), referencias
+// `archivo:línea`, llamadas `.metodo()`, código entre backticks y códigos HTTP crudos (4xx/5xx).
+// NO marca vocabulario del DOMINIO del producto — para sus siglas hay allowlist.
+const JARGON_ALLOW = new Set(['H&E', 'LIS', 'REC', 'ID', 'OK', 'PDF', 'URL']);
+function detectJargon(text) {
+  if (!text) return [];
+  const found = new Set();
+  const patterns = [
+    /`[^`]+`/g,                              // código entre backticks
+    /\b[a-z]+[A-Z][a-zA-Z]+\b/g,             // camelCase (openCasePinned)
+    /\b[A-Z][a-z]+[A-Z][a-zA-Z]+\b/g,        // PascalCase multi (RoleConstants, PedidosService)
+    /\b[A-Z]{2,}_[A-Z0-9_]+\b/g,             // CONSTANT_CASE (ORDER_RBAC_VIOLATION)
+    /\b[A-Za-z]\w*_[A-Za-z]\w*\b/g,          // snake_case / CEIX_Articulos
+    /\b\w+:\d{2,4}\b/g,                      // archivo:línea (PedidosService:891)
+    /\.[a-zA-Z_]\w*\(\)/g,                   // .metodo()
+    /\b[45]\d\d\b/g,                         // HTTP 4xx/5xx crudo
+  ];
+  for (const re of patterns) {
+    for (const m of text.matchAll(re)) {
+      const tok = m[0];
+      if (JARGON_ALLOW.has(tok.replace(/[`]/g, ''))) continue;
+      // permitir números sueltos que NO son HTTP (ej "3 bolsas") — el patrón HTTP ya acota a 4xx/5xx
+      found.add(tok);
+    }
+  }
+  return [...found];
+}
+
+// markdown inline mínimo (código `x`, negrita **x**) → HTML, sobre texto YA escapado.
+function mdInline(s) {
+  return esc(s)
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+}
+
+function renderHtml({ sid, title, preambleHtml, cards, stats, generatedAt, embeddedState, outFileName }) {
+  const rows = cards.map((c) => c.groupTitle ? `
+    <h2 class="group">${esc(c.groupTitle)}</h2>` : `
+    <section class="ac" data-ac="${c.n}" data-tier="${c.tier}">
+      <header>
+        <span class="acnum">AC #${c.n}</span>
+        <span class="badge badge-${c.tier}">${esc(c.badge)}</span>${
+          c.roleNone ? `\n        <span class="badge badge-none">Sin login — lo verifica el sistema</span>`
+          : (c.roles || []).map((r) => `\n        <span class="badge badge-role" title="Usuario con el que probar este AC">${esc(r)}</span>`).join('')
+        }
+      </header>
+      <p class="actext">${mdInline(c.text)}</p>
+      ${c.tierNote ? `<p class="tiernote">${mdInline(c.tierNote)}</p>` : ''}
+      ${c.pruebas.length ? `<div class="block"><h4>Qué probar a mano</h4>${c.pruebas.map((p) => `
+        <div class="prueba">
+          ${p.escenario ? `<div class="do"><span class="dolabel">Hacé:</span> ${mdInline(p.escenario)}</div>` : ''}
+          ${p.esperado ? `<div class="exp"><span class="explabel">Tenés que ver:</span> ${mdInline(p.esperado)}</div>` : ''}
+        </div>`).join('')}</div>` : (c.needsPasos ? `<p class="faltan">✍️ Faltan los pasos en lenguaje de tester para este AC — pedíselos al dev. (Abajo queda el detalle técnico.)</p>` : '')}
+      ${(c.acTextTech || c.tecnica.length || c.cmds.length) ? `<details class="cmds"><summary>Detalle técnico (para el dev)</summary>${
+        c.acTextTech ? `<div class="prueba"><div class="do"><span class="dolabel">AC (texto técnico):</span> ${mdInline(c.acTextTech)}</div></div>` : ''
+      }${
+        c.tecnica.map((p) => `<div class="prueba"><div class="do"><span class="dolabel">Escenario:</span> ${mdInline(p.escenario)}</div>${p.esperado ? `<div class="exp"><span class="explabel">Esperado:</span> ${mdInline(p.esperado)}</div>` : ''}</div>`).join('')
+      }${c.cmds.map((x) => `<pre>${esc(x)}</pre>`).join('')}</details>` : ''}
+      <div class="verdict">
+        <div class="opts">
+          <label><input type="radio" name="v${c.n}" value="pass"> ✅ Pasó</label>
+          <label><input type="radio" name="v${c.n}" value="fail"> ❌ Falló</label>
+          <label><input type="radio" name="v${c.n}" value="na"> ⏭️ No aplica</label>
+          <button type="button" class="clr" onclick="limpiar(${c.n})">Limpiar</button>
+        </div>
+        <textarea placeholder="Notas del tester (qué viste, capturas, nº de orden usada...)" data-notes="${c.n}"></textarea>
+      </div>
+    </section>`).join('\n');
+
+  return `<!doctype html>
+<html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Guía QA — Story ${esc(sid)}</title>
+<style>
+  :root{--bg:#f7f8fa;--card:#fff;--ink:#1a2028;--muted:#5b6470;--line:#e3e7ec;--accent:#2563eb;
+    --run:#0a7d32;--wv:#7c3aed;--pend:#c2410c;}
+  @media (prefers-color-scheme:dark){:root{--bg:#0f1319;--card:#171c24;--ink:#e6e9ee;--muted:#9aa4b0;--line:#2a313b;}}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  .wrap{max-width:920px;margin:0 auto;padding:24px 18px 80px}
+  h1{font-size:22px;margin:0 0 4px} .sub{color:var(--muted);margin:0 0 18px}
+  .summary{display:flex;gap:10px;flex-wrap:wrap;margin:14px 0 24px}
+  .pill{background:var(--card);border:1px solid var(--line);border-radius:999px;padding:6px 12px;font-size:13px}
+  .pill b{color:var(--accent)}
+  .preamble{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:24px}
+  .preamble h2{font-size:16px;margin:0 0 8px} .preamble pre{white-space:pre-wrap}
+  h2.group{font-size:15px;text-transform:uppercase;letter-spacing:.04em;color:var(--accent);margin:28px 0 10px;padding-bottom:6px;border-bottom:2px solid var(--line)}
+  h2.group:first-of-type{margin-top:8px}
+  .ac{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:16px;scroll-margin-top:12px}
+  .ac header{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+  .acnum{font-weight:700}
+  .badge{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;border-radius:6px;padding:3px 8px;color:#fff}
+  .badge-run{background:var(--run)} .badge-wv{background:var(--wv)} .badge-pend{background:var(--pend)}
+  .badge-role{background:#0e7490} .badge-none{background:#64748b;text-transform:none;letter-spacing:0}
+  .actext{margin:0 0 8px}
+  .tiernote{color:var(--muted);font-size:13px;margin:0 0 10px;border-left:3px solid var(--line);padding-left:10px}
+  .block{margin:12px 0} .block h4{margin:0 0 6px;font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em}
+  .prueba{border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:8px 0;background:rgba(127,127,127,.04)}
+  .prueba .do{margin-bottom:6px} .prueba .exp{color:var(--ink)}
+  .dolabel,.explabel{display:inline-block;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.03em;margin-right:6px}
+  .dolabel{color:var(--accent)} .explabel{color:var(--run)}
+  @media (prefers-color-scheme:dark){.explabel{color:#4ade80}}
+  code{background:rgba(127,127,127,.15);padding:1px 5px;border-radius:4px;font-size:13px}
+  details.cmds{margin:8px 0} details.cmds summary{cursor:pointer;color:var(--muted);font-size:13px}
+  pre{background:rgba(127,127,127,.1);border:1px solid var(--line);border-radius:8px;padding:10px;overflow:auto;font-size:12.5px}
+  .faltan{color:var(--pend);font-size:13px;margin:8px 0;border-left:3px solid var(--pend);padding-left:10px}
+  .verdict{display:flex;flex-direction:column;gap:8px;margin-top:12px;padding-top:12px;border-top:1px dashed var(--line)}
+  .verdict .opts{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .verdict label{margin-right:6px;font-size:14px;cursor:pointer}
+  .verdict textarea{width:100%;min-height:52px;border:1px solid var(--line);border-radius:8px;padding:8px;background:transparent;color:inherit;font:inherit;resize:vertical}
+  button.clr{background:transparent;color:var(--muted);border:1px solid var(--line);padding:3px 10px;font-size:12px;border-radius:6px;margin-left:auto}
+  button.clr:hover{color:var(--ink);border-color:var(--muted)}
+  .toolbar{position:sticky;top:0;background:var(--bg);padding:10px 0;z-index:5;display:flex;gap:10px;align-items:center;border-bottom:1px solid var(--line);margin-bottom:16px}
+  button{background:var(--accent);color:#fff;border:0;border-radius:8px;padding:8px 14px;font:inherit;cursor:pointer}
+  button.ghost{background:transparent;color:var(--accent);border:1px solid var(--accent)}
+  .prog{color:var(--muted);font-size:13px;margin-left:auto}
+  .saved{color:var(--run);font-size:13px} @media (prefers-color-scheme:dark){.saved{color:#4ade80}}
+  .ac.done-pass{border-color:var(--run)} .ac.done-fail{border-color:#c0392b}
+  .storage-note{background:rgba(37,99,235,.08);border:1px solid var(--accent);border-radius:8px;padding:8px 12px;font-size:13px;margin-bottom:16px;color:var(--ink)}
+</style></head>
+<body><div class="wrap">
+  <div class="toolbar">
+    <button onclick="guardar()">💾 Guardar</button>
+    <span class="saved" id="saved"></span>
+    <span class="prog" id="prog"></span>
+  </div>
+  <script id="qa-state" type="application/json">${JSON.stringify(embeddedState || {})}</script>
+  <h1>Guía de prueba manual — Story ${esc(sid)}</h1>
+  <p class="sub">${esc(title)} · generada ${esc(generatedAt)} · segundo control de calidad (humano) sobre lo verificado automáticamente</p>
+  <div class="summary">
+    <span class="pill"><b>${stats.total}</b> ACs</span>
+    <span class="pill"><b>${stats.runtime}</b> verificados corriendo la app</span>
+    <span class="pill"><b>${stats.waived + stats.notVerifiable}</b> no verificables por la app (revisar test que los cubre)</span>
+  </div>
+  <div class="storage-note">
+    📝 Tus respuestas (Pasó / Falló / No aplica + notas) se van recordando mientras trabajás. Cuando
+    termines (o cuando quieras cortar), tocá <b>💾 Guardar</b>: escribe tus selecciones dentro de
+    <b>este mismo archivo HTML</b>, así quedan guardadas y viajan con la historia. Cada caso tiene
+    un botón <b>Limpiar</b> para borrar su selección.
+  </div>
+  ${preambleHtml ? `<div class="preamble"><h2>Antes de empezar — preparar el entorno</h2>${preambleHtml}</div>` : ''}
+  ${rows}
+</div>
+<script>
+  var SID=${JSON.stringify(sid)};
+  // Nombre del archivo que "Guardar" sobrescribe — DEBE ser el mismo que generó el pipeline
+  // (basename del story), no un derivado del SID, o Guardar crea un archivo huérfano paralelo.
+  var FNAME=${JSON.stringify(outFileName || (String(sid).replace(/\./g, '-') + '-guia-qa.html'))};
+  var KEY='qa-guide:'+SID;
+  // Estado inicial = lo guardado DENTRO del archivo (script#qa-state) ∪ lo que quedó en este
+  // navegador (localStorage, por si hubo ediciones sin Guardar). El archivo es la base.
+  function embedded(){try{return JSON.parse(document.getElementById('qa-state').textContent||'{}')}catch(e){return {}}}
+  function local(){try{return JSON.parse(localStorage.getItem(KEY)||'{}')}catch(e){return {}}}
+  function saveLocal(s){try{localStorage.setItem(KEY,JSON.stringify(s))}catch(e){}}
+  var state=Object.assign({},embedded(),local());
+  function dirtyMark(){var el=document.getElementById('saved');if(el)el.textContent='● cambios sin guardar';}
+  function apply(){
+    document.querySelectorAll('.ac').forEach(function(sec){
+      var n=sec.getAttribute('data-ac'), v=state['v'+n];
+      sec.classList.remove('done-pass','done-fail');
+      if(v==='pass')sec.classList.add('done-pass'); if(v==='fail')sec.classList.add('done-fail');
+      var r=sec.querySelector('input[value="'+v+'"]'); if(r)r.checked=true; else {var rs=sec.querySelectorAll('input[type=radio]');rs.forEach(function(x){x.checked=false});}
+      var t=sec.querySelector('textarea'); if(t)t.value=state['n'+n]!=null?state['n'+n]:'';
+    });
+    var tot=document.querySelectorAll('.ac').length, done=Object.keys(state).filter(function(k){return k[0]==='v'&&state[k]}).length;
+    document.getElementById('prog').textContent=done+' / '+tot+' evaluados';
+  }
+  document.addEventListener('change',function(e){
+    var m=e.target.name&&e.target.name.match(/^v(\\d+)$/);
+    if(m){state['v'+m[1]]=e.target.value;saveLocal(state);apply();dirtyMark();}
+    if(e.target.hasAttribute&&e.target.hasAttribute('data-notes')){state['n'+e.target.getAttribute('data-notes')]=e.target.value;saveLocal(state);dirtyMark();}
+  });
+  document.addEventListener('input',function(e){
+    if(e.target.hasAttribute&&e.target.hasAttribute('data-notes')){state['n'+e.target.getAttribute('data-notes')]=e.target.value;saveLocal(state);dirtyMark();}
+  });
+  window.limpiar=function(n){delete state['v'+n];delete state['n'+n];saveLocal(state);apply();dirtyMark();};
+  // Guardar = escribir el estado DENTRO de este archivo HTML. Con la File System Access API
+  // (Chrome/Edge) se sobrescribe el archivo abierto o se elige dónde; si no, cae a descarga.
+  window.guardar=async function(){
+    document.getElementById('qa-state').textContent=JSON.stringify(state);
+    var full='<!doctype html>\\n'+document.documentElement.outerHTML;
+    var fname=FNAME;
+    try{
+      if(window.showSaveFilePicker){
+        var h=await window.showSaveFilePicker({suggestedName:fname,types:[{description:'HTML',accept:{'text/html':['.html']}}]});
+        var w=await h.createWritable();await w.write(full);await w.close();
+        document.getElementById('saved').textContent='✓ guardado en el archivo';return;
+      }
+    }catch(e){if(e&&e.name==='AbortError'){return;}}
+    var b=new Blob([full],{type:'text/html'});var a=document.createElement('a');
+    a.href=URL.createObjectURL(b);a.download=fname;a.click();
+    document.getElementById('saved').textContent='✓ descargado — reemplazá el archivo original con éste';
+  };
+  window.addEventListener('beforeunload',function(e){if(document.getElementById('saved').textContent.indexOf('sin guardar')>=0){e.preventDefault();e.returnValue='';}});
+  apply();
+</script>
+</body></html>`;
+}
+
+// ¿La story toca UI (donde un tester humano aporta)? Fuente única: lib/ui-signal.js (fix
+// 2026-08-14 — señal genérica + evidence.fe_paths del repo; nada de productos en duro).
+// La firma (content, fm) se mantiene: acá el frontmatter llega ya separado.
+function isUiStory(content, fm, repoRoot) {
+  return require(path.join(__dirname, 'lib', 'ui-signal.js')).touchesUiParts(fm, content, repoRoot);
+}
+
+function main() {
+  const argv = process.argv.slice(2);
+  const opt = (n) => { const i = argv.indexOf(n); return i !== -1 ? argv[i + 1] : null; };
+  const storyPath = opt('--story');
+  if (!storyPath || !isFile(storyPath)) {
+    console.error('qa-guide.js: --story <abs .md> requerido y existente.');
+    process.exit(2);
+  }
+  const abs = path.resolve(storyPath);
+  const { content, fm } = readStory(abs);
+
+  const rm = require(path.join(__dirname, 'runtime-matrix.js'));
+  const matrix = rm.compute({ storyPath: abs });
+  if (matrix.structuralError) {
+    console.error(`qa-guide.js: la matriz no computa (${matrix.structuralError}).`);
+    process.exit(2);
+  }
+  const sid = matrix.sid;
+  // La guía del tester se nombra con la CLAVE de la story (story 1.17.1): con un número que se repite en el repo, dos
+  // stories que comparten la carpeta qa/ escribían y leían el mismo `<id>-pasos.md`, y el chequeo de una daba por
+  // buena la guía de la otra. Con número único la clave es el número: el nombre de siempre.
+  const qk = matrix.key || sid;
+  const titleM = content.match(/^#\s+(.+)$/m);
+  const title = titleM ? titleM[1].replace(/[#*`]/g, '').trim() : sid;
+
+  const acs = parseAcsWithText(content);
+  const tests = parseTestsFull(content);
+  // La atribución de evidencia la decide runtime-matrix.js (repo de la story + companions
+  // declarados — fix 2026-08-14): esta guía usa los MISMOS dirs, no re-barre el workspace.
+  // La copia local del barrido por hermanos mostraba en la guía smokes de OTROS repos.
+  const evidenceDirs = matrix.evidenceDirs || [];
+  // El registro de humos se nombra con la CLAVE de la evidencia (story 1.17), que la matriz ya calculó.
+  const smokeByAc = readSmokeLedgerByAc(evidenceDirs, matrix.key || sid);
+
+  // preámbulo (setup del entorno) — --preamble o convención specs/qa/preamble.md del repo de la story
+  let preambleHtml = '';
+  const preamblePath = opt('--preamble') ||
+    [path.join(path.dirname(path.dirname(abs)), 'qa', 'preamble.md')].find(isFile);
+  if (preamblePath && isFile(preamblePath)) {
+    const md = fs.readFileSync(preamblePath, 'utf8');
+    // render muy básico: encabezados, listas, code fences, párrafos.
+    preambleHtml = md
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/```([\s\S]*?)```/g, (_m, code) => `<pre>${code.trim()}</pre>`)
+      .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+      .replace(/^## (.+)$/gm, '<h3>$1</h3>')
+      .replace(/^- (.+)$/gm, '<li>$1</li>')
+      .replace(/(<li>[\s\S]*?<\/li>)/g, '<ul>$1</ul>')
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+      .split(/\n{2,}/).map((b) => /^<(h3|ul|pre)/.test(b.trim()) ? b : (b.trim() ? `<p>${b.trim()}</p>` : '')).join('\n');
+  }
+
+  const TIER = {
+    RUNTIME: { tier: 'run', badge: 'verificado corriendo', note: null },
+    'WAIVED-USER': { tier: 'wv', badge: 'no verificable por la app (aprobado)', note: null },
+    'NOT-VERIFIABLE': { tier: 'wv', badge: 'no verificable por la app', note: null },
+    'NOT-RUN': { tier: 'pend', badge: 'pendiente', note: null },
+  };
+
+  // Pasos EN CRIOLLO para el tester (fuente separada de la tabla dev): --steps o <repo>/qa/<clave>-pasos.md
+  let pasosByAc = {};
+  let sequence = [];
+  let defaultRole = null;
+  const pasosPath = opt('--steps') ||
+    [path.join(path.dirname(path.dirname(abs)), 'qa', `${qk}-pasos.md`)].find(isFile);
+  // Lo viejo: con número compartido, `<id>-pasos.md` / `<id>-legibilidad.md` no dicen de cuál story son. No cuentan,
+  // no se tocan, y se nombran para que nadie crea que la guía falta por descuido.
+  const qaViejos = qk === sid ? [] : [`${sid}-pasos.md`, `${sid}-legibilidad.md`]
+    .map((f) => path.join(path.dirname(path.dirname(abs)), 'qa', f)).filter(isFile);
+  if (pasosPath && isFile(pasosPath)) {
+    const rawMd = fs.readFileSync(pasosPath, 'utf8');
+    pasosByAc = parsePasos(rawMd);
+    sequence = parsePasosSequence(rawMd);
+    defaultRole = parseDefaultRole(rawMd);
+  }
+
+  // ── MODO --check (candado DODRT-C7): para una story de UI, la guía de tester tiene que estar
+  // LISTA antes de cerrar. Exige los 4 pasos: (1) archivo de pasos-tester, (2) que cubra cada AC
+  // verificado corriendo, (3) sin jerga de software (determinístico), (4) review de legibilidad
+  // independiente con "veredicto: OK". 1-3 son candados duros infakeables (chequean el texto real);
+  // 4 es un artefacto de la pasada del "tester no técnico" (evidencia, tier DoD).
+  if (argv.includes('--check')) {
+    const isUi = isUiStory(content, fm, matrix.repoRoot);
+    if (!isUi) { console.log(`qa-guide --check: story ${sid} no toca UI → no requiere guía de tester.`); process.exit(0); }
+    const problems = [];
+    const qaDir = path.join(path.dirname(path.dirname(abs)), 'qa');
+    const runtimeAcs = acs.map((a) => a.n).filter((n) => (matrix.perAc[n] || {}).verdict === 'RUNTIME');
+    // 🔴 La ruta del mensaje se CALCULA de la misma forma que la búsqueda (2026-08-05): decía
+    // `specs/qa/...` mientras el script buscaba en `<repo>/qa/...`, así que mandaba a crear el
+    // archivo donde nunca lo iba a encontrar — y el gate seguía fallando después de obedecerlo.
+    // Lo destapó una prueba en frío con una story nueva; con la story ya armada no se veía.
+    const pasosEsperado = path.join(path.dirname(path.dirname(abs)), 'qa', `${qk}-pasos.md`);
+    if (!pasosPath) problems.push(`(1) Falta el archivo de pasos-tester: ${pasosEsperado}`);
+    const sinPasos = runtimeAcs.filter((n) => !pasosByAc[n]);
+    if (sinPasos.length) problems.push(`(2) ACs verificados corriendo SIN pasos-tester: ${sinPasos.map((n) => '#' + n).join(', ')}`);
+    for (const n of Object.keys(pasosByAc)) {
+      const b = pasosByAc[n];
+      const txt = [b.desc, ...b.pairs.flatMap((p) => [p.escenario, p.esperado])].join(' ');
+      const j = detectJargon(txt);
+      if (j.length) problems.push(`(3) AC #${n}: los pasos tienen JERGA de software (reescribir en criollo): ${j.slice(0, 6).join(', ')}`);
+    }
+    const readPath = path.join(qaDir, `${qk}-legibilidad.md`);
+    if (!isFile(readPath)) problems.push(`(4) Falta la review de legibilidad (pasada del "tester no técnico"): ${readPath} con "veredicto: OK"`);
+    else if (!/veredicto:\s*ok/i.test(fs.readFileSync(readPath, 'utf8'))) problems.push(`(4) La review de legibilidad no tiene "veredicto: OK" — resolver las marcas del tester y re-revisar.`);
+    // (5) DODRT-C7 2026-07-13: cada AC verificado corriendo declara CON QUÉ USUARIO se prueba
+    // (badge de rol en la guía). Explícito por AC (`Usuario: <rol>`) o un `Usuario por defecto:`
+    // al tope del archivo. Un `Usuario: —` (sin login) cuenta como declarado.
+    const sinRol = runtimeAcs.filter((n) => {
+      const b = pasosByAc[n];
+      const explicit = b && b.role && b.role.length;
+      return !explicit && !(defaultRole && defaultRole.length);
+    });
+    // (6) DESCRIPCIÓN EN CRIOLLO — 2026-08-05, pregunta del dev: "¿el harness no le dice que
+    // lo tiene que hacer?". Lo AVISABA al generar la guía y no lo exigía acá, así que la guía
+    // podía cerrar en verde mostrándole al tester el texto TÉCNICO del criterio (nombres de
+    // método, tablas, Given/When/Then). Un aviso que no frena es un aviso que se ignora.
+    // Calibrado para no pedir de más: sólo se exige descripción cuando el texto del AC NO se
+    // entiende solo — si ya está en castellano llano, sirve como titular y no hay nada que
+    // reescribir. El juez es el mismo detector de jerga del punto (3).
+    const sinDesc = acs.filter((a) => {
+      const b = pasosByAc[a.n];
+      if (b && b.desc && b.desc.trim()) return false;      // ya tiene descripción propia
+      return detectJargon(a.text || '').length > 0;         // el AC solo se lee con jerga
+    });
+    if (sinDesc.length) {
+      problems.push(
+        `(6) ACs cuyo titular en la guía sería el texto TÉCNICO del criterio (el tester lee nombres ` +
+        `de método/tablas en vez de qué se espera): ${sinDesc.map((a) => '#' + a.n).join(', ')}. ` +
+        `Agregá una línea en criollo bajo el "## AC N" de ${pasosPath || pasosEsperado}. ` +
+        `Aplica también a los ACs no verificables por la app: igual aparecen en la guía y el tester los lee.`,
+      );
+    }
+    if (sinRol.length) problems.push(`(5) ACs verificados corriendo SIN usuario de prueba declarado — agregá 'Usuario: <rol>' en el bloque del AC de ${pasosEsperado}, o un 'Usuario por defecto: <rol>' al tope del archivo: ${sinRol.map((n) => '#' + n).join(', ')}`);
+    if (problems.length) {
+      console.error(`🔴 qa-guide --check FALLÓ (story ${sid}) — la guía de tester no está lista:`);
+      for (const p of problems) console.error(`   - ${p}`);
+      for (const v of qaViejos) console.error(`   · ${v} no cuenta: el número ${sid} lo comparten varias stories de este repo y ese archivo no dice de cuál es (no se tocó). La guía de esta story va en ${qk}-….`);
+      process.exit(2);
+    }
+    console.log(`✅ qa-guide --check OK (story ${sid}): pasos-tester presentes, cubren los ${runtimeAcs.length} ACs corridos, sin jerga, legibilidad OK, usuario de prueba declarado, y los ${acs.length} ACs con titular legible.`);
+    process.exit(0);
+  }
+
+  function buildCard(a) {
+    const pa = matrix.perAc[a.n] || { verdict: 'NOT-RUN' };
+    const t = TIER[pa.verdict] || TIER['NOT-RUN'];
+    const acTests = tests.filter((r) => r.acRefs.includes(a.n));
+    const tecnica = acTests
+      .map((r) => ({ escenario: r.escenario, esperado: r.esperado }))
+      .filter((p) => p.escenario || p.esperado);
+    const pasos = pasosByAc[a.n] || { desc: '', pairs: [] };
+    const pruebas = pasos.pairs || [];
+    const headline = pasos.desc || a.text;
+    const acTextTech = pasos.desc ? a.text : null;
+    const cmds = (smokeByAc[a.n] || []).filter(Boolean);
+    let tierNote = null;
+    if (pa.verdict === 'NOT-VERIFIABLE' || pa.verdict === 'WAIVED-USER') {
+      tierNote = `No se puede verificar corriendo la app: ${pa.declReason || '(razón no declarada)'}. ` +
+        `Cubierto por el test **${pa.coveredBy || (pa.code || []).join(', ') || 'de código'}** — el tester puede revisar que ese test exista y pase, o inspeccionar la base/el esquema directamente.`;
+    }
+    const needsPasos = pruebas.length === 0 && pa.verdict === 'RUNTIME';
+    const needsDesc = !pasos.desc;
+    // Rol/usuario de prueba (badge del header): explícito en pasos.md (`Usuario:`), o el default.
+    const { roles, roleNone } = resolveRoles(pasos.role, t.tier, defaultRole);
+    const needsRole = t.tier !== 'wv' && !roleNone && roles.length === 0;
+    return { n: a.n, text: headline, acTextTech, tier: t.tier, badge: t.badge, tierNote, pruebas, tecnica, cmds, needsPasos, needsDesc, roles, roleNone, needsRole };
+  }
+
+  // ORDEN pensado para el tester: si el archivo de pasos define una secuencia (orden de los `## AC N`
+  // + `## GRUPO`), la guía sigue ESE orden (flujo que reusa setup → termina antes); los ACs no listados
+  // van al final. Sin archivo de pasos → orden numérico de la spec.
+  const cardByN = {};
+  for (const a of acs) cardByN[a.n] = buildCard(a);
+  let cards = [];
+  if (sequence.length) {
+    const usados = new Set();
+    for (const s of sequence) {
+      if (s.group) cards.push({ groupTitle: s.group });
+      else if (cardByN[s.ac]) { cards.push(cardByN[s.ac]); usados.add(s.ac); }
+    }
+    const resto = acs.map((a) => a.n).filter((n) => !usados.has(n)).sort((x, y) => x - y);
+    if (resto.length) { cards.push({ groupTitle: 'Otros ACs' }); for (const n of resto) cards.push(cardByN[n]); }
+  } else {
+    cards = acs.map((a) => cardByN[a.n]);
+  }
+
+  const stats = {
+    total: matrix.stats.total,
+    runtime: matrix.stats.runtime,
+    waived: matrix.stats.waived,
+    notVerifiable: matrix.stats.notVerifiable,
+  };
+
+  // Determinar el path de salida ANTES de render, para preservar el estado del tester ya guardado.
+  let out = opt('--out');
+  if (!out) {
+    const specsStories = path.dirname(abs);
+    const specsRoot = path.dirname(specsStories);
+    out = path.join(specsRoot, 'qa', path.basename(abs, '.md') + '-guia-qa.html');
+  }
+  // Si ya existe una guía con respuestas del tester guardadas, preservarlas (script#qa-state).
+  let embeddedState = {};
+  if (isFile(out)) {
+    const prev = fs.readFileSync(out, 'utf8');
+    const mm = prev.match(/<script id="qa-state"[^>]*>([\s\S]*?)<\/script>/);
+    if (mm) { try { embeddedState = JSON.parse(mm[1]) || {}; } catch { embeddedState = {}; } }
+  }
+
+  const html = renderHtml({
+    outFileName: path.basename(out),
+    sid, title, preambleHtml, cards, stats, embeddedState,
+    generatedAt: (opt('--now') || 'ahora'),
+  });
+
+  fs.mkdirSync(path.dirname(out), { recursive: true });
+  fs.writeFileSync(out, html, 'utf8');
+  const faltan = cards.filter((c) => c.needsPasos).map((c) => c.n);
+  const sinDesc = cards.filter((c) => c.needsDesc).map((c) => c.n);
+  console.log(`✅ Guía QA generada: ${out}`);
+  console.log(`   ${stats.total} ACs · ${stats.runtime} verificados corriendo · ${stats.waived + stats.notVerifiable} no verificables por la app`);
+  // La ruta que se sugiere es la MISMA que se busca (PIPE-DEBT-2.14): antes el mensaje decía
+  // `specs/qa/` fijo y la búsqueda es `<carpeta padre de la story>/../qa/` — en un repo con las
+  // stories en `specs/` eso es `qa/`, y el dev escribía el archivo donde el mensaje decía.
+  const pasosHint = path.relative(process.cwd(), path.join(path.dirname(path.dirname(abs)), 'qa', `${qk}-pasos.md`)) || `${qk}-pasos.md`;
+  for (const v of qaViejos) console.log(`   ⚠ ${v} no cuenta: el número ${sid} lo comparten varias stories de este repo (no se tocó). La guía de esta story va en ${pasosHint}.`);
+  if (faltan.length) console.log(`   ⚠ Sin pasos-tester: AC ${faltan.join(', ')} — escribir en ${pasosHint}`);
+  if (sinDesc.length) console.log(`   ⚠ Sin descripción criolla (el titular queda en texto técnico del AC): AC ${sinDesc.join(', ')} — agregar una línea de descripción en ${pasosHint}`);
+  const sinRol = cards.filter((c) => c.needsRole).map((c) => c.n);
+  if (sinRol.length) console.log(`   ⚠ Sin usuario de prueba declarado: AC ${sinRol.join(', ')} — agregar 'Usuario: <rol>' en ${pasosHint} (o 'Usuario por defecto:' al tope)`);
+
+  // --open (pedido del dev 2026-08-14): abrir la guía en el navegador al generarla —
+  // SOLO con el flag explícito, nunca por default: qa-guide corre también desde hooks
+  // (on-pre-commit --check no pasa por acá, pero cualquier automatización futura que
+  // genere no debe abrir ventanas sin pedirlo). Cross-platform, fail-open (best-effort).
+  if (process.argv.includes('--open')) {
+    try {
+      const { spawn } = require('child_process');
+      const cmd = process.platform === 'darwin' ? 'open'
+        : process.platform === 'win32' ? 'cmd'
+        : 'xdg-open';
+      const args = process.platform === 'win32' ? ['/c', 'start', '', out] : [out];
+      spawn(cmd, args, { detached: true, stdio: 'ignore' }).unref();
+      console.log('   🌐 Guía abierta en el navegador (--open)');
+    } catch (e) {
+      console.log(`   ⚠ No pude abrir la guía en el navegador (${e.message}) — abrila a mano: ${out}`);
+    }
+  }
+  process.exit(0);
+}
+
+module.exports = { parseAcsWithText, parseTestsFull, parsePasos, parseDefaultRole, resolveRoles, parsePasosSequence, detectJargon, isUiStory, renderHtml };
+if (require.main === module) {
+  // story 8.9 (tanda B3b): la opción vieja sigue andando hasta el retiro
+  require('./lib/legacy-names.js').aliasArgv('skills/tycon-pipeline/scripts/qa-guide.js');
+  main();
+}

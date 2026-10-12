@@ -1,0 +1,3 @@
+[mcp_servers.lab]
+command = "node"
+args = ["{{LEGACY_TOML}}/scripts/lab/server.js"]

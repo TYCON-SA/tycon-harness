@@ -1,0 +1,97 @@
+{
+  "__doc": "FIX-4(c) (2026-08-25): `.tycon/advisors.yaml` es la única superficie del arnés que puede APAGAR frenos y que NO dispara a ningún revisor — un commit que sólo la toca se clasifica como 'sólo documentación' y el set de revisores queda vacío. Este lint la revisa al editarla: determinístico, sin modelo, ~50ms, cero tokens. Los tres modos de falla que cubre son silenciosos: una llave que nadie lee (los 5 repos de Bigua declaraban `advisors:`), una regla CRITICAL declarada que no puede disparar (un patrón de costura que ya no matchea nada), y una cobertura que se achica de a una línea (cada exclusión nueva afloja REAL-C2 y REAL-C7). AVISA, nunca bloquea: un lint de config que frena commits se apaga en una semana. Off: TYCON_CONFIG_LINT=0.",
+  "hooks": [
+    {
+      "hook": "hook-post-edit.js → on-config-lint",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/hook-post-edit.js",
+      "event": "PostToolUse",
+      "matcher": "Edit|Write",
+      "cases": [
+        {
+          "id": "avisa-llave-que-nadie-lee",
+          "type": "must-emit",
+          "setup": [
+            "git init -q -b main . && mkdir -p .tycon && printf 'i18n:\\n  required: false\\n' > .tycon/advisors.yaml && git add .tycon && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "printf 'advisors:\\n  - tycon-story-validator\\ni18n:\\n  required: false\\n' > .tycon/advisors.yaml"
+          ],
+          "stdin": {
+            "session_id": "bench-cl1",
+            "tool_name": "Edit",
+            "tool_input": { "file_path": "${FIXTURE}/.tycon/advisors.yaml" }
+          },
+          "expect": {
+            "stdout_re": ["tycon-config-lint", "advisors:"]
+          }
+        },
+        {
+          "id": "avisa-exclusion-nueva-que-baja-cobertura",
+          "type": "must-emit",
+          "__doc": "Cada entrada de business_endpoint_excludes afloja DOS reglas CRITICAL. El aviso tiene que decir QUÉ afloja, no sólo que la config cambió.",
+          "setup": [
+            "git init -q -b main . && mkdir -p .tycon && printf 'e2e_realness:\\n  business_endpoint_excludes:\\n    - /api/legacy/\\n' > .tycon/advisors.yaml && git add .tycon && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "printf 'e2e_realness:\\n  business_endpoint_excludes:\\n    - /api/legacy/\\n    - /api/pedidos/\\n' > .tycon/advisors.yaml"
+          ],
+          "stdin": {
+            "session_id": "bench-cl2",
+            "tool_name": "Edit",
+            "tool_input": { "file_path": "${FIXTURE}/.tycon/advisors.yaml" }
+          },
+          "expect": {
+            "stdout_re": ["tycon-config-lint", "/api/pedidos/", "REAL-C2 y REAL-C7"]
+          }
+        },
+        {
+          "id": "quiet-config-legitima",
+          "type": "must-not-block",
+          "__doc": "Un lint que pone en rojo config que ya funciona se apaga. La config de acá es la forma real de un repo del equipo.",
+          "setup": [
+            "git init -q -b main . && mkdir -p .tycon && printf 'visual_plan: true\\ni18n:\\n  required: true\\n  hook: useT\\n  audiences:\\n    operator: es\\ne2e:\\n  gate: scripts/e2e-gate.sh\\n  frontend_dir: app\\n' > .tycon/advisors.yaml && git add .tycon && git -c user.email=b@b -c user.name=b commit -q -m base"
+          ],
+          "stdin": {
+            "session_id": "bench-cl3",
+            "tool_name": "Edit",
+            "tool_input": { "file_path": "${FIXTURE}/.tycon/advisors.yaml" }
+          },
+          "expect": {
+            "exit": 0,
+            "stdout_not_re": ["tycon-config-lint"]
+          }
+        },
+        {
+          "id": "quiet-editando-otra-cosa",
+          "type": "must-not-block",
+          "setup": [
+            "git init -q -b main . && mkdir -p .tycon src && printf 'advisors:\\n  - x\\n' > .tycon/advisors.yaml && printf 'const a=1\\n' > src/a.ts && git add .tycon src && git -c user.email=b@b -c user.name=b commit -q -m base"
+          ],
+          "stdin": {
+            "session_id": "bench-cl4",
+            "tool_name": "Edit",
+            "tool_input": { "file_path": "${FIXTURE}/src/a.ts" }
+          },
+          "expect": {
+            "exit": 0,
+            "stdout_not_re": ["tycon-config-lint"]
+          }
+        },
+        {
+          "id": "quiet-con-opt-out",
+          "type": "must-not-block",
+          "env": { "TYCON_CONFIG_LINT": "0" },
+          "setup": [
+            "git init -q -b main . && mkdir -p .tycon && printf 'i18n:\\n  required: false\\n' > .tycon/advisors.yaml && git add .tycon && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "printf 'advisors:\\n  - x\\n' > .tycon/advisors.yaml"
+          ],
+          "stdin": {
+            "session_id": "bench-cl5",
+            "tool_name": "Edit",
+            "tool_input": { "file_path": "${FIXTURE}/.tycon/advisors.yaml" }
+          },
+          "expect": {
+            "exit": 0,
+            "stdout_not_re": ["tycon-config-lint"]
+          }
+        }
+      ]
+    }
+  ]
+}

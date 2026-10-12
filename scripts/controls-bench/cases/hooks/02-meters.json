@@ -1,0 +1,169 @@
+{
+  "hooks": [
+    {
+      "hook": "blocking-meter.js",
+      "script": "${TCG}/scripts/hooks/blocking-meter.js",
+      "event": "Stop",
+      "matcher": "*",
+      "cases": [
+        {
+          "id": "mide-bloqueante-larga",
+          "type": "must-run",
+          "files": {
+            "transcript.jsonl": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"corré los tests\"},\"timestamp\":\"2026-08-21T10:00:00.000Z\"}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"id\":\"a1\",\"name\":\"Bash\",\"input\":{\"command\":\"npm run build\"}}]},\"timestamp\":\"2026-08-21T10:00:01.000Z\"}\n{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"a1\",\"content\":\"ok\"}]},\"timestamp\":\"2026-08-21T10:03:20.000Z\"}\n"
+          },
+          "stdin": { "session_id": "bench-s1", "transcript_path": "${FIXTURE}/transcript.jsonl", "stop_hook_active": false },
+          "expect": {
+            "file_exists": ["${SANDBOX_HOME}/.claude/blocking-meter/pending/bench-s1.json"],
+            "file_contains": [{ "path": "${SANDBOX_HOME}/.claude/blocking-meter/log.jsonl", "re": "." }]
+          }
+        },
+        {
+          "id": "quiet-espera-corta",
+          "type": "must-stay-quiet",
+          "files": {
+            "transcript.jsonl": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"leeme el archivo\"},\"timestamp\":\"2026-08-21T10:00:00.000Z\"}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"id\":\"a1\",\"name\":\"Bash\",\"input\":{\"command\":\"ls\"}}]},\"timestamp\":\"2026-08-21T10:00:01.000Z\"}\n{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"a1\",\"content\":\"ok\"}]},\"timestamp\":\"2026-08-21T10:00:03.000Z\"}\n"
+          },
+          "stdin": { "session_id": "bench-s2", "transcript_path": "${FIXTURE}/transcript.jsonl", "stop_hook_active": false },
+          "expect": { "file_absent": ["${SANDBOX_HOME}/.claude/blocking-meter/pending/bench-s2.json"] }
+        },
+        {
+          "id": "quiet-background-excluida",
+          "type": "must-stay-quiet",
+          "files": {
+            "transcript.jsonl": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"corré la suite de fondo\"},\"timestamp\":\"2026-08-21T10:00:00.000Z\"}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"id\":\"bg1\",\"name\":\"Bash\",\"input\":{\"command\":\"npm run e2e\",\"run_in_background\":true}}]},\"timestamp\":\"2026-08-21T10:00:01.000Z\"}\n{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"bg1\",\"content\":\"ok\"}]},\"timestamp\":\"2026-08-21T10:10:01.000Z\"}\n"
+          },
+          "stdin": { "session_id": "bench-s3", "transcript_path": "${FIXTURE}/transcript.jsonl", "stop_hook_active": false },
+          "expect": { "file_absent": ["${SANDBOX_HOME}/.claude/blocking-meter/pending/bench-s3.json"] }
+        },
+        {
+          "id": "quiet-espera-al-dev",
+          "type": "must-stay-quiet",
+          "files": {
+            "transcript.jsonl": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"revisá y preguntame\"},\"timestamp\":\"2026-08-21T10:00:00.000Z\"}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"id\":\"q1\",\"name\":\"AskUserQuestion\",\"input\":{\"questions\":[{\"question\":\"¿Sigo?\",\"header\":\"Seguir\",\"multiSelect\":false,\"options\":[{\"label\":\"Sí\",\"description\":\"sigo\"},{\"label\":\"No\",\"description\":\"paro\"}]}]}}]},\"timestamp\":\"2026-08-21T10:00:01.000Z\"}\n{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"q1\",\"content\":\"Sí\"}]},\"timestamp\":\"2026-08-21T10:10:01.000Z\"}\n"
+          },
+          "stdin": { "session_id": "bench-s4", "transcript_path": "${FIXTURE}/transcript.jsonl", "stop_hook_active": false },
+          "expect": { "file_absent": ["${SANDBOX_HOME}/.claude/blocking-meter/pending/bench-s4.json"] }
+        }
+      ]
+    },
+    {
+      "hook": "blocking-notice.js",
+      "script": "${TCG}/scripts/hooks/blocking-notice.js",
+      "event": "UserPromptSubmit",
+      "matcher": "*",
+      "cases": [
+        {
+          "id": "emite-y-consume-pending",
+          "type": "must-emit",
+          "files": {
+            "transcript.jsonl": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"corré los tests\"},\"timestamp\":\"2026-08-21T10:00:00.000Z\"}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"id\":\"a1\",\"name\":\"Bash\",\"input\":{\"command\":\"npm run build\"}}]},\"timestamp\":\"2026-08-21T10:00:01.000Z\"}\n{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"a1\",\"content\":\"ok\"}]},\"timestamp\":\"2026-08-21T10:03:20.000Z\"}\n"
+          },
+          "setup": [
+            "node -e \"const {execSync}=require('child_process');const input=JSON.stringify({session_id:'bench-s1',transcript_path:process.env.FIXTURE+'/transcript.jsonl',hook_event_name:'Stop',stop_hook_active:false,cwd:process.env.FIXTURE});execSync('node '+process.env.TCG+'/scripts/hooks/blocking-meter.js',{input,stdio:['pipe','ignore','inherit']})\""
+          ],
+          "stdin": { "session_id": "bench-s1", "prompt": "cómo vas?" },
+          "expect": {
+            "stdout_re": ["system-reminder"],
+            "file_absent": ["${SANDBOX_HOME}/.claude/blocking-meter/pending/bench-s1.json"]
+          }
+        },
+        {
+          "id": "quiet-sin-pending",
+          "type": "must-stay-quiet",
+          "stdin": { "session_id": "bench-s9", "prompt": "cómo vas?" },
+          "expect": {}
+        }
+      ]
+    },
+    {
+      "hook": "response-style-meter.js",
+      "script": "${TCG}/scripts/hooks/response-style-meter.js",
+      "event": "Stop",
+      "matcher": "*",
+      "cases": [
+        {
+          "id": "mide-muro-de-prosa",
+          "type": "must-run",
+          "env": { "TYCON_RESPONSE_MAX_PROSE_CHARS": "200" },
+          "stdin": {
+            "session_id": "bench-s1",
+            "stop_hook_active": false,
+            "last_assistant_message": "Este mensaje del banco de pruebas supera el umbral rebajado del medidor de estilo porque acumula bastante más de doscientos caracteres de prosa corrida, sin bloques de código ni tablas, exactamente como lo haría un cierre verboso real que entierra la conclusión bajo el detalle técnico que nadie pidió."
+          },
+          "expect": {
+            "file_exists": ["${SANDBOX_HOME}/.claude/response-style/pending/bench-s1.json"],
+            "dir_has_file": [{ "dir": "${SANDBOX_HOME}/.claude/response-style/long", "suffix": ".md" }],
+            "file_contains": [{ "path": "${SANDBOX_HOME}/.claude/response-style/log.jsonl", "re": "." }]
+          }
+        },
+        {
+          "id": "quiet-mensaje-ejecutivo",
+          "type": "must-stay-quiet",
+          "stdin": { "session_id": "bench-s2", "stop_hook_active": false, "last_assistant_message": "Listo: el gate quedó verde y el reporte está en el run dir." },
+          "expect": { "file_absent": ["${SANDBOX_HOME}/.claude/response-style/pending/bench-s2.json"] }
+        },
+        {
+          "id": "quiet-codigo-no-cuenta",
+          "type": "must-stay-quiet",
+          "env": { "TYCON_RESPONSE_MAX_PROSE_CHARS": "200" },
+          "stdin": {
+            "session_id": "bench-s3",
+            "stop_hook_active": false,
+            "last_assistant_message": "El script quedó así:\n```js\nconst a=1;const b=2;const c=3;const d=4;const e=5;const f=6;const g=7;const h=8;const i=9;const j=10;const k=11;const l=12;const m=13;const n=14;const o=15;const p=16;const q=17;const r=18;const s=19;const t=20;const u=21;\n```\nListo."
+          },
+          "expect": { "file_absent": ["${SANDBOX_HOME}/.claude/response-style/pending/bench-s3.json"] }
+        },
+        {
+          "id": "mide-oracion-larga",
+          "type": "must-run",
+          "stdin": {
+            "session_id": "bench-s4",
+            "stop_hook_active": false,
+            "last_assistant_message": "Lo mido sobre las respuestas finales de las sesiones de los últimos treinta días porque así se ve si el problema es real, cuántas veces pasa, en qué tipo de respuesta aparece y si vale la pena sumar una regla nueva que se cargue en todas las sesiones."
+          },
+          "expect": {
+            "file_exists": ["${SANDBOX_HOME}/.claude/response-style/pending/bench-s4.json"],
+            "file_contains": [{ "path": "${SANDBOX_HOME}/.claude/response-style/pending/bench-s4.json", "re": "oración de \\d+ palabras" }]
+          }
+        },
+        {
+          "id": "quiet-oraciones-cortas-y-codigo",
+          "type": "must-stay-quiet",
+          "stdin": {
+            "session_id": "bench-s5",
+            "stop_hook_active": false,
+            "last_assistant_message": "Listo. La medición quedó verde.\n- El medidor cuenta palabras por oración.\n```\nLo mido sobre las respuestas finales de las sesiones de los últimos treinta días porque así se ve si el problema es real, cuántas veces pasa, en qué tipo de respuesta aparece y si vale la pena sumar una regla nueva.\n```"
+          },
+          "expect": { "file_absent": ["${SANDBOX_HOME}/.claude/response-style/pending/bench-s5.json"] }
+        }
+      ]
+    },
+    {
+      "hook": "response-style-notice.js",
+      "script": "${TCG}/scripts/hooks/response-style-notice.js",
+      "event": "UserPromptSubmit",
+      "matcher": "*",
+      "cases": [
+        {
+          "id": "emite-y-consume-pending",
+          "type": "must-emit",
+          "setup": [
+            "node -e \"const {execSync}=require('child_process');const input=JSON.stringify({session_id:'bench-s1',hook_event_name:'Stop',stop_hook_active:false,cwd:process.env.FIXTURE,last_assistant_message:'x '.repeat(400)});execSync('node '+process.env.TCG+'/scripts/hooks/response-style-meter.js',{input,env:Object.assign({},process.env,{TYCON_RESPONSE_MAX_PROSE_CHARS:'200'}),stdio:['pipe','ignore','inherit']})\""
+          ],
+          "stdin": { "session_id": "bench-s1", "prompt": "seguí" },
+          "expect": {
+            "stdout_re": ["system-reminder"],
+            "file_absent": ["${SANDBOX_HOME}/.claude/response-style/pending/bench-s1.json"]
+          }
+        },
+        {
+          "id": "quiet-sin-pending",
+          "type": "must-stay-quiet",
+          "stdin": { "session_id": "bench-s9", "prompt": "seguí" },
+          "expect": {}
+        }
+      ]
+    }
+  ]
+}

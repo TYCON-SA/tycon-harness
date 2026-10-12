@@ -1,0 +1,958 @@
+{
+  "_lea_esto_primero": "failed-query-notice.js (2026-09-06, SALIDA-VACIA-DE-COMANDO-FALLADO): avisa cuando una consulta a un servicio (az, gh, curl, npm view…) devolvió VACÍO con el error tapado (2>/dev/null, o un filtro sin pipefail). NO es un control sobre salida vacía a secas: un listado vacío es la respuesta correcta en montones de casos, y avisar por eso sería ruido que termina apagado. Los casos que más pesan son los must-stay-quiet: sin ellos el control se apaga a la semana. Habla por stderr + exit 2 (el único canal de PostToolUse que llega al modelo); nunca bloquea nada porque la herramienta ya corrió.",
+  "hooks": [
+    {
+      "hook": "failed-query-notice.js (consulta vacía con el error tapado)",
+      "script": "${FIXTURE}/tcg/scripts/hooks/failed-query-notice.js",
+      "event": "PostToolUse",
+      "matcher": "Bash",
+      "cases": [
+        {
+          "id": "el-caso-real-az-con-el-error-tapado-por-un-sed",
+          "type": "must-block",
+          "_por_que": "El caso del 2026-09-04: `az repos pr list --project Acme … | sed` — el proyecto se llama «Acme Logistica», az falló, el sed se comió el error, la salida vacía se leyó como «no hay PR abierto». Dos conclusiones falsas ese día.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr list --org https://dev.azure.com/org-del-equipo --project Acme --status active -o tsv --query \"[].[pullRequestId,title]\" | sed 's/\\t/ · /'"
+            },
+            "tool_response": {
+              "stdout": "",
+              "stderr": ""
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "VACÍO",
+              "FALLÓ|falló"
+            ]
+          }
+        },
+        {
+          "id": "con-salida-no-avisa",
+          "type": "must-stay-quiet",
+          "_por_que": "Hubo respuesta: no hay nada que sospechar, aunque el error esté tapado.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr list --project P -o tsv 2>/dev/null | head -5"
+            },
+            "tool_response": {
+              "stdout": "3016\tci(bump)\n",
+              "stderr": ""
+            }
+          }
+        },
+        {
+          "id": "vacio-legitimo-sin-tapar-el-error-no-avisa",
+          "type": "must-stay-quiet",
+          "_por_que": "🔴 El que sostiene el control: un listado vacío con el error a la vista es la respuesta correcta («no hay PR abiertos»). Avisar acá sería el ruido que apaga el control.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr list --project P --status active -o json"
+            },
+            "tool_response": {
+              "stdout": "",
+              "stderr": ""
+            }
+          }
+        },
+        {
+          "id": "filtro-con-pipefail-no-avisa",
+          "type": "must-stay-quiet",
+          "_por_que": "Con `set -o pipefail` el código de salida del az sobrevive al filtro: quien escribió eso ya se protegió.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "set -o pipefail; az pipelines runs list --project P -o tsv | head -3"
+            },
+            "tool_response": {
+              "stdout": "",
+              "stderr": ""
+            }
+          }
+        },
+        {
+          "id": "un-comando-que-no-es-consulta-no-avisa",
+          "type": "must-stay-quiet",
+          "_por_que": "Un ls vacío con 2>/dev/null lo mira missing-path-notice (el disco); éste sólo mira servicios.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "ls -la carpeta/ 2>/dev/null | head"
+            },
+            "tool_response": {
+              "stdout": "",
+              "stderr": ""
+            }
+          }
+        },
+        {
+          "id": "otra-herramienta-no-avisa",
+          "type": "must-stay-quiet",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+          ],
+          "stdin": {
+            "tool_name": "Read",
+            "tool_input": {
+              "file_path": "/tmp/x"
+            },
+            "tool_response": {
+              "stdout": ""
+            }
+          }
+        },
+        {
+          "id": "proyecto-que-no-existe-en-la-organizacion-avisa",
+          "type": "must-block",
+          "_por_que": "La segunda mirada, sólo con lista cacheada: `--project Acme` no está en la organización (es «Acme Logistica»). Con ese nombre az falla siempre; se dice aunque haya salida y aunque el error no esté tapado.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/",
+            "mkdir -p $HOME/.claude/.tycon-pipeline && printf '{\"org\":\"https://dev.azure.com/org-del-equipo\",\"proyectos\":[\"Acme Logistica\",\"Totora\",\"URUTAU\"]}' > $HOME/.claude/.tycon-pipeline/az-projects.json"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr list --project Acme --status active -o json"
+            },
+            "tool_response": {
+              "stdout": "[]",
+              "stderr": ""
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "no existe en la organización",
+              "Acme Logistica"
+            ]
+          }
+        },
+        {
+          "id": "proyecto-que-si-existe-no-avisa",
+          "type": "must-stay-quiet",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/",
+            "mkdir -p $HOME/.claude/.tycon-pipeline && printf '{\"org\":\"https://dev.azure.com/org-del-equipo\",\"proyectos\":[\"Acme Logistica\",\"Totora\"]}' > $HOME/.claude/.tycon-pipeline/az-projects.json"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr list --project \"Acme Logistica\" --status active -o json"
+            },
+            "tool_response": {
+              "stdout": "[]",
+              "stderr": ""
+            }
+          }
+        },
+        {
+          "id": "sin-lista-cacheada-el-proyecto-no-se-juzga",
+          "type": "must-stay-quiet",
+          "_por_que": "Sin la lista no hay contra qué comparar: callado, no adivina.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr list --project Inventado --status active -o json"
+            },
+            "tool_response": {
+              "stdout": "[]",
+              "stderr": ""
+            }
+          }
+        },
+        {
+          "id": "apagado-por-variable",
+          "type": "must-stay-quiet",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+          ],
+          "env": {
+            "TYCON_FAILED_QUERY_NOTICE": "0"
+          },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "gh api repos/x/y/pulls 2>/dev/null"
+            },
+            "tool_response": {
+              "stdout": "",
+              "stderr": ""
+            }
+          }
+        },
+        {
+          "id": "el-caso-real-del-04-09-con-echo-de-cabecera-y-variable",
+          "type": "must-block",
+          "_por_que": "🔴 El comando REAL del 2026-09-04, tal cual: un `echo` de cabecera que deja stdout NO vacío, `--project \"$proj\"` (una variable, que la segunda mirada no juzga), `2>/dev/null` y `| sed`. La primera versión del hook callaba acá —el caso 1 del banco era una versión saneada de una línea—; la salida se ATRIBUYE descontando lo que imprimió el echo.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "echo \"== SR ==\"; az repos pr list --org https://dev.azure.com/org-del-equipo --project \"$proj\" --status active -o tsv --query \"[].[pullRequestId,title]\" 2>/dev/null | sed 's/^/pr: /'"
+            },
+            "tool_response": {
+              "stdout": "== SR ==\n",
+              "stderr": ""
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "VACÍO",
+              "filtrado sin pipefail"
+            ]
+          }
+        },
+        {
+          "id": "consulta-en-la-segunda-linea-dentro-de-un-for",
+          "type": "must-block",
+          "_por_que": "La consulta no arranca el comando: va en la segunda línea, dentro de un `for … do`. Fija la conducta (la segmentación por línea y por `do`); la primera versión también lo veía por su prefijo `do`, así que este caso no la distingue: lo que la distingue es el de la variable y el del echo de cabecera.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "cd /repo\nfor p in a b; do az pipelines runs list --project $p -o tsv 2>/dev/null | head -3; done"
+            },
+            "tool_response": {
+              "stdout": "",
+              "stderr": ""
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "VACÍO"
+            ]
+          }
+        },
+        {
+          "id": "consulta-dentro-de-un-subshell-asignado",
+          "type": "must-block",
+          "_por_que": "`TOK=$(curl … 2>/dev/null)`: el código de salida se pierde en la asignación y lo que se ve es el echo de después. Forma real de las transcripciones.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "TOK=$(curl -s https://dev.azure.com/x/_apis/token 2>/dev/null); echo \"tok=$TOK\""
+            },
+            "tool_response": {
+              "stdout": "tok=\n",
+              "stderr": ""
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "VACÍO",
+              "\\$\\(…\\)"
+            ]
+          }
+        },
+        {
+          "id": "o-true-se-traga-el-fallo",
+          "type": "must-block",
+          "_por_que": "`|| true` es el silenciador más honesto: el fallo se convierte en éxito a propósito y la salida vacía se lee como «no hay».",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "gh api repos/x/y/pulls 2>/dev/null || true"
+            },
+            "tool_response": {
+              "stdout": "",
+              "stderr": ""
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "VACÍO",
+              "\\|\\| true"
+            ]
+          }
+        },
+        {
+          "id": "otro-comando-despues-enmascara-el-codigo-de-salida",
+          "type": "must-block",
+          "_por_que": "`az … ; echo listo`: el código de salida que el modelo ve es el del ÚLTIMO comando. La consulta pudo fallar y el turno termina en 0.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr list --project P --status active -o tsv 2>/dev/null; echo listo"
+            },
+            "tool_response": {
+              "stdout": "listo\n",
+              "stderr": ""
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "VACÍO",
+              "otro comando después"
+            ]
+          }
+        },
+        {
+          "id": "codex-manda-la-respuesta-como-string",
+          "type": "must-block",
+          "_por_que": "Codex entrega tool_response como STRING, no como objeto con stdout: la pata Codex del banco corría con un payload que Codex nunca manda. Fija la conducta (la primera versión también aceptaba el string); sin este caso, borrar esa rama deja los casos verdes y el hook mudo en Codex.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr list --project P -o tsv | sed 's/\\t/ /'"
+            },
+            "tool_response": ""
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "VACÍO"
+            ]
+          }
+        },
+        {
+          "id": "proyecto-entre-comillas-que-no-existe-sugiere-sin-volcar-la-lista",
+          "type": "must-block",
+          "_por_que": "Todo proyecto real de la organización tiene espacio en el nombre, así que el argumento viene entre comillas; el aviso sugiere el parecido y NO pega la lista entera (los nombres de clientes no van al contexto).",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/",
+            "mkdir -p $HOME/.claude/.tycon-pipeline && printf '{\"org\":\"https://dev.azure.com/org-del-equipo\",\"fecha\":\"%s\",\"proyectos\":[\"Acme Logistica\",\"Totora\",\"URUTAU\"]}' \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\" > $HOME/.claude/.tycon-pipeline/az-projects.json"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr list --project \"Acme Logistic\" --status active -o json"
+            },
+            "tool_response": {
+              "stdout": "[]",
+              "stderr": ""
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "--project Acme Logistic",
+              "¿será «Acme Logistica»"
+            ],
+            "stderr_not_re": [
+              "Totora",
+              "URUTAU"
+            ]
+          }
+        },
+        {
+          "id": "stderr-a-dev-null-solo-con-exit-0-no-es-un-fallo-tapado",
+          "type": "must-stay-quiet",
+          "_por_que": "🔴 Reemplaza al caso «2>/dev/null y vacío avisa» de la primera versión: `2>/dev/null` esconde el MENSAJE, no el fallo — si el comando falla, el harness devuelve «Error: Exit code N» y el modelo lo ve. Con exit 0 y salida vacía es un vacío legítimo, y avisar ahí era ruido (revisión adversarial 2026-09-06, #42).",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "gh api repos/x/y/pulls 2>/dev/null"
+            },
+            "tool_response": {
+              "stdout": "",
+              "stderr": ""
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "fallo-a-la-vista-no-avisa",
+          "type": "must-stay-quiet",
+          "_por_que": "Cuando el comando falla, tool_response es el string «Error: Exit code N …»: el modelo está viendo el fallo, no hay nada que avisar.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/",
+            "mkdir -p $HOME/.claude/.tycon-pipeline && printf '{\"org\":\"https://dev.azure.com/org-del-equipo\",\"fecha\":\"%s\",\"proyectos\":[\"Acme Logistica\",\"Totora\",\"URUTAU\"]}' \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\" > $HOME/.claude/.tycon-pipeline/az-projects.json"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr list --project Acme --status active -o tsv | sed 's/a/b/'"
+            },
+            "tool_response": "Error: Exit code 2\nERROR: TF200016: The following project does not exist: Acme"
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "az-login-con-clave-no-se-juzga-ni-se-imprime",
+          "type": "must-stay-quiet",
+          "_por_que": "🔴 `az login -u … -p CLAVE`: la primera versión leía ese `-p` como proyecto e imprimía la clave por stderr con la lista de proyectos al lado. El `-p` sólo se juzga en `az repos|pipelines|boards|artifacts|devops`.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/",
+            "mkdir -p $HOME/.claude/.tycon-pipeline && printf '{\"org\":\"https://dev.azure.com/org-del-equipo\",\"fecha\":\"%s\",\"proyectos\":[\"Acme Logistica\",\"Totora\",\"URUTAU\"]}' \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\" > $HOME/.claude/.tycon-pipeline/az-projects.json"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az login -u user@bizuit.com -p 'S3cr3t!' --allow-no-subscriptions 2>/dev/null | head -1"
+            },
+            "tool_response": {
+              "stdout": "",
+              "stderr": ""
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "mkdir-p-con-az-en-el-texto-no-es-un-proyecto",
+          "type": "must-stay-quiet",
+          "_por_que": "Alcanzaba con que «az» apareciera en cualquier parte del texto para que el `-p` de mkdir se leyera como proyecto («--project /tmp/x no existe en la organización»).",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/",
+            "mkdir -p $HOME/.claude/.tycon-pipeline && printf '{\"org\":\"https://dev.azure.com/org-del-equipo\",\"fecha\":\"%s\",\"proyectos\":[\"Acme Logistica\",\"Totora\",\"URUTAU\"]}' \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\" > $HOME/.claude/.tycon-pipeline/az-projects.json"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "echo \"corre az luego\" && mkdir -p /tmp/x"
+            },
+            "tool_response": {
+              "stdout": "corre az luego\n",
+              "stderr": ""
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "heredoc-con-tabla-markdown-no-se-lee",
+          "type": "must-stay-quiet",
+          "_por_que": "🔴 El hook real se disparó sobre el informe de su propia revisión: un heredoc con una tabla markdown que tenía «-p |» en una fila. Los cuerpos de heredoc no son comandos.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/",
+            "mkdir -p $HOME/.claude/.tycon-pipeline && printf '{\"org\":\"https://dev.azure.com/org-del-equipo\",\"fecha\":\"%s\",\"proyectos\":[\"Acme Logistica\",\"Totora\",\"URUTAU\"]}' \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\" > $HOME/.claude/.tycon-pipeline/az-projects.json"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "mkdir -p /tmp/d && cat > /tmp/d/informe.md <<'MD'\n| comando | flag |\n| az repos list | -p | x |\nMD\necho ok"
+            },
+            "tool_response": {
+              "stdout": "ok\n",
+              "stderr": ""
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "guid-como-proyecto-se-acepta",
+          "type": "must-stay-quiet",
+          "_por_que": "az acepta el ID del proyecto; el hook afirmaba «no existe en la organización» sobre un comando que acababa de funcionar.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/",
+            "mkdir -p $HOME/.claude/.tycon-pipeline && printf '{\"org\":\"https://dev.azure.com/org-del-equipo\",\"fecha\":\"%s\",\"proyectos\":[\"Acme Logistica\",\"Totora\",\"URUTAU\"]}' \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\" > $HOME/.claude/.tycon-pipeline/az-projects.json"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos list --project 00000000-0000-4000-8000-000000000012 -o json"
+            },
+            "tool_response": {
+              "stdout": "[]",
+              "stderr": ""
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "segundo-plano-no-se-juzga",
+          "type": "must-stay-quiet",
+          "_por_que": "Un Bash en segundo plano devuelve stdout vacío por diseño (el resultado llega después): 293 de los ~380 avisos que la primera versión habría dado eran esto. El CLAUDE.md MANDA segundo plano para todo paso largo.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "curl -sS https://dev.azure.com/x/_apis/build/builds | head -3",
+              "run_in_background": true
+            },
+            "tool_response": {
+              "stdout": "",
+              "stderr": "",
+              "backgroundTaskId": "b1"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "descarga-a-archivo-no-es-consulta",
+          "type": "must-stay-quiet",
+          "_por_que": "`curl -o archivo`: la salida va al archivo, el vacío en pantalla es lo esperado. Ídem `> archivo`.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "curl -sS https://x/d.json -o /tmp/d.json | head"
+            },
+            "tool_response": {
+              "stdout": "",
+              "stderr": ""
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "escritura-az-devops-configure-no-es-consulta",
+          "type": "must-stay-quiet",
+          "_por_que": "`az devops configure --defaults …` escribe configuración: no devuelve nada y no hay nada que leer. Estaba entre los 33 «avisos» del commit original.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/",
+            "mkdir -p $HOME/.claude/.tycon-pipeline && printf '{\"org\":\"https://dev.azure.com/org-del-equipo\",\"fecha\":\"%s\",\"proyectos\":[\"Acme Logistica\",\"Totora\",\"URUTAU\"]}' \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\" > $HOME/.claude/.tycon-pipeline/az-projects.json"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az devops configure --defaults organization=https://dev.azure.com/org-del-equipo project=\"Acme Logistica\" 2>/dev/null | head"
+            },
+            "tool_response": {
+              "stdout": "",
+              "stderr": ""
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "curl-post-no-es-consulta",
+          "type": "must-stay-quiet",
+          "_por_que": "Un POST/PUT/DELETE es una escritura; su respuesta vacía no se lee como «no hay».",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "curl -sS -X POST -d '{\"x\":1}' https://x/api/items 2>/dev/null | jq ."
+            },
+            "tool_response": {
+              "stdout": "",
+              "stderr": ""
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "cache-vieja-no-juzga-el-proyecto",
+          "type": "must-stay-quiet",
+          "_por_que": "Una lista de proyectos de más de 30 días denunciaría con certeza un proyecto creado ayer. `fecha` se escribía y no se leía.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/",
+            "mkdir -p $HOME/.claude/.tycon-pipeline && printf '{\"org\":\"x\",\"fecha\":\"2019-01-01T00:00:00Z\",\"proyectos\":[\"Acme Logistica\"]}' > $HOME/.claude/.tycon-pipeline/az-projects.json"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr list --project Acme -o json"
+            },
+            "tool_response": {
+              "stdout": "[]",
+              "stderr": ""
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "consulta-con-and-and-no-enmascara",
+          "type": "must-stay-quiet",
+          "_por_que": "`az … && echo ok`: si az falla, el && corta y el exit ≠ 0 se ve. Fija la conducta (espejo): sin él, «hay otro comando después» se apaga a la semana.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr list --project P -o tsv 2>/dev/null && echo ok"
+            },
+            "tool_response": {
+              "stdout": "ok\n",
+              "stderr": ""
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "variable-con-datos-no-es-vacio",
+          "type": "must-stay-quiet",
+          "_por_que": "🔴 Espejo del caso del subshell (revisión con Fable, #14): `R=$(consulta); echo \"resultado: $R\"` con «resultado: succeeded» en pantalla. La primera reescritura reemplazaba la variable por `.*` y descontaba la línea entera como texto del echo → avisaba «devolvió VACÍO» con los datos a la vista. La variable que trajo texto ES la salida de la consulta.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "R=$(az pipelines runs show --id 9415 -o tsv --query result 2>/dev/null); echo \"resultado: $R\""
+            },
+            "tool_response": {
+              "stdout": "resultado: succeeded\n",
+              "stderr": ""
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "variable-con-llaves-no-parte-la-consulta",
+          "type": "must-block",
+          "_por_que": "`--project ${PROJ}` sin comillas: las llaves de la expansión partían el segmento y la consulta dejaba de ser la que precede al filtro (revisión con Fable, #3).",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr list --project ${PROJ} --status active -o tsv | sed -n 1p"
+            },
+            "tool_response": {
+              "stdout": "",
+              "stderr": ""
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "VACÍO"
+            ]
+          }
+        },
+        {
+          "id": "comentario-con-apostrofo-no-ciega-al-hook",
+          "type": "must-block",
+          "_por_que": "🔴 Un `# don't forget` antes de la consulta: el apóstrofo abría una comilla que se tragaba el resto del comando y el hook callaba — silencio leído como «no hay», justo lo que existe para evitar (revisión con Fable, #57).",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "# don't forget\naz repos pr list --org https://dev.azure.com/org-del-equipo --project Acme --status active -o tsv | sed \"s/x/y/\""
+            },
+            "tool_response": {
+              "stdout": "",
+              "stderr": ""
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "VACÍO"
+            ]
+          }
+        },
+        {
+          "id": "heredoc-con-guion-en-el-delimitador-no-se-lee",
+          "type": "must-stay-quiet",
+          "_por_que": "bash acepta cualquier palabra como delimitador (`END-DOC`): con el regex de identificador, el cuerpo del documento —que tenía un `az … | head`— se leía como comandos (revisión con Fable, #58).",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/",
+            "mkdir -p $HOME/.claude/.tycon-pipeline && printf '{\"org\":\"https://dev.azure.com/org-del-equipo\",\"fecha\":\"%s\",\"proyectos\":[\"Acme Logistica\",\"Totora\",\"URUTAU\"]}' \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\" > $HOME/.claude/.tycon-pipeline/az-projects.json"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "cat > notas.md <<'END-DOC'\n# Cómo listar PRs\naz repos pr list --project Acme --status active -o table | head -5\nEND-DOC\necho ok"
+            },
+            "tool_response": {
+              "stdout": "ok\n",
+              "stderr": ""
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "segundo-plano-por-shell-no-se-juzga",
+          "type": "must-stay-quiet",
+          "_por_que": "`… | head -3 &`: segundo plano por el shell, no por run_in_background — su salida no está en este resultado (revisión con Fable, #58).",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az pipelines runs list --project P -o tsv 2>/dev/null | head -3 &"
+            },
+            "tool_response": {
+              "stdout": "",
+              "stderr": ""
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "dos-mayor-ampersand-uno-no-parte-la-consulta",
+          "type": "must-block",
+          "_por_que": "🔴 Regresión del arreglo del `&` de fondo (crítico del 1er pase, D1): `2>&1` se leía como «& de fondo» y partía el segmento, y la primera mirada callaba. El 45 % de las consultas reales (1.110 de 2.441) llevan `2>&1`.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az pipelines runs list --project P -o tsv 2>&1 | head -3"
+            },
+            "tool_response": {
+              "stdout": "",
+              "stderr": ""
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "VACÍO"
+            ]
+          }
+        },
+        {
+          "id": "echo-con-variable-vacia-y-espacio-si-avisa",
+          "type": "must-block",
+          "_por_que": "«etiqueta: $R» con R vacío imprime «etiqueta:» (sin el espacio): la atribución exigía el espacio y la línea no se descontaba → silencio (crítico del 1er pase, D2). 189 usos reales llevan el espacio.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "R=$(az pipelines runs show --id 1 -o tsv --query result 2>/dev/null); echo \"resultado: $R\""
+            },
+            "tool_response": {
+              "stdout": "resultado:\n",
+              "stderr": ""
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "VACÍO"
+            ]
+          }
+        },
+        {
+          "id": "fondo-por-shell-tampoco-juzga-el-proyecto",
+          "type": "must-stay-quiet",
+          "_por_que": "Con `… &` la primera mirada callaba pero la segunda seguía hablando del `--project` (crítico del 1er pase, D2): el resultado de algo que se fue al fondo no está en esta respuesta, para ninguna de las dos.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/",
+            "mkdir -p $HOME/.claude/.tycon-pipeline && printf '{\"org\":\"https://dev.azure.com/org-del-equipo\",\"fecha\":\"%s\",\"proyectos\":[\"Acme Logistica\",\"Totora\",\"URUTAU\"]}' \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\" > $HOME/.claude/.tycon-pipeline/az-projects.json"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr list --project Acme -o json | head -3 &"
+            },
+            "tool_response": {
+              "stdout": "",
+              "stderr": ""
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "cabecera-con-la-variable-del-for-se-descuenta",
+          "type": "must-block",
+          "_por_que": "🔴 La forma en que se escribe un barrido: `for id in …; do echo \"== $id ==\"; az … | head; done`. La variable del for llena la cabecera; con la regla «descontar sólo si la variable vino vacía» esas líneas quedaban como salida y el hook callaba (segundo pase con Fable, [9]). Sólo la variable que se llenó con una consulta cuenta como salida.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "for id in 8728 8729; do echo \"== $id ==\"; az pipelines runs show --id $id -o tsv 2>/dev/null | head -3; done"
+            },
+            "tool_response": {
+              "stdout": "== 8728 ==\n== 8729 ==\n",
+              "stderr": ""
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "VACÍO"
+            ]
+          }
+        },
+        {
+          "id": "redireccion-2-mayor-ampersand-1-con-filtro",
+          "type": "must-block",
+          "_por_que": "🔴 Regresión del corte por `&` de fondo (2do pase con Fable, [0]/[8]/[14]/[16]): `2>&1` tiene un `&` seguido de dígito, así que la consulta quedaba partida y con separador `&` — el hook la leía como enviada al fondo y callaba. Es el idioma más común para «ver también el error», y justo ahí el vacío volvía a leerse como «no hay».",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr list --org https://dev.azure.com/org-del-equipo --project \"Acme Logistica\" --status active -o tsv 2>&1 | sed -n 1p"
+            },
+            "tool_response": {
+              "stdout": "",
+              "stderr": ""
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "VACÍO"
+            ]
+          }
+        },
+        {
+          "id": "redireccion-2-mayor-ampersand-1-con-o-true",
+          "type": "must-block",
+          "_por_que": "El mismo `2>&1` con `|| true`, la otra forma frecuente: el fallo se convierte en éxito y la salida vacía se lee como «no hay».",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az pipelines runs list --project P -o tsv 2>&1 || true"
+            },
+            "tool_response": {
+              "stdout": "",
+              "stderr": ""
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "VACÍO"
+            ]
+          }
+        },
+        {
+          "id": "pipe-con-ampersand-es-un-pipe",
+          "type": "must-block",
+          "_por_que": "`|&` es un pipe que además lleva stderr (bash 4+): se leía como `|` seguido de un `&` de fondo y la consulta se descartaba.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "gh pr list --state open |& grep -c ."
+            },
+            "tool_response": {
+              "stdout": "",
+              "stderr": ""
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "VACÍO"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "hook": "failed-query-notice.js (por la herramienta PowerShell de Claude Code en Windows)",
+      "script": "${FIXTURE}/tcg/scripts/hooks/failed-query-notice.js",
+      "event": "PostToolUse",
+      "matcher": "Bash|PowerShell",
+      "tools": [
+        "claude"
+      ],
+      "asymmetry": "La herramienta PowerShell es de Claude Code (en Windows corre los comandos por ahí, con tool_name «PowerShell» y la misma entrada tool_input.command; fuente: code.claude.com/docs/en/tools-reference §«PowerShell tool»). Codex no la emite: del lado Codex el freno se registra con matcher «Bash» (adapters/codex/hooks.json).",
+      "__doc": "2026-10-04 · medido en una sesión REAL de Claude Code 2.1.289 en Windows 11 con el arnés instalado: los comandos salen por la herramienta PowerShell y los hooks registrados con matcher «Bash» no se disparaban (pasaron `git add -A` y un `git commit` que saltea los hooks de git). El matcher pasa a «Bash|PowerShell» en los dos instaladores; estos casos fijan que el guion entiende la entrada de esa herramienta. El payload es SINTÉTICO (la forma documentada), no una captura en vivo.",
+      "cases": [
+        {
+          "id": "ps-el-caso-real-por-powershell",
+          "type": "must-block",
+          "_por_que": "El caso del 2026-09-04: `az repos pr list --project Acme … | sed` — el proyecto se llama «Acme Logistica», az falló, el sed se comió el error, la salida vacía se leyó como «no hay PR abierto». Dos conclusiones falsas ese día.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+          ],
+          "stdin": {
+            "tool_name": "PowerShell",
+            "tool_input": {
+              "command": "az repos pr list --org https://dev.azure.com/org-del-equipo --project Acme --status active -o tsv --query \"[].[pullRequestId,title]\" | sed 's/\\t/ · /'"
+            },
+            "tool_response": {
+              "stdout": "",
+              "stderr": ""
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "VACÍO",
+              "FALLÓ|falló"
+            ]
+          },
+          "nota": "El mismo caso real, por la herramienta PowerShell: el guion descartaba todo lo que no fuera tool_name «Bash»."
+        }
+      ]
+    }
+  ]
+}

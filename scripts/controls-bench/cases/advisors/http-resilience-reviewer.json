@@ -1,0 +1,49 @@
+{
+  "__doc": "Casos quirúrgicos del advisor http-resilience-reviewer (Etapa D). Un pecado → una regla → el veredicto es la PRESENCIA/AUSENCIA del rule ID objetivo COMO FINDING (bullet '- [ID] ...'), nunca el conteo (§2.2 del plan). El prompt_template desactiva la regla de reporte resumen-solo: la salida va a un archivo de auditoría, no al chat.",
+  "advisor": "http-resilience-reviewer",
+  "cases": [
+    {
+      "id": "http-c1-new-httpclient-en-service",
+      "type": "must-flag",
+      "rule": "HTTP-C1",
+      "files": {
+        "src/Services/InvoiceApiClient.cs": "using System.Net.Http;\nusing System.Threading;\nusing System.Threading.Tasks;\nnamespace Demo.Services\n{\n    public class InvoiceApiClient\n    {\n        private readonly HttpClient _http;\n        public InvoiceApiClient()\n        {\n            _http = new HttpClient();\n        }\n        public async Task<string> GetInvoiceAsync(string id, CancellationToken ct)\n        {\n            var response = await _http.GetAsync($\"https://api.example.com/invoices/{id}\", ct);\n            return await response.Content.ReadAsStringAsync(ct);\n        }\n    }\n}\n"
+      },
+      "canario": true
+    },
+    {
+      "id": "http-c5-token-no-propagado",
+      "type": "must-flag",
+      "rule": "HTTP-C5",
+      "files": {
+        "src/Workers/StatusPollingWorker.cs": "using System.Net.Http;\nusing System.Threading;\nusing System.Threading.Tasks;\nnamespace Demo.Workers\n{\n    public class StatusPollingWorker\n    {\n        private readonly HttpClient _http;\n        public StatusPollingWorker(IHttpClientFactory factory)\n        {\n            _http = factory.CreateClient(\"status\");\n        }\n        public async Task<string> PollAsync(CancellationToken stoppingToken)\n        {\n            var response = await _http.GetAsync(\"https://api.example.com/status\");\n            return await response.Content.ReadAsStringAsync(stoppingToken);\n        }\n    }\n}\n"
+      }
+    },
+    {
+      "id": "limpio-factory-sin-c1",
+      "type": "must-not-flag",
+      "rule": "HTTP-C1",
+      "files": {
+        "src/Services/InvoiceApiClient.cs": "using System.Net.Http;\nusing System.Threading;\nusing System.Threading.Tasks;\nnamespace Demo.Services\n{\n    public class InvoiceApiClient\n    {\n        private readonly HttpClient _http;\n        public InvoiceApiClient(IHttpClientFactory factory)\n        {\n            _http = factory.CreateClient(\"invoices\");\n        }\n        public async Task<string> GetInvoiceAsync(string id, CancellationToken ct)\n        {\n            var response = await _http.GetAsync($\"https://api.example.com/invoices/{id}\", ct);\n            return await response.Content.ReadAsStringAsync(ct);\n        }\n    }\n}\n"
+      },
+      "canario": true
+    },
+    {
+      "id": "http-c7-getrequestmessage-en-predicado-de-plugin",
+      "type": "must-flag",
+      "rule": "HTTP-C7",
+      "files": {
+        "src/DemoBackendPlugin.cs": "using System.Net.Http;\nusing System.Threading.Tasks;\nusing Bizuit.Backend.Abstractions;\nusing Microsoft.Extensions.Configuration;\nusing Microsoft.Extensions.DependencyInjection;\nusing Microsoft.Extensions.Http.Resilience;\nusing Polly;\nnamespace Demo.Plugin\n{\n    public class DemoBackendPlugin : IBackendPlugin\n    {\n        public void ConfigureServices(IServiceCollection services, IConfiguration configuration)\n        {\n            services.AddHttpClient<PacaraClient>()\n                .AddStandardResilienceHandler(options =>\n                {\n                    options.Retry.MaxRetryAttempts = 2;\n                    options.Retry.UseJitter = true;\n                    options.Retry.ShouldHandle = args =>\n                    {\n                        var metodo = args.Context.GetRequestMessage()?.Method;\n                        if (metodo is not null && metodo != HttpMethod.Get)\n                            return ValueTask.FromResult(false);\n                        return ValueTask.FromResult(HttpClientResiliencePredicates.IsTransient(args.Outcome));\n                    };\n                });\n        }\n    }\n    public class PacaraClient\n    {\n        private readonly HttpClient _http;\n        public PacaraClient(HttpClient http) { _http = http; }\n        public Task<HttpResponseMessage> GetAsync(string path, System.Threading.CancellationToken ct) => _http.GetAsync(path, ct);\n    }\n}\n"
+      }
+    },
+    {
+      "id": "limpio-predicado-por-clave-cruda-sin-c7",
+      "type": "must-not-flag",
+      "rule": "HTTP-C7",
+      "files": {
+        "src/DemoBackendPlugin.cs": "using System.Net.Http;\nusing System.Threading.Tasks;\nusing Bizuit.Backend.Abstractions;\nusing Microsoft.Extensions.Configuration;\nusing Microsoft.Extensions.DependencyInjection;\nusing Microsoft.Extensions.Http.Resilience;\nusing Polly;\nnamespace Demo.Plugin\n{\n    public class DemoBackendPlugin : IBackendPlugin\n    {\n        public void ConfigureServices(IServiceCollection services, IConfiguration configuration)\n        {\n            // El host carga SU Http.Resilience: nada estático de la librería dentro del predicado.\n            var claveRequest = new ResiliencePropertyKey<HttpRequestMessage>(\"Resilience.Http.RequestMessage\");\n            services.AddHttpClient<PacaraClient>()\n                .AddStandardResilienceHandler(options =>\n                {\n                    options.Retry.MaxRetryAttempts = 2;\n                    options.Retry.UseJitter = true;\n                    var esTransitorio = options.Retry.ShouldHandle;\n                    options.Retry.ShouldHandle = async args =>\n                    {\n                        var metodo = (args.Context.Properties.TryGetValue(claveRequest, out var req) ? req : null)?.Method\n                                     ?? args.Outcome.Result?.RequestMessage?.Method;\n                        if (metodo is null || metodo != HttpMethod.Get) return false;\n                        return await esTransitorio(args);\n                    };\n                });\n        }\n    }\n    public class PacaraClient\n    {\n        private readonly HttpClient _http;\n        public PacaraClient(HttpClient http) { _http = http; }\n        public Task<HttpResponseMessage> GetAsync(string path, System.Threading.CancellationToken ct) => _http.GetAsync(path, ct);\n    }\n}\n"
+      }
+    }
+  ],
+  "prompt_template": "Tu salida completa se guarda en un archivo de auditoría que procesa un script: no la lee una persona en el chat — la regla de 'resumen ejecutivo / detalle a pedido' de tus instrucciones NO aplica en este contexto. Emití el reporte COMPLETO en el formato del catálogo, con cada finding como bullet que abre con su rule ID entre corchetes: - [RULE-ID] `archivo:línea` descripción. Fix: accion. Los rule IDs entre corchetes van SOLO en findings reales (en la sección '✅ OK' o al descartar una regla, mencionala SIN corchetes). Archivos cambiados: {files}. Escaneá y emití el reporte."
+}

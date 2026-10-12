@@ -1,0 +1,798 @@
+{
+  "hooks": [
+    {
+      "hook": "bench-notice.js (dogfood del banco)",
+      "script": "${FIXTURE}/tcg/scripts/hooks/bench-notice.js",
+      "event": "SessionStart",
+      "matcher": "*",
+      "cases": [
+        {
+          "id": "grita-con-corrida-en-rojo",
+          "type": "must-emit",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/controls-bench/.bench && cp $TCG/scripts/hooks/bench-notice.js tcg/scripts/hooks/",
+            "node -e \"require('fs').writeFileSync('tcg/scripts/controls-bench/.bench/last-run-claude.json',JSON.stringify({ts:new Date().toISOString(),failed:2,parityBreaks:0,baselineRegressions:1}))\"",
+            "mkdir -p tcg/scripts/controls-bench && cp $TCG/scripts/controls-bench/*.js tcg/scripts/controls-bench/",
+            "node -e \"require('fs').writeFileSync('ultimo-examen.json',JSON.stringify({kind:'examen-periodico',estado:'completo',alcance:'completo',ts:new Date().toISOString(),criterio:0,inestables:0,paridadReal:0,baselineRegressions:0,maquina:'mini'}))\""
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {
+            "stdout_re": [
+              "controls-bench EN ROJO"
+            ]
+          }
+        },
+        {
+          "id": "quiet-todo-verde",
+          "type": "must-stay-quiet",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/controls-bench/.bench && cp $TCG/scripts/hooks/bench-notice.js tcg/scripts/hooks/",
+            "node -e \"require('fs').writeFileSync('tcg/scripts/controls-bench/.bench/last-run-claude.json',JSON.stringify({ts:new Date().toISOString(),failed:0,parityBreaks:0,baselineRegressions:0}))\"",
+            "mkdir -p tcg/scripts/controls-bench && cp $TCG/scripts/controls-bench/*.js tcg/scripts/controls-bench/",
+            "node -e \"require('fs').writeFileSync('ultimo-examen.json',JSON.stringify({kind:'examen-periodico',estado:'completo',alcance:'completo',ts:new Date().toISOString(),criterio:0,inestables:0,paridadReal:0,baselineRegressions:0,maquina:'mini'}))\""
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {}
+        },
+        {
+          "id": "grita-con-advisors-en-rojo",
+          "type": "must-emit",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/controls-bench/.bench && cp $TCG/scripts/hooks/bench-notice.js tcg/scripts/hooks/",
+            "node -e \"require('fs').writeFileSync('tcg/scripts/controls-bench/.bench/advisors-both.json',JSON.stringify({ts:new Date().toISOString(),failed:1,parityBreaks:1,baselineRegressions:0}))\"",
+            "mkdir -p tcg/scripts/controls-bench && cp $TCG/scripts/controls-bench/*.js tcg/scripts/controls-bench/",
+            "node -e \"require('fs').writeFileSync('ultimo-examen.json',JSON.stringify({kind:'examen-periodico',estado:'completo',alcance:'completo',ts:new Date().toISOString(),criterio:0,inestables:0,paridadReal:0,baselineRegressions:0,maquina:'mini'}))\""
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {
+            "stdout_re": [
+              "controls-bench EN ROJO",
+              "advisors-both"
+            ]
+          }
+        },
+        {
+          "id": "grita-con-guard-fire-en-rojo",
+          "type": "must-emit",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/controls-bench/.bench && cp $TCG/scripts/hooks/bench-notice.js tcg/scripts/hooks/",
+            "node -e \"require('fs').writeFileSync('tcg/scripts/controls-bench/.bench/live-fire-guard.json',JSON.stringify({ts:new Date().toISOString(),tools:{claude:{pass:true,failures:[]},codex:{pass:false,failures:['el commit SE CREÓ (count=2) — el freno NO frenó']}}}))\"",
+            "mkdir -p tcg/scripts/controls-bench && cp $TCG/scripts/controls-bench/*.js tcg/scripts/controls-bench/",
+            "node -e \"require('fs').writeFileSync('ultimo-examen.json',JSON.stringify({kind:'examen-periodico',estado:'completo',alcance:'completo',ts:new Date().toISOString(),criterio:0,inestables:0,paridadReal:0,baselineRegressions:0,maquina:'mini'}))\""
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {
+            "stdout_re": [
+              "controls-bench EN ROJO",
+              "freno NO fren"
+            ]
+          }
+        },
+        {
+          "id": "quiet-guard-fire-verde",
+          "type": "must-stay-quiet",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/controls-bench/.bench && cp $TCG/scripts/hooks/bench-notice.js tcg/scripts/hooks/",
+            "node -e \"require('fs').writeFileSync('tcg/scripts/controls-bench/.bench/live-fire-guard.json',JSON.stringify({ts:new Date().toISOString(),tools:{claude:{pass:true,failures:[]},codex:{pass:true,failures:[]}}}))\"",
+            "mkdir -p tcg/scripts/controls-bench && cp $TCG/scripts/controls-bench/*.js tcg/scripts/controls-bench/",
+            "node -e \"require('fs').writeFileSync('ultimo-examen.json',JSON.stringify({kind:'examen-periodico',estado:'completo',alcance:'completo',ts:new Date().toISOString(),criterio:0,inestables:0,paridadReal:0,baselineRegressions:0,maquina:'mini'}))\""
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {}
+        },
+        {
+          "id": "quiet-prove-detection-no-cuenta-como-rojo",
+          "type": "must-stay-quiet",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/controls-bench/.bench && cp $TCG/scripts/hooks/bench-notice.js tcg/scripts/hooks/",
+            "node -e \"require('fs').writeFileSync('tcg/scripts/controls-bench/.bench/live-fire-claude-prove.json',JSON.stringify({ts:new Date().toISOString(),prove:true,failures:['hook de CANARY NO SE DISPARÓ (sin marcador)']}))\"",
+            "mkdir -p tcg/scripts/controls-bench && cp $TCG/scripts/controls-bench/*.js tcg/scripts/controls-bench/",
+            "node -e \"require('fs').writeFileSync('ultimo-examen.json',JSON.stringify({kind:'examen-periodico',estado:'completo',alcance:'completo',ts:new Date().toISOString(),criterio:0,inestables:0,paridadReal:0,baselineRegressions:0,maquina:'mini'}))\""
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {}
+        },
+        {
+          "id": "grita-con-paridad-en-rojo",
+          "type": "must-emit",
+          "__doc": "Etapa H: harness-parity.json con superficies en rojo → bench-notice lo cobra al arranque. El rojo de paridad llega solo o no es un control.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/controls-bench/.bench && cp $TCG/scripts/hooks/bench-notice.js tcg/scripts/hooks/",
+            "node -e \"require('fs').writeFileSync('tcg/scripts/controls-bench/.bench/harness-parity.json',JSON.stringify({ts:new Date().toISOString(),deployed:true,reds:2,surfaces:[{name:'trust',ok:false,detail:'1/26'},{name:'llave-en-rc',ok:false,detail:'falta'},{name:'advisors',ok:true,detail:'ok'}]}))\"",
+            "mkdir -p tcg/scripts/controls-bench && cp $TCG/scripts/controls-bench/*.js tcg/scripts/controls-bench/",
+            "node -e \"require('fs').writeFileSync('ultimo-examen.json',JSON.stringify({kind:'examen-periodico',estado:'completo',alcance:'completo',ts:new Date().toISOString(),criterio:0,inestables:0,paridadReal:0,baselineRegressions:0,maquina:'mini'}))\""
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {
+            "stdout_re": [
+              "harness-parity",
+              "trust",
+              "llave-en-rc"
+            ]
+          }
+        },
+        {
+          "id": "quiet-paridad-verde-y-no-desplegado",
+          "type": "must-stay-quiet",
+          "__doc": "Los dos silencios legítimos: paridad toda verde en máquina desplegada (reds:0, ts fresco) y un scratch .json SIN kind (el .bench real acumula ~45 de advisor-runner --json: gritarlos sería una pared de falsos rojos).",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/controls-bench/.bench && cp $TCG/scripts/hooks/bench-notice.js tcg/scripts/hooks/",
+            "node -e \"require('fs').writeFileSync('tcg/scripts/controls-bench/.bench/harness-parity.json',JSON.stringify({kind:'harness-parity',ts:new Date().toISOString(),deployed:true,reds:0,surfaces:[]}))\"",
+            "node -e \"require('fs').writeFileSync('tcg/scripts/controls-bench/.bench/cx-scratch-debug.json',JSON.stringify({advisor:'x',hallazgos:[]}))\"",
+            "mkdir -p tcg/scripts/controls-bench && cp $TCG/scripts/controls-bench/*.js tcg/scripts/controls-bench/",
+            "node -e \"require('fs').writeFileSync('ultimo-examen.json',JSON.stringify({kind:'examen-periodico',estado:'completo',alcance:'completo',ts:new Date().toISOString(),criterio:0,inestables:0,paridadReal:0,baselineRegressions:0,maquina:'mini'}))\""
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {}
+        },
+        {
+          "id": "grita-con-reporte-de-paridad-viejo",
+          "type": "must-emit",
+          "__doc": "2ª ronda adversarial: un reporte que dejó de refrescarse = la paridad dejó de correr. Independiente de los reds (como else-if, un reporte viejo CON rojos nunca lo decía). ts ilegible = viejo (fail-closed: NaN comparaba false y quedaba eternamente fresco).",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/controls-bench/.bench && cp $TCG/scripts/hooks/bench-notice.js tcg/scripts/hooks/",
+            "node -e \"require('fs').writeFileSync('tcg/scripts/controls-bench/.bench/harness-parity.json',JSON.stringify({kind:'harness-parity',ts:'fecha-basura',deployed:true,reds:0,surfaces:[]}))\"",
+            "mkdir -p tcg/scripts/controls-bench && cp $TCG/scripts/controls-bench/*.js tcg/scripts/controls-bench/",
+            "node -e \"require('fs').writeFileSync('ultimo-examen.json',JSON.stringify({kind:'examen-periodico',estado:'completo',alcance:'completo',ts:new Date().toISOString(),criterio:0,inestables:0,paridadReal:0,baselineRegressions:0,maquina:'mini'}))\""
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {
+            "stdout_re": [
+              "dej[oó] de correr"
+            ]
+          }
+        },
+        {
+          "id": "grita-con-kind-desconocido",
+          "type": "must-emit",
+          "__doc": "Un reporte CON kind que ningún brazo reconoce se grita (así un control nuevo no nace muerto); los sin kind se ignoran (scratch).",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/controls-bench/.bench && cp $TCG/scripts/hooks/bench-notice.js tcg/scripts/hooks/",
+            "node -e \"require('fs').writeFileSync('tcg/scripts/controls-bench/.bench/reporte-nuevo.json',JSON.stringify({kind:'control-inventado',ts:new Date().toISOString(),failures:['x']}))\"",
+            "mkdir -p tcg/scripts/controls-bench && cp $TCG/scripts/controls-bench/*.js tcg/scripts/controls-bench/",
+            "node -e \"require('fs').writeFileSync('ultimo-examen.json',JSON.stringify({kind:'examen-periodico',estado:'completo',alcance:'completo',ts:new Date().toISOString(),criterio:0,inestables:0,paridadReal:0,baselineRegressions:0,maquina:'mini'}))\""
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {
+            "stdout_re": [
+              "control-inventado",
+              "no reconoce"
+            ]
+          }
+        },
+        {
+          "id": "grita-con-suites-bash-en-rojo",
+          "type": "must-emit",
+          "__doc": "El job diario de suites bash corre DE FONDO: este reporte es su único canal de cobro.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/controls-bench/.bench && cp $TCG/scripts/hooks/bench-notice.js tcg/scripts/hooks/",
+            "node -e \"require('fs').writeFileSync('tcg/scripts/controls-bench/.bench/bash-tests.json',JSON.stringify({kind:'bash-tests',ts:new Date().toISOString(),failures:['harness-parity.test.sh']}))\"",
+            "mkdir -p tcg/scripts/controls-bench && cp $TCG/scripts/controls-bench/*.js tcg/scripts/controls-bench/",
+            "node -e \"require('fs').writeFileSync('ultimo-examen.json',JSON.stringify({kind:'examen-periodico',estado:'completo',alcance:'completo',ts:new Date().toISOString(),criterio:0,inestables:0,paridadReal:0,baselineRegressions:0,maquina:'mini'}))\""
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {
+            "stdout_re": [
+              "bash",
+              "harness-parity\\.test\\.sh"
+            ]
+          }
+        },
+        {
+          "id": "denuncia-el-examen-detenido-y-CALLA-los-numeros-viejos",
+          "type": "must-emit",
+          "__doc": "🔴 El bug que la Story 1.1 vino a cerrar: hasta hoy 'no corrió' y 'corrió verde hace nueve días' eran el mismo silencio, y una foto vieja mostrada sin contexto se lee como el estado de esta semana. Pasados los 8 días el aviso denuncia y NO muestra los números: hacen perseguir rojos que quizá ya arregló lo que vino después.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/controls-bench/.bench && cp $TCG/scripts/hooks/bench-notice.js tcg/scripts/hooks/",
+            "mkdir -p tcg/scripts/controls-bench && cp $TCG/scripts/controls-bench/*.js tcg/scripts/controls-bench/",
+            "node -e \"const d=new Date(Date.now()-9*864e5).toISOString();require('fs').writeFileSync('ultimo-examen.json',JSON.stringify({kind:'examen-periodico',estado:'completo',alcance:'completo',ts:d,criterio:7,inestables:4,paridadReal:2,baselineRegressions:1,maquina:'mini'}))\""
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {
+            "stdout_re": [
+              "NO ESTÁ CORRIENDO",
+              "8|9"
+            ],
+            "stdout_not_re": [
+              "7 de criterio"
+            ]
+          }
+        },
+        {
+          "id": "habla-aunque-no-haya-una-sola-falla",
+          "type": "must-emit",
+          "__doc": "El aviso viejo hablaba SÓLO si había rojos. Con todo el banco en verde y el examen detenido, se callaba por completo — que es exactamente cómo se veía el problema.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/controls-bench/.bench && cp $TCG/scripts/hooks/bench-notice.js tcg/scripts/hooks/",
+            "mkdir -p tcg/scripts/controls-bench && cp $TCG/scripts/controls-bench/*.js tcg/scripts/controls-bench/",
+            "node -e \"require('fs').writeFileSync('tcg/scripts/controls-bench/.bench/last-run-claude.json',JSON.stringify({ts:new Date().toISOString(),failed:0,parityBreaks:0,baselineRegressions:0}))\""
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {
+            "stdout_re": [
+              "NO ESTÁ CORRIENDO"
+            ]
+          }
+        },
+        {
+          "id": "quiet-examen-fresco-y-verde",
+          "type": "must-stay-quiet",
+          "__doc": "El único silencio legítimo, y el que impide que esta pieza se vuelva la casilla que nadie mira: hay una medición completa, fresca y sin rojos. Si este caso se pusiera ruidoso, el aviso entero se empezaría a ignorar.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/controls-bench/.bench && cp $TCG/scripts/hooks/bench-notice.js tcg/scripts/hooks/",
+            "mkdir -p tcg/scripts/controls-bench && cp $TCG/scripts/controls-bench/*.js tcg/scripts/controls-bench/",
+            "node -e \"require('fs').writeFileSync('ultimo-examen.json',JSON.stringify({kind:'examen-periodico',estado:'completo',alcance:'completo',ts:new Date().toISOString(),criterio:0,inestables:0,paridadReal:0,baselineRegressions:0,maquina:'mini'}))\""
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {}
+        },
+        {
+          "id": "una-corrida-incompleta-no-se-muestra-en-verde",
+          "type": "must-emit",
+          "__doc": "Un intento que no terminó no es un resultado: es un 'no pude mirar'. Se dice con su motivo y nunca cuenta como medición.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/controls-bench/.bench && cp $TCG/scripts/hooks/bench-notice.js tcg/scripts/hooks/",
+            "mkdir -p tcg/scripts/controls-bench && cp $TCG/scripts/controls-bench/*.js tcg/scripts/controls-bench/",
+            "node -e \"require('fs').writeFileSync('ultimo-examen.json',JSON.stringify({kind:'examen-periodico',estado:'completo',alcance:'completo',ts:new Date().toISOString(),criterio:0,inestables:0,paridadReal:0,baselineRegressions:0,maquina:'mini'}))\"",
+            "node -e \"require('fs').writeFileSync('tcg/scripts/controls-bench/.bench/examen-intento.json',JSON.stringify({kind:'examen-periodico-intento',ts:new Date().toISOString(),estado:'incompleto',motivo:'la sesión de Claude Code no responde'}))\""
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {
+            "stdout_re": [
+              "INCOMPLETO",
+              "no responde"
+            ]
+          }
+        },
+        {
+          "id": "la-corrida-parcial-no-se-lee-como-el-estado-general",
+          "type": "must-emit",
+          "__doc": "Una corrida acotada a 3 revisores no dice nada de los otros 25. Se nombra como complementaria, marcada, y sólo cuando ya se está hablando del examen.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/controls-bench/.bench && cp $TCG/scripts/hooks/bench-notice.js tcg/scripts/hooks/",
+            "mkdir -p tcg/scripts/controls-bench && cp $TCG/scripts/controls-bench/*.js tcg/scripts/controls-bench/",
+            "node -e \"const d=new Date(Date.now()-9*864e5).toISOString();require('fs').writeFileSync('ultimo-examen.json',JSON.stringify({kind:'examen-periodico',estado:'completo',alcance:'completo',ts:d,criterio:7,inestables:4,paridadReal:2,baselineRegressions:1,maquina:'mini'}))\"",
+            "node -e \"require('fs').writeFileSync('tcg/scripts/controls-bench/.bench/advisors-claude-parcial-uno-abc12345.json',JSON.stringify({ts:new Date().toISOString(),alcance:'acotado',only:['tycon-story-validator'],failed:0,criterio:0,inestables:0,parityBreaks:0,paridadReal:0,baselineRegressions:0}))\""
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {
+            "stdout_re": [
+              "PARCIAL",
+              "tycon-story-validator"
+            ],
+            "stdout_not_re": [
+              "7 de criterio"
+            ]
+          }
+        },
+        {
+          "id": "denuncia-el-banco-nocturno-detenido-y-CALLA-los-numeros",
+          "type": "must-emit",
+          "__doc": "🔴 La razón de mover el banco a ADO es que su reporte viaje y que TODAS las máquinas lean la misma foto — y entonces 'dejó de correr' tiene que oírse en todas. Reporte de hace 3 días con rojos adentro: se denuncia que NO ESTÁ CORRIENDO y NO se muestran los rojos (hacen perseguir lo que quizá ya se arregló). La antigüedad se afirma como `hace \\\\d+ día`, nunca un número fijo: el caso del reloj del 2026-09-04 enseñó que un fixture y un umbral anclados a horas distintas fallan según la hora.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/controls-bench/.bench && cp $TCG/scripts/hooks/bench-notice.js tcg/scripts/hooks/",
+            "mkdir -p tcg/scripts/controls-bench && cp $TCG/scripts/controls-bench/*.js tcg/scripts/controls-bench/",
+            "node -e \"require('fs').writeFileSync('ultimo-examen.json',JSON.stringify({kind:'examen-periodico',estado:'completo',alcance:'completo',ts:new Date().toISOString(),criterio:0,inestables:0,paridadReal:0,baselineRegressions:0,maquina:'mini'}))\"",
+            "node -e \"require('fs').writeFileSync('ultimo-banco.json',JSON.stringify({ts:new Date(Date.now()-3*864e5).toISOString(),tool:'both',ran:380,failed:4,skipped:0,nomedido:0,parityBreaks:0,baselineRegressions:1,origen:'azure-pipelines',estado:'completo'}))\""
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {
+            "stdout_re": [
+              "banco de controles NOCTURNO NO ESTÁ CORRIENDO",
+              "hace \\d+ día"
+            ],
+            "stdout_not_re": [
+              "4 rojos",
+              "regresiones 1"
+            ]
+          }
+        },
+        {
+          "id": "grita-con-el-banco-nocturno-fresco-en-rojo",
+          "type": "must-emit",
+          "__doc": "Reporte de anoche con 2 rojos y 1 no medido: se dicen los dos, y el no medido con su marca propia — un caso al que se le agotó el tiempo no es un control roto, pero tampoco es verde, y la corrida no está completa.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/controls-bench/.bench && cp $TCG/scripts/hooks/bench-notice.js tcg/scripts/hooks/",
+            "mkdir -p tcg/scripts/controls-bench && cp $TCG/scripts/controls-bench/*.js tcg/scripts/controls-bench/",
+            "node -e \"require('fs').writeFileSync('ultimo-examen.json',JSON.stringify({kind:'examen-periodico',estado:'completo',alcance:'completo',ts:new Date().toISOString(),criterio:0,inestables:0,paridadReal:0,baselineRegressions:0,maquina:'mini'}))\"",
+            "node -e \"require('fs').writeFileSync('ultimo-banco.json',JSON.stringify({ts:new Date().toISOString(),tool:'both',ran:380,failed:2,skipped:0,nomedido:1,parityBreaks:0,baselineRegressions:0,origen:'azure-pipelines',estado:'completo'}))\""
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {
+            "stdout_re": [
+              "banco de controles nocturno",
+              "2 rojos",
+              "1 NO MEDIDO"
+            ]
+          }
+        },
+        {
+          "id": "quiet-banco-nocturno-fresco-y-verde",
+          "type": "must-stay-quiet",
+          "__doc": "El silencio legítimo: corrió anoche, completo y sin rojos ni no medidos. Si esto hablara, el aviso entero se empezaría a ignorar.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/controls-bench/.bench && cp $TCG/scripts/hooks/bench-notice.js tcg/scripts/hooks/",
+            "mkdir -p tcg/scripts/controls-bench && cp $TCG/scripts/controls-bench/*.js tcg/scripts/controls-bench/",
+            "node -e \"require('fs').writeFileSync('ultimo-examen.json',JSON.stringify({kind:'examen-periodico',estado:'completo',alcance:'completo',ts:new Date().toISOString(),criterio:0,inestables:0,paridadReal:0,baselineRegressions:0,maquina:'mini'}))\"",
+            "node -e \"require('fs').writeFileSync('ultimo-banco.json',JSON.stringify({ts:new Date().toISOString(),tool:'both',ran:380,failed:0,skipped:0,nomedido:0,parityBreaks:0,baselineRegressions:0,origen:'azure-pipelines',estado:'completo'}))\""
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {}
+        },
+        {
+          "id": "una-foto-LOCAL-mas-vieja-que-el-nocturno-no-se-muestra",
+          "type": "must-stay-quiet",
+          "__doc": "🔴 Con el lanzamiento local retirado, el `last-run-claude.json` de cada máquina es lo que quedó de la última corrida a mano y va a envejecer para siempre. Si se siguiera mostrando, cada máquina gritaría rojos que el nocturno ya dio por arreglados — la misma foto vieja que este aviso jura no mostrar. Foto local de hace 2 días con 3 rojos + nocturno de anoche en verde: silencio.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/controls-bench/.bench && cp $TCG/scripts/hooks/bench-notice.js tcg/scripts/hooks/",
+            "mkdir -p tcg/scripts/controls-bench && cp $TCG/scripts/controls-bench/*.js tcg/scripts/controls-bench/",
+            "node -e \"require('fs').writeFileSync('ultimo-examen.json',JSON.stringify({kind:'examen-periodico',estado:'completo',alcance:'completo',ts:new Date().toISOString(),criterio:0,inestables:0,paridadReal:0,baselineRegressions:0,maquina:'mini'}))\"",
+            "node -e \"require('fs').writeFileSync('ultimo-banco.json',JSON.stringify({ts:new Date().toISOString(),tool:'both',ran:380,failed:0,skipped:0,nomedido:0,parityBreaks:0,baselineRegressions:0,origen:'azure-pipelines',estado:'completo'}))\"",
+            "node -e \"require('fs').writeFileSync('tcg/scripts/controls-bench/.bench/last-run-claude.json',JSON.stringify({ts:new Date(Date.now()-2*864e5).toISOString(),tool:'claude',ran:379,failed:3,skipped:0,nomedido:0,parityBreaks:0,baselineRegressions:0}))\""
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {}
+        },
+        {
+          "id": "una-foto-LOCAL-mas-nueva-que-el-nocturno-SI-se-muestra",
+          "type": "must-emit",
+          "__doc": "El gemelo del anterior, para que el filtro no se pase de largo: una corrida a mano de HOY, posterior al nocturno, es información nueva y se muestra con sus rojos.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/controls-bench/.bench && cp $TCG/scripts/hooks/bench-notice.js tcg/scripts/hooks/",
+            "mkdir -p tcg/scripts/controls-bench && cp $TCG/scripts/controls-bench/*.js tcg/scripts/controls-bench/",
+            "node -e \"require('fs').writeFileSync('ultimo-examen.json',JSON.stringify({kind:'examen-periodico',estado:'completo',alcance:'completo',ts:new Date().toISOString(),criterio:0,inestables:0,paridadReal:0,baselineRegressions:0,maquina:'mini'}))\"",
+            "node -e \"require('fs').writeFileSync('ultimo-banco.json',JSON.stringify({ts:new Date(Date.now()-3600e3).toISOString(),tool:'both',ran:380,failed:0,skipped:0,nomedido:0,parityBreaks:0,baselineRegressions:0,origen:'azure-pipelines',estado:'completo'}))\"",
+            "node -e \"require('fs').writeFileSync('tcg/scripts/controls-bench/.bench/last-run-claude.json',JSON.stringify({ts:new Date().toISOString(),tool:'claude',ran:379,failed:3,skipped:0,nomedido:0,parityBreaks:0,baselineRegressions:0}))\""
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {
+            "stdout_re": [
+              "last-run-claude.json: 3 rojos"
+            ]
+          }
+        },
+        {
+          "id": "denuncia-las-suites-nocturnas-detenidas-y-CALLA-los-numeros",
+          "type": "must-emit",
+          "__doc": "Las suites se mudaron a Azure DevOps el 2026-09-05 por el mismo motivo que el banco. Y por el mismo motivo tienen que denunciarse cuando dejan de correr: 'no corrió' y 'corrió verde' no pueden ser el mismo silencio. Reporte de hace 3 días con rojos adentro → se dice que NO ESTÁN CORRIENDO y NO se listan las suites en rojo.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/controls-bench/.bench && cp $TCG/scripts/hooks/bench-notice.js tcg/scripts/hooks/",
+            "mkdir -p tcg/scripts/controls-bench && cp $TCG/scripts/controls-bench/*.js tcg/scripts/controls-bench/",
+            "node -e \"require('fs').writeFileSync('ultimo-examen.json',JSON.stringify({kind:'examen-periodico',estado:'completo',alcance:'completo',ts:new Date().toISOString(),criterio:0,inestables:0,paridadReal:0,baselineRegressions:0,maquina:'mini'}))\"",
+            "node -e \"require('fs').writeFileSync('ultimo-banco.json',JSON.stringify({ts:new Date().toISOString(),tool:'both',ran:380,failed:0,skipped:0,nomedido:0,parityBreaks:0,baselineRegressions:0,origen:'azure-pipelines',estado:'completo'}))\"",
+            "node -e \"require('fs').writeFileSync('ultimo-suites.json',JSON.stringify({kind:'bash-tests',ts:new Date(Date.now()-3*864e5).toISOString(),origen:'azure-pipelines',corridas:35,failures:['smoke.test.sh']}))\""
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {
+            "stdout_re": [
+              "suites de prueba NOCTURNAS NO ESTÁN CORRIENDO",
+              "hace \\d+ día"
+            ],
+            "stdout_not_re": [
+              "smoke.test.sh"
+            ]
+          }
+        },
+        {
+          "id": "grita-con-suites-nocturnas-en-rojo",
+          "type": "must-emit",
+          "__doc": "Corrida de anoche con dos suites en rojo: se nombran, porque el nombre es lo único que permite ir a mirar.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/controls-bench/.bench && cp $TCG/scripts/hooks/bench-notice.js tcg/scripts/hooks/",
+            "mkdir -p tcg/scripts/controls-bench && cp $TCG/scripts/controls-bench/*.js tcg/scripts/controls-bench/",
+            "node -e \"require('fs').writeFileSync('ultimo-examen.json',JSON.stringify({kind:'examen-periodico',estado:'completo',alcance:'completo',ts:new Date().toISOString(),criterio:0,inestables:0,paridadReal:0,baselineRegressions:0,maquina:'mini'}))\"",
+            "node -e \"require('fs').writeFileSync('ultimo-banco.json',JSON.stringify({ts:new Date().toISOString(),tool:'both',ran:380,failed:0,skipped:0,nomedido:0,parityBreaks:0,baselineRegressions:0,origen:'azure-pipelines',estado:'completo'}))\"",
+            "node -e \"require('fs').writeFileSync('ultimo-suites.json',JSON.stringify({kind:'bash-tests',ts:new Date().toISOString(),origen:'azure-pipelines',corridas:35,failures:['smoke.test.sh', 'pipeline-debt.test.js']}))\""
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {
+            "stdout_re": [
+              "suites de prueba nocturnas",
+              "smoke.test.sh",
+              "pipeline-debt.test.js"
+            ]
+          }
+        },
+        {
+          "id": "las-suites-no-medidas-se-cuentan-en-una-linea-y-no-se-listan",
+          "type": "must-emit",
+          "__doc": "Revisión del 2026-10-04 de las suites en trabajos paralelos. Un trabajo de suites que no termina deja sus ~108 suites en `failures` con la marca «(no-medida)». El aviso las contaba como rojas y las listaba una por una con su motivo: 8.328 caracteres en cada arranque de sesión de cada máquina, hasta la noche siguiente. «No medida» no es «roja»: la roja de verdad se nombra, y las no medidas van en UNA cláusula con la cuenta y el motivo. El detalle queda en el reporte.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/controls-bench/.bench && cp $TCG/scripts/hooks/bench-notice.js tcg/scripts/hooks/",
+            "node -e \"const u=[];for(let i=1;i<=108;i++)u.push('lab-'+i+'.test.sh(no-medida)');const m={};for(const n of u)m[n]='no medida: el trabajo 2 no terminó';m['smoke.test.sh']='MAL — el chequeo 3';require('fs').writeFileSync('suites.json',JSON.stringify({kind:'bash-tests',ts:new Date().toISOString(),origen:'azure-pipelines',corridas:109,failures:['smoke.test.sh',...u],motivos:m,unmeasured:u,complete:false}))\""
+          ],
+          "env": {
+            "TYCON_SUITES_REPORT": "${FIXTURE}/suites.json"
+          },
+          "stdin": {},
+          "expect": {
+            "stdout_re": [
+              "suites de prueba nocturnas",
+              "1 en rojo",
+              "smoke\\.test\\.sh \\(MAL — el chequeo 3\\)",
+              "108 suite\\(s\\) no medidas: el trabajo 2 no terminó",
+              "ultimo-suites\\.json"
+            ],
+            "stdout_not_re": [
+              "109 en rojo",
+              "lab-\\d+\\.test\\.sh",
+              "no-medida"
+            ]
+          }
+        },
+        {
+          "id": "suites-solo-no-medidas-no-dice-en-rojo",
+          "type": "must-emit",
+          "__doc": "El espejo del caso anterior: una noche sin ninguna roja y con un trabajo sin terminar NO es una noche roja ni una verde. Se dice que quedó incompleta, con la cuenta, y no se usa la palabra «rojo» para lo que no se midió.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/controls-bench/.bench && cp $TCG/scripts/hooks/bench-notice.js tcg/scripts/hooks/",
+            "node -e \"const u=[];for(let i=1;i<=108;i++)u.push('lab-'+i+'.test.sh(no-medida)');const m={};for(const n of u)m[n]='no medida: el trabajo 2 no terminó';require('fs').writeFileSync('suites.json',JSON.stringify({kind:'bash-tests',ts:new Date().toISOString(),origen:'azure-pipelines',corridas:109,failures:u,motivos:m,unmeasured:u,complete:false}))\""
+          ],
+          "env": {
+            "TYCON_SUITES_REPORT": "${FIXTURE}/suites.json"
+          },
+          "stdin": {},
+          "expect": {
+            "stdout_re": [
+              "🟡 suites de prueba nocturnas",
+              "108 suite\\(s\\) no medidas: el trabajo 2 no terminó",
+              "la noche quedó incompleta"
+            ],
+            "stdout_not_re": [
+              "en rojo",
+              "🔴 suites",
+              "lab-\\d+\\.test\\.sh"
+            ]
+          }
+        },
+        {
+          "id": "quiet-suites-nocturnas-frescas-y-verdes",
+          "type": "must-stay-quiet",
+          "__doc": "El silencio legítimo: corrieron anoche y ninguna falló.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/controls-bench/.bench && cp $TCG/scripts/hooks/bench-notice.js tcg/scripts/hooks/",
+            "mkdir -p tcg/scripts/controls-bench && cp $TCG/scripts/controls-bench/*.js tcg/scripts/controls-bench/",
+            "node -e \"require('fs').writeFileSync('ultimo-examen.json',JSON.stringify({kind:'examen-periodico',estado:'completo',alcance:'completo',ts:new Date().toISOString(),criterio:0,inestables:0,paridadReal:0,baselineRegressions:0,maquina:'mini'}))\"",
+            "node -e \"require('fs').writeFileSync('ultimo-banco.json',JSON.stringify({ts:new Date().toISOString(),tool:'both',ran:380,failed:0,skipped:0,nomedido:0,parityBreaks:0,baselineRegressions:0,origen:'azure-pipelines',estado:'completo'}))\"",
+            "node -e \"require('fs').writeFileSync('ultimo-suites.json',JSON.stringify({kind:'bash-tests',ts:new Date().toISOString(),origen:'azure-pipelines',corridas:35,failures:[]}))\""
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {}
+        },
+        {
+          "id": "una-foto-LOCAL-de-suites-mas-vieja-que-el-nocturno-no-se-muestra",
+          "type": "must-stay-quiet",
+          "__doc": "Caso real del 2026-09-05: otra sesión abrió mostrando '2 suites en rojo' de un bash-tests.json local de las 04:04, cuando el nocturno de ADO ya había corrido las 35 en verde. Con el lanzamiento local retirado ese archivo no se refresca más: si es más viejo que el nocturno, calla.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/controls-bench/.bench && cp $TCG/scripts/hooks/bench-notice.js tcg/scripts/hooks/",
+            "mkdir -p tcg/scripts/controls-bench && cp $TCG/scripts/controls-bench/*.js tcg/scripts/controls-bench/",
+            "node -e \"require('fs').writeFileSync('ultimo-examen.json',JSON.stringify({kind:'examen-periodico',estado:'completo',alcance:'completo',ts:new Date().toISOString(),criterio:0,inestables:0,paridadReal:0,baselineRegressions:0,maquina:'mini'}))\"",
+            "node -e \"require('fs').writeFileSync('ultimo-banco.json',JSON.stringify({ts:new Date().toISOString(),tool:'both',ran:380,failed:0,skipped:0,nomedido:0,parityBreaks:0,baselineRegressions:0,origen:'azure-pipelines',estado:'completo'}))\"",
+            "node -e \"require('fs').writeFileSync('ultimo-suites.json',JSON.stringify({kind:'bash-tests',ts:new Date().toISOString(),origen:'azure-pipelines',corridas:35,failures:[]}))\"",
+            "node -e \"require('fs').writeFileSync('tcg/scripts/controls-bench/.bench/bash-tests.json',JSON.stringify({kind:'bash-tests',ts:new Date(Date.now()-2*864e5).toISOString(),failures:['tolerant-steps.test.sh']}))\""
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {}
+        },
+        {
+          "id": "una-foto-LOCAL-de-suites-mas-nueva-que-el-nocturno-SI-se-muestra",
+          "type": "must-emit",
+          "__doc": "El gemelo: una corrida a mano de hoy, posterior al nocturno, sí es información y se muestra.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/controls-bench/.bench && cp $TCG/scripts/hooks/bench-notice.js tcg/scripts/hooks/",
+            "mkdir -p tcg/scripts/controls-bench && cp $TCG/scripts/controls-bench/*.js tcg/scripts/controls-bench/",
+            "node -e \"require('fs').writeFileSync('ultimo-examen.json',JSON.stringify({kind:'examen-periodico',estado:'completo',alcance:'completo',ts:new Date().toISOString(),criterio:0,inestables:0,paridadReal:0,baselineRegressions:0,maquina:'mini'}))\"",
+            "node -e \"require('fs').writeFileSync('ultimo-banco.json',JSON.stringify({ts:new Date().toISOString(),tool:'both',ran:380,failed:0,skipped:0,nomedido:0,parityBreaks:0,baselineRegressions:0,origen:'azure-pipelines',estado:'completo'}))\"",
+            "node -e \"require('fs').writeFileSync('ultimo-suites.json',JSON.stringify({kind:'bash-tests',ts:new Date(Date.now()-3600e3).toISOString(),origen:'azure-pipelines',corridas:35,failures:[]}))\"",
+            "node -e \"require('fs').writeFileSync('tcg/scripts/controls-bench/.bench/bash-tests.json',JSON.stringify({kind:'bash-tests',ts:new Date().toISOString(),failures:['tolerant-steps.test.sh']}))\""
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {
+            "stdout_re": [
+              "tolerant-steps.test.sh"
+            ]
+          }
+        },
+        {
+          "id": "una-corrida-ACOTADA-del-banco-no-es-el-estado-general",
+          "type": "must-stay-quiet",
+          "__doc": "Las corridas con --only escriben last-run-<tool>-parcial-<alcance>-<hash>.json (report-name, 2026-09-01) y el aviso las mostraba como estado del banco: el 2026-09-05 el arranque listaba 14, 5 y 3 rojos de tres corridas así — experimentos de rojo previo con el arreglo desactivado a propósito, de días atrás. Complementarias, no estado; mismo criterio que las acotadas del examen.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/controls-bench/.bench && cp $TCG/scripts/hooks/bench-notice.js tcg/scripts/hooks/",
+            "mkdir -p tcg/scripts/controls-bench && cp $TCG/scripts/controls-bench/*.js tcg/scripts/controls-bench/",
+            "node -e \"require('fs').writeFileSync('ultimo-examen.json',JSON.stringify({kind:'examen-periodico',estado:'completo',alcance:'completo',ts:new Date().toISOString(),criterio:0,inestables:0,paridadReal:0,baselineRegressions:0,maquina:'mini'}))\"",
+            "node -e \"require('fs').writeFileSync('ultimo-banco.json',JSON.stringify({ts:new Date().toISOString(),tool:'both',ran:380,failed:0,skipped:0,nomedido:0,parityBreaks:0,baselineRegressions:0,origen:'azure-pipelines',estado:'completo'}))\"",
+            "node -e \"require('fs').writeFileSync('ultimo-suites.json',JSON.stringify({kind:'bash-tests',ts:new Date().toISOString(),origen:'azure-pipelines',corridas:35,failures:[]}))\"",
+            "node -e \"require('fs').writeFileSync('tcg/scripts/controls-bench/.bench/last-run-claude-parcial-pr-sin-auto-77904795.json',JSON.stringify({ts:new Date().toISOString(),tool:'claude',ran:6,failed:14,parityBreaks:0,baselineRegressions:0}))\""
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {}
+        },
+        {
+          "id": "grita-con-las-suites-SEMANALES-locales-en-rojo-si-son-mas-nuevas-que-el-nocturno",
+          "type": "must-emit",
+          "__doc": "El reporte semanal (kind bash-tests-semanal) no tenía rama y caía en 'kind desconocido' en cada arranque. Ahora tiene la suya, con la misma regla de foto vieja que el diario: si es más nuevo que el nocturno de suites, se muestra con sus rojos.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/controls-bench/.bench && cp $TCG/scripts/hooks/bench-notice.js tcg/scripts/hooks/",
+            "mkdir -p tcg/scripts/controls-bench && cp $TCG/scripts/controls-bench/*.js tcg/scripts/controls-bench/",
+            "node -e \"require('fs').writeFileSync('ultimo-examen.json',JSON.stringify({kind:'examen-periodico',estado:'completo',alcance:'completo',ts:new Date().toISOString(),criterio:0,inestables:0,paridadReal:0,baselineRegressions:0,maquina:'mini'}))\"",
+            "node -e \"require('fs').writeFileSync('ultimo-banco.json',JSON.stringify({ts:new Date().toISOString(),tool:'both',ran:380,failed:0,skipped:0,nomedido:0,parityBreaks:0,baselineRegressions:0,origen:'azure-pipelines',estado:'completo'}))\"",
+            "node -e \"require('fs').writeFileSync('ultimo-suites.json',JSON.stringify({kind:'bash-tests',ts:new Date(Date.now()-3600e3).toISOString(),origen:'azure-pipelines',corridas:35,failures:[]}))\"",
+            "node -e \"require('fs').writeFileSync('tcg/scripts/controls-bench/.bench/bash-tests-semanal.json',JSON.stringify({kind:'bash-tests-semanal',ts:new Date().toISOString(),failures:['bench-vacuity.test.sh']}))\""
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {
+            "stdout_re": [
+              "semanal",
+              "bench-vacuity.test.sh"
+            ],
+            "stdout_not_re": [
+              "no reconoce"
+            ]
+          }
+        },
+        {
+          "id": "quiet-suites-SEMANALES-locales-mas-viejas-que-el-nocturno",
+          "type": "must-stay-quiet",
+          "__doc": "La foto semanal local de hace 3 días con rojos, con el nocturno de anoche en verde: calla.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/controls-bench/.bench && cp $TCG/scripts/hooks/bench-notice.js tcg/scripts/hooks/",
+            "mkdir -p tcg/scripts/controls-bench && cp $TCG/scripts/controls-bench/*.js tcg/scripts/controls-bench/",
+            "node -e \"require('fs').writeFileSync('ultimo-examen.json',JSON.stringify({kind:'examen-periodico',estado:'completo',alcance:'completo',ts:new Date().toISOString(),criterio:0,inestables:0,paridadReal:0,baselineRegressions:0,maquina:'mini'}))\"",
+            "node -e \"require('fs').writeFileSync('ultimo-banco.json',JSON.stringify({ts:new Date().toISOString(),tool:'both',ran:380,failed:0,skipped:0,nomedido:0,parityBreaks:0,baselineRegressions:0,origen:'azure-pipelines',estado:'completo'}))\"",
+            "node -e \"require('fs').writeFileSync('ultimo-suites.json',JSON.stringify({kind:'bash-tests',ts:new Date().toISOString(),origen:'azure-pipelines',corridas:35,failures:[]}))\"",
+            "node -e \"require('fs').writeFileSync('tcg/scripts/controls-bench/.bench/bash-tests-semanal.json',JSON.stringify({kind:'bash-tests-semanal',ts:new Date(Date.now()-3*864e5).toISOString(),failures:['bench-vacuity.test.sh']}))\""
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {}
+        },
+        {
+          "id": "una-foto-LOCAL-de-backfill-mas-vieja-que-el-nocturno-no-se-muestra",
+          "type": "must-stay-quiet",
+          "__doc": "Caso real 2026-09-05: una sesión nueva abrió con '11 suites en rojo' de un backfill-tests.json local. Con backfill y matrix mudados a ADO, una foto local más vieja que el nocturno calla.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/controls-bench/.bench && cp $TCG/scripts/hooks/bench-notice.js tcg/scripts/hooks/",
+            "mkdir -p tcg/scripts/controls-bench && cp $TCG/scripts/controls-bench/*.js tcg/scripts/controls-bench/",
+            "node -e \"require('fs').writeFileSync('ultimo-examen.json',JSON.stringify({kind:'examen-periodico',estado:'completo',alcance:'completo',ts:new Date().toISOString(),criterio:0,inestables:0,paridadReal:0,baselineRegressions:0,maquina:'mini'}))\"",
+            "node -e \"require('fs').writeFileSync('ultimo-banco.json',JSON.stringify({ts:new Date().toISOString(),tool:'both',ran:380,failed:0,skipped:0,nomedido:0,parityBreaks:0,baselineRegressions:0,origen:'azure-pipelines',estado:'completo'}))\"",
+            "node -e \"require('fs').writeFileSync('ultimo-suites.json',JSON.stringify({kind:'bash-tests',ts:new Date().toISOString(),origen:'azure-pipelines',corridas:35,failures:[]}))\"",
+            "node -e \"require('fs').writeFileSync('tcg/scripts/controls-bench/.bench/backfill-tests.json',JSON.stringify({kind:'backfill-tests',ts:new Date(Date.now()-2*864e5).toISOString(),failures:['periodic-exam.test.js']}))\""
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {}
+        },
+        {
+          "id": "una-foto-LOCAL-de-backfill-mas-nueva-que-el-nocturno-SI-se-muestra",
+          "type": "must-emit",
+          "__doc": "El gemelo: corrida a mano posterior al nocturno, se muestra con su rojo.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/controls-bench/.bench && cp $TCG/scripts/hooks/bench-notice.js tcg/scripts/hooks/",
+            "mkdir -p tcg/scripts/controls-bench && cp $TCG/scripts/controls-bench/*.js tcg/scripts/controls-bench/",
+            "node -e \"require('fs').writeFileSync('ultimo-examen.json',JSON.stringify({kind:'examen-periodico',estado:'completo',alcance:'completo',ts:new Date().toISOString(),criterio:0,inestables:0,paridadReal:0,baselineRegressions:0,maquina:'mini'}))\"",
+            "node -e \"require('fs').writeFileSync('ultimo-banco.json',JSON.stringify({ts:new Date().toISOString(),tool:'both',ran:380,failed:0,skipped:0,nomedido:0,parityBreaks:0,baselineRegressions:0,origen:'azure-pipelines',estado:'completo'}))\"",
+            "node -e \"require('fs').writeFileSync('ultimo-suites.json',JSON.stringify({kind:'bash-tests',ts:new Date(Date.now()-3600e3).toISOString(),origen:'azure-pipelines',corridas:35,failures:[]}))\"",
+            "node -e \"require('fs').writeFileSync('tcg/scripts/controls-bench/.bench/backfill-tests.json',JSON.stringify({kind:'backfill-tests',ts:new Date().toISOString(),failures:['periodic-exam.test.js']}))\""
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {
+            "stdout_re": [
+              "periodic-exam.test.js"
+            ]
+          }
+        },
+        {
+          "id": "la-foto-de-las-suites-dice-hace-cuanto-es",
+          "type": "must-emit",
+          "__doc": "🔴 El aviso no mide: muestra lo que vio el nocturno de la madrugada. Un rojo arreglado durante el día se sigue mostrando hasta la corrida siguiente y se lee como «está roto AHORA» — pasó el 2026-09-06 con esta misma suite, en tres sesiones seguidas. La línea dice la edad y que no es una medición de ahora.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/controls-bench/.bench && cp $TCG/scripts/hooks/bench-notice.js tcg/scripts/hooks/",
+            "node -e \"const t=new Date(Date.now()-20*3600000).toISOString();require('fs').writeFileSync('suites.json',JSON.stringify({kind:'bash-tests',ts:t,origen:'azure-pipelines',failures:['sdlc-transitions-nightly.test.sh']}))\""
+          ],
+          "env": {
+            "TYCON_SUITES_REPORT": "${FIXTURE}/suites.json"
+          },
+          "stdin": {},
+          "expect": {
+            "stdout_re": [
+              "foto del",
+              "hace 20 h",
+              "no una medici[óo]n de ahora"
+            ]
+          }
+        },
+        {
+          "id": "una-foto-recien-tomada-no-lleva-la-advertencia",
+          "type": "must-emit",
+          "__doc": "El espejo: si la foto es de recién, la advertencia sobra — un aviso que siempre relativiza sus propios números enseña a no creerle a ninguno.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/controls-bench/.bench && cp $TCG/scripts/hooks/bench-notice.js tcg/scripts/hooks/",
+            "node -e \"const t=new Date(Date.now()-0*3600000).toISOString();require('fs').writeFileSync('suites.json',JSON.stringify({kind:'bash-tests',ts:t,origen:'azure-pipelines',failures:['sdlc-transitions-nightly.test.sh']}))\""
+          ],
+          "env": {
+            "TYCON_SUITES_REPORT": "${FIXTURE}/suites.json"
+          },
+          "stdin": {},
+          "expect": {
+            "stdout_re": [
+              "en rojo",
+              "sdlc-transitions-nightly"
+            ],
+            "stdout_not_re": [
+              "no una medici[óo]n de ahora"
+            ]
+          }
+        },
+        {
+          "id": "nocturnos-apagada-calla-lo-nocturno-y-sigue-con-lo-local",
+          "type": "must-emit",
+          "__doc": "story 8.3 (AC 9, octava integración `nightly`): con la lib de configuración al lado del hook y sin perfil ni llave, «esta máquina no espera los nocturnos del equipo»: el banco nocturno detenido y las suites nocturnas detenidas NO se denuncian (afuera gritarían en cada arranque), pero el banco LOCAL en rojo sí se dice. El examen de revisores sigue hablando siempre (decisión del dev, 2026-09-26).",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/controls-bench/.bench && cp $TCG/scripts/hooks/bench-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/tycon-config.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/controls-bench && cp $TCG/scripts/controls-bench/*.js tcg/scripts/controls-bench/",
+            "node -e \"require('fs').writeFileSync('ultimo-examen.json',JSON.stringify({kind:'examen-periodico',estado:'completo',alcance:'completo',ts:new Date().toISOString(),criterio:0,inestables:0,paridadReal:0,baselineRegressions:0,maquina:'mini'}))\"",
+            "node -e \"require('fs').writeFileSync('ultimo-banco.json',JSON.stringify({ts:new Date(Date.now()-3*864e5).toISOString(),tool:'both',ran:380,failed:4,skipped:0,nomedido:0,parityBreaks:0,baselineRegressions:1,origen:'azure-pipelines',estado:'completo'}))\"",
+            "node -e \"require('fs').writeFileSync('ultimo-suites.json',JSON.stringify({ts:new Date(Date.now()-3*864e5).toISOString(),failures:[]}))\"",
+            "node -e \"require('fs').writeFileSync('tcg/scripts/controls-bench/.bench/last-run-claude.json',JSON.stringify({ts:new Date().toISOString(),failed:2,parityBreaks:0,baselineRegressions:0}))\""
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {
+            "stdout_re": [
+              "controls-bench EN ROJO",
+              "last-run-claude\\.json"
+            ],
+            "stdout_not_re": [
+              "NOCTURNO NO ESTÁ CORRIENDO",
+              "NOCTURNAS NO ESTÁN CORRIENDO"
+            ]
+          }
+        },
+        {
+          "id": "nocturnos-prendida-por-variable-denuncia-lo-nocturno",
+          "type": "must-emit",
+          "__doc": "El control del caso anterior: misma foto, TYCON_NIGHTLY=1 (la llave por variable, como en el perfil del equipo) → el banco nocturno y las suites nocturnas detenidos se denuncian como siempre.",
+          "env": {
+            "TYCON_NIGHTLY": "1"
+          },
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/controls-bench/.bench && cp $TCG/scripts/hooks/bench-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/tycon-config.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/controls-bench && cp $TCG/scripts/controls-bench/*.js tcg/scripts/controls-bench/",
+            "node -e \"require('fs').writeFileSync('ultimo-examen.json',JSON.stringify({kind:'examen-periodico',estado:'completo',alcance:'completo',ts:new Date().toISOString(),criterio:0,inestables:0,paridadReal:0,baselineRegressions:0,maquina:'mini'}))\"",
+            "node -e \"require('fs').writeFileSync('ultimo-banco.json',JSON.stringify({ts:new Date(Date.now()-3*864e5).toISOString(),tool:'both',ran:380,failed:4,skipped:0,nomedido:0,parityBreaks:0,baselineRegressions:1,origen:'azure-pipelines',estado:'completo'}))\"",
+            "node -e \"require('fs').writeFileSync('ultimo-suites.json',JSON.stringify({ts:new Date(Date.now()-3*864e5).toISOString(),failures:[]}))\"",
+            "node -e \"require('fs').writeFileSync('tcg/scripts/controls-bench/.bench/last-run-claude.json',JSON.stringify({ts:new Date().toISOString(),failed:2,parityBreaks:0,baselineRegressions:0}))\""
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {
+            "stdout_re": [
+              "banco de controles NOCTURNO NO ESTÁ CORRIENDO",
+              "suites de prueba NOCTURNAS NO ESTÁN CORRIENDO",
+              "controls-bench EN ROJO"
+            ]
+          }
+        },
+        {
+          "id": "quiet-examen-sin-maquina-designada",
+          "type": "must-stay-quiet",
+          "__doc": "story 8.4 (tanda B, AC 28 · T25): `exam-config.json` presente y SIN máquina designada —la copia pública la deja vacía— → nadie corre ese examen, y el aviso calla sobre él: si no, diría «NO ESTÁ CORRIENDO» en cada arranque, para siempre, por un proceso que ninguna máquina tiene. Sin reporte del examen, sin nada más: silencio total.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/controls-bench/.bench && cp $TCG/scripts/hooks/bench-notice.js tcg/scripts/hooks/",
+            "mkdir -p tcg/scripts/controls-bench && cp $TCG/scripts/controls-bench/*.js tcg/scripts/controls-bench/",
+            "node -e \"require('fs').writeFileSync('tcg/scripts/controls-bench/exam-config.json',JSON.stringify({designated_machine:'',days_between_runs:3,scheduled_days:['tuesday','friday'],hour:'02:00'},null,2))\""
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {}
+        },
+        {
+          "id": "denuncia-el-examen-sin-reporte-con-maquina-designada",
+          "type": "must-emit",
+          "__doc": "story 8.4 (T25, control del caso anterior): la misma foto CON máquina designada —el equipo— y sin ningún reporte del examen → se denuncia como siempre (decisión del 2026-09-26: el examen avisa siempre adentro).",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/controls-bench/.bench && cp $TCG/scripts/hooks/bench-notice.js tcg/scripts/hooks/",
+            "mkdir -p tcg/scripts/controls-bench && cp $TCG/scripts/controls-bench/*.js tcg/scripts/controls-bench/",
+            "node -e \"require('fs').writeFileSync('tcg/scripts/controls-bench/exam-config.json',JSON.stringify({designated_machine:'maquina-del-equipo',days_between_runs:3,scheduled_days:['tuesday','friday'],hour:'02:00'},null,2))\""
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {
+            "stdout_re": [
+              "examen de los revisores NO ESTÁ CORRIENDO"
+            ]
+          }
+        },
+        {
+          "id": "examen-config-ilegible-no-es-sin-maquina",
+          "type": "must-emit",
+          "__doc": "story 8.4 (T25): «no pude leer la configuración» no es «no hay máquina designada». Con `exam-config.json` roto el aviso no sabe si alguien corre el examen, y un «no sé» callado se lee igual que un verde: denuncia como siempre.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/controls-bench/.bench && cp $TCG/scripts/hooks/bench-notice.js tcg/scripts/hooks/",
+            "mkdir -p tcg/scripts/controls-bench && cp $TCG/scripts/controls-bench/*.js tcg/scripts/controls-bench/",
+            "printf '{roto' > tcg/scripts/controls-bench/exam-config.json"
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {
+            "stdout_re": [
+              "examen de los revisores NO ESTÁ CORRIENDO"
+            ]
+          }
+        }
+      ],
+      "__doc": "Los casos de este archivo aíslan UNA de las dos cosas que dice el aviso: los rojos del banco. Desde la Story 1.1 el aviso también contesta '¿el examen de revisores está corriendo?', y esa respuesta se apoya en `periodic-exam.js` (de donde importa el único umbral de vejez) y en un reporte que vive FUERA de `.bench/` porque tiene que viajar por git. Por eso cada setup copia esa pieza —CON sus hermanos: todos los .js de la carpeta, no un archivo. El 2026-09-05 `periodic-exam.js` pasó a requerir `tools-path.js`; la copia de un solo archivo caía al catch «clon viejo», los 11 casos mudos hablaban y los 4 que gritan decían otra cosa: 15 rojos falsos, encontrados por DevB desde su máquina. Copiar la carpeta cierra también el próximo hermano— y deja una medición fresca y verde: sin neutralizar ese eje, todo caso mudo gritaría por el otro. Los casos del eje nuevo están al final.",
+      "env": {
+        "TYCON_EXAM_REPORT": "${FIXTURE}/ultimo-examen.json",
+        "TYCON_BENCH_REPORT": "${FIXTURE}/ultimo-banco.json",
+        "TYCON_SUITES_REPORT": "${FIXTURE}/ultimo-suites.json"
+      }
+    }
+  ]
+}

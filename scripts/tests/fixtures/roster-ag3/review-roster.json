@@ -1,0 +1,97 @@
+{
+  "version": 1,
+  "story": "AG-3",
+  "written_by": "on-advisor-run.js",
+  "ts": "2026-09-21T01:16:13.946Z",
+  "base_sha": "0000000",
+  "tree_sha": "000000000000",
+  "implementer": {
+    "kind": "sesion-principal",
+    "session_id": "sesion-anonimizada",
+    "model": "claude-opus-5"
+  },
+  "reviewers": [
+    {
+      "agent": "tycon-plugin-dotnet-conventions",
+      "kind": "subagente",
+      "model": "sonnet",
+      "model_source": "agente",
+      "ts": "2026-09-21T00:47:27.681Z",
+      "iter": 2
+    },
+    {
+      "agent": "tycon-plugin-security-basics",
+      "kind": "subagente",
+      "model": "sonnet",
+      "model_source": "agente",
+      "ts": "2026-09-21T00:47:36.927Z",
+      "iter": 2
+    },
+    {
+      "agent": "tycon-plugin-tests-coverage",
+      "kind": "subagente",
+      "model": "sonnet",
+      "model_source": "agente",
+      "ts": "2026-09-21T00:47:45.919Z",
+      "iter": 2
+    },
+    {
+      "agent": "tycon-silent-failure-hunter",
+      "kind": "subagente",
+      "model": "sonnet",
+      "model_source": "agente",
+      "ts": "2026-09-21T00:47:56.178Z",
+      "iter": 2
+    },
+    {
+      "agent": "tycon-feature-wiring-checker",
+      "kind": "subagente",
+      "model": "sonnet",
+      "model_source": "agente",
+      "ts": "2026-09-21T01:03:02.738Z",
+      "iter": 2
+    },
+    {
+      "agent": "tycon-e2e-realness-checker",
+      "kind": "subagente",
+      "model": "sonnet",
+      "model_source": "agente",
+      "ts": "2026-09-21T01:03:11.779Z",
+      "iter": 2
+    },
+    {
+      "agent": "tycon-spec-first-checker",
+      "kind": "subagente",
+      "model": "opus",
+      "model_source": "agente",
+      "ts": "2026-09-21T01:03:22.200Z",
+      "iter": 2
+    },
+    {
+      "agent": "tycon-ac-coverage-checker",
+      "kind": "subagente",
+      "model": "sonnet",
+      "model_source": "agente",
+      "ts": "2026-09-21T01:03:32.750Z",
+      "iter": 1
+    },
+    {
+      "agent": "tycon-story-validator",
+      "kind": "subagente",
+      "model": "sonnet",
+      "model_source": "agente",
+      "ts": "2026-09-21T01:05:20.486Z",
+      "iter": 2
+    },
+    {
+      "agent": "http-resilience-reviewer",
+      "kind": "subagente",
+      "model": "sonnet",
+      "model_source": "agente",
+      "ts": "2026-09-21T01:16:13.856Z",
+      "iter": 2
+    }
+  ],
+  "iterations": 2,
+  "iterations_source": "ledger"
+}

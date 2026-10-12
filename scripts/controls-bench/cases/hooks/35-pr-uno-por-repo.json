@@ -1,0 +1,261 @@
+{
+  "_por_que": "El 2026-09-03 la cola de Azure se llenó CUATRO veces por la misma causa, en dos variantes: empujar de a poco a la misma rama, y abrir una tanda de pull requests y después OTRA sobre los mismos repos. Las dos veces se prometió no repetirlo y se repitió por la otra puerta. Una regla que hay que recordar no es un control. 🔴 Corregido dos veces el mismo día por preguntas del dev: primero bloqueaba ante CUALQUIER pull request abierto (lo que impide que dos personas trabajen en el mismo repo), y venia PRENDIDO. Ahora frena solo ante una construccion EN CURSO, y esta apagado por default: se enciende con TYCON_PR_ONE_PER_REPO=1 para una tanda de cambios en varios repos, que es donde se llena la cola de la organizacion.",
+  "hooks": [
+    {
+      "hook": "pr-one-per-repo-guard.js",
+      "script": "${TCG}/scripts/hooks/pr-one-per-repo-guard.js",
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "cases": [
+        {
+          "id": "no-bloquea-lo-que-no-crea-un-pr",
+          "type": "must-not-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr update --id 1 --auto-complete true"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "no-bloquea-listar",
+          "type": "must-not-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr list --org https://x --project P --repository R"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "no-bloquea-un-comando-cualquiera",
+          "type": "must-not-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git status"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "sin-poder-consultar-no-bloquea-pero-lo-dice",
+          "_por_que": "Sin `az` en el PATH del sandbox no puede preguntar. Un freno que corta el trabajo cuando no pudo mirar se apaga en una tarde; lo que no puede hacer es callarse.",
+          "type": "must-not-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr create --org https://x --project P --repository R --source-branch ci/a --target-branch main --title t"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "stderr_re": [
+              "NO verifiqué|no pude consultar"
+            ]
+          },
+          "env": {
+            "TYCON_PR_ONE_PER_REPO": "1"
+          }
+        },
+        {
+          "id": "apagado-por-default-no-estorba",
+          "type": "must-not-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr create --org https://x --project P --repository R --source-branch ci/a --target-branch main --title t"
+            }
+          },
+          "expect": {
+            "exit": 0
+          },
+          "_por_que": "APAGADO por default: en el dia a dia de un dev esto no tiene que estorbar. Se enciende solo para una tanda de cambios en varios repos."
+        },
+        {
+          "id": "con-forma-igual-no-se-calla",
+          "type": "must-not-block",
+          "_por_que": "AZ-PR-PARSER-UNICO-1 (2026-09-03): con `--org=https://x` (forma `=`) el lector casero no encontraba el org y caía en la rama «sin datos»: exit 0 y ni una palabra. Sin `az` en el sandbox tiene que decir que NO pudo consultar, igual que con la forma `--org https://x`.",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr create --org=https://x --project=P --repository=R --source-branch=ci/a --target-branch=main --title=t"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "stderr_re": [
+              "NO verifiqué|no pude consultar"
+            ]
+          },
+          "env": {
+            "TYCON_PR_ONE_PER_REPO": "1"
+          }
+        },
+        {
+          "id": "con-organization-y-comillas-no-se-calla",
+          "type": "must-not-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr create -p \"Acme Logistica\" -r NoExiste-9f3a -s ci/a -t main --title \"con espacios\""
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "stderr_re": [
+              "no pude consultar"
+            ]
+          },
+          "env": {
+            "TYCON_PR_ONE_PER_REPO": "1"
+          },
+          "_por_que": "Revisión adversarial 2026-09-06: el comando original (`--organization \"…\" --project \"Acme Logistica\"`) era verde con el lector VIEJO también — ese regex ya leía comillas con espacios. Lo que el viejo se comía en silencio (rc 0, stderr vacío) era la forma CORTA `-p/-r/-s/-t`: ésta. Sin org en el comando, el hook ya no renuncia: pregunta con las banderas que hay y deja que `az` resuelva (28 de 52 PR reales van sin --org). (El runner no tiene `stderr_not_re`: se exige «no pude consultar», que sólo sale si PREGUNTÓ; el viejo decía «NO verifiqué… no pude leer».)"
+        },
+        {
+          "id": "encadenado-consulta-los-dos-repos",
+          "type": "must-not-block",
+          "_por_que": "Revisión adversarial 2026-09-06 (hallazgo #3): sólo se juzgaba el PRIMER `pr create` de la cadena; R2 nunca se miraba. Sin az válido en el sandbox, tiene que decir que no pudo consultar los DOS.",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr create --org https://x --project P --repository R1 -s ci/a -t main --title t && az repos pr create --org https://x --project P --repository R2 -s ci/a -t main --title t"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "stderr_re": [
+              "P/R1",
+              "P/R2"
+            ]
+          },
+          "env": {
+            "TYCON_PR_ONE_PER_REPO": "1"
+          }
+        },
+        {
+          "id": "sin-org-ni-proyecto-igual-pregunta",
+          "type": "must-not-block",
+          "_por_que": "Revisión adversarial 2026-09-06 (hallazgo #14): con org/proyecto en `az devops configure --defaults` (lo que recomienda el CLAUDE.md) el hook avisaba «no pude leer org/proyecto/repo» y nunca preguntaba. Ahora pasa las banderas que hay y `az` resuelve por sus defaults — y si no puede, lo dice. (El runner no tiene `stderr_not_re`: se exige «no pude consultar», que sólo sale si PREGUNTÓ; el viejo decía «NO verifiqué… no pude leer».)",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr create -r NoExiste-9f3a -s dev -t main --title x"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "stderr_re": [
+              "no pude consultar"
+            ]
+          },
+          "env": {
+            "TYCON_PR_ONE_PER_REPO": "1"
+          }
+        },
+        {
+          "id": "constancia-2.6-no-anota-lo-que-no-le-compete",
+          "type": "must-not-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "ls -la"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "file_absent": [
+              "${SANDBOX_HOME}/.claude/.tycon-pipeline/frenos.jsonl"
+            ]
+          }
+        },
+        {
+          "id": "constancia-2.6-el-paso-se-anota",
+          "type": "must-not-block",
+          "so": [
+            "linux",
+            "darwin"
+          ],
+          "__so": "Sólo Linux y Mac (story 8.17, W1, medido en Windows): el caso reemplaza `az` por uno de mentira escrito como guion de shell y pone su PATH con «:», y en Windows Node no puede lanzar un guion con «#!» como si fuera un ejecutable. Además, en Windows este control NO puede consultar: llama a `az` con `execFileSync`, y ahí `az` es un `.cmd` que Node no lanza sin shell (la story lo declara en «Qué queda afuera en Windows»). O sea: el caso no se puede armar ahí, y el camino que mide tampoco existe ahí ([DEF-8.17-W1-NO-CASE-ON-WINDOWS]).",
+          "__doc": "story 2.6 · creaba un pull request, se PUDO preguntar y no había otro abierto: eso es un `paso` y queda escrito. Con un `az` de mentira en el sandbox, porque el caso tiene que llegar a la decisión — sin eso el freno sale por «no pude preguntar», que a propósito no se anota.",
+          "setup": [
+            "mkdir -p bin && printf '#!/bin/sh\\nif [ \"$1\" = repos ]; then echo \"[]\"; else echo \"{}\"; fi\\n' > bin/az && chmod +x bin/az",
+            "git init -q -b main . && git config user.email b@b && git config user.name b"
+          ],
+          "env": {
+            "TYCON_PR_ONE_PER_REPO": "1",
+            "PATH": "${FIXTURE}/bin:/usr/bin:/bin"
+          },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr create --source-branch story/x --target-branch main --title t --auto-complete true --squash false"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/frenos.jsonl",
+                "re": "\"freno\":\"pr-uno-por-repo\""
+              },
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/frenos.jsonl",
+                "re": "\"veredicto\":\"paso\""
+              }
+            ]
+          }
+        },
+        {
+          "id": "constancia-2.6-sin-poder-preguntar-no-se-anota",
+          "type": "must-not-block",
+          "__doc": "story 2.6 · 🔴 el espejo del anterior, y el que de verdad importa: si la consulta FALLA, el freno no bloquea —correcto— pero tampoco puede anotar «paso». «No miré» y «miré y está bien» no pueden terminar en el mismo número: es la distinción que esta story existe para no perder.",
+          "setup": [
+            "git init -q -b main . && git config user.email b@b && git config user.name b"
+          ],
+          "env": {
+            "TYCON_PR_ONE_PER_REPO": "1",
+            "PATH": "/usr/bin:/bin"
+          },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr create --source-branch story/x --target-branch main --title t --auto-complete true --squash false"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "file_absent": [
+              "${SANDBOX_HOME}/.claude/.tycon-pipeline/frenos.jsonl"
+            ]
+          }
+        },
+        {
+          "id": "no-bloquea-un-pedido-de-github",
+          "_por_que": "story 8.26, tanda E (AC 19): este freno cuida los pedidos de Azure de los repos de producto. Un `gh pr create` no es asunto suyo: pasa sin aviso.",
+          "type": "must-not-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "gh pr create --repo acme/widgets --base main --head feat/x --title \"feat: x\" --body-file cuerpo.md"
+            }
+          },
+          "expect": {
+            "exit": 0
+          },
+          "env": {
+            "TYCON_PR_ONE_PER_REPO": "1"
+          }
+        }
+      ]
+    }
+  ]
+}

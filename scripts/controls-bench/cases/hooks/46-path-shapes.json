@@ -1,0 +1,1216 @@
+{
+  "__doc": "Story 8.17, tanda W1 (T21, AC 15): cada portón que decide por la RUTA de un archivo, con la misma ruta escrita de las cuatro formas en que puede llegar. `forma-nativa` es la de siempre (/a/b) y corre en Linux y en Mac; las otras tres son las de Windows —C:\\a\\b (${FIXTURE_BACKSLASH}), C:/a/b (${FIXTURE_SLASH}) y /c/a/b, la de Git Bash (${FIXTURE_MSYS})— y corren sólo ahí (`so`): fuera de Windows no nombran ninguna carpeta que exista. El veredicto tiene que ser el mismo en las cuatro. Cada portón va de a pares —el que frena o avisa y el parecido que pasa—, y los dos de un par sólo se distinguen por la ruta: si el portón no entiende la forma, uno de los dos sale rojo. Los pares son los de 05-pipeline-preedit.json, 06-pipeline-bash-stop.json y 29-story-skill-gate.json; en el portón de la terminal la ruta va absoluta y entre comillas.",
+  "hooks": [
+    {
+      "hook": "hook-pre-edit.js → los portones por ruta (story-gate, evidencia de cierre, frontmatter, artefactos de planning), en cada forma de ruta",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/hook-pre-edit.js",
+      "event": "PreToolUse",
+      "matcher": "Edit|Write",
+      "cases": [
+        {
+          "id": "story-gate-frena-forma-nativa",
+          "type": "must-block",
+          "so": [
+            "linux",
+            "darwin"
+          ],
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon src"
+          ],
+          "stdin": {
+            "tool_name": "Write",
+            "tool_input": {
+              "file_path": "${FIXTURE}/src/Foo.cs",
+              "content": "class Foo {}"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log",
+                "re": "story-gate"
+              }
+            ]
+          }
+        },
+        {
+          "id": "story-gate-frena-forma-barras-invertidas",
+          "type": "must-block",
+          "so": [
+            "win32"
+          ],
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon src"
+          ],
+          "stdin": {
+            "tool_name": "Write",
+            "tool_input": {
+              "file_path": "${FIXTURE_BACKSLASH}\\src\\Foo.cs",
+              "content": "class Foo {}"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log",
+                "re": "story-gate"
+              }
+            ]
+          }
+        },
+        {
+          "id": "story-gate-frena-forma-barras",
+          "type": "must-block",
+          "so": [
+            "win32"
+          ],
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon src"
+          ],
+          "stdin": {
+            "tool_name": "Write",
+            "tool_input": {
+              "file_path": "${FIXTURE_SLASH}/src/Foo.cs",
+              "content": "class Foo {}"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log",
+                "re": "story-gate"
+              }
+            ]
+          }
+        },
+        {
+          "id": "story-gate-frena-forma-git-bash",
+          "type": "must-block",
+          "so": [
+            "win32"
+          ],
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon src"
+          ],
+          "stdin": {
+            "tool_name": "Write",
+            "tool_input": {
+              "file_path": "${FIXTURE_MSYS}/src/Foo.cs",
+              "content": "class Foo {}"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log",
+                "re": "story-gate"
+              }
+            ]
+          }
+        },
+        {
+          "id": "story-gate-pasa-forma-nativa",
+          "type": "must-not-block",
+          "so": [
+            "linux",
+            "darwin"
+          ],
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon src"
+          ],
+          "stdin": {
+            "tool_name": "Write",
+            "tool_input": {
+              "file_path": "${FIXTURE}/README.md",
+              "content": "# Notas\n"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "story-gate-pasa-forma-barras-invertidas",
+          "type": "must-not-block",
+          "so": [
+            "win32"
+          ],
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon src"
+          ],
+          "stdin": {
+            "tool_name": "Write",
+            "tool_input": {
+              "file_path": "${FIXTURE_BACKSLASH}\\README.md",
+              "content": "# Notas\n"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "story-gate-pasa-forma-barras",
+          "type": "must-not-block",
+          "so": [
+            "win32"
+          ],
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon src"
+          ],
+          "stdin": {
+            "tool_name": "Write",
+            "tool_input": {
+              "file_path": "${FIXTURE_SLASH}/README.md",
+              "content": "# Notas\n"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "story-gate-pasa-forma-git-bash",
+          "type": "must-not-block",
+          "so": [
+            "win32"
+          ],
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon src"
+          ],
+          "stdin": {
+            "tool_name": "Write",
+            "tool_input": {
+              "file_path": "${FIXTURE_MSYS}/README.md",
+              "content": "# Notas\n"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "dod-evidence-frena-forma-nativa",
+          "type": "must-block",
+          "so": [
+            "linux",
+            "darwin"
+          ],
+          "setup": [
+            "mkdir -p .advisors/dod-runtime"
+          ],
+          "stdin": {
+            "tool_name": "Write",
+            "tool_input": {
+              "file_path": "${FIXTURE}/.advisors/dod-runtime/3.1-20260821.md",
+              "content": "evidencia"
+            }
+          },
+          "expect": {
+            "exit": 2
+          }
+        },
+        {
+          "id": "dod-evidence-frena-forma-barras-invertidas",
+          "type": "must-block",
+          "so": [
+            "win32"
+          ],
+          "setup": [
+            "mkdir -p .advisors/dod-runtime"
+          ],
+          "stdin": {
+            "tool_name": "Write",
+            "tool_input": {
+              "file_path": "${FIXTURE_BACKSLASH}\\.advisors\\dod-runtime\\3.1-20260821.md",
+              "content": "evidencia"
+            }
+          },
+          "expect": {
+            "exit": 2
+          }
+        },
+        {
+          "id": "dod-evidence-frena-forma-barras",
+          "type": "must-block",
+          "so": [
+            "win32"
+          ],
+          "setup": [
+            "mkdir -p .advisors/dod-runtime"
+          ],
+          "stdin": {
+            "tool_name": "Write",
+            "tool_input": {
+              "file_path": "${FIXTURE_SLASH}/.advisors/dod-runtime/3.1-20260821.md",
+              "content": "evidencia"
+            }
+          },
+          "expect": {
+            "exit": 2
+          }
+        },
+        {
+          "id": "dod-evidence-frena-forma-git-bash",
+          "type": "must-block",
+          "so": [
+            "win32"
+          ],
+          "setup": [
+            "mkdir -p .advisors/dod-runtime"
+          ],
+          "stdin": {
+            "tool_name": "Write",
+            "tool_input": {
+              "file_path": "${FIXTURE_MSYS}/.advisors/dod-runtime/3.1-20260821.md",
+              "content": "evidencia"
+            }
+          },
+          "expect": {
+            "exit": 2
+          }
+        },
+        {
+          "id": "dod-evidence-pasa-forma-nativa",
+          "type": "must-not-block",
+          "so": [
+            "linux",
+            "darwin"
+          ],
+          "setup": [
+            "mkdir -p .advisors/dod-runtime"
+          ],
+          "stdin": {
+            "tool_name": "Write",
+            "tool_input": {
+              "file_path": "${FIXTURE}/.advisors/dod-runtime/3.1-self-audit.md",
+              "content": "audit"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "dod-evidence-pasa-forma-barras-invertidas",
+          "type": "must-not-block",
+          "so": [
+            "win32"
+          ],
+          "setup": [
+            "mkdir -p .advisors/dod-runtime"
+          ],
+          "stdin": {
+            "tool_name": "Write",
+            "tool_input": {
+              "file_path": "${FIXTURE_BACKSLASH}\\.advisors\\dod-runtime\\3.1-self-audit.md",
+              "content": "audit"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "dod-evidence-pasa-forma-barras",
+          "type": "must-not-block",
+          "so": [
+            "win32"
+          ],
+          "setup": [
+            "mkdir -p .advisors/dod-runtime"
+          ],
+          "stdin": {
+            "tool_name": "Write",
+            "tool_input": {
+              "file_path": "${FIXTURE_SLASH}/.advisors/dod-runtime/3.1-self-audit.md",
+              "content": "audit"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "dod-evidence-pasa-forma-git-bash",
+          "type": "must-not-block",
+          "so": [
+            "win32"
+          ],
+          "setup": [
+            "mkdir -p .advisors/dod-runtime"
+          ],
+          "stdin": {
+            "tool_name": "Write",
+            "tool_input": {
+              "file_path": "${FIXTURE_MSYS}/.advisors/dod-runtime/3.1-self-audit.md",
+              "content": "audit"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "frontmatter-frena-forma-nativa",
+          "type": "must-block",
+          "so": [
+            "linux",
+            "darwin"
+          ],
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p specs/stories .advisors/dod-runtime",
+            "printf -- '---\\nstory: \"4.2\"\\nepic: \"4\"\\nstatus: in-progress\\n---\\n# Story 4.2\\n\\ntests_done_playwright_spec: tests/e2e/foo.spec.ts\\n' > specs/stories/4-2.md",
+            "git add -A && git -c user.email=b@b -c user.name=b commit -q -m x"
+          ],
+          "stdin": {
+            "tool_name": "Edit",
+            "tool_input": {
+              "file_path": "${FIXTURE}/specs/stories/4-2.md",
+              "old_string": "status: in-progress",
+              "new_string": "status: done"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "DoD|runtime|evidencia"
+            ]
+          }
+        },
+        {
+          "id": "frontmatter-frena-forma-barras-invertidas",
+          "type": "must-block",
+          "so": [
+            "win32"
+          ],
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p specs/stories .advisors/dod-runtime",
+            "printf -- '---\\nstory: \"4.2\"\\nepic: \"4\"\\nstatus: in-progress\\n---\\n# Story 4.2\\n\\ntests_done_playwright_spec: tests/e2e/foo.spec.ts\\n' > specs/stories/4-2.md",
+            "git add -A && git -c user.email=b@b -c user.name=b commit -q -m x"
+          ],
+          "stdin": {
+            "tool_name": "Edit",
+            "tool_input": {
+              "file_path": "${FIXTURE_BACKSLASH}\\specs\\stories\\4-2.md",
+              "old_string": "status: in-progress",
+              "new_string": "status: done"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "DoD|runtime|evidencia"
+            ]
+          }
+        },
+        {
+          "id": "frontmatter-frena-forma-barras",
+          "type": "must-block",
+          "so": [
+            "win32"
+          ],
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p specs/stories .advisors/dod-runtime",
+            "printf -- '---\\nstory: \"4.2\"\\nepic: \"4\"\\nstatus: in-progress\\n---\\n# Story 4.2\\n\\ntests_done_playwright_spec: tests/e2e/foo.spec.ts\\n' > specs/stories/4-2.md",
+            "git add -A && git -c user.email=b@b -c user.name=b commit -q -m x"
+          ],
+          "stdin": {
+            "tool_name": "Edit",
+            "tool_input": {
+              "file_path": "${FIXTURE_SLASH}/specs/stories/4-2.md",
+              "old_string": "status: in-progress",
+              "new_string": "status: done"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "DoD|runtime|evidencia"
+            ]
+          }
+        },
+        {
+          "id": "frontmatter-frena-forma-git-bash",
+          "type": "must-block",
+          "so": [
+            "win32"
+          ],
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p specs/stories .advisors/dod-runtime",
+            "printf -- '---\\nstory: \"4.2\"\\nepic: \"4\"\\nstatus: in-progress\\n---\\n# Story 4.2\\n\\ntests_done_playwright_spec: tests/e2e/foo.spec.ts\\n' > specs/stories/4-2.md",
+            "git add -A && git -c user.email=b@b -c user.name=b commit -q -m x"
+          ],
+          "stdin": {
+            "tool_name": "Edit",
+            "tool_input": {
+              "file_path": "${FIXTURE_MSYS}/specs/stories/4-2.md",
+              "old_string": "status: in-progress",
+              "new_string": "status: done"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "DoD|runtime|evidencia"
+            ]
+          }
+        },
+        {
+          "id": "frontmatter-pasa-forma-nativa",
+          "type": "must-not-block",
+          "so": [
+            "linux",
+            "darwin"
+          ],
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p specs/stories",
+            "printf -- '---\\nstory: \"4.2\"\\nepic: \"4\"\\nstatus: in-progress\\ndod_runtime_exempt: true\\n---\\n# Story 4.2\\n\\ntests_done_playwright_spec: tests/e2e/foo.spec.ts\\n' > specs/stories/4-2.md",
+            "git add -A && git -c user.email=b@b -c user.name=b commit -q -m x"
+          ],
+          "stdin": {
+            "tool_name": "Edit",
+            "tool_input": {
+              "file_path": "${FIXTURE}/specs/stories/4-2.md",
+              "old_string": "status: in-progress",
+              "new_string": "status: done"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "frontmatter-pasa-forma-barras-invertidas",
+          "type": "must-not-block",
+          "so": [
+            "win32"
+          ],
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p specs/stories",
+            "printf -- '---\\nstory: \"4.2\"\\nepic: \"4\"\\nstatus: in-progress\\ndod_runtime_exempt: true\\n---\\n# Story 4.2\\n\\ntests_done_playwright_spec: tests/e2e/foo.spec.ts\\n' > specs/stories/4-2.md",
+            "git add -A && git -c user.email=b@b -c user.name=b commit -q -m x"
+          ],
+          "stdin": {
+            "tool_name": "Edit",
+            "tool_input": {
+              "file_path": "${FIXTURE_BACKSLASH}\\specs\\stories\\4-2.md",
+              "old_string": "status: in-progress",
+              "new_string": "status: done"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "frontmatter-pasa-forma-barras",
+          "type": "must-not-block",
+          "so": [
+            "win32"
+          ],
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p specs/stories",
+            "printf -- '---\\nstory: \"4.2\"\\nepic: \"4\"\\nstatus: in-progress\\ndod_runtime_exempt: true\\n---\\n# Story 4.2\\n\\ntests_done_playwright_spec: tests/e2e/foo.spec.ts\\n' > specs/stories/4-2.md",
+            "git add -A && git -c user.email=b@b -c user.name=b commit -q -m x"
+          ],
+          "stdin": {
+            "tool_name": "Edit",
+            "tool_input": {
+              "file_path": "${FIXTURE_SLASH}/specs/stories/4-2.md",
+              "old_string": "status: in-progress",
+              "new_string": "status: done"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "frontmatter-pasa-forma-git-bash",
+          "type": "must-not-block",
+          "so": [
+            "win32"
+          ],
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p specs/stories",
+            "printf -- '---\\nstory: \"4.2\"\\nepic: \"4\"\\nstatus: in-progress\\ndod_runtime_exempt: true\\n---\\n# Story 4.2\\n\\ntests_done_playwright_spec: tests/e2e/foo.spec.ts\\n' > specs/stories/4-2.md",
+            "git add -A && git -c user.email=b@b -c user.name=b commit -q -m x"
+          ],
+          "stdin": {
+            "tool_name": "Edit",
+            "tool_input": {
+              "file_path": "${FIXTURE_MSYS}/specs/stories/4-2.md",
+              "old_string": "status: in-progress",
+              "new_string": "status: done"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "planning-artifact-avisa-forma-nativa",
+          "type": "must-emit",
+          "so": [
+            "linux",
+            "darwin"
+          ],
+          "setup": [
+            "mkdir -p specs/planning-artifacts"
+          ],
+          "stdin": {
+            "tool_name": "Write",
+            "tool_input": {
+              "file_path": "${FIXTURE}/specs/planning-artifacts/ux-spec-v7.md",
+              "content": "---\nstatus: draft\n---\n# UX\n"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "stdout_re": [
+              "reconciles"
+            ]
+          }
+        },
+        {
+          "id": "planning-artifact-avisa-forma-barras-invertidas",
+          "type": "must-emit",
+          "so": [
+            "win32"
+          ],
+          "setup": [
+            "mkdir -p specs/planning-artifacts"
+          ],
+          "stdin": {
+            "tool_name": "Write",
+            "tool_input": {
+              "file_path": "${FIXTURE_BACKSLASH}\\specs\\planning-artifacts\\ux-spec-v7.md",
+              "content": "---\nstatus: draft\n---\n# UX\n"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "stdout_re": [
+              "reconciles"
+            ]
+          }
+        },
+        {
+          "id": "planning-artifact-avisa-forma-barras",
+          "type": "must-emit",
+          "so": [
+            "win32"
+          ],
+          "setup": [
+            "mkdir -p specs/planning-artifacts"
+          ],
+          "stdin": {
+            "tool_name": "Write",
+            "tool_input": {
+              "file_path": "${FIXTURE_SLASH}/specs/planning-artifacts/ux-spec-v7.md",
+              "content": "---\nstatus: draft\n---\n# UX\n"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "stdout_re": [
+              "reconciles"
+            ]
+          }
+        },
+        {
+          "id": "planning-artifact-avisa-forma-git-bash",
+          "type": "must-emit",
+          "so": [
+            "win32"
+          ],
+          "setup": [
+            "mkdir -p specs/planning-artifacts"
+          ],
+          "stdin": {
+            "tool_name": "Write",
+            "tool_input": {
+              "file_path": "${FIXTURE_MSYS}/specs/planning-artifacts/ux-spec-v7.md",
+              "content": "---\nstatus: draft\n---\n# UX\n"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "stdout_re": [
+              "reconciles"
+            ]
+          }
+        },
+        {
+          "id": "planning-artifact-calla-forma-nativa",
+          "type": "must-stay-quiet",
+          "so": [
+            "linux",
+            "darwin"
+          ],
+          "setup": [
+            "mkdir -p specs/planning-artifacts"
+          ],
+          "stdin": {
+            "tool_name": "Write",
+            "tool_input": {
+              "file_path": "${FIXTURE}/specs/planning-artifacts/ux-spec-v8.md",
+              "content": "---\nstatus: draft\nreconciles: [ux-spec-v7]\n---\n# UX\n"
+            }
+          },
+          "expect": {
+            "stdout_not_re": [
+              "reconciles"
+            ]
+          }
+        },
+        {
+          "id": "planning-artifact-calla-forma-barras-invertidas",
+          "type": "must-stay-quiet",
+          "so": [
+            "win32"
+          ],
+          "setup": [
+            "mkdir -p specs/planning-artifacts"
+          ],
+          "stdin": {
+            "tool_name": "Write",
+            "tool_input": {
+              "file_path": "${FIXTURE_BACKSLASH}\\specs\\planning-artifacts\\ux-spec-v8.md",
+              "content": "---\nstatus: draft\nreconciles: [ux-spec-v7]\n---\n# UX\n"
+            }
+          },
+          "expect": {
+            "stdout_not_re": [
+              "reconciles"
+            ]
+          }
+        },
+        {
+          "id": "planning-artifact-calla-forma-barras",
+          "type": "must-stay-quiet",
+          "so": [
+            "win32"
+          ],
+          "setup": [
+            "mkdir -p specs/planning-artifacts"
+          ],
+          "stdin": {
+            "tool_name": "Write",
+            "tool_input": {
+              "file_path": "${FIXTURE_SLASH}/specs/planning-artifacts/ux-spec-v8.md",
+              "content": "---\nstatus: draft\nreconciles: [ux-spec-v7]\n---\n# UX\n"
+            }
+          },
+          "expect": {
+            "stdout_not_re": [
+              "reconciles"
+            ]
+          }
+        },
+        {
+          "id": "planning-artifact-calla-forma-git-bash",
+          "type": "must-stay-quiet",
+          "so": [
+            "win32"
+          ],
+          "setup": [
+            "mkdir -p specs/planning-artifacts"
+          ],
+          "stdin": {
+            "tool_name": "Write",
+            "tool_input": {
+              "file_path": "${FIXTURE_MSYS}/specs/planning-artifacts/ux-spec-v8.md",
+              "content": "---\nstatus: draft\nreconciles: [ux-spec-v7]\n---\n# UX\n"
+            }
+          },
+          "expect": {
+            "stdout_not_re": [
+              "reconciles"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "hook": "hook-pre-edit.js → on-story-skill-gate, en cada forma de ruta",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/hook-pre-edit.js",
+      "event": "PreToolUse",
+      "matcher": "Edit|Write",
+      "env": {
+        "TYCON_LANE_LLM": "0"
+      },
+      "cases": [
+        {
+          "id": "story-skill-gate-frena-forma-nativa",
+          "type": "must-block",
+          "so": [
+            "linux",
+            "darwin"
+          ],
+          "tools": [
+            "claude"
+          ],
+          "asymmetry": "Codex no expone la invocación de skills como tool call: el freno no bloquea bajo Codex y deja la constancia como «unknown» (mismo motivo que el caso de origen, en 29-story-skill-gate.json).",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon specs"
+          ],
+          "files": {
+            ".tycon/advisors.yaml": "stories:\n  id_pattern: '^(?:[A-Z]{1,4}-)?\\d+(?:[.-]\\d+)*$'\n"
+          },
+          "stdin": {
+            "session_id": "bench-shape",
+            "tool_name": "Write",
+            "tool_input": {
+              "file_path": "${FIXTURE}/specs/story-as1-pedidos-del-dia.md",
+              "content": "---\nstory: \"AS-1\"\nepic: \"pedidos\"\nstatus: ready-for-dev\ntitle: \"Pedidos del día\"\n---\n# Story AS-1\n"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "STORY A MANO"
+            ],
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log",
+                "re": "\"name\":\"story-skill-gate\".*\"status\":\"blocked\""
+              }
+            ]
+          }
+        },
+        {
+          "id": "story-skill-gate-frena-forma-barras-invertidas",
+          "type": "must-block",
+          "so": [
+            "win32"
+          ],
+          "tools": [
+            "claude"
+          ],
+          "asymmetry": "Codex no expone la invocación de skills como tool call: el freno no bloquea bajo Codex y deja la constancia como «unknown» (mismo motivo que el caso de origen, en 29-story-skill-gate.json).",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon specs"
+          ],
+          "files": {
+            ".tycon/advisors.yaml": "stories:\n  id_pattern: '^(?:[A-Z]{1,4}-)?\\d+(?:[.-]\\d+)*$'\n"
+          },
+          "stdin": {
+            "session_id": "bench-shape",
+            "tool_name": "Write",
+            "tool_input": {
+              "file_path": "${FIXTURE_BACKSLASH}\\specs\\story-as1-pedidos-del-dia.md",
+              "content": "---\nstory: \"AS-1\"\nepic: \"pedidos\"\nstatus: ready-for-dev\ntitle: \"Pedidos del día\"\n---\n# Story AS-1\n"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "STORY A MANO"
+            ],
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log",
+                "re": "\"name\":\"story-skill-gate\".*\"status\":\"blocked\""
+              }
+            ]
+          }
+        },
+        {
+          "id": "story-skill-gate-frena-forma-barras",
+          "type": "must-block",
+          "so": [
+            "win32"
+          ],
+          "tools": [
+            "claude"
+          ],
+          "asymmetry": "Codex no expone la invocación de skills como tool call: el freno no bloquea bajo Codex y deja la constancia como «unknown» (mismo motivo que el caso de origen, en 29-story-skill-gate.json).",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon specs"
+          ],
+          "files": {
+            ".tycon/advisors.yaml": "stories:\n  id_pattern: '^(?:[A-Z]{1,4}-)?\\d+(?:[.-]\\d+)*$'\n"
+          },
+          "stdin": {
+            "session_id": "bench-shape",
+            "tool_name": "Write",
+            "tool_input": {
+              "file_path": "${FIXTURE_SLASH}/specs/story-as1-pedidos-del-dia.md",
+              "content": "---\nstory: \"AS-1\"\nepic: \"pedidos\"\nstatus: ready-for-dev\ntitle: \"Pedidos del día\"\n---\n# Story AS-1\n"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "STORY A MANO"
+            ],
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log",
+                "re": "\"name\":\"story-skill-gate\".*\"status\":\"blocked\""
+              }
+            ]
+          }
+        },
+        {
+          "id": "story-skill-gate-frena-forma-git-bash",
+          "type": "must-block",
+          "so": [
+            "win32"
+          ],
+          "tools": [
+            "claude"
+          ],
+          "asymmetry": "Codex no expone la invocación de skills como tool call: el freno no bloquea bajo Codex y deja la constancia como «unknown» (mismo motivo que el caso de origen, en 29-story-skill-gate.json).",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon specs"
+          ],
+          "files": {
+            ".tycon/advisors.yaml": "stories:\n  id_pattern: '^(?:[A-Z]{1,4}-)?\\d+(?:[.-]\\d+)*$'\n"
+          },
+          "stdin": {
+            "session_id": "bench-shape",
+            "tool_name": "Write",
+            "tool_input": {
+              "file_path": "${FIXTURE_MSYS}/specs/story-as1-pedidos-del-dia.md",
+              "content": "---\nstory: \"AS-1\"\nepic: \"pedidos\"\nstatus: ready-for-dev\ntitle: \"Pedidos del día\"\n---\n# Story AS-1\n"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "STORY A MANO"
+            ],
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log",
+                "re": "\"name\":\"story-skill-gate\".*\"status\":\"blocked\""
+              }
+            ]
+          }
+        },
+        {
+          "id": "story-skill-gate-pasa-forma-nativa",
+          "type": "must-not-block",
+          "so": [
+            "linux",
+            "darwin"
+          ],
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon specs"
+          ],
+          "stdin": {
+            "session_id": "bench-shape",
+            "tool_name": "Write",
+            "tool_input": {
+              "file_path": "${FIXTURE}/specs/prd.md",
+              "content": "---\nstatus: draft\ntitle: \"PRD\"\n---\n# PRD\n"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "file_absent": [
+              "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log"
+            ]
+          }
+        },
+        {
+          "id": "story-skill-gate-pasa-forma-barras-invertidas",
+          "type": "must-not-block",
+          "so": [
+            "win32"
+          ],
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon specs"
+          ],
+          "stdin": {
+            "session_id": "bench-shape",
+            "tool_name": "Write",
+            "tool_input": {
+              "file_path": "${FIXTURE_BACKSLASH}\\specs\\prd.md",
+              "content": "---\nstatus: draft\ntitle: \"PRD\"\n---\n# PRD\n"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "file_absent": [
+              "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log"
+            ]
+          }
+        },
+        {
+          "id": "story-skill-gate-pasa-forma-barras",
+          "type": "must-not-block",
+          "so": [
+            "win32"
+          ],
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon specs"
+          ],
+          "stdin": {
+            "session_id": "bench-shape",
+            "tool_name": "Write",
+            "tool_input": {
+              "file_path": "${FIXTURE_SLASH}/specs/prd.md",
+              "content": "---\nstatus: draft\ntitle: \"PRD\"\n---\n# PRD\n"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "file_absent": [
+              "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log"
+            ]
+          }
+        },
+        {
+          "id": "story-skill-gate-pasa-forma-git-bash",
+          "type": "must-not-block",
+          "so": [
+            "win32"
+          ],
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon specs"
+          ],
+          "stdin": {
+            "session_id": "bench-shape",
+            "tool_name": "Write",
+            "tool_input": {
+              "file_path": "${FIXTURE_MSYS}/specs/prd.md",
+              "content": "---\nstatus: draft\ntitle: \"PRD\"\n---\n# PRD\n"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "file_absent": [
+              "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "hook": "on-bash-write-gate.js, con la ruta absoluta en cada forma",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/on-bash-write-gate.js",
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "cases": [
+        {
+          "id": "bash-write-gate-frena-forma-nativa",
+          "type": "must-block",
+          "so": [
+            "linux",
+            "darwin"
+          ],
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon src"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "cat > \"${FIXTURE}/src/Foo.cs\" <<'EOF'\nclass Foo {}\nEOF"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log",
+                "re": "story-gate"
+              }
+            ]
+          }
+        },
+        {
+          "id": "bash-write-gate-frena-forma-barras-invertidas",
+          "type": "must-block",
+          "so": [
+            "win32"
+          ],
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon src"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "cat > \"${FIXTURE_BACKSLASH}\\src\\Foo.cs\" <<'EOF'\nclass Foo {}\nEOF"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log",
+                "re": "story-gate"
+              }
+            ]
+          }
+        },
+        {
+          "id": "bash-write-gate-frena-forma-barras",
+          "type": "must-block",
+          "so": [
+            "win32"
+          ],
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon src"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "cat > \"${FIXTURE_SLASH}/src/Foo.cs\" <<'EOF'\nclass Foo {}\nEOF"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log",
+                "re": "story-gate"
+              }
+            ]
+          }
+        },
+        {
+          "id": "bash-write-gate-frena-forma-git-bash",
+          "type": "must-block",
+          "so": [
+            "win32"
+          ],
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon src"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "cat > \"${FIXTURE_MSYS}/src/Foo.cs\" <<'EOF'\nclass Foo {}\nEOF"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log",
+                "re": "story-gate"
+              }
+            ]
+          }
+        },
+        {
+          "id": "bash-write-gate-pasa-forma-nativa",
+          "type": "must-not-block",
+          "so": [
+            "linux",
+            "darwin"
+          ],
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon src"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "cat > \"${FIXTURE}/NOTAS.md\" <<'EOF'\n# Notas\nEOF"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "bash-write-gate-pasa-forma-barras-invertidas",
+          "type": "must-not-block",
+          "so": [
+            "win32"
+          ],
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon src"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "cat > \"${FIXTURE_BACKSLASH}\\NOTAS.md\" <<'EOF'\n# Notas\nEOF"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "bash-write-gate-pasa-forma-barras",
+          "type": "must-not-block",
+          "so": [
+            "win32"
+          ],
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon src"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "cat > \"${FIXTURE_SLASH}/NOTAS.md\" <<'EOF'\n# Notas\nEOF"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "bash-write-gate-pasa-forma-git-bash",
+          "type": "must-not-block",
+          "so": [
+            "win32"
+          ],
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon src"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "cat > \"${FIXTURE_MSYS}/NOTAS.md\" <<'EOF'\n# Notas\nEOF"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        }
+      ]
+    }
+  ]
+}

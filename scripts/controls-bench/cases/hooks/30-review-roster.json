@@ -1,0 +1,308 @@
+{
+  "__doc": "Registro de AUTORÍA de la story — 'revisor ≠ autor, verificable' (2026-08-30, reemplaza a la Decisión 2 del plan vs el AI-Native SDLC Playbook). El playbook pide un revisor con IA en el servidor; acá la revisión ya ocurre ANTES del PR y con más contexto (la sesión implementa, los advisors subagentes revisan), pero el rastro committeado NO lo decía: el portón podía verificar que hubo revisión, no que la hizo otro. El hook on-advisor-run.js proyecta el ledger de spawns reales a `review-roster.json` en el run dir, y el portón de CI lo exige al pasar a `done`. Estos casos fijan las tres cosas que hacen que sirva: que se escriba solo al cerrar la ronda, que NO se escriba cuando no corresponde, y que un fallo de escritura DEJE CONSTANCIA en vez de salir limpio en silencio.",
+  "hooks": [
+    {
+      "hook": "on-advisor-run.js (registro de autoría)",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/on-advisor-run.js",
+      "event": "PreToolUse",
+      "matcher": "Task|Agent",
+      "env": {
+        "TYCON_AUTO_SNAPSHOT": "0"
+      },
+      "cases": [
+        {
+          "id": "ronda-completa-escribe-el-registro",
+          "type": "must-run",
+          "setup": [
+            "git init -q -b main . && echo x > a.txt && git add a.txt && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "mkdir -p .advisors/pipeline-runs/9.4-20260901120000",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline/active';fs.mkdirSync(d,{recursive:true});fs.writeFileSync(d+'/bench-ros1.json',JSON.stringify({sessionId:'bench-ros1',storyId:'9.4',repoPath:process.env.FIXTURE,lastTouch:new Date().toISOString()}))\"",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline/advisor-runs';fs.mkdirSync(d,{recursive:true});fs.writeFileSync(d+'/bench-ros1.jsonl',JSON.stringify({ts:'2026-09-01T12:00:00Z',event:'step5-start',iter:1,expected:['tycon-plugin-security-basics','tycon-silent-failure-hunter']})+'\\n'+JSON.stringify({ts:'2026-09-01T12:01:00Z',advisor:'tycon-plugin-security-basics',model:'opus',repo:process.env.FIXTURE,story:'9.4'})+'\\n')\""
+          ],
+          "stdin": {
+            "session_id": "bench-ros1",
+            "tool_name": "Task",
+            "tool_input": {
+              "subagent_type": "tycon-silent-failure-hunter",
+              "model": "sonnet"
+            }
+          },
+          "expect": {
+            "file_contains": [
+              {
+                "path": "${FIXTURE}/.advisors/pipeline-runs/9.4-20260901120000/review-roster.json",
+                "re": "\"kind\": \"sesion-principal\""
+              },
+              {
+                "path": "${FIXTURE}/.advisors/pipeline-runs/9.4-20260901120000/review-roster.json",
+                "re": "\"agent\": \"tycon-plugin-security-basics\""
+              },
+              {
+                "path": "${FIXTURE}/.advisors/pipeline-runs/9.4-20260901120000/review-roster.json",
+                "re": "\"agent\": \"tycon-silent-failure-hunter\""
+              },
+              {
+                "path": "${FIXTURE}/.advisors/pipeline-runs/9.4-20260901120000/review-roster.json",
+                "re": "\"story\": \"9.4\""
+              }
+            ]
+          }
+        },
+        {
+          "id": "apagar-la-foto-NO-apaga-el-registro",
+          "__nota": "TYCON_AUTO_SNAPSHOT=0 (el env de esta suite entera) apaga la foto del re-loop. El registro de autoría es la evidencia que el portón exige: tiene que sobrevivir a ese interruptor. La primera versión de la pieza los metió bajo el mismo `if` y este caso es el que lo habría cazado.",
+          "type": "must-run",
+          "setup": [
+            "git init -q -b main . && echo x > a.txt && git add a.txt && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "mkdir -p .advisors/pipeline-runs/7.1-20260901120000",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline/active';fs.mkdirSync(d,{recursive:true});fs.writeFileSync(d+'/bench-ros2.json',JSON.stringify({sessionId:'bench-ros2',storyId:'7.1',repoPath:process.env.FIXTURE,lastTouch:new Date().toISOString()}))\"",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline/advisor-runs';fs.mkdirSync(d,{recursive:true});fs.writeFileSync(d+'/bench-ros2.jsonl',JSON.stringify({ts:'2026-09-01T12:00:00Z',event:'step5-start',iter:1,expected:['tycon-plugin-security-basics']})+'\\n')\""
+          ],
+          "stdin": {
+            "session_id": "bench-ros2",
+            "tool_name": "Task",
+            "tool_input": {
+              "subagent_type": "tycon-plugin-security-basics"
+            }
+          },
+          "expect": {
+            "file_contains": [
+              {
+                "path": "${FIXTURE}/.advisors/pipeline-runs/7.1-20260901120000/review-roster.json",
+                "re": "\"agent\": \"tycon-plugin-security-basics\""
+              }
+            ]
+          }
+        },
+        {
+          "id": "ronda-incompleta-no-escribe-nada",
+          "type": "must-stay-quiet",
+          "setup": [
+            "git init -q -b main . && echo x > a.txt && git add a.txt && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "mkdir -p .advisors/pipeline-runs/5.2-20260901120000",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline/active';fs.mkdirSync(d,{recursive:true});fs.writeFileSync(d+'/bench-ros3.json',JSON.stringify({sessionId:'bench-ros3',storyId:'5.2',repoPath:process.env.FIXTURE,lastTouch:new Date().toISOString()}))\"",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline/advisor-runs';fs.mkdirSync(d,{recursive:true});fs.writeFileSync(d+'/bench-ros3.jsonl',JSON.stringify({ts:'2026-09-01T12:00:00Z',event:'step5-start',iter:1,expected:['uno','dos','tres']})+'\\n')\""
+          ],
+          "stdin": {
+            "session_id": "bench-ros3",
+            "tool_name": "Task",
+            "tool_input": {
+              "subagent_type": "uno"
+            }
+          },
+          "expect": {
+            "file_absent": [
+              "${FIXTURE}/.advisors/pipeline-runs/5.2-20260901120000/review-roster.json"
+            ]
+          }
+        },
+        {
+          "id": "no-poder-escribir-deja-constancia",
+          "__nota": "La regla de la casa hecha caso: 'salió limpio sin dejar constancia = falla'. Si el run dir no se puede escribir, el hook NO rompe el spawn (sale 0) pero tiene que anotar `roster-write-failed` en el ledger. Sin esa línea, un registro que nunca se escribió se leería igual que uno que sí.",
+          "type": "must-run",
+          "so": [
+            "linux",
+            "darwin"
+          ],
+          "__so": "Sólo Linux y Mac (story 8.17, W1, medido en Windows): el caso arma su situación con los permisos de un archivo (`chmod`), y en Windows no existen ni el bit de ejecución ni una carpeta de sólo lectura hecha así. No es un defecto del control: en Windows este camino queda sin caso ([DEF-8.17-W1-NO-CASE-ON-WINDOWS]).",
+          "setup": [
+            "git init -q -b main . && echo x > a.txt && git add a.txt && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "mkdir -p .advisors/pipeline-runs/3.3-20260901120000 && chmod 500 .advisors/pipeline-runs/3.3-20260901120000",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline/active';fs.mkdirSync(d,{recursive:true});fs.writeFileSync(d+'/bench-ros4.json',JSON.stringify({sessionId:'bench-ros4',storyId:'3.3',repoPath:process.env.FIXTURE,lastTouch:new Date().toISOString()}))\"",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline/advisor-runs';fs.mkdirSync(d,{recursive:true});fs.writeFileSync(d+'/bench-ros4.jsonl',JSON.stringify({ts:'2026-09-01T12:00:00Z',event:'step5-start',iter:1,expected:['tycon-plugin-security-basics']})+'\\n')\""
+          ],
+          "stdin": {
+            "session_id": "bench-ros4",
+            "tool_name": "Task",
+            "tool_input": {
+              "subagent_type": "tycon-plugin-security-basics"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/advisor-runs/bench-ros4.jsonl",
+                "re": "roster-write-failed"
+              }
+            ]
+          }
+        },
+        {
+          "id": "kill-switch-apaga-sin-romper",
+          "type": "must-stay-quiet",
+          "env": {
+            "TYCON_REVIEW_ROSTER": "0"
+          },
+          "setup": [
+            "git init -q -b main . && echo x > a.txt && git add a.txt && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "mkdir -p .advisors/pipeline-runs/2.2-20260901120000",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline/active';fs.mkdirSync(d,{recursive:true});fs.writeFileSync(d+'/bench-ros5.json',JSON.stringify({sessionId:'bench-ros5',storyId:'2.2',repoPath:process.env.FIXTURE,lastTouch:new Date().toISOString()}))\"",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline/advisor-runs';fs.mkdirSync(d,{recursive:true});fs.writeFileSync(d+'/bench-ros5.jsonl',JSON.stringify({ts:'2026-09-01T12:00:00Z',event:'step5-start',iter:1,expected:['tycon-plugin-security-basics']})+'\\n')\""
+          ],
+          "stdin": {
+            "session_id": "bench-ros5",
+            "tool_name": "Task",
+            "tool_input": {
+              "subagent_type": "tycon-plugin-security-basics"
+            }
+          },
+          "expect": {
+            "file_absent": [
+              "${FIXTURE}/.advisors/pipeline-runs/2.2-20260901120000/review-roster.json"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "hook": "on-pre-commit.js (freno de autoría: roster vs registro local)",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/on-pre-commit.js",
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "cases": [
+        {
+          "id": "camino-feliz-no-frena-y-NO-crashea",
+          "__nota": "El caso que faltaba y por eso pasó un crash: con el roster presente y válido, el freno usaba mal el resultado del registro y tiraba un TypeError. El hook falla ABIERTO, así que el commit se saltaba TODOS sus controles (evidencia DoD incluida) justo en el camino más común. Lo cazó el pase adversarial de la pieza; este caso lo deja fijado.",
+          "type": "must-not-block",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p specs/stories",
+            "printf '%s\\n' '---' 'story: \"4.2\"' 'epic: \"4\"' 'status: in-progress' 'dod_runtime_exempt: true' 'dod_runtime_exempt_reason: \"puro docs\"' '---' '# Story 4.2' '' '## Acceptance Criteria' '1. AC uno' > specs/stories/4-2.md",
+            "git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "node -e \"const fs=require('fs');const p='specs/stories/4-2.md';fs.writeFileSync(p,fs.readFileSync(p,'utf8').replace('status: in-progress','status: done'))\"",
+            "git add specs/stories/4-2.md",
+            "mkdir -p .advisors/pipeline-runs/4.2-20260901120000 && echo '[]' > .advisors/pipeline-runs/4.2-20260901120000/findings.json",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline/advisor-runs';fs.mkdirSync(d,{recursive:true});fs.writeFileSync(d+'/bench-rg.jsonl',JSON.stringify({ts:new Date().toISOString(),advisor:'tycon-plugin-security-basics',model:'opus',repo:process.env.FIXTURE,story:'4.2'})+'\\n')\"",
+            "node -e \"const fs=require('fs');fs.writeFileSync('.advisors/pipeline-runs/4.2-20260901120000/review-roster.json',JSON.stringify(Object.assign({version:1,story:'4.2',implementer:{kind:'sesion-principal',session_id:'bench-rg'},reviewers:[{agent:'tycon-plugin-security-basics',kind:'subagente'}],iterations:1},{})))\""
+          ],
+          "stdin": {
+            "session_id": "bench-rg",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit -m \"story 4.2 done\""
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "stderr_not_re": [
+              "TypeError",
+              "FAILING OPEN"
+            ]
+          }
+        },
+        {
+          "id": "roster-con-un-revisor-que-el-registro-nunca-vio-frena",
+          "type": "must-block",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p specs/stories",
+            "printf '%s\\n' '---' 'story: \"4.2\"' 'epic: \"4\"' 'status: in-progress' 'dod_runtime_exempt: true' 'dod_runtime_exempt_reason: \"puro docs\"' '---' '# Story 4.2' '' '## Acceptance Criteria' '1. AC uno' > specs/stories/4-2.md",
+            "git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "node -e \"const fs=require('fs');const p='specs/stories/4-2.md';fs.writeFileSync(p,fs.readFileSync(p,'utf8').replace('status: in-progress','status: done'))\"",
+            "git add specs/stories/4-2.md",
+            "mkdir -p .advisors/pipeline-runs/4.2-20260901120000 && echo '[]' > .advisors/pipeline-runs/4.2-20260901120000/findings.json",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline/advisor-runs';fs.mkdirSync(d,{recursive:true});fs.writeFileSync(d+'/bench-rg.jsonl',JSON.stringify({ts:new Date().toISOString(),advisor:'tycon-plugin-security-basics',model:'opus',repo:process.env.FIXTURE,story:'4.2'})+'\\n')\"",
+            "node -e \"const fs=require('fs');fs.writeFileSync('.advisors/pipeline-runs/4.2-20260901120000/review-roster.json',JSON.stringify(Object.assign({version:1,story:'4.2',implementer:{kind:'sesion-principal',session_id:'bench-rg'},reviewers:[{agent:'tycon-plugin-security-basics',kind:'subagente'}],iterations:1},{reviewers:[{agent:'tycon-plugin-security-basics',kind:'subagente'},{agent:'inventado-a-mano',kind:'subagente'}]})))\""
+          ],
+          "stdin": {
+            "session_id": "bench-rg",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit -m \"story 4.2 done\""
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "NUNCA vio",
+              "inventado-a-mano"
+            ]
+          }
+        },
+        {
+          "id": "sin-registro-local-frena-y-dice-como-destrabarlo",
+          "__nota": "El testigo puede faltar por motivos inocentes (otra máquina, la rama de un compañero). Frena igual, pero la salida es una excusa ESCRITA en el archivo, que viaja en el diff — no una variable que no deja rastro.",
+          "type": "must-block",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p specs/stories",
+            "printf '%s\\n' '---' 'story: \"4.2\"' 'epic: \"4\"' 'status: in-progress' 'dod_runtime_exempt: true' 'dod_runtime_exempt_reason: \"puro docs\"' '---' '# Story 4.2' '' '## Acceptance Criteria' '1. AC uno' > specs/stories/4-2.md",
+            "git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "node -e \"const fs=require('fs');const p='specs/stories/4-2.md';fs.writeFileSync(p,fs.readFileSync(p,'utf8').replace('status: in-progress','status: done'))\"",
+            "git add specs/stories/4-2.md",
+            "mkdir -p .advisors/pipeline-runs/4.2-20260901120000 && echo '[]' > .advisors/pipeline-runs/4.2-20260901120000/findings.json",
+            "node -e \"const fs=require('fs');fs.writeFileSync('.advisors/pipeline-runs/4.2-20260901120000/review-roster.json',JSON.stringify(Object.assign({version:1,story:'4.2',implementer:{kind:'sesion-principal',session_id:'bench-rg'},reviewers:[{agent:'tycon-plugin-security-basics',kind:'subagente'}],iterations:1},{})))\""
+          ],
+          "stdin": {
+            "session_id": "bench-rg",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit -m \"story 4.2 done\""
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "otra máquina",
+              "sin_testigo"
+            ]
+          }
+        },
+        {
+          "id": "la-excusa-escrita-destraba-el-cruce",
+          "type": "must-not-block",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p specs/stories",
+            "printf '%s\\n' '---' 'story: \"4.2\"' 'epic: \"4\"' 'status: in-progress' 'dod_runtime_exempt: true' 'dod_runtime_exempt_reason: \"puro docs\"' '---' '# Story 4.2' '' '## Acceptance Criteria' '1. AC uno' > specs/stories/4-2.md",
+            "git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "node -e \"const fs=require('fs');const p='specs/stories/4-2.md';fs.writeFileSync(p,fs.readFileSync(p,'utf8').replace('status: in-progress','status: done'))\"",
+            "git add specs/stories/4-2.md",
+            "mkdir -p .advisors/pipeline-runs/4.2-20260901120000 && echo '[]' > .advisors/pipeline-runs/4.2-20260901120000/findings.json",
+            "node -e \"const fs=require('fs');fs.writeFileSync('.advisors/pipeline-runs/4.2-20260901120000/review-roster.json',JSON.stringify(Object.assign({version:1,story:'4.2',implementer:{kind:'sesion-principal',session_id:'bench-rg'},reviewers:[{agent:'tycon-plugin-security-basics',kind:'subagente'}],iterations:1},{sin_testigo:'implementado en la desktop, subo desde la notebook'})))\""
+          ],
+          "stdin": {
+            "session_id": "bench-rg",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit -m \"story 4.2 done\""
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "la-excusa-escrita-NO-tapa-un-roster-roto",
+          "__nota": "`sin_testigo` explica UNA sola cosa —que el registro de esta máquina no tiene los revisores— y no puede waivear que el autor figure como revisor ni que no haya ninguno. Antes se miraba ANTES de validar y perdonaba todo.",
+          "type": "must-block",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p specs/stories",
+            "printf '%s\\n' '---' 'story: \"4.2\"' 'epic: \"4\"' 'status: in-progress' 'dod_runtime_exempt: true' 'dod_runtime_exempt_reason: \"puro docs\"' '---' '# Story 4.2' '' '## Acceptance Criteria' '1. AC uno' > specs/stories/4-2.md",
+            "git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "node -e \"const fs=require('fs');const p='specs/stories/4-2.md';fs.writeFileSync(p,fs.readFileSync(p,'utf8').replace('status: in-progress','status: done'))\"",
+            "git add specs/stories/4-2.md",
+            "mkdir -p .advisors/pipeline-runs/4.2-20260901120000 && echo '[]' > .advisors/pipeline-runs/4.2-20260901120000/findings.json",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline/advisor-runs';fs.mkdirSync(d,{recursive:true});fs.writeFileSync(d+'/bench-rg.jsonl',JSON.stringify({ts:new Date().toISOString(),advisor:'tycon-plugin-security-basics',model:'opus',repo:process.env.FIXTURE,story:'4.2'})+'\\n')\"",
+            "node -e \"const fs=require('fs');fs.writeFileSync('.advisors/pipeline-runs/4.2-20260901120000/review-roster.json',JSON.stringify(Object.assign({version:1,story:'4.2',implementer:{kind:'sesion-principal',session_id:'bench-rg'},reviewers:[{agent:'tycon-plugin-security-basics',kind:'subagente'}],iterations:1},{sin_testigo:'lo mío',reviewers:[{agent:'yo-mismo',kind:'sesion-principal'}]})))\""
+          ],
+          "stdin": {
+            "session_id": "bench-rg",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit -m \"story 4.2 done\""
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "revisor-es-el-autor"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

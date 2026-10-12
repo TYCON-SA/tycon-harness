@@ -1,0 +1,47 @@
+{
+  "_note": "Vocabulario CERRADO de la causa del reproceso (story 2.3, 2026-09-05). Es lo que una story que declara `followup_of:` escribe en `followup_reason:` — por qué hubo que volver sobre lo que otra story ya entregó. Lo leen DOS: `scripts/lib/lint-story-frontmatter.js` (exige el campo sólo a las stories que nacen, y rechaza cualquier valor que no esté acá) y `scripts/metrics/sdlc-stage-metrics.js` (publica el conteo por causa en el snapshot). `story-format.md` §1.2 COPIA esta tabla y un test compara los dos: dos listas del mismo vocabulario en dos archivos se separan solas (ya pasó con los dos diccionarios de estados). Agregar una causa es una DECISIÓN que se mira antes de tomar: la alarma de la ficha del tablero es `cambio-de-requisito` subiendo mientras `defecto-propio` baja, y una quinta causa cómoda es la forma más fácil de esconder eso. No hay «otros» a propósito: lo que no entra en cuatro se declara como la más cercana o queda «sin declarar», que es una barra propia y lleva la palabra.",
+  "causes": {
+    "defecto-propio": {
+      "what": "Lo que se entregó estaba mal: un bug, una regla mal implementada, un caso no manejado que el spec sí pedía.",
+      "reason": "Es la causa que MIDE calidad de lo que hacemos. Separarla de las otras tres es la razón de existir del campo: hoy «nos equivocamos» y «el cliente cambió de idea» se ven idénticos.",
+      "date": "2026-09-05"
+    },
+    "cambio-de-requisito": {
+      "what": "Lo entregado hacía lo que el spec pedía; el pedido cambió después (el cliente, el producto, una regulación).",
+      "reason": "No es un defecto nuestro y no debe contarse como tal — pero es la salida cómoda. Por eso la alarma del tablero es ESTA barra subiendo mientras defecto-propio baja: un cambio de requisito real deja rastro (un pedido, un correo, un CR); uno declarado por comodidad no.",
+      "date": "2026-09-05"
+    },
+    "deuda-declarada": {
+      "what": "La story original dejó algo afuera A PROPÓSITO y lo escribió (bloque `pipelines:` con lo diferido, un TODO(Story-N-deferral), una deuda con fecha); el seguimiento viene a pagarlo.",
+      "reason": "Volver sobre una deuda declarada es el plan funcionando, no un problema. Mezclarla con defecto-propio castigaría exactamente la conducta que el arnés pide (declarar lo que se difiere en vez de callarlo).",
+      "date": "2026-09-05"
+    },
+    "descubrimiento": {
+      "what": "Al usar lo entregado se vio algo que nadie sabía antes: un caso real que el spec no contemplaba y el cliente tampoco había pedido, un dato del entorno, un límite del host.",
+      "reason": "Ni el spec ni la implementación estaban «mal» con lo que se sabía. Es la causa que separa un defecto (lo pedido no se cumplió) de un aprendizaje (lo pedido no alcanzaba). Si crece mucho, la señal es sobre cómo se especifica, no sobre cómo se implementa.",
+      "date": "2026-09-05"
+    }
+  },
+  "_decisions": [
+    {
+      "date": "2026-09-05",
+      "what": "Es un campo NUEVO y no se reusa el `type:` de `followup_of[]`.",
+      "reason": "`type` dice QUÉ clase de cambio es (extension, fix, recalibration, gap-fill, scope-change); la causa dice POR QUÉ hubo que volver. Medido: `extension` está en 136 de las 285 stories con seguimiento (48 %) y no es reproceso — sobre `type` la ficha no hablaría de calidad. Censo: scripts/metrics/censo-followups-2026-09-05.json."
+    },
+    {
+      "date": "2026-09-05",
+      "what": "Las 285 stories existentes NO se rellenan, ni a mano ni derivando la causa del `type`.",
+      "reason": "Una causa derivada es una adivinanza y contaminaría la línea base contra la que se mide la alarma. Quedan «sin declarar», barra propia con la palabra; el desglose por `type` se muestra como contexto rotulado derivado."
+    },
+    {
+      "date": "2026-09-05",
+      "what": "El lint exige el campo SÓLO a las stories que nacen (sin historial en git); a las existentes les avisa y no las frena.",
+      "reason": "Medir antes de gatear: 285 stories en 9 repos empezarían a fallar el pre-commit el día del merge, y el lint se apagaría en una semana."
+    },
+    {
+      "date": "2026-09-05",
+      "what": "Un valor fuera de este vocabulario frena SIEMPRE, nueva o vieja; no se normalizan mayúsculas ni acentos.",
+      "reason": "Medido: hoy ninguna story tiene el campo, así que nadie empieza a fallar; y un vocabulario que acepta variantes deja de ser cerrado."
+    }
+  ]
+}

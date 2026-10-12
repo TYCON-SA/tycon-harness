@@ -1,0 +1,31 @@
+{
+  "_why": "CLAUDEMD-SIN-PRESUPUESTO (pipeline-debt, decidido por el dev el 2026-09-06). Cada bloque de claude-md-blocks/ se carga ENTERO en cada sesión de cada máquina del equipo, y nada medía cuánto pesaba: el bloque de estilo llegó a 17.034 bytes (el 40 % del CLAUDE.md) con seis pasadas de la misma regla, cada una arrastrando su caso disparador, su fecha y las citas del dev; la poda lo dejó en 6.270 sin perder una regla. Y el patrón siguió: ado-runs-list-lag creció de 4.634 a 9.979 en una madrugada por la misma vía. Este archivo declara el TECHO en bytes de cada bloque (y uno total); scripts/ci/check-claude-md-blocks.js lo verifica en el pre-commit del arnés y FRENA el commit que se pasa — el destino de la historia es la guía (guides/*.md) y el incident-log, no el bloque. Los techos de hoy están puestos apenas por encima del tamaño real: ningún bloque nace en rojo, pero ninguno puede crecer sin que alguien lo decida ACÁ, con el motivo al lado. Un bloque nuevo sin techo declarado usa `default`. Se mide en BYTES (utf-8), no en caracteres: es lo que viaja y lo que cuenta el guion. Las variantes de Codex (names/<bloque>.codex.md) reemplazan al bloque en las máquinas con TYCON_CODEX=1: se miden contra el techo de su bloque —o el propio, declarado como «<bloque>.codex»— y suman en `total_codex` (revisión adversarial 2026-09-06: la variante de tool-names pesaba 4.569 contra un techo de 2.500 y nadie lo medía).",
+  "default": 6000,
+  "total": 18500,
+  "total_codex": 18700,
+  "blocks": {
+    "ado-runs-list-lag": 4500,
+    "background-execution": 4000,
+    "response-style": 7000,
+    "tool-names": 2500,
+    "tool-names.codex": 4700
+  },
+  "_reasons": {
+    "ado-runs-list-lag": "4.134 tras la poda del 2026-09-06: de 9.979 a 4.134 (−59 %) sin perder una regla. Las seis reglas quedaron con sus comandos; los seis casos disparadores —fechas, capturas, citas del dev— se fueron a guides/ado-cola-y-listados.md, que es donde se leen cuando hacen falta. La poda también borró una coletilla que ya era FALSA: la regla del trigger `.cs` de FRESNOBZExtBackend se retiró el 2026-09-02 y el bloque la seguía dando por vigente. El techo es el tamaño de hoy más margen, no un permiso para crecer.",
+    "response-style": "6.270 tras la poda del 2026-09-03; lo que quedó adentro está a propósito (guides/response-style.md dice qué y por qué).",
+    "background-execution": "2.756 tras la auditoría de instrucciones del 2026-09-23: el caso disparador se mudó a guides/incident-log.md#pasos-bloqueantes-sin-respuesta-2026-07-29 y el bloque lo referencia. No sumar casos: referenciarlos.",
+    "tool-names": "1.873; es una tabla de nombres, crece sólo si aparece una tool nueva.",
+    "tool-names.codex": "4.569 al 2026-09-06: la variante de Codex trae la tabla de nombres de las dos herramientas más los MCP de Codex; es una tabla, crece sólo si aparece una tool nueva.",
+    "total_codex": "18.251 al 2026-09-06 con la variante de tool-names en lugar del bloque (era 24.096 antes de podar el bloque de Azure DevOps); ~450 de margen para una tool nueva, no para historia.",
+    "total": "15.555 al 2026-09-06 (era 21.400 antes de la poda). El techo es la suma de los techos por bloque más 500: el que frena de verdad es el techo de cada bloque, y el total existe para que un bloque nuevo no entre por la ventana.",
+    "README.md": "El README se importa ENTERO en cada sesión y en cada subagente: la línea @.../README.md vive en el ~/.claude/CLAUDE.md personal de cada dev, así que viaja a TODOS los repos, no sólo al arnés. Medido el 2026-09-17 (tasks/medicion-7.4-piso-de-contexto-2026-09-17.md): 235.771 bytes ≈ 76 mil tokens (3,08 bytes/token, A/B con claude -p), el 61 % del piso de ~125 mil con el que arranca un revisor ANTES de leer un archivo — y ningún revisor lo usa: ninguno de los 16 agents/tycon-*.md lo cita y 2 de 154 transcripciones lo abrieron. Había crecido ×10 en cuatro meses contra la regla escrita del propio repo (INSTALL.md: «el README es el índice operativo», «agregar UNA línea en la sección Qué contiene»): 105 fichas, 211.378 bytes, el 90 % del archivo. La poda mudó las 105 fichas TEXTUALES a guides/piezas-del-arnes.md (lectura on-demand) y dejó el README como índice. 57.830 bytes tras la poda (de 235.771). El techo es el tamaño de hoy más margen chico, no un permiso para crecer; `max_input` frena por entrada para que el índice no vuelva a ser un catálogo, y las anclas se exigen en las dos direcciones para que la guía y el índice no se separen. Subirlo es una decisión que se escribe acá, con el motivo al lado. Story 7.7 (2026-09-19): el README deja también de ser índice —las 110 fichas se buscan en guides/piezas-del-arnes.md, que pasa a ser el índice de las piezas— y queda con lo que se usa en cada sesión: la tabla «Cuándo leer cada guía», las reglas siempre activas y los comandos del día a día. 23.080 bytes (de 59.100). Medido en laboratorio (tasks/analisis-tokens-por-corrida-2026-09-19.md): el hilo principal relee el piso en cada respuesta, y el recorte del README, el SKILL.md del pipeline y la lista de skills bajó el contexto por respuesta 27–42 % con el mismo comportamiento. Techo BAJADO de 60.000 a 26.000. `linked_sections: false` deja de exigir un enlace del README por cada sección de la guía (ya no es índice); los enlaces que el README sí tiene tienen que seguir resolviendo, y scripts/tests/readme-index.test.js verifica que cada ruta del índice viejo siga nombrada en la guía."
+  },
+  "imported": {
+    "README.md": {
+      "ceiling": 26000,
+      "max_input": 400,
+      "detail": "guides/piezas-del-arnes.md",
+      "linked_sections": false
+    }
+  }
+}

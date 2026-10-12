@@ -1,0 +1,574 @@
+{
+  "__doc": "unpushed-work-notice (2026-08-25, caso de la Story 1.1 de un producto del equipo: el commit del backend quedó solo local — el push nunca se ejecutó — y el front se promovió a main; el smoke dio verde contra ese backend local). Un script, 3 eventos + CLI --scan. Los casos arman un remoto bare offline y reproducen el incidente: rama feature con commit sin push en un repo hermano. La clave de memoria es repo+rama+tipSha (un commit nuevo en rama ya avisada re-grita — hallazgo EF-H3 de la ronda adversarial del plan). El Stop bloquea UNA vez por repo+rama por sesión (RU-F2). Mismos scripts en Claude y Codex.",
+  "hooks": [
+    {
+      "hook": "unpushed-work-notice.js (notice)",
+      "script": "${FIXTURE}/tcg/scripts/hooks/unpushed-work-notice.js",
+      "event": "SessionStart",
+      "cases": [
+        {
+          "id": "grita-rama-hermana-sin-subir-y-deja-constancia",
+          "type": "must-run",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/unpushed-work-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/",
+            "git init -q --bare o1.git && git init -q --bare o2.git",
+            "mkdir -p grupo/Back grupo/Front",
+            "cd grupo/Back && git init -q -b main . && git remote add origin ../../o1.git && mkdir .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -qm base && git push -q origin main && git checkout -q -b feat/story-1.1 && echo y > b.txt && git add -A && git -c user.email=b@b -c user.name=b commit -qm 'feat: endpoints Story 1.1'",
+            "cd grupo/Front && git init -q -b main . && git remote add origin ../../o2.git && mkdir .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -qm base && git push -q origin main"
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "cwd": "${FIXTURE}/grupo/Front"
+          },
+          "expect": {
+            "stdout_re": [
+              "trabajo sin subir",
+              "feat/story-1\\.1",
+              "NO están en origin"
+            ],
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/unpushed-notice.json",
+                "re": "feat/story-1\\.1"
+              }
+            ]
+          }
+        },
+        {
+          "id": "quiet-todo-pusheado",
+          "type": "must-stay-quiet",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/unpushed-work-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/",
+            "git init -q --bare o1.git && mkdir -p grupo/Solo",
+            "cd grupo/Solo && git init -q -b main . && git remote add origin ../../o1.git && mkdir .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -qm base && git push -q origin main"
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "cwd": "${FIXTURE}/grupo/Solo"
+          },
+          "expect": {}
+        },
+        {
+          "id": "quiet-repo-sin-remoto",
+          "type": "must-stay-quiet",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/unpushed-work-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/",
+            "mkdir -p grupo/Local && cd grupo/Local && git init -q -b main . && mkdir .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -qm base"
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "cwd": "${FIXTURE}/grupo/Local"
+          },
+          "expect": {}
+        },
+        {
+          "id": "quiet-clon-del-arnes-en-carpeta-con-otro-nombre-se-reconoce-por-su-origin",
+          "type": "must-stay-quiet",
+          "__doc": "Quién es el arnés lo dice el remoto, no la carpeta (2026-09-17, scripts/lib/harness-repo.js). Un clon descartable del arnés en `scratchpad/clon-arnes`, con una rama sin subir: los repos del arnés están excluidos por diseño (drift permanente). ROJO PREVIO: la exclusión miraba los segmentos de la ruta; ninguno se llama como el arnés, así que el aviso gritaba por el clon — y por el checkout canónico, con la misma rama, no.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/unpushed-work-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/",
+            "git init -q --bare o1.git",
+            "mkdir -p scratchpad/clon-arnes && cd scratchpad/clon-arnes && git init -q -b main . && git remote add origin $FIXTURE/o1.git && mkdir .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -qm base && git push -q origin main && git checkout -q -b feat/story-9.9 && echo y > b.txt && git add -A && git -c user.email=b@b -c user.name=b commit -qm wip && git remote set-url origin https://org-del-equipo@dev.azure.com/org-del-equipo/tycon-claude-guides/_git/tycon-claude-guides"
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "cwd": "${FIXTURE}/scratchpad/clon-arnes"
+          },
+          "expect": {
+            "file_absent": [
+              "${SANDBOX_HOME}/.claude/.tycon-pipeline/unpushed-notice.json"
+            ]
+          },
+          "env": {
+            "TYCON_HARNESS_IDENTITIES":"https://org-del-equipo@dev.azure.com/org-del-equipo/tycon-claude-guides/_git/tycon-claude-guides,https://org-del-equipo.visualstudio.com/AgentSkills/_git/AgentSkills"
+          },
+          "_8_3": "story 8.3: «el arnés» es el origin del propio clon; el arnés de mentira del caso no tiene origin, así que las identidades de referencia se inyectan (mismo mecanismo que harness-repo.test.sh)"
+        },
+        {
+          "id": "grita-en-repo-de-producto-debajo-de-una-carpeta-llamada-como-el-arnes",
+          "type": "must-run",
+          "__doc": "La otra cara, y la cara: un repo de PRODUCTO clonado debajo de una carpeta llamada como el arnés, con una rama sin subir. Su `origin` dice que no es el arnés. ROJO PREVIO: bastaba un segmento de la ruta con ese nombre para excluirlo — el trabajo sin subir (el incidente FRESNO 1.1 que motivó este hook) no se avisaba, y nada lo decía.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/unpushed-work-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/",
+            "git init -q --bare o1.git",
+            "mkdir -p tycon-claude-guides/MiProducto && cd tycon-claude-guides/MiProducto && git init -q -b main . && git remote add origin $FIXTURE/o1.git && mkdir .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -qm base && git push -q origin main && git checkout -q -b feat/story-9.9 && echo y > b.txt && git add -A && git -c user.email=b@b -c user.name=b commit -qm wip && git remote set-url origin https://org-del-equipo@dev.azure.com/org-del-equipo/UnProducto/_git/Backend"
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "cwd": "${FIXTURE}/tycon-claude-guides/MiProducto"
+          },
+          "expect": {
+            "stdout_re": [
+              "trabajo sin subir",
+              "feat/story-9\\.9"
+            ],
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/unpushed-notice.json",
+                "re": "feat/story-9\\.9"
+              }
+            ]
+          },
+          "env": {
+            "TYCON_HARNESS_IDENTITIES":"https://org-del-equipo@dev.azure.com/org-del-equipo/tycon-claude-guides/_git/tycon-claude-guides,https://org-del-equipo.visualstudio.com/AgentSkills/_git/AgentSkills"
+          },
+          "_8_3": "story 8.3: «el arnés» es el origin del propio clon; el arnés de mentira del caso no tiene origin, así que las identidades de referencia se inyectan (mismo mecanismo que harness-repo.test.sh)"
+        },
+        {
+          "id": "grita-en-repo-de-producto-debajo-de-una-carpeta-llamada-como-el-arnes-nombre-publico",
+          "type": "must-run",
+          "__doc": "GEMELO con el nombre público (story 8.19, tanda E, AC 39): el mismo caso con la carpeta llamada como el lugar del arnés. La otra cara, y la cara: un repo de PRODUCTO clonado debajo de una carpeta llamada como el arnés, con una rama sin subir. Su `origin` dice que no es el arnés. ROJO PREVIO: bastaba un segmento de la ruta con ese nombre para excluirlo — el trabajo sin subir (el incidente FRESNO 1.1 que motivó este hook) no se avisaba, y nada lo decía.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/unpushed-work-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/",
+            "git init -q --bare o1.git",
+            "mkdir -p ${PLACE_NAME}/MiProducto && cd ${PLACE_NAME}/MiProducto && git init -q -b main . && git remote add origin $FIXTURE/o1.git && mkdir .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -qm base && git push -q origin main && git checkout -q -b feat/story-9.9 && echo y > b.txt && git add -A && git -c user.email=b@b -c user.name=b commit -qm wip && git remote set-url origin https://org-del-equipo@dev.azure.com/org-del-equipo/UnProducto/_git/Backend"
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "cwd": "${FIXTURE}/${PLACE_NAME}/MiProducto"
+          },
+          "expect": {
+            "stdout_re": [
+              "trabajo sin subir",
+              "feat/story-9\\.9"
+            ],
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/unpushed-notice.json",
+                "re": "feat/story-9\\.9"
+              }
+            ]
+          },
+          "env": {
+            "TYCON_HARNESS_IDENTITIES":"https://org-del-equipo@dev.azure.com/org-del-equipo/tycon-claude-guides/_git/tycon-claude-guides,https://org-del-equipo.visualstudio.com/AgentSkills/_git/AgentSkills"
+          },
+          "_8_3": "story 8.3: «el arnés» es el origin del propio clon; el arnés de mentira del caso no tiene origin, así que las identidades de referencia se inyectan (mismo mecanismo que harness-repo.test.sh)"
+        },
+        {
+          "id": "kill-switch-apaga-el-notice",
+          "type": "must-stay-quiet",
+          "env": {
+            "TYCON_UNPUSHED_NOTICE": "0"
+          },
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/unpushed-work-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/",
+            "git init -q --bare o1.git && mkdir -p grupo/Back",
+            "cd grupo/Back && git init -q -b main . && git remote add origin ../../o1.git && mkdir .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -qm base && git push -q origin main && git checkout -q -b feat/x && echo y > b.txt && git add -A && git -c user.email=b@b -c user.name=b commit -qm feat"
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "cwd": "${FIXTURE}/grupo/Back"
+          },
+          "expect": {}
+        }
+      ]
+    },
+    {
+      "hook": "unpushed-work-notice.js (record push-main)",
+      "script": "${FIXTURE}/tcg/scripts/hooks/unpushed-work-notice.js",
+      "event": "PostToolUse",
+      "matcher": "Bash",
+      "cases": [
+        {
+          "id": "push-a-main-escanea-el-grupo-y-grita-por-el-hermano",
+          "type": "must-block",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/unpushed-work-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/",
+            "git init -q --bare o1.git && git init -q --bare o2.git",
+            "mkdir -p grupo/Back grupo/Front",
+            "cd grupo/Back && git init -q -b main . && git remote add origin ../../o1.git && mkdir .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -qm base && git push -q origin main && git checkout -q -b feat/story-1.1 && echo y > b.txt && git add -A && git -c user.email=b@b -c user.name=b commit -qm 'feat: endpoints'",
+            "cd grupo/Front && git init -q -b main . && git remote add origin ../../o2.git && mkdir .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -qm base && git push -q origin main"
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "tool_name": "Bash",
+            "cwd": "${FIXTURE}/grupo/Front",
+            "tool_input": {
+              "command": "git push origin main"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "promoviendo a main",
+              "feat/story-1\\.1"
+            ]
+          }
+        },
+        {
+          "id": "push-a-main-marca-el-commit-ajeno-como-no-tocar",
+          "type": "must-block",
+          "__doc": "Hallazgo F: el aviso del push a main llega antes que el Stop; el commit ajeno del hermano se marca como 'NO es de esta sesión — no tocar'.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/unpushed-work-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/",
+            "git init -q --bare o1.git && git init -q --bare o2.git && mkdir -p grupo/Back grupo/Front",
+            "cd grupo/Back && git init -q -b main . && git remote add origin ../../o1.git && mkdir .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -qm base && git push -q origin main",
+            "cd grupo/Front && git init -q -b main . && git remote add origin ../../o2.git && mkdir .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -qm base && git push -q origin main && git checkout -q -b dev && echo y > senuelo.txt && git add -A && git -c user.email=b@b -c user.name=b commit -qm 'test: señuelo de OTRA sesión'"
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "tool_name": "Bash",
+            "cwd": "${FIXTURE}/grupo/Back",
+            "tool_input": {
+              "command": "git push origin main"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "promoviendo a main",
+              "grupo/Front",
+              "NO es de esta sesión"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "hook": "unpushed-work-notice.js (stop)",
+      "__windows": "Story 8.17, W1 (medido en Windows, corrida 11694): la ruta del repo que estos casos escriben en el registro sale de `pwd -W` (en el bash de Git, `C:/a/b`; fuera de Windows esa opción no existe y vale `pwd`), no de `$PWD`, que ahí es `/c/a/b` y para un programa de Node no es una ruta. Y la marca «ya avisado» se escribe con Node y `realpathSync`, que es con lo que el control arma su clave.",
+      "script": "${FIXTURE}/tcg/scripts/hooks/unpushed-work-notice.js",
+      "event": "Stop",
+      "cases": [
+        {
+          "id": "block-tras-commit-local-sin-push",
+          "type": "must-block",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/unpushed-work-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/",
+            "git init -q --bare o1.git && mkdir -p grupo/Back",
+            "cd grupo/Back && git init -q -b main . && git remote add origin ../../o1.git && mkdir .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -qm base && git push -q origin main && git checkout -q -b feat/story-1.1 && echo y > b.txt && git add -A && git -c user.email=b@b -c user.name=b commit -qm 'feat: endpoints'",
+            "mkdir -p \"$HOME/.claude/.tycon-pipeline\" && SHA=$(cd grupo/Back && git rev-parse HEAD) && printf '{\"ts\":\"2026-08-25T00:00:00Z\",\"repo\":\"%s/grupo/Back\",\"kind\":\"commit\",\"sha\":\"%s\"}\\n' \"$(pwd -W 2>/dev/null || pwd)\" \"$SHA\" > \"$HOME/.claude/.tycon-pipeline/unpushed-commits-bench-s1.jsonl\""
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "hook_event_name": "Stop",
+            "cwd": "${FIXTURE}/grupo/Back"
+          },
+          "expect": {
+            "stdout_re": [
+              "\"decision\"\\s*:\\s*\"block\"",
+              "feat/story-1\\.1",
+              "esta sesión commiteó"
+            ]
+          }
+        },
+        {
+          "id": "no-re-bloquea-la-misma-rama-en-la-sesion",
+          "type": "must-not-block",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/unpushed-work-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/",
+            "git init -q --bare o1.git && mkdir -p grupo/Back",
+            "cd grupo/Back && git init -q -b main . && git remote add origin ../../o1.git && mkdir .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -qm base && git push -q origin main && git checkout -q -b feat/story-1.1 && echo y > b.txt && git add -A && git -c user.email=b@b -c user.name=b commit -qm 'feat: endpoints'",
+            "mkdir -p \"$HOME/.claude/.tycon-pipeline\" && SHA=$(cd grupo/Back && git rev-parse HEAD) && printf '{\"ts\":\"2026-08-25T00:00:00Z\",\"repo\":\"%s/grupo/Back\",\"kind\":\"commit\",\"sha\":\"%s\"}\\n' \"$(pwd -W 2>/dev/null || pwd)\" \"$SHA\" > \"$HOME/.claude/.tycon-pipeline/unpushed-commits-bench-s1.jsonl\"",
+            "node -e \"const fs=require('fs');const k='bench-s1|'+fs.realpathSync('grupo/Back')+'|feat/story-1.1|own';fs.writeFileSync(process.env.HOME+'/.claude/.tycon-pipeline/unpushed-notice.json',JSON.stringify({stopSeen:{[k]:{ts:'2026-08-25T00:00:00Z'}}}))\""
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "hook_event_name": "Stop",
+            "cwd": "${FIXTURE}/grupo/Back"
+          },
+          "expect": {},
+          "__doc": "RU-F2. Clave de memoria repo+rama+CLASE (2026-08-31): un aviso propio ya dado no se repite en la sesión."
+        },
+        {
+          "id": "commit-ajeno-en-el-grupo-no-se-atribuye-y-prohibe-tocarlo",
+          "type": "must-block",
+          "__doc": "2026-08-31 (incident-log#revert-cruzado-entre-sesiones-2026-08-31): la sesión pusheó a main en Back (ledger push-main → se escanea el grupo) y Front tiene un commit local que NO hizo esta sesión. Antes: 'esta sesión commiteó' → el agente lo revirtió y pusheó. Ahora: aviso de commit AJENO con prohibición de tocarlo.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/unpushed-work-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/",
+            "git init -q --bare o1.git && git init -q --bare o2.git && mkdir -p grupo/Back grupo/Front",
+            "cd grupo/Back && git init -q -b main . && git remote add origin ../../o1.git && mkdir .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -qm base && git push -q origin main",
+            "cd grupo/Front && git init -q -b main . && git remote add origin ../../o2.git && mkdir .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -qm base && git push -q origin main && git checkout -q -b dev && echo y > senuelo.txt && git add -A && git -c user.email=b@b -c user.name=b commit -qm 'test: señuelo de OTRA sesión'",
+            "mkdir -p \"$HOME/.claude/.tycon-pipeline\" && printf '{\"ts\":\"2026-08-31T00:00:00Z\",\"repo\":\"%s/grupo/Back\",\"kind\":\"push-main\"}\\n' \"$(pwd -W 2>/dev/null || pwd)\" > \"$HOME/.claude/.tycon-pipeline/unpushed-commits-bench-s1.jsonl\""
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "hook_event_name": "Stop",
+            "cwd": "${FIXTURE}/grupo/Back"
+          },
+          "expect": {
+            "stdout_re": [
+              "\"decision\"\\s*:\\s*\"block\"",
+              "NO hizo",
+              "NO los revertas",
+              "grupo/Front"
+            ],
+            "stdout_not_re": [
+              "esta sesión commiteó"
+            ]
+          }
+        },
+        {
+          "id": "commit-propio-por-sha-sigue-siendo-esta-sesion",
+          "type": "must-block",
+          "__doc": "Contracaso: el sha del commit sin subir está en el ledger de la sesión → sigue siendo 'esta sesión commiteó', sin la advertencia de ajeno.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/unpushed-work-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/",
+            "git init -q --bare o1.git && git init -q --bare o2.git && mkdir -p grupo/Back grupo/Front",
+            "cd grupo/Back && git init -q -b main . && git remote add origin ../../o1.git && mkdir .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -qm base && git push -q origin main",
+            "cd grupo/Front && git init -q -b main . && git remote add origin ../../o2.git && mkdir .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -qm base && git push -q origin main && git checkout -q -b dev && echo y > senuelo.txt && git add -A && git -c user.email=b@b -c user.name=b commit -qm 'test: señuelo de OTRA sesión'",
+            "SHA=$(cd grupo/Front && git rev-parse HEAD) && mkdir -p \"$HOME/.claude/.tycon-pipeline\" && printf '{\"ts\":\"2026-08-31T00:00:00Z\",\"repo\":\"%s/grupo/Front\",\"kind\":\"commit\",\"sha\":\"%s\"}\\n' \"$(pwd -W 2>/dev/null || pwd)\" \"$SHA\" > \"$HOME/.claude/.tycon-pipeline/unpushed-commits-bench-s1.jsonl\""
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "hook_event_name": "Stop",
+            "cwd": "${FIXTURE}/grupo/Front"
+          },
+          "expect": {
+            "stdout_re": [
+              "\"decision\"\\s*:\\s*\"block\"",
+              "esta sesión commiteó",
+              "grupo/Front"
+            ],
+            "stdout_not_re": [
+              "NO los revertas"
+            ]
+          }
+        },
+        {
+          "id": "rebase-reescribe-shas-y-la-rama-propia-sigue-propia",
+          "type": "must-block",
+          "__doc": "Hallazgo C: la sesión commiteó en Back/feat (ledger con el sha viejo); un rebase reescribió el sha. Criterio de respaldo: rama actual de un repo donde la sesión commiteó → propia ('shas reescritos'), nunca 'NO los pushees'.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/unpushed-work-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/",
+            "git init -q --bare o1.git && git init -q --bare o2.git && mkdir -p grupo/Back grupo/Front",
+            "cd grupo/Back && git init -q -b main . && git remote add origin ../../o1.git && mkdir .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -qm base && git push -q origin main",
+            "cd grupo/Front && git init -q -b main . && git remote add origin ../../o2.git && mkdir .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -qm base && git push -q origin main && git checkout -q -b dev && echo y > senuelo.txt && git add -A && git -c user.email=b@b -c user.name=b commit -qm 'test: señuelo de OTRA sesión'",
+            "cd grupo/Back && git checkout -q -b feat && echo z > c.txt && git add -A && git -c user.email=b@b -c user.name=b commit -qm 'feat: propio'",
+            "mkdir -p \"$HOME/.claude/.tycon-pipeline\" && printf '{\"ts\":\"2026-08-31T00:00:00Z\",\"repo\":\"%s/grupo/Back\",\"kind\":\"commit\",\"sha\":\"0000000000000000000000000000000000000000\"}\\n' \"$(pwd -W 2>/dev/null || pwd)\" > \"$HOME/.claude/.tycon-pipeline/unpushed-commits-bench-s1.jsonl\""
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "hook_event_name": "Stop",
+            "cwd": "${FIXTURE}/grupo/Back"
+          },
+          "expect": {
+            "stdout_re": [
+              "\"decision\"\\s*:\\s*\"block\"",
+              "esta sesión commiteó",
+              "shas reescritos"
+            ],
+            "stdout_not_re": [
+              "NO los revertas"
+            ]
+          }
+        },
+        {
+          "id": "ledger-legacy-sin-sha-se-trata-como-propio",
+          "type": "must-block",
+          "__doc": "Hallazgo D: entrada `commit` sin la clave sha (formato anterior, ledger vivo 7 días) → propia; la transición no convierte 'pusheá' en 'no pushees'.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/unpushed-work-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/",
+            "git init -q --bare o1.git && git init -q --bare o2.git && mkdir -p grupo/Back grupo/Front",
+            "cd grupo/Back && git init -q -b main . && git remote add origin ../../o1.git && mkdir .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -qm base && git push -q origin main",
+            "cd grupo/Front && git init -q -b main . && git remote add origin ../../o2.git && mkdir .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -qm base && git push -q origin main && git checkout -q -b dev && echo y > senuelo.txt && git add -A && git -c user.email=b@b -c user.name=b commit -qm 'test: señuelo de OTRA sesión'",
+            "cd grupo/Back && git checkout -q -b feat && echo z > c.txt && git add -A && git -c user.email=b@b -c user.name=b commit -qm 'feat: propio'",
+            "mkdir -p \"$HOME/.claude/.tycon-pipeline\" && printf '{\"ts\":\"2026-08-25T00:00:00Z\",\"repo\":\"%s/grupo/Back\",\"kind\":\"commit\"}\\n' \"$(pwd -W 2>/dev/null || pwd)\" > \"$HOME/.claude/.tycon-pipeline/unpushed-commits-bench-s1.jsonl\""
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "hook_event_name": "Stop",
+            "cwd": "${FIXTURE}/grupo/Back"
+          },
+          "expect": {
+            "stdout_re": [
+              "\"decision\"\\s*:\\s*\"block\"",
+              "esta sesión commiteó",
+              "grupo/Back"
+            ],
+            "stdout_not_re": [
+              "NO los revertas"
+            ]
+          }
+        },
+        {
+          "id": "ajeno-avisado-y-luego-propio-en-la-misma-rama-re-grita",
+          "type": "must-block",
+          "__doc": "Hallazgo E: la memoria 'ya avisé' es por repo+rama+CLASE; tras avisar Front/dev como ajena, si la sesión commitea encima el aviso PROPIO sale igual.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/unpushed-work-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/",
+            "git init -q --bare o1.git && git init -q --bare o2.git && mkdir -p grupo/Back grupo/Front",
+            "cd grupo/Back && git init -q -b main . && git remote add origin ../../o1.git && mkdir .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -qm base && git push -q origin main",
+            "cd grupo/Front && git init -q -b main . && git remote add origin ../../o2.git && mkdir .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -qm base && git push -q origin main && git checkout -q -b dev && echo y > senuelo.txt && git add -A && git -c user.email=b@b -c user.name=b commit -qm 'test: señuelo de OTRA sesión'",
+            "cd grupo/Front && echo w > propio.txt && git add -A && git -c user.email=b@b -c user.name=b commit -qm 'feat: propio encima'",
+            "SHA=$(cd grupo/Front && git rev-parse HEAD) && mkdir -p \"$HOME/.claude/.tycon-pipeline\" && printf '{\"ts\":\"2026-08-31T00:00:00Z\",\"repo\":\"%s/grupo/Front\",\"kind\":\"commit\",\"sha\":\"%s\"}\\n' \"$(pwd -W 2>/dev/null || pwd)\" \"$SHA\" > \"$HOME/.claude/.tycon-pipeline/unpushed-commits-bench-s1.jsonl\"",
+            "node -e \"const fs=require('fs');const k='bench-s1|'+fs.realpathSync('grupo/Front')+'|dev|foreign';fs.writeFileSync(process.env.HOME+'/.claude/.tycon-pipeline/unpushed-notice.json',JSON.stringify({stopSeen:{[k]:{ts:'2026-08-31T00:00:00Z'}}}))\""
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "hook_event_name": "Stop",
+            "cwd": "${FIXTURE}/grupo/Front"
+          },
+          "expect": {
+            "stdout_re": [
+              "\"decision\"\\s*:\\s*\"block\"",
+              "esta sesión commiteó",
+              "grupo/Front"
+            ]
+          }
+        },
+        {
+          "id": "propio-y-ajeno-en-el-mismo-stop-salen-los-dos-avisos",
+          "type": "must-block",
+          "__doc": "Back/feat propio (sha en el ledger) + push a main registrado → el grupo se escanea → Front/dev ajeno. Un solo block con las dos secciones.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/unpushed-work-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/",
+            "git init -q --bare o1.git && git init -q --bare o2.git && mkdir -p grupo/Back grupo/Front",
+            "cd grupo/Back && git init -q -b main . && git remote add origin ../../o1.git && mkdir .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -qm base && git push -q origin main",
+            "cd grupo/Front && git init -q -b main . && git remote add origin ../../o2.git && mkdir .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -qm base && git push -q origin main && git checkout -q -b dev && echo y > senuelo.txt && git add -A && git -c user.email=b@b -c user.name=b commit -qm 'test: señuelo de OTRA sesión'",
+            "cd grupo/Back && git checkout -q -b feat && echo z > c.txt && git add -A && git -c user.email=b@b -c user.name=b commit -qm 'feat: propio'",
+            "SHA=$(cd grupo/Back && git rev-parse HEAD) && mkdir -p \"$HOME/.claude/.tycon-pipeline\" && printf '{\"ts\":\"2026-08-31T00:00:00Z\",\"repo\":\"%s/grupo/Back\",\"kind\":\"commit\",\"sha\":\"%s\"}\\n{\"ts\":\"2026-08-31T00:00:01Z\",\"repo\":\"%s/grupo/Back\",\"kind\":\"push-main\"}\\n' \"$(pwd -W 2>/dev/null || pwd)\" \"$SHA\" \"$(pwd -W 2>/dev/null || pwd)\" > \"$HOME/.claude/.tycon-pipeline/unpushed-commits-bench-s1.jsonl\""
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "hook_event_name": "Stop",
+            "cwd": "${FIXTURE}/grupo/Back"
+          },
+          "expect": {
+            "stdout_re": [
+              "\"decision\"\\s*:\\s*\"block\"",
+              "esta sesión commiteó",
+              "grupo/Back",
+              "NO hizo",
+              "grupo/Front",
+              "NO los revertas"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "hook": "unpushed-work-notice.js (record commit)",
+      "script": "${FIXTURE}/tcg/scripts/hooks/unpushed-work-notice.js",
+      "event": "PostToolUse",
+      "matcher": "Bash",
+      "cases": [
+        {
+          "id": "record-anota-el-sha-del-commit-propio",
+          "type": "must-run",
+          "__doc": "2026-08-31: el ledger guarda el sha del commit recién hecho (el asunto del commit aparece en el comando).",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/unpushed-work-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/",
+            "git init -q --bare o1.git && git init -q --bare o2.git && mkdir -p grupo/Back grupo/Front",
+            "cd grupo/Back && git init -q -b main . && git remote add origin ../../o1.git && mkdir .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -qm base && git push -q origin main",
+            "cd grupo/Front && git init -q -b main . && git remote add origin ../../o2.git && mkdir .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -qm base && git push -q origin main && git checkout -q -b dev && echo y > senuelo.txt && git add -A && git -c user.email=b@b -c user.name=b commit -qm 'test: señuelo de OTRA sesión'",
+            "cd grupo/Back && git checkout -q -b feat && echo z > c.txt && git add -A && git -c user.email=b@b -c user.name=b commit -qm 'feat: propio'"
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "tool_name": "Bash",
+            "cwd": "${FIXTURE}/grupo/Back",
+            "tool_input": {
+              "command": "git commit -qm 'feat: propio'"
+            }
+          },
+          "expect": {
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/unpushed-commits-bench-s1.jsonl",
+                "re": "\"kind\":\"commit\",\"sha\":\"[0-9a-f]{40}\""
+              }
+            ]
+          }
+        },
+        {
+          "id": "record-commit-fallido-no-adopta-el-head-ajeno",
+          "type": "must-run",
+          "__doc": "Hallazgo A: `git commit` que no commiteó (exit enmascarado por | tail) sobre un repo cuyo HEAD es el commit AJENO → sha:null, nunca el sha ajeno.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/unpushed-work-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/",
+            "git init -q --bare o1.git && git init -q --bare o2.git && mkdir -p grupo/Back grupo/Front",
+            "cd grupo/Back && git init -q -b main . && git remote add origin ../../o1.git && mkdir .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -qm base && git push -q origin main",
+            "cd grupo/Front && git init -q -b main . && git remote add origin ../../o2.git && mkdir .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -qm base && git push -q origin main && git checkout -q -b dev && echo y > senuelo.txt && git add -A && git -c user.email=b@b -c user.name=b commit -qm 'test: señuelo de OTRA sesión'"
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "tool_name": "Bash",
+            "cwd": "${FIXTURE}/grupo/Front",
+            "tool_input": {
+              "command": "git commit -qm nada 2>&1 | tail -3"
+            }
+          },
+          "expect": {
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/unpushed-commits-bench-s1.jsonl",
+                "re": "\"kind\":\"commit\",\"sha\":null"
+              }
+            ],
+            "file_not_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/unpushed-commits-bench-s1.jsonl",
+                "re": "\"sha\":\"[0-9a-f]{40}\""
+              }
+            ]
+          }
+        },
+        {
+          "id": "record-cd-y-commit-anota-el-repo-correcto",
+          "type": "must-run",
+          "__doc": "Hallazgo B: `cd ../Front && git commit` con cwd=Back tiene que anotar Front (y su sha), no Back.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/unpushed-work-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/",
+            "git init -q --bare o1.git && git init -q --bare o2.git && mkdir -p grupo/Back grupo/Front",
+            "cd grupo/Back && git init -q -b main . && git remote add origin ../../o1.git && mkdir .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -qm base && git push -q origin main",
+            "cd grupo/Front && git init -q -b main . && git remote add origin ../../o2.git && mkdir .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -qm base && git push -q origin main && git checkout -q -b dev && echo y > senuelo.txt && git add -A && git -c user.email=b@b -c user.name=b commit -qm 'test: señuelo de OTRA sesión'",
+            "cd grupo/Front && echo w > propio.txt && git add -A && git -c user.email=b@b -c user.name=b commit -qm 'feat: propio en front'"
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "tool_name": "Bash",
+            "cwd": "${FIXTURE}/grupo/Back",
+            "tool_input": {
+              "command": "cd ../Front && git commit -qm 'feat: propio en front'"
+            }
+          },
+          "expect": {
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/unpushed-commits-bench-s1.jsonl",
+                "re": "grupo/Front\",\"kind\":\"commit\",\"sha\":\"[0-9a-f]{40}\""
+              }
+            ],
+            "file_not_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/unpushed-commits-bench-s1.jsonl",
+                "re": "grupo/Back\""
+              }
+            ]
+          }
+        },
+        {
+          "id": "constancia-2.7-carril",
+          "type": "must-run",
+          "__doc": "story 2.7: el commit de una sesión con corrida viva deja su carril (pipeline) y su story, en el registro de la sesión y en la constancia durable carriles.jsonl — ésta sin ruta ni sha. Rojo previo: quitar la línea → el archivo no existe.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib && cp $TCG/scripts/hooks/unpushed-work-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/",
+            "mkdir -p \"${SANDBOX_HOME}/.claude/.tycon-pipeline/active\" && printf '{\"storyId\":\"2.7\",\"sessionId\":\"bench-s27\"}' > \"${SANDBOX_HOME}/.claude/.tycon-pipeline/active/bench-s27.json\"",
+            "mkdir -p repo && cd repo && git init -q -b main . && mkdir .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -qm 'feat: con corrida'"
+          ],
+          "stdin": {
+            "session_id": "bench-s27",
+            "tool_name": "Bash",
+            "cwd": "${FIXTURE}/repo",
+            "tool_input": {
+              "command": "git commit -qm 'feat: con corrida'"
+            }
+          },
+          "expect": {
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/carriles.jsonl",
+                "re": "^\\{\"ts\":\"[^\"]+\",\"carril\":\"pipeline\",\"story\":\"2\\.7\"\\}$"
+              },
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/unpushed-commits-bench-s27.jsonl",
+                "re": "\"sha\":\"[0-9a-f]{40}\",\"carril\":\"pipeline\",\"story\":\"2\\.7\""
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

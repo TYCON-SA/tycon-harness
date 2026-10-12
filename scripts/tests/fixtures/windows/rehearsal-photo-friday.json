@@ -1,0 +1,230 @@
+{
+  "at": "2026-10-02T21:00:00.000Z",
+  "settings": {
+    "exists": true,
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "bytes": 2100,
+    "bom": false,
+    "crlf": false,
+    "ends_with_newline": true,
+    "indent": 2,
+    "top_keys": [
+      "$schema",
+      "hooks"
+    ],
+    "env": null,
+    "cleanup_period_days": null,
+    "hooks": [
+      {
+        "event": "PreToolUse",
+        "matcher": "Bash",
+        "name": "@tcg:safety-brake.js",
+        "runner": "node",
+        "file": "C:/lab/profile/SourceCode/tycon-claude-guides/scripts/hooks/safety-brake.js",
+        "command": "node \"C:/lab/profile/SourceCode/tycon-claude-guides/scripts/hooks/safety-brake.js\"",
+        "is_async": false,
+        "exists": true
+      },
+      {
+        "event": "Stop",
+        "matcher": "",
+        "name": "@tcg:old-meter.js",
+        "runner": "node",
+        "file": "C:/lab/profile/SourceCode/tycon-claude-guides/scripts/hooks/old-meter.js",
+        "command": "node \"C:/lab/profile/SourceCode/tycon-claude-guides/scripts/hooks/old-meter.js\"",
+        "is_async": false,
+        "exists": true
+      },
+      {
+        "event": "SessionStart",
+        "matcher": "",
+        "name": "@tcg:bench-notice.js",
+        "runner": "node",
+        "file": "C:/lab/profile/SourceCode/tycon-claude-guides/scripts/hooks/bench-notice.js",
+        "command": "node \"C:/lab/profile/SourceCode/tycon-claude-guides/scripts/hooks/bench-notice.js\"",
+        "is_async": false,
+        "exists": true
+      },
+      {
+        "event": "Stop",
+        "matcher": "",
+        "name": "@tcg:retired-meter.js",
+        "runner": "node",
+        "file": "C:/lab/profile/SourceCode/tycon-claude-guides/scripts/hooks/retired-meter.js",
+        "command": "node \"C:/lab/profile/SourceCode/tycon-claude-guides/scripts/hooks/retired-meter.js\"",
+        "is_async": false,
+        "exists": true
+      }
+    ],
+    "startup_lines": [
+      {
+        "event": "SessionStart",
+        "command": "pwsh -NoProfile -ExecutionPolicy Bypass -Command \"try { Set-Location $env:USERPROFILE\\.claude\\tycon-claude-guides; git pull --ff-only --quiet --autostash; Set-Location $env:USERPROFILE\\.claude\\agent-skills; git pull --ff-only --quiet --autostash; & $env:USERPROFILE\\.claude\\tycon-claude-guides\\scripts\\install-tycon-hooks.ps1 } catch {}\"",
+        "is_async": true,
+        "form": "old",
+        "shell": "pwsh"
+      }
+    ],
+    "duplicated": [],
+    "dangling": [],
+    "backups": 1
+  },
+  "links": [
+    {
+      "name": "tycon-claude-guides",
+      "present": true,
+      "kind": "link",
+      "resolves_to": "C:/lab/target/tycon-claude-guides",
+      "ok": true
+    },
+    {
+      "name": "agent-skills",
+      "present": true,
+      "kind": "folder",
+      "resolves_to": "C:/lab/target/agent-skills",
+      "ok": true
+    },
+    {
+      "name": "agents",
+      "present": true,
+      "kind": "link",
+      "resolves_to": "C:/lab/target/agents",
+      "ok": true
+    },
+    {
+      "name": "skills",
+      "present": true,
+      "kind": "link",
+      "resolves_to": "C:/lab/target/skills",
+      "ok": true
+    }
+  ],
+  "doctor": {
+    "exit": 0,
+    "error": null,
+    "mode": "managed",
+    "fail": [],
+    "warn": [
+      "copia fija de arranque vieja respecto del árbol (bootstrap.js): a propósito"
+    ],
+    "ok": [
+      "Node 22.1.0 (piso 20)"
+    ],
+    "readable": true
+  },
+  "version": {
+    "exit": 0,
+    "error": null,
+    "text": "2026.10.02+1111111 · latest · managed"
+  },
+  "state": {
+    "exists": true,
+    "mode": "managed",
+    "channel": "latest",
+    "version": "2026.10.02+1111111",
+    "notice": null,
+    "failed": null,
+    "hold": null,
+    "policy": {
+      "channel": "latest",
+      "apply": "auto",
+      "enabled": true
+    },
+    "last_fetch": "2026-10-02T20:55:00.000Z",
+    "managed": 31,
+    "sources": [
+      {
+        "name": "harness",
+        "ref": "main",
+        "commit": "1111111111111111111111111111111111111111"
+      },
+      {
+        "name": "agent_skills",
+        "ref": "main",
+        "commit": "2222222222222222222222222222222222222222"
+      }
+    ]
+  },
+  "repos": {
+    "harness": {
+      "exists": true,
+      "head": "1111111111111111111111111111111111111111",
+      "branch": "main",
+      "origin_main": "1111111111111111111111111111111111111111",
+      "dirty": 0,
+      "dirty_first": [],
+      "stashes": 0,
+      "in_progress": [],
+      "autocrlf": "true"
+    },
+    "skills": {
+      "exists": true,
+      "head": "2222222222222222222222222222222222222222",
+      "branch": "main",
+      "origin_main": "2222222222222222222222222222222222222222",
+      "dirty": 0,
+      "dirty_first": [],
+      "stashes": 0,
+      "in_progress": [],
+      "autocrlf": "true"
+    }
+  },
+  "commands": [
+    "mine.md"
+  ],
+  "claude_md": {
+    "exists": true,
+    "imports": [
+      "@C:/lab/profile/SourceCode/tycon-claude-guides/README.md"
+    ],
+    "blocks": 4,
+    "bom": false,
+    "crlf": false
+  },
+  "fixed_copy": [
+    {
+      "file": "bootstrap-fallback.ps1",
+      "has_cr": null
+    },
+    {
+      "file": "bootstrap-fallback.sh",
+      "has_cr": false
+    },
+    {
+      "file": "bootstrap.js",
+      "has_cr": null
+    }
+  ],
+  "startup_log_tail": [
+    "2026-10-02T20:55:01.000Z startup: arnés al día"
+  ],
+  "expected": {
+    "integrations": {
+      "ado": true,
+      "clockify": true,
+      "engram": true,
+      "codegraph": false,
+      "buzon": true,
+      "codex": "detect",
+      "nocturnos": true,
+      "telegram": false
+    },
+    "names": [
+      "PreToolUse:@tcg:safety-brake.js",
+      "Stop:@tcg:old-meter.js",
+      "SessionStart:@tcg:bench-notice.js",
+      "Stop:@tcg:retired-meter.js",
+      "PreToolUse:@tcg:bash-brake.sh"
+    ],
+    "expected_total": 5,
+    "in_place": 4,
+    "missing": [
+      "PreToolUse:@tcg:bash-brake.sh"
+    ],
+    "duplicated": [],
+    "superseded": [],
+    "misplaced": [],
+    "unexpected": [],
+    "dangling": []
+  }
+}

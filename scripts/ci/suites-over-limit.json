@@ -1,0 +1,219 @@
+{
+  "__doc": "Las suites que pasan del límite en la validación de una rama, y qué se decidió de cada una (story 8.22, tramo F, AC 21). El límite se mide con el juego de pesos `weight_set` de scripts/ci/suites-weights.json (lo que tarda cada suite en el agente de la validación). Por suite, UNA de dos: `\"nightly\": true` con su `why` (la validación de la rama la saltea —«pasa de 45 s: la corre el nocturno»— y la corre el banco nocturno), o `\"exception\"` con `signed_by`, `date` (AAAA-MM-DD) y `why`, y `until` si vence (corre como siempre; la firma la pone el dueño del arnés, nunca quien escribe el archivo). La tercera salida no se anota acá: partir la suite (scripts/tests/lib/suite-parts.js y .sh). Las legacy-names-* no entran: se retiran con la story 8.15. Lo lee scripts/ci/suites-for-change.js con --over-limit; una entrada mal formada deja el archivo entero sin leer y no se saltea ninguna. scripts/tests/suites-over-limit.test.js frena una suite que pasa del límite sin decisión y una decisión que sobra.",
+  "__signed": "Las excepciones las aprobó el dueño del arnés el 2026-10-07, en la sesión del tramo F de la story 8.22, con las suites y sus tiempos a la vista: 16 antes de la validación de la rama y 4 después, con lo medido en ella (specs/story-8.22-la-validacion-en-15-minutos.md, Change Log). El 2026-10-08, en la sesión del tramo G, volvió a firmar las 12 del laboratorio del instalador con su motivo de verdad, y en una pregunta aparte la número 13 (harness-tools, que entró a main ese día). Ese mismo día firmó la CLASE ENTERA («Regla para todas»): toda suite del laboratorio del instalador que pase de 45 s entra al grupo `installer` y lleva esta misma excepción, citando esa decisión, sin otra firma por suite; así entró harness-move-home. La decisión está escrita en `groups.installer.standing_decision` de scripts/ci/heavy-suites.json: el anterior —que bajaban preparando el laboratorio una sola vez— lo desmintió la medición. La firma lleva su rol y no su nombre: este archivo viaja en la copia pública.",
+  "limit_seconds": 45,
+  "weight_set": "pr",
+  "suites": {
+    "harness-update.test.sh": {
+      "exception": {
+        "signed_by": "el dueño del arnés",
+        "date": "2026-10-08",
+        "why": "Suite del laboratorio del instalador. Por decisión del dueño corre en la validación de la rama sólo cuando el cambio toca el instalador (el grupo `installer` de scripts/ci/heavy-suites.json, con su costo aceptado); con cualquier otro cambio la corre el nocturno. Cuando corre pasa de 45 s (1279 s medidos en el agente): son decenas de casos que instalan, actualizan y revisan sobre el laboratorio, de 2 a 12 s cada uno. Armar el laboratorio no es lo caro (0,85 s por vez, medido el 2026-10-07): prepararlo una sola vez no la baja. Bajaría con menos procesos por comando del instalador, que es código del producto y otra story."
+      }
+    },
+    "harness-doctor.test.sh": {
+      "exception": {
+        "signed_by": "el dueño del arnés",
+        "date": "2026-10-08",
+        "why": "Suite del laboratorio del instalador. Por decisión del dueño corre en la validación de la rama sólo cuando el cambio toca el instalador (el grupo `installer` de scripts/ci/heavy-suites.json, con su costo aceptado); con cualquier otro cambio la corre el nocturno. Cuando corre pasa de 45 s (408 s medidos en el agente): son decenas de casos que instalan, actualizan y revisan sobre el laboratorio, de 2 a 12 s cada uno. Armar el laboratorio no es lo caro (0,85 s por vez, medido el 2026-10-07): prepararlo una sola vez no la baja. Bajaría con menos procesos por comando del instalador, que es código del producto y otra story."
+      }
+    },
+    "harness-install.test.sh": {
+      "exception": {
+        "signed_by": "el dueño del arnés",
+        "date": "2026-10-08",
+        "why": "Suite del laboratorio del instalador. Por decisión del dueño corre en la validación de la rama sólo cuando el cambio toca el instalador (el grupo `installer` de scripts/ci/heavy-suites.json, con su costo aceptado); con cualquier otro cambio la corre el nocturno. Cuando corre pasa de 45 s (360 s medidos en el agente): son decenas de casos que instalan, actualizan y revisan sobre el laboratorio, de 2 a 12 s cada uno. Armar el laboratorio no es lo caro (0,85 s por vez, medido el 2026-10-07): prepararlo una sola vez no la baja. Bajaría con menos procesos por comando del instalador, que es código del producto y otra story."
+      }
+    },
+    "harness-repoint.test.sh": {
+      "exception": {
+        "signed_by": "el dueño del arnés",
+        "date": "2026-10-08",
+        "why": "Suite del laboratorio del instalador. Por decisión del dueño corre en la validación de la rama sólo cuando el cambio toca el instalador (el grupo `installer` de scripts/ci/heavy-suites.json, con su costo aceptado); con cualquier otro cambio la corre el nocturno. Cuando corre pasa de 45 s (329 s medidos en el agente): son decenas de casos que instalan, actualizan y revisan sobre el laboratorio, de 2 a 12 s cada uno. Armar el laboratorio no es lo caro (0,85 s por vez, medido el 2026-10-07): prepararlo una sola vez no la baja. Bajaría con menos procesos por comando del instalador, que es código del producto y otra story."
+      }
+    },
+    "harness-plan.test.sh": {
+      "exception": {
+        "signed_by": "el dueño del arnés",
+        "date": "2026-10-08",
+        "why": "Suite del laboratorio del instalador. Por decisión del dueño corre en la validación de la rama sólo cuando el cambio toca el instalador (el grupo `installer` de scripts/ci/heavy-suites.json, con su costo aceptado); con cualquier otro cambio la corre el nocturno. Cuando corre pasa de 45 s (183 s medidos en el agente): son decenas de casos que instalan, actualizan y revisan sobre el laboratorio, de 2 a 12 s cada uno. Armar el laboratorio no es lo caro (0,85 s por vez, medido el 2026-10-07): prepararlo una sola vez no la baja. Bajaría con menos procesos por comando del instalador, que es código del producto y otra story."
+      }
+    },
+    "harness-uninstall.test.sh": {
+      "exception": {
+        "signed_by": "el dueño del arnés",
+        "date": "2026-10-08",
+        "why": "Suite del laboratorio del instalador. Por decisión del dueño corre en la validación de la rama sólo cuando el cambio toca el instalador (el grupo `installer` de scripts/ci/heavy-suites.json, con su costo aceptado); con cualquier otro cambio la corre el nocturno. Cuando corre pasa de 45 s (151 s medidos en el agente): son decenas de casos que instalan, actualizan y revisan sobre el laboratorio, de 2 a 12 s cada uno. Armar el laboratorio no es lo caro (0,85 s por vez, medido el 2026-10-07): prepararlo una sola vez no la baja. Bajaría con menos procesos por comando del instalador, que es código del producto y otra story."
+      }
+    },
+    "harness-profile.test.sh": {
+      "exception": {
+        "signed_by": "el dueño del arnés",
+        "date": "2026-10-08",
+        "why": "Suite del laboratorio del instalador. Por decisión del dueño corre en la validación de la rama sólo cuando el cambio toca el instalador (el grupo `installer` de scripts/ci/heavy-suites.json, con su costo aceptado); con cualquier otro cambio la corre el nocturno. Cuando corre pasa de 45 s (141 s medidos en el agente): son decenas de casos que instalan, actualizan y revisan sobre el laboratorio, de 2 a 12 s cada uno. Armar el laboratorio no es lo caro (0,85 s por vez, medido el 2026-10-07): prepararlo una sola vez no la baja. Bajaría con menos procesos por comando del instalador, que es código del producto y otra story."
+      }
+    },
+    "harness-health.test.sh": {
+      "exception": {
+        "signed_by": "el dueño del arnés",
+        "date": "2026-10-08",
+        "why": "Suite del laboratorio del instalador. Por decisión del dueño corre en la validación de la rama sólo cuando el cambio toca el instalador (el grupo `installer` de scripts/ci/heavy-suites.json, con su costo aceptado); con cualquier otro cambio la corre el nocturno. Cuando corre pasa de 45 s (98 s medidos en el agente): son decenas de casos que instalan, actualizan y revisan sobre el laboratorio, de 2 a 12 s cada uno. Armar el laboratorio no es lo caro (0,85 s por vez, medido el 2026-10-07): prepararlo una sola vez no la baja. Bajaría con menos procesos por comando del instalador, que es código del producto y otra story."
+      }
+    },
+    "harness-channel.test.sh": {
+      "exception": {
+        "signed_by": "el dueño del arnés",
+        "date": "2026-10-08",
+        "why": "Suite del laboratorio del instalador. Por decisión del dueño corre en la validación de la rama sólo cuando el cambio toca el instalador (el grupo `installer` de scripts/ci/heavy-suites.json, con su costo aceptado); con cualquier otro cambio la corre el nocturno. Cuando corre pasa de 45 s (78 s medidos en el agente): son decenas de casos que instalan, actualizan y revisan sobre el laboratorio, de 2 a 12 s cada uno. Armar el laboratorio no es lo caro (0,85 s por vez, medido el 2026-10-07): prepararlo una sola vez no la baja. Bajaría con menos procesos por comando del instalador, que es código del producto y otra story."
+      }
+    },
+    "harness-rollback.test.sh": {
+      "exception": {
+        "signed_by": "el dueño del arnés",
+        "date": "2026-10-08",
+        "why": "Suite del laboratorio del instalador. Por decisión del dueño corre en la validación de la rama sólo cuando el cambio toca el instalador (el grupo `installer` de scripts/ci/heavy-suites.json, con su costo aceptado); con cualquier otro cambio la corre el nocturno. Cuando corre pasa de 45 s (73 s medidos en el agente): son decenas de casos que instalan, actualizan y revisan sobre el laboratorio, de 2 a 12 s cada uno. Armar el laboratorio no es lo caro (0,85 s por vez, medido el 2026-10-07): prepararlo una sola vez no la baja. Bajaría con menos procesos por comando del instalador, que es código del producto y otra story."
+      }
+    },
+    "installer-repeated-hooks.test.sh": {
+      "exception": {
+        "signed_by": "el dueño del arnés",
+        "date": "2026-10-08",
+        "why": "Suite del laboratorio del instalador. Por decisión del dueño corre en la validación de la rama sólo cuando el cambio toca el instalador (el grupo `installer` de scripts/ci/heavy-suites.json, con su costo aceptado); con cualquier otro cambio la corre el nocturno. Cuando corre pasa de 45 s (60 s medidos en el agente): son decenas de casos que instalan, actualizan y revisan sobre el laboratorio, de 2 a 12 s cada uno. Armar el laboratorio no es lo caro (0,85 s por vez, medido el 2026-10-07): prepararlo una sola vez no la baja. Bajaría con menos procesos por comando del instalador, que es código del producto y otra story."
+      }
+    },
+    "installer-ps1.test.sh": {
+      "exception": {
+        "signed_by": "el dueño del arnés",
+        "date": "2026-10-07",
+        "why": "El gemelo de Windows del instalador, corrido con pwsh: 23 secciones parejas, casi todas una corrida de pwsh, que en el agente tarda ~1,9 veces lo de una Mac. No se pudo partir: tres secciones solas ya pasan de 45 s, y cortar por adentro de una sección es reescribirla.",
+        "until": "la medición final de la story 8.22 (tramo H)"
+      }
+    },
+    "export-real.test.sh": {
+      "exception": {
+        "signed_by": "el dueño del arnés",
+        "date": "2026-10-07",
+        "why": "La copia pública de verdad: es la que frena, antes de main, un cambio que rompería la publicación. El 2026-10-05 se la sacó de la validación de cada rama y la publicación se cayó dos veces. Partirla quedó fuera del alcance de la story.",
+        "until": "la medición final de la story 8.22 (tramo H)"
+      }
+    },
+    "nightly-dependencies.test.sh": {
+      "exception": {
+        "signed_by": "el dueño del arnés",
+        "date": "2026-10-07",
+        "why": "Se partió en dos y se volvió atrás: legacy-names-c1.test.js exige ver su entrada entera en suites.json, y las legacy-names-* no se tocan hasta su retiro. Con las partes sumaba las mismas verificaciones.",
+        "until": "el retiro de las suites legacy-names-* (story 8.15)"
+      }
+    },
+    "work-items.test.sh": {
+      "exception": {
+        "signed_by": "el dueño del arnés",
+        "date": "2026-10-07",
+        "why": "Se partió en dos y se volvió atrás: legacy-names-c1.test.js exige ver su entrada entera en suites.json, y las legacy-names-* no se tocan hasta su retiro. Con las partes sumaba las mismas verificaciones.",
+        "until": "el retiro de las suites legacy-names-* (story 8.15)"
+      }
+    },
+    "open-pr-per-finding.test.sh": {
+      "exception": {
+        "signed_by": "el dueño del arnés",
+        "date": "2026-10-07",
+        "why": "Se partió en dos y se volvió atrás: legacy-names-c1.test.js exige ver su entrada entera en suites.json, y las legacy-names-* no se tocan hasta su retiro. Con las partes sumaba las mismas verificaciones.",
+        "until": "el retiro de las suites legacy-names-* (story 8.15)"
+      }
+    },
+    "third-party-real.p2.test.sh": {
+      "exception": {
+        "signed_by": "el dueño del arnés",
+        "date": "2026-10-07",
+        "why": "La parte de la suite que corre el exportador de verdad sobre el núcleo: es un solo paso, que en el agente tarda más de 45 s (57 s medidos en la validación de la rama). No se puede partir más; baja si baja el exportador.",
+        "until": "la medición final de la story 8.22 (tramo H)"
+      }
+    },
+    "suites-for-change.test.js": {
+      "exception": {
+        "signed_by": "el dueño del arnés",
+        "date": "2026-10-07",
+        "why": "64 s medidos en la validación de la rama. Una sola prueba —la que repasa cada rojo real del nocturno con el merge que lo causó, del tramo B de la story— se lleva el 86 %: no se parte, y aliviarla es reescribirla.",
+        "until": "la medición final de la story 8.22 (tramo H)"
+      }
+    },
+    "harness-release.test.sh": {
+      "exception": {
+        "signed_by": "el dueño del arnés",
+        "date": "2026-10-08",
+        "why": "Suite del laboratorio del instalador. Por decisión del dueño corre en la validación de la rama sólo cuando el cambio toca el instalador (el grupo `installer` de scripts/ci/heavy-suites.json, con su costo aceptado); con cualquier otro cambio la corre el nocturno. Cuando corre pasa de 45 s (132 s medidos en el agente): son decenas de casos que instalan, actualizan y revisan sobre el laboratorio, de 2 a 12 s cada uno. Armar el laboratorio no es lo caro (0,85 s por vez, medido el 2026-10-07): prepararlo una sola vez no la baja. Bajaría con menos procesos por comando del instalador, que es código del producto y otra story."
+      }
+    },
+    "harness-tools.test.sh": {
+      "exception": {
+        "signed_by": "el dueño del arnés",
+        "date": "2026-10-08",
+        "why": "Suite del laboratorio del instalador (los enchufes de cada herramienta). Por decisión del dueño corre en la validación de la rama sólo cuando el cambio toca el instalador (el grupo `installer` de scripts/ci/heavy-suites.json, con su costo aceptado) o el adaptador de Codex; con cualquier otro cambio la corre el nocturno. Cuando corre pasa de 45 s: 60 s medidos en la Mac, porque entró a main el mismo día sin peso medido en el agente (la medición final lo corrige). Son 140 verificaciones que instalan y revisan sobre el laboratorio; armar el laboratorio no es lo caro."
+      }
+    },
+    "get-harness.test.sh": {
+      "exception": {
+        "signed_by": "el dueño del arnés",
+        "date": "2026-10-08",
+        "why": "Suite del laboratorio del instalador (el guion de entrada de la portada SIN git, story 8.23 tanda E). Entra por la decisión del dueño para la clase entera («Regla para todas», 2026-10-08): toda suite del laboratorio que pase de 45 s corre en la validación de la rama sólo cuando el cambio toca el instalador (el grupo `installer` de scripts/ci/heavy-suites.json, con su costo aceptado) y lleva esta excepción. Cuando corre pasa de 45 s: unos 120 s medidos en la Mac (seis instalaciones completas contra el GitHub de juguete: público, privado sin permiso, con la variable, por terminal, con el permiso guardado, con uno que no vale), antes 8 s cuando clonaba. Son 31 verificaciones; armar el laboratorio no es lo caro."
+      }
+    },
+    "harness-move-home.test.sh": {
+      "exception": {
+        "signed_by": "el dueño del arnés",
+        "date": "2026-10-08",
+        "why": "Suite del laboratorio del instalador (la mudanza de una máquina a ~/.tycon). Entra por la decisión del dueño para la clase entera («Regla para todas», 2026-10-08): toda suite del laboratorio que pase de 45 s corre en la validación de la rama sólo cuando el cambio toca el instalador (el grupo `installer` de scripts/ci/heavy-suites.json, con su costo aceptado) y lleva esta excepción. Cuando corre pasa de 45 s: 49 s medidos en la Mac, porque entró a main sin peso medido en el agente (la medición final lo corrige). Son 97 verificaciones que instalan y mudan sobre el laboratorio; armar el laboratorio no es lo caro."
+      }
+    },
+    "harness-team-a2.test.sh": {
+      "exception": {
+        "signed_by": "el dueño del arnés",
+        "date": "2026-10-08",
+        "why": "Suite del laboratorio del instalador (story 8.25, tanda A2a: la capa del equipo con revisores y skills, sobre una versión de juguete que trae el pipeline). Entra por la decisión del dueño para la clase entera («Regla para todas», 2026-10-08): toda suite del laboratorio que pase de 45 s corre en la validación de la rama sólo cuando el cambio toca el instalador (el grupo `installer` de scripts/ci/heavy-suites.json, con su costo aceptado) y lleva esta excepción. Cuando corre pasa de 45 s: cinco casos que instalan, actualizan, refrescan y mudan, cada uno con su HOME y su servidor; el peso, medido en la Mac."
+      }
+    },
+    "harness-team-skill-data.test.sh": {
+      "exception": {
+        "signed_by": "el dueño del arnés",
+        "date": "2026-10-08",
+        "why": "Suite del laboratorio del instalador (story 8.25, tanda A2c: una skill de la lista fija con sus datos fuera de su carpeta, sobre una capa de juguete). Entra por la decisión del dueño para la clase entera («Regla para todas», 2026-10-08): toda suite del laboratorio que pase de 45 s corre en la validación de la rama sólo cuando el cambio toca el instalador (el grupo `installer` de scripts/ci/heavy-suites.json, con su costo aceptado) y lleva esta excepción. Cuando corre pasa de 45 s: dos laboratorios que instalan, actualizan una docena de veces, refrescan y desinstalan: 42 s medidos en la Mac; en el agente, ESTIMADO por encima de 45 s hasta la medición en el agente."
+      }
+    },
+    "harness-team-codex.test.sh": {
+      "exception": {
+        "signed_by": "el dueño del arnés",
+        "date": "2026-10-08",
+        "why": "Suite del laboratorio del instalador (story 8.25, tanda A2b: los revisores de la capa del equipo en Codex, sobre una máquina de juguete con Claude Code, Codex y las piezas reales del enchufe de Codex). Entra por la decisión del dueño para la clase entera («Regla para todas», 2026-10-08): toda suite del laboratorio que pase de 45 s corre en la validación de la rama sólo cuando el cambio toca el instalador (el grupo `installer` de scripts/ci/heavy-suites.json, con su costo aceptado) y lleva esta excepción. 18 s medidos en la Mac; en el agente, ESTIMADO por encima de 45 s (instala, actualiza, refresca cinco veces y desinstala con dos servidores) hasta la medición en el agente."
+      }
+    },
+    "harness-team-azure.test.sh": {
+      "exception": {
+        "signed_by": "el dueño del arnés",
+        "date": "2026-10-08",
+        "why": "Suite del laboratorio del instalador (story 8.25, tanda A1a-azure: la capa del equipo desde Azure DevOps, con el GitHub de juguete para la copia y el Azure de juguete para el repo del equipo). Entra por la decisión del dueño para la clase entera («Regla para todas», 2026-10-08): toda suite del laboratorio que pase de 45 s corre en la validación de la rama sólo cuando el cambio toca el instalador (el grupo `installer` de scripts/ci/heavy-suites.json, con su costo aceptado) y lleva esta excepción. Cuando corre pasa de 45 s: ~300 s medidos en la Mac (cuatro casos que instalan, actualizan y mudan; cada caso levanta una HOME y dos servidores), ESTIMADO hasta la medición en el agente."
+      }
+    },
+    "harness-team.test.sh": {
+      "exception": {
+        "signed_by": "el dueño del arnés",
+        "date": "2026-10-08",
+        "why": "Suite del laboratorio del instalador (story 8.25, tanda A1a: la capa del equipo sobre la versión bajada, con el GitHub de juguete atendiendo dos repos). Entra por la decisión del dueño para la clase entera («Regla para todas», 2026-10-08): toda suite del laboratorio que pase de 45 s corre en la validación de la rama sólo cuando el cambio toca el instalador (el grupo `installer` de scripts/ci/heavy-suites.json, con su costo aceptado) y lleva esta excepción. Cuando corre pasa de 45 s: ~420 s medidos en la Mac (cinco casos que instalan, actualizan y mudan sobre el laboratorio con dos repos; cada caso levanta una HOME y el servidor), ESTIMADO hasta la medición en el agente."
+      }
+    },
+    "windows-guided-lab.test.js": {
+      "exception": {
+        "signed_by": "el dueño del arnés",
+        "date": "2026-10-08",
+        "why": "Suite del laboratorio del instalador (story 8.28: el alta y la actualización en Windows siguiendo la página pública de instalación, con el programa de verdad, en modo de laboratorio). Entra por la decisión del dueño para la clase entera («Regla para todas», 2026-10-08): toda suite del laboratorio que pase de 45 s corre en la validación de la rama sólo cuando el cambio toca el instalador (el grupo `installer` de scripts/ci/heavy-suites.json, con su costo aceptado) y lleva esta excepción. Cuando corre pasa de 45 s: arma un árbol publicado de juguete, instala dos veces con el guion de entrada desde el GitHub de juguete, suma la capa del equipo desde el Azure DevOps de juguete y abre once sesiones; medido en la Mac, ESTIMADO hasta la medición en el agente."
+      }
+    },
+    "windows-rehearsal.test.js": {
+      "exception": {
+        "signed_by": "el dueño del arnés",
+        "date": "2026-10-07",
+        "why": "92 s medidos en la validación de la rama, la primera en la que corrió: sólo corre si el cambio toca los pipelines, el texto del alta o los guiones de Windows. No se perfiló en este tramo.",
+        "until": "la medición final de la story 8.22 (tramo H)"
+      }
+    }
+  }
+}

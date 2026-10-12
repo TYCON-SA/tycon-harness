@@ -1,0 +1,109 @@
+TYCON Harness
+Copyright 2026 TYCON
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use
+this work except in compliance with the License. The full text is in the LICENSE
+file at the root of this repository, and at
+https://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software distributed
+under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+CONDITIONS OF ANY KIND, either express or implied.
+
+
+Trademarks
+----------
+
+TYCON, Bizuit and BMad are trademarks of their respective owners. As section 6
+of the License says, the License does not grant permission to use the trade
+names, trademarks, service marks or product names of any of them, except as
+required for describing the origin of the work.
+
+Bizuit: the optional stack pack holds the conventions TYCON uses to build
+plugins on Bizuit. It is not a Bizuit product.
+
+BMad: this harness uses BMad Method (MIT); it is not affiliated with or
+endorsed by BMad Code, LLC.
+
+
+Third-party attributions
+------------------------
+
+The files below are derived from, or credit, third-party work. Each line gives
+the path in this repository, its origin, its license and its copyright. The
+permission notice of that license follows each group.
+
+ECC (https://github.com/affaan-m/ECC):
+
+* guides/advisor-rules-catalog.md — based on ECC (https://github.com/affaan-m/ECC) · MIT · Copyright (c) 2026 Affaan Mustafa
+* guides/context-budget.md — based on ECC (https://github.com/affaan-m/ECC) · MIT · Copyright (c) 2026 Affaan Mustafa
+* guides/harness-audit.md — based on ECC (https://github.com/affaan-m/ECC) · MIT · Copyright (c) 2026 Affaan Mustafa
+* guides/decisions/instinct-mining-v1-spec.md — based on ECC (https://github.com/affaan-m/ECC) · MIT · Copyright (c) 2026 Affaan Mustafa
+* guides/instinct-mining.md — based on ECC (https://github.com/affaan-m/ECC) · MIT · Copyright (c) 2026 Affaan Mustafa
+* guides/piezas-del-arnes.md — based on ECC (https://github.com/affaan-m/ECC) · MIT · Copyright (c) 2026 Affaan Mustafa
+* guides/rules-distill.md — based on ECC (https://github.com/affaan-m/ECC) · MIT · Copyright (c) 2026 Affaan Mustafa
+* guides/safety-guard.md — based on ECC (https://github.com/affaan-m/ECC) · MIT · Copyright (c) 2026 Affaan Mustafa
+* guides/skill-scout.md — based on ECC (https://github.com/affaan-m/ECC) · MIT · Copyright (c) 2026 Affaan Mustafa
+* scripts/lib/harness-audit.js — based on ECC (https://github.com/affaan-m/ECC) · MIT · Copyright (c) 2026 Affaan Mustafa
+* scripts/hooks/safety-guard-pre.sh — based on ECC (https://github.com/affaan-m/ECC) · MIT · Copyright (c) 2026 Affaan Mustafa
+* scripts/tools/context-budget.js — based on ECC (https://github.com/affaan-m/ECC) · MIT · Copyright (c) 2026 Affaan Mustafa
+* scripts/tools/rules-distill.js — based on ECC (https://github.com/affaan-m/ECC) · MIT · Copyright (c) 2026 Affaan Mustafa
+
+MIT License, for the files above:
+
+Copyright (c) 2026 Affaan Mustafa
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+BMad Method (https://github.com/bmad-code-org/BMAD-METHOD):
+
+* skills/tycon-create-story — based on bmad-create-story from BMad Method (https://github.com/bmad-code-org/BMAD-METHOD, commit 1cc433e543cf2bd725cf0128a005d7aa852df76f, path src/bmm-skills/4-implementation/bmad-create-story), renamed as its trademark policy asks · MIT · Copyright (c) 2025 BMad Code, LLC · basada en bmad-create-story de BMad Method, renombrada como pide su política de marca
+
+What the team changed is listed in skills/tycon-create-story/NOTICE.md, and the
+original license text is in skills/tycon-create-story/LICENSE, unchanged.
+
+MIT License, for the files above:
+
+Copyright (c) 2025 BMad Code, LLC
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+
+Third-party skills downloaded at install time
+---------------------------------------------
+
+The installer downloads a few third-party skills from their origins; they are
+not part of this repository. Each one, with its origin, commit, license and
+copyright, is listed in scripts/publishing/third-party-skills.json.

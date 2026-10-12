@@ -1,0 +1,65 @@
+{
+ "hooks": [
+  {
+   "hook": "harness-startup.js (el arranque de una sesión de Codex actualiza el arnés)",
+   "script": "${FIXTURE}/tcg/scripts/hooks/harness-startup.js",
+   "event": "SessionStart",
+   "matcher": "*",
+   "cases": [
+    {
+     "id": "corre-la-copia-fija-de-arranque",
+     "type": "must-emit",
+     "__doc": "Con el mecanismo instalado, el hook corre la COPIA FIJA de arranque (<estado>/harness/bootstrap.js) y deja pasar lo que imprime. La casa del arnés es de juguete (TYCON_HOME con state/: la máquina que vive ahí), la copia fija es un guion que dice una línea, y el hook se lanza como lo lanza Codex.",
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/setup/harness && cp $TCG/scripts/hooks/harness-startup.js tcg/scripts/hooks/ && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/",
+      "mkdir -p casa/state/harness && printf 'console.log(\"COPIA-FIJA-CORRIDA\");\\n' > casa/state/harness/bootstrap.js",
+      "printf '#!/bin/bash\\nTYCON_HOME=\"$PWD/casa\" node tcg/scripts/hooks/harness-startup.js\\n' > verificador.sh && chmod +x verificador.sh"
+     ],
+     "stdin": {
+      "source": "startup"
+     },
+     "expect": {
+      "stdout_re": [
+       "COPIA-FIJA-CORRIDA"
+      ]
+     },
+     "script": "${FIXTURE}/verificador.sh"
+    },
+    {
+     "id": "copia-fija-que-no-arranca-cae-al-respaldo-y-sale-0",
+     "type": "must-emit",
+     "__doc": "La copia fija sale distinto de 0 (el árbol no arranca): el hook lanza el respaldo en shell que vive a su lado, desprendido de la sesión, y sale 0 igual. El respaldo de juguete deja un marcador; el verificador espera un segundo y lo busca.",
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/setup/harness && cp $TCG/scripts/hooks/harness-startup.js tcg/scripts/hooks/ && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/",
+      "mkdir -p casa/state/harness && printf 'process.exit(1);\\n' > casa/state/harness/bootstrap.js",
+      "printf '#!/bin/bash\\necho corrido > \"$(dirname \"$0\")/respaldo.txt\"\\n' > casa/state/harness/bootstrap-fallback.sh",
+      "printf '#!/bin/bash\\nTYCON_HOME=\"$PWD/casa\" node tcg/scripts/hooks/harness-startup.js; rc=$?\\nsleep 1\\n[ \"$rc\" = 0 ] && [ -f casa/state/harness/respaldo.txt ] && echo RESPALDO-CORRIDO-Y-SALE-0\\n' > verificador.sh && chmod +x verificador.sh"
+     ],
+     "stdin": {
+      "source": "startup"
+     },
+     "expect": {
+      "stdout_re": [
+       "RESPALDO-CORRIDO-Y-SALE-0"
+      ]
+     },
+     "script": "${FIXTURE}/verificador.sh"
+    },
+    {
+     "id": "quiet-y-exit-0-sin-nada-que-correr",
+     "type": "must-stay-quiet",
+     "__doc": "Sin copia fija y con el mantenimiento apuntado a algo que no existe (TYCON_MAINTAIN_CMD): ni salida ni error. Un hook de arranque roto es peor que uno ausente.",
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/setup/harness && cp $TCG/scripts/hooks/harness-startup.js tcg/scripts/hooks/ && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/",
+      "printf '#!/bin/bash\\nTYCON_MAINTAIN_CMD=/no/existe/instalador.sh node tcg/scripts/hooks/harness-startup.js\\n' > verificador.sh && chmod +x verificador.sh"
+     ],
+     "stdin": {
+      "source": "startup"
+     },
+     "expect": {},
+     "script": "${FIXTURE}/verificador.sh"
+    }
+   ]
+  }
+ ]
+}

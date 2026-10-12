@@ -1,0 +1,7 @@
+{
+  "__doc": "La configuración del examen periódico de revisores (Story 1.1). Es EL único lugar donde se toca la frecuencia y la máquina que corre: el disparador (LaunchAgent) se GENERA desde acá, así que cambiar un día o una hora es editar este archivo y volver a correr el instalador — no se edita ni el disparador ni el código. 🔴 `designated_machine` se compara contra el nombre de la máquina (hostname o ComputerName de macOS), sin distinguir mayúsculas y sin el sufijo .local. Si queda vacío, NO CORRE NADIE: es fail-closed a propósito, porque una máquina de más corriendo el examen gasta la cuota del dev dos veces. Para saber cómo se llama una máquina: node scripts/controls-bench/periodic-exam.js --dry-run · 🔴 `days_between_runs` va MENOR que el hueco más corto entre `scheduled_days` (de martes a viernes = 3 días justos; los días se escriben en inglés: `monday` … `sunday`), no igual: el sello se escribe al TERMINAR la corrida (~02:16) y el disparador siguiente llega a las 02:00, así que con 3 el viernes encontraba 2 días y 23 h 44 min y se salteaba SIEMPRE — el examen corría una vez por semana y el aviso de vejez (8 días) no lo veía (2026-09-18). El período sólo frena corridas dobles del mismo disparador; para eso alcanza 2.",
+  "designated_machine": "",
+  "days_between_runs": 2,
+  "scheduled_days": ["tuesday", "friday"],
+  "hour": "02:00"
+}

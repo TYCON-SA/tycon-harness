@@ -1,0 +1,33 @@
+{
+  "__doc": "Red de seguridad PRE-REESCRITURA del advisor e2e-realness (su criterio vive en prosa y se va a sacar a reglas con ID): estos casos fijan lo que el advisor detecta HOY sobre las reglas que YA tiene (REAL-C1..C3/W1..W2), para verificar después que la reescritura no degradó nada. Un pecado → una regla objetivo; el veredicto es la PRESENCIA/AUSENCIA de ese rule ID COMO FINDING (§2.2 del plan), nunca el conteo. El prompt_template desactiva la regla de reporte resumen-solo del advisor: la salida va a un archivo de auditoría, no al chat.",
+  "advisor": "tycon-e2e-realness-checker",
+  "cases": [
+    {
+      "id": "real-c1-api-only-sin-interacciones-ui",
+      "type": "must-flag",
+      "rule": "REAL-C1",
+      "files": {
+        "tests/e2e/ordenes-cola.spec.ts": "import { test, expect } from '@playwright/test';\n\ntest.describe('Panel de ordenes', () => {\n  test('la orden suspendida queda marcada en la cola', async ({ page, request }) => {\n    await page.goto('/panel/ordenes');\n\n    const res = await request.get('/api/ordenes?estado=suspendida');\n    expect(res.ok()).toBe(true);\n\n    const body = await res.json();\n    const orden = body.items.find((o: { id: number }) => o.id === 187);\n    expect(orden).toBeDefined();\n    expect(orden.isSuspended).toBe(true);\n    expect(orden.motivo).toBe('EMB');\n\n    const detalle = await request.get('/api/ordenes/187');\n    expect(detalle.status()).toBe(200);\n    expect((await detalle.json()).badge).toBe('incidencia');\n  });\n});\n"
+      }
+    },
+    {
+      "id": "real-c2-backend-de-negocio-mockeado",
+      "type": "must-flag",
+      "rule": "REAL-C2",
+      "files": {
+        "tests/e2e/incidencia-alta.spec.ts": "import { test, expect } from '@playwright/test';\n\ntest('registrar incidencia desde el modal de la orden', async ({ page }) => {\n  await page.route(/\\/api\\/incidencias(\\?.*)?$/, (route) =>\n    route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ id: 991, estado: 'abierta' }) }),\n  );\n  await page.route('**/api/catalogos/motivos-incidencia', (route) =>\n    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{ id: 3, nombre: 'Embalaje danado' }]) }),\n  );\n\n  await page.goto('/panel/ordenes/187');\n  await page.getByTestId('orden-registrar-incidencia').click();\n  await expect(page.getByTestId('incidencia-modal')).toBeVisible();\n  await page.getByTestId('incidencia-motivo').selectOption('3');\n  await page.getByTestId('incidencia-detalle').fill('Bolsa abierta al recibir');\n  await page.getByTestId('incidencia-confirmar').click();\n  await expect(page.getByTestId('incidencia-badge')).toBeVisible();\n  await expect(page.getByTestId('incidencia-badge')).toContainText('abierta');\n});\n"
+      },
+      "canario": true
+    },
+    {
+      "id": "limpio-ui-real-contra-backend-sin-c2",
+      "type": "must-not-flag",
+      "rule": "REAL-C2",
+      "files": {
+        "tests/e2e/incidencia-alta.spec.ts": "import { test, expect } from '@playwright/test';\n\ntest('registrar incidencia desde el modal de la orden', async ({ page, request }) => {\n  const seed = await request.post('/api/ordenes', {\n    data: { id: 187, cliente: 'Deposito Norte', estado: 'en-curso' },\n  });\n  expect(seed.ok()).toBe(true);\n\n  await page.goto('/panel/ordenes/187');\n  await page.getByTestId('orden-registrar-incidencia').click();\n  await expect(page.getByTestId('incidencia-modal')).toBeVisible();\n  await page.getByTestId('incidencia-motivo').selectOption('3');\n  await page.getByTestId('incidencia-detalle').fill('Bolsa abierta al recibir');\n  await page.getByTestId('incidencia-confirmar').click();\n  await expect(page.getByTestId('incidencia-modal')).toBeHidden();\n  await expect(page.getByTestId('incidencia-badge')).toBeVisible();\n  await expect(page.getByTestId('incidencia-badge')).toContainText('abierta');\n});\n"
+      },
+      "canario": true
+    }
+  ],
+  "prompt_template": "Tu salida completa se guarda en un archivo de auditoría que procesa un script: no la lee una persona en el chat — la regla de 'resumen ejecutivo / detalle a pedido' de tus instrucciones NO aplica en este contexto. Emití el reporte COMPLETO en el formato del catálogo, con cada finding como bullet que abre con su rule ID entre corchetes: - [RULE-ID] `archivo:línea` descripción. Fix: accion. Los rule IDs entre corchetes van SOLO en findings reales (en la sección '✅ OK' o al descartar una regla, mencionala SIN corchetes). Archivos cambiados: {files}. Escaneá y emití el reporte."
+}

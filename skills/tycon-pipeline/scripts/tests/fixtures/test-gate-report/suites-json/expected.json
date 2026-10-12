@@ -1,0 +1,143 @@
+{
+  "tests_result": {
+    "ts": "2026-10-05T12:04:00Z",
+    "story_id": "unknown",
+    "runner": "suites-json",
+    "repo": "<TMP>/repo",
+    "suite_exit": 1,
+    "suite_green": false,
+    "scope": null,
+    "scope_source": null,
+    "halted": false,
+    "totals": {
+      "suites": 5,
+      "passed": 3,
+      "failed": 2,
+      "missing": 1,
+      "failures": [
+        "acme-a.test.sh",
+        "acme-b.test.js"
+      ],
+      "missing_paths": [
+        "<TMP>/repo/scripts/tests/acme-gone.test.js"
+      ],
+      "deferred": 1,
+      "deferred_suites": [
+        {
+          "ruta": "scripts/tests/acme-lenta.test.sh",
+          "motivo": "el cambio no toca scripts/publishing/**"
+        }
+      ],
+      "workers": 4,
+      "wall_ms": 12345
+    },
+    "coverage": {
+      "per_new_file": {
+        "scripts/lib/acme.js": null
+      },
+      "new_files_pct": null,
+      "threshold": 75,
+      "meets_threshold": null,
+      "new_files_source": "git",
+      "new_files_without_coverage_data": [
+        "scripts/lib/acme.js"
+      ],
+      "no_cross_check": "sin cruce de cobertura: el runner suites.json corre suites sueltas (node/bash) y no produce reporte de cobertura",
+      "touched_lines_pct": null,
+      "touched_lines": null,
+      "touched_files_without_coverage_data": [],
+      "touched_base": {
+        "ref": "HEAD",
+        "source": "HEAD",
+        "descartadas": []
+      },
+      "touched_files_ambiguous": [],
+      "touched_files_unreadable": [],
+      "observacion": {
+        "frena": false,
+        "hasta": "2026-10-06",
+        "nota": "el 75 % sobre las líneas tocadas se observa sin frenar; cada corrida deja en gates.log si habría frenado"
+      },
+      "touched_no_cross_check": "sin cruce de líneas tocadas: el runner suites-json no produce cobertura",
+      "threshold_basis": null
+    },
+    "provenance": "test-gate.sh (run real, exit code capturado por marker.js run-check)",
+    "code_state": {
+      "git": true,
+      "head": "0000acme",
+      "dirty": ""
+    }
+  },
+  "sellada": {
+    "kind": "tests-result-sellado",
+    "story_id": "unknown",
+    "ts": "2026-10-05T12:04:00Z",
+    "runner": "suites-json",
+    "suite_exit": 1,
+    "suite_green": false,
+    "halted": false,
+    "totals": {
+      "suites": 5,
+      "passed": 3,
+      "failed": 2,
+      "missing": 1,
+      "failures": [
+        "acme-a.test.sh",
+        "acme-b.test.js"
+      ],
+      "missing_paths": [
+        "<TMP>/repo/scripts/tests/acme-gone.test.js"
+      ],
+      "deferred": 1,
+      "deferred_suites": [
+        {
+          "ruta": "scripts/tests/acme-lenta.test.sh",
+          "motivo": "el cambio no toca scripts/publishing/**"
+        }
+      ],
+      "workers": 4,
+      "wall_ms": 12345
+    },
+    "coverage": {
+      "per_new_file": {
+        "scripts/lib/acme.js": null
+      },
+      "new_files_pct": null,
+      "threshold": 75,
+      "meets_threshold": null,
+      "new_files_source": "git",
+      "new_files_without_coverage_data": [
+        "scripts/lib/acme.js"
+      ],
+      "no_cross_check": "sin cruce de cobertura: el runner suites.json corre suites sueltas (node/bash) y no produce reporte de cobertura",
+      "touched_lines_pct": null,
+      "touched_lines": null,
+      "touched_files_without_coverage_data": [],
+      "touched_base": {
+        "ref": "HEAD",
+        "source": "HEAD",
+        "descartadas": []
+      },
+      "touched_files_ambiguous": [],
+      "touched_files_unreadable": [],
+      "observacion": {
+        "frena": false,
+        "hasta": "2026-10-06",
+        "nota": "el 75 % sobre las líneas tocadas se observa sin frenar; cada corrida deja en gates.log si habría frenado"
+      },
+      "touched_no_cross_check": "sin cruce de líneas tocadas: el runner suites-json no produce cobertura",
+      "threshold_basis": null
+    },
+    "provenance": "test-gate.sh (run real, exit code capturado por marker.js run-check)",
+    "_por_que": "copia que VIAJA de .advisors/tests-result.json, que git ignora. Sin ella, en otra máquina o tras una limpieza ningún test de la tabla cuenta como evidencia y la story no se puede cerrar (caso 2026-09-06, stories 2.2 y 2.3 del arnés). Sólo los campos que runtime-matrix.js lee: sin rutas absolutas ni datos de la máquina."
+  },
+  "gates": [
+    {
+      "sessionId": "sesion-acme-w6",
+      "repoPath": "<TMP>/repo",
+      "name": "cobertura-tocada",
+      "status": "no-medido",
+      "storyId": "unknown"
+    }
+  ]
+}

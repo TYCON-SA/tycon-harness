@@ -1,0 +1,139 @@
+{
+  "tests_result": {
+    "ts": "2026-10-05T12:02:00Z",
+    "story_id": "9.3",
+    "runner": "jest",
+    "repo": "<TMP>/repo",
+    "suite_exit": 0,
+    "suite_green": true,
+    "scope": "app",
+    "scope_source": "story",
+    "halted": false,
+    "totals": {
+      "total": 11,
+      "passed": 9,
+      "failed": 0,
+      "skipped": 2
+    },
+    "coverage": {
+      "per_new_file": {
+        "app/src/validate.js": 75
+      },
+      "new_files_pct": 75,
+      "threshold": 75,
+      "meets_threshold": false,
+      "declared_not_found": [
+        "app/src/ghost.js"
+      ],
+      "new_files_source": "story:files_to_create",
+      "new_files_without_coverage_data": [],
+      "touched_lines_pct": 66.7,
+      "touched_lines": {
+        "covered": 4,
+        "measurable": 6,
+        "per_file": {
+          "app/src/form.js": {
+            "covered": 1,
+            "measurable": 2,
+            "pct": 50
+          },
+          "app/src/validate.js": {
+            "covered": 3,
+            "measurable": 4,
+            "pct": 75
+          }
+        }
+      },
+      "touched_files_without_coverage_data": [],
+      "touched_base": {
+        "ref": "HEAD~1",
+        "source": "env",
+        "descartadas": []
+      },
+      "touched_files_ambiguous": [],
+      "touched_files_unreadable": [],
+      "observacion": {
+        "frena": false,
+        "hasta": "2026-10-06",
+        "nota": "el 75 % sobre las líneas tocadas se observa sin frenar; cada corrida deja en gates.log si habría frenado"
+      },
+      "threshold_basis": "touched_lines"
+    },
+    "provenance": "test-gate.sh (run real, exit code capturado por marker.js run-check)",
+    "code_state": {
+      "git": true,
+      "head": "0000acme",
+      "dirty": null
+    }
+  },
+  "sellada": {
+    "kind": "tests-result-sellado",
+    "story_id": "9.3",
+    "ts": "2026-10-05T12:02:00Z",
+    "runner": "jest",
+    "suite_exit": 0,
+    "suite_green": true,
+    "halted": false,
+    "totals": {
+      "total": 11,
+      "passed": 9,
+      "failed": 0,
+      "skipped": 2
+    },
+    "coverage": {
+      "per_new_file": {
+        "app/src/validate.js": 75
+      },
+      "new_files_pct": 75,
+      "threshold": 75,
+      "meets_threshold": false,
+      "declared_not_found": [
+        "app/src/ghost.js"
+      ],
+      "new_files_source": "story:files_to_create",
+      "new_files_without_coverage_data": [],
+      "touched_lines_pct": 66.7,
+      "touched_lines": {
+        "covered": 4,
+        "measurable": 6,
+        "per_file": {
+          "app/src/form.js": {
+            "covered": 1,
+            "measurable": 2,
+            "pct": 50
+          },
+          "app/src/validate.js": {
+            "covered": 3,
+            "measurable": 4,
+            "pct": 75
+          }
+        }
+      },
+      "touched_files_without_coverage_data": [],
+      "touched_base": {
+        "ref": "HEAD~1",
+        "source": "env",
+        "descartadas": []
+      },
+      "touched_files_ambiguous": [],
+      "touched_files_unreadable": [],
+      "observacion": {
+        "frena": false,
+        "hasta": "2026-10-06",
+        "nota": "el 75 % sobre las líneas tocadas se observa sin frenar; cada corrida deja en gates.log si habría frenado"
+      },
+      "threshold_basis": "touched_lines"
+    },
+    "provenance": "test-gate.sh (run real, exit code capturado por marker.js run-check)",
+    "_por_que": "copia que VIAJA de .advisors/tests-result.json, que git ignora. Sin ella, en otra máquina o tras una limpieza ningún test de la tabla cuenta como evidencia y la story no se puede cerrar (caso 2026-09-06, stories 2.2 y 2.3 del arnés). Sólo los campos que runtime-matrix.js lee: sin rutas absolutas ni datos de la máquina."
+  },
+  "gates": [
+    {
+      "sessionId": "sesion-acme-w6",
+      "repoPath": "<TMP>/repo",
+      "name": "cobertura-tocada",
+      "status": "habria-frenado",
+      "storyId": "9.3"
+    }
+  ]
+}

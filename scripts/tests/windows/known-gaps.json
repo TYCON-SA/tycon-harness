@@ -1,0 +1,126 @@
+{
+  "__doc": "Lo que HOY no anda en Windows, medido: un hueco por hallazgo de la corrida de base, con la tanda de la story 8.17 que lo cierra (closes: W1 a W8) y el paso que lo mide (step). Lo lee scripts/tests/windows/run.js: la corrida es roja si aparece un hallazgo que no está acá, si un hueco de acá ya no se reproduce (se borra) o si un hueco no dice su tanda. Se escribe desde una corrida (node scripts/tests/windows/run.js propose-gaps <windows-report.json>), nunca desde el análisis: por eso nace vacía y sin línea de base. La línea de base se escribió desde la corrida 11937 (measure sobre main, 2026-10-05): desde ahí, un hallazgo nuevo o un hueco que ya no se reproduce ponen roja la corrida. W7 la deja vacía. Los huecos del banco (`bench:red:<guion>::<id>`) los lee además scripts/controls-bench/runner.js, en Windows: cada uno declara en `match` el motivo con que falla su caso (una expresión que todos los motivos de la falla tienen que cumplir, medida en una corrida). Sólo por ese motivo el rojo cuenta como «conocido»; si el caso falla por otra cosa es un rojo nuevo, y si sale verde o ya no tiene caso que lo mida, el banco pide sacar el hueco.",
+  "baseline": {
+    "run": "11937",
+    "date": "2026-10-05T16:09:44.315Z",
+    "harness_ref": "7280c9557f2b0f0bb0225408a1690ac9990a9b94"
+  },
+  "gaps": [
+    {
+      "id": "bench:red:telegram-zombie-sweep.sh::mata-launcher-huerfano-y-respeta-vivo",
+      "step": "bench",
+      "closes": "W4",
+      "match": "^stdout no matchea /(huérfanos|pids: 9001 9002)/$",
+      "note": "Medido en la corrida 11694 (stdout no dice «huérfanos»): el barrido de procesos huérfanos del plugin de Telegram no anda en Windows: compara la salida de `ps` con la carpeta del plugin bajo `$HOME`, que en el bash de Git es `/c/…` y no la ruta de Windows del proceso, y el `ps` de Git Bash no ve los procesos de Windows. Queda afuera de Windows a propósito (story 8.17, «Qué queda afuera en Windows»): la tanda W4 lo declara en windows-support.json y deja de correr sus casos ahí."
+    },
+    {
+      "id": "bench:red:telegram-zombie-sweep.sh::mata-de-verdad",
+      "step": "bench",
+      "closes": "W4",
+      "match": "^stdout no matchea /huérfanos cerrados ",
+      "note": "Medido en la corrida 11694 (no cerró el proceso de prueba): el barrido de procesos huérfanos del plugin de Telegram no anda en Windows: compara la salida de `ps` con la carpeta del plugin bajo `$HOME`, que en el bash de Git es `/c/…` y no la ruta de Windows del proceso, y el `ps` de Git Bash no ve los procesos de Windows. Queda afuera de Windows a propósito (story 8.17, «Qué queda afuera en Windows»): la tanda W4 lo declara en windows-support.json y deja de correr sus casos ahí."
+    },
+    {
+      "id": "fire:no-portable-case:PostToolUse:@tcg:retro-pending.js",
+      "step": "fire-registered",
+      "closes": "W1",
+      "note": "@tcg:retro-pending.js frena (el banco le pide frenar) y el banco no trae, para PostToolUse, un caso «tiene que frenar» que se pueda disparar sin preparar un repo por shell: su freno se mide con el banco en Windows"
+    },
+    {
+      "id": "fire:no-portable-case:PostToolUse:@tcg:unpushed-work-notice.js",
+      "step": "fire-registered",
+      "closes": "W1",
+      "note": "@tcg:unpushed-work-notice.js frena (el banco le pide frenar) y el banco no trae, para PostToolUse, un caso «tiene que frenar» que se pueda disparar sin preparar un repo por shell: su freno se mide con el banco en Windows"
+    },
+    {
+      "id": "fire:no-portable-case:PostToolUse:@tcg:failed-query-notice.js",
+      "step": "fire-registered",
+      "closes": "W1",
+      "note": "@tcg:failed-query-notice.js frena (el banco le pide frenar) y el banco no trae, para PostToolUse, un caso «tiene que frenar» que se pueda disparar sin preparar un repo por shell: su freno se mide con el banco en Windows"
+    },
+    {
+      "id": "fire:no-portable-case:PreToolUse:tycon-pipeline/scripts/hook-pre-edit.js",
+      "step": "fire-registered",
+      "closes": "W1",
+      "note": "tycon-pipeline/scripts/hook-pre-edit.js frena (el banco le pide frenar) y el banco no trae, para PreToolUse, un caso «tiene que frenar» que se pueda disparar sin preparar un repo por shell: su freno se mide con el banco en Windows"
+    },
+    {
+      "id": "fire:no-portable-case:PreToolUse:tycon-pipeline/scripts/on-pre-commit.js",
+      "step": "fire-registered",
+      "closes": "W1",
+      "note": "tycon-pipeline/scripts/on-pre-commit.js frena (el banco le pide frenar) y el banco no trae, para PreToolUse, un caso «tiene que frenar» que se pueda disparar sin preparar un repo por shell: su freno se mide con el banco en Windows"
+    },
+    {
+      "id": "fire:no-portable-case:PreToolUse:tycon-pipeline/scripts/on-bash-write-gate.js",
+      "step": "fire-registered",
+      "closes": "W1",
+      "note": "tycon-pipeline/scripts/on-bash-write-gate.js frena (el banco le pide frenar) y el banco no trae, para PreToolUse, un caso «tiene que frenar» que se pueda disparar sin preparar un repo por shell: su freno se mide con el banco en Windows"
+    },
+    {
+      "id": "fire:brake-passes:PreToolUse:@tcg:pr-auto-complete-guard.js:pwsh-command",
+      "step": "fire-registered",
+      "closes": "W5",
+      "note": "@tcg:pr-auto-complete-guard.js, lanzado por pwsh-command, NO frenó la entrada que tiene que frenar (caso bloquea-el-pr-2859-tal-cual): salió 1 — 🔴 Este pull request se está armando A MANO y no va a quedar bien (va a main):"
+    },
+    {
+      "id": "fire:brake-passes:PreToolUse:@tcg:pr-auto-complete-guard.js:pwsh-file",
+      "step": "fire-registered",
+      "closes": "W5",
+      "note": "@tcg:pr-auto-complete-guard.js, lanzado por pwsh-file, NO frenó la entrada que tiene que frenar (caso bloquea-el-pr-2859-tal-cual): salió 0 — 🔴 Este pull request se está armando A MANO y no va a quedar bien (va a main):"
+    },
+    {
+      "id": "fire:brake-passes:PreToolUse:@tcg:public-push-guard.js:pwsh-command",
+      "step": "fire-registered",
+      "closes": "W5",
+      "note": "@tcg:public-push-guard.js, lanzado por pwsh-command, NO frenó la entrada que tiene que frenar (caso bloquea-el-repo-publico-nombrado-con-repo-desde-otra-carpeta): salió 1 — ⛔ `gh pr comment` FRENADO — publica en el repo público del arnés y 1 cosa(s) de lo que publica no pueden salir:"
+    },
+    {
+      "id": "fire:brake-passes:PreToolUse:@tcg:public-push-guard.js:pwsh-file",
+      "step": "fire-registered",
+      "closes": "W5",
+      "note": "@tcg:public-push-guard.js, lanzado por pwsh-file, NO frenó la entrada que tiene que frenar (caso bloquea-el-repo-publico-nombrado-con-repo-desde-otra-carpeta): salió 0 — ⛔ `gh pr comment` FRENADO — publica en el repo público del arnés y 1 cosa(s) de lo que publica no pueden salir:"
+    },
+    {
+      "id": "fire:brake-passes:PreToolUse:@tcg:safety-guard-pre.sh:pwsh-command",
+      "step": "fire-registered",
+      "closes": "W5",
+      "note": "@tcg:safety-guard-pre.sh, lanzado por pwsh-command, NO frenó la entrada que tiene que frenar (caso block-rm-root): salió 1 — 🛑 TYCON safety-guard BLOCK [FS-C2]"
+    },
+    {
+      "id": "fire:brake-passes:PreToolUse:@tcg:safety-guard-pre.sh:pwsh-file",
+      "step": "fire-registered",
+      "closes": "W5",
+      "note": "@tcg:safety-guard-pre.sh, lanzado por pwsh-file, NO frenó la entrada que tiene que frenar (caso block-rm-root): salió 0 — 🛑 TYCON safety-guard BLOCK [FS-C2]"
+    },
+    {
+      "id": "fire:brake-passes:PreToolUse:@tcg:test-scope-guard-pre.sh:pwsh-command",
+      "step": "fire-registered",
+      "closes": "W5",
+      "note": "@tcg:test-scope-guard-pre.sh, lanzado por pwsh-command, NO frenó la entrada que tiene que frenar (caso block-npm-test-sin-scope): salió 1 — 🛑 TYCON test-scope-guard BLOCK [TEST-DISCIPLINE]"
+    },
+    {
+      "id": "fire:brake-passes:PreToolUse:@tcg:test-scope-guard-pre.sh:pwsh-file",
+      "step": "fire-registered",
+      "closes": "W5",
+      "note": "@tcg:test-scope-guard-pre.sh, lanzado por pwsh-file, NO frenó la entrada que tiene que frenar (caso block-npm-test-sin-scope): salió 0 — 🛑 TYCON test-scope-guard BLOCK [TEST-DISCIPLINE]"
+    },
+    {
+      "id": "fire:no-portable-case:Stop:tycon-pipeline/scripts/on-stop-dod-gate.js",
+      "step": "fire-registered",
+      "closes": "W1",
+      "note": "tycon-pipeline/scripts/on-stop-dod-gate.js frena (el banco le pide frenar) y el banco no trae, para Stop, un caso «tiene que frenar» que se pueda disparar sin preparar un repo por shell: su freno se mide con el banco en Windows"
+    },
+    {
+      "id": "fire:no-portable-case:Stop:@tcg:retro-pending.js",
+      "step": "fire-registered",
+      "closes": "W1",
+      "note": "@tcg:retro-pending.js frena (el banco le pide frenar) y el banco no trae, para Stop, un caso «tiene que frenar» que se pueda disparar sin preparar un repo por shell: su freno se mide con el banco en Windows"
+    },
+    {
+      "id": "fire:no-portable-case:Stop:@tcg:unpushed-work-notice.js",
+      "step": "fire-registered",
+      "closes": "W1",
+      "note": "@tcg:unpushed-work-notice.js frena (el banco le pide frenar) y el banco no trae, para Stop, un caso «tiene que frenar» que se pueda disparar sin preparar un repo por shell: su freno se mide con el banco en Windows"
+    }
+  ]
+}

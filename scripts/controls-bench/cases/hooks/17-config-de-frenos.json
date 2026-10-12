@@ -1,0 +1,206 @@
+{
+  "__doc": "FIX-1 (2026-08-25): de dónde leen los FRENOS la config del repo. Casi todos consultaban `.tycon/advisors.yaml` COMO ESTÁ EN LA CARPETA, así que alcanzaba con escribir ese archivo —sin commitear, sin rastro en ningún commit, sin despertar revisores— para apagarlos: no daba error, daba silencio. Reproducido: con `stories.id_pattern: ^ZZZ-...` en la carpeta, ninguna story es una story y las DOS capas que impiden cerrar sin evidencia salen exit 0 y cero mensajes. La regla que fijan estos casos: AFLOJAR exige commit, APRETAR vale al toque. Ver guides/decisions/controles-apagables-por-config-2026-08-25.md §C1/C3/C8/C9 y lib/config-source.js.",
+  "hooks": [
+    {
+      "hook": "on-pre-commit.js (config de frenos, capa 1)",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/on-pre-commit.js",
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "cases": [
+        {
+          "id": "c1-bloquea-aunque-el-yaml-de-la-carpeta-excluya-la-story",
+          "type": "must-block",
+          "__doc": "C1: el id_pattern imposible escrito SOLO en la carpeta ya no apaga el freno.",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p specs/stories .advisors/dod-runtime .tycon",
+            "printf -- '---\\nstory: \"4.2\"\\nepic: \"4\"\\nstatus: in-progress\\n---\\n# Story 4.2\\n\\n## Acceptance Criteria\\n1. AC uno E2E\\n\\ntests_done_playwright_spec: tests/e2e/foo.spec.ts\\n' > specs/stories/4-2.md",
+            "git add specs && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "node -e \"const fs=require('fs');const p='specs/stories/4-2.md';fs.writeFileSync(p,fs.readFileSync(p,'utf8').replace('status: in-progress','status: done'))\"",
+            "git add specs/stories/4-2.md",
+            "printf '%s\\n' 'stories:' '  id_pattern: ^ZZZ-[0-9]+$' > .tycon/advisors.yaml"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit -m \"story 4.2 done\""
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "DoD|runtime|evidencia"
+            ]
+          }
+        },
+        {
+          "id": "c1-el-recorte-COMMITEADO-si-vale",
+          "type": "must-not-block",
+          "__doc": "La contracara: recortar el alcance del freno es legítimo (material de un banco de evals que sólo LUCE como story) — pero commiteado. Sin este caso, 'la unión' podría implementarse como 'ignorá siempre la config' y nadie se enteraría.",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p specs/stories .tycon",
+            "printf '%s\\n' 'stories:' '  id_pattern: ^EV-[0-9]+$' > .tycon/advisors.yaml",
+            "printf -- '---\\nstory: \"4.2\"\\nepic: \"4\"\\nstatus: in-progress\\n---\\n# Story 4.2\\n\\n## Acceptance Criteria\\n1. AC uno E2E\\n\\ntests_done_playwright_spec: tests/e2e/foo.spec.ts\\n' > specs/stories/4-2.md",
+            "git add .tycon specs && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "node -e \"const fs=require('fs');const p='specs/stories/4-2.md';fs.writeFileSync(p,fs.readFileSync(p,'utf8').replace('status: in-progress','status: done'))\"",
+            "git add specs/stories/4-2.md"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit -m \"story 4.2 done\""
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "c3-la-evidencia-de-un-hermano-sin-commitear-no-cuenta",
+          "type": "must-block",
+          "__doc": "C3: declarar un repo hermano hace que la evidencia de OTRO repo cuente como propia — eso AFLOJA, así que sólo vale commiteado, y el freno lo dice en vez de dejar al dev adivinando por qué da rojo.",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p specs/stories .advisors/dod-runtime .tycon ../Hermano/.advisors/dod-runtime",
+            "printf 'evidencia del hermano\\n' > ../Hermano/.advisors/dod-runtime/4.2-20260825-smoke.md",
+            "printf -- '---\\nstory: \"4.2\"\\nepic: \"4\"\\nstatus: in-progress\\n---\\n# Story 4.2\\n\\n## Acceptance Criteria\\n1. AC uno E2E\\n\\ntests_done_playwright_spec: tests/e2e/foo.spec.ts\\n' > specs/stories/4-2.md",
+            "git add specs && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "node -e \"const fs=require('fs');const p='specs/stories/4-2.md';fs.writeFileSync(p,fs.readFileSync(p,'utf8').replace('status: in-progress','status: done'))\"",
+            "git add specs/stories/4-2.md",
+            "printf '%s\\n' 'evidence:' '  companion_repos:' '    - Hermano' > .tycon/advisors.yaml"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit -m \"story 4.2 done\""
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "companion_repos",
+              "AFLOJA el freno"
+            ]
+          }
+        },
+        {
+          "id": "c8-qa_guide-off-sin-commitear-no-apaga-el-aviso",
+          "type": "must-block",
+          "__doc": "C8 parte 2: `qa_guide: off` apaga el aviso de guía de pruebas (y un tercio del de evidencia de story). Apagar es aflojar → sólo commiteado. El bloqueo de esta corrida lo produce la evidencia de DoD; lo que este caso mide es que el AVISO de la guía sobreviva al `off` sin commitear.",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p specs/stories .advisors/dod-runtime .tycon",
+            "printf -- '---\\nstory: \"4.2\"\\nepic: \"4\"\\nstatus: in-progress\\n---\\n# Story 4.2\\n\\n## Acceptance Criteria\\n1. AC uno E2E\\n\\ntests_done_playwright_spec: tests/e2e/foo.spec.ts\\n' > specs/stories/4-2.md",
+            "git add specs && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "node -e \"const fs=require('fs');const p='specs/stories/4-2.md';fs.writeFileSync(p,fs.readFileSync(p,'utf8').replace('status: in-progress','status: done'))\"",
+            "git add specs/stories/4-2.md",
+            "printf '%s\\n' 'qa_guide: off' > .tycon/advisors.yaml"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit -m \"story 4.2 done\""
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "tycon-qa-guide"
+            ]
+          }
+        },
+        {
+          "id": "c2-apagar-la-escotilla-de-atdd-NO-apaga-el-aviso-de-evidencia",
+          "type": "must-block",
+          "__doc": "El hallazgo reportable del caso C2: `off` en .tycon/atdd-gate apagaba TAMBIÉN el aviso de criterios sin verificar, y esa herencia no estaba escrita en ningún lado. Decisión del dev (D1): dos llaves.",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p specs/stories .advisors/dod-runtime .tycon",
+            "printf -- '---\\nstory: \"4.2\"\\nepic: \"4\"\\nstatus: in-progress\\n---\\n# Story 4.2\\n\\n## Acceptance Criteria\\n1. AC uno E2E\\n\\ntests_done_playwright_spec: tests/e2e/foo.spec.ts\\n' > specs/stories/4-2.md",
+            "printf 'off\\n' > .tycon/atdd-gate",
+            "git add specs .tycon && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "node -e \"const fs=require('fs');const p='specs/stories/4-2.md';fs.writeFileSync(p,fs.readFileSync(p,'utf8').replace('status: in-progress','status: done'))\"",
+            "git add specs/stories/4-2.md"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit -m \"story 4.2 done\""
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "tycon-story-evidence"
+            ],
+            "stdout_not_re": [
+              "tycon-atdd-commit"
+            ]
+          }
+        },
+        {
+          "id": "c2-la-escotilla-propia-apaga-SOLO-lo-suyo-y-exige-commit",
+          "type": "must-block",
+          "__doc": "La llave propia del gate de evidencia: escrita en la carpeta no apaga nada (apagar es aflojar). Este caso la deja SIN commitear, así que el aviso tiene que seguir saliendo.",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p specs/stories .advisors/dod-runtime .tycon",
+            "printf -- '---\\nstory: \"4.2\"\\nepic: \"4\"\\nstatus: in-progress\\n---\\n# Story 4.2\\n\\n## Acceptance Criteria\\n1. AC uno E2E\\n\\ntests_done_playwright_spec: tests/e2e/foo.spec.ts\\n' > specs/stories/4-2.md",
+            "git add specs && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "printf 'off\\n' > .tycon/story-evidence-gate",
+            "node -e \"const fs=require('fs');const p='specs/stories/4-2.md';fs.writeFileSync(p,fs.readFileSync(p,'utf8').replace('status: in-progress','status: done'))\"",
+            "git add specs/stories/4-2.md"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit -m \"story 4.2 done\""
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "tycon-story-evidence"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "hook": "hook-pre-edit.js → on-frontmatter-write (config de frenos, capa 2)",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/hook-pre-edit.js",
+      "__doc": "Se ejerce el DESPACHADOR, no el handler suelto: desde la consolidación H10 (2026-05-21) `on-frontmatter-write.js` corre in-process dentro de `hook-pre-edit.js`, que es lo que está registrado en las dos herramientas. Apuntarle al handler directo hacía que el chequeo de registro de Codex reportara un hueco que no existe.",
+      "event": "PreToolUse",
+      "matcher": "Edit|Write",
+      "cases": [
+        {
+          "id": "c1-capa2-bloquea-aunque-el-yaml-de-la-carpeta-excluya-la-story",
+          "type": "must-block",
+          "__doc": "El mismo control tiene DOS capas y el mismo archivo sin commitear apagaba las dos. Ésta es la del Edit/Write.",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p specs/stories .advisors/dod-runtime .tycon",
+            "printf -- '---\\nstory: \"4.2\"\\nepic: \"4\"\\nstatus: in-progress\\n---\\n# Story 4.2\\n\\n## Acceptance Criteria\\n1. AC uno E2E\\n\\ntests_done_playwright_spec: tests/e2e/foo.spec.ts\\n' > specs/stories/4-2.md",
+            "git add specs && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "printf '%s\\n' 'stories:' '  id_pattern: ^ZZZ-[0-9]+$' > .tycon/advisors.yaml"
+          ],
+          "stdin": {
+            "tool_name": "Edit",
+            "tool_input": {
+              "file_path": "${FIXTURE}/specs/stories/4-2.md",
+              "old_string": "status: in-progress",
+              "new_string": "status: done"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "BLOQUEADO|evidence|evidencia"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

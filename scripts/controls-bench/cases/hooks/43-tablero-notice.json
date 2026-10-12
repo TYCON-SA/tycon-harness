@@ -1,0 +1,441 @@
+{
+  "__doc": "Aviso de arranque del tablero del arnés (story 2.12). La página la genera el nocturno de Azure (pipelines/azure-pipelines-tablero.yml) y trae un sello con su fecha: este aviso lo lee de lo PUBLICADO (origin/main), denuncia si tiene más de 2 días callando los números, avisa en naranja si salió parcial, y habla aunque esté completa. Relojes fijos (TYCON_DASHBOARD_NOW) y fechas lejos del umbral: un caso que depende de la hora enseña a ignorar el rojo del banco.",
+  "hooks": [
+    {
+      "hook": "dashboard-notice.js (el tablero del arnés dice de cuándo es y si salió completo)",
+      "script": "${FIXTURE}/tcg/scripts/hooks/dashboard-notice.js",
+      "event": "SessionStart",
+      "matcher": "*",
+      "cases": [
+        {
+          "id": "denuncia-pagina-vieja-y-calla-los-numeros",
+          "type": "must-emit",
+          "__doc": "T17 · AC 16. La página publicada tiene un sello de hace 4 días y números centinela en las fichas y en el sello: el aviso denuncia desde cuándo no se genera y NO muestra ninguno. ROJO PREVIO: leer la fecha del mtime → tras un git pull el archivo parece de hoy y el aviso calla el atraso; o mostrar los conteos del sello viejo.",
+          "files": {
+            "tcg/artifacts/tablero-del-arnes.html": "<!doctype html><html lang=\"es\"><head><meta charset=\"utf-8\"><title>El arnés en seis preguntas</title><script type=\"application/json\" id=\"tablero-sello\">{\"esquema\": 1, \"generado\": \"2026-09-10T08:31:00.000Z\", \"snapshot\": \"2026-09-10\", \"modo\": \"nocturno\", \"corrida\": \"4242\", \"fuentes\": {\"esperadas\": 13, \"al_dia\": 13}, \"buzon\": {\"estado\": \"leido\", \"maquinas\": 7777}}</script></head><body><b>9173</b> fichas <b>31337</b></body></html>"
+          },
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/nightly/dashboard && cp $TCG/scripts/hooks/dashboard-notice.js $TCG/scripts/hooks/dependencies-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && cp $TCG/scripts/nightly/dashboard/seal.js tcg/scripts/nightly/dashboard/",
+            "git -C tcg init -q . && git -C tcg add -A && git -C tcg -c user.email=t@t -c user.name=t commit -qm v1 && git -C tcg update-ref refs/remotes/origin/main HEAD"
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "env": {
+            "TYCON_DASHBOARD_NOW":"2026-09-14T11:00:00Z"
+          },
+          "expect": {
+            "stdout_re": [
+              "NO SE ESTÁ GENERANDO",
+              "desde el 2026-09-10",
+              "hace 4 día",
+              "tablero-del-arnes"
+            ],
+            "stdout_not_re": [
+              "9173",
+              "31337",
+              "4242",
+              "7777",
+              "\\b13\\b"
+            ]
+          }
+        },
+        {
+          "id": "la-fecha-sale-del-contenido-no-del-archivo",
+          "type": "must-emit",
+          "__doc": "T17 · AC 16. El archivo se toca DESPUÉS de publicarse (mtime de ahora, como tras un pull): la fecha tiene que salir del sello. ROJO PREVIO: usar el mtime → la página vieja se lee fresca.",
+          "files": {
+            "tcg/artifacts/tablero-del-arnes.html": "<!doctype html><html lang=\"es\"><head><meta charset=\"utf-8\"><title>El arnés en seis preguntas</title><script type=\"application/json\" id=\"tablero-sello\">{\"esquema\": 1, \"generado\": \"2026-09-10T08:31:00.000Z\", \"snapshot\": \"2026-09-10\", \"modo\": \"nocturno\", \"corrida\": \"4242\", \"fuentes\": {\"esperadas\": 13, \"al_dia\": 13}, \"buzon\": {\"estado\": \"leido\", \"maquinas\": 7777}}</script></head><body><b>9173</b> fichas <b>31337</b></body></html>"
+          },
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/nightly/dashboard && cp $TCG/scripts/hooks/dashboard-notice.js $TCG/scripts/hooks/dependencies-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && cp $TCG/scripts/nightly/dashboard/seal.js tcg/scripts/nightly/dashboard/",
+            "git -C tcg init -q . && git -C tcg add -A && git -C tcg -c user.email=t@t -c user.name=t commit -qm v1 && git -C tcg update-ref refs/remotes/origin/main HEAD",
+            "touch tcg/artifacts/tablero-del-arnes.html"
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "env": {
+            "TYCON_DASHBOARD_NOW":"2026-09-14T11:00:00Z"
+          },
+          "expect": {
+            "stdout_re": [
+              "NO SE ESTÁ GENERANDO"
+            ],
+            "stdout_not_re": [
+              "completo",
+              "9173",
+              "31337",
+              "4242",
+              "7777",
+              "\\b13\\b"
+            ]
+          }
+        },
+        {
+          "id": "sin-sello-denuncia-sin-numeros",
+          "type": "must-emit",
+          "__doc": "T18 · AC 17. Una página sin sello (la anterior a la story 2.12) no dice de cuándo es: se denuncia y no se muestra ningún número. ROJO PREVIO: tratarla como fresca, o leer la fecha visible del cuerpo.",
+          "files": {
+            "tcg/artifacts/tablero-del-arnes.html": "<!doctype html><html lang=\"es\"><head><meta charset=\"utf-8\"><title>El arnés en seis preguntas</title></head><body><b>Generado:</b> 2026-09-14 08:31 UTC <b>9173</b></body></html>"
+          },
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/nightly/dashboard && cp $TCG/scripts/hooks/dashboard-notice.js $TCG/scripts/hooks/dependencies-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && cp $TCG/scripts/nightly/dashboard/seal.js tcg/scripts/nightly/dashboard/",
+            "git -C tcg init -q . && git -C tcg add -A && git -C tcg -c user.email=t@t -c user.name=t commit -qm v1 && git -C tcg update-ref refs/remotes/origin/main HEAD"
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "env": {
+            "TYCON_DASHBOARD_NOW":"2026-09-14T11:00:00Z"
+          },
+          "expect": {
+            "stdout_re": [
+              "no dice de cuándo es"
+            ],
+            "stdout_not_re": [
+              "9173",
+              "31337",
+              "4242",
+              "7777",
+              "\\b13\\b"
+            ]
+          }
+        },
+        {
+          "id": "sello-ilegible-denuncia-sin-numeros",
+          "type": "must-emit",
+          "__doc": "T18 · AC 17. Un sello que no es JSON (o no tiene la forma) cuenta como sin fecha. ROJO PREVIO: un sello roto que se lee como «no hay nada que decir».",
+          "files": {
+            "tcg/artifacts/tablero-del-arnes.html": "<!doctype html><html lang=\"es\"><head><meta charset=\"utf-8\"><title>El arnés en seis preguntas</title><script type=\"application/json\" id=\"tablero-sello\">{\"esquema\":1,\"generado\":\"2026-09-14T08:31:00.000Z\", 9173</script></head><body><b>9173</b> fichas <b>31337</b></body></html>"
+          },
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/nightly/dashboard && cp $TCG/scripts/hooks/dashboard-notice.js $TCG/scripts/hooks/dependencies-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && cp $TCG/scripts/nightly/dashboard/seal.js tcg/scripts/nightly/dashboard/",
+            "git -C tcg init -q . && git -C tcg add -A && git -C tcg -c user.email=t@t -c user.name=t commit -qm v1 && git -C tcg update-ref refs/remotes/origin/main HEAD"
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "env": {
+            "TYCON_DASHBOARD_NOW":"2026-09-14T11:00:00Z"
+          },
+          "expect": {
+            "stdout_re": [
+              "no dice de cuándo es"
+            ],
+            "stdout_not_re": [
+              "9173",
+              "31337",
+              "4242",
+              "7777",
+              "\\b13\\b"
+            ]
+          }
+        },
+        {
+          "id": "fresca-y-completa-una-linea",
+          "type": "must-emit",
+          "__doc": "T19 · AC 18. Página de hoy, completa: una línea de estado AUNQUE todo esté bien. Si callara, «el nocturno anda» y «el aviso no corrió» serían el mismo silencio. ROJO PREVIO: callar en verde.",
+          "files": {
+            "tcg/artifacts/tablero-del-arnes.html": "<!doctype html><html lang=\"es\"><head><meta charset=\"utf-8\"><title>El arnés en seis preguntas</title><script type=\"application/json\" id=\"tablero-sello\">{\"esquema\": 1, \"generado\": \"2026-09-14T08:31:00.000Z\", \"snapshot\": \"2026-09-14\", \"modo\": \"nocturno\", \"corrida\": \"4242\", \"fuentes\": {\"esperadas\": 13, \"al_dia\": 13}, \"buzon\": {\"estado\": \"leido\", \"maquinas\": 7777}}</script></head><body><b>9173</b> fichas <b>31337</b></body></html>"
+          },
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/nightly/dashboard && cp $TCG/scripts/hooks/dashboard-notice.js $TCG/scripts/hooks/dependencies-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && cp $TCG/scripts/nightly/dashboard/seal.js tcg/scripts/nightly/dashboard/",
+            "git -C tcg init -q . && git -C tcg add -A && git -C tcg -c user.email=t@t -c user.name=t commit -qm v1 && git -C tcg update-ref refs/remotes/origin/main HEAD"
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "env": {
+            "TYCON_DASHBOARD_NOW":"2026-09-14T11:00:00Z"
+          },
+          "expect": {
+            "stdout_re": [
+              "^✅ tablero del arnés \\(2026-09-14 08:31 UTC\\): completo"
+            ],
+            "stdout_not_re": [
+              "\\n\\S",
+              "parcial",
+              "NO SE ESTÁ",
+              "9173",
+              "31337",
+              "4242",
+              "7777",
+              "\\b13\\b"
+            ]
+          }
+        },
+        {
+          "id": "buzon-no-leido-parcial",
+          "type": "must-emit",
+          "__doc": "T20 · AC 19. El nocturno corrió pero no pudo leer el buzón: la línea es naranja y dice qué faltó, sin números de fichas. ROJO PREVIO: una página con las fichas del equipo en gris anunciada como «completo».",
+          "files": {
+            "tcg/artifacts/tablero-del-arnes.html": "<!doctype html><html lang=\"es\"><head><meta charset=\"utf-8\"><title>El arnés en seis preguntas</title><script type=\"application/json\" id=\"tablero-sello\">{\"esquema\": 1, \"generado\": \"2026-09-14T08:31:00.000Z\", \"snapshot\": \"2026-09-14\", \"modo\": \"nocturno\", \"corrida\": \"4242\", \"fuentes\": {\"esperadas\": 13, \"al_dia\": 13}, \"buzon\": {\"estado\": \"no_leido\", \"motivo\": \"la identidad del nocturno no tiene el rol de lectura\"}}</script></head><body><b>9173</b> fichas <b>31337</b></body></html>"
+          },
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/nightly/dashboard && cp $TCG/scripts/hooks/dashboard-notice.js $TCG/scripts/hooks/dependencies-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && cp $TCG/scripts/nightly/dashboard/seal.js tcg/scripts/nightly/dashboard/",
+            "git -C tcg init -q . && git -C tcg add -A && git -C tcg -c user.email=t@t -c user.name=t commit -qm v1 && git -C tcg update-ref refs/remotes/origin/main HEAD"
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "env": {
+            "TYCON_DASHBOARD_NOW":"2026-09-14T11:00:00Z"
+          },
+          "expect": {
+            "stdout_re": [
+              "^🟡 tablero del arnés",
+              "parcial",
+              "fichas del equipo no se midieron",
+              "rol de lectura"
+            ],
+            "stdout_not_re": [
+              "completo",
+              "9173",
+              "31337",
+              "4242",
+              "7777"
+            ]
+          }
+        },
+        {
+          "id": "fuente-vieja-parcial",
+          "type": "must-emit",
+          "__doc": "T20 · AC 19. Una fuente obligatoria vieja: parcial, con cuántas de cuántas fuentes estaban al día.",
+          "files": {
+            "tcg/artifacts/tablero-del-arnes.html": "<!doctype html><html lang=\"es\"><head><meta charset=\"utf-8\"><title>El arnés en seis preguntas</title><script type=\"application/json\" id=\"tablero-sello\">{\"esquema\": 1, \"generado\": \"2026-09-14T08:31:00.000Z\", \"snapshot\": \"2026-09-14\", \"modo\": \"nocturno\", \"corrida\": \"4242\", \"fuentes\": {\"esperadas\": 6, \"al_dia\": 5}, \"buzon\": {\"estado\": \"leido\", \"maquinas\": 7777}}</script></head><body><b>9173</b> fichas <b>31337</b></body></html>"
+          },
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/nightly/dashboard && cp $TCG/scripts/hooks/dashboard-notice.js $TCG/scripts/hooks/dependencies-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && cp $TCG/scripts/nightly/dashboard/seal.js tcg/scripts/nightly/dashboard/",
+            "git -C tcg init -q . && git -C tcg add -A && git -C tcg -c user.email=t@t -c user.name=t commit -qm v1 && git -C tcg update-ref refs/remotes/origin/main HEAD"
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "env": {
+            "TYCON_DASHBOARD_NOW":"2026-09-14T11:00:00Z"
+          },
+          "expect": {
+            "stdout_re": [
+              "parcial",
+              "5 de 6 fuentes al día"
+            ],
+            "stdout_not_re": [
+              "completo",
+              "9173",
+              "31337"
+            ]
+          }
+        },
+        {
+          "id": "sin-corrida-del-nocturno-parcial",
+          "type": "must-emit",
+          "__doc": "T20 · AC 19. Una página publicada que no generó el nocturno (modo local, corrida nula): parcial. ROJO PREVIO: una página de una máquina publicada a mano se anuncia como la del equipo.",
+          "files": {
+            "tcg/artifacts/tablero-del-arnes.html": "<!doctype html><html lang=\"es\"><head><meta charset=\"utf-8\"><title>El arnés en seis preguntas</title><script type=\"application/json\" id=\"tablero-sello\">{\"esquema\": 1, \"generado\": \"2026-09-14T08:31:00.000Z\", \"snapshot\": \"2026-09-14\", \"modo\": \"local\", \"corrida\": null, \"fuentes\": {\"esperadas\": 13, \"al_dia\": 13}, \"buzon\": {\"estado\": \"no_aplica\"}}</script></head><body><b>9173</b> fichas <b>31337</b></body></html>"
+          },
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/nightly/dashboard && cp $TCG/scripts/hooks/dashboard-notice.js $TCG/scripts/hooks/dependencies-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && cp $TCG/scripts/nightly/dashboard/seal.js tcg/scripts/nightly/dashboard/",
+            "git -C tcg init -q . && git -C tcg add -A && git -C tcg -c user.email=t@t -c user.name=t commit -qm v1 && git -C tcg update-ref refs/remotes/origin/main HEAD"
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "env": {
+            "TYCON_DASHBOARD_NOW":"2026-09-14T11:00:00Z"
+          },
+          "expect": {
+            "stdout_re": [
+              "parcial",
+              "no la generó el nocturno"
+            ],
+            "stdout_not_re": [
+              "completo",
+              "9173"
+            ]
+          }
+        },
+        {
+          "id": "lee-lo-publicado-no-el-disco",
+          "type": "must-emit",
+          "__doc": "T21 · AC 20. En origin/main la página es vieja; en el disco hay una fresca sin publicar (una rama de otra sesión, un pull a medias). Manda lo publicado. ROJO PREVIO: leer el disco → «completo» con el nocturno detenido.",
+          "files": {
+            "tcg/artifacts/tablero-del-arnes.html": "<!doctype html><html lang=\"es\"><head><meta charset=\"utf-8\"><title>El arnés en seis preguntas</title><script type=\"application/json\" id=\"tablero-sello\">{\"esquema\": 1, \"generado\": \"2026-09-10T08:31:00.000Z\", \"snapshot\": \"2026-09-10\", \"modo\": \"nocturno\", \"corrida\": \"4242\", \"fuentes\": {\"esperadas\": 13, \"al_dia\": 13}, \"buzon\": {\"estado\": \"leido\", \"maquinas\": 7777}}</script></head><body><b>9173</b> fichas <b>31337</b></body></html>",
+            "tcg/fresca.html": "<!doctype html><html lang=\"es\"><head><meta charset=\"utf-8\"><title>El arnés en seis preguntas</title><script type=\"application/json\" id=\"tablero-sello\">{\"esquema\": 1, \"generado\": \"2026-09-14T08:31:00.000Z\", \"snapshot\": \"2026-09-14\", \"modo\": \"nocturno\", \"corrida\": \"4242\", \"fuentes\": {\"esperadas\": 13, \"al_dia\": 13}, \"buzon\": {\"estado\": \"leido\", \"maquinas\": 7777}}</script></head><body><b>9173</b> fichas <b>31337</b></body></html>"
+          },
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/nightly/dashboard && cp $TCG/scripts/hooks/dashboard-notice.js $TCG/scripts/hooks/dependencies-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && cp $TCG/scripts/nightly/dashboard/seal.js tcg/scripts/nightly/dashboard/",
+            "git -C tcg init -q . && git -C tcg add -A && git -C tcg -c user.email=t@t -c user.name=t commit -qm v1 && git -C tcg update-ref refs/remotes/origin/main HEAD",
+            "cp tcg/fresca.html tcg/artifacts/tablero-del-arnes.html"
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "env": {
+            "TYCON_DASHBOARD_NOW":"2026-09-14T11:00:00Z"
+          },
+          "expect": {
+            "stdout_re": [
+              "NO SE ESTÁ GENERANDO"
+            ],
+            "stdout_not_re": [
+              "completo",
+              "leído del disco"
+            ]
+          }
+        },
+        {
+          "id": "sin-origin-main-lee-el-disco-y-lo-dice",
+          "type": "must-emit",
+          "__doc": "T21 · AC 20. Una copia sin origin/main: se lee el disco y la línea lo DICE. «Leí lo publicado» y «no pude» no son lo mismo.",
+          "files": {
+            "tcg/artifacts/tablero-del-arnes.html": "<!doctype html><html lang=\"es\"><head><meta charset=\"utf-8\"><title>El arnés en seis preguntas</title><script type=\"application/json\" id=\"tablero-sello\">{\"esquema\": 1, \"generado\": \"2026-09-14T08:31:00.000Z\", \"snapshot\": \"2026-09-14\", \"modo\": \"nocturno\", \"corrida\": \"4242\", \"fuentes\": {\"esperadas\": 13, \"al_dia\": 13}, \"buzon\": {\"estado\": \"leido\", \"maquinas\": 7777}}</script></head><body><b>9173</b> fichas <b>31337</b></body></html>"
+          },
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/nightly/dashboard && cp $TCG/scripts/hooks/dashboard-notice.js $TCG/scripts/hooks/dependencies-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && cp $TCG/scripts/nightly/dashboard/seal.js tcg/scripts/nightly/dashboard/",
+            "git -C tcg init -q . && git -C tcg add -A && git -C tcg -c user.email=t@t -c user.name=t commit -qm v1"
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "env": {
+            "TYCON_DASHBOARD_NOW":"2026-09-14T11:00:00Z"
+          },
+          "expect": {
+            "stdout_re": [
+              "completo",
+              "leído del disco"
+            ]
+          }
+        },
+        {
+          "id": "no-publicado-lo-dice",
+          "type": "must-emit",
+          "__doc": "AC 17. origin/main no tiene la página: se dice, no se calla.",
+          "files": {
+            "tcg/README.md": "x"
+          },
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/nightly/dashboard && cp $TCG/scripts/hooks/dashboard-notice.js $TCG/scripts/hooks/dependencies-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && cp $TCG/scripts/nightly/dashboard/seal.js tcg/scripts/nightly/dashboard/",
+            "git -C tcg init -q . && git -C tcg add -A && git -C tcg -c user.email=t@t -c user.name=t commit -qm v1 && git -C tcg update-ref refs/remotes/origin/main HEAD"
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "env": {
+            "TYCON_DASHBOARD_NOW":"2026-09-14T11:00:00Z"
+          },
+          "expect": {
+            "stdout_re": [
+              "no está publicado"
+            ]
+          }
+        },
+        {
+          "id": "apagado-mudo",
+          "type": "must-stay-quiet",
+          "__doc": "T22 · AC 21. TYCON_DASHBOARD_NOTICE=0 apaga el aviso: ni una línea, aunque la página esté vieja.",
+          "files": {
+            "tcg/artifacts/tablero-del-arnes.html": "<!doctype html><html lang=\"es\"><head><meta charset=\"utf-8\"><title>El arnés en seis preguntas</title><script type=\"application/json\" id=\"tablero-sello\">{\"esquema\": 1, \"generado\": \"2026-09-10T08:31:00.000Z\", \"snapshot\": \"2026-09-10\", \"modo\": \"nocturno\", \"corrida\": \"4242\", \"fuentes\": {\"esperadas\": 13, \"al_dia\": 13}, \"buzon\": {\"estado\": \"leido\", \"maquinas\": 7777}}</script></head><body><b>9173</b> fichas <b>31337</b></body></html>"
+          },
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/nightly/dashboard && cp $TCG/scripts/hooks/dashboard-notice.js $TCG/scripts/hooks/dependencies-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && cp $TCG/scripts/nightly/dashboard/seal.js tcg/scripts/nightly/dashboard/",
+            "git -C tcg init -q . && git -C tcg add -A && git -C tcg -c user.email=t@t -c user.name=t commit -qm v1 && git -C tcg update-ref refs/remotes/origin/main HEAD"
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "env": {
+            "TYCON_DASHBOARD_NOW":"2026-09-14T11:00:00Z",
+            "TYCON_DASHBOARD_NOTICE": "0"
+          },
+          "expect": {}
+        },
+        {
+          "id": "error-inesperado-mudo-y-sale-0",
+          "type": "must-stay-quiet",
+          "__doc": "T22 · AC 21. Una copia rota (falta el módulo del sello): el aviso sale 0 y mudo — nunca rompe el arranque de una sesión.",
+          "files": {
+            "tcg/artifacts/tablero-del-arnes.html": "<!doctype html><html lang=\"es\"><head><meta charset=\"utf-8\"><title>El arnés en seis preguntas</title><script type=\"application/json\" id=\"tablero-sello\">{\"esquema\": 1, \"generado\": \"2026-09-10T08:31:00.000Z\", \"snapshot\": \"2026-09-10\", \"modo\": \"nocturno\", \"corrida\": \"4242\", \"fuentes\": {\"esperadas\": 13, \"al_dia\": 13}, \"buzon\": {\"estado\": \"leido\", \"maquinas\": 7777}}</script></head><body><b>9173</b> fichas <b>31337</b></body></html>"
+          },
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/dashboard-notice.js $TCG/scripts/hooks/dependencies-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/",
+            "git -C tcg init -q . && git -C tcg add -A && git -C tcg -c user.email=t@t -c user.name=t commit -qm v1 && git -C tcg update-ref refs/remotes/origin/main HEAD"
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "env": {
+            "TYCON_DASHBOARD_NOW":"2026-09-14T11:00:00Z"
+          },
+          "expect": {}
+        },
+        {
+          "id": "fecha-futura-denuncia-sin-numeros",
+          "type": "must-emit",
+          "__doc": "T18 · AC 17. Un sello que dice haberse generado dos días DESPUÉS de ahora no se lee como fresco: el aviso denuncia esa fecha y calla los números. ROJO PREVIO: sin la guarda, una página fechada en el futuro nunca envejece y el aviso dice «completo» todos los días.",
+          "files": {
+            "tcg/artifacts/tablero-del-arnes.html": "<!doctype html><html lang=\"es\"><head><meta charset=\"utf-8\"><title>El arnés en seis preguntas</title><script type=\"application/json\" id=\"tablero-sello\">{\"esquema\": 1, \"generado\": \"2026-09-16T08:31:00.000Z\", \"snapshot\": \"2026-09-16\", \"modo\": \"nocturno\", \"corrida\": \"4242\", \"fuentes\": {\"esperadas\": 13, \"al_dia\": 13}, \"buzon\": {\"estado\": \"leido\", \"maquinas\": 7777}}</script></head><body><b>9173</b> fichas <b>31337</b></body></html>"
+          },
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/nightly/dashboard && cp $TCG/scripts/hooks/dashboard-notice.js $TCG/scripts/hooks/dependencies-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && cp $TCG/scripts/nightly/dashboard/seal.js tcg/scripts/nightly/dashboard/",
+            "git -C tcg init -q . && git -C tcg add -A && git -C tcg -c user.email=t@t -c user.name=t commit -qm v1 && git -C tcg update-ref refs/remotes/origin/main HEAD"
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "env": {
+            "TYCON_DASHBOARD_NOW":"2026-09-14T11:00:00Z"
+          },
+          "expect": {
+            "stdout_re": [
+              "posterior a hoy",
+              "2026-09-16",
+              "tablero-del-arnes"
+            ],
+            "stdout_not_re": [
+              "9173",
+              "31337",
+              "4242",
+              "7777",
+              "\\b13\\b",
+              "completo"
+            ]
+          }
+        },
+        {
+          "id": "fecha-apenas-adelantada-se-tolera",
+          "type": "must-emit",
+          "__doc": "T18 · AC 17 (espejo). Media hora de adelanto es una diferencia de reloj, no una fecha falsa: la página fresca y completa se informa como completa. ROJO PREVIO (mutación): sin tolerancia, cualquier reloj adelantado haría gritar al aviso todos los días y se apagaría.",
+          "files": {
+            "tcg/artifacts/tablero-del-arnes.html": "<!doctype html><html lang=\"es\"><head><meta charset=\"utf-8\"><title>El arnés en seis preguntas</title><script type=\"application/json\" id=\"tablero-sello\">{\"esquema\": 1, \"generado\": \"2026-09-14T11:30:00.000Z\", \"snapshot\": \"2026-09-14\", \"modo\": \"nocturno\", \"corrida\": \"4242\", \"fuentes\": {\"esperadas\": 13, \"al_dia\": 13}, \"buzon\": {\"estado\": \"leido\", \"maquinas\": 7777}}</script></head><body><b>9173</b> fichas <b>31337</b></body></html>"
+          },
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/nightly/dashboard && cp $TCG/scripts/hooks/dashboard-notice.js $TCG/scripts/hooks/dependencies-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && cp $TCG/scripts/nightly/dashboard/seal.js tcg/scripts/nightly/dashboard/",
+            "git -C tcg init -q . && git -C tcg add -A && git -C tcg -c user.email=t@t -c user.name=t commit -qm v1 && git -C tcg update-ref refs/remotes/origin/main HEAD"
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "env": {
+            "TYCON_DASHBOARD_NOW":"2026-09-14T11:00:00Z"
+          },
+          "expect": {
+            "stdout_re": [
+              "completo",
+              "2026-09-14 11:30 UTC"
+            ],
+            "stdout_not_re": [
+              "9173",
+              "31337",
+              "4242",
+              "7777",
+              "\\b13\\b",
+              "posterior a hoy"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

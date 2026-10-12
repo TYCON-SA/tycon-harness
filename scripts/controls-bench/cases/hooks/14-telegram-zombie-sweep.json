@@ -1,0 +1,105 @@
+{
+  "hooks": [
+    {
+      "hook": "telegram-zombie-sweep.sh",
+      "script": "${TCG}/scripts/hooks/telegram-zombie-sweep.sh",
+      "event": "SessionStart",
+      "matcher": "*",
+      "__why": "incident-log#telegram-zombies (2026-08-24): lanzadores del plugin oficial de Telegram huérfanos (ppid=1) durante días, 30-55% CPU c/u, robando updates al bot válido. Criterio: ppid=1 del lanzador ⇒ el CLI murió. Con ps falso (TYCON_TZS_PS_FILE) + dry-run se prueba la selección; el caso 'mata-de-verdad' mata un proceso real doble-forkeado.",
+      "cases": [
+        {
+          "id": "quiet-sin-plugin",
+          "type": "must-stay-quiet",
+          "setup": [
+            "printf '9001 1 bun run --cwd /nada/claude-plugins-official/telegram/0.0.7 start\\n' > ps.txt"
+          ],
+          "env": {
+            "TYCON_TZS_PS_FILE": "${FIXTURE}/ps.txt",
+            "TYCON_TZS_DRY_RUN": "1"
+          },
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {}
+        },
+        {
+          "id": "mata-launcher-huerfano-y-respeta-vivo",
+          "type": "must-emit",
+          "setup": [
+            "mkdir -p ${SANDBOX_HOME}/.claude/plugins/cache/claude-plugins-official/telegram/0.0.7 $SANDBOX_HOME/.claude/channels/telegram",
+            "echo 9004 > $SANDBOX_HOME/.claude/channels/telegram/bot.pid",
+            "printf '9001 1 bun run --cwd ${SANDBOX_HOME}/.claude/plugins/cache/claude-plugins-official/telegram/0.0.7 --shell=bun --silent start\\n9002 9001 /x/.bun/bin/bun server.ts\\n9003 777 bun run --cwd ${SANDBOX_HOME}/.claude/plugins/cache/claude-plugins-official/telegram/0.0.7 --shell=bun --silent start\\n9004 9003 /x/.bun/bin/bun server.ts\\n' > ps.txt"
+          ],
+          "env": {
+            "TYCON_TZS_PS_FILE": "${FIXTURE}/ps.txt",
+            "TYCON_TZS_DRY_RUN": "1"
+          },
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {
+            "stdout_re": [
+              "huérfanos",
+              "pids: 9001 9002"
+            ],
+            "stdout_not_re": [
+              "9003",
+              "9004"
+            ]
+          }
+        },
+        {
+          "id": "quiet-todos-vivos",
+          "type": "must-stay-quiet",
+          "setup": [
+            "mkdir -p ${SANDBOX_HOME}/.claude/plugins/cache/claude-plugins-official/telegram/0.0.7 $SANDBOX_HOME/.claude/channels/telegram",
+            "printf '9003 777 bun run --cwd ${SANDBOX_HOME}/.claude/plugins/cache/claude-plugins-official/telegram/0.0.7 --shell=bun --silent start\\n9004 9003 /x/.bun/bin/bun server.ts\\n' > ps.txt"
+          ],
+          "env": {
+            "TYCON_TZS_PS_FILE": "${FIXTURE}/ps.txt",
+            "TYCON_TZS_DRY_RUN": "1"
+          },
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {}
+        },
+        {
+          "id": "quiet-optout-env",
+          "type": "must-stay-quiet",
+          "setup": [
+            "mkdir -p ${SANDBOX_HOME}/.claude/plugins/cache/claude-plugins-official/telegram/0.0.7 $SANDBOX_HOME/.claude/channels/telegram",
+            "printf '9001 1 bun run --cwd ${SANDBOX_HOME}/.claude/plugins/cache/claude-plugins-official/telegram/0.0.7 --shell=bun --silent start\\n9002 9001 /x/.bun/bin/bun server.ts\\n9003 777 bun run --cwd ${SANDBOX_HOME}/.claude/plugins/cache/claude-plugins-official/telegram/0.0.7 --shell=bun --silent start\\n9004 9003 /x/.bun/bin/bun server.ts\\n' > ps.txt"
+          ],
+          "env": {
+            "TYCON_TZS_PS_FILE": "${FIXTURE}/ps.txt",
+            "TYCON_TZS_DRY_RUN": "1",
+            "TYCON_TG_ZOMBIE_SWEEP": "0"
+          },
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {}
+        },
+        {
+          "id": "mata-de-verdad",
+          "type": "must-emit",
+          "__why": "proceso real: `( exec -a <cmd del plugin> sleep 120 & )` queda con ppid=1 al morir el subshell; el hook lo tiene que matar con ps REAL (sin TYCON_TZS_PS_FILE). El stdio del proceso falso va a /dev/null: si hereda los pipes del runner, el setup se cuelga hasta que el sleep termina y el hook ya no encuentra nada (1ra corrida: 120 s y rojo).",
+          "setup": [
+            "mkdir -p ${SANDBOX_HOME}/.claude/plugins/cache/claude-plugins-official/telegram/0.0.7 $SANDBOX_HOME/.claude/channels/telegram",
+            "bash -c '( exec -a \"bun run --cwd ${SANDBOX_HOME}/.claude/plugins/cache/claude-plugins-official/telegram/0.0.7 --shell=bun --silent start\" sleep 30 >/dev/null 2>&1 & echo $! > zombie.pid )'",
+            "sleep 1"
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {
+            "stdout_re": [
+              "huérfanos cerrados \\(pids: [0-9]+"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

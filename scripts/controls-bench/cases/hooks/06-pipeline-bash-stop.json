@@ -1,0 +1,391 @@
+{
+  "hooks": [
+    {
+      "hook": "on-bash-write-gate.js",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/on-bash-write-gate.js",
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "cases": [
+        {
+          "id": "bloquea-heredoc-a-codigo-sin-carril",
+          "type": "must-block",
+          "setup": ["git init -q -b main .", "mkdir -p .tycon src"],
+          "stdin": { "tool_name": "Bash", "tool_input": { "command": "cat > src/Foo.cs <<'EOF'\nclass Foo {}\nEOF" } },
+          "expect": { "exit": 2, "file_contains": [{ "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log", "re": "story-gate" }] }
+        },
+        {
+          "id": "pasa-redirect-a-devnull",
+          "type": "must-not-block",
+          "setup": ["git init -q -b main .", "mkdir -p .tycon"],
+          "stdin": { "tool_name": "Bash", "tool_input": { "command": "echo hola > /dev/null" } },
+          "expect": { "exit": 0 }
+        },
+        {
+          "id": "pasa-path-solo-mencionado-en-string",
+          "type": "must-not-block",
+          "setup": ["git init -q -b main .", "mkdir -p .tycon"],
+          "stdin": { "tool_name": "Bash", "tool_input": { "command": "git commit -m \"fix: sed -i src/a.ts\"" } },
+          "expect": { "exit": 0 }
+        }
+      ]
+    },
+    {
+      "hook": "on-pre-commit.js",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/on-pre-commit.js",
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "cases": [
+        {
+          "id": "quiet-commit-sin-stories-staged",
+          "type": "must-not-block",
+          "setup": [
+            "git init -q -b main . && echo 'const a=1' > a.ts && git add a.ts"
+          ],
+          "stdin": { "tool_name": "Bash", "tool_input": { "command": "git commit -m \"chore: x\"" } },
+          "expect": { "exit": 0 }
+        },
+        {
+          "id": "bloquea-story-a-done-sin-evidencia-runtime",
+          "type": "must-block",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p specs/stories .advisors/dod-runtime",
+            "printf -- '---\\nstory: \"4.2\"\\nepic: \"4\"\\nstatus: in-progress\\n---\\n# Story 4.2\\n\\n## Acceptance Criteria\\n1. AC uno E2E\\n\\ntests_done_playwright_spec: tests/e2e/foo.spec.ts\\n' > specs/stories/4-2.md",
+            "git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "node -e \"const fs=require('fs');const p='specs/stories/4-2.md';fs.writeFileSync(p,fs.readFileSync(p,'utf8').replace('status: in-progress','status: done'))\"",
+            "git add specs/stories/4-2.md"
+          ],
+          "stdin": { "tool_name": "Bash", "tool_input": { "command": "git commit -m \"story 4.2 done\"" } },
+          "expect": { "exit": 2, "stderr_re": ["DoD|runtime|evidencia"] }
+        },
+        {
+          "id": "evidence-no-verify-queda-auditado",
+          "type": "must-run",
+          "setup": [
+            "git init -q -b main . && echo x > a.ts && git add a.ts"
+          ],
+          "stdin": { "tool_name": "Bash", "tool_input": { "command": "git commit --no-verify -m x" } },
+          "expect": { "exit": 0, "file_contains": [{ "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/bypass.log", "re": "NO_VERIFY" }] }
+        },
+        {
+          "id": "bloquea-story-a-done-sin-advisors",
+          "type": "must-block",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p specs/stories",
+            "printf '%s\\n' '---' 'story: \"4.2\"' 'epic: \"4\"' 'status: in-progress' 'dod_runtime_exempt: true' 'dod_runtime_exempt_reason: \"puro docs\"' '---' '# Story 4.2' '' '## Acceptance Criteria' '1. AC uno' > specs/stories/4-2.md",
+            "git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "node -e \"const fs=require('fs');const p='specs/stories/4-2.md';fs.writeFileSync(p,fs.readFileSync(p,'utf8').replace('status: in-progress','status: done'))\"",
+            "git add specs/stories/4-2.md"
+          ],
+          "stdin": {"tool_name": "Bash", "tool_input": {"command": "git commit -m \"story 4.2 done\""}},
+          "expect": {"exit": 2, "stderr_re": ["advisors", "pipeline.js start"]}
+        },
+        {
+          "id": "pasa-story-a-done-con-corrida-de-advisors-en-el-repo",
+          "type": "must-not-block",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p specs/stories",
+            "printf '%s\\n' '---' 'story: \"4.2\"' 'epic: \"4\"' 'status: in-progress' 'dod_runtime_exempt: true' 'dod_runtime_exempt_reason: \"puro docs\"' '---' '# Story 4.2' '' '## Acceptance Criteria' '1. AC uno' > specs/stories/4-2.md",
+            "git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "node -e \"const fs=require('fs');const p='specs/stories/4-2.md';fs.writeFileSync(p,fs.readFileSync(p,'utf8').replace('status: in-progress','status: done'))\"",
+            "git add specs/stories/4-2.md",
+            "mkdir -p .advisors/pipeline-runs/4.2-20260824-1200 && echo '[]' > .advisors/pipeline-runs/4.2-20260824-1200/findings.json"
+          ],
+          "stdin": {"tool_name": "Bash", "tool_input": {"command": "git commit -m \"story 4.2 done\""}},
+          "expect": {"exit": 0}
+        },
+        {
+          "id": "pasa-story-a-done-con-advisors_exempt-declarado",
+          "type": "must-not-block",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p specs/stories",
+            "printf '%s\\n' '---' 'story: \"4.2\"' 'epic: \"4\"' 'status: in-progress' 'dod_runtime_exempt: true' 'dod_runtime_exempt_reason: \"puro docs\"' 'advisors_exempt: true' 'advisors_exempt_reason: \"docs puros\"' '---' '# Story 4.2' '' '## Acceptance Criteria' '1. AC uno' > specs/stories/4-2.md",
+            "git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "node -e \"const fs=require('fs');const p='specs/stories/4-2.md';fs.writeFileSync(p,fs.readFileSync(p,'utf8').replace('status: in-progress','status: done'))\"",
+            "git add specs/stories/4-2.md"
+          ],
+          "stdin": {"tool_name": "Bash", "tool_input": {"command": "git commit -m \"story 4.2 done\""}},
+          "expect": {"exit": 0}
+        }
+      ]
+    },
+    {
+      "hook": "on-stop-dod-gate.js",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/on-stop-dod-gate.js",
+      "event": "Stop",
+      "matcher": "*",
+      "cases": [
+        {
+          "id": "bloquea-stop-autonomo-con-check-rojo",
+          "type": "must-block",
+          "setup": [
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline/active';fs.mkdirSync(d,{recursive:true});fs.writeFileSync(d+'/bench-s1.json',JSON.stringify({sessionId:'bench-s1',storyId:'4.2',autonomous:true,checks:{build:'green',tests:'red:3 failing'},lastTouch:new Date().toISOString()}))\""
+          ],
+          "stdin": { "session_id": "bench-s1", "stop_hook_active": false },
+          "expect": { "stdout_re": ["\"decision\"\\s*:\\s*\"block\""], "file_contains": [{ "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/active/bench-s1.json", "re": "iter" }] }
+        },
+        {
+          "id": "deja-parar-sin-modo-autonomo",
+          "type": "must-stay-quiet",
+          "setup": [
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline/active';fs.mkdirSync(d,{recursive:true});fs.writeFileSync(d+'/bench-s1.json',JSON.stringify({sessionId:'bench-s1',storyId:'4.2',checks:{tests:'red:3'},lastTouch:new Date().toISOString()}))\""
+          ],
+          "stdin": { "session_id": "bench-s1", "stop_hook_active": false },
+          "expect": { "stdout_not_re": ["decision"] }
+        },
+        {
+          "id": "deja-parar-todo-verde",
+          "type": "must-stay-quiet",
+          "setup": [
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline/active';fs.mkdirSync(d,{recursive:true});fs.writeFileSync(d+'/bench-s1.json',JSON.stringify({sessionId:'bench-s1',storyId:'4.2',autonomous:true,checks:{build:'green',tests:'green'},lastTouch:new Date().toISOString()}))\""
+          ],
+          "stdin": { "session_id": "bench-s1", "stop_hook_active": false },
+          "expect": { "stdout_not_re": ["decision"] }
+        }
+      ]
+    },
+    {
+      "hook": "on-advisor-run.js",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/on-advisor-run.js",
+      "event": "PreToolUse",
+      "matcher": "Task|Agent",
+      "cases": [
+        {
+          "id": "avisa-adhoc-en-repo-con-codegraph",
+          "type": "must-emit",
+          "setup": ["mkdir -p .codegraph"],
+          "stdin": { "session_id": "bench-s1", "tool_name": "Task", "tool_input": { "subagent_type": "general-purpose" } },
+          "expect": { "stdout_re": ["systemMessage"] }
+        },
+        {
+          "id": "quiet-spawn-de-advisor",
+          "type": "must-stay-quiet",
+          "stdin": { "session_id": "bench-s1", "tool_name": "Task", "tool_input": { "subagent_type": "tycon-plugin-security-basics", "model": "sonnet" } },
+          "expect": { "stdout_not_re": ["systemMessage"] }
+        },
+        {
+          "id": "evidence-ledger-de-spawns",
+          "type": "must-run",
+          "stdin": { "session_id": "bench-s1", "tool_name": "Task", "tool_input": { "subagent_type": "tycon-plugin-security-basics", "model": "sonnet" } },
+          "expect": { "file_contains": [{ "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/advisor-runs/bench-s1.jsonl", "re": "tycon-plugin-security-basics" }] }
+        }
+      ]
+    },
+    {
+      "hook": "on-prompt.js (tycon-pipeline)",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/on-prompt.js",
+      "event": "UserPromptSubmit",
+      "matcher": "*",
+      "cases": [
+        {
+          "id": "stop-detect-con-pasos-pendientes",
+          "type": "must-emit",
+          "files": { "transcript.jsonl": "{}\n" },
+          "setup": [
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline/active';fs.mkdirSync(d,{recursive:true});fs.writeFileSync(d+'/bench-s1.json',JSON.stringify({sessionId:'bench-s1',storyId:'4.2',stepsPending:[5,6],lastTouch:new Date().toISOString()}))\""
+          ],
+          "stdin": { "session_id": "bench-s1", "prompt": "listo, cerremos y merge a main", "transcript_path": "${FIXTURE}/transcript.jsonl" },
+          "expect": { "stdout_re": ["tycon-pipeline|pendiente"] }
+        },
+        {
+          "id": "quiet-listo-sin-pipeline-activo",
+          "type": "must-stay-quiet",
+          "files": { "transcript.jsonl": "{}\n" },
+          "stdin": { "session_id": "bench-s1", "prompt": "listo, cerremos", "transcript_path": "${FIXTURE}/transcript.jsonl" },
+          "expect": {}
+        },
+        {
+          "id": "intent-detect-implementemos-story",
+          "type": "must-emit",
+          "files": { "transcript.jsonl": "{}\n" },
+          "stdin": { "session_id": "bench-s1", "prompt": "implementemos la story 4.2", "transcript_path": "${FIXTURE}/transcript.jsonl" },
+          "expect": { "stdout_re": ["tycon-pipeline"] }
+        }
+      ]
+    },
+    {
+      "hook": "on-bash-write-gate.js (por la herramienta PowerShell de Claude Code en Windows)",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/on-bash-write-gate.js",
+      "event": "PreToolUse",
+      "matcher": "Bash|PowerShell",
+      "tools": [
+        "claude"
+      ],
+      "asymmetry": "La herramienta PowerShell es de Claude Code (en Windows corre los comandos por ahí, con tool_name «PowerShell» y la misma entrada tool_input.command; fuente: code.claude.com/docs/en/tools-reference §«PowerShell tool»). Codex no la emite: del lado Codex el freno se registra con matcher «Bash» (adapters/codex/hooks.json).",
+      "__doc": "2026-10-04 · medido en una sesión REAL de Claude Code 2.1.289 en Windows 11 con el arnés instalado: los comandos salen por la herramienta PowerShell y los hooks registrados con matcher «Bash» no se disparaban (pasaron `git add -A` y un `git commit` que saltea los hooks de git). El matcher pasa a «Bash|PowerShell» en los dos instaladores; estos casos fijan que el guion entiende la entrada de esa herramienta. El payload es SINTÉTICO (la forma documentada), no una captura en vivo.",
+      "cases": [
+        {
+          "id": "ps-bloquea-set-content-a-codigo-sin-carril",
+          "type": "must-block",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon src"
+          ],
+          "stdin": {
+            "tool_name": "PowerShell",
+            "tool_input": {
+              "command": "Set-Content -Path src/Foo.cs -Value 'class Foo {}'"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log",
+                "re": "story-gate"
+              }
+            ]
+          },
+          "nota": "La escritura de PowerShell que el portón ya reconocía (Set-Content), ahora también por la herramienta PowerShell: el guion descartaba todo lo que no fuera tool_name «Bash»."
+        },
+        {
+          "id": "ps-bloquea-copy-item-a-codigo-sin-carril",
+          "type": "must-block",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon src"
+          ],
+          "stdin": {
+            "tool_name": "PowerShell",
+            "tool_input": {
+              "command": "Copy-Item tmp/Foo.cs src/Foo.cs"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log",
+                "re": "story-gate"
+              }
+            ]
+          },
+          "nota": "La forma de PowerShell de `cp` (que el portón ya frena): el destino es el último argumento."
+        },
+        {
+          "id": "ps2-bloquea-copy-alias-a-codigo-sin-carril",
+          "type": "must-block",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon src"
+          ],
+          "stdin": {
+            "tool_name": "PowerShell",
+            "tool_input": {
+              "command": "copy tmp/Foo.cs src/Foo.cs"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log",
+                "re": "story-gate"
+              }
+            ]
+          },
+          "nota": "Segunda vuelta (revisión adversarial, 2026-10-04) MENOR 4: los alias de Copy-Item / Move-Item (copy, cpi, move, mi)."
+        },
+        {
+          "id": "ps2-bloquea-writealltext-a-codigo-sin-carril",
+          "type": "must-block",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon src"
+          ],
+          "stdin": {
+            "tool_name": "PowerShell",
+            "tool_input": {
+              "command": "[IO.File]::WriteAllText('src/Foo.cs', 'class Foo {}')"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log",
+                "re": "story-gate"
+              }
+            ]
+          },
+          "nota": "Segunda vuelta (revisión adversarial, 2026-10-04) MENOR 4: [IO.File]::WriteAllText escribe como Set-Content."
+        },
+        {
+          "id": "ps-pasa-lectura-de-codigo",
+          "type": "must-not-block",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon src"
+          ],
+          "stdin": {
+            "tool_name": "PowerShell",
+            "tool_input": {
+              "command": "Get-Content src/Foo.cs"
+            }
+          },
+          "expect": {
+            "exit": 0
+          },
+          "nota": "El espejo: leer no es escribir."
+        }
+      ]
+    },
+    {
+      "hook": "on-pre-commit.js (por la herramienta PowerShell de Claude Code en Windows)",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/on-pre-commit.js",
+      "event": "PreToolUse",
+      "matcher": "Bash|PowerShell",
+      "tools": [
+        "claude"
+      ],
+      "asymmetry": "La herramienta PowerShell es de Claude Code (en Windows corre los comandos por ahí, con tool_name «PowerShell» y la misma entrada tool_input.command; fuente: code.claude.com/docs/en/tools-reference §«PowerShell tool»). Codex no la emite: del lado Codex el freno se registra con matcher «Bash» (adapters/codex/hooks.json).",
+      "__doc": "2026-10-04 · medido en una sesión REAL de Claude Code 2.1.289 en Windows 11 con el arnés instalado: los comandos salen por la herramienta PowerShell y los hooks registrados con matcher «Bash» no se disparaban (pasaron `git add -A` y un `git commit` que saltea los hooks de git). El matcher pasa a «Bash|PowerShell» en los dos instaladores; estos casos fijan que el guion entiende la entrada de esa herramienta. El payload es SINTÉTICO (la forma documentada), no una captura en vivo.",
+      "cases": [
+        {
+          "id": "ps-bloquea-story-a-done-sin-evidencia-runtime",
+          "type": "must-block",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p specs/stories .advisors/dod-runtime",
+            "printf -- '---\\nstory: \"4.2\"\\nepic: \"4\"\\nstatus: in-progress\\n---\\n# Story 4.2\\n\\n## Acceptance Criteria\\n1. AC uno E2E\\n\\ntests_done_playwright_spec: tests/e2e/foo.spec.ts\\n' > specs/stories/4-2.md",
+            "git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "node -e \"const fs=require('fs');const p='specs/stories/4-2.md';fs.writeFileSync(p,fs.readFileSync(p,'utf8').replace('status: in-progress','status: done'))\"",
+            "git add specs/stories/4-2.md"
+          ],
+          "stdin": {
+            "tool_name": "PowerShell",
+            "tool_input": {
+              "command": "git commit -m \"story 4.2 done\""
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "DoD|runtime|evidencia"
+            ]
+          },
+          "nota": "El mismo commit, por la herramienta PowerShell: el guion descartaba todo lo que no fuera tool_name «Bash»."
+        },
+        {
+          "id": "ps-quiet-commit-sin-stories-staged",
+          "type": "must-not-block",
+          "setup": [
+            "git init -q -b main . && echo 'const a=1' > a.ts && git add a.ts"
+          ],
+          "stdin": {
+            "tool_name": "PowerShell",
+            "tool_input": {
+              "command": "git commit -m \"chore: x\""
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        }
+      ]
+    }
+  ]
+}

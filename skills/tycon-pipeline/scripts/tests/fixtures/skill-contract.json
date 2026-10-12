@@ -1,0 +1,1029 @@
+{
+ "_por_que": "Contrato del SKILL.md de tycon-pipeline (story 7.7 del arnés, 2026-09-19): lo que el SKILL.md grande nombraba y el recortado no puede perder. Se genera con `node test-skill-contract.js --generate` desde el SKILL.md del commit `base` más los step files; `historicos` se conserva entre regeneraciones y cada entrada lleva su motivo.",
+ "base": "c5c919cc3024c7f435a3e4172f90746be4da6731",
+ "frontmatter": "---\nname: tycon-pipeline\ndescription: Orquesta el pipeline completo TYCON — valida la story con tycon-story-validator, invoca el skill BMAD apropiado (bmad-dev-story / bmad-agent-dev / bmad-agent-quick-flow-solo-dev) en plan mode, aprueba el plan con el usuario, ejecuta la implementación con build-gate, invoca los advisors en paralelo (set computado mecánicamente por `pipeline.js mech-check` + `pipeline.js advisors` — ver sección \"Step 5 advisors checklist\" abajo), consolida los reportes, y prepara el commit sin ejecutarlo. Usar cuando el usuario pide \"implementemos la story X\", \"implementar historia\", \"apply tycon pipeline\" o equivalentes.\n---\n",
+ "entradas": {
+  "regla": [
+   "A-2",
+   "A.i",
+   "ACCOV-C1",
+   "ACCOV-C2",
+   "ACCOV-C3",
+   "ACCOV-C5",
+   "ACCOV-C7",
+   "ACCOV-C8",
+   "B.ii",
+   "B1-B6",
+   "BUG-PIPELINE-006",
+   "C.i",
+   "C2-C5",
+   "CF-1",
+   "CF-2",
+   "COMM.i",
+   "COMM.ii",
+   "COMM.iii",
+   "D.i",
+   "D.i.1",
+   "D.i.2",
+   "D.i.3",
+   "DEFTR-C1",
+   "DEFTR-C2",
+   "DEFTR-W1",
+   "DODRT-C1",
+   "DODRT-C2",
+   "DODRT-C3",
+   "DODRT-C5",
+   "DODRT-C5.1",
+   "DODRT-C6",
+   "DODRT-C7",
+   "DODRT-C8",
+   "DODRT-W1",
+   "DOTNET-C2",
+   "DOTNET-W3",
+   "E.i",
+   "EV-1",
+   "F.i",
+   "F.ii",
+   "F.iii",
+   "F.iv",
+   "G-3",
+   "G.i",
+   "G.ii",
+   "GATESLOG-STORYID-NS-1",
+   "H.i",
+   "H.ii",
+   "H.iii",
+   "HOLE-1",
+   "I.i",
+   "I.i.b",
+   "I.i.c",
+   "I.i.c.1",
+   "I.i.d",
+   "I.i.d.1",
+   "I.i.e",
+   "I.ii",
+   "M-1",
+   "MECH-2",
+   "N-1",
+   "PIPE-C0",
+   "PIPE-C1",
+   "PIPE-C2",
+   "PIPE-C3",
+   "PIPE-C4",
+   "PIPE-C5",
+   "PIPE-C6",
+   "PIPE-C7",
+   "PIPE-C8",
+   "PIPE-C9",
+   "PRE-1",
+   "PRE-2",
+   "QA-1",
+   "R1-R16",
+   "S1-2026-08-24",
+   "SEC-C1",
+   "SPAWN-1",
+   "SPEC-C1",
+   "SPEC-C2",
+   "SPEC-C3",
+   "SPEC-C4",
+   "SPEC-C5",
+   "SPEC-W1",
+   "SPEC-W2",
+   "SPEED-1",
+   "SPEED-2",
+   "SPEED-3",
+   "TEST-C2",
+   "TESTGATE-DEDUCTOR-LAYOUT-GAP-1",
+   "TOOL.i",
+   "VAL-C1",
+   "VAL-C2",
+   "VAL-C3",
+   "VAL-C5",
+   "VAL-C6",
+   "VAL-C8",
+   "VAL-W1",
+   "VAL-W15",
+   "VAL-W2",
+   "VAL-W9",
+   "WIRING-C1",
+   "WIRING-C2",
+   "XPAT-C1",
+   "XPAT-C3",
+   "XPAT-W1"
+  ],
+  "comando": [
+   "marker.js adhoc",
+   "marker.js adopt-session",
+   "marker.js append-file",
+   "marker.js bloquea",
+   "marker.js clear",
+   "marker.js clear-session",
+   "marker.js complete-step",
+   "marker.js find-by-story",
+   "marker.js get",
+   "marker.js list-all",
+   "marker.js mark-adversarial-launched",
+   "marker.js mark-adversarial-result",
+   "marker.js mark-adversarial-skipped",
+   "marker.js mark-dod-runtime-checked",
+   "marker.js promote-probe",
+   "marker.js reales",
+   "marker.js run-check",
+   "marker.js runtime-waiver",
+   "marker.js set",
+   "marker.js set-autonomous",
+   "marker.js set-check",
+   "marker.js set-flag",
+   "marker.js snapshot-iter",
+   "marker.js start-step",
+   "marker.js update-story-status",
+   "pipeline.js advisor-runs",
+   "pipeline.js advisors",
+   "pipeline.js check-count",
+   "pipeline.js deep-review-gate",
+   "pipeline.js deferrals-open",
+   "pipeline.js dep-gate",
+   "pipeline.js dod-checker-needed",
+   "pipeline.js e2e-config",
+   "pipeline.js evidence-dir",
+   "pipeline.js findings-status",
+   "pipeline.js followups-status",
+   "pipeline.js mech-check",
+   "pipeline.js model-hint",
+   "pipeline.js next",
+   "pipeline.js next-story",
+   "pipeline.js preflight-frontmatter",
+   "pipeline.js qa-readability",
+   "pipeline.js risk-class",
+   "pipeline.js smart-reloop",
+   "pipeline.js start",
+   "pipeline.js timing-report",
+   "pipeline.js tooling-expected",
+   "pipeline.js write-findings",
+   "pipeline.js write-followups"
+  ],
+  "flag": [
+   "--abbrev-ref",
+   "--acs",
+   "--apply",
+   "--approved",
+   "--file",
+   "--area",
+   "--args",
+   "--assigned-to",
+   "--auto-approved",
+   "--autonomous",
+   "--base-url",
+   "--bearer-token",
+   "--branch",
+   "--budget",
+   "--changed",
+   "--check",
+   "--cost-tier",
+   "--data",
+   "--deep-review",
+   "--deep-review-fable",
+   "--deep-review-opus",
+   "--deferred",
+   "--discussion",
+   "--doctor",
+   "--dry-run",
+   "--in",
+   "--evidence-dir",
+   "--date-at-last-reviewer",
+   "--fields",
+   "--files",
+   "--findings",
+   "--force-full-reloop",
+   "--force-manual",
+   "--help",
+   "--id",
+   "--iter",
+   "--json",
+   "--limit",
+   "--manual",
+   "--marks",
+   "--max-mutants",
+   "--model",
+   "--reason",
+   "--no",
+   "--no-atdd",
+   "--no-autonomous",
+   "--no-deep-review",
+   "--no-mutation",
+   "--open",
+   "--org",
+   "--organization",
+   "--out",
+   "--out-of-order",
+   "--output",
+   "--plain",
+   "--porcelain",
+   "--pretty",
+   "--project",
+   "--own",
+   "--tests",
+   "--query",
+   "--ran",
+   "--relation-type",
+   "--relaunch",
+   "--repo",
+   "--reporter",
+   "--repos",
+   "--reverse",
+   "--run",
+   "--scenario",
+   "--since",
+   "--skip-advisor",
+   "--specs-dir",
+   "--state",
+   "--story",
+   "--story-path",
+   "--strict-working-tree",
+   "--target-id",
+   "--target-pipeline-done",
+   "--target-status",
+   "--test",
+   "--type",
+   "--title",
+   "--top",
+   "--trust-ran",
+   "--type",
+   "--ultracode",
+   "--visual-plan",
+   "--wiql",
+   "--workers"
+  ],
+  "env": [
+   "ADHOC_LLM_DENIED_LANE",
+   "ADHOC_LLM_OVERRIDE_LANE",
+   "ADVERSARIAL_ABANDONADO",
+   "ADVISOR_AUDITED_SURFACE",
+   "ALLOW_DOD_EVIDENCE_WRITE",
+   "AZURE_DEVOPS_EXT_PAT",
+   "CLAUDE_CODE_SESSION_ID",
+   "CODE_EXTS",
+   "DOD_BYPASS",
+   "DOD_BYPASS_ACMATRIX",
+   "E2E_AUDIT_REQUIRED",
+   "GITIGNORE_ADVISORS",
+   "MARKER_SKIPS_PLAN",
+   "PLAYWRIGHT_WORKERS",
+   "RUN_DIR",
+   "STOP_AUTONOMY",
+   "STORY_ID",
+   "STORY_PATH",
+   "TYCON_5B_EARLY",
+   "TYCON_ADHOC_SPAWN_WARN",
+   "TYCON_ADO_ORG",
+   "TYCON_ADO_PROJECT",
+   "TYCON_ADVISORS_GATE",
+   "TYCON_ATDD_COMMIT_GATE",
+   "TYCON_ATDD_PREEDIT_GATE",
+   "TYCON_BLOCK",
+   "TYCON_LANE_LLM",
+   "TYCON_LANE_LLM_MODEL",
+   "TYCON_LANE_LLM_MS",
+   "TYCON_MUTATION_CHECK",
+   "TYCON_NO_DEEP_REVIEW",
+   "TYCON_PIPELINE_NO_AUTONOMOUS",
+   "TYCON_RUNTIME_MATRIX_NO_MUTATION_CHECK",
+   "TYCON_SPAWN_GOVERNANCE",
+   "TYCON_STORY_GATE",
+   "TYCON_STORY_SCAN_BUDGET_MS",
+   "TYCON_TEST_GATE"
+  ]
+ },
+ "historicos": [
+  {
+   "id": "DOTNET-W3",
+   "motivo": "story 8.2 (2026-09-26): era el ejemplo del findings.json del step-06 y nombraba al revisor de convenciones .NET, que desde la 8.2 vive en el paquete bizuit (packs/), no en el núcleo. El ejemplo pasó a SEC-W1 (revisor del núcleo). La regla sigue en el catálogo y en su agente."
+  },
+  {
+   "id": "XPAT-W1",
+   "motivo": "story 8.2 (2026-09-26): estaba en el prompt del revisor de plugins hermanos escrito en el step-01; ese prompt vive ahora en packs/clients/pack.json (grupo validacion) y el step lo lanza vía `pipeline.js validators` sin nombrar al revisor. La regla sigue en el catálogo y en su agente."
+  },
+  {
+   "id": "C2-C5",
+   "motivo": "ruido del extractor: no es un id de regla (rango o caso citado en un incidente)"
+  },
+  {
+   "id": "R1-R16",
+   "motivo": "ruido del extractor: no es un id de regla (rango o caso citado en un incidente)"
+  },
+  {
+   "id": "S1-2026-08-24",
+   "motivo": "ruido del extractor: no es un id de regla (rango o caso citado en un incidente)"
+  },
+  {
+   "id": "B1-B6",
+   "motivo": "ruido del extractor: no es un id de regla (rango o caso citado en un incidente)"
+  },
+  {
+   "id": "A-2",
+   "motivo": "ruido del extractor: no es un id de regla (rango o caso citado en un incidente)"
+  },
+  {
+   "id": "G-3",
+   "motivo": "ruido del extractor: no es un id de regla (rango o caso citado en un incidente)"
+  },
+  {
+   "id": "M-1",
+   "motivo": "ruido del extractor: no es un id de regla (rango o caso citado en un incidente)"
+  },
+  {
+   "id": "N-1",
+   "motivo": "ruido del extractor: no es un id de regla (rango o caso citado en un incidente)"
+  },
+  {
+   "id": "marker.js reales",
+   "motivo": "ruido del extractor: «los spawns de `marker.js` reales», no un subcomando"
+  },
+  {
+   "id": "EV-1",
+   "motivo": "id de un material de evals citado como ejemplo de lo que el descubridor excluye; la regla (forma del id) sigue en steps y en lib/story-discovery.js"
+  },
+  {
+   "id": "HOLE-1",
+   "motivo": "id histórico del arreglo de fileEvents (2026-06-11); el comportamiento vive en on-edit.js y en HISTORIA.md"
+  },
+  {
+   "id": "GATESLOG-STORYID-NS-1",
+   "motivo": "id histórico del namespace por repo de gates.log (2026-08-24); vive en HISTORIA.md"
+  },
+  {
+   "id": "marker.js append-file",
+   "motivo": "subcomando sin callers desde 2026-06-11 (lo reemplazó on-edit.js); el orquestador no lo usa"
+  },
+  {
+   "id": "ADHOC_LLM_DENIED_LANE",
+   "motivo": "nombre de evento que escribe el portón en adhoc.log; lo lee lane-llm-notice, no el orquestador"
+  },
+  {
+   "id": "ADHOC_LLM_OVERRIDE_LANE",
+   "motivo": "nombre de evento que escribe el portón en adhoc.log; lo lee lane-llm-notice, no el orquestador"
+  },
+  {
+   "id": "CODE_EXTS",
+   "motivo": "constante interna de lib/story-gate.js; el SKILL.md dice qué cuenta como código en palabras"
+  },
+  {
+   "id": "DOD_BYPASS_ACMATRIX",
+   "motivo": "dato viejo: desde 2026-07-10 la matriz NO se abre con DOD_BYPASS (marker.js complete-step 8, «NO tiene bypass para el agente»); el SKILL.md de la base todavía decía que sí"
+  },
+  {
+   "id": "BUG-PIPELINE-006",
+   "motivo": "no es un id de regla: era el identificador interno de un defecto, citado en los pasos 6 y 8 junto al relato de cómo se encontró. Los pasos dicen la regla (el findings.json se escribe con el comando y el paso 8 lo exige) sin el relato; el caso vive en el registro de incidentes."
+  },
+  {
+   "id": "TESTGATE-DEDUCTOR-LAYOUT-GAP-1",
+   "motivo": "no es un id de regla: era el identificador interno de una propuesta, citado en el paso 7b junto al caso que la motivó. El paso dice la regla (al salir del loop se chequea que el verde de la suite siga midiendo este código) sin el caso; el caso vive en el registro de incidentes."
+  }
+ ],
+ "parrafos": [
+  {
+   "h": "c36bef486cf21578",
+   "inicio": "# tycon-pipeline"
+  },
+  {
+   "h": "40c58478e5cf62c4",
+   "inicio": "Skill orchestrator del workflow TYCON completo. Coordina skills BMAD +"
+  },
+  {
+   "h": "92dc5fb9cceb20c9",
+   "inicio": "## ⚠️ ANTI-PATTERN — NO bypass del orchestrator"
+  },
+  {
+   "h": "2a713554ef98bcf3",
+   "inicio": "**Toda transición de campo contractual de una story Mary+GOLD DEBE ir "
+  },
+  {
+   "h": "0807ce1c02684896",
+   "inicio": "Campos contractuales (frontmatter de una story Mary+GOLD — la descubre"
+  },
+  {
+   "h": "73d4c56aae3cdb7f",
+   "inicio": "- `status:` (`ready-for-dev` → `in-progress` → `review` → `done`) - `s"
+  },
+  {
+   "h": "dd89855201d80bc2",
+   "inicio": "### Invocaciones correctas"
+  },
+  {
+   "h": "b12893a1f37fdde6",
+   "inicio": "| Operación | Orchestrator | |---|---| | Pasar story `ready-for-dev → "
+  },
+  {
+   "h": "4aedef24b196dc6f",
+   "inicio": "### Por qué importa"
+  },
+  {
+   "h": "957dbb18e785b74e",
+   "inicio": "El orchestrator coordina **5+ side-effects atómicos** que el edit manu"
+  },
+  {
+   "h": "111d9578df36e5fe",
+   "inicio": "1. **Clocki time entry** (`/clocki start` o `/clocki stop` via step-00"
+  },
+  {
+   "h": "3b988f113eb341f0",
+   "inicio": "> Editar la transición a mano deja inconsistentes los 5+ side-effects "
+  },
+  {
+   "h": "824246519b62f98d",
+   "inicio": "**Si pensás \"yo sé qué estoy haciendo, mi caso es excepción\"** → NO. I"
+  },
+  {
+   "h": "13d5b7295119784c",
+   "inicio": "## 🔴 Step 5 advisors checklist (MANDATORY — leer antes de invocar)"
+  },
+  {
+   "h": "b8adc642ad106985",
+   "inicio": "Cuando el flujo llega a **Step 5 (advisors paralelos)**, la forma canó"
+  },
+  {
+   "h": "37e611bafedfb737",
+   "inicio": "1. **`pipeline.js mech-check --repo <r> --story <s>`** primero — corre"
+  },
+  {
+   "h": "4283f811a298f00f",
+   "inicio": "La matriz de triggers vive en `computeAdvisorSet()` de `pipeline.js` ("
+  },
+  {
+   "h": "fb637dbc4835a503",
+   "inicio": "**Regla B (anuncio pre-flight, obligatoria)**: antes del primer `Agent"
+  },
+  {
+   "h": "98a6e8032db98e77",
+   "inicio": "**Regla C (count check, obligatoria)**: al terminar, correr `check-cou"
+  },
+  {
+   "h": "c54c166fc6d18ccd",
+   "inicio": "## 🔴 SPAWN-1 — Gobierno de los agentes AD-HOC (Steps 0-4) — MANDATORY"
+  },
+  {
+   "h": "64da9b9f7eb9b0bd",
+   "inicio": "Toda la maquinaria de costo del pipeline (mech-check, smart-reloop, co"
+  },
+  {
+   "h": "47a9fa4c5467854d",
+   "inicio": "**Medición 2026-07-28** (58 runs / 795 spawns / baseline en `~/.claude"
+  },
+  {
+   "h": "94947de8c6444a08",
+   "inicio": "- El subagent más spawneado del pipeline **no es un advisor**: es `gen"
+  },
+  {
+   "h": "19740417dd5deaf4",
+   "inicio": "> **Corolario que gobierna este skill: la palanca es abrir MENOS agent"
+  },
+  {
+   "h": "9dca19e6d1b6949f",
+   "inicio": "Las 4 reglas, aplicables en **todos los steps 0-4** (y en cualquier sp"
+  },
+  {
+   "h": "b3b0d383180bc14c",
+   "inicio": "1. **Índice de código antes que agente.** Si el repo tiene `.codegraph"
+  },
+  {
+   "h": "77e8d6445fcf7909",
+   "inicio": "**Por qué advisory y no bloqueante**: la lección del run 9.4 es que re"
+  },
+  {
+   "h": "78d6958ff6134f44",
+   "inicio": "## Configuración de diseño"
+  },
+  {
+   "h": "84b03d43ce2f6c3e",
+   "inicio": "- **COMM.i (HITL en lenguaje simple primero — feedback del dev 2026-07"
+  },
+  {
+   "h": "f820d9025c2a97b1",
+   "inicio": "- **COMM.ii (cierre ejecutivo — feedback del dev 2026-07-25, NO-NEGOCI"
+  },
+  {
+   "h": "4c1d4d1815aeb2ec",
+   "inicio": "🔴 **Anti-pattern explícito**: volcar el `step-06-consolidated-report."
+  },
+  {
+   "h": "2febaf827dfc2f2c",
+   "inicio": "**Excepción — el detalle sube al chat sin pedirlo** cuando: (a) hay CR"
+  },
+  {
+   "h": "d365b8439ad7e4a4",
+   "inicio": "Razón: post-pipeline el cierre llegaba tan denso que el resumen real q"
+  },
+  {
+   "h": "44d9d1d7966a336f",
+   "inicio": "**🔴 Sub-regla D.i.1 — NO cherry-pick MANUAL en re-loop**: re-ejecutar"
+  },
+  {
+   "h": "c61c140c6be8e062",
+   "inicio": "Es **exactamente el anti-pattern E.i** (skip-by-inference). Si en iter"
+  },
+  {
+   "h": "7126327dd9bc25cb",
+   "inicio": "**🟢 SPEED-1 (2026-05-27; data-path reparado 2026-06-11) — escape dete"
+  },
+  {
+   "h": "5af73f53ce9aa4fc",
+   "inicio": "> ⚠️ **Historia (auditoría 2026-06-11, run 9.4)**: entre 2026-06-09 y "
+  },
+  {
+   "h": "e99b79ff19f54600",
+   "inicio": "**🟢 MECH-2 (2026-06-11; recalibrado el mismo día por verificación adv"
+  },
+  {
+   "h": "5881a7140d45f83d",
+   "inicio": "**🟢 Model hints en re-loops (2026-06-11 — APLICARLOS es mandatory)**:"
+  },
+  {
+   "h": "71e5a1b0ddfc4fe5",
+   "inicio": "Workflow correcto smart-reloop: 1. Iter 1: `pipeline.js advisors ...` "
+  },
+  {
+   "h": "f43e35de1235330b",
+   "inicio": "Si dudás del mapping (ej: regresión silenciosa sospechada) → `--force-"
+  },
+  {
+   "h": "744f3711475a9202",
+   "inicio": "**🔴 Sub-regla D.i.2 — cerrá la CLASE, no el síntoma (anti-whack-a-mol"
+  },
+  {
+   "h": "2f41c45000574985",
+   "inicio": "**🟢 Sub-regla D.i.3 — gating de re-loop por severidad × ubicación**: "
+  },
+  {
+   "h": "db4f7a2d26eee334",
+   "inicio": "Casos: `guides/incident-log.md#reloop-2.5` (commit prep sin re-correr "
+  },
+  {
+   "h": "93cfeda51c62289b",
+   "inicio": "...es **bug, no feature**. Saltear un step por inferencia conversacion"
+  },
+  {
+   "h": "38d449e1ba27da8b",
+   "inicio": "Caso: `guides/incident-log.md#skip-inference-2.9` (Step 0b/0c skipeado"
+  },
+  {
+   "h": "a51b8d331ef5a5b0",
+   "inicio": "Caso: `guides/incident-log.md#dod-4.2` (Claude declaró `done` + commit"
+  },
+  {
+   "h": "1679cc61b9cbfd99",
+   "inicio": "**Extensión 2026-07-03 (incidente Story 11.1) — UI con E2E diferido + "
+  },
+  {
+   "h": "b96e9c6b5be08015",
+   "inicio": "**Enforcement mecánico agregado (2026-07-07, regla DODRT-C5.1 — incide"
+  },
+  {
+   "h": "ddfb57f45efc801a",
+   "inicio": "(a) **`scripts/runtime-matrix.js`** computa POR CADA AC su evidencia d"
+  },
+  {
+   "h": "fbef5cf406e21272",
+   "inicio": "🔴 **Dónde vive esa aprobación y a qué se ata (corregido 2026-07-29, p"
+  },
+  {
+   "h": "61b01e28918856fd",
+   "inicio": "Por qué cambió: el anclaje al `matrix_hash` pinnea los veredictos + la"
+  },
+  {
+   "h": "5dfe2517f0d24253",
+   "inicio": "Compatibilidad: el log del home (`~/.claude/.tycon-pipeline/runtime-wa"
+  },
+  {
+   "h": "1adc179f465d32b0",
+   "inicio": "⚠️ **NO se usa el frontmatter para el registro**: el ack agent-writabl"
+  },
+  {
+   "h": "7b9ece935ddb3bce",
+   "inicio": "(b) **`marker.js complete-step 8` exige `checks.acmatrix === 'green'` "
+  },
+  {
+   "h": "57132ff38e11a0d1",
+   "inicio": "(c) **`on-pre-commit.js` RE-COMPUTA la matriz en vivo** en transicione"
+  },
+  {
+   "h": "0e63406b379fbf4c",
+   "inicio": "**Dos categorías (2026-07-10, pedido del dev) — \"no-corrido\" NO es lo "
+  },
+  {
+   "h": "bd1a3189899919c4",
+   "inicio": "**Flujo obligatorio del Step 7 (formato COMM.i)**: tras el 7c, correr "
+  },
+  {
+   "h": "908aeecfa0d27d02",
+   "inicio": "**Narrar \"listo/probado/preparo commits\" con la matriz roja y sin habe"
+  },
+  {
+   "h": "33b1bd14f2c87f5a",
+   "inicio": "- **G.i (Nivel 2 — 2026-06-09, aprobado por del dev)**: en Step 3 (HIT"
+  },
+  {
+   "h": "ba52ae14d9cf90b9",
+   "inicio": "## Cuándo activarse"
+  },
+  {
+   "h": "156aed7e72c0f356",
+   "inicio": "Invocar este skill cuando el usuario dice (en español o inglés): - \"im"
+  },
+  {
+   "h": "428598206aaa89c5",
+   "inicio": "**No invocar automáticamente** si el usuario solo dice \"implementá X\" "
+  },
+  {
+   "h": "1159e4b1166b1bb8",
+   "inicio": "### `/tycon-pipeline next-story` — auto-discovery de la próxima story "
+  },
+  {
+   "h": "d7eb0297d7b3d476",
+   "inicio": "Cuando el usuario dice \"¿cuál es la próxima story?\", \"arrancá la que s"
+  },
+  {
+   "h": "378bcb40be259c89",
+   "inicio": "```bash node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipe"
+  },
+  {
+   "h": "054cd1b0c89c3844",
+   "inicio": "Escanea las stories del repo (`lib/story-discovery.js`: frontmatter co"
+  },
+  {
+   "h": "45a7b8a952f4d107",
+   "inicio": "## Inputs requeridos"
+  },
+  {
+   "h": "8378920c148105e0",
+   "inicio": "1. **Path al story** (`.md`) — absoluto o relativo al cwd 2. **Path al"
+  },
+  {
+   "h": "74ed9398a8a259aa",
+   "inicio": "### Flags opcionales"
+  },
+  {
+   "h": "d4e15081491b6484",
+   "inicio": "- **I.i (ATDD con GATE MECÁNICO — 2026-07-27, decisión del dev)**: el "
+  },
+  {
+   "h": "8a17a518d163b0f6",
+   "inicio": "**Calibrado para NO dar falsos positivos** (un gate que los da se term"
+  },
+  {
+   "h": "ce1b27c0dacb3f26",
+   "inicio": "**I.i.b — el gate también corre FUERA del pipeline (2026-07-28)**: el "
+  },
+  {
+   "h": "553fc8e03ab989e1",
+   "inicio": "**I.i.c — el aviso de \"story sin pipeline\" ya no vive de una lista fij"
+  },
+  {
+   "h": "4444b1bb0ac36173",
+   "inicio": "**I.i.c.1 — …y ahora tampoco vive de una lista de NOMBRES de carpeta ("
+  },
+  {
+   "h": "8edfa5e9f3964798",
+   "inicio": "- **Un buscador, no tres.** `on-edit.js`, `pipeline.js next-story` y `"
+  },
+  {
+   "h": "3ea68ea6cb9fa908",
+   "inicio": "**I.i.d — la guía de QA también se pierde al salirse del pipeline (202"
+  },
+  {
+   "h": "cf45f4d54a32779b",
+   "inicio": "**I.i.d.1 — la guía se pide sólo si hay algo que una PERSONA pueda ope"
+  },
+  {
+   "h": "7c15ddd17122915c",
+   "inicio": "El corte **no** es \"¿tiene front?\" sino **\"¿hay una superficie que una"
+  },
+  {
+   "h": "0bbea28532b572b7",
+   "inicio": "**Escape por repo**: `.tycon/advisors.yaml` → `qa_guide: auto | off | "
+  },
+  {
+   "h": "e041314f815bf21e",
+   "inicio": "**I.i.e — ni un AC salteado, ni pasos de tester faltantes, ni UI sin n"
+  },
+  {
+   "h": "884d72826d4fe0a0",
+   "inicio": "**Escape consciente**: `marker.js complete-step 4 --no-atdd` → queda e"
+  },
+  {
+   "h": "3a1394ef87dd3f30",
+   "inicio": "**Caso disparador**: Story 3.21 de un repo del equipo. El orquestador escribi"
+  },
+  {
+   "h": "456ee3ebad0b6c4b",
+   "inicio": "**🔴 Capa PREVENTIVA + fix del gate ciego (2026-07-30 — caso disparado"
+  },
+  {
+   "h": "5703092a2ef1522d",
+   "inicio": "## Gate E2E del proyecto (`.tycon/advisors.yaml`)"
+  },
+  {
+   "h": "b52905e53b31898a",
+   "inicio": "El gate E2E es **project-agnostic**: lo OWNea cada repo (script + spec"
+  },
+  {
+   "h": "9cc412723764d6f5",
+   "inicio": "```yaml e2e: gate: scripts/e2e-gate.sh # ruta (relativ"
+  },
+  {
+   "h": "fa8409d97034cab1",
+   "inicio": "**Monorepos con varias apps (2026-08-15, Story QA-1 Totora)** — usar "
+  },
+  {
+   "h": "1985615539de15e3",
+   "inicio": "```yaml e2e: frontend_dirs: # TODAS las app"
+  },
+  {
+   "h": "0c0a0c3ee0c0daf1",
+   "inicio": "`pipeline.js e2e-config --repo <r> --changed <archivos...>` agrega `fr"
+  },
+  {
+   "h": "cf57f549b38f976a",
+   "inicio": "- **Contrato del script `gate`**: `<frontend-dir> <story-id> <evidence"
+  },
+  {
+   "h": "2976481cc3dfc063",
+   "inicio": "## Flujo"
+  },
+  {
+   "h": "71f6029b5b1969ed",
+   "inicio": "**Arranque canónico**: `node scripts/pipeline.js start --story <spec> "
+  },
+  {
+   "h": "5bd42efed6566f52",
+   "inicio": "Seguí EN ORDEN los steps definidos en `steps/` — **el orden y los salt"
+  },
+  {
+   "h": "25d2886d5f944cc5",
+   "inicio": "0. **step-00-preflight.md** — Branch guard (NO implementar en `main`/`"
+  },
+  {
+   "h": "fda552c31ae8c459",
+   "inicio": "### Fase de cierre (manual-trigger, post-DoD)"
+  },
+  {
+   "h": "ca1a39edbeea5afd",
+   "inicio": "9. **step-09-ado-story-closure.md** — **NO se ejecuta en el flujo prin"
+  },
+  {
+   "h": "842a964e4c138893",
+   "inicio": "Cada step tiene sus decisiones documentadas. Leé el archivo correspond"
+  },
+  {
+   "h": "53d4ca167f58fc6a",
+   "inicio": "## 🟢 Marker file — state-of-pipeline persistente entre turns"
+  },
+  {
+   "h": "b11a57499cb6fd21",
+   "inicio": "**INTRODUCIDO 2026-05-15** — caso: `guides/incident-log.md#marker-1.7.1`"
+  },
+  {
+   "h": "a48593013eff60b3",
+   "inicio": "El skill mantiene un **marker file** durante toda la vida del pipeline"
+  },
+  {
+   "h": "7e6eb84f740faa76",
+   "inicio": "**🔴 Multi-sesión sin race (2026-05-17):** cada sesión de Claude Code "
+  },
+  {
+   "h": "faf3c32a973e82ee",
+   "inicio": "El formato legacy single-file (`~/.claude/.tycon-pipeline/active.json`"
+  },
+  {
+   "h": "d65d1f4e0312f6fa",
+   "inicio": "### Marker lifecycle"
+  },
+  {
+   "h": "0797e1bc87ca70e9",
+   "inicio": "- **Step 0 (preflight) — setear marker** al confirmar branch guard: ``"
+  },
+  {
+   "h": "4cee05fa146a8a24",
+   "inicio": "- **Cada step que completa — actualizar marker** (🔒 en ORDEN: 3←1,2 ·"
+  },
+  {
+   "h": "5b81dbfd6b40c0d5",
+   "inicio": "- **Checks mecánicos (build/tests/etc.) — `run-check` (2026-06-09, ree"
+  },
+  {
+   "h": "9ada3ceaf4889ba2",
+   "inicio": "- **Step 0b/0c — flags de side-effects**: ```bash node ~/.claude/agent"
+  },
+  {
+   "h": "90bb55637e5542da",
+   "inicio": "- **Resume cross-session — `adopt-session`**: re-asigna el marker de u"
+  },
+  {
+   "h": "1bc181a6001cd9c2",
+   "inicio": "- **Edits/Writes durante Step 4 (execute) — auto-tracked** por el hook"
+  },
+  {
+   "h": "e29404e21180476c",
+   "inicio": "- **Step 5 (advisors) — la FOTO de la iteración: la toma el arnés, no "
+  },
+  {
+   "h": "2241d8920ff47b72",
+   "inicio": "- **Step 8 (commit-prep) — clear marker** una vez que el commit messag"
+  },
+  {
+   "h": "a6351262c395bae0",
+   "inicio": "- **Step 9 (ado-closure) — clear marker** si la story se cierra (alter"
+  },
+  {
+   "h": "3afe2233e10874de",
+   "inicio": "### Hooks que consultan el marker"
+  },
+  {
+   "h": "65f73f7f2a478a55",
+   "inicio": "Los hooks del pipeline viven en `~/.claude/agent-skills/skills/tycon-p"
+  },
+  {
+   "h": "016e71df7eaa48ae",
+   "inicio": "1. **`on-prompt.js`** (UserPromptSubmit) — tres modos: - **INTENT-dete"
+  },
+  {
+   "h": "65fe729157c8d695",
+   "inicio": "2. **`on-edit.js`** (PostToolUse Edit|Write): - Si HAY marker: registr"
+  },
+  {
+   "h": "eb53297f10f3f9ea",
+   "inicio": "3. **`on-write-collision.js`** (PreToolUse Edit|Write) — fix robusto 2"
+  },
+  {
+   "h": "68200606bcf6c87c",
+   "inicio": "4. **`on-story-gate.js`** (PreToolUse Edit|Write, vía `dispatch.js`) +"
+  },
+  {
+   "h": "61b466da4d3df84d",
+   "inicio": "5. **`marker.js`** — utility CRUD, no es hook (lo invocan los steps + "
+  },
+  {
+   "h": "a775b3afdb63b700",
+   "inicio": "### Cross-session discovery (fix robusto 2026-05-20)"
+  },
+  {
+   "h": "f2dc0d4cff65c910",
+   "inicio": "**Problema**: el marker per-session-id resuelve la race condition mult"
+  },
+  {
+   "h": "4bd843689a88b962",
+   "inicio": "**Solución**: 3 mecanismos combinados:"
+  },
+  {
+   "h": "4681367c81ea8e6e",
+   "inicio": "- **`marker.js list-all`** y **`marker.js find-by-story <storyId>`**: "
+  },
+  {
+   "h": "8981ed54858ec46b",
+   "inicio": "**Comandos extra de `marker.js` para recovery**: - `marker.js clear-se"
+  },
+  {
+   "h": "27c78e7c219260e9",
+   "inicio": "### Auto-recovery"
+  },
+  {
+   "h": "42c4b48c9a1d1670",
+   "inicio": "Si el marker queda huérfano (skill crashed, el dev cerró la herramient"
+  },
+  {
+   "h": "f3dd98854d507349",
+   "inicio": "### 🔒 Portón de carril — el pipeline ya no depende de que el agente s"
+  },
+  {
+   "h": "4095d51c3b7c0954",
+   "inicio": "**Caso disparador**: otro dev del equipo pidió una funcionalidad en le"
+  },
+  {
+   "h": "5d83f569e402da09",
+   "inicio": "Tres candados mecánicos (deniegan, no recuerdan):"
+  },
+  {
+   "h": "cf9c64c325b0fc2d",
+   "inicio": "1. **Carril** — `on-story-gate.js` (PreToolUse Edit|Write, primero en "
+  },
+  {
+   "h": "83823f943d5a134e",
+   "inicio": "Kill-switch **del dev, no del agente**: env `TYCON_STORY_GATE=off` (ap"
+  },
+  {
+   "h": "55c455091893cd21",
+   "inicio": "### Carril: se declara o se pregunta — nunca se adivina (2026-08-24, r"
+  },
+  {
+   "h": "d69e196ffb7c0f53",
+   "inicio": "**El caso original** (`incident-log#adhoc-self-declared-2026-08-24`): "
+  },
+  {
+   "h": "6cb90a16c813765c",
+   "inicio": "**El primer diseño (2026-08-24) y por qué se borró (2026-08-27).** El "
+  },
+  {
+   "h": "8841919841552beb",
+   "inicio": "**El diseño vigente** — nadie adivina, cada carril tiene una fuente de"
+  },
+  {
+   "h": "825786f32660506d",
+   "inicio": "| Carril | Cómo se fija | Evidencia | |---|---|---| | **pipeline** | E"
+  },
+  {
+   "h": "72f98c5611cc600b",
+   "inicio": "**El intérprete de castellano** (`lib/lane-classifier.js`) es quien ju"
+  },
+  {
+   "h": "f3bd91d4145e0bf1",
+   "inicio": "- `PIPELINE` → **veta** el atajo aunque el reason cite al user (citar "
+  },
+  {
+   "h": "4222c1a439791b1b",
+   "inicio": "Kill-switches del dev: `TYCON_STORY_GATE=off` (portón entero) · `TYCON"
+  },
+  {
+   "h": "9fd56e609999e223",
+   "inicio": "Igual en Codex: son los mismos scripts (`adapters/codex/hooks.json`). "
+  },
+  {
+   "h": "3f3e107cd9ab0f3c",
+   "inicio": "### Excepciones permitidas (manual override)"
+  },
+  {
+   "h": "0274420bf75e8670",
+   "inicio": "Hotfix obvio, refactor independiente, cleanup ad-hoc → **carril ad-hoc"
+  },
+  {
+   "h": "64194e75e0aa502c",
+   "inicio": "## Terminación del pipeline"
+  },
+  {
+   "h": "ca9e80cca5d5a935",
+   "inicio": "El pipeline termina en cualquiera de estos casos:"
+  },
+  {
+   "h": "a729f22157461dbb",
+   "inicio": "- Step 1: CRITICAL sin override + usuario pide corregir - Step 2: el s"
+  },
+  {
+   "h": "f32ee9e1b7e9231b",
+   "inicio": "En **TODOS** los casos, el último paso obligatorio es `marker.js clear"
+  },
+  {
+   "h": "1776f1acda9a687e",
+   "inicio": "En todos los casos, el log del pipeline queda en `.advisors/pipeline-r"
+  },
+  {
+   "h": "8f7f129916456893",
+   "inicio": "## Logging"
+  },
+  {
+   "h": "90f42fb4da39bddc",
+   "inicio": "Una corrida deja registro en **tres carpetas distintas** — buscar en l"
+  },
+  {
+   "h": "a2ad9556228c1544",
+   "inicio": "**1. Al run dir** `.advisors/pipeline-runs/<story-id>-<timestamp>/`: -"
+  },
+  {
+   "h": "dfad963bcc376b0a",
+   "inicio": "**2. Al evidence dir** `.advisors/dod-runtime/` del repo de la story ("
+  },
+  {
+   "h": "ec03608dc4d2cd24",
+   "inicio": "**3. A la carpeta de QA de la story** (`<carpeta-de-la-story>/../qa/`,"
+  },
+  {
+   "h": "4ac2c8e1d7371f8e",
+   "inicio": "🔴 Los dos marcados **son contrato**: hay código fuera de este skill q"
+  },
+  {
+   "h": "c6f1ec71c5b104f3",
+   "inicio": "Esto sirve como audit trail de qué pasó en la corrida, útil para debug"
+  },
+  {
+   "h": "009ed6bb1783d2a4",
+   "inicio": "## Anti-patterns (lo que NO hace)"
+  },
+  {
+   "h": "1690e351e44cdf16",
+   "inicio": "- ❌ NO ejecuta `git commit` ni `git push` sin aprobación explícita (ve"
+  },
+  {
+   "h": "425c4ffaa549974b",
+   "inicio": "## Post-pipeline (fuera del alcance)"
+  },
+  {
+   "h": "937d755136cee558",
+   "inicio": "Después de que el dev ejecute el commit y haga push/merge: - La métric"
+  },
+  {
+   "h": "f29190bada439de1",
+   "inicio": "## Referencias"
+  },
+  {
+   "h": "677316992fbbc689",
+   "inicio": "- Advisors invocados: `~/.claude/agent-skills/agents/tycon-*.md` - Ski"
+  }
+ ]
+}

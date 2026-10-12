@@ -1,0 +1,33 @@
+{
+  "__doc": "Casos quirúrgicos del advisor llm-cost-reviewer (Etapa D). Un pecado → una regla → el veredicto es la PRESENCIA/AUSENCIA del rule ID objetivo COMO FINDING (bullet '- [ID] ...'), nunca el conteo (§2.2 del plan). Reglas elegidas por determinismo greppeable: LLMCOST-C1 (ausencia literal de max_tokens en messages.create) y LLMCOST-C2 (loop for que llama al LLM por elemento sin batch ni concurrency cap). Cada fixture peca contra UNA sola regla: el de C1 tiene signal/timeout y no loopea; el de C2 tiene max_tokens y signal. El must-not-flag es el gemelo del de C1 con max_tokens presente.",
+  "advisor": "llm-cost-reviewer",
+  "cases": [
+    {
+      "id": "llmcost-c1-sin-max-tokens",
+      "type": "must-flag",
+      "rule": "LLMCOST-C1",
+      "files": {
+        "src/lib/llm/rerank.ts": "import Anthropic from '@anthropic-ai/sdk';\n\nconst client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });\n\nexport async function rerankCandidates(query: string, candidates: string[]): Promise<string> {\n  const response = await client.messages.create(\n    {\n      model: 'claude-haiku-4-5-20251001',\n      messages: [\n        { role: 'user', content: `Rerank candidates for \"${query}\": ${candidates.join(' | ')}` },\n      ],\n    },\n    { signal: AbortSignal.timeout(30_000) },\n  );\n  return response.content[0].type === 'text' ? response.content[0].text : '';\n}\n"
+      },
+      "canario": true
+    },
+    {
+      "id": "llmcost-c2-loop-sin-cap",
+      "type": "must-flag",
+      "rule": "LLMCOST-C2",
+      "files": {
+        "src/lib/llm/classify.ts": "import Anthropic from '@anthropic-ai/sdk';\n\nconst client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });\n\nexport async function classifyProducts(items: string[]): Promise<string[]> {\n  const results: string[] = [];\n  for (const item of items) {\n    const response = await client.messages.create(\n      {\n        model: 'claude-haiku-4-5-20251001',\n        max_tokens: 300,\n        messages: [{ role: 'user', content: `Classify this product: ${item}` }],\n      },\n      { signal: AbortSignal.timeout(30_000) },\n    );\n    results.push(response.content[0].type === 'text' ? response.content[0].text : '');\n  }\n  return results;\n}\n"
+      }
+    },
+    {
+      "id": "limpio-max-tokens-presente-sin-c1",
+      "type": "must-not-flag",
+      "rule": "LLMCOST-C1",
+      "files": {
+        "src/lib/llm/rerank.ts": "import Anthropic from '@anthropic-ai/sdk';\n\nconst client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });\n\nexport async function rerankCandidates(query: string, candidates: string[]): Promise<string> {\n  const response = await client.messages.create(\n    {\n      model: 'claude-haiku-4-5-20251001',\n      max_tokens: 300,\n      messages: [\n        { role: 'user', content: `Rerank candidates for \"${query}\": ${candidates.join(' | ')}` },\n      ],\n    },\n    { signal: AbortSignal.timeout(30_000) },\n  );\n  return response.content[0].type === 'text' ? response.content[0].text : '';\n}\n"
+      },
+      "canario": true
+    }
+  ],
+  "prompt_template": "Tu salida completa se guarda en un archivo de auditoría que procesa un script: no la lee una persona en el chat — la regla de 'resumen ejecutivo / detalle a pedido' de tus instrucciones NO aplica en este contexto. Emití el reporte COMPLETO en el formato del catálogo, con cada finding como bullet que abre con su rule ID entre corchetes: - [RULE-ID] `archivo:línea` descripción. Fix: accion. Los rule IDs entre corchetes van SOLO en findings reales (en la sección '✅ OK' o al descartar una regla, mencionala SIN corchetes). Archivos cambiados: {files}. Escaneá y emití el reporte."
+}

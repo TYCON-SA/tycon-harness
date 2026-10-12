@@ -1,0 +1,158 @@
+{
+ "__doc": "Caso incident-log#story-write-spawn-2026-08-28: el spawnIf del despachador de edición (dispatch.js → hojas ado-story-create + followup-story-create) exigía el segmento de RUTA `/specs/stories/` — medido ese día, 13 de los 15 repos con stories del equipo (751 de 1083 stories) usan otro layout, o sea que los dos automatismos no corrían NUNCA fuera de CeiboProject, sin un solo error. El mismo defecto que el barrido del 2026-08-15 (incident-log#story-discovery-nombres) arregló en otros 3 gates, en la única pieza que ese barrido no vio. Ahora decide la IDENTIDAD DECLARADA (`story:` en el frontmatter del content — declaresStoryIdentity de lib/story-discovery.js, el criterio del lint 2026-08-23). Estos casos ejercen el DISPARO REAL vía hook-post-edit.js: la evidencia es el reminder de la hoja (STORY-CREATE-detect / STORY-FOLLOWUP-detect) en stdout. OJO al escribir casos nuevos acá: las hojas excluyen a propósito paths bajo ~/.claude o que contengan el nombre del arnés — el fixture del banco vive en tmpdir, por eso funciona.",
+ "hooks": [
+  {
+   "hook": "hook-post-edit.js → spawnIf story-write (ado-story-create + followup-story-create)",
+   "script": "${SKILLS}/skills/tycon-pipeline/scripts/hook-post-edit.js",
+   "event": "PostToolUse",
+   "matcher": "Edit|Write",
+   "cases": [
+    {
+     "id": "story-en-specs-stories-dispara",
+     "env": { "TYCON_ADO_ORG": "org-de-prueba" },
+     "__ado": "el aviso del work item sale sólo con Azure DevOps prendido: el caso lo prende explícito (en el repo interno lo prendía el perfil del equipo; en la copia pública nace apagado)",
+     "type": "must-emit",
+     "__doc": "La convención clásica (el repo de specs de un producto del equipo) — el único caso que el guard viejo cubría: no puede dejar de disparar con el nuevo.",
+     "setup": [
+      "git init -q -b main .",
+      "mkdir -p specs/stories"
+     ],
+     "stdin": {
+      "session_id": "bench-sw1",
+      "tool_name": "Write",
+      "tool_input": {
+       "file_path": "${FIXTURE}/specs/stories/story-9-9-demo.md",
+       "content": "---\nstory: \"9.9\"\nepic: \"pedidos\"\nstatus: backlog\ntitle: \"Demo\"\napproach: \"t\"\n---\n# Story 9.9\n"
+      }
+     },
+     "expect": {
+      "stdout_re": [
+       "STORY-CREATE-detect"
+      ]
+     }
+    },
+    {
+     "id": "story-fuera-de-specs-stories-dispara",
+     "env": { "TYCON_ADO_ORG": "org-de-prueba" },
+     "__ado": "el aviso del work item sale sólo con Azure DevOps prendido: el caso lo prende explícito (en el repo interno lo prendía el perfil del equipo; en la copia pública nace apagado)",
+     "type": "must-emit",
+     "__doc": "EL caso que hoy fallaba: layout de un producto del equipo (docs/<área>/<épica>/). Antes del fix este caso salía mudo — story creada, work item de ADO jamás sugerido, follow-ups jamás enlazados.",
+     "setup": [
+      "git init -q -b main .",
+      "mkdir -p docs/pedidos/epic-entregas"
+     ],
+     "stdin": {
+      "session_id": "bench-sw2",
+      "tool_name": "Write",
+      "tool_input": {
+       "file_path": "${FIXTURE}/docs/pedidos/epic-entregas/story-9-9-demo.md",
+       "content": "---\nstory: \"9.9\"\nepic: \"pedidos\"\nstatus: backlog\ntitle: \"Demo\"\napproach: \"t\"\n---\n# Story 9.9\n"
+      }
+     },
+     "expect": {
+      "stdout_re": [
+       "STORY-CREATE-detect"
+      ]
+     }
+    },
+    {
+     "id": "followup-fuera-de-specs-stories-dispara",
+     "type": "must-emit",
+     "__doc": "La segunda hoja, mismo layout no-clásico: story hija con followup_of y la padre (sin back-link) en el mismo dir → tiene que salir el aviso de back-links.",
+     "setup": [
+      "git init -q -b main .",
+      "mkdir -p docs/pedidos/epic-entregas",
+      "node -e \"require('fs').writeFileSync('docs/pedidos/epic-entregas/story-9-1-padre.md','---\\nstory: \\\"9.1\\\"\\nepic: \\\"pedidos\\\"\\nstatus: done\\ntitle: \\\"Padre\\\"\\n---\\n# Story 9.1\\n')\""
+     ],
+     "stdin": {
+      "session_id": "bench-sw3",
+      "tool_name": "Write",
+      "tool_input": {
+       "file_path": "${FIXTURE}/docs/pedidos/epic-entregas/story-9-2-hija.md",
+       "content": "---\nstory: \"9.2\"\nepic: \"pedidos\"\nstatus: backlog\ntitle: \"Hija\"\nfollowup_of:\n  - id: \"9.1\"\n    type: fix\n    summary: \"recalibra el mapeo\"\n---\n# Story 9.2\n"
+      }
+     },
+     "expect": {
+      "stdout_re": [
+       "STORY-FOLLOWUP-detect"
+      ]
+     }
+    },
+    {
+     "id": "md-de-planning-queda-quieto",
+     "type": "must-stay-quiet",
+     "__doc": "Un PRD declara estado (`status:`) pero no identidad (`story:`): el guard corre en CADA Write y no puede spawnear hojas para los docs de planning (medición 2026-08-23: 0 de 13 docs del corpus declaran story:).",
+     "setup": [
+      "git init -q -b main .",
+      "mkdir -p docs"
+     ],
+     "stdin": {
+      "session_id": "bench-sw4",
+      "tool_name": "Write",
+      "tool_input": {
+       "file_path": "${FIXTURE}/docs/prd.md",
+       "content": "---\ntitle: \"PRD pedidos\"\nstatus: draft\n---\n# PRD\n"
+      }
+     },
+     "expect": {
+      "stdout_not_re": [
+       "STORY-CREATE",
+       "STORY-FOLLOWUP"
+      ]
+     }
+    },
+    {
+     "id": "story-write-sin-content-lee-el-disco",
+     "env": { "TYCON_ADO_ORG": "org-de-prueba" },
+     "__ado": "el aviso del work item sale sólo con Azure DevOps prendido: el caso lo prende explícito (en el repo interno lo prendía el perfil del equipo; en la copia pública nace apagado)",
+     "type": "must-emit",
+     "__doc": "Rama disk-fallback: un Write de `.md` sin tool_input.content (forma de un evento Codex normalizado por un hook-io viejo, sin extracción de Add File). Es PostToolUse — el archivo ya existe — así que el dispatcher completa el content desde disco y las hojas content-based siguen funcionando.",
+     "setup": [
+      "git init -q -b main .",
+      "mkdir -p docs/pedidos/epic-entregas",
+      "node -e \"require('fs').writeFileSync('docs/pedidos/epic-entregas/story-9-9-demo.md','---\\nstory: \\\"9.9\\\"\\nepic: \\\"pedidos\\\"\\nstatus: backlog\\ntitle: \\\"Demo\\\"\\napproach: \\\"t\\\"\\n---\\n# Story 9.9\\n')\""
+     ],
+     "stdin": {
+      "session_id": "bench-sw5",
+      "tool_name": "Write",
+      "tool_input": {
+       "file_path": "${FIXTURE}/docs/pedidos/epic-entregas/story-9-9-demo.md"
+      }
+     },
+     "expect": {
+      "stdout_re": [
+       "STORY-CREATE-detect"
+      ]
+     }
+    },
+    {
+     "id": "codex-add-file-de-story-dispara",
+     "env": { "TYCON_ADO_ORG": "org-de-prueba" },
+     "__ado": "el aviso del work item sale sólo con Azure DevOps prendido: el caso lo prende explícito (en el repo interno lo prendía el perfil del equipo; en la copia pública nace apagado)",
+     "type": "must-emit",
+     "tools": [
+      "codex"
+     ],
+     "__doc": "Gemelo con el formato REAL de Codex (apply_patch, path relativo al cwd — la forma que mide 09-codex-apply-patch.json): el traductor hook-io extrae el content de las líneas + del Add File, y el guard + las hojas deciden por ese content igual que con un Write de Claude.",
+     "setup": [
+      "git init -q -b main .",
+      "mkdir -p docs/pedidos/epic-entregas"
+     ],
+     "stdin": {
+      "session_id": "bench-sw6",
+      "tool_name": "apply_patch",
+      "tool_input": {
+       "command": "*** Begin Patch\n*** Add File: docs/pedidos/epic-entregas/story-9-8-codex.md\n+---\n+story: \"9.8\"\n+epic: \"pedidos\"\n+status: backlog\n+title: \"Codex\"\n+approach: \"t\"\n+---\n+# Story 9.8\n*** End Patch"
+      }
+     },
+     "expect": {
+      "stdout_re": [
+       "STORY-CREATE-detect"
+      ]
+     },
+     "asymmetry": "Formato EXCLUSIVO de codex: claude nunca emite apply_patch. La dirección claude de este gemelo son los casos Write de esta misma suite (story-fuera-de-specs-stories-dispara + story-write-sin-content-lee-el-disco)."
+    }
+   ]
+  }
+ ]
+}

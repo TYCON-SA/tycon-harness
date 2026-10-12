@@ -1,0 +1,30 @@
+{
+  "advisors": [
+    "tycon-plugin-security-basics",
+    "tycon-plugin-dotnet-conventions",
+    "tycon-silent-failure-hunter",
+    "tycon-plugin-react-conventions",
+    "nextjs-app-router-security",
+    "tycon-plugin-nextjs-conventions",
+    "multi-tenant-isolation-reviewer",
+    "auth-session-reviewer",
+    "worker-lifecycle-reviewer",
+    "http-resilience-reviewer",
+    "signalr-hub-reviewer",
+    "signalr-client-reviewer",
+    "drizzle-migration-reviewer",
+    "migration-impact-analyzer",
+    "llm-cost-reviewer",
+    "i18n-hardcoded-text-reviewer",
+    "tycon-plugin-tests-coverage",
+    "tycon-story-validator",
+    "tycon-ac-coverage-checker",
+    "tycon-signed-scope-audit",
+    "tycon-spec-first-checker",
+    "tycon-e2e-realness-checker",
+    "tycon-feature-wiring-checker",
+    "tycon-deferral-tracker",
+    "tycon-dod-runtime-checker",
+    "tycon-retrospective-capturer"
+  ]
+}

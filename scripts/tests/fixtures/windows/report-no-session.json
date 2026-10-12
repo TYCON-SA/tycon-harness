@@ -1,0 +1,781 @@
+{
+  "__doc": "Fixture de scripts/tests/windows-probe.test.js (story 8.17, W0 · T13). El mismo reporte de ejemplo que report-complete.json, SIN sesión real: el paso session-probe dice «no medido» con su motivo. Los valores son inventados para la prueba: no son una medición.",
+  "schema": 1,
+  "kind": "windows-report",
+  "run": {
+    "id": "4242",
+    "number": "windows-20261004.1",
+    "harness_ref": "refs/heads/main",
+    "real_session": false,
+    "disposable": true,
+    "started": "2026-10-04T02:00:00.000Z",
+    "finished": "2026-10-04T02:21:00.000Z",
+    "platform": "win32",
+    "lab_mode": false,
+    "node": "22.9.0",
+    "copy_commit": "0123456789abcdef0123456789abcdef01234567",
+    "bundle": {
+      "mode": "export",
+      "package": "core,bizuit"
+    }
+  },
+  "steps": [
+    {
+      "schema": 1,
+      "name": "inventory",
+      "status": "measured",
+      "reason": null,
+      "started": "2026-10-04T02:00:00.000Z",
+      "seconds": 12.5,
+      "facts": {
+        "system": {
+          "platform": "win32",
+          "arch": "x64",
+          "type": "Windows_NT",
+          "release": "10.0.26100",
+          "version": "Windows Server 2025 Datacenter",
+          "azure_agent": true
+        },
+        "tools": {
+          "git": {
+            "state": "present",
+            "locations": [
+              "C:\\Program Files\\Git\\cmd\\git.exe"
+            ],
+            "versions": [
+              {
+                "location": "C:\\Program Files\\Git\\cmd\\git.exe",
+                "text": "git version 2.51.0.windows.1",
+                "exit": 0
+              }
+            ],
+            "version": "git version 2.51.0.windows.1",
+            "launch_kind": "exe"
+          },
+          "node": {
+            "state": "present",
+            "locations": [
+              "C:\\Program Files\\nodejs\\node.exe"
+            ],
+            "versions": [
+              {
+                "location": "C:\\Program Files\\nodejs\\node.exe",
+                "text": "v22.9.0",
+                "exit": 0
+              }
+            ],
+            "version": "v22.9.0",
+            "launch_kind": "exe"
+          },
+          "pwsh": {
+            "state": "present",
+            "locations": [
+              "C:\\Program Files\\PowerShell\\7\\pwsh.exe"
+            ],
+            "versions": [
+              {
+                "location": "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
+                "text": "PowerShell 7.5.2",
+                "exit": 0
+              }
+            ],
+            "version": "PowerShell 7.5.2",
+            "launch_kind": "exe"
+          },
+          "powershell": {
+            "state": "present",
+            "locations": [
+              "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
+            ],
+            "versions": [
+              {
+                "location": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+                "text": "5.1.26100.1",
+                "exit": 0
+              }
+            ],
+            "version": "5.1.26100.1",
+            "launch_kind": "exe"
+          },
+          "bash": {
+            "state": "present",
+            "locations": [
+              "C:\\Windows\\System32\\bash.exe",
+              "C:\\Program Files\\Git\\bin\\bash.exe"
+            ],
+            "versions": [
+              {
+                "location": "C:\\Windows\\System32\\bash.exe",
+                "text": null,
+                "exit": 0
+              }
+            ],
+            "version": null,
+            "launch_kind": "exe",
+            "wsl_launcher": [
+              true,
+              false
+            ]
+          },
+          "jq": {
+            "state": "present",
+            "locations": [
+              "C:\\ProgramData\\chocolatey\\bin\\jq.exe"
+            ],
+            "versions": [
+              {
+                "location": "C:\\ProgramData\\chocolatey\\bin\\jq.exe",
+                "text": "jq-1.7.1",
+                "exit": 0
+              }
+            ],
+            "version": "jq-1.7.1",
+            "launch_kind": "exe"
+          },
+          "python": {
+            "state": "present",
+            "locations": [
+              "C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\python.exe"
+            ],
+            "versions": [
+              {
+                "location": "C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\python.exe",
+                "text": "Python 3.12.10",
+                "exit": 0
+              }
+            ],
+            "version": "Python 3.12.10",
+            "launch_kind": "exe"
+          },
+          "python3": {
+            "state": "absent",
+            "locations": []
+          },
+          "py": {
+            "state": "present",
+            "locations": [
+              "C:\\Windows\\py.exe"
+            ],
+            "versions": [
+              {
+                "location": "C:\\Windows\\py.exe",
+                "text": "Python 3.12.10",
+                "exit": 0
+              }
+            ],
+            "version": "Python 3.12.10",
+            "launch_kind": "exe"
+          },
+          "az": {
+            "state": "present",
+            "locations": [
+              "C:\\Program Files\\Microsoft SDKs\\Azure\\CLI2\\wbin\\az.cmd"
+            ],
+            "versions": [
+              {
+                "location": "C:\\Program Files\\Microsoft SDKs\\Azure\\CLI2\\wbin\\az.cmd",
+                "text": "azure-cli 2.77.0",
+                "exit": 0
+              }
+            ],
+            "version": "azure-cli 2.77.0",
+            "launch_kind": "cmd"
+          },
+          "claude": {
+            "state": "absent",
+            "locations": []
+          },
+          "timeout": {
+            "state": "present",
+            "locations": [
+              "C:\\Windows\\System32\\timeout.exe"
+            ],
+            "versions": [
+              {
+                "location": "C:\\Windows\\System32\\timeout.exe",
+                "text": null,
+                "exit": 0
+              }
+            ],
+            "version": null,
+            "launch_kind": "exe"
+          },
+          "realpath": {
+            "state": "absent",
+            "locations": []
+          },
+          "lsof": {
+            "state": "absent",
+            "locations": []
+          }
+        },
+        "git_bash": {
+          "path": "C:\\Program Files\\Git\\bin\\bash.exe",
+          "from": "junto a C:\\Program Files\\Git\\cmd\\git.exe",
+          "reason": null,
+          "tools": {
+            "jq": null,
+            "timeout": "/usr/bin/timeout",
+            "realpath": "/usr/bin/realpath",
+            "lsof": null,
+            "python3": null,
+            "python": null,
+            "cygpath": "/usr/bin/cygpath"
+          },
+          "first_bash_in_path": "C:\\Windows\\System32\\bash.exe",
+          "first_bash_is_wsl_launcher": true
+        },
+        "autocrlf": {
+          "set": true,
+          "entries": [
+            "system\tfile:C:/Program Files/Git/etc/gitconfig\ttrue"
+          ],
+          "effective": "true"
+        },
+        "administrator": {
+          "known": true,
+          "value": true
+        },
+        "developer_mode": {
+          "known": true,
+          "value": false,
+          "detail": "la clave del registro no está"
+        },
+        "homes": {
+          "node_homedir": "C:\\Users\\agent",
+          "env_userprofile": "C:\\Users\\agent",
+          "pwsh_home": "C:\\Users\\agent",
+          "git_bash_home": "/c/Users/agent",
+          "git_bash_home_windows": "C:\\Users\\agent",
+          "compared": {
+            "pwsh_home": "C:\\Users\\agent",
+            "userprofile": "C:\\Users\\agent",
+            "git_bash_home": "C:\\Users\\agent",
+            "node_homedir": "C:\\Users\\agent"
+          },
+          "unknown": [],
+          "agree": true
+        }
+      },
+      "findings": [],
+      "notes": [],
+      "cap_s": 600,
+      "capped_by": "run-capped.js",
+      "exit": 0,
+      "wall_seconds": 13.1
+    },
+    {
+      "schema": 1,
+      "name": "install",
+      "status": "measured",
+      "reason": null,
+      "started": "2026-10-04T02:00:00.000Z",
+      "seconds": 12.5,
+      "facts": {
+        "cover": {
+          "file": ".github/README.md",
+          "marker": "install:core",
+          "fence": "powershell",
+          "block": "git clone <public-repo-url> harness-clone; node harness-clone/scripts/setup/harness.js install"
+        },
+        "variants": {
+          "plain": {
+            "home": "D:\\a\\1\\tycon-lab\\users\\lab-user",
+            "work": "D:\\a\\1\\tycon-lab\\work\\plain",
+            "seen_homes": {
+              "node_is_lab": true,
+              "pwsh_is_lab": true,
+              "git_bash_is_lab": true
+            },
+            "run": {
+              "exit": 0,
+              "error": null,
+              "timed_out": false,
+              "seconds": 41.2,
+              "stdout": "arnés instalado · managed",
+              "stderr": ""
+            },
+            "clone": "D:\\a\\1\\tycon-lab\\work\\plain\\harness-clone",
+            "eol": {
+              "total": 96,
+              "with_cr": 96,
+              "first": [
+                "scripts/hooks/safety-guard-pre.sh"
+              ],
+              "autocrlf_in_clone": "file:C:/Program Files/Git/etc/gitconfig\ttrue"
+            },
+            "version": {
+              "exit": 0,
+              "text": "0.9.0 · stable · managed"
+            },
+            "doctor": {
+              "exit": 0,
+              "readable": true,
+              "mode": "managed",
+              "fail": [],
+              "warn": [],
+              "ok": [
+                "Node 22.9.0"
+              ]
+            },
+            "settings": {
+              "exists": true,
+              "hooks_by_event": {
+                "SessionStart": 9,
+                "PreToolUse": 3
+              },
+              "hooks_total": 23,
+              "copy": "settings-plain.json"
+            },
+            "state": {
+              "mode": "managed",
+              "channel": "stable",
+              "sources": 1,
+              "version": "0.9.0"
+            },
+            "links": [
+              {
+                "name": "tycon-claude-guides",
+                "present": true,
+                "kind": "link",
+                "link_type": "Junction",
+                "to_clone": true
+              },
+              {
+                "name": "agent-skills",
+                "present": true,
+                "kind": "link",
+                "link_type": "Junction",
+                "to_clone": true
+              },
+              {
+                "name": "agents",
+                "present": true,
+                "kind": "link",
+                "link_type": "Junction",
+                "to_clone": true
+              },
+              {
+                "name": "skills",
+                "present": true,
+                "kind": "link",
+                "link_type": "Junction",
+                "to_clone": true
+              }
+            ]
+          },
+          "accent": {
+            "home": "D:\\a\\1\\tycon-lab\\users\\usuario de práctica",
+            "seen_homes": {
+              "node_is_lab": true,
+              "pwsh_is_lab": true,
+              "git_bash_is_lab": true
+            },
+            "run": {
+              "exit": 0,
+              "error": null,
+              "seconds": 39.8,
+              "stdout": "",
+              "stderr": ""
+            },
+            "clone": "D:\\a\\1\\tycon-lab\\users\\usuario de práctica\\proyectos\\harness-clone",
+            "eol": {
+              "total": 96,
+              "with_cr": 96,
+              "first": [],
+              "autocrlf_in_clone": "true"
+            },
+            "doctor": {
+              "exit": 0,
+              "readable": true,
+              "fail": []
+            },
+            "settings": {
+              "exists": true,
+              "hooks_total": 23
+            },
+            "links": [
+              {
+                "name": "tycon-claude-guides",
+                "present": true,
+                "kind": "link",
+                "link_type": "Junction",
+                "to_clone": true
+              },
+              {
+                "name": "agent-skills",
+                "present": true,
+                "kind": "link",
+                "link_type": "Junction",
+                "to_clone": true
+              },
+              {
+                "name": "agents",
+                "present": true,
+                "kind": "link",
+                "link_type": "Junction",
+                "to_clone": true
+              },
+              {
+                "name": "skills",
+                "present": true,
+                "kind": "link",
+                "link_type": "Junction",
+                "to_clone": true
+              }
+            ],
+            "uninstall": {
+              "exit": 0,
+              "error": null,
+              "links_left": [],
+              "state_left": false,
+              "clone_still_there": true
+            }
+          }
+        },
+        "measured_variant": "plain"
+      },
+      "findings": [
+        {
+          "id": "eol:sh-with-cr",
+          "kind": "line-endings",
+          "detail": "96 de 96 archivos .sh del clon llegaron con \\r",
+          "closes_hint": "W1"
+        }
+      ],
+      "notes": [],
+      "cap_s": 600,
+      "capped_by": "run-capped.js",
+      "exit": 0,
+      "wall_seconds": 13.1
+    },
+    {
+      "schema": 1,
+      "name": "count-hooks",
+      "status": "measured",
+      "reason": null,
+      "started": "2026-10-04T02:00:00.000Z",
+      "seconds": 12.5,
+      "facts": {
+        "variant": "plain",
+        "result": {
+          "expected_total": 35,
+          "registered_total": 23,
+          "registered_of_harness": 22,
+          "registered_foreign": 0,
+          "in_place": 22,
+          "missing": [
+            {
+              "hook": "PreToolUse:@tcg:safety-guard-pre.sh",
+              "matcher": "Bash",
+              "origin": "optin"
+            }
+          ],
+          "duplicated": [],
+          "misplaced": [],
+          "superseded": [],
+          "unexpected": [],
+          "dangling": [],
+          "other_forms": [],
+          "runners": {
+            "node": 22
+          },
+          "startup_line": {
+            "count": 1,
+            "events": [
+              "SessionStart"
+            ],
+            "is_async": [
+              true
+            ]
+          }
+        }
+      },
+      "findings": [
+        {
+          "id": "hooks:missing:PreToolUse:@tcg:safety-guard-pre.sh",
+          "kind": "hook-missing",
+          "detail": "el hook esperado PreToolUse:@tcg:safety-guard-pre.sh (matcher Bash) no quedó registrado",
+          "closes_hint": "W4"
+        }
+      ],
+      "notes": [],
+      "cap_s": 600,
+      "capped_by": "run-capped.js",
+      "exit": 0,
+      "wall_seconds": 13.1
+    },
+    {
+      "schema": 1,
+      "name": "fire-registered",
+      "status": "measured",
+      "reason": null,
+      "started": "2026-10-04T02:00:00.000Z",
+      "seconds": 12.5,
+      "facts": {
+        "variant": "plain",
+        "forms": [
+          {
+            "id": "bash-c",
+            "shell": "C:\\Program Files\\Git\\bin\\bash.exe"
+          },
+          {
+            "id": "pwsh-command",
+            "shell": "pwsh"
+          },
+          {
+            "id": "default-shell",
+            "shell": "cmd.exe /d /s /c"
+          }
+        ],
+        "hooks_fired": 22,
+        "fires": [
+          {
+            "hook": "@tcg:pr-auto-complete-guard.js",
+            "event": "PreToolUse",
+            "matcher": "Bash",
+            "runner": "node",
+            "case": "must-block",
+            "case_id": "ejemplo",
+            "form": "bash-c",
+            "exit": 2,
+            "error": null,
+            "timed_out": false,
+            "blocked": true,
+            "ms": 140,
+            "out": "",
+            "err": "frenado"
+          },
+          {
+            "hook": "@tcg:pr-auto-complete-guard.js",
+            "event": "PreToolUse",
+            "matcher": "Bash",
+            "runner": "node",
+            "case": "must-block",
+            "case_id": "ejemplo",
+            "form": "pwsh-command",
+            "exit": 1,
+            "error": null,
+            "timed_out": false,
+            "blocked": false,
+            "ms": 140,
+            "out": "",
+            "err": ""
+          },
+          {
+            "hook": "@tcg:pr-auto-complete-guard.js",
+            "event": "PreToolUse",
+            "matcher": "Bash",
+            "runner": "node",
+            "case": "must-not-block",
+            "case_id": "ejemplo",
+            "form": "bash-c",
+            "exit": 0,
+            "error": null,
+            "timed_out": false,
+            "blocked": false,
+            "ms": 140,
+            "out": "",
+            "err": ""
+          }
+        ],
+        "by_form": {
+          "bash-c": {
+            "fired": 24,
+            "exit_0": 23,
+            "exit_2": 1,
+            "other_exit": 0,
+            "did_not_start": 0,
+            "timed_out": 0,
+            "slowest_ms": 900
+          },
+          "pwsh-command": {
+            "fired": 24,
+            "exit_0": 23,
+            "exit_2": 0,
+            "other_exit": 1,
+            "did_not_start": 0,
+            "timed_out": 0,
+            "slowest_ms": 1900
+          }
+        },
+        "bash_brakes": [
+          {
+            "hook": "@tcg:safety-guard-pre.sh",
+            "exists": true,
+            "has_cr": true,
+            "case_id": "block-rm-root",
+            "with_agent_path": {
+              "jq_seen": "/c/ProgramData/chocolatey/bin/jq",
+              "exit": 2,
+              "blocked": true
+            },
+            "without_jq": {
+              "jq_seen": "",
+              "exit": 0,
+              "blocked": false
+            }
+          }
+        ],
+        "startup": {
+          "registered": true,
+          "is_async": true,
+          "by_form": [
+            {
+              "form": "bash-c",
+              "shell": "C:\\Program Files\\Git\\bin\\bash.exe",
+              "healthy": {
+                "exit": 0,
+                "bootstrap_ran": true,
+                "log_lines": [
+                  "startup: TYCON_UPDATE=0: sin actualización"
+                ]
+              },
+              "broken": {
+                "exit": 1,
+                "bootstrap_said_broken": true,
+                "fallback_ran": false,
+                "log_lines": [
+                  "bootstrap: el enlace no resuelve"
+                ]
+              }
+            },
+            {
+              "form": "default-shell",
+              "shell": "cmd.exe /d /s /c",
+              "healthy": {
+                "exit": 0,
+                "bootstrap_ran": true,
+                "log_lines": []
+              },
+              "broken": {
+                "exit": 0,
+                "bootstrap_said_broken": true,
+                "fallback_ran": true,
+                "log_lines": [
+                  "respaldo en shell: bootstrap.js no arrancó harness.js"
+                ]
+              }
+            }
+          ],
+          "link_restored": true,
+          "settings_changed": false
+        }
+      },
+      "findings": [
+        {
+          "id": "fire:brake-passes:@tcg:pr-auto-complete-guard.js:pwsh-command",
+          "kind": "fire-brake",
+          "detail": "@tcg:pr-auto-complete-guard.js, lanzado por pwsh-command, NO frenó la entrada que tiene que frenar: salió 1",
+          "closes_hint": "W5"
+        },
+        {
+          "id": "brakes:safety-guard-pre.sh:passes-without-jq",
+          "kind": "bash-brake",
+          "detail": "safety-guard-pre.sh bajo el bash de Git, con jq quitado del PATH, NO frenó «rm -rf /»: salió 0",
+          "closes_hint": "W2"
+        },
+        {
+          "id": "startup:fallback-did-not-run:bash-c",
+          "kind": "startup-line",
+          "detail": "con el enlace del arnés roto, la línea de arranque lanzada por bash-c no corrió el respaldo",
+          "closes_hint": "W5"
+        }
+      ],
+      "notes": [],
+      "cap_s": 600,
+      "capped_by": "run-capped.js",
+      "exit": 0,
+      "wall_seconds": 13.1
+    },
+    {
+      "schema": 1,
+      "name": "pipeline-skeleton",
+      "status": "measured",
+      "reason": null,
+      "started": "2026-10-04T02:40:00.000Z",
+      "seconds": 41.2,
+      "facts": {
+        "variant": "plain",
+        "checks": {
+          "lint": { "exit": 0, "error": null, "ok": true },
+          "start": { "exit": 0, "error": null, "ok": true },
+          "mech-check": { "exit": 0, "error": null, "ok": true },
+          "advisors": { "exit": 0, "error": null, "ok": true },
+          "test-gate": { "exit": 0, "error": null, "ok": true }
+        },
+        "tests_result": { "runner": "node-test", "suite_green": true, "totals": { "total": 2, "passed": 2, "failed": 0, "skipped": 0, "executed": 2 } }
+      },
+      "findings": [],
+      "notes": [],
+      "cap_s": 1500,
+      "capped_by": "run-capped.js",
+      "exit": 0,
+      "wall_seconds": 42.0
+    },
+    {
+      "schema": 1,
+      "name": "session-probe",
+      "status": "not-measured",
+      "reason": "falta la sesión real: se mide en la máquina virtual con el login del dueño (story 8.17, AC 9), no en este agente",
+      "started": "2026-10-04T02:00:00.000Z",
+      "seconds": 12.5,
+      "facts": {},
+      "findings": [],
+      "notes": [],
+      "cap_s": 600,
+      "capped_by": "run-capped.js",
+      "exit": 0,
+      "wall_seconds": 13.1
+    }
+  ],
+  "verdict": {
+    "color": "green",
+    "mode": "first-measurement",
+    "errors": [],
+    "missing_steps": [],
+    "new_findings": [
+      {
+        "step": "install",
+        "id": "eol:sh-with-cr",
+        "kind": "line-endings",
+        "detail": "96 de 96 archivos .sh del clon llegaron con \\r",
+        "closes_hint": "W1"
+      },
+      {
+        "step": "count-hooks",
+        "id": "hooks:missing:PreToolUse:@tcg:safety-guard-pre.sh",
+        "kind": "hook-missing",
+        "detail": "el hook esperado PreToolUse:@tcg:safety-guard-pre.sh (matcher Bash) no quedó registrado",
+        "closes_hint": "W4"
+      },
+      {
+        "step": "fire-registered",
+        "id": "fire:brake-passes:@tcg:pr-auto-complete-guard.js:pwsh-command",
+        "kind": "fire-brake",
+        "detail": "@tcg:pr-auto-complete-guard.js, lanzado por pwsh-command, NO frenó la entrada que tiene que frenar: salió 1",
+        "closes_hint": "W5"
+      },
+      {
+        "step": "fire-registered",
+        "id": "brakes:safety-guard-pre.sh:passes-without-jq",
+        "kind": "bash-brake",
+        "detail": "safety-guard-pre.sh bajo el bash de Git, con jq quitado del PATH, NO frenó «rm -rf /»: salió 0",
+        "closes_hint": "W2"
+      },
+      {
+        "step": "fire-registered",
+        "id": "startup:fallback-did-not-run:bash-c",
+        "kind": "startup-line",
+        "detail": "con el enlace del arnés roto, la línea de arranque lanzada por bash-c no corrió el respaldo",
+        "closes_hint": "W5"
+      }
+    ],
+    "stale_gaps": [],
+    "invalid_gaps": [],
+    "known": [],
+    "not_measured": [
+      "session-probe: falta la sesión real: se mide en la máquina virtual con el login del dueño (story 8.17, AC 9), no en este agente"
+    ]
+  }
+}

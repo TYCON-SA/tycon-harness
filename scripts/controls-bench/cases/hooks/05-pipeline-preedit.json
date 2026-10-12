@@ -1,0 +1,123 @@
+{
+  "hooks": [
+    {
+      "hook": "hook-pre-edit.js (dispatcher pre-edit)",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/hook-pre-edit.js",
+      "event": "PreToolUse",
+      "matcher": "Edit|Write",
+      "cases": [
+        {
+          "id": "quiet-archivo-inofensivo",
+          "type": "must-not-block",
+          "stdin": { "tool_name": "Edit", "tool_input": { "file_path": "${FIXTURE}/README.md" } },
+          "expect": { "exit": 0 }
+        },
+        {
+          "id": "story-gate-bloquea-codigo-sin-carril",
+          "type": "must-block",
+          "setup": ["git init -q -b main .", "mkdir -p .tycon src"],
+          "stdin": { "tool_name": "Write", "tool_input": { "file_path": "${FIXTURE}/src/Foo.cs", "content": "class Foo {}" } },
+          "expect": { "exit": 2, "file_contains": [{ "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log", "re": "story-gate" }] }
+        },
+        {
+          "id": "story-gate-pasa-con-marker-de-pipeline",
+          "type": "must-not-block",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon src specs/stories",
+            "printf -- '---\\nstory: \"3.1\"\\nepic: \"3\"\\nstatus: in-progress\\n---\\n# Story 3.1\\n' > specs/stories/3-1.md",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline/active';fs.mkdirSync(d,{recursive:true});fs.writeFileSync(d+'/bench-s1.json',JSON.stringify({sessionId:'bench-s1',storyId:'3.1',repoPath:process.env.FIXTURE,storyPath:process.env.FIXTURE+'/specs/stories/3-1.md',stepsCompleted:[0,1,2,3,4],fileEvents:[{path:process.env.FIXTURE+'/tests/Foo.test.ts'}],lastTouch:new Date().toISOString()}))\""
+          ],
+          "stdin": { "session_id": "bench-s1", "tool_name": "Write", "tool_input": { "file_path": "${FIXTURE}/src/Foo.cs", "content": "class Foo {}" } },
+          "expect": { "exit": 0 }
+        },
+        {
+          "id": "dod-evidence-bloquea-escritura-de-evidencia",
+          "type": "must-block",
+          "setup": ["mkdir -p .advisors/dod-runtime"],
+          "stdin": { "tool_name": "Write", "tool_input": { "file_path": "${FIXTURE}/.advisors/dod-runtime/3.1-20260821.md", "content": "evidencia" } },
+          "expect": { "exit": 2 }
+        },
+        {
+          "id": "dod-evidence-deja-pasar-self-audit",
+          "type": "must-not-block",
+          "setup": ["mkdir -p .advisors/dod-runtime"],
+          "stdin": { "tool_name": "Write", "tool_input": { "file_path": "${FIXTURE}/.advisors/dod-runtime/3.1-self-audit.md", "content": "audit" } },
+          "expect": { "exit": 0 }
+        },
+        {
+          "id": "atdd-bloquea-impl-antes-que-test",
+          "type": "must-block",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p src specs/stories",
+            "printf -- '---\\nstory: \"3.1\"\\nepic: \"3\"\\nstatus: in-progress\\n---\\n# Story 3.1\\n\\n### Tests\\n| id | descripcion |\\n|---|---|\\n| T1 | valida x |\\n' > specs/stories/3-1.md",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline/active';fs.mkdirSync(d,{recursive:true});fs.writeFileSync(d+'/bench-s1.json',JSON.stringify({sessionId:'bench-s1',storyId:'3.1',repoPath:process.env.FIXTURE,storyPath:process.env.FIXTURE+'/specs/stories/3-1.md',stepsCompleted:[0,1,2,3],fileEvents:[],lastTouch:new Date().toISOString()}))\""
+          ],
+          "stdin": { "session_id": "bench-s1", "tool_name": "Write", "tool_input": { "file_path": "${FIXTURE}/src/Foo.cs", "content": "class Foo {}" } },
+          "expect": { "exit": 2, "stderr_re": ["ATDD|test"] }
+        },
+        {
+          "id": "atdd-pasa-si-ya-hay-test-tocado",
+          "type": "must-not-block",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p src specs/stories",
+            "printf -- '---\\nstory: \"3.1\"\\nepic: \"3\"\\nstatus: in-progress\\n---\\n# Story 3.1\\n\\n### Tests\\n| id | descripcion |\\n|---|---|\\n| T1 | valida x |\\n' > specs/stories/3-1.md",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline/active';fs.mkdirSync(d,{recursive:true});fs.writeFileSync(d+'/bench-s1.json',JSON.stringify({sessionId:'bench-s1',storyId:'3.1',repoPath:process.env.FIXTURE,storyPath:process.env.FIXTURE+'/specs/stories/3-1.md',stepsCompleted:[0,1,2,3],fileEvents:[{path:process.env.FIXTURE+'/tests/Foo.test.ts'}],lastTouch:new Date().toISOString()}))\""
+          ],
+          "stdin": { "session_id": "bench-s1", "tool_name": "Write", "tool_input": { "file_path": "${FIXTURE}/src/Foo.cs", "content": "class Foo {}" } },
+          "expect": { "exit": 0 }
+        },
+        {
+          "id": "frontmatter-bloquea-done-sin-evidencia",
+          "type": "must-block",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p specs/stories .advisors/dod-runtime",
+            "printf -- '---\\nstory: \"4.2\"\\nepic: \"4\"\\nstatus: in-progress\\n---\\n# Story 4.2\\n\\ntests_done_playwright_spec: tests/e2e/foo.spec.ts\\n' > specs/stories/4-2.md",
+            "git add -A && git -c user.email=b@b -c user.name=b commit -q -m x"
+          ],
+          "stdin": { "tool_name": "Edit", "tool_input": { "file_path": "${FIXTURE}/specs/stories/4-2.md", "old_string": "status: in-progress", "new_string": "status: done" } },
+          "expect": { "exit": 2, "stderr_re": ["DoD|runtime|evidencia"] }
+        },
+        {
+          "id": "frontmatter-pasa-con-exencion-declarada",
+          "type": "must-not-block",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p specs/stories",
+            "printf -- '---\\nstory: \"4.2\"\\nepic: \"4\"\\nstatus: in-progress\\ndod_runtime_exempt: true\\n---\\n# Story 4.2\\n\\ntests_done_playwright_spec: tests/e2e/foo.spec.ts\\n' > specs/stories/4-2.md",
+            "git add -A && git -c user.email=b@b -c user.name=b commit -q -m x"
+          ],
+          "stdin": { "tool_name": "Edit", "tool_input": { "file_path": "${FIXTURE}/specs/stories/4-2.md", "old_string": "status: in-progress", "new_string": "status: done" } },
+          "expect": { "exit": 0 }
+        },
+        {
+          "id": "collision-avisa-archivo-de-otra-sesion",
+          "type": "must-emit",
+          "setup": [
+            "mkdir -p src && echo x > src/Foo.cs",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline/active';fs.mkdirSync(d,{recursive:true});fs.writeFileSync(d+'/otro.json',JSON.stringify({sessionId:'otro',storyId:'4.2',filesTouched:[process.env.FIXTURE+'/src/Foo.cs'],lastTouch:new Date().toISOString()}))\""
+          ],
+          "stdin": { "session_id": "bench-s1", "tool_name": "Edit", "tool_input": { "file_path": "${FIXTURE}/src/Foo.cs", "old_string": "x", "new_string": "y" } },
+          "expect": { "exit": 0, "stdout_re": ["sesi"] }
+        },
+        {
+          "id": "planning-avisa-artefacto-sin-reconciles",
+          "type": "must-emit",
+          "setup": ["mkdir -p specs/planning-artifacts"],
+          "stdin": { "tool_name": "Write", "tool_input": { "file_path": "${FIXTURE}/specs/planning-artifacts/ux-spec-v7.md", "content": "---\nstatus: draft\n---\n# UX\n" } },
+          "expect": { "exit": 0, "stdout_re": ["reconciles"] }
+        },
+        {
+          "id": "planning-quiet-con-reconciles",
+          "type": "must-stay-quiet",
+          "setup": ["mkdir -p specs/planning-artifacts"],
+          "stdin": { "tool_name": "Write", "tool_input": { "file_path": "${FIXTURE}/specs/planning-artifacts/ux-spec-v8.md", "content": "---\nstatus: draft\nreconciles: [ux-spec-v7]\n---\n# UX\n" } },
+          "expect": { "stdout_not_re": ["reconciles"] }
+        }
+      ]
+    }
+  ]
+}

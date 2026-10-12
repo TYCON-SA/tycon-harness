@@ -1,0 +1,151 @@
+{
+  "__doc": "La ficha de la página pública de Windows (getting-started/windows.md), para el ensayo que la sigue paso por paso. La página lleva UNA marca, afuera del bloque que la persona copia; la identidad de cada paso vive acá. Cada comando (`text`) tiene que estar escrito, letra por letra, en el bloque marcado: entero en un renglón o, si declara `line_prefix`, al final de un renglón que empieza con ese comienzo. Si la página cambia un comando, el ensayo no corre a medias: dice qué paso dejó de calzar. Campos de un comando: `expect` (lo esperado de ESE comando, como dato: `match` = una expresión sobre la salida, sin letras con acento; `min` = un número mínimo; `equals` = un valor exacto; `file` = un archivo que tiene que existir, en la carpeta de trabajo o en la de usuario), `ok_exits` (los códigos de salida buenos; si falta, sólo 0), `run_when` (cuándo se corre), `windows_only` (sólo tiene sentido en Windows, con su motivo), `notes` (lo que se anota y no se compara) y, en lo esperado, `lab_gap` (lo que el laboratorio no puede dar: no comparable, con su motivo). Una expresión (`match`) se busca en la salida del comando, no en su canal de errores (ahí PowerShell repite el renglón del comando); con `in: any`, en los dos. Que un programa del comando no esté en la máquina no hace falta declararlo: el ensayo lo ve solo. El comando de bajada lleva los dos marcadores del nombre público, como la página de origen: los resuelve el ensayo con scripts/setup/public-remotes.json del árbol que se ensaya. Y donde un comando nombra la carpeta del arnés dentro de la de Claude Code, la ficha lleva el marcador {{harness-place}}: el ensayo pone ahí el nombre que da scripts/setup/harness/place.js (ese nombre no se escribe en estos guiones).",
+  "schema": 1,
+  "page": {
+    "published": "getting-started/windows.md",
+    "source": "scripts/publishing/public-files/getting-started/windows.md",
+    "mark": "guided:base",
+    "fence": "text"
+  },
+  "needs": {
+    "entry_script": "scripts/setup/get-harness.ps1",
+    "names": "scripts/setup/public-remotes.json"
+  },
+  "lab": {
+    "__auth": "Cómo sirve el GitHub de juguete el árbol que se ensaya. `none`: como repo público, sin permiso, y ningún paso lleva una credencial de GitHub en su ambiente — lo que la página supone desde que baja el guion sin credencial. `token`: como repo privado, con un permiso de juguete en el ambiente de los pasos que bajan e instalan; sirve sólo para una página cuyo comando de bajada mande ese permiso.",
+    "auth": "none",
+    "api_origin": "https://api.github.com"
+  },
+  "steps": [
+    {
+      "id": "tools",
+      "runs": "machine",
+      "severity": "noise",
+      "commands": [
+        {
+          "text": "$PSVersionTable.PSVersion.ToString(); node --version; tar --version",
+          "expect": [
+            { "kind": "match", "pattern": "^7\\.", "what": "PowerShell 7" },
+            { "kind": "match", "pattern": "^(bsdtar|tar)\\b", "flags": "im", "what": "tar" }
+          ],
+          "notes": [
+            { "id": "node", "pattern": "^v\\d+\\.\\d+\\.\\d+", "why": "la versión de node es un dato del agente, no de la página: se anota, no se compara" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "download",
+      "runs": "machine",
+      "severity": "breaks",
+      "commands": [
+        {
+          "text": "Invoke-WebRequest -Headers @{ Accept = 'application/vnd.github.raw' } -OutFile get-harness.ps1 https://api.github.com/repos/{{public-org}}/{{public-repo}}/contents/scripts/setup/get-harness.ps1",
+          "expect": [
+            { "kind": "file", "in": "cwd", "path": "get-harness.ps1", "what": "el guion en la carpeta" }
+          ]
+        },
+        {
+          "text": "Get-Content get-harness.ps1",
+          "expect": [
+            { "kind": "match", "pattern": "# get-harness\\.ps1 . baja la versi.n publicada del arn.s \\(sin git\\)", "what": "el guion empieza diciendo qué es" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "plan",
+      "runs": "machine",
+      "severity": "noise",
+      "commands": [
+        {
+          "text": "pwsh -File get-harness.ps1 -- --profile full --integrations none --packs all --dry-run",
+          "expect": [
+            { "kind": "match", "pattern": "se instalar.a la versi.n ", "what": "muestra el plan" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "install",
+      "runs": "machine",
+      "severity": "breaks",
+      "commands": [
+        {
+          "text": "pwsh -File get-harness.ps1 -- --profile full --integrations none --packs all --yes",
+          "expect": [
+            { "kind": "match", "pattern": "versi.n: \\S+", "what": "termina diciendo la versión" },
+            { "kind": "file", "in": "home", "path": ".tycon/harness/version.json", "what": "el arnés en la carpeta de usuario" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "git-hooks",
+      "runs": "machine",
+      "severity": "loses-control",
+      "commands": [
+        {
+          "text": "git config --global --get core.hooksPath",
+          "ok_exits": [0, 1],
+          "expect": []
+        },
+        {
+          "text": "git config --global core.hooksPath \"$env:USERPROFILE\\.git-hooks\"",
+          "line_prefix": "Si no devuelve nada, corré:  ",
+          "run_when": "previous-output-empty",
+          "expect": []
+        }
+      ]
+    },
+    {
+      "id": "verify",
+      "runs": "machine",
+      "severity": "breaks",
+      "commands": [
+        {
+          "text": "node \"$env:USERPROFILE\\.claude\\{{harness-place}}\\scripts\\setup\\harness.js\" doctor",
+          "windows_only": "la ruta con barras invertidas que se le pasa a node sólo resuelve en Windows",
+          "expect": [
+            { "kind": "match", "pattern": "perfil: full", "what": "el perfil completo" },
+            { "kind": "match", "pattern": "todo en orden|aviso\\(s\\), nada en rojo", "what": "nada en rojo" }
+          ]
+        },
+        {
+          "text": "@(Get-ChildItem \"$env:USERPROFILE\\.claude\\skills\" -Directory).Count",
+          "expect": [
+            { "kind": "min", "value": 41, "what": "más de 40 skills", "lab_gap": "el GitHub de juguete no sirve las skills de terceros: en el laboratorio quedan sólo las del propio arnés, y la cuenta se anota sin compararla" }
+          ]
+        },
+        {
+          "text": "(Select-String -Path \"$env:USERPROFILE\\.claude\\CLAUDE.md\" -Pattern \"README.md\").Count",
+          "expect": [
+            { "kind": "equals", "value": 1, "what": "un solo import de las guías" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "report",
+      "runs": "person",
+      "what": "el bloque de texto con el resultado del alta (para guardarlo o para pedir ayuda), y cerrar y volver a abrir Claude Code",
+      "why": "armar el reporte lo hace el asistente con la persona, y reabrir Claude Code pide una sesión real del asistente"
+    }
+  ],
+  "team": {
+    "commands": [
+      { "text": "harness.js config set azure.token", "stdin": "el permiso de juguete del Azure DevOps de juguete" },
+      { "text": "harness.js install --version latest --team <team-url> --yes" }
+    ]
+  },
+  "not_rehearsed": [
+    { "what": "el límite de pedidos sin credencial de GitHub (el 403 que la página explica) y la salida con un permiso propio en TYCON_GITHUB_TOKEN", "why": "el GitHub de juguete no le limita los pedidos al alta, y al laboratorio no entra ningún permiso de GitHub: la página lo dice y el ensayo no lo mide" },
+    { "what": "instalar con winget lo que falte (PowerShell 7, node) y cerrar y volver a abrir la terminal", "why": "instala paquetes en la máquina y lo decide una persona: el ensayo sólo anota qué hay" },
+    { "what": "decir que sí al plan, a la instalación y a la carpeta global de hooks de git", "why": "cada sí es de la persona: el ensayo corre el comando que sigue como si lo hubiera dado" },
+    { "what": "la carpeta global de hooks de git que ya apunta a otro lado (no pisarla y decidir)", "why": "es una decisión de la persona sobre su máquina: la carpeta de laboratorio nace sin ninguna" },
+    { "what": "la parte 2 de la página (engram, codegraph, codex, telegram)", "why": "todos sus pasos piden a la persona o salen a la red de verdad" },
+    { "what": "aplicar a mano la versión nueva en la máquina que pregunta (harness.js update --yes)", "why": "el programa la aplica sólo con una persona en una terminal, a propósito: el ensayo no tiene, y comprueba que sin ella se niega y no cambia nada" },
+    { "what": "la capa real del equipo y su credencial tomada del gestor de git", "why": "piden una credencial de verdad: se ensaya con un repo de juguete y un permiso de juguete guardado por el comando real" },
+    { "what": "la política de ejecución de scripts de la máquina de una persona", "why": "el laboratorio lanza cada proceso con la política en Bypass: la efectiva queda anotada, no se mide la de un usuario" }
+  ]
+}

@@ -1,0 +1,132 @@
+{
+  "hooks": [
+    {
+      "hook": "harness-bootstrap-heal.sh (repara la línea de arranque que no llama al instalador)",
+      "script": "${FIXTURE}/tcg/scripts/hooks/harness-bootstrap-heal.sh",
+      "event": "SessionStart",
+      "matcher": "*",
+      "cases": [
+        {
+          "id": "repara-la-linea-vieja-conservando-lo-que-el-dev-tenia",
+          "type": "must-emit",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/harness-bootstrap-heal.sh tcg/scripts/hooks/ && cp $TCG/scripts/install-tycon-hooks.sh tcg/scripts/",
+            "node -e \"require('fs').writeFileSync('settings.json', JSON.stringify({hooks:{SessionStart:[{hooks:[{type:'command',command:'cd ~/SourceCode/tycon-claude-guides && git pull --quiet; cd ~/.claude/agent-skills && git pull --quiet'}]}]}}))\""
+          ],
+          "env": {
+            "TYCON_SETTINGS_PATH": "${FIXTURE}/settings.json",
+            "TYCON_NO_AUTOINSTALL": "1"
+          },
+          "expect": {
+            "stdout_re": [
+              "línea de arranque",
+              "reparada"
+            ]
+          }
+        },
+        {
+          "id": "no-toca-nada-si-ya-esta-sana",
+          "type": "must-stay-quiet",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/harness-bootstrap-heal.sh tcg/scripts/hooks/ && cp $TCG/scripts/install-tycon-hooks.sh tcg/scripts/",
+            "node -e \"require('fs').writeFileSync('settings.json', JSON.stringify({hooks:{SessionStart:[{hooks:[{type:'command',command:'git pull; bash /x/scripts/install-tycon-hooks.sh'}]}]}}))\""
+          ],
+          "env": {
+            "TYCON_SETTINGS_PATH": "${FIXTURE}/settings.json",
+            "TYCON_NO_AUTOINSTALL": "1"
+          }
+        },
+        {
+          "id": "settings-roto-no-rompe-el-arranque",
+          "type": "must-not-block",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/harness-bootstrap-heal.sh tcg/scripts/hooks/ && cp $TCG/scripts/install-tycon-hooks.sh tcg/scripts/",
+            "node -e \"require('fs').writeFileSync('settings.json','no soy json {')\""
+          ],
+          "env": {
+            "TYCON_SETTINGS_PATH": "${FIXTURE}/settings.json",
+            "TYCON_NO_AUTOINSTALL": "1"
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "linea-que-termina-en-ampersand-no-se-rompe",
+          "type": "must-emit",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/harness-bootstrap-heal.sh tcg/scripts/hooks/ && cp $TCG/scripts/install-tycon-hooks.sh tcg/scripts/",
+            "node -e \"require('fs').writeFileSync('settings.json', JSON.stringify({hooks:{SessionStart:[{hooks:[{type:'command',command:'(cd ~/SourceCode/tycon-claude-guides && git pull --quiet) &'}]}]}}))\""
+          ],
+          "env": {
+            "TYCON_SETTINGS_PATH": "${FIXTURE}/settings.json",
+            "TYCON_NO_AUTOINSTALL": "1"
+          },
+          "expect": {
+            "stdout_re": [
+              "reparada"
+            ],
+            "file_contains": [
+              {
+                "path": "${FIXTURE}/settings.json",
+                "re": "install-tycon-hooks"
+              }
+            ],
+            "file_not_contains": [
+              {
+                "path": "${FIXTURE}/settings.json",
+                "re": "&;\\s*bash"
+              }
+            ]
+          }
+        },
+        {
+          "id": "linea-que-termina-en-comentario-el-append-queda-vivo",
+          "type": "must-emit",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/harness-bootstrap-heal.sh tcg/scripts/hooks/ && cp $TCG/scripts/install-tycon-hooks.sh tcg/scripts/",
+            "node -e \"require('fs').writeFileSync('settings.json', JSON.stringify({hooks:{SessionStart:[{hooks:[{type:'command',command:'cd ~/SourceCode/tycon-claude-guides && git pull --quiet # update tycon'}]}]}}))\""
+          ],
+          "env": {
+            "TYCON_SETTINGS_PATH": "${FIXTURE}/settings.json",
+            "TYCON_NO_AUTOINSTALL": "1"
+          },
+          "expect": {
+            "stdout_re": [
+              "reparada"
+            ],
+            "file_contains": [
+              {
+                "path": "${FIXTURE}/settings.json",
+                "re": "tycon\\\\nbash"
+              }
+            ],
+            "file_not_contains": [
+              {
+                "path": "${FIXTURE}/settings.json",
+                "re": "tycon;\\s*bash"
+              }
+            ]
+          }
+        },
+        {
+          "id": "la-string-en-permissions-no-da-falso-sano",
+          "type": "must-emit",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/harness-bootstrap-heal.sh tcg/scripts/hooks/ && cp $TCG/scripts/install-tycon-hooks.sh tcg/scripts/",
+            "node -e \"require('fs').writeFileSync('settings.json', JSON.stringify({permissions:{allow:['Bash(bash */install-tycon-hooks.sh)']},hooks:{SessionStart:[{hooks:[{type:'command',command:'cd ~/SourceCode/tycon-claude-guides && git pull --quiet'}]}]}}))\""
+          ],
+          "env": {
+            "TYCON_SETTINGS_PATH": "${FIXTURE}/settings.json",
+            "TYCON_NO_AUTOINSTALL": "1"
+          },
+          "expect": {
+            "stdout_re": [
+              "reparada"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

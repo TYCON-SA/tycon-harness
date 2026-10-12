@@ -1,0 +1,2906 @@
+#!/usr/bin/env node
+/**
+ * tycon-pipeline marker — state CRUD utility.
+ *
+ * El marker indica "hay una story Mary+GOLD mid-impl bajo tycon-pipeline". Los
+ * hooks (`on-prompt.js`, `on-edit.js`) lo consultan para emitir reminders al
+ * orquestador (Claude) cuando detectan patrones de bypass.
+ *
+ * 🔴 MULTI-SESIÓN SIN RACE (2026-05-17): cada sesión de Claude Code tiene su
+ * propio archivo `~/.claude/.tycon-pipeline/active/<sessionId>.json` que contiene
+ * el marker de esa sesión. Cada sesión lee/escribe SOLO su archivo:
+ *   - No colisionan KEYS (cada pipeline su marker).
+ *   - No colisionan ESCRITURAS (`on-edit.js` de dos sesiones concurrentes escribe
+ *     archivos distintos — el read-modify-write del modelo single-file que pisaba
+ *     el marker de la otra sesión quedó cerrado).
+ *
+ * El sessionId lo resuelve `lib/session-id.js`, que es la ÚNICA copia de esa
+ * cadena en el skill (Claude Code → override del banco → Codex → `_nosession`).
+ * El contrato un-archivo-por-sesión y la detección de workflows huérfanos
+ * `adversarial_is_ours` funcionan igual en las dos herramientas. La firma CLI de
+ * marker.js NO cambió — los step files lo invocan igual que siempre.
+ *
+ * Estructura de cada archivo `active/<sessionId>.json` (el marker directo):
+ *
+ *   {
+ *     "storyId": "3.3",
+ *     "storyPath": "/abs/path/to/specs/stories/3-3-...md",
+ *     "repoPath": "/abs/path/to/repo",
+ *     "sprint": 3,
+ *     "sessionId": "<sessionId>",
+ *     "startedAt": "2026-05-17T09:45:11.000Z",
+ *     "lastTouch": "2026-05-17T10:06:15.000Z",
+ *     "stepsCompleted": [0, 1, 2, 3, 4],
+ *     "stepsPending": [5, 6, 7, 8, 9],
+ *     "filesTouched": ["/abs/path/file1.ts"]
+ *   }
+ *
+ * Formato LEGACY: el viejo `active.json` single-file (sea `{storyId,...}` plano
+ * o `{sessionId: marker}`). readMarker() lo lee como fallback para no perder un
+ * pipeline mid-impl en la transición; los writes nuevos NUNCA lo tocan.
+ *
+ * Commands (resuelven el sessionId solos — la firma CLI no cambia):
+ *   marker.js set '{"storyId":"...","stepsPending":[...]}'  → escribe el marker de esta sesión
+ *   marker.js get          → marker de esta sesión, o `{}`
+ *   marker.js touch        → actualiza lastTouch
+ *   marker.js complete-step <N>  → mueve step N pending→completed
+ *   marker.js append-file <abs-path>  → agrega path a filesTouched (dedup)
+ *   marker.js clear        → borra el marker de esta sesión
+ *   marker.js is-active    → exit 0 si esta sesión tiene marker, 1 si no
+ *
+ * Cross-session discovery (fix robusto 2026-05-20 — caso disparador Story 4.2):
+ *   marker.js list-all                          → JSON array con TODOS los markers activos
+ *                                                  (todas las sesiones), stale-filtered
+ *   marker.js find-by-story <storyId>           → JSON array con markers que matcheen
+ *                                                  ese storyId (cualquier sesión)
+ *   marker.js clear-session <sessionId>         → borra el marker de OTRA sesión
+ *                                                  (recovery / admin)
+ *   marker.js adopt-session <sessionId>         → ADOPTA el marker completo de otra
+ *                                                  sesión (resume cross-session sin pérdida:
+ *                                                  filesTouched/iterations/checks/dodRuntimeChecked
+ *                                                  se copian) y borra el archivo viejo.
+ *   marker.js update-story-status <path> <new>  → muta atómicamente el frontmatter
+ *                                                  `status:` de una story Mary+GOLD.
+ *                                                  Valores: ready-for-dev | in-progress
+ *                                                  | review | done | blocked | abandoned.
+ *
+ * Ground-truth de checks (auditoría 2026-06-09 — cierra el gate fakeable del modo autónomo):
+ *   marker.js run-check <name> -- <cmd> [args...] → EJECUTA el comando (execFileSync, sin
+ *                                                  shell/pipes), captura el exit code REAL y
+ *                                                  setea marker.checks[name] = green|red:<exit>.
+ *                                                  Loguea a ~/.claude/.tycon-pipeline/gates.log
+ *                                                  (append-only: ts, cmd, exit, duración).
+ *                                                  Exit code = el del comando (gateable).
+ *   marker.js set-check <name> <status> --manual → override manual (EXIGE --manual desde
+ *                                                  2026-06-23; sin el flag → RECHAZADO exit 2).
+ *                                                  Queda provenance='manual' + entry en gates.log.
+ *                                                  Para checks mecánicos usá run-check — set-check
+ *                                                  --manual es la excepción auditable, no la regla.
+ *   marker.js snapshot-iter <N> [--date-at-last-reviewer]
+ *                                                → la FOTO del estado auditado de la iteración N.
+ *                                                  La toma SOLA el hook al lanzar el último revisor;
+ *                                                  si la llamás a mano con código editado después,
+ *                                                  se niega (exit 2) o conserva la anterior y lo deja
+ *                                                  en gates.log. `--date-at-last-reviewer` produce
+ *                                                  el corte correcto cuando ese código YA fue
+ *                                                  revisado. Kill-switch: TYCON_SNAPSHOT_GUARD=0.
+ *   marker.js promote-probe <probe_dir> --file <x.txt> --a <tests/…>
+ *                                                → la prueba con la que el pase adversarial
+ *                                                  CONFIRMÓ un hallazgo pasa a la suite del repo
+ *                                                  (archivo nuevo, nombre real). Sin esto,
+ *                                                  mark-adversarial-result con confirmados exige
+ *                                                  --tests k --deferred d --reason "…" (k+d=N,
+ *                                                  k = lo promovido acá, no lo declarado).
+ *   marker.js set-flag <flag> <true|false>       → flags de sub-steps no-enteros
+ *                                                  (clockiStarted | adoMarkedActive) para que
+ *                                                  resume/`pipeline.js next` no re-ejecute 0b/0c.
+ *                                                  `deepReviewDone` NO (story 1.8): el 5b lo cierran
+ *                                                  los dos comandos de abajo, con constancia.
+ *   marker.js mark-adversarial-result <N> --type 5b --tests k [--own p --in "<rutas>"]
+ *                                   [--deferred d --reason "…"] [--classes k] [--separate n]
+ *                                                → anota el resultado del pase y CIERRA el 5b
+ *                                                  (k+p+d=N; p = pruebas escritas a mano, verificadas).
+ *   marker.js mark-adversarial-skipped --files <archivos de código del diff>
+ *                                                → el 5b sin pase, si el PORTÓN lo decide
+ *                                                  (deep-review-gate como proceso; con el pase
+ *                                                  lanzado sólo con el interruptor = abandono).
+ *   `complete-step 8` bloquea sin una de las dos constancias (freno adversarial-result-gate).
+ *
+ * Timing (Fase 0 instrumentación — `pipeline.js timing-report` lo consume):
+ *   `complete-step N` guarda marker.stepTimings[N].completedAt automáticamente.
+ *   marker.js start-step <N>                     → anota marker.stepTimings[N].startedAt (story 2.7).
+ *                                                  No mueve un arranque ya anotado ni arranca un paso
+ *                                                  completo. `pipeline.js next` lo hace solo para el paso
+ *                                                  que devuelve: sin el arranque, el tiempo muerto antes
+ *                                                  de empezar un paso caía entero en ese paso.
+ *
+ * Write atómico tmp+rename. Cada `set` purga archivos de sesiones stale (>24h),
+ * advisor-runs/*.jsonl viejos (>7d) y *.tmp huérfanos (>1d).
+ */
+
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+// story 8.23 (A2): la carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: este
+// archivo viaja suelto (al banco, a laboratorios de pruebas); ahí vale la ruta de siempre, que es la misma (T5 de
+// scripts/tests/tycon-home.test.js). Si está y no carga, tira.
+const stateDirOf = (() => { const lib = path.join(__dirname, '..', '..', '..', 'scripts', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
+const { resolveSessionId } = require('./lib/session-id.js');
+
+const STATE_DIR = path.join(stateDirOf(os.homedir()));
+const ACTIVE_DIR = path.join(STATE_DIR, 'active');
+const LEGACY_MARKER_PATH = path.join(STATE_DIR, 'active.json');
+const STALE_HOURS = 24;
+
+// sessionId de ESTA invocación — Claude Code lo expone a todo subproceso Bash.
+const SID = resolveSessionId();
+
+function ensureActiveDir() {
+  if (!fs.existsSync(ACTIVE_DIR)) {
+    fs.mkdirSync(ACTIVE_DIR, { recursive: true });
+  }
+}
+
+function nowIso() {
+  return new Date().toISOString();
+}
+
+// Path del archivo de una sesión. Sanitiza separadores por las dudas.
+function markerFilePath(sessionId) {
+  const safe = String(sessionId || '_nosession').replace(/[/\\]/g, '_');
+  return path.join(ACTIVE_DIR, `${safe}.json`);
+}
+
+// Borra archivos de sesiones stale (>STALE_HOURS sin touch) — auto-recovery
+// de pipelines huérfanos (sesión cerrada / Claude crasheó).
+// Housekeeping extendido (auditoría 2026-06-09): también purga advisor-runs/*.jsonl
+// viejos (>7d, crecían sin límite — 98 archivos acumulados) y *.tmp huérfanos (>1d)
+// de writes atómicos interrumpidos.
+function pruneStale() {
+  if (!fs.existsSync(ACTIVE_DIR)) return;
+  const cutoff = Date.now() - STALE_HOURS * 3600 * 1000;
+  let files = [];
+  try { files = fs.readdirSync(ACTIVE_DIR); } catch (_e) { return; }
+  for (const f of files) {
+    const full = path.join(ACTIVE_DIR, f);
+    if (f.endsWith('.tmp')) {
+      // tmp huérfano de un write atómico interrumpido — borrar si >1d.
+      try {
+        if (fs.statSync(full).mtimeMs < Date.now() - 24 * 3600 * 1000) fs.unlinkSync(full);
+      } catch (_e) { /* ignore */ }
+      continue;
+    }
+    if (!f.endsWith('.json')) continue;
+    try {
+      const m = JSON.parse(fs.readFileSync(full, 'utf8'));
+      if (m && m.lastTouch && new Date(m.lastTouch).getTime() < cutoff) {
+        fs.unlinkSync(full);
+      }
+    } catch (_e) { /* ignore */ }
+  }
+  // advisor-runs/*.jsonl > 7 días — check-count solo mira la corrida actual.
+  // 🔴 RESUMEN DURABLE ANTES DE BORRAR (decisión D2 del dev, 2026-08-25 — Tema 2 del plan de
+  // controles apagables). Esta poda venía borrando el ÚNICO registro no-falsificable de que los
+  // revisores corrieron: el voluntario (`gates.log`) sólo se escribe si alguien tipea el comando.
+  // A los 7 días la pregunta "¿corrieron los revisores de la story X?" se quedaba sin respuesta
+  // mecánica para siempre, y el silencio se lee como incumplimiento. Ahora cada archivo deja una
+  // línea-resumen en `advisor-runs-summary.jsonl` (repos, stories, advisors y conteos) que no se
+  // borra nunca: ~10 KB por semana, menos de 1 MB al año.
+  // Si el resumen NO se pudo escribir, el archivo NO se borra — se junta hasta la próxima pasada.
+  // Perder unos KB es reversible; borrar la constancia en silencio, no.
+  const runsDir = path.join(STATE_DIR, 'advisor-runs');
+  if (fs.existsSync(runsDir)) {
+    const runCutoff = Date.now() - 7 * 24 * 3600 * 1000;
+    let runFiles = [];
+    try { runFiles = fs.readdirSync(runsDir); } catch (_e) { runFiles = []; }
+    let ledger = null;
+    try { ledger = require('./lib/advisor-ledger.js'); } catch (_e) { ledger = null; }
+    for (const f of runFiles) {
+      if (!f.endsWith('.jsonl')) continue;
+      try {
+        const full = path.join(runsDir, f);
+        if (fs.statSync(full).mtimeMs >= runCutoff) continue;
+        if (ledger && !ledger.archive(full, f.replace(/\.jsonl$/, ''))) continue;
+        fs.unlinkSync(full);
+      } catch (_e) { /* ignore */ }
+    }
+  }
+}
+
+// Append-only logs en STATE_DIR — trazabilidad durable de gates y bypasses.
+// gates.log: cada run-check/set-check (ts, name, status, cmd, exit, provenance).
+// bypass.log: cada DOD_BYPASS / --no-verify detectado (antes solo stderr efímero).
+function appendLog(fileName, obj) {
+  try {
+    if (!fs.existsSync(STATE_DIR)) fs.mkdirSync(STATE_DIR, { recursive: true });
+    // Namespace por repo (2026-08-24, GATESLOG-STORYID-NS-1): los logs son globales por máquina y
+    // los ids cortos de story se repiten entre repos (una "S1" en Totora y otra en Pacara) —
+    // agrupar por storyId solo mezclaba proyectos en las métricas del retrospective-capturer.
+    // Va ANTES de ...obj para que un `repoPath`/`repoRoot` explícito del caller gane.
+    let repoPath = null;
+    // La ruta de la story también (story 1.17.1): con un número que se repite en el repo, la constancia de revisores
+    // de `gates.log` sólo cuenta para la story cuya ruta trae (on-pre-commit.js §findAdvisorsEvidence).
+    let storyPath = null;
+    try { const mk = readMarker() || {}; repoPath = mk.repoPath || null; storyPath = mk.storyPath || null; } catch (_e) { repoPath = null; }
+    // Sin marker (gate corrido a mano, fuera del pipeline) la línea quedaba sin repo: medido el
+    // 2026-08-25, 142 de las 149 corridas de revisores registradas en gates.log no tenían repo
+    // atribuido, o sea que las métricas por proyecto no se podían armar. La raíz de git del
+    // directorio actual lo contesta sin adivinar. Es un campo más en el log: no cambia ni un
+    // bloqueo ni un veredicto.
+    if (!repoPath) {
+      try { repoPath = require('./lib/repo-attrib.js').gitRoot(process.cwd()); } catch (_e) { /* sin git */ }
+    }
+    fs.appendFileSync(
+      path.join(STATE_DIR, fileName),
+      JSON.stringify({ ts: nowIso(), sessionId: SID, repoPath, ...(storyPath ? { storyPath } : {}), ...obj }) + '\n',
+      'utf8',
+    );
+  } catch (_e) { /* logging nunca rompe el comando */ }
+}
+
+// Marker de ESTA sesión. Primero el archivo per-session; si no, fallback al
+// legacy single-file (transición — readonly).
+function readMarker() {
+  const own = markerFilePath(SID);
+  if (fs.existsSync(own)) {
+    try {
+      const m = JSON.parse(fs.readFileSync(own, 'utf8'));
+      if (m && m.storyId) return m;
+    } catch (_e) { /* ignore */ }
+  }
+  if (fs.existsSync(LEGACY_MARKER_PATH)) {
+    try {
+      const raw = fs.readFileSync(LEGACY_MARKER_PATH, 'utf8').trim();
+      if (raw && raw !== '{}') {
+        const obj = JSON.parse(raw);
+        if (obj && obj.storyId) {
+          // legacy plano: pertenece a la sesión sintética `_legacy`.
+          return SID === '_legacy' ? obj : null;
+        }
+        const m = obj && obj[SID];
+        if (m && m.storyId) return m;
+      }
+    } catch (_e) { /* ignore */ }
+  }
+  return null;
+}
+
+function writeMarker(marker) {
+  ensureActiveDir();
+  pruneStale();
+  const p = markerFilePath(SID);
+  const tmp = `${p}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(marker, null, 2) + '\n', 'utf8');
+  fs.renameSync(tmp, p);
+}
+
+function clearMarker() {
+  const own = markerFilePath(SID);
+  if (fs.existsSync(own)) {
+    try { fs.unlinkSync(own); } catch (_e) { /* ignore */ }
+  }
+  // Limpiar también de legacy si la entry de esta sesión vivía ahí.
+  if (fs.existsSync(LEGACY_MARKER_PATH)) {
+    try {
+      const obj = JSON.parse(fs.readFileSync(LEGACY_MARKER_PATH, 'utf8'));
+      if (obj && !obj.storyId && obj[SID]) {
+        delete obj[SID];
+        if (Object.keys(obj).length === 0) {
+          fs.unlinkSync(LEGACY_MARKER_PATH);
+        } else {
+          const tmp = `${LEGACY_MARKER_PATH}.${process.pid}.tmp`;
+          fs.writeFileSync(tmp, JSON.stringify(obj, null, 2) + '\n', 'utf8');
+          fs.renameSync(tmp, LEGACY_MARKER_PATH);
+        }
+      }
+    } catch (_e) { /* ignore */ }
+  }
+}
+
+function cmdSet(payloadJson) {
+  let payload;
+  try {
+    payload = JSON.parse(payloadJson);
+  } catch (err) {
+    console.error('marker.js set: invalid JSON payload —', err.message);
+    process.exit(2);
+  }
+  if (!payload.storyId) {
+    console.error('marker.js set: payload.storyId requerido');
+    process.exit(2);
+  }
+  let existing = readMarker();
+  const existingBefore = existing;
+  // 🔴 Anti-leak cross-story (review Opus RIESGO-2, 2026-07-30): el spread de abajo preserva
+  // campos ante un `set` de la MISMA story — pero si esta sesión arranca una story NUEVA sobre un
+  // marker viejo sin clear (pipeline cancelado, crash, "listo" antes del Step 8), la story B
+  // heredaba el ciclo de vida de la A: `deepReviewDone=true` heredado → computeNext saltea el 5b
+  // de B EN SILENCIO; `checks.build=green` y `dodRuntimeChecked` heredados → gates mintiendo.
+  // Reproducido empíricamente en el review. Al cambiar de storyId, los campos de CICLO DE VIDA DE
+  // CORRIDA se resetean (la identidad de sesión y el startedAt se conservan).
+  if (existing && payload.storyId !== existing.storyId) {
+    const {
+      adversarial, deepReviewDone, clockiStarted, adoMarkedActive, atddBypass,
+      checks, checksProvenance, dodRuntimeChecked, iterations, fileEvents, filesTouched, filesTouchedAt,
+      stepsCompleted, stepsPending, startedAt, evidenceDir, baseSha,
+      // story 2.7: los arranques y fines de paso son de la corrida. Heredarlos le daba a la story
+      // nueva arranques de la vieja, y `anotarArranque` se niega a pisar uno existente.
+      stepTimings,
+      // story 1.8: lo del pase adversarial es de la corrida. Heredado, B contaba como suyas las pruebas
+      // promovidas de A en `--tests`, y con el freno del paso 8 heredaría el salteo de A y cerraría su
+      // paso 8 sin su propio 5b.
+      adversarialPasses, adversarialRegressions, adversarialSkip,
+      ...carryOver
+    } = existing;
+    console.error(
+      `marker.js set: story cambia (${existing.storyId} → ${payload.storyId}) — ` +
+      `reset de ciclo de vida de corrida (adversarial/deepReviewDone/atddBypass/checks/flags/steps/iterations/fileEvents/sellos de contenido).`
+    );
+    existing = carryOver;
+  }
+  // 🔴 Mismo storyId + stepsPending entrante (típico: `pipeline.js start` re-corrido tras PIPE-C0/C5 o
+  // tras una compactación): NO reabrir steps ya completados. Antes `start` pisaba stepsPending con
+  // [0..8] y el portón de plan volvía a cerrar en medio del Step 4, obligando a re-aprobar el plan
+  // (hallazgo R7 del review adversarial 2026-08-19).
+  if (existing && payload.storyId === existing.storyId && Array.isArray(payload.stepsPending)) {
+    const done = new Set((existing.stepsCompleted || []).map(Number));
+    payload.stepsPending = payload.stepsPending.filter((n) => !done.has(Number(n)));
+  }
+  // Marker NUEVO que arranca sin el Step 3 (plan aprobado) pendiente ni completado = un pipeline
+  // "manual" que se saltea el HITL del plan. No se bloquea (adopt/resume legítimos pasan por acá),
+  // pero queda en bypass.log y avisa — el portón de carril ya no frena código en esta sesión.
+  // Dos formas de "saltearse el plan" con un set (hallazgo H5, review 2026-08-19): un marker NUEVO (o de
+  // OTRA story) que arranca sin 3 pendiente ni completado, y un set de la MISMA story que OMITE el 3 que
+  // estaba pendiente. Ninguna se bloquea (adopt/resume legítimos), pero las dos quedan en bypass.log.
+  if (Array.isArray(payload.stepsPending)) {
+    const pend = payload.stepsPending.map(Number);
+    const done = (payload.stepsCompleted || []).map(Number);
+    const sameStory = existingBefore && existingBefore.storyId === payload.storyId;
+    const freshWithoutPlan = !sameStory && !pend.includes(3) && !done.includes(3);
+    const dropsPlan = sameStory && (existingBefore.stepsPending || []).map(Number).includes(3)
+      && !pend.includes(3) && !(existingBefore.stepsCompleted || []).map(Number).includes(3) && !done.includes(3);
+    if (freshWithoutPlan || dropsPlan) {
+      appendLog('bypass.log', { kind: dropsPlan ? 'MARKER_DROPS_PLAN' : 'MARKER_SKIPS_PLAN', storyId: payload.storyId, stepsPending: payload.stepsPending, cwd: process.cwd() });
+      console.error(`⚠️  marker.js set: el marker queda SIN el Step 3 (plan aprobado) ${dropsPlan ? 'que estaba pendiente' : 'desde el arranque'} — el portón de carril`);
+      console.error(`    no va a exigir aprobación del plan en esta sesión. Queda en bypass.log (${dropsPlan ? 'MARKER_DROPS_PLAN' : 'MARKER_SKIPS_PLAN'}).`);
+      console.error('    Pipeline real → `pipeline.js start` (deja 1..8 pendientes). Retomando una corrida que YA aprobó el plan →');
+      console.error('    pasá `stepsCompleted` con los steps hechos (incluido 3) en el mismo set: así no avisa.');
+    }
+  }
+  const marker = {
+    // 🔴 Los campos DESCONOCIDOS del marker existente se PRESERVAN. Antes este objeto era un
+    // whitelist cerrado y todo lo que no estuviera enumerado acá se perdía en silencio: `checks`,
+    // `checksProvenance`, `dodRuntimeChecked`, `deepReviewDone`, `clockiStarted`, `adoMarkedActive`,
+    // `autonomous`, `iter`, `noProgressStreak`, `lastFailures`, `stepTimings`… O sea que un `set`
+    // mid-pipeline BORRABA toda la evidencia de verificación (los checks con provenance `run-check`,
+    // el gate de DoD) y el pipeline quedaba obligado a re-correr suites enteras — o, peor, tentado a
+    // re-poner los greens a mano con `set-check --manual`, que es exactamente lo que la capa
+    // anti-green-falso existe para impedir.
+    //
+    // Es la MISMA clase de bug que ya se parchó para `fileEvents` (HOLE-1, 2026-06-11) y para
+    // `iterations` (SPEED-1): se venía arreglando campo por campo. Esto lo cierra de raíz — un campo
+    // nuevo en el marker ya no necesita acordarse de sumarlo acá.
+    //
+    // Agravante que lo hacía difícil de ver: `cmdGet` emite el marker COMPLETO, así que el patrón
+    // natural `marker.js get | jq '.x = y' | marker.js set` parecía seguro y era destructivo.
+    // (Caso: Story 4.17 de un repo del equipo 2026-07-24 — un `set` para corregir `storyPath` borró los 3
+    // checks `run-check` y el flag de DoD; hubo que re-correr build + suite completa.)
+    ...(existing || {}),
+    storyId: payload.storyId,
+    storyPath: payload.storyPath || existing?.storyPath || null,
+    repoPath: path.resolve(payload.repoPath || existing?.repoPath || process.cwd()),
+    // Dónde nace la evidencia de cierre (2026-09-05): el repo de la STORY, aunque el código viva en
+    // otro. Lo escribe `pipeline.js start`; lo leen el step 7c, el macro y `mark-dod-runtime-checked`.
+    // 🔴 El spread de arriba preserva lo EXISTENTE, no lo que trae el payload: sin esta línea el
+    // campo se perdía en silencio y la prosa prometía un `marker.js get → evidenceDir` que no existía
+    // (lo cazó la revisión adversarial del mismo día). Es estado de corrida: se resetea por story.
+    evidenceDir: payload.evidenceDir || existing?.evidenceDir || null,
+    // Commit en el que arrancó la corrida (story 2.4 del arnés, 2026-09-16): la base contra la que
+    // test-gate.sh mide las «líneas tocadas» (lib/coverage-base.js). Lo anota `pipeline.js start`.
+    // Es estado de corrida: el bloque de arriba lo descarta al cambiar de story. Y gana el EXISTENTE:
+    // re-correr `start` sobre la misma story (retomar) no puede mover la base al HEAD de ahora, o lo
+    // commiteado durante la corrida dejaría de contar como tocado.
+    baseSha: existing?.baseSha || payload.baseSha || null,
+    sprint: payload.sprint ?? existing?.sprint ?? null,
+    sessionId: SID,
+    startedAt: existing?.startedAt || nowIso(),
+    lastTouch: nowIso(),
+    stepsCompleted: payload.stepsCompleted || existing?.stepsCompleted || [],
+    stepsPending: payload.stepsPending || existing?.stepsPending || [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+    filesTouched: payload.filesTouched || existing?.filesTouched || [],
+    // Los sellos de contenido (hash + hora por toque, piso de frescura por contenido 2026-09-06)
+    // viven y mueren con la story: si cambia la story, los de la anterior no valen para ésta.
+    filesTouchedAt: (payload.storyId && existing?.storyId && payload.storyId !== existing.storyId)
+      ? (payload.filesTouchedAt || {})
+      : (payload.filesTouchedAt || existing?.filesTouchedAt || {}),
+    // SPEED-1 (2026-05-27) — per-iter file snapshots para smart re-loop advisors.
+    // Map { "<N>": { ts, filesSnapshot: [abs-paths] } }. Permite computar delta
+    // entre iters N y N-1 → pipeline.js smart-reloop decide qué advisors re-correr.
+    iterations: payload.iterations || existing?.iterations || {},
+    // fileEvents (fix verificación adversarial 2026-06-11, HOLE-1): un `set`
+    // mid-pipeline NO debe borrar los eventos de edición de la iteración — si se
+    // pierden, computeSmartReloop elige el path fileEvents con datos truncados y
+    // SUPRIME el fallback por mtime (re-ediciones caen del delta en silencio).
+    fileEvents: payload.fileEvents || existing?.fileEvents || [],
+  };
+  // story 2.7: el paso 0 arranca cuando nace la corrida. Nadie lo pide con `next` (start lo cierra
+  // enseguida), así que sin esto el paso 0 salía siempre «estimado» y toda corrida real «parcial».
+  if ((marker.stepsPending || []).map(Number).includes(0) && !(marker.stepsCompleted || []).map(Number).includes(0)) {
+    const conArranque = anotarArranque(marker, '0', marker.startedAt);
+    if (conArranque) marker.stepTimings = conArranque.stepTimings;
+  }
+  writeMarker(marker);
+  process.stdout.write(JSON.stringify(marker, null, 2));
+}
+
+// SPEED-1 (2026-05-27) — snapshot files-at-end-of-iter para smart re-loop.
+// Llamado por el orquestador justo después de invocar el set de advisors de iter N
+// (típicamente al final del Step 5 / Step 7b). Idempotente: re-llamar para iter N
+// re-toma el snapshot (overwrites). pipeline.js smart-reloop --iter N+1 lo lee
+// para computar el delta.
+//
+// 🔴 YA NO ES IDEMPOTENTE A CIEGAS (2026-09-15) — ver `lib/late-snapshot.js` para el caso completo.
+// La foto se toma SOLA desde el 2026-08-15 en el spawn del último revisor, pero el texto del skill
+// siguió mandando una segunda llamada «al cierre del step» y ésta PISABA la buena sin mirar: medido
+// sobre la corrida real de la story 2.5, 15 de 15 fotos automáticas pisadas y en 2 de 15 había
+// código editado en el medio — el arreglo quedaba ADENTRO de la foto y el delta de la vuelta
+// siguiente salía vacío, así que los revisores de seguridad y de fallos silenciosos se salteaban
+// «por superficie no tocada». Ahora, antes de escribir, se pregunta si hay CÓDIGO con hora posterior
+// al último lanzamiento de revisores, y la tabla de decisión de abajo manda. Kill-switch:
+// TYCON_SNAPSHOT_GUARD=0 (y queda la segunda capa, el corte de `computeSmartReloop`).
+function cmdSnapshotIter(nRaw, flags) {
+  const fecharAlUltimo = Array.isArray(flags) && flags.includes('--date-at-last-reviewer');
+  const n = parseInt(nRaw, 10);
+  if (Number.isNaN(n) || n < 1) {
+    console.error('marker.js snapshot-iter: N debe ser entero >= 1');
+    process.exit(2);
+  }
+  const marker = readMarker();
+  if (!marker) {
+    console.error('marker.js snapshot-iter: no hay marker activo para esta sesión');
+    process.exit(1);
+  }
+  marker.iterations = marker.iterations || {};
+  // Los probes transitorios del pase adversarial NO entran a la foto (2026-08-26). Medido el mismo
+  // día en dos repos: el `filesSnapshot` de Totora quedó con 7 archivos `__probe*`/`_probe_*` que
+  // ningún humano escribió y que se borran solos — contaminan el insumo del re-loop y hacen parecer
+  // sano un registro que estaba ciego. Convención de nombres: steps/step-05b-adversarial-verify.md.
+  const honesty = require('./lib/ledger-honesty.js');
+  const todos = [...(marker.filesTouched || [])];
+  const foto = honesty.sinProbes(todos);
+  const probesFuera = todos.length - foto.length;
+
+  // ── ¿Se tocó código después del último revisor? ───────────────────────────────────────────────
+  // La guarda NUNCA rompe la foto: si no puede correr, el comportamiento es el de siempre y se DICE
+  // (un «no medido» que se lee como «ok» es peor que no medir).
+  let g = null;
+  let motivoSinMedir = null;
+  if (require('./lib/legacy-names.js').readEnv('TYCON_SNAPSHOT_GUARD', { where: 'skills/tycon-pipeline/scripts/marker.js' }) === '0') {
+    motivoSinMedir = 'guarda de foto tardía apagada por el dev (TYCON_SNAPSHOT_GUARD=0)';
+  } else {
+    try {
+      const ft = require('./lib/late-snapshot.js');
+      let lineas = [];
+      try {
+        lineas = fs.readFileSync(path.join(STATE_DIR, 'advisor-runs', `${SID}.jsonl`), 'utf8').split('\n');
+      } catch (_e) { lineas = []; }
+      g = ft.codigoDespuesDelUltimoRevisor({
+        ledgerLineas: lineas, marker, repoRoot: marker.repoPath || null, iter: n,
+      });
+      if (!g.medible) { motivoSinMedir = g.motivo; g = null; }
+    } catch (e) {
+      motivoSinMedir = `la guarda de foto tardía no pudo correr: ${e && e.message}`;
+      g = null;
+    }
+  }
+
+  const ft = (() => { try { return require('./lib/late-snapshot.js'); } catch (_e) { return null; } })();
+  const nom = g && ft ? ft.nombrados(g.posteriores) : { lista: [], resto: 0, corto: '' };
+  const hhmmss = (iso) => (typeof iso === 'string' && iso.length >= 19 ? `${iso.slice(11, 19)} UTC` : String(iso));
+  const escribir = (ts) => {
+    marker.iterations[String(n)] = {
+      ts,
+      filesSnapshot: foto,
+      ...(probesFuera ? { probes_excluidos: probesFuera } : {}),
+    };
+    marker.lastTouch = nowIso();
+    writeMarker(marker);
+  };
+  // Constancia AUTOMÁTICA de la iteración en gates.log (fix 2026-08-28, 10ma recurrencia del
+  // undercount — ZERO-ADVISOR-TRACE-ESCALATED, peor caso medido: la story 1.14 de un producto del equipo con 1
+  // entry para 6 iteraciones reales — guides/incident-log.md#case-iteration-log-undercount-2026-08-28). Antes el registro por iteración dependía de que el
+  // orquestador invocara `check-count` en cada vuelta — un control que hay que acordarse de
+  // invocar es un control que no corre. snapshot-iter es el ancla correcta: el orquestador YA
+  // lo llama en cada iteración por interés propio (sin snapshot, smart-reloop degrada a
+  // force-full, el camino caro). El consumidor (retrospective-capturer) cuenta **iters
+  // DISTINTOS** por repoPath+storyId, no líneas: re-snapshotear el mismo N (permitido e
+  // idempotente en el marker) escribe otra línea con el mismo `iter`.
+  // 🔴 Desde 2026-09-15 la línea dice ADEMÁS qué se decidió con la foto y si se pudo verificar. El
+  // orquestador llamó a este comando con `>/dev/null 2>&1` en la corrida de la 2.5: lo que no queda
+  // en gates.log, no pasó.
+  const constancia = (extra) => appendLog('gates.log', {
+    name: 'advisors-iter',
+    storyId: marker.storyId || null,
+    iter: n,
+    snapshot_size: (marker.iterations[String(n)] || { filesSnapshot: [] }).filesSnapshot.length,
+    ...extra,
+  });
+  const salida = (obj, code) => {
+    process.stdout.write(JSON.stringify(obj, null, 2) + '\n');
+    if (code) process.exit(code);
+  };
+
+  // ── Tabla de decisión ─────────────────────────────────────────────────────────────────────────
+  // El escape explícito: fechar la foto en el último lanzamiento de revisores. NO es un bypass —
+  // produce el corte CORRECTO (todo lo editado después entra al delta por las tres fuentes con
+  // hora), por eso va a gates.log y no a bypass.log. No existe un `--force` que escriba «ahora»:
+  // sería el defecto con bandera.
+  if (fecharAlUltimo) {
+    if (!g) {
+      console.error(`🛑 marker.js snapshot-iter ${n} --date-at-last-reviewer: no puedo saber cuándo fue el último revisor (${motivoSinMedir}).`);
+      console.error('   Sin esa hora, fechar la foto sería inventar un corte. Corré `snapshot-iter N` a secas (queda dicho que no se pudo verificar).');
+      constancia({ foto: 'rechazada', verificada: false, motivo: motivoSinMedir });
+      process.exit(2);
+    }
+    escribir(g.ultimoRevisor);
+    constancia({
+      foto: 'fechada-al-ultimo-revisor',
+      verificada: true,
+      ultimo_revisor: g.ultimoRevisor,
+      posteriores: nom.lista,
+      posteriores_total: g.posteriores.length,
+    });
+    console.error(`foto iter ${n} fechada a las ${hhmmss(g.ultimoRevisor)} (último revisor).`);
+    return salida({ iter: n, foto: 'fechada-al-ultimo-revisor', snapshot_size: foto.length, ts: g.ultimoRevisor }, 0);
+  }
+
+  if (!g) {
+    // No medible (o guarda apagada): se toma la foto como siempre, pero «no medido» ≠ «ok».
+    escribir(nowIso());
+    constancia({ foto: 'tomada', verificada: false, motivo: motivoSinMedir });
+    console.error(`⚠ foto iter ${n} sin verificar: ${motivoSinMedir}`);
+    console.error('   (¿retomaste la corrida en otra sesión sin copiar advisor-runs/<sid>.jsonl? La guarda no puede medir.)');
+    return salida({
+      iter: n, foto: 'tomada', verificada: false, motivo: motivoSinMedir,
+      snapshot_size: foto.length, ...(probesFuera ? { probes_excluidos: probesFuera } : {}),
+      ts: marker.iterations[String(n)].ts,
+    }, 0);
+  }
+
+  if (g.posteriores.length === 0) {
+    escribir(nowIso());
+    constancia({ foto: 'tomada', verificada: true, ultimo_revisor: g.ultimoRevisor });
+    return salida({
+      iter: n, foto: 'tomada', verificada: true, snapshot_size: foto.length,
+      ...(probesFuera ? { probes_excluidos: probesFuera } : {}),
+      ts: marker.iterations[String(n)].ts,
+    }, 0);
+  }
+
+  // Hay código posterior. ¿La foto que ya está es la BUENA (la automática, anterior a esas
+  // ediciones)? Entonces no se pisa: el estado queda CORRECTO, así que exit 0 — un
+  // `snapshot-iter && smart-reloop` encadenado sigue y usa la foto buena.
+  const previaMs = g.fotoPrevia && g.fotoPrevia.ts ? Date.parse(g.fotoPrevia.ts) : NaN;
+  const primeraEdicionMs = Math.min(...g.posteriores.map((e) => Date.parse(e.ts)));
+  if (Number.isFinite(previaMs) && Number.isFinite(primeraEdicionMs) && previaMs <= primeraEdicionMs) {
+    constancia({
+      foto: 'conservada',
+      verificada: true,
+      ultimo_revisor: g.ultimoRevisor,
+      foto_previa: g.fotoPrevia.ts,
+      posteriores: nom.lista,
+      posteriores_total: g.posteriores.length,
+    });
+    console.error(
+      `📸 la foto de la iteración ${n} ya estaba tomada a las ${hhmmss(g.fotoPrevia.ts)} (al lanzar el último revisor) y no se pisa: ` +
+      `${g.posteriores.length} archivo(s) de código editados después — ${nom.corto}${nom.resto ? ` y ${nom.resto} más` : ''}.\n` +
+      '   Ningún revisor los vio; el re-loop los va a incluir.\n',
+    );
+    return salida({
+      iter: n, foto: 'conservada', verificada: true, ts: g.fotoPrevia.ts,
+      snapshot_size: (g.fotoPrevia.filesSnapshot || []).length,
+      posteriores: nom.lista.map((e) => e.path),
+    }, 0);
+  }
+
+  // No hay foto buena que conservar (la automática estaba apagada, la ronda fue informal, o la
+  // previa también es posterior a la edición): escribir «ahora» sería escribir la mentira. Se
+  // niega, y el próximo re-loop corre el set completo — más caro, nunca menos revisión.
+  constancia({
+    foto: 'rechazada',
+    verificada: true,
+    ultimo_revisor: g.ultimoRevisor,
+    posteriores: nom.lista,
+    posteriores_total: g.posteriores.length,
+  });
+  console.error(
+    `🛑 no tomo la foto de la iteración ${n}: hay código editado después del último revisor ` +
+    `(${hhmmss(nom.lista[0] && nom.lista[0].ts)} ${nom.corto}). smart-reloop --iter ${n + 1} va a correr el set completo.\n` +
+    `   Si ese código YA fue revisado, fechá la foto en el último lanzamiento:\n` +
+    `     marker.js snapshot-iter ${n} --date-at-last-reviewer   (queda en gates.log)\n`,
+  );
+  return salida({
+    iter: n, foto: 'rechazada', verificada: true, ultimo_revisor: g.ultimoRevisor,
+    posteriores: nom.lista.map((e) => e.path),
+  }, 2);
+}
+
+function cmdGet() {
+  const marker = readMarker();
+  process.stdout.write(JSON.stringify(marker ?? {}, null, 2));
+}
+
+function cmdTouch() {
+  const marker = readMarker();
+  if (!marker) process.exit(0);
+  marker.lastTouch = nowIso();
+  writeMarker(marker);
+}
+
+/**
+ * ¿El 5b quedó atendido? (story 1.8, 2026-09-18). Pura: lee el marker y devuelve
+ * `{ veredicto: 'paso'|'bloqueo', motivo, runId, launchedAt }`.
+ *
+ * Lanzado → pasa con un resultado `tipo: '5b'` anotado en o después del ÚLTIMO lanzamiento (`resultado`), o con
+ * el abandono de ESE lanzamiento (`abandonado`); si los resultados que hay son de un lanzamiento anterior —el
+ * pase se relanzó, como en la 2.12— bloquea (`resultado-de-otro-lanzamiento`); sin nada, `sin-resultado`.
+ * No lanzado → pasa con el salteo que decidió el portón (`salteado` / `salteado-forzado`), o con un resultado 5b
+ * anotado aunque nadie haya registrado el lanzamiento (`resultado-sin-lanzamiento`), y si no, `no-atendido`:
+ * la bandera `deepReviewDone` de una corrida vieja NO cuenta, porque es justo lo que cualquiera escribía a mano.
+ * «No lo pude leer» no es «está»: un registro que no es lista o un lanzamiento sin fecha bloquean con su nombre.
+ */
+function veredictoPaseAdversarial(marker) {
+  const m = marker || {};
+  const adv = m.adversarial || null;
+  const runId = adv && typeof adv === 'object' ? (adv.runId || null) : null;
+  const launchedAt = adv && typeof adv === 'object' ? (adv.launchedAt ?? null) : null;
+  const res = (veredicto, motivo, extra) => ({ veredicto, motivo, runId, launchedAt, ...(extra || {}) });
+  if (m.adversarialPasses !== undefined && m.adversarialPasses !== null && !Array.isArray(m.adversarialPasses)) {
+    return res('bloqueo', 'registro-ilegible', { campo: 'adversarialPasses' });
+  }
+  const pases = Array.isArray(m.adversarialPasses) ? m.adversarialPasses : [];
+  const skip = m.adversarialSkip && typeof m.adversarialSkip === 'object' ? m.adversarialSkip : null;
+  if (adv) {
+    const desde = Date.parse(launchedAt);
+    if (!Number.isFinite(desde)) return res('bloqueo', 'lanzamiento-sin-fecha', { campo: 'adversarial.launchedAt' });
+    const del5b = pases.filter((p) => p && p.tipo === '5b');
+    if (del5b.some((p) => Date.parse(p.ts) >= desde)) return res('paso', 'resultado');
+    if (skip && skip.abandonado === true && skip.runId === runId) return res('paso', 'abandonado');
+    if (del5b.length) return res('bloqueo', 'resultado-de-otro-lanzamiento');
+    return res('bloqueo', 'sin-resultado');
+  }
+  if (skip) return res('paso', skip.forzado === true || skip.abandonado === true ? 'salteado-forzado' : 'salteado');
+  // Resultado 5b anotado sin lanzamiento registrado (decisión D6 del dev, hallazgo del pase adversarial de la 1.8):
+  // el resultado ES la constancia que el paso pide; queda con su propio motivo, visible en el registro.
+  if (pases.some((p) => p && p.tipo === '5b')) return res('paso', 'resultado-sin-lanzamiento');
+  return res('bloqueo', 'no-atendido');
+}
+
+function mensajeDelPaseAdversarial(v) {
+  const cmdResultado = `node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js mark-adversarial-result <N confirmados> --type 5b --run ${v.runId || '<runId>'} --model <modelo> --tests <k promovidas> [--own <p> --in "<rutas de prueba>"] [--deferred <d> --reason "<por qué>"]`;
+  const cmdSalteo = 'node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js mark-adversarial-skipped --files <archivos de código del diff>';
+  const e = (s) => console.error(s);
+  if (v.motivo === 'registro-ilegible') {
+    e(`marker.js complete-step 8 BLOQUEADO — no pude leer el registro de pases adversariales: el campo \`${v.campo}\` del marker no es una lista.`);
+    e('  «No lo pude leer» no es «está». Revisá el marker (marker.js get): ese campo lo escriben sólo los comandos del pase.');
+    return;
+  }
+  if (v.motivo === 'lanzamiento-sin-fecha') {
+    e(`marker.js complete-step 8 BLOQUEADO — el lanzamiento del pase adversarial no tiene fecha legible (\`${v.campo}\` = ${JSON.stringify(v.launchedAt)}).`);
+    e('  Sin esa fecha no se puede saber si el resultado anotado es de este lanzamiento. Lo escribe mark-adversarial-launched.');
+    return;
+  }
+  if (v.motivo === 'no-atendido') {
+    e('marker.js complete-step 8 BLOQUEADO — el 5b no está atendido: ni lanzado ni salteado por el portón.');
+    e('  (la bandera deepReviewDone sola no cuenta: es la que se escribía suelta y dejaba el pase sin constancia)');
+    e('  Si el pase corrió, anotá su resultado:');
+    e(`    ${cmdResultado}`);
+    e('  Si no corre, que lo decida el portón:');
+    e(`    ${cmdSalteo}`);
+    return;
+  }
+  const cuando = `${v.runId || 'sin runId'}, ${v.launchedAt}`;
+  if (v.motivo === 'resultado-de-otro-lanzamiento') {
+    e(`marker.js complete-step 8 BLOQUEADO — el pase adversarial se relanzó (${cuando}) y el resultado anotado es del lanzamiento anterior.`);
+  } else {
+    e(`marker.js complete-step 8 BLOQUEADO — el pase adversarial se lanzó (${cuando}) y su resultado no está anotado.`);
+  }
+  e('  Cada confirmado va a la suite (prueba promovida o prueba propia) o se difiere con motivo:');
+  e(`    ${cmdResultado}`);
+  e('  Abandonarlo es una decisión: TYCON_NO_DEEP_REVIEW=1 marker.js mark-adversarial-skipped --files … (queda en bypass.log).');
+}
+
+function cmdCompleteStep(nRaw, flags) {
+  const n = parseInt(nRaw, 10);
+  if (Number.isNaN(n)) {
+    console.error('marker.js complete-step: N debe ser entero');
+    process.exit(2);
+  }
+  const marker = readMarker();
+  if (!marker) {
+    console.error('marker.js complete-step: no hay marker activo para esta sesión');
+    process.exit(1);
+  }
+  const opts = Array.isArray(flags) ? flags : [];
+  const optVal = (name) => { const i = opts.indexOf(name); return i >= 0 ? (opts[i + 1] ?? '') : null; };
+
+  // ── ORDEN (2026-08-19) — no se cierra un step con su predecesor GATEADO todavía pendiente ────────
+  // Caso disparador: "empieza el pipeline, toma confianza y se saltea etapas" (otro dev del equipo).
+  // Sólo se exige contra los steps que tienen gate real (hallazgo R16 del review adversarial: exigir
+  // "todo k<N" volvía rutina el --out-of-order). Cadena: 3 ← {1,2} · 4 ← {3} · 5 ← {4} · 8 ← {5}.
+  // Se mira stepsPending (no stepsCompleted): un marker manual/adoptado con pending parcial no traba.
+  const ORDER_REQUIRES = { 3: [1, 2], 4: [3], 5: [4], 8: [5] };
+  const pendingNow = (marker.stepsPending || []).map(Number);
+  const missing = (ORDER_REQUIRES[n] || []).filter((k) => pendingNow.includes(k));
+  if (missing.length) {
+    if (opts.includes('--out-of-order')) {
+      appendLog('bypass.log', { kind: 'STEP_OUT_OF_ORDER', storyId: marker.storyId, step: n, pendingBefore: missing });
+      console.error(`⚠️  complete-step ${n} con step(s) ${missing.join(',')} pendientes — --out-of-order (queda en bypass.log).`);
+    } else {
+      appendLog('gates.log', { name: 'step-order', status: 'blocked', story: marker.storyId, step: n, pendingBefore: missing });
+      console.error(`marker.js complete-step ${n} BLOQUEADO — step(s) ${missing.join(', ')} todavía pendiente(s).`);
+      console.error('  El pipeline se recorre EN ORDEN: `pipeline.js next` te dice cuál va. Cerrá ese primero (con su evidencia).');
+      console.error('  Escape consciente (raro — p.ej. retomando una corrida que ya los hizo): --out-of-order (queda en bypass.log).');
+      process.exit(1);
+    }
+  }
+
+  // ── Step 3 (plan aprobado) — la aprobación es del USER y queda citada ──────────────────────────
+  // `--approved "<cita>"` (HITL) o `--auto-approved "<criterios>"` (Nivel 2, SOLO LOW-risk — se verifica
+  // con risk-class, no se declara: hallazgo R11). Sin esto, cerrar el 3 era un comando vacío y el
+  // portón de carril (código antes del plan) se abría sin que nadie hubiera aprobado nada.
+  if (n === 3) {
+    const approved = optVal('--approved');
+    const auto = optVal('--auto-approved');
+    if (!approved && !auto) {
+      console.error('marker.js complete-step 3 BLOQUEADO — falta la aprobación del plan.');
+      console.error('  HITL:     marker.js complete-step 3 --approved "<cita textual de la aprobación del user>"');
+      console.error('  Nivel 2:  marker.js complete-step 3 --auto-approved "<criterios LOW-risk>"  (sólo si risk-class = LOW)');
+      console.error('  No se cierra el Step 3 sin decir QUIÉN aprobó. Ver steps/step-03-hitl-plan.md.');
+      process.exit(1);
+    }
+    if (auto && !approved) {
+      let rc = null;
+      try {
+        const { computeRiskClass } = require('./pipeline.js');
+        rc = computeRiskClass({ story: resolveStoryPath(marker.storyPath, marker) });
+      } catch (e) { rc = { risk: 'NORMAL', error: e.message }; }
+      if (!rc || rc.risk !== 'LOW') {
+        appendLog('gates.log', { name: 'plan-auto-approve', status: 'blocked', story: marker.storyId, risk: rc && rc.risk, error: rc && rc.error });
+        console.error(`marker.js complete-step 3 BLOQUEADO — --auto-approved pero risk-class = ${(rc && rc.risk) || '?'}${rc && rc.error ? ` (${rc.error})` : ''}.`);
+        console.error('  La auto-aprobación Nivel 2 es SOLO para stories LOW-risk. Esta necesita aprobación del user:');
+        console.error('    marker.js complete-step 3 --approved "<cita textual>"');
+        process.exit(1);
+      }
+    }
+    marker.planApproval = { mode: approved ? 'user' : 'auto-low-risk', text: approved || auto, at: nowIso() };
+    appendLog('gates.log', { name: 'plan-approval', status: 'ok', story: marker.storyId, mode: marker.planApproval.mode, text: marker.planApproval.text });
+  }
+
+  // ── Step 5 (advisors) — el set esperado corrió DE VERDAD, y en ESTA iteración ──────────────────
+  // `checks.advisors` lo pone `run-check advisors -- pipeline.js check-count …` (ground-truth del log
+  // de spawns, CF-2). Sin esto, cerrar el 5 no exigía nada y el Stop-gate sólo mira checks REGISTRADOS
+  // en rojo (ausente = pasa). Se rechaza `trust-ran` (self-report) y el green de una iteración
+  // anterior (hallazgo R10): al re-cerrar el 5 tras fixes (loop D.i) el check tiene que ser posterior
+  // al cierre previo del 5. Escape consciente: `set-check advisors green --force-manual`.
+  if (n === 5) {
+    const st = marker.checks && marker.checks.advisors;
+    const prov = (marker.checksProvenance && marker.checksProvenance.advisors) || null;
+    const at = (marker.checksAt && marker.checksAt.advisors) || null;
+    const prevClose = marker.stepTimings && marker.stepTimings['5'] && marker.stepTimings['5'].completedAt;
+    const okProv = prov === 'run-check' || prov === 'manual-forced';
+    const fresh = !prevClose || (at && new Date(at).getTime() > new Date(prevClose).getTime());
+    if (st !== 'green' || !okProv || !fresh) {
+      appendLog('gates.log', { name: 'advisors-complete', status: 'blocked', story: marker.storyId, checks_advisors: st || '(ausente)', provenance: prov || '(ausente)', fresh });
+      console.error('marker.js complete-step 5 BLOQUEADO — el check `advisors` no está en verde por conteo real'
+        + (st === 'green' && !fresh ? ' de ESTA iteración' : '') + '.');
+      console.error(`  Estado: checks.advisors=${st || '(ausente)'} provenance=${prov || '(ausente)'}${prevClose ? ` · cierre previo del 5: ${prevClose}` : ''}`);
+      console.error('  Registralo con el exit code REAL de check-count (lee el log de spawns, no tu --ran):');
+      console.error('    marker.js run-check advisors -- node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js check-count \\');
+      console.error('      --repo <repo> --story <story_path> --files <archivos modificados…>');
+      console.error('  Set esperado vacío (mech-check sin advisors aplicables): check-count sale 0 con el expected:[] persistido.');
+      console.error('  `--trust-ran` / `--ran` NO alcanzan (provenance trust-ran = self-report). Escape consciente y logueado:');
+      console.error('    marker.js set-check advisors green --force-manual');
+      process.exit(1);
+    }
+  }
+
+  // ── Step 4 (implementación) — freno ATDD: los tests se escriben ANTES del código ───────────────
+  // El ATDD era la ÚNICA regla del pipeline sin gate mecánico, y por eso era la que se salteaba
+  // (caso Story 3.21 de un repo del equipo, 2026-07-27: lo detectó el dev leyendo el transcript, no el harness).
+  // La evidencia NO es nueva: `marker.fileEvents` ya registra cada edición con `{path, ts}` desde el
+  // fix HOLE-1 de 2026-06-11. Detalle del calibrado (qué bloquea y qué sólo avisa, para no dar falsos
+  // positivos con un refactor legítimo): `lib/atdd-order.js`.
+  if (n === 4) {
+    const { computeAtddOrder, atddBlockMessage } = require('./lib/atdd-order.js');
+    const r = computeAtddOrder(marker.fileEvents, marker.repoPath);
+    // El flag `atddBypass` (el escape que dicta el portón pre-edit) vale también acá: un solo
+    // bypass declarado cubre la corrida entera — obligar a declararlo dos veces con dos nombres
+    // distintos era dejar al dev contra una segunda pared (hallazgo F3 del review adversarial
+    // 2026-07-30, que además contradecía el texto del propio mensaje de bloqueo).
+    const bypass = opts.includes('--no-atdd') || marker.atddBypass === true;
+    appendLog('gates.log', {
+      name: 'atdd',
+      status: r.verdict,
+      story: marker.storyId,
+      firstTest: r.firstTest,
+      firstImpl: r.firstImpl,
+      reason: r.reason,
+      bypassed: bypass || undefined,
+    });
+    if (r.verdict === 'blocked' && !bypass) {
+      console.error(atddBlockMessage(r));
+      process.exit(1);
+    }
+    if (r.verdict === 'blocked' && bypass) {
+      // El bypass NO es silencioso: queda en bypass.log con el detalle, igual que DOD_BYPASS.
+      appendLog('bypass.log', { kind: 'ATDD_BYPASS', story: marker.storyId, firstTest: r.firstTest, firstImpl: r.firstImpl });
+      console.error('⚠️  ATDD saltado con --no-atdd (queda en bypass.log).');
+      console.error(`   código primero: ${r.firstImpl} · test después: ${r.firstTest}`);
+    }
+    if (r.verdict === 'warn-no-tests' || r.verdict === 'warn-unknown') {
+      // Avisa y sigue — pero queda medido en gates.log, así que "cuántas corridas hicieron ATDD de
+      // verdad" pasa a tener respuesta en vez de impresión.
+      console.error(`⚠️  ATDD: ${r.reason}`);
+    }
+
+    // ── El verde de `tests` tiene que salir de la suite COMPLETA ──────────────────────────────
+    // Decisión del dev 2026-08-13 (tag `dec-2026-08-13-suite-completa-al-cerrar`), MEDIDA en el
+    // cierre de la Story 4.30 de un repo del equipo: el check quedó verde con los 872 tests que la story
+    // declaraba, corridos a mano (`run-check tests -- node --test <lista>`). La suite completa son
+    // 2400 y salía en ROJO: 13 fallas, DOS de la propia story que se estaba cerrando. La diferencia
+    // entre "los tests que la story declara" y "todos" es exactamente donde se escondían.
+    //
+    // Se acepta `test-gate` (el gate corrió la suite entera y capturó el exit code real) y
+    // `manual-forced` (escape consciente y logueado: `set-check tests green --force-manual`).
+    // Se RECHAZA `run-check` a secas y `manual`: son verdes parciales o auto-declarados.
+    const testsCheck = marker.checks && marker.checks.tests;
+    const testsProv = (marker.checksProvenance && marker.checksProvenance.tests) || null;
+    if (testsCheck === 'green' && testsProv !== 'test-gate' && testsProv !== 'manual-forced') {
+      appendLog('gates.log', {
+        name: 'tests-scope', status: 'blocked', story: marker.storyId,
+        provenance: testsProv || '(ausente)',
+        reason: 'el verde de tests no vino de test-gate.sh (suite completa)',
+      });
+      console.error('marker.js complete-step 4 BLOQUEADO — el verde de `tests` no salió de la suite completa.');
+      console.error('');
+      console.error(`  Estado actual: checks.tests=green provenance=${testsProv || '(ausente)'}`);
+      console.error('  Correr sólo los tests que la story declara deja afuera las regresiones que');
+      console.error('  la story causó en otro lado — y ahí es exactamente donde aparecen.');
+      console.error('');
+      console.error('  El control es el gate, que corre TODO y captura el exit code real:');
+      console.error('    bash <skills>/tycon-pipeline/scripts/test-gate.sh <repo> <story-path>');
+      console.error('');
+      console.error('  Escape consciente (el repo no tiene suite completa, o hay que cerrar igual):');
+      console.error('    marker.js set-check tests green --force-manual   (queda en gates.log)');
+      process.exit(1);
+    }
+
+    // ── Chequeo de MUTANTES (AVISA, NO FRENA — decisión del dev 2026-08-13) ─────────────────────
+    // La suite en verde no prueba que los tests ejerzan el código nuevo; el chequeo lo rompe a
+    // propósito y mira si algún test se pone rojo. El único caso que bloquea es exit 1 del chequeo
+    // (CERO mutantes muertos). Sobrevivientes → aviso; estructural (story sin tests) o cualquier
+    // problema del chequeo mismo → fail-open. Todo queda en gates.log. Escapes: --no-mutation
+    // (bypass.log) · TYCON_MUTATION_CHECK=off. Semántica y tests: lib/mutation-gate.js.
+    {
+      const { runMutationGate } = require('./lib/mutation-gate.js');
+      const g = runMutationGate({ marker, opts, appendLog });
+      if (g.block) process.exit(1);
+    }
+  }
+
+  // Capa 4 DoD gate — Step 8 (commit prep). Caso disparador Story 4.2: el orquestador llegaba a
+  // Step 8 sin pasar Step 7c DoD. Dos regímenes:
+  //   - Story de UI (DODRT-C5.1 AIRTIGHT, 2026-07-07): exige el gate `dod` en VERDE por run-check
+  //     (el exit code REAL de un `npx playwright test`, no falseable) o `--force-manual` (escape
+  //     explícito y logueado). NO alcanza `dodRuntimeChecked` — ese flag lo satisface un archivo de
+  //     evidencia de texto (agente-escribible), el agujero exacto de la Story 11.2.
+  //   - Story no-UI: mantiene el gate `dodRuntimeChecked` (Step 7c corrido).
+  if (n === 8) {
+    const isUi = markerStoryIsUi(marker);
+    avisarBajaDePantalla(marker);
+    let blocked = null;
+
+    // 🔴 `findings.json` lo exige el FRENO, no una instrucción del step (2026-09-18,
+    // HALLAZGOS-SIN-ARCHIVO-1). El artefacto ya se podía escribir vacío a propósito («un run sin
+    // hallazgos igual escribe el archivo»), y `pipeline.js findings-status` existía como
+    // «pre-condición mecánica del Step 8»… pero su único enforcement vivía en el markdown del
+    // step-08, o sea en algo que el orquestador tiene que ACORDARSE de correr. Medido sobre los run
+    // dirs reales: 4 de las 35 corridas desde el 01-09 no lo dejaron —una de ellas de hoy mismo—, y
+    // sin el archivo «no escribí» y «no encontré nada» son indistinguibles: la tabla por regla de
+    // `poda.js` decide retiros con media muestra y puede retirar una regla porque su revisor «nunca
+    // encontró nada» cuando en realidad nadie anotó. El criterio no se copia: lo computa
+    // `computeFindingsStatus` de pipeline.js, que es el mismo que usa `findings-status`.
+    // 🔴 Sin run dir NO se bloquea: no hay dónde buscar, y frenar ahí rompería una corrida cuyo run
+    // dir se borró. Se dice por stderr y queda en gates.log — «no pude mirar» visible, no silencio.
+    {
+      const storyPathF = resolveStoryPath(marker.storyPath, marker);
+      let st = null;
+      try {
+        const { computeFindingsStatus } = require('./pipeline.js');
+        if (storyPathF) st = computeFindingsStatus({ story: storyPathF, repo: marker.repoPath || process.cwd() });
+      } catch (e) { st = { error: e.message }; }
+      const anotar = (veredicto, motivo) => appendLog('gates.log', {
+        name: 'findings-json', action: veredicto, story: marker.storyId || null, step: 8, motivo,
+      });
+      if (!storyPathF || !st || st.error || st.key_error) {
+        const motivoNoMedido = (st && (st.error || (st.key_error && `sin clave de la carpeta de corrida: ${st.key_error}`))) || 'sin story path en el marker';
+        console.error(`⚠️  complete-step 8: NO pude mirar si está el findings.json del Step 6 (${motivoNoMedido}). No es «está»: es «no lo vi».`);
+        anotar('no-medido', motivoNoMedido);
+      } else if (!st.run_dir) {
+        console.error('⚠️  complete-step 8: no hay run dir bajo .advisors/pipeline-runs/, así que no pude mirar el findings.json.');
+        anotar('no-medido', 'sin run dir');
+      } else if (!st.exists || !st.valid) {
+        blocked = 'findings';
+        console.error(`marker.js complete-step 8 BLOQUEADO — ${st.exists ? 'el findings.json NO es un array JSON válido' : 'FALTA el findings.json del Step 6'} en ${st.run_dir}.`);
+        console.error('  Sin ese archivo, «no encontré nada» y «no lo escribí» son lo mismo: el criterio de poda del catálogo');
+        console.error('  decide retiros de reglas con media muestra. Un run sin hallazgos igual lo escribe, con [].');
+        console.error(`    node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js write-findings --story ${storyPathF} --findings -`);
+        console.error('    (el array sale del reporte consolidado del Step 6, con la disposition final de cada hallazgo)');
+        anotar('bloqueo', st.exists ? 'findings.json inválido' : 'findings.json ausente');
+      }
+    }
+    // 🔴 El pase adversarial ATENDIDO (story 1.8, 2026-09-18). Lanzado → su resultado anotado después del último
+    // lanzamiento; no lanzado → el salteo que decidió el portón. Medido: 4 de las 9 corridas que lanzaron el pase
+    // desde el 14/9 lo cerraron sin resultado, y 3 de esas 4 pasaron por acá igual. Se evalúa SIEMPRE (no sólo si
+    // los frenos de arriba pasaron: los dos mensajes salen en la misma corrida), deja su línea en toda llamada, y
+    // NO se abre con DOD_BYPASS: el arreglo siempre está a mano y esa variable la puede poner el propio agente.
+    let bloqueoAdversarial = null;
+    {
+      const v = veredictoPaseAdversarial(marker);
+      appendLog('gates.log', {
+        name: 'adversarial-result-gate', status: v.veredicto === 'paso' ? 'ok' : 'blocked',
+        motivo: v.motivo, story: marker.storyId || null, step: 8, runId: v.runId || null,
+      });
+      if (v.veredicto === 'bloqueo') {
+        bloqueoAdversarial = v.motivo;
+        mensajeDelPaseAdversarial(v);
+      }
+    }
+    if (isUi) {
+      const dodCheck = marker.checks && marker.checks.dod;
+      const dodProv = marker.checksProvenance && marker.checksProvenance.dod;
+      const okUi = dodCheck === 'green' && (dodProv === 'run-check' || dodProv === 'manual-forced');
+      if (!okUi) {
+        blocked = 'ui';
+        console.error('marker.js complete-step 8 BLOQUEADO — story de UI sin el gate `dod` en verde por run-check.');
+        console.error('');
+        console.error(`  Estado actual: checks.dod=${dodCheck || '(ausente)'} provenance=${dodProv || '(ausente)'}`);
+        console.error('  Una story de UI exige el EXIT CODE REAL del Playwright — no un flag ni un archivo de texto:');
+        console.error('    marker.js run-check dod -- npx playwright test <spec> --workers=1');
+        console.error('  Escape consciente (marcada UI pero sin superficie de UI real):');
+        console.error('    marker.js set-check dod green --force-manual   (queda manual-forced en gates.log)');
+      }
+    } else if (marker.dodRuntimeChecked !== true) {
+      blocked = 'non-ui';
+      console.error('marker.js complete-step 8 BLOQUEADO — DoD runtime check (Step 7c) no se ejecutó.');
+      console.error('');
+      console.error('El marker no tiene dodRuntimeChecked=true. Acciones permitidas:');
+      console.error('  (a) Correr Step 7c — invocar tycon-dod-runtime-checker advisor +');
+      console.error('      ejecutar E2E specs + capturar evidencia. Después:');
+      console.error('      marker.js mark-dod-runtime-checked \'{"verdict":"PASS","evidencePath":"<path>"}\'');
+      // El camino de la exención era «setear marker.dodRuntimeChecked=true manualmente con set»: no
+      // es un comando, y se descubría probando (propuesta PIPE-DEBT-2.13 c, 2026-09-14). Éste existe,
+      // queda escrito como exención (evidencePath «exenta: …») y sólo vale para una story sin UI.
+      console.error('  (b) Story exenta (sin UI ni endpoints — step-07c): en el frontmatter');
+      console.error('      dod_runtime_exempt: true  y  dod_runtime_exempt_reason: "<razón concreta>". Después:');
+      console.error('      marker.js mark-dod-runtime-checked \'{"verdict":"PASS","evidencePath":"exenta: <razón>"}\'');
+    }
+    // DODRT-C6 (2026-07-10, caso Story 10.4; endurecido tras el ataque adversarial) — la matriz
+    // de verificación runtime por AC se RE-COMPUTA acá EN PROCESO, NO se confía en el check
+    // `checks.acmatrix` (que `run-check acmatrix -- true` podría poner verde con un comando
+    // trivial — vector de forja). Se computa runtime-matrix.js contra marker.storyPath y se exige
+    // green: cada AC con evidencia de EJECUCIÓN real (gate E2E / smoke con exit code real) o
+    // waiveado por el USUARIO desde su terminal (marker.js runtime-waiver, TTY-only). El agente
+    // no puede forjar evidencia creíble ni producir un waiver (no tiene /dev/tty).
+    if (!blocked) {
+      const storyPath = resolveStoryPath(marker.storyPath, marker);
+      if (!storyPath) {
+        blocked = 'acmatrix-nostory';
+        console.error(`marker.js complete-step 8 BLOQUEADO — no puedo computar la matriz runtime: marker.storyPath ausente o inexistente (crudo: ${marker.storyPath ?? '(vacío)'}; base: ${marker.repoPath ?? process.cwd()}).`);
+        console.error('  Seteá el path de la story en el marker (pipeline.js start lo hace) y reintentá.');
+      } else {
+        let matrix;
+        try {
+          matrix = require('./runtime-matrix.js').compute({ storyPath });
+        } catch (e) {
+          blocked = 'acmatrix-error';
+          console.error(`marker.js complete-step 8 BLOQUEADO — la matriz runtime no computó (fail-closed): ${e.message}`);
+        }
+        if (matrix && matrix.structuralError) {
+          blocked = 'acmatrix-struct';
+          console.error(`marker.js complete-step 8 BLOQUEADO — matriz runtime no computable: ${matrix.structuralError}`);
+        } else if (matrix && !matrix.green) {
+          blocked = 'acmatrix';
+          console.error('marker.js complete-step 8 BLOQUEADO — matriz de verificación runtime (DODRT-C6) ROJA.');
+          console.error('');
+          console.error(`  (${matrix.stats.runtime}/${matrix.stats.total} corridos · ${matrix.stats.notRun} SIN CORRER · ${matrix.stats.notVerifiable} imposibles-declarados · ${matrix.stats.waived} waiveados)`);
+          if ((matrix.notRun || []).length) {
+            console.error(`  🔴 SIN CORRER (el agente DEBE correrlos — NO se pueden waivear): ${matrix.notRun.map((n) => '#' + n).join(', ')}`);
+            console.error('     Corrélos (E2E Playwright / smoke-run.sh). Si son materialmente imposibles,');
+            console.error('     declaralos en el frontmatter `runtime_not_verifiable:` (reason + covered_by).');
+          }
+          if ((matrix.notVerifiable || []).length) {
+            console.error(`  🟪 imposibles-declarados (esperan waiver del USUARIO): ${matrix.notVerifiable.map((n) => '#' + n).join(', ')}`);
+            console.error(`     node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js runtime-waiver ${storyPath}`);
+          }
+          // Story 7.17: la firma que existe pero se descartó se DICE — sin esto, «esperan waiver» parecía que el dev no firmó.
+          for (const l of require('./runtime-matrix.js').avisoFirmasDescartadas(matrix, storyPath)) console.error(`  ${l}`);
+          if (matrix.chainOk === false) console.error('  🚨 hay líneas de esta story descartadas por la cadena del registro de firmas — causa probable: una edición a mano.');
+        }
+      }
+    }
+    // DODRT-C7 (2026-07-10, pedido DevA) — para una story de UI, la GUÍA DE PRUEBA MANUAL del
+    // tester tiene que estar lista: pasos en criollo, que cubran los ACs corridos, SIN jerga de
+    // software (determinístico), y con la review de legibilidad independiente "veredicto: OK".
+    // qa-guide.js --check chequea los 4 y sale !=0 si falta algo.
+    const qaStoryPath = resolveStoryPath(marker.storyPath, marker);
+    if (!blocked && markerStoryIsUi(marker) && qaStoryPath) {
+      try {
+        require('child_process').execFileSync(
+          'node',
+          [path.join(__dirname, 'qa-guide.js'), '--check', '--story', qaStoryPath],
+          { stdio: 'inherit' },
+        );
+      } catch (e) {
+        blocked = 'qaguide';
+        console.error('');
+        console.error('marker.js complete-step 8 BLOQUEADO — la guía de prueba manual del tester (DODRT-C7) NO está lista (ver arriba).');
+        console.error('  Escribí/corregí los pasos en criollo en specs/qa/<sid>-pasos.md y corré la review de legibilidad.');
+      }
+    }
+    if (bloqueoAdversarial) {
+      console.error('');
+      console.error('  🔒 El bloqueo del pase adversarial no se abre con DOD_BYPASS: el arreglo siempre está al alcance');
+      console.error('     (anotar el resultado, o el salteo que decide el portón).');
+      process.exit(2);
+    }
+    if (blocked) {
+      // 🔴 Los bloqueos de la matriz runtime (acmatrix*) y de la guía de tester (qaguide) NO tienen
+      // bypass por env var: DOD_BYPASS lo puede setear el agente, y la regla (DevA 2026-07-10) es que
+      // el agente NO puede saltear ni la verificación runtime ni dejar la guía sin criollo. Los bloqueos
+      // legacy (ui / non-ui) mantienen su escape DOD_BYPASS histórico.
+      if (String(blocked).startsWith('acmatrix') || blocked === 'qaguide') {
+        console.error('');
+        console.error('  🔒 Este bloqueo NO tiene bypass para el agente (ni DOD_BYPASS ni --no-verify lo saltean');
+        console.error('     limpiamente): la verificación runtime es obligatoria. La única salida es el waiver TTY del usuario.');
+        process.exit(2);
+      }
+      console.error('  Bypass excepcional: setear DOD_BYPASS=1 (queda had_dod_bypass=true en bypass.log).');
+      console.error('');
+      console.error('Ver: ~/.claude/agent-skills/skills/tycon-pipeline/steps/step-07c-dod-runtime-gate.md');
+      if (process.env.DOD_BYPASS !== '1') {
+        process.exit(2);
+      }
+      console.error('⚠ DOD_BYPASS=1 detectado — permitiendo complete-step 8 con flag had_dod_bypass=true');
+      marker.hadDodBypass = true;
+      // Rastro DURABLE del bypass (auditoría 2026-06-09): el marker se borra al
+      // cerrar el pipeline; bypass.log sobrevive y on-prompt puede reportarlo.
+      appendLog('bypass.log', {
+        type: blocked === 'ui' ? 'DOD_BYPASS_UI' : blocked === 'acmatrix' ? 'DOD_BYPASS_ACMATRIX' : 'DOD_BYPASS',
+        storyId: marker.storyId,
+        step: n,
+        cwd: process.cwd(),
+      });
+    }
+  }
+
+  marker.stepsPending = marker.stepsPending.filter((s) => s !== n);
+  if (!marker.stepsCompleted.includes(n)) {
+    marker.stepsCompleted.push(n);
+    marker.stepsCompleted.sort((a, b) => a - b);
+  }
+  // Fase 0 instrumentación (auditoría 2026-06-09): timestamp por step para que
+  // `pipeline.js timing-report` desglose dónde se va el wall-clock de la corrida.
+  marker.stepTimings = marker.stepTimings || {};
+  // story 2.7: se CONSERVA el arranque (y cualquier otro campo del paso). Antes se pisaba el objeto
+  // entero con `{completedAt}` y el arranque que `start-step`/`next` hubieran anotado se perdía.
+  const previo = marker.stepTimings[String(n)];
+  marker.stepTimings[String(n)] = { ...(previo && typeof previo === 'object' ? previo : {}), completedAt: nowIso() };
+  marker.lastTouch = nowIso();
+  writeMarker(marker);
+  process.stdout.write(JSON.stringify(marker, null, 2));
+}
+
+/**
+ * La hora de ARRANQUE de un paso (story 2.7). Pura: devuelve el marker con el arranque anotado, o
+ * `null` si no hay nada que anotar — el paso ya arrancó o ya está completo. Nunca mueve un arranque:
+ * la primera consulta es la que marca, y las siguientes (el orquestador pregunta `next` varias veces)
+ * no pueden correrlo hacia adelante y esconder el tiempo que ya pasó.
+ */
+// Los sub-pasos (0b, 0c, 5b, 7c) se cierran con una BANDERA, no con complete-step: tienen arranque y
+// no fin propio. Sin arranque, su trabajo (el pase adversarial del 5b dura ~30 min) caía como «tiempo
+// entre pasos» en la cuenta (pase adversarial de la 2.7, hallazgos 1 y 7).
+const PASO_ARRANCABLE = /^(\d|0b|0c|5b|7c)$/;
+function anotarArranque(marker, n, ts) {
+  const k = String(n);
+  if (!marker || !PASO_ARRANCABLE.test(k)) return null;
+  const completos = (marker.stepsCompleted || []).map(String);
+  if (completos.includes(k)) return null;
+  const st = marker.stepTimings && typeof marker.stepTimings === 'object' ? marker.stepTimings : {};
+  const previo = st[k] && typeof st[k] === 'object' ? st[k] : {};
+  if (previo.startedAt || previo.completedAt) return null;
+  return { ...marker, stepTimings: { ...st, [k]: { ...previo, startedAt: ts } } };
+}
+
+function cmdStartStep(nRaw) {
+  const n = String(nRaw || '');
+  if (!PASO_ARRANCABLE.test(n)) {
+    console.error('marker.js start-step: N debe ser un paso (0..9) o un sub-paso (0b, 0c, 5b, 7c)');
+    process.exit(2);
+  }
+  const marker = readMarker();
+  if (!marker) process.exit(0);   // sin corrida no hay nada que medir: no es un error
+  const nuevo = anotarArranque(marker, n, nowIso());
+  if (!nuevo) process.exit(0);
+  nuevo.lastTouch = nowIso();
+  writeMarker(nuevo);
+}
+
+// ============================================================
+// Capa 4 DoD enforcement (caso disparador Story 4.2 Sprint 4 2026-05-20)
+// ============================================================
+
+/**
+ * Marca el marker actual como "DoD runtime verified" — Step 7c del pipeline
+ * pasó. Es pre-condición para `complete-step 8`.
+ *
+ * Payload JSON esperado:
+ *   {
+ *     "evidencePath": "<abs path al archivo .advisors/dod-runtime/...md>",
+ *     "verdict": "PASS" | "PARTIAL" | "FAIL",
+ *     "gatesRun": ["DODRT-C1", "DODRT-C2", ...]
+ *   }
+ *
+ * Solo PASS desbloquea Step 8. PARTIAL requiere waiver explícito del user
+ * (manejado en el step file).
+ */
+function cmdMarkDodRuntimeChecked(payloadJson) {
+  if (!payloadJson) {
+    console.error('marker.js mark-dod-runtime-checked: payload JSON requerido');
+    process.exit(2);
+  }
+  let payload;
+  try { payload = JSON.parse(payloadJson); } catch (e) {
+    console.error('marker.js mark-dod-runtime-checked: payload JSON invalido:', e.message);
+    process.exit(2);
+  }
+  const marker = readMarker();
+  if (!marker) {
+    console.error('marker.js mark-dod-runtime-checked: no hay marker activo');
+    process.exit(1);
+  }
+  const wantsPass = payload.verdict === 'PASS';
+  avisarBajaDePantalla(marker);
+  // DODRT-C5.1 hardening (2026-07-07) — para una story de UI, un verdict PASS NO se acepta como
+  // self-assertion a ciegas: exige que el evidencePath EXISTA y contenga evidencia Playwright real
+  // (espejo del check del hook on-pre-commit). Cierra el agujero por el que `mark-dod-runtime-checked
+  // {verdict:PASS}` desbloqueaba complete-step 8 (commit prep) SIN haber corrido el E2E — el path
+  // EXACTO que se usó en la Story 11.2. Antes: dodRuntimeChecked = (verdict==='PASS'), sin verificar nada.
+  if (wantsPass && markerStoryIsUi(marker)) {
+    const ev = verifyPlaywrightEvidence(marker, payload.evidencePath);
+    if (!ev.ok) {
+      console.error('marker.js mark-dod-runtime-checked: RECHAZADO — story de UI, verdict PASS exige');
+      console.error('  evidencia Playwright REAL (DODRT-C5.1). ' + ev.reason);
+      console.error('  Corré el E2E y apuntá evidencePath a un archivo .advisors/dod-runtime/<story>-*.md');
+      console.error('  que documente el resultado (debe mencionar playwright / tests/e2e / @story- / E2E-N).');
+      console.error('  Una story de UI no se exime (step-07c). Si está marcada UI y no tiene superficie de UI real,');
+      console.error('  el escape consciente es: marker.js set-check dod green --force-manual  (queda en gates.log).');
+      process.exit(2);
+    }
+  }
+  marker.dodRuntimeChecked = wantsPass;
+  marker.dodRuntime = {
+    verdict: payload.verdict,
+    evidencePath: payload.evidencePath || null,
+    gatesRun: payload.gatesRun || [],
+    timestamp: nowIso(),
+  };
+  marker.lastTouch = nowIso();
+  writeMarker(marker);
+  process.stdout.write(JSON.stringify(marker, null, 2));
+}
+
+// ============================================================
+// Autonomía Nivel 1 (Stop-hook DoD gate — 2026-05-21)
+// ============================================================
+// `set-autonomous true|false` → opt-in del MODO AUTÓNOMO. El Stop hook
+// `on-stop-dod-gate.js` SOLO atrapa el fin de turno si `marker.autonomous === true`.
+// Inicializa el estado del loop (iter, noProgressStreak, lastFailures, checks).
+//
+// `set-check <name> <status>` → registra el resultado de un gate mecánico que el hook
+// lee: name ∈ {build,tests,advisors,dod}; status = 'green' | 'red:<detalle>'. El hook
+// bloquea el stop SOLO si algún check registrado está en rojo (ausente ≠ rojo — preserva
+// pausas HITL). Ground-truth: el step debe pasar el resultado de exit codes / check-count
+// REALES, no lo que el LLM "cree".
+
+function cmdSetAutonomous(valRaw) {
+  const on = valRaw === 'true' || valRaw === '1' || valRaw === 'on';
+  const marker = readMarker();
+  if (!marker) {
+    console.error('marker.js set-autonomous: no hay marker activo (corré `set` en Step 0 primero)');
+    process.exit(1);
+  }
+  marker.autonomous = on;
+  if (on) {
+    // Inicializar/resetear el estado del loop al activar.
+    marker.iter = 0;
+    marker.noProgressStreak = 0;
+    marker.lastFailures = [];
+    if (!marker.checks) marker.checks = {};
+  }
+  marker.lastTouch = nowIso();
+  writeMarker(marker);
+  process.stdout.write(`autonomous: ${on}\n`);
+}
+
+const VALID_CHECKS = ['build', 'tests', 'advisors', 'dod', 'acmatrix'];
+
+// DODRT-C5.1 hardening (2026-07-07) — verifica que el evidencePath de una story de UI sea evidencia
+// Playwright REAL: el archivo EXISTE (resuelto relativo a marker.repoPath si el path es relativo) y su
+// CONTENIDO menciona playwright / tests/e2e / @story- / E2E-N. Espejo del check del hook
+// on-pre-commit.js:578 — así el gate del marker (complete-step 8) y el gate del commit exigen lo mismo.
+/**
+ * Resuelve el `storyPath` del marker a una ruta USABLE.
+ *
+ * 🔴 `pipeline.js start` lo guarda RELATIVO al repo (`specs/<epic>/<story>.md`), así que cualquier
+ * `fs.existsSync(marker.storyPath)` falla salvo que el proceso corra parado justo en la raíz del
+ * repo. Eso rompía en silencio 3 sitios distintos: el gate de `complete-step 8`, el check de la
+ * guía de QA, y el fallback de `runtime-waiver` (que además le echaba la culpa al usuario con un
+ * "el marker no lo tiene"). Es la misma familia que el bug F.iii de `runtime-matrix.js`, que ya se
+ * había arreglado allá con un `path.resolve` — pero solo allá.
+ *
+ * Mismo criterio que `evidencePath` más abajo: relativo ⇒ contra `marker.repoPath` (absoluto por
+ * construcción, `readMarker` lo defaultea a `process.cwd()`), nunca contra el cwd del proceso.
+ * @returns {string|null} la ruta absoluta si el archivo existe; `null` si no
+ */
+function resolveStoryPath(raw, marker) {
+  if (!raw) { return null; }
+  let p = String(raw);
+  if (!path.isAbsolute(p)) {
+    const base = (marker && marker.repoPath) || process.cwd();
+    p = path.join(base, p);
+  }
+  return fs.existsSync(p) ? p : null;
+}
+
+function verifyPlaywrightEvidence(marker, evidencePath) {
+  if (!evidencePath || String(evidencePath).trim() === '') {
+    return { ok: false, reason: 'Falta evidencePath en el payload.' };
+  }
+  let p = String(evidencePath);
+  if (!path.isAbsolute(p)) {
+    // Relativo ⇒ primero contra el repo de la EVIDENCIA (el de la story, `marker.evidenceDir` =
+    // <repo>/.advisors/dod-runtime → dos niveles arriba), después contra `marker.repoPath` (el del
+    // código). Con la evidencia en otro repo, resolver sólo contra repoPath decía "no existe".
+    const bases = [];
+    if (marker && typeof marker.evidenceDir === 'string' && marker.evidenceDir) bases.push(path.resolve(marker.evidenceDir, '..', '..'));
+    bases.push((marker && marker.repoPath) || process.cwd());
+    const hallado = bases.map((b) => path.join(b, p)).find((c) => fs.existsSync(c));
+    p = hallado || path.join(bases[bases.length - 1], p);
+  }
+  if (!fs.existsSync(p)) {
+    return { ok: false, reason: `El evidencePath no existe: ${p}` };
+  }
+  let content;
+  try {
+    content = fs.readFileSync(p, 'utf8');
+  } catch (e) {
+    return { ok: false, reason: `No se pudo leer el evidencePath: ${e.message}` };
+  }
+  if (!/playwright|tests\/e2e\/|@story-|E2E[-\s]\d/i.test(content)) {
+    return { ok: false, reason: 'La evidencia existe pero no menciona Playwright / tests/e2e / @story- / E2E-N.' };
+  }
+  return { ok: true, path: p };
+}
+
+// DODRT-C5.1 (2026-07-07) — ¿la story del marker toca UI? Si sí, el check `dod` NO se puede marcar
+// manual: exige un run-check con Playwright (evidencia por-AC, no falseable). Cierra el agujero por
+// el que se declaró "probada en runtime" una UI sin correr el E2E (Story 11.2, y antes 11.1).
+// Señal de UI: la decide lib/ui-signal.js (extensiones de pantalla, rutas del frente y nombres
+// declarados en las listas de archivos, campos estructurados y tandas; la prosa sólo de respaldo;
+// escenarios de navegador en el spec). Acá no se copia ninguna regla ni ningún nombre de producto.
+function markerStoryIsUi(marker) {
+  try {
+    const p = marker && marker.storyPath;
+    if (!p || !fs.existsSync(p)) return false;
+    const content = fs.readFileSync(p, 'utf8');
+    return require(path.join(__dirname, 'lib', 'ui-signal.js'))
+      .storyTouchesUi(content, (marker && marker.repoPath) || process.cwd());
+  } catch (_e) {
+    return false;
+  }
+}
+
+// Story 7.18 (AC 6) — la baja de pantalla nunca es muda. Si el detector de antes tomaba la story como de
+// pantalla y el de ahora no (la palabra del frente sólo está en la prosa o en documentos), se dice en UNA
+// línea por stderr, sin bloquear. Se llama una sola vez por comando, al nivel del comando: NO dentro de
+// markerStoryIsUi, que `complete-step 8` llama más de una vez.
+function avisarBajaDePantalla(marker) {
+  try {
+    const p = marker && resolveStoryPath(marker.storyPath, marker);
+    if (!p || !fs.existsSync(p)) return;
+    const ui = require(path.join(__dirname, 'lib', 'ui-signal.js'));
+    const linea = ui.proseDropNotice(ui.uiSignalDetail(fs.readFileSync(p, 'utf8'), marker.repoPath || process.cwd()));
+    if (linea) console.error(linea);
+  } catch (_e) { /* el aviso nunca rompe el comando */ }
+}
+
+function cmdSetCheck(name, status, flag) {
+  if (!name || !status) {
+    console.error('marker.js set-check: <name> <status> requeridos');
+    console.error(`  <name> ∈ ${VALID_CHECKS.join(' | ')}; <status> = green | red:<detalle>`);
+    process.exit(2);
+  }
+  if (!VALID_CHECKS.includes(name)) {
+    console.error(`marker.js set-check: name inválido '${name}' — válidos: ${VALID_CHECKS.join(' | ')}`);
+    process.exit(2);
+  }
+  if (name === 'acmatrix') {
+    // La matriz runtime NO se ASERTA — se COMPUTA. complete-step 8 la re-computa en proceso;
+    // un set-check acmatrix green sería un breadcrumb engañoso (y era una vía de forja). Rechazado.
+    console.error("marker.js set-check: 'acmatrix' no se puede setear a mano — se computa.");
+    console.error('  Para VER el estado: run-check acmatrix -- node <skill>/scripts/runtime-matrix.js --story <spec>');
+    console.error('  El gate real de complete-step 8 re-computa la matriz solo; no confía en el check.');
+    process.exit(2);
+  }
+  if (status !== 'green' && !status.startsWith('red')) {
+    console.error(`marker.js set-check: status inválido '${status}' — esperaba 'green' o 'red:<detalle>'`);
+    process.exit(2);
+  }
+  // HARDENING (2026-06-23, AUTONOMY-DEFAULT-ON): set-check ahora EXIGE --manual explícito.
+  // Antes solo avisaba y seteaba igual → en modo autónomo un green colado por self-report
+  // escapaba el loop (el Stop-gate confía en cualquier green de marker.checks). Ahora un
+  // override manual es un acto DELIBERADO y auditable; el ground-truth no-falseable es run-check.
+  // Se aceptan --manual (override normal) y --force-manual (escape para el caso DoD-UI, ver abajo).
+  const isManual = flag === '--manual' || flag === '--force-manual';
+  if (!isManual) {
+    console.error(`marker.js set-check '${name}': RECHAZADO — requiere --manual explícito.`);
+    console.error('  Para checks mecánicos (no falseables) usá: marker.js run-check ' + name + ' -- <comando> [args...]');
+    console.error('  (run-check ejecuta el comando y captura el exit code REAL — no se puede colar un green).');
+    console.error('  Override manual real (ej: no hay build definido): agregá --manual (queda en gates.log).');
+    process.exit(2);
+  }
+  const marker = readMarker();
+  // Sin marker (sin pipeline) → no-op silencioso. El check solo importa con pipeline activo.
+  if (!marker) process.exit(0);
+
+  if (name === 'dod') avisarBajaDePantalla(marker);
+  // DODRT-C5.1 (2026-07-07) — DoD de una story de UI NO se puede marcar manual: exige Playwright real.
+  if (name === 'dod' && flag !== '--force-manual' && status === 'green' && markerStoryIsUi(marker)) {
+    console.error("marker.js set-check dod: RECHAZADO — la story toca UI (.tsx / paths FE del repo / E2E).");
+    console.error("  El DoD de una story de UI NO se marca a mano: exige un E2E Playwright que asserte");
+    console.error("  CADA AC de UI (regla DODRT-C5.1). Usá:");
+    console.error("    marker.js run-check dod -- npx playwright test <spec> --workers=1");
+    console.error("  (captura el exit code real → provenance=run-check, no falseable).");
+    console.error("  Excepción consciente (raro, p.ej. story sin superficie de UI real): --force-manual");
+    console.error("  (queda logueado como provenance=manual-forced en gates.log).");
+    process.exit(2);
+  }
+
+  if (!marker.checks) marker.checks = {};
+  marker.checks[name] = status;
+  const prov = flag === '--force-manual' ? 'manual-forced' : 'manual';
+  // Provenance: override manual explícito y auditable. El ground-truth mecánico es run-check.
+  marker.checksProvenance = marker.checksProvenance || {};
+  marker.checksProvenance[name] = prov;
+  marker.checksAt = marker.checksAt || {};
+  marker.checksAt[name] = nowIso();
+  marker.lastTouch = nowIso();
+  writeMarker(marker);
+  appendLog('gates.log', { check: name, status, provenance: prov, storyId: marker.storyId });
+  process.stdout.write(`check ${name}: ${status} (${prov})\n`);
+}
+
+/**
+ * run-check — ground-truth de los gates del modo autónomo (auditoría 2026-06-09).
+ *
+ *   marker.js run-check <name> -- <cmd> [args...]
+ *
+ * Ejecuta el comando vía execFileSync SIN shell (no pipes, no `| tail` que enmascare
+ * el exit code — caso 2026-06-03), captura el exit code REAL y setea
+ * marker.checks[name] = 'green' | 'red:exit=N'. provenance='run-check'.
+ * Loguea {check, cmd, exit, durationMs} a gates.log (append-only).
+ * El exit code del proceso = el del comando → gateable con && / set -e.
+ *
+ * 🔴 EN ROJO guarda además la COLA de la salida en `cola` (2026-09-17). Desde el 2026-09-14, 0 de 43
+ * frenos en rojo tenían su mensaje en el volcado de la corrida: `tokens-digest.js` lo buscaba en la
+ * conversación, y en los 43 el comando lo había lanzado un script (`test-gate.sh`, `runtime-matrix.js`)
+ * y 26 corrían en segundo plano, donde la conversación sólo dice «Command running in background» y la
+ * salida va a un archivo que se borra. El único que ve la salida es este comando: la guarda él.
+ * La salida se sigue mostrando mientras corre (se copia a la consola a medida que llega) y se retienen
+ * sólo los últimos bytes. Se sanea ANTES de escribirla con `colaDeSalida` de tokens-digest.js —el mismo
+ * saneado y el mismo tope que el rescate—, porque gates.log viaja al buzón del equipo. Si ese archivo no
+ * está (arnés atrasado), NO se guarda la salida cruda: queda `cola_motivo` y el veredicto no cambia.
+ * En verde no se guarda nada.
+ */
+function colaParaElRegistro(crudo) {
+  try {
+    const { dir: guias, aviso } = require('./lib/harness-path.js').rutaArnesHook();   // story 8.3: la variable o el enlace, nunca una carpeta escrita a mano
+    if (!guias) return { cola_motivo: `${aviso} — la salida no se guardó sin sanear` };
+    const digest = require(path.join(guias, 'scripts', 'metrics', 'tokens-digest.js'));
+    if (typeof digest.colaDeSalida !== 'function') {
+      return { cola_motivo: 'tokens-digest.js no tiene colaDeSalida (arnés atrasado): la salida no se guardó sin sanear' };
+    }
+    return { cola: digest.colaDeSalida(crudo) };
+  } catch (e) {
+    return { cola_motivo: `no pude cargar tokens-digest.js para sanear la salida (${e.code || 'error'}): no se guardó` };
+  }
+}
+
+// Bytes crudos que se retienen de la salida para armar la cola. El tope publicado (700 caracteres
+// saneados) es mucho menor; se retiene de más porque sanear achica y los colores ocupan.
+const COLA_BYTES_RETENIDOS = 64 * 1024;
+
+function cmdRunCheck(argv) {
+  const name = argv[0];
+  const sep = argv.indexOf('--');
+  if (!name || !VALID_CHECKS.includes(name) || sep === -1 || sep + 1 >= argv.length) {
+    console.error('marker.js run-check: uso — run-check <name> -- <cmd> [args...]');
+    console.error(`  <name> ∈ ${VALID_CHECKS.join(' | ')}`);
+    process.exit(2);
+  }
+  const cmdArgv = argv.slice(sep + 1);
+  const marker = readMarker();
+  const { spawn } = require('child_process');
+  const t0 = Date.now();
+  // Sin shell, como antes. La salida se copia a la consola a medida que llega (el dev/LLM la ve igual)
+  // y se retienen los últimos COLA_BYTES_RETENIDOS para la cola del registro.
+  const trozos = [];
+  let retenidos = 0;
+  const retener = (b) => {
+    trozos.push(b);
+    retenidos += b.length;
+    while (trozos.length > 1 && retenidos - trozos[0].length >= COLA_BYTES_RETENIDOS) retenidos -= trozos.shift().length;
+  };
+  let terminado = false;
+  const terminar = (exitCode) => {
+    if (terminado) return;
+    terminado = true;
+    registrarRunCheck(name, cmdArgv, marker, exitCode, Date.now() - t0, Buffer.concat(trozos).toString('utf8'));
+  };
+  // En Windows, un `bash` a secas se lanza con el bash de Git que devuelve `findGitBash()` del arnés, nunca con el
+  // primero del PATH (puede ser el lanzador de WSL). Sin bash de Git no se lanza: el check sale rojo con el motivo
+  // (story 8.17, W6 · AC 48). Un programa que en Windows es sólo un `.cmd` (`npx`) también va por el bash de Git: Node
+  // no lo lanza sin shell. Fuera de Windows, y para un `.exe`, el comando va tal cual.
+  const lanzar = require('./lib/portable-tools.js').runCheckLaunch(cmdArgv);
+  if (!lanzar.file) {
+    process.stderr.write(`marker.js run-check: ${lanzar.error}\n`);
+    retener(Buffer.from(`${lanzar.error}\n`));
+    terminar(1);
+    return;
+  }
+  let hijo;
+  try {
+    hijo = spawn(lanzar.file, lanzar.args, { stdio: ['inherit', 'pipe', 'pipe'] });
+  } catch (err) {
+    retener(Buffer.from(`${err.message}\n`));
+    terminar(1);
+    return;
+  }
+  hijo.stdout.on('data', (b) => { process.stdout.write(b); retener(b); });
+  hijo.stderr.on('data', (b) => { process.stderr.write(b); retener(b); });
+  // No se pudo lanzar (ENOENT, permiso): antes execFileSync lo daba como exit 1.
+  hijo.on('error', (err) => { retener(Buffer.from(`${err.message}\n`)); if (hijo.pid === undefined) terminar(1); });
+  hijo.on('close', (code) => terminar(typeof code === 'number' && code >= 0 ? code : 1));
+}
+
+function registrarRunCheck(name, cmdArgv, marker, exitCode, durationMs, salida) {
+  const status = exitCode === 0 ? 'green' : `red:exit=${exitCode}`;
+  // 🔴 `tests` distingue QUIÉN corrió la suite (decisión del dev 2026-08-13, tag
+  // `dec-2026-08-13-suite-completa-al-cerrar`). `test-gate.sh` exporta TYCON_TEST_GATE=1 y corre la
+  // suite ENTERA; un `run-check tests -- node --test <lista de archivos>` a mano corre la parcial y
+  // queda como 'run-check'. `complete-step 4` bloquea el verde parcial. Medido en el cierre de la
+  // 4.30: 872 de 2400 en verde, y la corrida completa en rojo con 13 fallas (2 de la propia story).
+  // `advisors`: el único verde que vale es el de `pipeline.js check-count` SIN `--ran`/`--trust-ran`
+  // (con `--ran` y sin step5-start, check-count acepta el self-report del LLM y sale 0 — hallazgo H4,
+  // review 2026-08-19). Otro comando (`-- true`) → `run-check-other`. El gate del complete-step 5 sólo
+  // acepta `run-check` (y el escape explícito `manual-forced`).
+  const invokesCheckCount = cmdArgv.some((a) => /pipeline\.js$/.test(a)) && cmdArgv.includes('check-count');
+  const prov = name === 'tests' && process.env.TYCON_TEST_GATE === '1' ? 'test-gate'
+    : name !== 'advisors' ? 'run-check'
+      : (cmdArgv.includes('--trust-ran') || cmdArgv.includes('--ran')) ? 'trust-ran'
+        : !invokesCheckCount ? 'run-check-other'
+          : 'run-check';
+  // 🔴 RELEER antes de escribir (2026-09-15). El marker leído arriba es una FOTO de antes de correr
+  // el comando, y el comando puede tardar horas (medido: 16% de los run-check pasan de 2 minutos; el
+  // mayor, 3h07). Escribir esa foto entera pisa TODO lo que haya cambiado en el medio: el apagado del
+  // modo autónomo que hizo el dev, la escalada que escribió el Stop-hook (`needs_human`,
+  // `escalation_reason`), y el contador `iter`, que RETROCEDÍA — o sea que el cap anti-loop se
+  // rebobinaba solo con cada suite larga. En la corrida de la story 2.17 esto deshizo 4 apagados.
+  // Ahora se relee y se aplica SÓLO el delta de este comando. `marker` (la foto) se sigue usando
+  // como condición: si no había corrida al arrancar, este comando no escribe nada — y si la corrida
+  // se cerró mientras el comando corría, tampoco la resucita.
+  if (marker) {
+    const fresh = readMarker();
+    if (fresh) {
+      fresh.checks = fresh.checks || {};
+      fresh.checks[name] = status;
+      fresh.checksProvenance = fresh.checksProvenance || {};
+      fresh.checksProvenance[name] = prov;
+      fresh.checksAt = fresh.checksAt || {};
+      fresh.checksAt[name] = nowIso();
+      fresh.lastTouch = nowIso();
+      writeMarker(fresh);
+    }
+  }
+  appendLog('gates.log', {
+    check: name,
+    status,
+    provenance: prov,
+    cmd: cmdArgv.join(' '),
+    exit: exitCode,
+    durationMs,
+    storyId: marker ? marker.storyId : null,
+    ...(exitCode === 0 ? {} : colaParaElRegistro(salida)),
+  });
+  process.stdout.write(`check ${name}: ${status} (${prov}, ${durationMs}ms)\n`);
+  // exitCode y no process.exit(): con la salida a un pipe (macOS) process.exit puede cortar lo que la
+  // consola todavía no escribió. El hijo ya cerró: no queda nada que mantenga vivo al proceso.
+  process.exitCode = exitCode;
+}
+
+// Flags booleanos de sub-steps no-enteros (0b clocki / 0c ADO) — el resume y
+// `pipeline.js next` los leen para no re-ejecutar (evita doble timer / doble
+// transición de WI al retomar cross-session).
+// `atddBypass` (2026-07-30): escape consciente del portón pre-edit de ATDD (on-atdd-preedit.js) —
+// para el refactor legítimo sobre red preexistente. El uso queda en bypass.log, no es silencioso.
+// `waitingForHuman` (2026-09-15) — EL TERCER ESTADO del portón de autonomía.
+// El Stop-hook sabía decir dos cosas: "podés cerrar" (todo verde) y "no cierres, arreglá" (algo en
+// rojo). Le faltaba la tercera, que es la más común: "le pregunté al dev y estoy esperando". Y como
+// preguntar ES terminar el turno, el agente quedaba atrapado justo cuando necesitaba hablar — sobre
+// todo con el único rojo que él NO puede poner en verde, la matriz esperando el waiver. La salida que
+// quedaba era el botón de pánico `STOP_AUTONOMY`, que es un archivo para TODA la máquina: frenaba
+// también las corridas de al lado y les apagaba el portón (medido el 2026-09-15: una sesión lo puso,
+// otra lo sacó, dos sesiones de otro repo investigando qué era).
+// Este flag es de UN SOLO USO y lo CONSUME el Stop-hook: deja cerrar ese turno sin tocar
+// `autonomous`, y se apaga solo. Mismo patrón que `ALLOW_DOD_EVIDENCE_WRITE`.
+//
+// 🔴 `deepReviewDone` YA NO se escribe a mano (story 1.8 del arnés, 2026-09-18). Era la bandera con la que se
+// cerraba el 5b, y cualquiera la escribía: medido sobre las corridas del 14 al 17/9, 4 de las 9 que lanzaron el
+// pase adversarial lo cerraron con la bandera y sin anotar qué encontró, y 3 de esas 4 pasaron el paso 8 igual.
+// Ahora la escriben sólo los dos comandos que cierran el 5b con constancia: `mark-adversarial-result` (el pase
+// corrió y se anota su resultado) y `mark-adversarial-skipped` (el portón decidió que no corre).
+const VALID_FLAGS = ['clockiStarted', 'adoMarkedActive', 'atddBypass', 'waitingForHuman'];
+
+function cmdSetFlag(flag, valRaw) {
+  if (flag === 'deepReviewDone') {
+    // Antes de leer el marker: el comando no escribe NADA, ni el `lastTouch`.
+    console.error('marker.js set-flag: `deepReviewDone` ya no se escribe a mano — cierra el 5b uno de estos dos comandos:');
+    console.error('  el pase corrió  → marker.js mark-adversarial-result <N confirmados> --type 5b --run <runId> --model <modelo> --tests <k> …');
+    console.error('  el pase no corre → marker.js mark-adversarial-skipped --files <archivos de código del diff>   (decide el portón)');
+    console.error('  (story 1.8: con la bandera suelta, 4 de 9 corridas cerraron el 5b sin anotar qué encontró el pase)');
+    process.exit(2);
+  }
+  if (!flag || !VALID_FLAGS.includes(flag)) {
+    console.error(`marker.js set-flag: flag inválido '${flag}' — válidos: ${VALID_FLAGS.join(' | ')}`);
+    process.exit(2);
+  }
+  const marker = readMarker();
+  if (!marker) {
+    console.error('marker.js set-flag: no hay marker activo para esta sesión');
+    process.exit(1);
+  }
+  marker[flag] = valRaw === 'true' || valRaw === '1';
+  marker.lastTouch = nowIso();
+  writeMarker(marker);
+  process.stdout.write(`${flag}: ${marker[flag]}\n`);
+}
+
+// Fase B paralelización (2026-07-30) — estado estructurado del pase adversarial 5b
+// cuando se lanza TEMPRANO (al cierre del Step 4, en paralelo con el Step 5).
+//
+// marker.adversarial = { launchedAtStep, runId, sessionId, launchedAt }
+//
+// El sessionId es la clave de la DETECCIÓN DE ORFANDAD: el resume de un Workflow es
+// same-session-only (memoria del equipo: un runId de otra sesión no se puede joinear
+// ni resumir — re-corre todo). El step-05b (join) compara adversarial.sessionId con la
+// sesión actual: igual → join pasivo (esperar la notificación); distinto → el workflow
+// quedó huérfano de una sesión muerta, se anuncia y se RELANZA (este comando permite el
+// overwrite cross-session exactamente para eso). Sin este campo, la sesión nueva no
+// puede distinguir "está corriendo acá" de "murió con la sesión anterior" — y el join
+// colgaría esperando algo que jamás llega (hallazgo de la revisión adversarial del plan).
+//
+// Guard anti-doble-lanzamiento: re-llamar DESDE LA MISMA SESIÓN es un bug del
+// orquestador (el 5b corre UNA vez por corrida) → exit 2. El campo NO se borra al
+// completar el 5b (deepReviewDone=true) — queda como evidencia de auditoría.
+function cmdMarkAdversarialLaunched(runId, stepRaw) {
+  if (!runId) {
+    console.error('marker.js mark-adversarial-launched: runId requerido (1er argumento posicional)');
+    process.exit(2);
+  }
+  // Whitelist explícita del step: el campo es evidencia de auditoría ("¿se lanzó temprano o en el
+  // lugar clásico?") — basura o typos ('banana', '5B') NO caen a 4 en silencio (review Opus MENOR-6).
+  const stepArg = String(stepRaw ?? '4').toLowerCase();
+  if (!['4', '5b'].includes(stepArg)) {
+    console.error(`marker.js mark-adversarial-launched: step inválido '${stepRaw}' — debe ser 4 o 5b`);
+    process.exit(2);
+  }
+  const marker = readMarker();
+  if (!marker) {
+    console.error('marker.js mark-adversarial-launched: no hay marker activo para esta sesión');
+    process.exit(1);
+  }
+  // Escape hatch del guard (review Opus RIESGO-1): --relaunch permite el overwrite same-session
+  // para los relanzamientos LEGÍTIMOS (workflow que devolvió no-op por files vacío, diff stale por
+  // gate ATDD post-lanzamiento). Queda auditado en bypass.log, mismo patrón que --no-atdd.
+  const relaunch = process.argv.includes('--relaunch');
+  if (marker.adversarial && marker.adversarial.sessionId === SID && !relaunch) {
+    console.error(
+      `marker.js mark-adversarial-launched: el pase adversarial YA se lanzó en esta sesión ` +
+      `(runId ${marker.adversarial.runId}, step ${marker.adversarial.launchedAtStep}). ` +
+      `Corre UNA vez por corrida — el join es step-05b, no un re-lanzamiento. ` +
+      `Si el relanzamiento es legítimo (no-op por files vacío / diff stale), usá --relaunch (queda en bypass.log).`
+    );
+    process.exit(2);
+  }
+  if (marker.adversarial && marker.adversarial.sessionId === SID && relaunch) {
+    appendLog('bypass.log', {
+      kind: 'ADVERSARIAL_RELAUNCH', story: marker.storyId,
+      prevRunId: marker.adversarial.runId, newRunId: String(runId),
+    });
+    console.error('⚠️  Relanzamiento same-session con --relaunch (queda en bypass.log).');
+  }
+  if (marker.adversarial && marker.adversarial.sessionId !== SID) {
+    // Adopción de huérfano: la sesión que lo lanzó ya no existe — overwrite legítimo.
+    process.stdout.write(
+      `adversarial huérfano detectado (sesión ${marker.adversarial.sessionId}, ` +
+      `runId ${marker.adversarial.runId}) → overwrite con relanzamiento de esta sesión\n`
+    );
+  }
+  marker.adversarial = {
+    // 4 = lanzamiento temprano (cierre del Step 4) · '5b' = fallback / relanzamiento.
+    launchedAtStep: stepArg === '5b' ? '5b' : 4,
+    runId: String(runId),
+    sessionId: SID,
+    launchedAt: nowIso(),
+  };
+  marker.lastTouch = nowIso();
+  writeMarker(marker);
+  process.stdout.write(JSON.stringify(marker.adversarial, null, 2) + '\n');
+}
+
+// marker.js mark-adversarial-skipped --files <archivos de código del diff> [--no-deep-review]
+//
+// El 5b sin pase: lo decide el PORTÓN, no quien lo anota (story 1.8, 2026-09-18). Hasta hoy el salteo se
+// cerraba con `set-flag deepReviewDone true` y nada preguntaba si el portón había dicho que no corría: la
+// bandera era la misma para «el portón lo salteó», «me olvidé» y «lo dejé corriendo y no miré qué encontró».
+// Mismo principio que `complete-step 3 --auto-approved`, que no cree en el «LOW» declarado y recomputa.
+//
+// 🔴 El portón se llama como PROCESO (`pipeline.js deep-review-gate`), no como función: así hereda su guarda
+// de aridad (`--files` sin partir → exit 2, el caso 9.1 que «selló el step» con 1 archivo contado) y su «no
+// pude medir» (`run: null` sin `--files`) sin copiarlos. Dos copias del criterio se separan solas.
+//
+// «Forzado» lo decide el interruptor presente (TYCON_NO_DEEP_REVIEW=1 o --no-deep-review), no el texto del
+// `reason`. Con el pase ya lanzado, sin interruptor se niega (un pase lanzado se cierra con su resultado);
+// con interruptor se anota como ABANDONO, con el runId del lanzamiento, y queda en bypass.log.
+function cmdMarkAdversarialSkipped(argsGate) {
+  const marker = readMarker();
+  if (!marker) {
+    console.error('marker.js mark-adversarial-skipped: no hay corrida del pipeline en esta sesión — el salteo del 5b se anota sobre una corrida');
+    process.exit(2);
+  }
+  const args = [...(argsGate || [])];
+  const forzado = process.env.TYCON_NO_DEEP_REVIEW === '1' || args.includes('--no-deep-review');
+  const lanzado = marker.adversarial ? (typeof marker.adversarial === 'object' ? marker.adversarial : {}) : null;
+  if (lanzado && !forzado) {
+    console.error(`marker.js mark-adversarial-skipped: el pase adversarial YA se lanzó (runId ${lanzado.runId || '?'}, ${lanzado.launchedAt || 'sin fecha'}) — un pase lanzado se cierra con su resultado:`);
+    console.error('    marker.js mark-adversarial-result <N confirmados> --type 5b --run <runId> --model <modelo> --tests <k> …');
+    console.error('  Abandonarlo es una decisión, no un salteo: se toma con el interruptor (TYCON_NO_DEEP_REVIEW=1 o --no-deep-review)');
+    console.error('  y queda en bypass.log como ADVERSARIAL_ABANDONADO.');
+    process.exit(2);
+  }
+  if (!args.includes('--repo')) args.push('--repo', marker.repoPath || process.cwd());
+  const story = resolveStoryPath(marker.storyPath, marker);
+  if (!args.includes('--story') && story) args.push('--story', story);
+  // spawnSync y no execFileSync: con exit 0 execFileSync no devuelve el stderr (lección de la story 1.6).
+  const r = require('child_process').spawnSync(process.execPath,
+    [path.join(__dirname, 'pipeline.js'), 'deep-review-gate', ...args],
+    { encoding: 'utf8', env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
+  let gate = null;
+  if (r.status === 0) { try { gate = JSON.parse(r.stdout); } catch (_e) { gate = null; } }
+  if (!gate || typeof gate !== 'object') {
+    const detalle = String(r.stderr || '').trim()
+      || (r.error && r.error.message)
+      || `el portón salió ${r.status} sin decir por qué${r.stdout ? ` (stdout: ${String(r.stdout).trim().slice(0, 200)})` : ''}`;
+    console.error(`marker.js mark-adversarial-skipped: no pude evaluar el portón — ${detalle}`);
+    console.error('  «No pude mirar» no es «se puede saltear»: arreglá la llamada (los --files del diff, partidos) y repetí. No se anotó nada.');
+    process.exit(2);
+  }
+  if (gate.run !== false) {
+    console.error(`marker.js mark-adversarial-skipped: el portón dice que el pase CORRE — ${gate.reason || '(sin reason)'}`);
+    console.error('  No se saltea: se lanza (step-04 §Lanzamiento temprano, o step-05b §Acción) y se registra con');
+    console.error('    marker.js mark-adversarial-launched <runId> 4');
+    console.error('  No se anotó nada.');
+    process.exit(2);
+  }
+  // Se cuentan como los cuenta `parseArgs` de pipeline.js (clase H): todos los `--files`, cortando en un argumento
+  // vacío o que empieza con `--`. Si no, el número anotado no es el que midió el portón.
+  let archivos = 0;
+  for (let i = 0; i < args.length; i += 1) {
+    if (args[i] !== '--files') continue;
+    while (args[i + 1] && !String(args[i + 1]).startsWith('--')) { archivos += 1; i += 1; }
+  }
+  const abandonado = !!lanzado;
+  const runId = abandonado ? (lanzado.runId || null) : null;
+  const at = nowIso();
+  const salteo = { motivo: gate.reason || null, archivos, forzado, abandonado, runId, at };
+  // UNA escritura: el salteo y el cierre del 5b nacen juntos — no hay un instante con uno y sin el otro.
+  marker.adversarialSkip = salteo;
+  marker.deepReviewDone = true;
+  marker.lastTouch = at;
+  writeMarker(marker);
+  appendLog('gates.log', {
+    name: 'adversarial-skip', status: 'ok', storyId: marker.storyId, motivo: salteo.motivo,
+    archivos, forzado, abandonado, runId,
+  });
+  if (abandonado) {
+    appendLog('bypass.log', { kind: 'ADVERSARIAL_ABANDONADO', storyId: marker.storyId, runId, motivo: salteo.motivo });
+    console.error(`⚠️  pase adversarial ABANDONADO (runId ${runId || '?'}) con el interruptor — queda en bypass.log.`);
+  } else if (forzado) {
+    appendLog('bypass.log', { kind: 'ADVERSARIAL_SKIP_FORZADO', storyId: marker.storyId, motivo: salteo.motivo });
+    console.error('⚠️  salteo del pase adversarial FORZADO con el interruptor — queda en bypass.log.');
+  }
+  process.stdout.write(JSON.stringify(salteo, null, 2) + '\n');
+}
+
+// Resultado de un pase adversarial (2026-09-14, propuesta STEP8-HEURISTICA-CIEGA-A-ADVERSARIAL-
+// POST-FORMAL-1, parte 1). Caso: Story 7.7 del repo del framework — una segunda ronda adversarial
+// corrida DESPUÉS del cierre formal de los revisores encontró dos defectos graves, y el merge salió
+// 40 minutos después sin otra ronda. Sólo las iteraciones de revisores dejaban línea en gates.log,
+// así que ese pase y su veredicto eran invisibles para la retrospectiva.
+//
+// El veredicto sale de un NÚMERO, no de prosa: con hallazgos confirmados, lo que se revisó no estaba
+// listo. Sirve igual para el 5b del pipeline y para una revisión lanzada a mano después del cierre
+// (sin marker hay que decir de qué story es: una línea sin story no la puede cruzar nadie).
+// `head` es el commit sobre el que se anotó: lo que permite comparar después contra el merge.
+function cmdMarkAdversarialResult(countRaw) {
+  const argv = process.argv;
+  const flag = (k) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : undefined; };
+  if (!/^\d+$/.test(String(countRaw ?? ''))) {
+    console.error('marker.js mark-adversarial-result: <confirmados> tiene que ser un entero ≥ 0 (los hallazgos que el pase confirmó)');
+    process.exit(2);
+  }
+  const confirmados = parseInt(countRaw, 10);
+  const tipo = String(flag('--type') || '5b').toLowerCase();
+  if (!['5b', 'revision'].includes(tipo)) {
+    console.error(`marker.js mark-adversarial-result: --type inválido '${flag('--type')}' — 5b (el del pipeline) o revision (una lanzada a mano)`);
+    process.exit(2);
+  }
+  const marker = readMarker();
+  const storyId = flag('--story') || (marker && marker.storyId) || null;
+  if (!storyId) {
+    console.error('marker.js mark-adversarial-result: no hay corrida del pipeline en esta sesión — pasá --story <id> para saber de qué story es el pase');
+    process.exit(2);
+  }
+  // El pase es de la corrida sólo si es de SU story (hallazgo del pase adversarial de la 1.8, clase F): con
+  // `--story B` en una corrida de A, el resultado de B se sumaba a A y le cerraba el 5b. De otra story: sólo la
+  // línea de gates.log, como una revisión sin corrida.
+  const corrida = marker && storyId === marker.storyId ? marker : null;
+  // 🔴 CADA CONFIRMADO TERMINA EN LA SUITE O SE DIFIERE CON MOTIVO (2026-09-17, pedido del dev).
+  // El step-05b decía «agregá un test de regresión por cada bug confirmado» y nada lo verificaba:
+  // el verificador borraba su prueba y el pipeline seguía. Ahora, con hallazgos, este comando no
+  // anota el pase sin que se declare cuántos ya tienen su prueba en la suite (`--tests k`,
+  // promovidas con `promote-probe`, que es lo que se cuenta — no lo que se dice) y cuántos se
+  // difieren (`--deferred d --reason "…"`: un hallazgo en código preexistente que va a una story
+  // aparte, caso 10.1 del repo del framework). k + d tiene que dar N: un confirmado sin destino
+  // escrito es un bug que se pierde en silencio.
+  // 🔴 LA PRUEBA ESCRITA A MANO TAMBIÉN CUENTA (story 1.8, 2026-09-18). Con sólo `--tests` (= lo que pasó por
+  // promote-probe), las dos corridas que anotaron con la regla del 17/9 —2.12 con 10 y 1.6 con 21— tuvieron que
+  // declarar TODO como diferido aunque todo estaba arreglado con su prueba: las pruebas se habían escrito dentro
+  // de suites existentes, que es justo lo que promote-probe manda a hacer («editalo a mano»). `--own p --in
+  // <rutas>` cuenta esas; y como `--tests`, no se cree: cada ruta tiene que estar en el repo, existir, ser una
+  // prueba (el criterio del freno ATDD) y haberse editado en ESTA corrida después del lanzamiento del pase.
+  // Una misma ruta cubre varios hallazgos (la 1.6: 21 pruebas en 4 archivos) — no se pide una por hallazgo.
+  // `--in` desde la tanda G de la story 8.9 del arnés; su nombre de antes llega ya traducido (aliasArgv, al entrar).
+  const iEn = argv.indexOf('--in');
+  const hayEn = iEn >= 0;
+  const propiasRaw = flag('--own');
+  if (propiasRaw !== undefined && !/^\d+$/.test(String(propiasRaw))) {
+    console.error(`marker.js mark-adversarial-result: --own '${propiasRaw}' tiene que ser un entero ≥ 0 (cuántos confirmados se arreglaron con una prueba escrita a mano)`);
+    process.exit(2);
+  }
+  const propias = propiasRaw !== undefined ? parseInt(propiasRaw, 10) : 0;
+  const enPedidas = hayEn ? String(argv[iEn + 1] ?? '').split(',').map((s) => s.trim()).filter(Boolean) : [];
+  if (propias > 0 && !hayEn) {
+    console.error(`marker.js mark-adversarial-result: --own ${propias} sin --in — decí en qué archivo(s) de prueba quedaron: --in "<ruta>[,<ruta>…]" (relativas al repo)`);
+    process.exit(2);
+  }
+  if (hayEn && enPedidas.length === 0) {
+    console.error('marker.js mark-adversarial-result: --in vacío — las rutas de las pruebas propias, separadas por coma');
+    process.exit(2);
+  }
+  if (hayEn && propias === 0) {
+    console.error('marker.js mark-adversarial-result: --in sin --own <p> — ¿cuántos confirmados cubren esas pruebas?');
+    process.exit(2);
+  }
+  if (confirmados === 0 && propias > 0) {
+    console.error(`marker.js mark-adversarial-result: --own ${propias} con 0 confirmados — no hay hallazgos que cubrir`);
+    process.exit(2);
+  }
+  let pruebas = 0, diferidos = 0, motivo = null;
+  if (confirmados > 0) {
+    const k = flag('--tests'), d = flag('--deferred');
+    if (!/^\d+$/.test(String(k ?? ''))) {
+      console.error(`marker.js mark-adversarial-result: con ${confirmados} confirmado(s) hace falta --tests <k> (cuántos ya tienen su prueba de regresión en la suite, promovida con promote-probe), --own <p> --in "<rutas>" para los arreglados con una prueba escrita a mano y, si falta alguno, --deferred <d> --reason "<por qué>"`);
+      process.exit(2);
+    }
+    pruebas = parseInt(k, 10);
+    diferidos = /^\d+$/.test(String(d ?? '')) ? parseInt(d, 10) : 0;
+    motivo = flag('--reason') || null;
+    if (pruebas + propias + diferidos !== confirmados) {
+      console.error(`marker.js mark-adversarial-result: --tests ${pruebas} + --own ${propias} + --deferred ${diferidos} ≠ ${confirmados} confirmados — cada hallazgo confirmado termina en la suite (promovida o escrita a mano) o se difiere con motivo, no hay otra opción`);
+      process.exit(2);
+    }
+    if (diferidos > 0 && !String(motivo || '').trim()) {
+      console.error(`marker.js mark-adversarial-result: ${diferidos} diferido(s) sin --reason — un hallazgo que no entra a la suite lleva escrito por qué (story de seguimiento, código preexistente…)`);
+      process.exit(2);
+    }
+    // Se cuentan las promovidas para el lanzamiento VIGENTE (clase E): tras un relanzamiento, las del pase anterior
+    // son de otro resultado. Sin lanzamiento anotado, todas, como antes.
+    let promovidas = null;
+    if (corrida && tipo === '5b') {
+      const desde = corrida.adversarial && typeof corrida.adversarial === 'object' ? Date.parse(corrida.adversarial.launchedAt) : NaN;
+      promovidas = (corrida.adversarialRegressions || [])
+        .filter((g) => !Number.isFinite(desde) || Date.parse(g && g.ts) >= desde).length;
+    }
+    if (promovidas !== null && promovidas !== pruebas) {
+      console.error(`marker.js mark-adversarial-result: --tests ${pruebas} pero para este lanzamiento del pase se promovieron ${promovidas} prueba(s) con promote-probe — se cuenta lo promovido, no lo declarado`);
+      process.exit(2);
+    }
+  }
+  const { en, enSinFecha } = propias > 0 ? verificarPruebasPropias(enPedidas, corrida, tipo) : { en: [], enSinFecha: false };
+  let head = null;
+  try {
+    head = require('child_process').execFileSync('git', ['rev-parse', '--short', 'HEAD'],
+      { cwd: (corrida && corrida.repoPath) || process.cwd(), encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || null;
+  } catch (_e) { head = null; }
+  // En cuántas CAUSAS distintas se agrupaban esos hallazgos (story 7.11). Lo devuelve el propio pase
+  // (`clases` de adversarial-verify.workflow.js). Sin el dato el volcado no puede decir cuánto se
+  // ahorró, y el ratio de duplicación vuelve a medirse a mano una corrida por vez. Opcional a
+  // propósito: un pase viejo, o uno corrido con el agrupamiento apagado, no lo trae.
+  const clasesRaw = flag('--classes');
+  if (clasesRaw !== undefined && !/^\d+$/.test(String(clasesRaw))) {
+    console.error(`marker.js mark-adversarial-result: --classes '${clasesRaw}' tiene que ser un entero ≥ 0 (en cuántas causas distintas se agruparon los ${confirmados} hallazgos)`);
+    process.exit(2);
+  }
+  const clases = clasesRaw !== undefined ? parseInt(clasesRaw, 10) : null;
+  if (clases !== null && clases > confirmados) {
+    console.error(`marker.js mark-adversarial-result: --classes ${clases} con ${confirmados} confirmado(s) — no puede haber más causas que hallazgos`);
+    process.exit(2);
+  }
+  // Y tampoco menos de una: con hallazgos confirmados, cero causas es imposible (el agrupador nunca
+  // devuelve 0 clases con ≥1 hallazgo). Dejarlo pasar anota un ahorro igual al total y el ratio, que
+  // se mide solo a partir de este volcado, queda mintiendo (lo cazó el pase adversarial, 2026-09-20).
+  if (clases !== null && confirmados > 0 && clases < 1) {
+    console.error(`marker.js mark-adversarial-result: --classes ${clases} con ${confirmados} confirmado(s) — con hallazgos tiene que haber al menos una causa`);
+    process.exit(2);
+  }
+  // Hallazgos que el verificador declaró distintos del que reprodujo: no heredaron su veredicto, o
+  // sea que NADIE los miró. Se anotan para que queden en el volcado; hacerlos bloqueantes del cierre
+  // es el follow-up declarado en la story 7.11.
+  const aparteRaw = flag('--separate');
+  if (aparteRaw !== undefined && !/^\d+$/.test(String(aparteRaw))) {
+    console.error(`marker.js mark-adversarial-result: --separate '${aparteRaw}' tiene que ser un entero ≥ 0 (hallazgos que quedaron para verificar por separado)`);
+    process.exit(2);
+  }
+  const aparte = aparteRaw !== undefined ? parseInt(aparteRaw, 10) : null;
+  if (aparte !== null && aparte > confirmados) {
+    console.error(`marker.js mark-adversarial-result: --separate ${aparte} con ${confirmados} confirmado(s) — no puede haber más hallazgos sin verificar que confirmados`);
+    process.exit(2);
+  }
+  const pase = {
+    tipo,
+    confirmados,
+    ...(clases !== null ? { clases, agentes_ahorrados: confirmados - clases } : {}),
+    ...(aparte !== null ? { a_verificar_aparte: aparte } : {}),
+    pruebas,
+    propias,
+    en,
+    ...(enSinFecha ? { enSinFecha: true } : {}),
+    diferidos,
+    motivo,
+    veredicto: confirmados > 0 ? 'no-listo' : 'listo',
+    runId: flag('--run') || null,
+    modelo: flag('--model') || null,
+    head,
+  };
+  appendLog('gates.log', { name: 'adversarial-pass', storyId, ...pase });
+  if (corrida) {
+    corrida.adversarialPasses = [...(corrida.adversarialPasses || []), { ts: nowIso(), ...pase }];
+    // El resultado del 5b CIERRA el 5b (story 1.8), en la misma escritura que la entrada nueva: no hay un
+    // instante con el pase anotado y el 5b abierto, ni al revés. Una revisión a mano (`--type revision`) no
+    // es el 5b de la corrida y no lo toca.
+    if (tipo === '5b') corrida.deepReviewDone = true;
+    corrida.lastTouch = nowIso();
+    writeMarker(corrida);
+  }
+  process.stdout.write(JSON.stringify({ storyId, ...pase }, null, 2) + '\n');
+}
+
+/**
+ * Las cuatro verificaciones de `--in` (story 1.8, AC 13-14 y 34-36). Sale 2 con la ruta y la condición que falló;
+ * devuelve las rutas (relativas a su repo) y si no se pudo fechar contra el lanzamiento.
+ *
+ * 🔴 Las rutas se comparan CANÓNICAS y sin distinguir mayúsculas (hallazgos del pase adversarial de la propia 1.8,
+ * clase A — 6 de los 16): `fs.realpathSync` en JS conserva las mayúsculas como vienen y no resuelve una ruta que no
+ * existe, así que `/tmp` ↔ `/private/tmp` o `Specs-Repo` ↔ `specs-repo` dejaban afuera al mismo archivo real, y
+ * «fuera del repo» se decidía sobre la ruta ESCRITA contra el repo RESUELTO. Mismo criterio que
+ * `lib/atdd-order.js adentroDelRepo` (APFS y NTFS no distinguen mayúsculas).
+ *
+ * La (d) —«se editó en esta corrida después del lanzamiento»— es la unión de dos evidencias (clase B): un evento de
+ * edición posterior, o la fecha del archivo posterior. `marker.fileEvents` sólo lo escribe el hook de Edit|Write:
+ * una prueba escrita con `sed` o un heredoc no deja evento (la misma ceguera que `lib/late-snapshot.js` ya documenta).
+ *
+ * Base: el repo de la corrida; sin marker (revisión a mano), la raíz git del directorio actual. Una ruta fuera de
+ * esa base se acepta si vive en un repo git donde la corrida EDITÓ archivos (clase C, decisión D7 del dev: story de
+ * dos repos) y se anota como `(<repo>) <ruta>`, la forma que usa la story para lo que vive en agent-skills.
+ */
+function verificarPruebasPropias(rutas, marker, tipo) {
+  let base = (marker && marker.repoPath) || null;
+  if (!base) {
+    try { base = require('./lib/repo-attrib.js').gitRoot(process.cwd()); } catch (_e) { base = null; }
+  }
+  base = base || process.cwd();
+  // La ruta canónica: la real del sistema (`.native` resuelve enlaces Y mayúsculas); si no existe, la real del
+  // ancestro que sí existe más el resto tal cual.
+  const canon = (p) => {
+    let actual = path.resolve(p);
+    const resto = [];
+    for (;;) {
+      try { return path.join(fs.realpathSync.native(actual), ...resto); } catch (e) {
+        // Sólo «no existe» sube al ancestro. Otro error (permisos) no es «no existe»: se usa la ruta tal cual y las
+        // verificaciones de abajo dicen lo que ven, sin inventar un motivo (revisor de fallos silenciosos, iter 2).
+        if (!e || (e.code !== 'ENOENT' && e.code !== 'ENOTDIR')) return path.join(actual, ...resto);
+      }
+      const padre = path.dirname(actual);
+      if (padre === actual) return path.join(actual, ...resto);
+      resto.unshift(path.basename(actual));
+      actual = padre;
+    }
+  };
+  const clave = (p) => canon(p).split(path.sep).join('/').toLowerCase();
+  const adentro = (k, raiz) => k === raiz || k.startsWith(raiz.endsWith('/') ? raiz : `${raiz}/`);
+  const falla = (ruta, por) => {
+    console.error(`marker.js mark-adversarial-result: --in ${ruta}: ${por} — no se anotó nada.`);
+    process.exit(2);
+  };
+  const { isTestPath } = require('./lib/atdd-order.js');
+  const repo = canon(base);
+  const repoClave = clave(repo);
+  // Lo que la corrida tocó: define los repos hermanos aceptables y es la primera evidencia de la (d).
+  const tocadasEventos = (marker && Array.isArray(marker.fileEvents) ? marker.fileEvents : []).filter((ev) => ev && ev.path);
+  const tocadasRutas = [
+    ...tocadasEventos.map((ev) => ev.path),
+    ...(marker && Array.isArray(marker.filesTouched) ? marker.filesTouched : []),
+  ].map((p) => clave(p));
+  const raizGit = (archivo) => {
+    const r = require('child_process').spawnSync('git', ['-C', path.dirname(archivo), 'rev-parse', '--show-toplevel'],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    return r.status === 0 && String(r.stdout || '').trim() ? canon(String(r.stdout).trim()) : null;
+  };
+  // La (d) sólo existe con un lanzamiento anotado del 5b: una revisión a mano no tiene lanzamiento que anotar.
+  const lanz = tipo === '5b' && marker && marker.adversarial && typeof marker.adversarial === 'object' ? marker.adversarial : null;
+  const desde = lanz ? Date.parse(lanz.launchedAt) : NaN;
+  const conFecha = Number.isFinite(desde);
+  const editadasDespues = new Set(conFecha
+    ? tocadasEventos.filter((ev) => Date.parse(ev.ts) > desde).map((ev) => clave(ev.path))
+    : []);
+  const en = [];
+  for (const ruta of rutas) {
+    const abs = path.resolve(base, ruta);
+    const k = clave(abs);
+    let esArchivo = false;
+    try { esArchivo = fs.statSync(abs).isFile(); } catch (_e) { esArchivo = false; }
+    // (a) En el repo de la corrida, o en un repo hermano que la corrida editó.
+    let raiz = null;
+    let prefijo = '';
+    if (adentro(k, repoClave)) {
+      raiz = repo;
+    } else if (esArchivo) {
+      const r2 = raizGit(abs);
+      const r2Clave = r2 ? clave(r2) : null;
+      if (r2Clave && tocadasRutas.some((t) => adentro(t, r2Clave))) {
+        raiz = r2;
+        prefijo = `(${path.basename(r2)}) `;
+      }
+    }
+    if (!raiz) falla(ruta, `queda fuera del repo (${repo}) y de los repos que esta corrida editó`);
+    // (b)
+    if (!esArchivo) falla(ruta, 'no existe (o no es un archivo)');
+    const rel = path.relative(raiz, canon(abs)).split(path.sep).join('/');
+    if (!rel || rel.startsWith('../') || rel === '..') falla(ruta, `queda fuera del repo por un enlace (apunta a ${canon(abs)})`);
+    // (c)
+    if (!isTestPath(rel)) falla(ruta, 'no es un archivo de prueba (el criterio de isTestPath, el mismo del freno ATDD)');
+    // (d) evento posterior, o fecha del archivo posterior (la edición por consola no deja evento).
+    if (conFecha) {
+      let mtime = NaN;
+      try { mtime = fs.statSync(abs).mtimeMs; } catch (_e) { mtime = NaN; }
+      if (!editadasDespues.has(k) && !(mtime > desde)) {
+        falla(ruta, `no se editó después del lanzamiento del pase (${lanz.launchedAt}): ni un evento de edición posterior en esta corrida ni una fecha de modificación posterior`);
+      }
+    }
+    en.push(prefijo + rel);
+  }
+  if (!conFecha) {
+    console.error(`⚠️  marker.js mark-adversarial-result: no pude verificar que se tocaron después del pase: no hay lanzamiento anotado${lanz ? ' con fecha legible' : ''}. Existen, están en el repo y son pruebas; la entrada lleva enSinFecha.`);
+  }
+  return { en, enSinFecha: !conFecha };
+}
+
+// marker.js promote-probe <probe_dir> --file <nombre.txt> --a <ruta del test, relativa al repo>
+//
+// La prueba con la que el verificador del pase adversarial CONFIRMÓ un hallazgo pasa a la suite
+// del repo como prueba de regresión (2026-09-17, pedido del dev). El verificador la deja en
+// `<RUN_DIR>/step-05b-probes/<lente>-<n>/` con `.txt` en el nombre (para que nada la compile
+// mientras el pase sigue corriendo); acá se copia a su lugar definitivo, de a UNA, desde el
+// orquestador — nunca desde los agentes del pase, que corren en paralelo y ya rompieron una
+// compilación escribiendo en el proyecto de tests (caso 2026-08-26). Nace en rojo: el arreglo
+// del hallazgo la pone en verde y el test-gate del re-loop la corre.
+//
+// Lo que se niega, con motivo: un destino fuera del repo · un destino que ya existe (una prueba
+// de regresión es nueva; pisar una existente es otra cosa) · 🔴 un destino con nombre de probe
+// (`ZZProbe*`, `__probe*`): `lib/ledger-honesty.js` lo excluye de la foto de la iteración y el
+// pipeline lo trataría como descartable — sería «promover» a un archivo invisible.
+function cmdPromoteProbe(probeDir) {
+  const argv = process.argv;
+  const flag = (k) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : undefined; };
+  const marker = readMarker();
+  if (!marker || !marker.repoPath) {
+    console.error('marker.js promote-probe: no hay corrida del pipeline en esta sesión (hace falta el repo del marker)');
+    process.exit(2);
+  }
+  const archivo = flag('--file'), destRel = flag('--a');
+  if (!probeDir || !archivo || !destRel) {
+    console.error('marker.js promote-probe: uso: promote-probe <probe_dir> --file <nombre.txt> --a <ruta del test relativa al repo>');
+    process.exit(2);
+  }
+  const src = path.join(probeDir, archivo);
+  if (!fs.existsSync(src) || !fs.statSync(src).isFile()) {
+    console.error(`marker.js promote-probe: no existe ${src} — ¿el verificador guardó la prueba? (probe_dir del hallazgo)`);
+    process.exit(2);
+  }
+  const repo = path.resolve(marker.repoPath);
+  const dest = path.resolve(repo, destRel);
+  if (dest !== repo && !dest.startsWith(repo + path.sep)) {
+    console.error(`marker.js promote-probe: el destino ${dest} queda fuera del repo ${repo}`);
+    process.exit(2);
+  }
+  if (require('./lib/ledger-honesty.js').esProbe(dest)) {
+    console.error(`marker.js promote-probe: ${path.basename(dest)} tiene nombre de probe descartable — el pipeline lo ignoraría (ledger-honesty). Dale nombre de test real`);
+    process.exit(2);
+  }
+  if (fs.existsSync(dest)) {
+    console.error(`marker.js promote-probe: ${destRel} ya existe — una prueba de regresión es un archivo nuevo; si querés sumarla a uno existente, editalo a mano`);
+    process.exit(2);
+  }
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  fs.copyFileSync(src, dest);
+  const reg = { probeDir: path.resolve(probeDir), archivo, dest: path.relative(repo, dest), ts: nowIso() };
+  marker.adversarialRegressions = [...(marker.adversarialRegressions || []), reg];
+  marker.lastTouch = nowIso();
+  writeMarker(marker);
+  // A propósito NO deja línea en gates.log: no es una evaluación de un control (no tiene veredicto),
+  // y el tablero contaría un control «adversarial-regresion» sin estado. Queda en el marker —que
+  // viaja entero en el volcado de la corrida— y en la línea `adversarial-pass` como `pruebas`.
+  process.stdout.write(JSON.stringify({ storyId: marker.storyId, ...reg, promovidas: marker.adversarialRegressions.length }, null, 2) + '\n');
+}
+
+function cmdAppendFile(absPath) {
+  if (!absPath) process.exit(0);
+  const marker = readMarker();
+  if (!marker) process.exit(0);
+  if (!marker.filesTouched.includes(absPath)) {
+    marker.filesTouched.push(absPath);
+  }
+  // EVENTOS de edición con timestamp (fix smart-reloop, auditoría 2026-06-09):
+  // filesTouched dedupea → un archivo RE-editado en iter N nunca entraba al delta
+  // por nombres y el fix de iter N-1 no se re-auditaba (caso real: fix SILENT-W2
+  // de la story 4.5.3 nunca re-validado). fileEvents conserva CADA edición con ts;
+  // pipeline.js smart-reloop computa el delta como "archivos con evento posterior
+  // al snapshot de la iter previa". Cap 500 entries (FIFO) para no crecer sin límite.
+  marker.fileEvents = marker.fileEvents || [];
+  marker.fileEvents.push({ path: absPath, ts: nowIso() });
+  if (marker.fileEvents.length > 500) {
+    marker.fileEvents = marker.fileEvents.slice(-500);
+  }
+  marker.lastTouch = nowIso();
+  writeMarker(marker);
+}
+
+// Las opciones de los dos guiones del arnés que llama el cierre (`tokens-digest.js` y `run-change.js`), con sus nombres
+// de ANTES del renombre (story 8.9). El cierre llama con los de hoy; si el guion sale con su código de «argumentos
+// inválidos» es un arnés atrasado, que sólo entiende los viejos, y se lo llama UNA vez más con ésos.
+// Hasta la story 8.7 (tanda B, 2026-10-03) iban sólo los viejos: en el repo del equipo los traduce el mapa de renombres,
+// pero la copia pública no trae el mapa — ahí el guion salía 2 y cada cierre anotaba «no medido»: sin el cambio de git,
+// sin el hilo y sin el consumo. Se arman por partes: no son nombres a usar.
+// Los dos guiones salen 2 también cuando no pudieron escribir su salida: ahí la segunda vuelta repite el intento una vez,
+// falla igual, y el motivo que queda anotado es el de esa última.
+// Casos: `tests/marker-archive-change.test.js` (T13–T16).
+const HARNESS_INVALID_ARGS = 2;
+const HARNESS_OLD_OPTION = {
+  run: `--${['co', 'rrida'].join('')}`,
+  dump: `--${['vol', 'cado'].join('')}`,
+  state: `--${['es', 'tado'].join('')}`,
+};
+
+/**
+ * Rescate del hilo y el consumo de la corrida que cierra (story 2.13 del arnés, 2026-09-09).
+ *
+ * El archivador ya guarda tiempos, frenos y costo. Lo que NO guardaba es el CONSUMO ni el HILO: eso
+ * vive sólo en la conversación de Claude Code, que se borra a los 30 días. Medido el 2026-09-09: de
+ * 230 corridas archivadas, 157 ya habían perdido su conversación — el 68 %.
+ *
+ * 🔴 ESTA FUNCIÓN NO PUEDE ROMPER EL ARCHIVADO, y por eso está escrita al revés que el resto: el
+ * volcado ya está en disco cuando se la llama, y todo camino de falla termina anotando el motivo
+ * adentro del volcado en vez de propagar. `tokens-digest.js` vive en OTRO repo
+ * (el arnés), que se actualiza por un camino distinto a éste: una máquina con el arnés
+ * atrasado tiene este archivo nuevo y aquél ausente. Si el archivado dependiera de él, esa máquina
+ * dejaría de archivar TAMBIÉN los tiempos, los frenos y el costo — que hoy se guardan bien.
+ * Casos: `tests/marker-archive-rescue.test.js` (T8 rescate roto · T8b script ausente · T8c sano) y
+ * `tests/marker-archive-change.test.js` (T15, T16: con qué nombre de opción se lo llama).
+ *
+ * Devuelve el volcado ya actualizado, para que la copia del repo salga con lo mismo.
+ * Apagar: TYCON_NO_THREAD_RESCUE=1
+ */
+function rescatarHiloYConsumo(archivo, dump) {
+  const anotar = (motivo) => {
+    try {
+      const d = JSON.parse(fs.readFileSync(archivo, 'utf8'));
+      // Sin la clave `tokens`, a propósito: un cero se lee como «esta corrida no consumió nada».
+      d.consumo = { estado: 'no_medido', motivo, medido_en: nowIso() };
+      fs.writeFileSync(archivo, JSON.stringify(d, null, 2), 'utf8');
+      return d;
+    } catch { return dump; }
+  };
+
+  if (require('./lib/legacy-names.js').readEnv('TYCON_NO_THREAD_RESCUE', { where: 'skills/tycon-pipeline/scripts/marker.js' }) === '1') {
+    return anotar('el rescate del hilo está apagado en esta máquina (TYCON_NO_THREAD_RESCUE=1)');
+  }
+
+  const arnes = require('./lib/harness-path.js').rutaArnesHook();   // story 8.3: la variable o el enlace, nunca una carpeta escrita a mano
+  if (!arnes.dir) return anotar(`${arnes.aviso} — la corrida se archivó igual`);
+  const script = path.join(arnes.dir, 'scripts', 'metrics', 'tokens-digest.js');
+  if (!fs.existsSync(script)) {
+    return anotar(`no encontré tokens-digest.js en ${script} — el arnés de esta máquina puede estar atrasado; la corrida se archivó igual`);
+  }
+
+  try {
+    const { execFileSync } = require('child_process');
+    const resto = process.env.TYCON_PROJECTS_DIR ? ['--projects-dir', process.env.TYCON_PROJECTS_DIR] : [];
+    const llamar = (opcion) => execFileSync(process.execPath, [script, opcion, archivo, ...resto], { stdio: 'ignore', timeout: 60000 });
+    try {
+      llamar('--run');
+    } catch (err) {
+      // sólo «argumentos inválidos» (un arnés de antes del renombre) merece la vuelta con el nombre viejo; cualquier otra
+      // falla —rota, lenta, ausente— sigue su camino de siempre
+      if (!err || err.status !== HARNESS_INVALID_ARGS) throw err;
+      llamar(HARNESS_OLD_OPTION.run);
+    }
+    return JSON.parse(fs.readFileSync(archivo, 'utf8'));
+  } catch (err) {
+    return anotar(`el rescate del hilo falló: ${err && (err.code || err.message) ? (err.code || err.message) : 'motivo desconocido'}`);
+  }
+}
+
+/**
+ * El cambio de la corrida según git (story 2.19 del arnés, 2026-09-17): llama a
+ * `scripts/metrics/run-change.js` del arnés, que deja `<volcado>.cambio.json.gz` al
+ * lado del volcado (los commits que la corrida creó y lo que quedó sin commitear, en cada repo donde
+ * escribió), y anota en el volcado SÓLO el resumen `cambio: {estado, repos, archivos, motivo}`.
+ *
+ * 🔴 Mismo contrato que `rescatarHiloYConsumo`, y por la misma razón: el guion vive en otro repo que se
+ * actualiza por otro camino, así que ninguna falla suya —ausente, roto, lento— puede impedir el archivado.
+ * Todo camino termina anotando `no_medido` con el motivo. Los parches nunca entran al volcado: el volcado
+ * se copia al repo.
+ * Casos: `tests/marker-archive-change.test.js` (T11 sano · T12 ausente, roto, lento, apagado · T13, T14: con qué
+ * nombres de opción se lo llama).
+ * Apagar: TYCON_NO_RUN_CHANGE=1 · tope: 30 s (TYCON_RUN_CHANGE_TIMEOUT_MS, para las pruebas)
+ */
+function guardarCambioDeCorrida(archivo, dump) {
+  const anotar = (cambio) => {
+    try {
+      const d = JSON.parse(fs.readFileSync(archivo, 'utf8'));
+      d.cambio = cambio;
+      fs.writeFileSync(archivo, JSON.stringify(d, null, 2), 'utf8');
+      return d;
+    } catch { return { ...dump, cambio }; }
+  };
+  const noMedido = (motivo) => anotar({ estado: 'no_medido', repos: 0, archivos: 0, motivo });
+
+  const { readEnv } = require('./lib/legacy-names.js');
+  if (readEnv('TYCON_NO_RUN_CHANGE', { where: 'skills/tycon-pipeline/scripts/marker.js' }) === '1') {
+    return noMedido('el cambio de git de la corrida está apagado en esta máquina (TYCON_NO_RUN_CHANGE=1)');
+  }
+  const arnes = require('./lib/harness-path.js').rutaArnesHook();   // story 8.3: la variable o el enlace, nunca una carpeta escrita a mano
+  if (!arnes.dir) return noMedido(`${arnes.aviso} — la corrida se archivó igual`);
+  // El nombre nuevo primero (story 8.9, tanda C1): por el viejo corre el reemplazo, que en Azure avisa «nombre viejo» en
+  // cada corrida. El viejo sólo en un arnés que todavía no tiene el renombre (se arma por partes: no es un nombre a usar).
+  const metricas = path.join(arnes.dir, 'scripts', 'metrics');
+  const script = [path.join(metricas, 'run-change.js'), path.join(metricas, `${['cambio', 'de', 'corrida'].join('-')}.js`)].find((p) => fs.existsSync(p));
+  if (!script) {
+    return noMedido(`no encontré run-change.js en ${metricas} — el arnés de esta máquina puede estar atrasado; la corrida se archivó igual`);
+  }
+  const topePuesto = Number(readEnv('TYCON_RUN_CHANGE_TIMEOUT_MS', { where: 'skills/tycon-pipeline/scripts/marker.js' }));
+  const tope = topePuesto > 0 ? topePuesto : 30000;
+  try {
+    const { spawnSync } = require('child_process');
+    const llamar = (dumpOption, stateOption) => spawnSync(process.execPath, [script, dumpOption, archivo, stateOption, STATE_DIR],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: tope, killSignal: 'SIGKILL' });
+    let r = llamar('--dump', '--state');
+    // sólo «argumentos inválidos» (un arnés de antes del renombre) merece la vuelta con los nombres viejos
+    if (!r.error && r.status === HARNESS_INVALID_ARGS) r = llamar(HARNESS_OLD_OPTION.dump, HARNESS_OLD_OPTION.state);
+    if (r.error && r.error.code === 'ETIMEDOUT') return noMedido(`el cambio de git tardó más de ${Math.round(tope / 1000)} s y se cortó; la corrida se archivó igual`);
+    if (r.error) return noMedido(`el cambio de git falló: ${r.error.code || r.error.message}`);
+    if (r.status !== 0) return noMedido(`el cambio de git falló (salió ${r.status}); la corrida se archivó igual`);
+    let s;
+    try { s = JSON.parse(String(r.stdout || '').trim().split('\n').pop()); } catch { s = null; }
+    if (!s || typeof s !== 'object' || !s.estado) return noMedido('el cambio de git no devolvió un resumen legible; la corrida se archivó igual');
+    return anotar({ estado: String(s.estado), repos: Number(s.repos) || 0, archivos: Number(s.archivos) || 0, motivo: s.motivo || null });
+  } catch (err) {
+    return noMedido(`el cambio de git falló: ${err && (err.code || err.message) ? (err.code || err.message) : 'motivo desconocido'}`);
+  }
+}
+
+function cmdClear() {
+  // Timing dump automático (auditoría 2026-06-11, pedido del dev — guides/incident-log.md#pipeline-cost-9.4): el cierre del
+  // pipeline archiva el marker completo + los gates de la sesión ANTES de borrar —
+  // es la única fuente de la curva de costo por run (stepTimings, iteraciones,
+  // checks, gates con duración). Mecánico: no depende de que el orquestador se
+  // acuerde de correr `pipeline.js timing-report` antes del clear. Best-effort:
+  // un fallo acá JAMÁS bloquea el clear.
+  try {
+    const marker = readMarker();
+    if (marker && marker.storyId) {
+      let gates = [];
+      try {
+        const raw = fs.readFileSync(path.join(STATE_DIR, 'gates.log'), 'utf8');
+        gates = raw.split('\n').filter(Boolean)
+          .map((l) => { try { return JSON.parse(l); } catch { return null; } })
+          .filter((g) => g && g.sessionId === SID);
+      } catch { /* sin gates.log */ }
+      // Costo del run (2026-07-28): el conteo de spawns es el proxy de costo, porque cada
+      // agente cuesta ~60.000-100.000 tokens ANTES de leer nada (baseline medido en
+      // ~/.claude/.tycon-pipeline/baseline/). Se calcula ACÁ, en el mismo cierre mecánico que
+      // el timing dump, para que no dependa de que alguien se acuerde de correr
+      // `pipeline.js cost-report`. Vara del historial (58 runs): ~14 spawns por run, 22% de
+      // exploración libre, 2,6 de ésos antes de los advisors.
+      const ADHOC = new Set(['general-purpose', 'Explore', 'Plan', 'claude']);
+      const costo = { spawns: 0, adhoc: 0, adhoc_pre_step5: 0, iteraciones: 0, por_tipo: {} };
+      try {
+        const runLog = path.join(STATE_DIR, 'advisor-runs', `${SID}.jsonl`);
+        let vistoStep5 = false;
+        for (const l of fs.readFileSync(runLog, 'utf8').split('\n')) {
+          if (!l.trim()) continue;
+          let d; try { d = JSON.parse(l); } catch { continue; }
+          if (d.event === 'step5-start') { vistoStep5 = true; costo.iteraciones++; continue; }
+          if (!d.advisor) continue;
+          costo.spawns++;
+          costo.por_tipo[d.advisor] = (costo.por_tipo[d.advisor] || 0) + 1;
+          if (ADHOC.has(d.advisor)) { costo.adhoc++; if (!vistoStep5) costo.adhoc_pre_step5++; }
+        }
+      } catch { /* sin log de spawns: costo queda en cero */ }
+      const dump = { archivedAt: nowIso(), marker, gates, costo };
+      const safeStory = String(marker.storyId).replace(/[^\w.-]/g, '_');
+      const ts = nowIso().replace(/[:.]/g, '').slice(0, 15);
+      // 1) Historia global (sobrevive aunque el repo no exista).
+      const histDir = path.join(STATE_DIR, 'timing-history');
+      fs.mkdirSync(histDir, { recursive: true });
+      const histFile = path.join(histDir, `${safeStory}-${ts}.json`);
+      fs.writeFileSync(histFile, JSON.stringify(dump, null, 2), 'utf8');
+      // 1b) Rescate del hilo, el consumo y el mensaje de los errores (story 2.13). Se hace DESPUÉS
+      //     de que el volcado ya está en disco, a propósito: si algo de esto falla, lo peor que pasa
+      //     es que el volcado quede con `consumo.estado: "no_medido"` y su motivo.
+      // 1c) El cambio según git (story 2.19), después del rescate y con el mismo contrato: nunca rompe.
+      const dumpFinal = guardarCambioDeCorrida(histFile, rescatarHiloYConsumo(histFile, dump));
+      // 2) Copia en el repo (pipeline-runs del run, si resuelve) — viaja con los
+      //    artefactos de la story para la retro / el retrospective-capturer.
+      if (marker.repoPath && fs.existsSync(marker.repoPath)) {
+        const runsDir = path.join(marker.repoPath, '.advisors', 'pipeline-runs');
+        let target = null;
+        try {
+          // La carpeta de ESTA story: por la clave (story 1.17.1); con número repetido, `<id>-*` es la de otra.
+          const sp = marker.storyPath ? (path.isAbsolute(marker.storyPath) ? marker.storyPath : path.join(marker.repoPath, marker.storyPath)) : null;
+          const ki = require('./lib/evidence-key.js').keyInfoOr(sp, String(marker.storyId));
+          const clave = ki.key;
+          // Sin clave el volcado cae en la raíz de pipeline-runs/ (como cuando no hay carpeta), pero se DICE por qué.
+          if (!clave) process.stderr.write(`[marker] el volcado de tiempos va suelto a ${runsDir}: no pude calcular la clave de la carpeta de la story (${ki.error}).\n`);
+          const candidates = (clave ? fs.readdirSync(runsDir) : [])
+            .filter((d) => d.startsWith(`${clave}-`))
+            .sort();
+          if (candidates.length) target = path.join(runsDir, candidates[candidates.length - 1]);
+        } catch { /* sin runs dir */ }
+        if (!target) {
+          target = runsDir;
+          fs.mkdirSync(target, { recursive: true });
+        }
+        fs.writeFileSync(path.join(target, `timing-dump-${ts}.json`), JSON.stringify(dumpFinal, null, 2), 'utf8');
+      }
+      process.stderr.write(`[marker] timing dump archivado: timing-history/${safeStory}-${ts}.json\n`);
+      // Línea de costo al cierre — mecánica, siempre, sin flags. Compara contra la vara del
+      // historial para que el número signifique algo sin tener que ir a buscarlo.
+      if (costo.spawns) {
+        const pct = Math.round((costo.adhoc / costo.spawns) * 100);
+        const vs = (v, base, unidad) => {
+          const d = v - base;
+          if (Math.abs(d) < 0.05) return `= vara (${base}${unidad})`;
+          return `${d > 0 ? '▲' : '▼'} vara ${base}${unidad}`;
+        };
+        process.stderr.write(
+          `[marker] costo del run: ${costo.spawns} agentes en ${costo.iteraciones} iteración(es) de revisión · ` +
+          `${costo.adhoc} de exploración libre (${pct}%, ${vs(pct, 22, '%')}) · ` +
+          `${costo.adhoc_pre_step5} antes de los advisors (${vs(costo.adhoc_pre_step5, 2.6, '')}) · ` +
+          `referencia ~60-100K tokens por agente · vara del historial: ~14 agentes/run\n`,
+        );
+      }
+    }
+  } catch { /* best-effort */ }
+  clearMarker();
+}
+
+function cmdIsActive() {
+  const marker = readMarker();
+  if (!marker) process.exit(1);
+  process.stdout.write(marker.storyId);
+  process.exit(0);
+}
+
+// ============================================================
+// Cross-session discovery (fix robusto 2026-05-20)
+// Caso disparador: Story 4.2 — pipeline iniciado en sessionA quedaba
+// invisible para sessionB porque `marker.js get` lee solo ESTA sesión.
+// list-all + find-by-story permiten que cualquier hook detecte pipelines
+// activos en otras sesiones antes de arrancar duplicado.
+// ============================================================
+
+function listAllMarkers() {
+  if (!fs.existsSync(ACTIVE_DIR)) return [];
+  pruneStale();
+  let files = [];
+  try { files = fs.readdirSync(ACTIVE_DIR); } catch (_e) { return []; }
+  const markers = [];
+  for (const f of files) {
+    if (!f.endsWith('.json')) continue;
+    try {
+      const m = JSON.parse(fs.readFileSync(path.join(ACTIVE_DIR, f), 'utf8'));
+      if (m && m.storyId) markers.push(m);
+    } catch (_e) { /* ignore */ }
+  }
+  return markers;
+}
+
+function cmdListAll() {
+  process.stdout.write(JSON.stringify(listAllMarkers(), null, 2));
+}
+
+function cmdFindByStory(storyId) {
+  if (!storyId) {
+    console.error('marker.js find-by-story: storyId requerido');
+    process.exit(2);
+  }
+  const all = listAllMarkers();
+  const matches = all.filter((m) => m.storyId === storyId);
+  process.stdout.write(JSON.stringify(matches, null, 2));
+}
+
+function cmdClearSession(sid) {
+  if (!sid) {
+    console.error('marker.js clear-session: sessionId requerido');
+    process.exit(2);
+  }
+  const safe = String(sid).replace(/[/\\]/g, '_');
+  const p = path.join(ACTIVE_DIR, `${safe}.json`);
+  if (fs.existsSync(p)) {
+    try { fs.unlinkSync(p); } catch (_e) { /* ignore */ }
+  }
+  process.stdout.write(`cleared: ${safe}.json\n`);
+}
+
+/**
+ * adopt-session — resume cross-session SIN pérdida de estado (auditoría 2026-06-09).
+ *
+ * Antes el resume era manual: el orquestador re-escribía el marker con `set` y un
+ * payload parcial → filesTouched/iterations/dodRuntimeChecked/checks se PERDÍAN
+ * (state lossy). adopt-session copia el marker COMPLETO de la otra sesión al
+ * sessionId actual y borra el archivo viejo en la misma operación (atómico:
+ * write-own-then-unlink-other; si el unlink falla, pruneStale lo limpia en 24h).
+ *
+ * Rechaza si ESTA sesión ya tiene marker activo (no pisar un pipeline propio).
+ */
+function cmdAdoptSession(sid) {
+  if (!sid) {
+    console.error('marker.js adopt-session: sessionId requerido');
+    process.exit(2);
+  }
+  if (sid === SID) {
+    console.error('marker.js adopt-session: esa YA es tu sesión');
+    process.exit(2);
+  }
+  const own = readMarker();
+  if (own && own.storyId) {
+    console.error(`marker.js adopt-session: esta sesión ya tiene marker activo (story ${own.storyId}) — clear primero si querés adoptar otro`);
+    process.exit(1);
+  }
+  const safe = String(sid).replace(/[/\\]/g, '_');
+  const otherPath = path.join(ACTIVE_DIR, `${safe}.json`);
+  if (!fs.existsSync(otherPath)) {
+    console.error(`marker.js adopt-session: no existe marker de la sesión ${safe}`);
+    process.exit(1);
+  }
+  let other;
+  try {
+    other = JSON.parse(fs.readFileSync(otherPath, 'utf8'));
+  } catch (e) {
+    console.error(`marker.js adopt-session: marker de ${safe} ilegible:`, e.message);
+    process.exit(1);
+  }
+  const adopted = { ...other, sessionId: SID, lastTouch: nowIso(), adoptedFrom: safe, adoptedAt: nowIso() };
+  writeMarker(adopted);
+  try { fs.unlinkSync(otherPath); } catch (_e) { /* pruneStale lo limpia */ }
+  process.stdout.write(JSON.stringify(adopted, null, 2));
+}
+
+// ============================================================
+// Story `status:` frontmatter mutation (fix robusto capa 3)
+// Source of truth durable cross-sesión y cross-máquina. Permite que el
+// orquestador setee status: in-progress al arrancar y review/done al cerrar.
+// Mutación atómica via tmp+rename.
+// ============================================================
+
+const VALID_STATUSES = ['ready-for-dev', 'in-progress', 'review', 'done', 'blocked', 'abandoned'];
+
+function cmdUpdateStoryStatus(storyPath, newStatus) {
+  if (!storyPath || !newStatus) {
+    console.error('marker.js update-story-status: <storyPath> <newStatus> requeridos');
+    console.error(`  Valores válidos de <newStatus>: ${VALID_STATUSES.join(' | ')}`);
+    process.exit(2);
+  }
+  if (!fs.existsSync(storyPath)) {
+    console.error(`marker.js update-story-status: story file no existe: ${storyPath}`);
+    process.exit(1);
+  }
+  if (!VALID_STATUSES.includes(newStatus)) {
+    console.error(`marker.js update-story-status: status inválido '${newStatus}' — valores: ${VALID_STATUSES.join(' | ')}`);
+    process.exit(2);
+  }
+  const content = fs.readFileSync(storyPath, 'utf8');
+  // Frontmatter YAML entre los dos '---' del inicio del archivo.
+  const fmRegex = /^(---\r?\n)([\s\S]*?)(\r?\n---\r?\n)/;
+  const m = content.match(fmRegex);
+  if (!m) {
+    console.error('marker.js update-story-status: la story no tiene frontmatter YAML válido (esperaba bloque "---...---" al inicio)');
+    process.exit(1);
+  }
+  const fmBody = m[2];
+  // Match `status: X` con/sin quotes, preserve indent + trailing inline comment.
+  // (las stories de este repo usan `status: ready-for-dev  # nota...` — el comentario
+  //  trailing se captura en $2 y se preserva intacto.)
+  const statusRegex = /^(\s*status\s*:\s*)["']?[\w-]+["']?([ \t]*(?:#.*)?)$/m;
+  if (!statusRegex.test(fmBody)) {
+    console.error('marker.js update-story-status: frontmatter no contiene línea `status:`');
+    process.exit(1);
+  }
+  // Reemplazo con FUNCIÓN, nunca con texto: replace lee `$'`, `$&` y `$1` en el texto de reemplazo, y un título con
+  // `$'` pegaba el resto del archivo adentro del frontmatter (story 8.14 del arnés, 2026-10-01).
+  const newFmBody = fmBody.replace(statusRegex, (_, head, tail) => `${head}${newStatus}${tail}`);
+  const newContent = content.replace(fmRegex, (_, open, _body, close) => `${open}${newFmBody}${close}`);
+  // Atomic write.
+  const tmp = `${storyPath}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, newContent, 'utf8');
+  fs.renameSync(tmp, storyPath);
+  process.stdout.write(`status: ${newStatus}\n`);
+}
+
+// ============================================================
+// DODRT-C6 — waiver runtime USER-ONLY (llave TTY, 2026-07-10)
+// ============================================================
+// La ÚNICA vía para saltear la verificación runtime por-AC. TTY-only por construcción:
+// el agente corre sin terminal controladora → promptTty() tira. El humano confirma en su
+// terminal. El agente NO puede ejecutar esto con éxito. Ver lib/runtime-waiver.js.
+function cmdRuntimeWaiver(storyArg) {
+  const waiver = require('./lib/runtime-waiver.js');
+  const rm = require('./runtime-matrix.js');
+
+  // Resolver el path de la story (arg explícito o del marker de la sesión).
+  const m = readMarker();
+  const crudo = storyArg || (m && (m.storyPath || m.specPath || m.storySpec));
+  const storyPath = resolveStoryPath(crudo, m);
+  if (!storyPath) {
+    // 🔴 El mensaje viejo decía "falta --story <abs path .md>" — ese flag NO EXISTE, el argumento
+    // es POSICIONAL. Mandaba al usuario a una sintaxis inválida, y encima le echaba la culpa al
+    // marker cuando el problema real era que el path guardado es relativo.
+    console.error('marker.js runtime-waiver: no encuentro la story.');
+    console.error(`  Recibido: ${crudo ?? '(nada — ni argumento ni marker)'}`);
+    console.error('  El path va POSICIONAL (no hay flag `--story`) y conviene ABSOLUTO:');
+    console.error(`    node ${__filename} runtime-waiver /abs/path/a/la-story.md`);
+    process.exit(2);
+  }
+
+  // Freno físico ANTES de computar nada: si no hay terminal, ni arrancamos.
+  if (!waiver.hasTty()) {
+    console.error('🔒 marker.js runtime-waiver BLOQUEADO — requiere una terminal interactiva real (/dev/tty).');
+    console.error('   Este es el candado user-only: el agente corre sin terminal y NO puede ejecutarlo.');
+    console.error('   Lo corre EL USUARIO, en su terminal:');
+    console.error(`     node ${__filename} runtime-waiver ${storyPath}`);
+    process.exit(2);
+  }
+
+  const matrix = rm.compute({ storyPath });
+  if (matrix.structuralError) {
+    console.error(`marker.js runtime-waiver: la matriz no computa (${matrix.structuralError}).`);
+    process.exit(2);
+  }
+  if (matrix.green) {
+    console.error('marker.js runtime-waiver: la matriz YA está verde — no hay nada que waivear.');
+    process.exit(0);
+  }
+
+  // 🔴 REGLA (DevA 2026-07-10): el waiver SÓLO aplica a los ACs declarados imposibles de
+  // verificar corriendo (runtime_not_verifiable). Si hay ACs SIN CORRER (no declarados), se
+  // REHÚSA — esos el agente los tiene que correr, no se pueden saltear.
+  const notRun = matrix.notRun || [];
+  if (notRun.length > 0) {
+    console.error('🚫 marker.js runtime-waiver RECHAZADO — hay ACs SIN CORRER que NO se pueden waivear:');
+    console.error(`   AC ${notRun.map((n) => '#' + n).join(', ')}`);
+    console.error('   Estos NO están declarados como imposibles de verificar corriendo la app.');
+    console.error('   El agente debe correrlos (E2E/smoke) — o, si de verdad son imposibles,');
+    console.error('   declararlos en el frontmatter `runtime_not_verifiable:` (reason + covered_by test).');
+    console.error('   El waiver es SÓLO para lo declarado-imposible, no para lo no-corrido.');
+    process.exit(2);
+  }
+
+  const pend = matrix.notVerifiable || [];
+  if (pend.length === 0) {
+    console.error('marker.js runtime-waiver: no hay ACs declarados-imposibles pendientes de waiver.');
+    process.exit(0);
+  }
+
+  // 🔴 CONFIRMACIÓN POR-AC (DevA 2026-07-10): NO una frase que aprueba todo de golpe (rubber-stamp).
+  // Se muestra CADA AC con su razón + el test que lo cubre, y el usuario aprueba UNO POR UNO. Sólo se
+  // waivean los que aprobó explícitamente; si rechaza alguno, ése bloquea (el agente lo tiene que
+  // resolver — correrlo, o corregir la razón). El detalle también se le presenta en la conversación
+  // ANTES de correr esto (regla F.ii del SKILL.md); acá es el sello seguro, no la primera vez que lo ve.
+  let intro;
+  try {
+    intro = waiver.promptTty(
+      `\n════════ WAIVER RUNTIME · story ${matrix.sid} ════════\n` +
+      `Hay ${pend.length} AC declarados IMPOSIBLES de verificar corriendo la app. Te los muestro UNO\n` +
+      `POR UNO con su razón y el test que lo cubre; aprobás cada uno por separado (si / no).\n` +
+      `(Enter para empezar) `,
+    );
+  } catch (e) {
+    console.error(`🔒 ${e.message}`);
+    process.exit(2);
+  }
+  void intro;
+
+  const approved = [];
+  const rejected = [];
+  for (const n of pend) {
+    const reason = matrix.perAc[n].declReason || '(sin razón declarada)';
+    const cov = matrix.perAc[n].coveredBy || (matrix.perAc[n].code || []).join(', ') || 'test de código';
+    // 🔴 El TEXTO del AC va PRIMERO (2026-07-27). Antes el prompt mostraba la razón y el test, pero
+    // nunca QUÉ decía el AC: el usuario aprobaba saltear la verificación de algo sin nombre — la
+    // excusa sin el hecho. Es el mismo rubber-stamp que la confirmación por-AC vino a evitar, un
+    // nivel más abajo. Caso disparador: story 3.24 de un producto del equipo — guides/incident-log.md#case-waiver-prompt-without-ac-text-2026-07-27
+    const texto = matrix.perAc[n].text;
+    let ans;
+    try {
+      ans = waiver.promptTty(
+        `\n──────── AC #${n} ────────\n` +
+        `QUÉ DICE EL AC:\n  ${texto ? texto : '(no se pudo citar del spec — abrí la story antes de aprobar)'}\n\n` +
+        `Por qué NO se puede verificar corriendo la app:\n  ${reason}\n` +
+        `Cubierto por (test que ya corrió): ${cov}\n\n` +
+        `¿Aprobás saltar la verificación POR-LA-APP de AC#${n}? (si / no) > `,
+      );
+    } catch (e) {
+      console.error(`🔒 ${e.message}`);
+      process.exit(2);
+    }
+    if (/^s(i|í)?$/i.test((ans || '').trim())) approved.push(n);
+    else { rejected.push(n); console.error(`   → AC#${n} NO aprobado — queda bloqueado.`); }
+  }
+
+  if (approved.length === 0) {
+    console.error('\nmarker.js runtime-waiver: no aprobaste ningún AC — sin waiver.');
+    process.exit(1);
+  }
+
+  const approvedBy = process.env.USER || process.env.LOGNAME || 'tty-user';
+  // 🔴 2026-07-29 — la aprobación se ancla a la DECLARACIÓN de cada AC (su razón + el test que lo
+  // cubre) y se firma DENTRO del repo, en `.tycon/runtime-waivers.jsonl`. Antes iba sólo al log del
+  // home, anclada al `matrixHash`: como ese hash pinnea la evidencia de `.advisors/` (gitignoreada),
+  // en otra máquina o en CI no enganchaba y había que volver a aprobar todo a mano. La declaración
+  // vive en la story y viaja con el repo. NO se usa el frontmatter para el registro: el ack
+  // agent-writable fue el agujero que se cerró el 2026-07-10 y no se reintroduce.
+  const declHashByAc = {};
+  for (const n of approved) {
+    declHashByAc[n] = waiver.declHashFor(matrix.perAc[n].declReason, matrix.perAc[n].coveredBy);
+  }
+  const repoRoot = matrix.repoRoot || null;
+  // `story` lleva la CLAVE de la story (story 1.17.1): con número único es el número de siempre; con número repetido,
+  // `<tema>__<número>`, para que la firma no le valga a otra story del mismo número.
+  const entry = waiver.appendWaiver({
+    story: matrix.key || matrix.sid, acs: approved, matrixHash: matrix.hash, approvedBy, nowIso: nowIso(),
+    declHashByAc,
+    logPath: repoRoot ? waiver.repoWaiverLogPath(repoRoot) : undefined,
+  });
+  if (repoRoot) {
+    console.error(`\n📌 Firmado en ${waiver.repoWaiverLogPath(repoRoot)}`);
+    console.error('   COMMITEALO: es lo que hace que tu aprobación valga en otra máquina y en CI.');
+  }
+  appendLog('gates.log', { type: 'RUNTIME_WAIVER', story: matrix.sid, acs: approved, rejected, matrixHash: matrix.hash, approvedBy });
+  console.error(`\n✅ Waiver registrado (TTY): story ${matrix.sid}, ACs aprobados ${approved.join(',')}${rejected.length ? ` · rechazados ${rejected.join(',')}` : ''}, hash ${matrix.hash}, por ${approvedBy}.`);
+  console.error(`   Pinneado al hash actual: si el código/evidencia cambian, se invalida solo.`);
+  console.error(`   Cadena: ${entry.chain}`);
+  if (rejected.length) console.error(`   ⚠ AC ${rejected.join(',')} quedaron sin aprobar → la matriz sigue roja para esos; el agente los tiene que resolver.`);
+  process.exit(0);
+}
+
+// ============================================================
+// Carril AD-HOC (2026-08-19) — hotfix / ajuste chico SIN story, declarado por sesión.
+// Es la salida (b) del portón de carril (lib/story-gate.js): un repo bajo el arnés no acepta
+// código sin pipeline activo ni esta declaración. Archivo: adhoc/<sid>.json
+//   { reason, maxFiles, files[], declaredAt, lastTouch }
+// El cupo lo cuentan los archivos de IMPLEMENTACIÓN distintos (on-edit.js los registra en
+// PostToolUse); al pasarse, el portón vuelve a cerrar (→ story + pipeline, o re-declarar con cupo
+// mayor y motivo). Todo queda en adhoc.log. `adhoc clear` lo termina; `marker.js set` (pipeline)
+// tiene prioridad sobre él aunque siga existiendo.
+// ============================================================
+function cmdAdhoc(sub, payloadJson) {
+  const io = require('./lib/story-gate-io.js');
+  const existing = io.readAdhoc(STATE_DIR, SID);
+  if (sub === 'get') {
+    process.stdout.write(JSON.stringify(existing, null, 2) + '\n');
+    process.exit(existing ? 0 : 1);
+  }
+  if (sub === 'clear') {
+    try { fs.unlinkSync(io.adhocPath(STATE_DIR, SID)); } catch (_e) { /* ya no estaba */ }
+    appendLog('adhoc.log', { kind: 'ADHOC_CLEAR', reason: existing ? existing.reason : null, files: existing ? (existing.files || []).length : 0 });
+    process.stdout.write('adhoc: cleared\n');
+    process.exit(0);
+  }
+  if (sub === 'set') {
+    let payload;
+    try { payload = JSON.parse(payloadJson || ''); } catch (err) {
+      console.error('marker.js adhoc set: payload JSON inválido —', err.message);
+      console.error('  Uso: marker.js adhoc set \'{"reason":"<qué y por qué, en palabras del user>","maxFiles":8}\'');
+      process.exit(2);
+    }
+    const reason = String(payload.reason || '').trim();
+    if (reason.length < 8) {
+      console.error('marker.js adhoc set: "reason" requerido (≥8 caracteres) — en palabras del USER, no tuyas.');
+      process.exit(2);
+    }
+    // 2026-08-27 — el carril NO se adivina más por regex (tres incidentes en tres días; ver el
+    // comentario grande en lib/story-gate.js). El juicio de `adhoc set` queda en DOS capas:
+    //   1. MECÁNICA: el reason tiene que ser un fragmento literal de lo que escribió el user
+    //      (reasonInPrompts sobre el ring que sólo escribe on-prompt.js — el agente no puede
+    //      inyectar ahí).
+    //   2. MODELO: el clasificador (lib/lane-classifier.js) lee los prompts REALES y contesta qué
+    //      autorizó el humano. Castellano lo interpreta un modelo, no un regex. Corre SIEMPRE que
+    //      esté disponible — `adhoc set` pasa una vez por sesión, el costo es marginal — y su
+    //      veredicto GANA sobre la cita: si dice 'pipeline' (el user pidió una story), citar al
+    //      user no alcanza para el atajo; si dice 'adhoc', una cita fallida no traba.
+    //   Sin modelo (tests, sin binario, timeout): decide la capa mecánica sola, como siempre.
+    // Kill-switch del dev: TYCON_STORY_GATE=off.
+    const gate = require('./lib/story-gate.js');
+    const lane = io.readLane(STATE_DIR, SID);
+    const recentAll = lane && Array.isArray(lane.recentPrompts) ? lane.recentPrompts : [];
+    const gateOn = process.env.TYCON_STORY_GATE !== 'off';
+
+    // H2a (revisión adversarial 2026-08-27): el ring vacío daba quoted=true — dos fail-open
+    // compuestos (hook de prompt roto + sin modelo = cualquier reason inventado pasaba). Un ring
+    // vacío significa que NO HAY nada citable: la cita falla, y el mensaje de abajo dice cómo
+    // seguir (preguntarle al user; si el user YA contestó y esto se repite, el hook on-prompt no
+    // está corriendo y eso es lo que hay que arreglar).
+    const quoted = gateOn ? (recentAll.length > 0 && gate.reasonInPrompts(reason, recentAll)) : true;
+    let llm = { lane: null, via: 'sin-consulta' };
+    if (gateOn && recentAll.length) {
+      try { llm = require('./lib/lane-classifier.js').classifyLane(recentAll); } catch (_) { llm = { lane: null, via: 'error' }; }
+    }
+
+    const ask =
+      `🔴 NO cierres el turno con este texto: está escrito para VOS. Preguntale al user en castellano ` +
+      `llano, p. ej.: "Esto toca código del repo. ¿Lo hago como ajuste puntual —decime que es un ` +
+      `hotfix y sigo— o querés que vaya con story y revisión completa?". Su respuesta es citable y ` +
+      `destraba este comando. Prohibido nombrarle "carril", "marker", "ad-hoc", "el arnés" o esta ` +
+      `salida: no significan nada para él.\n` +
+      `   · SUBAGENTE (sin AskUserQuestion): no elijas vos — cerrá tu reporte pidiendo que le ` +
+      `pregunten al user.`;
+
+    if (gateOn && llm.lane === 'pipeline') {
+      // El modelo leyó los prompts del user y dice que pidió una story: el atajo no corre, ni
+      // siquiera citándolo (citar "implementemos la story 1.1" como motivo de un ad-hoc es
+      // exactamente el anti-pattern del 2026-08-24).
+      console.error(
+        `marker.js adhoc set: DENEGADO — leyendo los últimos mensajes del user, lo que pidió es una ` +
+        `story/spec por el pipeline, no un ajuste suelto.\n\n` +
+        `  (a) Si es así → Skill(skill="tycon-pipeline", args="implementemos …").\n` +
+        `  (b) Si el user QUIERE el atajo, que lo diga en su próximo mensaje ("es un hotfix", "sin ` +
+        `story") — eso cambia el veredicto.\n\n` + ask +
+        `\n\nCaso: incident-log#adhoc-self-declared-2026-08-24.`,
+      );
+      appendLog('adhoc.log', { kind: 'ADHOC_LLM_DENIED_LANE', reason, via: llm.via, cwd: process.cwd() });
+      process.exit(2);
+    }
+    if (gateOn && !quoted && llm.lane !== 'adhoc') {
+      console.error(
+        `marker.js adhoc set: DENEGADO — "reason" tiene que ser un fragmento LITERAL de lo que escribió el user ` +
+        `(≥${gate.ADHOC_REASON_MIN_CHARS} caracteres; se compara sin mayúsculas ni acentos), no una paráfrasis tuya.\n\n` +
+        `CÓMO SE ARREGLA (es mecánico): copiá y pegá un pedazo del prompt del user TAL CUAL lo escribió — ` +
+        `con sus typos, sin traducir, sin resumir. Ej: si escribió "actualiza el sp de desduplicación e ` +
+        `incluilo en el repo", un reason válido es "actualiza el sp de desduplicacion" y uno inválido es ` +
+        `"el user pidió actualizar un stored procedure".\n\n` +
+        `SI NO HAY NADA CITABLE (el pedido quedó fuera de los últimos ${io.LANE_RECENT_PROMPTS || 8} mensajes, ` +
+        `o sólo dijo "dale"/"si"): NO fabriques una cita. ` + ask,
+      );
+      appendLog('adhoc.log', { kind: 'ADHOC_DENIED_REASON', reason, via: llm.via, cwd: process.cwd() });
+      process.exit(2);
+    }
+    // H1 (revisión adversarial 2026-08-27, CRÍTICO): sin modelo, citar el PROPIO pedido de story
+    // ("implementemos la story 1.1") como motivo del atajo PASABA la capa mecánica — el rediseño
+    // había quedado estrictamente más débil que el regex borrado justo en el anti-pattern
+    // fundacional (#adhoc-self-declared-2026-08-24). El veto no adivina nada: mira SOLO el prompt
+    // que la declaración cita como su autorización, y si ese prompt es un pedido explícito de
+    // story (STORY_INTENT_PATTERNS, fuente única con el reminder), el atajo no corre. El modelo
+    // (ADHOC) puede abrirlo igual — el user pudo cambiar de idea en otro prompt.
+    if (gateOn && quoted && llm.lane !== 'adhoc' && gate.quotedPromptAsksStory(reason, recentAll)) {
+      console.error(
+        `marker.js adhoc set: DENEGADO — el texto que citás como motivo ES un pedido de implementar ` +
+        `una story ("${reason.slice(0, 80)}"). Citar el pedido de la story como autorización del atajo ` +
+        `es exactamente el anti-pattern que este freno existe para parar.\n\n` +
+        `  (a) Si es una story → Skill(skill="tycon-pipeline", args="implementemos …").\n` +
+        `  (b) Si el user QUIERE el atajo, que lo diga: su próximo mensaje es citable.\n\n` + ask +
+        `\n\nCaso: incident-log#adhoc-self-declared-2026-08-24.`,
+      );
+      appendLog('adhoc.log', { kind: 'ADHOC_DENIED_STORY_QUOTE', reason, via: llm.via, cwd: process.cwd() });
+      process.exit(2);
+    }
+    if (gateOn && quoted && llm.lane === null && llm.via !== 'sin-consulta') {
+      // El atajo se abre por la cita SOLA, sin juez (modelo apagado/ausente/tímido). Es legal —
+      // falla hacia lo mecánico— pero NO silencioso: queda su propia constancia para el --report
+      // del medidor (¿cuántos atajos pasan sin juez? si son muchos, el juez no está juzgando).
+      appendLog('adhoc.log', { kind: 'ADHOC_SET_UNJUDGED', reason, via: llm.via, cwd: process.cwd() });
+    }
+    if (gateOn && !quoted && llm.lane === 'adhoc') {
+      // El modelo abrió lo que la capa mecánica había cerrado: constancia propia — es el único
+      // evento del clasificador que merece revisión humana (lo grita lane-llm-notice al arranque).
+      appendLog('adhoc.log', {
+        kind: 'ADHOC_LLM_OVERRIDE_LANE', reason,
+        lanePrompt: String(recentAll[recentAll.length - 1] || '').replace(/\s+/g, ' ').slice(0, 160),
+        via: llm.via, cwd: process.cwd(),
+      });
+    }
+    const maxFiles = Number.isFinite(Number(payload.maxFiles)) && Number(payload.maxFiles) > 0
+      ? Number(payload.maxFiles) : (existing ? existing.maxFiles : 8);
+    const obj = {
+      reason, maxFiles,
+      files: existing ? (existing.files || []) : [],
+      declaredAt: existing ? existing.declaredAt : nowIso(),
+      lastTouch: nowIso(),
+      cwd: process.cwd(),
+    };
+    io.writeAdhoc(STATE_DIR, SID, obj);
+    appendLog('adhoc.log', { kind: existing ? 'ADHOC_UPDATE' : 'ADHOC_SET', reason, maxFiles, prevMaxFiles: existing ? existing.maxFiles : null, files: obj.files.length, cwd: process.cwd() });
+    process.stdout.write(JSON.stringify(obj, null, 2) + '\n');
+    process.exit(0);
+  }
+  console.error('marker.js adhoc: uso — adhoc set \'{"reason":"…","maxFiles":N}\' | adhoc get | adhoc clear');
+  process.exit(2);
+}
+
+// Escape consciente del freno de STORY A MANO (2026-08-30, lib/story-skill-gate.js): deja la misma
+// marca que dejaría la invocación de tycon-create-story, pero con skill:'bypass' + la razón, y queda
+// en bypass.log (STORY_SKILL_BYPASS). La razón tiene que venir del USER (mismo contrato que
+// `adhoc set`): es el user quien decide que ESTA story se escribe a mano, no el agente.
+function cmdStorySkillBypass(reasonRaw) {
+  const reason = String(reasonRaw || '').trim();
+  if (reason.length < 8) {
+    console.error('marker.js story-skill-bypass: "razón" requerida (≥8 caracteres) — en palabras del USER, no tuyas.');
+    console.error('  Uso: marker.js story-skill-bypass "<por qué esta story se escribe sin el skill>"');
+    process.exit(2);
+  }
+  const sio = require('./lib/story-skill-gate-io.js');
+  const mark = sio.writeMark(STATE_DIR, SID, { skill: 'bypass', reason, at: nowIso(), sessionId: SID, cwd: process.cwd(), via: 'bypass' });
+  appendLog('bypass.log', { kind: 'STORY_SKILL_BYPASS', reason, cwd: process.cwd() });
+  console.error(`⚠️  story-skill-gate: bypass declarado para esta sesión (queda en bypass.log): ${reason}`);
+  process.stdout.write(JSON.stringify(mark, null, 2) + '\n');
+}
+
+// story 8.9 (tanda B3b): las opciones viejas siguen andando hasta el retiro (también desde una sesión abierta con las
+// instrucciones de antes en la memoria)
+require('./lib/legacy-names.js').aliasArgv('skills/tycon-pipeline/scripts/marker.js');
+const cmd = process.argv[2];
+const arg1 = process.argv[3];
+const arg2 = process.argv[4];
+
+switch (cmd) {
+  case 'set':
+    cmdSet(arg1);
+    break;
+  case 'get':
+    cmdGet();
+    break;
+  case 'touch':
+    cmdTouch();
+    break;
+  case 'complete-step':
+    cmdCompleteStep(arg1, process.argv.slice(4));
+    break;
+  case 'start-step':
+    cmdStartStep(arg1);
+    break;
+  case 'append-file':
+    cmdAppendFile(arg1);
+    break;
+  case 'clear':
+    cmdClear();
+    break;
+  case 'is-active':
+    cmdIsActive();
+    break;
+  case 'list-all':
+    cmdListAll();
+    break;
+  case 'find-by-story':
+    cmdFindByStory(arg1);
+    break;
+  case 'clear-session':
+    cmdClearSession(arg1);
+    break;
+  case 'adopt-session':
+    cmdAdoptSession(arg1);
+    break;
+  case 'update-story-status':
+    cmdUpdateStoryStatus(arg1, arg2);
+    break;
+  case 'mark-dod-runtime-checked':
+    cmdMarkDodRuntimeChecked(arg1);
+    break;
+  case 'set-autonomous':
+    cmdSetAutonomous(arg1);
+    break;
+  case 'set-check':
+    cmdSetCheck(arg1, arg2, process.argv[5]);
+    break;
+  case 'run-check':
+    cmdRunCheck(process.argv.slice(3));
+    break;
+  case 'set-flag':
+    cmdSetFlag(arg1, arg2);
+    break;
+  case 'snapshot-iter':
+    cmdSnapshotIter(arg1, process.argv.slice(4));
+    break;
+  case 'runtime-waiver':
+    cmdRuntimeWaiver(arg1);
+    break;
+  case 'mark-adversarial-launched':
+    cmdMarkAdversarialLaunched(arg1, arg2);
+    break;
+  case 'mark-adversarial-result':
+    cmdMarkAdversarialResult(arg1);
+    break;
+  case 'mark-adversarial-skipped':
+    cmdMarkAdversarialSkipped(process.argv.slice(3));
+    break;
+  case 'promote-probe':
+    cmdPromoteProbe(arg1);
+    break;
+  case 'adhoc':
+    cmdAdhoc(arg1, arg2);
+    break;
+  case 'story-skill-bypass':
+    cmdStorySkillBypass(arg1);
+    break;
+  default:
+    console.error(`marker.js: comando desconocido '${cmd}'`);
+    console.error(
+      'Usage: marker.js <set|get|touch|complete-step|append-file|clear|is-active|' +
+        'list-all|find-by-story|clear-session|adopt-session|update-story-status|' +
+        'mark-dod-runtime-checked|set-autonomous|set-check|run-check|set-flag|snapshot-iter|' +
+        'mark-adversarial-launched|mark-adversarial-result|mark-adversarial-skipped|promote-probe|adhoc|story-skill-bypass> [arg] [arg2]',
+    );
+    process.exit(2);
+}

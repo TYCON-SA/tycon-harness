@@ -1,0 +1,22 @@
+# Finales de línea: los decide el repo, no la configuración de cada máquina.
+#
+# Git for Windows viene con core.autocrlf=true: sin este archivo, cada archivo de texto llega al árbol de trabajo
+# con \r\n, y un guion de bash con \r\n falla al correr (no al clonar). Con esta regla todo texto queda con \n,
+# en el repo y en el árbol de trabajo, en cualquier sistema.
+#
+# Un clon anterior a este archivo conserva su \r\n en lo que el pull no toca. Con el árbol limpio se normaliza con:
+#     git rm --cached -r -q . && git reset --hard -q
+# Lo comprueba scripts/tests/eol.test.js.
+* text=auto eol=lf
+
+# Binarios: no se convierten ni se comparan como texto. Uno nuevo se declara acá (la prueba lo pide por su nombre).
+*.gz binary
+*.zip binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary

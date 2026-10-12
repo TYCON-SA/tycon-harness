@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<coverage line-rate="0.4" branch-rate="1" version="1.9" timestamp="1759665601">
+  <sources>
+    <source><REPO_RUN></source>
+  </sources>
+  <packages>
+    <package name="Acme.Orders" line-rate="0.4">
+      <classes>
+        <class name="Acme.Orders.OrderImporter" filename="src/Acme.Orders/OrderImporter.cs" line-rate="0" branch-rate="1" complexity="1">
+          <lines>
+            <line number="1" hits="0" /><line number="2" hits="0" /><line number="3" hits="0" /><line number="4" hits="0" /><line number="5" hits="0" />
+            <line number="6" hits="0" /><line number="7" hits="0" /><line number="8" hits="0" /><line number="9" hits="0" /><line number="10" hits="0" />
+          </lines>
+        </class>
+        <class name="Acme.Orders.OrderRepository/&lt;GetAsync&gt;d__2" filename="src/Acme.Orders/OrderRepository.cs" line-rate="1" branch-rate="1" complexity="2">
+          <lines>
+            <line number="6" hits="2" /><line number="7" hits="2" />
+          </lines>
+        </class>
+      </classes>
+    </package>
+  </packages>
+</coverage>

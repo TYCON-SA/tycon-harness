@@ -1,0 +1,552 @@
+{
+ "__nota": [
+  "Dónde puede quedar el nombre del repo interno en la copia pública (story 8.19, tanda E, AC 40).",
+  "Fuera de la ruta del lugar, cada línea de la copia que nombra al repo interno tiene que caer en un archivo de esta lista,",
+  "con su motivo: «azure» (un dato de Azure DevOps), «functional» (un reconocedor: el nombre interno sigue al lado del",
+  "público), «literal-copy» (el nombre viejo del lugar en una copia declarada), «test» (una prueba, un caso del banco o una",
+  "foto medida), «engram» (el proyecto de engram de las memorias ya escritas) o «history» (una decisión escrita que se publica: la historia no se reescribe, AC 28). La prosa que lee una persona no entra acá: dice «el arnés». export-real.test.sh cuenta las líneas y frena",
+  "con una mención en un archivo que no está en la lista."
+ ],
+ "entries": [
+  {
+   "path": ".githooks/pre-commit-skills",
+   "kind": "literal-copy",
+   "why": "el lector del arnés en el hook de git: busca el lugar y después el nombre viejo, escritos (copia declarada de harness-place-names.json)"
+  },
+  {
+   "path": "guides/ci-gate.md",
+   "kind": "azure",
+   "why": "el checkout, el repositorio, el grupo de lectores y la llamada a la API del proyecto en Azure DevOps"
+  },
+  {
+   "path": "guides/decisions/codex-etapa-d-retro-red.md",
+   "kind": "history",
+   "why": "historia: una decisión escrita con las rutas de ese día; se publica entera y no se reescribe (AC 28)"
+  },
+  {
+   "path": "guides/decisions/controles-apagables-por-config-2026-08-25.md",
+   "kind": "history",
+   "why": "historia: una decisión escrita con las rutas de ese día; se publica entera y no se reescribe (AC 28)"
+  },
+  {
+   "path": "guides/decisions/instinct-mining-v1-spec.md",
+   "kind": "history",
+   "why": "historia: una decisión escrita con las rutas de ese día; se publica entera y no se reescribe (AC 28)"
+  },
+  {
+   "path": "guides/publicacion-espejo.md",
+   "kind": "azure",
+   "why": "el proyecto de Azure DevOps en los comandos az del pipeline del espejo"
+  },
+  {
+   "path": "scripts/ci/grant-new-product-permissions.js",
+   "kind": "azure",
+   "why": "el proyecto del arnés en Azure DevOps (el valor por defecto de --harness)"
+  },
+  {
+   "path": "scripts/controls-bench/cases/hooks/14-retro-pending.json",
+   "kind": "test",
+   "why": "caso del banco: arma una carpeta, un remoto o una línea con el nombre interno para probar un reconocimiento"
+  },
+  {
+   "path": "scripts/controls-bench/cases/hooks/23-unpushed-notice.json",
+   "kind": "test",
+   "why": "caso del banco: arma una carpeta, un remoto o una línea con el nombre interno para probar un reconocimiento"
+  },
+  {
+   "path": "scripts/controls-bench/cases/hooks/25-bootstrap-heal.json",
+   "kind": "test",
+   "why": "caso del banco: arma una carpeta, un remoto o una línea con el nombre interno para probar un reconocimiento"
+  },
+  {
+   "path": "scripts/hooks/git-pre-commit-global.sh",
+   "kind": "literal-copy",
+   "why": "ídem: el pre-commit global se instala copiado y busca los dos nombres del lugar"
+  },
+  {
+   "path": "scripts/hooks/harness-bootstrap-heal.sh",
+   "kind": "functional",
+   "why": "repara la línea de arranque vieja escrita en las máquinas"
+  },
+  {
+   "path": "scripts/hooks/session-collision-guard.js",
+   "kind": "functional",
+   "why": "reconocedor: los repos del arnés por su carpeta, con el nombre interno y el público"
+  },
+  {
+   "path": "scripts/lib/canonical-path.js",
+   "kind": "test",
+   "why": "el --selftest arma clones de juguete con el nombre interno para probar que la carpeta no decide"
+  },
+  {
+   "path": "scripts/lib/harness-audit.js",
+   "kind": "engram",
+   "why": "el proyecto de engram que el arnés usó antes (dato de las memorias ya escritas): la auditoría lo reconoce como transversal"
+  },
+  {
+   "path": "scripts/lib/harness-repo.js",
+   "kind": "functional",
+   "why": "reconocedor: los segmentos de carpeta del arnés, con el nombre interno y el público (respaldo cuando no hay origin)"
+  },
+  {
+   "path": "scripts/lib/legacy-names.js",
+   "kind": "literal-copy",
+   "why": "la constante del nombre viejo del lugar: viaja sola a /opt con el freno de producción"
+  },
+  {
+   "path": "scripts/lib/repos-root.js",
+   "kind": "test",
+   "why": "el --selftest arma clones de juguete con el nombre interno para probar la raíz de los repos"
+  },
+  {
+   "path": "scripts/lib/tycon-config.js",
+   "kind": "literal-copy",
+   "why": "ídem: la constante del nombre viejo del lugar, en la copia que viaja a /opt"
+  },
+  {
+   "path": "scripts/nightly/dashboard/changes.js",
+   "kind": "functional",
+   "why": "reconocedor: las rutas de los repos del arnés en el tablero, con el nombre interno y el público"
+  },
+  {
+   "path": "scripts/production/install-guard.sh",
+   "kind": "azure",
+   "why": "el lector de los dos nombres del lugar y la URL del repo en Azure DevOps contra la que verifica el clon antes de instalar el freno"
+  },
+  {
+   "path": "scripts/publishing/export.js",
+   "kind": "functional",
+   "why": "las raíces que reconoce la traducción de rutas viejas (el nombre interno y su marcador <…>), y su comentario"
+  },
+  {
+   "path": "scripts/publishing/spanish-names.js",
+   "kind": "functional",
+   "why": "documenta la raíz del arnés que la expresión de rutas viejas reconoce"
+  },
+  {
+   "path": "scripts/publishing/third-party-coverage.js",
+   "kind": "functional",
+   "why": "los repos derivados de terceros por su nombre interno: lo cruza con el campo repo de third-party-skills.json"
+  },
+  {
+   "path": "scripts/publishing/third-party-skills.json",
+   "kind": "functional",
+   "why": "el repo donde vive cada derivado de terceros (campo repo): lo lee third-party-coverage.js"
+  },
+  {
+   "path": "scripts/setup/apply-hooks.js",
+   "kind": "functional",
+   "why": "las expresiones que encuentran los git pull viejos escritos en las máquinas para sumarles --autostash (vivían en install-tycon-hooks.sh hasta la 8.17 W4)"
+  },
+  {
+   "path": "scripts/setup/harness/bootstrap-fallback.ps1",
+   "kind": "literal-copy",
+   "why": "el respaldo en PowerShell de la copia fija: los dos nombres del lugar"
+  },
+  {
+   "path": "scripts/setup/harness/bootstrap-fallback.sh",
+   "kind": "literal-copy",
+   "why": "el respaldo en shell de la copia fija: los dos nombres del lugar"
+  },
+  {
+   "path": "scripts/setup/harness/bootstrap.js",
+   "kind": "literal-copy",
+   "why": "la copia fija de arranque: busca el lugar y después el nombre viejo sin cargar nada del árbol"
+  },
+  {
+   "path": "scripts/setup/harness/startup-line.js",
+   "kind": "functional",
+   "why": "reconoce la línea de arranque vieja escrita en las máquinas (git pull por el nombre interno)"
+  },
+  {
+   "path": "scripts/setup/harness/tycon-home.js",
+   "kind": "literal-copy",
+   "why": "la constante del nombre viejo del lugar (LEGACY_PLACE_NAME), que se mudó desde place.js en la story 8.23: las máquinas instaladas antes lo tienen"
+  },
+  {
+   "path": "scripts/setup/install-effects.json",
+   "kind": "functional",
+   "why": "el efecto del enlace viejo del lugar (id y ruta), que sólo existe en las máquinas que ya lo tenían"
+  },
+  {
+   "path": "scripts/tests/apply-hooks.test.js",
+   "kind": "test",
+   "why": "prueba: modela una máquina del equipo con los hooks registrados por el nombre viejo del lugar"
+  },
+  {
+   "path": "scripts/tests/branch-guard-notice.test.sh",
+   "kind": "test",
+   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
+  },
+  {
+   "path": "scripts/tests/canonical-path.test.sh",
+   "kind": "test",
+   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
+  },
+  {
+   "path": "scripts/tests/clean-machine/scenarios/folders.sh",
+   "kind": "test",
+   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
+  },
+  {
+   "path": "scripts/tests/clean-machine/scenarios/unified.sh",
+   "kind": "test",
+   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
+  },
+  {
+   "path": "scripts/tests/context-budget.test.sh",
+   "kind": "test",
+   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
+  },
+  {
+   "path": "scripts/tests/dashboard-runs.test.sh",
+   "kind": "test",
+   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
+  },
+  {
+   "path": "scripts/tests/export.test.js",
+   "kind": "test",
+   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
+  },
+  {
+   "path": "scripts/tests/fixtures/harness-managed-pieces.json",
+   "kind": "test",
+   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
+  },
+  {
+   "path": "scripts/tests/fixtures/product-pipeline/backend-azure-pipelines.yml",
+   "kind": "azure",
+   "why": "pipeline de producto de juguete: el checkout del repo del arnés en Azure DevOps"
+  },
+  {
+   "path": "scripts/tests/fixtures/product-pipeline/forms-azure-pipelines.yml",
+   "kind": "azure",
+   "why": "pipeline de producto de juguete: el checkout del repo del arnés en Azure DevOps"
+  },
+  {
+   "path": "scripts/tests/fixtures/startup-lines.json",
+   "kind": "test",
+   "why": "las líneas de arranque viejas medidas en las máquinas"
+  },
+  {
+   "path": "scripts/tests/fixtures/windows/onboarding-one-clone.md",
+   "kind": "test",
+   "why": "foto o reporte medido de una máquina del equipo en Windows (story 8.17): es lo que había escrito"
+  },
+  {
+   "path": "scripts/tests/fixtures/windows/portable-report.json",
+   "kind": "test",
+   "why": "foto o reporte medido de una máquina del equipo en Windows (story 8.17): es lo que había escrito"
+  },
+  {
+   "path": "scripts/tests/fixtures/windows/rehearsal-photo-friday.json",
+   "kind": "test",
+   "why": "foto o reporte medido de una máquina del equipo en Windows (story 8.17): es lo que había escrito"
+  },
+  {
+   "path": "scripts/tests/fixtures/windows/rehearsal-photo-today.json",
+   "kind": "test",
+   "why": "foto o reporte medido de una máquina del equipo en Windows (story 8.17): es lo que había escrito"
+  },
+  {
+   "path": "scripts/tests/fixtures/windows/rehearsal-report.json",
+   "kind": "test",
+   "why": "foto o reporte medido de una máquina del equipo en Windows (story 8.17): es lo que había escrito"
+  },
+  {
+   "path": "scripts/tests/fixtures/windows/report-complete.json",
+   "kind": "test",
+   "why": "foto o reporte medido de una máquina del equipo en Windows (story 8.17): es lo que había escrito"
+  },
+  {
+   "path": "scripts/tests/fixtures/windows/report-no-session.json",
+   "kind": "test",
+   "why": "foto o reporte medido de una máquina del equipo en Windows (story 8.17): es lo que había escrito"
+  },
+  {
+   "path": "scripts/tests/githook-livefire.test.sh",
+   "kind": "test",
+   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
+  },
+  {
+   "path": "scripts/tests/harness-bootstrap.test.sh",
+   "kind": "test",
+   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
+  },
+  {
+   "path": "scripts/tests/harness-channel.test.sh",
+   "kind": "test",
+   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
+  },
+  {
+   "path": "scripts/tests/harness-doctor.test.sh",
+   "kind": "test",
+   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
+  },
+  {
+   "path": "scripts/tests/harness-eol.test.sh",
+   "kind": "test",
+   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
+  },
+  {
+   "path": "scripts/tests/harness-health.test.sh",
+   "kind": "test",
+   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
+  },
+  {
+   "path": "scripts/tests/harness-install.test.sh",
+   "kind": "test",
+   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
+  },
+  {
+   "path": "scripts/tests/harness-place.test.js",
+   "kind": "test",
+   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
+  },
+  {
+   "path": "scripts/tests/harness-plan.test.sh",
+   "kind": "test",
+   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
+  },
+  {
+   "path": "scripts/tests/harness-profile.test.sh",
+   "kind": "test",
+   "why": "guarda del laboratorio: se niega a correr si la carpeta temporal cae dentro de un clon del arnés, por el nombre interno y el público"
+  },
+  {
+   "path": "scripts/tests/harness-questions.test.sh",
+   "kind": "test",
+   "why": "guarda del laboratorio: se niega a correr si la carpeta temporal cae dentro de un clon del arnés, por el nombre interno y el público"
+  },
+  {
+   "path": "scripts/tests/harness-repoint.test.sh",
+   "kind": "test",
+   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
+  },
+  {
+   "path": "scripts/tests/harness-rollback.test.sh",
+   "kind": "test",
+   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
+  },
+  {
+   "path": "scripts/tests/harness-snapshot.test.js",
+   "kind": "test",
+   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
+  },
+  {
+   "path": "scripts/tests/harness-startup-line.test.js",
+   "kind": "test",
+   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
+  },
+  {
+   "path": "scripts/tests/harness-state.test.js",
+   "kind": "test",
+   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
+  },
+  {
+   "path": "scripts/tests/harness-uninstall.test.sh",
+   "kind": "test",
+   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
+  },
+  {
+   "path": "scripts/tests/harness-update.test.sh",
+   "kind": "test",
+   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
+  },
+  {
+   "path": "scripts/tests/install-effects.test.js",
+   "kind": "test",
+   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
+  },
+  {
+   "path": "scripts/tests/install-guard.test.sh",
+   "kind": "test",
+   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
+  },
+  {
+   "path": "scripts/tests/install-third-party.test.sh",
+   "kind": "test",
+   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
+  },
+  {
+   "path": "scripts/tests/installer-repeated-hooks.test.sh",
+   "kind": "test",
+   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
+  },
+  {
+   "path": "scripts/tests/installer-shared-pieces.test.sh",
+   "kind": "test",
+   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
+  },
+  {
+   "path": "scripts/tests/instinct-observer-catalog.test.sh",
+   "kind": "test",
+   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
+  },
+  {
+   "path": "scripts/tests/legacy-names-install.test.sh",
+   "kind": "test",
+   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
+  },
+  {
+   "path": "scripts/tests/legacy-names-product-pipeline.test.sh",
+   "kind": "azure",
+   "why": "pipeline de producto de juguete: el checkout del repo del arnés en Azure DevOps"
+  },
+  {
+   "path": "scripts/tests/legacy-names.test.js",
+   "kind": "test",
+   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
+  },
+  {
+   "path": "scripts/tests/lib/harness-lab.sh",
+   "kind": "test",
+   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
+  },
+  {
+   "path": "scripts/tests/no-hardcoded-paths.test.js",
+   "kind": "test",
+   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
+  },
+  {
+   "path": "scripts/tests/product-parity.test.sh",
+   "kind": "test",
+   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
+  },
+  {
+   "path": "scripts/tests/profile-equivalence.test.sh",
+   "kind": "test",
+   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
+  },
+  {
+   "path": "scripts/tests/ps1-readable.test.js",
+   "kind": "test",
+   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
+  },
+  {
+   "path": "scripts/tests/public-copy.test.js",
+   "kind": "test",
+   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
+  },
+  {
+   "path": "scripts/tests/sync-codex-detection.test.sh",
+   "kind": "test",
+   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
+  },
+  {
+   "path": "scripts/tests/third-party-skills.test.js",
+   "kind": "test",
+   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
+  },
+  {
+   "path": "scripts/tests/tycon-home.test.js",
+   "kind": "test",
+   "why": "prueba: compara las rutas del lugar (la del nombre viejo incluida) con la fórmula de antes de la story 8.23"
+  },
+  {
+   "path": "scripts/tests/windows/portable-probe.js",
+   "kind": "test",
+   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
+  },
+  {
+   "path": "scripts/tests/windows/team-lab.js",
+   "kind": "test",
+   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
+  },
+  {
+   "path": "scripts/tools/tycon-worktree.sh",
+   "kind": "functional",
+   "why": "reconocedor: los repos del arnés donde el worktree está prohibido, con el nombre interno y el público"
+  },
+  {
+   "path": "skills/tycon-ado-story-wi/scripts/on-story-create.js",
+   "kind": "functional",
+   "why": "reconocedor: salta las stories del propio arnés, por el nombre interno y el público"
+  },
+  {
+   "path": "skills/tycon-pipeline/scripts/lib/harness-path.js",
+   "kind": "literal-copy",
+   "why": "el lector de las skills: busca el lugar y después el nombre viejo"
+  },
+  {
+   "path": "skills/tycon-pipeline/scripts/lib/story-gate.js",
+   "kind": "functional",
+   "why": "reconocedor: los segmentos de carpeta del arnés, con el nombre interno y el público"
+  },
+  {
+   "path": "skills/tycon-pipeline/scripts/package-equivalence.js",
+   "kind": "functional",
+   "why": "reconocedor: las carpetas que no son paquetes (las del arnés, con los dos nombres)"
+  },
+  {
+   "path": "skills/tycon-pipeline/scripts/tests/advisor-ledger.test.js",
+   "kind": "test",
+   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
+  },
+  {
+   "path": "skills/tycon-pipeline/scripts/tests/fixtures/findings-7-10.json",
+   "kind": "test",
+   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
+  },
+  {
+   "path": "skills/tycon-pipeline/scripts/tests/guides-heal.test.js",
+   "kind": "test",
+   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
+  },
+  {
+   "path": "skills/tycon-pipeline/scripts/tests/harness-path.test.js",
+   "kind": "test",
+   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
+  },
+  {
+   "path": "skills/tycon-pipeline/scripts/tests/marker-archive-change.test.js",
+   "kind": "test",
+   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
+  },
+  {
+   "path": "skills/tycon-pipeline/scripts/tests/packs.test.js",
+   "kind": "test",
+   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
+  },
+  {
+   "path": "skills/tycon-pipeline/scripts/tests/story-gate-cli.test.js",
+   "kind": "test",
+   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
+  },
+  {
+   "path": "skills/tycon-pipeline/scripts/tests/story-gate.test.js",
+   "kind": "test",
+   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
+  },
+  {
+   "path": "skills/tycon-pipeline/scripts/tests/story-skill-gate.test.js",
+   "kind": "test",
+   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
+  },
+  {
+   "path": "skills/tycon-pipeline/scripts/tests/test-pipeline-coverage.js",
+   "kind": "test",
+   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
+  },
+  {
+   "path": "skills/tycon-pipeline/scripts/tests/unit.test.js",
+   "kind": "test",
+   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
+  },
+  {
+   "path": "skills/tycon-pipeline/scripts/tests/validator-reloop.test.js",
+   "kind": "test",
+   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
+  },
+  {
+   "path": "skills/tycon-story-followup-link/scripts/on-story-create.js",
+   "kind": "functional",
+   "why": "reconocedor: salta las stories del propio arnés, por el nombre interno y el público"
+  },
+  {
+   "path": "scripts/tests/harness-release.test.sh",
+   "kind": "test",
+   "why": "prueba (story 8.23, tanda B): la guarda del laboratorio comprueba que la carpeta temporal no cayó en el checkout del repo interno ni en agent-skills"
+  }
+ ]
+}

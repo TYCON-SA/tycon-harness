@@ -1,0 +1,59 @@
+{
+  "__doc": "Casos quirúrgicos del advisor migration-impact-analyzer (Etapa D). Un pecado → una regla → el veredicto es la PRESENCIA/AUSENCIA del rule ID objetivo COMO FINDING (bullet '- [ID] ...'), nunca el conteo (§2.2 del plan). Reglas elegidas por determinismo puro: MIGRATION-C1 (numeración duplicada entre dos database/NNN_*.sql — estructural, sin juicio) y MIGRATION-C5 (DDL + DML en el mismo .sql sin BEGIN TRAN — greppeable en un solo archivo). El must-not-flag es el gemelo de C5 con la transacción explícita. El prompt_template desactiva la regla de reporte resumen-solo del advisor: la salida del banco va a un archivo de auditoría, no al chat.",
+  "advisor": "migration-impact-analyzer",
+  "cases": [
+    {
+      "id": "mig-c1-numeracion-duplicada",
+      "type": "must-flag",
+      "rule": "MIGRATION-C1",
+      "files": {
+        "database/027_AddCustomerNotes.sql": "-- Migración 027: agrega columna Notes a Customers\nBEGIN TRANSACTION;\n\nIF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('Customers') AND name = 'Notes')\nBEGIN\n    ALTER TABLE Customers ADD Notes NVARCHAR(500) NULL;\n    PRINT 'Migración 027: columna Notes agregada a Customers';\nEND\n\nCOMMIT TRANSACTION;\n",
+        "database/027_FixOrderStatusDefault.sql": "-- Migración 027: corrige default de Status en Orders\nBEGIN TRANSACTION;\n\nIF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('Orders') AND name = 'Status')\nBEGIN\n    ALTER TABLE Orders ADD CONSTRAINT DF_Orders_Status DEFAULT 'Pending' FOR Status;\n    PRINT 'Migración 027: default Pending aplicado a Orders.Status';\nEND\n\nCOMMIT TRANSACTION;\n"
+      }
+    },
+    {
+      "id": "mig-c5-ddl-dml-sin-transaccion",
+      "type": "must-flag",
+      "rule": "MIGRATION-C5",
+      "files": {
+        "database/031_NormalizeTicketSeverity.sql": "-- Migracion 031: normaliza Severity a la nueva tabla TicketPriorities y elimina la columna vieja\nALTER TABLE Tickets ADD PriorityId INT NULL;\n\nUPDATE Tickets SET PriorityId = (SELECT Id FROM TicketPriorities WHERE Name = Tickets.Severity);\n\nDELETE FROM Tickets WHERE PriorityId IS NULL;\n\nALTER TABLE Tickets ALTER COLUMN PriorityId INT NOT NULL;\n\nALTER TABLE Tickets DROP COLUMN Severity;\n"
+      },
+      "__nota": "Fixture ENDURECIDO 2026-08-21: la 1ra version envolvia el DDL en IF NOT EXISTS y usaba UPDATEs re-ejecutables — el advisor descarto C5 con fundamento (patron aditivo idempotente, sin riesgo de estado intermedio) y el caso quedaba en rojo por diseno del fixture, no por falla del advisor. Ahora el pecado es INEQUIVOCO: DDL destructivo (DROP COLUMN) + DML con perdida de datos (DELETE) en la misma migracion sin BEGIN TRAN, donde una falla a mitad deja el schema partido.",
+      "__hallazgo": "El banco expuso que MIGRATION-C5 tiene margen de calibracion: el advisor distingue mezcla DDL+DML riesgosa de aditiva-idempotente, y el catalogo no lo dice. Evaluar precisar la regla.",
+      "canario": true
+    },
+    {
+      "id": "limpio-tran-explicita-sin-c5",
+      "type": "must-not-flag",
+      "rule": "MIGRATION-C5",
+      "files": {
+        "database/031_AddPriorityToTickets.sql": "-- Migración 031: agrega Priority a Tickets y backfillea valores existentes\nBEGIN TRANSACTION;\n\nIF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('Tickets') AND name = 'Priority')\nBEGIN\n    ALTER TABLE Tickets ADD Priority INT NOT NULL DEFAULT 3;\n    PRINT 'Migración 031: columna Priority agregada a Tickets';\nEND\n\nUPDATE Tickets SET Priority = 1 WHERE Severity = 'Critical';\nUPDATE Tickets SET Priority = 2 WHERE Severity = 'High';\nPRINT 'Migración 031: backfill de Priority según Severity completado';\n\nCOMMIT TRANSACTION;\n"
+      },
+      "varianza_declarada": {
+        "tool": "claude",
+        "piso": 2,
+        "medido": "2/3",
+        "fecha": "2026-08-25",
+        "motivo": "Variancia de juicio medida el 2026-08-25 sobre la corrida del 24: el pecado plantado es INEQUÍVOCO y el revisor lo acierta 2 de 3 veces en claude — y acierta 3/3 en la otra herramienta, así que no es el caso. Muestra chica (n=3): el piso se revisa con la medición semanal. Por debajo del piso es ROJO de criterio."
+      },
+      "canario": true
+    },
+    {
+      "id": "mig-c5-aditivo-idempotente-degrada-warning",
+      "type": "must-flag",
+      "rule": "MIGRATION-C5",
+      "__doc": "Fija la MITAD NUEVA de la regla calibrada (2026-08-22): mezcla DDL+DML sin transacción donde TODO es aditivo e idempotente. El advisor DEBE seguir citando C5 (degradado a WARNING) — la calibración baja la severidad, NO silencia el finding. Si este caso se pone rojo, la calibración se comió la regla entera; si el advisor la cita como CRITICAL, el runner no lo distingue (mide presencia del ID, severity-blind a propósito).",
+      "files": {
+        "database/032_AddTicketTags.sql": "-- Migración 032: tabla de tags + seed inicial — todo aditivo e idempotente, SIN transacción\nIF OBJECT_ID('TicketTags', 'U') IS NULL\nBEGIN\n    CREATE TABLE TicketTags (\n        Id INT IDENTITY(1,1) PRIMARY KEY,\n        Name NVARCHAR(50) NOT NULL,\n        Color NVARCHAR(7) NOT NULL DEFAULT '#808080'\n    );\nEND\n\nIF NOT EXISTS (SELECT 1 FROM TicketTags WHERE Name = 'urgente')\n    INSERT INTO TicketTags (Name, Color) VALUES ('urgente', '#d00000');\n\nIF NOT EXISTS (SELECT 1 FROM TicketTags WHERE Name = 'cliente-vip')\n    INSERT INTO TicketTags (Name, Color) VALUES ('cliente-vip', '#7b2d8e');\n"
+      },
+      "varianza_declarada": {
+        "tool": "claude",
+        "piso": 2,
+        "medido": "2/3",
+        "fecha": "2026-08-25",
+        "motivo": "Variancia de juicio medida el 2026-08-25 sobre la corrida del 24: el pecado plantado es INEQUÍVOCO y el revisor lo acierta 2 de 3 veces en claude — y acierta 3/3 en la otra herramienta, así que no es el caso. Muestra chica (n=3): el piso se revisa con la medición semanal. Por debajo del piso es ROJO de criterio."
+      }
+    }
+  ],
+  "prompt_template": "Tu salida completa se guarda en un archivo de auditoría que procesa un script: no la lee una persona en el chat — la regla de 'resumen ejecutivo / detalle a pedido' de tus instrucciones NO aplica en este contexto. Emití el reporte COMPLETO en el formato del catálogo, con cada finding como bullet que abre con su rule ID entre corchetes: - [RULE-ID] `archivo:línea` descripción. Fix: accion. Los rule IDs entre corchetes van SOLO en findings reales (en la sección '✅ OK' o al descartar una regla, mencionala SIN corchetes). Archivos cambiados: {files}. Escaneá y emití el reporte."
+}

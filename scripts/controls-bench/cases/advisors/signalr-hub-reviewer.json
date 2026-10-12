@@ -1,0 +1,40 @@
+{
+  "__doc": "Casos quirúrgicos del advisor signalr-hub-reviewer (Etapa D). Un pecado → una regla → el veredicto es la PRESENCIA/AUSENCIA del rule ID objetivo COMO FINDING (bullet '- [ID] ...'), nunca el conteo (§2.2 del plan). Reglas elegidas por determinismo: SIGNALR-C2 (Clients.All.SendAsync literal en un Hub) y SIGNALR-C8 (async void en método público de Hub) — ambas greppeables por presencia sintáctica. El must-not-flag es el mismo Hub del caso C2 con Clients.Group tenant-scoped.",
+  "advisor": "signalr-hub-reviewer",
+  "cases": [
+    {
+      "id": "signalr-c2-broadcast-clients-all",
+      "type": "must-flag",
+      "rule": "SIGNALR-C2",
+      "files": {
+        "src/Hubs/OrdersHub.cs": "using Microsoft.AspNetCore.SignalR;\nusing System.Threading.Tasks;\nnamespace Demo.Realtime.Hubs\n{\n    public class OrdersHub : Hub\n    {\n        public async Task PublishOrderStatus(int projectId, int orderId, string status)\n        {\n            await Clients.All.SendAsync(\"OrderStatusChanged\", orderId, status);\n        }\n        public override async Task OnConnectedAsync()\n        {\n            var apiKey = Context.GetHttpContext()?.Request.Query[\"apiKey\"].ToString();\n            if (string.IsNullOrEmpty(apiKey))\n            {\n                Context.Abort();\n                return;\n            }\n            await base.OnConnectedAsync();\n        }\n    }\n}\n"
+      },
+      "canario": true
+    },
+    {
+      "id": "signalr-c8-hub-method-async-void",
+      "type": "must-flag",
+      "rule": "SIGNALR-C8",
+      "files": {
+        "src/Hubs/AlertsHub.cs": "using Microsoft.AspNetCore.SignalR;\nusing System.Threading.Tasks;\nnamespace Demo.Realtime.Hubs\n{\n    public class AlertsHub : Hub\n    {\n        public async void RaiseAlert(int projectId, string alertCode)\n        {\n            await Clients.Group($\"project_{projectId}_alerts\").SendAsync(\"AlertRaised\", alertCode);\n        }\n        public override async Task OnConnectedAsync()\n        {\n            var apiKey = Context.GetHttpContext()?.Request.Query[\"apiKey\"].ToString();\n            if (string.IsNullOrEmpty(apiKey))\n            {\n                Context.Abort();\n                return;\n            }\n            await base.OnConnectedAsync();\n        }\n    }\n}\n"
+      },
+      "varianza_declarada": {
+        "tool": "claude",
+        "piso": 2,
+        "medido": "2/3",
+        "fecha": "2026-08-25",
+        "motivo": "Variancia de juicio medida el 2026-08-25 sobre la corrida del 24: el pecado plantado es INEQUÍVOCO y el revisor lo acierta 2 de 3 veces en claude — y acierta 3/3 en la otra herramienta, así que no es el caso. Muestra chica (n=3): el piso se revisa con la medición semanal. Por debajo del piso es ROJO de criterio."
+      }
+    },
+    {
+      "id": "limpio-group-tenant-scoped-sin-c2",
+      "type": "must-not-flag",
+      "rule": "SIGNALR-C2",
+      "files": {
+        "src/Hubs/OrdersHub.cs": "using Microsoft.AspNetCore.SignalR;\nusing System.Threading.Tasks;\nnamespace Demo.Realtime.Hubs\n{\n    public class OrdersHub : Hub\n    {\n        public async Task PublishOrderStatus(int projectId, int orderId, string status)\n        {\n            await Clients.Group($\"project_{projectId}_orders\").SendAsync(\"OrderStatusChanged\", orderId, status);\n        }\n        public override async Task OnConnectedAsync()\n        {\n            var apiKey = Context.GetHttpContext()?.Request.Query[\"apiKey\"].ToString();\n            if (string.IsNullOrEmpty(apiKey))\n            {\n                Context.Abort();\n                return;\n            }\n            await base.OnConnectedAsync();\n        }\n    }\n}\n"
+      },
+      "canario": true
+    }
+  ],
+  "prompt_template": "Tu salida completa se guarda en un archivo de auditoría que procesa un script: no la lee una persona en el chat — la regla de 'resumen ejecutivo / detalle a pedido' de tus instrucciones NO aplica en este contexto. Emití el reporte COMPLETO en el formato del catálogo, con cada finding como bullet que abre con su rule ID entre corchetes: - [RULE-ID] `archivo:línea` descripción. Fix: accion. Los rule IDs entre corchetes van SOLO en findings reales (en la sección '✅ OK' o al descartar una regla, mencionala SIN corchetes). Archivos cambiados: {files}. Escaneá y emití el reporte."
+}

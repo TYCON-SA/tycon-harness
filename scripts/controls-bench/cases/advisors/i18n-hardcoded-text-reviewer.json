@@ -1,0 +1,36 @@
+{
+  "__doc": "Casos quirúrgicos del advisor i18n-hardcoded-text-reviewer (Etapa D). Un pecado → una regla → el veredicto es la PRESENCIA/AUSENCIA del rule ID objetivo COMO FINDING (bullet '- [ID] ...'), nunca el conteo (§2.2 del plan). OJO: advisor PROJECT-gated — solo actúa si el repo declara `.tycon/advisors.yaml` con `i18n.required: true`; por eso CADA fixture incluye ese archivo (con `hook: useAppTranslation`, el mecanismo que el gemelo limpio usa). El prompt_template desactiva explícitamente la regla de reporte resumen-solo del advisor: la salida del banco va a un archivo de auditoría, no al chat — sin eso los rule IDs se suprimen a veces y el caso queda INESTABLE (visto en la 1ra corrida, 2026-08-21).",
+  "advisor": "i18n-hardcoded-text-reviewer",
+  "cases": [
+    {
+      "id": "i18n-c1-label-jsx-hardcoded",
+      "type": "must-flag",
+      "rule": "I18N-C1",
+      "files": {
+        ".tycon/advisors.yaml": "i18n:\n  required: true\n  hook: \"useAppTranslation\"\n  locales_glob: \"**/src/locales/*.json\"\n",
+        "src/components/CustomerForm.tsx": "import React, { useState } from 'react';\n\nexport function CustomerForm({ onSave }: { onSave: (name: string) => void }) {\n  const [name, setName] = useState('');\n  return (\n    <form onSubmit={(e) => { e.preventDefault(); onSave(name); }}>\n      <label htmlFor=\"customer-name\">Nombre del cliente</label>\n      <input\n        id=\"customer-name\"\n        data-testid=\"customer-name-input\"\n        value={name}\n        onChange={(e) => setName(e.target.value)}\n      />\n      <button type=\"submit\">Guardar cambios</button>\n    </form>\n  );\n}\n"
+      },
+      "canario": true
+    },
+    {
+      "id": "i18n-w1-toast-literal",
+      "type": "must-flag",
+      "rule": "I18N-W1",
+      "files": {
+        ".tycon/advisors.yaml": "i18n:\n  required: true\n  hook: \"useAppTranslation\"\n  locales_glob: \"**/src/locales/*.json\"\n",
+        "src/components/SaveButton.tsx": "import React from 'react';\nimport { toast } from 'react-hot-toast';\nimport { useAppTranslation } from '../i18n/useAppTranslation';\n\nexport function SaveButton({ onSave }: { onSave: () => Promise<void> }) {\n  const { t } = useAppTranslation();\n  const handleClick = async () => {\n    await onSave();\n    toast.success('Los cambios se guardaron correctamente');\n  };\n  return (\n    <button type=\"button\" onClick={handleClick}>\n      {t('common.saveButton')}\n    </button>\n  );\n}\n"
+      }
+    },
+    {
+      "id": "limpio-labels-via-t-sin-c1",
+      "type": "must-not-flag",
+      "rule": "I18N-C1",
+      "files": {
+        ".tycon/advisors.yaml": "i18n:\n  required: true\n  hook: \"useAppTranslation\"\n  locales_glob: \"**/src/locales/*.json\"\n",
+        "src/components/CustomerForm.tsx": "import React, { useState } from 'react';\nimport { useAppTranslation } from '../i18n/useAppTranslation';\n\nexport function CustomerForm({ onSave }: { onSave: (name: string) => void }) {\n  const { t } = useAppTranslation();\n  const [name, setName] = useState('');\n  return (\n    <form onSubmit={(e) => { e.preventDefault(); onSave(name); }}>\n      <label htmlFor=\"customer-name\">{t('customers.nameLabel')}</label>\n      <input\n        id=\"customer-name\"\n        data-testid=\"customer-name-input\"\n        value={name}\n        onChange={(e) => setName(e.target.value)}\n      />\n      <button type=\"submit\">{t('customers.saveButton')}</button>\n    </form>\n  );\n}\n"
+      },
+      "canario": true
+    }
+  ],
+  "prompt_template": "Tu salida completa se guarda en un archivo de auditoría que procesa un script: no la lee una persona en el chat — la regla de 'resumen ejecutivo / detalle a pedido' de tus instrucciones NO aplica en este contexto. Emití el reporte COMPLETO en el formato del catálogo, con cada finding como bullet que abre con su rule ID entre corchetes: - [RULE-ID] `archivo:línea` descripción. Fix: accion. Los rule IDs entre corchetes van SOLO en findings reales (en la sección '✅ OK' o al descartar una regla, mencionala SIN corchetes). Archivos cambiados: {files}. Escaneá y emití el reporte."
+}

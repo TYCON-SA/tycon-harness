@@ -1,0 +1,128 @@
+{
+  "__doc": "Suite POST-REESCRITURA de signed-scope-audit (2026-08-21). 10 casos: los 2 originales de VAL-C7\n(co-enforcement global; el must-flag se rediseño el 2026-08-23 — corridas mixtas: tenia DOS movimientos\ny la lectura floja los fusionaba, ver su __doc — el limpio sigue tal cual) + 6 must-flag,\nuno por cada regla CRITICAL propia SCOPE-C1..C6, + 2 gemelos limpios.\n\nAISLAMIENTO (contrato 2.2): cada fixture aisla UN pecado. Todos llevan propuesta firmada legible con\nbloques Entregable/Gate y >=1 story parseable (si no, SCOPE-C5 dispara primero y contamina el caso),\nsprint-plan.md alineado con el frontmatter (si no, dispara SCOPE-C6) y signed_ac_ref citando texto que\nexiste en la propuesta (si no, dispara SCOPE-W3). Excepcion declarada: en scope-c4 la story nacida en\nel sprint equivocado tambien puede leerse como SCOPE-W1 (son complementos por construccion, C1<->W1 y\nC4); el caso assertea SOLO SCOPE-C4, que es la regla especifica y CRITICAL.\n\nGEMELOS LIMPIOS elegidos por costo del falso positivo:\n(a) SCOPE-C4 - hija/split que vive en otro sprint (2.8.1 con followup_of a una padre firmada). Es la\n    forma que MAS se parece al pecado (story firmada en otro sprint) y su falso positivo acusa al equipo\n    de mover alcance firmado sin autorizacion. El advisor tiene el anti-falso-positivo escrito como\n    obligatorio en su seccion de deteccion; el caso lo verifica.\n(b) SCOPE-C5 - la propuesta llega como .txt ya extraido, sin PDF ni pdftotext en la maquina. Es el falso\n    positivo mas caro de todos: SCOPE-C5 precede a todo y nunca degrada a PASS, asi que un disparo\n    indebido convierte el audit entero en INCONCLUSO cronico y apaga el control (\"se lee como esta\n    herramienta no anda\", calibracion del propio advisor). Ademas cubre el supuesto sobre el que corren\n    los otros 9 casos del banco, que usan exactamente ese insumo.\n\nDEUDA ANOTADA (2026-08-21): las 4 reglas WARNING (SCOPE-W1 story agregada que parece alcance nuevo,\nSCOPE-W2 divergencia justificada solo con signed_scope_notes, SCOPE-W3 signed_ac_ref inexistente en el\nfirmado, SCOPE-W4 cambio de alcance como nota suelta sin CR) quedan SIN casos. Tambien falta el gemelo\nlimpio de SCOPE-C1 (entregable firmado cubierto por una story que lo PARAFRASEA: el advisor declara que\nel match es semantico y no regex, y eso hoy no esta verificado). Mientras tanto esas 5 reglas estan\nescritas y no probadas.",
+  "advisor": "tycon-signed-scope-audit",
+  "cases": [
+    {
+      "id": "val-c7-story-firmada-movida-sin-cr",
+      "type": "must-flag",
+      "rule": "VAL-C7",
+      "files": {
+        "specs/planning-artifacts/comercial/propuesta-firmada.txt": "PROPUESTA DE SERVICIOS - APROBACION CLIENTE (FIRMADA 10-mar-2026)\n[texto extraido del PDF firmado con: pdftotext -layout propuesta-firmada.pdf -]\n\nFase 1: Desarrollo (2 sprints, 8 semanas) - extracto Sprints 2 y 3\n\nSprint 2 (4 semanas)\n  Entregable: Recepcion de solicitud urgente desde ERP con panel en Pantalla P2.\n  Gate de aceptacion: solicitud urgente recibida y visible en el panel (AC 18 #15).\n\nSprint 3 (4 semanas)\n  Entregable: Reportes de trazabilidad exportables.\n  Gate de aceptacion: reporte de trazabilidad exportable en PDF (AC 18 #22).\n\n16. Proceso de Cambio de Alcance: todo cambio sobre lo aqui firmado requiere\n    aprobacion escrita del cliente antes de ejecutarse.\n",
+        "specs/planning-artifacts/sprint-plan.md": "# Sprint Plan - estado actual\n\n## Sprint 2\n(sin stories asignadas)\n\n## Sprint 3\n- 2.8 Recepcion Solicitud urgente desde ERP\n- 3.1 Reportes de trazabilidad exportables\n",
+        "specs/stories/2-8-recepcion-urgentes.md": "---\nepic: 2\nstory: \"2.8\"\ntitle: \"Recepcion Solicitud urgente desde ERP (pedido category=VELOZ)\"\nstatus: ready-for-dev\nsprint: 3\nsigned_for_sprint: 2\nsigned_ac_ref: \"Sprint 2 entregable + AC 18 #15\"\npriority: \"P0\"\napproach: \"[CREATE]\"\ndepends_on: []\n---\n\n## Contexto\n\nRecepcion de la solicitud urgente enviada por el ERP y su visualizacion en el panel de Pantalla P2.\n\n## Acceptance Criteria\n\n### Recepcion\n1. El endpoint acepta un pedido con category=VELOZ y responde 201.\n2. La solicitud recibida aparece en el panel de Pantalla P2.\n",
+        "specs/stories/3-1-reportes-trazabilidad.md": "---\nepic: 3\nstory: \"3.1\"\ntitle: \"Reportes de trazabilidad exportables\"\nstatus: ready-for-dev\nsprint: 3\nsigned_for_sprint: 3\nsigned_ac_ref: \"Sprint 3 entregable + AC 18 #22\"\npriority: \"P1\"\napproach: \"[CREATE]\"\ndepends_on: []\n---\n\n## Acceptance Criteria\n\n### Exportacion\n1. El reporte de trazabilidad se exporta a PDF desde la vista de listado.\n"
+      },
+      "timeout_s": 900,
+      "__doc": " | v2 (rediseño 2026-08-23, corridas mixtas [false,true,true]): el fixture tenía DOS movimientos (2.8 sin CR + 3.1 con CR-004 aprobado) y la lectura floja trataba el intercambio como una sola operación cubierta por el CR → miss. Queda UN pecado (2.8 movida sin CR); el eje 'movida CON CR no se marca' ya lo cubre limpio-movida-con-cr-aprobado-sin-c7.",
+      "canario": true
+    },
+    {
+      "id": "limpio-movida-con-cr-aprobado-sin-c7",
+      "type": "must-not-flag",
+      "rule": "VAL-C7",
+      "files": {
+        "specs/planning-artifacts/comercial/propuesta-firmada.txt": "PROPUESTA DE SERVICIOS - APROBACION CLIENTE (FIRMADA 10-mar-2026)\n[texto extraido del PDF firmado con: pdftotext -layout propuesta-firmada.pdf -]\n\nFase 1: Desarrollo - extracto Sprint 2\n\nSprint 2 (4 semanas)\n  Entregable: Recepcion de solicitud urgente desde ERP con panel en Pantalla P2.\n  Gate de aceptacion: solicitud urgente recibida y visible en el panel (AC 18 #15).\n\n16. Proceso de Cambio de Alcance: todo cambio sobre lo aqui firmado requiere\n    aprobacion escrita del cliente antes de ejecutarse.\n",
+        "specs/planning-artifacts/sprint-plan.md": "# Sprint Plan - estado actual\n\n## Sprint 2\n- (2.8 movida a Sprint 3 por CR-007, aprobado por el cliente el 12-may-2026)\n\n## Sprint 3\n- 2.8 Recepcion Solicitud urgente desde ERP\n",
+        "specs/stories/2-8-recepcion-urgentes.md": "---\nepic: 2\nstory: \"2.8\"\ntitle: \"Recepcion Solicitud urgente desde ERP (pedido category=VELOZ)\"\nstatus: ready-for-dev\nsprint: 3\nsigned_for_sprint: 2\nsigned_ac_ref: \"Sprint 2 entregable + AC 18 #15\"\nchange_request_ref: CR-007\npriority: \"P0\"\napproach: \"[CREATE]\"\ndepends_on: []\n---\n\n## Contexto\n\nRecepcion de la solicitud urgente enviada por el ERP y su visualizacion en el panel de Pantalla P2.\n\n## Acceptance Criteria\n\n### Recepcion\n1. El endpoint acepta un pedido con category=VELOZ y responde 201.\n2. La solicitud recibida aparece en el panel de Pantalla P2.\n",
+        "specs/planning-artifacts/change-requests/cr-007-shift-2-8-sprint-3.md": "---\ncr_id: CR-007\ndate_proposed: 2026-05-08\ndate_decided: 2026-05-12\nstatus: approved\naffected_stories: [\"2.8\"]\nproposed_by: internal-team\ndecision_evidence: \"email firmado del cliente 12-may-2026, asunto 'OK mover urgentes a Sprint 3' (adjunto en drive comercial)\"\nsupersedes: null\nsuperseded_by: null\n---\n\n## CR-007 - Mover 2.8 de Sprint 2 a Sprint 3\n\n### Propuesta\nMover la recepcion de urgentes a Sprint 3 porque el ERP del cliente no expone el endpoint de pedidos hasta junio.\n\n### Decision cliente\nAPPROVED (2026-05-12) - presentada por escrito y aceptada por el cliente antes de ejecutarse.\n"
+      },
+      "timeout_s": 900,
+      "canario": true
+    },
+    {
+      "id": "scope-c1-entregable-firmado-sin-story",
+      "type": "must-flag",
+      "rule": "SCOPE-C1",
+      "files": {
+        "specs/planning-artifacts/comercial/propuesta-firmada.txt": "PROPUESTA DE SERVICIOS - APROBACION CLIENTE (FIRMADA 10-mar-2026)\n[texto extraido del PDF firmado con: pdftotext -layout propuesta-firmada.pdf -]\n\nFase 1: Desarrollo - extracto Sprint 2\n\nSprint 2 (4 semanas)\n  Entregable: Recepcion de solicitud urgente desde ERP con panel en Pantalla P2.\n  Gate de aceptacion: solicitud urgente recibida y visible en el panel (AC 18 #15).\n\n  Entregable: Alerta por vencimiento de muestra en Pantalla P3.\n  Gate de aceptacion: alerta visible en P3 al superar las 72hs sin procesar (AC 18 #19).\n\n16. Proceso de Cambio de Alcance: todo cambio sobre lo aqui firmado requiere\n    aprobacion escrita del cliente antes de ejecutarse.\n",
+        "specs/planning-artifacts/sprint-plan.md": "# Sprint Plan - estado actual\n\n## Sprint 2\n- 2.8 Recepcion Solicitud urgente desde ERP\n",
+        "specs/stories/2-8-recepcion-urgentes.md": "---\nepic: 2\nstory: \"2.8\"\ntitle: \"Recepcion Solicitud urgente desde ERP (pedido category=VELOZ)\"\nstatus: ready-for-dev\nsprint: 2\nsigned_for_sprint: 2\nsigned_ac_ref: \"Sprint 2 entregable + AC 18 #15\"\npriority: \"P0\"\napproach: \"[CREATE]\"\ndepends_on: []\n---\n\n## Contexto\n\nRecepcion de la solicitud urgente enviada por el ERP y su visualizacion en el panel de Pantalla P2.\n\n## Acceptance Criteria\n\n### Recepcion\n1. El endpoint acepta un pedido con category=VELOZ y responde 201.\n2. La solicitud recibida aparece en el panel de Pantalla P2.\n"
+      },
+      "timeout_s": 900
+    },
+    {
+      "id": "scope-c2-cr-citado-que-no-existe",
+      "type": "must-flag",
+      "rule": "SCOPE-C2",
+      "files": {
+        "specs/planning-artifacts/comercial/propuesta-firmada.txt": "PROPUESTA DE SERVICIOS - APROBACION CLIENTE (FIRMADA 10-mar-2026)\n[texto extraido del PDF firmado con: pdftotext -layout propuesta-firmada.pdf -]\n\nFase 1: Desarrollo - extracto Sprint 2\n\nSprint 2 (4 semanas)\n  Entregable: Recepcion de solicitud urgente desde ERP con panel en Pantalla P2.\n  Gate de aceptacion: solicitud urgente recibida y visible en el panel (AC 18 #15).\n\n16. Proceso de Cambio de Alcance: todo cambio sobre lo aqui firmado requiere\n    aprobacion escrita del cliente antes de ejecutarse.\n",
+        "specs/planning-artifacts/sprint-plan.md": "# Sprint Plan - estado actual\n\n## Sprint 2\n- 2.8 Recepcion Solicitud urgente desde ERP\n",
+        "specs/stories/2-8-recepcion-urgentes.md": "---\nepic: 2\nstory: \"2.8\"\ntitle: \"Recepcion Solicitud urgente desde ERP (pedido category=VELOZ)\"\nstatus: ready-for-dev\nsprint: 2\nsigned_for_sprint: 2\nsigned_ac_ref: \"Sprint 2 entregable + AC 18 #15\"\nchange_request_ref: CR-009\npriority: \"P0\"\napproach: \"[CREATE]\"\ndepends_on: []\n---\n\n## Contexto\n\nRecepcion de la solicitud urgente enviada por el ERP y su visualizacion en el panel de Pantalla P2.\nEl AC 3 (campo urgencia) se agrego al alcance por el cambio CR-009.\n\n## Acceptance Criteria\n\n### Recepcion\n1. El endpoint acepta un pedido con category=VELOZ y responde 201.\n2. La solicitud recibida aparece en el panel de Pantalla P2.\n3. El panel muestra el campo urgencia de la solicitud (agregado por CR-009).\n",
+        "specs/planning-artifacts/change-requests/cr-002-ajuste-catalogo-1-4.md": "---\ncr_id: CR-002\ndate_proposed: 2026-04-28\ndate_decided: 2026-04-30\nstatus: approved\naffected_stories: [\"1.4\"]\nproposed_by: cliente\ndecision_evidence: \"email cliente 30-abr-2026 asunto 'OK ajuste de catalogo de estudios' (adjunto catalogo-v2.xlsx)\"\nsupersedes: null\nsuperseded_by: null\n---\n\n## CR-002 - Ajuste del catalogo de estudios de la story 1.4\n\n### Decision cliente\nAPPROVED (2026-04-30) - unico CR registrado hasta la fecha en este registry.\n"
+      },
+      "timeout_s": 900
+    },
+    {
+      "id": "scope-c3-cr-aprobado-sin-evidencia",
+      "type": "must-flag",
+      "rule": "SCOPE-C3",
+      "files": {
+        "specs/planning-artifacts/comercial/propuesta-firmada.txt": "PROPUESTA DE SERVICIOS - APROBACION CLIENTE (FIRMADA 10-mar-2026)\n[texto extraido del PDF firmado con: pdftotext -layout propuesta-firmada.pdf -]\n\nFase 1: Desarrollo - extracto Sprint 2\n\nSprint 2 (4 semanas)\n  Entregable: Recepcion de solicitud urgente desde ERP con panel en Pantalla P2.\n  Gate de aceptacion: solicitud urgente recibida y visible en el panel (AC 18 #15).\n\n16. Proceso de Cambio de Alcance: todo cambio sobre lo aqui firmado requiere\n    aprobacion escrita del cliente antes de ejecutarse.\n",
+        "specs/planning-artifacts/sprint-plan.md": "# Sprint Plan - estado actual\n\n## Sprint 2\n- (2.8 pasa a Sprint 3 por CR-007)\n\n## Sprint 3\n- 2.8 Recepcion Solicitud urgente desde ERP\n",
+        "specs/stories/2-8-recepcion-urgentes.md": "---\nepic: 2\nstory: \"2.8\"\ntitle: \"Recepcion Solicitud urgente desde ERP (pedido category=VELOZ)\"\nstatus: ready-for-dev\nsprint: 3\nsigned_for_sprint: 2\nsigned_ac_ref: \"Sprint 2 entregable + AC 18 #15\"\nchange_request_ref: CR-007\npriority: \"P0\"\napproach: \"[CREATE]\"\ndepends_on: []\n---\n\n## Contexto\n\nRecepcion de la solicitud urgente enviada por el ERP y su visualizacion en el panel de Pantalla P2.\n\n## Acceptance Criteria\n\n### Recepcion\n1. El endpoint acepta un pedido con category=VELOZ y responde 201.\n2. La solicitud recibida aparece en el panel de Pantalla P2.\n",
+        "specs/planning-artifacts/change-requests/cr-007-shift-2-8-sprint-3.md": "---\ncr_id: CR-007\ndate_proposed: 2026-05-08\ndate_decided: 2026-05-12\nstatus: approved\naffected_stories: [\"2.8\"]\nproposed_by: internal-team\ndecision_evidence: \"aprobado\"\nsupersedes: null\nsuperseded_by: null\n---\n\n## CR-007 - Mover 2.8 de Sprint 2 a Sprint 3\n\n### Propuesta\nMover la recepcion de urgentes a Sprint 3 porque el ERP del cliente no expone el endpoint de pedidos hasta junio.\n\n### Decision cliente\nAPPROVED (2026-05-12).\n"
+      },
+      "timeout_s": 900
+    },
+    {
+      "id": "scope-c4-story-nacida-en-otro-sprint",
+      "type": "must-flag",
+      "rule": "SCOPE-C4",
+      "files": {
+        "specs/planning-artifacts/comercial/propuesta-firmada.txt": "PROPUESTA DE SERVICIOS - APROBACION CLIENTE (FIRMADA 10-mar-2026)\n[texto extraido del PDF firmado con: pdftotext -layout propuesta-firmada.pdf -]\n\nFase 1: Desarrollo - extracto Sprints 2 y 3\n\nSprint 2 (4 semanas)\n  Entregable: Panel de seguimiento de solicitudes urgentes en Pantalla P2.\n  Gate de aceptacion: panel de seguimiento de urgentes operativo en P2 (AC 18 #17).\n\nSprint 3 (4 semanas)\n  Entregable: Reportes de trazabilidad exportables.\n  Gate de aceptacion: reporte de trazabilidad exportable en PDF (AC 18 #22).\n\n16. Proceso de Cambio de Alcance: todo cambio sobre lo aqui firmado requiere\n    aprobacion escrita del cliente antes de ejecutarse.\n",
+        "specs/planning-artifacts/sprint-plan.md": "# Sprint Plan - estado actual\n\n## Sprint 2\n- (sin stories asignadas)\n\n## Sprint 3\n- 2.9 Panel de seguimiento de solicitudes urgentes en Pantalla P2\n- 3.1 Reportes de trazabilidad exportables\n",
+        "specs/stories/2-9-panel-seguimiento-urgentes.md": "---\nepic: 2\nstory: \"2.9\"\ntitle: \"Panel de seguimiento de solicitudes urgentes en Pantalla P2\"\nstatus: ready-for-dev\nsprint: 3\npriority: \"P0\"\napproach: \"[CREATE]\"\ndepends_on: []\n---\n\n## Contexto\n\nPanel de seguimiento de las solicitudes urgentes en Pantalla P2 (gate de aceptacion AC 18 #17).\nStory creada directamente en Sprint 3 durante el replanning interno.\n\n## Acceptance Criteria\n\n### Panel\n1. La Pantalla P2 lista las solicitudes urgentes con su estado de seguimiento.\n2. El panel filtra por estado y por fecha de solicitud.\n",
+        "specs/stories/3-1-reportes-trazabilidad.md": "---\nepic: 3\nstory: \"3.1\"\ntitle: \"Reportes de trazabilidad exportables\"\nstatus: ready-for-dev\nsprint: 3\nsigned_for_sprint: 3\nsigned_ac_ref: \"Sprint 3 entregable + AC 18 #22\"\npriority: \"P1\"\napproach: \"[CREATE]\"\ndepends_on: []\n---\n\n## Acceptance Criteria\n\n### Exportacion\n1. El reporte de trazabilidad se exporta a PDF desde la vista de listado.\n"
+      },
+      "timeout_s": 900
+    },
+    {
+      "id": "scope-c5-propuesta-firmada-ilegible",
+      "type": "must-flag",
+      "rule": "SCOPE-C5",
+      "files": {
+        "specs/planning-artifacts/comercial/propuesta-firmada.txt": "[pdftotext -layout propuesta-firmada.pdf - devolvio 0 bytes]\n[el PDF firmado es un escaneo sin capa de texto: no se pudo extraer el Plan de Sprints]\n",
+        "specs/planning-artifacts/sprint-plan.md": "# Sprint Plan - estado actual\n\n## Sprint 2\n- 2.8 Recepcion Solicitud urgente desde ERP\n",
+        "specs/stories/2-8-recepcion-urgentes.md": "---\nepic: 2\nstory: \"2.8\"\ntitle: \"Recepcion Solicitud urgente desde ERP (pedido category=VELOZ)\"\nstatus: ready-for-dev\nsprint: 2\nsigned_for_sprint: 2\npriority: \"P0\"\napproach: \"[CREATE]\"\ndepends_on: []\n---\n\n## Contexto\n\nRecepcion de la solicitud urgente enviada por el ERP y su visualizacion en el panel de Pantalla P2.\n\n## Acceptance Criteria\n\n### Recepcion\n1. El endpoint acepta un pedido con category=VELOZ y responde 201.\n2. La solicitud recibida aparece en el panel de Pantalla P2.\n"
+      },
+      "timeout_s": 900
+    },
+    {
+      "id": "scope-c6-fuentes-del-plan-en-desacuerdo",
+      "type": "must-flag",
+      "rule": "SCOPE-C6",
+      "files": {
+        "specs/planning-artifacts/comercial/propuesta-firmada.txt": "PROPUESTA DE SERVICIOS - APROBACION CLIENTE (FIRMADA 10-mar-2026)\n[texto extraido del PDF firmado con: pdftotext -layout propuesta-firmada.pdf -]\n\nFase 1: Desarrollo - extracto Sprint 2\n\nSprint 2 (4 semanas)\n  Entregable: Recepcion de solicitud urgente desde ERP con panel en Pantalla P2.\n  Gate de aceptacion: solicitud urgente recibida y visible en el panel (AC 18 #15).\n\n16. Proceso de Cambio de Alcance: todo cambio sobre lo aqui firmado requiere\n    aprobacion escrita del cliente antes de ejecutarse.\n",
+        "specs/planning-artifacts/sprint-plan.md": "# Sprint Plan - estado actual\n\n## Sprint 2\n- 2.8 Recepcion Solicitud urgente desde ERP\n\n## Sprint 3\n- (sin stories asignadas)\n",
+        "specs/planning-artifacts/sprint-status.yaml": "# sprint-status.yaml - generado por bmad-sprint-planning\nsprints:\n  2:\n    stories: []\n  3:\n    stories:\n      - id: \"2.8\"\n        title: \"Recepcion Solicitud urgente desde ERP\"\n        status: ready-for-dev\n",
+        "specs/stories/2-8-recepcion-urgentes.md": "---\nepic: 2\nstory: \"2.8\"\ntitle: \"Recepcion Solicitud urgente desde ERP (pedido category=VELOZ)\"\nstatus: ready-for-dev\nsprint: 2\nsigned_for_sprint: 2\nsigned_ac_ref: \"Sprint 2 entregable + AC 18 #15\"\npriority: \"P0\"\napproach: \"[CREATE]\"\ndepends_on: []\n---\n\n## Contexto\n\nRecepcion de la solicitud urgente enviada por el ERP y su visualizacion en el panel de Pantalla P2.\n\n## Acceptance Criteria\n\n### Recepcion\n1. El endpoint acepta un pedido con category=VELOZ y responde 201.\n2. La solicitud recibida aparece en el panel de Pantalla P2.\n"
+      },
+      "timeout_s": 900
+    },
+    {
+      "id": "limpio-split-hija-en-otro-sprint-sin-c4",
+      "type": "must-not-flag",
+      "rule": "SCOPE-C4",
+      "files": {
+        "specs/planning-artifacts/comercial/propuesta-firmada.txt": "PROPUESTA DE SERVICIOS - APROBACION CLIENTE (FIRMADA 10-mar-2026)\n[texto extraido del PDF firmado con: pdftotext -layout propuesta-firmada.pdf -]\n\nFase 1: Desarrollo - extracto Sprint 2\n\nSprint 2 (4 semanas)\n  Entregable: Recepcion de solicitud urgente desde ERP con panel en Pantalla P2.\n  Gate de aceptacion: solicitud urgente recibida y visible en el panel (AC 18 #15).\n\n16. Proceso de Cambio de Alcance: todo cambio sobre lo aqui firmado requiere\n    aprobacion escrita del cliente antes de ejecutarse.\n",
+        "specs/planning-artifacts/sprint-plan.md": "# Sprint Plan - estado actual\n\n## Sprint 2\n- 2.8 Recepcion Solicitud urgente desde ERP\n\n## Sprint 3\n- 2.8.1 Panel P2: paginacion y filtros del listado de urgentes (split de 2.8)\n",
+        "specs/stories/2-8-recepcion-urgentes.md": "---\nepic: 2\nstory: \"2.8\"\ntitle: \"Recepcion Solicitud urgente desde ERP (pedido category=VELOZ)\"\nstatus: ready-for-dev\nsprint: 2\nsigned_for_sprint: 2\nsigned_ac_ref: \"Sprint 2 entregable + AC 18 #15\"\nfollowed_up_by: [\"2.8.1\"]\npriority: \"P0\"\napproach: \"[CREATE]\"\ndepends_on: []\n---\n\n## Contexto\n\nRecepcion de la solicitud urgente enviada por el ERP y su visualizacion en el panel de Pantalla P2.\n\n## Acceptance Criteria\n\n### Recepcion\n1. El endpoint acepta un pedido con category=VELOZ y responde 201.\n2. La solicitud recibida aparece en el panel de Pantalla P2.\n",
+        "specs/stories/2-8-1-panel-paginacion-filtros.md": "---\nepic: 2\nstory: \"2.8.1\"\ntitle: \"Panel P2: paginacion y filtros del listado de urgentes\"\nstatus: ready-for-dev\nsprint: 3\nfollowup_of: \"2.8\"\npriority: \"P2\"\napproach: \"[MODIFY]\"\ndepends_on: [\"2.8\"]\n---\n\n## Contexto\n\nSplit interno de 2.8: la paginacion y los filtros del listado no entran en la ventana de Sprint 2\ny no forman parte del gate firmado (que solo exige la solicitud visible en el panel).\n\n## Acceptance Criteria\n\n### Listado\n1. El listado del panel P2 pagina de a 25 solicitudes.\n2. El listado filtra por estado y por fecha.\n"
+      },
+      "timeout_s": 900
+    },
+    {
+      "id": "limpio-txt-ya-extraido-sin-pdf-sin-c5",
+      "type": "must-not-flag",
+      "rule": "SCOPE-C5",
+      "files": {
+        "specs/planning-artifacts/comercial/propuesta-firmada.txt": "PROPUESTA DE SERVICIOS - APROBACION CLIENTE (FIRMADA 10-mar-2026)\n[texto extraido del PDF firmado con: pdftotext -layout propuesta-firmada.pdf -]\n\nFase 1: Desarrollo - extracto Sprint 2\n\nSprint 2 (4 semanas)\n  Entregable: Recepcion de solicitud urgente desde ERP con panel en Pantalla P2.\n  Gate de aceptacion: solicitud urgente recibida y visible en el panel (AC 18 #15).\n\n16. Proceso de Cambio de Alcance: todo cambio sobre lo aqui firmado requiere\n    aprobacion escrita del cliente antes de ejecutarse.\n",
+        "specs/planning-artifacts/sprint-plan.md": "# Sprint Plan - estado actual\n\n## Sprint 2\n- 2.8 Recepcion Solicitud urgente desde ERP\n",
+        "specs/stories/2-8-recepcion-urgentes.md": "---\nepic: 2\nstory: \"2.8\"\ntitle: \"Recepcion Solicitud urgente desde ERP (pedido category=VELOZ)\"\nstatus: ready-for-dev\nsprint: 2\nsigned_for_sprint: 2\nsigned_ac_ref: \"Sprint 2 entregable + AC 18 #15\"\npriority: \"P0\"\napproach: \"[CREATE]\"\ndepends_on: []\n---\n\n## Contexto\n\nRecepcion de la solicitud urgente enviada por el ERP y su visualizacion en el panel de Pantalla P2.\n\n## Acceptance Criteria\n\n### Recepcion\n1. El endpoint acepta un pedido con category=VELOZ y responde 201.\n2. La solicitud recibida aparece en el panel de Pantalla P2.\n"
+      },
+      "timeout_s": 900
+    }
+  ],
+  "prompt_template": "Tu salida completa se guarda en un archivo de auditoría que procesa un script: no la lee una persona en el chat — la regla de 'resumen ejecutivo / detalle a pedido' de tus instrucciones NO aplica en este contexto. Emití el reporte COMPLETO en el formato del catálogo, con cada finding como bullet que abre con su rule ID entre corchetes: - [RULE-ID] `archivo:línea` descripción. Fix: accion. Los rule IDs entre corchetes van SOLO en findings reales (en la sección '✅ OK' o al descartar una regla, mencionala SIN corchetes). Artefactos de planning del repo: {files}. La propuesta firmada del cliente YA viene extraída a texto en `specs/planning-artifacts/comercial/propuesta-firmada.txt` (no hay PDF ni `pdftotext` en este sandbox): usá ese archivo como `proposal_path` y el resto como plan actual. Corré el cross-check de signed scope y emití el reporte.",
+  "__timeout_nota": "timeout_s=900 (default 420) 2026-08-21: los fixtures de esta suite son multi-artefacto (propuesta firmada + sprint-plan + sprint-status + N stories + change-requests) y el advisor reescrito evalua 10 reglas cruzando todos contra todos — tres corridas se cortaron por tiempo a mitad del cross-check y el banco las conto como rojo. Un corte por tiempo NO es un veredicto: es ruido que erosiona la confianza en el banco."
+}

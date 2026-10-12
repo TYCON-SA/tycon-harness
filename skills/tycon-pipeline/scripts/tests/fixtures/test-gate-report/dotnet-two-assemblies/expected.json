@@ -1,0 +1,146 @@
+{
+  "tests_result": {
+    "ts": "2026-10-05T12:00:00Z",
+    "story_id": "9.1",
+    "runner": "dotnet",
+    "repo": "<TMP>/repo",
+    "suite_exit": 1,
+    "suite_green": false,
+    "scope": null,
+    "scope_source": null,
+    "halted": false,
+    "totals": {
+      "total": 8,
+      "passed": 7,
+      "failed": 1,
+      "executed": 8
+    },
+    "coverage": {
+      "per_new_file": {
+        "src/Acme.Orders/OrderImporter.cs": 70
+      },
+      "new_files_pct": 70,
+      "threshold": 75,
+      "meets_threshold": true,
+      "new_files_source": "git",
+      "new_files_without_coverage_data": [],
+      "touched_lines_pct": 75,
+      "touched_lines": {
+        "covered": 12,
+        "measurable": 16,
+        "per_file": {
+          "src/Acme.Orders/OrderImporter.cs": {
+            "covered": 7,
+            "measurable": 10,
+            "pct": 70
+          },
+          "src/Acme.Orders/OrderRepository.cs": {
+            "covered": 5,
+            "measurable": 6,
+            "pct": 83.3
+          }
+        }
+      },
+      "touched_files_without_coverage_data": [],
+      "touched_base": {
+        "ref": "HEAD",
+        "source": "HEAD",
+        "descartadas": [
+          {
+            "source": "marcador",
+            "motivo": "no hay marcador activo"
+          }
+        ]
+      },
+      "touched_files_ambiguous": [],
+      "touched_files_unreadable": [],
+      "observacion": {
+        "frena": false,
+        "hasta": "2026-10-06",
+        "nota": "el 75 % sobre las líneas tocadas se observa sin frenar; cada corrida deja en gates.log si habría frenado"
+      },
+      "threshold_basis": "touched_lines"
+    },
+    "provenance": "test-gate.sh (run real, exit code capturado por marker.js run-check)",
+    "code_state": {
+      "git": true,
+      "head": "0000acme",
+      "dirty": "abc"
+    },
+    "trx_files": 2,
+    "test_projects": 3,
+    "partial_run": true
+  },
+  "sellada": {
+    "kind": "tests-result-sellado",
+    "story_id": "9.1",
+    "ts": "2026-10-05T12:00:00Z",
+    "runner": "dotnet",
+    "suite_exit": 1,
+    "suite_green": false,
+    "halted": false,
+    "totals": {
+      "total": 8,
+      "passed": 7,
+      "failed": 1,
+      "executed": 8
+    },
+    "coverage": {
+      "per_new_file": {
+        "src/Acme.Orders/OrderImporter.cs": 70
+      },
+      "new_files_pct": 70,
+      "threshold": 75,
+      "meets_threshold": true,
+      "new_files_source": "git",
+      "new_files_without_coverage_data": [],
+      "touched_lines_pct": 75,
+      "touched_lines": {
+        "covered": 12,
+        "measurable": 16,
+        "per_file": {
+          "src/Acme.Orders/OrderImporter.cs": {
+            "covered": 7,
+            "measurable": 10,
+            "pct": 70
+          },
+          "src/Acme.Orders/OrderRepository.cs": {
+            "covered": 5,
+            "measurable": 6,
+            "pct": 83.3
+          }
+        }
+      },
+      "touched_files_without_coverage_data": [],
+      "touched_base": {
+        "ref": "HEAD",
+        "source": "HEAD",
+        "descartadas": [
+          {
+            "source": "marcador",
+            "motivo": "no hay marcador activo"
+          }
+        ]
+      },
+      "touched_files_ambiguous": [],
+      "touched_files_unreadable": [],
+      "observacion": {
+        "frena": false,
+        "hasta": "2026-10-06",
+        "nota": "el 75 % sobre las líneas tocadas se observa sin frenar; cada corrida deja en gates.log si habría frenado"
+      },
+      "threshold_basis": "touched_lines"
+    },
+    "provenance": "test-gate.sh (run real, exit code capturado por marker.js run-check)",
+    "_por_que": "copia que VIAJA de .advisors/tests-result.json, que git ignora. Sin ella, en otra máquina o tras una limpieza ningún test de la tabla cuenta como evidencia y la story no se puede cerrar (caso 2026-09-06, stories 2.2 y 2.3 del arnés). Sólo los campos que runtime-matrix.js lee: sin rutas absolutas ni datos de la máquina."
+  },
+  "gates": [
+    {
+      "sessionId": "sesion-acme-w6",
+      "repoPath": "<TMP>/repo",
+      "name": "cobertura-tocada",
+      "status": "cumple",
+      "storyId": "9.1"
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "__doc": "Casos quirúrgicos del advisor multi-tenant-isolation-reviewer (Etapa D). Un pecado → una regla → el veredicto es la PRESENCIA/AUSENCIA del rule ID objetivo COMO FINDING (bullet '- [ID] ...'), nunca el conteo (§2.2 del plan). Reglas elegidas por determinismo greppeable: TENANT-C1 (query Drizzle sobre tabla con user_id sin filtro userId) y TENANT-C3 (INSERT setea userId desde el body del request). El must-not-flag es el gemelo de C1 con el filtro and(eq(lists.userId, userId)) correcto.",
+  "advisor": "multi-tenant-isolation-reviewer",
+  "cases": [
+    {
+      "id": "tenant-c1-query-sin-filtro-userid",
+      "type": "must-flag",
+      "rule": "TENANT-C1",
+      "files": {
+        "src/db/schema.ts": "import { pgTable, text, uuid } from 'drizzle-orm/pg-core';\n\nexport const lists = pgTable('lists', {\n  id: uuid('id').primaryKey().defaultRandom(),\n  userId: uuid('user_id').notNull(),\n  name: text('name').notNull(),\n});\n",
+        "src/db/repos/lists-repo.ts": "import { eq } from 'drizzle-orm';\nimport { db } from '../client';\nimport { lists } from '../schema';\n\nexport async function getListById(listId: string) {\n  const rows = await db\n    .select()\n    .from(lists)\n    .where(eq(lists.id, listId))\n    .limit(1);\n  return rows[0] ?? null;\n}\n"
+      },
+      "canario": true
+    },
+    {
+      "id": "tenant-c3-userid-desde-body",
+      "type": "must-flag",
+      "rule": "TENANT-C3",
+      "files": {
+        "src/db/schema.ts": "import { pgTable, text, uuid } from 'drizzle-orm/pg-core';\n\nexport const lists = pgTable('lists', {\n  id: uuid('id').primaryKey().defaultRandom(),\n  userId: uuid('user_id').notNull(),\n  name: text('name').notNull(),\n});\n",
+        "src/app/api/lists/route.ts": "import { NextResponse } from 'next/server';\nimport { auth } from '@/lib/auth';\nimport { db } from '@/db/client';\nimport { lists } from '@/db/schema';\n\nexport async function POST(request: Request) {\n  const session = await auth();\n  if (!session?.user) {\n    return NextResponse.json({ error: 'unauthorized' }, { status: 401 });\n  }\n  const body = await request.json();\n  const [created] = await db\n    .insert(lists)\n    .values({ name: body.name, userId: body.userId })\n    .returning();\n  return NextResponse.json(created, { status: 201 });\n}\n"
+      }
+    },
+    {
+      "id": "limpio-filtro-userid-sin-c1",
+      "type": "must-not-flag",
+      "rule": "TENANT-C1",
+      "files": {
+        "src/db/schema.ts": "import { pgTable, text, uuid } from 'drizzle-orm/pg-core';\n\nexport const lists = pgTable('lists', {\n  id: uuid('id').primaryKey().defaultRandom(),\n  userId: uuid('user_id').notNull(),\n  name: text('name').notNull(),\n});\n",
+        "src/db/repos/lists-repo.ts": "import { and, eq } from 'drizzle-orm';\nimport { db } from '../client';\nimport { lists } from '../schema';\n\nexport async function getListById(listId: string, userId: string) {\n  const rows = await db\n    .select()\n    .from(lists)\n    .where(and(eq(lists.id, listId), eq(lists.userId, userId)))\n    .limit(1);\n  return rows[0] ?? null;\n}\n"
+      },
+      "canario": true
+    }
+  ],
+  "prompt_template": "Tu salida completa se guarda en un archivo de auditoría que procesa un script: no la lee una persona en el chat — la regla de 'resumen ejecutivo / detalle a pedido' de tus instrucciones NO aplica en este contexto. Emití el reporte COMPLETO en el formato del catálogo, con cada finding como bullet que abre con su rule ID entre corchetes: - [RULE-ID] `archivo:línea` descripción. Fix: accion. Los rule IDs entre corchetes van SOLO en findings reales (en la sección '✅ OK' o al descartar una regla, mencionala SIN corchetes). Archivos cambiados: {files}. Escaneá y emití el reporte."
+}

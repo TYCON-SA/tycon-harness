@@ -1,0 +1,16 @@
+{
+  "__doc": "Fixture de scripts/tests/windows-probe.test.js (story 8.17, W0 · T3). Un settings.json con dos defectos puestos a propósito: el medidor de estilo quedó en PostToolUse (se espera en Stop), y un hook del arnés nombra un archivo que no existe (la prueba dice cuál por su buscador de archivos). Además trae un hook ajeno, que no se cuenta. Carpeta de usuario C:/lab/profile, clon C:/lab/work/harness-clone.",
+  "hooks": {
+    "PostToolUse": [
+      { "hooks": [{ "type": "command", "command": "node \"C:/lab/work/harness-clone/scripts/hooks/response-style-meter.js\"" }] }
+    ],
+    "Stop": [
+      { "hooks": [
+        { "type": "command", "command": "node \"C:/lab/work/harness-clone/scripts/hooks/blocking-meter.js\"" },
+        { "type": "command", "command": "node \"C:/lab/work/harness-clone/scripts/hooks/blocking-meter.js\"" },
+        { "type": "command", "command": "node \"C:/lab/work/harness-clone/scripts/hooks/retired-notice.js\"" },
+        { "type": "command", "command": "node \"C:/lab/profile/own-tools/my-hook.js\"" }
+      ] }
+    ]
+  }
+}

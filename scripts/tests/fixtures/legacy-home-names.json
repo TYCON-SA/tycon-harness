@@ -1,0 +1,132 @@
+{
+  "__doc": "Story 8.23 (AC 4, 5 y 36): los archivos que pueden nombrar las rutas viejas del arnés bajo ~/.claude. `entries`: no cuentan para el techo de «.claude» (dot-claude-ceiling.json) — sólo lo que DEFINE la ruta de hoy en un único lugar o lo que no puede importar esa definición. `until_d`: los que todavía arman la carpeta del estado a mano a propósito hasta la tanda D (viajan al freno de producción, o son shell/PowerShell); SÍ cuentan para el techo. Uno por archivo, con su motivo y cuándo se retira. Todo lo demás le pide la ruta a scripts/setup/harness/tycon-home.js. Lo lee scripts/tests/tycon-home.test.js (T3 y T5). En la tanda E cada entrada lleva su fecha de retiro (la regla de 30 días de la 8.15) y el techo llega a cero.",
+  "entries": [
+    {
+      "path": "scripts/setup/harness/tycon-home.js",
+      "why": "la única definición de dónde vive el arnés: en las tandas A1 y A2 cada función vale la ruta de hoy, bajo ~/.claude",
+      "retire_with": "8.23 tanda B (las rutas pasan a ~/.tycon) y tanda E (el nombre viejo sale)",
+      "retire_after": "2026-11-07",
+      "retired_by": "8.24"
+    },
+    {
+      "path": "scripts/setup/harness/bootstrap.js",
+      "why": "la copia fija de arranque: corre fuera del árbol y no hace ningún require del árbol (lo durable no viaja por el camino roto)",
+      "retire_with": "8.23 tanda D (la mudanza) y tanda E",
+      "retire_after": "2026-11-07",
+      "retired_by": "8.24"
+    },
+    {
+      "path": "scripts/setup/harness/bootstrap-fallback.sh",
+      "why": "el respaldo en shell de la copia fija: no carga nada del árbol ni tiene Node",
+      "retire_with": "8.23 tanda D (la mudanza) y tanda E",
+      "retire_after": "2026-11-07",
+      "retired_by": "8.24"
+    },
+    {
+      "path": "scripts/setup/harness/bootstrap-fallback.ps1",
+      "why": "el respaldo en PowerShell de la copia fija: no carga nada del árbol ni tiene Node",
+      "retire_with": "8.23 tanda D (la mudanza) y tanda E",
+      "retire_after": "2026-11-07",
+      "retired_by": "8.24"
+    }
+  ],
+  "until_d": [
+    {
+      "path": "scripts/hooks/prod-access-guard.js",
+      "why": "viaja al freno de producción en /opt: desde la tanda D (2026-10-08) le pide la carpeta del estado a tycon-home.js si está al lado (en /opt viaja su copia) y sólo sin ella arma la de siempre: la mención queda como respaldo",
+      "retire_after": "2026-11-07",
+      "retired_by": "8.24"
+    },
+    {
+      "path": "scripts/lib/guard-record.js",
+      "why": "viaja al freno de producción en /opt: desde la tanda D (2026-10-08) le pide la carpeta del estado a tycon-home.js si está al lado (en /opt viaja su copia) y sólo sin ella arma la de siempre: la mención queda como respaldo",
+      "retire_after": "2026-11-07",
+      "retired_by": "8.24"
+    },
+    {
+      "path": "scripts/lib/legacy-names.js",
+      "why": "viaja al freno de producción en /opt: desde la tanda D (2026-10-08) le pide la carpeta del estado a tycon-home.js si está al lado (en /opt viaja su copia) y sólo sin ella arma la de siempre: la mención queda como respaldo",
+      "retire_after": "2026-11-07",
+      "retired_by": "8.24"
+    },
+    {
+      "path": "scripts/lib/tycon-config.js",
+      "why": "viaja al freno de producción en /opt: desde la tanda D (2026-10-08) le pide la carpeta del estado a tycon-home.js si está al lado (en /opt viaja su copia) y sólo sin ella arma la de siempre: la mención queda como respaldo",
+      "retire_after": "2026-11-07",
+      "retired_by": "8.24"
+    },
+    {
+      "path": "scripts/production/production-index.js",
+      "why": "viaja al freno de producción en /opt: desde la tanda D (2026-10-08) le pide la carpeta del estado a tycon-home.js si está al lado (en /opt viaja su copia) y sólo sin ella arma la de siempre: la mención queda como respaldo",
+      "retire_after": "2026-11-07",
+      "retired_by": "8.24"
+    },
+    {
+      "path": "scripts/production/node-shim.sh",
+      "why": "viaja al freno de producción en /opt: desde la tanda D (2026-10-08) le pide la carpeta del estado a tycon-home.js si está al lado (en /opt viaja su copia) y sólo sin ella arma la de siempre: la mención queda como respaldo",
+      "retire_after": "2026-11-07",
+      "retired_by": "8.24"
+    },
+    {
+      "path": "scripts/setup/harness/startup-line.js",
+      "why": "decisión de la tanda D (2026-10-08): la mudanza deja ~/.claude/.tycon-pipeline como ENLACE al estado (AC 28), así la línea de arranque escrita en cada máquina y los guiones de shell/PowerShell siguen valiendo sin reescribirse; se re-apuntan cuando se retire el enlace (story de retiro, AC 36)",
+      "retire_after": "2026-11-07",
+      "retired_by": "8.24"
+    },
+    {
+      "path": "scripts/setup/harness/health.js",
+      "why": "decisión de la tanda D (2026-10-08): la mudanza deja ~/.claude/.tycon-pipeline como ENLACE al estado (AC 28), así la línea de arranque escrita en cada máquina y los guiones de shell/PowerShell siguen valiendo sin reescribirse; se re-apuntan cuando se retire el enlace (story de retiro, AC 36)",
+      "retire_after": "2026-11-07",
+      "retired_by": "8.24"
+    },
+    {
+      "path": "scripts/hooks/harness-bootstrap-heal.sh",
+      "why": "decisión de la tanda D (2026-10-08): la mudanza deja ~/.claude/.tycon-pipeline como ENLACE al estado (AC 28), así la línea de arranque escrita en cada máquina y los guiones de shell/PowerShell siguen valiendo sin reescribirse; se re-apuntan cuando se retire el enlace (story de retiro, AC 36)",
+      "retire_after": "2026-11-07",
+      "retired_by": "8.24"
+    },
+    {
+      "path": "scripts/install-tycon-hooks.sh",
+      "why": "decisión de la tanda D (2026-10-08): la mudanza deja ~/.claude/.tycon-pipeline como ENLACE al estado (AC 28), así la línea de arranque escrita en cada máquina y los guiones de shell/PowerShell siguen valiendo sin reescribirse; se re-apuntan cuando se retire el enlace (story de retiro, AC 36)",
+      "retire_after": "2026-11-07",
+      "retired_by": "8.24"
+    },
+    {
+      "path": "scripts/install-tycon-hooks.ps1",
+      "why": "decisión de la tanda D (2026-10-08): la mudanza deja ~/.claude/.tycon-pipeline como ENLACE al estado (AC 28), así la línea de arranque escrita en cada máquina y los guiones de shell/PowerShell siguen valiendo sin reescribirse; se re-apuntan cuando se retire el enlace (story de retiro, AC 36)",
+      "retire_after": "2026-11-07",
+      "retired_by": "8.24"
+    },
+    {
+      "path": "scripts/setup/ensure-sqlite3.sh",
+      "why": "decisión de la tanda D (2026-10-08): la mudanza deja ~/.claude/.tycon-pipeline como ENLACE al estado (AC 28), así la línea de arranque escrita en cada máquina y los guiones de shell/PowerShell siguen valiendo sin reescribirse; se re-apuntan cuando se retire el enlace (story de retiro, AC 36)",
+      "retire_after": "2026-11-07",
+      "retired_by": "8.24"
+    },
+    {
+      "path": "scripts/setup/ensure-sqlite3.ps1",
+      "why": "decisión de la tanda D (2026-10-08): la mudanza deja ~/.claude/.tycon-pipeline como ENLACE al estado (AC 28), así la línea de arranque escrita en cada máquina y los guiones de shell/PowerShell siguen valiendo sin reescribirse; se re-apuntan cuando se retire el enlace (story de retiro, AC 36)",
+      "retire_after": "2026-11-07",
+      "retired_by": "8.24"
+    },
+    {
+      "path": "skills/tycon-pipeline/scripts/smoke-run.sh",
+      "why": "decisión de la tanda D (2026-10-08): la mudanza deja ~/.claude/.tycon-pipeline como ENLACE al estado (AC 28), así la línea de arranque escrita en cada máquina y los guiones de shell/PowerShell siguen valiendo sin reescribirse; se re-apuntan cuando se retire el enlace (story de retiro, AC 36)",
+      "retire_after": "2026-11-07",
+      "retired_by": "8.24"
+    },
+    {
+      "path": "scripts/ci/nightly-dod-notice.sh",
+      "why": "decisión de la tanda D (2026-10-08): la mudanza deja ~/.claude/.tycon-pipeline como ENLACE al estado (AC 28), así la línea de arranque escrita en cada máquina y los guiones de shell/PowerShell siguen valiendo sin reescribirse; se re-apuntan cuando se retire el enlace (story de retiro, AC 36)",
+      "retire_after": "2026-11-07",
+      "retired_by": "8.24"
+    },
+    {
+      "path": "scripts/hooks/test-scope-guard-pre.sh",
+      "why": "decisión de la tanda D (2026-10-08): la mudanza deja ~/.claude/.tycon-pipeline como ENLACE al estado (AC 28), así la línea de arranque escrita en cada máquina y los guiones de shell/PowerShell siguen valiendo sin reescribirse; se re-apuntan cuando se retire el enlace (story de retiro, AC 36)",
+      "retire_after": "2026-11-07",
+      "retired_by": "8.24"
+    }
+  ],
+  "__retiro": "Story 8.23 (AC 36, tanda E · 2026-10-08): cada ruta vieja bajo ~/.claude tiene su fecha de retiro (retire_after: 30 días después de publicada la E, la regla de la story 8.15) y la story que la retira (retired_by: 8.24, escrita, no implementada). Si antes de esa fecha el buzón o los nocturnos muestran usos del nombre viejo, la fecha se corre 30 días en un commit aparte que dice qué se vio (8.15, AC 18)."
+}

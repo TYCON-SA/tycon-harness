@@ -1,0 +1,101 @@
+{
+  "tests_result": {
+    "ts": "2026-10-05T12:07:00Z",
+    "story_id": "9.8",
+    "runner": "dotnet",
+    "repo": "<TMP>/repo",
+    "suite_exit": 1,
+    "suite_green": false,
+    "scope": null,
+    "scope_source": null,
+    "halted": false,
+    "totals": {},
+    "coverage": {
+      "per_new_file": {},
+      "new_files_pct": null,
+      "threshold": 75,
+      "meets_threshold": null,
+      "new_files_source": null,
+      "new_files_without_coverage_data": [],
+      "no_cross_check": "sin cruce de cobertura: git no reporta archivos nuevos y no se pasó la ruta de la story (\\$2) para caer a `files_to_create`",
+      "touched_lines_pct": null,
+      "touched_lines": null,
+      "touched_files_without_coverage_data": [],
+      "touched_base": {
+        "ref": "HEAD",
+        "source": null,
+        "descartadas": [
+          {
+            "source": "test-gate",
+            "motivo": "la descripción de la base no es un objeto JSON"
+          }
+        ]
+      },
+      "touched_files_ambiguous": [],
+      "touched_files_unreadable": [],
+      "observacion": {
+        "frena": false,
+        "hasta": "2026-10-06",
+        "nota": "el 75 % sobre las líneas tocadas se observa sin frenar; cada corrida deja en gates.log si habría frenado"
+      },
+      "touched_no_cross_check": "sin cruce de líneas tocadas: la corrida no dejó reporte de cobertura (coverage.cobertura.xml)",
+      "threshold_basis": null
+    },
+    "provenance": "test-gate.sh (run real, exit code capturado por marker.js run-check)",
+    "code_state": {
+      "git": true
+    }
+  },
+  "sellada": {
+    "kind": "tests-result-sellado",
+    "story_id": "9.8",
+    "ts": "2026-10-05T12:07:00Z",
+    "runner": "dotnet",
+    "suite_exit": 1,
+    "suite_green": false,
+    "halted": false,
+    "totals": {},
+    "coverage": {
+      "per_new_file": {},
+      "new_files_pct": null,
+      "threshold": 75,
+      "meets_threshold": null,
+      "new_files_source": null,
+      "new_files_without_coverage_data": [],
+      "no_cross_check": "sin cruce de cobertura: git no reporta archivos nuevos y no se pasó la ruta de la story (\\$2) para caer a `files_to_create`",
+      "touched_lines_pct": null,
+      "touched_lines": null,
+      "touched_files_without_coverage_data": [],
+      "touched_base": {
+        "ref": "HEAD",
+        "source": null,
+        "descartadas": [
+          {
+            "source": "test-gate",
+            "motivo": "la descripción de la base no es un objeto JSON"
+          }
+        ]
+      },
+      "touched_files_ambiguous": [],
+      "touched_files_unreadable": [],
+      "observacion": {
+        "frena": false,
+        "hasta": "2026-10-06",
+        "nota": "el 75 % sobre las líneas tocadas se observa sin frenar; cada corrida deja en gates.log si habría frenado"
+      },
+      "touched_no_cross_check": "sin cruce de líneas tocadas: la corrida no dejó reporte de cobertura (coverage.cobertura.xml)",
+      "threshold_basis": null
+    },
+    "provenance": "test-gate.sh (run real, exit code capturado por marker.js run-check)",
+    "_por_que": "copia que VIAJA de .advisors/tests-result.json, que git ignora. Sin ella, en otra máquina o tras una limpieza ningún test de la tabla cuenta como evidencia y la story no se puede cerrar (caso 2026-09-06, stories 2.2 y 2.3 del arnés). Sólo los campos que runtime-matrix.js lee: sin rutas absolutas ni datos de la máquina."
+  },
+  "gates": [
+    {
+      "sessionId": "sesion-acme-w6",
+      "repoPath": "<TMP>/repo",
+      "name": "cobertura-tocada",
+      "status": "no-medido",
+      "storyId": "9.8"
+    }
+  ]
+}

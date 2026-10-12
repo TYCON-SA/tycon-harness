@@ -1,0 +1,14 @@
+{
+  "corridas": 5,
+  "verdes": 3,
+  "fallas": [
+    { "ruta": "<REPO_RUN>/scripts/tests/acme-a.test.sh", "exit": 1 },
+    { "ruta": "<REPO_RUN>/skills/x/tests/acme-b.test.js", "exit": 2 }
+  ],
+  "ausentes": ["<REPO_RUN>/scripts/tests/acme-gone.test.js"],
+  "deferred_suites": [
+    { "ruta": "scripts/tests/acme-lenta.test.sh", "motivo": "el cambio no toca scripts/publishing/**" }
+  ],
+  "workers": 4,
+  "wall_ms": 12345
+}

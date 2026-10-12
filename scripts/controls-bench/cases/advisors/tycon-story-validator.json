@@ -1,0 +1,70 @@
+{
+  "__doc": "Casos quirúrgicos del advisor tycon-story-validator (Etapa D). Un pecado → una regla → el veredicto es la PRESENCIA/AUSENCIA del rule ID objetivo COMO FINDING (bullet '- [ID] ...'), nunca el conteo (§2.2 del plan). Fixtures: cada caso trae una story Mary+GOLD chica en specs/ + el codebase mínimo contra el que se verifican referencias. Las stories son frontend/TS a propósito — así VAL-C8 (patrón hermano, solo backend .NET) skipea sin reportar y el pecado queda aislado. Reglas elegidas por ser ESTRUCTURALES (verificables con Read/Grep, sin juicio): VAL-C1 (archivo referenciado en 'Que existe hoy' no existe — test -f) y VAL-W3 (tabla ### Tests con nombres que no son PascalCase — grep del naming). El prompt_template desactiva explícitamente la regla de reporte resumen-solo del advisor: la salida del banco va a un archivo de auditoría, no al chat — sin eso los rule IDs se suprimen a veces y el caso queda INESTABLE (visto en la 1ra corrida, 2026-08-21). Desde la story 7.3 cada caso declara también expect_veredicto: el renglón Veredicto con que el validador cierra el informe tiene que nombrar la regla del caso en los que deben marcar (hallazgos) y no nombrarla en los dos gemelos (sin-la-regla) — con ese renglón pipeline.js decide si lo relanza en los re-loops. Los gemelos NO esperan limpio: son limpios para SU regla, no para las 23 (en la primera corrida en vivo, 2026-09-17, los dos dijeron hallazgos con razón: VAL-W3 en uno, VAL-C8 en el otro).",
+  "advisor": "tycon-story-validator",
+  "cases": [
+    {
+      "id": "val-c1-archivo-inexistente",
+      "type": "must-flag",
+      "rule": "VAL-C1",
+      "expect_veredicto": "hallazgos",
+      "files": {
+        "specs/story-4-2.md": "---\nepic: 4\nstory: \"4.2\"\ntitle: \"Resumen de pedido con descuentos\"\nstatus: ready-for-dev\nsprint: 6\npriority: media\napproach: \"extender orderTotals existente\"\ndepends_on: []\n---\n\n# Story 4.2 — Resumen de pedido con descuentos\n\nStatus: ready-for-dev\n\n## Story\n\nComo cliente, quiero ver el total del pedido con el descuento aplicado, para saber cuánto pago antes de confirmar.\n\n## Acceptance Criteria\n\n### Cálculo de totales\n\n1. El total refleja el descuento porcentual configurado.\n2. Un pedido vacío devuelve total 0 sin error.\n\n### Tests\n\n| Test | AC | Resultado esperado |\n|---|---|---|\n| CalculaTotalConDescuento | 1 | total = 900 para subtotal 1000 y descuento 10% |\n| PedidoVacioDevuelveCero | 2 | total = 0, sin excepción |\n\n## Tasks\n\n1. Salvaguarda de BD/estado: no aplica — cambio en memoria, sin migraciones ni datos persistidos.\n2. Extender `applyDiscount()` en `src/services/orderTotals.ts`.\n\n## Dev Notes\n\n### Que existe hoy\n\n- `src/services/orderTotals.ts` — `computeTotal()` linea 3 suma items sin aplicar descuento.\n- `src/services/orderParser.ts` — `parseOrder()` linea 8 normaliza la orden antes del cálculo.\n\n### Lo que NO hay que hacer\n\n- No tocar el flujo de checkout ni el servicio de pagos.\n\n### Cómo verificar que funciona\n\n```bash\nnpm test -- orderTotals\n```\n\n## Dev Agent Record\n\n_Placeholder — completar al implementar._\n",
+        "src/services/orderTotals.ts": "export interface OrderItem { price: number; qty: number; }\n\nexport function computeTotal(items: OrderItem[]): number {\n  return items.reduce((sum, it) => sum + it.price * it.qty, 0);\n}\n\nexport function applyDiscount(total: number, pct: number): number {\n  return total - (total * pct) / 100;\n}\n"
+      },
+      "residuo_conocido": {
+        "tool": "codex",
+        "fecha": "2026-08-25",
+        "incidente": "incident-log#corral-que-se-escapa",
+        "estado": "veredicto CORRECTO y unánime (3/3) — el residuo es una fuga del corral en 1 de 3 corridas",
+        "motivo": "El caso ya NO muere por tiempo (era exit≠0 por el barrido de ~/SourceCode). Con el corral aislado y el límite duro, el revisor contesta bien y consistente. Lo que queda: 1 de 3 corridas todavía mira una ruta real de la máquina (~/SourceCode/Totora), probablemente arrastrada por los hermanos nombrados como EJEMPLO en la prosa. No cambia el veredicto, pero mientras pase, el caso no es 100% reproducible en otra máquina. RE-MEDIR en la semanal: si la fuga no vuelve, cerrar."
+      },
+      "canario": true
+    },
+    {
+      "id": "val-w3-tests-sin-pascalcase",
+      "type": "must-flag",
+      "rule": "VAL-W3",
+      "expect_veredicto": "hallazgos",
+      "files": {
+        "specs/story-4-3.md": "---\nepic: 4\nstory: \"4.3\"\ntitle: \"Cupones de descuento por código\"\nstatus: ready-for-dev\nsprint: 6\npriority: media\napproach: \"extender orderTotals existente\"\ndepends_on: []\n---\n\n# Story 4.3 — Cupones de descuento por código\n\nStatus: ready-for-dev\n\n## Story\n\nComo cliente, quiero aplicar un cupón por código, para obtener el descuento asociado en el total.\n\n## Acceptance Criteria\n\n### Aplicación de cupones\n\n1. Un código válido aplica su porcentaje de descuento al total.\n2. Un código inválido deja el total sin cambios y no lanza error.\n\n### Tests\n\n| Test | AC | Resultado esperado |\n|---|---|---|\n| aplica_cupon_valido | 1 | total = 800 para subtotal 1000 y cupón de 20% |\n| cupon_invalido_no_cambia_total | 2 | total = 1000, sin excepción |\n\n## Tasks\n\n1. Salvaguarda de BD/estado: no aplica — cambio en memoria, sin migraciones ni datos persistidos.\n2. Agregar `applyCoupon()` junto a `applyDiscount()` en `src/services/orderTotals.ts`.\n\n## Dev Notes\n\n### Que existe hoy\n\n- `src/services/orderTotals.ts` — `applyDiscount()` linea 7 aplica un porcentaje directo, sin cupones.\n\n### Lo que NO hay que hacer\n\n- No tocar el flujo de checkout ni el servicio de pagos.\n\n### Cómo verificar que funciona\n\n```bash\nnpm test -- orderTotals\n```\n\n## Dev Agent Record\n\n_Placeholder — completar al implementar._\n",
+        "src/services/orderTotals.ts": "export interface OrderItem { price: number; qty: number; }\n\nexport function computeTotal(items: OrderItem[]): number {\n  return items.reduce((sum, it) => sum + it.price * it.qty, 0);\n}\n\nexport function applyDiscount(total: number, pct: number): number {\n  return total - (total * pct) / 100;\n}\n"
+      }
+    },
+    {
+      "id": "limpio-story-consistente",
+      "type": "must-not-flag",
+      "rule": "VAL-C1",
+      "expect_veredicto": "sin-la-regla",
+      "files": {
+        "specs/story-4-2.md": "---\nepic: 4\nstory: \"4.2\"\ntitle: \"Resumen de pedido con descuentos\"\nstatus: ready-for-dev\nsprint: 6\npriority: media\napproach: \"extender orderTotals existente\"\ndepends_on: []\n---\n\n# Story 4.2 — Resumen de pedido con descuentos\n\nStatus: ready-for-dev\n\n## Story\n\nComo cliente, quiero ver el total del pedido con el descuento aplicado, para saber cuánto pago antes de confirmar.\n\n## Acceptance Criteria\n\n### Cálculo de totales\n\n1. El total refleja el descuento porcentual configurado.\n2. Un pedido vacío devuelve total 0 sin error.\n\n### Tests\n\n| Test | AC | Resultado esperado |\n|---|---|---|\n| CalculaTotalConDescuento | 1 | total = 900 para subtotal 1000 y descuento 10% |\n| PedidoVacioDevuelveCero | 2 | total = 0, sin excepción |\n\n## Tasks\n\n1. Salvaguarda de BD/estado: no aplica — cambio en memoria, sin migraciones ni datos persistidos.\n2. Extender `applyDiscount()` en `src/services/orderTotals.ts`.\n\n## Dev Notes\n\n### Que existe hoy\n\n- `src/services/orderTotals.ts` — `computeTotal()` linea 3 suma items sin aplicar descuento.\n\n### Lo que NO hay que hacer\n\n- No tocar el flujo de checkout ni el servicio de pagos.\n\n### Cómo verificar que funciona\n\n```bash\nnpm test -- orderTotals\n```\n\n## Dev Agent Record\n\n_Placeholder — completar al implementar._\n",
+        "src/services/orderTotals.ts": "export interface OrderItem { price: number; qty: number; }\n\nexport function computeTotal(items: OrderItem[]): number {\n  return items.reduce((sum, it) => sum + it.price * it.qty, 0);\n}\n\nexport function applyDiscount(total: number, pct: number): number {\n  return total - (total * pct) / 100;\n}\n"
+      },
+      "canario": true
+    },
+    {
+      "id": "val-w14-cita-linea-sobre-archivo-que-la-story-modifica",
+      "type": "must-flag",
+      "rule": "VAL-W14",
+      "expect_veredicto": "hallazgos",
+      "_por_que": "STORY-SELF-CITED-LINE-FRAGILE-1 (aprobada 2026-09-06): la story cita `src/Boundary/PluginBoundary.cs:15` y ese archivo está en su File List/Tasks — la primera edición de la propia story corre esa línea (el repo del framework, story 7.6: tres desincronizaciones en una corrida). El archivo existe y la línea es real: VAL-C1 no tiene nada que decir; VAL-W14 sí.",
+      "canario": true,
+      "files": {
+        "specs/story-7-6.md": "---\nepic: 7\nstory: \"7.6\"\ntitle: \"El límite del payload se lee de la configuración\"\nstatus: ready-for-dev\nsprint: 9\npriority: media\napproach: \"extender ValidatePayload existente\"\ndepends_on: []\n---\n\n# Story 7.6 — El límite del payload se lee de la configuración\n\nStatus: ready-for-dev\n\n## Story\n\nComo administrador, quiero configurar el tamaño máximo del payload, para no recompilar el plugin cuando cambia.\n\n## Acceptance Criteria\n\n### Límite configurable\n\n1. `ValidatePayload` rechaza un payload mayor al límite configurado.\n2. Sin configuración, el límite por defecto sigue siendo 4096.\n\n### Tests\n\n| Test | AC | Resultado esperado |\n|---|---|---|\n| ValidatePayloadRechazaSobreElLimiteConfigurado | 1 | false para 100 bytes con límite 50 |\n| ValidatePayloadUsaDefaultSinConfiguracion | 2 | true para 4096 bytes, false para 4097 |\n\n## Tasks\n\n1. Salvaguarda de BD/estado: no aplica — sin migraciones ni datos persistidos.\n2. Extender `ValidatePayload` en `src/Boundary/PluginBoundary.cs` para leer el límite de `IPluginHost`.\n\n## Dev Notes\n\n### Que existe hoy\n\n- `src/Boundary/PluginBoundary.cs:15` compara contra la constante 4096.\n\n### Lo que NO hay que hacer\n\n- No tocar `ForwardAsync`.\n\n### Cómo verificar que funciona\n\n```bash\ndotnet test --filter \"FullyQualifiedName~PluginBoundaryTests\"\n```\n\n## File List\n\n- src/Boundary/PluginBoundary.cs\n\n## Dev Agent Record\n\n_Placeholder — completar al implementar._\n",
+        "src/Boundary/PluginBoundary.cs": "namespace Plugin.Boundary;\n\npublic sealed class PluginBoundary\n{\n    private readonly IPluginHost _host;\n\n    public PluginBoundary(IPluginHost host)\n    {\n        _host = host;\n    }\n\n    public bool ValidatePayload(string payload)\n    {\n        if (string.IsNullOrWhiteSpace(payload)) return false;\n        return payload.Length <= 4096;\n    }\n\n    public Task ForwardAsync(string payload, CancellationToken ct)\n    {\n        return _host.SendAsync(payload, ct);\n    }\n}\n"
+      }
+    },
+    {
+      "id": "limpio-cita-por-miembro-sobre-archivo-propio-sin-w14",
+      "type": "must-not-flag",
+      "rule": "VAL-W14",
+      "expect_veredicto": "sin-la-regla",
+      "_por_que": "El espejo: la misma story cita el MIEMBRO («`ValidatePayload` en `src/Boundary/PluginBoundary.cs`»), que es la convención de story-format §9. Sin este caso, una regla que marque toda mención de un archivo propio se apaga a la semana.",
+      "canario": true,
+      "files": {
+        "specs/story-7-6.md": "---\nepic: 7\nstory: \"7.6\"\ntitle: \"El límite del payload se lee de la configuración\"\nstatus: ready-for-dev\nsprint: 9\npriority: media\napproach: \"extender ValidatePayload existente\"\ndepends_on: []\n---\n\n# Story 7.6 — El límite del payload se lee de la configuración\n\nStatus: ready-for-dev\n\n## Story\n\nComo administrador, quiero configurar el tamaño máximo del payload, para no recompilar el plugin cuando cambia.\n\n## Acceptance Criteria\n\n### Límite configurable\n\n1. `ValidatePayload` rechaza un payload mayor al límite configurado.\n2. Sin configuración, el límite por defecto sigue siendo 4096.\n\n### Tests\n\n| Test | AC | Resultado esperado |\n|---|---|---|\n| ValidatePayloadRechazaSobreElLimiteConfigurado | 1 | false para 100 bytes con límite 50 |\n| ValidatePayloadUsaDefaultSinConfiguracion | 2 | true para 4096 bytes, false para 4097 |\n\n## Tasks\n\n1. Salvaguarda de BD/estado: no aplica — sin migraciones ni datos persistidos.\n2. Extender `ValidatePayload` en `src/Boundary/PluginBoundary.cs` para leer el límite de `IPluginHost`.\n\n## Dev Notes\n\n### Que existe hoy\n\n- `ValidatePayload` en `src/Boundary/PluginBoundary.cs` (~línea 15, como ayuda) compara contra la constante 4096.\n\n### Lo que NO hay que hacer\n\n- No tocar `ForwardAsync`.\n\n### Cómo verificar que funciona\n\n```bash\ndotnet test --filter \"FullyQualifiedName~PluginBoundaryTests\"\n```\n\n## File List\n\n- src/Boundary/PluginBoundary.cs\n\n## Dev Agent Record\n\n_Placeholder — completar al implementar._\n",
+        "src/Boundary/PluginBoundary.cs": "namespace Plugin.Boundary;\n\npublic sealed class PluginBoundary\n{\n    private readonly IPluginHost _host;\n\n    public PluginBoundary(IPluginHost host)\n    {\n        _host = host;\n    }\n\n    public bool ValidatePayload(string payload)\n    {\n        if (string.IsNullOrWhiteSpace(payload)) return false;\n        return payload.Length <= 4096;\n    }\n\n    public Task ForwardAsync(string payload, CancellationToken ct)\n    {\n        return _host.SendAsync(payload, ct);\n    }\n}\n"
+      }
+    }
+  ],
+  "prompt_template": "Tu salida completa se guarda en un archivo de auditoría que procesa un script: no la lee una persona en el chat — la regla de 'resumen ejecutivo / detalle a pedido' de tus instrucciones NO aplica en este contexto. Emití el reporte COMPLETO en el formato del catálogo, con cada finding como bullet que abre con su rule ID entre corchetes: - [RULE-ID] `archivo:línea` descripción. Fix: accion. Los rule IDs entre corchetes van SOLO en findings reales (en la sección '✅ OK' o al descartar una regla, mencionala SIN corchetes). Validá la story Mary+GOLD del fixture: la story es el `.md` bajo `specs/` de estos archivos: {files}; el resto de los archivos es el codebase contra el que verificás archivos/métodos referenciados. Validá y emití el reporte."
+}

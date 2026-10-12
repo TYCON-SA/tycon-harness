@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# .githooks/pre-commit de la copia pública: un despachador que generó el exportador (transformación merged-hooks).
+# La copia junta en un repo los dos del equipo, y cada uno trae su pre-commit: los dos corren SIEMPRE, cada uno en su
+# proceso (la salida temprana de uno no saltea al otro), con la raíz del repo como arnés y como agent-skills. El commit
+# se crea sólo si pasan los dos.
+set -u
+raiz="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export TYCON_GUIDES_DIR="$raiz" TYCON_SKILLS_DIR="$raiz"
+correr() { if [ -x "$1" ]; then "$1"; else bash "$1"; fi; }
+fallo=0
+correr "$raiz/.githooks/pre-commit-harness" || fallo=1
+correr "$raiz/.githooks/pre-commit-skills" || fallo=1
+exit "$fallo"

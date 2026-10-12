@@ -1,0 +1,232 @@
+{
+  "__doc": "Los 19 hallazgos que el pase adversarial de la story 7.10 confirmó (tycon-claude-guides, 2026-09-20), con la clase real de cada uno. Es el caso contra el que se prueba `lib/group-findings.js` (story 7.11, AC 3/4/5).",
+  "__procedencia": {
+    "hallazgos": "Reconstruidos de las 19 carpetas de prueba del pase: .advisors/pipeline-runs/7.10-20260919-232413/step-05b-probes/<lente>-<n>/COMO-SE-CORRIO.txt. El volcado crudo del pase (step-05b-adversarial.json) NO se guardó en esa corrida.",
+    "limitacion": "🔴 El `summary`/`repro` de acá es el texto del VERIFICADOR (el que reprodujo el hallazgo), no el del cazador que lo reportó. Ese texto se perdió. Se copió textual, sin parafrasear, pero no es idéntico al que vería el agrupador en vivo: un agrupador que dependa de la redacción exacta anda mejor acá que en la realidad. Por eso el criterio NO puede apoyarse en parecido de texto (Dev Notes de la 7.11, «Lo que NO hay que hacer»).",
+    "clases": "La columna `clase_real` sale de la tabla «Agrupados (19 confirmados → 8 clases)» de .advisors/pipeline-runs/7.10-20260919-232607/step-06-consolidated-report.md, escrita durante la corrida 7.10 — ANTES de que existiera esta story. El encabezado de esa tabla dice 8 y la tabla tiene 9 filas; vale la tabla.",
+    "verificacion": "La asignación la hicieron por separado el orquestador y un sub-agente que sólo vio el texto de las pruebas, sin ver el código ni la tabla de clases. Coincidieron en los 19. Los tamaños de clase resultantes (2,3,3,2,2,1,1,2,3) dan exactamente los de la tabla del reporte.",
+    "lineas": "El `line` de cada hallazgo es el que DECLARA textualmente su COMO-SE-CORRIO.txt (grep de `lectura-grande-meter.js:<n>` / `línea <n>`); null donde la prueba no declaró ninguna. 🔴 No se completó por inferencia: inferir la línea desde el síntoma y después agrupar por línea sería circular — el resultado saldría bien por construcción."
+  },
+  "clases": {
+    "C1": "Cuerpo de heredoc parseado como comandos",
+    "C2": "cat/acotadores matcheados como texto suelto, no como binario invocado",
+    "C3": "Contador `acotadas` con regex duplicado y desincronizado de CONFIG",
+    "C4": "Cualquier `>` cuenta como escritura (incluye 2>&1, 2>/dev/null)",
+    "C5": "La exención se evalúa sobre el comando entero, no sobre su segmento",
+    "C6": "archivoDe() sin `<` ni comillas con espacios",
+    "C7": "El comentario final participa del test de acotadores",
+    "C8": "offset: 0 evade",
+    "C9": "module.exports inalcanzable (sin require.main === module)"
+  },
+  "hallazgos": [
+    {
+      "carpeta": "algorithmic-correctness-1",
+      "lens": "algorithmic-correctness",
+      "severity": "bug",
+      "file": "scripts/hooks/large-read-meter.js",
+      "line": null,
+      "summary": "lecturaEnteraBash() tokeniza por espacios sin respetar que el texto está entre comillas: un `git commit -m \"update plugin.json\"` se cobra como lectura entera, y un `cat \"notes on jq usage.md\"` se exime porque CONFIG.acotadores matchea la palabra `jq` dentro del nombre del archivo.",
+      "repro": "CASO 1 (falso positivo): lecturaEnteraBash('git commit -m \"...plugin.json\"') → esperado null (es un commit), observado \"plugin.json\". CASO 2 (falso negativo): un cat entero real se exime por una palabra dentro del nombre entre comillas → esperado \"notes on jq usage.md\", observado null.",
+      "confidence": "high",
+      "clase_real": "C2"
+    },
+    {
+      "carpeta": "algorithmic-correctness-2",
+      "lens": "algorithmic-correctness",
+      "severity": "bug",
+      "file": "scripts/hooks/large-read-meter.js",
+      "line": 76,
+      "summary": "segmentos() no trata el heredoc como un bloque atómico: sólo se excluye el segmento que ABRE el heredoc (la línea con `<<`), y las líneas del BODY se parten por `\\n` y se re-clasifican como comandos independientes.",
+      "repro": "Si una línea del body arranca con cat/bat/nl sin pipe/redirect/`<<` EN ESA MISMA LÍNEA, el clasificador la toma como una lectura entera real del archivo que nombra esa línea.",
+      "confidence": "high",
+      "clase_real": "C1"
+    },
+    {
+      "carpeta": "algorithmic-correctness-3",
+      "lens": "algorithmic-correctness",
+      "severity": "bug",
+      "file": "scripts/hooks/large-read-meter.js",
+      "line": 98,
+      "summary": "La exención `lectura-entera-ok:` se evalúa sobre el comando ENTERO y no sobre el segmento: en un comando compuesto con `;`, una exención declarada para el segundo `cat` blanquea también al primero, que es de otro archivo y no está justificado.",
+      "repro": "INPUT: `cat /repo/no-relacionado-enorme.md; cat /repo/b.md # lectura-entera-ok: el dev pidio ver b.md`. ESPERADO si la exención fuera por-segmento: el primer cat sigue siendo detectado. OBSERVADO: los dos quedan exentos.",
+      "confidence": "high",
+      "clase_real": "C5"
+    },
+    {
+      "carpeta": "algorithmic-correctness-4",
+      "lens": "algorithmic-correctness",
+      "severity": "bug",
+      "file": "scripts/hooks/large-read-meter.js",
+      "line": 201,
+      "summary": "measure() cuenta las lecturas acotadas contra una lista hardcodeada en la línea 201 que NO es CONFIG.acotadores: un turno sin lecturas queda contado como acotada, y una lectura que el medidor dice que es acotada devuelve null y no se cuenta ni como acotada ni como entera.",
+      "repro": "Esperado (comentario de measure(), línea 208): turno sin lecturas → nada. Observado: measure() devuelve {peor:null, enteras:0, acotadas:1}. Y en el otro caso, esperado contarla como acotada, observado measure() → null.",
+      "confidence": "high",
+      "clase_real": "C3"
+    },
+    {
+      "carpeta": "algorithmic-correctness-5",
+      "lens": "algorithmic-correctness",
+      "severity": "bug",
+      "file": "scripts/hooks/large-read-meter.js",
+      "line": 372,
+      "summary": "module.exports es inalcanzable por require(): main() corre incondicionalmente al cargar el módulo y el archivo pega process.exit(0) antes de llegar a la línea de exports.",
+      "repro": "probe-require.js hace console.log('before-require'), require() del módulo real y console.log('after-require'). Esperado: se imprimen los dos. Observado: 'after-require' NUNCA se imprime; el proceso entero termina en el require.",
+      "confidence": "high",
+      "clase_real": "C9"
+    },
+    {
+      "carpeta": "determinism-ordering-1",
+      "lens": "determinism-ordering",
+      "severity": "bug",
+      "file": "scripts/hooks/large-read-meter.js",
+      "line": 103,
+      "summary": "Falso negativo: la regex de exclusión de «redirección de salida» (/>>?\\s*\\S/) matchea CUALQUIER '>' del segmento bash, incluida la redirección de stderr (`2>/dev/null`, `2>&1`), no sólo la de stdout.",
+      "repro": "Un `cat archivo 2>/dev/null` que vuelca el archivo entero por stdout queda clasificado como «escritura» y jamás se mide.",
+      "confidence": "high",
+      "clase_real": "C4"
+    },
+    {
+      "carpeta": "determinism-ordering-2",
+      "lens": "determinism-ordering",
+      "severity": "bug",
+      "file": "scripts/hooks/large-read-meter.js",
+      "line": 81,
+      "summary": "archivoDe() (líneas 81-92) no reconoce el operador de redirección de entrada `<` ni reconstruye paths entre comillas con espacios.",
+      "repro": "Con un comando que lee por `<` o con un archivo cuyo nombre lleva espacios entre comillas, el aviso que le llega al agente nombra un archivo que no es el que se leyó.",
+      "confidence": "high",
+      "clase_real": "C6"
+    },
+    {
+      "carpeta": "false-negative-classification-1",
+      "lens": "false-negative-classification",
+      "severity": "bug",
+      "file": "scripts/hooks/large-read-meter.js",
+      "line": 62,
+      "summary": "/bin/cat y \\cat (bypass de alias) quedan invisibles para el medidor: no se cobran NI cuentan como acotadas — measure() devuelve null y no se escribe ni pending/ ni log.jsonl.",
+      "repro": "Transcript JSONL sintético con un tool_use Bash `/bin/cat <archivo>` y un tool_result de 40.000 caracteres, pasado por stdin al hook real: no se registra nada.",
+      "confidence": "high",
+      "clase_real": "C2"
+    },
+    {
+      "carpeta": "false-negative-classification-2",
+      "lens": "false-negative-classification",
+      "severity": "bug",
+      "file": "scripts/hooks/large-read-meter.js",
+      "line": 106,
+      "summary": "CONFIG.acotadores.test(seg) corre sobre el segmento entero, comentario final incluido: un comentario inocuo al final de la línea que nombre un acotador anula el cobro de un cat entero real.",
+      "repro": "`cat gordo.md # ojo con el head` → esperado: cobrar (un comentario no es un filtro aplicado a la salida). Observado: no cobra.",
+      "confidence": "high",
+      "clase_real": "C7"
+    },
+    {
+      "carpeta": "false-negative-classification-3",
+      "lens": "false-negative-classification",
+      "severity": "bug",
+      "file": "scripts/hooks/large-read-meter.js",
+      "line": 100,
+      "summary": "La exención `lectura-entera-ok:` se testea contra CONFIG.marcaExencion.test(texto) donde `texto` es el comando COMPLETO, ANTES de partirlo en segmentos con segmentos(): una exención declarada en un segmento blanquea TODO el comando.",
+      "repro": "En un comando compuesto con `;`/`&&`, la exención de un segmento exime también los otros `cat` de archivos grandes y no relacionados.",
+      "confidence": "high",
+      "clase_real": "C5"
+    },
+    {
+      "carpeta": "false-positive-edge-1",
+      "lens": "false-positive-edge",
+      "severity": "bug",
+      "file": "scripts/hooks/large-read-meter.js",
+      "line": null,
+      "summary": "lecturaEnteraBash() matchea los nombres de los binarios como texto suelto: un `git commit -m \"update cat facts\"` o un `echo \"I saw a cat today in the yard\"` se clasifican como lectura entera de un archivo.",
+      "repro": "lecturaEnteraBash('git commit -m \"update cat facts\"'), ('git commit -m \"fix the nl handling please\"') y ('echo \"I saw a cat today in the yard\"') → esperado null en los tres, observado un archivo en cada uno.",
+      "confidence": "high",
+      "clase_real": "C2"
+    },
+    {
+      "carpeta": "false-positive-edge-2",
+      "lens": "false-positive-edge",
+      "severity": "bug",
+      "file": "scripts/hooks/large-read-meter.js",
+      "line": 103,
+      "summary": "La exención «este segmento escribe, no lee» (/>>?\\s*\\S/.test(seg)) matchea CUALQUIER `>`, incluyendo redirecciones de sólo stderr (`2>&1`, `2>/dev/null`), así que un cat que trae el archivo entero por stdout escapa sin medir.",
+      "repro": "HOME falso, transcript JSONL con un tool_use Bash `cat <archivo> 2>/dev/null` + su tool_result grande, contra el hook real: no se mide.",
+      "confidence": "high",
+      "clase_real": "C4"
+    },
+    {
+      "carpeta": "false-positive-edge-3",
+      "lens": "false-positive-edge",
+      "severity": "robustness",
+      "file": "scripts/hooks/large-read-meter.js",
+      "line": 116,
+      "summary": "offset:0 evade el cobro: measure() exime la llamada por tener offset, aunque offset:0 sin limit lee exactamente lo mismo que no pasar ni offset ni limit.",
+      "repro": "Turno A (offset:0) → measure() {\"peor\":null,\"enteras\":0,\"acotadas\":1}; Turno B (sin offset) → {\"peor\":{...},\"enteras\":1,\"acotadas\":0}. El tool_result es idéntico en los dos.",
+      "confidence": "high",
+      "clase_real": "C8"
+    },
+    {
+      "carpeta": "false-positive-edge-4",
+      "lens": "false-positive-edge",
+      "severity": "bug",
+      "file": "scripts/hooks/large-read-meter.js",
+      "line": 372,
+      "summary": "module.exports es inalcanzable por require() porque main() corre incondicionalmente al cargar el módulo y, salvo que el ARGV del proceso que lo requiere contenga --selftest, pega process.exit(0) antes de llegar a la línea de exports.",
+      "repro": "echo '' | node -e \"console.log('before'); require('./scripts/hooks/lectura-grande-meter.js'); console.log('after')\" → 'after' no se imprime.",
+      "confidence": "high",
+      "clase_real": "C9"
+    },
+    {
+      "carpeta": "integration-contracts-1",
+      "lens": "integration-contracts",
+      "severity": "bug",
+      "file": "scripts/hooks/large-read-meter.js",
+      "line": 201,
+      "summary": "La rama `else if` de measure() (línea 201) cuenta mal las lecturas acotadas: usa su propia lista en vez de CONFIG, y turnos enteros desaparecen del --report.",
+      "repro": "Transcripts JSONL sintéticos con el mismo patrón que scripts/tests/large-read-meter.test.sh contra el hook real: el conteo de acotadas no coincide con las lecturas acotadas del turno.",
+      "confidence": "high",
+      "clase_real": "C3"
+    },
+    {
+      "carpeta": "integration-contracts-2",
+      "lens": "integration-contracts",
+      "severity": "bug",
+      "file": "scripts/hooks/large-read-meter.js",
+      "line": 372,
+      "summary": "Falta el guard require.main === module: main() corre como efecto secundario de require() y termina el proceso.",
+      "repro": "node -e \"require('<ruta>/lectura-grande-meter.js'); console.log('llega aca')\" < /dev/null → 'llega aca' NUNCA se imprime, EXIT=0.",
+      "confidence": "high",
+      "clase_real": "C9"
+    },
+    {
+      "carpeta": "traversal-completeness-1",
+      "lens": "traversal-completeness",
+      "severity": "bug",
+      "file": "scripts/hooks/large-read-meter.js",
+      "line": 76,
+      "summary": "segmentos()/lecturaEnteraBash() tratan cada LÍNEA del cuerpo de un heredoc como un segmento de comando independiente, así que una línea del cuerpo que empieza con cat/nl/bat —texto que el heredoc está ESCRIBIENDO, nunca ejecutando— se clasifica como una lectura entera del archivo que nombra esa línea.",
+      "repro": "Heredoc que escribe un script cuyo cuerpo tiene una línea `cat /etc/hostname`: el medidor cobra /etc/hostname. 42 de 200 sesiones reales disparan este caso.",
+      "confidence": "high",
+      "clase_real": "C1"
+    },
+    {
+      "carpeta": "traversal-completeness-2",
+      "lens": "traversal-completeness",
+      "severity": "bug",
+      "file": "scripts/hooks/large-read-meter.js",
+      "line": 201,
+      "summary": "measure() sólo cuenta un Bash como «acotada» si matchea el regex hardcodeado de la línea 201, que es una lista MÁS CORTA que CONFIG.acotadores (línea 64): le faltan ag, wc, cut, sort, uniq y otros, así que el turno no aparece como medido en el log ni en el --report.",
+      "repro": "Un turno con dos comandos que SÍ están en CONFIG.acotadores: esperado measure().acotadas === 2 y turno medido; observado, el turno no aparece.",
+      "confidence": "high",
+      "clase_real": "C3"
+    },
+    {
+      "carpeta": "traversal-completeness-3",
+      "lens": "traversal-completeness",
+      "severity": "robustness",
+      "file": "scripts/hooks/large-read-meter.js",
+      "line": 116,
+      "summary": "lecturaEnteraRead() exime cualquier llamada con offset != null, incluyendo offset:0 sin limit, que en el comportamiento real de la herramienta Read lee lo mismo que no pasar ni offset ni limit.",
+      "repro": "Llamada directa a lecturaEnteraRead({file_path, offset:0}) sobre el módulo real: devuelve exento, cuando la lectura trajo el archivo entero.",
+      "confidence": "high",
+      "clase_real": "C8"
+    }
+  ]
+}

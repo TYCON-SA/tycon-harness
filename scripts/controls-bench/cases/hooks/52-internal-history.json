@@ -1,0 +1,168 @@
+{
+  "__doc": "El control de historia interna en la prosa que se publica (scripts/publishing/internal-history.js). No es un hook de la herramienta: lo corren el pre-commit de git y la validación de cada pedido de cambio, igual bajo cualquier herramienta. Por eso los casos lo corren con un guion intermedio sobre un repo de juguete armado en el banco de trabajo (con la forma del repo público: sin perfil, todo lo versionado se publica), y son todos `must-emit`: lo que se fija es el CÓDIGO DE SALIDA de cada camino y lo que dice. Nunca `must-block`: para el banco una salida 2 es «bloqueó», y para este control 2 es «no pude mirar» — un caso escrito así quedaría verde justo cuando el control no miró nada. Lo que no se puede perder: que una forma nueva en una guía salga 1 diciendo archivo, línea y forma sin repetir el texto; que lo que ya estaba, un marcador y un nombre de mentira salgan 0 en silencio; que sin su configuración salga 2 y lo diga; que avisando avise de verdad y salga 0; y que sin ninguna variable frene por lo que está escrito.",
+  "hooks": [
+    {
+      "hook": "scripts/publishing/internal-history.js (la historia interna no entra a la prosa que se publica)",
+      "script": "${FIXTURE}/correr.sh",
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "cases": [
+        {
+          "id": "una-forma-nueva-en-una-guia-sale-1-y-dice-donde",
+          "type": "must-emit",
+          "__doc": "🔴 El caso que el control existe para frenar: un commit que le agrega a una guía «la story N de un producto del equipo». Prendido, sale 1 (no 2: miró y encontró), nombra el archivo, la línea y la forma, y NO repite el texto encontrado: el registro de un commit y el de una validación pública no son lugares para volver a escribirlo.",
+          "files": {
+            "correr.sh": "#!/usr/bin/env bash\ncd \"$FIXTURE/repo\"\nenv -u GIT_DIR -u GIT_INDEX_FILE HOME=\"$FIXTURE/home\" TYCON_INTERNAL_HISTORY=block node \"$TCG/scripts/publishing/internal-history.js\" --repo \"$FIXTURE/repo\"\necho \"salida=$?\"\n",
+            "prep.sh": "#!/usr/bin/env bash\nset -eu\ncd \"$FIXTURE\"\nmkdir -p repo/guides repo/scripts home\ncd repo\ng() { git -c user.name=Lab -c user.email=lab@example.com -c core.hooksPath=/dev/null \"$@\"; }\ng init -q -b main\nprintf '# Guia\\n\\nPrimera linea.\\n' > guides/a.md\nprintf '# Vieja\\n\\nQuedo asi (story 8.1).\\n' > guides/old.md\nprintf \"'use strict';\\n\" > scripts/x.js\ng add -A\ng commit -q -m base\nprintf '# Guia\\n\\nPrimera linea.\\nPaso en la Story 4.2 de un producto del equipo.\\n' > guides/a.md\ng add -A\n"
+          },
+          "setup": [
+            "chmod +x correr.sh prep.sh",
+            "bash prep.sh"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "historia"
+            }
+          },
+          "expect": {
+            "stdout_re": [
+              "salida=1",
+              "internal-history: findings=1 cannot_look=0 mode=block"
+            ],
+            "stderr_re": [
+              "guides/a\\.md:4\\s+product-story",
+              "el commit no se crea",
+              "internal-history-allowed\\.json"
+            ],
+            "stderr_not_re": [
+              "4\\.2"
+            ]
+          }
+        },
+        {
+          "id": "lo-que-ya-estaba-un-marcador-y-un-nombre-de-mentira-salen-0-callados",
+          "type": "must-emit",
+          "__doc": "El silencio legítimo, y lo que hace que el control no se termine apagando: retocar un párrafo que ya traía una forma, escribir un marcador (`story <N.M>`) o un nombre de mentira (`acme`, `example.com`), o poner el mismo texto en un guion —que no es prosa— no frena ni dice nada.",
+          "files": {
+            "correr.sh": "#!/usr/bin/env bash\ncd \"$FIXTURE/repo\"\nenv -u GIT_DIR -u GIT_INDEX_FILE HOME=\"$FIXTURE/home\" TYCON_INTERNAL_HISTORY=block node \"$TCG/scripts/publishing/internal-history.js\" --repo \"$FIXTURE/repo\"\necho \"salida=$?\"\n",
+            "prep.sh": "#!/usr/bin/env bash\nset -eu\ncd \"$FIXTURE\"\nmkdir -p repo/guides repo/scripts home\ncd repo\ng() { git -c user.name=Lab -c user.email=lab@example.com -c core.hooksPath=/dev/null \"$@\"; }\ng init -q -b main\nprintf '# Guia\\n\\nPrimera linea.\\n' > guides/a.md\nprintf '# Vieja\\n\\nQuedo asi (story 8.1).\\n' > guides/old.md\nprintf \"'use strict';\\n\" > scripts/x.js\ng add -A\ng commit -q -m base\nprintf '# Guia\\n\\nEl cliente acme (example.com) usa `story <N.M>`.\\n' > guides/a.md\nprintf '# Vieja\\n\\nQuedo asi, retocada (story 8.1).\\n' > guides/old.md\nprintf \"'use strict';\\n// Paso en la Story 4.2 de un producto del equipo.\\n\" > scripts/x.js\ng add -A\n"
+          },
+          "setup": [
+            "chmod +x correr.sh prep.sh",
+            "bash prep.sh"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "historia"
+            }
+          },
+          "expect": {
+            "stdout_re": [
+              "salida=0",
+              "internal-history: findings=0 cannot_look=0 mode=block"
+            ],
+            "stderr_not_re": [
+              "historia interna"
+            ]
+          }
+        },
+        {
+          "id": "sin-su-configuracion-sale-2-y-lo-dice",
+          "type": "must-emit",
+          "__doc": "🔴 «No pude mirar» nunca es verde: sin su configuración el control no sabe qué formas frenan. Prendido sale 2 —distinto del 1 de un hallazgo— y dice que no pudo mirar; la línea de cuentas lo marca (`cannot_look=1`) para que la validación no lo lea como «cero hallazgos».",
+          "files": {
+            "correr.sh": "#!/usr/bin/env bash\ncd \"$FIXTURE/repo\"\nenv -u GIT_DIR -u GIT_INDEX_FILE HOME=\"$FIXTURE/home\" TYCON_INTERNAL_HISTORY=block node \"$TCG/scripts/publishing/internal-history.js\" --repo \"$FIXTURE/repo\" --config \"$FIXTURE/no-esta.json\"\necho \"salida=$?\"\n",
+            "prep.sh": "#!/usr/bin/env bash\nset -eu\ncd \"$FIXTURE\"\nmkdir -p repo/guides home\ncd repo\ng() { git -c user.name=Lab -c user.email=lab@example.com -c core.hooksPath=/dev/null \"$@\"; }\ng init -q -b main\nprintf '# Guia\\n\\nPrimera linea.\\n' > guides/a.md\ng add -A\ng commit -q -m base\nprintf '# Guia\\n\\nPrimera linea, tocada.\\n' > guides/a.md\ng add -A\n"
+          },
+          "setup": [
+            "chmod +x correr.sh prep.sh",
+            "bash prep.sh"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "historia"
+            }
+          },
+          "expect": {
+            "stdout_re": [
+              "salida=2",
+              "internal-history: findings=0 cannot_look=1 mode=block"
+            ],
+            "stderr_re": [
+              "no pude mirar",
+              "el commit no se crea"
+            ]
+          }
+        },
+        {
+          "id": "avisando-avisa-de-verdad-y-sale-0",
+          "type": "must-emit",
+          "__doc": "El modo con que el control nace: dice lo mismo que diría frenando —archivo, línea y forma— y deja crear el commit. Lo que se fija es que el aviso EXISTA (un modo aviso que no dice nada es un control apagado) y que la línea de cuentas lleve el hallazgo, que es lo que la validación convierte en un aviso de la corrida.",
+          "files": {
+            "correr.sh": "#!/usr/bin/env bash\ncd \"$FIXTURE/repo\"\nenv -u GIT_DIR -u GIT_INDEX_FILE HOME=\"$FIXTURE/home\" TYCON_INTERNAL_HISTORY=warn node \"$TCG/scripts/publishing/internal-history.js\" --repo \"$FIXTURE/repo\"\necho \"salida=$?\"\n",
+            "prep.sh": "#!/usr/bin/env bash\nset -eu\ncd \"$FIXTURE\"\nmkdir -p repo/guides home\ncd repo\ng() { git -c user.name=Lab -c user.email=lab@example.com -c core.hooksPath=/dev/null \"$@\"; }\ng init -q -b main\nprintf '# Guia\\n\\nPrimera linea.\\n' > guides/a.md\ng add -A\ng commit -q -m base\nprintf '# Guia\\n\\nPrimera linea.\\nPaso en la Story 4.2 de un producto del equipo.\\n' > guides/a.md\ng add -A\n"
+          },
+          "setup": [
+            "chmod +x correr.sh prep.sh",
+            "bash prep.sh"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "historia"
+            }
+          },
+          "expect": {
+            "stdout_re": [
+              "salida=0",
+              "internal-history: findings=1 cannot_look=0 mode=warn"
+            ],
+            "stderr_re": [
+              "guides/a\\.md:4\\s+product-story",
+              "avisa, no frena"
+            ],
+            "stderr_not_re": [
+              "4\\.2"
+            ]
+          }
+        },
+        {
+          "id": "sin-variable-frena-por-lo-que-esta-escrito",
+          "type": "must-emit",
+          "__doc": "🔴 El modo ESCRITO del control es frenar: sin ninguna variable en el entorno, el mismo commit que agrega una forma a una guía sale 1 con `mode=block`. Es el caso que se pone rojo si alguien vuelve a dejar el control en aviso por escrito (scripts/publishing/internal-history.json → mode): con la prosa que se publica en cero, un control que sólo avisa deja entrar de nuevo lo que costó sacar.",
+          "files": {
+            "correr.sh": "#!/usr/bin/env bash\ncd \"$FIXTURE/repo\"\nenv -u GIT_DIR -u GIT_INDEX_FILE -u TYCON_INTERNAL_HISTORY HOME=\"$FIXTURE/home\" node \"$TCG/scripts/publishing/internal-history.js\" --repo \"$FIXTURE/repo\"\necho \"salida=$?\"\n",
+            "prep.sh": "#!/usr/bin/env bash\nset -eu\ncd \"$FIXTURE\"\nmkdir -p repo/guides repo/scripts home\ncd repo\ng() { git -c user.name=Lab -c user.email=lab@example.com -c core.hooksPath=/dev/null \"$@\"; }\ng init -q -b main\nprintf '# Guia\\n\\nPrimera linea.\\n' > guides/a.md\nprintf '# Vieja\\n\\nQuedo asi (story 8.1).\\n' > guides/old.md\nprintf \"'use strict';\\n\" > scripts/x.js\ng add -A\ng commit -q -m base\nprintf '# Guia\\n\\nPrimera linea.\\nPaso en la Story 4.2 de un producto del equipo.\\n' > guides/a.md\ng add -A\n"
+          },
+          "setup": [
+            "chmod +x correr.sh prep.sh",
+            "bash prep.sh"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "historia"
+            }
+          },
+          "expect": {
+            "stdout_re": [
+              "salida=1",
+              "internal-history: findings=1 cannot_look=0 mode=block"
+            ],
+            "stderr_re": [
+              "guides/a\\.md:4\\s+product-story",
+              "el commit no se crea",
+              "internal-history-allowed\\.json"
+            ],
+            "stderr_not_re": [
+              "4\\.2"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

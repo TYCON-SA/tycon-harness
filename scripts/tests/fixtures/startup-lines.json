@@ -1,0 +1,135 @@
+{
+  "__doc": "Las formas CONOCIDAS de la línea de arranque del arnés en settings.json (story 8.13, AC 7). Una por variante medida en el equipo, con nombres inventados (Lab-user: con mayúscula, así el detector de publicación no la toma por una ruta de máquina real): la migración (scripts/setup/harness/startup-line.js) reconoce cada una por ESTRUCTURA (los `cd … && git pull` / `git -C … pull` de los dos repos, `engram sync --import` opcional, la llamada al instalador opcional, flags en cualquier orden, y la variante Windows con Set-Location/pwsh) y la reemplaza UNA sola vez por la línea nueva; una forma que no está acá no se toca. La prueba harness-startup-line.test.js cruza todas. `platform`: posix | windows. `expect`: known (se migra) | unknown (se deja, con aviso). `classify_as`: el id que devuelve classify() cuando el comando es estructuralmente igual a otra forma (el async no vive en el comando).",
+  "new": {
+    "posix": "node \"$HOME/.claude/.tycon-pipeline/harness/bootstrap.js\" || bash \"$HOME/.claude/.tycon-pipeline/harness/bootstrap-fallback.sh\"",
+    "windows": "pwsh -NoProfile -ExecutionPolicy Bypass -Command \"node '<HOME>/.claude/.tycon-pipeline/harness/bootstrap.js' || & '<HOME>/.claude/.tycon-pipeline/harness/bootstrap-fallback.ps1'\""
+  },
+  "superseded": {
+    "__doc": "La forma ANTERIOR de la línea nueva de Windows (story 8.13): llama a la copia fija pero pregunta `if ($LASTEXITCODE -ne 0)`, y Git Bash —por donde Claude Code lanza los hooks en Windows— se come la variable. `startup` la pasa a la de ahora (story 8.17).",
+    "windows": "pwsh -NoProfile -ExecutionPolicy Bypass -Command \"node '<HOME>/.claude/.tycon-pipeline/harness/bootstrap.js'; if ($LASTEXITCODE -ne 0) { & '<HOME>/.claude/.tycon-pipeline/harness/bootstrap-fallback.ps1' }\""
+  },
+  "forms": [
+    {
+      "id": "canonical-posix",
+      "platform": "posix",
+      "source": "la línea que INSTALL.md §4 mandaba pegar a mano en macOS y Linux hasta la story 8.18 (desde entonces la escribe harness.js install y el papel ya no la trae)",
+      "async": true,
+      "expect": "known",
+      "command": "engram sync --import >/dev/null 2>&1 || true; cd ~/.claude/tycon-claude-guides && git pull --ff-only --quiet --autostash 2>/dev/null || true; cd ~/.claude/agent-skills && git pull --ff-only --quiet --autostash 2>/dev/null || true; bash ~/.claude/tycon-claude-guides/scripts/install-tycon-hooks.sh 2>/dev/null || true"
+    },
+    {
+      "id": "canonical-windows",
+      "platform": "windows",
+      "source": "la línea que INSTALL.md §4 mandaba pegar a mano en Windows hasta la story 8.18 (desde entonces la escribe harness.js install y el papel ya no la trae)",
+      "async": true,
+      "expect": "known",
+      "command": "pwsh -NoProfile -ExecutionPolicy Bypass -Command \"try { engram sync --import *> $null } catch {}; try { Set-Location $env:USERPROFILE\\.claude\\tycon-claude-guides; git pull --ff-only --quiet --autostash; Set-Location $env:USERPROFILE\\.claude\\agent-skills; git pull --ff-only --quiet --autostash; & $env:USERPROFILE\\.claude\\tycon-claude-guides\\scripts\\install-tycon-hooks.ps1 } catch {}\""
+    },
+    {
+      "id": "sourcecode-clone-no-engram",
+      "platform": "posix",
+      "source": "medida en una máquina del equipo (clon en ~/SourceCode, sin engram sync, flags en otro orden)",
+      "async": true,
+      "expect": "known",
+      "command": "cd ~/SourceCode/tycon-claude-guides && git pull --ff-only --autostash --quiet 2>/dev/null || true; cd ~/.claude/agent-skills && git pull --ff-only --quiet --autostash 2>/dev/null || true; bash ~/SourceCode/tycon-claude-guides/scripts/install-tycon-hooks.sh 2>/dev/null || true"
+    },
+    {
+      "id": "no-engram",
+      "platform": "posix",
+      "source": "medida en una máquina del equipo (rutas absolutas con el usuario, sin engram sync)",
+      "async": true,
+      "expect": "known",
+      "command": "cd /Users/Lab-user/.claude/tycon-claude-guides && git pull --ff-only --quiet --autostash 2>/dev/null || true; cd /Users/Lab-user/.claude/agent-skills && git pull --ff-only --quiet --autostash 2>/dev/null || true; bash /Users/Lab-user/.claude/tycon-claude-guides/scripts/install-tycon-hooks.sh 2>/dev/null || true"
+    },
+    {
+      "id": "no-installer",
+      "platform": "posix",
+      "source": "la que motivó harness-bootstrap-heal.sh (cabecera): baja todo y no enchufa nada",
+      "async": true,
+      "expect": "known",
+      "command": "engram sync --import >/dev/null 2>&1 || true; cd ~/.claude/tycon-claude-guides && git pull --ff-only --quiet --autostash 2>/dev/null || true; cd ~/.claude/agent-skills && git pull --ff-only --quiet --autostash 2>/dev/null || true"
+    },
+    {
+      "id": "no-ff",
+      "platform": "posix",
+      "source": "instalaciones anteriores al 2026-09-03 (sin --ff-only --autostash; la normalización del .sh las protege)",
+      "async": true,
+      "expect": "known",
+      "command": "engram sync --import >/dev/null 2>&1 || true; cd ~/.claude/tycon-claude-guides && git pull --quiet 2>/dev/null || true; cd ~/.claude/agent-skills && git pull --quiet 2>/dev/null || true; bash ~/.claude/tycon-claude-guides/scripts/install-tycon-hooks.sh 2>/dev/null || true"
+    },
+    {
+      "id": "canonical-posix-async-false",
+      "platform": "posix",
+      "source": "la canónica registrada sin `async` (una máquina del equipo)",
+      "async": false,
+      "expect": "known",
+      "classify_as": "canonical-posix",
+      "command": "engram sync --import >/dev/null 2>&1 || true; cd ~/.claude/tycon-claude-guides && git pull --ff-only --quiet --autostash 2>/dev/null || true; cd ~/.claude/agent-skills && git pull --ff-only --quiet --autostash 2>/dev/null || true; bash ~/.claude/tycon-claude-guides/scripts/install-tycon-hooks.sh 2>/dev/null || true"
+    },
+    {
+      "id": "git-c-posix",
+      "platform": "posix",
+      "source": "variante con `git -C <repo> pull` en vez de `cd && git pull` (la forma que harness-bootstrap-heal.sh también reconoce)",
+      "async": true,
+      "expect": "known",
+      "classify_as": "canonical-posix",
+      "command": "engram sync --import >/dev/null 2>&1 || true; git -C \"$HOME/.claude/tycon-claude-guides\" pull --autostash --ff-only --quiet 2>/dev/null || true; git -C \"$HOME/.claude/agent-skills\" pull --autostash --ff-only --quiet 2>/dev/null || true; bash \"$HOME/.claude/tycon-claude-guides/scripts/install-tycon-hooks.sh\" 2>/dev/null || true"
+    },
+    {
+      "id": "heal-appended",
+      "platform": "posix",
+      "source": "la nueva con la llamada al instalador pegada atrás con salto de línea: lo que deja harness-bootstrap-heal.sh viejo (M7)",
+      "async": true,
+      "expect": "known",
+      "command": "node \"$HOME/.claude/.tycon-pipeline/harness/bootstrap.js\" || bash \"$HOME/.claude/.tycon-pipeline/harness/bootstrap-fallback.sh\"\nbash \"/Users/Lab-user/.claude/tycon-claude-guides/scripts/install-tycon-hooks.sh\" 2>/dev/null || true"
+    },
+    {
+      "id": "unknown-dev-extra",
+      "platform": "posix",
+      "source": "inventada: la canónica más un paso propio del dev al final — no se toca, se avisa",
+      "async": true,
+      "expect": "unknown",
+      "command": "engram sync --import >/dev/null 2>&1 || true; cd ~/.claude/tycon-claude-guides && git pull --ff-only --quiet --autostash 2>/dev/null || true; cd ~/.claude/agent-skills && git pull --ff-only --quiet --autostash 2>/dev/null || true; bash ~/.claude/tycon-claude-guides/scripts/install-tycon-hooks.sh 2>/dev/null || true; ~/bin/session-start-lab.sh"
+    },
+    {
+      "id": "unknown-windows-dev-extra",
+      "platform": "windows",
+      "source": "inventada: la canónica de Windows con un paso propio del dev adentro — no se toca, se avisa",
+      "async": true,
+      "expect": "unknown",
+      "command": "pwsh -NoProfile -ExecutionPolicy Bypass -Command \"try { Set-Location $env:USERPROFILE\\.claude\\tycon-claude-guides; git pull --ff-only --quiet --autostash; Set-Location $env:USERPROFILE\\.claude\\agent-skills; git pull --ff-only --quiet --autostash; & $env:USERPROFILE\\lab\\session-start.ps1; & $env:USERPROFILE\\.claude\\tycon-claude-guides\\scripts\\install-tycon-hooks.ps1 } catch {}\""
+    },
+    {
+      "id": "installer-only",
+      "platform": "posix",
+      "source": "la que crea harness-bootstrap-heal.sh viejo cuando no había ninguna línea del arnés («creada la línea que faltaba»): sólo la llamada al instalador, con la ruta entre comillas",
+      "async": false,
+      "expect": "known",
+      "command": "bash \"/Users/Lab-user/.claude/tycon-claude-guides/scripts/install-tycon-hooks.sh\" 2>/dev/null || true"
+    },
+    {
+      "id": "unknown-second-installer",
+      "platform": "posix",
+      "source": "inventada (pase adversarial, clase 15): la canónica más una segunda llamada a OTRO instalador — no se toca, se avisa",
+      "async": true,
+      "expect": "unknown",
+      "command": "engram sync --import >/dev/null 2>&1 || true; cd ~/.claude/tycon-claude-guides && git pull --ff-only --quiet --autostash 2>/dev/null || true; cd ~/.claude/agent-skills && git pull --ff-only --quiet --autostash 2>/dev/null || true; bash ~/.claude/tycon-claude-guides/scripts/install-tycon-hooks.sh 2>/dev/null || true; bash ~/lab/otro/scripts/install-tycon-hooks.sh 2>/dev/null || true"
+    },
+    {
+      "id": "unknown-redirect-step",
+      "platform": "posix",
+      "source": "inventada (pase adversarial, clase 15): un paso propio que es sólo una redirección a un archivo del dev — no se toca, se avisa",
+      "async": true,
+      "expect": "unknown",
+      "command": "cd ~/.claude/tycon-claude-guides && git pull --ff-only --quiet --autostash 2>/dev/null || true; cd ~/.claude/agent-skills && git pull --ff-only --quiet --autostash 2>/dev/null || true; true >~/.lab-marker; bash ~/.claude/tycon-claude-guides/scripts/install-tycon-hooks.sh 2>/dev/null || true"
+    },
+    {
+      "id": "unknown-engram-args",
+      "platform": "posix",
+      "source": "inventada (pase adversarial, clase 15): engram sync con argumentos propios — no se toca, se avisa",
+      "async": true,
+      "expect": "unknown",
+      "command": "engram sync --import --project lab-project >/dev/null 2>&1 || true; cd ~/.claude/tycon-claude-guides && git pull --ff-only --quiet --autostash 2>/dev/null || true; cd ~/.claude/agent-skills && git pull --ff-only --quiet --autostash 2>/dev/null || true; bash ~/.claude/tycon-claude-guides/scripts/install-tycon-hooks.sh 2>/dev/null || true"
+    }
+  ]
+}

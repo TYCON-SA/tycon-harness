@@ -1,0 +1,143 @@
+{
+  "__doc": "Story 2.8 (AC 4): el aviso de la guía de QA de on-pre-commit.js deja constancia en gates.log de los CUATRO resultados —falta, vieja, presente, no aplica— y toda línea lleva esquema 2. Hasta la 2.8 sólo anotaba falta y vieja, así que el tablero publicaba «0 de 109 guías presentes» por construcción. Lo observable no cambia: el mismo aviso cuando falta, silencio cuando está o no aplica. El exit 2 de los tres casos lo produce la evidencia de DoD ausente (igual que en c8 de 17-config-de-frenos.json), no la guía. ROJO PREVIO: con el hook de main, presente y no-aplica no escriben ninguna línea y missing no trae esquema.",
+  "hooks": [
+    {
+      "hook": "on-pre-commit.js (constancia de la guía de QA, story 2.8)",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/on-pre-commit.js",
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "cases": [
+        {
+          "id": "presente-deja-constancia",
+          "type": "must-run",
+          "__doc": "Story con superficie operable a mano que pasa a done con la guía al día: se anota «presente» con esquema 2 y no se avisa nada.",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p specs/stories specs/qa .advisors/dod-runtime",
+            "printf -- '---\\nstory: \"4.2\"\\nepic: \"4\"\\nstatus: in-progress\\n---\\n# Story 4.2\\n\\n## Acceptance Criteria\\n1. AC uno E2E\\n\\ntests_done_playwright_spec: tests/e2e/foo.spec.ts\\n' > specs/stories/4-2.md",
+            "git add specs && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "node -e \"const fs=require('fs');const p='specs/stories/4-2.md';fs.writeFileSync(p,fs.readFileSync(p,'utf8').replace('status: in-progress','status: done'))\"",
+            "git add specs/stories/4-2.md",
+            "node -e \"const fs=require('fs');fs.writeFileSync('specs/qa/4-2-guia-qa.html','<html>guía</html>');const t=new Date(Date.now()+60000);fs.utimesSync('specs/qa/4-2-guia-qa.html',t,t)\""
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit -m \"story 4.2 done\""
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_not_re": [
+              "tycon-qa-guide"
+            ],
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log",
+                "re": "\"name\":\"qa-guide\"[^\\n]*\"status\":\"presente\"[^\\n]*\"esquema\":2"
+              },
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log",
+                "re": "\"status\":\"presente\"[^\\n]*\"clave\":\"[0-9a-f]{16}\""
+              }
+            ]
+          }
+        },
+        {
+          "id": "no-aplica-deja-constancia",
+          "type": "must-run",
+          "__doc": "El repo apagó la guía con qa_guide: off COMMITEADO: se anota «no-aplica» con esquema 2, sin aviso. Sin esta línea el tablero no sabría cuántos cierres NO necesitaban guía.",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p specs/stories .advisors/dod-runtime .tycon",
+            "printf -- '---\\nstory: \"4.2\"\\nepic: \"4\"\\nstatus: in-progress\\n---\\n# Story 4.2\\n\\n## Acceptance Criteria\\n1. AC uno E2E\\n\\ntests_done_playwright_spec: tests/e2e/foo.spec.ts\\n' > specs/stories/4-2.md",
+            "printf '%s\\n' 'qa_guide: off' > .tycon/advisors.yaml",
+            "git add specs .tycon && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "node -e \"const fs=require('fs');const p='specs/stories/4-2.md';fs.writeFileSync(p,fs.readFileSync(p,'utf8').replace('status: in-progress','status: done'))\"",
+            "git add specs/stories/4-2.md"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit -m \"story 4.2 done\""
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_not_re": [
+              "tycon-qa-guide"
+            ],
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log",
+                "re": "\"name\":\"qa-guide\"[^\\n]*\"status\":\"no-aplica\"[^\\n]*\"esquema\":2"
+              }
+            ]
+          }
+        },
+        {
+          "id": "missing-sigue-avisando-con-esquema",
+          "type": "must-run",
+          "__doc": "Sin guía: el aviso sale IGUAL que antes (no-regresión) y la línea de missing ahora trae esquema 2, para que la cuenta sepa que viene del registro completo.",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p specs/stories .advisors/dod-runtime",
+            "printf -- '---\\nstory: \"4.2\"\\nepic: \"4\"\\nstatus: in-progress\\n---\\n# Story 4.2\\n\\n## Acceptance Criteria\\n1. AC uno E2E\\n\\ntests_done_playwright_spec: tests/e2e/foo.spec.ts\\n' > specs/stories/4-2.md",
+            "git add specs && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "node -e \"const fs=require('fs');const p='specs/stories/4-2.md';fs.writeFileSync(p,fs.readFileSync(p,'utf8').replace('status: in-progress','status: done'))\"",
+            "git add specs/stories/4-2.md"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit -m \"story 4.2 done\""
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "tycon-qa-guide"
+            ],
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log",
+                "re": "\"name\":\"qa-guide\"[^\\n]*\"status\":\"missing\"[^\\n]*\"esquema\":2"
+              }
+            ]
+          }
+        },
+        {
+          "id": "no-aplica-sin-superficie-operable",
+          "type": "must-run",
+          "__doc": "Revisión de la story 2.8 (TEST-W4): la OTRA mitad del «no aplica» — una story con criterios pero sin nada que una persona pueda operar a mano (ni pantalla ni HTTP), con el modo por defecto. Se anota «no-aplica» con esquema 2 y clave, sin aviso. Sin este caso, romper el cálculo de la superficie operable no lo detectaba nada.",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p specs/stories .advisors/dod-runtime",
+            "printf -- '---\\nstory: \"4.2\"\\nepic: \"4\"\\nstatus: in-progress\\n---\\n# Story 4.2\\n\\n## Acceptance Criteria\\n1. la función ordena la lista de nombres alfabéticamente\\n' > specs/stories/4-2.md",
+            "git add specs && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "node -e \"const fs=require('fs');const p='specs/stories/4-2.md';fs.writeFileSync(p,fs.readFileSync(p,'utf8').replace('status: in-progress','status: done'))\"",
+            "git add specs/stories/4-2.md"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit -m \"story 4.2 done\""
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_not_re": [
+              "tycon-qa-guide"
+            ],
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log",
+                "re": "\"name\":\"qa-guide\"[^\\n]*\"status\":\"no-aplica\"[^\\n]*\"esquema\":2[^\\n]*\"clave\":\"[0-9a-f]{16}\""
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "__doc": "La configuración del control de historia interna en la prosa que se publica (scripts/publishing/internal-history.js). No es privada: sólo modos y nombres de carpetas. `mode` es el modo del control: `warn` (dice dónde y sale 0) o `block` (el commit no se crea); la variable TYCON_INTERNAL_HISTORY lo pisa, y cuando lo baja lo dice en cada corrida. `forms.<forma>.mode` es el modo de cada forma: el efectivo es el más bajo entre el del control y el suyo, así una forma con demasiados falsos positivos queda sólo como aviso sin apagar las demás. `nonPublicRoots` son las carpetas del repo del equipo que no se publican y que no se confunden con una convención del repo de quien usa el arnés: en el repo público, una ruta bajo una de ellas en la prosa de una guía es una ruta que no lleva a nada. Guía: guides/publicacion-espejo.md, sección «La historia interna».",
+  "__mode": "`block`: la prosa que se publica mide cero (`--all`) y una prueba que viaja lo exige (scripts/tests/internal-history.test.js). Volver a `warn` deja entrar de nuevo lo que costó sacar: si una forma da demasiados falsos positivos, se baja ESA forma en `forms`, con su `why`.",
+  "mode": "block",
+  "forms": {
+    "product-story": { "mode": "block" },
+    "pr-number": { "mode": "block" },
+    "incident-log": { "mode": "block" },
+    "work-branch": { "mode": "block" },
+    "azure-run": { "mode": "block" },
+    "private-commit": { "mode": "block" },
+    "debt-id": { "mode": "block" },
+    "owner-decision": { "mode": "block" },
+    "case-label": { "mode": "block" },
+    "batch-code": { "mode": "block" },
+    "story-number": { "mode": "block" },
+    "story-bare": { "mode": "block", "why": "no distingue el número de una story del de una versión («la 5.1 que viene con el sistema»): medido, 1 falso de cada 20; el falso se declara como dato" },
+    "team-path": { "mode": "block" }
+  },
+  "nonPublicRoots": ["inbox", "artifacts", "onboarding", "new-product-templates"]
+}

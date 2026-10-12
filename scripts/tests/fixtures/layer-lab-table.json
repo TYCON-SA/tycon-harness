@@ -1,0 +1,4 @@
+{
+  "__doc": "La tabla de reemplazos de los laboratorios de la capa (story 8.13.1, AC 5): vacía. La clasificación del exportador lee de ella sólo «afuera»; cada laboratorio la copia a scripts/publishing/replacements.json de su interno de juguete. En el laboratorio la copia pública también la trae (es de juguete): así no cuenta como agregado.",
+  "afuera": []
+}

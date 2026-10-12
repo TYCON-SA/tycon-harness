@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node {{LEGACY_SLASH}}/scripts/setup/harness.js doctor)",
+      "Bash(git status)"
+    ]
+  },
+  "statusLine": { "type": "command", "command": "bash \"$HOME/.claude/{{LEGACY_NAME}}/scripts/hooks/lab-status.sh\"" },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "node \"{{LEGACY}}/scripts/hooks/lab-guard.js\"" },
+          { "type": "command", "command": "node \"{{REAL}}/scripts/hooks/lab-twin.js\"" },
+          { "type": "command", "command": "node \"~/.claude/{{LEGACY_NAME}}/scripts/hooks/lab-twin.js\"" },
+          { "type": "command", "command": "node \"~/.claude/{{LEGACY_NAME}}-viejo/scripts/hooks/x.js\"" },
+          { "type": "command", "command": "node \"{{FOREIGN}}/hook.js\"" }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          { "type": "command", "command": "bash \"${HOME}/.claude/{{LEGACY_NAME}}/scripts/hooks/lab-start.sh\"" },
+          { "type": "command", "command": "bash \"$HOME/.claude/{{LEGACY_NAME}}/scripts/hooks/lab-start.sh\"" },
+          { "type": "command", "command": "node \"{{REAL}}/scripts/hooks/lab-real.js\"" }
+        ]
+      }
+    ]
+  }
+}

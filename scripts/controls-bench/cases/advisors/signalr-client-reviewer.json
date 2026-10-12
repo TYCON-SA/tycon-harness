@@ -1,0 +1,33 @@
+{
+  "__doc": "Casos quirúrgicos del advisor signalr-client-reviewer (Etapa D). Un pecado → una regla → el veredicto es la PRESENCIA/AUSENCIA del rule ID objetivo COMO FINDING (bullet '- [ID] ...'), nunca el conteo (§2.2 del plan). Reglas elegidas por determinismo greppeable: SIGNALRC-C3 (token literal en accessTokenFactory) y SIGNALRC-C2 (Subscribe una sola vez tras start(), sin onreconnected). El must-not-flag es el gemelo de C3 con factory async que pide token fresco.",
+  "advisor": "signalr-client-reviewer",
+  "cases": [
+    {
+      "id": "signalrc-c3-token-hardcoded",
+      "type": "must-flag",
+      "rule": "SIGNALRC-C3",
+      "files": {
+        "src/services/chatHub.ts": "import * as signalR from '@microsoft/signalr';\n\nconst connection = new signalR.HubConnectionBuilder()\n  .withUrl('/hubs/chat', {\n    accessTokenFactory: () => 'eyJhbGciOiJIUzI1NiJ9.hardcoded-demo-token.abc123'\n  })\n  .withAutomaticReconnect()\n  .build();\n\nconnection.onclose(error => {\n  console.error('chat hub closed', error?.message, connection.connectionId);\n});\n\nexport async function startChatHub(): Promise<void> {\n  await connection.start();\n}\n"
+      },
+      "canario": true
+    },
+    {
+      "id": "signalrc-c2-reconnect-sin-resubscribe",
+      "type": "must-flag",
+      "rule": "SIGNALRC-C2",
+      "files": {
+        "src/services/projectHub.ts": "import * as signalR from '@microsoft/signalr';\nimport { getFreshAccessToken } from './auth/tokenProvider';\n\nconst connection = new signalR.HubConnectionBuilder()\n  .withUrl('/hubs/projects', {\n    accessTokenFactory: async () => await getFreshAccessToken()\n  })\n  .withAutomaticReconnect()\n  .build();\n\nconnection.on('ProjectUpdated', payload => {\n  console.info('project updated', payload.projectId);\n});\n\nconnection.onclose(error => {\n  console.error('projects hub closed', error?.message, connection.connectionId);\n});\n\nexport async function startProjectHub(projectId: string): Promise<void> {\n  await connection.start();\n  await connection.invoke('SubscribeToProject', projectId);\n}\n"
+      }
+    },
+    {
+      "id": "limpio-token-factory-sin-c3",
+      "type": "must-not-flag",
+      "rule": "SIGNALRC-C3",
+      "files": {
+        "src/services/chatHub.ts": "import * as signalR from '@microsoft/signalr';\nimport { getFreshAccessToken } from './auth/tokenProvider';\n\nconst connection = new signalR.HubConnectionBuilder()\n  .withUrl('/hubs/chat', {\n    accessTokenFactory: async () => await getFreshAccessToken()\n  })\n  .withAutomaticReconnect()\n  .build();\n\nconnection.onclose(error => {\n  console.error('chat hub closed', error?.message, connection.connectionId);\n});\n\nexport async function startChatHub(): Promise<void> {\n  await connection.start();\n}\n"
+      },
+      "canario": true
+    }
+  ],
+  "prompt_template": "Tu salida completa se guarda en un archivo de auditoría que procesa un script: no la lee una persona en el chat — la regla de 'resumen ejecutivo / detalle a pedido' de tus instrucciones NO aplica en este contexto. Emití el reporte COMPLETO en el formato del catálogo, con cada finding como bullet que abre con su rule ID entre corchetes: - [RULE-ID] `archivo:línea` descripción. Fix: accion. Los rule IDs entre corchetes van SOLO en findings reales (en la sección '✅ OK' o al descartar una regla, mencionala SIN corchetes). Archivos cambiados: {files}. Escaneá y emití el reporte."
+}

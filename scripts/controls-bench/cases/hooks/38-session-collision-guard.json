@@ -1,0 +1,371 @@
+{
+  "__doc": "session-collision-guard.js (2026-09-05): dos sesiones sobre el MISMO checkout no tocan git a la vez. El caso real: en el arnés, un `git add <mis archivos>` + commit se llevó una deleción que la otra sesión tenía en el índice; el `--amend` para corregirlo cayó sobre el commit de la otra; y el commit siguiente cayó en la rama de story a la que la otra acababa de cambiar. Sin un error de git. El freno mira el disco (las transcripciones de ~/.claude/projects/<cwd>/ con mtime reciente) porque ninguna sesión sabe de la otra ni puede saberlo. Los casos que pesan: el 1 (frena) y los 2-5 (no frena: sola, transcripción vieja, git de lectura, la propia) — sin los de no-frenar, el control se apagaría a la semana.",
+  "hooks": [
+    {
+      "hook": "session-collision-guard.js (freno: otra sesión viva sobre el mismo checkout)",
+      "script": "${FIXTURE}/tcg/scripts/hooks/session-collision-guard.js",
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "cases": [
+        {
+          "id": "el-caso-real-commit-con-otra-sesion-viva-en-el-mismo-checkout",
+          "type": "must-block",
+          "__doc": "Otra transcripción en la carpeta de sesiones de ESTE cwd, tocada hace segundos, con un último pedido legible. El commit se frena y el mensaje nombra la sesión y su pedido. ROJO PREVIO: sin el hook registrado, el commit pasa.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && mkdir -p tcg/scripts/lib && cp $TCG/scripts/hooks/session-collision-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js tcg/scripts/lib/",
+            "git init -q . && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m base",
+            "D=\"$HOME/.claude/projects/$(node -e 'console.log(process.env.FIXTURE.replace(/[\\/\\\\:]/g,\"-\"))')\" && mkdir -p \"$D\" && printf '%s\\n' '{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"implementemos la story 2.1\"}}' > \"$D/aaaa1111-otra-sesion.jsonl\""
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "session_id": "bbbb2222-la-mia",
+            "tool_input": {
+              "command": "git commit -m \"feat: algo\""
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "OTRA sesi[oó]n viva",
+              "aaaa1111",
+              "implementemos la story 2.1",
+              "UNA sola sesi[oó]n|worktree"
+            ]
+          }
+        },
+        {
+          "id": "sola-en-el-checkout-el-commit-pasa",
+          "type": "must-not-block",
+          "__doc": "Sin otra transcripción no hay nadie con quien colisionar. Un freno que frena estando solo se apaga el primer día.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && mkdir -p tcg/scripts/lib && cp $TCG/scripts/hooks/session-collision-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js tcg/scripts/lib/",
+            "git init -q . && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m base",
+            "D=\"$HOME/.claude/projects/$(node -e 'console.log(process.env.FIXTURE.replace(/[\\/\\\\:]/g,\"-\"))')\" && mkdir -p \"$D\""
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "session_id": "bbbb2222-la-mia",
+            "tool_input": {
+              "command": "git commit -m \"feat: algo\""
+            }
+          }
+        },
+        {
+          "id": "una-transcripcion-VIEJA-no-es-una-sesion-viva",
+          "type": "must-not-block",
+          "__doc": "La carpeta acumula meses de sesiones cerradas. Lo que decide es el mtime dentro de la ventana (10 min), no la existencia del archivo: si contara todo, el freno estaría prendido para siempre en cualquier repo con historia.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && mkdir -p tcg/scripts/lib && cp $TCG/scripts/hooks/session-collision-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js tcg/scripts/lib/",
+            "git init -q . && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m base",
+            "D=\"$HOME/.claude/projects/$(node -e 'console.log(process.env.FIXTURE.replace(/[\\/\\\\:]/g,\"-\"))')\" && mkdir -p \"$D\" && printf '%s\\n' '{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"algo de ayer\"}}' > \"$D/cccc3333-vieja.jsonl\" && touch -t 202601010000 \"$D/cccc3333-vieja.jsonl\""
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "session_id": "bbbb2222-la-mia",
+            "tool_input": {
+              "command": "git checkout -b story/x"
+            }
+          }
+        },
+        {
+          "id": "git-de-LECTURA-no-se-frena-aunque-haya-otra-viva",
+          "type": "must-not-block",
+          "__doc": "status, log, diff, show, fetch, merge-base y stash list no cambian nada. Frenarlos sería ruido puro, y `merge-base` / `stash list` son las trampas del regex (contienen merge y stash).",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && mkdir -p tcg/scripts/lib && cp $TCG/scripts/hooks/session-collision-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js tcg/scripts/lib/",
+            "git init -q . && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m base",
+            "D=\"$HOME/.claude/projects/$(node -e 'console.log(process.env.FIXTURE.replace(/[\\/\\\\:]/g,\"-\"))')\" && mkdir -p \"$D\" && printf '%s\\n' '{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"x\"}}' > \"$D/aaaa1111-otra-sesion.jsonl\""
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "session_id": "bbbb2222-la-mia",
+            "tool_input": {
+              "command": "git status --short && git log --oneline -3 && git merge-base HEAD HEAD && git stash list && git fetch -q origin"
+            }
+          }
+        },
+        {
+          "id": "la-PROPIA-transcripcion-no-cuenta-como-otra-sesion",
+          "type": "must-not-block",
+          "__doc": "La transcripción de la sesión que ejecuta el comando se toca en cada turno: si contara, el freno se dispararía siempre. Se excluye por session_id (y por transcript_path).",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && mkdir -p tcg/scripts/lib && cp $TCG/scripts/hooks/session-collision-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js tcg/scripts/lib/",
+            "git init -q . && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m base",
+            "D=\"$HOME/.claude/projects/$(node -e 'console.log(process.env.FIXTURE.replace(/[\\/\\\\:]/g,\"-\"))')\" && mkdir -p \"$D\" && printf '%s\\n' '{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"x\"}}' > \"$D/bbbb2222-la-mia.jsonl\""
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "session_id": "bbbb2222-la-mia",
+            "tool_input": {
+              "command": "git rebase main"
+            }
+          }
+        },
+        {
+          "id": "el-escape-pegado-al-comando-deja-pasar-CON-constancia",
+          "type": "must-not-block",
+          "__doc": "Coordinado a propósito: TYCON_SESSION_GUARD_OK=1 como prefijo pegado al comando. Pasa, pero queda dicho en stderr (y en bypass.log). Un escape mudo es un apagado.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && mkdir -p tcg/scripts/lib && cp $TCG/scripts/hooks/session-collision-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js tcg/scripts/lib/",
+            "git init -q . && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m base",
+            "D=\"$HOME/.claude/projects/$(node -e 'console.log(process.env.FIXTURE.replace(/[\\/\\\\:]/g,\"-\"))')\" && mkdir -p \"$D\" && printf '%s\\n' '{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"x\"}}' > \"$D/aaaa1111-otra-sesion.jsonl\""
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "session_id": "bbbb2222-la-mia",
+            "tool_input": {
+              "command": "TYCON_SESSION_GUARD_OK=1 git commit -m \"coordinado\""
+            }
+          },
+          "expect": {
+            "stderr_re": [
+              "Queda dicho"
+            ]
+          }
+        },
+        {
+          "id": "fuera-de-un-repo-git-no-hay-nada-que-frenar",
+          "type": "must-not-block",
+          "__doc": "Fail-open: si el cwd no es un repo, el comando git va a fallar solo y el freno no tiene checkout que proteger.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && mkdir -p tcg/scripts/lib && cp $TCG/scripts/hooks/session-collision-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js tcg/scripts/lib/",
+            "D=\"$HOME/.claude/projects/$(node -e 'console.log(process.env.FIXTURE.replace(/[\\/\\\\:]/g,\"-\"))')\" && mkdir -p \"$D\" && printf '%s\\n' '{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"x\"}}' > \"$D/aaaa1111-otra-sesion.jsonl\""
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "session_id": "bbbb2222-la-mia",
+            "tool_input": {
+              "command": "git commit -m x"
+            }
+          }
+        },
+        {
+          "id": "payload-basura-no-rompe-el-turno",
+          "type": "must-not-block",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && mkdir -p tcg/scripts/lib && cp $TCG/scripts/hooks/session-collision-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js tcg/scripts/lib/"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "###basura###"
+            }
+          }
+        },
+        {
+          "id": "un-git--C-sobre-OTRO-repo-no-frena-aunque-aca-haya-otra-viva",
+          "type": "must-not-block",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && mkdir -p tcg/scripts/lib && cp $TCG/scripts/hooks/session-collision-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js tcg/scripts/lib/",
+            "git init -q . && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m base",
+            "mkdir -p otro && git -C otro init -q && git -C otro -c user.email=t@t -c user.name=t commit -q --allow-empty -m base",
+            "D=\"$HOME/.claude/projects/$(node -e 'console.log(process.env.FIXTURE.replace(/[\\/\\\\:]/g,\"-\"))')\" && mkdir -p \"$D\" && printf '%s\\n' '{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"dale\"}}' > \"$D/aaaa1111-otra-sesion.jsonl\""
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "session_id": "bbbb2222-la-mia",
+            "tool_input": {
+              "command": "git -C otro commit --allow-empty -m x"
+            }
+          },
+          "__doc": "Caso real 2026-09-05: trabajando desde un clon descartable (para NO tocar el checkout compartido con sesiones vivas), el freno paraba igual — buscaba las sesiones mezclando el cwd de la sesión en las claves, así que cualquier destino veía las sesiones de ESTE checkout. El destino manda: `-C otro` es otro repo, sin sesiones propias → pasa. ROJO PREVIO: frenaba."
+        },
+        {
+          "id": "un-cd-con-variable-y-||-hacia-OTRO-repo-no-frena",
+          "type": "must-not-block",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && mkdir -p tcg/scripts/lib && cp $TCG/scripts/hooks/session-collision-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js tcg/scripts/lib/",
+            "git init -q . && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m base",
+            "mkdir -p otro && git -C otro init -q && git -C otro -c user.email=t@t -c user.name=t commit -q --allow-empty -m base",
+            "D=\"$HOME/.claude/projects/$(node -e 'console.log(process.env.FIXTURE.replace(/[\\/\\\\:]/g,\"-\"))')\" && mkdir -p \"$D\" && printf '%s\\n' '{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"dale\"}}' > \"$D/aaaa1111-otra-sesion.jsonl\""
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "session_id": "bbbb2222-la-mia",
+            "tool_input": {
+              "command": "D=otro; S=x; cd \"$D\" || exit 9\ngit merge --no-ff --no-commit HEAD"
+            }
+          },
+          "__doc": "La forma exacta que frenó el 2026-09-05: `cd \"$D\" || exit 9` (no `&&`) con `$D` definido en el mismo comando. El freno resuelve la variable desde el texto del comando y acepta `||`, `;` y salto de línea como separadores. ROJO PREVIO: caía al cwd de la sesión y frenaba."
+        },
+        {
+          "id": "un-git--C-al-PROPIO-checkout-sigue-frenando",
+          "type": "must-block",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && mkdir -p tcg/scripts/lib && cp $TCG/scripts/hooks/session-collision-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js tcg/scripts/lib/",
+            "git init -q . && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m base",
+            "D=\"$HOME/.claude/projects/$(node -e 'console.log(process.env.FIXTURE.replace(/[\\/\\\\:]/g,\"-\"))')\" && mkdir -p \"$D\" && printf '%s\\n' '{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"dale\"}}' > \"$D/aaaa1111-otra-sesion.jsonl\""
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "session_id": "bbbb2222-la-mia",
+            "tool_input": {
+              "command": "D=.; git -C \"$D\" commit --allow-empty -m x"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "OTRA sesi[oó]n viva",
+              "aaaa1111"
+            ]
+          },
+          "__doc": "Resolver el destino no puede abrir un agujero: `-C \"$D\"` con D=. ES este checkout y hay otra viva → frena igual que sin -C."
+        },
+        {
+          "id": "un-destino-que-NO-se-puede-resolver-se-trata-como-el-propio-checkout",
+          "type": "must-block",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && mkdir -p tcg/scripts/lib && cp $TCG/scripts/hooks/session-collision-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js tcg/scripts/lib/",
+            "git init -q . && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m base",
+            "D=\"$HOME/.claude/projects/$(node -e 'console.log(process.env.FIXTURE.replace(/[\\/\\\\:]/g,\"-\"))')\" && mkdir -p \"$D\" && printf '%s\\n' '{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"dale\"}}' > \"$D/aaaa1111-otra-sesion.jsonl\""
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "session_id": "bbbb2222-la-mia",
+            "tool_input": {
+              "command": "cd \"$NO_DEFINIDA\" && git commit --allow-empty -m x"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "OTRA sesi[oó]n viva"
+            ]
+          },
+          "__doc": "Una variable que el comando no define no se puede resolver desde el texto. Hasta hoy eso caía en 'no es un repo' y el comando PASABA sin mirar (fail-open = agujero: `git -C \"$TCG\" commit` sobre este checkout no frenaba). Ahora un destino desconocido se asume que es el checkout de la sesión: con otra viva, frena. ROJO PREVIO: pasaba."
+        },
+        {
+          "id": "una-cadena-mixta-frena-por-el-git-que-toca-el-checkout",
+          "type": "must-block",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && mkdir -p tcg/scripts/lib && cp $TCG/scripts/hooks/session-collision-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js tcg/scripts/lib/",
+            "git init -q . && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m base",
+            "mkdir -p otro && git -C otro init -q && git -C otro -c user.email=t@t -c user.name=t commit -q --allow-empty -m base",
+            "D=\"$HOME/.claude/projects/$(node -e 'console.log(process.env.FIXTURE.replace(/[\\/\\\\:]/g,\"-\"))')\" && mkdir -p \"$D\" && printf '%s\\n' '{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"dale\"}}' > \"$D/aaaa1111-otra-sesion.jsonl\""
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "session_id": "bbbb2222-la-mia",
+            "tool_input": {
+              "command": "git -C otro commit --allow-empty -m x && git commit --allow-empty -m y"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "OTRA sesi[oó]n viva"
+            ]
+          },
+          "__doc": "Se mira CADA git que escribe, no sólo el primero: el primero va a otro repo, el segundo a este checkout con otra viva → frena. Sin esto, un -C al frente exime a toda la cadena."
+        },
+        {
+          "id": "el-OTRO-repo-con-su-propia-sesion-viva-frena-y-lo-nombra",
+          "type": "must-block",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && mkdir -p tcg/scripts/lib && cp $TCG/scripts/hooks/session-collision-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js tcg/scripts/lib/",
+            "git init -q . && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m base",
+            "mkdir -p otro && git -C otro init -q && git -C otro -c user.email=t@t -c user.name=t commit -q --allow-empty -m base",
+            "D=\"$HOME/.claude/projects/$(node -e 'console.log((process.env.FIXTURE+\"/otro\").replace(/[\\/\\\\:]/g,\"-\"))')\" && mkdir -p \"$D\" && printf '%s\\n' '{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"tocando otro\"}}' > \"$D/dddd4444-en-otro.jsonl\""
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "session_id": "bbbb2222-la-mia",
+            "tool_input": {
+              "command": "git -C otro checkout -b rama"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "OTRA sesi[oó]n viva",
+              "dddd4444",
+              "otro"
+            ]
+          },
+          "__doc": "La regla es sobre el repo DESTINO: si `otro` tiene su propia sesión viva (su carpeta de transcripciones), tocarlo frena y el mensaje nombra ese repo y esa sesión — no las de este checkout."
+        }
+      ]
+    },
+    {
+      "hook": "session-collision-guard.js (aviso al abrir sesión con otra viva en el mismo checkout)",
+      "script": "${FIXTURE}/tcg/scripts/hooks/session-collision-guard.js",
+      "event": "SessionStart",
+      "matcher": "*",
+      "cases": [
+        {
+          "id": "al-abrir-con-otra-sesion-viva-avisa-y-la-nombra",
+          "type": "must-emit",
+          "__doc": "Abrir no rompe nada, así que avisa en vez de frenar: 'acá ya hay alguien'. Nombra la sesión y dice que el freno de git va a parar.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && mkdir -p tcg/scripts/lib && cp $TCG/scripts/hooks/session-collision-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js tcg/scripts/lib/",
+            "git init -q . && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m base",
+            "D=\"$HOME/.claude/projects/$(node -e 'console.log(process.env.FIXTURE.replace(/[\\/\\\\:]/g,\"-\"))')\" && mkdir -p \"$D\" && printf '%s\\n' '{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"seguimos con el tablero\"}}' > \"$D/aaaa1111-otra-sesion.jsonl\""
+          ],
+          "stdin": {
+            "session_id": "bbbb2222-la-mia"
+          },
+          "expect": {
+            "stdout_re": [
+              "otra\\(s\\) sesi[oó]n",
+              "aaaa1111",
+              "seguimos con el tablero"
+            ]
+          }
+        },
+        {
+          "id": "al-abrir-solo-no-dice-nada",
+          "type": "must-stay-quiet",
+          "__doc": "Sin otra sesión viva, silencio: un aviso en cada arranque se deja de leer.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && mkdir -p tcg/scripts/lib && cp $TCG/scripts/hooks/session-collision-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js tcg/scripts/lib/",
+            "git init -q . && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m base"
+          ],
+          "stdin": {
+            "session_id": "bbbb2222-la-mia"
+          }
+        }
+      ]
+    },
+    {
+      "hook": "session-collision-guard.js (freno, por la herramienta PowerShell de Claude Code en Windows)",
+      "script": "${FIXTURE}/tcg/scripts/hooks/session-collision-guard.js",
+      "event": "PreToolUse",
+      "matcher": "Bash|PowerShell",
+      "tools": [
+        "claude"
+      ],
+      "asymmetry": "La herramienta PowerShell es de Claude Code (en Windows corre los comandos por ahí, con tool_name «PowerShell» y la misma entrada tool_input.command; fuente: code.claude.com/docs/en/tools-reference §«PowerShell tool»). Codex no la emite: del lado Codex el freno se registra con matcher «Bash» (adapters/codex/hooks.json).",
+      "__doc": "2026-10-04 · medido en una sesión REAL de Claude Code 2.1.289 en Windows 11 con el arnés instalado: los comandos salen por la herramienta PowerShell y los hooks registrados con matcher «Bash» no se disparaban (pasaron `git add -A` y un `git commit` que saltea los hooks de git). El matcher pasa a «Bash|PowerShell» en los dos instaladores; estos casos fijan que el guion entiende la entrada de esa herramienta. El payload es SINTÉTICO (la forma documentada), no una captura en vivo.",
+      "cases": [
+        {
+          "id": "ps-el-caso-real-por-powershell",
+          "type": "must-block",
+          "__doc": "Otra transcripción en la carpeta de sesiones de ESTE cwd, tocada hace segundos, con un último pedido legible. El commit se frena y el mensaje nombra la sesión y su pedido. ROJO PREVIO: sin el hook registrado, el commit pasa.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && mkdir -p tcg/scripts/lib && cp $TCG/scripts/hooks/session-collision-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js tcg/scripts/lib/",
+            "git init -q . && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m base",
+            "D=\"$HOME/.claude/projects/$(node -e 'console.log(process.env.FIXTURE.replace(/[\\/\\\\:]/g,\"-\"))')\" && mkdir -p \"$D\" && printf '%s\\n' '{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"implementemos la story 2.1\"}}' > \"$D/aaaa1111-otra-sesion.jsonl\""
+          ],
+          "stdin": {
+            "tool_name": "PowerShell",
+            "session_id": "bbbb2222-la-mia",
+            "tool_input": {
+              "command": "git commit -m \"feat: algo\""
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "OTRA sesi[oó]n viva",
+              "aaaa1111",
+              "implementemos la story 2.1",
+              "UNA sola sesi[oó]n|worktree"
+            ]
+          },
+          "nota": "El mismo caso real, por la herramienta PowerShell: el guion descartaba todo lo que no fuera tool_name «Bash»."
+        }
+      ]
+    }
+  ]
+}

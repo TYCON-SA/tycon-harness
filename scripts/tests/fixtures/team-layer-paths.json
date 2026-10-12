@@ -1,0 +1,91 @@
+{
+  "__doc": "La lista CERRADA de rutas que la capa del equipo puede traer (story 8.25). Tanda A1 (D3): dos rutas exactas (`paths`); tanda A2b-AC33 (AC 33): la tercera, el mapa de renombres, que la máquina valida contra la versión que va a quedar. Tanda A2a (AC 17): además, por patrón (`patterns`, expresiones regulares sobre la ruta con «/»): el manifiesto de un paquete, un agente y los `.md` de una skill — sólo texto, nunca un guion, un hook, un comando ni una traducción a Codex (la máquina la genera). La fuente que el programa usa es `layerPathProblem` de scripts/setup/harness/team.js; este archivo es la copia que leen las personas y las pruebas (harness-team.test.js T17 pasa `samples` por las dos y exige que coincidan). Eso es la regla POR RUTA; la del CONJUNTO (cada archivo de skills/ con su SKILL.md a una, dos o tres carpetas; nada dentro de una skill de la versión ni de terceros; rutas iguales sin caja; los topes) la aplica `planTeam`. La declaración de la capa (team-layer.json) y los papeles de la raíz (README*, LICENSE*, .gitignore) son del repo del equipo y no se apilan; un .gitattributes rechaza la capa. Cualquier otra ruta rechaza la capa ENTERA, nombrándola. Tanda A2c (AC 31): dentro de una skill de la lista FIJA de la versión (`extras_file`), manda SU lista blanca —los .md de su raíz y de sus carpetas, salvo las excluidas, y sus archivos de datos exactos—; `extras_samples` son sus ejemplos (T31 los pasa por el programa y exige que coincidan). Story 8.26, tanda H1c (AC 66): el texto del alta del equipo, `onboarding/<nombre>.md` —los `.md` de la RAÍZ de onboarding/, un solo nivel, comparado con caja como los demás patrones—; la charla (onboarding/mini-class/, con HTML), una subcarpeta, un guion o un dato bajo onboarding/ siguen afuera y rechazan la capa. La versión no trae esa carpeta: cuando la capa deja de traer sus archivos, la máquina la borra vacía.",
+  "schema": 1,
+  "paths": [
+    "perfil-equipo.json",
+    "scripts/metrics/corridas-buzon.json",
+    "scripts/lib/renames.json"
+  ],
+  "patterns": [
+    "^packs/[A-Za-z0-9._-]+/pack\\.json$",
+    "^agents/[A-Za-z0-9._-]+\\.md$",
+    "^skills/(?:[A-Za-z0-9._-]+/){1,5}[A-Za-z0-9._-]+\\.md$",
+    "^onboarding/(?!(?:[Cc][Ll][Aa][Uu][Dd][Ee]|[Aa][Gg][Ee][Nn][Tt][Ss]?|[Gg][Ee][Mm][Ii][Nn][Ii]|[Qq][Ww][Ee][Nn]|[Cc][Rr][Uu][Ss][Hh]|[Ww][Aa][Rr][Pp])(?:\\.[A-Za-z0-9_-]+)*\\.md$)[A-Za-z0-9._-]+\\.md$"
+  ],
+  "samples": {
+    "in": [
+      "perfil-equipo.json",
+      "scripts/metrics/corridas-buzon.json",
+      "scripts/lib/renames.json",
+      "packs/equipo-juguete/pack.json",
+      "agents/rev-base.md",
+      "skills/sola/SKILL.md",
+      "skills/projects/cliente-x/arquitectura/references/a.md",
+      "onboarding/step-0-mac.md",
+      "onboarding/claudette.md",
+      "onboarding/agents-del-equipo.md"
+    ],
+    "out": [
+      "scripts/x.js",
+      "scripts/metrics/otra.json",
+      "scripts/lib/other.json",
+      "commands/x.md",
+      "adapters/codex/agents/rev-base.toml",
+      "packs/equipo-juguete/cases.js",
+      "packs/equipo-juguete/notas.md",
+      "agents/rev-base.toml",
+      "agents/sub/rev.md",
+      "skills/sola/run.sh",
+      "skills/sola/x.json",
+      "skills/SKILL.md",
+      "skills/a/b/c/d/e/f/SKILL.md",
+      "version.json",
+      ".githooks/pre-commit",
+      "onboarding/mini-class/charla.md",
+      "onboarding/mini-class/index.html",
+      "onboarding/x.sh",
+      "onboarding/x.json",
+      "onboarding/sub/x.md",
+      "Onboarding/x.md",
+      "onboarding/CLAUDE.md",
+      "onboarding/claude.md",
+      "onboarding/CLAUDE.local.md",
+      "onboarding/AGENTS.md",
+      "onboarding/Agents.override.md",
+      "onboarding/GEMINI.md",
+      "onboarding/AGENT.md",
+      "onboarding/agent.md",
+      "onboarding/QWEN.md",
+      "onboarding/CRUSH.md",
+      "onboarding/WARP.md"
+    ]
+  },
+  "root_not_stacked": [
+    "team-layer.json",
+    "README*",
+    "LICENSE*",
+    ".gitignore"
+  ],
+  "max_total_bytes": 1048576,
+  "max_files": 300,
+  "extras_file": "scripts/setup/harness/team-skill-extras.json",
+  "extras_samples": {
+    "in": [
+      "skills/bizuit-sdd/SKILL.md",
+      "skills/bizuit-sdd/docs/guia.md",
+      "skills/bizuit-sdd/rules/custom/README.md",
+      "skills/bizuit-sdd/VERSION",
+      "skills/bizuit-sdd/templates/shared-styles.css"
+    ],
+    "out": [
+      "skills/bizuit-sdd/processes/x/spec.md",
+      "skills/bizuit-sdd/rules/custom/cliente.md",
+      "skills/bizuit-sdd/docs/pilots/x.md",
+      "skills/bizuit-sdd/tests/smoke.sh",
+      "skills/bizuit-sdd/scripts/install-skill.sh",
+      "skills/bizuit-sdd/.gitignore",
+      "skills/bizuit-sdd/.bizuit-config.yaml",
+      "skills/bizuit-sdd/dist/x.zip"
+    ]
+  }
+}

@@ -1,0 +1,105 @@
+{
+  "__doc": "Examen periódico de revisores (Story 1.1, 2026-08-31). La pieza que hace que el examen de los 28 revisores corra solo en la máquina del examen y que, cuando NO corre, eso se note. Los casos corren el CLI REAL contra un examen FALSO inyectado (`TYCON_EXAM_RUNNER`), así que no gastan una sola llamada al modelo — la corrida de verdad son ~5h30 y es prueba del mini, no del banco. Lo que fijan es lo único que no puede fallar: que una corrida que NO terminó no se parezca a una verde (ni sellando el período ni pisando la última medición buena), que sólo lance la máquina designada, que el reporte que tiene que viajar no caiga en una carpeta que git ignora, y que un flag desconocido no dispare el examen entero — el gotcha medido de `advisor-runner.js --help`.",
+  "hooks": [
+    {
+      "hook": "periodic-exam.js (el examen de revisores corre solo)",
+      "script": "${FIXTURE}/correr.sh",
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "env": {
+        "TYCON_EXAM_CONFIG": "${FIXTURE}/exam-config.json",
+        "TYCON_EXAM_RUNNER": "${FIXTURE}/runner-falso.js",
+        "TYCON_EXAM_REPO": "${FIXTURE}/repo",
+        "TYCON_EXAM_PROBE": "off"
+      },
+      "cases": [
+        {
+          "id": "en-otra-maquina-no-corre-nada",
+          "type": "must-emit",
+          "__doc": "El examen corre en UNA máquina. En las demás no queda tarea ni corrida: para el resto del equipo lo único que cambia es el texto del aviso.",
+          "env": { "TYCON_EXAM_MACHINE": "notebook-de-otro" },
+          "files": {
+            "correr.sh": "#!/usr/bin/env bash\ncd \"$FIXTURE\"\nnode \"$TCG/scripts/controls-bench/periodic-exam.js\"\n",
+            "prep.js": "const fs=require('fs');fs.writeFileSync('exam-config.json',JSON.stringify({designated_machine:'Devas-Mac-mini',days_between_runs:3,scheduled_days:['tuesday','friday'],hour:'02:00'}));fs.writeFileSync('runner-falso.js','require(\"fs\").writeFileSync(\"'+process.cwd()+'/corrio.txt\",\"si\")');"
+          },
+          "setup": [
+            "mkdir -p repo/scripts/controls-bench/.bench",
+            "node prep.js",
+            "chmod +x correr.sh"
+          ],
+          "stdin": { "tool_name": "Bash", "tool_input": { "command": "examen" } },
+          "expect": {
+            "exit": 0,
+            "stdout_re": ["no-designada"],
+            "file_absent": ["${FIXTURE}/corrio.txt"]
+          }
+        },
+        {
+          "id": "una-corrida-que-no-termina-NO-sella-ni-pisa-la-ultima-buena",
+          "type": "must-run",
+          "__doc": "🔴 El corazón de la story. El lanzador anterior sellaba la semana ANTES de correr: la corrida cancelada el 2026-08-28 tras 5h30 se comió el turno de esa semana sin dejar una sola medición. Acá el examen falso muere; el sello NO se escribe (la próxima sesión reintenta), la última medición buena Y SU FECHA sobreviven, y queda constancia del intento con su motivo.",
+          "env": { "TYCON_EXAM_MACHINE": "Devas-Mac-mini" },
+          "files": {
+            "correr.sh": "#!/usr/bin/env bash\ncd \"$FIXTURE\"\nnode \"$TCG/scripts/controls-bench/periodic-exam.js\"\necho \"salida=$?\"\n",
+            "prep.js": "const fs=require('fs');fs.writeFileSync('exam-config.json',JSON.stringify({designated_machine:'Devas-Mac-mini',days_between_runs:3}));fs.writeFileSync('runner-falso.js','process.exit(1)');fs.writeFileSync('repo/scripts/controls-bench/ultimo-examen.json',JSON.stringify({kind:'examen-periodico',estado:'completo',alcance:'completo',ts:'2026-08-20T02:00:00.000Z',criterio:0,inestables:0,paridadReal:0,baselineRegressions:0,maquina:'mini'}));"
+          },
+          "setup": [
+            "mkdir -p repo/scripts/controls-bench/.bench",
+            "node prep.js",
+            "chmod +x correr.sh"
+          ],
+          "stdin": { "tool_name": "Bash", "tool_input": { "command": "examen" } },
+          "expect": {
+            "stdout_not_re": ["salida=0"],
+            "file_absent": ["${HOME}/.claude/.tycon-pipeline/periodic-exam-last-run"],
+            "file_contains": [
+              { "path": "${FIXTURE}/repo/scripts/controls-bench/ultimo-examen.json", "re": "2026-08-20" },
+              { "path": "${FIXTURE}/repo/scripts/controls-bench/.bench/examen-intento.json", "re": "incompleto" }
+            ]
+          }
+        },
+        {
+          "id": "un-flag-desconocido-no-dispara-el-examen",
+          "type": "must-emit",
+          "__doc": "Gotcha medido 2026-08-27: `advisor-runner.js --help` NO imprime ayuda — arranca el banco COMPLETO de los 28 revisores, porque no tiene handler del flag. Una pieza que ENVUELVE a ese runner no puede heredar esa forma: `--help` y `--dry-run` salen antes de cualquier proceso hijo.",
+          "env": { "TYCON_EXAM_MACHINE": "Devas-Mac-mini" },
+          "files": {
+            "correr.sh": "#!/usr/bin/env bash\ncd \"$FIXTURE\"\nnode \"$TCG/scripts/controls-bench/periodic-exam.js\" --help\nnode \"$TCG/scripts/controls-bench/periodic-exam.js\" --dry-run\n",
+            "prep.js": "const fs=require('fs');fs.writeFileSync('exam-config.json',JSON.stringify({designated_machine:'Devas-Mac-mini',days_between_runs:3,scheduled_days:['tuesday','friday'],hour:'02:00'}));fs.writeFileSync('runner-falso.js','require(\"fs\").writeFileSync(\"'+process.cwd()+'/corrio.txt\",\"si\")');"
+          },
+          "setup": [
+            "mkdir -p repo/scripts/controls-bench/.bench",
+            "node prep.js",
+            "chmod +x correr.sh"
+          ],
+          "stdin": { "tool_name": "Bash", "tool_input": { "command": "examen" } },
+          "expect": {
+            "exit": 0,
+            "stdout_re": ["--dry-run", "Devas-Mac-mini"],
+            "file_absent": ["${FIXTURE}/corrio.txt"]
+          }
+        },
+        {
+          "id": "el-reporte-que-viaja-no-cae-en-una-carpeta-ignorada",
+          "type": "must-run",
+          "__doc": "`.bench/` está en el .gitignore, así que un reporte que viva ahí no sale nunca de la máquina que lo escribió — y entonces el resultado del mini no lo ve nadie y toda la pieza no sirve. El pase adversarial del vigilante encontró exactamente este error; acá queda fijado.",
+          "env": { "TYCON_EXAM_MACHINE": "Devas-Mac-mini" },
+          "files": {
+            "correr.sh": "#!/usr/bin/env bash\ncd \"$FIXTURE/repo\"\nnode -e 'console.log(require(process.env.TCG+\"/scripts/controls-bench/periodic-exam.js\").RUTA_REPORTE_QUE_VIAJA)' > ruta.txt\ngit check-ignore -q \"$(cat ruta.txt)\" && echo IGNORADO || echo VIAJA\ncat ruta.txt\n"
+          },
+          "setup": [
+            "mkdir -p repo/scripts/controls-bench/.bench",
+            "printf 'scripts/controls-bench/.bench/\\n' > repo/.gitignore",
+            "cd repo && git init -q -b main . && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "chmod +x correr.sh"
+          ],
+          "stdin": { "tool_name": "Bash", "tool_input": { "command": "examen" } },
+          "expect": {
+            "stdout_re": ["VIAJA"],
+            "stdout_not_re": ["IGNORADO", "\\.bench/"]
+          }
+        }
+      ]
+    }
+  ]
+}

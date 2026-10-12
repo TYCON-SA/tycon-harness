@@ -1,0 +1,62 @@
+{
+  "__doc": "Casos quirúrgicos del advisor silent-failure-hunter (Etapa D — regla B2: un advisor entra con sus casos). Un pecado → una regla → el veredicto es la PRESENCIA/AUSENCIA del rule ID objetivo COMO FINDING (bullet '- [ID] ...'), nunca el conteo (§2.2 del plan). Las 2 reglas elegidas son las más deterministas del catálogo SILENT-*: C1 (catch vacío, greppeable de forma inequívoca) y W1 (.catch(() => []) literal en TS); el must-not-flag es el gemelo legítimo de C1 — catch que loggea con contexto Y rethrowea, que NO debe citarse como finding.",
+  "advisor": "tycon-silent-failure-hunter",
+  "cases": [
+    {
+      "id": "silent-c1-catch-vacio-cs",
+      "type": "must-flag",
+      "rule": "SILENT-C1",
+      "files": {
+        "src/NotificationService.cs": "using System;\nusing System.Collections.Generic;\n\nnamespace Demo.Notifications\n{\n    public class NotificationService\n    {\n        private readonly List<string> _sent = new List<string>();\n\n        public void Send(string recipient, string message)\n        {\n            try\n            {\n                if (string.IsNullOrEmpty(recipient))\n                    throw new ArgumentException(\"recipient requerido\");\n                _sent.Add($\"{recipient}:{message}\");\n            }\n            catch (Exception) { }\n        }\n    }\n}\n"
+      },
+      "canario": true
+    },
+    {
+      "id": "silent-w1-catch-default-ts",
+      "type": "must-flag",
+      "rule": "SILENT-W1",
+      "files": {
+        "src/ordersApi.ts": "export interface Order {\n  id: string;\n  total: number;\n}\n\nexport async function fetchOrders(baseUrl: string): Promise<Order[]> {\n  return fetch(`${baseUrl}/api/orders`)\n    .then((r) => r.json())\n    .catch(() => []);\n}\n"
+      },
+      "varianza_declarada": {
+        "tool": "codex",
+        "piso": 2,
+        "medido": "2/3",
+        "fecha": "2026-08-25",
+        "motivo": "Variancia de juicio medida el 2026-08-25 sobre la corrida del 24: el pecado plantado es INEQUÍVOCO y el revisor lo acierta 2 de 3 veces en codex — y acierta 3/3 en la otra herramienta, así que no es el caso. Muestra chica (n=3): el piso se revisa con la medición semanal. Por debajo del piso es ROJO de criterio."
+      }
+    },
+    {
+      "id": "limpio-log-y-rethrow-sin-c1",
+      "type": "must-not-flag",
+      "rule": "SILENT-C1",
+      "files": {
+        "src/NotificationService.cs": "using System;\nusing System.Collections.Generic;\nusing Microsoft.Extensions.Logging;\n\nnamespace Demo.Notifications\n{\n    public class NotificationService\n    {\n        private readonly ILogger<NotificationService> _logger;\n        private readonly List<string> _sent = new List<string>();\n\n        public NotificationService(ILogger<NotificationService> logger)\n        {\n            _logger = logger;\n        }\n\n        public void Send(string recipient, string message)\n        {\n            try\n            {\n                if (string.IsNullOrEmpty(recipient))\n                    throw new ArgumentException(\"recipient requerido\");\n                _sent.Add($\"{recipient}:{message}\");\n            }\n            catch (Exception ex)\n            {\n                _logger.LogError(ex, \"Fallo enviando notificación a {Recipient}\", recipient);\n                throw;\n            }\n        }\n    }\n}\n"
+      },
+      "canario": true
+    },
+    {
+      "id": "silent-w7-bool-con-dos-causas-colapsado-a-un-404",
+      "type": "must-flag",
+      "rule": "SILENT-W7",
+      "_por_que": "SILENT-W7-COLLAPSED-OUTCOME-1 (aprobada 2026-09-06): el bug de 7 meses del repo del framework tal cual — el servicio distingue «no existe» de «conflicto de concurrencia» con logs propios y devuelve el mismo `false`; el controller lo traduce a un único 404 «not found». Las tres condiciones juntas: consumidor HTTP, una sola respuesta, ≥2 causas nombradas.",
+      "canario": true,
+      "files": {
+        "src/Services/ConfigurationService.cs": "using Microsoft.Extensions.Logging;\n\nnamespace Plugin.Services;\n\npublic class ConfigurationService\n{\n    private readonly IConfigRepository _repo;\n    private readonly ILogger<ConfigurationService> _log;\n    public ConfigurationService(IConfigRepository repo, ILogger<ConfigurationService> log) { _repo = repo; _log = log; }\n\n    // Dos causas con nombre propio, un solo `false`.\n    public async Task<bool> UpdateValueAsync(string key, string value, CancellationToken ct)\n    {\n        var row = await _repo.FindAsync(key, ct);\n        if (row is null)\n        {\n            _log.LogWarning(\"Configuration {Key} not found\", key);\n            return false;\n        }\n        var affected = await _repo.UpdateAsync(row, value, ct);   // 0 filas = choque de concurrencia (rowversion)\n        if (affected == 0)\n        {\n            _log.LogWarning(\"Concurrency conflict updating configuration {Key}\", key);\n            return false;\n        }\n        return true;\n    }\n}\n",
+        "src/Controllers/ConfigurationController.cs": "using Microsoft.AspNetCore.Mvc;\nusing Plugin.Services;\n\nnamespace Plugin.Controllers;\n\n[ApiController]\n[Route(\"api/configuration\")]\npublic class ConfigurationController : ControllerBase\n{\n    private readonly ConfigurationService _svc;\n    public ConfigurationController(ConfigurationService svc) { _svc = svc; }\n\n    [HttpPut(\"{key}\")]\n    public async Task<IActionResult> Update(string key, [FromBody] string value, CancellationToken ct)\n    {\n        var ok = await _svc.UpdateValueAsync(key, value, ct);\n        if (!ok) return NotFound($\"{key} not found in category\");   // el conflicto de concurrencia también sale como 404\n        return NoContent();\n    }\n}\n"
+      }
+    },
+    {
+      "id": "limpio-predicado-isvalidpassword-con-dos-ramas-sin-w7",
+      "type": "must-not-flag",
+      "rule": "SILENT-W7",
+      "_por_que": "El falso positivo que enterró la primera versión de la regla: `IsValidPassword` tiene dos ramas con log y un solo `false`, pero es un PREDICADO (`Is*`) — ahí `false` es la respuesta completa, y distinguir las causas hacia el usuario sería un oráculo de enumeración de cuentas. Sin este caso el advisor marca una validación de contraseña y se apaga.",
+      "canario": true,
+      "files": {
+        "src/Services/PasswordService.cs": "using Microsoft.Extensions.Logging;\n\nnamespace Plugin.Services;\n\npublic class PasswordService\n{\n    private readonly IUserRepository _users;\n    private readonly ILogger<PasswordService> _log;\n    public PasswordService(IUserRepository users, ILogger<PasswordService> log) { _users = users; _log = log; }\n\n    // Predicado: `false` ES la respuesta completa. Distinguir «no existe» de «hash distinto» no le sirve al llamador\n    // (y decírselo al usuario sería un oráculo de enumeración de cuentas).\n    public async Task<bool> IsValidPassword(string user, string password, CancellationToken ct)\n    {\n        var u = await _users.FindAsync(user, ct);\n        if (u is null)\n        {\n            _log.LogDebug(\"Login attempt for unknown user {User}\", user);\n            return false;\n        }\n        if (!Hasher.Verify(password, u.PasswordHash))\n        {\n            _log.LogDebug(\"Password mismatch for {User}\", user);\n            return false;\n        }\n        return true;\n    }\n}\n",
+        "src/Controllers/AuthController.cs": "using Microsoft.AspNetCore.Mvc;\nusing Plugin.Services;\n\nnamespace Plugin.Controllers;\n\n[ApiController]\n[Route(\"api/auth\")]\npublic class AuthController : ControllerBase\n{\n    private readonly PasswordService _passwords;\n    private readonly ITokenIssuer _tokens;\n    public AuthController(PasswordService passwords, ITokenIssuer tokens) { _passwords = passwords; _tokens = tokens; }\n\n    [HttpPost(\"login\")]\n    public async Task<IActionResult> Login([FromBody] LoginRequest req, CancellationToken ct)\n    {\n        if (!await _passwords.IsValidPassword(req.User, req.Password, ct)) return Unauthorized();\n        return Ok(new { token = _tokens.Issue(req.User) });\n    }\n}\n"
+      }
+    }
+  ],
+  "prompt_template": "Tu salida completa se guarda en un archivo de auditoría que procesa un script: no la lee una persona en el chat — la regla de 'resumen ejecutivo / detalle a pedido' de tus instrucciones NO aplica en este contexto. Emití el reporte COMPLETO en el formato del catálogo, con cada finding como bullet que abre con su rule ID entre corchetes: - [RULE-ID] `archivo:línea` descripción. Fix: accion. Los rule IDs entre corchetes van SOLO en findings reales (en la sección '✅ OK' o al descartar una regla, mencionala SIN corchetes). Archivos cambiados: {files}. Escaneá y emití el reporte."
+}

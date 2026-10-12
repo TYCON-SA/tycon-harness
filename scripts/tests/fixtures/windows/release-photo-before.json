@@ -1,0 +1,198 @@
+{
+  "at": "2030-04-01T10:00:00.000Z",
+  "settings": {
+    "exists": true,
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "bytes": 2100,
+    "bom": false,
+    "crlf": false,
+    "ends_with_newline": true,
+    "indent": 2,
+    "top_keys": [
+      "$schema",
+      "hooks",
+      "statusLine"
+    ],
+    "env": null,
+    "cleanup_period_days": null,
+    "hooks": [
+      {
+        "event": "PreToolUse",
+        "matcher": "Bash",
+        "name": "@tcg:safety-brake.js",
+        "runner": "node",
+        "file": "C:/lab/profile/.tycon/harness/scripts/hooks/safety-brake.js",
+        "command": "node \"C:/lab/profile/.tycon/harness/scripts/hooks/safety-brake.js\"",
+        "is_async": false,
+        "exists": true
+      },
+      {
+        "event": "Stop",
+        "matcher": "",
+        "name": "@tcg:old-meter.js",
+        "runner": "node",
+        "file": "C:/lab/profile/.tycon/harness/scripts/hooks/old-meter.js",
+        "command": "node \"C:/lab/profile/.tycon/harness/scripts/hooks/old-meter.js\"",
+        "is_async": false,
+        "exists": true
+      },
+      {
+        "event": "SessionStart",
+        "matcher": "",
+        "name": "@tcg:bench-notice.js",
+        "runner": "node",
+        "file": "C:/lab/profile/.tycon/harness/scripts/hooks/bench-notice.js",
+        "command": "node \"C:/lab/profile/.tycon/harness/scripts/hooks/bench-notice.js\"",
+        "is_async": false,
+        "exists": true
+      },
+      {
+        "event": "Stop",
+        "matcher": "",
+        "name": "@tcg:retired-meter.js",
+        "runner": "node",
+        "file": "C:/lab/profile/.tycon/harness/scripts/hooks/retired-meter.js",
+        "command": "node \"C:/lab/profile/.tycon/harness/scripts/hooks/retired-meter.js\"",
+        "is_async": false,
+        "exists": true
+      }
+    ],
+    "startup_lines": [
+      {
+        "event": "SessionStart",
+        "command": "node \"C:/lab/profile/.claude/.tycon-pipeline/harness/bootstrap.js\" || bash \"C:/lab/profile/.claude/.tycon-pipeline/harness/bootstrap-fallback.sh\"",
+        "is_async": true,
+        "form": "new",
+        "shell": "node"
+      }
+    ],
+    "duplicated": [],
+    "dangling": [],
+    "backups": 1
+  },
+  "links": [
+    {
+      "name": "harness-place",
+      "present": true,
+      "kind": "link",
+      "resolves_to": "C:/lab/profile/.tycon/harness",
+      "ok": true
+    },
+    {
+      "name": "agent-skills",
+      "present": true,
+      "kind": "folder",
+      "resolves_to": "C:/lab/profile/.tycon/harness",
+      "ok": true
+    },
+    {
+      "name": "agents",
+      "present": true,
+      "kind": "link",
+      "resolves_to": "C:/lab/profile/.tycon/harness/agents",
+      "ok": true
+    },
+    {
+      "name": "skills",
+      "present": true,
+      "kind": "link",
+      "resolves_to": "C:/lab/profile/.tycon/harness/skills",
+      "ok": true
+    }
+  ],
+  "doctor": {
+    "exit": 0,
+    "error": null,
+    "mode": "managed",
+    "fail": [],
+    "warn": [
+      "copia fija de arranque vieja respecto del árbol (bootstrap.js): a propósito"
+    ],
+    "ok": [
+      "Node 22.1.0 (piso 20)"
+    ],
+    "readable": true
+  },
+  "version": {
+    "exit": 0,
+    "error": null,
+    "text": "2030.04.01.1 · latest · managed",
+    "number": "2030.04.01.1"
+  },
+  "state": {
+    "exists": true,
+    "mode": "managed",
+    "channel": "latest",
+    "version": "2030.04.01.1",
+    "notice": null,
+    "failed": null,
+    "hold": null,
+    "policy": {
+      "channel": "latest",
+      "apply": "auto",
+      "enabled": true
+    },
+    "last_fetch": "2030-04-01T10:00:00.000Z",
+    "kind": "release",
+    "team": {
+      "repo": "acme/proyecto/equipo-lab",
+      "host": "azure",
+      "commit": "5555555555555555555555555555555555555555"
+    }
+  },
+  "commands": [
+    "mine.md",
+    "old-command.md"
+  ],
+  "claude_md": {
+    "exists": true,
+    "imports": [
+      "@C:/lab/profile/.tycon/harness/README.md"
+    ],
+    "blocks": 4,
+    "bom": false,
+    "crlf": false
+  },
+  "fixed_copy": [
+    {
+      "file": "bootstrap-fallback.ps1",
+      "has_cr": null
+    },
+    {
+      "file": "bootstrap-fallback.sh",
+      "has_cr": false
+    },
+    {
+      "file": "bootstrap.js",
+      "has_cr": null
+    }
+  ],
+  "startup_log_tail": [
+    "2030-04-01T09:00:00.000Z startup: al día (2030.04.01.1)"
+  ],
+  "expected": {
+    "integrations": {
+      "engram": true,
+      "telegram": false
+    },
+    "names": [
+      "PreToolUse:@tcg:safety-brake.js",
+      "Stop:@tcg:old-meter.js",
+      "SessionStart:@tcg:bench-notice.js",
+      "Stop:@tcg:retired-meter.js",
+      "PreToolUse:@tcg:bash-brake.sh"
+    ],
+    "expected_total": 5,
+    "in_place": 4,
+    "missing": [
+      "PreToolUse:@tcg:bash-brake.sh"
+    ],
+    "duplicated": [],
+    "superseded": [],
+    "misplaced": [],
+    "unexpected": [],
+    "dangling": [],
+    "from": "scripts/setup/hooks-list.json",
+    "profile": "full"
+  }
+}

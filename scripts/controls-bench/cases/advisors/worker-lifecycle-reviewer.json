@@ -1,0 +1,33 @@
+{
+  "__doc": "Casos quirúrgicos del advisor worker-lifecycle-reviewer (Etapa D). Un pecado → una regla → el veredicto es la PRESENCIA/AUSENCIA del rule ID objetivo COMO FINDING (bullet '- [ID] ...'), nunca el conteo (§2.2 del plan). Cada fixture es UNA clase BackgroundService autocontenida; el prompt_template desactiva la regla de reporte resumen-solo (la salida va a archivo de auditoría, no al chat).",
+  "advisor": "worker-lifecycle-reviewer",
+  "cases": [
+    {
+      "id": "worker-c1-loop-sin-trycatch",
+      "type": "must-flag",
+      "rule": "WORKER-C1",
+      "files": {
+        "src/QueuePollingWorker.cs": "using System;\nusing System.Threading;\nusing System.Threading.Tasks;\nusing Microsoft.Extensions.Hosting;\n\nnamespace Demo.Workers\n{\n    public class QueuePollingWorker : BackgroundService\n    {\n        protected override async Task ExecuteAsync(CancellationToken stoppingToken)\n        {\n            while (!stoppingToken.IsCancellationRequested)\n            {\n                var batch = await FetchPendingAsync(stoppingToken);\n                Console.WriteLine($\"processing {batch} items\");\n                await Task.Delay(TimeSpan.FromSeconds(10), stoppingToken);\n            }\n        }\n\n        private Task<int> FetchPendingAsync(CancellationToken token) => Task.FromResult(3);\n    }\n}\n"
+      }
+    },
+    {
+      "id": "worker-c3-delay-sin-token",
+      "type": "must-flag",
+      "rule": "WORKER-C3",
+      "files": {
+        "src/CleanupWorker.cs": "using System;\nusing System.Threading;\nusing System.Threading.Tasks;\nusing Microsoft.Extensions.Hosting;\n\nnamespace Demo.Workers\n{\n    public class CleanupWorker : BackgroundService\n    {\n        protected override async Task ExecuteAsync(CancellationToken stoppingToken)\n        {\n            while (!stoppingToken.IsCancellationRequested)\n            {\n                try\n                {\n                    await PurgeExpiredAsync(stoppingToken);\n                }\n                catch (Exception ex)\n                {\n                    Console.WriteLine($\"cleanup iteration failed: {ex.Message}\");\n                }\n                await Task.Delay(TimeSpan.FromSeconds(30));\n            }\n        }\n\n        private Task PurgeExpiredAsync(CancellationToken token) => Task.CompletedTask;\n    }\n}\n"
+      },
+      "canario": true
+    },
+    {
+      "id": "limpio-delay-con-token-sin-c3",
+      "type": "must-not-flag",
+      "rule": "WORKER-C3",
+      "files": {
+        "src/CleanupWorker.cs": "using System;\nusing System.Threading;\nusing System.Threading.Tasks;\nusing Microsoft.Extensions.Hosting;\n\nnamespace Demo.Workers\n{\n    public class CleanupWorker : BackgroundService\n    {\n        protected override async Task ExecuteAsync(CancellationToken stoppingToken)\n        {\n            while (!stoppingToken.IsCancellationRequested)\n            {\n                try\n                {\n                    await PurgeExpiredAsync(stoppingToken);\n                }\n                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)\n                {\n                    break;\n                }\n                catch (Exception ex)\n                {\n                    Console.WriteLine($\"cleanup iteration failed: {ex.Message}\");\n                }\n                await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);\n            }\n        }\n\n        private Task PurgeExpiredAsync(CancellationToken token) => Task.CompletedTask;\n    }\n}\n"
+      },
+      "canario": true
+    }
+  ],
+  "prompt_template": "Tu salida completa se guarda en un archivo de auditoría que procesa un script: no la lee una persona en el chat — la regla de 'resumen ejecutivo / detalle a pedido' de tus instrucciones NO aplica en este contexto. Emití el reporte COMPLETO en el formato del catálogo, con cada finding como bullet que abre con su rule ID entre corchetes: - [RULE-ID] `archivo:línea` descripción. Fix: accion. Los rule IDs entre corchetes van SOLO en findings reales (en la sección '✅ OK' o al descartar una regla, mencionala SIN corchetes). Archivos cambiados: {files}. Escaneá y emití el reporte."
+}

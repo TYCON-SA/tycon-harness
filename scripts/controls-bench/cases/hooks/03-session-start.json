@@ -1,0 +1,448 @@
+{
+  "hooks": [
+    {
+      "hook": "branch-guard-notice.js (repos del arnés fuera de main, atrasados respecto de origin/main, o trabados por un autostash)",
+      "script": "${FIXTURE}/tcg/scripts/hooks/branch-guard-notice.js",
+      "event": "SessionStart",
+      "matcher": "*",
+      "cases": [
+        {
+          "id": "grita-repo-fuera-de-main",
+          "type": "must-emit",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/branch-guard-notice.js tcg/scripts/hooks/",
+            "git -C tcg init -q -b codex/etapa-x && git -C tcg -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "mkdir -p $SANDBOX_HOME/.claude/agent-skills && git -C $SANDBOX_HOME/.claude/agent-skills init -q -b main && git -C $SANDBOX_HOME/.claude/agent-skills -c user.email=b@b -c user.name=b commit -q --allow-empty -m x"
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {
+            "stdout_re": [
+              "BRANCH GUARD",
+              "codex/etapa-x"
+            ]
+          }
+        },
+        {
+          "id": "quiet-ambos-en-main",
+          "type": "must-stay-quiet",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/branch-guard-notice.js tcg/scripts/hooks/",
+            "git -C tcg init -q -b main && git -C tcg -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "mkdir -p $SANDBOX_HOME/.claude/agent-skills && git -C $SANDBOX_HOME/.claude/agent-skills init -q -b main && git -C $SANDBOX_HOME/.claude/agent-skills -c user.email=b@b -c user.name=b commit -q --allow-empty -m x"
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {}
+        },
+        {
+          "id": "quiet-optout-env",
+          "type": "must-stay-quiet",
+          "env": {
+            "TYCON_BRANCH_GUARD": "0"
+          },
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/branch-guard-notice.js tcg/scripts/hooks/",
+            "git -C tcg init -q -b codex/etapa-x && git -C tcg -c user.email=b@b -c user.name=b commit -q --allow-empty -m x"
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {}
+        },
+        {
+          "id": "grita-clon-atrasado-y-nombra-el-archivo-que-lo-traba",
+          "type": "must-emit",
+          "setup": [
+            "git init -q -b main origen && git -C origen -c user.email=b@b -c user.name=b commit -q --allow-empty -m base && mkdir -p origen/guides && printf 'v1\\n' > origen/guides/guide-update-proposals.md && git -C origen add -A && git -C origen -c user.email=b@b -c user.name=b commit -q -m v1",
+            "git clone -q origen tcg",
+            "printf 'v2\\n' > origen/guides/guide-update-proposals.md && git -C origen add -A && git -C origen -c user.email=b@b -c user.name=b commit -q -m v2 && git -C tcg fetch -q origin",
+            "printf 'local\\n' > tcg/guides/guide-update-proposals.md",
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/branch-guard-notice.js tcg/scripts/hooks/"
+          ],
+          "expect": {
+            "stdout_re": [
+              "ARNÉS ATRASADO",
+              "1 commit",
+              "guide-update-proposals\\.md",
+              "capturador de retrospectivas",
+              "git -C \\S+ stash",
+              "merge --ff-only origin/main"
+            ]
+          }
+        },
+        {
+          "id": "quiet-en-main-y-al-dia-con-origin",
+          "type": "must-stay-quiet",
+          "setup": [
+            "git init -q -b main origen && git -C origen -c user.email=b@b -c user.name=b commit -q --allow-empty -m base",
+            "git clone -q origen tcg",
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/branch-guard-notice.js tcg/scripts/hooks/"
+          ]
+        },
+        {
+          "id": "grita-clon-trabado-con-el-consejo-que-funciona",
+          "__doc": "H1+H8: con behind=0 y UU por autostash del arranque, `git stash` lo rechaza y `reset --hard` borra lo que el dev editó después — el consejo es checkout de HEAD sobre los archivos en conflicto, nada más.",
+          "type": "must-emit",
+          "setup": [
+            "git init -q -b main origen && git -C origen -c user.email=b@b -c user.name=b commit -q --allow-empty -m base && mkdir -p origen/guides && printf 'v1\\n' > origen/guides/guide-update-proposals.md && git -C origen add -A && git -C origen -c user.email=b@b -c user.name=b commit -q -m v1",
+            "git clone -q origen tcg",
+            "printf 'v2\\n' > origen/guides/guide-update-proposals.md && git -C origen add -A && git -C origen -c user.email=b@b -c user.name=b commit -q -m v2",
+            "printf 'local\\n' > tcg/guides/guide-update-proposals.md",
+            "git -C tcg pull --ff-only --quiet --autostash origin main >/dev/null 2>&1 || true",
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/branch-guard-notice.js tcg/scripts/hooks/"
+          ],
+          "expect": {
+            "stdout_re": [
+              "TRABADA",
+              "conflicto abierto",
+              "checkout HEAD -- guides/guide-update-proposals\\.md"
+            ],
+            "stdout_not_re": [
+              "git -C \\S+ stash\\b",
+              "reset --hard"
+            ]
+          }
+        },
+        {
+          "id": "grita-clon-trabado-du-con-rm-cached",
+          "__doc": "Story 8.5.1 (pase adversarial de la 8.5 tanda B): el retiro borró un archivo que el dev había modificado → DU con autostash. `checkout HEAD --` sobre una ruta que HEAD no tiene falla entero; el consejo es `rm --cached` para esa ruta.",
+          "type": "must-emit",
+          "setup": [
+            "git init -q -b main origen && git -C origen -c user.email=b@b -c user.name=b commit -q --allow-empty -m base",
+            "git clone -q origen tcg",
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/branch-guard-notice.js tcg/scripts/hooks/",
+            "git init -q -b main asup && mkdir -p asup/skills/acme && printf 'v1\\n' > asup/skills/acme/SKILL.md && git -C asup add -A && git -C asup -c user.email=b@b -c user.name=b commit -q -m v1",
+            "mkdir -p $SANDBOX_HOME/.claude && git clone -q asup $SANDBOX_HOME/.claude/agent-skills",
+            "git -C asup rm -q skills/acme/SKILL.md && git -C asup -c user.email=b@b -c user.name=b commit -q -m retiro",
+            "printf 'del dev\\n' > $SANDBOX_HOME/.claude/agent-skills/skills/acme/SKILL.md",
+            "git -C $SANDBOX_HOME/.claude/agent-skills -c user.email=b@b -c user.name=b pull --ff-only --quiet --autostash >/dev/null 2>&1 || true"
+          ],
+          "expect": {
+            "stdout_re": [
+              "TRABADA",
+              "rm --cached -- skills/acme/SKILL\\.md"
+            ],
+            "stdout_not_re": [
+              "checkout HEAD -- skills/acme"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "hook": "retro-staleness-notice.js",
+      "script": "${FIXTURE}/tcg/scripts/hooks/retro-staleness-notice.js",
+      "event": "SessionStart",
+      "matcher": "*",
+      "cases": [
+        {
+          "id": "avisa-dashboard-viejo",
+          "type": "must-emit",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/.dashboard && cp $TCG/scripts/hooks/retro-staleness-notice.js tcg/scripts/hooks/",
+            "echo '{}' > tcg/.dashboard/metrics-2026-01-01-run.json"
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {
+            "stdout_re": [
+              "retro"
+            ],
+            "file_exists": [
+              "${SANDBOX_HOME}/.claude/.tycon-retro-staleness-last-notice"
+            ]
+          }
+        },
+        {
+          "id": "quiet-dashboard-fresco",
+          "type": "must-stay-quiet",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/.dashboard && cp $TCG/scripts/hooks/retro-staleness-notice.js tcg/scripts/hooks/",
+            "echo '{}' > tcg/.dashboard/metrics-$(date +%F)-run.json"
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {}
+        },
+        {
+          "id": "avisa-aunque-un-vecino-sea-de-hoy",
+          "__doc": "2026-09-05: el capturer lleva meses sin correr, pero en la MISMA carpeta hay un `sdlc-stage-<hoy>.json` (lo escribe otro nocturno desde el 30/08) y un `last-successful-run.json` sin fecha en el nombre (cae al mtime, que es de ahora). Con el filtro viejo (`endsWith('.json')`) cualquiera de los dos hace que 'la última corrida' sea HOY y el hook calla — así estuvo ciego seis días con el banco en verde. ROJO PREVIO verificado: revertir el filtro a `f.endsWith('.json')` → este caso falla (sin stdout, sin archivo de throttle). Los dos casos anteriores no pueden verlo porque siembran sólo metrics-*.",
+          "type": "must-emit",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/.dashboard && cp $TCG/scripts/hooks/retro-staleness-notice.js tcg/scripts/hooks/",
+            "echo '{}' > tcg/.dashboard/metrics-2026-01-01-run.json",
+            "echo '{}' > tcg/.dashboard/sdlc-stage-$(date +%F).json",
+            "echo '{}' > tcg/.dashboard/last-successful-run.json"
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {
+            "stdout_re": [
+              "retro"
+            ],
+            "file_exists": [
+              "${SANDBOX_HOME}/.claude/.tycon-retro-staleness-last-notice"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "hook": "instinct-trigger.sh",
+      "script": "${TCG}/scripts/hooks/instinct-trigger.sh",
+      "event": "SessionStart",
+      "matcher": "*",
+      "cases": [
+        {
+          "id": "quiet-default-apagado",
+          "type": "must-stay-quiet",
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {
+            "file_absent": [
+              "${SANDBOX_HOME}/.claude/instinct-observer.last"
+            ]
+          }
+        },
+        {
+          "id": "dispara-con-optin-y-deja-throttle",
+          "type": "must-run",
+          "env": {
+            "TYCON_INSTINCT_OBSERVER": "1",
+            "TYCON_GUIDES_DIR": "${FIXTURE}/tcg"
+          },
+          "setup": [
+            "mkdir -p tcg/scripts/instincts tcg/scripts/setup/harness",
+            "cp $TCG/scripts/instincts/instinct-dirs.js tcg/scripts/instincts/ && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/",
+            "printf 'process.exit(0)\\n' > tcg/scripts/instincts/instinct-observer.js"
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {
+            "file_exists": [
+              "${SANDBOX_HOME}/.claude/instinct-observer.last",
+              "${SANDBOX_HOME}/.claude/.tycon-pipeline/inbox/instincts/observer.log"
+            ],
+            "file_absent": [
+              "${FIXTURE}/tcg/inbox"
+            ]
+          }
+        },
+        {
+          "id": "dispara-con-buzon-registra-en-el-arbol",
+          "type": "must-run",
+          "env": {
+            "TYCON_INSTINCT_OBSERVER": "1",
+            "TYCON_GUIDES_DIR": "${FIXTURE}/tcg"
+          },
+          "setup": [
+            "mkdir -p tcg/scripts/instincts tcg/scripts/setup/harness tcg/inbox/instincts",
+            "printf '# el buzon del arbol de prueba\\n' > tcg/inbox/instincts/README.md",
+            "cp $TCG/scripts/instincts/instinct-dirs.js tcg/scripts/instincts/ && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/",
+            "printf 'process.exit(0)\\n' > tcg/scripts/instincts/instinct-observer.js"
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {
+            "file_exists": [
+              "${SANDBOX_HOME}/.claude/instinct-observer.last",
+              "${FIXTURE}/tcg/inbox/instincts/observer.log"
+            ],
+            "file_absent": [
+              "${SANDBOX_HOME}/.claude/.tycon-pipeline/inbox"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "hook": "instinct-observe.sh",
+      "script": "${TCG}/scripts/hooks/instinct-observe.sh",
+      "event": "PostToolUse",
+      "matcher": "*",
+      "cases": [
+        {
+          "id": "quiet-default-apagado",
+          "type": "must-stay-quiet",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "npm test -- Foo"
+            }
+          },
+          "expect": {
+            "file_absent": [
+              "${FIXTURE}/obs"
+            ]
+          }
+        },
+        {
+          "id": "graba-con-optin",
+          "type": "must-run",
+          "env": {
+            "TYCON_INSTINCT_MINING": "1",
+            "TYCON_INSTINCT_OBS_DIR": "${FIXTURE}/obs"
+          },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "npm test -- Foo"
+            }
+          },
+          "expect": {
+            "dir_has_file": [
+              {
+                "dir": "${FIXTURE}/obs",
+                "suffix": ".jsonl"
+              }
+            ]
+          }
+        },
+        {
+          "id": "quiet-datos-de-cliente-filtrados",
+          "type": "must-run",
+          "__doc": "REESCRITO 2026-08-25: el auditor de vacuidad lo cazó pasando con un control que no hace nada — asertaba file_not_contains sobre un seed que el hook JAMÁS escribe (graba en <mes>.jsonl). El control correcto DESCARTA el evento entero cuando la ruta toca /clients/ (privacidad de cliente: ni sanitizado entra). Como la acción del control ES una ausencia, el caso necesita un testigo positivo: el wrapper deja constancia de que la corrida llegó al final, y la aserción negativa verifica que del evento no quedó NADA.",
+          "script": "${FIXTURE}/wrapper.sh",
+          "env": {
+            "TYCON_INSTINCT_MINING": "1",
+            "TYCON_INSTINCT_OBS_DIR": "${FIXTURE}/obs"
+          },
+          "setup": [
+            "mkdir -p obs",
+            "printf '#!/bin/sh\\nbash \"$TCG/scripts/hooks/instinct-observe.sh\"\\ncat \"$FIXTURE\"/obs/*.jsonl >> \"$FIXTURE/testigo.txt\" 2>/dev/null\\necho FIN >> \"$FIXTURE/testigo.txt\"\\n' > wrapper.sh && chmod +x wrapper.sh"
+          ],
+          "stdin": {
+            "tool_name": "Read",
+            "tool_input": {
+              "file_path": "/repo/specs/clients/acme/contrato.md"
+            },
+            "session_id": "bench-priv"
+          },
+          "expect": {
+            "file_contains": [
+              {
+                "path": "${FIXTURE}/testigo.txt",
+                "re": "FIN"
+              }
+            ],
+            "file_not_contains": [
+              {
+                "path": "${FIXTURE}/testigo.txt",
+                "re": "clients|acme|contrato"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "hook": "codegraph-session-hook.sh",
+      "script": "${TCG}/scripts/hooks/codegraph-session-hook.sh",
+      "event": "SessionStart",
+      "matcher": "*",
+      "cases": [
+        {
+          "id": "quiet-cwd-sin-proyecto",
+          "type": "must-stay-quiet",
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {
+            "file_absent": [
+              "${FIXTURE}/.codegraph"
+            ]
+          }
+        },
+        {
+          "id": "quiet-cwd-es-home",
+          "type": "must-stay-quiet",
+          "__why": "incident-log#codegraph-indexa-el-home (2026-08-24): sesión abierta en $HOME con un package.json suelto → el hook indexó el home entero 2 h (3.8 GB). Con los stubs y SIN el guard este caso crea .codegraph y falla. HOME=${FIXTURE} para que cwd == HOME; el guard compara rutas físicas (pwd -P) porque /var → /private/var.",
+          "setup": [
+            "echo '{}' > package.json",
+            "mkdir -p $SANDBOX_HOME/bin",
+            "printf '#!/bin/sh\\nif [ \"$1\" = init ]; then mkdir -p .codegraph; fi\\nexit 0\\n' > $SANDBOX_HOME/bin/codegraph && chmod +x $SANDBOX_HOME/bin/codegraph",
+            "printf '#!/bin/sh\\nexit 0\\n' > $SANDBOX_HOME/bin/claude && chmod +x $SANDBOX_HOME/bin/claude"
+          ],
+          "env": {
+            "HOME": "${FIXTURE}",
+            "PATH": "${SANDBOX_HOME}/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+          },
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {
+            "file_absent": [
+              "${FIXTURE}/.codegraph"
+            ]
+          }
+        },
+        {
+          "id": "quiet-fast-path-ya-configurado",
+          "type": "must-stay-quiet",
+          "setup": [
+            "git init -q -b main .",
+            "echo '{}' > package.json",
+            "mkdir -p .codegraph && touch .codegraph/.tycon-setup-done"
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {}
+        },
+        {
+          "id": "configura-repo-nuevo-con-stubs",
+          "type": "must-run",
+          "setup": [
+            "git init -q -b main .",
+            "echo '{}' > package.json",
+            "mkdir -p $SANDBOX_HOME/bin",
+            "printf '#!/bin/sh\\nif [ \"$1\" = init ]; then mkdir -p .codegraph; fi\\nexit 0\\n' > $SANDBOX_HOME/bin/codegraph && chmod +x $SANDBOX_HOME/bin/codegraph",
+            "printf '#!/bin/sh\\nexit 0\\n' > $SANDBOX_HOME/bin/claude && chmod +x $SANDBOX_HOME/bin/claude"
+          ],
+          "env": {
+            "PATH": "${SANDBOX_HOME}/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+          },
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {
+            "file_exists": [
+              "${FIXTURE}/.codegraph/.tycon-setup-done"
+            ]
+          }
+        },
+        {
+          "id": "codex-only-indexa-sin-claude",
+          "type": "must-run",
+          "__why": "incident-log#codegraph-codex-sin-indice (2026-08-24): un dev solo-Codex tiene codegraph pero no el CLI claude; antes el hook salía en `command -v claude || exit 0` y NUNCA indexaba → el server codegraph de Codex respondía vacío. Con solo el stub de codegraph (sin claude en PATH) el hook DEBE indexar y marcar done.",
+          "setup": [
+            "git init -q -b main .",
+            "echo '{}' > package.json",
+            "mkdir -p $SANDBOX_HOME/bin",
+            "printf '#!/bin/sh\\nif [ \"$1\" = init ]; then mkdir -p .codegraph; fi\\nexit 0\\n' > $SANDBOX_HOME/bin/codegraph && chmod +x $SANDBOX_HOME/bin/codegraph"
+          ],
+          "env": {
+            "PATH": "${SANDBOX_HOME}/bin:/usr/bin:/bin"
+          },
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {
+            "file_exists": [
+              "${FIXTURE}/.codegraph/.tycon-setup-done"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

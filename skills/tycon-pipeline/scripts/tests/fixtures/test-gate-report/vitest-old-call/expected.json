@@ -1,0 +1,97 @@
+{
+  "tests_result": {
+    "ts": "2026-10-05T12:05:00Z",
+    "story_id": "9.6",
+    "runner": "vitest",
+    "repo": "<TMP>/repo",
+    "suite_exit": 0,
+    "suite_green": true,
+    "scope": null,
+    "scope_source": null,
+    "halted": false,
+    "totals": {
+      "total": 4,
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0
+    },
+    "coverage": {
+      "per_new_file": {
+        "src/nuevo.ts": 66.7,
+        "src/otro.ts": 87.5
+      },
+      "new_files_pct": 77.1,
+      "threshold": 75,
+      "meets_threshold": true,
+      "new_files_source": "git",
+      "new_files_without_coverage_data": [],
+      "touched_lines_pct": null,
+      "touched_lines": null,
+      "touched_files_without_coverage_data": [],
+      "touched_base": {
+        "ref": null,
+        "source": null,
+        "descartadas": []
+      },
+      "touched_files_ambiguous": [],
+      "touched_files_unreadable": [],
+      "observacion": {
+        "frena": false,
+        "hasta": "2026-10-06",
+        "nota": "el 75 % sobre las líneas tocadas se observa sin frenar; cada corrida deja en gates.log si habría frenado"
+      },
+      "touched_no_cross_check": "sin cruce de líneas tocadas: test-gate no pasó una base al parser",
+      "threshold_basis": "new_files"
+    },
+    "provenance": "test-gate.sh (run real, exit code capturado por marker.js run-check)",
+    "code_state": {
+      "git": false
+    }
+  },
+  "sellada": {
+    "kind": "tests-result-sellado",
+    "story_id": "9.6",
+    "ts": "2026-10-05T12:05:00Z",
+    "runner": "vitest",
+    "suite_exit": 0,
+    "suite_green": true,
+    "halted": false,
+    "totals": {
+      "total": 4,
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0
+    },
+    "coverage": {
+      "per_new_file": {
+        "src/nuevo.ts": 66.7,
+        "src/otro.ts": 87.5
+      },
+      "new_files_pct": 77.1,
+      "threshold": 75,
+      "meets_threshold": true,
+      "new_files_source": "git",
+      "new_files_without_coverage_data": [],
+      "touched_lines_pct": null,
+      "touched_lines": null,
+      "touched_files_without_coverage_data": [],
+      "touched_base": {
+        "ref": null,
+        "source": null,
+        "descartadas": []
+      },
+      "touched_files_ambiguous": [],
+      "touched_files_unreadable": [],
+      "observacion": {
+        "frena": false,
+        "hasta": "2026-10-06",
+        "nota": "el 75 % sobre las líneas tocadas se observa sin frenar; cada corrida deja en gates.log si habría frenado"
+      },
+      "touched_no_cross_check": "sin cruce de líneas tocadas: test-gate no pasó una base al parser",
+      "threshold_basis": "new_files"
+    },
+    "provenance": "test-gate.sh (run real, exit code capturado por marker.js run-check)",
+    "_por_que": "copia que VIAJA de .advisors/tests-result.json, que git ignora. Sin ella, en otra máquina o tras una limpieza ningún test de la tabla cuenta como evidencia y la story no se puede cerrar (caso 2026-09-06, stories 2.2 y 2.3 del arnés). Sólo los campos que runtime-matrix.js lee: sin rutas absolutas ni datos de la máquina."
+  },
+  "gates": []
+}

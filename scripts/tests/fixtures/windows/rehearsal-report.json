@@ -1,0 +1,1911 @@
+{
+  "schema": 1,
+  "kind": "windows-rehearsal",
+  "run": {
+    "id": "4343",
+    "number": "windows-20261005.1",
+    "harness_ref": "origin/main",
+    "scenario": "all",
+    "expected_steps": [
+      "inventory",
+      "update",
+      "onboarding",
+      "count-hooks",
+      "fire-registered"
+    ],
+    "started": "2026-10-05T11:58:00.000Z",
+    "platform": "darwin",
+    "lab_mode": true,
+    "node": "20.19.6",
+    "friday_tag": "retorno/2026-10-02-fin-del-viernes",
+    "commits": {
+      "harness": {
+        "friday": "1111111111111111111111111111111111111111",
+        "today": "3333333333333333333333333333333333333333",
+        "between": 91,
+        "today_ref": "origin/main"
+      },
+      "skills": {
+        "friday": "2222222222222222222222222222222222222222",
+        "today": "4444444444444444444444444444444444444444",
+        "between": 12,
+        "today_ref": "origin/main"
+      }
+    },
+    "finished": "2026-10-05T12:20:00.000Z"
+  },
+  "steps": [
+    {
+      "schema": 1,
+      "name": "inventory",
+      "status": "measured",
+      "reason": null,
+      "started": "2026-10-05T12:00:00.000Z",
+      "seconds": 60,
+      "facts": {
+        "tools": {
+          "git": {
+            "state": "present",
+            "locations": [
+              "C:/Git/cmd/git.exe"
+            ],
+            "version": "git version 2.55.0.windows.1"
+          },
+          "pwsh": {
+            "state": "present",
+            "locations": [
+              "C:/PowerShell/7/pwsh.exe"
+            ],
+            "version": "PowerShell 7.6.6"
+          },
+          "powershell": {
+            "state": "present",
+            "locations": [
+              "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
+            ],
+            "version": "5.1.26100"
+          },
+          "node": {
+            "state": "present",
+            "locations": [
+              "C:/nodejs/node.exe"
+            ],
+            "version": "v22.23.3"
+          }
+        }
+      },
+      "findings": [],
+      "notes": [],
+      "cap_s": 3600,
+      "capped_by": "run-capped.js",
+      "exit": 0,
+      "wall_seconds": 61
+    },
+    {
+      "schema": 1,
+      "name": "update",
+      "status": "measured",
+      "reason": null,
+      "started": "2026-10-05T12:00:00.000Z",
+      "seconds": 60,
+      "facts": {
+        "commits": {
+          "friday": {
+            "harness": "1111111111111111111111111111111111111111",
+            "skills": "2222222222222222222222222222222222222222"
+          },
+          "today": {
+            "harness": "3333333333333333333333333333333333333333",
+            "skills": "4444444444444444444444444444444444444444"
+          }
+        },
+        "not_rehearsed": [
+          {
+            "step": "PASO 0",
+            "what": "instalar un requisito que falte (git, node, Go)",
+            "why": "lo decide una persona; el ensayo sólo anota qué hay en la máquina"
+          },
+          {
+            "step": "PASO 1",
+            "what": "las credenciales de Azure DevOps y Git Credential Manager",
+            "why": "piden una credencial: los dos repos se sirven desde el laboratorio"
+          },
+          {
+            "step": "PASO 5",
+            "what": "engram: instalar el binario, `engram setup claude-code` y su hook de commit",
+            "why": "herramienta opcional que instala paquetes en la máquina (Go, winget)"
+          },
+          {
+            "step": "PASO 5",
+            "what": "el chequeo de versión de engram y la instalación de sqlite3 que corre el instalador",
+            "why": "instalan paquetes: se corren apagados (TYCON_NO_ENGRAM_VERSION_CHECK=1, TYCON_SQLITE_AUTO_INSTALL=0)"
+          },
+          {
+            "step": "PASO 6",
+            "what": "el runtime de BMAD (`npx bmad-method install`)",
+            "why": "es un asistente interactivo: sus respuestas las da una persona"
+          },
+          {
+            "step": "PASO 7",
+            "what": "Clockify, CodeGraph, instinct-mining y el lado Codex",
+            "why": "opcionales por dev; Clockify pide una llave personal"
+          },
+          {
+            "step": "PASO 8",
+            "what": "el modo «bypass permissions»",
+            "why": "se diagnostica sobre la aplicación del asistente, que el agente no tiene"
+          },
+          {
+            "step": "PASO 9",
+            "what": "las líneas de engram y de BMAD de la verificación final",
+            "why": "verifican lo que no se instaló"
+          },
+          {
+            "step": "PASO 9",
+            "what": "reiniciar el asistente y preguntarle qué guías y revisores ve",
+            "why": "pide una sesión real del asistente"
+          },
+          {
+            "step": "instalador",
+            "what": "el refresco de la lista de proyectos de Azure DevOps",
+            "why": "llama a Azure con la sesión del dev: se corre apagado (TYCON_NO_AZ_PROJECTS_REFRESH=1)"
+          }
+        ],
+        "line_endings": {
+          "harness": {
+            "sh": {
+              "total": 38,
+              "with_cr": 38,
+              "first": [
+                "scripts/hooks/safety-guard-pre.sh"
+              ]
+            },
+            "ps1": {
+              "total": 9,
+              "with_cr": 9,
+              "first": [
+                "scripts/install-tycon-hooks.ps1"
+              ]
+            },
+            "autocrlf_in_clone": "file:C:/Git/etc/gitconfig true",
+            "gitattributes": false,
+            "bash_reads_first": {
+              "file": "scripts/hooks/safety-guard-pre.sh",
+              "exit": 2,
+              "error": null,
+              "said": "syntax error near unexpected token `$'{\\r''"
+            }
+          },
+          "skills": {
+            "sh": {
+              "total": 3,
+              "with_cr": 3,
+              "first": [
+                "skills/clocki/scripts/sweep.sh"
+              ]
+            },
+            "ps1": {
+              "total": 0,
+              "with_cr": 0,
+              "first": []
+            },
+            "autocrlf_in_clone": "file:C:/Git/etc/gitconfig true",
+            "gitattributes": false
+          }
+        },
+        "powershell_reads": [
+          {
+            "shell": "pwsh",
+            "version": "7.6.6",
+            "file": "install-tycon-hooks.ps1",
+            "exit": 0,
+            "error": null,
+            "parse_errors": 0,
+            "first": null
+          },
+          {
+            "shell": "powershell",
+            "version": "5.1.26100.1",
+            "file": "install-tycon-hooks.ps1",
+            "exit": 0,
+            "error": null,
+            "parse_errors": 3,
+            "first": "Unexpected token"
+          }
+        ],
+        "variants": {
+          "canonical": {
+            "what": "PowerShell 7 · la línea de arranque vieja canónica",
+            "home": "C:/lab/profile",
+            "friday": {
+              "install": {
+                "ps": "pwsh",
+                "clone": "C:/lab/profile/SourceCode/tycon-claude-guides",
+                "skills": "C:/lab/profile/.claude/agent-skills",
+                "settings": "C:/lab/profile/.claude/settings.json",
+                "problem": null,
+                "startup_line": {
+                  "command": "pwsh -NoProfile -ExecutionPolicy Bypass -Command \"try { Set-Location $env:USERPROFILE\\.claude\\tycon-claude-guides; git pull --ff-only --quiet --autostash; Set-Location $env:USERPROFILE\\.claude\\agent-skills; git pull --ff-only --quiet --autostash; & $env:USERPROFILE\\.claude\\tycon-claude-guides\\scripts\\install-tycon-hooks.ps1 } catch {}\"",
+                  "async": true,
+                  "from": "canonical-windows"
+                },
+                "steps": [
+                  {
+                    "id": "step-0",
+                    "what": "el clon del arnés que pide el paso cero",
+                    "exit": 0,
+                    "error": null,
+                    "timed_out": false,
+                    "stdout": "",
+                    "stderr": "",
+                    "seconds": 1.2
+                  },
+                  {
+                    "id": "clone-harness",
+                    "what": "PASO 1a: clonar el arnés",
+                    "exit": 0,
+                    "error": null,
+                    "timed_out": false,
+                    "stdout": "",
+                    "stderr": "",
+                    "seconds": 1.2
+                  },
+                  {
+                    "id": "clone-skills",
+                    "what": "PASO 1b: clonar agent-skills",
+                    "exit": 0,
+                    "error": null,
+                    "timed_out": false,
+                    "stdout": "",
+                    "stderr": "",
+                    "seconds": 1.2
+                  },
+                  {
+                    "id": "links",
+                    "what": "PASO 2: los enlaces de agents y skills",
+                    "exit": 0,
+                    "error": null,
+                    "timed_out": false,
+                    "stdout": "",
+                    "stderr": "",
+                    "seconds": 1.2
+                  },
+                  {
+                    "id": "import",
+                    "what": "PASO 3: el import en CLAUDE.md",
+                    "exit": 0,
+                    "error": null,
+                    "timed_out": false,
+                    "stdout": "",
+                    "stderr": "",
+                    "seconds": 1.2
+                  },
+                  {
+                    "id": "startup-line",
+                    "what": "PASO 4: la línea de arranque en settings.json",
+                    "exit": 0,
+                    "error": null,
+                    "timed_out": false,
+                    "stdout": "",
+                    "stderr": "",
+                    "seconds": 1.2
+                  },
+                  {
+                    "id": "installer",
+                    "what": "PASO 4: el instalador, una vez a mano",
+                    "exit": 0,
+                    "error": null,
+                    "timed_out": false,
+                    "stdout": "✓ tycon: instalé 4 hook(s) en ~/.claude/settings.json",
+                    "stderr": "",
+                    "seconds": 1.2
+                  },
+                  {
+                    "id": "json-check",
+                    "what": "PASO 4: settings.json sigue siendo JSON",
+                    "exit": 0,
+                    "error": null,
+                    "timed_out": false,
+                    "stdout": "",
+                    "stderr": "",
+                    "seconds": 1.2
+                  },
+                  {
+                    "id": "verify",
+                    "what": "PASO 9: la verificación final (sin engram ni BMAD)",
+                    "exit": 0,
+                    "error": null,
+                    "timed_out": false,
+                    "stdout": "",
+                    "stderr": "",
+                    "seconds": 1.2
+                  }
+                ]
+              },
+              "session": {
+                "label": "viernes",
+                "form": "default-shell",
+                "hooks": [
+                  {
+                    "hook": "startup-line",
+                    "startup": "old",
+                    "exit": 0,
+                    "error": null,
+                    "ms": 9000,
+                    "out": "",
+                    "err": ""
+                  }
+                ],
+                "log_lines": [],
+                "heads": {
+                  "harness": "1111111111111111111111111111111111111111",
+                  "skills": "2222222222222222222222222222222222222222"
+                }
+              }
+            },
+            "before": {
+              "at": "2026-10-02T21:00:00.000Z",
+              "settings": {
+                "exists": true,
+                "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "bytes": 2100,
+                "bom": false,
+                "crlf": false,
+                "ends_with_newline": true,
+                "indent": 2,
+                "top_keys": [
+                  "$schema",
+                  "hooks"
+                ],
+                "env": null,
+                "cleanup_period_days": null,
+                "hooks": [
+                  {
+                    "event": "PreToolUse",
+                    "matcher": "Bash",
+                    "name": "@tcg:safety-brake.js",
+                    "runner": "node",
+                    "file": "C:/lab/profile/SourceCode/tycon-claude-guides/scripts/hooks/safety-brake.js",
+                    "command": "node \"C:/lab/profile/SourceCode/tycon-claude-guides/scripts/hooks/safety-brake.js\"",
+                    "is_async": false,
+                    "exists": true
+                  },
+                  {
+                    "event": "Stop",
+                    "matcher": "",
+                    "name": "@tcg:old-meter.js",
+                    "runner": "node",
+                    "file": "C:/lab/profile/SourceCode/tycon-claude-guides/scripts/hooks/old-meter.js",
+                    "command": "node \"C:/lab/profile/SourceCode/tycon-claude-guides/scripts/hooks/old-meter.js\"",
+                    "is_async": false,
+                    "exists": true
+                  },
+                  {
+                    "event": "SessionStart",
+                    "matcher": "",
+                    "name": "@tcg:bench-notice.js",
+                    "runner": "node",
+                    "file": "C:/lab/profile/SourceCode/tycon-claude-guides/scripts/hooks/bench-notice.js",
+                    "command": "node \"C:/lab/profile/SourceCode/tycon-claude-guides/scripts/hooks/bench-notice.js\"",
+                    "is_async": false,
+                    "exists": true
+                  },
+                  {
+                    "event": "Stop",
+                    "matcher": "",
+                    "name": "@tcg:retired-meter.js",
+                    "runner": "node",
+                    "file": "C:/lab/profile/SourceCode/tycon-claude-guides/scripts/hooks/retired-meter.js",
+                    "command": "node \"C:/lab/profile/SourceCode/tycon-claude-guides/scripts/hooks/retired-meter.js\"",
+                    "is_async": false,
+                    "exists": true
+                  }
+                ],
+                "startup_lines": [
+                  {
+                    "event": "SessionStart",
+                    "command": "pwsh -NoProfile -ExecutionPolicy Bypass -Command \"try { Set-Location $env:USERPROFILE\\.claude\\tycon-claude-guides; git pull --ff-only --quiet --autostash; Set-Location $env:USERPROFILE\\.claude\\agent-skills; git pull --ff-only --quiet --autostash; & $env:USERPROFILE\\.claude\\tycon-claude-guides\\scripts\\install-tycon-hooks.ps1 } catch {}\"",
+                    "is_async": true,
+                    "form": "old",
+                    "shell": "pwsh"
+                  }
+                ],
+                "duplicated": [],
+                "dangling": [],
+                "backups": 1
+              },
+              "links": [
+                {
+                  "name": "tycon-claude-guides",
+                  "present": true,
+                  "kind": "link",
+                  "resolves_to": "C:/lab/target/tycon-claude-guides",
+                  "ok": true
+                },
+                {
+                  "name": "agent-skills",
+                  "present": true,
+                  "kind": "folder",
+                  "resolves_to": "C:/lab/target/agent-skills",
+                  "ok": true
+                },
+                {
+                  "name": "agents",
+                  "present": true,
+                  "kind": "link",
+                  "resolves_to": "C:/lab/target/agents",
+                  "ok": true
+                },
+                {
+                  "name": "skills",
+                  "present": true,
+                  "kind": "link",
+                  "resolves_to": "C:/lab/target/skills",
+                  "ok": true
+                }
+              ],
+              "doctor": {
+                "exit": 0,
+                "error": null,
+                "mode": "managed",
+                "fail": [],
+                "warn": [
+                  "copia fija de arranque vieja respecto del árbol (bootstrap.js): a propósito"
+                ],
+                "ok": [
+                  "Node 22.1.0 (piso 20)"
+                ],
+                "readable": true
+              },
+              "version": {
+                "exit": 0,
+                "error": null,
+                "text": "2026.10.02+1111111 · latest · managed"
+              },
+              "state": {
+                "exists": true,
+                "mode": "managed",
+                "channel": "latest",
+                "version": "2026.10.02+1111111",
+                "notice": null,
+                "failed": null,
+                "hold": null,
+                "policy": {
+                  "channel": "latest",
+                  "apply": "auto",
+                  "enabled": true
+                },
+                "last_fetch": "2026-10-02T20:55:00.000Z",
+                "managed": 31,
+                "sources": [
+                  {
+                    "name": "harness",
+                    "ref": "main",
+                    "commit": "1111111111111111111111111111111111111111"
+                  },
+                  {
+                    "name": "agent_skills",
+                    "ref": "main",
+                    "commit": "2222222222222222222222222222222222222222"
+                  }
+                ]
+              },
+              "repos": {
+                "harness": {
+                  "exists": true,
+                  "head": "1111111111111111111111111111111111111111",
+                  "branch": "main",
+                  "origin_main": "1111111111111111111111111111111111111111",
+                  "dirty": 0,
+                  "dirty_first": [],
+                  "stashes": 0,
+                  "in_progress": [],
+                  "autocrlf": "true"
+                },
+                "skills": {
+                  "exists": true,
+                  "head": "2222222222222222222222222222222222222222",
+                  "branch": "main",
+                  "origin_main": "2222222222222222222222222222222222222222",
+                  "dirty": 0,
+                  "dirty_first": [],
+                  "stashes": 0,
+                  "in_progress": [],
+                  "autocrlf": "true"
+                }
+              },
+              "commands": [
+                "mine.md"
+              ],
+              "claude_md": {
+                "exists": true,
+                "imports": [
+                  "@C:/lab/profile/SourceCode/tycon-claude-guides/README.md"
+                ],
+                "blocks": 4,
+                "bom": false,
+                "crlf": false
+              },
+              "fixed_copy": [
+                {
+                  "file": "bootstrap-fallback.ps1",
+                  "has_cr": null
+                },
+                {
+                  "file": "bootstrap-fallback.sh",
+                  "has_cr": false
+                },
+                {
+                  "file": "bootstrap.js",
+                  "has_cr": null
+                }
+              ],
+              "startup_log_tail": [
+                "2026-10-02T20:55:01.000Z startup: arnés al día"
+              ],
+              "expected": {
+                "integrations": {
+                  "ado": true,
+                  "clockify": true,
+                  "engram": true,
+                  "codegraph": false,
+                  "buzon": true,
+                  "codex": "detect",
+                  "nocturnos": true,
+                  "telegram": false
+                },
+                "names": [
+                  "PreToolUse:@tcg:safety-brake.js",
+                  "Stop:@tcg:old-meter.js",
+                  "SessionStart:@tcg:bench-notice.js",
+                  "Stop:@tcg:retired-meter.js",
+                  "PreToolUse:@tcg:bash-brake.sh"
+                ],
+                "expected_total": 5,
+                "in_place": 4,
+                "missing": [
+                  "PreToolUse:@tcg:bash-brake.sh"
+                ],
+                "duplicated": [],
+                "superseded": [],
+                "misplaced": [],
+                "unexpected": [],
+                "dangling": []
+              }
+            },
+            "before_smoke": {
+              "rows": [
+                {
+                  "key": "PreToolUse:@tcg:safety-brake.js[Bash]",
+                  "event": "PreToolUse",
+                  "form": "default-shell",
+                  "exit": 0,
+                  "error": null,
+                  "timed_out": false,
+                  "blocked": false,
+                  "ms": 300,
+                  "said": ""
+                }
+              ]
+            },
+            "weekend": {
+              "done": true,
+              "why": null
+            },
+            "sessions": [
+              {
+                "label": "hoy-1",
+                "form": "bash-c",
+                "shell": "C:/Git/bin/bash.exe",
+                "hooks": [
+                  {
+                    "hook": "startup-line",
+                    "startup": "old",
+                    "form": "bash-c",
+                    "exit": 1,
+                    "error": null,
+                    "timed_out": false,
+                    "blocked": false,
+                    "ms": 900,
+                    "out": "",
+                    "err": ":USERPROFILE.claude: The term is not recognized as a name of a cmdlet"
+                  }
+                ],
+                "log_lines": [],
+                "heads": {
+                  "harness": "1111111111111111111111111111111111111111",
+                  "skills": "2222222222222222222222222222222222222222"
+                },
+                "settings_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              },
+              {
+                "label": "hoy-2",
+                "form": "default-shell",
+                "shell": "cmd.exe /d /s /c",
+                "hooks": [
+                  {
+                    "hook": "startup-line",
+                    "startup": "old",
+                    "form": "default-shell",
+                    "exit": 0,
+                    "error": null,
+                    "timed_out": false,
+                    "blocked": false,
+                    "ms": 21000,
+                    "out": "✓ tycon: instalé 2 hook(s) en ~/.claude/settings.json",
+                    "err": ""
+                  }
+                ],
+                "log_lines": [
+                  "2026-10-05T12:00:03.000Z startup: update: harness 1111111 → 3333333, agent_skills 2222222 → 4444444",
+                  "2026-10-05T12:00:09.000Z aplicador … → ok"
+                ],
+                "heads": {
+                  "harness": "3333333333333333333333333333333333333333",
+                  "skills": "4444444444444444444444444444444444444444"
+                },
+                "settings_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+              }
+            ],
+            "updated_by_itself": true,
+            "after": {
+              "at": "2026-10-05T12:00:00.000Z",
+              "settings": {
+                "exists": true,
+                "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "bytes": 2600,
+                "bom": false,
+                "crlf": true,
+                "ends_with_newline": true,
+                "indent": 2,
+                "top_keys": [
+                  "$schema",
+                  "hooks",
+                  "cleanupPeriodDays",
+                  "env"
+                ],
+                "env": {
+                  "CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR": "1"
+                },
+                "cleanup_period_days": 365,
+                "hooks": [
+                  {
+                    "event": "PreToolUse",
+                    "matcher": "Bash",
+                    "name": "@tcg:safety-brake.js",
+                    "runner": "node",
+                    "file": "C:/lab/profile/SourceCode/tycon-claude-guides/scripts/hooks/safety-brake.js",
+                    "command": "node \"C:/lab/profile/SourceCode/tycon-claude-guides/scripts/hooks/safety-brake.js\"",
+                    "is_async": false,
+                    "exists": true
+                  },
+                  {
+                    "event": "Stop",
+                    "matcher": "",
+                    "name": "@tcg:old-meter.js",
+                    "runner": "node",
+                    "file": "C:/lab/profile/SourceCode/tycon-claude-guides/scripts/hooks/old-meter.js",
+                    "command": "node \"C:/lab/profile/SourceCode/tycon-claude-guides/scripts/hooks/old-meter.js\"",
+                    "is_async": false,
+                    "exists": false
+                  },
+                  {
+                    "event": "Stop",
+                    "matcher": "",
+                    "name": "@tcg:new-meter.js",
+                    "runner": "node",
+                    "file": "C:/lab/profile/SourceCode/tycon-claude-guides/scripts/hooks/new-meter.js",
+                    "command": "node \"C:/lab/profile/SourceCode/tycon-claude-guides/scripts/hooks/new-meter.js\"",
+                    "is_async": false,
+                    "exists": true
+                  },
+                  {
+                    "event": "PostToolUse",
+                    "matcher": "Bash",
+                    "name": "@tcg:new-notice.js",
+                    "runner": "node",
+                    "file": "C:/lab/profile/SourceCode/tycon-claude-guides/scripts/hooks/new-notice.js",
+                    "command": "node \"C:/lab/profile/SourceCode/tycon-claude-guides/scripts/hooks/new-notice.js\"",
+                    "is_async": false,
+                    "exists": true
+                  }
+                ],
+                "startup_lines": [
+                  {
+                    "event": "SessionStart",
+                    "command": "pwsh -NoProfile -ExecutionPolicy Bypass -Command \"node 'C:/lab/profile/.claude/.tycon-pipeline/harness/bootstrap.js'; if ($LASTEXITCODE -ne 0) { & 'C:/lab/profile/.claude/.tycon-pipeline/harness/bootstrap-fallback.ps1' }\"",
+                    "is_async": true,
+                    "form": "new",
+                    "shell": "pwsh"
+                  }
+                ],
+                "duplicated": [],
+                "dangling": [
+                  {
+                    "key": "Stop:@tcg:old-meter.js",
+                    "file": "C:/lab/profile/SourceCode/tycon-claude-guides/scripts/hooks/old-meter.js"
+                  }
+                ],
+                "backups": 2
+              },
+              "links": [
+                {
+                  "name": "tycon-claude-guides",
+                  "present": true,
+                  "kind": "link",
+                  "resolves_to": "C:/lab/target/tycon-claude-guides",
+                  "ok": true
+                },
+                {
+                  "name": "agent-skills",
+                  "present": true,
+                  "kind": "folder",
+                  "resolves_to": "C:/lab/target/agent-skills",
+                  "ok": true
+                },
+                {
+                  "name": "agents",
+                  "present": true,
+                  "kind": "link",
+                  "resolves_to": "C:/lab/target/agents",
+                  "ok": true
+                },
+                {
+                  "name": "skills",
+                  "present": true,
+                  "kind": "link",
+                  "resolves_to": "C:/lab/elsewhere/skills",
+                  "ok": false
+                }
+              ],
+              "doctor": {
+                "exit": 1,
+                "error": null,
+                "mode": "managed",
+                "fail": [
+                  "fuente harness: HEAD 3333333 no es el commit registrado 1111111 (alguien movió el clon a mano, o arrancó por el respaldo en shell)"
+                ],
+                "warn": [
+                  "copia fija de arranque vieja respecto del árbol (bootstrap.js): a propósito",
+                  "sin registrar: un hook del arnés en settings.json — harness.js apply"
+                ],
+                "ok": [
+                  "Node 22.1.0 (piso 20)"
+                ],
+                "readable": true
+              },
+              "version": {
+                "exit": 0,
+                "error": null,
+                "text": "2026.10.05+3333333 · latest · managed"
+              },
+              "state": {
+                "exists": true,
+                "mode": "managed",
+                "channel": "latest",
+                "version": "2026.10.02+1111111",
+                "notice": null,
+                "failed": null,
+                "hold": null,
+                "policy": {
+                  "channel": "latest",
+                  "apply": "auto",
+                  "enabled": true
+                },
+                "last_fetch": "2026-10-02T20:55:00.000Z",
+                "managed": 31,
+                "sources": [
+                  {
+                    "name": "harness",
+                    "ref": "main",
+                    "commit": "3333333333333333333333333333333333333333"
+                  },
+                  {
+                    "name": "agent_skills",
+                    "ref": "main",
+                    "commit": "4444444444444444444444444444444444444444"
+                  }
+                ]
+              },
+              "repos": {
+                "harness": {
+                  "exists": true,
+                  "head": "3333333333333333333333333333333333333333",
+                  "branch": "main",
+                  "origin_main": "3333333333333333333333333333333333333333",
+                  "dirty": 0,
+                  "dirty_first": [],
+                  "stashes": 0,
+                  "in_progress": [],
+                  "autocrlf": "true"
+                },
+                "skills": {
+                  "exists": true,
+                  "head": "4444444444444444444444444444444444444444",
+                  "branch": "main",
+                  "origin_main": "4444444444444444444444444444444444444444",
+                  "dirty": 0,
+                  "dirty_first": [],
+                  "stashes": 0,
+                  "in_progress": [],
+                  "autocrlf": "true"
+                }
+              },
+              "commands": [
+                "harness-status.md",
+                "mine.md"
+              ],
+              "claude_md": {
+                "exists": true,
+                "imports": [
+                  "@C:/lab/profile/SourceCode/tycon-claude-guides/README.md"
+                ],
+                "blocks": 4,
+                "bom": false,
+                "crlf": false
+              },
+              "fixed_copy": [
+                {
+                  "file": "bootstrap-fallback.ps1",
+                  "has_cr": null
+                },
+                {
+                  "file": "bootstrap-fallback.sh",
+                  "has_cr": false
+                },
+                {
+                  "file": "bootstrap.js",
+                  "has_cr": null
+                }
+              ],
+              "startup_log_tail": [
+                "2026-10-05T12:00:03.000Z startup: update: harness 1111111 → 3333333, agent_skills 2222222 → 4444444",
+                "2026-10-05T12:00:09.000Z aplicador … → ok"
+              ],
+              "expected": {
+                "integrations": {
+                  "ado": true,
+                  "clockify": true,
+                  "engram": true,
+                  "codegraph": false,
+                  "buzon": true,
+                  "codex": "detect",
+                  "nocturnos": true,
+                  "telegram": false
+                },
+                "names": [
+                  "PreToolUse:@tcg:safety-brake.js",
+                  "Stop:@tcg:new-meter.js",
+                  "SessionStart:@tcg:bench-notice.js",
+                  "PostToolUse:@tcg:new-notice.js",
+                  "PreToolUse:@tcg:bash-brake.sh"
+                ],
+                "expected_total": 5,
+                "in_place": 3,
+                "missing": [
+                  "SessionStart:@tcg:bench-notice.js",
+                  "PreToolUse:@tcg:bash-brake.sh"
+                ],
+                "duplicated": [],
+                "superseded": [],
+                "misplaced": [],
+                "unexpected": [
+                  "Stop:@tcg:old-meter.js"
+                ],
+                "dangling": [
+                  "Stop:@tcg:old-meter.js"
+                ]
+              }
+            },
+            "after_smoke": {
+              "rows": [
+                {
+                  "key": "PreToolUse:@tcg:safety-brake.js[Bash]",
+                  "event": "PreToolUse",
+                  "form": "default-shell",
+                  "exit": 2,
+                  "error": null,
+                  "timed_out": false,
+                  "blocked": true,
+                  "ms": 300,
+                  "said": "frenado"
+                }
+              ]
+            },
+            "differences": [
+              {
+                "id": "links:wrong:skills",
+                "severity": "breaks",
+                "kind": "link",
+                "detail": "~/.claude/skills (link) no llega a donde tiene que llegar: C:/lab/elsewhere/skills"
+              },
+              {
+                "id": "smoke:default-shell:PreToolUse:@tcg:safety-brake.js[Bash]",
+                "severity": "breaks",
+                "kind": "smoke",
+                "detail": "PreToolUse:@tcg:safety-brake.js[Bash], lanzado por default-shell con una entrada legítima, salió 2 y FRENA: bloquea cada uso de esa herramienta (el viernes salía 0) — frenado"
+              },
+              {
+                "id": "hooks:dangling:Stop:@tcg:old-meter.js",
+                "severity": "loses-control",
+                "kind": "hook",
+                "detail": "Stop:@tcg:old-meter.js quedó registrado y su archivo no existe: C:/lab/profile/SourceCode/tycon-claude-guides/scripts/hooks/old-meter.js"
+              },
+              {
+                "id": "doctor:fail:fuente harness: HEAD # no es el commit registrado # (alguien movió el clon a man",
+                "severity": "loses-control",
+                "kind": "doctor",
+                "detail": "doctor en rojo: fuente harness: HEAD 3333333 no es el commit registrado 1111111 (alguien movió el clon a mano, o arrancó por el respaldo en shell)"
+              },
+              {
+                "id": "hooks:lost:SessionStart:@tcg:bench-notice.js",
+                "severity": "loses-control",
+                "kind": "hook",
+                "detail": "SessionStart:@tcg:bench-notice.js estaba registrado el viernes y hoy no está: se perdió en la actualización"
+              },
+              {
+                "id": "session:bash-c:startup-line-failed",
+                "severity": "loses-control",
+                "kind": "session",
+                "detail": "la línea de arranque (vieja), lanzada por bash-c, salió 1 — :USERPROFILE.claude: The term is not recognized as a name of a cmdlet"
+              },
+              {
+                "id": "hooks:lost:Stop:@tcg:retired-meter.js",
+                "severity": "noise",
+                "kind": "hook",
+                "detail": "Stop:@tcg:retired-meter.js estaba el viernes y hoy no; la lista del instalador de hoy ya no lo trae (retirado a propósito)"
+              },
+              {
+                "id": "startup:line-changed",
+                "severity": "noise",
+                "kind": "startup-line",
+                "detail": "la línea de arranque pasó de «old:pwsh» a «new:pwsh»"
+              },
+              {
+                "id": "doctor:new-warn:sin registrar: un hook del arnés en settings.json — harness.js apply",
+                "severity": "noise",
+                "kind": "doctor",
+                "detail": "doctor suma un aviso que el viernes no daba: sin registrar: un hook del arnés en settings.json — harness.js apply"
+              },
+              {
+                "id": "settings:rewritten",
+                "severity": "noise",
+                "kind": "settings",
+                "detail": "settings.json cambió de forma: sangría 2, LF → sangría 2, CRLF"
+              },
+              {
+                "id": "settings:keys-added",
+                "severity": "noise",
+                "kind": "settings",
+                "detail": "settings.json suma claves: cleanupPeriodDays, env, env.CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR"
+              },
+              {
+                "id": "settings:more-backups",
+                "severity": "noise",
+                "kind": "settings",
+                "detail": "quedaron 1 copia(s) .bak más de settings.json"
+              },
+              {
+                "id": "hooks:gained",
+                "severity": "noise",
+                "kind": "hook",
+                "detail": "hooks nuevos registrados (2): Stop:@tcg:new-meter.js, PostToolUse:@tcg:new-notice.js[Bash]"
+              },
+              {
+                "id": "commands:added",
+                "severity": "noise",
+                "kind": "commands",
+                "detail": "~/.claude/commands suma: harness-status.md"
+              },
+              {
+                "id": "version:changed",
+                "severity": "noise",
+                "kind": "version",
+                "detail": "versión: «2026.10.02+1111111 · latest · managed» → «2026.10.05+3333333 · latest · managed»"
+              }
+            ],
+            "answers": {
+              "healthy": false,
+              "updated": true,
+              "by_severity": {
+                "breaks": 2,
+                "loses-control": 4,
+                "noise": 9
+              },
+              "doctor": {
+                "before": 0,
+                "after": 1,
+                "same_or_better": false
+              },
+              "hooks": {
+                "before": 4,
+                "after": 4,
+                "kept": 2
+              },
+              "sessions_started": [
+                {
+                  "label": "hoy-1",
+                  "form": "bash-c",
+                  "startup_exit": 1,
+                  "startup_error": null
+                },
+                {
+                  "label": "hoy-2",
+                  "form": "default-shell",
+                  "startup_exit": 0,
+                  "startup_error": null
+                }
+              ],
+              "what_the_dev_is_told": []
+            }
+          },
+          "ps51": {
+            "what": "sólo el PowerShell 5.1 de Windows, el viernes y el lunes",
+            "home": "C:/lab/profile-ps51",
+            "not_run": "no hay powershell en esta máquina con qué instalar el viernes"
+          }
+        }
+      },
+      "findings": [
+        {
+          "id": "update:canonical:links:wrong:skills",
+          "kind": "link",
+          "detail": "~/.claude/skills (link) no llega a donde tiene que llegar: C:/lab/elsewhere/skills",
+          "closes_hint": null,
+          "severity": "breaks",
+          "variant": "canonical"
+        },
+        {
+          "id": "update:canonical:smoke:default-shell:PreToolUse:@tcg:safety-brake.js[Bash]",
+          "kind": "smoke",
+          "detail": "PreToolUse:@tcg:safety-brake.js[Bash], lanzado por default-shell con una entrada legítima, salió 2 y FRENA: bloquea cada uso de esa herramienta (el viernes salía 0) — frenado",
+          "closes_hint": null,
+          "severity": "breaks",
+          "variant": "canonical"
+        },
+        {
+          "id": "update:canonical:hooks:dangling:Stop:@tcg:old-meter.js",
+          "kind": "hook",
+          "detail": "Stop:@tcg:old-meter.js quedó registrado y su archivo no existe: C:/lab/profile/SourceCode/tycon-claude-guides/scripts/hooks/old-meter.js",
+          "closes_hint": null,
+          "severity": "loses-control",
+          "variant": "canonical"
+        },
+        {
+          "id": "update:canonical:doctor:fail:fuente harness: HEAD # no es el commit registrado # (alguien movió el clon a man",
+          "kind": "doctor",
+          "detail": "doctor en rojo: fuente harness: HEAD 3333333 no es el commit registrado 1111111 (alguien movió el clon a mano, o arrancó por el respaldo en shell)",
+          "closes_hint": null,
+          "severity": "loses-control",
+          "variant": "canonical"
+        },
+        {
+          "id": "update:canonical:hooks:lost:SessionStart:@tcg:bench-notice.js",
+          "kind": "hook",
+          "detail": "SessionStart:@tcg:bench-notice.js estaba registrado el viernes y hoy no está: se perdió en la actualización",
+          "closes_hint": null,
+          "severity": "loses-control",
+          "variant": "canonical"
+        },
+        {
+          "id": "update:canonical:session:bash-c:startup-line-failed",
+          "kind": "session",
+          "detail": "la línea de arranque (vieja), lanzada por bash-c, salió 1 — :USERPROFILE.claude: The term is not recognized as a name of a cmdlet",
+          "closes_hint": null,
+          "severity": "loses-control",
+          "variant": "canonical"
+        },
+        {
+          "id": "update:canonical:hooks:lost:Stop:@tcg:retired-meter.js",
+          "kind": "hook",
+          "detail": "Stop:@tcg:retired-meter.js estaba el viernes y hoy no; la lista del instalador de hoy ya no lo trae (retirado a propósito)",
+          "closes_hint": null,
+          "severity": "noise",
+          "variant": "canonical"
+        },
+        {
+          "id": "update:canonical:startup:line-changed",
+          "kind": "startup-line",
+          "detail": "la línea de arranque pasó de «old:pwsh» a «new:pwsh»",
+          "closes_hint": null,
+          "severity": "noise",
+          "variant": "canonical"
+        },
+        {
+          "id": "update:canonical:doctor:new-warn:sin registrar: un hook del arnés en settings.json — harness.js apply",
+          "kind": "doctor",
+          "detail": "doctor suma un aviso que el viernes no daba: sin registrar: un hook del arnés en settings.json — harness.js apply",
+          "closes_hint": null,
+          "severity": "noise",
+          "variant": "canonical"
+        },
+        {
+          "id": "update:canonical:settings:rewritten",
+          "kind": "settings",
+          "detail": "settings.json cambió de forma: sangría 2, LF → sangría 2, CRLF",
+          "closes_hint": null,
+          "severity": "noise",
+          "variant": "canonical"
+        },
+        {
+          "id": "update:canonical:settings:keys-added",
+          "kind": "settings",
+          "detail": "settings.json suma claves: cleanupPeriodDays, env, env.CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR",
+          "closes_hint": null,
+          "severity": "noise",
+          "variant": "canonical"
+        },
+        {
+          "id": "update:canonical:settings:more-backups",
+          "kind": "settings",
+          "detail": "quedaron 1 copia(s) .bak más de settings.json",
+          "closes_hint": null,
+          "severity": "noise",
+          "variant": "canonical"
+        },
+        {
+          "id": "update:canonical:hooks:gained",
+          "kind": "hook",
+          "detail": "hooks nuevos registrados (2): Stop:@tcg:new-meter.js, PostToolUse:@tcg:new-notice.js[Bash]",
+          "closes_hint": null,
+          "severity": "noise",
+          "variant": "canonical"
+        },
+        {
+          "id": "update:canonical:commands:added",
+          "kind": "commands",
+          "detail": "~/.claude/commands suma: harness-status.md",
+          "closes_hint": null,
+          "severity": "noise",
+          "variant": "canonical"
+        },
+        {
+          "id": "update:canonical:version:changed",
+          "kind": "version",
+          "detail": "versión: «2026.10.02+1111111 · latest · managed» → «2026.10.05+3333333 · latest · managed»",
+          "closes_hint": null,
+          "severity": "noise",
+          "variant": "canonical"
+        }
+      ],
+      "notes": [],
+      "cap_s": 3600,
+      "capped_by": "run-capped.js",
+      "exit": 0,
+      "wall_seconds": 61
+    },
+    {
+      "schema": 1,
+      "name": "onboarding",
+      "status": "measured",
+      "reason": null,
+      "started": "2026-10-05T12:00:00.000Z",
+      "seconds": 60,
+      "facts": {
+        "commits": {
+          "harness": "3333333333333333333333333333333333333333",
+          "skills": "4444444444444444444444444444444444444444"
+        },
+        "not_rehearsed": [
+          {
+            "step": "PASO 0",
+            "what": "instalar un requisito que falte (git, node, Go)",
+            "why": "lo decide una persona; el ensayo sólo anota qué hay en la máquina"
+          },
+          {
+            "step": "PASO 1",
+            "what": "las credenciales de Azure DevOps y Git Credential Manager",
+            "why": "piden una credencial: los dos repos se sirven desde el laboratorio"
+          },
+          {
+            "step": "PASO 5",
+            "what": "engram: instalar el binario, `engram setup claude-code` y su hook de commit",
+            "why": "herramienta opcional que instala paquetes en la máquina (Go, winget)"
+          },
+          {
+            "step": "PASO 5",
+            "what": "el chequeo de versión de engram y la instalación de sqlite3 que corre el instalador",
+            "why": "instalan paquetes: se corren apagados (TYCON_NO_ENGRAM_VERSION_CHECK=1, TYCON_SQLITE_AUTO_INSTALL=0)"
+          },
+          {
+            "step": "PASO 6",
+            "what": "el runtime de BMAD (`npx bmad-method install`)",
+            "why": "es un asistente interactivo: sus respuestas las da una persona"
+          },
+          {
+            "step": "PASO 7",
+            "what": "Clockify, CodeGraph, instinct-mining y el lado Codex",
+            "why": "opcionales por dev; Clockify pide una llave personal"
+          },
+          {
+            "step": "PASO 8",
+            "what": "el modo «bypass permissions»",
+            "why": "se diagnostica sobre la aplicación del asistente, que el agente no tiene"
+          },
+          {
+            "step": "PASO 9",
+            "what": "las líneas de engram y de BMAD de la verificación final",
+            "why": "verifican lo que no se instaló"
+          },
+          {
+            "step": "PASO 9",
+            "what": "reiniciar el asistente y preguntarle qué guías y revisores ve",
+            "why": "pide una sesión real del asistente"
+          },
+          {
+            "step": "instalador",
+            "what": "el refresco de la lista de proyectos de Azure DevOps",
+            "why": "llama a Azure con la sesión del dev: se corre apagado (TYCON_NO_AZ_PROJECTS_REFRESH=1)"
+          }
+        ],
+        "measured_variant": "new-dev",
+        "variants": {
+          "new-dev": {
+            "what": "una máquina con PowerShell 7",
+            "home": "C:/lab/profile",
+            "install": {
+              "ps": "pwsh",
+              "clone": "C:/lab/profile/SourceCode/tycon-claude-guides",
+              "skills": "C:/lab/profile/.claude/agent-skills",
+              "settings": "C:/lab/profile/.claude/settings.json",
+              "problem": null,
+              "startup_line": {
+                "command": "pwsh -NoProfile -ExecutionPolicy Bypass -Command \"try { Set-Location $env:USERPROFILE\\.claude\\tycon-claude-guides; git pull --ff-only --quiet --autostash; Set-Location $env:USERPROFILE\\.claude\\agent-skills; git pull --ff-only --quiet --autostash; & $env:USERPROFILE\\.claude\\tycon-claude-guides\\scripts\\install-tycon-hooks.ps1 } catch {}\"",
+                "async": true,
+                "from": "el texto del alta"
+              },
+              "steps": [
+                {
+                  "id": "step-0",
+                  "what": "el clon del arnés que pide el paso cero",
+                  "exit": 0,
+                  "error": null,
+                  "timed_out": false,
+                  "stdout": "",
+                  "stderr": "",
+                  "seconds": 1.2
+                },
+                {
+                  "id": "clone-harness",
+                  "what": "PASO 1a: clonar el arnés",
+                  "exit": 0,
+                  "error": null,
+                  "timed_out": false,
+                  "stdout": "",
+                  "stderr": "",
+                  "seconds": 1.2
+                },
+                {
+                  "id": "clone-skills",
+                  "what": "PASO 1b: clonar agent-skills",
+                  "exit": 0,
+                  "error": null,
+                  "timed_out": false,
+                  "stdout": "",
+                  "stderr": "",
+                  "seconds": 1.2
+                },
+                {
+                  "id": "links",
+                  "what": "PASO 2: los enlaces de agents y skills",
+                  "exit": 0,
+                  "error": null,
+                  "timed_out": false,
+                  "stdout": "",
+                  "stderr": "",
+                  "seconds": 1.2
+                },
+                {
+                  "id": "import",
+                  "what": "PASO 3: el import en CLAUDE.md",
+                  "exit": 0,
+                  "error": null,
+                  "timed_out": false,
+                  "stdout": "",
+                  "stderr": "",
+                  "seconds": 1.2
+                },
+                {
+                  "id": "startup-line",
+                  "what": "PASO 4: la línea de arranque en settings.json",
+                  "exit": 0,
+                  "error": null,
+                  "timed_out": false,
+                  "stdout": "",
+                  "stderr": "",
+                  "seconds": 1.2
+                },
+                {
+                  "id": "installer",
+                  "what": "PASO 4: el instalador, una vez a mano",
+                  "exit": 0,
+                  "error": null,
+                  "timed_out": false,
+                  "stdout": "✓ tycon: instalé 4 hook(s) en ~/.claude/settings.json",
+                  "stderr": "",
+                  "seconds": 1.2
+                },
+                {
+                  "id": "json-check",
+                  "what": "PASO 4: settings.json sigue siendo JSON",
+                  "exit": 0,
+                  "error": null,
+                  "timed_out": false,
+                  "stdout": "",
+                  "stderr": "",
+                  "seconds": 1.2
+                },
+                {
+                  "id": "verify",
+                  "what": "PASO 9: la verificación final (sin engram ni BMAD)",
+                  "exit": 0,
+                  "error": null,
+                  "timed_out": false,
+                  "stdout": "",
+                  "stderr": "",
+                  "seconds": 1.2
+                }
+              ]
+            },
+            "installed": {
+              "at": "2026-10-02T21:00:00.000Z",
+              "settings": {
+                "exists": true,
+                "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "bytes": 2100,
+                "bom": false,
+                "crlf": false,
+                "ends_with_newline": true,
+                "indent": 2,
+                "top_keys": [
+                  "$schema",
+                  "hooks"
+                ],
+                "env": null,
+                "cleanup_period_days": null,
+                "hooks": [
+                  {
+                    "event": "PreToolUse",
+                    "matcher": "Bash",
+                    "name": "@tcg:safety-brake.js",
+                    "runner": "node",
+                    "file": "C:/lab/profile/SourceCode/tycon-claude-guides/scripts/hooks/safety-brake.js",
+                    "command": "node \"C:/lab/profile/SourceCode/tycon-claude-guides/scripts/hooks/safety-brake.js\"",
+                    "is_async": false,
+                    "exists": true
+                  },
+                  {
+                    "event": "Stop",
+                    "matcher": "",
+                    "name": "@tcg:old-meter.js",
+                    "runner": "node",
+                    "file": "C:/lab/profile/SourceCode/tycon-claude-guides/scripts/hooks/old-meter.js",
+                    "command": "node \"C:/lab/profile/SourceCode/tycon-claude-guides/scripts/hooks/old-meter.js\"",
+                    "is_async": false,
+                    "exists": true
+                  },
+                  {
+                    "event": "SessionStart",
+                    "matcher": "",
+                    "name": "@tcg:bench-notice.js",
+                    "runner": "node",
+                    "file": "C:/lab/profile/SourceCode/tycon-claude-guides/scripts/hooks/bench-notice.js",
+                    "command": "node \"C:/lab/profile/SourceCode/tycon-claude-guides/scripts/hooks/bench-notice.js\"",
+                    "is_async": false,
+                    "exists": true
+                  },
+                  {
+                    "event": "Stop",
+                    "matcher": "",
+                    "name": "@tcg:retired-meter.js",
+                    "runner": "node",
+                    "file": "C:/lab/profile/SourceCode/tycon-claude-guides/scripts/hooks/retired-meter.js",
+                    "command": "node \"C:/lab/profile/SourceCode/tycon-claude-guides/scripts/hooks/retired-meter.js\"",
+                    "is_async": false,
+                    "exists": true
+                  }
+                ],
+                "startup_lines": [
+                  {
+                    "event": "SessionStart",
+                    "command": "pwsh -NoProfile -ExecutionPolicy Bypass -Command \"try { Set-Location $env:USERPROFILE\\.claude\\tycon-claude-guides; git pull --ff-only --quiet --autostash; Set-Location $env:USERPROFILE\\.claude\\agent-skills; git pull --ff-only --quiet --autostash; & $env:USERPROFILE\\.claude\\tycon-claude-guides\\scripts\\install-tycon-hooks.ps1 } catch {}\"",
+                    "is_async": true,
+                    "form": "old",
+                    "shell": "pwsh"
+                  }
+                ],
+                "duplicated": [],
+                "dangling": [],
+                "backups": 1
+              },
+              "links": [
+                {
+                  "name": "tycon-claude-guides",
+                  "present": true,
+                  "kind": "link",
+                  "resolves_to": "C:/lab/target/tycon-claude-guides",
+                  "ok": true
+                },
+                {
+                  "name": "agent-skills",
+                  "present": true,
+                  "kind": "folder",
+                  "resolves_to": "C:/lab/target/agent-skills",
+                  "ok": true
+                },
+                {
+                  "name": "agents",
+                  "present": true,
+                  "kind": "link",
+                  "resolves_to": "C:/lab/target/agents",
+                  "ok": true
+                },
+                {
+                  "name": "skills",
+                  "present": true,
+                  "kind": "link",
+                  "resolves_to": "C:/lab/target/skills",
+                  "ok": true
+                }
+              ],
+              "doctor": {
+                "exit": 0,
+                "error": null,
+                "mode": "managed",
+                "fail": [],
+                "warn": [
+                  "copia fija de arranque vieja respecto del árbol (bootstrap.js): a propósito"
+                ],
+                "ok": [
+                  "Node 22.1.0 (piso 20)"
+                ],
+                "readable": true
+              },
+              "version": {
+                "exit": 0,
+                "error": null,
+                "text": "2026.10.02+1111111 · latest · managed"
+              },
+              "state": {
+                "exists": true,
+                "mode": "managed",
+                "channel": "latest",
+                "version": "2026.10.02+1111111",
+                "notice": null,
+                "failed": null,
+                "hold": null,
+                "policy": {
+                  "channel": "latest",
+                  "apply": "auto",
+                  "enabled": true
+                },
+                "last_fetch": "2026-10-02T20:55:00.000Z",
+                "managed": 31,
+                "sources": [
+                  {
+                    "name": "harness",
+                    "ref": "main",
+                    "commit": "1111111111111111111111111111111111111111"
+                  },
+                  {
+                    "name": "agent_skills",
+                    "ref": "main",
+                    "commit": "2222222222222222222222222222222222222222"
+                  }
+                ]
+              },
+              "repos": {
+                "harness": {
+                  "exists": true,
+                  "head": "1111111111111111111111111111111111111111",
+                  "branch": "main",
+                  "origin_main": "1111111111111111111111111111111111111111",
+                  "dirty": 0,
+                  "dirty_first": [],
+                  "stashes": 0,
+                  "in_progress": [],
+                  "autocrlf": "true"
+                },
+                "skills": {
+                  "exists": true,
+                  "head": "2222222222222222222222222222222222222222",
+                  "branch": "main",
+                  "origin_main": "2222222222222222222222222222222222222222",
+                  "dirty": 0,
+                  "dirty_first": [],
+                  "stashes": 0,
+                  "in_progress": [],
+                  "autocrlf": "true"
+                }
+              },
+              "commands": [
+                "mine.md"
+              ],
+              "claude_md": {
+                "exists": true,
+                "imports": [
+                  "@C:/lab/profile/SourceCode/tycon-claude-guides/README.md"
+                ],
+                "blocks": 4,
+                "bom": false,
+                "crlf": false
+              },
+              "fixed_copy": [
+                {
+                  "file": "bootstrap-fallback.ps1",
+                  "has_cr": null
+                },
+                {
+                  "file": "bootstrap-fallback.sh",
+                  "has_cr": false
+                },
+                {
+                  "file": "bootstrap.js",
+                  "has_cr": null
+                }
+              ],
+              "startup_log_tail": [
+                "2026-10-02T20:55:01.000Z startup: arnés al día"
+              ],
+              "expected": {
+                "integrations": {
+                  "ado": true,
+                  "clockify": true,
+                  "engram": true,
+                  "codegraph": false,
+                  "buzon": true,
+                  "codex": "detect",
+                  "nocturnos": true,
+                  "telegram": false
+                },
+                "names": [
+                  "PreToolUse:@tcg:safety-brake.js",
+                  "Stop:@tcg:old-meter.js",
+                  "SessionStart:@tcg:bench-notice.js",
+                  "Stop:@tcg:retired-meter.js",
+                  "PreToolUse:@tcg:bash-brake.sh"
+                ],
+                "expected_total": 5,
+                "in_place": 4,
+                "missing": [
+                  "PreToolUse:@tcg:bash-brake.sh"
+                ],
+                "duplicated": [],
+                "superseded": [],
+                "misplaced": [],
+                "unexpected": [],
+                "dangling": []
+              }
+            },
+            "sessions": [
+              {
+                "label": "hoy-2",
+                "form": "default-shell",
+                "shell": "cmd.exe /d /s /c",
+                "hooks": [
+                  {
+                    "hook": "startup-line",
+                    "startup": "old",
+                    "form": "default-shell",
+                    "exit": 0,
+                    "error": null,
+                    "timed_out": false,
+                    "blocked": false,
+                    "ms": 21000,
+                    "out": "✓ tycon: instalé 2 hook(s) en ~/.claude/settings.json",
+                    "err": ""
+                  }
+                ],
+                "log_lines": [
+                  "2026-10-05T12:00:03.000Z startup: update: harness 1111111 → 3333333, agent_skills 2222222 → 4444444",
+                  "2026-10-05T12:00:09.000Z aplicador … → ok"
+                ],
+                "heads": {
+                  "harness": "3333333333333333333333333333333333333333",
+                  "skills": "4444444444444444444444444444444444444444"
+                },
+                "settings_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+              }
+            ],
+            "after_first_sessions": {
+              "at": "2026-10-02T21:00:00.000Z",
+              "settings": {
+                "exists": true,
+                "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "bytes": 2100,
+                "bom": false,
+                "crlf": false,
+                "ends_with_newline": true,
+                "indent": 2,
+                "top_keys": [
+                  "$schema",
+                  "hooks"
+                ],
+                "env": null,
+                "cleanup_period_days": null,
+                "hooks": [
+                  {
+                    "event": "PreToolUse",
+                    "matcher": "Bash",
+                    "name": "@tcg:safety-brake.js",
+                    "runner": "node",
+                    "file": "C:/lab/profile/SourceCode/tycon-claude-guides/scripts/hooks/safety-brake.js",
+                    "command": "node \"C:/lab/profile/SourceCode/tycon-claude-guides/scripts/hooks/safety-brake.js\"",
+                    "is_async": false,
+                    "exists": true
+                  },
+                  {
+                    "event": "Stop",
+                    "matcher": "",
+                    "name": "@tcg:old-meter.js",
+                    "runner": "node",
+                    "file": "C:/lab/profile/SourceCode/tycon-claude-guides/scripts/hooks/old-meter.js",
+                    "command": "node \"C:/lab/profile/SourceCode/tycon-claude-guides/scripts/hooks/old-meter.js\"",
+                    "is_async": false,
+                    "exists": true
+                  },
+                  {
+                    "event": "SessionStart",
+                    "matcher": "",
+                    "name": "@tcg:bench-notice.js",
+                    "runner": "node",
+                    "file": "C:/lab/profile/SourceCode/tycon-claude-guides/scripts/hooks/bench-notice.js",
+                    "command": "node \"C:/lab/profile/SourceCode/tycon-claude-guides/scripts/hooks/bench-notice.js\"",
+                    "is_async": false,
+                    "exists": true
+                  },
+                  {
+                    "event": "Stop",
+                    "matcher": "",
+                    "name": "@tcg:retired-meter.js",
+                    "runner": "node",
+                    "file": "C:/lab/profile/SourceCode/tycon-claude-guides/scripts/hooks/retired-meter.js",
+                    "command": "node \"C:/lab/profile/SourceCode/tycon-claude-guides/scripts/hooks/retired-meter.js\"",
+                    "is_async": false,
+                    "exists": true
+                  }
+                ],
+                "startup_lines": [
+                  {
+                    "event": "SessionStart",
+                    "command": "pwsh -NoProfile -ExecutionPolicy Bypass -Command \"try { Set-Location $env:USERPROFILE\\.claude\\tycon-claude-guides; git pull --ff-only --quiet --autostash; Set-Location $env:USERPROFILE\\.claude\\agent-skills; git pull --ff-only --quiet --autostash; & $env:USERPROFILE\\.claude\\tycon-claude-guides\\scripts\\install-tycon-hooks.ps1 } catch {}\"",
+                    "is_async": true,
+                    "form": "old",
+                    "shell": "pwsh"
+                  }
+                ],
+                "duplicated": [],
+                "dangling": [],
+                "backups": 1
+              },
+              "links": [
+                {
+                  "name": "tycon-claude-guides",
+                  "present": true,
+                  "kind": "link",
+                  "resolves_to": "C:/lab/target/tycon-claude-guides",
+                  "ok": true
+                },
+                {
+                  "name": "agent-skills",
+                  "present": true,
+                  "kind": "folder",
+                  "resolves_to": "C:/lab/target/agent-skills",
+                  "ok": true
+                },
+                {
+                  "name": "agents",
+                  "present": true,
+                  "kind": "link",
+                  "resolves_to": "C:/lab/target/agents",
+                  "ok": true
+                },
+                {
+                  "name": "skills",
+                  "present": true,
+                  "kind": "link",
+                  "resolves_to": "C:/lab/target/skills",
+                  "ok": true
+                }
+              ],
+              "doctor": {
+                "exit": 0,
+                "error": null,
+                "mode": "managed",
+                "fail": [],
+                "warn": [
+                  "copia fija de arranque vieja respecto del árbol (bootstrap.js): a propósito"
+                ],
+                "ok": [
+                  "Node 22.1.0 (piso 20)"
+                ],
+                "readable": true
+              },
+              "version": {
+                "exit": 0,
+                "error": null,
+                "text": "2026.10.02+1111111 · latest · managed"
+              },
+              "state": {
+                "exists": true,
+                "mode": "managed",
+                "channel": "latest",
+                "version": "2026.10.02+1111111",
+                "notice": null,
+                "failed": null,
+                "hold": null,
+                "policy": {
+                  "channel": "latest",
+                  "apply": "auto",
+                  "enabled": true
+                },
+                "last_fetch": "2026-10-02T20:55:00.000Z",
+                "managed": 31,
+                "sources": [
+                  {
+                    "name": "harness",
+                    "ref": "main",
+                    "commit": "1111111111111111111111111111111111111111"
+                  },
+                  {
+                    "name": "agent_skills",
+                    "ref": "main",
+                    "commit": "2222222222222222222222222222222222222222"
+                  }
+                ]
+              },
+              "repos": {
+                "harness": {
+                  "exists": true,
+                  "head": "1111111111111111111111111111111111111111",
+                  "branch": "main",
+                  "origin_main": "1111111111111111111111111111111111111111",
+                  "dirty": 0,
+                  "dirty_first": [],
+                  "stashes": 0,
+                  "in_progress": [],
+                  "autocrlf": "true"
+                },
+                "skills": {
+                  "exists": true,
+                  "head": "2222222222222222222222222222222222222222",
+                  "branch": "main",
+                  "origin_main": "2222222222222222222222222222222222222222",
+                  "dirty": 0,
+                  "dirty_first": [],
+                  "stashes": 0,
+                  "in_progress": [],
+                  "autocrlf": "true"
+                }
+              },
+              "commands": [
+                "mine.md"
+              ],
+              "claude_md": {
+                "exists": true,
+                "imports": [
+                  "@C:/lab/profile/SourceCode/tycon-claude-guides/README.md"
+                ],
+                "blocks": 4,
+                "bom": false,
+                "crlf": false
+              },
+              "fixed_copy": [
+                {
+                  "file": "bootstrap-fallback.ps1",
+                  "has_cr": null
+                },
+                {
+                  "file": "bootstrap-fallback.sh",
+                  "has_cr": false
+                },
+                {
+                  "file": "bootstrap.js",
+                  "has_cr": null
+                }
+              ],
+              "startup_log_tail": [
+                "2026-10-02T20:55:01.000Z startup: arnés al día"
+              ],
+              "expected": {
+                "integrations": {
+                  "ado": true,
+                  "clockify": true,
+                  "engram": true,
+                  "codegraph": false,
+                  "buzon": true,
+                  "codex": "detect",
+                  "nocturnos": true,
+                  "telegram": false
+                },
+                "names": [
+                  "PreToolUse:@tcg:safety-brake.js",
+                  "Stop:@tcg:old-meter.js",
+                  "SessionStart:@tcg:bench-notice.js",
+                  "Stop:@tcg:retired-meter.js",
+                  "PreToolUse:@tcg:bash-brake.sh"
+                ],
+                "expected_total": 5,
+                "in_place": 4,
+                "missing": [
+                  "PreToolUse:@tcg:bash-brake.sh"
+                ],
+                "duplicated": [],
+                "superseded": [],
+                "misplaced": [],
+                "unexpected": [],
+                "dangling": []
+              }
+            },
+            "changed_by_first_sessions": [],
+            "answers": {
+              "usable": true,
+              "by_severity": {
+                "breaks": 0,
+                "loses-control": 1,
+                "noise": 0
+              }
+            }
+          }
+        }
+      },
+      "findings": [
+        {
+          "id": "onboarding:new-dev:hooks:missing:PreToolUse:@tcg:bash-brake.sh",
+          "kind": "hook",
+          "detail": "el hook PreToolUse:@tcg:bash-brake.sh está en la lista del instalador de Mac y Linux y no quedó registrado",
+          "closes_hint": null,
+          "severity": "loses-control",
+          "variant": "new-dev"
+        }
+      ],
+      "notes": [],
+      "cap_s": 2400,
+      "capped_by": "run-capped.js",
+      "exit": 0,
+      "wall_seconds": 61
+    },
+    {
+      "schema": 1,
+      "name": "count-hooks",
+      "status": "measured",
+      "reason": null,
+      "started": "2026-10-05T12:00:00.000Z",
+      "seconds": 60,
+      "facts": {
+        "variant": "new-dev"
+      },
+      "findings": [
+        {
+          "id": "hooks:missing:PreToolUse:@tcg:bash-brake.sh",
+          "kind": "hook-missing",
+          "detail": "el hook esperado PreToolUse:@tcg:bash-brake.sh (matcher Bash) no quedó registrado",
+          "closes_hint": "W4"
+        }
+      ],
+      "notes": [],
+      "cap_s": 300,
+      "capped_by": "run-capped.js",
+      "exit": 0,
+      "wall_seconds": 61
+    },
+    {
+      "schema": 1,
+      "name": "fire-registered",
+      "status": "measured",
+      "reason": null,
+      "started": "2026-10-05T12:00:00.000Z",
+      "seconds": 60,
+      "facts": {
+        "variant": "new-dev",
+        "hooks_fired": 4
+      },
+      "findings": [],
+      "notes": [],
+      "cap_s": 2400,
+      "capped_by": "run-capped.js",
+      "exit": 0,
+      "wall_seconds": 61
+    }
+  ]
+}

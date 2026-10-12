@@ -1,0 +1,14 @@
+{
+  "_what_it_is": "La hipótesis del reproceso por carril (story 2.7), escrita y commiteada ANTES de mirar un solo número real. El tablero la lee de acá: no la escribe nadie después de ver el resultado.",
+  "schema": 1,
+  "declared_on": "2026-09-16",
+  "hypothesis": "Las stories cerradas con una corrida del pipeline guardada en su repo vuelven (reciben un seguimiento posterior) en una proporción MENOR que las cerradas sin constancia de corrida en ese mismo repo.",
+  "result_against": "Si vuelven igual o más, se publica igual, con el mismo tono. Un tablero que sólo muestra lo que conviene no sirve para decidir.",
+  "min_n_per_group": 5,
+  "_min_n_why": "Con menos de cinco stories cerradas en un grupo, una sola que vuelva mueve la proporción veinte puntos: eso es una anécdota, no una comparación. Se compara dentro de cada repo, nunca sumando productos distintos.",
+  "groups": {
+    "with_run": "la story tiene una carpeta .advisors/pipeline-runs/<story>-*/ en su repo",
+    "without_record": "la story se cerró después de que el repo empezó a guardar corridas, y no tiene ninguna. NO quiere decir «a mano»: una corrida que no se guardó cae acá"
+  },
+  "review_before": "2027-03-16"
+}

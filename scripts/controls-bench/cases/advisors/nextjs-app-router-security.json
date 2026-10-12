@@ -1,0 +1,34 @@
+{
+  "__doc": "Casos quirúrgicos del advisor nextjs-app-router-security (Etapa D — banco de controles). Un pecado → una regla → el veredicto es la PRESENCIA/AUSENCIA del rule ID objetivo COMO FINDING (bullet '- [ID] ...'), nunca el conteo (§2.2 del plan). Reglas elegidas por determinismo greppeable: NEXTSEC-C6 (dangerouslySetInnerHTML sin DOMPurify) y NEXTSEC-C1 (Server Action sin validación Zod); el must-not-flag es el gemelo legítimo de C6 (mismo componente, sanitizado con DOMPurify).",
+  "advisor": "nextjs-app-router-security",
+  "cases": [
+    {
+      "id": "nextsec-c6-html-sin-dompurify",
+      "type": "must-flag",
+      "rule": "NEXTSEC-C6",
+      "files": {
+        "src/app/posts/PostBody.tsx": "type Props = { html: string };\n\n// html llega del contenido guardado por el usuario en la DB (rich-text del editor)\nexport default function PostBody({ html }: Props) {\n  return (\n    <article className=\"prose\">\n      <div dangerouslySetInnerHTML={{ __html: html }} />\n    </article>\n  );\n}\n"
+      },
+      "canario": true
+    },
+    {
+      "id": "nextsec-c1-server-action-sin-zod",
+      "type": "must-flag",
+      "rule": "NEXTSEC-C1",
+      "files": {
+        "src/app/comments/actions.ts": "'use server';\n\nimport { getServerSession } from 'next-auth';\nimport { db } from '@/db';\nimport { comments } from '@/db/schema';\n\nexport async function createComment(formData: FormData) {\n  const session = await getServerSession();\n  if (!session?.user?.id) throw new Error('unauthorized');\n  await db.insert(comments).values({\n    userId: session.user.id,\n    postId: formData.get('postId') as string,\n    body: formData.get('body') as string,\n  });\n}\n"
+      }
+    },
+    {
+      "id": "limpio-dompurify-sin-c6",
+      "type": "must-not-flag",
+      "rule": "NEXTSEC-C6",
+      "files": {
+        "src/app/posts/PostBody.tsx": "import DOMPurify from 'isomorphic-dompurify';\n\ntype Props = { html: string };\n\n// html llega del contenido guardado por el usuario en la DB (rich-text del editor)\nexport default function PostBody({ html }: Props) {\n  const safe = DOMPurify.sanitize(html, {\n    ALLOWED_TAGS: ['p', 'strong', 'em', 'ul', 'li'],\n    ALLOWED_ATTR: [],\n  });\n  return (\n    <article className=\"prose\">\n      <div dangerouslySetInnerHTML={{ __html: safe }} />\n    </article>\n  );\n}\n"
+      },
+      "__nota": "Gemelo limpio ENDURECIDO 2026-08-21: la 1ra version sanitizaba sin ALLOWED_ATTR y con el tag <a> permitido — el advisor emitio un WARNING legitimo citando NEXTSEC-C6 (href javascript:). Un gemelo limpio tiene que ser INEQUIVOCAMENTE correcto: allowlist cerrada, sin atributos, sin <a>.",
+      "canario": true
+    }
+  ],
+  "prompt_template": "Tu salida completa se guarda en un archivo de auditoría que procesa un script: no la lee una persona en el chat — la regla de 'resumen ejecutivo / detalle a pedido' de tus instrucciones NO aplica en este contexto. Emití el reporte COMPLETO en el formato del catálogo, con cada finding como bullet que abre con su rule ID entre corchetes: - [RULE-ID] `archivo:línea` descripción. Fix: accion. Los rule IDs entre corchetes van SOLO en findings reales (en la sección '✅ OK' o al descartar una regla, mencionala SIN corchetes). Archivos cambiados: {files}. Escaneá y emití el reporte."
+}

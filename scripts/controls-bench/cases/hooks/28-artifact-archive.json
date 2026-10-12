@@ -1,0 +1,226 @@
+{
+  "hooks": [
+    {
+      "hook": "artifact-archive.js (copia el artefacto publicado al repo de la sesión)",
+      "script": "${FIXTURE}/tcg/scripts/hooks/artifact-archive.js",
+      "event": "PostToolUse",
+      "matcher": "Artifact",
+      "tools": [
+        "claude"
+      ],
+      "asymmetry": "La tool Artifact (publicar páginas en claude.ai) es EXCLUSIVA de Claude Code: Codex nunca emite este tool_name, así que no existe dirección codex de este control. Pedido del dev 2026-08-30: los artefactos publicados no pueden vivir solo en el scratchpad temporal.",
+      "cases": [
+        {
+          "id": "publicar-desde-el-scratchpad-copia-al-repo-y-deja-indice",
+          "type": "must-not-block",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/artifact-archive.js tcg/scripts/hooks/",
+            "mkdir -p .git",
+            "mkdir -p $SANDBOX_HOME/scratch && printf '<title>Informe X</title><p>hola</p>' > $SANDBOX_HOME/scratch/informe-x.html"
+          ],
+          "stdin": {
+            "tool_name": "Artifact",
+            "tool_input": {
+              "file_path": "${SANDBOX_HOME}/scratch/informe-x.html",
+              "favicon": "📊"
+            },
+            "tool_response": "Published at https://claude.ai/code/artifact/00000000-1111-2222-3333-444444444444"
+          },
+          "expect": {
+            "stdout_re": [
+              "archivado",
+              "artifacts[\\\\/]informe-x\\.html",
+              "SIN commitear"
+            ],
+            "file_exists": [
+              "${FIXTURE}/artifacts/informe-x.html",
+              "${FIXTURE}/artifacts/README.md"
+            ],
+            "file_contains": [
+              {
+                "path": "${FIXTURE}/artifacts/README.md",
+                "re": "informe-x\\.html"
+              },
+              {
+                "path": "${FIXTURE}/artifacts/README.md",
+                "re": "claude\\.ai/code/artifact/00000000"
+              }
+            ]
+          }
+        },
+        {
+          "id": "url-con-el-formato-nuevo-de-claude-ai-queda-en-el-indice",
+          "type": "must-not-block",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/artifact-archive.js tcg/scripts/hooks/",
+            "mkdir -p .git",
+            "mkdir -p $SANDBOX_HOME/scratch && printf '<title>Mapa</title>' > $SANDBOX_HOME/scratch/mapa.html"
+          ],
+          "stdin": {
+            "tool_name": "Artifact",
+            "tool_input": {
+              "file_path": "${SANDBOX_HOME}/scratch/mapa.html",
+              "favicon": "🐴"
+            },
+            "tool_response": "Published /tmp/mapa.html at https://claude.ai/artifact/Abc123Def456Ghi789Jk (Version 11)\n\nTo get back to it later: on the web, the gallery at claude.ai/code/artifacts lists them."
+          },
+          "expect": {
+            "file_contains": [
+              {
+                "path": "${FIXTURE}/artifacts/README.md",
+                "re": "mapa\\.html` — https://claude\\.ai/artifact/Abc123Def456Ghi789Jk — "
+              }
+            ]
+          }
+        },
+        {
+          "id": "republicar-sin-url-reconocible-no-pisa-la-anotada",
+          "type": "must-not-block",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/artifact-archive.js tcg/scripts/hooks/",
+            "mkdir -p .git",
+            "mkdir -p artifacts && printf -- '# Artefactos\\n\\n- `viejo.html` — https://claude.ai/artifact/AbC123xyz — 2026-09-01\\n' > artifacts/README.md",
+            "mkdir -p $SANDBOX_HOME/scratch && printf '<title>v</title>' > $SANDBOX_HOME/scratch/viejo.html"
+          ],
+          "stdin": {
+            "tool_name": "Artifact",
+            "tool_input": {
+              "file_path": "${SANDBOX_HOME}/scratch/viejo.html"
+            },
+            "tool_response": "Published, sin dirección en el texto"
+          },
+          "expect": {
+            "file_contains": [
+              {
+                "path": "${FIXTURE}/artifacts/README.md",
+                "re": "viejo\\.html` — https://claude\\.ai/artifact/AbC123xyz — "
+              }
+            ]
+          }
+        },
+        {
+          "id": "republicar-con-la-url-en-el-pedido-la-anota",
+          "type": "must-not-block",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/artifact-archive.js tcg/scripts/hooks/",
+            "mkdir -p .git",
+            "mkdir -p $SANDBOX_HOME/scratch && printf '<title>u</title>' > $SANDBOX_HOME/scratch/pedido.html"
+          ],
+          "stdin": {
+            "tool_name": "Artifact",
+            "tool_input": {
+              "file_path": "${SANDBOX_HOME}/scratch/pedido.html",
+              "url": "https://claude.ai/artifact/Pedido999"
+            },
+            "tool_response": "Published (Version 3)"
+          },
+          "expect": {
+            "file_contains": [
+              {
+                "path": "${FIXTURE}/artifacts/README.md",
+                "re": "pedido\\.html` — https://claude\\.ai/artifact/Pedido999 — "
+              }
+            ]
+          }
+        },
+        {
+          "id": "archivo-que-ya-vive-dentro-del-repo-no-se-duplica",
+          "type": "must-stay-quiet",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/artifact-archive.js tcg/scripts/hooks/",
+            "mkdir -p .git decks && printf '<title>Deck</title>' > decks/deck.html"
+          ],
+          "stdin": {
+            "tool_name": "Artifact",
+            "tool_input": {
+              "file_path": "${FIXTURE}/decks/deck.html"
+            }
+          },
+          "expect": {
+            "file_absent": [
+              "${FIXTURE}/artifacts/deck.html"
+            ]
+          }
+        },
+        {
+          "id": "fuera-de-un-repo-git-no-hace-nada",
+          "type": "must-stay-quiet",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/artifact-archive.js tcg/scripts/hooks/",
+            "mkdir -p $SANDBOX_HOME/scratch && printf '<title>x</title>' > $SANDBOX_HOME/scratch/suelto.html"
+          ],
+          "stdin": {
+            "tool_name": "Artifact",
+            "tool_input": {
+              "file_path": "${SANDBOX_HOME}/scratch/suelto.html"
+            }
+          },
+          "expect": {
+            "file_absent": [
+              "${FIXTURE}/artifacts/suelto.html"
+            ]
+          }
+        },
+        {
+          "id": "acciones-que-no-publican-no-archivan",
+          "type": "must-stay-quiet",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/artifact-archive.js tcg/scripts/hooks/",
+            "mkdir -p .git"
+          ],
+          "stdin": {
+            "tool_name": "Artifact",
+            "tool_input": {
+              "action": "read",
+              "url": "https://claude.ai/code/artifact/abc"
+            }
+          },
+          "expect": {
+            "file_absent": [
+              "${FIXTURE}/artifacts/README.md"
+            ]
+          }
+        },
+        {
+          "id": "kill-switch-apaga-sin-romper",
+          "type": "must-stay-quiet",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/artifact-archive.js tcg/scripts/hooks/",
+            "mkdir -p .git",
+            "mkdir -p $SANDBOX_HOME/scratch && printf '<title>x</title>' > $SANDBOX_HOME/scratch/apagado.html"
+          ],
+          "env": {
+            "TYCON_ARTIFACT_ARCHIVE": "0"
+          },
+          "stdin": {
+            "tool_name": "Artifact",
+            "tool_input": {
+              "file_path": "${SANDBOX_HOME}/scratch/apagado.html"
+            }
+          },
+          "expect": {
+            "file_absent": [
+              "${FIXTURE}/artifacts/apagado.html"
+            ]
+          }
+        },
+        {
+          "id": "payload-basura-no-rompe-el-turno",
+          "type": "must-not-block",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/artifact-archive.js tcg/scripts/hooks/"
+          ],
+          "stdin": {
+            "tool_name": "Artifact",
+            "tool_input": {
+              "file_path": 12345
+            }
+          },
+          "expect": {
+            "stdout_empty": true
+          }
+        }
+      ]
+    }
+  ]
+}

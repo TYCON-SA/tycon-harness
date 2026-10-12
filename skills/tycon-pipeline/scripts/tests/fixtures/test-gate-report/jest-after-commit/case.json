@@ -1,0 +1,24 @@
+{
+  "__doc": "jest en una iteración posterior al commit: git ya no reporta archivos nuevos, así que la lista sale de lo que la story declara crear (uno existe, otro no). Las líneas tocadas se miden contra el commit anterior (HEAD~1). Claves de cobertura absolutas, con barras invertidas en una.",
+  "runner": "jest",
+  "suite_exit": "0",
+  "story_id": "9.3",
+  "cov_min": "75",
+  "ts": "2026-10-05T12:02:00Z",
+  "test_project_count": "0",
+  "scope": "app",
+  "scope_source": "story",
+  "declared_new": ["app/src/validate.js", "app\\src\\validate.test.js", "app/src/ghost.js", "docs/notas.md", "  "],
+  "code_state": { "git": true, "head": "0000acme", "dirty": null },
+  "base_ref": "HEAD~1",
+  "base_json": { "ref": "HEAD~1", "source": "env", "descartadas": [] },
+  "base": {
+    "app/src/form.js": { "lines": 10 }
+  },
+  "after": {
+    "app/src/form.js": { "lines": 10, "changed": [2, 3] },
+    "app/src/validate.js": { "lines": 6 },
+    "app/src/validate.test.js": { "lines": 2 }
+  },
+  "now": {}
+}

@@ -1,0 +1,240 @@
+'use strict';
+// tycon-home.js — dónde vive el arnés en la máquina: la única pieza que lo sabe (story 8.23, tanda A1).
+//
+// ── EL CASO (2026-10-06) ──────────────────────────────────────────────────────────────────────────────────────────
+// El dueño decidió que el arnés viva en `~/.tycon`, fuera de la carpeta de cualquier herramienta. Hasta acá cinco piezas
+// resolvían cada una un pedazo de la ruta (place.js, harness-path.js, state.js, skills-dir.js, tycon-config.js), todas con
+// `.claude` adentro. Antes de mover nada, la ruta se pide a UN lugar: este archivo.
+//
+// ── QUÉ HAY ACÁ ───────────────────────────────────────────────────────────────────────────────────────────────────
+// Una función por ruta. En las tandas A1 y A2 cada una vale LO DE HOY (nada se mueve en ninguna máquina):
+//   · harnessDir(home)          el arnés: lo que resuelve el lugar (resolvePlace: primero el lugar, después el nombre viejo)
+//   · stateDir(home)            el estado del mecanismo y del pipeline: ~/.claude/.tycon-pipeline
+//   · configFile(home)          la configuración de la máquina: ~/.claude/tycon.json
+//   · backupsDir(home)          las copias de seguridad de la 8.13: ~/.claude/.tycon-pipeline/harness/backups
+//   · installedSkillsDir(home)  las skills instaladas: ~/.claude/agent-skills
+//   · home({ env })             la carpeta propia del arnés, ~/.tycon (o TYCON_HOME): la usan las tandas B en adelante
+//
+// ── LA MÁQUINA QUE VIVE EN ~/.tycon (tanda C, 2026-10-07) ─────────────────────────────────────────────────────────
+// Una máquina SIN Claude Code no puede guardar nada en la carpeta de Claude Code (AC 22): su estado nace en
+// `~/.tycon/state`. La regla es una sola y la lee el disco: **si existe `~/.tycon/state`, el estado, las copias y la
+// configuración son los de `~/.tycon`; si no, los de hoy**. La crea `install --version` en una máquina que no enchufa a
+// Claude Code (`adoptOwnHome`), y es la misma regla con que la tanda D muda a las demás (mover y crear esa carpeta). Una
+// máquina sin esa carpeta —todas las de hoy— contesta lo de siempre, byte a byte.
+// Y lo del lugar de la 8.19, que se mudó acá desde place.js (que queda como fachada): los dos nombres, sus rutas y
+// resolvePlace. Las variables parciales de hoy (TYCON_GUIDES_DIR, TYCON_SKILLS_DIR, TYCON_HARNESS_SNAPSHOT_DIR, …) las
+// sigue leyendo cada pieza ANTES de pedir acá: ganan en su pedazo, como siempre.
+//
+// ── POR QUÉ VIVE ACÁ Y NO EN scripts/lib/ ─────────────────────────────────────────────────────────────────────────
+// La copia fija del programa (`~/.claude/.tycon-pipeline/harness/program/harness/`) se refresca copiando esta carpeta
+// entera, y la copia la hace el código VIEJO en memoria. Un archivo de otra carpeta no llegaría a la copia en la primera
+// actualización y `rollback`/`uninstall` de emergencia quedarían rotos hasta la versión siguiente. Acá viaja solo.
+// Al freno de producción lo va a copiar su instalador a /opt/tycon/setup/harness/ desde la tanda D (AC 30), cuando
+// skills-dir.js y tycon-config.js le pidan su ruta; en las tandas A1-C el freno no la usa.
+//
+// Sin dependencias: sólo módulos de Node. Corre suelto desde la copia fija y desde la del freno.
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+
+const PLACE_NAME = 'tycon-harness';
+const LEGACY_PLACE_NAME = 'tycon-claude-guides';
+const OWN_DIR_NAME = '.tycon';
+
+class TyconHomeError extends Error {
+  constructor(message) { super(message); this.name = 'TyconHomeError'; }
+}
+
+// la carpeta de Claude Code bajo el HOME: en las tandas A1 y A2, el arnés vive todavía adentro
+function claudeDir(home) { return path.join(home || os.homedir(), '.claude'); }
+
+function placePath(home) { return path.join(claudeDir(home), PLACE_NAME); }
+function legacyPlacePath(home) { return path.join(claudeDir(home), LEGACY_PLACE_NAME); }
+
+/** «Clon válido del arnés» = existe y tiene el instalador (el criterio de la 8.3, AC 4). */
+function isHarnessClone(dir) { return !!dir && fs.existsSync(path.join(dir, 'scripts', 'install-tycon-hooks.sh')); }
+
+function realOrNull(p) { try { return fs.realpathSync(p); } catch (_) { return null; } }
+function exists(p) { try { fs.lstatSync(p); return true; } catch (_) { return false; } }
+
+/**
+ * El lugar del arnés: primero el lugar, después el nombre viejo.
+ * @returns {{dir:string|null, via:'place'|'legacy'|null, path:string|null, tried:string[], invalid:{path:string,real:string}[], present:string[]}}
+ *   `dir`: la carpeta real del clon (o null) · `via`: por cuál nombre se encontró · `path`: la ruta de ese nombre ·
+ *   `tried`: las dos rutas, en orden · `invalid`: los nombres que resuelven a algo que no es un clon · `present`: los
+ *   nombres en los que hay algo (sirve para nombrar el viejo SÓLO si existe).
+ */
+function resolvePlace({ home, isValid = isHarnessClone } = {}) {
+  const tried = [placePath(home), legacyPlacePath(home)];
+  const out = { dir: null, via: null, path: null, tried, invalid: [], present: tried.filter(exists) };
+  for (const [i, p] of tried.entries()) {
+    const r = realOrNull(p);
+    if (!r) continue;
+    if (!isValid(r)) { out.invalid.push({ path: p, real: r }); continue; }
+    Object.assign(out, { dir: r, via: i === 0 ? 'place' : 'legacy', path: p });
+    return out;
+  }
+  return out;
+}
+
+/** La casa propia del arnés vista desde un HOME: `TYCON_HOME` si está (y vale), o `<home>/.tycon`. Nunca tira. */
+function ownRootOf(home) {
+  const v = process.env.TYCON_HOME === undefined ? '' : String(process.env.TYCON_HOME).trim();
+  return v && path.isAbsolute(v) ? v : path.join(home || os.homedir(), OWN_DIR_NAME);
+}
+/** El estado de una máquina que vive en la casa propia: `~/.tycon/state`. */
+function ownStateDir(home) { return path.join(ownRootOf(home), 'state'); }
+/** El estado donde vivió siempre (y vive, hasta la mudanza, en una máquina con Claude Code). */
+function legacyStateDir(home) { return path.join(claudeDir(home), '.tycon-pipeline'); }
+/** ¿Esta máquina vive en la casa propia del arnés? (existe `~/.tycon/state`: la regla de la cabecera) */
+function livesInOwnHome(home) {
+  try { return fs.statSync(ownStateDir(home)).isDirectory(); } catch (_) { return false; }
+}
+/**
+ * La máquina pasa a vivir en la casa propia: crea `~/.tycon/state`. Lo llama `install --version` en una máquina que no
+ * enchufa a Claude Code y no tiene estado donde siempre (tanda C), y la mudanza (tanda D). Devuelve la carpeta. Tira si
+ * no la puede crear: sin ella el estado caería en la carpeta de Claude Code.
+ */
+/** ¿`~/.tycon/state` existe pero no tiene estado? Es el resto de una instalación cortada (Ctrl-C en «¿Instalo?»): la
+ *  máquina NO vive ahí (pase adversarial de la C, clase 7: esa carpeta vacía la marcaba para siempre). */
+function ownHomeStale(home) {
+  return livesInOwnHome(home) && !fs.existsSync(path.join(ownStateDir(home), 'harness-state.json'));
+}
+/** Saca ese resto. Devuelve true si había algo que sacar. */
+function dropStaleOwnHome(home, { log = null } = {}) {
+  if (!ownHomeStale(home)) return false;
+  try { fs.rmSync(ownStateDir(home), { recursive: true, force: true }); return true; } catch (e) { if (log) log(`no pude sacar ${ownStateDir(home)} (${e.code || e.message}): queda, y la máquina sigue contando como «vive en ~/.tycon»`); return false; }
+}
+function adoptOwnHome(home) {
+  const dir = ownStateDir(home);
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+function harnessDir(home) { return resolvePlace({ home }).dir; }
+function stateDir(home) { return livesInOwnHome(home) ? ownStateDir(home) : legacyStateDir(home); }
+/** La configuración de la máquina donde siempre estuvo (la carpeta de Claude Code): lo que la mudanza funde y deja como enlace. */
+function legacyConfigFile(home) { return path.join(claudeDir(home), 'tycon.json'); }
+function configFile(home) { return livesInOwnHome(home) ? path.join(ownRootOf(home), 'config.json') : legacyConfigFile(home); }
+// las copias de seguridad: en la casa propia van aparte del estado (`~/.tycon/backups`), así desinstalar puede quitar el
+// estado entero y dejarlas; donde siempre, adentro de la carpeta del mecanismo
+function backupsDir(home) { return livesInOwnHome(home) ? path.join(ownRootOf(home), 'backups') : path.join(stateDir(home), 'harness', 'backups'); }
+function installedSkillsDir(home) { return path.join(claudeDir(home), 'agent-skills'); }
+/** Las carpetas del estado que el arnés puede estar usando o va a usar: la vigente y la de la casa propia (sin repetir). */
+function stateDirs(home) { return [...new Set([stateDir(home), ownStateDir(home)])]; }
+/**
+ * ¿La máquina instaló una versión BAJADA (story 8.23, tanda B)? Se lee del estado del mecanismo (una fuente `kind:
+ * release`), sin cargar state.js (que carga este archivo). Un estado ilegible o ausente es «no» (un clon, o nada).
+ */
+function isReleaseMachine(home) {
+  try {
+    const s = JSON.parse(fs.readFileSync(path.join(stateDir(home), 'harness-state.json'), 'utf8'));
+    return Boolean(s && Array.isArray(s.sources) && s.sources.some((x) => x && x.kind === 'release'));
+  } catch (_) { return false; }
+}
+
+/** `paths.maintained` de `~/.tycon/config.json` (la ruta del clon que esta máquina MANTIENE), o null. */
+function maintainedPath({ env = process.env } = {}) {
+  try {
+    const j = JSON.parse(fs.readFileSync(ownPaths({ env }).config, 'utf8'));
+    const v = j && j.paths && typeof j.paths.maintained === 'string' ? j.paths.maintained.trim() : '';
+    return v && path.isAbsolute(v) && fs.existsSync(v) ? v : null;
+  } catch (_) { return null; }
+}
+
+/**
+ * `paths.maintainers` de `~/.tycon/config.json`: el clon del repo PRIVADO de mantenimiento que la máquina declara (story
+ * 8.26, tanda H1c · AC 65). → `{ declared, path, problem }`. A diferencia de `maintainedPath`, distingue «no declara
+ * ninguno» (`declared: false`, sin `problem`) de «declara uno que no sirve» (`problem` dice por qué, sin citar nada del
+ * archivo): quien reconoce los repos del arnés o lee de ahí la configuración del merge tiene que poder DECIRLO, no
+ * callar. Una configuración que no se deja leer es `declared: false` con `problem` (no se sabe si declaraba). Nunca
+ * tira, y `problem` nunca cita el contenido del archivo (trae un permiso en texto plano).
+ */
+function maintainersClone({ env = process.env } = {}) {
+  const none = (problem = null) => ({ declared: false, path: null, problem });
+  let file;
+  try { file = ownPaths({ env }).config; } catch (e) { return none(`no pude ubicar la configuración de la máquina (${e.message})`); }
+  let j;
+  try { j = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) {
+    if (e && e.code === 'ENOENT') return none();
+    return none('la configuración de la máquina (config.json del arnés) no se puede leer: no sé si declara paths.maintainers');
+  }
+  const raw = j && typeof j === 'object' && j.paths && typeof j.paths === 'object' ? j.paths.maintainers : undefined;
+  const v = typeof raw === 'string' ? raw.trim() : '';
+  if (!v) return none();
+  const bad = (problem) => ({ declared: true, path: v, problem });
+  if (!path.isAbsolute(v)) return bad('paths.maintainers no es una ruta absoluta');
+  let st = null;
+  try { st = fs.statSync(v); } catch (_) { st = null; }
+  if (!st || !st.isDirectory()) return bad('paths.maintainers nombra una carpeta que no está');
+  return { declared: true, path: v, problem: null };
+}
+
+/**
+ * El árbol que se MANTIENE (story 8.23, tanda A2, AC 6): de ahí leen los avisos de la máquina lo que escriben los
+ * nocturnos en el repo (`.dashboard/…`). En un clon es el árbol de quien pregunta (`ownTree`), como siempre; en una
+ * instalación `release` (tanda B, AC 18) es el clon que la máquina declara como el que mantiene (`paths.maintained`), o
+ * null: ningún aviso corre git sobre `~/.tycon`, y sin clon declarado calla.
+ */
+function maintainedDir(home, ownTree) {
+  if (isReleaseMachine(home)) return maintainedPath();
+  return ownTree || null;
+}
+
+/**
+ * Dónde se escribe y se lee `.dashboard` (lo de los nocturnos y las corridas) en esta máquina (story 8.23, tanda D ·
+ * AC 28): en un clon, adentro del árbol de quien pregunta (`<tree>/.dashboard`, como siempre); en una instalación
+ * `release` —que vive en `~/.tycon` y cuyo árbol se reemplaza entero en cada actualización—, `~/.tycon/state/dashboard`
+ * (la mudanza copia ahí lo que el clon traía).
+ */
+function dashboardDir(home, ownTree) {
+  if (isReleaseMachine(home)) {
+    // con un clon declarado como el que se mantiene, lo escrito va AHÍ (de ahí se commitea y de ahí leen los avisos:
+    // retro-pending.js); sin clon declarado, en el estado propio (pase adversarial de la D, clase 3)
+    const m = maintainedPath();
+    return m ? path.join(m, '.dashboard') : path.join(stateDir(home), 'dashboard');
+  }
+  return ownTree ? path.join(ownTree, '.dashboard') : null;
+}
+
+/**
+ * La carpeta propia del arnés: `TYCON_HOME` si está, o `os.homedir()` + `.tycon` (en Windows, la de USERPROFILE).
+ * Una `TYCON_HOME` relativa o vacía es un error que la nombra: no se adivina contra qué carpeta resolverla.
+ */
+function home({ env = process.env } = {}) {
+  if (Object.prototype.hasOwnProperty.call(env, 'TYCON_HOME') && env.TYCON_HOME !== undefined) {
+    const v = String(env.TYCON_HOME).trim();
+    if (!v) throw new TyconHomeError('TYCON_HOME está definida pero vacía: poné una ruta absoluta o sacala');
+    if (!path.isAbsolute(v)) throw new TyconHomeError(`TYCON_HOME tiene que ser una ruta absoluta (dice «${v}»)`);
+    return v;
+  }
+  return path.join(os.homedir(), OWN_DIR_NAME);
+}
+
+/**
+ * Las carpetas de la casa propia del arnés (story 8.23, tanda B): lo que una instalación `release` escribe adentro de
+ * `~/.tycon`. `harness` es la versión activa (siempre la misma ruta real), `previous` la anterior, `incoming` donde se
+ * arma una nueva, `trash` lo que se borra en el arranque siguiente, `thirdParty` la caché de las skills de terceros,
+ * `config` el permiso de GitHub y `paths.maintained`, `journal` el diario del cambio de versión.
+ */
+function ownPaths({ env = process.env } = {}) {
+  const root = home({ env });
+  return {
+    root,
+    harness: path.join(root, 'harness'),
+    previous: path.join(root, 'previous'),
+    incoming: path.join(root, 'incoming'),
+    trash: path.join(root, 'trash'),
+    thirdParty: path.join(root, 'third-party'),
+    config: path.join(root, 'config.json'),
+    journal: path.join(root, 'swap.json'),
+  };
+}
+
+module.exports = {
+  PLACE_NAME, LEGACY_PLACE_NAME, OWN_DIR_NAME, TyconHomeError,
+  placePath, legacyPlacePath, isHarnessClone, resolvePlace, claudeDir,
+  harnessDir, stateDir, configFile, backupsDir, installedSkillsDir, maintainedDir, dashboardDir, home, ownPaths, isReleaseMachine, maintainedPath,
+  maintainersClone,
+  ownStateDir, legacyStateDir, legacyConfigFile, livesInOwnHome, ownHomeStale, dropStaleOwnHome, adoptOwnHome, stateDirs,
+};

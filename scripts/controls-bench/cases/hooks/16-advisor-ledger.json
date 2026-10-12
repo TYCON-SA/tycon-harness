@@ -1,0 +1,191 @@
+{
+  "__doc": "Registro de corridas de revisores con REPO y STORY (2026-08-25, Tema 2 del plan de controles apagables). El registro voluntario (gates.log check=advisors) sólo se escribe si alguien tipea el comando: 142 de sus 149 entradas históricas no tenían repo. El registro AUTOMÁTICO —los spawns reales que anota on-advisor-run.js— sí era confiable pero guardaba {ts, advisor, model} y nada más: 756 líneas medidas, CERO con repo, o sea que no podía contestar '¿corrieron los revisores de la story X?'. Estos casos fijan que cada spawn quede atribuido: por el marker de la sesión si lo hay, por la raíz de git del cwd si no.",
+  "hooks": [
+    {
+      "hook": "on-advisor-run.js (atribución del registro)",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/on-advisor-run.js",
+      "event": "PreToolUse",
+      "matcher": "Task|Agent",
+      "env": {
+        "TYCON_AUTO_SNAPSHOT": "0"
+      },
+      "cases": [
+        {
+          "id": "estampa-repo-y-story-desde-el-marker",
+          "type": "must-run",
+          "setup": [
+            "git init -q -b main . && echo x > a.txt && git add a.txt && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline/active';fs.mkdirSync(d,{recursive:true});fs.writeFileSync(d+'/bench-led1.json',JSON.stringify({sessionId:'bench-led1',storyId:'9.4',repoPath:process.env.FIXTURE,lastTouch:new Date().toISOString()}))\""
+          ],
+          "stdin": {
+            "session_id": "bench-led1",
+            "tool_name": "Task",
+            "tool_input": {
+              "subagent_type": "tycon-plugin-security-basics",
+              "model": "sonnet"
+            }
+          },
+          "expect": {
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/advisor-runs/bench-led1.jsonl",
+                "re": "\"story\":\"9.4\""
+              },
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/advisor-runs/bench-led1.jsonl",
+                "re": "\"repo\":\"[^\"]*fixture\""
+              }
+            ]
+          }
+        },
+        {
+          "id": "estampa-repo-por-raiz-de-git-sin-marker",
+          "type": "must-run",
+          "setup": [
+            "git init -q -b main . && echo x > a.txt && git add a.txt && git -c user.email=b@b -c user.name=b commit -q -m base"
+          ],
+          "stdin": {
+            "session_id": "bench-led2",
+            "tool_name": "Task",
+            "tool_input": {
+              "subagent_type": "tycon-plugin-react-conventions"
+            }
+          },
+          "expect": {
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/advisor-runs/bench-led2.jsonl",
+                "re": "\"repo\":\"[^\"]*fixture\""
+              },
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/advisor-runs/bench-led2.jsonl",
+                "re": "\"story\":null"
+              }
+            ]
+          }
+        },
+        {
+          "id": "registra-igual-fuera-de-un-repo-git",
+          "type": "must-run",
+          "stdin": {
+            "session_id": "bench-led3",
+            "tool_name": "Task",
+            "tool_input": {
+              "subagent_type": "tycon-story-validator"
+            }
+          },
+          "expect": {
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/advisor-runs/bench-led3.jsonl",
+                "re": "tycon-story-validator"
+              },
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/advisor-runs/bench-led3.jsonl",
+                "re": "\"repo\":null"
+              }
+            ]
+          }
+        },
+        {
+          "id": "la-retrospectiva-estampa-el-repo-y-el-merge-QUE-LE-PIDIERON",
+          "type": "must-run",
+          "__doc": "2026-08-31 (incident-log#retro-gate-cuenta-sin-repo-2026-08-31): la atribución contesta «¿en qué repo trabaja esta sesión?» — buena para los revisores, MENTIRA para el capturer, que se lanza post-merge y muchas veces con el marker de una story de OTRO repo. Sobre ese dato el freno empareja merge↔retro. El blanco real viaja en el prompt del spawn: acá el marker dice el fixture y el prompt pide otro repo — gana el prompt (en retro_repo/retro_sha, sin pisar repo/story, de los que dependen el roster y el snapshot de iteración).",
+          "setup": [
+            "git init -q -b main . && echo x > a.txt && git add a.txt && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline/active';fs.mkdirSync(d,{recursive:true});fs.writeFileSync(d+'/bench-led1.json',JSON.stringify({sessionId:'bench-led1',storyId:'9.4',repoPath:process.env.FIXTURE,lastTouch:new Date().toISOString()}))\""
+          ],
+          "stdin": {
+            "session_id": "bench-led1",
+            "tool_name": "Agent",
+            "tool_input": {
+              "subagent_type": "tycon-retrospective-capturer",
+              "model": "sonnet",
+              "prompt": "Post-merge retrospective: repo /Users/x/SourceCode/Totora/Backend, merge 86bbbb5ab153 — capturá learnings."
+            }
+          },
+          "expect": {
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/advisor-runs/bench-led1.jsonl",
+                "re": "\"retro_repo\":\"/Users/x/SourceCode/Totora/Backend\""
+              },
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/advisor-runs/bench-led1.jsonl",
+                "re": "\"retro_sha\":\"86bbbb5ab153\""
+              },
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/advisor-runs/bench-led1.jsonl",
+                "re": "\"story\":\"9.4\""
+              }
+            ]
+          }
+        },
+        {
+          "id": "sin-blanco-en-el-prompt-no-se-inventa-ninguno",
+          "type": "must-run",
+          "__doc": "Un blanco inventado es peor que ninguno: si el prompt no dice a qué repo/merge apunta la retro, no se estampa nada y el freno cae a su emparejamiento anterior.",
+          "setup": [
+            "git init -q -b main . && echo x > a.txt && git add a.txt && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline/active';fs.mkdirSync(d,{recursive:true});fs.writeFileSync(d+'/bench-led1.json',JSON.stringify({sessionId:'bench-led1',storyId:'9.4',repoPath:process.env.FIXTURE,lastTouch:new Date().toISOString()}))\""
+          ],
+          "stdin": {
+            "session_id": "bench-led1",
+            "tool_name": "Agent",
+            "tool_input": {
+              "subagent_type": "tycon-retrospective-capturer",
+              "model": "sonnet",
+              "prompt": "hacé la retro de lo último que mergeamos"
+            }
+          },
+          "expect": {
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/advisor-runs/bench-led1.jsonl",
+                "re": "tycon-retrospective-capturer"
+              }
+            ],
+            "file_not_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/advisor-runs/bench-led1.jsonl",
+                "re": "retro_repo"
+              }
+            ]
+          }
+        },
+        {
+          "id": "el-blanco-se-estampa-SOLO-para-la-retrospectiva",
+          "type": "must-run",
+          "__doc": "Un revisor cualquiera cuyo prompt mencione un repo y un sha no es una retrospectiva: el campo es del capturer y de nadie más.",
+          "setup": [
+            "git init -q -b main . && echo x > a.txt && git add a.txt && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline/active';fs.mkdirSync(d,{recursive:true});fs.writeFileSync(d+'/bench-led1.json',JSON.stringify({sessionId:'bench-led1',storyId:'9.4',repoPath:process.env.FIXTURE,lastTouch:new Date().toISOString()}))\""
+          ],
+          "stdin": {
+            "session_id": "bench-led1",
+            "tool_name": "Agent",
+            "tool_input": {
+              "subagent_type": "tycon-plugin-security-basics",
+              "model": "sonnet",
+              "prompt": "revisá el repo /Users/x/OtroRepo, merge deadbeef1234"
+            }
+          },
+          "expect": {
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/advisor-runs/bench-led1.jsonl",
+                "re": "tycon-plugin-security-basics"
+              }
+            ],
+            "file_not_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/advisor-runs/bench-led1.jsonl",
+                "re": "retro_repo"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

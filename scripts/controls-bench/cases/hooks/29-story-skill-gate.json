@@ -1,0 +1,589 @@
+{
+ "__doc": "Freno de STORY A MANO (2026-08-30, incident-log#story-a-mano-sin-skill-2026-08-30): una story Mary+GOLD NUEVA no se escribe sin que en la sesión conste la invocación de tycon-create-story (o familia). La constancia la deja on-skill-invoke.js (PostToolUse Skill) en ~/.claude/.tycon-pipeline/skill-marks/<sid>.json; el freno corre en las DOS puertas (hook-pre-edit.js → on-story-skill-gate.js, y on-bash-write-gate.js — los dos casos reales fueron heredocs). Editar una story existente pasa SIEMPRE (el falso positivo que mataría el control). 🔴 EL ROJO ESTÁ EN EL BANCO: los casos `rojo-*` son el MISMO fixture y el MISMO evento con SÓLO este freno apagado (TYCON_STORY_SKILL_GATE=off) → tienen que pasar (exit 0). Si alguno bloqueara, el bloqueo del caso verde no sería atribuible a esta pieza — la lección del gate de ATDD, que nació ciego y dio verde 15 corridas sin frenar nada. Verificado además a mano el 2026-08-30 quitando on-story-skill-gate de la cadena pre-edit de dispatch.js: el caso `bloquea-story-nueva-a-mano` sale 0 (rojo real). Los must-block van con tools:['claude']: bajo Codex no hay evento de skill (asimetría declarada en adapters/codex/hooks.json) y el freno no frena — el caso `codex-*` asserta que queda MEDIDO (unknown en gates.log), no mudo. El fixture con `stories.id_pattern` es el de Totora/Backend: el caso verde es literalmente AS-1. Pase adversarial (Fable, 2026-08-30) cerrado en el mismo commit: F1 slash del user (bloque on-prompt), F2 atribución del heredoc a su target, F3 mv/cp de story existente + mensaje por nombre, F6 toda marca deja mark-written en gates.log.",
+ "hooks": [
+  {
+   "hook": "hook-pre-edit.js → on-story-skill-gate (story-skill-gate, puerta Edit|Write)",
+   "script": "${SKILLS}/skills/tycon-pipeline/scripts/hook-pre-edit.js",
+   "event": "PreToolUse",
+   "matcher": "Edit|Write",
+   "env": {
+    "TYCON_LANE_LLM": "0"
+   },
+   "cases": [
+    {
+     "id": "bloquea-story-nueva-a-mano-sin-skill",
+     "type": "must-block",
+     "tools": [
+      "claude"
+     ],
+     "asymmetry": "Codex no expone la invocación de skills como tool call → sin constancia mecánica posible; el freno no bloquea bajo Codex y deja unknown en gates.log (ver caso codex-no-frena-pero-queda-medido).",
+     "__doc": "EL caso real: el backend de un producto del equipo, story AS-1, 2026-08-28. Repo con .tycon/ y el id_pattern de ese producto; la story no existe; ninguna marca en la sesión → DENEGADA + constancia en gates.log.",
+     "setup": [
+      "git init -q -b main .",
+      "mkdir -p .tycon specs"
+     ],
+     "files": {
+      ".tycon/advisors.yaml": "stories:\n  id_pattern: '^(?:[A-Z]{1,4}-)?\\d+(?:[.-]\\d+)*$'\n"
+     },
+     "stdin": {
+      "session_id": "bench-ssg",
+      "tool_name": "Write",
+      "tool_input": {
+       "file_path": "${FIXTURE}/specs/story-as1-pedidos-del-dia.md",
+       "content": "---\nstory: \"AS-1\"\nepic: \"pedidos\"\nstatus: ready-for-dev\ntitle: \"Pedidos del día\"\n---\n# Story AS-1\n"
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "STORY A MANO",
+       "tycon-create-story"
+      ],
+      "file_contains": [
+       {
+        "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log",
+        "re": "\"name\":\"story-skill-gate\".*\"status\":\"blocked\""
+       }
+      ]
+     }
+    },
+    {
+     "id": "rojo-el-mismo-write-pasa-con-solo-este-freno-apagado",
+     "type": "must-not-block",
+     "tools": [
+      "claude"
+     ],
+     "asymmetry": "Par del caso must-block (tools:['claude']); bajo Codex el freno ya no bloquea de por sí.",
+     "__doc": "🔴 EL ROJO: mismo fixture, mismo evento, sólo TYCON_STORY_SKILL_GATE=off → el despachador ENTERO deja pasar. Prueba que el exit 2 del caso anterior es de ESTA pieza y no de otro handler de la cadena.",
+     "setup": [
+      "git init -q -b main .",
+      "mkdir -p .tycon specs"
+     ],
+     "files": {
+      ".tycon/advisors.yaml": "stories:\n  id_pattern: '^(?:[A-Z]{1,4}-)?\\d+(?:[.-]\\d+)*$'\n"
+     },
+     "env": {
+      "TYCON_STORY_SKILL_GATE": "off"
+     },
+     "stdin": {
+      "session_id": "bench-ssg",
+      "tool_name": "Write",
+      "tool_input": {
+       "file_path": "${FIXTURE}/specs/story-as1-pedidos-del-dia.md",
+       "content": "---\nstory: \"AS-1\"\nepic: \"pedidos\"\nstatus: ready-for-dev\ntitle: \"Pedidos del día\"\n---\n# Story AS-1\n"
+      }
+     },
+     "expect": {
+      "exit": 0,
+      "file_absent": [
+       "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log"
+      ]
+     }
+    },
+    {
+     "id": "pasa-con-constancia-del-skill-en-la-sesion",
+     "type": "must-not-block",
+     "__doc": "La marca que deja on-skill-invoke.js al invocar tycon-create-story abre el portón para ESA sesión.",
+     "setup": [
+      "git init -q -b main .",
+      "mkdir -p .tycon specs",
+      "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline/skill-marks';fs.mkdirSync(d,{recursive:true});fs.writeFileSync(d+'/bench-ssg.json',JSON.stringify({skill:'tycon-create-story',at:new Date().toISOString(),sessionId:'bench-ssg'}))\""
+     ],
+     "stdin": {
+      "session_id": "bench-ssg",
+      "tool_name": "Write",
+      "tool_input": {
+       "file_path": "${FIXTURE}/specs/9-9.md",
+       "content": "---\nstory: \"9.9\"\nepic: \"9\"\nstatus: backlog\n---\n# Story 9.9\n"
+      }
+     },
+     "expect": {
+      "exit": 0
+     }
+    },
+    {
+     "id": "bloquea-con-constancia-vencida",
+     "type": "must-block",
+     "tools": [
+      "claude"
+     ],
+     "asymmetry": "Idem must-block principal: bajo Codex el freno no bloquea.",
+     "__doc": "Una marca de hace 3 horas (TTL 2h) no habilita la story de ahora — la constancia es de la sesión de hoy, no un permiso permanente.",
+     "setup": [
+      "git init -q -b main .",
+      "mkdir -p .tycon specs",
+      "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline/skill-marks';fs.mkdirSync(d,{recursive:true});fs.writeFileSync(d+'/bench-ssg.json',JSON.stringify({skill:'tycon-create-story',at:new Date(Date.now()-3*3600e3).toISOString(),sessionId:'bench-ssg'}))\""
+     ],
+     "stdin": {
+      "session_id": "bench-ssg",
+      "tool_name": "Write",
+      "tool_input": {
+       "file_path": "${FIXTURE}/specs/9-9.md",
+       "content": "---\nstory: \"9.9\"\nepic: \"9\"\nstatus: backlog\n---\n# Story 9.9\n"
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "VENCI"
+      ]
+     }
+    },
+    {
+     "id": "pasa-editar-story-existente",
+     "type": "must-not-block",
+     "__doc": "EL falso positivo que mataría el control: el pipeline edita stories existentes todo el tiempo (status, Change Log, follow-ups, Dev Agent Record). El discriminante es que el archivo exista.",
+     "setup": [
+      "git init -q -b main .",
+      "mkdir -p .tycon specs",
+      "printf -- '---\\nstory: \"9.9\"\\nepic: \"9\"\\nstatus: backlog\\n---\\n# Story 9.9\\n' > specs/9-9.md"
+     ],
+     "stdin": {
+      "session_id": "bench-ssg",
+      "tool_name": "Write",
+      "tool_input": {
+       "file_path": "${FIXTURE}/specs/9-9.md",
+       "content": "---\nstory: \"9.9\"\nepic: \"9\"\nstatus: in-progress\n---\n# Story 9.9\n## Change Log\n- x\n"
+      }
+     },
+     "expect": {
+      "exit": 0,
+      "file_absent": [
+       "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log"
+      ]
+     }
+    },
+    {
+     "id": "pasa-md-de-planning-nuevo",
+     "type": "must-not-block",
+     "__doc": "Un PRD declara estado (status:) pero no identidad (story:): no es una story, no se frena, no se loguea.",
+     "setup": [
+      "git init -q -b main .",
+      "mkdir -p .tycon specs"
+     ],
+     "stdin": {
+      "session_id": "bench-ssg",
+      "tool_name": "Write",
+      "tool_input": {
+       "file_path": "${FIXTURE}/specs/prd.md",
+       "content": "---\nstatus: draft\ntitle: \"PRD\"\n---\n# PRD\n"
+      }
+     },
+     "expect": {
+      "exit": 0,
+      "file_absent": [
+       "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log"
+      ]
+     }
+    },
+    {
+     "id": "repo-fuera-del-arnes-pasa-y-queda-medido",
+     "type": "must-run",
+     "__doc": "Sin .tycon/ y sin stories no hay arnés que respetar: no se frena — pero queda `unknown` en gates.log (trampa 5 del handoff: ante la duda no bloquear, y dejar el caso medido).",
+     "setup": [
+      "git init -q -b main .",
+      "mkdir -p specs"
+     ],
+     "stdin": {
+      "session_id": "bench-ssg",
+      "tool_name": "Write",
+      "tool_input": {
+       "file_path": "${FIXTURE}/specs/9-9.md",
+       "content": "---\nstory: \"9.9\"\nepic: \"9\"\nstatus: backlog\n---\n# Story 9.9\n"
+      }
+     },
+     "expect": {
+      "exit": 0,
+      "file_contains": [
+       {
+        "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log",
+        "re": "\"name\":\"story-skill-gate\".*\"status\":\"unknown\""
+       }
+      ]
+     }
+    },
+    {
+     "id": "bypass-auditado-deja-pasar-y-queda-en-bypass-log",
+     "type": "must-run",
+     "__doc": "El escape consciente: `marker.js story-skill-bypass \"<razón>\"` deja la marca (skill:'bypass') y la línea STORY_SKILL_BYPASS en bypass.log; el Write pasa y su uso queda auditado (STORY_SKILL_BYPASS_USED).",
+     "env": {
+      "CLAUDE_CODE_SESSION_ID": "bench-ssg"
+     },
+     "setup": [
+      "git init -q -b main .",
+      "mkdir -p .tycon specs",
+      "node ${SKILLS}/skills/tycon-pipeline/scripts/marker.js story-skill-bypass \"el dev pidió escribir esta story a mano\""
+     ],
+     "stdin": {
+      "session_id": "bench-ssg",
+      "tool_name": "Write",
+      "tool_input": {
+       "file_path": "${FIXTURE}/specs/9-9.md",
+       "content": "---\nstory: \"9.9\"\nepic: \"9\"\nstatus: backlog\n---\n# Story 9.9\n"
+      }
+     },
+     "expect": {
+      "exit": 0,
+      "file_contains": [
+       {
+        "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/bypass.log",
+        "re": "STORY_SKILL_BYPASS\""
+       },
+       {
+        "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/bypass.log",
+        "re": "STORY_SKILL_BYPASS_USED"
+       }
+      ]
+     }
+    },
+    {
+     "id": "codex-no-frena-pero-queda-medido",
+     "type": "must-run",
+     "tools": [
+      "codex"
+     ],
+     "asymmetry": "Lado Codex del must-block principal: sin evento de skill no hay constancia posible; frenar obligaría al bypass en cada story legítima. Pasa y queda unknown-codex en gates.log.",
+     "setup": [
+      "git init -q -b main .",
+      "mkdir -p .tycon specs"
+     ],
+     "files": {
+      ".tycon/advisors.yaml": "stories:\n  id_pattern: '^(?:[A-Z]{1,4}-)?\\d+(?:[.-]\\d+)*$'\n"
+     },
+     "stdin": {
+      "session_id": "bench-ssg",
+      "tool_name": "Write",
+      "tool_input": {
+       "file_path": "${FIXTURE}/specs/story-as1.md",
+       "content": "---\nstory: \"AS-1\"\nepic: \"pedidos\"\nstatus: ready-for-dev\n---\n# Story AS-1\n"
+      }
+     },
+     "expect": {
+      "exit": 0,
+      "file_contains": [
+       {
+        "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log",
+        "re": "unknown-codex"
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "hook": "on-bash-write-gate.js → story-skill-gate (puerta Bash: heredoc / printf / cp)",
+   "script": "${SKILLS}/skills/tycon-pipeline/scripts/on-bash-write-gate.js",
+   "event": "PreToolUse",
+   "matcher": "Bash",
+   "env": {
+    "TYCON_LANE_LLM": "0"
+   },
+   "cases": [
+    {
+     "id": "bloquea-heredoc-de-story-nueva-sin-skill",
+     "type": "must-block",
+     "tools": [
+      "claude"
+     ],
+     "asymmetry": "Bajo Codex el freno no bloquea (sin evento de skill); ver la asimetría del despachador.",
+     "__doc": "EL comando real de AS-1 (2026-08-28): `cat > specs/story-as1-….md <<'STORYEOF'`. Un freno que sólo mirara Edit|Write no habría frenado nada.",
+     "setup": [
+      "git init -q -b main .",
+      "mkdir -p .tycon specs"
+     ],
+     "files": {
+      ".tycon/advisors.yaml": "stories:\n  id_pattern: '^(?:[A-Z]{1,4}-)?\\d+(?:[.-]\\d+)*$'\n"
+     },
+     "stdin": {
+      "session_id": "bench-ssg",
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "cat > specs/story-as1-pedidos-del-dia.md <<'STORYEOF'\n---\nstory: \"AS-1\"\nepic: \"pedidos\"\nstatus: ready-for-dev\ntitle: \"Pedidos del día\"\n---\n# Story AS-1\nSTORYEOF"
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "STORY A MANO",
+       "vía Bash"
+      ],
+      "file_contains": [
+       {
+        "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log",
+        "re": "\"name\":\"story-skill-gate\".*\"status\":\"blocked\""
+       }
+      ]
+     }
+    },
+    {
+     "id": "rojo-el-mismo-heredoc-pasa-con-solo-este-freno-apagado",
+     "type": "must-not-block",
+     "tools": [
+      "claude"
+     ],
+     "asymmetry": "Par del must-block de Bash (tools:['claude']).",
+     "__doc": "🔴 EL ROJO de la puerta Bash: mismo comando, TYCON_STORY_SKILL_GATE=off → pasa. El carril (TYCON_STORY_GATE) sigue prendido: un .md no es código, así que el exit 2 de arriba sólo puede ser de esta pieza.",
+     "setup": [
+      "git init -q -b main .",
+      "mkdir -p .tycon specs"
+     ],
+     "files": {
+      ".tycon/advisors.yaml": "stories:\n  id_pattern: '^(?:[A-Z]{1,4}-)?\\d+(?:[.-]\\d+)*$'\n"
+     },
+     "env": {
+      "TYCON_STORY_SKILL_GATE": "off"
+     },
+     "stdin": {
+      "session_id": "bench-ssg",
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "cat > specs/story-as1-pedidos-del-dia.md <<'STORYEOF'\n---\nstory: \"AS-1\"\nepic: \"pedidos\"\nstatus: ready-for-dev\n---\n# Story AS-1\nSTORYEOF"
+      }
+     },
+     "expect": {
+      "exit": 0
+     }
+    },
+    {
+     "id": "pasa-heredoc-append-a-story-existente",
+     "type": "must-not-block",
+     "__doc": "`>>` a una story que ya existe (agregar un Change Log por Bash) no es crear.",
+     "setup": [
+      "git init -q -b main .",
+      "mkdir -p .tycon specs",
+      "printf -- '---\\nstory: \"9.9\"\\nepic: \"9\"\\nstatus: backlog\\n---\\n# Story 9.9\\n' > specs/9-9.md"
+     ],
+     "stdin": {
+      "session_id": "bench-ssg",
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "cat >> specs/9-9.md <<'EOF'\n## Change Log\n- story: nota\nEOF"
+      }
+     },
+     "expect": {
+      "exit": 0
+     }
+    },
+    {
+     "id": "pasa-heredoc-de-story-nueva-con-constancia",
+     "type": "must-not-block",
+     "setup": [
+      "git init -q -b main .",
+      "mkdir -p .tycon specs",
+      "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline/skill-marks';fs.mkdirSync(d,{recursive:true});fs.writeFileSync(d+'/bench-ssg.json',JSON.stringify({skill:'tycon-create-story',at:new Date().toISOString(),sessionId:'bench-ssg'}))\""
+     ],
+     "stdin": {
+      "session_id": "bench-ssg",
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "cat > specs/9-9.md <<'EOF'\n---\nstory: \"9.9\"\nepic: \"9\"\nstatus: backlog\n---\n# Story 9.9\nEOF"
+      }
+     },
+     "expect": {
+      "exit": 0
+     }
+    },
+    {
+     "id": "bloquea-cp-a-nombre-de-story-sin-contenido-legible",
+     "type": "must-block",
+     "tools": [
+      "claude"
+     ],
+     "asymmetry": "Bajo Codex el freno no bloquea (sin evento de skill).",
+     "__doc": "Decisión explícita del handoff para la puerta Bash: cuando el contenido no se puede parsear (cp/mv/tee de un pipe) se decide por NOMBRE (story-*.md, stories/*.md) y se acepta ser más conservador ahí. La plantilla NO es una story (sin frontmatter); copiar una story EXISTENTE es rename/duplicado y pasa (caso siguiente).",
+     "setup": [
+      "git init -q -b main .",
+      "mkdir -p .tycon specs",
+      "printf '# Plantilla de story\\n\\n<!-- completar -->\\n' > specs/plantilla.md"
+     ],
+     "stdin": {
+      "session_id": "bench-ssg",
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "cp specs/plantilla.md specs/story-nueva.md"
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "STORY A MANO",
+       "por el NOMBRE parece"
+      ]
+     }
+    },
+    {
+     "id": "pasa-md-cualquiera-por-bash",
+     "type": "must-not-block",
+     "__doc": "Un README nuevo por heredoc no es una story: ni frena ni loguea.",
+     "setup": [
+      "git init -q -b main .",
+      "mkdir -p .tycon"
+     ],
+     "stdin": {
+      "session_id": "bench-ssg",
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "cat > NOTAS.md <<'EOF'\n# Notas\n- story: la palabra suelta no es un frontmatter\nEOF"
+      }
+     },
+     "expect": {
+      "exit": 0,
+      "file_absent": [
+       "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log"
+      ]
+     }
+    },
+    {
+     "id": "pasa-mv-de-story-existente-y-queda-medido",
+     "type": "must-run",
+     "__doc": "F3 del pase adversarial 2026-08-30: renombrar/duplicar una story EXISTENTE con mv/cp no es crearla a mano — pasa y queda unknown-rename en gates.log.",
+     "setup": [
+      "git init -q -b main .",
+      "mkdir -p .tycon specs",
+      "printf -- '---\\nstory: \"9.9\"\\nepic: \"9\"\\nstatus: backlog\\n---\\n# Story 9.9\\n' > specs/story-a.md"
+     ],
+     "stdin": {
+      "session_id": "bench-ssg",
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "mv specs/story-a.md specs/story-a-renombrada.md"
+      }
+     },
+     "expect": {
+      "exit": 0,
+      "file_contains": [
+       {
+        "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log",
+        "re": "unknown-rename"
+       }
+      ]
+     }
+    },
+    {
+     "id": "heredoc-de-story-existente-no-contagia-a-otro-md-nuevo",
+     "type": "must-not-block",
+     "__doc": "F2 del pase adversarial 2026-08-30: el cuerpo de un heredoc se atribuye al target de SU línea; reescribir una story existente y crear un .md cualquiera en el mismo comando no frena.",
+     "setup": [
+      "git init -q -b main .",
+      "mkdir -p .tycon specs",
+      "printf -- '---\\nstory: \"9.9\"\\nepic: \"9\"\\nstatus: backlog\\n---\\n# Story 9.9\\n' > specs/9-9.md"
+     ],
+     "stdin": {
+      "session_id": "bench-ssg",
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "cat > specs/9-9.md <<'EOF'\n---\nstory: \"9.9\"\nepic: \"9\"\nstatus: in-progress\n---\n# Story 9.9\nEOF\necho notas > docs-notas.md"
+      }
+     },
+     "expect": {
+      "exit": 0,
+      "file_absent": [
+       "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "hook": "on-skill-invoke.js (story-skill-gate: la constancia, PostToolUse sobre la tool Skill)",
+   "script": "${SKILLS}/skills/tycon-pipeline/scripts/on-skill-invoke.js",
+   "event": "PostToolUse",
+   "matcher": "Skill",
+   "tools": [
+    "claude"
+   ],
+   "asymmetry": "Codex no emite ningún evento de hook al cargar un skill (se carga por mención, no por tool call) — no hay payload que alimentar de su lado. Declarado en adapters/codex/hooks.json.",
+   "cases": [
+    {
+     "id": "deja-constancia-al-invocar-tycon-create-story",
+     "type": "must-run",
+     "__doc": "Payload verificado con 823 eventos reales del grabador de instincts (tool_name 'Skill', tool_input.skill = nombre). La marca queda bajo el estado del pipeline — que el portón de carril bloquea escribir por Write/heredoc: el agente no la puede fabricar.",
+     "stdin": {
+      "session_id": "bench-ssg",
+      "tool_name": "Skill",
+      "tool_input": {
+       "skill": "tycon-create-story",
+       "args": "AS-1"
+      },
+      "tool_response": "ok"
+     },
+     "expect": {
+      "exit": 0,
+      "file_contains": [
+       {
+        "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/skill-marks/bench-ssg.json",
+        "re": "\"skill\": \"tycon-create-story\""
+       }
+      ]
+     }
+    },
+    {
+     "id": "no-deja-constancia-para-un-skill-que-no-crea-stories",
+     "type": "must-stay-quiet",
+     "stdin": {
+      "session_id": "bench-ssg",
+      "tool_name": "Skill",
+      "tool_input": {
+       "skill": "tycon-pipeline",
+       "args": ""
+      }
+     },
+     "expect": {
+      "exit": 0,
+      "file_absent": [
+       "${SANDBOX_HOME}/.claude/.tycon-pipeline/skill-marks/bench-ssg.json"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "hook": "on-prompt.js → story-skill-gate (la constancia cuando el USER invoca el skill por SLASH)",
+   "script": "${SKILLS}/skills/tycon-pipeline/scripts/on-prompt.js",
+   "event": "UserPromptSubmit",
+   "matcher": "*",
+   "env": {
+    "TYCON_LANE_LLM": "0"
+   },
+   "cases": [
+    {
+     "id": "slash-tycon-create-story-deja-la-marca",
+     "type": "must-run",
+     "__doc": "F1 del pase adversarial 2026-08-30: `/tycon-create-story` tipeado por el dev NO pasa por la tool Skill (Claude Code lo expande como <command-name>), así que la constancia la deja el hook de prompt, con via:'slash'. Sin esto el flujo más directo del dev se frenaba en el primer Write.",
+     "stdin": {
+      "session_id": "bench-ssg",
+      "prompt": "/tycon-create-story 4.2"
+     },
+     "expect": {
+      "exit": 0,
+      "file_contains": [
+       {
+        "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/skill-marks/bench-ssg.json",
+        "re": "\"skill\": \"tycon-create-story\""
+       },
+       {
+        "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log",
+        "re": "mark-written.*\"via\":\"slash\""
+       }
+      ]
+     }
+    },
+    {
+     "id": "otro-slash-no-deja-marca",
+     "__doc": "🔴 Tipado corregido 2026-09-01 (lo cazó vacuity-audit): estaba como `must-run` afirmando una AUSENCIA, y una ausencia la satisface un control que no hace nada — o sea que contaba como cobertura sin cubrir. Es un caso de 'debe callarse', igual que su gemelo `no-deja-constancia-para-un-skill-que-no-crea-stories` de la puerta PostToolUse. La mitad afirmativa de esta pareja es `slash-tycon-create-story-deja-la-marca`, acá arriba.",
+     "type": "must-stay-quiet",
+     "stdin": {
+      "session_id": "bench-ssg",
+      "prompt": "/tycon-pipeline specs/story-4-2.md"
+     },
+     "expect": {
+      "exit": 0,
+      "file_absent": [
+       "${SANDBOX_HOME}/.claude/.tycon-pipeline/skill-marks/bench-ssg.json"
+      ]
+     }
+    }
+   ]
+  }
+ ]
+}

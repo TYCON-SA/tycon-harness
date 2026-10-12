@@ -1,0 +1,2414 @@
+{
+  "hooks": [
+    {
+      "hook": "rebuild-before-verify.js (marca)",
+      "script": "${TCG}/scripts/hooks/rebuild-before-verify.js",
+      "event": "PostToolUse",
+      "matcher": "Edit|Write",
+      "cases": [
+        {
+          "id": "marca-componente-sucio",
+          "type": "must-run",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon src && printf 'frontend:\\n  dev_build_cmd: \"npm run build:dev\"\\n' > .tycon/advisors.yaml",
+            "echo 'x' > src/App.tsx"
+          ],
+          "stdin": {
+            "tool_name": "Edit",
+            "tool_input": {
+              "file_path": "${FIXTURE}/src/App.tsx"
+            }
+          },
+          "expect": {
+            "file_contains": [
+              {
+                "path": "${FIXTURE}/.advisors/frontend-dirty.json",
+                "re": "App\\.tsx"
+              }
+            ]
+          }
+        },
+        {
+          "id": "quiet-archivo-no-componente",
+          "type": "must-stay-quiet",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon src && printf 'frontend:\\n  dev_build_cmd: \"npm run build:dev\"\\n' > .tycon/advisors.yaml",
+            "echo 'x' > src/util.ts"
+          ],
+          "stdin": {
+            "tool_name": "Edit",
+            "tool_input": {
+              "file_path": "${FIXTURE}/src/util.ts"
+            }
+          },
+          "expect": {
+            "file_absent": [
+              "${FIXTURE}/.advisors/frontend-dirty.json"
+            ]
+          }
+        },
+        {
+          "id": "quiet-repo-sin-config",
+          "type": "must-stay-quiet",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p src && echo 'x' > src/App.tsx"
+          ],
+          "stdin": {
+            "tool_name": "Edit",
+            "tool_input": {
+              "file_path": "${FIXTURE}/src/App.tsx"
+            }
+          },
+          "expect": {
+            "file_absent": [
+              "${FIXTURE}/.advisors/frontend-dirty.json"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "hook": "rebuild-before-verify.js (limpia)",
+      "script": "${TCG}/scripts/hooks/rebuild-before-verify.js",
+      "event": "PostToolUse",
+      "matcher": "Bash",
+      "cases": [
+        {
+          "id": "limpia-marker-tras-build",
+          "type": "must-run",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon .advisors && printf 'frontend:\\n  dev_build_cmd: \"npm run build:dev\"\\n' > .tycon/advisors.yaml",
+            "node -e \"require('fs').writeFileSync('.advisors/frontend-dirty.json',JSON.stringify({files:['src/App.tsx'],since:new Date().toISOString(),dev_build_cmd:'npm run build:dev'}))\""
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "npm run build:dev"
+            }
+          },
+          "expect": {
+            "file_absent": [
+              "${FIXTURE}/.advisors/frontend-dirty.json"
+            ]
+          }
+        },
+        {
+          "id": "C10-el-comando-ACTUAL-de-la-config-limpia-el-marker-viejo",
+          "type": "must-run",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon .advisors && printf 'frontend:\\n  dev_build_cmd: \"npm run build:local\"\\n' > .tycon/advisors.yaml",
+            "node -e \"require('fs').writeFileSync('.advisors/frontend-dirty.json',JSON.stringify({files:['src/App.tsx'],since:new Date().toISOString(),dev_build_cmd:'npm run build:dev'}))\""
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "npm run build:local"
+            }
+          },
+          "expect": {
+            "file_absent": [
+              "${FIXTURE}/.advisors/frontend-dirty.json"
+            ]
+          }
+        },
+        {
+          "id": "C10-el-comando-congelado-en-el-marker-sigue-limpiando",
+          "type": "must-run",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon .advisors && printf 'frontend:\\n  dev_build_cmd: \"npm run build:local\"\\n' > .tycon/advisors.yaml",
+            "node -e \"require('fs').writeFileSync('.advisors/frontend-dirty.json',JSON.stringify({files:['src/App.tsx'],since:new Date().toISOString(),dev_build_cmd:'npm run build:dev'}))\""
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "npm run build:dev"
+            }
+          },
+          "expect": {
+            "file_absent": [
+              "${FIXTURE}/.advisors/frontend-dirty.json"
+            ]
+          }
+        },
+        {
+          "id": "C10-un-comando-ajeno-NO-limpia",
+          "type": "must-stay-quiet",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon .advisors && printf 'frontend:\\n  dev_build_cmd: \"npm run build:local\"\\n' > .tycon/advisors.yaml",
+            "node -e \"require('fs').writeFileSync('.advisors/frontend-dirty.json',JSON.stringify({files:['src/App.tsx'],since:new Date().toISOString(),dev_build_cmd:'npm run build:dev'}))\""
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git status"
+            }
+          },
+          "expect": {
+            "file_contains": [
+              {
+                "path": "${FIXTURE}/.advisors/frontend-dirty.json",
+                "re": "App\\.tsx"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "hook": "rebuild-before-verify.js (avisa)",
+      "script": "${TCG}/scripts/hooks/rebuild-before-verify.js",
+      "event": "UserPromptSubmit",
+      "matcher": "*",
+      "cases": [
+        {
+          "id": "avisa-frontend-sucio",
+          "type": "must-emit",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon .advisors && printf 'frontend:\\n  dev_build_cmd: \"npm run build:dev\"\\n' > .tycon/advisors.yaml",
+            "node -e \"require('fs').writeFileSync('.advisors/frontend-dirty.json',JSON.stringify({files:['src/App.tsx'],since:new Date().toISOString(),dev_build_cmd:'npm run build:dev'}))\""
+          ],
+          "stdin": {
+            "prompt": "probemos en el navegador"
+          },
+          "expect": {
+            "stdout_re": [
+              "rebuild|build"
+            ]
+          }
+        },
+        {
+          "id": "quiet-sin-marker",
+          "type": "must-stay-quiet",
+          "setup": [
+            "git init -q -b main ."
+          ],
+          "stdin": {
+            "prompt": "probemos en el navegador"
+          },
+          "expect": {}
+        },
+        {
+          "id": "C10-el-aviso-nombra-el-comando-ACTUAL-no-el-congelado",
+          "type": "must-emit",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon .advisors && printf 'frontend:\\n  dev_build_cmd: \"npm run build:local\"\\n' > .tycon/advisors.yaml",
+            "node -e \"require('fs').writeFileSync('.advisors/frontend-dirty.json',JSON.stringify({files:['src/App.tsx'],since:new Date().toISOString(),dev_build_cmd:'npm run build:dev'}))\""
+          ],
+          "stdin": {},
+          "expect": {
+            "stdout_re": [
+              "corré `npm run build:local`"
+            ],
+            "stdout_not_re": [
+              "build:dev"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "hook": "engram-pre-commit.sh",
+      "script": "${TCG}/scripts/hooks/engram-pre-commit.sh",
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "_por_que": "Los casos miden el hook con su integración PRENDIDA (TYCON_ENGRAM=1): sin perfil del equipo —la copia pública— engram viene apagada y desde DEF-8.23-C-hooks-codex-sin-integracion el hook no hace nada. Los dos casos «con-engram-apagada-…» la apagan a propósito.",
+      "env": {
+        "TYCON_ENGRAM": "1"
+      },
+      "cases": [
+        {
+          "id": "sincroniza-en-commit-con-optin",
+          "type": "must-run",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'benchproj' > .engram-project",
+            "mkdir -p $SANDBOX_HOME/bin",
+            "printf '#!/bin/sh\\necho \"$@\" > \"$FIXTURE/engram-called\"\\nexit 0\\n' > $SANDBOX_HOME/bin/engram && chmod +x $SANDBOX_HOME/bin/engram"
+          ],
+          "env": {
+            "ENGRAM_BIN": "${SANDBOX_HOME}/bin/engram"
+          },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit -m \"fix: x\""
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "file_contains": [
+              {
+                "path": "${FIXTURE}/engram-called",
+                "re": "sync.*benchproj"
+              }
+            ]
+          }
+        },
+        {
+          "id": "quiet-repo-sin-optin",
+          "type": "must-not-block",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "mkdir -p $SANDBOX_HOME/bin",
+            "printf '#!/bin/sh\\necho \"$@\" > \"$FIXTURE/engram-called\"\\nexit 0\\n' > $SANDBOX_HOME/bin/engram && chmod +x $SANDBOX_HOME/bin/engram"
+          ],
+          "env": {
+            "ENGRAM_BIN": "${SANDBOX_HOME}/bin/engram"
+          },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit -m \"fix: x\""
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "file_absent": [
+              "${FIXTURE}/engram-called"
+            ]
+          }
+        },
+        {
+          "id": "quiet-comando-no-git-commit",
+          "type": "must-not-block",
+          "setup": [
+            "git init -q -b main .",
+            "printf 'benchproj' > .engram-project"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git status"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "file_absent": [
+              "${FIXTURE}/engram-called"
+            ]
+          }
+        },
+        {
+          "id": "manifest-con-marcadores-no-se-stagea",
+          "type": "must-run",
+          "__doc": "ENGRAM-MANIFEST-1(a): manifest con marcadores de conflicto → el hook NO lo stagea (git add incondicional dejó pasar JSON roto a main, 12946bf) y grita la maniobra de recuperación. Constancia: el warning en stderr + el path sigue SIN stagear (diff --cached vacío).",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'benchproj' > .engram-project",
+            "mkdir -p $SANDBOX_HOME/bin",
+            "printf '#!/bin/sh\\necho \"$@\" > \"$FIXTURE/engram-called\"\\nexit 0\\n' > $SANDBOX_HOME/bin/engram && chmod +x $SANDBOX_HOME/bin/engram",
+            "mkdir -p .engram",
+            "printf '<<<<<<< HEAD\\n{\"a\":1}\\n=======\\n{\"b\":2}\\n>>>>>>> otra\\n' > .engram/manifest.json"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit -m \"x\""
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "stderr_re": [
+              "MARCADORES DE CONFLICTO",
+              "NO borres el manifest"
+            ],
+            "file_contains": [
+              {
+                "path": "${FIXTURE}/hook.log",
+                "re": "NO se stagea"
+              }
+            ],
+            "stdout_not_re": [
+              "git rm .engram/manifest.json"
+            ]
+          },
+          "env": {
+            "ENGRAM_BIN": "${SANDBOX_HOME}/bin/engram",
+            "ENGRAM_HOOK_DEBUG": "1",
+            "ENGRAM_HOOK_LOG": "${FIXTURE}/hook.log"
+          },
+          "_por_que": "Un manifest con marcadores de conflicto NO se stagea: `git add` no valida contenido, sólo saca el path de la lista de unmerged, y así llegó a main un JSON roto (12946bf). 🔴 ACTUALIZADO 2026-08-25: este caso EXIGÍA el texto `git rm .engram/manifest.json`, que la guía canónica documenta como DAÑINO — `engram sync` exporta lo pendiente, no reconstruye el índice (medido 2026-08-22: dejó 1 entrada con 19 chunks en disco, sin dar error). O sea que el banco estaba protegiendo el consejo equivocado. Ahora exige lo contrario: que NO lo aconseje."
+        },
+        {
+          "id": "manifest-json-invalido-no-se-stagea",
+          "type": "must-run",
+          "__doc": "ENGRAM-MANIFEST-1(a): manifest que no parsea como JSON (sin marcadores) → tampoco se stagea, con aviso.",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'benchproj' > .engram-project",
+            "mkdir -p $SANDBOX_HOME/bin",
+            "printf '#!/bin/sh\\necho \"$@\" > \"$FIXTURE/engram-called\"\\nexit 0\\n' > $SANDBOX_HOME/bin/engram && chmod +x $SANDBOX_HOME/bin/engram",
+            "mkdir -p .engram",
+            "printf '{esto no es json' > .engram/manifest.json"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit -m \"x\""
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "stderr_re": [
+              "NO parsea como JSON"
+            ],
+            "file_contains": [
+              {
+                "path": "${FIXTURE}/hook.log",
+                "re": "NO se stagea"
+              }
+            ]
+          },
+          "env": {
+            "ENGRAM_BIN": "${SANDBOX_HOME}/bin/engram",
+            "ENGRAM_HOOK_DEBUG": "1",
+            "ENGRAM_HOOK_LOG": "${FIXTURE}/hook.log"
+          }
+        },
+        {
+          "id": "manifest-sano-se-stagea-como-siempre",
+          "type": "must-not-block",
+          "env": {
+            "ENGRAM_BIN": "${SANDBOX_HOME}/bin/engram"
+          },
+          "__doc": "Gemelo limpio de ENGRAM-MANIFEST-1(a): manifest JSON válido → conducta idéntica a la previa (se stagea, sin gritos).",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'benchproj' > .engram-project",
+            "mkdir -p $SANDBOX_HOME/bin",
+            "printf '#!/bin/sh\\necho \"$@\" > \"$FIXTURE/engram-called\"\\nexit 0\\n' > $SANDBOX_HOME/bin/engram && chmod +x $SANDBOX_HOME/bin/engram",
+            "mkdir -p .engram",
+            "printf '{\"version\":1,\"chunks\":[]}' > .engram/manifest.json"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit -m \"x\""
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "stdout_not_re": [
+              "MARCADORES",
+              "NO parsea"
+            ]
+          }
+        },
+        {
+          "id": "push-no-sincroniza-ni-ensucia-el-arbol",
+          "type": "must-stay-quiet",
+          "_por_que": "Reemplaza a `push-stagea-la-memoria-nueva-y-avisa` (2026-08-25 → 2026-09-16). Aquel caso exigía que el sync corriera también al pushear, stageara la memoria nueva y avisara «commiteala y volvé a pushear». Medido el 2026-09-16: ese commit casi nunca llegaba; el manifest quedaba modificado sin commit, el `pull --autostash` del arranque siguiente chocaba en la lista de chunks y la limpieza del conflicto descartaba las entradas nuevas — 5 chunks sin entrada en el índice, 3 de ellos ya publicados en main, o sea memoria que las otras máquinas no importan; y cuatro arranques trabados en un día. Ahora en un push el hook NO llama a engram (el engram falso de este setup crearía un chunk si lo llamara) y no toca .engram/: lo pendiente se exporta y commitea junto en el commit siguiente. Rojo previo verificado contra el hook anterior. Caso: incident-log#memoria-huerfana-por-sync-en-push-2026-09-16.",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'benchproj' > .engram-project",
+            "mkdir -p $SANDBOX_HOME/bin .engram/chunks",
+            "printf '#!/bin/sh\\necho nuevo > .engram/chunks/delsync.jsonl.gz\\nexit 0\\n' > $SANDBOX_HOME/bin/engram && chmod +x $SANDBOX_HOME/bin/engram",
+            "git add -A && git -c user.email=b@b -c user.name=b commit -qm base"
+          ],
+          "env": {
+            "ENGRAM_BIN": "${SANDBOX_HOME}/bin/engram",
+            "ENGRAM_HOOK_DEBUG": "1",
+            "ENGRAM_HOOK_LOG": "${FIXTURE}/hook.log"
+          },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git push origin main"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "file_absent": [
+              "${FIXTURE}/.engram/chunks/delsync.jsonl.gz"
+            ],
+            "file_contains": [
+              {
+                "path": "${FIXTURE}/hook.log",
+                "re": "push: no se sincroniza"
+              }
+            ]
+          }
+        },
+        {
+          "id": "push-NO-frena-nunca",
+          "type": "must-not-block",
+          "_por_que": "La primera versión bloqueaba (exit 2) y frenó dos comandos legítimos en cinco minutos, uno de ellos el que agregaba estos mismos casos. Un hook que corta trabajo real se apaga entero. Este caso fija que el push SIEMPRE sale.",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'benchproj' > .engram-project",
+            "mkdir -p $SANDBOX_HOME/bin .engram/chunks",
+            "printf '#!/bin/sh\\nexit 0\\n' > $SANDBOX_HOME/bin/engram && chmod +x $SANDBOX_HOME/bin/engram",
+            "git add -A && git -c user.email=b@b -c user.name=b commit -qm base",
+            "printf 'x' > .engram/chunks/nuevo.jsonl.gz"
+          ],
+          "env": {
+            "ENGRAM_BIN": "${SANDBOX_HOME}/bin/engram"
+          },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git push origin main"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "push-sin-memoria-nueva-silencio-total",
+          "type": "must-stay-quiet",
+          "_por_que": "Un aviso en CADA push sería el ruido que este hook quiere evitar. Sólo habla si el sync generó algo.",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'benchproj' > .engram-project",
+            "mkdir -p $SANDBOX_HOME/bin .engram/chunks",
+            "printf '#!/bin/sh\\nexit 0\\n' > $SANDBOX_HOME/bin/engram && chmod +x $SANDBOX_HOME/bin/engram",
+            "printf 'x' > .engram/chunks/viejo.jsonl.gz",
+            "git add -A && git -c user.email=b@b -c user.name=b commit -qm base"
+          ],
+          "env": {
+            "ENGRAM_BIN": "${SANDBOX_HOME}/bin/engram"
+          },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git push origin main"
+            }
+          },
+          "expect": {}
+        },
+        {
+          "id": "el-texto-de-un-push-adentro-de-otro-comando-no-dispara",
+          "type": "must-stay-quiet",
+          "_por_que": "El matcher pasó de substring a POSICIONAL el 2026-08-25: el glob viejo daba positivo con cualquier comando que contuviera ese texto — un grep, un heredoc escribiendo estos casos. Con el hook sólo sincronizando era desperdicio invisible; bloqueando fue un freno falso.",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'benchproj' > .engram-project",
+            "mkdir -p $SANDBOX_HOME/bin .engram/chunks",
+            "printf '#!/bin/sh\\nexit 0\\n' > $SANDBOX_HOME/bin/engram && chmod +x $SANDBOX_HOME/bin/engram",
+            "git add -A && git -c user.email=b@b -c user.name=b commit -qm base",
+            "printf 'x' > .engram/chunks/nuevo.jsonl.gz"
+          ],
+          "env": {
+            "ENGRAM_BIN": "${SANDBOX_HOME}/bin/engram"
+          },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "grep -rn 'git push origin main' scripts/"
+            }
+          },
+          "expect": {}
+        },
+        {
+          "id": "stagea-solo-lo-que-genero-el-sync",
+          "type": "must-run",
+          "_por_que": "🔴 El `git add .engram/` incondicional stageaba TODO lo que hubiera ahí, incluidos chunks que el dev había dejado sin commitear A PROPÓSITO. Reproducido en la revisión adversarial: un falso positivo del matcher stageó un chunk preexistente. Ahora se toma una foto antes del sync y se stagea sólo la diferencia.",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'benchproj' > .engram-project",
+            "mkdir -p $SANDBOX_HOME/bin .engram/chunks",
+            "printf '#!/bin/sh\\necho nuevo > .engram/chunks/delsync.jsonl.gz\\nexit 0\\n' > $SANDBOX_HOME/bin/engram && chmod +x $SANDBOX_HOME/bin/engram",
+            "git add -A && git -c user.email=b@b -c user.name=b commit -qm base",
+            "printf 'MIO' > .engram/chunks/manual.jsonl.gz"
+          ],
+          "env": {
+            "ENGRAM_BIN": "${SANDBOX_HOME}/bin/engram",
+            "ENGRAM_HOOK_DEBUG": "1",
+            "ENGRAM_HOOK_LOG": "${FIXTURE}/hook.log"
+          },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit -m x"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "file_contains": [
+              {
+                "path": "${FIXTURE}/hook.log",
+                "re": "staged \\(sólo lo del sync\\)"
+              }
+            ],
+            "file_not_contains": [
+              {
+                "path": "${FIXTURE}/hook.log",
+                "re": "manual\\.jsonl\\.gz"
+              }
+            ]
+          }
+        },
+        {
+          "id": "detecta-git-con-opciones-globales",
+          "type": "must-run",
+          "_por_que": "El matcher anterior sólo aceptaba opciones SIN valor entre `git` y el subcomando, así que se perdía `git -C ruta commit`, `git -c k=v commit`, `command git` y `/usr/bin/git` — formas de uso diario. Con el hook ya sin bloquear, el costo asimétrico cambió: un falso negativo deja memoria sin exportar, un falso positivo cuesta un sync de más.",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'benchproj' > .engram-project",
+            "mkdir -p $SANDBOX_HOME/bin .engram/chunks",
+            "printf '#!/bin/sh\\necho \"$@\" > \"$FIXTURE/engram-called\"\\nexit 0\\n' > $SANDBOX_HOME/bin/engram && chmod +x $SANDBOX_HOME/bin/engram"
+          ],
+          "env": {
+            "ENGRAM_BIN": "${SANDBOX_HOME}/bin/engram"
+          },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git -c color.ui=false commit -m x"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "file_contains": [
+              {
+                "path": "${FIXTURE}/engram-called",
+                "re": "sync.*benchproj"
+              }
+            ]
+          }
+        },
+        {
+          "id": "avisa-si-el-sync-falla",
+          "type": "must-run",
+          "_por_que": "Un sync que fallaba dejaba stdout/stderr vacíos y el commit seguía como si nada — el código de salida sólo iba al log de debug, que nadie mira. Si no exportó, la memoria de esa sesión no viaja, y eso tiene que verse en el momento.",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'benchproj' > .engram-project",
+            "mkdir -p $SANDBOX_HOME/bin .engram/chunks",
+            "printf '#!/bin/sh\\nexit 3\\n' > $SANDBOX_HOME/bin/engram && chmod +x $SANDBOX_HOME/bin/engram"
+          ],
+          "env": {
+            "ENGRAM_BIN": "${SANDBOX_HOME}/bin/engram",
+            "ENGRAM_HOOK_DEBUG": "1",
+            "ENGRAM_HOOK_LOG": "${FIXTURE}/hook.log"
+          },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit -m x"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "stderr_re": [
+              "falló \\(código 3\\)",
+              "NO se exportó"
+            ],
+            "file_contains": [
+              {
+                "path": "${FIXTURE}/hook.log",
+                "re": "engram sync rc=3"
+              }
+            ]
+          }
+        },
+        {
+          "id": "no-aconseja-borrar-el-manifest",
+          "type": "must-run",
+          "_por_que": "🔴 Los avisos recomendaban `git rm .engram/manifest.json && engram sync`, que la guía canónica documenta como DAÑINO: sync exporta lo pendiente, no reconstruye el índice — medido 2026-08-22, dejó 1 entrada con 19 chunks en disco y sin dar error. El banco protegía el consejo equivocado.",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'benchproj' > .engram-project",
+            "mkdir -p $SANDBOX_HOME/bin .engram/chunks",
+            "printf '#!/bin/sh\\nexit 0\\n' > $SANDBOX_HOME/bin/engram && chmod +x $SANDBOX_HOME/bin/engram",
+            "mkdir -p .engram && printf '<<<<<<< HEAD\\n{\"a\":1}\\n=======\\n{\"b\":2}\\n>>>>>>> otra\\n' > .engram/manifest.json"
+          ],
+          "env": {
+            "ENGRAM_BIN": "${SANDBOX_HOME}/bin/engram",
+            "ENGRAM_HOOK_DEBUG": "1",
+            "ENGRAM_HOOK_LOG": "${FIXTURE}/hook.log"
+          },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit -m x"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "stderr_re": [
+              "MARCADORES DE CONFLICTO",
+              "NO borres el manifest"
+            ],
+            "stdout_not_re": [
+              "git rm .engram/manifest.json"
+            ],
+            "file_contains": [
+              {
+                "path": "${FIXTURE}/hook.log",
+                "re": "NO se stagea"
+              }
+            ]
+          }
+        },
+        {
+          "id": "detecta-git-con-prefijo-de-variable",
+          "type": "must-run",
+          "_por_que": "Revisión adversarial 2026-09-06: el `_GIT` posicional no admitía nada antes de `git` salvo `command` o una ruta, así que `TYCON_SESSION_GUARD_OK=1 git commit …` —la forma de escape que el session-collision-guard exige— no disparaba el sync de memoria. Mismo agujero que GIT-C1 del safety-guard, mismo arreglo.",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'benchproj' > .engram-project",
+            "mkdir -p $SANDBOX_HOME/bin .engram/chunks",
+            "printf '#!/bin/sh\\necho \"$@\" > \"$FIXTURE/engram-called\"\\nexit 0\\n' > $SANDBOX_HOME/bin/engram && chmod +x $SANDBOX_HOME/bin/engram"
+          ],
+          "env": {
+            "ENGRAM_BIN": "${SANDBOX_HOME}/bin/engram"
+          },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "TYCON_SESSION_GUARD_OK=1 git commit -m x"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "file_contains": [
+              {
+                "path": "${FIXTURE}/engram-called",
+                "re": "sync.*benchproj"
+              }
+            ]
+          }
+        },
+        {
+          "id": "frena-el-commit-que-pierde-entradas-del-indice",
+          "type": "must-block",
+          "_por_que": "🔴 EL CASO. El 2026-09-17 el commit ad4f498 dejó .engram/manifest.json con 205 entradas para 210 archivos y NADA lo objetó: `git add` no valida contenido y el hook sólo miraba marcadores de conflicto y JSON válido. Una entrada perdida NO vuelve sola (ni sync, ni --import, ni tener el chunk en disco), y `engram sync --import` lee el ÍNDICE: esa memoria queda en el repo e invisible para las demás máquinas, sin dar error. Acá el engram falso reescribe el índice con 2 de las 3 entradas de HEAD — la firma exacta del escritor que agrega sobre una copia vieja.",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'benchproj' > .engram-project",
+            "mkdir -p $SANDBOX_HOME/bin .engram/chunks",
+            "printf 'x' | gzip -c > .engram/chunks/aaaa1111.jsonl.gz",
+            "printf 'x' | gzip -c > .engram/chunks/bbbb2222.jsonl.gz",
+            "printf 'x' | gzip -c > .engram/chunks/cccc3333.jsonl.gz",
+            "printf '{\"version\":1,\"chunks\":[{\"id\":\"aaaa1111\",\"created_by\":\"t\",\"created_at\":\"2026-01-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0},{\"id\":\"bbbb2222\",\"created_by\":\"t\",\"created_at\":\"2026-02-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0},{\"id\":\"cccc3333\",\"created_by\":\"t\",\"created_at\":\"2026-03-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0}]}' > .engram/manifest.json",
+            "git add -A && git -c user.email=b@b -c user.name=b commit -qm base",
+            "printf '%s' '{\"version\":1,\"chunks\":[{\"id\":\"aaaa1111\",\"created_by\":\"t\",\"created_at\":\"2026-01-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0},{\"id\":\"bbbb2222\",\"created_by\":\"t\",\"created_at\":\"2026-02-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0}]}' > truncado.json",
+            "printf '#!/bin/sh\\ncp truncado.json .engram/manifest.json\\nexit 0\\n' > $SANDBOX_HOME/bin/engram && chmod +x $SANDBOX_HOME/bin/engram"
+          ],
+          "env": {
+            "ENGRAM_BIN": "${SANDBOX_HOME}/bin/engram",
+            "ENGRAM_HOOK_DEBUG": "1",
+            "ENGRAM_HOOK_LOG": "${FIXTURE}/hook.log"
+          },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit -m x"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "cccc3333",
+              "PERDI",
+              "no da error",
+              "manifest-engram\\.js.*repair --apply",
+              "TYCON_ENGRAM_MANIFEST_OK=1"
+            ],
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/frenos.jsonl",
+                "re": "\"freno\":\"engram-manifest\""
+              },
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/frenos.jsonl",
+                "re": "\"regla\":\"entradas-perdidas\""
+              },
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/frenos.jsonl",
+                "re": "\"veredicto\":\"bloqueo\""
+              }
+            ]
+          }
+        },
+        {
+          "id": "con-el-interruptor-apagado-el-mismo-commit-pasa-y-avisa",
+          "type": "must-not-block",
+          "_por_que": "Un freno sin interruptor se saca a martillazos. Con TYCON_ENGRAM_MANIFEST_GUARD=0 el MISMO commit de T22 pasa, pero el aviso sale igual y queda anotado como `aviso`: apagar el bloqueo no apaga la medición.",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'benchproj' > .engram-project",
+            "mkdir -p $SANDBOX_HOME/bin .engram/chunks",
+            "printf 'x' | gzip -c > .engram/chunks/aaaa1111.jsonl.gz",
+            "printf 'x' | gzip -c > .engram/chunks/bbbb2222.jsonl.gz",
+            "printf 'x' | gzip -c > .engram/chunks/cccc3333.jsonl.gz",
+            "printf '{\"version\":1,\"chunks\":[{\"id\":\"aaaa1111\",\"created_by\":\"t\",\"created_at\":\"2026-01-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0},{\"id\":\"bbbb2222\",\"created_by\":\"t\",\"created_at\":\"2026-02-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0},{\"id\":\"cccc3333\",\"created_by\":\"t\",\"created_at\":\"2026-03-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0}]}' > .engram/manifest.json",
+            "git add -A && git -c user.email=b@b -c user.name=b commit -qm base",
+            "printf '%s' '{\"version\":1,\"chunks\":[{\"id\":\"aaaa1111\",\"created_by\":\"t\",\"created_at\":\"2026-01-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0},{\"id\":\"bbbb2222\",\"created_by\":\"t\",\"created_at\":\"2026-02-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0}]}' > truncado.json",
+            "printf '#!/bin/sh\\ncp truncado.json .engram/manifest.json\\nexit 0\\n' > $SANDBOX_HOME/bin/engram && chmod +x $SANDBOX_HOME/bin/engram"
+          ],
+          "env": {
+            "ENGRAM_BIN": "${SANDBOX_HOME}/bin/engram",
+            "ENGRAM_HOOK_DEBUG": "1",
+            "ENGRAM_HOOK_LOG": "${FIXTURE}/hook.log",
+            "TYCON_ENGRAM_MANIFEST_GUARD": "0"
+          },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit -m x"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "stderr_re": [
+              "cccc3333",
+              "manifest-engram\\.js.*repair --apply"
+            ],
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/frenos.jsonl",
+                "re": "\"freno\":\"engram-manifest\""
+              },
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/frenos.jsonl",
+                "re": "\"regla\":\"entradas-perdidas\""
+              },
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/frenos.jsonl",
+                "re": "\"veredicto\":\"aviso\""
+              }
+            ]
+          }
+        },
+        {
+          "id": "frena-el-chunk-nuevo-sin-entrada",
+          "type": "must-block",
+          "_por_que": "🔴 La otra mitad del daño: el archivo entra al commit y su entrada no. Mismo efecto —un chunk que ningún índice nombra no existe para el import— por otro camino: el engram falso exporta el chunk y no lo declara. No está en el árbol de HEAD, así que es NUEVO de este commit: frena.",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'benchproj' > .engram-project",
+            "mkdir -p $SANDBOX_HOME/bin .engram/chunks",
+            "printf 'x' | gzip -c > .engram/chunks/aaaa1111.jsonl.gz",
+            "printf 'x' | gzip -c > .engram/chunks/bbbb2222.jsonl.gz",
+            "printf '{\"version\":1,\"chunks\":[{\"id\":\"aaaa1111\",\"created_by\":\"t\",\"created_at\":\"2026-01-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0},{\"id\":\"bbbb2222\",\"created_by\":\"t\",\"created_at\":\"2026-02-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0}]}' > .engram/manifest.json",
+            "git add -A && git -c user.email=b@b -c user.name=b commit -qm base",
+            "printf '#!/bin/sh\\nprintf x | gzip -c > .engram/chunks/dddd4444.jsonl.gz\\nexit 0\\n' > $SANDBOX_HOME/bin/engram && chmod +x $SANDBOX_HOME/bin/engram"
+          ],
+          "env": {
+            "ENGRAM_BIN": "${SANDBOX_HOME}/bin/engram",
+            "ENGRAM_HOOK_DEBUG": "1",
+            "ENGRAM_HOOK_LOG": "${FIXTURE}/hook.log"
+          },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit -m x"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "dddd4444",
+              "manifest-engram\\.js.*repair --apply"
+            ],
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/frenos.jsonl",
+                "re": "\"freno\":\"engram-manifest\""
+              },
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/frenos.jsonl",
+                "re": "\"regla\":\"chunk-sin-entrada\""
+              },
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/frenos.jsonl",
+                "re": "\"veredicto\":\"bloqueo\""
+              }
+            ]
+          }
+        },
+        {
+          "id": "avisa-la-deriva-heredada-y-no-frena",
+          "type": "must-not-block",
+          "_por_que": "Decisión del dev: frena sólo lo que ESTE commit rompe. Un freno que muerde en cada commit por algo que rompió otro se apaga en una semana (incident-log#sesiones-concurrentes-mismo-checkout-2026-09-05: «un freno que castiga la maniobra segura enseña a saltearlo»). Acá HEAD ya venía con 3 archivos y 2 entradas: el commit no empeora nada, así que avisa con el comando y deja pasar.",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'benchproj' > .engram-project",
+            "mkdir -p $SANDBOX_HOME/bin .engram/chunks",
+            "printf 'x' | gzip -c > .engram/chunks/aaaa1111.jsonl.gz",
+            "printf 'x' | gzip -c > .engram/chunks/bbbb2222.jsonl.gz",
+            "printf 'x' | gzip -c > .engram/chunks/cccc3333.jsonl.gz",
+            "printf '{\"version\":1,\"chunks\":[{\"id\":\"aaaa1111\",\"created_by\":\"t\",\"created_at\":\"2026-01-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0},{\"id\":\"bbbb2222\",\"created_by\":\"t\",\"created_at\":\"2026-02-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0}]}' > .engram/manifest.json",
+            "git add -A && git -c user.email=b@b -c user.name=b commit -qm 'nace en deriva'",
+            "printf '#!/bin/sh\\nexit 0\\n' > $SANDBOX_HOME/bin/engram && chmod +x $SANDBOX_HOME/bin/engram"
+          ],
+          "env": {
+            "ENGRAM_BIN": "${SANDBOX_HOME}/bin/engram",
+            "ENGRAM_HOOK_DEBUG": "1",
+            "ENGRAM_HOOK_LOG": "${FIXTURE}/hook.log"
+          },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit -m x"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "stderr_re": [
+              "cccc3333",
+              "manifest-engram\\.js.*repair --apply"
+            ],
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/frenos.jsonl",
+                "re": "\"freno\":\"engram-manifest\""
+              },
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/frenos.jsonl",
+                "re": "\"regla\":\"deriva-heredada\""
+              },
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/frenos.jsonl",
+                "re": "\"veredicto\":\"aviso\""
+              }
+            ]
+          }
+        },
+        {
+          "id": "pasa-el-commit-sano-y-anota-paso",
+          "type": "must-not-block",
+          "_por_que": "El gemelo limpio, con un engram falso que imita al REAL: escribe el chunk Y su entrada (si sólo escribiera el chunk, la prueba mediría un mundo que no existe — lección del cierre de la 1.5). En verde el hook no dice una palabra del índice; la única huella es la constancia `paso`, que es el denominador de la medición: «de los commits en repos con memoria, cuántos frenó».",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'benchproj' > .engram-project",
+            "mkdir -p $SANDBOX_HOME/bin .engram/chunks",
+            "printf 'x' | gzip -c > .engram/chunks/aaaa1111.jsonl.gz",
+            "printf 'x' | gzip -c > .engram/chunks/bbbb2222.jsonl.gz",
+            "printf '{\"version\":1,\"chunks\":[{\"id\":\"aaaa1111\",\"created_by\":\"t\",\"created_at\":\"2026-01-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0},{\"id\":\"bbbb2222\",\"created_by\":\"t\",\"created_at\":\"2026-02-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0}]}' > .engram/manifest.json",
+            "git add -A && git -c user.email=b@b -c user.name=b commit -qm base",
+            "printf '%s' '{\"version\":1,\"chunks\":[{\"id\":\"aaaa1111\",\"created_by\":\"t\",\"created_at\":\"2026-01-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0},{\"id\":\"bbbb2222\",\"created_by\":\"t\",\"created_at\":\"2026-02-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0},{\"id\":\"dddd4444\",\"created_by\":\"t\",\"created_at\":\"2026-03-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0}]}' > con-dddd.json",
+            "printf '#!/bin/sh\\nprintf x | gzip -c > .engram/chunks/dddd4444.jsonl.gz\\ncp con-dddd.json .engram/manifest.json\\nexit 0\\n' > $SANDBOX_HOME/bin/engram && chmod +x $SANDBOX_HOME/bin/engram"
+          ],
+          "env": {
+            "ENGRAM_BIN": "${SANDBOX_HOME}/bin/engram",
+            "ENGRAM_HOOK_DEBUG": "1",
+            "ENGRAM_HOOK_LOG": "${FIXTURE}/hook.log"
+          },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit -m x"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "stderr_not_re": [
+              "ndice de memoria",
+              "PERDI"
+            ],
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/frenos.jsonl",
+                "re": "\"freno\":\"engram-manifest\""
+              },
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/frenos.jsonl",
+                "re": "\"regla\":\"sano\""
+              },
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/frenos.jsonl",
+                "re": "\"veredicto\":\"paso\""
+              },
+              {
+                "path": "${FIXTURE}/hook.log",
+                "re": "staged"
+              }
+            ]
+          }
+        },
+        {
+          "id": "sin-manifest-no-frena-y-dice-que-no-pudo-medir",
+          "type": "must-not-block",
+          "_por_que": "Fail-open respecto del commit, como el resto del hook — pero NUNCA diciendo «sano». «No pude medir» y «está todo bien» son cosas distintas y la diferencia es justamente lo que esta familia de controles existe para no perder.",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'benchproj' > .engram-project",
+            "mkdir -p $SANDBOX_HOME/bin .engram/chunks",
+            "printf 'x' | gzip -c > .engram/chunks/aaaa1111.jsonl.gz",
+            "git add -A && git -c user.email=b@b -c user.name=b commit -qm base",
+            "printf '#!/bin/sh\\nexit 0\\n' > $SANDBOX_HOME/bin/engram && chmod +x $SANDBOX_HOME/bin/engram"
+          ],
+          "env": {
+            "ENGRAM_BIN": "${SANDBOX_HOME}/bin/engram",
+            "ENGRAM_HOOK_DEBUG": "1",
+            "ENGRAM_HOOK_LOG": "${FIXTURE}/hook.log"
+          },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit -m x"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "stderr_re": [
+              "no pude medir"
+            ],
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/frenos.jsonl",
+                "re": "\"freno\":\"engram-manifest\""
+              },
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/frenos.jsonl",
+                "re": "\"regla\":\"no-pude-medir\""
+              },
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/frenos.jsonl",
+                "re": "\"veredicto\":\"aviso\""
+              }
+            ]
+          }
+        },
+        {
+          "id": "escape-por-comando-deja-pasar-y-queda-escrito",
+          "type": "must-not-block",
+          "_por_que": "El escape va PEGADO al comando (mismo criterio posicional que el matcher _GIT), así vale para ese commit y no para toda la sesión. Se puede, no es gratis: queda anotado como `escape` y el tablero lo cuenta al lado de los bloqueos.",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'benchproj' > .engram-project",
+            "mkdir -p $SANDBOX_HOME/bin .engram/chunks",
+            "printf 'x' | gzip -c > .engram/chunks/aaaa1111.jsonl.gz",
+            "printf 'x' | gzip -c > .engram/chunks/bbbb2222.jsonl.gz",
+            "printf 'x' | gzip -c > .engram/chunks/cccc3333.jsonl.gz",
+            "printf '{\"version\":1,\"chunks\":[{\"id\":\"aaaa1111\",\"created_by\":\"t\",\"created_at\":\"2026-01-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0},{\"id\":\"bbbb2222\",\"created_by\":\"t\",\"created_at\":\"2026-02-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0},{\"id\":\"cccc3333\",\"created_by\":\"t\",\"created_at\":\"2026-03-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0}]}' > .engram/manifest.json",
+            "git add -A && git -c user.email=b@b -c user.name=b commit -qm base",
+            "printf '%s' '{\"version\":1,\"chunks\":[{\"id\":\"aaaa1111\",\"created_by\":\"t\",\"created_at\":\"2026-01-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0},{\"id\":\"bbbb2222\",\"created_by\":\"t\",\"created_at\":\"2026-02-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0}]}' > truncado.json",
+            "printf '#!/bin/sh\\ncp truncado.json .engram/manifest.json\\nexit 0\\n' > $SANDBOX_HOME/bin/engram && chmod +x $SANDBOX_HOME/bin/engram"
+          ],
+          "env": {
+            "ENGRAM_BIN": "${SANDBOX_HOME}/bin/engram",
+            "ENGRAM_HOOK_DEBUG": "1",
+            "ENGRAM_HOOK_LOG": "${FIXTURE}/hook.log"
+          },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "TYCON_ENGRAM_MANIFEST_OK=1 git commit -m x"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/frenos.jsonl",
+                "re": "\"freno\":\"engram-manifest\""
+              },
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/frenos.jsonl",
+                "re": "\"regla\":\"entradas-perdidas\""
+              },
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/frenos.jsonl",
+                "re": "\"veredicto\":\"escape\""
+              }
+            ]
+          }
+        },
+        {
+          "id": "sin-el-criterio-no-frena-y-lo-dice",
+          "type": "must-not-block",
+          "_por_que": "El hook se copia al fixture sin `scripts/lib/`: sin el archivo del criterio no hay cruce posible. No puede frenar (sería un bloqueo sin evidencia) ni callar (sería decir «sano» sin haber mirado): dice que no pudo medir y nombra lo que le falta.",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'benchproj' > .engram-project",
+            "mkdir -p $SANDBOX_HOME/bin .engram/chunks",
+            "printf 'x' | gzip -c > .engram/chunks/aaaa1111.jsonl.gz",
+            "printf 'x' | gzip -c > .engram/chunks/bbbb2222.jsonl.gz",
+            "printf 'x' | gzip -c > .engram/chunks/cccc3333.jsonl.gz",
+            "printf '{\"version\":1,\"chunks\":[{\"id\":\"aaaa1111\",\"created_by\":\"t\",\"created_at\":\"2026-01-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0},{\"id\":\"bbbb2222\",\"created_by\":\"t\",\"created_at\":\"2026-02-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0},{\"id\":\"cccc3333\",\"created_by\":\"t\",\"created_at\":\"2026-03-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0}]}' > .engram/manifest.json",
+            "git add -A && git -c user.email=b@b -c user.name=b commit -qm base",
+            "printf '%s' '{\"version\":1,\"chunks\":[{\"id\":\"aaaa1111\",\"created_by\":\"t\",\"created_at\":\"2026-01-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0},{\"id\":\"bbbb2222\",\"created_by\":\"t\",\"created_at\":\"2026-02-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0}]}' > truncado.json",
+            "printf '#!/bin/sh\\ncp truncado.json .engram/manifest.json\\nexit 0\\n' > $SANDBOX_HOME/bin/engram && chmod +x $SANDBOX_HOME/bin/engram",
+            "mkdir -p copia/scripts/hooks && cp $TCG/scripts/hooks/engram-pre-commit.sh copia/scripts/hooks/"
+          ],
+          "env": {
+            "ENGRAM_BIN": "${SANDBOX_HOME}/bin/engram",
+            "ENGRAM_HOOK_DEBUG": "1",
+            "ENGRAM_HOOK_LOG": "${FIXTURE}/hook.log"
+          },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit -m x"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "stderr_re": [
+              "no pude medir",
+              "manifest-engram"
+            ]
+          },
+          "script": "${FIXTURE}/copia/scripts/hooks/engram-pre-commit.sh"
+        },
+        {
+          "id": "push-sigue-sin-cruzar",
+          "type": "must-stay-quiet",
+          "_por_que": "En `git push` el hook sale ANTES del sync desde el 2026-09-16 (un sync en push dejaba .engram/ sucio sin commit y el pull siguiente se comía las entradas). El cruce vive después de ese punto: en push no mide, no avisa y no anota. El mismo escenario de T22, que en commit bloquea.",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'benchproj' > .engram-project",
+            "mkdir -p $SANDBOX_HOME/bin .engram/chunks",
+            "printf 'x' | gzip -c > .engram/chunks/aaaa1111.jsonl.gz",
+            "printf 'x' | gzip -c > .engram/chunks/bbbb2222.jsonl.gz",
+            "printf 'x' | gzip -c > .engram/chunks/cccc3333.jsonl.gz",
+            "printf '{\"version\":1,\"chunks\":[{\"id\":\"aaaa1111\",\"created_by\":\"t\",\"created_at\":\"2026-01-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0},{\"id\":\"bbbb2222\",\"created_by\":\"t\",\"created_at\":\"2026-02-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0},{\"id\":\"cccc3333\",\"created_by\":\"t\",\"created_at\":\"2026-03-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0}]}' > .engram/manifest.json",
+            "git add -A && git -c user.email=b@b -c user.name=b commit -qm base",
+            "printf '%s' '{\"version\":1,\"chunks\":[{\"id\":\"aaaa1111\",\"created_by\":\"t\",\"created_at\":\"2026-01-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0},{\"id\":\"bbbb2222\",\"created_by\":\"t\",\"created_at\":\"2026-02-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0}]}' > truncado.json",
+            "printf '#!/bin/sh\\ncp truncado.json .engram/manifest.json\\nexit 0\\n' > $SANDBOX_HOME/bin/engram && chmod +x $SANDBOX_HOME/bin/engram"
+          ],
+          "env": {
+            "ENGRAM_BIN": "${SANDBOX_HOME}/bin/engram",
+            "ENGRAM_HOOK_DEBUG": "1",
+            "ENGRAM_HOOK_LOG": "${FIXTURE}/hook.log"
+          },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git push origin main"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "la-constancia-no-tumba-al-hook",
+          "type": "must-block",
+          "_por_que": "La constancia es AYUDA, no evidencia (story 2.6): si no se puede anotar, el veredicto no cambia. Acá el hook se copia sin `lib/guard-record.js` pero CON el criterio: tiene que bloquear igual que T22. Un freno que se rompe por no poder anotar es peor que un freno sin constancia.",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'benchproj' > .engram-project",
+            "mkdir -p $SANDBOX_HOME/bin .engram/chunks",
+            "printf 'x' | gzip -c > .engram/chunks/aaaa1111.jsonl.gz",
+            "printf 'x' | gzip -c > .engram/chunks/bbbb2222.jsonl.gz",
+            "printf 'x' | gzip -c > .engram/chunks/cccc3333.jsonl.gz",
+            "printf '{\"version\":1,\"chunks\":[{\"id\":\"aaaa1111\",\"created_by\":\"t\",\"created_at\":\"2026-01-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0},{\"id\":\"bbbb2222\",\"created_by\":\"t\",\"created_at\":\"2026-02-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0},{\"id\":\"cccc3333\",\"created_by\":\"t\",\"created_at\":\"2026-03-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0}]}' > .engram/manifest.json",
+            "git add -A && git -c user.email=b@b -c user.name=b commit -qm base",
+            "printf '%s' '{\"version\":1,\"chunks\":[{\"id\":\"aaaa1111\",\"created_by\":\"t\",\"created_at\":\"2026-01-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0},{\"id\":\"bbbb2222\",\"created_by\":\"t\",\"created_at\":\"2026-02-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0}]}' > truncado.json",
+            "printf '#!/bin/sh\\ncp truncado.json .engram/manifest.json\\nexit 0\\n' > $SANDBOX_HOME/bin/engram && chmod +x $SANDBOX_HOME/bin/engram",
+            "mkdir -p copia/scripts/hooks copia/scripts/lib && cp $TCG/scripts/hooks/engram-pre-commit.sh copia/scripts/hooks/ && cp $TCG/scripts/lib/manifest-engram.js copia/scripts/lib/"
+          ],
+          "env": {
+            "ENGRAM_BIN": "${SANDBOX_HOME}/bin/engram",
+            "ENGRAM_HOOK_DEBUG": "1",
+            "ENGRAM_HOOK_LOG": "${FIXTURE}/hook.log"
+          },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit -m x"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "cccc3333"
+            ]
+          },
+          "script": "${FIXTURE}/copia/scripts/hooks/engram-pre-commit.sh"
+        },
+        {
+          "id": "el-primer-commit-de-memoria-no-se-frena-y-el-aviso-no-miente",
+          "type": "must-not-block",
+          "_por_que": "🔴 El PRIMER commit de memoria de un repo: `.engram/manifest.json` todavía no existe en HEAD, así que no hay contra qué comparar. Dos cosas tienen que pasar: (a) NO frenar —la regla es que nunca se frena por lo que no se pudo comparar, y si frenara molestaría a todo repo que estrena engram—, y (b) el aviso NO puede decir «ya venía incompleto», porque eso afirma algo que no se midió: tiene que decir que no pudo comparar. Encontrado probando el hook a mano contra un repo real (2026-09-17); la primera versión del mensaje sí mentía. 🔴 El fixture STAGEA la memoria (2026-09-17, tras el pase adversarial): el hook cruza lo que git va a commitear, así que memoria en disco sin stagear no dispara nada — y eso es correcto, ese commit no la lleva.",
+          "setup": [
+            "git init -q -b main . && printf 'hola' > readme.md && git add -A && git -c user.email=b@b -c user.name=b commit -qm 'repo sin memoria todavía'",
+            "printf 'benchproj' > .engram-project",
+            "mkdir -p $SANDBOX_HOME/bin .engram/chunks",
+            "printf 'x' | gzip -c > .engram/chunks/cccc3333.jsonl.gz",
+            "printf '%s' '{\"version\":1,\"chunks\":[]}' > .engram/manifest.json",
+            "git add .engram .engram-project",
+            "printf '#!/bin/sh\\nexit 0\\n' > $SANDBOX_HOME/bin/engram && chmod +x $SANDBOX_HOME/bin/engram"
+          ],
+          "env": {
+            "ENGRAM_BIN": "${SANDBOX_HOME}/bin/engram"
+          },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit -m x"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "stderr_re": [
+              "NO pude compararlo con el commit anterior",
+              "cccc3333"
+            ],
+            "stderr_not_re": [
+              "ya venía incompleto",
+              "de antes"
+            ]
+          }
+        },
+        {
+          "id": "un-repo-sin-memoria-todavia-no-dice-nada",
+          "type": "must-stay-quiet",
+          "_por_que": "🔴 Calibración medida el 2026-09-17: 3 de los 22 repos con memoria de esta máquina (dos de la plataforma y uno de un producto) tienen `.engram/` creada y NI UN archivo de memoria adentro. Sin este corte, «no pude medir el índice» saldría en CADA commit de esos repos — un aviso que aparece siempre, que nadie puede accionar, y que enseña a ignorar los que sí importan. Con cero archivos no hay memoria en juego: silencio y sin constancia. Con UNO ya hay algo que perder y el cruce habla (lo cubre `sin-manifest-no-frena-y-dice-que-no-pudo-medir`).",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'benchproj' > .engram-project",
+            "mkdir -p $SANDBOX_HOME/bin .engram/chunks",
+            "printf '#!/bin/sh\\nexit 0\\n' > $SANDBOX_HOME/bin/engram && chmod +x $SANDBOX_HOME/bin/engram"
+          ],
+          "env": {
+            "ENGRAM_BIN": "${SANDBOX_HOME}/bin/engram"
+          },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit -m x"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "frena-lo-que-va-al-commit-aunque-el-disco-este-sano",
+          "type": "must-block",
+          "_por_que": "🔴 El repro del pase adversarial (2026-09-17): el índice TRUNCADO está stageado y el árbol de trabajo está SANO (se restauró desde HEAD después de stagear). `git commit` va a llevar el truncado. La primera versión del hook cruzaba el DISCO: quedaba mudo, el commit entraba con 2 entradas para 3 chunks, y el portón lo cazaba después — el defecto exacto que este freno existe para frenar, dejado pasar por medir la copia equivocada. Ahora se cruza el índice de git.",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'benchproj' > .engram-project",
+            "mkdir -p $SANDBOX_HOME/bin .engram/chunks",
+            "printf 'x' | gzip -c > .engram/chunks/aaaa1111.jsonl.gz",
+            "printf 'x' | gzip -c > .engram/chunks/bbbb2222.jsonl.gz",
+            "printf 'x' | gzip -c > .engram/chunks/cccc3333.jsonl.gz",
+            "printf '%s' '{\"version\":1,\"chunks\":[{\"id\":\"aaaa1111\",\"created_by\":\"t\",\"created_at\":\"2026-01-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0},{\"id\":\"bbbb2222\",\"created_by\":\"t\",\"created_at\":\"2026-02-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0},{\"id\":\"cccc3333\",\"created_by\":\"t\",\"created_at\":\"2026-03-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0}]}' > .engram/manifest.json",
+            "git add -A && git -c user.email=b@b -c user.name=b commit -qm base",
+            "printf '%s' '{\"version\":1,\"chunks\":[{\"id\":\"aaaa1111\",\"created_by\":\"t\",\"created_at\":\"2026-01-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0},{\"id\":\"bbbb2222\",\"created_by\":\"t\",\"created_at\":\"2026-02-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0}]}' > .engram/manifest.json",
+            "git add .engram/manifest.json",
+            "git show HEAD:.engram/manifest.json > .engram/manifest.json",
+            "printf '#!/bin/sh\\nexit 0\\n' > $SANDBOX_HOME/bin/engram && chmod +x $SANDBOX_HOME/bin/engram"
+          ],
+          "env": {
+            "ENGRAM_BIN": "${SANDBOX_HOME}/bin/engram",
+            "ENGRAM_HOOK_DEBUG": "1",
+            "ENGRAM_HOOK_LOG": "${FIXTURE}/hook.log"
+          },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit -m x"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "cccc3333",
+              "PERDI"
+            ]
+          }
+        },
+        {
+          "id": "no-frena-por-un-disco-roto-que-no-va-al-commit",
+          "type": "must-not-block",
+          "_por_que": "El espejo del anterior: el índice del DISCO está truncado pero NO está stageado — el commit lleva el sano de HEAD. Cruzar el disco frenaba un commit que no tenía el defecto (falso positivo del pase adversarial, prueba pC). Se mide lo que viaja.",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'benchproj' > .engram-project",
+            "mkdir -p $SANDBOX_HOME/bin .engram/chunks",
+            "printf 'x' | gzip -c > .engram/chunks/aaaa1111.jsonl.gz",
+            "printf 'x' | gzip -c > .engram/chunks/bbbb2222.jsonl.gz",
+            "printf 'x' | gzip -c > .engram/chunks/cccc3333.jsonl.gz",
+            "printf '%s' '{\"version\":1,\"chunks\":[{\"id\":\"aaaa1111\",\"created_by\":\"t\",\"created_at\":\"2026-01-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0},{\"id\":\"bbbb2222\",\"created_by\":\"t\",\"created_at\":\"2026-02-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0},{\"id\":\"cccc3333\",\"created_by\":\"t\",\"created_at\":\"2026-03-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0}]}' > .engram/manifest.json",
+            "git add -A && git -c user.email=b@b -c user.name=b commit -qm base",
+            "printf '%s' '{\"version\":1,\"chunks\":[{\"id\":\"aaaa1111\",\"created_by\":\"t\",\"created_at\":\"2026-01-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0},{\"id\":\"bbbb2222\",\"created_by\":\"t\",\"created_at\":\"2026-02-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0}]}' > .engram/manifest.json",
+            "printf '#!/bin/sh\\nexit 0\\n' > $SANDBOX_HOME/bin/engram && chmod +x $SANDBOX_HOME/bin/engram"
+          ],
+          "env": {
+            "ENGRAM_BIN": "${SANDBOX_HOME}/bin/engram",
+            "ENGRAM_HOOK_DEBUG": "1",
+            "ENGRAM_HOOK_LOG": "${FIXTURE}/hook.log"
+          },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit -m x"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "stderr_not_re": [
+              "PERDI"
+            ],
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/frenos.jsonl",
+                "re": "\"veredicto\":\"paso\""
+              }
+            ]
+          }
+        },
+        {
+          "id": "con-commit-a-se-cruza-el-disco-porque-es-lo-que-viaja",
+          "type": "must-block",
+          "_por_que": "Con `git commit -a` git stagea todo lo modificado EN el commit, después de que corre este hook: lo que va a viajar es el disco. El mismo disco truncado que el caso anterior deja pasar, acá frena.",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'benchproj' > .engram-project",
+            "mkdir -p $SANDBOX_HOME/bin .engram/chunks",
+            "printf 'x' | gzip -c > .engram/chunks/aaaa1111.jsonl.gz",
+            "printf 'x' | gzip -c > .engram/chunks/bbbb2222.jsonl.gz",
+            "printf 'x' | gzip -c > .engram/chunks/cccc3333.jsonl.gz",
+            "printf '%s' '{\"version\":1,\"chunks\":[{\"id\":\"aaaa1111\",\"created_by\":\"t\",\"created_at\":\"2026-01-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0},{\"id\":\"bbbb2222\",\"created_by\":\"t\",\"created_at\":\"2026-02-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0},{\"id\":\"cccc3333\",\"created_by\":\"t\",\"created_at\":\"2026-03-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0}]}' > .engram/manifest.json",
+            "git add -A && git -c user.email=b@b -c user.name=b commit -qm base",
+            "printf '%s' '{\"version\":1,\"chunks\":[{\"id\":\"aaaa1111\",\"created_by\":\"t\",\"created_at\":\"2026-01-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0},{\"id\":\"bbbb2222\",\"created_by\":\"t\",\"created_at\":\"2026-02-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0}]}' > .engram/manifest.json",
+            "printf '#!/bin/sh\\nexit 0\\n' > $SANDBOX_HOME/bin/engram && chmod +x $SANDBOX_HOME/bin/engram"
+          ],
+          "env": {
+            "ENGRAM_BIN": "${SANDBOX_HOME}/bin/engram",
+            "ENGRAM_HOOK_DEBUG": "1",
+            "ENGRAM_HOOK_LOG": "${FIXTURE}/hook.log"
+          },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit -am x"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "cccc3333"
+            ]
+          }
+        },
+        {
+          "id": "un-git-commit-adentro-de-un-string-no-es-un-commit",
+          "type": "must-stay-quiet",
+          "_por_que": "🔴 La cabecera del hook lo anticipaba desde agosto: «si alguna vez esta rama vuelve a bloquear, [el matcher por regex] NO alcanza». Esta story la hizo bloquear. Un `git log --grep=\"; git commit\"` sobre un repo con el índice truncado en disco quedaba tratado como commit y BLOQUEADO. Los strings entrecomillados se vacían antes de matchear.",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'benchproj' > .engram-project",
+            "mkdir -p $SANDBOX_HOME/bin .engram/chunks",
+            "printf 'x' | gzip -c > .engram/chunks/aaaa1111.jsonl.gz",
+            "printf 'x' | gzip -c > .engram/chunks/bbbb2222.jsonl.gz",
+            "printf 'x' | gzip -c > .engram/chunks/cccc3333.jsonl.gz",
+            "printf '%s' '{\"version\":1,\"chunks\":[{\"id\":\"aaaa1111\",\"created_by\":\"t\",\"created_at\":\"2026-01-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0},{\"id\":\"bbbb2222\",\"created_by\":\"t\",\"created_at\":\"2026-02-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0},{\"id\":\"cccc3333\",\"created_by\":\"t\",\"created_at\":\"2026-03-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0}]}' > .engram/manifest.json",
+            "git add -A && git -c user.email=b@b -c user.name=b commit -qm base",
+            "printf '%s' '{\"version\":1,\"chunks\":[{\"id\":\"aaaa1111\",\"created_by\":\"t\",\"created_at\":\"2026-01-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0},{\"id\":\"bbbb2222\",\"created_by\":\"t\",\"created_at\":\"2026-02-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0}]}' > .engram/manifest.json",
+            "printf '#!/bin/sh\\nexit 0\\n' > $SANDBOX_HOME/bin/engram && chmod +x $SANDBOX_HOME/bin/engram"
+          ],
+          "env": {
+            "ENGRAM_BIN": "${SANDBOX_HOME}/bin/engram",
+            "ENGRAM_HOOK_DEBUG": "1",
+            "ENGRAM_HOOK_LOG": "${FIXTURE}/hook.log"
+          },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git log --grep=\"; git commit -m x\" --oneline"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "el-escape-adentro-del-mensaje-no-abre",
+          "type": "must-block",
+          "_por_que": "El espejo del anterior para el escape: `TYCON_ENGRAM_MANIFEST_OK=1` mencionado ADENTRO del mensaje del commit no es el escape pegado al comando. Antes abría (falso negativo del bloqueo, pase adversarial).",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'benchproj' > .engram-project",
+            "mkdir -p $SANDBOX_HOME/bin .engram/chunks",
+            "printf 'x' | gzip -c > .engram/chunks/aaaa1111.jsonl.gz",
+            "printf 'x' | gzip -c > .engram/chunks/bbbb2222.jsonl.gz",
+            "printf 'x' | gzip -c > .engram/chunks/cccc3333.jsonl.gz",
+            "printf '%s' '{\"version\":1,\"chunks\":[{\"id\":\"aaaa1111\",\"created_by\":\"t\",\"created_at\":\"2026-01-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0},{\"id\":\"bbbb2222\",\"created_by\":\"t\",\"created_at\":\"2026-02-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0},{\"id\":\"cccc3333\",\"created_by\":\"t\",\"created_at\":\"2026-03-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0}]}' > .engram/manifest.json",
+            "git add -A && git -c user.email=b@b -c user.name=b commit -qm base",
+            "printf '%s' '{\"version\":1,\"chunks\":[{\"id\":\"aaaa1111\",\"created_by\":\"t\",\"created_at\":\"2026-01-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0},{\"id\":\"bbbb2222\",\"created_by\":\"t\",\"created_at\":\"2026-02-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0}]}' > .engram/manifest.json",
+            "git add .engram/manifest.json",
+            "printf '#!/bin/sh\\nexit 0\\n' > $SANDBOX_HOME/bin/engram && chmod +x $SANDBOX_HOME/bin/engram"
+          ],
+          "env": {
+            "ENGRAM_BIN": "${SANDBOX_HOME}/bin/engram",
+            "ENGRAM_HOOK_DEBUG": "1",
+            "ENGRAM_HOOK_LOG": "${FIXTURE}/hook.log"
+          },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit -m \"ver ; TYCON_ENGRAM_MANIFEST_OK=1 git commit\""
+            }
+          },
+          "expect": {
+            "exit": 2
+          }
+        },
+        {
+          "id": "indice-con-entradas-sin-carpeta-de-chunks-no-es-silencio",
+          "type": "must-run",
+          "_por_que": "🔴 `null` no es `0` (pase adversarial): con `// 0`, un índice que DECLARA entradas sin ningún archivo caía en el silencio del «repo sin memoria». Cruzando el índice de git, ese caso es un fantasma heredado (entrada sin archivo) y el hook tiene que DECIRLO — nunca callarse. Con `-a` (se mira el disco, y la carpeta no existe) es «no pude medir», y también se dice: ver el caso siguiente.",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'benchproj' > .engram-project",
+            "mkdir -p $SANDBOX_HOME/bin .engram/chunks",
+            "printf '%s' '{\"version\":1,\"chunks\":[{\"id\":\"aaaa1111\",\"created_by\":\"t\",\"created_at\":\"2026-01-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0}]}' > .engram/manifest.json",
+            "rmdir .engram/chunks",
+            "git add -A && git -c user.email=b@b -c user.name=b commit -qm base",
+            "printf '#!/bin/sh\\nexit 0\\n' > $SANDBOX_HOME/bin/engram && chmod +x $SANDBOX_HOME/bin/engram"
+          ],
+          "env": {
+            "ENGRAM_BIN": "${SANDBOX_HOME}/bin/engram",
+            "ENGRAM_HOOK_DEBUG": "1",
+            "ENGRAM_HOOK_LOG": "${FIXTURE}/hook.log"
+          },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit -m x"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "stderr_re": [
+              "aaaa1111",
+              "archivo no está"
+            ]
+          }
+        },
+        {
+          "id": "con-commit-a-y-sin-carpeta-de-chunks-dice-que-no-pudo-medir",
+          "type": "must-run",
+          "_por_que": "La variante en DISCO del caso anterior (`git commit -a` mira el árbol de trabajo): sin la carpeta de chunks el criterio no puede contar (`archivos: null`), y eso NO es «cero archivos»: se dice «no pude medir». Antes `// 0` lo mandaba al silencio.",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'benchproj' > .engram-project",
+            "mkdir -p $SANDBOX_HOME/bin .engram/chunks",
+            "printf '%s' '{\"version\":1,\"chunks\":[{\"id\":\"aaaa1111\",\"created_by\":\"t\",\"created_at\":\"2026-01-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0}]}' > .engram/manifest.json",
+            "rmdir .engram/chunks",
+            "git add -A && git -c user.email=b@b -c user.name=b commit -qm base",
+            "printf '#!/bin/sh\\nexit 0\\n' > $SANDBOX_HOME/bin/engram && chmod +x $SANDBOX_HOME/bin/engram"
+          ],
+          "env": {
+            "ENGRAM_BIN": "${SANDBOX_HOME}/bin/engram",
+            "ENGRAM_HOOK_DEBUG": "1",
+            "ENGRAM_HOOK_LOG": "${FIXTURE}/hook.log"
+          },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit -am x"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "stderr_re": [
+              "no pude medir"
+            ]
+          }
+        },
+        {
+          "id": "con-commit-all-tambien-se-cruza-el-disco",
+          "type": "must-block",
+          "_por_que": "La forma larga de `-a`: `--all`. Mismo disco truncado, mismo freno. (Hueco señalado por el revisor de cobertura, vuelta 2: sólo se probaba `-am`.)",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'benchproj' > .engram-project",
+            "mkdir -p $SANDBOX_HOME/bin .engram/chunks",
+            "printf 'x' | gzip -c > .engram/chunks/aaaa1111.jsonl.gz",
+            "printf 'x' | gzip -c > .engram/chunks/bbbb2222.jsonl.gz",
+            "printf 'x' | gzip -c > .engram/chunks/cccc3333.jsonl.gz",
+            "printf '%s' '{\"version\":1,\"chunks\":[{\"id\":\"aaaa1111\",\"created_by\":\"t\",\"created_at\":\"2026-01-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0},{\"id\":\"bbbb2222\",\"created_by\":\"t\",\"created_at\":\"2026-02-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0},{\"id\":\"cccc3333\",\"created_by\":\"t\",\"created_at\":\"2026-03-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0}]}' > .engram/manifest.json",
+            "git add -A && git -c user.email=b@b -c user.name=b commit -qm base",
+            "printf '%s' '{\"version\":1,\"chunks\":[{\"id\":\"aaaa1111\",\"created_by\":\"t\",\"created_at\":\"2026-01-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0},{\"id\":\"bbbb2222\",\"created_by\":\"t\",\"created_at\":\"2026-02-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0}]}' > .engram/manifest.json",
+            "printf '#!/bin/sh\\nexit 0\\n' > $SANDBOX_HOME/bin/engram && chmod +x $SANDBOX_HOME/bin/engram"
+          ],
+          "env": {
+            "ENGRAM_BIN": "${SANDBOX_HOME}/bin/engram",
+            "ENGRAM_HOOK_DEBUG": "1",
+            "ENGRAM_HOOK_LOG": "${FIXTURE}/hook.log"
+          },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit --all -m x"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "cccc3333"
+            ]
+          }
+        },
+        {
+          "id": "con-a-despues-del-mensaje-tambien-se-cruza-el-disco",
+          "type": "must-block",
+          "_por_que": "`-a` DESPUÉS del mensaje, no pegado a `commit`. El detector de `-a` tiene que verlo en cualquier posición entre las opciones del commit.",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'benchproj' > .engram-project",
+            "mkdir -p $SANDBOX_HOME/bin .engram/chunks",
+            "printf 'x' | gzip -c > .engram/chunks/aaaa1111.jsonl.gz",
+            "printf 'x' | gzip -c > .engram/chunks/bbbb2222.jsonl.gz",
+            "printf 'x' | gzip -c > .engram/chunks/cccc3333.jsonl.gz",
+            "printf '%s' '{\"version\":1,\"chunks\":[{\"id\":\"aaaa1111\",\"created_by\":\"t\",\"created_at\":\"2026-01-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0},{\"id\":\"bbbb2222\",\"created_by\":\"t\",\"created_at\":\"2026-02-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0},{\"id\":\"cccc3333\",\"created_by\":\"t\",\"created_at\":\"2026-03-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0}]}' > .engram/manifest.json",
+            "git add -A && git -c user.email=b@b -c user.name=b commit -qm base",
+            "printf '%s' '{\"version\":1,\"chunks\":[{\"id\":\"aaaa1111\",\"created_by\":\"t\",\"created_at\":\"2026-01-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0},{\"id\":\"bbbb2222\",\"created_by\":\"t\",\"created_at\":\"2026-02-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0}]}' > .engram/manifest.json",
+            "printf '#!/bin/sh\\nexit 0\\n' > $SANDBOX_HOME/bin/engram && chmod +x $SANDBOX_HOME/bin/engram"
+          ],
+          "env": {
+            "ENGRAM_BIN": "${SANDBOX_HOME}/bin/engram",
+            "ENGRAM_HOOK_DEBUG": "1",
+            "ENGRAM_HOOK_LOG": "${FIXTURE}/hook.log"
+          },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit -m x -a"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "cccc3333"
+            ]
+          }
+        },
+        {
+          "id": "con-engram-apagada-no-sincroniza",
+          "type": "must-run",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'benchproj' > .engram-project",
+            "mkdir -p $SANDBOX_HOME/bin",
+            "printf '#!/bin/sh\\necho \"$@\" > \"$FIXTURE/engram-called\"\\nexit 0\\n' > $SANDBOX_HOME/bin/engram && chmod +x $SANDBOX_HOME/bin/engram"
+          ],
+          "env": {
+            "ENGRAM_BIN": "${SANDBOX_HOME}/bin/engram",
+            "TYCON_ENGRAM": "0",
+            "ENGRAM_HOOK_DEBUG": "1",
+            "ENGRAM_HOOK_LOG": "${FIXTURE}/hook.log"
+          },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit -m \"fix: x\""
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "file_absent": [
+              "${FIXTURE}/engram-called"
+            ],
+            "file_contains": [
+              {
+                "path": "${FIXTURE}/hook.log",
+                "re": "integración engram apagada"
+              }
+            ]
+          }
+        },
+        {
+          "id": "con-engram-apagada-y-el-interruptor-sincroniza",
+          "type": "must-run",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'benchproj' > .engram-project",
+            "mkdir -p $SANDBOX_HOME/bin",
+            "printf '#!/bin/sh\\necho \"$@\" > \"$FIXTURE/engram-called\"\\nexit 0\\n' > $SANDBOX_HOME/bin/engram && chmod +x $SANDBOX_HOME/bin/engram"
+          ],
+          "env": {
+            "ENGRAM_BIN": "${SANDBOX_HOME}/bin/engram",
+            "TYCON_ENGRAM": "0",
+            "TYCON_ENGRAM_HOOK": "1"
+          },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit -m \"fix: x\""
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "file_contains": [
+              {
+                "path": "${FIXTURE}/engram-called",
+                "re": "sync.*benchproj"
+              }
+            ]
+          }
+        },
+        {
+          "id": "sesion-en-un-repo-commit-con-cd-en-otro-la-memoria-queda-en-el-del-commit",
+          "type": "must-run",
+          "_por_que": "DEF-engram-pre-commit-repo-de-la-sesion (2026-10-10). El hook elegía el repo con `git rev-parse` desde la carpeta de la SESIÓN: una sesión parada en un repo que commitea en otro (`cd <clon> && git commit`, `git -C <clon> commit`) dejaba el trozo de memoria y el índice PREPARADOS en la carpeta de la sesión, y el commit salía sin su memoria. Visto dos veces ese día en la carpeta compartida del arnés. Ahora el destino lo da scripts/lib/git-target.js. Acá, con `cd`. Sin el arreglo el trozo queda en la carpeta de la sesión, con el proyecto de la sesión.",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'proj-sesion' > .engram-project",
+            "git init -q -b main \"$SANDBOX_HOME/otro\" && git -C \"$SANDBOX_HOME/otro\" -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'proj-clon' > \"$SANDBOX_HOME/otro\"/.engram-project",
+            "mkdir -p $SANDBOX_HOME/bin",
+            "printf '#!/bin/sh\\nmkdir -p .engram/chunks && echo nuevo > .engram/chunks/delsync.jsonl.gz\\necho \"$PWD :: $@\" >> \"$SANDBOX_HOME/called\"\\nexit 0\\n' > $SANDBOX_HOME/bin/engram && chmod +x $SANDBOX_HOME/bin/engram"
+          ],
+          "env": {
+            "ENGRAM_BIN": "${SANDBOX_HOME}/bin/engram",
+            "ENGRAM_HOOK_DEBUG": "1",
+            "ENGRAM_HOOK_LOG": "${SANDBOX_HOME}/hook.log"
+          },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "cd ${SANDBOX_HOME}/otro && git commit -m x"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "file_exists": [
+              "${SANDBOX_HOME}/otro/.engram/chunks/delsync.jsonl.gz"
+            ],
+            "file_absent": [
+              "${FIXTURE}/.engram/chunks/delsync.jsonl.gz"
+            ],
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/called",
+                "re": "otro :: sync --project proj-clon"
+              },
+              {
+                "path": "${SANDBOX_HOME}/hook.log",
+                "re": "staged \\(sólo lo del sync\\): .*otro/\\.engram/chunks/delsync\\.jsonl\\.gz"
+              }
+            ],
+            "file_not_contains": [
+              {
+                "path": "${SANDBOX_HOME}/called",
+                "re": "proj-sesion"
+              }
+            ]
+          }
+        },
+        {
+          "id": "sesion-en-un-repo-commit-con-git-C-en-otro-la-memoria-queda-en-el-del-commit",
+          "type": "must-run",
+          "_por_que": "DEF-engram-pre-commit-repo-de-la-sesion (2026-10-10). El hook elegía el repo con `git rev-parse` desde la carpeta de la SESIÓN: una sesión parada en un repo que commitea en otro (`cd <clon> && git commit`, `git -C <clon> commit`) dejaba el trozo de memoria y el índice PREPARADOS en la carpeta de la sesión, y el commit salía sin su memoria. Visto dos veces ese día en la carpeta compartida del arnés. Ahora el destino lo da scripts/lib/git-target.js. Acá, con `git -C`.",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'proj-sesion' > .engram-project",
+            "git init -q -b main \"$SANDBOX_HOME/otro\" && git -C \"$SANDBOX_HOME/otro\" -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'proj-clon' > \"$SANDBOX_HOME/otro\"/.engram-project",
+            "mkdir -p $SANDBOX_HOME/bin",
+            "printf '#!/bin/sh\\nmkdir -p .engram/chunks && echo nuevo > .engram/chunks/delsync.jsonl.gz\\necho \"$PWD :: $@\" >> \"$SANDBOX_HOME/called\"\\nexit 0\\n' > $SANDBOX_HOME/bin/engram && chmod +x $SANDBOX_HOME/bin/engram"
+          ],
+          "env": {
+            "ENGRAM_BIN": "${SANDBOX_HOME}/bin/engram",
+            "ENGRAM_HOOK_DEBUG": "1",
+            "ENGRAM_HOOK_LOG": "${SANDBOX_HOME}/hook.log"
+          },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git -C ${SANDBOX_HOME}/otro commit -m x"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "file_exists": [
+              "${SANDBOX_HOME}/otro/.engram/chunks/delsync.jsonl.gz"
+            ],
+            "file_absent": [
+              "${FIXTURE}/.engram/chunks/delsync.jsonl.gz"
+            ],
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/called",
+                "re": "otro :: sync --project proj-clon"
+              },
+              {
+                "path": "${SANDBOX_HOME}/hook.log",
+                "re": "staged \\(sólo lo del sync\\): .*otro/\\.engram/chunks/delsync\\.jsonl\\.gz"
+              }
+            ],
+            "file_not_contains": [
+              {
+                "path": "${SANDBOX_HOME}/called",
+                "re": "proj-sesion"
+              }
+            ]
+          }
+        },
+        {
+          "id": "commit-con-cd-a-una-ruta-con-espacios-queda-preparado-ahi",
+          "type": "must-run",
+          "_por_que": "DEF-engram-pre-commit-repo-de-la-sesion (2026-10-10). El hook elegía el repo con `git rev-parse` desde la carpeta de la SESIÓN: una sesión parada en un repo que commitea en otro (`cd <clon> && git commit`, `git -C <clon> commit`) dejaba el trozo de memoria y el índice PREPARADOS en la carpeta de la sesión, y el commit salía sin su memoria. Visto dos veces ese día en la carpeta compartida del arnés. Ahora el destino lo da scripts/lib/git-target.js. Acá, con `cd` a una ruta con espacios. Mide además que el trozo quede PREPARADO: la lista de lo que generó el sync se cortaba en el primer espacio de la ruta y el `git add` fallaba callado.",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'proj-sesion' > .engram-project",
+            "git init -q -b main \"$SANDBOX_HOME/otro repo\" && git -C \"$SANDBOX_HOME/otro repo\" -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'proj-clon' > \"$SANDBOX_HOME/otro repo\"/.engram-project",
+            "mkdir -p $SANDBOX_HOME/bin",
+            "printf '#!/bin/sh\\nmkdir -p .engram/chunks && echo nuevo > .engram/chunks/delsync.jsonl.gz\\necho \"$PWD :: $@\" >> \"$SANDBOX_HOME/called\"\\nexit 0\\n' > $SANDBOX_HOME/bin/engram && chmod +x $SANDBOX_HOME/bin/engram"
+          ],
+          "env": {
+            "ENGRAM_BIN": "${SANDBOX_HOME}/bin/engram",
+            "ENGRAM_HOOK_DEBUG": "1",
+            "ENGRAM_HOOK_LOG": "${SANDBOX_HOME}/hook.log"
+          },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "cd \"${SANDBOX_HOME}/otro repo\" && git commit -m x"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "file_exists": [
+              "${SANDBOX_HOME}/otro repo/.engram/chunks/delsync.jsonl.gz"
+            ],
+            "file_absent": [
+              "${FIXTURE}/.engram/chunks/delsync.jsonl.gz"
+            ],
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/called",
+                "re": "otro repo :: sync --project proj-clon"
+              },
+              {
+                "path": "${SANDBOX_HOME}/hook.log",
+                "re": "staged \\(sólo lo del sync\\): .*otro repo/\\.engram/chunks/delsync\\.jsonl\\.gz"
+              }
+            ],
+            "file_not_contains": [
+              {
+                "path": "${SANDBOX_HOME}/called",
+                "re": "proj-sesion"
+              }
+            ]
+          }
+        },
+        {
+          "id": "commit-con-git-C-a-una-ruta-con-espacios-queda-preparado-ahi",
+          "type": "must-run",
+          "_por_que": "DEF-engram-pre-commit-repo-de-la-sesion (2026-10-10). El hook elegía el repo con `git rev-parse` desde la carpeta de la SESIÓN: una sesión parada en un repo que commitea en otro (`cd <clon> && git commit`, `git -C <clon> commit`) dejaba el trozo de memoria y el índice PREPARADOS en la carpeta de la sesión, y el commit salía sin su memoria. Visto dos veces ese día en la carpeta compartida del arnés. Ahora el destino lo da scripts/lib/git-target.js. Acá, con `git -C` a una ruta con espacios.",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'proj-sesion' > .engram-project",
+            "git init -q -b main \"$SANDBOX_HOME/otro repo\" && git -C \"$SANDBOX_HOME/otro repo\" -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'proj-clon' > \"$SANDBOX_HOME/otro repo\"/.engram-project",
+            "mkdir -p $SANDBOX_HOME/bin",
+            "printf '#!/bin/sh\\nmkdir -p .engram/chunks && echo nuevo > .engram/chunks/delsync.jsonl.gz\\necho \"$PWD :: $@\" >> \"$SANDBOX_HOME/called\"\\nexit 0\\n' > $SANDBOX_HOME/bin/engram && chmod +x $SANDBOX_HOME/bin/engram"
+          ],
+          "env": {
+            "ENGRAM_BIN": "${SANDBOX_HOME}/bin/engram",
+            "ENGRAM_HOOK_DEBUG": "1",
+            "ENGRAM_HOOK_LOG": "${SANDBOX_HOME}/hook.log"
+          },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git -C \"${SANDBOX_HOME}/otro repo\" commit -m x"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "file_exists": [
+              "${SANDBOX_HOME}/otro repo/.engram/chunks/delsync.jsonl.gz"
+            ],
+            "file_absent": [
+              "${FIXTURE}/.engram/chunks/delsync.jsonl.gz"
+            ],
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/called",
+                "re": "otro repo :: sync --project proj-clon"
+              },
+              {
+                "path": "${SANDBOX_HOME}/hook.log",
+                "re": "staged \\(sólo lo del sync\\): .*otro repo/\\.engram/chunks/delsync\\.jsonl\\.gz"
+              }
+            ],
+            "file_not_contains": [
+              {
+                "path": "${SANDBOX_HOME}/called",
+                "re": "proj-sesion"
+              }
+            ]
+          }
+        },
+        {
+          "id": "commit-en-un-repo-sin-memoria-no-escribe-en-la-carpeta-de-la-sesion",
+          "type": "must-stay-quiet",
+          "_por_que": "DEF-engram-pre-commit-repo-de-la-sesion (2026-10-10). El hook elegía el repo con `git rev-parse` desde la carpeta de la SESIÓN: una sesión parada en un repo que commitea en otro (`cd <clon> && git commit`, `git -C <clon> commit`) dejaba el trozo de memoria y el índice PREPARADOS en la carpeta de la sesión, y el commit salía sin su memoria. Visto dos veces ese día en la carpeta compartida del arnés. Ahora el destino lo da scripts/lib/git-target.js. El espejo: el repo del commit no guarda memoria (no tiene .engram-project). No hay nada que exportar ahí, y la carpeta de la sesión —que sí guarda— no se toca: sin el arreglo recibía el trozo de un commit ajeno.",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'proj-sesion' > .engram-project",
+            "git init -q -b main \"$SANDBOX_HOME/otro\" && git -C \"$SANDBOX_HOME/otro\" -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "mkdir -p $SANDBOX_HOME/bin",
+            "printf '#!/bin/sh\\nmkdir -p .engram/chunks && echo nuevo > .engram/chunks/delsync.jsonl.gz\\necho \"$PWD :: $@\" >> \"$SANDBOX_HOME/called\"\\nexit 0\\n' > $SANDBOX_HOME/bin/engram && chmod +x $SANDBOX_HOME/bin/engram"
+          ],
+          "env": {
+            "ENGRAM_BIN": "${SANDBOX_HOME}/bin/engram",
+            "ENGRAM_HOOK_DEBUG": "1",
+            "ENGRAM_HOOK_LOG": "${SANDBOX_HOME}/hook.log"
+          },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "cd ${SANDBOX_HOME}/otro && git commit -m x"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "file_absent": [
+              "${SANDBOX_HOME}/called",
+              "${FIXTURE}/.engram/chunks/delsync.jsonl.gz",
+              "${SANDBOX_HOME}/otro/.engram/chunks/delsync.jsonl.gz"
+            ]
+          }
+        },
+        {
+          "id": "commit-que-no-se-puede-ubicar-lo-dice-y-no-escribe-en-ningun-lado",
+          "type": "must-run",
+          "_por_que": "DEF-engram-pre-commit-repo-de-la-sesion (2026-10-10). El hook elegía el repo con `git rev-parse` desde la carpeta de la SESIÓN: una sesión parada en un repo que commitea en otro (`cd <clon> && git commit`, `git -C <clon> commit`) dejaba el trozo de memoria y el índice PREPARADOS en la carpeta de la sesión, y el commit salía sin su memoria. Visto dos veces ese día en la carpeta compartida del arnés. Ahora el destino lo da scripts/lib/git-target.js. El destino depende de una variable que el comando no define: no se puede saber el repo. Se DICE (exit 1: el comando sigue y el aviso se ve) y no se exporta ni se prepara nada, en ningún repo. Nunca en la carpeta de la sesión por descarte: sin el arreglo, el trozo caía ahí.",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'proj-sesion' > .engram-project",
+            "git init -q -b main \"$SANDBOX_HOME/otro\" && git -C \"$SANDBOX_HOME/otro\" -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'proj-clon' > \"$SANDBOX_HOME/otro\"/.engram-project",
+            "mkdir -p $SANDBOX_HOME/bin",
+            "printf '#!/bin/sh\\nmkdir -p .engram/chunks && echo nuevo > .engram/chunks/delsync.jsonl.gz\\necho \"$PWD :: $@\" >> \"$SANDBOX_HOME/called\"\\nexit 0\\n' > $SANDBOX_HOME/bin/engram && chmod +x $SANDBOX_HOME/bin/engram"
+          ],
+          "env": {
+            "ENGRAM_BIN": "${SANDBOX_HOME}/bin/engram",
+            "ENGRAM_HOOK_DEBUG": "1",
+            "ENGRAM_HOOK_LOG": "${SANDBOX_HOME}/hook.log"
+          },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git -C \"$DEST\" commit -m x"
+            }
+          },
+          "expect": {
+            "exit": 1,
+            "stderr_re": [
+              "NO PUDO SABER en qué repo se hace este commit",
+              "en ningún repo"
+            ],
+            "file_absent": [
+              "${SANDBOX_HOME}/called",
+              "${FIXTURE}/.engram/chunks/delsync.jsonl.gz",
+              "${SANDBOX_HOME}/otro/.engram/chunks/delsync.jsonl.gz"
+            ]
+          }
+        },
+        {
+          "id": "commit-que-no-se-puede-ubicar-desde-una-carpeta-sin-memoria-calla",
+          "type": "must-stay-quiet",
+          "_por_que": "DEF-engram-pre-commit-repo-de-la-sesion (2026-10-10). El hook elegía el repo con `git rev-parse` desde la carpeta de la SESIÓN: una sesión parada en un repo que commitea en otro (`cd <clon> && git commit`, `git -C <clon> commit`) dejaba el trozo de memoria y el índice PREPARADOS en la carpeta de la sesión, y el commit salía sin su memoria. Visto dos veces ese día en la carpeta compartida del arnés. Ahora el destino lo da scripts/lib/git-target.js. El aviso de «no pude saber» sale sólo si la carpeta de la sesión guarda memoria, que es donde la versión anterior habría escrito. Desde una carpeta que no guarda, el hook no hacía nada y sigue callado: un aviso en cada commit con una variable, en repos que no usan memoria, es la vía corta a que lo apaguen.",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "git init -q -b main \"$SANDBOX_HOME/otro\" && git -C \"$SANDBOX_HOME/otro\" -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'proj-clon' > \"$SANDBOX_HOME/otro\"/.engram-project",
+            "mkdir -p $SANDBOX_HOME/bin",
+            "printf '#!/bin/sh\\nmkdir -p .engram/chunks && echo nuevo > .engram/chunks/delsync.jsonl.gz\\necho \"$PWD :: $@\" >> \"$SANDBOX_HOME/called\"\\nexit 0\\n' > $SANDBOX_HOME/bin/engram && chmod +x $SANDBOX_HOME/bin/engram"
+          ],
+          "env": {
+            "ENGRAM_BIN": "${SANDBOX_HOME}/bin/engram",
+            "ENGRAM_HOOK_DEBUG": "1",
+            "ENGRAM_HOOK_LOG": "${SANDBOX_HOME}/hook.log"
+          },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git -C \"$DEST\" commit -m x"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "stderr_not_re": [
+              "NO PUDO SABER"
+            ],
+            "file_absent": [
+              "${SANDBOX_HOME}/called",
+              "${FIXTURE}/.engram/chunks/delsync.jsonl.gz",
+              "${SANDBOX_HOME}/otro/.engram/chunks/delsync.jsonl.gz"
+            ]
+          }
+        },
+        {
+          "id": "dos-commits-en-dos-repos-cada-uno-recibe-su-memoria",
+          "type": "must-run",
+          "_por_que": "DEF-engram-pre-commit-repo-de-la-sesion (2026-10-10). El hook elegía el repo con `git rev-parse` desde la carpeta de la SESIÓN: una sesión parada en un repo que commitea en otro (`cd <clon> && git commit`, `git -C <clon> commit`) dejaba el trozo de memoria y el índice PREPARADOS en la carpeta de la sesión, y el commit salía sin su memoria. Visto dos veces ese día en la carpeta compartida del arnés. Ahora el destino lo da scripts/lib/git-target.js. Un comando con dos commits, uno en el otro repo y uno en la carpeta de la sesión: cada repo exporta con SU proyecto y prepara lo suyo (una vuelta del hook por repo).",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'proj-sesion' > .engram-project",
+            "git init -q -b main \"$SANDBOX_HOME/otro\" && git -C \"$SANDBOX_HOME/otro\" -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'proj-clon' > \"$SANDBOX_HOME/otro\"/.engram-project",
+            "mkdir -p $SANDBOX_HOME/bin",
+            "printf '#!/bin/sh\\nmkdir -p .engram/chunks && echo nuevo > .engram/chunks/delsync.jsonl.gz\\necho \"$PWD :: $@\" >> \"$SANDBOX_HOME/called\"\\nexit 0\\n' > $SANDBOX_HOME/bin/engram && chmod +x $SANDBOX_HOME/bin/engram"
+          ],
+          "env": {
+            "ENGRAM_BIN": "${SANDBOX_HOME}/bin/engram",
+            "ENGRAM_HOOK_DEBUG": "1",
+            "ENGRAM_HOOK_LOG": "${SANDBOX_HOME}/hook.log"
+          },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git -C ${SANDBOX_HOME}/otro commit -m x; git commit -m y"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "file_exists": [
+              "${SANDBOX_HOME}/otro/.engram/chunks/delsync.jsonl.gz",
+              "${FIXTURE}/.engram/chunks/delsync.jsonl.gz"
+            ],
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/called",
+                "re": "otro :: sync --project proj-clon"
+              },
+              {
+                "path": "${SANDBOX_HOME}/called",
+                "re": "fixture :: sync --project proj-sesion"
+              }
+            ]
+          }
+        },
+        {
+          "id": "un-commit-nombrado-en-el-cuerpo-de-un-heredoc-no-sincroniza",
+          "type": "must-stay-quiet",
+          "_por_que": "DEF-engram-pre-commit-repo-de-la-sesion (2026-10-10). El hook elegía el repo con `git rev-parse` desde la carpeta de la SESIÓN: una sesión parada en un repo que commitea en otro (`cd <clon> && git commit`, `git -C <clon> commit`) dejaba el trozo de memoria y el índice PREPARADOS en la carpeta de la sesión, y el commit salía sin su memoria. Visto dos veces ese día en la carpeta compartida del arnés. Ahora el destino lo da scripts/lib/git-target.js. El comando escribe un archivo cuyo texto nombra un commit: habla de un commit, no lo hace. No se exporta ni se prepara nada (sin el arreglo se exportaba a la carpeta de la sesión, sin commit que lo llevara) y no se avisa: lo pendiente viaja en el commit de verdad que siga.",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'proj-sesion' > .engram-project",
+            "git init -q -b main \"$SANDBOX_HOME/otro\" && git -C \"$SANDBOX_HOME/otro\" -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'proj-clon' > \"$SANDBOX_HOME/otro\"/.engram-project",
+            "mkdir -p $SANDBOX_HOME/bin",
+            "printf '#!/bin/sh\\nmkdir -p .engram/chunks && echo nuevo > .engram/chunks/delsync.jsonl.gz\\necho \"$PWD :: $@\" >> \"$SANDBOX_HOME/called\"\\nexit 0\\n' > $SANDBOX_HOME/bin/engram && chmod +x $SANDBOX_HOME/bin/engram"
+          ],
+          "env": {
+            "ENGRAM_BIN": "${SANDBOX_HOME}/bin/engram",
+            "ENGRAM_HOOK_DEBUG": "1",
+            "ENGRAM_HOOK_LOG": "${SANDBOX_HOME}/hook.log"
+          },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "cat > nota.txt <<'EOF'\ngit commit -m dentro\nEOF"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "stderr_not_re": [
+              "NO PUDO SABER"
+            ],
+            "file_absent": [
+              "${SANDBOX_HOME}/called",
+              "${FIXTURE}/.engram/chunks/delsync.jsonl.gz",
+              "${SANDBOX_HOME}/otro/.engram/chunks/delsync.jsonl.gz"
+            ]
+          }
+        },
+        {
+          "id": "sin-el-criterio-un-commit-con-cd-lo-dice-y-no-escribe",
+          "type": "must-run",
+          "script": "${FIXTURE}/copia/scripts/hooks/engram-pre-commit.sh",
+          "_por_que": "DEF-engram-pre-commit-repo-de-la-sesion (2026-10-10). El hook elegía el repo con `git rev-parse` desde la carpeta de la SESIÓN: una sesión parada en un repo que commitea en otro (`cd <clon> && git commit`, `git -C <clon> commit`) dejaba el trozo de memoria y el índice PREPARADOS en la carpeta de la sesión, y el commit salía sin su memoria. Visto dos veces ese día en la carpeta compartida del arnés. Ahora el destino lo da scripts/lib/git-target.js. Una copia del hook SIN su carpeta de criterios (lo mismo vale sin node): con un `cd` en el comando no hay con qué saber el repo, así que lo dice y no escribe. El commit simple, sin `cd` ni `-C`, no tiene nada que resolver y sigue como siempre (casos «sin-el-criterio-no-frena-y-lo-dice» y T35b de manifest-engram.test.sh).",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'proj-sesion' > .engram-project",
+            "git init -q -b main \"$SANDBOX_HOME/otro\" && git -C \"$SANDBOX_HOME/otro\" -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'proj-clon' > \"$SANDBOX_HOME/otro\"/.engram-project",
+            "mkdir -p $SANDBOX_HOME/bin",
+            "printf '#!/bin/sh\\nmkdir -p .engram/chunks && echo nuevo > .engram/chunks/delsync.jsonl.gz\\necho \"$PWD :: $@\" >> \"$SANDBOX_HOME/called\"\\nexit 0\\n' > $SANDBOX_HOME/bin/engram && chmod +x $SANDBOX_HOME/bin/engram",
+            "mkdir -p copia/scripts/hooks && cp $TCG/scripts/hooks/engram-pre-commit.sh copia/scripts/hooks/"
+          ],
+          "env": {
+            "ENGRAM_BIN": "${SANDBOX_HOME}/bin/engram",
+            "ENGRAM_HOOK_DEBUG": "1",
+            "ENGRAM_HOOK_LOG": "${SANDBOX_HOME}/hook.log"
+          },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "cd ${SANDBOX_HOME}/otro && git commit -m x"
+            }
+          },
+          "expect": {
+            "exit": 1,
+            "stderr_re": [
+              "NO PUDO SABER en qué repo se hace este commit",
+              "falta el criterio"
+            ],
+            "file_absent": [
+              "${SANDBOX_HOME}/called",
+              "${FIXTURE}/.engram/chunks/delsync.jsonl.gz",
+              "${SANDBOX_HOME}/otro/.engram/chunks/delsync.jsonl.gz"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "hook": "engram-pre-commit.sh (sin jq en el PATH: lee la entrada y el cruce con node)",
+      "script": "${TCG}/scripts/hooks/engram-pre-commit.sh",
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "_por_que": "El tercer hook que FRENA y leía con `jq`: sin `jq` el comando quedaba vacío, «no era un commit» y salía 0 sin sincronizar la memoria ni cruzar el índice — el aviso «jq no está en el PATH» que traía adentro era inalcanzable. El PATH del hook es SÓLO ${FIXTURE}/lab: una carpeta de enlaces que el `setup` de cada caso arma con lo que el hook usa. `jq` no está en ella (en la máquina sigue instalado: no se desinstala nada).",
+      "env": {
+        "PATH": "${FIXTURE}/lab",
+        "TYCON_ENGRAM": "1"
+      },
+      "cases": [
+        {
+          "id": "sin-jq-sincroniza-en-commit-con-optin",
+          "type": "must-run",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'benchproj' > .engram-project",
+            "mkdir -p $SANDBOX_HOME/bin",
+            "printf '#!/bin/sh\\necho \"$@\" > \"$FIXTURE/engram-called\"\\nexit 0\\n' > $SANDBOX_HOME/bin/engram && chmod +x $SANDBOX_HOME/bin/engram",
+            "mkdir -p lab && for t in bash node git cat cp gzip date mkdir dirname basename readlink grep sed tr find sort cksum awk comm wc; do ln -s \"$(command -v $t)\" lab/$t || exit 1; done"
+          ],
+          "env": {
+            "ENGRAM_BIN": "${SANDBOX_HOME}/bin/engram"
+          },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit -m \"fix: x\""
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "file_contains": [
+              {
+                "path": "${FIXTURE}/engram-called",
+                "re": "sync.*benchproj"
+              }
+            ]
+          },
+          "_por_que": "Gemelo sin `jq` de «sincroniza-en-commit-con-optin»: mismo armado y mismas exigencias; lo único que cambia es el PATH del hook."
+        },
+        {
+          "id": "sin-jq-quiet-comando-no-git-commit",
+          "type": "must-not-block",
+          "setup": [
+            "git init -q -b main .",
+            "printf 'benchproj' > .engram-project",
+            "mkdir -p lab && for t in bash node git cat cp gzip date mkdir dirname basename readlink grep sed tr find sort cksum awk comm wc; do ln -s \"$(command -v $t)\" lab/$t || exit 1; done"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git status"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "file_absent": [
+              "${FIXTURE}/engram-called"
+            ]
+          },
+          "_por_que": "Gemelo sin `jq` de «quiet-comando-no-git-commit»: mismo armado y mismas exigencias; lo único que cambia es el PATH del hook."
+        },
+        {
+          "id": "sin-jq-frena-el-commit-que-pierde-entradas-del-indice",
+          "type": "must-block",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'benchproj' > .engram-project",
+            "mkdir -p $SANDBOX_HOME/bin .engram/chunks",
+            "printf 'x' | gzip -c > .engram/chunks/aaaa1111.jsonl.gz",
+            "printf 'x' | gzip -c > .engram/chunks/bbbb2222.jsonl.gz",
+            "printf 'x' | gzip -c > .engram/chunks/cccc3333.jsonl.gz",
+            "printf '{\"version\":1,\"chunks\":[{\"id\":\"aaaa1111\",\"created_by\":\"t\",\"created_at\":\"2026-01-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0},{\"id\":\"bbbb2222\",\"created_by\":\"t\",\"created_at\":\"2026-02-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0},{\"id\":\"cccc3333\",\"created_by\":\"t\",\"created_at\":\"2026-03-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0}]}' > .engram/manifest.json",
+            "git add -A && git -c user.email=b@b -c user.name=b commit -qm base",
+            "printf '%s' '{\"version\":1,\"chunks\":[{\"id\":\"aaaa1111\",\"created_by\":\"t\",\"created_at\":\"2026-01-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0},{\"id\":\"bbbb2222\",\"created_by\":\"t\",\"created_at\":\"2026-02-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0}]}' > truncado.json",
+            "printf '#!/bin/sh\\ncp truncado.json .engram/manifest.json\\nexit 0\\n' > $SANDBOX_HOME/bin/engram && chmod +x $SANDBOX_HOME/bin/engram",
+            "mkdir -p lab && for t in bash node git cat cp gzip date mkdir dirname basename readlink grep sed tr find sort cksum awk comm wc; do ln -s \"$(command -v $t)\" lab/$t || exit 1; done"
+          ],
+          "env": {
+            "ENGRAM_BIN": "${SANDBOX_HOME}/bin/engram",
+            "ENGRAM_HOOK_DEBUG": "1",
+            "ENGRAM_HOOK_LOG": "${FIXTURE}/hook.log"
+          },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit -m x"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "cccc3333",
+              "PERDI",
+              "no da error",
+              "manifest-engram\\.js.*repair --apply",
+              "TYCON_ENGRAM_MANIFEST_OK=1"
+            ],
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/frenos.jsonl",
+                "re": "\"freno\":\"engram-manifest\""
+              },
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/frenos.jsonl",
+                "re": "\"regla\":\"entradas-perdidas\""
+              },
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/frenos.jsonl",
+                "re": "\"veredicto\":\"bloqueo\""
+              }
+            ]
+          },
+          "_por_que": "Gemelo sin `jq` de «frena-el-commit-que-pierde-entradas-del-indice»: mismo armado y mismas exigencias; lo único que cambia es el PATH del hook."
+        },
+        {
+          "id": "sin-jq-avisa-la-deriva-heredada-y-no-frena",
+          "type": "must-not-block",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'benchproj' > .engram-project",
+            "mkdir -p $SANDBOX_HOME/bin .engram/chunks",
+            "printf 'x' | gzip -c > .engram/chunks/aaaa1111.jsonl.gz",
+            "printf 'x' | gzip -c > .engram/chunks/bbbb2222.jsonl.gz",
+            "printf 'x' | gzip -c > .engram/chunks/cccc3333.jsonl.gz",
+            "printf '{\"version\":1,\"chunks\":[{\"id\":\"aaaa1111\",\"created_by\":\"t\",\"created_at\":\"2026-01-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0},{\"id\":\"bbbb2222\",\"created_by\":\"t\",\"created_at\":\"2026-02-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0}]}' > .engram/manifest.json",
+            "git add -A && git -c user.email=b@b -c user.name=b commit -qm 'nace en deriva'",
+            "printf '#!/bin/sh\\nexit 0\\n' > $SANDBOX_HOME/bin/engram && chmod +x $SANDBOX_HOME/bin/engram",
+            "mkdir -p lab && for t in bash node git cat cp gzip date mkdir dirname basename readlink grep sed tr find sort cksum awk comm wc; do ln -s \"$(command -v $t)\" lab/$t || exit 1; done"
+          ],
+          "env": {
+            "ENGRAM_BIN": "${SANDBOX_HOME}/bin/engram",
+            "ENGRAM_HOOK_DEBUG": "1",
+            "ENGRAM_HOOK_LOG": "${FIXTURE}/hook.log"
+          },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit -m x"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "stderr_re": [
+              "cccc3333",
+              "manifest-engram\\.js.*repair --apply"
+            ],
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/frenos.jsonl",
+                "re": "\"freno\":\"engram-manifest\""
+              },
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/frenos.jsonl",
+                "re": "\"regla\":\"deriva-heredada\""
+              },
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/frenos.jsonl",
+                "re": "\"veredicto\":\"aviso\""
+              }
+            ]
+          },
+          "_por_que": "Gemelo sin `jq` de «avisa-la-deriva-heredada-y-no-frena»: mismo armado y mismas exigencias; lo único que cambia es el PATH del hook."
+        },
+        {
+          "id": "sin-jq-pasa-el-commit-sano-y-anota-paso",
+          "type": "must-not-block",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'benchproj' > .engram-project",
+            "mkdir -p $SANDBOX_HOME/bin .engram/chunks",
+            "printf 'x' | gzip -c > .engram/chunks/aaaa1111.jsonl.gz",
+            "printf 'x' | gzip -c > .engram/chunks/bbbb2222.jsonl.gz",
+            "printf '{\"version\":1,\"chunks\":[{\"id\":\"aaaa1111\",\"created_by\":\"t\",\"created_at\":\"2026-01-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0},{\"id\":\"bbbb2222\",\"created_by\":\"t\",\"created_at\":\"2026-02-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0}]}' > .engram/manifest.json",
+            "git add -A && git -c user.email=b@b -c user.name=b commit -qm base",
+            "printf '%s' '{\"version\":1,\"chunks\":[{\"id\":\"aaaa1111\",\"created_by\":\"t\",\"created_at\":\"2026-01-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0},{\"id\":\"bbbb2222\",\"created_by\":\"t\",\"created_at\":\"2026-02-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0},{\"id\":\"dddd4444\",\"created_by\":\"t\",\"created_at\":\"2026-03-01T00:00:00Z\",\"sessions\":0,\"memories\":1,\"prompts\":0}]}' > con-dddd.json",
+            "printf '#!/bin/sh\\nprintf x | gzip -c > .engram/chunks/dddd4444.jsonl.gz\\ncp con-dddd.json .engram/manifest.json\\nexit 0\\n' > $SANDBOX_HOME/bin/engram && chmod +x $SANDBOX_HOME/bin/engram",
+            "mkdir -p lab && for t in bash node git cat cp gzip date mkdir dirname basename readlink grep sed tr find sort cksum awk comm wc; do ln -s \"$(command -v $t)\" lab/$t || exit 1; done"
+          ],
+          "env": {
+            "ENGRAM_BIN": "${SANDBOX_HOME}/bin/engram",
+            "ENGRAM_HOOK_DEBUG": "1",
+            "ENGRAM_HOOK_LOG": "${FIXTURE}/hook.log"
+          },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit -m x"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "stderr_not_re": [
+              "ndice de memoria",
+              "PERDI"
+            ],
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/frenos.jsonl",
+                "re": "\"freno\":\"engram-manifest\""
+              },
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/frenos.jsonl",
+                "re": "\"regla\":\"sano\""
+              },
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/frenos.jsonl",
+                "re": "\"veredicto\":\"paso\""
+              },
+              {
+                "path": "${FIXTURE}/hook.log",
+                "re": "staged"
+              }
+            ]
+          },
+          "_por_que": "Gemelo sin `jq` de «pasa-el-commit-sano-y-anota-paso»: mismo armado y mismas exigencias; lo único que cambia es el PATH del hook."
+        },
+        {
+          "id": "sin-jq-ni-node-en-un-commit-de-un-repo-con-memoria-lo-dice",
+          "type": "must-run",
+          "_por_que": "Sin `jq` ni `node` no se puede leer el comando. En un repo con memoria (`.engram-project`) y con «commit» en el texto de la entrada, el hook no frena y no calla: sale 1 —error que no bloquea— y dice que la memoria no se exportó. No corre el sync a ciegas.",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'benchproj' > .engram-project",
+            "mkdir -p $SANDBOX_HOME/bin",
+            "printf '#!/bin/sh\\necho \"$@\" > \"$FIXTURE/engram-called\"\\nexit 0\\n' > $SANDBOX_HOME/bin/engram && chmod +x $SANDBOX_HOME/bin/engram",
+            "mkdir -p lab && for t in bash git cat cp gzip date mkdir dirname basename readlink grep sed tr find sort cksum awk comm wc; do ln -s \"$(command -v $t)\" lab/$t || exit 1; done"
+          ],
+          "env": {
+            "ENGRAM_BIN": "${SANDBOX_HOME}/bin/engram"
+          },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit -m \"fix: x\""
+            }
+          },
+          "expect": {
+            "exit": 1,
+            "stderr_re": [
+              "^.*engram-pre-commit.*NO PUDO LEER.*node",
+              "ni jq ni node"
+            ],
+            "file_absent": [
+              "${FIXTURE}/engram-called"
+            ]
+          }
+        },
+        {
+          "id": "sin-jq-ni-node-un-comando-que-no-nombra-commit-calla",
+          "type": "must-stay-quiet",
+          "_por_que": "Este hook corre en CADA comando y sólo le compete el commit. Si el texto crudo de la entrada ni nombra «commit», no puede serlo: silencio (los dos frenos de arriba ya avisan en cada comando).",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'benchproj' > .engram-project",
+            "mkdir -p $SANDBOX_HOME/bin",
+            "printf '#!/bin/sh\\necho \"$@\" > \"$FIXTURE/engram-called\"\\nexit 0\\n' > $SANDBOX_HOME/bin/engram && chmod +x $SANDBOX_HOME/bin/engram",
+            "mkdir -p lab && for t in bash git cat cp gzip date mkdir dirname basename readlink grep sed tr find sort cksum awk comm wc; do ln -s \"$(command -v $t)\" lab/$t || exit 1; done"
+          ],
+          "env": {
+            "ENGRAM_BIN": "${SANDBOX_HOME}/bin/engram"
+          },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git status"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "stderr_not_re": [
+              "."
+            ],
+            "file_absent": [
+              "${FIXTURE}/engram-called"
+            ]
+          }
+        },
+        {
+          "id": "sin-jq-ni-node-en-un-repo-sin-memoria-calla",
+          "type": "must-stay-quiet",
+          "_por_que": "El hook es opt-in por repo: sin `.engram-project` no haría nada aunque pudiera leer. Avisar ahí es ruido.",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "mkdir -p lab && for t in bash git cat cp gzip date mkdir dirname basename readlink grep sed tr find sort cksum awk comm wc; do ln -s \"$(command -v $t)\" lab/$t || exit 1; done"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit -m \"fix: x\""
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "stderr_not_re": [
+              "."
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "hook": "engram-pre-commit.sh (entrada vacía o ilegible)",
+      "script": "${TCG}/scripts/hooks/engram-pre-commit.sh",
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "_por_que": "🔴 EL CASO (revisor de fallos silenciosos, 2026-10-03). `cannot_read` miraba si el texto de la entrada nombraba «commit»; con la entrada realmente vacía eso no matchea y caía en el `exit 0` silencioso. Entrada vacía = «no pude leer», explícito y antes de ese filtro. Lo que se conserva: en un repo sin `.engram-project` el hook no haría nada aunque pudiera leer, así que ahí calla. El corredor siempre manda un objeto JSON por stdin; por eso estos casos traen su lanzador (`script` del caso), que corre el hook REAL con la entrada vacía (`< /dev/null`) o ilegible (stdin es una carpeta: el `cat` falla al leer).",
+      "cases": [
+        {
+          "id": "entrada-vacia-en-un-repo-con-memoria-lo-dice",
+          "type": "must-run",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'benchproj' > .engram-project",
+            "mkdir -p $SANDBOX_HOME/bin",
+            "printf '#!/bin/sh\\necho \"$@\" > \"$FIXTURE/engram-called\"\\nexit 0\\n' > $SANDBOX_HOME/bin/engram && chmod +x $SANDBOX_HOME/bin/engram"
+          ],
+          "env": {
+            "ENGRAM_BIN": "${SANDBOX_HOME}/bin/engram"
+          },
+          "stdin": {},
+          "expect": {
+            "exit": 1,
+            "stderr_re": [
+              "^.*engram-pre-commit.*NO PUDO LEER.*vac[ií]a"
+            ],
+            "file_absent": [
+              "${FIXTURE}/engram-called"
+            ]
+          },
+          "files": {
+            "sin-entrada.sh": "#!/usr/bin/env bash\nexec bash \"${TCG}/scripts/hooks/engram-pre-commit.sh\" < /dev/null\n"
+          },
+          "script": "${FIXTURE}/sin-entrada.sh"
+        },
+        {
+          "id": "entrada-ilegible-en-un-repo-con-memoria-lo-dice",
+          "type": "must-run",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'benchproj' > .engram-project",
+            "mkdir -p $SANDBOX_HOME/bin",
+            "printf '#!/bin/sh\\necho \"$@\" > \"$FIXTURE/engram-called\"\\nexit 0\\n' > $SANDBOX_HOME/bin/engram && chmod +x $SANDBOX_HOME/bin/engram"
+          ],
+          "env": {
+            "ENGRAM_BIN": "${SANDBOX_HOME}/bin/engram"
+          },
+          "stdin": {},
+          "expect": {
+            "exit": 1,
+            "stderr_re": [
+              "^.*engram-pre-commit.*NO PUDO LEER.*vac[ií]a"
+            ],
+            "stderr_not_re": [
+              "^cat:"
+            ],
+            "file_absent": [
+              "${FIXTURE}/engram-called"
+            ]
+          },
+          "files": {
+            "entrada-ilegible.sh": "#!/usr/bin/env bash\nexec bash \"${TCG}/scripts/hooks/engram-pre-commit.sh\" < \"${FIXTURE}\"\n"
+          },
+          "script": "${FIXTURE}/entrada-ilegible.sh"
+        },
+        {
+          "id": "entrada-vacia-en-un-repo-sin-memoria-calla",
+          "type": "must-stay-quiet",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x"
+          ],
+          "stdin": {},
+          "expect": {
+            "exit": 0,
+            "stderr_not_re": [
+              "."
+            ]
+          },
+          "files": {
+            "sin-entrada.sh": "#!/usr/bin/env bash\nexec bash \"${TCG}/scripts/hooks/engram-pre-commit.sh\" < /dev/null\n"
+          },
+          "script": "${FIXTURE}/sin-entrada.sh"
+        },
+        {
+          "id": "entrada-valida-sin-comando-calla",
+          "type": "must-stay-quiet",
+          "_por_que": "La contracara, en un repo CON memoria: una entrada que se lee y no trae comando no es un commit. Sale 0 sin una palabra y sin llamar a engram.",
+          "setup": [
+            "git init -q -b main . && git -c user.email=b@b -c user.name=b commit -q --allow-empty -m x",
+            "printf 'benchproj' > .engram-project",
+            "mkdir -p $SANDBOX_HOME/bin",
+            "printf '#!/bin/sh\\necho \"$@\" > \"$FIXTURE/engram-called\"\\nexit 0\\n' > $SANDBOX_HOME/bin/engram && chmod +x $SANDBOX_HOME/bin/engram"
+          ],
+          "env": {
+            "ENGRAM_BIN": "${SANDBOX_HOME}/bin/engram"
+          },
+          "stdin": {
+            "tool_name": "Read",
+            "tool_input": {
+              "file_path": "/tmp/x.txt"
+            }
+          },
+          "expect": {
+            "exit": 0,
+            "stderr_not_re": [
+              "."
+            ],
+            "file_absent": [
+              "${FIXTURE}/engram-called"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "hook": "rebuild-before-verify.js (limpia, por la herramienta PowerShell de Claude Code en Windows)",
+      "script": "${TCG}/scripts/hooks/rebuild-before-verify.js",
+      "event": "PostToolUse",
+      "matcher": "Bash|PowerShell",
+      "tools": [
+        "claude"
+      ],
+      "asymmetry": "La herramienta PowerShell es de Claude Code (en Windows corre los comandos por ahí, con tool_name «PowerShell» y la misma entrada tool_input.command; fuente: code.claude.com/docs/en/tools-reference §«PowerShell tool»). Codex no la emite: del lado Codex el freno se registra con matcher «Bash» (adapters/codex/hooks.json).",
+      "__doc": "2026-10-04 · medido en una sesión REAL de Claude Code 2.1.289 en Windows 11 con el arnés instalado: los comandos salen por la herramienta PowerShell y los hooks registrados con matcher «Bash» no se disparaban (pasaron `git add -A` y un `git commit` que saltea los hooks de git). El matcher pasa a «Bash|PowerShell» en los dos instaladores; estos casos fijan que el guion entiende la entrada de esa herramienta. El payload es SINTÉTICO (la forma documentada), no una captura en vivo.",
+      "cases": [
+        {
+          "id": "ps-limpia-marker-tras-build-por-powershell",
+          "type": "must-run",
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p .tycon .advisors && printf 'frontend:\\n  dev_build_cmd: \"npm run build:dev\"\\n' > .tycon/advisors.yaml",
+            "node -e \"require('fs').writeFileSync('.advisors/frontend-dirty.json',JSON.stringify({files:['src/App.tsx'],since:new Date().toISOString(),dev_build_cmd:'npm run build:dev'}))\""
+          ],
+          "stdin": {
+            "tool_name": "PowerShell",
+            "tool_input": {
+              "command": "npm run build:dev"
+            }
+          },
+          "expect": {
+            "file_absent": [
+              "${FIXTURE}/.advisors/frontend-dirty.json"
+            ]
+          },
+          "nota": "El build corrido por la herramienta PowerShell también limpia la marca: el guion sólo miraba tool_name «Bash»."
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "<REPO_RUN>/src/cart.ts": {
+    "path": "<REPO_RUN>/src/cart.ts",
+    "statementMap": {
+      "0": { "start": { "line": 1, "column": 0 }, "end": { "line": 1, "column": 20 } },
+      "1": { "start": { "line": 4, "column": 2 }, "end": { "line": 4, "column": 30 } },
+      "2": { "start": { "line": 5, "column": 2 }, "end": { "line": 6, "column": 4 } },
+      "3": { "start": { "line": 5, "column": 10 }, "end": { "line": 5, "column": 18 } },
+      "4": { "start": { "line": 9, "column": 0 }, "end": { "line": 9, "column": 12 } },
+      "5": { "start": { "line": "x", "column": 0 }, "end": { "line": 9, "column": 12 } }
+    },
+    "s": { "0": 4, "1": 0, "2": 2, "3": 0, "4": 1, "5": 1 },
+    "fnMap": {}, "f": {}, "branchMap": {}, "b": {}
+  },
+  "<REPO_RUN>/src/price.ts": {
+    "path": "<REPO_RUN>/src/price.ts",
+    "statementMap": {
+      "0": { "start": { "line": 1, "column": 0 }, "end": { "line": 1, "column": 9 } },
+      "1": { "start": { "line": 2, "column": 0 }, "end": { "line": 2, "column": 9 } },
+      "2": { "start": { "line": 3, "column": 0 }, "end": { "line": 3, "column": 9 } }
+    },
+    "s": { "0": 1, "1": 1, "2": 0 },
+    "fnMap": {}, "f": {}, "branchMap": {}, "b": {}
+  },
+  "<REPO_RUN>/src/empty.ts": {
+    "path": "<REPO_RUN>/src/empty.ts",
+    "statementMap": {},
+    "s": {}
+  }
+}

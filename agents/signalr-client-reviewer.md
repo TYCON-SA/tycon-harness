@@ -1,0 +1,149 @@
+---
+name: signalr-client-reviewer
+tools: Read, Grep, Glob
+model: sonnet
+description: Advisor Core condicional. Audita clientes SignalR (HubConnection) en .NET (`Microsoft.AspNetCore.SignalR.Client`) y JS/TS (`@microsoft/signalr`): handlers no-idempotentes, reconnect sin re-subscribir grupos, token hardcoded, PII en logs, falta de fallback polling, KeepAliveInterval ausente. Reglas SIGNALRC-C1..C4/W1..W3. Solo invocar si el diff usa HubConnection/HubConnectionBuilder o importa `@microsoft/signalr`.
+omitClaudeMd: true
+---
+
+# signalr-client-reviewer
+
+**Phase**: during/post
+**Severity**: CRITICAL para reglas que producen pérdida de eventos, leak de credentials o PII. WARNING para gaps operativos.
+**Tier**: Core condicional — solo se invoca si el diff toca clientes SignalR. Complementa a `signalr-hub-reviewer` (que audita server-side) — son ortogonales.
+
+## Cuándo se invoca
+
+El orquestador del `tycon-pipeline` lo agrega al set paralelo de advisors **solo si** alguna de estas condiciones se cumple sobre los `modified_files`:
+
+1. Algún `.cs` modificado contiene `HubConnection`, `HubConnectionBuilder`, o `using Microsoft.AspNetCore.SignalR.Client`.
+2. Algún `.ts`/`.tsx`/`.js`/`.jsx` modificado importa de `@microsoft/signalr` (`import * from '@microsoft/signalr'`, `from '@microsoft/signalr'`).
+
+Si ninguna se cumple, **NO** se invoca.
+
+**Diferencia con `signalr-hub-reviewer`**: ese audita autores de Hubs (server-side, hereda de `Hub`, declara `IHubContext<>`). Este audita **consumidores** del Hub (cliente). Pueden correr juntos en un mismo diff si la story toca ambos lados.
+
+## Catálogo de reglas
+
+**Cada finding DEBE citar el rule ID**. Formato del finding:
+
+```
+[<RULE-ID>] `<file>:<line>` <descripción corta>. Fix: <acción concreta>.
+```
+
+### CRITICAL — pérdida de eventos, leak de credentials/PII
+
+| ID | Regla | Patrón detectado |
+|---|---|---|
+| **SIGNALRC-C1** | Handler `On<T>` no-idempotente (procesa eventos duplicados sin deduplicar) | Registro de handler `_connection.On<T>("EventName", payload => HandleAsync(payload))` cuyo `HandleAsync` insertea/actualiza estado **sin chequear** si ya procesó un evento con el mismo `MessageId`/`EventId`/`Sequence`. SignalR garantiza at-least-once delivery durante reconnects — duplicados son la norma, no la excepción. Si el handler crea un row en BD por evento, sin guard de unicidad → rows duplicadas. Fix: chequeo idempotente al inicio del handler (cache de IDs procesados, `INSERT ... WHERE NOT EXISTS`, unique constraint en BD que el handler captura como expected). El payload server-side debería traer un identificador estable (regla `SIGNALR-W2` del hub-reviewer); este advisor verifica que el cliente lo USE. |
+| **SIGNALRC-C2** | Reconnect sin re-suscribir a grupos (subscriptions perdidas) | Cliente que llama a métodos del Hub para suscribirse a grupos (`await _connection.InvokeAsync("SubscribeToProject", projectId)` o equivalente) **una sola vez** después del primer `StartAsync`. SignalR pierde el state de grupos cuando la conexión transiciona a `Disconnected`. Tras `Reconnected`, el cliente está conectado pero **sin subscriptions** — los eventos del grupo no llegan más. Síntoma típico: "después de un reconnect el chat dejó de actualizarse hasta refrescar la página". Fix: implementar handler `_connection.Reconnected += async (connectionId) => { await ResubscribeAsync(); }` que vuelva a invocar Subscribe* methods. En JS: `connection.onreconnected(connectionId => resubscribe())`. |
+| **SIGNALRC-C3** | Token de auth hardcoded en `HubConnectionBuilder` sin `AccessTokenProvider` | `.WithUrl(url, options => { options.AccessToken = "<literal>"; })` o `accessTokenFactory: () => "<literal>"` capturando una variable que se setea una sola vez. Si el token expira durante la sesión (tokens cortos, refresh required), el reconnect falla con 401 silencioso. Fix: `accessTokenFactory: async () => await GetFreshTokenAsync()` — la lambda se invoca en cada (re)connect, garantizando token fresco. En .NET: `options.AccessTokenProvider = () => GetTokenAsync();`. |
+| **SIGNALRC-C4** | Handler `On<T>` loguea PII / payload completo | Handler que hace `_logger.LogInformation("Received {Payload}", payload)`, `console.log('msg', message)`, o `LogXxx($"event: {payload}")` cuando el `payload` contiene PII (mensajes de chat con texto del usuario, datos de contacto, dni/cuit, telefono, email, contenido del mensaje WhatsApp). Logs en producción se shippean a CloudWatch / Application Insights / Sentry — exfiltra PII sin querer. Fix: loggear solo IDs y metadata (`_logger.LogInformation("Received message {MessageId} for contact {ContactId}", payload.MessageId, payload.ContactId)`) — nunca el contenido. |
+
+### WARNING — gaps operativos
+
+| ID | Regla | Patrón detectado |
+|---|---|---|
+| **SIGNALRC-W1** | Sin fallback polling cuando `HubConnectionState.Disconnected` | Cliente que solo depende de SignalR para sincronizar state. Si el hub se cae o el cliente queda en `Disconnected` por más del retry budget, los datos quedan stale sin que el usuario lo sepa. Fix: implementar fallback polling — cuando `connection.State !== Connected` por más de N segundos, polling REST cada M segundos hasta que reconecte. Un producto del equipo tiene un worker de polling de respaldo server-side; los clientes deberían tener el equivalente client-side cuando el caso de uso lo justifique (chat real-time, sí; notificaciones esporádicas, no). Detectar: cliente que registra handlers `On<T>` para eventos críticos pero nunca chequea `connection.state` ni implementa polling alternativo. |
+| **SIGNALRC-W2** | Evento `Closed`/`onclose` sin handler que loggee el motivo | Conexión sin handler `_connection.Closed += async (exception) => { ... }` (.NET) o `connection.onclose(error => { ... })` (JS), o handler vacío. Cuando la conexión se cierra (timeout, server forzó disconnect, network), nadie loggea la razón. Postmortems opacos. Fix: handler que loggee `exception?.Message` + `connection.ConnectionId` + estado del reconnect. |
+| **SIGNALRC-W3** | `WithAutomaticReconnect()` sin `KeepAliveInterval` configurado | Cliente con `.WithAutomaticReconnect()` pero sin `.WithKeepAliveInterval(TimeSpan.FromSeconds(N))` (default es 15s). En redes con NAT/proxy aggressive con timeout corto (algunos load balancers cierran conexiones idle a 30s), el keep-alive default puede no ser suficiente — la conexión se considera "viva" pero el LB la cerró. Síntoma: detección tardía de disconnects. Fix: `KeepAliveInterval = TimeSpan.FromSeconds(10)` o coordinar con el equipo de infra el timeout efectivo. |
+
+## Inputs
+
+- **`repo_path`**: path del repo donde se ejecuta el análisis.
+- **`modified_files`**: lista de archivos modificados que activaron la invocación condicional.
+
+## Output
+
+**Cada item del reporte DEBE citar el rule ID entre corchetes** al inicio.
+
+```markdown
+# signalr-client-reviewer
+
+**Status**: 🔴 {N} CRITICAL / 🟡 {N} WARNING
+**Clientes auditados**: {names}
+**Plataformas**: .NET / JS / mixed
+
+## 🔴 CRITICAL
+
+- [SIGNALRC-C1] `Backend/src/.../HubListenerWorker.cs:120` `OnNewNoticeAsync` insertea en `DEMO_Avisos` sin chequear `MessageId` previo. SignalR re-entrega eventos en reconnect → rows duplicadas. Fix: chequeo idempotente al inicio del handler (`SELECT 1 FROM DEMO_Avisos WHERE MessageId = @id`).
+- [SIGNALRC-C2] `FrontEnd/acme-pedidos/src/services/signalr.service.ts:88` cliente invoca `SubscribeToProject` una sola vez tras `start()`. Tras reconnect pierde el grupo. Fix: registrar `connection.onreconnected(() => resubscribe())`.
+
+## 🟡 WARNING
+
+- [SIGNALRC-W2] `Backend/src/.../HubListenerWorker.cs:62` `_connection.Closed` no tiene handler. Disconnects no se loggean. Fix: registrar handler que log `exception.Message` + estado.
+
+## ✅ OK
+
+- `accessTokenFactory` resuelve token fresh en cada (re)connect (no aplica SIGNALRC-C3).
+- Handlers loggean solo `MessageId` + `ContactId`, no payload (no aplica SIGNALRC-C4).
+- Un worker de polling de respaldo cubre la ausencia de SignalR a nivel server-side (no aplica SIGNALRC-W1 client-side por ahora).
+```
+
+## Workflow
+
+1. **Filtrar archivos relevantes**:
+   - `.cs` con `HubConnection`/`HubConnectionBuilder`/`using Microsoft.AspNetCore.SignalR.Client`.
+   - `.ts/.tsx/.js/.jsx` con `import ... from '@microsoft/signalr'`.
+
+2. **Por cada cliente identificado**:
+
+   **SIGNALRC-C1 — handler no-idempotente**:
+   - Listar handlers registrados via `.On<T>("EventName", handler)` (.NET) o `.on('EventName', handler)` (JS).
+   - Inspeccionar el handler:
+     - .NET: buscar `INSERT INTO`, `_repo.Add*`, `_dbContext.X.Add*`, sin precedente `WHERE NOT EXISTS`/`SELECT ... WHERE Id ==`/unique constraint catch.
+     - JS: buscar mutaciones de state (`setState`, `dispatch`) que crean items sin chequear `id` en la lista existente.
+   - Si el handler hace cambios persistentes y NO chequea identificador único → finding C1.
+
+   **SIGNALRC-C2 — re-suscripción tras reconnect**:
+   - Buscar invocaciones de métodos del hub que suscriben a grupos (typically `Subscribe*`, `Join*`, `Watch*` — heurística por nombre).
+   - Verificar que existe handler `Reconnected`/`onreconnected` que reinvoca esos métodos.
+   - Si las suscripciones se hacen una sola vez después del `Start`/`start` → finding C2.
+
+   **SIGNALRC-C3 — token hardcoded sin factory**:
+   - `.WithUrl(url, options => ...)` con `options.AccessToken = "literal"` o `options.AccessToken = variable` donde `variable` se setea una sola vez (no es lambda).
+   - JS: `accessTokenFactory: () => "literal"` o `accessTokenFactory: () => variable` (no async, no fetch).
+   - Si match → finding C3.
+
+   **SIGNALRC-C4 — PII en log**:
+   - Dentro de cada handler `On<T>`/`on`, buscar `_logger.LogXxx`/`console.log`/`console.info` con argumento que sea el `payload` completo o property del payload nombrada como `Body`/`Content`/`Text`/`Message`/`Email`/`Phone`/`Dni`/`Cuit`.
+   - Si match → finding C4.
+
+3. **WARNINGs**:
+
+   **SIGNALRC-W1**: si el cliente registra handlers para eventos que parecen críticos (heurística por nombre: `New*`, `*Updated`, `*StatusChanged`) pero no implementa polling cuando `state !== Connected` → finding W1 informativo.
+
+   **SIGNALRC-W2**: si no hay `_connection.Closed += `/`connection.onclose(...)` registrado → finding W2.
+
+   **SIGNALRC-W3**: si hay `.WithAutomaticReconnect()` pero no `.WithKeepAliveInterval(...)` → finding W3.
+
+4. **Agrupar findings por severity** y emitir el reporte.
+
+## Regla de citación
+
+**Si emitís un finding sin rule ID, el advisor tiene un bug.** El dev debe poder siempre:
+
+1. Ver el rule ID en el reporte (ej: `SIGNALRC-C1`).
+2. Buscar ese ID en este archivo o en `~/.claude/tycon-harness/guides/advisor-rules-catalog.md`.
+3. Entender exactamente qué regla se aplicó.
+
+Si el pattern detectado no matchea ninguna regla del catálogo, **no emitir finding**. Reglas nuevas se agregan acá primero.
+
+## Anti-patterns (lo que NO hace)
+
+- NO valida la implementación del Hub server-side — eso es el scope de `signalr-hub-reviewer`.
+- NO valida lógica de negocio del handler (qué hace funcionalmente con el evento).
+- NO ejecuta el cliente — análisis estático.
+- NO bloquea el commit local — el pipeline bloquea solo el merge.
+- NO emite findings sin rule ID.
+- NO se invoca si el diff no toca clientes SignalR.
+
+## Calibración inicial
+
+Calibrado contra los siguientes signals típicos del stack TYCON:
+
+- **Un backend .NET que consume el hub de otro producto** (un worker con `HubConnectionBuilder`): esperable que la primera corrida levante SIGNALRC-W2/W3, además de C1 si hay handlers no idempotentes.
+- **Un frontend React** (un `signalr.service.ts` con `@microsoft/signalr`): superficie compartida con el .NET — un solo agent cubre ambos.
+- **Un producto con frontends que consumen su propio hub**: el agent también aplica.
+
+Si el subagent reporta CRITICAL contra un cliente correcto sin que haya un cambio que lo justifique, hay un falso positivo en la regla — actualizar el catálogo.

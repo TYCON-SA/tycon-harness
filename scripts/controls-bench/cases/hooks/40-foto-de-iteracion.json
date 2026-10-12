@@ -1,0 +1,346 @@
+{
+  "__doc": "La FOTO de la iteración se fecha en el momento correcto (2026-09-15). La foto se toma sola desde el 2026-08-15, en el spawn del último revisor — pero el texto del skill seguía mandando una segunda llamada manual 'al cierre del step', y `snapshot-iter` PISABA la foto buena sin mirar. Medido sobre la corrida real de la story 2.5 del arnés: las 15 fotos automáticas fueron pisadas, y en 2 de las 15 había código editado en el medio. En la iteración 11 la foto quedó fechada a las 17:03:17 con un arreglo de las 16:58 adentro: el delta de la 12 salió VACÍO y `security-basics` y `silent-failure-hunter` se saltearon como 'superficie no tocada'. Estos casos fijan las dos capas del arreglo: `snapshot-iter` se niega a pisar (o a escribir) una foto con código posterior al último revisor, y `smart-reloop` corta por el último revisor y no por la hora de la foto. Las dos fallan hacia 'un revisor de más', nunca hacia 'un revisor de menos'.",
+  "hooks": [
+    {
+      "hook": "on-advisor-run.js + marker.js snapshot-iter (la foto de la iteración no se fecha tarde)",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/on-advisor-run.js",
+      "controles": ["${SKILLS}/skills/tycon-pipeline/scripts/marker.js", "${SKILLS}/skills/tycon-pipeline/scripts/pipeline.js"],
+      "__controles": "Los casos corren marker.js snapshot-iter y pipeline.js smart-reloop desde el setup y assertan lo que ellos escriben: el auditor de vacuidad los neutraliza también (2026-09-17).",
+      "event": "PreToolUse",
+      "matcher": "Task|Agent",
+      "cases": [
+        {
+          "id": "2.5-iter11-la-llamada-manual-no-pisa-la-foto-automatica",
+          "type": "must-run",
+          "__nota": "LA SECUENCIA REAL: último revisor 16:52:52 → `src/reductor.js` editado 16:58:16 → llamada manual del cierre 17:03. La foto automática (16:52:52.654) tiene que sobrevivir.",
+          "files": {
+            "_utimes.js": "const fs = require('fs');\nconst t = Date.parse(process.argv[3]) / 1000;\nfs.utimesSync(process.argv[2], t, t);\n",
+            "src/reductor.js": "function reducir(x) { return x; }\nmodule.exports = { reducir };\n",
+            "specs/story.md": "---\nstory: \"2.5\"\nepic: 2\nstatus: in-progress\n---\n# Story 2.5\n",
+            "_marker.json": "{\n  \"storyId\": \"2.5\",\n  \"storyPath\": \"${FIXTURE}/specs/story.md\",\n  \"repoPath\": \"${FIXTURE}\",\n  \"sessionId\": \"foto-1\",\n  \"lastTouch\": \"2026-09-15T17:03:17.869Z\",\n  \"stepsCompleted\": [0, 1, 2, 3, 4],\n  \"stepsPending\": [5],\n  \"filesTouched\": [\"${FIXTURE}/src/reductor.js\"],\n  \"fileEvents\": [{ \"path\": \"${FIXTURE}/src/reductor.js\", \"ts\": \"2026-09-15T16:58:16.000Z\" }],\n  \"iterations\": { \"11\": { \"ts\": \"2026-09-15T16:52:52.654Z\", \"filesSnapshot\": [\"${FIXTURE}/src/reductor.js\"] } }\n}\n",
+            "_ledger.jsonl": "{\"ts\":\"2026-09-15T16:52:30.000Z\",\"event\":\"step5-start\",\"iter\":11,\"expected\":[\"tycon-plugin-tests-coverage\",\"tycon-plugin-react-conventions\",\"tycon-plugin-security-basics\"],\"mode\":\"smart-reloop\"}\n{\"ts\":\"2026-09-15T16:52:40.000Z\",\"advisor\":\"tycon-plugin-tests-coverage\",\"story\":\"2.5\",\"repo\":\"${FIXTURE}\"}\n{\"ts\":\"2026-09-15T16:52:45.000Z\",\"advisor\":\"tycon-plugin-react-conventions\",\"story\":\"2.5\",\"repo\":\"${FIXTURE}\"}\n{\"ts\":\"2026-09-15T16:52:52.354Z\",\"advisor\":\"tycon-plugin-security-basics\",\"story\":\"2.5\",\"repo\":\"${FIXTURE}\"}\n{\"ts\":\"2026-09-15T16:52:52.500Z\",\"event\":\"auto-snapshot\",\"iter\":11}\n"
+          },
+          "setup": [
+            "mkdir -p ${SANDBOX_HOME}/.claude/.tycon-pipeline/active ${SANDBOX_HOME}/.claude/.tycon-pipeline/advisor-runs",
+            "cp _marker.json ${SANDBOX_HOME}/.claude/.tycon-pipeline/active/foto-1.json",
+            "cp _ledger.jsonl ${SANDBOX_HOME}/.claude/.tycon-pipeline/advisor-runs/foto-1.jsonl",
+            "node _utimes.js src/reductor.js 2026-09-15T16:58:16.000Z",
+            "CLAUDE_CODE_SESSION_ID=foto-1 node ${SKILLS}/skills/tycon-pipeline/scripts/marker.js snapshot-iter 11 > snap.out 2> snap.err"
+          ],
+          "stdin": {
+            "session_id": "foto-1",
+            "tool_name": "Task",
+            "tool_input": { "subagent_type": "general-purpose", "model": "haiku" }
+          },
+          "expect": {
+            "file_contains": [
+              { "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/active/foto-1.json", "re": "\"11\": \\{\\s*\"ts\": \"2026-09-15T16:52:52" },
+              { "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log", "re": "\"foto\":\"conservada\"" },
+              { "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log", "re": "reductor\\.js" }
+            ]
+          }
+        },
+
+        {
+          "id": "2.5-iter12-el-reloop-vuelve-a-correr-seguridad",
+          "type": "must-run",
+          "__nota": "La consecuencia de la foto conservada: el delta de la iteración 12 trae `src/reductor.js` y `security-basics` vuelve a la lista. Antes del arreglo el delta salía vacío y seguridad quedaba en `skipped` por «superficie no tocada».",
+          "files": {
+            "_utimes.js": "const fs = require('fs');\nconst t = Date.parse(process.argv[3]) / 1000;\nfs.utimesSync(process.argv[2], t, t);\n",
+            "_resumen.js": "const fs = require('fs');\nconst j = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));\nfs.writeFileSync(process.argv[3], JSON.stringify({ mode: j.mode, rerun: j.rerun, delta_files: j.delta_files, suspect_late_snapshot: j.suspect_late_snapshot === true }, null, 1) + '\\n');\n",
+            "src/reductor.js": "function reducir(x) { return x; }\nmodule.exports = { reducir };\n",
+            "specs/story.md": "---\nstory: \"2.5\"\nepic: 2\nstatus: in-progress\n---\n# Story 2.5\n\n## Acceptance criteria\n- AC1: reducir\n\n### Tests\n| Test | AC |\n|---|---|\n| t1 | AC1 |\n",
+            "_marker.json": "{\n  \"storyId\": \"2.5\",\n  \"storyPath\": \"${FIXTURE}/specs/story.md\",\n  \"repoPath\": \"${FIXTURE}\",\n  \"sessionId\": \"foto-2\",\n  \"lastTouch\": \"2026-09-15T17:03:17.869Z\",\n  \"stepsCompleted\": [0, 1, 2, 3, 4],\n  \"stepsPending\": [5],\n  \"filesTouched\": [\"${FIXTURE}/src/reductor.js\"],\n  \"fileEvents\": [{ \"path\": \"${FIXTURE}/src/reductor.js\", \"ts\": \"2026-09-15T16:58:16.000Z\" }],\n  \"iterations\": { \"11\": { \"ts\": \"2026-09-15T16:52:52.654Z\", \"filesSnapshot\": [\"${FIXTURE}/src/reductor.js\"] } }\n}\n",
+            "_ledger.jsonl": "{\"ts\":\"2026-09-15T16:52:30.000Z\",\"event\":\"step5-start\",\"iter\":11,\"expected\":[\"tycon-plugin-tests-coverage\",\"tycon-plugin-security-basics\"],\"mode\":\"smart-reloop\"}\n{\"ts\":\"2026-09-15T16:52:40.000Z\",\"advisor\":\"tycon-plugin-tests-coverage\",\"story\":\"2.5\",\"repo\":\"${FIXTURE}\"}\n{\"ts\":\"2026-09-15T16:52:52.354Z\",\"advisor\":\"tycon-plugin-security-basics\",\"story\":\"2.5\",\"repo\":\"${FIXTURE}\"}\n{\"ts\":\"2026-09-15T16:52:52.500Z\",\"event\":\"auto-snapshot\",\"iter\":11}\n"
+          },
+          "setup": [
+            "mkdir -p ${SANDBOX_HOME}/.claude/.tycon-pipeline/active ${SANDBOX_HOME}/.claude/.tycon-pipeline/advisor-runs",
+            "cp _marker.json ${SANDBOX_HOME}/.claude/.tycon-pipeline/active/foto-2.json",
+            "cp _ledger.jsonl ${SANDBOX_HOME}/.claude/.tycon-pipeline/advisor-runs/foto-2.jsonl",
+            "node _utimes.js src/reductor.js 2026-09-15T16:58:16.000Z",
+            "CLAUDE_CODE_SESSION_ID=foto-2 node ${SKILLS}/skills/tycon-pipeline/scripts/marker.js snapshot-iter 11 > snap.out 2> snap.err",
+            "CLAUDE_CODE_SESSION_ID=foto-2 node ${SKILLS}/skills/tycon-pipeline/scripts/pipeline.js smart-reloop --iter 12 --repo ${FIXTURE} --story ${FIXTURE}/specs/story.md --files src/reductor.js > reloop.json 2> reloop.err",
+            "node _resumen.js reloop.json reloop-resumen.json"
+          ],
+          "stdin": {
+            "session_id": "foto-2",
+            "tool_name": "Task",
+            "tool_input": { "subagent_type": "general-purpose" }
+          },
+          "expect": {
+            "file_contains": [
+              { "path": "${FIXTURE}/reloop-resumen.json", "re": "tycon-plugin-security-basics" },
+              { "path": "${FIXTURE}/reloop-resumen.json", "re": "reductor\\.js" }
+            ]
+          }
+        },
+
+        {
+          "id": "sin-codigo-posterior-la-foto-se-toma-y-lo-dice",
+          "type": "must-run",
+          "__nota": "El camino normal: nadie tocó código después de la ronda → la foto se toma, y la constancia dice que se pudo VERIFICAR (no es lo mismo que «no pude mirar»).",
+          "files": {
+            "_utimes.js": "const fs = require('fs');\nconst t = Date.parse(process.argv[3]) / 1000;\nfs.utimesSync(process.argv[2], t, t);\n",
+            "src/reductor.js": "function reducir(x) { return x; }\n",
+            "specs/story.md": "---\nstory: \"2.5\"\nepic: 2\nstatus: in-progress\n---\n# Story 2.5\n",
+            "_marker.json": "{\n  \"storyId\": \"2.5\",\n  \"storyPath\": \"${FIXTURE}/specs/story.md\",\n  \"repoPath\": \"${FIXTURE}\",\n  \"sessionId\": \"foto-3\",\n  \"lastTouch\": \"2026-09-15T17:03:17.869Z\",\n  \"stepsCompleted\": [0, 1, 2, 3, 4],\n  \"stepsPending\": [5],\n  \"filesTouched\": [\"${FIXTURE}/src/reductor.js\"],\n  \"fileEvents\": [{ \"path\": \"${FIXTURE}/src/reductor.js\", \"ts\": \"2026-09-15T16:45:00.000Z\" }],\n  \"iterations\": { \"11\": { \"ts\": \"2026-09-15T16:52:52.654Z\", \"filesSnapshot\": [\"${FIXTURE}/src/reductor.js\"] } }\n}\n",
+            "_ledger.jsonl": "{\"ts\":\"2026-09-15T16:52:30.000Z\",\"event\":\"step5-start\",\"iter\":11,\"expected\":[\"tycon-plugin-tests-coverage\",\"tycon-plugin-security-basics\"],\"mode\":\"smart-reloop\"}\n{\"ts\":\"2026-09-15T16:52:40.000Z\",\"advisor\":\"tycon-plugin-tests-coverage\",\"story\":\"2.5\",\"repo\":\"${FIXTURE}\"}\n{\"ts\":\"2026-09-15T16:52:52.354Z\",\"advisor\":\"tycon-plugin-security-basics\",\"story\":\"2.5\",\"repo\":\"${FIXTURE}\"}\n{\"ts\":\"2026-09-15T16:52:52.500Z\",\"event\":\"auto-snapshot\",\"iter\":11}\n"
+          },
+          "setup": [
+            "mkdir -p ${SANDBOX_HOME}/.claude/.tycon-pipeline/active ${SANDBOX_HOME}/.claude/.tycon-pipeline/advisor-runs",
+            "cp _marker.json ${SANDBOX_HOME}/.claude/.tycon-pipeline/active/foto-3.json",
+            "cp _ledger.jsonl ${SANDBOX_HOME}/.claude/.tycon-pipeline/advisor-runs/foto-3.jsonl",
+            "node _utimes.js src/reductor.js 2026-09-15T16:45:00.000Z",
+            "CLAUDE_CODE_SESSION_ID=foto-3 node ${SKILLS}/skills/tycon-pipeline/scripts/marker.js snapshot-iter 11 > snap.out 2> snap.err"
+          ],
+          "stdin": {
+            "session_id": "foto-3",
+            "tool_name": "Task",
+            "tool_input": { "subagent_type": "general-purpose" }
+          },
+          "expect": {
+            "file_contains": [
+              { "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log", "re": "\"foto\":\"tomada\"" },
+              { "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log", "re": "\"verificada\":true" }
+            ],
+            "file_not_contains": [
+              { "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log", "re": "\"foto\":\"conservada\"" },
+              { "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log", "re": "\"foto\":\"rechazada\"" }
+            ]
+          }
+        },
+
+        {
+          "id": "reportes-y-specs-despues-de-la-ronda-no-frenan",
+          "type": "must-run",
+          "__nota": "🔴 EL CASO ANTI-FALSO-POSITIVO. Escribir los reportes de los revisores, tocar la story y el README entre la foto y el cierre es lo NORMAL de cada iteración: si eso frenara, el control se apaga en una semana. No puede ponerse rojo antes del arreglo (hoy la foto se toma siempre) — se verifica por MUTACIÓN: sacándole el filtro `isCodeFile` a la guarda, este caso se pone rojo.",
+          "files": {
+            "_utimes.js": "const fs = require('fs');\nconst t = Date.parse(process.argv[3]) / 1000;\nfs.utimesSync(process.argv[2], t, t);\n",
+            "specs/story.md": "---\nstory: \"2.5\"\nepic: 2\nstatus: in-progress\n---\n# Story 2.5\n",
+            "README.md": "# fixture\n",
+            ".advisors/pipeline-runs/x/step-05-advisor-reports-iter12/r.md": "# reporte del revisor\n",
+            "_marker.json": "{\n  \"storyId\": \"2.5\",\n  \"storyPath\": \"${FIXTURE}/specs/story.md\",\n  \"repoPath\": \"${FIXTURE}\",\n  \"sessionId\": \"foto-4\",\n  \"lastTouch\": \"2026-09-15T17:03:17.869Z\",\n  \"stepsCompleted\": [0, 1, 2, 3, 4],\n  \"stepsPending\": [5],\n  \"filesTouched\": [\"${FIXTURE}/.advisors/pipeline-runs/x/step-05-advisor-reports-iter12/r.md\", \"${FIXTURE}/specs/story.md\", \"${FIXTURE}/README.md\"],\n  \"fileEvents\": [{ \"path\": \"${FIXTURE}/.advisors/pipeline-runs/x/step-05-advisor-reports-iter12/r.md\", \"ts\": \"2026-09-15T16:58:16.000Z\" }, { \"path\": \"${FIXTURE}/specs/story.md\", \"ts\": \"2026-09-15T16:59:00.000Z\" }, { \"path\": \"${FIXTURE}/README.md\", \"ts\": \"2026-09-15T17:00:00.000Z\" }],\n  \"iterations\": { \"11\": { \"ts\": \"2026-09-15T16:52:52.654Z\", \"filesSnapshot\": [] } }\n}\n",
+            "_ledger.jsonl": "{\"ts\":\"2026-09-15T16:52:30.000Z\",\"event\":\"step5-start\",\"iter\":11,\"expected\":[\"tycon-plugin-tests-coverage\",\"tycon-plugin-security-basics\"],\"mode\":\"smart-reloop\"}\n{\"ts\":\"2026-09-15T16:52:40.000Z\",\"advisor\":\"tycon-plugin-tests-coverage\",\"story\":\"2.5\",\"repo\":\"${FIXTURE}\"}\n{\"ts\":\"2026-09-15T16:52:52.354Z\",\"advisor\":\"tycon-plugin-security-basics\",\"story\":\"2.5\",\"repo\":\"${FIXTURE}\"}\n{\"ts\":\"2026-09-15T16:52:52.500Z\",\"event\":\"auto-snapshot\",\"iter\":11}\n"
+          },
+          "setup": [
+            "mkdir -p ${SANDBOX_HOME}/.claude/.tycon-pipeline/active ${SANDBOX_HOME}/.claude/.tycon-pipeline/advisor-runs",
+            "cp _marker.json ${SANDBOX_HOME}/.claude/.tycon-pipeline/active/foto-4.json",
+            "cp _ledger.jsonl ${SANDBOX_HOME}/.claude/.tycon-pipeline/advisor-runs/foto-4.jsonl",
+            "node _utimes.js .advisors/pipeline-runs/x/step-05-advisor-reports-iter12/r.md 2026-09-15T16:58:16.000Z",
+            "node _utimes.js specs/story.md 2026-09-15T16:59:00.000Z",
+            "node _utimes.js README.md 2026-09-15T17:00:00.000Z",
+            "CLAUDE_CODE_SESSION_ID=foto-4 node ${SKILLS}/skills/tycon-pipeline/scripts/marker.js snapshot-iter 11 > snap.out 2> snap.err"
+          ],
+          "stdin": {
+            "session_id": "foto-4",
+            "tool_name": "Task",
+            "tool_input": { "subagent_type": "general-purpose" }
+          },
+          "expect": {
+            "file_contains": [
+              { "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log", "re": "\"foto\":\"tomada\"" }
+            ],
+            "file_not_contains": [
+              { "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log", "re": "\"foto\":\"conservada\"" },
+              { "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log", "re": "\"foto\":\"rechazada\"" }
+            ]
+          }
+        },
+
+        {
+          "id": "edicion-por-bash-la-ve-por-mtime",
+          "type": "must-run",
+          "__nota": "Una edición por Bash (sed, heredoc) no pasa por el hook de Edit/Write: no hay `fileEvents`. La guarda tiene que verla igual por el mtime del archivo — una guarda que mirara sólo `fileEvents` dejaría pasar la foto tardía sin decir nada.",
+          "files": {
+            "_utimes.js": "const fs = require('fs');\nconst t = Date.parse(process.argv[3]) / 1000;\nfs.utimesSync(process.argv[2], t, t);\n",
+            "src/a.js": "module.exports = 1;\n",
+            "specs/story.md": "---\nstory: \"2.5\"\nepic: 2\nstatus: in-progress\n---\n# Story 2.5\n",
+            "_marker.json": "{\n  \"storyId\": \"2.5\",\n  \"storyPath\": \"${FIXTURE}/specs/story.md\",\n  \"repoPath\": \"${FIXTURE}\",\n  \"sessionId\": \"foto-5\",\n  \"lastTouch\": \"2026-09-15T17:03:17.869Z\",\n  \"stepsCompleted\": [0, 1, 2, 3, 4],\n  \"stepsPending\": [5],\n  \"filesTouched\": [\"${FIXTURE}/src/a.js\"],\n  \"fileEvents\": [],\n  \"iterations\": { \"11\": { \"ts\": \"2026-09-15T16:52:52.654Z\", \"filesSnapshot\": [\"${FIXTURE}/src/a.js\"] } }\n}\n",
+            "_ledger.jsonl": "{\"ts\":\"2026-09-15T16:52:30.000Z\",\"event\":\"step5-start\",\"iter\":11,\"expected\":[\"tycon-plugin-tests-coverage\",\"tycon-plugin-security-basics\"],\"mode\":\"smart-reloop\"}\n{\"ts\":\"2026-09-15T16:52:40.000Z\",\"advisor\":\"tycon-plugin-tests-coverage\",\"story\":\"2.5\",\"repo\":\"${FIXTURE}\"}\n{\"ts\":\"2026-09-15T16:52:52.354Z\",\"advisor\":\"tycon-plugin-security-basics\",\"story\":\"2.5\",\"repo\":\"${FIXTURE}\"}\n{\"ts\":\"2026-09-15T16:52:52.500Z\",\"event\":\"auto-snapshot\",\"iter\":11}\n"
+          },
+          "setup": [
+            "mkdir -p ${SANDBOX_HOME}/.claude/.tycon-pipeline/active ${SANDBOX_HOME}/.claude/.tycon-pipeline/advisor-runs",
+            "cp _marker.json ${SANDBOX_HOME}/.claude/.tycon-pipeline/active/foto-5.json",
+            "cp _ledger.jsonl ${SANDBOX_HOME}/.claude/.tycon-pipeline/advisor-runs/foto-5.jsonl",
+            "printf '// editado por sed\\n' >> src/a.js",
+            "node _utimes.js src/a.js 2026-09-15T16:58:16.000Z",
+            "CLAUDE_CODE_SESSION_ID=foto-5 node ${SKILLS}/skills/tycon-pipeline/scripts/marker.js snapshot-iter 11 > snap.out 2> snap.err"
+          ],
+          "stdin": {
+            "session_id": "foto-5",
+            "tool_name": "Task",
+            "tool_input": { "subagent_type": "general-purpose" }
+          },
+          "expect": {
+            "file_contains": [
+              { "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log", "re": "\"foto\":\"conservada\"" },
+              { "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log", "re": "\"fuente\":\"mtime\"" }
+            ]
+          }
+        },
+
+        {
+          "id": "sin-registro-de-revisores-no-finge-verificar",
+          "type": "must-run",
+          "__nota": "Retomar la corrida en otra sesión copiando el marker y NO el registro de spawns: la guarda no puede medir. Toma la foto como siempre, pero lo DICE — «no medido» no se lee como «ok».",
+          "files": {
+            "src/a.js": "module.exports = 1;\n",
+            "specs/story.md": "---\nstory: \"2.5\"\nepic: 2\nstatus: in-progress\n---\n# Story 2.5\n",
+            "_marker.json": "{\n  \"storyId\": \"2.5\",\n  \"storyPath\": \"${FIXTURE}/specs/story.md\",\n  \"repoPath\": \"${FIXTURE}\",\n  \"sessionId\": \"foto-6\",\n  \"lastTouch\": \"2026-09-15T17:03:17.869Z\",\n  \"stepsCompleted\": [0, 1, 2, 3, 4],\n  \"stepsPending\": [5],\n  \"filesTouched\": [\"${FIXTURE}/src/a.js\"],\n  \"fileEvents\": [],\n  \"iterations\": { \"11\": { \"ts\": \"2026-09-15T16:52:52.654Z\", \"filesSnapshot\": [\"${FIXTURE}/src/a.js\"] } }\n}\n"
+          },
+          "setup": [
+            "mkdir -p ${SANDBOX_HOME}/.claude/.tycon-pipeline/active",
+            "cp _marker.json ${SANDBOX_HOME}/.claude/.tycon-pipeline/active/foto-6.json",
+            "CLAUDE_CODE_SESSION_ID=foto-6 node ${SKILLS}/skills/tycon-pipeline/scripts/marker.js snapshot-iter 11 > snap.out 2> snap.err"
+          ],
+          "stdin": {
+            "session_id": "foto-6",
+            "tool_name": "Task",
+            "tool_input": { "subagent_type": "general-purpose" }
+          },
+          "expect": {
+            "file_contains": [
+              { "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log", "re": "\"foto\":\"tomada\"" },
+              { "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log", "re": "\"verificada\":false" },
+              { "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log", "re": "\"motivo\":\"[^\"]+\"" }
+            ]
+          }
+        },
+
+        {
+          "id": "sin-foto-previa-y-con-codigo-posterior-se-niega",
+          "type": "must-run",
+          "env": { "TYCON_AUTO_SNAPSHOT": "0" },
+          "__nota": "Con la foto automática apagada no hay foto buena que conservar, y la única salida honesta es NO escribir una mentira: sale 2 y el próximo re-loop corre el set completo (más caro, nunca menos revisión).",
+          "files": {
+            "_utimes.js": "const fs = require('fs');\nconst t = Date.parse(process.argv[3]) / 1000;\nfs.utimesSync(process.argv[2], t, t);\n",
+            "src/a.js": "module.exports = 1;\n",
+            "specs/story.md": "---\nstory: \"2.5\"\nepic: 2\nstatus: in-progress\n---\n# Story 2.5\n",
+            "_marker.json": "{\n  \"storyId\": \"2.5\",\n  \"storyPath\": \"${FIXTURE}/specs/story.md\",\n  \"repoPath\": \"${FIXTURE}\",\n  \"sessionId\": \"foto-7\",\n  \"lastTouch\": \"2026-09-15T17:03:17.869Z\",\n  \"stepsCompleted\": [0, 1, 2, 3, 4],\n  \"stepsPending\": [5],\n  \"filesTouched\": [\"${FIXTURE}/src/a.js\"],\n  \"fileEvents\": [{ \"path\": \"${FIXTURE}/src/a.js\", \"ts\": \"2026-09-15T16:58:16.000Z\" }],\n  \"iterations\": {}\n}\n",
+            "_ledger.jsonl": "{\"ts\":\"2026-09-15T16:52:30.000Z\",\"event\":\"step5-start\",\"iter\":3,\"expected\":[\"tycon-plugin-tests-coverage\",\"tycon-plugin-security-basics\"],\"mode\":\"smart-reloop\"}\n{\"ts\":\"2026-09-15T16:52:40.000Z\",\"advisor\":\"tycon-plugin-tests-coverage\",\"story\":\"2.5\",\"repo\":\"${FIXTURE}\"}\n{\"ts\":\"2026-09-15T16:52:52.354Z\",\"advisor\":\"tycon-plugin-security-basics\",\"story\":\"2.5\",\"repo\":\"${FIXTURE}\"}\n"
+          },
+          "setup": [
+            "mkdir -p ${SANDBOX_HOME}/.claude/.tycon-pipeline/active ${SANDBOX_HOME}/.claude/.tycon-pipeline/advisor-runs",
+            "cp _marker.json ${SANDBOX_HOME}/.claude/.tycon-pipeline/active/foto-7.json",
+            "cp _ledger.jsonl ${SANDBOX_HOME}/.claude/.tycon-pipeline/advisor-runs/foto-7.jsonl",
+            "node _utimes.js src/a.js 2026-09-15T16:58:16.000Z",
+            "CLAUDE_CODE_SESSION_ID=foto-7 node ${SKILLS}/skills/tycon-pipeline/scripts/marker.js snapshot-iter 3 > snap.out 2> snap.err; echo rc=$? > rc.txt"
+          ],
+          "stdin": {
+            "session_id": "foto-7",
+            "tool_name": "Task",
+            "tool_input": { "subagent_type": "general-purpose" }
+          },
+          "expect": {
+            "file_contains": [
+              { "path": "${FIXTURE}/rc.txt", "re": "^rc=2$" },
+              { "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log", "re": "\"foto\":\"rechazada\"" }
+            ],
+            "file_not_contains": [
+              { "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/active/foto-7.json", "re": "\"3\":" }
+            ]
+          }
+        },
+
+        {
+          "id": "fechar-al-ultimo-revisor-deja-constancia",
+          "type": "must-run",
+          "env": { "TYCON_AUTO_SNAPSHOT": "0" },
+          "__nota": "La salida cuando el código posterior YA fue revisado: se fecha la foto en el último lanzamiento de revisores (el corte correcto), nunca «ahora». No existe un --force que escriba la hora actual: sería el defecto con bandera.",
+          "files": {
+            "_utimes.js": "const fs = require('fs');\nconst t = Date.parse(process.argv[3]) / 1000;\nfs.utimesSync(process.argv[2], t, t);\n",
+            "src/a.js": "module.exports = 1;\n",
+            "specs/story.md": "---\nstory: \"2.5\"\nepic: 2\nstatus: in-progress\n---\n# Story 2.5\n",
+            "_marker.json": "{\n  \"storyId\": \"2.5\",\n  \"storyPath\": \"${FIXTURE}/specs/story.md\",\n  \"repoPath\": \"${FIXTURE}\",\n  \"sessionId\": \"foto-8\",\n  \"lastTouch\": \"2026-09-15T17:03:17.869Z\",\n  \"stepsCompleted\": [0, 1, 2, 3, 4],\n  \"stepsPending\": [5],\n  \"filesTouched\": [\"${FIXTURE}/src/a.js\"],\n  \"fileEvents\": [{ \"path\": \"${FIXTURE}/src/a.js\", \"ts\": \"2026-09-15T16:58:16.000Z\" }],\n  \"iterations\": {}\n}\n",
+            "_ledger.jsonl": "{\"ts\":\"2026-09-15T16:52:30.000Z\",\"event\":\"step5-start\",\"iter\":3,\"expected\":[\"tycon-plugin-tests-coverage\",\"tycon-plugin-security-basics\"],\"mode\":\"smart-reloop\"}\n{\"ts\":\"2026-09-15T16:52:40.000Z\",\"advisor\":\"tycon-plugin-tests-coverage\",\"story\":\"2.5\",\"repo\":\"${FIXTURE}\"}\n{\"ts\":\"2026-09-15T16:52:52.354Z\",\"advisor\":\"tycon-plugin-security-basics\",\"story\":\"2.5\",\"repo\":\"${FIXTURE}\"}\n"
+          },
+          "setup": [
+            "mkdir -p ${SANDBOX_HOME}/.claude/.tycon-pipeline/active ${SANDBOX_HOME}/.claude/.tycon-pipeline/advisor-runs",
+            "cp _marker.json ${SANDBOX_HOME}/.claude/.tycon-pipeline/active/foto-8.json",
+            "cp _ledger.jsonl ${SANDBOX_HOME}/.claude/.tycon-pipeline/advisor-runs/foto-8.jsonl",
+            "node _utimes.js src/a.js 2026-09-15T16:58:16.000Z",
+            "CLAUDE_CODE_SESSION_ID=foto-8 node ${SKILLS}/skills/tycon-pipeline/scripts/marker.js snapshot-iter 3 --fechar-al-ultimo-revisor > snap.out 2> snap.err"
+          ],
+          "stdin": {
+            "session_id": "foto-8",
+            "tool_name": "Task",
+            "tool_input": { "subagent_type": "general-purpose" }
+          },
+          "expect": {
+            "file_contains": [
+              { "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/active/foto-8.json", "re": "\"3\": \\{\\s*\"ts\": \"2026-09-15T16:52:52.354Z\"" },
+              { "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log", "re": "\"foto\":\"fechada-al-ultimo-revisor\"" }
+            ]
+          }
+        },
+
+        {
+          "id": "la-foto-automatica-sigue-pasando-la-guarda",
+          "type": "must-run",
+          "__nota": "NO REGRESIÓN, y por eso no puede ponerse rojo antes del arreglo (hoy la foto automática ya funciona): impide que la guarda nueva frene el camino que SÍ estaba bien — p. ej. por un desfasaje de milisegundos entre la línea del spawn y la foto. Si se rompiera, la foto dejaría de tomarse sola y volveríamos al defecto de 2026-08-15.",
+          "files": {
+            "_utimes.js": "const fs = require('fs');\nconst t = Date.parse(process.argv[3]) / 1000;\nfs.utimesSync(process.argv[2], t, t);\n",
+            "src/a.js": "module.exports = 1;\n",
+            "specs/story.md": "---\nstory: \"2.5\"\nepic: 2\nstatus: in-progress\n---\n# Story 2.5\n",
+            "_marker.json": "{\n  \"storyId\": \"2.5\",\n  \"storyPath\": \"${FIXTURE}/specs/story.md\",\n  \"repoPath\": \"${FIXTURE}\",\n  \"sessionId\": \"foto-9\",\n  \"lastTouch\": \"2026-09-15T17:03:17.869Z\",\n  \"stepsCompleted\": [0, 1, 2, 3, 4],\n  \"stepsPending\": [5],\n  \"filesTouched\": [\"${FIXTURE}/src/a.js\"],\n  \"fileEvents\": [{ \"path\": \"${FIXTURE}/src/a.js\", \"ts\": \"2026-09-15T16:40:00.000Z\" }],\n  \"iterations\": {}\n}\n",
+            "_ledger.jsonl": "{\"ts\":\"2026-09-15T16:52:30.000Z\",\"event\":\"step5-start\",\"iter\":1,\"expected\":[\"tycon-plugin-tests-coverage\",\"tycon-plugin-security-basics\"],\"mode\":\"full\"}\n{\"ts\":\"2026-09-15T16:52:40.000Z\",\"advisor\":\"tycon-plugin-tests-coverage\",\"story\":\"2.5\",\"repo\":\"${FIXTURE}\"}\n"
+          },
+          "setup": [
+            "mkdir -p ${SANDBOX_HOME}/.claude/.tycon-pipeline/active ${SANDBOX_HOME}/.claude/.tycon-pipeline/advisor-runs",
+            "cp _marker.json ${SANDBOX_HOME}/.claude/.tycon-pipeline/active/foto-9.json",
+            "cp _ledger.jsonl ${SANDBOX_HOME}/.claude/.tycon-pipeline/advisor-runs/foto-9.jsonl",
+            "node _utimes.js src/a.js 2026-09-15T16:40:00.000Z"
+          ],
+          "stdin": {
+            "session_id": "foto-9",
+            "tool_name": "Task",
+            "tool_input": { "subagent_type": "tycon-plugin-security-basics", "model": "sonnet" }
+          },
+          "expect": {
+            "file_contains": [
+              { "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/active/foto-9.json", "re": "\"1\": \\{\\s*\"ts\":" },
+              { "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/advisor-runs/foto-9.jsonl", "re": "\"event\":\"auto-snapshot\"" },
+              { "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log", "re": "\"iter\":1" },
+              { "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/gates.log", "re": "\"verificada\":true" }
+            ]
+          }
+        },
+
+        {
+          "id": "smart-reloop-corta-por-el-ultimo-revisor-no-por-la-foto",
+          "type": "must-run",
+          "__nota": "La SEGUNDA capa, sobre el marker archivado de la 2.5 tal cual: foto 17:03:17, edición 16:58:16, último revisor 16:52:52. Es la única capa que cubre TYCON_FOTO_GUARD=0, una foto escrita a mano en el marker, o un `snapshot-iter` viejo de una máquina con el arnés atrasado. El aviso sale también por stderr porque el orquestador filtra el JSON.",
+          "files": {
+            "_utimes.js": "const fs = require('fs');\nconst t = Date.parse(process.argv[3]) / 1000;\nfs.utimesSync(process.argv[2], t, t);\n",
+            "_resumen.js": "const fs = require('fs');\nconst j = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));\nfs.writeFileSync(process.argv[3], JSON.stringify({ mode: j.mode, rerun: j.rerun, delta_files: j.delta_files, suspect_late_snapshot: j.suspect_late_snapshot === true }, null, 1) + '\\n');\n",
+            "src/reductor.js": "function reducir(x) { return x; }\nmodule.exports = { reducir };\n",
+            "specs/story.md": "---\nstory: \"2.5\"\nepic: 2\nstatus: in-progress\n---\n# Story 2.5\n\n## Acceptance criteria\n- AC1: reducir\n\n### Tests\n| Test | AC |\n|---|---|\n| t1 | AC1 |\n",
+            "_marker.json": "{\n  \"storyId\": \"2.5\",\n  \"storyPath\": \"${FIXTURE}/specs/story.md\",\n  \"repoPath\": \"${FIXTURE}\",\n  \"sessionId\": \"foto-10\",\n  \"lastTouch\": \"2026-09-15T17:03:17.869Z\",\n  \"stepsCompleted\": [0, 1, 2, 3, 4],\n  \"stepsPending\": [5],\n  \"filesTouched\": [\"${FIXTURE}/src/reductor.js\"],\n  \"fileEvents\": [{ \"path\": \"${FIXTURE}/src/reductor.js\", \"ts\": \"2026-09-15T16:58:16.000Z\" }],\n  \"iterations\": { \"11\": { \"ts\": \"2026-09-15T17:03:17.869Z\", \"filesSnapshot\": [\"${FIXTURE}/src/reductor.js\"] } }\n}\n",
+            "_ledger.jsonl": "{\"ts\":\"2026-09-15T16:52:30.000Z\",\"event\":\"step5-start\",\"iter\":11,\"expected\":[\"tycon-plugin-tests-coverage\",\"tycon-plugin-security-basics\"],\"mode\":\"smart-reloop\"}\n{\"ts\":\"2026-09-15T16:52:40.000Z\",\"advisor\":\"tycon-plugin-tests-coverage\",\"story\":\"2.5\",\"repo\":\"${FIXTURE}\"}\n{\"ts\":\"2026-09-15T16:52:52.354Z\",\"advisor\":\"tycon-plugin-security-basics\",\"story\":\"2.5\",\"repo\":\"${FIXTURE}\"}\n{\"ts\":\"2026-09-15T16:52:52.500Z\",\"event\":\"auto-snapshot\",\"iter\":11}\n"
+          },
+          "setup": [
+            "mkdir -p ${SANDBOX_HOME}/.claude/.tycon-pipeline/active ${SANDBOX_HOME}/.claude/.tycon-pipeline/advisor-runs",
+            "cp _marker.json ${SANDBOX_HOME}/.claude/.tycon-pipeline/active/foto-10.json",
+            "cp _ledger.jsonl ${SANDBOX_HOME}/.claude/.tycon-pipeline/advisor-runs/foto-10.jsonl",
+            "node _utimes.js src/reductor.js 2026-09-15T16:58:16.000Z",
+            "CLAUDE_CODE_SESSION_ID=foto-10 node ${SKILLS}/skills/tycon-pipeline/scripts/pipeline.js smart-reloop --iter 12 --repo ${FIXTURE} --story ${FIXTURE}/specs/story.md --files src/reductor.js > reloop.json 2> reloop.err",
+            "node _resumen.js reloop.json reloop-resumen.json"
+          ],
+          "stdin": {
+            "session_id": "foto-10",
+            "tool_name": "Task",
+            "tool_input": { "subagent_type": "general-purpose" }
+          },
+          "expect": {
+            "file_contains": [
+              { "path": "${FIXTURE}/reloop-resumen.json", "re": "\"suspect_late_snapshot\": true" },
+              { "path": "${FIXTURE}/reloop-resumen.json", "re": "tycon-plugin-security-basics" },
+              { "path": "${FIXTURE}/reloop-resumen.json", "re": "reductor\\.js" },
+              { "path": "${FIXTURE}/reloop.err", "re": "foto de la iteración" }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

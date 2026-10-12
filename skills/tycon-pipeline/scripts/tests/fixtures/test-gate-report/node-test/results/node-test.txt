@@ -1,0 +1,20 @@
+
+> acme-mcp@1.0.0 test
+> node --test
+
+✔ acme suma (1.2ms)
+✔ acme resta (0.4ms)
+ℹ tests 2
+ℹ pass 2
+ℹ fail 0
+✔ acme multiplica (0.3ms)
+﹣ acme divide (0.1ms) # SKIP
+✖ acme falla a medias (0.2ms)
+ℹ tests 7
+ℹ suites 0
+ℹ pass 5
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 1
+ℹ todo 0
+ℹ duration_ms 41.5

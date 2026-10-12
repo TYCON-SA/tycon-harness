@@ -1,0 +1,20 @@
+{
+  "__doc": "Los commits de la unión del arnés con agent-skills (story 8.18, tramo 0, 2026-10-03), anotados en la rama. Los leen scripts/tests/union-check.test.js y scripts/tests/unified-ignore.test.sh para medir sobre la unión de verdad; en un clon que no trae esa historia (la copia pública, un clon recortado) esa parte sale NO MEDIDA. No cambian nunca: una re-mezcla de main en la base es otro commit, y la unión sigue siendo ésta.",
+  "union": "8c70e013b3a5c031368758e3cc96eed188a46228",
+  "harness_side": "3ddc3620356f5210aabc424e8c42fbc15b656f72",
+  "skills_side": "f2fc3bb538c9e557ab50927486d9a53342e3be4a",
+  "harness_resolved": "1c4dcb36227c870bc0ae4b24d067065acaaa0fbc",
+  "skills_resolved": "60a095a57140e84170de2691ff45b6f7d8bf830f",
+  "__export_pair": "La pareja con que export-real.test.sh mide el AC 20 (T20 y T21): main del arnés y main de agent-skills ya limpios por la story 8.10.1, los últimos que la base de la unificación trajo (el arnés en c95f1cdc, agent-skills en f7b11a23). El commit de la unión es anterior a esa limpieza y el detector de hoy encuentra en él los datos internos que la limpieza sacó: exportarlo dejó de poder salir 0. La prueba compone la unión de estos dos con las mismas reglas que la de verdad (union-check.js). Cambia sólo si el detector vuelve a endurecerse y esta pareja deja de pasarlo.",
+  "export_pair": {
+    "harness": "b6597f339351e781ff278c5bce50eb071c92ceef",
+    "skills": "12f49e469383ae6ce045b6632a963d896bb6c5ca"
+  },
+  "tips": {
+    "harness_main": "9b20db653c53762350e463db0b7ff6518d3e9dc2",
+    "harness_batch_d": "b785220fd4c5a960b31ab93d3f6fd2e1e4a2272c",
+    "harness_batch_g": "635520f498a6d5fb637ddd5b256c1a7757de6c08",
+    "skills_main": "1633546aef04d45f56244aa0a73a0d789175e1ab",
+    "skills_batch_g": "e9c97d0d0912ab73e63e4c2fc22a73e84b57d5ef"
+  }
+}

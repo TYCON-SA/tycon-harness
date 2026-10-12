@@ -1,0 +1,187 @@
+.DS_Store
+*.swp
+*.bak
+# TYCON — los artefactos efimeros de advisors NO viajan, pero la evidencia de cierre SI:
+# es auditable y el medidor SDLC la lee desde el servidor (si no viaja, mide 0% y miente).
+# Patron `dir/*` (no `dir/`) para que la negacion pueda re-incluir el subdirectorio.
+**/.advisors/*
+# ...y de cada corrida del pipeline viajan SOLO el registro de revisores y sus hallazgos:
+# es lo que el porton de CI exige para pasar una story a `done` (2026-09-05).
+**/.advisors/pipeline-runs/*
+**/.advisors/pipeline-runs/*/*
+.dashboard/
+# ...EXCEPTO las métricas del SDLC (2026-08-30, decisión del dev, en dos pasos el mismo día):
+# 1) la serie diaria agregada (sdlc-stage-*.json) — sin versionarla cada dev acumulaba su
+#    propia serie, nadie veía la del equipo y un formateo la borraba;
+# 2) los metrics-*.json del capturer — son la FUENTE de first-pass; versionarlos es lo que
+#    permite que el pipeline nocturno de ADO calcule las 4 métricas y sea el ÚNICO escritor
+#    del punto del día (STAGE-METRICS-CI-1: una sola fuente, git; un solo escritor, CI).
+#    Son ~1 MB por 4 meses — texto chico, repo interno.
+.dashboard/*
+# 3) los snapshots del vigilante de producción (2026-08-31). Son SU LÍNEA BASE: sin versionarlos,
+#    el `git add` del pipeline no falla — agrega NADA, en silencio — y el vigilante queda en modo
+#    "todavía no tengo historia" para siempre, sin que nada lo delate. Lo cazó el pase adversarial
+#    de la pieza; es exactamente la clase de falla que este arnés persigue.
+# 4) los snapshots de la revisión nocturna de dependencias (2026-09-01). Misma razón que (3), y
+#    acá pesa doble: el nocturno decide qué es NUEVO comparando contra el snapshot de anoche, y
+#    denuncia su propia ausencia mirando la FECHA del último. Sin versionarlos, el `git add` del
+#    pipeline no falla —agrega nada, en silencio—, cada vulnerabilidad se vería nueva todas las
+#    noches, y "no corrió en 9 días" sería indistinguible de "corrió y no había nada".
+# Banco de controles nocturno (2026-09-05): el reporte de cada noche viaja por git para que todas las
+# máquinas lean la misma foto. La carpeta nació ignorada por el `.dashboard/*` de arriba y la primera
+# corrida en Azure DevOps no pudo commitear — el mismo tropiezo que ya tuvieron vigilante y dependencias.
+# La foto por proyecto (story 2.20, 2026-10-07): un JSON por repo con stories, que lee el control de
+# proyectos de un producto del equipo. Cuarta vez el mismo tropiezo, cazado esta vez por el pase
+# adversarial ANTES del merge: sin la excepción, el `git add` del nocturno sale 1 y con `set -e` aborta
+# el commit del día.
+
+# CodeGraph: indice local (SQLite), machine-specific y regenerable
+.codegraph/
+# Local Netlify folder
+.netlify
+# controls-bench: reportes locales por maquina (la baseline SI se commitea)
+scripts/controls-bench/.bench/
+# Config del editor: personal de cada dev, no del equipo. Lo que se commitea acá le aparece a
+# TODA persona que abra el repo — VS Code le sugiere instalar lo que diga extensions.json.
+# Si alguna vez hace falta compartir algo (un launch.json de debug del equipo), va con
+# `git add -f` y con la decisión tomada a propósito, no de arrastre.
+.vscode/
+# Carpetas de trabajo efímeras que las sesiones crean DENTRO del repo (clones descartables,
+# bancos de un pase adversarial). No son del proyecto y llegan a pesar GB: aparecían en cada
+# `git status` y empujaban a que la gente deje de mirarlo. Se ignoran; no se borran solas,
+# porque pueden ser de una sesión que las está usando.
+scratchpad/
+# El prototipo de la vista de corridas se regenera: el modelo sale del registro de cada
+# máquina (~9 MB con los diffs) y la página, del modelo. Viaja el código, no la salida.
+tasks/prototipo-vista-corridas/modelo.json
+tasks/prototipo-vista-corridas/*.html
+tasks/prototipo-vista-corridas/*.png
+# 🔴 Y la medición cruda de los errores rescatados TAMPOCO viaja: es salida de comandos tal cual
+# quedó en la conversación, con rutas del disco del dev adentro. Lo que viaja es la conclusión,
+# en tasks/nota-error-recuperable-2026-09-09.md.
+tasks/prototipo-vista-corridas/medicion-errores-recuperables.txt
+# El estado local del freno de produccion (indice, memoria pegajosa y registro de la puerta)
+# NUNCA viaja por git: es de esta maquina. Si un HOME mal resuelto lo escribe aca, que no se commitee.
+.claude/.tycon-pipeline/
+# La vista de corridas se arma en cada máquina y no se commitea (2026-09-17). Desde la story 8.9 (tanda D2) se
+# llama runs-dashboard.html; la línea del nombre de antes queda para las copias que todavía lo usan.
+artifacts/tablero-corridas.html
+artifacts/runs-dashboard.html
+# Lo que dejó la carpeta vieja de instincts en cada máquina al mudarse a inbox/instincts/ (story 8.12, tanda R2): el
+# log del observador y los descartados que nunca viajaron por git. Ignorados, para que no aparezcan como sin trackear ni
+# un `git add` amplio los suba; los descartados los migra el observador a inbox/instincts/descartados/ en su primera
+# corrida (el log se queda: es un log). Se borra con la story de retiro.
+/instincts/
+# Bytecode de Python (aparece al correr los scripts de office/pptx).
+__pycache__/
+*.pyc
+# Skills/archivos personales de un dev — no van al repo del equipo (decisión 2026-08-13).
+skills/super
+skills/theme-factory/themes/claude-warm-paper.md
+# Las skills de la cuenta de Claude: Claude Code las baja a ~/.claude/skills/synced/, y en el repo unido ese enlace es
+# <clon>/skills (story 8.18): sin esta línea caen dentro del repo (medido en Windows el 2026-10-04: 229 archivos).
+skills/synced/
+# índice local de código (codegraph): por máquina, nunca viaja
+# Skills desactivadas: no se cargan en ninguna sesión y no se versionan (story 7.7 del arnés).
+# Cómo volver a activarlas: guides/inactive-skills.md.
+skills-inactivas/
+# Skills de terceros (story 8.5 del arnés): lo ajeno no se versiona acá — se referencia. Cada destino lo declara el
+# manifiesto del arnés (scripts/publishing/third-party-skills.json, con su origen, commit y hash de árbol) y lo pone en
+# su lugar el paso del instalador (install-third-party.js), primero desde la historia de git de este clon, sin red.
+# Una línea por destino y por enlace retirado: el control de cobertura verifica que cada uno esté acá. Una skill nueva
+# de internet se declara en el manifiesto y se agrega acá; nunca se copia al repo.
+.agents/skills/accessibility
+.agents/skills/frontend-design
+.agents/skills/seo
+.claude/skills/accessibility
+.claude/skills/frontend-design
+.claude/skills/seo
+skills-lock.json
+skills/algorithmic-art
+skills/api-design-principles
+skills/bmad-advanced-elicitation
+skills/bmad-agent-analyst
+skills/bmad-agent-architect
+skills/bmad-agent-dev
+skills/bmad-agent-pm
+skills/bmad-agent-qa
+skills/bmad-agent-quick-flow-solo-dev
+skills/bmad-agent-sm
+skills/bmad-agent-tech-writer
+skills/bmad-agent-ux-designer
+skills/bmad-brainstorming
+skills/bmad-check-implementation-readiness
+skills/bmad-code-review
+skills/bmad-correct-course
+skills/bmad-create-architecture
+skills/bmad-create-epics-and-stories
+skills/bmad-create-prd
+skills/bmad-create-ux-design
+skills/bmad-dev-story
+skills/bmad-distillator
+skills/bmad-document-project
+skills/bmad-domain-research
+skills/bmad-edit-prd
+skills/bmad-editorial-review-prose
+skills/bmad-editorial-review-structure
+skills/bmad-generate-project-context
+skills/bmad-help
+skills/bmad-index-docs
+skills/bmad-init
+skills/bmad-market-research
+skills/bmad-party-mode
+skills/bmad-product-brief
+skills/bmad-qa-generate-e2e-tests
+skills/bmad-quick-dev
+skills/bmad-retrospective
+skills/bmad-review-adversarial-general
+skills/bmad-review-edge-case-hunter
+skills/bmad-shard-doc
+skills/bmad-sprint-planning
+skills/bmad-sprint-status
+skills/bmad-technical-research
+skills/bmad-validate-prd
+skills/brand-guidelines
+skills/canvas-design
+skills/code-review-excellence
+skills/composition-patterns
+skills/doc-coauthoring
+skills/docx
+skills/dotnet-backend-patterns
+skills/e2e-testing-patterns
+skills/error-handling-patterns
+skills/impeccable
+skills/internal-comms
+skills/mcp-builder
+skills/next-best-practices
+skills/next-cache-components
+skills/pdf
+skills/pptx
+skills/react-best-practices
+skills/react-native-skills
+skills/security-review
+skills/skill-creator
+skills/slack-gif-creator
+skills/systematic-debugging
+skills/template-skill
+skills/test-driven-development
+skills/theme-factory
+skills/typescript-advanced-types
+skills/web-artifacts-builder
+skills/web-design-guidelines
+skills/webapp-testing
+skills/xlsx
+# Carpetas de trabajo de quien mantiene el arnés (su memoria, sus historias, sus planes y lo que generan sus
+# máquinas): no son de este repo. Si aparecen en tu copia de trabajo, no se commitean.
+/.advisors/
+/.dashboard/
+/.engram/
+/.tycon/
+/_bmad/
+/artifacts/
+/inbox/
+/new-product-templates/
+/onboarding/
+/qa/
+/specs/
+/tasks/

@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# un pre-commit propio de la máquina de juguete: llama al global del arnés por el nombre viejo
+bash "{{LEGACY_SLASH}}/scripts/hooks/git-pre-commit-global.sh" "$@"
