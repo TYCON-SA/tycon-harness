@@ -3,7 +3,7 @@
 //
 // Qué resuelve: la versión publicada es la copia pública y no trae lo que es del equipo —el perfil (perfil-equipo.json)
 // y la llave del buzón (scripts/metrics/corridas-buzon.json)—; la primera máquina mudada (2026-10-08) quedó con las
-// integraciones, el paquete por defecto y la política de fábrica. Acá vive la capa: un segundo repo privado de GitHub,
+// integraciones, el paquete por defecto y la política de fábrica. Acá vive la capa: un segundo repo privado (GitHub o Azure),
 // chico, con esos dos archivos y su declaración (team-layer.json), que `install --version … --team <org>/<repo>`, `update` y
 // `migrate --to-home` bajan con el mismo permiso que el arnés, verifican contra el commit SEGÚN GITHUB y apilan sobre la
 // versión pública en `incoming/<versión>/` ANTES del cambio. Nada se funde en `~/.tycon/config.json`: los valores quedan
