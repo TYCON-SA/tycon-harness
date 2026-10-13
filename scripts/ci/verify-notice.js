@@ -35,7 +35,7 @@
 //   Códigos: 0 (escribió el aviso, o la verificación salió en verde) · 2 argumentos · 3 calló a propósito: lo único
 //   que había son hallazgos aceptados de la historia del repo privado.
 // No lee ninguna variable de entorno ni habla con la red: quien manda el aviso es el paso del pipeline
-// (pipelines/azure-pipelines-publicacion.yml, «Avisar lo que encontró la verificación»). Casos: scripts/tests/verify-notice.test.js.
+// (pipelines/azure-pipelines-public-leak-check.yml, «Avisar lo que encontró la verificación»). Casos: scripts/tests/verify-notice.test.js.
 
 const fs = require('fs');
 
