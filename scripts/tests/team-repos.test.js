@@ -59,6 +59,15 @@ test('TeamRepos_Problems_CarryTheKeyPath_AndNoPartialData', () => {
   assert.deepStrictEqual(paths(r), ['extra', 'harness_copies.1.repo', 'maintainers.org', 'operations.platform', 'profile', 'public.project', 'version']);
 });
 
+test('TeamRepos_AzureNamesWithAccents_AreValid_GitHubOnesAreNot', () => {
+  const doc = goodTeam();
+  doc.operations = azure('operaciones', 'Arnés del equipo');
+  assert.strictEqual(TEAM.parse(JSON.stringify(doc)).ok, true, 'Azure acepta tildes y eñes');
+  assert.strictEqual(TEAM.url(doc.operations), 'https://dev.azure.com/acme/Arn%C3%A9s%20del%20equipo/_git/operaciones');
+  doc.public = github('arnés');
+  assert.deepStrictEqual(paths(TEAM.parse(JSON.stringify(doc))), ['public.repo'], 'GitHub, sólo ASCII');
+});
+
 test('TeamRepos_Owners_AreRejectedHere — la lista de responsables no llega a todas las máquinas', () => {
   const r = TEAM.parse(JSON.stringify({ ...goodTeam(), owners: ['someone'] }));
   assert.deepStrictEqual(paths(r), ['owners']);

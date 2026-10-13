@@ -36,8 +36,12 @@ const REPO_KEYS = { azure: ['org', 'project', 'repo'], github: ['org', 'repo'] }
 const REQUIRED = ['public', 'profile', 'operations'];
 const OPTIONAL = ['maintainers', 'harness_copies'];
 const KEYS = ['version', ...REQUIRED, ...OPTIONAL];
-// Los nombres de Azure y de GitHub: letras, números, punto, guion, guion bajo; los proyectos de Azure llevan espacios.
-const NAME = /^[A-Za-z0-9._-](?:[A-Za-z0-9._ -]*[A-Za-z0-9._-])?$/;
+// Los nombres: letras, números, punto, guion, guion bajo, y espacios adentro. Azure acepta letras de cualquier idioma
+// (un proyecto «Arnés del equipo» es válido); GitHub, sólo ASCII.
+const NAME = {
+  azure: /^[\p{L}\p{N}._-](?:[\p{L}\p{N}._ -]*[\p{L}\p{N}._-])?$/u,
+  github: /^[A-Za-z0-9._-](?:[A-Za-z0-9._ -]*[A-Za-z0-9._-])?$/,
+};
 
 const isObject = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
 const comment = (k) => k.startsWith('__');
@@ -59,7 +63,7 @@ function repoProblems(value, at) {
     const v = value[k];
     if (v === undefined) out.push({ path: `${at}.${k}`, message: 'falta' });
     else if (typeof v !== 'string' || !v.trim()) out.push({ path: `${at}.${k}`, message: 'tiene que ser un texto no vacío' });
-    else if (!NAME.test(v)) out.push({ path: `${at}.${k}`, message: `«${v}» tiene caracteres que no van en un nombre (letras, números, punto, guion, guion bajo; espacios sólo adentro)` });
+    else if (!NAME[platform].test(v)) out.push({ path: `${at}.${k}`, message: `«${v}» tiene caracteres que no van en un nombre de ${platform} (letras${platform === 'github' ? ' sin tilde' : ''}, números, punto, guion, guion bajo; espacios sólo adentro)` });
   }
   return out;
 }
