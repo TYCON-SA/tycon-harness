@@ -120,12 +120,42 @@ function remoteOf(url) {
 const stamp = (d) => d.toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15);
 
 /**
+ * 🔴 La primera versión del arnés cuya lista cerrada de la capa admite `team-repos.json` (scripts/setup/harness/team.js).
+ * Una máquina con una versión anterior rechaza la capa ENTERA si el perfil trae ese archivo: se quedaría sin perfil, sin
+ * revisores y sin skills del equipo. Por eso la página propone el cambio al perfil SÓLO si su `team-layer.json` ya pide al
+ * menos esta versión (`requires.harness`), y lo dice si no. Si este número cambia al mergear, se corrige acá.
+ */
+const TEAM_REPOS_SINCE = '2026.10.13.10';
+const versionParts = (v) => { const m = /^(\d{4})\.(\d{1,2})\.(\d{1,2})\.(\d+)$/.exec(String(v || '').trim()); return m ? m.slice(1).map(Number) : null; };
+const versionAtLeast = (v, min) => {
+  const a = versionParts(v); const b = versionParts(min);
+  if (!a || !b) return false;
+  for (let i = 0; i < 4; i += 1) if (a[i] !== b[i]) return a[i] > b[i];
+  return true;
+};
+/** `null` si el perfil de ese clon ya pide una versión que admite team-repos.json; si no, el motivo en llano. */
+function profileGateProblem(clone) {
+  let decl;
+  try { decl = JSON.parse(fs.readFileSync(path.join(clone, 'team-layer.json'), 'utf8')); } catch (e) {
+    return `no pude leer team-layer.json del clon del perfil (${(e && e.code) || e.message}), y sin él no sé qué versión del arnés piden las máquinas`;
+  }
+  const req = String(((decl || {}).requires || {}).harness || '');
+  const m = /^>=\s*(\S+)$/.exec(req.trim());
+  if (m && versionAtLeast(m[1], TEAM_REPOS_SINCE)) return null;
+  return `todavía no se puede proponer: el perfil pide «${req || 'nada'}» en team-layer.json, y una máquina con una versión anterior a la ${TEAM_REPOS_SINCE} rechazaría la capa entera si trae team-repos.json. Primero se sube requires.harness a «>= ${TEAM_REPOS_SINCE}» (o más). El archivo quedó guardado en tu clon`;
+}
+
+/**
  * Lo que va a pasar si la persona confirma: los comandos, en orden. No corre nada. Frena si el clon tiene otros cambios
  * sin commitear (el pedido llevaría más de lo que se ve en la página) o si el archivo no cambió.
  */
 function proposalPlan(target, clone, opts = {}) {
   const why = cloneProblem(clone);
   if (why) return { ok: false, message: why };
+  if (target.id === 'repos') {
+    const gate = profileGateProblem(clone);
+    if (gate) return { ok: false, message: gate };
+  }
   const env = opts.env || process.env;
   // `-z`: cada entrada «XY ruta» separada por un nulo, sin comillas ni recortes (la salida recortada perdía el espacio
   // inicial de la primera línea y con él la primera letra de la ruta)
@@ -432,4 +462,4 @@ function declaredClones({ env = process.env } = {}) {
   return { repos: pick(p.team), operations: pick(p.operations) };
 }
 
-module.exports = { TARGETS, start, declaredClones, readTarget, saveTarget, proposalPlan, runProposal, remoteOf, browserCommand, cloneProblem, formatJson, loadReader, NO_PERMISSION };
+module.exports = { TARGETS, start, declaredClones, readTarget, saveTarget, proposalPlan, runProposal, remoteOf, browserCommand, cloneProblem, formatJson, loadReader, NO_PERMISSION, TEAM_REPOS_SINCE, profileGateProblem };

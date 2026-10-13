@@ -47,6 +47,8 @@ function cloneWithRemote() {
   const dir = tmp('clone');
   g(dir, 'init', '-q', '-b', 'main');
   fs.writeFileSync(path.join(dir, 'README.md'), 'perfil\n');
+  // el perfil ya pide una versión que admite team-repos.json en la capa: sin eso la página no propone el cambio (T6b)
+  fs.writeFileSync(path.join(dir, 'team-layer.json'), `${JSON.stringify({ schema: 1, name: 'equipo', requires: { harness: `>= ${TC.TEAM_REPOS_SINCE}` } })}\n`);
   g(dir, 'add', '-A'); g(dir, 'commit', '-q', '-m', 'base');
   g(dir, 'remote', 'add', 'origin', bare);
   g(dir, 'push', '-q', '-u', 'origin', 'main');
@@ -191,6 +193,29 @@ test('T6 Plan_OnlyThisFile_NothingToPropose_PlatformFromOrigin', () => {
   const az = TC.proposalPlan(t, dir, { env: ENV, now });
   assert.deepStrictEqual(az.pr.slice(0, 5), ['az', 'repos', 'pr', 'create', '--detect']);
   assert.ok(az.manual.startsWith('https://dev.azure.com/acme/Mi%20Proyecto/_git/team-profile/pullrequestcreate?sourceRef=team-config%2Frepos-'));
+});
+
+test('T6b Plan_ProfileMustRequireAVersionThatAdmitsTeamRepos — sin eso, cada máquina anterior rechazaría la capa entera', () => {
+  const t = TC.TARGETS[0];
+  const { dir } = cloneWithRemote();
+  fs.writeFileSync(path.join(dir, t.file), TC.formatJson(GOOD));
+  const first = TC.proposalPlan(t, dir, { env: ENV });
+  assert.strictEqual(first.ok, true, `con el perfil pidiendo la versión, se propone: ${first.message}`);
+  for (const [req, why] of [['>= 2026.10.13.9', 'una anterior'], ['', 'sin pedir'], ['cualquiera', 'ilegible']]) {
+    fs.writeFileSync(path.join(dir, 'team-layer.json'), `${JSON.stringify({ schema: 1, name: 'equipo', requires: { harness: req } })}\n`);
+    g(dir, 'add', 'team-layer.json'); g(dir, 'commit', '-q', '-m', why);
+    const r = TC.proposalPlan(t, dir, { env: ENV });
+    assert.strictEqual(r.ok, false, `${why}: no se propone`);
+    assert.match(r.message, /todavía no se puede proponer: .*rechazaría la capa entera/, why);
+  }
+  g(dir, 'rm', '-q', 'team-layer.json'); g(dir, 'commit', '-q', '-m', 'sin declaración');
+  assert.match(TC.proposalPlan(t, dir, { env: ENV }).message, /no pude leer team-layer\.json/);
+  // operations.json no llega a las máquinas: su propuesta no depende de la versión
+  const o = TC.TARGETS[1];
+  fs.writeFileSync(path.join(dir, o.file), '{"version":1,"owners":{"default":"a@b.example"}}\n');
+  fs.rmSync(path.join(dir, t.file));
+  const op = TC.proposalPlan(o, dir, { env: ENV });
+  assert.strictEqual(op.ok, true, `operations: ${op.message}`);
 });
 
 test('T7 Propose_RealPushToTheRemote_PermissionSaidPlainly_MissingToolGivesTheLink', () => {

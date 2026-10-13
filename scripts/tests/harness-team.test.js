@@ -273,6 +273,25 @@ test('T6u Team_ProfileValidatedWithReaderOfTree_TempDir_NoProfileVar_PersonalAnd
   assert.match(r.reason, /lector/);
 });
 
+test('T6v Team_TeamReposInTheClosedList_ValidatedWithReaderOfTree — dónde vive cada repo viaja en la capa, validado por la versión que va a quedar', () => {
+  // story 8.26, tanda J: sin esta ruta en la lista cerrada, una capa con team-repos.json se rechazaba ENTERA en cada máquina
+  assert.equal(TEAM.layerPathProblem(TEAM.TEAM_REPOS_PATH), null, 'team-repos.json entra en la capa');
+  assert.equal(TEAM.isContentChecked(TEAM.TEAM_REPOS_PATH), true, 'y se juzga por su contenido antes de escribir nada');
+  const repo = (r) => ({ platform: 'azure', org: 'acme', project: 'Main', repo: r });
+  const sane = JSON.stringify({ version: 1, public: { platform: 'github', org: 'acme', repo: 'harness' }, profile: repo('profile'), operations: repo('ops') });
+  assert.deepEqual(TEAM.validateTeamRepos(sane, { readerTree: ROOT }), { ok: true });
+  const bad = TEAM.validateTeamRepos(JSON.stringify({ version: 1, public: { platform: 'github', org: 'acme', repo: 'harness' }, profile: repo('profile'), owners: ['x'] }), { readerTree: ROOT });
+  assert.equal(bad.ok, false);
+  assert.match(bad.reason, /operations · falta/, 'el motivo nombra la clave');
+  assert.match(bad.reason, /owners · la lista de responsables no va acá/, 'y la lista de responsables no entra en la capa');
+  assert.match(TEAM.validateTeamRepos('{ roto', { readerTree: ROOT }).reason, /el archivo/);
+  // una versión que no trae el lector no lo puede validar: rechazo dicho, no una excepción
+  const old = casa('sin-lector-de-repos');
+  const r = TEAM.validateTeamRepos(sane, { readerTree: old });
+  assert.equal(r.ok, false);
+  assert.match(r.reason, /no trae su lector/);
+});
+
 // tanda A1b (T10 en unidad; revisión adversarial C1, C2, W5, W7, W8, W9): el refresco en el lugar como transacción, sobre
 // carpetas temporales y sin red; y la copia de lo editado que hace `uninstall`
 test('T10u RefreshInPlace_Transaction_EditedKept_RemovedOnlyClosedAndIntact_PublicNeverTouched_KeepEditedNeverThrows', () => {
