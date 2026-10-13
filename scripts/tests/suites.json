@@ -985,6 +985,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.26, tanda J: los lectores de la configuración de una organización — team-repos.json (en el perfil del equipo: dónde vive cada repo del arnés) y operations.json (en el repo de operaciones: responsables y revisores). Válido da sus datos; con problemas, ninguno a medias y cada problema con la ruta de su clave; «no pude leer» no es «no hay repo»; la lista de responsables no entra en el archivo que llega a todas las máquinas. Sólo textos, sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/team-repos.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.26, tanda I: los papeles del repo público medidos donde viven (LICENSE, NOTICE, .github/, getting-started/, scripts/setup/) — el texto canónico de la licencia, el NOTICE contra el manifiesto, las portadas en los dos idiomas y lo que nombran. Antes los medía sobre sus plantillas del repo del equipo, que dejaron de ser la fuente.",
       "raiz": "arnes",
       "ruta": "tests/repo-papers.test.js",
