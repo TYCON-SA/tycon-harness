@@ -74,7 +74,6 @@
     { "path": "scripts/tests/lib/harness-lab.sh", "member": "harness_lab_links y la línea vieja", "why": "el laboratorio modela la máquina de antes (la tanda A lo dejó así a propósito)" },
     { "path": "scripts/tests/profile-equivalence.test.sh", "member": "los hooks y la línea de antes", "why": "la equivalencia de perfiles compara contra una base escrita antes de la 8.19" },
     { "path": "scripts/tests/harness-health.test.sh", "member": "la línea de import que se saca para reinstalar", "why": "se saca la línea escrita con cualquiera de los dos nombres: una máquina de antes la tiene con el viejo", "lines": ["-e '^@~/.claude/tycon-claude-guides/README.md$'"] },
-    { "path": "scripts/tests/third-party-real.test.sh", "member": "el clon como carpeta real con el nombre viejo", "why": "modela una máquina del equipo que clonó dentro de ~/.claude con el nombre de antes" },
     { "path": "scripts/tests/apply-hooks.test.js", "member": "isHarnessCommand y W4 SameHookByRepoPath", "why": "modela una máquina del equipo con los hooks registrados por el nombre viejo: es lo que hay escrito en las máquinas instaladas antes de la 8.19" }
   ],
   "other_uses": [

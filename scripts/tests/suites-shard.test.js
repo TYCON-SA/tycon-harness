@@ -299,8 +299,8 @@ test('SuitesWeights_PrSetHasMeasuredValues', () => {
   assert.ok(Array.isArray(pr.runs) && pr.runs.length > 0 && pr.runs.every((n) => Number.isInteger(n) && n > 0),
     `el juego cita las corridas de la 170 de donde salen sus pesos: ${JSON.stringify(pr.runs)}`);
   assert.ok(Number.isFinite(pr.default) && pr.default > 0, 'el juego trae su peso por defecto');
-  const er = pr.weights['export-real.test.sh'];
-  assert.ok(er >= 300 && er <= 500, `export-real pesa lo medido en la 170 (~391 s), no lo del nocturno: ${er}`);
+  // (story 8.26, tanda I: export-real, el caso de ~391 s en la 170 contra 1439 de noche, se retiró con la copia armada;
+  // que cada juego use sus pesos lo mide el caso de juguete de SuitesShard_PrWeightsOnlyInPr)
   for (const [name, seconds] of Object.entries(pr.weights)) assert.ok(Number.isFinite(seconds) && seconds > 0, `${name}: ${seconds}`);
 });
 

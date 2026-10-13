@@ -683,7 +683,9 @@ test('PrShards_PlanStep_RunsEverythingWhenTheChangeIsUnknown', { skip: NO_BASH }
 });
 
 // ── segunda parte: las dos suites más largas, sólo si el cambio toca lo que miden ─────────────────────────────────
-const HEAVY_TOY = [['export-real.test.sh', GREEN_SH], ['clean-machine.test.sh', GREEN_SH], ['lab-green-a.test.sh', GREEN_SH],
+// Desde la story 8.26 (tanda I) queda una sola de las dos más largas: la copia pública armada (export-real) se retiró,
+// porque de ningún repo sale ya una copia. Los casos conservan su nombre (el reparto en partes los usa).
+const HEAVY_TOY = [['clean-machine.test.sh', GREEN_SH], ['lab-green-a.test.sh', GREEN_SH],
   ['lab-green-b.test.js', 'process.exit(0);\n'], ['lab-red.test.sh', RED_SH]];
 const planned = (r, file) => fs.readFileSync(path.join(r.plan, file), 'utf8').split('\n').filter(Boolean).map((l) => path.posix.basename(slash(l.split('\t')[0])));
 
@@ -706,16 +708,15 @@ test('PrShards_HeavySuites_ChangeThatDoesNotShip_SkipsBothAndTheVerdictSaysSo', 
   const r = runPlan(dir, shards, ['specs/story-9.9-lab.md', 'tasks/lab.md']);
   const plan = r;
   assert.strictEqual(r.code, 0, r.out);
-  assert.deepStrictEqual(planned(r, 'skip.txt').sort(), ['clean-machine.test.sh', 'export-real.test.sh']);
-  assert.ok(!planned(r, 'run.txt').includes('export-real.test.sh'));
+  assert.deepStrictEqual(planned(r, 'skip.txt').sort(), ['clean-machine.test.sh']);
+  assert.ok(!planned(r, 'run.txt').includes('clean-machine.test.sh'));
   for (let i = 1; i <= shards; i += 1) assert.strictEqual(runShard(dir, i, shards).code, 0);
   publishBench(dir);
   const v = runVerdict(dir, plan.matrix);
   assert.strictEqual(v.join.code, 0, v.join.out);
-  assert.match(v.report.notRun['export-real.test.sh'], /no toca lo que mide/);
-  assert.match(v.verdict.out, /no corrió: el cambio no toca lo que mide — export-real\.test\.sh/);
+  assert.match(v.report.notRun['clean-machine.test.sh'], /no toca lo que mide/);
   assert.match(v.verdict.out, /no corrió: el cambio no toca lo que mide — clean-machine\.test\.sh/);
-  assert.doesNotMatch(v.verdict.out, /(ROJO NUEVO|ya estaba rojo)[^\n]*(export-real|clean-machine)/, 'ni rojas ni excusadas: no corrieron');
+  assert.doesNotMatch(v.verdict.out, /(ROJO NUEVO|ya estaba rojo)[^\n]*clean-machine/, 'ni roja ni excusada: no corrió');
   assert.strictEqual(v.verdict.code, 0, v.verdict.out);
 });
 
@@ -725,7 +726,7 @@ test('PrShards_HeavySuites_NightlyPhotoIncompleteOldOrMissing_NothingIsSkippedAn
   // prueba rota. Acá la foto la pone el caso (toyGit), no el nocturno de anoche.
   const old = new Date(Date.now() - 40 * 3600 * 1000).toISOString();
   const cases = [
-    ['el nocturno no midió todo', { kind: 'bash-tests', ts: new Date().toISOString(), failures: ['export-real.test.sh(no-medida)'], complete: false }, /--deps no saltea nada[^\n]*complete: false/],
+    ['el nocturno no midió todo', { kind: 'bash-tests', ts: new Date().toISOString(), failures: ['clean-machine.test.sh(no-medida)'], complete: false }, /--deps no saltea nada[^\n]*complete: false/],
     ['la foto es de hace 40 h', { kind: 'bash-tests', ts: old, failures: [], complete: true }, /--deps no saltea nada[^\n]*hace 40 h/],
     ['no llegó la foto', null, /##vso\[task\.logissue type=warning\]suites: no pude leer la foto nocturna[^\n]*--deps no saltea nada/],
   ];
@@ -733,7 +734,7 @@ test('PrShards_HeavySuites_NightlyPhotoIncompleteOldOrMissing_NothingIsSkippedAn
     const r = runPlan(toy(HEAVY_TOY, { photo }), maxShards(), ['specs/story-9.9-lab.md', 'tasks/lab.md']);
     assert.strictEqual(r.code, 0, `${what}\n${r.out}`);
     assert.deepStrictEqual(planned(r, 'skip.txt'), [], `${what}: sin red no se saltea ninguna\n${r.out}`);
-    for (const heavy of ['clean-machine.test.sh', 'export-real.test.sh']) assert.ok(planned(r, 'run.txt').includes(heavy), `${what}: ${heavy} corre\n${r.out}`);
+    for (const heavy of ['clean-machine.test.sh']) assert.ok(planned(r, 'run.txt').includes(heavy), `${what}: ${heavy} corre\n${r.out}`);
     assert.match(r.out, says, `${what}: el paso dice por qué no saltea`);
   }
 });
@@ -753,14 +754,14 @@ test('PrShards_HeavySuites_PublishingChangeOrFailedDiff_RunsBoth', { skip: NO_BA
   const shards = maxShards();
   const publishing = runPlan(toy(HEAVY_TOY), shards, ['scripts/publishing/export.js']);
   assert.strictEqual(publishing.code, 0, publishing.out);
-  for (const name of ['export-real.test.sh', 'clean-machine.test.sh']) assert.ok(planned(publishing, 'run.txt').includes(name), `scripts/publishing/ corre ${name}`);
+  for (const name of ['clean-machine.test.sh']) assert.ok(planned(publishing, 'run.txt').includes(name), `scripts/publishing/ corre ${name}`);
   // El diff del pedido de merge falló («Qué trae este cambio» dejó todo=si): corren todas, nunca «no hace falta».
   // (story 8.22: el motivo lo trae «Qué trae este cambio» en motivoTodo y el paso lo repite)
   const failed = runPlan(toy(HEAVY_TOY), shards, null, { SYSTEM_PULLREQUEST_TARGETBRANCH: 'refs/heads/main', MOTIVOTODO: 'el diff contra origin/main falló: x' });
   assert.strictEqual(failed.code, 0, failed.out);
   assert.match(failed.out, /suites: corren todas — el diff contra origin\/main falló: x/);
   assert.deepStrictEqual(planned(failed, 'skip.txt'), []);
-  for (const name of ['export-real.test.sh', 'clean-machine.test.sh']) assert.ok(planned(failed, 'run.txt').includes(name), `con el diff fallido corre ${name}`);
+  for (const name of ['clean-machine.test.sh']) assert.ok(planned(failed, 'run.txt').includes(name), `con el diff fallido corre ${name}`);
 });
 
 test('PrShards_ShardNumberOutsideTheMatrix_GoesRedWithoutRunningAnything', { skip: NO_BASH }, () => {
