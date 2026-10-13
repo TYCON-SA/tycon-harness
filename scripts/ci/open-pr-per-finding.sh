@@ -27,6 +27,8 @@
 #    pero lo que decide si hay que abrir uno es la ficha, no lo que Azure conteste sobre una rama.
 #    Sin `pr:`, se pregunta por la rama con `--status all` y se ADOPTA lo que haya: eso es lo que
 #    impide que un `pr:` perdido por un push fallido produzca un segundo pull request.
+#    Y un `pr:` cuenta sólo si ese pull request es de ESTE repo (`--project`/`--repo`): el número vale
+#    para toda la organización, y el de otro repo no es un lugar donde decidir esta ficha (ver `pr_owner`).
 #
 # 2. PREGUNTAR MAL NO ES «NO HAY NINGUNO». Ninguna consulta lleva `|| true` ni `2>/dev/null`: si
 #    `az` falla, esa ficha no se toca, se imprime el error CRUDO, cuenta como fallo, las demás se
@@ -273,6 +275,27 @@ campo_pr(){ node -e '
     console.log([p.pullRequestId,p.status,(p.creationDate||"").slice(0,10),(p.closedDate||"").slice(0,10)].join(" "));
   });'; }
 
+# 🔴 EL NÚMERO DE UN PULL REQUEST ES DE TODA LA ORGANIZACIÓN, NO DE ESTE REPO (story 8.26, tanda J — 2026-10-13).
+# `pr_por_id` pregunta por número y Azure contesta el pull request de CUALQUIER repo. Una ficha que llegó con su `pr:`
+# desde otro repo —el caso: la cola se muda a un repo que nace con la historia del anterior— tenía entonces un pull
+# request «propio» que no se puede decidir acá: si seguía activo, la ficha esperaba para siempre en un lugar donde
+# nadie la iba a aceptar; si alguien lo abandonaba para ordenar, se anotaba como un rechazo; y a los 7 días pasaba
+# sola a ignorada. Las tres, en verde. Este lector dice de quién es: `own`, o `foreign <proyecto>/<repo>`.
+# Como los otros: si la respuesta no dice de qué repo es, sale != 0 —«no pude leer» no es «es de acá»—.
+# `--project` y `--repo` pueden venir por nombre o por id: se compara contra los dos, sin distinguir mayúsculas.
+pr_owner(){ PR_PROJECT="$PROYECTO" PR_REPO="$REPO" node -e '
+  let d=""; process.stdin.on("data",c=>d+=c).on("end",()=>{
+    let p; try { p=JSON.parse(d); } catch { process.stderr.write("respuesta ilegible de az\n"); process.exit(1); }
+    const r=p&&p.repository, pj=r&&r.project;
+    if (!r||typeof r!=="object"||!r.name||!pj||typeof pj!=="object"||!pj.name) {
+      process.stderr.write("la respuesta no dice de qué repo es el pull request\n"); process.exit(1);
+    }
+    const same=(a,b)=>String(a||"").toLowerCase()===String(b||"").toLowerCase();
+    const one=(o,v)=>same(o.name,v)||same(o.id,v);
+    if (one(r,process.env.PR_REPO)&&one(pj,process.env.PR_PROJECT)) { console.log("own"); return; }
+    console.log("foreign "+String(pj.name).replace(/\s+/g," ")+"/"+String(r.name).replace(/\s+/g," "));
+  });'; }
+
 # 🔴 El motivo del rechazo es el ÚLTIMO comentario de tipo `text` escrito por una PERSONA. Medido
 # sobre los tres pull requests abandonados reales: sólo UNO tenía un comentario de texto; los otros
 # dos únicamente comentarios de sistema ("voted -10", "updated the pull request status to
@@ -319,7 +342,23 @@ for F in "$COLA"/pending/*.yaml; do
       fallo "$ID: no pude leer la respuesta de Azure sobre el PR !$PR — $(cat "$ERR")"; continue
     fi
     read -r _ ESTADO _ CERRADO <<< "$LEIDO"
-  else
+    if ! OWNER=$(printf '%s' "$OUT" | pr_owner 2>"$ERR"); then
+      fallo "$ID: no pude leer de qué repo es el PR !$PR — $(cat "$ERR")"; continue
+    fi
+    if [ "$OWNER" != own ]; then
+      # 🔴 Un rechazo YA anotado es un dato de la ficha, no del pull request: se respeta venga de donde venga
+      # (en dependencias la ficha rechazada sigue viva, con su `pr:` y su `rechazado:`), y no se vuelve a preguntar.
+      if grep -q '^rechazado:' "$F"; then
+        echo "$ID: ya estaba anotado el rechazo (su PR !$PR es de otro repo, ${OWNER#foreign }: no se mira su estado)"; continue
+      fi
+      # Lo que el otro repo diga de ese pull request NO decide esta ficha: ni «activo» es un lugar donde decidirla,
+      # ni «abandonado» es un rechazo (es lo que queda al ordenar una mudanza). Se sigue como si no tuviera `pr:`:
+      # se busca por la rama EN ESTE repo y, si no hay, se abre uno acá, que reemplaza el número en la ficha.
+      aviso "$ID: su pr: !$PR es de otro repo (${OWNER#foreign }, $ESTADO), no de $PROYECTO/$REPO: acá no cuenta. Se busca su pull request en este repo; el de allá queda como está (si sigue abierto, hay que cerrarlo a mano)"
+      PR=""
+    fi
+  fi
+  if [ -z "$PR" ]; then
     if ! OUT=$(pr_por_rama "$PREFIJO/$ID"); then
       fallo "$ID: no se pudo consultar los PR de $PREFIJO/$ID — $(cat "$ERR")"; continue
     fi
@@ -346,7 +385,7 @@ for F in "$COLA"/pending/*.yaml; do
 
   case "$ESTADO" in
     active)
-      if [ -z "$(escalar "$F" pr)" ]; then
+      if [ "$(escalar "$F" pr)" != "$PR" ]; then   # sin `pr:`, o con el de otro repo, que no cuenta
         echo "$ID: adoptado el PR !$PR que ya existía"
         encolar "$F" pr "$PR"
         # Alguien pudo REACTIVAR en Azure un pull request que se había rechazado: la ficha lo tiene
@@ -411,6 +450,15 @@ for F in "$COLA"/archived/*.yaml "$COLA"/promoted/*.yaml; do
     fallo "$ID: no pude leer la respuesta de Azure sobre el PR !$PR — $(cat "$ERR")"; continue
   fi
   read -r _ ESTADO _ CERRADO <<< "$LEIDO"
+  if ! OWNER=$(printf '%s' "$OUT" | pr_owner 2>"$ERR"); then
+    fallo "$ID: no pude leer de qué repo es el PR !$PR de una ficha cerrada — $(cat "$ERR")"; continue
+  fi
+  if [ "$ESTADO" = "active" ] && [ "$OWNER" != own ]; then
+    # 🔴 Este guion no escribe en otro repo: no abandona el pull request ni lo da por cerrado (sigue abierto). Avisa
+    # cada noche hasta que alguien lo cierre allá; desde entonces cae en el `else` de abajo y se anota su cierre.
+    aviso "$ID: su PR !$PR sigue abierto en otro repo (${OWNER#foreign }): este guion no cierra pull requests de otro repo — hay que cerrarlo a mano; se vuelve a mirar mañana"
+    continue
+  fi
   if [ "$ESTADO" = "active" ]; then
     if az repos pr update --org "$ORG" --id "$PR" --status abandoned -o none 2>"$ERR"; then
       echo "PR !$PR abandonado con su ficha ($ID)"
