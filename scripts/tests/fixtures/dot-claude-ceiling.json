@@ -5,7 +5,7 @@
     "direction": "baja dos, a propósito",
     "reason": "Story 8.26, tanda G3: el revisor de deudas deja de citar el registro de incidentes por su ruta (la prosa de los revisores quedó sin historia interna), y sus dos traducciones a Codex pasan de 1 a 0 cada una. El total queda en 828."
   },
-  "total": 828,
+  "total": 825,
   "files": {
     "adapters/codex/agents-native/http-resilience-reviewer.toml": 1,
     "adapters/codex/agents-native/migration-impact-analyzer.toml": 1,
@@ -98,7 +98,7 @@
     "scripts/lib/harness-repo.js": 4,
     "scripts/lib/hook-io.js": 2,
     "scripts/lib/installed-packs.js": 2,
-    "scripts/lib/legacy-names.js": 10,
+    "scripts/lib/legacy-names.js": 7,
     "scripts/lib/lint-story-frontmatter.js": 2,
     "scripts/lib/manifest-engram.js": 1,
     "scripts/lib/renames.json": 41,

@@ -383,7 +383,8 @@ test('T20 LegacyNames_Shims_CrossFolderPs1MdLoggingAndUnsafePaths', () => {
   // .ps1: marca en la segunda línea y el nuevo por ruta relativa; corrido si hay pwsh
   const ps1 = fs.readFileSync(path.join(repo, `scripts/lab/${W.viejo}.ps1`), 'utf8');
   assert.ok(isShim(ps1), '.ps1: marca en la segunda línea');
-  assert.match(ps1, /& \(Join-Path \$PSScriptRoot 'new-tool\.ps1'\) @args/);
+  assert.match(ps1, /\$legacyTarget = Join-Path \$PSScriptRoot 'new-tool\.ps1'\n/);
+  assert.match(ps1, /& \$legacyTarget @args/);
   assert.match(ps1, /exit \$LASTEXITCODE/);
   if (spawnSync('pwsh', ['-v'], { encoding: 'utf8' }).status === 0) {
     const ps = [`scripts/lab/${W.viejo}.ps1`, 'scripts/lab/new-tool.ps1'].map((rel) => spawnSync('pwsh', ['-NoProfile', '-File', path.join(repo, rel), 'c', 'd'], { encoding: 'utf8', env }));
@@ -1100,7 +1101,8 @@ test('T2 Restructure_Shims_ComputedRelativePathAndMdForm', () => {
   // el .ps1 desde otra carpeta: la ruta relativa sube y baja, con la marca y el código de salida
   const ps1 = fs.readFileSync(path.join(repo, oldPs), 'utf8');
   assert.ok(lib().isShim(ps1), '.ps1: marca en la segunda línea');
-  assert.match(ps1, /& \(Join-Path \$PSScriptRoot '\.\.\/tools\/ps-tool\.ps1'\) @args/, '.ps1: la ruta relativa al nuevo, desde otra carpeta');
+  assert.match(ps1, /\$legacyTarget = Join-Path \$PSScriptRoot '\.\.\/tools\/ps-tool\.ps1'\n/, '.ps1: la ruta relativa al nuevo, desde otra carpeta');
+  assert.match(ps1, /& \$legacyTarget @args/);
   assert.match(ps1, /exit \$LASTEXITCODE/);
   if (spawnSync('pwsh', ['-v'], { encoding: 'utf8' }).status === 0) {
     const ps = [oldPs, 'scripts/tools/ps-tool.ps1'].map((rel) => spawnSync('pwsh', ['-NoProfile', '-File', path.join(repo, rel), 'c', 'd'], { encoding: 'utf8', env }));
