@@ -89,14 +89,6 @@
         "until": "la medición final de la story 8.22 (tramo H)"
       }
     },
-    "export-real.test.sh": {
-      "exception": {
-        "signed_by": "el dueño del arnés",
-        "date": "2026-10-07",
-        "why": "La copia pública de verdad: es la que frena, antes de main, un cambio que rompería la publicación. El 2026-10-05 se la sacó de la validación de cada rama y la publicación se cayó dos veces. Partirla quedó fuera del alcance de la story.",
-        "until": "la medición final de la story 8.22 (tramo H)"
-      }
-    },
     "nightly-dependencies.test.sh": {
       "exception": {
         "signed_by": "el dueño del arnés",
@@ -119,14 +111,6 @@
         "date": "2026-10-07",
         "why": "Se partió en dos y se volvió atrás: legacy-names-c1.test.js exige ver su entrada entera en suites.json, y las legacy-names-* no se tocan hasta su retiro. Con las partes sumaba las mismas verificaciones.",
         "until": "el retiro de las suites legacy-names-* (story 8.15)"
-      }
-    },
-    "third-party-real.p2.test.sh": {
-      "exception": {
-        "signed_by": "el dueño del arnés",
-        "date": "2026-10-07",
-        "why": "La parte de la suite que corre el exportador de verdad sobre el núcleo: es un solo paso, que en el agente tarda más de 45 s (57 s medidos en la validación de la rama). No se puede partir más; baja si baja el exportador.",
-        "until": "la medición final de la story 8.22 (tramo H)"
       }
     },
     "suites-for-change.test.js": {
