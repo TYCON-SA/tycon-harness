@@ -43,7 +43,7 @@ const NO_IMPRIMIBLES = new RegExp('[' + String.fromCharCode(0) + '-' + String.fr
 const limpio = (t, max) => String(t).replace(NO_IMPRIMIBLES, ' ').slice(0, max);
 
 /** La línea del aviso para una página ya leída. `nota` es el sufijo cuando se leyó del disco. */
-function redactar({ html, ahora, nota = '', sello }) {
+function redactar({ html, ahora, nota = '', sello, copia = null }) {
   const l = sello.leer(html);
   if (!l.sello) {
     // El motivo de un sello roto puede citar un valor de la página: se dice sólo si no trae sello o si está ilegible.
@@ -57,6 +57,9 @@ function redactar({ html, ahora, nota = '', sello }) {
     return `🔕 el tablero del arnés publicado dice ser del ${fecha}, posterior a hoy — sus números no se muestran · revisar el pipeline ${PIPELINE}${nota}`;
   }
   if (ahora - t > VEJEZ_MS) {
+    // la página venció, pero la copia del clon de mantenimiento no se trae desde antes: no prueba que no se generó
+    const vieja = copia ? copia(t + VEJEZ_MS) : null;
+    if (vieja) return `🟠 tablero del arnés: no sé si se generó — su última página es del ${fecha} y ${vieja}${nota}`;
     const dias = Math.floor((ahora - t) / 86400000);
     return `🔕 el tablero del arnés NO SE ESTÁ GENERANDO desde el ${fecha} (hace ${dias} día(s)) — sus números no se muestran a propósito · revisar el pipeline ${PIPELINE}${nota}`;
   }
@@ -77,12 +80,22 @@ function main() {
   const where = 'scripts/hooks/dashboard-notice.js';
   if (readEnv('TYCON_DASHBOARD_NOTICE', { where }) === '0' || process.env.TYCON_EVAL_SANDBOX === '1') return 0;
   const sello = require('../nightly/dashboard/seal.js');  // una copia sin el sello es una copia rota: el wrapper calla
-  // de qué árbol se lee (story 8.23, AC 6 y 18): la variable manda; si no, lo decide tycon-home.js —en un clon, éste; en
-  // una versión bajada, el clon que la máquina mantiene, o ninguno (y este aviso calla: nunca git sobre ~/.tycon)—
+  // de qué árbol se lee: la variable manda; si no, lo decide scripts/lib/night-data.js —en un clon, éste; en una versión
+  // bajada, el clon de mantenimiento que la máquina declara (`paths.maintainers`), o ninguno (y este aviso calla: nunca
+  // git sobre ~/.tycon; que el clon falte o no sirva lo dice el aviso de dependencias, una vez por arranque)—. Sin esa
+  // biblioteca al lado, lo de antes (tycon-home.js).
   const own = path.resolve(__dirname, '..', '..');
   const homeLib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js');
-  const raiz = readEnv('TYCON_DASHBOARD_REPO', { where }) || (fs.existsSync(homeLib) ? require(homeLib).maintainedDir(require('os').homedir(), own) : own);
+  const nightLib = path.join(__dirname, '..', 'lib', 'night-data.js');
+  const N = fs.existsSync(nightLib) ? require(nightLib) : null;
+  const porVariable = readEnv('TYCON_DASHBOARD_REPO', { where });
+  const noche = porVariable ? { dir: porVariable, source: 'own' }
+    : N ? N.resolve(own)
+      : { dir: fs.existsSync(homeLib) ? require(homeLib).maintainedDir(require('os').homedir(), own) : own, source: 'own' };
+  const raiz = noche.dir;
   if (!raiz) return 0;
+  // la máquina que declara su clon de mantenimiento mira de cuándo es su copia antes de acusar al nocturno
+  const copia = noche.source === 'maintainers' ? (desde) => N.copyAfter(raiz, desde) : null;
   const ahoraFija = readEnv('TYCON_DASHBOARD_NOW', { where });
   const ahora = ahoraFija ? Date.parse(ahoraFija) : Date.now();
   if (Number.isNaN(ahora)) return 0;
@@ -98,7 +111,10 @@ function main() {
     let nombres = null;
     try { nombres = pub.fuente.listar(dir); } catch (_) { nombres = null; }
     if (nombres && !nombres.includes(ARCHIVO)) {
-      console.log(`🔕 el tablero del arnés no está publicado (${DONDE} no está en main) — lo genera el pipeline ${PIPELINE}`);
+      // sin página y con la copia del clon de mantenimiento vieja: no se sabe (puede estar publicada y no traída)
+      const vieja = copia ? copia(ahora - VEJEZ_MS) : null;
+      console.log(vieja ? `🟠 tablero del arnés: no sé si está publicado — ${DONDE} no está en mi copia del clon de mantenimiento y ${vieja}`
+        : `🔕 el tablero del arnés no está publicado (${DONDE} no está en main) — lo genera el pipeline ${PIPELINE}`);
       return 0;
     }
     if (nombres) { try { html = pub.fuente.leer(dir, ARCHIVO); } catch (_) { html = null; } }
@@ -117,7 +133,7 @@ function main() {
     }
     nota = ` · ℹ️ leído del disco, no de lo publicado (${limpio(motivo, 120)})`;
   }
-  console.log(redactar({ html, ahora, nota, sello }));
+  console.log(redactar({ html, ahora, nota, sello, copia }));
   return 0;
 }
 

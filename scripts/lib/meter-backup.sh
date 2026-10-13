@@ -22,6 +22,21 @@
 # y tarda minutos; el margen cubre una corrida lenta o encolada.
 RESPALDO_MEDIDOR_DESDE_HORA="${RESPALDO_MEDIDOR_DESDE_HORA:-05}"
 
+# 🔴 El respaldo escribe en el árbol del arnés, así que sólo tiene sentido donde ese árbol es un CLON (2026-10-13).
+# En una versión instalada el árbol no es un clon: el instalador buscaba la foto del día en `<árbol>/.dashboard/`, que
+# ahí no existe nunca, y el respaldo corría todos los días, barría la carpeta madre del árbol (sin repos) y dejaba una
+# foto vacía —medido: 939 bytes contra los 49.945 de la del nocturno, con el mismo nombre—. En el clon donde el
+# nocturno deja la suya, esa foto la pisa o traba el `pull` siguiente. El punto del día es del nocturno: donde el arnés
+# no es un clon, no hay respaldo.
+#
+# Uso: meter_backup_has_own_tree <raíz del árbol del arnés>     sale 0 = es un clon (aplica) · 1 = no aplica
+meter_backup_has_own_tree() {
+  local tree="${1:-}"
+  [ -n "$tree" ] || return 1
+  [ -e "$tree/.git" ] || return 1     # carpeta en un clon, archivo en un árbol enlazado
+  return 0
+}
+
 respaldo_medidor_debe_correr() {
   local hora="$1" existe="$2" sello_hoy="$3"
   [ "$existe" = "1" ] && return 1        # ya llegó con el pull: escritor único

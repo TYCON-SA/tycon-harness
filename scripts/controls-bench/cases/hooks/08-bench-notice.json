@@ -785,6 +785,37 @@
               "examen de los revisores NO ESTÁ CORRIENDO"
             ]
           }
+        },
+        {
+          "id": "maintainers-clone-fresh-and-clean-still-says-a-line",
+          "type": "must-emit",
+          "__doc": "La máquina de quien mantiene el arnés usa la versión instalada y declara su clon de mantenimiento (paths.maintainers): ahí viven los datos de la noche, no al lado del hook ni en el clon del público. Medido el 2026-10-12: cinco nocturnos sanos y este aviso mudo, igual que si no corrieran. El caso arma esa máquina entera —el estado de una versión instalada, la configuración con el clon declarado y un clon con la noche publicada en origin/main— y NO pasa ninguna variable que apunte el aviso a los datos: llega sólo por la configuración. El banco y las suites frescos y limpios callan en cualquier otra máquina (casos quiet-banco-nocturno-fresco-y-verde y quiet-suites-nocturnas-frescas-y-verdes). Acá hablan, con cuántos corrieron: el silencio de una foto limpia y el de una foto que no existe eran el mismo. El examen de los revisores no entra: se lo neutraliza con su variable, como en los demás casos.",
+          "env": {
+            "TYCON_BENCH_REPORT": "",
+            "TYCON_SUITES_REPORT": "",
+            "TYCON_NIGHTLY": "1"
+          },
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/setup && cp $TCG/scripts/hooks/bench-notice.js $TCG/scripts/hooks/public-push-guard.js tcg/scripts/hooks/ && cp -R $TCG/scripts/lib tcg/scripts/lib && cp -R $TCG/scripts/setup/harness tcg/scripts/setup/harness && mkdir -p tcg/scripts/controls-bench && cp $TCG/scripts/controls-bench/*.js tcg/scripts/controls-bench/",
+            "node -e \"require('fs').writeFileSync('ultimo-examen.json',JSON.stringify({kind:'examen-periodico',estado:'completo',alcance:'completo',ts:new Date().toISOString(),criterio:0,inestables:0,paridadReal:0,baselineRegressions:0,maquina:'mini'}))\"",
+            "mkdir -p mant/scripts/controls-bench && node -e \"const f=require('fs');const ts=new Date().toISOString();f.writeFileSync('mant/scripts/controls-bench/ultimo-banco.json',JSON.stringify({ts,tool:'both',ran:380,failed:0,skipped:0,nomedido:0,parityBreaks:0,baselineRegressions:0,origen:'azure-pipelines',estado:'completo'}));f.writeFileSync('mant/scripts/controls-bench/ultimo-suites.json',JSON.stringify({kind:'bash-tests',ts,corridas:2,failures:[],motivos:{},unmeasured:[],complete:true,ran:['a.test.js','b.test.sh'],disappeared:[]}))\"",
+            "git -C mant init -q . && git -C mant add -A -f && git -C mant -c user.email=t@t -c user.name=t commit -qm noche && git -C mant update-ref refs/remotes/origin/main HEAD",
+            "mkdir -p \"$HOME/.tycon/state\" && printf '%s' '{\"schema\":1,\"sources\":[{\"kind\":\"release\",\"version\":\"0.0.0\"}]}' > \"$HOME/.tycon/state/harness-state.json\" && node -e \"const f=require('fs'),p=require('path');f.writeFileSync(p.join(process.env.HOME,'.tycon','config.json'),JSON.stringify({paths:{maintainers:p.resolve('mant')}}))\""
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "expect": {
+            "stdout_re": [
+              "✅ banco de controles nocturno \\([0-9-]+\\): 380 caso\\(s\\), sin rojos",
+              "✅ suites de prueba nocturnas \\(foto del [^)]*\\): 2 corrida\\(s\\), ninguna en rojo"
+            ],
+            "stdout_not_re": [
+              "NO EST",
+              "leído del disco",
+              "no hay ninguna foto"
+            ]
+          }
         }
       ],
       "__doc": "Los casos de este archivo aíslan UNA de las dos cosas que dice el aviso: los rojos del banco. Desde la Story 1.1 el aviso también contesta '¿el examen de revisores está corriendo?', y esa respuesta se apoya en `periodic-exam.js` (de donde importa el único umbral de vejez) y en un reporte que vive FUERA de `.bench/` porque tiene que viajar por git. Por eso cada setup copia esa pieza —CON sus hermanos: todos los .js de la carpeta, no un archivo. El 2026-09-05 `periodic-exam.js` pasó a requerir `tools-path.js`; la copia de un solo archivo caía al catch «clon viejo», los 11 casos mudos hablaban y los 4 que gritan decían otra cosa: 15 rojos falsos, encontrados por DevB desde su máquina. Copiar la carpeta cierra también el próximo hermano— y deja una medición fresca y verde: sin neutralizar ese eje, todo caso mudo gritaría por el otro. Los casos del eje nuevo están al final.",

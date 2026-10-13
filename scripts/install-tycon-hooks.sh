@@ -1304,8 +1304,14 @@ STAGE_STAMP="$HOME/.claude/.tycon-pipeline/stage-metrics-last-run"
 STAGE_ROOT="${TYCON_METRICS_SCAN_ROOT:-$(dirname "$(dirname "$SCRIPT_DIR")")}"
 # con --check no se sella ni se lanza el barrido (story 8.7, AC 24: --check no escribe; antes dejaba el sello en
 # ~/.claude/.tycon-pipeline/ y lanzaba el respaldo, que escribe su punto del día en el clon)
+# 🔴 Sólo donde el arnés corre desde un CLON (2026-10-13): en una versión instalada el árbol no es un clon, la foto del
+# día nunca está en `<árbol>/.dashboard/` y este respaldo corría todos los días, barriendo una carpeta sin repos y
+# dejando una foto vacía con el nombre de la del nocturno. La pregunta vive en scripts/lib/meter-backup.sh.
+# shellcheck source=lib/meter-backup.sh
+if [[ -f "$SCRIPT_DIR/lib/meter-backup.sh" ]]; then . "$SCRIPT_DIR/lib/meter-backup.sh"
+else echo "⚠️  falta scripts/lib/meter-backup.sh: el respaldo local del medidor no corre (el árbol del arnés está incompleto)" >&2; fi
 if [[ "$CHECK_ONLY" != "1" && "${TYCON_STAGE_METRICS:-1}" == "1" && "$PROFILE_FULL" == "1" ]] && command -v node >/dev/null 2>&1 \
-   && [[ -f "$STAGE_METRICS_JS" && -d "$STAGE_ROOT" ]]; then
+   && [[ -f "$STAGE_METRICS_JS" && -d "$STAGE_ROOT" ]] && meter_backup_has_own_tree "$(dirname "$SCRIPT_DIR")"; then
   TODAY_SM="$(date +%Y-%m-%d)"
   # Escritor ÚNICO (STAGE-METRICS-CI-1, 2026-08-30): el punto del día lo escribe el pipeline
   # nocturno de ADO; esta corrida local es el RESPALDO — sólo actúa si el snapshot de hoy no
@@ -1315,8 +1321,6 @@ if [[ "$CHECK_ONLY" != "1" && "${TYCON_STAGE_METRICS:-1}" == "1" && "$PROFILE_FU
   # antes de las 03:00 el archivo de hoy nunca está —el nocturno no corrió todavía—, y este
   # respaldo corría en toda sesión de madrugada aunque nada hubiera fallado. Después el nocturno
   # commiteaba el suyo y el `git pull` de la mañana rebotaba contra el suelto.
-  # shellcheck source=lib/meter-backup.sh
-  . "$SCRIPT_DIR/lib/meter-backup.sh"
   _SM_EXISTE=0; [[ -f "$(dirname "$SCRIPT_DIR")/.dashboard/sdlc-stage-$TODAY_SM.json" ]] && _SM_EXISTE=1
   _SM_SELLO_HOY=0; [[ "$(cat "$STAGE_STAMP" 2>/dev/null || true)" == "$TODAY_SM" ]] && _SM_SELLO_HOY=1
   if [[ "$_SM_EXISTE" == "1" ]]; then

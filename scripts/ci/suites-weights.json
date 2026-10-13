@@ -102,7 +102,10 @@
     "harness-bootstrap.test.sh": 11,
     "manifest-engram.test.sh": 11,
     "publish-bump.test.sh": 11,
-    "tycon-home.test.js": 10
+    "tycon-home.test.js": 10,
+    "night-notices.p1.test.js": 35,
+    "night-notices.p2.test.js": 35,
+    "night-notices.p3.test.js": 35
   },
   "pr": {
     "__doc": "Los pesos de la validación de cada rama (pipelines/azure-pipelines-pr.yml), que los pide con `--weight-set pr` en sus tres llamados a suites-shard.js (story 8.22, tramo A). No son los del nocturno: en la validación clean-machine tarda ~3 s y export-real ~391. Cada peso es la mediana de las corridas de `runs` (la mediana deja afuera un cuelgue: en la 12185 harness-update tardó 1373 s). Una suite que no está acá toma el peso de `weights` de arriba y, si tampoco, el `default` de acá; por eso clean-machine va anotada aunque pese menos de 10 s. Trae las suites de 10 s o más; las demás promediaron 2,6 s. Cómo se mide una suite cuando corren dos a la vez (restar la línea anterior del registro NO da su duración), y la tabla: tasks/medicion-8.22-validacion-15-min.md.",
@@ -197,6 +200,9 @@
       "installer-cleanup-period.test.sh": 19,
       "harness-bootstrap.test.sh": 19,
       "nightly-dod-notice.test.sh": 18,
+      "night-notices.p1.test.js": 35,
+      "night-notices.p2.test.js": 35,
+      "night-notices.p3.test.js": 35,
       "prune.test.sh": 18,
       "legacy-names.test.js": 18,
       "legacy-names-product-pipeline.test.sh": 17,

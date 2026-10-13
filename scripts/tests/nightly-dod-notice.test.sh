@@ -473,7 +473,85 @@ if [ "${RC}" = 0 ] && grep -q "doble-de-scripts-lib ensayo" "${OUT}" && cmp -s "
 else mal "T34 rc=${RC} salida=[$(tail -3 "${OUT}")]"; fi
 fi
 
+# ── T35 y T36 ─ los datos, del clon de mantenimiento; el envío, del árbol propio (2026-10-13) ────────────────────
+# EL DEFECTO. Este guion tomaba como repo su propia ubicación. En una versión instalada eso es el árbol bajado, que no
+# es un clon: el `fetch` fallaba y el aviso decía «no pude mirar» todas las noches, con los datos sanos en el clon de
+# mantenimiento de la máquina. Y un solo «repo» ubicaba dos cosas distintas: de dónde se leen los datos y de dónde
+# sale el guion que manda el Telegram.
+# Rojo previo: el guion viejo, sin TYCON_GUIDES_DIR, hace `fetch` sobre el árbol de juguete (que no es un clon).
+# Se arma una versión instalada de juguete: una copia del guion y de sus bibliotecas, con su PROPIO doble del envío.
+instalada() {
+  IN="${BASE}/instalada"; rm -rf "${IN}" "${BASE}/home/.tycon"
+  mkdir -p "${IN}/scripts/ci" "${IN}/scripts/setup" "${IN}/scripts/hooks" "${BASE}/home/.tycon/state" "${BASE}/clon-publico/.git"
+  cp "${GUION}" "${IN}/scripts/ci/"; cp -R "${RAIZ}/scripts/lib" "${IN}/scripts/lib"; cp -R "${RAIZ}/scripts/setup/harness" "${IN}/scripts/setup/harness"
+  cp "${RAIZ}/scripts/hooks/public-push-guard.js" "${IN}/scripts/hooks/"
+  for f in version.json; do [ -f "${RAIZ}/${f}" ] && cp "${RAIZ}/${f}" "${IN}/"; done
+  printf '#!/usr/bin/env bash\necho "$1" >> "%s/propio"\necho 4242\n' "${D}" > "${IN}/scripts/lib/tycon-telegram-notify.sh"
+  chmod +x "${IN}/scripts/lib/tycon-telegram-notify.sh"
+  printf '{"schema":1,"sources":[{"kind":"release","version":"0.0.0"}]}' > "${BASE}/home/.tycon/state/harness-state.json"
+  printf '%s' "$1" > "${BASE}/home/.tycon/config.json"
+}
+correr_instalada() { ( unset TYCON_NOTICE_NOTIFY TYCON_GUIDES_DIR; TYCON_HOME="${BASE}/home/.tycon" TYCON_NIGHTLY=1 /bin/bash "${IN}/scripts/ci/nightly-dod-notice.sh" > "${OUT}" 2>&1 ); RC=$?; }
+
+echo "T35 VersionInstalada_SinGuidesDir_LeeElClonDeMantenimiento_MandaConSuPropioEnvio"
+armar "$(repo A__A 10)"; publicar "${HOY}" 20 "$(repo A__A 20)"; codigos 0
+instalada "{\"paths\":{\"maintained\":\"${BASE}/clon-publico\",\"maintainers\":\"${CO}\"}}"
+correr_instalada
+PROPIO="$(cat "${D}/propio" 2>/dev/null)"
+if [ "${RC}" = 0 ] && contiene "${PROPIO}" "Se movió la evidencia DoD del nocturno: 10% (10/100) -> 20% (20/100)" && [ "$(llamadas)" = 0 ]; then
+  ok "T35 leyó los snapshots del clon de mantenimiento y mandó con el envío de su propio árbol (el del clon de datos no se llamó)"
+else mal "T35 rc=${RC} propio=[${PROPIO}] llamadas-al-doble-del-clon=$(llamadas) salida=[$(cat "${OUT}")]"; fi
+
+echo "T36 VersionInstalada_SinClonDeMantenimiento_LoDiceYNoMandaNada"
+armar "$(repo A__A 10)"; publicar "${HOY}" 20 "$(repo A__A 20)"; codigos 0
+instalada "{\"paths\":{\"maintained\":\"${BASE}/clon-publico\"}}"
+correr_instalada
+if [ "${RC}" = 2 ] && grep -q "paths.maintainers" "${OUT}" && grep -q "se declara con: harness.js config set paths.maintainers" "${OUT}" && [ ! -e "${D}/propio" ] && [ "$(llamadas)" = 0 ] && ! grep -q "fetch de main falló" "${OUT}"; then
+  ok "T36 sin clon de mantenimiento declarado sale 2 diciendo qué falta, sin traer ni mandar nada"
+else mal "T36 rc=${RC} salida=[$(cat "${OUT}")]"; fi
+
+echo "T36b VersionInstalada_ClonDeclaradoQueNoSirve_NoRecetaDeclararLoYaDeclarado"
+armar "$(repo A__A 10)"; publicar "${HOY}" 20 "$(repo A__A 20)"; codigos 0
+mkdir -p "${BASE}/una-carpeta-cualquiera"
+instalada "{\"paths\":{\"maintained\":\"${BASE}/clon-publico\",\"maintainers\":\"${BASE}/una-carpeta-cualquiera\"}}"
+correr_instalada
+if [ "${RC}" = 2 ] && grep -q "no es la raíz de un clon" "${OUT}" && grep -q "lo declarado no sirve" "${OUT}" && ! grep -q "— se declara con" "${OUT}" && [ "$(llamadas)" = 0 ]; then
+  ok "T36b con un clon declarado que no sirve dice por qué y no receta «se declara con»"
+else mal "T36b rc=${RC} salida=[$(cat "${OUT}")]"; fi
+
+echo "T37 VersionInstalada_SinNodeEnElPath_DiceLaCausa_NoHaceFetchSobreUnArbolQueNoEsUnClon"
+# Corre desde una tarea programada: su PATH puede no traer node. Sin node no se puede preguntar de qué clon leer; en una
+# versión instalada el árbol propio no es un clon, y hacer el fetch igual daba «no pude mirar» por otra causa.
+armar "$(repo A__A 10)"; publicar "${HOY}" 20 "$(repo A__A 20)"; codigos 0
+instalada "{\"paths\":{\"maintained\":\"${BASE}/clon-publico\",\"maintainers\":\"${CO}\"}}"
+SIN_NODE="${BASE}/bin-sin-node"; rm -rf "${SIN_NODE}"; mkdir -p "${SIN_NODE}"
+for t in bash sh git python3 date dirname basename cat sed tail head mkdir rm sleep tr wc mktemp grep awk printf env sort cut; do
+  p="$(command -v "$t" 2>/dev/null)"; case "$p" in /*) ln -s "$p" "${SIN_NODE}/$t" ;; esac
+done
+( unset TYCON_NOTICE_NOTIFY TYCON_GUIDES_DIR; PATH="${SIN_NODE}" TYCON_HOME="${BASE}/home/.tycon" TYCON_NIGHTLY=1 /bin/bash "${IN}/scripts/ci/nightly-dod-notice.sh" > "${OUT}" 2>&1 ); RC=$?
+if [ "${RC}" = 2 ] && grep -q "no encontré node" "${OUT}" && ! grep -q "fetch de main falló" "${OUT}" && ! grep -q "se declara con" "${OUT}" && [ ! -e "${D}/propio" ] && [ "$(llamadas)" = 0 ]; then
+  ok "T37 sin node en el PATH sale 2 diciendo la causa (y sin recetar una declaración que no arregla nada), sin hacer fetch ni mandar nada"
+else mal "T37 rc=${RC} salida=[$(cat "${OUT}")]"; fi
+
+echo "T38 DesdeUnClonConDatos_EnUnaMaquinaConVersionInstaladaSinClonDeMantenimiento_LeeSuArbol"
+# Lanzado DESDE un clon que trae los datos, el repo es ese clon, como siempre: que la máquina tenga además una versión
+# instalada sin clon de mantenimiento (o con los nocturnos apagados) no lo cambia. Rojo previo: salía 2 sin mirar nada.
+armar "$(repo A__A 10)"; publicar "${HOY}" 20 "$(repo A__A 20)"; codigos 0
+instalada "{\"paths\":{\"maintained\":\"${BASE}/clon-publico\"}}"
+mkdir -p "${CO}/scripts/ci" "${CO}/scripts/setup" "${CO}/scripts/hooks"
+cp "${GUION}" "${CO}/scripts/ci/"; cp -R "${RAIZ}/scripts/lib/." "${CO}/scripts/lib/"; cp -R "${RAIZ}/scripts/setup/harness" "${CO}/scripts/setup/harness"
+printf '#!/usr/bin/env bash\nexec "%s" "$@"\n' "${BASE}/doble.sh" > "${CO}/scripts/lib/tycon-telegram-notify.sh"; chmod +x "${CO}/scripts/lib/tycon-telegram-notify.sh"
+for NOCT in 1 0; do
+  codigos 0
+  ( unset TYCON_NOTICE_NOTIFY TYCON_GUIDES_DIR; TYCON_HOME="${BASE}/home/.tycon" TYCON_NIGHTLY="${NOCT}" /bin/bash "${CO}/scripts/ci/nightly-dod-notice.sh" > "${OUT}" 2>&1 ); RC=$?
+  MSG="$(enviado)"
+  if [ "${RC}" = 0 ] && contiene "${MSG}" "Se movió la evidencia DoD del nocturno: 10% (10/100) -> 20% (20/100)" && ! grep -q "no sé de qué clon" "${OUT}"; then
+    ok "T38 desde un clon con datos lee su propio árbol (nocturnos=${NOCT})"
+  else mal "T38 nocturnos=${NOCT} rc=${RC} enviado=[${MSG}] salida=[$(cat "${OUT}")]"; fi
+  rm -rf "${BASE}/estado"
+done
+
 echo
-if [ "${FALLOS}" -eq 0 ] && [ "${T34_NOT_MEASURED}" = 1 ]; then echo "aviso-dod-nocturno: 33 de 34 casos en verde, T34 salteado (NO MEDIDO en la copia pública)"; exit 0; fi
-if [ "${FALLOS}" -eq 0 ]; then echo "aviso-dod-nocturno: 34 de 34 casos en verde"; exit 0; fi
+if [ "${FALLOS}" -eq 0 ] && [ "${T34_NOT_MEASURED}" = 1 ]; then echo "aviso-dod-nocturno: 37 de 38 casos en verde, T34 salteado (NO MEDIDO en la copia pública)"; exit 0; fi
+if [ "${FALLOS}" -eq 0 ]; then echo "aviso-dod-nocturno: 38 de 38 casos en verde"; exit 0; fi
 echo "aviso-dod-nocturno: ${FALLOS} fallo(s)"; exit 1

@@ -435,6 +435,32 @@
         "SkillsReviewersAndBlocks_TranslationsRegenerated (T58) — las traducciones a Codex salen del texto de hoy": 0.3,
         "SkillsReviewersAndBlocks_ExamVerdictsUnchanged (T58) — el examen de los revisores tocados da lo mismo antes y después": 0.1
       }
+    },
+    "night-notices.test.js": {
+      "parts": 3,
+      "seconds": {
+        "T85 NightNotices_MaintainersClone_OneLinePerNightly_DeadIsNeverSilent_MachineWritesLandThere": 2.5,
+        "T85 DeadPiece_ChangesOnlyItsLine_AndSaysNotRunning": 12.1,
+        "T85 NoPhoto_AndUnreadablePhoto_AreSaid_EachWithItsOwnText": 3.2,
+        "T85 CopyAge_StalePhotoWithOldCopyIsUnknown_FreshCopyIsNotRunning_FreshPhotoIsItsState": 18.7,
+        "T85 ReadsWhatIsPublished_NotTheWorkingTreeOfTheClone": 1.9,
+        "T85 MaintainerWithoutMaintainersClone_OrWithOneThatIsNotOne_OneLineWithTheCommand": 4.0,
+        "T85 MachineThatDoesNotMaintain_OrNightliesOff_SeesNothing": 1.9,
+        "T85 RunningFromAClone_SameOutputAsBefore_ByteForByte": 5.7,
+        "T85 NoGreenLine_WithAnIncompleteNight": 16.4,
+        "T85 MachineWrites_LandInTheMaintainersClone_NeverInThePublicOne": 3.1,
+        "T85 EachNotice_CopiedAlone_WorksAsToday": 1.0,
+        "T85 TheGuide_SaysWhoBringsTheMaintainersClone_AndWhen": 0.1,
+        "T85 PublishedCannotBeRead_ReadsTheDiskOfTheClone_AndSaysSo": 3.8,
+        "T85 BrokenMachineConfig_IsSaidByItsReader_NoNightlyLine_NothingWrittenInThePublicClone": 1.4,
+        "T85 NightData_EachFunction_AnsweredDirectly": 6.8,
+        "T85 NoPhoto_WithAnOldCopy_IsUnknown_NotMissing": 4.6,
+        "T85 TheProblem_IsSaid_EvenWithTheDependenciesNoticeSwitchedOff": 1.6,
+        "T85 TextFromAPublishedPhoto_IsSanitizedBeforeTheScreen": 2.1,
+        "T85 StalenessOfMachineRecords_ReadsWhereTheyAreWritten_SilentWhereTheyDoNotTravel": 1.8,
+        "T85 DiskNote_IsOnEveryLine_AlsoOnTheRedOnes": 4.9,
+        "T85 PhotoDatedInTheFuture_IsNotGreen": 2.4
+      }
     }
   }
 }

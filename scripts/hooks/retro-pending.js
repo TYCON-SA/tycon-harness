@@ -180,6 +180,10 @@ const DASHBOARD_DIR = MAINTAINED_TREE ? path.join(MAINTAINED_TREE, '.dashboard')
 // y donde escribe el latido en esta máquina según tycon-home.js (story 8.23, tanda D): en una instalación bajada sin clon
 // declarado es ~/.tycon/state/dashboard — si no se mira ahí, el latido que este aviso pide correr nunca lo apaga
 const MACHINE_DASHBOARD_DIR = (() => {
+  // desde la story 8.26 (tanda J) el latido escribe donde dice scripts/lib/night-data.js: en una versión bajada, el clon de
+  // mantenimiento que la máquina declara (nunca el del público). Sin esa biblioteca al lado, lo de antes.
+  // (si la biblioteca ESTÁ y no carga, tira: no se vuelve callado a la ruta de antes; si no pudo saber, lo avisa ella)
+  { const lib = path.join(__dirname, '..', 'lib', 'night-data.js'); if (fs.existsSync(lib)) { const d = require(lib).machineDashboardDir(path.resolve(__dirname, '..', '..')); if (d) return d; } }
   try { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); const TH = require(lib); return typeof TH.dashboardDir === 'function' ? TH.dashboardDir(os.homedir(), MAINTAINED_TREE || path.resolve(__dirname, '..', '..')) : null; } catch { return null; }
 })();
 const MAX_BLOCKS = 3;

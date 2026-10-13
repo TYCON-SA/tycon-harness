@@ -518,6 +518,13 @@ if corre T18; then
   corre_avisos "con paths.maintained:"
   [ -z "$(grep -- "/.tycon/" "$LAB_GIT_WITNESS_LOG" 2>/dev/null)" ] && ok "tampoco ahora git sobre ~/.tycon" || mal "git sobre ~/.tycon: $(grep -- "/.tycon/" "$LAB_GIT_WITNESS_LOG" | head -3)"
   [ "$(node -e 'const h=require(process.argv[1]);process.stdout.write(String(h.maintainedDir(process.env.HOME, "x")))' "$RAIZ/scripts/setup/harness/tycon-home.js")" = "$LAB_TREE" ] && ok "maintainedDir devuelve el clon declarado" || mal "maintainedDir no devuelve paths.maintained"
+  # y con el clon de MANTENIMIENTO declarado (de ahí leen la noche los avisos: scripts/lib/night-data.js; su lectura
+  # la prueba scripts/tests/night-notices.test.js): tampoco git sobre ~/.tycon, ni queja
+  printf '%s' "$LAB_TREE" | harness_release config set paths.maintainers >/dev/null 2>&1
+  : > "$LAB_GIT_WITNESS_LOG"
+  corre_avisos "con paths.maintainers:"
+  [ -z "$(grep -- "/.tycon/" "$LAB_GIT_WITNESS_LOG" 2>/dev/null)" ] && ok "con el clon de mantenimiento declarado, tampoco git sobre ~/.tycon" || mal "git sobre ~/.tycon: $(grep -- "/.tycon/" "$LAB_GIT_WITNESS_LOG" | head -3)"
+  harness_release config unset paths.maintainers >/dev/null 2>&1
   # el consejo «git pull» del instalador y de pipeline.js (AC 18): sobre una instalación release dice harness.js update.
   # El tramo del instalador sólo se imprime cuando falta un control en el disco: se ejercita su rama a mano, con el
   # estado release de esta máquina

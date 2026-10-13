@@ -60,6 +60,10 @@ const TCG = path.resolve(__dirname, '..', '..');
 // dónde vive `.dashboard` en esta máquina lo sabe tycon-home.js (story 8.23, tanda D): en una instalación bajada es
 // ~/.tycon/state/dashboard; en un clon, el de siempre. Si este archivo viaja suelto, el de siempre.
 function dashboardDefault() {
+  // lo que escribe la máquina vive donde dice scripts/lib/night-data.js (story 8.26, tanda J): en una versión bajada, el
+  // clon de mantenimiento que la máquina declara; nunca el del público. Sin esa biblioteca al lado, lo de antes.
+  // (si la biblioteca ESTÁ y no carga, tira: no se vuelve callado a la ruta de antes; si no pudo saber, lo avisa ella)
+  { const lib = path.join(__dirname, '..', 'lib', 'night-data.js'); if (fs.existsSync(lib)) { const d = require(lib).machineDashboardDir(TCG); if (d) return d; } }
   try {
     const TH = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'));
     const d = typeof TH.dashboardDir === 'function' ? TH.dashboardDir(require('os').homedir(), TCG) : null;
@@ -82,7 +86,7 @@ function parseArgs(argv) {
     const k = argv[i];
     if (k === '--repo') a.repos.push(path.resolve(argv[++i]));
     else if (k === '--scan') a.scan.push(path.resolve(argv[++i]));
-    else if (k === '--dashboard') a.dashboard = path.resolve(argv[++i]);
+    else if (k === '--dashboard') { a.dashboard = path.resolve(argv[++i]); a.dashboardGiven = true; }
     else if (k === '--since') a.since = argv[++i];
     else if (k === '--json') a.json = true;
     else if (k === '--snapshot') a.snapshot = true;
@@ -1409,7 +1413,15 @@ function main() {
   // Snapshot: un archivo por día en el .dashboard. Es lo que convierte una foto en SERIE —
   // sin esto, cada corrida reemplaza a la anterior y la tendencia (que es el único uso real
   // de estas métricas) no existe. Idempotente dentro del mismo día a propósito.
-  if (a.snapshot) {
+  // 🔴 El punto del día lo escribe el NOCTURNO, en su propio árbol. Desde una versión bajada, la carpeta por defecto es
+  // el clon de mantenimiento de la máquina, donde vive el punto del nocturno con ESE nombre: escribir acá lo pisa (o
+  // deja un archivo suelto que traba el `pull` siguiente — pasó el 11 y el 12 de octubre de 2026 con una foto vacía de
+  // 939 bytes sobre una de 49.945). Ahí no se escribe; quien de verdad lo quiera, dice dónde con `--dashboard`.
+  const enOtroClon = !a.dashboardGiven && path.resolve(a.dashboard) !== path.join(TCG, '.dashboard')
+    && fs.existsSync(path.join(path.dirname(path.resolve(a.dashboard)), '.git'));
+  if (a.snapshot && enOtroClon) {
+    console.error(`⚠️  no escribo el punto del día: iría a ${a.dashboard}, que es el clon de mantenimiento y trae el del nocturno con ese nombre. Para escribirlo igual, decí dónde: --dashboard <carpeta>`);
+  } else if (a.snapshot) {
     const day = new Date().toISOString().slice(0, 10);
     const out = path.join(a.dashboard, `sdlc-stage-${day}.json`);
     try {

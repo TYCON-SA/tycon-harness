@@ -3432,8 +3432,9 @@ function cmdDoctor(ctx) {
     if (policy.errors.length) add('fail', `política de actualización mal escrita: ${policy.errors.join(' · ')}`);
     else add('ok', `política: canal ${policy.channel} (${policy.origins.channel}) · aplicación ${policy.apply} (${policy.origins.apply})${policy.enabled ? '' : ' · TYCON_UPDATE=0'}`);
     for (const it of mod('release').doctorItems(ctx, state, { fetch: Boolean(ctx.opts.fetch), channel: policy.errors.length ? null : policy.channel })) add(it.level, it.text);
-    // el clon que esta máquina MANTIENE (story 8.23, tanda D · AC 29): de ahí leen los avisos; sin declarar, callan
-    { const mp = mod('tycon-home').maintainedPath({ env }); add('ok', mp ? `clon que esta máquina mantiene: ${mp} (paths.maintained)` : 'sin clon declarado como el que esta máquina mantiene: los avisos de los nocturnos callan — harness.js config set paths.maintained <ruta de tu clon>'); }
+    // el clon que esta máquina MANTIENE (story 8.23, tanda D · AC 29). Los avisos de los nocturnos ya no leen de ahí: leen
+    // del clon de MANTENIMIENTO (`paths.maintainers`, scripts/lib/night-data.js), que esta misma orden nombra más abajo
+    { const mp = mod('tycon-home').maintainedPath({ env }); add('ok', mp ? `clon que esta máquina mantiene: ${mp} (paths.maintained)` : 'sin clon declarado como el que esta máquina mantiene (no mantiene el arnés) — si lo mantenés: harness.js config set paths.maintained <ruta de tu clon>'); }
     if (state.migrate_home && state.migrate_home.status === 'done') add('ok', `mudada a ${tree} el ${state.migrate_home.at || '—'} desde el clon ${state.migrate_home.from || '—'} (que quedó donde estaba)`);
     // el freno de producción de antes de la mudanza (AC 30): anda por los enlaces; reinstalarlo es humano (sudo)
     { const g = mod('move-home').guardStatus({ env }); if (g.installed && g.old) add('warn', `el freno de producción instalado (${g.dir}) es anterior a la mudanza (su origen de confianza no trae el repo de GitHub): sigue andando por los enlaces; cuando puedas, reinstalalo: sudo bash ${path.join(tree, 'scripts', 'production', 'install-guard.sh')}`); }
