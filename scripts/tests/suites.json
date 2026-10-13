@@ -979,6 +979,18 @@
       ]
     },
     {
+      "__nota": "story 8.26, tanda I: la atribución de lo ajeno medida sobre este repo, sin red — la cobertura del manifiesto sale 0 (y 1 con una skill ajena re-agregada en un clon de laboratorio), los créditos a ECC son las derivadas declaradas, y cada skill derivada trae su LICENSE y un NOTICE.md con su origen y cada archivo. Antes lo medía third-party-real.test.sh sobre la copia armada desde el repo del equipo.",
+      "raiz": "arnes",
+      "ruta": "tests/third-party-attribution.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.26, tanda I: los papeles del repo público medidos donde viven (LICENSE, NOTICE, .github/, getting-started/, scripts/setup/) — el texto canónico de la licencia, el NOTICE contra el manifiesto, las portadas en los dos idiomas y lo que nombran. Antes los medía sobre sus plantillas del repo del equipo, que dejaron de ser la fuente.",
+      "raiz": "arnes",
+      "ruta": "tests/repo-papers.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.3 (tanda A): el lector de configuración del arnés — precedencia variable › máquina › perfil › apagado, falla fuerte en comandos y aviso-sin-frenar en hooks (con el hook real engram-pre-commit.sh), lo personal fuera del perfil.",
       "raiz": "arnes",
       "ruta": "tests/tycon-config.test.js",
