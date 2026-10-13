@@ -1591,11 +1591,11 @@ y lo que Azure hace con el yml (abajo). Antes de la primera corrida de un cambio
 
 ```bash
 bash scripts/tests/mirror-pipeline.test.sh
-node scripts/ci/check-tolerant-steps.js pipelines/azure-pipelines-publicacion.yml
-node scripts/ci/check-stage-dependencies.js pipelines/azure-pipelines-publicacion.yml
+node scripts/ci/check-tolerant-steps.js pipelines/azure-pipelines-public-leak-check.yml
+node scripts/ci/check-stage-dependencies.js pipelines/azure-pipelines-public-leak-check.yml
 # contra Azure, sin ejecutar ni hacer cola
 bash scripts/ci/validate-pipeline-in-ado.sh --project tycon-claude-guides --pipeline <id> \
-  --yaml pipelines/azure-pipelines-publicacion.yml
+  --yaml pipelines/azure-pipelines-public-leak-check.yml
 ```
 
 **Lo que todavía no está medido.** La prueba corre los pasos, no a Azure. Lo que sigue sólo se ve en una corrida de

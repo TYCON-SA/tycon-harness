@@ -270,7 +270,7 @@ node -e 'const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));
 #   · ningún merge lo dispara: ni lo que era de agent-skills (agents/, skills/, packs/), ni una guía, el README o un guion;
 #   · y este control, corrido a mano sobre ese YAML, lo dice: con `trigger: none` no tiene nada que medir, y sale 2. El
 #     día que alguien le vuelva a poner un disparo (la vuelta atrás del corte), este caso se pone rojo y obliga a mirar.
-PUB="$AQUI/pipelines/azure-pipelines-publicacion.yml"
+PUB="$AQUI/pipelines/azure-pipelines-public-leak-check.yml"
 # fires <archivo…> → 0 si ALGUNO dispara el pipeline de publicación (y los nombra en $TMP/out.txt); 1 si ninguno
 fires(){
   node -e '

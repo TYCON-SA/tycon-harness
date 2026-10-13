@@ -52,10 +52,11 @@
  *   · un repo que legítimamente construya con documentación (un sitio de docs): hoy no hay ninguno entre
  *     los productos. El día que aparezca, se declara acá con motivo y fecha —no se afloja el control
  *     para todos.
- *   · el pipeline de PUBLICACIÓN del arnés (pipelines/azure-pipelines-publicacion.yml), declarado el
- *     2026-10-04 (story 8.18): no construye, no despliega ni pide producción —lleva la copia pública,
- *     donde la documentación ES contenido—, y por eso no filtra por rutas. No está en
- *     product-parity.json; con --file da 1, y trigger-without-docs.test.sh lo deja fijado.
+ *   · el pipeline de PUBLICACIÓN del arnés (pipelines/azure-pipelines-public-leak-check.yml, en el repo del
+ *     equipo), declarado el 2026-10-04 (story 8.18): no construye, no despliega ni pide producción —hoy
+ *     verifica que lo publicado no filtre nada privado—, y desde 2026-10-13 un merge no lo dispara
+ *     (`trigger: none`). No está en product-parity.json; con --file da 2 (no tiene qué medir), y
+ *     trigger-without-docs.test.sh lo deja fijado.
  *
  * Los repos salen de `product-parity.json` (la única lista de qué pipelines son "los productos");
  * un grupo cuyo archivo lleva `trigger: none` (producción) cuenta como "no aplica", no como medido.
