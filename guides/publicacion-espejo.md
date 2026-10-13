@@ -1030,8 +1030,8 @@ lo que no se ve no es «no hay». Vale para `plan` y para `sync`. Qué hacer: co
 repo interno, que trae las dos historias (un clon superficial se completa con `git fetch --unshallow`). Con dos repos
 físicos esta comprobación no corre.
 
-El pipeline no declara el repo de agent-skills como recurso, y un merge que toca `agents/`, `skills/` o `packs/`
-dispara como cualquier otro (§«El pipeline de publicación»). Lo prueban dos casos de `scripts/tests/mirror.test.js`,
+El pipeline no declara el repo de agent-skills como recurso: lo que toca `agents/`, `skills/` o `packs/` se publica
+como cualquier otro cambio (§«El pipeline de publicación»). Lo prueban dos casos de `scripts/tests/mirror.test.js`,
 `Mirror_OneCommit_BothTrailersSame_VersionJsonShapeKept` y
 `Mirror_FirstSyncAfterUnion_RecognizesPrevious_StopsIfUnknown`, con un repo único de juguete armado como el de verdad:
 un merge de dos historias sin relación.
@@ -1047,8 +1047,8 @@ escribe en GitHub.
 
 **El flujo**, de un merge a `main` del interno al `main` público:
 
-1. Un merge a `main` del repo interno dispara la publicación. La corre su pipeline, que suma una corrida diaria
-   (§«El pipeline de publicación»).
+1. Un merge a `main` del repo interno disparaba la publicación (hasta el corte a GitHub; desde entonces ya no la
+   dispara: queda la corrida diaria, §«El pipeline de publicación»). La corre su pipeline.
 2. `mirror.js` resuelve cada referencia interna a un sha, una sola vez —con un solo repo interno, un commit para las
    dos fuentes (§«Un solo repo interno»)—, y corre el exportador una vez con la exportación que se publica, que es una
    constante del código: `--package core,bizuit --single-repo` (§«El repo único»).
@@ -1406,20 +1406,19 @@ por su cuenta. El archivo no nombra el repo destino: es el de `public-repos.json
 
 **Cuándo corre**
 
-- Con cada merge a `main` del repo interno. Una ráfaga de merges da una sola corrida. El arnés y
-  agent-skills son un repo (§«Un solo repo interno»): un merge que toca `agents/`, `skills/` o `packs/` dispara como
-  cualquier otro, y el pipeline no declara ningún repositorio de otro proyecto como recurso.
 - Todos los días a las 09:00 UTC, después del tablero.
 - A mano, eligiendo el modo.
 
-No filtra por rutas, a propósito: copiar al pipeline las exclusiones del exportador serían dos listas que se separan
-solas, y acá la documentación es contenido —una guía o el `README.md` salen en la copia—. Un disparo que no cambia la
-copia termina en «sin cambios», sin empujar nada. El control de disparadores del arnés
-(`scripts/ci/check-trigger-without-docs.js`) mide los pipelines de los productos, que construyen y piden producción;
-éste no hace ninguna de las dos cosas y no está en su lista. Corrido a mano sobre este YAML (`--file`) da 1, y es lo
-esperado: el exclude que sugiere dejaría el `README.md` esperando a la corrida diaria. Queda fijado en
-`scripts/tests/trigger-without-docs.test.sh` y en la prueba del pipeline (abajo, «El contrato»): quien le ponga un filtro
-tiene que mirar primero qué deja afuera.
+**Un merge a `main` del repo interno no lo dispara** (`trigger: none`, desde poco después del corte). Hasta el corte a GitHub
+lo disparaba cada merge, en ráfaga y sin filtro de rutas: el interno era la fuente y cada cambio tenía que llegar a la
+copia. Desde el corte la fuente es el público, y aquel disparo sólo encolaba corridas que terminaban en la guarda sin
+hacer nada (47 el 2026-10-13). Volver a escribir en el interno —la vuelta atrás del corte— es también volver a poner el
+disparo, sin filtro de rutas: copiar al pipeline las exclusiones del exportador serían dos listas que se separan solas.
+El control de disparadores del arnés (`scripts/ci/check-trigger-without-docs.js`) mide los pipelines de los productos,
+que construyen y piden producción; éste no hace ninguna de las dos cosas y no está en su lista. Corrido a mano sobre
+este YAML (`--file`) da 2: con `trigger: none` no tiene nada que medir. Queda fijado en
+`scripts/tests/trigger-without-docs.test.sh` y en la prueba del pipeline (abajo, «El contrato»): quien le vuelva a poner
+un disparo tiene que hacerlo a propósito.
 
 **Los modos** (el parámetro `mode`)
 

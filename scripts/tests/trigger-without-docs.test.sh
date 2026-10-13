@@ -261,38 +261,36 @@ rc=$(corre --file "$TMP/real.yml" --json)
 node -e 'const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); if(j.medidos!==1||j.resultados[0].veredicto!=="docs") process.exit(1)' "$TMP/out.txt" \
   && ok "--json trae medidos y el veredicto por pipeline" || no "--json no trae lo esperado: $(cat "$TMP/out.txt")"
 
-# ---------------------------------------------------------------- 15. el pipeline de publicación del arnés (story 8.18, AC 27)
-# No es un pipeline de producto: no construye, no despliega y no pide producción. Lleva la copia pública, y ahí la
-# documentación ES contenido: una guía o el README salen en la copia. Por eso NO filtra por rutas, a propósito —la lista
-# del exportador y la de un disparador serían dos listas que se separan solas—, y un merge que no cambia la copia termina
-# en «sin cambios», sin empujar nada. Lo que se fija acá, sobre el YAML de verdad:
-#   · lo que era de agent-skills (agents/, skills/, packs/) dispara, igual que lo demás: desde la unión vive en este repo;
-#   · una guía, el README y un guion disparan: con el exclude que este control sugiere, el README esperaría a la corrida diaria;
-#   · y queda DICHO que este control, corrido a mano sobre ese YAML, da 1. Es la excepción declarada, no un descuido: el
-#     día que alguien le ponga un filtro, este caso se pone rojo y obliga a mirar qué deja afuera.
+# ---------------------------------------------------------------- 15. el pipeline de publicación del arnés (story 8.18, AC 27; story 8.26, tanda H1b)
+# No es un pipeline de producto: no construye, no despliega y no pide producción. Hasta el corte a GitHub llevaba la
+# copia pública y lo disparaba cada merge a `main` del repo del equipo, sin filtro de rutas. Desde el corte la fuente es
+# el público, y aquel disparo sólo encolaba corridas que terminaban en su guarda sin hacer nada (47 el 2026-10-13): la
+# tanda H1b lo retiró (`trigger: none`). Quedan su corrida diaria, que verifica lo publicado, y la corrida a mano. Lo que
+# se fija acá, sobre el YAML de verdad (vive en el repo del equipo: en este repo solo, el caso no aplica):
+#   · ningún merge lo dispara: ni lo que era de agent-skills (agents/, skills/, packs/), ni una guía, el README o un guion;
+#   · y este control, corrido a mano sobre ese YAML, lo dice: con `trigger: none` no tiene nada que medir, y sale 2. El
+#     día que alguien le vuelva a poner un disparo (la vuelta atrás del corte), este caso se pone rojo y obliga a mirar.
 PUB="$AQUI/pipelines/azure-pipelines-publicacion.yml"
-# fires <archivo…> → 0 si el trigger del pipeline de publicación incluye a TODOS; si no, 1 y los nombra en $TMP/out.txt
+# fires <archivo…> → 0 si ALGUNO dispara el pipeline de publicación (y los nombra en $TMP/out.txt); 1 si ninguno
 fires(){
   node -e '
     const rules = require(process.argv[1]);
     const trigger = rules.leerTrigger(require("fs").readFileSync(process.argv[2], "utf8"));
-    const left = trigger.tipo === "none" ? process.argv.slice(3) : process.argv.slice(3).filter((f) => rules.incluido(trigger, f) === null);
-    if (left.length) { console.log(`no disparan: ${left.join(", ")}`); process.exit(1); }
+    const fired = trigger.tipo === "none" ? [] : process.argv.slice(3).filter((f) => rules.incluido(trigger, f) !== null);
+    if (fired.length) { console.log(`disparan: ${fired.join(", ")} (trigger ${trigger.tipo})`); process.exit(0); }
+    process.exit(1);
   ' "$CHK" "$PUB" "$@" >"$TMP/out.txt" 2>&1
 }
 if [ ! -f "$PUB" ]; then
   echo "ℹ️ disparador: el pipeline de publicación no está en esta copia (pipelines/ no viaja): su caso no aplica"
 else
-  fires agents/un-revisor.md skills/una-skill/SKILL.md packs/un-paquete/pack.json \
-    && ok "publicación: un merge que sólo toca agents/, skills/ o packs/ dispara (PublicationPipeline_NoCrossResource_TriggerPaths_LinkTemplate)" \
-    || no "🔴 publicación: el disparador deja afuera lo que era de agent-skills — $(cat "$TMP/out.txt")"
-  fires guides/una-guia.md README.md scripts/un-guion.js \
-    && ok "publicación: una guía, el README y un guion disparan: lo que sale en la copia no espera a la corrida diaria" \
-    || no "🔴 publicación: el disparador deja afuera contenido que se publica — $(cat "$TMP/out.txt")"
+  ! fires agents/un-revisor.md skills/una-skill/SKILL.md packs/un-paquete/pack.json guides/una-guia.md README.md scripts/un-guion.js \
+    && ok "publicación: ningún merge la dispara, ni de agents/, skills/ o packs/ ni de una guía, el README o un guion (PublicationPipeline_NoMergeTrigger)" \
+    || no "🔴 publicación: un merge la dispara — $(cat "$TMP/out.txt"). Desde el corte la fuente es el público: el disparo por merge se retiró en la tanda H1b"
   rc=$(corre --file "$PUB")
-  { [ "$rc" -eq 1 ] && grep -q 'la raíz está incluida' "$TMP/out.txt"; } \
-    && ok "publicación: sin filtro de rutas, a propósito — este control, corrido a mano sobre su YAML, da 1 y queda declarado (no construye ni pide producción: un disparo que no cambia la copia termina en «sin cambios»)" \
-    || no "🔴 publicación: el control dio $rc sobre su YAML y se esperaba 1 (sin filtro). Si ahora filtra por rutas: revisar que no deje afuera nada de lo que se publica, y actualizar este caso y guides/publicacion-espejo.md — $(cat "$TMP/out.txt")"
+  { [ "$rc" -eq 2 ] && grep -q 'trigger: none' "$TMP/out.txt"; } \
+    && ok "publicación: con trigger: none este control, corrido a mano sobre su YAML, no tiene qué medir y lo dice (sale 2)" \
+    || no "🔴 publicación: el control dio $rc sobre su YAML y se esperaba 2 (trigger: none, nada que medir) — $(cat "$TMP/out.txt")"
 fi
 
 # ---------------------------------------------------------------- 8.10.3 A · T3 (AC 3): «sin productos» declarado a propósito
