@@ -30,6 +30,10 @@ const REPO = path.resolve(__dirname, '..', '..');   // el clon: este archivo viv
 // dónde vive `.dashboard` en esta máquina lo sabe tycon-home.js (story 8.23, tanda D): en una instalación bajada es
 // ~/.tycon/state/dashboard; en un clon, el de siempre. Si el archivo viaja suelto, el de siempre.
 function dashboardDefault() {
+  // lo que escribe la máquina vive donde dice scripts/lib/night-data.js (story 8.26, tanda J): en una versión bajada, el
+  // clon de mantenimiento que la máquina declara; nunca el del público. Sin esa biblioteca al lado, lo de antes.
+  // (si la biblioteca ESTÁ y no carga, tira: no se vuelve callado a la ruta de antes; si no pudo saber, lo avisa ella)
+  { const lib = path.join(__dirname, 'night-data.js'); if (require('fs').existsSync(lib)) { const d = require(lib).machineDashboardDir(REPO); if (d) return d; } }
   try {
     const TH = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'));
     const d = typeof TH.dashboardDir === 'function' ? TH.dashboardDir(require('os').homedir(), REPO) : null;

@@ -29,7 +29,7 @@
 # pendientes (con su fecha) en el mismo mensaje.
 #
 # VARIABLES
-#   TYCON_GUIDES_DIR        el repo del arnés (default ~/.claude/tycon-harness)
+#   TYCON_GUIDES_DIR        el repo de donde se leen los snapshots y sale el envío (sin ella, ver «DOS COSAS» abajo; antes, ~/.claude/tycon-harness)
 #   TYCON_NOTICE_DRYRUN=1   no manda nada: imprime "[dry-run] <texto>" y no toca los pendientes
 #   TYCON_NOTICE_NOTIFY     script de envío (default <repo>/scripts/lib/tycon-telegram-notify.sh)
 #   TYCON_NOTICE_TODAY      fecha UTC de hoy (AAAA-MM-DD); para las pruebas
@@ -40,7 +40,8 @@
 #   TYCON_NOTICE_FETCH_RETRIES  intentos de traer main cuando falla por red (default 3; story 8.3.1)
 #   TYCON_NOTICE_FETCH_WAIT_S    segundos entre esos intentos (default 60)
 #
-# SALIDA: 0 miró (y avisó o calló) · 2 no pudo mirar o comparar (y lo avisó) ·
+# SALIDA: 0 miró (y avisó o calló) · 2 no pudo mirar o comparar (y lo avisó), o esta máquina no tiene de qué clon
+#           leer los datos de la noche (lo deja en el registro, sin mandar nada) ·
 #         3 no pudo entregar el aviso (también si falta el script de envío; no entregar manda sobre
 #           el 2), o no hay ni un snapshot publicado.
 #
@@ -48,12 +49,45 @@
 # APAGARLO:  launchctl unload ~/Library/LaunchAgents/com.tycon.aviso-dod.plist
 set -u
 
-REPO="${TYCON_GUIDES_DIR:-$(cd "$(dirname "$0")/../.." && pwd)}"   # este script vive en el arnés: su ubicación (story 8.3)
+SELF_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"   # este script vive en el arnés: su ubicación (story 8.3)
+# 🔴 DOS COSAS QUE ANTES ERAN UNA (2026-10-13): de qué repo se LEEN los snapshots, y de qué árbol sale el guion que MANDA.
+# En una versión instalada el árbol de este guion no es un clon: tomarlo como repo hacía fallar el `fetch` todas las
+# noches («no pude mirar») con los datos sanos en el clon de mantenimiento de la máquina. Los datos:
+#   · TYCON_GUIDES_DIR, si viene (y entonces también el envío sale de ahí, como siempre);
+#   · si no, y este árbol es un clon: este árbol, como siempre;
+#   · si no es un clon (una versión instalada): lo que diga scripts/lib/night-data.js, que es el clon de mantenimiento
+#     que la máquina declara (`paths.maintainers`). Sin uno que sirva, o sin `node` para preguntarlo: se dice y se sale
+#     2, sin traer ni mandar nada (lo mismo lo dice el arranque de cada sesión).
+# El envío, sin TYCON_GUIDES_DIR ni TYCON_NOTICE_NOTIFY: siempre el de este árbol.
+DATA_PROBLEM=""
+if [ -n "${TYCON_GUIDES_DIR:-}" ]; then
+  REPO="$TYCON_GUIDES_DIR"; CODE_ROOT="$TYCON_GUIDES_DIR"
+else
+  REPO="$SELF_ROOT"; CODE_ROOT="$SELF_ROOT"
+  # Lanzado DESDE un clon, el repo es ese clon, como siempre (aunque la máquina tenga además una versión instalada):
+  # sólo cuando este árbol no es un clon hay que preguntar de cuál se leen los datos.
+  if [ ! -e "$SELF_ROOT/.git" ] && [ -f "$SELF_ROOT/scripts/lib/night-data.js" ]; then
+    if command -v node >/dev/null 2>&1; then
+      # La ruta sale por la salida y el motivo por la de error, cada una por su lado: mezcladas, un aviso cualquiera de
+      # node quedaba adentro de la ruta. Y una respuesta que no es UNA carpeta que existe no se usa como repo.
+      NIGHT_ERR_FILE="$(mktemp 2>/dev/null || echo "/tmp/tycon-aviso-dod.$$.err")"
+      NIGHT_OUT="$(node "$SELF_ROOT/scripts/lib/night-data.js" --plain 2>"$NIGHT_ERR_FILE")"; NIGHT_RC=$?
+      NIGHT_ERR="$(head -n 1 "$NIGHT_ERR_FILE" 2>/dev/null)"; rm -f "$NIGHT_ERR_FILE"
+      if [ "$NIGHT_RC" -eq 0 ] && [ -n "$NIGHT_OUT" ] && [ -d "$NIGHT_OUT" ]; then REPO="$NIGHT_OUT"
+      elif [ "$NIGHT_RC" -eq 0 ]; then DATA_PROBLEM="la respuesta de night-data.js no es una carpeta que exista"
+      else DATA_PROBLEM="${NIGHT_ERR:-no pude preguntar de qué clon se leen los datos de la noche (night-data.js salió ${NIGHT_RC})}"; fi
+    else
+      # Sin node no se puede preguntar, y este árbol no es un clon: antes de hacer un `fetch` sobre una carpeta que no
+      # lo es —y avisar «no pude mirar» por otra causa—, se dice.
+      DATA_PROBLEM="este árbol no es un clon y no encontré node en el PATH para preguntar de qué clon se leen los datos de la noche"
+    fi
+  fi
+fi
 # Las variables renombradas a inglés (story 8.9): la biblioteca, por la ubicación de este script (vive en el arnés).
-. "$(cd "$(dirname "$0")/../.." && pwd)/scripts/lib/legacy-names.sh"
+. "$SELF_ROOT/scripts/lib/legacy-names.sh"
 legacy_env TYCON_NOTICE_DRYRUN; legacy_env TYCON_NOTICE_NOTIFY; legacy_env TYCON_NOTICE_TODAY
 legacy_env TYCON_NOTICE_STATE_DIR; legacy_env TYCON_NOTICE_RETRIES; legacy_env TYCON_NOTICE_WAIT_S
-NOTIFY="${TYCON_NOTICE_NOTIFY:-$REPO/scripts/lib/tycon-telegram-notify.sh}"
+NOTIFY="${TYCON_NOTICE_NOTIFY:-$CODE_ROOT/scripts/lib/tycon-telegram-notify.sh}"
 HOY="${TYCON_NOTICE_TODAY:-$(date -u +%Y-%m-%d)}"
 ESTADO_DIR="${TYCON_NOTICE_STATE_DIR:-$HOME/.claude/.tycon-pipeline/aviso-dod}"
 PENDIENTES="$ESTADO_DIR/pendientes.tsv"
@@ -103,6 +137,18 @@ FETCH_INTENTOS="${TYCON_NOTICE_FETCH_RETRIES:-3}"
 FETCH_ESPERA_S="${TYCON_NOTICE_FETCH_WAIT_S:-60}"
 case "$FETCH_INTENTOS" in ''|*[!0-9]*|0*|????*) log "TYCON_NOTICE_FETCH_RETRIES inválido («${FETCH_INTENTOS}»): uso 3"; FETCH_INTENTOS=3 ;; esac
 case "$FETCH_ESPERA_S" in ''|*[!0-9]*|?????*) log "TYCON_NOTICE_FETCH_WAIT_S inválido («${FETCH_ESPERA_S}»): uso 60"; FETCH_ESPERA_S=60 ;; esac
+
+if [ -n "$DATA_PROBLEM" ]; then
+  # la receta según lo que pasa: falta la declaración, o lo declarado no sirve; con los nocturnos apagados o sin node,
+  # ninguna (no arregla nada)
+  case "$DATA_PROBLEM" in
+    *"no declara el de mantenimiento"*) DATA_FIX=" — se declara con: harness.js config set paths.maintainers <la carpeta de tu clon de mantenimiento>" ;;
+    *paths.maintainers*) DATA_FIX=" — lo declarado no sirve; se corrige con: harness.js config set paths.maintainers <la carpeta de tu clon de mantenimiento>" ;;
+    *) DATA_FIX="" ;;
+  esac
+  log "no sé de qué clon leer los datos de la noche: ${DATA_PROBLEM}${DATA_FIX}"
+  exit 2
+fi
 
 FETCH_N=0
 FETCH_MOTIVO=""

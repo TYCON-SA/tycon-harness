@@ -46,11 +46,20 @@ try {
   // mantiene, o ninguno y el aviso calla); si este archivo viaja suelto, éste
   const own = path.resolve(__dirname, '..', '..');
   const homeLib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js');
-  const TH = fs.existsSync(homeLib) ? require(homeLib) : null;
-  const tree = TH ? TH.maintainedDir(os.homedir(), own) : own;
+  // Desde la story 8.26 (tanda J) los registros de cada merge viven donde dice scripts/lib/night-data.js: en una versión
+  // bajada, el clon de mantenimiento que la máquina declara. Sin uno que sirva quedan en la carpeta del estado, que no
+  // viaja y trae la copia congelada que dejó la mudanza: ahí este aviso calla (mediría una serie que nadie alimenta).
+  const nightLib = path.join(__dirname, '..', 'lib', 'night-data.js');
+  const machine = fs.existsSync(nightLib) ? require(nightLib).machineDashboard(own) : null;
+  // «no pude saber dónde están» no es «no viajan»: se dice (callar acá se vería igual que una serie al día)
+  if (machine && !machine.dir) { console.log(`⚠️ retro capturer: ${machine.why} — no pude mirar si la serie de retrospectivas está al día`); process.exit(0); }
+  if (machine && !machine.travels) process.exit(0);
+  const TH = !machine && fs.existsSync(homeLib) ? require(homeLib) : null;   // sin la biblioteca nueva al lado: lo de antes
+  const tree = machine ? own : (TH ? TH.maintainedDir(os.homedir(), own) : own);
   if (!tree) process.exit(0);
   // en una instalación bajada (story 8.23, tanda D) el .dashboard vive en ~/.tycon/state/dashboard
-  const dashboardDir = TH && typeof TH.dashboardDir === 'function' ? TH.dashboardDir(os.homedir(), tree) : path.join(tree, '.dashboard');
+  const dashboardDir = machine && machine.dir ? machine.dir
+    : TH && typeof TH.dashboardDir === 'function' ? TH.dashboardDir(os.homedir(), tree) : path.join(tree, '.dashboard');
   if (!fs.existsSync(dashboardDir)) process.exit(0);
 
   // Sólo lo que escribe el capturer: la carpeta la comparten otros nocturnos (ver cabecera).

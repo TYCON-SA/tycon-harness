@@ -370,8 +370,17 @@ function main() {
   const v = validate(doc);
   if (!v.ok) salir(`el validador de dashboard-metrics.js rechazó el archivo, no se escribió nada: ${v.errors.join(' · ')}`);
 
-  // en una instalación bajada (story 8.23, tanda D) el .dashboard vive en ~/.tycon/state/dashboard; lo sabe tycon-home.js
-  const dashboardDefault = (() => { try { const TH = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')); return (typeof TH.dashboardDir === 'function' && TH.dashboardDir(os.homedir(), ARNES)) || null; } catch (_) { return null; } })();
+  // Dónde escribe la máquina lo suyo lo sabe scripts/lib/night-data.js (story 8.26, tanda J): en un clon, su `.dashboard`;
+  // en una versión bajada, el del clon de mantenimiento que la máquina declara —de ahí viaja— o, sin uno que sirva, la
+  // carpeta del estado, y se dice que no viaja. 🔴 Nunca el clon del público: medido el 2026-10-12, el registro de cada
+  // merge caía en una carpeta ignorada de ese clon y no llegaba a ningún repo. Sin esa biblioteca al lado, lo de antes.
+  // 🔴 Si la biblioteca ESTÁ y no carga, esto tira: volver callado a la ruta de antes sería escribir otra vez en el clon del
+  // público. Y si no pudo saber dónde escribe la máquina, no se escribe nada y se dice (el merge queda sin su archivo, que
+  // es lo que cobra retro-pending.js).
+  const nightLib = path.join(__dirname, '..', 'lib', 'night-data.js');
+  const machine = fs.existsSync(nightLib) ? require(nightLib).machineDashboard(ARNES) : null;
+  if (!a.out && machine && !machine.dir) salir(`no se escribió nada: ${machine.why}`);
+  const dashboardDefault = machine && machine.dir ? machine.dir : (() => { try { const TH = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')); return (typeof TH.dashboardDir === 'function' && TH.dashboardDir(os.homedir(), ARNES)) || null; } catch (_) { return null; } })();
   const out = path.resolve(a.out || dashboardDefault || path.join(ARNES, '.dashboard'));
   // El archivo se nombra por el REPO (lo que dice su remoto), no por la carpeta desde la que se corrió
   // (2026-09-17): un latido lanzado desde un clon descartable salía `metrics-…-tcg-adhoc-…`. Sin remoto
@@ -387,6 +396,8 @@ function main() {
   } catch (err) {
     salir(`no se pudo escribir ${destino}: ${err && err.message ? err.message : err}`);
   }
+  // lo que queda en la carpeta del estado no viaja: se dice (por stderr; por stdout sale sólo la ruta, que otros leen)
+  if (!a.out && machine && machine.travels === false) process.stderr.write(`retro-latido: el registro quedó en esta máquina y no viaja a ningún repo — ${machine.why}\n`);
   process.stdout.write(`${destino}\n`);
 }
 

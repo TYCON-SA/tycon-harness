@@ -33,6 +33,38 @@ caso 09 1 0 1 "09:00, el archivo YA llegó con el pull → NO corre (escritor ú
 caso 09 0 1 1 "09:00, sin archivo pero ya se lanzó hoy → NO corre (no se reintenta en loop)"
 caso 23 0 0 0 "23:00, sin archivo → SÍ corre"
 
+# ── El respaldo sólo corre donde el arnés es un CLON (2026-10-13) ────────────────────────────────
+# EL DEFECTO. En una versión instalada el árbol del arnés no es un clon: el instalador buscaba la foto del día en
+# `<árbol>/.dashboard/`, que ahí no existe nunca, así que el respaldo corría TODOS los días; barría la carpeta madre
+# del árbol (sin repos) y escribía una foto vacía. Medido: 939 bytes, contra los 49.945 de la del nocturno, con el
+# mismo nombre. Escrita en el clon donde el nocturno deja la suya, la pisa o traba el `pull` siguiente.
+# 🔴 rojo previo verificado: sin `meter_backup_has_own_tree`, estos casos fallan por «command not found».
+T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
+mkdir -p "$T/clon/.git" "$T/enlazado" "$T/instalado/scripts"
+echo "gitdir: /otro/lado" > "$T/enlazado/.git"
+arbol() {
+  local dir="$1" esperado="$2" nombre="$3"
+  meter_backup_has_own_tree "$dir" 2>/dev/null; local rc=$?
+  if [ "$rc" = "$esperado" ]; then ok "$nombre"; else mal "$nombre (esperaba $esperado, dio $rc)"; fi
+}
+arbol "$T/clon" 0 "el arnés corre desde un clon → el respaldo tiene dónde escribir: aplica"
+arbol "$T/enlazado" 0 "un árbol enlazado de un clon (.git es un archivo) → aplica"
+arbol "$T/instalado" 1 "una versión instalada (sin .git) → NO aplica: el punto del día es del nocturno"
+arbol "$T/no-existe" 1 "una carpeta que no está → NO aplica"
+arbol "" 1 "sin carpeta → NO aplica"
+# y el instalador se lo pregunta ANTES de sellar y de lanzar el barrido
+if awk '/^STAGE_METRICS_JS=/{on=1} on&&/nohup node "\$STAGE_METRICS_JS"/{exit} on' "$RAIZ/scripts/install-tycon-hooks.sh" | grep -q 'meter_backup_has_own_tree'; then
+  ok "el instalador pregunta si el arnés es un clon antes de lanzar el respaldo"
+else
+  mal "el instalador lanza el respaldo sin preguntar si el arnés es un clon"
+fi
+# …y si la biblioteca del respaldo no está, lo dice (antes el `source` fallaba a la vista; saltearlo callado no)
+if grep -q 'falta scripts/lib/meter-backup.sh' "$RAIZ/scripts/install-tycon-hooks.sh"; then
+  ok "sin scripts/lib/meter-backup.sh el instalador dice que el respaldo no corre"
+else
+  mal "sin scripts/lib/meter-backup.sh el instalador saltea el respaldo sin decirlo"
+fi
+
 echo
 if [ "$FALLOS" -gt 0 ]; then echo "FALLARON $FALLOS chequeo(s)"; exit 1; fi
 echo "todo verde"; exit 0

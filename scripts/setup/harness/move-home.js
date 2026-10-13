@@ -843,7 +843,7 @@ function advance(ctx, j, H, { log, snap = null }) {
   const keptLine = kept.length ? `ya existían en el destino y no se pisaron: ${kept.join(', ')} (siguen en ${sourceOf})` : '';
   const lines = [
     `arnés mudado a ${p.own.harness} (versión ${j.version}, ${j.ref} ${sha7(j.commit)} de ${j.repo}) · estado en ${p.newStateDir} · configuración en ${p.newConfig}`,
-    `tu clon ${j.oldTree} sigue donde estaba, sin git del mecanismo: para que esta máquina lo MANTENGA (los avisos leen de ahí), harness.js config set paths.maintained ${j.oldTree}`,
+    `tu clon ${j.oldTree} sigue donde estaba, sin git del mecanismo: para que esta máquina lo MANTENGA, harness.js config set paths.maintained ${j.oldTree} (y si mantenés el arnés, el clon del repo de mantenimiento se declara aparte, con paths.maintainers: de ahí leen los avisos de los nocturnos)`,
     // el perfil del equipo (tanda G): cuántos valores pasaron; sin perfil en el clon, se dice una vez (la máquina sigue con lo escrito)
     ...(j.profileFolded ? [`perfil del equipo: ${j.profileFolded} valores pasaron a ${p.newConfig} como valores de la máquina (la versión bajada no trae el perfil; lo que ya tenías escrito ganó)`] : (j.profileFold && j.profileFold.status === 'absent' ? [`perfil del equipo: ${j.profileFold.reason || 'el clon no traía perfil-equipo.json'} — nada pasó; la máquina sigue con lo que tenga escrito`] : (j.profileFold && j.profileFold.status === 'skipped' ? [`perfil del equipo: ${j.profileFold.reason}`] : []))),
     // la capa del equipo (story 8.25): qué quedó apilado en el árbol nuevo

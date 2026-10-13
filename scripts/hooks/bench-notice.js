@@ -39,6 +39,12 @@ const { leerVariable, leerEstado } = (() => {
 
 if (process.env.TYCON_BENCH_NOTICE === '0' || process.env.TYCON_EVAL_SANDBOX === '1') process.exit(0);
 
+/** Un texto que sale de una foto publicada o del mensaje de un error, antes de ir a la pantalla del arranque: una línea,
+ *  sin caracteres de control (C0 y C1, DEL y los separadores U+2028/U+2029, armados por código), y cortado. */
+const CONTROL = new RegExp('[' + String.fromCharCode(0) + '-' + String.fromCharCode(0x1f) + String.fromCharCode(0x7f) + '-' + String.fromCharCode(0x9f)
+  + String.fromCharCode(0x2028) + String.fromCharCode(0x2029) + ']+', 'g');
+const limpio = (t, max = 160) => String(t === undefined || t === null ? '' : t).replace(CONTROL, ' ').trim().slice(0, max);
+
 // ── nocturnos (story 8.3, AC 9 — la octava integración) ─────────────────────────────────────────
 // «Esta máquina espera los resultados de los procesos nocturnos del equipo». Apagada (sin perfil del equipo ni
 // llave), el banco NOCTURNO y las suites NOCTURNAS detenidos no se denuncian: afuera gritarían «NO ESTÁ CORRIENDO»
@@ -58,7 +64,7 @@ try {
   // sin la lib al lado (hook copiado a un arnés de mentira): como hoy. Cualquier OTRO error del lector se dice —
   // un hook no frena, pero tragarlo dejaría un bug del lector invisible en todos los hooks a la vez (revisor de
   // fallos silenciosos, tanda B).
-  if (!(e && e.code === 'MODULE_NOT_FOUND')) console.log(`bench-notice: el lector de configuración falló (${e && e.message}) — sigo como si los nocturnos estuvieran prendidos`);
+  if (!(e && e.code === 'MODULE_NOT_FOUND')) console.log(`bench-notice: el lector de configuración falló (${limpio(e && e.message)}) — sigo como si los nocturnos estuvieran prendidos`);
 }
 
 // TYCON_BENCH_DIR: override PARA EL BANCO (2026-08-25) — sin él, los casos del propio notice no
@@ -128,42 +134,113 @@ function examenSinMaquinaDesignada() {
 // Criterio, el mismo que dependencies-notice: sin reporte = todavía no se estrenó (nada que decir);
 // reporte con más de dos días = NO ESTÁ CORRIENDO, y se callan los números viejos; fresco con
 // rojos o no medidos = se dicen; fresco y limpio = silencio.
-const RUTA_BANCO = leerVariable('TYCON_BENCH_REPORT')
-  || path.join(__dirname, '..', 'controls-bench', 'ultimo-banco.json');
 const BANCO_VEJEZ_MS = 2 * 24 * 60 * 60 * 1000; // corre todas las noches: dos sin foto = se detuvo
+
+// ── De dónde se leen las dos fotos nocturnas (story 8.26, tanda J · scripts/lib/night-data.js) ────
+// Una versión bajada no trae `ultimo-banco.json` ni `ultimo-suites.json` al lado de este hook: los nocturnos los dejan
+// en el repo de mantenimiento. Medido el 2026-10-12 en la máquina de quien mantiene: los dos nocturnos sanos y este
+// aviso mudo, igual que si no corrieran. Orden de lectura, uno solo para TODOS los que miran una foto (la fecha con que
+// se tapan los reportes locales viejos, y el estado que se dice):
+//   1. la variable de siempre (`TYCON_BENCH_REPORT`, `TYCON_SUITES_REPORT`): manda, y lee ese disco;
+//   2. en la máquina que declara su clon de mantenimiento, lo PUBLICADO en ese clon (`origin/main`, sin red) y, si git
+//      no contesta, su disco, diciéndolo. Esa máquina ESPERA los nocturnos: ahí cada uno dice siempre una línea;
+//   3. en cualquier otra, al lado de este hook, como siempre.
+// Sin la biblioteca al lado (el hook copiado solo, como lo corre el banco): 1 y 3. El examen de los revisores NO pasa
+// por acá: quién lo corre y dónde deja su reporte es otra pieza.
+const NOCHE = (() => {
+  if (!NOCTURNOS) return null;
+  const lib = path.join(__dirname, '..', 'lib', 'night-data.js');
+  if (!fs.existsSync(lib)) return null;
+  try {
+    const N = require(lib);
+    const r = N.resolve(path.resolve(__dirname, '..', '..'), { nightly: true });
+    // Que el clon falte o no sirva lo dice el aviso de dependencias, una vez por arranque. Si ese aviso está apagado
+    // con su interruptor, lo dice éste: si no, nadie.
+    if (r.problem && process.env.TYCON_DEPS_NOTICE === '0') console.log(N.problemLine(r.problem));
+    return r.source === 'maintainers' && r.dir ? { N, dir: r.dir } : null;
+  } catch (e) {
+    // 🔴 la biblioteca ESTÁ y no anda: callar acá dejaría al banco y a las suites leyendo al lado del hook, donde en
+    // una versión bajada no hay nada — el mismo silencio que una noche sana
+    console.log(`banco y suites nocturnos: no pude saber de qué clon leerlos (${limpio((e && e.message) || e)}) — asumilos NO medidos`);
+    return null;
+  }
+})();
+const FOTOS = new Map();
+/**
+ * La foto nocturna `nombre`: `{ rep, estado, espera, nota }`. `estado`: `ok` | `falta` | `ilegible` (los dos últimos
+ * sólo se distinguen —y se dicen— cuando `espera`: la máquina que declara el clon de mantenimiento). `nota`: el
+ * sufijo que avisa que se leyó del disco del clon y no de lo publicado.
+ */
+function fotoNocturna(nombre, variable) {
+  if (FOTOS.has(nombre)) return FOTOS.get(nombre);
+  const porVariable = leerVariable(variable);
+  let out;
+  if (porVariable || !NOCHE) {
+    const rep = readJson(porVariable || path.join(__dirname, '..', 'controls-bench', nombre));
+    out = { rep, estado: rep ? 'ok' : 'falta', espera: false, nota: '' };
+  } else {
+    const r = NOCHE.N.readPublished(NOCHE.dir, `scripts/controls-bench/${nombre}`);
+    let rep = null;
+    if (r.state === 'ok') { try { rep = JSON.parse(r.text); } catch (_) { rep = null; } }
+    if (!rep || typeof rep !== 'object' || Array.isArray(rep)) rep = null;
+    out = { rep, estado: r.state === 'missing' ? 'falta' : rep ? 'ok' : 'ilegible', espera: true,
+      nota: r.from === 'disk' ? ` · ℹ️ leído del disco del clon de mantenimiento, no de lo publicado (${r.why})` : '' };
+  }
+  FOTOS.set(nombre, out);
+  return out;
+}
+const fotoDelBanco = () => fotoNocturna('ultimo-banco.json', 'TYCON_BENCH_REPORT');
+const fotoDeLasSuites = () => fotoNocturna('ultimo-suites.json', 'TYCON_SUITES_REPORT');
+/** En la máquina que espera los nocturnos, «no hay foto» y «la foto no se lee» se dicen, cada una con su texto. */
+function sinFoto(que, foto) {
+  if (foto.estado === 'ilegible') return `🔴 ${que}: la foto está en el clon de mantenimiento y no se puede leer${foto.nota}`;
+  // sin foto y con la copia del clon vieja: tampoco se sabe (puede haber una foto que esta copia no trajo)
+  const vieja = NOCHE.N.copyAfter(NOCHE.dir, Date.now() - BANCO_VEJEZ_MS);
+  return vieja ? `🟠 ${que}: no sé si corrió — no hay ninguna foto en mi copia del clon de mantenimiento y ${vieja}${foto.nota}`
+    : `🔴 ${que}: no hay ninguna foto en el clon de mantenimiento${foto.nota}`;
+}
+/** En la máquina que espera los nocturnos, una foto fechada más de una hora adelante no vence nunca: no se lee como sana. */
+function delFuturo(foto, t) { return foto.espera && !isNaN(t) && (t - Date.now()) > 60 * 60 * 1000; }
+/** Foto vencida: si la copia del clon no se trae desde antes de que venciera, el texto que lo dice; si no, null. */
+function copiaVieja(foto, t) {
+  if (!foto.espera || isNaN(t)) return null;
+  return NOCHE.N.copyAfter(NOCHE.dir, t + BANCO_VEJEZ_MS);
+}
+
 const BANCO_TS = (() => {
   if (!NOCTURNOS) return null;   // sin nocturnos, la foto local no se compara contra ninguna nocturna
-  const b = readJson(RUTA_BANCO);
+  const b = fotoDelBanco().rep;
   const t = b && b.ts ? Date.parse(b.ts) : NaN;
   return isNaN(t) ? null : t;
 })();
 
 // Las SUITES nocturnas juegan el mismo juego que el banco: reporte que viaja, denuncia si
 // envejece, silencio si está fresco y limpio (2026-09-05).
-const RUTA_SUITES = leerVariable('TYCON_SUITES_REPORT')
-  || path.join(__dirname, '..', 'controls-bench', 'ultimo-suites.json');
 /** La fecha de la foto nocturna de suites, o null (sin foto, ilegible, o nocturnos apagada). */
 function tsSuitesNocturnas() {
   if (!NOCTURNOS) return null;
-  const b = readJson(RUTA_SUITES);
+  const b = fotoDeLasSuites().rep;
   const t = b && b.ts ? Date.parse(b.ts) : NaN;
   return isNaN(t) ? null : t;
 }
 
 function estadoDeLasSuitesNocturnas() {
-  const rep = readJson(RUTA_SUITES);
-  if (!rep) return [];
+  const foto = fotoDeLasSuites();
+  const rep = foto.rep;
+  if (!rep) return foto.espera ? [sinFoto('suites de prueba nocturnas', foto)] : [];
   const t = rep.ts ? Date.parse(rep.ts) : NaN;
-  const fecha = rep.ts ? String(rep.ts).slice(0, 10) : '?';
+  const fecha = rep.ts ? limpio(String(rep.ts).slice(0, 10)) : '?';
   const dias = isNaN(t) ? null : Math.floor((Date.now() - t) / 86400000);
   if (isNaN(t) || (Date.now() - t) > BANCO_VEJEZ_MS) {
+    const vieja = copiaVieja(foto, t);
+    if (vieja) return [`🟠 suites de prueba nocturnas: no sé si corrieron — su última foto es del ${fecha} y ${vieja}${foto.nota}`];
     return [`🔕 las suites de prueba NOCTURNAS NO ESTÁN CORRIENDO desde el ${fecha}`
       + (dias === null ? ' (fecha ilegible)' : ` (hace ${dias} día(s))`)
       + ' — sus números no se muestran a propósito: no son el estado de hoy'
-      + ' · revisar el pipeline "Banco de controles (nocturno)" en Azure DevOps'];
+      + ' · revisar el pipeline "Banco de controles (nocturno)" en Azure DevOps' + foto.nota];
   }
+  if (delFuturo(foto, t)) return [`🟡 suites de prueba nocturnas: la foto dice ser del ${fecha}, posterior a hoy — no se lee como el estado de la noche${foto.nota}`];
   const f = rep.failures || [];
-  if (!f.length) return [];
   // 🔴 La EDAD de la foto va en la línea (2026-09-06, pedido del dev): esto no mide nada, muestra lo
   // que vio el nocturno de la madrugada. Un rojo que se arregló durante el día se sigue mostrando
   // hasta la corrida siguiente, y sin la edad se lee como «está roto AHORA»: pasó el 06-09 con
@@ -171,6 +248,17 @@ function estadoDeLasSuitesNocturnas() {
   // madrugada aún sin pushear) y a la mañana ya pasaba, con tres sesiones repitiendo el mismo aviso.
   const horas = isNaN(t) ? null : Math.floor((Date.now() - t) / 3600000);
   const cuando = horas === null ? '' : horas < 1 ? ', recién' : horas < 24 ? `, hace ${horas} h` : `, hace ${Math.floor(horas / 24)} día(s)`;
+  if (!f.length) {
+    if (!foto.espera) return [];   // fresca y limpia: silencio, como siempre
+    // En la máquina que espera los nocturnos habla igual, y dice ✅ sólo con la noche completa: corrió al menos una
+    // suite y ninguna de la foto anterior desapareció. Sin eso, «ninguna en rojo» no es verde.
+    const cab = `suites de prueba nocturnas (foto del ${fecha}${cuando})`;
+    const corridas = Array.isArray(rep.ran) ? rep.ran.length : (Number(rep.corridas) || 0);
+    const idas = Array.isArray(rep.disappeared) ? rep.disappeared.length : 0;
+    if (!corridas) return [`🟡 ${cab}: la foto no dice que haya corrido ninguna suite — no es verde${foto.nota}`];
+    if (idas) return [`🟡 ${cab}: ninguna en rojo, pero ${idas} suite(s) de la foto anterior no corrieron — la noche no está completa · detalle: scripts/controls-bench/ultimo-suites.json${foto.nota}`];
+    return [`✅ ${cab}: ${corridas} corrida(s), ninguna en rojo${foto.nota}`];
+  }
   // El MOTIVO al lado del nombre (2026-09-14, PIPE-DEBT-2.13-b): con el nombre solo, saber por qué
   // estaba roja exigía volver a correrla. Corto a propósito; el reporte trae hasta tres líneas.
   const motivos = rep.motivos && typeof rep.motivos === 'object' ? rep.motivos : {};
@@ -180,44 +268,64 @@ function estadoDeLasSuitesNocturnas() {
   // nombran; las no medidas se CUENTAN, agrupadas por su motivo («el trabajo 2 no terminó»). El detalle, en el reporte.
   const noMedidas = Array.isArray(rep.unmeasured) ? f.filter((n) => rep.unmeasured.includes(n)) : [];
   const rojas = f.filter((n) => !noMedidas.includes(n));
+  // nombres y motivos salen de la foto publicada: van saneados a la pantalla (una línea, sin caracteres de control)
   const conMotivo = rojas.map((n) => (typeof motivos[n] === 'string' && motivos[n]
-    ? `${n} (${motivos[n].length > 140 ? `${motivos[n].slice(0, 139)}…` : motivos[n]})` : n));
+    ? `${limpio(n)} (${motivos[n].length > 140 ? `${limpio(motivos[n], 139)}…` : limpio(motivos[n], 140)})` : limpio(n)));
   const porMotivo = new Map();
   for (const n of noMedidas) {
-    const m = typeof motivos[n] === 'string' && motivos[n] ? motivos[n].replace(/^no medida:\s*/, '').slice(0, 140) : 'sin motivo anotado';
+    const m = typeof motivos[n] === 'string' && motivos[n] ? limpio(motivos[n].replace(/^no medida:\s*/, ''), 140) : 'sin motivo anotado';
     porMotivo.set(m, (porMotivo.get(m) || 0) + 1);
   }
   const sinMedir = [...porMotivo].map(([m, cuantas]) => `${cuantas} suite(s) no medidas: ${m}`).join(' · ');
   const cola = horas !== null && horas >= 2 ? ' · es lo que vio el nocturno, no una medición de ahora: si se arregló después, esto no lo sabe' : '';
   if (!rojas.length) {
     return [`🟡 suites de prueba nocturnas (foto del ${fecha}${cuando}): ${sinMedir} — la noche quedó incompleta: no son rojas ni verdes`
-      + ' · detalle: scripts/controls-bench/ultimo-suites.json' + cola];
+      + ' · detalle: scripts/controls-bench/ultimo-suites.json' + cola + foto.nota];
   }
   return [`🔴 suites de prueba nocturnas (foto del ${fecha}${cuando}): ${rojas.length} en rojo — ${conMotivo.join(' · ')}`
-    + (sinMedir ? ` · 🟡 ${sinMedir} (detalle: scripts/controls-bench/ultimo-suites.json)` : '') + cola];
+    + (sinMedir ? ` · 🟡 ${sinMedir} (detalle: scripts/controls-bench/ultimo-suites.json)` : '') + cola + foto.nota];
 }
 
 function estadoDelBancoNocturno() {
-  const rep = readJson(RUTA_BANCO);
-  if (!rep) return [];
+  const foto = fotoDelBanco();
+  const rep = foto.rep;
+  if (!rep) return foto.espera ? [sinFoto('banco de controles nocturno', foto)] : [];
   const t = rep.ts ? Date.parse(rep.ts) : NaN;
-  const fecha = rep.ts ? String(rep.ts).slice(0, 10) : '?';
+  const fecha = rep.ts ? limpio(String(rep.ts).slice(0, 10)) : '?';
   const dias = isNaN(t) ? null : Math.floor((Date.now() - t) / 86400000);
   if (isNaN(t) || (Date.now() - t) > BANCO_VEJEZ_MS) {
+    // la foto venció, pero la copia del clon de mantenimiento no se trae desde antes: no prueba que no corrió
+    const vieja = copiaVieja(foto, t);
+    if (vieja) return [`🟠 banco de controles nocturno: no sé si corrió — su última foto es del ${fecha} y ${vieja}${foto.nota}`];
     // 🔴 Se denuncia y NO se muestran los números: una foto vieja hace perseguir rojos que
     // quizá ya se arreglaron, o tranquiliza con un verde que ya no es de hoy.
     return [`🔕 el banco de controles NOCTURNO NO ESTÁ CORRIENDO desde el ${fecha}`
       + (dias === null ? ' (fecha ilegible)' : ` (hace ${dias} día(s))`)
       + ' — sus números no se muestran a propósito: no son el estado de hoy'
-      + ' · revisar el pipeline "Banco de controles (nocturno)" en Azure DevOps'];
+      + ' · revisar el pipeline "Banco de controles (nocturno)" en Azure DevOps' + foto.nota];
+  }
+  if (delFuturo(foto, t)) return [`🟡 banco de controles nocturno: la foto dice ser del ${fecha}, posterior a hoy — no se lee como el estado de la noche${foto.nota}`];
+  // Los contadores salen de la foto y van a la pantalla: tienen que ser NÚMEROS. Un texto en su lugar no se imprime ni se
+  // suma (una cadena volvía «rojos» una cadena y forzaba la línea, con lo que trajera): la foto no se puede leer.
+  const contadores = ['failed', 'parityBreaks', 'baselineRegressions', 'nomedido'];
+  if (contadores.some((k) => rep[k] !== undefined && rep[k] !== null && !(typeof rep[k] === 'number' && Number.isFinite(rep[k])))) {
+    return [`🔴 banco de controles nocturno (${fecha}): la foto trae contadores que no son números — no se puede leer${foto.nota}`];
   }
   const rojos = (rep.failed || 0) + (rep.parityBreaks || 0) + (rep.baselineRegressions || 0);
   const nm = rep.nomedido || 0;
-  if (rojos === 0 && nm === 0) return [];
+  if (rojos === 0 && nm === 0) {
+    if (!foto.espera) return [];   // fresco y limpio: silencio, como siempre
+    // En la máquina que espera los nocturnos habla igual, y dice ✅ sólo si la foto dice que corrió algún caso:
+    // un banco de cero casos también tiene cero rojos.
+    const casos = Number(rep.ran) || 0;
+    return [casos > 0
+      ? `✅ banco de controles nocturno (${fecha}): ${casos} caso(s), sin rojos${foto.nota}`
+      : `🟡 banco de controles nocturno (${fecha}): la foto no dice que haya corrido ningún caso — no es verde${foto.nota}`];
+  }
   return [`${rojos ? '🔴' : '🟡'} banco de controles nocturno (${fecha}): ${rep.failed || 0} rojos`
     + ` · paridad rota ${rep.parityBreaks || 0} · regresiones ${rep.baselineRegressions || 0}`
     + (nm ? ` · 🟡 ${nm} NO MEDIDO(s) (se les agotó el tiempo — la corrida no está completa)` : '')
-    + ' · detalle: scripts/controls-bench/ultimo-banco.json'];
+    + ' · detalle: scripts/controls-bench/ultimo-banco.json' + foto.nota];
 }
 
 // ── ¿El sello diario lo escribió el JOB, o una mano? (§5.3, 2026-08-25) ─────────────────────────
@@ -338,18 +446,18 @@ function estadoDelExamen(benchDir) {
 try {
   for (const l of estadoDelExamen(BENCH)) console.log(l);
 } catch (e) {
-  console.log(`examen de revisores: no pude evaluar si está corriendo (${e && e.message}) — asumilo NO medido`);
+  console.log(`examen de revisores: no pude evaluar si está corriendo (${limpio(e && e.message)}) — asumilo NO medido`);
 }
 if (NOCTURNOS) {
   try {
     for (const l of estadoDelBancoNocturno()) console.log(l);
   } catch (e) {
-    console.log(`banco nocturno: no pude evaluar si está corriendo (${e && e.message}) — asumilo NO medido`);
+    console.log(`banco nocturno: no pude evaluar si está corriendo (${limpio(e && e.message)}) — asumilo NO medido`);
   }
   try {
     for (const l of estadoDeLasSuitesNocturnas()) console.log(l);
   } catch (e) {
-    console.log(`suites nocturnas: no pude evaluar si están corriendo (${e && e.message}) — asumilo NO medido`);
+    console.log(`suites nocturnas: no pude evaluar si están corriendo (${limpio(e && e.message)}) — asumilo NO medido`);
   }
 }
 
