@@ -41,7 +41,12 @@ const path = require('path');
 // repo, y en /opt/tycon/setup/harness/ por el instalador del freno); si no, la de siempre
 function stateDirOf(home) {
   try { const TH = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')); if (typeof TH.stateDir === 'function') return TH.stateDir(home); } catch (_) { /* la de siempre */ }
-  return path.join(home, '.claude', '.tycon-pipeline');
+  return path.join(claudeDirOf(home), '.tycon-pipeline');
+}
+// la carpeta de Claude Code en la casa del usuario: también la sabe tycon-home.js; sin él al lado, la de siempre
+function claudeDirOf(home) {
+  try { const TH = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')); if (typeof TH.claudeDir === 'function') return TH.claudeDir(home); } catch (_) { /* la de siempre */ }
+  return path.join(home, '.claude');
 }
 const crypto = require('crypto');
 
@@ -521,6 +526,12 @@ function shimText(entry, oldAbs, newAbs, root) {
   const head = 'Reemplazo generado por scripts/lib/legacy-names.js --write-shims (story 8.9): no se edita a mano. El nombre viejo sigue andando hasta el retiro del mapa (scripts/lib/renames.json).';
   // dónde está la biblioteca para anotar el uso: la del mismo repo (arnés), o la del arnés de la máquina (agent-skills)
   const libRel = entry.repo === 'agent-skills' ? null : slash(path.relative(path.dirname(oldAbs), path.join(root, 'scripts', 'lib', 'legacy-names.js')));
+  // si el destino no está en el repo del reemplazo (un clon del repo privado de mantenimiento, que no trae lo público),
+  // el del arnés instalado: así un nombre viejo que llama un producto sigue andando contra ese clon
+  const installed = [entry.repo === 'agent-skills' ? 'agent-skills' : PLACE_NAME, ...entry.new.split('/')];
+  // la carpeta de Claude Code en la casa del usuario, donde vive el lugar del arnés: el texto de los reemplazos la nombra
+  // en siete lugares y acá se escribe una vez (scripts/tests/tycon-home.test.js T3 cuenta cada mención de la carpeta)
+  const claude = path.basename(claudeDirOf('/'));
   const warn = `##vso[task.logissue type=warning]nombre viejo «${entry.old}» (file): sigue andando y no es la causa de ningún error de este paso — cuando puedas, cambialo por «${entry.new}»`;
   if (['.js', '.cjs', '.mjs'].includes(ext)) {
     return [
@@ -529,14 +540,19 @@ function shimText(entry, oldAbs, newAbs, root) {
       "'use strict';",
       `// ${head}`,
       "const path = require('path');",
-      `const target = path.join(__dirname, ${JSON.stringify(rel)});`,
+      '// el destino del mismo repo; si no está, el del arnés instalado (un clon del repo privado no trae lo público)',
+      'const target = (() => {',
+      `  const here = path.join(__dirname, ${JSON.stringify(rel)});`,
+      `  const inst = path.join(require('os').homedir(), '${claude}', ${installed.map((x) => JSON.stringify(x)).join(', ')});`,
+      "  return !require('fs').existsSync(here) && require('fs').existsSync(inst) ? inst : here;",
+      '})();',
       '// anotar el uso nunca rompe: la biblioteca del mismo repo, la de TYCON_GUIDES_DIR o la del lugar del arnés',
       '(() => {',
       "  const fs = require('fs');",
       '  const cands = [',
       libRel ? `    path.join(__dirname, ${JSON.stringify(libRel)}),` : '',
       "    process.env.TYCON_GUIDES_DIR && path.join(process.env.TYCON_GUIDES_DIR, 'scripts', 'lib', 'legacy-names.js'),",
-      `    path.join(require('os').homedir(), '.claude', '${PLACE_NAME}', 'scripts', 'lib', 'legacy-names.js'),`,
+      `    path.join(require('os').homedir(), '${claude}', '${PLACE_NAME}', 'scripts', 'lib', 'legacy-names.js'),`,
       '  ];',
       `  const use = { kind: 'file', old: ${JSON.stringify(entry.old)}, new: ${JSON.stringify(entry.new)}, script: ${JSON.stringify(entry.old)} };`,
       '  for (const c of cands) { try { if (c && fs.existsSync(c)) { require(c).recordUse(use); return; } } catch { /* sigue */ } }',
@@ -561,9 +577,13 @@ function shimText(entry, oldAbs, newAbs, root) {
       `# ${head}`,
       '_legacy_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"',
       `_legacy_target="$_legacy_dir/"${shq(rel)}`,
+      '# si el destino no está en este repo (un clon del repo privado no trae lo público), el del arnés instalado',
+      // la ruta del instalado, de corrido entre comillas dobles (pathProblem sólo deja letras, dígitos, «.», «_», «-» y
+      // «/»): partida en dos comillas, el control del nombre público (mirror-pipeline T36) no la reconoce como ruta del lugar
+      `if [ ! -e "$_legacy_target" ] && [ -e "\${HOME:-/nonexistent}/${claude}/${installed.join('/')}" ]; then _legacy_target="\${HOME}/${claude}/${installed.join('/')}"; fi`,
       `case "\${TF_BUILD:-}" in [Tt][Rr][Uu][Ee]) printf '%s\\n' ${shq(warn)} >&2 ;; esac`,
       '# anotar el uso, de fondo (nunca demora): la biblioteca del mismo repo, la de TYCON_GUIDES_DIR o la del lugar',
-      `for _legacy_lib in ${libRel ? `"$_legacy_dir/"${shq(libRel)} ` : ''}"\${TYCON_GUIDES_DIR:-/nonexistent}/scripts/lib/legacy-names.js" "\${HOME:-/nonexistent}/.claude/${PLACE_NAME}/scripts/lib/legacy-names.js"; do`,
+      `for _legacy_lib in ${libRel ? `"$_legacy_dir/"${shq(libRel)} ` : ''}"\${TYCON_GUIDES_DIR:-/nonexistent}/scripts/lib/legacy-names.js" "\${HOME:-/nonexistent}/${claude}/${PLACE_NAME}/scripts/lib/legacy-names.js"; do`,
       `  if [ -f "$_legacy_lib" ]; then ( TF_BUILD= node "$_legacy_lib" --log-use file ${shq(entry.old)} ${shq(entry.new)} ${shq(entry.old)} >/dev/null 2>&1 & ) 2>/dev/null; break; fi`,
       'done',
       '# cargado con `source`: se carga el nuevo en el mismo shell, sin reemplazarlo',
@@ -581,14 +601,17 @@ function shimText(entry, oldAbs, newAbs, root) {
       '$legacyLibs = @(' + [
         libRel ? `(Join-Path $PSScriptRoot ${psq(libRel)})` : null,
         "$(if ($env:TYCON_GUIDES_DIR) { Join-Path $env:TYCON_GUIDES_DIR 'scripts/lib/legacy-names.js' })",
-        `(Join-Path $HOME '.claude/${PLACE_NAME}/scripts/lib/legacy-names.js')`,
+        `(Join-Path $HOME '${claude}/${PLACE_NAME}/scripts/lib/legacy-names.js')`,
       ].filter(Boolean).join(', ') + ')',
       '$legacyLib = $legacyLibs | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -First 1',
       'if ($legacyLib -and (Get-Command node -ErrorAction SilentlyContinue)) {',
       "  try { $psi = [System.Diagnostics.ProcessStartInfo]::new('node'); foreach ($a in @($legacyLib, '--log-use', 'file', " + `${psq(entry.old)}, ${psq(entry.new)}, ${psq(entry.old)}`
         + ")) { $psi.ArgumentList.Add($a) }; $psi.UseShellExecute = $false; $psi.RedirectStandardOutput = $true; $psi.RedirectStandardError = $true; $psi.Environment['TF_BUILD'] = ''; [void][System.Diagnostics.Process]::Start($psi) } catch { }",
       '}',
-      `& (Join-Path $PSScriptRoot ${psq(rel)}) @args`,
+      '# si el destino no está en este repo (un clon del repo privado no trae lo público), el del arnés instalado',
+      `$legacyTarget = Join-Path $PSScriptRoot ${psq(rel)}`,
+      `if (-not (Test-Path -LiteralPath $legacyTarget)) { $legacyInst = Join-Path $HOME ${psq(`${claude}/${installed.join('/')}`)}; if (Test-Path -LiteralPath $legacyInst) { $legacyTarget = $legacyInst } }`,
+      '& $legacyTarget @args',
       'exit $LASTEXITCODE',
       '',
     ].join('\n');

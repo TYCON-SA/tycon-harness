@@ -306,6 +306,15 @@ test('T1 Harness_Cli_LayerAndHarnessClone_ClosedTableByName_EnglishNames_NoRealN
 
   // los dos frenos de nombres sobre la rama (como en harness-place.test.js T1): sin origin/main, o sin commits propios,
   // NO MEDIDO y se dice. El rango trae lo de la rama: scripts/setup/ y las fixtures nuevas de la story entre eso.
+  // 🔴 En un árbol armado —el repo privado con el público encima, como lo arma la validación de sus pedidos— la punta
+  // es el commit local de esa superposición. Medido desde ahí, todo el público cuenta como «nuevo» y los frenos marcan
+  // nombres que ya existían (16 hallazgos en la corrida #13239); medido hasta el commit anterior, el privado adelgazado
+  // no trae la lista de palabras y el freno no puede mirar. Ahí este caso no mide los frenos sobre la rama, y lo dice.
+  const tipSubject = spawnSync('git', ['-C', RAIZ, 'log', '-1', '--format=%s', 'HEAD'], { encoding: 'utf8' });
+  if (tipSubject.status === 0 && tipSubject.stdout.includes('[superposición local, no se empuja]')) {
+    console.log('⏭ 8.13.1 T1: NO MEDIDO — los frenos de nombres sobre la rama (árbol armado: la punta es la superposición del público)');
+    return;
+  }
   const base = spawnSync('git', ['-C', RAIZ, 'merge-base', 'origin/main', 'HEAD'], { encoding: 'utf8' });
   const head = spawnSync('git', ['-C', RAIZ, 'rev-parse', 'HEAD'], { encoding: 'utf8' });
   if (base.status !== 0 || base.stdout.trim() === head.stdout.trim()) {
