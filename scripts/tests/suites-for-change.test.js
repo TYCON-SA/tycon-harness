@@ -105,20 +105,6 @@ test('SuitesForChange_UnreadableSuitesJson_Exit2', () => {
   assert.strictEqual(r.code, 2, 'sin la lista de suites no hay qué correr: «no pude mirar»');
 });
 
-test('SuitesForChange_RealSuitesJson_TheTwoSlowOnesDeclareTheirGate', (t) => {
-  // las dos que se llevaban la mitad del tiempo del control declaran su carpeta
-  const real = JSON.parse(fs.readFileSync(path.resolve(__dirname, 'suites.json'), 'utf8'));
-  const all = [...real.diarias, ...(real.semanales || [])];
-  // la copia pública no lleva la suite de la copia de verdad: ahí esto no se mide, y se dice
-  if (!fs.existsSync(path.resolve(__dirname, 'export-real.test.sh'))) { t.skip('NO MEDIDO — copia pública sin la suite de la copia de verdad'); return; }
-  // (third-party-real corre por partes desde la story 8.22, tramo F: lo registrado, y lo que lleva el criterio, son sus partes)
-  for (const name of ['tests/export-real.test.sh', 'tests/third-party-real.p1.test.sh', 'tests/third-party-real.p2.test.sh']) {
-    const s = all.find((x) => x.ruta === name);
-    assert.ok(s, `${name} está en suites.json`);
-    assert.ok(Array.isArray(s.gate_only_when_touching) && s.gate_only_when_touching.length, `${name} declara gate_only_when_touching`);
-  }
-});
-
 // ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════
 // Story 8.18 (2026-10-03), AC 12 y 13 · T11: la raíz `agent-skills` sale de LA función (`resolveSkillsDirs()` de
 // scripts/lib/skills-dir.js: la variable › el propio clon si es unido › lo instalado), no de una ruta escrita en
@@ -510,11 +496,12 @@ test('T11 SuitesForChange_MdDoesNotChoose_ExceptHeavyThatReadsMd — un README d
   // espejo: sin el .md en la lista entera, la copia no corre por ese cambio
   assert.ok(depsPlan(dir, ['adapters/x.json'], { docs: ['adapters/x.json'] }).skip.some((s) => s.startsWith('SKIP\texport-real.test.sh\t')));
   const real = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'ci', 'heavy-suites.json'), 'utf8'));
-  assert.strictEqual(real.suites['export-real.test.sh'].reads_md, true, 'la de verdad declara que mira .md');
-  // Las que leen el texto de un .md real del repo, y sólo ésas: la copia pública (lo que viaja), la máquina limpia
-  // (INSTALL.md y la portada; rojo real del merge 5b3b1db0) y el freno de producción (su guía, T33).
+  // Las que leen el texto de un .md real del repo, y sólo ésas: la máquina limpia (INSTALL.md y la portada; rojo real
+  // del merge 5b3b1db0) y el freno de producción (su guía, T33). La copia pública armada (export-real) salió de la lista
+  // en la story 8.26 (tanda I): desde que el arnés se escribe en GitHub, de ningún repo sale una copia.
   const readers = Object.entries(real.suites).filter(([, e]) => e.reads_md !== undefined).map(([n]) => n).sort();
-  assert.deepStrictEqual(readers, ['clean-machine.test.sh', 'export-real.test.sh', 'prod-access-guard.test.sh'], 'las pesadas que declaran mirar .md');
+  assert.deepStrictEqual(readers, ['clean-machine.test.sh', 'prod-access-guard.test.sh'], 'las pesadas que declaran mirar .md');
+  for (const n of readers) assert.strictEqual(real.suites[n].reads_md, true, `${n} declara que mira .md`);
 });
 
 // Pase adversarial del tramo B (2026-10-06) — dos huecos de «ante la duda, corre» (AC 9 b y c), confirmados ejecutando:
@@ -604,9 +591,8 @@ const HISTORY_REDS = [
   ['61b88a81544cf26df7fb91736f65adfdbf6e6c3a', 'legacy-names-c3.test.js', 'un merge editó la suite misma'],
   ['93ffc52b292daa2e279611c380121cc629fbb346', 'legacy-names-env.test.js', 'un merge tocó scripts/install-tycon-hooks.sh, que la suite audita'],
   ['7bc9af180e611c8c399fd1df3e3f19149dd28ad6', 'harness-install.test.sh', 'un merge editó el instalador y la suite'],
-  ['9f1530d091abbc8f004a42404d1f0228caa325ee', 'export-real.test.sh', 'un merge editó la suite dentro de una reestructuración'],
+  // (los dos rojos de export-real.test.sh, la copia pública armada, salieron con ella: story 8.26, tanda I)
   ['5b3b1db06d079cbc5bc733e11c1f66cf3a149c10', 'clean-machine.test.sh', 'un merge editó INSTALL.md (T37)'],
-  ['a4d71e835915e878be24007ccdffe8529148e98e', 'export-real.test.sh', 'un merge editó la suite (con su nombre de antes)'],
   ['a4d71e835915e878be24007ccdffe8529148e98e', 'suites-coverage.test.js', 'un merge tocó suites.json sin registrar las suites nuevas'],
   ['70804576878a75e024d5cf6f7bf2cbd160e92450', 'install-guard.test.sh', 'story 6.1 trajo el freno de producción con su suite'],
   ['70804576878a75e024d5cf6f7bf2cbd160e92450', 'tycon-prod-sql.test.sh', 'la misma story 6.1'],
@@ -733,8 +719,9 @@ test('T27 SuiteDeps_HistoryHeavyReds_WouldHaveRun — los rojos de pesadas de la
   for (const p of ['scripts/lib/**', 'scripts/publishing/**', 'pipelines/**', 'skills/**', 'agents/**']) {
     assert.ok(!real.shared.patterns.includes(p), `la contraprueba mide la red achicada: ${p} ya no está en shared`);
   }
-  const heavyReds = HISTORY_REDS.filter(([, suite]) => namesOf(suite).some((n) => real.suites[n]) || /^exportador-real/.test(suite));
-  assert.ok(heavyReds.length >= 4, `los rojos de pesadas de la historia (${heavyReds.length})`);
+  const heavyReds = HISTORY_REDS.filter(([, suite]) => namesOf(suite).some((n) => real.suites[n]));
+  // tres desde la story 8.26 (tanda I): el instalador, la máquina limpia y el freno de producción
+  assert.ok(heavyReds.length >= 3, `los rojos de pesadas de la historia (${heavyReds.length})`);
   const missed = historyAll().filter((m) => heavyReds.some(([, suite]) => m.startsWith(`${suite} (`)));
   assert.deepStrictEqual(missed, [], 'rojos de pesadas que la rama habría salteado con la red achicada');
 });
