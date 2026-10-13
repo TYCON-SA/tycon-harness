@@ -107,3 +107,5 @@ Third-party skills downloaded at install time
 The installer downloads a few third-party skills from their origins; they are
 not part of this repository. Each one, with its origin, commit, license and
 copyright, is listed in scripts/publishing/third-party-skills.json.
+
+(Línea de prueba de un pedido desde una copia ajena. No se mergea.)
