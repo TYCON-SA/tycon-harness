@@ -265,7 +265,7 @@ SH
   # con el de otro servidor), en un clon de laboratorio (`git clone --shared`: el origin es una carpeta) o en un clon
   # por ssh, el instalador moría antes de instalar nada y nueve chequeos daban rojo sin haber medido lo suyo (medido en
   # la copia: «no pude leer el remoto del clon»).
-  # Con un origin https de Azure DevOps se sigue instalando desde ESTE clon, con la organización del perfil: así el
+  # Con el origin https del repo del equipo se sigue instalando desde ESTE clon, con la organización del perfil: así el
   # repo del equipo mide además que su perfil y su remoto coinciden. Sin eso, se arma un clon de laboratorio con los
   # archivos del instalador, un origin de Azure DevOps inventado y esa organización por TYCON_ADO_ORG —lo mismo que ya
   # hace T19l con su clon falso— y se dice: que ESTE clon sea instalable ahí no se midió.
@@ -274,6 +274,12 @@ SH
   HARNESS_T19="$AQUI"; ORG_T19="${TYCON_ADO_ORG:-}"
   case "$ORIGIN_URL" in https://*) : ;; *) HARNESS_T19="" ;; esac
   [ -n "$ORG_REAL" ] || HARNESS_T19=""
+  # …y tiene que ser EL repo en el que el instalador confía (el `case` del remoto de install-guard.sh). Desde otro repo
+  # de la misma organización —su origin también es un https de Azure DevOps— el instalador muere por el remoto antes de
+  # instalar nada, y los nueve chequeos de abajo daban rojo sin haber medido lo suyo: la misma falla que ya tenían la
+  # copia pública y los clones de laboratorio, con otro remoto. Un clon así, además, no tiene por qué traer el freno
+  # publicado en su rama principal.
+  case "$ORIGIN_URL" in */tycon-claude-guides/_git/tycon-claude-guides) : ;; *) HARNESS_T19="" ;; esac
   if [ -z "$HARNESS_T19" ]; then
     HARNESS_T19="$TMP/harness-t19"; ORG_T19="https://dev.azure.com/lab-org"
     rm -rf "$HARNESS_T19"; mkdir -p "$HARNESS_T19"
@@ -283,7 +289,7 @@ SH
       mkdir -p "$HARNESS_T19/$(dirname "$f")"; cp "$AQUI/$f" "$HARNESS_T19/$f"
     done
     ( cd "$HARNESS_T19" && git init -q . && git remote add origin "https://dev.azure.com/lab-org/tycon-claude-guides/_git/tycon-claude-guides" ) >/dev/null 2>&1
-    echo "⏭ instalar-freno: T19 corre sobre un clon de laboratorio con un origin de Azure DevOps inventado — el origin de este clon no es el https de Azure DevOps (${ORIGIN_URL:-sin remoto}). Que ESTE clon sea instalable no se midió acá."
+    echo "⏭ instalar-freno: T19 corre sobre un clon de laboratorio con un origin de Azure DevOps inventado — el origin de este clon no es el repo en el que confía el instalador, por https (${ORIGIN_URL:-sin remoto}). Que ESTE clon sea instalable no se midió acá."
   fi
   # managed ajeno preexistente (de la organización): no se pisa
   printf '{"permissions":{"allow":["Bash(ls *)"]},"organizacion":true}' > "$TMP/sys2/Library/Application Support/ClaudeCode/managed-settings.json"
@@ -316,17 +322,21 @@ SH
   # T19k · la organización en cualquiera de sus formas (barra final, <org>.visualstudio.com, espacios) es la MISMA
   #        organización: el instalador acepta el clon del equipo; y una organización ajena lo sigue rechazando (control).
   #        La organización se lee del origin de ESTE clon (ORG_REAL, arriba): la prueba no escribe ninguna a mano.
+  #        Si este clon no es el repo en el que confía el instalador (otro repo de la misma organización), se mide lo
+  #        mismo sobre el clon de laboratorio de T19, con su organización inventada: con ESTE clon los tres daban rojo
+  #        por el remoto, no por la forma de escribir la organización.
+  ORG_K="$ORG_REAL"; [ "$HARNESS_T19" = "$AQUI" ] || ORG_K="lab-org"
   if [ -z "$ORG_REAL" ]; then
     echo "⏭ instalar-freno: T19k salteado — el origin de este clon no es de Azure DevOps (no hay organización que comparar)"
   else
-    for forma in "https://dev.azure.com/${ORG_REAL}/" "https://${ORG_REAL}.visualstudio.com" " https://dev.azure.com/${ORG_REAL} "; do
+    for forma in "https://dev.azure.com/${ORG_K}/" "https://${ORG_K}.visualstudio.com" " https://dev.azure.com/${ORG_K} "; do
       rm -rf "$TMP/sys5"; mkdir -p "$TMP/sys5/Library/Application Support/ClaudeCode" "$TMP/sys5/opt"
-      PATH="$TMP/bin:$PATH" TYCON_ADO_ORG="$forma" TYCON_PROD_TEST_PATH="$TMP/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin" TYCON_PROD_NODE_LOCAL=1 TYCON_PROD_ROOT="$TMP/sys5" TYCON_PROD_HARNESS="$AQUI" TYCON_PROD_ACCEPT_ORIGIN=1 bash "$INSTALADOR" --no-sudo >"$TMP/inst-out-k" 2>&1; rc=$?
+      PATH="$TMP/bin:$PATH" TYCON_ADO_ORG="$forma" TYCON_PROD_TEST_PATH="$TMP/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin" TYCON_PROD_NODE_LOCAL=1 TYCON_PROD_ROOT="$TMP/sys5" TYCON_PROD_HARNESS="$HARNESS_T19" TYCON_PROD_ACCEPT_ORIGIN=1 bash "$INSTALADOR" --no-sudo >"$TMP/inst-out-k" 2>&1; rc=$?
       if [ "$rc" -eq 0 ]; then ok "T19k · la organización escrita «${forma}» es la del equipo: el instalador acepta el clon"
       else no "T19k · con la organización «${forma}» el instalador rechazó el clon del equipo (rc=$rc): $(grep -m1 -i 'remoto\|organización' "$TMP/inst-out-k")"; fi
     done
     rm -rf "$TMP/sys5"; mkdir -p "$TMP/sys5/Library/Application Support/ClaudeCode" "$TMP/sys5/opt"
-    PATH="$TMP/bin:$PATH" TYCON_ADO_ORG="https://dev.azure.com/otra-organizacion" TYCON_PROD_TEST_PATH="$TMP/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin" TYCON_PROD_NODE_LOCAL=1 TYCON_PROD_ROOT="$TMP/sys5" TYCON_PROD_HARNESS="$AQUI" TYCON_PROD_ACCEPT_ORIGIN=1 bash "$INSTALADOR" --no-sudo >"$TMP/inst-out-k" 2>&1; rc=$?
+    PATH="$TMP/bin:$PATH" TYCON_ADO_ORG="https://dev.azure.com/otra-organizacion" TYCON_PROD_TEST_PATH="$TMP/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin" TYCON_PROD_NODE_LOCAL=1 TYCON_PROD_ROOT="$TMP/sys5" TYCON_PROD_HARNESS="$HARNESS_T19" TYCON_PROD_ACCEPT_ORIGIN=1 bash "$INSTALADOR" --no-sudo >"$TMP/inst-out-k" 2>&1; rc=$?
     if [ "$rc" -ne 0 ] && grep -q "no es el del equipo" "$TMP/inst-out-k"; then ok "T19k · control: con otra organización configurada, el clon se rechaza diciéndolo"
     else no "T19k · control: con otra organización el instalador aceptó el clon (rc=$rc)"; fi
   fi

@@ -394,6 +394,11 @@
    "why": "pipeline de producto de juguete: el checkout del repo del arnés en Azure DevOps"
   },
   {
+   "path": "scripts/tests/legacy-names-production.test.sh",
+   "kind": "test",
+   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
+  },
+  {
    "path": "scripts/tests/legacy-names.test.js",
    "kind": "test",
    "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"

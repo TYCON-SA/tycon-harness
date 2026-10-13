@@ -309,14 +309,35 @@ else
   SYS="$TMP/sys-mudanza"; BIN="$TMP/bin-mudanza"
   rm -rf "$SYS" "$BIN"; mkdir -p "$BIN"
   old_opt "$SYS"
-  URL="$(git -C "$AQUI" remote get-url origin)"
-  ORG="$(node -e 'const p=require(process.argv[1]); const o=(p.ado||{}).org||""; process.stdout.write(o)' "$AQUI/perfil-equipo.json" 2>/dev/null)"
-  case "$ORG" in https://*) ;; *) ORG="https://dev.azure.com/$ORG" ;; esac
+  # ── de qué clon instala T49m…p ─────────────────────────────────────────────────────────────────────────────────
+  # El instalador sólo instala desde un clon cuyo `origin` sea, por https, el repo en el que confía. Corriendo sobre ESTE
+  # clon, estos chequeos dependían del remoto de quien corre: desde otro repo de la misma organización (o por ssh) el
+  # instalador moría por el remoto y los cuatro daban rojo sin haber medido la mudanza. Con ese origin se sigue
+  # instalando desde ESTE clon, con la organización del perfil. Sin él se arma un clon de laboratorio con los archivos
+  # del instalador y un origin inventado —lo que hace T19 de install-guard.test.sh— y se dice.
+  URL="$(git -C "$AQUI" remote get-url origin 2>/dev/null)"
+  HARNESS_T49="$AQUI"; ORG_ENV=""
+  case "$URL" in https://*/tycon-claude-guides/_git/tycon-claude-guides) : ;; *) HARNESS_T49="" ;; esac
+  if [ -n "$HARNESS_T49" ]; then
+    ORG="$(node -e 'const p=require(process.argv[1]); const o=(p.ado||{}).org||""; process.stdout.write(o)' "$AQUI/perfil-equipo.json" 2>/dev/null)"
+    case "$ORG" in https://*) ;; *) ORG="https://dev.azure.com/$ORG" ;; esac
+  else
+    echo "⏭ legacy-names-production: T49m…p corren sobre un clon de laboratorio con un origin de Azure DevOps inventado — el origin de este clon no es el repo en el que confía el instalador, por https (${URL:-sin remoto}). Que ESTE clon sea instalable no se midió acá."
+    HARNESS_T49="$TMP/harness-t49"; ORG="https://dev.azure.com/lab-org"; ORG_ENV="$ORG"
+    URL="https://dev.azure.com/lab-org/tycon-claude-guides/_git/tycon-claude-guides"
+    rm -rf "$HARNESS_T49"; mkdir -p "$HARNESS_T49"
+    # los archivos del instalador y, si este arnés es el del equipo, su perfil y su mapa (el instalador los exige juntos)
+    for f in $(sed -n '/^ARCHIVOS=(/,/^)/p' "$INSTALLER" | grep '^  scripts/') scripts/lib/renames.json perfil-equipo.json; do
+      [ -f "$AQUI/$f" ] || continue
+      mkdir -p "$HARNESS_T49/$(dirname "$f")"; cp "$AQUI/$f" "$HARNESS_T49/$f"
+    done
+    ( cd "$HARNESS_T49" && git init -q . && git remote add origin "$URL" ) >/dev/null 2>&1
+  fi
   printf '{"url":"%s","org":"%s","fijado":"2026-09-15T00:00:00Z"}' "$URL" "$ORG" > "$SYS/opt/tycon/$P_OLD/origen-de-confianza.json"
   printf '#!/usr/bin/env bash\nexit 0\n' > "$BIN/sqlcmd"; chmod +x "$BIN/sqlcmd"
   # SIN TYCON_PROD_ACCEPT_ORIGIN: si el instalador no encuentra el origen fijado viejo, pide confirmar y muere
   out="$(env HOME="$TMP/casa-inst" PATH="$BIN:$PATH" TYCON_PROD_TEST_PATH="$BIN:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin" TYCON_PROD_NODE_LOCAL=1 \
-    TYCON_PROD_ROOT="$SYS" TYCON_PROD_HARNESS="$AQUI" bash "$INSTALLER" --no-sudo 2>&1)"; rc=$?
+    ${ORG_ENV:+TYCON_ADO_ORG="$ORG_ENV"} TYCON_PROD_ROOT="$SYS" TYCON_PROD_HARNESS="$HARNESS_T49" bash "$INSTALLER" --no-sudo 2>&1)"; rc=$?
   MD="$SYS/Library/Application Support/ClaudeCode/managed-settings.d"
   if [ "$rc" = 0 ] && [ -f "$SYS/opt/tycon/production/trusted-origin.json" ] && grep -q "\"$URL\"" "$SYS/opt/tycon/production/trusted-origin.json"; then
     ok "T49m · el origen fijado en la carpeta vieja pasa a la nueva sin volver a pedir confirmación"
