@@ -135,6 +135,15 @@ test('T1 PlaceNames_EnglishIdentifiers_NoRealNames_PublicRepoNameUnwritten', () 
     'scripts/tests/harness-place-operations.test.js', ...LIST.literal_copies.map((e) => e.path), ...LIST.recognizers.map((e) => e.path)];
   for (const f of new Set(mine)) for (const s of asRepo) assert.ok(!read(f).includes(s), `${f} escribe el nombre del repo público como repo («${s}»)`);
   // los dos frenos de nombres sobre la rama (con origin/main a mano; sin él —un clon superficial—, NO MEDIDO)
+  // 🔴 En un árbol armado —el repo privado con el público encima, como lo arma la validación de sus pedidos— la punta
+  // es el commit local de esa superposición. Medido desde ahí, todo el público cuenta como «nuevo» y los frenos marcan
+  // nombres que ya existían (16 hallazgos en la corrida #13239); medido hasta el commit anterior, el privado adelgazado
+  // no trae la lista de palabras y el freno no puede mirar. Ahí este caso no mide los frenos sobre la rama, y lo dice.
+  const tipSubject = spawnSync('git', ['-C', ROOT, 'log', '-1', '--format=%s', 'HEAD'], { encoding: 'utf8' });
+  if (tipSubject.status === 0 && tipSubject.stdout.includes('[superposición local, no se empuja]')) {
+    console.log('⏭ T1: NO MEDIDO — los frenos de nombres sobre la rama (árbol armado: la punta es la superposición del público)');
+    return;
+  }
   const base = spawnSync('git', ['-C', ROOT, 'merge-base', 'origin/main', 'HEAD'], { encoding: 'utf8' });
   const head = spawnSync('git', ['-C', ROOT, 'rev-parse', 'HEAD'], { encoding: 'utf8' });
   if (base.status !== 0 || base.stdout.trim() === head.stdout.trim()) {
