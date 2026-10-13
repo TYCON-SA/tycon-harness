@@ -19,6 +19,8 @@
 //   version [--json]             · doctor [--json] [--fetch]              · channel [latest|stable]
 //   rollback [--to <copia>] [--list] [--release]  · uninstall [--dry-run] [--yes]   (llegan en la tanda C)
 //   link --local <clon> [--allow-temporary] | link --managed
+//   team-config [--no-open] [--team-clone <c>] [--operations-clone <c>]   (la página local de configuración de la
+//                                organización; harness/team-config.js)
 //   relocate [--check]           (story 8.19: muda a mano lo registrado por el nombre viejo del lugar; harness/relocate.js)
 //   layer [--check] [--list] [--json] [--public <copia>] [--harness-clone <clon>]   (story 8.13.1: la capa privada, sólo
 //                                leyendo; harness/layer.js) · install --harness-clone <clon> (de dónde se lee la capa)
@@ -105,7 +107,7 @@ const COMMANDS = {
   // el secreto no va por ahí (cmdConfig lo rechaza con el motivo)
   // las claves de la tabla salen de github-auth.js (KEYS): una clave que cmdConfig acepta y la tabla no, se rechaza antes de llegar
   // (pase adversarial 8.25 A1a-azure: `config set azure.token` —la acción que recomiendan todos los mensajes— salía 2 acá)
-  config:    { opts: {}, positional: ['set', 'unset', 'show', 'github.token', 'azure.token', 'paths.maintained', 'paths.maintainers'], freeAfter: 2, help: 'la configuración propia del arnés en ~/.tycon/config.json (story 8.23, tanda B): `config set <clave> [<valor>]` guarda el valor (por argumento, por stdin, o pedido en la terminal); `config set github.token` lee el permiso de sólo lectura de GitHub por stdin o lo pide en la terminal SIN eco —nunca por argumento, nunca lo imprime— y lo guarda sólo para tu usuario; `config set azure.token` hace lo mismo con el PAT de Azure DevOps del repo del equipo (story 8.25); `config unset <clave>` lo saca; `config show` dice qué claves hay (sin valores)' },
+  config:    { opts: {}, positional: ['set', 'unset', 'show', 'github.token', 'azure.token', 'paths.maintained', 'paths.maintainers', 'paths.team', 'paths.operations'], freeAfter: 2, help: 'la configuración propia del arnés en ~/.tycon/config.json (story 8.23, tanda B): `config set <clave> [<valor>]` guarda el valor (por argumento, por stdin, o pedido en la terminal); `config set github.token` lee el permiso de sólo lectura de GitHub por stdin o lo pide en la terminal SIN eco —nunca por argumento, nunca lo imprime— y lo guarda sólo para tu usuario; `config set azure.token` hace lo mismo con el PAT de Azure DevOps del repo del equipo (story 8.25); `config unset <clave>` lo saca; `config show` dice qué claves hay (sin valores)' },
   startup:   { opts: { '--force': 'flag' }, help: 'lo que corre la línea de arranque de cada sesión (sale 0 siempre)' },
   update:    { opts: { '--check': 'flag', '--dry-run': 'flag', '--yes': 'flag' }, help: 'trae la punta del canal de cada fuente y, si hay versión nueva, la aplica (0 al día · 3 hay nueva · 2 no pude mirar, con --check)' },
   apply:     { opts: { '--dry-run': 'flag' }, help: 'corre el aplicador (install-tycon-hooks.sh / .ps1); --dry-run muestra lo que cambiaría, sin escribir' },
@@ -117,6 +119,7 @@ const COMMANDS = {
   link:      { opts: { '--local': 'value', '--allow-temporary': 'flag', '--managed': 'flag' }, help: 'modo desarrollador: el enlace apunta a un clon propio (--local) o vuelve a managed (--managed)' },
   migrate:   { opts: { '--to-home': 'flag', '--dry-run': 'flag', '--repo': 'value', '--team': 'value' }, help: `muda esta máquina del clon a ~/.tycon: la versión bajada en ~/.tycon/harness, el estado y la configuración en ~/.tycon, los enchufes al árbol nuevo, el clon intacto (story 8.23, tanda D); --dry-run dice el plan sin escribir; --team <org>/<repo> (story 8.25) apila la capa del equipo sobre la versión bajada (sin la opción, la clave team de public-repos.json del clon; con capa, el perfil del clon no se funde en la configuración)` },
   relocate:  { opts: { '--check': 'flag' }, help: `muda a mano lo registrado por el nombre viejo ~/.claude/${PLACE.LEGACY_PLACE_NAME} al lugar ~/.claude/${PLACE.PLACE_NAME} (--check dice qué cambiaría, sin escribir)` },
+  'team-config': { opts: { '--no-open': 'flag', '--team-clone': 'value', '--operations-clone': 'value' }, help: 'abre en el navegador la página local para configurar la organización: dónde vive cada repo (team-repos.json, en el clon del perfil del equipo) y a quién se asignan los avisos (operations.json, en el clon de operaciones); valida, guarda y ofrece el pedido. Las carpetas de los clones se guardan como paths.team y paths.operations; --team-clone y --operations-clone las usan sólo esta vez, sin guardarlas. --no-open imprime la dirección sin abrir el navegador' },
   layer:     { opts: { '--check': 'flag', '--list': 'flag', '--json': 'flag', '--public': 'value', '--harness-clone': 'value' }, help: 'la capa privada, sólo leyendo: qué agregó, qué pisó, qué está editado a mano (--check sale 0 si está entera, 1 si falta o sobra algo, 3 si no hay capa; --list nombra cada archivo; --public <copia> y --harness-clone <clon> calculan contra esa copia y ese clon sin tocar el estado)' },
 };
 
@@ -4299,8 +4302,11 @@ function cmdConfig(ctx) {
   // callarían sin que nadie sepa por qué (pase adversarial de la B)
   // `paths.maintainers` (story 8.26, tanda F1), lo mismo: el freno antes de publicar lee de ahí la lista privada, y una ruta
   // que no vale dejaría a la máquina de quien mantiene sin lista sin que nadie sepa por qué
-  if (key === 'paths.maintained' || key === 'paths.maintainers') {
-    const what = key === 'paths.maintained' ? 'el clon que esta máquina mantiene' : 'el clon del repo de mantenimiento';
+  // `paths.team` y `paths.operations` (la página de configuración de la organización), lo mismo: una carpeta que no es un
+  // clon se diría «guardada» y la página volvería a pedirla sin decir por qué
+  const CLONE_KEYS = { 'paths.maintained': 'el clon que esta máquina mantiene', 'paths.maintainers': 'el clon del repo de mantenimiento', 'paths.team': 'el clon del perfil del equipo', 'paths.operations': 'el clon del repo de operaciones' };
+  if (CLONE_KEYS[key]) {
+    const what = CLONE_KEYS[key];
     const p = value.replace(/^~(?=\/|$)/, ctx.home);
     if (!path.isAbsolute(p)) return { code: 2, lines: [`harness.js config: ${key} tiene que ser una ruta absoluta (dice «${value}»)`] };
     if (!fs.existsSync(p)) return { code: 2, lines: [`harness.js config: ${key} apunta a una carpeta que no existe (${p})`] };
@@ -4319,6 +4325,42 @@ function cmdConfig(ctx) {
   return { code: 0, lines: [`${key} guardada en ${r.file} (sólo para tu usuario)`, ...(r.warning ? [r.warning] : []), ...(secretNote ? [secretNote] : [])] };
 }
 
+/**
+ * `team-config` — la página local de configuración de la organización (harness/team-config.js). Arranca un servidor en
+ * 127.0.0.1, imprime la dirección (con su llave) y abre el navegador; el proceso sigue vivo hasta que la página se cierra
+ * (botón «Cerrar la página») o Ctrl+C. Las carpetas de los clones salen de `--team-clone`/`--operations-clone` (sólo esta
+ * vez) o de `paths.team`/`paths.operations`; si faltan, la página las pide y se guardan con `config set` (el mismo
+ * camino y los mismos lectores que desde la terminal).
+ */
+function cmdTeamConfig(ctx) {
+  const TC = mod('team-config');
+  const clones = TC.declaredClones({ env: ctx.env });
+  for (const [opt, id] of [['team-clone', 'repos'], ['operations-clone', 'operations']]) {
+    if (ctx.opts[opt] === undefined) continue;
+    const dir = path.resolve(String(ctx.opts[opt]).replace(/^~(?=[\\/]|$)/, ctx.home));
+    const why = TC.cloneProblem(dir);
+    if (why) return { code: 2, lines: [`harness.js team-config: --${opt}: ${why}`] };
+    clones[id] = dir;
+  }
+  const setClone = (target, dir) => {
+    const r = cmdConfig({ ...ctx, args: ['set', target.configKey, dir] });
+    return { ok: r.code === 0, message: (r.lines || []).join(' ') };
+  };
+  TC.start({ tree: ctx.tree, clones, setClone, env: ctx.env, home: ctx.home }).then((p) => {
+    process.stdout.write(`página de configuración de la organización: ${p.url}\n(sólo en esta máquina; se cierra con el botón «Cerrar la página» o con Ctrl+C)\n`);
+    if (ctx.opts['no-open']) return;
+    const [cmd, args] = TC.browserCommand(ctx.platform, p.url);
+    const { spawn } = require('child_process');
+    const child = spawn(cmd, args, { stdio: 'ignore', detached: true, windowsHide: true });
+    child.on('error', () => process.stdout.write('no pude abrir el navegador: copiá la dirección de arriba\n'));
+    child.unref();
+  }, (e) => {
+    process.stderr.write(`harness.js team-config: no pude abrir la página (${e && e.message ? e.message : e})\n`);
+    process.exitCode = 2;
+  });
+  return { code: 0, lines: [] };
+}
+
 const HANDLERS = {
   install: cmdInstall,
   startup: cmdStartup,
@@ -4334,6 +4376,7 @@ const HANDLERS = {
   relocate: cmdRelocate,
   layer: cmdLayer,
   migrate: cmdMigrate,
+  'team-config': cmdTeamConfig,
 };
 
 function main(argv) {

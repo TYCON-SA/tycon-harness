@@ -1155,6 +1155,12 @@
       "requiere": []
     },
     {
+      "__nota": "la página local de configuración de la organización (`harness.js team-config`): sólo contesta con su llave y por su propia dirección (otro Host, otro Origin, sin llave, no JSON o un cuerpo de más: rechazados); nada se carga de afuera; valida con los lectores del árbol (team-repos.js y operations-config.js) y no escribe lo que rechazan; la carpeta de cada clon la valida y la guarda quien la lanzó; el pedido no lleva otros cambios del clon, sube la rama de verdad a un remoto de juguete, y un rechazo por permisos o una herramienta que falta se dicen en llano con el enlace para abrirlo a mano; cómo se abre el navegador en Mac, Windows y Linux.",
+      "raiz": "arnes",
+      "ruta": "tests/team-config.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.25 (tanda A1a-azure, TZ7, TZ8, TZ9 y TZ13): la capa del equipo desde Azure DevOps sobre la versión bajada, con el GitHub de juguete para la copia pública y el Azure de juguete para el repo del equipo: install --team <URL de Azure> con el PAT guardado (capa apilada, origen perfil, team.host azure, update lleva la punta nueva); sin credencial, PAT que no vale, 403 y 404 → 1 sin escribir y dicho; update sin credencial arrastra la instalada y lo dice, y una lista cortada o un item alterado no entran; la mudanza con la clave team del clon = la URL de Azure. Sin red real: todo en localhost.",
       "raiz": "arnes",
       "ruta": "tests/harness-team-azure.test.sh",

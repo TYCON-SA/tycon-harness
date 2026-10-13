@@ -117,7 +117,9 @@ const VOCABULARIO = Object.freeze({
   // lista privada. Lo escribe `harness.js config set paths.maintainers`; acá, igual, sólo se lo conoce. La primera versión
   // de la F1 lo escribía sin que estuviera acá: guardarlo dejaba la configuración de la máquina «rota» para este lector.
   // Toda clave que ese comando sabe escribir tiene que estar en este vocabulario (lo fija la prueba del freno, T56).
-  rutas: Object.freeze({ repos: 'ruta', tree: 'ruta-absoluta', maintained: 'ruta-absoluta', maintainers: 'ruta-absoluta' }),
+  // `team` y `operations`: los clones del perfil del equipo y del repo de operaciones de la organización, que edita la
+  // página de configuración (`harness.js team-config`, que las pide la primera vez y las guarda con `config set`).
+  rutas: Object.freeze({ repos: 'ruta', tree: 'ruta-absoluta', maintained: 'ruta-absoluta', maintainers: 'ruta-absoluta', team: 'ruta-absoluta', operations: 'ruta-absoluta' }),
   // `github.token` (story 8.23, tandas B y C): el permiso de sólo lectura de GitHub, en `~/.tycon/config.json`. Tipo
   // `secreto`: este lector sabe SI está y nunca qué dice —el valor no entra a `valores` (queda `true`), no sale en
   // `explain`, `get` ni en un error, y `set` no lo escribe (lo escribe `harness.js config set github.token`, por stdin)—.

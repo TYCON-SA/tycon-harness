@@ -31,7 +31,9 @@ const CAUSES_404 = Object.freeze(['sin permiso de GitHub guardado', 'el permiso 
 // `azure.token` (story 8.25): el PAT de sólo lectura (Code: Read) de Azure DevOps para el repo del equipo; secreto como el de GitHub
 // `paths.maintainers` (story 8.26, tanda F1): el clon del repo de mantenimiento en esta máquina, de donde el freno antes
 // de publicar (scripts/hooks/public-push-guard.js) lee la lista privada. Sólo la tiene la máquina de quien mantiene.
-const KEYS = Object.freeze(['github.token', 'paths.maintained', 'paths.maintainers', 'azure.token']);
+// `paths.team` y `paths.operations`: los clones del perfil del equipo y del repo de operaciones, que edita la página de
+// configuración de la organización (harness.js team-config). Sólo los tiene quien configura la organización.
+const KEYS = Object.freeze(['github.token', 'paths.maintained', 'paths.maintainers', 'paths.team', 'paths.operations', 'azure.token']);
 const SECRET_KEYS = Object.freeze(['github.token', 'azure.token']);
 
 const isObject = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
