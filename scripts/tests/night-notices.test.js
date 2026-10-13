@@ -166,7 +166,7 @@ function startup(lab, more = {}, tree = ROOT) {
   return { deps: deps.out, bench: bench.out, board: board.out, all, lines: all.split('\n').filter((l) => /^\S/.test(l)) };
 }
 const line = (s, re) => s.lines.find((l) => re.test(l)) || '';
-const NIGHTLIES = { dependencias: /dependencias/, vigilante: /vigilante/, banco: /banco de controles/i, suites: /suites de prueba/i, tablero: /tablero del arnés/ };
+const NIGHTLIES = { dependencias: /dependencias\b/, vigilante: /vigilante\b/, banco: /banco de controles/i, suites: /suites de prueba/i, tablero: /tablero del arnés/ };
 /** La línea de cada nocturno, o '' si no habló. */
 const perNightly = (s) => Object.fromEntries(Object.entries(NIGHTLIES).map(([k, re]) => [k, line(s, re)]));
 
@@ -540,7 +540,7 @@ test('T85 AQueueThatCannotBeEvaluated_IsSaid_AndDoesNotSilenceTheOther', () => {
   const s = startup(machine({ published: { ...base, [depsFile(at)]: edit(base, depsFile(at), (j) => { j.no_medidos = 7; }) } }));
   const n = perNightly(s);
   assert.match(n.dependencias, /^🔴 dependencias: no pude evaluar la noche \(/, `la cola que tiró calló:\n${s.all}`);
-  assert.match(n.vigilante, /^✅ vigilante/, 'el error de una cola calló a la otra');
+  assert.match(n.vigilante, /^✅ vigilante\b/, 'el error de una cola calló a la otra');
   assert.strictEqual(s.lines.length, 5, s.all);
 });
 
