@@ -1437,12 +1437,22 @@ test('motivo del pull: un texto largo se recorta Y SE NOTA que fue recortado', (
 const PATH_DE_LAUNCHD = '/usr/bin:/bin:/usr/sbin:/sbin';
 
 /** Un bin/ con node y —según el caso— `claude` y `codex` al lado, como el bin de nvm. */
-function binDeNode(b, { conHerramientas = true } = {}) {
+function binDeNode(b, { conHerramientas = true, real: rutaReal = process.execPath } = {}) {
   const bin = path.join(b.raiz, 'bin-falso');
   fs.mkdirSync(bin, { recursive: true });
   const nodeFalso = path.join(bin, 'node');
-  try { fs.linkSync(process.execPath, nodeFalso); }
-  catch (_) { fs.copyFileSync(process.execPath, nodeFalso); fs.chmodSync(nodeFalso, 0o755); }
+  // 🔴 UNA COPIA, NUNCA UN ENLACE AL NODE REAL (2026-10-13). Era un enlace duro, y al llamar esto dos veces sobre el mismo
+  // banco el `copyFileSync` de respaldo copiaba el binario real sobre sí mismo: los bytes quedaban iguales, pero macOS
+  // dio por inválida su firma y mató con 137 a todo proceso que lanzara ese node, en toda la máquina, hasta que se
+  // reemplazó el archivo. Ahora es una copia con inodo propio (en APFS, un clon: instantáneo), se reusa si ya está, y
+  // antes de escribir se comprueba que el destino no sea el node que corre: si lo es, la prueba falla en seco.
+  const real = fs.statSync(rutaReal);
+  const esElReal = (p) => { try { const st = fs.statSync(p); return st.ino === real.ino && st.dev === real.dev; } catch (_) { return false; } };
+  if (esElReal(nodeFalso)) throw new Error(`binDeNode: ${nodeFalso} es el node real (${rutaReal}); no se escribe sobre él`);
+  if (!fs.existsSync(nodeFalso)) {
+    fs.copyFileSync(rutaReal, nodeFalso, fs.constants.COPYFILE_FICLONE);
+    fs.chmodSync(nodeFalso, 0o755);
+  }
   if (conHerramientas) {
     // La forma REAL de cada una (medida 2026-09-05): `claude` es un binario nativo — acá un sh
     // alcanza —; `codex` es un script `#!/usr/bin/env node`, y ésa es la trampa que el caso tiene
@@ -1718,4 +1728,167 @@ test('T72 exam_unknown_day_refused: con un día que no existe --install-task se 
   const alDia = instalarEn(b3, 'Devas-Mac-mini', ['--check']);
   assert.strictEqual(alDia.r.status, 0, `control: --install-task --check con el disparador al día sale 0 (${alDia.r.stderr})`);
   assert.doesNotMatch(`${alDia.r.stdout || ''}`, /falta \(o cambió\)/, 'y no dice que falte');
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// T73-T76 — en la versión bajada, la máquina designada y el resultado viven en el clon de mantenimiento (2026-10-13)
+//
+// El caso: la máquina que corre el examen pasó el 9 de octubre a la versión bajada (el árbol público instalado, sin git).
+// Ese árbol trae `exam-config.json` con la máquina designada vacía: el instalador lo leyó, retiró el disparador, y el
+// martes 13 el examen no corrió. El arranque marcaba el sello de la corrida a mano como «no lo escribió el job», porque
+// buscaba el reporte en el árbol instalado. La máquina designada y el reporte que viaja son del clon de mantenimiento
+// que la máquina declara (`paths.maintainers`), el mismo del que los avisos leen la noche.
+// 🔴 Rojo previo: con el periodic-exam.js y el bench-notice.js de antes, T73, T74 y T75 fallan.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+/** Un árbol instalado de juguete: el código del examen y del aviso, con la configuración pública (nadie designado). */
+function arbolInstalado(raiz) {
+  const arbol = path.join(raiz, 'arbol-instalado');
+  for (const d of [['scripts', 'lib'], ['scripts', 'setup', 'harness']]) {
+    fs.cpSync(path.join(TCG, ...d), path.join(arbol, ...d), { recursive: true });
+  }
+  const origen = path.join(TCG, 'scripts', 'controls-bench');
+  const cb = path.join(arbol, 'scripts', 'controls-bench');
+  fs.mkdirSync(cb, { recursive: true });
+  for (const f of fs.readdirSync(origen)) if (f.endsWith('.js')) fs.copyFileSync(path.join(origen, f), path.join(cb, f));
+  fs.writeFileSync(path.join(cb, 'exam-config.json'), JSON.stringify({ designated_machine: '', days_between_runs: 2, scheduled_days: ['tuesday', 'friday'], hour: '02:00' }));
+  fs.mkdirSync(path.join(arbol, 'scripts', 'hooks'), { recursive: true });
+  fs.copyFileSync(NOTICE, path.join(arbol, 'scripts', 'hooks', 'bench-notice.js'));
+  return arbol;
+}
+
+/**
+ * Una máquina con versión bajada que declara su clon de mantenimiento. El clon es el repo del banco (con su remoto), y
+ * trae la configuración que designa la máquina. `release: false` = la máquina no usa la versión bajada.
+ */
+function maquinaConClonDeMantenimiento({ release = true } = {}) {
+  const b = banco();
+  const cfgDelClon = path.join(b.repo, 'scripts', 'controls-bench', 'exam-config.json');
+  fs.writeFileSync(cfgDelClon, JSON.stringify({ designated_machine: 'Devas-Mac-mini', days_between_runs: 2, scheduled_days: ['tuesday', 'friday'], hour: '02:00' }));
+  b.git('add', '-f', '--', 'scripts/controls-bench/exam-config.json');
+  b.git('commit', '-q', '-m', 'la máquina designada');
+  b.git('push', '-q', 'origin', 'main');
+  const tycon = path.join(b.casa, '.tycon');
+  if (release) escribir(path.join(tycon, 'state', 'harness-state.json'), { schema: 1, sources: [{ kind: 'release', version: '0.0.0' }] });
+  escribir(path.join(tycon, 'config.json'), { paths: { maintainers: b.repo } });
+  b.arbol = arbolInstalado(b.raiz);
+  return b;
+}
+
+/** El ambiente de la máquina, sin ninguna variable que apunte el examen a un lugar: se alcanza sólo por la configuración. */
+function ambienteDeLaMaquina(b, extra = {}) {
+  const env = Object.assign({}, process.env, { HOME: b.casa, USERPROFILE: b.casa, TYCON_HOME: path.join(b.casa, '.tycon'), TYCON_NIGHTLY: '1' }, extra);
+  for (const k of Object.keys(env)) if (/^TYCON_EXAM_(CONFIG|REPO|REPORT)$/.test(k) || env[k] === undefined) delete env[k];
+  return env;
+}
+
+test('T73 exam_reads_maintainers_clone: en la versión bajada, --dry-run lee la máquina designada y el reporte del clon de mantenimiento', () => {
+  const b = maquinaConClonDeMantenimiento();
+  const r = spawnSync(process.execPath, [path.join(b.arbol, 'scripts', 'controls-bench', 'periodic-exam.js'), '--dry-run'],
+    { encoding: 'utf8', env: ambienteDeLaMaquina(b, { TYCON_EXAM_MACHINE: 'Devas-Mac-mini' }) });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.match(r.stdout, /máquina designada: Devas-Mac-mini/, `la máquina designada sale del clon — «${r.stdout}»`);
+  assert.match(r.stdout, /HOY LE TOCA/, 'y le toca correr');
+  assert.ok(r.stdout.includes(path.join(b.repo, E.RUTA_REPORTE_QUE_VIAJA)), `el reporte que viaja va al clon — «${r.stdout}»`);
+  assert.match(r.stdout, /del clon de mantenimiento/, 'y lo dice');
+});
+
+test('T74 exam_task_installed_from_maintainers_clone: en la versión bajada, --install-task programa el examen desde el árbol instalado', () => {
+  const b = maquinaConClonDeMantenimiento();
+  const agentes = path.join(b.raiz, 'LaunchAgents');
+  const launchctlFalso = path.join(b.raiz, 'launchctl-falso.sh');
+  fs.writeFileSync(launchctlFalso, '#!/bin/sh\necho "$@" >> "$LAUNCHCTL_LOG"\nexit 0\n');
+  fs.chmodSync(launchctlFalso, 0o755);
+  const nodeFalso = binDeNode(b);
+  const r = spawnSync(nodeFalso, [path.join(b.arbol, 'scripts', 'controls-bench', 'periodic-exam.js'), '--install-task'], {
+    encoding: 'utf8',
+    env: ambienteDeLaMaquina(b, {
+      PATH: PATH_DE_LAUNCHD, TYCON_EXAM_MACHINE: 'Devas-Mac-mini', TYCON_EXAM_LAUNCHAGENTS: agentes,
+      TYCON_EXAM_REAL_HOME: b.casa, LAUNCHCTL_BIN: launchctlFalso, LAUNCHCTL_LOG: path.join(b.raiz, 'launchctl.log'),
+    }),
+  });
+  assert.strictEqual(r.status, 0, `${r.stdout}${r.stderr}`);
+  const plist = path.join(agentes, 'ar.com.tycon.examen-periodico.plist');
+  assert.ok(fs.existsSync(plist), `quedó el disparador — «${r.stdout}»`);
+  assert.ok(fs.readFileSync(plist, 'utf8').includes(path.join(b.arbol, 'scripts', 'controls-bench', 'periodic-exam.js')),
+    'y corre el código del árbol instalado');
+  // control: la misma máquina sin el clon de mantenimiento declarado no programa nada (la copia pública no designa)
+  fs.rmSync(path.join(b.casa, '.tycon', 'config.json'));
+  fs.rmSync(plist);
+  const sin = spawnSync(nodeFalso, [path.join(b.arbol, 'scripts', 'controls-bench', 'periodic-exam.js'), '--install-task'], {
+    encoding: 'utf8',
+    env: ambienteDeLaMaquina(b, {
+      PATH: PATH_DE_LAUNCHD, TYCON_EXAM_MACHINE: 'Devas-Mac-mini', TYCON_EXAM_LAUNCHAGENTS: agentes,
+      TYCON_EXAM_REAL_HOME: b.casa, LAUNCHCTL_BIN: launchctlFalso, LAUNCHCTL_LOG: path.join(b.raiz, 'launchctl.log'),
+    }),
+  });
+  assert.strictEqual(sin.status, 0, sin.stderr);
+  assert.ok(!fs.existsSync(plist), 'control: sin clon declarado, la copia pública no programa el examen');
+});
+
+test('T75 notice_reads_exam_from_maintainers_clone: el aviso de arranque lee el resultado del clon y no denuncia un sello legítimo', () => {
+  const b = maquinaConClonDeMantenimiento();
+  const ahora = new Date().toISOString();
+  escribir(path.join(b.repo, E.RUTA_REPORTE_QUE_VIAJA), {
+    ts: ahora, estado: 'completo', maquina: 'devas-mac-mini', tool: 'both', runs: 3,
+    criterio: 1, inestables: 0, paridadReal: 0, baselineRegressions: 0, erroresDeCorrida: 0, skippedMcp: 0, fugas: 0,
+  });
+  // el sello que deja la corrida al terminar, en la carpeta del estado de esta máquina
+  const sello = path.join(b.casa, '.tycon', 'state', 'periodic-exam-last-run');
+  fs.mkdirSync(path.dirname(sello), { recursive: true });
+  fs.writeFileSync(sello, ahora);
+  const r = spawnSync(process.execPath, [path.join(b.arbol, 'scripts', 'hooks', 'bench-notice.js')], {
+    encoding: 'utf8', input: '{"source":"startup"}',
+    env: ambienteDeLaMaquina(b, {
+      TYCON_BENCH_DIR: path.join(b.repo, 'scripts', 'controls-bench', '.bench'),
+      TYCON_SUITES_REPORT: b.reporteSuites, TYCON_BENCH_REPORT: b.reporteBanco, TYCON_EVAL_SANDBOX: '',
+    }),
+  });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.match(r.stdout, /examen de revisores \(\d{4}-\d{2}-\d{2}, hace 0 día/, `el aviso habla del examen del clon — «${r.stdout}»`);
+  assert.match(r.stdout, /1 de criterio/, 'con sus números');
+  assert.doesNotMatch(r.stdout, /no lo escribió el job/, 'y el sello de la corrida no se toma por uno escrito a mano');
+});
+
+test('T76 exam_own_config_wins: un árbol que designa máquina (un clon completo) se lee a sí mismo, aunque haya clon de mantenimiento', () => {
+  const b = maquinaConClonDeMantenimiento();
+  fs.writeFileSync(path.join(b.arbol, 'scripts', 'controls-bench', 'exam-config.json'),
+    JSON.stringify({ designated_machine: 'Otra-Mac', days_between_runs: 2, scheduled_days: ['tuesday', 'friday'], hour: '02:00' }));
+  const r = spawnSync(process.execPath, [path.join(b.arbol, 'scripts', 'controls-bench', 'periodic-exam.js'), '--dry-run'],
+    { encoding: 'utf8', env: ambienteDeLaMaquina(b, { TYCON_EXAM_MACHINE: 'Devas-Mac-mini' }) });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.match(r.stdout, /máquina designada: Otra-Mac/, `manda la configuración propia — «${r.stdout}»`);
+  assert.ok(r.stdout.includes(path.join(b.arbol, E.RUTA_REPORTE_QUE_VIAJA)), 'y el reporte queda en el árbol propio');
+  // y una máquina que no usa la versión bajada tampoco mira el clon de mantenimiento
+  const c = maquinaConClonDeMantenimiento({ release: false });
+  const r2 = spawnSync(process.execPath, [path.join(c.arbol, 'scripts', 'controls-bench', 'periodic-exam.js'), '--dry-run'],
+    { encoding: 'utf8', env: ambienteDeLaMaquina(c, { TYCON_EXAM_MACHINE: 'Devas-Mac-mini' }) });
+  assert.strictEqual(r2.status, 0, r2.stderr);
+  assert.match(r2.stdout, /máquina designada: \(ninguna/, `sin versión bajada, la copia pública: nadie designado — «${r2.stdout}»`);
+});
+
+test('T77 fake_node_never_touches_the_real_one: armar el node falso dos veces no toca el node real (2026-10-13)', () => {
+  // 🔴 Rojo previo: con el enlace duro, la segunda llamada copiaba el node real sobre sí mismo y macOS lo invalidaba.
+  const huella = () => require('crypto').createHash('sha256').update(fs.readFileSync(process.execPath)).digest('hex');
+  const real = fs.statSync(process.execPath);
+  const antes = huella();
+  const b = banco();
+  const primero = binDeNode(b);
+  const segundo = binDeNode(b);
+  assert.strictEqual(primero, segundo, 'la segunda llamada reusa el mismo node falso');
+  const falso = fs.statSync(primero);
+  assert.notStrictEqual(falso.ino, real.ino, 'el node falso es otro archivo, no un enlace al real');
+  assert.strictEqual(fs.statSync(process.execPath).nlink, real.nlink, 'el node real no ganó enlaces');
+  assert.strictEqual(huella(), antes, 'y sus bytes no cambiaron');
+  const r = spawnSync(primero, ['-e', 'process.stdout.write("vivo")'], { encoding: 'utf8' });
+  assert.strictEqual(r.stdout, 'vivo', `el node falso arranca (${r.status} ${r.signal || ''})`);
+  // el freno: si el destino ES el node real, no se escribe y la prueba falla en seco. El «node real» de este tramo es un
+  // archivo del laboratorio: ni siquiera para probar el freno se arma un enlace al de verdad.
+  const otra = banco();
+  const deMentira = path.join(otra.raiz, 'node-real-de-mentira');
+  fs.writeFileSync(deMentira, 'no soy node\n');
+  fs.mkdirSync(path.join(otra.raiz, 'bin-falso'), { recursive: true });
+  fs.linkSync(deMentira, path.join(otra.raiz, 'bin-falso', 'node'));
+  assert.throws(() => binDeNode(otra, { real: deMentira }), /es el node real/, 'con el real en el destino, frena antes de escribir');
+  assert.strictEqual(fs.readFileSync(deMentira, 'utf8'), 'no soy node\n', 'y no lo tocó');
 });

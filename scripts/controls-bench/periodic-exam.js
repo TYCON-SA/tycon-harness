@@ -162,13 +162,54 @@ function diasProgramados(scheduled_days) {
 // Funciones puras — lo que decide, separado de lo que ejecuta
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
-function repoRaiz() {
-  return leerVariable('TYCON_EXAM_REPO') || path.resolve(__dirname, '..', '..');
+/**
+ * 🔴 DE QUÉ REPO SE LEE LA MÁQUINA DESIGNADA, Y ADÓNDE VA EL RESULTADO (2026-10-13).
+ *
+ * La copia pública trae `exam-config.json` con la máquina designada vacía: afuera nadie corre este examen. La máquina
+ * del equipo que lo corría pasó el 9 de octubre a la versión bajada (el árbol público, sin git), y desde esa noche el
+ * instalador leía esa copia vacía, retiraba el disparador y el examen dejó de correr: el martes 13 no corrió, y el
+ * arranque lo marcaba en rojo en cada sesión. La máquina designada y el resultado que viaja son del repo de
+ * mantenimiento, el clon que la máquina declara en `paths.maintainers` (el mismo del que los avisos leen la noche:
+ * scripts/lib/night-data.js). Por eso, en orden:
+ *   · TYCON_EXAM_REPO / TYCON_EXAM_CONFIG, si vienen (cada una por su lado, como siempre);
+ *   · si no, la configuración de este árbol cuando designa una máquina (un clon completo del arnés): este árbol;
+ *   · si no, y la máquina usa la versión bajada con su clon de mantenimiento sano: la configuración y el resultado de
+ *     ese clon. El código sigue siendo el de este árbol, el instalado;
+ *   · si no, este árbol (la copia pública de alguien de afuera: nadie designado, nadie corre).
+ * Lo usan las tres preguntas —el instalador del disparador, la corrida y el aviso de arranque (bench-notice.js)—, para
+ * que las tres miren el MISMO lugar.
+ */
+function lugarDelExamen() {
+  const propio = path.resolve(__dirname, '..', '..');
+  const configPropia = path.join(__dirname, 'exam-config.json');
+  const repoVar = leerVariable('TYCON_EXAM_REPO');
+  const configVar = leerVariable('TYCON_EXAM_CONFIG');
+  if (repoVar || configVar) return { repo: repoVar || propio, config: configVar || configPropia, origen: 'variable' };
+  const lugarPropio = { repo: propio, config: configPropia, origen: 'propio' };
+  if (designaMaquina(leerJson(configPropia))) return lugarPropio;
+  const lib = path.join(__dirname, '..', 'lib', 'night-data.js');
+  if (!fs.existsSync(lib)) return lugarPropio;   // copiado solo (el banco lo hace): como siempre
+  let r;
+  try { r = require(lib).resolve(propio); } catch (e) {
+    return Object.assign({}, lugarPropio, { problema: `no pude saber cuál es el clon de mantenimiento (${(e && e.message) || e})` });
+  }
+  if (r && r.source === 'maintainers' && r.dir) {
+    return { repo: r.dir, config: path.join(r.dir, 'scripts', 'controls-bench', 'exam-config.json'), origen: 'mantenimiento' };
+  }
+  return r && r.problem ? Object.assign({}, lugarPropio, { problema: r.problem }) : lugarPropio;
+}
+
+function leerJson(p) {
+  try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch (_) { return null; }
+}
+
+function designaMaquina(cfg) {
+  return Boolean(cfg && typeof cfg === 'object' && !Array.isArray(cfg)
+    && String(cfg.designated_machine == null ? '' : cfg.designated_machine).trim());
 }
 
 function leerConfig(ruta) {
-  const p = ruta || leerVariable('TYCON_EXAM_CONFIG') || path.join(__dirname, 'exam-config.json');
-  try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch (_) { return {}; }
+  return leerJson(ruta || lugarDelExamen().config) || {};
 }
 
 /** Cómo se llama esta máquina, en todas las formas en que se la puede nombrar (minúsculas). */
@@ -705,7 +746,8 @@ function ayuda() {
     '                sale 2 si no instala porque no alcanza a claude/codex',
     '  --help        esto',
     '',
-    `Config: ${leerVariable('TYCON_EXAM_CONFIG') || path.join(__dirname, 'exam-config.json')}`,
+    'Config: la de este árbol si designa una máquina; en una versión bajada, la del clon de mantenimiento',
+    '        (paths.maintainers). --dry-run dice cuál leyó.',
     'Apagado: TYCON_NO_NIGHTLY_EXAM=1',
   ].join('\n'));
 }
@@ -728,9 +770,10 @@ async function main(argv) {
     return r && r.rechazado ? 2 : 0;
   }
 
-  const repo = repoRaiz();
+  const lugar = lugarDelExamen();
+  const repo = lugar.repo;
   const benchDir = path.join(repo, 'scripts', 'controls-bench', '.bench');
-  const cfg = leerConfig();
+  const cfg = leerConfig(lugar.config);
   const ctx = {
     cfg, identidades: identidadesDeMaquina(), sello: leerSello(), ahora: new Date(),
     rutaCandado: path.join(benchDir, 'examen.lock'),
@@ -743,6 +786,8 @@ async function main(argv) {
     console.log(`  motivo:            ${d.motivo}${d.detalle ? ` (${d.detalle})` : ''}`);
     console.log(`  esta máquina es:   ${ctx.identidades.join(' / ') || '(sin nombre)'}`);
     console.log(`  máquina designada: ${cfg.designated_machine || '(ninguna — así NADIE corre)'}`);
+    console.log(`  configuración:     ${lugar.config}${lugar.origen === 'mantenimiento' ? ' (del clon de mantenimiento)' : ''}`);
+    if (lugar.problema) console.log(`  ⚠ ${lugar.problema}`);
     const dias = diasProgramados(cfg.scheduled_days);
     console.log(`  cada:              ${cfg.days_between_runs || 3} días · ${dias.numeros.map((n) => Object.keys(DIAS).find((k) => DIAS[k] === n)).join(', ')} ${cfg.hour || ''}`);
     // el día que no existe se marca acá también: --dry-run es el primer paso de la revisión a mano del examen
@@ -916,7 +961,7 @@ async function main(argv) {
 
 module.exports = {
   VEJEZ_MS, RUTA_REPORTE_QUE_VIAJA, CANDADO_EN_ESCRITURA_MS,
-  leerConfig, identidadesDeMaquina, esMaquinaDesignada, periodoCumplido, estadoDelCandado,
+  leerConfig, lugarDelExamen, designaMaquina, identidadesDeMaquina, esMaquinaDesignada, periodoCumplido, estadoDelCandado,
   motivoDeGit,
   plistDeseado, diasProgramados, decidir, instalarTarea, liberarCandado, tomarCandado, main,
 };

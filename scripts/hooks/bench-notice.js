@@ -105,8 +105,13 @@ try { EXAMEN = require(path.join(__dirname, '..', 'controls-bench', 'periodic-ex
 // viejo (sin el hermano) se muestra como antes — fail-open, como todo en este archivo.
 let rubrosNoMedidos = () => ({ inestables: null, paridad: null });
 try { ({ rubrosNoMedidos } = require(path.join(__dirname, '..', 'controls-bench', 'unmeasured-categories.js'))); } catch { /* clon viejo */ }
+// 🔴 De dónde se leen la máquina designada y el resultado: lo decide el examen (`lugarDelExamen`), para que el aviso mire
+// lo mismo que el disparador y la corrida. En una versión bajada es el clon de mantenimiento: leer la copia pública
+// (vacía) callaba sobre el examen y dejaba el sello de la corrida sin reporte que lo respalde (2026-10-13).
+let LUGAR_EXAMEN = null;
+try { if (EXAMEN && typeof EXAMEN.lugarDelExamen === 'function') LUGAR_EXAMEN = EXAMEN.lugarDelExamen(); } catch { /* clon viejo */ }
 const RUTA_EXAMEN = leerVariable('TYCON_EXAM_REPORT')
-  || path.join(__dirname, '..', 'controls-bench', 'ultimo-examen.json');
+  || (LUGAR_EXAMEN ? path.join(LUGAR_EXAMEN.repo, EXAMEN.RUTA_REPORTE_QUE_VIAJA) : path.join(__dirname, '..', 'controls-bench', 'ultimo-examen.json'));
 
 function readJson(p) {
   try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return null; }
@@ -119,7 +124,8 @@ function readJson(p) {
 // alguien lo corre: el aviso sigue como siempre (un «no sé» callado se lee igual que un verde). Con máquina designada
 // —el equipo— nada cambia: sigue la decisión del 2026-09-26 de que el examen avisa siempre.
 function examenSinMaquinaDesignada() {
-  const ruta = leerVariable('TYCON_EXAM_CONFIG') || path.join(__dirname, '..', 'controls-bench', 'exam-config.json');
+  const ruta = leerVariable('TYCON_EXAM_CONFIG') || (LUGAR_EXAMEN && LUGAR_EXAMEN.config)
+    || path.join(__dirname, '..', 'controls-bench', 'exam-config.json');
   const cfg = readJson(ruta);
   if (!cfg || typeof cfg !== 'object' || Array.isArray(cfg)) return false;
   return !String(cfg.designated_machine == null ? '' : cfg.designated_machine).trim();
