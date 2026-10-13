@@ -2389,6 +2389,14 @@ const MARCA = {
 };
 const CERCO = '`'.repeat(3);
 const PAPELES = 'scripts/publishing/public-files';
+// EL REPO PRIVADO ADELGAZADO (story 8.26, tanda I, 2026-10-13). Ahí las pruebas corren sobre el árbol armado: lo público
+// llega encima, y con él los guiones de entrada y la lista de remotos en scripts/setup/. «En el interno no existe» no se
+// puede cumplir, así que esas dos afirmaciones no se exigen cuando la lista del privado (.tycon/internal-forms.json) dice
+// `layout: thin`; lo demás de cada caso (la plantilla, su declaración en la lista blanca) sí. Sin esa lista —el público,
+// o un privado de antes— no cambia nada.
+const THIN_PRIVATE = (() => {
+  try { return JSON.parse(fs.readFileSync(path.join(RAIZ, '.tycon', 'internal-forms.json'), 'utf8')).layout === 'thin'; } catch (_) { return false; }
+})();
 const escRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /** Los papeles dados (`{ destino: contenido }`) en public-files/ del arnés de mentira, cada uno con su sintético del núcleo. */
@@ -3424,7 +3432,7 @@ test('Export_PublicRemotes_ShipsWithThePublicName — la plantilla real y su dec
     const plantilla = fs.readFileSync(path.join(RAIZ, PAPELES, REMOTOS), 'utf8');
     assert.strictEqual(plantilla, PLANTILLA_REMOTOS, 'el contrato con el programa de instalación: una lista «remotes» con la URL por marcadores');
     assert.deepStrictEqual(JSON.parse(plantilla), { remotes: ['https://github.com/{{public-org}}/{{public-repo}}'] });
-    assert.ok(!fs.existsSync(path.join(RAIZ, REMOTOS)), 'en el interno no existe en scripts/setup/: un clon interno nunca es «público»');
+    if (!THIN_PRIVATE) assert.ok(!fs.existsSync(path.join(RAIZ, REMOTOS)), 'en el interno no existe en scripts/setup/: un clon interno nunca es «público»');
     const real = JSON.parse(fs.readFileSync(path.join(RAIZ, 'scripts', 'publishing', 'allowlist.json'), 'utf8'));
     const sintetico = (real.synthetic || []).find((x) => x.target === REMOTOS);
     assert.ok(sintetico, `la lista blanca declara el sintético de ${REMOTOS}`);
@@ -3980,7 +3988,7 @@ test('Export_GetHarness_ByPlaceholder_InternalNeverNamesPublicRepo — la declar
       assert.strictEqual(entry.from, `${PAPELES}/${g}`);
       assert.deepStrictEqual(entry.packages, ['core']);
       assert.ok(String(entry.reason || '').trim(), `${g}: con su motivo`);
-      assert.ok(!fs.existsSync(path.join(RAIZ, g)), `en el interno ${g} no existe en scripts/setup/: sólo su plantilla, entre los papeles`);
+      if (!THIN_PRIVATE) assert.ok(!fs.existsSync(path.join(RAIZ, g)), `en el interno ${g} no existe en scripts/setup/: sólo su plantilla, entre los papeles`);
       const text = fs.readFileSync(path.join(RAIZ, PAPELES, g), 'utf8');
       assert.ok(text.includes('{{public-org}}/{{public-repo}}'), `${g}: la dirección va por marcadores`);
       for (const name of [pr.repo, `${pr.org}/${pr.repo}`]) {
