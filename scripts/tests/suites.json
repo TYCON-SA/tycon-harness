@@ -985,6 +985,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.26, tanda J: los lectores de la configuración de una organización — team-repos.json (en el perfil del equipo: dónde vive cada repo del arnés) y operations.json (en el repo de operaciones: responsables y revisores). Válido da sus datos; con problemas, ninguno a medias y cada problema con la ruta de su clave; «no pude leer» no es «no hay repo»; la lista de responsables no entra en el archivo que llega a todas las máquinas. Sólo textos, sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/team-repos.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.26, tanda I: los papeles del repo público medidos donde viven (LICENSE, NOTICE, .github/, getting-started/, scripts/setup/) — el texto canónico de la licencia, el NOTICE contra el manifiesto, las portadas en los dos idiomas y lo que nombran. Antes los medía sobre sus plantillas del repo del equipo, que dejaron de ser la fuente.",
       "raiz": "arnes",
       "ruta": "tests/repo-papers.test.js",
@@ -1146,6 +1152,12 @@
       "__nota": "story 8.25 (tanda A1a-azure, TA1-TA5): la capa del equipo desde AZURE DEVOPS sin laboratorio completo — la URL del repo del equipo (dev.azure.com, con usuario@, barra o .git), la credencial en orden (el PAT guardado gana; el gestor de credenciales de git sin interacción; sin ninguna, dicho con las dos formas), resolver (ref → commit → árbol recursivo cuyo hash recalculado da el treeId → lista cerrada → items verificados por blob; lista cortada o item alterado rechazados), el acceso como Azure lo da (302 a login para anónimo y PAT inválido, 403, 404; nunca «sin red»), y bajar a la caché con manifiesto (la segunda vez sin pedidos). Contra el Azure de juguete (scripts/tests/fixtures/toy-azure-server.js) sobre un repo bare real.",
       "raiz": "arnes",
       "ruta": "tests/harness-team-azure.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "la página local de configuración de la organización (`harness.js team-config`): sólo contesta con su llave y por su propia dirección (otro Host, otro Origin, sin llave, no JSON o un cuerpo de más: rechazados); nada se carga de afuera; valida con los lectores del árbol (team-repos.js y operations-config.js) y no escribe lo que rechazan; la carpeta de cada clon la valida y la guarda quien la lanzó; el pedido no lleva otros cambios del clon, sube la rama de verdad a un remoto de juguete, y un rechazo por permisos o una herramienta que falta se dicen en llano con el enlace para abrirlo a mano; cómo se abre el navegador en Mac, Windows y Linux.",
+      "raiz": "arnes",
+      "ruta": "tests/team-config.test.js",
       "requiere": []
     },
     {

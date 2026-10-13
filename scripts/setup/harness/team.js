@@ -39,8 +39,11 @@ const rel = () => require(path.join(__dirname, 'release.js'));
 const A1_PATHS = Object.freeze(['perfil-equipo.json', 'scripts/metrics/corridas-buzon.json']);
 /** El mapa de renombres (tanda A2b-AC33, AC 33): un dato que lee scripts/lib/legacy-names.js, validado contra la versión. */
 const RENAMES_PATH = 'scripts/lib/renames.json';
+/** Dónde vive cada repo del arnés de la organización (story 8.26, tanda J): la escribe la página de configuración y la valida
+ * el lector de la versión que va a quedar (scripts/lib/team-repos.js). */
+const TEAM_REPOS_PATH = 'team-repos.json';
 /** Las rutas exactas de la lista cerrada. La copia que leen las personas y las pruebas vive junto a harness-team.test.js (que comprueba que coinciden). */
-const CLOSED_PATHS = Object.freeze([...A1_PATHS, RENAMES_PATH]);
+const CLOSED_PATHS = Object.freeze([...A1_PATHS, RENAMES_PATH, TEAM_REPOS_PATH]);
 /**
  * Tanda A2a (AC 17): además, por patrón —el manifiesto de un paquete, un agente y los `.md` de una skill—; sólo texto, nunca
  * un guion, un hook, un comando ni una traducción a Codex. Es la regla POR RUTA; la del conjunto (cada archivo de skills/
@@ -752,6 +755,22 @@ function validateProfile(text, { readerTree, home = os.homedir(), env = process.
   }
 }
 
+/**
+ * `team-repos.json` de la capa, con el lector de la versión que va a quedar (`readerTree`): una versión que no lo trae no lo
+ * puede validar, y una capa que no se puede validar no se apila. `{ ok: true }` o `{ ok: false, reason }` con cada problema
+ * y la ruta de su clave.
+ */
+function validateTeamRepos(text, { readerTree } = {}) {
+  const readerFile = path.join(readerTree || '', 'scripts', 'lib', 'team-repos.js');
+  let TR;
+  try { TR = require(readerFile); } catch (e) { return { ok: false, reason: `${TEAM_REPOS_PATH}: la versión que va a quedar no trae su lector (${readerFile}: ${(e && e.code) || e.message})` }; }
+  if (typeof TR.parse !== 'function') return { ok: false, reason: `${TEAM_REPOS_PATH}: el lector de la versión que va a quedar no sabe validarlo` };
+  if (text === null || text === undefined) return { ok: false, reason: `${TEAM_REPOS_PATH}: no se pudo leer` };
+  const r = TR.parse(String(text).replace(/^\uFEFF/, ''));
+  if (r.ok) return { ok: true };
+  return { ok: false, reason: `${TEAM_REPOS_PATH} de la capa: ${r.problems.map((x) => `${x.path || '(el archivo)'} · ${x.message}`).join(' | ')}` };
+}
+
 // ── resolver (sin escribir), bajar y apilar ───────────────────────────────────────────────────────────────────────
 
 /** Un pedido que no sirvió, dicho: 404 y 403 (sin ser el límite de la API) son «sin acceso» al repo del equipo. */
@@ -778,7 +797,7 @@ function contentsAt(c, repo, file, sha) {
 }
 
 /** Los archivos que se juzgan por su CONTENIDO antes de escribir nada (momento 1 del AC 26): el perfil, los agentes, los SKILL.md y los manifiestos de paquete. */
-const isContentChecked = (p) => p === 'perfil-equipo.json' || /^agents\/[^/]+\.md$/.test(p)
+const isContentChecked = (p) => p === 'perfil-equipo.json' || p === TEAM_REPOS_PATH || /^agents\/[^/]+\.md$/.test(p)
   || (p.startsWith('skills/') && path.posix.basename(p) === 'SKILL.md') || /^packs\/[^/]+\/pack\.json$/.test(p);
 const rmQuiet = (d) => { try { fs.rmSync(d, { recursive: true, force: true }); } catch (_) { /* queda en la temporal del sistema */ } };
 // las temporales de lo leído que todavía no se movieron a la caché: se borran al salir pase lo que pase (`--dry-run`, un aborto)
@@ -824,6 +843,10 @@ function judgeContentIn(dir, plan, read, { version, readerTree, home, env, head,
     const v = validateProfile(readText('perfil-equipo.json'), { readerTree, home, env });
     if (!v.ok) return fail({ ok: false, status: 'blocked', invalid: true, commit, reason: `${head} @ ${sha7(commit)}: ${v.reason} — la capa no se apila (${plan.files.length} archivo(s) declarados)` });
     profileEntries = v.entries;
+  }
+  if (plan.files.some((f) => f.path === TEAM_REPOS_PATH)) {
+    const v = validateTeamRepos(readText(TEAM_REPOS_PATH), { readerTree });
+    if (!v.ok) return fail({ ok: false, status: 'blocked', invalid: true, commit, reason: `${head} @ ${sha7(commit)}: ${v.reason} — la capa no se apila (${plan.files.length} archivo(s) declarados)` });
   }
   const cp = contentProblems(dir, plan.files.filter((f) => isContentChecked(f.path)));
   if (cp.length) return fail({ ok: false, status: 'blocked', invalid: true, commit, reason: `${head} @ ${sha7(commit)}: no se apila — ${cp.map((x) => `${x.path}: ${x.reason}`).join(' · ')}` });
@@ -1684,6 +1707,6 @@ module.exports = {
   EXTRAS_FILE, MAX_EXTRAS, validateExtras, loadExtras, extrasEntryFor, extrasPathProblem, extrasReviewDue, dataHomeOf,
   extrasInLayer, findLegacyData, moveSkillData, extrasForeign, skillDataDoctor, blobStore,
   layerPathProblem, contentProblems, frontmatterKeys, versionIndex, checkAgainstVersion, judgeContent, dropStaged, isContentChecked, pruneEmptyDirs,
-  parseTeam, openSource, teamOf, planTeam, validateDeclaration, validateProfile, resolveTeam, planLine, collisionWith, collisionReason, fetchTeam, stackTeam, carryTeam,
+  parseTeam, openSource, teamOf, planTeam, validateDeclaration, validateProfile, validateTeamRepos, TEAM_REPOS_PATH, resolveTeam, planLine, collisionWith, collisionReason, fetchTeam, stackTeam, carryTeam,
   stateEntry, readTeamManifest, layerPaths, cacheDirOf, syncStateWithTree, refreshInPlace, teamStatus, keepEdited, blobOf, filesIntact,
 };
