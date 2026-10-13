@@ -70,6 +70,9 @@ function declaredPublicRepo() {
 }
 const PUBLIC_REPO = declaredPublicRepo();
 const ORG_REPO = PUBLIC_REPO.error ? '<sin dirección declarada>' : `${PUBLIC_REPO.org}/${PUBLIC_REPO.repo}`;
+// La carpeta del clon en el comando de la portada lleva el nombre del repo: también sale de la lista, no se escribe.
+const CLONE_DIR = PUBLIC_REPO.error ? '<sin dirección declarada>' : PUBLIC_REPO.repo;
+const escRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 // T10: el texto canónico, con su fuente. La prueba no baja nada: compara contra el hash guardado acá.
 const LICENSE_SOURCE = 'https://www.apache.org/licenses/LICENSE-2.0.txt';
@@ -125,8 +128,8 @@ const INSTALL_LINES = {
 const withOptions = (shell, options) => [INSTALL_LINES[shell][0], INSTALL_LINES[shell][1], `${INSTALL_LINES[shell][2]} -- ${options}`];
 // El clon, modo desarrollador (`install:clone`): el comando de la 8.13, para quien mantiene el arnés; no para usarlo.
 const CLONE_LINE = {
-  bash: `git clone https://github.com/${ORG_REPO} tycon-harness && node tycon-harness/scripts/setup/harness.js install`,
-  powershell: `git clone https://github.com/${ORG_REPO} tycon-harness; node tycon-harness/scripts/setup/harness.js install`,
+  bash: `git clone https://github.com/${ORG_REPO} ${CLONE_DIR} && node ${CLONE_DIR}/scripts/setup/harness.js install`,
+  powershell: `git clone https://github.com/${ORG_REPO} ${CLONE_DIR}; node ${CLONE_DIR}/scripts/setup/harness.js install`,
 };
 const EVENTS = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop'];
 
@@ -405,7 +408,8 @@ test('Papeles_Portadas_MismoContratoEnDosIdiomas', async (t) => {
     const paper = readPaper(rel);
     // (sólo los del exportador: `${{ … }}` de la CI es sintaxis de GitHub Actions, no un marcador)
     assert.deepStrictEqual(paper.match(/\{\{\s*public-[^}\n]*\}\}/g) || [], [], `${rel}: marcadores del exportador sin reemplazar`);
-    const other = [...paper.matchAll(/(?:github\.com|api\.github\.com\/repos)\/([A-Za-z0-9_.-]+\/tycon-harness[A-Za-z0-9_.-]*)/g)].map((m) => m[1]).filter((x) => x !== ORG_REPO);
+    const address = new RegExp(`(?:github\\.com|api\\.github\\.com/repos)/([A-Za-z0-9_.-]+/${escRe(CLONE_DIR)}[A-Za-z0-9_.-]*)`, 'g');
+    const other = [...paper.matchAll(address)].map((m) => m[1]).filter((x) => x !== ORG_REPO);
     assert.deepStrictEqual(other, [], `${rel}: una dirección del arnés en GitHub que no es la declarada en public-remotes.json`);
   }
 
