@@ -4131,10 +4131,28 @@ function cmdUninstall(ctx) {
       if (keep.copied.length) lines.push(`capa del equipo: editado(s) a mano o dentro de una skill de la lista fija, conservado(s) en ${keep.dir}: ${keep.copied.join(', ')}`);
       const spared = new Set(keep.failedTrees.map((t) => (t === 'harness' ? own.harness : own.previous)));
       if (keep.problems.length) lines.push(`capa del equipo: no pude conservar ${keep.problems.join(' · ')} — ${[...spared].join(' y ')} queda(n) sin quitar`);
-      for (const d of [own.harness, own.previous, own.incoming, own.trash, own.journal]) {
+      // (en la forma con enlaces —story 8.33, Windows— `harness` y `previous` son enlaces: se quita el ENLACE, nunca se
+      // borra a través de él; las versiones viven en versions/, que se quita después)
+      const TH = mod('tycon-home');
+      const versionsSpared = [...spared].filter((d) => TH.isLink(d)).map((d) => TH.linkTarget(d)).filter(Boolean);
+      for (const d of [own.harness, own.previous, own.incoming, own.trash, own.journal, own.linkJournal]) {
         if (spared.has(d)) continue;
-        try { if (fs.existsSync(d)) { fs.rmSync(d, { recursive: true, force: true }); lines.push(`quitado: ${d}`); } } catch (e) { lines.push(`no pude quitar ${d}: ${e.message}`); }
+        try {
+          if (TH.isLink(d)) { TH.removeLink(d); lines.push(`quitado el enlace: ${d}`); }
+          else if (fs.existsSync(d)) { fs.rmSync(d, { recursive: true, force: true }); lines.push(`quitado: ${d}`); }
+        } catch (e) { lines.push(`no pude quitar ${d}: ${e.message}`); }
       }
+      try {
+        if (fs.existsSync(own.versions)) {
+          for (const n of fs.readdirSync(own.versions)) {
+            const v = path.join(own.versions, n);
+            if (versionsSpared.some((s) => path.resolve(s) === path.resolve(v))) { lines.push(`queda ${v}: tiene lo editado que no se pudo conservar`); continue; }
+            if (TH.isLink(v)) TH.removeLink(v); else fs.rmSync(v, { recursive: true, force: true });
+          }
+          if (!fs.readdirSync(own.versions).length) fs.rmdirSync(own.versions);
+          lines.push(`quitado: ${own.versions}`);
+        }
+      } catch (e) { lines.push(`no pude quitar todo ${own.versions} (${e.code || e.message}): si un programa tiene abierta una versión, cerralo y borrala a mano`); }
       for (const l of [linkPath(ctx.home), mod('tycon-home').installedSkillsDir(ctx.home)]) {
         try {
           const st = fs.lstatSync(l);
@@ -4142,7 +4160,7 @@ function cmdUninstall(ctx) {
           // contra la casa del arnés como se la nombra y resuelta (story 8.23, tanda C): con la HOME detrás de un enlace
           // (en Mac, la carpeta temporal) el enlace guarda la ruta resuelta y quedaba colgado
           const to = st.isSymbolicLink() ? path.resolve(path.dirname(l), fs.readlinkSync(l)) : null;
-          if (to && [own.root, real(own.root)].filter(Boolean).some((r) => to === r || to.startsWith(r + path.sep))) { fs.unlinkSync(l); lines.push(`quitado el enlace: ${l}`); }
+          if (to && [own.root, real(own.root)].filter(Boolean).some((r) => to === r || to.startsWith(r + path.sep))) { mod('tycon-home').removeLink(l); lines.push(`quitado el enlace: ${l}`); }
         } catch (_) { /* no está */ }
       }
       // ~/.tycon/team (la caché de la capa del equipo y lo conservado) se nombra sólo si existe: sin capa, la línea de siempre (AC 16)

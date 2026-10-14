@@ -480,12 +480,240 @@ function renameRetry(from, to) {
 function writeJournal(file, data) { fs.mkdirSync(path.dirname(file), { recursive: true }); const tmp = `${file}.tmp-${process.pid}`; fs.writeFileSync(tmp, `${JSON.stringify(Object.assign({ schema: 1 }, data), null, 2)}\n`); fs.renameSync(tmp, file); }
 function readJournal(file) { try { const j = JSON.parse(fs.readFileSync(file, 'utf8')); return isObject(j) && typeof j.stage === 'string' ? j : null; } catch (_) { return null; } }
 
+// ── el cambio con ENLACES (story 8.33): Windows, y las pruebas de Mac con TYCON_RELEASE_LINKS=1 ─────────────────────
+// `harness` y `previous` son enlaces (uniones en Windows) a `versions/<v>/`. Cambiar de versión, volver atrás y reparar
+// cambian ENLACES; ninguna carpeta de versión se renombra después de armada, así que una carpeta tomada por otra sesión
+// o por VS Code no frena nada (182 #13451: la unión se cambia con su destino tomado). El diario es otro archivo
+// (`link-swap.json`): la copia fija de antes de esta story borra `swap.json` si `harness` existe, y lo perdería.
+// Regla de la reparación: un cambio cortado vuelve los dos enlaces a donde estaban (el estado todavía dice esa versión).
+
+const linksOn = (ctx) => TH.linksMode({ env: ctx.env });
+const versionOfDir = (dir) => { const m = readManifest(dir); return m && m.version ? String(m.version) : null; };
+const sameDir = (a, b) => Boolean(a && b) && path.resolve(a) === path.resolve(b);
+/** Las carpetas de `versions/` que un enlace usa hoy (`harness`, `previous`). */
+function linkedVersions(own) { return [TH.linkTarget(own.harness), TH.linkTarget(own.previous)].filter(Boolean); }
+/**
+ * Una carpeta libre en `versions/` para la versión `v`. Si ya hay una con ese número y ningún enlace la usa, es un resto
+ * (una conversión trabada, un cambio cortado): se saca. Si no se puede sacar (tomada) o un enlace la usa, va con sello.
+ */
+function freeVersionDir(own, v) {
+  const base = path.join(own.versions, String(v || 'sin-numero'));
+  if (!exists(base)) return base;
+  if (!linkedVersions(own).some((t) => sameDir(t, base))) {
+    try { fs.rmSync(base, { recursive: true, force: true }); } catch (_) { /* tomada: va con sello */ }
+    if (!exists(base)) return base;
+  }
+  return `${base}-${stamp()}`;
+}
+/** Vuelve los dos enlaces a donde estaban según un diario; un `harness_was` ausente (la primera instalación) va al destino. */
+function restoreLinks(own, j) {
+  const fix = (name, was) => {
+    if (was && exists(was)) { if (!sameDir(TH.linkTarget(name), was)) TH.pointLink(name, was); }
+    else if (TH.isLink(name)) TH.removeLink(name);
+  };
+  try {
+    if (!j.harness_was && j.dest && exists(j.dest)) { if (!sameDir(TH.linkTarget(own.harness), j.dest)) TH.pointLink(own.harness, j.dest); }
+    else fix(own.harness, j.harness_was);
+    fix(own.previous, j.previous_was);
+    for (const t of [...TH.strayTempLinks(own.harness), ...TH.strayTempLinks(own.previous)]) TH.removeLink(t);
+    return { ok: true };
+  } catch (e) { return { ok: false, reason: e.code || e.message }; }
+}
+
+/**
+ * La conversión de una máquina en la forma de hoy (decisión 7 de la 8.33): `harness/` y `previous/` carpetas reales pasan
+ * a `versions/<v>/` y su nombre a ser un enlace. Es un `rename` de la carpeta en uso —el mismo que falla con una ventana
+ * abierta—, una sola vez por máquina. `{ ok, converted, held?, reason? }`: con `harness/` tomada, `ok: false, held: true`
+ * y nada cambió para `harness`. Lo llaman el arranque (cada vez, sin frenar nada) y el cambio de versión.
+ */
+function convertLayout(ctx, { log = null } = {}) {
+  const own = TH.ownPaths({ env: ctx.env });
+  const real = (p) => exists(p) && !TH.isLink(p);
+  if (!real(own.harness) && !real(own.previous)) return { ok: true, converted: false };
+  if (exists(own.linkJournal)) return { ok: false, reason: `hay un cambio de enlaces a medias (${own.linkJournal}): primero se repara` };
+  fs.mkdirSync(own.versions, { recursive: true });
+  const moves = [];
+  for (const name of [own.harness, own.previous]) {
+    if (!real(name)) continue;
+    const dest = freeVersionDir(own, versionOfDir(name));
+    moves.push({ name, dest });
+    writeJournal(own.linkJournal, { kind: 'convert', stage: 'start', moves, at: nowIso() });
+    const r = renameRetry(name, dest);
+    if (!r.ok) {
+      moves.pop();
+      if (moves.length) writeJournal(own.linkJournal, { kind: 'convert', stage: 'moved', moves, at: nowIso() }); else fs.rmSync(own.linkJournal, { force: true });
+      if (name === own.harness) {
+        if (log) log(`release: conversión a la forma con enlaces: ${own.harness} está tomada (${r.reason}); queda para el próximo arranque`);
+        return { ok: false, held: true, reason: `${own.harness} está tomada (${r.reason})` };
+      }
+      if (log) log(`release: conversión: ${own.previous} está tomada (${r.reason}); queda como carpeta hasta el próximo arranque`);
+      break;
+    }
+    writeJournal(own.linkJournal, { kind: 'convert', stage: 'moved', moves, at: nowIso() });
+    TH.makeLink(dest, name);
+    if (log) log(`release: conversión: ${name} → ${dest} (ahora es un enlace)`);
+  }
+  fs.rmSync(own.linkJournal, { force: true });
+  return { ok: true, converted: moves.length > 0 };
+}
+
+/** El cambio con enlaces: `incoming/<v>` → `versions/<v>`, `previous` → donde estaba `harness`, `harness` → la nueva. */
+function swapLinks(ctx, { incomingDir, version, log = null }) {
+  const own = TH.ownPaths({ env: ctx.env });
+  const conv = convertLayout(ctx, { log });
+  if (!conv.ok) {
+    // la versión no se pierde (AC 10): queda en versions/<v>; la máquina sigue en la de antes
+    let kept = null;
+    try { fs.mkdirSync(own.versions, { recursive: true }); const dest = freeVersionDir(own, version); if (renameRetry(incomingDir, dest).ok) kept = dest; } catch (_) { kept = null; }
+    return { ok: false, waiting: true, convert: Boolean(conv.held), reason: conv.reason, kept };
+  }
+  const harnessWas = TH.linkTarget(own.harness);
+  const previousWas = TH.linkTarget(own.previous);
+  // lo ajeno dentro de una skill de la lista fija en la versión que deja de ser «anterior» se guarda antes de soltarla
+  // (tanda A2c de la 8.25 · AC 36): la limpieza la va a borrar
+  const kept = [];
+  if (previousWas && !sameDir(previousWas, harnessWas)) {
+    try {
+      const k = require('./team.js').keepEdited([['previous', previousWas]], path.join(own.root, 'team'), { edited: false, foreign: true });
+      if (k.copied.length) kept.push(`guardado en ${k.dir} antes de descartar la versión anterior (estaba dentro de una skill de la lista fija): ${k.copied.join(', ')}`);
+      if (k.problems.length) kept.push(`no pude guardar ${k.problems.join(' · ')} antes de descartar la versión anterior: queda en ${previousWas} hasta que la limpieza la borre`);
+    } catch (e) { kept.push(`no pude revisar lo ajeno de la versión anterior (${e.message}): queda en ${previousWas} hasta que la limpieza la borre`); }
+    for (const l of kept) if (log) log(`release: ${l}`);
+  }
+  fs.mkdirSync(own.versions, { recursive: true });
+  const dest = freeVersionDir(own, version);
+  const base = { kind: 'swap', version, incoming: incomingDir, dest, harness_was: harnessWas, previous_was: previousWas, at: nowIso() };
+  writeJournal(own.linkJournal, Object.assign({ stage: 'start' }, base));
+  const r = renameRetry(incomingDir, dest);
+  if (!r.ok) { fs.rmSync(own.linkJournal, { force: true }); return { ok: false, reason: `no pude poner la versión nueva en ${dest} (${r.reason})` }; }
+  writeJournal(own.linkJournal, Object.assign({ stage: 'moved' }, base));
+  try {
+    if (harnessWas) TH.pointLink(own.previous, harnessWas);
+    writeJournal(own.linkJournal, Object.assign({ stage: 'previous-pointed' }, base));
+    TH.pointLink(own.harness, dest);
+    writeJournal(own.linkJournal, Object.assign({ stage: 'harness-pointed' }, base));
+  } catch (e) {
+    const back = restoreLinks(own, base);
+    if (back.ok) fs.rmSync(own.linkJournal, { force: true });
+    return { ok: false, reason: `no pude cambiar los enlaces (${e.code || e.message})${back.ok ? '; quedó la versión de antes' : '; el arranque siguiente lo repara desde el diario'}` };
+  }
+  fs.rmSync(own.linkJournal, { force: true });
+  if (log) log(`release: ${version}: harness → ${dest}${harnessWas ? `; previous → ${harnessWas}` : ''}`);
+  return { ok: true, kept };
+}
+
+/** La vuelta con enlaces: `rollback` intercambia los destinos; la salud roja vuelve `harness` y quita `previous`. */
+function swapBackLinks(ctx, { log = null, reason = 'rollback' } = {}) {
+  const own = TH.ownPaths({ env: ctx.env });
+  const conv = convertLayout(ctx, { log });
+  if (!conv.ok) return { ok: false, reason: `no pude pasar a la forma con enlaces: ${conv.reason}` };
+  const harnessWas = TH.linkTarget(own.harness);
+  const previousWas = TH.linkTarget(own.previous);
+  if (!previousWas || !exists(previousWas)) return { ok: false, reason: 'no hay versión anterior (previous) a la que volver' };
+  const base = { kind: 'back', why: reason, harness_was: harnessWas, previous_was: previousWas, at: nowIso() };
+  writeJournal(own.linkJournal, Object.assign({ stage: 'start' }, base));
+  try {
+    TH.pointLink(own.harness, previousWas);
+    writeJournal(own.linkJournal, Object.assign({ stage: 'harness-pointed' }, base));
+    if (reason === 'rollback' && harnessWas) TH.pointLink(own.previous, harnessWas); else TH.removeLink(own.previous);
+  } catch (e) {
+    const back = restoreLinks(own, base);
+    if (back.ok) fs.rmSync(own.linkJournal, { force: true });
+    return { ok: false, reason: `no pude cambiar los enlaces (${e.code || e.message})${back.ok ? '; la actual quedó' : '; el arranque siguiente lo repara desde el diario'}` };
+  }
+  fs.rmSync(own.linkJournal, { force: true });
+  if (log) log(`release: vuelta atrás (${reason}): harness → ${previousWas}; ${reason === 'rollback' ? `previous → ${harnessWas}` : `la deshecha (${harnessWas}) queda para la limpieza`}`);
+  return { ok: true, aside: reason === 'rollback' ? own.previous : harnessWas };
+}
+
+/** Repara un cambio de enlaces cortado (AC 5). `{ repaired, lines }`; sin `link-swap.json`, nada. */
+function repairLinks(ctx, { log = null } = {}) {
+  const own = TH.ownPaths({ env: ctx.env });
+  if (!exists(own.linkJournal)) return { repaired: false, lines: [] };
+  const say = (l) => { if (log) log(`release: reparación: ${l}`); return l; };
+  const j = readJournal(own.linkJournal);
+  if (!j) return { repaired: false, lines: [say(`el diario ${own.linkJournal} no se puede leer: lo dejo para que alguien lo mire`)] };
+  if (j.kind === 'convert') {
+    try {
+      for (const m of Array.isArray(j.moves) ? j.moves : []) if (m && m.name && m.dest && !exists(m.name) && exists(m.dest)) TH.makeLink(m.dest, m.name);
+    } catch (e) { return { repaired: false, lines: [say(`no pude completar la conversión a la forma con enlaces (${e.code || e.message}); queda para el próximo arranque`)] }; }
+    fs.rmSync(own.linkJournal, { force: true });
+    return { repaired: true, lines: [say('la conversión a la forma con enlaces quedó a medias: se completó')] };
+  }
+  const back = restoreLinks(own, j);
+  if (!back.ok) return { repaired: false, lines: [say(`no pude reparar el cambio de versión cortado en «${j.stage}» (${back.reason}); queda para el próximo arranque`)] };
+  fs.rmSync(own.linkJournal, { force: true });
+  const now = versionOfDir(own.harness) || TH.linkTarget(own.harness) || '—';
+  return { repaired: true, lines: [say(`el ${j.kind === 'back' ? 'rollback' : `cambio a ${j.version || '—'}`} quedó a medias en «${j.stage}»: harness volvió a ${now}`)] };
+}
+
+/** Días enteros desde una fecha ISO (0 si no se puede leer). */
+const daysSince = (iso) => { const t = Date.parse(iso || ''); return Number.isFinite(t) ? Math.max(0, Math.floor((Date.now() - t) / 86400000)) : 0; };
+const PENDING_SAY_DAYS = 7;   // decisión 9 de la 8.33: el aviso sale cuando la más vieja lleva 7 días sin poder borrarse
+
+/**
+ * La limpieza de `versions/` (AC 11): lo que no es destino de `harness` ni de `previous`. Primero se intenta RENOMBRAR a
+ * `trash/` —en Windows falla entera si algo la tiene tomada (182 #13451), así nunca se borra a medias una versión en
+ * uso—; lo apartado se borra. Lo tomado queda en `state.link_pending` con la fecha en que quedó pendiente; lo nombrado no
+ * se toca. Devuelve lo de `cleanupDeferred` más `held` y `oldHeld` (las tomadas de 7 días o más).
+ */
+function cleanupVersions(ctx, state, out, { log = null } = {}) {
+  const own = TH.ownPaths({ env: ctx.env });
+  out.held = [];
+  out.oldHeld = [];
+  // con la conversión pendiente (`harness` todavía es una carpeta), lo que hay en versions/ es la versión que espera a
+  // la conversión (AC 10): no se toca hasta que harness sea un enlace
+  if (!TH.isLink(own.harness)) return out;
+  const linked = linkedVersions(own);
+  const pending = isObject(state.link_pending) ? Object.assign({}, state.link_pending) : {};
+  let names = [];
+  try { names = fs.readdirSync(own.versions); } catch (_) { names = []; }
+  for (const n of names) {
+    const dir = path.join(own.versions, n);
+    if (linked.some((t) => sameDir(t, dir))) continue;
+    const named = isNamed(ctx, dir, { state });
+    if (named) { out.kept.push(dir); out.lines.push(`${dir} no se borra: lo nombra ${named}`); continue; }
+    fs.mkdirSync(own.trash, { recursive: true });
+    const aside = path.join(own.trash, `${n}-${stamp()}`);
+    const r = renameRetry(dir, aside);
+    if (!r.ok) {
+      if (!pending[dir]) pending[dir] = nowIso();
+      out.kept.push(dir);
+      out.held.push({ dir, since: pending[dir], days: daysSince(pending[dir]) });
+      out.lines.push(`${dir} queda para el próximo arranque (${r.reason}: algún programa la tiene abierta)`);
+      continue;
+    }
+    delete pending[dir];
+    try { fs.rmSync(aside, { recursive: true, force: true }); out.removed.push(dir); if (log) log(`release: limpieza: ${dir} borrada`); } catch (e) {
+      out.removed.push(dir);
+      out.lines.push(`${dir} se apartó a ${aside} y se borra en el próximo arranque (${e.code || e.message})`);
+    }
+  }
+  for (const k of Object.keys(pending)) if (!exists(k)) delete pending[k];
+  state.link_pending = Object.keys(pending).length ? pending : undefined;
+  if (state.link_pending === undefined) delete state.link_pending;
+  out.oldHeld = out.held.filter((h) => h.days >= PENDING_SAY_DAYS);
+  return out;
+}
+
+/** El aviso de una versión vieja que no se puede borrar hace 7 días o más (decisión 9). */
+function oldHeldText(oldHeld) {
+  const h = oldHeld.slice().sort((a, b) => b.days - a.days)[0];
+  return `una versión vieja del arnés (${h.dir}) no se puede borrar hace ${h.days} días: algún programa la tiene abierta. Cerrá las otras sesiones de Claude Code y de Codex, y VS Code (si sigue, reiniciá la máquina); se borra sola en el arranque siguiente`;
+}
+/** El aviso de la conversión trabada (decisión 7): qué pasa, qué cerrar, reiniciar como último recurso, el comando. */
+function convertHeldText(own) {
+  return `el arnés no se puede actualizar en esta máquina hasta pasar a la forma nueva, y ${own.harness} está en uso. Cerrá las otras sesiones de Claude Code y de Codex, y VS Code, y en una terminal suelta corré: node "${path.join(own.harness, 'scripts', 'setup', 'harness.js')}" update --yes. Si sigue trabado, reiniciá la máquina y corrélo antes de abrir nada. Pasa una sola vez por máquina`;
+}
+
 /**
  * El cambio: `incoming/<v>` pasa a ser `harness/`, y `harness/` a `previous/`, con el diario escrito antes de cada paso.
  * `{ ok: true }` · `{ ok: false, waiting: true, reason }` (una `previous/` que no se pudo apartar: la actualización
  * espera) · `{ ok: false, reason }` (algo que el arranque siguiente repara desde el diario).
+ * En la forma con enlaces (Windows), el cambio es `swapLinks`.
  */
 function swap(ctx, { incomingDir, version, log = null }) {
+  if (linksOn(ctx)) return swapLinks(ctx, { incomingDir, version, log });
   const own = TH.ownPaths({ env: ctx.env });
   const journal = own.journal;
   const base = { incoming: incomingDir, version, at: nowIso(), harness: own.harness, previous: own.previous };
@@ -536,6 +764,7 @@ function swap(ctx, { incomingDir, version, log = null }) {
  * `trash/` y vuelve `previous/` a `harness/`: lo roto no se guarda como «anterior».
  */
 function swapBack(ctx, { log = null, reason = 'rollback' } = {}) {
+  if (linksOn(ctx)) return swapBackLinks(ctx, { log, reason });
   const own = TH.ownPaths({ env: ctx.env });
   if (!exists(own.previous)) return { ok: false, reason: 'no hay versión anterior (previous/) a la que volver' };
   const journal = own.journal;
@@ -571,8 +800,11 @@ function swapBack(ctx, { log = null, reason = 'rollback' } = {}) {
  */
 function repair(ctx, { log = null } = {}) {
   const own = TH.ownPaths({ env: ctx.env });
+  // el diario de los enlaces (story 8.33) primero; después, el de carpetas, como siempre
+  const rl = repairLinks(ctx, { log });
+  if (exists(own.linkJournal)) return rl;
   const j = readJournal(own.journal);
-  if (!j) return { repaired: false, lines: [] };
+  if (!j) return rl;
   const say = (l) => { if (log) log(`release: reparación: ${l}`); return l; };
   const lines = [];
   const done = () => { fs.rmSync(own.journal, { force: true }); return { repaired: true, lines }; };
@@ -625,11 +857,20 @@ function repair(ctx, { log = null } = {}) {
   }
 }
 
-/** ¿Alguna pieza de la máquina nombra esta carpeta? (el estado, settings.json, hooks.json, el plist, la tarea del examen) */
-function isNamed(ctx, dir) {
+/**
+ * ¿Alguna pieza de la máquina nombra esta carpeta? (el estado, settings.json, hooks.json, el plist, la tarea del examen)
+ * Con `state`, el estado se mira en memoria y SIN su lista de pendientes de limpiar (8.33): que la limpieza anote una
+ * versión como pendiente no la vuelve «nombrada».
+ */
+function isNamed(ctx, dir, { state = null } = {}) {
   const H = ctx.home || os.homedir();
+  if (state) {
+    const forms0 = [...new Set([dir, JSON.stringify(dir).slice(1, -1), dir.replace(/\\/g, '/')])];
+    const text = JSON.stringify(Object.assign({}, state, { link_pending: undefined }));
+    if (forms0.some((x) => text.includes(x))) return S.paths(H).file;
+  }
   const files = [
-    S.paths(H).file,
+    ...(state ? [] : [S.paths(H).file]),
     (ctx.env && ctx.env.TYCON_SETTINGS_PATH) || path.join(H, '.claude', 'settings.json'),
     path.join((ctx.env && ctx.env.CODEX_HOME) || path.join(H, '.codex'), 'hooks.json'),
     path.join((ctx.env && ctx.env.CODEX_HOME) || path.join(H, '.codex'), 'config.toml'),
@@ -660,7 +901,7 @@ function cleanupDeferred(ctx, state, { log = null } = {}) {
   const own = TH.ownPaths({ env: ctx.env });
   const out = { removed: [], kept: [], lines: [] };
   if (!state.last_health) return out;
-  if (exists(own.journal)) return out;   // un cambio a medias: primero se repara
+  if (exists(own.journal) || exists(own.linkJournal)) return out;   // un cambio a medias: primero se repara
   const candidates = [];
   try { for (const n of fs.readdirSync(own.trash)) candidates.push(path.join(own.trash, n)); } catch (_) { /* sin trash */ }
   try { for (const n of fs.readdirSync(own.incoming)) candidates.push(path.join(own.incoming, n)); } catch (_) { /* sin incoming */ }
@@ -672,6 +913,8 @@ function cleanupDeferred(ctx, state, { log = null } = {}) {
       out.lines.push(`${dir} queda para el próximo arranque (${e.code || e.message}: un archivo está tomado)`);
     }
   }
+  // la forma con enlaces (story 8.33): las versiones que ningún enlace usa
+  if (linksOn(ctx)) cleanupVersions(ctx, state, out, { log });
   return out;
 }
 
@@ -1156,6 +1399,12 @@ function update(ctx, state, H, { mode = 'apply', log = null, snapshot = null, ye
   const sw = swap(ctx, { incomingDir: d.dir, version: t.version, log });
   if (!sw.ok) {
     H.finishSnapshot(ctx, snap, log);
+    if (sw.waiting && sw.convert) {
+      // la conversión a la forma con enlaces trabada (8.33, AC 10): la versión quedó en versions/, la máquina en la de antes
+      const own0 = TH.ownPaths({ env: ctx.env });
+      if (log) log(`update: la conversión a la forma con enlaces está trabada (${sw.reason})${sw.kept ? `; la versión ${t.version} quedó en ${sw.kept}` : ''}`);
+      return withTeam({ status: 'waiting', convert: true, code: 2, lines: [`harness.js update: ${convertHeldText(own0)}`] });
+    }
     if (sw.waiting) { if (log) log(`update: espera: ${sw.reason}`); return withTeam({ status: 'waiting', code: 2, lines: [`harness.js update: ${sw.reason}`] }); }
     return withTeam({ status: 'blocked', code: 2, lines: [`harness.js update: ${sw.reason}`] });
   }
@@ -1288,10 +1537,21 @@ function startup(ctx, state, H, { log, snapshot = null }) {
   const rep = repair(ctx, { log });
   if (rep.repaired) { line = rep.lines[0]; }
   // un cambio que quedó a medias y no se pudo reparar: el arranque no toca más nada y lo dice
-  if (exists(own.journal)) {
+  if (exists(own.journal) || exists(own.linkJournal)) {
     const text = `el cambio de versión quedó a medias y no se pudo reparar (${rep.lines[0] || 'ver el diario'}): detalle en ${S.paths(ctx.home).log}`;
     R.setNotice(state, text); S.write(ctx.home, state);
     return { code: 0, lines: [text] };
+  }
+  // la conversión a la forma con enlaces (story 8.33, decisión 7): se intenta en cada arranque, sin frenar nada. Trabada,
+  // el aviso sale UNA vez (en la primera que falla); después, al registro y a doctor, hasta que salga
+  if (linksOn(ctx) && state.mode !== 'developer') {
+    const cv = convertLayout(ctx, { log: (l) => log(`startup: ${l.replace(/^release: /, '')}`) });
+    if (cv.ok) {
+      if (state.link_convert) { log('startup: la conversión a la forma con enlaces salió'); delete state.link_convert; }
+    } else if (cv.held) {
+      if (!state.link_convert) { state.link_convert = { since: nowIso(), reason: cv.reason }; line = convertHeldText(own); log(`startup: ${line}`); }
+      else { state.link_convert.reason = cv.reason; log(`startup: la conversión a la forma con enlaces sigue trabada desde ${state.link_convert.since} (${cv.reason})`); }
+    } else log(`startup: la conversión a la forma con enlaces no se pudo (${cv.reason})`);
   }
   // el respaldo en shell pudo volver a previous/ sin tocar el estado: lo que hay en harness/ manda, y la versión que
   // se cayó queda como `failed` para no volver a bajarla sola (pase adversarial de la B)
@@ -1364,13 +1624,15 @@ function startup(ctx, state, H, { log, snapshot = null }) {
           }
         }
       }
-      if (['new', 'applied', 'up_to_date', 'older'].includes(u.status)) R.clearUpdateFailure(ctx.home);
+      // la conversión trabada (8.33) no es una falla que se cuente: su aviso es el de una sola vez, de arriba
+      const convertWait = u.status === 'waiting' && u.convert;
+      if (['new', 'applied', 'up_to_date', 'older'].includes(u.status) || convertWait) R.clearUpdateFailure(ctx.home);
       else if (!['held', 'skipped'].includes(u.status)) R.recordUpdateFailure(ctx.home, String(u.lines[0] || u.status).replace(/^harness\.js update: /, ''));
       if (u.status === 'new') { const text = H.availableText(state, policy, u); notice = notice || text; log(`startup: ${text}`); line = text; }
       else if (u.status === 'applied') { line = u.lines[0]; log(`startup: ${u.lines.join(' · ')}`); if (u.dataNotice) notice = notice ? `${notice} · ${u.dataNotice}` : u.dataNotice; }
       else if (u.status === 'up_to_date' || u.status === 'older') { if (u.status === 'older') log(`startup: ${u.lines.join(' · ')}`); }
       else if (u.status === 'failed') { notice = notice || state.notice; line = u.lines[0]; log(`startup: ${u.lines.join(' · ')}`); }
-      else if (u.status === 'held' || u.status === 'skipped') log(`startup: ${u.lines.join(' · ')}`);
+      else if (u.status === 'held' || u.status === 'skipped' || convertWait) log(`startup: ${u.lines.join(' · ')}`);
       else if (u.status === 'unknown' && /sin red/.test(u.lines[0])) { log(`startup: ${u.lines.join(' · ')}`); line = 'arnés: sin red, no se actualizó'; }
       else { log(`startup: ${u.lines.join(' · ')}`); notice = notice || u.lines[0].replace(/^harness\.js update: /, ''); line = u.lines[0]; }
     }
@@ -1398,6 +1660,8 @@ function startup(ctx, state, H, { log, snapshot = null }) {
   // la limpieza diferida (AC 14): sólo con la salud en verde después del último cambio
   const cl = cleanupDeferred(ctx, state, { log });
   for (const l of cl.lines) log(`startup: limpieza: ${l}`);
+  // una versión vieja tomada hace 7 días o más (8.33, decisión 9): el arranque lo dice, con qué cerrar
+  if (cl.oldHeld && cl.oldHeld.length) { const t = oldHeldText(cl.oldHeld); line = line ? `${line} · ${t}` : t; log(`startup: ${t}`); }
   if (!notice && state.hold) notice = H.holdText(state);
   if (!notice && state.failed && state.failed.stage === 'install') notice = `la instalación quedó a medias (${state.failed.reason === 'applier' ? 'el aplicador falló' : 'la comprobación de salud no pasó'}, ${state.failed.at || '—'}): harness.js install --version latest otra vez la retoma — harness.js doctor lo detalla`;
   if (!notice && state.failed) notice = `la versión ${state.failed.commit} no quedó sana (${state.failed.reason || 'salud'}, ${state.failed.at || '—'}) y volvió sola a ${state.version && state.version.number}; no se reintenta sola hasta que cambie la punta (o ${H.applyHint}) — harness.js doctor lo detalla`;
@@ -1419,7 +1683,14 @@ function cmdUpdate(ctx, state, H, { log, asked = null }) {
   const policy = H.policyOf(ctx, own.harness);
   if (policy.errors.length) return { code: 2, lines: [`harness.js update: la política de actualización está mal escrita: ${policy.errors.join(' · ')}`] };
   if (!policy.enabled) return { code: 0, lines: ['TYCON_UPDATE=0: la actualización está apagada del todo (sacá la variable para actualizar)'] };
-  if (exists(own.journal)) { const rep = repair(ctx, { log }); if (exists(own.journal)) return { code: 2, lines: [`harness.js update: hay un cambio de versión a medias que no pude reparar: ${rep.lines[0] || 'ver el diario'}`] }; }
+  if (exists(own.journal) || exists(own.linkJournal)) { const rep = repair(ctx, { log }); if (exists(own.journal) || exists(own.linkJournal)) return { code: 2, lines: [`harness.js update: hay un cambio de versión a medias que no pude reparar: ${rep.lines[0] || 'ver el diario'}`] }; }
+  // `update --yes` en una terminal suelta es lo que el aviso de la conversión manda correr (8.33, decisión 7): convierte
+  // primero, aunque no haya versión nueva
+  if (linksOn(ctx) && !ctx.opts.check && !ctx.opts['dry-run']) {
+    const cv = convertLayout(ctx, { log });
+    if (cv.ok && cv.converted) { delete state.link_convert; S.write(ctx.home, state); }
+    else if (!cv.ok && cv.held) return { code: 2, lines: [`harness.js update: ${convertHeldText(own)}`] };
+  }
   const mode = ctx.opts.check ? 'check' : ctx.opts['dry-run'] ? 'dry-run' : (policy.apply === 'ask' && !ctx.opts.yes && asked !== true ? 'check' : 'apply');
   if (ctx.opts.yes && mode === 'apply' && policy.apply === 'ask' && !process.stdin.isTTY) {
     return { code: 2, lines: ['harness.js update: `--yes` necesita una terminal, o `apply: auto` en la configuración (la política es «ask»: aplicar una versión nueva lo decide una persona)'] };
@@ -1526,6 +1797,21 @@ function doctorItems(ctx, state, { fetch = false, channel = null } = {}) {
   if (exists(own.previous)) add('ok', `versión anterior en ${own.previous}${prev ? ` (${prev.version})` : ''}: harness.js rollback vuelve a ella sin red`);
   else add('ok', `sin versión anterior (${own.previous}): para volver a un número publicado, harness.js install --version <n>`);
   if (exists(own.journal)) add('fail', `hay un cambio de versión a medias (${own.journal}): el próximo arranque lo repara; harness.js update también`);
+  if (exists(own.linkJournal)) add('fail', `hay un cambio de versión a medias (${own.linkJournal}): el próximo arranque lo repara; harness.js update también`);
+  // la forma con enlaces (story 8.33): dónde apunta cada enlace, la conversión trabada, lo pendiente de limpiar
+  if (linksOn(ctx)) {
+    const where = (name) => (TH.isLink(name) ? `${name} → ${TH.linkTarget(name)}` : exists(name) ? `${name} es una carpeta (la forma de antes)` : `${name} no está`);
+    add('ok', `enlaces: ${where(own.harness)} · ${where(own.previous)}`);
+    if (exists(own.harness) && !TH.isLink(own.harness)) {
+      add('warn', `conversión a la forma con enlaces pendiente${isObject(state.link_convert) ? `, tomada desde ${state.link_convert.since}${state.link_convert.reason ? ` (${state.link_convert.reason})` : ''}` : ''}: ${convertHeldText(own)}`);
+    }
+    const pend = isObject(state.link_pending) ? state.link_pending : {};
+    for (const [dir, since] of Object.entries(pend)) {
+      if (!exists(dir)) continue;
+      const d = daysSince(since);
+      add('warn', `pendiente de limpiar: ${dir} (${d === 0 ? 'desde hoy' : `hace ${d} día(s)`}; algún programa la tiene abierta) — se borra sola cuando se suelte`);
+    }
+  }
   const a = auditTree(ctx, own.harness);
   // las skills de la lista fija que trae la capa (tanda A2c · AC 36): lo ajeno dentro de su carpeta se dice con su lugar y
   // reemplaza, para esas rutas, la línea «de más»; nunca `fail`, nunca tira, nada en modo desarrollador
@@ -1573,5 +1859,6 @@ module.exports = {
   MANIFEST_NAME, MAIN_REF, SYNC_REF, API_DEFAULT,
   githubRepoOf, repoOf, apiBase, client, explainFailure, refCommit, versionAt, resolveChannel, check, locateVersion,
   download, readManifest, restoreThirdParty, swap, swapBack, repair, cleanupDeferred, isNamed, makeSource,
+  convertLayout, swapLinks, swapBackLinks, repairLinks,
   cmdInstall, update, rollback, auditTree,
 };

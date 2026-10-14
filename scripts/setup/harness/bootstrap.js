@@ -186,12 +186,15 @@ function runFixedProgram(args) {
  * La versión bajada (story 8.23, tanda B · AC 13): un cambio de versión cortado a mitad (entre los dos `rename`) se
  * repara desde su diario (`~/.tycon/swap.json`) ANTES de resolver el lugar —sin reparar, el lugar no resuelve—. Lo
  * hace `release.js` de la copia fija del programa; sin esa copia (una máquina de antes de la B) no hay nada que reparar.
+ * En la forma con enlaces (story 8.33, Windows) el diario es `~/.tycon/link-swap.json`: un corte puede dejar `harness`
+ * sin enlace, y sin repararlo el lugar tampoco resuelve.
  */
 function repairRelease() {
   const own = process.env.TYCON_HOME && path.isAbsolute(process.env.TYCON_HOME) ? process.env.TYCON_HOME : path.join(HOME, '.tycon');
-  if (!fs.existsSync(path.join(own, 'swap.json'))) return;
+  const journal = ['swap.json', 'link-swap.json'].map((n) => path.join(own, n)).find((f) => fs.existsSync(f));
+  if (!journal) return;
   const release = path.join(HARNESS_DIR, 'program', 'harness', 'release.js');
-  if (!fs.existsSync(release)) { log(`hay un cambio de versión a medias (${path.join(own, 'swap.json')}) y la copia fija no trae release.js para repararlo`); return; }
+  if (!fs.existsSync(release)) { log(`hay un cambio de versión a medias (${journal}) y la copia fija no trae release.js para repararlo`); return; }
   try {
     const r = require(release).repair({ home: HOME, env: process.env }, { log: (l) => log(l) });
     if (!r.repaired) log(`el cambio de versión a medias no se pudo reparar: ${r.lines.join(' · ')}`);
