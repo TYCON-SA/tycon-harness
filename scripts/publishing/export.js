@@ -227,7 +227,10 @@ const EXCLUIDOS_SIEMPRE = Object.freeze([
   { fuente: 'arnes', glob: PARIDAD, motivo: 'los productos de los clientes y dónde viven' },
   { fuente: 'arnes', glob: 'scripts/ci/pipeline-debt.json', motivo: 'la deuda de pipelines por repo de cliente (la copia lleva un sintético)' },
   { fuente: 'arnes', glob: 'scripts/metrics/corridas-buzon.json', motivo: 'la llave del buzón de corridas del equipo' },
-  { fuente: 'arnes', glob: 'perfil-equipo.json', motivo: 'el perfil del equipo: organización e integraciones' },
+  // el perfil con su nombre de hoy y el de antes, que sigue valiendo: el clon tiene uno de los dos (o, en la transición, los
+  // dos), así que a ninguno se le exige archivo (`clase`)
+  { fuente: 'arnes', glob: 'team-profile.json', motivo: 'el perfil del equipo: organización e integraciones', clase: true },
+  { fuente: 'arnes', glob: 'perfil-equipo.json', motivo: 'el perfil del equipo, con su nombre de antes (sigue valiendo)', clase: true },
   // story 8.12 (tanda R6): los seis yml y su plantilla viven en `pipelines/`, una sola exclusión
   // story 8.26 (tanda C, AC 48): `salvo` la validación y sus plantillas, que después del corte viven en el repo público
   // (Azure sólo valida un pedido de GitHub si el YAML está en ese repo) y desde ya viajan, así el detector y el freno de

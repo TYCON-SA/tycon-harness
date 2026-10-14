@@ -26,7 +26,7 @@
 //     mirando el detector del exportador.
 //
 // CÓMO FALLA: exit 0 = pasa · 1 = hallazgos (el commit no se crea) · 2 = no pude mirar (tampoco se crea). «No pude
-// mirar» nunca es verde. Sin la lista de denegación ni `perfil-equipo.json` (un laboratorio; la copia pública tiene su
+// mirar» nunca es verde. Sin la lista de denegación ni el perfil del equipo (`team-profile.json`, o `perfil-equipo.json`; un laboratorio; la copia pública tiene su
 // modo, más abajo) no dice nada: ahí no hay lista por diseño. Sin el otro repo (agent-skills para un commit del arnés),
 // avisa fuerte y deja pasar. `TYCON_NEW_NAMES=0` lo apaga y lo dice en cada commit. Cada commit que tuvo algo que mirar
 // deja una línea de conteos —nunca un texto encontrado— en ~/.claude/.tycon-pipeline/new-names.jsonl y en el registro
@@ -93,8 +93,12 @@ const CONFIG = {
   exporter: 'scripts/publishing/export.js',
   ceiling: 'scripts/publishing/names-ceiling.json',
   parity: 'scripts/ci/product-parity.json',   // su ruta de antes de la tanda D1 sale del mapa (legacyPathsOf)
-  profile: 'perfil-equipo.json',
+  profile: 'team-profile.json',
+  legacyProfile: 'perfil-equipo.json',   // el nombre de antes del perfil: sigue diciendo «este árbol es del equipo»
 };
+/** El perfil que trae `dir` (el nombre de hoy primero), o undefined. */
+const profileIn = (dir) => [CONFIG.profile, CONFIG.legacyProfile].find((n) => fs.existsSync(path.join(dir, n)));
+const hasProfile = (dir) => Boolean(profileIn(dir));
 // El exportador se mudó en la tanda C2 de la story 8.9: en una foto de antes vive en su ruta vieja, que sale del mapa
 // de renombres —nunca escrita acá—. Sin mapa (la copia pública) no hay rutas viejas.
 const legacyNames = require('../lib/legacy-names.js');
@@ -311,7 +315,7 @@ function ownChanges(changes, source) {
  */
 function unifiedCheckout(repo) {
   return require('../lib/canonical-path.js').isSingleRepo(repo)
-    && fs.existsSync(path.join(repo, CONFIG.list)) && fs.existsSync(path.join(repo, CONFIG.profile));
+    && fs.existsSync(path.join(repo, CONFIG.list)) && hasProfile(repo);
 }
 /** La forma de lo que trae un commit: el repo unido, el arnés solo, agent-skills solo, u otra cosa. */
 const shapeOf = (pipeline, agents, list) => (pipeline && agents ? (list ? 'unified' : 'skills') : (list ? 'harness' : 'other'));
@@ -815,7 +819,7 @@ function isTeamMachine(env) {
   try { places.push(home.ownPaths({ env }).harness); } catch (e) { throw new CouldNotLook(`no pude ubicar el arnés instalado de esta máquina (${e.message})`); }
   const placed = home.harnessDir(os.homedir());
   if (placed) places.push(placed);
-  return places.some((dir) => fs.existsSync(path.join(dir, CONFIG.profile)));
+  return places.some((dir) => hasProfile(dir));
 }
 
 /** El aviso de la lista atrasada, si lo hay (una línea). Sin red: un commit no sale a la red. Nunca cambia el veredicto. */
@@ -1042,8 +1046,9 @@ function run(args) {
   const deniedText = afterText(CONFIG.denied);
   if (deniedText === null) {
     // El perfil es del ARNÉS (su disco), no de la foto: un commit viejo sin lista, en el arnés del equipo, no es una copia.
-    if (!fs.existsSync(path.join(harnessDisk, CONFIG.profile))) return { outcome: 'quiet' };   // la copia pública o un laboratorio: no hay lista por diseño
-    throw new CouldNotLook(`no está ${CONFIG.denied} y el arnés tiene ${CONFIG.profile}: el equipo tiene lista, y sin ella no se mira`);
+    const profile = profileIn(harnessDisk);
+    if (!profile) return { outcome: 'quiet' };   // la copia pública o un laboratorio: no hay lista por diseño
+    throw new CouldNotLook(`no está ${CONFIG.denied} y el arnés tiene ${profile}: el equipo tiene lista, y sin ella no se mira`);
   }
   if (otherInfo.missing) return { outcome: 'other-repo-missing', otherDir: otherInfo.dir, other };
   if (!unified) trees[other] = commitTree(otherInfo.dir, otherInfo.head);

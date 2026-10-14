@@ -554,6 +554,21 @@
    "why": "prueba (story 8.23, tanda B): la guarda del laboratorio comprueba que la carpeta temporal no cayó en el checkout del repo interno ni en agent-skills"
   },
   {
+   "path": "scripts/tests/harness-repo.test.sh",
+   "kind": "test",
+   "why": "prueba del reconocedor del repo del arnés por el remoto: arma remotos con el nombre interno (y parecidos) para probar cuáles se reconocen"
+  },
+  {
+   "path": "scripts/tests/pre-commit-stories.test.sh",
+   "kind": "test",
+   "why": "prueba del lint de stories en el pre-commit: el repo interno es uno de los casos que tienen que llamar al lint, y su ruta por defecto"
+  },
+  {
+   "path": "scripts/tests/trimmed-close.test.sh",
+   "kind": "test",
+   "why": "prueba de los recortes del cierre: un caso arma el repo interno para probar que ahí el control no aplica"
+  },
+  {
    "path": "scripts/tests/windows-portable.test.js",
    "kind": "test",
    "why": "prueba: el clon del laboratorio portable lleva el nombre de la carpeta de antes, como lo dejaba el alta de dos clones"

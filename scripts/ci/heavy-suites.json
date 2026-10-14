@@ -23,6 +23,7 @@
       "version.json",
       "packs/**",
       "commands/**",
+      "team-profile.json",
       "perfil-equipo.json",
       "engram-version"
     ],
@@ -47,7 +48,8 @@
       "version.json": "la versión que comparan la instalación y la actualización: se lee como dato, por una ruta armada",
       "packs/**": "los paquetes de revisores: el laboratorio real los copia y el instalador los instala listando la carpeta",
       "commands/**": "los comandos de barra: el instalador los instala listando la carpeta",
-      "perfil-equipo.json": "el perfil del equipo que lee el instalador, por una ruta armada",
+      "team-profile.json": "el perfil del equipo que lee el instalador, por una ruta armada",
+      "perfil-equipo.json": "el perfil del equipo con su nombre de antes, que sigue valiendo: el instalador lo lee si no está el nuevo",
       "engram-version": "el pin de engram que compara el instalador, por una ruta armada"
     }
   },

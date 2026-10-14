@@ -484,7 +484,7 @@ const PACKS_DEFAULT_VALUES = Object.freeze(['all', 'none']);
 
 /**
  * Qué paquetes activa un repo que NO declara `packs:`: lo dice la clave `packs.default` del lector de configuración del
- * arnés (`scripts/lib/tycon-config.js`: la variable `TYCON_PACKS_DEFAULT` › `perfil-equipo.json` › el archivo de la
+ * arnés (`scripts/lib/tycon-config.js`: la variable `TYCON_PACKS_DEFAULT` › `team-profile.json` (o el nombre de antes) › el archivo de la
  * máquina › `none`). En esta clave el perfil del equipo le gana a lo que la máquina eligió al instalar (story 8.29): acá
  * no hay un orden propio, lo decide el lector. Un paquete opcional es uno que quien no lo usa no tiene que apagar: afuera,
  * sin perfil, ninguno; el perfil del equipo dice `all`. El arnés se ubica como lo ubica el pipeline (lib/harness-path.js).

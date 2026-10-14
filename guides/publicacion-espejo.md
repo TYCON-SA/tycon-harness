@@ -105,7 +105,8 @@ Viven en el código (`EXCLUIDOS_SIEMPRE`), por repo y con su motivo, y **nunca s
 | arnes | `.engram/` `.dashboard/` `.advisors/` `inbox/` _(del repo del equipo; no está en esta copia)_ `tasks/` `specs/` `qa/` `_bmad/` | memoria, series, evidencia, hallazgos y planes del equipo |
 | arnes | `guides/incident-log.md` `guides/guide-update-proposals.md` _(del repo del equipo; no está en esta copia)_ `guides/decisions/telemetria-produccion-inventario-*.md` | casos nominados, propuestas internas, inventario de producción |
 | arnes | `scripts/metrics/censo-*.json` `scripts/ci/product-parity.json` `scripts/ci/pipeline-debt.json` `scripts/metrics/corridas-buzon.json` _(del repo del equipo; no está en esta copia)_ | censos, productos y deuda por repo de cliente, la llave del buzón |
-| arnes | `perfil-equipo.json` _(del repo del equipo; no está en esta copia)_ `pipelines/**` | el perfil y los pipelines del equipo (los nocturnos, el de pull request y sus pedazos compartidos) |
+| arnes | `team-profile.json` _(del repo del equipo; no está en esta copia)_ `perfil-equipo.json` _(del repo del equipo; no está en esta copia)_ (de «clase»: el clon tiene uno de los dos, o los dos en la transición) | el perfil del equipo, con su nombre de hoy y el de antes, que sigue valiendo |
+| arnes | `pipelines/**` | los pipelines del equipo (los nocturnos, el de pull request y sus pedazos compartidos) |
 | arnes | `scripts/nightly/dependencies/` _(del repo del equipo; no está en esta copia)_ `scripts/nightly/watcher/` _(del repo del equipo; no está en esta copia)_ `commands/tycon-vigilante.md` _(del repo del equipo; no está en esta copia)_ `scripts/controls-bench/ultimo-*.json` | operación interna y resultados del equipo |
 | arnes | `**/denylist*.json` `**/replacements*.json` | lo privado de la publicación: la lista de denegación y la tabla de reemplazos |
 | arnes | `scripts/lib/renames.json` _(del repo del equipo; no está en esta copia)_ (de «clase»: el retiro lo borra) | el mapa de renombres a inglés: los nombres viejos no viajan |
@@ -290,11 +291,8 @@ en la prueba. Cada una que se podría hacer portable queda para una story aparte
 
 | Por qué no viaja | Qué |
 |---|---|
-| Su código o sus datos quedan afuera | `vigilante`, `nightly-dependencies`, `work-items`, `work-item-status`, `daily-summary`, `open-pr-per-finding`, `nightly-publishes-report`, `suites-report`, `pr-verdict`, `nightly-dashboard`, `states-dictionary`, `pre-commit-stories`, `mapa-arnes-censo`, `mapa-arnes-publico`, `steps-per-run`; el caso `hooks/31-vigilante.json` |
+| Su código o sus datos quedan afuera | `vigilante`, `nightly-dependencies`, `work-items`, `work-item-status`, `daily-summary`, `open-pr-per-finding`, `nightly-publishes-report`, `suites-report`, `pr-verdict`, `nightly-dashboard`, `mapa-arnes-censo`, `mapa-arnes-publico`; el caso `hooks/31-vigilante.json` |
 | Usa lo privado de la publicación | `export-real.test.sh` (la tabla y la lista de denegación no viajan) |
-| Reconoce al arnés por el remoto o lee el historial del repo interno: la copia es un commit sin remoto hasta que se publique | `harness-repo` (T15), `retro-heartbeat` (T11b), `trimmed-close` (T12; y su T8 audita el catálogo entero, al que en el núcleo le faltan las secciones de bizuit), `installer-codex-evidence` (lee un commit viejo del instalador) |
-| Lee datos del equipo que no viajan | `manifest-engram` (el índice real de `.engram/`), `forms-to-version` (`guides/incident-log.md`) |
-| Compara huellas del texto interno | `test-skill-contract.js` de agent-skills (el hash de cada párrafo del SKILL.md; regenerarlo necesita el historial) |
 | Espera a otra story (`pendientes` del `--json`) | de bizuit, sus traducciones a Codex, sus casos del banco y sus secciones del catálogo |
 
 Dos pruebas declaran la llave de su integración en vez de contar con que el perfil del equipo la prende:

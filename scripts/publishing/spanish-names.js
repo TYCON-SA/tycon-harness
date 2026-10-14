@@ -14,7 +14,7 @@
 // `schemaFiles`. Usar un nombre castellano que ya existe pasa: todavía no tiene reemplazo. Qué es castellano lo decide
 // scripts/lib/spanish-words.json más el diccionario inglés del sistema (/usr/share/dict/words).
 //
-// MODOS: en el arnés del equipo (tiene perfil-equipo.json) lo que sale lo dice la lista blanca; en la copia pública (sin
+// MODOS: en el arnés del equipo (tiene team-profile.json, o perfil-equipo.json) lo que sale lo dice la lista blanca; en la copia pública (sin
 // perfil) todo lo del repo sale, con las mismas reglas, y nunca sale 2 por no tener la configuración privada.
 //
 // CÓMO FALLA: 0 = pasa · 1 = hallazgos (el commit no se crea) · 2 = no pude mirar (tampoco se crea). Sin el otro repo,
@@ -44,7 +44,9 @@ const { CouldNotLook } = nn;
 const WORDS_PATH = 'scripts/lib/spanish-words.json';
 const CEILING_PATH = 'scripts/publishing/spanish-names-ceiling.json';
 const RENAMES_PATH = 'scripts/lib/renames.json';
-const PROFILE = 'perfil-equipo.json';
+// el perfil del equipo con su nombre de hoy o el de antes (los dos dicen «este árbol es del equipo»)
+const PROFILES = ['team-profile.json', 'perfil-equipo.json'];
+const hasProfile = (dir) => PROFILES.some((n) => fs.existsSync(path.join(dir, n)));
 const DEFAULT_DICT = '/usr/share/dict/words';
 const CATEGORIES = ['path', 'option', 'subcommand', 'value', 'env', 'key'];
 const LABEL = { path: 'ruta', option: 'opción', subcommand: 'subcomando', value: 'valor', env: 'variable', key: 'clave' };
@@ -571,7 +573,7 @@ function run(args) {
   const otherInfo = unified ? { dir: repo } : nn.otherRepo(source);
   const harnessDisk = source === 'arnes' ? repo : otherInfo.dir;
   if (source === 'agent-skills' && otherInfo.missing) return { outcome: 'other-repo-missing', otherDir: otherInfo.dir, other };
-  const isPublic = !fs.existsSync(path.join(harnessDisk, PROFILE));
+  const isPublic = !hasProfile(harnessDisk);
   if (!isPublic && otherInfo.missing) return { outcome: 'other-repo-missing', otherDir: otherInfo.dir, other };
 
   const dirs = { [source]: repo, [other]: otherInfo.dir };
@@ -809,7 +811,7 @@ function count(args) {
   const words = loadWords(fs.readFileSync(wordsFile, 'utf8'), WORDS_PATH);
   const det = makeDetector(words, { dictPath: process.env.TYCON_SPANISH_NAMES_DICTIONARY || DEFAULT_DICT });
   if (!det.dictionary) say(`⚠️  nombres en castellano: sin diccionario inglés (${det.dictPath}) — uso sólo la lista de palabras`);
-  const isPublic = !fs.existsSync(path.join(repo, PROFILE));
+  const isPublic = !hasProfile(repo);
   const packages = {};
   if (isPublic) {
     const tree = nn.commitTree(repo, 'HEAD');

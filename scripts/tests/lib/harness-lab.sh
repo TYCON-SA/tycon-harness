@@ -696,7 +696,7 @@ harness_lab_team_machine() { # harness_lab_team_machine <dir> [toy|real]
   #     líneas del lado viejo que siguen valiendo), como el del arnés real antes del merge
   if [ "$kind" = real ]; then
     mkdir -p "$hs" || return 1
-    _harness_lab_copy_real "$hs" scripts build adapters claude-md-blocks commands perfil-equipo.json engram-version version.json || return 1
+    _harness_lab_copy_real "$hs" scripts build adapters claude-md-blocks commands team-profile.json perfil-equipo.json engram-version version.json || return 1
     [ -f "$hs/scripts/install-tycon-hooks.sh" ] || { echo "harness-lab: el repo bajo prueba no trae scripts/install-tycon-hooks.sh: el laboratorio «real» no se puede armar" >&2; return 1; }
     printf '# arnés del laboratorio (harness-lab.sh, real)\n' > "$hs/README.md"
     printf '1\n' > "$hs/VERSION"

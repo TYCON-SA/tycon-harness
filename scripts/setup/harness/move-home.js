@@ -325,7 +325,7 @@ function dropOldHooks(settingsFile, oldTreeReal, { newTree = null, log = null } 
 
 // ── el perfil del equipo (tanda G, AC 41) ──────────────────────────────────────────────────────────────────────
 // La configuración se lee en cadena: variable › archivo de la máquina › perfil del equipo EN LA RAÍZ DEL ÁRBOL QUE CORRE ›
-// apagado. El clon trae perfil-equipo.json; la versión bajada es la copia pública, que no lo trae (el exportador lo deja
+// apagado. El clon trae team-profile.json (o perfil-equipo.json, el nombre de antes); la versión bajada es la copia pública, que no lo trae (el exportador lo deja
 // afuera a propósito). Sin esto, la primera máquina migrada (2026-10-08) quedó con las integraciones, el paquete de
 // revisores por defecto y la política de actualización de fábrica, y nadie lo dijo como pérdida. Lo que el perfil
 // declara pasa al archivo de la máquina como valores suyos; lo que la máquina ya tenía escrito gana, clave por clave.
@@ -381,7 +381,7 @@ function profileFoldLine(f, newConfig) {
   if (!f || f.status === 'broken') return `  perfil del equipo: ${f ? f.reason : 'no se miró'}`;
   // con repo del equipo declarado (story 8.25, AC 13), el perfil llega por la capa con origen «perfil» y no se funde
   if (f.status === 'skipped') return `  perfil del equipo: ${f.reason}`;
-  if (f.status !== 'read') return `  perfil del equipo: ${f.reason ? f.reason : 'el clon no trae perfil-equipo.json'} — nada que pasar (la máquina sigue con lo que tenga escrito)`;
+  if (f.status !== 'read') return `  perfil del equipo: ${f.reason ? f.reason : 'el clon no trae team-profile.json (ni perfil-equipo.json, el nombre de antes)'} — nada que pasar (la máquina sigue con lo que tenga escrito)`;
   const parts = [f.moves.length ? f.moves.map(profileItem).join(', ') : 'nada nuevo (la máquina ya lo tenía todo escrito)'];
   if (f.had.length) parts.push(`ya tenías: ${f.had.map(profileItem).join(', ')} (gana lo tuyo)`);
   if (f.skipped.length) parts.push(`no viajan: ${f.skipped.map((m) => `${m.section}.${m.key}`).join(', ')}`);
@@ -845,7 +845,7 @@ function advance(ctx, j, H, { log, snap = null }) {
     `arnés mudado a ${p.own.harness} (versión ${j.version}, ${j.ref} ${sha7(j.commit)} de ${j.repo}) · estado en ${p.newStateDir} · configuración en ${p.newConfig}`,
     `tu clon ${j.oldTree} sigue donde estaba, sin git del mecanismo: para que esta máquina lo MANTENGA, harness.js config set paths.maintained ${j.oldTree} (y si mantenés el arnés, el clon del repo de mantenimiento se declara aparte, con paths.maintainers: de ahí leen los avisos de los nocturnos)`,
     // el perfil del equipo (tanda G): cuántos valores pasaron; sin perfil en el clon, se dice una vez (la máquina sigue con lo escrito)
-    ...(j.profileFolded ? [`perfil del equipo: ${j.profileFolded} valores pasaron a ${p.newConfig} como valores de la máquina (la versión bajada no trae el perfil; lo que ya tenías escrito ganó)`] : (j.profileFold && j.profileFold.status === 'absent' ? [`perfil del equipo: ${j.profileFold.reason || 'el clon no traía perfil-equipo.json'} — nada pasó; la máquina sigue con lo que tenga escrito`] : (j.profileFold && j.profileFold.status === 'skipped' ? [`perfil del equipo: ${j.profileFold.reason}`] : []))),
+    ...(j.profileFolded ? [`perfil del equipo: ${j.profileFolded} valores pasaron a ${p.newConfig} como valores de la máquina (la versión bajada no trae el perfil; lo que ya tenías escrito ganó)`] : (j.profileFold && j.profileFold.status === 'absent' ? [`perfil del equipo: ${j.profileFold.reason || 'el clon no traía team-profile.json (ni perfil-equipo.json, el nombre de antes)'} — nada pasó; la máquina sigue con lo que tenga escrito`] : (j.profileFold && j.profileFold.status === 'skipped' ? [`perfil del equipo: ${j.profileFold.reason}`] : []))),
     // la capa del equipo (story 8.25): qué quedó apilado en el árbol nuevo
     ...(j.team && j.team.commit ? [`capa del equipo ${j.team.repo} @ ${sha7(j.team.commit)}: ${j.team.files} archivo(s) (${j.team.name || 'equipo'}) en ${p.own.harness}; el estado la recuerda y update la lleva a cada versión nueva`] : []),
     ...(nS || nA ? [`conservadas ${nS} skills y ${nA} agente${nA === 1 ? '' : 's'} tuyos en ${personalDest(ctx, 'skills', pr.skills)} y ${personalDest(ctx, 'agents', pr.agents)} (carpetas reales; el arnés al lado, un enlace por entrada)${keptLine ? ` · ${keptLine}` : ''}`] : (keptLine ? [`⚠️ lo tuyo ${keptLine}`] : [])),

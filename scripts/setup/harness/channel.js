@@ -2,7 +2,7 @@
 // channel.js — la política de actualización: canal (`latest` | `stable`) y aplicación (`auto` | `ask`) (story 8.13, AC 12).
 //
 // Vive en la configuración del arnés (`scripts/lib/tycon-config.js`, sección `update`, vocabulario cerrado): variable de
-// entorno (`TYCON_UPDATE_CHANNEL`, `TYCON_UPDATE_APPLY`) › `~/.claude/tycon.json` › `perfil-equipo.json` › el default.
+// entorno (`TYCON_UPDATE_CHANNEL`, `TYCON_UPDATE_APPLY`) › `~/.claude/tycon.json` › `team-profile.json` (o `perfil-equipo.json`, el nombre de antes) › el default.
 // Sin que nadie diga nada: `stable` + `ask`. El perfil del equipo trae `latest` + `auto`; la copia pública no trae perfil.
 // Un valor fuera del vocabulario es un ERROR (8.3 AC 2), no «apagado». `TYCON_UPDATE=0` apaga la actualización del todo
 // (`startup` queda en importar engram + aplicador + salud).

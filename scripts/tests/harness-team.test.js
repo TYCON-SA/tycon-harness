@@ -13,6 +13,9 @@
 //        valor personal, una clave desconocida y las tres llaves que no viajan lo rechazan; uno sano pasa.
 //   T33 · (tanda A2b-AC33) el mapa de renombres como tercera ruta exacta, validado contra la versión que va a quedar con el
 //        lector de esa versión: un mapa sano pasa; cada forma mala rechaza la capa nombrando la entrada; el mapa real pasa.
+//   TPN · el perfil con su nombre de hoy (team-profile.json) y el de antes (perfil-equipo.json): la capa acepta los dos, con
+//        el de antes avisa cómo renombrarlo, con los dos gana el nuevo y el de antes no se apila; el refresco que renombra
+//        deja el nuevo y borra el viejo.
 //   T80 · (story 8.26, tanda H1c) el texto del alta del equipo, `onboarding/<nombre>.md`, entra a la lista cerrada: un nivel y
 //        sólo `.md`; la charla, un guion, un dato o una subcarpeta rechazan la capa entera; se apila, se arrastra y, cuando la
 //        capa deja de traerlo, se va con su carpeta vacía; no va a Codex.
@@ -1321,3 +1324,96 @@ test('T33 Team_RenamesMapThirdExactPath_ShapeValidated_OldVariableOptionAndState
   const r = TEAM.checkAgainstVersion(l.dir, l.files, v, { env: {} });
   assert.deepEqual(r.problems, [], 'el mapa real pasa contra la versión');
 });
+
+test('TPN Team_ProfileName_NewOldBoth_LayerAcceptsBoth_OldSaysHowToRename_BothNewWinsOldNotStacked_RefreshRenames', () => {
+  const GH = require(path.join(ROOT, 'scripts', 'lib', 'git-tree-hash.js'));
+  const b = (t) => GH.blobSha(Buffer.from(t));
+  assert.equal(TEAM.PROFILE_PATH, 'team-profile.json');
+  assert.equal(TEAM.LEGACY_PROFILE_PATH, 'perfil-equipo.json');
+  for (const p of ['team-profile.json', 'perfil-equipo.json']) {
+    assert.equal(TEAM.layerPathProblem(p), null, `${p} es de la lista cerrada`);
+    assert.equal(TEAM.isContentChecked(p), true, `${p} se juzga por su contenido`);
+  }
+  const base = [dir('scripts'), dir('scripts/metrics'), blob('scripts/metrics/corridas-buzon.json', 400), blob('team-layer.json', 80)];
+  // (1) el nombre nuevo: entra, sin aviso
+  const fresh = TEAM.planTeam([...base, blob('team-profile.json', 300)]);
+  assert.equal(fresh.ok, true, JSON.stringify(fresh.problems));
+  assert.deepEqual(fresh.files.map((f) => f.path).sort(), ['scripts/metrics/corridas-buzon.json', 'team-profile.json']);
+  assert.deepEqual(fresh.notes, []);
+  // (2) el de antes: entra igual, con un aviso de una línea que dice cómo renombrarlo y que suba la versión mínima
+  const old = TEAM.planTeam([...base, blob('perfil-equipo.json', 300)]);
+  assert.equal(old.ok, true, JSON.stringify(old.problems));
+  assert.ok(old.files.some((f) => f.path === 'perfil-equipo.json'));
+  assert.equal(old.notes.length, 1);
+  assert.match(old.notes[0], /nombre de antes \(perfil-equipo\.json\): sigue andando.*git mv perfil-equipo\.json team-profile\.json.*requires\.harness de team-layer\.json/);
+  assert.equal(old.notes[0].includes('\n'), false, 'una sola línea');
+  // (3) los dos: gana el nuevo, el de antes no se apila (ni cuenta en el tope) y se avisa
+  const both = TEAM.planTeam([...base, blob('team-profile.json', 300), blob('perfil-equipo.json', 300)]);
+  assert.equal(both.ok, true, JSON.stringify(both.problems));
+  assert.deepEqual(both.files.map((f) => f.path).sort(), ['scripts/metrics/corridas-buzon.json', 'team-profile.json']);
+  assert.equal(both.totalBytes, 700, 'el de antes no cuenta en el tope');
+  assert.match(both.notes[0], /los dos nombres: vale team-profile\.json y perfil-equipo\.json no se usa.*git rm perfil-equipo\.json/);
+  // la línea del plan (install/update/--dry-run) dice el aviso; sin aviso, la línea de siempre
+  const resolvedOf = (plan) => ({ repo: 'acme/equipo', commit: SHA(5), files: plan.files, declaration: { name: 'e', requires: '2026.10.01.1' }, notes: plan.notes });
+  assert.match(TEAM.planLine(resolvedOf(old)), / — aviso: el perfil del equipo usa el nombre de antes/);
+  assert.doesNotMatch(TEAM.planLine(resolvedOf(fresh)), /aviso/);
+  // (4) el perfil del árbol: los dos nombres
+  const lab = casa('pname');
+  const t0 = path.join(lab, 't0'); fs.mkdirSync(t0);
+  assert.deepEqual(TEAM.profileIn(t0), { file: path.join(t0, 'team-profile.json'), name: 'team-profile.json', exists: false, legacy: false, both: false });
+  fs.writeFileSync(path.join(t0, 'perfil-equipo.json'), '{}\n');
+  assert.equal(TEAM.profileIn(t0).name, 'perfil-equipo.json'); assert.equal(TEAM.profileIn(t0).legacy, true);
+  fs.writeFileSync(path.join(t0, 'team-profile.json'), '{}\n');
+  assert.equal(TEAM.profileIn(t0).name, 'team-profile.json'); assert.equal(TEAM.profileIn(t0).both, true);
+  // (5) validar: el motivo nombra el archivo que trae la capa
+  const readerTree = path.join(lab, 'reader'); fs.mkdirSync(path.join(readerTree, 'scripts'), { recursive: true });
+  fs.cpSync(path.join(ROOT, 'scripts', 'lib'), path.join(readerTree, 'scripts', 'lib'), { recursive: true });
+  const bad = TEAM.validateProfile('{ roto', { readerTree, home: lab, name: 'team-profile.json' });
+  assert.equal(bad.ok, false); assert.match(bad.reason, /^team-profile\.json es ilegible/);
+  const badKey = TEAM.validateProfile('{ "inventada": { "x": 1 } }\n', { readerTree, home: lab, name: 'team-profile.json' });
+  assert.equal(badKey.ok, false); assert.match(badKey.reason, /^team-profile\.json de la capa: /);
+  assert.equal(TEAM.validateProfile('{ "integrations": { "engram": true } }\n', { readerTree, home: lab, name: 'team-profile.json' }).ok, true);
+  // …y con un lector de una versión anterior, que sólo conoce el nombre de antes, el perfil nuevo también se valida
+  const oldReader = path.join(lab, 'old-reader'); fs.mkdirSync(path.join(oldReader, 'scripts'), { recursive: true });
+  fs.cpSync(path.join(ROOT, 'scripts', 'lib'), path.join(oldReader, 'scripts', 'lib'), { recursive: true });
+  const oldTc = path.join(oldReader, 'scripts', 'lib', 'tycon-config.js');
+  const src = fs.readFileSync(oldTc, 'utf8').replace("const NOMBRE_PERFIL = 'team-profile.json';", "const NOMBRE_PERFIL = 'perfil-equipo.json';");
+  assert.ok(src.includes("const NOMBRE_PERFIL = 'perfil-equipo.json';"), 'el lector de juguete busca sólo el nombre de antes');
+  fs.writeFileSync(oldTc, src);
+  assert.equal(TEAM.validateProfile('{ "integrations": { "engram": true } }\n', { readerTree: oldReader, home: lab, name: 'team-profile.json' }).ok, true);
+  // (6) apilar con el nombre nuevo: queda team-profile.json; un perfil nuevo inválido rechaza la capa nombrándolo
+  const P = '{ "integrations": { "engram": true } }\n';
+  const cacheDir = path.join(lab, 'cache'); fs.mkdirSync(cacheDir);
+  fs.writeFileSync(path.join(cacheDir, 'team-profile.json'), P);
+  const inc = path.join(lab, 'incoming'); fs.mkdirSync(path.join(inc, 'scripts'), { recursive: true });
+  fs.cpSync(path.join(ROOT, 'scripts', 'lib'), path.join(inc, 'scripts', 'lib'), { recursive: true });
+  const files = [{ path: 'team-profile.json', mode: '100644', blob: b(P) }];
+  const resolved = { repo: 'acme/equipo', ref: 'main', commit: SHA(9), tree: SHA(10), etag: null, files: files.map((f) => ({ path: f.path, mode: f.mode, sha: f.blob })), declaration: { name: 'e', requires: '2026.10.01.1' } };
+  const st = TEAM.stackTeam({ resolved, cacheDir, files }, inc, { home: lab, env: {} });
+  assert.equal(st.ok, true, JSON.stringify(st));
+  assert.equal(fs.readFileSync(path.join(inc, 'team-profile.json'), 'utf8'), P);
+  assert.equal(fs.existsSync(path.join(inc, 'perfil-equipo.json')), false);
+  const TC = require(path.join(inc, 'scripts', 'lib', 'tycon-config.js'));
+  const read = TC.cargar({ env: {}, home: lab, arnes: inc });
+  assert.equal(read.valores.integraciones.engram, true); assert.equal(read.origenes['integraciones.engram'], 'perfil');
+  const inc2 = path.join(lab, 'incoming2'); fs.mkdirSync(path.join(inc2, 'scripts'), { recursive: true });
+  fs.cpSync(path.join(ROOT, 'scripts', 'lib'), path.join(inc2, 'scripts', 'lib'), { recursive: true });
+  const cacheBad = path.join(lab, 'cache-bad'); fs.mkdirSync(cacheBad);
+  const PB = '{ "install": { "home": true } }\n';
+  fs.writeFileSync(path.join(cacheBad, 'team-profile.json'), PB);
+  const filesBad = [{ path: 'team-profile.json', mode: '100644', blob: b(PB) }];
+  const stBad = TEAM.stackTeam({ resolved: Object.assign({}, resolved, { files: filesBad.map((f) => ({ path: f.path, mode: f.mode, sha: f.blob })) }), cacheDir: cacheBad, files: filesBad }, inc2, { home: lab, env: {} });
+  assert.equal(stBad.ok, false); assert.match(stBad.reason, /team-profile\.json de la capa/);
+  assert.equal(fs.existsSync(path.join(inc2, 'team-profile.json')), false, 'no escribió nada');
+  // (7) el refresco en el lugar cuando el repo del equipo renombra: queda el nuevo y el de antes (con su blob) se borra
+  const harness = path.join(lab, 'harness'); fs.mkdirSync(path.join(harness, 'scripts'), { recursive: true });
+  fs.cpSync(path.join(ROOT, 'scripts', 'lib'), path.join(harness, 'scripts', 'lib'), { recursive: true });
+  fs.writeFileSync(path.join(harness, 'perfil-equipo.json'), P);
+  fs.writeFileSync(path.join(harness, TEAM.MANIFEST_NAME), JSON.stringify({ schema: 1, repo: 'acme/equipo', ref: 'main', commit: SHA(1), tree: SHA(2), name: 'e', requires: '2026.10.01.1', files: [{ path: 'perfil-equipo.json', mode: '100644', blob: b(P) }] }));
+  const rf = TEAM.refreshInPlace({ cacheDir, files, resolved: Object.assign({}, resolved, { commit: SHA(3), tree: SHA(4) }) }, harness, { home: lab, env: {} });
+  assert.equal(rf.ok, true, JSON.stringify(rf));
+  assert.equal(fs.readFileSync(path.join(harness, 'team-profile.json'), 'utf8'), P);
+  assert.equal(fs.existsSync(path.join(harness, 'perfil-equipo.json')), false, 'el nombre de antes se fue con el refresco');
+  assert.deepEqual(TEAM.readTeamManifest(harness).files.map((f) => f.path), ['team-profile.json']);
+});
+
