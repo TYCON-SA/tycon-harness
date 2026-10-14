@@ -288,9 +288,9 @@ else
   LAB2="$TMP/lab-opt-51"
   old_opt "$LAB2"
   out="$(env HOME="$CASA" TYCON_REPOS_ROOT="$REPOS" TYCON_GUIDES_DIR="$H" TYCON_PROD_ROOT="$LAB2" TYCON_PRODUCTION_AUTOINSTALL=0 node "$NOTICE" --report 2>&1)"
-  if printf '%s' "$out" | grep -q "el freno quedó viejo: reinstalalo"; then ok "T51d · el aviso dice «el freno quedó viejo: reinstalalo»"
+  if printf '%s' "$out" | grep "el freno quedó viejo: reinstalalo" >/dev/null; then ok "T51d · el aviso dice «el freno quedó viejo: reinstalalo»"
   else no "T51d · el aviso no dijo que quedó viejo — $(printf '%s' "$out" | head -c 300)"; fi
-  if printf '%s' "$out" | grep -q "alguien lo cambió"; then no "T51e · el aviso dijo «alguien lo cambió» ante una copia vieja"
+  if printf '%s' "$out" | grep "alguien lo cambió" >/dev/null; then no "T51e · el aviso dijo «alguien lo cambió» ante una copia vieja"
   else ok "T51e · y nunca «alguien lo cambió»"; fi
 fi
 
@@ -299,7 +299,7 @@ if [ ! -f "$INSTALLER" ]; then
   no "T49k · no está el instalador con su nombre nuevo ($INSTALLER)"
 else
   out="$(env -u TYCON_PROD_ROOT bash "$INSTALLER" "$OLD_NO_SUDO" 2>&1)"; rc=$?
-  if [ "$rc" != 0 ] && printf '%s' "$out" | grep -q -- "--no-sudo necesita TYCON_PROD_ROOT"; then
+  if [ "$rc" != 0 ] && printf '%s' "$out" | grep -- "--no-sudo necesita TYCON_PROD_ROOT" >/dev/null; then
     ok "T49k · la opción vieja del instalador se entiende como la nueva (y el mensaje nombra la nueva)"
   else no "T49k · la opción vieja no se tradujo (rc=$rc) — $(printf '%s' "$out" | head -c 200)"; fi
   out="$(bash "$INSTALLER" --no-sudo --bogus-flag 2>&1)"; rc=$?
@@ -342,7 +342,7 @@ else
   if [ "$rc" = 0 ] && [ -f "$SYS/opt/tycon/production/trusted-origin.json" ] && grep -q "\"$URL\"" "$SYS/opt/tycon/production/trusted-origin.json"; then
     ok "T49m · el origen fijado en la carpeta vieja pasa a la nueva sin volver a pedir confirmación"
   else no "T49m · la mudanza del origen fijado falló (rc=$rc) — $(printf '%s' "$out" | tail -3 | tr '\n' ' ')"; fi
-  if [ -f "$MD/tycon-production.json" ] && [ ! -f "$MD/$OLD_MANAGED" ] && ls "$MD" | grep -q "^$OLD_MANAGED.bak-"; then
+  if [ -f "$MD/tycon-production.json" ] && [ ! -f "$MD/$OLD_MANAGED" ] && ls "$MD" | grep "^$OLD_MANAGED.bak-" >/dev/null; then
     ok "T49n · el archivo administrado pasa al nombre nuevo, el viejo queda respaldado y sale (el freno no se registra dos veces)"
   else no "T49n · archivo administrado: $(ls "$MD" | tr '\n' ' ')"; fi
   if [ ! -e "$SYS/opt/tycon/$P_OLD" ] && [ -f "$SYS/opt/tycon/production/production-index.js" ] && [ -f "$SYS/opt/tycon/production/load-key.command.template" ]; then

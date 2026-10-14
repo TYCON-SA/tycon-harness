@@ -56,7 +56,7 @@ login() {
 
 # ¿$1 es MENOR que $2? (versiones X.Y.Z; sort -V)
 es_menor() { [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -1)" = "$1" ]; }
-valida_version() { printf '%s' "$1" | grep -qE '^[0-9]+(\.[0-9]+)+$'; }
+valida_version() { printf '%s' "$1" | grep -E '^[0-9]+(\.[0-9]+)+$' >/dev/null; }
 
 case "$MODO" in
   plugin)

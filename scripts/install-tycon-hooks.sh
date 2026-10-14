@@ -594,7 +594,7 @@ if [[ "$RENAMED_N" != "0" ]]; then
   printf '%s\n' "$RENAMED_OUT" | grep '^  ' || true
 elif [[ "$RENAMED_OUT" == ⚠* ]]; then
   echo "$RENAMED_OUT"
-elif printf '%s\n' "$RENAMED_OUT" | grep -q '^  ⚠'; then
+elif printf '%s\n' "$RENAMED_OUT" | grep '^  ⚠' >/dev/null; then
   # nada reescrito, pero algo quedó sin tocar (un plist binario, un archivo sin respaldo): se dice igual
   echo "⚠ tycon: la migración de nombres viejos dejó avisos (story 8.9):"
   printf '%s\n' "$RENAMED_OUT" | grep '^  ⚠' || true

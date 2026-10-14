@@ -28,10 +28,10 @@ c "chore(ci): trigger"
 c "fix(vencimientos): la fecha se calculaba mal"
 
 S=$(bash "$SH" --local prueba src/ 2>/dev/null)
-echo "$S" | grep -q "feat(pedidos)" && ok "sin --type lista los cambios reales del producto" || no "sin --type NO listó los cambios reales"
-echo "$S" | grep -q "fix(vencimientos)" && ok "lista el segundo cambio real" || no "perdió un cambio real"
+echo "$S" | grep "feat(pedidos)" >/dev/null && ok "sin --type lista los cambios reales del producto" || no "sin --type NO listó los cambios reales"
+echo "$S" | grep "fix(vencimientos)" >/dev/null && ok "lista el segundo cambio real" || no "perdió un cambio real"
 for r in "fix(ci)" "ci: el porton" "Merged PR" "chore(ci)" "bump version"; do
-  echo "$S" | grep -q "$r" && no "🔴 deja pasar ruido a la nota: $r" || ok "filtra el ruido: $r"
+  echo "$S" | grep "$r" >/dev/null && no "🔴 deja pasar ruido a la nota: $r" || ok "filtra el ruido: $r"
 done
 
 # la bandera no cambia el resultado en modo --local (la divergencia sólo vive en --from-server)
@@ -43,21 +43,21 @@ S3=$(bash "$SH" --type plugin --local prueba src/ 2>/dev/null)
 # un --type inválido no se traga en silencio, pero tampoco rompe el build
 S4=$(bash "$SH" --type pepe --local prueba src/ 2>&1); R=$?
 [ $R -eq 0 ] && ok "un --type inválido NO rompe el build (exit 0)" || no "un --type inválido rompió el build (exit $R)"
-echo "$S4" | grep -q "type inválido" && ok "…pero lo dice por stderr" || no "un --type inválido pasó en silencio"
+echo "$S4" | grep "type inválido" >/dev/null && ok "…pero lo dice por stderr" || no "un --type inválido pasó en silencio"
 
 # 🔴 conducta correcta y no obvia: un marcador de build en el MEDIO corta la lista ahí — lo
 # anterior ya se publicó y no puede volver a anunciarse.
 c "chore: update versions and add deployment ZIPs [skip ci]"
 c "feat(entregas): alta desde la ficha"
 S6=$(bash "$SH" --local prueba src/ 2>/dev/null)
-echo "$S6" | grep -q "feat(entregas)" && ok "lista lo posterior al último build" || no "perdió lo posterior al último build"
-echo "$S6" | grep -q "fix(vencimientos)" && no "🔴 re-anuncia cambios ya publicados en un build anterior" || ok "no re-anuncia lo que ya salió en el build anterior"
+echo "$S6" | grep "feat(entregas)" >/dev/null && ok "lista lo posterior al último build" || no "perdió lo posterior al último build"
+echo "$S6" | grep "fix(vencimientos)" >/dev/null && no "🔴 re-anuncia cambios ya publicados en un build anterior" || ok "no re-anuncia lo que ya salió en el build anterior"
 
 # sin punto de partida confiable: avisa y no miente
 cd "$TMP" && git checkout -q --orphan huerfana && git rm -rqf . 2>/dev/null; mkdir -p src; echo x > src/a.txt
 git add -A && git commit -q -m "feat: primer commit sin build anterior"
 S5=$(bash "$SH" --local prueba src/ 2>&1)
-echo "$S5" | grep -q "sin punto de partida confiable" && ok "sin build anterior avisa que la lista puede estar incompleta" || no "no avisó que no tenía punto de partida"
+echo "$S5" | grep "sin punto de partida confiable" >/dev/null && ok "sin build anterior avisa que la lista puede estar incompleta" || no "no avisó que no tenía punto de partida"
 
 # ---------------------------------------------------------------- reintento del login (2026-09-01)
 # Un curl de mentira: el login falla con 000 dos veces y a la tercera entra; /versions devuelve el
@@ -72,7 +72,7 @@ cat > "$STUB/curl" <<STUB
 url=""; hdr=""; out=""
 while [ \$# -gt 0 ]; do case "\$1" in -D) hdr="\$2"; shift;; -o) out="\$2"; shift;; -w) shift;; http*) url="\$1";; esac; shift; done
 echo "\$url" >> "\$STUB_LOG"
-if echo "\$url" | grep -q '/api/auth/login'; then
+if echo "\$url" | grep '/api/auth/login' >/dev/null; then
   n=\$(grep -c '/api/auth/login' "\$STUB_LOG")
   if [ -n "\${STUB_401:-}" ]; then printf '401'; exit 0; fi
   if [ "\$n" -lt 3 ]; then printf '000'; exit 7; fi
@@ -80,7 +80,7 @@ if echo "\$url" | grep -q '/api/auth/login'; then
 fi
 # El curl real escribe el cuerpo en el archivo de -o e imprime el código con -w. El simulador
 # tiene que hacer lo mismo o los casos prueban un curl que no existe (2026-09-01).
-if echo "\$url" | grep -q '/versions'; then
+if echo "\$url" | grep '/versions' >/dev/null; then
   cuerpo='[{"version":"1.0.9","isCurrent":true,"commitHash":"$PUB"}]'
   if [ -n "\${STUB_VERSIONS_CODE:-}" ]; then
     [ -n "\$out" ] && printf '%s' '{}' > "\$out"; printf '%s' "\$STUB_VERSIONS_CODE"; exit 0
@@ -99,7 +99,7 @@ printf '#!/usr/bin/env bash\nexit 0\n' > "$STUB/sleep"; chmod +x "$STUB/sleep"
 S7=$(PATH="$STUB:$PATH" bash "$SH" --type form --from-server http://stub usuario clave prueba src/ 2>"$TMP/err7.txt")
 logins=$(grep -c '/api/auth/login' "$STUB_LOG")
 [ "$logins" -eq 3 ] && ok "ante HTTP 000 reintenta el login (3 intentos hasta entrar)" || no "🔴 no reintentó: $logins login(s), esperaba 3"
-echo "$S7" | grep -q "la versión que está publicada" && ok "…y la nota sale contra la versión PUBLICADA, no contra el build anterior" || no "🔴 con reintento igual cayó al build anterior: $(head -1 <<<"$S7")"
+echo "$S7" | grep "la versión que está publicada" >/dev/null && ok "…y la nota sale contra la versión PUBLICADA, no contra el build anterior" || no "🔴 con reintento igual cayó al build anterior: $(head -1 <<<"$S7")"
 grep -q "intento 1" "$TMP/err7.txt" && ok "…y avisa cada reintento por stderr" || no "no avisó el reintento"
 : > "$STUB_LOG"
 S8=$(STUB_401=1 PATH="$STUB:$PATH" bash "$SH" --type form --from-server http://stub usuario clave prueba src/ 2>/dev/null)
@@ -120,7 +120,7 @@ S9=$(BZ_TOKEN=tok123 PATH="$STUB:$PATH" bash "$SH" --type form --from-server htt
 [ "$(grep -c '/versions' "$STUB_LOG")" -ge 1 ] \
   && ok "…pero SÍ consulta la versión publicada (el token se usa, no se ignora)" \
   || no "🔴 con BZ_TOKEN no consultó nada: $(cat "$STUB_LOG")"
-echo "$S9" | grep -q "la versión que está publicada" \
+echo "$S9" | grep "la versión que está publicada" >/dev/null \
   && ok "…y la nota sale contra la versión PUBLICADA" \
   || no "🔴 con BZ_TOKEN la nota cayó al build anterior: $(head -1 <<<"$S9")"
 
@@ -162,7 +162,7 @@ cat > "$STUB/curl" <<'STUB2'
 #!/usr/bin/env bash
 url=""; out=""
 while [ $# -gt 0 ]; do case "$1" in -o) out="$2"; shift;; -w) shift;; -D) shift;; http*) url="$1";; esac; shift; done
-if echo "$url" | grep -q '/versions'; then
+if echo "$url" | grep '/versions' >/dev/null; then
   # un commit que NO existe en este clon
   printf '%s' '[{"version":"9.9.9","isCurrent":true,"commitHash":"deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"}]' > "${out:-/dev/stdout}"
   [ -n "$out" ] && printf '200'
@@ -216,18 +216,18 @@ for asunto in \
   # respaldo: sin build anterior
   armar_merge "$asunto"
   S=$(bash "$SH" --local prueba 2>/dev/null)
-  printf '%s\n' "$S" | grep -qF -- "- $asunto" \
+  printf '%s\n' "$S" | grep -F -- "- $asunto" >/dev/null \
     && no "🔴 respaldo: le publica el asunto del merge al administrador («${asunto}»)" \
     || ok "respaldo: no publica el asunto del merge («${asunto:0:28}…»)"
-  echo "$S" | grep -qE '^- (feat|fix)\(' \
+  echo "$S" | grep -E '^- (feat|fix)\(' >/dev/null \
     && ok "…y publica un cambio real" \
     || no "🔴 respaldo con «${asunto}»: no quedó ningún cambio real: $(echo "$S" | tail -1)"
 
   # normal: con build anterior, `--no-merges` ya excluye el merge
   armar_merge "$asunto" con-build
   S=$(bash "$SH" --local prueba 2>/dev/null)
-  printf '%s\n' "$S" | grep -qF -- "- $asunto" && no "🔴 camino normal: publica el asunto del merge («${asunto}»)" || ok "camino normal: no publica el asunto del merge («${asunto:0:28}…»)"
-  { echo "$S" | grep -q "feat(stock)" && echo "$S" | grep -q "fix(stock)" && echo "$S" | grep -q "fix(hotfix)"; } \
+  printf '%s\n' "$S" | grep -F -- "- $asunto" >/dev/null && no "🔴 camino normal: publica el asunto del merge («${asunto}»)" || ok "camino normal: no publica el asunto del merge («${asunto:0:28}…»)"
+  { echo "$S" | grep "feat(stock)" >/dev/null && echo "$S" | grep "fix(stock)" >/dev/null && echo "$S" | grep "fix(hotfix)" >/dev/null; } \
     && ok "…y lista los tres cambios reales (los dos del PR y el de main)" \
     || no "🔴 camino normal con «${asunto}»: perdió cambios reales: $(echo "$S" | tr '\n' ' ')"
 done
@@ -237,7 +237,7 @@ done
 armar_merge "Merged PR 10: algo" con-build
 cd "$(git rev-parse --show-toplevel)" && echo z > src/c.txt && git add -A && git commit -q -m "fix: el merge de listas perdía el último elemento"
 S=$(bash "$SH" --local prueba 2>/dev/null)
-echo "$S" | grep -q "el merge de listas" && ok "un cambio real que habla de «merge» NO se filtra" || no "🔴 el filtro se comió un cambio real del producto: $(echo "$S" | tr '\n' ' ')"
+echo "$S" | grep "el merge de listas" >/dev/null && ok "un cambio real que habla de «merge» NO se filtra" || no "🔴 el filtro se comió un cambio real del producto: $(echo "$S" | tr '\n' ' ')"
 
 cd "$TMP"
 

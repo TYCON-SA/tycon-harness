@@ -144,8 +144,8 @@ printf 'veredicto: OK\n' > "$QA4/epic-07__1.1-legibilidad.md"
 ca="$(node "$SK/qa-guide.js" --story "$M4/docs/voz/epic-05/1-1-x.md" --check 2>&1)"; rca=$?
 cb="$(node "$SK/qa-guide.js" --story "$M4/docs/voz/epic-07/1-1-y.md" --check 2>&1)"; rcb=$?
 ga="$(node "$SK/qa-guide.js" --story "$M4/docs/voz/epic-05/1-1-x.md" --out "$TMP/m4/qa-a.html" 2>&1)"
-if [ "$rca" -ne 0 ] && printf '%s' "$ca" | grep -q 'epic-05__1\.1-pasos\.md' && [ "$rcb" -eq 0 ] \
-   && printf '%s' "$ga" | grep -q 'epic-05__1\.1-pasos\.md'; then ok "T4 GuiaDeQA_PorLaClave"
+if [ "$rca" -ne 0 ] && printf '%s' "$ca" | grep 'epic-05__1\.1-pasos\.md' >/dev/null && [ "$rcb" -eq 0 ] \
+   && printf '%s' "$ga" | grep 'epic-05__1\.1-pasos\.md' >/dev/null; then ok "T4 GuiaDeQA_PorLaClave"
 else no "T4 GuiaDeQA_PorLaClave — a: rc=$rca «$(printf '%s' "$ca" | head -3 | tr '\n' ' ')» · b: rc=$rcb «$(printf '%s' "$cb" | head -3 | tr '\n' ' ')»"; fi
 
 # ── T5 — la aprobación de la matriz de b no vale para a aunque la declaración sea la misma ───────
@@ -212,10 +212,10 @@ v7="$(printf '%s' "$mx7" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on
 despues="$(cd "$M7" && find .advisors .specs/a/qa .tycon -type f | sort | xargs shasum 2>/dev/null)"
 f7=""
 [[ "$adv7" == no-cuenta*1.1-20261005090000* ]] || f7="$f7 carpeta($adv7)"
-{ [ "$rq7" -ne 0 ] && printf '%s' "$qa7" | grep -q '1\.1-pasos\.md.*no cuenta\|no cuenta.*1\.1-pasos\.md'; } || f7="$f7 guía(rc=$rq7)"
+{ [ "$rq7" -ne 0 ] && printf '%s' "$qa7" | grep '1\.1-pasos\.md.*no cuenta\|no cuenta.*1\.1-pasos\.md' >/dev/null; } || f7="$f7 guía(rc=$rq7)"
 # Sin tildes en el patrón: `[oó]` no es UN carácter en el locale C. (El comentario va en su línea: al final de la de
 # abajo se tragaba el `|| f7=…` y la rama no podía fallar nunca — lo cazaron dos revisores en la primera vuelta.)
-{ [ "$v7" != "WAIVED-USER" ] && printf '%s' "$mx7" | grep -q 'vieja de la matriz'; } || f7="$f7 aprobación($v7)"
+{ [ "$v7" != "WAIVED-USER" ] && printf '%s' "$mx7" | grep 'vieja de la matriz' >/dev/null; } || f7="$f7 aprobación($v7)"
 [ "$antes" = "$despues" ] || f7="$f7 se-tocó-algo"
 if [ -z "$f7" ]; then ok "T7 LoViejo_NoSeTocaNiCuenta"
 else no "T7 LoViejo_NoSeTocaNiCuenta — falla en:$f7"; fi

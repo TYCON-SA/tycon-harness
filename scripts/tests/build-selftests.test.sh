@@ -17,7 +17,7 @@ for s in check-hooks-registration.js check-bank-coverage.js check-hook-coverage.
     echo "❌ $s — no existe (¿se renombró y quedó sin correr?)"; fallos=$((fallos+1)); continue
   fi
   out="$(node "$BUILD/$s" --selftest 2>&1)"; rc=$?
-  if [ "$rc" -eq 0 ] && printf '%s' "$out" | grep -q '✅'; then
+  if [ "$rc" -eq 0 ] && printf '%s' "$out" | grep '✅' >/dev/null; then
     echo "✅ $s --selftest"
   else
     echo "❌ $s --selftest (exit=$rc)"; printf '%s\n' "$out" | tail -5; fallos=$((fallos+1))
@@ -26,14 +26,14 @@ done
 
 # El portón de CI (scripts/ci/) — misma razón: su autotest existe y nadie lo corría.
 out="$(node "$(dirname "$BUILD")/scripts/ci/tycon-ci-gate.js" --selftest 2>&1)"; rc=$?
-if [ "$rc" -eq 0 ] && printf '%s' "$out" | grep -q '✅'; then echo "✅ tycon-ci-gate --selftest"; else
+if [ "$rc" -eq 0 ] && printf '%s' "$out" | grep '✅' >/dev/null; then echo "✅ tycon-ci-gate --selftest"; else
   echo "❌ tycon-ci-gate --selftest (exit=$rc)"; printf '%s\n' "$out" | tail -5; fallos=$((fallos+1)); fi
 
 # La clasificación de rojos del banco de advisors (criterio vs. inestabilidad). Lógica pura: no
 # lanza un solo revisor, así que puede correr todos los días sin costo.
 for m in --selftest-classes --selftest-sandbox --selftest-variance; do
   out="$(node "$(dirname "$BUILD")/scripts/controls-bench/advisor-runner.js" "$m" 2>&1)"; rc=$?
-  if [ "$rc" -eq 0 ] && printf '%s' "$out" | grep -q '✅'; then echo "✅ advisor-runner $m"; else
+  if [ "$rc" -eq 0 ] && printf '%s' "$out" | grep '✅' >/dev/null; then echo "✅ advisor-runner $m"; else
     echo "❌ advisor-runner $m (exit=$rc)"; printf '%s\n' "$out" | tail -5; fallos=$((fallos+1)); fi
 done
 
@@ -56,7 +56,7 @@ cov_case() { # <nombre> <exit esperado> <texto que tiene que aparecer> <valor de
   local out rc
   if [ -n "$4" ]; then out="$(HOME="$LAB/home" TYCON_SKILLS_DIR="$4" node "$COV" 2>&1)"; rc=$?
   else out="$(env -u TYCON_SKILLS_DIR HOME="$LAB/home" node "$COV" 2>&1)"; rc=$?; fi
-  if [ "$rc" -eq "$2" ] && printf '%s' "$out" | grep -qF -- "$3"; then echo "✅ hook-coverage: $1"; else
+  if [ "$rc" -eq "$2" ] && printf '%s' "$out" | grep -F -- "$3" >/dev/null; then echo "✅ hook-coverage: $1"; else
     echo "❌ hook-coverage: $1 (exit=$rc, esperaba $2 con «$3»)"; printf '%s\n' "$out" | tail -4; fallos=$((fallos+1)); fi
 }
 cov_case "con TYCON_SKILLS_DIR (la carpeta skills/) censa ESAS skills: un hook sin casos es rojo" 1 "on-new-without-cases.js" "$LAB/repo/skills"

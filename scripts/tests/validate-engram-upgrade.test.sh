@@ -45,7 +45,7 @@ correr() { # <repos extra> → corre el guion en el laboratorio; deja SAL y RC
 
 # ── control positivo: con un repo extra que existe, verde ─────────────────────────────────────────
 correr "$T/repo-bueno"
-if [ "$RC" = 0 ] && printf '%s\n' "$SAL" | grep -q "✓ repo-bueno"; then
+if [ "$RC" = 0 ] && printf '%s\n' "$SAL" | grep "✓ repo-bueno" >/dev/null; then
   ok "con un repo extra que existe, sale 0 y lo da por validado"
 else
   no "control: esperaba rc=0 y «✓ repo-bueno»; rc=$RC — salida: $SAL"
@@ -53,8 +53,8 @@ fi
 
 # ── un repo extra que no existe: no pude validar ──────────────────────────────────────────────────
 correr "$T/repo-bueno $T/repo-fantasma"
-if [ "$RC" != 0 ] && printf '%s\n' "$SAL" | grep -q "✗ repo-fantasma" \
-   && ! printf '%s\n' "$SAL" | grep -q "✓ repo-fantasma" && printf '%s\n' "$SAL" | grep -q "RESULTADO: ROJO"; then
+if [ "$RC" != 0 ] && printf '%s\n' "$SAL" | grep "✗ repo-fantasma" >/dev/null \
+   && ! printf '%s\n' "$SAL" | grep "✓ repo-fantasma" >/dev/null && printf '%s\n' "$SAL" | grep "RESULTADO: ROJO" >/dev/null; then
   ok "un repo extra que no existe sale distinto de 0 y lo nombra"
 else
   no "repo inexistente: esperaba rc≠0, «✗ repo-fantasma» y ROJO; rc=$RC — salida: $SAL"
@@ -62,8 +62,8 @@ fi
 
 # ── una carpeta que no es un repo: tampoco cuenta como validada ───────────────────────────────────
 correr "$T/carpeta-suelta"
-if [ "$RC" != 0 ] && printf '%s\n' "$SAL" | grep -q "✗ carpeta-suelta" \
-   && ! printf '%s\n' "$SAL" | grep -q "✓ carpeta-suelta"; then
+if [ "$RC" != 0 ] && printf '%s\n' "$SAL" | grep "✗ carpeta-suelta" >/dev/null \
+   && ! printf '%s\n' "$SAL" | grep "✓ carpeta-suelta" >/dev/null; then
   ok "una carpeta que no es un repo sale distinto de 0 y la nombra"
 else
   no "carpeta sin git: esperaba rc≠0 y «✗ carpeta-suelta»; rc=$RC — salida: $SAL"
@@ -94,7 +94,7 @@ run_lab() { # <arnés de laboratorio> → corre SU guion, sin repos extra; deja 
 }
 lab_harness "$T/arnes-sin-memoria"
 : > "$LLAMADAS"; run_lab "$T/arnes-sin-memoria"
-if [ "$RC" = 0 ] && printf '%s\n' "$SAL" | grep -q "no lleva memoria" && printf '%s\n' "$SAL" | grep -q "RESULTADO: VERDE" \
+if [ "$RC" = 0 ] && printf '%s\n' "$SAL" | grep "no lleva memoria" >/dev/null && printf '%s\n' "$SAL" | grep "RESULTADO: VERDE" >/dev/null \
    && ! grep -qE "^engram sync --project .*arnes-sin-memoria\)$" "$LLAMADAS" && [ ! -e "$T/arnes-sin-memoria/.engram" ]; then
   ok "un arnés que no lleva memoria sale 0, lo dice y no sincroniza nada adentro"
 else
@@ -102,7 +102,7 @@ else
 fi
 lab_harness "$T/arnes-con-memoria"; echo "lab" > "$T/arnes-con-memoria/.engram-project"
 run_lab "$T/arnes-con-memoria"
-if [ "$RC" != 0 ] && printf '%s\n' "$SAL" | grep -q "RESULTADO: ROJO" && printf '%s\n' "$SAL" | grep -q "✗ manifest"; then
+if [ "$RC" != 0 ] && printf '%s\n' "$SAL" | grep "RESULTADO: ROJO" >/dev/null && printf '%s\n' "$SAL" | grep "✗ manifest" >/dev/null; then
   ok "un arnés que declara memoria y no tiene el índice sigue en ROJO"
 else
   no "arnés con memoria y sin índice: esperaba rc≠0, «✗ manifest» y ROJO; rc=$RC — salida: $SAL"

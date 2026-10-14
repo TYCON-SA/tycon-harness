@@ -103,7 +103,7 @@ cruzar
 nuevo_repo; chunk aaaa1111; chunk bbbb2222
 cruzar
 [ "$RC" -eq 3 ] && [ "$(j estado)" = "no-medido" ] && [ "$(j codigo)" = "sin-manifest" ] \
-  && printf '%s' "$(j motivo)" | grep -q "no hay .engram/manifest.json" \
+  && printf '%s' "$(j motivo)" | grep "no hay .engram/manifest.json" >/dev/null \
   && [ "$(j huerfanos)" = "null" ] && [ "$(j fantasmas)" = "null" ] && [ "$(j duplicados)" = "null" ] \
   && [ "$(j archivos)" = "2" ] && [ "$(j declarados)" = "null" ] && [ "$(j regla)" = "no-pude-medir" ] \
   && ok "T3 chunks sin índice → no-medido con motivo, listas null (nunca vacías-como-verde), exit 3" \
@@ -118,7 +118,7 @@ cruzar
   || no "T4 JSON inválido dio estado=$(j estado) codigo=$(j codigo) rc=$RC huerfanos=[$(j huerfanos)]"
 printf '<<<<<<< HEAD\n{"version":1,"chunks":[]}\n=======\n{"version":1,"chunks":[]}\n>>>>>>> otra\n' > "$R/.engram/manifest.json"
 cruzar
-[ "$RC" -eq 3 ] && [ "$(j codigo)" = "marcadores" ] && printf '%s' "$(j motivo)" | grep -qi "marcadores de conflicto" && [ "$(j huerfanos)" = "null" ] \
+[ "$RC" -eq 3 ] && [ "$(j codigo)" = "marcadores" ] && printf '%s' "$(j motivo)" | grep -i "marcadores de conflicto" >/dev/null && [ "$(j huerfanos)" = "null" ] \
   && ok "T4 marcadores de conflicto → no-medido con SU motivo" \
   || no "T4 marcadores dio codigo=$(j codigo) motivo=[$(j motivo)] rc=$RC"
 printf '{"version":1}' > "$R/.engram/manifest.json"
@@ -240,7 +240,7 @@ git -C "$R" checkout -q --theirs .engram/manifest.json && git -C "$R" add -A && 
 git -C "$R" branch -q -D remoto        # en un pull real el lado descartado NO es un ref
 PODADOS=$(git -C "$R" log --all --format=%H -- .engram/manifest.json | wc -l | tr -d ' ')
 reparar --apply
-[ "$PODADOS" = "2" ] && [ "$RC" -eq 0 ] && [ "$(entrada bbbb2222)" = "$ENT_LUZ" ] && printf '%s' "$(j reparadas.0.origen)" | grep -q "^git:" \
+[ "$PODADOS" = "2" ] && [ "$RC" -eq 0 ] && [ "$(entrada bbbb2222)" = "$ENT_LUZ" ] && printf '%s' "$(j reparadas.0.origen)" | grep "^git:" >/dev/null \
   && ok "T11b 🔴 la entrada que vive en el lado del merge que git PODA se rescata exacta de git (luz, sus contadores), no del chunk" \
   || no "T11b podados=$PODADOS (2 = git poda sin --full-history) · bbbb=[$(entrada bbbb2222)] esperaba [$ENT_LUZ] · origen=$(j reparadas.0.origen) rc=$RC"
 
@@ -275,7 +275,7 @@ nuevo_repo; chunk aaaa1111; indice 'aaaa1111|t|2026-01-01T00:00:00Z'; commitear 
 printf '.engram/chunks/eeee5555.jsonl.gz\n' > "$R/.gitignore"; git -C "$R" add .gitignore; git -C "$R" commit -qm "ignora el chunk que va a llegar"
 chunk eeee5555
 reparar --apply
-[ "$RC" -ne 0 ] && [ "$(j reparado)" = "false" ] && printf '%s' "$(j avisos)" | grep -q "no pude stagear" && [ "$(entrada eeee5555)" != "(no está)" ] \
+[ "$RC" -ne 0 ] && [ "$(j reparado)" = "false" ] && printf '%s' "$(j avisos)" | grep "no pude stagear" >/dev/null && [ "$(entrada eeee5555)" != "(no está)" ] \
   && ok "T16d si el git add de lo reparado falla, lo dice, no dice «reparado» y sale ≠0 (el índice sí queda escrito)" \
   || no "T16d rc=$RC reparado=$(j reparado) avisos=[$(j avisos)] entrada=[$(entrada eeee5555)]"
 
@@ -397,7 +397,7 @@ if [ "$HAY_ENGRAM" -eq 1 ]; then
   no "T16 el entorno de prueba tiene un \`engram\` en /usr/bin o /bin: no puedo probar la rama «sin importador»"
 else
   [ "$RC" -eq 0 ] && [ "$STAGED" = ".engram/manifest.json " ] && [ "$(j aplicado)" = "true" ] && [ "$(j verificado.huerfanos)" = "0" ] \
-    && printf '%s' "$(j verificado.importador)" | grep -q "no verifiqué con un importador" \
+    && printf '%s' "$(j verificado.importador)" | grep "no verifiqué con un importador" >/dev/null \
     && ok "T16 con --apply: índice stageado, cruce posterior 0 huérfanos, y dice «no verifiqué con un importador»" \
     || no "T16 --apply dio rc=$RC staged=[$STAGED] huerfanos-despues=$(j verificado.huerfanos) importador=[$(j verificado.importador)] — $ERR"
 fi
@@ -483,7 +483,7 @@ indice 'aaaa1111|t|2026-01-01T00:00:00Z'; commitear "pierde una"
 # mundo que no existe: la lección de la 1.5, repetida acá y anotada para que no sea tres.
 printf '#!/bin/sh\necho "Imported 2 new chunk(s) from .engram/"\necho "  Sessions:     0"\necho "  Observations: 2"\necho "  Prompts:      0"\nexit 0\n' > "$TMP/bin/engram" && chmod +x "$TMP/bin/engram"
 reparar --apply
-[ "$RC" -eq 0 ] && printf '%s' "$(j verificado.importador)" | grep -q "vio los 2 chunks" \
+[ "$RC" -eq 0 ] && printf '%s' "$(j verificado.importador)" | grep "vio los 2 chunks" >/dev/null \
   && ok "T16b con un importador presente que confirma: lo dice («vio los 2 chunks»)" \
   || no "T16b con importador que confirma dio [$(j verificado.importador)] rc=$RC"
 # …y si el importador ve MENOS de los que hay, lo GRITA en vez de dar el visto bueno.
@@ -492,7 +492,7 @@ nuevo_repo; chunk aaaa1111; chunk bbbb2222
 indice 'aaaa1111|t|2026-01-01T00:00:00Z' 'bbbb2222|t|2026-02-01T00:00:00Z'; commitear "2 de 2"
 indice 'aaaa1111|t|2026-01-01T00:00:00Z'; commitear "pierde una"
 reparar --apply
-printf '%s' "$(j verificado.importador)" | grep -q "🔴" && printf '%s' "$(j verificado.importador)" | grep -q "1 chunk" \
+printf '%s' "$(j verificado.importador)" | grep "🔴" >/dev/null && printf '%s' "$(j verificado.importador)" | grep "1 chunk" >/dev/null \
   && ok "T16b 🔴 si el importador ve MENOS chunks de los que hay, lo grita — no da el visto bueno" \
   || no "T16b con importador discrepante dio [$(j verificado.importador)]"
 rm -f "$TMP/bin/engram"
@@ -627,7 +627,7 @@ hook39 "$MAINT39" "git -C \"$PUB39\" commit -m \"desde la otra carpeta\""
 : > "$M39/calls.log"
 printf 'z\n' > "$MAINT39/nota.txt"; git -C "$MAINT39" add nota.txt
 hook39 "$PUB39" "cd \"$MAINT39\" && git commit -m \"la memoria viaja con este commit\""
-[ "$(cat "$M39/calls.log")" = "$(cd "$MAINT39" && pwd -P)" ] && git -C "$MAINT39" diff --cached --name-only | grep -q '^\.engram/chunks/nuevo-' \
+[ "$(cat "$M39/calls.log")" = "$(cd "$MAINT39" && pwd -P)" ] && git -C "$MAINT39" diff --cached --name-only | grep '^\.engram/chunks/nuevo-' >/dev/null \
   && [ ! -e "$PUB39/.engram" ] \
   && ok "Memory_NotInPublicRepo (T39): el commit siguiente en el clon de mantenimiento exporta ahí lo pendiente y lo deja preparado; el público sigue sin memoria" \
   || no "Memory_NotInPublicRepo (T39) la otra mitad: rc=$RC39 · engram corrió en [$(tr '\n' ' ' < "$M39/calls.log")] · preparado=[$(git -C "$MAINT39" diff --cached --name-only | tr '\n' ' ')] · $(head -c 300 "$M39/err")"

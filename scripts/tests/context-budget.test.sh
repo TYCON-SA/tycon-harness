@@ -39,7 +39,7 @@ w=next((i for i in its if 'Wix' in i.get('name','')), None)
 print(json.dumps({'tokens': w and w.get('tokens'), 'sinAutorizar': w and w.get('sinAutorizar')}))" 2>/dev/null || echo "?")
 
 # C-01 · Wix sin autorizar no se cobra a 500/tool (19 tools → 9.500)
-echo "$WIX" | grep -q '"sinAutorizar": true' && ok "C-01 Wix figura como SIN AUTORIZAR (esquemas no cargados)" || mal "C-01 Wix no se marcó como sin autorizar: $WIX"
+echo "$WIX" | grep '"sinAutorizar": true' >/dev/null && ok "C-01 Wix figura como SIN AUTORIZAR (esquemas no cargados)" || mal "C-01 Wix no se marcó como sin autorizar: $WIX"
 W_TOK=$(echo "$WIX" | python3 -c "import json,sys; print(json.load(sys.stdin).get('tokens') or 0)" 2>/dev/null || echo 9999)
 [ "$W_TOK" -lt 1000 ] 2>/dev/null && ok "C-01 …y se cobra un mínimo ($W_TOK), no 9.500" || mal "C-01 Wix se cobra $W_TOK (la cuenta inflada)"
 
@@ -54,7 +54,7 @@ print(next((i.get('tokens') for i in its if i.get('name')=='engram'), 0))" 2>/de
 [ "$E_TOK" -ge 6000 ] 2>/dev/null && ok "C-03 engram (local, cargado) se sigue cobrando entero ($E_TOK)" || mal "C-03 engram se cobra $E_TOK — el descuento se aplicó de más"
 
 # C-04 · el texto del reporte lo dice
-HOME="$H" node "$RAIZ/scripts/tools/context-budget.js" 2>/dev/null | grep -qi "sin autorizar" && ok "C-04 el reporte legible dice «sin autorizar»" || mal "C-04 el reporte no distingue lo no autorizado"
+HOME="$H" node "$RAIZ/scripts/tools/context-budget.js" 2>/dev/null | grep -i "sin autorizar" >/dev/null && ok "C-04 el reporte legible dice «sin autorizar»" || mal "C-04 el reporte no distingue lo no autorizado"
 
 # C-05 · harness-audit usa el mismo criterio (tiene su propia copia de la cuenta): su número tiene
 # que ser EL MISMO que el de context-budget, y su propio veredicto `passed` tiene que ser verdadero.
@@ -115,7 +115,7 @@ else
 fi
 
 # C-06b · el reporte legible dice de dónde viene cada archivo importado
-HOME="$H2" node "$RAIZ/scripts/tools/context-budget.js" 2>/dev/null | grep -qi "import de" \
+HOME="$H2" node "$RAIZ/scripts/tools/context-budget.js" 2>/dev/null | grep -i "import de" >/dev/null \
   && ok "C-06b el reporte legible dice «import de <archivo>»" || mal "C-06b el reporte no distingue lo importado de lo propio"
 
 # C-06c · 🔴 con un import GRANDE, la recomendación se dispara y el reporte NO revienta.
@@ -127,7 +127,7 @@ H4=$(mktemp -d); mkdir -p "$H4/.claude"
 printf '{ "mcpServers": {} }\n' > "$H4/.claude/settings.json"
 printf 'raiz\n@grande.md\n' > "$H4/.claude/CLAUDE.md"
 head -c 250000 /dev/zero | tr '\0' 'g' > "$H4/.claude/grande.md"
-if SAL=$(HOME="$H4" node "$RAIZ/scripts/tools/context-budget.js" 2>&1) && echo "$SAL" | grep -q "se importa ENTERO"; then
+if SAL=$(HOME="$H4" node "$RAIZ/scripts/tools/context-budget.js" 2>&1) && echo "$SAL" | grep "se importa ENTERO" >/dev/null; then
   ok "C-06c un import de 250 KB sale RECOMENDADO y el reporte se renderiza (no revienta)"
 else
   mal "C-06c el reporte falló o no recomienda el import grande: $(echo "$SAL" | tail -3 | tr '\n' ' ')"
@@ -154,7 +154,7 @@ if [ "${1:-}" = 1 ] && [ "${2:-}" = "True" ] && [ "${3:-0}" -gt 0 ] 2>/dev/null;
 else
   mal "C-06d items=${1:-?} fueraDeCasa=${2:-?} tokens=${3:-?} — o no se cuenta, o no se marca"
 fi
-HOME="$H5" node "$RAIZ/scripts/tools/context-budget.js" 2>/dev/null | grep -qi "fuera de" \
+HOME="$H5" node "$RAIZ/scripts/tools/context-budget.js" 2>/dev/null | grep -i "fuera de" >/dev/null \
   && ok "C-06d2 el reporte legible lo dice" || mal "C-06d2 el reporte no avisa del import de afuera"
 rm -rf "$H5" "$AFUERA"
 

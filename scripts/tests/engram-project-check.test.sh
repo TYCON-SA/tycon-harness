@@ -15,7 +15,7 @@ check() { # check <nombre> <esperado> <obtenido>
   if [ "$2" = "$3" ]; then echo "✅ $1"; else echo "❌ $1 — esperaba [$2], obtuvo [$3]"; fallos=$((fallos+1)); fi
 }
 contiene() { # contiene <nombre> <aguja> <pajar>
-  if printf '%s' "$3" | grep -qF -- "$2"; then echo "✅ $1"; else echo "❌ $1 — no encontré [$2] en: $3"; fallos=$((fallos+1)); fi
+  if printf '%s' "$3" | grep -F -- "$2" >/dev/null; then echo "✅ $1"; else echo "❌ $1 — no encontré [$2] en: $3"; fallos=$((fallos+1)); fi
 }
 nuevo_repo() { local d; d="$(mktemp -d)"; mkdir -p "$d/.engram"; echo "$d"; }
 config() { printf '{ "project_name": "%s", "other": 1 }\n' "$2" > "$1/.engram/config.json"; }

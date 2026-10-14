@@ -183,7 +183,7 @@ corre "AC 16/17 · la suite vieja y la del tablero, verdes" --acs 16,17 -- \
 set -e
 node '$RAIZ/scripts/tests/sdlc-stage-metrics.test.js' > /dev/null
 bash '$RAIZ/scripts/tests/dashboard.test.sh' > /dev/null
-git -C '$RAIZ' diff origin/main -- scripts/tests/sdlc-stage-metrics.test.js | grep -qE '^-[^-]' && { echo 'la suite vieja perdió líneas'; exit 1; }
+git -C '$RAIZ' diff origin/main -- scripts/tests/sdlc-stage-metrics.test.js | grep -E '^-[^-]' >/dev/null && { echo 'la suite vieja perdió líneas'; exit 1; }
 echo 'suite vieja verde y sin tocar · tablero verde'
 "
 

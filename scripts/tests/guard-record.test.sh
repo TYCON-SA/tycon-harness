@@ -89,8 +89,8 @@ veredictos=$(HOME="$CASA" node -e '
   const ls=fs.readFileSync(p,"utf8").trim().split("\n").filter(Boolean).map(l=>JSON.parse(l));
   process.stdout.write(ls.map(l=>l.freno+":"+l.veredicto).sort().join(" "));
 ')
-if [ "$ec_block" = "2" ] && echo "$veredictos" | grep -q "safety-guard:bloqueo" \
-   && echo "$veredictos" | grep -q "test-scope-guard:paso"; then
+if [ "$ec_block" = "2" ] && echo "$veredictos" | grep "safety-guard:bloqueo" >/dev/null \
+   && echo "$veredictos" | grep "test-scope-guard:paso" >/dev/null; then
   ok "T2 el que frenó anota bloqueo y el que dejó pasar anota paso ($veredictos)"
 else
   no "T2 veredictos=[$veredictos] exit_del_bloqueo=$ec_block exit_del_paso=$ec_pass"
@@ -111,7 +111,7 @@ anotar safety-guard SQL-C1 bloqueo "sqlcmd -S host -U sa -P $SECRETO -Q 'DROP DA
 salida="$(cat "$(REG)" 2>/dev/null || true)"
 fuga=0
 for m in "$SECRETO" "/Users/usuarioa" "sqlcmd" "DROP DATABASE"; do
-  if echo "$salida" | grep -qF "$m"; then fuga=1; echo "    ↳ se filtró: $m"; fi
+  if echo "$salida" | grep -F "$m" >/dev/null; then fuga=1; echo "    ↳ se filtró: $m"; fi
 done
 huella=$(echo "$salida" | grep -cE '"sha256":"[0-9a-f]{64}"' || true)
 if [ "$fuga" = "0" ] && [ "$huella" = "1" ]; then
@@ -124,7 +124,7 @@ fi
 mundo
 anotar test-scope-guard "el dev estaba apurado y corrio /Users/deva/proyecto" bloqueo 'npm test'
 reg="$(cat "$(REG)" 2>/dev/null || true)"
-if echo "$reg" | grep -q '"regla":"otra"' && ! echo "$reg" | grep -qF "/Users/deva"; then
+if echo "$reg" | grep '"regla":"otra"' >/dev/null && ! echo "$reg" | grep -F "/Users/deva" >/dev/null; then
   ok "T5 motivo libre → regla otra, y la prosa no se escribe"
 else
   no "T5 la línea quedó: $reg"
@@ -136,7 +136,7 @@ for regla in clean generic-only; do anotar public-push-guard "$regla" paso 'gh p
 anotar public-push-guard "lo del cliente Zorblax" bloqueo 'gh pr create --title "lo de Zorblax"'
 reg="$(cat "$(REG)" 2>/dev/null || true)"
 codigos="$(echo "$reg" | grep -o '"freno":"public-push-guard","regla":"[a-z-]*","veredicto":"[a-z]*"' | sed 's/.*"regla":"\([a-z-]*\)","veredicto":"\([a-z]*\)"/\1=\2/' | tr '\n' ' ')"
-if [ "$codigos" = "finding=bloqueo could-not-look=bloqueo unreadable-text=bloqueo clean=paso generic-only=paso otra=bloqueo " ] && ! echo "$reg" | grep -qi "zorblax"; then
+if [ "$codigos" = "finding=bloqueo could-not-look=bloqueo unreadable-text=bloqueo clean=paso generic-only=paso otra=bloqueo " ] && ! echo "$reg" | grep -i "zorblax" >/dev/null; then
   ok "T5 el freno antes de publicar anota sus cinco reglas por su código; una frase suelta sale otra, y su texto no se escribe"
 else
   no "T5 (freno antes de publicar) quedó: $codigos"
@@ -152,7 +152,7 @@ anotar internal-history clean paso 'commit'
 anotar internal-history "la story de un cliente Zorblax" bloqueo 'commit con lo de Zorblax'
 reg="$(cat "$(REG)" 2>/dev/null || true)"
 codigos="$(echo "$reg" | grep -o '"freno":"internal-history","regla":"[a-z-]*","veredicto":"[a-z]*"' | sed 's/.*"regla":"\([a-z-]*\)","veredicto":"\([a-z]*\)"/\1=\2/' | tr '\n' ' ')"
-if [ "$codigos" = "finding=bloqueo finding=aviso finding=escape could-not-look=bloqueo disabled=escape clean=paso otra=bloqueo " ] && ! echo "$reg" | grep -qi "zorblax"; then
+if [ "$codigos" = "finding=bloqueo finding=aviso finding=escape could-not-look=bloqueo disabled=escape clean=paso otra=bloqueo " ] && ! echo "$reg" | grep -i "zorblax" >/dev/null; then
   ok "T5 el control de historia interna anota sus cuatro reglas por su código; una frase suelta sale otra, y su texto no se escribe"
 else
   no "T5 (historia interna) quedó: $codigos"
@@ -176,7 +176,7 @@ fi
 mundo
 correr "$P2" 'TYCON_PR_BY_HAND=1 az repos pr create --source-branch x --target-branch main --title t' >/dev/null
 n=$(lineas); v=$(grep -o '"veredicto":"[a-z]*"' "$(REG)" 2>/dev/null | sort -u | tr '\n' ' ')
-if [ "$n" = "1" ] && echo "$v" | grep -q 'escape'; then
+if [ "$n" = "1" ] && echo "$v" | grep 'escape' >/dev/null; then
   ok "T7 el escape declarado deja UNA línea (escape), no dos"
 else
   no "T7 quedaron $n línea(s): $v"
@@ -203,7 +203,7 @@ fi
 mundo
 correr "$P2" 'TYCON_PR_BY_HAND=1 az repos pr create --source-branch a --target-branch main --title a && az repos pr create --source-branch b --target-branch main --title b' >/dev/null
 n=$(lineas); v=$(grep -o '"veredicto":"[a-z]*"' "$(REG)" 2>/dev/null | tr '\n' ' ')
-if [ "$n" = "1" ] && echo "$v" | grep -q 'bloqueo'; then
+if [ "$n" = "1" ] && echo "$v" | grep 'bloqueo' >/dev/null; then
   ok "T9 dos pull requests, uno salteado y otro mal armado → UNA línea, y dice bloqueo"
 else
   no "T9 quedaron $n línea(s): $v"
@@ -239,7 +239,7 @@ mencion=$(lineas)
 correr "$TS" 'TYCON_FULL_SUITE=1 npm test' >/dev/null
 legitimo=$(lineas)
 v=$(grep -o '"veredicto":"[a-z]*"' "$(REG)" 2>/dev/null | tr '\n' ' ')
-if [ "$mencion" = "0" ] && [ "$legitimo" = "1" ] && echo "$v" | grep -q 'escape'; then
+if [ "$mencion" = "0" ] && [ "$legitimo" = "1" ] && echo "$v" | grep 'escape' >/dev/null; then
   ok "T11 mencionar el escape no lo anota; usarlo de verdad sí"
 else
   no "T11 menciones=$mencion legítimo=$legitimo veredictos=[$v]"
@@ -252,7 +252,7 @@ mundo
 printf '%s' '{"tool_input":{"command":"sqlcmd -S prod.db' \
   | HOME="$CASA" node "$AQUI/scripts/hooks/prod-access-guard.js" >/dev/null 2>&1; ec=$?
 reg="$(cat "$(REG)" 2>/dev/null || true)"
-if [ "$ec" = "2" ] && echo "$reg" | grep -q '"regla":"no-pude-mirar"' && echo "$reg" | grep -q '"veredicto":"bloqueo"'; then
+if [ "$ec" = "2" ] && echo "$reg" | grep '"regla":"no-pude-mirar"' >/dev/null && echo "$reg" | grep '"veredicto":"bloqueo"' >/dev/null; then
   ok "T12 el freno que no pudo decidir frena Y deja su línea"
 else
   no "T12 exit=$ec reg=[$reg]"
@@ -284,13 +284,13 @@ if [ -z "$OLD_RECORD_REL" ]; then
   no "T13 no encontré NOMBRE_VIEJO_CONSTANCIA en scripts/production/install-guard.sh: sin el nombre de antes no se puede armar el caso"
 else
   mundo; guard_lab "$TMP/g-new" new; guard_lab_run "$TMP/g-new"
-  if [ "$ec" = "2" ] && echo "$reg" | grep -q '"regla":"no-pude-mirar"' && echo "$reg" | grep -q '"veredicto":"bloqueo"'; then
+  if [ "$ec" = "2" ] && echo "$reg" | grep '"regla":"no-pude-mirar"' >/dev/null && echo "$reg" | grep '"veredicto":"bloqueo"' >/dev/null; then
     ok "T13 con la biblioteca sólo bajo el nombre nuevo (la copia pública) el freno frena Y deja su línea"
   else
     no "T13 sólo el nombre nuevo: exit=$ec reg=[$reg]"
   fi
   mundo; guard_lab "$TMP/g-old" old; guard_lab_run "$TMP/g-old"
-  if [ "$ec" = "2" ] && echo "$reg" | grep -q '"regla":"no-pude-mirar"' && echo "$reg" | grep -q '"veredicto":"bloqueo"'; then
+  if [ "$ec" = "2" ] && echo "$reg" | grep '"regla":"no-pude-mirar"' >/dev/null && echo "$reg" | grep '"veredicto":"bloqueo"' >/dev/null; then
     ok "T13 con la biblioteca sólo bajo el nombre de antes (una instalación vieja) el freno frena Y deja su línea"
   else
     no "T13 sólo el nombre de antes: exit=$ec reg=[$reg]"
@@ -298,7 +298,7 @@ else
   # sin ninguna de las dos: frenar no depende de la constancia, y que no se pudo anotar no queda callado
   mundo; guard_lab "$TMP/g-none" none; guard_lab_run "$TMP/g-none"
   hook_errors="$(cat "$CASA/$ESTADO/hook-errors.log" 2>/dev/null || true)"
-  if [ "$ec" = "2" ] && [ -z "$reg" ] && echo "$hook_errors" | grep -q 'no pudo cargar la biblioteca de constancias'; then
+  if [ "$ec" = "2" ] && [ -z "$reg" ] && echo "$hook_errors" | grep 'no pudo cargar la biblioteca de constancias' >/dev/null; then
     ok "T13 sin la biblioteca el freno frena igual, y que no pudo anotar queda dicho en hook-errors.log"
   else
     no "T13 sin la biblioteca: exit=$ec reg=[$reg] hook-errors=[$(echo "$hook_errors" | head -c 300)]"
@@ -311,7 +311,7 @@ else
   cp "$AQUI/scripts/production/production-index.js" "$TMP/g-full/scripts/production/"
   ec="$(correr "$TMP/g-full/scripts/hooks/prod-access-guard.js" 'sqlcmd -S servidor-de-juguete.example -Q "select 1"')"
   reg="$(cat "$(REG)" 2>/dev/null || true)"
-  if [ "$ec" = "2" ] && echo "$reg" | grep -q '"freno":"prod-access-guard"' && echo "$reg" | grep -q '"veredicto":"bloqueo"'; then
+  if [ "$ec" = "2" ] && echo "$reg" | grep '"freno":"prod-access-guard"' >/dev/null && echo "$reg" | grep '"veredicto":"bloqueo"' >/dev/null; then
     ok "T13 un servidor sin declarar, con la biblioteca sólo bajo el nombre nuevo: frena por su función de frenar Y deja su línea"
   else
     no "T13 función de frenar con sólo el nombre nuevo: exit=$ec reg=[$reg]"
@@ -376,11 +376,11 @@ else
   eg="$(de72 on-dod-evidence-guard)"
   limpias="$(lineas_limpias)"
   if [ "$ec_sin" = "2" ] && [ "$ec_con" = "0" ] && [ "$ec_pc" = "2" ] && [ "$ec_eg" = "2" ] \
-     && echo "$fw" | grep -q '"regla":"evidencia-ausente","veredicto":"bloqueo"' \
-     && echo "$fw" | grep -q '"regla":"evidencia-ok","veredicto":"paso"' \
-     && echo "$pc" | grep -q '"regla":"roster","veredicto":"bloqueo"' \
-     && echo "$eg" | grep -q '"regla":"escritura-manual","veredicto":"bloqueo"' \
-     && echo "$eg" | grep -q '"regla":"archivo-exento","veredicto":"paso"' \
+     && echo "$fw" | grep '"regla":"evidencia-ausente","veredicto":"bloqueo"' >/dev/null \
+     && echo "$fw" | grep '"regla":"evidencia-ok","veredicto":"paso"' >/dev/null \
+     && echo "$pc" | grep '"regla":"roster","veredicto":"bloqueo"' >/dev/null \
+     && echo "$eg" | grep '"regla":"escritura-manual","veredicto":"bloqueo"' >/dev/null \
+     && echo "$eg" | grep '"regla":"archivo-exento","veredicto":"paso"' >/dev/null \
      && [ "$(lineas)" = "5" ] && [ "$limpias" = "0" ]; then
     ok "7.2-T1 los tres hooks del cierre anotan cada decisión (bloqueo y paso), una línea cada una, sin ruta ni story"
   else

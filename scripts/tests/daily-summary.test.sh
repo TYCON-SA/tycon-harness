@@ -655,7 +655,7 @@ fi
 D="$TMP/t14b"; mundo "$D"; snap "$D" "$HOY" '{}'
 reset_srv ok:1
 RC=$(TYCON_SUMMARY_INJECT_FAILURE=1 entregar "$D" dependencias "$HOY")
-[ "$RC" = 3 ] && [ "$(pedidos)" = 0 ] && tail -n 1 "$D/entregar.txt" | grep -q 'error inesperado' && ! grep -qE '^\s+at ' "$D/entregar.txt" \
+[ "$RC" = 3 ] && [ "$(pedidos)" = 0 ] && tail -n 1 "$D/entregar.txt" | grep 'error inesperado' >/dev/null && ! grep -qE '^\s+at ' "$D/entregar.txt" \
   && [ "$(q "$D/out/dependencias-$HOY.json" 'j.resumen && j.resumen.message_id === null && /error inesperado/.test(j.resumen.motivo)')" = true ] \
   && ok "T14b un error inesperado: sale 3, la última línea lo dice sin stack, y el snapshot queda con el motivo" \
   || no "T14b error inesperado: rc=$RC · $(tail -c 400 "$D/entregar.txt")"
@@ -663,7 +663,7 @@ RC=$(TYCON_SUMMARY_INJECT_FAILURE=1 entregar "$D" dependencias "$HOY")
 # T14c (revisor de pruebas, iter 2) el error inesperado también por `armar`: una línea, sale 1, sin constancia
 D="$TMP/t14c"; mundo "$D"; snap "$D" "$HOY" '{}'; cp "$D/out/dependencias-$HOY.json" "$D/antes.json"
 TYCON_SUMMARY_INJECT_FAILURE=1 node "$RES" build --source dependencies --today "$HOY" --out "$D/out" --pending "$D/pend" --config "$D/repos.json" --summary-config "$D/resumen.json" --watcher-out "$D/vig" > "$D/a.txt" 2>&1; RC=$?
-[ "$RC" = 1 ] && tail -n 1 "$D/a.txt" | grep -q 'error inesperado' && ! grep -qE '^\s+at ' "$D/a.txt" && cmp -s "$D/antes.json" "$D/out/dependencias-$HOY.json" \
+[ "$RC" = 1 ] && tail -n 1 "$D/a.txt" | grep 'error inesperado' >/dev/null && ! grep -qE '^\s+at ' "$D/a.txt" && cmp -s "$D/antes.json" "$D/out/dependencias-$HOY.json" \
   && ok "T14c armar con un error inesperado sale 1 en una línea y no toca el snapshot" || no "T14c: rc=$RC · $(tail -c 300 "$D/a.txt")"
 
 # ════════════════════════════════════════════════════════════════════════════════════════════════
@@ -830,7 +830,7 @@ for CASO in dependencias; do
   S3="$TMP/sb3-$CASO"; sandbox "$S3"; RUTA_ESPERADA=sendMessage
   S4="$TMP/sb4-$CASO"; sandbox "$S4"; reset_srv ok:45
   RC=$(correr_paso "$Y" "$DISP" "$S4" HOY_NOCTURNO="$HOY" TYCON_TELEGRAM_DIR="$TMP/canal" TYCON_SUMMARY_INJECT_FAILURE=1)
-  [ "$RC" != 0 ] && [ "$(pedidos)" = 0 ] && grep 'task.logissue type=warning' "$S4/paso.out" | grep -q 'error inesperado' \
+  [ "$RC" != 0 ] && [ "$(pedidos)" = 0 ] && grep 'task.logissue type=warning' "$S4/paso.out" | grep 'error inesperado' >/dev/null \
     && ok "$T un error inesperado del guion llega al warning de Azure con su motivo, no con la última línea de un stack" \
     || no "$T warning con error inesperado: rc=$RC · $(grep 'logissue' "$S4/paso.out" | head -c 300)"
   reset_srv ok:44

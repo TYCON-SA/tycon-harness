@@ -188,7 +188,7 @@ else
   # Story 8.26, tanda C (AC 10): en un repo de GitHub el pedido es el que la dispara (`pr:` sobre main, y Azure corta las
   # corridas viejas del mismo pedido); en un repo de Azure ese bloque no se aplica (allá la encola la política de rama),
   # así que la 170 no cambia. Lo que sigue sin existir es el disparador por empuje: dos corridas por cambio.
-  { grep -q '^trigger: none' "$YAML" && grep -A2 '^pr:' "$YAML" | grep -qE 'include: \[main\]' && ! grep -q '^pr: none' "$YAML"; } \
+  { grep -q '^trigger: none' "$YAML" && grep -A2 '^pr:' "$YAML" | grep -E 'include: \[main\]' >/dev/null && ! grep -q '^pr: none' "$YAML"; } \
     && ok "V11c: no se dispara por empuje; en GitHub lo dispara el pedido a main" || no "V11c: el pipeline tiene trigger propio o no declara el pedido a main"
 fi
 
@@ -337,7 +337,7 @@ if [ -f "$YAML" ]; then
     || no "V14b: el pipeline no reintenta, o el modo aviso sigue fijo en el YAML"
   # El banco NO se reintenta: su rojo frena. (Su paso no puede nombrar el reintento.)
   BANCO_PASO=$(awk "/displayName: 'Banco de controles/{exit} /- script: \|/{buf=\"\"} {buf=buf\"\\n\"\$0} END{print buf}" "$YAML")
-  echo "$BANCO_PASO" | grep -q 'reintent' \
+  echo "$BANCO_PASO" | grep 'reintent' >/dev/null \
     && no "V14c: 🔴 el paso del banco reintenta — el rojo del banco tiene que frenar" \
     || ok "V14c: el banco no se reintenta (sólo las suites)"
 fi
@@ -357,10 +357,10 @@ if [ -f "$YAML" ]; then
   else
     MALCLASIF=""
     for p in pipelines/azure-pipelines-lab.yml pipelines/templates/plantilla-lab.yml scripts/lab.js; do
-      printf '%s\n' "$p" | grep -qE "$PATRON" || MALCLASIF="$MALCLASIF $p(no-código)"
+      printf '%s\n' "$p" | grep -E "$PATRON" >/dev/null || MALCLASIF="$MALCLASIF $p(no-código)"
     done
     for p in docs/lab.md guides/lab.md README.md; do
-      printf '%s\n' "$p" | grep -qE "$PATRON" && MALCLASIF="$MALCLASIF $p(código)"
+      printf '%s\n' "$p" | grep -E "$PATRON" >/dev/null && MALCLASIF="$MALCLASIF $p(código)"
     done
     [ -z "$MALCLASIF" ] \
       && ok "V15a: 🔴 el regex clasifica pipelines/x.yml y pipelines/templates/x.yml como código, y docs/x.md no" \
@@ -406,11 +406,11 @@ if [ -f "$YAML" ]; then
     MALCLASIF=""
     # las rutas de la fuente lógica agent-skills (contrato C7): las tres carpetas y sus dos archivos sueltos
     for p in skills/lab-skill/SKILL.md packs/lab-pack/pack.json agents/lab-reviewer.md .tycon/post-commit-ignore .githooks/pre-commit-skills; do
-      printf '%s\n' "$p" | grep -qE "$PATRON" || MALCLASIF="$MALCLASIF $p(no-código)"
+      printf '%s\n' "$p" | grep -E "$PATRON" >/dev/null || MALCLASIF="$MALCLASIF $p(no-código)"
     done
     # espejo: documentación, y lo que sólo se parece (otra carpeta con ese nombre adentro, otro archivo de .tycon/)
     for p in specs/story-lab.md guides/skills/lab.md docs/packs/lab.md skills-notes.md .tycon/ado-config.yaml; do
-      printf '%s\n' "$p" | grep -qE "$PATRON" && MALCLASIF="$MALCLASIF $p(código)"
+      printf '%s\n' "$p" | grep -E "$PATRON" >/dev/null && MALCLASIF="$MALCLASIF $p(código)"
     done
     [ -z "$MALCLASIF" ] \
       && ok "V16a: 🔴 un cambio que toca sólo skills/, packs/ o agents/ cuenta como código (corren el banco y las suites); uno de specs/, no" \
@@ -519,13 +519,13 @@ STUB
     # V16e — el primer par del freno de castellano es el del arnés y se sostiene solo: C-22 de githook-livefire.test.sh
     # lo saca del yml con este mismo corte y lo corre en un laboratorio
     PAR=$(awk '/spanish-names\.js --range/{p=1} p{print} p&&/falla /{exit}' "$YAML")
-    { [ "$(printf '%s\n' "$PAR" | grep -c .)" = 2 ] && printf '%s\n' "$PAR" | sed -n 1p | grep -q -- '--source arnes' \
-      && ! printf '%s\n' "$PAR" | grep -q 'agent-skills'; } \
+    { [ "$(printf '%s\n' "$PAR" | grep -c .)" = 2 ] && printf '%s\n' "$PAR" | sed -n 1p | grep -- '--source arnes' >/dev/null \
+      && ! printf '%s\n' "$PAR" | grep 'agent-skills' >/dev/null; } \
       && ok "V16e: el primer par «spanish-names.js --range … / falla» es el de la fuente arnes, en dos líneas que se sostienen solas" \
       || no "V16e: el corte que usa githook-livefire C-22 ya no da el par del arnés: $(printf '%s' "$PAR" | tr '\n' '|' | cut -c1-200)"
 
     # V16f — el lint no llama al pre-commit (un hook en el servidor mira lo stageado: nada)
-    grep -vE '^[[:space:]]*#' "$L16/lint.tpl" | grep -qE '\.githooks/pre-commit|core\.hooksPath' \
+    grep -vE '^[[:space:]]*#' "$L16/lint.tpl" | grep -E '\.githooks/pre-commit|core\.hooksPath' >/dev/null \
       && no "V16f: 🔴 el lint llama al pre-commit: en el servidor mira un índice vacío y sale verde sin haber mirado" \
       || ok "V16f: el lint no llama al pre-commit: sus controles son pasos del yml, con --range"
   fi

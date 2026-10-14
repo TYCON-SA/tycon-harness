@@ -317,7 +317,7 @@ instalar9() {  # <líneas esperadas> <VAR=valor>...
 }
 instalar9 3 TYCON_X=0
 ORDER_LOG="$(tr '\n' '|' < "${T}/orden.txt")"
-echo "${ORDER_LOG}" | grep -Eq '^barrido\|subida [^|]*\|bajada [^|]*\|$' && ok "T9 el instalador lanza barrido → subida → bajada, en ese orden" || mal "T9 orden anotado: ${ORDER_LOG} $(head -3 "${T}/inst.log")"
+echo "${ORDER_LOG}" | grep -E '^barrido\|subida [^|]*\|bajada [^|]*\|$' >/dev/null && ok "T9 el instalador lanza barrido → subida → bajada, en ese orden" || mal "T9 orden anotado: ${ORDER_LOG} $(head -3 "${T}/inst.log")"
 [ -f "${T}/home/.claude/.tycon-pipeline/upload-runs.log" ] && [ -f "${T}/home/.claude/.tycon-pipeline/download-runs.log" ] && ok "T9 subida y bajada dejan su registro (upload-runs.log, download-runs.log)" || mal "T9 falta algún registro: $(ls "${T}/home/.claude/.tycon-pipeline" 2>&1)"
 instalar9 2 TYCON_NO_DOWNLOAD_RUNS=1
 grep -q bajada "${T}/orden.txt" && mal "T9 con TYCON_NO_DOWNLOAD_RUNS=1 igual bajó" || ok "T9 TYCON_NO_DOWNLOAD_RUNS=1 apaga la bajada"
@@ -339,7 +339,7 @@ instalar9 0 CHECK_ONLY=1
 printf "setTimeout(() => require('fs').appendFileSync(process.env.ORDER_LOG, 'recoleccion ' + process.argv.slice(2).join(' ') + '\\\\n'), 200);\n" > "${T}/scripts/metrics/collect-findings.js"
 instalar9 4 TYCON_X=0
 ORDER_LOG="$(tr '\n' '|' < "${T}/orden.txt")"
-echo "${ORDER_LOG}" | grep -Eq '^barrido\|recoleccion [^|]*\|subida [^|]*\|bajada [^|]*\|$' \
+echo "${ORDER_LOG}" | grep -E '^barrido\|recoleccion [^|]*\|subida [^|]*\|bajada [^|]*\|$' >/dev/null \
   && ok "T9b el instalador lanza barrido → recolección → subida → bajada" \
   || mal "T9b orden anotado: ${ORDER_LOG} — rojo previo: sin el paso, los hallazgos no viajan nunca"
 [ -f "${T}/home/.claude/.tycon-pipeline/collect-findings.log" ] \

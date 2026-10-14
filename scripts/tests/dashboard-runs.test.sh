@@ -1444,7 +1444,7 @@ python3 -c "
 import json,sys
 m=json.loads(sys.argv[1]); x=[c['cambios'] for c in m['corridas'] if not (c.get('cambios') or {}).get('git') or c['cambios']['git'].get('estado')=='sin_cambio'][0]
 assert not any(e.get('o') for e in x['lista']) and any(x['archivos'][e['a']]['f']=='p.Id' for e in x['lista']), x['lista']
-" "${J}" && cliente "${T}/o.html" all | grep -q 'según la conversación: lo hecho por consola se reconoce por aproximación y lo de los subagentes no está' \
+" "${J}" && cliente "${T}/o.html" all | grep 'según la conversación: lo hecho por consola se reconoce por aproximación y lo de los subagentes no está' >/dev/null \
   && ok "2.19-T16 sin cambio de git: la lista de hoy, con la consola marcada aproximada y dicho en la tarjeta" || mal "2.19-T16 sin cambio: $(echo "${DG}" | grep -o 'según la conversación.\{0,120\}' | head -1)"
 rm -rf "${T}"
 
@@ -1477,7 +1477,7 @@ grep -q 't-val">400<' <<< "${P}" && ok "7.12-T1 la vista trae la mediana de paso
 grep -q 'n=4 de 4 corridas' <<< "${P}" && ok "7.12-T1 con su denominador al lado (n=4 de 4)" || mal "7.12-T1 falta el denominador: ${P:0:300}"
 [ "$(echo "${F}" | distancia_fichas 'Pasos de una corrida' 'Tokens de una corrida')" = "1" ] && ok "7.12-T1 la ficha de pasos está PEGADA a la de tokens" || mal "7.12-T1 la ficha de pasos no está al lado del consumo"
 # …y la recalcula el filtro: con «sólo con consumo medido» sigue ahí, con un rango imposible desaparece.
-cliente "${T}/o.html" impossible-filter | grep -q 'Pasos de una corrida' && mal "7.12-T1 con el filtro imposible la ficha siguió mostrando un número" || ok "7.12-T1 el filtro la recalcula (rango imposible → sin número)"
+cliente "${T}/o.html" impossible-filter | grep 'Pasos de una corrida' >/dev/null && mal "7.12-T1 con el filtro imposible la ficha siguió mostrando un número" || ok "7.12-T1 el filtro la recalcula (rango imposible → sin número)"
 
 # ── 7.12-T4 · la serie por mes, en el cliente (AC 4) @story-7.12 @ac-4 ──
 # 🔴 rojo previo: publicar sólo la mediana global → no hay contra qué comparar la línea base.
@@ -1541,7 +1541,7 @@ volcado "${T}/r" "${S1}" "2026-08-10T05:00:00Z" '{"consumo":{"respuestas":100}}'
 volcado "${T}/r" "${S2}" "2026-08-20T05:00:00Z" '{"consumo":{"respuestas":300}}'
 volcado "${T}/r" "${S3}" "2026-09-05T05:00:00Z" '{"consumo":{"respuestas":500},"marker":{"startedAt":null}}'
 generar "${T}/r" "${T}/o.html" "${T}/log"
-cliente "${T}/o.html" container fichas | grep -q 'n=3 de 3 corridas' && ok "7.12-T4c la ficha cuenta las 3 medidas" || mal "7.12-T4c la ficha no cuenta las 3 medidas"
+cliente "${T}/o.html" container fichas | grep 'n=3 de 3 corridas' >/dev/null && ok "7.12-T4c la ficha cuenta las 3 medidas" || mal "7.12-T4c la ficha no cuenta las 3 medidas"
 G="$(cliente "${T}/o.html" container gpasos)"
 grep -q '1 corrida medida no trae su fecha de arranque' <<< "${G}" && ok "7.12-T4c la serie dice la que quedó afuera por no tener fecha" || mal "7.12-T4c la serie descarta una corrida medida sin decirlo"
 

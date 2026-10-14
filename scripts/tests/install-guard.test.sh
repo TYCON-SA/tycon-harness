@@ -57,7 +57,7 @@ else
   for clave in usuario password; do
     declara "{\"servers\":[{\"host\":\"x.database.windows.net\",\"environment\":\"produccion\",\"keychain\":\"tycon-prod-x\",\"$clave\":\"lo-que-sea\"}]}"
     salida="$(node "$LINT" --staged --repo "$TMP/r" 2>&1)"; rc=$?
-    if [ "$rc" -ne 0 ] && printf '%s' "$salida" | grep -q "$clave"; then ok "T11b · la clave de más «${clave}» rechaza el archivo y la nombra"
+    if [ "$rc" -ne 0 ] && printf '%s' "$salida" | grep "$clave" >/dev/null; then ok "T11b · la clave de más «${clave}» rechaza el archivo y la nombra"
     else no "T11b · «${clave}» no fue rechazada (rc=$rc) — salida: $(printf '%s' "$salida" | head -1)"; fi
   done
 
@@ -89,7 +89,7 @@ else
   # AC 1: producción se declara en el repo con migraciones (database/ o BD/)
   declara "$BUENO"; rm -rf "$TMP/r/database"
   salida="$(node "$LINT" --staged --repo "$TMP/r" 2>&1)"; rc=$?
-  if [ "$rc" -ne 0 ] && printf '%s' "$salida" | grep -q "sin migraciones"; then ok "T11j · producción declarada en un repo sin migraciones se rechaza"
+  if [ "$rc" -ne 0 ] && printf '%s' "$salida" | grep "sin migraciones" >/dev/null; then ok "T11j · producción declarada en un repo sin migraciones se rechaza"
   else no "T11j · producción en un repo sin database/ ni BD/ pasó (rc=$rc)"; fi
   declara '{"servers":[{"host":"test.bizuit.example","environment":"no-produccion"}]}'; rm -rf "$TMP/r/database"
   if node "$LINT" --staged --repo "$TMP/r" >/dev/null 2>&1; then ok "T11k · un servidor de no-producción se declara en cualquier repo"
@@ -98,7 +98,7 @@ fi
 
 # el enganche en el pre-commit global: sin `|| true` (el AC 1 dice que RECHAZA)
 if grep -q "lint-production-json.js" "$HOOK_GLOBAL" 2>/dev/null; then
-  if grep -A3 "lint-production-json.js" "$HOOK_GLOBAL" | grep -q "|| true"; then
+  if grep -A3 "lint-production-json.js" "$HOOK_GLOBAL" | grep "|| true" >/dev/null; then
     no 'T11i · el lint está enganchado con "|| true": no rechazaría nada'
   else ok "T11i · el lint está enganchado en el pre-commit global y su veredicto manda"; fi
 else
@@ -487,7 +487,7 @@ if [ -f "$INSTALADOR" ]; then
   #    equivocado (moría por el remoto, antes de buscar el cliente). Se instala desde el mismo clon que T19a —que sí
   #    llega a instalar— y se exige que el motivo sea el cliente de base.
   salida="$(TYCON_ADO_ORG="$ORG_T19" TYCON_PROD_TEST_PATH="$TMP/sinsql:/usr/bin:/bin" TYCON_PROD_ROOT="$TMP/sys4" TYCON_PROD_HARNESS="$HARNESS_T19" TYCON_PROD_ACCEPT_ORIGIN=1 bash "$INSTALADOR" --no-sudo 2>&1)"; rc=$?
-  if [ "$rc" != 0 ] && ! printf '%s' "$salida" | grep -q "✅" && printf '%s' "$salida" | grep -qi "sqlcmd"; then ok "T19i · sin el cliente de base falla diciéndolo, y no termina en ✅"
+  if [ "$rc" != 0 ] && ! printf '%s' "$salida" | grep "✅" >/dev/null && printf '%s' "$salida" | grep -i "sqlcmd" >/dev/null; then ok "T19i · sin el cliente de base falla diciéndolo, y no termina en ✅"
   else no "T19i · sin sqlcmd terminó rc=$rc, dijo ✅ o no nombró al cliente: $(printf '%s' "$salida" | tail -1)"; fi
 fi
 
@@ -680,14 +680,14 @@ JS
       recorre31 "$R31" "$TMP/trazas-31c"
       salida="$(juez31 "$TMP/trazas-31c" "$TMP/req-31c.json" 2>&1)"; rc=$?
       mv "$TMP/apartado-31" "$R31/opt/tycon/$falta"
-      if [ "$rc" -ne 0 ] && printf '%s' "$salida" | grep -q "$(basename "$falta")"; then ok "T31a · control: sin /opt/tycon/${falta}, la prueba falla y lo nombra"
+      if [ "$rc" -ne 0 ] && printf '%s' "$salida" | grep "$(basename "$falta")" >/dev/null; then ok "T31a · control: sin /opt/tycon/${falta}, la prueba falla y lo nombra"
       else no "T31a · control: sin /opt/tycon/${falta} la prueba no falló o no lo nombró (rc=$rc): $(printf '%s' "$salida" | head -c 200)"; fi
     done
     # y el otro lado: con las mismas trazas, un instalador cuyo ARCHIVOS no lleva una biblioteca que el freno requiere
     grep -v '^  scripts/lib/tycon-config.js$' "$INSTALADOR" > "$TMP/install-guard-sin-31.sh"
     salida="$(node "$JUEZ31" "$R31/opt/tycon" "$TMP/install-guard-sin-31.sh" "$TMP/req-31d.json" "$TMP"/trazas-31/pasa "$TMP"/trazas-31/entero \
       "$TMP"/trazas-31/base "$TMP"/trazas-31/basesinraiz "$TMP"/trazas-31/llaves 2>&1)"; rc=$?
-    if [ "$rc" -ne 0 ] && printf '%s' "$salida" | grep -q "scripts/lib/tycon-config.js.*ARCHIVOS"; then
+    if [ "$rc" -ne 0 ] && printf '%s' "$salida" | grep "scripts/lib/tycon-config.js.*ARCHIVOS" >/dev/null; then
       ok "T31a · control: con scripts/lib/tycon-config.js fuera de ARCHIVOS, la prueba falla y lo nombra"
     else no "T31a · control: sacar tycon-config.js de ARCHIVOS no hizo fallar la prueba (rc=$rc): $(printf '%s' "$salida" | head -c 200)"; fi
 
@@ -854,47 +854,47 @@ json.dump(m, open(p, "w"), indent=1)' "$NUEVA32/.tycon-release.json" "$LIB32"
       env -u TF_BUILD HOME="$CASA32" TYCON_REPOS_ROOT="$REPOS32" TYCON_GUIDES_DIR="$1" TYCON_PROD_ROOT="$SYS30" TYCON_PRODUCTION_AUTOINSTALL=0 node "$NOTICE32" --report 2>&1
     }
     out="$(aviso32 "$ARNES30")"
-    if printf '%s' "$out" | grep -q "al día y con sus huellas" && ! printf '%s' "$out" | grep -q "alguien lo cambió\|NO coincide"; then
+    if printf '%s' "$out" | grep "al día y con sus huellas" >/dev/null && ! printf '%s' "$out" | grep "alguien lo cambió\|NO coincide" >/dev/null; then
       ok "T32h · recién instalado desde la versión bajada, con un clon declarado de otros bytes: «al día», nunca «alguien lo cambió»"
     else no "T32h · el aviso tras instalar desde la versión bajada — $(printf '%s' "$out" | head -c 400)"; fi
     out="$(aviso32 "$NUEVA32")"
-    if printf '%s' "$out" | grep -q "el freno quedó viejo: reinstalalo" && printf '%s' "$out" | grep -q "repos-root.js" && ! printf '%s' "$out" | grep -q "alguien lo cambió"; then
+    if printf '%s' "$out" | grep "el freno quedó viejo: reinstalalo" >/dev/null && printf '%s' "$out" | grep "repos-root.js" >/dev/null && ! printf '%s' "$out" | grep "alguien lo cambió" >/dev/null; then
       ok "T32i · el arnés bajó una versión nueva: «el freno quedó viejo: reinstalalo», nombrando la biblioteca, y no «alguien lo cambió»"
     # el rojo muestra las líneas que decide la condición, no los primeros 400 caracteres: el 2026-10-14 (public-ci, Node 22)
     # salió rojo con «quedó viejo» y «repos-root.js» a la vista, y lo que lo hizo fallar quedó fuera del recorte
     else no "T32i · con una versión nueva — $(printf '%s\n' "$out" | grep -E 'quedó viejo|repos-root\.js|alguien lo cambió' | head -8 | cut -c1-300) [$(printf '%s' "$out" | wc -l | tr -d ' ') líneas]"; fi
     cp "$INST32" "$TMP/guardada-32.js"; printf '\n// retocada en /opt\n' >> "$INST32"
     out="$(aviso32 "$ARNES30")"
-    if printf '%s' "$out" | grep -q "alguien lo cambió" && printf '%s' "$out" | grep -q "repos-root.js"; then ok "T32j · gemelo: tocar una biblioteca en /opt sigue gritando «alguien lo cambió» y la nombra"
+    if printf '%s' "$out" | grep "alguien lo cambió" >/dev/null && printf '%s' "$out" | grep "repos-root.js" >/dev/null; then ok "T32j · gemelo: tocar una biblioteca en /opt sigue gritando «alguien lo cambió» y la nombra"
     else no "T32j · con una biblioteca retocada en /opt — $(printf '%s' "$out" | head -c 400)"; fi
     cp "$TMP/guardada-32.js" "$INST32"
     # un freno instalado antes de la constancia: con una versión nueva es «quedó viejo»; igual a la que corre, «al día»
     mv "$CONST32" "$TMP/constancia-32.json"
     out="$(aviso32 "$NUEVA32")"
-    if printf '%s' "$out" | grep -q "el freno quedó viejo: reinstalalo" && ! printf '%s' "$out" | grep -q "alguien lo cambió"; then ok "T32k · sin constancia (instalado antes de ella) y una versión nueva: «quedó viejo», no «alguien lo cambió»"
+    if printf '%s' "$out" | grep "el freno quedó viejo: reinstalalo" >/dev/null && ! printf '%s' "$out" | grep "alguien lo cambió" >/dev/null; then ok "T32k · sin constancia (instalado antes de ella) y una versión nueva: «quedó viejo», no «alguien lo cambió»"
     else no "T32k · sin constancia — $(printf '%s' "$out" | head -c 400)"; fi
     # una constancia que está y no se lee no se toma por «no hay»: se dice
     printf '{ roto' > "$CONST32"
     out="$(aviso32 "$ARNES30")"
-    if printf '%s' "$out" | grep -q "no pude leer la constancia"; then ok "T32l · una constancia ilegible se dice (no se lee como «no hay constancia»)"
+    if printf '%s' "$out" | grep "no pude leer la constancia" >/dev/null; then ok "T32l · una constancia ilegible se dice (no se lee como «no hay constancia»)"
     else no "T32l · con la constancia rota — $(printf '%s' "$out" | head -c 400)"; fi
     mv -f "$TMP/constancia-32.json" "$CONST32"
     # y un manifiesto de la versión que corre ilegible: «no pude leer», no «al día»
     ROTA32="$TMP/arnes-32-rota"; rm -rf "$ROTA32"; cp -R "$ARNES30" "$ROTA32"; printf '{ roto' > "$ROTA32/.tycon-release.json"
     out="$(aviso32 "$ROTA32")"
-    if printf '%s' "$out" | grep -q "no pude leer el manifiesto de la versión bajada" && ! printf '%s' "$out" | grep -q "al día y con sus huellas"; then ok "T32m · con el manifiesto de la versión ilegible lo dice, y no da «al día»"
+    if printf '%s' "$out" | grep "no pude leer el manifiesto de la versión bajada" >/dev/null && ! printf '%s' "$out" | grep "al día y con sus huellas" >/dev/null; then ok "T32m · con el manifiesto de la versión ilegible lo dice, y no da «al día»"
     else no "T32m · con el manifiesto roto — $(printf '%s' "$out" | head -c 400)"; fi
     # el aviso corriendo DESDE la versión bajada con TYCON_GUIDES_DIR apuntando al clon (una variable que quedó de antes
     # de la mudanza): el arnés que corre es la versión bajada, y contra ella se juzga
     CORRE32="$TMP/arnes-32-corre"; rm -rf "$CORRE32"; cp -R "$ARNES30" "$CORRE32"; mkdir -p "$CORRE32/scripts/hooks"; cp "$NOTICE32" "$CORRE32/scripts/hooks/"
     out="$(env -u TF_BUILD HOME="$CASA32" TYCON_REPOS_ROOT="$REPOS32" TYCON_GUIDES_DIR="$INTERNO32" TYCON_PROD_ROOT="$SYS30" TYCON_PRODUCTION_AUTOINSTALL=0 node "$CORRE32/scripts/hooks/produccion-notice.js" --report 2>&1)"
-    if printf '%s' "$out" | grep -q "al día y con sus huellas" && ! printf '%s' "$out" | grep -q "alguien lo cambió\|NO coincide"; then
+    if printf '%s' "$out" | grep "al día y con sus huellas" >/dev/null && ! printf '%s' "$out" | grep "alguien lo cambió\|NO coincide" >/dev/null; then
       ok "T32n · con TYCON_GUIDES_DIR apuntando al clon, el aviso que corre desde la versión bajada juzga contra ella: «al día»"
     else no "T32n · el aviso desde la versión bajada con TYCON_GUIDES_DIR al clon — $(printf '%s' "$out" | head -c 400)"; fi
     # y la constancia rota con una biblioteca retocada: se dicen las dos cosas, ninguna calla
     cp "$CONST32" "$TMP/constancia-32.json"; printf '{ roto' > "$CONST32"; cp "$INST32" "$TMP/guardada-32.js"; printf '\n// retocada en /opt\n' >> "$INST32"
     out="$(aviso32 "$ARNES30")"
-    if printf '%s' "$out" | grep -q "no pude leer la constancia" && printf '%s' "$out" | grep -q "repos-root.js" && printf '%s' "$out" | grep -q "🔴"; then ok "T32o · constancia ilegible y una biblioteca retocada: lo dice, en rojo, y nombra la biblioteca"
+    if printf '%s' "$out" | grep "no pude leer la constancia" >/dev/null && printf '%s' "$out" | grep "repos-root.js" >/dev/null && printf '%s' "$out" | grep "🔴" >/dev/null; then ok "T32o · constancia ilegible y una biblioteca retocada: lo dice, en rojo, y nombra la biblioteca"
     else no "T32o · constancia rota con una biblioteca retocada — $(printf '%s' "$out" | head -c 400)"; fi
     cp "$TMP/guardada-32.js" "$INST32"; mv -f "$TMP/constancia-32.json" "$CONST32"
     rm -f "$SYS30/usr/bin/security"

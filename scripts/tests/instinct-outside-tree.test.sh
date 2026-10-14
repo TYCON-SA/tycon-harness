@@ -87,7 +87,7 @@ hash_de() { node -e 'process.stdout.write(require("crypto").createHash("sha1").u
 primer_nivel() { ls -A "$1" | sort | tr '\n' ' '; }
 # como root los permisos no impiden leer ni borrar: los casos de «no se deja leer» no se pueden medir
 ES_ROOT=0; [ "$(id -u)" = 0 ] && ES_ROOT=1
-sin_inbox_en_casa() { ! find "$1" -type d -name inbox 2>/dev/null | grep -q .; }
+sin_inbox_en_casa() { ! find "$1" -type d -name inbox 2>/dev/null | grep . >/dev/null; }
 
 # Las observaciones (un patrón repetido en Totora) y el modelo de mentira: propone lo de $LAB/<caso>.propuestas y revisa
 # con $LAB/<caso>.revision; guarda el pedido de revisión que recibió en $LAB/<caso>.revision-recibida.txt
@@ -118,7 +118,7 @@ modelo() { # $1=caso  $2=propuestas: las-dos | nueva | cubierta | dos-cubiertas 
 #!/usr/bin/env bash
 if [ "\$1" = "--version" ]; then echo "claude de mentira"; exit 0; fi
 entrada=\$(cat)
-if printf '%s' "\$entrada" | grep -q "You are checking proposed"; then
+if printf '%s' "\$entrada" | grep "You are checking proposed" >/dev/null; then
   printf '%s' "\$entrada" > "$LAB/$caso.revision-recibida.txt"
   cat "$LAB/$caso.revision"
 else
@@ -167,8 +167,8 @@ for forma in siempre propia; do
   else bad "T10 estado $forma" "rc=$RC casa=[$(ls "$CASA" "$CASA/pending" "$CASA/descartados" 2>&1 | tr '\n' ' ')] árbol=[$(primer_nivel "$A")] $(tail -3 "$LAB/t10-$forma.log" | tr '\n' ' ')"; fi
   # el resumen de descartadas de `list`, con UN lugar: nombra la carpeta real (la de la casa), no una del árbol
   revisar "$A" "$H" list
-  if [ "$RC" = 0 ] && echo "$SAL" | grep -qF "1 propuesta(s) que la revisión del observer descartó" \
-    && echo "$SAL" | grep -qF "movela de $CASA/descartados/ a $CASA/pending/" && [ ! -e "$A/inbox" ]; then
+  if [ "$RC" = 0 ] && echo "$SAL" | grep -F "1 propuesta(s) que la revisión del observer descartó" >/dev/null \
+    && echo "$SAL" | grep -F "movela de $CASA/descartados/ a $CASA/pending/" >/dev/null && [ ! -e "$A/inbox" ]; then
     ok "T10 estado «${forma}»: list resume la descartada y dice de qué carpeta a cuál moverla (las de la casa)"
   else bad "T10 resumen de descartadas, un lugar ($forma)" "rc=$RC $(echo "$SAL" | tail -3 | tr '\n' '|' | cut -c1-400)"; fi
 done
@@ -220,9 +220,9 @@ if [ "$(ls "$CASA/descartados/"*"-$H_CUB.yaml" 2>/dev/null | wc -l | tr -d ' ')"
 else bad "T11 (d) una sola en la casa" "$(ls "$CASA/descartados" 2>&1 | tr '\n' ' ') $(grep -h veces_descartada "$CASA/descartados/"*.yaml 2>&1 | tr '\n' ' ')"; fi
 # el resumen de `list` con descartadas en DOS lugares: la propuesta una vez, con el mayor contador, y las dos carpetas
 revisar "$A" "$H" list
-if [ "$RC" = 0 ] && echo "$SAL" | grep -qF "1 propuesta(s) que la revisión del observer descartó" && echo "$SAL" | grep -qF "(descartada 5 veces)" \
+if [ "$RC" = 0 ] && echo "$SAL" | grep -F "1 propuesta(s) que la revisión del observer descartó" >/dev/null && echo "$SAL" | grep -F "(descartada 5 veces)" >/dev/null \
   && [ "$(echo "$SAL" | grep -F "Están en:" | grep -o "inbox/instincts/descartados/" | wc -l | tr -d ' ')" = 2 ] \
-  && echo "$SAL" | grep -F "Están en:" | grep -qF "$CASA/descartados/" && echo "$SAL" | grep -F "Están en:" | grep -qE '(: |, )inbox/instincts/descartados/'; then
+  && echo "$SAL" | grep -F "Están en:" | grep -F "$CASA/descartados/" >/dev/null && echo "$SAL" | grep -F "Están en:" | grep -E '(: |, )inbox/instincts/descartados/' >/dev/null; then
   ok "T11 (d) list resume la descartada una vez (5 veces) aunque su constancia esté en dos lugares, y nombra las dos carpetas"
 else bad "T11 (d) resumen con dos lugares" "rc=$RC $(echo "$SAL" | tail -4 | tr '\n' '|' | cut -c1-500)"; fi
 # (e) un lugar de lectura cuya carpeta de descartados existe y no se deja leer: el observador lo DICE y sigue
@@ -232,7 +232,7 @@ if [ "$ES_ROOT" = 1 ]; then echo "⏭️  T11 (e) descartados ilegible: NO MEDID
   mkdir -p "$A/inbox/instincts/descartados"; chmod 000 "$A/inbox/instincts/descartados"
   observar "$A" "$H" "$B"
   chmod 755 "$A/inbox/instincts/descartados"
-  if [ "$RC" = 0 ] && grep -F "no pude leer inbox/instincts/descartados" "$LAB/t11e.log" | grep -qF "contador" \
+  if [ "$RC" = 0 ] && grep -F "no pude leer inbox/instincts/descartados" "$LAB/t11e.log" | grep -F "contador" >/dev/null \
     && [ "$(grep -c "no pude leer inbox/instincts/descartados" "$LAB/t11e.log")" = 1 ] \
     && grep -qF 'veces_descartada: 1' "$CASA/descartados/"*"-$H_CUB.yaml" 2>/dev/null && ls "$CASA/descartados/"*"-$H_CUB2.yaml" > /dev/null 2>&1 && grep -qF "Done." "$LAB/t11e.log"; then
     ok "T11 (e) con descartados ilegible en un lugar de lectura el observador no se cae: lo dice UNA vez aunque descarte dos propuestas (el contador puede quedar corto) y deja las dos constancias en la casa"
@@ -245,7 +245,7 @@ if [ "$ES_ROOT" = 1 ]; then echo "⏭️  T11 (g) decididos ilegibles: NO MEDIDO
   chmod 000 "$A/inbox/instincts/promoted"
   observar "$A" "$H" "$B"
   chmod 755 "$A/inbox/instincts/promoted"
-  if [ "$RC" = 0 ] && grep -F "no pude leer inbox/instincts/promoted" "$LAB/t11g.log" | grep -qF "puede volver a proponerse" \
+  if [ "$RC" = 0 ] && grep -F "no pude leer inbox/instincts/promoted" "$LAB/t11g.log" | grep -F "puede volver a proponerse" >/dev/null \
     && [ "$(grep -c "no pude leer inbox/instincts/promoted" "$LAB/t11g.log")" = 1 ] && ls "$CASA/pending/"*"-$H_NUEVA.yaml" > /dev/null 2>&1; then
     ok "T11 (g) con las aprobadas de un lugar de lectura ilegibles, el observador lo dice una vez (puede volver a proponerse) y sigue"
   else bad "T11 (g) decididos ilegibles" "rc=$RC avisos=$(grep -c 'no pude leer' "$LAB/t11g.log") $(tail -3 "$LAB/t11g.log" | tr '\n' ' ' | cut -c1-300)"; fi
@@ -253,7 +253,7 @@ fi
 # (h) un lugar entero sin mirar (la configuración de la máquina, rota): el observador lo anota antes de proponer
 A=$(arbol t11h); casa casa-t11h bajada; printf '{ esto no es JSON' > "$H/.tycon/config.json"; B=$(modelo t11h nueva)
 observar "$A" "$H" "$B"
-if [ "$RC" = 0 ] && grep -F "no es JSON válido" "$LAB/t11h.log" | grep -qF "puede volver a proponerse" && ls "$CASA/pending/"*"-$H_NUEVA.yaml" > /dev/null 2>&1; then
+if [ "$RC" = 0 ] && grep -F "no es JSON válido" "$LAB/t11h.log" | grep -F "puede volver a proponerse" >/dev/null && ls "$CASA/pending/"*"-$H_NUEVA.yaml" > /dev/null 2>&1; then
   ok "T11 (h) con la configuración de la máquina rota, el observador anota que el clon que mantiene no se lee, y sigue"
 else bad "T11 (h) configuración rota" "rc=$RC $(tail -3 "$LAB/t11h.log" | tr '\n' ' ' | cut -c1-300)"; fi
 # (f) la mudanza de descartados de antes de la 8.12 no corre en un árbol que no trae su buzón: nada pasa a inbox/
@@ -281,15 +281,15 @@ instinto "$CASA/pending/20261003-rep-d3d3d3d3d3.yaml" "MARCA-REPETIDA" "hash: d3
 instinto "$A/inbox/instincts/pending/20261003-rep-d3d3d3d3d3.yaml" "MARCA-REPETIDA" "hash: d3d3d3d3d3" "confidence: 0.9"
 revisar "$A" "$H" list; LISTA="$SAL"; RC_L=$RC
 revisar "$A" "$H" bulk-list; BULK="$SAL"
-if [ "$RC_L" = 0 ] && echo "$LISTA" | grep -qF "MARCA-DEL-ARBOL" && echo "$LISTA" | grep -qF "MARCA-DE-LA-CASA" \
-  && [ "$(echo "$LISTA" | grep -c 'trigger: MARCA-REPETIDA')" = 1 ] && echo "$LISTA" | grep -qF "también en inbox/instincts" \
-  && echo "$LISTA" | grep -qF "$CASA" && echo "$LISTA" | grep -qF "3 instincts pending" \
+if [ "$RC_L" = 0 ] && echo "$LISTA" | grep -F "MARCA-DEL-ARBOL" >/dev/null && echo "$LISTA" | grep -F "MARCA-DE-LA-CASA" >/dev/null \
+  && [ "$(echo "$LISTA" | grep -c 'trigger: MARCA-REPETIDA')" = 1 ] && echo "$LISTA" | grep -F "también en inbox/instincts" >/dev/null \
+  && echo "$LISTA" | grep -F "$CASA" >/dev/null && echo "$LISTA" | grep -F "3 instincts pending" >/dev/null \
   && [ "$(echo "$BULK" | grep -c .)" = 3 ] && [ "$(echo "$BULK" | grep -c d3d3d3d3d3)" = 1 ]; then
   ok "T12 Promote_ListShowStatus_AllPlaces_CreateNothing — list y bulk-list traen lo del árbol y lo de la casa, el hash repetido una vez con su nota, y dicen de qué lugar es cada grupo"
 else bad "T12 list en todos los lugares" "rc=$RC_L $(echo "$LISTA" | head -14 | tr '\n' '|' | cut -c1-500) bulk=$(echo "$BULK" | tr '\n' '|')"; fi
 revisar "$A" "$H" show b1b1b1b1b1; S1="$SAL"; R1=$RC
 revisar "$A" "$H" show c2c2c2c2c2; S2="$SAL"; R2=$RC
-if [ "$R1" = 0 ] && [ "$R2" = 0 ] && echo "$S1" | grep -qF "# File: $A/inbox/instincts/pending/20261001-arbol-b1b1b1b1b1.yaml" && echo "$S2" | grep -qF "# File: $CASA/pending/20261002-casa-c2c2c2c2c2.yaml"; then
+if [ "$R1" = 0 ] && [ "$R2" = 0 ] && echo "$S1" | grep -F "# File: $A/inbox/instincts/pending/20261001-arbol-b1b1b1b1b1.yaml" >/dev/null && echo "$S2" | grep -F "# File: $CASA/pending/20261002-casa-c2c2c2c2c2.yaml" >/dev/null; then
   ok "T12 show encuentra la del árbol y la de la casa e imprime la ruta de cada una"
 else bad "T12 show" "rc=$R1/$R2 $(echo "$S1" | head -1) · $(echo "$S2" | head -1)"; fi
 # show también encuentra lo decidido y lo descartado, en cualquiera de los lugares
@@ -299,14 +299,14 @@ instinto "$A/inbox/instincts/descartados/20260922-de-a7a7a7a7a7.yaml" "MARCA-DES
 OKS=0
 for par in "e5e5e5e5e5|$A/inbox/instincts/promoted/20260920-ap-e5e5e5e5e5.yaml" "f6f6f6f6f6|$CASA/archived/20260921-re-f6f6f6f6f6.yaml" "a7a7a7a7a7|$A/inbox/instincts/descartados/20260922-de-a7a7a7a7a7.yaml"; do
   revisar "$A" "$H" show "${par%%|*}"
-  [ "$RC" = 0 ] && echo "$SAL" | grep -qF "# File: ${par#*|}" && OKS=$((OKS+1))
+  [ "$RC" = 0 ] && echo "$SAL" | grep -F "# File: ${par#*|}" >/dev/null && OKS=$((OKS+1))
 done
 [ "$OKS" = 3 ] && ok "T12 show encuentra una aprobada y una descartada del árbol y una rechazada de la casa" \
   || bad "T12 show en los demás estados" "encontró $OKS de 3"
 rm -f "$A/inbox/instincts/promoted/"*.yaml "$CASA/archived/"*.yaml "$A/inbox/instincts/descartados/"*.yaml
 revisar "$A" "$H" status
-if [ "$RC" = 0 ] && echo "$SAL" | grep -F "$CASA" | grep -qE '^\* .*pending 2 · promoted 0 · archived 0 · drafts 0 · descartados 0.*acá se escribe' \
-  && echo "$SAL" | grep -F "inbox/instincts — " | grep -v "$CASA" | grep -qE '^  .*pending 2 ' && echo "$SAL" | grep -qF "paths.maintained"; then
+if [ "$RC" = 0 ] && echo "$SAL" | grep -F "$CASA" | grep -E '^\* .*pending 2 · promoted 0 · archived 0 · drafts 0 · descartados 0.*acá se escribe' >/dev/null \
+  && echo "$SAL" | grep -F "inbox/instincts — " | grep -v "$CASA" | grep -E '^  .*pending 2 ' >/dev/null && echo "$SAL" | grep -F "paths.maintained" >/dev/null; then
   ok "T12 status: una línea por lugar con sus cuentas, el de escritura marcado, y dice que la versión bajada no declara el clon que mantiene"
 else bad "T12 status" "rc=$RC $(echo "$SAL" | tr '\n' '|' | cut -c1-500)"; fi
 # una carpeta de pendientes que EXISTE y no se deja leer no es «no hay pendientes»: list lo dice y status pone «?»
@@ -315,8 +315,8 @@ if [ "$ES_ROOT" = 1 ]; then echo "⏭️  T12 carpeta ilegible: NO MEDIDO — co
   revisar "$A" "$H" list; L_SAL="$SAL"; L_RC=$RC
   revisar "$A" "$H" status
   chmod 755 "$A/inbox/instincts/pending"
-  if [ "$L_RC" = 0 ] && echo "$L_SAL" | grep -qF "no pude leer inbox/instincts/pending" && echo "$L_SAL" | grep -qF "MARCA-DE-LA-CASA" \
-    && [ "$RC" = 0 ] && echo "$SAL" | grep -F "inbox/instincts — " | grep -v "$CASA" | grep -qF "pending ? ·" && echo "$SAL" | grep -qF "? = esa carpeta existe y no la pude leer"; then
+  if [ "$L_RC" = 0 ] && echo "$L_SAL" | grep -F "no pude leer inbox/instincts/pending" >/dev/null && echo "$L_SAL" | grep -F "MARCA-DE-LA-CASA" >/dev/null \
+    && [ "$RC" = 0 ] && echo "$SAL" | grep -F "inbox/instincts — " | grep -v "$CASA" | grep -F "pending ? ·" >/dev/null && echo "$SAL" | grep -F "? = esa carpeta existe y no la pude leer" >/dev/null; then
     ok "T12 una carpeta de pendientes ilegible se dice: list avisa (y muestra lo de la casa) y status pone «?» en vez de 0"
   else bad "T12 carpeta ilegible" "list rc=$L_RC [$(echo "$L_SAL" | grep -c 'no pude leer')] status=[$(echo "$SAL" | tr '\n' '|' | cut -c1-400)]"; fi
   # lo mismo para los demás comandos que leen: show y approve avisan y dicen «no encontrado», sin traza; y el resumen
@@ -326,9 +326,9 @@ if [ "$ES_ROOT" = 1 ]; then echo "⏭️  T12 carpeta ilegible: NO MEDIDO — co
   revisar "$A" "$H" approve b1b1b1b1b1; A_SAL="$SAL"; A_RC=$RC
   revisar "$A" "$H" list
   chmod 755 "$A/inbox/instincts/pending" "$A/inbox/instincts/descartados"; rmdir "$A/inbox/instincts/descartados"
-  if [ "$S_RC" = 1 ] && echo "$S_SAL" | grep -qF "no pude leer inbox/instincts/pending" && echo "$S_SAL" | grep -qF "no encontrado" && ! echo "$S_SAL" | grep -qE '^\s+at ' \
-    && [ "$A_RC" = 1 ] && echo "$A_SAL" | grep -qF "no pude leer inbox/instincts/pending" && ! echo "$A_SAL" | grep -qE '^\s+at ' \
-    && [ -f "$A/inbox/instincts/pending/20261001-arbol-b1b1b1b1b1.yaml" ] && echo "$SAL" | grep -qF "no pude leer inbox/instincts/descartados"; then
+  if [ "$S_RC" = 1 ] && echo "$S_SAL" | grep -F "no pude leer inbox/instincts/pending" >/dev/null && echo "$S_SAL" | grep -F "no encontrado" >/dev/null && ! echo "$S_SAL" | grep -E '^\s+at ' >/dev/null \
+    && [ "$A_RC" = 1 ] && echo "$A_SAL" | grep -F "no pude leer inbox/instincts/pending" >/dev/null && ! echo "$A_SAL" | grep -E '^\s+at ' >/dev/null \
+    && [ -f "$A/inbox/instincts/pending/20261001-arbol-b1b1b1b1b1.yaml" ] && echo "$SAL" | grep -F "no pude leer inbox/instincts/descartados" >/dev/null; then
     ok "T12 show y approve sobre una carpeta ilegible avisan y dicen «no encontrado» (sin traza, sin tocar nada), y list avisa los descartados ilegibles"
   else bad "T12 show/approve/resumen con carpeta ilegible" "show rc=$S_RC [$(echo "$S_SAL" | head -2 | tr '\n' '|')] approve rc=$A_RC [$(echo "$A_SAL" | head -2 | tr '\n' '|')] list=[$(echo "$SAL" | grep -c 'descartados')]"; fi
 fi
@@ -338,15 +338,15 @@ for caso in "no-existe|$LAB/un-clon-que-no-esta|esa carpeta no existe" "sin-buzo
   nombre="${caso%%|*}"; resto="${caso#*|}"
   A2=$(arbol "t12-nota-$nombre"); casa "casa-t12-nota-$nombre" bajada "${resto%%|*}"
   revisar "$A2" "$H" status
-  if [ "$RC" = 0 ] && echo "$SAL" | grep -F "! " | grep -qF "${resto#*|}" && ! echo "$SAL" | grep -qF "no declara el clon" && [ "$(echo "$SAL" | grep -c ' — pending ')" = 1 ]; then
+  if [ "$RC" = 0 ] && echo "$SAL" | grep -F "! " | grep -F "${resto#*|}" >/dev/null && ! echo "$SAL" | grep -F "no declara el clon" >/dev/null && [ "$(echo "$SAL" | grep -c ' — pending ')" = 1 ]; then
     ok "T12 status, clon declarado que $nombre: no lo suma y dice por qué"
   else bad "T12 status, clon $nombre" "rc=$RC $(echo "$SAL" | tr '\n' '|' | cut -c1-400)"; fi
 done
 A2=$(arbol t12-nota-rota); casa casa-t12-nota-rota bajada; printf '{ esto no es JSON' > "$H/.tycon/config.json"
 revisar "$A2" "$H" status; S_SAL="$SAL"; S_RC=$RC
 revisar "$A2" "$H" list
-if [ "$S_RC" = 0 ] && echo "$S_SAL" | grep -F "! " | grep -qF "no es JSON válido" && ! echo "$S_SAL" | grep -qF "no declara el clon" \
-  && [ "$RC" = 0 ] && echo "$SAL" | grep -qF "no es JSON válido" && echo "$SAL" | grep -qF "No hay instincts pending."; then
+if [ "$S_RC" = 0 ] && echo "$S_SAL" | grep -F "! " | grep -F "no es JSON válido" >/dev/null && ! echo "$S_SAL" | grep -F "no declara el clon" >/dev/null \
+  && [ "$RC" = 0 ] && echo "$SAL" | grep -F "no es JSON válido" >/dev/null && echo "$SAL" | grep -F "No hay instincts pending." >/dev/null; then
   ok "T12 con la configuración rota, status y list lo dicen (no «no declara el clon», ni «no hay pendientes» a secas)"
 else bad "T12 configuración rota" "status rc=$S_RC [$(echo "$S_SAL" | tr '\n' '|' | cut -c1-300)] list=[$(echo "$SAL" | tr '\n' '|' | cut -c1-200)]"; fi
 # con todo vacío, ninguno crea nada
@@ -370,8 +370,8 @@ instinto "$CASA/pending/20261003-rep-d3d3d3d3d3.yaml" "MARCA-REPETIDA" "hash: d3
 instinto "$A/inbox/instincts/pending/20261003-rep-d3d3d3d3d3.yaml" "MARCA-REPETIDA" "hash: d3d3d3d3d3" "engram_promoted: false"
 revisar "$A" "$H" approve c2c2c2c2c2; AP="$SAL"; R_AP=$RC
 if [ "$R_AP" = 0 ] && [ -f "$CASA/promoted/20261002-casa-c2c2c2c2c2.yaml" ] && [ ! -e "$CASA/pending/20261002-casa-c2c2c2c2c2.yaml" ] \
-  && [ -f "$CASA/drafts/c2c2c2c2c2-advisor-noexiste-c1.md" ] && echo "$AP" | grep -qF "Archivo: $CASA/drafts/c2c2c2c2c2-advisor-noexiste-c1.md" \
-  && ! echo "$AP" | grep -qi "commite" && [ ! -e "$A/inbox/instincts/promoted" ] && [ ! -e "$A/inbox/instincts/drafts" ]; then
+  && [ -f "$CASA/drafts/c2c2c2c2c2-advisor-noexiste-c1.md" ] && echo "$AP" | grep -F "Archivo: $CASA/drafts/c2c2c2c2c2-advisor-noexiste-c1.md" >/dev/null \
+  && ! echo "$AP" | grep -i "commite" >/dev/null && [ ! -e "$A/inbox/instincts/promoted" ] && [ ! -e "$A/inbox/instincts/drafts" ]; then
   ok "T13 Promote_ApproveReject_StayInTheirPlace — aprobar la de la casa la mueve dentro de la casa; el borrador nace ahí, con su ruta completa y sin el consejo de commitear"
 else bad "T13 approve en la casa" "rc=$R_AP casa=[$(ls "$CASA" "$CASA/promoted" "$CASA/drafts" 2>&1 | tr '\n' ' ')] $(echo "$AP" | grep -i 'archivo\|commit' | tr '\n' '|')"; fi
 revisar "$A" "$H" reject b1b1b1b1b1 --reason "prueba"; R_RE=$RC
@@ -382,7 +382,7 @@ if [ "$R_RE" = 0 ] && [ -f "$A/inbox/instincts/archived/20261001-arbol-b1b1b1b1b
 else bad "T13 reject en el árbol / approve en el clon" "rc=$R_RE/$R_CL árbol=[$(ls "$A/inbox/instincts" 2>&1 | tr '\n' ' ')] clon=[$(ls "$CLON/inbox/instincts" "$CLON/inbox/instincts/promoted" 2>&1 | tr '\n' ' ')]"; fi
 revisar "$A" "$H" approve d3d3d3d3d3
 if [ "$RC" = 0 ] && [ -f "$CASA/promoted/20261003-rep-d3d3d3d3d3.yaml" ] && [ -f "$A/inbox/instincts/pending/20261003-rep-d3d3d3d3d3.yaml" ] \
-  && echo "$SAL" | grep -F "otra copia" | grep -qF "inbox/instincts/pending/20261003-rep-d3d3d3d3d3.yaml"; then
+  && echo "$SAL" | grep -F "otra copia" | grep -F "inbox/instincts/pending/20261003-rep-d3d3d3d3d3.yaml" >/dev/null; then
   ok "T13 el mismo hash en dos lugares: actúa sobre el primero (el de escritura) y dice dónde quedó la otra copia"
 else bad "T13 hash repetido" "rc=$RC $(echo "$SAL" | grep -i 'copia' | head -2 | tr '\n' '|') casa=[$(ls "$CASA/promoted" 2>&1 | tr '\n' ' ')]"; fi
 
@@ -393,8 +393,8 @@ if [ "$ES_ROOT" = 1 ]; then echo "⏭️  T13 borrado que falla: NO MEDIDO — c
   mkdir -p "$CASA/promoted"; chmod 555 "$CASA/pending"
   revisar "$A" "$H" approve b8b8b8b8b8
   chmod 755 "$CASA/pending"
-  if [ "$RC" = 0 ] && [ -f "$CASA/promoted/20261005-bo-b8b8b8b8b8.yaml" ] && echo "$SAL" | grep -qF "no pude borrar" \
-    && echo "$SAL" | grep -qF "Borrala a mano" && echo "$SAL" | grep -qF 'topic_key: "instinct-b8b8b8b8b8"' && ! echo "$SAL" | grep -qE '^\s+at '; then
+  if [ "$RC" = 0 ] && [ -f "$CASA/promoted/20261005-bo-b8b8b8b8b8.yaml" ] && echo "$SAL" | grep -F "no pude borrar" >/dev/null \
+    && echo "$SAL" | grep -F "Borrala a mano" >/dev/null && echo "$SAL" | grep -F 'topic_key: "instinct-b8b8b8b8b8"' >/dev/null && ! echo "$SAL" | grep -E '^\s+at ' >/dev/null; then
     ok "T13 si la pendiente no se puede borrar, la aprobación queda escrita, se dice y la memoria a guardar sale igual (sin traza)"
   else bad "T13 borrado que falla" "rc=$RC $(echo "$SAL" | head -6 | tr '\n' '|' | cut -c1-400)"; fi
   # y lo mismo al rechazar
@@ -402,8 +402,8 @@ if [ "$ES_ROOT" = 1 ]; then echo "⏭️  T13 borrado que falla: NO MEDIDO — c
   mkdir -p "$CASA/archived"; chmod 555 "$CASA/pending"
   revisar "$A" "$H" reject c9c9c9c9c9 --reason "prueba"
   chmod 755 "$CASA/pending"
-  if [ "$RC" = 0 ] && grep -qF 'rejection_reason: "prueba"' "$CASA/archived/20261006-re-c9c9c9c9c9.yaml" 2>/dev/null && echo "$SAL" | grep -qF "no pude borrar" \
-    && echo "$SAL" | grep -qF "Borrala a mano" && ! echo "$SAL" | grep -qE '^\s+at '; then
+  if [ "$RC" = 0 ] && grep -qF 'rejection_reason: "prueba"' "$CASA/archived/20261006-re-c9c9c9c9c9.yaml" 2>/dev/null && echo "$SAL" | grep -F "no pude borrar" >/dev/null \
+    && echo "$SAL" | grep -F "Borrala a mano" >/dev/null && ! echo "$SAL" | grep -E '^\s+at ' >/dev/null; then
     ok "T13 lo mismo al rechazar: el rechazo queda escrito con su motivo, y se dice que la pendiente no se pudo borrar"
   else bad "T13 borrado que falla al rechazar" "rc=$RC $(echo "$SAL" | head -4 | tr '\n' '|' | cut -c1-300)"; fi
 fi
@@ -441,7 +441,7 @@ for forma in sin-la-pieza pieza-que-falla registro-que-no-abre; do
   esac
   disparar "$A" "$H"; esperar "$A/corrio.txt" "--notify"; esperar "$RESERVA" LINEA-DEL-OBSERVADOR
   if [ "$RC" = 0 ] && [ "$(cat "$A/corrio.txt" 2>/dev/null)" = "--notify" ] && [ ! -e "$A/inbox" ] && [ ! -e "$A/una" ] && sin_inbox_en_casa "$H" \
-    && grep -F "de reserva" "$RESERVA" 2>/dev/null | grep -qF -- "$MOTIVO" && grep -qF LINEA-DEL-OBSERVADOR "$RESERVA"; then
+    && grep -F "de reserva" "$RESERVA" 2>/dev/null | grep -F -- "$MOTIVO" >/dev/null && grep -qF LINEA-DEL-OBSERVADOR "$RESERVA"; then
     ok "T14 $forma: el observador corre igual, nada se crea en el árbol, y el registro de reserva trae el motivo y lo que dijo el observador"
   else bad "T14 $forma" "rc=$RC corrió=$(cat "$A/corrio.txt" 2>/dev/null || echo no) árbol=[$(primer_nivel "$A")] reserva=[$(head -c 300 "$RESERVA" 2>&1 | tr '\n' '|')]"; fi
 done
@@ -469,7 +469,7 @@ A=$(arbol t15 limpio sin-estado); casa casa-t15; B=$(modelo t15 las-dos); ANTES=
 observar "$A" "$H" "$B"; RC_O=$RC
 revisar "$A" "$H" list
 if [ "$RC_O" = 0 ] && grep -qF "tycon-home.js" "$LAB/t15.log" && [ "$(grep -c . "$LAB/t15.log")" = 1 ] && [ "$(primer_nivel "$A")" = "$ANTES" ] && sin_inbox_en_casa "$H" \
-  && [ "$RC" = 1 ] && echo "$SAL" | grep -qF "tycon-home.js" && ! echo "$SAL" | grep -qE '^\s+at '; then
+  && [ "$RC" = 1 ] && echo "$SAL" | grep -F "tycon-home.js" >/dev/null && ! echo "$SAL" | grep -E '^\s+at ' >/dev/null; then
   ok "T15 NoStateResolver_ObserverSaysIt_PromoteExits1 — sin tycon-home.js: el observador lo dice en una línea y sale 0 sin escribir; el comando de revisión sale 1 con el motivo, sin traza"
 else bad "T15 sin tycon-home.js" "observador rc=$RC_O [$(tail -2 "$LAB/t15.log" | tr '\n' ' ')] · list rc=$RC [$(echo "$SAL" | head -3 | tr '\n' '|')] árbol=[$(primer_nivel "$A")]"; fi
 

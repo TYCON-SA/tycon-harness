@@ -77,7 +77,7 @@ correr
   && ok "…y el resumen trae el título de los que lo tienen y las ramas del de auto-complete" \
   || no "el resumen no trae títulos/ramas: $(cat "$RES" 2>/dev/null | tr '\n' ' ')"
 grep -q "Esta corrida incluye 3 pull request" "$RES" 2>/dev/null && ok "…y dice cuántos PR trae" || no "el resumen no dice cuántos PR trae"
-printf '%s\n' "$OUT" | grep -q "^##vso\[task.uploadsummary\]" && ok "…y publica el resumen en la corrida" || no "no publicó el resumen: $OUT"
+printf '%s\n' "$OUT" | grep "^##vso\[task.uploadsummary\]" >/dev/null && ok "…y publica el resumen en la corrida" || no "no publicó el resumen: $OUT"
 
 # ---------------------------------------------------------------- T2b. el merge de un pedido de GitHub
 # Un pedido mergeado desde GitHub por el skill se titula «asunto (#N)»: el número va al final. Sin leer esa forma, el
@@ -146,8 +146,8 @@ SYSTEM_COLLECTIONURI="https://dev.azure.com/o/" SYSTEM_TEAMPROJECT="P" BUILD_REP
 # «5001» como número suelto: el resumen nombra commits por su sha corto, y uno como «b5001e5» lo contenía (public-ci,
 # 2026-10-14, Node 24: rojo sin ninguna tarea en el resumen)
 SUELTO_5001='(^|[^0-9a-fA-F])5001([^0-9a-fA-F]|$)'
-printf 'anotado en el commit de versión b5001e5.\n' | grep -qE "$SUELTO_5001" && no "el patrón del 5001 toma un sha corto" || ok "el patrón del 5001 no toma un sha corto (b5001e5)"
-printf '%s\n' 'la tarea 5001 quedó nombrada' | grep -qE "$SUELTO_5001" && ok "…y sí ve el 5001 suelto" || no "el patrón del 5001 no ve el número suelto"
+printf 'anotado en el commit de versión b5001e5.\n' | grep -E "$SUELTO_5001" >/dev/null && no "el patrón del 5001 toma un sha corto" || ok "el patrón del 5001 no toma un sha corto (b5001e5)"
+printf '%s\n' 'la tarea 5001 quedó nombrada' | grep -E "$SUELTO_5001" >/dev/null && ok "…y sí ve el 5001 suelto" || no "el patrón del 5001 no ve el número suelto"
 { [ "$RC" -eq 0 ] && [ "$(etiquetas)" = "PR-43 " ] && ! grep -qE "$SUELTO_5001" "$RES"; } 2>/dev/null \
   && ok "🔴 en un repo de Azure, «(#N)» al final de un merge no es un pedido: sin etiqueta" \
   || no "tarea etiquetada como pedido en Azure: [$(etiquetas)] $(cat "$RES" 2>/dev/null | tr '\n' ' ')"
@@ -168,7 +168,7 @@ BUILD_REPOSITORY_PROVIDER="GitHub" correr
 nuevo_repo; bump_backend "$(git rev-parse HEAD)"
 cambio_en main "fix: push directo a main"
 correr
-{ [ "$RC" -eq 0 ] && ! printf '%s\n' "$OUT" | grep -q "addbuildtag" && ! printf '%s\n' "$OUT" | grep -q "logissue"; } \
+{ [ "$RC" -eq 0 ] && ! printf '%s\n' "$OUT" | grep "addbuildtag" >/dev/null && ! printf '%s\n' "$OUT" | grep "logissue" >/dev/null; } \
   && ok "corrida sin merges: ninguna etiqueta, sin aviso, sale 0" \
   || no "corrida sin merges: rc=$RC out=[$OUT]"
 
@@ -176,7 +176,7 @@ correr
 nuevo_repo; bump_backend "$(git rev-parse HEAD)"; merge_a dev main "Merged PR 31: algo"
 SHALLOW="$TMP/shallow$N"; git clone -q --depth 1 "file://$R" "$SHALLOW"
 R="$SHALLOW"; correr
-{ [ "$RC" -eq 0 ] && ! printf '%s\n' "$OUT" | grep -q "addbuildtag" && printf '%s\n' "$OUT" | grep -q "^##vso\[task.logissue type=warning\]"; } \
+{ [ "$RC" -eq 0 ] && ! printf '%s\n' "$OUT" | grep "addbuildtag" >/dev/null && printf '%s\n' "$OUT" | grep "^##vso\[task.logissue type=warning\]" >/dev/null; } \
   && ok "clon shallow: no etiqueta, AVISA y sale 0 (nunca un verde mudo)" \
   || no "clon shallow: rc=$RC out=[$OUT]"
 
@@ -213,7 +213,7 @@ git checkout -q main; git commit -q --allow-empty -m "chore: bump version to 1.0
 merge_a dev main "Merged PR 92: el de esta corrida"
 correr
 [ "$(etiquetas)" = "PR-92 " ] && ok "marca Commit: que no resuelve: se cae al commit del bot (sólo PR-92)…" || no "marca inválida dio [$(etiquetas)] — $ERR"
-printf '%s\n' "$ERR" | grep -q "no es un ancestro válido" && ok "…y avisa que puede faltar un pull request" || no "no avisó por la marca inválida: $ERR"
+printf '%s\n' "$ERR" | grep "no es un ancestro válido" >/dev/null && ok "…y avisa que puede faltar un pull request" || no "no avisó por la marca inválida: $ERR"
 
 # ---------------------------------------------------------------- T8. merge sin número
 nuevo_repo; bump_backend "$(git rev-parse HEAD)"
@@ -246,15 +246,15 @@ RUTA=$(printf '%s\n' "$OUT" | sed -n 's/^##vso\[task\.uploadsummary\]//p' | head
 
 # ---------------------------------------------------------------- T11. no pudo: sale 0 con aviso
 R="$TMP/no-existe"; correr
-{ [ "$RC" -eq 0 ] && printf '%s\n' "$OUT" | grep -q "^##vso\[task.logissue type=warning\]"; } \
+{ [ "$RC" -eq 0 ] && printf '%s\n' "$OUT" | grep "^##vso\[task.logissue type=warning\]" >/dev/null; } \
   && ok "repo inexistente: aviso y sale 0" || no "repo inexistente: rc=$RC out=[$OUT]"
 SOLO="$TMP/solo"; mkdir -p "$SOLO"; cp "$SH" "$SOLO/"
 nuevo_repo; bump_backend "$(git rev-parse HEAD)"; merge_a dev main "Merged PR 81: x"
 (cd "$R" && bash "$SOLO/label-prs.sh" --repo "$R") >"$TMP/out" 2>"$TMP/err"; RC=$?; OUT="$(cat "$TMP/out")"
-{ [ "$RC" -eq 0 ] && printf '%s\n' "$OUT" | grep -q "^##vso\[task.logissue type=warning\]" && ! printf '%s\n' "$OUT" | grep -q "addbuildtag"; } \
+{ [ "$RC" -eq 0 ] && printf '%s\n' "$OUT" | grep "^##vso\[task.logissue type=warning\]" >/dev/null && ! printf '%s\n' "$OUT" | grep "addbuildtag" >/dev/null; } \
   && ok "sin run-base.sh al lado: aviso y sale 0" || no "sin la lib al lado: rc=$RC out=[$OUT]"
 nuevo_repo; correr
-{ [ "$RC" -eq 0 ] && printf '%s\n' "$OUT" | grep -q "^##vso\[task.logissue type=warning\]"; } \
+{ [ "$RC" -eq 0 ] && printf '%s\n' "$OUT" | grep "^##vso\[task.logissue type=warning\]" >/dev/null; } \
   && ok "historia de un solo commit (sin base): aviso y sale 0" || no "sin base: rc=$RC out=[$OUT]"
 
 # ---------------------------------------------------------------- T12. sin commit del bot
@@ -263,7 +263,7 @@ merge_a dev main "Merged PR 71: primero"
 merge_a dev main "Merged PR 72: segundo"
 correr
 [ "$(etiquetas)" = "PR-72 " ] && ok "sin commit de versión del bot: cae a HEAD~1 (sólo PR-72)…" || no "sin commit del bot: [$(etiquetas)]"
-printf '%s\n' "$ERR" | grep -q "HEAD~1" && ok "…y lo dice" || no "no dijo que cayó a HEAD~1: $ERR"
+printf '%s\n' "$ERR" | grep "HEAD~1" >/dev/null && ok "…y lo dice" || no "no dijo que cayó a HEAD~1: $ERR"
 
 # ---------------------------------------------------------------- T20. el skill fija el mensaje de merge
 SKILLS="${TYCON_SKILLS_DIR:-$HOME/.claude/agent-skills/skills}"
@@ -281,13 +281,13 @@ else
   S93=$(awk '/^### 9b\.3/{f=1} /^### 9b\.4/{f=0} f' "$PASO")
   S92=$(awk '/^### 9b\.2/{f=1} /^### 9b\.3/{f=0} f' "$PASO")
   UPD93=$(printf '%s\n' "$S93" | awk '/az repos pr update/{f=1} f{print} f&&!/\\$/{f=0}')
-  { printf '%s' "$UPD93" | grep -q -- "--merge-commit-message" && printf '%s' "$UPD93" | grep -q -- "--auto-complete true" \
-    && printf '%s' "$UPD93" | grep -q -- "--squash false" && printf '%s' "$UPD93" | grep -qE -- "$DSB"; } \
+  { printf '%s' "$UPD93" | grep -- "--merge-commit-message" >/dev/null && printf '%s' "$UPD93" | grep -- "--auto-complete true" >/dev/null \
+    && printf '%s' "$UPD93" | grep -- "--squash false" >/dev/null && printf '%s' "$UPD93" | grep -E -- "$DSB" >/dev/null; } \
     && ok "skill 9b.3: después de crear, un update fija el mensaje con las cuatro opciones juntas" \
     || no "skill 9b.3 sin el update con --merge-commit-message y las cuatro opciones — $PISTA"
   UPD92=$(printf '%s\n' "$S92" | awk '/az repos pr update/{f=1} f{print} f&&!/\\$/{f=0}')
-  { printf '%s' "$UPD92" | grep -q -- "--title" && printf '%s' "$UPD92" | grep -q -- "--merge-commit-message" \
-    && printf '%s' "$UPD92" | grep -qE -- "$DSB"; } \
+  { printf '%s' "$UPD92" | grep -- "--title" >/dev/null && printf '%s' "$UPD92" | grep -- "--merge-commit-message" >/dev/null \
+    && printf '%s' "$UPD92" | grep -E -- "$DSB" >/dev/null; } \
     && ok "skill 9b.2: el update del PR reusado alinea título, descripción y mensaje" \
     || no "skill 9b.2 sin --title / --merge-commit-message / --delete-source-branch — $PISTA"
   { grep -q "Merged PR" "$PASO" && grep -q 'merge: <source> -> <target>' "$PASO" && grep -qF '[skip ci]' "$PASO" && grep -qF '***NO_CI***' "$PASO"; } \

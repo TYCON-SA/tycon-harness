@@ -446,7 +446,7 @@ grep -qi 'devbs' "${C}/out" "${C}/err" && mal "T9 el nombre de la máquina apare
 RCA="$(TYCON_MACHINE_CASE="Devbs-MacBook-Pro" contar "${C}" --alias)"; AL2="$(tr -d '[:space:]' < "${C}/out")"
 AL3="$(node "${REDUCTOR}" --alias-of "Devbs-MacBook-Pro" 2>/dev/null | tr -d '[:space:]')"
 AL4="$(node "${REDUCTOR}" --alias-of "devbs-macbook-pro.local" 2>/dev/null | tr -d '[:space:]')"
-if echo "${AL1}" | grep -Eq '^maq-[0-9a-f]{6}$' && [ "${AL1}" = "${AL2}" ] && [ "${AL1}" = "${AL3}" ] && [ "${AL1}" = "${AL4}" ]; then
+if echo "${AL1}" | grep -E '^maq-[0-9a-f]{6}$' >/dev/null && [ "${AL1}" = "${AL2}" ] && [ "${AL1}" = "${AL3}" ] && [ "${AL1}" = "${AL4}" ]; then
   ok "T9 alias ${AL1}: la misma huella en la cuenta, en --alias y en --alias-of (con o sin .local, con mayúsculas)"
 else mal "T9 alias: cuenta=${AL1} --alias=${AL2} --alias-of=${AL3} normalizado=${AL4} (rc ${RC}/${RCA})"; fi
 C="$(nuevo_caso t9-nombre)"; gates_basicos "${C}/local"

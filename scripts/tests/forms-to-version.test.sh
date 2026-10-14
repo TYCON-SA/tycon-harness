@@ -119,15 +119,15 @@ D="$TMP/rebasado"; mkdir -p "$D"
   git commit -qam "chore: update form versions [skip ci]" -m "Commit: $SHA_A"
   echo m3 >> H/src/i.ts && git commit -qam "Merged PR 3: H" ) >/dev/null 2>&1
 L=$(bash "$SH_V" --repo "$D" 2>"$TMP/e9.txt")
-echo "$L" | grep -qx "G" && ok "🔴 el bump rebasado NO esconde el merge que quedó debajo (G se versiona)" \
+echo "$L" | grep -x "G" >/dev/null && ok "🔴 el bump rebasado NO esconde el merge que quedó debajo (G se versiona)" \
   || no "🔴 G NO se versiona — sale con código nuevo y versión vieja, el host lo deduplica y el cambio no llega, en verde. Dio: [$(echo $L)]"
-echo "$L" | grep -qx "H" && ok "…y el formulario de la corrida propia también (H)" || no "H no se versiona: [$(echo $L)]"
+echo "$L" | grep -x "H" >/dev/null && ok "…y el formulario de la corrida propia también (H)" || no "H no se versiona: [$(echo $L)]"
 
 # ---------------------------------------------------------------- 9b. y NO re-versiona lo de la corrida anterior
 # El gemelo del caso 9, y el que casi se me escapa: si la base es el commit del que partió la corrida
 # anterior, el commit de versiones de ESA corrida cae dentro del rango. Con un diff plano, F volvería
 # a versionarse en cada corrida para siempre — el arreglo del caso 9 pagado con ruido perpetuo.
-echo "$L" | grep -qx "F" \
+echo "$L" | grep -x "F" >/dev/null \
   && no "🔴 F se re-versiona: el commit de versiones de la corrida anterior está entrando al rango" \
   || ok "…y NO vuelve a versionar lo que ya versionó la corrida anterior (F queda afuera)"
 
@@ -183,7 +183,7 @@ VER_EN_BASE=$(cd "$D4" && git show "$BASE_V":A/package.json 2>/dev/null | grep -
   || no "🔴 --base da la versión $VER_EN_BASE: el pipeline calcularía un número YA PUBLICADO, el host lo deduplica y el cambio no llega"
 
 # Y el rango de "qué cambió" sigue siendo el amplio: A tiene que estar.
-echo "$(bash "$SH_V" --repo "$D4" 2>/dev/null)" | grep -qx "A" \
+echo "$(bash "$SH_V" --repo "$D4" 2>/dev/null)" | grep -x "A" >/dev/null \
   && ok "…y el rango de qué cambió sigue viendo el merge (A se versiona)" \
   || no "🔴 al separar las bases se perdió el formulario del merge"
 
@@ -218,7 +218,7 @@ VER=$(cd "$D5" && git show "$BV":A/package.json 2>/dev/null | grep -o '"version"
 [ "$VER" = "1.1.0" ] \
   && ok "🔴 la marca VACÍA sirve: la versión publicada se lee de ella (1.1.0, la que subió la persona)" \
   || no "🔴 la versión publicada salió '$VER' en vez de 1.1.0 — el número siguiente repetiría lo ya publicado y el cambio no llegaría"
-echo "$(bash "$SH_V" --repo "$D5" 2>/dev/null)" | grep -qx "A" \
+echo "$(bash "$SH_V" --repo "$D5" 2>/dev/null)" | grep -x "A" >/dev/null \
   && ok "…y el rango de qué cambió ve el merge posterior a la marca" \
   || no "🔴 con la marca vacía se perdió el formulario del merge siguiente"
 

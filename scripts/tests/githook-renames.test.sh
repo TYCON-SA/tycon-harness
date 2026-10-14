@@ -143,7 +143,7 @@ if called parity; then no "espejo: tocar un bloque corrió además la paridad, q
 # ═════════════════════════════════════════════════════════════════════════════════════════════════════════════
 # L · una lista GRANDE en el índice (revisión del tramo 2, vuelta 1, 2026-10-04)
 # ═════════════════════════════════════════════════════════════════════════════════════════════════════════════
-# EL CASO. Los disparos eran `git diff … | grep -q …` con `pipefail`: `grep -q` se va con la primera ruta que coincide,
+# EL CASO. Los disparos eran `git diff … | grep …` con `pipefail`: `grep -q` se va con la primera ruta que coincide, >/dev/null
 # y si a git le queda lista por escribir muere por SIGPIPE (141). Con la paridad, `if ! … | grep -q` daba verdadero y
 # el hook salía 0 SIN correr ningún control; con los bloques y el quoting de bash 3.2, el disparo daba falso y su control
 # se salteaba. Medido con 6000 archivos en el índice. Las rutas vigiladas van ANTES de la carga (`zz-bulk/` ordena

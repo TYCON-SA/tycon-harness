@@ -36,7 +36,7 @@ C3=$(limpio "${CORRIDA[@]}" AGENT_TEMPDIRECTORY="$J3" -- 'registro_despliegue de
 C4=$(limpio "${CORRIDA[@]}" AGENT_TEMPDIRECTORY="$J4" -- 'registro_despliegue desplegado plugin totorabackend 1.0.214 9999999' | linea | jq -r .clave)
 C5=$(limpio "${CORRIDA[@]}" SYSTEM_STAGENAME=DeployAcmeStaging SYSTEM_JOBNAME=DeployToAcmeStaging AGENT_TEMPDIRECTORY="$J5" -- 'registro_despliegue desplegado plugin totorabackend 1.0.214 abc1234' | linea | jq -r .clave)
 C6=$(limpio "${CORRIDA[@]}" ENVIRONMENT_NAME=production AGENT_TEMPDIRECTORY="$J6" -- 'registro_despliegue desplegado plugin totorabackend 1.0.214 abc1234' | linea | jq -r .clave)
-if printf '%s' "$C1" | grep -qE '^d-[0-9a-f]{16}$'; then ok "T2 la clave tiene forma d-<16 hexadecimales> ($C1)"; else no "T2 la clave no tiene forma d-<16 hex>: '$C1'"; fi
+if printf '%s' "$C1" | grep -E '^d-[0-9a-f]{16}$' >/dev/null; then ok "T2 la clave tiene forma d-<16 hexadecimales> ($C1)"; else no "T2 la clave no tiene forma d-<16 hex>: '$C1'"; fi
 [ -n "$C1" ] && [ "$C1" = "$C2" ] && ok "T2 otra corrida (otro build, otro ts, hash largo con el mismo prefijo) → MISMA clave" || no "🔴 T2 dos corridas del mismo despliegue dan claves distintas ($C1 vs $C2) — la 2.11 lo contaría dos veces"
 [ "$C1" != "$C3" ] && ok "T2 otra versión → otra clave" || no "T2 otra versión dio la misma clave"
 [ "$C1" != "$C4" ] && ok "T2 otro hash → otra clave" || no "T2 otro hash dio la misma clave"
@@ -88,7 +88,7 @@ env -i PATH="$PATH" HOME="$TMP" TF_BUILD=True AGENT_TEMPDIRECTORY="$D" bash -c "
 
 # Revisión (fallos silenciosos): un --environment explícito que no se pudo dejar para el humo no se pierde callado
 SAL=$(env -i PATH="$PATH" HOME="$TMP" TF_BUILD=True AGENT_TEMPDIRECTORY="$TMP/no-existe/job" bash -c "set -u; . '$AYUDANTE'; registro_declarar_entorno produccion; echo rc=\$?")
-printf '%s' "$SAL" | grep -q 'logissue type=warning' && printf '%s' "$SAL" | grep -q 'rc=1' && ok "T9 sin directorio del job, declarar el entorno avisa y devuelve 1" || no "🔴 T9 declarar sin directorio del job se perdió en silencio: $SAL"
+printf '%s' "$SAL" | grep 'logissue type=warning' >/dev/null && printf '%s' "$SAL" | grep 'rc=1' >/dev/null && ok "T9 sin directorio del job, declarar el entorno avisa y devuelve 1" || no "🔴 T9 declarar sin directorio del job se perdió en silencio: $SAL"
 
 # Pase adversarial: perder la marca (o la etiqueta) no escribe nada por stderr — el 2>/dev/null tiene que tapar la redirección
 D=$(nuevo_tmp); mkdir -p "$D/tycon-despliegue"; chmod 555 "$D/tycon-despliegue"
@@ -115,15 +115,15 @@ SAL=$(env -i PATH="$PATH" HOME="$TMP" TF_BUILD=True bash -c "set -uo pipefail; b
 # ── T13 · texto de afuera no fija comandos de la corrida ─────────────────────────────────────────
 D=$(nuevo_tmp)
 SAL=$(limpio "${CORRIDA[@]}" AGENT_TEMPDIRECTORY="$D" -- 'registro_despliegue desplegado plugin "x##vso[task.setvariable variable=a]1" 1.0.214 abc1234; echo rc=$?')
-printf '%s' "$SAL" | grep -q '^\[registro-despliegue\]' && no "🔴 T13 un artefacto con ##vso[ se anotó" || ok "T13 artefacto con ##vso[ → no se anota"
-printf '%s' "$SAL" | grep -q '##vso\[task.setvariable' && no "🔴 T13 el ##vso[task.setvariable llegó a stdout: $SAL" || ok "T13 …y el comando no aparece en ningún lado de la salida"
-printf '%s' "$SAL" | grep -q 'logissue type=warning' && printf '%s' "$SAL" | grep -q 'rc=1' && ok "T13 …avisa con el nombre saneado y devuelve 1" || no "T13 no avisó o no devolvió 1: $SAL"
+printf '%s' "$SAL" | grep '^\[registro-despliegue\]' >/dev/null && no "🔴 T13 un artefacto con ##vso[ se anotó" || ok "T13 artefacto con ##vso[ → no se anota"
+printf '%s' "$SAL" | grep '##vso\[task.setvariable' >/dev/null && no "🔴 T13 el ##vso[task.setvariable llegó a stdout: $SAL" || ok "T13 …y el comando no aparece en ningún lado de la salida"
+printf '%s' "$SAL" | grep 'logissue type=warning' >/dev/null && printf '%s' "$SAL" | grep 'rc=1' >/dev/null && ok "T13 …avisa con el nombre saneado y devuelve 1" || no "T13 no avisó o no devolvió 1: $SAL"
 D=$(nuevo_tmp)
 SAL=$(limpio "${CORRIDA[@]}" AGENT_TEMPDIRECTORY="$D" -- 'registro_despliegue desplegado plugin totorabackend 1.0:2 abc1234; echo rc=$?')
-printf '%s' "$SAL" | grep -q '^\[registro-despliegue\]\|addbuildtag' && no "🔴 T13 una versión con ':' se anotó (Azure rechaza la etiqueta)" || ok "T13 versión con ':' → no se anota"
+printf '%s' "$SAL" | grep '^\[registro-despliegue\]\|addbuildtag' >/dev/null && no "🔴 T13 una versión con ':' se anotó (Azure rechaza la etiqueta)" || ok "T13 versión con ':' → no se anota"
 D=$(nuevo_tmp)
 SAL=$(limpio "${CORRIDA[@]}" 'SYSTEM_STAGENAME=Deploy; rm -rf x' AGENT_TEMPDIRECTORY="$D" -- 'registro_despliegue desplegado plugin totorabackend 1.0.214 abc1234; echo rc=$?')
-printf '%s' "$SAL" | grep -q '^\[registro-despliegue\]' && no "🔴 T13 un destino con espacios y ';' se anotó" || ok "T13 destino fuera de su juego → no se anota"
+printf '%s' "$SAL" | grep '^\[registro-despliegue\]' >/dev/null && no "🔴 T13 un destino con espacios y ';' se anotó" || ok "T13 destino fuera de su juego → no se anota"
 D=$(nuevo_tmp)
 L=$(limpio "${CORRIDA[@]}" AGENT_TEMPDIRECTORY="$D" -- 'registro_despliegue desplegado plugin totorabackend 1.0.214 zzz' | linea)
 [ "$(printf '%s' "$L" | jq -r .hash 2>/dev/null)" = "null" ] && ok "T13 hash inválido → hash null, y el despliegue sí se anota" || no "T13 hash inválido no quedó null o no se anotó: '$L'"
@@ -143,7 +143,7 @@ REAL=$(printf '%s' "$L" | jq -r 'keys[]' 2>/dev/null | sort | tr '\n' ' ')
 [ "$(printf '%s' "$DOC" | wc -w | tr -d ' ')" = "15" ] && ok "T14 son 15 claves" || no "T14 la cabecera no documenta 15 claves: $DOC"
 grep -q '^# PREFIJO: \[registro-despliegue\]' "$AYUDANTE" && ok "T14 la cabecera documenta el prefijo" || no "T14 la cabecera no documenta el prefijo"
 for et in 'desplegado' '<artefacto>-<version>' 'despliegue-intentado'; do
-  grep '^# ETIQUETAS:' "$AYUDANTE" | grep -qF "$et" && ok "T14 la cabecera documenta la etiqueta $et" || no "T14 la cabecera no documenta la etiqueta $et"
+  grep '^# ETIQUETAS:' "$AYUDANTE" | grep -F "$et" >/dev/null && ok "T14 la cabecera documenta la etiqueta $et" || no "T14 la cabecera no documenta la etiqueta $et"
 done
 printf '%s' "$L" | jq -e '.v==1 and .estado=="desplegado" and .tipo=="plugin" and .entorno=="staging" and .entorno_fuente=="derivado" and .proyecto=="Totora" and .repo=="Backend" and .destino=="Deploy/DeployToStaging" and .artefacto=="totorabackend" and .version=="1.0.214" and .hash=="abc1234" and .build=="100" and .build_ci=="100" and (.ts|test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"))' >/dev/null && ok "T14 cada clave vale lo que dice el contrato" || no "T14 valores fuera de contrato: $L"
 D=$(nuevo_tmp)

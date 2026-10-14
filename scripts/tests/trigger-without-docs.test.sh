@@ -112,7 +112,7 @@ YML
 rc=$(corre --file "$TMP/excl-parcial.yml")
 [ "$rc" -eq 1 ] && ok "🔴 un exclude parcial (el parche a mano del 23-09) sigue construyendo por lo que no excluye" || no "🔴 el exclude parcial salió $rc"
 grep -q 'specs/' "$TMP/out.txt" && ok "…y dice qué se le escapa (specs/…)" || no "no nombró lo que se escapa: $(cat "$TMP/out.txt")"
-grep -v 'agregar `paths.exclude`' "$TMP/out.txt" | grep -q 'README.md' && no "🔴 acusó a README.md, que SÍ está excluido" || ok "…sin acusar a lo que sí excluye (README.md)"
+grep -v 'agregar `paths.exclude`' "$TMP/out.txt" | grep 'README.md' >/dev/null && no "🔴 acusó a README.md, que SÍ está excluido" || ok "…sin acusar a lo que sí excluye (README.md)"
 
 # ---------------------------------------------------------------- 6. gana el más específico: include ancho + exclude fino
 cat > "$TMP/especifico.yml" <<'YML'

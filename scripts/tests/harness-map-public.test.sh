@@ -62,7 +62,7 @@ echo "harness-map-public"
 # idioma incrustado para la página del mapa, y nada de lo prohibido.
 cp "$FPRIV" "$TMP/priv.html"
 rc=$(correr)
-if [ "$rc" = 0 ] && head -1 "$TMP/pub.html" | grep -qi '^<!doctype html>' && grep -q 'Una única máquina designada.' "$TMP/pub.html" \
+if [ "$rc" = 0 ] && head -1 "$TMP/pub.html" | grep -i '^<!doctype html>' >/dev/null && grep -q 'Una única máquina designada.' "$TMP/pub.html" \
    && grep -q '"admin": "Una máquina designada"' "$TMP/pub.html" && grep -q 'idioma de prueba: map' "$TMP/pub.html" \
    && ! grep -qE 'servidor-acme|admin del arnés|>ADMIN<|acme-harness-interno|03:30|prefers-color-scheme: dark' "$TMP/pub.html"; then
   ok "C-01 la pública sale completa, con sus textos y sin nada interno"
@@ -247,7 +247,7 @@ else sin_medir "R-01"; fi
 
 # R-02 · la pública de verdad es un documento completo y no trae la máquina, el canal ni el rótulo del admin.
 if [ "$REAL" = 1 ]; then
-  if head -1 "$PUB" | grep -qi '^<!doctype html>' && ! grep -qE 'Telegram|Mac mini|admin del arnés' "$PUB"; then
+  if head -1 "$PUB" | grep -i '^<!doctype html>' >/dev/null && ! grep -qE 'Telegram|Mac mini|admin del arnés' "$PUB"; then
     ok "R-02 la pública es un documento completo y limpio"
   else
     mal "R-02 la pública no es un documento completo o trae algo interno"
