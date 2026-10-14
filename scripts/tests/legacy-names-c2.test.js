@@ -105,7 +105,7 @@ test('T39b · BatchC2_ShimRunsAloneInArtifact — en el artefacto solo, el nombr
 });
 
 test('T39c · BatchC2_TemplatesUseNewNames — las plantillas de pipeline de un producto nuevo no nombran ningún guion viejo de la tanda', { skip: SKIP_PUBLIC }, () => {
-  const dir = path.join(RAIZ, 'new-product-templates', 'pipelines');
+  const dir = path.join(RAIZ, 'packs', 'bizuit', 'new-product-templates', 'pipelines');
   const ymls = fs.readdirSync(dir).filter((f) => /\.ya?ml$/.test(f));
   assert.ok(ymls.length > 0, 'no hay plantillas de pipeline');
   const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

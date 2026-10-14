@@ -126,7 +126,7 @@ test('T38 R5_Templates_NewProductBornWithNewPath — la plantilla de formularios
   const entries = r5Entries();
   const react = entries.find((e) => e.new === 'guides/bizuit/bizuit-plugin-react.md');
   assert.ok(react, 'el mapa tiene la entrada de la guía React');
-  const tpl = fs.readFileSync(path.join(ROOT, 'new-product-templates', 'forms', 'CLAUDE.md'), 'utf8');
+  const tpl = fs.readFileSync(path.join(ROOT, 'packs', 'bizuit', 'new-product-templates', 'forms', 'CLAUDE.md'), 'utf8');
   assert.ok(tpl.includes(react.new), `la plantilla nombra ${react.new}`);
   const stale = entries.filter((e) => tpl.includes(e.old)).map((e) => e.old);
   assert.deepStrictEqual(stale, [], 'la plantilla no nombra ninguna ruta vieja de la R5');
