@@ -1,0 +1,43 @@
+{
+  "__doc": "Ejemplo de la configuración del vigilante de producción (scripts/nightly/watcher/vigilante.js), con nombres inventados. No es secreta: las credenciales NO van acá, sino en variables de entorno del pipeline que lo corre, y cada producto sólo NOMBRA las suyas (env_user, env_pass). Va en el repo de operaciones de la organización y se pasa con --config: el arnés publicado no trae ninguna y el vigilante viene apagado. La RAMPA se maneja con `activo` por producto: conviene prender uno, mirar unas noches los borradores y recién después sumar los demás. Las primeras noches de cada producto son de arranque (sólo plugin caído) mientras arma su línea base.",
+  "ventana_horas": 25,
+  "__ventana": "24 h + 1 de solape. El solape lo absorbe la deduplicación por huella: un hallazgo repetido actualiza el borrador abierto en vez de crear otro.",
+  "umbral_piso": 3,
+  "__umbral_piso": "Dos errores sueltos en 24 h no son una tendencia y no despiertan a nadie.",
+  "factor": 3,
+  "__factor": "Un hallazgo de goteo necesita errores >= max(piso, factor x mediana de la línea base).",
+  "ventana_linea_base_dias": 14,
+  "noches_arranque_frio": 3,
+  "__arranque_frio": "Las primeras 3 noches no hay línea base: sólo se levanta un plugin caído. Fingir criterio sin datos es peor que declarar que todavía no se tiene.",
+  "umbral_rafaga_azure": 5,
+  "__rafaga": "Más de 5 errores en cualquier ventana de 5 minutos = la alerta `*-Http5xxBurst` de Azure YA sonó. Ese hallazgo no vuelve a sonar acá (se adjunta como diagnóstico del mail que el equipo ya recibió). Tiene que coincidir con el umbral real de esas alertas.",
+  "concentracion_min": 0.8,
+  "__concentracion": "Regla de desagregación: una rebanada (usuario o IP) que concentra >=80% de los errores de un endpoint que en total no llama la atención. Es el incidente #9 — una cuenta de servicio perdió un permiso y sólo ella fallaba.",
+  "dias_silencio_descartado": 60,
+  "dias_silencio_ignorado": 7,
+  "__silencio": "Cuánto calla un hallazgo ya archivado antes de poder volver a sonar. `descartado` = alguien lo miró y decidió: se respeta 60 días. `ignorado` = nadie lo miró: 7, porque no hubo decisión que respetar. Sin esta ventana, un problema descartado en marzo que vuelve en agosto por otra causa no sonaba NUNCA más.",
+  "horas_sin_pedidos": 66,
+  "__latido": "Un plugin que venía recibiendo pedidos y hace N horas no recibe ninguno. Es lo único que ve el caso de un servicio zombie: su salud dice Running mientras no atiende a nadie. 66 h = de viernes a la tarde a lunes al mediodía. Con 20 h, un plugin de uso diurno saltaba los domingos con el lunes de vuelta en tráfico normal. Costo aceptado: una caída MUDA se ve dos o tres noches después en vez de la siguiente; las que dan errores las siguen viendo las otras reglas. 🔴 No «arreglar» el ruido descartando el hallazgo: un descarte calla esa huella `dias_silencio_descartado` días, o sea que deja sin latido justo al servicio que más importa.",
+  "dias_recordatorio_pendiente": 3,
+  "__recordatorio": "Un borrador que lleva N días sin decisión suena UNA vez en el aviso nocturno, aunque esa noche no haya hallazgos nuevos. Sin esto el aviso sólo hablaba de lo que aparece y nunca de lo que se pudre: a los 7 días el borrador se archiva solo como `ignorado` y nadie se enteró de que había algo que decidir. 3 días = antes de los 7 del auto-archivo, con margen para un fin de semana.",
+  "max_hallazgos_por_aviso": 2,
+  "__presupuesto": "La tasa base real es ~0,5 incidentes por semana. Máximo 2 hallazgos por aviso y 3 noches con aviso por semana; al menos 1 noche muda de cada 2. El tope es sobre el AVISO: lo que no entra se escribe igual en los borradores.",
+  "productos": [
+    {
+      "id": "acme",
+      "url": "https://acme-extensions.example.com",
+      "env_user": "BIZEXT_ACME_USER",
+      "env_pass": "BIZEXT_ACME_PASS",
+      "plugins": [],
+      "activo": true
+    },
+    {
+      "id": "globex",
+      "url": "https://globex-extensions.example.com",
+      "env_user": "BIZEXT_GLOBEX_USER",
+      "env_pass": "BIZEXT_GLOBEX_PASS",
+      "plugins": [],
+      "activo": false
+    }
+  ]
+}

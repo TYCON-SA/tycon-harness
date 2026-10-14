@@ -129,3 +129,18 @@ horario, el `cron` de cada YAML.
   navegador).
 - **Una corrida en rojo** dice en su primer error por qué. Las causas de siempre: un permiso del punto 3, un JSON que no
   valida, o el repo de operaciones sin rama `main`.
+
+## 8. El vigilante de producción (apagado de fábrica)
+
+El cuarto nocturno, `scripts/nightly/watcher/vigilante.js`, mira la API de administración de los hosts de BIZUIT
+Extensions de la organización, agrupa lo que huele mal por debajo de las alertas de la nube y deja un borrador por
+hallazgo en `inbox/watcher/pending/` para que una persona decida (`/tycon-vigilante`). **No toca nada.**
+
+Viene apagado: sin configuración no mira nada, lo dice en una línea y sale 0. Para prenderlo:
+
+- copiá `examples/hosts.json` a `scripts/nightly/watcher/hosts.json` del repo de operaciones, con un producto por host
+  (`env_user`/`env_pass` NOMBRAN las variables de entorno con las credenciales; nunca las traen);
+- en el pipeline que lo corra, pasale `--config` con esa ruta, `--out .dashboard/vigilante` y
+  `--pending inbox/watcher`, y las credenciales como variables secretas.
+
+El modelo de ese pipeline todavía no está en esta carpeta: es lo siguiente.

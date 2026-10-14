@@ -352,6 +352,13 @@
     "on-pre-commit.js::sin-registro-local-frena-y-dice-como-destrabarlo": true,
     "on-pre-commit.js::la-excusa-escrita-destraba-el-cruce": true,
     "on-pre-commit.js::la-excusa-escrita-NO-tapa-un-roster-roto": true,
+    "correr.sh::hay-anomalia-escribe-el-borrador-y-lo-avisa": true,
+    "correr.sh::el-borrador-NO-tiene-forma-de-story": true,
+    "correr.sh::noche-normal-no-levanta-nada-y-no-avisa": true,
+    "correr.sh::no-pudo-consultar-DEJA-CONSTANCIA": true,
+    "correr.sh::un-hallazgo-repetido-no-crea-un-segundo-borrador": true,
+    "correr.sh::un-problema-que-persiste-NO-se-auto-silencia": true,
+    "correr.sh::el-aviso-respeta-el-presupuesto-pero-escribe-todo": true,
     "correr.sh::en-otra-maquina-no-corre-nada": true,
     "correr.sh::una-corrida-que-no-termina-NO-sella-ni-pisa-la-ultima-buena": true,
     "correr.sh::un-flag-desconocido-no-dispara-el-examen": true,
@@ -491,6 +498,10 @@
     "unpushed-work-notice.js::quiet-clon-del-arnes-en-carpeta-con-otro-nombre-se-reconoce-por-su-origin": true,
     "unpushed-work-notice.js::grita-en-repo-de-producto-debajo-de-una-carpeta-llamada-como-el-arnes": true,
     "retro-pending.js::quiet-un-heredoc-que-NO-va-a-un-shell-con-texto-con-FORMA-de-push-no-dispara-el-aviso": true,
-    "retro-pending.js::registra-un-push-dentro-de-un-heredoc-que-SI-va-a-un-shell": true
+    "retro-pending.js::registra-un-push-dentro-de-un-heredoc-que-SI-va-a-un-shell": true,
+    "correr.sh::js-con-destino-corre-el-destino": true,
+    "correr.sh::js-sin-destino-ni-instalado-sale-rojo-nombrandolo": true,
+    "correr.sh::sh-con-destino-corre-el-destino": true,
+    "correr.sh::sh-sin-destino-ni-instalado-sale-rojo-nombrandolo": true
   }
 }
