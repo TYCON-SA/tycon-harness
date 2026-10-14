@@ -159,6 +159,7 @@ function runOpsData(w) {
 test('T4 OpsData_CopiesAndRetargets: trae los datos y la configuración de la lista, los fija en un commit local, apunta origin a operaciones y deja la huella', () => {
   const w = agent({
     'operations.json': '{"version":1,"owners":{"default":"lider@acme.example"}}\n',
+    'team-repos.json': '{"version":1,"operations":{"platform":"azure"}}\n', // story 8.31 (T15): la plataforma viaja
     'scripts/nightly/dependencies/repos.json': '{"repos":[]}\n',
     'scripts/nightly/dashboard/sources.json': '{"de":"operaciones"}\n',
     '.dashboard/sdlc-stage-2026-01-01.json': '{}\n',
@@ -170,7 +171,7 @@ test('T4 OpsData_CopiesAndRetargets: trae los datos y la configuración de la li
   const head = git(w.s, ['rev-parse', 'HEAD']);
   const r = runOpsData(w);
   assert.strictEqual(r.code, 0, r.out);
-  for (const [rel, want] of [['operations.json', 'lider@acme.example'], ['scripts/nightly/dependencies/repos.json', 'repos'], ['scripts/nightly/dashboard/sources.json', 'operaciones'], ['.dashboard/sdlc-stage-2026-01-01.json', '{}'], ['inbox/dependencies/pending/a1b2c3d4.yaml', 'a1b2c3d4']]) {
+  for (const [rel, want] of [['operations.json', 'lider@acme.example'], ['team-repos.json', 'platform'], ['scripts/nightly/dependencies/repos.json', 'repos'], ['scripts/nightly/dashboard/sources.json', 'operaciones'], ['.dashboard/sdlc-stage-2026-01-01.json', '{}'], ['inbox/dependencies/pending/a1b2c3d4.yaml', 'a1b2c3d4']]) {
     assert.match(fs.readFileSync(path.join(w.s, rel), 'utf8'), new RegExp(want), `${rel} quedó encima`);
   }
   assert.strictEqual(fs.readFileSync(path.join(w.s, 'scripts', 'a.js'), 'utf8'), 'module.exports = 1;\n', 'el código del arnés no lo pisa operaciones');

@@ -106,7 +106,9 @@ Un ejemplo: en ACME, Pedro administra y Juan programa.
 
 **Los procesos de la noche.** En Azure DevOps, la revisión de dependencias, las métricas del ciclo y el tablero corren en
 tu organización con tres pipelines modelo y tu repo de operaciones: [cómo darlos de alta](pipelines/operations/README.md).
-En GitHub (Actions) todavía no están. El vigilante de producción no se publicó: todavía es propio de TYCON.
+En GitHub, los mismos tres corren como workflows de GitHub Actions, y los hallazgos de dependencias son issues en el
+repo de cada producto: [cómo darlos de alta](pipelines/operations/github/README.md). El vigilante de producción no se
+publicó: todavía es propio de TYCON.
 
 ## Dónde seguir
 
