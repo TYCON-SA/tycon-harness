@@ -1,0 +1,23 @@
+{
+  "_que_es": "Los estados de story que el medidor (scripts/metrics/sdlc-stage-metrics.js) encontró sin diccionario el 2026-09-05 en los repos de un equipo (20 repos, 1.234 stories): la unión del `status:` de ese día y de los que aparecieron alguna vez en una transición. Es el insumo del caso T3 de scripts/tests/states-dictionary.test.js: cada valor tiene que quedar mapeado a un canónico o declarado en `_decisions` de scripts/metrics/states.json. Sólo trae los valores: ni repos ni conteos.",
+  "_por_que_no_a_mano": "Sale de una corrida del medidor, no de memoria: una lista escrita a mano sólo mide lo que alguien se acordó de anotar (la primera versión del diccionario se perdió `updated` y `redundant`, dos estados vivos). Para medir contra un censo propio más nuevo: TYCON_STATES_CENSUS=<ruta> con la misma forma (la lista `valores`).",
+  "generado": "2026-09-05",
+  "valores": [
+    "abandoned",
+    "ac-pending",
+    "blocked",
+    "cancelled",
+    "eliminated",
+    "implementation-complete",
+    "merged",
+    "pending-rewrite",
+    "phase-1-done-phase-2-deferred",
+    "ready-for-design",
+    "ready-for-dev-final",
+    "ready-for-review",
+    "redundant",
+    "reverted",
+    "superseded",
+    "updated"
+  ]
+}

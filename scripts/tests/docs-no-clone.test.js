@@ -1,0 +1,264 @@
+#!/usr/bin/env node
+/**
+ * docs-no-clone.test.js — las guías dicen `~/.tycon`, «usar no es mantener» y el modo desarrollador, y ninguna nombra un
+ * clon como forma de USAR el arnés (story 8.23, tanda E · AC 34 · T35, la parte de las guías; las portadas públicas las
+ * mide public-papers.test.js).
+ *
+ * Lo que caza: una guía que, en su sección de INSTALACIÓN, siga pidiendo `git clone` para usar el arnés. El clon queda
+ * para quien lo mantiene (INSTALL.md §1b «Mantener el arnés: el clon», la portada «Modo desarrollador»): esas secciones
+ * sí pueden clonar, y se nombran acá una por una.
+ *
+ *   T35a · cada guía de instalación dice `~/.tycon/harness` (donde vive la versión instalada) y «usar no es mantener».
+ *   T35b · en las secciones de USO de cada guía no hay `git clone`; en las de MANTENER sí puede haber.
+ *   T35c · INSTALL.md y la guía del mecanismo nombran el modo desarrollador (`link --local` / `link --managed`) como la
+ *          forma de probar antes de publicar.
+ *   T35d · el espejo: una guía de juguete con un `git clone` en su sección de uso falla; sin la frase, falla.
+ *   T35e · las guías sin dos versiones (story 8.26, tanda I · AC 35). Once guías tenían en este repo una versión
+ *          propia, con bloques internos, y cada cambio a una de ellas en GitHub pedía un segundo pedido acá. Nueve ya
+ *          no viven en este repo: son del público, y lo que decían sólo para el equipo vive en `onboarding/interno/`.
+ *          Las otras dos esperan, declaradas en la lista del repo adelgazado (`.tycon/internal-forms.json`, `own`).
+ *          Se mide: ningún `.md` de lo que viaja trae un marcador de bloque, salvo esas dos; la lista es la de un repo
+ *          adelgazado, con las dos declaradas y las nueve sin declarar; y lo mudado está enlazado en su portada, dice
+ *          de qué guía salió y queda fuera de la capa del equipo.
+ *
+ * DÓNDE CORRE: en el público solo, y sobre el árbol ARMADO de los nocturnos (lo privado del equipo con el público
+ * encima). Qué mide en cada uno:
+ *   · en los dos: la guía del mecanismo y la sección de uso de INSTALL.md (`~/.tycon/harness`, sin `git clone`), el
+ *     espejo, y que ningún .md de lo que viaja traiga un marcador de bloque (en el público solo, ninguno; en el árbol
+ *     armado, salvo las dos que esperan);
+ *   · sólo en el árbol armado (se reconoce por `.tycon/internal-forms.json`, la lista del repo privado): las tres guías
+ *     del alta del equipo (onboarding/), lo que dice la versión del equipo de INSTALL.md («usar no es mantener», el modo
+ *     desarrollador y la sección §1b de quien mantiene, que el INSTALL.md del público no trae), la lista del repo
+ *     adelgazado y dónde vive lo mudado. En el público solo eso sale SALTEADO o anunciado como NO MEDIDO —nunca verde
+ *     por haberlo mirado—; en el árbol armado, que falte es rojo.
+ * En un clon pelado del repo privado adelgazado las guías del público no están, y esta prueba lo dice.
+ *
+ * Correr: node --test scripts/tests/docs-no-clone.test.js
+ */
+'use strict';
+
+const fs = require('fs');
+const path = require('path');
+const { execFileSync } = require('child_process');
+const assert = require('node:assert/strict');
+const { test } = require('node:test');
+const publicCopy = require('../publishing/public-copy.js');
+
+const ROOT = path.join(__dirname, '..', '..');
+const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+/** ¿El árbol armado de los nocturnos (lo privado del equipo con el público encima)? Lo dice la lista del repo privado. */
+const ARMED = fs.existsSync(path.join(ROOT, '.tycon', 'internal-forms.json'));
+const NOT_ARMED = 'NO MEDIDO en el público solo: es del repo privado del equipo (sólo se mide en el árbol armado, donde está .tycon/internal-forms.json)';
+
+/** Las guías de instalación: el archivo, cómo se recorta su sección de USO y qué frases tiene que decir. */
+const GUIDES = [
+  {
+    file: 'INSTALL.md',
+    // la sección de uso: todo «## Instalación» (§1 a §6, hasta «## Setup opcional») MENOS §1b, que es lo de quien
+    // mantiene (pase adversarial de la E, clase 8: recortar en §1b dejaba §2-§6 sin mirar)
+    use: (t) => {
+      const whole = t.slice(t.indexOf('## Instalación'), t.indexOf('## Setup opcional'));
+      const a = whole.indexOf('### 1b. Mantener el arnés'); const b = whole.indexOf('### 2.', a);
+      return a < 0 ? whole : whole.slice(0, a) + whole.slice(b < 0 ? whole.length : b);
+    },
+    says: ['~/.tycon/harness'],
+    // lo que dice la versión del equipo (bloques internos del repo privado); el INSTALL.md del público no lo trae
+    saysArmed: ['usar no es mantener', 'link --local', 'link --managed'],
+  },
+  {
+    file: 'onboarding/step-0-mac.md', team: true,
+    use: (t) => t,
+    says: ['~/.tycon/harness', 'usar el arnés no es mantenerlo', 'get-harness.sh'],
+  },
+  {
+    file: 'onboarding/step-0-windows.md', team: true,
+    use: (t) => t,
+    says: ['.tycon\\harness', 'usar el arnés no es mantenerlo', 'get-harness.ps1'],
+  },
+  {
+    file: 'onboarding/new-dev-harness-setup.md', team: true,
+    // el bloque del prompt entero: es lo que el asistente ejecuta
+    use: (t) => t.slice(t.indexOf('═══ INICIO DEL PROMPT ═══'), t.indexOf('═══ FIN DEL PROMPT ═══')),
+    says: ['~/.tycon/harness', 'usar no es mantener'],
+  },
+  {
+    file: 'guides/mecanismo-de-instalacion.md',
+    // la sección de los guiones de entrada (la que explica cómo se instala)
+    use: (t) => { const s = t.indexOf('## Los guiones de entrada'); return t.slice(s, t.indexOf('\n## ', s + 3)); },
+    says: ['usar el arnés no es mantenerlo', 'link --local', 'link --managed', 'no usa git ni lo pide'],
+  },
+];
+const CLONE = /\bgit clone\b/;
+/** Las líneas de un texto que piden clonar (la prosa y el código por igual). */
+const cloneLines = (text) => text.split('\n').map((l, i) => ({ n: i + 1, l })).filter((x) => CLONE.test(x.l));
+const whole = (t) => t;
+/** Las guías que se miden en este árbol: las del alta del equipo (`team`) sólo en el árbol armado. */
+const measured = () => {
+  const out = GUIDES.filter((g) => !g.team || ARMED);
+  const off = GUIDES.filter((g) => g.team && !ARMED).map((g) => g.file);
+  if (off.length) console.log(`ℹ️  ${off.join(', ')}: ${NOT_ARMED}`);
+  return out;
+};
+
+test('T35a Docs_SayTyconHome_UseIsNotMaintain', () => {
+  for (const g of measured()) {
+    const t = read(g.file);
+    for (const s of [...g.says, ...(ARMED ? g.saysArmed || [] : [])]) assert.ok(t.includes(s), `${g.file}: falta «${s}»`);
+    if (!ARMED && g.saysArmed) console.log(`ℹ️  ${g.file}: ${g.saysArmed.map((x) => `«${x}»`).join(', ')} — ${NOT_ARMED}`);
+  }
+});
+
+test('T35b Docs_NoCloneToUse_CloneOnlyForMaintainers', () => {
+  for (const g of measured()) {
+    const t = read(g.file);
+    const use = g.use(t);
+    assert.ok(use.length > 200, `${g.file}: no encontré su sección de uso (recortó ${use.length} caracteres)`);
+    assert.deepStrictEqual(cloneLines(use).map((x) => `${g.file}:${x.n}: ${x.l.trim().slice(0, 100)}`), [], `${g.file}: la sección de uso pide clonar`);
+  }
+  // el espejo de lo permitido: la sección de quien mantiene SÍ clona (si dejara de hacerlo, esta prueba lo dice). Esa
+  // sección (§1b) es de la versión del equipo de INSTALL.md: en el público solo no está.
+  if (!ARMED) { console.log(`ℹ️  INSTALL.md §1b (quien mantiene clona): ${NOT_ARMED}`); return; }
+  const install = read('INSTALL.md');
+  const maintain = install.slice(install.indexOf('### 1b. Mantener el arnés'), install.indexOf('### 2.'));
+  assert.ok(cloneLines(maintain).length >= 2, 'INSTALL.md §1b: la sección de quien mantiene tiene que traer el clon (bash y PowerShell)');
+});
+
+test('T35c Docs_DeveloperMode_IsTheWayToTryBeforePublishing', () => {
+  // el INSTALL.md del público no explica el modo desarrollador (lo hace la guía del mecanismo): sólo la versión del equipo
+  for (const file of ARMED ? ['INSTALL.md', 'guides/mecanismo-de-instalacion.md'] : ['guides/mecanismo-de-instalacion.md']) {
+    const t = read(file);
+    assert.match(t, /link --local/, `${file}: no nombra link --local`);
+    assert.match(t, /link --managed/, `${file}: no nombra link --managed`);
+  }
+  if (ARMED) assert.match(read('INSTALL.md'), /probarlo antes de publicar|probar un cambio antes de publicarlo/, 'INSTALL.md: el modo desarrollador es la forma de probar antes de publicar');
+  else console.log(`ℹ️  INSTALL.md (el modo desarrollador): ${NOT_ARMED}`);
+});
+
+test('T35d Mirror_ToyGuideWithCloneOrWithoutPhraseFails', () => {
+  const toy = `## Instalación\n\nmkdir -p ~/SourceCode && git clone <URL> el-arnes\n\n### 1b. Mantener el arnés\n`;
+  assert.ok(cloneLines(GUIDES[0].use(toy)).length === 1, 'control: la guía de juguete con un clon en su sección de uso se detecta');
+  assert.ok(!whole(toy).includes('usar no es mantener'), 'control: la guía de juguete sin la frase se detecta');
+});
+
+// ── T35e · story 8.26, tanda I (AC 35): las guías sin dos versiones ──────────────────────────────────────────────
+
+/** Las guías que tenían una versión interna (bloques internos, la marca de las rutas que no viajan) y ya son sólo del
+ *  público: nueve de las once. En el repo privado adelgazado no están; llegan con el público encima. */
+const PUBLIC_ONLY_GUIDES = [
+  'README.md', 'INDEX.md',   // el índice de guías: hasta 2026-10-14 era README.md, que pasó a ser la portada
+  'guides/agent-architecture.md', 'guides/ci-gate.md', 'guides/codex-migration.md', 'guides/instinct-mining.md',
+  'guides/mecanismo-de-instalacion.md', 'guides/reglas-para-revisores.md',
+  'guides/decisions/codex-etapa-d-retro-red.md', 'guides/decisions/controles-apagables-por-config-2026-08-25.md',
+];
+/** Las dos que esperan: el privado tiene la suya, con sus bloques internos, declarada en `own`. Tres casos de prueba
+ *  que viven en el público exigen, cuando corren con lo privado, el texto interno de cada una: harness-place.test.js
+ *  (T13 y T35: las líneas viejas declaradas y el párrafo de los dos nombres, adentro de las marcas del INSTALL) e
+ *  internal-data-leftovers.test.js (T27: la regla de los inventados, en un bloque de la guía de publicación). Mientras
+ *  estén acá, un cambio de GitHub a cualquiera de las dos no llega solo: hay que traerlo a mano. La que deje de
+ *  esperar sale de `own`, pasa a la lista de arriba, y sus bloques, a `onboarding/interno/`. */
+const STILL_WITH_AN_INTERNAL_FORM = ['INSTALL.md', 'guides/publicacion-espejo.md'];
+/** Las carpetas que no viajan: ahí un marcador de bloque no publica nada (una story o una medición que lo cita como
+ *  ejemplo). De onboarding/ quedan afuera sólo las SUBCARPETAS: los `.md` de su raíz son el texto del alta, que viaja a
+ *  cada máquina del equipo, y nadie le saca un bloque por el camino. */
+const NOT_TRAVELLING = /^(?:(?:specs|tasks|inbox|qa|_bmad|artifacts|new-product-templates|\.advisors|\.dashboard|\.engram)\/|onboarding\/[^/]+\/)/;
+/** Dónde vive lo que se mudó de las guías. Una subcarpeta, a propósito: los `.md` de la RAÍZ de onboarding/ son el texto
+ *  del alta y viajan a cada máquina del equipo (scripts/publishing/split.json, `onboarding/*.md` → team). */
+const PRIVATE_HOME = 'onboarding/interno';
+const tracked = (...args) => execFileSync('git', ['-C', ROOT, 'ls-files', '-z', ...args], { encoding: 'utf8', maxBuffer: 64 << 20 }).split('\0').filter(Boolean);
+/** ¿Es el árbol armado? Sin el README del público, es un clon pelado del privado: las guías no están y nada de lo de
+ *  abajo se puede medir. No se saltea: se dice, en rojo. */
+const ARMED_TREE = 'esta prueba corre sobre el árbol armado (lo privado con el público encima, como lo deja scripts/ci/overlay-harness.js --after-cut); en un clon pelado del repo privado no están las guías del público';
+/** Las tres de scripts/publishing/split.js, copiadas tal cual (ese guion no las exporta): un glob con barra final es
+ *  una carpeta, nunca una ruta exacta; y gana la regla más específica —la ruta exacta, y si no el glob más largo—. */
+const asGlob = (glob) => (glob.endsWith('/') ? `${glob}**` : glob);
+const isExact = (glob) => !/[*?]/.test(asGlob(glob));
+const specificity = (glob) => (isExact(glob) ? Infinity : asGlob(glob).length);
+/** Si un glob de split.json toma una ruta lo decide el comparador del exportador, que es el que usa el reparto
+ *  (`coincide`: dos asteriscos cruzan carpetas, uno solo y el signo de pregunta no, y dos asteriscos con su barra
+ *  también valen por ninguna carpeta). Sin copia propia del comparador: una copia leería distinto la primera forma de
+ *  glob que no hubiera previsto. */
+const { coincide } = require('../publishing/export.js');
+/** A dónde manda el reparto una ruta que el exportador no publica, con la precedencia de split.js y no con el orden del
+ *  archivo. Devuelve los destinos de las reglas que empatan arriba: uno solo, o el reparto la da por mal clasificada. */
+function destinationsOf(rules, rel) {
+  const matching = rules.filter((r) => coincide(r.glob, rel));
+  const best = Math.max(...matching.map((r) => specificity(r.glob)));
+  return [...new Set(matching.filter((r) => specificity(r.glob) === best).map((r) => r.to))];
+}
+
+test('T35e Guides_NoBlockMarkers_InWhatTravels @story-8.26 @ac-35', () => {
+  assert.ok(fs.existsSync(path.join(ROOT, 'README.md')), ARMED_TREE);
+  const mds = tracked('*.md').filter((f) => !NOT_TRAVELLING.test(f));
+  assert.ok(mds.length > 100, `control: miré ${mds.length} .md; con tan pocos la cuenta de abajo no dice nada (${ARMED_TREE})`);
+  const withMarkers = mds.filter((f) => publicCopy.markerLines(read(f)).length);
+  // en el público solo no espera ninguna: las versiones con bloques son del repo privado
+  const waiting = ARMED ? STILL_WITH_AN_INTERNAL_FORM : [];
+  assert.deepStrictEqual(withMarkers.filter((f) => !waiting.includes(f)), [],
+    'un .md de lo que viaja trae marcadores de bloque: lo sólo-interno va a onboarding/interno/ del repo privado, no a un bloque');
+  // las que esperan siguen trayendo los suyos: el día que una los pierda, sale de esa lista (y se libera)
+  assert.deepStrictEqual(waiting.filter((f) => !withMarkers.includes(f)), [], 'una guía de las que esperan ya no trae bloques: sacala de STILL_WITH_AN_INTERNAL_FORM');
+  // el espejo: el lector de marcadores ve uno de verdad (si dejara de verlos, la cuenta de arriba daría 0 siempre)
+  assert.strictEqual(publicCopy.markerLines(`uno\n${publicCopy.INTERNAL_START}\ndos\n${publicCopy.INTERNAL_END}\n`).length, 2, 'control: el lector de marcadores no ve un bloque de juguete');
+});
+
+test('T35e ThinList_DeclaresTheTwoThatWait_AndNotTheNine @story-8.26 @ac-35', (t) => {
+  if (!ARMED) { t.skip(NOT_ARMED); return; }
+  const list = JSON.parse(read('.tycon/internal-forms.json'));
+  // la lista de un repo adelgazado: sin formas firmadas ni liberadas (eran la transición), con lo que el privado conserva
+  assert.strictEqual(list.layout, 'thin', '.tycon/internal-forms.json: el repo privado está adelgazado y la lista no lo dice ("layout": "thin")');
+  for (const old of ['forms', 'released']) assert.ok(!(old in list), `.tycon/internal-forms.json: trae "${old}", que es de antes de adelgazar`);
+  const own = list.own || {};
+  const mirror = list.mirror || {};
+  // cada cosa que el privado conserva, con su motivo: sin él, mañana nadie sabe por qué ese archivo no sigue a GitHub
+  assert.ok(Object.keys(own).length >= STILL_WITH_AN_INTERNAL_FORM.length, 'control: "own" trae menos rutas que guías que esperan');
+  for (const [rel, why] of Object.entries({ ...own, ...mirror })) {
+    assert.ok(typeof why === 'string' && why.trim().length >= 20, `${rel}: declarado sin motivo (o con uno que no dice nada)`);
+  }
+  // las que esperan: declaradas, y con sus bloques (el día que una los pierda, sale de la lista y de `own`)
+  for (const rel of STILL_WITH_AN_INTERNAL_FORM) {
+    assert.ok(rel in own, `${rel}: tiene su versión en el privado y la lista no la declara en "own"`);
+    assert.ok(publicCopy.markerLines(read(rel)).length > 0, `${rel}: declarada en "own" y ya no trae bloques internos: si es igual a la del público, sale de "own" y se borra de acá`);
+  }
+  // las nueve: del público. No se declaran (declararlas sería volver a tener dos versiones) y no traen bloques
+  for (const rel of PUBLIC_ONLY_GUIDES) {
+    assert.ok(!(rel in own) && !(rel in mirror), `${rel}: es sólo del público y la lista la declara: volvió a tener una versión acá`);
+    assert.ok(fs.existsSync(path.join(ROOT, rel)), `${rel}: no está. ${ARMED_TREE}`);
+    assert.strictEqual(publicCopy.markerLines(read(rel)).length, 0, `${rel}: es la del público y trae marcadores de bloque`);
+  }
+  // ninguna guía con bloques que la lista no declare: un .md declarado que no es de los dos de arriba tampoco los trae
+  for (const rel of Object.keys(own).filter((r) => r.toLowerCase().endsWith('.md') && !STILL_WITH_AN_INTERNAL_FORM.includes(r))) {
+    assert.strictEqual(publicCopy.markerLines(read(rel)).length, 0, `${rel}: declarado en "own" y con marcadores de bloque; si espera como las otras dos, va en STILL_WITH_AN_INTERNAL_FORM con su motivo`);
+  }
+});
+
+test('T35e PrivateHome_IsIndexedInItsCover_AndOutOfTheTeamLayer @story-8.26 @ac-35', (t) => {
+  if (!ARMED) { t.skip(NOT_ARMED); return; }
+  const files = tracked(`${PRIVATE_HOME}/**`);
+  const cover = `${PRIVATE_HOME}/README.md`;
+  assert.ok(files.includes(cover), `falta la portada del privado (${cover})`);
+  assert.ok(files.length >= 5, `control: ${PRIVATE_HOME}/ trae ${files.length} archivo(s); esperaba la portada y sus cuatro anexos`);
+  const coverText = read(cover);
+  const everything = new Set(tracked());
+  for (const f of files.filter((x) => x !== cover)) {
+    const rel = f.slice(PRIVATE_HOME.length + 1);
+    assert.ok(coverText.includes(`(${rel})`), `${f}: la portada no lo enlaza; un anexo que nadie indexa no lo encuentra nadie`);
+    // cada anexo dice de qué guía salió cada pedazo, y esa guía existe: sin eso, el texto mudado queda sin contexto
+    const origins = [...read(f).matchAll(/^> Salió de `([^`]+)`, de la sección «[^»]+»/gm)].map((m) => m[1]);
+    assert.ok(origins.length >= 1, `${f}: no dice de qué guía salió («> Salió de \`<guía>\`, de la sección «…»»)`);
+    for (const guide of origins) assert.ok(everything.has(guide), `${f}: dice que salió de ${guide}, que no está en el repo`);
+  }
+  // fuera de la capa del equipo: el reparto, con su precedencia, manda cada uno a quien mantiene
+  const rules = JSON.parse(read('scripts/publishing/split.json')).rules;
+  for (const f of files) assert.deepStrictEqual(destinationsOf(rules, f), ['maintainers'], `${f}: el reparto no lo manda a «maintainers»; lo sólo-interno de las guías es de quien mantiene`);
+  // el espejo: la misma cuenta ve que un .md de la raíz de onboarding/ sí va a las máquinas del equipo, y que la
+  // precedencia no depende del orden del archivo (con las reglas al revés da lo mismo)
+  assert.deepStrictEqual(destinationsOf(rules, 'onboarding/README.md'), ['team'], 'control: un .md de la raíz de onboarding/ ya no va a la capa del equipo; revisar la cuenta de arriba');
+  assert.deepStrictEqual(destinationsOf([...rules].reverse(), 'onboarding/README.md'), ['team'], 'control: el destino cambió al dar vuelta el orden de las reglas');
+  // y las dos formas de glob que hoy no usa ninguna regla se leen como en split.js: la carpeta con barra final (que
+  // no es una ruta exacta: pierde contra el glob más largo) y el `?`, que no cruza carpetas
+  const toy = [{ glob: 'x/', to: 'data' }, { glob: 'x/sub/*.md', to: 'team' }, { glob: 'y/?.md', to: 'team' }, { glob: 'z/**/w.md', to: 'maintainers' }];
+  assert.deepStrictEqual(destinationsOf(toy, 'x/a.md'), ['data'], 'control: un glob con barra final es la carpeta entera');
+  assert.deepStrictEqual(destinationsOf(toy, 'x/sub/a.md'), ['team'], 'control: entre dos reglas gana la más larga, no la carpeta');
+  assert.deepStrictEqual([destinationsOf(toy, 'y/a.md'), destinationsOf(toy, 'y/ab.md'), destinationsOf(toy, 'y/a/b.md')], [['team'], [], []], 'control: `?` es un solo carácter y no cruza carpetas');
+  assert.deepStrictEqual([destinationsOf(toy, 'z/w.md'), destinationsOf(toy, 'z/a/b/w.md')], [['maintainers'], ['maintainers']], 'control: `**/` vale por ninguna carpeta o por varias');
+});
