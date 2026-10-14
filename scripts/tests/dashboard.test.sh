@@ -280,7 +280,7 @@ hits=[t.strip() for t in vis if re.search(r'\b\d{2,}\b', t) and not re.search(r'
 print(len(hits)); [print('   ', h[:90]) for h in hits[:6]]
 PY
 )
-echo "$M" | head -1 | grep -q "^0$" && ok "C-13 el template no tiene números visibles escritos a mano" || { mal "C-13 hay números tipeados en el template:"; echo "$M" | tail -n +2; }
+echo "$M" | head -1 | grep "^0$" >/dev/null && ok "C-13 el template no tiene números visibles escritos a mano" || { mal "C-13 hay números tipeados en el template:"; echo "$M" | tail -n +2; }
 
 # ── C-14 · la ficha «Tiempo por etapa» deja la trama cuando el snapshot trae el dato (T10) ──
 # 🔴 rojo previo: no conectar el adaptador → la ficha sigue con trama fija aunque el dato esté.
@@ -289,11 +289,11 @@ node "$TABLERO" --dir "$T" --output "$T/o.html" >/dev/null 2>&1
 EST=$(ficha_estado "$T/o.html" "Tiempo por etapa")
 [ "$EST" != "blind" ] && [ "$EST" != "AUSENTE" ] && ok "C-14 la ficha ya no tiene trama (estado '$EST')" || mal "C-14 la ficha sigue con trama o no está (estado '$EST')"
 FIC=$(ficha_html "$T/o.html" "Tiempo por etapa")
-echo "$FIC" | grep -q 'no medido' && mal "C-14 la ficha se sigue declarando no medida" || ok "C-14 la ficha no se declara no medida"
-echo "$FIC" | grep -q 'n=' && ok "C-14 la ficha declara el n por etapa" || mal "C-14 la ficha no trae ningún n="
-echo "$FIC" | grep -q 'in-progress' && echo "$FIC" | grep -q 'review' && ok "C-14 nombra las etapas medidas" || mal "C-14 no nombra las etapas"
-echo "$FIC" | grep -q 'queda parado' && ok "C-14 nombra en el pie dónde se queda parado el trabajo" || mal "C-14 falta el pie de la etapa más lenta"
-echo "$FIC" | grep -q '6,4' && ok "C-14 muestra la mediana de la etapa más lenta" || mal "C-14 no muestra la mediana más alta (6,4)"
+echo "$FIC" | grep 'no medido' >/dev/null && mal "C-14 la ficha se sigue declarando no medida" || ok "C-14 la ficha no se declara no medida"
+echo "$FIC" | grep 'n=' >/dev/null && ok "C-14 la ficha declara el n por etapa" || mal "C-14 la ficha no trae ningún n="
+echo "$FIC" | grep 'in-progress' >/dev/null && echo "$FIC" | grep 'review' >/dev/null && ok "C-14 nombra las etapas medidas" || mal "C-14 no nombra las etapas"
+echo "$FIC" | grep 'queda parado' >/dev/null && ok "C-14 nombra en el pie dónde se queda parado el trabajo" || mal "C-14 falta el pie de la etapa más lenta"
+echo "$FIC" | grep '6,4' >/dev/null && ok "C-14 muestra la mediana de la etapa más lenta" || mal "C-14 no muestra la mediana más alta (6,4)"
 rm -rf "$T"
 
 # ── C-15 · sin el dato, la ficha sigue con trama y motivo — nunca un cero (T11) ──
@@ -303,9 +303,9 @@ node "$TABLERO" --dir "$T" --output "$T/o.html" >/dev/null 2>&1
 EST=$(ficha_estado "$T/o.html" "Tiempo por etapa")
 [ "$EST" = "blind" ] && ok "C-15 sin el dato la ficha tiene trama" || mal "C-15 esperaba trama y fue '$EST'"
 FIC=$(ficha_html "$T/o.html" "Tiempo por etapa")
-echo "$FIC" | grep -q 'no medido' && ok "C-15 se declara no medida" || mal "C-15 no se declara no medida"
-echo "$FIC" | grep -qE '<div class="t-val">0[,.<]' && mal "C-15 dibujó un 0 donde no hay dato" || ok "C-15 no dibuja ningún 0"
-echo "$FIC" | grep -q 'snapshot no trae' && ok "C-15 dice POR QUÉ no está medida" || mal "C-15 la ficha no trae motivo"
+echo "$FIC" | grep 'no medido' >/dev/null && ok "C-15 se declara no medida" || mal "C-15 no se declara no medida"
+echo "$FIC" | grep -E '<div class="t-val">0[,.<]' >/dev/null && mal "C-15 dibujó un 0 donde no hay dato" || ok "C-15 no dibuja ningún 0"
+echo "$FIC" | grep 'snapshot no trae' >/dev/null && ok "C-15 dice POR QUÉ no está medida" || mal "C-15 la ficha no trae motivo"
 rm -rf "$T"
 
 # ── C-16 · el gráfico mensual NO cambia por agregar el tiempo por etapa (T15 · AC 12) ──
@@ -361,10 +361,10 @@ done
 grep -q 'Hoy no hay forma de distinguir' "$T/o.html" && mal "C-17 sigue el pie que admitía el problema" || ok "C-17 el pie viejo ya no está"
 grep -q 'Stories abiertas en toda la historia medida' "$T/o.html" && mal "C-17 sigue la resta vieja" || ok "C-17 la resta vieja se fue"
 FIC=$(ficha_html "$T/o.html" 'Trabajo en curso')
-echo "$FIC" | grep -qE 'de 52 stories' && ok "C-17 «en curso» trae su denominador (52 stories)" || mal "C-17 «en curso» sin denominador: $FIC"
-echo "$FIC" | grep -qE '1 de 1 repos' && ok "C-17 y la cobertura de repos" || mal "C-17 falta la cobertura de repos"
+echo "$FIC" | grep -E 'de 52 stories' >/dev/null && ok "C-17 «en curso» trae su denominador (52 stories)" || mal "C-17 «en curso» sin denominador: $FIC"
+echo "$FIC" | grep -E '1 de 1 repos' >/dev/null && ok "C-17 y la cobertura de repos" || mal "C-17 falta la cobertura de repos"
 # 🔴 el desglose: sin él la ficha esconde que la mayoría no está en desarrollo sino en revisión
-echo "$FIC" | grep -q 'en revisión' && ok "C-17 «en curso» se desglosa por canónico en el pie" || mal "C-17 falta el desglose por canónico"
+echo "$FIC" | grep 'en revisión' >/dev/null && ok "C-17 «en curso» se desglosa por canónico en el pie" || mal "C-17 falta el desglose por canónico"
 rm -rf "$T"
 
 # ── C-18 · sin el campo, las tres fichas van con trama y motivo — jamás tres ceros (T11 · AC 11) ──
@@ -376,8 +376,8 @@ for PAT in 'Trabajo en curso' 'En el backlog' 'no reconoce'; do
   EST=$(ficha_estado "$T/o.html" "$PAT")
   [ "$EST" = "blind" ] && ok "C-18 «${PAT}» va con trama (fue «${EST}»)" || mal "C-18 «${PAT}» esperaba trama y fue «${EST}»"
   FIC=$(ficha_html "$T/o.html" "$PAT")
-  echo "$FIC" | grep -qE '<div class="t-val">0[,.<]' && mal "C-18 «${PAT}» dibujó un 0" || ok "C-18 «${PAT}» no dibuja ningún 0"
-  echo "$FIC" | grep -q 'snapshot no trae' && ok "C-18 «${PAT}» dice por qué" || mal "C-18 «${PAT}» sin motivo"
+  echo "$FIC" | grep -E '<div class="t-val">0[,.<]' >/dev/null && mal "C-18 «${PAT}» dibujó un 0" || ok "C-18 «${PAT}» no dibuja ningún 0"
+  echo "$FIC" | grep 'snapshot no trae' >/dev/null && ok "C-18 «${PAT}» dice por qué" || mal "C-18 «${PAT}» sin motivo"
 done
 rm -rf "$T"
 
@@ -393,9 +393,9 @@ con_estados "$T" '{"sin_diccionario": {"raro": 4, "otro": 3, "tercero": 2, "cuar
 node "$TABLERO" --dir "$T" --output "$T/o.html" >/dev/null 2>&1
 FIC=$(ficha_html "$T/o.html" 'no reconoce')
 for N in raro otro tercero; do
-  echo "$FIC" | grep -q "$N" && ok "C-19 el pie nombra «${N}»" || mal "C-19 el pie no nombra «${N}»"
+  echo "$FIC" | grep "$N" >/dev/null && ok "C-19 el pie nombra «${N}»" || mal "C-19 el pie no nombra «${N}»"
 done
-echo "$FIC" | grep -qE '<div class="t-val">10<' && ok "C-19 y la cuenta total es 10 (4+3+2+1)" || mal "C-19 la cuenta total no es 10: $FIC"
+echo "$FIC" | grep -E '<div class="t-val">10<' >/dev/null && ok "C-19 y la cuenta total es 10 (4+3+2+1)" || mal "C-19 la cuenta total no es 10: $FIC"
 rm -rf "$T"
 
 # ── C-20 · «en curso» sale del snapshot, no de una lista adentro del tablero (T5 · AC 5) ──
@@ -440,7 +440,7 @@ PA=$(ficha_html "$T/a.html" 'no reconoce' | grep -oE 't-foot">[^<]*' | head -1)
 PB=$(ficha_html "$T/b.html" 'no reconoce' | grep -oE 't-foot">[^<]*' | head -1)
 [ -n "$PA" ] && [ "$PA" = "$PB" ] && ok "C-22 con empate la lista es la misma sin importar el orden" \
   || mal "C-22 la lista cambio con el orden de las claves: «${PA}» vs «${PB}»"
-echo "$PA" | grep -q "alfa" && ok "C-22 y desempata por nombre (alfa entra primero)" || mal "C-22 no desempata por nombre: $PA"
+echo "$PA" | grep "alfa" >/dev/null && ok "C-22 y desempata por nombre (alfa entra primero)" || mal "C-22 no desempata por nombre: $PA"
 rm -rf "$T"
 
 # ═══════════════════════════════════════════════════════════════════════════════════════════
@@ -490,7 +490,7 @@ EST=$(ficha_estado "$T/o.html" 'Por qué volvió')
 [ "$EST" != "blind" ] && [ "$EST" != "AUSENTE" ] && ok "C-23 la ficha «Por qué volvió» dejó la trama (estado «${EST}»)" || mal "C-23 la ficha sigue con trama o no está: «${EST}»"
 FIC=$(tile_completo "$T/o.html" 'Por qué volvió')
 for PAT in 'Defecto propio' 'Cambio de requisito' 'Deuda declarada' 'Descubrimiento' 'Sin declarar'; do
-  echo "$FIC" | grep -q "$PAT" && ok "C-23 está la barra «${PAT}»" || mal "C-23 falta la barra «${PAT}»"
+  echo "$FIC" | grep "$PAT" >/dev/null && ok "C-23 está la barra «${PAT}»" || mal "C-23 falta la barra «${PAT}»"
 done
 N=$(echo "$FIC" | grep -o 'class="causa-barra' | wc -l | tr -d ' ')
 [ "$N" -eq 5 ] && ok "C-23 son exactamente CINCO barras" || mal "C-23 esperaba 5 barras y hay $N"
@@ -501,13 +501,13 @@ import re,sys
 h=sys.stdin.read()
 m=re.search(r'<div class=\"causa-barra sd\">.*?</div>\s*</div>', h, re.S)
 print('OK' if m and re.search(r'Sin declarar', m.group(0)) and re.search(r'class=\"cv\">9<', m.group(0)) else 'NO')
-" | grep -q OK && ok "C-23 «Sin declarar» trae su cuenta (9) en su propia fila" || mal "C-23 «Sin declarar» sin su cuenta"
-echo "$FIC" | grep -q 'sobre 16 seguimientos' && ok "C-23 el denominador es el total de seguimientos (16)" || mal "C-23 falta el denominador"
-echo "$FIC" | grep -q '1 de 1 repos' && ok "C-23 y la cobertura de repos" || mal "C-23 falta la cobertura de repos"
-echo "$FIC" | grep -q 'cambio-de-requisito subiendo mientras defecto-propio baja' && ok "C-23 el pie escribe la alarma" || mal "C-23 el pie no dice qué mirar"
-echo "$FIC" | grep -q 'derivado del' && echo "$FIC" | grep -q 'no declarado' && ok "C-23 el desglose por type se rotula derivado, no declarado" || mal "C-23 el desglose no dice que es derivado"
-echo "$FIC" | grep -q 'extension' && ok "C-23 …y nombra el type dominante de las sin declarar" || mal "C-23 el desglose no nombra los type"
-echo "$FIC" | grep -q 'no se registra la causa de ningún seguimiento' && mal "C-23 sigue el motivo viejo de la trama" || ok "C-23 el motivo viejo ya no está"
+" | grep OK >/dev/null && ok "C-23 «Sin declarar» trae su cuenta (9) en su propia fila" || mal "C-23 «Sin declarar» sin su cuenta"
+echo "$FIC" | grep 'sobre 16 seguimientos' >/dev/null && ok "C-23 el denominador es el total de seguimientos (16)" || mal "C-23 falta el denominador"
+echo "$FIC" | grep '1 de 1 repos' >/dev/null && ok "C-23 y la cobertura de repos" || mal "C-23 falta la cobertura de repos"
+echo "$FIC" | grep 'cambio-de-requisito subiendo mientras defecto-propio baja' >/dev/null && ok "C-23 el pie escribe la alarma" || mal "C-23 el pie no dice qué mirar"
+echo "$FIC" | grep 'derivado del' >/dev/null && echo "$FIC" | grep 'no declarado' >/dev/null && ok "C-23 el desglose por type se rotula derivado, no declarado" || mal "C-23 el desglose no dice que es derivado"
+echo "$FIC" | grep 'extension' >/dev/null && ok "C-23 …y nombra el type dominante de las sin declarar" || mal "C-23 el desglose no nombra los type"
+echo "$FIC" | grep 'no se registra la causa de ningún seguimiento' >/dev/null && mal "C-23 sigue el motivo viejo de la trama" || ok "C-23 el motivo viejo ya no está"
 rm -rf "$T"
 
 # ── C-24 · un valor fuera del vocabulario se NOMBRA en el pie, con su cuenta (T11 · AC 8) ──
@@ -516,7 +516,7 @@ rm -rf "$T"
 T=$(mktemp -d); montar_sano "$T"; con_causas "$T" '{"fuera_de_vocabulario": {"otra-cosa": 2}, "total": 18}'
 node "$TABLERO" --dir "$T" --output "$T/o.html" >/dev/null 2>&1
 FIC=$(tile_completo "$T/o.html" 'Por qué volvió')
-echo "$FIC" | grep -q 'otra-cosa (2)' && ok "C-24 el pie nombra «otra-cosa (2)»" || mal "C-24 el fuera de vocabulario no se nombra"
+echo "$FIC" | grep 'otra-cosa (2)' >/dev/null && ok "C-24 el pie nombra «otra-cosa (2)»" || mal "C-24 el fuera de vocabulario no se nombra"
 N=$(echo "$FIC" | grep -o 'class="causa-barra' | wc -l | tr -d ' ')
 [ "$N" -eq 5 ] && ok "C-24 y siguen siendo cinco barras (no se le dibuja una sexta)" || mal "C-24 el fuera de vocabulario cambió el número de barras: $N"
 rm -rf "$T"
@@ -529,9 +529,9 @@ node "$TABLERO" --dir "$T" --output "$T/o.html" >/dev/null 2>&1
 EST=$(ficha_estado "$T/o.html" 'Por qué volvió')
 [ "$EST" = "blind" ] && ok "C-25 sin el campo la ficha va con trama" || mal "C-25 esperaba trama y fue «${EST}»"
 FIC=$(tile_completo "$T/o.html" 'Por qué volvió')
-echo "$FIC" | grep -qE '<div class="t-val">0[,.<]' && mal "C-25 dibujó un 0" || ok "C-25 no dibuja ningún 0"
-echo "$FIC" | grep -q 'class="causa-barra' && mal "C-25 dibujó barras sin dato" || ok "C-25 no dibuja barras sin dato"
-echo "$FIC" | grep -q 'snapshot no trae' && ok "C-25 dice por qué (el snapshot no trae el campo)" || mal "C-25 sin motivo"
+echo "$FIC" | grep -E '<div class="t-val">0[,.<]' >/dev/null && mal "C-25 dibujó un 0" || ok "C-25 no dibuja ningún 0"
+echo "$FIC" | grep 'class="causa-barra' >/dev/null && mal "C-25 dibujó barras sin dato" || ok "C-25 no dibuja barras sin dato"
+echo "$FIC" | grep 'snapshot no trae' >/dev/null && ok "C-25 dice por qué (el snapshot no trae el campo)" || mal "C-25 sin motivo"
 rm -rf "$T"
 
 # ── C-26 · el gráfico mensual y la ficha «lo que vuelve» no cambian por la ficha nueva (T14 · AC 10) ──
@@ -1253,7 +1253,7 @@ assert q['estado']!='medido' and '4 avisos' in q['motivo'] and q.get('valor') is
 TYCON_MACHINE=maquina-local-l node "$TABLERO" --dir "$T" --logs "$T/local" --mailbox "$T/buzon" --output "$T/o.html" >/dev/null 2>&1
 FIC="$(ficha_html "$T/o.html" 'guía para que una persona pruebe')"
 if [ -z "$FIC" ]; then mal "C-52 no encontré la ficha de la guía de QA en la página"
-elif printf '%s' "$FIC" | grep -q '0%\|0 de 4'; then mal "C-52 la ficha de la guía publica un cero: ${FIC:0:200}"
+elif printf '%s' "$FIC" | grep '0%\|0 de 4' >/dev/null; then mal "C-52 la ficha de la guía publica un cero: ${FIC:0:200}"
 else ok "C-52 la ficha de la guía de QA no publica «0 %» ni «0 de 4»"; fi
 rm -rf "$T"
 
@@ -1393,13 +1393,13 @@ d=json.load(open(f)); d['global']['dod_evidence_ratio']={"num":80,"den":400,"exe
 PY
 node "$TABLERO" --dir "$T" --output "$T/o.html" >/dev/null 2>&1
 F="$(ficha_html "$T/o.html" 'Cierres que dejaron prueba')"
-echo "$F" | grep -q '<div class="t-val">20%</div>' && ok "C-58 la ficha sigue midiendo sólo lo probado (80 de 400)" || mal "C-58 el porcentaje no es 80/400"
-echo "$F" | grep -q "49 cerradas con exención declarada" && ok "C-58 nombra las 49 exentas al lado" || mal "C-58 las exentas no aparecen en la ficha"
+echo "$F" | grep '<div class="t-val">20%</div>' >/dev/null && ok "C-58 la ficha sigue midiendo sólo lo probado (80 de 400)" || mal "C-58 el porcentaje no es 80/400"
+echo "$F" | grep "49 cerradas con exención declarada" >/dev/null && ok "C-58 nombra las 49 exentas al lado" || mal "C-58 las exentas no aparecen en la ficha"
 rm -rf "$T"
 # y sin exentas no inventa la línea
 T=$(mktemp -d); montar_sano "$T"
 node "$TABLERO" --dir "$T" --output "$T/o.html" >/dev/null 2>&1
-ficha_html "$T/o.html" 'Cierres que dejaron prueba' | grep -q "exención declarada" && mal "C-58b dijo exentas donde no hay" || ok "C-58b sin exentas, no aparece la línea"
+ficha_html "$T/o.html" 'Cierres que dejaron prueba' | grep "exención declarada" >/dev/null && mal "C-58b dijo exentas donde no hay" || ok "C-58b sin exentas, no aparece la línea"
 rm -rf "$T"
 
 # ═══════════════ story 7.12 · los pasos de una corrida, como ficha de la pregunta 4 ═══════════════
@@ -1426,10 +1426,10 @@ T=$(mktemp -d); montar_sano "$T"; buzon_de_mentira "$T/buzon"
 node "$TABLERO" --dir "$T" --mailbox "$T/buzon" --output "$T/o.html" >/dev/null 2>&1
 F="$(ficha_html "$T/o.html" 'Pasos de una corrida')"
 [ -n "$F" ] && ok "C-59 la ficha de pasos por corrida existe" || mal "C-59 la ficha de pasos por corrida no está en la página"
-echo "$F" | grep -q '<div class="t-val">400</div>' && ok "C-59 con la mediana de las medidas (400)" || mal "C-59 la mediana no es 400: ${F:0:200}"
-echo "$F" | grep -q 'n=4 de 5 corridas' && ok "C-59 con su denominador al lado (n=4 de 5: la sin medir sigue contando)" || mal "C-59 falta el denominador n=4 de 5"
-echo "$F" | grep -q "$(fecha_hace 3)" && ok "C-59 con la fecha de la corrida medida más nueva" || mal "C-59 la ficha no trae su fecha"
-echo "$F" | grep -q '1 sin consumo medido' && ok "C-59 y dice la que quedó sin medir (AC 2)" || mal "C-59 no dice la corrida sin medir"
+echo "$F" | grep '<div class="t-val">400</div>' >/dev/null && ok "C-59 con la mediana de las medidas (400)" || mal "C-59 la mediana no es 400: ${F:0:200}"
+echo "$F" | grep 'n=4 de 5 corridas' >/dev/null && ok "C-59 con su denominador al lado (n=4 de 5: la sin medir sigue contando)" || mal "C-59 falta el denominador n=4 de 5"
+echo "$F" | grep "$(fecha_hace 3)" >/dev/null && ok "C-59 con la fecha de la corrida medida más nueva" || mal "C-59 la ficha no trae su fecha"
+echo "$F" | grep '1 sin consumo medido' >/dev/null && ok "C-59 y dice la que quedó sin medir (AC 2)" || mal "C-59 no dice la corrida sin medir"
 # va al lado de la ficha de la duración de una corrida: son la misma pregunta
 python3 - "$T/o.html" <<'PY2' && ok "C-59 la ficha vive en la pregunta 4, pegada a la duración de una corrida" || mal "C-59 la ficha no está al lado de «Una corrida del pipeline, de punta a punta»"
 import sys
@@ -1447,8 +1447,8 @@ node "$TABLERO" --dir "$T" --mailbox "$T/buzon" --output "$T/o.html" >/dev/null 
 [ "$RC" -eq 0 ] && ok "C-59b con el buzón vacío el tablero mide igual (exit 0): la fuente no es obligatoria" || mal "C-59b el buzón vacío rompió el tablero (exit $RC)"
 [ "$(ficha_estado "$T/o.html" 'Pasos de una corrida')" = "blind" ] && ok "C-59b buzón vacío → la ficha sale con trama" || mal "C-59b buzón vacío y la ficha no salió «no medido»"
 F="$(ficha_html "$T/o.html" 'Pasos de una corrida')"
-echo "$F" | grep -q 'buzón' && ok "C-59b con su motivo" || mal "C-59b sin motivo: ${F:0:200}"
-echo "$F" | grep -q '<div class="t-val">0' && mal "C-59b publicó un cero" || ok "C-59b ningún cero publicado"
+echo "$F" | grep 'buzón' >/dev/null && ok "C-59b con su motivo" || mal "C-59b sin motivo: ${F:0:200}"
+echo "$F" | grep '<div class="t-val">0' >/dev/null && mal "C-59b publicó un cero" || ok "C-59b ningún cero publicado"
 rm -rf "$T"
 
 # ── C-60 · una noche de suites INCOMPLETA no se dibuja como un número (2026-10-04) ──
@@ -1466,8 +1466,8 @@ PY
 node "$TABLERO" --dir "$T" --output "$T/o.html" >/dev/null 2>&1
 [ "$(ficha_estado "$T/o.html" 'Suites del arnés en rojo')" = "blind" ] && ok "C-60 una noche de suites incompleta sale con trama, no con un número" || mal "C-60 la noche incompleta se dibujó como medida ($(ficha_estado "$T/o.html" 'Suites del arnés en rojo'))"
 F="$(ficha_html "$T/o.html" 'Suites del arnés en rojo')"
-echo "$F" | grep -q '108 suites sin medir' && ok "C-60 con su motivo y la cuenta" || mal "C-60 sin motivo: ${F:0:300}"
-echo "$F" | grep -q '<div class="t-val">108' && mal "C-60 publicó 108 como si fueran rojas" || ok "C-60 las no medidas no se publican como rojas"
+echo "$F" | grep '108 suites sin medir' >/dev/null && ok "C-60 con su motivo y la cuenta" || mal "C-60 sin motivo: ${F:0:300}"
+echo "$F" | grep '<div class="t-val">108' >/dev/null && mal "C-60 publicó 108 como si fueran rojas" || ok "C-60 las no medidas no se publican como rojas"
 rm -rf "$T"
 # el espejo: con `complete: true` (o sin el campo, una foto de antes) la ficha se mide como siempre
 T=$(mktemp -d); montar_sano "$T"
@@ -1478,7 +1478,7 @@ d=json.load(open(f)); d.update(failures=['a.test.sh','b.test.sh'], unmeasured=[]
 PY
 node "$TABLERO" --dir "$T" --output "$T/o.html" >/dev/null 2>&1
 F="$(ficha_html "$T/o.html" 'Suites del arnés en rojo')"
-echo "$F" | grep -q '<div class="t-val">2</div>' && ok "C-60b una noche entera con dos rojas se mide como siempre" || mal "C-60b la noche entera no se midió: ${F:0:300}"
+echo "$F" | grep '<div class="t-val">2</div>' >/dev/null && ok "C-60b una noche entera con dos rojas se mide como siempre" || mal "C-60b la noche entera no se midió: ${F:0:300}"
 rm -rf "$T"
 
 echo

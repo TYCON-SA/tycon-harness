@@ -48,25 +48,25 @@ nota_en(){ unzip -p "$1" manifest.json | jq -r '.forms[0].releaseNotes'; }
 Z1="$TMP/z1"; mkdir -p "$Z1"; zip_con_form "$Z1" "totora-reserva"
 export STUB_LOG="$TMP/llamadas.log"; : > "$STUB_LOG"
 ERR=$(bash "$FLAT/recompute-zip-notes.sh" "$Z1" http://srv usuario clave 2>&1 >/dev/null); rc=$?
-echo "$ERR" | grep -q "no está" && no "🔴 no encontró release-notes.sh en su misma carpeta (el defecto de la v1.0.62)" || ok "encuentra release-notes.sh en la misma carpeta (layout plano del artefacto)"
+echo "$ERR" | grep "no está" >/dev/null && no "🔴 no encontró release-notes.sh en su misma carpeta (el defecto de la v1.0.62)" || ok "encuentra release-notes.sh en la misma carpeta (layout plano del artefacto)"
 [ "$rc" -eq 0 ] && ok "sale 0 cuando todas las notas salieron contra el servidor" || no "salió $rc con todo bien (stderr: $ERR)"
 
 # ---------------------------------------------------------------- 2. lo llama como FORMULARIO y desde el servidor
 L=$(cat "$STUB_LOG")
-echo "$L" | grep -q -- '^--type form --from-server http://srv usuario clave totora-reserva totora-reserva/src totora-reserva/package.json$' \
+echo "$L" | grep -- '^--type form --from-server http://srv usuario clave totora-reserva totora-reserva/src totora-reserva/package.json$' >/dev/null \
   && ok "invoca --type form --from-server con el nombre y los paths del formulario" \
   || no "🔴 la invocación no es la esperada: '$L' (sin --type form pregunta por PLUGINS)"
 
 # ---------------------------------------------------------------- 3. reescribe la nota dentro del ZIP
 N=$(nota_en "$Z1/totora-reserva.zip")
-echo "$N" | grep -q "feat(stock): algo real" && ok "la nota nueva quedó dentro del manifest del ZIP" || no "el ZIP sigue con la nota vieja: '$N'"
+echo "$N" | grep "feat(stock): algo real" >/dev/null && ok "la nota nueva quedó dentro del manifest del ZIP" || no "el ZIP sigue con la nota vieja: '$N'"
 
 # ---------------------------------------------------------------- 4. sin el hermano → 3, y lo dice
 FLAT2="$TMP/solo"; mkdir -p "$FLAT2"; cp "$REC_SRC" "$FLAT2/recompute-zip-notes.sh"
 Z2="$TMP/z2"; mkdir -p "$Z2"; zip_con_form "$Z2" "f"
 ERR=$(bash "$FLAT2/recompute-zip-notes.sh" "$Z2" http://srv u p 2>&1 >/dev/null); rc=$?
 [ "$rc" -eq 3 ] && ok "sin release-notes.sh sale 3 (antes: 0 y paso verde)" || no "🔴 sin release-notes.sh salió $rc"
-echo "$ERR" | grep -q "no está" && ok "…y dice qué falta" || no "no dijo qué falta: '$ERR'"
+echo "$ERR" | grep "no está" >/dev/null && ok "…y dice qué falta" || no "no dijo qué falta: '$ERR'"
 [ "$(nota_en "$Z2/f.zip")" = "nota del empaquetado" ] && ok "…y el ZIP conserva la nota que traía" || no "tocó el ZIP sin poder calcular"
 
 # ---------------------------------------------------------------- 5. sin credenciales → 3
@@ -78,14 +78,14 @@ Z3="$TMP/z3"; mkdir -p "$Z3"; zip_con_form "$Z3" "g"
 ERR=$(STUB_SALIDA='Sin cambios desde el build anterior (9f21d3d3) — esta versión sólo trae cambios internos del repositorio.' \
   bash "$FLAT/recompute-zip-notes.sh" "$Z3" http://srv u p 2>&1 >/dev/null); rc=$?
 [ "$rc" -eq 3 ] && ok "nota calculada contra el build anterior → sale 3 (no se disfraza de verde)" || no "🔴 nota degradada y salió $rc — es EXACTAMENTE la v1.0.62"
-echo "$ERR" | grep -q "build anterior" && ok "…y explica que fue contra el build anterior" || no "no explicó la degradación: '$ERR'"
-nota_en "$Z3/g.zip" | grep -q "build anterior" && ok "…pero la nota igual se escribió (mejor que nada)" || no "no escribió la nota degradada"
+echo "$ERR" | grep "build anterior" >/dev/null && ok "…y explica que fue contra el build anterior" || no "no explicó la degradación: '$ERR'"
+nota_en "$Z3/g.zip" | grep "build anterior" >/dev/null && ok "…pero la nota igual se escribió (mejor que nada)" || no "no escribió la nota degradada"
 
 # ---------------------------------------------------------------- 7. dos formularios: cada uno con su nombre, con pausa entre medio
 Z4="$TMP/z4"; mkdir -p "$Z4"; zip_con_form "$Z4" "a-form"; zip_con_form "$Z4" "b-form"
 : > "$STUB_LOG"
 bash "$FLAT/recompute-zip-notes.sh" "$Z4" http://srv u p >/dev/null 2>&1
-grep -c -- ' a-form a-form/src' "$STUB_LOG" | grep -qx 1 && grep -c -- ' b-form b-form/src' "$STUB_LOG" | grep -qx 1 \
+grep -c -- ' a-form a-form/src' "$STUB_LOG" | grep -x 1 >/dev/null && grep -c -- ' b-form b-form/src' "$STUB_LOG" | grep -x 1 >/dev/null \
   && ok "con dos ZIPs pregunta por cada formulario por su nombre del manifest" || no "no preguntó por cada formulario: $(cat "$STUB_LOG")"
 
 # ---------------------------------------------------------------- 8. UN SOLO INGRESO para todos
@@ -100,7 +100,7 @@ url=""; hdr=""; out=""; cuerpo=""
 while [ $# -gt 0 ]; do case "$1" in -D) hdr="$2"; shift;; -o) out="$2"; shift;; --data-raw|--data|-d|--data-binary) cuerpo="$2"; shift;; http*) url="$1";; esac; shift; done
 echo "$url" >> "$CURL_LOG"
 [ -n "$cuerpo" ] && printf '%s\n' "$cuerpo" >> "${CURL_BODY_LOG:-/dev/null}"
-if echo "$url" | grep -q '/api/auth/login'; then
+if echo "$url" | grep '/api/auth/login' >/dev/null; then
   if [ -n "${CURL_LOGIN_FALLA:-}" ]; then printf '000'; exit 7; fi
   printf 'HTTP/1.1 200 OK\r\nSet-Cookie: admin_token=tokUNICO; Path=/\r\n\r\n' > "$hdr"; echo '{}' > "$out"; printf '200'; exit 0
 fi
@@ -134,7 +134,7 @@ formularios=$(grep -c -- '--type form' "$STUB_LOG")
 # el despliegue de al lado se comió el límite. El caso 8 pasaba igual, porque el servidor
 # simulado aceptaba cualquier cosa: un "un solo ingreso" que manda basura no sirve de nada.
 CUERPO=$(cat "$STUB_BODY" 2>/dev/null | head -1)
-echo "$CUERPO" | grep -q '^@' && no "🔴 el cuerpo del ingreso es una RUTA, no el JSON: $CUERPO" \
+echo "$CUERPO" | grep '^@' >/dev/null && no "🔴 el cuerpo del ingreso es una RUTA, no el JSON: $CUERPO" \
   || ok "el cuerpo del ingreso NO es una ruta de archivo"
 echo "$CUERPO" | jq -e '.username == "u" and .tenant_id == "default"' >/dev/null 2>&1 \
   && ok "…es JSON válido y trae el usuario (el host lo va a entender)" \

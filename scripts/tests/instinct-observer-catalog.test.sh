@@ -201,16 +201,16 @@ fi
 R="$LAB/completo.revision.txt"
 revision_de "$A" > "$R" 2>"$LAB/revision.err"
 APROB="Approved ("
-seccion "$R" "$APROB" | grep -qF -- "- [aaaaaaaaaa] (Totora) MARCA-APROBADO buscar con CodeGraph primero → ACCION-APROBADA codegraph_search antes de grep" \
+seccion "$R" "$APROB" | grep -F -- "- [aaaaaaaaaa] (Totora) MARCA-APROBADO buscar con CodeGraph primero → ACCION-APROBADA codegraph_search antes de grep" >/dev/null \
   && ok "C-02 la revisión recibe cada aprobado con su hash, su proyecto y su acción" \
   || bad "C-02 aprobado" "$(seccion "$R" "$APROB") $(head -c 300 "$LAB/revision.err")"
 
 RECH=$(seccion "$R" "Rejected by the developer")
-echo "$RECH" | grep -qF -- "- [bbbbbbbbbb] (tycon-claude-guides) MARCA-RECHAZADO correr la suite completa al iterar — rejected because: MOTIVO-RECHAZO la regla de tests pide scope" \
+echo "$RECH" | grep -F -- "- [bbbbbbbbbb] (tycon-claude-guides) MARCA-RECHAZADO correr la suite completa al iterar — rejected because: MOTIVO-RECHAZO la regla de tests pide scope" >/dev/null \
   && ok "C-03 la revisión recibe cada rechazado con su proyecto y su motivo" \
   || bad "C-03 rechazado" "$RECH"
 
-echo "$RECH" | grep -qF "MARCA-BLOQUE hook de dotnet test por edición — rejected because: MOTIVO-EN-BLOQUE primera línea y segunda línea" \
+echo "$RECH" | grep -F "MARCA-BLOQUE hook de dotnet test por edición — rejected because: MOTIVO-EN-BLOQUE primera línea y segunda línea" >/dev/null \
   && ok "C-04 el motivo escrito en bloque (motivo_rechazo: |) se lee y queda en una línea" \
   || bad "C-04 motivo en bloque" "$RECH"
 
@@ -233,37 +233,37 @@ else
 fi
 
 REV=$(seccion "$R" "Advisors (code reviewers that run in the pipeline) — what each one audits")
-if echo "$REV" | grep -qF -- "- tycon-revisor-prueba: Audita MARCA-REVISOR código .NET contra las convenciones (SafeQueryBuilder, IBackendPlugin, feature structure, orchestrator pattern, BizuitUserContext, rollback en catch. Tx abierta, read/write-while-tx-open, DateTime sin Kind, FIN-DE-LA-LISTA)" \
-  && ! echo "$REV" | grep -qF "PRUEBA-C1" && ! echo "$REV" | grep -qF "Usar cuando"; then
+if echo "$REV" | grep -F -- "- tycon-revisor-prueba: Audita MARCA-REVISOR código .NET contra las convenciones (SafeQueryBuilder, IBackendPlugin, feature structure, orchestrator pattern, BizuitUserContext, rollback en catch. Tx abierta, read/write-while-tx-open, DateTime sin Kind, FIN-DE-LA-LISTA)" >/dev/null \
+  && ! echo "$REV" | grep -F "PRUEBA-C1" >/dev/null && ! echo "$REV" | grep -F "Usar cuando" >/dev/null; then
   ok "C-08 la línea de cada revisor llega hasta el final de su lista (más de 160 caracteres), sin IDs de reglas ni cuándo invocarlo"
 else
   bad "C-08 línea del revisor" "$REV"
 fi
-if echo "$REV" | grep -qF -- "- worker-prueba: Audita MARCA-WORKER BackgroundService sin stoppingToken" \
-  && echo "$REV" | grep -qF -- "- tycon-abrev-prueba: Audita MARCA-ABREV Server vs. Client boundary, e.g. Server Actions sin validar"; then
+if echo "$REV" | grep -F -- "- worker-prueba: Audita MARCA-WORKER BackgroundService sin stoppingToken" >/dev/null \
+  && echo "$REV" | grep -F -- "- tycon-abrev-prueba: Audita MARCA-ABREV Server vs. Client boundary, e.g. Server Actions sin validar" >/dev/null; then
   ok "C-09 entran los revisores que no son tycon-*, y una abreviatura («vs.», «e.g.») no corta la oración"
 else
   bad "C-09 revisores" "$REV"
 fi
 
 PRE=$(seccion "$R" "Pre-commit checks")
-if echo "$PRE" | grep -qF -- "- scripts/lint-prueba.js: MARCA-LINT chequea que el frontmatter sea legible." \
-  && echo "$PRE" | grep -qF -- "- scripts/ci/porton-prueba.js: MARCA-PORTON exige la evidencia de cierre en el repo de la story." \
-  && echo "$PRE" | grep -qF -- "- build/check.js: MARCA-CHECK paridad Claude-Codex." \
-  && echo "$PRE" | grep -qF -- "- scripts/ci/despues-de-aritmetica.js"; then
+if echo "$PRE" | grep -F -- "- scripts/lint-prueba.js: MARCA-LINT chequea que el frontmatter sea legible." >/dev/null \
+  && echo "$PRE" | grep -F -- "- scripts/ci/porton-prueba.js: MARCA-PORTON exige la evidencia de cierre en el repo de la story." >/dev/null \
+  && echo "$PRE" | grep -F -- "- build/check.js: MARCA-CHECK paridad Claude-Codex." >/dev/null \
+  && echo "$PRE" | grep -F -- "- scripts/ci/despues-de-aritmetica.js" >/dev/null; then
   ok "C-10 el pre-commit lista lo que su guion ejecuta, con la primera frase de la cabecera (dos renglones unidos), también después de un \$(( a << b ))"
 else
   bad "C-10 pre-commit" "$PRE"
 fi
-if [ -n "$PRE" ] && ! echo "$PRE" | grep -qE "comentado|viejo-en-comentario|en-echo|en-heredoc|en-then|en-segmento|en-herestring|real-test" && no_tiene "$R" "DETALLE-QUE-NO-VA"; then
+if [ -n "$PRE" ] && ! echo "$PRE" | grep -E "comentado|viejo-en-comentario|en-echo|en-heredoc|en-then|en-segmento|en-herestring|real-test" >/dev/null && no_tiene "$R" "DETALLE-QUE-NO-VA"; then
   ok "C-11 no cuenta como control del pre-commit lo nombrado en un comentario, un echo (también tras then o &&), un heredoc, un here-string o bajo scripts/tests/"
 else
   bad "C-11 lo que no corre" "$PRE"
 fi
 
 CI=$(seccion "$R" "CI scripts")
-if echo "$CI" | grep -qF -- "- comentado.js: MARCA-CI-comentado verifica algo de noche." \
-  && echo "$CI" | grep -qxF -- "- sin-cabecera.sh" && ! echo "$CI" | grep -qF "porton-prueba.js"; then
+if echo "$CI" | grep -F -- "- comentado.js: MARCA-CI-comentado verifica algo de noche." >/dev/null \
+  && echo "$CI" | grep -xF -- "- sin-cabecera.sh" >/dev/null && ! echo "$CI" | grep -F "porton-prueba.js" >/dev/null; then
   ok "C-12 scripts/ci/ entra entero, sin repetir lo que figura en el pre-commit; sin cabecera, el nombre solo"
 else
   bad "C-12 CI" "$CI"
@@ -299,8 +299,8 @@ MEDIDA=$(con_observador "$T" '(() => {
 RT="$LAB/tope.revision.txt"
 revision_de "$T" '"ollama"' > "$RT" 2>/dev/null
 LISTA_R=$(seccion "$RT" "Rejected by the developer"); LISTA_A=$(seccion "$RT" "Approved (")
-if echo "$LISTA_A" | grep -qF "APROBADO-RELEVANTE-VIEJO" && echo "$LISTA_R" | grep -qF "RELEVANTE-MAS-NUEVO" \
-  && ! echo "$LISTA_R" | grep -qF "RELEVANTE-MAS-VIEJO" && ! echo "$LISTA_R" | grep -qF "AJENO-"; then
+if echo "$LISTA_A" | grep -F "APROBADO-RELEVANTE-VIEJO" >/dev/null && echo "$LISTA_R" | grep -F "RELEVANTE-MAS-NUEVO" >/dev/null \
+  && ! echo "$LISTA_R" | grep -F "RELEVANTE-MAS-VIEJO" >/dev/null && ! echo "$LISTA_R" | grep -F "AJENO-" >/dev/null; then
   ok "C-14 bajo el tope entran primero lo aprobado, lo del proyecto con candidatos (también en una lista con coma y otras mayúsculas) y lo nuevo; lo ajeno queda afuera aunque sea de hoy"
 else
   bad "C-14 prioridad" "aprobado=$(echo "$LISTA_A" | grep -c APROBADO-RELEVANTE) nuevo=$(echo "$LISTA_R" | grep -c MAS-NUEVO) viejo=$(echo "$LISTA_R" | grep -c MAS-VIEJO) ajenos=$(echo "$LISTA_R" | grep -c AJENO-)"
@@ -454,7 +454,7 @@ punta() {
 if [ "\$1" = "--version" ]; then echo "$ejecutor de mentira"; exit 0; fi
 entrada=\$(cat)
 salida="$LAB/respuesta-propuestas.txt"
-if printf '%s' "\$entrada" | grep -q "You are checking proposed"; then
+if printf '%s' "\$entrada" | grep "You are checking proposed" >/dev/null; then
   printf '%s' "\$entrada" > "$LAB/$nombre.revision-recibida.txt"
   case "$modo" in
     fails) echo "sin cuota" >&2; exit 1 ;;
@@ -522,8 +522,8 @@ en_e1() { ( cd "$E1" && HOME="$E1/home" USERPROFILE="$E1/home" node scripts/inst
 LISTA=$(en_e1 list 2>&1)
 HASH_DESC=$(grep -h '^hash:' "$E1/inbox/instincts/descartados/"*.yaml 2>/dev/null | head -1 | awk '{print $2}')
 MOSTRADO=$(en_e1 show "${HASH_DESC:-sin-hash}" 2>&1)
-if echo "$LISTA" | grep -qF "1 propuesta(s) que la revisión del observer descartó" && echo "$LISTA" | grep -qF "PROPUESTA-CUBIERTA" \
-  && echo "$LISTA" | grep -qF "la cubre: aaaaaaaaaa — mismo caso" && echo "$MOSTRADO" | grep -qF "cubierto_por"; then
+if echo "$LISTA" | grep -F "1 propuesta(s) que la revisión del observer descartó" >/dev/null && echo "$LISTA" | grep -F "PROPUESTA-CUBIERTA" >/dev/null \
+  && echo "$LISTA" | grep -F "la cubre: aaaaaaaaaa — mismo caso" >/dev/null && echo "$MOSTRADO" | grep -F "cubierto_por" >/dev/null; then
   ok "C-26 la lista de pending resume lo que la revisión descartó (con qué lo cubre), y show lo encuentra"
 else
   bad "C-26 lista de descartados" "$(echo "$LISTA" | tail -6 | tr '\n' ' ')"
@@ -549,7 +549,7 @@ ACTUAL=$(ls "$E1/inbox/instincts/descartados/"*.yaml | head -1)
 cp "$ACTUAL" "$E1/inbox/instincts/descartados/${AYER}${ACTUAL##*/[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]}"
 LISTA2=$(en_e1 list 2>&1)
 if [ "$N_DESC" = 1 ] && [ "$VECES_OK" = 1 ] \
-  && echo "$LISTA2" | grep -qF "1 propuesta(s) que la revisión del observer descartó" && echo "$LISTA2" | grep -qF "(descartada 2 veces)"; then
+  && echo "$LISTA2" | grep -F "1 propuesta(s) que la revisión del observer descartó" >/dev/null && echo "$LISTA2" | grep -F "(descartada 2 veces)" >/dev/null; then
   ok "C-28 la misma repetición en otra corrida deja un solo archivo, con cuántas veces se descartó, y la lista la cuenta una vez (también si quedó una copia vieja)"
 else
   bad "C-28 descartes repetidos" "archivos=$N_DESC · $(echo "$LISTA2" | tail -4 | tr '\n' ' ')"
@@ -600,10 +600,10 @@ instinto "$R2/inbox/instincts/pending/20261002-r2-b2b2b2b2b2.yaml" "MARCA-R2-REC
 LISTA_R2=$(cd "$R2" && limpio node scripts/instincts/instinct-promote.js list 2>&1)
 APRUEBA=$(cd "$R2" && limpio node scripts/instincts/instinct-promote.js approve a1a1a1a1a1 2>&1)
 RECHAZA=$(cd "$R2" && limpio node scripts/instincts/instinct-promote.js reject b2b2b2b2b2 --reason "prueba" 2>&1)
-if echo "$LISTA_R2" | grep -qF "MARCA-R2-APROBAR" && echo "$LISTA_R2" | grep -qF "MARCA-R2-RECHAZAR" \
+if echo "$LISTA_R2" | grep -F "MARCA-R2-APROBAR" >/dev/null && echo "$LISTA_R2" | grep -F "MARCA-R2-RECHAZAR" >/dev/null \
   && [ -f "$R2/inbox/instincts/promoted/20261002-r2-a1a1a1a1a1.yaml" ] && [ -f "$R2/inbox/instincts/archived/20261002-r2-b2b2b2b2b2.yaml" ] \
   && [ -z "$(ls -A "$R2/inbox/instincts/pending")" ] && [ -f "$R2/inbox/instincts/drafts/a1a1a1a1a1-advisor-noexiste-c1.md" ] \
-  && echo "$APRUEBA" | grep -qF "Archivo: inbox/instincts/drafts/a1a1a1a1a1-advisor-noexiste-c1.md" \
+  && echo "$APRUEBA" | grep -F "Archivo: inbox/instincts/drafts/a1a1a1a1a1-advisor-noexiste-c1.md" >/dev/null \
   && [ ! -e "$R2/scripts/instincts/pending" ] && [ ! -e "$R2/scripts/instincts/drafts" ] && [ ! -e "$R2/instincts" ]; then
   ok "T18 instinct-promote lista, aprueba (con su borrador) y rechaza sobre inbox/instincts/{pending,promoted,archived,drafts}"
 else
@@ -611,7 +611,7 @@ else
 fi
 
 AVISO=$(limpio TYCON_INSTINCT_NOTIFY=1 node "$R2/scripts/instincts/instinct-observer.js" --notify --dry-run 2>&1); RC=$?
-if [ "$RC" = 0 ] && echo "$AVISO" | grep -qF "Telegram apagado en esta máquina" && ! echo "$AVISO" | grep -qF "Cannot find module"; then
+if [ "$RC" = 0 ] && echo "$AVISO" | grep -F "Telegram apagado en esta máquina" >/dev/null && ! echo "$AVISO" | grep -F "Cannot find module" >/dev/null; then
   ok "T18 instinct-observer --notify lee la configuración del arnés (scripts/lib/tycon-config.js) desde scripts/instincts/"
 else
   bad "T18 observer + tycon-config" "rc=$RC $(echo "$AVISO" | head -3 | tr '\n' ' ' | head -c 300)"
@@ -690,7 +690,7 @@ else
     NUEVA=$(cd "$R2" && limpio node scripts/instincts/instinct-promote.js list 2>&1); RN=$?
     VIEJA=$(cd "$R2" && limpio node "$V_PROMOTE" list 2>&1); RV=$?
     DVIEJO=$(limpio node -e 'process.stdout.write(require(process.argv[1]).ownerDePrefijo("NOEXISTE"))' "$R2/$V_DRAFT" 2>&1)
-    if [ "$RN" = 0 ] && [ "$RN" = "$RV" ] && [ "$NUEVA" = "$VIEJA" ] && echo "$VIEJA" | grep -qF "MARCA-R2-VIEJA" && [ "$DVIEJO" = "UNKNOWN-ADVISOR" ]; then
+    if [ "$RN" = 0 ] && [ "$RN" = "$RV" ] && [ "$NUEVA" = "$VIEJA" ] && echo "$VIEJA" | grep -F "MARCA-R2-VIEJA" >/dev/null && [ "$DVIEJO" = "UNKNOWN-ADVISOR" ]; then
       ok "T18 los reemplazos de la ruta vieja (instinct-promote list, instinct-draft) dan lo mismo que la nueva"
     else
       bad "T18 reemplazos" "rc nueva=$RN vieja=$RV draft=$(echo "$DVIEJO" | head -c 80) · $(echo "$VIEJA" | head -3 | tr '\n' ' ' | head -c 200)"
@@ -774,8 +774,8 @@ else
     && tiene "$D/20260901-x-c1c1c1c1c1.yaml" "NUEVO-C1" && tiene "$D/20260901-y-c2c2c2c2c2.yaml" "VIEJO-C2" \
     && tiene "$D/20260901-z-c3c3c3c3c3.yaml" "VIEJO-C3" && tiene "$D/20260901-w-c4c4c4c4c4.yaml" "VIEJO-C4" \
     && [ "$(ls "$D" | wc -l | tr -d ' ')" = 4 ] && [ ! -e "$C/$V_CARPETA/descartados" ] && [ -f "$C/$V_CARPETA/observer.log" ] \
-    && echo "$L1" | grep -qF "4 descartado(s) de $V_CARPETA/descartados/ a inbox/instincts/descartados/" \
-    && echo "$L1" | grep -qF "3 con el mismo nombre en las dos" && [ -z "$L2" ]; then
+    && echo "$L1" | grep -F "4 descartado(s) de $V_CARPETA/descartados/ a inbox/instincts/descartados/" >/dev/null \
+    && echo "$L1" | grep -F "3 con el mismo nombre en las dos" >/dev/null && [ -z "$L2" ]; then
     ok "T18b adversarial R2: instinct-promote también migra; en un choque gana el de más veces descartada (empate: el más nuevo), y la segunda vez calla"
   else
     bad "T18b choque" "rc=$RL1/$RL2 · $(echo "$L1 | $L2" | head -c 300) · $(grep -h '^trigger' "$D/"*.yaml 2>&1 | tr '\n' ' ')"
@@ -788,7 +788,7 @@ else
   instinto "$S/$V_CARPETA/descartados/20260901-s-c5c5c5c5c5.yaml" "SIN-MAPA" "" "hash: c5c5c5c5c5"
   LS=$(cd "$S" && limpio node scripts/instincts/instinct-promote.js list 2>&1); RS=$?
   [ "$RS" = 0 ] && [ -f "$S/$V_CARPETA/descartados/20260901-s-c5c5c5c5c5.yaml" ] && [ ! -e "$S/inbox/instincts/descartados/20260901-s-c5c5c5c5c5.yaml" ] \
-    && ! echo "$LS" | grep -qF "descartado(s) de" \
+    && ! echo "$LS" | grep -F "descartado(s) de" >/dev/null \
     && ok "T18b adversarial R2: sin el mapa (copia pública) no hay nada que migrar y nada se mueve" \
     || bad "T18b sin mapa" "rc=$RS · $(echo "$LS" | tail -3 | tr '\n' ' ' | head -c 200)"
 fi

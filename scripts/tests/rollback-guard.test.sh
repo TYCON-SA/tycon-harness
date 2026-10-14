@@ -16,14 +16,14 @@ cat > "$STUB/curl" <<'STUB'
 #!/usr/bin/env bash
 url=""; hdr=""; out=""
 while [ $# -gt 0 ]; do case "$1" in -D) hdr="$2"; shift;; -o) out="$2"; shift;; -w) shift;; http*) url="$1";; esac; shift; done
-if echo "$url" | grep -q '/api/auth/login'; then
+if echo "$url" | grep '/api/auth/login' >/dev/null; then
   code=$(cat "$STUB_DIR/login.code" 2>/dev/null || echo 200)
   [ "$code" = "401" ] && echo '{"error":"Invalid credentials"}' > "$out"
   [ "$code" = "200" ] && { printf 'HTTP/1.1 200 OK\r\nSet-Cookie: admin_token=tok; Path=/\r\n\r\n' > "$hdr"; echo '{}' > "$out"; }
   printf '%s' "$code"; [ "$code" = "000" ] && exit 7; exit 0
 fi
-if echo "$url" | grep -q '/api/admin/plugins'; then cat "$STUB_DIR/plugins.json"; exit 0; fi
-if echo "$url" | grep -q '/api/custom-forms'; then cat "$STUB_DIR/forms.json"; exit 0; fi
+if echo "$url" | grep '/api/admin/plugins' >/dev/null; then cat "$STUB_DIR/plugins.json"; exit 0; fi
+if echo "$url" | grep '/api/custom-forms' >/dev/null; then cat "$STUB_DIR/forms.json"; exit 0; fi
 exit 1
 STUB
 chmod +x "$STUB/curl"; export PATH="$STUB:$PATH"

@@ -53,7 +53,7 @@ arbol "$T/instalado" 1 "una versión instalada (sin .git) → NO aplica: el punt
 arbol "$T/no-existe" 1 "una carpeta que no está → NO aplica"
 arbol "" 1 "sin carpeta → NO aplica"
 # y el instalador se lo pregunta ANTES de sellar y de lanzar el barrido
-if awk '/^STAGE_METRICS_JS=/{on=1} on&&/nohup node "\$STAGE_METRICS_JS"/{exit} on' "$RAIZ/scripts/install-tycon-hooks.sh" | grep -q 'meter_backup_has_own_tree'; then
+if awk '/^STAGE_METRICS_JS=/{on=1} on&&/nohup node "\$STAGE_METRICS_JS"/{exit} on' "$RAIZ/scripts/install-tycon-hooks.sh" | grep 'meter_backup_has_own_tree' >/dev/null; then
   ok "el instalador pregunta si el arnés es un clon antes de lanzar el respaldo"
 else
   mal "el instalador lanza el respaldo sin preguntar si el arnés es un clon"

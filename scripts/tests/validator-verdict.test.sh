@@ -66,7 +66,7 @@ for (const [nombre, texto, esperado] of casos) {
 console.log(mal ? `ROJO ${mal}` : 'VERDE');
 JS
 )"
-  if printf '%s' "${salida}" | grep -q '^VERDE$'; then ok "T1 Veredicto_Parser_EstadosYReglas"; else bad "T1 Veredicto_Parser_EstadosYReglas" "$(printf '%s' "${salida}" | tr '\n' ' ' | cut -c1-600)"; fi
+  if printf '%s' "${salida}" | grep '^VERDE$' >/dev/null; then ok "T1 Veredicto_Parser_EstadosYReglas"; else bad "T1 Veredicto_Parser_EstadosYReglas" "$(printf '%s' "${salida}" | tr '\n' ' ' | cut -c1-600)"; fi
 fi
 
 # ── T2 · Veredicto_Conversacion_NotificacionEncoladaYTraspaso (AC 3) ─────────────────────────────────
@@ -127,7 +127,7 @@ console.log(chk.join('\n'));
 console.log(chk.some((c) => c.startsWith('MAL')) ? 'ROJO' : 'VERDE');
 JS
 )"
-if printf '%s' "${salida}" | grep -q '^VERDE$'; then ok "T2 Veredicto_Conversacion_NotificacionEncoladaYTraspaso"; else bad "T2 Veredicto_Conversacion_NotificacionEncoladaYTraspaso" "$(printf '%s' "${salida}" | grep -v '^OK' | tr '\n' ' ' | cut -c1-700)"; fi
+if printf '%s' "${salida}" | grep '^VERDE$' >/dev/null; then ok "T2 Veredicto_Conversacion_NotificacionEncoladaYTraspaso"; else bad "T2 Veredicto_Conversacion_NotificacionEncoladaYTraspaso" "$(printf '%s' "${salida}" | grep -v '^OK' | tr '\n' ' ' | cut -c1-700)"; fi
 
 # ── T2g · el marco del traspaso cierra en el renglón SIN sangría (pase adversarial 2026-09-17) ───────
 # Medido en 78 traspasos reales (135 hilos guardados): los 78 cierran con `</agent-message>` al principio de
@@ -165,7 +165,7 @@ console.log(chk.join('\n'));
 console.log(chk.some((c) => c.startsWith('MAL')) ? 'ROJO' : 'VERDE');
 JS
 )"
-if printf '%s' "${salida}" | grep -q '^VERDE$'; then ok "T2g/T2h traspaso cerrado sin sangría · otra story por nombre o carpeta"; else bad "T2g/T2h traspaso y otra story" "$(printf '%s' "${salida}" | grep -v '^OK' | tr '\n' ' ' | cut -c1-900)"; fi
+if printf '%s' "${salida}" | grep '^VERDE$' >/dev/null; then ok "T2g/T2h traspaso cerrado sin sangría · otra story por nombre o carpeta"; else bad "T2g/T2h traspaso y otra story" "$(printf '%s' "${salida}" | grep -v '^OK' | tr '\n' ' ' | cut -c1-900)"; fi
 
 # ── T16 · Banco_ExpectVeredicto_AutotestYCasos (AC 13) ──────────────────────────────────────────────
 # Mutación: un caso sin `expect_veredicto`, o con el estado que no corresponde a su tipo; o el autotest del
@@ -183,11 +183,11 @@ console.log(d.cases.length === 5 ? '' : `se esperaban 5 casos, hay ${d.cases.len
 console.log(mal.length ? `ROJO ${mal.join(' · ')}` : 'VERDE');
 JS
 )"
-if printf '%s' "${salida}" | grep -q '^VERDE$'; then ok "T16a los 5 casos del validador declaran expect_veredicto coherente con su tipo"; else bad "T16a casos del validador" "$(printf '%s' "${salida}" | tr '\n' ' ' | cut -c1-500)"; fi
+if printf '%s' "${salida}" | grep '^VERDE$' >/dev/null; then ok "T16a los 5 casos del validador declaran expect_veredicto coherente con su tipo"; else bad "T16a casos del validador" "$(printf '%s' "${salida}" | tr '\n' ' ' | cut -c1-500)"; fi
 
 salida="$(node "${RUNNER}" --selftest-retro 2>&1)"
 rc=$?
-if [ "${rc}" -eq 0 ] && printf '%s' "${salida}" | grep -q 'selftest-retro: VEREDICTO'; then
+if [ "${rc}" -eq 0 ] && printf '%s' "${salida}" | grep 'selftest-retro: VEREDICTO' >/dev/null; then
   ok "T16b el autotest del banco parsea el renglón Veredicto (y sale verde)"
 else
   bad "T16b autotest del banco" "rc=${rc}; $(printf '%s' "${salida}" | grep -i 'veredicto\|❌' | tr '\n' ' ' | cut -c1-400)"

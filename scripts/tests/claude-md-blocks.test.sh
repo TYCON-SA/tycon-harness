@@ -438,7 +438,7 @@ else
 fi
 # los marcadores de los bloques reales: se miden también en la copia (no necesitan historia)
 for b in response-style tool-names background-execution; do
-  head -n 3 "$RAIZ/claude-md-blocks/$b.md" | grep -qx '<!-- requires-profile: full -->' && ok "T34 $b.md lleva el marcador" || mal "T34 $b.md no lleva <!-- requires-profile: full -->"
+  head -n 3 "$RAIZ/claude-md-blocks/$b.md" | grep -x '<!-- requires-profile: full -->' >/dev/null && ok "T34 $b.md lleva el marcador" || mal "T34 $b.md no lleva <!-- requires-profile: full -->"
 done
 grep -q 'requires-profile' "$RAIZ/claude-md-blocks/ado-runs-list-lag.md" && mal "T34 ado-runs-list-lag.md cambió (no lleva el marcador)" || ok "T34 ado-runs-list-lag.md sin el marcador"
 rm -rf "$P"

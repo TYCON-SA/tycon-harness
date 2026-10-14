@@ -531,9 +531,9 @@ case "$SALIDA" in *"registrado por el nombre viejo: settings.json 1"*"harness.js
 # «8.19» como número suelto: la salida trae la hora de instalación con milésimas, y «…:38.190Z» lo contenía de a ratos
 # (public-ci, 2026-10-14, Node 22: rojo sin ninguna story en la salida)
 T26_STORY='story|(^|[^0-9.])8\.19([^0-9]|$)'
-printf '%s\n' '  ✓ versión 2026.10.14+b815072 · instalada 2026-10-14T05:55:38.190Z' | grep -qiE "$T26_STORY" && mal "T26 el patrón de story toma la hora de instalación como una story" || ok "T26 el patrón de story no toma la hora de instalación (…:38.190Z)"
-printf '%s\n' 'tanda B de la 8.19' '(8.19)' 'una Story' | grep -ciE "$T26_STORY" | grep -qx 3 && ok "T26 espejo: el patrón sí ve «8.19» suelto y «story»" || mal "T26 espejo: el patrón no ve «8.19» suelto o «story»"
-printf '%s\n' "$SALIDA" | grep -qiE "$T26_STORY" && mal "T26 una línea nombra una story: $(printf '%s\n' "$SALIDA" | grep -iE "$T26_STORY")" || ok "T26 ninguna línea nombra una story"
+printf '%s\n' '  ✓ versión 2026.10.14+b815072 · instalada 2026-10-14T05:55:38.190Z' | grep -iE "$T26_STORY" >/dev/null && mal "T26 el patrón de story toma la hora de instalación como una story" || ok "T26 el patrón de story no toma la hora de instalación (…:38.190Z)"
+printf '%s\n' 'tanda B de la 8.19' '(8.19)' 'una Story' | grep -ciE "$T26_STORY" | grep -x 3 >/dev/null && ok "T26 espejo: el patrón sí ve «8.19» suelto y «story»" || mal "T26 espejo: el patrón no ve «8.19» suelto o «story»"
+printf '%s\n' "$SALIDA" | grep -iE "$T26_STORY" >/dev/null && mal "T26 una línea nombra una story: $(printf '%s\n' "$SALIDA" | grep -iE "$T26_STORY")" || ok "T26 ninguna línea nombra una story"
 # (2) mudada: el hook por el lugar, el permiso con las dos formas → sólo permisos
 cp "$BASE/t26-settings.json" "$TYCON_SETTINGS_PATH"
 t26_hook "node \"\$HOME/.claude/$PN/scripts/hooks/lab-hook.js\""
@@ -550,7 +550,7 @@ JSON="$(harness doctor --json 2>/dev/null)"; SALIDA="$(harness doctor 2>&1)"
 # (3) una máquina de afuera: sin el viejo y sin nada por él → ni una palabra del viejo
 cp "$BASE/t26-settings.json" "$TYCON_SETTINGS_PATH"; t26_rm "$T26_OLD"
 SALIDA="$(harness doctor 2>&1)"; RC=$?; JSON="$(harness doctor --json 2>/dev/null)"
-[ "$RC" = 0 ] && ! printf '%s\n' "$SALIDA" | grep -q "nombre viejo" && [ "$(printf '%s' "$JSON" | jtxt "('legacy' in d, 'registered_by_legacy' in d, d['place']['name'])")" = "(False, False, '$PN')" ] \
+[ "$RC" = 0 ] && ! printf '%s\n' "$SALIDA" | grep "nombre viejo" >/dev/null && [ "$(printf '%s' "$JSON" | jtxt "('legacy' in d, 'registered_by_legacy' in d, d['place']['name'])")" = "(False, False, '$PN')" ] \
   && ok "T26 máquina de afuera: verde, sin nombrar el viejo, place sin legacy en el JSON" || mal "T26 afuera (rc $RC): $(printf '%s\n' "$SALIDA" | grep -i 'viejo') · $(printf '%s' "$JSON" | jtxt "[k for k in d]")"
 # (3b) …con las copias que el arnés gestiona instaladas: el pre-commit global de git (copia de su fuente en el árbol)
 #      nombra la ruta vieja a propósito; no es un registro de la persona: sigue sin una palabra del viejo y con 0
@@ -559,7 +559,7 @@ mkdir -p "$LAB_TREE/scripts/hooks" "$TYCON_GIT_HOOKS_DIR"
 printf '#!/usr/bin/env bash\nharness_dir="${TYCON_GUIDES_DIR:-$HOME/.claude/%s}"\nbash "$HOME/.claude/%s/scripts/hooks/x.sh"\n' "$LN" "$LN" > "$LAB_TREE/scripts/hooks/git-pre-commit-global.sh"
 cp "$LAB_TREE/scripts/hooks/git-pre-commit-global.sh" "$TYCON_GIT_HOOKS_DIR/pre-commit"
 SALIDA="$(harness doctor 2>&1)"; RC=$?; JSON="$(harness doctor --json 2>/dev/null)"
-[ "$RC" = 0 ] && ! printf '%s\n' "$SALIDA" | grep -q "nombre viejo" && [ "$(printf '%s' "$JSON" | jtxt "('legacy' in d, 'registered_by_legacy' in d)")" = "(False, False)" ] \
+[ "$RC" = 0 ] && ! printf '%s\n' "$SALIDA" | grep "nombre viejo" >/dev/null && [ "$(printf '%s' "$JSON" | jtxt "('legacy' in d, 'registered_by_legacy' in d)")" = "(False, False)" ] \
   && ok "T26 máquina de afuera con el pre-commit global del árbol instalado: tampoco nombra el viejo (la copia no es un registro)" || mal "T26 afuera con el pre-commit (rc $RC): $(printf '%s\n' "$SALIDA" | grep -i 'viejo') · $(printf '%s' "$JSON" | jtxt "d.get('registered_by_legacy')")"
 rm -f "$LAB_TREE/scripts/hooks/git-pre-commit-global.sh" "$TYCON_GIT_HOOKS_DIR/pre-commit"
 # (4) el viejo como carpeta ajena o como archivo: un dato, no rojo (M7)

@@ -1154,25 +1154,25 @@ require("fs").writeFileSync(f, JSON.stringify(s));' "$TMP/dash/dependencias-2026
   TYCON_DEPS_OUT="$TMP/dash" TYCON_DEPS_PENDING="$TMP/deps" TYCON_WATCHER_OUT="$TMP/vig" TYCON_DEPS_NOW=2026-09-10T15:00:00Z node "$NOTICE"
 }
 salida=$(aviso "")
-echo "$salida" | grep -q 'NO intentó crear pedidos' && ok "T22a: snapshot sin «pedidos» → el aviso dice que la noche NO intentó crear pedidos" || no "T22a: el aviso calla la ausencia — «${salida}»"
+echo "$salida" | grep 'NO intentó crear pedidos' >/dev/null && ok "T22a: snapshot sin «pedidos» → el aviso dice que la noche NO intentó crear pedidos" || no "T22a: el aviso calla la ausencia — «${salida}»"
 salida=$(aviso '{"simulado":false,"creados":[],"fallidos":[{"ficha":"abc12345","proyecto":"Proy A","paso":"crear","motivo":"TF401320 sin permiso"},{"ficha":"def67890","proyecto":"ProyB","paso":"duplicados","motivo":"no pude consultar duplicados (x)"}]}')
-{ echo "$salida" | grep -q '2 pedido(s) no se pudieron crear' && echo "$salida" | grep -q 'TF401320'; } \
+{ echo "$salida" | grep '2 pedido(s) no se pudieron crear' >/dev/null && echo "$salida" | grep 'TF401320' >/dev/null; } \
   && ok "T22b: con fallos el aviso los cuenta y muestra el primer motivo" || no "T22b: «${salida}»"
 salida=$(aviso '{"simulado":true,"creados":[{"ficha":"a"},{"ficha":"b"}],"fallidos":[]}')
-echo "$salida" | grep -q 'modo simulado: 2 habrían salido' && ok "T22c: en modo simulado dice cuántos habrían salido" || no "T22c: «${salida}»"
+echo "$salida" | grep 'modo simulado: 2 habrían salido' >/dev/null && ok "T22c: en modo simulado dice cuántos habrían salido" || no "T22c: «${salida}»"
 salida=$(aviso '{"simulado":false,"creados":[],"fallidos":[],"adoptados":[]}')
-{ echo "$salida" | grep -q 'no hay nada esperando' && ! echo "$salida" | grep -qi 'pedido'; } \
+{ echo "$salida" | grep 'no hay nada esperando' >/dev/null && ! echo "$salida" | grep -i 'pedido' >/dev/null; } \
   && ok "T22d: una noche con la sección presente y sin novedad no agrega ruido" || no "T22d: «${salida}»"
 salida=$(aviso '{"simulado":false,"creados":[{"ficha":"a"}],"fallidos":[{"ficha":"abc12345","proyecto":"Proy A","paso":"administradores","motivo":"TF400813 sin permiso para leer grupos"}]}')
-{ echo "$salida" | grep -q '1 pedido(s) con fallos que no impidieron crearlos' && echo "$salida" | grep -q 'TF400813' \
-  && ! echo "$salida" | grep -q 'no se pudieron crear'; } \
+{ echo "$salida" | grep '1 pedido(s) con fallos que no impidieron crearlos' >/dev/null && echo "$salida" | grep 'TF400813' >/dev/null \
+  && ! echo "$salida" | grep 'no se pudieron crear' >/dev/null; } \
   && ok "T22e: un fallo que no impidió crear (leer administradores, comentar) se cuenta aparte y con su motivo" || no "T22e: «${salida}»"
 # T22f. 🔴 se cuentan PEDIDOS, no entradas (pase adversarial en Fable): un par con la lectura de
 # administradores fallida Y el `crear` fallido no existe — no puede aparecer también como «creado con
 # fallos». Y un pedido con dos fallos posteriores es UN pedido, no dos.
 salida=$(aviso '{"simulado":false,"creados":[{"ficha":"d"}],"fallidos":[{"ficha":"a","proyecto":"P","paso":"administradores","motivo":"leer"},{"ficha":"a","proyecto":"P","paso":"crear","motivo":"TF-crear"},{"ficha":"d","proyecto":"P","paso":"comentario","motivo":"TF-comentar"},{"ficha":"d","proyecto":"P","paso":"escribir-ficha","motivo":"disco"}]}')
-{ echo "$salida" | grep -q '1 pedido(s) no se pudieron crear — crear: TF-crear' \
-  && echo "$salida" | grep -q '1 pedido(s) con fallos que no impidieron crearlos — comentario: TF-comentar' \
+{ echo "$salida" | grep '1 pedido(s) no se pudieron crear — crear: TF-crear' >/dev/null \
+  && echo "$salida" | grep '1 pedido(s) con fallos que no impidieron crearlos — comentario: TF-comentar' >/dev/null \
   && [ "$(echo "$salida" | grep -c 'pedido(s)')" -eq 2 ]; } \
   && ok "T22f: 🔴 el aviso cuenta pedidos y no entradas: el que no salió no figura también como creado con fallos" || no "T22f: «${salida}»"
 
@@ -1199,15 +1199,15 @@ pipeline_ok(){
   pedi=$(sed -n "$(( r + 1 )),$(( p + 3 ))p" "$Y")                  # guion + env del paso de pedidos
   llamada_ped=$(echo "$pedi" | sed -n '/work-items.js run/,/| tee/p')
   final=$(sed -n "${prl},\$p" "$Y")
-  echo "$pedi" | grep -q 'work-items.js run' || { echo "el paso de pedidos no corre el guion"; return; }
-  echo "$pedi" | grep -qF 'AZURE_DEVOPS_EXT_PAT: $(System.AccessToken)' || { echo "el paso de pedidos no tiene el token"; return; }
-  ! echo "$pedi" | grep -Eq '^[[:space:]]*continueOnError:' || { echo "el paso de pedidos tiene continueOnError"; return; }
-  echo "$pedi" | grep -q 'PEDIDOS_NO_INTENTADOS' || { echo "el paso de pedidos no deja la marca"; return; }
-  echo "$pedi" | grep -q 'HOY_NOCTURNO:-' && ! echo "$pedi" | grep -q 'date -u' || { echo "el paso de pedidos no toma la fecha de la revisión"; return; }
-  echo "$llamada_ped" | grep -Eq -- "${HOY_OPC} \"[\$]HOY\"" || { echo "el guion de pedidos no recibe --today"; return; }
-  echo "$final" | grep -q 'succeededOrFailed()' && echo "$final" | grep -q 'PEDIDOS_NO_INTENTADOS' || { echo "falta la denuncia final"; return; }
-  echo "$rev" | grep -q 'task.setvariable variable=HOY_NOCTURNO' || { echo "la revisión no publica la fecha"; return; }
-  echo "$llamada_noc" | grep -Eq -- "${HOY_OPC} \"[\$]HOY\"" || { echo "la revisión no recibe --today"; return; }
+  echo "$pedi" | grep 'work-items.js run' >/dev/null || { echo "el paso de pedidos no corre el guion"; return; }
+  echo "$pedi" | grep -F 'AZURE_DEVOPS_EXT_PAT: $(System.AccessToken)' >/dev/null || { echo "el paso de pedidos no tiene el token"; return; }
+  ! echo "$pedi" | grep -E '^[[:space:]]*continueOnError:' >/dev/null || { echo "el paso de pedidos tiene continueOnError"; return; }
+  echo "$pedi" | grep 'PEDIDOS_NO_INTENTADOS' >/dev/null || { echo "el paso de pedidos no deja la marca"; return; }
+  echo "$pedi" | grep 'HOY_NOCTURNO:-' >/dev/null && ! echo "$pedi" | grep 'date -u' >/dev/null || { echo "el paso de pedidos no toma la fecha de la revisión"; return; }
+  echo "$llamada_ped" | grep -E -- "${HOY_OPC} \"[\$]HOY\"" >/dev/null || { echo "el guion de pedidos no recibe --today"; return; }
+  echo "$final" | grep 'succeededOrFailed()' >/dev/null && echo "$final" | grep 'PEDIDOS_NO_INTENTADOS' >/dev/null || { echo "falta la denuncia final"; return; }
+  echo "$rev" | grep 'task.setvariable variable=HOY_NOCTURNO' >/dev/null || { echo "la revisión no publica la fecha"; return; }
+  echo "$llamada_noc" | grep -E -- "${HOY_OPC} \"[\$]HOY\"" >/dev/null || { echo "la revisión no recibe --today"; return; }
   echo "ok"
 }
 salida=$(pipeline_ok "$YAML")

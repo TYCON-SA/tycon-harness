@@ -950,7 +950,7 @@ PY
     git -C "$P" checkout -q -- . 2>/dev/null; git -C "$P" reset -q 2>/dev/null
     # el LaunchAgent: su guion es el nuevo, de verdad (no un reemplazo)
     agente="$(sed -n 's#.*<string>\([^<]*periodic-exam[^<]*\)</string>.*#\1#p' "$H/Library/LaunchAgents/lab.legacy-names.old-machine.plist")"
-    [ -f "$agente" ] && ! sed -n 2p "$agente" | grep -q 'tycon-legacy-shim:' && ok "T55 el LaunchAgent apunta al guion nuevo, que existe" || mal "T55 LaunchAgent apunta a «${agente}»"
+    [ -f "$agente" ] && ! sed -n 2p "$agente" | grep 'tycon-legacy-shim:' >/dev/null && ok "T55 el LaunchAgent apunta al guion nuevo, que existe" || mal "T55 LaunchAgent apunta a «${agente}»"
     # check-hook-coverage.js y la paridad Claude↔Codex, en esa HOME
     ( fake_home_create "$H" && unset TYCON_GUIDES_DIR TYCON_SKILLS_DIR && node "$GH/build/check-hook-coverage.js" ) > "$T/cobertura.out" 2>&1 \
       && ok "T55 check-hook-coverage.js verde en la máquina migrada" || mal "T55 check-hook-coverage.js: $(tail -5 "$T/cobertura.out" | tr '\n' ' ')"

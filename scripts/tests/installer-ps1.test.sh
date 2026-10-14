@@ -930,10 +930,10 @@ unread_notice() { grep 'safety-guard-pre\.sh' "$1" | grep 'no pude leer' | grep 
 make_unreadable
 HQ="$(new_home unreadable)"; SQ="$HQ/.claude/settings.json"
 unread_installer "$HQ" "${HELD[@]}" > "$T/q.out" 2>&1; RC=$?
-if [ "$RC" -eq 0 ] && [ "$(hook_n "$SQ" PreToolUse '*' safety-guard-pre.sh)" = 0 ] && [ "$(unread_notice "$T/q.out")" = 1 ] && grep 'safety-guard-pre\.sh' "$T/q.out" | grep -q 'NO quedó registrado'; then
+if [ "$RC" -eq 0 ] && [ "$(hook_n "$SQ" PreToolUse '*' safety-guard-pre.sh)" = 0 ] && [ "$(unread_notice "$T/q.out")" = 1 ] && grep 'safety-guard-pre\.sh' "$T/q.out" | grep 'NO quedó registrado' >/dev/null; then
   ok "(s) un .sh de la lista que no se puede leer (${UNREAD_HOW}) NO se registra, y UNA línea lo nombra con el motivo y «se vuelve a intentar en la próxima corrida»"
 else no "(s) un .sh que no se puede leer (${UNREAD_HOW}; rc $RC): está registrado $(hook_n "$SQ" PreToolUse '*' safety-guard-pre.sh) vez/veces, $(unread_notice "$T/q.out") línea(s) con el motivo y el reintento · $(grep 'safety-guard-pre\.sh' "$T/q.out" | head -1 | cut -c1-240)"; fi
-if [ "$(hook_n "$SQ" PreToolUse '*' test-scope-guard-pre.sh)$(hook_n "$SQ" Stop '*' blocking-meter.js)" = 11 ] && ! grep 'test-scope-guard-pre\.sh' "$T/q.out" | grep -q 'no pude leer'; then
+if [ "$(hook_n "$SQ" PreToolUse '*' test-scope-guard-pre.sh)$(hook_n "$SQ" Stop '*' blocking-meter.js)" = 11 ] && ! grep 'test-scope-guard-pre\.sh' "$T/q.out" | grep 'no pude leer' >/dev/null; then
   ok "(s) el espejo, en la misma corrida: el .sh legible de al lado se registra sin aviso, y los demás controles también"
 else no "(s) el espejo en la misma corrida: test-scope $(hook_n "$SQ" PreToolUse '*' test-scope-guard-pre.sh), blocking-meter $(hook_n "$SQ" Stop '*' blocking-meter.js) · $(grep -c 'no pude leer' "$T/q.out") aviso(s) de ilegible"; fi
 # con -Check: lo dice, no lo cuenta entre «los que faltan» (correr el instalador no lo registraría) y no escribe nada
@@ -952,7 +952,7 @@ else no "(s) el espejo, legible y sano (rc $RC): está $(hook_n "$SQ" PreToolUse
 cp "$SQ" "$T/q.settings.json"
 make_unreadable
 unread_installer "$HQ" "${HELD[@]}" > "$T/q3.out" 2>&1; RC=$?
-if [ "$RC" -eq 0 ] && cmp -s "$SQ" "$T/q.settings.json" && [ "$(hook_n "$SQ" PreToolUse 'Bash|PowerShell' safety-guard-pre.sh)" = 1 ] && [ "$(unread_notice "$T/q3.out")" = 1 ] && grep 'safety-guard-pre\.sh' "$T/q3.out" | grep -q 'Queda registrado'; then
+if [ "$RC" -eq 0 ] && cmp -s "$SQ" "$T/q.settings.json" && [ "$(hook_n "$SQ" PreToolUse 'Bash|PowerShell' safety-guard-pre.sh)" = 1 ] && [ "$(unread_notice "$T/q3.out")" = 1 ] && grep 'safety-guard-pre\.sh' "$T/q3.out" | grep 'Queda registrado' >/dev/null; then
   ok "(s) un .sh ya registrado que deja de poder leerse: queda registrado (settings.json byte a byte igual) y una línea avisa, con el motivo y el reintento"
 else no "(s) un .sh ya registrado que deja de poder leerse (rc $RC): está $(hook_n "$SQ" PreToolUse 'Bash|PowerShell' safety-guard-pre.sh) vez/veces, $(unread_notice "$T/q3.out") aviso(s) · $(grep 'safety-guard-pre\.sh' "$T/q3.out" | head -1 | cut -c1-240)"; fi
 make_readable
@@ -974,7 +974,7 @@ else no "(t) con \$ en la carpeta de usuario (rc $RC): comandos inseguros «$(un
 if [ "$(unsafe_notice "$T/p.out" '«\$»')" = 10 ] && [ "$(unsafe_notice "$T/p.out" 'tycon-pipeline/scripts/on-bash-write-gate\.js (PreToolUse)')" = 1 ] && [ "$(unsafe_notice "$T/p.out" 'clocki/scripts/on-prompt\.js (UserPromptSubmit)')" = 1 ]; then
   ok "(t) …y una línea por cada uno lo dice: el guion y el carácter (\$)"
 else no "(t) con \$ en la carpeta de usuario: $(unsafe_notice "$T/p.out" '«\$»') línea(s) que nombran el carácter (esperaba 10) · $(grep 'su ruta trae' "$T/p.out" | head -1 | cut -c1-240)"; fi
-if [ "$(hook_n "$SP" PreToolUse 'Bash|PowerShell' safety-guard-pre.sh)$(hook_n "$SP" Stop '*' large-read-meter.js)" = 11 ] && ! grep 'su ruta trae' "$T/p.out" | grep -q 'safety-guard-pre\.sh'; then
+if [ "$(hook_n "$SP" PreToolUse 'Bash|PowerShell' safety-guard-pre.sh)$(hook_n "$SP" Stop '*' large-read-meter.js)" = 11 ] && ! grep 'su ruta trae' "$T/p.out" | grep 'safety-guard-pre\.sh' >/dev/null; then
   ok "(t) el espejo, en la misma corrida: los guiones del clon (su ruta no trae \$) se registran sin aviso, .sh y .js"
 else no "(t) el espejo en la misma corrida: safety-guard $(hook_n "$SP" PreToolUse 'Bash|PowerShell' safety-guard-pre.sh), large-read-meter $(hook_n "$SP" Stop '*' large-read-meter.js)"; fi
 cp "$SP" "$T/p.settings.json"
@@ -1071,7 +1071,7 @@ deferred_notice() { grep 'se registran en la corrida siguiente' "$1" | grep -c '
 HM="$(new_home old-harness)"; SM="$HM/.claude/settings.json"
 installer "$HM" "$OLD_HARNESS" "${TEAM[@]}" -- -ReportJson "$T/m1.report.json" > "$T/m1.out" 2>&1; RC=$?
 if [ "$RC" -eq 0 ] && [ "$(sh_state "$SM")" = 000 ] && [ "$(report_sh "$T/m1.report.json")" = "0 de 36" ] && [ "$(deferred_notice "$T/m1.out")" = 1 ] \
-   && grep 'se registran en la corrida siguiente' "$T/m1.out" | grep -q 'safety-guard-pre\.sh'; then
+   && grep 'se registran en la corrida siguiente' "$T/m1.out" | grep 'safety-guard-pre\.sh' >/dev/null; then
   ok "(u) lanzado por un harness.js de antes (sin TYCON_HARNESS_GIT_BASH_HEALTH): ningún .sh en settings.json ni en el reporte (sus 35 ids de hook son .js), y UNA línea dice que se registran en la corrida siguiente"
 else no "(u) lanzado por un harness.js de antes (rc $RC): .sh registrados «$(sh_state "$SM")» (esperaba 000), reporte «$(report_sh "$T/m1.report.json")» (esperaba «0 de 36»), $(deferred_notice "$T/m1.out") línea(s) · $(brief "$T/m1.out" 200)"; fi
 if [ "$(hook_n "$SM" Stop '*' large-read-meter.js)$(hook_n "$SM" PreToolUse 'Bash|PowerShell' push-phantom-ref-notice.js)$(hook_n "$SM" UserPromptSubmit '*' rebuild-before-verify.js)" = 111 ]; then ok "(u) …en esa misma corrida los .js se registran como siempre"
@@ -1176,7 +1176,7 @@ HW2="$(new_home widen-both)"; SW2="$HW2/.claude/settings.json"
 installer "$HW2" "${HELD[@]}" "${TEAM[@]}" > "$T/n3.out" 2>&1
 node "$T/widen.js" both "$SW2" "$SW2"
 installer "$HW2" "${HELD[@]}" "${TEAM[@]}" > "$T/n4.out" 2>&1; RC=$?
-if [ "$RC" -eq 0 ] && [ -z "$(wrong_counts "$SW2" 1 "${SHELL_ROWS[@]}")" ] && grep -- '- PreToolUse' "$T/n4.out" | grep 'safety-guard-pre\.sh' | grep -q 'matcher viejo'; then
+if [ "$RC" -eq 0 ] && [ -z "$(wrong_counts "$SW2" 1 "${SHELL_ROWS[@]}")" ] && grep -- '- PreToolUse' "$T/n4.out" | grep 'safety-guard-pre\.sh' | grep 'matcher viejo' >/dev/null; then
   ok "(v) el viejo y el nuevo a la vez: queda uno, y se dice"
 else no "(v) el viejo y el nuevo a la vez (rc $RC):$(wrong_counts "$SW2" 1 "${SHELL_ROWS[@]}") · $(grep 'safety-guard' "$T/n4.out" | head -1 | cut -c1-200)"; fi
 # -Check sobre la de antes: sale 0, no escribe, y nombra lo que falta con su matcher nuevo
@@ -1389,7 +1389,7 @@ HW2="$(prof_home w-minimal-sg minimal)"
 # la variable manda en los dos sentidos: el freno de pruebas (sólo de full) entra con su variable en 1; el de comandos
 # destructivos (de los dos perfiles desde el 2026-10-05) sale con la suya en 0
 installer "$HW2" TYCON_TEST_SCOPE_GUARD=1 TYCON_SAFETY_GUARD=0 -- > "$T/w2.out" 2>&1; RC=$?
-if [ "$RC" -eq 0 ] && ps1_ids "$HW2/.claude/settings.json" | grep -qx 'PreToolUse:@tcg:test-scope-guard-pre.sh' && ! ps1_ids "$HW2/.claude/settings.json" | grep -q 'safety-guard'; then ok "(w) T39 minimal + TYCON_TEST_SCOPE_GUARD=1 + TYCON_SAFETY_GUARD=0: entra el de pruebas, sale el de comandos"
+if [ "$RC" -eq 0 ] && ps1_ids "$HW2/.claude/settings.json" | grep -x 'PreToolUse:@tcg:test-scope-guard-pre.sh' >/dev/null && ! ps1_ids "$HW2/.claude/settings.json" | grep 'safety-guard' >/dev/null; then ok "(w) T39 minimal + TYCON_TEST_SCOPE_GUARD=1 + TYCON_SAFETY_GUARD=0: entra el de pruebas, sale el de comandos"
 else no "(w) T39 minimal + TYCON_TEST_SCOPE_GUARD=1 + TYCON_SAFETY_GUARD=0 (rc $RC): $(ps1_ids "$HW2/.claude/settings.json" | grep guard | tr '\n' ' ') · $(brief "$T/w2.out" 200)"; fi
 grep -qx 'PreToolUse:@tcg:safety-guard-pre.sh' "$T/w-minimal.txt" && ok "(w) T39 el freno de comandos destructivos está entre los de minimal" || no "(w) T39 la lista de minimal no trae el freno de comandos destructivos"
 HW3="$(prof_home w-switch full)"
@@ -1436,7 +1436,7 @@ sync_profile_section() {
   BCL="$(blocks_clone profile "$SLAB/claude-md-blocks")"; P="$(sync_home prof-record-installer)"
   LAB_INSTALLER="$BCL/scripts/install-tycon-hooks.ps1" installer "$P" "${HELD[@]}" "${SYNC_ENV[@]}" TYCON_INSTALL_PROFILE=full -- -ReportJson "$T/sp-rec1.report.json" > "$T/sp-rec1.out" 2>&1; RC=$?
   LAB_INSTALLER="$BCL/scripts/install-tycon-hooks.ps1" installer "$P" "${HELD[@]}" "${SYNC_ENV[@]}" TYCON_INSTALL_PROFILE=full -- -ReportJson "$T/sp-rec2.report.json" > "$T/sp-rec.out" 2>&1; RC2=$?
-  if printf '%s' "$WANT" | grep -q 'de-full' && [ "$RC" -eq 0 ] && [ "$RC2" -eq 0 ] && [ "$(report_blocks "$T/sp-rec1.report.json")" = "$WANT" ] && [ "$(report_blocks "$T/sp-rec2.report.json")" = "$WANT" ]; then
+  if printf '%s' "$WANT" | grep 'de-full' >/dev/null && [ "$RC" -eq 0 ] && [ "$RC2" -eq 0 ] && [ "$(report_blocks "$T/sp-rec1.report.json")" = "$WANT" ] && [ "$(report_blocks "$T/sp-rec2.report.json")" = "$WANT" ]; then
     ok "(w) T39 el registro del instalador .ps1 (dos corridas) anota «en su lugar» los bloques con requires-profile ($WANT)"
   else no "(w) T39 bloques con requires-profile en su lugar: el sync .sh «${WANT}», el instalador .ps1 «$(report_blocks "$T/sp-rec1.report.json")» y en la segunda corrida «$(report_blocks "$T/sp-rec2.report.json")» (rc $RC y $RC2) $(brief "$T/sp-rec.out" 160)"; fi
 }
@@ -1595,7 +1595,7 @@ get_harness_ps1_section() {
   # (la ruta `/git/ref/heads/<rama>` de la API de GitHub no es una invocación de git: se descuenta antes de mirar)
   # (la primera línea trae el BOM UTF-8 antes del `#`: se saca antes de descontar los comentarios)
   ps1_code() { LC_ALL=C sed '1s/^\xef\xbb\xbf//' "$src" | grep -vE '^\s*#' | sed 's#/git/##g'; }
-  if ! ps1_code | grep -qwE 'git|--depth'; then ok "get-harness.ps1 · no invoca git ni lo pide (sin clon: la versión se baja como archivos)"
+  if ! ps1_code | grep -wE 'git|--depth' >/dev/null; then ok "get-harness.ps1 · no invoca git ni lo pide (sin clon: la versión se baja como archivos)"
   else no "get-harness.ps1 · todavía nombra git fuera de los comentarios: $(ps1_code | grep -nwE 'git|--depth' | head -2 | tr '\n' ' ')"; fi
   if [ "$(head -c 3 "$src" | od -An -tx1 | tr -d ' \n')" = efbbbf ]; then ok "get-harness.ps1 · empieza con el BOM UTF-8 (Windows PowerShell 5.1 lee mal un .ps1 sin él)"
   else no "get-harness.ps1 · no empieza con el BOM UTF-8"; fi

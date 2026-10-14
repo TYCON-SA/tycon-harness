@@ -129,7 +129,7 @@ if corre T5; then
   [ "$(settings "[c.get('async') for h in d['hooks']['SessionStart'] for c in h['hooks'] if 'bootstrap.js' in c['command']][0]")" = True ] && ok "T5 la línea es async" || mal "T5 la línea no es async"
   [ "$(grep -c "^@~/.claude/$PLACE_NAME/INDEX.md\$" "$CLAUDE_MD_PATH")" = 1 ] && ok "T5 el @import del índice (INDEX.md) en CLAUDE.md, una vez (por el lugar)" || mal "T5 @import: $(grep -c "$PLACE_NAME/INDEX.md" "$CLAUDE_MD_PATH") veces"
   grep -q 'lock_held=1' "$LAB_HOME/.claude/.tycon-pipeline/lab-applier.log" 2>/dev/null && ok "T5 el aplicador corrió con el candado del padre (TYCON_HARNESS_LOCK_HELD=1)" || mal "T5 el aplicador no corrió con lock_held=1: $(cat "$LAB_HOME/.claude/.tycon-pipeline/lab-applier.log" 2>&1)"
-  harness_lab_settings_commands | grep -q 'lab-hook.js' && ok "T5 el aplicador registró su hook" || mal "T5 el hook del aplicador no está en settings.json"
+  harness_lab_settings_commands | grep 'lab-hook.js' >/dev/null && ok "T5 el aplicador registró su hook" || mal "T5 el hook del aplicador no está en settings.json"
   case "$SALIDA" in *managed*) ok "T5 la salida dice versión, canal, política y modo" ;; *) mal "T5 la salida no dice el modo: $SALIDA" ;; esac
   # segunda corrida: nada cambia (estado, settings, CLAUDE.md, copia fija) y lo dice
   H1="$(sha_de "$LAB_HOME/.claude/.tycon-pipeline/harness-state.json")$(sha_de "$TYCON_SETTINGS_PATH")$(sha_de "$CLAUDE_MD_PATH")$(sha_de "$COPIA/bootstrap.js")"
@@ -602,7 +602,7 @@ PY
   # (story 8.19: los enlaces del arnés son los dos nombres de su lugar, el lugar y el viejo, cada uno su pieza `link`)
   case "$PIECES" in *" new=[] gone=[] links=$LEGACY_PLACE_NAME,$PLACE_NAME") ok "T29 no registra piezas nuevas: las mismas que antes del corte, y los únicos enlaces son los dos nombres del lugar (${PIECES%% *} piezas)" ;; *) mal "T29 las piezas cambiaron: $PIECES" ;; esac
   DOCTOR="$(harness_lab_isolated harness doctor 2>&1)"
-  [ "$(printf '%s\n' "$DOCTOR" | grep -c 'dos clones: en transición')" = 1 ] && printf '%s\n' "$DOCTOR" | grep 'dos clones: en transición' | grep -q '^  ✓ ' \
+  [ "$(printf '%s\n' "$DOCTOR" | grep -c 'dos clones: en transición')" = 1 ] && printf '%s\n' "$DOCTOR" | grep 'dos clones: en transición' | grep '^  ✓ ' >/dev/null \
     && ok "T29 doctor lo dice UNA vez, como dato" || mal "T29 doctor: $(printf '%s\n' "$DOCTOR" | grep -c 'dos clones') mención(es) — $(printf '%s\n' "$DOCTOR" | grep 'dos clones' | head -2)"
   [ "$(printf '%s\n' "$DOCTOR_BEFORE" | grep -c 'dos clones')" = 0 ] && ok "T29 (espejo) antes del corte doctor no lo dice" || mal "T29 doctor lo decía antes del corte"
   [ "$(printf '%s\n' "$DOCTOR" | doctor_alarms)" = "$(printf '%s\n' "$DOCTOR_BEFORE" | doctor_alarms)" ] && ok "T29 …y la transición no suma ni un rojo ni un aviso a doctor" \
@@ -710,7 +710,7 @@ for c in sorted(c.get("command","") for ev in s.get("hooks",{}).values() for h i
   mv "$LAB_SKILLS" "$BASE/canary-old-clone" && rm -f "$LAB_HOME/.claude/skills" "$LAB_HOME/.claude/agents" || mal "CANARY no pude sacar el agent-skills instalado"
   ANTES="$(harness_lab_home_hash)"
   SALIDA="$(harness_lab_real_applier 2>&1)"; RC=$?
-  [ "$RC" = 1 ] && [ "$(printf '%s\n' "$SALIDA" | grep -c 'agent-skills no encontrado')" = 1 ] && printf '%s\n' "$SALIDA" | grep 'agent-skills no encontrado' | grep -qF "$INSTALLED" \
+  [ "$RC" = 1 ] && [ "$(printf '%s\n' "$SALIDA" | grep -c 'agent-skills no encontrado')" = 1 ] && printf '%s\n' "$SALIDA" | grep 'agent-skills no encontrado' | grep -F "$INSTALLED" >/dev/null \
     && ok "CANARY (error) sin skills en ningún lado: sale 1 con UNA línea «agent-skills no encontrado» que nombra dónde las buscó" \
     || mal "CANARY (error) sin skills (rc $RC): $(printf '%s\n' "$SALIDA" | tail -3 | cut -c1-400)"
   [ "$(harness_lab_home_hash)" = "$ANTES" ] && ok "CANARY (error) …y no escribe nada (la HOME, idéntica por hash)" || mal "CANARY (error) sin skills escribió algo en la HOME"
@@ -755,7 +755,7 @@ for c in sorted(c.get("command","") for ev in s.get("hooks",{}).values() for h i
     || mal "CANARY la variable cambió settings.json: $(diff "$BASE/canary-settings.json" "$TYCON_SETTINGS_PATH" | grep '^[<>]' | head -3 | cut -c1-300)"
   # (error) la variable apunta a una carpeta que no existe: la suite NO corrió y se dice (no es verde); lo demás sigue
   SALIDA="$(TYCON_SKILLS_DIR="$BASE/canary-nowhere" harness_lab_real_applier 2>&1)"; RC=$?
-  [ "$RC" = 0 ] && [ "$(printf '%s\n' "$SALIDA" | grep -c 'la suite de la capa determinista NO corrió')" = 1 ] && printf '%s\n' "$SALIDA" | grep 'NO corrió' | grep -qF "$BASE/canary-nowhere" \
+  [ "$RC" = 0 ] && [ "$(printf '%s\n' "$SALIDA" | grep -c 'la suite de la capa determinista NO corrió')" = 1 ] && printf '%s\n' "$SALIDA" | grep 'NO corrió' | grep -F "$BASE/canary-nowhere" >/dev/null \
     && cmp -s "$BASE/canary-settings.json" "$TYCON_SETTINGS_PATH" \
     && ok "CANARY (error) con TYCON_SKILLS_DIR en una carpeta que no existe: sale 0, dice UNA vez que la suite NO corrió y por qué, y no toca settings.json" \
     || mal "CANARY (error) variable a una carpeta inexistente (rc $RC): $(printf '%s\n' "$SALIDA" | grep -e 'suite' -e 'no encontrado' | head -2 | cut -c1-300)"
@@ -893,7 +893,7 @@ PY
     && ok "T37 la línea de arranque y el @import, una vez cada uno (nadie los escribe a mano)" || mal "T37 la línea de arranque o el @import no están una vez"
   DOCTOR="$(on_machine node "$LAB_TREE/scripts/setup/harness.js" doctor 2>&1)"; RC=$?
   # «todo en orden» (sin avisos: la copia pública) o «N aviso(s), nada en rojo» (el repo interno): lo que importa es 0 y ningún ✗
-  [ "$RC" = 0 ] && [ "$(printf '%s\n' "$DOCTOR" | grep -c '^  ✗ ')" = 0 ] && printf '%s\n' "$DOCTOR" | grep -qE '^(todo en orden|[0-9]+ aviso\(s\), nada en rojo)$' \
+  [ "$RC" = 0 ] && [ "$(printf '%s\n' "$DOCTOR" | grep -c '^  ✗ ')" = 0 ] && printf '%s\n' "$DOCTOR" | grep -E '^(todo en orden|[0-9]+ aviso\(s\), nada en rojo)$' >/dev/null \
     && ok "T37 doctor: sale 0, nada en rojo" || mal "T37 doctor (rc $RC): $(printf '%s\n' "$DOCTOR" | grep -e '^  ✗ ' -e 'rojo' | head -4 | tr '\n' ' ') · última línea: $(printf '%s\n' "$DOCTOR" | tail -1)"
   [ "$(printf '%s\n' "$DOCTOR" | grep -c 'dos clones')" = 0 ] && ok "T37 (espejo de T29) con un solo clon doctor no habla de «dos clones»" || mal "T37 doctor habla de dos clones en una máquina de uno: $(printf '%s\n' "$DOCTOR" | grep 'dos clones')"
   if [ "$TP_ON" = 1 ]; then
@@ -1342,7 +1342,7 @@ if corre RELOCATE; then
   [ "${N_OLD:-0}" -gt 0 ] && [ "$RC" = 0 ] && [ "$(grep -c "/.claude/$LEGACY_PLACE_NAME/" "$TYCON_SETTINGS_PATH")" = 0 ] \
     && ok "RELOCATE la máquina con $N_OLD línea(s) por el nombre viejo: relocate 0 y ninguna queda" || mal "RELOCATE relocate (rc $RC, por el viejo antes $N_OLD): $SALIDA"
   APPLIED="$(harness_lab_real_applier 2>&1)"; RC=$?
-  [ "$RC" = 0 ] && ! printf '%s\n' "$APPLIED" | grep -q '^ADDED:' && [ "$(harness_lab_settings_commands | wc -l | tr -d ' ')" = "$HOOKS_BEFORE" ] \
+  [ "$RC" = 0 ] && ! printf '%s\n' "$APPLIED" | grep '^ADDED:' >/dev/null && [ "$(harness_lab_settings_commands | wc -l | tr -d ' ')" = "$HOOKS_BEFORE" ] \
     && ok "RELOCATE el aplicador real después de relocate: no agrega ningún hook ($HOOKS_BEFORE, los mismos)" || mal "RELOCATE el aplicador (rc $RC) agregó: $(printf '%s\n' "$APPLIED" | grep -A3 '^ADDED:' | head -4) · hooks $(harness_lab_settings_commands | wc -l | tr -d ' ') (antes $HOOKS_BEFORE)"
   [ "$(harness_lab_settings_commands | sort | uniq -d | wc -l | tr -d ' ')" = 0 ] && ok "RELOCATE ningún hook repetido" || mal "RELOCATE repetidos: $(harness_lab_settings_commands | sort | uniq -d | head -3)"
   EQ="$(node "$RAIZ/scripts/publishing/profile-equivalence.js" --settings "$BASE/trel-before.json" "$TYCON_SETTINGS_PATH" 2>&1)"; RC=$?
@@ -1523,7 +1523,7 @@ if corre HP; then
   # install sobre git sin carpeta global: la pone, con el pre-push del arnés adentro, y lo dice una vez (sin el aviso viejo)
   hp install --yes
   [ "${RC}" = 0 ] && [ "$(hp_value)" = "${HP_OURS}" ] && grep -q 'git-pre-push-global.sh' "${HP_OURS}/pre-push" && [ "$(hp_said_set)" = 1 ] \
-    && ! printf '%s' "${SALIDA}" | grep -q 'git no tiene core.hooksPath global' \
+    && ! printf '%s' "${SALIDA}" | grep 'git no tiene core.hooksPath global' >/dev/null \
     && ok "HP install sobre git sin carpeta global: la pone en la del instalador y lo dice, sin el aviso de «no tiene»" \
     || mal "HP install (rc ${RC}, core.hooksPath=«$(hp_value)»): $(printf '%s' "${SALIDA}" | grep -i 'hooks' | head -3 | tr '\n' '|')"
   [ "$(estado "(d.get('git_hooks_path') or {}).get('value')")" = "${HP_OURS}" ] && ok "HP …y la anota en el estado (la saca uninstall)" || mal "HP el estado no anota la carpeta: $(estado "d.get('git_hooks_path')")"
@@ -1582,7 +1582,7 @@ if corre HP; then
     mkdir -p "${LAB}/hp-cerrada" && : > "${LAB}/hp-cerrada/gitconfig" && chmod 555 "${LAB}/hp-cerrada"
     SALIDA="$(GIT_CONFIG_GLOBAL="${LAB}/hp-cerrada/gitconfig" harness_lab_isolated harness apply 2>&1 < /dev/null)"; RC=$?
     chmod 755 "${LAB}/hp-cerrada"
-    [ "${RC}" = 0 ] && [ "$(hp_said_set)" = 0 ] && printf '%s' "${SALIDA}" | grep -q 'no pude ponerla' && printf '%s' "${SALIDA}" | grep -q -F "git config --global core.hooksPath \"${HP_OURS}\"" && [ ! -s "${LAB}/hp-cerrada/gitconfig" ] \
+    [ "${RC}" = 0 ] && [ "$(hp_said_set)" = 0 ] && printf '%s' "${SALIDA}" | grep 'no pude ponerla' >/dev/null && printf '%s' "${SALIDA}" | grep -F "git config --global core.hooksPath \"${HP_OURS}\"" >/dev/null && [ ! -s "${LAB}/hp-cerrada/gitconfig" ] \
       && ok "HP git no deja escribir: avisa que no pudo, con el comando, sin «✓»" || mal "HP configuración cerrada (rc ${RC}): ${SALIDA}"
   fi
 
@@ -1604,9 +1604,9 @@ if corre HP; then
   hp install --yes
   [ "$(hp_value)" = "${HP_OURS}" ] || mal "HP la reinstalación no la puso: «$(hp_value)»"
   hp uninstall --dry-run
-  printf '%s' "${SALIDA}" | grep -q 'quita también la carpeta global de hooks de git que puso el arnés' && ok "HP uninstall --dry-run la nombra" || mal "HP uninstall --dry-run no la nombra: ${SALIDA}"
+  printf '%s' "${SALIDA}" | grep 'quita también la carpeta global de hooks de git que puso el arnés' >/dev/null && ok "HP uninstall --dry-run la nombra" || mal "HP uninstall --dry-run no la nombra: ${SALIDA}"
   hp uninstall --yes
-  [ "${RC}" = 0 ] && [ -z "$(hp_value)" ] && printf '%s' "${SALIDA}" | grep -q 'quitado: la carpeta global de hooks de git que puso el arnés' \
+  [ "${RC}" = 0 ] && [ -z "$(hp_value)" ] && printf '%s' "${SALIDA}" | grep 'quitado: la carpeta global de hooks de git que puso el arnés' >/dev/null \
     && ok "HP uninstall saca la carpeta que puso el arnés" || mal "HP uninstall (rc ${RC}, core.hooksPath=«$(hp_value)»): $(printf '%s' "${SALIDA}" | tail -5)"
   fi
 fi

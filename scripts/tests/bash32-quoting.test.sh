@@ -21,7 +21,7 @@ ok()  { echo "✅ $1"; }
 mal() { echo "❌ $1"; fallos=$((fallos+1)); }
 
 # C-1 · el defecto existe de verdad en el bash 3.2 (si esta máquina lo tiene)
-if [ -x /bin/bash ] && /bin/bash --version 2>/dev/null | grep -q "version 3\.2"; then
+if [ -x /bin/bash ] && /bin/bash --version 2>/dev/null | grep "version 3\.2" >/dev/null; then
   printf -v cmd 'echo "«$%s»"' X                      # el comando lleva la secuencia rota de verdad; este archivo, no
   # el defecto aparece con el idioma en UTF-8 (el de la terminal de cualquier dev); sin idioma o en C, bash 3.2 lee
   # byte a byte y la línea sale bien — una corrida de fondo sin LANG daba el rojo falso de abajo (2026-09-29)
@@ -58,7 +58,7 @@ rc=$( cd "$T/r" && bash "$LINT" --staged s/roto.sh >/dev/null 2>&1; echo $? )
 # C-5 · sin rutas recorre todos los .sh del repo
 ( cd "$T/r" && printf '#!/bin/bash\nY=1\necho "$%s…"\n' Y > s/otro.sh && git add s/otro.sh )
 out="$( cd "$T/r" && bash "$LINT" 2>&1 )"; rc=$?
-[ "$rc" = 1 ] && printf '%s' "$out" | grep -q '^s/otro.sh:3:' && ok "C-5 sin rutas recorre el repo y encuentra el nuevo" || mal "C-5 rc=$rc: $out"
+[ "$rc" = 1 ] && printf '%s' "$out" | grep '^s/otro.sh:3:' >/dev/null && ok "C-5 sin rutas recorre el repo y encuentra el nuevo" || mal "C-5 rc=$rc: $out"
 
 # C-6 · fuera de un repo no dice «limpio»: sale 2
 rc=$( cd "$T" && bash "$LINT" >/dev/null 2>&1; echo $? )

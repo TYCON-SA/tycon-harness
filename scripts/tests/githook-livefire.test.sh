@@ -505,7 +505,7 @@ montar_castellano() {   # $1=T
 # Sin diccionario inglés (el nocturno es Linux) una palabra que no está en la lista pasa por inglés: lo que depende de
 # eso se declara NO verificado, y el aviso «sin diccionario» no cuenta como que el freno habló (corrida 11337).
 DICC="${TYCON_SPANISH_NAMES_DICTIONARY:-/usr/share/dict/words}"
-hablo_el_freno() { grep -v 'sin diccionario inglés' "$1" | grep -q 'castellano'; }
+hablo_el_freno() { grep -v 'sin diccionario inglés' "$1" | grep 'castellano' >/dev/null; }
 C_OPT="--si""n-copia"; C_SUB="lim""piar"; C_ENV="TYCON_NO_BA""JAR"; C_KEY="moti""vo"; C_FILE="car""gar-da""tos"
 nuevo_bloqueado() {   # $1=T $2=etiqueta $3...=patrones que el mensaje tiene que traer
   local T="$1" etiqueta="$2"; shift 2

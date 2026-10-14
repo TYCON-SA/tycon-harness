@@ -243,7 +243,7 @@ correr --run "$HIST/t5.json" --projects-dir "$PROJ" --json
 msgs="$(leer "d['hilo']['mensajes']")"; bytes="$(leer "d['hilo']['bytes']")"
 gz="$HIST/t5.hilo.jsonl.gz"
 if [ -f "$gz" ] && [ "$msgs" = "2" ] && [ -n "$bytes" ] && [ "$bytes" != "null" ] \
-   && ! gzip -dc "$gz" | grep -q 'BBBBBBBBBB'; then
+   && ! gzip -dc "$gz" | grep 'BBBBBBBBBB' >/dev/null; then
   ok "T5 · el hilo guarda los 2 mensajes, descarta adjuntos e instantáneas, y registra el tamaño"
 else
   bad "T5 · hilo sin adjuntos" "esperaba 2 mensajes, tamaño registrado y ningún relleno adentro; salió mensajes=$msgs bytes=$bytes (copiar el crudo lo hace pesar ~3×) · $OUT"

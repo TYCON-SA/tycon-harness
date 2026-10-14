@@ -154,7 +154,7 @@ R="${BASE}/t5"; repo "${R}"
 printf '{"Conexion": "Server=x;Password=ClaveSecreta123;", "Ruta": "/Users/dev/cliente/x"}\n' > "${R}/appsettings.json"
 V="${BASE}/t5v.json"; volcado "${V}" "${R}"
 correr "${V}"
-if gzip -dc "${BASE}/t5v.cambio.json.gz" | grep -q 'ClaveSecreta123\|/Users/dev'; then mal "T5 la clave o la ruta quedaron en el archivo"
+if gzip -dc "${BASE}/t5v.cambio.json.gz" | grep 'ClaveSecreta123\|/Users/dev' >/dev/null; then mal "T5 la clave o la ruta quedaron en el archivo"
 elif grep -q 'ClaveSecreta123\|/Users/dev' "${BASE}/out" "${BASE}/err"; then mal "T5 la clave o la ruta salieron por pantalla"
 else
   G="$(leer "${BASE}/t5v.cambio.json.gz" 'const p=c.repos[0].sin_commitear[0]; [p.ruta, /appsettings/.test(p.parche), /<oculto>|<ruta>/.test(p.parche)].join("|")')"

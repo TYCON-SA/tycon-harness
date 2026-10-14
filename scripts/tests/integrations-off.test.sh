@@ -109,7 +109,7 @@ else no "T9 el instalador no resume las integraciones: $(grep -i 'integraciones'
 EXPL="$(afuera "$C1" -- node "$CFG" explain 2>&1)"; RC=$?
 [ "$RC" -eq 0 ] || no "T9 explain salió $RC: $(echo "$EXPL" | tail -2 | tr '\n' ' ')"
 for i in ado clockify engram codegraph mailbox codex nightly telegram; do
-  if echo "$EXPL" | grep -qE "^\s+$i\s+apagada"; then ok "T9 explain: $i apagada"; else no "T9 explain no lista $i como apagada: $(echo "$EXPL" | grep -E "^\s+$i " | head -1)"; fi
+  if echo "$EXPL" | grep -E "^\s+$i\s+apagada" >/dev/null; then ok "T9 explain: $i apagada"; else no "T9 explain no lista $i como apagada: $(echo "$EXPL" | grep -E "^\s+$i " | head -1)"; fi
 done
 
 # el despachador de ediciones sigue registrado y NO corre clocki-enforce (Clockify apagada)
@@ -118,11 +118,11 @@ EVENTO="{\"session_id\":\"t9\",\"tool_name\":\"Edit\",\"tool_input\":{\"file_pat
 DISP="$SK_REPO/skills/tycon-pipeline/scripts/hook-post-edit.js"
 SAL="$(printf '%s' "$EVENTO" | afuera "$C1" TYCON_GUIDES_DIR="$RAIZ" -- node "$DISP" 2>&1)"; RC=$?
 [ "$RC" -eq 0 ] || no "T9 el despachador salió $RC con Clockify apagada: $(echo "$SAL" | head -3 | tr '\n' ' ')"
-if echo "$SAL" | grep -qi 'clocki'; then no "T9 Clockify apagada y el despachador igual corrió clocki-enforce: $(echo "$SAL" | grep -i clocki | head -1)"
+if echo "$SAL" | grep -i 'clocki' >/dev/null; then no "T9 Clockify apagada y el despachador igual corrió clocki-enforce: $(echo "$SAL" | grep -i clocki | head -1)"
 else ok "T9 Clockify apagada: el despachador de ediciones corre y saltea clocki-enforce"; fi
 C1b="$(casa apagada-control-clocki)"
 SAL="$(printf '%s' "$EVENTO" | afuera "$C1b" TYCON_GUIDES_DIR="$RAIZ" TYCON_CLOCKIFY=1 -- node "$DISP" 2>&1)"
-if echo "$SAL" | grep -qiE 'clocki|timer'; then ok "T9 control: con TYCON_CLOCKIFY=1 el despachador sí corre clocki-enforce (avisa que no hay timer)"
+if echo "$SAL" | grep -iE 'clocki|timer' >/dev/null; then ok "T9 control: con TYCON_CLOCKIFY=1 el despachador sí corre clocki-enforce (avisa que no hay timer)"
 else no "T9 control: con Clockify prendida el despachador no avisó nada de clocki (¿el test mide algo?): $(echo "$SAL" | head -2 | tr '\n' ' ')"; fi
 
 # ── control positivo: con las llaves por variable, los siete se registran y az SÍ es llamado ──────
@@ -162,7 +162,7 @@ dice_apagada() { # <etiqueta> <rc> <salida> <regex de la integración>
   linea="$(echo "$sal" | grep -iE 'apagad' | grep -iE "$re" | head -1)"
   if [ "$rc" -ne 0 ]; then no "T10 $et: salió $rc (tenía que terminar bien y decir que la integración está apagada): $(echo "$sal" | tail -2 | tr '\n' ' ')"; return; fi
   if [ -z "$linea" ]; then no "T10 $et: no dijo que la integración ($re) está apagada: $(echo "$sal" | head -3 | tr '\n' ' ')"; return; fi
-  if echo "$linea" | grep -qiE 'ninguno|: 0( |$)|\bnada\b'; then no "T10 $et: la línea miente («0»/«nada» sin haber mirado): $linea"; return; fi
+  if echo "$linea" | grep -iE 'ninguno|: 0( |$)|\bnada\b' >/dev/null; then no "T10 $et: la línea miente («0»/«nada» sin haber mirado): $linea"; return; fi
   ok "T10 $et: exit 0 y lo dice — $(echo "$linea" | cut -c1-110)"
 }
 
@@ -209,15 +209,15 @@ done
 # ── controles: con la integración PRENDIDA el mismo comando NO dice «apagada» (y sí intenta el servicio) ──
 rm -f "$LLAMADAS"
 SAL="$(afuera "$C4" TYCON_ADO_ORG=https://dev.azure.com/equipo -- node "$RAIZ/scripts/nightly/open-prs/open-prs.js" --today 2026-09-26 2>&1)"
-if echo "$SAL" | grep -qi 'apagad'; then no "T10 control: con Azure DevOps prendida, open-prs.js igual dice «apagado»"
+if echo "$SAL" | grep -i 'apagad' >/dev/null; then no "T10 control: con Azure DevOps prendida, open-prs.js igual dice «apagado»"
 elif grep -q '^az ' "$LLAMADAS" 2>/dev/null; then ok "T10 control: con Azure DevOps prendida, open-prs.js consulta az"
 else no "T10 control: con Azure DevOps prendida, open-prs.js no consultó az: $(echo "$SAL" | head -2 | tr '\n' ' ')"; fi
 SAL="$(afuera "$C4" TYCON_MAILBOX=1 -- node "$RAIZ/scripts/metrics/upload-runs.js" --dry-run 2>&1)"; RC=$?
-if echo "$SAL" | grep -qi 'apagad'; then no "T10 control: con el buzón prendido por variable y sin llave, upload-runs.js dice «apagado» (tenía que decir que falta la llave)"
-elif [ "$RC" -ne 0 ] && echo "$SAL" | grep -qi 'llave'; then ok "T10 control: buzón prendido sin llave = el error de siempre (falta la llave, exit $RC), no «apagado»"
+if echo "$SAL" | grep -i 'apagad' >/dev/null; then no "T10 control: con el buzón prendido por variable y sin llave, upload-runs.js dice «apagado» (tenía que decir que falta la llave)"
+elif [ "$RC" -ne 0 ] && echo "$SAL" | grep -i 'llave' >/dev/null; then ok "T10 control: buzón prendido sin llave = el error de siempre (falta la llave, exit $RC), no «apagado»"
 else no "T10 control: buzón prendido sin llave: exit $RC — $(echo "$SAL" | tail -1)"; fi
 SAL="$(afuera "$C4" TYCON_ENGRAM=1 -- node "$RAIZ/scripts/lib/engram-autoheal.js" 2>&1)"
-if echo "$SAL" | grep -qi 'apagad'; then no "T10 control: con engram prendida, engram-autoheal.js igual dice «apagada»"; else ok "T10 control: con engram prendida, engram-autoheal.js no dice «apagada»"; fi
+if echo "$SAL" | grep -i 'apagad' >/dev/null; then no "T10 control: con engram prendida, engram-autoheal.js igual dice «apagada»"; else ok "T10 control: con engram prendida, engram-autoheal.js no dice «apagada»"; fi
 
 # ── T10 · un BUG del lector no se traga (revisor de fallos silenciosos, tanda B, 2026-09-27) ─────────────────────────
 # «Sin la lib al lado: como hoy» vale SÓLO cuando la lib no está (MODULE_NOT_FOUND). Un error de verdad dentro del lector
@@ -226,10 +226,10 @@ if echo "$SAL" | grep -qi 'apagad'; then no "T10 control: con engram prendida, e
 F="$(mktemp -d)"; cp -R "$RAIZ/scripts" "$F/scripts"
 printf '%s\n' "throw new TypeError('bug de mentira en el lector');" > "$F/scripts/lib/tycon-config.js"
 SAL="$(afuera "$C4" -- node "$F/scripts/lib/engram-autoheal.js" 2>&1)"; RC=$?
-if [ "$RC" -ne 0 ] && echo "$SAL" | grep -q 'bug de mentira' && ! echo "$SAL" | grep -qi 'apagad'; then ok "T10 un bug del lector NO se traga: el comando (engram-autoheal.js) frena (exit $RC) y lo dice"
+if [ "$RC" -ne 0 ] && echo "$SAL" | grep 'bug de mentira' >/dev/null && ! echo "$SAL" | grep -i 'apagad' >/dev/null; then ok "T10 un bug del lector NO se traga: el comando (engram-autoheal.js) frena (exit $RC) y lo dice"
 else no "T10 con el lector roto por un bug, engram-autoheal.js salió $RC sin decirlo: $(echo "$SAL" | tail -2 | tr '\n' ' ')"; fi
 SAL="$(afuera "$C4" -- node "$F/scripts/hooks/bench-notice.js" 2>&1)"; RC=$?
-if [ "$RC" -eq 0 ] && echo "$SAL" | grep -q 'lector de configuración falló'; then ok "T10 un bug del lector NO se traga: el hook (bench-notice.js) sigue (exit 0) y lo dice"
+if [ "$RC" -eq 0 ] && echo "$SAL" | grep 'lector de configuración falló' >/dev/null; then ok "T10 un bug del lector NO se traga: el hook (bench-notice.js) sigue (exit 0) y lo dice"
 else no "T10 con el lector roto por un bug, bench-notice.js salió $RC sin decirlo: $(echo "$SAL" | tail -2 | tr '\n' ' ')"; fi
 rm -rf "$F"
 
@@ -238,7 +238,7 @@ rm -rf "$F"
 C5="$(casa rota-engram)"; printf '{ "integrations": { "engram": "si" } }' > "$C5/.claude/tycon.json"
 for cmd in "scripts/lib/harness-audit.js --json" "scripts/lib/engram-autoheal.js"; do
   SAL="$(afuera "$C5" -- node $RAIZ/$cmd 2>&1)"; RC=$?
-  if [ "$RC" -eq 2 ] && echo "$SAL" | grep -q 'integrations.engram' &&! echo "$SAL" | grep -q 'at raizDeLaMaquina\|at Object'; then ok "T10 config rota: ${cmd%% *} frena con exit 2 y nombra la clave, sin traza"
+  if [ "$RC" -eq 2 ] && echo "$SAL" | grep 'integrations.engram' >/dev/null &&! echo "$SAL" | grep 'at raizDeLaMaquina\|at Object' >/dev/null; then ok "T10 config rota: ${cmd%% *} frena con exit 2 y nombra la clave, sin traza"
   else no "T10 config rota: ${cmd%% *} salió $RC — $(echo "$SAL" | grep -v '^\s*$' | tail -3 | tr '\n' ' ' | cut -c1-200)"; fi
 done
 
@@ -246,16 +246,16 @@ done
 #          engram-drift-notice con TYCON_ENGRAM_DRIFT=1 y engram apagada NO dice «apagado» (antes sí: el instalador lo
 #          registraba y el hook igual no hacía nada); el hook de git con TYCON_ENGRAM_HOOK=1 llama a engram (de mentira)
 SAL="$(afuera "$C4" TYCON_ENGRAM_DRIFT=1 -- node "$RAIZ/scripts/hooks/engram-drift-notice.js" --force 2>&1)"
-if echo "$SAL" | grep -qi 'engram apagad'; then no "T10 con TYCON_ENGRAM_DRIFT=1 y la llave apagada, engram-drift-notice igual dice «apagado»"
+if echo "$SAL" | grep -i 'engram apagad' >/dev/null; then no "T10 con TYCON_ENGRAM_DRIFT=1 y la llave apagada, engram-drift-notice igual dice «apagado»"
 else ok "T10 TYCON_ENGRAM_DRIFT=1 manda sobre la llave apagada (engram-drift-notice no dice «apagado»)"; fi
 R="$T/repo-engram"; mkdir -p "$R"; ( cd "$R" && git init -q . && printf 'proy\n' > .engram-project && mkdir -p .engram && git add -A && git -c user.email=t@t -c user.name=t commit -qm x ) 2>/dev/null
 : > "$LLAMADAS"
 SAL="$(cd "$R" && afuera "$C4" TYCON_ENGRAM_HOOK=1 TYCON_GUIDES_DIR="$RAIZ" -- bash "$RAIZ/scripts/hooks/git-pre-commit-global.sh" 2>&1)"; RC=$?
-if grep -q '^engram sync' "$LLAMADAS" 2>/dev/null && ! echo "$SAL" | grep -qi 'engram apagad'; then ok "T10 TYCON_ENGRAM_HOOK=1 manda sobre la llave apagada (el hook de git sincroniza)"
+if grep -q '^engram sync' "$LLAMADAS" 2>/dev/null && ! echo "$SAL" | grep -i 'engram apagad' >/dev/null; then ok "T10 TYCON_ENGRAM_HOOK=1 manda sobre la llave apagada (el hook de git sincroniza)"
 else no "T10 con TYCON_ENGRAM_HOOK=1 y la llave apagada el hook de git no sincronizó (rc $RC): $(echo "$SAL" | tail -2 | tr '\n' ' ' | cut -c1-200) — llamadas: $(cat "$LLAMADAS" 2>/dev/null | tr '\n' ' ' | cut -c1-100)"; fi
 : > "$LLAMADAS"
 SAL="$(cd "$R" && afuera "$C4" TYCON_GUIDES_DIR="$RAIZ" -- bash "$RAIZ/scripts/hooks/git-pre-commit-global.sh" 2>&1)"
-if ! grep -q '^engram' "$LLAMADAS" 2>/dev/null && echo "$SAL" | grep -qi 'engram apagad'; then ok "T10 control: sin el interruptor y con la llave apagada, el hook de git no sincroniza y lo dice"
+if ! grep -q '^engram' "$LLAMADAS" 2>/dev/null && echo "$SAL" | grep -i 'engram apagad' >/dev/null; then ok "T10 control: sin el interruptor y con la llave apagada, el hook de git no sincroniza y lo dice"
 else no "T10 control: sin interruptor y llave apagada el hook de git hizo otra cosa: $(echo "$SAL" | tail -1 | cut -c1-150) — llamadas: $(cat "$LLAMADAS" 2>/dev/null | tr '\n' ' ' | cut -c1-80)"; fi
 
 fi
@@ -359,10 +359,10 @@ sync32 "$V" "$ADO_ON" > "$V/on.out" 2>&1
 if has_block "$MD_V" "$B_ADO"; then ok "T32 con TYCON_ADO_ORG el bloque $B_ADO se escribe"
 else no "T32 con TYCON_ADO_ORG el bloque $B_ADO no se escribió: $(head -2 "$V/on.out" | tr '\n' ' ')"; fi
 if grep -q 'requires-integration' "$MD_V"; then no "T32 el comentario requires-integration se copió al CLAUDE.md"
-elif head -1 "$RAIZ/claude-md-blocks/$B_ADO.md" | grep -qx '<!-- requires-integration: ado -->'; then ok "T32 el bloque declara su integración en la primera línea y el comentario no llega al CLAUDE.md"
+elif head -1 "$RAIZ/claude-md-blocks/$B_ADO.md" | grep -x '<!-- requires-integration: ado -->' >/dev/null; then ok "T32 el bloque declara su integración en la primera línea y el comentario no llega al CLAUDE.md"
 else no "T32 claude-md-blocks/$B_ADO.md no declara «<!-- requires-integration: ado -->» en su primera línea"; fi
 SAL="$(sync32 "$V" 2>&1)"; RC=$?
-if [ "$RC" -eq 0 ] && ! has_block "$MD_V" "$B_ADO" && echo "$SAL" | grep "$B_ADO" | grep -q 'integración «ado» apagada'; then ok "T32 apagada con el bloque ya escrito: el sync lo quita y lo dice"
+if [ "$RC" -eq 0 ] && ! has_block "$MD_V" "$B_ADO" && echo "$SAL" | grep "$B_ADO" | grep 'integración «ado» apagada' >/dev/null; then ok "T32 apagada con el bloque ya escrito: el sync lo quita y lo dice"
 else no "T32 apagada con el bloque ya escrito: sigue ahí o no se dijo (rc $RC): $(echo "$SAL" | head -2 | tr '\n' ' ')"; fi
 if cmp -s "$MD_V" "$T/t32-never.md"; then ok "T32 «lo tuvo y se apagó» es byte a byte «nunca lo tuvo» (lo escrito a mano y los otros bloques, intactos)"
 else no "T32 «lo tuvo y se apagó» difiere de «nunca lo tuvo»: $(diff "$T/t32-never.md" "$MD_V" | grep '^[<>]' | head -3 | tr '\n' ' ' | cut -c1-240)"; fi
@@ -401,7 +401,7 @@ else no "T32 con Azure DevOps prendido el CLAUDE.md no es el de antes: $(diff "$
 K="$(home32 check)"; MD_K="$K/.claude/CLAUDE.md"
 sync32 "$K" "$ADO_ON" > /dev/null 2>&1; cp "$MD_K" "$T/t32-check.md"
 SAL="$(sync32 "$K" -- --check 2>&1)"
-if echo "$SAL" | grep "$B_ADO" | grep -q 'sobra (integración «ado» apagada)' && cmp -s "$MD_K" "$T/t32-check.md"; then ok "T32 --check con el bloque de una integración apagada: avisa que sobra y no toca el archivo"
+if echo "$SAL" | grep "$B_ADO" | grep 'sobra (integración «ado» apagada)' >/dev/null && cmp -s "$MD_K" "$T/t32-check.md"; then ok "T32 --check con el bloque de una integración apagada: avisa que sobra y no toca el archivo"
 else no "T32 --check no avisó «sobra (integración «ado» apagada)» o escribió: $(echo "$SAL" | head -2 | tr '\n' ' ')"; fi
 SAL="$(sync32 "$K" "$ADO_ON" -- --check 2>&1)"
 if [ -z "$SAL" ]; then ok "T32 espejo: --check con Azure DevOps prendido y el bloque al día no dice nada"
@@ -426,7 +426,7 @@ SAL="$(sync32 "$R1" 2>&1)"; RC=$?
 # desde la story 8.16 (tanda C) los otros tres bloques piden el perfil full: con la configuración rota tampoco se sabe el
 # perfil, así que tampoco se agregan, y cada uno lo dice en su línea
 if [ "$RC" -eq 0 ] && ! has_block "$R1/.claude/CLAUDE.md" "$B_ADO" && ! has_block "$R1/.claude/CLAUDE.md" response-style \
-   && [ "$(echo "$SAL" | grep "$B_ADO" | grep -c 'integración «ado»')" = 1 ] && echo "$SAL" | grep "'response-style'" | grep -q 'perfil'; then ok "T32 configuración rota y bloque ausente: no se agrega (tampoco los del perfil), y una línea lo dice por cada uno"
+   && [ "$(echo "$SAL" | grep "$B_ADO" | grep -c 'integración «ado»')" = 1 ] && echo "$SAL" | grep "'response-style'" | grep 'perfil' >/dev/null; then ok "T32 configuración rota y bloque ausente: no se agrega (tampoco los del perfil), y una línea lo dice por cada uno"
 else no "T32 configuración rota y bloque ausente (rc $RC): $(echo "$SAL" | grep "$B_ADO" | head -2 | tr '\n' ' ' | cut -c1-240)"; fi
 SAL="$(sync32 "$R2" 2>&1)"
 if has_block "$R2/.claude/CLAUDE.md" "$B_ADO" && ! grep -q '^VIEJO$' "$R2/.claude/CLAUDE.md" && ! grep -q 'requires-integration' "$R2/.claude/CLAUDE.md" \
@@ -440,10 +440,10 @@ else
   S1="$(home32 no-node-absent)"; S2="$(home32 no-node-present seed)"; seed_stale "$S2/.claude/CLAUDE.md" "$B_ADO"
   SAL="$(PATH32=/usr/bin:/bin sync32 "$S1" "$ADO_ON" 2>&1)"
   # (story 8.16: sin node tampoco se sabe el perfil, así que el bloque de estilo tampoco se agrega)
-  if ! has_block "$S1/.claude/CLAUDE.md" "$B_ADO" && ! has_block "$S1/.claude/CLAUDE.md" response-style && echo "$SAL" | grep "$B_ADO" | grep -q 'node'; then ok "T32 sin node y bloque ausente: no se agrega (tampoco los del perfil), y la línea nombra node"
+  if ! has_block "$S1/.claude/CLAUDE.md" "$B_ADO" && ! has_block "$S1/.claude/CLAUDE.md" response-style && echo "$SAL" | grep "$B_ADO" | grep 'node' >/dev/null; then ok "T32 sin node y bloque ausente: no se agrega (tampoco los del perfil), y la línea nombra node"
   else no "T32 sin node y bloque ausente: $(echo "$SAL" | head -2 | tr '\n' ' ' | cut -c1-240)"; fi
   SAL="$(PATH32=/usr/bin:/bin sync32 "$S2" 2>&1)"
-  if has_block "$S2/.claude/CLAUDE.md" "$B_ADO" && ! grep -q '^VIEJO$' "$S2/.claude/CLAUDE.md" && echo "$SAL" | grep "$B_ADO" | grep -q 'node'; then ok "T32 sin node y bloque presente: queda, se actualiza, y la línea nombra node"
+  if has_block "$S2/.claude/CLAUDE.md" "$B_ADO" && ! grep -q '^VIEJO$' "$S2/.claude/CLAUDE.md" && echo "$SAL" | grep "$B_ADO" | grep 'node' >/dev/null; then ok "T32 sin node y bloque presente: queda, se actualiza, y la línea nombra node"
   else no "T32 sin node y bloque presente: $(echo "$SAL" | head -3 | tr '\n' ' ' | cut -c1-240)"; fi
 fi
 
@@ -454,11 +454,11 @@ printf '<!-- requires-integration: zeta -->\n# regla de zeta\ntexto de zeta\n' >
 printf '# regla común\ntexto común\n' > "$LAB/claude-md-blocks/common.md"
 D1="$(home32 unknown-absent)"; D2="$(home32 unknown-present seed)"; seed_stale "$D2/.claude/CLAUDE.md" zeta
 SAL="$(SYNC32="$LAB/scripts/setup/sync-claude-md-blocks.sh" sync32 "$D1" 2>&1)"
-if ! has_block "$D1/.claude/CLAUDE.md" zeta && has_block "$D1/.claude/CLAUDE.md" common && echo "$SAL" | grep "'zeta'" | grep -q 'integración «zeta»'; then ok "T32 integración desconocida y bloque ausente: no se agrega, lo demás sí, y una línea lo dice"
+if ! has_block "$D1/.claude/CLAUDE.md" zeta && has_block "$D1/.claude/CLAUDE.md" common && echo "$SAL" | grep "'zeta'" | grep 'integración «zeta»' >/dev/null; then ok "T32 integración desconocida y bloque ausente: no se agrega, lo demás sí, y una línea lo dice"
 else no "T32 integración desconocida y bloque ausente: $(echo "$SAL" | head -2 | tr '\n' ' ' | cut -c1-240)"; fi
 SAL="$(SYNC32="$LAB/scripts/setup/sync-claude-md-blocks.sh" sync32 "$D2" 2>&1)"
 if has_block "$D2/.claude/CLAUDE.md" zeta && grep -q '^texto de zeta$' "$D2/.claude/CLAUDE.md" && ! grep -q '^VIEJO$' "$D2/.claude/CLAUDE.md" \
-   && ! grep -q 'requires-integration' "$D2/.claude/CLAUDE.md" && echo "$SAL" | grep "'zeta'" | grep -q 'integración «zeta»'; then ok "T32 integración desconocida y bloque presente: queda, se actualiza (sin el comentario), y una línea lo dice"
+   && ! grep -q 'requires-integration' "$D2/.claude/CLAUDE.md" && echo "$SAL" | grep "'zeta'" | grep 'integración «zeta»' >/dev/null; then ok "T32 integración desconocida y bloque presente: queda, se actualiza (sin el comentario), y una línea lo dice"
 else no "T32 integración desconocida y bloque presente: $(echo "$SAL" | head -3 | tr '\n' ' ' | cut -c1-240)"; fi
 
 # ── un marcador CASI bien escrito (pase adversarial de la tanda C) ──
@@ -478,18 +478,18 @@ SAL="$(SYNC32="$LAB2/scripts/setup/sync-claude-md-blocks.sh" sync32 "$M1" 2>&1)"
 MAL=""
 for b in upper dashed multi blank; do
   has_block "$MD_M" "$b" && MAL="$MAL $b(se escribió)"
-  echo "$SAL" | grep "'$b'" | grep -q 'mal escrito' || MAL="$MAL $b(sin aviso)"
+  echo "$SAL" | grep "'$b'" | grep 'mal escrito' >/dev/null || MAL="$MAL $b(sin aviso)"
 done
 if [ -z "$MAL" ] && ! grep -q 'requires-integration' "$MD_M" 2>/dev/null; then ok "T32 un marcador casi bien escrito (mayúsculas, guion, dos nombres, fuera de la primera línea): el bloque no se agrega, el comentario no se copia y una línea lo dice"
 else no "T32 marcador casi bien escrito:$MAL · $(grep -c 'requires-integration' "$MD_M" 2>/dev/null) comentario(s) copiado(s)"; fi
-if ! has_block "$MD_M" bom && ! echo "$SAL" | grep -q "'bom'"; then ok "T32 un BOM delante del marcador no cambia nada: con la integración apagada el bloque no se escribe (y sin aviso: está bien escrito)"
+if ! has_block "$MD_M" bom && ! echo "$SAL" | grep "'bom'" >/dev/null; then ok "T32 un BOM delante del marcador no cambia nada: con la integración apagada el bloque no se escribe (y sin aviso: está bien escrito)"
 else no "T32 con BOM delante del marcador: $(has_block "$MD_M" bom && echo 'el bloque se escribió') $(echo "$SAL" | grep "'bom'" | head -1 | cut -c1-160)"; fi
 if has_block "$MD_M" plain && grep -q '^<!-- una nota cualquiera -->$' "$MD_M"; then ok "T32 el espejo: un bloque cuya primera línea es otro comentario es un bloque común (se escribe entero)"
 else no "T32 el espejo: un bloque con otro comentario en su primera línea no se escribió entero"; fi
 M2="$(home32 marker-present seed)"; seed_stale "$M2/.claude/CLAUDE.md" upper
 SAL="$(SYNC32="$LAB2/scripts/setup/sync-claude-md-blocks.sh" sync32 "$M2" 2>&1)"
 if has_block "$M2/.claude/CLAUDE.md" upper && grep -q '^texto de upper$' "$M2/.claude/CLAUDE.md" && ! grep -q 'requires-integration' "$M2/.claude/CLAUDE.md" \
-   && echo "$SAL" | grep "'upper'" | grep -q 'mal escrito'; then ok "T32 marcador mal escrito y bloque presente: queda, se actualiza sin el comentario, y una línea lo dice"
+   && echo "$SAL" | grep "'upper'" | grep 'mal escrito' >/dev/null; then ok "T32 marcador mal escrito y bloque presente: queda, se actualiza sin el comentario, y una línea lo dice"
 else no "T32 marcador mal escrito y bloque presente: $(echo "$SAL" | head -3 | tr '\n' ' ' | cut -c1-240)"; fi
 
 fi   # ── fin de los bloques: lo que sigue corre en todas las partes ──

@@ -409,7 +409,7 @@ for n in sorted(os.listdir(d)):
     try: rs.append(json.load(open(os.path.join(d,n,'manifest.json'))).get('reason'))
     except Exception: pass
 print(' '.join(str(r) for r in rs))" "$H/.claude/.tycon-pipeline/harness/backups" 2>/dev/null)"
-  printf '%s' "$REASON" | grep -qw profile && ok "T36 copia de respaldo con reason: profile" || mal "T36 sin copia «profile» (copias: ${REASON})"
+  printf '%s' "$REASON" | grep -w profile >/dev/null && ok "T36 copia de respaldo con reason: profile" || mal "T36 sin copia «profile» (copias: ${REASON})"
   # de vuelta a full: lo repone
   harness "$T/t36/back.out" install --profile full --yes
   { [ "$RC" = 0 ] && [ "$(setting "$H" cleanupPeriodDays)" = 365 ] && [ -f "$H/.git-hooks/pre-commit" ] && grep -q 'TYCON_BLOCK:response-style START' "$H/.claude/CLAUDE.md" \
@@ -439,7 +439,7 @@ print(' '.join(str(r) for r in rs))" "$H/.claude/.tycon-pipeline/harness/backups
   # una integración prendida trae lo suyo también en minimal
   H="$T/t36/engram"; new_home "$H"; base "$H"; RUN_ENV+=(TYCON_ENGRAM=1)
   harness "$T/t36/engram.out" install --profile minimal --yes
-  { [ "$RC" = 0 ] && harness_hooks "$H" "$TREE" | grep -q 'engram-pre-commit.sh' && harness_hooks "$H" "$TREE" | grep -q 'engram-drift-notice.js'; } && ok "T36 engram prendida en minimal: sus hooks están" \
+  { [ "$RC" = 0 ] && harness_hooks "$H" "$TREE" | grep 'engram-pre-commit.sh' >/dev/null && harness_hooks "$H" "$TREE" | grep 'engram-drift-notice.js' >/dev/null; } && ok "T36 engram prendida en minimal: sus hooks están" \
     || mal "T36 engram en minimal: rc ${RC} · $(harness_hooks "$H" "$TREE" | grep engram | tr '\n' ' ')"
 fi
 
@@ -465,7 +465,7 @@ if corre T37; then
   machine "$H" '{ "install": { "profile": "medio" } }'
   harness "$T/t37/s2.out" startup
   NOTICE="$(python3 -c "import json,sys; print(json.load(open(sys.argv[1], encoding='utf-8')).get('notice') or '')" "$H/.claude/.tycon-pipeline/harness-state.json" 2>/dev/null)"
-  { [ "$RC" = 0 ] && printf '%s' "$NOTICE" | grep -q 'perfil'; } && ok "T37 startup con el perfil roto: 0 con su aviso" || mal "T37 startup con el perfil roto: rc ${RC} · aviso «${NOTICE}»"
+  { [ "$RC" = 0 ] && printf '%s' "$NOTICE" | grep 'perfil' >/dev/null; } && ok "T37 startup con el perfil roto: 0 con su aviso" || mal "T37 startup con el perfil roto: rc ${RC} · aviso «${NOTICE}»"
   # el freno de producción instalado con un lector que no conoce la sección: el aviso de setKey, y sigue
   printf "const VOCABULARIO = Object.freeze({ ado: Object.freeze({ org: 'texto' }) });\n" > "$T/freno-viejo.js"
   H="$T/t37/guard"; new_home "$H"; base "$H"
@@ -492,8 +492,8 @@ if corre REG; then
     echo "CON-REPORTE $(st)"
   ) 2>&1 )"
   case "$OUT" in *"MAL"*) mal "REG laboratorio: $OUT" ;; esac
-  printf '%s\n' "$OUT" | grep -q '^SIN-REPORTE full$' && ok "REG sin reporte, el perfil nuevo no se anota (queda full: se reintenta)" || mal "REG sin reporte: $(printf '%s' "$OUT" | tr '\n' ' ')"
-  printf '%s\n' "$OUT" | grep -q '^CON-REPORTE minimal$' && ok "REG …y el arranque siguiente, con reporte, lo completa" || mal "REG con reporte: $(printf '%s' "$OUT" | tr '\n' ' ')"
+  printf '%s\n' "$OUT" | grep '^SIN-REPORTE full$' >/dev/null && ok "REG sin reporte, el perfil nuevo no se anota (queda full: se reintenta)" || mal "REG sin reporte: $(printf '%s' "$OUT" | tr '\n' ' ')"
+  printf '%s\n' "$OUT" | grep '^CON-REPORTE minimal$' >/dev/null && ok "REG …y el arranque siguiente, con reporte, lo completa" || mal "REG con reporte: $(printf '%s' "$OUT" | tr '\n' ' ')"
 fi
 
 echo

@@ -93,7 +93,7 @@ FLOOR_SCRIPT="$(sed -n 's/^NODE_FLOOR=\([0-9][0-9]*\).*/\1/p' "$SRC")"
 if [ -n "$FLOOR_HARNESS" ] && [ "$FLOOR_SCRIPT" = "$FLOOR_HARNESS" ]; then ok "T54 el piso de Node del guion (${FLOOR_SCRIPT}) es el de harness.js (NODE_FLOOR)"
 else no "T54 el piso de Node del guion es «${FLOOR_SCRIPT}» y el de harness.js «${FLOOR_HARNESS}»"; fi
 # (la ruta `/git/ref/heads/<rama>` de la API de GitHub no es una invocación de git: se descuenta antes de mirar)
-if ! grep -vE '^\s*#' "$SRC" | sed 's#/git/##g' | grep -qwE 'git|--depth'; then ok "T54 el guion no invoca git ni lo pide (sin clon: la versión se baja como archivos)"
+if ! grep -vE '^\s*#' "$SRC" | sed 's#/git/##g' | grep -wE 'git|--depth' >/dev/null; then ok "T54 el guion no invoca git ni lo pide (sin clon: la versión se baja como archivos)"
 else no "T54 el guion todavía nombra git fuera de los comentarios: $(grep -vE '^\s*#' "$SRC" | sed 's#/git/##g' | grep -nwE 'git|--depth' | head -3 | tr '\n' ' ')"; fi
 if [ "$COPY" = 0 ]; then
   if grep -qxF 'REPO="{{public-org}}/{{public-repo}}"' "$SRC"; then ok "T54 la dirección de fábrica del guion son los marcadores de la portada (REPO=\"{{public-org}}/{{public-repo}}\")"
@@ -153,7 +153,7 @@ mkdir -p "$LAB/uname-darwin" "$LAB/uname-other"
 printf '#!/bin/sh\necho Darwin\n' > "$LAB/uname-darwin/uname"; printf '#!/bin/sh\necho Plan9\n' > "$LAB/uname-other/uname"; chmod +x "$LAB/uname-darwin/uname" "$LAB/uname-other/uname"
 env -u TYCON_GITHUB_TOKEN PATH="$LAB/uname-darwin:$LAB/path-nonode" "$REAL_BASH" "$GH" < /dev/null > "$BASE/t55b.out" 2>&1; RC_D=$?
 env -u TYCON_GITHUB_TOKEN PATH="$LAB/uname-other:$LAB/path-nonode" "$REAL_BASH" "$GH" < /dev/null > "$BASE/t55c.out" 2>&1; RC_O=$?
-if [ "$RC_D" -eq 1 ] && grep 'falta node' "$BASE/t55b.out" | grep -qF 'brew install node' && [ "$RC_O" -eq 1 ] && grep 'falta node' "$BASE/t55c.out" | grep -qF 'https://nodejs.org' && [ ! -e "$PKG_CALLS" ]; then
+if [ "$RC_D" -eq 1 ] && grep 'falta node' "$BASE/t55b.out" | grep -F 'brew install node' >/dev/null && [ "$RC_O" -eq 1 ] && grep 'falta node' "$BASE/t55c.out" | grep -F 'https://nodejs.org' >/dev/null && [ ! -e "$PKG_CALLS" ]; then
   ok "T55 la sugerencia sale del sistema: Homebrew en una Mac, la página oficial en un sistema que no es Mac ni Debian/Ubuntu (y ninguna se corre)"
 else no "T55 la sugerencia por sistema (Mac rc $RC_D: $(grep 'falta node' "$BASE/t55b.out" | head -1) · otro rc $RC_O: $(grep 'falta node' "$BASE/t55c.out" | head -1))"; fi
 

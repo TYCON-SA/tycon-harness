@@ -90,7 +90,7 @@ else
   x=$(helper dod-checker-needed --story "$R/specs/story-9.9.md" --repo "$R/api" --base "$B")
 
   if [ "$a" = "0" ] && [ "$wa" = "0" ] && [ "$b" = "0" ] && [ "$c" = "0" ] && [ "$d" = "3" ] \
-     && echo "$linea_d" | grep -q '"invoca":false' && [ "$e" = "0" ] && [ "$we" = "0" ] && [ "$f" = "0" ] && [ "$g" = "0" ] && [ "$wg" = "0" ] && [ "$x" = "0" ]; then
+     && echo "$linea_d" | grep '"invoca":false' >/dev/null && [ "$e" = "0" ] && [ "$we" = "0" ] && [ "$f" = "0" ] && [ "$g" = "0" ] && [ "$wg" = "0" ] && [ "$x" = "0" ]; then
     ok "T3 worker→0 (también en subcarpeta sin trackear) · transacción con rollback→0 · tanda bloqueada→0 · ninguna→3 con su línea · diff roto, sin base o sin story→0 con motivo"
   else
     no "T3 exits worker/tx/tanda/ninguna/diff-roto/sin-base/sin-story/worker-en-subcarpeta=$a/$b/$c/$d/$e/$f/$g/$x · motivo-worker=$wa · línea=[$linea_d] · motivos-no-pude=$we/$wg"
@@ -181,7 +181,7 @@ else
   m=$(helper qa-readability --story "$R/specs/story-9.9.md" --repo "$R" --marks 3)
   linea_m="$(grep '"name":"qa-legibilidad"' "$GATES" 2>/dev/null | tail -1)"
   n=$(helper qa-readability --story "$R/specs/story-9.9.md" --repo "$R" --marks tres)
-  if [ "$m" = "0" ] && echo "$linea_m" | grep -q '"marcas":3' && echo "$linea_m" | grep -q '"storyId":"9.9"' && [ "$n" = "2" ]; then
+  if [ "$m" = "0" ] && echo "$linea_m" | grep '"marcas":3' >/dev/null && echo "$linea_m" | grep '"storyId":"9.9"' >/dev/null && [ "$n" = "2" ]; then
     ok "T4b qa-legibilidad anota las marcas resueltas; un número inválido no se anota (exit 2)"
   else
     no "T4b exit=$m/$n línea=[$linea_m]"
@@ -267,15 +267,15 @@ else
   pre9="$(awk '/^## /{n++} n<=2' "$S09")"
   s7b="$(awk '/\*\*7b-1 /,/Regla general anti-espera/' "$SMERGE")"
   problemas=""
-  echo "$s72" | grep -q 'dod-checker-needed' || problemas="$problemas 7c.2-sin-helper"
-  echo "$s72" | grep -q 'dod-checker-decision' || problemas="$problemas 7c.2-sin-constancia-de-la-decision"
-  echo "$s72" | grep -qi 'LAS CUATRO\|4 condiciones' && problemas="$problemas 7c.2-sigue-la-regla-de-cuatro"
-  echo "$capa4" | grep -q 'qa-legibilidad' || problemas="$problemas capa4-sin-marca"
+  echo "$s72" | grep 'dod-checker-needed' >/dev/null || problemas="$problemas 7c.2-sin-helper"
+  echo "$s72" | grep 'dod-checker-decision' >/dev/null || problemas="$problemas 7c.2-sin-constancia-de-la-decision"
+  echo "$s72" | grep -i 'LAS CUATRO\|4 condiciones' >/dev/null && problemas="$problemas 7c.2-sigue-la-regla-de-cuatro"
+  echo "$capa4" | grep 'qa-legibilidad' >/dev/null || problemas="$problemas capa4-sin-marca"
   grep -q 'deferrals-open' "$S09" || problemas="$problemas step9-sin-helper"
   grep -q '`tycon-dod-runtime-checker` advisor verde' "$S09" && problemas="$problemas step9-relanza-dod-checker"
   grep -q '`tycon-ac-coverage-checker` en modo `transition-to-done`' "$S09" && problemas="$problemas step9-relanza-ac-coverage"
-  echo "$s7b" | grep -q 'vuelve cuando el gate del proyecto tenga aislamiento por worker' || problemas="$problemas merge-sin-condicion-de-vuelta"
-  echo "$s7b" | grep -q 'lanzar la suite COMPLETA del gate del proyecto en \*\*BACKGROUND\*\*' && problemas="$problemas merge-sigue-lanzando-7b-2"
+  echo "$s7b" | grep 'vuelve cuando el gate del proyecto tenga aislamiento por worker' >/dev/null || problemas="$problemas merge-sin-condicion-de-vuelta"
+  echo "$s7b" | grep 'lanzar la suite COMPLETA del gate del proyecto en \*\*BACKGROUND\*\*' >/dev/null && problemas="$problemas merge-sigue-lanzando-7b-2"
   grep -q 'correr 7b-1 + 7b-2' "$SMERGE" && problemas="$problemas merge-sigue-corriendo-7b-2"
   [ -n "$pre9" ] || problemas="$problemas step9-ilegible"
   if [ -z "$problemas" ]; then
@@ -314,7 +314,7 @@ orph_cuentan=""
 for o in $orph_ids; do
   case "$o" in XPAT-*) [ -d "$AQUI/packs/clients" ] && orph_cuentan="$orph_cuentan $o" ;; *) orph_cuentan="$orph_cuentan $o" ;; esac
 done
-if echo "$fila_c9" | grep -q '~~ACCOV-C9~~' && echo "$fila_c9" | grep -q 'RETIRADA 2026-09-16' \
+if echo "$fila_c9" | grep '~~ACCOV-C9~~' >/dev/null && echo "$fila_c9" | grep 'RETIRADA 2026-09-16' >/dev/null \
    && [ "$rd" = "0" ] && [ "$bc" = "0" ] && [ -n "$zomb" ] && [ "$zomb" -le 1 ] && [ -n "$orph" ] && [ -z "$orph_cuentan" ] && [ -z "$c9_listado" ]; then
   ok "T8 ACCOV-C9 figura retirada con fecha, sin borrar la fila; rules-distill (0 orphans que cuenten, zombies $zomb ≤ línea base) y build/check verdes"
 else
@@ -355,7 +355,7 @@ else
     HOME="$HB" node "$AQUI/scripts/controls-bench/runner.js" --tool claude --only "$o" > "$TMP/banco-$o.out" 2>&1; r=$?
     linea="$(grep -E 'corridos' "$TMP/banco-$o.out" | tail -1)"
     # en Windows el resumen intercala «N rojos conocidos (known-gaps.json)» (story 8.17): la misma suposición puso rojo a T19e
-    echo "$linea" | grep -qE ' 0 rojos · ([0-9]+ rojos conocidos \(known-gaps\.json\) · )?0 NO MEDIDOS' && [ "$r" = "0" ] || res11="$res11 $o(rc=$r: $linea)"
+    echo "$linea" | grep -E ' 0 rojos · ([0-9]+ rojos conocidos \(known-gaps\.json\) · )?0 NO MEDIDOS' >/dev/null && [ "$r" = "0" ] || res11="$res11 $o(rc=$r: $linea)"
   done
   if [ -z "$res11" ]; then ok "T11 el banco de on-pre-commit, on-frontmatter-write y on-dod-evidence-guard sigue verde"
   else no "T11 banco:$res11"; fi
@@ -396,7 +396,7 @@ if [ -n "$THIN_SIN_MARKER" ]; then
 elif git -C "$AS_RAIZ" rev-parse --verify -q origin/main >/dev/null 2>&1; then
   RC_MAIN="$(git -C "$AS_RAIZ" show origin/main:skills/tycon-pipeline/scripts/marker.js | funciones_run_check)"
   RC_AHORA="$(funciones_run_check < "$AS_RAIZ/skills/tycon-pipeline/scripts/marker.js")"
-  { [ -n "$RC_MAIN" ] && [ "$RC_MAIN" = "$RC_AHORA" ] && ! printf '%s' "$RC_AHORA" | grep -q '^SIN:'; } \
+  { [ -n "$RC_MAIN" ] && [ "$RC_MAIN" = "$RC_AHORA" ] && ! printf '%s' "$RC_AHORA" | grep '^SIN:' >/dev/null; } \
     || t12="$t12 agent-skills:run-check-cambiado"
   # 🔴 La matriz ya NO se compara contra origin/main (2026-10-07, decisión del dueño). La comparación probaba que la
   #    story 7.2 no la había tocado, y esa story cerró el 2026-09-16. Desde entonces sólo ponía en rojo —hasta el

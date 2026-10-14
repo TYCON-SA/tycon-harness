@@ -312,7 +312,7 @@ grep -q 'sin TypeSafe' "${TMP}/o.txt" && grep -qi 'nombres' "${TMP}/o.txt" && ok
 repo; cambio_tipico
 out=$(env -u TYPESAFE_API_KEY TYCON_GUIDES_DIR="${AQUI}" TYCON_SQL_COMPILE=0 bash "${HOOK}" 2>&1); rc=$?
 [ "${rc}" = "0" ] && ok "pre-commit global sale 0 con un CLAUDE.md tocado" || no "pre-commit global salió ${rc}: ${out}"
-printf '%s' "${out}" | grep -q 'movela a «Reglas para revisores»' && ok "pre-commit global muestra el aviso" || no "pre-commit global no mostró el aviso: ${out}"
+printf '%s' "${out}" | grep 'movela a «Reglas para revisores»' >/dev/null && ok "pre-commit global muestra el aviso" || no "pre-commit global no mostró el aviso: ${out}"
 
 # ── T9 Codex_GeneradorYCheck ─────────────────────────────────────────────────────────────────────
 cd "${AQUI}" || exit 9

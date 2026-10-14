@@ -162,7 +162,7 @@ if corre T6; then
   N="$(corridas_aplicador)"; ANTES="$(head_de "$LAB_TREE")"
   harness startup >/dev/null 2>&1
   [ "$(head_de "$LAB_TREE")" = "$ANTES" ] && [ "$(corridas_aplicador)" = $((N + 1)) ] && ok "T6 segundo arranque en < 10 min: sin red, con aplicador" || mal "T6 segundo arranque: HEAD $(head_de "$LAB_TREE") (antes $ANTES) aplicador $(corridas_aplicador)/$((N + 1))"
-  ls "$LAB_HOME/.claude/.tycon-pipeline/" | grep -q "^lab-daily-$(date +%F)$" && ok "T6 el sello diario del aplicador existe" || mal "T6 sin sello diario"
+  ls "$LAB_HOME/.claude/.tycon-pipeline/" | grep "^lab-daily-$(date +%F)$" >/dev/null && ok "T6 el sello diario del aplicador existe" || mal "T6 sin sello diario"
   # con last_fetch de hace 11 minutos vuelve a la red y aplica
   estado_set "import datetime; d['last_fetch']=(datetime.datetime.now(datetime.timezone.utc)-datetime.timedelta(minutes=11)).isoformat()"
   harness startup >/dev/null 2>&1
@@ -997,7 +997,7 @@ if corre T8; then
   capa_lab "$BASE/t8"
   # el armado no deja un mantenimiento de git corriendo de fondo en un repo que T8 mide (ver capa_lab). 🔴 rojo previo:
   # sin la configuración de los bare, la traza del push trae el `git maintenance run --auto` que lanzó el receive-pack.
-  [ -s "$BASE/t8/push-trace.json" ] && ! grep '"child_start"' "$BASE/t8/push-trace.json" | grep -q '"maintenance"' \
+  [ -s "$BASE/t8/push-trace.json" ] && ! grep '"child_start"' "$BASE/t8/push-trace.json" | grep '"maintenance"' >/dev/null \
     && ok "T8 el push del armado no lanza el mantenimiento de git en el bare (la huella de antes no se cruza con un reempaquetado)" \
     || mal "T8 el push del armado lanzó el mantenimiento de git en el bare, o no dejó traza: $(grep '"child_start"' "$BASE/t8/push-trace.json" 2>/dev/null | head -c 300)"
   mira install --yes --harness-clone "$INTERNAL"

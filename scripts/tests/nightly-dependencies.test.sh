@@ -172,7 +172,7 @@ rm -rf "$TMP/out" "$TMP/pend"; mundo A; echo "$LIMPIO" > "$TMP/fix/A.json"; conf
 noche "$TMP/c6.json" 2026-09-01 >/dev/null; echo "$UNA" > "$TMP/fix/A.json"; noche "$TMP/c6.json" 2026-09-02 >/dev/null
 B=$(ls "$TMP/pend/pending"/*.yaml | head -1)
 node "$NOC" pr-text --draft "$B" > "$TMP/pr.txt" 2>&1
-{ head -1 "$TMP/pr.txt" | grep -q "browserslist" && grep -q -- "---CUERPO---" "$TMP/pr.txt" && grep -q "declara" "$TMP/pr.txt"; } \
+{ head -1 "$TMP/pr.txt" | grep "browserslist" >/dev/null && grep -q -- "---CUERPO---" "$TMP/pr.txt" && grep -q "declara" "$TMP/pr.txt"; } \
   && ok "el pull request nombra el paquete y explica qué decidir" || no "pr-text: $(head -3 "$TMP/pr.txt")"
 
 # ── 14. `report` distingue lo ignorado de lo descartado ─────────────────────────────────────

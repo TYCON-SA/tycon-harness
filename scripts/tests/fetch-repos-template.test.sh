@@ -254,7 +254,7 @@ if extract_step 'Traer los repos de los productos' "$PSNIP" && [ -s "$PSNIP" ]; 
   printf '{"repos":[{"ruta":"Lab/RepoA","ado":"LabProj/RepoA"},{"ruta":"Lab/RepoX","ado":"LabProj/RepoX"}]}\n' > "$LAB/reg-half.json"
   HP5="$LAB/home-p5"; mkdir -p "$HP5"; run_products "$HP5" "$LAB/reg-half.json"; RC=$?
   # el aviso de Azure lleva texto fijo (AC 45: el control del pedido es público); el repo y el error, en la línea común
-  if [ "$RC" = 0 ] && grep -q '##vso\[task.logissue type=warning\]' "$OUT" && ! grep '##vso' "$OUT" | grep -q 'RepoX' && grep -q 'RepoX' "$OUT"; then
+  if [ "$RC" = 0 ] && grep -q '##vso\[task.logissue type=warning\]' "$OUT" && ! grep '##vso' "$OUT" | grep 'RepoX' >/dev/null && grep -q 'RepoX' "$OUT"; then
     ok "T11e un repo que no se clona avisa (con texto fijo; el nombre en el registro) y el paso sigue"
   else bad "T11e esperaba aviso de texto fijo y código 0 (código $RC)"; show; fi
 else
@@ -309,7 +309,7 @@ done
 # el banco sigue incluyendo la plantilla en sus dos trabajos, con la lista de productos de siempre
 if [ ${#NIGHTLY_YAMLS[@]} -gt 0 ]; then
   N_TEMPLATE="$(code_of "$BENCH_YAML" | grep -c 'template: /pipelines/templates/traer-repos.yml')"
-  if [ "$N_TEMPLATE" = 2 ] && ! code_of "$BENCH_YAML" | grep -q 'productRegistry'; then ok "T15 el banco incluye la plantilla en sus dos trabajos, con la lista de productos por defecto"
+  if [ "$N_TEMPLATE" = 2 ] && ! code_of "$BENCH_YAML" | grep 'productRegistry' >/dev/null; then ok "T15 el banco incluye la plantilla en sus dos trabajos, con la lista de productos por defecto"
   else bad "T15 el banco incluye la plantilla $N_TEMPLATE vez/veces (esperaba 2) o le pasa otra lista"; fi
 fi
 # la historia entera se pide desde el checkout (la plantilla la completa si igual vino recortado)

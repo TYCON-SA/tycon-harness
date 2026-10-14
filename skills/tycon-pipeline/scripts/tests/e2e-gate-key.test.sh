@@ -107,10 +107,10 @@ rm -rf "$T"
 T="$(mktemp -d)"; montar "$T" 1 0 "E2E_AUDIT_REQUIRED"
 correr "$T"
 EV="$(evidencia "$T")"
-echo "$EV" | grep -q '^- llave_exigente: .*E2E_REQUIRED=1' \
+echo "$EV" | grep '^- llave_exigente: .*E2E_REQUIRED=1' >/dev/null \
   && ok "C-03 la evidencia registra la llave paraguas" \
   || mal "C-03 la evidencia no dice con qué llaves corrió: un verde exigente no se distingue de uno permisivo"
-echo "$EV" | grep -q '^- llave_exigente: .*E2E_AUDIT_REQUIRED=1' \
+echo "$EV" | grep '^- llave_exigente: .*E2E_AUDIT_REQUIRED=1' >/dev/null \
   && ok "C-03 y también el nombre por dominio declarado" \
   || mal "C-03 la evidencia omite el nombre por dominio"
 rm -rf "$T"
