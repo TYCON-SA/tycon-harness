@@ -290,13 +290,22 @@ fi
 # versión pública, o algo interno se filtraría, el generador frena y dice qué. Va ANTES del filtro
 # RELEVANTES: ninguna de estas rutas está en esa lista.
 # Antes de generar, el `tipo` de cada ficha tiene que ser el que le da su ruta (story 8.12, R7):
-# `censo.js --check` sobre la privada del índice; sólo lee el mapa, no depende de la máquina.
-# Casos: scripts/tests/mapa-arnes-publico.test.sh · scripts/tests/mapa-arnes-censo.test.sh (C-08 a C-12) ·
+# `census.js --check` sobre la privada del índice; sólo lee el mapa, no depende de la máquina.
+# Casos: scripts/tests/harness-map-public.test.sh · scripts/tests/harness-map-census.test.sh (C-08 a C-12) ·
 # scripts/tests/githook-livefire.test.sh (C-26/C-27: el tipo mal puesto, con un commit de verdad).
 # El generador y su configuración viven en scripts/tools/harness-map/ desde la story 8.12, tanda R4.
+# El código del mapa (census.js, public-version.js) vive en el repo público; el mapa interno, publica.json y el sitio, en
+# el del equipo. En un repo que no trae el mapa interno —ni en el índice ni en HEAD— no hay versión pública que derivar:
+# un commit que toca sólo el código pasa y lo dice (sus pruebas, scripts/tests/harness-map-*.test.sh, lo prueban con un
+# mapa de juguete). Si HEAD lo trae y el índice no (el mapa movido o borrado), el control corre y frena como siempre.
 MAPA_TOCADO="$(grep -E '^(artifacts/mapa-arnes\.html$|scripts/tools/harness-map/|onboarding/mini-class/mapa-del-arnes\.html$)' <<<"$STAGED_ALL" || true)"
+if [ -n "$MAPA_TOCADO" ] && ! git cat-file -e :artifacts/mapa-arnes.html 2>/dev/null \
+   && ! git cat-file -e HEAD:artifacts/mapa-arnes.html 2>/dev/null; then
+  echo "▸ pre-commit: este repo no trae el mapa interno del arnés (artifacts/mapa-arnes.html): no hay versión pública que regenerar."
+  MAPA_TOCADO=""
+fi
 if [ -n "$MAPA_TOCADO" ]; then
-  MAPA_GEN="$REPO_ROOT/scripts/tools/harness-map/version-publica.js"
+  MAPA_GEN="$REPO_ROOT/scripts/tools/harness-map/public-version.js"
   if [ ! -f "$MAPA_GEN" ]; then
     echo "⚠️  tycon: no encontré $MAPA_GEN — no se regeneró la versión pública del mapa del arnés." >&2
   else
@@ -310,7 +319,7 @@ if [ -n "$MAPA_TOCADO" ]; then
     fi
     # La privada del índice, en la forma de un arnés (<raíz>/artifacts/mapa-arnes.html) para `--tcg`.
     mkdir -p "$MAPA_TMP/tcg/artifacts" && cp "$MAPA_TMP/privada.html" "$MAPA_TMP/tcg/artifacts/mapa-arnes.html"
-    if ! node "$REPO_ROOT/scripts/tools/harness-map/censo.js" --check --tcg "$MAPA_TMP/tcg"; then
+    if ! node "$REPO_ROOT/scripts/tools/harness-map/census.js" --check --tcg "$MAPA_TMP/tcg"; then
       rm -rf "$MAPA_TMP"
       echo "⛔ COMMIT RECHAZADO — el tipo de alguna pieza del mapa no es el que le da su ruta (el detalle está arriba)." >&2
       exit 1

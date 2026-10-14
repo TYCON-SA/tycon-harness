@@ -168,7 +168,7 @@
     "scripts/setup/install-instinct-mining.sh": 2,
     "scripts/setup/validate-engram-upgrade.sh": 1,
     "scripts/tools/context-budget.js": 9,
-    "scripts/tools/harness-map/censo.js": 2,
+    "scripts/tools/harness-map/census.js": 2,
     "scripts/tools/release-notes-parity.js": 1,
     "scripts/tools/rules-distill.js": 7,
     "scripts/tools/tycon-backfill-followups.js": 2,
