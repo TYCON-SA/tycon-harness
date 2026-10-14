@@ -1,0 +1,9 @@
+{
+  "__doc": "EJEMPLO. Va en la raíz de tu repo de operaciones. Lector y forma: scripts/lib/operations-config.js. owners.default es el responsable de respaldo: se le asigna un pedido de trabajo cuando no se deduce un dueño, y se lo menciona en cada pedido. owners.by_project asigna directo los pedidos de un proyecto. reviewers.dependencies: quiénes revisan los pull requests de la revisión de dependencias. Identidades: el principalName de Azure DevOps.",
+  "version": 1,
+  "owners": {
+    "default": "lider@acme.example",
+    "by_project": { "Acme Web": "responsable-web@acme.example" }
+  },
+  "reviewers": { "dependencies": ["lider@acme.example"] }
+}

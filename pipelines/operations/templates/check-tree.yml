@@ -1,0 +1,17 @@
+# pipelines/operations/templates/check-tree.yml — la guarda de antes de medir (story 8.30).
+#
+# Cada modelo de pipelines/operations/ la incluye JUSTO ANTES del paso que mide. Compara el código de HEAD y el del disco
+# con la huella que dejó ops-data.yml en `HARNESS_TREE` (scripts/ci/harness-tree.js --check-tree --worktree). Si un paso
+# de antes movió el checkout —el caso que la motivó: un guion que hacía `git checkout -B main origin/main` antes de
+# medir—, el trabajo mediría otro árbol y saldría verde. Con otro árbol, o sin la huella, sale ROJO y no se mide nada.
+# La guarda de antes de GUARDAR la corre el propio guion de guardar (push-nightly-data.js), sin `--worktree`.
+
+steps:
+  - script: |
+      set -uo pipefail
+      if ! OUT=$(node "$(Build.SourcesDirectory)/scripts/ci/harness-tree.js" --check-tree --worktree --repo "$(Build.SourcesDirectory)" 2>&1); then
+        echo "##vso[task.logissue type=error]$(printf '%s' "$OUT" | tail -n 1 | sed 's/##vso/## vso/g') — no se mide nada"
+        exit 1
+      fi
+      echo "$OUT"
+    displayName: 'El árbol sigue siendo el que se armó (antes de medir)'

@@ -53,7 +53,9 @@
 // siendo el que dejó la plantilla que trae el arnés, que lo anota en `HARNESS_TREE`. Si cambió, no se guarda. Y si la
 // variable falta, tampoco: no hay contra qué comparar (sale 1, también cuando no había nada nuevo). Corre el guion
 // que la plantilla guardó para la corrida (`<Agent.TempDirectory>/arnes-guion/`), si lo guardó; si no, el del
-// checkout. `sync` no la mira: no empuja nada.
+// checkout. `sync` no la mira: no empuja nada. Un árbol sin `overlay-harness.js` (el de los pipelines de operaciones de
+// cualquier organización, que no superponen nada: pipelines/operations/) corre la guarda pública, `harness-tree.js`, con
+// la misma huella y los mismos argumentos (story 8.30).
 //
 // Salida: 0 viajó, o no había nada nuevo · 1 NO viajó (dice por qué) · 2 uso.
 // Casos: scripts/tests/push-nightly-data.test.js (T73).
@@ -67,6 +69,8 @@ const STATE_FILE = 'nightly-data.json';
 // lo que nunca es un dato de la noche, aunque caiga en una carpeta que se guarda
 const NEVER = ['.DS_Store', '*.swp', '*.bak'];
 const TREE_CHECK = 'scripts/ci/overlay-harness.js';
+// la guarda pública (story 8.30): la misma huella, para un árbol que no trae la superposición
+const PUBLIC_TREE_CHECK = 'scripts/ci/harness-tree.js';
 /** Dónde deja la plantilla (traer-arnes.yml) el guion de la corrida, bajo la carpeta temporal del agente. */
 const RUN_TREE_CHECK = path.join('arnes-guion', 'overlay-harness.js');
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -221,12 +225,14 @@ function checkTree(repo, env, say) {
   const saved = env.AGENT_TEMPDIRECTORY ? path.join(env.AGENT_TEMPDIRECTORY, RUN_TREE_CHECK) : '';
   // un ARCHIVO, como lo elige check-tree.yml con `[ -f ]`: otra cosa con ese nombre no es el guion de la corrida
   const isFile = (p) => { try { return fs.statSync(p).isFile(); } catch (_) { return false; } };
-  const script = saved && isFile(saved) ? saved : path.join(repo, TREE_CHECK);
+  // sin el de la corrida: el de la superposición si el árbol lo trae (el del equipo que mantiene el arnés); si no, el público
+  const own = isFile(path.join(repo, TREE_CHECK)) ? TREE_CHECK : PUBLIC_TREE_CHECK;
+  const script = saved && isFile(saved) ? saved : path.join(repo, own);
   const r = spawnSync(process.execPath, [script, '--check-tree', '--repo', repo], { env, encoding: 'utf8', maxBuffer: 1 << 26 });
   const said = quiet(`${r.stdout || ''}${r.stderr || ''}`);
   if (said) say(said);
   // el rojo nombra el guion que corrió: con el de la corrida, buscar el motivo en el del checkout es buscar en otro
-  const which = script === saved ? `el guion de la corrida, ${RUN_TREE_CHECK}` : TREE_CHECK;
+  const which = script === saved ? `el guion de la corrida, ${RUN_TREE_CHECK}` : own;
   if (r.status !== 0) throw new Red(`el árbol ya no es el que dejó la superposición (${which} --check-tree salió ${r.status === null ? 'sin código' : r.status}): no se guarda`);
 }
 

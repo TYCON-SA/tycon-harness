@@ -106,8 +106,10 @@ An example: at ACME, Pedro is the administrator and Juan writes code.
    if it is on GitHub, or with the repo's address if it is on Azure DevOps. From then on, every update also brings him
    what belongs to the team.
 
-**What is not there yet.** The nightly jobs (dependencies, dashboard, retrospectives) are not published yet: today
-they run only at TYCON, on Azure DevOps. The production watcher is not published either: it is still TYCON's own.
+**The nightly jobs.** On Azure DevOps, the dependency review, the cycle metrics and the dashboard run in your
+organization with three model pipelines and your operations repo: [how to set them up](pipelines/operations/README.md)
+(in Spanish). On GitHub (Actions) they are not there yet. The production watcher is not published: it is still TYCON's
+own.
 
 ## Where to go next
 

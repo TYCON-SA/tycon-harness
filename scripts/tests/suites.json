@@ -227,6 +227,47 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/nightly-dependencies.test.sh",
+      "requiere": [],
+      "gate_only_when_touching": [
+        "scripts/nightly/**",
+        "scripts/ci/**",
+        "scripts/lib/**"
+      ]
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/work-items.test.sh",
+      "requiere": [],
+      "gate_only_when_touching": [
+        "scripts/nightly/**",
+        "scripts/lib/**"
+      ]
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/work-item-status.test.sh",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/daily-summary.test.sh",
+      "requiere": [],
+      "gate_only_when_touching": [
+        "scripts/nightly/**",
+        "scripts/controls-bench/**",
+        "scripts/hooks/**",
+        "scripts/lib/**"
+      ]
+    },
+    {
+      "__nota": "2026-09-29: ubicarRepo del nocturno de dependencias encuentra el repo por su origin en Azure, no por el nombre de la carpeta. Viaja con el nocturno desde la story 8.30, con nombres inventados.",
+      "raiz": "arnes",
+      "ruta": "tests/locate-repo.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/sync-codex-detection.test.sh",
       "requiere": []
     },
@@ -1792,6 +1833,18 @@
       "__nota": "story 8.26, tanda H1a (T73): cómo guardan los nocturnos lo que escribieron (scripts/ci/push-nightly-data.js). Con un remoto desnudo y el clon de un trabajo, con git de verdad: con un commit local debajo de HEAD y main adelantada, a main llega sólo lo que el paso escribió (lo nuevo sin seguimiento, lo ignorado, lo borrado, lo renombrado y lo binario), nunca ese commit ni sus borrados, y el checkout no se mueve; dos guardados del mismo trabajo se componen y el que no viajó lo lleva el siguiente; lo que otro trabajo escribió en la misma carpeta queda; un choque sale rojo nombrando el archivo; el archivo del día y la verificación del paso se comprueban antes de empujar; tres rechazos salen 1 diciendo que no viajó; sync trae sólo datos sin mover HEAD; la guarda del árbol corre antes de guardar, con el guion que la plantilla guardó para la corrida si lo guardó, y sin HARNESS_TREE no se guarda. Sin red.",
       "raiz": "arnes",
       "ruta": "tests/push-nightly-data.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.30 (T6, T7): la huella pública del código que mide un pipeline de operaciones (scripts/ci/harness-tree.js) — tocar una carpeta de datos no la mueve, tocar código sí; la guarda sale 1 con el checkout movido o el disco sucio, 2 sin huella. Con git de verdad, sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/harness-tree.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.30 (T1 a T5): los modelos de pipelines de operaciones para cualquier organización (pipelines/operations/) — los archivos en su lugar, ningún literal del equipo, todo paso con efectos atado a efectos (y a main si empuja), y la plantilla ops-data.yml corrida de verdad sobre dos repos de juguete. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/operations-pipelines.test.js",
       "requiere": []
     },
     {
