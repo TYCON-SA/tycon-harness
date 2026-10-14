@@ -177,6 +177,19 @@ function measure({ lab, out, platform = process.platform, baseEnv = process.env,
     }
     if (rec.step.facts.after_install.links.place === 'missing') rec.finding('no-clone:place-link-missing', 'links', `el lugar ${placeLink} no quedó enlazado a ~/.tycon/harness`, 'W8', { severity: 'loses-control' });
     if (rec.step.facts.after_install.links.skills === 'missing') rec.finding('no-clone:skills-link-missing', 'links', 'agent-skills no quedó enlazado a ~/.tycon/harness (en Windows, una unión)', 'W8', { severity: 'loses-control' });
+    // el freno antes de publicar, puesto (2026-10-14): una máquina limpia, sin carpeta global de hooks de git, queda con
+    // core.hooksPath apuntando a la carpeta del aplicador y el pre-push del arnés adentro. Antes la instalación sólo avisaba
+    // y nada la ponía: una máquina instalada sin el paso a mano de la página quedaba sin el freno, sin que nadie lo notara
+    {
+      const hp = L.run('git', ['config', '--global', '--get', 'core.hooksPath'], { env, timeoutMs: 60000 });
+      const want = path.join(home, '.git-hooks');
+      const value = String(hp.stdout || '').trim();
+      let prePush = false;
+      try { prePush = fs.readFileSync(path.join(want, 'pre-push'), 'utf8').includes('git-pre-push-global.sh'); } catch (_) { prePush = false; }
+      const same = Boolean(value) && L.samePath(value.replace(/\//g, path.sep), want);
+      rec.fact('hooks_path', { exit: hp.exit, value: value || null, expected: want, same, pre_push: prePush });
+      if (!same || !prePush) rec.finding('no-clone:pre-push-not-active', 'install', `después de install, core.hooksPath global es «${value || 'nada'}» (se esperaba ${want}) y el pre-push del arnés ${prePush ? 'está' : 'NO está'} ahí: el freno antes de publicar no corre`, 'W8', { severity: 'loses-control' });
+    }
     const hooks0 = hookCount();
     const tree = path.join(own, 'harness');
 
