@@ -1,7 +1,7 @@
 # La máquina limpia del núcleo (story 8.7, AC 17): la lista de requisitos de la portada, hecha ejecutable.
 #
 # Trae EXACTAMENTE lo que declara el bloque `<!-- requirements -->` de la portada pública
-# (scripts/publishing/public-files/.github/README.md) y nada más: `clean-machine.test.sh` (T24) comprueba que cada
+# (getting-started/reference.md) y nada más: `clean-machine.test.sh` (T24) comprueba que cada
 # requisito responde a `command -v` y que ninguna herramienta de la lista vigilada está. No trae Claude Code, ni
 # credenciales, ni el arnés: la copia entra después, en una capa que arma la prueba.
 #

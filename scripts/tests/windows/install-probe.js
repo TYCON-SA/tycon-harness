@@ -298,7 +298,7 @@ function measure({ lab, out, fence, platform = process.platform, disposable = fa
   if (cover.problem) return { status: L.STATUS.error, reason: `no pude medir: ${cover.problem}` };
   const redact = L.redactor({ publicUrl: cover.url, secrets: L.secretValues(baseEnv) });
   rec.setRedactor(redact);
-  rec.fact('cover', { file: '.github/README.md', marker: cover.marker, fence, block: cover.block });
+  rec.fact('cover', { file: path.relative(source, cover.file).split(path.sep).join('/'), marker: cover.marker, fence, block: cover.block });
   const redirect = L.gitRedirectEnv(cover.url, source, baseEnv);
   const pwsh = L.scanPath('pwsh', { env: baseEnv, platform })[0] || null;
   const gitBash = L.findGitBash({ platform, env: baseEnv, gitLocations: L.scanPath('git', { env: baseEnv, platform }), bashLocations: L.scanPath('bash', { env: baseEnv, platform }) }).path;

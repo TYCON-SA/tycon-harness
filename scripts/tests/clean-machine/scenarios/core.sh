@@ -97,9 +97,9 @@ if [ "${MODE}" = internal ]; then
   A="${WORK_DIR}/asks-pack"; FIXED='el repo declara el paquete «bizuit» en `packs:` y no está instalado en '
   if make_example_repo "${A}" && run_block bizuit "${OUT_DIR}/install-bizuit.out" "${A}"; then
     ( cd "${A}" && TYCON_SESSION_ID="clean-machine-core-pack" node "${PIPE_DIR}/pipeline.js" advisors --repo "${A}" --story "${A}/specs/story-1.1-greeting.md" --files src/greeting.js ) > "${OUT_DIR}/t29.out" 2> "${OUT_DIR}/t29.err"; RC=$?
-    if [ "${RC}" -eq 2 ] && grep -q -F "${FIXED}" "${OUT_DIR}/t29.err" && grep -q -F "${FIXED}" "${CLONE}/.github/README.md"; then
-      ok "T29 el núcleo solo, frente a un repo con packs: [bizuit], sale 2 con el mensaje que la portada muestra"
-    else no "T29 pipeline.js advisors salió ${RC} (esperado 2), o su mensaje no es el de la portada: $(tail -n 2 "${OUT_DIR}/t29.err" | tr '\n' ' ' | head -c 300)"; fi
+    if [ "${RC}" -eq 2 ] && grep -q -F "${FIXED}" "${OUT_DIR}/t29.err" && grep -q -F "${FIXED}" "${CLONE}/getting-started/reference.md"; then
+      ok "T29 el núcleo solo, frente a un repo con packs: [bizuit], sale 2 con el mensaje que la referencia muestra"
+    else no "T29 pipeline.js advisors salió ${RC} (esperado 2), o su mensaje no es el de la referencia: $(tail -n 2 "${OUT_DIR}/t29.err" | tr '\n' ' ' | head -c 300)"; fi
   else
     no "T29 no pude armar el repo que pide el paquete (el bloque install:bizuit de la portada falló): $(tail -n 2 "${OUT_DIR}/install-bizuit.out" 2>/dev/null | tr '\n' ' ')"
   fi

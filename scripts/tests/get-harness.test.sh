@@ -28,10 +28,10 @@
 set -uo pipefail
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SRC="$RAIZ/scripts/publishing/public-files/scripts/setup/get-harness.sh"
-README_EN="$RAIZ/scripts/publishing/public-files/.github/README.md"
+README_EN="$RAIZ/scripts/publishing/public-files/getting-started/reference.md"
 COPY=0
 if [ ! -f "$SRC" ] && [ -f "$RAIZ/scripts/setup/get-harness.sh" ]; then
-  COPY=1; SRC="$RAIZ/scripts/setup/get-harness.sh"; README_EN="$RAIZ/.github/README.md"
+  COPY=1; SRC="$RAIZ/scripts/setup/get-harness.sh"; README_EN="$RAIZ/getting-started/reference.md"
 fi
 GUARD_HOOK="$RAIZ/scripts/hooks/safety-guard-pre.sh"
 
@@ -39,7 +39,7 @@ for tool in python3 git node tar; do
   command -v "$tool" >/dev/null 2>&1 || { echo "⏭ get-harness: NO MEDIDO — no hay ${tool} en esta máquina"; exit 2; }
 done
 [ -f "$SRC" ] || { echo "❌ get-harness: no existe ${SRC#"$RAIZ"/}"; exit 1; }
-[ -f "$README_EN" ] || { echo "❌ get-harness: no existe ${README_EN#"$RAIZ"/} (la portada)"; exit 1; }
+[ -f "$README_EN" ] || { echo "❌ get-harness: no existe ${README_EN#"$RAIZ"/} (la referencia, con los bloques de instalación)"; exit 1; }
 
 FAILURES=0; TOTAL=0
 ok() { TOTAL=$((TOTAL+1)); echo "✅ get-harness: $1"; }
