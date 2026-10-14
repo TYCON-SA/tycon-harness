@@ -87,13 +87,13 @@
           "agents/tycon-plugin-dotnet-conventions.md",
           "agents/tycon-plugin-react-conventions.md",
           "agents/tycon-plugin-nextjs-conventions.md",
-          "skills/core/bizuit-backend-plugin-system/**",
-          "skills/core/bizuit-custom-forms-system/**",
-          "skills/core/bizuit-sdk-integration/**",
-          "skills/core/safe-query-builder/**",
-          "skills/core/esbuild-bundling/**",
-          "skills/core/feature-based-crud-endpoints/**",
-          "skills/core/dotnet-dapper-sqlserver/**"
+          "skills/bizuit-backend-plugin-system/**",
+          "skills/bizuit-custom-forms-system/**",
+          "skills/bizuit-sdk-integration/**",
+          "skills/safe-query-builder/**",
+          "skills/esbuild-bundling/**",
+          "skills/feature-based-crud-endpoints/**",
+          "skills/dotnet-dapper-sqlserver/**"
         ],
         "out": [
           { "glob": "skills/bizuit-sdd/**", "reason": "deprecada, no se publica (2026-09-30); sus dos suites se van de la copia con ella" }
