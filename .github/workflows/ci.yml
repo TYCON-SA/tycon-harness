@@ -10,6 +10,12 @@
 #     puede mover; un sha, no;
 #   · el checkout trae la historia completa (fetch-depth: 0): el freno de nombres compara contra la rama de destino;
 #   · Node 22 y 24;
+#   · la corrida va PARTIDA en trabajos que corren a la vez (2026-10-14: una sola corrida por Node tardaba ~30 min, y con
+#     el merge automático ese es el tiempo que tarda en entrar cada cambio): la matriz es Node × parte. La parte `checks`
+#     corre todos los pasos menos las portables; cada `suites-<i>-of-<n>` corre la parte <i> de las portables, repartidas
+#     por peso con scripts/ci/suites-shard.js. Las partes juntas son la corrida entera (public-ci.sh,
+#     TYCON_PUBLIC_CI_PART); la lista tiene que traer `checks` y TODAS las `suites-<i>-of-<n>`, de 1 a n: una que falta
+#     deja suites sin correr y el veredicto igual verde;
 #   · el último job se llama `public-ci` y es el ÚNICO chequeo que las reglas de la rama exigen. Tiene nombre estable a
 #     propósito: cambiárselo deja los merges esperando un chequeo que no llega nunca.
 #
@@ -34,13 +40,14 @@ permissions:
 
 jobs:
   checks:
-    name: Node ${{ matrix.node }}
+    name: Node ${{ matrix.node }} · ${{ matrix.part }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
         node: [22, 24]
+        part: [checks, suites-1-of-3, suites-2-of-3, suites-3-of-3]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -49,9 +56,10 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ matrix.node }}
-      - name: Todos los pasos de la CI pública
+      - name: Los pasos de la CI pública que le tocan a esta parte
         env:
           TYCON_PUBLIC_CI_OUT: ${{ runner.temp }}/public-ci
+          TYCON_PUBLIC_CI_PART: ${{ matrix.part }}
           BASE_REF: ${{ github.base_ref }}
         run: |
           if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
@@ -72,7 +80,9 @@ jobs:
           done
 
   # El chequeo con nombre estable. Corre SIEMPRE (un job que depende de otro que falló se saltea, y un chequeo salteado
-  # cuenta como aprobado): mira el resultado de cada job del que depende y falla si alguno no terminó bien.
+  # cuenta como aprobado): mira el resultado de cada job del que depende y falla si alguno no terminó bien. El resultado
+  # de un job con matriz es uno solo para todas sus combinaciones: `success` sólo si TODAS (cada Node, cada parte)
+  # terminaron bien; una que falló, se canceló o no corrió lo deja en otra cosa, y acá eso es rojo.
   public-ci:
     if: always()
     needs: [checks]
