@@ -877,9 +877,15 @@
       "exclusive": true
     },
     {
-      "__nota": "story 8.7 (tanda C, pase adversarial): el gemelo de Windows del instalador y del sync de bloques, corrido con pwsh — -Check sobre una HOME vacía (salía 1 con un error de PowerShell), el settings.json que deja una instalación limpia, uno vacío, el marcador requires-integration mal escrito comparado byte a byte con el .sh. Sin pwsh en la máquina: NO MEDIDO, exit 0. ~12 s.",
+      "__nota": "Parte 1 de 2 de tests/installer-ps1.test.sh (2026-10-14: entera tardaba ~440 s en el agente de GitHub y en uno lento pasó el tope de 900 s de public-ci; el archivo entero no se registra, scripts/tests/lib/suite-parts.sh). story 8.7 (tanda C, pase adversarial): el gemelo de Windows del instalador y del sync de bloques, corrido con pwsh — -Check sobre una HOME vacía (salía 1 con un error de PowerShell), el settings.json que deja una instalación limpia, uno vacío, el marcador requires-integration mal escrito comparado byte a byte con el .sh. Sin pwsh en la máquina: NO MEDIDO, exit 0. ~12 s.",
       "raiz": "arnes",
-      "ruta": "tests/installer-ps1.test.sh",
+      "ruta": "tests/installer-ps1.p1.test.sh",
+      "requiere": []
+    },
+    {
+      "__nota": "Parte 2 de 2 de tests/installer-ps1.test.sh (2026-10-14: entera tardaba ~440 s en el agente de GitHub y en uno lento pasó el tope de 900 s de public-ci; el archivo entero no se registra, scripts/tests/lib/suite-parts.sh). story 8.7 (tanda C, pase adversarial): el gemelo de Windows del instalador y del sync de bloques, corrido con pwsh — -Check sobre una HOME vacía (salía 1 con un error de PowerShell), el settings.json que deja una instalación limpia, uno vacío, el marcador requires-integration mal escrito comparado byte a byte con el .sh. Sin pwsh en la máquina: NO MEDIDO, exit 0. ~12 s.",
+      "raiz": "arnes",
+      "ruta": "tests/installer-ps1.p2.test.sh",
       "requiere": []
     },
     {
