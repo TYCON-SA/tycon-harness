@@ -35,7 +35,7 @@ permissions:
 jobs:
   checks:
     name: Node ${{ matrix.node }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 90
     strategy:
       fail-fast: false
@@ -76,7 +76,7 @@ jobs:
   public-ci:
     if: always()
     needs: [checks]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
       - name: Todos los jobs terminaron bien

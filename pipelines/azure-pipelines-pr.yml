@@ -83,7 +83,7 @@ parameters:
     default: false
 
 pool:
-  vmImage: 'ubuntu-latest'
+  vmImage: 'ubuntu-26.04'
 
 # Cuatro jobs. `Validar` corre SIEMPRE (qué trae el cambio, el freno de publicación sobre el pedido —story 8.26, tanda
 # F2: con un repo de GitHub como propio, lo que el pedido publica— y el minuto de lint) y, si el cambio trae código, deja la lista
