@@ -1782,7 +1782,7 @@
       "requiere": []
     },
     {
-      "__nota": "story 8.10.3, tanda A (T5): los textos de código que en la copia pública mandarían a una integración del equipo que no viaja (la llave del buzón, el guion nocturno de dependencias, la lista de repos) tienen su versión pública en la lista blanca del armado (publicTexts), y el repo conserva los de hoy. El bloque del mapa del pre-commit se queda a propósito: githook-renames.test.sh, que viaja, lo prueba. Viaja: en la copia comprueba que ya se aplicaron.",
+      "__nota": "story 8.10.3, tanda A (T5): los textos de código que en la copia pública mandarían a una integración del equipo que no viaja (la llave del buzón, el guion nocturno de dependencias, la lista de repos) traen el texto público en los dos lados desde la story 8.26 (AC 36: el repo de mantenimiento ya no arma la copia), y ninguna vuelve a pedir un texto interno en publicTexts. El bloque del mapa del pre-commit se queda a propósito: githook-renames.test.sh, que viaja, lo prueba.",
       "raiz": "arnes",
       "ruta": "tests/public-copy-messages.test.js",
       "requiere": []
