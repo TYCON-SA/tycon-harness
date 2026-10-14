@@ -128,7 +128,7 @@
       "reason": "un número inventado: el título de un `gh pr create` que el freno tiene que frenar por traer un número de pedido; el caso del banco y su gemelo de PowerShell (story 8.26, tanda F2, T67)"
     },
     {
-      "file": ".github/README.es.md",
+      "file": "getting-started/reference.es.md",
       "form": "story-bare",
       "value": "la 5.1",
       "reason": "la versión de un programa que trae el sistema, no el número de una story: el único falso de la forma en la muestra de la tanda G1 (tasks/measurement-8.26-tanda-g/false-positives.md). El archivo se declara con la ruta con que sale; en el repo del equipo es un papel de scripts/publishing/public-files/"

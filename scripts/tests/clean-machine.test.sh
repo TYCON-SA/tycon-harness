@@ -207,13 +207,14 @@ read_cover() {
 cover_selfcheck() {
   local d="${T}/cover" cover why line rejected=0 total=0
   mkdir -p "${d}/ok" "${d}/bad"
-  cover="${ROOT}/scripts/publishing/public-files/.github/README.md"; [ -f "${cover}" ] || cover="${ROOT}/.github/README.md"
-  if [ ! -f "${cover}" ]; then no "T24 (portada) no encuentro la portada (ni scripts/publishing/public-files/.github/README.md ni .github/README.md)"; return; fi
+  # los bloques de instalación viven en la referencia (getting-started/reference.md) desde que la portada se achicó
+  cover="${ROOT}/getting-started/reference.md"
+  if [ ! -f "${cover}" ]; then no "T24 (referencia) no encuentro la referencia con los bloques de instalación (getting-started/reference.md)"; return; fi
   # el nombre del repo ya puesto, como lo deja el exportador (en la copia pública no cambia nada)
   sed -e 's/{{public-org}}/acme/g' -e 's/{{public-repo}}/harness/g' "${cover}" > "${d}/README.md"
   if why="$(read_cover "${d}/README.md" "${d}/ok")"; then
-    ok "T24 (portada) los cuatro bloques de la portada se leen (requirements, install:core, install:unattended, install:bizuit), cada requisito tiene la forma declarada ($(tr '\n' ',' < "${d}/ok/requirements.txt" | sed -e 's/,$//' -e 's/,/, /g')) y la URL del repo está resuelta"
-  else no "T24 (portada) la portada no se puede leer: ${why}"; fi
+    ok "T24 (referencia) los cuatro bloques de la referencia se leen (requirements, install:core, install:unattended, install:bizuit), cada requisito tiene la forma declarada ($(tr '\n' ',' < "${d}/ok/requirements.txt" | sed -e 's/,$//' -e 's/,/, /g')) y la URL del repo está resuelta"
+  else no "T24 (referencia) la referencia no se puede leer: ${why}"; fi
   # el espejo · requisitos con otra forma, con un paquete que la prueba no conoce, o un bloque vacío: rojo
   for line in 'node>=22' 'Node 22' 'node >= v22' 'node >= 22 or later' 'dotnet (other-pack)' 'git ' ''; do
     total=$((total + 1)); printf 'git\n%s\n' "${line}" > "${d}/bad/requirements.txt"
@@ -520,7 +521,7 @@ prepare_lab() {
   mkdir -p "${lab}/blocks" && cp -R "${LAB}/scenarios" "${lab}/scenarios" && cp "${LAB}/lib.sh" "${LAB}/plugin-story-1.1.md.tpl" "${lab}/" \
     && cp -R "${ROOT}/scripts/tests/fixtures/example-repo" "${lab}/example-repo" \
     || { no "no pude armar lo que corre adentro del contenedor en ${lab}"; return 1; }
-  why="$(read_cover "$1/copy/.github/README.md" "${lab}/blocks")" || { no "T24 la portada de la copia no se puede leer: ${why}"; return 1; }
+  why="$(read_cover "$1/copy/getting-started/reference.md" "${lab}/blocks")" || { no "T24 la referencia de la copia no se puede leer: ${why}"; return 1; }
   expected_version "$1/copy" "${lab}/blocks/stamped-version.txt"
 }
 # expected_version <copia> <archivo> — deja en el archivo el número que `harness.js version` tiene que dar adentro. En
@@ -709,7 +710,8 @@ lab_git() {
 }
 # fake_public_repo <carpeta> — un repo público de mentira (skills/, agents/, la portada) con un commit
 fake_public_repo() {
-  mkdir -p "$1/skills" "$1/agents" "$1/.github" && printf '# portada de mentira\n' > "$1/.github/README.md" \
+  mkdir -p "$1/skills" "$1/agents" "$1/.github" "$1/getting-started" && printf '# portada de mentira\n' > "$1/.github/README.md" \
+    && printf '# referencia de mentira\n' > "$1/getting-started/reference.md" \
     && lab_git -C "$1" init -q && lab_git -C "$1" add -A && lab_git -C "$1" commit -q -m lab
 }
 
@@ -880,7 +882,7 @@ elif [ -n "${SOURCE}" ]; then
   [ "$(cd "$(git -C "${SOURCE}" rev-parse --show-toplevel 2>/dev/null || echo /nonexistent)" 2>/dev/null && pwd -P)" = "${SOURCE}" ] \
     || unable "TYCON_CLEAN_MACHINE_SOURCE no es la raíz de un repo git: ${SOURCE}"
   git -C "${SOURCE}" rev-parse --verify --quiet 'HEAD^{commit}' >/dev/null || unable "el repo de TYCON_CLEAN_MACHINE_SOURCE no tiene ningún commit: ${SOURCE}"
-  for need in skills agents .github/README.md; do
+  for need in skills agents .github/README.md getting-started/reference.md; do
     [ -e "${SOURCE}/${need}" ] || unable "TYCON_CLEAN_MACHINE_SOURCE no es el repo público (le falta ${need}): ${SOURCE}"
   done
 else

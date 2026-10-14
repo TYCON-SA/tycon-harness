@@ -94,7 +94,9 @@ const SECTIONS = [
   // 2026-10-13 (pedido del dueño): la sección para quien arma el arnés en una organización, y una tabla de a dónde seguir
   ['For an organization', 'Para una organización'],
   ['Where to go next', 'Dónde seguir'],
-  ['Reference', 'Referencia'],
+  ['License and trademarks', 'Licencia y marcas'],
+  // 2026-10-14 (pedido del dueño): la «Referencia» se mudó entera a getting-started/reference(.es).md, con los bloques de
+  // instalación. Las pruebas leen la portada y la referencia juntas (readCover): de acá para abajo, la referencia
   ['What it is and what it isn\'t', 'Qué es y qué no es'],
   ['Requirements', 'Requisitos'],
   ['Install by hand', 'Instalar a mano'],
@@ -105,7 +107,6 @@ const SECTIONS = [
   ['Your product repo', 'El repo del producto'],
   ['Offline', 'Sin red'],
   ['How it updates', 'Cómo se actualiza'],
-  ['License and trademarks', 'Licencia y marcas'],
 ];
 const BLOCKS = ['requirements', 'install:core', 'install:unattended', 'install:bizuit', 'install:clone', 'install:clone-unattended'];
 const STACK_PHRASE = {
@@ -139,6 +140,10 @@ const EVENTS = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse',
 // ── utilidades ──────────────────────────────────────────────────────────────────────────────────────────────────
 const exists = (abs) => fs.existsSync(abs);
 const readPaper = (rel) => fs.readFileSync(path.join(RAIZ, rel), 'utf8');
+// La portada y su referencia (getting-started/reference(.es).md, donde viven desde 2026-10-14 los bloques de instalación
+// y todo lo de consultar), leídas juntas: los contratos buscan por título de sección, y ningún título se repite entre las dos
+const REFERENCE = { en: 'getting-started/reference.md', es: 'getting-started/reference.es.md' };
+const readCover = (lang) => `${readPaper({ en: '.github/README.md', es: '.github/README.es.md' }[lang])}\n${readPaper(REFERENCE[lang])}`;
 const readJson = (abs) => JSON.parse(fs.readFileSync(abs, 'utf8'));
 
 /** Las líneas de un markdown con una marca de si están dentro de un cerco de código. */
@@ -375,7 +380,7 @@ test('Papeles_Comunidad_SusSecciones', () => {
 
 // ── T13 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 test('Papeles_Portadas_MismoContratoEnDosIdiomas', async (t) => {
-  const text = { en: readPaper(README.en), es: readPaper(README.es) };
+  const text = { en: readCover('en'), es: readCover('es') };
   assert.match(text.en, /\]\(README\.es\.md\)/, 'la portada en inglés tiene que enlazar a README.es.md');
   assert.match(text.es, /\]\(README\.md\)/, 'la portada en castellano tiene que enlazar a README.md');
 
@@ -458,7 +463,7 @@ test('Papeles_Portadas_MismoContratoEnDosIdiomas', async (t) => {
 
 // ── T14 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 test('Papeles_HooksEInterruptoresQueExisten', async (t) => {
-  const text = { en: readPaper(README.en), es: readPaper(README.es) };
+  const text = { en: readCover('en'), es: readCover('es') };
 
   await t.test('cada variable nombrada en las portadas existe', () => {
     const corpus = variableCorpus();
@@ -636,7 +641,7 @@ function frontPageProblems(text, lang) {
 //    «rollback --to no recibe un número de versión» y las viñetas (cinco, sin «Versions» ni «Startup»)—. Los dos espejos
 //    fallaban antes: sin la frase en la portada real no hay de dónde sacarla («la portada de juguete … es igual a la real»).
 test('PublicFrontPage_OneLineInstall_BothLanguages', async (t) => {
-  const text = { en: readPaper(README.en), es: readPaper(README.es) };
+  const text = { en: readCover('en'), es: readCover('es') };
 
   await t.test('las dos portadas dicen cada punto del AC 27, por palabras clave', () => {
     for (const lang of ['en', 'es']) {
@@ -876,7 +881,8 @@ function guidedLeftovers(text, lang) {
   // AC 10: en la «Referencia», todo párrafo que nombra Windows nombra WSL (WSL sigue sin probar, y lo dice). Arriba
   // alcanza con una mención en «Qué necesitás»: la regla, aplicada a toda la página, llenaba de WSL el camino recomendado
   // (revisión del lector interno, 2026-10-06).
-  const refTitle = `## ${titleOf(at('Reference'), lang)}`;
+  // la referencia empieza en su primera sección (desde 2026-10-14 vive en getting-started/reference(.es).md)
+  const refTitle = `## ${titleOf(at('What it is and what it isn\'t'), lang)}`;
   const reference = text.includes(refTitle) ? text.slice(text.indexOf(refTitle)) : text;
   if (!/\bWSL\b/.test(sectionOf(at('What you need'))(text, lang))) out.push('AC 10 · «Qué necesitás» no nombra WSL');
   const prose = reference.replace(/^(```|~~~)[^\n]*\n[\s\S]*?^\1[ \t]*$/gm, '');
@@ -898,7 +904,7 @@ function guidedProblems(text, lang, effects) {
 //    los dos ajustes, no dice «1300», el barrido diario, lo que guarda, la red ni dónde va un interruptor; dice
 //    «deshace todo»; no hay «Primer uso» ni la frase de Windows.
 test('Papers_FrontPage_GuidedInstall_TandaA', async (t) => {
-  const text = { en: readPaper(README.en), es: readPaper(README.es) };
+  const text = { en: readCover('en'), es: readCover('es') };
   const loaded = readEffects(RAIZ);
   assert.strictEqual(loaded.ok, true, `no pude leer la lista de efectos: ${loaded.reason}`);
   const effects = loaded.effects;
@@ -1019,7 +1025,7 @@ const NO_GIT_KEYWORDS = [
 
 test('Papers_NoGitFrontPage_ThreeVisibleLines_NoPipeToShell_PermissionBeforeDownload', () => {
   for (const lang of ['en', 'es']) {
-    const text = readPaper(README[lang]);
+    const text = readCover(lang);
     const pipe = text.split('\n').find((l) => PIPE_TO_SHELL.test(l));
     assert.strictEqual(pipe, undefined, `${README[lang]}: una tubería hacia un shell — «${String(pipe || '').trim().slice(0, 100)}»`);
     const inst = IN_INSTALL(text, lang);
@@ -1049,7 +1055,7 @@ const PLAN_PHRASE = {
 };
 test('Papeles_UnattendedBlock_BothLanguages (T24)', () => {
   for (const lang of ['en', 'es']) {
-    const text = readPaper(README[lang]);
+    const text = readCover(lang);
     const inst = IN_INSTALL(text, lang);
     for (const k of PLAN_PHRASE.asks[lang]) assert.ok(says(inst, k), `${README[lang]}: «Instalación» no dice «${k}» (install muestra el plan y pregunta)`);
     const un = fences(block(text, 'install:unattended', README[lang]));
@@ -1096,7 +1102,7 @@ function profilesProblems(text, lang, effects) {
 test('Papers_ProfilesSection_BothLanguages (T31)', () => {
   const effects = readEffects(RAIZ).effects;
   for (const lang of ['en', 'es']) {
-    const text = readPaper(README[lang]);
+    const text = readCover(lang);
     assert.deepStrictEqual(profilesProblems(text, lang, effects), [], `${README[lang]}: la sección de los perfiles`);
     // el espejo: un renglón de más, o sin una palabra clave, falla
     const title = `## ${titleOf(at('Profiles'), lang)}`;
@@ -1129,7 +1135,7 @@ test('Papeles_Portadas_SkillsConSuNombreEnLaCopia', () => {
   assert.ok(renamed.size > 0, 'el manifiesto de terceros no trae ninguna skill con otro nombre de origen: la prueba no estaría probando nada');
   const out = [];
   for (const lang of ['en', 'es']) {
-    const ticks = readPaper(README[lang]).match(/`[^`\n]+`/g) || [];
+    const ticks = readCover(lang).match(/`[^`\n]+`/g) || [];
     for (const t of ticks.map((x) => x.slice(1, -1).trim())) {
       if (renamed.has(t)) out.push(`${README[lang]}: nombra \`${t}\`, que en la copia se llama \`${renamed.get(t)}\``);
     }
@@ -1152,7 +1158,7 @@ test('PublicPapers_PlacePath_ZeroLegacy_InstallBlockUnchanged', () => {
   const legacyRx = new RegExp(`\\.claude[/\\\\]+${PLACE.LEGACY_PLACE_NAME}(?![A-Za-z0-9_-])`, 'g');
   const placeRx = new RegExp(`\\.claude[/\\\\]+${PLACE.PLACE_NAME}(?![A-Za-z0-9_-])`, 'g');
   for (const lang of ['en', 'es']) {
-    const text = readPaper(README[lang]);
+    const text = readCover(lang);
     assert.deepStrictEqual(text.match(legacyRx) || [], [], `${README[lang]}: nombra la ruta vieja del lugar`);
     // la portada reescrita para el dev externo (2026-10-06) nombra menos rutas que la de antes (eran 10 o más): el piso
     // sólo asegura que el lugar sigue nombrado donde hace falta; lo que importa es que la ruta vieja no aparezca
@@ -1209,7 +1215,7 @@ function questionsProblems(text, lang) {
 }
 test('Papers_ProfilesAndQuestions_UnattendedCarriesProfile_BothLanguages (T50)', () => {
   for (const lang of ['en', 'es']) {
-    const text = readPaper(README[lang]);
+    const text = readCover(lang);
     assert.deepStrictEqual(questionsProblems(text, lang), [], `${README[lang]}: las preguntas en la portada`);
     // espejos: sin una palabra clave, sin la marca de una fila, o sin la oración de full, falla
     const inst = IN_INSTALL(text, lang);
@@ -1248,7 +1254,7 @@ function clearTopProblems(text, lang) {
   return out;
 }
 test('PublicFrontPage_ClearTop_ChangesBeforeInstall_GuidesKeepThePromises', async (t) => {
-  const text = { en: readPaper(README.en), es: readPaper(README.es) };
+  const text = { en: readCover('en'), es: readCover('es') };
   await t.test('las dos portadas', () => {
     for (const lang of ['en', 'es']) assert.deepStrictEqual(clearTopProblems(text[lang], lang), [], `${README[lang]}: la parte de arriba`);
   });
@@ -1448,7 +1454,7 @@ function coverPermissionProblems(text, lang) {
 //    en TYCON_GITHUB_TOKEN fuera del caso del límite, en las tres secciones y en la bajada.
 test('T80 TeamOnboardingText_InTeamLayer_GettingStartedWithoutRepoPermission — ninguna página de primeros pasos pide un permiso para bajar el arnés', async (t) => {
   const pages = Object.fromEntries(GUIDED_PAPERS.map((rel) => [rel, readPaper(rel)]));
-  const covers = { en: readPaper(README.en), es: readPaper(README.es) };
+  const covers = { en: readCover('en'), es: readCover('es') };
 
   await t.test('las tres páginas: sin permiso, sin invitación, sin credencial en la bajada, gemelas, y con el caso del límite', () => {
     for (const rel of GUIDED_PAPERS) assert.deepStrictEqual(guidedPermissionProblems(pages[rel], SHELL_OF[rel]), [], `${rel}: lo que le falta o le sobra`);
