@@ -620,11 +620,19 @@ for h in s.get("hooks",{}).get("SessionStart",[]):
     for c in h.get("hooks",[]): print(c.get("command",""))' "$TYCON_SETTINGS_PATH"
 }
 
+# __harness_lab_tree_digest <find: lo que se poda>…  — desde la carpeta actual, una línea por enlace («ruta -> destino»)
+# y una por archivo («suma  ruta»), en orden fijo. Los archivos van todos a UN shasum (xargs): con un shasum por archivo,
+# cada comparación «doctor no escribió nada» costaba ~4 s en la Mac por un HOME de ~200 archivos, y el doble en el
+# agente de GitHub; harness-doctor.test.sh hace decenas (public-ci, 2026-10-14: cortada a los 900 s en un agente lento).
+# `xargs -r`: sin archivos no corre shasum (que leería la entrada estándar).
+__harness_lab_tree_digest() {
+  find . "$@" -o -type l -print0 | LC_ALL=C sort -z | while IFS= read -r -d '' f; do printf '%s -> %s\n' "$f" "$(readlink "$f")"; done
+  find . "$@" -o -type f -print0 | LC_ALL=C sort -z | xargs -0 -r shasum -a 256
+}
+
 # un hash de todo el HOME de juguete (contenido y rutas; sin los .git, que cambian solos con un fetch)
 harness_lab_home_hash() {
-  ( cd "$LAB_HOME" && find . -path '*/.git' -prune -o -type f -print -o -type l -print | LC_ALL=C sort | while IFS= read -r f; do
-      if [ -L "$f" ]; then printf '%s -> %s\n' "$f" "$(readlink "$f")"; else printf '%s ' "$f"; shasum -a 256 < "$f"; fi
-    done ) | shasum -a 256 | cut -d' ' -f1
+  ( cd "$LAB_HOME" && __harness_lab_tree_digest -path '*/.git' -prune ) | shasum -a 256 | cut -d' ' -f1
 }
 
 # ══ La máquina del equipo en la transición (story 8.18, tramo 3 · 2026-10-04) ══════════════════════════════════════════
@@ -827,9 +835,7 @@ harness_lab_shape() { # harness_lab_shape <dir> <two-clones|repointed|single>
 harness_lab_worktree_hash() {
   local d="${1:-}"
   [ -n "$d" ] && [ -d "$d" ] || { echo "harness-lab: harness_lab_worktree_hash <clon> — «${d}» no existe" >&2; return 2; }
-  ( cd "$d" && find . -path ./.git -prune -o \( -type f -o -type l \) -print | LC_ALL=C sort | while IFS= read -r f; do
-      if [ -L "$f" ]; then printf '%s -> %s\n' "$f" "$(readlink "$f")"; else printf '%s ' "$f"; shasum -a 256 < "$f"; fi
-    done ) | shasum -a 256 | cut -d' ' -f1
+  ( cd "$d" && __harness_lab_tree_digest -path ./.git -prune ) | shasum -a 256 | cut -d' ' -f1
 }
 
 # harness_lab_cut  — el corte: `main` del remoto del arnés pasa a ser la unión (trae skills/, agents/ y packs/). Se

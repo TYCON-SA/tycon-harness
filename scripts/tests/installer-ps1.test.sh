@@ -242,6 +242,15 @@ check() { # <modo> <archivo…>: una línea con lo que encontró; exit 0 sólo s
   return "${PIPESTATUS[0]}"
 }
 
+# ── La suite corre por partes (2026-10-14, public-ci: tardaba ~440 s en el agente de GitHub y en uno lento pasó los
+# 900 s del tope, a punto de terminar). Entera —a mano— corre todos los bloques; como parte
+# (`installer-ps1.p<k>.test.sh`), sólo los suyos. Lo de afuera de los bloques —el laboratorio de arriba y las
+# funciones y listas de la tanda W3a— corre siempre: un bloque no puede depender de lo que dejó otro
+# (scripts/tests/lib/suite-parts.sh). La parte 1 va de (a) a (r); la 2, de (u) al final.
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/suite-parts.sh"
+suite_parts 2
+if suite_part 1; then   # ── parte 1 de 2: de (a) a (k) ──
+
 # ═══ (a) -Check sobre una HOME vacía: exit 0, lista lo que falta, no escribe nada ═══════════════════════════════
 HA="$(new_home check-empty)"
 BEFORE="$(listing "$HA")"
@@ -588,6 +597,8 @@ fresh_run "$T/k5.out"; RC=$?
 if [ "$RC" -eq 0 ] && grep -q 'core.hooksPath local vestigial removido' "$T/k5.out" && [ -z "$(hooks_path)" ]; then ok "(k) (espejo) una carpeta que no existe y que el repo no sigue: la destapa, como siempre"
 else no "(k) (espejo) carpeta inexistente (rc $RC): «$(said_hooks_path "$T/k5.out")» · hooksPath: «$(hooks_path)»"; fi
 
+fi   # ── fin de la parte 1 (de (a) a (k)); lo que sigue, hasta (n), corre en las dos partes ──
+
 # ═══ story 8.17, tanda W3a · el .ps1 registra lo que faltaba (T90 a T93) ════════════════════════════════════════
 # Lo esperado de estas secciones está ESCRITO ACÁ, control por control: si saliera de las tablas del .ps1, una fila que
 # falta en la tabla no se vería (así vivieron los 15 huecos). Todas las corridas con TYCON_HARNESS_LOCK_HELD=1 y
@@ -642,6 +653,9 @@ wrong_counts() { # <settings> <n> <evento|matcher|relpath>…: los que NO están
 }
 same_cmd() { [ "$(hook_cmd "$1" "$2" "$3" "$4")" = "$5" ]; }   # <settings> <evento> <matcher> <relpath> <comando esperado, entero>
 sh_state3() { local s="$1" r out=""; for r in safety-guard-pre.sh test-scope-guard-pre.sh engram-pre-commit.sh; do out="$out$(hook_n "$s" PreToolUse '*' "$r")"; done; printf '%s' "$out"; }   # <settings> → cuántas veces está cada .sh, en cualquier matcher
+hook_order() { # <settings>: una línea por hook, en el orden del archivo (evento, matcher, guion) — para decir QUÉ quedó fuera de lugar
+  node -e 'const s=require(process.argv[1]);for(const[e,b]of Object.entries(s.hooks||{}))for(const x of b)for(const h of x.hooks||[])console.log(e,x.matcher||"*",String(h.command||"").split("/").pop())' "$1" 2>&1
+}
 
 # los que faltaban y tienen sentido en Windows (AC 64), los dos reemplazados que sobraban, lo que queda afuera con su
 # motivo en windows-support.json (AC 68) y el opt-in que nace apagado
@@ -663,6 +677,8 @@ HELD=(TYCON_HARNESS_LOCK_HELD=1 TYCON_HARNESS_GIT_BASH_HEALTH=1)
 TEAM=(TYCON_CLOCKIFY=1 TYCON_ENGRAM=1 TYCON_NIGHTLY=1)
 lab_env "$GUARD" "${TEAM[@]}" -- node "$CLONE/scripts/lib/tycon-config.js" integrations --json > "$T/integrations-team.json" 2> "$T/integrations-team.err"
 [ $? -eq 0 ] || { echo "❌ installer-ps1: el lector de configuración no contestó con las integraciones del equipo: $(brief "$T/integrations-team.err")"; exit 1; }
+
+if suite_part 1; then   # ── parte 1 de 2: de (n) a (r) ──
 
 # ── (n) T90 · Ps1_RegistersMissingControls_EachOnce_DuplicatesGone ──────────────────────────────────────────────
 HT="$(new_home team)"; ST="$HT/.claude/settings.json"
@@ -784,9 +800,6 @@ back_to_factory() { # <qué se apagó>: con todo de fábrica otra vez, settings.
   team_run "${TEAM[@]}"; local rc=$?
   if [ "$rc" -eq 0 ] && cmp -s "$ST" "$T/t.settings.json"; then ok "(p) T92 $1: al volver a lo de fábrica, settings.json queda byte a byte como el de una instalación fresca (cada hook en su lugar)"
   else no "(p) T92 $1: al volver a lo de fábrica (rc $rc) settings.json no es el de la instalación fresca: $(diff <(hook_order "$T/t.settings.json") <(hook_order "$ST") | head -6 | tr '\n' ' ')"; fi
-}
-hook_order() { # <settings>: una línea por hook, en el orden del archivo (evento, matcher, guion) — para decir QUÉ quedó fuera de lugar
-  node -e 'const s=require(process.argv[1]);for(const[e,b]of Object.entries(s.hooks||{}))for(const x of b)for(const h of x.hooks||[])console.log(e,x.matcher||"*",String(h.command||"").split("/").pop())' "$1" 2>&1
 }
 # el espejo primero: con todo de fábrica, los tres .sh están
 if [ "$(n_of PreToolUse safety-guard-pre.sh)$(n_of PreToolUse test-scope-guard-pre.sh)$(n_of PreToolUse engram-pre-commit.sh)" = 111 ]; then ok "(p) T92 el espejo: con todo de fábrica, los tres .sh están registrados"
@@ -1053,6 +1066,10 @@ else no "(r) el espejo sin formas viejas (rc $RC): quedó «$(legacy_state "$SN"
 installer "$HN" "${HELD[@]}" > "$T/ln2.out" 2>&1; RC=$?
 if [ "$RC" -eq 0 ] && [ "$(legacy_state "$SN")" = "0 0 0 1 1" ]; then ok "(r) al apagar la integración engram se saca el del arnés y el hook propio que se llama igual queda"
 else no "(r) al apagar engram con un hook propio que se llama igual (rc $RC): quedó «$(legacy_state "$SN")» (esperaba «0 0 0 1 1») · $(brief "$T/ln2.out" 200)"; fi
+
+fi   # ── fin de la parte 1 ──
+
+if suite_part 2; then   # ── parte 2 de 2: de (u) al final ──
 
 # ── (u) Ps1_LaunchedByOldHarness_ShDeferredToNextRun · pase adversarial de la W3a (B1) ─────────────────────────────
 # La actualización que TRAE esta tanda la juzga la salud de la versión anterior (harness.js la carga antes de mover el
@@ -2020,8 +2037,9 @@ if grep -nE "$USER_DIR_SHAPES" "${BASH_SOURCE[0]}" >/dev/null 2>&1; then
 else
   ok "T79 la prueba no trae escrita ninguna ruta con forma de carpeta de usuario (viaja en la copia pública)"
 fi
+fi   # ── fin de la parte 2 ──
 
 echo
-echo "ℹ installer-ps1: una instalación entera del .ps1 con pwsh tardó ${ELAPSED_INSTALL} s"
+[ -z "${ELAPSED_INSTALL:-}" ] || echo "ℹ installer-ps1: una instalación entera del .ps1 con pwsh tardó ${ELAPSED_INSTALL} s"   # (la mide (b), en la parte 1)
 if [ "$FAILURES" -gt 0 ]; then echo "❌ installer-ps1: $FAILURES de $TOTAL en rojo"; exit 1; fi
 echo "✅ installer-ps1: todo verde ($TOTAL chequeos)"; exit 0
