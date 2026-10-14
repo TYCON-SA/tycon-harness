@@ -24,17 +24,22 @@
  *      y sigue sin raíz — nunca deniega nada por un archivo de configuración).
  *   3. **Las sesiones de la persona.** Cada sesión de Claude Code deja su transcripción en
  *      `~/.claude/projects/<cwd codificado>/` y la cabeza de cada transcripción dice el `cwd`. O sea
- *      que el disco ya sabe en qué repos trabaja esta persona: se toman los cwd que son repos git —
- *      sin sandboxes del banco ni temporales, sin `~/.claude`, sin el arnés ni agent-skills, que son
- *      infraestructura— y la raíz es el ancestro MÁS ALTO por debajo del home que contiene a la
- *      mayoría (≥ 50 %) de esos repos. Se deduce de lo que la persona hace, no de dónde se clonó nada.
+ *      que el disco ya sabe en qué repos trabaja esta persona: se toman los repos de esos cwd —el repo que contiene al
+ *      cwd, o los repos que el cwd tiene adentro si es la carpeta que los junta—, sin sandboxes del banco ni
+ *      temporales, sin `~/.claude`, sin el arnés ni agent-skills (infraestructura), y la raíz es el ancestro MÁS
+ *      ALTO por debajo del home (y de sus carpetas personales: Escritorio, Documentos, OneDrive) que contiene a la
+ *      mayoría (≥ 50 %) de esos repos. En Windows las rutas se comparan sin distinguir mayúsculas (la letra de
+ *      unidad). Se deduce de lo que la persona hace, no de dónde se clonó nada.
  *   4. **La carpeta padre del arnés** — la premisa del onboarding (INSTALL.md) es que el arnés se
  *      clona al lado de los repos. Pero SÓLO si ahí hay al menos otro repo git DE TRABAJO (el clon de
  *      las skills, como el del arnés, es infraestructura y no cuenta): el 2026-09-05 una
  *      máquina tenía el arnés en su carpeta de repos y los proyectos en otra, y esta regla elegía
  *      una carpeta con un solo repo (el arnés) como "la raíz" — cero repos que auditar, y cero se lee
  *      como "todo bien".
- *   5. **Sin raíz** (story 8.3, AC 6): `root: null`, `fuente: 'sin-raiz'` y el motivo. Hasta la 8.3
+ *   5. **La carpeta del clon desde el que se MUDÓ la máquina** (2026-10-14): el estado la recuerda (`migrate_home.from`).
+ *      Antes de la mudanza esa carpeta salía en el paso 4; con el arnés en `~/.tycon` se perdía. Mismas condiciones que
+ *      el vecino: existe y tiene otros repos de trabajo. (La mudanza, además, la anota en `paths.repos`.)
+ *   6. **Sin raíz** (story 8.3, AC 6): `root: null`, `fuente: 'sin-raiz'` y el motivo. Hasta la 8.3
  *      acá había un último recurso escrito a mano —la carpeta de una máquina— que en cualquier otra
  *      inventaba una raíz que no existía; las auditorías que la usan reportan «no medido: sin raíz».
  *
@@ -53,13 +58,53 @@ const ENV = 'TYCON_REPOS_ROOT';
 
 function real(p) { try { return fs.realpathSync(p); } catch (_) { return null; } }
 function esRepoGit(p) { try { return fs.existsSync(path.join(p, '.git')); } catch (_) { return false; } }
-function dentroDe(p, dir) { return !!dir && (p === dir || p.startsWith(dir + path.sep)); }
 
-/** Los cwd de las sesiones que son repos git de trabajo (no infraestructura, no temporales). */
-function reposDeSesiones({ projectsDir, home, tmp, excluir }) {
-  const out = new Set();
+/**
+ * Las rutas según la plataforma. 🔴 En Windows (2026-10-14) la extensión de VS Code abre Claude Code con la letra de
+ * unidad en MINÚSCULA (`c:\Users\…`, como la escribe VS Code), y eso queda en el `cwd` de cada transcripción; el home
+ * (`os.homedir()`) viene con mayúscula (`C:\Users\…`) y `fs.realpathSync` no corrige la letra. Comparando con `===`
+ * ningún repo quedaba «debajo del home»: cada uno votaba sólo por su carpeta padre, y con los repos repartidos en
+ * carpetas de producto ninguna llegaba a la mayoría — «sin sesiones con repos» en una máquina que usa Claude Code todos
+ * los días. En otra máquina andaba por casualidad: sus repos estaban en `d:\workspace`, fuera del home, todos con el
+ * mismo padre. En Windows las rutas se comparan sin distinguir mayúsculas, y la letra de unidad se escribe en mayúscula.
+ */
+function rutasDe(platform) {
+  const win = platform === 'win32';
+  const P = win ? path.win32 : path;
+  const llave = (p) => (win ? String(p).toLowerCase() : String(p));
+  const canon = (p) => {
+    if (!p) return p;
+    let s = P.normalize(String(p));
+    if (win) s = s.replace(/^([a-z]):/, (_, d) => `${d.toUpperCase()}:`);
+    while (s.length > P.parse(s).root.length && /[\\/]$/.test(s)) s = s.slice(0, -1);
+    return s;
+  };
+  const igual = (a, b) => !!a && !!b && llave(a) === llave(b);
+  const dentroDe = (p, dir) => {
+    if (!p || !dir) return false;
+    const a = llave(p), d = llave(dir);
+    return a === d || a.startsWith(d.endsWith(P.sep) ? d : d + P.sep);
+  };
+  return { win, P, llave, canon, igual, dentroDe };
+}
+
+/** Las carpetas hijas de `dir` que son repos git (sin las de `excluir`). */
+function reposAlLado(dir, { R, fsx, excluir = [] }) {
+  return fsx.hijos(dir).filter((p) => fsx.esRepo(p) && !excluir.some((e) => R.dentroDe(fsx.real(p) || p, e)));
+}
+
+/**
+ * Los repos donde trabajan las sesiones (no infraestructura, no temporales). Un `cwd` cuenta por el repo que lo contiene
+ * (una sesión abierta en `<repo>/src` trabaja en `<repo>`) o, si no está dentro de ninguno, por los repos que tiene adentro
+ * (una sesión abierta en la carpeta que junta varios repos trabaja en ellos). La sesión abierta en el home no cuenta: no
+ * es trabajo en los repos que cuelgan de él.
+ * @returns {{ repos: string[], diag: { carpetas: number, cwds: number, sinRepo: number } }}
+ */
+function reposDeSesiones({ projectsDir, home, tmp, excluir, R, fsx }) {
+  const out = new Map();   // llave → ruta
+  const diag = { carpetas: 0, cwds: 0, sinRepo: 0 };
   let carpetas;
-  try { carpetas = fs.readdirSync(projectsDir); } catch (_) { return []; }
+  try { carpetas = fs.readdirSync(projectsDir); } catch (_) { return { repos: [], diag }; }
   for (const nombre of carpetas) {
     // Filtro barato por el NOMBRE codificado (cada `/` del cwd es un `-`): los sandboxes del banco y
     // los temporales son la mayoría de las ~2000 carpetas de una máquina que corre el banco, y no
@@ -69,6 +114,7 @@ function reposDeSesiones({ projectsDir, home, tmp, excluir }) {
     let archivos;
     try { archivos = fs.readdirSync(dir).filter((f) => f.endsWith('.jsonl')); } catch (_) { continue; }
     if (!archivos.length) continue;
+    diag.carpetas++;
     // La transcripción más nueva alcanza: el cwd de una carpeta es siempre el mismo.
     const masNueva = archivos.map((f) => path.join(dir, f))
       .map((f) => { let m = 0; try { m = fs.statSync(f).mtimeMs; } catch (_) { /* 0 */ } return [f, m]; })
@@ -83,35 +129,64 @@ function reposDeSesiones({ projectsDir, home, tmp, excluir }) {
     if (!m) continue;
     let cwd;
     try { cwd = JSON.parse(`"${m[1]}"`); } catch (_) { continue; }
-    const r = real(cwd);
-    if (!r || !esRepoGit(r)) continue;
-    if (dentroDe(r, tmp)) continue;
-    if (dentroDe(r, path.join(home, '.claude'))) continue;
-    if (excluir.some((e) => dentroDe(r, e))) continue;
-    out.add(r);
+    const r = fsx.real(cwd);
+    if (!r) continue;
+    diag.cwds++;
+    let candidatos = [];
+    if (fsx.esRepo(r)) candidatos = [r];
+    else {
+      for (let p = R.P.dirname(r); p !== R.P.dirname(p) && !R.igual(p, home); p = R.P.dirname(p)) {
+        if (fsx.esRepo(p)) { candidatos = [p]; break; }
+      }
+      if (!candidatos.length && !R.igual(r, home) && !R.dentroDe(home, r)) candidatos = reposAlLado(r, { R, fsx });
+    }
+    const validos = candidatos.filter((c) => !R.dentroDe(c, tmp) && !R.dentroDe(c, R.P.join(home, '.claude')) && !excluir.some((e) => R.dentroDe(c, e)));
+    if (!candidatos.length) diag.sinRepo++;
+    for (const c of validos) if (!out.has(R.llave(c))) out.set(R.llave(c), c);
   }
-  return [...out];
+  return { repos: [...out.values()], diag };
 }
 
-/** El ancestro más alto por debajo del home que contiene a la mayoría de los repos. */
-function raizPorMayoria(repos, home) {
+// Las carpetas personales que el sistema pone en el home (el Escritorio, Documentos, OneDrive y sus nombres en castellano)
+// cuentan como el home: nadie las elige como «la carpeta de los repos», y si la raíz fuera el Escritorio entero los
+// repos de `Escritorio/<carpeta>/<producto>/<repo>` quedarían más hondo de lo que miran las auditorías (2026-10-14).
+const CARPETA_PERSONAL = /^(desktop|documents|escritorio|documentos|onedrive( - .+)?)$/i;
+/** El tope de la subida de un repo bajo el home: el home, o la carpeta personal más honda que lo contiene. */
+function topeEnElHome(r, home, R) {
+  let tope = home;
+  for (;;) {
+    const resto = r.slice(tope.length).replace(/^[\\/]+/, '');
+    const primera = resto.split(/[\\/]+/)[0];
+    if (!primera || !CARPETA_PERSONAL.test(primera) || R.igual(R.P.join(tope, primera), r)) return tope;
+    tope = R.P.join(tope, primera);
+  }
+}
+
+/** El ancestro más alto por debajo del home (y de sus carpetas personales) que contiene a la mayoría de los repos. */
+function raizPorMayoria(repos, home, R = rutasDe(process.platform)) {
   if (!repos.length) return null;
-  const votos = new Map();   // ancestro → cuántos repos contiene
+  const P = R.P;
+  const votos = new Map();   // llave del ancestro → { ruta, n }
   for (const r of repos) {
-    const bajoElHome = dentroDe(r, home) && r !== home;
-    let p = path.dirname(r);
-    const tope = bajoElHome ? home : path.dirname(p);   // fuera del home: sólo el padre directo
-    while (p && p !== tope && p !== path.dirname(p)) {
-      votos.set(p, (votos.get(p) || 0) + 1);
-      p = path.dirname(p);
+    const bajoElHome = R.dentroDe(r, home) && !R.igual(r, home);
+    let p = P.dirname(r);
+    const tope = bajoElHome ? topeEnElHome(r, home, R) : P.dirname(p);   // fuera del home: sólo el padre directo
+    while (p && !R.igual(p, tope) && p !== P.dirname(p)) {
+      const k = R.llave(p);
+      const v = votos.get(k) || { ruta: p, n: 0 };
+      v.n++; votos.set(k, v);
+      p = P.dirname(p);
     }
   }
   const minimo = Math.ceil(repos.length / 2);
-  const candidatos = [...votos.entries()].filter(([, n]) => n >= minimo)
-    .sort((a, b) => (a[0].split(path.sep).length - b[0].split(path.sep).length) || (b[1] - a[1]) || a[0].localeCompare(b[0]));
-  if (candidatos.length) return { root: candidatos[0][0], repos: candidatos[0][1] };
-  // Todos los repos cuelgan DIRECTO del home: la raíz es el home (sin este caso quedaría sin voto).
-  if (repos.every((r) => path.dirname(r) === home)) return { root: home, repos: repos.length };
+  const hondura = (x) => x.split(/[\\/]+/).filter(Boolean).length;
+  const candidatos = [...votos.values()].filter((v) => v.n >= minimo)
+    .sort((a, b) => (hondura(a.ruta) - hondura(b.ruta)) || (b.n - a.n) || a.ruta.localeCompare(b.ruta));
+  if (candidatos.length) return { root: candidatos[0].ruta, repos: candidatos[0].n };
+  // Todos los repos cuelgan DIRECTO del home (o de la misma carpeta personal): la raíz es esa carpeta (sin este caso
+  // quedaría sin voto).
+  const padre = P.dirname(repos[0]);
+  if (repos.every((r) => R.igual(P.dirname(r), padre) && R.igual(padre, R.dentroDe(r, home) ? topeEnElHome(r, home, R) : home))) return { root: padre, repos: repos.length };
   return null;
 }
 
@@ -124,25 +199,48 @@ function raizDeLaMaquina({ env, home, clon }) {
 }
 
 /**
+ * El clon desde el que se mudó esta máquina a `~/.tycon` (lo anota la mudanza en el estado: `migrate_home.from`; `doctor`
+ * lo muestra como «mudada … desde el clon X»), o null. Sólo lee; nunca tira.
+ */
+function clonDeLaMudanza(home) {
+  try {
+    const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js');
+    if (!fs.existsSync(lib)) return null;
+    const s = JSON.parse(fs.readFileSync(path.join(require(lib).stateDir(home), 'harness-state.json'), 'utf8').replace(/^﻿/, ''));
+    const mh = s && s.migrate_home;
+    return mh && mh.status === 'done' && typeof mh.from === 'string' && mh.from ? mh.from : null;
+  } catch (_) { return null; }
+}
+
+/**
  * @param {string} [envValue] override explícito (para tests) — `undefined` lee process.env
- * @param {object} [opts]     home · projectsDir · clon (el arnés) · tmp · env · sinConfig — inyección para las pruebas
- * @returns {{root: string|null, fuente: 'env'|'maquina'|'sesiones'|'vecino'|'sin-raiz', evidencia?: number, motivo?: string}}
+ * @param {object} [opts]     home · projectsDir · clon (el arnés) · tmp · env · sinConfig · platform · fsx — inyección para las pruebas
+ * @returns {{root: string|null, fuente: 'env'|'maquina'|'sesiones'|'vecino'|'mudanza'|'sin-raiz', evidencia?: number, motivo?: string}}
  * @throws {ConfigError} si `~/.claude/tycon.json` está roto (nivel 2): un comando frena, un hook lo atrapa y avisa
  */
 function resolveReposRoot(envValue, opts = {}) {
   const env = opts.env || process.env;
-  const home = real(opts.home || os.homedir()) || (opts.home || os.homedir());
+  const R = rutasDe(opts.platform || process.platform);
+  const P = R.P;
+  // las operaciones de disco que dependen de la forma de las rutas, inyectables para probar las de Windows en otra máquina
+  const fsx = Object.assign({
+    real: (p) => { const r = real(p); return r ? R.canon(r) : null; },
+    esRepo: esRepoGit,
+    hijos: (dir) => { try { return fs.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => P.join(dir, e.name)); } catch (_) { return []; } },
+  }, opts.fsx || {});
+  const home0 = opts.home || os.homedir();
+  const home = fsx.real(home0) || R.canon(home0);
   const v = envValue !== undefined ? envValue : env[ENV];
   // `~` se expande igual que en el lector de configuración (tycon-config.js): una `~` literal llega a la variable
   // por el bloque `env` de settings.json o por `export X="~/…"` con comillas (pase adversarial, vuelta 1).
   if (v && String(v).trim()) {
     const e = String(v).trim().replace(/^~(?=$|[\\/])/, home);
-    return { root: path.isAbsolute(e) ? path.normalize(e) : path.join(home, e), fuente: 'env' };   // relativa: contra el HOME, como el lector
+    return { root: P.isAbsolute(e) ? P.normalize(e) : P.join(home, e), fuente: 'env' };   // relativa: contra el HOME, como el lector
   }
 
   const clon = opts.clon || path.resolve(__dirname, '..', '..');      // <clon>/scripts/lib → el clon
   const projectsDir = opts.projectsDir || path.join(home, '.claude', 'projects');
-  const tmp = real(opts.tmp || os.tmpdir());
+  const tmp = fsx.real(opts.tmp || os.tmpdir());
 
   // 2. el archivo de la máquina
   if (!opts.sinConfig) {
@@ -154,7 +252,7 @@ function resolveReposRoot(envValue, opts = {}) {
   // skills» según la regla, y lo INSTALADO en `~/.claude/agent-skills`. Lo instalado va siempre y por su ruta real:
   // desde la 8.18 la regla contesta el propio clon cuando trae `skills/`, y un clon de skills instalado que vive fuera
   // de `~/.claude` (un enlace) dejaba de estar excluido — con un solo producto, su carpeta salía como «la raíz».
-  const installed = path.join(home, '.claude', 'agent-skills');
+  const installed = P.join(home, '.claude', 'agent-skills');
   let skills = installed;
   // 🔴 El valor de siempre (lo instalado) es SÓLO para la copia que viaja sin skills-dir.js al lado. Antes un `catch`
   //    tragaba CUALQUIER error de la regla (segunda vuelta de los revisores del tramo 1 de la story 8.18, 2026-10-04):
@@ -163,10 +261,11 @@ function resolveReposRoot(envValue, opts = {}) {
   //    error (el «Require stack» de un MODULE_NOT_FOUND nombra a skills-dir.js aunque falte otro). Mismo criterio que
   //    harness-repo.js y legacy-names.js.
   if (fs.existsSync(path.join(__dirname, 'skills-dir.js'))) skills = require('./skills-dir.js').resolveSkillsDirs(env.TYCON_SKILLS_DIR).repo;
-  const infra = [...new Set([real(clon), real(skills), real(installed)].filter(Boolean))];
+  const infra = [...new Set([fsx.real(clon), fsx.real(skills), fsx.real(installed)].filter(Boolean))];
 
   // 3. lo que la persona hace
-  const mayoria = raizPorMayoria(reposDeSesiones({ projectsDir, home, tmp, excluir: infra }), home);
+  const ses = reposDeSesiones({ projectsDir, home, tmp, excluir: infra, R, fsx });
+  const mayoria = raizPorMayoria(ses.repos, home, R);
   if (mayoria) return { root: mayoria.root, fuente: 'sesiones', evidencia: mayoria.repos };
 
   // 4. el vecino del arnés — sólo si de verdad hay vecinos. Un vecino es un repo de TRABAJO: la infraestructura que
@@ -174,21 +273,33 @@ function resolveReposRoot(envValue, opts = {}) {
   //    el pase adversarial del tramo 1 de la 8.18 (hallazgo 1) este paso sólo descartaba al clon del arnés: con el clon
   //    de las skills como único repo al lado, su carpeta salía como «la raíz» con evidencia 1 —cero repos que auditar,
   //    y aguas abajo «no pude mirar» se leía «miré y no hay nada»— en vez de «sin raíz».
-  const vecino = path.dirname(clon);
+  const vecino = P.dirname(clon);
   try {
-    if (fs.existsSync(path.join(clon, 'scripts')) && fs.statSync(vecino).isDirectory()) {
-      const isInfra = (p) => { const r = real(p) || p; return infra.some((i) => dentroDe(r, i)); };
-      const otros = fs.readdirSync(vecino, { withFileTypes: true })
-        .map((e) => (e.isDirectory() ? path.join(vecino, e.name) : null))
-        .filter((p) => p && p !== clon && !isInfra(p) && esRepoGit(p));
+    if (fs.existsSync(P.join(clon, 'scripts')) && fs.statSync(vecino).isDirectory()) {
+      const otros = reposAlLado(vecino, { R, fsx, excluir: infra }).filter((p) => !R.igual(p, clon));
       if (otros.length) return { root: vecino, fuente: 'vecino', evidencia: otros.length };
     }
-  } catch (_) { /* cae a «sin raíz» */ }
+  } catch (_) { /* sigue */ }
 
-  // 5. sin raíz, dicho como tal — nunca una ruta inventada
+  // 5. la carpeta del clon desde el que se MUDÓ la máquina (2026-10-14). Antes de la mudanza esa carpeta salía en el paso
+  //    4 (el arnés vivía ahí); mudado a `~/.tycon`, el vecino es `~/.tycon` y la raíz se perdía sin que nada cambiara en
+  //    los repos. Vale con las mismas condiciones que el vecino: la carpeta existe y tiene OTROS repos de trabajo.
+  const desde = opts.clonMudanza !== undefined ? opts.clonMudanza : clonDeLaMudanza(home);
+  const padreMudanza = desde ? P.dirname(desde) : null;
+  if (padreMudanza) {
+    const viejo = fsx.real(desde) || desde;
+    const otros = reposAlLado(padreMudanza, { R, fsx, excluir: infra }).filter((p) => !R.igual(p, desde) && !R.igual(fsx.real(p) || p, viejo));
+    if (otros.length) return { root: padreMudanza, fuente: 'mudanza', evidencia: otros.length };
+  }
+
+  // 6. sin raíz, dicho como tal — nunca una ruta inventada. Lo que se leyó de las sesiones va en el motivo: «0 carpetas»
+  //    no es lo mismo que «12 sesiones, ninguna en un repo».
+  const sesTxt = ses.diag.carpetas
+    ? `sin mayoría de repos en las sesiones de ${projectsDir} (${ses.diag.carpetas} carpeta(s) de sesión, ${ses.diag.cwds} con su carpeta de trabajo en el disco, ${ses.repos.length} repo(s) de trabajo)`
+    : `sin sesiones con repos en ${projectsDir}`;
   return {
     root: null, fuente: 'sin-raiz',
-    motivo: `sin TYCON_REPOS_ROOT, sin rutas.repos en ${path.join(home, '.claude', 'tycon.json')}, sin sesiones con repos en ${projectsDir} y sin otro repo al lado del arnés (${vecino})`,
+    motivo: `sin TYCON_REPOS_ROOT, sin rutas.repos en ${path.join(home, '.claude', 'tycon.json')}, ${sesTxt} y sin otro repo al lado del arnés (${vecino})${padreMudanza ? ` ni del clon desde el que se mudó la máquina (${padreMudanza})` : ''}`,
   };
 }
 
@@ -199,6 +310,7 @@ function describir(r) {
     maquina: 'el archivo de la máquina (~/.claude/tycon.json → rutas.repos)',
     sesiones: `tus sesiones (${r.evidencia} repos)`,
     vecino: `la carpeta del arnés (${r.evidencia} repos al lado)`,
+    mudanza: `la carpeta del clon desde el que se mudó la máquina (${r.evidencia} repos al lado)`,
     'sin-raiz': `sin raíz — ${r.motivo}. Definí TYCON_REPOS_ROOT o rutas.repos en ~/.claude/tycon.json`,
   }[r.fuente];
 }
@@ -299,6 +411,55 @@ function selftest() {
   const rAp = ask(hA, clonA);
   casos.push(['(espejo) con un producto al lado, además del clon de las skills: vecino, y la evidencia cuenta al producto y no a la infraestructura (1, no 2)',
     rAp.fuente === 'vecino' && rAp.root === path.join(hA.h, 'Infra') && rAp.evidencia === 1]);
+  // ── Windows (2026-10-14): la extensión de VS Code deja el cwd con la letra de unidad en MINÚSCULA (`c:\Users\…`) y el
+  //    home viene con mayúscula. Comparando con `===` ningún repo quedaba bajo el home, cada uno votaba sólo por su padre
+  //    y, con los repos repartidos en carpetas de producto, ninguna carpeta llegaba a la mayoría: «sin raíz» en una máquina
+  //    que usa Claude Code todos los días. Las rutas de Windows se prueban acá con un disco inyectado (corre en cualquier
+  //    máquina); los nombres de carpeta de las sesiones son los que Claude Code crea en Windows.
+  {
+    const RW = rutasDe('win32');
+    const W = 'C:\\Users\\dev';
+    const PR = `${W}\\Desktop\\proyectos`;
+    const carpetasW = [W, `${W}\\.claude`, `${W}\\AppData\\Local\\Temp`, `${W}\\.tycon\\harness`, `${W}\\Desktop`, PR,
+      `${PR}\\Totora`, `${PR}\\Totora\\Backend`, `${PR}\\Ceibo`, `${PR}\\Ceibo\\Backend`, `${PR}\\Ceibo\\Backend\\src`, `${PR}\\Fresno`, `${PR}\\Fresno\\Api`];
+    const reposW = new Set([`${PR}\\Totora\\Backend`, `${PR}\\Ceibo\\Backend`, `${PR}\\Fresno\\Api`].map((x) => x.toLowerCase()));
+    const porLlave = new Map(carpetasW.map((x) => [x.toLowerCase(), x]));
+    const fsxW = {
+      real: (p) => porLlave.get(RW.canon(p).toLowerCase()) || null,
+      esRepo: (p) => reposW.has(String(p).toLowerCase()),
+      hijos: (d) => carpetasW.filter((x) => path.win32.dirname(x).toLowerCase() === String(d).toLowerCase()),
+    };
+    const projW = mk('casaW-projects');
+    // tres repos, cada uno en su carpeta de producto: una sesión en el repo, otra en una subcarpeta del repo, otra en la
+    // carpeta del producto (que no es un repo); y la misma del repo abierta desde la terminal, con la C mayúscula
+    sesionEn(projW, 'c:\\Users\\dev\\Desktop\\proyectos\\Totora\\Backend', 'c--Users-dev-Desktop-proyectos-Totora-Backend');
+    sesionEn(projW, 'C:\\Users\\dev\\Desktop\\proyectos\\Totora\\Backend', 'C--Users-dev-Desktop-proyectos-Totora-Backend');
+    sesionEn(projW, 'c:\\Users\\dev\\Desktop\\proyectos\\Ceibo\\Backend\\src', 'c--Users-dev-Desktop-proyectos-Ceibo-Backend-src');
+    sesionEn(projW, 'c:\\Users\\dev\\Desktop\\proyectos\\Fresno', 'c--Users-dev-Desktop-proyectos-Fresno');
+    const rW = resolveReposRoot('', { platform: 'win32', fsx: fsxW, home: W, clon: `${W}\\.tycon\\harness`, tmp: `${W}\\AppData\\Local\\Temp`, projectsDir: projW, env: {}, sinConfig: true, clonMudanza: null });
+    casos.push(['🔴 Windows: cwd con `c:` minúscula y home con `C:` — los repos bajo el Escritorio cuentan como bajo el home y la raíz es la carpeta que los junta, no «sin raíz»',
+      rW.fuente === 'sesiones' && rW.root === PR]);
+    casos.push(['Windows: el mismo repo con `c:` y con `C:` es UN repo; la sesión en una subcarpeta cuenta por su repo y la de la carpeta del producto por los repos que tiene adentro (evidencia 3)',
+      rW.evidencia === 3]);
+    casos.push(['Windows: el Escritorio no es «la raíz» aunque contenga a todos (es una carpeta personal, como el home)', rW.root !== `${W}\\Desktop`]);
+  }
+  // ── la máquina mudada (2026-10-14): el arnés vive en ~/.tycon y los repos siguen al lado del clon viejo ──
+  {
+    const hM = house('casaM'); const clonM = harnessAt('casaM', '.tycon', 'harness');
+    const viejoM = real(repo('casaM', 'Fuentes', 'tycon-claude-guides'));
+    fs.mkdirSync(path.join(hM.h, '.tycon', 'state'), { recursive: true });
+    fs.writeFileSync(path.join(hM.h, '.tycon', 'state', 'harness-state.json'), JSON.stringify({ migrate_home: { status: 'done', from: viejoM } }));
+    const sinOtros = ask(hM, clonM);
+    casos.push(['mudada: con el clon viejo SOLO en su carpeta, esa carpeta no es la raíz (cero repos que auditar): sin raíz, y el motivo nombra la carpeta del clon viejo',
+      noRoot(sinOtros) && sinOtros.motivo.includes(path.dirname(viejoM))]);
+    repo('casaM', 'Fuentes', 'ProductoA');
+    const rM = ask(hM, clonM);
+    casos.push(['🔴 mudada: sin sesiones ni archivo, la carpeta del clon desde el que se mudó la máquina da la raíz si tiene otros repos (evidencia: los otros, no el clon viejo)',
+      rM.fuente === 'mudanza' && rM.root === path.join(hM.h, 'Fuentes') && rM.evidencia === 1]);
+    casos.push(['mudada: la descripción dice de dónde salió', /se mudó/.test(describir(rM))]);
+    fs.writeFileSync(path.join(hM.h, '.tycon', 'state', 'harness-state.json'), JSON.stringify({ migrate_home: { status: 'failed', from: viejoM } }));
+    casos.push(['mudada: una mudanza que falló no da raíz (la máquina sigue en su clon)', noRoot(ask(hM, clonM))]);
+  }
   // ── T6 (story 8.3): sin sesiones, sin vecino, sin variable, sin archivo → SIN RAÍZ, con motivo ──
   const vacio = mk('casa', 'projects-vacio');
   const r4 = resolveReposRoot('', Object.assign({}, o, { projectsDir: vacio }));
@@ -343,4 +504,4 @@ if (require.main === module) {
   process.exit(0);
 }
 
-module.exports = { resolveReposRoot, describir, ENV };
+module.exports = { resolveReposRoot, describir, ENV, __test: { rutasDe, raizPorMayoria, reposDeSesiones } };
