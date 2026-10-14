@@ -643,7 +643,7 @@ Upload via Backend Host Admin UI or API.
 - **All database operations** use SafeQueryBuilder - never raw SQL strings
 - **Feature registration** in `{{BACKEND_REPO}}.cs` is manual - script doesn't auto-register
 - **Connection strings** are injected via `IConfiguration.GetConnectionString("Default")`
-- **Endpoint routes** are auto-prefixed with `/api/plugins/{name}/{version}/`
+- **Endpoint routes** are auto-prefixed with `/api/plugins/{name}/` on the host (no version in the path: the host serves the active one; DevHost uses `/api/` only)
 - **Service layer** is only needed for features using automatic transactions
 
 ### Naming Conventions
