@@ -138,8 +138,13 @@ JS
 }
 JSON
   printf '.calls\n.advisors/\n' > "${r}/.gitignore"
+  mkdir -p "${r}/.githooks"
+  printf '%s\n' 'echo "repo-lint head=$(git log -1 --format=%s HEAD) staged=$(git diff --cached --name-only | tr "\n" " ")" >> "$(cd "$(git rev-parse --git-common-dir)/.." && pwd)/.calls"' \
+    '[ ! -f lint-rojo ] || { echo "el pre-commit frena"; exit 1; }' > "${r}/.githooks/pre-commit-harness"
+  printf '{ "version": "2026.01.01.1" }\n' > "${r}/version.json"
   ( cd "${r}" && lab_git init -q . && lab_git add -A && lab_git commit -qm base \
-      && echo "// segundo commit" >> build/check.js && lab_git commit -qam historia ) > /dev/null 2>&1 \
+      && echo "// segundo commit" >> build/check.js && printf '{ "version": "2026.01.01.2" }\n' > version.json \
+      && lab_git commit -qam historia ) > /dev/null 2>&1 \
     || { no "no pude armar el repo de mentira en ${r}"; return 1; }
   # un .js roto SIN versionar: no es del repo, `node --check` no lo mira
   mkdir -p "${r}/scratch"; printf 'function ( {\n' > "${r}/scratch/broken.js"
@@ -207,23 +212,37 @@ done
 is "T21 (d) la salida de cada paso, la de cada suite y el reporte del banco quedan en TYCON_PUBLIC_CI_OUT" "" "${MISSING}"
 has "T21 (d) el archivo de cada suite trae SU salida" "${R}.ci/agent-skills-suites/arnes__tests__alpha.test.js.log" "alpha: salida de la suite"
 
-# con --range y --clean-machine: los nueve pasos; sin TYCON_PUBLIC_CI_OUT, la carpeta temporal se nombra y existe
+# con --range y --clean-machine: los once pasos; sin TYCON_PUBLIC_CI_OUT, la carpeta temporal se nombra y existe
 variant green9
 ( cd "${T}/elsewhere" && TYCON_SKILLS_DIR="${T}/no-skills" bash "${SCRIPT}" --root "${R}" --range 'HEAD~1...HEAD' --clean-machine ) > "${R}.out" 2>&1; RC=$?
 is "T21 (d) todo verde con --range y --clean-machine sale 0" 0 "${RC}"
-is "T21 (d) los nueve pasos, en orden" "${SEVEN} spanish-names clean-machine" "$(steps_of "${R}.out")"
-is "T21 (d) el resumen cuenta los nueve" "✅ public-ci: 9 pasos verdes" "$(tail -n 1 "${R}.out")"
-is "T21 (d) el freno de nombres recibe el rango y la máquina limpia va al final" "spanish-names --range HEAD~1...HEAD|clean-machine |" \
-  "$(calls_of "${R}" | tail -n 2 | tr '\n' '|')"
+is "T21 (d) los once pasos, en orden" "${SEVEN} spanish-names repo-lint version clean-machine" "$(steps_of "${R}.out")"
+is "T21 (d) el resumen cuenta los once" "✅ public-ci: 11 pasos verdes" "$(tail -n 1 "${R}.out")"
+is "T21 (d) el freno de nombres recibe el rango, el pre-commit ve lo que trae el rango sobre la base, y la máquina limpia va al final" \
+  "spanish-names --range HEAD~1...HEAD|repo-lint head=base staged=build/check.js version.json |clean-machine |" \
+  "$(calls_of "${R}" | tail -n 3 | tr '\n' '|')"
+is "T21 (d) la copia de trabajo del pre-commit no queda" "" "$(git -C "${R}" worktree list | sed -n 2p)"
 lacks "T21 (d) tampoco con todas las opciones corre el detector" "${R}/.calls" "detector"
 OUT_DIR="$(sed -n 's/^public-ci: la salida de cada paso quedó en \(.*\)$/\1/p' "${R}.out")"
-if [ -n "${OUT_DIR}" ] && [ -f "${OUT_DIR}/9-clean-machine.log" ]; then
+if [ -n "${OUT_DIR}" ] && [ -f "${OUT_DIR}/11-clean-machine.log" ]; then
   ok "T21 (d) sin TYCON_PUBLIC_CI_OUT la salida va a una carpeta temporal que el resumen nombra"
   # la máquina limpia corre en su modo PÚBLICO: pedida de forma explícita y sobre el repo de --root
-  has "T21 (d) la máquina limpia recibe TYCON_CLEAN_MACHINE=1 y TYCON_CLEAN_MACHINE_SOURCE=<raíz>" "${OUT_DIR}/9-clean-machine.log" \
+  has "T21 (d) la máquina limpia recibe TYCON_CLEAN_MACHINE=1 y TYCON_CLEAN_MACHINE_SOURCE=<raíz>" "${OUT_DIR}/11-clean-machine.log" \
     "TYCON_CLEAN_MACHINE=1 TYCON_CLEAN_MACHINE_SOURCE=${R}"
   rm -rf "${OUT_DIR}"
 else no "T21 (d) el resumen no nombra una carpeta con la salida de cada paso («${OUT_DIR}»): $(tail -n 3 "${R}.out" | tr '\n' ' ')"; fi
+
+# el pedido: un pre-commit que frena es rojo de repo-lint; una versión que no sube es rojo de version
+variant lintred; ( cd "${R}" && touch lint-rojo && lab_git add lint-rojo && lab_git commit -qm "con lint rojo" ) > /dev/null 2>&1
+run_ci --range 'HEAD~1...HEAD'
+is "T21 (e) un pre-commit que frena sobre el rango sale 1" 1 "${RC}"
+has "T21 (e) …con repo-lint en rojo" "${R}.out" "❌ public-ci: repo-lint — rojo (exit 1)"
+has "T21 (e) …y su motivo" "${R}.out" "el pre-commit frena"
+variant samever; ( cd "${R}" && echo "// sin subir la versión" >> build/check.js && lab_git commit -qam "sin versión" ) > /dev/null 2>&1
+run_ci --range 'HEAD~1...HEAD'
+is "T21 (e) una versión que no sube sale 1" 1 "${RC}"
+has "T21 (e) …con version en rojo" "${R}.out" "❌ public-ci: version — rojo (exit 1)"
+has "T21 (e) …diciendo qué hacer" "${R}.out" "cada pedido sube la versión"
 
 # el control del «sólo lo versionado»: el mismo .js roto, versionado, sí es rojo
 variant tracked; ( cd "${R}" && lab_git add scratch/broken.js && lab_git commit -qm roto ) > /dev/null 2>&1; run_ci
@@ -270,7 +289,10 @@ is "T21 (c) --range sin historia sale 1" 1 "${RC}"
 has "T21 (c) el paso es rojo con «no pude correr»" "${R}.out" "❌ public-ci: spanish-names — no pude correr: "
 has "T21 (c) …y dice qué punta no resuelve" "${R}.out" "origin/main"
 lacks "T21 (c) el freno de nombres no se llama con un rango que no resuelve" "${R}/.calls" "spanish-names"
-is "T21 (c) el resumen nombra el paso" "❌ public-ci: 1 de 8 pasos en rojo: spanish-names" "$(tail -n 1 "${R}.out")"
+has "T21 (c) el pre-commit del rango tampoco corre: «no pude correr»" "${R}.out" "❌ public-ci: repo-lint — no pude correr: "
+has "T21 (c) ni la versión: «no pude correr»" "${R}.out" "❌ public-ci: version — no pude correr: "
+lacks "T21 (c) el pre-commit no se llama con un rango que no resuelve" "${R}/.calls" "repo-lint"
+is "T21 (c) el resumen nombra los tres pasos del rango" "❌ public-ci: 3 de 10 pasos en rojo: spanish-names, repo-lint, version" "$(tail -n 1 "${R}.out")"
 variant badrange; run_ci --range 'HEAD'
 has "T21 (c) un rango que no es <base>...<punta> también es «no pude correr»" "${R}.out" "❌ public-ci: spanish-names — no pude correr: "
 
