@@ -230,18 +230,30 @@ Y advisors **condicionales** (se invocan solo si su trigger se cumple): `signalr
 Si alguno falla, revisá:
 - Path absoluto del `@import` en tu `~/.claude/CLAUDE.md` (paso 2)
 - Los enlaces `~/.claude/skills` y `~/.claude/agents` (paso 3): `harness.js doctor` dice si falta alguno
-- Hook corre OK (paso 4) — podés verificar con: `ls -la ~/.claude/tycon-harness/.git/FETCH_HEAD` — debería actualizarse cada sesión
+- La actualización (paso 4): `harness.js version` muestra la versión instalada y el canal; `harness.js doctor` dice si
+  algo quedó mal
 
-### 6. Actualizar manualmente (solo si no configuraste el hook)
+### 6. Cómo llegan las actualizaciones
 
-Si por alguna razón no querés el hook, correr cuando sepas que hubo cambios:
+La versión bajada vive en `~/.tycon/harness` (`~/.claude/tycon-harness` es un enlace a esa carpeta). No es un clon: no
+hay `git pull` que hacer. Al arrancar cada sesión, el arnés mira si su canal tiene una versión nueva. Qué hace con ella
+depende de la política, `update.apply`:
 
-```bash
-cd ~/.claude/tycon-harness
-git pull
-```
+- **`ask`** (la de fábrica): deja un aviso en la sesión y no toca nada; mira como mucho una vez cada 6 horas. La versión
+  nueva se aplica a mano, desde una terminal:
+  `node ~/.claude/tycon-harness/scripts/setup/harness.js update --yes`.
+- **`auto`**: la instala sola al arrancar la sesión.
 
-**No hace falta tocar tu CLAUDE.md personal nunca más.** Las actualizaciones llegan via `git pull` (automático o manual).
+La política se fija con `update.apply` en `~/.claude/tycon.json` o con la variable `TYCON_UPDATE_APPLY`; `TYCON_UPDATE=0`
+apaga la consulta. `harness.js update --check` dice si hay una versión nueva sin aplicarla.
+
+La versión anterior queda guardada en `~/.tycon/previous`. Si la nueva no pasa la comprobación de salud, el arnés vuelve
+solo a la anterior; para volver a mano, `harness.js rollback` (sin bajar nada). Después de volver atrás, el arnés deja
+de actualizarse solo hasta que lo sueltes con `harness.js rollback --release`.
+
+En el modo desarrollador (el enlace apunta a tu clon) actualizar es tuyo: el arnés no toca el git de ese clon.
+
+**No hace falta tocar tu CLAUDE.md personal nunca más.** Las actualizaciones llegan solas o con `update --yes`.
 
 ---
 
@@ -394,7 +406,8 @@ Detalle de diseño y asimetrías declaradas: `guides/codex-migration.md` y
    ```
 4. Commit + push.
 
-Los devs reciben la guía automáticamente con `git pull`. Nadie toca su CLAUDE.md personal.
+Los devs reciben la guía con la próxima actualización del arnés (sola, o con `harness.js update --yes`). Nadie toca su
+CLAUDE.md personal.
 
 ### Modificar una guía existente
 
@@ -529,7 +542,8 @@ Ahora:
 **Claude no aplica las reglas de una guía:**
 - Las guías **NO se cargan solas** en contexto. Lo único que se importa es el **índice** (`INDEX.md`), vía el `@import` de tu `~/.claude/CLAUDE.md`. Las guías son lectura **on-demand**: Claude las abre con `Read` cuando aplica el trigger de la tabla "Cuándo leer cada guía". Si no las está aplicando, pedíle explícitamente que lea la guía.
 - Verificá la línea del `@import` del índice en tu `~/.claude/CLAUDE.md`: `@~/.claude/tycon-harness/INDEX.md`.
-- `cd ~/.claude/tycon-harness && git pull` — puede que alguien haya modificado la guía.
+- `node ~/.claude/tycon-harness/scripts/setup/harness.js update --check` — puede que haya una versión nueva con la guía
+  cambiada; `update --yes` la aplica.
 - Reiniciá la sesión de Claude Code (el `@import` del índice se carga al inicio).
 
 **"Context too large" al iniciar sesión:**
