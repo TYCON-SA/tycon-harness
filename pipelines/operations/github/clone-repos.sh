@@ -9,7 +9,8 @@
 #   clone-repos.sh --org <destino> [--team-repos <archivo>]
 #       Para las métricas. Descubre los repos de cada dueño de `OWNERS` (separados por `;`; vacío: GITHUB_REPOSITORY_OWNER),
 #       como organización o como usuario según GitHub, paginado; con `PREFIX`, sólo los que empiezan así; sin las copias
-#       del arnés que declara team-repos.json (`harness_copies` de GitHub). Clona LIVIANO (`--filter=blob:none`, sólo
+#       del arnés que declara team-repos.json (`harness_copies` de GitHub, salvo la de `maintainers` si está en la lista:
+#       la regla es la del lector, scripts/lib/team-repos.js). Clona LIVIANO (`--filter=blob:none`, sólo
 #       Markdown, `.advisors/` y `.tycon/`) en `<destino>/<dueño>__<repo>` (lo parten en `__` las métricas). El clon
 #       liviano baja contenido después: el token queda en la config de esos clones, en un trabajo que sólo lee Markdown.
 #
@@ -54,7 +55,8 @@ fi
 
 # --org: la lista, armada por node (paginada, organización o usuario, sin copias, con prefijo)
 LIST="$(mktemp)"
-if ! GH_TOKEN="${ORG_TOKEN}" node - "${TEAM_REPOS}" > "${LIST}" 2> "${LIST}.err" <<'JS'
+READER="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)/scripts/lib/team-repos.js"
+if ! GH_TOKEN="${ORG_TOKEN}" node - "${TEAM_REPOS}" "${READER}" > "${LIST}" 2> "${LIST}.err" <<'JS'
 const { spawnSync } = require('child_process');
 const fs = require('fs');
 const cmd = process.env.TYCON_GH_CMD || 'gh';
@@ -64,11 +66,13 @@ const api = (ruta) => {
   if (r.error || r.status !== 0) return { ok: false, motivo: String((r.stderr || (r.error && r.error.message) || '')).trim().split('\n')[0] };
   try { return { ok: true, valor: JSON.parse(r.stdout) }; } catch { return { ok: false, motivo: 'la respuesta no es JSON' }; }
 };
-const teamRepos = process.argv[2];
+const [teamRepos, reader] = process.argv.slice(2);
 const copias = new Set();
 if (teamRepos && fs.existsSync(teamRepos)) {
-  const t = JSON.parse(fs.readFileSync(teamRepos, 'utf8'));
-  for (const c of t.harness_copies || []) if (c && c.platform === 'github') copias.add(`${c.org}/${c.repo}`.toLowerCase());
+  // las copias, con la regla del lector: un team-repos.json que no valida es un error, no «no hay copias»
+  const r = require(reader).load(teamRepos);
+  if (!r.ok) { console.error(`team-repos.json no valida: ${r.problems.map((p) => `${p.path || '(el archivo)'}: ${p.message}`).join('; ')}`); process.exit(1); }
+  for (const c of require(reader).harnessCopies(r.data, 'github')) if (!c.measured) copias.add(c.id.toLowerCase());
 }
 const owners = String(process.env.OWNERS || process.env.GITHUB_REPOSITORY_OWNER || '').split(';').map((s) => s.trim()).filter(Boolean);
 if (!owners.length) { console.error('no hay dueños que mirar (OWNERS y GITHUB_REPOSITORY_OWNER vacíos)'); process.exit(1); }

@@ -765,7 +765,8 @@ test('InternalHistoryGuard_Cli_HelpUnknownAndMissingValue — la línea de coman
   assert.match(guard(l, { args: ['--help'] }).stdout, /--range/);
   for (const bad of [['--does-not-exist'], ['--range'], ['--config']]) assert.strictEqual(guard(l, { args: bad }).code, 2, bad.join(' '));
   assert.throws(() => ih.parseArgs(['--ref']), ih.CouldNot);
-  assert.deepStrictEqual(ih.parseArgs(['--all', '--json', '--ref', 'abc']), { mode: 'all', repo: null, range: null, json: true, ref: 'abc', config: null });
+  assert.deepStrictEqual(ih.parseArgs(['--all', '--json', '--ref', 'abc']), { mode: 'all', repo: null, range: null, json: true, ref: 'abc', config: null, publicRemote: null });
+  assert.strictEqual(ih.parseArgs(['--public-remote', 'origin']).publicRemote, 'origin', 'el repo público se puede decir');
 });
 
 test('InternalHistoryGuard_All_Ref_AndAnInternalErrorIsTwo — la cuenta de otro commit; lo que no existe es 2', () => {

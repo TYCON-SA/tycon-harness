@@ -113,13 +113,7 @@
       "file": "scripts/tests/public-push-guard.test.js",
       "form": "pr-number",
       "value": "pull request #1234",
-      "reason": "un número inventado: el asunto que GitHub le pone a un merge hecho en su web («Merge pull request #N from …»), que el freno NO cuenta en la primera línea y sí en cualquier otro lugar (story 8.26, tanda F1, T22)"
-    },
-    {
-      "file": "scripts/tests/public-push-guard.test.js",
-      "form": "pr-number",
-      "value": "PR 1235",
-      "reason": "un número inventado: el cuerpo de un commit de merge que nombra OTRO pedido, y que el freno tiene que frenar (story 8.26, tanda F1, T22)"
+      "reason": "un número inventado: el asunto con que GitHub mergea («Merge pull request #N from …») con un término de la lista en la rama que nombra, y el título de un `gh pr create`; el repo público de la prueba no tiene ese pedido (story 8.26, tanda F1, T22 y T67)"
     },
     {
       "file": "scripts/tests/public-push-guard.test.js",

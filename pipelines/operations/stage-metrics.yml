@@ -15,12 +15,15 @@
 # - Un repo que no se pudo clonar o medir se REPORTA, no se calla: un barrido que se achica en silencio se lee igual que
 #   uno completo.
 #
-# Variables de la definición (opcionales; se cargan en Azure, en «Variables» del pipeline):
+# Variable de la definición (opcional; se carga en Azure, en «Variables» del pipeline):
 #   METRICS_PROJECTS — los proyectos que se miran, separados por `;`. Vacía: todos los de la organización que la
 #                      identidad de compilación puede ver.
-#   HARNESS_COPIES   — repos de la organización que son copias del repo del arnés (`<proyecto>/<repo>`, separados por
-#                      `;`): no se miden, así sus stories no cuentan dos veces. Vacía: ninguno. Si tu organización mantiene
-#                      el arnés, poné acá las copias y en HARNESS_MEASURED_COPY la que sí cuenta.
+#
+# Las copias del repo del arnés (sólo si tu organización tiene alguna con stories) las declara `team-repos.json` del repo
+# de operaciones, `harness_copies`: no se miden, así sus stories no cuentan dos veces; de ellas se mide sólo la de
+# `maintainers`, si está en la lista. Las variables de antes, HARNESS_COPIES y HARNESS_MEASURED_COPY, ya no se leen: si
+# siguen puestas, la corrida avisa, y sale en rojo si team-repos.json no declara las copias (no se mide dos veces en
+# silencio).
 #
 # Permisos (una vez): la identidad de compilación del proyecto («<proyecto> Build Service») necesita LECTURA sobre los repos
 # que mide y «Contribute» sobre el repo de operaciones (para guardar). Si la organización limita el alcance del token al
@@ -70,10 +73,34 @@ jobs:
           TOTAL=0
           lower(){ printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
           list(){ printf '%s\n' "$1" | tr ';' '\n' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | grep -v '^$' || true; }
-          # Las copias del arnés no se miden (salvo la que se declara como la que cuenta): sus stories contarían dos veces.
-          COPIES="$(list "${HARNESS_COPIES:-}" | tr '[:upper:]' '[:lower:]')"
-          MEASURED="$(lower "${HARNESS_MEASURED_COPY:-}")"
-          is_copy(){ [ -n "$COPIES" ] && printf '%s\n' "$COPIES" | grep -qxF -- "$(lower "$1")"; }
+          # Las copias del arnés no se miden (salvo la de mantenimiento): sus stories contarían dos veces. Las declara
+          # team-repos.json (`harness_copies`), que ops-data.yml trae del repo de operaciones, y las da su lector. Un
+          # team-repos.json que no valida es rojo: «no pude saber cuáles son copias» no es «no hay copias».
+          COPIES=""
+          MEASURED=""
+          TEAM_REPOS="$(Build.SourcesDirectory)/team-repos.json"
+          if [ -f "$TEAM_REPOS" ]; then
+            if ! DECLARED="$(node "$(Build.SourcesDirectory)/scripts/lib/team-repos.js" "$TEAM_REPOS" --harness-copies azure)"; then
+              echo "##vso[task.logissue type=error]team-repos.json no valida (el motivo, arriba): no se sabe qué repos son copias del arnés. No se midió nada."
+              exit 1
+            fi
+            while IFS=$'\t' read -r KIND ID; do
+              [ -n "$ID" ] || continue
+              COPIES="${COPIES}$(lower "$ID")"$'\n'
+              [ "$KIND" != "measure" ] || MEASURED="$(lower "$ID")"
+            done <<< "$DECLARED"
+          fi
+          # Las variables de antes ya no se leen (DEF-8.30-copias-del-arnes-en-team-repos): dos lugares para lo mismo
+          # terminan diciendo cosas distintas. Si siguen puestas y team-repos.json no declara copias, rojo: quien las puso
+          # tiene copias, y medirlas dos veces en silencio es justo lo que la variable evitaba.
+          if [ -n "$(printf '%s' "${HARNESS_COPIES:-}${HARNESS_MEASURED_COPY:-}" | tr -d '; \t')" ]; then
+            if [ -z "$COPIES" ]; then
+              echo "##vso[task.logissue type=error]HARNESS_COPIES y HARNESS_MEASURED_COPY ya no se leen: las copias del arnés se declaran en team-repos.json del repo de operaciones (harness_copies; se mide la de maintainers). Pasalas ahí y borrá las variables de la definición. No se midió nada."
+              exit 1
+            fi
+            echo "##vso[task.logissue type=warning]HARNESS_COPIES y HARNESS_MEASURED_COPY ya no se leen (las copias salen de team-repos.json): borralas de la definición."
+          fi
+          is_copy(){ [ -n "$COPIES" ] && printf '%s' "$COPIES" | grep -qxF -- "$(lower "$1")"; }
           SKIPPED=""
           # Los proyectos: los de METRICS_PROJECTS, o todos los que se ven. Si no se pudo preguntar, rojo: «no pude
           # preguntar» no es «no hay proyectos».
