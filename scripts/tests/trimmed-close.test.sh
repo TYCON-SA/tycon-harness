@@ -457,7 +457,7 @@ if git -C "$AQUI" rev-parse --verify -q origin/main >/dev/null 2>&1; then
   #    una mejora de un debilitamiento. Lo que no puede pasar es que PIERDA una regla, y eso se
   #    chequea abajo, junto a los cuatro chequeos de `revisar()`. Su comportamiento real lo fijan dos
   #    suites propias que corren aparte: `roster-validate-parity.test.js` (las dos copias, veredicto
-  #    por veredicto, sobre los rosters reales del PR 3372) y el `--selftest` del propio portón.
+  #    por veredicto, sobre rosters reales de un pedido) y el `--selftest` del propio portón.
   # 🔴 Y el 2026-09-22 se RETIRA la comparación por bytes para las seis (decisión del dev en la
   #    misma sesión, tras desfrizar dos en un día: `validarRoster` y `revisarAutoria`, las dos por
   #    mejoras legítimas). El congelamiento no distinguía una mejora de un deterioro: cualquier
