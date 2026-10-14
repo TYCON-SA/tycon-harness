@@ -469,7 +469,9 @@ function pruebas() {
       fs.copyFileSync(__filename, copia);
       const env = { ...process.env, INVENTED_RULE_COPY: '1' };
       delete env.NODE_TEST_CONTEXT;
-      const r = spawnSync(process.execPath, [copia], { encoding: 'utf8', env, timeout: 60000 });
+      // TAP pedido a mano: desde Node 23 la salida por defecto es la de personas («﹣ … # NO MEDIDO»), sin «# SKIP» ni
+      // «# pass»; con Node 20 local daba verde y en public-ci (Node 22 y 24) rojo
+      const r = spawnSync(process.execPath, ['--test-reporter=tap', copia], { encoding: 'utf8', env, timeout: 60000 });
       assert.strictEqual(r.status, 0, `el público sin la tabla: 0\n${r.stdout}${r.stderr}`);
       assert.match(r.stdout, /# SKIP NO MEDIDO en el público solo/, 'el caso de la tabla real sale salteado y dice por qué');
       assert.match(r.stdout, /^# pass [1-9]/m, 'y los casos de mentira corren');
