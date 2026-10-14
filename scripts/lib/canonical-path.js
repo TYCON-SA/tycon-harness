@@ -962,7 +962,7 @@ function convertWholeLink({ where, src, side, tree, check = false }) {
  */
 function ensureRepoLinks({ clone, home, check = false, only = null, links = null } = {}) {
   const given = path.resolve(clone || RAIZ);
-  // la forma con enlaces (story 8.33): si el árbol se nombra por un enlace (`~/.tycon/harness`), los enlaces de ~/.claude
+  // la forma con enlaces (story 8.33): si el árbol se nombra por un enlace (`~/.tycon/harness`), los enlaces del arnés
   // apuntan adentro de ESE nombre, no de la carpeta numerada: con la ruta real, la versión siguiente los dejaría en la vieja
   const c = stableName(given) || real(given) || given;
   // `plan`: con `check`, cada enlace con lo que le haría el instalador (add · update · remove · keep; story 8.16, AC 11)

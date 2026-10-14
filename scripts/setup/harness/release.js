@@ -2053,8 +2053,10 @@ function doctorItems(ctx, state, { fetch = false, channel = null } = {}) {
   if (exists(own.linkJournal)) add('fail', `hay un cambio de versión a medias (${own.linkJournal}): el próximo arranque lo repara; harness.js update también`);
   // (story 8.35) ~/.claude/skills y ~/.claude/agents son carpetas del dev; un enlace a la carpeta ENTERA del arnés es la
   // forma vieja: lo que el dev o Claude Code ponen ahí cae adentro del arnés y se pierde con una actualización
+  // (los dos enchufes de Claude Code, cada uno escrito entero: así el techo de la carpeta de Claude Code los reconoce)
+  const plugs = { skills: path.join(ctx.home || os.homedir(), '.claude', 'skills'), agents: path.join(ctx.home || os.homedir(), '.claude', 'agents') };
   for (const side of ['skills', 'agents']) {
-    const p = path.join(ctx.home || os.homedir(), '.claude', side);
+    const p = plugs[side];
     let r = null, t = null;
     try { if (fs.lstatSync(p).isSymbolicLink()) { r = fs.realpathSync(p); t = fs.realpathSync(path.join(own.harness, side)); } } catch (_) { r = null; }
     // (en Windows y en Mac el disco no distingue mayúsculas: `c:\…` y `C:\…` son la misma carpeta)
