@@ -37,6 +37,12 @@
 // (`warnings` = hallazgos de formas que sólo avisan; `looked=0` = nada de lo tocado era prosa; `measured=0` = un rango
 // sin commits). Nunca imprime el texto encontrado: archivo, línea y forma.
 //
+// LO QUE YA ES DEL REPO PÚBLICO no es historia interna: un pedido o un commit de ese repo llevan a algún lado desde
+// afuera. Tres formas lo distinguen preguntándole al repo público (`publicLookup`, más abajo): `pr-number` y el `#N`
+// suelto de `azure-run` pasan si N es un pedido del público; `private-commit`, si el commit es del público. Lo de Azure
+// sigue siendo interno: «PR N» sin numeral, «PR !N», «corrida N», «build N». Si el público no contesta, nada es suyo y
+// esas formas frenan como siempre.
+//
 // Un dato o un ejemplo que tiene que quedar se declara con su archivo (la ruta con que sale), su forma, el valor EXACTO
 // y el motivo en scripts/tests/fixtures/internal-history-allowed.json — nunca un archivo entero.
 //
@@ -44,7 +50,9 @@
 //   node scripts/publishing/internal-history.js [--repo <dir>] [--config <archivo>]   (lo stageado: el pre-commit)
 //   node scripts/publishing/internal-history.js --range <base>...<punta>              (el diff de un pedido de cambio)
 //   node scripts/publishing/internal-history.js --all [--json] [--ref <commit>]       (la cuenta de todo; no frena)
-//   Para otra herramienta: require(...).scan(text, zone) → [{ form, value, line, col }] (pura: sin disco ni git).
+//   --public-remote <remoto|dirección> dice cuál es el repo público (si no, `origin` cuando es un repo de GitHub).
+//   Para otra herramienta: require(...).scan(text, zone[, lookup]) → [{ form, value, line, col }] (pura: sin disco ni
+//   git; `lookup`, de `publicLookup(repo, remoto)`, es lo único que sale a preguntar, y sólo si hay algo que distinguir).
 // Guía: guides/publicacion-espejo.md §«La historia interna»
 
 const fs = require('fs');
@@ -179,10 +187,105 @@ function scanAll(text, zone) {
  * @param {string} text
  * @param {'prose'|'code'|'message'} zone `prose`: todas las formas de texto; `code` y `message` (el nombre de una rama, un
  *   mensaje de commit, el título y el cuerpo de un pedido): hoy, sólo `pr-number`.
+ * @param {object|null} [lookup] de `publicLookup`: lo que nombra un pedido o un commit del repo público no es un hallazgo
  * @returns {{form: string, value: string, line: number, col: number}[]} `line` desde 1, `col` desde 0
  */
-function scan(text, zone) {
-  return scanAll(text, zone).filter((f) => !f.covered).map(({ form, value, line, col }) => ({ form, value, line, col }));
+function scan(text, zone, lookup = null) {
+  return scanAll(text, zone).filter((f) => !f.covered && !isPublicReference(f, lookup)).map(({ form, value, line, col }) => ({ form, value, line, col }));
+}
+
+// ── lo que ya es del repo público ───────────────────────────────────────────────────────────────────────────────
+// Después del corte, un pedido o un commit del repo público son referencias legítimas, y el asunto con que GitHub
+// mergea («Merge pull request #N from …») es `pr-number` desde el pedido 100. Tres formas los confundían con la historia
+// del equipo; con este lector distinguen:
+//   · `pr-number`: el número escrito con numeral (`#N`, la forma de GitHub) y N es un pedido del público. «PR N» sin
+//     numeral y «PR !N» son las formas de Azure («Merge pull request N from …» es el asunto de un merge de Azure): ésas
+//     siguen siendo internas;
+//   · `azure-run`: sólo el `#N` suelto puede ser un pedido del público; «corrida N» y «build N» son de Azure, siempre;
+//   · `private-commit`: el commit está en este clon y se llega a él desde una punta del repo público.
+// Se le pregunta al público UNA vez por corrida, con `git ls-remote` y sin la API de GitHub (que tiene cupo): GitHub
+// publica cada pedido como `refs/pull/<N>/head`, y las puntas de sus ramas, marcas y pedidos dicen qué commits tiene. Se
+// pregunta sólo cuando hay algo que distinguir: un control sin candidatos no sale a la red.
+// 🔴 Si el público no contesta —sin red, un remoto que no es un repo, el tope de tiempo, un clon sin repo público—
+// nada es suyo: las tres formas frenan como antes, y `problem()` dice por qué (la salida lo muestra).
+// Cuál es el público: el que se pasa (el freno de publicar pasa la dirección a la que empuja) o, si no, `origin` cuando
+// es un repo de GitHub. Límite: un número de Azure escrito `#N` que coincida con un pedido del público pasa.
+const GITHUB_REMOTE = /^(?:https?:\/\/(?:[^@/]+@)?github\.com\/|git@github\.com:|ssh:\/\/git@github\.com\/)/i;
+const LOOKUP_MS = 20000;
+function publicLookup(repo, remote = null) {
+  let answer = null;   // null: todavía no se preguntó; después, { prs, tips } o { problem }
+  let localTips = null;
+  const commits = new Map();
+  const ask = () => {
+    if (answer) return answer;
+    let target = remote ? String(remote) : null;
+    if (!target) {
+      const r = git(repo, ['config', '--get', 'remote.origin.url'], { tolerate: true });
+      if (r.status !== 0 || !GITHUB_REMOTE.test(r.stdout.trim())) {
+        answer = { problem: 'este clon no tiene el repo público de GitHub como `origin`' };
+        return answer;
+      }
+      target = 'origin';
+    }
+    if (target.startsWith('-')) { answer = { problem: 'la dirección del repo público no es válida' }; return answer; }
+    const r = spawnSync('git', ['ls-remote', target], {
+      cwd: repo, encoding: 'utf8', timeout: LOOKUP_MS, maxBuffer: 256 * 1024 * 1024,
+      env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never' },
+    });
+    if (r.error || r.status !== 0) {
+      const late = r.error && r.error.code === 'ETIMEDOUT';
+      answer = { problem: late ? `el repo público no contestó en ${LOOKUP_MS / 1000} s` : 'el repo público no contestó (sin red, o la dirección no es un repo)' };
+      return answer;
+    }
+    const prs = new Set();
+    const tips = new Set();
+    for (const row of r.stdout.split('\n')) {
+      const m = /^([0-9a-f]{40}(?:[0-9a-f]{24})?)\t(\S+)$/.exec(row);
+      if (!m) continue;
+      tips.add(m[1]);
+      const pr = /^refs\/pull\/([0-9]+)\/head$/.exec(m[2]);
+      if (pr) prs.add(Number(pr[1]));
+    }
+    answer = { prs, tips: [...tips] };
+    return answer;
+  };
+  return {
+    /** ¿N es un pedido del repo público? */
+    pr(n) { const a = ask(); return !!a.prs && a.prs.has(Number(n)); },
+    /** ¿El commit (entero o abreviado) es del repo público? */
+    commit(abbr) {
+      const a = ask();
+      if (!a.prs) return false;
+      const key = String(abbr).toLowerCase();
+      if (commits.has(key)) return commits.get(key);
+      let yes = false;
+      const r = git(repo, ['rev-parse', '--verify', '--quiet', '--end-of-options', `${key}^{commit}`], { tolerate: true });
+      if (r.status === 0) {
+        if (!localTips) {
+          // las puntas del público que este clon tiene (una que no trajo no sirve para llegar a nada)
+          const c = spawnSync('git', ['cat-file', '--batch-check'], { cwd: repo, encoding: 'utf8', input: `${a.tips.join('\n')}\n` });
+          localTips = c.status === 0 ? c.stdout.split('\n').filter((l) => / commit /.test(l)).map((l) => l.split(' ')[0]) : [];
+        }
+        if (localTips.length) {
+          // vacío = se llega al commit desde alguna de esas puntas
+          const l = spawnSync('git', ['rev-list', '-n', '1', '--stdin'], { cwd: repo, encoding: 'utf8', input: `${r.stdout.trim()}\n${localTips.map((t) => `^${t}`).join('\n')}\n` });
+          yes = l.status === 0 && l.stdout.trim() === '';
+        }
+      }
+      commits.set(key, yes);
+      return yes;
+    },
+    /** Por qué no se pudo preguntar (`null` si se pudo, o si no hizo falta). */
+    problem() { return answer && answer.problem ? answer.problem : null; },
+  };
+}
+/** ¿Lo encontrado nombra un pedido o un commit del repo público? Sin lector, nunca. */
+function isPublicReference(f, lookup) {
+  if (!lookup) return false;
+  if (f.form === 'pr-number') { const m = /#([0-9]+)$/.exec(f.value); return !!m && lookup.pr(m[1]); }
+  if (f.form === 'azure-run') { const m = /^#([0-9]+)$/.exec(f.value); return !!m && lookup.pr(m[1]); }
+  if (f.form === 'private-commit') { const m = /([0-9a-f]{7,40})`?$/.exec(f.value); return !!m && lookup.commit(m[1]); }
+  return false;
 }
 
 /**
@@ -413,15 +516,16 @@ function loadAllowed(text) {
 // por la ruta con que sale (la que vale en los dos repos) o por la del archivo que se edita (en el del equipo, un papel)
 const declares = (e, f, file) => (e.file === file.dest || e.file === file.real) && (e.form || 'pr-number') === f.form && e.value === f.value;
 
-/** Las formas de un archivo de prosa que se publica: todas (`all`) y sin los datos declarados (`kept`). */
-function findingsOf(pub, dest, allowed) {
+/** Las formas de un archivo de prosa que se publica: todas (`all`) y sin los datos declarados ni lo que ya es del repo
+ *  público (`kept`). */
+function findingsOf(pub, dest, allowed, lookup = null) {
   const file = pub.files.get(dest);
   const text = file.text();
   if (text === null || text === undefined) throw new CouldNot(`${shown(file.real)} se publica como prosa y no tiene texto que mirar`);
   const lines = text.split(/\r?\n/);
   // `ptext`: el renglón donde empieza cada una (para decir después cuál es la nueva: la de un renglón que no estaba)
   const all = [...scanAll(text, 'prose'), ...teamPaths(text, dest, pub.pathsEnv)].map((f) => ({ ...f, ptext: lines[f.line - 1] }));
-  const kept = all.filter((f) => !allowed.some((e) => declares(e, f, { real: file.real, dest })));
+  const kept = all.filter((f) => !allowed.some((e) => declares(e, f, { real: file.real, dest })) && !isPublicReference(f, lookup));
   return { kept, all, text };
 }
 function countByKey(findings) {
@@ -432,7 +536,7 @@ function countByKey(findings) {
 
 // ── la corrida ───────────────────────────────────────────────────────────────────────────────────────────────────
 function parseArgs(argv) {
-  const a = { mode: 'staged', repo: null, range: null, json: false, ref: 'HEAD', config: null };
+  const a = { mode: 'staged', repo: null, range: null, json: false, ref: 'HEAD', config: null, publicRemote: null };
   for (let i = 0; i < argv.length; i++) {
     const x = argv[i];
     const value = () => {
@@ -446,8 +550,9 @@ function parseArgs(argv) {
     else if (x === '--json') a.json = true;
     else if (x === '--ref') a.ref = value();
     else if (x === '--config') a.config = value();
+    else if (x === '--public-remote') a.publicRemote = value();
     else if (x === '--help' || x === '-h') a.help = true;
-    else throw new CouldNot(`no entiendo «${shown(x)}» (uso: [--repo <dir>] [--config <archivo>] [--range <base>...<punta>] | --all [--json] [--ref <commit>])`);
+    else throw new CouldNot(`no entiendo «${shown(x)}» (uso: [--repo <dir>] [--config <archivo>] [--public-remote <remoto>] [--range <base>...<punta>] | --all [--json] [--ref <commit>])`);
   }
   return a;
 }
@@ -524,6 +629,7 @@ function runAll(repo, args) {
   const pub = published(kind, repo, tree, shown(args.ref), config, true);
   const allowedEntry = tree.find((e) => e.ruta === ALLOWED_PATH && e.tipo === 'blob');
   const allowed = loadAllowed(allowedEntry ? git(repo, ['cat-file', 'blob', allowedEntry.obj]).stdout : null);
+  const lookup = publicLookup(repo, args.publicRemote || null);
   const forms = {};
   const files = {};
   const seen = new Set();
@@ -533,7 +639,7 @@ function runAll(repo, args) {
   let looked = 0;
   for (const dest of [...pub.files.keys()].sort()) {
     if (zoneOf(dest) !== 'prose') continue;
-    const r = findingsOf(pub, dest, allowed);
+    const r = findingsOf(pub, dest, allowed, lookup);
     looked++;
     const real = pub.files.get(dest).real;
     paths.push(real);
@@ -556,7 +662,7 @@ function runAll(repo, args) {
   const underRoot = (value) => (config.nonPublicRoots || []).includes(String(value).split('/')[0]);
   const visibleHere = (e) => e.form !== 'team-path' || (env.team ? !!env.team(e.value) || !underRoot(e.value) : underRoot(e.value));
   const stale = allowed.filter((e) => e.form && e.form !== 'pr-number' && !seen.has(e) && visibleHere(e)).map((e) => ({ file: e.file, form: e.form }));
-  return { outcome: 'counted', mode: kind, total, looked, paths, forms, files, stale, ...(args.detail ? { list } : {}) };
+  return { outcome: 'counted', mode: kind, total, looked, paths, forms, files, stale, publicProblem: lookup.problem(), ...(args.detail ? { list } : {}) };
 }
 
 function run(args) {
@@ -590,6 +696,7 @@ function run(args) {
   }
   const allowedEntry = afterTree.find((e) => e.ruta === ALLOWED_PATH && e.tipo === 'blob');
   const allowed = loadAllowed(allowedEntry ? git(repo, ['cat-file', 'blob', allowedEntry.obj]).stdout : null);
+  const lookup = publicLookup(repo, args.publicRemote || null);
 
   const findings = [];
   let looked = 0;
@@ -608,10 +715,10 @@ function run(args) {
     // igual a algún padre: el mismo archivo, con la misma ruta, sin tocar, y sin que el commit cambie qué se publica
     // (una ruta ya escrita pasa a ser del equipo si lo que nombra deja de salir): nada nuevo, y no se lee
     if (!reclassified && what.parents.some((p, i) => beforeDest[i] === dest && befores[i].pub.files.get(dest).real === file.real && !p.changes.has(file.real))) continue;
-    const now = findingsOf(after, dest, allowed);
+    const now = findingsOf(after, dest, allowed, lookup);
     looked++;
     if (!now.kept.length) continue;
-    const beforeOf = (b, d) => (d ? findingsOf(b.pub, d, allowed).kept : []);
+    const beforeOf = (b, d) => (d ? findingsOf(b.pub, d, allowed, lookup).kept : []);
     const before = beforeDest.map((d, i) => beforeOf(befores[i], d));
     const counts = before.map(countByKey);
     const base = common ? countByKey(beforeOf(common, beforeIn(common, null))) : null;
@@ -666,11 +773,11 @@ function run(args) {
     }
   }
   findings.sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : a.line - b.line));
-  return { outcome: findings.length ? 'findings' : 'clean', findings, looked, kind };
+  return { outcome: findings.length ? 'findings' : 'clean', findings, looked, kind, publicProblem: lookup.problem() };
 }
 
 // ── el mensaje, la constancia y la salida ────────────────────────────────────────────────────────────────────────
-function report(findings, blocks) {
+function report(findings, blocks, publicProblem = null) {
   const l = [blocks
     ? `🛑 historia interna en la prosa que se publica — el commit no se crea (${findings.length} hallazgo(s)):`
     : `⚠️  historia interna en la prosa que se publica — avisa, no frena (${findings.length} hallazgo(s)):`, ''];
@@ -683,7 +790,14 @@ function report(findings, blocks) {
     '  (b) Si es un marcador o un ejemplo genérico: escribilo como marcador (`story <N.M>`, `specs/<story>.md`).',
     `  (c) Si es un dato o un ejemplo que tiene que quedar tal cual: declararlo en ${ALLOWED_PATH}`,
     '      con su archivo (la ruta con que sale), su forma, el valor exacto y el motivo (nunca un archivo entero).',
+    '  (d) Si nombra un pedido o un commit del repo público: el pedido con numeral (`#N`); el control le pregunta al',
+    '      repo público si existen. Un número de Azure («PR N», «PR !N», una corrida) sigue siendo interno.',
     '', 'Guía: guides/publicacion-espejo.md §«La historia interna».');
+  const distinguishable = new Set(['pr-number', 'azure-run', 'private-commit']);
+  if (publicProblem && findings.some((f) => distinguishable.has(f.form))) {
+    l.push('', `No pude preguntarle al repo público (${publicProblem}): un pedido o un commit de ese repo no se distingue y`,
+      'cuenta como interno.');
+  }
   return l.join('\n');
 }
 // la carpeta del estado la sabe scripts/setup/harness/tycon-home.js, que viaja; sin él (un laboratorio con guiones
@@ -725,6 +839,7 @@ const HELP = [
   '  node scripts/publishing/internal-history.js [--repo <dir>] [--config <archivo>]   lo stageado (el pre-commit)',
   '  node scripts/publishing/internal-history.js --range <base>...<punta>              el diff de un pedido de cambio',
   '  node scripts/publishing/internal-history.js --all [--json] [--ref <commit>]       la cuenta de todo lo que se publica',
+  `  --public-remote <remoto|dirección>  el repo público (si no, \`origin\` cuando es de GitHub)`,
   `  ${SWITCH}=block|warn|0 pisa el modo escrito en ${CONFIG_PATH}`,
 ].join('\n');
 /** Un mensaje para imprimir: en UN renglón (un salto de línea adentro podría leerse como un comando del registro) y acotado. */
@@ -796,14 +911,14 @@ function main() {
   const blocking = r.findings.filter((f) => f.formMode === 'block');
   const warnings = r.findings.length - blocking.length;
   const blocks = m.mode === 'block' && blocking.length > 0;
-  if (r.findings.length) say(report(r.findings, blocks));
+  if (r.findings.length) say(report(r.findings, blocks, r.publicProblem));
   // `looked=0` también acá: un `.md` tocado que no era prosa del alcance, o que no se publica, no es «miré y está limpio»
   summary(blocking.length, 0, warnings ? `warnings=${warnings}` : r.looked ? '' : 'looked=0');
   record(args, { mode: m.mode, findings: r.findings, lowered: m.lowered, blocked: blocks, looked: r.looked });
   return blocks ? 1 : 0;
 }
 
-module.exports = { scan, FORMS, ZONES, zoneOf, teamPaths, effectiveMode, formModeOf, logicalLines, parseChanges, parseArgs, run, decisionOf, CouldNot };
+module.exports = { scan, FORMS, ZONES, zoneOf, teamPaths, effectiveMode, formModeOf, logicalLines, parseChanges, parseArgs, run, decisionOf, publicLookup, isPublicReference, CouldNot };
 
 // el código de salida se deja anotado y el proceso termina solo: `process.exit` corta la salida a medio escribir cuando
 // va por un tubo (la cuenta en JSON de `--all` son miles de renglones)

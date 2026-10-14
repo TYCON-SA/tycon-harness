@@ -21,8 +21,9 @@
 //     nombre contra la lista, y el correo tiene que ser un `noreply` de GitHub;
 //   · el nombre de la rama o de la marca, y que la ref sea una rama o una marca (una nota o un guardado no se publican);
 //   · un número de pedido en un mensaje o en un nombre de ref (la forma la define scripts/publishing/internal-history.js;
-//     un nombre de ref se mira además con sus separadores vueltos espacios, y no cuenta el número del asunto que GitHub
-//     le pone a un merge hecho en su web);
+//     un nombre de ref se mira además con sus separadores vueltos espacios). Un pedido del repo público no cuenta —el
+//     asunto con que GitHub mergea, «Merge pull request #N from …», es uno—: el control le pregunta al repo público
+//     (al remoto al que se empuja; en un rango o en un `gh`, al `origin` de GitHub) y, si no contesta, cuenta;
 //   · las rutas vedadas: las seis carpetas que nunca son públicas y las que sume la lista privada (`forbiddenPaths`).
 // PÚBLICO es todo remoto que no sea de Azure DevOps ni una carpeta local (que se sigue hasta su `origin`). Se decide con
 // la dirección que git le pasa al hook, nunca con `origin`; una dirección que no se sabe leer es pública.
@@ -580,20 +581,34 @@ function isDeclared(id, env) {
   return H.declaradas().ids.some((x) => H.mismaIdentidad(x, id));
 }
 
-/** El lector de números de pedido (la forma es de scripts/publishing/internal-history.js). Sin el archivo, no se mide. */
-function historyScanner() {
+/**
+ * El lector de números de pedido (la forma es de scripts/publishing/internal-history.js). Sin el archivo, no se mide.
+ * `from`: `{ top, remote }`, de dónde preguntar qué pedidos son del repo público (`remote` null = el `origin` de
+ * GitHub de `top`). Un pedido del público no es historia interna; si el público no contesta, cuenta, y
+ * `scan.publicProblem()` dice por qué. Sin `from`, o con un control anterior al lector, todo número cuenta.
+ */
+function historyScanner(from = null) {
   const file = path.join(ROOT, HISTORY_PATH);
   if (!fs.existsSync(file)) return null;
   let mod;
   try { mod = require(file); } catch (_) { throw new Blind('el control de historia interna (internal-history.js) está y no carga'); }
   if (!mod || typeof mod.scan !== 'function') throw new Blind('el control de historia interna (internal-history.js) no trae `scan`');
-  return (text) => {
+  const lookup = from && from.top && typeof mod.publicLookup === 'function' ? mod.publicLookup(from.top, from.remote || null) : null;
+  const scan = (text) => {
     try {
-      const found = mod.scan(String(text), 'message');
+      const found = mod.scan(String(text), 'message', lookup);
       if (!Array.isArray(found)) throw new TypeError('scan no devolvió una lista');
       return found;
     } catch (_) { throw new Blind('el control de historia interna no pudo mirar un texto'); }
   };
+  scan.publicProblem = () => (lookup ? lookup.problem() : null);
+  return scan;
+}
+/** La línea que explica por qué un número de pedido no se pudo distinguir del repo público, si hace falta. */
+function publicProblemLines(findings, scan) {
+  const problem = scan && typeof scan.publicProblem === 'function' ? scan.publicProblem() : null;
+  if (!problem || !findings.some((f) => f.category === 'historia-interna')) return [];
+  return [`   (no pude preguntarle al repo público qué pedidos tiene — ${problem}: un número de pedido suyo cuenta como interno)`];
 }
 
 // ── leer objetos de git ──────────────────────────────────────────────────────────────────────────────────────────
@@ -677,16 +692,6 @@ function makeReview(list, scan) {
     history(value, where);
   };
   /**
-   * El mensaje de un commit. Igual que `message`, con UNA salvedad: el asunto que GitHub le pone a un merge hecho en su
-   * web («Merge pull request #N from …») trae el número de un pedido que ya es público, y no lo escribió nadie. Sólo se
-   * saltea ese número, en esa forma exacta y en la primera línea: el resto de la línea y del mensaje se miran igual.
-   */
-  const commitMessage = (value, where) => {
-    const body = String(value == null ? '' : value);
-    for (const h of text(body, ROUTES.message)) add(h.categoria, h.regla, where(h.linea));
-    history(body.replace(GITHUB_MERGE_SUBJECT, 'Merge from '), where);
-  };
-  /**
    * El nombre de una rama o de una marca. El detector lo mira tal cual. El número de pedido no: la forma que define el
    * control de historia interna es la de la prosa (la sigla, un espacio y el número), y en un nombre de ref no hay espacios
    * (`arreglo/pr-123`, `PR#123`). Se mira también con los separadores vueltos espacios, y en mayúsculas y minúsculas.
@@ -697,9 +702,8 @@ function makeReview(list, scan) {
     const spaced = name.replace(/[^A-Za-z0-9]+/g, ' ').replace(/([A-Za-z])(?=\d)/g, '$1 ').trim();
     for (const variant of new Set([name, spaced, spaced.toUpperCase(), spaced.toLowerCase()])) history(variant, where);
   };
-  return { D, findings, add, text, message, commitMessage, refName };
+  return { D, findings, add, text, message, refName };
 }
-const GITHUB_MERGE_SUBJECT = /^Merge pull request #\d+ from (?=\S)/;
 
 /** `Nombre <correo> fecha zona` → el nombre contra la lista, y el correo: un `noreply` de GitHub. */
 function reviewIdentity(R, line, who, where) {
@@ -721,16 +725,16 @@ const isForbidden = (list, rel) => FORBIDDEN.some((p) => rel.startsWith(p)) || l
  * `Blind`. `partial`: se pasó el tope de tiempo con hallazgos ya encontrados (se dicen esos, y que faltó mirar).
  */
 function reviewPush({ top, url, lines, list, deadline, limitMs }) {
-  const scan = historyScanner();
+  const scan = historyScanner({ top, remote: url });
   const R = makeReview(list, scan);
   const looked = { commits: 0, objects: 0, refs: 0, tags: 0 };
   try {
     reviewPushInto(R, looked, { top, url, lines, list, deadline, limitMs });
   } catch (e) {
     if (!(e instanceof OutOfTime) || !R.findings.length) throw e;
-    return { findings: R.findings, looked, partial: e.message, history: Boolean(scan) };
+    return { findings: R.findings, looked, partial: e.message, history: Boolean(scan), publicProblem: publicProblemLines(R.findings, scan) };
   }
-  return { findings: R.findings, looked, partial: null, history: Boolean(scan) };
+  return { findings: R.findings, looked, partial: null, history: Boolean(scan), publicProblem: publicProblemLines(R.findings, scan) };
 }
 
 /** `top`: la carpeta desde la que se le habla a git (la raíz del árbol de trabajo, o el repo desnudo). */
@@ -812,7 +816,9 @@ function reviewCommitsInto(R, looked, { top, tips, excludes, list, tick }) {
       const header = (key) => { const x = new RegExp(`^${key} (.*)$`, 'm').exec(r.head); return x ? x[1] : ''; };
       reviewIdentity(R, header('author'), 'author', `el autor del commit ${short(sha)}`);
       reviewIdentity(R, header('committer'), 'committer', `el committer del commit ${short(sha)}`);
-      R.commitMessage(r.body, (linea) => `el mensaje del commit ${short(sha)} (línea ${linea})`);
+      // el asunto con que GitHub mergea («Merge pull request #N from …») no tiene salvedad propia: su número es un pedido
+      // del repo público, y el control lo distingue preguntándole a ese repo
+      R.message(r.body, (linea) => `el mensaje del commit ${short(sha)} (línea ${linea})`);
       const extra = otherHeaders(r.head);
       if (extra) R.message(extra, () => `la cabecera del commit ${short(sha)} (una marca incrustada u otra cabecera de más)`);
     }
@@ -1001,6 +1007,7 @@ function prePush({ remoteName, url, input, cwd = process.cwd(), env = process.en
     result.findings = r.findings;
     result.looked = r.looked;
     result.history = r.history;
+    if (r.publicProblem.length) result.publicProblem = r.publicProblem;
     if (r.partial) result.partial = r.partial;
     if (r.findings.length) { result.verdict = 'findings'; record('finding', 'bloqueo'); return { code: 1, result }; }
     record(list.generic ? 'generic-only' : 'clean', 'paso');
@@ -1041,6 +1048,7 @@ function prePushMessage(result) {
     L.push(`⛔ EMPUJE FRENADO — el remoto es público y ${n} cosa(s) de lo que este empuje publica no pueden salir:`);
     for (const f of result.findings.slice(0, MAX_SHOWN)) L.push(`   · [${f.category}${f.rule ? `/${f.rule}` : ''}] ${f.place}`);
     if (n > MAX_SHOWN) L.push(`   · … y ${n - MAX_SHOWN} más`);
+    if (result.publicProblem) L.push(...result.publicProblem);
     if (result.partial) L.push(`   Y no terminé de mirar: ${result.partial}. Puede haber más.`);
     L.push('   Nada salió. Lo que se empuja a un remoto público queda publicado aunque después se borre la rama.');
     L.push('   Cómo seguir:');
@@ -1102,7 +1110,7 @@ function rangeMode({ base, head, branch = null, titleFile = null, bodyFile = nul
     // 🔴 Acá el control de historia interna es obligatorio. En el `pre-push` de una máquina puede faltar (un arnés
     // instalado anterior a ese control) y se dice; en la validación corre el árbol del propio repo, que lo trae: si
     // falta, alguien lo sacó, y un pedido mirado sin él saldría verde con un número de pedido en el título.
-    const scan = historyScanner();
+    const scan = historyScanner({ top, remote: null });
     if (!scan) throw new Blind(`falta el control de historia interna (${HISTORY_PATH}): los números de pedido no se pueden mirar, y un pedido no se da por revisado sin eso`);
     result.history = true;
     const R = makeReview(list, scan);
@@ -1122,6 +1130,8 @@ function rangeMode({ base, head, branch = null, titleFile = null, bodyFile = nul
       result.partial = e.message;
     }
     result.findings = R.findings;
+    const problem = publicProblemLines(R.findings, scan);
+    if (problem.length) result.publicProblem = problem;
     if (R.findings.length) { result.verdict = 'findings'; record('finding', 'bloqueo'); return { code: 1, result }; }
     record('clean', 'paso');
     return { code: 0, result };
@@ -1154,6 +1164,7 @@ function rangeMessage(result) {
     L.push(`⛔ PEDIDO FRENADO — ${n} cosa(s) de lo que este pedido publica no pueden estar en el repo público:`);
     for (const f of result.findings.slice(0, MAX_SHOWN)) L.push(`   · [${f.category}${f.rule ? `/${f.rule}` : ''}] ${f.place}`);
     if (n > MAX_SHOWN) L.push(`   · … y ${n - MAX_SHOWN} más`);
+    if (result.publicProblem) L.push(...result.publicProblem);
     if (result.partial) L.push(`   Y no terminé de mirar: ${result.partial}. Puede haber más.`);
     L.push('   La rama de un pedido YA es pública: no mergear no la despublica. Qué hacer, en este orden:');
     L.push('     1. cerrar el pedido (sin mergearlo);');
@@ -1427,7 +1438,7 @@ function reviewGhCommand(command, { cwd = process.cwd(), env = process.env, powe
     // la lista es obligatoria cuando se SABE que alguno va al repo público del arnés; si de todos sólo «no se sabe», en
     // una máquina sin lista se mira lo que no la necesita (y se dice)
     const list = resolveList(anyTop, env, { optional: !certain });
-    const scan = historyScanner();
+    const scan = historyScanner(anyTop ? { top: anyTop, remote: null } : null);
     const R = makeReview(list, scan);
     for (const { c, dir, top } of mine) {
       for (const t of c.textos) R.message(t.texto, (linea) => `el texto de ${t.de === 'argumento' ? 'un argumento' : t.de} de \`${c.resumen}\` (línea ${linea})`, ROUTES.pullRequest);
@@ -1438,6 +1449,7 @@ function reviewGhCommand(command, { cwd = process.cwd(), env = process.env, powe
       const L = [`⛔ ${names} FRENADO — ${where} y ${R.findings.length} cosa(s) de lo que publica no pueden salir:`];
       for (const f of R.findings.slice(0, MAX_SHOWN)) L.push(`   · [${f.category}${f.rule ? `/${f.rule}` : ''}] ${f.place}`);
       if (R.findings.length > MAX_SHOWN) L.push(`   · … y ${R.findings.length - MAX_SHOWN} más`);
+      L.push(...publicProblemLines(R.findings, scan));
       L.push('   Nada se publicó. Corregí el texto y volvé a correr el comando; si es un freno falso, la salida es una excepción');
       L.push('   con motivo en la lista privada (`permitidos`), como en el exportador.');
       return { code: 2, lines: L };
