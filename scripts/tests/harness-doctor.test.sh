@@ -528,7 +528,12 @@ case "$SALIDA" in *"nombre viejo ~/.claude/$LN sigue andando y apunta al lugar"*
 case "$SALIDA" in *"registrado por el nombre viejo: settings.json 1"*"harness.js relocate"*) ok "T26 lo registrado por el viejo, por archivo, como dato y con el comando" ;; *) mal "T26 el conteo: $(printf '%s\n' "$SALIDA" | grep -i 'registrado')" ;; esac
 [ "$(printf '%s' "$JSON" | jtxt "(d['place']['name'], d['place']['kind'], d['legacy']['to_place'], d['registered_by_legacy']['total'], len(d['fail']))")" = "('$PN', 'link', True, 1, 0)" ] \
   && ok "T26 --json: place (nombre, enlace), legacy (apunta al lugar), registered_by_legacy 1, sin fail" || mal "T26 --json: $(printf '%s' "$JSON" | jtxt "{k: d.get(k) for k in ('place','legacy','registered_by_legacy','fail')}")"
-printf '%s\n' "$SALIDA" | grep -qiE 'story|8\.19' && mal "T26 una línea nombra una story" || ok "T26 ninguna línea nombra una story"
+# «8.19» como número suelto: la salida trae la hora de instalación con milésimas, y «…:38.190Z» lo contenía de a ratos
+# (public-ci, 2026-10-14, Node 22: rojo sin ninguna story en la salida)
+T26_STORY='story|(^|[^0-9.])8\.19([^0-9]|$)'
+printf '%s\n' '  ✓ versión 2026.10.14+b815072 · instalada 2026-10-14T05:55:38.190Z' | grep -qiE "$T26_STORY" && mal "T26 el patrón de story toma la hora de instalación como una story" || ok "T26 el patrón de story no toma la hora de instalación (…:38.190Z)"
+printf '%s\n' 'tanda B de la 8.19' '(8.19)' 'una Story' | grep -ciE "$T26_STORY" | grep -qx 3 && ok "T26 espejo: el patrón sí ve «8.19» suelto y «story»" || mal "T26 espejo: el patrón no ve «8.19» suelto o «story»"
+printf '%s\n' "$SALIDA" | grep -qiE "$T26_STORY" && mal "T26 una línea nombra una story: $(printf '%s\n' "$SALIDA" | grep -iE "$T26_STORY")" || ok "T26 ninguna línea nombra una story"
 # (2) mudada: el hook por el lugar, el permiso con las dos formas → sólo permisos
 cp "$BASE/t26-settings.json" "$TYCON_SETTINGS_PATH"
 t26_hook "node \"\$HOME/.claude/$PN/scripts/hooks/lab-hook.js\""
