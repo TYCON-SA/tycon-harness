@@ -54,16 +54,23 @@ function makeVersion(dir, mark) {
   fs.writeFileSync(path.join(dir, 'scripts', 'where.ps1'), '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8\nWrite-Output ("root=" + $PSScriptRoot)\nWrite-Output ("cmd=" + $PSCommandPath)\n');
 }
 
-/** Los que toman la carpeta, por la ruta de la unión. En posix el archivo y la carpeta de trabajo se arman igual. */
-function holders(kind, dir, env, isWin) {
+/**
+ * Los que toman la carpeta, por la ruta de la unión. En posix el archivo y la carpeta de trabajo se arman igual. `file` y
+ * `cwd` (relativos a `dir`) tienen que EXISTIR: con un archivo que no está, el proceso sigue vivo sin tomar nada y la
+ * medición miente (182 #13456: en una versión de verdad no hay `held.txt` ni `sub/`). Si no existen, tira.
+ */
+function holders(kind, dir, env, isWin, { file = 'held.txt', cwd = 'sub' } = {}) {
   const ps = L.scanPath('pwsh', { env })[0] || L.scanPath('powershell', { env })[0];
   const out = [];
+  for (const [want, rel] of [[kind === 'file' || kind === 'all', file], [kind === 'cwd' || kind === 'all', cwd]]) {
+    if (want && !fs.existsSync(path.join(dir, rel))) throw new Error(`holders: ${path.join(dir, rel)} no existe: no puedo tomarlo`);
+  }
   if (kind === 'file' || kind === 'all') {
-    const f = path.join(dir, 'held.txt');
+    const f = path.join(dir, file);
     if (isWin && ps) out.push(spawn(ps, ['-NoProfile', '-NonInteractive', '-Command', `$f = [System.IO.File]::Open(${quote(f)}, 'Open', 'Read', 'None'); Start-Sleep -Seconds 600`], { env, stdio: 'ignore', windowsHide: true }));
     else out.push(spawn(process.execPath, ['-e', 'require("fs").openSync(process.argv[1],"r");setTimeout(()=>{},600000)', f], { env, stdio: 'ignore', windowsHide: true }));
   }
-  if (kind === 'cwd' || kind === 'all') out.push(spawn(process.execPath, ['-e', 'setTimeout(()=>{},600000)'], { cwd: path.join(dir, 'sub'), env, stdio: 'ignore', windowsHide: true }));
+  if (kind === 'cwd' || kind === 'all') out.push(spawn(process.execPath, ['-e', 'setTimeout(()=>{},600000)'], { cwd: path.join(dir, cwd), env, stdio: 'ignore', windowsHide: true }));
   if ((kind === 'watcher' || kind === 'all') && isWin && ps) {
     const script = `$w = New-Object System.IO.FileSystemWatcher ${quote(dir)}; $w.IncludeSubdirectories = $true; $w.EnableRaisingEvents = $true; Start-Sleep -Seconds 600`;
     out.push(spawn(ps, ['-NoProfile', '-NonInteractive', '-Command', script], { env, stdio: 'ignore', windowsHide: true }));

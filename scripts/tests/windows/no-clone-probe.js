@@ -293,7 +293,8 @@ function measureLinkLayout({ own, home, author, env0, env, run, versionOf, state
   const isLinkP = (p) => { try { return fs.lstatSync(p).isSymbolicLink(); } catch (_) { return false; } };
   const ls = (d) => { try { return fs.readdirSync(d); } catch (_) { return []; } };
   const vdir = (v) => path.join(versions, v);
-  const hold = (dir) => { const hs = SP.holders('all', dir, env0, true); lockers.push(...hs); wait(2500); return hs; };
+  // (un archivo y una carpeta que una versión de verdad trae: version.json y scripts/, abiertos por la ruta que se da)
+  const hold = (dir) => { const hs = SP.holders('all', dir, env0, true, { file: 'version.json', cwd: 'scripts' }); lockers.push(...hs); wait(2500); return hs; };
   const release = (hs) => { for (const h of hs) kill(h); wait(1500); };
   const out = (r) => `${r.stdout}\n${r.stderr}`;
   const breaks = (id, area, text) => rec.finding(`no-clone:${id}`, area, text, 'W8', { severity: 'breaks' });
