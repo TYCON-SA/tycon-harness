@@ -1650,12 +1650,16 @@ function computeSmartReloop({ repo, story, files, iter, forceFullReloop, costTie
   // `step5-start` del registro ES el de `iter-1` (acá se calcula; `logStep5Start` anota el nuevo
   // después). Sin registro → corte = la foto, como siempre.
   let ultimoRevisorMs = null;
+  let lineasRegistro = null;
+  try {
+    const lp = path.join(stateDirOf(os.homedir()), 'advisor-runs', `${sessionIdFileKey()}.jsonl`);
+    lineasRegistro = fs.readFileSync(lp, 'utf8').split('\n');
+  } catch { /* sin registro de spawns → el corte sigue siendo la foto, y la vista por revisor no se mide */ }
   try {
     const { ultimoRevisorDeLaRonda } = require('./lib/late-snapshot.js');
-    const lp = path.join(stateDirOf(os.homedir()), 'advisor-runs', `${sessionIdFileKey()}.jsonl`);
-    const ur = ultimoRevisorDeLaRonda(fs.readFileSync(lp, 'utf8').split('\n'), iter - 1);
+    const ur = ultimoRevisorDeLaRonda(lineasRegistro || [], iter - 1);
     if (Number.isFinite(ur.ts)) ultimoRevisorMs = ur.ts;
-  } catch { /* sin registro de spawns → el corte sigue siendo la foto */ }
+  } catch { /* ídem */ }
   // Delta = UNIÓN de TRES fuentes (fix verificación adversarial 2026-06-11 —
   // antes fileEvents/mtime eran either/or: un fileEvents truncado, p.ej. por un
   // `marker.js set` mid-pipeline pre-fix, o ediciones hechas SOLO por Bash
@@ -1752,10 +1756,70 @@ function computeSmartReloop({ repo, story, files, iter, forceFullReloop, costTie
     return out;
   }
 
+  // ── La versión del cambio que vio CADA revisor (2026-10-14) ─────────────────────────────────────
+  // 🔴 El delta de arriba es de la VUELTA: mira desde la foto, y la foto se toma sola al lanzar el
+  // último revisor. Un arreglo hecho mientras corrían los demás, antes de ese último lanzamiento, queda
+  // adentro de la foto: el delta no lo trae y el revisor que se había lanzado ANTES del arreglo —que no
+  // lo vio— se salteaba por «superficie no tocada». Por eso, para cada revisor, también cuenta lo
+  // editado después de SU lanzamiento (la hora la escribe el hook en cada spawn real).
+  // Sólo SUMA: el delta de la vuelta se sigue aplicando igual a todos, así que nadie que antes entraba
+  // puede quedar afuera por esto.
+  //   · lanzado en la vuelta anterior → lo editado después de su lanzamiento;
+  //   · no estaba en esa vuelta (la anterior lo había salteado) → lo editado desde que arrancó la vuelta;
+  //   · estaba en la vuelta y no consta su lanzamiento, o no hay registro de la vuelta → no se sabe qué
+  //     vio: se re-corre por las dudas, y se dice.
+  let vista;
+  try {
+    vista = require('./lib/late-snapshot.js').vistaPorRevisor(lineasRegistro || [], iter - 1);
+  } catch (e) {
+    vista = { medible: false, motivo: `no se pudo leer el registro de lanzamientos (${(e && e.message) || e})` };
+  }
+  const ultimaEdicion = new Map();     // path → ms de su edición más reciente, por cualquiera de las fuentes
+  if (vista.medible) {
+    const anotarEdicion = (p, t) => {
+      if (!p || !Number.isFinite(t)) return;
+      const v = ultimaEdicion.get(p);
+      if (v === undefined || t > v) ultimaEdicion.set(p, t);
+    };
+    // Las mismas fuentes que el delta (registro de ediciones, mtime, git), con los mismos filtros.
+    for (const e of Array.isArray(marker.fileEvents) ? marker.fileEvents : []) {
+      if (e && e.path && e.ts && delRepo(honesty.sinProbes([e.path])).length) anotarEdicion(e.path, new Date(e.ts).getTime());
+    }
+    for (const f of [...currentFiles, ...honesty.sinProbes(gitArchivosDelWorkingTree(repo))]) {
+      try { anotarEdicion(f, fs.statSync(f).mtimeMs); } catch { /* borrado → si es nuevo, lo cubre el delta por nombre */ }
+    }
+  }
+  const enElDelta = new Set(delta);
+  const noVistosDesde = (ms) => [...ultimaEdicion].filter(([p, t]) => t > ms && !enElDelta.has(p)).map(([p]) => p);
+  const noVistosPorRevisor = {};       // revisor → archivos de su alcance editados después de su lanzamiento
+  const sinVista = [];                 // revisores re-corridos porque no se sabe qué versión vieron
+
   const rerun = [];
   const skipped = [];
   for (const adv of fullSet.all) {
-    const { affected, reason } = advisorAffectedByDelta(adv, delta);
+    let { affected, reason } = advisorAffectedByDelta(adv, delta);
+    if (!affected && !vista.medible) {
+      affected = true;
+      reason = `no se sabe qué versión del cambio vio en la vuelta ${iter - 1} (${vista.motivo}) → se re-corre por las dudas`;
+      sinVista.push(adv);
+    } else if (!affected) {
+      const lanzado = vista.lanzamientos.get(adv);
+      if (lanzado === undefined && vista.esperados.has(adv)) {
+        affected = true;
+        reason = `estaba en la vuelta ${iter - 1} y no consta su lanzamiento → no se sabe qué vio: se re-corre por las dudas`;
+        sinVista.push(adv);
+      } else {
+        const desde = lanzado !== undefined ? lanzado : vista.inicioMs;
+        const enSuAlcance = noVistosDesde(desde).filter((f) => advisorAffectedByDelta(adv, [f]).affected);
+        if (enSuAlcance.length) {
+          affected = true;
+          noVistosPorRevisor[adv] = enSuAlcance;
+          reason = lanzado !== undefined
+            ? `'${enSuAlcance[0]}' se editó después de su lanzamiento en la vuelta ${iter - 1} (${new Date(lanzado).toISOString()}): no lo vio`
+            : `'${enSuAlcance[0]}' se editó durante la vuelta ${iter - 1}, que lo había salteado: no lo vio`;
+        }
+      }
+    }
     if (affected) {
       rerun.push({ name: adv, reason });
     } else {
@@ -1797,6 +1861,24 @@ function computeSmartReloop({ repo, story, files, iter, forceFullReloop, costTie
     );
   }
 
+  // Por stderr también, por la misma razón que el aviso de arriba: el JSON lo puede filtrar quien llama.
+  const revisoresNoVieron = Object.keys(noVistosPorRevisor);
+  if (revisoresNoVieron.length) {
+    process.stderr.write(
+      `⚠ ${revisoresNoVieron.length} revisor(es) de la vuelta ${iter - 1} no vieron un arreglo hecho después de ` +
+      `lanzarse (quedó adentro de la foto): ` +
+      `${revisoresNoVieron.map((a) => `${a} (${noVistosPorRevisor[a].slice(0, 3).map((f) => path.basename(f)).join(', ')})`).join('; ')}.\n` +
+      `   ESTA vuelta los re-corre.\n`,
+    );
+  }
+  if (sinVista.length) {
+    process.stderr.write(
+      `⚠ no se sabe qué versión del cambio vieron ${sinVista.length} revisor(es) en la vuelta ${iter - 1}` +
+      `${vista.medible ? ' (estaban en la vuelta y no consta su lanzamiento)' : ` (${vista.motivo})`}: ` +
+      `se re-corren por las dudas — ${sinVista.join(', ')}.\n`,
+    );
+  }
+
   const suspectEmptyDelta = delta.length === 0;
   const emptyDeltaWarning = suspectEmptyDelta
     ? `⚠ DELTA VACÍO en un re-loop (iter ${iter}) — un re-loop sigue a fixes, así que un delta vacío ` +
@@ -1826,7 +1908,13 @@ function computeSmartReloop({ repo, story, files, iter, forceFullReloop, costTie
         `lanzar el último revisor — no la repitas a mano después de arreglar.`,
     } : {}),
     ...(Object.keys(reloopModelHints).length ? { reloop_model_hints: reloopModelHints, reloop_model_hints_note: 'tier deep (Opus) → sonnet en re-loop: el juicio de scope grande ya corrió en iter 1; ignorá el hint si el delta toca specs.' } : {}),
-    note: suspectEmptyDelta
+    ...(revisoresNoVieron.length ? { no_vistos_por_revisor: noVistosPorRevisor } : {}),
+    vista_por_revisor: vista.medible
+      ? { medible: true, ...(sinVista.length ? { sin_vista: sinVista } : {}) }
+      : { medible: false, motivo: vista.motivo, sin_vista: sinVista },
+    note: !vista.medible && sinVista.length
+      ? `no se sabe qué versión del cambio vio cada revisor en la vuelta ${iter - 1} (${vista.motivo}): se re-corren todos los que el delta no traía. Ver vista_por_revisor.`
+      : suspectEmptyDelta
       ? `delta vacío en un re-loop → ver "warning": snapshot probablemente post-fixes. NO degradar a "todo skip" en silencio.`
       : skipped.length > 0
         ? `${skipped.length}/${fullSet.all.length} advisors skip por surface intacta. Override con --force-full-reloop si dudás.`

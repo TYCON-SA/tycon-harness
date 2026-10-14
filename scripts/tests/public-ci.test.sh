@@ -12,6 +12,11 @@
 #         vive en `scripts/publishing/public-files/.github/workflows/`; en la copia pública, en `.github/workflows/`) y
 #         da rojo, nombrando la regla, con cada copia alterada: una alteración por regla, y una por cada forma de
 #         escribir lo prohibido que las reglas con nombre no ven (ahí la roja es `shape`, la forma exacta del archivo).
+#   T24 · PublicCi_PartesQueJuntasSonTodo (2026-10-14) — la corrida partida para correr a la vez: con
+#         TYCON_PUBLIC_CI_PART=checks corren todos los pasos menos las portables; con suites-<i>-of-<n>, sólo las portables
+#         con su parte (TYCON_PORTABLE_SHARD=<i>/<n>); un valor que no es una parte sale 2 sin correr nada. Y
+#         portable-suites.test.sh, sobre un repo de mentira: las <n> partes juntas son todas las portables, ninguna en dos,
+#         cada parte con alguna, las más pesadas primero; una parte mal escrita o un reparto imposible es rojo.
 #
 # 🔴 El entorno de git de quien llama NO decide nada. Un hook de git (o un `git rebase --exec`) le exporta a lo que
 #    lanza GIT_DIR, GIT_INDEX_FILE, GIT_WORK_TREE y GIT_COMMON_DIR, y esas variables le ganan a la carpeta: sin limpiarlas,
@@ -38,7 +43,7 @@ trap 'rm -rf "${T}"' EXIT
 mkdir -p "${T}/home"
 export HOME="${T}/home" TYCON_NO_NIGHTLY_EXAM=1 TYCON_NO_GUI_ENV=1 TYCON_CODEX=0
 unset XDG_CONFIG_HOME TYCON_PORTABLE_HOME TYCON_PUBLIC_CI_OUT TYCON_PUBLIC_CI_PARALLEL TYCON_PUBLIC_CI_CAP_MS \
-  TYCON_CLEAN_MACHINE TYCON_CLEAN_MACHINE_SOURCE
+  TYCON_CLEAN_MACHINE TYCON_CLEAN_MACHINE_SOURCE TYCON_PUBLIC_CI_PART TYCON_PORTABLE_SHARD TYCON_PORTABLE_PARALLEL
 # git de la suite: sin las variables que git le pasa a lo que lanza un hook (la carpeta decide el repo, nada más)
 lab_git() {
   env -u GIT_DIR -u GIT_INDEX_FILE -u GIT_WORK_TREE -u GIT_COMMON_DIR \
@@ -92,7 +97,7 @@ make_repo() { # <carpeta>
   fake_js "${r}/build/generate.js" build-generate
   fake_js "${r}/scripts/tests/suites-coverage.test.js" suites-coverage
   # las portables: anota además con qué layout la llamaron y qué repo ve git desde un paso (el de --root, no el de quien llama)
-  printf '%s\n' 'echo "portable-suites skills=${TYCON_SKILLS_DIR:-} guides=${TYCON_GUIDES_DIR:-} git=$(git rev-parse --show-toplevel 2>/dev/null)" >> .calls' > "${r}/scripts/tests/portable-suites.test.sh"
+  printf '%s\n' 'echo "portable-suites skills=${TYCON_SKILLS_DIR:-} guides=${TYCON_GUIDES_DIR:-} git=$(git rev-parse --show-toplevel 2>/dev/null) shard=${TYCON_PORTABLE_SHARD:-}" >> .calls' > "${r}/scripts/tests/portable-suites.test.sh"
   # el banco: tiene que dejar su reporte donde le dicen
   cat > "${r}/scripts/controls-bench/runner.js" <<'JS'
 const fs = require('fs');
@@ -175,7 +180,7 @@ is "T21 (d) todo verde sale 0" 0 "${RC}"
 is "T21 (d) los siete pasos, en orden" "${SEVEN}" "$(steps_of "${R}.out")"
 is "T21 (d) una línea «✅ public-ci: <paso> (Ns)» por paso" 7 "$(grep -cE '^✅ public-ci: [a-z-]+ \([0-9]+s\)$' "${R}.out")"
 is "T21 (d) la última línea es el resumen" "✅ public-ci: 7 pasos verdes" "$(tail -n 1 "${R}.out")"
-printf '%s\n' "build-check " "build-generate --check" "suites-coverage " "portable-suites skills=${R}/skills guides=${R} git=${R}" \
+printf '%s\n' "build-check " "build-generate --check" "suites-coverage " "portable-suites skills=${R}/skills guides=${R} git=${R} shard=" \
   "controls-bench --tool both --baseline check --json ${R}.ci/bench.json" > "${R}.expected"
 if calls_of "${R}" | cmp -s - "${R}.expected"; then ok "T21 (d) cada paso se llamó una vez, en orden, con sus argumentos, desde la raíz y con git mirando el repo de --root"
 else no "T21 (d) las llamadas no son las esperadas: $(calls_of "${R}" | tr '\n' '|')"; fi
@@ -388,6 +393,88 @@ is "T21 con una entrada relativa en el PATH todo verde sale 0" 0 "${RC}"
 printf '✅\t%s\n' "agent-skills/tycon-pipeline/scripts/tests/beta.test.sh" "arnes/tests/alpha.test.js" "arnes/tests/weekly.test.sh" > "${R}.tsv"
 if cmp -s "${R}.ci/agent-skills-suites.tsv" "${R}.tsv"; then ok "T21 con una entrada relativa en el PATH las suites en bash corren (el enlace no queda roto)"
 else no "T21 con una entrada relativa en el PATH las suites no corrieron: $(grep -F 'no pude lanzarla' "${R}.out" | head -n 2 | tr '\n' ' ')"; fi
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# T24 (a) · la corrida partida (TYCON_PUBLIC_CI_PART): checks + las partes de las suites = la corrida entera
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ELEVEN="${SEVEN} spanish-names repo-lint version clean-machine"
+variant partchecks; export TYCON_PUBLIC_CI_PART=checks; run_ci --range 'HEAD~1...HEAD' --clean-machine; unset TYCON_PUBLIC_CI_PART
+is "T24 (a) la parte checks, todo verde, sale 0" 0 "${RC}"
+is "T24 (a) la parte checks corre todos los pasos menos las portables, en orden" "node-check build-check build-generate suites-coverage agent-skills-suites controls-bench spanish-names repo-lint version clean-machine" "$(steps_of "${R}.out")"
+lacks "T24 (a) …y no llama a las portables" "${R}/.calls" "portable-suites"
+has "T24 (a) …y lo dice al arrancar" "${R}.out" "public-ci: parte checks — todos los pasos menos portable-suites"
+is "T24 (a) el resumen dice que es sólo una parte" "✅ public-ci: 10 pasos verdes (sólo la parte checks)" "$(tail -n 1 "${R}.out")"
+STEPS_CHECKS="$(steps_of "${R}.out")"
+variant partsuites; export TYCON_PUBLIC_CI_PART=suites-2-of-3; run_ci --range 'HEAD~1...HEAD' --clean-machine; unset TYCON_PUBLIC_CI_PART
+is "T24 (a) una parte de las suites, todo verde, sale 0" 0 "${RC}"
+is "T24 (a) la parte suites-2-of-3 corre sólo las portables" "portable-suites" "$(steps_of "${R}.out")"
+is "T24 (a) …con su parte: TYCON_PORTABLE_SHARD=2/3, y nada más" "portable-suites skills=${R}/skills guides=${R} git=${R} shard=2/3" "$(calls_of "${R}" | tr '\n' '|' | sed 's/|$//')"
+lacks "T24 (a) …sin las suites que piden agent-skills (van en checks)" "${R}/.calls" "suite-"
+is "T24 (a) el resumen dice que es sólo una parte" "✅ public-ci: 1 pasos verdes (sólo la parte suites-2-of-3)" "$(tail -n 1 "${R}.out")"
+# shellcheck disable=SC2086
+is "T24 (a) checks más una parte de las suites son los once pasos de la corrida entera, ninguno dos veces" \
+  "$(printf '%s\n' ${ELEVEN} | LC_ALL=C sort | tr '\n' ' ')" "$(printf '%s\n' ${STEPS_CHECKS} $(steps_of "${R}.out") | LC_ALL=C sort | tr '\n' ' ')"
+variant partred; echo 'exit 4' >> "${R}/scripts/tests/portable-suites.test.sh"; commit_all "portables en rojo"
+export TYCON_PUBLIC_CI_PART=suites-1-of-1; run_ci; unset TYCON_PUBLIC_CI_PART
+is "T24 (a) una parte con su paso en rojo sale 1" 1 "${RC}"
+is "T24 (a) …y el resumen nombra el paso y la parte" "❌ public-ci: 1 de 1 pasos en rojo (sólo la parte suites-1-of-1): portable-suites" "$(tail -n 1 "${R}.out")"
+# sin parte, la corrida entera corre TODAS las portables aunque quien llama tenga puesta una parte de las portables
+variant partnone; export TYCON_PORTABLE_SHARD=1/3; run_ci; unset TYCON_PORTABLE_SHARD
+is "T24 (a) sin TYCON_PUBLIC_CI_PART corre los siete pasos" "${SEVEN}" "$(steps_of "${R}.out")"
+if grep -qE "^portable-suites .* shard=$" "${R}/.calls"; then ok "T24 (a) …y las portables van enteras (la parte llega vacía) aunque quien llama tenga TYCON_PORTABLE_SHARD puesta"
+else no "T24 (a) la parte de las portables no llegó vacía: $(grep '^portable-suites' "${R}/.calls")"; fi
+for bad in suites-0-of-3 suites-4-of-3 suites-1-of-2-of-3 suites-1-of-3x all Checks; do
+  variant "part-${bad}"; export TYCON_PUBLIC_CI_PART="${bad}"; run_ci; unset TYCON_PUBLIC_CI_PART
+  if [ "${RC}" -eq 2 ] && grep -qF "uso: bash scripts/ci/public-ci.sh" "${R}.out" && grep -qF "no es una parte" "${R}.out" && [ ! -f "${R}/.calls" ]; then ok "T24 (a) TYCON_PUBLIC_CI_PART=${bad} sale 2 con el uso y no corre nada"
+  else no "T24 (a) TYCON_PUBLIC_CI_PART=${bad} esperaba exit 2 con el uso y sin correr nada, y dio exit ${RC}: $(tail -n 2 "${R}.out" | tr '\n' ' ')"; fi
+done
+
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# T24 (b) · portable-suites.test.sh con una parte (TYCON_PORTABLE_SHARD), sobre un repo de mentira: siete portables
+#           (una pesada y una mediana según el juego `pr`) y una que pide engram
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
+PS="${T}/portables"; mkdir -p "${PS}/scripts/tests" "${PS}/scripts/ci"
+cp "${ROOT}/scripts/tests/portable-suites.test.sh" "${PS}/scripts/tests/portable-suites.test.sh"
+cp "${ROOT}/scripts/ci/suites-shard.js" "${PS}/scripts/ci/suites-shard.js"
+printf '%s\n' '{ "default": 1, "weights": {}, "pr": { "default": 1, "weights": { "heavy.test.sh": 50, "mid.test.sh": 20 } } }' > "${PS}/scripts/ci/suites-weights.json"
+for s in a b c heavy d mid e other; do printf '%s\n' "echo ${s} >> \"\${PWD}/.ran\"" > "${PS}/scripts/tests/${s}.test.sh"; done
+node -e 'const names = ["a", "b", "c", "heavy", "d", "mid", "e"];
+  const diarias = names.map((n) => ({ raiz: "arnes", ruta: `tests/${n}.test.sh`, requiere: [] }));
+  diarias.push({ raiz: "arnes", ruta: "tests/other.test.sh", requiere: ["engram"] });
+  require("fs").writeFileSync(process.argv[1], JSON.stringify({ diarias, semanales: [] }, null, 2));' "${PS}/scripts/tests/suites.json"
+# run_ps <parte> → corre la prueba real sobre el repo de mentira, de a una suite (el orden se puede medir); salida en
+# ${PS}.out, lo que corrió en ${PS}.ran (en el orden en que arrancó) y el exit en RC
+run_ps() {
+  rm -f "${PS}/.ran"
+  ( cd "${PS}" && env TYCON_PORTABLE_SHARD="$1" TYCON_PORTABLE_PARALLEL=1 bash scripts/tests/portable-suites.test.sh < /dev/null ) > "${PS}.out" 2>&1; RC=$?
+  cp "${PS}/.ran" "${PS}.ran" 2>/dev/null || : > "${PS}.ran"
+}
+ALL_RAN=""; EMPTY_PART=""; PART_RC=""
+for i in 1 2 3; do
+  run_ps "${i}/3"; PART_RC="${PART_RC}${RC}"
+  [ -s "${PS}.ran" ] || EMPTY_PART="${EMPTY_PART} ${i}"
+  ALL_RAN="${ALL_RAN}$(cat "${PS}.ran")"$'\n'
+  if grep -qx heavy "${PS}.ran"; then is "T24 (b) en su parte, la pesada arranca primero" "heavy" "$(head -n 1 "${PS}.ran")"; fi
+  if grep -qx mid "${PS}.ran"; then is "T24 (b) en su parte, la mediana arranca primero" "mid" "$(head -n 1 "${PS}.ran")"; fi
+done
+is "T24 (b) las tres partes salen 0" "000" "${PART_RC}"
+is "T24 (b) ninguna parte queda sin suites" "" "${EMPTY_PART}"
+is "T24 (b) las tres partes juntas son las siete portables, cada una una sola vez, y nunca la que pide engram" \
+  "a b c d e heavy mid" "$(printf '%s' "${ALL_RAN}" | grep -v '^$' | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//')"
+has "T24 (b) cada parte dice cuál es y cuántas le tocaron" "${PS}.out" "suites-portables: parte 3 de 3 (repartidas por peso con scripts/ci/suites-shard.js, juego pr): "
+run_ps ""
+is "T24 (b) sin parte corren las siete" "a b c d e heavy mid" "$(LC_ALL=C sort "${PS}.ran" | tr '\n' ' ' | sed 's/ $//')"
+for bad in 4/3 0/3 x 1/3x; do
+  run_ps "${bad}"
+  if [ "${RC}" -eq 1 ] && grep -qF "TYCON_PORTABLE_SHARD=${bad} no es una parte" "${PS}.out" && [ ! -s "${PS}.ran" ]; then ok "T24 (b) TYCON_PORTABLE_SHARD=${bad} es rojo sin correr ninguna"
+  else no "T24 (b) TYCON_PORTABLE_SHARD=${bad} esperaba exit 1 sin correr ninguna, y dio exit ${RC}: $(tail -n 2 "${PS}.out" | tr '\n' ' ')"; fi
+done
+run_ps "8/8"
+if [ "${RC}" -eq 1 ] && grep -qF "no le tocó ninguna portable" "${PS}.out"; then ok "T24 (b) una parte sin ninguna suite es rojo (cero no es verde)"
+else no "T24 (b) la parte 8 de 8 con siete portables esperaba exit 1 «no le tocó ninguna», y dio exit ${RC}: $(tail -n 2 "${PS}.out" | tr '\n' ' ')"; fi
+rm -f "${PS}/scripts/ci/suites-shard.js"; run_ps "1/3"
+if [ "${RC}" -eq 1 ] && grep -qF "no pude repartir las portables para la parte 1 de 3" "${PS}.out" && [ ! -s "${PS}.ran" ]; then ok "T24 (b) sin el repartidor es rojo, no «todas» ni «ninguna» en silencio"
+else no "T24 (b) sin suites-shard.js esperaba exit 1 «no pude repartir», y dio exit ${RC}: $(tail -n 2 "${PS}.out" | tr '\n' ' ')"; fi
+
 # el entorno de git de quien llama: toda la suite corrió con GIT_DIR, GIT_INDEX_FILE, GIT_WORK_TREE y GIT_COMMON_DIR
 # apuntando al repo de afuera (ver la cabecera). El guion miró siempre el repo de --root, y el de afuera quedó como estaba.
 lacks "T21 con GIT_DIR y compañía de otro repo el guion revisa el de --root, no el de quien llama" "${T}/green.ci/1-node-check.log" "broken-in-the-outer-repo.js"
@@ -464,8 +551,8 @@ else
   altered "con el job public-ci que no mira los resultados" "aggregate-job" 'return t.replace(/needs\.\*\.result/, "needs.*.outputs");'
   altered "con un job que deja pasar su rojo" "aggregate-job" 'return t.replace(/^(    runs-on: .*)$/m, "$1\n    continue-on-error: true");'
   # lo que el control no encuentra es rojo, nunca limpio: una regla cuyo bloque no existe no se da por cumplida
-  altered "sin on ni jobs" "aggregate-job clean-machine fetch-depth node-matrix permissions range triggers" 'return "name: x\n";'
-  altered "sin el bloque de la matriz" "node-matrix" 'return t.replace(/^    strategy:\n(?:      .*\n)+/m, "");'
+  altered "sin on ni jobs" "aggregate-job clean-machine fetch-depth node-matrix parts permissions range triggers" 'return "name: x\n";'
+  altered "sin el bloque de la matriz" "node-matrix parts" 'return t.replace(/^    strategy:\n(?:      .*\n)+/m, "");'
   altered "con la lista de Node fuera de matrix" "node-matrix" 'return t.replace(/^      matrix:$/m, "      versions:");'
   altered "con matrix fuera de strategy" "node-matrix" 'return t.replace(/^    strategy:$/m, "    defaults:");'
   altered "sin ningún checkout" "fetch-depth" 'return t.replace(/^      - uses: actions\/checkout@.*\n(?:        .*\n)+/m, "");'
@@ -509,8 +596,20 @@ else
   # lo que el pase dejó «a verificar aparte» (otra regla u otro mecanismo que el de su clase)
   altered "aparte: un uses por rama dentro de una lista en estilo flujo" "uses-by-sha" 'return t.replace(/^  public-ci:\n/m, "  extra: { runs-on: ubuntu-latest, steps: [uses: evil/action@main] }\n  public-ci:\n").replace("needs: [checks]", "needs: [checks, extra]");'
   altered "aparte: la condición del pull request invertida" "" 'return t.replace("= \"pull_request\" ]", "!= \"pull_request\" ]");'
-  altered "aparte: un if en el paso que corre el guion" "" 'return t.replace(/^(      - name: Todos los pasos de la CI pública)$/m, "$1\n        if: ${{ false }}");'
+  altered "aparte: un if en el paso que corre el guion" "" 'return t.replace(/^(      - name: Los pasos de la CI pública que le tocan a esta parte)$/m, "$1\n        if: ${{ false }}");'
   altered "aparte: sin persist-credentials false en el checkout" "" 'return t.replace(/^          persist-credentials: false\n/m, "");'
+  # la corrida partida (T24): la lista de partes trae checks y TODAS las de las suites, en orden, y la parte sale de la matriz
+  altered "sin una parte de las suites" "parts" 'return t.replace(", suites-3-of-3]", "]");'
+  altered "sin la parte checks" "parts" 'return t.replace("part: [checks, ", "part: [");'
+  altered "con una parte repetida" "parts" 'return t.replace("suites-3-of-3]", "suites-2-of-3]");'
+  altered "con las partes desordenadas" "parts" 'return t.replace("suites-1-of-3, suites-2-of-3", "suites-2-of-3, suites-1-of-3");'
+  altered "con una parte que dice otra cuenta" "parts" 'return t.replace("suites-3-of-3]", "suites-3-of-4]");'
+  altered "con la lista de partes dos veces" "parts" 'return t.replace(/^(        part: .*)$/m, "$1\n$1");'
+  altered "sin la lista de partes" "parts" 'return t.replace(/^        part: .*\n/m, "");'
+  altered "con la parte fija en vez de la de la matriz" "parts" 'return t.replace("TYCON_PUBLIC_CI_PART: ${{ matrix.part }}", "TYCON_PUBLIC_CI_PART: checks");'
+  altered "sin pasarle la parte al guion" "parts" 'return t.replace(/^          TYCON_PUBLIC_CI_PART: .*\n/m, "");'
+  # otra cuenta de partes, completa, cumple la regla con nombre: la frena sólo la forma exacta (cambiarla es cambiar SHAPE)
+  altered "con cuatro partes de las suites, todas" "=shape" 'return t.replace("part: [checks, suites-1-of-3, suites-2-of-3, suites-3-of-3]", "part: [checks, suites-1-of-4, suites-2-of-4, suites-3-of-4, suites-4-of-4]");'
   # no pudo leer: 2, no un verde
   node "${CHECK}" "${T}/alt/no-such-file.yml" > "${T}/check.out" 2>&1; is "T22 un archivo que no existe sale 2 (no pude leer)" 2 "$?"
   node "${CHECK}" > "${T}/check.out" 2>&1; is "T22 sin archivo sale 2" 2 "$?"

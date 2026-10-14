@@ -141,10 +141,16 @@ function contenidoEn(repo, ref, rel) {
 // excluía (`findDodEvidence` de on-pre-commit.js); este portón no, así que una copia de SÓLO la
 // matriz —o un ledger suelto— lo ponía verde sin una corrida real detrás. Mismo criterio que el
 // local: un `.md` con el prefijo de la story que no sea ninguno de esos tres.
-// 🔴 Es una COPIA deliberada de `lib/evidencia-de-cierre.js` del skill (2026-09-06): este portón corre
+// 🔴 Es una COPIA deliberada de `lib/closing-evidence.js` del skill (2026-09-06): este portón corre
 // en un agente sin `~/.claude/`, así que no puede importarla. Las dos las compara
 // `scripts/tests/closing-evidence-parity.test.js` en cada corrida — mismo mecanismo que cuida
 // `validarRoster`. El medidor del tablero importa ESTA copia (mismo repo), así que son dos en total.
+// 2026-10-14 — el freno del commit pasó a sumar por AC la UNIÓN de las tres fuentes que escribe la máquina (registro de
+// pruebas de humo, gates E2E y firmas del dev; `coberturaDeLaUnion` en la canónica). Acá no se copia a propósito: este
+// portón nunca miró criterio por criterio —pide que exista evidencia de cierre— y la validez de las dos primeras
+// fuentes se confirma contra gates.log, que vive en la máquina y no en el agente. Lo que sí comparten las dos capas
+// es esta lista, y con ella el registro (`-smoke-ledger.jsonl`) y el gate (`-e2e-gate-*.md`) ya cuentan como evidencia;
+// el `-cierre.md`, si existe, también (es un `.md`).
 const NO_ES_EVIDENCIA_DE_CIERRE = [/-self-audit(?:-iter\d+)?\.md$/, /-runtime-matrix\.md$/, /-manual-test-plan\.md$/];
 // El ledger de smokes CUENTA (decisión del dev, 2026-09-06): es el registro crudo de cada prueba
 // que corrió, escrito por la máquina — más difícil de falsear que un informe. Motivo completo en

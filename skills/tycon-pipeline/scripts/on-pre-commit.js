@@ -134,7 +134,7 @@ function parseFrontmatter(content) {
 }
 
 const { isWorkStoryId, storiesConfigForGate } = require('./lib/story-discovery.js');
-const { esEvidenciaDeCierre } = require('./lib/closing-evidence.js');
+const { esEvidenciaDeCierre, ES_EVIDENCIA_ADEMAS, coberturaDeLaUnion } = require('./lib/closing-evidence.js');
 const { resolveSessionId } = require('./lib/session-id.js');
 
 /**
@@ -597,8 +597,12 @@ function findDodEvidence(cwd, storyId, opts = {}) {
         // le ganaba a la evidencia real y nueva con tres ✅, y el mensaje «no menciona ACs #4, #5»
         // desaparecía — con la matriz DODRT-C6 en verde, el commit pasaba gracias al archivo fallido.
         // Medido en los repos de la máquina: la elección cambiaba en 78 de 463 stories, 2 hacia un FAIL.
-        const cand = { filename: f, path: full, content, acs: parseAcsFromEvidence(content).length, mtime,
-          fallido: evidenciaDeclaraFail(content) };
+        // El registro de pruebas de humo cuenta como evidencia (existe), pero sus criterios NO se leen del texto:
+        // el texto trae también las corridas que fallaron. Sus criterios válidos los suma la unión de la matriz
+        // (salida 0 + copia en gates.log) — ver más abajo, en el chequeo por AC (2026-10-14).
+        const esRegistro = ES_EVIDENCIA_ADEMAS.some((re) => re.test(f));
+        const cand = { filename: f, path: full, content, acs: esRegistro ? 0 : parseAcsFromEvidence(content).length, mtime,
+          fallido: evidenciaDeclaraFail(content), esRegistro };
         const mejor = best === null
           || (best.fallido && !cand.fallido)
           || (best.fallido === cand.fallido && (cand.acs > best.acs || (cand.acs === best.acs && cand.mtime > best.mtime)));
@@ -851,6 +855,27 @@ function parseAcsFromEvidence(evidenceContent) {
   return [...acs];
 }
 
+// Dónde se buscaron los criterios que faltan, para el mensaje del freno (2026-10-14): las tres fuentes de la unión,
+// con la ruta real de cada una. Sale de la matriz ya calculada; si no corrió, se dice por qué.
+function fuentesBuscadas(calc) {
+  if (!calc || calc.error) return { error: calc && calc.error ? String(calc.error.message || calc.error) : 'la matriz no corrió' };
+  const m = calc.matrix;
+  if (!m || m.structuralError) return { error: m ? m.structuralError : 'la matriz no devolvió nada' };
+  if (m.exempt) return { error: 'la story está exenta de la matriz (dod_runtime_exempt)' };
+  const clave = m.key || m.sid;
+  const dirs = m.evidenceDirs || [];
+  const existentes = (re) => dirs.flatMap((d) => {
+    try { return fs.readdirSync(d).filter((f) => re.test(f)).map((f) => path.join(d, f)); } catch { return []; }
+  });
+  const escapar = (x) => String(x).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return {
+    registros: existentes(new RegExp(`^${escapar(clave)}-smoke-ledger\\.jsonl$`)),
+    gates: existentes(new RegExp(`^${escapar(clave)}-e2e-gate-.*\\.md$`)),
+    firmas: m.repoRoot ? path.join(m.repoRoot, '.tycon', 'runtime-waivers.jsonl') : null,
+    clave,
+  };
+}
+
 // ============================================================
 // SMOKE-SECRETO-2 (2026-10-04) — secretos en `.advisors/dod-runtime/`
 // ============================================================
@@ -925,6 +950,39 @@ function frenoSecretosEnEvidencia(event) {
   process.exit(2);
 }
 
+// Ver lib/chained-add.js. Deja `process.env.GIT_INDEX_FILE` apuntando a la copia del índice con los `add` aplicados,
+// o —si no se pudieron simular— una nota que sale SÓLO si el freno termina frenando (exit 2). Nunca cambia el índice
+// real, y un error propio deja todo como antes (se mira lo stageado hoy).
+function prepararIndiceConLosAdd(command, cwd) {
+  let plan;
+  try { plan = require('./lib/chained-add.js').addsBeforeCommit(command, (seg) => isGitCommit(seg)); } catch { return; }
+  if (!plan || plan.estado === 'sin-add') return;
+  const notaAlFrenar = (texto) => process.on('exit', (code) => {
+    if (code === 2) { try { fs.writeSync(2, texto); } catch { /* la nota nunca cambia el veredicto */ } }
+  });
+  const pedirAddAparte = (motivo) => notaAlFrenar(
+    `\nℹ️  Este comando trae un \`git add\` antes del commit, y el freno corre ANTES que el comando entero:\n` +
+    `   lo de arriba se evaluó sobre lo stageado HOY, sin lo que trae ese \`add\` (${motivo}).\n` +
+    '   Si el `add` ya arregla lo que dice arriba, corré el `git add` en una llamada aparte y después el commit.\n');
+  if (plan.estado !== 'simulable') { pedirAddAparte(plan.motivo); return; }
+  let copia;
+  try {
+    const git = (args, env) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: env || process.env });
+    const indice = path.resolve(cwd, git(['rev-parse', '--git-path', 'index']).trim());
+    copia = path.join(os.tmpdir(), `tycon-precommit-index-${process.pid}-${Date.now()}`);
+    if (fs.existsSync(indice)) fs.copyFileSync(indice, copia);
+    process.on('exit', () => { try { fs.unlinkSync(copia); } catch { /* temporal */ } });
+    for (const args of plan.adds) git(['add', ...args], { ...process.env, GIT_INDEX_FILE: copia });
+  } catch (e) {
+    // El `add` falla igual en el comando real (con `&&` el commit no corre). Se mira lo stageado hoy y se avisa.
+    const det = String((e && (e.stderr || e.message)) || e).split('\n').find((l) => l.trim()) || 'error de git';
+    pedirAddAparte(`no se pudo reproducir: ${det.trim().slice(0, 120)}`);
+    return;
+  }
+  process.env.GIT_INDEX_FILE = copia;
+  notaAlFrenar(`\nℹ️  Evaluado sobre lo que quedaría stageado después de los \`git add\` de este mismo comando (${plan.adds.map((a) => `git add ${a.join(' ')}`).join(' · ')}).\n`);
+}
+
 // ============================================================
 // Main
 // ============================================================
@@ -949,6 +1007,12 @@ function main() {
   if (!isCommit) {
     process.exit(0);
   }
+
+  // `git add X && git commit` en una sola línea (2026-10-14): el freno corre antes que el comando entero, así que lo
+  // stageado todavía no tiene lo que traen esos `add`. Si se pueden reproducir igual que el shell, el resto del freno
+  // evalúa una COPIA del índice con los `add` ya aplicados (GIT_INDEX_FILE: lo heredan todos los `git` de este hook);
+  // si no, mira lo stageado hoy y, si frena, dice que corra el `add` aparte. Motivo y límites: lib/chained-add.js.
+  prepararIndiceConLosAdd(command, event.cwd || process.cwd());
 
   // Secretos en la evidencia: va ANTES del `--no-verify`, que no lo saltea. Una contraseña commiteada llega al
   // remoto y a la historia; no hay apuro que lo justifique, y la salida es escribir `***` o una variable.
@@ -1259,6 +1323,41 @@ function main() {
   const raizDelRepo = require('./lib/story-discovery.js').findRepoRoot(cwd) || cwd;
   const rutaDeSpec = (rel) => path.join(raizDelRepo, rel);
 
+  // La matriz por AC (runtime-matrix.js) se calcula UNA vez por story y la usan dos chequeos: el de evidencia por AC
+  // (la unión de las tres fuentes, 2026-10-14) y DODRT-C6. Sobre el contenido STAGED (lo que se está por commitear),
+  // no el working tree — un ack agregado sin stagear no cuenta. `{ error }` si no corrió: cada chequeo decide qué
+  // hacer con eso (C6 sigue fail-open logueado; el de evidencia vuelve a mirar sólo el archivo).
+  const matrices = new Map();
+  const matrizDe = (specRel, staged) => {
+    if (matrices.has(specRel)) return matrices.get(specRel);
+    let out;
+    try {
+      const rm = require(path.join(__dirname, 'runtime-matrix.js'));
+      const specAbs = rutaDeSpec(specRel);
+      const tmpSpec = path.join(os.tmpdir(), `tycon-precommit-${process.pid}-${path.basename(specRel)}`);
+      fs.writeFileSync(tmpSpec, staged, 'utf8');
+      // El workspace se descubre desde el path REAL de la story (el tmp vive en /tmp):
+      let workspaceRoot = null;
+      let wsDir = path.dirname(specAbs);
+      for (let i = 0; i < 6 && wsDir !== '/'; i++) {
+        if (path.basename(wsDir) === 'specs') { workspaceRoot = path.dirname(path.dirname(wsDir)); break; }
+        wsDir = path.dirname(wsDir);
+      }
+      try {
+        // repoRoot explícito: el cómputo corre sobre una COPIA tmp del spec (contenido staged)
+        // y la discovery de repo desde /tmp no puede ver el repo real — sin esto, la matriz
+        // degradaría a fail-closed (0 evidencia) con la evidencia intacta en disco (patrón F.iii).
+        out = { rm, specAbs, matrix: rm.compute({ storyPath: tmpSpec, keyStoryPath: specAbs, workspaceRoot, repoRoot: rm.discoverRepoRoot(specAbs) }) };
+      } finally {
+        try { fs.unlinkSync(tmpSpec); } catch { /* best effort */ }
+      }
+    } catch (e) {
+      out = { error: e };
+    }
+    matrices.set(specRel, out);
+    return out;
+  };
+
   // Para cada spec en el diff, detectar transición crítica de status/pipelines.
   const violations = [];
   const soloAviso = new Set();   // specs cuya transición es la interna `review → done` (aviso, no freno)
@@ -1392,9 +1491,17 @@ function main() {
       violations.push({ specRel, storyId, statusTransition, pipelineTransition, reason: 'evidence-failed', evidencePath: evidence.path });
       continue;
     }
+    // 2026-10-14 — un AC cuenta si lo nombra el archivo elegido O si aparece en la UNIÓN de las tres fuentes que
+    // escribe la máquina (registro de pruebas de humo, gates E2E, firmas del dev), con las reglas de validez de la
+    // matriz por AC: se reusa su cálculo, no se duplica (lib/closing-evidence.js → coberturaDeLaUnion). Antes se
+    // exigía que UN archivo nombrara todos; las stories que reparten la evidencia rebotaban y la salida era que el
+    // agente redactara un `-cierre.md` con la lista — más falsificable que las tres fuentes que reemplazaba.
+    // Si la matriz no corre, se mira sólo el archivo (lo de antes) y el mensaje lo dice.
     const acsInSpec = parseAcsFromSpec(staged);
-    const acsInEvidence = new Set(parseAcsFromEvidence(evidence.content));
-    const missingAcs = acsInSpec.filter(ac => !acsInEvidence.has(ac));
+    const acsInEvidence = new Set(evidence.esRegistro ? [] : parseAcsFromEvidence(evidence.content));
+    const calc = matrizDe(specRel, staged);
+    const union = calc.matrix ? coberturaDeLaUnion(calc.matrix) : { porAc: new Map(), cubiertos: new Set() };
+    const missingAcs = acsInSpec.filter(ac => !acsInEvidence.has(ac) && !union.cubiertos.has(Number(ac.slice(1))));
 
     if (missingAcs.length > 0) {
       violations.push({
@@ -1402,6 +1509,8 @@ function main() {
         reason: 'incomplete-evidence',
         missingAcs,
         evidencePath: evidence.path,
+        evidenceEsRegistro: !!evidence.esRegistro,
+        fuentes: fuentesBuscadas(calc),
       });
       continue;
     }
@@ -1424,28 +1533,11 @@ function main() {
     // recalcula qué ACs tienen evidencia de EJECUCIÓN real — gate E2E con exit 0,
     // smokes vía smoke-run.sh — y valida el ack del usuario con hash anti-drift).
     try {
-      const rm = require(path.join(__dirname, 'runtime-matrix.js'));
-      const specAbs = rutaDeSpec(specRel);
       // OJO: se computa sobre el contenido STAGED (lo que se está por commitear), no el
-      // working tree — un ack agregado sin stagear no cuenta.
-      const tmpSpec = path.join(os.tmpdir(), `tycon-precommit-${process.pid}-${path.basename(specRel)}`);
-      fs.writeFileSync(tmpSpec, staged, 'utf8');
-      // El workspace se descubre desde el path REAL de la story (el tmp vive en /tmp):
-      let workspaceRoot = null;
-      let wsDir = path.dirname(specAbs);
-      for (let i = 0; i < 6 && wsDir !== '/'; i++) {
-        if (path.basename(wsDir) === 'specs') { workspaceRoot = path.dirname(path.dirname(wsDir)); break; }
-        wsDir = path.dirname(wsDir);
-      }
-      let matrix;
-      try {
-        // repoRoot explícito: el cómputo corre sobre una COPIA tmp del spec (contenido staged)
-        // y la discovery de repo desde /tmp no puede ver el repo real — sin esto, la matriz
-        // degradaría a fail-closed (0 evidencia) con la evidencia intacta en disco (patrón F.iii).
-        matrix = rm.compute({ storyPath: tmpSpec, keyStoryPath: specAbs, workspaceRoot, repoRoot: rm.discoverRepoRoot(specAbs) });
-      } finally {
-        try { fs.unlinkSync(tmpSpec); } catch { /* best effort */ }
-      }
+      // working tree — un ack agregado sin stagear no cuenta. El cálculo es el mismo que ya usó el chequeo por AC.
+      const calcC6 = matrizDe(specRel, staged);
+      if (calcC6.error) throw calcC6.error;
+      const { rm, specAbs: specAbsC6, matrix } = calcC6;
       if (matrix && matrix.structuralError) {
         violations.push({
           specRel, storyId, statusTransition, pipelineTransition,
@@ -1464,7 +1556,7 @@ function main() {
           hash: matrix.hash,
           chainOk: matrix.chainOk,
           // story 7.17: las firmas descartadas, y el texto con la ruta REAL (la matriz corrió sobre una copia tmp)
-          avisoDescartadas: rm.avisoFirmasDescartadas(matrix, specAbs),
+          avisoDescartadas: rm.avisoFirmasDescartadas(matrix, specAbsC6),
         });
         continue;
       }
@@ -1636,9 +1728,25 @@ function main() {
       lines.push(`     La única evidencia de cierre que hay declara FAIL: ${v.evidencePath}`);
       lines.push(`     Una corrida fallida documenta que se probó, no que pasó. Corré de nuevo y dejá la evidencia verde.`);
     } else if (v.reason === 'incomplete-evidence') {
-      lines.push(`     Evidencia encontrada: ${v.evidencePath}`);
-      lines.push(`     PERO no menciona ACs: ${v.missingAcs.join(', ')}`);
-      lines.push(`     Cada AC declarado en spec debe estar verified en la evidencia.`);
+      // 2026-10-14: el mensaje nombra los criterios que faltan y DÓNDE se buscaron — el archivo elegido y las tres
+      // fuentes de la unión—, para que el arreglo sea correr lo que falta y no redactar un resumen que los nombre.
+      const fu = v.fuentes || {};
+      const nada = (xs) => !xs || xs.length === 0;
+      lines.push(`     Criterios sin evidencia: ${v.missingAcs.join(', ')}`);
+      lines.push('     Se buscaron en:');
+      lines.push(`       · el informe elegido: ${v.evidencePath}${v.evidenceEsRegistro ? ' (es el registro de pruebas de humo: sus criterios se cuentan por la fuente 1, no por el texto)' : ''}`);
+      if (fu.error) {
+        lines.push(`       · las tres fuentes de la máquina NO se pudieron leer (${fu.error}): sólo se miró el informe.`);
+      } else {
+        lines.push(`       1. pruebas de humo: ${nada(fu.registros) ? `no hay registro ${fu.clave}-smoke-ledger.jsonl` : fu.registros.join(', ')}`);
+        lines.push('          (cuenta una corrida de smoke-run.sh con salida 0, su copia en gates.log y posterior al último cambio de código)');
+        lines.push(`       2. gates E2E: ${nada(fu.gates) ? `no hay ${fu.clave}-e2e-gate-*.md` : fu.gates.map((g) => path.basename(g)).join(', ')}`);
+        lines.push('          (cuenta un gate PASS con su copia en gates.log; los criterios salen de las filas E2E de la tabla ### Tests)');
+        lines.push(`       3. firmas del dev: ${fu.firmas || '(no se pudo saber el repo)'}`);
+        lines.push('          (cuenta una firma vigente para la declaración del criterio en runtime_not_verifiable)');
+      }
+      lines.push('     Salida: correr lo que falta (gate E2E o smoke-run.sh) o, si es imposible, declararlo y que el dev lo firme.');
+      lines.push('     El detalle por criterio lo da: node <skill>/scripts/runtime-matrix.js --story <ruta-story.md> --no-write');
     } else if (v.reason === 'no-playwright-evidence') {
       lines.push(`     DODRT-C5.1: story de UI — la evidencia DoD NO menciona Playwright/E2E.`);
       lines.push(`     Evidencia encontrada: ${v.evidencePath}`);
@@ -1704,6 +1812,7 @@ function main() {
 // Exports para la suite de tests de la capa determinista (auditoría 2026-06-09).
 // require() desde tests NO ejecuta main() (gate require.main).
 module.exports = {
+  prepararIndiceConLosAdd,
   isGitCommit, parseAcsFromSpec, parseAcsFromEvidence, findDodEvidence, evidenciaDeclaraFail, findAdvisorsEvidence,
   looksLikeStorySpec, selectStorySpecs, revisarRosterLocal, checkSelfAudit,
 };

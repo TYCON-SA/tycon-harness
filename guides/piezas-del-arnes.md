@@ -330,11 +330,12 @@ y **un paso que no pudo correr es rojo con «no pude correr», nunca un salto**:
 pasó. No corre el detector (necesita la lista privada) ni lee secretos. Sirve en la copia (un solo repo) y en el repo
 del equipo (dos): por eso la prueba nocturna de la copia corre el mismo guion en los dos lados y compara los veredictos.
 El workflow (`.github/workflows/ci.yml` en la copia) sólo lo llama, en
-Node 22 y 24, y termina en **un job llamado `public-ci`**: es el chequeo con nombre estable que las reglas de la rama
+Node 22 y 24 y partido en trabajos que corren a la vez (2026-10-14: entero tardaba ~30 min por Node; la parte `checks`
+y tres partes de las portables, `TYCON_PUBLIC_CI_PART`), y termina en **un job llamado `public-ci`**: es el chequeo con nombre estable que las reglas de la rama
 exigen, y renombrarlo deja los merges esperando un chequeo que no llega. `check-public-workflow.js` lee ese YAML **por
-texto** y verifica once reglas: diez que dicen por qué algo está mal (los disparadores, ningún secreto, cada acción fijada
+texto** y verifica doce reglas: once que dicen por qué algo está mal (los disparadores, ningún secreto, cada acción fijada
 por el sha de su commit, permiso de sólo lectura, la historia completa, la matriz, `--range` en un pull request,
-`--clean-machine` siempre y el job agregador que falla si alguno falló) y una, `shape`, que es la red: el control lleva
+`--clean-machine` siempre, el job agregador que falla si alguno falló y las partes, todas) y una, `shape`, que es la red: el control lleva
 adentro **la forma exacta** del `ci.yml` —sus líneas de código, una por una y en orden— y cualquier línea de más, de
 menos o distinta es rojo. 🔴 Por qué la forma exacta: una regla por texto no ve
 otra forma de escribir lo prohibido (una opción dentro de un comentario, un

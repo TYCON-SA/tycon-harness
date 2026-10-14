@@ -87,13 +87,13 @@
           "agents/tycon-plugin-dotnet-conventions.md",
           "agents/tycon-plugin-react-conventions.md",
           "agents/tycon-plugin-nextjs-conventions.md",
-          "skills/core/bizuit-backend-plugin-system/**",
-          "skills/core/bizuit-custom-forms-system/**",
-          "skills/core/bizuit-sdk-integration/**",
-          "skills/core/safe-query-builder/**",
-          "skills/core/esbuild-bundling/**",
-          "skills/core/feature-based-crud-endpoints/**",
-          "skills/core/dotnet-dapper-sqlserver/**"
+          "skills/bizuit-backend-plugin-system/**",
+          "skills/bizuit-custom-forms-system/**",
+          "skills/bizuit-sdk-integration/**",
+          "skills/safe-query-builder/**",
+          "skills/esbuild-bundling/**",
+          "skills/feature-based-crud-endpoints/**",
+          "skills/dotnet-dapper-sqlserver/**"
         ],
         "out": [
           { "glob": "skills/bizuit-sdd/**", "reason": "deprecada, no se publica (2026-09-30); sus dos suites se van de la copia con ella" }
@@ -131,11 +131,6 @@
     { "root": "arnes", "path": "tests/team-repo.test.js", "reason": "prueba scripts/publishing/team-repo.js, que queda afuera (story 8.25, tanda A2b)" },
     { "root": "arnes", "path": "tests/overlay-harness.test.js", "reason": "prueba la superposición de los nocturnos del equipo (scripts/ci/overlay-harness.js), que queda afuera (story 8.26, tanda B)" },
     { "root": "arnes", "path": "tests/mirror-pipeline.test.sh", "reason": "prueba pipelines/azure-pipelines-public-leak-check.yml y lee scripts/publishing/public-repos.json, que quedan afuera: en la copia no hay pipeline de publicación que medir (story 8.8, tanda B)" },
-    { "root": "arnes", "path": "tests/windows-probe.test.js", "reason": "su T1 prueba pipelines/azure-pipelines-windows.yml, que queda afuera, y su T5 corre los dos frenos de nombres con la lista privada del equipo; el resto compara contra el instalador y los casos del banco del repo interno y no se midió sobre la copia (story 8.17, tanda W0). La tanda W7 de esa story, que lleva la medición de Windows a la CI pública, decide si entra" },
-    { "root": "arnes", "path": "tests/windows-rehearsal.test.js", "reason": "prueba la parte de los ensayos del equipo de pipelines/azure-pipelines-windows.yml y lee el texto del alta del equipo (onboarding/), que quedan afuera: en la copia no hay instalación del equipo que ensayar (story 8.17, tanda W0). Sale y vuelve junto con windows-probe.test.js" },
-    { "root": "arnes", "path": "tests/windows-guided.test.js", "reason": "prueba los ensayos del pipeline de Windows que siguen la página pública de instalación leyendo esa página en scripts/publishing/public-files/ (los papeles, que no viajan: en la copia la página ya está en su destino), el texto del alta del equipo (onboarding/) y pipelines/azure-pipelines-windows.yml, que quedan afuera (story 8.28). Los guiones que prueba (scripts/tests/windows/) sí viajan. Sale y vuelve junto con windows-probe.test.js" },
-    { "root": "arnes", "path": "tests/windows-guided-lab.test.js", "reason": "arma un árbol publicado de juguete desde el árbol de trabajo, poniendo en su destino la página y el guion de entrada de scripts/publishing/public-files/ (los papeles, que no viajan): en la copia esos papeles ya están en su lugar y no hay de dónde armarlo (story 8.28). Sale y vuelve junto con windows-probe.test.js" },
-    { "root": "arnes", "path": "tests/windows-portable.test.js", "reason": "prueba el escenario portable de pipelines/azure-pipelines-windows.yml, que queda afuera, y los guiones que clonan los dos repos internos del equipo: en la copia hay un solo repo y no hay pipeline de Windows que medir (story 8.17). Sale y vuelve junto con windows-probe.test.js" },
     { "root": "arnes", "path": "tests/legacy-names-product-pipeline.test.sh", "reason": "necesita un commit del repo del equipo (su dato de prueba BASE): afuera no corre nunca (story 8.10.3)" }
   ],
   "casesOutside": [
@@ -161,13 +156,8 @@
     { "path": "pipelines", "reason": "la carpeta de pipelines de CI de cada repo (la carpeta suelta: un pipeline concreto del equipo se marca)" },
     { "path": "specs", "reason": "la carpeta de stories de cada repo (la carpeta suelta: una story concreta del equipo se marca)" }
   ],
-  "__publicTexts": "Textos de código que en el repo del equipo diagnostican una integración del equipo y en la copia mandarían a una pieza que no viaja (story 8.10.3, AC 5): el texto EXACTO del repo (puede ocupar varios renglones), su versión pública (\"\" lo saca), cuántas veces aparece y por qué. Si no aparece esas veces, el armado sale 2. Los bloques internos sólo existen en los .md.",
-  "publicTexts": [
-    {"root": "arnes", "file": "scripts/metrics/upload-runs.js", "text": "Viene con el repo del arnés; si no está, la copia del arnés está incompleta", "public": "Es una integración del equipo que la copia pública no trae", "count": 1, "reason": "la llave del buzón de corridas no viaja: afuera no es una copia incompleta"},
-    {"root": "arnes", "file": "scripts/hooks/dependencies-notice.js", "text": "Se deciden en su pull request, o con: node scripts/nightly/dependencies/nightly-dependencies.js report", "public": "Se deciden en su pull request.", "count": 1, "reason": "el guion nocturno de dependencias no viaja (en la copia el aviso calla: no hay fichas)"},
-    {"root": "arnes", "file": "scripts/nightly/dashboard/dashboard.js", "text": "no hay productos declarados en repos.json", "public": "la lista de productos del equipo no viene con la copia pública", "count": 2, "reason": "la lista de repos de producto (scripts/nightly/dependencies/repos.json) no viaja"},
-    {"root": "arnes", "file": "scripts/nightly/dashboard/dashboard.js", "text": "no hay repos declarados en repos.json", "public": "la lista de repos del equipo no viene con la copia pública", "count": 1, "reason": "la lista de repos de producto (scripts/nightly/dependencies/repos.json) no viaja"}
-  ],
+  "__publicTexts": "Textos de código que en el repo del equipo diagnostican una integración del equipo y en la copia mandarían a una pieza que no viaja (story 8.10.3, AC 5): el texto EXACTO del repo (puede ocupar varios renglones), su versión pública (\"\" lo saca), cuántas veces aparece y por qué. Si no aparece esas veces, el armado sale 2. Los bloques internos sólo existen en los .md. Vacía desde la story 8.26 (AC 36): el repo de mantenimiento ya no arma la copia, y las tres piezas que la usaban (la llave del buzón de corridas, el aviso de dependencias y el tablero) quedaron con el texto público en los dos lados. La transformación sigue disponible para quien la declare.",
+  "publicTexts": [],
   "synthetic": [
     { "target": "scripts/ci/pipeline-debt.json", "from": "scripts/publishing/synthetic/pipeline-debt.json", "reason": "el real es la deuda de pipelines por repo de cliente y pipeline-debt.test.js necesita el archivo" },
     { "target": "scripts/nightly/dashboard/declared.json", "from": "scripts/publishing/synthetic/declared.json", "reason": "el real trae datos operativos del equipo; el tablero y dashboard.test.sh necesitan el archivo con su forma (story 8.10.3)" },

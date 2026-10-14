@@ -878,13 +878,17 @@ function compute(opts) {
   for (const n of acs) {
     const runtime = [];
     const code = [];
+    // De qué fuente sale cada evidencia, sin parsear los textos de arriba: lo lee el freno del commit para sumar las
+    // tres fuentes por AC (lib/closing-evidence.js → coberturaDeLaUnion). No entra al `hash`.
+    const fuentes = { e2e: [], smoke: [] };
     for (const re of rowEvidence) {
       if (!re.row.acRefs.includes(n)) continue;
-      if (re.tier === 'runtime') runtime.push(`${re.row.tid} (${re.ref})`);
+      if (re.tier === 'runtime') { runtime.push(`${re.row.tid} (${re.ref})`); fuentes.e2e.push(re.ref); }
       else if (re.tier === 'code') code.push(`${re.row.tid} (${re.ref})`);
     }
     for (const e of freshSmokes) {
       if (!e.acs.includes(n)) continue;
+      fuentes.smoke.push(e.ts);
       // Un smoke sólo cuenta como evidencia RUNTIME si su comando ejercita la app. Si fue
       // `node --test` o un gate de build, es evidencia de CÓDIGO — legítima, pero de otra clase:
       // el AC cae a NOT-VERIFIABLE/NOT-RUN y pasa por el camino explícito (declaración +
@@ -913,7 +917,7 @@ function compute(opts) {
       else verdict = 'RUNTIME-PARCIAL';
     }
     perAc[n] = { verdict, runtime, code, text: acTexts[n] || null, mutacion,
-      exentoC8: ex.valida ? ex.motivo : null };
+      exentoC8: ex.valida ? ex.motivo : null, fuentes };
   }
 
   // --- hash anti-drift: pinnea (ACs + veredictos + refs de evidencia). El ack guarda
