@@ -1210,7 +1210,7 @@ function cmdInstall(ctx, H) {
       pieces.push('config');
     }
     // 9. los enchufes de cada herramienta (el aplicador es el de Claude Code; el de Codex, en Node) y la salud
-    const a = H.runApplier(ctx, tree, { log, snapshotDir: snap && snap.dir, tools: tc.tools, force: true });
+    const a = H.runApplier(ctx, tree, { log, snapshotDir: snap && snap.dir, tools: tc.tools, force: true, hooksPath: true });
     state.last_apply = nowIso();
     if (!a.ok) {
       state.last_health = null;
@@ -1224,6 +1224,9 @@ function cmdInstall(ctx, H) {
     // lo que el enchufe de Codex le dice a la persona (un servidor MCP que falta, los hooks a aprobar) va al cierre
     if (tc.tools.includes('codex')) for (const w of a.warnings || []) if (!notes.includes(w)) notes.push(w);
     H.recordPieces(ctx, state, a.report, a.shared);
+    // la carpeta global de hooks de git (2026-10-14): si git no tenía ninguna, la puso el aplicador de arriba; se dice, y
+    // si git no la dejó escribir, el aviso con el comando a mano (los demás avisos del aplicador no llegan a este cierre)
+    { const hp = H.noteHooksPath(state, a); if (hp) notes.push(hp); else if (a.gitHooksPath && a.gitHooksPath.status === 'failed') notes.push(...a.gitHooksPath.line.split('\n')); }
     const prof = H.profileOf(ctx, tree);
     if (prof.ok) state.profile = { value: prof.value, origin: prof.origin };
     S.write(ctx.home, state);
@@ -1747,6 +1750,11 @@ function startup(ctx, state, H, { log, snapshot = null }) {
   if (teamNotice && !(notice || '').includes(teamNotice)) notice = notice ? `${notice} · ${teamNotice}` : teamNotice;
   // una herramienta instalada y sin enchufar (tanda C, AC 24): se dice en cada arranque, sin pisar otro aviso
   { const tn = typeof H.toolNotice === 'function' ? H.toolNotice(ctx, own.harness, state) : null; if (tn) notice = notice ? `${notice} · ${tn}` : tn; }
+  // la carpeta global de hooks de git (2026-10-14): con `auto` la pone este arranque y lo dice una vez; con `ask`, el aviso
+  // la pide. Sólo con el aplicador sano (el pre-push tiene que estar en su lugar)
+  if (typeof H.hooksPathUnattended === 'function') {
+    if (a.ok) notice = H.hooksPathUnattended(ctx, state, applierTree, policy, { mode: 'startup', log: (l) => log(`startup: ${l}`), notice }).notice;
+  }
   if (notice) R.setNotice(state, notice); else R.clearNotice(state);
   S.write(ctx.home, state);
   R.clearUpdateFailure(ctx.home, { kind: 'busy' });
@@ -1794,6 +1802,12 @@ function cmdUpdate(ctx, state, H, { log, asked = null }) {
     else { state.policy = { channel: p2.channel, apply: p2.apply, enabled: p2.enabled }; H.applyPolicy(ctx, state, p2); }
   }
   if (lifted.length) u.lines = [...lifted, ...u.lines];
+  // la carpeta global de hooks de git (2026-10-14): un update que aplica la pone si falta (el aviso de `ask` la pedía)
+  if (mode === 'apply' && typeof H.hooksPathUnattended === 'function' && !['failed', 'busy'].includes(u.status)) {
+    const hp = H.hooksPathUnattended(ctx, state, own.harness, policy, { mode: 'update', log: (l) => log(`update: ${l}`), notice: state.notice });
+    if (hp.line) u.lines = [...(u.lines || []), ...hp.line.split('\n')];
+    if (hp.notice) R.setNotice(state, hp.notice); else R.clearNotice(state);
+  }
   S.write(ctx.home, state);
   if (mode === 'check' && u.status === 'new' && !ctx.opts.check) return { code: 3, lines: [...u.lines, `la política es «ask»: aplicá con ${H.applyHint}`] };
   return { code: u.code, lines: u.lines };

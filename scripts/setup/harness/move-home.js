@@ -809,12 +809,15 @@ function stageReplugged(ctx, j, H, log, { snap = null } = {}) {
   const policy = H.policyOf(ctx, p.own.harness);
   if (!policy.errors.length) { state.policy = { channel: policy.channel, apply: policy.apply, enabled: policy.enabled }; H.applyPolicy(ctx, state, policy); }
   H.copyBootstrap(ctx, p.own.harness, state, { version: j.version });
-  const a = H.runApplier(ctx, p.own.harness, { log, snapshotDir: snap && snap.dir, tools, force: true });
+  // `hooksPath`: la carpeta global de hooks de git, si git no tiene ninguna (2026-10-14: una máquina mudada quedaba con los
+  // hooks del arnés en ~/.git-hooks y git sin mirarlos — el freno antes de publicar no corría)
+  const a = H.runApplier(ctx, p.own.harness, { log, snapshotDir: snap && snap.dir, tools, force: true, hooksPath: true });
   state.last_apply = nowIso();
   if (!a.ok) return { ok: false, reason: `el aplicador del árbol nuevo falló (${a.reason})`, state };
   dropOldHooks(H.settingsPath(ctx), p.oldTreeReal, { newTree: p.own.harness, log });
   for (const w of a.warnings || []) j.notes = [...(j.notes || []), w];
   H.recordPieces(ctx, state, a.report, a.shared);
+  { const hp = H.noteHooksPath(state, a); if (hp) j.notes = [...(j.notes || []), hp]; }
   const prof = H.profileOf(ctx, p.own.harness);
   if (prof.ok) state.profile = { value: prof.value, origin: prof.origin };
   // la salud corre `doctor`, que lee el estado DEL DISCO: el que dice «clon» daría «el enlace no apunta al árbol». El

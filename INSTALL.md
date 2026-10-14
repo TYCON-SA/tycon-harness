@@ -99,21 +99,23 @@ Con la capa del equipo instalada (`guides/mecanismo-de-instalacion.md`, «La cap
 si su perfil declara los paquetes, el perfil del equipo gana sobre ese archivo: ahí vale la variable, o `packs:` en el repo.
 Para arrancar un plugin o un formulario nuevo, las guías de guides/bizuit/ te mandan a los templates públicos.
 
-**2. Confirmá los hooks globales de git.** El instalador los copia a `~/.git-hooks/`, pero git los usa sólo si se lo
-decís, y eso no lo hace solo: es tu configuración global. Primero mirá si ya tenés una:
+**2. Confirmá los hooks globales de git.** El instalador los copia a `~/.git-hooks/`, y git los usa sólo con una
+carpeta global de hooks. Si git no tenía ninguna, `install` (o `apply`) la apuntó a esa carpeta; si ya tenías otra, no
+la tocó. Mirá cómo quedó:
 
 ```bash
 git config --global --get core.hooksPath
 ```
 
-Si no devuelve nada, activalos (en PowerShell, la misma línea con `"$env:USERPROFILE\.git-hooks"`):
+Si no devuelve nada (por ejemplo, git no dejó escribir la configuración), activalos a mano (en PowerShell, la misma línea
+con `"$env:USERPROFILE\.git-hooks"`):
 
 ```bash
 git config --global core.hooksPath ~/.git-hooks
 ```
 
-Si devuelve otra carpeta (husky, hooks tuyos), no la pises: decidí vos. Sin este paso, el arnés funciona igual, pero
-sin los controles que corren al commitear. `harness.js doctor` te dice si quedó.
+Si devuelve otra carpeta (husky, hooks tuyos), no la pises: decidí vos. Sin la carpeta global, el arnés funciona igual,
+pero sin los controles que corren al commitear. `harness.js doctor` te dice si quedó.
 
 **3. engram y Clockify son opcionales.** engram (memoria entre sesiones) se prende con `TYCON_ENGRAM=1` o
 `"integrations": { "engram": true }` en `~/.claude/tycon.json`; Clockify (horas), con `TYCON_CLOCKIFY=1` y
