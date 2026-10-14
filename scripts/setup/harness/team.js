@@ -867,7 +867,7 @@ function judgeContent(plan, read, opts) {
   // nunca tira: un error del disco al escribir lo leído es un motivo, y la temporal se borra (fallos silenciosos, A2a vuelta 2)
   try { return judgeContentIn(dir, plan, read, opts); } catch (e) { dropStaged(dir); return { ok: false, status: 'blocked', reason: `${opts.head}: no pude revisar la capa (${e.code || e.message})` }; }
 }
-function judgeContentIn(dir, plan, read, { version, readerTree, home, env, head, commit }) {
+function judgeContentIn(dir, plan, read, { version, readerTree, deferReaders = false, home, env, head, commit }) {
   const fail = (o) => { dropStaged(dir); return o; };
   const wanted = [{ path: DECLARATION, sha: plan.declaration && plan.declaration.sha }, ...plan.files.filter((f) => isContentChecked(f.path)).map((f) => ({ path: f.path, sha: f.sha }))];
   for (const w of wanted) {
@@ -884,26 +884,34 @@ function judgeContentIn(dir, plan, read, { version, readerTree, home, env, head,
   if (!d.ok) return fail({ ok: false, status: 'blocked', invalid: true, commit, reason: `${head} @ ${sha7(commit)}: ${d.reason}` });
   let profileEntries = null;
   const pfile = profileFileOf(plan.files);
-  if (pfile) {
+  // `deferReaders`: quien llama todavía no tiene la versión que va a quedar (la mudanza, antes de bajarla) y la juzga después
+  // con SUS lectores; juzgar ahora con los de otro árbol (el clon viejo) rechazaría o aceptaría por un lector que no va a
+  // quedar. Lo que no se juzgó vuelve en `readersDeferred`: quien llama no puede tratar este resultado como el definitivo
+  const readersDeferred = [];
+  if (pfile && deferReaders) readersDeferred.push(pfile.path);
+  if (pfile && !deferReaders) {
     const v = validateProfile(readText(pfile.path), { readerTree, home, env, name: pfile.path });
     if (!v.ok) return fail({ ok: false, status: 'blocked', invalid: true, commit, reason: `${head} @ ${sha7(commit)}: ${v.reason} — la capa no se apila (${plan.files.length} archivo(s) declarados)` });
     profileEntries = v.entries;
   }
-  if (plan.files.some((f) => f.path === TEAM_REPOS_PATH)) {
+  if (plan.files.some((f) => f.path === TEAM_REPOS_PATH) && deferReaders) readersDeferred.push(TEAM_REPOS_PATH);
+  else if (plan.files.some((f) => f.path === TEAM_REPOS_PATH)) {
     const v = validateTeamRepos(readText(TEAM_REPOS_PATH), { readerTree });
     if (!v.ok) return fail({ ok: false, status: 'blocked', invalid: true, commit, reason: `${head} @ ${sha7(commit)}: ${v.reason} — la capa no se apila (${plan.files.length} archivo(s) declarados)` });
   }
   const cp = contentProblems(dir, plan.files.filter((f) => isContentChecked(f.path)));
   if (cp.length) return fail({ ok: false, status: 'blocked', invalid: true, commit, reason: `${head} @ ${sha7(commit)}: no se apila — ${cp.map((x) => `${x.path}: ${x.reason}`).join(' · ')}` });
-  return { ok: true, dir, declaration: { name: d.name, requires: d.requires }, profileEntries };
+  return { ok: true, dir, declaration: { name: d.name, requires: d.requires }, profileEntries, readersDeferred };
 }
 
 /**
  * Resuelve y valida la capa SIN escribir ni registrar: la punta de `main` del repo del equipo, el commit y su árbol, la lista
- * del árbol (lista cerrada), la declaración (contra `version`) y el perfil (con el lector de `readerTree`).
- * `{ ok: true, repo, ref, commit, tree, etag, files, declaration: { name, requires }, totalBytes }` o `{ ok: false, status, reason }`.
+ * del árbol (lista cerrada), la declaración (contra `version`) y el perfil (con el lector de `readerTree`). Con `deferReaders`,
+ * el perfil y `team-repos.json` no se juzgan (no hay todavía lectores de la versión que va a quedar): van en `readersDeferred`
+ * y quien llama vuelve a resolver con `readerTree` apuntando a esa versión antes de escribir nada.
+ * `{ ok: true, repo, ref, commit, tree, etag, files, declaration: { name, requires }, totalBytes, readersDeferred }` o `{ ok: false, status, reason }`.
  */
-function resolveTeam(c, repo, { version, readerTree, home = os.homedir(), env = process.env, publicPaths = [], knownCommits = [] } = {}) {
+function resolveTeam(c, repo, { version, readerTree, deferReaders = false, home = os.homedir(), env = process.env, publicPaths = [], knownCommits = [] } = {}) {
   const head = `capa del equipo (${repo})`;
   const ref = c.get(`/repos/${repo}/git/ref/heads/${TEAM_REF}`);
   if (!ref.ok || ref.status !== 200 || !ref.json || !ref.json.object || typeof ref.json.object.sha !== 'string') {
@@ -938,10 +946,10 @@ function resolveTeam(c, repo, { version, readerTree, home = os.homedir(), env = 
   const judged = judgeContent(plan, (p) => {
     const r = contentsAt(c, repo, p, commit);
     return r.ok ? { ok: true, buf: r.text === null ? null : r.buf } : r;
-  }, { version, readerTree, home, env, head, commit });
+  }, { version, readerTree, deferReaders, home, env, head, commit });
   if (!judged.ok) return judged;
   dropStaged(judged.dir);
-  return { ok: true, repo, host: 'github', ref: TEAM_REF, commit, tree, etag, files: plan.files, declaration: judged.declaration, totalBytes: plan.totalBytes, profileEntries: judged.profileEntries, notes: plan.notes };
+  return { ok: true, repo, host: 'github', ref: TEAM_REF, commit, tree, etag, files: plan.files, declaration: judged.declaration, totalBytes: plan.totalBytes, profileEntries: judged.profileEntries, readersDeferred: judged.readersDeferred, notes: plan.notes };
 }
 
 /**
