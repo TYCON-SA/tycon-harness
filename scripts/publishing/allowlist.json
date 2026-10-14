@@ -66,8 +66,7 @@
           { "glob": ".tycon/**", "reason": "la configuración del equipo para este repo" },
           { "glob": "packs/**", "reason": "cada manifiesto viaja con su paquete; el de clientes no sale nunca" },
           { "glob": "skills/core/signalr-realtime/**", "reason": "describe el hub de mensajería del producto de un cliente: los reemplazos borran los nombres, pero el contenido sigue siendo de ese producto; sólo serviría reescrita en genérico (2026-10-05)" },
-          { "glob": "skills/tycon-pipeline/HISTORIA.md", "reason": "la historia de la skill (casos, fechas y mediciones con los nombres de los productos del equipo), mudada del SKILL.md para que no se cargue sola; la skill publicada no la lee, y test-skill-contract.js, que viaja, mide sus párrafos por la huella que declara el contrato (`en_historia`) y los verifica literales sólo donde HISTORIA.md está (story 8.10, pregunta 4, decidido el 2026-09-28)" },
-          { "glob": "skills/tycon-alta-de-producto/**", "reason": "casi toda infraestructura interna del equipo (su Azure DevOps, políticas de rama, permisos, el catálogo de producción) y usa las plantillas de new-product-templates/, que quedan afuera (decidido el 2026-09-28)" }
+          { "glob": "skills/tycon-pipeline/HISTORIA.md", "reason": "la historia de la skill (casos, fechas y mediciones con los nombres de los productos del equipo), mudada del SKILL.md para que no se cargue sola; la skill publicada no la lee, y test-skill-contract.js, que viaja, mide sus párrafos por la huella que declara el contrato (`en_historia`) y los verifica literales sólo donde HISTORIA.md está (story 8.10, pregunta 4, decidido el 2026-09-28)" }
         ]
       }
     },
