@@ -1,0 +1,24 @@
+{
+  "_lea_esto_primero": [
+    "EJEMPLO para una organización en GitHub. Qué repos mira la revisión nocturna de dependencias (pipelines/operations/github/dependency-audit.yml).",
+    "En tu repo de operaciones va en scripts/nightly/dependencies/repos.json. Agregar un repo es una entrada acá, no código.",
+    "`ruta` es la etiqueta del repo (la carpeta donde el workflow lo clona); `github` es <dueño>/<repo>. Se mira la rama main.",
+    "`tipo`: npm (npm audit contra el package-lock.json) o nuget (dotnet list package --vulnerable, sobre el .sln de la raíz).",
+    "`activo: false` lo saca de la corrida sin borrarlo. `subruta` (opcional): audita una subcarpeta con su propio lockfile.",
+    "Bloque `github`: `issues_enabled` (true abre un issue en el repo del producto por cada hallazgo; false, no se habla con GitHub) e",
+    "`identity` (opcional: la cuenta con la que corre la noche, si la credencial no la deja leer, como la de una GitHub App).",
+    "Una organización, una plataforma: con entradas `ado` (Azure DevOps) la revisión de GitHub sale en rojo."
+  ],
+  "presupuesto_de_ruido": {
+    "_por_que": "Un aviso que suena todas las noches se ignora a la tercera. Lo que no entra en el tope queda para la noche siguiente; las críticas no consumen tope.",
+    "tope_pr_por_noche": 2
+  },
+  "github": {
+    "issues_enabled": false
+  },
+  "raiz_por_defecto": "~/SourceCode",
+  "repos": [
+    { "producto": "Acme Web", "ruta": "acme/web-frontend", "github": "acme/web-frontend", "tipo": "npm", "activo": true },
+    { "producto": "Acme Web", "ruta": "acme/web-backend", "github": "acme/web-backend", "tipo": "nuget", "activo": true }
+  ]
+}

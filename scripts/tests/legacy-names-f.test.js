@@ -263,8 +263,8 @@ const twelve = () => [
   { file: SCRIPT_WORK_ITEMS, line: 75, what: 'el --config por defecto de los pedidos de trabajo', dest: DEPS_CONFIG },
   { file: SCRIPT_WORK_ITEMS, line: 77, what: 'el --pending por defecto de los pedidos de trabajo', dest: QUEUE_DEPS },
   { file: scriptWatcher(), line: 51, what: 'el --pending por defecto de la mirada de producción', dest: QUEUE_WATCHER },
-  { file: 'scripts/tools/harness-map/censo.js', line: 217, what: 'la lista de subcarpetas de scripts/ que recorre el censo', dest: DEPS_CONFIG },
-  { file: 'scripts/tools/harness-map/version-publica.js', line: 51, what: 'el --output por defecto del mapa público', dest: MINI_CLASS },
+  { file: 'scripts/tools/harness-map/census.js', line: 217, what: 'la lista de subcarpetas de scripts/ que recorre el censo', dest: DEPS_CONFIG },
+  { file: 'scripts/tools/harness-map/public-version.js', line: 51, what: 'el --output por defecto del mapa público', dest: MINI_CLASS },
 ];
 // Las nueve de al lado, que NO se tocan: la foto de cada noche sigue en `.dashboard/<cola>` (archivo, cola, cuántas).
 const photoNeighbors = () => [
@@ -754,8 +754,8 @@ test('T60b · BatchF_PipelinesParseAndDryRunsMatch — cada guion, sin --pending
   assert.deepStrictEqual(f.fetched, TOY_ROUTES, `el paso que trae los repos: ${err(f.raw.fetch)}`);
   assert.deepStrictEqual(list(toy.home), [], 'ningún guion escribió en la HOME');
   // el generador del mapa público, contra el repo de verdad y sin escribir: su salida por defecto está en la carpeta nueva
-  const check = spawnSync(process.execPath, [path.join(RAIZ, 'scripts', 'tools', 'harness-map', 'version-publica.js'), '--check'], { cwd: toy.base, encoding: 'utf8', env: toy.env, timeout: 60000 });
-  assert.strictEqual(check.status, 0, `version-publica.js --check: ${check.stdout.slice(0, 300)} ${check.stderr.slice(0, 300)}`);
+  const check = spawnSync(process.execPath, [path.join(RAIZ, 'scripts', 'tools', 'harness-map', 'public-version.js'), '--check'], { cwd: toy.base, encoding: 'utf8', env: toy.env, timeout: 60000 });
+  assert.strictEqual(check.status, 0, `public-version.js --check: ${check.stdout.slice(0, 300)} ${check.stderr.slice(0, 300)}`);
 });
 
 test('T60b · laboratorio — con las fichas y repos.json en las carpetas viejas, ningún guion encuentra nada', { skip: SKIP_PUBLIC }, () => {

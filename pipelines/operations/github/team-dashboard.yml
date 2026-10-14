@@ -1,0 +1,165 @@
+# ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# El tablero del arnés — MODELO de GitHub Actions para una organización que vive en GitHub (story 8.31)
+#
+# Cómo darlo de alta: pipelines/operations/github/README.md. Se copia a `.github/workflows/` del repo de operaciones,
+# sin cambiar nada: qué arnés corre lo dice `team-repos.json` del repo de operaciones.
+#
+# El tablero del arnés: hace lo mismo y en el mismo orden que el modelo de Azure (pipelines/operations/team-dashboard.yml).
+# `artifacts/tablero-del-arnes.html` del repo de operaciones tiene UN escritor: este workflow. Lee lo que dejaron los otros
+# dos en `.dashboard/` (las fuentes que espera, `scripts/nightly/dashboard/sources.json` del repo de operaciones),
+# genera la página, verifica su sello (de hoy, de esta corrida y del snapshot de métricas más nuevo), la guarda en main
+# y verifica lo PUBLICADO. Corre después de las métricas: sin el punto del día, el sello no pasa. Lo que cambia a
+# propósito: no hay buzón de corridas (es un almacenamiento de Azure: las fichas del equipo salen «no leído»), y lo
+# «naranja» de Azure es un aviso (::warning::) con la corrida en verde. No necesita la credencial de la organización.
+# Efectos: una corrida programada SIEMPRE guarda (en ella `inputs` está vacío); una a mano, según `effects`.
+# ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+name: team-dashboard
+
+on:
+  schedule:
+    - cron: '47 8 * * *'
+  workflow_dispatch:
+    inputs:
+      effects:
+        description: 'Con efectos fuera de la corrida (guardar la página y verificar la publicada)'
+        type: boolean
+        default: true
+      harness_ref:
+        description: 'Rama, tag o commit del arnés (vacío: la variable HARNESS_REF, o main)'
+        type: string
+        default: ''
+
+permissions:
+  contents: write
+
+concurrency:
+  group: harness-team-dashboard
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Generar la página del tablero y publicarla
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      EFFECTS: ${{ github.event_name == 'schedule' || inputs.effects }}
+      # la clave de la corrida que usan el guardado y el sello del tablero (en Azure, Build.BuildId)
+      BUILD_BUILDID: ${{ github.run_id }}
+      SYSTEM_JOBATTEMPT: ${{ github.run_attempt }}
+    steps:
+      - name: El repo de operaciones
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: ops
+          persist-credentials: false
+
+      - name: Qué arnés corre (team-repos.json del repo de operaciones)
+        id: harness
+        working-directory: ops
+        env:
+          INPUT_REF: ${{ inputs.harness_ref }}
+          VAR_REF: ${{ vars.HARNESS_REF }}
+        run: |
+          set -euo pipefail
+          node - <<'JS'
+          const fs = require('fs');
+          const red = (m) => { console.log(`::error::${m} — no se mide nada`); process.exit(1); };
+          let t;
+          try { t = JSON.parse(fs.readFileSync('team-repos.json', 'utf8')); } catch (e) { red(`el repo de operaciones no trae un team-repos.json legible (${e.message})`); }
+          const p = t && t.public;
+          if (!p || p.platform !== 'github') red('team-repos.json: public tiene que ser el repo del arnés en GitHub (platform «github»)');
+          const name = /^[A-Za-z0-9._-]+$/;
+          if (!name.test(String(p.org || '')) || !name.test(String(p.repo || ''))) red('team-repos.json: public.org o public.repo no es un nombre de GitHub');
+          const ref = process.env.INPUT_REF || process.env.VAR_REF || 'main';
+          if (!/^[A-Za-z0-9._\/-]+$/.test(ref) || ref.includes('..') || /^refs\/pull\//.test(ref) || ref.startsWith('-')) red(`la referencia del arnés «${ref}» no es una rama, un tag ni un commit`);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `repository=${p.org}/${p.repo}\nref=${ref}\n`);
+          console.log(`el arnés: ${p.org}/${p.repo} @ ${ref}`);
+          JS
+
+      - name: El arnés
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ steps.harness.outputs.repository }}
+          ref: ${{ steps.harness.outputs.ref }}
+          path: harness
+          fetch-depth: 1
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Armar el árbol (los datos y la configuración de operaciones, encima del arnés)
+        env:
+          OPS_TOKEN: ${{ github.token }}
+        run: bash harness/pipelines/operations/github/prepare-tree.sh
+
+      - name: Traer de main del repo de operaciones los datos más nuevos
+        if: github.ref == 'refs/heads/main'
+        working-directory: harness
+        env:
+          OPS_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          . pipelines/operations/github/operations-auth.sh
+          node scripts/ci/push-nightly-data.js sync -- .dashboard artifacts/tablero-del-arnes.html 2>&1 | bash pipelines/operations/github/annotate.sh
+
+      - name: El árbol sigue siendo el que se armó (antes de medir)
+        working-directory: harness
+        run: |
+          set -uo pipefail
+          if ! OUT=$(node scripts/ci/harness-tree.js --check-tree --worktree --repo . 2>&1); then
+            echo "::error::$(printf '%s' "${OUT}" | tail -n 1) — no se mide nada"
+            exit 1
+          fi
+          echo "${OUT}"
+
+      - name: Generar la página del tablero (modo nocturno)
+        working-directory: harness
+        run: |
+          set -uo pipefail
+          set +e   # GitHub corre el paso con bash -e: el código de salida se lee abajo, no corta acá
+          node scripts/nightly/dashboard/dashboard.js --nightly 2>&1 | bash pipelines/operations/github/annotate.sh
+          RC=${PIPESTATUS[0]}
+          case "${RC}" in
+            0) ;;
+            2) echo "::warning::El tablero se generó con una fuente obligatoria ausente o vieja (exit 2): la página lo dice. Si esa fuente no existe en tu organización, sacala de las obligatorias en scripts/nightly/dashboard/sources.json del repo de operaciones" ;;
+            *) echo "::error::El generador del tablero no pudo medir o escribir la página (exit ${RC})"; exit 1 ;;
+          esac
+
+      # La prueba de vida NO es «el archivo existe»: el sello tiene que ser de hoy, de ESTA corrida y del snapshot más nuevo.
+      - name: Prueba de vida — el sello de la página es de hoy y del snapshot más nuevo
+        working-directory: harness
+        run: node scripts/nightly/dashboard/seal.js --verify artifacts/tablero-del-arnes.html --today "$(date -u +%Y-%m-%d)" --run "${BUILD_BUILDID}" --dashboard .dashboard
+
+      - name: Guardar la página del día en el repo de operaciones
+        if: env.EFFECTS == 'true' && github.ref == 'refs/heads/main'
+        working-directory: harness
+        env:
+          OPS_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          . pipelines/operations/github/operations-auth.sh
+          DAY=$(date -u +%Y-%m-%d)
+          node scripts/ci/push-nightly-data.js save \
+            --message "chore(tablero): página del arnés ${DAY} [nocturno]" \
+            --require artifacts/tablero-del-arnes.html \
+            --verify "node scripts/nightly/dashboard/seal.js --verify \"\$PUSH_DIR/artifacts/tablero-del-arnes.html\" --today \"${DAY}\" --run \"${BUILD_BUILDID}\" --dashboard \"\$PUSH_DIR/.dashboard\"" \
+            --verify-export .dashboard \
+            -- artifacts/tablero-del-arnes.html 2>&1 | bash pipelines/operations/github/annotate.sh
+
+      # Lo publicado, no el disco: la página que abre la organización es la de main del repo de operaciones.
+      - name: Verificar la página publicada
+        if: env.EFFECTS == 'true' && github.ref == 'refs/heads/main'
+        working-directory: harness
+        env:
+          OPS_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          . pipelines/operations/github/operations-auth.sh
+          PUB="${RUNNER_TEMP}/publicada.html"
+          git fetch --quiet origin main || { echo "::error::No se pudo traer main del repo de operaciones para verificar lo publicado"; exit 1; }
+          git show origin/main:artifacts/tablero-del-arnes.html > "${PUB}" || { echo "::error::La página del tablero no está en main del repo de operaciones"; exit 1; }
+          node scripts/nightly/dashboard/seal.js --verify "${PUB}" --today "$(date -u +%Y-%m-%d)" --run "${BUILD_BUILDID}" --dashboard .dashboard \
+            || { echo "::error::La página publicada no pasa la verificación del sello"; exit 1; }
+          echo "La página publicada pasa la verificación."

@@ -1,0 +1,40 @@
+<!-- El mapa interno de JUGUETE para las pruebas del mapa (scripts/tests/mapa-arnes-*.test.sh): la misma forma que
+     el de verdad (artifacts/mapa-arnes.html, en el repo del equipo), con datos inventados. No es el mapa del arnés. -->
+<style>
+  :root { --fondo: #ffffff; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --fondo: #111111;
+    }
+  }
+  :root[data-theme="dark"] {
+    --fondo: #111111;
+  }
+  body { background: var(--fondo); }
+</style>
+<div class="mapa">
+  <svg viewBox="0 0 100 40">
+    <rect x="1" y="1" width="20" height="10" class="s-dev"/>
+    <text x="2" y="8" class="t-dev">DEV</text>
+    <rect x="30" y="1" width="20" height="10" class="s-admin"/>
+    <text x="31" y="8" class="t-admin">ADMIN</text>
+    <text x="60" y="8" class="t-real">acme-harness-interno</text>
+  </svg>
+  <ul class="leyenda">
+    <li><span class="tag-dev">DEV</span> corre en la máquina de cada dev</li>
+    <li><span class="tag-admin">ADMIN</span> corre en el servidor-acme-01</li>
+  </ul>
+</div>
+<script>
+const LUGARES = {"dev": "La máquina del dev", "admin": "Máquina del admin del arnés"};
+const REPOS = {"tcg": "acme-harness-interno"};
+const D = {
+  "prompt": {"capa":"Sesión","nombre":"Aviso del prompt","tipo":"control de sesión","real":"on-prompt","por":"Le recuerda al agente la regla del turno.","lugar":"dev","donde":"La sesión del dev.","cuando":"En cada prompt.","archivos":[["tcg","scripts/hooks/on-prompt-acme.js"]]},
+  "examen": {"capa":"Banco","nombre":"Examen de los revisores","tipo":"script","real":"periodic-exam","por":"Corre los revisores contra casos conocidos.","lugar":"admin","donde":"El servidor-acme-01, a las 03:30.","cuando":"martes y viernes.","archivos":[["tcg","scripts/controls-bench/periodic-exam.js"]]},
+  "vigilante": {"capa":"Producción","nombre":"Vigilante","tipo":"script","real":"watcher","por":"Junta síntomas de producción.","lugar":"admin","donde":"El servidor-acme-01, con su credencial.","cuando":"Cada noche.","archivos":[["tcg","scripts/nightly/watcher/watcher.js"]]},
+  "censo": {"capa":"Mapa","nombre":"Censo del mapa","tipo":"script","real":"censo","por":"Toda pieza tiene lugar en el mapa.","lugar":"dev","donde":"El pre-commit del repo del arnés.","cuando":"En cada commit que toca el mapa.","archivos":[["tcg","scripts/tools/harness-map/census.js"]]},
+  "cobertura": {"capa":"Banco","nombre":"Cobertura de hooks","tipo":"script","real":"check-hook-coverage","por":"Todo hook tiene sus casos.","lugar":"dev","donde":"El pre-commit.","cuando":"Al tocar un hook.","archivos":[["tcg","build/check-hook-coverage.js"]]},
+  "guia": {"capa":"Guías","nombre":"Registro de incidentes","tipo":"guía","por":"Por qué existe cada control.","lugar":"dev","donde":"A demanda.","cuando":"Antes de retirar un control.","archivos":[["tcg","guides/incident-log.md"]]},
+  "dev": {"capa":"Afuera","nombre":"El dev","tipo":"externo","por":"Quien usa el arnés.","lugar":"dev","donde":"Su máquina.","cuando":"Siempre.","archivos":[]}
+};
+</script>

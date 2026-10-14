@@ -108,8 +108,9 @@ An example: at ACME, Pedro is the administrator and Juan writes code.
 
 **The nightly jobs.** On Azure DevOps, the dependency review, the cycle metrics and the dashboard run in your
 organization with three model pipelines and your operations repo: [how to set them up](pipelines/operations/README.md)
-(in Spanish). On GitHub (Actions) they are not there yet. The production watcher is not published: it is still TYCON's
-own.
+(in Spanish). On GitHub, the same three run as GitHub Actions workflows, and the dependency findings become issues in
+each product repo: [how to set them up](pipelines/operations/github/README.md) (in Spanish). The production watcher is not
+published: it is still TYCON's own.
 
 ## Where to go next
 

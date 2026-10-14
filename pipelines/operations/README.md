@@ -9,6 +9,8 @@ tuyo, el **repo de operaciones**:
 | `dependency-audit.yml` | Busca dependencias con vulnerabilidades conocidas en los repos que declares, y abre un pull request por hallazgo | `.dashboard/dependencias/` e `inbox/dependencies/` |
 | `team-dashboard.yml` | Arma una página con todo lo anterior | `artifacts/tablero-del-arnes.html` |
 
+Si tu organización vive en GitHub, los mismos tres corren como GitHub Actions: [esta otra página](github/README.md).
+
 Esta página es para quien administra Azure DevOps. Lleva una hora la primera vez. No hace falta instalar nada en una
 máquina: todo pasa en Azure.
 
@@ -35,6 +37,7 @@ lee el arnés (los ejemplos están en `pipelines/operations/examples/` del arné
 |---|---|---|
 | `operations.json` | A quién se asignan los pedidos de trabajo y quiénes revisan los pull requests. Forma: `scripts/lib/operations-config.js` | Sí, para la revisión de dependencias |
 | `scripts/nightly/dependencies/repos.json` | Qué repos mira la revisión de dependencias (`ado`: `<proyecto>/<repo>`; `tipo`: `npm` o `nuget`) | Sí, para la revisión de dependencias |
+| `team-repos.json` | Opcional. Dónde vive cada repo del arnés de tu organización (forma: `scripts/lib/team-repos.js`). Si está, tiene que validar: con `operations.platform: github` los avisos de dependencias son issues de GitHub, no pedidos de trabajo | No |
 | `scripts/nightly/dashboard/sources.json` | Qué fuentes espera el tablero. Usá el ejemplo: el del arnés espera fuentes que tu organización no tiene | Sí, para el tablero |
 | `pipelines/stage-metrics.yml`, `pipelines/dependency-audit.yml`, `pipelines/team-dashboard.yml` | Copias de los tres modelos de esta carpeta | Sí |
 
