@@ -82,13 +82,19 @@ $Repaired = ''
 function Test-Link([string]$P) { try { $i = Get-Item -LiteralPath $P -Force -ErrorAction Stop; return [bool]($i.Attributes -band [IO.FileAttributes]::ReparsePoint) } catch { return $false } }
 function Get-LinkTarget([string]$P) { try { $t = (Get-Item -LiteralPath $P -Force -ErrorAction Stop).Target; if ($t -is [array]) { $t = $t[0] }; return ([string]$t) -replace '^\\\\\?\\', '' } catch { return '' } }
 function Remove-Link([string]$P) { if (Test-Link $P) { [System.IO.Directory]::Delete($P, $false) } }
+# La unión se crea con Node, como todas las operaciones de enlace del arnés (en Windows el shell no las hace igual):
+# este camino sólo corre con node en el PATH (sin node no se sabe si harness.js arranca, y no se toca nada).
+function New-Junction([string]$P, [string]$Target) {
+    & node -e "require('fs').symlinkSync(process.argv[2], process.argv[1], 'junction')" $P $Target
+    if ($LASTEXITCODE -ne 0) { throw "node no pudo crear la unión $P → $Target" }
+}
 # (si crear la nueva falla después de quitar la vieja, se recrea la vieja: nunca queda el nombre sin enlace callado)
 function Set-Link([string]$P, [string]$Target) {
     $Before = Get-LinkTarget $P
     Remove-Link $P
-    try { New-Item -ItemType Junction -Path $P -Target $Target -ErrorAction Stop | Out-Null }
+    try { New-Junction $P $Target }
     catch {
-        if ($Before -and -not (Test-Path $P)) { try { New-Item -ItemType Junction -Path $P -Target $Before -ErrorAction Stop | Out-Null } catch { throw "no pude apuntar $P a $Target y quedó sin enlace (antes iba a $Before): $($_.Exception.Message)" } }
+        if ($Before -and -not (Test-Path $P)) { try { New-Junction $P $Before } catch { throw "no pude apuntar $P a $Target y quedó sin enlace (antes iba a $Before): $($_.Exception.Message)" } }
         throw
     }
 }
