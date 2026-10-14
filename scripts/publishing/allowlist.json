@@ -5,6 +5,10 @@
       "arnes": {
         "in": [
           "README.md",
+          "README.es.md",
+          "INDEX.md",
+          "getting-started/reference.md",
+          "getting-started/reference.es.md",
           "INSTALL.md",
           "story-format.md",
           "engram-version",
@@ -29,7 +33,7 @@
           { "glob": "scripts/tools/harness-map/**", "reason": "sin artifacts/mapa-arnes.html (que queda afuera) el pre-commit del arnés rechaza todo commit que la toque" },
           { "glob": "artifacts/**", "reason": "páginas generadas por y para el equipo (tablero, mapa, planes)" },
           { "glob": ".tycon/**", "reason": "la configuración del equipo para este repo: revisores, portones y los servidores de producción declarados" },
-          { "glob": "onboarding/**", "reason": "el onboarding interno del equipo, con el material de charla (onboarding/mini-class/, que se publica aparte, si se publica); el de afuera es la portada pública (.github/README.md) y el INSTALL.md con sus bloques sólo-públicos (story 8.7)" },
+          { "glob": "onboarding/**", "reason": "el onboarding interno del equipo, con el material de charla (onboarding/mini-class/, que se publica aparte, si se publica); el de afuera es la portada pública (README.md) y el INSTALL.md con sus bloques sólo-públicos (story 8.7)" },
           { "glob": "scripts/publishing/public-files/**", "reason": "los papeles de la copia pública (licencia, NOTICE, portadas, comunidad, incident-log público): cada uno llega a su destino por un sintético (story 8.7, AC 9)" },
           { "glob": "scripts/publishing/public-repos.json", "reason": "sólo lo leen el exportador, la sincronización y el reconocedor de repos del arnés (harness-repo.js, story 8.26), en el interno; la copia lleva el nombre ya puesto en sus papeles (story 8.7, AC 14) y en scripts/setup/public-remotes.json" },
           { "glob": "scripts/publishing/split.json", "reason": "el reparto de cada ruta del interno el día del corte a GitHub: nombra las carpetas privadas y sus destinos (story 8.26, tanda A)" },
@@ -57,7 +61,7 @@
           "skills/tycon-create-story/**"
         ],
         "out": [
-          { "glob": "README.md", "reason": "la documentación interna del repo; la de afuera es la portada pública (.github/README.md, story 8.7)" },
+          { "glob": "README.md", "reason": "la documentación interna del repo; la de afuera es la portada pública (README.md del arnés)" },
           { "glob": ".gitattributes", "reason": "los finales de línea de la copia los fija el .gitattributes de la raíz, que sale del arnés (story 8.17): en un solo repo, el de agent-skills caería en la misma ruta, y los dos traen las mismas reglas (lo comprueba scripts/tests/eol.test.js)" },
           { "glob": ".tycon/**", "reason": "la configuración del equipo para este repo" },
           { "glob": "packs/**", "reason": "cada manifiesto viaja con su paquete; el de clientes no sale nunca" },
@@ -182,8 +186,6 @@
     { "target": "scripts/ci/product-parity.json", "from": "scripts/publishing/synthetic/product-parity.json", "reason": "el real es la lista de productos del equipo; con «sin_productos» los dos controles de paridad salen 0 diciendo que no compararon nada (story 8.10.3)" },
     { "target": "LICENSE", "from": "scripts/publishing/public-files/LICENSE", "packages": ["core"], "reason": "Apache License 2.0, texto canónico (story 8.7, AC 1); los repos internos no la llevan" },
     { "target": "NOTICE", "from": "scripts/publishing/public-files/NOTICE", "packages": ["core"], "reason": "titular, marcas y atribuciones de las derivadas (story 8.7, AC 2)" },
-    { "target": ".github/README.md", "from": "scripts/publishing/public-files/.github/README.md", "packages": ["core"], "reason": "la portada en inglés (story 8.7, AC 4)" },
-    { "target": ".github/README.es.md", "from": "scripts/publishing/public-files/.github/README.es.md", "packages": ["core"], "reason": "la portada en castellano (story 8.7, AC 4)" },
     { "target": ".github/CONTRIBUTING.md", "from": "scripts/publishing/public-files/.github/CONTRIBUTING.md", "packages": ["core"], "reason": "cómo contribuir a una copia espejo (story 8.7, AC 3)" },
     { "target": ".github/CODE_OF_CONDUCT.md", "from": "scripts/publishing/public-files/.github/CODE_OF_CONDUCT.md", "packages": ["core"], "reason": "Contributor Covenant 2.1 (story 8.7, AC 3)" },
     { "target": ".github/SECURITY.md", "from": "scripts/publishing/public-files/.github/SECURITY.md", "packages": ["core"], "reason": "cómo reportar una vulnerabilidad en privado (story 8.7, AC 3)" },

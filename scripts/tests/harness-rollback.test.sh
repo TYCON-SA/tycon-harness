@@ -193,7 +193,7 @@ if corre T23; then
   ! hay "TYCON_BLOCK:$BLOCK_V2" "$CLAUDE_MD_PATH" && ok "T23 bloques como en v1: el bloque de v2 salió" || mal "T23 el bloque de v2 sigue: $(cat "$CLAUDE_MD_PATH")"
   hay 'Bash(lab-manual:\*)' "$TYCON_SETTINGS_PATH" && hay 'línea a mano del dev' "$CLAUDE_MD_PATH" \
     && ok "T23 el permiso y la línea a mano siguen" || mal "T23 se perdió lo de a mano: settings=$(hay lab-manual "$TYCON_SETTINGS_PATH" && echo sí || echo no) CLAUDE.md=$(hay 'a mano' "$CLAUDE_MD_PATH" && echo sí || echo no)"
-  hay '@~/.claude/tycon-harness/README.md' "$CLAUDE_MD_PATH" && ok "T23 el @import (pieza propia de harness.js, por el lugar desde la story 8.19) no se tocó" || mal "T23 se fue el @import: $(cat "$CLAUDE_MD_PATH")"
+  hay '@~/.claude/tycon-harness/INDEX.md' "$CLAUDE_MD_PATH" && ok "T23 el @import (pieza propia de harness.js, por el lugar desde la story 8.19) no se tocó" || mal "T23 se fue el @import: $(cat "$CLAUDE_MD_PATH")"
   [ "$(head_de "$LAB_TREE")" = "$T1" ] && [ "$(head_de "$LAB_SKILLS")" = "$S1" ] && ok "T23 los dos árboles en v1" || mal "T23 árboles: tree $(head_de "$LAB_TREE") (v1 $T1) skills $(head_de "$LAB_SKILLS") (v1 $S1)"
   [ "$(rama_de "$LAB_TREE")" = main ] && [ "$(rama_de "$LAB_SKILLS")" = main ] && ok "T23 …en main, no en un HEAD suelto" || mal "T23 ramas: $(rama_de "$LAB_TREE") / $(rama_de "$LAB_SKILLS")"
   [ "$(estado "d['version']['number']")" = "$V1" ] && ok "T23 estado: version = v1 ($V1)" || mal "T23 version $(estado "d['version']['number']") (v1 $V1)"

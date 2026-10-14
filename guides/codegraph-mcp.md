@@ -65,8 +65,8 @@ manual, configura solo el repo indicado y hay que re-correr el script para cada 
 ## La regla de uso — ya viaja con el arnés
 
 Para que los agentes usen CodeGraph *por defecto* (sin que pidas "con codegraph"), el
-`README.md` de este repo incluye una **regla siempre activa** (sección "Regla siempre
-activa — CodeGraph"). Como tu `~/.claude/CLAUDE.md` importa ese README, la regla está en
+índice de este repo (`INDEX.md`) incluye una **regla siempre activa** (sección "Regla siempre
+activa — CodeGraph"). Como tu `~/.claude/CLAUDE.md` importa ese índice, la regla está en
 contexto en todas tus sesiones, y es **self-gating**: aplica cuando el repo tiene `.codegraph/` en
 su raíz o la sesión tiene tools de CodeGraph (incluidas las `codegraph-<subcarpeta>` del modo
 contenedor del instalador). No hay que hacer nada.
@@ -141,7 +141,7 @@ codegraph status   # estadísticas del índice
   o reinstalaste Node, volvé a correr el instalador.
 
 **El agente sigue usando `grep` en vez de las tools `codegraph`:**
-- ¿Tu `~/.claude/CLAUDE.md` importa el `README.md` del arnés? (paso 2 del
+- ¿Tu `~/.claude/CLAUDE.md` importa el `INDEX.md` del arnés? (paso 2 del
   setup TYCON). Sin ese import, la regla siempre-activa no se carga.
 - Reiniciá la sesión.
 

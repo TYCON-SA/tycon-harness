@@ -243,9 +243,11 @@ function coverUrl(block) {
  *  en Windows— es `install:clone` (y `install:clone-unattended`). */
 function readCover(clone, { fence, marker = 'install:clone' } = {}) {
   // los bloques de instalación viven en la referencia desde que la portada se achicó (2026-10-14); un clon que no la trae
-  // (una versión anterior, o un clon de juguete de las pruebas) los tiene en la portada
+  // (una versión anterior, o un clon de juguete de las pruebas) los tiene en la portada: en .github/ hasta que pasó a la
+  // raíz del repo (2026-10-14)
   const ref = path.join(clone, 'getting-started', 'reference.md');
-  const file = fs.existsSync(ref) ? ref : path.join(clone, '.github', 'README.md');
+  const oldCover = path.join(clone, '.github', 'README.md');
+  const file = fs.existsSync(ref) ? ref : fs.existsSync(oldCover) ? oldCover : path.join(clone, 'README.md');
   let text;
   try { text = fs.readFileSync(file, 'utf8'); } catch (e) { return { problem: `no pude leer la portada del clon (${file}): ${e.code || e.message}` }; }
   const block = coverBlock(text, marker, fence);

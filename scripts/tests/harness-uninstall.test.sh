@@ -832,7 +832,7 @@ if s.get("cleanupPeriodDays") != 30: bad.append("cleanupPeriodDays (30, cambiado
 if "CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR" in (s.get("env") or {}): bad.append("la variable de env del arnés sigue")
 if s.get("permissions") != {"allow": ["Bash(ls:*)"]}: bad.append("los permisos del dev cambiaron")
 md = open(os.path.join(claude, "CLAUDE.md"), encoding="utf-8").read()
-if "TYCON_BLOCK" in md or "@~/.claude/tycon-claude-guides/README.md" in md or "@~/.claude/tycon-harness/README.md" in md: bad.append("CLAUDE.md conserva bloques o el @import (por cualquiera de los dos nombres del lugar)")
+if "TYCON_BLOCK" in md or "@~/.claude/tycon-claude-guides/README.md" in md or "@~/.claude/tycon-harness/README.md" in md or "@~/.claude/tycon-harness/INDEX.md" in md: bad.append("CLAUDE.md conserva bloques o el @import (por cualquiera de los dos nombres del lugar)")
 if "# lo mío" not in md: bad.append("CLAUDE.md perdió el texto propio")
 if glob.glob(os.path.join(claude, "commands", "tycon-*.md")): bad.append("quedaron los comandos copiados")
 if lex(os.path.join(claude, "tycon-claude-guides")): bad.append("el enlace ~/.claude/tycon-claude-guides sigue")

@@ -98,8 +98,8 @@ test('T1 SpanishNames_Guide_HasEveryRuleWithExample — la guía trae las cinco 
   for (const [es, en] of Object.entries(list.glossary)) {
     assert.ok(glossaryBody.includes(`\`${es}\``) && glossaryBody.includes(`\`${en}\``), `el glosario de la guía no trae ${es} → ${en}`);
   }
-  const readme = fs.readFileSync(path.join(RAIZ, 'README.md'), 'utf8');
-  assert.match(readme, /^\|[^\n]*`guides\/nombres-en-ingles\.md`[^\n]*\|$/m, 'el README no tiene la fila de la guía en «Cuándo leer cada guía»');
+  const readme = fs.readFileSync(path.join(RAIZ, 'INDEX.md'), 'utf8');
+  assert.match(readme, /^\|[^\n]*`guides\/nombres-en-ingles\.md`[^\n]*\|$/m, 'el índice (INDEX.md) no tiene la fila de la guía en «Cuándo leer cada guía»');
 });
 
 // ── T2 · la lista rota es «no pude mirar» ────────────────────────────────────────────────────────────────────────

@@ -134,7 +134,7 @@ const ROUTES = Object.freeze({
 });
 
 // ── Lo que tiene que estar antes de publicar ────────────────────────────────────────────────────────────────────
-const PAPERS = Object.freeze(['LICENSE', 'NOTICE', '.github/README.md', '.github/README.es.md', '.github/CONTRIBUTING.md',
+const PAPERS = Object.freeze(['LICENSE', 'NOTICE', 'README.md', 'README.es.md', '.github/CONTRIBUTING.md',
   '.github/CODE_OF_CONDUCT.md', '.github/SECURITY.md']);
 const LICENSE_MARKS = Object.freeze(['Apache License', 'Version 2.0']);
 // Dos carpetas que no pueden salir con ese nombre. El de la segunda va por partes: es el nombre de ADENTRO de una skill

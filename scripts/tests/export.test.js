@@ -3909,7 +3909,9 @@ const BOM = Buffer.from([0xef, 0xbb, 0xbf]);
 // del guion de bash publicado (desde la story 8.23, tanda E, lo baja por la API; antes era SOURCE= con la URL de clon, que
 // se sigue aceptando). Sin esa línea la copia está rota: se dice, no se saltea.
 function papelReal(rel) {
-  if (fs.existsSync(path.join(RAIZ, PAPELES, ENTRY_SCRIPTS[0]))) return fs.readFileSync(path.join(RAIZ, PAPELES, rel), 'utf8');
+  // la portada dejó de ser un papel (2026-10-14: README.md y README.es.md en la raíz, escritos en el público): en el
+  // privado ya no está en public-files/, y se toma del árbol armado como en el público
+  if (fs.existsSync(path.join(RAIZ, PAPELES, rel))) return fs.readFileSync(path.join(RAIZ, PAPELES, rel), 'utf8');
   const guion = fs.readFileSync(path.join(RAIZ, ENTRY_SCRIPTS[0]), 'utf8');
   const m = /^REPO="([A-Za-z0-9._-]+)\/([A-Za-z0-9._-]+)"$/m.exec(guion)
     || /^SOURCE="https:\/\/github\.com\/([A-Za-z0-9._-]+)\/([A-Za-z0-9._-]+)"$/m.exec(guion);

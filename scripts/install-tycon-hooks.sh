@@ -1171,6 +1171,18 @@ if [[ -f "$SYNC_BLOCKS" ]]; then
   fi
 fi
 
+# La línea de ~/.claude/CLAUDE.md que carga el índice de guías: desde 2026-10-14 el índice es INDEX.md y README.md es la
+# portada. Este aplicador es el del árbol NUEVO aunque la actualización la haya decidido el programa instalado antes, así
+# que la misma actualización deja la línea nueva (la vieja, reescrita en su lugar; nunca dos). No la agrega si no está:
+# eso es de harness.js. Fail-open: si no puede, la reescribe el próximo arranque. Detalle: setup/harness/import-line.js.
+if [[ -f "$SCRIPT_DIR/setup/harness/import-line.js" ]] && command -v node >/dev/null 2>&1; then
+  if [[ "$CHECK_ONLY" == "1" ]]; then
+    node "$SCRIPT_DIR/setup/harness/import-line.js" --fix --check --quiet 2>/dev/null || true
+  else
+    node "$SCRIPT_DIR/setup/harness/import-line.js" --fix --quiet 2>/dev/null || true
+  fi
+fi
+
 # ============================================================
 # Los comandos de barra del equipo (2026-08-31). Mismo problema que los bloques de
 # CLAUDE.md: viven versionados en `commands/` pero Claude Code los lee de

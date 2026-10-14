@@ -3,7 +3,7 @@
 [English](reference.md) · Castellano
 
 Lo que sigue es para consultar: instalar a mano, los perfiles, qué escribe en tu máquina, cómo se actualiza. Para
-instalar con Claude Code no hace falta leerlo: empezá por la [portada](../.github/README.es.md).
+instalar con Claude Code no hace falta leerlo: empezá por la [portada](../README.es.md).
 
 ## Qué es y qué no es
 
@@ -268,8 +268,8 @@ variable; `node ~/.claude/tycon-harness/scripts/lib/tycon-config.js explain` mue
 | `codegraph` | el índice de código de CodeGraph para los agentes (informativa: CodeGraph lo instalás vos) | `integrations.codegraph: true`, o `TYCON_CODEGRAPH=1` |
 | `mailbox` | sube los registros de cada corrida del pipeline a un buzón de tu organización; hace falta que la organización lo tenga armado (hoy, un almacenamiento de Azure) | `integrations.mailbox: true`, o `TYCON_MAILBOX=1` (su llave en `TYCON_MAILBOX_JSON`) |
 | `codex` | despliega el lado Codex | `integrations.codex: true` o `"detect"`, o `TYCON_CODEX=1` |
-| `claude` | enchufa Claude Code (hooks, ajustes, el import del README) | `integrations.claude: true` o `"detect"`, o `TYCON_CLAUDE=1` |
-| `nightly` | los avisos de los procesos de la noche de tu organización (tablero, dependencias, retrospectivas), que corren desde su repo de operaciones: ver [Para una organización](../.github/README.es.md#para-una-organización) | `integrations.nightly: true`, o `TYCON_NIGHTLY=1` |
+| `claude` | enchufa Claude Code (hooks, ajustes, el import del índice) | `integrations.claude: true` o `"detect"`, o `TYCON_CLAUDE=1` |
+| `nightly` | los avisos de los procesos de la noche de tu organización (tablero, dependencias, retrospectivas), que corren desde su repo de operaciones: ver [Para una organización](../README.es.md#para-una-organización) | `integrations.nightly: true`, o `TYCON_NIGHTLY=1` |
 | `telegram` | avisos de progreso a un chat de Telegram | `telegram.chat_id` en `~/.claude/tycon.json`, o `TYCON_TELEGRAM_CHAT_ID` |
 
 **El lado Codex**: el mismo arnés bajo Codex, traducido y desplegado solo. Pide `codex` en el PATH y logueado, y
@@ -294,7 +294,7 @@ tres bloques de reglas en `~/.claude/CLAUDE.md`, entre sus propios marcadores, y
 - `background-execution`: los pasos de más de dos minutos corren en segundo plano y se anuncian antes. Otro hook mide
   lo que dejó bloqueada la conversación (`TYCON_BLOCKING_METER=0`).
 - `tool-names`: la tabla con el nombre exacto de cada herramienta que nombran esas reglas.
-- La línea de import carga en cada sesión el `README.md` del arnés: unos 12 KB, en castellano, con el índice de las
+- La línea de import carga en cada sesión el `INDEX.md` del arnés: unos 13 KB, en castellano, con el índice de las
   guías y las reglas siempre activas.
 - Los enlaces de `~/.claude/skills` y `~/.claude/agents` dejan disponibles en todas tus sesiones las skills y los
   revisores del arnés: el nombre y la descripción de cada uno se cargan en cada sesión.

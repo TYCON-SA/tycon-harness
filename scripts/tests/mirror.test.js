@@ -86,8 +86,6 @@ const PAPERS_DIR = 'scripts/publishing/public-files';
 const PAPERS = {
   LICENSE: '                                 Apache License\n                           Version 2.0, January 2004\n\n   (texto de prueba)\n',
   NOTICE: 'Arnés de mentira\n',
-  '.github/README.md': '# Example harness\n\nA harness, for the tests.\n',
-  '.github/README.es.md': '# Arnés de ejemplo\n\nUn arnés, para las pruebas.\n',
   '.github/CONTRIBUTING.md': '# Contributing\n\nPull requests are not merged here.\n',
   '.github/CODE_OF_CONDUCT.md': '# Code of conduct\n\nBe kind.\n',
   '.github/SECURITY.md': '# Security\n\nReport privately.\n',
@@ -98,7 +96,7 @@ const ALLOWLIST = {
   packages: {
     core: {
       arnes: {
-        in: ['README.md', '.gitignore', 'scripts/**', 'guides/**', 'commands/**'],
+        in: ['README.md', 'README.es.md', '.gitignore', 'scripts/**', 'guides/**', 'commands/**'],
         out: [
           { glob: 'guides/bizuit/*.md', reason: 'va al paquete bizuit' },
           { glob: `${PAPERS_DIR}/**`, reason: 'los papeles llegan a su destino por un sintético' },
@@ -180,6 +178,8 @@ function buildTemplate() {
   for (const s of fixedSamples('arnes')) inHarness[s] = 'muestra de una exclusión fija\n';
   Object.assign(inHarness, {
     'README.md': '# Arnés de mentira\n\nPara probar la publicación.\n',
+    // la portada en castellano: desde 2026-10-14 las dos portadas viven en la raíz del arnés, no son papeles
+    'README.es.md': '# Arnés de mentira\n\nPara probar la publicación, en castellano.\n',
     '.gitignore': 'node_modules/\n*.log\n',
     'scripts/hola.js': "'use strict';\nmodule.exports = () => 'hola';\n",
     'guides/guia.md': '# Guía\n\nPrimera versión.\n',

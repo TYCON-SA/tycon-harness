@@ -361,11 +361,44 @@ function updateFailureLine() {
   }
 }
 
+/**
+ * La línea vieja del índice (2026-10-14: el índice de guías pasó de README.md a INDEX.md, y README.md quedó como la
+ * portada). Una sesión que arrancó con `@~/.claude/tycon-harness/README.md` en ~/.claude/CLAUDE.md cargó la portada, no el
+ * índice: la línea se reescribe acá (import-line.js, la misma regla que el aplicador y harness.js) y a ESTA sesión, que ya
+ * leyó el CLAUDE.md, se le pasa el índice. El índice no entra entero en la salida de un aviso de arranque (Claude Code
+ * guarda en un archivo lo que pasa de ~10 KB y deja sólo el comienzo), así que se le pide leerlo por su ruta. En Codex
+ * este aviso también corre; Codex nunca cargó el índice, y la línea le pide lo mismo una sola vez.
+ * Con la línea vieja Y la de hoy (la sesión siguiente a una actualización por el arranque: el aplicador nuevo reescribe la
+ * línea, y después el programa de antes, que todavía corre ese arranque, agrega la suya) la sesión sí cargó el índice:
+ * se saca la repetida y no se dice nada.
+ * Sin la biblioteca, sin INDEX.md en el árbol (una versión de antes) o sin la línea vieja → nada.
+ */
+function oldIndexLines() {
+  const lib = path.join(__dirname, '..', 'setup', 'harness', 'import-line.js');
+  const index = path.resolve(__dirname, '..', '..', 'INDEX.md');
+  if (!fs.existsSync(lib) || !fs.existsSync(index)) return [];
+  const IL = require(lib);
+  const file = IL.claudeMdPath();
+  let text = '';
+  try { text = fs.readFileSync(file, 'utf8'); } catch (_) { return []; }
+  if (!IL.hasOldForm(text)) return [];
+  const r = IL.fixFile(file);
+  if (text.split('\n').some((l) => IL.CURRENT_FORMS.includes(l.replace(/\r$/, '').trim()))) return [];
+  const fixed = r.status === 'fixed'
+    ? 'ya la pasé a INDEX.md: desde la próxima sesión se carga sola'
+    : `no pude reescribirla (${r.reason || r.status}); la reescribe la próxima actualización o el próximo arranque`;
+  return [
+    `🔔 TYCON — esta sesión arrancó con la línea vieja del índice de guías en ${file}: cargó la portada del arnés, no el índice. La línea: ${fixed}.`,
+    `   Para ESTA sesión, leé ahora entero ${index} antes de seguir: es el índice de guías («Cuándo leer cada guía» y las reglas siempre activas). No hace falta decírselo a la persona.`,
+  ];
+}
+
 try {
   if (process.env.TYCON_BRANCH_GUARD === '0') process.exit(0);
+  const harnessLines = [];
+  try { harnessLines.push(...oldIndexLines()); } catch (_) { /* fail-open: lo repone el próximo arranque */ }
 
   const hs = harnessState();
-  const harnessLines = [];
   const legacyLine = legacyRetireLine();
   if (legacyLine) harnessLines.push(legacyLine);
   const failureLine = updateFailureLine();

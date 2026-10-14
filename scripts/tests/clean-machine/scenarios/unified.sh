@@ -97,7 +97,7 @@ node "${HARNESS_JS}" doctor --json > "${OUT_DIR}/doctor.json" 2> "${OUT_DIR}/doc
 V="$(json "${OUT_DIR}/doctor.json" 'Array.isArray(d.fail) ? d.fail.length + "|" + d.fail.slice(0, 3).join(" · ") : "sin-lista"')"
 if [ "${V}" = "0|" ]; then ok "T37 harness.js doctor --json no trae ningún fail"; else no "T37 harness.js doctor --json: ${V:-no es JSON} $(head -c 200 "${OUT_DIR}/doctor.err")"; fi
 
-N="$(grep -c -x -F '@~/.claude/tycon-harness/README.md' "${HOME}/.claude/CLAUDE.md" 2>/dev/null || true)"
+N="$(grep -c -x -F '@~/.claude/tycon-harness/INDEX.md' "${HOME}/.claude/CLAUDE.md" 2>/dev/null || true)"
 L="$(json "${SETTINGS}" '((d.hooks && d.hooks.SessionStart) || []).reduce((a, m) => a + (m.hooks || []).filter((h) => /\.tycon-pipeline\/harness\/bootstrap\.js/.test(h.command || "")).length, 0)')"
 if [ "${N:-0}" = 1 ] && [ "${L:-0}" = 1 ]; then ok "T37 el @import y la línea de arranque están una vez cada uno (nadie los escribió a mano)"
 else no "T37 el @import aparece ${N:-0} veces y la línea de arranque ${L:-?} (esperado 1 y 1)"; fi

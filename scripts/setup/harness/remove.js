@@ -16,7 +16,7 @@
 //                   `env` si queda vacío.
 //   · block         `<!-- TYCON_BLOCK:<n> START … END -->` del archivo de su `where` (CLAUDE.md o el espejo AGENTS.md),
 //                   con el renglón en blanco que el sync le puso delante. Sin marcador de cierre no se adivina: queda.
-//   · import        la línea (`@~/.claude/<lugar>/README.md`, con cualquiera de los dos nombres del lugar).
+//   · import        la línea (`@~/.claude/<lugar>/INDEX.md`, en cualquiera de sus formas: import-line.js).
 //   · startup-line  el hook de SessionStart que `startup-line.isNew` reconoce.
 //   · link          sólo si es un enlace que resuelve al árbol o adentro de él (o colgado, apuntando al árbol que se borró):
 //                   el del arnés y, en el repo único de la 8.7, agent-skills, skills, agents y los enlaces por entrada.
@@ -68,13 +68,13 @@ const RUNNER_RE = new RegExp(`^\\s*${RUNNER}\\s+"([^"]+)"\\s*$`, 'i');
 const BOM = /^﻿/;
 
 /**
- * La línea de CLAUDE.md con cualquiera de los dos nombres del lugar (story 8.19, tanda B · AC 20): la pieza pudo quedar
- * registrada con un nombre y la línea escrita con el otro (`relocate` cambia los dos; una vuelta atrás, uno solo).
+ * La línea de CLAUDE.md en cualquiera de sus formas: los dos nombres del lugar (story 8.19, tanda B · AC 20) y el
+ * README.md que era el índice hasta que pasó a INDEX.md. La pieza pudo quedar registrada con una forma y la línea
+ * escrita con otra (`relocate` y la actualización cambian las dos; una vuelta atrás, una sola).
  * Otra línea queda como es.
  */
 function importForms(id) {
-  const PLACE = require('./place.js');
-  const forms = [PLACE.PLACE_NAME, PLACE.LEGACY_PLACE_NAME].map((n) => `@~/.claude/${n}/README.md`);
+  const forms = require('./import-line.js').ALL_FORMS;
   return new Set(forms.includes(id) ? forms : [id]);
 }
 

@@ -120,7 +120,7 @@ if corre T5; then
   LINEA="$(harness_lab_settings_commands | grep -c '\.tycon-pipeline/harness/bootstrap\.js')"
   [ "$LINEA" = 1 ] && ok "T5 la línea de arranque nueva, una sola" || mal "T5 líneas con bootstrap.js: $LINEA"
   [ "$(settings "[c.get('async') for h in d['hooks']['SessionStart'] for c in h['hooks'] if 'bootstrap.js' in c['command']][0]")" = True ] && ok "T5 la línea es async" || mal "T5 la línea no es async"
-  [ "$(grep -c "^@~/.claude/$PLACE_NAME/README.md\$" "$CLAUDE_MD_PATH")" = 1 ] && ok "T5 el @import en CLAUDE.md, una vez (por el lugar)" || mal "T5 @import: $(grep -c "$PLACE_NAME/README.md" "$CLAUDE_MD_PATH") veces"
+  [ "$(grep -c "^@~/.claude/$PLACE_NAME/INDEX.md\$" "$CLAUDE_MD_PATH")" = 1 ] && ok "T5 el @import del índice (INDEX.md) en CLAUDE.md, una vez (por el lugar)" || mal "T5 @import: $(grep -c "$PLACE_NAME/INDEX.md" "$CLAUDE_MD_PATH") veces"
   grep -q 'lock_held=1' "$LAB_HOME/.claude/.tycon-pipeline/lab-applier.log" 2>/dev/null && ok "T5 el aplicador corrió con el candado del padre (TYCON_HARNESS_LOCK_HELD=1)" || mal "T5 el aplicador no corrió con lock_held=1: $(cat "$LAB_HOME/.claude/.tycon-pipeline/lab-applier.log" 2>&1)"
   harness_lab_settings_commands | grep -q 'lab-hook.js' && ok "T5 el aplicador registró su hook" || mal "T5 el hook del aplicador no está en settings.json"
   case "$SALIDA" in *managed*) ok "T5 la salida dice versión, canal, política y modo" ;; *) mal "T5 la salida no dice el modo: $SALIDA" ;; esac
@@ -167,9 +167,9 @@ if corre T12; then
     T12_N=$((T12_N + 1)); harness_lab_create "$BASE/t12-line-$T12_N" >/dev/null || { mal "T12 no pude armar el laboratorio"; continue; }
     mkdir -p "$(dirname "$CLAUDE_MD_PATH")"; printf '# mío\n@~/.claude/%s/README.md\n' "$line_name" > "$CLAUDE_MD_PATH"
     SALIDA="$(harness install --yes 2>&1)"; RC=$?
-    N="$(grep -c -E "^@~/.claude/($PLACE_NAME|$LEGACY_PLACE_NAME)/README.md\$" "$CLAUDE_MD_PATH")"
-    [ "$RC" = 0 ] && [ "$N" = 1 ] && grep -q "^@~/.claude/$line_name/README.md\$" "$CLAUDE_MD_PATH" \
-      && ok "T12 install con la línea por «${line_name}» ya escrita: queda UNA línea, la que estaba" || mal "T12 con la línea por «${line_name}»: rc $RC, $N líneas — $(cat "$CLAUDE_MD_PATH" | tr '\n' ' ')"
+    N="$(grep -c -E "^@~/.claude/($PLACE_NAME|$LEGACY_PLACE_NAME)/(README|INDEX).md\$" "$CLAUDE_MD_PATH")"
+    [ "$RC" = 0 ] && [ "$N" = 1 ] && grep -q "^@~/.claude/$line_name/INDEX.md\$" "$CLAUDE_MD_PATH" \
+      && ok "T12 install con la línea por «${line_name}» ya escrita: queda UNA línea, con el mismo nombre y apuntando al índice (INDEX.md)" || mal "T12 con la línea por «${line_name}»: rc $RC, $N líneas — $(cat "$CLAUDE_MD_PATH" | tr '\n' ' ')"
   done
   # la pieza `link`: por cada nombre que ES un enlace; una carpeta real en el lugar no es pieza
   harness_lab_create "$BASE/t12-pieces" >/dev/null
