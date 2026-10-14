@@ -1302,6 +1302,12 @@
       "requiere": []
     },
     {
+      "__nota": "arreglo del 2026-10-14 (sin story): la carpeta global de hooks de git (core.hooksPath) la pone harness.js, no sólo la avisa — una máquina con la versión bajada, mudada desde un clon, tenía los hooks del arnés en ~/.git-hooks y git sin carpeta global, y doctor mandaba a apply sin que apply la pusiera. Pruebas del módulo scripts/setup/harness/git-hooks-path.js: la pone sólo si git no tiene ninguna, en full, con el pre-push del arnés en la carpeta; nunca pisa otra; git que no deja escribir avisa con el comando; saca sólo la que puso. De punta a punta: harness-install.test.sh, sección HP.",
+      "raiz": "arnes",
+      "ruta": "tests/git-hooks-path.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "arreglo de la mudanza (sin story): en Windows la mudanza no arranca si otro programa tiene tomada una carpeta que va a renombrar o apartar — no sólo el estado: agent-skills como carpeta real y lo personal real que se muda; cada carpeta tomada se nombra con su código y se dice qué cerrar o que se reinicie Windows; un enlace no se prueba. El rename trabado se inyecta (no se reproduce fuera de Windows).",
       "raiz": "arnes",
       "ruta": "tests/move-home-busy.test.js",

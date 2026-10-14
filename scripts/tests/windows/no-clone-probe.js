@@ -50,7 +50,11 @@ const lastLines = (s, n = 3) => String(s || '').split('\n').map((l) => l.trim())
 const isWin = L.isWin();
 
 // con identidad propia: el agente de Windows no tiene user.name/user.email y `git commit` sale 128 (182 #12314)
-function git(dir, args, env) { return L.run('git', ['-C', dir, '-c', 'user.name=Lab', '-c', 'user.email=lab@example.com', ...args], { env, timeoutMs: 5 * 60 * 1000 }); }
+// …y sin los hooks de git de la carpeta de usuario del laboratorio: desde el 2026-10-14 `install` y la mudanza ponen ahí la
+// carpeta global de hooks del arnés, y su pre-push (el freno antes de publicar) frenaba las publicaciones de juguete del
+// propio ensayo, que van a un remoto de laboratorio declarado público (182 #13452). Lo que se mide es el arnés, no esto
+const LAB_NO_HOOKS = path.join(require('os').tmpdir(), 'tycon-lab-no-git-hooks');
+function git(dir, args, env) { return L.run('git', ['-C', dir, '-c', 'user.name=Lab', '-c', 'user.email=lab@example.com', '-c', `core.hooksPath=${LAB_NO_HOOKS}`, ...args], { env, timeoutMs: 5 * 60 * 1000 }); }
 
 /** Una versión numerada publicada sobre `main` del remoto, con la copia «autor»: devuelve el commit, o null. */
 function publish(author, number, env, extra = null) {
@@ -177,6 +181,19 @@ function measure({ lab, out, platform = process.platform, baseEnv = process.env,
     }
     if (rec.step.facts.after_install.links.place === 'missing') rec.finding('no-clone:place-link-missing', 'links', `el lugar ${placeLink} no quedó enlazado a ~/.tycon/harness`, 'W8', { severity: 'loses-control' });
     if (rec.step.facts.after_install.links.skills === 'missing') rec.finding('no-clone:skills-link-missing', 'links', 'agent-skills no quedó enlazado a ~/.tycon/harness (en Windows, una unión)', 'W8', { severity: 'loses-control' });
+    // el freno antes de publicar, puesto (2026-10-14): una máquina limpia, sin carpeta global de hooks de git, queda con
+    // core.hooksPath apuntando a la carpeta del aplicador y el pre-push del arnés adentro. Antes la instalación sólo avisaba
+    // y nada la ponía: una máquina instalada sin el paso a mano de la página quedaba sin el freno, sin que nadie lo notara
+    {
+      const hp = L.run('git', ['config', '--global', '--get', 'core.hooksPath'], { env, timeoutMs: 60000 });
+      const want = path.join(home, '.git-hooks');
+      const value = String(hp.stdout || '').trim();
+      let prePush = false;
+      try { prePush = fs.readFileSync(path.join(want, 'pre-push'), 'utf8').includes('git-pre-push-global.sh'); } catch (_) { prePush = false; }
+      const same = Boolean(value) && L.samePath(value.replace(/\//g, path.sep), want);
+      rec.fact('hooks_path', { exit: hp.exit, value: value || null, expected: want, same, pre_push: prePush });
+      if (!same || !prePush) rec.finding('no-clone:pre-push-not-active', 'install', `después de install, core.hooksPath global es «${value || 'nada'}» (se esperaba ${want}) y el pre-push del arnés ${prePush ? 'está' : 'NO está'} ahí: el freno antes de publicar no corre`, 'W8', { severity: 'loses-control' });
+    }
     const hooks0 = hookCount();
     const tree = path.join(own, 'harness');
 
