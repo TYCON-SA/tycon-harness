@@ -4,6 +4,10 @@
 #    Lo único que se toma del HOME de verdad es DÓNDE está agent-skills, para leer dos textos (T8).
 AS_DIR="${TYCON_AGENT_SKILLS_DIR:-${HOME}/.claude/agent-skills}"
 HOME="$(mktemp -d)"; export HOME
+# Esta suite arma sus repos en el temporal del sistema, y retro-pending.js no anota ni reclama los repos de laboratorio
+# (2026-10-14): se declara que no hay carpetas de laboratorio, para medirlos como repos de verdad. El criterio de
+# laboratorio se mide en T11c, con su carpeta declarada.
+export TYCON_RETRO_LAB_DIRS=""
 #
 # retro-heartbeat.test.sh — red de `scripts/metrics/retro-heartbeat.js` (story 7.1 del arnés, 2026-09-16).
 #
@@ -331,6 +335,23 @@ if [ -n "${ARNES_ENV}" ]; then JZ="$(TYCON_HARNESS_IDENTITIES="${ARNES_ENV}" nod
 else JZ="$(node "${RAIZ}/scripts/hooks/retro-pending.js" --judge "${J}/repo" 2>&1)"; fi
 echo "${JZ}" | node -e 'const j = JSON.parse(require("fs").readFileSync(0, "utf8")); process.exit(j.arnes === true && j.arnes_por === "remoto" && j.registraria === false && j.exento === null ? 0 : 1)' \
   && ok "T11b --judge: un clon del arnés (carpeta «repo», remoto del arnés) sale arnes:true y registraria:false, con exento intacto" || bad "T11b --judge arnés" "${JZ}"
+
+# T11c — `--judge` dice también si el repo es de LABORATORIO (2026-10-14): uno que vive en una carpeta temporal y cuyo
+#        remoto no tiene copia de trabajo fuera de las temporales no se anota (registraria:false). El clon descartable
+#        de un repo con copia de trabajo afuera, sí. Rojo previo: --judge no conocía el campo y decía registraria:true.
+L="${BASE}/laboratorio"; mkdir -p "${L}/temporal" "${L}/repos/producto"
+( cd "${L}/repos/producto" && git init -q -b main . && git remote add origin https://dev.azure.com/acme/Producto/_git/Producto )
+( cd "${L}/temporal" && git init -q -b main juguete && git -C juguete remote add origin https://github.com/acme-pruebas/juguete.git \
+  && git init -q -b main clon && git -C clon remote add origin https://dev.azure.com/acme/Producto/_git/Producto )
+for R in juguete clon; do
+  ( cd "${L}/temporal/${R}" && echo x > a.txt && git add -A && git -c user.email=t@t -c user.name=t commit -q -m base )
+done
+JZ="$(TYCON_RETRO_LAB_DIRS="${L}/temporal" TYCON_REPOS_ROOT="${L}/repos" node "${RAIZ}/scripts/hooks/retro-pending.js" --judge "${L}/temporal/juguete" 2>&1)"
+echo "${JZ}" | node -e 'const j = JSON.parse(require("fs").readFileSync(0, "utf8")); process.exit(j.laboratorio === true && j.registraria === false ? 0 : 1)' \
+  && ok "T11c --judge: un repo de juguete en una carpeta temporal sale laboratorio:true y registraria:false" || bad "T11c --judge laboratorio" "${JZ}"
+JZ="$(TYCON_RETRO_LAB_DIRS="${L}/temporal" TYCON_REPOS_ROOT="${L}/repos" node "${RAIZ}/scripts/hooks/retro-pending.js" --judge "${L}/temporal/clon" 2>&1)"
+echo "${JZ}" | node -e 'const j = JSON.parse(require("fs").readFileSync(0, "utf8")); process.exit(j.laboratorio === false && j.laboratorio_por === "mismo-remoto-que-una-copia-de-afuera" && j.registraria === true ? 0 : 1)' \
+  && ok "T11c --judge: el clon descartable de un repo con copia de trabajo afuera NO es laboratorio (registraria:true)" || bad "T11c --judge clon" "${JZ}"
 
 # T12 — el archivo se nombra por el REPO (lo que dice su remoto), no por la carpeta del clon (2026-09-17):
 #       un latido lanzado desde un clon descartable salía `metrics-…-tcg-adhoc-…`. El campo `repo` NO

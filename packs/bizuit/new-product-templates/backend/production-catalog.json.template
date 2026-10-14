@@ -1,0 +1,5 @@
+{
+  "servers": [
+    { "host": "{{SQL_HOST}}", "environment": "produccion", "keychain": "tycon-prod-{{PRODUCT_LOWER}}", "base": "{{DATABASE}}" }
+  ]
+}

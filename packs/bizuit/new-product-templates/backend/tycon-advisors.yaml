@@ -1,0 +1,17 @@
+# ── Cómo llega el trabajo a main ─────────────────────────────────────────────────────────────
+# `pr`: /tycon-merge-to-main NO pushea main directo — pushea la rama y crea el Pull Request con
+# auto-complete, que se completa solo cuando el pipeline de validación da verde. Esto exige que
+# main tenga política de validación por build y de estrategia de merge (las dos se configuran en
+# ADO, no acá). Sin esta línea el skill cae al modo `push`, que la política rechaza.
+# 🔴 La política prohíbe SQUASH a propósito: con squash los commits individuales desaparecen de
+# main y las notas de versión —que se arman listando esos commits desde la versión publicada—
+# colapsarían a "Merged PR N".
+merge:
+  mode: pr
+
+# Los repos que una entrega de {{PRODUCT}} puede tocar junta. Lo lee el aviso de trabajo sin subir y el
+# preflight del grupo en /tycon-merge-to-main. Rutas relativas al directorio padre de este repo.
+repo_group: [{{FORMS_REPO}}, {{STORIES_REPO}}]
+
+# El paquete bizuit del arnés: suma los revisores de convenciones de plugins y formularios BIZUIT.
+packs: [bizuit]
