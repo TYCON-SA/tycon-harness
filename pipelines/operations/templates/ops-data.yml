@@ -1,0 +1,80 @@
+# pipelines/operations/templates/ops-data.yml — los datos y la configuración de la organización, encima del arnés
+# (story 8.30).
+#
+# Va JUSTO DESPUÉS de fetch-harness.yml. El repo de operaciones guarda sus archivos en las MISMAS rutas que los lee el
+# arnés, y esta plantilla los pone encima del checkout del arnés. Así los guiones leen su configuración y escriben sus
+# datos donde siempre, sin cambiar código. Se trae SÓLO esto (una lista cerrada: el repo de operaciones no puede
+# reemplazar código del arnés):
+#   · datos: `.dashboard/`, `inbox/`, `artifacts/`. Cada una queda IGUAL a la del repo de operaciones (lo que se movió
+#     o se borró allá, también acá). Si el repo no trae alguna —un repo recién creado no trae ninguna— no es un error:
+#     es la primera noche.
+#   · configuración, si está: `operations.json` (responsables y revisores), `scripts/nightly/dependencies/repos.json`
+#     (qué repos mira la revisión de dependencias) y `summary.json` (el resumen diario), y
+#     `scripts/nightly/dashboard/sources.json` y `declared.json` (qué espera el tablero). Lo que no trae queda como lo
+#     trae el arnés (los ejemplos públicos están en pipelines/operations/examples/).
+#   · cualquier otro archivo del repo de operaciones (salvo `pipelines/`, `README.md` y `.gitignore`) NO se trae, y se
+#     avisa nombrándolo: si hace falta, se suma a esta lista con un pedido al arnés.
+#
+# Después:
+#   1. Lo traído queda en un commit LOCAL encima del arnés, que no se empuja. Guardar (push-nightly-data.js) toma HEAD
+#      como base para saber qué escribió cada paso: con los datos sólo en el disco, la base sería el arnés y cada guardado
+#      chocaría con lo que ya tiene el repo de operaciones.
+#   2. El `origin` del árbol pasa a ser el repo de operaciones (`Build.Repository.Uri`), y el del arnés queda como
+#      `harness`. Desde ahí, guardar y abrir un pedido por hallazgo escriben en operaciones. El repo de operaciones tiene
+#      que tener una rama `main` con al menos un commit.
+#   3. Deja `HARNESS_TREE`: la huella del código que se mide, YA con la configuración traída (scripts/ci/harness-tree.js).
+#      check-tree.yml la compara antes de medir, y push-nightly-data.js antes de guardar.
+
+steps:
+  - script: |
+      set -euo pipefail
+      S="$(Build.SourcesDirectory)"
+      O="$(Agent.BuildDirectory)/ops"
+      red() { echo "##vso[task.logissue type=error]$1 — no se mide nada"; exit 1; }
+      [ -d "$O/.git" ] || red "no está el checkout del repo de operaciones en $O (falta fetch-harness.yml antes)"
+      [ -d "$S/.git" ] || red "no está el árbol del arnés en $S (falta fetch-harness.yml antes)"
+      DATA_DIRS=(.dashboard inbox artifacts)
+      CONFIG_FILES=(operations.json scripts/nightly/dependencies/repos.json scripts/nightly/dependencies/summary.json scripts/nightly/dashboard/sources.json scripts/nightly/dashboard/declared.json)
+      ENTRIES=()
+      for D in "${DATA_DIRS[@]}"; do
+        [ -d "$O/$D" ] || continue
+        mkdir -p "$S/$D"
+        rsync -a --delete "$O/$D/" "$S/$D/"
+        ENTRIES+=("$D")
+      done
+      for F in "${CONFIG_FILES[@]}"; do
+        [ -f "$O/$F" ] || continue
+        mkdir -p "$(dirname "$S/$F")"
+        cp -p "$O/$F" "$S/$F"
+        ENTRIES+=("$F")
+      done
+      # lo demás no se trae: se nombra, para que nadie crea que se está leyendo
+      IGNORED=$(cd "$O" && git ls-files | grep -Ev '^(\.dashboard/|inbox/|artifacts/|pipelines/|README\.md$|\.gitignore$)' | grep -vxF -f <(printf '%s\n' "${CONFIG_FILES[@]}") | head -n 20 || true)
+      [ -z "$IGNORED" ] || echo "##vso[task.logissue type=warning]El repo de operaciones trae archivos que esta plantilla no lee (no se ponen encima del arnés): $(printf '%s' "$IGNORED" | tr '\n' ' ' | sed 's/##vso/## vso/g')"
+      echo "del repo de operaciones: ${ENTRIES[*]:-(nada todavía)}"
+      if [ "${#ENTRIES[@]}" -gt 0 ]; then
+        git -C "$S" add -A -f -- "${ENTRIES[@]}" || red "no pude preparar lo traído de operaciones"
+        if ! git -C "$S" diff --cached --quiet; then
+          TREE=$(git -C "$S" write-tree) || red "no pude armar el árbol con lo de operaciones"
+          DATA_COMMIT=$(GIT_AUTHOR_NAME="Azure Pipelines" GIT_AUTHOR_EMAIL="azure-pipelines@localhost" GIT_COMMITTER_NAME="Azure Pipelines" GIT_COMMITTER_EMAIL="azure-pipelines@localhost" \
+            git -C "$S" commit-tree "$TREE" -p HEAD -m "datos de operaciones $(git -C "$O" rev-parse --short HEAD) [local, no se empuja]") \
+            || red "no pude fijar lo de operaciones en un commit local"
+          git -C "$S" update-ref HEAD "$DATA_COMMIT" || red "no pude mover HEAD al commit de los datos"
+        fi
+      fi
+      # origin → operaciones; el del arnés queda como «harness»
+      OLD=$(git -C "$S" remote get-url origin) || red "no pude leer el origin del árbol"
+      if git -C "$S" remote get-url harness > /dev/null 2>&1; then git -C "$S" remote set-url harness "$OLD"; else git -C "$S" remote add harness "$OLD"; fi
+      OPS_URL="$(Build.Repository.Uri)"
+      git -C "$S" remote set-url origin "$OPS_URL"
+      # la credencial de la corrida también para operaciones desde el árbol
+      git -C "$S" config --local "http.$OPS_URL.extraheader" "AUTHORIZATION: bearer $SYSTEM_ACCESSTOKEN"
+      git -C "$S" fetch --quiet origin main || red "no pude traer main del repo de operaciones ($OPS_URL) desde el árbol: ¿tiene una rama main? ¿la identidad de compilación puede leerlo?"
+      # la huella del código que se mide, con la configuración ya encima
+      HT=$(node "$S/scripts/ci/harness-tree.js" --tree --repo "$S") || red "no pude dejar dicha la huella del árbol que se mide"
+      printf '%s' "$HT" | grep -Eqx '[0-9a-f]{64}@[0-9a-f]{40}([0-9a-f]{24})?' || red "la huella del árbol no tiene su forma"
+      echo "##vso[task.setvariable variable=HARNESS_TREE]$HT"
+      echo "datos y configuración de $(git -C "$O" rev-parse --short HEAD) (operaciones); origin del árbol → $OPS_URL; harness → $OLD; huella $HT"
+    displayName: 'Los datos y la configuración de la organización: traerlos de operaciones y guardar ahí'
+    env:
+      SYSTEM_ACCESSTOKEN: $(System.AccessToken)

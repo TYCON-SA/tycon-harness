@@ -1004,3 +1004,33 @@ test('T73 lo que cambia fuera de las rutas del paso se nombra (el control de «s
   assert.deepStrictEqual(changedOutside(w.job, a, b, ['.dashboard/bench', 'inbox/q', 'scripts/run.sh'], cleanEnv()), []);
   assert.deepStrictEqual(changedOutside(w.job, a, b, ['.dashboard/bench/*.json', 'inbox'], cleanEnv()), ['scripts/run.sh']);
 });
+
+test('T8 (story 8.30) PushNightlyData_PublicTree_UsesHarnessTree: un árbol sin overlay-harness.js guarda con la guarda pública, y si el checkout se movió sale rojo nombrándola', () => {
+  // el árbol de un pipeline de operaciones de otra organización: el arnés público, sin la superposición del equipo
+  const w = world('public-guard');
+  fs.rmSync(path.join(w.job, 'scripts', 'ci', 'overlay-harness.js'));
+  fs.copyFileSync(path.join(ROOT, 'scripts', 'ci', 'harness-tree.js'), path.join(w.job, 'scripts', 'ci', 'harness-tree.js'));
+  git(w.job, ['add', '-A', '-f']);
+  git(w.job, ['commit', '--quiet', '-m', 'datos de operaciones [local, no se empuja]']);
+  const tree = spawnSync(process.execPath, [path.join(w.job, 'scripts', 'ci', 'harness-tree.js'), '--tree', '--repo', w.job], { env: cleanEnv(), encoding: 'utf8' });
+  assert.strictEqual(tree.status, 0, tree.stderr);
+  const real = tree.stdout.trim();
+  assert.match(real, /^[0-9a-f]{64}@[0-9a-f]{40}$/);
+
+  writeFiles(w.job, { 'ultimo.json': '{"ts":"publico"}\n' });
+  let r = save(w, ['--message', 'm', '--', 'ultimo.json'], { HARNESS_TREE: real });
+  assert.strictEqual(r.code, 0, r.out);
+  assert.strictEqual(mainText(w, 'ultimo.json'), '{"ts":"publico"}\n', 'guardó con la guarda pública');
+
+  // un paso movió el checkout a otro código: la guarda pública lo ve y nada viaja
+  writeFiles(w.job, { 'scripts/run.sh': '#!/bin/sh\necho otro codigo\n' });
+  git(w.job, ['add', '-A']);
+  git(w.job, ['commit', '--quiet', '-m', 'otro código']);
+  const before = mainTip(w);
+  writeFiles(w.job, { 'ultimo.json': '{"ts":"movido"}\n' });
+  r = save(w, ['--message', 'm', '--', 'ultimo.json'], { HARNESS_TREE: real });
+  assert.strictEqual(r.code, 1, r.out);
+  assert.match(r.out, /scripts\/ci\/harness-tree\.js --check-tree salió 1/, 'el rojo nombra la guarda pública');
+  assert.match(r.out, /scripts\/run\.sh/, 'y lo que cambió');
+  assert.strictEqual(mainTip(w), before, 'nada viaja');
+});

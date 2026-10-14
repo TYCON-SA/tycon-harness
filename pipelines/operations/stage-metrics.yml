@@ -1,0 +1,186 @@
+# ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# Métricas del ciclo de cada noche — MODELO para cualquier organización en Azure DevOps (story 8.30)
+#
+# Cómo darlo de alta: pipelines/operations/README.md. Se copia a `pipelines/` del repo de operaciones de la organización y
+# se cambia UNA línea: el `name:` del recurso `harness` (marcada abajo).
+#
+# Mide las métricas de etapa del ciclo de las stories sobre los repos de la organización que usan el arnés (los que tienen
+# `.tycon/` o `.advisors/`) y guarda el punto del día en `.dashboard/sdlc-stage-<fecha>.json` del repo de operaciones,
+# más una foto por repo en `.dashboard/proyectos/`. Git es la base de datos: unos KB por día, auditable.
+#
+# - SIN LISTA A MANO: los repos se descubren preguntándole a la organización (`az repos list` por proyecto). Una lista
+#   escrita a mano sólo mide lo que alguien se acordó de anotar.
+# - SIN CLONES COMPLETOS: `--filter=blob:none` con sparse-checkout de sólo lo que la medición lee (.md, .advisors,
+#   .tycon). La historia viaja entera (de ahí salen las fechas); los binarios, nunca.
+# - Un repo que no se pudo clonar o medir se REPORTA, no se calla: un barrido que se achica en silencio se lee igual que
+#   uno completo.
+#
+# Variables de la definición (opcionales; se cargan en Azure, en «Variables» del pipeline):
+#   METRICS_PROJECTS — los proyectos que se miran, separados por `;`. Vacía: todos los de la organización que la
+#                      identidad de compilación puede ver.
+#   HARNESS_COPIES   — repos de la organización que son copias del repo del arnés (`<proyecto>/<repo>`, separados por
+#                      `;`): no se miden, así sus stories no cuentan dos veces. Vacía: ninguno. Si tu organización mantiene
+#                      el arnés, poné acá las copias y en HARNESS_MEASURED_COPY la que sí cuenta.
+#
+# Permisos (una vez): la identidad de compilación del proyecto («<proyecto> Build Service») necesita LECTURA sobre los repos
+# que mide y «Contribute» sobre el repo de operaciones (para guardar). Si la organización limita el alcance del token al
+# propio proyecto («Limit job authorization scope»), los clones de otros proyectos fallan con 403, y el reporte lo dice.
+# ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+
+trigger: none   # nunca por push: sólo programado (o a mano)
+pr: none
+
+schedules:
+  - cron: '0 6 * * *'        # 06:00 UTC; antes que el tablero, que lo lee
+    displayName: 'Métricas del ciclo (nocturno)'
+    branches:
+      include: [main]
+    always: true             # el repo de operaciones no cambia; los demás sí
+
+parameters:
+  - name: efectos
+    displayName: 'Con efectos fuera de la corrida (guardar el punto del día en el repo de operaciones)'
+    type: boolean
+    default: true
+
+resources:
+  repositories:
+    - repository: harness
+      type: git                         # o `github`, con `endpoint: <conexión de servicio de GitHub>`
+      name: my-project/harness          # ← CAMBIAR: dónde está el arnés (en GitHub, la organización/repo público)
+      ref: refs/heads/main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+jobs:
+  - job: MeasureAndSave
+    displayName: 'Medir los repos de la organización y guardar el punto del día'
+    steps:
+      - template: pipelines/operations/templates/fetch-harness.yml@harness
+      - template: pipelines/operations/templates/ops-data.yml@harness
+
+      - script: |
+          set -u
+          export AZURE_DEVOPS_EXT_PAT="$(System.AccessToken)"
+          ORG="$(System.CollectionUri)"
+          CLONES="$(Agent.TempDirectory)/repos"
+          mkdir -p "$CLONES"
+          FALLIDOS=""
+          TOTAL=0
+          lower(){ printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
+          list(){ printf '%s\n' "$1" | tr ';' '\n' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | grep -v '^$' || true; }
+          # Las copias del arnés no se miden (salvo la que se declara como la que cuenta): sus stories contarían dos veces.
+          COPIES="$(list "${HARNESS_COPIES:-}" | tr '[:upper:]' '[:lower:]')"
+          MEASURED="$(lower "${HARNESS_MEASURED_COPY:-}")"
+          is_copy(){ [ -n "$COPIES" ] && printf '%s\n' "$COPIES" | grep -qxF -- "$(lower "$1")"; }
+          SKIPPED=""
+          # Los proyectos: los de METRICS_PROJECTS, o todos los que se ven. Si no se pudo preguntar, rojo: «no pude
+          # preguntar» no es «no hay proyectos».
+          if [ -n "${METRICS_PROJECTS:-}" ]; then
+            PROJECTS="$(list "$METRICS_PROJECTS")"
+          elif ! PROJECTS="$(az devops project list --org "$ORG" --query 'value[].name' -o tsv)"; then
+            echo "##vso[task.logissue type=error]No pude listar los proyectos de la organización: no se midió nada"
+            exit 1
+          fi
+          # 🔴 while-read, nunca `for` sobre $(...): un proyecto con espacios en el nombre se partiría por palabra.
+          while IFS= read -r PROJ; do
+            [ -n "$PROJ" ] || continue
+            if ! REPOS="$(az repos list --org "$ORG" --project "$PROJ" --query '[].[name,remoteUrl]' -o tsv)"; then
+              FALLIDOS="$FALLIDOS $PROJ(listar)"
+              continue
+            fi
+            while IFS=$'\t' read -r RNAME RURL; do
+              [ -n "$RNAME" ] || continue
+              TOTAL=$((TOTAL+1))
+              if is_copy "$PROJ/$RNAME" && [ "$(lower "$PROJ/$RNAME")" != "$MEASURED" ]; then
+                SKIPPED="$SKIPPED $PROJ/$RNAME"
+                continue
+              fi
+              DEST="$CLONES/${PROJ}__${RNAME}"
+              # El error del clon SE CONSERVA: con 2>/dev/null, un permiso que falta se ve igual que un repo que no existe.
+              CLONE_ERR=$(git -c http.extraHeader="AUTHORIZATION: bearer $(System.AccessToken)" \
+                   clone --quiet --filter=blob:none --no-checkout "$RURL" "$DEST" 2>&1)
+              if [ $? -eq 0 ]; then
+                # Un repo VACÍO no tiene HEAD: no es un fallo, es un repo sin nada que medir.
+                if ! git -C "$DEST" rev-parse -q --verify HEAD >/dev/null 2>&1; then
+                  rm -rf "$DEST"; continue
+                fi
+                (
+                  cd "$DEST"
+                  # La credencial queda en la config del clon (agente efímero): el clon es blobless y git baja contenido
+                  # bajo demanda durante la medición (`git log --follow`). Sin ella, el tiempo de entrega sale «sin dato».
+                  git config http.extraHeader "AUTHORIZATION: bearer $(System.AccessToken)"
+                  git sparse-checkout init --no-cone 2>/dev/null
+                  printf '%s\n' '**/*.md' '.advisors/**' '.tycon/**' > .git/info/sparse-checkout
+                  git checkout --quiet 2>/dev/null
+                ) || FALLIDOS="$FALLIDOS $PROJ/$RNAME(checkout)"
+              else
+                FALLIDOS="$FALLIDOS $PROJ/$RNAME(clone)"
+                echo "   ✗ $PROJ/$RNAME: $(echo "$CLONE_ERR" | grep -m1 -v '^$' | cut -c1-160)"
+              fi
+            done <<< "$REPOS"
+          done <<< "$PROJECTS"
+          echo "repos vistos: $TOTAL · clonados: $(ls -1 "$CLONES" | wc -l)"
+          [ -z "$SKIPPED" ] || echo "copias del arnés que no se miden:$SKIPPED"
+          if [ -n "$FALLIDOS" ]; then
+            echo "##vso[task.logissue type=warning]Repos NO medidos:$FALLIDOS — el barrido está incompleto (¿permiso de lectura? ¿«Limit job authorization scope»?)"
+          fi
+        displayName: 'Descubrir y clonar (liviano) los repos'
+
+      - template: pipelines/operations/templates/check-tree.yml@harness
+
+      - script: |
+          set -eu
+          # El buscador oficial de stories vive en las skills del propio arnés (scripts/lib/skills-dir.js). Sin esa carpeta,
+          # la medición sigue con el buscador de respaldo y lo avisa.
+          if SK="$(node scripts/lib/skills-dir.js --skills)"; then
+            export TYCON_SKILLS_DIR="$SK"
+            echo "el buscador de stories sale de: $SK"
+          else
+            echo "##vso[task.logissue type=warning]No hay carpeta de skills en el arnés (motivo arriba) — la medición sigue con el buscador de respaldo"
+          fi
+          # --only-harness: sólo los repos con huella del arnés (.tycon/ o .advisors/). Una organización tiene cursos, demos
+          # y repos de otros equipos que ensuciarían la estadística.
+          INICIO=$(date +%s)
+          node scripts/metrics/sdlc-stage-metrics.js \
+            --scan "$(Agent.TempDirectory)/repos" \
+            --only-harness \
+            --dashboard "$(Build.SourcesDirectory)/.dashboard" \
+            --snapshot
+          echo "⏱  medición: $(expr "$(date +%s)" - "$INICIO") s"
+          # La foto por repo, sobre los MISMOS clones: copia las métricas del snapshot de HOY (por su nombre, no «el más
+          # nuevo»: si el de hoy no está, el más nuevo sería el de ayer). Una foto que falla avisa y no apaga el snapshot.
+          SDLC="$(Build.SourcesDirectory)/.dashboard/sdlc-stage-$(date -u +%Y-%m-%d).json"
+          node scripts/nightly/projects/snapshot.js \
+            --scan "$(Agent.TempDirectory)/repos" \
+            --only-harness \
+            --sdlc "$SDLC" \
+            --out "$(Build.SourcesDirectory)/.dashboard/proyectos" \
+            || echo "##vso[task.logissue type=warning]La foto por repo falló (exit $?) — el snapshot sigue"
+        displayName: 'Medir y escribir el punto del día'
+
+      - script: |
+          # Modo aviso: el código de salida del validador se lee y se convierte en aviso; no se tapa con `|| true`.
+          set -u
+          node scripts/lib/dashboard-series.js --validate --dir "$(Build.SourcesDirectory)/.dashboard"
+          RC=$?
+          if [ "$RC" -ne 0 ]; then
+            echo "##vso[task.logissue type=warning]Métricas por merge: hay archivos que no cumplen el contrato (exit $RC). Modo aviso: no frena."
+          fi
+          exit 0
+        displayName: 'Validar el formato de las métricas por merge (aviso, no frena)'
+
+      - script: |
+          set -eu
+          cd "$(Build.SourcesDirectory)"
+          # Guarda por el único camino de los nocturnos: a main del repo de operaciones llega SÓLO lo que escribió este
+          # paso, sobre la punta recién traída y con reintento. El checkout no se mueve. El snapshot de hoy tiene que estar.
+          DAY=$(date -u +%Y-%m-%d)
+          node scripts/ci/push-nightly-data.js save \
+            --message "chore(metricas): snapshot SDLC $DAY [nocturno]" \
+            --require-daily '.dashboard/sdlc-stage-{day}.json' \
+            -- '.dashboard/sdlc-stage-*.json' '.dashboard/proyectos/*.json'
+        displayName: 'Guardar el punto del día en el repo de operaciones'
+        # Sólo desde main (encolado sobre otra rama, guardar la subiría entera) y sólo con efectos.
+        condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'), eq('${{ parameters.efectos }}', 'true'))

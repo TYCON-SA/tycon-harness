@@ -1,0 +1,306 @@
+# ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# Revisión nocturna de dependencias — MODELO para cualquier organización en Azure DevOps (story 8.30)
+#
+# Cómo darlo de alta: pipelines/operations/README.md. Se copia a `pipelines/` del repo de operaciones y se cambia el
+# `name:` del recurso `harness` (marcado abajo).
+#
+# POR QUÉ EXISTE. De los controles de seguridad de un pull request, el de dependencias es el único que pregunta AFUERA:
+# compara los paquetes contra la base pública de avisos. Su veredicto puede cambiar sin que cambie una línea de código: un
+# repo que pasó en verde a la tarde tiene un aviso nuevo a la noche, y nadie se entera hasta el próximo pull request.
+# Esta revisión mira cada noche la rama `main` de los repos declarados y AVISA (no frena: el código no cambió).
+#
+# QUÉ MIRA Y A QUIÉN AVISA — todo en el repo de operaciones, nada en este YAML:
+#   · `scripts/nightly/dependencies/repos.json` — los repos (proyecto/repo de Azure DevOps, tipo npm o nuget), el tope de
+#     avisos por noche y, en su bloque `azure`, si se crean pedidos de trabajo (`pedidos_activos`). Ejemplo:
+#     pipelines/operations/examples/repos.json del arnés.
+#   · `operations.json` — a quién se asigna un pedido de trabajo cuando no se deduce un dueño (`owners`) y quiénes revisan
+#     los pull requests por hallazgo (`reviewers.dependencies`). Ejemplo: pipelines/operations/examples/operations.json.
+#   · Lo que deja: `.dashboard/dependencias/` (la foto de cada noche) e `inbox/dependencies/` (una ficha por hallazgo).
+#     Cada hallazgo nuevo abre un PULL REQUEST en el repo de operaciones: ahí una persona decide, y rechazarlo obliga a
+#     escribir el motivo.
+#
+# Opcional: el RESUMEN DIARIO por Telegram. Si la definición tiene la variable `TYCON_TELEGRAM_CHAT_ID` (y la secreta
+# `TELEGRAM_BOT_TOKEN`), después de mirar se manda el resumen. Sin el chat, el paso no corre.
+#
+# Permisos (una vez): la identidad de compilación del proyecto («<proyecto> Build Service») necesita LECTURA sobre los repos
+# declarados, y «Contribute» y «Contribute to pull requests» sobre el repo de operaciones. Para los pedidos de trabajo,
+# además, crear y comentar work items y leer grupos en los proyectos declarados. Un permiso que falta no queda callado:
+# un repo que no se pudo clonar sale «NO MEDIDO», y un pedido que no se pudo crear queda en el snapshot con su motivo.
+# ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+
+trigger: none   # nunca por push: lo que cambia no es el repo, es lo que se sabe de los paquetes
+pr: none
+
+schedules:
+  - cron: '0 4 * * *'
+    displayName: 'Revisión nocturna de dependencias'
+    branches:
+      include: [main]
+    always: true   # el repo de operaciones no cambia; la base de avisos sí, todos los días
+
+# Una corrida de prueba va con efectos=false: mira las dependencias y escribe en el disco, pero no registra ni abre pull
+# requests, no crea pedidos de trabajo, no manda el resumen y no guarda nada.
+parameters:
+  - name: efectos
+    displayName: 'Con efectos fuera de la corrida (pull requests, pedidos de trabajo, resumen y guardar)'
+    type: boolean
+    default: true
+  - name: dotnetSdks
+    displayName: 'Versiones del SDK de .NET a instalar (para los repos nuget; vacío si no hay ninguno)'
+    type: object
+    default: ['9.0.x', '10.0.x']
+
+resources:
+  repositories:
+    - repository: harness
+      type: git                         # o `github`, con `endpoint: <conexión de servicio de GitHub>`
+      name: my-project/harness          # ← CAMBIAR: dónde está el arnés (en GitHub, la organización/repo público)
+      ref: refs/heads/main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  - name: RAMA_ANALIZADA
+    value: 'main'
+
+jobs:
+  - job: Review
+    displayName: 'Mirar las dependencias de los repos declarados y dejar el borrador'
+    timeoutInMinutes: 90
+    steps:
+      - template: pipelines/operations/templates/fetch-harness.yml@harness
+      - template: pipelines/operations/templates/ops-data.yml@harness
+
+      # Cada repo declara su SDK en su global.json; con uno solo instalado, un repo que pide otra versión mayor saldría
+      # «NO MEDIDO» todas las noches. Se instalan los de la lista.
+      - ${{ each sdk in parameters.dotnetSdks }}:
+          - task: UseDotNet@2
+            displayName: 'SDK .NET ${{ sdk }}'
+            inputs: { packageType: 'sdk', version: '${{ sdk }}' }
+
+      - script: |
+          set -euo pipefail
+          # Los revisores de los pull requests, de operations.json (reviewers.dependencies). Sin el archivo o sin la clave:
+          # el pull request se abre igual, sin revisores. Con un operations.json que no valida: rojo, no se adivina.
+          cd "$(Build.SourcesDirectory)"
+          if [ -f operations.json ]; then
+            REV=$(node -e 'const c = require("./scripts/lib/operations-config.js").load("operations.json"); if (!c.ok) { for (const p of c.problems) console.error(`operations.json: ${p.path || "(el archivo)"}: ${p.message}`); process.exit(1); } process.stdout.write(((c.data.reviewers || {}).dependencies || []).join(" "));') \
+              || { echo "##vso[task.logissue type=error]operations.json del repo de operaciones no es válido (motivo arriba)"; exit 1; }
+          else
+            REV=""
+          fi
+          echo "revisores de los pull requests: ${REV:-(ninguno)}"
+          echo "##vso[task.setvariable variable=OPS_REVIEWERS_DEPENDENCIES]$REV"
+          # Los pedidos de trabajo, sólo si repos.json los prende (azure.pedidos_activos: true). Apagados, los dos pasos
+          # que hablan con Azure Boards no corren: sin esos permisos, la corrida saldría roja todas las noches.
+          [ -f scripts/nightly/dependencies/repos.json ] || { echo "##vso[task.logissue type=error]El repo de operaciones no trae scripts/nightly/dependencies/repos.json: no hay qué repos mirar (ejemplo: pipelines/operations/examples/repos.json del arnés)"; exit 1; }
+          WI=$(node -e 'const c = JSON.parse(require("fs").readFileSync("scripts/nightly/dependencies/repos.json", "utf8")); process.stdout.write(c && c.azure && c.azure.pedidos_activos === true ? "1" : "0");') \
+            || { echo "##vso[task.logissue type=error]scripts/nightly/dependencies/repos.json no es JSON válido"; exit 1; }
+          echo "pedidos de trabajo: $([ "$WI" = 1 ] && echo prendidos || echo 'apagados (azure.pedidos_activos no es true)')"
+          echo "##vso[task.setvariable variable=WORK_ITEMS_ON]$WI"
+          # La primera noche de una organización no hay cola: se crea con sus tres carpetas (y su .gitkeep, que guardar
+          # lleva al repo de operaciones). Una cola que existe a medias (sin pending/) NO se completa acá: eso es una
+          # mudanza a medias, y el guion de los pull requests la frena con su motivo.
+          if [ ! -e inbox/dependencies ]; then
+            for D in pending promoted archived; do mkdir -p "inbox/dependencies/$D" && : > "inbox/dependencies/$D/.gitkeep"; done
+            echo "primera noche: se crea la cola inbox/dependencies (pending, promoted, archived)"
+          fi
+        displayName: 'Leer la configuración de la organización (operations.json y repos.json)'
+
+      - script: |
+          # Lo que una persona decidió AYER en un pull request se registra ANTES de la revisión: una ficha rechazada no
+          # puede salir como «sin decidir» un día tarde. Si Azure no contesta, la noche se mira igual y queda naranja.
+          set -uo pipefail
+          cd "$(Build.SourcesDirectory)"
+          bash scripts/ci/open-pr-per-finding.sh --record-only \
+            --queue inbox/dependencies \
+            --branch dependencias \
+            --script scripts/nightly/dependencies/nightly-dependencies.js \
+            --org "$(System.CollectionUri)" \
+            --project "$(System.TeamProject)" \
+            --repo "$(Build.Repository.Name)"
+        displayName: 'Registrar lo que se decidió en los pull requests'
+        continueOnError: true
+        # empuja a main por dentro (abandona pedidos, borra ramas, guarda): sólo desde main y con efectos
+        condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'), eq('${{ parameters.efectos }}', 'true'))
+        env:
+          AZURE_DEVOPS_EXT_PAT: $(System.AccessToken)
+
+      - script: |
+          set -uo pipefail
+          cd "$(Build.SourcesDirectory)"
+          CLONES="$(Agent.TempDirectory)/repos"
+          mkdir -p "$CLONES"
+          ORG="$(System.CollectionUri)"
+          FALLIDOS=""
+          # Las rutas y los repos salen de repos.json: agregar un repo es una entrada en ese archivo, no una línea acá.
+          while IFS=$'\t' read -r RUTA ADO; do
+            [ -z "$RUTA" ] && continue
+            PROJ="${ADO%%/*}"; RNAME="${ADO##*/}"
+            DEST="$CLONES/$RUTA"
+            mkdir -p "$(dirname "$DEST")"
+            if ! ERR=$(git -c http.extraheader="AUTHORIZATION: bearer $SYSTEM_ACCESSTOKEN" \
+                 clone --quiet --depth=1 --branch "$(RAMA_ANALIZADA)" \
+                 "${ORG}${PROJ}/_git/${RNAME}" "$DEST" 2>&1); then
+              # el error del clon SE CONSERVA: un permiso que falta no se ve igual que un repo que no existe
+              echo "##vso[task.logissue type=warning]No se pudo clonar $PROJ/$RNAME: $ERR"
+              FALLIDOS="$FALLIDOS $ADO"
+            fi
+          done < <(node scripts/nightly/dependencies/nightly-dependencies.js clone-list)
+          echo "clonados: $(cd "$CLONES" && find . -maxdepth 3 -name .git | wc -l)"
+          [ -z "$FALLIDOS" ] || echo "##vso[task.logissue type=warning]Repos NO clonados:$FALLIDOS — van a figurar como NO MEDIDO, que no es lo mismo que limpio"
+        displayName: 'Clonar los repos declarados'
+        env:
+          SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+
+      - script: |
+          # El estado de cada pedido de trabajo, ANTES de decidir. SÓLO LEE. Y la fecha de la noche nace acá, una vez.
+          # Con código 2 (sin token, sin az, pedidos apagados) deja el volcado con el motivo y la noche mide igual.
+          set -uo pipefail
+          cd "$(Build.SourcesDirectory)"
+          HOY=$(date -u +%Y-%m-%d)
+          echo "##vso[task.setvariable variable=HOY_NOCTURNO]$HOY"
+          node scripts/nightly/dependencies/work-items.js state \
+            --out "$(Build.SourcesDirectory)/.dashboard/dependencias" \
+            --pending "$(Build.SourcesDirectory)/inbox/dependencies" \
+            --today "$HOY" \
+            | tee /tmp/estado-salida.txt
+          CODIGO=${PIPESTATUS[0]}
+          if [ "$CODIGO" = "2" ]; then
+            echo "##vso[task.logissue type=warning]No se pudo leer el estado de los pedidos de trabajo (código 2) — ver la salida. La noche mide igual pero NO cruza: no es «coinciden»."
+          elif [ "$CODIGO" != "0" ]; then
+            echo "##vso[task.logissue type=warning]El volcado del estado de los pedidos terminó con código $CODIGO — el nocturno lo va a leer como «sin volcado»."
+          fi
+          exit 0
+        displayName: 'Volcar el estado de los pedidos de trabajo'
+        condition: and(succeeded(), eq(variables['WORK_ITEMS_ON'], '1'))
+        env:
+          AZURE_DEVOPS_EXT_PAT: $(System.AccessToken)
+
+      - template: pipelines/operations/templates/check-tree.yml@harness
+
+      - script: |
+          # 🔴 pipefail no es decorativo: sin él, el exit del paso es el de `tee` y un nocturno caído quedaría VERDE.
+          set -uo pipefail
+          cd "$(Build.SourcesDirectory)"
+          HOY="${HOY_NOCTURNO:-$(date -u +%Y-%m-%d)}"
+          echo "##vso[task.setvariable variable=HOY_NOCTURNO]$HOY"
+          node scripts/nightly/dependencies/nightly-dependencies.js run \
+            --root "$(Agent.TempDirectory)/repos" \
+            --out "$(Build.SourcesDirectory)/.dashboard/dependencias" \
+            --pending "$(Build.SourcesDirectory)/inbox/dependencies" \
+            --today "$HOY" \
+            | tee /tmp/deps-salida.txt
+          CODIGO=${PIPESTATUS[0]}
+          # Sale 0 aunque encuentre vulnerabilidades: una dependencia vulnerable NO es un pipeline roto. Otro código es que
+          # NO SE PUDO MIRAR NADA.
+          if [ "$CODIGO" != "0" ]; then
+            echo "##vso[task.logissue type=error]El nocturno terminó con código $CODIGO — las dependencias NO se miraron"
+            exit 1
+          fi
+          if [ ! -f "$(Build.SourcesDirectory)/.dashboard/dependencias/dependencias-$HOY.json" ]; then
+            echo "##vso[task.logissue type=error]No quedó el snapshot de $HOY: la noche no se miró"
+            exit 1
+          fi
+          if grep -q 'NO MEDIDO' /tmp/deps-salida.txt; then
+            echo "##vso[task.logissue type=warning]Hubo repos que no se pudieron mirar — ver la salida. No medido NO es limpio."
+          fi
+        displayName: 'Correr la revisión de dependencias'
+
+      - script: |
+          # Va ANTES de guardar: el id de cada pedido se escribe en la ficha y tiene que viajar en el mismo commit. No tumba
+          # el guardado: si no pudo intentar nada, deja la marca y el rojo lo pone el último paso.
+          set -uo pipefail
+          cd "$(Build.SourcesDirectory)"
+          HOY="${HOY_NOCTURNO:-}"
+          if [ -z "$HOY" ]; then
+            echo "##vso[task.logissue type=error]Falta HOY_NOCTURNO (la fecha del paso de la revisión): los pedidos de trabajo no se intentaron."
+            echo "##vso[task.setvariable variable=PEDIDOS_NO_INTENTADOS]1"
+            exit 0
+          fi
+          node scripts/nightly/dependencies/work-items.js run \
+            --out "$(Build.SourcesDirectory)/.dashboard/dependencias" \
+            --pending "$(Build.SourcesDirectory)/inbox/dependencies" \
+            --today "$HOY" \
+            | tee /tmp/pedidos-salida.txt
+          CODIGO=${PIPESTATUS[0]}
+          if [ "$CODIGO" != "0" ]; then
+            echo "##vso[task.logissue type=error]Los pedidos de trabajo NO se pudieron intentar (código $CODIGO) — ver la salida. No es «no había nada que pedir»."
+            echo "##vso[task.setvariable variable=PEDIDOS_NO_INTENTADOS]1"
+          fi
+          exit 0
+        displayName: 'Crear los pedidos de trabajo'
+        condition: and(succeeded(), eq('${{ parameters.efectos }}', 'true'), eq(variables['WORK_ITEMS_ON'], '1'))
+        env:
+          AZURE_DEVOPS_EXT_PAT: $(System.AccessToken)
+
+      - script: |
+          # El resumen diario (opcional). Va después de los pedidos y antes de guardar: la constancia de entrega viaja en
+          # el mismo commit. Si no se entregó, la corrida queda naranja y guardar corre igual.
+          set -uo pipefail
+          cd "$(Build.SourcesDirectory)"
+          HOY="${HOY_NOCTURNO:-}"
+          if [ -z "$HOY" ]; then
+            echo "##vso[task.logissue type=warning]Falta HOY_NOCTURNO: el resumen NO se intentó."
+            exit 1
+          fi
+          # Una variable que no está en la definición NO llega vacía: Azure deja el literal `$(NOMBRE)`. Tratada como ausente,
+          # el motivo dice la verdad («no hay token»).
+          case "${TELEGRAM_BOT_TOKEN:-}" in *'$('*) unset TELEGRAM_BOT_TOKEN ;; esac
+          case "${TYCON_TELEGRAM_CHAT_ID:-}" in *'$('*) unset TYCON_TELEGRAM_CHAT_ID ;; esac
+          ERR=$(mktemp)
+          node scripts/nightly/dependencies/daily-summary.js deliver --source dependencies --today "$HOY" \
+            --out "$(Build.SourcesDirectory)/.dashboard/dependencias" \
+            --pending "$(Build.SourcesDirectory)/inbox/dependencies" 2> "$ERR"
+          CODIGO=$?
+          cat "$ERR" >&2
+          if [ "$CODIGO" != "0" ]; then
+            echo "##vso[task.logissue type=warning]El resumen NO se entregó (código $CODIGO): $(tail -n 1 "$ERR")"
+            exit 1
+          fi
+        displayName: 'Entregar el resumen (si hay bot de Telegram)'
+        continueOnError: true
+        condition: and(succeeded(), eq('${{ parameters.efectos }}', 'true'), ne(variables['TYCON_TELEGRAM_CHAT_ID'], ''))
+        env:
+          TELEGRAM_BOT_TOKEN: $(TELEGRAM_BOT_TOKEN)
+          TYCON_TELEGRAM_CHAT_ID: $(TYCON_TELEGRAM_CHAT_ID)
+
+      - script: |
+          set -eu
+          cd "$(Build.SourcesDirectory)"
+          # A main del repo de operaciones llega SÓLO lo que la noche escribió en estas dos carpetas, sobre la punta recién
+          # traída y con reintento. El checkout no se mueve. La foto de hoy tiene que estar.
+          node scripts/ci/push-nightly-data.js save \
+            --message "chore(dependencias): revisión nocturna $(date -u +%Y-%m-%d) [nocturno]" \
+            --require-daily '.dashboard/dependencias/dependencias-{day}.json' \
+            -- .dashboard/dependencias inbox/dependencies
+        displayName: 'Guardar el snapshot y las fichas en el repo de operaciones'
+        condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'), eq('${{ parameters.efectos }}', 'true'))
+
+      - script: |
+          set -uo pipefail
+          cd "$(Build.SourcesDirectory)"
+          # Abre un pull request SÓLO por una ficha que nunca tuvo uno; el que una persona rechazó se convierte en la
+          # decisión que esta cola prevé. Si no se pudo preguntar a Azure, no se abre nada y la noche termina en rojo.
+          bash scripts/ci/open-pr-per-finding.sh \
+            --queue inbox/dependencies \
+            --branch dependencias \
+            --script scripts/nightly/dependencies/nightly-dependencies.js \
+            --org "$(System.CollectionUri)" \
+            --project "$(System.TeamProject)" \
+            --repo "$(Build.Repository.Name)" \
+            --reviewers "${OPS_REVIEWERS_DEPENDENCIES:-}"
+        displayName: 'Abrir un pull request por hallazgo (ahí se decide)'
+        # empuja ramas y guarda en main por dentro: sólo desde main y con efectos
+        condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'), eq('${{ parameters.efectos }}', 'true'))
+        env:
+          AZURE_DEVOPS_EXT_PAT: $(System.AccessToken)
+
+      # El rojo de «los pedidos no se intentaron» va ACÁ, después de guardar y de abrir los pull requests: la noche no se
+      # pierde por no poder hablar con los tableros de los proyectos.
+      - script: |
+          echo "##vso[task.logissue type=error]Los pedidos de trabajo no se intentaron esta noche. El snapshot y las fichas ya se guardaron; la corrida queda en rojo para que no pase por una noche sin novedad."
+          exit 1
+        displayName: 'Denunciar que los pedidos no se intentaron'
+        condition: and(succeededOrFailed(), eq(variables['PEDIDOS_NO_INTENTADOS'], '1'))
