@@ -136,6 +136,7 @@ jobs:
         working-directory: harness
         run: |
           set -u
+          set +e   # GitHub corre el paso con bash -e: el código de salida se lee abajo, no corta acá
           node scripts/lib/dashboard-series.js --validate --dir .dashboard
           RC=$?
           [ "${RC}" -eq 0 ] || echo "::warning::Métricas por merge: hay archivos que no cumplen el contrato (exit ${RC}). Modo aviso: no frena."

@@ -118,6 +118,7 @@ jobs:
         working-directory: harness
         run: |
           set -uo pipefail
+          set +e   # GitHub corre el paso con bash -e: el código de salida se lee abajo, no corta acá
           node scripts/nightly/dashboard/dashboard.js --nightly 2>&1 | bash pipelines/operations/github/annotate.sh
           RC=${PIPESTATUS[0]}
           case "${RC}" in

@@ -138,6 +138,7 @@ jobs:
           GH_TOKEN: ${{ secrets.HARNESS_ORG_TOKEN }}
         run: |
           set -uo pipefail
+          set +e   # GitHub corre el paso con bash -e: el código de salida se lee abajo, no corta acá
           HOY=$(date -u +%Y-%m-%d)
           echo "HOY_NOCTURNO=${HOY}" >> "${GITHUB_ENV}"
           node scripts/nightly/dependencies/work-items.js state --out .dashboard/dependencias --pending inbox/dependencies --today "${HOY}" 2>&1 \
@@ -160,6 +161,7 @@ jobs:
         working-directory: harness
         run: |
           set -uo pipefail
+          set +e   # GitHub corre el paso con bash -e: el código de salida se lee abajo, no corta acá
           HOY="${HOY_NOCTURNO:-$(date -u +%Y-%m-%d)}"
           echo "HOY_NOCTURNO=${HOY}" >> "${GITHUB_ENV}"
           node scripts/nightly/dependencies/nightly-dependencies.js run --root "${RUNNER_TEMP}/repos" \
@@ -178,6 +180,7 @@ jobs:
           GH_TOKEN: ${{ secrets.HARNESS_ORG_TOKEN }}
         run: |
           set -uo pipefail
+          set +e   # GitHub corre el paso con bash -e: el código de salida se lee abajo, no corta acá
           node scripts/nightly/dependencies/work-items.js run --out .dashboard/dependencias --pending inbox/dependencies --today "${HOY_NOCTURNO}" 2>&1 \
             | bash pipelines/operations/github/annotate.sh
           CODIGO=${PIPESTATUS[0]}
@@ -196,6 +199,7 @@ jobs:
           TYCON_TELEGRAM_CHAT_ID: ${{ vars.TYCON_TELEGRAM_CHAT_ID }}
         run: |
           set -uo pipefail
+          set +e   # GitHub corre el paso con bash -e: el código de salida se lee abajo, no corta acá
           node scripts/nightly/dependencies/daily-summary.js deliver --source dependencies --today "${HOY_NOCTURNO}" \
             --out .dashboard/dependencias --pending inbox/dependencies 2>&1 | bash pipelines/operations/github/annotate.sh
           CODIGO=${PIPESTATUS[0]}
