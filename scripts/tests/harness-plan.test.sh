@@ -86,13 +86,16 @@ base() { # base <home> → el ambiente aislado (en el arreglo RUN_ENV)
        TYCON_THIRD_PARTY=0 TYCON_UPDATE=0 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null TMPDIR="$T/tmp")
   mkdir -p "$T/tmp"
 }
-home_hash() { # un hash de todo el HOME (rutas, enlaces, contenido y carpetas): «no tocó nada»
+home_list() { # todo el HOME, una línea por ruta (enlace, archivo con su suma, carpeta)
   ( cd "$1" && find . -print | LC_ALL=C sort | while IFS= read -r f; do
       if [ -L "$f" ]; then printf '%s -> %s\n' "$f" "$(readlink "$f")"
       elif [ -f "$f" ]; then printf '%s ' "$f"; shasum -a 256 < "$f"
       else printf '%s/\n' "$f"; fi
-    done ) | shasum -a 256 | cut -d' ' -f1
+    done )
 }
+home_hash() { home_list "$1" | shasum -a 256 | cut -d' ' -f1; }   # un hash de todo el HOME: «no tocó nada»
+# home_changed <antes.txt> <home> → las rutas que cambiaron (para que un «la HOME cambió» diga QUÉ cambió)
+home_changed() { home_list "$2" > "$1.despues"; diff "$1" "$1.despues" | grep '^[<>]' | sed 's/ [0-9a-f]\{64\}  *-$//' | head -6 | tr '\n' ' '; }
 # plan_actions <plan.json> → «kind id action» por línea, ordenado (para comparar y contar)
 plan_actions() { python3 -c "
 import json,sys
@@ -123,12 +126,12 @@ if corre T15; then
   A="$T/t15/tree"; H="$T/t15/home"; lab_tree "$A"; new_home "$H"; base "$H"
   INST="$A/scripts/install-tycon-hooks.sh"
   # (a) HOME vacía: todo add, nada escrito
-  ANTES="$(home_hash "$H")"
+  ANTES="$(home_hash "$H")"; home_list "$H" > "$T/t15/home-antes.txt"
   RC=0; "${RUN_ENV[@]}" bash "$INST" --check --plan-json "$T/t15/plan-empty.json" > "$T/t15/check-empty.out" 2>&1 || RC=$?
   if [ "$RC" = 0 ] && plan_shape "$T/t15/plan-empty.json" 2>/dev/null && plan_all "$T/t15/plan-empty.json" ' add$'; then
     ok "T15 HOME vacía: el plan trae $(plan_actions "$T/t15/plan-empty.json" | wc -l | tr -d ' ') piezas, todas «add»"
   else mal "T15 HOME vacía: salió ${RC}; plan: $(head -c 300 "$T/t15/plan-empty.json" 2>/dev/null) · $(tail -n 3 "$T/t15/check-empty.out" | tr '\n' ' ')"; fi
-  [ "$(home_hash "$H")" = "$ANTES" ] && ok "T15 HOME vacía: --check --plan-json no escribió nada en la HOME" || mal "T15 HOME vacía: la HOME cambió con --check --plan-json"
+  [ "$(home_hash "$H")" = "$ANTES" ] && ok "T15 HOME vacía: --check --plan-json no escribió nada en la HOME" || mal "T15 HOME vacía: la HOME cambió con --check --plan-json: $(home_changed "$T/t15/home-antes.txt" "$H")"
   for k in hook setting block command git-hook; do
     plan_has "$T/t15/plan-empty.json" "^${k} " && ok "T15 el plan cubre las piezas «${k}»" || mal "T15 el plan no trae ninguna pieza «${k}»"
   done
