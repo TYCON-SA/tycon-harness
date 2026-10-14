@@ -42,7 +42,8 @@ if echo "$url" | grep -q '/health$'; then
 fi
 if echo "$url" | grep -q '/api/admin/plugins/loaded'; then cat "$STUB_DIR/loaded.json" 2>/dev/null || cat "$STUB_DIR/plugins.json"; exit 0; fi
 if echo "$url" | grep -q '/api/admin/plugins'; then cat "$STUB_DIR/plugins.json"; exit 0; fi
-if echo "$url" | grep -q '/code$'; then printf '%s' "$(cat "$STUB_DIR/code.http" 2>/dev/null || echo '200 1234')"; exit 0; fi
+# el código: con -o, el cuerpo va a ese archivo (code.body, si el caso lo pone; el humo lo muestra cuando falla)
+if echo "$url" | grep -q '/code$'; then [ -n "$out" ] && { cat "$STUB_DIR/code.body" 2>/dev/null || :; } > "$out"; printf '%s' "$(cat "$STUB_DIR/code.http" 2>/dev/null || echo '200 1234')"; exit 0; fi
 # story 2.10: /api/custom-forms/<f>/versions contesta versions-<f>.json con versions-<f>.code (default 200)
 if echo "$url" | grep -q '/api/custom-forms/[^/]*/versions$'; then
   f=$(echo "$url" | sed 's#.*/api/custom-forms/\([^/]*\)/versions$#\1#')
@@ -51,7 +52,12 @@ if echo "$url" | grep -q '/api/custom-forms/[^/]*/versions$'; then
   if [ -n "$fmt" ]; then printf '%s\n%s' "$cuerpo" "$code"; else printf '%s' "$cuerpo"; fi
   exit 0
 fi
-if echo "$url" | grep -q '/api/custom-forms'; then cat "$STUB_DIR/forms.json"; exit 0; fi
+# la lista: con -o y -w (como la pide el humo desde 2026-10-14) el cuerpo va al archivo y el código (forms.code,
+# default 200) a la salida; sin ellos, como antes
+if echo "$url" | grep -q '/api/custom-forms'; then
+  if [ -n "$out" ]; then cat "$STUB_DIR/forms.json" > "$out"; printf '%s' "$(cat "$STUB_DIR/forms.code" 2>/dev/null || echo 200)"; exit 0; fi
+  cat "$STUB_DIR/forms.json"; exit 0
+fi
 exit 1
 STUB
 chmod +x "$STUB/curl"; export PATH="$STUB:$PATH"

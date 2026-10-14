@@ -128,6 +128,15 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/smoke-forms-reason.test.sh",
+      "requiere": [],
+      "gate_only_when_touching": [
+        "scripts/ci/**",
+        "scripts/lib/**"
+      ]
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/deploy-record.test.sh",
       "requiere": []
     },
