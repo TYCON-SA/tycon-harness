@@ -105,11 +105,6 @@
   },
   "__suitesOutside": "Suites que no viajan porque su código o sus datos quedan afuera: la suite y su entrada de scripts/tests/suites.json salen juntas. Una suite cuyo ARCHIVO no sale pierde su entrada sola; éstas son las que salen como archivo pero no andarían. La lista definitiva la da la corrida de las suites portables en la copia (tanda B, T22).",
   "suitesOutside": [
-    { "root": "arnes", "path": "tests/nightly-dependencies.test.sh", "reason": "su código vive en scripts/nightly/dependencies/, que queda afuera" },
-    { "root": "arnes", "path": "tests/work-items.test.sh", "reason": "prueba scripts/nightly/dependencies/work-items.js, que queda afuera" },
-    { "root": "arnes", "path": "tests/work-item-status.test.sh", "reason": "prueba scripts/nightly/dependencies/, que queda afuera" },
-    { "root": "arnes", "path": "tests/locate-repo.test.js", "reason": "prueba ubicarRepo de scripts/nightly/dependencies/nightly-dependencies.js, que queda afuera" },
-    { "root": "arnes", "path": "tests/daily-summary.test.sh", "reason": "prueba scripts/nightly/dependencies/daily-summary.js y el pipeline nocturno del vigilante, que quedan afuera" },
     { "root": "arnes", "path": "tests/open-pr-per-finding.test.sh", "reason": "prueba los pipelines nocturnos del vigilante y de dependencias, que quedan afuera" },
     { "root": "arnes", "path": "tests/nightly-publishes-report.test.sh", "reason": "prueba el pipeline nocturno del banco (pipelines/azure-pipelines-banco.yml), que queda afuera" },
     { "root": "arnes", "path": "tests/nightly-suites-shards.test.js", "reason": "corre los pasos del pipeline nocturno del banco (pipelines/azure-pipelines-banco.yml), que queda afuera; el reparto mismo lo mide suites-shard.test.js, que sí viaja" },

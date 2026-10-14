@@ -221,8 +221,9 @@ const EXCLUIDOS_SIEMPRE = Object.freeze([
   { fuente: 'arnes', glob: 'pipelines/**', motivo: 'los pipelines del equipo en Azure DevOps y la plantilla que trae sus repos', salvo: VALIDACION_PUBLICA, motivoSalvo: 'la validación de cada pedido y sus plantillas: después del corte viven en el repo público (story 8.26, tanda C)' },
   // story 8.9: la tanda C1 mudó acá el ejecutable y la F, sus dos .json; la exclusión sigue al archivo. La carpeta vieja
   // (hoy, sólo reemplazos) queda excluida como clase, al final de esta lista: `carpetasFijasConNombreViejo`
-  NOCTURNO_DEPENDENCIAS,
-  { fuente: 'arnes', glob: 'scripts/nightly/watcher/**', motivo: 'el vigilante de la producción del equipo' },
+  // 2026-10-14 (decisión 1 del dueño, story 8.30): el código de los dos nocturnos —dependencias y vigilante— es público.
+  // Del equipo queda sólo la lista de sus repos, en el repo de mantenimiento: como clase (el público no la trae)
+  { fuente: 'arnes', glob: 'scripts/nightly/dependencies/repos.json', motivo: NOCTURNO_DEPENDENCIAS.motivo, clase: true },
   { fuente: 'arnes', glob: 'commands/tycon-vigilante.md', motivo: 'su sujeto (el vigilante) no viaja' },
   { fuente: 'arnes', glob: 'scripts/controls-bench/ultimo-*.json', motivo: 'resultados de las corridas del equipo' },
   { fuente: 'arnes', glob: '**/denylist*.json', motivo: 'lo privado de la publicación: la lista de denegación' },

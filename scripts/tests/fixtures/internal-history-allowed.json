@@ -238,13 +238,7 @@
     {
       "file": "guides/publicacion-espejo.md",
       "form": "team-path",
-      "value": "scripts/nightly/dependencies",
-      "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
-    },
-    {
-      "file": "guides/publicacion-espejo.md",
-      "form": "team-path",
-      "value": "scripts/nightly/watcher",
+      "value": "scripts/nightly/dependencies/repos.json",
       "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
     },
     {
