@@ -229,7 +229,7 @@ else
 grep -q '^## evidencia-pisada-entre-stories-2026-10-05' "$AQUI/guides/incident-log.md" || f11="$f11 incident-log"
 grep -q 'un identificador que no identifica convierte a un control en un mentiroso con confianza' "$AQUI/guides/incident-log.md" || f11="$f11 regla"
 fi
-grep -q 'evidencia huérfana' "$AQUI/README.md" || f11="$f11 README"
+grep -q 'evidencia huérfana' "$AQUI/INDEX.md" || f11="$f11 INDEX"   # el índice: INDEX.md desde 2026-10-14
 if [ -z "$f11" ]; then ok "T11 story-format pide el id único, incident-log tiene su entrada y README su fila"
 else no "T11 faltan:$f11"; fi
 

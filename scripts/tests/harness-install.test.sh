@@ -882,7 +882,7 @@ PY
     && ok "T37 las skills y los revisores se ven desde ~/.claude/skills y ~/.claude/agents (donde los busca Claude Code)" || mal "T37 ~/.claude/skills/tycon-pipeline/SKILL.md o los revisores de ~/.claude/agents no se ven"
   read -r N_HOOKS N_REP <<< "$(hooks_census)"
   [ "${N_HOOKS:-0}" -ge 20 ] && [ "$N_REP" = 0 ] && ok "T37 settings.json: $N_HOOKS hooks, ninguno dos veces" || mal "T37 settings.json: ${N_HOOKS:-?} hooks, ${N_REP:-?} repetido(s)"
-  [ "$(harness_lab_settings_commands | grep -c '\.tycon-pipeline/harness/bootstrap\.js')" = 1 ] && [ "$(grep -c -E "^@~/.claude/($PLACE_NAME|$LEGACY_PLACE_NAME)/README.md\$" "$CLAUDE_MD_PATH" 2>/dev/null)" = 1 ] \
+  [ "$(harness_lab_settings_commands | grep -c '\.tycon-pipeline/harness/bootstrap\.js')" = 1 ] && [ "$(grep -c -E "^@~/.claude/($PLACE_NAME|$LEGACY_PLACE_NAME)/(README|INDEX).md\$" "$CLAUDE_MD_PATH" 2>/dev/null)" = 1 ] \
     && ok "T37 la línea de arranque y el @import, una vez cada uno (nadie los escribe a mano)" || mal "T37 la línea de arranque o el @import no están una vez"
   DOCTOR="$(on_machine node "$LAB_TREE/scripts/setup/harness.js" doctor 2>&1)"; RC=$?
   # «todo en orden» (sin avisos: la copia pública) o «N aviso(s), nada en rojo» (el repo interno): lo que importa es 0 y ningún ✗
