@@ -191,12 +191,25 @@ const POOL = Math.max(1, Math.min(8, os.cpus().length || 2));
 const bad = new Map();
 let next = 0;
 let alive = 0;
+// Un guion de flujo de trabajo (`*.workflow.js`) no es un módulo: lo carga la herramienta Workflow de Claude Code, que
+// envuelve su cuerpo en una función asíncrona (ahí `return` y `await` a nivel de archivo son legítimos) y lee su
+// `export const meta`. Se revisa como lo ejecuta ese motor: el cuerpo, sin el `export`, adentro de una función
+// asíncrona, en un temporal. Saltearlo dejaría sin revisar un archivo que corre; revisarlo como módulo, en rojo uno sano.
+let wrapDir = null;
+function checkable(f) {
+  if (!f.endsWith('.workflow.js')) return path.join(ROOT, f);
+  if (!wrapDir) wrapDir = require('fs').mkdtempSync(path.join(os.tmpdir(), 'public-ci-workflow-'));
+  const body = require('fs').readFileSync(path.join(ROOT, f), 'utf8').replace(/^export\s+(?=(?:const|let|var|function|async\s+function|class)\b)/gm, '');
+  const out = path.join(wrapDir, f.replace(/[\\/]/g, '__'));
+  require('fs').writeFileSync(out, `(async () => {\n${body}\n})();\n`);
+  return out;
+}
 function launch() {
   while (alive < POOL && next < files.length) {
     const f = files[next++];
     alive++;
     let err = '';
-    const p = spawn(process.execPath, ['--check', path.join(ROOT, f)], { stdio: ['ignore', 'ignore', 'pipe'] });
+    const p = spawn(process.execPath, ['--check', checkable(f)], { stdio: ['ignore', 'ignore', 'pipe'] });
     p.stderr.on('data', (d) => { err += d; });
     p.on('error', (e) => { err += e.message; });
     p.on('close', (code) => {

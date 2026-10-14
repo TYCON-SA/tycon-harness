@@ -37,7 +37,8 @@ test.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
 const put = (dir, rel, body) => { const f = path.join(dir, rel); fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, body); return f; };
 // sin la variable de quien corre esta prueba: una parte de esta misma suite no puede contagiar a las de juguete
 const cleanEnv = () => { const e = { ...process.env }; delete e.SUITE_PART; delete e.NODE_TEST_CONTEXT; return e; };
-const node = (file) => spawnSync(process.execPath, [file], { encoding: 'utf8', env: cleanEnv() });
+// en TAP siempre: desde Node 23 el formato por defecto es el de personas (✔/✖), y `ran` lee las líneas «ok N - …»
+const node = (file) => spawnSync(process.execPath, ['--test-reporter=tap', file], { encoding: 'utf8', env: cleanEnv() });
 const bash = (file, env = {}) => spawnSync('bash', [file], { encoding: 'utf8', env: { ...cleanEnv(), ...env } });
 // las pruebas que corrieron, en orden, leídas de la salida TAP de `node archivo`
 const ran = (out) => out.split('\n').map((l) => l.match(/^(?:not )?ok \d+ - (.*?)(?: # .*)?$/)).filter(Boolean).map((m) => m[1]);
@@ -88,7 +89,7 @@ test('T40 — el `after` del archivo corre en cada parte, y `test.skip` cuenta c
   const dir = nodeLab(3, TOY_SECONDS);
   const log = path.join(dir, 'after.log');
   for (const k of [1, 2, 3]) {
-    const r = spawnSync(process.execPath, [path.join(dir, `toy.p${k}.test.js`)], { encoding: 'utf8', env: { ...cleanEnv(), AFTER_LOG: log } });
+    const r = spawnSync(process.execPath, ['--test-reporter=tap', path.join(dir, `toy.p${k}.test.js`)], { encoding: 'utf8', env: { ...cleanEnv(), AFTER_LOG: log } });
     assert.strictEqual(r.status, 0, r.stdout + r.stderr);
   }
   assert.strictEqual(fs.readFileSync(log, 'utf8'), 'after\nafter\nafter\n');
@@ -410,7 +411,14 @@ test.skip('salteada', () => { throw new Error('no corre'); });
   put(dir, 'suite-parts.json', JSON.stringify({ suites: { 'toy.test.js': { parts: 2, seconds: {} } } }));
   const outs = [1, 2].map((k) => { const r = node(path.join(dir, `toy.p${k}.test.js`)); assert.strictEqual(r.status, 0, r.stdout + r.stderr); return r.stdout; });
   const names = outs.flatMap(ran);
-  assert.deepStrictEqual([...names].sort(), ['común', 'pendiente', 'salteada', 'sola'], `cada una en una parte, y sólo en una: ${JSON.stringify(outs.map(ran))}`);
+  // Cómo trata `test.only` ESTE Node sin --test-only: hasta Node 22 lo ignora y corre todo; los más nuevos corren sólo
+  // la marcada y saltean el resto del archivo. Se le pregunta al Node que corre, sin escribir números de versión: lo que
+  // se mide acá es el reparto (cada una en una sola parte), no esa regla de Node.
+  put(dir, 'only-probe.test.js', "const t = require('node:test'); t('otra', () => {}); t.only('marcada', () => {});\n");
+  const honorsOnly = !ran(node(path.join(dir, 'only-probe.test.js')).stdout).includes('otra');
+  const parted = honorsOnly ? names.filter((n) => n !== 'común') : names;
+  const expected = honorsOnly ? ['pendiente', 'salteada', 'sola'] : ['común', 'pendiente', 'salteada', 'sola'];
+  assert.deepStrictEqual([...parted].sort(), expected, `cada una en una parte, y sólo en una: ${JSON.stringify(outs.map(ran))}`);
   const all = outs.join('\n');
   assert.match(all, /ok \d+ - pendiente # TODO/, 'la pendiente sale como pendiente');
   assert.match(all, /ok \d+ - salteada # SKIP/, 'la salteada sale como salteada');

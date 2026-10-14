@@ -361,7 +361,7 @@ test('T15g Eol_CannotLookIsNotGreen — con un clon que git no puede leer la pru
     return dir;
   };
   // sólo T15b y T15c de la copia: las que miden el repo (y así la copia no vuelve a lanzar esta misma prueba)
-  const run = (dir) => spawnSync(process.execPath, ['--test-name-pattern=T15[bc] ', path.join(dir, 'scripts', 'tests', 'eol.test.js')],
+  const run = (dir) => spawnSync(process.execPath, ['--test-reporter=tap', '--test-name-pattern=T15[bc] ', path.join(dir, 'scripts', 'tests', 'eol.test.js')],
     { encoding: 'utf8', env: { ...sinGitDelPadre(), TYCON_SKILLS_DIR: dir } });
   const unreadable = run(build(true));
   assert.notStrictEqual(unreadable.status, 0, `un clon que no se puede leer no puede dar verde:\n${unreadable.stdout}`);
