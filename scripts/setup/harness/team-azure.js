@@ -177,7 +177,7 @@ function itemAt(c, commit, file, expectedSha, { timeoutMs = null } = {}) {
  * Resuelve y valida la capa SIN escribir ni registrar (la misma forma que `team.resolveTeam`): la ref `main`, el commit y
  * su `treeId`, la lista del árbol (lista cerrada; su hash recalculado tiene que dar el `treeId`), la declaración y el perfil.
  */
-function resolve(c, { version, readerTree, home = os.homedir(), env = process.env, knownCommits = [] } = {}) {
+function resolve(c, { version, readerTree, deferReaders = false, home = os.homedir(), env = process.env, knownCommits = [] } = {}) {
   const T = team();
   const src = c.src;
   const head = `capa del equipo (${src.url})`;
@@ -212,9 +212,9 @@ function resolve(c, { version, readerTree, home = os.homedir(), env = process.en
   // del HOME que `fetch` reusa (cada archivo se pide UNA vez); lo que la máquina ya tiene con ese blob —en harness/ o en otra
   // caché— no se pide (tanda A2c · AC 39: un commit que sólo cambia el perfil cuesta la lista más un pedido)
   const store = T.blobStore(env);
-  const judged = T.judgeContent(plan, (p, sha) => { const have = sha ? store.get(sha) : null; return have ? { ok: true, buf: have, blob: sha } : itemAt(c, commit, p, sha); }, { version, readerTree, home, env, head, commit });
+  const judged = T.judgeContent(plan, (p, sha) => { const have = sha ? store.get(sha) : null; return have ? { ok: true, buf: have, blob: sha } : itemAt(c, commit, p, sha); }, { version, readerTree, deferReaders, home, env, head, commit });
   if (!judged.ok) return judged;
-  return { ok: true, repo: src.url, host: 'azure', ref: TEAM_REF, commit, tree, etag: null, files: plan.files, declaration: judged.declaration, declarationSha: plan.declaration ? plan.declaration.sha : null, totalBytes: plan.totalBytes, profileEntries: judged.profileEntries, stagedDir: judged.dir, notes: plan.notes };
+  return { ok: true, repo: src.url, host: 'azure', ref: TEAM_REF, commit, tree, etag: null, files: plan.files, declaration: judged.declaration, declarationSha: plan.declaration ? plan.declaration.sha : null, totalBytes: plan.totalBytes, profileEntries: judged.profileEntries, readersDeferred: judged.readersDeferred, stagedDir: judged.dir, notes: plan.notes };
 }
 
 /**

@@ -459,7 +459,11 @@ function preconditions(ctx, state, H) {
     // la fuente según su forma (GitHub o Azure DevOps): sin la credencial de Azure, la mudanza no arranca y lo dice
     teamOpen = TEAM.openSource(teamRepo.repo, { ctx, deadlineAt: Date.now() + Math.max(60, Number(ctx.env.TYCON_RELEASE_DOWNLOAD_BUDGET_S) > 0 ? Number(ctx.env.TYCON_RELEASE_DOWNLOAD_BUDGET_S) : 120) * 1000, publicRepo: repo.repo });
     if (!teamOpen.ok) return bad(`${HEAD}: ${teamOpen.reason}`, teamOpen.code || 1);
-    teamPlan = teamOpen.resolve({ version: t.version, readerTree: state.tree, home: ctx.home, env: ctx.env });
+    // el perfil y team-repos.json de la capa NO se juzgan con los lectores del clon: el clon no es la versión que va a quedar
+    // (uno viejo ni siquiera trae scripts/lib/team-repos.js, y la mudanza no arrancaba nunca). Acá se mira todo lo demás —el
+    // acceso, la lista cerrada, la declaración, los nombres—; esos dos se juzgan en la mudanza, con los lectores de la versión
+    // recién bajada y antes de escribir nada (como update), y `--dry-run` lo dice en el plan
+    teamPlan = teamOpen.resolve({ version: t.version, readerTree: null, deferReaders: true, home: ctx.home, env: ctx.env });
     if (!teamPlan.ok) return bad(`${HEAD}: ${teamPlan.reason}`);
     profile = { status: 'skipped', file: profile.file, reason: `viaja en la capa del equipo (${teamRepo.repo}), no se funde en ${p.newConfig} (los valores quedan con origen perfil)`, moves: [], had: [], skipped: [] };
   }
@@ -476,6 +480,8 @@ function planLines(ctx, pre) {
   L0.push(`  mueve: ${moves.join(' · ')}`);
   L0.push(profileFoldLine(pre.profile, p.newConfig));
   if (pre.teamPlan) L0.push(`  ${require('./team.js').planLine(pre.teamPlan)} → apilada en ${p.own.harness} antes del cambio`);
+  const deferred = pre.teamPlan && Array.isArray(pre.teamPlan.readersDeferred) ? pre.teamPlan.readersDeferred : [];
+  if (deferred.length) L0.push(`  valida: ${deferred.join(' y ')} de la capa con los lectores de la versión ${target.version} (la que baja), al mudar y antes de escribir nada — si esa versión los rechaza, la mudanza no arranca`);
   // la conexión vieja de una skill de la lista fija (tanda A2c · AC 35): el plan anticipa qué se copiaría (la carpeta vieja de
   // skills, si es real, es la que la mudanza va a apartar)
   if (pre.teamPlan) {
@@ -990,13 +996,20 @@ function migrate(ctx, H, { log = null, auto = false, state: given = null } = {})
       rmrf(d.dir);
       return { code: 1, lines: [`${HEAD}: la versión ${target.version} no trae el aplicador (scripts/install-tycon-hooks.sh): no muda a una versión que no puede enchufar Claude Code`], precondition: true };
     }
-    // la capa del equipo (story 8.25, AC 13): se baja ANTES del diario (si falla, no queda nada); se apila después de los terceros
+    // la capa del equipo (story 8.25, AC 13): se baja ANTES del diario (si falla, no queda nada); se apila después de los terceros.
+    // Primero se vuelve a resolver con los lectores de LA VERSIÓN RECIÉN BAJADA (`d.dir`), como update: el perfil y
+    // team-repos.json que las precondiciones dejaron sin juzgar se juzgan acá; si esta versión los rechaza, la capa no se apila
+    // y la mudanza no arranca (sin diario, sin incoming/)
     let teamFetched = null;
+    let teamPlan = null;
     if (pre.teamPlan) {
       const TEAM = require('./team.js');
-      const col = TEAM.collisionWith(pre.teamPlan, d.dir);   // un choque se mira ANTES de bajar la capa: nada queda escrito
-      if (col.length) { const why = TEAM.collisionReason(pre.teamPlan, d.dir, col); rmrf(d.dir); return { code: 1, lines: [`${HEAD}: ${why}`], precondition: true }; }
-      const tf = pre.teamOpen.fetch(pre.teamPlan, { env: ctx.env, log: null });
+      if (pre.teamPlan.stagedDir) TEAM.dropStaged(pre.teamPlan.stagedDir);   // la lectura de las precondiciones no se reusa
+      teamPlan = pre.teamOpen.resolve({ version: target.version, readerTree: d.dir, home: ctx.home, env: ctx.env });
+      if (!teamPlan.ok) { rmrf(d.dir); return { code: 1, lines: [`${HEAD}: ${teamPlan.reason}`], precondition: true }; }
+      const col = TEAM.collisionWith(teamPlan, d.dir);   // un choque se mira ANTES de bajar la capa: nada queda escrito
+      if (col.length) { const why = TEAM.collisionReason(teamPlan, d.dir, col); rmrf(d.dir); return { code: 1, lines: [`${HEAD}: ${why}`], precondition: true }; }
+      const tf = pre.teamOpen.fetch(teamPlan, { env: ctx.env, log: null });
       if (!tf.ok) { rmrf(d.dir); return { code: 1, lines: [`${HEAD}: ${tf.reason}`], precondition: true }; }
       teamFetched = tf;
     }
@@ -1012,7 +1025,7 @@ function migrate(ctx, H, { log = null, auto = false, state: given = null } = {})
       // el perfil del equipo (tanda G): lo que va a pasar al archivo de la máquina, anotado ANTES de tocar el disco
       profileFold: pre.profile ? { status: pre.profile.status, file: pre.profile.file, reason: pre.profile.reason || null, moves: pre.profile.moves, had: pre.profile.had.map((m) => `${m.section}.${m.key}`), skipped: pre.profile.skipped.map((m) => `${m.section}.${m.key}`) } : null,
       // la capa del equipo (story 8.25): lo resuelto, para el estado que stageReplugged reconstruye (se completa al apilar)
-      team: pre.teamPlan ? { repo: pre.teamPlan.repo, ref: pre.teamPlan.ref, commit: pre.teamPlan.commit, tree: pre.teamPlan.tree, etag: pre.teamPlan.etag || null, name: pre.teamPlan.declaration.name, files: pre.teamPlan.files.length, applied_at: null } : null,
+      team: teamPlan ? { repo: teamPlan.repo, ref: teamPlan.ref, commit: teamPlan.commit, tree: teamPlan.tree, etag: teamPlan.etag || null, name: teamPlan.declaration.name, files: teamPlan.files.length, applied_at: null } : null,
       links: {
         place: isLink(p.placeLink) ? readlink(p.placeLink) : null,
         legacy: isLink(p.legacyLink) ? readlink(p.legacyLink) : null,
