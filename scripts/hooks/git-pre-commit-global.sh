@@ -106,7 +106,7 @@ if [ "${TYCON_PROD_LINT:-1}" != "0" ]; then
       echo "⛔ el catálogo de producción rechazó el commit (.tycon/production.json)" >&2
       exit 1
     fi
-  elif git -C "$REPO_ROOT" diff --cached --name-only 2>/dev/null | grep -qE '\.tycon/(production|produccion)\.json$'; then
+  elif git -C "$REPO_ROOT" diff --cached --name-only 2>/dev/null | grep -E '\.tycon/(production|produccion)\.json$' >/dev/null; then
     # sin el lint o sin node NO se saltea en silencio cuando el commit toca el catálogo: se dice
     echo "⚠ el commit toca el catálogo de producción (.tycon/production.json) y no pude verificarlo (falta $LINT_PROD o node)" >&2
   fi
@@ -140,7 +140,7 @@ command -v engram >/dev/null 2>&1 || exit 0
 cd "$REPO_ROOT" || exit 0
 OUTPUT="$(engram sync --project "$PROJECT" 2>&1 || true)"
 
-if printf '%s' "$OUTPUT" | grep -q "Created chunk"; then
+if printf '%s' "$OUTPUT" | grep "Created chunk" >/dev/null; then
   git add .engram/
   echo "engram: nuevo chunk auto-staged ($PROJECT)"
 fi

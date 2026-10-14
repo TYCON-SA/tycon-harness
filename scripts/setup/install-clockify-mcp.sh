@@ -46,7 +46,7 @@ if [ -z "${API_KEY:-}" ]; then
 fi
 
 # 3. Si ya existe el server, removerlo (idempotencia)
-if claude mcp list 2>/dev/null | grep -q "^${SERVER_NAME}:"; then
+if claude mcp list 2>/dev/null | grep "^${SERVER_NAME}:" >/dev/null; then
   echo "→ '${SERVER_NAME}' ya estaba instalado; lo remuevo para reinstalar limpio."
   claude mcp remove --scope user "${SERVER_NAME}" >/dev/null 2>&1 || true
 fi
@@ -65,7 +65,7 @@ claude mcp add \
 echo
 echo "→ Verificando conexión..."
 sleep 1
-if claude mcp list 2>&1 | grep -q "^${SERVER_NAME}:.*✓ Connected"; then
+if claude mcp list 2>&1 | grep "^${SERVER_NAME}:.*✓ Connected" >/dev/null; then
   echo "✓ '${SERVER_NAME}' instalado y conectado correctamente."
   echo
   echo "Próximo paso: reiniciá tu sesión de Claude Code para ver los tools nuevos."
