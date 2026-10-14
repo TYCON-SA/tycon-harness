@@ -29,7 +29,7 @@ const PACKS_REALES = path.join(RAIZ, 'packs');
 const HOME_AISLADO = fs.mkdtempSync(path.join(os.tmpdir(), 'packs-home-'));
 // Story 8.7 (tanda B): la copia pública sale sin el paquete de clientes. Lo que tres casos miden contra ese paquete REAL
 // no se puede medir ahí, y se dice; en el repo del equipo `SKIP_PUBLIC` es false y se mide todo, como siempre.
-const { SKIP_PUBLIC, CLIENT_PACK_REVIEWER_COUNT, packReviewers } = require('./lib/public-copy.js');
+const { SKIP_PUBLIC, clientPackReviewers, packReviewers } = require('./lib/public-copy.js');
 
 const TC ='tycon-plugin-tests-coverage';
 const SB = 'tycon-plugin-security-basics';
@@ -602,10 +602,12 @@ test('Advisors_SalidaIncluyePaquetesCargados', () => {
   assert.deepEqual(s.json.packs.map((p) => p.nombre), ['prueba']);
 });
 
-// ── T8 · AC 7 — el núcleo no nombra a los cinco ─────────────────────────────────────────────────
-// (story 8.10.3 D: «los cinco» ya no se escriben acá: son los que declaran los manifiestos instalados. En el repo del
-// equipo son cinco; la copia pública trae sólo el paquete del stack y sus tres)
-const LOS_CINCO = packReviewers(PACKS_REALES);
+// ── T8 · AC 7 — el núcleo no nombra a los revisores de paquete ──────────────────────────────────
+// (story 8.10.3 D: los revisores de paquete no se escriben acá: son los que declaran los manifiestos instalados. La copia
+// pública trae sólo el paquete del stack y sus tres; el repo del equipo suma los de su paquete de clientes, que el
+// público no cuenta: los lee de ese manifiesto — sacar o sumar uno allá no toca esta suite)
+const LOS_DE_PAQUETE = packReviewers(PACKS_REALES);
+const DEL_PAQUETE_DEL_STACK = 3;
 function archivosDelNucleo() {
   const skill = path.resolve(SCRIPTS, '..');
   const out = [PIPELINE, path.join(skill, 'SKILL.md')];
@@ -625,7 +627,7 @@ test('Nucleo_SinNombresDePaquetes', (t) => {
   for (const f of archivosDelNucleo()) {
     const lineas = fs.readFileSync(f, 'utf8').split('\n');
     lineas.forEach((l, i) => {
-      for (const n of LOS_CINCO) if (l.includes(n)) apariciones.push(`${path.relative(RAIZ, f)}:${i + 1} ${n}`);
+      for (const n of LOS_DE_PAQUETE) if (l.includes(n)) apariciones.push(`${path.relative(RAIZ, f)}:${i + 1} ${n}`);
     });
   }
   assert.deepEqual(apariciones, [], `los revisores de paquete sólo viven en packs/:\n${apariciones.join('\n')}`);
@@ -638,12 +640,14 @@ test('Nucleo_SinNombresDePaquetes', (t) => {
     });
   // (pase adversarial de la 8.10.3 D: comparar la lista contra los mismos manifiestos de los que sale no mide nada)
   // lo que sí se mide: cada revisor que un manifiesto declara tiene su definición, y la lista no perdió ni duplicó ninguno
-  assert.deepEqual([...new Set(enPacks)].sort(), LOS_CINCO, 'la lista de revisores de paquete es la de los manifiestos, sin repetir');
-  for (const n of LOS_CINCO) assert.ok(fs.existsSync(path.join(RAIZ, 'agents', `${n}.md`)), `${n}: lo declara un manifiesto y no tiene su definición en agents/`);
-  // la lista sale de los manifiestos: que no se quede corta. En el repo del equipo son los cinco de siempre; en la copia
-  // pública, los del paquete que viaja, y los del paquete de clientes no se miden (se dice)
-  assert.equal(LOS_CINCO.length, 5 - (SKIP_PUBLIC ? CLIENT_PACK_REVIEWER_COUNT : 0), `revisores de paquete: ${LOS_CINCO.join(', ')}`);
-  if (SKIP_PUBLIC) t.diagnostic(`NO MEDIDO: que el núcleo no nombre a los ${CLIENT_PACK_REVIEWER_COUNT} revisores del paquete de clientes ni que su manifiesto los declare (${SKIP_PUBLIC}); se mide en el repo del equipo`);
+  assert.deepEqual([...new Set(enPacks)].sort(), LOS_DE_PAQUETE, 'la lista de revisores de paquete es la de los manifiestos, sin repetir');
+  for (const n of LOS_DE_PAQUETE) assert.ok(fs.existsSync(path.join(RAIZ, 'agents', `${n}.md`)), `${n}: lo declara un manifiesto y no tiene su definición en agents/`);
+  // la lista sale de los manifiestos: que no se quede corta. Los tres del paquete del stack están siempre; en el repo del
+  // equipo se suman los que declare su paquete de clientes (los dice su manifiesto, no un número escrito acá); en la
+  // copia pública ese paquete no está y no se mide (se dice)
+  const deClientes = clientPackReviewers();
+  assert.equal(LOS_DE_PAQUETE.length, DEL_PAQUETE_DEL_STACK + deClientes.length, `revisores de paquete: ${LOS_DE_PAQUETE.join(', ')}`);
+  if (SKIP_PUBLIC) t.diagnostic(`NO MEDIDO: que el núcleo no nombre a los revisores del paquete de clientes ni que su manifiesto los declare (${SKIP_PUBLIC}); se mide en el repo del equipo`);
 });
 
 // ── T9 · AC 8 — sin paquetes, un diff .cs conserva pruebas y seguridad, sin avisos ─────────────
