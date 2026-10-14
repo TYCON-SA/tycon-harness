@@ -364,7 +364,7 @@ t('@story-7.12 @ac-7 MapaLoIncluye — el medidor figura en el mapa, con su arch
   // público no los publica. Sin ellos este caso no puede mirar nada, y se dice: SALTEADO con su motivo, nunca verde.
   // Para medir contra un mapa en otra ruta: TYCON_HARNESS_MAP=<ruta del .html>.
   const rutaMapa = process.env.TYCON_HARNESS_MAP ? path.resolve(process.env.TYCON_HARNESS_MAP) : path.join(RAIZ, 'artifacts', 'mapa-arnes.html');
-  const censo = path.join(RAIZ, 'scripts', 'tools', 'harness-map', 'censo.js');
+  const censo = path.join(RAIZ, 'scripts', 'tools', 'harness-map', 'census.js');
   const faltan = [rutaMapa, censo].filter((x) => !fs.existsSync(x));
   if (faltan.length) return { salteado: `NO MEDIDO: no está ${faltan.map((x) => path.relative(RAIZ, x)).join(' ni ')} (el mapa vive en el repo de mantenimiento)` };
   const mapa = fs.readFileSync(rutaMapa, 'utf8');

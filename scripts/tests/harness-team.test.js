@@ -11,6 +11,8 @@
 //        más, sin requires, mínima mayor, otra forma de requires, name fuera del alfabeto: siete rechazos con su motivo.
 //   T6u · el perfil candidato se valida con el lector del árbol dado, sobre una carpeta temporal y sin TYCON_PROFILE: un
 //        valor personal, una clave desconocida y las tres llaves que no viajan lo rechazan; uno sano pasa.
+//   T6w · sin la versión que va a quedar (la mudanza, antes de bajarla), el perfil y team-repos.json no se juzgan con otro
+//        árbol: se difieren y vuelven nombrados; la declaración se sigue juzgando.
 //   T33 · (tanda A2b-AC33) el mapa de renombres como tercera ruta exacta, validado contra la versión que va a quedar con el
 //        lector de esa versión: un mapa sano pasa; cada forma mala rechaza la capa nombrando la entrada; el mapa real pasa.
 //   TPN · el perfil con su nombre de hoy (team-profile.json) y el de antes (perfil-equipo.json): la capa acepta los dos, con
@@ -293,6 +295,39 @@ test('T6v Team_TeamReposInTheClosedList_ValidatedWithReaderOfTree — dónde viv
   const r = TEAM.validateTeamRepos(sane, { readerTree: old });
   assert.equal(r.ok, false);
   assert.match(r.reason, /no trae su lector/);
+});
+
+test('T6w Team_DeferReaders_ProfileAndTeamReposLeftForTheVersionThatStays — sin la versión que va a quedar, los lectores no juzgan: se difieren y se dicen', () => {
+  // la mudanza de un clon viejo (sin scripts/lib/team-repos.js): juzgar con los lectores del clon frenaba una capa válida.
+  // Con deferReaders, el perfil y team-repos.json NO se juzgan con readerTree y vuelven nombrados en readersDeferred; todo
+  // lo demás (la declaración) se sigue juzgando
+  const repo = (r) => ({ platform: 'github', org: 'acme', repo: r });
+  const files = {
+    'team-layer.json': JSON.stringify({ schema: 1, name: 'equipo', requires: { harness: '>= 2026.10.01.1' } }),
+    'perfil-equipo.json': JSON.stringify({ install: { profile: 'full' } }),
+    'team-repos.json': JSON.stringify({ version: 1, public: repo('arnes'), profile: repo('perfil'), operations: repo('operaciones') }),
+  };
+  const plan = { declaration: { sha: null }, files: [{ path: 'perfil-equipo.json', sha: null }, { path: 'team-repos.json', sha: null }] };
+  const read = (p) => ({ ok: true, buf: Buffer.from(files[p], 'utf8') });
+  const old = casa('clon-sin-lectores');   // un árbol sin ninguno de los dos lectores, como el clon viejo
+  const opts = { head: 'capa de prueba', version: '2026.10.09.1', commit: 'c'.repeat(40), home: casa('home-6w'), env: {} };
+  const judged = TEAM.judgeContent(plan, read, Object.assign({}, opts, { readerTree: old }));
+  assert.equal(judged.ok, false, 'sin diferir, el árbol sin lector rechaza la capa (lo de antes: la mudanza no arrancaba)');
+  assert.match(judged.reason, /lector/);
+  const deferred = TEAM.judgeContent(plan, read, Object.assign({}, opts, { readerTree: null, deferReaders: true }));
+  assert.equal(deferred.ok, true, `difiriendo, la capa pasa lo que no depende de los lectores: ${deferred.reason}`);
+  assert.deepEqual(deferred.readersDeferred, ['perfil-equipo.json', 'team-repos.json'], 'y nombra los dos archivos que quedan por juzgar');
+  assert.equal(deferred.profileEntries, null, 'el perfil no se leyó: no hay entradas que dar por buenas');
+  TEAM.dropStaged(deferred.dir);
+  // la declaración se sigue juzgando aunque se difieran los lectores
+  const tooNew = Object.assign({}, files, { 'team-layer.json': JSON.stringify({ schema: 1, name: 'equipo', requires: { harness: '>= 2099.01.01.1' } }) });
+  const r = TEAM.judgeContent(plan, (p) => ({ ok: true, buf: Buffer.from(tooNew[p], 'utf8') }), Object.assign({}, opts, { readerTree: null, deferReaders: true }));
+  assert.equal(r.ok, false, 'una declaración que pide una versión posterior sigue frenando');
+  // y juzgado con los lectores de una versión que los trae (este árbol), no difiere nada
+  const full = TEAM.judgeContent(plan, read, Object.assign({}, opts, { readerTree: ROOT }));
+  assert.equal(full.ok, true, `con los lectores de la versión: ${full.reason}`);
+  assert.deepEqual(full.readersDeferred, []);
+  TEAM.dropStaged(full.dir);
 });
 
 // tanda A1b (T10 en unidad; revisión adversarial C1, C2, W5, W7, W8, W9): el refresco en el lugar como transacción, sobre
