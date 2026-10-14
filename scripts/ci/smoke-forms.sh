@@ -59,6 +59,58 @@ es_numero() { local LC_ALL=C re='^[0-9]{1,15}$'; [[ "$1" =~ $re ]]; }
 texto_visible() { printf '%s' "$1" | LC_ALL=C tr '\000-\037\177' ' ' | LC_ALL=C tr -d '#' | cut -c1-200; }
 # <<< nombre-seguro
 
+# 🔴 POR QUÉ FALLÓ (2026-10-14). Cuando un formulario no pasaba, el humo decía «falló» y nada más: un día lo
+# rompía el host de pruebas con su circuit breaker abierto y hubo que averiguarlo a mano. Ahora cada falla al
+# consultar el host muestra lo que contestó —el código HTTP y un recorte del cuerpo, de hasta 500 caracteres—
+# y una línea que dice si parece del host (5xx, breaker, tiempo agotado, sin respuesta) o nuestro (404, 401/403,
+# otro 4xx, un formulario que no sirve código). Sólo informa: el veredicto y el código de salida no cambian.
+# Lo que contesta el host no sale tal cual: en una línea, sin '#' ni caracteres de control (como texto_visible),
+# y con lo que parezca una llave tapado — el usuario y el token de esta corrida, un JWT, un `Bearer …`, un campo
+# token/password/secret/key, y cualquier tira de 32 caracteres o más de base64 o hexadecimal.
+# SMOKE_FORMS_MAX_TIME (segundos) cambia el tope de cada consulta de formularios; sin ella, los de siempre (25 y
+# 40). Existe para que la prueba de «tiempo agotado» no espere 40 s por intento.
+TOPE_LISTA=25; TOPE_CODIGO=40
+if [ -n "${SMOKE_FORMS_MAX_TIME:-}" ] && es_numero "$SMOKE_FORMS_MAX_TIME" && [ "$SMOKE_FORMS_MAX_TIME" -gt 0 ]; then
+  TOPE_LISTA=$SMOKE_FORMS_MAX_TIME; TOPE_CODIGO=$SMOKE_FORMS_MAX_TIME
+fi
+TRABAJO=$(mktemp -d) || { echo "[humo] no pude crear una carpeta temporal" >&2; exit 1; }
+trap 'rm -rf "$TRABAJO"' EXIT
+tapar_llaves() { # entrada → salida, con lo que parezca una llave tapado
+  local t; t="$(cat)"
+  # los valores de esta corrida, literales (sólo si tienen largo de secreto: una clave de 1 letra taparía medio texto)
+  if [ "${#CLAVE}" -ge 6 ]; then t="${t//"$CLAVE"/[tapado]}"; fi
+  if [ -n "${TOKEN:-}" ] && [ "${#TOKEN}" -ge 6 ]; then t="${t//"$TOKEN"/[tapado]}"; fi
+  printf '%s' "$t" | LC_ALL=C sed -E \
+    -e 's/eyJ[A-Za-z0-9_-]+[.][A-Za-z0-9_-]+([.][A-Za-z0-9_-]*)?/[tapado]/g' \
+    -e 's/(Bearer|Basic|bearer|basic)[[:space:]]+[A-Za-z0-9._~+\/=-]+/\1 [tapado]/g' \
+    -e 's/("[A-Za-z_-]*([Tt]oken|TOKEN|[Pp]assword|PASSWORD|[Ss]ecret|SECRET|[Kk]ey|KEY|[Aa]uthorization|[Cc]redential)[A-Za-z_-]*"[[:space:]]*:[[:space:]]*)"[^"]*"/\1"[tapado]"/g' \
+    -e 's/([A-Za-z_]*([Tt]oken|[Pp]assword|[Ss]ecret|[Kk]ey))=[^;&[:space:]"]+/\1=[tapado]/g' \
+    -e 's/[A-Za-z0-9+\/_=-]{32,}/[tapado]/g'
+}
+recorte() { # <archivo con el cuerpo> → una línea, sin '#' ni controles, llaves tapadas, hasta 500 caracteres
+  head -c 4000 "$1" 2>/dev/null | tapar_llaves | LC_ALL=C tr '\000-\037\177' ' ' | LC_ALL=C tr -d '#' | tr -s ' ' | cut -c1-500
+}
+# <código HTTP> <salida de curl> <archivo con el cuerpo> <qué se pedía: lista|codigo> → una línea: ¿del host o nuestro?
+motivo_del_host() {
+  local code="$1" rc="$2" f="$3" que="$4"
+  if [ "$rc" = 28 ]; then echo "parece del host: no contestó a tiempo (tiempo agotado)"; return; fi
+  if grep -qiE 'circuit|breaker' "$f" 2>/dev/null; then echo "parece del host: tiene el circuit breaker abierto (HTTP $code)"; return; fi
+  case "$code" in
+    000|"") echo "parece del host o de la red: no hubo respuesta (curl salió $rc)" ;;
+    5??) echo "parece del host: error del servidor (HTTP $code)" ;;
+    404) echo "parece nuestro: el host no encuentra esa ruta o ese formulario (HTTP 404)" ;;
+    401|403) echo "parece nuestro: el usuario del humo no tiene acceso (HTTP $code)" ;;
+    4??) echo "parece nuestro: el host rechazó el pedido (HTTP $code)" ;;
+    200) if [ "$que" = codigo ]; then echo "parece nuestro: el formulario no sirve código (HTTP 200 sin cuerpo)"; else echo "parece del host: contestó 200 pero no con la lista de formularios"; fi ;;
+    *) echo "no sé de quién es: el host contestó HTTP $code" ;;
+  esac
+}
+decir_respuesta() { # <qué falló> <código HTTP> <salida de curl> <archivo con el cuerpo> <lista|codigo>
+  local extra=""; [ "$3" != 0 ] && extra=" (curl salió $3)"
+  echo "[humo] $1 — respuesta del host: HTTP $(nombre_visible "$2")$extra · cuerpo: «$(recorte "$4")»" >&2
+  echo "[humo]   $(motivo_del_host "$(nombre_visible "$2")" "$3" "$4" "$5")" >&2
+}
+
 # 🔴 EL REGISTRO DE DESPLIEGUES (story 2.10). Un humo aprobado, dentro de una corrida de Azure, anota
 # SÓLO los formularios que esta corrida subió — no todos los que verificó: el directorio trae el ZIP de
 # cada formulario y la mayoría ya estaba. Quién se subió lo dice el host: la versión actual de cada
@@ -172,8 +224,17 @@ TOKEN=$(login) || exit 1
 A=(-H "Authorization: Bearer $TOKEN" -H "Cookie: admin_token=$TOKEN" -H 'X-Tenant-Id: default')
 
 for intento in 1 2 3; do
-  LISTA=$(curl -s --max-time 25 "${URL}/api/custom-forms" "${A[@]}" 2>/dev/null) || LISTA=""
+  CODIGO_LISTA=$(curl -s -o "$TRABAJO/lista" -w '%{http_code}' --max-time "$TOPE_LISTA" "${URL}/api/custom-forms" "${A[@]}" 2>/dev/null); RC_LISTA=$?
+  [ -n "$CODIGO_LISTA" ] || CODIGO_LISTA="000"
+  LISTA=$(cat "$TRABAJO/lista" 2>/dev/null) || LISTA=""
   FALLAS=0; k=0
+  # sin la lista no se puede comparar ninguno: se dice qué contestó el host y cuentan todos como no verificados
+  if [ "$CODIGO_LISTA" != "200" ] || ! printf '%s' "$LISTA" | jq -e . >/dev/null 2>&1; then
+    decir_respuesta "intento $intento: no pude leer la lista de formularios del host" "$CODIGO_LISTA" "$RC_LISTA" "$TRABAJO/lista" lista
+    FALLAS=${#NOMBRES[@]}
+    [ "$intento" -lt 3 ] && sleep 10
+    continue
+  fi
   while [ "$k" -lt "${#NOMBRES[@]}" ]; do
     F="${NOMBRES[$k]}"; V="${VERSIONES[$k]}"; ESP_TAM="${PESOS[$k]}"; FU="${EN_URL[$k]}"; k=$((k+1))
     ACTUAL=$(printf '%s' "$LISTA" | jq -r --arg f "$F" '
@@ -182,13 +243,19 @@ for intento in 1 2 3; do
     [ -z "$ACTUAL" ] && ACTUAL="ILEGIBLE"
     if [ "$ACTUAL" != "$V" ]; then echo "[humo] intento $intento: $F está en '$(nombre_visible "$ACTUAL")', esperaba '$V'" >&2; FALLAS=$((FALLAS+1)); continue; fi
     # y el código se sirve: 200 con cuerpo
-    BYTES=$(curl -s -o /dev/null -w '%{http_code} %{size_download}' --max-time 40 "${URL}/api/custom-forms/${FU}/code" "${A[@]}" 2>/dev/null) || BYTES="000 0"
+    rm -f "$TRABAJO/codigo"
+    BYTES=$(curl -s -o "$TRABAJO/codigo" -w '%{http_code} %{size_download}' --max-time "$TOPE_CODIGO" "${URL}/api/custom-forms/${FU}/code" "${A[@]}" 2>/dev/null); RC_COD=$?
+    [ -n "$BYTES" ] || BYTES="000 0"
     HTTP="${BYTES%% *}"; SIZE="${BYTES##* }"
     # 🔴 Lo que cuenta `curl` también entra a la cuenta de más abajo. `curl -w` siempre da un número, pero si
     # un día no lo diera, la resta moría —en bash 3.2 saliendo 0 y sin imprimir nada— y sin peso declarado se
     # aprobaba «abc bytes». Un tamaño que no es un número es «no pude mirar»: falla, y lo dice.
     if ! es_numero "$SIZE"; then echo "[humo] intento $intento: $F v$V — no pude leer cuántos bytes sirve el host: lo que contó curl no es un número («$(nombre_visible "$SIZE")», HTTP $(nombre_visible "$HTTP"))" >&2; FALLAS=$((FALLAS+1)); continue; fi
-    if [ "$HTTP" != "200" ] || [ "${SIZE:-0}" -le 0 ]; then echo "[humo] intento $intento: $F v$V — el código no se sirve (HTTP $HTTP, $SIZE bytes)" >&2; FALLAS=$((FALLAS+1)); continue; fi
+    if [ "$HTTP" != "200" ] || [ "${SIZE:-0}" -le 0 ]; then
+      echo "[humo] intento $intento: $F v$V — el código no se sirve (HTTP $(nombre_visible "$HTTP"), $SIZE bytes)" >&2
+      decir_respuesta "intento $intento: $F v$V" "$HTTP" "$RC_COD" "$TRABAJO/codigo" codigo
+      FALLAS=$((FALLAS+1)); continue
+    fi
     # 🔴 ¿SIRVE LO QUE ESTA CORRIDA CONSTRUYÓ? (2026-09-03, todavía AVISANDO, no frenando)
     #
     # Este humo compara VERSIÓN contra VERSIÓN, así que toda la familia de fallos de versionado lo
