@@ -20,6 +20,8 @@
 #         `\r\n` es un AVISO con el guion y el remedio, nunca una falla (está en el disco del clon: volver atrás no lo
 #         arregla), y uno que no se puede leer es «sin comprobar»; y el primer `.sh` de un evento se lanza con ese bash,
 #         no con cmd.exe. En Mac y Linux, como antes.
+#   EPIPE · un hook que sale sin leer su payload corrió: el EPIPE que trae spawnSync con el código de salida no es «no pude
+#         lanzarlo» (era un aviso falso de a ratos, y el rojo inestable de T99 en public-ci).
 #
 # Nota de laboratorio (el Given/Fixture de la story ya lo dice así): con `chmod 000` git no puede ni mirar el archivo y el
 # merge falla con «would be overwritten by merge» (bloqueada, no interrumpida). El texto que decide `interrupted` («unable to unlink»)
@@ -32,7 +34,7 @@
 #         skills llega, se registra con la ruta fija ~/.claude/agent-skills y la salud pasa; en la máquina re-apuntada un
 #         hook roto hace volver las DOS fuentes al mismo commit; y una mudanza que no pudo pasar no tira abajo la salud.
 #
-# Uso: bash scripts/tests/harness-health.test.sh [--only T25|T25-DENY|T25-SYNTAX|T25-HARNESS|T25-SUITE|T25-SANA|T25-INTERRUPTED|UNIT|T38|T38-PROFILE|T99]
+# Uso: bash scripts/tests/harness-health.test.sh [--only T25|T25-DENY|T25-SYNTAX|T25-HARNESS|T25-SUITE|T25-SANA|T25-INTERRUPTED|UNIT|T38|T38-PROFILE|T99|EPIPE]
 #   (T38 de la story 8.18 y T38-PROFILE de la 8.16, tanda C: la salud en minimal, con eventos sin hooks)
 set -uo pipefail
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -573,6 +575,42 @@ JS
   [ "$RC" = 0 ] && [ "$(j "$U/t38.json" "d['ok']")" = True ] && [ "$(j "$U/t38.json" "len(d['failures'])")" = 0 ] \
     && ok "T38 la salud de una instalación minimal (Stop, PostToolUse y UserPromptSubmit sin hooks) pasa" \
     || mal "T38 la salud en minimal: rc $RC · $(j "$U/t38.json" "d.get('failures')") $(head -c 200 "$U/t38.err")"
+fi
+
+# ═══ EPIPE · un hook que sale sin leer su payload CORRIÓ: no es «no pude lanzarlo» ═════════════════════════════════════
+# public-ci, 2026-10-14: T99 salió rojo de a ratos con «hook Stop:@tcg:fine-stop.sh: no pude lanzarlo (spawnSync …
+# EPIPE)». fine-stop.sh es `exit 0`: si termina antes de que spawnSync le escriba el payload, spawnSync trae EPIPE y
+# TAMBIÉN el código de salida del hook. La salud miraba sólo `r.error`. Acá el EPIPE se provoca siempre: un payload más
+# grande que el búfer del caño y un hijo que sale sin leer (node, no un shell: vale igual en Windows).
+# 🔴 rojo previo: `r.error` viene puesto (lo que la salud miraba antes), así que el hook sano era un aviso.
+if corre EPIPE; then
+  echo "· epipe"
+  U="$BASE/epipe"; mkdir -p "$U"
+  cat > "$U/epipe.js" <<'JS'
+const { spawnSync } = require('child_process');
+const { launchError } = require(process.argv[2]);
+const big = 'x'.repeat(1024 * 1024);
+const run = (code) => spawnSync(process.execPath, ['-e', `process.exit(${code})`], { input: big, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+const r0 = run(0); const r2 = run(2);
+const missing = spawnSync('tycon-no-existe-este-programa', [], { input: 'x', encoding: 'utf8' });
+const out = {
+  r0: { code: r0.error && r0.error.code, status: r0.status, launch: launchError(r0) && launchError(r0).code },
+  r2: { code: r2.error && r2.error.code, status: r2.status, launch: launchError(r2) && launchError(r2).code },
+  missing: { launch: launchError(missing) && launchError(missing).code },
+  epipeNoStatus: launchError({ error: { code: 'EPIPE' }, status: null }) ? 'error' : null,
+  clean: launchError({ status: 0 }),
+};
+process.stdout.write(JSON.stringify(out));
+JS
+  node "$U/epipe.js" "$RAIZ/scripts/setup/harness/health.js" > "$U/epipe.json" 2> "$U/epipe.err"; RC=$?
+  e() { j "$U/epipe.json" "$1"; }
+  [ "$RC" = 0 ] && [ "$(e "d['r0']['code']")" = EPIPE ] && [ "$(e "d['r0']['status']")" = 0 ] \
+    && ok "EPIPE reproducido: el hook salió 0 sin leer el payload y spawnSync trae EPIPE con el código de salida (lo que antes era aviso)" \
+    || mal "EPIPE no se reprodujo (rc $RC): $(cat "$U/epipe.json" "$U/epipe.err" 2>/dev/null | head -c 300) — sin él el caso no mide nada"
+  [ "$(e "d['r0']['launch']")" = None ] && ok "EPIPE: un hook que salió 0 sin leer el payload corrió (no es «no pude lanzarlo»)" || mal "EPIPE: el hook sano es error de lanzamiento: $(e "d['r0']")"
+  [ "$(e "d['r2']['launch']")" = None ] && [ "$(e "d['r2']['status']")" = 2 ] && ok "EPIPE: uno que sale 2 sin leer también corrió, y su 2 llega (sigue siendo falla de la salud)" || mal "EPIPE: el que sale 2: $(e "d['r2']")"
+  [ "$(e "d['missing']['launch']")" = ENOENT ] && ok "EPIPE espejo: un programa que no existe sigue siendo «no pude lanzarlo»" || mal "EPIPE espejo ENOENT: $(e "d['missing']")"
+  [ "$(e "d['epipeNoStatus']")" = error ] && [ "$(e "d['clean']")" = None ] && ok "EPIPE espejo: un EPIPE sin código de salida (no se sabe si corrió) sigue siendo error; sin error, nada" || mal "EPIPE espejo sin código de salida: $(e "d['epipeNoStatus']") / $(e "d['clean']")"
 fi
 
 if [ "$FALLOS" = 0 ]; then echo "✅ harness-health: todo verde"; exit 0; fi
