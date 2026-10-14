@@ -9,8 +9,20 @@
 // tablero no está publicado»), y una pieza muerta se veía igual que una sana. Y lo que la máquina escribe —el registro
 // de cada merge— caía en `.dashboard/` del clon del público, una carpeta ignorada que no viaja a ningún repo.
 //
+// ── EL CASO (2026-10-14): DOS REPOS DE DATOS ─────────────────────────────────────────────────────────────────────────
+// Desde las stories 8.30 y 8.31, los nocturnos de la organización (dependencias, vigilante, el resumen diario, las
+// métricas y el tablero) guardan en el REPO DE OPERACIONES, no en el de mantenimiento; el banco, las suites y el examen
+// siguen guardando en el de mantenimiento. Los avisos leían todo del de mantenimiento: el 14 mostraban la noche del 13,
+// y desde el día siguiente habrían dicho «foto vieja» con los nocturnos sanos. Por eso hay dos resoluciones:
+//   · resolve(ownTree)             → el clon de mantenimiento (`paths.maintainers`): banco, suites y examen;
+//   · resolveOperations(ownTree)   → el clon de operaciones (`paths.operations`): dependencias, vigilante, resumen,
+//                                    métricas y tablero.
+// Una máquina que mantiene el arnés (declara `paths.maintained` o `paths.maintainers`) y no declara el clon de
+// operaciones lo oye en una línea, con el comando; una que no mantiene nada (la de un dev) no tiene estos avisos.
+//
 // ── QUÉ HAY ACÁ ───────────────────────────────────────────────────────────────────────────────────────────────────────
-//   · resolve(ownTree)             de qué árbol se LEE la noche: `{ dir, source, problem }`
+//   · resolve(ownTree)             de qué árbol se LEE la noche del mantenimiento: `{ dir, source, problem }`
+//   · resolveOperations(ownTree)   de qué árbol se LEE la noche de operaciones: `{ dir, source, problem }`
 //   · machineDashboard(ownTree)    dónde ESCRIBE la máquina lo suyo (el registro de cada merge) y si desde ahí viaja
 //   · readPublished(dir, rel)      un archivo de lo publicado en ese clon (`origin/main`, sin red), o del disco diciéndolo
 //   · copyAfter(dir, since)        ¿la rama principal de ese clon se trajo después de `since`? Si no, el texto que lo dice
@@ -33,9 +45,10 @@
 // tiene reinstalarlo con contraseña. Esto no es «dónde vive el arnés»: es dónde vive lo que el arnés LEE de otro repo.
 // `maintainedDir()` y `dashboardDir()` de allá quedan para quien compara código contra el clon que se mantiene.
 //
-// ── QUIÉN TRAE ESE CLON ───────────────────────────────────────────────────────────────────────────────────────────────
+// ── QUIÉN TRAE ESOS CLONES ───────────────────────────────────────────────────────────────────────────────────────────────
 // Nada de acá sale a la red. La copia la trae quien le haga `git fetch` o `git pull`; cada noche, el aviso de evidencia
-// (scripts/ci/nightly-dod-notice.sh) en la máquina que lo tenga programado. Por eso cada aviso mira de cuándo es su copia
+// (scripts/ci/nightly-dod-notice.sh) en la máquina que lo tenga programado: trae los dos clones, el de operaciones (de
+// donde lee las métricas) y el de mantenimiento. Por eso cada aviso mira de cuándo es su copia
 // (`copyAfter`, que lee `FETCH_HEAD` y cuenta sólo una traída de la rama principal): con la foto vencida —o sin foto— y
 // el clon sin traer desde antes, lo cierto es «no sé si corrió», no «no corre» ni «no hay foto».
 //
@@ -48,6 +61,7 @@ const { spawnSync } = require('child_process');
 const PUBLISHED = 'refs/remotes/origin/main';
 const GIT_MS = 5000;
 const SET_COMMAND = 'harness.js config set paths.maintainers <la carpeta de tu clon de mantenimiento>';
+const SET_OPERATIONS_COMMAND = 'harness.js config set paths.operations <la carpeta de tu clon del repo de operaciones>';
 
 const HOME_LIB = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js');
 /** tycon-home.js, o `null` si este archivo viaja sin él. 🔴 Si ESTÁ y no carga, tira: lo dice quien llama, no se calla. */
@@ -64,13 +78,14 @@ const real = (p) => { try { return fs.realpathSync.native(p); } catch (_) { retu
  * ¿Por qué esa carpeta no sirve como clon de mantenimiento? `null` si sirve. `kept`: el clon que la máquina declara que
  * MANTIENE (`paths.maintained`: el del código), si se sabe.
  */
-function unfit(dir, kept = null) {
+function unfit(dir, kept = null, key = 'paths.maintainers') {
+  const repo = key === 'paths.operations' ? 'el clon del repo de operaciones' : 'el clon del repo de mantenimiento';
   let isRoot = false;
   try { isRoot = fs.existsSync(path.join(dir, '.git')); } catch (_) { isRoot = false; }
-  if (!isRoot) return 'paths.maintainers no es la raíz de un clon de git';
+  if (!isRoot) return `${key} no es la raíz de un clon de git`;
   // el clon del código declarado en las dos claves: los datos de la noche viven en OTRO clon (y un clon del público con
   // otro remoto —un fork, un alias— no se reconoce por su remoto: por la carpeta, sí)
-  if (kept && real(kept) === real(dir)) return 'paths.maintainers es el mismo clon que paths.maintained (el del código), y los datos de la noche viven en el clon del repo de mantenimiento';
+  if (kept && real(kept) === real(dir)) return `${key} es el mismo clon que paths.maintained (el del código), y los datos de la noche viven en ${repo}`;
   // un clon del repo público no trae los datos de la noche: los dos clones de quien mantiene se cruzan fácil. Se
   // reconoce por su remoto; un clon cuyo remoto no se deja leer (o no tiene) no se puede acusar: pasa.
   const lib = path.join(__dirname, 'harness-repo.js');
@@ -78,8 +93,8 @@ function unfit(dir, kept = null) {
   try {
     const HR = require(lib);
     const r = HR.resolverRemoto(dir);
-    if (r && r.id && HR.esPublicoDeclarado(r.id)) return 'paths.maintainers apunta a un clon del repo público, que no trae los datos de la noche';
-  } catch (e) { return `no pude mirar de qué repo es el clon de paths.maintainers (${reasonOf(e)})`; }   // «no pude mirar» no es «sirve»
+    if (r && r.id && HR.esPublicoDeclarado(r.id)) return `${key} apunta a un clon del repo público, que no trae los datos de la noche`;
+  } catch (e) { return `no pude mirar de qué repo es el clon de ${key} (${reasonOf(e)})`; }   // «no pude mirar» no es «sirve»
   return null;
 }
 
@@ -128,9 +143,73 @@ function resolve(ownTree, opts = {}) {
   } catch (e) { return failed(e); }
 }
 
-/** La línea que dice un `problem` de `resolve`, con el comando que lo arregla. Una por arranque: la dice un solo aviso. */
-function problemLine(problem) {
-  return `🔴 avisos de los nocturnos: ${clean(problem)} — no puedo leer la noche de ningún nocturno · ${SET_COMMAND}`;
+/**
+ * `paths.operations` de la configuración de la máquina: el clon del repo de operaciones. → `{ declared, path, problem }`,
+ * con la misma forma que `maintainersClone` de tycon-home.js (que no se toca: ver «POR QUÉ NO VIVE EN tycon-home.js»).
+ * Una configuración que no se deja leer es `declared: false` con `problem`. Nunca tira, y `problem` nunca cita el
+ * archivo (trae un permiso en texto plano).
+ */
+function operationsClone(TH, { env = process.env } = {}) {
+  const none = (problem = null) => ({ declared: false, path: null, problem });
+  let j;
+  try { j = JSON.parse(fs.readFileSync(TH.ownPaths({ env }).config, 'utf8')); } catch (e) {
+    if (e && e.code === 'ENOENT') return none();
+    return none('la configuración de la máquina (config.json del arnés) no se puede leer: no sé si declara paths.operations');
+  }
+  const raw = j && typeof j === 'object' && j.paths && typeof j.paths === 'object' ? j.paths.operations : undefined;
+  const v = typeof raw === 'string' ? raw.trim() : '';
+  if (!v) return none();
+  const bad = (problem) => ({ declared: true, path: v, problem });
+  if (!path.isAbsolute(v)) return bad('paths.operations no es una ruta absoluta');
+  let st = null;
+  try { st = fs.statSync(v); } catch (_) { st = null; }
+  if (!st || !st.isDirectory()) return bad('paths.operations nombra una carpeta que no está');
+  return { declared: true, path: v, problem: null };
+}
+
+/**
+ * De qué árbol se lee lo que los nocturnos guardan en el repo de operaciones (dependencias, vigilante, resumen diario,
+ * métricas y tablero). → `{ dir, source, problem }`, con la tabla de `resolve` y `paths.operations` en lugar de
+ * `paths.maintainers`. `source: 'operations'` quiere decir que la máquina ESPERA esos nocturnos. Sin clon de operaciones
+ * declarado: si la máquina mantiene el arnés (declara `paths.maintained` o `paths.maintainers`), `problem` lo dice; si
+ * no, nada (la máquina de un dev no tiene estos avisos). Nunca tira.
+ */
+function resolveOperations(ownTree, opts = {}) {
+  const own = { dir: ownTree || null, source: 'own', problem: null };
+  const none = { dir: null, source: null, problem: null };
+  const failed = (e) => ({ dir: null, source: null, problem: `no pude saber de qué clon se leen los datos de operaciones (${reasonOf(e)})` });
+  let TH;
+  try { TH = homeLib(); } catch (e) { return failed(e); }
+  if (!TH) return own;
+  const home = opts.home || os.homedir();
+  try {
+    if (!TH.isReleaseMachine(home)) return own;
+    const on = opts.nightly === undefined ? nightliesOn() : opts.nightly;
+    if (!on) return none;
+    const o = operationsClone(TH);
+    if (o.declared) {
+      const why = o.problem || unfit(o.path, typeof TH.maintainedPath === 'function' ? TH.maintainedPath() : null, 'paths.operations');
+      return why ? { dir: null, source: 'operations', problem: why } : { dir: o.path, source: 'operations', problem: null };
+    }
+    if (o.problem) return none;   // configuración ilegible: lo dice su lector, no éste
+    const m = typeof TH.maintainersClone === 'function' ? TH.maintainersClone() : { declared: false };
+    const maintains = Boolean(m.declared) || Boolean(typeof TH.maintainedPath === 'function' && TH.maintainedPath());
+    return maintains ? { dir: null, source: null, problem: 'esta máquina mantiene el arnés y no declara el clon del repo de operaciones (paths.operations), donde guardan dependencias, vigilante, resumen, métricas y tablero' } : none;
+  } catch (e) { return failed(e); }
+}
+
+/**
+ * La línea que dice un `problem` de `resolve` (o de `resolveOperations`, con `ops`), con el comando que lo arregla. Una
+ * por arranque: la dice un solo aviso. `ops`: el problema del clon de operaciones, que va en la MISMA línea.
+ */
+function problemLine(problem, ops = null) {
+  const parts = [];
+  if (problem) parts.push({ text: clean(problem), cmd: SET_COMMAND });
+  if (ops) parts.push({ text: clean(ops), cmd: SET_OPERATIONS_COMMAND });
+  const scope = problem && ops ? 'no puedo leer la noche de ningún nocturno'
+    : ops ? 'no puedo leer la noche de dependencias, vigilante ni tablero'
+      : 'no puedo leer la noche del banco, las suites ni el examen';
+  return `🔴 avisos de los nocturnos: ${parts.map((p) => p.text).join('; ')} — ${scope} · ${parts.map((p) => p.cmd).join(' · ')}`;
 }
 
 /**
@@ -266,14 +345,17 @@ function copyAge(dir) {
  * ¿La rama principal del clon se trajo después de `since` (ms)? → `null` si sí. Si no, o si no se sabe, el texto que
  * lo dice: con él, una foto vencida (o que falta) no prueba que el nocturno no corrió.
  */
-function copyAfter(dir, since) {
+function copyAfter(dir, since, clone = 'el clon de mantenimiento') {
   const c = copyAge(dir);
   if (c.at && c.at > since) return null;
-  if (c.at) return `la copia del clon de mantenimiento es del ${new Date(c.at).toISOString().slice(0, 10)}`;
-  if (c.failed) return 'la última traída del clon de mantenimiento falló';
-  if (c.unknown) return 'no pude leer cuándo se trajo el clon de mantenimiento';
-  return 'no consta ninguna traída de la rama principal del clon de mantenimiento';
+  const of = clone.replace(/^el /, 'del ');
+  if (c.at) return `la copia ${of} es del ${new Date(c.at).toISOString().slice(0, 10)}`;
+  if (c.failed) return `la última traída ${of} falló`;
+  if (c.unknown) return `no pude leer cuándo se trajo ${clone}`;
+  return `no consta ninguna traída de la rama principal ${of}`;
 }
+/** El nombre del clon según de dónde se leyó (`source` de `resolve` o `resolveOperations`). */
+const cloneName = (source) => (source === 'operations' ? 'el clon de operaciones' : 'el clon de mantenimiento');
 /** ¿Consta que la rama principal se trajo, y hace más de `ms`? (para decir cómo traerla aunque quien pregunta esté al día) */
 function copyOlderThan(dir, ms, now = Date.now()) {
   const c = copyAge(dir);
@@ -291,13 +373,15 @@ function fetchHint(dir) {
   return /["\\$`]/.test(d) ? `   Para traerla: git fetch origin, parado en ${d}` : `   Para traerla: git -C "${d}" fetch origin`;
 }
 
-module.exports = { PUBLISHED, SET_COMMAND, SHORTEST_PHOTO_LIFE_MS, resolve, problemLine, machineDashboard, machineDashboardDir, readPublished, copyAge, copyAfter, copyOlderThan, fetchHint, unfit, clean };
+module.exports = { PUBLISHED, SET_COMMAND, SET_OPERATIONS_COMMAND, SHORTEST_PHOTO_LIFE_MS, resolve, resolveOperations, operationsClone, cloneName, problemLine, machineDashboard, machineDashboardDir, readPublished, copyAge, copyAfter, copyOlderThan, fetchHint, unfit, clean };
 
 if (require.main === module) {
-  // a mano, o desde un guion de shell: `node scripts/lib/night-data.js [--plain]` dice de qué árbol se lee la noche
-  const r = resolve(path.resolve(__dirname, '..', '..'));
+  // a mano, o desde un guion de shell: `node scripts/lib/night-data.js [--plain] [--operations]` dice de qué árbol se lee
+  // la noche (con `--operations`, la del repo de operaciones; sin él, la del de mantenimiento)
+  const own = path.resolve(__dirname, '..', '..');
+  const r = process.argv.includes('--operations') ? resolveOperations(own) : resolve(own);
   if (process.argv.includes('--plain')) {
     if (r.dir) process.stdout.write(`${r.dir}\n`);
     else { process.stderr.write(`${r.problem || 'esta máquina no tiene de dónde leer los datos de la noche'}\n`); process.exitCode = 2; }
-  } else process.stdout.write(`${JSON.stringify({ ...r, machine: machineDashboard(path.resolve(__dirname, '..', '..')) }, null, 2)}\n`);
+  } else process.stdout.write(`${JSON.stringify({ ...r, machine: machineDashboard(own) }, null, 2)}\n`);
 }

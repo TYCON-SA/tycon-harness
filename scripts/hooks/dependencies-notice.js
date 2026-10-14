@@ -362,8 +362,9 @@ function redactarVigilante(w, o = {}) {
   if (w.estado === 'sin-historia') {
     if (!o.espera) return null;
     // sin foto y con la copia del clon vieja: tampoco se sabe (puede haber una foto que esta copia no trajo)
-    return o.copia ? `🟠 vigilante: no sé si corrió — no hay ninguna foto en mi copia del clon de mantenimiento y ${o.copia}`
-      : '🔴 vigilante: no hay ninguna foto del vigilante en el clon de mantenimiento';
+    const clon = o.clon || 'el clon de mantenimiento';
+    return o.copia ? `🟠 vigilante: no sé si corrió — no hay ninguna foto en mi copia ${clon.replace(/^el /, 'del ')} y ${o.copia}`
+      : `🔴 vigilante: no hay ninguna foto del vigilante en ${clon}`;
   }
   if (w.estado === 'detenido') {
     // foto vencida y la copia del clon sin traer desde antes: no prueba que no corrió (ver scripts/lib/night-data.js)
@@ -461,8 +462,9 @@ function redactar(v, o = {}) {
   if (v.estado === 'sin-historia') {
     if (!o.espera) return null;
     // sin foto y con la copia del clon vieja: tampoco se sabe (puede haber una foto que esta copia no trajo)
-    return o.copia ? `🟠 dependencias: no sé si la revisión nocturna corrió — no hay ninguna foto en mi copia del clon de mantenimiento y ${o.copia}`
-      : '🔴 dependencias: no hay ninguna foto de la revisión nocturna en el clon de mantenimiento';
+    const clon = o.clon || 'el clon de mantenimiento';
+    return o.copia ? `🟠 dependencias: no sé si la revisión nocturna corrió — no hay ninguna foto en mi copia ${clon.replace(/^el /, 'del ')} y ${o.copia}`
+      : `🔴 dependencias: no hay ninguna foto de la revisión nocturna en ${clon}`;
   }
 
   if (v.estado === 'detenida') {
@@ -524,8 +526,10 @@ function redactar(v, o = {}) {
 function main() {
   if (process.env.TYCON_DEPS_NOTICE === '0' || process.env.TYCON_EVAL_SANDBOX === '1') return 0;
   // de qué árbol se leen los .dashboard del nocturno: la variable manda; si no, lo decide scripts/lib/night-data.js —en un
-  // clon, éste; en una versión bajada, el clon de mantenimiento que la máquina declara (`paths.maintainers`), o ninguno—.
-  // Sin esa biblioteca al lado, lo de antes (tycon-home.js); si este archivo viaja suelto, este árbol.
+  // clon, éste; en una versión bajada, el clon del repo de operaciones que la máquina declara (`paths.operations`): desde
+  // las stories 8.30 y 8.31 dependencias, vigilante y el resumen diario guardan ahí (2026-10-14: leídos del clon de
+  // mantenimiento, decían la noche del 13 con la del 14 ya guardada), o ninguno—. Sin esa biblioteca al lado, lo de antes
+  // (tycon-home.js); si este archivo viaja suelto, este árbol.
   const own = path.resolve(__dirname, '..', '..');
   const homeLib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js');
   const nightLib = path.join(__dirname, '..', 'lib', 'night-data.js');
@@ -536,10 +540,15 @@ function main() {
     return 0;
   }
   const noche = process.env.TYCON_DEPS_REPO ? { dir: process.env.TYCON_DEPS_REPO, source: 'own', problem: null }
-    : N ? N.resolve(own)
+    : N ? (typeof N.resolveOperations === 'function' ? N.resolveOperations(own) : N.resolve(own))
       : { dir: fs.existsSync(homeLib) ? require(homeLib).maintainedDir(require('os').homedir(), own) : own, source: 'own', problem: null };
-  // el clon de mantenimiento no está declarado, o no sirve: se dice UNA vez por arranque, y la dice este aviso
-  if (noche.problem && N) { console.log(N.problemLine(noche.problem)); return 0; }
+  // el clon de mantenimiento (de donde leen banco, suites y examen) o el de operaciones (de donde lee este aviso) no está
+  // declarado, o no sirve: se dice UNA vez por arranque, en UNA línea, y la dice este aviso
+  const mant = N && typeof N.resolveOperations === 'function' ? N.resolve(own) : { problem: null };
+  if (N && (mant.problem || noche.problem)) {
+    console.log(typeof N.resolveOperations === 'function' ? N.problemLine(mant.problem, noche.problem) : N.problemLine(noche.problem));
+    if (noche.problem) return 0;
+  }
   const raiz = noche.dir;
   if (!raiz) return 0;
   const outDir = process.env.TYCON_DEPS_OUT || path.join(raiz, '.dashboard', 'dependencias');
@@ -555,10 +564,11 @@ function main() {
   // Carpetas pasadas por variable = una decisión explícita de leer ESE disco (banco, suites): sin nota.
   const explicito = ['TYCON_DEPS_OUT', 'TYCON_DEPS_PENDING'].some((k) => process.env[k]) || !!vigOutVar;
   const nota = (motivo) => `ℹ️ dependencias y vigilante: leído del disco, no de lo publicado (${motivo}) — si esta copia está en otra rama o atrasada, la foto puede ser vieja.`;
-  // la máquina que declara su clon de mantenimiento ESPERA los nocturnos: ahí cada cola dice siempre una línea. Y con
+  // la máquina que declara su clon de operaciones ESPERA los nocturnos: ahí cada cola dice siempre una línea. Y con
   // la foto vencida (o sin ninguna) mira de cuándo es su copia del clon: si no se trae desde antes, no prueba que el
   // nocturno no corrió.
-  const espera = noche.source === 'maintainers' && !explicito;
+  const espera = (noche.source === 'operations' || noche.source === 'maintainers') && !explicito;
+  const clon = N && typeof N.cloneName === 'function' ? N.cloneName(noche.source) : 'el clon de mantenimiento';
   // Cada cola por separado: un error inesperado en una no puede callar la otra. En la máquina que espera los nocturnos
   // tampoco la calla a ella: una cola sin línea es una pieza rota, así que el error se dice.
   const parte = (cola, fn) => {
@@ -570,15 +580,15 @@ function main() {
   // `vence`: el instante (ms) en que la foto dejó de valer; sin foto, hace cuánto tendría que haber una
   const copia = (vence) => {
     if (!espera || isNaN(vence)) return null;
-    const texto = N.copyAfter(raiz, vence);
+    const texto = N.copyAfter(raiz, vence, clon);
     if (texto) copiaVieja = true;
     return texto;
   };
   const copiaDe = (estado, fecha, detenida) => (estado === detenida ? copia(Date.parse(`${fecha}T12:00:00Z`) + VEJEZ_MS)
     : estado === 'sin-historia' ? copia(ahora - VEJEZ_MS) : null);
   const todo = (fuente) => [
-    parte('dependencias', () => { const v = evaluar({ outDir, pendingDir, ahora, fuente, legacyPendingDir }); return redactar(v, { espera, copia: copiaDe(v.estado, v.fecha, 'detenida') }); }),
-    parte('vigilante', () => { const w = evaluarVigilante({ vigOut, ahora, fuente }); return redactarVigilante(w, { espera, copia: copiaDe(w.estado, w.fecha, 'detenido') }); }),
+    parte('dependencias', () => { const v = evaluar({ outDir, pendingDir, ahora, fuente, legacyPendingDir }); return redactar(v, { espera, clon, copia: copiaDe(v.estado, v.fecha, 'detenida') }); }),
+    parte('vigilante', () => { const w = evaluarVigilante({ vigOut, ahora, fuente }); return redactarVigilante(w, { espera, clon, copia: copiaDe(w.estado, w.fecha, 'detenido') }); }),
   ].filter(Boolean);
   let partes;
   let motivo = null;
@@ -593,8 +603,15 @@ function main() {
   }
   if (partes.length && motivo) partes.push(nota(motivo));
   // Cómo traerla: una vez por arranque, y la dice este aviso. No sólo cuando una de SUS dos colas dijo «no sé»: el banco,
-  // las suites y el tablero vencen un día antes (2 días contra 3), y en esa ventana lo dirían ellos sin el comando.
-  if (partes.length && espera && (copiaVieja || N.copyOlderThan(raiz, N.SHORTEST_PHOTO_LIFE_MS, ahora))) partes.push(N.fetchHint(raiz));
+  // las suites y el tablero vencen un día antes (2 días contra 3), y en esa ventana lo dirían ellos sin el comando. Son
+  // hasta dos clones —el de operaciones (este aviso y el tablero) y el de mantenimiento (banco y suites)—: un renglón por
+  // cada uno que esté viejo, y uno solo si son el mismo.
+  if (partes.length && espera) {
+    const viejos = [];
+    if (copiaVieja || N.copyOlderThan(raiz, N.SHORTEST_PHOTO_LIFE_MS, ahora)) viejos.push(raiz);
+    if (mant.dir && mant.source === 'maintainers' && N.copyOlderThan(mant.dir, N.SHORTEST_PHOTO_LIFE_MS, ahora)) viejos.push(mant.dir);
+    for (const d of [...new Set(viejos)]) partes.push(N.fetchHint(d));
+  }
   // Lo que sale viene en parte de fotos y fichas publicadas (nombres de paquetes, de repos, motivos): va a la pantalla
   // del arranque sin caracteres de control. Los saltos de línea entre renglones son del aviso y se conservan.
   if (partes.length) console.log(partes.join('\n').split('\n').map((l) => l.replace(CONTROL, ' ')).join('\n'));

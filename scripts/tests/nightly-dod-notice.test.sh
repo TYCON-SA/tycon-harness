@@ -493,27 +493,27 @@ instalada() {
 }
 correr_instalada() { ( unset TYCON_NOTICE_NOTIFY TYCON_GUIDES_DIR; TYCON_HOME="${BASE}/home/.tycon" TYCON_NIGHTLY=1 /bin/bash "${IN}/scripts/ci/nightly-dod-notice.sh" > "${OUT}" 2>&1 ); RC=$?; }
 
-echo "T35 VersionInstalada_SinGuidesDir_LeeElClonDeMantenimiento_MandaConSuPropioEnvio"
+echo "T35 VersionInstalada_SinGuidesDir_LeeElClonDeOperaciones_MandaConSuPropioEnvio"
 armar "$(repo A__A 10)"; publicar "${HOY}" 20 "$(repo A__A 20)"; codigos 0
-instalada "{\"paths\":{\"maintained\":\"${BASE}/clon-publico\",\"maintainers\":\"${CO}\"}}"
+instalada "{\"paths\":{\"maintained\":\"${BASE}/clon-publico\",\"maintainers\":\"${CO}\",\"operations\":\"${CO}\"}}"
 correr_instalada
 PROPIO="$(cat "${D}/propio" 2>/dev/null)"
 if [ "${RC}" = 0 ] && contiene "${PROPIO}" "Se movió la evidencia DoD del nocturno: 10% (10/100) -> 20% (20/100)" && [ "$(llamadas)" = 0 ]; then
-  ok "T35 leyó los snapshots del clon de mantenimiento y mandó con el envío de su propio árbol (el del clon de datos no se llamó)"
+  ok "T35 leyó los snapshots del clon de operaciones y mandó con el envío de su propio árbol (el del clon de datos no se llamó)"
 else mal "T35 rc=${RC} propio=[${PROPIO}] llamadas-al-doble-del-clon=$(llamadas) salida=[$(cat "${OUT}")]"; fi
 
-echo "T36 VersionInstalada_SinClonDeMantenimiento_LoDiceYNoMandaNada"
+echo "T36 VersionInstalada_SinClonDeOperaciones_LoDiceYNoMandaNada"
 armar "$(repo A__A 10)"; publicar "${HOY}" 20 "$(repo A__A 20)"; codigos 0
-instalada "{\"paths\":{\"maintained\":\"${BASE}/clon-publico\"}}"
+instalada "{\"paths\":{\"maintained\":\"${BASE}/clon-publico\",\"maintainers\":\"${CO}\"}}"
 correr_instalada
-if [ "${RC}" = 2 ] && grep -q "paths.maintainers" "${OUT}" && grep -q "se declara con: harness.js config set paths.maintainers" "${OUT}" && [ ! -e "${D}/propio" ] && [ "$(llamadas)" = 0 ] && ! grep -q "fetch de main falló" "${OUT}"; then
-  ok "T36 sin clon de mantenimiento declarado sale 2 diciendo qué falta, sin traer ni mandar nada"
+if [ "${RC}" = 2 ] && grep -q "paths.operations" "${OUT}" && grep -q "se declara con: harness.js config set paths.operations" "${OUT}" && [ ! -e "${D}/propio" ] && [ "$(llamadas)" = 0 ] && ! grep -q "fetch de main falló" "${OUT}"; then
+  ok "T36 sin clon de operaciones declarado sale 2 diciendo qué falta, sin traer ni mandar nada"
 else mal "T36 rc=${RC} salida=[$(cat "${OUT}")]"; fi
 
 echo "T36b VersionInstalada_ClonDeclaradoQueNoSirve_NoRecetaDeclararLoYaDeclarado"
 armar "$(repo A__A 10)"; publicar "${HOY}" 20 "$(repo A__A 20)"; codigos 0
 mkdir -p "${BASE}/una-carpeta-cualquiera"
-instalada "{\"paths\":{\"maintained\":\"${BASE}/clon-publico\",\"maintainers\":\"${BASE}/una-carpeta-cualquiera\"}}"
+instalada "{\"paths\":{\"maintained\":\"${BASE}/clon-publico\",\"maintainers\":\"${CO}\",\"operations\":\"${BASE}/una-carpeta-cualquiera\"}}"
 correr_instalada
 if [ "${RC}" = 2 ] && grep -q "no es la raíz de un clon" "${OUT}" && grep -q "lo declarado no sirve" "${OUT}" && ! grep -q "— se declara con" "${OUT}" && [ "$(llamadas)" = 0 ]; then
   ok "T36b con un clon declarado que no sirve dice por qué y no receta «se declara con»"
@@ -523,7 +523,7 @@ echo "T37 VersionInstalada_SinNodeEnElPath_DiceLaCausa_NoHaceFetchSobreUnArbolQu
 # Corre desde una tarea programada: su PATH puede no traer node. Sin node no se puede preguntar de qué clon leer; en una
 # versión instalada el árbol propio no es un clon, y hacer el fetch igual daba «no pude mirar» por otra causa.
 armar "$(repo A__A 10)"; publicar "${HOY}" 20 "$(repo A__A 20)"; codigos 0
-instalada "{\"paths\":{\"maintained\":\"${BASE}/clon-publico\",\"maintainers\":\"${CO}\"}}"
+instalada "{\"paths\":{\"maintained\":\"${BASE}/clon-publico\",\"maintainers\":\"${CO}\",\"operations\":\"${CO}\"}}"
 SIN_NODE="${BASE}/bin-sin-node"; rm -rf "${SIN_NODE}"; mkdir -p "${SIN_NODE}"
 for t in bash sh git python3 date dirname basename cat sed tail head mkdir rm sleep tr wc mktemp grep awk printf env sort cut; do
   p="$(command -v "$t" 2>/dev/null)"; case "$p" in /*) ln -s "$p" "${SIN_NODE}/$t" ;; esac
@@ -551,7 +551,31 @@ for NOCT in 1 0; do
   rm -rf "${BASE}/estado"
 done
 
+# ── T39 ─ los datos, del clon de OPERACIONES; y el de mantenimiento también se trae (2026-10-14) ─────────────────────
+# EL CASO. Desde la story 8.30 las métricas se guardan en el repo de operaciones. Leídas del clon de mantenimiento, el
+# aviso del 14 dijo «el de hoy (2026-10-14) no está en main; el último es del 2026-10-13» con el de hoy ya guardado.
+# Y este guion es quien pone al día los clones cada noche: el de mantenimiento (banco, suites, examen) también.
+# Rojo previo: lee el clon de mantenimiento (sin el snapshot de hoy) y avisa que no está publicado; el de operaciones no
+# se trae.
+echo "T39 VersionInstalada_ConClonDeOperaciones_LeeDeAhi_YTraeTambienElDeMantenimiento"
+armar "$(repo A__A 10)"; publicar "${HOY}" 20 "$(repo A__A 20)"; codigos 0
+MANT_ORIGIN="${BASE}/mant-origin.git"; MANT="${BASE}/clon-mant"; rm -rf "${MANT_ORIGIN}" "${MANT}" "${BASE}/mant-pub"
+git init -q --bare "${MANT_ORIGIN}"; git -C "${MANT_ORIGIN}" symbolic-ref HEAD refs/heads/main
+git init -q "${BASE}/mant-pub"; git -C "${BASE}/mant-pub" checkout -q -b main; git -C "${BASE}/mant-pub" remote add origin "${MANT_ORIGIN}"
+mkdir -p "${BASE}/mant-pub/.dashboard"; snap "${BASE}/mant-pub/.dashboard/sdlc-stage-${AYER}.json" 10 "$(repo A__A 10)"
+git -C "${BASE}/mant-pub" add -A; git -C "${BASE}/mant-pub" commit -qm ayer; git -C "${BASE}/mant-pub" push -q origin main
+git clone -q "${MANT_ORIGIN}" "${MANT}"
+echo banco > "${BASE}/mant-pub/banco.txt"; git -C "${BASE}/mant-pub" add -A; git -C "${BASE}/mant-pub" commit -qm banco; git -C "${BASE}/mant-pub" push -q origin main
+MANT_NUEVO="$(git -C "${BASE}/mant-pub" rev-parse HEAD)"
+instalada "{\"paths\":{\"maintained\":\"${BASE}/clon-publico\",\"maintainers\":\"${MANT}\",\"operations\":\"${CO}\"}}"
+correr_instalada
+PROPIO="$(cat "${D}/propio" 2>/dev/null)"
+MANT_TRAIDO="$(git -C "${MANT}" rev-parse refs/remotes/origin/main 2>/dev/null)"
+if [ "${RC}" = 0 ] && contiene "${PROPIO}" "Se movió la evidencia DoD del nocturno: 10% (10/100) -> 20% (20/100)" && [ "${MANT_TRAIDO}" = "${MANT_NUEVO}" ]; then
+  ok "T39 leyó el snapshot de hoy del clon de operaciones y trajo también el de mantenimiento"
+else mal "T39 rc=${RC} propio=[${PROPIO}] mant=${MANT_TRAIDO} esperado=${MANT_NUEVO} salida=[$(cat "${OUT}")]"; fi
+
 echo
-if [ "${FALLOS}" -eq 0 ] && [ "${T34_NOT_MEASURED}" = 1 ]; then echo "aviso-dod-nocturno: 37 de 38 casos en verde, T34 salteado (NO MEDIDO en la copia pública)"; exit 0; fi
-if [ "${FALLOS}" -eq 0 ]; then echo "aviso-dod-nocturno: 38 de 38 casos en verde"; exit 0; fi
+if [ "${FALLOS}" -eq 0 ] && [ "${T34_NOT_MEASURED}" = 1 ]; then echo "aviso-dod-nocturno: 38 de 39 casos en verde, T34 salteado (NO MEDIDO en la copia pública)"; exit 0; fi
+if [ "${FALLOS}" -eq 0 ]; then echo "aviso-dod-nocturno: 39 de 39 casos en verde"; exit 0; fi
 echo "aviso-dod-nocturno: ${FALLOS} fallo(s)"; exit 1
