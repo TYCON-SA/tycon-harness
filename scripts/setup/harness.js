@@ -201,13 +201,15 @@ const claudeMdPath = (ctx) => ctx.env.CLAUDE_MD_PATH || path.join(ctx.home, '.cl
 const isHarnessClone = (dir) => Boolean(dir) && fs.existsSync(path.join(dir, 'scripts', 'install-tycon-hooks.sh'));
 const applierPath = (ctx, tree) => path.join(tree, 'scripts', isWin(ctx) ? 'install-tycon-hooks.ps1' : 'install-tycon-hooks.sh');
 
-/** ¿`name` está en el PATH? Devuelve la ruta o null (`command -v` / `where`, sin shell). */
-function findInPath(name, env) {
+/** ¿`name` está en el PATH? Devuelve la ruta o null (`command -v` / `where`, sin shell). En Windows reconoce el alias de
+ *  ejecución de la Microsoft Store (`tools.runnableAt`); el sistema y `fsApi` se inyectan sólo en las pruebas. */
+function findInPath(name, env, { platform = process.platform, fsApi = fs } = {}) {
   const dirs = String(env.PATH || env.Path || '').split(path.delimiter).filter(Boolean);
-  const exts = process.platform === 'win32' ? ['.exe', '.cmd', '.bat', ''] : [''];
+  const exts = platform === 'win32' ? ['.exe', '.cmd', '.bat', ''] : [''];
+  const { runnableAt } = mod('tools');
   for (const d of dirs) for (const ext of exts) {
     const p = path.join(d, name + ext);
-    try { fs.accessSync(p, fs.constants.X_OK); if (fs.statSync(p).isFile()) return p; } catch (_) { /* siguiente */ }
+    if (runnableAt(p, platform, fsApi)) return p;
   }
   return null;
 }
@@ -4410,4 +4412,4 @@ if (require.main === module) {
   process.exitCode = main(process.argv.slice(2));
 }
 
-module.exports = { COMMANDS, NODE_FLOOR, TREE, parse, usage, main, requirementsFor, requirementChecks, installPlan, fixedCopyFiles };
+module.exports = { COMMANDS, NODE_FLOOR, TREE, parse, usage, main, requirementsFor, requirementChecks, findInPath, installPlan, fixedCopyFiles };
