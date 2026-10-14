@@ -938,10 +938,36 @@ PY
   else no "T30k · el forjado pasó o frenó por otro motivo: $(grep '⛔' "$TMP/inst-30" | head -1 | cut -c1-240)"; fi
   [ -d "$SYS30/opt/tycon" ] && no "T30k · …y dejó algo en /opt/tycon" || ok "T30l · …sin dejar nada en /opt"
   G30 checkout -q -- scripts/lib/skills-dir.js; rm -f "$SRC30/.git/forjado.idx"; cp "$AQUI/scripts/lib/skills-dir.js" "$ARNES30/scripts/lib/skills-dir.js"; ARBOL30="$(manifiesto30)"; estado30 "$ARBOL30"
-  # (f) la versión instalada ya no es la punta publicada (alguien publicó otra): actualizar antes de instalar el freno
-  printf 'otra\n' > "$SRC30/CHANGES"; G30 add -A >/dev/null; G30 commit -q -m "otra versión" >/dev/null; G30 push -q "$BARE30" main >/dev/null 2>&1; G30 reset -q --hard HEAD~1; ARBOL30="$(manifiesto30)"; estado30 "$ARBOL30"
-  if ! instala30 && grep -q 'no es la punta publicada' "$TMP/inst-30"; then ok "T30m · una versión que ya no es la punta publicada frena y pide actualizar"
-  else no "T30m · con otra punta publicada: $(grep '⛔' "$TMP/inst-30" | head -1 | cut -c1-240)"; fi
+  # (f) la versión instalada ya no es la punta publicada (alguien publicó otra). EL CASO (2026-10-14): un día de más de 30
+  # publicaciones, una cada ~10 min, exigir la punta exacta hacía casi imposible instalar el freno. Ahora vale un commit
+  # PUBLICADO de main (GitHub: «behind» respecto de la punta) cuyo freno sea byte a byte el de la punta: instala y avisa.
+  # Lo que la regla de la punta cuidaba sigue frenando: una rama (fuera de main), un freno viejo, y GitHub sin contestar.
+  C1_30="$(G30 rev-parse HEAD)"
+  printf 'otra\n' > "$SRC30/CHANGES"; G30 add -A >/dev/null; G30 commit -q -m "otra versión" >/dev/null; C2_30="$(G30 rev-parse HEAD)"; G30 push -q "$BARE30" main >/dev/null 2>&1; G30 reset -q --hard HEAD~1; ARBOL30="$(manifiesto30)"; estado30 "$ARBOL30"
+  rm -rf "$SYS30/opt/tycon"; mkdir -p "$SYS30/opt"
+  if instala30 && grep -q 'hay una versión más nueva' "$TMP/inst-30" && grep -q "main ${C2_30:0:7}, 1 commit adelante" "$TMP/inst-30" && grep -q 'Actualizá cuando puedas' "$TMP/inst-30" && [ -f "$SYS30/opt/tycon/hooks/prod-access-guard.js" ]; then ok "T30m · una versión de main atrasada, con el mismo freno que la punta, instala y avisa que hay una más nueva"
+  else no "T30m · atrasada con el mismo freno: $(grep '⛔' "$TMP/inst-30" | head -1 | cut -c1-240) — $(grep '⚠' "$TMP/inst-30" | head -1 | cut -c1-240)"; fi
+  # (f2) 🔴 atrasada y el freno CAMBIÓ en la punta (un arreglo del freno publicado después): una versión vieja verifica contra
+  # GitHub igual, y el asistente la puede bajar — no se instala un freno viejo
+  G30 reset -q --hard "$C2_30"; printf '\n// arreglo del freno publicado después\n' >> "$SRC30/scripts/lib/skills-dir.js"; G30 add -A >/dev/null; G30 commit -q -m "arreglo del freno" >/dev/null; G30 push -q "$BARE30" main >/dev/null 2>&1; G30 reset -q --hard "$C1_30"; ARBOL30="$(manifiesto30)"; estado30 "$ARBOL30"
+  rm -rf "$SYS30/opt/tycon"; mkdir -p "$SYS30/opt"
+  if ! instala30 && grep -q 'es de main pero VIEJA' "$TMP/inst-30" && grep -q 'scripts/lib/skills-dir.js' "$TMP/inst-30" && [ ! -d "$SYS30/opt/tycon" ]; then ok "T30m2 · una versión de main atrasada con el freno cambiado en la punta frena, nombra el archivo y no deja nada en /opt"
+  else no "T30m2 · atrasada con otro freno en la punta: $(grep '⛔' "$TMP/inst-30" | head -1 | cut -c1-240)"; fi
+  G30 push -q -f "$BARE30" main >/dev/null 2>&1
+  # (f3) 🔴 un commit que no está en main (una rama publicada en el repo, o un cambio local): GitHub lo sirve por su sha
+  # con su árbol, pero respecto de la punta es «ahead» — frena
+  printf 'rama\n' > "$SRC30/RAMA"; cp "$SRC30/RAMA" "$ARNES30/RAMA"; G30 add -A >/dev/null; G30 commit -q -m "una rama" >/dev/null; G30 push -q "$BARE30" HEAD:refs/heads/otra >/dev/null 2>&1; ARBOL30="$(manifiesto30)"; estado30 "$ARBOL30"
+  if ! instala30 && grep -q 'NO es un commit publicado de main' "$TMP/inst-30" && grep -q 'ahead' "$TMP/inst-30" && [ ! -d "$SYS30/opt/tycon" ]; then ok "T30m3 · un commit de una rama (fuera de main) frena aunque GitHub lo sirva con su árbol"
+  else no "T30m3 · commit fuera de main: $(grep '⛔' "$TMP/inst-30" | head -1 | cut -c1-240)"; fi
+  rm -f "$ARNES30/RAMA"; G30 reset -q --hard "$C1_30"; git -C "$BARE30" update-ref -d refs/heads/otra; ARBOL30="$(manifiesto30)"; estado30 "$ARBOL30"
+  # (f4) 🔴 atrasada y GitHub no contesta la comparación (caído, o 403 por el límite de consultas): no es «está bien», frena
+  git -C "$SRC30" push -q -f "$BARE30" "$C2_30:refs/heads/main" >/dev/null 2>&1
+  for cod30 in 503 403; do
+    printf '{ "auth": "none", "compare_status": %s }\n' "$cod30" > "$SRV30/control.json"
+    if ! instala30 && grep -q "GitHub contestó $cod30 al comparar" "$TMP/inst-30" && [ ! -d "$SYS30/opt/tycon" ]; then ok "T30m4 · atrasada y la comparación de GitHub contesta $cod30: frena"
+    else no "T30m4 · comparación con $cod30: $(grep '⛔' "$TMP/inst-30" | head -1 | cut -c1-240)"; fi
+  done
+  printf '{ "auth": "none" }\n' > "$SRV30/control.json"
   G30 push -q -f "$BARE30" main >/dev/null 2>&1
   # (g) el repo es privado y la máquina no tiene el permiso guardado: 404 con la única acción; con el permiso, instala
   printf '{ "auth": "token:permiso-de-laboratorio" }\n' > "$SRV30/control.json"
