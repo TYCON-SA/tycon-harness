@@ -37,14 +37,24 @@ test('T1 Models_FilesInPlace: los tres modelos, las tres plantillas, la página 
   assert.ok(ops.ok, `el operations.json de ejemplo valida: ${JSON.stringify(ops.problems)}`);
 });
 
-test('T2 Models_NoTeamLiterals: ni los modelos ni las plantillas nombran nada del equipo que mantiene el arnés', () => {
-  // lo que los pipelines del equipo nombran y una organización no tiene
-  const literals = [/harness-maintainers/i, /harness-team-operations/i, /tycon-claude-guides/i, /github\.com_/i, /vigilante-prod-hosts/i,
-    /tablero-nocturno-buzon/i, /@maintainers/, /traer-arnes/, /overlay-harness/, /HARNESS_AFTER_CUT/, /dev\.azure\.com\/(?!acme)/i];
+test('T2 Models_NoTeamLiterals: lo de la organización no está escrito en los modelos ni en las plantillas', () => {
+  // Se mira la FORMA y no una lista de nombres (una lista de nombres del equipo, escrita acá, sería justo lo que no se
+  // publica): un solo recurso, `harness`, con su nombre marcado para cambiar; ninguna plantilla de otro repo; ningún grupo
+  // de variables (si no existe, el pipeline no arranca); ninguna conexión de servicio escrita (van por parámetro); ninguna
+  // dirección de organización salvo la de ejemplo; y nada de la superposición del equipo que mantiene el arnés.
   for (const f of [...MODELS, ...TEMPLATES.map((t) => `templates/${t}`)]) {
     const text = read(f);
-    for (const re of literals) assert.doesNotMatch(text, re, `${f} nombra ${re}`);
-    assert.doesNotMatch(text, /^\s*- group:/m, `${f}: un grupo de variables que no existe no deja arrancar al pipeline`);
+    const repos = [...text.matchAll(/^\s*- repository:\s*(\S+)/gm)].map((x) => x[1]);
+    assert.ok(repos.every((r) => r === 'harness'), `${f}: el único recurso es harness (${repos.join(', ')})`);
+    const names = [...text.matchAll(/^\s+name:\s*(\S+)(.*)$/gm)];
+    for (const [, , rest] of names) assert.match(rest, /← CAMBIAR/, `${f}: un name: sin la marca de cambiar`);
+    for (const [, ref] of text.matchAll(/^\s*- template:\s*\S+@([A-Za-z0-9_-]+)\s*$/gm)) assert.strictEqual(ref, 'harness', `${f}: una plantilla de @${ref}`);
+    assert.doesNotMatch(text, /^\s*- group:/m, `${f}: un grupo de variables`);
+    for (const [, v] of text.matchAll(/^\s*(?:endpoint|azureSubscription):\s*(.+)$/gm)) {
+      assert.match(v, /^\$\{\{\s*parameters\./, `${f}: una conexión de servicio escrita (${v})`);
+    }
+    for (const [u] of text.matchAll(/https?:\/\/dev\.azure\.com\/[^\s/'"]+/g)) assert.match(u, /\/acme$/, `${f}: una organización escrita (${u})`);
+    assert.doesNotMatch(text, /overlay-harness|HARNESS_AFTER_CUT/, `${f}: la superposición del equipo`);
   }
 });
 
