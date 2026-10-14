@@ -95,6 +95,17 @@ harness_lab_git() { # harness_lab_git <dir> <args…>  — git sin la configurac
     git -c core.hooksPath=/dev/null -c maintenance.auto=false -c gc.auto=0 -C "$d" "$@"
 }
 
+# 🔴 Sin mantenimiento automático TAMBIÉN para el git que corre el código bajo prueba (2026-10-14). harness_lab_git lo
+#    apaga para el git del laboratorio, pero el `fetch` y el `commit` de harness.js lo lanzaban igual
+#    (`git maintenance run --auto --detach`, de fondo). Con git 2.55 eso reempaqueta el clon y escribe `.git/info/refs`:
+#    harness-repoint.test.sh, que compara la máquina byte a byte después de la ida y la vuelta, salía rojo de a ratos
+#    (public-ci, LINK y VIEW: «info: exclude» antes, «info: exclude refs» después). Va por el entorno, que lo hereda todo
+#    git hijo (sources.js pasa el entorno; layer.js borra las GIT_* pero sólo hace checkout, que no lo lanza). Lo mide
+#    scripts/tests/harness-lab-git.test.sh.
+harness_lab_no_auto_maintenance() {
+  export GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=maintenance.auto GIT_CONFIG_VALUE_0=false GIT_CONFIG_KEY_1=gc.auto GIT_CONFIG_VALUE_1=0
+}
+
 # el arnés de juguete, en <dir>: lo mínimo que harness.js y el aplicador real exigen, con los scripts REALES bajo prueba
 _harness_lab_toy_tree() { # _harness_lab_toy_tree <dir>
   local d="$1"
@@ -352,6 +363,7 @@ _harness_lab_machine() {
   printf '{\n  "hooks": {}\n}\n' > "$LAB_HOME/.claude/settings.json"
   : > "$LAB_HOME/.claude/CLAUDE.md"
   export REAL_HOME="${REAL_HOME:-$HOME}" HOME="$LAB_HOME" TMPDIR="$LAB_TMP"
+  harness_lab_no_auto_maintenance
   # en Windows, Node saca la carpeta de la persona de USERPROFILE y no de HOME: sin esto, `harness.js` corrido desde el
   # laboratorio en Git Bash trabajaría sobre la máquina DE VERDAD (story 8.18: la ida y la vuelta se miden en Windows)
   export USERPROFILE="$LAB_HOME"
