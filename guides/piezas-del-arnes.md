@@ -800,6 +800,37 @@ y los programas que la tenían siguen andando.
 Red: `scripts/tests/harness-release-links.test.sh` (Mac, con la variable) y el escenario `no-clone` del 182, que mide todo
 con la versión activa tomada de verdad (`scripts/tests/windows/no-clone-probe.js` y `links-spike.js`).
 
+## scripts/lib/canonical-path.js — las carpetas de skills y agentes, siempre reales
+
+*(scripts/lib/canonical-path.js `ensureRepoLinks` + `scripts/hooks/branch-guard-notice.js`)*
+
+`~/.claude/skills` y `~/.claude/agents` son carpetas del dev, con un enlace por cada skill y cada revisor del arnés. Nunca
+un enlace a la carpeta entera del árbol. Por qué: Claude Code sincroniza las skills de la cuenta en `~/.claude/skills/synced`
+cada pocos minutos, y el dev crea sus propias skills y agentes en esas carpetas. Con un enlace entero, todo eso caía adentro
+del arnés, y la actualización —que deja sólo lo que la versión trae— lo perdía: lo de la cuenta vuelve solo, lo propio no.
+
+- **Instalación nueva:** carpeta real y un enlace por entrada (en Windows, uniones para las skills; enlace de archivo o, sin
+  permiso, enlace duro para los revisores).
+- **La forma vieja se convierte sola** cada vez que corre el aplicador (en cada arranque): lo que no es del arnés —lo que no
+  nombran el manifiesto de la versión, git en un clon, terceros ni la capa del equipo— se mueve a una carpeta temporal al
+  lado, se quita el enlace (nunca un borrado a través de él: en Windows se borraría el arnés) y la temporal pasa a ser la
+  carpeta. Algo en uso no frena: todo vuelve a su lugar y se reintenta en el arranque siguiente. Un corte deja la
+  temporal, que la corrida siguiente retoma; si Claude Code recreó la carpeta en el medio, se juntan sin pisar nada.
+- **La primera conversión llega con una actualización**, y corre después del cambio de versión: lo que el dev escribió
+  por el enlace entero quedó en la versión que pasó a ser la anterior. Por eso se recorre también esa versión (sólo
+  entre dos versiones bajadas, con su manifiesto).
+- **Lo que está dos veces con distinto contenido** (un corte y Claude Code que lo volvió a bajar) no traba nada: una
+  versión queda en `~/.claude/skills.tycon-aparte` (o `agents.tycon-aparte`), que Claude Code no lee, y se avisa una
+  vez. Dos archivos iguales quedan en uno. `doctor` dice lo apartado y la temporal de un corte.
+- **Un enlace colgado** (a un clon borrado, a una versión ya limpiada) pasa a carpeta real en la primera corrida.
+- **No se convierte** un enlace entero a OTRO clon del arnés (lo eligió la persona).
+- **PowerShell 7:** en Windows la línea de arranque es `pwsh`; sin él, el arnés no arranca ni se actualiza, y antes sólo
+  `doctor` lo decía. El hook de arranque (que corre con Node) avisa una vez qué instalar; si `pwsh` vuelve y falta otra
+  vez, avisa de nuevo.
+
+Red: `scripts/tests/repo-links-real-folders.test.sh`, `scripts/tests/branch-guard-notice.test.sh` (T12-T13) y el escenario
+`no-clone` del 182, que convierte la forma vieja con el aplicador de PowerShell de verdad.
+
 ## guides/response-style.md
 
 El porqué del bloque de estilo de respuesta que se carga en cada sesión (`claude-md-blocks/response-style.md`): la regla madre completa con su plantilla de avance, por qué el detalle tiene un destino obligatorio, por qué el reporte de un subagente también es una respuesta, el medidor en detalle (por qué cuenta caracteres y no líneas, por qué no bloquea, umbrales, opt-out), y **qué quedó en el bloque a propósito** para que la próxima poda no lo saque. Nació de la poda del 2026-09-03: el bloque pesaba 17.034 bytes —el 36% del `CLAUDE.md` que cada máquina carga en cada sesión— y bajó a 6.270 sin perder una regla (el `CLAUDE.md` completo, de 46.706 a ≈35.942, −23%). 🔴 Una poda verifica que cada frase que saca del bloque esté en su destino: sin el objetivo de ~10 líneas, el único número que queda es el umbral del medidor (13), y el objetivo sube sin que nadie lo decida. Tras esa poda el bloque más pesado pasó a ser el de ADO (`ado-runs-list-lag.md`), y el 2026-09-06 se le aplicó el mismo patrón: 9.979 → 4.134 bytes (ver la entrada de `guides/ado-cola-y-listados.md`).

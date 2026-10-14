@@ -228,7 +228,15 @@ function measure({ lab, out, platform = process.platform, baseEnv = process.env,
 
     // 3. (story 8.33 · T16) en Windows la versión bajada vive en la forma con ENLACES: la activa tomada no frena nada
     if (isWin) {
+      // (story 8.35 · T14) las carpetas de skills y agentes de Claude Code: reales al instalar, y la forma vieja convertida
+      const rf = measureRealFolders({ home, own, run, rec });
       measureLinkLayout({ own, home, author, env0, env, run, versionOf, stateFile, rec, lockers, harnessJs });
+      if (rf) {
+        // después de las actualizaciones y vueltas atrás de arriba, lo propio sigue en la carpeta real
+        const still = rf.every((f) => fs.existsSync(f));
+        rec.fact('real_folders_after_updates', { kept: still });
+        if (!still) rec.finding('no-clone:real-folders-own-lost-on-update', 'real-folders', `lo propio de ~/.claude no sobrevivió a las actualizaciones: ${rf.filter((f) => !fs.existsSync(f)).join(', ')}`, 'W8', { severity: 'breaks' });
+      }
       // la mitad de la 8.23 (con previous/ tomada, la actualización espera) no aplica en la forma con enlaces
     } else {
     // 3. el archivo tomado (T14): en previous/ durante un cambio → la actualización espera; en trash/ → la limpieza espera
@@ -302,6 +310,55 @@ function measure({ lab, out, platform = process.platform, baseEnv = process.env,
     if (real) rec.note(real);
     return { status: L.STATUS.measured, reason: null };
   } finally { stopAll(); }
+}
+
+/**
+ * Las carpetas de skills y agentes de Claude Code (story 8.35 · T14, AC 1, 2 y 14): después de instalar son carpetas REALES
+ * con un enlace por entrada (uniones para las skills; enlace de archivo o enlace duro para los agentes). Después se arma la
+ * forma vieja —`~/.claude/skills` y `agents` uniones a la carpeta entera del arnés— con una skill propia, un agente propio y
+ * `synced/` adentro del arnés, y el arranque (el aplicador de PowerShell de verdad) la convierte: lo propio queda en la
+ * carpeta real y el arnés ya no lo tiene. Devuelve las rutas de lo propio, para mirar que sobreviva a las actualizaciones
+ * que siguen; o null si no se pudo armar. Nunca tira.
+ */
+function measureRealFolders({ home, own, run, rec }) {
+  const claude = path.join(home, '.claude');
+  const harness = path.join(own, 'harness');
+  const isLinkP = (p) => { try { return fs.lstatSync(p).isSymbolicLink(); } catch (_) { return false; } };
+  const isReal = (p) => { try { const s = fs.lstatSync(p); return s.isDirectory() && !s.isSymbolicLink(); } catch (_) { return false; } };
+  const ls = (d) => { try { return fs.readdirSync(d); } catch (_) { return []; } };
+  const sides = ['skills', 'agents'];
+  rec.fact('real_folders_after_install', Object.fromEntries(sides.map((s) => [s, { real: isReal(path.join(claude, s)), entries: ls(path.join(claude, s)).length }])));
+  for (const s of sides) if (!isReal(path.join(claude, s))) rec.finding(`no-clone:real-folders-${s}-not-real`, 'real-folders', `después de instalar, ${path.join(claude, s)} no es una carpeta real`, 'W8', { severity: 'loses-control' });
+  // la forma vieja: se quitan las carpetas (sólo sus enlaces, nunca a través de ellos) y se ponen uniones a la carpeta entera
+  try {
+    for (const s of sides) {
+      const d = path.join(claude, s);
+      for (const n of ls(d)) { const p = path.join(d, n); if (isLinkP(p)) { try { fs.unlinkSync(p); } catch (_) { fs.rmdirSync(p); } } else fs.rmSync(p, { recursive: true, force: true }); }
+      fs.rmdirSync(d);
+      fs.symlinkSync(path.join(harness, s), d, 'junction');
+    }
+    fs.mkdirSync(path.join(harness, 'skills', 'mia'), { recursive: true });
+    fs.writeFileSync(path.join(harness, 'skills', 'mia', 'SKILL.md'), 'mia\n');
+    fs.mkdirSync(path.join(harness, 'skills', 'synced', 'org_cuenta', 'de-la-cuenta'), { recursive: true });
+    fs.writeFileSync(path.join(harness, 'skills', 'synced', 'org_cuenta', 'de-la-cuenta', 'SKILL.md'), 'cuenta\n');
+    fs.writeFileSync(path.join(harness, 'agents', 'mio.md'), 'mio\n');
+  } catch (e) { rec.note(`carpetas reales: no pude armar la forma vieja (${e.code || e.message}): la conversión queda sin medir`); return null; }
+  const st = run(harness, ['startup'], 'real_folders_convert');
+  const own1 = path.join(claude, 'skills', 'mia', 'SKILL.md'), own2 = path.join(claude, 'agents', 'mio.md'), syn = path.join(claude, 'skills', 'synced', 'org_cuenta', 'de-la-cuenta', 'SKILL.md');
+  const fact = {
+    exit: st.exit,
+    skills_real: isReal(path.join(claude, 'skills')), agents_real: isReal(path.join(claude, 'agents')),
+    own_skill: fs.existsSync(own1), own_agent: fs.existsSync(own2), synced: fs.existsSync(syn),
+    harness_clean: !fs.existsSync(path.join(harness, 'skills', 'mia')) && !fs.existsSync(path.join(harness, 'agents', 'mio.md')),
+    harness_intact: fs.existsSync(path.join(harness, 'scripts', 'setup', 'harness.js')),
+    pipeline_linked: fs.existsSync(path.join(claude, 'skills', 'tycon-pipeline', 'SKILL.md')),
+  };
+  rec.fact('real_folders_convert', fact);
+  if (!fact.harness_intact) rec.finding('no-clone:real-folders-deleted-through-link', 'real-folders', 'la conversión borró algo del arnés a través de la unión', 'W8', { severity: 'breaks' });
+  if (!fact.skills_real || !fact.agents_real) rec.finding('no-clone:real-folders-not-converted', 'real-folders', `el arranque no convirtió la forma vieja: ${JSON.stringify(fact)}`, 'W8', { severity: 'loses-control' });
+  if (!fact.own_skill || !fact.own_agent || !fact.synced) rec.finding('no-clone:real-folders-own-lost', 'real-folders', `la conversión perdió lo propio: ${JSON.stringify(fact)}`, 'W8', { severity: 'breaks' });
+  if (!fact.pipeline_linked) rec.finding('no-clone:real-folders-harness-not-linked', 'real-folders', 'después de convertir, las skills del arnés no se ven en ~/.claude/skills', 'W8', { severity: 'breaks' });
+  return [own1, own2];
 }
 
 /**

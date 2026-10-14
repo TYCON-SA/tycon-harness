@@ -68,11 +68,21 @@ else no "T37 la política del estado es «${V:-ilegible}» (esperado «latest|au
 
 BAD=""
 # el enlace del arnés es el LUGAR (HARNESS_LINK, story 8.19): una máquina nueva ya no recibe el nombre viejo
-for pair in "$(basename "${HARNESS_LINK}"):" "agent-skills:" "agents:agents" "skills:skills"; do
-  name="${pair%%:*}"; sub="${pair#*:}"; link="${HOME}/.claude/${name}"
-  if [ ! -L "${link}" ] || [ "$(real "${link}")" != "$(real "${CLONE}/${sub}")" ]; then BAD="${BAD} ${name}"; fi
+# skills y agents: carpetas reales del dev con un enlace por entrada del clon (story 8.35)
+for name in "$(basename "${HARNESS_LINK}")" agent-skills; do
+  if [ ! -L "${HOME}/.claude/${name}" ] || [ "$(real "${HOME}/.claude/${name}")" != "$(real "${CLONE}")" ]; then BAD="${BAD} ${name}"; fi
 done
-if [ -z "${BAD}" ]; then ok "T37 los cuatro enlaces existen y apuntan al clon (el lugar del arnés, agent-skills, agents, skills)"
+N=0
+for sub in skills agents; do
+  { [ -d "${HOME}/.claude/${sub}" ] && [ ! -L "${HOME}/.claude/${sub}" ]; } || BAD="${BAD} ${sub}(no es carpeta real)"
+  for entry in "${CLONE}/${sub}"/*; do
+    [ -e "${entry}" ] || continue
+    e="$(basename "${entry}")"; link="${HOME}/.claude/${sub}/${e}"; N=$((N + 1))
+    if [ ! -L "${link}" ] || [ ! -e "${link}" ] || [ "$(real "${link}")" != "$(real "${entry}")" ]; then BAD="${BAD} ${sub}/${e}"; fi
+  done
+done
+[ "${N}" -gt 0 ] || BAD="${BAD} (el clon no tiene entradas)"
+if [ -z "${BAD}" ]; then ok "T37 los enlaces existen y apuntan al clon (el lugar del arnés, agent-skills; skills y agents, carpetas reales con un enlace por entrada)"
 else no "T37 enlaces que faltan o apuntan a otro lado:${BAD}"; fi
 if [ -f "${HOME}/.claude/skills/tycon-pipeline/SKILL.md" ] && [ -n "$(ls "${HOME}/.claude/agents"/*.md 2>/dev/null | head -n 1)" ]; then
   ok "T37 las skills y los revisores se ven desde ~/.claude/skills y ~/.claude/agents (donde los busca Claude Code)"

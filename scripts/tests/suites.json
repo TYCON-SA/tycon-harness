@@ -1253,6 +1253,18 @@
       ]
     },
     {
+      "__nota": "story 8.35 (T2-T11): ~/.claude/skills y ~/.claude/agents siempre carpetas reales con un enlace por entrada del arnés (canonical-path.js ensureRepoLinks): la instalación nueva, la conversión de la forma vieja (enlace a la carpeta entera) moviendo lo propio, synced/ y .trash/ a la carpeta real sin borrar nada a través del enlace, el corte retomado, lo tomado (simulado) que no frena, el choque de nombres, el enlace a otro clon intacto, una versión nueva con la forma de enlaces de la 8.33, uninstall y doctor. Sobre un árbol de juguete y la máquina de juguete de la 8.23; sin red real.",
+      "raiz": "arnes",
+      "ruta": "tests/repo-links-real-folders.test.sh",
+      "requiere": [],
+      "gate_only_when_touching": [
+        "scripts/setup/**",
+        "scripts/lib/**",
+        "scripts/tests/lib/**",
+        "scripts/tests/fixtures/**"
+      ]
+    },
+    {
       "__nota": "story 8.23 (tanda D, T27, T28, T29 y T32): la mudanza de una máquina del clon a ~/.tycon (harness.js migrate --to-home): las precondiciones sin escribir y el plan (--dry-run); la mudanza entera con diario (la versión en ~/.tycon/harness, el estado, la configuración fundida y el .dashboard en ~/.tycon, los hooks al árbol nuevo con la misma cuenta, los enlaces viejos) y sus cortes en cuatro puntos (el arranque completa o deshace); el clon de la persona intacto y declarable (paths.maintained); la llave install.home del perfil (una vez, la precondición reintenta, el fallo durante queda failed). Sobre la máquina de juguete instalada desde un clon y el servidor de versiones de juguete; sin red real.",
       "raiz": "arnes",
       "ruta": "tests/harness-move-home.test.sh",

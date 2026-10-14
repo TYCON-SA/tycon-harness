@@ -303,16 +303,25 @@ test('T25 RutasSinFijas_RepoUnico_Enlaces — repo único, HOME limpia: los cuat
   assert.equal(real(claude(home, PLACE.PLACE_NAME)), single, 'el lugar del arnés → el clon');
   assert.ok(!exists(claude(home, PLACE.LEGACY_PLACE_NAME)), 'una máquina nueva recibió el nombre viejo');
   assert.equal(real(claude(home, 'agent-skills')), single, 'agent-skills → el clon');
-  assert.equal(real(claude(home, 'agents')), path.join(single, 'agents'), 'agents → <clon>/agents');
-  assert.equal(real(claude(home, 'skills')), path.join(single, 'skills'), 'skills → <clon>/skills');
-  for (const n of [PLACE.PLACE_NAME, 'agent-skills', 'agents', 'skills']) assert.ok(isLink(claude(home, n)), `${n} es un enlace`);
+  for (const n of [PLACE.PLACE_NAME, 'agent-skills']) assert.ok(isLink(claude(home, n)), `${n} es un enlace`);
+  // story 8.35: skills y agents son carpetas reales del dev, con un enlace por CADA entrada del clon
+  const entries = [];
+  for (const side of ['skills', 'agents']) {
+    assert.ok(fs.statSync(claude(home, side)).isDirectory() && !isLink(claude(home, side)), `${side} es una carpeta real`);
+    for (const e of fs.readdirSync(path.join(single, side))) {
+      entries.push(`${side}/${e}`);
+      assert.ok(isLink(claude(home, side, e)), `${side}/${e} es un enlace`);
+      assert.equal(real(claude(home, side, e)), path.join(single, side, e), `${side}/${e} → <clon>/${side}/${e}`);
+    }
+  }
+  assert.ok(entries.length > 0, 'el clon trae entradas en skills/ y agents/');
   assert.doesNotMatch(r.out, /agent-skills no encontrado/);
   const settings = fs.readFileSync(claude(home, 'settings.json'), 'utf8');
   assert.match(settings, /\.claude\/agent-skills\/skills\/tycon-pipeline\/scripts\/on-prompt\.js/, 'los hooks de agent-skills quedan registrados por el enlace');
   // el reporte de piezas trae los enlaces (los dos nombres del lugar, story 8.19, y los tres del repo único), y cada uno
   // casa con la lista declarada
   const pieces = linkPieces(report);
-  assert.deepEqual(pieces.map((p) => p.id).sort(), ['agent-skills', 'agents', 'skills', PLACE.PLACE_NAME].sort());
+  assert.deepEqual(pieces.map((p) => p.id).sort(), ['agent-skills', PLACE.PLACE_NAME, ...entries].sort());
   const declared = JSON.parse(fs.readFileSync(PIECES_FIXTURE, 'utf8')).pieces.filter((d) => d.kind === 'link');
   for (const p of pieces) {
     const ok = declared.some((d) => (d.id ? d.id === p.id : new RegExp(d.id_pattern).test(p.id)) && new RegExp(d.where_pattern).test(p.where));

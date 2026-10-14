@@ -76,6 +76,10 @@ const PLACE = () => placeModule || (placeModule = require('../setup/harness/plac
 const RAIZ = path.resolve(__dirname, '..', '..');
 
 function real(p) { try { return fs.realpathSync(p); } catch (_) { return null; } }
+/** Dos rutas reales son la misma. En Windows y en Mac el disco no distingue mayúsculas (`c:\…` y `C:\…`). */
+function samePath(a, b) {
+  return !!a && !!b && (a === b || ((process.platform === 'win32' || process.platform === 'darwin') && a.toLowerCase() === b.toLowerCase()));
+}
 function rutaEnlace(home) { return PLACE().placePath(home); }
 /** «Clon válido del arnés» = existe y tiene el instalador (el criterio del AC 4). */
 function esClonDelArnes(dir) { return !!dir && fs.existsSync(path.join(dir, 'scripts', 'install-tycon-hooks.sh')); }
@@ -732,6 +736,221 @@ function linkEntries({ dir, src, written, id, check, links, home }) {
   return out;
 }
 
+// ── LAS CARPETAS DE SKILLS Y AGENTES, SIEMPRE REALES (story 8.35, 2026-10-14) ─────────────────────────────────────
+// Con `~/.claude/skills` (o `agents`) ausente, esto creaba un enlace a la carpeta ENTERA del árbol. Lo que Claude Code
+// sincroniza ahí (`skills/synced`, cada ~10 minutos) y lo que el dev crea (una skill o un agente propio) caía adentro del
+// arnés, y la actualización lo perdía. Ahora son siempre carpetas del dev con un enlace por entrada del arnés, y una
+// máquina con la forma vieja se convierte sola la próxima vez que corre el aplicador (en cada arranque): lo que no es del
+// arnés se MUEVE a la carpeta real. Nada se borra a través del enlace: se quita el enlace mismo.
+
+const CONVERT_TMP_MARK = '.tycon-new-';
+const CONVERT_ASIDE_MARK = '.tycon-aparte';
+
+/**
+ * Los nombres que el ARNÉS pone en `<árbol>/<lado>` (`skills` o `agents`): los que nombra el manifiesto de una versión
+ * bajada (`.tycon-release.json`) o, en un clon, los que git rastrea; más lo de terceros (`third-party-skills.json`) y la
+ * capa del equipo (`.tycon-team.json`). `null` si no se puede saber: entonces no se mueve nada.
+ */
+function ownedNames(tree, side) {
+  const names = new Set();
+  const addPath = (p) => {
+    const parts = String(p || '').split(/[\\/]+/).filter(Boolean);
+    // la PRIMERA aparición: una skill del arnés puede traer su propia subcarpeta `skills/` adentro
+    const i = parts.indexOf(side);
+    if (i >= 0 && i + 1 < parts.length) names.add(parts[i + 1]);
+  };
+  const readJson = (f) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch (_) { return null; } };
+  let known = false;
+  const manifest = readJson(path.join(tree, '.tycon-release.json'));
+  if (manifest && Array.isArray(manifest.files)) { known = true; for (const f of manifest.files) if (f && typeof f.path === 'string' && f.path.startsWith(`${side}/`)) addPath(f.path); }
+  else if (fs.existsSync(path.join(tree, '.git'))) {
+    const r = require('child_process').spawnSync('git', ['-C', tree, 'ls-files', '-z', '--', side], { encoding: 'utf8', windowsHide: true, timeout: 30000 });
+    if (r.status === 0) { known = true; for (const f of String(r.stdout || '').split('\0').filter(Boolean)) addPath(f); }
+  }
+  if (!known) return null;
+  const third = readJson(path.join(tree, 'scripts', 'publishing', 'third-party-skills.json'));
+  const list = third && (Array.isArray(third.third_party) ? third.third_party : (Array.isArray(third.thirdParty) ? third.thirdParty : []));
+  for (const t of list || []) for (const c of [t && t.target, ...((t && Array.isArray(t.links)) ? t.links : [])]) if (typeof c === 'string') addPath(c);
+  const team = readJson(path.join(tree, '.tycon-team.json'));
+  if (team && Array.isArray(team.files)) for (const f of team.files) if (f && typeof f.path === 'string') addPath(f.path);
+  return names;
+}
+
+/** Mueve `from` a `to`: renombre; en otro disco, copia y borra. Tomado (Windows) → tira, sin dejar nada a medias. */
+function moveEntry(from, to) {
+  try { fs.renameSync(from, to); return; } catch (e) { if (!e || e.code !== 'EXDEV') throw e; }
+  fs.cpSync(from, to, { recursive: true, verbatimSymlinks: true, errorOnExist: true, force: false });
+  fs.rmSync(from, { recursive: true, force: true });
+}
+
+/**
+ * Junta `from` adentro de `to` sin pisar nada: lo que falta se mueve, dos carpetas se juntan adentro, dos archivos
+ * iguales quedan en uno. Lo que choca (mismo nombre, otro contenido) queda en `from` y va a `out.same`; lo que no se
+ * pudo mover (tomado), a `out.failed`.
+ */
+function mergeInto(from, to, out) {
+  const why = (e) => (e && (e.code || e.message)) || 'error';
+  let a, b = null;
+  try { a = fs.lstatSync(from); } catch (_) { return; }
+  try { b = fs.lstatSync(to); } catch (_) { b = null; }
+  if (!b) { try { moveEntry(from, to); } catch (e) { out.failed.push(`${from} (${why(e)})`); } return; }
+  if (a.isDirectory() && b.isDirectory() && !a.isSymbolicLink() && !b.isSymbolicLink()) {
+    let names;
+    try { names = fs.readdirSync(from); } catch (e) { out.failed.push(`${from} (${why(e)})`); return; }
+    for (const n of names) mergeInto(path.join(from, n), path.join(to, n), out);
+    try { if (!fs.readdirSync(from).length) fs.rmdirSync(from); } catch (e) { out.failed.push(`${from} (${why(e)})`); }
+    return;
+  }
+  if (a.isFile() && b.isFile() && a.size === b.size) {
+    try { if (fs.readFileSync(from).equals(fs.readFileSync(to))) { fs.unlinkSync(from); return; } } catch (e) { out.failed.push(`${from} (${why(e)})`); return; }
+  }
+  out.same.push(from);
+}
+
+/** Las carpetas temporales que dejó una conversión cortada al lado de `where`. */
+function convertTmps(where) {
+  const dir = path.dirname(where), base = `${path.basename(where)}${CONVERT_TMP_MARK}`;
+  let names = [];
+  try { names = fs.readdirSync(dir); } catch (_) { return []; }
+  return names.filter((n) => n.startsWith(base)).map((n) => path.join(dir, n)).filter((p) => { try { const s = fs.lstatSync(p); return s.isDirectory() && !s.isSymbolicLink(); } catch (_) { return false; } });
+}
+
+/**
+ * Convierte `where` (un enlace a la carpeta entera `src` del árbol, o ya una carpeta real con temporales de un corte) en
+ * una carpeta real con lo que no es del arnés adentro. `{ status, moved, held, line }`: `converted` · `merged` (había una
+ * temporal de un corte) · `held` (algo propio no se pudo mover: todo vuelve a su lugar, el enlace queda) · `unknown`
+ * (no se sabe qué es del arnés: no se toca) · `foreign` (hay una temporal, pero `where` no es la forma vieja: un enlace
+ * propio del dev o un archivo; no se toca nada) · `plan` (con `check`). Con `converted`/`merged`, si algo quedó en una
+ * temporal (tomado) la línea empieza con ⚠️; lo que estaba dos veces con distinto contenido no traba nada: una versión
+ * queda en `<where>.tycon-aparte/` y la línea lo dice una vez.
+ */
+function convertWholeLink({ where, src, side, tree, check = false }) {
+  const st = estadoEnlace({ enlace: where });
+  // sólo la forma vieja (un enlace a la carpeta entera de ESTE árbol) se quita; un enlace propio del dev, nunca. Uno
+  // colgado no lleva a nada: se trata como si faltara
+  const isWhole = st.estado === 'enlace' && samePath(st.destinoReal, real(src));
+  const tmps = convertTmps(where);
+  if (!isWhole && st.estado !== 'carpeta' && st.estado !== 'falta' && st.estado !== 'colgado') {
+    const what = st.estado === 'enlace' ? `es un enlace tuyo a ${st.destino}` : `es un ${st.estado}`;
+    return { status: 'foreign', moved: [], held: [], line: `⚠️ tycon: quedó ${tmps.join(', ')} de una conversión cortada, y ${where} no es la carpeta entera del arnés (${what}): no toco ninguno de los dos. Lo de la temporal es tuyo: movelo a donde lo quieras` };
+  }
+  const owned = isWhole ? ownedNames(tree, side) : new Set();
+  if (owned === null) return { status: 'unknown', moved: [], held: [], line: `⚠️ tycon: ${where} es un enlace a la carpeta entera del arnés y no sé qué es del arnés en ${src} (sin manifiesto ni git): no la convierto` };
+  // De dónde sale lo propio: la carpeta del árbol activo y, en una versión bajada, la de la versión ANTERIOR. La primera
+  // conversión de una máquina instalada corre en la actualización que la trae, DESPUÉS del cambio de versión: lo que el
+  // dev escribió a través del enlace entero quedó en la versión que acaba de pasar a `previous`
+  const sources = [{ dir: src, owned }];
+  // (sólo entre dos versiones BAJADAS, con su manifiesto: un clon que se llame `harness` no tiene «versión anterior»)
+  const isRelease = (t) => fs.existsSync(path.join(t, '.tycon-release.json'));
+  if (isWhole && path.basename(tree) === 'harness' && isRelease(tree)) {
+    const prevTree = path.join(path.dirname(tree), 'previous');
+    const prevOwned = real(prevTree) && !samePath(real(prevTree), real(tree)) && isRelease(prevTree) ? ownedNames(prevTree, side) : null;
+    if (prevOwned) sources.push({ dir: path.join(prevTree, side), owned: prevOwned });
+  }
+  const entries = [];
+  if (isWhole) {
+    for (const s of sources) {
+      let names = [];
+      try { names = fs.readdirSync(s.dir); } catch (_) { names = []; }
+      for (const n of names) if (!s.owned.has(n) && n !== '.DS_Store') entries.push({ n, from: s.dir });
+    }
+  }
+  if (check) return { status: 'plan', moved: entries.map((e) => e.n), held: [], line: `(--check) ✓ tycon: ${where} pasaría a carpeta tuya (${entries.length} cosa(s) tuya(s) que hoy están adentro del arnés)` };
+  if (st.estado === 'colgado') borrarEnlace(where);
+  // la temporal: la de un corte (se retoma) o una nueva
+  const tmp = tmps[0] || `${where}${CONVERT_TMP_MARK}${process.pid}`;
+  const why = (e) => (e && (e.code || e.message)) || 'error';
+  // lo que choca (mismo nombre, otro contenido) y lo que no se pudo mover (tomado) se dicen por separado: el primero lo
+  // resuelve el dev, el segundo se arregla solo cuando el programa lo suelta
+  const tell = (out) => out.failed.length ? `no pude mover ${out.failed.join(', ')} (lo más común: algún programa lo tiene abierto; se reintenta en el próximo arranque)` : '';
+  // Lo que está dos veces con contenido distinto (un corte y Claude Code que lo volvió a bajar, o el dev que lo editó)
+  // no traba la conversión ni se avisa en cada arranque: una de las versiones queda en `<where>.tycon-aparte/`, que
+  // Claude Code no lee, y se dice una vez. No se pierde ninguna
+  const aside = `${where}${CONVERT_ASIDE_MARK}`;
+  const setAside = (out, roots) => {
+    const kept = [];
+    // si alguien puso ahí un enlace o un archivo, no se escribe a través de él: queda como «no se pudo mover»
+    const a = estadoEnlace({ enlace: aside }).estado;
+    if (a !== 'carpeta' && a !== 'falta') { out.failed.push(...out.same.map((p) => `${p} (${aside} no es una carpeta)`)); out.same = []; return kept; }
+    for (const p of out.same) {
+      const root = roots.find((r) => p === r || p.startsWith(r + path.sep)) || path.dirname(p);
+      let dst = path.join(aside, path.relative(root, p));
+      for (let i = 2; fs.existsSync(dst); i++) dst = `${path.join(aside, path.relative(root, p))}-${i}`;
+      try { fs.mkdirSync(path.dirname(dst), { recursive: true }); moveEntry(p, dst); kept.push(path.relative(aside, dst)); } catch (e) { out.failed.push(`${p} (${why(e)})`); continue; }
+      // las carpetas que quedaron vacías al sacarlo (hasta la raíz, sin ella): si no, el nombre seguiría en el árbol
+      for (let d = path.dirname(p); d !== root && d.startsWith(root + path.sep); d = path.dirname(d)) {
+        try { if (fs.readdirSync(d).length) break; fs.rmdirSync(d); } catch (_) { break; }
+      }
+    }
+    out.same = [];
+    return kept;
+  };
+  const apart = [];
+  const moved = [];
+  if (isWhole) {
+    fs.mkdirSync(tmp, { recursive: true });
+    const out = { same: [], failed: [] };
+    const origin = new Map();
+    for (const { n, from } of entries) {
+      const dst = path.join(tmp, n), fresh = !fs.existsSync(dst), was = out.same.length + out.failed.length;
+      mergeInto(path.join(from, n), dst, out);
+      if (fresh && out.same.length + out.failed.length === was) { moved.push(n); origin.set(n, from); }
+    }
+    // la versión del árbol que choca con la de la temporal sale del árbol: a la carpeta de lo apartado
+    if (out.same.length) apart.push(...setAside(out, sources.map((s) => s.dir)));
+    if (out.failed.length) {
+      // algo propio no se movió: TODO lo de la temporal (lo de esta corrida y lo de un corte anterior) vuelve a su lugar y
+      // el enlace queda como estaba; el arranque siguiente reintenta. Lo que no puede volver queda en la temporal y se dice
+      const back = { same: [], failed: [] };
+      let names = [];
+      try { names = fs.readdirSync(tmp); } catch (_) { names = []; }
+      for (const n of names) mergeInto(path.join(tmp, n), path.join(origin.get(n) || src, n), back);
+      try { if (!fs.readdirSync(tmp).length) fs.rmdirSync(tmp); } catch (_) { /* queda: el próximo arranque la retoma */ }
+      const stuck = [...back.failed, ...back.same];
+      const stay = stuck.length ? `; y no pude devolver ${stuck.join(', ')}: quedó en ${tmp}, el próximo arranque lo termina` : '';
+      const put = apart.length ? `; ${apart.length} cosa(s) que estaba(n) dos veces con distinto contenido quedaron en ${aside}` : '';
+      return { status: 'held', moved: [], held: out.failed, line: `⚠️ tycon: ${where} todavía es un enlace a la carpeta entera del arnés: ${tell(out)}. No se perdió nada${stay}${put}` };
+    }
+    // el enlace se QUITA (nunca un borrado recursivo: a través de la unión se borraría el arnés)
+    borrarEnlace(where);
+  }
+  // Claude Code pudo recrear la carpeta entre quitar el enlace y renombrar (o un corte dejó la real y la temporal):
+  // se junta lo de la temporal adentro, sin pisar nada
+  const out = { same: [], failed: [] };
+  const merge = (t) => {
+    let names = [];
+    try { names = fs.readdirSync(t); } catch (e) { out.failed.push(`${t} (${why(e)})`); return; }
+    for (const n of names) {
+      const fresh = !fs.existsSync(path.join(where, n)), was = out.same.length + out.failed.length;
+      mergeInto(path.join(t, n), path.join(where, n), out);
+      if (fresh && out.same.length + out.failed.length === was && !moved.includes(n)) moved.push(n);
+    }
+    try { if (!fs.readdirSync(t).length) fs.rmdirSync(t); } catch (_) { /* queda con lo que no entró: ya se dice */ }
+  };
+  const merged = tmps.length ? tmps : [tmp];
+  if (fs.existsSync(where)) { for (const t of merged) merge(t); }
+  else {
+    for (const n of fs.readdirSync(tmp)) if (!moved.includes(n)) moved.push(n);
+    fs.renameSync(tmp, where);
+    for (const t of tmps.slice(1)) merge(t);
+  }
+  // lo de la temporal que choca con lo que ya está en la carpeta real: a lo apartado, y la temporal se saca
+  if (out.same.length) {
+    apart.push(...setAside(out, merged));
+    for (const t of merged) { try { if (fs.existsSync(t) && !fs.readdirSync(t).length) fs.rmdirSync(t); } catch (_) { /* queda: se dice */ } }
+  }
+  const status = isWhole ? 'converted' : 'merged';
+  const put = apart.length ? `. Ojo: ${apart.join(', ')} estaba(n) dos veces con distinto contenido; la otra versión quedó en ${aside} (revisala y borrá la que sobre)` : '';
+  const left = convertTmps(where);
+  if (out.failed.length || left.length) {
+    return { status, moved, held: out.failed, line: `⚠️ tycon: ${where} ya es carpeta tuya y las del arnés quedan enlazadas una por una, pero algo tuyo quedó en ${left.join(', ') || tmp}: ${tell(out) || 'la temporal no se pudo sacar'}. No se perdió nada${put}` };
+  }
+  return {
+    status, moved, held: [],
+    line: `${apart.length ? '⚠️' : '✓'} tycon: ${where} pasó a carpeta tuya${moved.length ? ` (${moved.length} cosa(s) tuya(s) que estaban adentro del arnés: ${moved.slice(0, 5).join(', ')}${moved.length > 5 ? ', …' : ''})` : ''}; las del arnés, enlazadas una por una. Lo que pongas ahí —y las skills que baja Claude Code— ya no se pierde con una actualización${put}`,
+  };
+}
+
 /**
  * Crea / repara / respeta los enlaces del repo único. Nunca tira: lo que no se pudo se dice en una línea.
  * `only`: 'agent-skills' (ése solo: el instalador lo necesita ANTES de verificar agent-skills) · 'entries' (agents y
@@ -771,16 +990,37 @@ function ensureRepoLinks({ clone, home, check = false, only = null, links = null
     const where = path.join(home || os.homedir(), '.claude', L.id);
     const dest = path.join(c, L.sub);
     try {
+      // (story 8.35) skills y agents son SIEMPRE carpetas reales: ausente → se crea real; un enlace a la carpeta entera
+      // de ESTE árbol (la forma vieja) o una temporal de un corte → se convierte, moviendo lo que no es del arnés
+      let born = false;   // la carpeta la creó esta corrida: su línea dice «creada», no «no la piso»
+      let dangling = null;   // el destino del enlace colgado que la carpeta real reemplazó
+      if (L.entries) {
+        const was = estadoEnlace({ enlace: where });
+        const whole = was.estado === 'enlace' && samePath(was.destinoReal, real(dest));
+        if (whole || convertTmps(where).length) {
+          const r = convertWholeLink({ where, src: dest, side: L.sub, tree: c, check });
+          say(r.line.replace(/^\(--check\) /, ''));
+          // con --check, el plan del instalador tiene que ver que hay algo que escribir (si no, dice «sin cambios»)
+          if (r.status === 'plan') out.plan.push({ where, id: L.id, action: 'update' });
+          if (r.status !== 'converted' && r.status !== 'merged') continue;
+        } else if (was.estado === 'falta' || was.estado === 'colgado') {
+          // un enlace colgado (a un clon borrado, a una versión ya limpiada) no lleva a nada: en su lugar, la carpeta real.
+          // Se quita el NOMBRE, nunca un contenido
+          born = true; dangling = was.estado === 'colgado' ? was.destino : null;
+          if (!check) { if (dangling) borrarEnlace(where); fs.mkdirSync(where, { recursive: true }); }
+        }
+      }
       const before = estadoEnlace({ enlace: where });
       // Un enlace a una carpeta PROPIA (ni este clon ni otro árbol del arnés: los archivos de configuración de la
       // persona, por ejemplo) se trata como una carpeta real: no se mueve, y adentro va un enlace por entrada. Moverlo
       // dejaba sus skills fuera de la vista de Claude (decisión del dueño, 2026-10-03).
-      const own = L.entries && before.estado === 'enlace' && before.destinoReal !== real(dest)
+      const own = L.entries && before.estado === 'enlace' && !samePath(before.destinoReal, real(dest))
         && isDir(before.destinoReal) && !L.valid(before.destinoReal);
-      if ((before.estado === 'carpeta' || own) && L.entries) {
+      // (con --check y la carpeta ausente o colgada, el plan es el de la carpeta real que se crearía: un enlace por entrada)
+      if ((before.estado === 'carpeta' || own || (check && born)) && L.entries) {
         const r = linkEntries({ dir: where, src: dest, written: [dest, path.join(given, L.sub)], id: L.id, check, links, home });
         if (r.added || r.removed) {
-          const what = own ? `es un enlace a una carpeta propia (${before.destinoReal}), no lo muevo` : 'es una carpeta real, no la piso';
+          const what = born ? `creada como carpeta tuya${dangling ? ` en lugar del enlace colgado (→ ${dangling})` : ''} (lo que pongas ahí no se pierde con una actualización)` : own ? `es un enlace a una carpeta propia (${before.destinoReal}), no lo muevo` : 'es una carpeta real, no la piso';
           const hard = r.hard.length ? `; ${r.hard.length} como enlace(s) duro(s) (${r.hard.join(', ')}): Windows no dejó crear el enlace de archivo, que pide el modo desarrollador` : '';
           say(check
             ? `✓ tycon: ${where} ${what}: agregaría ${r.added} enlace(s) por entrada y sacaría ${r.removed} (→ ${dest})`
@@ -927,22 +1167,25 @@ function selftest() {
 
   const k1 = casa('k1');
   let q = ensureRepoLinks({ clone: u, home: k1 });
-  casos.push(['AC18 HOME limpia: crea los tres enlaces (agent-skills → el clon, agents y skills → adentro), una línea por cada uno',
-    q.applies === true && real(at(k1, 'agent-skills')) === u && real(at(k1, 'agents')) === path.join(u, 'agents') && real(at(k1, 'skills')) === path.join(u, 'skills')
-    && q.lines.length === 3 && q.lines.every((l) => /creado/.test(l)) && ids(q) === 'agent-skills,agents,skills']);
+  // (story 8.35: skills y agents son carpetas REALES con un enlace por entrada, nunca un enlace a la carpeta entera)
+  const ENTRY_IDS = 'agents/rev-a.md,agents/rev-b.md,skills/extra,skills/tycon-pipeline';
+  casos.push(['AC18 HOME limpia: agent-skills → el clon; agents y skills, carpetas reales con un enlace por entrada; una línea por cada una',
+    q.applies === true && real(at(k1, 'agent-skills')) === u && isRealDir(at(k1, 'agents')) && isRealDir(at(k1, 'skills'))
+    && real(at(k1, 'skills', 'tycon-pipeline')) === path.join(u, 'skills', 'tycon-pipeline') && real(at(k1, 'agents', 'rev-a.md')) === path.join(u, 'agents', 'rev-a.md')
+    && q.lines.length === 3 && q.lines.every((l) => /cread[oa]/.test(l)) && ids(q) === `agent-skills,${ENTRY_IDS}`]);
   casos.push(['AC18 …las piezas llevan la ruta SIN resolver (la de la HOME), como las anota el instalador',
     q.pieces.every((x) => x.where === at(k1, x.id))]);
   q = ensureRepoLinks({ clone: u, home: k1 });
-  casos.push(['AC18 segunda corrida sin cambios: ninguna línea, y los tres siguen contando como piezas en su lugar',
-    q.lines.length === 0 && ids(q) === 'agent-skills,agents,skills']);
+  casos.push(['AC18 segunda corrida sin cambios: ninguna línea, y los enlaces siguen contando como piezas en su lugar',
+    q.lines.length === 0 && ids(q) === `agent-skills,${ENTRY_IDS}`]);
 
   const k2 = casa('k2');
   q = ensureRepoLinks({ clone: u, home: k2, only: 'agent-skills' });
   casos.push(['AC18 --only agent-skills: sólo ése (va antes de la verificación de agent-skills del instalador)',
     real(at(k2, 'agent-skills')) === u && !lexists(at(k2, 'skills')) && !lexists(at(k2, 'agents')) && ids(q) === 'agent-skills']);
   q = ensureRepoLinks({ clone: u, home: k2, only: 'entries' });
-  casos.push(['AC18 --only entries: agents y skills (va después del paso de terceros)',
-    real(at(k2, 'skills')) === path.join(u, 'skills') && real(at(k2, 'agents')) === path.join(u, 'agents') && ids(q) === 'agents,skills']);
+  casos.push(['AC18 --only entries: agents y skills, carpetas reales con un enlace por entrada (va después del paso de terceros)',
+    isRealDir(at(k2, 'skills')) && isRealDir(at(k2, 'agents')) && real(at(k2, 'skills', 'extra')) === path.join(u, 'skills', 'extra') && ids(q) === ENTRY_IDS]);
 
   const k3 = casa('k3');
   q = ensureRepoLinks({ clone: a, home: k3 });
@@ -977,8 +1220,11 @@ function selftest() {
   const k6 = casa('k6');
   for (const n of ['agent-skills', 'skills', 'agents']) fs.symlinkSync(path.join(t, 'borrado', n), at(k6, n));
   q = ensureRepoLinks({ clone: u, home: k6 });
-  casos.push(['AC18 colgados: los tres se reparan',
-    real(at(k6, 'agent-skills')) === u && real(at(k6, 'skills')) === path.join(u, 'skills') && real(at(k6, 'agents')) === path.join(u, 'agents') && q.lines.length === 3 && q.lines.every((l) => /colgado/.test(l))]);
+  // (story 8.35) agent-skills se repara como enlace; skills y agents colgados pasan a carpetas reales (nunca la forma vieja)
+  casos.push(['AC18 colgados: agent-skills se repara; skills y agents quedan carpetas reales con un enlace por entrada',
+    real(at(k6, 'agent-skills')) === u && isRealDir(at(k6, 'skills')) && isRealDir(at(k6, 'agents'))
+    && real(at(k6, 'skills', 'tycon-pipeline')) === path.join(u, 'skills', 'tycon-pipeline') && real(at(k6, 'agents', 'rev-a.md')) === path.join(u, 'agents', 'rev-a.md')
+    && q.lines.length === 3 && q.lines.every((l) => /colgado/.test(l))]);
   const k7 = casa('k7'); W(path.join(at(k7, 'agent-skills'), 'mio.txt'), 'x');
   q = ensureRepoLinks({ clone: u, home: k7, only: 'agent-skills' });
   casos.push(['AC18 una carpeta real en ~/.claude/agent-skills: no se pisa y se dice',
@@ -1065,7 +1311,13 @@ function selftest() {
   c1 = cli(['--ensure-repo-links', '--clone', u, '--home', k13], { TYCON_REPORT_PIECES: rep });
   const recorded = fs.existsSync(rep) ? fs.readFileSync(rep, 'utf8') : '';
   casos.push(['AC18 CLI con TYCON_REPORT_PIECES: anota «link<TAB>ruta<TAB>id» por cada enlace en su lugar',
-    c1.status === 0 && recorded === ['agent-skills', 'agents', 'skills'].map((n) => `link\t${at(k13, n)}\t${n}\n`).join('')]);
+    // (casos de arriba le suman entradas al clon de juguete: se mira la forma de cada línea y que estén las conocidas)
+    c1.status === 0 && (() => {
+      const lines = recorded.split('\n').filter(Boolean);
+      return lines[0] === `link\t${at(k13, 'agent-skills')}\tagent-skills`
+        && lines.every((l) => { const [k, w, id] = l.split('\t'); return k === 'link' && w === at(k13, ...id.split('/')); })
+        && ['skills/tycon-pipeline', 'agents/rev-a.md'].every((id) => lines.some((l) => l.endsWith(`\t${id}`)));
+    })()]);
   c1 = cli(['--ensure-repo-links', '--clone', a, '--home', casa('k14')], { TYCON_REPORT_PIECES: path.join(t, 'pieces-k14.tsv') });
   casos.push(['AC18 CLI en el clon del equipo: sale 0, no imprime nada y no anota nada',
     c1.status === 0 && c1.stdout === '' && !fs.existsSync(path.join(t, 'pieces-k14.tsv'))]);
@@ -1143,7 +1395,7 @@ function selftest() {
     separate({ clone: u, home: m6 }) === null && q.lines.length === 3 && q.lines.every((l) => /no lo muevo/.test(l)) && real(at(m6, 'agent-skills')) === u3]);
   const m7 = casa('m7'); fs.symlinkSync(u, at(m7, 'agent-skills'));
   casos.push(['T29 (espejo) el árbol único —~/.claude/agent-skills ya es este clon— no es la transición: los enlaces se crean como siempre',
-    separate({ clone: u, home: m7 }) === null && ensureRepoLinks({ clone: u, home: m7 }).lines.filter((l) => /creado/.test(l)).length === 2]);
+    separate({ clone: u, home: m7 }) === null && ensureRepoLinks({ clone: u, home: m7 }).lines.filter((l) => /cread[oa]/.test(l)).length === 2]);
   casos.push(['T29 (contrato C4) isSingleRepo no cambió: el clon unido sí, el del equipo sin skills/ no, y el clon viejo de skills también da sí',
     isSingleRepo(u) === true && isSingleRepo(a) === false && isSingleRepo(real(at(m1, 'agent-skills'))) === true && isSingleRepo.length === 1]);
 

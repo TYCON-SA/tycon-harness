@@ -39,12 +39,23 @@ fi
 # los cuatro enlaces del AC 18, cada uno a su lugar del clon. El del arnés es el LUGAR (HARNESS_LINK, story 8.19): desde
 # la tanda C de la 8.19 una máquina nueva no recibe el nombre viejo (LEGACY_FOR_NEW_MACHINES en canonical-path.js), y
 # la copia pública publicada el 2026-10-07 ya lo trae así (nocturno 12260: esta prueba pedía el nombre viejo).
+# skills y agents son carpetas reales del dev, con un enlace por cada entrada del clon (story 8.35): lo que Claude Code
+# sincroniza y lo que el dev crea no cae adentro del arnés
 BAD=""
-for pair in "$(basename "${HARNESS_LINK}"):" "agent-skills:" "agents:agents" "skills:skills"; do
-  name="${pair%%:*}"; sub="${pair#*:}"; link="${HOME}/.claude/${name}"
-  if [ ! -L "${link}" ] || [ "$(real "${link}")" != "$(real "${CLONE}/${sub}")" ]; then BAD="${BAD} ${name}"; fi
+for name in "$(basename "${HARNESS_LINK}")" agent-skills; do
+  if [ ! -L "${HOME}/.claude/${name}" ] || [ "$(real "${HOME}/.claude/${name}")" != "$(real "${CLONE}")" ]; then BAD="${BAD} ${name}"; fi
 done
-if [ -z "${BAD}" ]; then ok "T26 los cuatro enlaces existen y apuntan al clon (el lugar del arnés, agent-skills, agents, skills)"
+N=0
+for sub in skills agents; do
+  { [ -d "${HOME}/.claude/${sub}" ] && [ ! -L "${HOME}/.claude/${sub}" ]; } || BAD="${BAD} ${sub}(no es carpeta real)"
+  for entry in "${CLONE}/${sub}"/*; do
+    [ -e "${entry}" ] || continue
+    e="$(basename "${entry}")"; link="${HOME}/.claude/${sub}/${e}"; N=$((N + 1))
+    if [ ! -L "${link}" ] || [ ! -e "${link}" ] || [ "$(real "${link}")" != "$(real "${entry}")" ]; then BAD="${BAD} ${sub}/${e}"; fi
+  done
+done
+[ "${N}" -gt 0 ] || BAD="${BAD} (el clon no tiene entradas)"
+if [ -z "${BAD}" ]; then ok "T26 los enlaces existen y apuntan al clon (el lugar del arnés, agent-skills; skills y agents, carpetas reales con un enlace por entrada)"
 else no "T26 enlaces que faltan o apuntan a otro lado:${BAD}"; fi
 check_install "T26"
 # lo contestado (T51): full, ninguna integración ni el paquete escritos
