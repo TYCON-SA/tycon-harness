@@ -3924,10 +3924,13 @@ test('Export_GetHarness_ByPlaceholder_InternalNeverNamesPublicRepo — la copia 
   const sources = Object.fromEntries(ENTRY_SCRIPTS.map((g) => [g, papelReal(g)]));
   // el párrafo del guion de las dos portadas reales (sólo ese párrafo: el resto de la portada enlaza a archivos que la
   // fixture no tiene): nombra la carpeta del guion por el marcador, y el exportador lo reemplaza (revisión de la tanda E)
+  // De dónde sale hoy el bloque install:core de cada portada: desde que la referencia se mudó de la portada a
+  // getting-started/ (2026-10-13), vive en la referencia de cada idioma. La portada de juguete lo sigue llevando.
+  const blockSource = { '.github/README.md': 'getting-started/reference.md', '.github/README.es.md': 'getting-started/reference.es.md' };
   for (const readme of ['.github/README.md', '.github/README.es.md']) {
     // desde la story 8.23 (tanda E) el guion ES el bloque install:core de la portada: se toma ese bloque (nombra la
     // dirección por los marcadores, y el exportador la reemplaza)
-    const real = papelReal(readme);
+    const real = papelReal(blockSource[readme]);
     const close = '<!-- /install:core -->';
     const start = real.indexOf('<!-- install:core -->');
     const end = real.indexOf(close);
