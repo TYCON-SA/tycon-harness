@@ -130,13 +130,19 @@ function loadMinimalIds(file) {
 
 // ── La configuración del arnés ───────────────────────────────────────────────────────────────────────────────────
 
-/** Integraciones y perfil, como los lee el instalador: con el comando de tycon-config.js (sus códigos de salida). */
-function readConfig({ env = process.env, libDir = path.join(SCRIPTS_DIR, 'lib') } = {}) {
+/**
+ * Integraciones y perfil, como los lee el instalador: con el comando de tycon-config.js (sus códigos de salida).
+ * `runConfig(args)` (opcional, story 8.36): con qué correr ese comando. Lo pasa la tanda del aplicador
+ * (scripts/setup/applier-batch.js), que lo corre en su mismo proceso; devuelve `{ status, stdout }` como `spawnSync`.
+ * Sin él, un proceso de Node por pregunta, como siempre.
+ */
+function readConfig({ env = process.env, libDir = path.join(SCRIPTS_DIR, 'lib'), runConfig = null } = {}) {
   const cfg = path.join(libDir, 'tycon-config.js');
   const integ = { state: 'sin-lector', values: {} };
   const profile = { state: 'sin-lector', value: undefined };
   if (!fs.existsSync(cfg)) return { integ, profile };
-  const r = spawnSync(process.execPath, [cfg, 'integrations', '--shell'], { encoding: 'utf8', env });
+  const ask = (args) => (runConfig ? runConfig(args) : spawnSync(process.execPath, [cfg, ...args], { encoding: 'utf8', env }));
+  const r = ask(['integrations', '--shell']);
   if (r.status === 0) {
     integ.state = 'ok';
     for (const line of String(r.stdout).split(/\r?\n/)) {
@@ -144,7 +150,7 @@ function readConfig({ env = process.env, libDir = path.join(SCRIPTS_DIR, 'lib') 
       if (m) integ.values[m[1].toLowerCase()] = m[2];
     }
   } else if (r.status === 2) integ.state = 'rota';
-  const p = spawnSync(process.execPath, [cfg, 'get', 'install.profile'], { encoding: 'utf8', env });
+  const p = ask(['get', 'install.profile']);
   const out = String(p.stdout || '').trim();
   if (p.status === 3) profile.state = 'ok';
   else if (p.status === 0 && (out === 'minimal' || out === 'full')) { profile.state = 'ok'; profile.value = out; }
@@ -587,7 +593,7 @@ function appendLines(file, lines) {
   }
 }
 
-function main(argv = process.argv.slice(2), env = process.env) {
+function main(argv = process.argv.slice(2), env = process.env, { runConfig = null } = {}) {
   const a = parseArgs(argv);
   const platform = a.platform || (process.platform === 'win32' ? 'windows' : 'posix');
   if (!['posix', 'windows'].includes(platform)) throw new ApplyError(`apply-hooks: --platform es posix o windows, no «${platform}»`);
@@ -614,7 +620,7 @@ function main(argv = process.argv.slice(2), env = process.env) {
   }
   if (!settings || typeof settings !== 'object' || Array.isArray(settings)) throw new ApplyError(`${settingsPath}: settings.json no es un objeto JSON — no lo toco`);
 
-  const { integ, profile } = readConfig({ env });
+  const { integ, profile } = readConfig({ env, runConfig });
   const minimalIds = loadMinimalIds(a.effects || path.join(SETUP_DIR, 'install-effects.json'));
   const has = (need) => need === 'telegram-plugin' && fs.existsSync(path.join(home, '.claude', 'plugins', 'cache', 'claude-plugins-official', 'telegram'));
   const decision = decide(list, { env, integ, profile, minimalIds, platform, has });
@@ -711,11 +717,18 @@ function main(argv = process.argv.slice(2), env = process.env) {
   return 0;
 }
 
-module.exports = { TOP_CANONICAL, ENV_CANONICAL, lugarCanonico, harnessIndexOf, validateList, loadList, loadMinimalIds, readConfig, decide, applyToSettings, normMatcher, invokesRepoPath, namesFile, runnerFor, normalizePullLine, main, ApplyError };
-
-if (require.main === module) {
-  try { process.exitCode = main(); } catch (e) {
+/**
+ * La línea de comandos entera, como función (story 8.36): lo mismo que corre el arranque de este archivo como programa,
+ * con su `try/catch`. Devuelve el código de salida. La llama la tanda del aplicador (scripts/setup/applier-batch.js),
+ * que le pasa `runConfig` para leer la configuración en su mismo proceso.
+ */
+function cli(argv, opts = {}) {
+  try { return main(argv, process.env, opts); } catch (e) {
     process.stderr.write(`✗ tycon: ${e instanceof ApplyError ? e.message : (e && e.stack) || e}\n`);
-    process.exitCode = 1;
+    return 1;
   }
 }
+
+module.exports = { TOP_CANONICAL, ENV_CANONICAL, lugarCanonico, harnessIndexOf, validateList, loadList, loadMinimalIds, readConfig, decide, applyToSettings, normMatcher, invokesRepoPath, namesFile, runnerFor, normalizePullLine, main, cli, ApplyError };
+
+if (require.main === module) process.exitCode = cli(process.argv.slice(2));

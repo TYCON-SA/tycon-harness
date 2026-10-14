@@ -280,6 +280,54 @@ function measureResult({ v, home, clone, env, platform, pwsh, out, finding, reda
   return facts;
 }
 
+/**
+ * Cuánto tarda el arranque en la variante que se cuenta (story 8.36, T9). Sólo hechos, sin hallazgos:
+ *   · una corrida del aplicador como la lanza `harness.js` (`pwsh -File … --report-json`, el candado ya tomado) con cada
+ *     Node anotado por `NODE_OPTIONS=--require <contador>` (sin intermediarios que cambien cómo se pasan los argumentos);
+ *   · cinco corridas más igual, sin contador, y su mediana en segundos;
+ *   · tres `harness.js startup` en el lugar y sin red (`TYCON_STARTUP_DETACH=0`, `TYCON_UPDATE=0`), y su mediana.
+ * La primera corrida (la contada) hace además de calentamiento: las cinco miden el estado estable.
+ */
+const median = (xs) => { const s = xs.filter((x) => typeof x === 'number').sort((a, b) => a - b); return s.length ? s[Math.floor((s.length - 1) / 2)] : null; };
+function measureStartupTiming({ home, clone, env, pwsh, scratch, runs = 5, startups = 3 }) {
+  const facts = { applier_runs_s: [], applier_median_s: null, node_processes: null, node_by_script: null, startup_runs_s: [], startup_median_s: null, problems: [] };
+  const applier = path.join(clone, 'scripts', 'install-tycon-hooks.ps1');
+  if (!pwsh || !fs.existsSync(applier)) { facts.problems.push(!pwsh ? 'sin pwsh en el PATH' : `sin ${applier}`); return facts; }
+  fs.mkdirSync(scratch, { recursive: true });
+  const report = path.join(scratch, 'timing-report.json');
+  const applierEnv = Object.assign({}, env, { TYCON_HARNESS_LOCK_HELD: '1', TYCON_HARNESS_GIT_BASH_HEALTH: '1' });
+  const runApplier = (extraEnv = {}) => L.run(pwsh, ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', applier, '--report-json', report], { cwd: home, env: Object.assign({}, applierEnv, extraEnv), timeoutMs: BLOCK_TIMEOUT_MS });
+  // el contador: cada Node que arranca anota su guion (o `-e`) en una línea. Barras hacia adelante: NODE_OPTIONS lee la
+  // barra invertida como escape dentro de las comillas.
+  const counter = path.join(scratch, 'node-counter.js');
+  const calls = path.join(scratch, 'node-calls.txt');
+  try { fs.rmSync(calls, { force: true }); } catch (_) { /* nada */ }
+  fs.writeFileSync(counter, `require('fs').appendFileSync(${JSON.stringify(calls)}, (process.argv[1] ? require('path').basename(process.argv[1]) : '-e') + '\\n');\n`);
+  const counted = runApplier({ NODE_OPTIONS: `--require "${counter.replace(/\\/g, '/')}"` });
+  if (counted.error || counted.exit !== 0) facts.problems.push(`la corrida contada salió ${counted.error || counted.exit}: ${lastLines(counted.stderr) || lastLines(counted.stdout)}`);
+  try {
+    const names = fs.readFileSync(calls, 'utf8').split('\n').filter(Boolean);
+    facts.node_processes = names.length;
+    facts.node_by_script = names.reduce((a, n) => Object.assign(a, { [n]: (a[n] || 0) + 1 }), {});
+  } catch (e) { facts.problems.push(`no pude leer el conteo de procesos: ${e.code || e.message}`); }
+  for (let i = 0; i < runs; i++) {
+    const r = runApplier();
+    if (r.error || r.exit !== 0) { facts.problems.push(`la corrida ${i + 1} del aplicador salió ${r.error || r.exit}`); continue; }
+    facts.applier_runs_s.push(Math.round(r.ms / 10) / 100);
+  }
+  facts.applier_median_s = median(facts.applier_runs_s);
+  const placed = path.join(home, '.claude', PLACE.PLACE_NAME, 'scripts', 'setup', 'harness.js');
+  const harness = fs.existsSync(placed) ? placed : path.join(clone, 'scripts', 'setup', 'harness.js');
+  const startupEnv = Object.assign({}, env, { TYCON_STARTUP_DETACH: '0', TYCON_UPDATE: '0' });
+  for (let i = 0; i < startups; i++) {
+    const r = L.run(process.execPath, [harness, 'startup'], { cwd: home, env: startupEnv, timeoutMs: BLOCK_TIMEOUT_MS });
+    if (r.error || r.exit !== 0) { facts.problems.push(`el startup ${i + 1} salió ${r.error || r.exit}: ${lastLines(r.stderr) || lastLines(r.stdout)}`); continue; }
+    facts.startup_runs_s.push(Math.round(r.ms / 10) / 100);
+  }
+  facts.startup_median_s = median(facts.startup_runs_s);
+  return facts;
+}
+
 /** `harness.js uninstall --yes`, y qué quedó. */
 function measureUninstall({ v, home, clone, env, finding }) {
   const harness = path.join(clone, 'scripts', 'setup', 'harness.js');
@@ -419,6 +467,15 @@ function measure({ lab, out, fence, platform = process.platform, disposable = fa
     rec.fact('variants', variants);
   }
   rec.fact('measured_variant', chosen ? chosen.id : null);
+  // cuánto tarda el arranque en la variante que se cuenta (story 8.36): sólo en Windows, que es lo que se mide
+  if (chosen && L.isWin(platform)) {
+    try {
+      const env = L.labEnv(chosen.home, { base: baseEnv, extra: chosen.env, platform });
+      if (chosen.path_first) { const k = L.pathKey(env); env[k] = `${chosen.path_first}${path.delimiter}${env[k] || ''}`; }
+      process.stdout.write(`install: ${chosen.id} — mido el arranque (aplicador y startup)\n`);
+      rec.fact('startup_timing', Object.assign({ variant: chosen.id }, measureStartupTiming({ home: chosen.home, clone: chosen.clone, env, pwsh, scratch: path.join(scratch, 'startup-timing') })));
+    } catch (e) { rec.fact('startup_timing', { variant: chosen.id, problems: [`la medición tiró: ${e.message}`] }); }
+  }
   L.writeJsonAtomic(path.join(lab, 'lab-state.json'), { schema: L.SCHEMA, source, allow_temp: allowTemp, measured_variant: chosen });
   if (!ran) return { status: L.STATUS.error, reason: `no pude medir: ninguna variante pudo correr (${Object.entries(variants).map(([k, x]) => `${k}: ${x.not_run}`).join(' · ')})` };
   if (broke.length) return { status: L.STATUS.error, reason: `no pude medir: ${broke.join(' · ')}` };
@@ -446,4 +503,4 @@ function main(argv) {
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
 
-module.exports = { NAME, VARIANTS, LINKS, measure, findClone, runBlock, seenHomes, shellFilesWithCr, measureLinks, photoDiff };
+module.exports = { NAME, VARIANTS, LINKS, measure, measureStartupTiming, findClone, runBlock, seenHomes, shellFilesWithCr, measureLinks, photoDiff };
