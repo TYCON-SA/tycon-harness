@@ -23,7 +23,14 @@
 #                          TMPDIR, y sin las herramientas del vocabulario en el PATH, como las portables
 #   7 controls-bench       node scripts/controls-bench/runner.js --tool both --baseline check --json <salida>/bench.json
 #   8 spanish-names        sólo con --range: node scripts/publishing/spanish-names.js --range <rango>
-#   9 clean-machine        sólo con --clean-machine: bash scripts/tests/clean-machine.test.sh en su modo público, o sea con
+#   9 repo-lint            sólo con --range: el pre-commit del repo (.githooks/pre-commit-harness) sobre lo que trae el
+#                          rango, como si se commiteara: en una copia de trabajo aparte de la punta, con el índice en la
+#                          punta y HEAD en la base (`git reset --soft`). Cada control decide si le toca, igual que al
+#                          commitear; los que necesitan lo privado (la lista de nombres del equipo) no lo tienen acá y
+#                          callan: eso lo mira el freno de quien empuja y la verificación diaria de lo publicado
+#  10 version              sólo con --range: version.json de la punta tiene que ser MAYOR que el de la base (cada pedido
+#                          lo sube: es lo que una máquina instalada compara para saber si hay algo nuevo)
+#  11 clean-machine        sólo con --clean-machine: bash scripts/tests/clean-machine.test.sh en su modo público, o sea con
 #                          TYCON_CLEAN_MACHINE=1 (pedida de forma explícita) y TYCON_CLEAN_MACHINE_SOURCE=<root> (sobre
 #                          este repo, que es la copia; sin esa variable la prueba exporta la copia desde el repo del equipo)
 #
@@ -380,6 +387,73 @@ spanish_names() {
   node scripts/publishing/spanish-names.js --range "${RANGE}"
 }
 
+# los dos extremos de --range, ya comprobados; si no resuelven, «no pude correr» (la misma regla que spanish_names)
+range_ends() {
+  local x
+  case "${RANGE}" in
+    ?*...?*) RANGE_BASE="${RANGE%%...*}"; RANGE_TIP="${RANGE##*...}" ;;
+    *) echo "no pude correr: --range pide <base>...<punta> y recibió «${RANGE}»"; return "${BLOCKED_EXIT}" ;;
+  esac
+  for x in "${RANGE_BASE}" "${RANGE_TIP}"; do
+    git -C "${ROOT}" rev-parse --verify --quiet "${x}^{commit}" >/dev/null 2>&1 \
+      || { echo "no pude correr: la historia no alcanza para --range ${RANGE}: ${x} no resuelve a un commit en ${ROOT} (¿un clon sin la historia completa?)"; return "${BLOCKED_EXIT}"; }
+  done
+}
+
+# ── paso 9 · el pre-commit del repo sobre lo que trae el rango ─────────────────────────────────────
+# En una copia de trabajo APARTE: el checkout de la CI no se mueve (los pasos de antes y de después miden la punta tal
+# cual). La base es el ancestro común, como el `...` del rango: lo que trae el pedido, no lo que la base avanzó.
+repo_lint() {
+  local mb wt rc
+  range_ends || return $?
+  mb="$(git -C "${ROOT}" merge-base "${RANGE_BASE}" "${RANGE_TIP}")" \
+    || { echo "no pude correr: no hay ancestro común entre ${RANGE_BASE} y ${RANGE_TIP}"; return "${BLOCKED_EXIT}"; }
+  wt="${OUT}/repo-lint-tree"
+  rm -rf "${wt}"
+  git -C "${ROOT}" worktree add --quiet --detach "${wt}" "${RANGE_TIP}" \
+    || { echo "no pude correr: no pude armar la copia de trabajo de ${RANGE_TIP}"; return "${BLOCKED_EXIT}"; }
+  if ! git -C "${wt}" reset --quiet --soft "${mb}"; then
+    git -C "${ROOT}" worktree remove --force "${wt}" >/dev/null 2>&1
+    echo "no pude correr: no pude poner HEAD en la base ${mb}"; return "${BLOCKED_EXIT}"
+  fi
+  echo "repo-lint: lo que trae ${RANGE} ($(git -C "${wt}" diff --cached --name-only | wc -l | tr -d ' ') archivo(s)), con el pre-commit de la punta"
+  ( cd "${wt}" && bash .githooks/pre-commit-harness < /dev/null ); rc=$?
+  git -C "${ROOT}" worktree remove --force "${wt}" >/dev/null 2>&1
+  return "${rc}"
+}
+
+# ── paso 10 · la versión sube ─────────────────────────────────────────────────────────────────────
+version_bumped() {
+  local mb
+  range_ends || return $?
+  mb="$(git -C "${ROOT}" merge-base "${RANGE_BASE}" "${RANGE_TIP}")" \
+    || { echo "no pude correr: no hay ancestro común entre ${RANGE_BASE} y ${RANGE_TIP}"; return "${BLOCKED_EXIT}"; }
+  node - "${ROOT}" "${RANGE_BASE}" "${RANGE_TIP}" <<'JS'
+'use strict';
+const { execFileSync } = require('child_process');
+const [root, base, tip] = process.argv.slice(2);
+const blocked = (m) => { console.log(`no pude correr: ${m}`); process.exit(9); };
+const read = (ref) => {
+  let text;
+  try { text = execFileSync('git', ['-C', root, 'show', `${ref}:version.json`], { stdio: ['ignore', 'pipe', 'pipe'] }).toString('utf8'); } catch (_) { return null; }
+  try { return String(JSON.parse(text).version || ''); } catch (e) { blocked(`version.json de ${ref} no es JSON: ${e.message}`); }
+};
+const parts = (v) => { const m = /^(\d{4})\.(\d{1,2})\.(\d{1,2})\.(\d+)$/.exec(v || ''); return m ? m.slice(1).map(Number) : null; };
+const was = read(base);
+const now = read(tip);
+if (now === null) blocked(`la punta ${tip} no trae version.json`);
+if (was === null) { console.log(`version: la base no trae version.json; la punta dice ${now}`); process.exit(0); }
+const a = parts(was); const b = parts(now);
+if (!b) { console.log(`version: «${now}» no tiene la forma AAAA.MM.DD.N`); process.exit(1); }
+if (!a) blocked(`la versión de la base, «${was}», no tiene la forma AAAA.MM.DD.N`);
+let cmp = 0;
+for (let i = 0; i < 4 && !cmp; i += 1) cmp = Math.sign(b[i] - a[i]);
+if (cmp > 0) { console.log(`version: ${was} → ${now}`); process.exit(0); }
+console.log(`version: la punta dice ${now} y la base ${was}: cada pedido sube la versión (merge-pr.js bump-version, lo hace la skill de merge)`);
+process.exit(1);
+JS
+}
+
 # ── la corrida ─────────────────────────────────────────────────────────────────────────────────────
 run_step node-check own "" "git node" node_check
 run_step build-check file build/check.js "node" node build/check.js
@@ -389,6 +463,8 @@ run_step portable-suites file scripts/tests/portable-suites.test.sh "bash node" 
 run_step agent-skills-suites own scripts/tests/suites.json "bash node" agent_skills_suites
 run_step controls-bench file scripts/controls-bench/runner.js "node" node scripts/controls-bench/runner.js --tool both --baseline check --json "${OUT}/bench.json"
 [ "${WITH_RANGE}" -eq 0 ] || run_step spanish-names own scripts/publishing/spanish-names.js "git node" spanish_names
+[ "${WITH_RANGE}" -eq 0 ] || run_step repo-lint own .githooks/pre-commit-harness "git bash node" repo_lint
+[ "${WITH_RANGE}" -eq 0 ] || run_step version own version.json "git node" version_bumped
 # la máquina limpia, en su modo PÚBLICO: pedida de forma explícita (sin eso, fuera del nocturno sale NO MEDIDA) y sobre
 # ESTE repo (sin eso cae en el modo interno, que exporta la copia desde el repo del equipo)
 [ "${CLEAN_MACHINE}" -eq 0 ] || run_step clean-machine file scripts/tests/clean-machine.test.sh "bash" \
