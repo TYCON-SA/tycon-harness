@@ -1,6 +1,8 @@
-# El arnés
+# Índice de guías del arnés
 
-Guías y convenciones compartidas del equipo TYCON para trabajar con **Claude Code y Codex** — el arnés es multi-modelo: Claude Code es el canónico (el markdown manda) y el lado Codex se traduce y despliega solo, con la llave `TYCON_CODEX=1` (setup en `INSTALL.md §Lado Codex`; paridad medida en cada arranque por `harness-audit.js --parity`). Centraliza reglas que antes vivían duplicadas en los `CLAUDE.md` de cada proyecto.
+Este archivo se carga en cada sesión. Dice qué guía leer según la tarea: las guías no se cargan solas, se leen
+cuando la tarea lo pide. Vale igual con Claude Code y con Codex. Si algo del arnés no anda, el comando
+`/tycon-harness` dice la versión, si está bien instalado y si hay una nueva.
 
 
 ---
@@ -13,31 +15,29 @@ Recorrido completo: **[guides/que-hace-el-arnes.md](guides/que-hace-el-arnes.md)
 
 ## Cuándo leer cada guía
 
-El agente debe leer estas guías **según el contexto de la tarea**, no todas siempre. Son
-lectura **on-demand** (cuando aplica el trigger), **no** imports
-automáticos — un path en backticks NO se carga solo en contexto.
+El agente lee estas guías **según la tarea**, no todas siempre. Una ruta escrita acá no se carga sola: se lee cuando
+la fila aplica.
 
 | Trabajando en... | Leer (on-demand) |
 |---|---|
 | Entender el arnés entero, explicárselo a alguien, o dar la charla | `guides/que-hace-el-arnes.md` |
 | Entender en detalle UNA pieza — su porqué, su medición, su red de pruebas | `guides/piezas-del-arnes.md` (el README es el índice; el detalle está ahí) |
-| Saber cuánto contexto carga cada sesión y cada revisor, y de qué está hecho | `node scripts/tools/context-budget.js [--measured]` — `--measured` da el piso REAL de los lanzamientos, no el estimado |
+| Ver qué versión del arnés tenés, si está bien instalado y si hay una nueva | el comando `/tycon-harness` (sólo mira, no cambia nada) |
+| Configurar el arnés para una organización: dónde vive cada repo y a quién se asignan los avisos de la noche | `harness.js team-config` (la página local; la portada, §Para una organización) |
 | Crear, validar o implementar stories | `story-format.md` |
 | Linkear una story nueva a la que viene a fixear/recalibrar (back-links `followup_of:` / `followed_up_by:`) | `story-format.md` §1.2 |
 | Back-fillear back-links de follow-ups en stories existentes (audit periódico de un repo) | `scripts/tools/tycon-backfill-followups.js` (dry-run / `--apply` / `--render-table`) |
 | Una story "no aparece" para el validator / el backfill / los scripts de status, o adoptar el lint de frontmatter en un repo | `story-format.md` §1.0 + `scripts/lib/lint-story-frontmatter.js` |
 | Escribir o editar guías, skills, steps o material del sitio — cómo nombrar Claude/Codex/el agente | `guides/criterio-tres-claude.md` |
-| Cualquier tarea (engram siempre activo) | `guides/engram-workflow.md` |
+| Memoria persistente con engram (si la integración está prendida) | `guides/engram-workflow.md` |
 | Commit, push, merge, cualquier cosa de git | `guides/git-commit-conventions.md` |
 | Correr 2 pipelines/stories en paralelo en el mismo repo · mergear sin congelar el working tree del dev · aislar escrituras de agentes paralelos | `guides/git-worktrees.md` (helper: `scripts/tools/tycon-worktree.sh`) |
 | Planificación de cambios no triviales | `guides/workflow-orchestration.md` |
 | Crear/reescribir un artefacto de planning (UX spec, navigation map, architecture, PRD) sobre dominio ya cubierto por un artefacto aprobado | `guides/workflow-orchestration.md` §12 — frontmatter `reconciles:`/`supersedes_in:` OBLIGATORIO; sin eso no pasa de `draft` (caso UX spec V7 que ignoró el catálogo firmado) |
 | Story que crea/modifica layout o navegación de pantalla | `guides/workflow-orchestration.md` §11 — validar contra el artefacto de IA antes de `done` (enforced por `WIRING-C5` desde 2026-06-10) |
 | Pipeline de agentes, invocar advisors, integración BMAD | `guides/agent-architecture.md` |
-| Entender qué hace el pase adversarial del pipeline (paso 5b), leer las pruebas con las que confirmó un hallazgo, o promoverlas a la suite (`marker.js promote-probe`) | `agent-skills/skills/tycon-pipeline/steps/step-05b-adversarial-verify.md` |
-| Upgrade de BMAD, debug de incompatibilidad con advisors | `guides/bmad-contract.md` |
+| Entender qué hace el pase adversarial del pipeline (paso 5b), leer las pruebas con las que confirmó un hallazgo, o promoverlas a la suite (`marker.js promote-probe`) | `skills/tycon-pipeline/steps/step-05b-adversarial-verify.md` |
 | Entender por qué un advisor reportó X, agregar/retirar reglas | `guides/advisor-rules-catalog.md` |
-| Antes de retirar/relajar una regla, hook o advisor — ver qué incidente lo motivó | `guides/incident-log.md` |
 | Cerrar una story (transición a `review`/`done`) — protocolo ACCOV-C7..C10 | `guides/accov-governance-protocol.md` |
 | Configurar hooks `.claude/settings.json` en un proyecto .NET TYCON (migraciones inmutables, dotnet format) | `guides/dotnet-hooks.md` |
 | Pasar una story de `review` → `done` (sign-off post-implementación) | `guides/definition-of-done.md` |
@@ -52,48 +52,24 @@ automáticos — un path en backticks NO se carga solo en contexto.
 | Crear stories que generen work items en Azure DevOps; configurar `.tycon/ado-config.yaml` | `guides/ado-projects.md` |
 | Consultar una base de PRODUCCIÓN · te frenó el freno de producción y querés saber por qué · declarar un servidor en `.tycon/production.json` · instalar o actualizar el freno (pide `sudo`) | `guides/produccion-con-permiso.md` |
 | Activar/desactivar el freno de mano del harness (bloqueo de `rm -rf /`, `--no-verify`, `curl\|bash`, `DROP DATABASE`, etc.) | `guides/safety-guard.md` |
-| Cambiar una regla que tiene que estar SIEMPRE cargada en el `CLAUDE.md` de todos (estilo de respuesta, comunicación), o agregar un bloque nuevo | `claude-md-blocks/` — editar el `.md` y commitear; se propaga solo en el próximo `SessionStart` |
-| Entender por qué el bloque de Azure DevOps dice lo que dice —antes de podarlo, relajarlo o discutirlo— · el detalle de los seis casos con sus comandos | `guides/ado-cola-y-listados.md` |
-| Tocar la regla de estilo de respuesta, el medidor `response-style-meter.js`, o el formato de reporte de un agente · entender por qué el bloque dice lo que dice antes de podarlo | `guides/response-style.md` |
-| Te apareció un aviso de versión de engram, o validaste una versión nueva y querés que el equipo la adopte | `engram-version` (el pin, con el procedimiento de bump en su cabecera) |
-| Armar o publicar la copia pública · el exportador o `mirror.js` frenó · un `git push` o un `gh` frenado · `verify` da 1 · qué entra y qué no · los reemplazos · sumar una skill ajena · máquina limpia | `guides/publicacion-espejo.md` (§«La publicación»; terceros: `third-party-skills.json`) + cabeceras de `scripts/publishing/{export,mirror}.js` — a mano: `export.js --explain` |
-| Un commit no se crea por un nombre real en un archivo que se publica · cómo salir · el termómetro de nombres en rojo · subir o bajar el techo | `guides/publicacion-espejo.md` §«El núcleo sin nombres» + `scripts/publishing/new-names.js` (cabecera) |
-| Nombrar algo que ejecuta la máquina · frenó el freno de castellano · renombrar sin romper a nadie (`renames.json`) | `guides/nombres-en-ingles.md` |
-| Antes de crear una skill/agent/guide/hook nuevo (chequear si ya existe equivalente — evita tejido cicatrizal) | `guides/skill-scout.md` |
-| Medir cuánto del context window consume el harness en cada sesión + qué recortar | `guides/context-budget.md` |
-| Auditar drift entre catálogo de reglas y advisors (mensual, o tras cambios estructurales) | `guides/rules-distill.md` |
-| Health-check completo del harness (score 0-10 sobre 7 categorías, monthly o pre-demo) | `guides/harness-audit.md` |
 | Setup del grabador silencioso (instinct mining) + comando `/tycon-instincts` | `guides/instinct-mining.md` |
-| Justificar por qué NO usamos un modelo local (o revisar si conviene ahora) — medición propia + estado de la industria | `guides/decisions/local-model-decision-2026-08.md` |
 | Bajar costo del pipeline TYCON (Haiku como executor, Opus como advisor on-demand) + flag `--cost-tier lean` + qué effort/modelo de sesión usar para una story (effort hint PIPE-C8) | `guides/harness-cost-tiering.md` |
-| Entender por qué un run del pipeline salió caro/lento, o verificar que las optimizaciones de costo siguen cableadas | `guides/decisions/pipeline-cost-audit-2026-06-11.md` |
 | Adoptar la "wiki por temas" en un repo de specs, o entender/arreglar el lint story↔wiki (`scripts/tools/lint-wiki.sh`) | `guides/wiki-topics.md` |
-| Llevar el harness a Codex (u otra herramienta): arquitectura de fuente única, etapas, riesgos | `guides/codex-migration.md` |
-| Antes de portar/tocar una pieza concreta (un hook, un advisor, un paso del pipeline, un MCP): qué cambia entre Claude Code y Codex y qué caso de prueba la cubre | `guides/codex-divergence-inventory.md` |
-| Sospecha de que un hook del arnés está apagado sin rastro (rc del shell, sellos diarios) · agregar un kill-switch nuevo | `guides/decisions/interruptores-fuera-de-tycon-2026-08-25.md` |
 | Un commit llegó a `main` sin pasar por los controles (otra máquina, la web de ADO, hooks salteados) · adoptar el portón de CI en un repo · entender por qué el portón pide el **registro de autoría** (quién implementó, quiénes revisaron) | `guides/ci-gate.md` |
 | Apareció el aviso "el desempate por modelo abrió N permisos" · decidir si el modelo del portón se queda o se saca (`--report`) | `scripts/hooks/lane-llm-notice.js` |
 | Apareció «sql: … SIN COMPILAR» o «NO compila» al commitear · configurar la base contra la que se compilan las migraciones · una migración que borra datos y hay que validarla | `scripts/ci/sql-compile.js` (cabecera) + `guides/definition-of-done.md` §1.quater |
-| Tocar un hook del arnés (verificar que sigue verde antes del commit) · agregar un hook/advisor nuevo (entra CON sus casos) · el aviso "controls-bench EN ROJO" apareció al arranque | `guides/controls-bench.md` |
-| Saber cuánto consumió una corrida del pipeline, o leer el hilo de una que ya pasó · una corrida dice «no medido» o «borrada» · por qué el hilo no viaja por git | `scripts/metrics/tokens-digest.js` (cabecera) — a mano: `--run <volcado>` \| `--pending` \| `--all` |
-| Saber cuánto **costó la revisión** de una corrida (cuántos revisores, cuánto tardaron, cuánto consumieron) · por qué una corrida dice «estimado» y otra un número · renovar el supuesto del estimado | `scripts/metrics/reviewers-cost.js` (cabecera) + `scripts/metrics/reviewers-cost-assumption.json` — a mano: `--run <volcado>` \| `--all` |
-| Decidir si una regla del catálogo se retira · una regla aparece como «candidata a retiro», «rota» o «sin probar» y querés saber por qué · cambiar el criterio de poda | `scripts/nightly/dashboard/prune.js` (cabecera) + `scripts/nightly/dashboard/sources.json` → `prune` — a mano: `node scripts/nightly/dashboard/prune.js` · el catálogo contado: `node scripts/lib/rules-catalog.js` · colisiones: `--collisions` |
-| La pregunta 4 del tablero dice «reportaron N de M máquinas» y falta una · declarar una máquina esperada · un control o escape sale como «otro» · el reductor se niega (exit 2) | `scripts/nightly/dashboard/reducer.js` (cabecera) + `sources.json` (misma carpeta) → `reducer` — a mano: `node scripts/nightly/dashboard/reducer.js --json` · alias de esta máquina: `--alias` · lo que subió: `upload-runs.log` y `~/.claude/.tycon-pipeline/registros-buzon/cobertura.json` |
 | Apareció «retro-pending: merge(s) a main sin su archivo de retrospectiva» al cerrar el turno o al arrancar · un merge necesita su retro · se quiere la retro con modelo | `scripts/metrics/retro-heartbeat.js` (cabecera; a mano: `--repo <repo> --merge <sha> [--story <id>]`) · antes: `node scripts/hooks/retro-pending.js --judge <repo>` · con modelo: pedir «retro con modelo» |
-| Ver las corridas del pipeline una por una (tiempo por paso, controles, agentes, vueltas, tokens) | `node scripts/nightly/dashboard/dashboard.js --view runs` (con permiso sobre el buzón de Azure, las de todas las máquinas; la ruta de la página la imprime) |
-| **Agregar un estado de story al vocabulario**, o entender por qué una story aparece como «desconocida» en el tablero · por qué `cancelled` no cuenta como entregada · qué pasa si el diccionario queda ilegible | `scripts/metrics/states.json` (el diccionario, con el motivo de cada decisión adentro) + `story-format.md` §1 |
 | Escribir una story que **corrige, recalibra o extiende** otra (`followup_of:`) — qué causa declarar en `followup_reason:` · por qué el lint frena a una story nueva y a una vieja no · agregar una causa al vocabulario | `scripts/metrics/rework-causes.json` (las cuatro causas, con el motivo de cada una) + `story-format.md` §1.2 |
-| Apareció "el examen de los revisores NO ESTÁ CORRIENDO" al arrancar · cambiar qué máquina lo corre o cada cuánto · entender por qué el aviso calla unos números que sí existen | `scripts/controls-bench/periodic-exam.js` (arranque: `--dry-run`) |
 | Apareció "ya hay otra(s) sesión(es) viva(s) sobre este mismo checkout" al arrancar, o el freno de git te paró por otra sesión · dos chats sobre el mismo repo | `scripts/hooks/session-collision-guard.js` + `guides/git-worktrees.md` |
 | Apareció «el arnés corre desde X, no desde la ruta canónica» al arrancar · un dev tiene el arnés o los proyectos en otra carpeta y pregunta si eso rompe algo | `scripts/lib/canonical-path.js` + `INSTALL.md` (el arnés y los proyectos pueden vivir en cualquier carpeta) |
-| Un control trata a un clon del arnés como si fuera un producto (o al revés) · querés saber si un repo cuenta como «del arnés» y por qué | `node scripts/lib/harness-repo.js <dir>` (decide el remoto `origin`; la carpeta sólo si no hay remoto) |
 | La matriz da un criterio por corrido con evidencia de otra story · evidencia huérfana | `pipeline.js evidence-key --story <ruta>` |
 | Una auditoría del arnés dice «0 repos» · un revisor dice «no encontré hermanos» · querés saber dónde cree el arnés que están tus repos, o decírselo | `node scripts/lib/repos-root.js` (imprime la raíz y de dónde salió) · `TYCON_REPOS_ROOT` es la única variable, para auditorías y revisores |
-| Apareció "ARNÉS ATRASADO" al arrancar, o "tu copia del arnés estaba N commits atrás" al primer prompt · un dev choca contra un freno cuyo habilitador "no está registrado" · un control nuevo no llega a una máquina aunque el clon "se actualiza solo" | `tycon-pipeline/scripts/lib/guides-heal.js` (agent-skills) |
+| Apareció "ARNÉS ATRASADO" al arrancar, o "tu copia del arnés estaba N commits atrás" al primer prompt · un dev choca contra un freno cuyo habilitador "no está registrado" · un control nuevo no llega a una máquina aunque el clon "se actualiza solo" | `skills/tycon-pipeline/scripts/lib/guides-heal.js` |
 | Backend .NET de plugins Bizuit (paquete bizuit) | guides/bizuit/bizuit-plugin-dotnet.md |
 | Frontend React/TS de plugins Bizuit (paquete bizuit) | guides/bizuit/bizuit-plugin-react.md |
 | Frontend Next.js (App Router) de plugins Bizuit (paquete bizuit) | guides/bizuit/bizuit-plugin-nextjs.md |
 | La spec de un proceso BPMN de BIZUIT, o por qué uno «pasó todos los controles» sin sus reglas (paquete bizuit) | guides/bizuit/bizuit-bpmn-spec-contract.md |
+| Mantener el arnés: publicar, el banco de controles, el catálogo de reglas, la auditoría, el costo del pipeline, el lado Codex, los procesos de la noche | `guides/mantener-el-arnes.md` |
 
 
 ---
@@ -137,7 +113,7 @@ guides/bizuit/bizuit-plugin-react.md §3. Incidente recurrente multi-proyecto �
 - Stories: `tycon-create-story` (Mary+GOLD; crea el WI de ADO vía `tycon-ado-story-wi`), `tycon-story-validator`.
 - Review: `bmad-code-review`, `security-review`, advisors `tycon-plugin-*`.
 - Merge a main: `/tycon-merge-to-main`. Drift de stories: `/check-story-drift`.
-- Engram: siempre con `project:` (nombres canónicos en `guides/engram-workflow.md`).
+- Engram (si la integración está prendida): siempre con `project:` (nombres canónicos en `guides/engram-workflow.md`).
 - **Commits: el agente NUNCA commitea ni pushea sin autorización explícita.**
 
 ---

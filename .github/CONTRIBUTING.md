@@ -1,18 +1,16 @@
 # Cómo contribuir
 
-This repository is a mirror: it is regenerated from the team's internal repositories, so pull requests are never merged on GitHub. If a change is accepted, it goes into the internal repository and comes back here with the next sync, and the pull request is closed with a link to that sync; if it is not accepted, it is closed with the reason. Credit is a link to your original pull request in the sync pull request (no `Co-authored-by` trailer). Before opening one, run what the CI runs: `bash scripts/ci/public-ci.sh`. Contributions are accepted under the Apache License 2.0, with no CLA. Issues and pull requests are welcome in English or in Spanish.
+Pull requests are welcome. Anyone can send one with code: it runs the repository's validation, and TYCON reviews it and decides. If it is accepted, it is merged here, with your commits. For now, the automatic validation does not run on pull requests from a fork, so TYCON reviews those by hand. Before opening one, run what the CI runs: `bash scripts/ci/public-ci.sh`. Contributions are accepted under the Apache License 2.0, with no CLA. Issues and pull requests are welcome in English or in Spanish.
 
-## El repo es un espejo
+## Los pull requests son bienvenidos
 
-Este repo es una copia que se regenera desde los repos internos del equipo: es un **espejo**. Lo que ves acá sale de
-ahí en cada sincronización, así que un pull request **no se mergea en GitHub**:
+Cualquiera puede mandar un pull request con código. Corre la validación del repo, y TYCON lo revisa y decide:
 
-- **Si se acepta**, el cambio entra al repo interno y vuelve acá en la próxima sincronización. El pull request se cierra
-  citándola.
+- **Si se acepta**, se mergea acá, con tus commits: el crédito queda en la historia del repo.
 - **Si no se acepta**, se cierra con su motivo.
 
-El crédito es el enlace al pull request original, que queda en el pull request de sincronización. No se agrega una
-línea `Co-authored-by` al commit: el crédito es ese enlace, sin `Co-authored-by`.
+Por ahora, la validación automática no corre sobre un pull request que viene de una copia del repo (un fork): esos los
+revisa TYCON a mano.
 
 ## Antes de abrir un pull request
 

@@ -75,9 +75,12 @@ const leer = (rel) => fs.readFileSync(path.join(REPO, rel), 'utf8');
 test('Readme_IndiceCompleto (T6): cada ruta del «Qué contiene» de la base sigue nombrada', () => {
   const { rutas } = JSON.parse(fs.readFileSync(FIXTURE, 'utf8'));
   assert.ok(Array.isArray(rutas) && rutas.length >= 100, `la lista de la base tiene ${rutas && rutas.length} rutas; se esperaban las ~110 del índice`);
-  const donde = leer('guides/piezas-del-arnes.md') + '\n' + leer('README.md');
+  // el índice se partió en dos: lo de uso diario queda en el README (se carga en cada sesión) y lo de quien mantiene el
+  // arnés pasó a guides/mantener-el-arnes.md (a demanda), que el README nombra en su última fila
+  const donde = leer('guides/piezas-del-arnes.md') + '\n' + leer('README.md') + '\n' + leer('guides/mantener-el-arnes.md');
   const faltan = rutas.filter((r) => !nombrada(r, donde));
-  assert.deepEqual(faltan, [], `rutas del índice de la base que ya no nombra ni la guía de piezas ni el README: ${faltan.join(', ')}`);
+  assert.deepEqual(faltan, [], `rutas del índice de la base que ya no nombra ni la guía de piezas, ni el README, ni la guía de mantener: ${faltan.join(', ')}`);
+  assert.ok(nombrada('guides/mantener-el-arnes.md', leer('README.md')), 'el README nombra la guía de mantener el arnés');
 });
 
 test('Readme_IndiceCompleto (T6): una ruta dentro de otra más larga NO cuenta como nombrada', () => {

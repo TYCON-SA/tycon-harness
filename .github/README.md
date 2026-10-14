@@ -1,23 +1,28 @@
-# TYCON Harness for Claude Code
+# TYCON Harness for Claude Code and Codex
 
 English · [Castellano](README.es.md)
 
-It adds to Claude Code the rules, guides and reviews that TYCON uses to build BIZUIT extensions (.NET and React).
+It adds to Claude Code (and to Codex, if you turn it on) the rules, guides and reviews that TYCON uses to build
+BIZUIT extensions (.NET and React).
 You ask for a change: Claude makes a plan, waits for your go-ahead, writes the code, runs the tests and readies the commit.
 Everything runs on your machine, inside Claude Code, and it sends your code nowhere.
 
 ## Before you install: what changes on your machine
 
-The recommended install sets the full profile (`full`). It changes things in all your projects, not just one:
+If you install with Claude, as described below, you get the full profile (`full`); the command by hand asks you which
+one you want. The full profile changes things in all your projects, not just one:
 
-- Claude answers you in Spanish, briefly and with the conclusion first.
+- **Claude answers you in Spanish**, briefly and with the conclusion first. All command output, hook messages and
+  rules are in Spanish too; there is no English option today.
 - In a repo that works with stories, Claude does not edit code without going through the harness's story process.
 - Git starts using a global folder for its commit checks (`core.hooksPath`). From then on, git stops running each
   repo's own checks, the ones in `.git/hooks/`. Claude asks you before it sets it.
 - Once a day it reads the git history of the repos next to the harness. What it records stays on your machine.
 - Claude Code keeps your conversations for a year.
 
-If you don't want this, ask for the minimal profile (`minimal`): it brings the guides, the reviewers and the story process, and nothing else.
+If you don't want this, ask for the minimal profile (`minimal`). It brings the guides, the reviewers and the story process.
+It does not change how Claude answers you and it does not touch git. It keeps a single guard: the one against destructive
+commands.
 To remove the harness, `harness.js uninstall --dry-run` shows what it would remove, and `harness.js uninstall --yes` removes it.
 
 ## What you need
@@ -36,7 +41,7 @@ It is the recommended path and takes about 10 minutes. Claude runs most of the c
 run in your own terminal.
 
 1. Open the instructions for your system: [Windows](../getting-started/windows.md), [Mac](../getting-started/mac.md) or [Linux](../getting-started/linux.md).
-2. Copy the whole "Parte 1" block (part 1). Open Claude Code in any folder and paste it into a new conversation.
+2. The instructions are in Spanish. Copy the whole "Parte 1" block (part 1). Open Claude Code in any folder and paste it into a new conversation.
 3. Claude gives you the lines that download the install script, show it and run it: paste them in your own terminal,
    so you read the script before you run it. Nothing asks you to sign in: the harness never opens a browser.
 4. Claude shows you the install plan and waits for your "yes". Before it touches `core.hooksPath`, it asks again.
@@ -60,7 +65,42 @@ Claude installs `minimal` and does not touch `core.hooksPath`.
 5. Claude shows you the plan, waits for your go-ahead, writes the code and runs the tests and reviewers.
 6. It leaves the commit ready: it never commits or pushes without your permission.
 
-If something doesn't work, `node ~/.claude/tycon-harness/scripts/setup/harness.js doctor` says what is missing, touching nothing.
+If something doesn't work, type `/tycon-harness` in Claude Code (which version you have, whether it is installed correctly and whether there is a new one), or run `node ~/.claude/tycon-harness/scripts/setup/harness.js doctor`, which says what is missing. Neither one changes anything.
+
+## For an organization
+
+**Try it alone first.** Install it on your machine as described above: nothing from your organization is needed. If it
+works for you, it is set up for the team with two repos of the organization, which only your team can see, besides this one, which
+is the same for everybody:
+
+| Repo | What it holds | Does it reach every machine? |
+|---|---|---|
+| This one (public) | the harness | Yes |
+| The **team profile** (for example `harness-team-profile`) | the configuration the team shares and the list of where each repo of the organization lives (`team-repos.json`) | Yes, every machine that installs with `--team` |
+| The **team operations** (for example `harness-team-operations`) | what runs at night for the organization (dependencies, dashboard, retrospectives) and who gets its notices (`operations.json`) | No: only those jobs read it |
+
+An example: at ACME, Pedro is the administrator and Juan writes code.
+
+1. Pedro creates ACME's two repos, in its Azure DevOps or GitHub, with access only for the team.
+2. Pedro runs `node ~/.claude/tycon-harness/scripts/setup/harness.js team-config`. A page opens on his machine, with
+   nothing on the internet, where he declares where each repo lives and who gets the notices. The page checks what he
+   writes, saves it in the right repo and offers him the pull request.
+3. Juan installs with `--team` and the profile: `harness.js install --version latest --team acme/harness-team-profile`
+   if it is on GitHub, or with the repo's address if it is on Azure DevOps. From then on, every update also brings him
+   what belongs to the team.
+
+**What is not there yet.** The nightly jobs run on Azure DevOps today: an organization that lives on GitHub still
+lacks their GitHub Actions versions. The production watcher is still TYCON's own and is not published.
+
+## Where to go next
+
+| If you want to… | Read |
+|---|---|
+| Install by hand, on Linux or with nobody at the keyboard | [Install by hand](#install-by-hand), below |
+| Know what it writes on your machine and how to turn each thing off | [What it writes on your machine](#what-it-writes-on-your-machine-and-what-it-does-on-its-own) |
+| Update, go back or uninstall | [How it updates](#how-it-updates) |
+| Use it with Codex | [What is optional](#what-is-optional) and [INSTALL.md](../INSTALL.md) |
+| Change the harness | [CONTRIBUTING.md](CONTRIBUTING.md) |
 
 ## Reference
 
@@ -333,10 +373,10 @@ from.
 | `clockify` | Clockify time tracking hooks | `integrations.clockify: true`, or `TYCON_CLOCKIFY=1` |
 | `engram` | engram persistent memory: sync on commit and a daily check | `integrations.engram: true`, or `TYCON_ENGRAM=1` |
 | `codegraph` | CodeGraph code index for the agents (informative: you install CodeGraph yourself) | `integrations.codegraph: true`, or `TYCON_CODEGRAPH=1` |
-| `mailbox` | team-only: they need infrastructure this repo does not ship. Uploads the pipeline run records to a shared mailbox | `integrations.mailbox: true`, or `TYCON_MAILBOX=1` (its key in `TYCON_MAILBOX_JSON`) |
+| `mailbox` | uploads the record of each pipeline run to your organization's mailbox; the organization has to have it set up (today, an Azure storage account) | `integrations.mailbox: true`, or `TYCON_MAILBOX=1` (its key in `TYCON_MAILBOX_JSON`) |
 | `codex` | deploys the Codex side | `integrations.codex: true` or `"detect"`, or `TYCON_CODEX=1` |
 | `claude` | plugs Claude Code (hooks, settings, the README import) | `integrations.claude: true` or `"detect"`, or `TYCON_CLAUDE=1` |
-| `nightly` | team-only: they need infrastructure this repo does not ship. Notices from your team's nightly jobs (dashboard, dependencies, retrospectives) | `integrations.nightly: true`, or `TYCON_NIGHTLY=1` |
+| `nightly` | notices from your organization's nightly jobs (dashboard, dependencies, retrospectives), which run from its operations repo: see [For an organization](#for-an-organization) | `integrations.nightly: true`, or `TYCON_NIGHTLY=1` |
 | `telegram` | progress notices to a Telegram chat | `telegram.chat_id` in `~/.claude/tycon.json`, or `TYCON_TELEGRAM_CHAT_ID` |
 
 **The Codex side**: the same harness under Codex, translated and deployed automatically. It needs `codex` on the PATH
@@ -361,7 +401,7 @@ writes three blocks of rules into `~/.claude/CLAUDE.md`, between their own marke
 - `background-execution`: steps longer than two minutes run in the background and are announced first. Another hook
   measures what kept the conversation blocked (`TYCON_BLOCKING_METER=0`).
 - `tool-names`: the table with the exact name of every tool those rules mention.
-- The import line loads the harness `README.md` in every session: about 18 KB, in Spanish, with the index of the
+- The import line loads the harness `README.md` in every session: about 12 KB, in Spanish, with the index of the
   guides and the always-on rules.
 - The links in `~/.claude/skills` and `~/.claude/agents` make the harness skills and reviewers available in all your
   sessions: the name and description of each one load in every session.
@@ -469,8 +509,6 @@ its metrics file exists (`TYCON_RETRO_PENDING=0` turns that off). The command ab
 `.tycon/` folder. Two ways to turn the edit gate off: `TYCON_STORY_GATE=off` in your environment (the agent cannot set
 it for the running session), and `pipeline.story_gate: false` in `.tycon/advisors.yaml`, committed, for that repo.
 
-This harness uses BMad Method (MIT); it is not affiliated with or endorsed by BMad Code, LLC.
-
 ## Offline
 
 Without network, the install still finishes (exit 0). The third-party step says in one line that it could not reach
@@ -483,22 +521,23 @@ The same applies if, with network, some skills were left pending because the ste
 
 ## How it updates
 
-- **Versions**: each version carries a number `YYYY.MM.DD.N`, where `N` is its order within the day. `stable` is what
-  the team has already approved; `latest` is the last sync, not yet approved. Moving from `latest` to `stable` never
-  goes down a version.
-- **Channel**: `stable` by default; `latest` follows every change. See or set it with
+- **Versions**: each version carries a number `YYYY.MM.DD.N`, where `N` is its order within the day. `stable` is `main` of
+  this repo, which only changes through a reviewed pull request. `latest` would read a pre-release branch if this repo
+  had one; today it has none, so both channels bring the same. Moving from `latest` to `stable` never goes down a
+  version.
+- **Channel**: `stable` by default. See or set it with
   `node ~/.claude/tycon-harness/scripts/setup/harness.js channel [latest|stable]`, or with `TYCON_UPDATE_CHANNEL`.
 - **Policy**: `ask` by default (it tells you and waits); `auto` applies on its own. Set it with `TYCON_UPDATE_APPLY` or
-  `update.apply` in `~/.claude/tycon.json`. Choosing `latest` together with `auto` asks you to confirm: you get what
-  the team pushes, within minutes, with no review of yours.
+  `update.apply` in `~/.claude/tycon.json`. Choosing `latest` together with `auto` asks you to confirm: you get every
+  change that lands on `main`, within minutes, with no review of yours.
 - **By hand**: `harness.js update --check` says whether there is a new version; `harness.js update --yes` applies it;
   `harness.js version` shows what is installed; `harness.js doctor` diagnoses without changing anything.
 - **Going back**: `harness.js rollback --list` shows the copies it can go back to, and
   `harness.js rollback --to <copy>` goes back to the one you choose. After going back, the harness stops updating on
   its own until you release it with `harness.js rollback --release`.
 - **Removing everything**: `harness.js uninstall --dry-run` shows what it would remove; `harness.js uninstall --yes`
-  removes only what the mechanism recorded, and leaves the clone and anything of yours untouched.
-- **Startup**: the startup line runs from a pinned copy in `~/.claude/.tycon-pipeline/harness/`, not from the clone,
+  removes only what the mechanism recorded, and leaves anything of yours untouched.
+- **Startup**: the startup line runs from a pinned copy in `~/.claude/.tycon-pipeline/harness/`, not from the folder that gets updated,
   so a half-finished update cannot break it. `TYCON_UPDATE=0` turns the update off; `TYCON_UPDATE_CHANNEL` and
   `TYCON_UPDATE_APPLY` set the channel and the policy.
 
@@ -512,5 +551,5 @@ attributions of the files derived from third-party work.
 TYCON and Bizuit are trademarks of their owners, and the license does not grant them.
 This harness uses BMad Method (MIT); it is not affiliated with or endorsed by BMad Code, LLC.
 
-To contribute, read [CONTRIBUTING.md](CONTRIBUTING.md) (the repo is a mirror). To report a vulnerability, read
+To contribute, read [CONTRIBUTING.md](CONTRIBUTING.md). To report a vulnerability, read
 [SECURITY.md](SECURITY.md). Participation follows the [code of conduct](CODE_OF_CONDUCT.md).
