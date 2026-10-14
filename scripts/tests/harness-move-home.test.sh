@@ -13,6 +13,8 @@
 #   T29 · el clon de la persona no se toca (hash del `.git` y del árbol), y `paths.maintained` lo declara: `doctor` lo nombra.
 #   T32 · la llave `install.home: tycon` del perfil: el arranque migra una vez; una precondición que falla se avisa y se
 #         reintenta en cada sesión; un fallo DURANTE deshace, queda `failed` y no se reintenta solo (a mano sí).
+#   T28r · la raíz de los repos: si salía de los repos al lado del clon y no estaba declarada, la mudanza la anota en
+#         paths.repos; una declarada no se pisa; una carpeta sin otros repos no se anota.
 #   T14 · un clon de antes del lector de team-repos.json se muda con una capa que lo trae: la capa se juzga con los lectores
 #         de la versión que baja (el plan lo dice); una capa que esa versión rechaza sigue frenando, con la HOME idéntica.
 #
@@ -20,7 +22,7 @@
 # skills, más el servidor de versiones de juguete). Nunca ~/.claude ni ~/.tycon de verdad. 🔴 Sin pipes sobre el comando
 # medido.
 #
-# Uso: bash scripts/tests/harness-move-home.test.sh [--only T27|T28|T29|T32|T13|T14]
+# Uso: bash scripts/tests/harness-move-home.test.sh [--only T27|T28|T28r|T29|T32|T13|T14]
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "$ROOT/scripts/tests/lib/harness-lab.sh"
@@ -168,6 +170,13 @@ if runs T28; then
   done
   # desde acá la máquina es la del último corte (links), completada por el arranque: se mide el resultado entero
   [ -f "$(NEW_TREE)/version.json" ] && [ "$(j "$(NEW_TREE)/version.json" "d['version']")" = 2026.10.08.1 ] && ok "la versión 2026.10.08.1 vive en ~/.tycon/harness" || bad "~/.tycon/harness no trae la versión: $(ls "$(NEW_TREE)" 2>/dev/null | head -5 | tr '\n' ' ')"
+  # la forma con enlaces (story 8.33, T12): con TYCON_RELEASE_LINKS=1 (la forma de Windows, en Mac sólo de pruebas) la
+  # mudanza deja ~/.tycon/harness como enlace a versions/<v>; sin la variable, una carpeta, como siempre
+  if [ "${TYCON_RELEASE_LINKS:-}" = 1 ]; then
+    [ -L "$(NEW_TREE)" ] && case "$(readlink "$(NEW_TREE)")" in */versions/2026.10.08.1) true ;; *) false ;; esac && ok "con la forma con enlaces, ~/.tycon/harness es un enlace a versions/2026.10.08.1" || bad "con TYCON_RELEASE_LINKS=1 la mudanza no dejó el enlace: $(ls -la "$LAB_HOME/.tycon" | tr '\n' ' ')"
+  else
+    [ -d "$(NEW_TREE)" ] && [ ! -L "$(NEW_TREE)" ] && ok "~/.tycon/harness es una carpeta (sin la forma con enlaces)" || bad "~/.tycon/harness no es una carpeta"
+  fi
   [ -f "$(NEW_STATE)" ] && [ ! -L "$LAB_HOME/.tycon/state" ] && ok "el estado vive en ~/.tycon/state" || bad "el estado no está en ~/.tycon/state"
   [ "$(state "d['tree']")" = "$(NEW_TREE)" ] && ok "el estado apunta al árbol nuevo" || bad "el estado apunta a $(state "d['tree']")"
   [ -L "$LAB_HOME/.claude/.tycon-pipeline" ] && [ "$(cd "$LAB_HOME/.claude/.tycon-pipeline" && pwd -P)" = "$(cd "$LAB_HOME/.tycon/state" && pwd -P)" ] && ok "~/.claude/.tycon-pipeline es un enlace al estado nuevo" || bad ".tycon-pipeline no es un enlace al estado: $(link_to "$LAB_HOME/.claude/.tycon-pipeline")"
@@ -488,6 +497,47 @@ for k in ["ado.org","integraciones.clockify","integraciones.engram","integracion
   case "$OUT" in *"perfil del equipo: el clon no trae team-profile.json (ni perfil-equipo.json, el nombre de antes) — nada que pasar"*) ok "sin perfil, el plan lo dice y sigue" ;; *) bad "sin perfil el plan dice otra cosa: $(printf '%s\n' "$OUT" | grep -i perfil)" ;; esac
   OUT="$(harness migrate --to-home 2>&1)"; RC=$?
   [ "$RC" = 0 ] && [ "$(state "d['sources'][0]['kind']")" = release ] && ok "sin perfil la mudanza completa igual" || bad "sin perfil: rc $RC: $OUT"
+  kill "$LAB_RELEASE_PROCESS" 2>/dev/null
+fi
+
+# ───────────────────────────────────────────── T28r ──────────────────────────────────────────
+# La raíz de los repos (2026-10-14): una máquina sin raíz declarada la deducía de los repos al lado del clon. Mudado el
+# arnés a ~/.tycon, al lado no hay nada y la máquina quedó «sin raíz» (el aviso diario de engram dejó de chequear). La
+# mudanza anota esa carpeta en paths.repos si la raíz salía de ahí y no estaba declarada; con una raíz declarada no la
+# pisa; y una carpeta sin otros repos no se anota.
+if runs T28r; then
+  echo "T28r · la raíz de los repos: la mudanza anota la carpeta del clon si de ahí salía; no pisa una declarada; no anota una carpeta sin repos"
+  unset TYCON_REPOS_ROOT   # la raíz explícita del que corre la suite no entra al laboratorio
+  same_dir() { python3 -c 'import os,sys; sys.exit(0 if os.path.realpath(sys.argv[1])==os.path.realpath(sys.argv[2]) else 1)' "$1" "$2"; }
+  clone_machine "$BASE/lab28r"
+  CLONES="$(dirname "$LAB_TREE")"
+  # (a) el clon solo en su carpeta: nada que anotar
+  OUT="$(harness migrate --to-home --dry-run 2>&1)"; RC=$?
+  [ "$RC" = 0 ] && ok "(a) --dry-run sale 0" || bad "(a) --dry-run rc $RC: $OUT"
+  case "$OUT" in *"→ paths.repos"*) bad "(a) con el clon solo en su carpeta el plan anota una raíz sin repos: $(printf '%s\n' "$OUT" | grep 'raíz de repos')" ;; *) ok "(a) con el clon solo en su carpeta el plan no anota raíz (sería una carpeta sin repos)" ;; esac
+  # (b) un repo de trabajo al lado del clon: la raíz salía de ahí → el plan lo dice y la mudanza la anota
+  mkdir -p "$CLONES/ProductoA" && git -C "$CLONES/ProductoA" init -q
+  OUT="$(harness migrate --to-home --dry-run 2>&1)"; RC=$?
+  case "$OUT" in *"raíz de repos: "*"→ paths.repos"*) ok "(b) con un repo al lado del clon, el plan dice que anota la raíz en paths.repos" ;; *) bad "(b) el plan no anota la raíz: $(printf '%s\n' "$OUT" | grep 'raíz de repos' || echo '(sin línea)')" ;; esac
+  OUT="$(harness migrate --to-home 2>&1)"; RC=$?
+  [ "$RC" = 0 ] && ok "(b) migrate --to-home sale 0" || bad "(b) migrate rc $RC: $OUT"
+  W="$(j "$LAB_HOME/.tycon/config.json" "d['paths']['repos']")"
+  [ -n "$W" ] && same_dir "$W" "$CLONES" && ok "(b) ~/.tycon/config.json trae paths.repos = la carpeta del clon" || bad "(b) paths.repos no quedó: «${W}» (config: $(python3 -c 'import json,sys; print(sorted(json.load(open(sys.argv[1])).get("paths",{}).keys()))' "$LAB_HOME/.tycon/config.json" 2>&1))"
+  [ "$(j "$LAB_HOME/.tycon/config.json" "d['install']['profile']")" = full ] && ok "(b) …sin perder lo demás de la configuración" || bad "(b) la configuración perdió install.profile"
+  case "$OUT" in *"raíz de repos: "*"anotada en"*) ok "(b) la salida lo cuenta" ;; *) bad "(b) la salida no cuenta la raíz anotada: $OUT" ;; esac
+  OUT="$(HOME="$LAB_HOME" node "$(NEW_TREE)/scripts/lib/repos-root.js" < /dev/null 2>&1)"
+  case "$OUT" in *"fuente: el archivo de la máquina"*) ok "(b) después de mudar, repos-root la lee del archivo de la máquina" ;; *) bad "(b) repos-root después de mudar: $OUT" ;; esac
+  kill "$LAB_RELEASE_PROCESS" 2>/dev/null
+  # (c) una raíz ya declarada no se pisa
+  clone_machine "$BASE/lab28r2"
+  CLONES="$(dirname "$LAB_TREE")"
+  mkdir -p "$CLONES/ProductoA" && git -C "$CLONES/ProductoA" init -q
+  DECL="$BASE/lab28r2/mis-repos"; mkdir -p "$DECL"
+  printf '{ "install": { "profile": "full" }, "paths": { "repos": "%s" } }\n' "$DECL" > "$LAB_HOME/.claude/tycon.json"
+  OUT="$(harness migrate --to-home --dry-run 2>&1)"
+  case "$OUT" in *"raíz de repos: ya declarada"*) ok "(c) con la raíz declarada, el plan dice que no se toca" ;; *) bad "(c) el plan con la raíz declarada: $(printf '%s\n' "$OUT" | grep 'raíz de repos' || echo '(sin línea)')" ;; esac
+  OUT="$(harness migrate --to-home 2>&1)"; RC=$?
+  [ "$RC" = 0 ] && [ "$(j "$LAB_HOME/.tycon/config.json" "d['paths']['repos']")" = "$DECL" ] && ok "(c) la mudanza deja la raíz declarada como estaba" || bad "(c) rc $RC, paths.repos = $(j "$LAB_HOME/.tycon/config.json" "d['paths'].get('repos')")"
   kill "$LAB_RELEASE_PROCESS" 2>/dev/null
 fi
 

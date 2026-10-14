@@ -54,7 +54,11 @@ const kill = (p) => { if (p) { try { p.kill(); } catch (_) { /* ya */ } } };
 const realOrNull = (p) => { try { return fs.realpathSync(p); } catch (_) { return null; } };
 
 // con identidad propia: el agente de Windows no tiene user.name/user.email y `git commit` sale 128 (182 #12314)
-function git(dir, args, env) { return L.run('git', ['-C', dir, '-c', 'user.name=Lab', '-c', 'user.email=lab@example.com', ...args], { env, timeoutMs: 5 * 60 * 1000 }); }
+// …y sin los hooks de git de la carpeta de usuario del laboratorio: desde el 2026-10-14 `install` y la mudanza ponen ahí la
+// carpeta global de hooks del arnés, y su pre-push (el freno antes de publicar) frenaba las publicaciones de juguete del
+// propio ensayo, que van a un remoto de laboratorio declarado público (182 #13452). Lo que se mide es el arnés, no esto
+const LAB_NO_HOOKS = path.join(require('os').tmpdir(), 'tycon-lab-no-git-hooks');
+function git(dir, args, env) { return L.run('git', ['-C', dir, '-c', 'user.name=Lab', '-c', 'user.email=lab@example.com', '-c', `core.hooksPath=${LAB_NO_HOOKS}`, ...args], { env, timeoutMs: 5 * 60 * 1000 }); }
 
 /** Una versión numerada publicada sobre `main` del remoto, con la copia «autor». */
 function publish(author, number, env) {

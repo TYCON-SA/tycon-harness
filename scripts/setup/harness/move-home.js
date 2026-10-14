@@ -61,7 +61,9 @@ const PERSONAL_SIDES = Object.freeze(['skills', 'agents']);
 // la carpeta skills/ o agents/ de Claude Code: su ruta se la pide a tycon-home.js (la carpeta vieja vive al lado)
 const claudeSide = (home, side) => path.join(path.dirname(TH.installedSkillsDir(home)), side);
 // lo que puede haber en `~/.tycon` y es nuestro: cualquier otra cosa frena (AC 27)
-const OWN_ENTRIES = Object.freeze(['harness', 'previous', 'incoming', 'trash', 'third-party', 'team', 'state', 'backups', 'config.json', 'swap.json', JOURNAL_NAME]);
+// (`versions` y `link-swap.json`: la forma con enlaces de Windows, story 8.33; la mudanza nace en esa forma porque
+// instala con `release.swap`, que en Windows cambia enlaces)
+const OWN_ENTRIES = Object.freeze(['harness', 'previous', 'incoming', 'trash', 'third-party', 'team', 'state', 'backups', 'config.json', 'swap.json', 'versions', 'link-swap.json', JOURNAL_NAME]);
 const DIE_VAR = 'TYCON_MIGRATE_DIE_AT';
 const HEAD = 'harness.js migrate';
 
@@ -74,7 +76,8 @@ const isLink = (p) => { try { return fs.lstatSync(p).isSymbolicLink(); } catch (
 const isRealDir = (p) => { try { const st = fs.lstatSync(p); return st.isDirectory() && !st.isSymbolicLink(); } catch (_) { return false; } };
 const real = (p) => { try { return fs.realpathSync(p); } catch (_) { return null; } };
 const slash = (p) => String(p).replace(/\\/g, '/');
-const rmrf = (p) => { try { fs.rmSync(p, { recursive: true, force: true }); } catch (_) { /* queda: lo dice doctor */ } };
+// un enlace (la forma con enlaces de la 8.33) se quita como enlace: nunca se borra a través de él
+const rmrf = (p) => { try { if (TH.isLink(p)) TH.removeLink(p); else fs.rmSync(p, { recursive: true, force: true }); } catch (_) { /* queda: lo dice doctor */ } };
 const readJson = (file) => { try { return JSON.parse(fs.readFileSync(file, 'utf8').replace(/^﻿/, '')); } catch (_) { return null; } };
 const readText = (file) => { try { return fs.readFileSync(file, 'utf8'); } catch (_) { return null; } };
 function writeAtomic(file, text, mode) {
@@ -389,6 +392,35 @@ function profileFoldLine(f, newConfig) {
   return `  perfil del equipo: ${f.file} → ${newConfig}, como valores de la máquina (la versión bajada no trae el perfil): ${parts.join(' · ')}`;
 }
 
+// ── la raíz de los repos (2026-10-14) ───────────────────────────────────────────────────────────────────────
+// Una máquina sin raíz declarada la deduce, como último recurso, de los repos que hay al lado del arnés
+// (scripts/lib/repos-root.js, la fuente «vecino»). Mudado el arnés a ~/.tycon, al lado no hay nada: la primera máquina
+// Windows mudada quedó «sin raíz» y el aviso diario de engram dejó de chequear. Si la raíz salía de ahí y no está
+// declarada, la mudanza la anota en la configuración nueva (`paths.repos`) con la carpeta padre del clon. Si la persona
+// la declaró (archivo o variable) o sale de sus sesiones, no se toca; y nunca se anota una carpeta sin otros repos (el
+// «vecino» ya lo exige).
+/**
+ * @returns {{ status: 'write', value: string, evidence: number } | { status: 'kept', source: string, value: string|null } | { status: 'unknown', reason: string }}
+ *   Sin escribir nada.
+ */
+function reposRootPlan({ ctx, oldTree }) {
+  let RR;
+  try { RR = require('../../lib/repos-root.js'); } catch (e) { return { status: 'unknown', reason: `el resolvedor de la raíz de repos del clon no carga (${(e && e.code) || e.message})` }; }
+  let r;
+  try { r = RR.resolveReposRoot(undefined, { home: ctx.home, env: ctx.env, clon: oldTree }); } catch (e) { return { status: 'unknown', reason: (e && e.message) || String(e) }; }
+  if (r.fuente === 'vecino' && r.root) return { status: 'write', value: r.root, evidence: r.evidencia || 0 };
+  return { status: 'kept', source: r.fuente, value: r.root || null };
+}
+/** La línea del plan (`--dry-run`). */
+function reposRootLine(rr, newConfig) {
+  if (!rr) return null;
+  if (rr.status === 'write') return `  raíz de repos: ${rr.value} (salía de los ${rr.evidence} repo(s) al lado del clon; con el arnés en ~/.tycon esa deducción deja de andar) → paths.repos en ${newConfig}, salvo que ya la tenga`;
+  if (rr.status === 'unknown') return `  raíz de repos: no pude mirarla (${rr.reason}) — no se anota nada`;
+  if (rr.source === 'env' || rr.source === 'maquina') return `  raíz de repos: ya declarada (${rr.value}) — no se toca`;
+  if (rr.source === 'sesiones') return `  raíz de repos: sale de tus sesiones (${rr.value}) — no hace falta anotarla`;
+  return null;
+}
+
 // ── las carpetas tomadas (Windows) ───────────────────────────────────────────────────────────────────────────────
 // En Windows una carpeta con un archivo abierto por otro programa (VS Code, una terminal o una ventana del Explorador paradas
 // ahí, una sesión de Claude Code o Codex) no se puede renombrar: EPERM o EBUSY. La prueba miraba sólo el estado; la mudanza
@@ -516,7 +548,8 @@ function preconditions(ctx, state, H) {
     if (!teamPlan.ok) return bad(`${HEAD}: ${teamPlan.reason}`);
     profile = { status: 'skipped', file: profile.file, reason: `viaja en la capa del equipo (${teamRepo.repo}), no se funde en ${p.newConfig} (los valores quedan con origen perfil)`, moves: [], had: [], skipped: [] };
   }
-  return { ok: true, p, repo, target: t, channel, policy, tools, oldConfigData, ownConfigData, personal, profile, teamPlan, teamOpen, notes: t.note ? [t.note] : [] };
+  const reposRoot = reposRootPlan({ ctx, oldTree: state.tree });
+  return { ok: true, p, repo, target: t, channel, policy, tools, oldConfigData, ownConfigData, personal, profile, reposRoot, teamPlan, teamOpen, notes: t.note ? [t.note] : [] };
 }
 
 /** El plan (`--dry-run`), para una persona. */
@@ -528,6 +561,8 @@ function planLines(ctx, pre) {
   if (pre.oldConfigData) moves.push(`${p.oldConfig} → ${p.newConfig} (la configuración, fundida: lo que ya está en la nueva gana; la vieja queda como enlace)`);
   L0.push(`  mueve: ${moves.join(' · ')}`);
   L0.push(profileFoldLine(pre.profile, p.newConfig));
+  const rrLine = reposRootLine(pre.reposRoot, p.newConfig);
+  if (rrLine) L0.push(rrLine);
   if (pre.teamPlan) L0.push(`  ${require('./team.js').planLine(pre.teamPlan)} → apilada en ${p.own.harness} antes del cambio`);
   const deferred = pre.teamPlan && Array.isArray(pre.teamPlan.readersDeferred) ? pre.teamPlan.readersDeferred : [];
   if (deferred.length) L0.push(`  valida: ${deferred.join(' y ')} de la capa con los lectores de la versión ${target.version} (la que baja), al mudar y antes de escribir nada — si esa versión los rechaza, la mudanza no arranca`);
@@ -594,7 +629,8 @@ function stageConfigMoved(ctx, j, log) {
   // el perfil del equipo del clon (tanda G, AC 41): lo que declara y la máquina no tiene escrito pasa como valor suyo;
   // también cuando no hay tycon.json viejo que fundir
   const fold = j.profileFold && j.profileFold.status === 'read' && Array.isArray(j.profileFold.moves) ? j.profileFold.moves : [];
-  if (!pending && !fold.length) return;
+  const reposValue = j.reposRoot && j.reposRoot.status === 'write' ? j.reposRoot.value : null;
+  if (!pending && !fold.length && !reposValue) return;
   let old = {};
   if (pending) {
     const old0 = readJson(p.oldConfig);
@@ -624,10 +660,19 @@ function stageConfigMoved(ctx, j, log) {
     if (!Object.prototype.hasOwnProperty.call(merged[m.section], m.key)) { merged[m.section][m.key] = m.value; folded++; }
   }
   j.profileFolded = folded;
+  // la raíz de los repos: en la sección de rutas con el nombre que ya traiga el archivo (`paths`, o `rutas`, el de antes);
+  // si ya trae `repos`, gana lo escrito
+  if (reposValue) {
+    const section = ['paths', 'rutas'].find((k) => isObject(merged[k])) || 'paths';
+    if (!isObject(merged[section])) merged[section] = {};
+    if (Object.prototype.hasOwnProperty.call(merged[section], 'repos')) j.reposRootWritten = false;
+    else { merged[section].repos = reposValue; j.reposRootWritten = true; }
+  }
   // desde acá el disco cambia: si la etapa falla justo después (o el fallo de prueba la corta antes de anotarse en el
   // diario), el deshacer tiene que reponer la configuración aunque la etapa no haya quedado anotada (lo destapó T28y)
   j.configTouched = true;
   writeJson(p.newConfig, merged, 0o600);
+  if (j.reposRootWritten) log(`mudanza: raíz de repos ${reposValue} anotada en ${p.newConfig} (paths.repos): se deducía de los repos al lado del clon`);
   if (folded) log(`mudanza: perfil del equipo: ${folded} valor(es) de ${j.profileFold.file} pasaron a ${p.newConfig} como valores de la máquina (la versión bajada no trae el perfil)`);
   if (!pending) return;
   fs.unlinkSync(p.oldConfig);
@@ -806,12 +851,15 @@ function stageReplugged(ctx, j, H, log, { snap = null } = {}) {
   const policy = H.policyOf(ctx, p.own.harness);
   if (!policy.errors.length) { state.policy = { channel: policy.channel, apply: policy.apply, enabled: policy.enabled }; H.applyPolicy(ctx, state, policy); }
   H.copyBootstrap(ctx, p.own.harness, state, { version: j.version });
-  const a = H.runApplier(ctx, p.own.harness, { log, snapshotDir: snap && snap.dir, tools, force: true });
+  // `hooksPath`: la carpeta global de hooks de git, si git no tiene ninguna (2026-10-14: una máquina mudada quedaba con los
+  // hooks del arnés en ~/.git-hooks y git sin mirarlos — el freno antes de publicar no corría)
+  const a = H.runApplier(ctx, p.own.harness, { log, snapshotDir: snap && snap.dir, tools, force: true, hooksPath: true });
   state.last_apply = nowIso();
   if (!a.ok) return { ok: false, reason: `el aplicador del árbol nuevo falló (${a.reason})`, state };
   dropOldHooks(H.settingsPath(ctx), p.oldTreeReal, { newTree: p.own.harness, log });
   for (const w of a.warnings || []) j.notes = [...(j.notes || []), w];
   H.recordPieces(ctx, state, a.report, a.shared);
+  { const hp = H.noteHooksPath(state, a); if (hp) j.notes = [...(j.notes || []), hp]; }
   const prof = H.profileOf(ctx, p.own.harness);
   if (prof.ok) state.profile = { value: prof.value, origin: prof.origin };
   // la salud corre `doctor`, que lee el estado DEL DISCO: el que dice «clon» daría «el enlace no apunta al árbol». El
@@ -901,6 +949,7 @@ function advance(ctx, j, H, { log, snap = null }) {
     `tu clon ${j.oldTree} sigue donde estaba, sin git del mecanismo: para que esta máquina lo MANTENGA, harness.js config set paths.maintained ${j.oldTree} (y si mantenés el arnés, el clon del repo de mantenimiento se declara aparte, con paths.maintainers: de ahí leen los avisos de los nocturnos)`,
     // el perfil del equipo (tanda G): cuántos valores pasaron; sin perfil en el clon, se dice una vez (la máquina sigue con lo escrito)
     ...(j.profileFolded ? [`perfil del equipo: ${j.profileFolded} valores pasaron a ${p.newConfig} como valores de la máquina (la versión bajada no trae el perfil; lo que ya tenías escrito ganó)`] : (j.profileFold && j.profileFold.status === 'absent' ? [`perfil del equipo: ${j.profileFold.reason || 'el clon no traía team-profile.json (ni perfil-equipo.json, el nombre de antes)'} — nada pasó; la máquina sigue con lo que tenga escrito`] : (j.profileFold && j.profileFold.status === 'skipped' ? [`perfil del equipo: ${j.profileFold.reason}`] : []))),
+    ...(j.reposRootWritten ? [`raíz de repos: ${j.reposRoot.value} anotada en ${p.newConfig} (paths.repos) — se deducía de los repos al lado del clon, y con el arnés en ~/.tycon esa deducción ya no la encuentra`] : []),
     // la capa del equipo (story 8.25): qué quedó apilado en el árbol nuevo
     ...(j.team && j.team.commit ? [`capa del equipo ${j.team.repo} @ ${sha7(j.team.commit)}: ${j.team.files} archivo(s) (${j.team.name || 'equipo'}) en ${p.own.harness}; el estado la recuerda y update la lleva a cada versión nueva`] : []),
     ...(nS || nA ? [`conservadas ${nS} skills y ${nA} agente${nA === 1 ? '' : 's'} tuyos en ${personalDest(ctx, 'skills', pr.skills)} y ${personalDest(ctx, 'agents', pr.agents)} (carpetas reales; el arnés al lado, un enlace por entrada)${keptLine ? ` · ${keptLine}` : ''}`] : (keptLine ? [`⚠️ lo tuyo ${keptLine}`] : [])),
@@ -970,7 +1019,8 @@ function undo(ctx, j, H, { log, why }) {
   try {
     const folded = Boolean(j.profileFold && j.profileFold.status === 'read' && Array.isArray(j.profileFold.moves) && j.profileFold.moves.length);
     // la etapa anotada, O el disco ya tocado por una etapa que falló antes de anotarse (`configTouched`, en memoria)
-    if ((typeof j.oldConfigText === 'string' || folded) && (j.configTouched || STAGES.indexOf(j.stage) >= STAGES.indexOf('config-moved'))) {
+    const reposWritten = Boolean(j.reposRoot && j.reposRoot.status === 'write');
+    if ((typeof j.oldConfigText === 'string' || folded || reposWritten) && (j.configTouched || STAGES.indexOf(j.stage) >= STAGES.indexOf('config-moved'))) {
       if (typeof j.oldConfigText === 'string') {
         if (lexists(p.oldConfig)) fs.unlinkSync(p.oldConfig);
         if (j.oldConfigLink) { try { fs.symlinkSync(j.oldConfigLink, p.oldConfig, 'file'); } catch (_) { writeAtomic(p.oldConfig, j.oldConfigText); } }
@@ -993,9 +1043,10 @@ function undo(ctx, j, H, { log, why }) {
     if (typeof j.oldStateText === 'string' && isRealDir(p.oldStateDir)) writeAtomic(path.join(p.oldStateDir, S.FILE_NAME), j.oldStateText);
   } catch (e) { say(`no pude volver el estado (${e.message})`); }
   // la versión instalada (lo que esta mudanza puso en ~/.tycon)
-  if (!j.harnessExisted) { rmrf(p.own.harness); if (!j.previousExisted) rmrf(p.own.previous); }
+  if (!j.harnessExisted) { rmrf(p.own.harness); if (!j.previousExisted) rmrf(p.own.previous); if (j.versionsExisted === false) rmrf(p.own.versions); }
   if (j.incoming) rmrf(j.incoming);
   rmrf(p.own.journal);
+  rmrf(p.own.linkJournal);
   rmrf(journalPath(ctx));
   say(why);
 }
@@ -1066,12 +1117,13 @@ function migrate(ctx, H, { log = null, auto = false, state: given = null } = {})
     const j = {
       schema: 1, stage: 'start', at: nowIso(), version: target.version, commit: target.commit, ref: target.ref,
       repo: repo.url, repoName: repo.repo, oldTree: state.tree, incoming: d.dir, tools: [...tools],
-      harnessExisted: lexists(p.own.harness), previousExisted: lexists(p.own.previous),
+      harnessExisted: lexists(p.own.harness), previousExisted: lexists(p.own.previous), versionsExisted: lexists(p.own.versions),
       oldStateText: readText(S.paths(ctx.home).file),
       oldConfigText: pre.oldConfigData ? readText(p.oldConfig) : null, oldConfigLink: pre.oldConfigData && isLink(p.oldConfig) ? readlink(p.oldConfig) : null, ownConfigText: pre.ownConfigData ? readText(p.newConfig) : null,
       dashCopied: false, backupsMoved: false, notes: [],
       personalPlan: personalPlanForJournal(pre.personal), personal: {},
       // el perfil del equipo (tanda G): lo que va a pasar al archivo de la máquina, anotado ANTES de tocar el disco
+      reposRoot: pre.reposRoot || null,
       profileFold: pre.profile ? { status: pre.profile.status, file: pre.profile.file, reason: pre.profile.reason || null, moves: pre.profile.moves, had: pre.profile.had.map((m) => `${m.section}.${m.key}`), skipped: pre.profile.skipped.map((m) => `${m.section}.${m.key}`) } : null,
       // la capa del equipo (story 8.25): lo resuelto, para el estado que stageReplugged reconstruye (se completa al apilar)
       team: teamPlan ? { repo: teamPlan.repo, ref: teamPlan.ref, commit: teamPlan.commit, tree: teamPlan.tree, etag: teamPlan.etag || null, name: teamPlan.declaration.name, files: teamPlan.files.length, applied_at: null } : null,
@@ -1130,7 +1182,7 @@ function repair(ctx, H, { log = null } = {}) {
   const realLog = (l) => { if (log) log(l); else R.log(ctx.home, l); };
   const own = ownOf(ctx);
   // un cambio de versión a medias (swap.json): primero lo repara release.js, como siempre
-  if (lexists(own.journal)) REL.repair(ctx, { log: realLog });
+  if (lexists(own.journal) || lexists(own.linkJournal)) REL.repair(ctx, { log: realLog });
   const m = REL.readManifest(own.harness);
   const installed = STAGES.indexOf(j.stage) >= STAGES.indexOf('installed') && m && m.version === j.version;
   if (!installed) {
@@ -1164,5 +1216,5 @@ function guardStatus({ root = '', env = process.env } = {}) {
 module.exports = {
   JOURNAL_NAME, STAGES, OWN_ENTRIES, migrate, repair, homeKey, dropOldHooks, guardStatus, planLines, preconditions, readJournal, journalPath,
   // sólo pruebas (scripts/tests/move-home.test.js): las etapas sueltas
-  __test: { places, configPending, stageConfigMoved, stageStateMoved, advance, undo, codexReapprovalNote, classifyPersonal, personalPlanLine, stagePersonal, PERSONAL_SIDES, profileFold, profileFoldLine, PROFILE_SKIP, renamedDirs, busyLine },
+  __test: { places, configPending, stageConfigMoved, reposRootPlan, reposRootLine, stageStateMoved, advance, undo, codexReapprovalNote, classifyPersonal, personalPlanLine, stagePersonal, PERSONAL_SIDES, profileFold, profileFoldLine, PROFILE_SKIP, renamedDirs, busyLine },
 };

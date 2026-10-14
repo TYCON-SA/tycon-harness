@@ -44,17 +44,16 @@ Bajar el propio guion va siempre sin credencial: si el 403 fue ahí, sólo queda
 3. Ver el plan de instalación (no instala nada): dame esta línea para mi ventana:
        pwsh -File get-harness.ps1 -- --profile full --integrations none --packs all --dry-run
    Baja la versión a una carpeta temporal y muestra el plan. Te paso la salida: mostrame el plan resumido (qué escribe,
-   qué hooks pone) y preguntame si sigo.
+   qué hooks pone, y si configura la carpeta global de hooks de git) y preguntame si sigo.
 
 4. Con mi sí, instalar, en mi ventana:
        pwsh -File get-harness.ps1 -- --profile full --integrations none --packs all --yes
    Esperado: termina con «versión: …» y un resumen, sin rojo. El arnés queda en $env:USERPROFILE\.tycon\harness
    (archivos, sin git).
 
-5. Los controles que corren al commitear (hooks globales de git). Antes de configurar nada, avisame esto y esperá mi
-   sí: con una carpeta global de hooks, git deja de correr los .git/hooks/ propios de cada uno de mis repos (el control
-   del arnés corre en su lugar el .githooks/pre-commit de cada repo). Si te digo que no, salteá este paso.
-   Con mi sí, primero mirá si ya tengo algo configurado:
+5. Los controles que corren al commitear (hooks globales de git). Si git no tenía una carpeta global de hooks, la
+   instalación la configuró (el plan lo decía): con ella git deja de correr los .git/hooks/ propios de cada uno de mis
+   repos, y el control del arnés corre en su lugar el .githooks/pre-commit de cada repo. Mirá cómo quedó:
    git config --global --get core.hooksPath
    Si no devuelve nada, corré:  git config --global core.hooksPath "$env:USERPROFILE\.git-hooks"
    Si devuelve otra carpeta, NO la pises: mostrámela y decidimos.
