@@ -790,9 +790,12 @@ mapa_lab() {
   cp "$RAIZ/scripts/tools/harness-map/"* "$T/repo/scripts/tools/harness-map/"
   cp "$RAIZ/artifacts/mapa-arnes.html" "$T/repo/artifacts/"
   cp "$RAIZ/onboarding/mini-class/mapa-del-arnes.html" "$T/repo/onboarding/mini-class/"
+  # el selector de idioma que el generador incrusta (onboarding/mini-class/i18n/inject.js, con su diccionario): sin él la
+  # pública no se genera y el cambio sano de C-27 se frenaría por eso
+  cp -R "$RAIZ/onboarding/mini-class/i18n" "$T/repo/onboarding/mini-class/"
   ( cd "$T/repo" && git add -A && git -c core.hooksPath=/dev/null -c user.email=b@b -c user.name=b commit -q -m mapa )
 }
-if [ ! -f "$RAIZ/artifacts/mapa-arnes.html" ] || [ ! -f "$RAIZ/scripts/tools/harness-map/censo.js" ]; then
+if [ ! -f "$RAIZ/artifacts/mapa-arnes.html" ] || [ ! -f "$RAIZ/scripts/tools/harness-map/census.js" ]; then
   # La copia pública no trae el mapa ni scripts/tools/harness-map/ (allowlist.json): no hay freno que disparar.
   echo "  ⚠️   — C-26/C-27 NO verificados: esta copia no trae el mapa del arnés. No es un verde."
 else

@@ -77,7 +77,7 @@ text "${HARNESS}/scripts/tools/harness-map/publica.json" "la configuración del 
 text "${HARNESS}/scripts/hooks/sample-hook.js" "un hook"
 text "${HARNESS}/docs/note.txt" "una nota"
 stub_js "${HARNESS}/scripts/ci/check-claude-md-blocks.js" blocks
-stub_js "${HARNESS}/scripts/tools/harness-map/version-publica.js" public-map
+stub_js "${HARNESS}/scripts/tools/harness-map/public-version.js" public-map
 stub_js "${HARNESS}/build/check.js" parity
 ( cd "${HARNESS}" && lab_git init -q . && lab_git add -A && lab_git commit -qm base ) > /dev/null 2>&1 \
   || { echo "githook-renames: NO MEDIDO — no pude armar el repo de juguete del arnés"; exit 1; }

@@ -1,0 +1,79 @@
+{
+  "__doc": "La configuración de la versión pública del mapa de JUGUETE (internal-map.html, al lado), con la forma de la de verdad (scripts/tools/harness-map/publica.json, en el repo del equipo). Datos inventados.",
+  "fichas": {
+    "examen": {
+      "donde": {
+        "privado": "cd174772b97e",
+        "texto": "Una única máquina designada."
+      },
+      "cuando": {
+        "privado": "4ad487a1c5dc",
+        "texto": "Dos veces por semana, de madrugada."
+      }
+    },
+    "vigilante": {
+      "donde": {
+        "privado": "0ff6051165a1",
+        "texto": "Una máquina designada, con su credencial guardada."
+      }
+    }
+  },
+  "reemplazos": [
+    {
+      "de": "\"admin\": \"Máquina del admin del arnés\"",
+      "a": "\"admin\": \"Una máquina designada\""
+    },
+    {
+      "de": "\"tcg\": \"acme-harness-interno\"",
+      "a": "\"tcg\": \"acme-harness\""
+    },
+    {
+      "de": "class=\"t-real\">acme-harness-interno</text>",
+      "a": "class=\"t-real\">acme-harness</text>"
+    }
+  ],
+  "quitar": [
+    {
+      "motivo": "la caja de la máquina del admin",
+      "veces": 1,
+      "patron": "\\n\\s*<rect [^>]*class=\"s-admin\"/>\\n\\s*<text [^>]*class=\"t-admin\">ADMIN</text>"
+    },
+    {
+      "motivo": "la leyenda de la máquina del admin",
+      "veces": 1,
+      "patron": "\\n\\s*<li><span class=\"tag-admin\">ADMIN</span>[^<]*</li>"
+    },
+    {
+      "motivo": "el tema oscuro automático",
+      "veces": 1,
+      "patron": "\\n  @media \\(prefers-color-scheme: dark\\) \\{\\n    :root:not\\(\\[data-theme=\"light\"\\]\\) \\{[\\s\\S]*?\\n    \\}\\n  \\}"
+    },
+    {
+      "motivo": "el tema oscuro a mano",
+      "veces": 1,
+      "patron": "\\n  :root\\[data-theme=\"dark\"\\] \\{[\\s\\S]*?\\n  \\}"
+    }
+  ],
+  "prohibido": [
+    {
+      "motivo": "la máquina del admin",
+      "patron": "servidor-acme-\\d+"
+    },
+    {
+      "motivo": "la máquina del admin, por su rótulo",
+      "patron": "admin del arnés|>ADMIN<"
+    },
+    {
+      "motivo": "el nombre del repo interno",
+      "patron": "acme-harness-interno"
+    },
+    {
+      "motivo": "el horario de una corrida desatendida",
+      "patron": "\\b([01]?\\d|2[0-3]):[0-5]\\d\\b|martes|viernes"
+    },
+    {
+      "motivo": "el tema oscuro",
+      "patron": "prefers-color-scheme: dark|data-theme=\"dark\""
+    }
+  ]
+}
