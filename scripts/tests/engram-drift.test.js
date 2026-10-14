@@ -384,3 +384,32 @@ test('T28 R3_HarnessAuditAutoheal_HooksRequireLib — los comandos que imprimen 
   const bench = fs.readFileSync(path.join(SCRIPTS, 'hooks', 'bench-notice.js'), 'utf8');
   assert.match(bench, /correr: node scripts\/lib\/harness-audit\.js --parity/);
 });
+
+// ── 2026-10-14: sin raíz de repos el aviso dice eso, no «¿base corrupta?» ───────────────────────────────────────
+// Caso real: una máquina Windows mudada a ~/.tycon quedó sin raíz de repos. El chequeo de la memoria nunca exportada
+// devuelve null sin raíz, y el aviso lo leía como «no se pudo leer la base de engram (¿base corrupta, permisos, sqlite3
+// roto?)» — con la base sana. Además el de chunks fuera del índice listaba un repo «(sin raíz)» como si fuera un hallazgo.
+test('sin raíz de repos: el aviso dice que no sabe dónde están los repos, y no culpa a la base de engram', { skip: SKIP }, () => {
+  const raiz = tmp();
+  const tcg = path.join(raiz, 'tcg');
+  fs.mkdirSync(path.join(tcg, 'scripts', 'hooks'), { recursive: true });
+  fs.copyFileSync(path.join(SCRIPTS, 'hooks', 'engram-drift-notice.js'), path.join(tcg, 'scripts', 'hooks', 'engram-drift-notice.js'));
+  fs.cpSync(path.join(SCRIPTS, 'lib'), path.join(tcg, 'scripts', 'lib'), { recursive: true });
+  // una casa sin archivo de configuración, sin sesiones y sin repos al lado del arnés: sin raíz
+  const home = path.join(raiz, 'home');
+  fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+  fs.mkdirSync(path.join(home, '.engram'), { recursive: true });
+  dbConSesiones(path.join(home, '.engram'), [{ project: 'algo', directory: path.join(home, 'x') }]);
+
+  const salida = execFileSync(process.execPath, [path.join(tcg, 'scripts', 'hooks', 'engram-drift-notice.js'), '--force'], {
+    encoding: 'utf8',
+    env: { PATH: process.env.PATH, HOME: home, TYCON_ENGRAM: '1', TYCON_NO_NIGHTLY_EXAM: '1', LANG: 'en_US.UTF-8' },
+  });
+  assert.match(salida, /no sé dónde están tus repos/, `el aviso tiene que decir que falta la raíz: ${salida}`);
+  assert.match(salida, /sin raíz/, 'con el motivo que da repos-root.js');
+  assert.doesNotMatch(salida, /base corrupta|no se pudo leer la base de engram/, `sin raíz no es una base rota: ${salida}`);
+  assert.doesNotMatch(salida, /chunk\(s\) de memoria están en el repo/, `sin raíz no hay chunks que acusar: ${salida}`);
+  assert.doesNotMatch(salida, /falló el chequeo de memoria partida/, `sin raíz no es un chequeo que falló: ${salida}`);
+  assert.equal((salida.match(/no sé dónde están tus repos/g) || []).length, 1, 'se dice una vez');
+  fs.rmSync(raiz, { recursive: true, force: true });
+});
