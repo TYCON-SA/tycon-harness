@@ -888,9 +888,9 @@ function construirAviso(fecha, hallazgos, noMedido, cfg, recordatorio) {
 /**
  * `note` — RECHAZAR EL PULL REQUEST ES `/tycon-vigilante reject` (story 4.2).
  *
- * El caso que lo funda: la rama `vigilante/2026-09-06-globex-c6dc06a2` recibió el PR 3015, una persona
- * lo rechazó cuatro horas después, y a la mañana siguiente el pipeline abrió el 3028 — que también
- * se rechazó, para que apareciera el 3044. Tres pull requests para una decisión ya tomada, porque
+ * El caso que lo funda: la rama de un hallazgo recibió su pull request, una persona lo rechazó horas
+ * después, y a la mañana siguiente el pipeline abrió otro —que también se rechazó, para que apareciera
+ * un tercero—. Tres pull requests para una decisión ya tomada, porque
  * "no hay PR activo" y "nunca tuvo uno" se veían igual. La ÚNICA ficha que no se reabrió es la que
  * el dev, además de rechazar, archivó a mano con `/tycon-vigilante reject`: esto automatiza eso.
  *
@@ -936,7 +936,7 @@ function cmdAnotar(a) {
   if (a.prCerrado !== null) t = poner(t, 'pr_cerrado', a.prCerrado);
   if (a.rechazado !== null) {
     // 🔴 `JSON.stringify` y no comillas a mano: `camposDe` corta en la primera comilla, así que un
-    // motivo con comillas adentro —«fue una "caida" de azure», textual del PR 3061— dejaría el
+    // motivo con comillas adentro —«fue una "caida" de azure», textual de un rechazo real— dejaría el
     // campo mocho. Es el mismo defecto que ya mordió con el diagnóstico, y `leerTexto` lo deshace.
     const texto = String(a.motivo || '').trim() || 'sin motivo escrito';
     t = t.replace(/^veredicto:.*$/m, () => 'veredicto: descartado');

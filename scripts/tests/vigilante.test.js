@@ -381,9 +381,9 @@ test('lo que se archiva por ignorado devuelve su id, para poder cerrar su PR', (
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 // Story 4.2 — rechazar el pull request ES `/tycon-vigilante reject`.
 //
-// El caso REAL que esto cierra: la rama `vigilante/2026-09-06-globex-c6dc06a2` recibió el PR 3015
-// (06-09 08:01), una persona lo rechazó a las 12:45, y a la mañana siguiente el pipeline abrió el
-// 3028 — que también se rechazó, para que el 08 apareciera el 3044. Tres pull requests para la
+// El caso REAL que esto cierra: la rama de un hallazgo recibió su pull request, una persona lo rechazó
+// horas después, y a la mañana siguiente el pipeline abrió otro —que también se rechazó— y apareció un
+// tercero. Tres pull requests para la
 // misma decisión ya tomada. La única ficha que NO se reabrió es la que el dev, además de rechazar,
 // archivó a mano con `/tycon-vigilante reject`. `note --rejected` automatiza exactamente eso.
 // ══════════════════════════════════════════════════════════════════════════════════════════════

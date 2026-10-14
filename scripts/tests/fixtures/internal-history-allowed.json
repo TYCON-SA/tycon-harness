@@ -2,6 +2,18 @@
   "__doc": "Los números de pull request que un archivo publicado usa como DATO de una prueba o de un control (story 8.10.3, tanda B, AC 10). Cada entrada: el archivo, el valor EXACTO tal como lo encuentra la expresión de internal-history.test.js y el motivo. Nunca un archivo entero. Un número que cuenta una historia no va acá: se reescribe la lección sin él. Desde la story 8.26 (tanda G1) la lista la comparte el control de historia interna de la prosa (scripts/publishing/internal-history.js) y cada entrada dice su forma en `form`: `pr-number` (las mira internal-history.test.js, en todo lo publicado) o cualquier otra forma del control (`story-number`, `private-commit`…: un ejemplo de la salida que una skill o un revisor tienen que producir, que el control deja pasar en ese archivo y con ese valor exacto).",
   "allowed": [
     {
+      "file": "scripts/tests/vigilante.test.js",
+      "form": "pr-number",
+      "value": "PR !3061",
+      "reason": "un dato de la prueba: el texto que `vigilante.js note --rejected --pr <n>` escribe en el borrador archivado (la forma «rechazo del PR !<n>»), comparado tal cual"
+    },
+    {
+      "file": "scripts/tests/vigilante.test.js",
+      "form": "pr-number",
+      "value": "PR !3015",
+      "reason": "un dato de la prueba: el texto que `vigilante.js note --rejected --pr <n>` escribe en el borrador archivado (la forma «rechazo del PR !<n>»), comparado tal cual"
+    },
+    {
       "file": "scripts/tools/release-notes-parity.js",
       "form": "pr-number",
       "value": "PR 2597",
