@@ -1,0 +1,1112 @@
+trigger:
+  # 🔴 `batch: true` portado de los otros cuatro (2026-09-01): agrupa los disparos. Sin esto, N
+  # merges seguidos a main encolan N corridas completas — con 2 trabajos simultáneos en toda la
+  # organización, eso deja a los demás productos esperando.
+  batch: true
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - src/**
+      - database/**
+      - plugin.json
+      # 🔴 2026-09-02 (revisión adversarial, hallazgo #5): la lista era SÓLO `src/**` y
+      # `plugin.json`. Un merge que tocaba únicamente pruebas, el propio pipeline, `scripts/`,
+      # `database/` o `plugin.json.example` NO construía nada en main — había que tocar un .cs
+      # para disparar el CI. Lista copiada del backend que estaba al día, la misma que ya tenían
+      # los demás. El bloque `pr:` NO se toca: para Azure Repos es
+      # inerte, quien encola el PR es la política de rama.
+      - plugin.json.example
+      - scripts/**
+      - package.json
+      - azure-pipelines.yml
+      - tests/**
+      # 🔴 2026-09-24: acá había `.tycon/**`. Ningún paso del build lo lee, y el pipeline del arnés
+      # escribe `.tycon/runtime-waivers.jsonl` en casi toda story: un merge de sólo documentación
+      # compilaba, desplegaba a staging, subía la versión y pedía producción (caso real en un
+      # producto, dos corridas seguidas). Lo mide check-trigger-without-docs.js del arnés.
+
+# Validation build on PRs against main — corre tests + coverage antes del merge.
+# Si solo cambia docs o engram, no dispara (paths excluidos por omisión).
+pr:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - src/**
+      - tests/**
+      - plugin.json
+      - coverlet.runsettings
+      - azure-pipelines.yml
+
+# El arnés no llega como recurso de Azure: cada etapa que lo usa lo clona de su repo público, sin
+# credencial (paso 'Fetch harness (public GitHub, no credentials)'). Por eso la identidad de compilación
+# no necesita lectura sobre ningún repo del arnés ni autorizar un recurso.
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  # De dónde se baja el arnés: su repo público y la rama. Un fork propio del arnés se apunta acá;
+  # el resto del pipeline no cambia.
+  harnessRepoUrl: 'https://github.com/TYCON-SA/tycon-harness.git'
+  harnessRef: 'main'
+  dotnetVersion: '{{DOTNET_SDK}}'
+  # Las credenciales de staging (BIZEXT_STAGING_URL / _USER / _PASS) son variables de ESTE pipeline,
+  # cargadas en la UI de ADO (la contraseña, secreta). No van acá.
+  BIZEXT_UPLOAD_ENDPOINT: '/api/admin/plugins/upload'
+  nodeVersion: '20.x'
+  # 🔴 2026-09-02 — MIGRACIONES ADMINISTRADAS POR EL HOST, desde la 001.
+  # En el producto del que salió esta plantilla las migraciones se corrían a mano, por entrega, desde la carpeta BD/ (con
+  # fecha en el nombre). Nada de eso está numerado, así que nada de eso viaja en el paquete: el
+  # empaquetado sólo toma database/NNN_*.sql, y la primera que alguien cree con el arnés va a
+  # ser la 001. El corte es 001 porque no hay ninguna migración numerada anterior que se pueda
+  # re-aplicar por accidente.
+  # Este número NO hay que volver a tocarlo: es un piso de arranque, no un contador. De 001 en
+  # adelante, cada migración que el host aplica queda registrada y no se re-ofrece.
+  firstManagedMigration: '001'
+
+stages:
+  - stage: TraerArnes
+    displayName: 'Fetch harness scripts (single source)'
+    # 🔴 2026-09-01. Hasta hoy la nota de versión de este plugin era `git log -1 --pretty=%B`:
+    # el administrador que instala el plugin leía EL ÚLTIMO MENSAJE DE COMMIT. El arnés resolvió
+    # eso en agosto con `release-notes.sh`, que arma la nota contra la versión que ESTÁ PUBLICADA
+    # en el servidor destino — o sea que contesta "qué cambia respecto de lo instalado", no
+    # "qué cambió desde el build anterior", que puede no haberse publicado nunca.
+    # El guion vive en UN solo lugar (el arnés) y llega por artefacto: nada se copia acá.
+    dependsOn: []
+    jobs:
+      - job: Arnes
+        displayName: 'Publish harness CI scripts'
+        steps:
+          - checkout: none
+          # El arnés se baja de su repo público (variables harnessRepoUrl y harnessRef), por clon y sin credencial.
+          # Sin `|| true`: si el repo no responde, el paso falla y lo dice.
+          - script: |
+              set -euo pipefail
+              DEST="$(Agent.BuildDirectory)/tcg"
+              rm -rf "$DEST"
+              git clone --quiet --depth 1 --single-branch --branch "$(harnessRef)" --no-tags "$(harnessRepoUrl)" "$DEST"
+              echo "Arnés público en $(git -C "$DEST" rev-parse --short HEAD)"
+            displayName: 'Fetch harness (public GitHub, no credentials)'
+          - task: PublishPipelineArtifact@1
+            displayName: 'Publish arnes-ci artifact'
+            inputs:
+              targetPath: '$(Agent.BuildDirectory)/tcg/scripts/ci'
+              artifact: 'arnes-ci'
+              publishLocation: 'pipeline'
+
+  - stage: HarnessGate
+    displayName: 'Harness gate (PRs only)'
+    dependsOn: []
+    condition: eq(variables['Build.Reason'], 'PullRequest')
+    jobs:
+      - job: TyconGate
+        displayName: 'tycon-ci-gate (blocking)'
+        steps:
+          # El arnés llega por clon (abajo), no por checkout: el repo propio queda solo en $(Build.SourcesDirectory).
+          - checkout: self
+            fetchDepth: 0
+            # 🔴 2026-08-31: sin esto, el `git fetch` de abajo NO tiene credenciales y falla con
+            # "could not read Username" — y estaba tapado con `|| true`. El portón funcionaba de
+            # casualidad, porque `fetchDepth: 0` ya trae la rama destino.
+            persistCredentials: true
+
+          # El arnés se baja de su repo público (variables harnessRepoUrl y harnessRef), por clon y sin credencial.
+          # Sin `|| true`: si el repo no responde, el paso falla y lo dice.
+          - script: |
+              set -euo pipefail
+              DEST="$(Agent.BuildDirectory)/tcg"
+              rm -rf "$DEST"
+              git clone --quiet --depth 1 --single-branch --branch "$(harnessRef)" --no-tags "$(harnessRepoUrl)" "$DEST"
+              echo "Arnés público en $(git -C "$DEST" rev-parse --short HEAD)"
+            displayName: 'Fetch harness (public GitHub, no credentials)'
+          # 2026-09-02: NodeTool@0 quedó obsoleta (Azure lo avisa en cada pull request); UseNode@1 es el
+          # reemplazo oficial. Los otros cuatro backends migraron a la mañana; acá quedaron dos tareas atrás.
+          - task: UseNode@1
+            inputs:
+              version: '20.x'
+          - script: |
+              set -u
+              GATE="$(Agent.BuildDirectory)/tcg/scripts/ci/tycon-ci-gate.js"
+              REPO="$(Build.SourcesDirectory)"
+              TARGET="$(System.PullRequest.TargetBranch)"
+              TARGET="${TARGET#refs/heads/}"
+              if [ ! -f "$GATE" ]; then
+                echo "##vso[task.logissue type=error]No se encontró el portón en $GATE — un control ausente NO es un control aprobado"
+                exit 1
+              fi
+              # 🔴 2026-08-31: el fetch YA NO se tapa con `|| true`. Si no puede actualizar la rama
+              # destino se DICE, y si la referencia directamente no está en el clon el portón no
+              # puede comparar nada — y un control que no puede correr NO está aprobado.
+              if ! git -C "$REPO" fetch --no-tags origin "$TARGET"; then
+                echo "##vso[task.logissue type=warning]No se pudo actualizar origin/$TARGET — se usa lo que trajo el checkout"
+              fi
+              if ! git -C "$REPO" rev-parse --verify -q "origin/$TARGET" >/dev/null; then
+                echo "##vso[task.logissue type=error]No existe origin/$TARGET en el clon — el portón no puede comparar contra la rama destino del PR"
+                exit 1
+              fi
+              node "$GATE" --repo "$REPO" --base "origin/$TARGET"
+            displayName: 'tycon-ci-gate (--base = PR target branch)'
+
+  - stage: SecurityScan
+    displayName: 'Security scan (PRs only)'
+    # Canónico: sólo en PRs, colgado del portón.
+    dependsOn: [HarnessGate]
+    condition: and(eq(variables['Build.Reason'], 'PullRequest'), in(dependencies.HarnessGate.result, 'Succeeded', 'SucceededWithIssues'))
+    jobs:
+      - job: SecurityChecks
+        displayName: 'Dependency + Secret + SAST Scan'
+        # 🔴 2026-09-02 (revisión adversarial de cierre; decidido con el dev): hasta hoy los tres
+        # controles de este stage eran DECORATIVOS. El de dependencias no restauraba antes de
+        # escanear (sin el assets file `dotnet list --vulnerable` no mira nada), el fallo se perdía
+        # en el `| tee`, y sólo avisaba; los de secretos y código llevaban `|| true`. Medido el
+        # 2026-09-01: 4 avisos altos reales en una transitiva, y el stage en verde. Estaba declarado
+        # como deuda con revisión 2026-09-15; se encendió antes, con la deuda preexistente declarada
+        # en vulnerabilidades-pendientes.json (lo que NO está declarado sigue frenando).
+        steps:
+          # El repo propio (checkout) y el arnés (clon, abajo): el criterio único del análisis de dependencias
+          # vive allá. El repo queda solo en $(Build.SourcesDirectory).
+          - checkout: self
+          # El arnés se baja de su repo público (variables harnessRepoUrl y harnessRef), por clon y sin credencial.
+          # Sin `|| true`: si el repo no responde, el paso falla y lo dice.
+          - script: |
+              set -euo pipefail
+              DEST="$(Agent.BuildDirectory)/tcg"
+              rm -rf "$DEST"
+              git clone --quiet --depth 1 --single-branch --branch "$(harnessRef)" --no-tags "$(harnessRepoUrl)" "$DEST"
+              echo "Arnés público en $(git -C "$DEST" rev-parse --short HEAD)"
+            displayName: 'Fetch harness (public GitHub, no credentials)'
+          - task: UseDotNet@2
+            displayName: 'Setup .NET SDK'
+            inputs:
+              packageType: 'sdk'
+              version: '$(dotnetVersion)'
+          - task: UseNode@1
+            inputs:
+              version: '$(nodeVersion)'
+
+          - script: |
+              set -u
+              REPO="$(Build.SourcesDirectory)"
+              GUION="$(Agent.BuildDirectory)/tcg/scripts/ci/audit-dependencies.js"
+              if [ ! -f "$GUION" ]; then
+                echo "##vso[task.logissue type=error]No se encontró audit-dependencies.js del arnés en $GUION — un control ausente NO es un control aprobado"
+                exit 1
+              fi
+              echo "🔍 Checking NuGet vulnerabilities (criterio único del arnés)..."
+              # El guion restaura ANTES de escanear, no pierde el fallo del `dotnet list` y, con
+              # --block, sale 1 ante alto/crítico NO declarado. "No pude medir" sale 2 y también
+              # frena: un escaneo que no corrió no es un escaneo limpio (era exactamente el agujero
+              # de este pipeline). La deuda declarada (vulnerabilidades-pendientes.json) ampara sólo
+              # lo que lista, hasta su fecha de revisión; vencida, todo vuelve a contar.
+              cd "$REPO"
+              node "$GUION" --repo . --type nuget --project src/{{BACKEND_REPO}}/{{BACKEND_REPO}}.csproj --declared vulnerabilidades-pendientes.json --block
+              RC=$?
+              if [ "$RC" -eq 2 ]; then
+                echo "##vso[task.logissue type=error]El escaneo de dependencias NO pudo medir — no se puede dar por limpio"
+                exit 1
+              elif [ "$RC" -ne 0 ]; then
+                echo "##vso[task.logissue type=error]Vulnerable NuGet packages (High/Critical) NO declaradas — ver arriba"
+                exit 1
+              fi
+            displayName: 'Dependency scan'
+
+          - script: |
+              # 🔴 2026-09-02 — BAJAR LAS IMÁGENES ANTES, CON REINTENTO (decidido con el dev).
+              # Caso real del mismo día: el pull request de otro backend murió con
+              #   "docker: Error response from daemon: received unexpected HTTP status: 502 Bad Gateway"
+              # al bajar la imagen de semgrep. El registro tuvo un tropiezo de segundos y se llevó
+              # puesto un pull request sano: `docker run` baja la imagen implícitamente y no
+              # reintenta, así que un 502 del registro se lee igual que un hallazgo de seguridad.
+              # Acá se bajan las dos ANTES, reintentando; los pasos siguientes ya las tienen locales.
+              #
+              # 🔴 Si tras los reintentos no se pudo bajar, es ERROR y no un salteo: un control que
+              # no puede correr NO está aprobado (misma regla que "docker no está en el agente").
+              if ! command -v docker >/dev/null; then
+                echo "##vso[task.logissue type=error]docker no está en el agente — los análisis de seguridad no pueden correr"
+                exit 1
+              fi
+              bajar() {
+                for intento in 1 2 3; do
+                  docker pull "$1" && return 0
+                  ESPERA=$((intento * 10))
+                  echo "  ⏳ no se pudo bajar $1 (intento $intento) — reintento en ${ESPERA}s"
+                  sleep $ESPERA
+                done
+                echo "##vso[task.logissue type=error]No se pudo bajar $1 tras 3 intentos — el análisis no puede correr"
+                return 1
+              }
+              bajar zricethezav/gitleaks:v8.30.1 || exit 1
+              bajar semgrep/semgrep || exit 1
+            displayName: 'Pull analysis images (with retry)'
+
+          - script: |
+              echo "🔍 Scanning for secrets..."
+              # H2 (2026-08-30): sin `|| true` — un secreto commiteado FRENA el
+              # PR. Y docker ausente es error, no skip silencioso (fail-closed, misma regla que el portón).
+              if ! command -v docker >/dev/null; then
+                echo "##vso[task.logissue type=error]docker no está en el agente — el scan de secretos no puede correr"
+                exit 1
+              fi
+              # --no-git: se escanea el ÁRBOL del merge (lo que de verdad entra a main), no la
+              # historia, que dependía de cuánta trajo el checkout. 🔴 VERSIÓN FIJA, no `latest`: la
+              # interpretación de la config cambió entre versiones y una vieja apaga reglas EN
+              # SILENCIO (medido: roto en v8.18.4, correcto en v8.30.1).
+              docker run --rm -v "$(Build.SourcesDirectory)":/repo zricethezav/gitleaks:v8.30.1 detect --source /repo --no-git --verbose --redact
+            displayName: 'Secret Scan (Gitleaks)'
+
+          - script: |
+              echo "🔍 Running SAST analysis..."
+              # H2 (2026-08-30): falla SOLO con hallazgos de severidad ERROR
+              # (--severity ERROR --error) — bloquear por todo lo que `--config auto` opina sería el
+              # gate que el equipo aprende a apagar. Docker ausente = error (mismo criterio que Gitleaks).
+              #
+              # `--exclude src/DevHost` se conserva: DevHost es el andamio local para levantar el
+              # plugin fuera del host, no viaja en el paquete (el publish es sólo del csproj del plugin).
+              if ! command -v docker >/dev/null; then
+                echo "##vso[task.logissue type=error]docker no está en el agente — el SAST no puede correr"
+                exit 1
+              fi
+              docker run --rm -v "$(Build.SourcesDirectory)":/src semgrep/semgrep semgrep scan --config auto --severity ERROR --error --exclude 'src/DevHost' /src
+            displayName: 'Code Scan (Semgrep)'
+
+  - stage: Pruebas
+    displayName: 'Tests and coverage — PR and main'
+    # 🔴 2026-09-01 — stage NUEVO (esquema canónico del camino del paquete).
+    # Las 2790 pruebas de este plugin YA corrían... adentro del stage Build, como un paso más
+    # antes de `dotnet publish`. O sea que la propiedad de fondo (el paquete que se despliega es
+    # el que se probó) ya se cumplía. Lo que NO se cumplía era que se VIERA: con las pruebas
+    # adentro del Build, un rojo se muestra como "Build: failed" y hay que abrir el registro para
+    # saber si fue la compilación, las pruebas o la cobertura. Separadas, el tablero dice
+    # "Pruebas: failed · Build: skipped" y se entiende sin abrir nada — que es lo mismo que ya
+    # mostraban los demás productos.
+    # Costo asumido: este stage recompila la solución (el Build ya no reusa esa compilación).
+    #
+    # 🔴 `Category!=EdgeCase` viene del pipeline original y se conserva, pero OJO: hoy no excluye
+    # NADA (medido 2026-09-01: 0 pruebas marcadas con esa categoría en todo `tests/`). Es un
+    # filtro vestigial y una trampa esperando: el día que alguien marque una prueba `EdgeCase`,
+    # esa prueba deja de correr en CI **sin que nada lo diga**.
+    # Canónico: cuelga del PORTÓN, no del análisis de seguridad. 'Skipped' cuenta como OK —
+    # en main el portón legítimamente no corre, y exigirle 'Succeeded' dejaría main sin pruebas.
+    dependsOn: [HarnessGate]
+    condition: in(dependencies.HarnessGate.result, 'Succeeded', 'SucceededWithIssues', 'Skipped')
+    jobs:
+      - job: ContainerTests
+        displayName: 'Run all tests with coverage'
+        steps:
+          - checkout: self
+            fetchDepth: '1'
+
+          - task: UseDotNet@2
+            displayName: 'Setup .NET SDK'
+            inputs:
+              packageType: 'sdk'
+              version: '$(dotnetVersion)'
+
+          - script: |
+              dotnet test --filter "Category!=EdgeCase" \
+                --collect:"XPlat Code Coverage" \
+                --settings coverlet.runsettings \
+                --results-directory $(Agent.TempDirectory)/TestResults \
+                --logger "trx;LogFileName=test-results.trx" \
+                --verbosity minimal
+            displayName: 'Run tests with coverage'
+
+          - task: PublishTestResults@2
+            displayName: 'Publish test results'
+            inputs:
+              testResultsFormat: 'VSTest'
+              testResultsFiles: '**/test-results.trx'
+              searchFolder: '$(Agent.TempDirectory)/TestResults'
+              testRunTitle: 'Unit + Integration Tests'
+            condition: always()
+            # 🔴 2026-09-02: publicar el informe NO puede tumbar el build. Los otros cuatro backends lo tienen
+            # desde el 2026-08-31 (Azure devolvió "Forbidden" al registrar resultados en tres proyectos en 12
+            # minutos, con el código sano). Acá este paso corre ANTES del piso de cobertura: un tropiezo de
+            # Azure mataba el job, `Pruebas` quedaba en rojo y el `Build` se salteaba con las pruebas verdes.
+            # Publicar un informe es para que alguien lo mire; el control es otro paso.
+            continueOnError: true
+
+          - script: |
+              # 🔴 2026-09-02 (revisión adversarial 🟠 #10, C#11): versión FIJA y sin `|| true`. Si
+              # reportgenerator no está, no hay Summary.txt, LINE_COV queda vacío, la aritmética de `bc`
+              # falla, la condición da falso y el paso imprimía ✅ con cobertura DESCONOCIDA.
+              dotnet tool install -g dotnet-reportgenerator-globaltool --version 5.5.11 2>/dev/null \
+                || dotnet tool update -g dotnet-reportgenerator-globaltool --version 5.5.11 \
+                || { echo "##vso[task.logissue type=error]No se pudo instalar reportgenerator 5.5.11 — sin él no se puede medir la cobertura"; exit 1; }
+              export PATH="$PATH:$HOME/.dotnet/tools"
+
+              # 🔴 2026-09-02 — SE COMBINAN TODOS LOS INFORMES, no se elige uno.
+              # Antes: `find ... | head -1` y se le pasaba UNO SOLO a reportgenerator, que
+              # justamente sabe combinar. Con un solo proyecto de prueba daba igual; con dos, el
+              # resultado depende del orden del sistema de archivos. Es el defecto que se midió ese
+              # día en otro producto: reportaba 0.0% teniendo 66% real, porque le tocaba el informe vacío
+              # del proyecto de integración que no corre por defecto.
+              # Si dos proyectos cubren partes distintas, la cobertura real es la UNIÓN, y eso es lo
+              # que calcula reportgenerator cuando se le pasan todos.
+              REPORTES=$(find $(Agent.TempDirectory)/TestResults -name "coverage.cobertura.xml" -type f | sort)
+
+              if [ -z "$REPORTES" ]; then
+                echo "##vso[task.logissue type=error]No se encontró ningún coverage.cobertura.xml — no se pudo medir la cobertura, el gate NO se da por bueno"
+                exit 1
+              fi
+
+              echo "Informes a combinar:"; echo "$REPORTES" | sed 's/^/  · /'
+              LISTA=$(echo "$REPORTES" | tr '\n' ';' | sed 's/;$//')
+
+              reportgenerator \
+                -reports:"$LISTA" \
+                -targetdir:"$(Agent.TempDirectory)/CoverageReport" \
+                -reporttypes:"HtmlInline_AzurePipelines;Cobertura;TextSummary" \
+                || { echo "##vso[task.logissue type=error]reportgenerator falló — no se pudo combinar la cobertura"; exit 1; }
+
+              echo ""
+              cat "$(Agent.TempDirectory)/CoverageReport/Summary.txt"
+
+              # Extract coverage percentages
+              LINE_COV=$(grep 'Line coverage:' "$(Agent.TempDirectory)/CoverageReport/Summary.txt" | grep -oE '[0-9]+\.?[0-9]*' | head -1)
+              BRANCH_COV=$(grep 'Branch coverage:' "$(Agent.TempDirectory)/CoverageReport/Summary.txt" | grep -oE '[0-9]+\.?[0-9]*' | head -1)
+              # 🔴 Cobertura vacía = no se pudo medir = ROJO. Un piso que no puede medir no frena nada.
+              if [ -z "$LINE_COV" ] || [ -z "$BRANCH_COV" ]; then
+                echo "##vso[task.logissue type=error]No pude leer la cobertura del Summary.txt (líneas='${LINE_COV}' ramas='${BRANCH_COV}') — el piso no se puede evaluar"
+                exit 1
+              fi
+
+              MIN_LINE=70
+              MIN_BRANCH=70
+
+              echo ""
+              echo "═══════════════════════════════════════"
+              echo "  Coverage: ${LINE_COV}% lines, ${BRANCH_COV}% branches"
+              echo "  Minimum:  ${MIN_LINE}% lines, ${MIN_BRANCH}% branches"
+              echo "═══════════════════════════════════════"
+
+              FAILED=0
+              if (( $(echo "$LINE_COV < $MIN_LINE" | bc -l) )); then
+                echo "##vso[task.logissue type=error]Line coverage ${LINE_COV}% is below minimum ${MIN_LINE}%"
+                FAILED=1
+              fi
+              if (( $(echo "$BRANCH_COV < $MIN_BRANCH" | bc -l) )); then
+                echo "##vso[task.logissue type=error]Branch coverage ${BRANCH_COV}% is below minimum ${MIN_BRANCH}%"
+                FAILED=1
+              fi
+
+              if [ $FAILED -eq 1 ]; then
+                exit 1
+              fi
+
+              echo "✅ Coverage thresholds passed!"
+            displayName: 'Enforce coverage threshold'
+
+          - task: PublishCodeCoverageResults@2
+            displayName: 'Publish code coverage'
+            inputs:
+              summaryFileFormat: 'Cobertura'
+              summaryFileLocation: '$(Agent.TempDirectory)/CoverageReport/Cobertura.xml'
+              pathToSources: '$(Build.SourcesDirectory)'
+            # Mismo motivo que en 'Publish test results': el informe no gatea, el piso de cobertura ya corrió.
+            continueOnError: true
+
+  - stage: Build
+    displayName: 'Build package'
+    # 🔴 2026-09-01 — el Build ahora COLGA de las pruebas. Antes las contenía; ahora depende de
+    # ellas y la dependencia va escrita en la CONDICIÓN: en Azure DevOps un `condition:` explícito
+    # REEMPLAZA al `succeeded()` implícito, y `dependsOn` a secas sólo ordena. Sin nombrar a
+    # Pruebas acá, el Build empaquetaría igual con las pruebas en rojo.
+    # SecurityScan sigue como dependencia: es el primer stage y el Build no debe correr si ese
+    # análisis falló. Se tolera 'Skipped' porque puede no aplicar en todos los disparos.
+    dependsOn: [HarnessGate, TraerArnes, Pruebas]
+    condition: and(in(dependencies.HarnessGate.result, 'Succeeded', 'SucceededWithIssues', 'Skipped'), in(dependencies.TraerArnes.result, 'Succeeded', 'SucceededWithIssues'), in(dependencies.Pruebas.result, 'Succeeded', 'SucceededWithIssues'))
+    jobs:
+      - job: BuildPlugin
+        displayName: 'Build and package'
+        steps:
+          - checkout: self
+            fetchDepth: '0'
+            persistCredentials: 'true'
+
+          - task: DownloadPipelineArtifact@2
+            displayName: 'Download harness scripts'
+            inputs:
+              buildType: 'current'
+              artifactName: 'arnes-ci'
+              targetPath: '$(Agent.TempDirectory)/arnes-ci'
+          # ── La corrida de main dice qué pull requests trae (2026-09-15) ────
+          # Trazabilidad, no un control: una etiqueta PR-<id> por cada pull request que entró a main
+          # desde la corrida anterior (con batch pueden ser varios) y un resumen en la página de la
+          # corrida con el enlace a cada uno. Va ACÁ porque es el primer job de main con historia
+          # completa (fetchDepth 0) y con arnes-ci ya bajado. Sólo en main: la corrida del pull
+          # request ya enlaza a su PR.
+          # 🔴 NUNCA frena: si el guion no llegó o sale distinto de 0, queda un aviso naranja con el
+          # motivo y el job sigue. Por eso no lleva continueOnError: el paso mismo no puede fallar.
+          - task: Bash@3
+            displayName: 'Tag this run with its pull requests (main only)'
+            condition: and(ne(variables['Build.Reason'], 'PullRequest'), eq(variables['Build.SourceBranch'], 'refs/heads/main'), succeeded())
+            inputs:
+              targetType: 'inline'
+              script: |
+                set -u
+                ETIQUETAR="$(Agent.TempDirectory)/arnes-ci/label-prs.sh"
+                if [ ! -f "$ETIQUETAR" ]; then
+                  echo "##vso[task.logissue type=warning]No llegó label-prs.sh del arnés — esta corrida queda SIN etiquetas de PR"
+                  exit 0
+                fi
+                bash "$ETIQUETAR" --repo . \
+                  || echo "##vso[task.logissue type=warning]label-prs.sh salió con código $? — esta corrida queda SIN etiquetas de PR (no frena)"
+          # 🔴 ACÁ Y NO DESPUÉS. El paquete que lleva migraciones tiene que declararlas, y el
+          # manifiesto que VIAJA es el `.example`, no el `plugin.json`. Va apenas baja el arnés y
+          # antes de que el pipeline copie el ejemplo ENCIMA del real para sacar credenciales: a
+          # partir de ese punto los dos son el mismo archivo y compararlos no dice nada.
+          - task: Bash@3
+            inputs:
+              targetType: 'inline'
+              script: |
+                set -u
+                # 🔴 LA BARRA FINAL NO ES COSMÉTICA (2026-09-03). `git ls-tree HEAD database` SIN
+                # barra devuelve la PALABRA "database" (el árbol), no su contenido: el conteo daba 0
+                # en toda corrida. Con --migrations 0, el control nunca evalúa su mitad más
+                # importante —que un paquete que lleva SQL adentro lo DECLARE en el manifiesto que
+                # viaja— y sin esa declaración el host ignora la carpeta, el despliegue dice "sin
+                # migraciones pendientes" y la base queda sin tocar, todo verde. Medido ese día:
+                # cuatro productos con entre 24 y 117 migraciones cada uno, y el control contaba 0
+                # en todos. Con la barra los cinco siguen pasando: no había deuda escondida,
+                # había un control que no miraba.
+                CTRL="$(Agent.TempDirectory)/arnes-ci/check-plugin-manifests.js"
+                [ -f "$CTRL" ] || { echo "##vso[task.logissue type=error]No llegó el control de manifiestos del arnés — ausente NO es aprobado"; exit 1; }
+                # 🔴 LOS MANIFIESTOS SE LEEN DE GIT, no del disco. Más abajo el pipeline copia el ejemplo
+                # ENCIMA del real para sacar credenciales, y a partir de ahí los dos son el mismo archivo:
+                # comparar el disco depende de en qué punto exacto corra este paso, y ese orden cambia entre
+                # productos. Leyendo del commit, el control da lo mismo esté donde esté.
+                D=$(mktemp -d)
+                git show HEAD:plugin.json > "$D/p.plugin.json" 2>/dev/null || { echo "##vso[task.logissue type=error]No pude leer plugin.json del commit"; exit 1; }
+                git show HEAD:plugin.json.example > "$D/p.plugin.json.example" 2>/dev/null || { echo "##vso[task.logissue type=error]No pude leer plugin.json.example del commit"; exit 1; }
+                node "$CTRL" --pairs "$D" --migrations "$(git ls-tree --name-only HEAD database/ 2>/dev/null | grep -cE '^database/[0-9]{3}_.*\.sql$')"
+            displayName: 'Manifest check: plugin.json matches its .example, and DB migrations are declared'
+
+
+          - task: UseDotNet@2
+            displayName: 'Setup .NET SDK'
+            inputs:
+              packageType: 'sdk'
+              version: '$(dotnetVersion)'
+
+          - task: UseNode@1
+            displayName: 'Setup Node.js'
+            inputs:
+              version: '$(nodeVersion)'
+
+          - script: |
+              COMMIT_HASH="$(Build.SourceVersion)"
+              SHORT_HASH="${COMMIT_HASH:0:7}"
+              BUILD_DATE=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
+
+              echo "##vso[task.setvariable variable=commitHash]$COMMIT_HASH"
+              echo "##vso[task.setvariable variable=shortHash]$SHORT_HASH"
+              echo "##vso[task.setvariable variable=buildDate]$BUILD_DATE"
+
+              echo "Commit: $SHORT_HASH"
+              echo "Build Date: $BUILD_DATE"
+            displayName: 'Get build metadata'
+
+          - script: |
+              # 🔴 2026-09-02 (revisión adversarial 🟠 #12, C#13): el árbol NO se rebasea. El `git pull
+              # --rebase` traía el último commit de versiones (lleva [skip ci] y, con batch, puede haber
+              # entrado después del commit de este run) — pero se traía TODO lo que entró a main después:
+              # el paquete se compilaba con código que la etapa de pruebas de ESTE run no vio, estampado
+              # con un commitHash que mentía. Lo único que hace falta es la VERSIÓN: se lee de la punta de
+              # main sin tocar el árbol. En un PR también sirve: la punta de main es la versión anterior.
+              git fetch origin main --quiet 2>/dev/null || echo "##vso[task.logissue type=warning]git fetch origin main falló — se usa la versión del checkout"
+              VERSION_EN_MAIN=$(git show origin/main:plugin.json 2>/dev/null | jq -r '.version // empty' 2>/dev/null || true)
+
+              # Validate plugin.json is valid JSON before proceeding
+              echo "📋 Validating plugin.json..."
+              if ! jq empty plugin.json 2>/dev/null; then
+                echo "❌ ERROR: plugin.json is not valid JSON!"
+                cat plugin.json
+                exit 1
+              fi
+              echo "✅ plugin.json is valid JSON"
+
+              # Read current version from plugin.json (this is the source of truth)
+              CURRENT_VERSION=$(jq -r '.version // "0.0.0"' plugin.json)
+              # La versión a incrementar es la MÁS ALTA entre el checkout y la punta de main (el último
+              # bump, que el checkout puede no tener). Si el checkout trae una mayor (bump manual), se respeta.
+              if [ -n "$VERSION_EN_MAIN" ] && [ "$(printf '%s\n%s\n' "$CURRENT_VERSION" "$VERSION_EN_MAIN" | sort -V | tail -1)" = "$VERSION_EN_MAIN" ]; then
+                echo "Versión en la punta de main: $VERSION_EN_MAIN (checkout: $CURRENT_VERSION)"
+                CURRENT_VERSION="$VERSION_EN_MAIN"
+              fi
+              echo "Current version in plugin.json: $CURRENT_VERSION"
+
+              # Validate current version format
+              if [ -z "$CURRENT_VERSION" ] || ! [[ "$CURRENT_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                NEW_VERSION="1.0.0"
+                echo "Invalid or missing version! Starting at v1.0.0"
+              else
+                # Increment PATCH from current version
+                IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
+                PATCH=$((PATCH + 1))
+                NEW_VERSION="$MAJOR.$MINOR.$PATCH"
+                echo "Auto-increment: $CURRENT_VERSION -> $NEW_VERSION"
+              fi
+
+              echo "##vso[task.setvariable variable=pluginVersion]$NEW_VERSION"
+
+              # Update plugin.json with new version (with validation)
+              if jq --arg version "$NEW_VERSION" '.version = $version' plugin.json > plugin.tmp.json && [ -s plugin.tmp.json ]; then
+                mv plugin.tmp.json plugin.json
+                echo "✅ Updated plugin.json to version $NEW_VERSION"
+              else
+                echo "❌ ERROR: Failed to update version in plugin.json"
+                rm -f plugin.tmp.json
+                exit 1
+              fi
+            displayName: 'Calculate version'
+
+          - script: |
+              # Validate plugin.json before reading metadata
+              if ! jq empty plugin.json 2>/dev/null; then
+                echo "❌ ERROR: plugin.json is not valid JSON!"
+                exit 1
+              fi
+
+              # Read metadata
+              PLUGIN_NAME=$(jq -r '.name // "unknown"' plugin.json)
+              PLUGIN_DESC=$(jq -r '.description // "Backend plugin"' plugin.json)
+              PLUGIN_AUTHOR=$(jq -r '.author // "BIZUIT"' plugin.json)
+
+              # Derive project name from entryPoint (e.g., "{{BACKEND_REPO}}.dll" -> "{{BACKEND_REPO}}")
+              ENTRY_POINT=$(jq -r '.entryPoint // ""' plugin.json)
+
+              if [ -z "$ENTRY_POINT" ] || [ "$ENTRY_POINT" = "null" ]; then
+                echo "❌ ERROR: entryPoint not found in plugin.json!"
+                cat plugin.json
+                exit 1
+              fi
+
+              PROJECT_NAME="${ENTRY_POINT%.dll}"
+
+              echo "##vso[task.setvariable variable=pluginName]$PLUGIN_NAME"
+              echo "##vso[task.setvariable variable=pluginDesc]$PLUGIN_DESC"
+              echo "##vso[task.setvariable variable=pluginAuthor]$PLUGIN_AUTHOR"
+              echo "##vso[task.setvariable variable=projectName]$PROJECT_NAME"
+
+              echo "Plugin: $PLUGIN_NAME"
+              echo "Project: $PROJECT_NAME"
+              echo "Description: $PLUGIN_DESC"
+              echo "Entry Point: $ENTRY_POINT"
+            displayName: 'Read plugin metadata'
+
+          - script: |
+              echo "📝 Preparing plugin.json for CI/CD deployment..."
+              echo "This ensures NO credentials are included in the deployment ZIP"
+
+              # Backup current plugin.json (has updated version)
+              cp plugin.json plugin.version-updated.json
+
+              # Copy plugin.json.example as base (without credentials)
+              if [ -f "plugin.json.example" ]; then
+                # Validate plugin.json.example is valid JSON
+                if jq empty plugin.json.example 2>/dev/null; then
+                  cp plugin.json.example plugin.json
+                  echo "✅ Copied plugin.json.example → plugin.json"
+                else
+                  echo "❌ ERROR: plugin.json.example is not valid JSON!"
+                  cat plugin.json.example
+                  exit 1
+                fi
+              else
+                echo "⚠️  Warning: plugin.json.example not found, using existing plugin.json"
+              fi
+
+              # Restore version from backup (with validation)
+              VERSION=$(jq -r '.version' plugin.version-updated.json)
+              if jq --arg version "$VERSION" '.version = $version' plugin.json > plugin.tmp.json && [ -s plugin.tmp.json ]; then
+                mv plugin.tmp.json plugin.json
+                echo "✅ Restored version: $VERSION"
+              else
+                echo "❌ ERROR: Failed to restore version"
+                rm -f plugin.tmp.json
+                exit 1
+              fi
+
+              # Sanitize defaultSettings (empty all values for security)
+              if [ -f "scripts/sanitize-plugin-json.mjs" ]; then
+                node scripts/sanitize-plugin-json.mjs
+                echo "✅ Sanitized defaultSettings (all values emptied)"
+              else
+                echo "⚠️  Warning: sanitize script not found, skipping sanitization"
+              fi
+
+              # Final validation
+              if ! jq empty plugin.json 2>/dev/null; then
+                echo "❌ ERROR: plugin.json is corrupted after sanitization!"
+                exit 1
+              fi
+
+              # Show final defaultSettings for verification
+              echo ""
+              echo "📋 Final plugin.json:"
+              cat plugin.json
+              echo ""
+            displayName: 'Sanitize plugin.json (remove credentials)'
+
+          - script: |
+              echo "Building plugin..."
+
+              # Validate projectName is set
+              if [ -z "$(projectName)" ]; then
+                echo "❌ ERROR: projectName variable is empty!"
+                exit 1
+              fi
+
+              dotnet publish src/$(projectName)/$(projectName).csproj -c Release -r win-x64 --self-contained false -p:DebugType=none -p:DebugSymbols=false -o publish
+
+              # Include database migrations in the package (2026-09-02).
+              #
+              # Dos reglas, las dos necesarias:
+              #
+              # 1) La carpeta DEBE llamarse "migrations/" y contener SOLO scripts NNN_*.sql.
+              #    El host de Bizuit ignora toda entrada del ZIP cuyo path no
+              #    arranque con "migrations/" (PluginMigrationService.ExtractMigrationsFromZip)
+              #    y descarta las que no matcheen NNN_Nombre.sql. Por eso NO se copia
+              #    database/ entera: quedan afuera scripts/operation/ y todo lo de BD/.
+              #
+              # 2) 🔴 Solo viajan las migraciones >= $(firstManagedMigration). En un producto nuevo el piso es
+              #    001 porque no existe ninguna migración numerada anterior: todo lo que se corrió
+              #    a mano vive en BD/ con fecha en el nombre y no matchea el glob. Si algún día
+              #    alguien numera un script viejo, este filtro es lo único que impide que el host
+              #    lo ofrezca como pendiente y lo vuelva a correr.
+              #
+              # El glob toma también los companion NNN_Nombre.rollback.sql si existen.
+              if [ -d "database" ]; then
+                mkdir -p publish/migrations
+                FIRST="$(firstManagedMigration)"
+                # 🔴 EL PISO TIENE QUE SER UN NÚMERO, Y SI NO LO ES SE FRENA (2026-09-03).
+                #
+                # Este filtro decide qué migraciones VIAJAN dentro del paquete. Las anteriores al piso ya se
+                # aplicaron a mano en todos los entornos y volver a correrlas DESTRUYE DATOS (en este producto
+                # hay migraciones que borran tablas y otras que las vacían). Si la variable no queda como
+                # número —porque alguien la renombra, la borra, o se copia este pipeline a un producto nuevo
+                # sin declararla— la comparación aritmética falla, el `if` da falso y VIAJAN TODAS. El host
+                # las ofrece como pendientes, el despliegue las ejecuta sin comparar contra nada, y el humo
+                # aprueba porque la versión coincide: la base destruida, todo en verde.
+                #
+                # El bloque no tiene `set -e` ni `set -u`, así que fallaba ABIERTO y en silencio. Ya pasó una
+                # vez (en otro producto, 2026-08-31) y lo cazó una persona leyendo, no un control. Fallar hacia "no viaja
+                # nada" tampoco sirve —dejaría la base sin migrar, también en verde—, así que la única salida
+                # correcta es NO EMPAQUETAR: sin un piso legible no se puede decidir qué es seguro mandar.
+                case "$FIRST" in
+                  ''|*[!0-9]*)
+                    echo "##vso[task.logissue type=error]firstManagedMigration no es un número ('$FIRST') — sin un piso legible no puedo decidir qué migraciones es seguro mandar, y mandarlas todas destruye datos. No empaqueto nada."
+                    exit 1 ;;
+                esac
+                MIGRATION_COUNT=0
+                SKIPPED=0
+                for f in database/[0-9][0-9][0-9]_*.sql; do
+                  [ -f "$f" ] || continue
+                  NUM="$(basename "$f" | cut -c1-3)"
+                  # 10# fuerza base decimal: sin eso "030" se interpretaría como octal.
+                  if [ $((10#$NUM)) -lt $((10#$FIRST)) ]; then
+                    SKIPPED=$((SKIPPED + 1))
+                    continue
+                  fi
+                  cp "$f" publish/migrations/
+                  echo "  + migrations/$(basename "$f")"
+                  MIGRATION_COUNT=$((MIGRATION_COUNT + 1))
+                done
+                echo "📂 Included $MIGRATION_COUNT migration script(s) in package; $SKIPPED anteriores a $FIRST omitidas (ya aplicadas a mano)"
+                if [ "$MIGRATION_COUNT" -eq 0 ]; then
+                  echo "ℹ️  Paquete sin migraciones — normal si no se agregó ninguna nueva."
+                fi
+              else
+                echo "No database/ directory found, skipping migrations"
+              fi
+
+              echo "Build completed"
+              ls -la publish/
+            displayName: 'Build and publish plugin'
+
+          - script: |
+              echo "Cleaning publish output to reduce package size..."
+              BEFORE=$(du -sh publish/ | cut -f1)
+
+              # Remove PDB files (debug symbols from NuGet packages like libSkiaSharp.pdb ~80MB)
+              find publish/ -name "*.pdb" -delete
+              echo "  Removed PDB files"
+
+              # Remove unnecessary runtimes: the Bizuit host runs on Windows x64 (IIS).
+              # Keep win-x64 (native SNI, Skia) AND win (managed shims: with a portable publish
+              # the Windows SqlClient/Pkcs/EventLog live in runtimes/win/lib — deleting it breaks
+              # SQL access on the host; with -r win-x64 there is no runtimes folder and this is a no-op).
+              if [ -d "publish/runtimes" ]; then
+                cd publish/runtimes
+                for dir in */; do
+                  case "$dir" in
+                    win-x64/|win/) echo "  Keeping runtime $dir" ;;
+                    *) echo "  Removing runtime $dir" && rm -rf "$dir" ;;
+                  esac
+                done
+                cd ../..
+              fi
+
+              AFTER=$(du -sh publish/ | cut -f1)
+              echo "Size: $BEFORE -> $AFTER"
+            displayName: 'Clean publish output (remove PDBs and extra runtimes)'
+
+          - script: |
+              PLUGIN_NAME="$(pluginName)"
+              VERSION="$(pluginVersion)"
+              SHORT_HASH="$(shortHash)"
+              COMMIT_HASH="$(commitHash)"
+              BUILD_DATE="$(buildDate)"
+
+              ZIP_NAME="${PLUGIN_NAME}.${VERSION}-${SHORT_HASH}.zip"
+
+              mkdir -p dist
+
+              # Get release notes from git commit message
+              # 🔴 2026-09-01 — ANTES: `git log -1 --pretty=%B`, o sea que el administrador que
+              # instala el plugin leía EL ÚLTIMO MENSAJE DE COMMIT como nota de versión. Con el
+              # flujo de pull request eso es peor todavía: el último commit de main es el merge,
+              # así que la nota decía "Merged PR 1234: ...".
+              # Esta es la nota de RESPALDO, la que viaja adentro del ZIP por si alguien lo sube
+              # a mano. El texto REAL se recalcula al desplegar, contra la versión que esté
+              # corriendo en ESE servidor (ver el paso de despliegue).
+              RN="$(Agent.TempDirectory)/arnes-ci/release-notes.sh"
+              if [ ! -f "$RN" ]; then
+                echo "##vso[task.logissue type=warning]No llegó release-notes.sh del arnés — la nota de esta versión va a salir VACÍA (la fuente única es <arnés>/scripts/ci; no hay copia local a propósito)"
+                RN=""
+              fi
+              RELEASE_NOTES=$(bash "$RN" --type plugin --local "$PLUGIN_NAME" src/ plugin.json database/ 2>&1 | grep -v '^\[release-notes\]' || echo "- (sin notas)")
+
+              # Get repository URL from git remote
+              REPO_URL=$(git remote get-url origin 2>/dev/null | sed 's/\.git$//' || echo "")
+
+              # Build URL for Azure DevOps
+              BUILD_URL="$(System.CollectionUri)$(System.TeamProject)/_build/results?buildId=$(Build.BuildId)"
+
+              echo "Adding metadata to plugin.json:"
+              echo "  - commitHash: $SHORT_HASH"
+              echo "  - buildDate: $BUILD_DATE"
+              echo "  - buildUrl: $BUILD_URL"
+              echo "  - repositoryUrl: $REPO_URL"
+
+              # Enrich plugin.json with all metadata (with validation)
+              if jq --arg commitHash "$COMMIT_HASH" \
+                 --arg buildDate "$BUILD_DATE" \
+                 --arg releaseNotes "$RELEASE_NOTES" \
+                 --arg repositoryUrl "$REPO_URL" \
+                 --arg buildUrl "$BUILD_URL" \
+                 '. + {commitHash: $commitHash, buildDate: $buildDate, releaseNotes: $releaseNotes, repositoryUrl: $repositoryUrl, buildUrl: $buildUrl}' \
+                 plugin.json > plugin.enriched.json && [ -s plugin.enriched.json ]; then
+                echo "✅ Enriched plugin.json with metadata"
+              else
+                echo "❌ ERROR: Failed to enrich plugin.json"
+                rm -f plugin.enriched.json
+                exit 1
+              fi
+
+              # Create ZIP with published files + enriched plugin.json
+              cd publish
+              cp ../plugin.enriched.json ./plugin.json
+              zip -r "../dist/${ZIP_NAME}" .
+              cd ..
+
+              echo "##vso[task.setvariable variable=zipName]$ZIP_NAME"
+
+              echo "Created: dist/${ZIP_NAME}"
+              ls -la dist/
+
+              # Verify plugin.json in ZIP is not empty
+              echo ""
+              echo "📋 Verifying plugin.json in ZIP:"
+              unzip -p "dist/${ZIP_NAME}" plugin.json | head -20
+            displayName: 'Create ZIP package with metadata'
+
+          - task: PublishPipelineArtifact@1
+            displayName: 'Publish artifact'
+            # 🔴 2026-09-02 (revisión adversarial 🟠 #7, C#8): SÓLO en main. El pull request compila y
+            # prueba, y el ZIP se arma y se descarta — etapa 1 del camino del paquete: "no fabrica
+            # nada que se despliegue". Publicarlo desde un PR dejaba un artefacto numerado como si
+            # fuera final, con el mismo número que va a usar el próximo build de main.
+            condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+            inputs:
+              targetPath: 'dist'
+              artifact: '$(pluginName)-$(pluginVersion)'
+              publishLocation: 'pipeline'
+
+          - script: |
+              echo "📝 Committing version update..."
+
+              # IMPORTANT: Restore the ORIGINAL plugin.json structure before committing
+              # We need to commit plugin.json with the new version but WITHOUT defaultSettings
+              # (defaultSettings should only exist in plugin.json.example)
+
+              # Read the new version
+              NEW_VERSION="$(pluginVersion)"
+
+              # Create a clean plugin.json with just the essential fields
+              # 🔴 requiresDatabase y migrations van SÍ o SÍ en esta lista (2026-09-02): el host exige los dos para administrar las migraciones. Sin ellos acá,
+              # cada bump los borraba en silencio y el paquete salía sin declararlos.
+              # 🔴 2026-09-02 — SIN LISTA DE CAMPOS. Acá había un `jq '{campo, campo, …}'` que conservaba
+              # una lista fija, DISTINTA en cada producto (diez, diez, nueve, ocho y ocho campos). Cualquier
+              # campo que no estuviera en esa lista se borraba EN SILENCIO en el próximo bump. Ya había
+              # pasado tres veces: `hasSignalRHubs` (el host deja de mapear los hubs), `relayHubsOnly` (el
+              # plugin vuelve a cargar de otra manera) y `migrations` — ésta el 2026-09-02, el mismo día que
+              # se cableó el flujo de migraciones administradas: el bot la borró en cuatro bumps seguidos.
+              # Cada vez se "arregló" agregando el campo a la lista. El cuarto arreglo habría durado hasta
+              # el quinto campo.
+              #
+              # Ahora se quita SÓLO lo que no debe estar (la configuración vive únicamente en el ejemplo) y
+              # se conserva todo lo demás. Lo que no se toca, no se pierde.
+              # Lo vigila `check-plugin-manifests.js` del arnés, que compara los dos manifiestos.
+              jq 'del(.defaultSettings)' plugin.version-updated.json > plugin.json
+
+              # Validate before committing
+              if ! jq empty plugin.json 2>/dev/null || [ ! -s plugin.json ]; then
+                echo "❌ ERROR: plugin.json is invalid before commit!"
+                cat plugin.json
+                exit 1
+              fi
+
+              echo "📋 plugin.json to commit:"
+              cat plugin.json
+
+              git config user.name "Azure Pipelines"
+              git config user.email "azure-pipelines@dev.azure.com"
+
+              git add plugin.json
+
+              if git diff --staged --quiet; then
+                echo "⚠️ No version changes to commit"
+              else
+                # La marca Commit: es el commit del que partió ESTA corrida. label-prs.sh la usa como
+                # base de la siguiente: un rebase de este commit (si entra otro merge mientras corre) no
+                # la mueve, así que ningún pull request queda sin etiquetar.
+                git commit -m "chore: bump version to $(pluginVersion) [skip ci]" -m "Commit: $(Build.SourceVersion)"
+
+                echo "📤 Pushing changes to repository..."
+
+                # Extract branch name from refs/heads/main -> main
+                BRANCH_NAME=$(echo "$(Build.SourceBranch)" | sed 's|refs/heads/||')
+                echo "Branch: $BRANCH_NAME"
+
+                # Rebase on top of latest remote to avoid race with concurrent runs.
+                # Si otro pipeline pusheó un bump antes, el pull --rebase reaplica
+                # nuestro commit sobre el head actualizado antes de pushear.
+                echo "🔄 Fetching + rebasing onto origin/$BRANCH_NAME..."
+                git fetch origin $BRANCH_NAME
+                if ! git rebase origin/$BRANCH_NAME; then
+                  echo "❌ Rebase failed (conflicto entre el bump y commits remotos)"
+                  git rebase --abort || true
+                  exit 1
+                fi
+
+                # Push with explicit error handling
+                if git push origin HEAD:$BRANCH_NAME; then
+                  echo "✅ Version update committed and pushed successfully"
+                else
+                  echo "❌ Failed to push changes"
+                  echo "This might be a permissions issue. Check pipeline settings:"
+                  echo "  - Project Settings → Repositories → Security"
+                  echo "  - Grant 'Contribute' permission to Build Service"
+                  exit 1
+                fi
+              fi
+            displayName: 'Commit version update (main only)'
+            condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+
+          - task: Bash@3
+            displayName: 'Warn if dev fell behind main (main only)'
+            continueOnError: true
+            condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+            inputs:
+              targetType: 'inline'
+              script: |
+                # 🔴 2026-08-31 — AVISA, NO TOCA. Decisión del dev, y el motivo importa:
+                # con el flujo de Pull Request cada merge deja en main algo que dev NO tiene (el commit
+                # de versión que escribe este bot), así que dev se atrasa SOLO. Medido el 2026-08-31:
+                # un backend llevaba 23 commits de atraso y su repo de formularios 15 — semanas, sin un solo
+                # incidente. O sea: el atraso molesta, no rompe.
+                #
+                # Se evaluó sincronizar dev automáticamente y se DESCARTÓ: mover origin/dev mientras
+                # alguien trabaja ahí le rebota el push y, si tocó el archivo de versión, le genera un
+                # conflicto. El problema real no es que dev se atrase: es que se atrase EN SILENCIO.
+                # Bajarlo es un `git pull` de diez segundos, y la decisión es de la persona.
+                UMBRAL=5
+                git fetch --no-tags origin dev main >/dev/null 2>&1 || true
+                if ! git rev-parse --verify origin/dev >/dev/null 2>&1; then exit 0; fi
+                ATRASO=$(git rev-list --count origin/dev..origin/main 2>/dev/null || echo 0)
+                if [ "$ATRASO" -ge "$UMBRAL" ]; then
+                  echo "##vso[task.logissue type=warning]dev está $ATRASO commits atrás de main. Bajalo cuando puedas: git checkout dev && git pull && git merge origin/main"
+                else
+                  echo "dev está $ATRASO commit(s) atrás de main (umbral de aviso: $UMBRAL)"
+                fi
+
+          - script: |
+              echo "=============================================="
+              echo "  Plugin Package Created Successfully!"
+              echo "=============================================="
+              echo ""
+              echo "Plugin: $(pluginName)"
+              echo "Version: $(pluginVersion)"
+              echo "Commit: $(shortHash)"
+              echo "Build Date: $(buildDate)"
+              echo ""
+              echo "Artifact: $(zipName)"
+              echo ""
+              echo "Metadata included:"
+              echo "  - commitHash: $(shortHash)"
+              echo "  - buildDate: $(buildDate)"
+              echo "  - releaseNotes: (from commit message)"
+              echo "  - buildUrl: (Azure DevOps build link)"
+              echo "  - repositoryUrl: (from git remote)"
+              echo ""
+              echo "Installation:"
+              echo "  1. Download artifact from this pipeline"
+              echo "  2. Go to Admin Panel > Plugins > Upload Plugin"
+              echo "  3. Upload the ZIP file"
+              echo "  4. Configure connection string if needed"
+              echo "  5. Activate the plugin"
+              echo ""
+              echo "API Endpoints will be available at:"
+              echo "  /api/plugins/$(pluginName)/*"
+              echo "=============================================="
+            displayName: 'Summary'
+
+  - stage: Deploy
+    displayName: 'Deploy to staging (main only)'
+    # 🔴 `TraerArnes` va en el dependsOn porque la condición lo NOMBRA. Andaba de casualidad:
+    # Azure DevOps resuelve dependencias transitivas (Build sí depende de TraerArnes), pero
+    # apoyarse en eso es frágil y no es lo que hacen los otros ocho pipelines.
+    dependsOn: [Build, TraerArnes]
+    # 🔴 GUARDA DE RAMA (2026-09-01). Hasta hoy este stage corría con `condition: succeeded()` y
+    # nada más. No explotaba porque el pipeline NUNCA corrió en un PR (0 runs `pullRequest` en el
+    # histórico). El día que `main` tenga política de rama, el pipeline pasa a ser la validación
+    # de CADA pull request — y sin esta guarda, cada PR abierto publicaría a staging pisando lo
+    # que el entorno está sirviendo (el upload marca la versión como default).
+    # 🔴 SIN succeeded(): evalúa la CADENA entera de dependencias y cualquier stage 'Skipped'
+    # aguas arriba la envenena (bug cazado en dos productos, en corridas distintas).
+    # Se chequea la dependencia DIRECTA, aceptando SucceededWithIssues para que un paso con
+    # continueOnError no corte el despliegue en silencio.
+    # La rama tiene que ser main además de "no-PR": sin eso, un run manual encolado sobre
+    # cualquier rama desplegaba ESA rama a staging como versión default.
+    condition: and(ne(variables['Build.Reason'], 'PullRequest'), eq(variables['Build.SourceBranch'], 'refs/heads/main'), in(dependencies.Build.result, 'Succeeded', 'SucceededWithIssues'), in(dependencies.TraerArnes.result, 'Succeeded', 'SucceededWithIssues'))
+    jobs:
+      - job: DeployToStaging
+        displayName: 'Upload to Bizuit host staging'
+        steps:
+          # El repo hace falta para recalcular las notas contra la versión que corre en ESTE
+          # servidor (fetchDepth 0: se necesita la historia completa para listar desde un commit
+          # viejo).
+          - checkout: self
+            fetchDepth: '0'
+
+          - task: DownloadPipelineArtifact@2
+            displayName: 'Download harness scripts'
+            inputs:
+              buildType: 'current'
+              artifactName: 'arnes-ci'
+              targetPath: '$(Agent.TempDirectory)/arnes-ci'
+
+          - task: DownloadPipelineArtifact@2
+            displayName: 'Download plugin artifact'
+            # 🔴 SIN `artifactName`: baja TODOS los artefactos del run. Nombrarlo con
+            # `$(pluginName)-$(pluginVersion)` NO funciona — esas variables se fijan con
+            # `task.setvariable` dentro del job del Build y NO cruzan de un stage a otro
+            # (harían falta variables de salida declaradas). Bajar todo trae el ZIP igual.
+            inputs:
+              buildType: 'current'
+              targetPath: '$(System.ArtifactsDirectory)'
+
+          - task: Bash@3
+            displayName: 'Recompute release notes against staging'
+            # AVISA, no corta: una nota vieja es un problema, un despliegue frenado por la nota
+            # es peor. Pero el guion sale 3 si no pudo, y eso deja el paso naranja (no verde).
+            continueOnError: true
+            inputs:
+              targetType: 'inline'
+              script: |
+                # La nota contesta "¿qué cambia respecto de lo que TENÉS INSTALADO?", y eso sólo
+                # se sabe AL PUBLICAR: entre que se armó el paquete y este momento el servidor
+                # pudo haber cambiado. Por eso se recalcula acá y no en el empaquetado.
+                # (Caso real: una nota de versión falsa en producción, 2026-08-31.)
+                set -u
+                ZIP_FILE=$(find "$(System.ArtifactsDirectory)" -name "*.zip" -type f | head -1)
+                if [ -z "$ZIP_FILE" ]; then echo "sin zip; se deja la nota del empaquetado"; exit 0; fi
+                RN="$(Agent.TempDirectory)/arnes-ci/release-notes.sh"
+                INJ="$(Agent.TempDirectory)/arnes-ci/inject-release-notes.sh"
+                if [ ! -f "$RN" ] || [ ! -f "$INJ" ]; then
+                  echo "##vso[task.logissue type=warning]No llegaron los guiones de notas del arnés — la nota queda como la del empaquetado (la fuente única es <arnés>/scripts/ci; no hay copia local a propósito)"
+                  exit 0
+                fi
+                NOTAS=$(bash "$RN" --type plugin --from-server "$(BIZEXT_STAGING_URL)" "$(BIZEXT_STAGING_USER)" "$(BIZEXT_STAGING_PASS)" {{PLUGIN}} src/ plugin.json database/ 2> >(sed 's/^/    [notas] /' >&2) )
+                if [ -n "$NOTAS" ]; then
+                  bash "$INJ" "$ZIP_FILE" "$NOTAS"
+                fi
+
+          # 🔴 EL DESPLIEGUE VA POR EL GUION COMPARTIDO DEL ARNÉS (2026-09-02). La secuencia —subir sin
+          # marcar como actual, preguntar con la vista previa, migrar, activar y recién ahí marcar— se
+          # escribió MAL cuatro veces seguidas mientras vivía acá, y las cuatro habrían salido verdes
+          # dejando producción rota. Ahora vive en un solo lugar, con 19 casos que prueban las siete
+          # formas de fallar. Ver `guides/probar-pipelines-sin-correrlos.md`.
+          - task: Bash@3
+            displayName: 'Deploy to staging (upload unmarked, preview, migrate, activate, mark)'
+            inputs:
+              targetType: 'inline'
+              script: |
+                set -u
+                DESPLEGAR="$(Agent.TempDirectory)/arnes-ci/deploy-plugin.sh"
+                if [ ! -f "$DESPLEGAR" ]; then
+                  echo "##vso[task.logissue type=error]No llegó deploy-plugin.sh del arnés — un despliegue que no puede empezar NO está desplegado"
+                  exit 1
+                fi
+                ZIP_FILE=$(find "$(System.ArtifactsDirectory)" -name "*.zip" -type f | head -1)
+                bash "$DESPLEGAR" \
+                  --url "$(BIZEXT_STAGING_URL)" \
+                  --user "$(BIZEXT_STAGING_USER)" \
+                  --password "$(BIZEXT_STAGING_PASS)" \
+                  --zip "$ZIP_FILE" \
+                  --endpoint "$(BIZEXT_UPLOAD_ENDPOINT)" \
+                  --environment staging
+
+          - task: Bash@3
+            displayName: 'Smoke: the plugin installed in staging is alive and is this version'
+            inputs:
+              targetType: 'inline'
+              script: |
+                set -u
+                HUMO="$(Agent.TempDirectory)/arnes-ci/smoke-plugin.sh"
+                if [ ! -f "$HUMO" ]; then
+                  echo "##vso[task.logissue type=error]No llegó smoke-plugin.sh del arnés — sin humo no hay verde"
+                  exit 1
+                fi
+                ZIP_FILE=$(find "$(System.ArtifactsDirectory)" -name "*.zip" -type f | head -1)
+                [ -z "$ZIP_FILE" ] && { echo "##vso[task.logissue type=error]No hay ZIP del plugin para saber qué versión esperar"; exit 1; }
+                VERSION=$(unzip -p "$ZIP_FILE" plugin.json | jq -r '.version // empty')
+                NOMBRE=$(unzip -p "$ZIP_FILE" plugin.json | jq -r '.name // empty')
+                if [ -z "$VERSION" ] || [ -z "$NOMBRE" ]; then
+                  echo "##vso[task.logissue type=error]El plugin.json del ZIP no trae name/version"
+                  exit 1
+                fi
+                echo "Humo: esperando $NOMBRE v$VERSION"
+                # 🔴 El identificador de compilación va como 6º argumento (2026-09-04, revisión de cierre —
+                # los otros cinco backends ya lo pasaban desde el 2026-09-03; éste era el único que no). La
+                # versión sola no dice que lo instalado sea ESTE build: se re-empaqueta y se sube sin tocar
+                # el número, y el humo aprueba igual. Sale del plugin.json del ZIP, que el empaquetado sella
+                # con el commit de esta corrida. Con él, el humo además exige que las rutas PROPIAS del
+                # plugin contesten 200: que el host lo dé por cargado no prueba que esté sirviendo.
+                HASH=$(unzip -p "$ZIP_FILE" plugin.json | jq -r '.commitHash // empty' | cut -c1-7)
+                [ -n "$HASH" ] || { echo "##vso[task.logissue type=error]El plugin.json del ZIP no trae commitHash — sin él el humo no puede verificar que lo instalado sea ESTE build"; exit 1; }
+                bash "$HUMO" "$(BIZEXT_STAGING_URL)" "$(BIZEXT_STAGING_USER)" "$(BIZEXT_STAGING_PASS)" "$NOMBRE" "$VERSION" "$HASH"
+
+  # 🔴 El stage `DeployProd` VIVÍA ACÁ y se mudó a `azure-pipelines-prod.yml` el 2026-09-01.
+  # Motivo: un run esperando la aprobación de PRODUCCIÓN cuenta como "en curso", y eso dejaba a
+  # los merges siguientes sin run propio hasta que alguien aprobara, rechazara o venciera (24 h)
+  # — staging se quedaba sin actualizar.
+  # El pipeline de producción se dispara solo cuando ESTE termina en verde sobre main (o sea,
+  # después del deploy a staging y su humo) y promueve el MISMO paquete, sin reconstruirlo.

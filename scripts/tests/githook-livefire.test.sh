@@ -828,7 +828,7 @@ fi
 # mismo que la nueva (el revisor de retrospectiva de agent-skills sigue llamando la vieja hasta el retiro) y (d) el
 # pre-commit real lintea por la ruta nueva aunque la vieja no esté. Las rutas viejas salen del mapa, nunca escritas acá.
 # desde la R6 los yml del arnés viven en pipelines/ y la plantilla en pipelines/templates/
-R3_ARCHIVOS="pipelines/azure-pipelines.yml pipelines/azure-pipelines-pr.yml pipelines/azure-pipelines-vigilante.yml pipelines/templates/traer-repos.yml .githooks/pre-commit new-product-templates/stories/githooks-pre-commit build/check.js"
+R3_ARCHIVOS="pipelines/azure-pipelines.yml pipelines/azure-pipelines-pr.yml pipelines/azure-pipelines-vigilante.yml pipelines/templates/traer-repos.yml .githooks/pre-commit packs/bizuit/new-product-templates/stories/githooks-pre-commit build/check.js"
 R3_YML="pipelines/azure-pipelines.yml pipelines/azure-pipelines-pr.yml pipelines/azure-pipelines-vigilante.yml pipelines/templates/traer-repos.yml"
 # La copia pública (story 8.7) no trae los pipelines del equipo (el exportador deja afuera pipelines/**): un yml que ahí
 # no está no se puede parsear, y se dice. En el repo del equipo, que falte uno sigue siendo un rojo.

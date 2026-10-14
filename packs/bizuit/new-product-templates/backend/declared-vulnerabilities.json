@@ -1,0 +1,19 @@
+{
+  "_lea_esto_primero": [
+    "Vulnerabilidades de dependencias NuGet DECLARADAS, con motivo y fecha de revision.",
+    "",
+    "POR QUE EXISTE: el freno de dependencias del pull request lee este archivo. Una",
+    "vulnerabilidad alta o critica que NO este aca bloquea el pull request. Declarar una NO apaga",
+    "el control: registra lo que ya estaba, con nombre y fecha, para que no se vuelva permanente",
+    "en silencio.",
+    "",
+    "{{PRODUCT}} NACE VACIO ({{DATE}}) y la intencion es que se quede asi. Este archivo se creo en el",
+    "alta del producto para que el control tenga donde leer, no para usarlo. Si algun dia hay que",
+    "declarar algo, cada entrada dice QUE AVISO ampara: una entrada sin `advisories` no ampara",
+    "nada. El identificador sale del propio analisis:",
+    "  dotnet list package --vulnerable --format json"
+  ],
+  "revision": "2026-12-31",
+  "motivo_general": "Ninguna declaracion. El producto nacio el {{DATE}} sin vulnerabilidades declaradas.",
+  "paquetes": []
+}

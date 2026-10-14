@@ -51,7 +51,7 @@ guides/                     las guías
 claude-md-blocks/ · commands/ · adapters/ · build/
 pipelines/                  los seis azure-pipelines-*.yml
   pipelines/templates/      sus pedazos compartidos
-new-product-templates/
+packs/bizuit/               el paquete bizuit: su manifiesto y las plantillas para dar de alta un producto
 inbox/                      lo que espera que alguien decida
   inbox/instincts/          los instintos minados
   inbox/dependencies/ · inbox/watcher/   las fichas de los dos nocturnos
