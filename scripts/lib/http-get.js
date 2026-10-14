@@ -22,6 +22,10 @@
 //   · `getSync(url, opts)` corre el pedido en un proceso hijo —harness.js es síncrono— y le pasa el pedido POR STDIN:
 //     ninguna cabecera (la credencial) va en la línea de comandos. Devuelve `{ ok, status, headers, body, url }` o
 //     `{ ok: false, kind, code, message }`, nunca tira.
+//   · `TYCON_HTTP_TRACE=<archivo>` (sólo pruebas, story 8.34): cada pedido —también cada salto de una redirección— agrega
+//     una línea JSON con el origen, la ruta (los VALORES de la consulta tapados: la llave temporal de codeload no se
+//     escribe) y si llevó `Authorization` (sí o no, nunca el valor). Así una prueba cuenta los pedidos a cada host, también
+//     contra el GitHub real (el ensayo de Windows).
 //   · Como comando: `node http-get.js --json` lee `{ url, headers, timeoutMs, … }` de stdin y escribe el resultado en
 //     JSON (el cuerpo en base64). Es el hijo de `getSync`; no está pensado para una persona.
 //
@@ -80,6 +84,15 @@ function connectTunnel(proxy, target, { timeoutMs }) {
   });
 }
 
+/** El registro de pedidos de las pruebas (`TYCON_HTTP_TRACE`): origen, ruta sin valores de la consulta, si llevó credencial. */
+function trace(env, target, headers) {
+  const file = envGet(env, 'TYCON_HTTP_TRACE');
+  if (!file) return;
+  const query = [...target.searchParams.keys()].map((k) => `${k}=…`).join('&');
+  const auth = Object.keys(headers || {}).some((k) => /^authorization$/i.test(k));
+  try { require('fs').appendFileSync(file, `${JSON.stringify({ at: new Date().toISOString(), method: 'GET', origin: target.origin, path: `${target.pathname}${query ? `?${query}` : ''}`, auth })}\n`); } catch (_) { /* el registro de una prueba no frena un pedido */ }
+}
+
 /** Un GET, sin seguir redirecciones. */
 function once(target, { headers, timeoutMs, maxBytes, env, tlsOpts }) {
   return new Promise((resolve, reject) => {
@@ -136,6 +149,7 @@ async function httpGet(url, opts = {}) {
     const left = opts.deadlineAt ? opts.deadlineAt - Date.now() : Infinity;
     if (left <= 0) throw new HttpError('timeout', `se acabó el tope antes de pedir ${target.host}`);
     const timeoutMs = Math.max(1, Math.min(opts.timeoutMs || DEFAULT_TIMEOUT_MS, left));
+    trace(env, target, headers);
     const r = await once(target, { headers, timeoutMs, maxBytes, env, tlsOpts: opts.tls });
     if (!REDIRECTS.has(r.status) || !r.headers.location) return { status: r.status, headers: r.headers, body: r.body, url: target.href };
     if (hop >= maxRedirects) throw new HttpError('redirect', `más de ${maxRedirects} redirecciones desde ${url}`);

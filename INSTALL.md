@@ -23,6 +23,15 @@ instalar»).
 Si el enlace ya apuntaba a otro clon válido, el instalador no lo mueve y lo dice: sólo
 `install-tycon-hooks.sh --link <ruta>` (`-Link` en Windows, donde es un *junction*) lo re-apunta.
 
+**El permiso de GitHub es opcional para el repo público.** Sin permiso, la API de GitHub tiene un tope de 60
+consultas por hora por conexión —toda una oficina comparte una—, así que el arnés no la usa para mirar ni para bajar: lee
+las ramas de la página pública `info/refs` (la que lee `git ls-remote`, sin necesitar git), el número de versión del raw
+de cada commit y el comprimido de codeload. A la API le queda una consulta por actualización, la que verifica lo bajado.
+Si GitHub dice que esa conexión llegó al tope, la versión nueva espera hasta la hora que GitHub indica: el arranque avisa
+una vez («se baja sola en el primer arranque después de las HH:MM») y no lo cuenta como un fallo. El permiso
+(`harness.js config set github.token`) sirve para los repos privados, como la capa del equipo; con un permiso guardado,
+todo va por la API como antes.
+
 
 ### 2. El import y la línea de arranque
 
