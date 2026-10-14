@@ -209,7 +209,10 @@ function startServer({ script, args, portFile, key, env, waitMs = PORTS_WAIT_MS,
   return { url, stop: () => kill(child) };
 }
 
-/** El GitHub de juguete sirviendo un repo desnudo como `org/name`; con `token`, como repo privado. `{ url, stop }` o `{ problem }`. */
+/**
+ * El GitHub de juguete sirviendo un repo desnudo como `org/name`; con `token`, como repo privado. `{ url, raw, stop }` o
+ * `{ problem }`: `url` es su API y `raw` su «raw.githubusercontent.com», de donde la página baja el guion.
+ */
 function startGitHub({ dir, bare, org, name, gitBin = 'git', env, token = null, waitMs }) {
   fs.mkdirSync(dir, { recursive: true });
   const control = path.join(dir, 'github-control.json');
@@ -217,7 +220,11 @@ function startGitHub({ dir, bare, org, name, gitBin = 'git', env, token = null, 
   // sin conversión de finales de línea al armar el comprimido, traiga lo que traiga la configuración de git del agente
   const serverEnv = Object.assign({}, env, { GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'core.autocrlf', GIT_CONFIG_VALUE_0: 'false' });
   const s = startServer({ script: GITHUB_SERVER, args: ['--repo', bare, '--org', org, '--name', name, '--git', gitBin, '--control', control, '--log', path.join(dir, 'github-requests.log')], portFile: path.join(dir, 'github-ports.env'), key: 'API', env: serverEnv, waitMs, what: 'el GitHub de juguete' });
-  return s.problem ? s : Object.assign(s, { log: path.join(dir, 'github-requests.log') });
+  if (s.problem) return s;
+  // el servidor escribe todas sus escuchas juntas, de una vez: si está la de la API, está la de «raw»
+  const raw = /^RAW=(.+)$/m.exec(fs.readFileSync(path.join(dir, 'github-ports.env'), 'utf8'));
+  if (!raw) { s.stop(); return { problem: 'el GitHub de juguete no dijo dónde escucha su «raw» (RAW= en su archivo de puertos)' }; }
+  return Object.assign(s, { raw: raw[1].trim(), log: path.join(dir, 'github-requests.log') });
 }
 
 /** El Azure DevOps de juguete sirviendo el repo del equipo, con su permiso. `{ url, stop }` o `{ problem }`. */

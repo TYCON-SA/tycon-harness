@@ -9,7 +9,9 @@
 //     "issues": { "<o>/<r>": [ { number, state, state_reason, title, body, labels:[nombres], assignees:[logins], user,
 //                               created_at, closed_at, closed_by } ] },
 //     "timeline": { "<o>/<r>#<n>": [ eventos ] }, "gone": ["<o>/<r>#<n>"], "moved": { "<o>/<r>#<n>": "<otro>/<repo>" },
-//     "owners": { "<dueño>": "Organization"|"User" }, "repos": { "<dueño>": [ { name } ] },
+//     "owners": { "<dueño>": "Organization"|"User" }, "repos": { "<dueño>": [ { name, private? } ] },
+//     "installation": ["<o>/<r>", …]   (los repos donde está instalada la App: GET installation/repositories),
+//     "visible": ["<o>/<r>", …]        (los que la credencial ve como dueño o colaboradora: GET user/repos),
 //     "fail": { "<MÉTODO> <prefijo de ruta>": { "status": 500, "message": "…" } } }
 // Una ruta con fallo declarado responde como gh: el cuerpo de error por la salida, «gh: … (HTTP n)» por stderr, sale 1.
 const fs = require('fs');
@@ -56,7 +58,17 @@ if (method === 'GET' && (m = base.match(/^users\/([^/]+)$/))) {
   if ((st.users || []).includes(m[1]) || m[1] === st.user) out({ login: m[1], type: 'User' });
   err(404, 'Not Found');
 }
-if (method === 'GET' && (m = base.match(/^(?:orgs|users)\/([^/]+)\/repos$/))) out(pag(((st.repos || {})[m[1]] || []).map((r) => ({ ...r, owner: { login: m[1] } }))));
+// como GitHub: la de una organización trae los privados que la credencial ve; la de un usuario, SÓLO los públicos
+const delDueno = (o) => ((st.repos || {})[o] || []).map((r) => ({ ...r, private: !!r.private, owner: { login: o } }));
+const porNombre = (lista) => (lista || []).map((full) => { const [o, n] = full.split('/'); return delDueno(o).find((r) => r.name === n) || { name: n, private: true, owner: { login: o } }; });
+if (method === 'GET' && (m = base.match(/^orgs\/([^/]+)\/repos$/))) out(pag(delDueno(m[1])));
+if (method === 'GET' && (m = base.match(/^users\/([^/]+)\/repos$/))) out(pag(delDueno(m[1]).filter((r) => !r.private)));
+if (method === 'GET' && base === 'installation/repositories') {
+  if (!st.installation) err(403, 'Resource not accessible by personal access token');
+  const l = porNombre(st.installation);
+  out({ total_count: l.length, repositories: pag(l) });
+}
+if (method === 'GET' && base === 'user/repos') out(pag(porNombre(st.visible)));
 if ((m = base.match(/^repos\/([^/]+\/[^/]+)\/issues$/))) {
   const repo = m[1];
   st.issues = st.issues || {}; st.issues[repo] = st.issues[repo] || [];

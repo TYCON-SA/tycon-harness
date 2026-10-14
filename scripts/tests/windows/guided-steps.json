@@ -14,7 +14,7 @@
   "lab": {
     "__auth": "Cómo sirve el GitHub de juguete el árbol que se ensaya. `none`: como repo público, sin permiso, y ningún paso lleva una credencial de GitHub en su ambiente — lo que la página supone desde que baja el guion sin credencial. `token`: como repo privado, con un permiso de juguete en el ambiente de los pasos que bajan e instalan; sirve sólo para una página cuyo comando de bajada mande ese permiso.",
     "auth": "none",
-    "api_origin": "https://api.github.com"
+    "download_origin": "https://raw.githubusercontent.com"
   },
   "steps": [
     {
@@ -40,7 +40,7 @@
       "severity": "breaks",
       "commands": [
         {
-          "text": "Invoke-WebRequest -Headers @{ Accept = 'application/vnd.github.raw' } -OutFile get-harness.ps1 https://api.github.com/repos/{{public-org}}/{{public-repo}}/contents/scripts/setup/get-harness.ps1",
+          "text": "Invoke-WebRequest -OutFile get-harness.ps1 https://raw.githubusercontent.com/{{public-org}}/{{public-repo}}/main/scripts/setup/get-harness.ps1",
           "expect": [
             { "kind": "file", "in": "cwd", "path": "get-harness.ps1", "what": "el guion en la carpeta" }
           ]

@@ -413,8 +413,8 @@ se pregunta, en `installQuestions` de `harness.js`. El mismo código en cualquie
 
 ## Los guiones de entrada: la portada sin git
 
-La portada pública entra por UN camino: el bloque `install:core` son tres líneas por sistema —bajar el guion por la API de
-GitHub, sin credencial (el repo es público), leerlo, correrlo—: `get-harness.sh` para bash y
+La portada pública entra por UN camino: el bloque `install:core` son tres líneas por sistema —bajar el guion de
+`raw.githubusercontent.com`, sin credencial (el repo es público), leerlo, correrlo—: `get-harness.sh` para bash y
 `get-harness.ps1` para PowerShell 7. **Nunca** una tubería hacia un shell: el freno de comandos la bloquea (`SUP-C1`,
 `guides/safety-guard.md`), y con tubería la entrada estándar es el guion y nadie podría contestar las preguntas de la
 instalación. El guion **no usa git ni lo pide**: usar el arnés no es mantenerlo.
@@ -454,8 +454,12 @@ de sintaxis.
 
 En el repo del equipo viven aparte, con la dirección por marcadores (`{{public-org}}` y
 `{{public-repo}}`) y llegan a `scripts/setup/` de la copia por dos sintéticos de `allowlist.json`; en los repos internos
-no existen ahí, y ningún archivo interno escribe el nombre del repo público. El guion se baja por la API sin credencial
-(el repo es público): es la primera línea de la portada, y nunca lleva la cabecera del permiso. Pruebas: `scripts/tests/get-harness.test.sh` (T54-T57, contra el «GitHub» de juguete y un `git` testigo).
+no existen ahí, y ningún archivo interno escribe el nombre del repo público. El guion se baja sin credencial (el repo es
+público) de `raw.githubusercontent.com/<org>/<repo>/main/scripts/setup/`, no de la API: es la primera línea de la
+portada, nunca lleva la cabecera del permiso y no gasta del tope de 60 consultas por hora de la API sin credencial, que
+antes dejaba a una máquina nueva sin poder empezar. La dirección por rama queda hasta 5 minutos en caché: justo después
+de un merge puede bajar el guion anterior, que igual instala el `main` del momento (lo lee de `info/refs`).
+Pruebas: `scripts/tests/get-harness.test.sh` (T54-T57, contra el «GitHub» de juguete y un `git` testigo).
 **Qué falta**: correr las tres líneas tal cual en Windows de punta a punta (el 182 corre hoy el bloque del clon) y en
 una Mac y un Linux después de la primera publicación.
 

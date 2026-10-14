@@ -403,7 +403,7 @@ function renderGuided(report) {
   const lab = from('lab_changes');
   if (lab) {
     M.push('## Lo que el laboratorio cambió', '', 'Todo lo que se puso o se cambió respecto de la máquina de una persona. Ningún otro carácter de ningún comando de la página se toca.', '');
-    if (lab.api_origin) M.push(`- el origen de la API: \`${cell(lab.api_origin.from)}\` → \`${cell(lab.api_origin.to)}\` (en ${cell(lab.api_origin.where)})`);
+    if (lab.download_origin) M.push(`- el origen de la bajada del guion: \`${cell(lab.download_origin.from)}\` → \`${cell(lab.download_origin.to)}\` (en ${cell(lab.download_origin.where)})`);
     if (lab.token) M.push(`- ${cell(lab.token)}`);
     if (lab.env_set) M.push(`- variables que se ponen: ${cell(Object.entries(lab.env_set).map(([k, val]) => `${k}=${val}`).join(' · '))}`);
     if (lab.env_set_with_team) M.push(`- desde que se suma la capa del equipo: ${cell(Object.entries(lab.env_set_with_team).map(([k, val]) => `${k}=${val}`).join(' · '))}`);

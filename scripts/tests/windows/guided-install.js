@@ -132,7 +132,7 @@ function openLab({ lab, name, state, baseEnv = process.env, platform = process.p
     const redact = redactOf([tokens.github, tokens.azure]);
     // `discard(problem)`: para quien, con el laboratorio ya abierto, no puede seguir armándolo (cierra y saca la
     // carpeta, igual que si hubiera fallado acá) — devuelve el motivo, ya tapado
-    return { manifest, guide, dir, genv, gitBin, tokens, api: github.url, azureApi: azure.url, team, noTools, redact, stop, discard: (problem) => failed(problem).problem };
+    return { manifest, guide, dir, genv, gitBin, tokens, api: github.url, raw: github.raw, azureApi: azure.url, team, noTools, redact, stop, discard: (problem) => failed(problem).problem };
   } catch (e) {
     return failed(`no pude armar el laboratorio del paso: ${e.message}`);
   }
@@ -154,7 +154,7 @@ function noteLab(rec, ctx, state, platform) {
   rec.fact('rehearsed_version', rehearsed);
   rec.fact('page', { file: m.page.published, mark: m.page.mark, at: state.remotes.harness.target, page_name_from: ctx.guide.page_name_from, page_steps: ctx.guide.page_steps, entry_script: ctx.guide.entry_script });
   rec.fact('not_rehearsed', G.notRehearsed(m));
-  rec.fact('toy_servers', { github: { api: ctx.api, repo: githubServing(ctx) }, azure: { api: ctx.azureApi, team: TL.TEAM_URL, team_commit: ctx.team.commit } });
+  rec.fact('toy_servers', { github: { api: ctx.api, raw: ctx.raw, repo: githubServing(ctx) }, azure: { api: ctx.azureApi, team: TL.TEAM_URL, team_commit: ctx.team.commit } });
 }
 
 /**
@@ -183,11 +183,11 @@ function openVariant({ ctx, lab, prefix, v, facts, platform = process.platform, 
 function labChanges({ ctx, changes, ps, env, scratch }) {
   const m = ctx.manifest;
   const where = [];
-  for (const s of G.machineSteps(m)) for (const [i, c] of s.commands.entries()) if (c.text.includes(m.lab.api_origin)) where.push(`${s.id}[${i}]`);
+  for (const s of G.machineSteps(m)) for (const [i, c] of s.commands.entries()) if (c.text.includes(m.lab.download_origin)) where.push(`${s.id}[${i}]`);
   let effective = null;
   if (ps) { const r = TL.runPage({ ps, text: 'Get-ExecutionPolicy', cwd: path.join(scratch, 'window'), env, scratch, id: 'execution-policy', timeoutMs: 60000 }); effective = L.firstLine(r.stdout) || `no pude leerla (${r.error || r.exit})`; }
   return {
-    api_origin: { from: m.lab.api_origin, to: ctx.api, where: where.join(', ') },
+    download_origin: { from: m.lab.download_origin, to: ctx.raw, where: where.join(', ') },
     token: ctx.tokens && ctx.tokens.github
       ? `TYCON_GITHUB_TOKEN: el permiso de juguete del GitHub de juguete, sólo en los pasos ${TOKEN_STEPS.join(', ')}`
       : 'TYCON_GITHUB_TOKEN: no se pone en ningún paso (el GitHub de juguete sirve el repo como público, sin permiso)',
@@ -234,7 +234,7 @@ function followPage({ ctx, home, env, ps, scratch, cwd, id, only = null, platfor
       commands.push(row);
       const decided = G.shouldRun(cmd, previous, { platform });
       if (!decided.run) { Object.assign(row, decided.not_comparable ? { not_comparable: decided.not_comparable } : { skipped: decided.skipped }); each([]); continue; }
-      const lab = G.labText(real, m, ctx.api);
+      const lab = G.labText(real, m, ctx.raw);
       if (lab.changed) row.lab_changed = { from: lab.from, to: lab.to };
       // queda dicho que este comando arrancó, antes de esperarlo: si no vuelve, el parcial lo nombra
       row.started = L.nowIso();
@@ -465,7 +465,7 @@ function runPs51({ ctx, v, facts, save, lab, platform, allowTemp, baseEnv, rec, 
   facts.followed_page = false;
   facts.why = 'la página manda parar en el paso 1 si no hay PowerShell 7: el ensayo no la sigue desde ahí';
   // fuera de la página: lo que encontraría quien siguiera igual
-  const download = G.labText(G.withNames(step('download').commands[0].text, ctx.guide.names), m, ctx.api).text;
+  const download = G.labText(G.withNames(step('download').commands[0].text, ctx.guide.names), m, ctx.raw).text;
   const install = G.withNames(step('install').commands[0].text, ctx.guide.names);
   facts.off_page = [];
   facts.off_page.push(shoot('bajar el guion con el comando de la página', download, true));

@@ -8,7 +8,15 @@
 #       el paso siguiente corre código de los productos (`dotnet restore`).
 #   clone-repos.sh --org <destino> [--team-repos <archivo>]
 #       Para las métricas. Descubre los repos de cada dueño de `OWNERS` (separados por `;`; vacío: GITHUB_REPOSITORY_OWNER),
-#       como organización o como usuario según GitHub, paginado; con `PREFIX`, sólo los que empiezan así; sin las copias
+#       paginado, según la credencial (`ORG_TOKEN_KIND`; vacía, se averigua: sólo el token de una App lee
+#       `installation/repositories`):
+#         · `app` (el token de la GitHub App): los repos donde la App está instalada (`installation/repositories`), de los
+#           dueños de OWNERS; privados incluidos, en una organización y en una cuenta de usuario. Un dueño sin ningún repo
+#           ahí sale como aviso (la App no está instalada en sus repos);
+#         · `user` (el usuario de máquina): de una organización, `orgs/<dueño>/repos?type=all`; de una cuenta de
+#           usuario, `users/<dueño>/repos?type=owner` —que da SÓLO los públicos— más los de ese dueño que la credencial ve
+#           por `user/repos?affiliation=owner,collaborator` (los privados del dueño o donde el usuario es colaborador).
+#       Con `PREFIX`, sólo los que empiezan así; sin las copias
 #       del arnés que declara team-repos.json (`harness_copies` de GitHub, salvo la de `maintainers` si está en la lista:
 #       la regla es la del lector, scripts/lib/team-repos.js). Clona LIVIANO (`--filter=blob:none`, sólo
 #       Markdown, `.advisors/` y `.tycon/`) en `<destino>/<dueño>__<repo>` (lo parten en `__` las métricas). El clon
@@ -17,7 +25,9 @@
 # Necesita ORG_TOKEN, por env del paso: el token de la GitHub App (recomendado) o el secreto HARNESS_ORG_TOKEN (un usuario
 # de máquina). Habla con GitHub por TYCON_GH_CMD (por defecto gh; un `.js` corre con node) y clona desde GITHUB_SERVER_URL
 # (las pruebas usan una carpeta local).
-# Un repo que no se pudo listar o clonar se NOMBRA (un barrido que se achica en silencio se lee igual que uno completo).
+# Un repo que no se pudo listar o clonar se NOMBRA (un barrido que se achica en silencio se lee igual que uno completo), y
+# cero repos vistos es un aviso, nunca un verde mudo (DEF-8.31-metricas-no-ven-privados-de-un-usuario: en una cuenta de
+# usuario el camino de `users/` no trae los privados y la corrida salía verde con «repos vistos: 0»).
 # Salida: 0 (lo que falló va como ::warning::) · 1 sin credencial, sin poder listar a un dueño, o error de uso.
 set -uo pipefail
 
@@ -76,25 +86,77 @@ if (teamRepos && fs.existsSync(teamRepos)) {
 }
 const owners = String(process.env.OWNERS || process.env.GITHUB_REPOSITORY_OWNER || '').split(';').map((s) => s.trim()).filter(Boolean);
 if (!owners.length) { console.error('no hay dueños que mirar (OWNERS y GITHUB_REPOSITORY_OWNER vacíos)'); process.exit(1); }
+let kind = String(process.env.ORG_TOKEN_KIND || '');
+if (kind && !['app', 'user'].includes(kind)) { console.error(`ORG_TOKEN_KIND «${kind}» no es app ni user`); process.exit(1); }
+if (!kind) {
+  // sin decir cuál (un workflow copiado antes de que existiera la variable): installation/repositories sólo contesta al
+  // token de una App; con el de un usuario responde 403 y vale el camino del usuario
+  const p = api('installation/repositories?per_page=1');
+  kind = p.ok && p.valor && Array.isArray(p.valor.repositories) ? 'app' : 'user';
+}
 const prefix = String(process.env.PREFIX || '');
 let fallo = false;
-for (const o of owners) {
-  if (!/^[A-Za-z0-9-]+$/.test(o)) { console.error(`«${o}» no es un dueño de GitHub`); fallo = true; continue; }
-  const u = api(`users/${o}`);
-  if (!u.ok || !u.valor || !u.valor.type) { console.error(`no pude saber qué es ${o}: ${u.motivo || 'sin tipo'}`); fallo = true; continue; }
-  const base = u.valor.type === 'Organization' ? `orgs/${o}/repos?type=all` : `users/${o}/repos?type=owner`;
+const vistos = new Set();
+const emitir = (x) => {
+  if (!x || typeof x.name !== 'string' || !x.owner || typeof x.owner.login !== 'string') return;
+  const full = `${x.owner.login}/${x.name}`;
+  if (vistos.has(full.toLowerCase())) return;
+  vistos.add(full.toLowerCase());
+  if (prefix && !x.name.startsWith(prefix)) return;
+  if (copias.has(full.toLowerCase())) { console.log(`COPY\t${full}`); return; }
+  console.log(`REPO\t${full}`);
+};
+/** Todas las páginas de una ruta; `campo`: la lista viene dentro de ese campo (installation/repositories). null = falló. */
+const todo = (ruta, campo) => {
+  const out = [];
   for (let page = 1; page <= 50; page++) {
-    const r = api(`${base}&per_page=100&page=${page}`);
-    if (!r.ok || !Array.isArray(r.valor)) { console.error(`no pude listar los repos de ${o} (página ${page}): ${r.motivo || 'no es una lista'}`); fallo = true; break; }
-    for (const x of r.valor) {
-      if (!x || typeof x.name !== 'string' || !x.owner) continue;
-      const full = `${x.owner.login}/${x.name}`;
-      if (prefix && !x.name.startsWith(prefix)) continue;
-      if (copias.has(full.toLowerCase())) { console.log(`COPY\t${full}`); continue; }
-      console.log(`REPO\t${full}`);
-    }
-    if (r.valor.length < 100) break;
+    const r = api(`${ruta}${ruta.includes('?') ? '&' : '?'}per_page=100&page=${page}`);
+    const lista = r.ok && r.valor ? (campo ? r.valor[campo] : r.valor) : null;
+    if (!Array.isArray(lista)) { console.error(`no pude listar ${ruta} (página ${page}): ${r.motivo || 'no es una lista'}`); return null; }
+    out.push(...lista);
+    if (lista.length < 100) break;
   }
+  return out;
+};
+const validos = owners.filter((o) => {
+  if (/^[A-Za-z0-9-]+$/.test(o)) return true;
+  console.error(`«${o}» no es un dueño de GitHub`); fallo = true; return false;
+});
+if (kind === 'app') {
+  // el token de la App sólo ve los repos donde está instalada: ésa es la lista, privados incluidos
+  const lista = todo('installation/repositories', 'repositories');
+  if (!lista) process.exit(1);
+  for (const o of validos) {
+    const suyos = lista.filter((x) => x && x.owner && String(x.owner.login).toLowerCase() === o.toLowerCase());
+    if (!suyos.length) console.log(`WARN\tla GitHub App no está instalada en ningún repo de ${o}: sus repos no se miden`);
+    suyos.forEach(emitir);
+  }
+} else {
+  let mios = null;
+  for (const o of validos) {
+    const u = api(`users/${o}`);
+    if (!u.ok || !u.valor || !u.valor.type) { console.error(`no pude saber qué es ${o}: ${u.motivo || 'sin tipo'}`); fallo = true; continue; }
+    if (u.valor.type === 'Organization') {
+      const l = todo(`orgs/${o}/repos?type=all`);
+      if (!l) { fallo = true; continue; }
+      l.forEach(emitir);
+      continue;
+    }
+    // una cuenta de usuario: users/<dueño>/repos trae sólo los públicos; los privados que la credencial ve, por user/repos
+    const l = todo(`users/${o}/repos?type=owner`);
+    if (!l) { fallo = true; continue; }
+    if (mios === null) mios = todo('user/repos?affiliation=owner,collaborator');
+    if (!mios) { fallo = true; continue; }
+    [...l, ...mios.filter((x) => x && x.owner && String(x.owner.login).toLowerCase() === o.toLowerCase())].forEach(emitir);
+  }
+}
+// lo que team-repos.json declara de estos dueños: si no se ve ninguno, la credencial no los está viendo
+const ownerSet = new Set(validos.map((o) => o.toLowerCase()));
+if (teamRepos && fs.existsSync(teamRepos)) {
+  const d = require(reader).load(teamRepos).data || {};
+  const decl = [d.public, d.profile, d.operations, d.maintainers, ...(d.harness_copies || [])]
+    .filter((x) => x && x.platform === 'github' && ownerSet.has(String(x.org).toLowerCase())).map((x) => `${x.org}/${x.repo}`);
+  if (decl.length) console.log(`DECL\t${[...new Set(decl)].join(' ')}`);
 }
 process.exit(fallo ? 1 : 0);
 JS
@@ -103,8 +165,13 @@ then
   rm -f "${LIST}" "${LIST}.err"; exit 1
 fi
 TOTAL=0; SKIPPED=""
+DECLARED=""
 while IFS=$'\t' read -r KIND FULL; do
   [ -n "${FULL}" ] || continue
+  case "${KIND}" in
+    WARN) echo "::warning::${FULL}"; continue ;;
+    DECL) DECLARED="${FULL}"; continue ;;
+  esac
   printf '%s' "${FULL}" | grep -Eq "${NAME}" || continue
   if [ "${KIND}" = "COPY" ]; then SKIPPED="${SKIPPED} ${FULL}"; continue; fi
   TOTAL=$((TOTAL + 1))
@@ -125,6 +192,13 @@ while IFS=$'\t' read -r KIND FULL; do
 done < "${LIST}"
 rm -f "${LIST}" "${LIST}.err"
 echo "repos vistos: ${TOTAL} · clonados: $(find "${DEST}" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')"
+if [ "${TOTAL}" -eq 0 ]; then
+  if [ -n "${DECLARED}" ]; then
+    echo "::warning::Cero repos vistos, y team-repos.json declara repos de estos dueños (${DECLARED}): la credencial no los ve — ¿la App no está instalada en ellos, o el usuario de máquina no ve los privados? No se midió nada"
+  else
+    echo "::warning::Cero repos vistos: no se midió nada (¿la credencial ve los repos de ${OWNERS:-${GITHUB_REPOSITORY_OWNER:-}}${PREFIX:+, con el prefijo ${PREFIX}}?)"
+  fi
+fi
 [ -z "${SKIPPED}" ] || echo "copias del arnés que no se miden:${SKIPPED}"
 [ -z "${FALLIDOS}" ] || echo "::warning::Repos NO medidos:${FALLIDOS} — el barrido está incompleto (¿la credencial puede leerlos?)"
 exit 0
