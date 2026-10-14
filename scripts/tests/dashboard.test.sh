@@ -129,7 +129,14 @@ cat > "$T/sdlc-stage-$F9.json" <<JSON
 "dod_evidence_ratio":{"num":222,"den":777}},"repos":[{"repo":"x/A","stories_total":777,"done_total":700,"not_measured":[]}]}
 JSON
 node "$TABLERO" --dir "$T" --output "$T/o.html" >/dev/null 2>&1
-if grep -q "777\|222\|111\|22,2\|33,3" "$T/o.html"; then mal "C-02 la página dibujó números de un dato de 9 días"; else ok "C-02 los números viejos NO se dibujan"; fi
+# los números del dato viejo, SUELTOS y fuera del sello «Datos del commit: <sha>»: un sha corto como «2229a42» contiene
+# «222», y la prueba salía roja en ese commit de main sin ningún número dibujado (public-ci, 2026-10-14)
+numeros_viejos() { sed -E 's/Datos del commit:<\/b> [0-9a-f]+//g' "$1" | grep -E '(^|[^0-9a-fA-F.,])(777|222|111)([^0-9a-fA-F.,]|$)|22,2|33,3' >/dev/null; }
+printf '<b>Datos del commit:</b> 2229a42 · hace 9 días\n' > "$T/sello.html"
+numeros_viejos "$T/sello.html" && mal "C-02 el sello del commit (2229a42) cuenta como un número viejo" || ok "C-02 el sello del commit no cuenta como un número viejo"
+printf '<td>777</td>\n' > "$T/espejo.html"
+numeros_viejos "$T/espejo.html" && ok "C-02 espejo: un 777 dibujado sí se ve" || mal "C-02 espejo: no ve un 777 dibujado"
+if numeros_viejos "$T/o.html"; then mal "C-02 la página dibujó números de un dato de 9 días"; else ok "C-02 los números viejos NO se dibujan"; fi
 grep -q "hace 9 días" "$T/o.html" && ok "C-02 muestra la EDAD, no la fecha" || mal "C-02 no muestra la edad del dato"
 rm -rf "$T"
 
