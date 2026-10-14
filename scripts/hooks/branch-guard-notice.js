@@ -393,9 +393,34 @@ function oldIndexLines() {
   ];
 }
 
+/**
+ * PowerShell 7 faltante en Windows (story 8.35, decisión del dueño 2026-10-14). La línea de arranque de Windows es
+ * `pwsh -Command "…"`: sin `pwsh`, falla en silencio y el arnés deja de arrancar y de actualizarse; sólo `doctor` lo decía.
+ * Este hook corre con Node, así que puede avisarlo: una vez por máquina (la marca vive en la carpeta de estado); con `pwsh`
+ * de vuelta la marca se borra, así que si vuelve a faltar avisa otra vez. `TYCON_BRANCH_GUARD_PLATFORM` es sólo de pruebas.
+ */
+function pwshMissingLines() {
+  const platform = process.env.TYCON_BRANCH_GUARD_PLATFORM || process.platform;
+  if (platform !== 'win32') return [];
+  const dirs = String(process.env.PATH || process.env.Path || '').split(path.delimiter).filter(Boolean);
+  // (el de la Microsoft Store es un alias de ejecución —un punto de reanálisis de 0 bytes— y `stat` puede fallar sobre él:
+  // cuenta la entrada como la ve `lstat`, salvo una carpeta: Windows sólo ejecuta `pwsh.exe`)
+  const found = dirs.some((d) => { try { return !fs.lstatSync(path.join(d, 'pwsh.exe')).isDirectory(); } catch (_) { return false; } });
+  let stateDir;
+  try { const TH = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')); stateDir = TH.stateDir(os.homedir()); } catch (_) { stateDir = path.join(os.homedir(), '.claude', '.tycon-pipeline'); }
+  const mark = path.join(stateDir, 'pwsh-missing-notice.json');
+  if (found) { try { fs.rmSync(mark, { force: true }); } catch (_) { /* nada */ } return []; }
+  if (fs.existsSync(mark)) return [];
+  try { fs.mkdirSync(stateDir, { recursive: true }); fs.writeFileSync(mark, `${JSON.stringify({ at: new Date().toISOString() })}\n`); } catch (_) { /* sin marca: avisa de nuevo la próxima */ }
+  return [
+    '🔔 TYCON — falta PowerShell 7 (pwsh) en esta máquina: sin él, el arranque del arnés no corre y el arnés no se actualiza. Decile a la persona, en una línea: instalalo con `winget install --id Microsoft.PowerShell --source winget` y abrí una sesión nueva. (Este aviso sale una sola vez.)',
+  ];
+}
+
 try {
   if (process.env.TYCON_BRANCH_GUARD === '0') process.exit(0);
   const harnessLines = [];
+  try { harnessLines.push(...pwshMissingLines()); } catch (_) { /* fail-open: un aviso que tira no frena el arranque */ }
   try { harnessLines.push(...oldIndexLines()); } catch (_) { /* fail-open: lo repone el próximo arranque */ }
 
   const hs = harnessState();

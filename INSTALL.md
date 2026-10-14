@@ -43,15 +43,18 @@ la actualización siguiente.
 ### 3. Los enlaces a las skills y a los revisores (los crea el instalador)
 
 Claude Code descubre las skills en `~/.claude/skills/` y los **subagentes advisor** (ver `guides/agent-architecture.md`)
-en `~/.claude/agents/`. Esos dos enlaces, y `~/.claude/agent-skills`, **los crea el instalador** apuntando al árbol que
-la máquina corre (`~/.tycon/harness` en una instalada sin clonar; tu clon, en el modo desarrollador): no hay que crearlos
-a mano (crear uno encima de un enlace que ya existe deja un enlace suelto dentro del árbol).
+en `~/.claude/agents/`. **Esas dos son carpetas tuyas**: el instalador las crea (si no están) y deja adentro un enlace por
+cada skill y por cada revisor del arnés, apuntando al árbol que la máquina corre (`~/.tycon/harness` en una instalada sin
+clonar; tu clon, en el modo desarrollador). `~/.claude/agent-skills` sí es un enlace al árbol entero. Lo que pongas en
+esas carpetas —una skill o un agente tuyo— y las skills de tu cuenta que baja Claude Code (`~/.claude/skills/synced`)
+quedan ahí: una actualización del arnés no las toca. Una máquina que tenía la forma vieja (las dos como enlace al árbol
+entero) se convierte sola en el próximo arranque, y lo tuyo que había caído adentro del arnés pasa a la carpeta.
 
 Verificá:
 
 ```bash
 ls -la ~/.claude/tycon-harness ~/.claude/agent-skills ~/.claude/skills ~/.claude/agents
-# tycon-harness y agent-skills -> ~/.tycon/harness (o tu clon) · skills -> <árbol>/skills · agents -> <árbol>/agents
+# tycon-harness y agent-skills -> ~/.tycon/harness (o tu clon) · skills y agents: carpetas, con un enlace por entrada adentro
 node ~/.claude/tycon-harness/scripts/setup/harness.js doctor    # tiene que cerrar con «nada en rojo»
 ```
 
@@ -59,7 +62,7 @@ En Windows, lo mismo en una terminal de PowerShell (el bloque de arriba es de ba
 
 ```powershell
 Get-Item "$env:USERPROFILE\.claude\tycon-harness","$env:USERPROFILE\.claude\agent-skills","$env:USERPROFILE\.claude\skills","$env:USERPROFILE\.claude\agents" | Format-List Name,Attributes,Target
-# los cuatro son enlaces (Attributes incluye ReparsePoint) y su Target es el árbol que corre (~/.tycon/harness, o tu clon), o una carpeta de él
+# tycon-harness y agent-skills son enlaces (Attributes incluye ReparsePoint) al árbol que corre; skills y agents, carpetas
 node "$env:USERPROFILE\.claude\tycon-harness\scripts\setup\harness.js" doctor    # tiene que cerrar con «nada en rojo»
 ```
 

@@ -1159,11 +1159,19 @@ out = open(out_file, encoding="utf-8").read() if out_file != "-" else ""
 entries = {"skills": sorted(os.listdir(os.path.join(tree, "skills"))) if os.path.isdir(os.path.join(tree, "skills")) else [],
            "agents": sorted(os.listdir(os.path.join(tree, "agents"))) if os.path.isdir(os.path.join(tree, "agents")) else []}
 if phase == "installed-links":
-    for name, target in ((PLACE, tree), ("agent-skills", tree), ("agents", os.path.join(tree, "agents")), ("skills", os.path.join(tree, "skills"))):
+    # (story 8.35) el lugar y agent-skills son enlaces al clon; skills y agents, carpetas REALES con un enlace por entrada
+    for name, target in ((PLACE, tree), ("agent-skills", tree)):
         if not points(name, target): bad.append("~/.claude/%s no es un enlace a %s" % (name, target))
     st = state(); ids = {p["id"] for p in links(st)}
-    for want in (PLACE, "agent-skills", "agents", "skills"):
+    for want in (PLACE, "agent-skills"):
         if want not in ids: bad.append("el registro no trae el enlace «%s» (trae %s)" % (want, sorted(ids)))
+    for name in ("skills", "agents"):
+        d = os.path.join(claude, name)
+        if os.path.islink(d) or not os.path.isdir(d): bad.append("~/.claude/%s no es una carpeta real" % name)
+        if name in ids: bad.append("el registro trae «%s» entero" % name)
+        for e in entries[name]:
+            if not points(os.path.join(name, e), os.path.join(tree, name, e)): bad.append("falta el enlace por entrada ~/.claude/%s/%s" % (name, e))
+            if "%s/%s" % (name, e) not in ids: bad.append("el registro no trae el enlace por entrada «%s/%s»" % (name, e))
     if len(st.get("sources", [])) != 1: bad.append("el estado tiene %d fuentes (repo único: una)" % len(st.get("sources", [])))
     declared(st)
 elif phase == "installed-folders":
@@ -1181,14 +1189,18 @@ elif phase == "installed-folders":
             if "%s/%s" % (name, e) not in ids: bad.append("el registro no trae el enlace por entrada «%s/%s»" % (name, e))
     declared(st)
 elif phase == "dry-run":
-    for name in ("agent-skills", "agents", "skills", PLACE):
+    for name in ("agent-skills", PLACE, os.path.join("skills", "tycon-pipeline")):
         if "el enlace %s" % os.path.join(claude, name) not in out: bad.append("el plan no quita el enlace ~/.claude/%s" % name)
     if "no está registrado" in out: bad.append("el plan lista un enlace registrado como «no está registrado»")
 elif phase == "removed-links":
-    for name in (PLACE, "agent-skills", "skills"):
+    for name in (PLACE, "agent-skills"):
         if lex(os.path.join(claude, name)): bad.append("~/.claude/%s sigue" % name)
+    # (story 8.35) skills queda como la carpeta de la persona, sin los enlaces del arnés adentro
+    sk = os.path.join(claude, "skills")
+    if os.path.islink(sk) or not os.path.isdir(sk): bad.append("~/.claude/skills dejó de ser una carpeta real")
+    elif [e for e in os.listdir(sk) if os.path.islink(os.path.join(sk, e))]: bad.append("quedaron enlaces del arnés en ~/.claude/skills")
     if not points("agents", os.path.join(lab, "own-agents")): bad.append("~/.claude/agents (re-apuntado por la persona a otro lado) se tocó")
-    if os.path.join(lab, "own-agents") not in out or "no al árbol" not in out: bad.append("la salida no dice que ~/.claude/agents apunta a otro lado y queda")
+    if os.path.join(lab, "own-agents") not in out or "no lo toco" not in out: bad.append("la salida no dice que ~/.claude/agents apunta a otro lado y queda")
     if not os.path.isdir(os.path.join(tree, "skills", "tycon-pipeline")) or not os.path.isfile(os.path.join(tree, "agents", "lab-reviewer.md")): bad.append("el clon no quedó intacto")
     if lex(os.path.join(claude, ".tycon-pipeline", "harness-state.json")): bad.append("el estado sigue")
 elif phase == "removed-folders":
@@ -1211,7 +1223,8 @@ PY
     else mal "K3 $6"; head -8 "$4/check-$1.txt" | sed 's/^/        /'; fi
   }
 
-  # variante 1 · la HOME sin skills/ ni agents/: tres enlaces a la carpeta entera
+  # variante 1 · la HOME sin skills/ ni agents/: desde la story 8.35, carpetas reales con un enlace por entrada (antes, tres
+  # enlaces a la carpeta entera)
   L="$T/lab-k3a"; H="$L/casa"; A="$L/arbol"; rm -rf "$L"; mkdir -p "$L" "$H/.claude"
   lab_single_repo "$A" "$L"; lab_env "$H" "$L"; RUN_ENV+=(TYCON_THIRD_PARTY=0 TYCON_PRODUCTION_GUARD_DIR="$L/sin-freno")
   rc=0; "${RUN_ENV[@]}" node "$A/scripts/setup/harness.js" install --yes >"$L/install.txt" 2>&1 || rc=$?
@@ -1223,7 +1236,7 @@ PY
     [ "$rc" = 0 ] || mal "K3 (enlaces) uninstall --dry-run salió $rc"
     k3_check dry-run "$H" "$A" "$L" "$L/dry.txt" "el plan quita los cuatro enlaces y ninguno sale como «no está registrado»"
     # la persona re-apunta ~/.claude/agents a una carpeta suya: sigue registrado, pero ya no apunta al árbol (espejo)
-    mkdir -p "$L/own-agents"; rm "$H/.claude/agents"; ln -s "$L/own-agents" "$H/.claude/agents"
+    mkdir -p "$L/own-agents"; rm -rf "$H/.claude/agents"; ln -s "$L/own-agents" "$H/.claude/agents"
     rc=0; "${RUN_ENV[@]}" node "$A/scripts/setup/harness.js" uninstall --yes < /dev/null > "$L/yes.txt" 2>&1 || rc=$?
     [ "$rc" = 0 ] || { mal "K3 (enlaces) uninstall --yes salió $rc"; head -6 "$L/yes.txt" | sed 's/^/        | /'; }
     k3_check removed-links "$H" "$A" "$L" "$L/yes.txt" "uninstall --yes: quita los enlaces al clon; el re-apuntado a otro lado queda y se dice; el clon intacto"

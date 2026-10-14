@@ -2051,6 +2051,22 @@ function doctorItems(ctx, state, { fetch = false, channel = null } = {}) {
   else add('ok', `sin versión anterior (${own.previous}): para volver a un número publicado, harness.js install --version <n>`);
   if (exists(own.journal)) add('fail', `hay un cambio de versión a medias (${own.journal}): el próximo arranque lo repara; harness.js update también`);
   if (exists(own.linkJournal)) add('fail', `hay un cambio de versión a medias (${own.linkJournal}): el próximo arranque lo repara; harness.js update también`);
+  // (story 8.35) ~/.claude/skills y ~/.claude/agents son carpetas del dev; un enlace a la carpeta ENTERA del arnés es la
+  // forma vieja: lo que el dev o Claude Code ponen ahí cae adentro del arnés y se pierde con una actualización
+  for (const side of ['skills', 'agents']) {
+    const p = path.join(ctx.home || os.homedir(), '.claude', side);
+    let r = null, t = null;
+    try { if (fs.lstatSync(p).isSymbolicLink()) { r = fs.realpathSync(p); t = fs.realpathSync(path.join(own.harness, side)); } } catch (_) { r = null; }
+    // (en Windows y en Mac el disco no distingue mayúsculas: `c:\…` y `C:\…` son la misma carpeta)
+    const same = r && t && (r === t || ((process.platform === 'win32' || process.platform === 'darwin') && r.toLowerCase() === t.toLowerCase()));
+    // lo que dejó la conversión: una temporal de un corte (el arranque la termina) o lo apartado (lo revisa el dev)
+    let near = [];
+    try { near = fs.readdirSync(path.dirname(p)); } catch (_) { near = []; }
+    const cut = near.filter((n) => n.startsWith(`${side}.tycon-new-`));
+    if (cut.length) add('warn', `quedó una conversión de ${p} a medias (${cut.map((n) => path.join(path.dirname(p), n)).join(', ')}): lo tuyo está ahí, el próximo arranque la termina`);
+    if (near.includes(`${side}.tycon-aparte`)) add('warn', `en ${p}.tycon-aparte hay cosas tuyas apartadas (estaban dos veces con distinto contenido): revisalas y borrá lo que sobre`);
+    if (same) add('warn', `${p} es un enlace a la carpeta entera del arnés (la forma vieja): lo que pongas ahí se pierde con una actualización. El próximo arranque la convierte en una carpeta tuya, con lo tuyo adentro`);
+  }
   // la forma con enlaces (story 8.33): dónde apunta cada enlace, la conversión trabada, lo pendiente de limpiar
   if (linksOn(ctx)) {
     const where = (name) => (TH.isLink(name) ? `${name} → ${TH.linkTarget(name)}` : exists(name) ? `${name} es una carpeta (la forma de antes)` : `${name} no está`);

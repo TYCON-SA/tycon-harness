@@ -648,5 +648,35 @@ else
   bad "T36 no pude armar la máquina de un solo árbol"
 fi
 
+# ═══ T12 / T13 (story 8.35) · el aviso de PowerShell 7 faltante: Windows (simulado), una vez; nunca en posix ═══════════
+# @story-8.35 · T12 PwshMissing_NoticeOnce · T13 PwshPresentOrPosix_Silent
+NODE_BIN="$(command -v node)"
+PW_BIN="$BASE/con-pwsh"; mkdir -p "$PW_BIN"; printf '#!/bin/sh\nexit 0\n' > "$PW_BIN/pwsh.exe"; chmod +x "$PW_BIN/pwsh.exe"
+# lo que Windows no puede ejecutar no cuenta: una carpeta llamada pwsh.exe, o un `pwsh` sin extensión
+PW_FAKE="$BASE/pwsh-falso"; mkdir -p "$PW_FAKE/pwsh.exe"; printf 'x\n' > "$PW_FAKE/pwsh"
+pw_notice() { # pw_notice <home> <PATH> [plataforma]: el hook con un PATH dado y, si se pide, Windows simulado
+  env -u GIT_DIR -u GIT_INDEX_FILE -u GIT_WORK_TREE HOME="$1" PATH="$2" GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null \
+    ${3:+TYCON_BRANCH_GUARD_PLATFORM=$3} "$NODE_BIN" "$HOOK_DIR/branch-guard-notice.js"
+}
+H="$BASE/h-pw"; mkdir -p "$H/.claude"
+o1="$(pw_notice "$H" /usr/bin:/bin win32)"; o2="$(pw_notice "$H" /usr/bin:/bin win32)"
+if grep -q 'PowerShell 7' <<<"$o1" && grep -q 'winget install' <<<"$o1" && ! grep -q 'PowerShell' <<<"$o2"; then
+  ok "T12 Windows sin pwsh: el aviso sale una vez, con el comando de winget, y no se repite"
+else bad "T12 sin pwsh: 1ª «${o1}» · 2ª «${o2}»"; fi
+o3="$(pw_notice "$H" "$PW_BIN:/usr/bin:/bin" win32)"; o4="$(pw_notice "$H" /usr/bin:/bin win32)"
+if ! grep -q 'PowerShell' <<<"$o3" && grep -q 'PowerShell 7' <<<"$o4"; then
+  ok "T12 con pwsh calla; si vuelve a faltar, avisa otra vez"
+else bad "T12 con pwsh «${o3}» · faltando otra vez «${o4}»"; fi
+H="$BASE/h-pw2"; mkdir -p "$H/.claude"
+o5="$(pw_notice "$H" /usr/bin:/bin)"; o6="$(pw_notice "$H" "$PW_BIN:/usr/bin:/bin" win32)"
+if ! grep -q 'PowerShell' <<<"$o5" && ! grep -q 'PowerShell' <<<"$o6"; then
+  ok "T13 en posix, o en Windows con pwsh: sin aviso"
+else bad "T13 posix «${o5}» · Windows con pwsh «${o6}»"; fi
+H="$BASE/h-pw3"; mkdir -p "$H/.claude"
+o7="$(pw_notice "$H" "$PW_FAKE:/usr/bin:/bin" win32)"
+if grep -q 'PowerShell 7' <<<"$o7"; then
+  ok "T12 una carpeta pwsh.exe o un pwsh sin extensión no cuentan: avisa"
+else bad "T12 con un pwsh que Windows no ejecuta calló: «${o7}»"; fi
+
 [ "$FALLAS" -eq 0 ] && { echo "branch-guard-notice: todo verde"; exit 0; }
 echo "branch-guard-notice: $FALLAS en rojo"; exit 1
