@@ -6,8 +6,10 @@
 // laboratorio (el remoto del arnés de harness-lab.sh): así las versiones se publican con las funciones de siempre
 // (`harness_lab_publish_stable`, `harness_lab_publish_sync`) y el cliente no sabe que no habla con GitHub.
 //
-// Dos escuchas, como GitHub: la API (`/repos/<org>/<name>/…`, `/user`) y «codeload» en OTRO puerto —otro origen—, a
-// donde redirige la bajada del comprimido con una llave temporal en la URL. Si a codeload le llega una cabecera
+// Cuatro escuchas, como los cuatro hosts de GitHub, cada una en su puerto —otro origen—: la API (`/repos/<org>/<name>/…`,
+// `/user`); «codeload», a donde redirige la bajada del comprimido con una llave temporal en la URL, y que también sirve
+// el comprimido de un commit público sin llave (`tar.gz`, story 8.34); «git» (github.com: `info/refs`, lo que lee
+// `git ls-remote`) y «raw» (raw.githubusercontent.com: un archivo de un commit). Si a codeload le llega una cabecera
 // `Authorization`, contesta 400 y lo anota: la credencial no tiene que viajar a otro host.
 //
 // Lo que atiende:
@@ -21,6 +23,10 @@
 //   GET /user                                      { login }   (401 sin credencial válida)
 //   codeload: GET /o/n/legacy.tar.gz/<sha>?token=  el tar.gz de `git archive` (carpeta raíz <org>-<name>-<sha7>/ y la
 //                                                   cabecera global pax con el commit, como el de GitHub)
+//   codeload: GET /o/n/tar.gz/<sha>                el mismo comprimido, sin llave (repo público; 404 si no lo es)
+//   git:      GET /o/n.git/info/refs?service=git-upload-pack   las refs en pkt-line (`git for-each-ref`
+//                                                   sobre el bare); 401 si el repo no es público o no existe, como GitHub
+//   raw:      GET /o/n/<sha>/<ruta>                los bytes del archivo en ese commit (404 si no está o el repo no es público)
 //
 // El archivo de control (`--control`, JSON, releído en cada pedido) cambia el comportamiento sin reiniciar:
 //   auth        "none" (repo público) · "token:<valor>" (privado: sin credencial válida, /repos contesta 404 como
@@ -28,18 +34,25 @@
 //               pero el repo da 404: falta aceptar la invitación)
 //   ratelimit   true → 403 con X-RateLimit-Remaining: 0
 //   mute        true → acepta la conexión y no contesta nunca
-//   ref_moved_to  <sha> → la ref contesta ese commit (la rama se movió); el comprimido del commit pedido sigue andando
+//   ref_moved_to  <sha> → la ref contesta ese commit (la rama se movió; también `main` en info/refs); el comprimido del
+//               commit pedido sigue andando
 //   truncate    true → el comprimido se corta a mitad
 //   tamper      true → el comprimido trae un archivo cambiado (README.md): el árbol no coincide
 //   latency_ms  n → espera antes de contestar
 //   compare_status  n → sólo la comparación contesta ese código (lo demás anda)
-// La cuota se cuenta en memoria (`X-RateLimit-Remaining`): un 304 no la gasta, como en GitHub.
+//   ratelimit_reset  <epoch en segundos> → la hora de renovación que dice `X-RateLimit-Reset` (por defecto, en una hora)
+//   git_down    true → «git» acepta la conexión y no contesta nunca · git_garbage true → contesta 200 con algo que no es git
+//   raw_down    true → «raw» contesta 503 · raw_version "<n>" → el version.json del raw dice ese número (no el del commit)
+//   raw_block   <código> → «raw» contesta ese código con una página HTML (la de un proxy que filtra), a todo
+// La cuota se cuenta en memoria (`X-RateLimit-Remaining`). Un 304 SIN credencial la gasta y con credencial no, como en
+// GitHub («does not count … if a 304 is returned and the request was made while correctly authorized», story 8.34). Las
+// rutas públicas (git, raw, codeload) no la tocan.
 //
-// El registro (`--log`): una línea JSON por pedido con método, host (api|codeload), ruta, si traía credencial y el
+// El registro (`--log`): una línea JSON por pedido con método, host (api|codeload|git|raw), ruta, si traía credencial y el
 // sha256 de la credencial (nunca el valor: las pruebas buscan el valor en todo lo escrito).
 //
 // Uso: node toy-release-server.js --repo <bare> --org <o> --name <n> --control <json> --log <archivo> --port-file <archivo>
-//   El archivo de puertos queda con `API=http://127.0.0.1:<p>` y `CODELOAD=http://127.0.0.1:<q>` cuando los dos escuchan.
+//   El archivo de puertos queda con `API=`, `CODELOAD=`, `GIT=` y `RAW=` (`http://127.0.0.1:<puerto>`) cuando todos escuchan.
 
 const fs = require('fs');
 const http = require('http');
@@ -87,8 +100,10 @@ function authOf(req, c, repo = null) {
   const valid = given !== null && given === want;
   return { ok: valid, given, repoVisible: valid && mode.startsWith('token:'), known };
 }
+const resetOf = (c) => (Number(c && c.ratelimit_reset) > 0 ? Number(c.ratelimit_reset) : Math.floor(Date.now() / 1000) + 3600);
+let resetNow = null;
 const send = (res, code, body, headers = {}) => {
-  const h = Object.assign({ 'X-RateLimit-Limit': '5000', 'X-RateLimit-Remaining': String(remaining), 'X-RateLimit-Reset': String(Math.floor(Date.now() / 1000) + 3600) }, headers);
+  const h = Object.assign({ 'X-RateLimit-Limit': '5000', 'X-RateLimit-Remaining': String(remaining), 'X-RateLimit-Reset': String(resetNow || resetOf(null)) }, headers);
   if (body === null) { res.writeHead(code, h); return res.end(); }
   const buf = Buffer.isBuffer(body) ? body : Buffer.from(JSON.stringify(body));
   res.writeHead(code, Object.assign({ 'Content-Type': Buffer.isBuffer(body) ? 'application/x-gzip' : 'application/json', 'Content-Length': String(buf.length) }, h));
@@ -98,6 +113,7 @@ const notFound = (res) => send(res, 404, { message: 'Not Found', documentation_u
 
 function api(req, res) {
   const c = control();
+  resetNow = resetOf(c);
   const u = new URL(req.url, 'http://api');
   const repo = REPOS.find((r) => u.pathname.startsWith(`/repos/${keyOf(r)}/`)) || null;
   const a = authOf(req, c, repo);
@@ -126,7 +142,7 @@ function api(req, res) {
       const sha = c.ref_moved_to || r.stdout.trim();
       // como GitHub: la ref también lleva ETag, y un If-None-Match igual es 304 sin gastar cuota
       const etag = `"ref-${sha}"`;
-      if (req.headers['if-none-match'] === etag) return send(res, 304, null, { ETag: etag });
+      if (req.headers['if-none-match'] === etag) { if (a.given === null) remaining--; return send(res, 304, null, { ETag: etag }); }
       remaining--;
       return send(res, 200, { ref: `refs/heads/${ref}`, object: { type: 'commit', sha } }, { ETag: etag });
     }
@@ -181,7 +197,7 @@ function api(req, res) {
       const blob = git(['rev-parse', '--verify', '-q', `${ref}:${file}`]);
       if (blob.status !== 0) return notFound(res);
       const etag = `"${blob.stdout.trim()}"`;
-      if (req.headers['if-none-match'] === etag) return send(res, 304, null, { ETag: etag });   // no gasta cuota
+      if (req.headers['if-none-match'] === etag) { if (a.given === null) remaining--; return send(res, 304, null, { ETag: etag }); }   // sin credencial, gasta
       const content = git(['show', `${ref}:${file}`], { encoding: 'buffer' }).stdout;
       remaining--;
       // como GitHub: a quien pide el archivo crudo (`Accept: application/vnd.github.raw`) le van los bytes del archivo, no
@@ -205,12 +221,23 @@ function codeload(req, res) {
   const c = control();
   const u = new URL(req.url, 'http://codeload');
   const hasAuth = Boolean(req.headers.authorization);
-  log({ host: 'codeload', method: req.method, path: u.pathname + u.search, auth: hasAuth, auth_sha256: hasAuth ? sha256(req.headers.authorization) : null });
+  log({ host: 'codeload', method: req.method, path: u.pathname + u.search, auth: hasAuth, auth_sha256: hasAuth ? sha256(req.headers.authorization) : null, via_proxy: req.headers['x-toy-proxy'] === '1' });
   if (hasAuth) return send(res, 400, { message: 'credential forwarded to codeload' });
+  // el comprimido público, sin llave (story 8.34): sólo de un repo público
+  const pub = REPOS.find((r) => u.pathname.startsWith(`/${keyOf(r)}/tar.gz/`)) || null;
+  if (pub) {
+    const mp = new RegExp(`^/${pub.org}/${pub.name}/tar\\.gz/([0-9a-f]{40})$`).exec(u.pathname);
+    if (!mp || modeFor(c, pub) !== 'none') return notFound(res);
+    return tarball(res, c, pub, mp[1]);
+  }
   const repo = REPOS.find((r) => u.pathname.startsWith(`/${keyOf(r)}/legacy.tar.gz/`)) || null;
   const m = repo ? new RegExp(`^/${repo.org}/${repo.name}/legacy\\.tar\\.gz/([0-9a-f]{40})$`).exec(u.pathname) : null;
   if (!m || !u.searchParams.get('token')) return notFound(res);
-  const sha = m[1];
+  return tarball(res, c, repo, m[1]);
+}
+
+/** El tar.gz de un commit, como el de GitHub, con `tamper` / `truncate` del control. */
+function tarball(res, c, repo, sha) {
   const prefix = `${repo.org}-${repo.name}-${sha.slice(0, 7)}/`;
   const tar = git(['archive', '--format=tar', `--prefix=${prefix}`, sha], { encoding: 'buffer', maxBuffer: 256 * 1024 * 1024 }, repo.bare);
   if (tar.status !== 0) return notFound(res);
@@ -257,8 +284,50 @@ function proxyServer({ mute = false } = {}) {
   });
 }
 
+// «git» (github.com): `info/refs` de un repo público, como lo sirve GitHub; 401 si no es público o no existe
+function gitHost(req, res) {
+  const c = control();
+  const u = new URL(req.url, 'http://git');
+  const repo = REPOS.find((r) => u.pathname === `/${keyOf(r)}.git/info/refs`) || null;
+  log({ host: 'git', method: req.method, path: u.pathname + u.search, auth: Boolean(req.headers.authorization), via_proxy: req.headers['x-toy-proxy'] === '1' });
+  if (c.git_down) return;   // acepta y calla
+  if (c.git_garbage) { res.writeHead(200, { 'Content-Type': 'text/html' }); return res.end('<html>esto no es git</html>'); }
+  if (!repo || u.searchParams.get('service') !== 'git-upload-pack' || modeFor(c, repo) !== 'none') { res.writeHead(401, { 'WWW-Authenticate': 'Basic realm="GitHub"' }); return res.end(); }
+  // las refs del bare en pkt-line, como las anuncia GitHub: la primera línea con las capacidades después de un byte nulo
+  const list = spawnSync(GIT, ['-C', repo.bare, 'for-each-ref', '--format=%(objectname) %(refname)'], { encoding: 'utf8' });
+  if (list.status !== 0) { res.writeHead(500); return res.end(); }
+  let refsText = list.stdout.split('\n').filter(Boolean).map((l, i) => `${l}${i === 0 ? '\0multi_ack thin-pack side-band agent=toy' : ''}\n`);
+  // `ref_moved_to`: main dice OTRO commit (el mismo largo: las líneas siguen valiendo), como en la API
+  if (c.ref_moved_to) refsText = refsText.map((l) => l.replace(/^[0-9a-f]{40}(?= refs\/heads\/main[\0\n])/, c.ref_moved_to));
+  const pkt = (t) => `${(Buffer.byteLength(t, 'latin1') + 4).toString(16).padStart(4, '0')}${t}`;
+  const body = Buffer.from(`${pkt('# service=git-upload-pack\n')}0000${refsText.map(pkt).join('')}0000`, 'latin1');
+  res.writeHead(200, { 'Content-Type': 'application/x-git-upload-pack-advertisement', 'Cache-Control': 'no-cache', 'Content-Length': String(body.length) });
+  res.end(body);
+}
+
+// «raw» (raw.githubusercontent.com): un archivo de un commit de un repo público
+function rawHost(req, res) {
+  const c = control();
+  const u = new URL(req.url, 'http://raw');
+  const repo = REPOS.find((r) => u.pathname.startsWith(`/${keyOf(r)}/`)) || null;
+  log({ host: 'raw', method: req.method, path: u.pathname + u.search, auth: Boolean(req.headers.authorization), via_proxy: req.headers['x-toy-proxy'] === '1' });
+  if (c.raw_down) { res.writeHead(503); return res.end('raw caído'); }
+  if (c.raw_block) { res.writeHead(Number(c.raw_block), { 'Content-Type': 'text/html' }); return res.end('<html>Blocked by policy</html>'); }
+  const m = repo ? /^([0-9a-f]{40})\/(.+)$/.exec(u.pathname.slice(`/${keyOf(repo)}/`.length)) : null;
+  if (!m || modeFor(c, repo) !== 'none') { res.writeHead(404); return res.end('404: Not Found'); }
+  const file = decodeURIComponent(m[2]);
+  const r = git(['show', `${m[1]}:${file}`], { encoding: 'buffer' }, repo.bare);
+  if (r.status !== 0) { res.writeHead(404); return res.end('404: Not Found'); }
+  let body = r.stdout;
+  if (c.raw_version && file === 'version.json') { try { const v = JSON.parse(body.toString('utf8')); v.version = String(c.raw_version); body = Buffer.from(`${JSON.stringify(v, null, 2)}\n`); } catch (_) { /* tal cual */ } }
+  res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'max-age=300', 'Content-Length': String(body.length) });
+  res.end(body);
+}
+
 let CODELOAD = null;
 const apiSrv = http.createServer(api);
+const gitSrv = http.createServer(gitHost);
+const rawSrv = http.createServer(rawHost);
 const codeSrv = http.createServer(codeload);
 const proxySrv = proxyServer();
 const muteSrv = proxyServer({ mute: true });
@@ -268,7 +337,9 @@ const listen = (srv) => new Promise((res) => srv.listen(0, '127.0.0.1', () => re
   const API = await listen(apiSrv);
   const PROXY = await listen(proxySrv);
   const MUTE = await listen(muteSrv);
-  fs.writeFileSync(`${PORT_FILE}.tmp`, `API=${API}\nCODELOAD=${CODELOAD}\nPROXY=${PROXY}\nMUTE_PROXY=${MUTE}\n`);
+  const GITH = await listen(gitSrv);
+  const RAW = await listen(rawSrv);
+  fs.writeFileSync(`${PORT_FILE}.tmp`, `API=${API}\nCODELOAD=${CODELOAD}\nPROXY=${PROXY}\nMUTE_PROXY=${MUTE}\nGIT=${GITH}\nRAW=${RAW}\n`);
   fs.renameSync(`${PORT_FILE}.tmp`, PORT_FILE);
 })();
 process.on('SIGTERM', () => process.exit(0));

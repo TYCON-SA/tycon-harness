@@ -431,12 +431,13 @@ Qué hace el guion, en orden:
 2. La credencial, **antes de bajar**: el repo es público y no hace falta. Si hay un permiso de lectura —el de
    `TYCON_GITHUB_TOKEN`, o el guardado en `~/.tycon/config.json`— lo usa; si no hay y el repo no se puede leer sin él
    (401 o 404), en una terminal lo pide sin eco; sin terminal sale 1 con la única acción (crear el permiso —el enlace—
-   y pasarlo). Un permiso que no vale sale 1 diciéndolo. Sin permiso, GitHub limita los pedidos (60 por hora por
-   dirección de red): si contesta 403, el guion sale 1 con ese código y no baja nada.
-3. Baja el comprimido de la rama publicada por la API (`/repos/<org>/<nombre>/tarball/<commit>`): la credencial viaja
-   sólo al host de la API y la redirección a codeload se sigue **sin** ella (el guion hace los dos GET a mano). Lo
-   desempaqueta con `tar` en una carpeta temporal, que se borra al terminar. `TYCON_RELEASE_API` (sólo pruebas) apunta
-   al servidor de juguete, como en release.js.
+   y pasarlo). Un permiso que no vale sale 1 diciéndolo.
+3. Baja el comprimido de `main`. **Sin permiso** no usa la API: lee el commit de `main` de `info/refs` y
+   baja de codeload (`tar.gz/<commit>`); si `github.com` no contesta, cae a la API. **Con permiso**, por la API
+   (`/repos/<org>/<nombre>/tarball/<commit>`): la credencial viaja sólo al host de la API y la redirección a codeload se
+   sigue **sin** ella (el guion hace los dos GET a mano). Un 403 del tope de la API dice hasta qué hora, en hora local.
+   Lo desempaqueta con `tar` en una carpeta temporal, que se borra al terminar. `TYCON_RELEASE_API`, `TYCON_RELEASE_GIT`
+   y `TYCON_RELEASE_ARCHIVE` (sólo pruebas) apuntan al servidor de juguete, como en release.js.
 4. Desde ese árbol temporal: guarda el permiso si lo pidió (`harness.js config set github.token`, por stdin, 0600) y
    corre `harness.js install --version latest --repo <org/nombre> <opciones>` (las que vienen después de `--`) en la
    misma terminal, sin tocar la entrada estándar: la bajada VERIFICADA (tar-reader + el árbol de git contra el commit) y
@@ -505,21 +506,36 @@ como archivos** (`kind: release`). La usan las máquinas nuevas que instalan con
   siguiente), `~/.tycon/third-party` (la caché de las skills de terceros) y `~/.tycon/config.json` (el permiso de GitHub
   y `paths.maintained`). El estado y la copia fija de arranque viven en `stateDir()`. `TYCON_HOME` cambia la
   carpeta.
-- **De dónde**: la API de GitHub, sin git. La ref del canal (`stable` → `main`; `latest` → `mirror/sync` si trae un
-  número mayor), su `version.json` con `If-None-Match` (al día es un pedido barato) y el comprimido **de ese commit**,
-  leído con un lector propio (`scripts/lib/tar-reader.js`) que rechaza enlaces, dispositivos y rutas que salen ANTES de
+- **De dónde**: de GitHub, sin git. La ref del canal (`stable` → `main`; `latest` → `mirror/sync` si trae un número
+  mayor), su `version.json` y el comprimido **de ese commit**. **Sin permiso guardado**, por las rutas
+  públicas, que no cuentan contra el tope de la API: las dos ramas de UN pedido a `github.com/<org>/<repo>.git/info/refs`
+  (lo que lee `git ls-remote`, leído por el cliente propio: no hace falta git), el número del raw **por commit**
+  (`raw.githubusercontent.com/<org>/<repo>/<sha>/version.json`; nunca por rama, que queda 5 min en caché), y sólo si la
+  punta cambió desde la última vista; el comprimido, de `codeload.github.com/<org>/<repo>/tar.gz/<sha>`. A la API le
+  queda **una consulta por bajada**: `git/commits/<sha>`, el árbol con el que se verifica: una consulta a cambio de que el árbol lo diga GitHub, sin un lector propio de objetos de git. Si
+  `github.com` no contesta o `info/refs` no se puede leer, se mira por la API como antes y queda en el registro; un 401
+  o 404 de `info/refs` es «el repo no está o no se ve», sin caer a la API. **Con permiso**, todo por la API, igual que
+  antes (lo prueba la línea de base de `release-api-count.test.sh`). El comprimido se lee con un lector propio (`scripts/lib/tar-reader.js`) que rechaza enlaces, dispositivos y rutas que salen ANTES de
   escribir, y verificado: el árbol de git calculado tiene que ser el del commit, si no no instala nada. El modo de cada
   archivo sale de la cabecera del comprimido, nunca del disco (Windows no guarda el bit de ejecutable).
 - **La credencial**: no hace falta, el repo es público. Si la persona pegó un permiso de sólo lectura (`harness.js config
-  set github.token`, por stdin; queda 0600 y nunca se imprime), se manda en cada pedido: sube el límite de pedidos de 60
-  por hora por dirección de red a 5000. No se lee la de git ni la de `gh`. Un 404 nombra sus tres causas; un 401 dice
-  que el permiso venció.
+  set github.token`, por stdin; queda 0600 y nunca se imprime), se manda en cada pedido a la API. Sirve para un repo
+  privado (la capa del equipo); para el público es opcional. No se lee la de git ni la de `gh`. Un 404 nombra sus tres
+  causas; un 401 dice que el permiso venció.
+- **El tope de la API**: sin permiso, GitHub limita la API a 60 consultas por hora **por conexión** (toda
+  una oficina comparte una), y un 304 sin permiso también gasta. Un 403 con `X-RateLimit-Remaining: 0` deja en el estado
+  `api_limited_until` (la hora de renovación que dice GitHub): hasta esa hora el arranque no le pide nada a la API
+  —mirar sigue andando, porque no la usa—, avisa **una vez** («hay versión nueva (X); GitHub limita las consultas sin
+  permiso de esta conexión hasta las HH:MM; se baja sola en el primer arranque después de esa hora. No hace falta hacer
+  nada»), no lo cuenta como «no se pudo actualizar», y `doctor` lo muestra. Pasada la hora, el primer arranque baja sin
+  esperar la ventana de 10 minutos. `update` a mano intenta una vez y, si sigue el tope, sale 2 con el mismo texto.
+  `install --version <n>` (un comando manual y raro) sigue por la API y dice el tope y la hora si llega.
 - **El cambio con diario**: `~/.tycon/swap.json` se escribe antes de mover; `harness/` → `previous/`, `incoming/<v>/` →
   `harness/`. Un corte lo repara el arranque siguiente (también `bootstrap.js` y los respaldos en shell, sin git ni Node).
   Una `previous/` que todavía está se aparta a `trash/`; si no se puede (Windows, un archivo tomado) la actualización
   espera. Salud roja → vuelve a `previous/` y la versión queda `failed`.
 - **Comandos**: `update --check` (0 al día · 3 nueva · 2 sin poder mirar, con el motivo: sin red, proxy sin respuesta, sin
-  permiso, 404, límite), `rollback` (el cambio al revés, sin bajar nada; sin `previous/` manda a `install --version`),
+  permiso, 404, el tope con su hora), `rollback` (el cambio al revés, sin bajar nada; sin `previous/` manda a `install --version`),
   `doctor` (cada archivo contra su manifiesto `.tycon-release.json`; sin git; red sólo con `--fetch`), `uninstall` (quita
   además las carpetas de versiones y los enlaces; deja el permiso y la caché de terceros, y lo dice).
 - **Los avisos** que miran el repo (`dependencias`, `tablero`, `producción`, `guides-heal`, `branch-guard`) no corren git
@@ -528,8 +544,10 @@ como archivos** (`kind: release`). La usan las máquinas nuevas que instalan con
   validación de cada rama) frena `export-ignore`/`export-subst`, enlaces y submódulos en rutas publicadas.
 
 Pruebas: `scripts/tests/harness-release.test.sh` (máquina de juguete con el «GitHub» de juguete,
-`scripts/tests/fixtures/toy-release-server.js`), `tar-reader.test.js`, `http-get.test.js`, `check-publishable-tree.test.js`;
-en Windows, el escenario `no-clone` del pipeline 182.
+`scripts/tests/fixtures/toy-release-server.js`, que atiende también las rutas públicas y cobra el 304 sin credencial),
+`release-api-count.test.sh` (cuántas consultas a la API gasta cada operación, y con permiso los mismos pedidos que la
+línea de base), `tar-reader.test.js`, `http-get.test.js`, `check-publishable-tree.test.js`; en Windows, el escenario
+`no-clone` del pipeline 182, que además mide contra el GitHub real con el registro de pedidos (`TYCON_HTTP_TRACE`).
 
 ## Cada herramienta, sus enchufes — y Codex solo
 

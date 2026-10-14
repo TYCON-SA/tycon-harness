@@ -1112,6 +1112,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.34: las rutas públicas de GitHub de una versión bajada sin permiso (scripts/setup/harness/public-git.js): el lector de info/refs (pkt-line; rechaza lo que no es git), las bases por defecto y de prueba (la API de juguete sin github.com de juguete no tiene rutas públicas) y las tres direcciones. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/public-git.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "Parte 1 de 2 de tests/no-hardcoded-paths.test.js (story 8.22, tramo F: ninguna suite pasa de 45 s; el archivo entero no se registra, scripts/tests/lib/suite-parts.js). story 8.3 (tanda A): el enlace ~/.claude/tycon-harness (instalador en HOME temporal: crea, repara, no mueve otro clon, --link) y el barrido de rutas/servicios fijos del núcleo en los dos repos.",
       "raiz": "arnes",
       "ruta": "tests/no-hardcoded-paths.p1.test.js",
@@ -1189,6 +1195,30 @@
       "__nota": "story 8.23 (tanda B, T8-T16, T19): la instalación release —una versión bajada de GitHub como archivos, sin git— sobre la máquina de juguete y el servidor de versiones de juguete (scripts/tests/fixtures/toy-release-server.js): install --version, update --check por la API (ref, ETag, proxy, red, 401/404/límite), la credencial siempre pegada y nunca escrita, el cambio con diario y su reparación (bootstrap.js y el respaldo en shell), la previous/ diferida, rollback, y nada fuera de ~/.tycon que nombre incoming/ ni previous/. Sin red real: todo en localhost.",
       "raiz": "arnes",
       "ruta": "tests/harness-release.test.sh",
+      "requiere": [],
+      "gate_only_when_touching": [
+        "scripts/setup/**",
+        "scripts/lib/**",
+        "scripts/tests/lib/**",
+        "scripts/tests/fixtures/**"
+      ]
+    },
+    {
+      "__nota": "Parte 1 de 2 de tests/release-api-count.test.sh (story 8.22, tramo F: ninguna suite pasa de 45 s; el archivo entero no se registra, scripts/tests/lib/suite-parts.sh). story 8.34 (T2-T13, T18): cuántas consultas a la API de GitHub gasta cada operación de una versión bajada, sin permiso (mirar 0, bajar 1, terceros 0, instalar 1, la mudanza 1) — por info/refs, el raw por commit y codeload del GitHub de juguete, que cobra el 304 sin credencial —; el respaldo por la API (github.com caído o ilegible; 401 no cae; raw caído, una consulta); la verificación (comprimido cambiado o cortado, el número del raw contra el del árbol); el tope (esperar hasta la hora, avisar una vez, no contarlo como fallo; update a mano intenta una vez; install --version dice la hora); y con permiso, los pedidos a la API iguales, pedido por pedido, a la línea de base grabada antes de la story (fixtures/release-api-baseline-token.txt). Sin red real: todo en localhost.",
+      "raiz": "arnes",
+      "ruta": "tests/release-api-count.p1.test.sh",
+      "requiere": [],
+      "gate_only_when_touching": [
+        "scripts/setup/**",
+        "scripts/lib/**",
+        "scripts/tests/lib/**",
+        "scripts/tests/fixtures/**"
+      ]
+    },
+    {
+      "__nota": "Parte 2 de 2 de tests/release-api-count.test.sh (story 8.22, tramo F: ninguna suite pasa de 45 s; el archivo entero no se registra, scripts/tests/lib/suite-parts.sh). story 8.34 (T2-T13, T18): cuántas consultas a la API de GitHub gasta cada operación de una versión bajada, sin permiso (mirar 0, bajar 1, terceros 0, instalar 1, la mudanza 1) — por info/refs, el raw por commit y codeload del GitHub de juguete, que cobra el 304 sin credencial —; el respaldo por la API (github.com caído o ilegible; 401 no cae; raw caído, una consulta); la verificación (comprimido cambiado o cortado, el número del raw contra el del árbol); el tope (esperar hasta la hora, avisar una vez, no contarlo como fallo; update a mano intenta una vez; install --version dice la hora); y con permiso, los pedidos a la API iguales, pedido por pedido, a la línea de base grabada antes de la story (fixtures/release-api-baseline-token.txt). Sin red real: todo en localhost.",
+      "raiz": "arnes",
+      "ruta": "tests/release-api-count.p2.test.sh",
       "requiere": [],
       "gate_only_when_touching": [
         "scripts/setup/**",

@@ -969,6 +969,28 @@ PY
   done
   printf '{ "auth": "none" }\n' > "$SRV30/control.json"
   G30 push -q -f "$BARE30" main >/dev/null 2>&1
+  # (f5) T15 (story 8.34) · sin permiso y con el github.com de juguete (TYCON_RELEASE_GIT): las puntas salen de info/refs, sin
+  # la API; a la API le queda el commit (1) y, con una versión atrasada, la comparación y el árbol de la punta (3, las del #55)
+  GIT30="$(sed -n 's/^GIT=//p' "$SRV30/ports.env" 2>/dev/null)"
+  api30(){ grep -c '"host":"api"' "$SRV30/requests.log" 2>/dev/null || true; }
+  rm -rf "$SYS30/opt/tycon"; mkdir -p "$SYS30/opt"; : > "$SRV30/requests.log"
+  if TYCON_RELEASE_GIT="$GIT30" instala30 && grep -q 'info/refs' "$SRV30/requests.log" && ! grep -q 'git/ref/heads' "$SRV30/requests.log" && [ "$(api30)" = 1 ]; then ok "T15 · sin permiso, las puntas de info/refs: una sola consulta a la API (el commit)"
+  else no "T15 · puntas sin la API (consultas a la API: $(api30)): $(grep '⛔' "$TMP/inst-30" | head -1 | cut -c1-240)"; fi
+  git -C "$SRC30" push -q -f "$BARE30" "$C2_30:refs/heads/main" >/dev/null 2>&1
+  rm -rf "$SYS30/opt/tycon"; mkdir -p "$SYS30/opt"; : > "$SRV30/requests.log"
+  if TYCON_RELEASE_GIT="$GIT30" instala30 && grep -q 'hay una versión más nueva' "$TMP/inst-30" && ! grep -q 'git/ref/heads' "$SRV30/requests.log" && [ "$(api30)" = 3 ]; then ok "T15 · atrasada y sin permiso: las puntas de info/refs; a la API, el commit, la comparación y el árbol de la punta (3)"
+  else no "T15 · atrasada sin la API para las puntas (consultas a la API: $(api30)): $(grep '⛔' "$TMP/inst-30" | head -1 | cut -c1-240)"; fi
+  # la API agotada: no instala y dice el tope y su hora, nunca «GitHub contestó 403»
+  RESET30=$(( $(date +%s) + 1800 )); HORA30="$(python3 -c "import time,sys; print(time.strftime('%H:%M', time.localtime(int(sys.argv[1]))))" "$RESET30")"
+  printf '{ "auth": "none", "ratelimit": true, "ratelimit_reset": %s }\n' "$RESET30" > "$SRV30/control.json"
+  rm -rf "$SYS30/opt/tycon"; mkdir -p "$SYS30/opt"
+  if ! TYCON_RELEASE_GIT="$GIT30" instala30 && grep -q "hasta las $HORA30" "$TMP/inst-30" && ! grep -q 'GitHub contestó 403' "$TMP/inst-30" && [ ! -d "$SYS30/opt/tycon" ]; then ok "T15 · con la API agotada: no instala y dice el tope y la hora ($HORA30), sin «GitHub contestó 403»"
+  else no "T15 · API agotada: $(grep '⛔' "$TMP/inst-30" | head -1 | cut -c1-240)"; fi
+  printf '{ "auth": "none" }\n' > "$SRV30/control.json"
+  G30 push -q -f "$BARE30" main >/dev/null 2>&1
+  # con sudo, github.com es SIEMPRE el real: TYCON_RELEASE_GIT es sólo de las pruebas, como TYCON_RELEASE_API
+  if grep -qF 'if [ "$SIN_SUDO" = 0 ]; then GIT_GITHUB="https://github.com"' "$INSTALADOR"; then ok "T15 · con sudo, las puntas se leen del github.com real (TYCON_RELEASE_GIT se ignora)"
+  else no "T15 · el instalador no fija github.com real con sudo"; fi
   # (g) el repo es privado y la máquina no tiene el permiso guardado: 404 con la única acción; con el permiso, instala
   printf '{ "auth": "token:permiso-de-laboratorio" }\n' > "$SRV30/control.json"
   if ! instala30 && grep -q 'config set github.token' "$TMP/inst-30"; then ok "T30n · repo privado sin permiso guardado: no instala y dice la acción (config set github.token)"
@@ -978,6 +1000,11 @@ PY
   else no "T30o · con el permiso guardado: $(grep '⛔' "$TMP/inst-30" | head -1 | cut -c1-240)"; fi
   if ! grep -q 'permiso-de-laboratorio' "$TMP/inst-30" && ! grep -rq 'permiso-de-laboratorio' "$SYS30/opt" 2>/dev/null; then ok "T30p · el permiso no aparece en la salida ni en /opt"
   else no "T30p · el permiso de GitHub quedó escrito en la salida o en /opt"; fi
+  # T10/T15 (story 8.34) · con el permiso guardado, los pedidos del freno a la API son los de antes (el commit y las dos
+  # puntas), aunque haya un github.com de juguete: con permiso no se usan las rutas públicas
+  rm -rf "$SYS30/opt/tycon"; mkdir -p "$SYS30/opt"; : > "$SRV30/requests.log"
+  if TYCON_RELEASE_GIT="$GIT30" instala30 && [ "$(grep '"host":"api"' "$SRV30/requests.log" | grep -c 'git/commits/')" = 1 ] && [ "$(grep '"host":"api"' "$SRV30/requests.log" | grep -c 'git/ref/heads/')" = 2 ] && ! grep -q 'info/refs' "$SRV30/requests.log"; then ok "T15 · con permiso, el freno pide a la API lo mismo que antes (el commit y las dos puntas), sin info/refs"
+  else no "T15 · con permiso, los pedidos cambiaron: $(sed 's/.*"path":"\([^"]*\)".*/\1/' "$SRV30/requests.log" | tr '\n' ' ')"; fi
   # (h) un archivo puesto a mano en ~/.tycon/harness que la versión NO trae (renames.json en una versión pública): su sola
   # presencia no lo mete en /opt (pase adversarial de la D, clases 4 y 17)
   rm -rf "$SYS30/opt/tycon"; mkdir -p "$SYS30/opt"

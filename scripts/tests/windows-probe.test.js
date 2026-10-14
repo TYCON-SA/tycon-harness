@@ -1361,3 +1361,32 @@ test('Probe_NoClone_DeclaresSkillDataScenario_T37', () => {
     assert.ok(E.legacyData.includes(TL.LAYER_A2C.legacy), 'y la conexión vieja, la de la lista');
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+// story 8.34 · T1 (en Windows) y T16 = Windows182_NoClone_TraceCounts: contra el GitHub REAL y sin permiso, el sondeo del tope
+// anónimo de la API (las rutas públicas no lo mueven; un 304 sin permiso sí) y el registro de pedidos (`TYCON_HTTP_TRACE`) de la
+// instalación (1 consulta: la verificación), de mirar (0) y de mirar con la API en un puerto cerrado (anda); en Windows,
+// get-harness.ps1 con la API cerrada. Lo mide sólo el agente de la 182 (TF_BUILD): acá se fija que la sonda lo DECLARA, que no
+// sale a la red fuera de ese agente, que las rutas son las reales (ninguna variable de juguete) y que no toca tareas programadas.
+test('Probe_NoClone_DeclaresRealGithubScenario_8_34_T16', () => {
+  const src = fs.readFileSync(path.join(ROOT, 'scripts', 'tests', 'windows', 'no-clone-probe.js'), 'utf8');
+  assert.match(src, /function measureRealGithub\(/, 'la sonda tiene la sección del GitHub real');
+  assert.match(src, /measureRealGithub\(\{/, '…y la corre');
+  const sec = src.slice(src.indexOf('function measureRealGithub('));
+  assert.match(sec, /if \(!baseEnv\.TF_BUILD && baseEnv\.TYCON_PROBE_REAL_GITHUB !== '1'\) return/, 'fuera del agente de la 182 no sale a la red');
+  assert.match(sec, /TYCON_HTTP_TRACE: trace/, 'cuenta con el registro de pedidos');
+  assert.match(sec, /for \(const k of \['TYCON_RELEASE_API', 'TYCON_RELEASE_GIT', 'TYCON_RELEASE_RAW', 'TYCON_RELEASE_ARCHIVE'\]\) delete env\[k\]/, 'las rutas son las reales');
+  assert.match(sec, /TYCON_RELEASE_API: 'http:\/\/127\.0\.0\.1:9', TYCON_RELEASE_GIT: 'https:\/\/github\.com'/, 'mira con la API en un puerto cerrado');
+  for (const k of ["TYCON_NO_NIGHTLY_EXAM: '1'", "TYCON_NO_GUI_ENV: '1'"]) assert.ok(sec.includes(k), `sin tareas programadas (${k})`);
+  for (const id of ['no-clone:real-public-route-charged', 'no-clone:real-info-refs-unreadable', 'no-clone:real-install-fails', 'no-clone:real-install-api',
+    'no-clone:real-check-fails', 'no-clone:real-check-api', 'no-clone:real-check-needs-api', 'no-clone:real-get-harness-needs-api']) {
+    assert.ok(sec.includes(`'${id}'`), `la sonda nombra el hallazgo ${id}`);
+  }
+  assert.match(sec, /rec\.fact\('real_github_spike'/, 'el sondeo queda como hecho (T1, con el número de corrida)');
+  // sin permiso y sin red hacia el GitHub real, en esta máquina: no sale a la red
+  const facts = {}; const notes = [];
+  const P = require(path.join(ROOT, 'scripts', 'tests', 'windows', 'no-clone-probe.js'));
+  const env = Object.assign({}, process.env); delete env.TF_BUILD; delete env.TYCON_PROBE_REAL_GITHUB;
+  const r = P.measureRealGithub({ base: os.tmpdir(), program: ROOT, baseEnv: env, platform: process.platform, rec: { fact: (k, v) => { facts[k] = v; }, note: (n) => notes.push(n), finding: () => {} } });
+  assert.match(String(r), /no medido fuera del agente de la 182/, 'sin TF_BUILD devuelve «no medido» sin medir nada');
+  assert.deepEqual(facts, {}, 'y no anota hechos');
+});

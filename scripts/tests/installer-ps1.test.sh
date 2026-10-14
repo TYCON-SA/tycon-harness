@@ -1594,7 +1594,8 @@ get_harness_ps1_section() {
   fi
   # (la ruta `/git/ref/heads/<rama>` de la API de GitHub no es una invocación de git: se descuenta antes de mirar)
   # (la primera línea trae el BOM UTF-8 antes del `#`: se saca antes de descontar los comentarios)
-  ps1_code() { LC_ALL=C sed '1s/^\xef\xbb\xbf//' "$src" | grep -vE '^\s*#' | sed 's#/git/##g'; }
+  # (y los nombres de las rutas públicas de la story 8.34 —`<repo>.git/info/refs`, `git-upload-pack`— tampoco)
+  ps1_code() { LC_ALL=C sed '1s/^\xef\xbb\xbf//' "$src" | grep -vE '^\s*#' | sed -e 's#/git/##g' -e 's#\.git/info/refs##g' -e 's#git-upload-pack##g'; }
   if ! ps1_code | grep -qwE 'git|--depth'; then ok "get-harness.ps1 · no invoca git ni lo pide (sin clon: la versión se baja como archivos)"
   else no "get-harness.ps1 · todavía nombra git fuera de los comentarios: $(ps1_code | grep -nwE 'git|--depth' | head -2 | tr '\n' ' ')"; fi
   if [ "$(head -c 3 "$src" | od -An -tx1 | tr -d ' \n')" = efbbbf ]; then ok "get-harness.ps1 · empieza con el BOM UTF-8 (Windows PowerShell 5.1 lee mal un .ps1 sin él)"
@@ -1748,6 +1749,24 @@ PS
   if ! grep -q 'falta python3\|falta bash' "$gl/codex.out" && grep -q '/tarball/' "$gl/requests.log" && [ "$(tail -1 "$calls" 2>/dev/null)" = "${INSTALL_CALL},\"--tool\",\"codex\",\"--yes\"]" ]; then
     ok "get-harness.ps1 · con -- --tool codex y sin python3 ni bash: no son requisitos (los pide el aplicador de Claude Code), baja e instala"
   else no "get-harness.ps1 · con -- --tool codex sin python3 (rc $rc; llamada: $(tail -1 "$calls" 2>/dev/null)): $(brief "$gl/codex.out")"; fi
+  # T14 (story 8.34) · sin permiso y con las rutas públicas del juguete (TYCON_RELEASE_GIT / _ARCHIVE): main de info/refs y el
+  # comprimido de codeload, sin ninguna consulta a la API; con la API agotada (por la API: con permiso), la hora del tope
+  local gitb cdl reset hora
+  gitb="$(sed -n 's/^GIT=//p' "$gl/ports.env")"; cdl="$(sed -n 's/^CODELOAD=//p' "$gl/ports.env")"
+  printf '{ "auth": "none" }\n' > "$gl/control.json"
+  h="$(new_home gh-public)"; : > "$gl/requests.log"
+  ps_gh "$h" "$gl/bin-full" TYCON_RELEASE_GIT="$gitb" TYCON_RELEASE_ARCHIVE="$cdl" -- -- --yes > "$gl/public.out" 2>&1; rc=$?
+  if [ "$rc" -eq 0 ] && [ "$(tail -1 "$calls" 2>/dev/null)" = "${INSTALL_CALL},\"--yes\"]" ] && grep -q 'info/refs' "$gl/requests.log" && grep -q '/tar.gz/' "$gl/requests.log" && ! grep -q '"host":"api"' "$gl/requests.log"; then
+    ok "get-harness.ps1 · T14 sin permiso: main de info/refs y el comprimido de codeload, sin ninguna consulta a la API; corre install"
+  else no "get-harness.ps1 · T14 sin permiso por las rutas públicas (rc $rc; pedidos: $(sed 's/.*"path":"\([^"]*\)".*/\1/' "$gl/requests.log" | tr '\n' ' ')): $(brief "$gl/public.out")"; fi
+  reset=$(( $(date +%s) + 2400 )); hora="$(node -e 'const d=new Date(Number(process.argv[1])*1000);console.log(`${d.getHours()}`.padStart(2,"0")+":"+`${d.getMinutes()}`.padStart(2,"0"))' "$reset")"
+  printf '{ "auth": "none", "ratelimit": true, "ratelimit_reset": %s }\n' "$reset" > "$gl/control.json"
+  h="$(new_home gh-limited)"; n_calls="$(wc -l < "$calls" | tr -d ' ')"
+  ps_gh "$h" "$gl/bin-full" TYCON_GITHUB_TOKEN="$permit" -- -- --yes > "$gl/limited.out" 2>&1; rc=$?
+  if [ "$rc" -eq 1 ] && grep -q "hasta las $hora" "$gl/limited.out" && ! grep -q 'GitHub contestó 403' "$gl/limited.out" && [ "$(wc -l < "$calls" | tr -d ' ')" = "$n_calls" ]; then
+    ok "get-harness.ps1 · T14 la API en su tope: sale 1 con la hora ($hora), sin «GitHub contestó 403» y sin llamar a install"
+  else no "get-harness.ps1 · T14 la API en su tope (rc $rc): $(brief "$gl/limited.out")"; fi
+  printf '{ "auth": "none" }\n' > "$gl/control.json"
   kill "$srv" 2>/dev/null; wait "$srv" 2>/dev/null
 }
 if command -v git >/dev/null 2>&1; then get_harness_ps1_section

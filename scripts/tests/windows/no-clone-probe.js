@@ -17,6 +17,12 @@
  *      que ESPERAR (sale 2, dice «espera», no es `failed`) y aplicarse cuando se suelta; con un archivo de `trash/`
  *      tomado, el arranque siguiente no la borra, no frena nada y lo dice; suelto, la borra.
  *   4. `rollback`, `doctor --json` y `uninstall --yes`.
+ *   6. (story 8.34 · T1 y T16) Contra el GitHub REAL, sin permiso, sólo en el agente de la 182 (`TF_BUILD`): cuánto gasta
+ *      del tope anónimo de la API cada ruta pública (`info/refs`, el raw por commit, codeload) y un 304 sin permiso; y, con
+ *      el registro de pedidos (`TYCON_HTTP_TRACE`), cuántas consultas a `api.github.com` hacen la instalación (1: la
+ *      verificación), mirar (0) y mirar con la API apuntada a un puerto cerrado (0, y anda); en Windows, que
+ *      `get-harness.ps1` baja con la API cerrada. Lo de este paso son hechos de la story 8.34: la conexión del agente se
+ *      comparte, así que un tope agotado por otros se anota, no se cuenta como falla del arnés.
  *   5. (story 8.25, A1b · T14) Lo mismo CON la capa del equipo, en otra carpeta de usuario: el repo del equipo de juguete
  *      servido por el Azure DevOps de juguete (`install --team <URL>` con el PAT de juguete guardado por `config set
  *      azure.token`; un commit sólo del equipo que llega en el arranque fuera de la ventana —en Windows, también con
@@ -264,6 +270,9 @@ function measure({ lab, out, platform = process.platform, baseEnv = process.env,
     // 7. la skill de la lista fija con sus datos fuera de su carpeta (story 8.25, A2c · T37)
     const skillData = measureTeamSkillData({ lab, base, author, program, env0, baseEnv, platform, allowTemp, rec, api, repoOption, gitBin, serverDir, lockers });
     if (skillData) rec.note(skillData);
+    // 8. contra el GitHub real, sin permiso (story 8.34 · T1 y T16)
+    const real = measureRealGithub({ base, program, baseEnv, platform, rec });
+    if (real) rec.note(real);
     return { status: L.STATUS.measured, reason: null };
   } finally { stopAll(); }
 }
@@ -654,6 +663,93 @@ function measureTeamSkillData({ lab, base, author, program, env0, baseEnv, platf
   return null;
 }
 
+/**
+ * Contra el GitHub REAL, sin permiso (story 8.34 · T1 en Windows y T16): el sondeo del tope anónimo de la API y el registro de
+ * pedidos de la instalación y de mirar, con el código de la rama (`program`). Sólo en el agente de la 182 (`TF_BUILD`; o con
+ * `TYCON_PROBE_REAL_GITHUB=1`): en una suite local no sale a la red. Devuelve una nota si no se midió; nunca tira.
+ */
+function measureRealGithub({ base, program, baseEnv, platform, rec }) {
+  if (!baseEnv.TF_BUILD && baseEnv.TYCON_PROBE_REAL_GITHUB !== '1') return 'GitHub real (story 8.34): no medido fuera del agente de la 182 (TF_BUILD; TYCON_PROBE_REAL_GITHUB=1 lo fuerza)';
+  let repo = null;
+  try { const m = /github\.com[/:]([^/]+)\/([^/.]+)/.exec((readJson(path.join(program, 'scripts', 'setup', 'public-remotes.json')).remotes || [])[0] || ''); if (m) repo = `${m[1]}/${m[2]}`; } catch (_) { repo = null; }
+  if (!repo) return 'GitHub real (story 8.34): la copia no trae scripts/setup/public-remotes.json con el remoto público: no medido';
+  const H = require('../../lib/http-get.js');
+  const PG = require('../../setup/harness/public-git.js');
+  const home = path.join(base, 'users', 'lab-real-github');
+  fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+  const trace = path.join(base, 'real-github-trace.jsonl');
+  const profile = path.join(base, 'lab-profile-real.json');
+  fs.writeFileSync(profile, '{ "install": { "profile": "minimal" } }\n');
+  fs.writeFileSync(path.join(home, '.claude', 'settings.json'), '{\n  "hooks": {}\n}\n');
+  fs.writeFileSync(path.join(home, '.claude', 'CLAUDE.md'), '');
+  const env = T.rehearsalEnv(home, { base: baseEnv, platform, extra: {
+    // sin tareas programadas: launchd es por usuario, no por HOME (una HOME de laboratorio no aísla la tarea real del examen)
+    TYCON_NO_NIGHTLY_EXAM: '1', TYCON_NO_GUI_ENV: '1',
+    TYCON_HTTP_TRACE: trace, TYCON_UPDATE_APPLY: 'auto', TYCON_PROFILE: profile, TYCON_CLAUDE: '1', TYCON_CODEX: '0', TYCON_BENCH_DAILY: '0', TYCON_STAGE_METRICS: '0',
+    TYCON_SETTINGS_PATH: path.join(home, '.claude', 'settings.json'), CLAUDE_MD_PATH: path.join(home, '.claude', 'CLAUDE.md'),
+    CODEX_HOME: path.join(home, '.codex'), TYCON_GIT_HOOKS_DIR: path.join(home, '.git-hooks'), TYCON_UPDATE_NETWORK_BUDGET_S: '60',
+  } });
+  // las rutas son las reales: ninguna variable de prueba que apunte a un juguete
+  for (const k of ['TYCON_RELEASE_API', 'TYCON_RELEASE_GIT', 'TYCON_RELEASE_RAW', 'TYCON_RELEASE_ARCHIVE']) delete env[k];
+  // T1: el tope anónimo antes y después de cada ruta pública, y un 304 sin permiso (`rate_limit` no cuenta)
+  const used = () => { const r = H.getSync('https://api.github.com/rate_limit', { env, timeoutMs: 20000 }); try { return JSON.parse(r.body.toString('utf8')).resources.core.used; } catch (_) { return null; } };
+  const b = PG.bases(env);
+  const spike = { before: used() };
+  const refs = H.getSync(PG.refsUrl(b, repo), { env, timeoutMs: 30000 });
+  const heads = refs.ok && refs.status === 200 ? PG.parseInfoRefs(refs.body) : { ok: false };
+  const main = heads.ok ? heads.heads.main : null;
+  spike.info_refs = { status: refs.ok ? refs.status : refs.kind, git_format: heads.ok, used_after: used() };
+  if (main) {
+    const raw = H.getSync(PG.rawUrl(b, repo, main, 'version.json'), { env, timeoutMs: 30000 });
+    spike.raw = { status: raw.ok ? raw.status : raw.kind, used_after: used() };
+    const tar = H.getSync(PG.tarUrl(b, repo, main), { env, timeoutMs: 120000, maxBytes: 256 * 1024 * 1024 });
+    spike.codeload = { status: tar.ok ? tar.status : tar.kind, bytes: tar.ok ? tar.body.length : 0, used_after: used() };
+  }
+  const refApi = `https://api.github.com/repos/${repo}/git/ref/heads/main`;
+  const first = H.getSync(refApi, { env, timeoutMs: 20000 });
+  const etag = first.ok ? first.headers.etag : null;
+  const u0 = used();
+  const cond = etag ? H.getSync(refApi, { env, timeoutMs: 20000, headers: { 'If-None-Match': etag } }) : null;
+  spike.not_modified = { status: cond && cond.ok ? cond.status : null, used_before: u0, used_after: used() };
+  rec.fact('real_github_spike', spike);
+  const moved = ['info_refs', 'raw', 'codeload'].filter((k) => spike[k] && spike.before !== null && spike[k].used_after !== null && spike[k].used_after > spike.before);
+  if (moved.length) rec.finding('no-clone:real-public-route-charged', 'real-github', `el tope anónimo de la API subió después de ${moved.join(', ')} (${JSON.stringify(spike).slice(0, 300)}); la conexión del agente se comparte: puede ser otro`, 'W8', { severity: 'loses-control' });
+  if (!heads.ok) rec.finding('no-clone:real-info-refs-unreadable', 'real-github', `info/refs de GitHub no se pudo leer (${JSON.stringify(spike.info_refs)})`, 'W8', { severity: 'breaks' });
+  // T16: la instalación y mirar, con el código de la rama, contados con el registro
+  const apiCalls = () => { try { return fs.readFileSync(trace, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)).filter((o) => /api\.github\.com/.test(o.origin) && !/rate_limit/.test(o.path)).map((o) => o.path); } catch (_) { return []; } };
+  const runP = (args, label, extra = {}) => {
+    try { fs.rmSync(trace, { force: true }); } catch (_) { /* nada */ }
+    const r = L.run(process.execPath, [path.join(program, 'scripts', 'setup', 'harness.js'), ...args], { env: Object.assign({}, env, extra), timeoutMs: CMD_TIMEOUT_MS, cap: 4000 });
+    const calls = apiCalls();
+    rec.fact(label, { exit: r.exit, api: calls, out: lastLines(`${r.stdout}\n${r.stderr}`, 3) });
+    return { r, calls };
+  };
+  const limited = (r) => /GitHub limita las consultas/.test(`${r.stdout}${r.stderr}`);
+  const inst = runP(['install', '--version', 'latest', '--yes'], 'real_install');
+  if (inst.r.exit !== 0 && limited(inst.r)) rec.note(`GitHub real: la API anónima del agente estaba en su tope; la instalación lo dijo con la hora (${lastLines(inst.r.stdout, 1)})`);
+  else if (inst.r.exit !== 0) rec.finding('no-clone:real-install-fails', 'real-github', `install --version latest contra el GitHub real salió ${inst.r.exit}: ${lastLines(`${inst.r.stdout}\n${inst.r.stderr}`, 2)}`, 'W8', { severity: 'breaks' });
+  else if (inst.calls.length !== 1 || !/git\/commits\//.test(inst.calls[0])) rec.finding('no-clone:real-install-api', 'real-github', `la instalación gastó ${inst.calls.length} consulta(s) a la API (se esperaba 1, git/commits): ${inst.calls.join(' ')}`, 'W8', { severity: 'loses-control' });
+  if (inst.r.exit !== 0) return null;
+  const look = runP(['update', '--check'], 'real_check');
+  if (![0, 3].includes(look.r.exit)) rec.finding('no-clone:real-check-fails', 'real-github', `update --check salió ${look.r.exit}: ${lastLines(`${look.r.stdout}\n${look.r.stderr}`, 2)}`, 'W8', { severity: 'breaks' });
+  if (look.calls.length) rec.finding('no-clone:real-check-api', 'real-github', `mirar gastó ${look.calls.length} consulta(s) a la API: ${look.calls.join(' ')}`, 'W8', { severity: 'loses-control' });
+  const closed = runP(['update', '--check'], 'real_check_api_closed', { TYCON_RELEASE_API: 'http://127.0.0.1:9', TYCON_RELEASE_GIT: 'https://github.com' });
+  if (![0, 3].includes(closed.r.exit)) rec.finding('no-clone:real-check-needs-api', 'real-github', `con la API en un puerto cerrado, update --check salió ${closed.r.exit}: ${lastLines(`${closed.r.stdout}\n${closed.r.stderr}`, 2)}`, 'W8', { severity: 'loses-control' });
+  // en Windows: get-harness.ps1 con la API cerrada baja igual (main de info/refs, el comprimido de codeload)
+  const ps = isWin ? L.scanPath('pwsh', { env })[0] : null;
+  if (!ps) { rec.note('GitHub real: get-harness.ps1 no medido (sin Windows o sin pwsh)'); return null; }
+  const home3 = path.join(base, 'users', 'lab-real-get-harness');
+  fs.mkdirSync(home3, { recursive: true });
+  const env3 = Object.assign(T.rehearsalEnv(home3, { base: baseEnv, platform, extra: { TYCON_NO_NIGHTLY_EXAM: '1', TYCON_NO_GUI_ENV: '1', TYCON_PROFILE: profile, TYCON_CLAUDE: '1', TYCON_CODEX: '0', TYCON_BENCH_DAILY: '0' } }), { TYCON_RELEASE_API: 'http://127.0.0.1:9', TYCON_RELEASE_GIT: 'https://github.com' });
+  delete env3.TYCON_RELEASE_RAW; delete env3.TYCON_RELEASE_ARCHIVE;
+  const g = L.run(ps, ['-NoProfile', '-NonInteractive', '-File', path.join(program, 'scripts', 'setup', 'get-harness.ps1'), '--', '--yes'], { env: env3, timeoutMs: CMD_TIMEOUT_MS, cap: 4000 });
+  const gout = `${g.stdout}\n${g.stderr}`;
+  const downloaded = /bajo .* a una carpeta temporal/.test(gout) && !/no pude bajar el comprimido/.test(gout);
+  rec.fact('real_get_harness_ps1', { exit: g.exit, downloaded, out: lastLines(gout, 3) });
+  if (!downloaded) rec.finding('no-clone:real-get-harness-needs-api', 'real-github', `get-harness.ps1 con la API cerrada no bajó: ${lastLines(gout, 2)}`, 'W8', { severity: 'loses-control' });
+  return null;
+}
+
 function main(argv) {
   const args = L.parseArgs(argv, { '--lab': 'value', '--out': 'value', '--allow-temp': 'flag' });
   if (args.problem || !args.lab || !args.out) { process.stderr.write(`no-clone-probe.js: ${args.problem || 'faltan --lab <laboratorio> y --out <carpeta del reporte>'}\n`); return 2; }
@@ -671,4 +767,4 @@ function main(argv) {
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
 
-module.exports = { NAME, measure };
+module.exports = { NAME, measure, measureRealGithub };

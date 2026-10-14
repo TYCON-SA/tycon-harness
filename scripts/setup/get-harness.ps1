@@ -10,8 +10,11 @@
 #      El comando sugerido se imprime; este guion nunca instala nada.
 #   2. La credencial, ANTES de bajar: el repo es público y no hace falta. Usa el permiso de lectura de GitHub si lo hay
 #      (TYCON_GITHUB_TOKEN, o el guardado en ~/.tycon/config.json); lo pide —sin eco; sin terminal sale 1— sólo ante 401 o 404.
-#   3. Baja el comprimido de la versión por la API de GitHub (la credencial viaja sólo al host de la API; la redirección
-#      a codeload va sin ella) a una carpeta temporal y lo desempaqueta con tar. No escribe nada fuera de esa carpeta.
+#   3. Baja el comprimido de la versión a una carpeta temporal y lo desempaqueta con tar. No escribe nada fuera de esa
+#      carpeta. SIN permiso (story 8.34) no usa la API de GitHub, que sin permiso tiene un tope de 60 consultas por hora
+#      por conexión: lee el commit de main de la página pública `info/refs` (la que lee `git ls-remote`, sin git) y baja
+#      de codeload. Si github.com no contesta, cae a la API. CON permiso, por la API (la credencial viaja sólo al host de
+#      la API; la redirección a codeload va sin ella). Al tope de la API, dice hasta qué hora.
 #   4. Desde ese árbol: guarda el permiso si lo pidió (`harness.js config set github.token`, por stdin) y corre
 #      `harness.js install --version latest --repo <org/nombre> <opciones>` en esta misma terminal: la bajada VERIFICADA y
 #      la instalación son las del arnés (quedan en ~/.tycon); la carpeta temporal se borra al terminar.
@@ -21,11 +24,17 @@
 
 $Repo = 'TYCON-SA/tycon-harness'
 $Api = if ($env:TYCON_RELEASE_API) { $env:TYCON_RELEASE_API } else { 'https://api.github.com' }   # TYCON_RELEASE_API: sólo pruebas
+# las rutas públicas (story 8.34; sólo pruebas: TYCON_RELEASE_GIT / _ARCHIVE). Con la API apuntada a un juguete y sin
+# TYCON_RELEASE_GIT, no hay rutas públicas: un laboratorio no sale al GitHub de verdad (la regla de public-git.js)
+$GitBase = if ($env:TYCON_RELEASE_GIT) { $env:TYCON_RELEASE_GIT } else { 'https://github.com' }
+$Codeload = if ($env:TYCON_RELEASE_ARCHIVE) { $env:TYCON_RELEASE_ARCHIVE } else { 'https://codeload.github.com' }
+$Public = -not ($env:TYCON_RELEASE_API -and -not $env:TYCON_RELEASE_GIT)
 $NodeFloor = 20   # el mismo piso que scripts/setup/harness.js
 $TokenUrl = 'https://github.com/settings/personal-access-tokens/new'
 
 function Say([string]$Text) { [Console]::Error.WriteLine("get-harness: $Text") }
 if ($Api -notmatch '^https?://') { Say "TYCON_RELEASE_API tiene que empezar con http:// o https:// (no sigo otros esquemas): $Api"; exit 2 }
+if ($GitBase -notmatch '^https?://' -or $Codeload -notmatch '^https?://') { Say "TYCON_RELEASE_GIT y TYCON_RELEASE_ARCHIVE tienen que empezar con http:// o https://"; exit 2 }
 
 $OnWindows = ($PSVersionTable.PSEdition -eq 'Desktop') -or ($IsWindows -eq $true)
 $OnMac = ($IsMacOS -eq $true)
@@ -123,6 +132,11 @@ function Fetch([string]$Url, [string]$Out) {
       if ($auth -and $script:Token) { $req.Headers.Authorization = [System.Net.Http.Headers.AuthenticationHeaderValue]::new('Bearer', $script:Token) }
       $resp = $client.SendAsync($req).GetAwaiter().GetResult()
       $code = [int]$resp.StatusCode
+      # el tope de la API (story 8.34): lo que quedó y la hora de renovación del último pedido
+      $script:RateRemaining = $null; $script:RateReset = $null
+      $vals = $null
+      if ($resp.Headers.TryGetValues('X-RateLimit-Remaining', [ref]$vals)) { $script:RateRemaining = [string]($vals | Select-Object -First 1) }
+      if ($resp.Headers.TryGetValues('X-RateLimit-Reset', [ref]$vals)) { $script:RateReset = [string]($vals | Select-Object -First 1) }
       if ($code -ge 300 -and $code -lt 400 -and $resp.Headers.Location) {
         if ($hop -eq 4) { return $code }   # demasiadas redirecciones: el código del último salto, no «sin red»
         $next = if ($resp.Headers.Location.IsAbsoluteUri) { $resp.Headers.Location } else { [Uri]::new([Uri]$u, $resp.Headers.Location) }
@@ -146,6 +160,15 @@ function Fetch([string]$Url, [string]$Out) {
   }
   return 0
 }
+function Limited {   # si el último 403 fue el tope de la API: hasta qué hora (hora local), y sale 1 (story 8.34)
+  if ($script:RateRemaining -ne '0') { return }
+  $n = 0; [void][long]::TryParse([string]$script:RateReset, [ref]$n)
+  $when = if ($n -gt 0) { [DateTimeOffset]::FromUnixTimeSeconds($n).LocalDateTime } else { (Get-Date).AddHours(1) }
+  $hora = $when.ToString('HH:mm')
+  if ($script:Token) { Say "GitHub limita las consultas de tu permiso hasta las $hora`: probá de nuevo después de esa hora. No bajé nada." }
+  else { Say "GitHub limita las consultas sin permiso de esta conexión hasta las $hora`: probá de nuevo después de esa hora (un permiso guardado tiene otro tope, pero el repo público no lo necesita). No bajé nada." }
+  exit 1
+}
 function Ask {   # sin permiso y el repo no se lee: en la terminal se pide sin eco; sin terminal, la única acción y 1
   if ([Environment]::UserInteractive -and -not [Console]::IsInputRedirected) {
     Say "el repo $Repo no se puede leer sin tu permiso de GitHub: uno de sólo lectura (Fine-grained, Contents: read) en $TokenUrl"
@@ -159,26 +182,45 @@ function Ask {   # sin permiso y el repo no se lee: en la terminal se pide sin e
   }
 }
 try {
+  # sin permiso, el commit de main sale de info/refs (0 consultas a la API); un 401/404 es un repo que no se ve sin permiso
+  # (se pide); sin red, un 5xx o algo que no es git → la API, como antes
+  $Sha = ''
+  if (-not $Token -and $Public) {
+    $Refs = Join-Path $Tmp 'refs'
+    $Code = Fetch "$GitBase/$Repo.git/info/refs?service=git-upload-pack" $Refs
+    if ($Code -eq 200) {
+      $text = [IO.File]::ReadAllText($Refs, [Text.Encoding]::GetEncoding('ISO-8859-1'))
+      $m = [regex]::Match($text, '([0-9a-f]{40}) refs/heads/main[\x00\n]')
+      if ($text.StartsWith("001e# service=git-upload-pack`n0000") -and $m.Success) { $Sha = $m.Groups[1].Value }
+      else { Say 'github.com contestó algo que no es la lista de ramas: miro por la API' }
+    } elseif ($Code -eq 401 -or $Code -eq 404) { Ask }
+    elseif ($Code -ne -2) { Say "github.com no contestó ($Code): miro por la API" }
+  }
   $Ref = Join-Path $Tmp 'ref.json'
-  $Code = Fetch "$Api/repos/$Repo/git/ref/heads/main" $Ref
-  if (-not $Token -and ($Code -eq 401 -or $Code -eq 404)) { Ask; $Code = Fetch "$Api/repos/$Repo/git/ref/heads/main" $Ref }
+  $Code = 200
+  if (-not $Sha) {
+    $Code = Fetch "$Api/repos/$Repo/git/ref/heads/main" $Ref
+    if (-not $Token -and ($Code -eq 401 -or $Code -eq 404)) { Ask; $Code = Fetch "$Api/repos/$Repo/git/ref/heads/main" $Ref }
+  }
   switch ($Code) {
     200 { }
+    403 { Limited; Say "GitHub contestó 403 al pedir la rama main de $Repo. No bajé nada."; exit 1 }
     401 { Say "el permiso de GitHub no vale (401): venció o se revocó. Creá otro en $TokenUrl y pegalo con harness.js config set github.token. No bajé nada."; exit 1 }
     404 { Say "GitHub no muestra $Repo (404): sin permiso guardado, o el permiso no ve el repo, o falta aceptar la invitación. El permiso: $TokenUrl. No bajé nada."; exit 1 }
     0 { Say "sin red: no pude llegar a $Api. No bajé nada."; exit 1 }
     -2 { Say 'No bajé nada.'; exit 1 }   # el motivo ya lo dijo Fetch
     default { Say "GitHub contestó $Code al pedir la rama main de $Repo. No bajé nada."; exit 1 }
   }
-  $Sha = ''
-  try { $Sha = [string](Get-Content -LiteralPath $Ref -Raw | ConvertFrom-Json).object.sha } catch { }
+  if (-not $Sha) { try { $Sha = [string](Get-Content -LiteralPath $Ref -Raw | ConvertFrom-Json).object.sha } catch { } }
   if (-not $Sha) { Say "la respuesta de GitHub no trae el commit de main de $Repo"; exit 1 }
 
   # ── 3. la bajada, a la carpeta temporal ─────────────────────────────────────────────────────────────────────
   Say "bajo $Repo (main $($Sha.Substring(0, 7))) a una carpeta temporal"
   $Tgz = Join-Path $Tmp 'arnes.tgz'
-  $Code = Fetch "$Api/repos/$Repo/tarball/$Sha" $Tgz
+  # sin permiso, de codeload (el mismo archivo al que redirige la API, sin gastar una consulta); con permiso, por la API
+  if (-not $Token -and $Public) { $Code = Fetch "$Codeload/$Repo/tar.gz/$Sha" $Tgz } else { $Code = Fetch "$Api/repos/$Repo/tarball/$Sha" $Tgz }
   if ($Code -eq -2) { Say 'No bajé nada.'; exit 1 }   # el motivo ya lo dijo Fetch
+  if ($Code -eq 403) { Limited }
   if ($Code -ne 200) { Say "no pude bajar el comprimido (GitHub contestó $Code): no quedó nada"; exit 1 }
   # antes de abrirlo con el tar del sistema se mira el listado: un enlace (l), un enlace duro (h) o una ruta que sale (`..`)
   # lo rechazan entero (la verificación de verdad —el árbol de git contra el commit— la hace install con la bajada suya)

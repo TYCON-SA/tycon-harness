@@ -123,6 +123,10 @@ HOME_LEIDA="${HOME_USUARIO:-${HOME:-}}"; CLAUDE_LEIDA="$HOME_LEIDA/.claude"
 # se dice. El origen de
 # confianza pasa a ser el repo de GitHub y queda fijado con `repo` (así `doctor` sabe que este freno ya es el de la mudanza).
 # TYCON_RELEASE_API cambia la API (sólo pruebas: el servidor de versiones de juguete); con sudo el entorno viene limpio.
+# Sin permiso guardado (story 8.34), las puntas de main y mirror/sync salen de la página pública `info/refs` de github.com
+# (lo que lee `git ls-remote`, leída con urllib: sin git y sin gastar el tope de la API, 60 consultas por hora por
+# conexión); a la API le quedan el commit (1 consulta) y, con una versión atrasada, la comparación y el árbol de la punta.
+# Con permiso, todo por la API, como antes. TYCON_RELEASE_GIT cambia github.com (sólo pruebas, como TYCON_RELEASE_API).
 # Lo que se copia a /opt (el freno, la puerta y lo que requieren). Escrito ANTES de 0a: con una versión bajada atrasada,
 # 0a exige que estos archivos sean byte a byte los de la punta de main (paso 5 del python).
 ARCHIVOS=(
@@ -162,11 +166,16 @@ if [ -f "$ARNES/.tycon-release.json" ] && [ ! -d "$ARNES/.git" ]; then
   # en el modo clon: el origen lo confirma UNA PERSONA por teclado la primera vez y queda fijado en /opt (root); cualquier
   # otro repo después exige --change-origin y otra confirmación por teclado (revisor de seguridad de la D, vuelta 2)
   if [ "$SIN_SUDO" = 0 ]; then API_GITHUB="https://api.github.com"; else API_GITHUB="${TYCON_RELEASE_API:-https://api.github.com}"; fi
+  # github.com (las puntas sin la API, story 8.34): con sudo, SIEMPRE el real. Una API de juguete sin un github.com de
+  # juguete no tiene rutas públicas (la salvaguarda de public-git.js): las puntas salen de la API, como antes
+  if [ "$SIN_SUDO" = 0 ]; then GIT_GITHUB="https://github.com"
+  elif [ -n "${TYCON_RELEASE_API:-}" ] && [ -z "${TYCON_RELEASE_GIT:-}" ]; then GIT_GITHUB=""
+  else GIT_GITHUB="${TYCON_RELEASE_GIT:-https://github.com}"; fi
   # (2>&1: el motivo de python viaja en la variable, así `muere` lo imprime; cazador de fallos silenciosos de la D)
-  REPO_GITHUB="$(/usr/bin/python3 - "$ARNES" "$ESTADO_RELEASE" "$API_GITHUB" "$HOME_LEIDA/.tycon/config.json" "$LISTA_VERIFICADA" "${ARCHIVOS[@]}" "$MAPA_NOMBRES" 2>&1 <<'PY'
-import hashlib, json, os, re, sys, urllib.request, urllib.error
-arnes, estado, api, token_file, lista = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]
-freno = sys.argv[6:]   # lo que se copia a /opt (ARCHIVOS y el mapa de nombres): tiene que ser igual al de la punta (paso 5)
+  REPO_GITHUB="$(/usr/bin/python3 - "$ARNES" "$ESTADO_RELEASE" "$API_GITHUB" "$HOME_LEIDA/.tycon/config.json" "$LISTA_VERIFICADA" "$GIT_GITHUB" "${ARCHIVOS[@]}" "$MAPA_NOMBRES" 2>&1 <<'PY'
+import hashlib, json, os, re, sys, time, urllib.request, urllib.error
+arnes, estado, api, token_file, lista, gitbase = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5], sys.argv[6]
+freno = sys.argv[7:]   # lo que se copia a /opt (ARCHIVOS y el mapa de nombres): tiene que ser igual al de la punta (paso 5)
 def muere(m): sys.stderr.write(m + "\n"); sys.exit(2)
 try:
     with open(os.path.join(arnes, ".tycon-release.json"), encoding="utf-8") as f: m = json.load(f)
@@ -225,17 +234,39 @@ def get(route):
     if token: req.add_header("Authorization", "Bearer " + token)
     try:
         with urllib.request.urlopen(req, timeout=30) as r: return r.status, json.loads(r.read().decode("utf-8"))
-    except urllib.error.HTTPError as e: return e.code, None
+    except urllib.error.HTTPError as e:
+        # el tope de la API (story 8.34): se dice hasta qué hora, en hora local, en vez de «GitHub contestó 403»
+        if e.code == 403 and str(e.headers.get("X-RateLimit-Remaining")) == "0":
+            try: hora = time.strftime("%H:%M", time.localtime(int(e.headers.get("X-RateLimit-Reset"))))
+            except Exception: hora = "dentro de una hora"
+            muere("GitHub limita las consultas %s hasta las %s: no instalo el freno; volvé a correrlo después de esa hora" % ("de tu permiso" if token else "sin permiso de esta conexión", hora))
+        return e.code, None
     except Exception as e: muere("no pude preguntarle a GitHub por el repo %s (%s): sin eso no instalo — el disco lo puede tocar el asistente" % (repo, e))
+def puntas_publicas():
+    # las ramas de `info/refs` (pkt-line de git), sin la API: {rama: sha}, o None si github.com no contesta o no es git
+    req = urllib.request.Request(gitbase.rstrip("/") + "/" + repo + ".git/info/refs?service=git-upload-pack", headers={"User-Agent": "tycon-install-guard"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r: body = r.read().decode("latin-1")
+    except urllib.error.HTTPError as e:
+        if e.code in (401, 404): muere("github.com no muestra %s (%s): el repo no está o no es público — sin permiso guardado no lo veo (harness.js config set github.token)" % (repo, e.code))
+        return None
+    except Exception: return None
+    if not body.startswith("001e# service=git-upload-pack\n0000"): return None
+    return {m.group(2): m.group(1) for m in re.finditer(r"([0-9a-f]{40}) refs/heads/([^\0\n]+)", body)}
 st, c = get("/repos/%s/git/commits/%s" % (repo, commit))
 if st == 404: muere("GitHub no encuentra el commit %s en %s (404): sin permiso guardado, el permiso no ve el repo, o el commit no existe — harness.js config set github.token, y harness.js doctor" % (commit[:7], repo))
 if st != 200 or not isinstance(c, dict): muere("GitHub contestó %s al pedir el commit %s de %s: no instalo" % (st, commit[:7], repo))
 gh_tree = str(((c.get("tree") or {}).get("sha")) or "")
 if gh_tree != arbol: muere("el árbol de la carpeta (%s) NO es el del commit %s en GitHub (%s): la carpeta no es lo publicado, no se instala como freno" % (arbol[:7], commit[:7], gh_tree[:7]))
 puntas = {}
-for ref in ("main", "mirror/sync"):
-    st2, r = get("/repos/%s/git/ref/heads/%s" % (repo, ref))
-    if st2 == 200 and isinstance(r, dict): puntas[ref] = str(((r.get("object") or {}).get("sha")) or "")
+# sin permiso, las puntas de UN pedido a info/refs (story 8.34); si github.com no contesta o no es git, por la API
+publicas = puntas_publicas() if gitbase and not token else None
+if publicas is not None:
+    puntas = {ref: publicas[ref] for ref in ("main", "mirror/sync") if ref in publicas}
+else:
+    for ref in ("main", "mirror/sync"):
+        st2, r = get("/repos/%s/git/ref/heads/%s" % (repo, ref))
+        if st2 == 200 and isinstance(r, dict): puntas[ref] = str(((r.get("object") or {}).get("sha")) or "")
 if not puntas: muere("GitHub no me dio la punta de main de %s: no instalo" % repo)
 # 5. 🔴 un commit PUBLICADO de main: la punta, o uno anterior de main con el MISMO freno que la punta (2026-10-14).
 # Antes se exigía la punta exacta, y en un día de 30 publicaciones el freno no se podía instalar. Lo que la regla cuida

@@ -205,6 +205,22 @@
         "scripts/tests/harness-release.test.sh"
       ]
     },
+    "release-api-count.p1.test.sh": {
+      "why": "La suite de la story 8.34 (cuántas consultas a la API gasta cada operación de una versión bajada): suite del laboratorio del instalador, corre en la rama sólo cuando el cambio toca el instalador (grupo `installer`), como harness-release. Pesos ESTIMADOS (lo medido en la Mac, 18 y 24 s, llevado a la escala del agente): se renuevan con la primera validación de la rama.",
+      "group": "installer",
+      "patterns": [
+        "scripts/tests/release-api-count.test.sh",
+        "scripts/tests/release-api-count.p1.test.sh"
+      ]
+    },
+    "release-api-count.p2.test.sh": {
+      "why": "La suite de la story 8.34 (cuántas consultas a la API gasta cada operación de una versión bajada): suite del laboratorio del instalador, corre en la rama sólo cuando el cambio toca el instalador (grupo `installer`), como harness-release. Pesos ESTIMADOS (lo medido en la Mac, 18 y 24 s, llevado a la escala del agente): se renuevan con la primera validación de la rama.",
+      "group": "installer",
+      "patterns": [
+        "scripts/tests/release-api-count.test.sh",
+        "scripts/tests/release-api-count.p2.test.sh"
+      ]
+    },
     "harness-tools.test.sh": {
       "why": "Suite del laboratorio del instalador: corre en la rama sólo cuando el cambio toca el instalador (grupo `installer`, arriba, con su costo aceptado; decisión del dueño, 2026-10-08, story 8.22 tramo G). Entró a main ese mismo día con la story 8.23 y no tenía peso medido: la encontró el pase adversarial del tramo. Prueba los enchufes de cada herramienta (Claude Code y Codex), así que suma a los patrones del grupo lo propio de su tema: el adaptador de Codex (adapters/codex/**) y lo que lo arma (build/**). Hasta ese día se elegía por su `gate_only_when_touching` de suites.json, que incluía scripts/lib/** y scripts/hooks/**; ése sigue siendo el del portón de cada story.",
       "group": "installer",
