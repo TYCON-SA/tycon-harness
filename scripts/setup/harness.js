@@ -398,6 +398,48 @@ function noteHooksPath(state, a) {
   return g.line;
 }
 
+/**
+ * La carpeta global de hooks de git en lo que corre SOLO (el arranque, `update`) — 2026-10-14, a pedido del dueño: que sea
+ * transparente, que ningún dev tenga que correr nada. Las máquinas ya instaladas sin ella nunca la recibían (sólo la ponían
+ * `install`, `apply` y la mudanza). Mismas reglas que `ensure` (no pisa otra, full, el pre-push del arnés en su lugar), más:
+ *   · `mode: 'startup'` con la política `auto` (la del perfil del equipo): la pone y devuelve el aviso de una línea, que
+ *     se dice una vez (el arranque siguiente ya la encuentra puesta); con `ask`, sólo el aviso que pide `update --yes`;
+ *   · `mode: 'update'` (`update` que aplica: `--yes`, o `auto`): la pone y devuelve la línea para la salida;
+ *   · si la puso el arnés y hoy no está, la sacó la persona: no se vuelve a poner sola (lo dice el registro).
+ * Devuelve `{ notice, line }`; los avisos anteriores de esta pieza que viajaban en `notice` salen (cada arranque decide).
+ * Nunca tira.
+ */
+function hooksPathUnattended(ctx, state, tree, policy, { mode, log, notice = null }) {
+  const G = mod('git-hooks-path');
+  const out = { notice: G.stripNotices(notice), line: null };
+  const add = (t) => { out.notice = out.notice ? `${out.notice} · ${t}` : t; };
+  try {
+    if (state.mode === 'developer' || !policy || !policy.enabled || (policy.errors && policy.errors.length)) return out;
+    const prof = profileOf(ctx, tree);
+    const profile = prof.ok ? prof.value : null;
+    if (!G.wouldSet({ home: ctx.home, env: ctx.env, profile })) return out;
+    if (state.git_hooks_path && state.git_hooks_path.value) {
+      if (log) log(`carpeta global de hooks de git: la puso el arnés (${state.git_hooks_path.value}) y hoy no está — la sacó la persona: no la vuelvo a poner sola (harness.js apply la pone)`);
+      return out;
+    }
+    if (mode === 'startup' && policy.apply !== 'auto') {
+      if (log) log('carpeta global de hooks de git: falta; con la política «ask» la pone update --yes (queda en el aviso)');
+      add(G.NOTICE_ASK);
+      return out;
+    }
+    const g = G.ensure({ home: ctx.home, env: ctx.env, platform: ctx.platform, profile, log });
+    if (g.status === 'set') {
+      noteHooksPath(state, { gitHooksPath: g });
+      out.line = g.line;
+      if (mode === 'startup') add(g.notice);
+    } else if (g.status === 'failed') {
+      out.line = g.line;
+      if (mode === 'startup') add(g.notice);
+    }
+  } catch (e) { if (log) log(`carpeta global de hooks de git: no pude mirarla (${(e && e.message) || e})`); }
+  return out;
+}
+
 function runApplierOnly(ctx, tree, { log, snapshotDir = null, tools = undefined, force = false } = {}) {
   const T = mod('tools');
   if (tools === undefined) {
@@ -1543,7 +1585,7 @@ function redetectSources(state, detected, tree, notes, blind = []) {
 function releaseHelpers(ctx) {
   const S = mod('state');
   return {
-    takeSnapshot, finishSnapshot, runApplier, noteHooksPath, runHealth, recordPieces, ensureLink, linkResolvesTo, ensureImport, copyBootstrap,
+    takeSnapshot, finishSnapshot, runApplier, noteHooksPath, hooksPathUnattended, runHealth, recordPieces, ensureLink, linkResolvesTo, ensureImport, copyBootstrap,
     settingsPath, policyOf, applyPolicy, installQuestions, writeAnswers, profileOf, machineProfile, holdText, availableText,
     applyHint, REEVALUATED_NOTICE, engramOn, missingRequirement, profileSwitch, dropForProfile, profileSwitchNotes, toolChoice, withAnswers, toolNotice,
     engramSync: (c) => {
@@ -2936,6 +2978,10 @@ function cmdStartup(ctx) {
     { const tn = toolNotice(ctx, tree, state); if (tn) notice = notice ? `${notice} · ${tn}` : tn; }
     // el aviso de finales de línea de este arranque (árbol sucio, o el paso falló), al final y sin pisar otro (B2)
     if (ctx.eolNotice) notice = notice ? `${notice} · finales de línea: ${ctx.eolNotice}` : `finales de línea: ${ctx.eolNotice}`;
+    // la carpeta global de hooks de git (2026-10-14): con `auto` la pone este arranque y lo dice una vez; con `ask`, el
+    // aviso la pide. Sólo con el aplicador sano (el pre-push tiene que estar en su lugar)
+    if (a.ok) notice = hooksPathUnattended(ctx, state, tree, policy, { mode: 'startup', log: (l) => log(`startup: ${l}`), notice }).notice;
+    else notice = mod('git-hooks-path').stripNotices(notice);
     if (notice) R.setNotice(state, notice); else R.clearNotice(state);
     S.write(ctx.home, state);
     // este arranque tuvo el candado y llegó al final: lo anotado por «candado ocupado» ya no vale (AC 39; lo de la red
@@ -3047,6 +3093,12 @@ function cmdUpdate(ctx) {
     else if (mode === 'check' && u.status === 'new') R.setNotice(state, availableText(state, policy, u));
     else if (u.status === 'up_to_date' && state.notice && !REEVALUATED_NOTICE.test(state.notice)) R.clearNotice(state);
     if (lifted.length) u.lines = [...lifted, ...u.lines];
+    // la carpeta global de hooks de git (2026-10-14): un update que aplica la pone si falta (el aviso de `ask` la pedía)
+    if (mode === 'apply' && !['failed', 'busy'].includes(u.status)) {
+      const hp = hooksPathUnattended(ctx, state, state.tree, policy, { mode: 'update', log: (l) => log(`update: ${l}`), notice: state.notice });
+      if (hp.line) u.lines = [...u.lines, ...hp.line.split('\n')];
+      if (hp.notice) R.setNotice(state, hp.notice); else R.clearNotice(state);
+    }
     S.write(ctx.home, state);
     if (mode === 'check' && u.status === 'new') {
       // la persona ya vio las fuentes y la diferencia arriba, y contestó que no: sólo la línea de siempre

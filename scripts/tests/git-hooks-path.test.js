@@ -13,6 +13,7 @@
 //   G4 · el aviso de «git no tiene» (con su comando) sale de los avisos; los demás quedan.
 //   G5 · release: la saca si es la que puso; si la persona la cambió, no; sin anotación, nada.
 //   G6 · en Windows se escribe con `/`.
+//   G7 · wouldSet (para el aviso con la política ask) no escribe; stripNotices saca sólo los avisos de esta pieza.
 //
 // Cada caso con su propia configuración global (GIT_CONFIG_GLOBAL en un temporal): nunca la de quien corre.
 // Uso: node --test scripts/tests/git-hooks-path.test.js
@@ -144,4 +145,24 @@ test('G6 · en Windows se escribe con /; la carpeta sale de TYCON_GIT_HOOKS_DIR 
   assert.equal(G.valueFor('/home/u/.git-hooks', 'linux'), '/home/u/.git-hooks');
   assert.equal(G.hooksDir({ home: '/h', env: {} }), path.join('/h', '.git-hooks'));
   assert.equal(G.hooksDir({ home: '/h', env: { TYCON_GIT_HOOKS_DIR: '/x/hooks' } }), '/x/hooks');
+});
+
+test('G7 · wouldSet dice lo mismo que ensure sin escribir; stripNotices saca sólo los avisos de esta pieza', () => {
+  const L = lab();
+  try {
+    const before = fs.readFileSync(L.cfg);
+    assert.equal(G.wouldSet({ home: L.home, env: L.env, profile: 'full' }), true);
+    assert.deepEqual(fs.readFileSync(L.cfg), before, 'wouldSet no escribe nada');
+    assert.equal(G.wouldSet({ home: L.home, env: L.env, profile: 'minimal' }), false);
+    assert.equal(G.wouldSet({ home: L.home, env: Object.assign({}, L.env, { TYCON_NO_GIT_HOOKS: '1' }), profile: 'full' }), false);
+    const r = G.ensure({ home: L.home, env: L.env, profile: 'full' });
+    assert.equal(r.status, 'set');
+    assert.ok(r.notice.startsWith(G.NOTICE_SET) && !r.notice.includes(' · ') && !r.notice.includes('\n'), `el aviso es una línea: ${r.notice}`);
+    assert.equal(G.wouldSet({ home: L.home, env: L.env, profile: 'full' }), false, 'ya puesta, no la pondría');
+  } finally { L.done(); }
+  const other = 'hay versión nueva: 1 → 2';
+  assert.equal(G.stripNotices(`${other} · ${G.NOTICE_ASK}`), other);
+  assert.equal(G.stripNotices(`${G.NOTICE_SET} (core.hooksPath = /h/.git-hooks): x`), null);
+  assert.equal(G.stripNotices(`${G.NOTICE_FAILED} (git config salió 255): y · ${other}`), other);
+  assert.equal(G.stripNotices(null), null);
 });

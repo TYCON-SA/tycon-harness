@@ -343,7 +343,8 @@ vez cada 6 horas. Si la hay, avisa y espera: no la aplica sin que se lo pidas de
   nunca pisa nada tuyo.
 - **Comandos de barra** copiados a `~/.claude/commands/` (`TYCON_NO_COMMANDS_SYNC=1` saltea la copia).
 - **Hooks globales de git** en `~/.git-hooks/` (`TYCON_NO_GIT_HOOKS=1` los saltea). git sólo los usa con
-  `core.hooksPath` global: si git no tiene ninguna, `install` y `apply` la apuntan a esa carpeta (una que ya tengas no
+  `core.hooksPath` global: si git no tiene ninguna, `install`, `apply` y el arranque (con la aplicación `auto`; con `ask`, el
+  aviso la pide y la pone `update --yes`) la apuntan a esa carpeta (una que ya tengas no
   la tocan), y `uninstall` o el paso al perfil mínimo la sacan si sigue siendo ésa. Con un `core.hooksPath` global git
   deja de correr los `.git/hooks/` de todos tus repos: el hook del arnés corre en su lugar el `.githooks/pre-commit` de
   cada repo.

@@ -164,6 +164,16 @@ function judgeReached(read, when, { expected, sessions = 0 } = {}) {
   return { number, reached, by_hand: reached === false, findings };
 }
 
+/** La carpeta global de hooks de git de una carpeta de usuario de laboratorio: el valor, si es la del arnés y si su pre-push está. */
+function hooksPathFacts(home, env) {
+  const r = L.run('git', ['config', '--global', '--get', 'core.hooksPath'], { env, timeoutMs: 60000 });
+  const expected = path.join(home, '.git-hooks');
+  const value = String(r.stdout || '').trim() || null;
+  let prePush = false;
+  try { prePush = require('fs').readFileSync(path.join(expected, 'pre-push'), 'utf8').includes('git-pre-push-global.sh'); } catch (_) { prePush = false; }
+  return { exit: r.exit, value, expected, same: Boolean(value) && L.samePath(value.replace(/\//g, path.sep), expected), pre_push: prePush };
+}
+
 function runVariant({ ctx, v, facts, save, lab, out, platform, allowTemp, baseEnv, rec, add, say, publishNext, waitCapMs, waitBudgetMs }) {
   const opened = GI.openVariant({ ctx, lab, prefix: NAME, v, facts, platform, allowTemp, baseEnv });
   if (!opened) return false;
@@ -229,6 +239,17 @@ function runVariant({ ctx, v, facts, save, lab, out, platform, allowTemp, baseEn
   // toda sesión que el ensayo abre se juzga igual (`toy-lab.sessionFindings`). Las de la variante que aplica sola
   // entran además a la comparación de fotos, que usa ese mismo juicio
   const judgeSessions = (list, prefix = '', opts = {}) => { for (const s of list) for (const f of TL.sessionFindings(s, opts)) add(f, prefix); };
+  // la carpeta global de hooks de git (2026-10-14): la máquina del equipo instalada ANTES del arreglo no la tiene (sólo la
+  // ponía la página a mano). Con la capa (política auto) el arranque se la tiene que poner solo: se la saca acá —la clave
+  // y su anotación en el estado, como en una máquina que el arnés nunca tocó— y se mira después de las sesiones
+  if (v.id === 'auto') {
+    const un = L.run('git', ['config', '--global', '--unset', 'core.hooksPath'], { env: sessionEnv, timeoutMs: 60000 });
+    try { const st = TL.stateOf(paths); if (st && st.git_hooks_path) { delete st.git_hooks_path; L.writeJsonAtomic(paths.file, st); } } catch (e) { throw new Error(`no pude simular la máquina sin la carpeta global de hooks: ${e.message}`); }
+    facts.hooks_path_before = hooksPathFacts(home, sessionEnv);
+    facts.hooks_path_before.unset_exit = un.exit;
+    if (facts.hooks_path_before.value) throw new Error(`no pude simular la máquina sin la carpeta global de hooks: git sigue diciendo ${facts.hooks_path_before.value}`);
+    save();
+  }
   const forms = T.launchForms({ env: sessionEnv, platform, scratch });
   const smokeForms = ['bash-c', 'default-shell'].map((id) => forms[id]).filter(Boolean);
   // una sesión con la versión de antes: la máquina queda asentada (el arranque mira, y no hay nada nuevo)
@@ -271,6 +292,9 @@ function runVariant({ ctx, v, facts, save, lab, out, platform, allowTemp, baseEn
     facts.after = RP.photo({ home, tree, env: sessionEnv, paths, platform });
     facts.after_smoke = T.smoke({ settingsFile: settings, forms: smokeForms, home, scratch, env: sessionEnv, platform });
     try { if (facts.after.settings.exists && !facts.after.settings.problem) L.writeJsonAtomic(path.join(out, `settings-update-${v.id}-after.json`), ctx.redact(T.readJsonLoose(settings).value)); } catch (_) { /* la copia es de cortesía */ }
+    // la máquina que no tenía la carpeta global de hooks la tiene, con el pre-push del arnés adentro, sin que nadie corra nada
+    facts.hooks_path_after = hooksPathFacts(home, sessionEnv);
+    if (!facts.hooks_path_after.same || !facts.hooks_path_after.pre_push) add({ id: 'pre-push-not-active', kind: 'git-hooks', severity: T.SEVERITY.loses, detail: `después de las sesiones, core.hooksPath global es «${facts.hooks_path_after.value || 'nada'}» (se esperaba ${facts.hooks_path_after.expected}) y el pre-push del arnés ${facts.hooks_path_after.pre_push ? 'está' : 'NO está'} ahí: el freno antes de publicar no corre` });
     facts.differences = RP.comparePhotos(facts.before, facts.after, { sessions, smokeBefore: facts.before_smoke, smokeAfter: facts.after_smoke, expectVersion: next });
     for (const d of facts.differences) add(d);
     facts.answers = RP.answers(facts.before, facts.after, facts.differences, { sessions, expectVersion: next });

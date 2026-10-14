@@ -1528,11 +1528,33 @@ if corre HP; then
     || mal "HP install (rc ${RC}, core.hooksPath=«$(hp_value)»): $(printf '%s' "${SALIDA}" | grep -i 'hooks' | head -3 | tr '\n' '|')"
   [ "$(estado "(d.get('git_hooks_path') or {}).get('value')")" = "${HP_OURS}" ] && ok "HP …y la anota en el estado (la saca uninstall)" || mal "HP el estado no anota la carpeta: $(estado "d.get('git_hooks_path')")"
 
-  # el arranque no la pone: la máquina mudada (sin la clave) sigue sin ella después de un arranque
+  # la puso el arnés y la persona la sacó: el arranque no la vuelve a poner, ni con la política auto
   hp_unset
-  hp startup --force
-  [ -z "$(hp_value)" ] && ok "HP el arranque no la pone (sólo lo que pide una persona)" || mal "HP el arranque la puso: «$(hp_value)»"
+  TYCON_UPDATE_APPLY=auto hp startup --force
+  [ -z "$(hp_value)" ] && ok "HP si la puso el arnés y la persona la sacó, el arranque no la vuelve a poner" || mal "HP el arranque volvió a poner la que la persona sacó: «$(hp_value)»"
   [ "$(hp_doctor_warns)" = 1 ] && ok "HP sin la clave, doctor avisa que el pre-push no está puesto" || mal "HP doctor sin la clave no avisó el pre-push"
+
+  # una máquina YA instalada sin la carpeta, que el arnés nunca puso (la mudada, o instalada antes de este arreglo): el
+  # caso que pidió el dueño — que sea transparente, sin que el dev corra nada
+  hp_forget() { python3 -c 'import json,sys; f=sys.argv[1]; d=json.load(open(f)); d.pop("git_hooks_path", None); json.dump(d, open(f, "w"), indent=2)' "${LAB_HOME}/.claude/.tycon-pipeline/harness-state.json"; }
+  hp_notice() { estado "d.get('notice') or ''"; }
+  hp_forget
+  # con la política ask: el arranque no la pone, y el aviso la pide; update --yes (con terminal, como pide ask) la pone
+  TYCON_UPDATE_APPLY=ask hp startup --force
+  [ -z "$(hp_value)" ] && case "$(hp_notice)" in *"falta la carpeta global de hooks de git"*"update --yes la pone"*) true ;; *) false ;; esac \
+    && ok "HP con ask, el arranque no la pone y el aviso la pide (update --yes)" || mal "HP ask: core.hooksPath=«$(hp_value)» aviso=«$(hp_notice)»"
+  SALIDA="$(harness_lab_pty - env GIT_CONFIG_GLOBAL="${HP_CFG}" TYCON_UPDATE_APPLY=ask TYCON_THIRD_PARTY=0 TYCON_NO_AZ_PROJECTS_REFRESH=1 TYCON_NO_UPLOAD_RUNS=1 TYCON_NO_DOWNLOAD_RUNS=1 TYCON_NO_COLLECT_FINDINGS=1 node "${LAB_TREE}/scripts/setup/harness.js" update --yes 2>&1)"; RC=$?
+  [ "$(hp_value)" = "${HP_OURS}" ] && [ "$(hp_said_set)" = 1 ] && case "$(hp_notice)" in *"falta la carpeta global"*) false ;; *) true ;; esac \
+    && ok "HP con ask, update --yes la pone, lo dice, y el aviso deja de pedirla" || mal "HP ask update --yes (rc ${RC}, core.hooksPath=«$(hp_value)», aviso «$(hp_notice)»): ${SALIDA}"
+  # con la política auto (la del perfil del equipo): la pone el arranque y lo dice UNA vez en el aviso
+  hp_unset; hp_forget
+  TYCON_UPDATE_APPLY=auto hp startup --force
+  [ "$(hp_value)" = "${HP_OURS}" ] && case "$(hp_notice)" in *"el arnés puso la carpeta global de hooks de git"*) true ;; *) false ;; esac \
+    && [ "$(estado "(d.get('git_hooks_path') or {}).get('value')")" = "${HP_OURS}" ] \
+    && ok "HP con auto, el arranque la pone, la anota y lo dice en el aviso" || mal "HP auto: core.hooksPath=«$(hp_value)» aviso=«$(hp_notice)»"
+  TYCON_UPDATE_APPLY=auto hp startup --force
+  case "$(hp_notice)" in *"carpeta global de hooks"*) mal "HP el arranque siguiente lo repite: «$(hp_notice)»" ;; *) ok "HP …y el arranque siguiente ya no lo repite (una sola vez)" ;; esac
+  hp_unset
 
   # el caso real: apply sobre la máquina sin la clave la pone, y doctor deja de avisar
   hp apply

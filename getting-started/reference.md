@@ -348,7 +348,8 @@ terminal (`node ~/.claude/tycon-harness/scripts/setup/harness.js update --yes`).
   them and never overwrites anything of yours.
 - **Slash commands** copied into `~/.claude/commands/` (`TYCON_NO_COMMANDS_SYNC=1` skips the copy).
 - **Global git hooks** in `~/.git-hooks/` (`TYCON_NO_GIT_HOOKS=1` skips them). git only uses them with a global
-  `core.hooksPath`: if git has none, `install` and `apply` point it to that folder (one you already have is left alone),
+  `core.hooksPath`: if git has none, `install`, `apply` and startup (with `auto` apply; with `ask`, the notice asks for it
+  and `update --yes` sets it) point it to that folder (one you already have is left alone),
   and `uninstall` or the switch to the minimal profile remove it if it is still that one. With a global
   `core.hooksPath` git stops running the `.git/hooks/` of all your repos: the harness hook runs each repo's
   `.githooks/pre-commit` instead.

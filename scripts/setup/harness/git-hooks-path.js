@@ -8,7 +8,11 @@
  * que el aviso seguía igual después de correrlo. Las máquinas que no avisaban tenían la clave puesta a mano, de cuando
  * se instalaba desde un clon y el alta lo pedía como un paso aparte.
  *
- * Lo que hace ahora, sólo en lo que una persona pide (`install`, `apply`, la mudanza; nunca el arranque):
+ * Lo que hace ahora en `install`, `apply` y la mudanza, y —desde que el dueño pidió que sea transparente— también en el
+ * arranque y en `update` de una máquina ya instalada: con la política de aplicación `auto` (la del perfil del equipo: el
+ * equipo decidió que el arnés cambie cosas solo) la pone el arranque y lo dice una vez en el aviso; con `ask`, el aviso
+ * lo pide y la pone `update --yes`. Si la puso el arnés y la persona la sacó, ni el arranque ni `update` la vuelven a
+ * poner (`apply` sí: lo pide una persona). En cualquiera de esos caminos:
  *   · git no tiene ninguna  → la pone apuntando a la carpeta que llena el aplicador, si ahí quedó el pre-push del arnés,
  *                             en el perfil `full` y sin `TYCON_NO_GIT_HOOKS=1`. Lo anota en el estado: `uninstall` y el
  *                             paso al perfil mínimo la sacan, sólo si sigue siendo la que puso el arnés;
@@ -27,6 +31,11 @@ const KEY = 'core.hooksPath';
 const PUSH_MARK = 'git-pre-push-global.sh';
 /** El aviso del aplicador cuando git no tiene ninguna (los dos guiones dicen lo mismo): el renglón y su comando. */
 const UNSET_WARNING = /^⚠ git no tiene core\.hooksPath global/;
+
+// Los avisos de arranque (una línea llana cada uno, sin « · », que es lo que separa un aviso de otro): con qué empiezan
+const NOTICE_SET = 'el arnés puso la carpeta global de hooks de git';
+const NOTICE_FAILED = 'no pude poner la carpeta global de hooks de git';
+const NOTICE_ASK = 'falta la carpeta global de hooks de git y sin ella no corre el freno antes de publicar: harness.js update --yes la pone';
 
 /** La carpeta que llena el aplicador: `TYCON_GIT_HOOKS_DIR`, o `~/.git-hooks` (como install-tycon-hooks.sh y .ps1). */
 function hooksDir({ home, env = process.env }) {
@@ -85,13 +94,31 @@ function ensure({ home, env = process.env, platform = process.platform, profile 
     if (w.error || w.status !== 0 || after.status !== 'set' || after.value !== value) {
       const why = w.error ? (w.error.code || w.error.message) : (w.status !== 0 ? `git config salió ${w.status}${firstLine(w.stderr) ? `: ${firstLine(w.stderr)}` : ''}` : 'la escribí y git no la devuelve igual');
       if (log) log(`carpeta global de hooks de git: no pude ponerla (${why})`);
-      return { status: 'failed', value, line: `⚠ git no tiene carpeta global de hooks y no pude ponerla (${why}): los hooks del arnés, incluido el freno antes de publicar, NO corren. A mano:\n    git config --global ${KEY} "${value}"` };
+      return { status: 'failed', value, line: `⚠ git no tiene carpeta global de hooks y no pude ponerla (${why}): los hooks del arnés, incluido el freno antes de publicar, NO corren. A mano:\n    git config --global ${KEY} "${value}"`,
+        notice: `${NOTICE_FAILED} (${why}): el freno antes de publicar no corre; a mano: git config --global ${KEY} "${value}"` };
     }
     if (log) log(`carpeta global de hooks de git: puesta en ${value} (git no tenía ninguna)`);
-    return { status: 'set', value, line: `✓ git usa ahora la carpeta global de hooks del arnés (${KEY} = ${value}): sus hooks, incluido el freno antes de publicar, corren en todos tus repos, en lugar del .git/hooks/ de cada uno. Para volver atrás: git config --global --unset ${KEY}` };
+    return { status: 'set', value, line: `✓ git usa ahora la carpeta global de hooks del arnés (${KEY} = ${value}): sus hooks, incluido el freno antes de publicar, corren en todos tus repos, en lugar del .git/hooks/ de cada uno. Para volver atrás: git config --global --unset ${KEY}`,
+      notice: `${NOTICE_SET} (${KEY} = ${value}): sus controles, incluido el freno antes de publicar, ya corren en todos tus repos; para volver atrás, git config --global --unset ${KEY}` };
   } catch (e) {
     return skip(`falló la mirada: ${(e && e.message) || e}`);
   }
+}
+
+/** ¿La pondría `ensure` ahora? Las mismas condiciones, sin escribir nada (para el aviso con la política `ask`). */
+function wouldSet({ home, env = process.env, profile = null }) {
+  try {
+    if (env.TYCON_NO_GIT_HOOKS === '1' || profile !== 'full') return false;
+    if (!pushHookPlaced(hooksDir({ home, env }))) return false;
+    return read({ env }).status === 'unset';
+  } catch (_) { return false; }
+}
+
+/** Un aviso de arranque sin los de este módulo (cada arranque los vuelve a decidir: no se arrastran del anterior). */
+function stripNotices(text) {
+  if (!text) return text || null;
+  const kept = String(text).split(' · ').filter((x) => ![NOTICE_SET, NOTICE_FAILED, NOTICE_ASK].some((n) => x.startsWith(n)));
+  return kept.length ? kept.join(' · ') : null;
 }
 
 /** Los avisos del aplicador sin el de «git no tiene» (y su comando): con la clave ya puesta, ese aviso es falso. */
@@ -129,4 +156,4 @@ function release({ env = process.env, recorded = null, log = null }) {
   return { status: 'removed', line: `quitado: la carpeta global de hooks de git que puso el arnés (${KEY} = ${recorded.value}); git vuelve a correr el .git/hooks/ de cada repo` };
 }
 
-module.exports = { KEY, PUSH_MARK, hooksDir, valueFor, read, pushHookPlaced, ensure, withoutUnsetWarning, release };
+module.exports = { KEY, PUSH_MARK, NOTICE_SET, NOTICE_FAILED, NOTICE_ASK, hooksDir, valueFor, read, pushHookPlaced, wouldSet, ensure, stripNotices, withoutUnsetWarning, release };
