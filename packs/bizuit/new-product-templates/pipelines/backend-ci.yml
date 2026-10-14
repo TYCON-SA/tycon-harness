@@ -772,7 +772,7 @@ stages:
               # 🔴 2026-09-01 — ANTES: `git log -1 --pretty=%B`, o sea que el administrador que
               # instala el plugin leía EL ÚLTIMO MENSAJE DE COMMIT como nota de versión. Con el
               # flujo de pull request eso es peor todavía: el último commit de main es el merge,
-              # así que la nota decía "Merged PR 1234: ...".
+              # así que la nota decía "Merged PR <número>: ...".
               # Esta es la nota de RESPALDO, la que viaja adentro del ZIP por si alguien lo sube
               # a mano. El texto REAL se recalcula al desplegar, contra la versión que esté
               # corriendo en ESE servidor (ver el paso de despliegue).
