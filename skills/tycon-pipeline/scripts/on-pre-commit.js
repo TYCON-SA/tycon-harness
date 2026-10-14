@@ -950,6 +950,39 @@ function frenoSecretosEnEvidencia(event) {
   process.exit(2);
 }
 
+// Ver lib/chained-add.js. Deja `process.env.GIT_INDEX_FILE` apuntando a la copia del índice con los `add` aplicados,
+// o —si no se pudieron simular— una nota que sale SÓLO si el freno termina frenando (exit 2). Nunca cambia el índice
+// real, y un error propio deja todo como antes (se mira lo stageado hoy).
+function prepararIndiceConLosAdd(command, cwd) {
+  let plan;
+  try { plan = require('./lib/chained-add.js').addsBeforeCommit(command, (seg) => isGitCommit(seg)); } catch { return; }
+  if (!plan || plan.estado === 'sin-add') return;
+  const notaAlFrenar = (texto) => process.on('exit', (code) => {
+    if (code === 2) { try { fs.writeSync(2, texto); } catch { /* la nota nunca cambia el veredicto */ } }
+  });
+  const pedirAddAparte = (motivo) => notaAlFrenar(
+    `\nℹ️  Este comando trae un \`git add\` antes del commit, y el freno corre ANTES que el comando entero:\n` +
+    `   lo de arriba se evaluó sobre lo stageado HOY, sin lo que trae ese \`add\` (${motivo}).\n` +
+    '   Si el `add` ya arregla lo que dice arriba, corré el `git add` en una llamada aparte y después el commit.\n');
+  if (plan.estado !== 'simulable') { pedirAddAparte(plan.motivo); return; }
+  let copia;
+  try {
+    const git = (args, env) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: env || process.env });
+    const indice = path.resolve(cwd, git(['rev-parse', '--git-path', 'index']).trim());
+    copia = path.join(os.tmpdir(), `tycon-precommit-index-${process.pid}-${Date.now()}`);
+    if (fs.existsSync(indice)) fs.copyFileSync(indice, copia);
+    process.on('exit', () => { try { fs.unlinkSync(copia); } catch { /* temporal */ } });
+    for (const args of plan.adds) git(['add', ...args], { ...process.env, GIT_INDEX_FILE: copia });
+  } catch (e) {
+    // El `add` falla igual en el comando real (con `&&` el commit no corre). Se mira lo stageado hoy y se avisa.
+    const det = String((e && (e.stderr || e.message)) || e).split('\n').find((l) => l.trim()) || 'error de git';
+    pedirAddAparte(`no se pudo reproducir: ${det.trim().slice(0, 120)}`);
+    return;
+  }
+  process.env.GIT_INDEX_FILE = copia;
+  notaAlFrenar(`\nℹ️  Evaluado sobre lo que quedaría stageado después de los \`git add\` de este mismo comando (${plan.adds.map((a) => `git add ${a.join(' ')}`).join(' · ')}).\n`);
+}
+
 // ============================================================
 // Main
 // ============================================================
@@ -974,6 +1007,12 @@ function main() {
   if (!isCommit) {
     process.exit(0);
   }
+
+  // `git add X && git commit` en una sola línea (2026-10-14): el freno corre antes que el comando entero, así que lo
+  // stageado todavía no tiene lo que traen esos `add`. Si se pueden reproducir igual que el shell, el resto del freno
+  // evalúa una COPIA del índice con los `add` ya aplicados (GIT_INDEX_FILE: lo heredan todos los `git` de este hook);
+  // si no, mira lo stageado hoy y, si frena, dice que corra el `add` aparte. Motivo y límites: lib/chained-add.js.
+  prepararIndiceConLosAdd(command, event.cwd || process.cwd());
 
   // Secretos en la evidencia: va ANTES del `--no-verify`, que no lo saltea. Una contraseña commiteada llega al
   // remoto y a la historia; no hay apuro que lo justifique, y la salida es escribir `***` o una variable.
@@ -1773,6 +1812,7 @@ function main() {
 // Exports para la suite de tests de la capa determinista (auditoría 2026-06-09).
 // require() desde tests NO ejecuta main() (gate require.main).
 module.exports = {
+  prepararIndiceConLosAdd,
   isGitCommit, parseAcsFromSpec, parseAcsFromEvidence, findDodEvidence, evidenciaDeclaraFail, findAdvisorsEvidence,
   looksLikeStorySpec, selectStorySpecs, revisarRosterLocal, checkSelfAudit,
 };

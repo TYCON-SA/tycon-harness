@@ -1,13 +1,14 @@
 {
-  "__doc": "2026-10-14 (caso: un producto del equipo, desde el 2026-10-13 casi todo commit que pasaba una story a `review` rebotaba con «PERO no menciona ACs»). El freno del commit elegía UN archivo de evidencia y le exigía que nombrara todos los criterios; la evidencia real estaba repartida entre el registro de pruebas de humo, los gates E2E y las firmas del dev, y la salida era que el agente redactara un `-cierre.md`. Ahora un criterio cuenta si aparece en la UNIÓN de esas tres fuentes, con las reglas de validez de la matriz por AC.",
+  "__doc": "2026-10-14 (caso: un producto del equipo, desde el 2026-10-13 casi todo commit que pasaba una story a `review` rebotaba con «PERO no menciona ACs»). El freno del commit elegía UN archivo de evidencia y le exigía que nombrara todos los criterios; la evidencia real estaba repartida entre el registro de pruebas de humo, los gates E2E y las firmas del dev, y la salida era que el agente redactara un `-cierre.md`. Ahora un criterio cuenta si aparece en la UNIÓN de esas tres fuentes, con las reglas de validez de la matriz por AC. Además: con `git add X && git commit` en una línea, el freno evalúa lo que quedaría stageado después del add.",
   "hooks": [
     {
-      "hook": "on-pre-commit.js (evidencia por AC: unión de las tres fuentes)",
+      "hook": "on-pre-commit.js (evidencia por AC: unión de las tres fuentes, y add encadenado)",
       "script": "${SKILLS}/skills/tycon-pipeline/scripts/on-pre-commit.js",
       "controles": [
-        "${SKILLS}/skills/tycon-pipeline/scripts/lib/closing-evidence.js"
+        "${SKILLS}/skills/tycon-pipeline/scripts/lib/closing-evidence.js",
+        "${SKILLS}/skills/tycon-pipeline/scripts/lib/chained-add.js"
       ],
-      "__controles": "La unión la calcula lib/closing-evidence.js sobre la matriz: el auditor de vacuidad la neutraliza.",
+      "__controles": "La unión la calcula lib/closing-evidence.js sobre la matriz; el add encadenado, lib/chained-add.js: el auditor de vacuidad los neutraliza.",
       "event": "PreToolUse",
       "matcher": "Bash",
       "cases": [
@@ -80,6 +81,71 @@
               "pruebas de humo",
               "gates E2E",
               "firmas del dev"
+            ]
+          }
+        },
+        {
+          "id": "add-encadenado-evalua-lo-que-quedaria-stageado",
+          "type": "must-not-block",
+          "__nota": "Lo stageado no tiene la exención; el disco sí, y el mismo comando la stagea antes del commit. El freno evalúa lo que quedaría stageado y deja pasar (antes rebotaba).",
+          "files": {
+            "_exenta.txt": "---\nstory: 9.9\nstatus: review\ndod_runtime_exempt: true\ndod_runtime_exempt_reason: \"fixture sin superficie runtime\"\n---\n\n# Story 9.9 — Fixture (pide E2E)\n\n## Acceptance Criteria\n\n1. **Given** algo, **Then** se ve otra cosa.\n",
+            "_sin.txt": "---\nstory: 9.9\nstatus: review\n---\n\n# Story 9.9 — Fixture (pide E2E)\n\n## Acceptance Criteria\n\n1. **Given** algo, **Then** se ve otra cosa.\n"
+          },
+          "env": {
+            "TYCON_CLOSURE_RECORD": "off",
+            "TYCON_ADVISORS_GATE": "off"
+          },
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p specs/stories",
+            "node -e \"const fs=require('fs');fs.writeFileSync('specs/stories/9-9-test.md',fs.readFileSync('_sin.txt','utf8').replace('status: review','status: ready-for-dev'))\"",
+            "git add specs/stories/9-9-test.md && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "cp _sin.txt specs/stories/9-9-test.md && git add specs/stories/9-9-test.md",
+            "cp _exenta.txt specs/stories/9-9-test.md"
+          ],
+          "stdin": {
+            "session_id": "bench-evidencia-union",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git add specs/stories/9-9-test.md && git commit -m \"story 9.9 a review\""
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "add-encadenado-no-cuela-una-version-rota",
+          "type": "must-block",
+          "__nota": "Al revés: lo stageado está exento y el add trae la versión sin exención y sin evidencia. Antes el freno miraba la stageada y dejaba pasar la rota; ahora frena.",
+          "files": {
+            "_exenta.txt": "---\nstory: 9.9\nstatus: review\ndod_runtime_exempt: true\ndod_runtime_exempt_reason: \"fixture sin superficie runtime\"\n---\n\n# Story 9.9 — Fixture (pide E2E)\n\n## Acceptance Criteria\n\n1. **Given** algo, **Then** se ve otra cosa.\n",
+            "_sin.txt": "---\nstory: 9.9\nstatus: review\n---\n\n# Story 9.9 — Fixture (pide E2E)\n\n## Acceptance Criteria\n\n1. **Given** algo, **Then** se ve otra cosa.\n"
+          },
+          "env": {
+            "TYCON_CLOSURE_RECORD": "off",
+            "TYCON_ADVISORS_GATE": "off"
+          },
+          "setup": [
+            "git init -q -b main .",
+            "mkdir -p specs/stories",
+            "node -e \"const fs=require('fs');fs.writeFileSync('specs/stories/9-9-test.md',fs.readFileSync('_sin.txt','utf8').replace('status: review','status: ready-for-dev'))\"",
+            "git add specs/stories/9-9-test.md && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "cp _exenta.txt specs/stories/9-9-test.md && git add specs/stories/9-9-test.md",
+            "cp _sin.txt specs/stories/9-9-test.md"
+          ],
+          "stdin": {
+            "session_id": "bench-evidencia-union",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git add specs/stories/9-9-test.md && git commit -m \"story 9.9 a review\""
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "quedaría stageado después de los `git add`"
             ]
           }
         }

@@ -1716,6 +1716,12 @@
       "requiere": []
     },
     {
+      "__nota": "`git add X && git commit` en una sola línea (2026-10-14): el freno del commit corre antes que el comando entero y veía la versión vieja de X stageada. Si lo que precede al commit son `git add` simples encadenados con && o ;, evalúa una copia del índice con esos add aplicados (lib/chained-add.js); si no, mira lo stageado hoy y, al frenar, pide el add aparte. Corre el hook de verdad: el arreglo que trae el add cuenta; un add de otro archivo no cambia nada; un add que trae una versión rota sobre una sana frena (antes pasaba); lo que no se puede reproducir pide el add aparte; el índice real nunca cambia.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/pre-commit-chained-add.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.16, tanda A (T2, T3, T11): scripts/setup/install-effects.json, la lista declarada de lo que la instalación cambia en la máquina y en cómo trabaja el asistente, contra el instalador en los dos sentidos — una entrada por hook de las dos listas (y por los que sólo registra el instalador de Windows), por bloque, por ajuste y por pieza de la lista del aplicador; una tarea por cada lanzamiento de fondo; `windows` de cada hook contra la lista del .ps1. Una pieza sin entrada, una entrada sin pieza o un lanzamiento sin declarar dan rojo nombrándolo. No usa bash ni toca la HOME.",
       "raiz": "arnes",
       "ruta": "tests/install-effects.test.js",
