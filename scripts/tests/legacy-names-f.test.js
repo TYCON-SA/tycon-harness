@@ -58,7 +58,7 @@ const QUEUE_WATCHER = 'inbox/watcher';
 const MINI_CLASS = 'onboarding/mini-class';
 const DEPS_CONFIG = 'scripts/nightly/dependencies';
 const DESTINATIONS = [QUEUE_DEPS, QUEUE_WATCHER, MINI_CLASS, DEPS_CONFIG];
-const CONFIG_FILES = ['repos.json', 'resumen.json'];
+const CONFIG_FILES = ['repos.json', 'summary.json'];
 const EXPECTED_SHIMS_LEFT = 3;
 
 /**
@@ -255,7 +255,7 @@ const scriptWatcher = () => `scripts/nightly/watcher/${folderOf(QUEUE_WATCHER).o
 const twelve = () => [
   { file: SCRIPT_NOTICE, line: 396, what: 'las fichas que lee el aviso de arranque', dest: QUEUE_DEPS },
   { file: SCRIPT_DASHBOARD, line: 731, what: 'el repos.json que lee el tablero', dest: DEPS_CONFIG },
-  { file: SCRIPT_SUMMARY, line: 64, what: 'la carpeta de repos.json y resumen.json del resumen diario', dest: DEPS_CONFIG },
+  { file: SCRIPT_SUMMARY, line: 64, what: 'la carpeta de repos.json y summary.json del resumen diario', dest: DEPS_CONFIG },
   { file: SCRIPT_SUMMARY, line: 953, what: 'el --pending por defecto del resumen de dependencias', dest: QUEUE_DEPS },
   { file: SCRIPT_SUMMARY, line: 959, what: 'el --pending por defecto del resumen de la mirada de producción', dest: QUEUE_WATCHER },
   { file: SCRIPT_DEPS, line: 67, what: 'el --config por defecto del nocturno de dependencias', dest: DEPS_CONFIG },
@@ -659,7 +659,7 @@ function toyHarness(layout) {
   fs.rmSync(path.join(root, 'scripts', 'nightly', 'watcher', 'hosts.json'), { force: true });
   const at = (dest) => (layout === 'new' ? dest : folderOf(dest).old);
   write(root, `${at(DEPS_CONFIG)}/repos.json`, JSON.stringify(TOY_REPOS, null, 1));
-  write(root, `${at(DEPS_CONFIG)}/resumen.json`, '{ "rubros_sin_fuente": {} }\n');
+  write(root, `${at(DEPS_CONFIG)}/summary.json`, '{ "rubros_sin_fuente": {} }\n');
   for (const [sub, ids] of Object.entries(TOY_DEPS_CARDS)) for (const id of ids) write(root, `${at(QUEUE_DEPS)}/${sub}/${id}.yaml`, depsCard(id, sub === 'pending' ? 'pendiente' : 'util'));
   for (const [sub, ids] of Object.entries(TOY_WATCHER_CARDS)) for (const id of ids) write(root, `${at(QUEUE_WATCHER)}/${sub}/${id}.yaml`, watcherCard(id));
   writePhotos(root);
@@ -701,7 +701,7 @@ function whatTheScriptsFind(toy) {
   const depsOut = path.join(toy.root, '.dashboard', folderOf(QUEUE_DEPS).old);
   const watcherWord = folderOf(QUEUE_WATCHER).old;   // el valor de --source de esa cola es su nombre de siempre
   const report = toy.run(SCRIPT_DEPS, ['report', '--json']);
-  const clones = toy.run(SCRIPT_DEPS, ['clones']);
+  const clones = toy.run(SCRIPT_DEPS, ['clone-list']);
   const workItems = toy.run(SCRIPT_WORK_ITEMS, ['run', '--simulate', '--json', '--today', TODAY, '--out', depsOut]);
   const defaults = spawnSync(process.execPath, ['-e', 'const a = require(process.argv[1]).parseArgs(["node", "x", "run"]); console.log(JSON.stringify({ pending: a.pending, config: a.config }));',
     path.join(toy.root, SCRIPT_WORK_ITEMS)], { cwd: toy.base, encoding: 'utf8', env: toy.env, timeout: 60000 });

@@ -140,7 +140,7 @@ jobs:
               echo "##vso[task.logissue type=warning]No se pudo clonar $PROJ/$RNAME: $ERR"
               FALLIDOS="$FALLIDOS $ADO"
             fi
-          done < <(node scripts/nightly/dependencies/nightly-dependencies.js clones)
+          done < <(node scripts/nightly/dependencies/nightly-dependencies.js clone-list)
           echo "clonados: $(cd "$CLONES" && find . -maxdepth 3 -name .git | wc -l)"
           [ -z "$FALLIDOS" ] || echo "##vso[task.logissue type=warning]Repos NO clonados:$FALLIDOS — van a figurar como NO MEDIDO, que no es lo mismo que limpio"
         displayName: 'Clonar los repos declarados'
