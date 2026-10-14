@@ -367,7 +367,7 @@ test('T23 InstinctDirs_TestsIgnoreInheritedTyconHome — las pruebas del grabado
     const lab = tmp('instinct-dirs-t9-');
     const env = Object.assign({}, process.env, { TYCON_HOME: path.join(lab, 'una-casa-heredada'), INSTINCT_DIRS_NESTED: '1' });
     delete env.NODE_TEST_CONTEXT;   // una prueba de node --test adentro de otra daría verde falso
-    const r = spawnSync(process.execPath, ['--test', '--test-name-pattern', '^T2 |^T4 ', __filename], { encoding: 'utf8', env });
+    const r = spawnSync(process.execPath, ['--test', '--test-reporter=tap', '--test-name-pattern', '^T2 |^T4 ', __filename], { encoding: 'utf8', env });
     assert.strictEqual(r.status, 0, `con TYCON_HOME heredada, T2 y T4 tienen que pasar igual:\n${r.stdout.slice(-1500)}${r.stderr.slice(-500)}`);
     assert.match(r.stdout, /# pass 2\b/, `corrieron los dos casos: ${r.stdout.slice(-400)}`);
     assert.ok(!fs.existsSync(path.join(lab, 'una-casa-heredada')), 'nadie escribió en la casa heredada');

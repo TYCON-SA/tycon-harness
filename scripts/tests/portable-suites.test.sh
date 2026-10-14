@@ -156,6 +156,12 @@ function siguiente() {
         rojas.push(`${e.ruta} (${motivo})`);
         const cola8 = salida.trim().split('\n').slice(-8).map((l) => `     ${l}`).join('\n');
         console.log(`❌ ${b} — ${motivo} (${seg(Date.now() - t0)})\n${cola8}`);
+        // En la CI pública, la salida ENTERA de la suite roja queda como un .log más en la carpeta que el último paso del
+        // workflow imprime cuando algo sale rojo: con las últimas ocho líneas, el caso que falló quedaba afuera (las dos
+        // suites del instalador que fallan de a ratos, 2026-10-13, no se pudieron diagnosticar por eso).
+        if (process.env.TYCON_PUBLIC_CI_OUT) {
+          try { fs.writeFileSync(path.join(process.env.TYCON_PUBLIC_CI_OUT, `portable-${b}.log`), salida); } catch (err) { console.log(`     (no pude guardar su salida completa: ${err.code || err.message})`); }
+        }
       }
       siguiente();
       if (!vivos && !cola.length) fin();
