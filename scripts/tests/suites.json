@@ -1665,6 +1665,12 @@
       "requiere": []
     },
     {
+      "__nota": "arreglo del 2026-10-14 (sin story): la búsqueda en el PATH de harness.js (findInPath, la de los requisitos de install y doctor) y de tools.js (findIn, la que detecta Claude Code y Codex), con el sistema y el sistema de archivos inyectados — en Windows el alias de ejecución de la Microsoft Store (statSync tira EACCES, lstatSync existe) cuenta como encontrado; una carpeta con el nombre del programa no; gana el primero del PATH; en Mac y Linux la regla no cambia. Más un caso con el sistema de archivos de verdad. No lanza procesos.",
+      "raiz": "arnes",
+      "ruta": "tests/path-lookup.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.17, tanda W1 (T19): el banco de controles con Windows inyectado — USERPROFILE en el aislamiento, la preparación y los hooks de bash por el bash de findGitBash() (con un testigo), «NO MEDIDO: falta Git for Windows» sin ningún verde, la línea de base sobre un banco de juguete, el marcador de live-fire.js en Node y missing-path-notice.js sin la variable HOME. Fuera de Windows fija que el entorno de un caso es, clave por clave, el de siempre.",
       "raiz": "arnes",
       "ruta": "tests/bench-portable.test.js",

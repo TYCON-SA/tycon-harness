@@ -75,5 +75,28 @@ N="$(launched "$BASE/lab-fetch.json")"
 [ "$(harness_lab_git "$REPO" config --get maintenance.auto 2>/dev/null)" = false ] && [ "$(harness_lab_git "$REPO" config --get gc.auto 2>/dev/null)" = 0 ] \
   && ok "harness_lab_git corre con maintenance.auto=false y gc.auto=0" || mal "harness_lab_git no fija maintenance.auto=false y gc.auto=0"
 
+# ── LabMachine_NoAutoMaintenance_CodeUnderTest (2026-10-14) ──────────────────────────────────────────────────────────
+# El git que corre el CÓDIGO BAJO PRUEBA (harness.js) no pasa por harness_lab_git: es un `git` a secas que hereda el
+# entorno de la máquina de juguete. Ese git también tiene que correr sin mantenimiento automático: con git 2.55 el
+# `fetch` de harness.js reempaquetaba el clon de fondo y harness-repoint.test.sh («byte a byte») salía rojo de a ratos.
+# 🔴 rojo previo: sin harness_lab_no_auto_maintenance en el armado, el commit y el fetch de abajo lanzan el mantenimiento.
+echo "LabMachine · el git del código bajo prueba, con el entorno de la máquina de juguete, tampoco lo lanza"
+(
+  harness_lab_create "$BASE/machine" >/dev/null 2>&1 || { echo "  MAL  — no pude armar la máquina de juguete"; exit 1; }
+  F=0
+  [ "${GIT_CONFIG_KEY_0:-}=${GIT_CONFIG_VALUE_0:-}" = "maintenance.auto=false" ] && [ "${GIT_CONFIG_KEY_1:-}=${GIT_CONFIG_VALUE_1:-}" = "gc.auto=0" ] \
+    && echo "  ok   — la máquina de juguete exporta maintenance.auto=false y gc.auto=0 a todo git hijo" || { echo "  MAL  — la máquina de juguete no exporta el apagado: ${GIT_CONFIG_COUNT:-sin GIT_CONFIG_COUNT}"; F=1; }
+  R2="$BASE/machine-repo"; B2="$BASE/machine-bare.git"; mkdir -p "$R2" "$B2"
+  plain_git "$R2" init -q -b main >/dev/null 2>&1; plain_git "$B2" init -q --bare >/dev/null 2>&1
+  echo uno > "$R2/a.txt"; plain_git "$R2" add -A >/dev/null 2>&1
+  GIT_TRACE2_EVENT="$BASE/machine-commit.json" plain_git "$R2" commit -q -m "código bajo prueba" >/dev/null 2>&1; RC=$?
+  N="$(launched "$BASE/machine-commit.json")"
+  [ "$RC" = 0 ] && [ -s "$BASE/machine-commit.json" ] && [ "$N" = 0 ] && echo "  ok   — un commit con un git a secas, en la máquina de juguete, no lanza mantenimiento" || { echo "  MAL  — commit en la máquina de juguete: rc ${RC}, ${N} proceso(s) de mantenimiento"; F=1; }
+  GIT_TRACE2_EVENT="$BASE/machine-fetch.json" plain_git "$B2" fetch -q "$R2" +refs/heads/main:refs/heads/main >/dev/null 2>&1; RC=$?
+  N="$(launched "$BASE/machine-fetch.json")"
+  [ "$RC" = 0 ] && [ -s "$BASE/machine-fetch.json" ] && [ "$N" = 0 ] && echo "  ok   — un fetch con un git a secas, en la máquina de juguete, no lanza mantenimiento" || { echo "  MAL  — fetch en la máquina de juguete: rc ${RC}, ${N} proceso(s) de mantenimiento"; F=1; }
+  exit "$F"
+) || FALLOS=$((FALLOS+1))
+
 if [ "$FALLOS" = 0 ]; then echo "✅ harness-lab-git: todo verde"; exit 0; fi
 echo "❌ harness-lab-git: $FALLOS fallo(s)"; exit 1
