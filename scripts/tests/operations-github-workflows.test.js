@@ -1,6 +1,6 @@
 'use strict';
 // operations-github-workflows.test.js — los workflows modelo de GitHub Actions para los procesos de la noche (story 8.31,
-// T1 a T8; T9: la credencial por GitHub App, 2026-10-14). Lee los YAML como texto (no hay biblioteca de YAML en el arnés, a propósito), corre de verdad el bloque que
+// T1 a T8; T9: la credencial por GitHub App, 2026-10-14; T10: los privados que ve la credencial, 2026-10-14). Lee los YAML como texto (no hay biblioteca de YAML en el arnés, a propósito), corre de verdad el bloque que
 // elige el arnés, prepare-tree.sh, operations-auth.sh y clone-repos.sh sobre repos de juguete, y nunca toca la red.
 const test = require('node:test');
 const assert = require('node:assert');
@@ -434,4 +434,98 @@ test('T9 GhModels_AppToken: la App es el camino recomendado y el usuario de máq
   assert.strictEqual(r.status, 1, 'no revocado: rojo');
   assert.match(r.stdout, /::error::No se pudo revocar la credencial de la App \(HTTP 401\)/);
   assert.doesNotMatch(`${r.stdout}${r.stderr}`, /ghs_de_prueba/, 'el token no se imprime');
+});
+
+test('T10 CloneRepos_SeesPrivates: con la App, los repos donde está instalada (privados incluidos); el usuario de máquina suma los privados de una cuenta de usuario; cero repos vistos es un aviso', () => {
+  // DEF-8.31-metricas-no-ven-privados-de-un-usuario: en una cuenta de usuario, users/<dueño>/repos trae sólo los públicos y
+  // la corrida salía verde con «repos vistos: 0»
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'clone-privados-')); dirs.push(base);
+  const server = path.join(base, 'server');
+  for (const full of ['bob/priv', 'bob/pub', 'acme/web', 'acme/api']) {
+    const bare = path.join(server, `${full}.git`);
+    fs.mkdirSync(bare, { recursive: true });
+    git(bare, ['init', '--quiet', '--bare']); git(bare, ['symbolic-ref', 'HEAD', 'refs/heads/main']);
+    const s = path.join(base, 'seed', full);
+    git(base, ['clone', '--quiet', bare, s]);
+    write(s, { 'specs/story-1.md': `# ${full}\n` }); git(s, ['add', '-A']); git(s, ['commit', '--quiet', '-m', 'x']); git(s, ['branch', '-M', 'main']); git(s, ['push', '--quiet', 'origin', 'main']);
+  }
+  const sh = path.join(DIR, 'clone-repos.sh');
+  const state = path.join(base, 'gh.json');
+  const estado = (extra) => fs.writeFileSync(state, JSON.stringify({ user: 'maquina', owners: { bob: 'User', acme: 'Organization' },
+    repos: { bob: [{ name: 'priv', private: true }, { name: 'pub' }], acme: [{ name: 'web', private: true }, { name: 'api', private: true }] }, ...extra }));
+  const tr = path.join(base, 'team-repos.json');
+  fs.writeFileSync(tr, JSON.stringify({ version: 1, public: { platform: 'github', org: 'acme', repo: 'harness' }, profile: { platform: 'github', org: 'acme', repo: 'profile' },
+    operations: { platform: 'github', org: 'acme', repo: 'operations' } }));
+  let n = 0;
+  const correr = (env) => {
+    const dest = path.join(base, `d${n++}`);
+    const log = path.join(base, `gh${n}.log`);
+    const r = spawnSync('bash', [sh, '--org', dest, '--team-repos', tr], { encoding: 'utf8',
+      env: cleanEnv({ ORG_TOKEN: 't0k3n', GITHUB_SERVER_URL: `file://${server}`, TYCON_GH_CMD: FAKE_GH, FAKE_GH_STATE: state, FAKE_GH_LOG: log, ...env }) });
+    const rutas = fs.existsSync(log) ? fs.readFileSync(log, 'utf8').trim().split('\n').map((l) => JSON.parse(l).ruta) : [];
+    return { ...r, out: `${r.stdout}${r.stderr}`, clones: fs.existsSync(dest) ? fs.readdirSync(dest).sort() : [], rutas };
+  };
+
+  // la App en una cuenta personal, instalada en un repo privado: se ve y se mide
+  estado({ installation: ['bob/priv'] });
+  let r = correr({ ORG_TOKEN_KIND: 'app', OWNERS: 'bob' });
+  assert.strictEqual(r.status, 0, r.out);
+  assert.deepStrictEqual(r.clones, ['bob__priv'], r.out);
+  assert.match(r.stdout, /repos vistos: 1 /);
+  assert.ok(r.rutas.includes('installation/repositories?per_page=100&page=1'), 'lista por installation/repositories');
+  assert.ok(!r.rutas.some((x) => /^users\//.test(x)), 'con la App no pregunta por users/');
+  assert.doesNotMatch(r.out, /t0k3n/);
+
+  // la App en una organización: sólo los repos donde está instalada, paginado; un dueño de OWNERS sin la App es un aviso
+  const muchos = Array.from({ length: 100 }, (_, i) => `otra/r${i}`);
+  estado({ installation: [...muchos, 'acme/web'] });
+  r = correr({ ORG_TOKEN_KIND: 'app', OWNERS: 'acme;bob' });
+  assert.strictEqual(r.status, 0, r.out);
+  assert.deepStrictEqual(r.clones, ['acme__web'], 'ni api (sin la App) ni los de otro dueño');
+  assert.ok(r.rutas.includes('installation/repositories?per_page=100&page=2'), 'pagina');
+  assert.ok(!r.rutas.some((x) => /^orgs\//.test(x)));
+  assert.match(r.stdout, /::warning::la GitHub App no está instalada en ningún repo de bob/);
+  assert.doesNotMatch(r.stdout, /Cero repos vistos/);
+
+  // el usuario de máquina en una cuenta de usuario: los públicos más los privados que ve (sin repetir)
+  estado({ visible: ['bob/priv', 'bob/pub', 'acme/web'] });
+  r = correr({ OWNERS: 'bob' });
+  assert.strictEqual(r.status, 0, r.out);
+  assert.deepStrictEqual(r.clones, ['bob__priv', 'bob__pub'], r.out);
+  assert.match(r.stdout, /repos vistos: 2 /);
+  assert.ok(r.rutas.includes('user/repos?affiliation=owner,collaborator&per_page=100&page=1'));
+  // y en una organización, el camino de siempre (orgs/, que ya trae los privados)
+  r = correr({ ORG_TOKEN_KIND: 'user', OWNERS: 'acme' });
+  assert.deepStrictEqual(r.clones, ['acme__api', 'acme__web'], r.out);
+  assert.ok(!r.rutas.some((x) => /^user\/repos/.test(x)), 'una organización no necesita user/repos');
+  // si user/repos falla, rojo: no un barrido a medias
+  estado({ visible: [], fail: { 'GET user/repos': { status: 500 } } });
+  r = correr({ OWNERS: 'bob' });
+  assert.strictEqual(r.status, 1, r.out); assert.match(r.stdout, /No se pudieron listar los repos[^\n]*user\/repos/);
+
+  // cero repos vistos con repos declarados en team-repos.json: un aviso que los nombra, no un verde mudo
+  estado({ installation: [] });
+  r = correr({ ORG_TOKEN_KIND: 'app', OWNERS: 'acme' });
+  assert.strictEqual(r.status, 0, r.out);
+  assert.match(r.stdout, /repos vistos: 0 /);
+  assert.match(r.stdout, /::warning::Cero repos vistos, y team-repos\.json declara repos de estos dueños \(acme\/harness acme\/profile acme\/operations\)/);
+  // sin nada declarado de ese dueño, igual es un aviso
+  r = correr({ ORG_TOKEN_KIND: 'app', OWNERS: 'bob' });
+  assert.match(r.stdout, /::warning::Cero repos vistos: no se midió nada/);
+  // el usuario de máquina en una cuenta de usuario que no ve ningún privado: también avisa
+  estado({ visible: [], repos: { bob: [{ name: 'priv', private: true }] } });
+  r = correr({ OWNERS: 'bob' });
+  assert.strictEqual(r.status, 0, r.out); assert.match(r.stdout, /::warning::Cero repos vistos/);
+  // sin ORG_TOKEN_KIND (un workflow copiado antes): se averigua; el token de una App lee installation/repositories
+  estado({ installation: ['bob/priv'] });
+  r = correr({ OWNERS: 'bob' });
+  assert.strictEqual(r.status, 0, r.out);
+  assert.deepStrictEqual(r.clones, ['bob__priv'], r.out);
+  assert.ok(!r.rutas.some((x) => /^(users|user)\//.test(x)), 'averiguó que es la App');
+  // un tipo de credencial que no existe: rojo
+  r = correr({ ORG_TOKEN_KIND: 'pat', OWNERS: 'bob' });
+  assert.strictEqual(r.status, 1, r.out); assert.match(r.stdout, /ORG_TOKEN_KIND «pat» no es app ni user/);
+  // el workflow dice qué credencial es, sin tocar el token
+  const paso = steps(read('stage-metrics.yml')).find((x) => /clone-repos\.sh --org/.test(x));
+  assert.match(paso, /^ {10}ORG_TOKEN_KIND: \$\{\{ steps\.org-token\.outcome == 'success' && 'app' \|\| 'user' \}\}$/m);
 });

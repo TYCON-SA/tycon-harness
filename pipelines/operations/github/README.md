@@ -50,9 +50,10 @@ nada en una máquina: todo pasa en GitHub.
 La llave de una App no vence. Para cambiarla: generá una nueva, reemplazá el secreto y borrá la vieja en la página de
 la App. Para cortarle el acceso a la noche, borrá la llave o desinstalá la App.
 
-Con la App, las métricas miran los repos de **un** dueño: el del repo de operaciones, donde está instalada. Si
-`METRICS_OWNERS` nombra a otros dueños, sus repos privados no se pueden leer y salen como «Repos NO medidos»; para
-varios dueños, usá el usuario de máquina.
+Con la App, las métricas miden los repos donde la App está **instalada**, privados incluidos, sea el dueño una
+organización o una cuenta de usuario: instalala en todos los repos a medir. Miran **un** dueño, el del repo de
+operaciones; si `METRICS_OWNERS` nombra a otros, la corrida avisa que la App no está instalada en sus repos y no los
+mide; para varios dueños, usá el usuario de máquina. Si no ven ningún repo, la corrida lo dice con un aviso.
 
 ### 1.2 El usuario de máquina (alternativa)
 
