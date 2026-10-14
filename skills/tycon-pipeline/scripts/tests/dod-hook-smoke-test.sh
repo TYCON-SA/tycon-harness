@@ -240,7 +240,7 @@ if [ "$ec" = "0" ]; then
   echo "  ✅ PASS — cross-story ref ignorada"
 else
   echo "  ❌ FAIL — hook reclamó AC inexistente, ec=$ec"
-  grep -E "no menciona ACs" /tmp/c6.err | sed 's/^/    /'
+  grep -E "Criterios sin evidencia" /tmp/c6.err | sed 's/^/    /'
   FAIL=$((FAIL+1))
 fi
 
@@ -295,7 +295,7 @@ if [ "$ec" = "0" ]; then
   echo "  ✅ PASS — combined heading reconocido"
 else
   echo "  ❌ FAIL — hook no reconoció heading combinado, ec=$ec"
-  grep -E "no menciona ACs" /tmp/c7.err | sed 's/^/    /'
+  grep -E "Criterios sin evidencia" /tmp/c7.err | sed 's/^/    /'
   FAIL=$((FAIL+1))
 fi
 
