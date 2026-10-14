@@ -13,6 +13,7 @@
 // Lo que atiende:
 //   GET /repos/o/n/git/ref/heads/<ref…>            { ref, object: { sha, type } }           404 si la ref no existe
 //   GET /repos/o/n/git/commits/<sha>               { sha, tree: { sha }, message }
+//   GET /repos/o/n/compare/<base>...<head>         { status, ahead_by, behind_by, base_commit, merge_base_commit }
 //   GET /repos/o/n/commits?sha=<ref>&path=<p>&per_page=N   [{ sha, commit: { message } }]  (los que tocaron <p>)
 //   GET /repos/o/n/contents/<ruta>?ref=<sha>       { content (base64), encoding, sha, size } con ETag; If-None-Match → 304
 //                                                   con `Accept: application/vnd.github.raw`, los bytes del archivo (mismo ETag)
@@ -31,6 +32,7 @@
 //   truncate    true → el comprimido se corta a mitad
 //   tamper      true → el comprimido trae un archivo cambiado (README.md): el árbol no coincide
 //   latency_ms  n → espera antes de contestar
+//   compare_status  n → sólo la comparación contesta ese código (lo demás anda)
 // La cuota se cuenta en memoria (`X-RateLimit-Remaining`): un 304 no la gasta, como en GitHub.
 //
 // El registro (`--log`): una línea JSON por pedido con método, host (api|codeload), ruta, si traía credencial y el
@@ -149,6 +151,23 @@ function api(req, res) {
         return e;
       });
       return send(res, 200, { sha: git(['rev-parse', m[1]]).stdout.trim(), url: `${u.origin}${u.pathname}`, tree, truncated: Boolean(c.truncated_tree) });
+    }
+    // la comparación (2026-10-14, el freno de producción acepta una versión de main atrasada): `base...head` como GitHub,
+    // con el estado de head respecto de base (identical · behind · ahead · diverged), la base de la comparación y el commit
+    // base con su árbol. `compare_status` en el control hace que SÓLO esta ruta conteste ese código (GitHub caído a medias)
+    if ((m = /^compare\/([0-9a-f]{7,40})\.\.\.([0-9a-f]{7,40})$/.exec(rest))) {
+      if (c.compare_status) return send(res, Number(c.compare_status), { message: 'compare no disponible (control del laboratorio)' });
+      const b = git(['rev-parse', '--verify', '-q', `${m[1]}^{commit}`]), h = git(['rev-parse', '--verify', '-q', `${m[2]}^{commit}`]);
+      if (b.status !== 0 || h.status !== 0) return notFound(res);
+      const base = b.stdout.trim(), head = h.stdout.trim();
+      const mb = git(['merge-base', base, head]);
+      if (mb.status !== 0) return notFound(res);
+      const mbase = mb.stdout.trim();
+      const count = (range) => Number(git(['rev-list', '--count', range]).stdout.trim() || '0');
+      const behind = count(`${head}..${base}`), ahead = count(`${base}..${head}`);
+      const status = base === head ? 'identical' : (ahead === 0 ? 'behind' : (behind === 0 ? 'ahead' : 'diverged'));
+      remaining--;
+      return send(res, 200, { status, ahead_by: ahead, behind_by: behind, total_commits: ahead, base_commit: { sha: base, commit: { tree: { sha: git(['rev-parse', `${base}^{tree}`]).stdout.trim() } } }, merge_base_commit: { sha: mbase }, commits: [], files: [] });
     }
     if (rest === 'commits') {
       const sha = u.searchParams.get('sha') || 'main', p = u.searchParams.get('path'), n = parseInt(u.searchParams.get('per_page') || '30', 10);
