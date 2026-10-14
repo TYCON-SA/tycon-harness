@@ -53,17 +53,6 @@ const isObject = (x) => x !== null && typeof x === 'object' && !Array.isArray(x)
 const slash = (s) => String(s).replace(/\\/g, '/');
 const firstLines = (s, n = 2) => String(s || '').trim().split('\n').filter(Boolean).slice(0, n).join(' | ').slice(0, 300);
 
-/**
- * El error de lanzar un hook, o null si el hook CORRIÓ. Un hook que sale sin leer su payload (no lo necesita) cierra la
- * entrada antes de que spawnSync termine de escribirla: spawnSync trae EPIPE y, además, el código de salida del hook.
- * Eso no es «no pude lanzarlo»: el hook corrió y su código de salida vale. Pasaba de a ratos con un hook de `exit 0`
- * (public-ci, 2026-10-14: «no pude lanzarlo (spawnSync … EPIPE)» en harness-health T99).
- */
-function launchError(r) {
-  if (!r.error) return null;
-  return r.error.code === 'EPIPE' && typeof r.status === 'number' ? null : r.error;
-}
-
 /** El archivo de un hook desde su id: `@tcg:x` vive en scripts/hooks/ del árbol; lo demás en agent-skills/skills. */
 function hookFile(relpath, { tree, skillsDir }) {
   if (relpath.startsWith('@tcg:')) return path.join(tree, 'scripts', 'hooks', relpath.slice(5));
@@ -250,7 +239,7 @@ function check(ctx = {}, opts = {}) {
             stdio: ['pipe', 'pipe', 'pipe'],
           });
           if (r.error && (r.error.code === 'ETIMEDOUT' || r.signal)) { warn(`hook ${h.id}: no terminó en ${Math.round(hookTimeout / 1000)} s (tope vencido; no cuenta como falla)`); continue; }
-          if (launchError(r)) { warn(`hook ${h.id}: no pude lanzarlo (${r.error.message})`); continue; }
+          if (r.error) { warn(`hook ${h.id}: no pude lanzarlo (${r.error.message})`); continue; }
           if (r.status === 2) { fail(`hook ${h.id}: sale 2 con el payload mínimo de ${h.event} (bloquea): ${firstLines(r.stderr || r.stdout) || 'sin mensaje'}`); continue; }
           if (r.status !== 0) warn(`hook ${h.id}: salió ${r.status} con el payload mínimo de ${h.event} (no bloquea): ${firstLines(r.stderr || r.stdout)}`);
           else log(`hook ${h.id}: ${h.event} ok`);
@@ -335,7 +324,7 @@ function check(ctx = {}, opts = {}) {
               stdio: ['pipe', 'pipe', 'pipe'],
             });
             if (r.error && (r.error.code === 'ETIMEDOUT' || r.signal)) { warn(`hook ${id}: no terminó en ${Math.round(hookTimeout / 1000)} s (tope vencido; no cuenta como falla)`); continue; }
-            if (launchError(r)) { warn(`hook ${id}: no pude lanzarlo (${r.error.message})`); continue; }
+            if (r.error) { warn(`hook ${id}: no pude lanzarlo (${r.error.message})`); continue; }
             if (r.status === 2) { fail(`hook ${id}: sale 2 con el payload mínimo de ${c.event} (bloquea): ${firstLines(r.stderr || r.stdout) || 'sin mensaje'}`); continue; }
             if (r.status !== 0) warn(`hook ${id}: salió ${r.status} con el payload mínimo de ${c.event} (no bloquea): ${firstLines(r.stderr || r.stdout)}`);
             else log(`hook ${id}: ok`);
@@ -365,4 +354,4 @@ function check(ctx = {}, opts = {}) {
   return { ok: failures.length === 0, failures, warnings };
 }
 
-module.exports = { HEALTH_EVENTS, HOOK_TIMEOUT_MS, SESSION_ID, hookFile, payloadFor, launchError, check };
+module.exports = { HEALTH_EVENTS, HOOK_TIMEOUT_MS, SESSION_ID, hookFile, payloadFor, check };
