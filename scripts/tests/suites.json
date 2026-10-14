@@ -303,6 +303,11 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/import-line.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/followup-reason-lint.test.sh",
       "requiere": []
     },
