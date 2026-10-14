@@ -2,18 +2,25 @@
 
 English · [Castellano](README.es.md)
 
-**A harness that makes Claude Code work with discipline** (and Codex, if you turn it on and approve its checks with `/hooks`). For a
-change, you and Claude write a story: the spec of what has to be done. Claude makes the plan, waits for your
-go-ahead, writes the code and the tests, and readies the commit.
+**An AI software development life cycle (AI SDLC), from spec to production and beyond**, for Claude Code and Codex.
 
-It does not rely on the model remembering the rules: its checks block, they do not just warn. In any repo it blocks
-destructive commands. With the full profile it also blocks touching code before you choose how the work is done (a
-story, or a small fix that you asked for, in your own words, and that gets logged), and closing a story that declares end-to-end or smoke
-tests without evidence that they were run.
+1. **Spec:** you and the agent write the story for the change: what has to be done and how it is tested. For a small
+   fix, asking for it in your own words is enough.
+2. **Code:** the agent makes the plan, waits for your go-ahead, and writes the code and the tests.
+3. **Review:** specialized reviewers (security, conventions, coverage) check the change before the commit.
+4. **Delivery:** the commit and the merge go through checks. For BIZUIT plugins it brings the scripts that deploy to
+   test and to production.
+5. **After:** every merge to main leaves its metrics file. The cycle dashboard and the nightly jobs (vulnerable
+   dependencies, rule pruning) run only at TYCON today and are being published.
 
-TYCON built it from real incidents, and it brings an optional pack for BIZUIT plugins (.NET, React and Next.js). Out of
-the box it runs on your machine. If you turn on the mailbox integration, each pipeline run, with its conversation and its
-changes, and the logs of the checks, are uploaded to your organization's storage.
+**It watches itself.** A test bench checks, on every change to the harness, that each control still blocks what it says
+it blocks. If you turn it on, it also watches your sessions and proposes new rules for you to approve.
+
+With the full profile, the checks block, they do not just warn: it does not rely on the model remembering the rules.
+Most of them were born from a real incident.
+
+**Each organization brings its own.** Its reviewers, skills and configuration travel in its team profile. TYCON brings
+its own for BIZUIT plugins.
 
 ## Before you install: what changes on your machine
 

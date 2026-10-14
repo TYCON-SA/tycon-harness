@@ -2,18 +2,25 @@
 
 [English](README.md) · Castellano
 
-**Un arnés para que Claude Code trabaje con disciplina** (y Codex, si lo prendés y aprobás sus controles con `/hooks`). Para un
-cambio, con Claude escribís una story: la spec de qué hay que hacer. Claude arma el plan, espera tu visto bueno,
-escribe el código y las pruebas, y deja el commit listo.
+**Un ciclo de desarrollo con IA (AI SDLC), de la spec a producción y después**, para Claude Code y Codex.
 
-No depende de que el modelo se acuerde de las reglas: tiene controles que frenan, no sólo avisan. En cualquier repo frena
-los comandos destructivos. Con el perfil completo, además, no deja tocar código sin elegir antes cómo se trabaja (una
-story, o un ajuste chico que pediste vos, con tus palabras, y queda registrado), ni cerrar una story que declara pruebas de punta a punta
-o de humo sin la evidencia de haberlas corrido.
+1. **Spec:** con el agente escribís la story del cambio: qué hay que hacer y cómo se prueba. Para un ajuste chico
+   alcanza con pedirlo con tus palabras.
+2. **Código:** el agente arma el plan, espera tu visto bueno y escribe el código y las pruebas.
+3. **Revisión:** revisores especializados (seguridad, convenciones, cobertura) miran el cambio antes del commit.
+4. **Entrega:** el commit y el merge pasan por controles. Para plugins de BIZUIT trae los guiones que despliegan a
+   pruebas y a producción.
+5. **Después:** cada merge a main deja su archivo de métricas. El tablero del ciclo y los procesos de cada noche
+   (dependencias vulnerables, poda de reglas) hoy corren sólo en TYCON y se están publicando.
 
-Lo armó TYCON a partir de incidentes reales, y trae un paquete opcional para plugins de BIZUIT (.NET, React y Next.js).
-De fábrica corre en tu máquina. Si prendés la integración del buzón, cada corrida del pipeline, con su conversación y sus
-cambios, y los registros de los frenos, se suben al almacenamiento de tu organización.
+**Se vigila a sí mismo.** Un banco de pruebas comprueba, en cada cambio al arnés, que cada control siga frenando lo que
+dice. Si lo prendés, además observa tus sesiones y propone reglas nuevas, que vos aprobás.
+
+Con el perfil completo, los controles frenan, no sólo avisan: no depende de que el modelo se acuerde de las reglas. La
+mayoría nació de un incidente real.
+
+**Cada organización pone lo suyo.** Sus revisores, sus skills y su configuración viajan en el perfil de su equipo.
+TYCON trae los suyos para plugins de BIZUIT.
 
 ## Antes de instalar: qué cambia en tu máquina
 
