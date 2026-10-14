@@ -1,0 +1,222 @@
+# ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# Revisión nocturna de dependencias — MODELO de GitHub Actions para una organización que vive en GitHub (story 8.31)
+#
+# Cómo darlo de alta: pipelines/operations/github/README.md. Se copia a `.github/workflows/` del repo de operaciones,
+# sin cambiar nada: qué arnés corre lo dice `team-repos.json` del repo de operaciones.
+#
+# Hace lo mismo y en el mismo orden que el modelo de Azure (pipelines/operations/dependency-audit.yml): trae el arnés y
+# el repo de operaciones, arma el árbol, clona los repos de `scripts/nightly/dependencies/repos.json` (entradas
+# `github: <dueño>/<repo>`), lee el estado de los avisos, mira las dependencias, crea los avisos, manda el resumen y
+# guarda la foto y las fichas en el repo de operaciones. Lo que cambia a propósito:
+#   · los avisos son ISSUES en el repo de cada producto (scripts/nightly/dependencies/github-issues.js, elegido por
+#     `work-items.js` porque `team-repos.json` dice `operations.platform: github`), no Bugs de Azure Boards;
+#   · NO hay pull request por hallazgo en el repo de operaciones: el issue es el lugar de decidir;
+#   · la credencial de la organización es el secreto HARNESS_ORG_TOKEN, sólo en los pasos que clonan y hablan con los
+#     issues; el paso que mira las dependencias (corre `dotnet restore` sobre código de los productos) no tiene ninguna;
+#   · lo «naranja» de Azure es un aviso (::warning::) con la corrida en verde.
+#
+# Efectos: una corrida programada SIEMPRE tiene efectos (en ella `inputs` está vacío); una a mano, según `effects`. Con
+# `effects: false` mira y escribe en el disco del runner, pero no crea ni comenta issues, no manda el resumen y no guarda.
+# Opcional: el resumen diario por Telegram, con la variable TYCON_TELEGRAM_CHAT_ID y el secreto TELEGRAM_BOT_TOKEN.
+# ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+name: dependency-audit
+
+on:
+  schedule:
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+    inputs:
+      effects:
+        description: 'Con efectos fuera de la corrida (issues, resumen y guardar)'
+        type: boolean
+        default: true
+      harness_ref:
+        description: 'Rama, tag o commit del arnés (vacío: la variable HARNESS_REF, o main)'
+        type: string
+        default: ''
+
+permissions:
+  contents: write
+
+concurrency:
+  group: harness-dependency-audit
+  cancel-in-progress: false
+
+jobs:
+  review:
+    name: Revisión de dependencias
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      EFFECTS: ${{ github.event_name == 'schedule' || inputs.effects }}
+      # la clave de la corrida que usan el guardado y el sello del tablero (en Azure, Build.BuildId)
+      BUILD_BUILDID: ${{ github.run_id }}
+      SYSTEM_JOBATTEMPT: ${{ github.run_attempt }}
+    steps:
+      - name: El repo de operaciones
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: ops
+          persist-credentials: false
+
+      - name: Qué arnés corre (team-repos.json del repo de operaciones)
+        id: harness
+        working-directory: ops
+        env:
+          INPUT_REF: ${{ inputs.harness_ref }}
+          VAR_REF: ${{ vars.HARNESS_REF }}
+        run: |
+          set -euo pipefail
+          node - <<'JS'
+          const fs = require('fs');
+          const red = (m) => { console.log(`::error::${m} — no se mide nada`); process.exit(1); };
+          let t;
+          try { t = JSON.parse(fs.readFileSync('team-repos.json', 'utf8')); } catch (e) { red(`el repo de operaciones no trae un team-repos.json legible (${e.message})`); }
+          const p = t && t.public;
+          if (!p || p.platform !== 'github') red('team-repos.json: public tiene que ser el repo del arnés en GitHub (platform «github»)');
+          const name = /^[A-Za-z0-9._-]+$/;
+          if (!name.test(String(p.org || '')) || !name.test(String(p.repo || ''))) red('team-repos.json: public.org o public.repo no es un nombre de GitHub');
+          const ref = process.env.INPUT_REF || process.env.VAR_REF || 'main';
+          if (!/^[A-Za-z0-9._\/-]+$/.test(ref) || ref.includes('..') || /^refs\/pull\//.test(ref) || ref.startsWith('-')) red(`la referencia del arnés «${ref}» no es una rama, un tag ni un commit`);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `repository=${p.org}/${p.repo}\nref=${ref}\n`);
+          console.log(`el arnés: ${p.org}/${p.repo} @ ${ref}`);
+          JS
+
+      - name: El arnés
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ steps.harness.outputs.repository }}
+          ref: ${{ steps.harness.outputs.ref }}
+          path: harness
+          fetch-depth: 1
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      # Cada repo nuget declara su SDK en su global.json: se instalan los de esta lista (cambiala si tus repos piden otro).
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: |
+            9.0.x
+            10.0.x
+
+      - name: Armar el árbol (los datos y la configuración de operaciones, encima del arnés)
+        env:
+          OPS_TOKEN: ${{ github.token }}
+        run: bash harness/pipelines/operations/github/prepare-tree.sh
+
+      - name: Leer la configuración de la organización (repos.json)
+        working-directory: harness
+        run: |
+          set -euo pipefail
+          [ -f scripts/nightly/dependencies/repos.json ] || { echo "::error::El repo de operaciones no trae scripts/nightly/dependencies/repos.json: no hay qué repos mirar (ejemplo: pipelines/operations/examples/github/repos.json del arnés)"; exit 1; }
+          ON=$(node -e 'const c = JSON.parse(require("fs").readFileSync("scripts/nightly/dependencies/repos.json", "utf8")); process.stdout.write(c && c.github && c.github.issues_enabled === true ? "1" : "0");') \
+            || { echo "::error::scripts/nightly/dependencies/repos.json no es JSON válido"; exit 1; }
+          echo "issues: $([ "${ON}" = 1 ] && echo prendidos || echo 'apagados (github.issues_enabled no es true)')"
+          echo "ISSUES_ON=${ON}" >> "${GITHUB_ENV}"
+          # La primera noche de una organización no hay cola: se crea con sus tres carpetas (y su .gitkeep, que guardar
+          # lleva al repo de operaciones). Una cola a medias no se completa acá.
+          if [ ! -e inbox/dependencies ]; then
+            for D in pending promoted archived; do mkdir -p "inbox/dependencies/${D}" && : > "inbox/dependencies/${D}/.gitkeep"; done
+            echo "primera noche: se crea la cola inbox/dependencies (pending, promoted, archived)"
+          fi
+
+      - name: Clonar los repos declarados
+        working-directory: harness
+        env:
+          ORG_TOKEN: ${{ secrets.HARNESS_ORG_TOKEN }}
+        run: |
+          set -uo pipefail
+          node scripts/nightly/dependencies/nightly-dependencies.js clone-list | bash pipelines/operations/github/clone-repos.sh --declared "${RUNNER_TEMP}/repos"
+
+      - name: Volcar el estado de los issues (sólo lee)
+        if: env.ISSUES_ON == '1'
+        working-directory: harness
+        env:
+          GH_TOKEN: ${{ secrets.HARNESS_ORG_TOKEN }}
+        run: |
+          set -uo pipefail
+          HOY=$(date -u +%Y-%m-%d)
+          echo "HOY_NOCTURNO=${HOY}" >> "${GITHUB_ENV}"
+          node scripts/nightly/dependencies/work-items.js state --out .dashboard/dependencias --pending inbox/dependencies --today "${HOY}" 2>&1 \
+            | bash pipelines/operations/github/annotate.sh
+          CODIGO=${PIPESTATUS[0]}
+          [ "${CODIGO}" = 0 ] || echo "::warning::No se pudo leer el estado de los issues (código ${CODIGO}): la noche mide igual pero NO cruza — no es «coinciden»."
+          exit 0
+
+      - name: El árbol sigue siendo el que se armó (antes de medir)
+        working-directory: harness
+        run: |
+          set -uo pipefail
+          if ! OUT=$(node scripts/ci/harness-tree.js --check-tree --worktree --repo . 2>&1); then
+            echo "::error::$(printf '%s' "${OUT}" | tail -n 1) — no se mide nada"
+            exit 1
+          fi
+          echo "${OUT}"
+
+      - name: Correr la revisión de dependencias
+        working-directory: harness
+        run: |
+          set -uo pipefail
+          HOY="${HOY_NOCTURNO:-$(date -u +%Y-%m-%d)}"
+          echo "HOY_NOCTURNO=${HOY}" >> "${GITHUB_ENV}"
+          node scripts/nightly/dependencies/nightly-dependencies.js run --root "${RUNNER_TEMP}/repos" \
+            --out .dashboard/dependencias --pending inbox/dependencies --today "${HOY}" 2>&1 \
+            | tee "${RUNNER_TEMP}/deps-salida.txt" | bash pipelines/operations/github/annotate.sh
+          CODIGO=${PIPESTATUS[0]}
+          # Sale 0 aunque encuentre vulnerabilidades; otro código es que NO SE PUDO MIRAR NADA.
+          if [ "${CODIGO}" != 0 ]; then echo "::error::La revisión terminó con código ${CODIGO}: las dependencias NO se miraron"; exit 1; fi
+          [ -f ".dashboard/dependencias/dependencias-${HOY}.json" ] || { echo "::error::No quedó el snapshot de ${HOY}: la noche no se miró"; exit 1; }
+          if grep -q 'NO MEDIDO' "${RUNNER_TEMP}/deps-salida.txt"; then echo "::warning::Hubo repos que no se pudieron mirar (ver la salida). No medido NO es limpio."; fi
+
+      - name: Crear y comentar los issues
+        if: env.EFFECTS == 'true' && env.ISSUES_ON == '1'
+        working-directory: harness
+        env:
+          GH_TOKEN: ${{ secrets.HARNESS_ORG_TOKEN }}
+        run: |
+          set -uo pipefail
+          node scripts/nightly/dependencies/work-items.js run --out .dashboard/dependencias --pending inbox/dependencies --today "${HOY_NOCTURNO}" 2>&1 \
+            | bash pipelines/operations/github/annotate.sh
+          CODIGO=${PIPESTATUS[0]}
+          if [ "${CODIGO}" != 0 ]; then
+            echo "::error::Los issues NO se pudieron intentar (código ${CODIGO}) — ver la salida. No es «no había nada que avisar»."
+            echo "PEDIDOS_NO_INTENTADOS=1" >> "${GITHUB_ENV}"
+          fi
+          exit 0
+
+      - name: Entregar el resumen (si hay bot de Telegram)
+        if: env.EFFECTS == 'true' && vars.TYCON_TELEGRAM_CHAT_ID != ''
+        continue-on-error: true
+        working-directory: harness
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TYCON_TELEGRAM_CHAT_ID: ${{ vars.TYCON_TELEGRAM_CHAT_ID }}
+        run: |
+          set -uo pipefail
+          node scripts/nightly/dependencies/daily-summary.js deliver --source dependencies --today "${HOY_NOCTURNO}" \
+            --out .dashboard/dependencias --pending inbox/dependencies 2>&1 | bash pipelines/operations/github/annotate.sh
+          CODIGO=${PIPESTATUS[0]}
+          if [ "${CODIGO}" != 0 ]; then echo "::warning::El resumen NO se entregó (código ${CODIGO})"; exit 1; fi
+
+      - name: Guardar la foto y las fichas en el repo de operaciones
+        if: env.EFFECTS == 'true' && github.ref == 'refs/heads/main'
+        working-directory: harness
+        env:
+          OPS_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          . pipelines/operations/github/operations-auth.sh
+          node scripts/ci/push-nightly-data.js save \
+            --message "chore(dependencias): revisión nocturna $(date -u +%Y-%m-%d) [nocturno]" \
+            --require-daily '.dashboard/dependencias/dependencias-{day}.json' \
+            -- .dashboard/dependencias inbox/dependencies 2>&1 | bash pipelines/operations/github/annotate.sh
+
+      # El rojo de «los issues no se intentaron» va acá, después de guardar: la noche no se pierde por eso.
+      - name: Denunciar que los issues no se intentaron
+        if: always() && env.PEDIDOS_NO_INTENTADOS == '1'
+        run: |
+          echo "::error::Los issues no se intentaron esta noche. La foto y las fichas ya se guardaron; la corrida queda en rojo para que no pase por una noche sin novedad."
+          exit 1
