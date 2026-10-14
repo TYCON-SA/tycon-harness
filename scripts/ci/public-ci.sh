@@ -58,6 +58,15 @@
 # toda la corrida: los pasos miran ESE repo aunque en la máquina haya otro instalado.
 #
 # VARIABLES (todas opcionales):
+#   TYCON_PUBLIC_CI_PART=<parte>    corre sólo una PARTE de los pasos, para repartirlos en trabajos que corren a la vez
+#                                   (la CI de GitHub, con una matriz Node × parte). Sin la variable (o vacía), todos:
+#                                     checks            todos los pasos menos el 5 (portable-suites)
+#                                     suites-<i>-of-<n> sólo el paso 5, con la parte <i> de <n> de las portables: las
+#                                                       reparte scripts/ci/suites-shard.js por peso (juego `pr`, ver
+#                                                       portable-suites.test.sh, TYCON_PORTABLE_SHARD)
+#                                   Las n+1 partes juntas son la corrida entera: `checks` más `suites-1-of-<n>` …
+#                                   `suites-<n>-of-<n>`. Una parte sola NO es el veredicto: el resumen la nombra, y en la CI
+#                                   lo da el job `public-ci`, que junta todas. Un valor que no sea uno de ésos: 2, con el uso.
 #   TYCON_PUBLIC_CI_OUT=<carpeta>   dónde queda la salida: `<n>-<paso>.log` por paso, `agent-skills-suites.tsv` (una
 #                                   línea `✅|❌<TAB>raiz/ruta` por suite del paso 6, ordenadas), la salida de cada una
 #                                   en `agent-skills-suites/` y el reporte del banco en `bench.json`. Sin la variable va a
@@ -107,6 +116,30 @@ if [ "${ROOT_GIVEN}" -eq 1 ]; then
 else
   ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 fi
+
+# ── qué parte de los pasos (TYCON_PUBLIC_CI_PART, ver arriba) ───────────────────────────────────────
+PART="${TYCON_PUBLIC_CI_PART:-}"; PORTABLE_SHARD=""
+case "${PART}" in
+  ""|checks) ;;
+  suites-*-of-*)
+    # sólo dígitos, i entre 1 y n: «suites-0-of-3», «suites-4-of-3», «suites-1-of-3x» o «suites-1-of-2-of-3» no son una parte
+    PART_RE='^suites-([1-9][0-9]*)-of-([1-9][0-9]*)$'
+    if [[ "${PART}" =~ ${PART_RE} ]] && [ "${BASH_REMATCH[1]}" -le "${BASH_REMATCH[2]}" ]; then
+      SHARD_I="${BASH_REMATCH[1]}"; SHARD_N="${BASH_REMATCH[2]}"
+    else
+      echo "public-ci: TYCON_PUBLIC_CI_PART=${PART} no es una parte: checks o suites-<i>-of-<n>, con i entre 1 y n" >&2; usage 2
+    fi
+    PORTABLE_SHARD="${SHARD_I}/${SHARD_N}" ;;
+  *) echo "public-ci: TYCON_PUBLIC_CI_PART=${PART} no es una parte: checks o suites-<i>-of-<n>, con i entre 1 y n" >&2; usage 2 ;;
+esac
+# wants <paso> → 0 si el paso le toca a esta parte
+wants() {
+  case "${PART}" in
+    "") return 0 ;;
+    checks) [ "$1" != portable-suites ] ;;
+    *) [ "$1" = portable-suites ] ;;
+  esac
+}
 
 # ── dónde queda la salida ──────────────────────────────────────────────────────────────────────────
 if [ -n "${TYCON_PUBLIC_CI_OUT:-}" ]; then
@@ -455,22 +488,32 @@ JS
 }
 
 # ── la corrida ─────────────────────────────────────────────────────────────────────────────────────
-run_step node-check own "" "git node" node_check
-run_step build-check file build/check.js "node" node build/check.js
-run_step build-generate file build/generate.js "node" node build/generate.js --check
-run_step suites-coverage file scripts/tests/suites-coverage.test.js "node" node scripts/tests/suites-coverage.test.js
-run_step portable-suites file scripts/tests/portable-suites.test.sh "bash node" bash scripts/tests/portable-suites.test.sh
-run_step agent-skills-suites own scripts/tests/suites.json "bash node" agent_skills_suites
-run_step controls-bench file scripts/controls-bench/runner.js "node" node scripts/controls-bench/runner.js --tool both --baseline check --json "${OUT}/bench.json"
-[ "${WITH_RANGE}" -eq 0 ] || run_step spanish-names own scripts/publishing/spanish-names.js "git node" spanish_names
-[ "${WITH_RANGE}" -eq 0 ] || run_step repo-lint own .githooks/pre-commit-harness "git bash node" repo_lint
-[ "${WITH_RANGE}" -eq 0 ] || run_step version own version.json "git node" version_bumped
+case "${PART}" in
+  "") ;;
+  checks) echo "public-ci: parte checks — todos los pasos menos portable-suites (las portables van en las partes suites-<i>-of-<n>)" ;;
+  *) echo "public-ci: parte ${PART} — sólo portable-suites, con la parte ${SHARD_I} de ${SHARD_N} de las portables (los demás pasos van en la parte checks)" ;;
+esac
+wants node-check && run_step node-check own "" "git node" node_check
+wants build-check && run_step build-check file build/check.js "node" node build/check.js
+wants build-generate && run_step build-generate file build/generate.js "node" node build/generate.js --check
+wants suites-coverage && run_step suites-coverage file scripts/tests/suites-coverage.test.js "node" node scripts/tests/suites-coverage.test.js
+# TYCON_PORTABLE_SHARD siempre se pasa: vacía (la corrida entera, o la parte checks) corre todas las portables, aunque
+# quien llama la tenga puesta
+wants portable-suites && run_step portable-suites file scripts/tests/portable-suites.test.sh "bash node" \
+  env TYCON_PORTABLE_SHARD="${PORTABLE_SHARD}" bash scripts/tests/portable-suites.test.sh
+wants agent-skills-suites && run_step agent-skills-suites own scripts/tests/suites.json "bash node" agent_skills_suites
+wants controls-bench && run_step controls-bench file scripts/controls-bench/runner.js "node" node scripts/controls-bench/runner.js --tool both --baseline check --json "${OUT}/bench.json"
+[ "${WITH_RANGE}" -eq 0 ] || ! wants spanish-names || run_step spanish-names own scripts/publishing/spanish-names.js "git node" spanish_names
+[ "${WITH_RANGE}" -eq 0 ] || ! wants repo-lint || run_step repo-lint own .githooks/pre-commit-harness "git bash node" repo_lint
+[ "${WITH_RANGE}" -eq 0 ] || ! wants version || run_step version own version.json "git node" version_bumped
 # la máquina limpia, en su modo PÚBLICO: pedida de forma explícita (sin eso, fuera del nocturno sale NO MEDIDA) y sobre
 # ESTE repo (sin eso cae en el modo interno, que exporta la copia desde el repo del equipo)
-[ "${CLEAN_MACHINE}" -eq 0 ] || run_step clean-machine file scripts/tests/clean-machine.test.sh "bash" \
+[ "${CLEAN_MACHINE}" -eq 0 ] || ! wants clean-machine || run_step clean-machine file scripts/tests/clean-machine.test.sh "bash" \
   env TYCON_CLEAN_MACHINE=1 TYCON_CLEAN_MACHINE_SOURCE="${ROOT}" bash scripts/tests/clean-machine.test.sh
 
 echo "public-ci: la salida de cada paso quedó en ${OUT}"
-if [ "${RED_COUNT}" -eq 0 ]; then echo "✅ public-ci: ${STEP} pasos verdes"; exit 0; fi
-echo "❌ public-ci: ${RED_COUNT} de ${STEP} pasos en rojo: ${RED_NAMES}"
+# una parte sola no es la corrida entera: el resumen lo dice
+OF_PART=""; [ -z "${PART}" ] || OF_PART=" (sólo la parte ${PART})"
+if [ "${RED_COUNT}" -eq 0 ]; then echo "✅ public-ci: ${STEP} pasos verdes${OF_PART}"; exit 0; fi
+echo "❌ public-ci: ${RED_COUNT} de ${STEP} pasos en rojo${OF_PART}: ${RED_NAMES}"
 exit 1
