@@ -57,7 +57,7 @@ function redactar({ html, ahora, nota = '', sello, copia = null }) {
     return `🔕 el tablero del arnés publicado dice ser del ${fecha}, posterior a hoy — sus números no se muestran · revisar el pipeline ${PIPELINE}${nota}`;
   }
   if (ahora - t > VEJEZ_MS) {
-    // la página venció, pero la copia del clon de mantenimiento no se trae desde antes: no prueba que no se generó
+    // la página venció, pero la copia del clon de operaciones no se trae desde antes: no prueba que no se generó
     const vieja = copia ? copia(t + VEJEZ_MS) : null;
     if (vieja) return `🟠 tablero del arnés: no sé si se generó — su última página es del ${fecha} y ${vieja}${nota}`;
     const dias = Math.floor((ahora - t) / 86400000);
@@ -81,21 +81,22 @@ function main() {
   if (readEnv('TYCON_DASHBOARD_NOTICE', { where }) === '0' || process.env.TYCON_EVAL_SANDBOX === '1') return 0;
   const sello = require('../nightly/dashboard/seal.js');  // una copia sin el sello es una copia rota: el wrapper calla
   // de qué árbol se lee: la variable manda; si no, lo decide scripts/lib/night-data.js —en un clon, éste; en una versión
-  // bajada, el clon de mantenimiento que la máquina declara (`paths.maintainers`), o ninguno (y este aviso calla: nunca
-  // git sobre ~/.tycon; que el clon falte o no sirva lo dice el aviso de dependencias, una vez por arranque)—. Sin esa
-  // biblioteca al lado, lo de antes (tycon-home.js).
+  // bajada, el clon del repo de operaciones que la máquina declara (`paths.operations`: desde la story 8.30 el tablero se
+  // guarda ahí), o ninguno (y este aviso calla: nunca git sobre ~/.tycon; que el clon falte o no sirva lo dice el aviso
+  // de dependencias, una vez por arranque)—. Sin esa biblioteca al lado, lo de antes (tycon-home.js).
   const own = path.resolve(__dirname, '..', '..');
   const homeLib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js');
   const nightLib = path.join(__dirname, '..', 'lib', 'night-data.js');
   const N = fs.existsSync(nightLib) ? require(nightLib) : null;
   const porVariable = readEnv('TYCON_DASHBOARD_REPO', { where });
   const noche = porVariable ? { dir: porVariable, source: 'own' }
-    : N ? N.resolve(own)
+    : N ? (typeof N.resolveOperations === 'function' ? N.resolveOperations(own) : N.resolve(own))
       : { dir: fs.existsSync(homeLib) ? require(homeLib).maintainedDir(require('os').homedir(), own) : own, source: 'own' };
   const raiz = noche.dir;
   if (!raiz) return 0;
-  // la máquina que declara su clon de mantenimiento mira de cuándo es su copia antes de acusar al nocturno
-  const copia = noche.source === 'maintainers' ? (desde) => N.copyAfter(raiz, desde) : null;
+  // la máquina que declara su clon de operaciones mira de cuándo es su copia antes de acusar al nocturno
+  const clon = typeof N?.cloneName === 'function' ? N.cloneName(noche.source) : 'el clon de mantenimiento';
+  const copia = noche.source === 'operations' || noche.source === 'maintainers' ? (desde) => N.copyAfter(raiz, desde, clon) : null;
   const ahoraFija = readEnv('TYCON_DASHBOARD_NOW', { where });
   const ahora = ahoraFija ? Date.parse(ahoraFija) : Date.now();
   if (Number.isNaN(ahora)) return 0;
@@ -113,7 +114,7 @@ function main() {
     if (nombres && !nombres.includes(ARCHIVO)) {
       // sin página y con la copia del clon de mantenimiento vieja: no se sabe (puede estar publicada y no traída)
       const vieja = copia ? copia(ahora - VEJEZ_MS) : null;
-      console.log(vieja ? `🟠 tablero del arnés: no sé si está publicado — ${DONDE} no está en mi copia del clon de mantenimiento y ${vieja}`
+      console.log(vieja ? `🟠 tablero del arnés: no sé si está publicado — ${DONDE} no está en mi copia ${clon.replace(/^el /, 'del ')} y ${vieja}`
         : `🔕 el tablero del arnés no está publicado (${DONDE} no está en main) — lo genera el pipeline ${PIPELINE}`);
       return 0;
     }

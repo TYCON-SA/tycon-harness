@@ -55,11 +55,17 @@ SELF_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"   # este script vive en el arn�
 # noches («no pude mirar») con los datos sanos en el clon de mantenimiento de la máquina. Los datos:
 #   · TYCON_GUIDES_DIR, si viene (y entonces también el envío sale de ahí, como siempre);
 #   · si no, y este árbol es un clon: este árbol, como siempre;
-#   · si no es un clon (una versión instalada): lo que diga scripts/lib/night-data.js, que es el clon de mantenimiento
-#     que la máquina declara (`paths.maintainers`). Sin uno que sirva, o sin `node` para preguntarlo: se dice y se sale
-#     2, sin traer ni mandar nada (lo mismo lo dice el arranque de cada sesión).
+#   · si no es un clon (una versión instalada): lo que diga scripts/lib/night-data.js, que es el clon del repo de
+#     operaciones que la máquina declara (`paths.operations`): desde la story 8.30 las métricas se guardan ahí (2026-10-14:
+#     leídas del clon de mantenimiento, el aviso decía «el de hoy no está publicado» con el de hoy ya en operaciones).
+#     Sin uno que sirva, o sin `node` para preguntarlo: se dice y se sale 2, sin traer ni mandar nada (lo mismo lo dice
+#     el arranque de cada sesión).
+#   · y de paso trae el clon de mantenimiento (`paths.maintainers`), si la máquina lo declara y es otro: de ahí leen los
+#     avisos de arranque el banco, las suites y el examen, y este guion es quien pone al día los dos clones cada noche.
+#     Que esa traída falle se deja en el registro y no cambia el veredicto.
 # El envío, sin TYCON_GUIDES_DIR ni TYCON_NOTICE_NOTIFY: siempre el de este árbol.
 DATA_PROBLEM=""
+MAINT_REPO=""
 if [ -n "${TYCON_GUIDES_DIR:-}" ]; then
   REPO="$TYCON_GUIDES_DIR"; CODE_ROOT="$TYCON_GUIDES_DIR"
 else
@@ -71,11 +77,14 @@ else
       # La ruta sale por la salida y el motivo por la de error, cada una por su lado: mezcladas, un aviso cualquiera de
       # node quedaba adentro de la ruta. Y una respuesta que no es UNA carpeta que existe no se usa como repo.
       NIGHT_ERR_FILE="$(mktemp 2>/dev/null || echo "/tmp/tycon-aviso-dod.$$.err")"
-      NIGHT_OUT="$(node "$SELF_ROOT/scripts/lib/night-data.js" --plain 2>"$NIGHT_ERR_FILE")"; NIGHT_RC=$?
+      NIGHT_OUT="$(node "$SELF_ROOT/scripts/lib/night-data.js" --plain --operations 2>"$NIGHT_ERR_FILE")"; NIGHT_RC=$?
       NIGHT_ERR="$(head -n 1 "$NIGHT_ERR_FILE" 2>/dev/null)"; rm -f "$NIGHT_ERR_FILE"
       if [ "$NIGHT_RC" -eq 0 ] && [ -n "$NIGHT_OUT" ] && [ -d "$NIGHT_OUT" ]; then REPO="$NIGHT_OUT"
       elif [ "$NIGHT_RC" -eq 0 ]; then DATA_PROBLEM="la respuesta de night-data.js no es una carpeta que exista"
       else DATA_PROBLEM="${NIGHT_ERR:-no pude preguntar de qué clon se leen los datos de la noche (night-data.js salió ${NIGHT_RC})}"; fi
+      # el de mantenimiento, sólo para traerlo: un problema suyo no frena este aviso (lo dice el arranque)
+      MAINT_OUT="$(node "$SELF_ROOT/scripts/lib/night-data.js" --plain 2>/dev/null)"
+      if [ -n "$MAINT_OUT" ] && [ -d "$MAINT_OUT" ]; then MAINT_REPO="$MAINT_OUT"; fi
     else
       # Sin node no se puede preguntar, y este árbol no es un clon: antes de hacer un `fetch` sobre una carpeta que no
       # lo es —y avisar «no pude mirar» por otra causa—, se dice.
@@ -142,12 +151,21 @@ if [ -n "$DATA_PROBLEM" ]; then
   # la receta según lo que pasa: falta la declaración, o lo declarado no sirve; con los nocturnos apagados o sin node,
   # ninguna (no arregla nada)
   case "$DATA_PROBLEM" in
+    *"no declara el clon del repo de operaciones"*) DATA_FIX=" — se declara con: harness.js config set paths.operations <la carpeta de tu clon del repo de operaciones>" ;;
+    *paths.operations*) DATA_FIX=" — lo declarado no sirve; se corrige con: harness.js config set paths.operations <la carpeta de tu clon del repo de operaciones>" ;;
     *"no declara el de mantenimiento"*) DATA_FIX=" — se declara con: harness.js config set paths.maintainers <la carpeta de tu clon de mantenimiento>" ;;
     *paths.maintainers*) DATA_FIX=" — lo declarado no sirve; se corrige con: harness.js config set paths.maintainers <la carpeta de tu clon de mantenimiento>" ;;
     *) DATA_FIX="" ;;
   esac
   log "no sé de qué clon leer los datos de la noche: ${DATA_PROBLEM}${DATA_FIX}"
   exit 2
+fi
+
+# El clon de mantenimiento, una vez y sin reintentos: no es de donde lee este aviso. Si falla, queda en el registro.
+if [ -n "$MAINT_REPO" ] && [ "$(cd "$MAINT_REPO" 2>/dev/null && pwd -P)" != "$(cd "$REPO" 2>/dev/null && pwd -P)" ]; then
+  if ! MAINT_SALIDA="$(git -C "$MAINT_REPO" fetch -q origin "+refs/heads/main:$REF" 2>&1)"; then
+    log "el fetch de main del clon de mantenimiento falló (el banco, las suites y el examen pueden quedar con la copia vieja): $(motivo_de "$MAINT_SALIDA")"
+  fi
 fi
 
 FETCH_N=0

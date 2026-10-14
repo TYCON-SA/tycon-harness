@@ -438,7 +438,7 @@
         {
           "id": "maintainers-clone-stale-page-with-old-copy-is-unknown",
           "type": "must-emit",
-          "__doc": "La máquina de quien mantiene el arnés usa la versión instalada y declara su clon de mantenimiento (paths.maintainers): ahí viven los datos de la noche, no al lado del hook ni en el clon del público. Medido el 2026-10-12: cinco nocturnos sanos y este aviso mudo, igual que si no corrieran. El caso arma esa máquina entera —el estado de una versión instalada, la configuración con el clon declarado y un clon con la noche publicada en origin/main— y NO pasa ninguna variable que apunte el aviso a los datos: llega sólo por la configuración. Y la otra mitad: el aviso lee origin/main sin salir a la red, así que una página vencida en una copia que nadie trae desde ANTES de que venciera no prueba que el nocturno no corrió. Con la última traída del clon (FETCH_HEAD) anterior al vencimiento, lo cierto es «no sé si se generó», con la fecha de la copia — no «NO SE ESTÁ GENERANDO» (caso denuncia-pagina-vieja-y-calla-los-numeros, que sigue valiendo donde no hay otra copia que traer).",
+          "__doc": "La máquina de quien mantiene el arnés usa la versión instalada y declara sus clones de datos: el de mantenimiento (paths.maintainers) y el de operaciones (paths.operations, donde guardan dependencias, vigilante y tablero desde la story 8.30; acá, el mismo clon). Ahí viven los datos de la noche, no al lado del hook ni en el clon del público. Medido el 2026-10-12: cinco nocturnos sanos y este aviso mudo, igual que si no corrieran. El caso arma esa máquina entera —el estado de una versión instalada, la configuración con el clon declarado y un clon con la noche publicada en origin/main— y NO pasa ninguna variable que apunte el aviso a los datos: llega sólo por la configuración. Y la otra mitad: el aviso lee origin/main sin salir a la red, así que una página vencida en una copia que nadie trae desde ANTES de que venciera no prueba que el nocturno no corrió. Con la última traída del clon (FETCH_HEAD) anterior al vencimiento, lo cierto es «no sé si se generó», con la fecha de la copia — no «NO SE ESTÁ GENERANDO» (caso denuncia-pagina-vieja-y-calla-los-numeros, que sigue valiendo donde no hay otra copia que traer).",
           "files": {
             "mant/artifacts/tablero-del-arnes.html": "<!doctype html><html lang=\"es\"><head><meta charset=\"utf-8\"><title>El arnés en seis preguntas</title><script type=\"application/json\" id=\"tablero-sello\">{\"esquema\": 1, \"generado\": \"2026-09-10T08:31:00.000Z\", \"snapshot\": \"2026-09-10\", \"modo\": \"nocturno\", \"corrida\": \"4242\", \"fuentes\": {\"esperadas\": 13, \"al_dia\": 13}, \"buzon\": {\"estado\": \"leido\", \"maquinas\": 7777}}</script></head><body><b>9173</b> fichas</body></html>"
           },
@@ -446,7 +446,7 @@
             "mkdir -p tcg/scripts/hooks tcg/scripts/setup && cp $TCG/scripts/hooks/dashboard-notice.js $TCG/scripts/hooks/dependencies-notice.js $TCG/scripts/hooks/public-push-guard.js tcg/scripts/hooks/ && cp -R $TCG/scripts/lib tcg/scripts/lib && cp -R $TCG/scripts/setup/harness tcg/scripts/setup/harness && mkdir -p tcg/scripts/nightly/dashboard && cp $TCG/scripts/nightly/dashboard/seal.js tcg/scripts/nightly/dashboard/",
             "git -C mant init -q . && git -C mant add -A -f && git -C mant -c user.email=t@t -c user.name=t commit -qm noche && git -C mant update-ref refs/remotes/origin/main HEAD",
             "printf \"%s\\t\\tbranch 'main' of /un/remoto\\n\" \"$(git -C mant rev-parse HEAD)\" > mant/.git/FETCH_HEAD && touch -t 202609091200 mant/.git/FETCH_HEAD",
-            "mkdir -p \"$HOME/.tycon/state\" && printf '%s' '{\"schema\":1,\"sources\":[{\"kind\":\"release\",\"version\":\"0.0.0\"}]}' > \"$HOME/.tycon/state/harness-state.json\" && node -e \"const f=require('fs'),p=require('path');f.writeFileSync(p.join(process.env.HOME,'.tycon','config.json'),JSON.stringify({paths:{maintainers:p.resolve('mant')}}))\""
+            "mkdir -p \"$HOME/.tycon/state\" && printf '%s' '{\"schema\":1,\"sources\":[{\"kind\":\"release\",\"version\":\"0.0.0\"}]}' > \"$HOME/.tycon/state/harness-state.json\" && node -e \"const f=require('fs'),p=require('path');f.writeFileSync(p.join(process.env.HOME,'.tycon','config.json'),JSON.stringify({paths:{maintainers:p.resolve('mant'),operations:p.resolve('mant')}}))\""
           ],
           "stdin": {
             "source": "startup"
@@ -457,7 +457,7 @@
           },
           "expect": {
             "stdout_re": [
-              "🟠 tablero del arnés: no sé si se generó — su última página es del 2026-09-10 y la copia del clon de mantenimiento es del 2026-09-09"
+              "🟠 tablero del arnés: no sé si se generó — su última página es del 2026-09-10 y la copia del clon de operaciones es del 2026-09-09"
             ],
             "stdout_not_re": [
               "NO SE ESTÁ GENERANDO",
