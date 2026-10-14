@@ -2,10 +2,18 @@
 
 [English](README.md) · Castellano
 
-Le suma a Claude Code (y a Codex, si lo prendés) las reglas, guías y revisiones con que TYCON desarrolla extensiones
-de BIZUIT (.NET y React).
-Vos pedís un cambio: Claude arma un plan, espera tu visto bueno, programa, corre las pruebas y deja el commit listo.
-Todo corre en tu máquina, dentro de Claude Code, y no manda tu código a ningún lado.
+**Un arnés para que Claude Code trabaje con disciplina** (y Codex, si lo prendés y aprobás sus controles con `/hooks`). Para un
+cambio, con Claude escribís una story: la spec de qué hay que hacer. Claude arma el plan, espera tu visto bueno,
+escribe el código y las pruebas, y deja el commit listo.
+
+No depende de que el modelo se acuerde de las reglas: tiene controles que frenan, no sólo avisan. En cualquier repo frena
+los comandos destructivos. Con el perfil completo, además, no deja tocar código sin elegir antes cómo se trabaja (una
+story, o un ajuste chico que pediste vos, con tus palabras, y queda registrado), ni cerrar una story que declara pruebas de punta a punta
+o de humo sin la evidencia de haberlas corrido.
+
+Lo armó TYCON a partir de incidentes reales, y trae un paquete opcional para plugins de BIZUIT (.NET, React y Next.js).
+De fábrica corre en tu máquina. Si prendés la integración del buzón, cada corrida del pipeline, con su conversación y sus
+cambios, y los registros de los frenos, se suben al almacenamiento de tu organización.
 
 ## Antes de instalar: qué cambia en tu máquina
 

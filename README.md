@@ -2,10 +2,18 @@
 
 English · [Castellano](README.es.md)
 
-It adds to Claude Code (and to Codex, if you turn it on) the rules, guides and reviews that TYCON uses to build
-BIZUIT extensions (.NET and React).
-You ask for a change: Claude makes a plan, waits for your go-ahead, writes the code, runs the tests and readies the commit.
-Everything runs on your machine, inside Claude Code, and it sends your code nowhere.
+**A harness that makes Claude Code work with discipline** (and Codex, if you turn it on and approve its checks with `/hooks`). For a
+change, you and Claude write a story: the spec of what has to be done. Claude makes the plan, waits for your
+go-ahead, writes the code and the tests, and readies the commit.
+
+It does not rely on the model remembering the rules: its checks block, they do not just warn. In any repo it blocks
+destructive commands. With the full profile it also blocks touching code before you choose how the work is done (a
+story, or a small fix that you asked for, in your own words, and that gets logged), and closing a story that declares end-to-end or smoke
+tests without evidence that they were run.
+
+TYCON built it from real incidents, and it brings an optional pack for BIZUIT plugins (.NET, React and Next.js). Out of
+the box it runs on your machine. If you turn on the mailbox integration, each pipeline run, with its conversation and its
+changes, and the logs of the checks, are uploaded to your organization's storage.
 
 ## Before you install: what changes on your machine
 
