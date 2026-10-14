@@ -37,7 +37,7 @@ lee el arnés (los ejemplos están en `pipelines/operations/examples/` del arné
 |---|---|---|
 | `operations.json` | A quién se asignan los pedidos de trabajo y quiénes revisan los pull requests. Forma: `scripts/lib/operations-config.js` | Sí, para la revisión de dependencias |
 | `scripts/nightly/dependencies/repos.json` | Qué repos mira la revisión de dependencias (`ado`: `<proyecto>/<repo>`; `tipo`: `npm` o `nuget`) | Sí, para la revisión de dependencias |
-| `team-repos.json` | Opcional. Dónde vive cada repo del arnés de tu organización (forma: `scripts/lib/team-repos.js`). Si está, tiene que validar: con `operations.platform: github` los avisos de dependencias son issues de GitHub, no pedidos de trabajo | No |
+| `team-repos.json` | Opcional. Dónde vive cada repo del arnés de tu organización (forma: `scripts/lib/team-repos.js`). Si está, tiene que validar: con `operations.platform: github` los avisos de dependencias son issues de GitHub, no pedidos de trabajo; y si tu organización tiene copias del repo del arnés con stories, van en `harness_copies` (las métricas no las miden, salvo la de `maintainers` si está en la lista) | No |
 | `scripts/nightly/dashboard/sources.json` | Qué fuentes espera el tablero. Usá el ejemplo: el del arnés espera fuentes que tu organización no tiene | Sí, para el tablero |
 | `pipelines/stage-metrics.yml`, `pipelines/dependency-audit.yml`, `pipelines/team-dashboard.yml` | Copias de los tres modelos de esta carpeta | Sí |
 
@@ -89,8 +89,11 @@ Variables opcionales de cada definición (*Edit → Variables*):
 | Pipeline | Variable | Para qué |
 |---|---|---|
 | `stage-metrics` | `METRICS_PROJECTS` | Los proyectos a medir, separados por `;`. Vacía: todos los que la identidad puede ver |
-| `stage-metrics` | `HARNESS_COPIES`, `HARNESS_MEASURED_COPY` | Sólo si tu organización tiene copias del repo del arnés con stories: cuáles son y cuál cuenta |
 | `dependency-audit` | `TYCON_TELEGRAM_CHAT_ID` y `TELEGRAM_BOT_TOKEN` (secreta) | El resumen diario por Telegram. Sin el chat, no se manda |
+
+Las copias del repo del arnés ya no van en variables de la definición: van en `team-repos.json` (punto 2). Si tu
+definición de `stage-metrics` todavía tiene `HARNESS_COPIES` o `HARNESS_MEASURED_COPY`, borralas: la corrida lo avisa, y
+sale en rojo mientras `team-repos.json` no declare las copias.
 
 El tablero tiene un parámetro opcional, `mailboxConnection`: la conexión de servicio de Azure con lectura sobre un buzón
 de corridas, si tu organización junta los registros de las máquinas. Sin buzón, las fichas del equipo salen «no leído».

@@ -14,7 +14,8 @@
 //     "profile":     <repo>,            obligatorio — el perfil del equipo (este mismo repo)
 //     "operations":  <repo>,            obligatorio — el repo de operaciones de la organización (no se instala)
 //     "maintainers": <repo>,            opcional — el de mantenimiento, sólo para quien mantiene el arnés
-//     "harness_copies": [<repo>, …] }   opcional — los repos de la organización que son copias del arnés
+//     "harness_copies": [<repo>, …] }   opcional — los repos de la organización que son copias del arnés: las métricas
+//                                       de la noche no los miden, salvo el de `maintainers` si está en la lista
 //   <repo> = { "platform": "azure", "org", "project", "repo" } o { "platform": "github", "org", "repo" }.
 //   Las claves que empiezan con `__` son comentarios. Cualquier otra clave es un problema, en su propia ruta: así un
 //   nombre mal escrito no queda ignorado en silencio.
@@ -26,7 +27,16 @@
 // `data` es `null`: nunca hay datos a medias. `load(file)` suma `couldNotRead: true` cuando el archivo no se pudo leer:
 // «no pude leer» nunca es «no hay repo».
 //
+// LAS COPIAS DEL ARNÉS, PARA LAS MÉTRICAS (DEF-8.30-copias-del-arnes-en-team-repos · 2026-10-14, decisión del dueño):
+// antes las declaraba una variable de cada definición (`HARNESS_COPIES`, y `HARNESS_MEASURED_COPY` la que cuenta); ahora
+// las declara este archivo, como el resto de los repos: un lugar menos que configurar. `harnessCopies(data, platform)`
+// las da con la que se mide marcada: la de mantenimiento, si está en la lista —es donde se escriben las stories del
+// arnés—; las demás se saltean, así sus stories no cuentan dos veces. Sin clave nueva: la que cuenta ya está declarada.
+//
 // A mano: node scripts/lib/team-repos.js <archivo> [--json]   → exit 0 válido · 1 con problemas · 2 no pude leer
+//         node scripts/lib/team-repos.js <archivo> --harness-copies <azure|github>
+//             → una línea por copia de esa plataforma, `measure<TAB><id>` o `skip<TAB><id>` (`<proyecto>/<repo>` en Azure,
+//               `<org>/<repo>` en GitHub); los problemas, por la salida de errores. Mismos códigos de salida.
 
 const fs = require('fs');
 
@@ -116,6 +126,25 @@ function url(repo) {
   return null;
 }
 
+/** El id de un repo para comparar con lo que lista la organización: `<project>/<repo>` en Azure, `<org>/<repo>` en GitHub. */
+function repoId(repo) {
+  return repo.platform === 'azure' ? `${repo.project}/${repo.repo}` : `${repo.org}/${repo.repo}`;
+}
+
+/**
+ * Las copias del arnés de una plataforma, de un archivo ya validado: `[{ id, measured }]`. Se mide sólo la de
+ * mantenimiento (`maintainers`), si está en la lista; sin ella, ninguna. Las mayúsculas no distinguen (Azure y GitHub no
+ * las distinguen en los nombres).
+ */
+function harnessCopies(data, platform) {
+  if (!isObject(data) || !Array.isArray(data.harness_copies)) return [];
+  const full = (r) => REPO_KEYS[r.platform].map((k) => String(r[k]).toLowerCase()).join('/');
+  const m = isObject(data.maintainers) && PLATFORMS.includes(data.maintainers.platform) ? data.maintainers : null;
+  return data.harness_copies
+    .filter((r) => isObject(r) && r.platform === platform)
+    .map((r) => ({ id: repoId(r), measured: !!m && m.platform === r.platform && full(m) === full(r) }));
+}
+
 /** La referencia `<project>/_git/<repo>` del repo de mantenimiento (la que piden las validaciones), o null. */
 function privateRepoRef(data) {
   const m = data && data.maintainers;
@@ -123,14 +152,23 @@ function privateRepoRef(data) {
   return `${m.project}/_git/${m.repo}`;
 }
 
-module.exports = { VERSION, PLATFORMS, REPO_KEYS, KEYS, parse, load, url, privateRepoRef, repoProblems };
+module.exports = { VERSION, PLATFORMS, REPO_KEYS, KEYS, parse, load, url, privateRepoRef, repoProblems, harnessCopies };
 
 if (require.main === module) {
   const args = process.argv.slice(2);
-  const file = args.find((a) => !a.startsWith('--'));
-  if (!file) { process.stderr.write('uso: node scripts/lib/team-repos.js <team-repos.json> [--json]\n'); process.exit(2); }
+  const at = args.indexOf('--harness-copies');
+  const platform = at >= 0 ? args[at + 1] : null;
+  const file = args.find((a, i) => !a.startsWith('--') && !(at >= 0 && i === at + 1));
+  if (!file || (at >= 0 && !PLATFORMS.includes(platform))) {
+    process.stderr.write('uso: node scripts/lib/team-repos.js <team-repos.json> [--json | --harness-copies <azure|github>]\n');
+    process.exit(2);
+  }
   const r = load(file);
-  if (args.includes('--json')) process.stdout.write(`${JSON.stringify(r, null, 2)}\n`);
+  if (at >= 0) {
+    // para los pipelines: la lista por la salida, los problemas por la de errores (no se mezclan con la lista)
+    if (r.ok) for (const c of harnessCopies(r.data, platform)) process.stdout.write(`${c.measured ? 'measure' : 'skip'}\t${c.id}\n`);
+    else for (const p of r.problems) process.stderr.write(`❌ ${file} · ${p.path || '(el archivo)'}: ${p.message}\n`);
+  } else if (args.includes('--json')) process.stdout.write(`${JSON.stringify(r, null, 2)}\n`);
   else if (r.ok) process.stdout.write(`✅ ${file}: válido\n`);
   else for (const p of r.problems) process.stdout.write(`❌ ${p.path || '(el archivo)'}: ${p.message}\n`);
   process.exit(r.ok ? 0 : (r.couldNotRead ? 2 : 1));

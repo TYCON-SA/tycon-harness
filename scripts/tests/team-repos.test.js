@@ -113,6 +113,48 @@ test('TeamRepos_Url_AndPrivateRepoRef', () => {
   assert.strictEqual(TEAM.privateRepoRef(d), null);
 });
 
+test('TeamRepos_HarnessCopies_MeasuresOnlyMaintainers (DEF-8.30-copias-del-arnes-en-team-repos)', () => {
+  // EL CASO: las métricas de la noche sabían qué repos son copias del arnés por una variable de la definición
+  // (HARNESS_COPIES, y HARNESS_MEASURED_COPY la que cuenta). Ahora lo dice este archivo: de las copias se mide sólo la
+  // de mantenimiento, comparada sin mayúsculas y con su organización; las demás se saltean.
+  const d = goodTeam();
+  d.harness_copies = [azure('Old-Harness'), { ...azure('MAINTAINERS'), org: 'ACME' }, azure('maintainers', 'Other Project'), github('mirror')];
+  assert.deepStrictEqual(TEAM.harnessCopies(d, 'azure'), [
+    { id: 'Main Project/Old-Harness', measured: false },
+    { id: 'Main Project/MAINTAINERS', measured: true },
+    { id: 'Other Project/maintainers', measured: false },
+  ]);
+  assert.deepStrictEqual(TEAM.harnessCopies(d, 'github'), [{ id: 'acme/mirror', measured: false }], 'GitHub: <org>/<repo>, sólo las de esa plataforma');
+  // sin mantenimiento declarado, ninguna se mide; sin copias, la lista está vacía
+  delete d.maintainers;
+  assert.ok(TEAM.harnessCopies(d, 'azure').every((c) => !c.measured));
+  delete d.harness_copies;
+  assert.deepStrictEqual(TEAM.harnessCopies(d, 'azure'), []);
+  assert.deepStrictEqual(TEAM.harnessCopies(null, 'azure'), []);
+  // a mano (lo que corren los pipelines): la lista por la salida; con problemas, nada en la salida y el motivo aparte
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'team-repos-copies-'));
+  try {
+    const file = path.join(dir, 'team-repos.json');
+    fs.writeFileSync(file, JSON.stringify(goodTeam()));
+    const cli = (...a) => spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'lib', 'team-repos.js'), ...a], { encoding: 'utf8' });
+    let r = cli(file, '--harness-copies', 'azure');
+    assert.strictEqual(r.status, 0, r.stderr);
+    assert.strictEqual(r.stdout, 'skip\tMain Project/old-harness\nmeasure\tMain Project/maintainers\n');
+    r = cli('--harness-copies', 'github', file);
+    assert.strictEqual(r.status, 0, r.stderr);
+    assert.strictEqual(r.stdout, '', 'ninguna copia en GitHub');
+    fs.writeFileSync(file, JSON.stringify({ ...goodTeam(), harness_copies: [azure('')] }));
+    r = cli(file, '--harness-copies', 'azure');
+    assert.strictEqual(r.status, 1);
+    assert.strictEqual(r.stdout, '', 'con un problema no hay lista a medias');
+    assert.match(r.stderr, /harness_copies\.0\.repo/);
+    assert.strictEqual(cli(path.join(dir, 'no-such.json'), '--harness-copies', 'azure').status, 2, '«no pude leer» no es «no hay copias»');
+    assert.strictEqual(cli(file, '--harness-copies', 'gitlab').status, 2, 'una plataforma desconocida es un error de uso');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('OperationsConfig_Valid_AndOwnerFor', () => {
   const doc = { version: 1, owners: { default: 'lead@acme.example', by_project: { 'Project A': 'a@acme.example' } }, reviewers: { dependencies: ['r@acme.example'], watcher: [] } };
   const r = OPS.parse(JSON.stringify(doc));
