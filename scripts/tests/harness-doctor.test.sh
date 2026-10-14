@@ -171,7 +171,7 @@ case "$SALIDA" in *"2 copia"*".bak"*"no las gestiona"*|*".bak"*"2"*"no las gesti
 # registro y doctor remite a install (pase adversarial, iteración 2)
 # (los dos nombres del lugar, de su constante: story 8.19)
 PLACE_NAMES_RX="$(node -e 'const p=require(process.argv[1]); process.stdout.write(`(${p.LEGACY_PLACE_NAME}|${p.PLACE_NAME})`)' "$RAIZ/scripts/setup/harness/place.js")"
-{ grep -v -E "${PLACE_NAMES_RX}/README.md" "$CLAUDE_MD_PATH" || true; } > "$BASE/claude.md"   # sin otras líneas, grep -v sale 1
+{ grep -v -E "${PLACE_NAMES_RX}/(README|INDEX).md" "$CLAUDE_MD_PATH" || true; } > "$BASE/claude.md"   # sin otras líneas, grep -v sale 1
 cat "$BASE/claude.md" > "$CLAUDE_MD_PATH"
 harness apply >/dev/null 2>&1 || mal "T19 apply falló sin el @import"
 JSON="$(harness doctor --json 2>/dev/null)"
