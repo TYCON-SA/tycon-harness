@@ -13,7 +13,8 @@
 // ── CÓMO ─────────────────────────────────────────────────────────────────────�
 // Primero se COMPRUEBA sin escribir nada (AC 27): la máquina es un clon; `~/.tycon` está libre o es nuestro; la
 // configuración de la máquina se lee; la versión del canal se puede ubicar con la credencial (la ÚNICA red antes de
-// escribir es mirar, y después bajar); en Windows, nadie tiene tomados los archivos del estado. Con una falla sale 1 con una
+// escribir es mirar, y después bajar); en Windows, ningún programa tiene tomada una carpeta que la mudanza va a renombrar o
+// apartar (`renamedDirs`, también con `--dry-run`). Con una falla sale 1 con una
 // línea y la HOME queda idéntica (ni el registro se escribe). `--dry-run` imprime el plan y sale 0.
 // Después, con el candado tomado, la versión se baja y verifica en `incoming/` (eso se limpia solo si falla) y recién ahí
 // empieza el DIARIO (`~/.tycon/migrate.json`), antes del primer cambio. Las etapas, cada una idempotente (mira el disco antes
@@ -388,6 +389,59 @@ function profileFoldLine(f, newConfig) {
   return `  perfil del equipo: ${f.file} → ${newConfig}, como valores de la máquina (la versión bajada no trae el perfil): ${parts.join(' · ')}`;
 }
 
+// ── las carpetas tomadas (Windows) ───────────────────────────────────────────────────────────────────────────────
+// En Windows una carpeta con un archivo abierto por otro programa (VS Code, una terminal o una ventana del Explorador paradas
+// ahí, una sesión de Claude Code o Codex) no se puede renombrar: EPERM o EBUSY. La prueba miraba sólo el estado; la mudanza
+// de una máquina falló después, en la etapa de los enlaces, al apartar agent-skills (se deshizo bien, pero la persona se
+// enteró al correrla de verdad). Ahora se prueban, antes de escribir nada, TODAS las carpetas reales que las etapas renombran.
+
+/**
+ * Lo que las etapas van a renombrar o apartar, con la condición de cada una sobre `places()` y la clasificación de lo
+ * personal (la misma que guarda el diario y lee `stagePersonal`). Un enlace (una unión en Windows) no entra: la etapa lo
+ * saca o lo re-apunta, la carpeta real a la que apunta no se renombra. Sólo lee.
+ * @returns {string[]}
+ */
+function renamedDirs(p, personal) {
+  const out = [];
+  // stageStateMoved: el estado pasa a ~/.tycon/state (moveDir: un rename)
+  if (isRealDir(p.oldStateDir) && !lexists(p.newStateDir)) out.push(p.oldStateDir);
+  // stageLinks: agent-skills como carpeta real (el clon viejo de skills) se aparta con sello
+  if (isRealDir(p.skillsLink)) out.push(p.skillsLink);
+  // stagePersonal: lo personal real de la carpeta apartada se renombra a skills/ y agents/ de Claude Code (desde un clon
+  // viejo que vive aparte se ENLAZA, y un enlace se reescribe: ninguno de los dos renombra)
+  if (personal && personal.oldIsDir && !personal.oldIsSeparate && personal.source) {
+    for (const side of PERSONAL_SIDES) {
+      for (const name of (personal[side] && personal[side].personal) || []) {
+        const full = path.join(personal.source, side, name);
+        if (isRealDir(full)) out.push(full);
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * En Windows, prueba cada carpeta con un rename de ida y vuelta (atómico: nada cambia de lugar) y devuelve la línea que frena
+ * la mudanza, nombrando CADA carpeta tomada con su código; null si están todas libres o no es Windows. `rename` se inyecta en
+ * las pruebas (el rename trabado de Windows no se puede reproducir en otro sistema).
+ */
+function busyLine(ctx, dirs, { rename = fs.renameSync } = {}) {
+  if (ctx.platform !== 'win32') return null;
+  const busy = [], stuck = [];
+  for (const dir of dirs) {
+    const probe = `${dir}.probe-${process.pid}`;
+    try { rename(dir, probe); } catch (e) { busy.push(`${dir} (${e.code || e.message})`); continue; }
+    let back = null;
+    for (let i = 0; i < 3; i++) { try { rename(probe, dir); back = null; break; } catch (e) { back = e; } }
+    if (back) stuck.push(`${probe} (${back.code || back.message}): devolvele el nombre ${path.basename(dir)} a mano`);
+  }
+  if (!busy.length && !stuck.length) return null;
+  const parts = [];
+  if (busy.length) parts.push(`${busy.length === 1 ? 'una carpeta que la mudanza tiene que mover está tomada' : `${busy.length} carpetas que la mudanza tiene que mover están tomadas`} por otro programa: ${busy.join(' · ')}`);
+  if (stuck.length) parts.push(`la prueba no pudo devolver su nombre a ${stuck.join(' · ')}`);
+  return `${HEAD}: ${parts.join('; ')}${stuck.length ? '' : ' — no se movió nada'}. Cerrá VS Code, Claude Code, Codex, las terminales y las ventanas del Explorador paradas ahí y volvé a correr; si sigue, reiniciá Windows y corré la mudanza antes de abrir nada`;
+}
+
 // ── las precondiciones (AC 27): nada se escribe, ni el registro ─────────────────────────────────�
 
 /**
@@ -438,16 +492,11 @@ function preconditions(ctx, state, H) {
   const t = REL.resolveChannel(c, repo.repo, channel);
   if (t.status !== 'ok') return bad(`${HEAD}: ${t.reason}`);
   if (!t.version || !VO.isOrdered(t.version)) return bad(`${HEAD}: la punta de ${t.ref} (${sha7(t.commit)}) ${t.version ? `trae un número sin forma («${t.version}»)` : 'no trae version.json'}: no se muda a una versión sin número`);
-  // Windows: nadie con los archivos del lugar viejo tomados (una prueba de rename, atómica, y vuelta)
-  if (ctx.platform === 'win32' && isRealDir(p.oldStateDir)) {
-    const probe = `${p.oldStateDir}.probe-${process.pid}`;
-    try { fs.renameSync(p.oldStateDir, probe); fs.renameSync(probe, p.oldStateDir); } catch (e) {
-      if (lexists(probe) && !lexists(p.oldStateDir)) { try { fs.renameSync(probe, p.oldStateDir); } catch (_) { /* queda dicho */ } }
-      return bad(`${HEAD}: alguien tiene tomados los archivos de ${p.oldStateDir} (${e.code || e.message}): cerrá las sesiones de Claude Code y Codex y volvé a correr`);
-    }
-  }
   // lo personal de la carpeta vieja (tanda F, AC 40): se clasifica acá, sin escribir, para el plan y para el diario
   const personal = classifyPersonal({ home: ctx.home, oldSkillsDir: p.skillsLink, tree: state.tree, ownRoot: p.own.root });
+  // Windows: ninguna carpeta que la mudanza va a renombrar o apartar está tomada por otro programa (también con --dry-run)
+  const busy = busyLine(ctx, renamedDirs(p, personal));
+  if (busy) return bad(busy);
   // el perfil del equipo del clon (tanda G, AC 41): roto es una precondición fallida, nunca «sin perfil» (8.3 AC 2)
   let profile = profileFold({ ctx, oldTree: state.tree, ownConfigData, oldConfigData });
   if (profile.status === 'broken') return bad(`${HEAD}: el perfil del equipo del clon no se puede leer — ${profile.reason}: arreglalo antes de mudar (la mudanza pasa sus valores a ${p.newConfig})`);
@@ -1118,5 +1167,5 @@ function guardStatus({ root = '', env = process.env } = {}) {
 module.exports = {
   JOURNAL_NAME, STAGES, OWN_ENTRIES, migrate, repair, homeKey, dropOldHooks, guardStatus, planLines, preconditions, readJournal, journalPath,
   // sólo pruebas (scripts/tests/move-home.test.js): las etapas sueltas
-  __test: { places, configPending, stageConfigMoved, stageStateMoved, advance, undo, codexReapprovalNote, classifyPersonal, personalPlanLine, stagePersonal, PERSONAL_SIDES, profileFold, profileFoldLine, PROFILE_SKIP },
+  __test: { places, configPending, stageConfigMoved, stageStateMoved, advance, undo, codexReapprovalNote, classifyPersonal, personalPlanLine, stagePersonal, PERSONAL_SIDES, profileFold, profileFoldLine, PROFILE_SKIP, renamedDirs, busyLine },
 };

@@ -237,6 +237,13 @@ freno que molesta sin motivo es el que alguien termina apagando.
   cambian, el instalador se niega y lo dice — si el cambio es tuyo, `--change-origin` (vuelve a
   preguntar por teclado). Un `tycon.json` o perfil ilegible lo frena nombrando el archivo, no como
   «sin organización».
+- Desde una **versión bajada** (`~/.tycon/harness`, sin git), el instalador recalcula desde el disco cada archivo y el
+  árbol, y le pregunta a GitHub si ese árbol es el del commit que registra el estado. Ese commit tiene que ser **de
+  main**: la punta, o uno anterior cuyo freno (los archivos que se copian a `/opt`) sea byte a byte el de la punta. En
+  ese caso instala y avisa «hay una versión más nueva; actualizá cuando puedas». Frena con un commit de una rama o un
+  cambio local, con un freno que cambió en la punta (una versión vieja también verifica contra GitHub, y el asistente la
+  puede bajar), y cuando GitHub no contesta o contesta un error, también el 403 del límite de consultas. Hasta el
+  2026-10-14 exigía la punta exacta, y un día de 30 publicaciones no dejaba instalarlo.
 - Contra qué compara el aviso de arranque: en un clon, contra lo publicado (`origin/main`) y su historia. En una
   máquina que corre una **versión bajada** (`~/.tycon/harness`, sin git), contra esa versión —su manifiesto— y contra
   la constancia que el instalador deja de root en `/opt/tycon/production/installed-files.json`: igual a la versión que
