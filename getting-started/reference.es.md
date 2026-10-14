@@ -227,8 +227,10 @@ El paquete opcional es el paquete del stack de TYCON: .NET + React/Next.js sobre
 `bizuit`. Son las convenciones con que TYCON desarrolla plugins sobre Bizuit; no es un producto de Bizuit.
 
 **Qué agrega**: tres revisores (`tycon-plugin-dotnet-conventions`, `tycon-plugin-react-conventions`,
-`tycon-plugin-nextjs-conventions`), sus guías y sus casos en el banco de controles. **Qué pide además**: el SDK de .NET
-de tu plugin.
+`tycon-plugin-nextjs-conventions`), sus guías y sus casos en el banco de controles, y la skill `bizuit-new-product`, que
+da de alta un producto nuevo (los repos de backend, formularios e historias, con pipelines que compilan, prueban y
+despliegan a staging y, con aprobación, a producción) desde las plantillas de `packs/bizuit/new-product-templates/`.
+**Qué pide además**: el SDK de .NET de tu plugin.
 
 **Viene apagado.** El repo lo trae, pero un repo de producto sólo lo usa si lo pide en su `.tycon/advisors.yaml` con
 `packs: [bizuit]`, o si tu máquina lo prende para todos los repos (`TYCON_PACKS_DEFAULT=all`, o `packs.default` en

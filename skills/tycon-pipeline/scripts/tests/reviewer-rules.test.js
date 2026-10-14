@@ -286,7 +286,7 @@ test('T7 Advisors_EstadoEnElJson — presente con bytes / ausente, y el set de r
 // ── T8: las definiciones de los revisores ───────────────────────────────────────────────────
 
 const EXCEPTUADOS = ['tycon-dod-runtime-checker', 'tycon-retrospective-capturer'];
-const { SKIP_PUBLIC, CLIENT_PACK_REVIEWER_COUNT, absentReviewers } = require('./lib/public-copy.js');
+const { SKIP_PUBLIC, clientPackReviewers, absentReviewers } = require('./lib/public-copy.js');
 
 function frontmatter(md) {
   const m = md.match(/^---\n([\s\S]*?)\n---/);
@@ -299,31 +299,32 @@ function frontmatter(md) {
   return out;
 }
 
-test('T8 Agentes_OmitClaudeMd_Decidido — 26 con el campo, exactamente dos exceptuados por nombre, límites en los 5 con Bash', (t) => {
+test('T8 Agentes_OmitClaudeMd_Decidido — 24 del núcleo con el campo (más los del paquete de clientes), exactamente dos exceptuados por nombre, límites en los que tienen Bash', (t) => {
   const defs = fs.readdirSync(AGENTS).filter((f) => f.endsWith('.md')).map((f) => {
     const md = fs.readFileSync(path.join(AGENTS, f), 'utf8');
     return { file: f, md, fm: frontmatter(md) };
   });
-  // Story 8.7 (tanda B): la copia pública sale sin las definiciones de los dos revisores del paquete de clientes. Los
-  // números de este caso se descuentan SÓLO por los que esa copia no trae, y se dice. En el repo del equipo no se
-  // descuenta nada y valen los de siempre (28, 26 y los 5 con Bash): que falte uno ahí es un rojo. (Story 8.10.3 D: sin
-  // sus nombres escritos — la copia sale siempre sin los revisores de ese paquete, y al que no viaja se lo reconoce
-  // porque le falta su definición.)
-  const ausentes = SKIP_PUBLIC ? CLIENT_PACK_REVIEWER_COUNT : 0;
+  // Story 8.7 (tanda B): la copia pública sale sin las definiciones de los revisores del paquete de clientes. Los números
+  // de este caso son los del núcleo (26 definiciones, 24 con el campo), que valen en los dos lados; en el repo del equipo
+  // se les suman los revisores que declara el manifiesto de ese paquete, leídos de él y no escritos acá (antes era un 2
+  // fijo, y sacar un revisor de ese paquete ponía rojo este caso). Que falte la definición de uno de ellos en el repo del
+  // equipo es un rojo. (Story 8.10.3 D: sin sus nombres escritos — al que no viaja se lo reconoce porque le falta su
+  // definición.)
+  const deClientes = clientPackReviewers();
   const CON_BASH = [
     'tycon-feature-wiring-checker', 'tycon-plugin-dotnet-conventions', 'tycon-sibling-pattern-reviewer',
     'tycon-signed-scope-audit', 'tycon-silent-failure-hunter',
   ];
   const noViajan = absentReviewers(CON_BASH);
-  if (ausentes) {
-    t.diagnostic(`NO MEDIDO: los ${ausentes} revisores del paquete de clientes (${SKIP_PUBLIC}) — se descuentan de las 28 definiciones, de las 26 con el campo y de los 5 con Bash${noViajan.length ? ` (${noViajan.join(' y ')})` : ''}; se miden en el repo del equipo`);
+  if (SKIP_PUBLIC) {
+    t.diagnostic(`NO MEDIDO: los revisores del paquete de clientes (${SKIP_PUBLIC}) — no están entre las definiciones ni entre los que tienen Bash${noViajan.length ? ` (${noViajan.join(' y ')})` : ''}; se miden en el repo del equipo`);
   }
-  assert.equal(defs.length, 28 - ausentes, `hay ${28 - ausentes} definiciones`);
+  assert.equal(defs.length, 26 + deClientes.length, `hay ${26 + deClientes.length} definiciones (26 del núcleo + ${deClientes.length} del paquete de clientes)`);
   const con = defs.filter((d) => d.fm.omitClaudeMd === 'true').map((d) => d.fm.name);
   const sin = defs.filter((d) => d.fm.omitClaudeMd !== 'true').map((d) => d.fm.name).sort();
   assert.deepEqual(sin, EXCEPTUADOS,
     `sólo los exceptuados van sin omitClaudeMd; sin decidir: ${sin.filter((n) => !EXCEPTUADOS.includes(n)).join(', ')}`);
-  assert.equal(con.length, 26 - ausentes);
+  assert.equal(con.length, 24 + deClientes.length);
   const conBash = defs.filter((d) => d.fm.omitClaudeMd === 'true' && /\bBash\b/.test(d.fm.tools || ''));
   assert.deepEqual(conBash.map((d) => d.fm.name).sort(), CON_BASH.filter((n) => !noViajan.includes(n)));
   for (const d of conBash) {

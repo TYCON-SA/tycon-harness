@@ -122,6 +122,27 @@
 // tres veces (acá, en unpushed-work-notice.js y en lib/story-gate.js de agent-skills), las tres por
 // carpeta. Casos: 14-retro-pending.json (`quiet-clon-del-arnes-…`,
 // `registra-repo-de-producto-debajo-…`) y scripts/tests/harness-repo.test.sh.
+// 🔴 LOS REPOS DE LABORATORIO (2026-10-14). Una sesión armó un repo de juguete en su carpeta de trabajo temporal
+// (`/private/tmp/…/scratchpad/…`, con `.tycon/` y `origin` a un repo de PRUEBA en GitHub) para probar una story, empujó
+// tres veces a main, y el cierre del turno quedó frenado por tres «merges sin retrospectiva» que ninguna retrospectiva
+// tenía sentido escribir. Ahora un push a main desde un repo de laboratorio NO se anota, y SE DICE (stderr, exit 2,
+// con el comando del latido por si era de verdad); el freno y el aviso de arranque tampoco reclaman las entradas viejas
+// de un repo que sigue en pie y es de laboratorio. Un repo es de laboratorio si cumple LAS DOS:
+//   1. vive en una carpeta temporal: la del sistema (`os.tmpdir()`, TMPDIR/TEMP/TMP) o las de siempre de un Unix
+//      (`/tmp`, `/var/tmp`, `/var/folders`, y sus `/private/…` en Mac) — ahí van también las carpetas de trabajo de las
+//      sesiones. Nunca el HOME ni algo que lo contenga, aunque una variable lo nombre. `TYCON_RETRO_LAB_DIRS` (carpetas
+//      separadas por el separador de rutas del sistema) REEMPLAZA esa lista; puesta y vacía, no hay ninguna (las suites
+//      que arman sus repos en el temporal la usan para medirlos como repos de verdad);
+//   2. y su `origin` no lleva a un repo de verdad: no tiene `origin`; o lo tiene, pero ninguna copia de trabajo
+//      FUERA de las carpetas temporales, bajo la raíz de repos (scripts/lib/repos-root.js), tiene ese mismo remoto.
+// Lo que NO es laboratorio aunque viva en el temporal — el cuidado de la regla: el clon descartable de un repo de
+// verdad. Si su `origin` es una ruta, se sigue (harness-repo.js) y basta que la cadena salga de las temporales; si es
+// un remoto, basta que haya una copia de trabajo de ese mismo remoto bajo la raíz de repos. Y la duda va hacia más
+// control: sin raíz de repos, sin repos-root.js al lado (una copia suelta de este archivo), con un remoto que no se
+// sabe leer o con una cadena de clones que pasa el tope, se anota como siempre. Límites declarados: un repo de verdad
+// que sólo existe en el temporal (sin copia de trabajo afuera) cuenta como laboratorio, y por eso se dice en cada push;
+// la cuenta de `--report` no separa las entradas viejas de laboratorio. Casos: 14-retro-pending.json
+// (`quiet-…-laboratorio…`, `registra-clon-descartable-…`, `deja-parar-…-laboratorio`).
 // Off: TYCON_RETRO_PENDING=0. Fail-open total: nunca rompe un push, un stop ni un arranque.
 const fs = require('fs');
 const os = require('os');
@@ -149,7 +170,7 @@ const GIT_PUSH = destinoGit.regexDeGit(destinoGit.VERBOS_QUE_PUBLICAN);
 // Quién es un repo DEL arnés (2026-09-17): lo dice el remoto `origin`, no la carpeta. Criterio ÚNICO,
 // compartido con unpushed-work-notice.js y con el portón de carril de agent-skills — estaba escrito
 // tres veces, las tres por nombre de carpeta. Copiado al sandbox del banco junto con el hook (setups).
-const { esRepoDelArnes, juzgarRepo, identidadRemoto } = require(path.join(__dirname, '..', 'lib', 'harness-repo.js'));
+const { esRepoDelArnes, juzgarRepo, identidadRemoto, resolverRemoto, mismaIdentidad } = require(path.join(__dirname, '..', 'lib', 'harness-repo.js'));
 // El cuerpo de un heredoc que NO va a un shell es TEXTO, no comandos (2026-09-17). Caso real de ese
 // día: un `node - <<'EOF'` cuyo cuerpo traía, dentro de un string, `cd ${dir} && … && git push -q origin
 // main`. El recorrido por sentencias corta por `&&` sin mirar dónde está, así que vio un `cd` a una
@@ -296,6 +317,9 @@ function pendingEntries() {
     if (seen.has(key)) continue;
     seen.add(key);
     if (coveredByMetrics(e)) continue;
+    // Una entrada vieja de un repo de laboratorio que sigue en pie no se reclama (cabecera). Si la carpeta ya no está,
+    // no se puede juzgar: se reclama como siempre.
+    if (fs.existsSync(e.repoPath) && juzgarLaboratorio(e.repoPath).laboratorio) continue;
     out.push(e);
   }
   return out;
@@ -323,6 +347,110 @@ function contarVentana(dias) {
 function launchHint(e) {
   return `node "${LATIDO}" --repo "${e.repoPath}" --merge ${e.sha} [--story <id> si el merge cierra una story]`;
 }
+
+// ── ¿repo de laboratorio? (2026-10-14, «LOS REPOS DE LABORATORIO» en la cabecera) ──────────────
+const ENV_LAB_DIRS = 'TYCON_RETRO_LAB_DIRS';
+const CENSO_PROFUNDIDAD = 4;          // ~/repos/Producto/Backend/src: alcanza para las copias de trabajo del equipo
+const CENSO_TOPE = 4000;              // carpetas miradas como mucho: la raíz de repos de una máquina no se recorre entera
+const CENSO_SALTEA = new Set(['node_modules', 'bin', 'obj', 'dist', 'build', 'vendor', 'packages']);
+// En Mac y Windows el disco no distingue mayúsculas: `/TMP/x` y `/tmp/x` son la misma carpeta.
+const caja = (p) => (process.platform === 'win32' || process.platform === 'darwin' ? String(p).toLowerCase() : String(p));
+let temporalesMemo = null;
+function carpetasTemporales() {
+  if (temporalesMemo) return temporalesMemo;
+  const declaradas = process.env[ENV_LAB_DIRS];
+  const crudas = declaradas !== undefined
+    ? String(declaradas).split(path.delimiter)
+    : [os.tmpdir(), process.env.TMPDIR, process.env.TEMP, process.env.TMP,
+      ...(process.platform === 'win32' ? [] : ['/tmp', '/var/tmp', '/var/folders', '/private/tmp', '/private/var/tmp', '/private/var/folders'])];
+  const casa = caja(real(os.homedir()));
+  const out = [];
+  for (const c of crudas) {
+    const t = String(c || '').trim();
+    if (!t || !path.isAbsolute(t) || !fs.existsSync(t)) continue;
+    const r = real(t);
+    // nunca el HOME ni algo que lo contenga (`/`, `/Users`): una variable mal puesta volvería laboratorio a todo
+    if (underOrEqual(casa, caja(r))) continue;
+    if (!out.includes(r)) out.push(r);
+  }
+  return (temporalesMemo = out);
+}
+function enTemporal(p) {
+  const r = caja(real(p));
+  return carpetasTemporales().some((t) => underOrEqual(r, caja(t)));
+}
+/** El `origin` de una copia de trabajo, leído de su .git/config (sin lanzar git: el censo mira decenas). */
+function origenDeCopia(dir) {
+  const dotgit = path.join(dir, '.git');
+  let st;
+  try { st = fs.statSync(dotgit); } catch { return null; }
+  if (!st.isDirectory()) return git(dir, ['remote', 'get-url', 'origin']) || null;   // un worktree o un submódulo
+  let texto = '';
+  try { texto = fs.readFileSync(path.join(dotgit, 'config'), 'utf8'); } catch { return null; }
+  let enOrigin = false;
+  for (const linea of texto.split(/\r?\n/)) {
+    const sec = linea.match(/^\s*\[\s*([^\]]+?)\s*\]/);
+    if (sec) { enOrigin = /^remote\s+"origin"$/.test(sec[1]); continue; }
+    const m = enOrigin && linea.match(/^\s*url\s*=\s*(.+?)\s*$/);
+    if (m) return m[1];
+  }
+  return null;
+}
+let censoMemo = null;
+/** Las copias de trabajo bajo la raíz de repos, FUERA de las temporales, con la identidad de su `origin`. */
+function copiasDeTrabajo() {
+  if (censoMemo) return censoMemo;
+  const out = { raiz: null, motivo: '', copias: [] };
+  const lib = path.join(__dirname, '..', 'lib', 'repos-root.js');
+  if (!fs.existsSync(lib)) { out.motivo = 'sin repos-root.js al lado'; return (censoMemo = out); }
+  let raiz = null;
+  try { raiz = require(lib).resolveReposRoot().root; } catch (e) { out.motivo = `la raíz de repos no se pudo leer (${(e && e.message) || e})`; return (censoMemo = out); }
+  if (!raiz || !fs.existsSync(raiz)) { out.motivo = 'sin raíz de repos'; return (censoMemo = out); }
+  out.raiz = raiz;
+  const cola = [[raiz, 0]];
+  let vistas = 0;
+  while (cola.length && vistas < CENSO_TOPE) {
+    const [dir, nivel] = cola.shift();
+    vistas++;
+    if (enTemporal(dir)) continue;
+    if (fs.existsSync(path.join(dir, '.git'))) {
+      const id = identidadRemoto(origenDeCopia(dir) || '');
+      if (id) out.copias.push({ dir, id });
+      continue;   // adentro de una copia no se buscan otras
+    }
+    if (nivel >= CENSO_PROFUNDIDAD) continue;
+    let hijos = [];
+    try { hijos = fs.readdirSync(dir, { withFileTypes: true }); } catch { continue; }
+    for (const h of hijos) {
+      if (h.isDirectory() && !h.name.startsWith('.') && !CENSO_SALTEA.has(h.name)) cola.push([path.join(dir, h.name), nivel + 1]);
+    }
+  }
+  if (cola.length) out.motivo = `censo cortado en ${CENSO_TOPE} carpetas`;
+  return (censoMemo = out);
+}
+const laboratorioMemo = new Map();
+/** ¿El repo es de laboratorio? `{ laboratorio, por, ... }` — el criterio, en la cabecera. Ante la duda, `false`. */
+function juzgarLaboratorio(root) {
+  const k = real(root);
+  if (laboratorioMemo.has(k)) return laboratorioMemo.get(k);
+  const juicio = (() => {
+    if (!enTemporal(root)) return { laboratorio: false, por: 'fuera-de-las-temporales' };
+    const rem = resolverRemoto(root);
+    // un clon de una copia de trabajo de afuera (su `origin` es una ruta que sale de las temporales): repo de verdad
+    if (rem.dir && !enTemporal(rem.dir)) return { laboratorio: false, por: 'clon-de-una-copia-de-afuera', copia: rem.dir };
+    if (!rem.id) return rem.por === 'sin-origin' ? { laboratorio: true, por: 'sin-remoto' } : { laboratorio: false, por: rem.por };
+    const censo = copiasDeTrabajo();
+    if (!censo.raiz) return { laboratorio: false, por: 'sin-raiz-de-repos', motivo: censo.motivo };
+    const igual = censo.copias.find((c) => mismaIdentidad(c.id, rem.id));
+    if (igual) return { laboratorio: false, por: 'mismo-remoto-que-una-copia-de-afuera', copia: igual.dir };
+    // un censo cortado no vio todo: no se puede decir que no hay copia afuera
+    if (censo.motivo) return { laboratorio: false, por: 'censo-incompleto', motivo: censo.motivo };
+    return { laboratorio: true, por: 'remoto-sin-copia-fuera-de-las-temporales', raiz: censo.raiz };
+  })();
+  laboratorioMemo.set(k, juicio);
+  return juicio;
+}
+const laboratoriosVistos = [];
 
 // ── record ─────────────────────────────────────────────────────────────────────────────────────
 function record(event) {
@@ -413,7 +541,11 @@ function record(event) {
     process.stderr.write(`retro-pending: no pude resolver a qué repo fue ${que} — NO lo registro contra este repo: sería una atribución falsa. Si fue un merge a main, corré el latido nombrando el repo y el merge: node "${LATIDO}" --repo <repo> --merge <sha>.\n`);
     process.exit(2);
   }
-  if (!anotadas.length) return;
+  const labLineas = laboratoriosVistos.map((l) => `retro-pending: push a main desde un repo de LABORATORIO (${l.root}: vive en una carpeta temporal y ${l.por === 'sin-remoto' ? 'no tiene origin' : 'ninguna copia de trabajo fuera de las temporales tiene su remoto'}) — NO lo registro. Si era un merge de verdad, corré el latido: node "${LATIDO}" --repo "${l.root}" --merge ${l.sha || '<sha>'}`);
+  if (!anotadas.length) {
+    if (labLineas.length) { process.stderr.write(labLineas.join('\n') + '\n'); process.exit(2); }
+    return;
+  }
   // stderr + exit 2, no stdout (2026-08-27): en PostToolUse el stdout va SOLO al debug log — el
   // agente jamás lo veía. Canal documentado que sí llega al modelo: stderr con exit 2 (la
   // herramienta ya corrió; no bloquea nada, sólo hace visible el aviso). Mismo arreglo que
@@ -429,6 +561,7 @@ function record(event) {
     const lista = (e.archivos || []).slice(0, 5).join(', ') + ((e.archivos || []).length > 5 ? ` +${e.archivos.length - 5}` : '');
     lineas.push(`retro-pending: push a ${e.branch} EXENTO de retrospectiva (${fmt(e)}; sólo tests/docs: ${lista}). Queda contado en el ledger; NO lances el latido ni el agente por este push.`);
   }
+  lineas.push(...labLineas);
   process.stderr.write(lineas.join('\n') + '\n');
   process.exit(2);
 }
@@ -546,6 +679,9 @@ function anotar(event, cmd, punto, ctx) {
   const mentionsMain = /\bpush\b[^|;&\n]*(?:[\s:"']|refs\/heads\/)(main|master)(?=$|[\s;&|"'])/.test(st);
   const onMain = /^(main|master)$/.test(branch) && !/\bpush\b[^|;&\n]*\b(dev|develop|feat|feature|fix|hotfix|release)\b/.test(st);
   if (!ctx.isPrCreate && !mentionsMain && !onMain) return null;
+  // Un repo de laboratorio no debe retrospectiva: no se anota, y `record` lo dice (cabecera, «LOS REPOS DE LABORATORIO»).
+  const lab = juzgarLaboratorio(root);
+  if (lab.laboratorio) { laboratoriosVistos.push({ root, sha: git(root, ['rev-parse', 'HEAD']).slice(0, 12), ...lab }); return null; }
   const target = ctx.prTarget === 'master' || (!ctx.isPrCreate && (/\bmaster\b/.test(st) || branch === 'master')) ? 'master' : 'main';
   // Qué trajo el push (2026-09-16, "EL BUCLE" y "LA RETRO QUE NO APORTA NADA" en la cabecera). Se decide
   // sobre el repo al que se empujó, antes de leer la sha. Sólo para pushes: en el modo PR el merge lo
@@ -801,10 +937,11 @@ function main() {
     // del arnés no lo anota nunca. Se dice, con de dónde salió el dato; `exento` no cambia (sigue hablando
     // sólo de lo que trajo el push) y qué hacer con un merge del arnés lo sigue decidiendo quien pregunta.
     const arnes = juzgarRepo(root);
+    const lab = juzgarLaboratorio(root);
     const juicio = juzgarPush(root, target);
-    // `registraria`: ¿este hook dejaría una entrada por ese push? No, si el repo es del arnés o si todo
+    // `registraria`: ¿este hook dejaría una entrada por ese push? No, si el repo es del arnés o de laboratorio, o si todo
     // lo que trajo es salida de una retrospectiva (una entrada exenta también es una entrada).
-    process.stdout.write(JSON.stringify({ repo: root, target, arnes: arnes.arnes, arnes_por: arnes.por, registraria: !arnes.arnes && !juicio.retro, ...juicio }, null, 2) + '\n');
+    process.stdout.write(JSON.stringify({ repo: root, target, arnes: arnes.arnes, arnes_por: arnes.por, laboratorio: lab.laboratorio, laboratorio_por: lab.por, registraria: !arnes.arnes && !lab.laboratorio && !juicio.retro, ...juicio }, null, 2) + '\n');
     return;
   }
   let event = {};

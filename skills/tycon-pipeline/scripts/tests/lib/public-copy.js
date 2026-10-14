@@ -31,8 +31,16 @@ const CLIENT_PACK = path.join(PACKS_DIR, 'clients', 'pack.json');
 /** `false` en el repo del equipo; en la copia pública, el motivo (sirve tal cual de mensaje para `t.skip`). */
 const SKIP_PUBLIC = !fs.existsSync(CLIENT_PACK) && 'copia pública: sin el paquete de clientes';
 
-/** Cuántos revisores trae el paquete de clientes: la copia sale sin el manifiesto y sin la definición de cada uno. */
-const CLIENT_PACK_REVIEWER_COUNT = 2;
+/**
+ * Los revisores que declara el paquete de clientes, leídos de su manifiesto (sin repetir y ordenados); `[]` en la copia
+ * pública, que sale sin él. Antes era un número escrito acá (2): el público contaba a mano lo que el repo del equipo
+ * tiene, y sacar un revisor de ese paquete ponía rojas tres suites del público. Ahora el público cuenta sólo lo suyo y
+ * suma lo que el manifiesto del equipo declare, sea lo que sea.
+ */
+function clientPackReviewers() {
+  if (SKIP_PUBLIC) return [];
+  return [...new Set((JSON.parse(fs.readFileSync(CLIENT_PACK, 'utf8')).reviewers || []).map((r) => r.agent))].sort();
+}
 
 /**
  * Los revisores que declaran los manifiestos instalados (`packs/<paquete>/pack.json`), sin repetir y ordenados.
@@ -57,4 +65,4 @@ function absentReviewers(names) {
   return names.filter((name) => !fs.existsSync(path.join(AGENTS_DIR, `${name}.md`)));
 }
 
-module.exports = { SKIP_PUBLIC, CLIENT_PACK_REVIEWER_COUNT, packReviewers, absentReviewers };
+module.exports = { SKIP_PUBLIC, CLIENT_PACK, clientPackReviewers, packReviewers, absentReviewers };
