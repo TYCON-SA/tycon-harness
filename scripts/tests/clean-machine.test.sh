@@ -710,7 +710,7 @@ lab_git() {
 }
 # fake_public_repo <carpeta> — un repo público de mentira (skills/, agents/, la portada) con un commit
 fake_public_repo() {
-  mkdir -p "$1/skills" "$1/agents" "$1/.github" "$1/getting-started" && printf '# portada de mentira\n' > "$1/.github/README.md" \
+  mkdir -p "$1/skills" "$1/agents" "$1/getting-started" && printf '# portada de mentira\n' > "$1/README.md" \
     && printf '# referencia de mentira\n' > "$1/getting-started/reference.md" \
     && lab_git -C "$1" init -q && lab_git -C "$1" add -A && lab_git -C "$1" commit -q -m lab
 }
@@ -882,12 +882,12 @@ elif [ -n "${SOURCE}" ]; then
   [ "$(cd "$(git -C "${SOURCE}" rev-parse --show-toplevel 2>/dev/null || echo /nonexistent)" 2>/dev/null && pwd -P)" = "${SOURCE}" ] \
     || unable "TYCON_CLEAN_MACHINE_SOURCE no es la raíz de un repo git: ${SOURCE}"
   git -C "${SOURCE}" rev-parse --verify --quiet 'HEAD^{commit}' >/dev/null || unable "el repo de TYCON_CLEAN_MACHINE_SOURCE no tiene ningún commit: ${SOURCE}"
-  for need in skills agents .github/README.md getting-started/reference.md; do
+  for need in skills agents README.md getting-started/reference.md; do
     [ -e "${SOURCE}/${need}" ] || unable "TYCON_CLEAN_MACHINE_SOURCE no es el repo público (le falta ${need}): ${SOURCE}"
   done
 else
   MODE=internal
-  for need in scripts/publishing/export.js scripts/publishing/allowlist.json scripts/publishing/replacements.json scripts/publishing/public-files/.github/README.md; do
+  for need in scripts/publishing/export.js scripts/publishing/allowlist.json scripts/publishing/replacements.json scripts/publishing/public-files/LICENSE; do
     [ -e "${ROOT}/${need}" ] || unable "modo interno sin exportador (falta ${need}): en el repo público va con TYCON_CLEAN_MACHINE_SOURCE=<raíz>"
   done
   # «No pude mirar» no es «no hay»: si la biblioteca tira (su vecina está y no carga), se dice la causa; no se lee como

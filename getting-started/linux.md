@@ -67,7 +67,7 @@ Bajar el propio guion va siempre sin credencial: si el 403 fue ahí, sólo queda
 6. Verificar (tres comandos):
    node ~/.claude/tycon-harness/scripts/setup/harness.js doctor
    ls -d ~/.claude/skills/*/ | wc -l
-   grep -c "README.md" ~/.claude/CLAUDE.md
+   grep -c "INDEX.md" ~/.claude/CLAUDE.md
    Esperado: doctor dice «perfil: full» (o «perfil: minimal» si pedí el mínimo) y cierra con «todo en orden» (o «N aviso(s), nada en rojo»); más de 40; 1.
 
 7. Armame UN solo bloque de texto, para guardarlo o para pedir ayuda, con la salida de los pasos 1, 2 y 4 (el final), y

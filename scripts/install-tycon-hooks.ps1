@@ -808,6 +808,16 @@ if (Test-Path $syncBlocks) {
     try { if ($Check) { & $syncBlocks -Check } else { & $syncBlocks } } catch { }
 }
 
+# La línea de ~/.claude/CLAUDE.md que carga el índice de guías: desde 2026-10-14 el índice es INDEX.md y README.md es la
+# portada. Este aplicador es el del árbol NUEVO aunque la actualización la haya decidido el programa instalado antes, así
+# que la misma actualización deja la línea nueva (la vieja, reescrita en su lugar; nunca dos). No la agrega si no está:
+# eso es de harness.js. Fail-open: si no puede, la reescribe el próximo arranque. Detalle: setup/harness/import-line.js.
+$importLineJs = Join-Path (Join-Path (Join-Path $PSScriptRoot 'setup') 'harness') 'import-line.js'
+if ((Test-Path $importLineJs) -and (Get-Command node -ErrorAction SilentlyContinue)) {
+    $ilArgs = @('--fix', '--quiet'); if ($Check) { $ilArgs += '--check' }
+    try { & node $importLineJs @ilArgs 2>$null } catch { }
+}
+
 # ============================================================
 # Versión de engram vs el pin del equipo (2026-07-25). AVISA, nunca actualiza.
 # Ver el header de check-engram-version.sh. Opt-out: TYCON_NO_ENGRAM_VERSION_CHECK=1.

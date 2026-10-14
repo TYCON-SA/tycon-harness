@@ -118,7 +118,7 @@
           ]
         },
         {
-          "text": "(Select-String -Path \"$env:USERPROFILE\\.claude\\CLAUDE.md\" -Pattern \"README.md\").Count",
+          "text": "(Select-String -Path \"$env:USERPROFILE\\.claude\\CLAUDE.md\" -Pattern \"INDEX.md\").Count",
           "expect": [
             { "kind": "equals", "value": 1, "what": "un solo import de las guías" }
           ]

@@ -193,7 +193,7 @@ if corre T23; then
   ! hay "TYCON_BLOCK:$BLOCK_V2" "$CLAUDE_MD_PATH" && ok "T23 bloques como en v1: el bloque de v2 salió" || mal "T23 el bloque de v2 sigue: $(cat "$CLAUDE_MD_PATH")"
   hay 'Bash(lab-manual:\*)' "$TYCON_SETTINGS_PATH" && hay 'línea a mano del dev' "$CLAUDE_MD_PATH" \
     && ok "T23 el permiso y la línea a mano siguen" || mal "T23 se perdió lo de a mano: settings=$(hay lab-manual "$TYCON_SETTINGS_PATH" && echo sí || echo no) CLAUDE.md=$(hay 'a mano' "$CLAUDE_MD_PATH" && echo sí || echo no)"
-  hay '@~/.claude/tycon-harness/README.md' "$CLAUDE_MD_PATH" && ok "T23 el @import (pieza propia de harness.js, por el lugar desde la story 8.19) no se tocó" || mal "T23 se fue el @import: $(cat "$CLAUDE_MD_PATH")"
+  hay '@~/.claude/tycon-harness/INDEX.md' "$CLAUDE_MD_PATH" && ok "T23 el @import (pieza propia de harness.js, por el lugar desde la story 8.19) no se tocó" || mal "T23 se fue el @import: $(cat "$CLAUDE_MD_PATH")"
   [ "$(head_de "$LAB_TREE")" = "$T1" ] && [ "$(head_de "$LAB_SKILLS")" = "$S1" ] && ok "T23 los dos árboles en v1" || mal "T23 árboles: tree $(head_de "$LAB_TREE") (v1 $T1) skills $(head_de "$LAB_SKILLS") (v1 $S1)"
   [ "$(rama_de "$LAB_TREE")" = main ] && [ "$(rama_de "$LAB_SKILLS")" = main ] && ok "T23 …en main, no en un HEAD suelto" || mal "T23 ramas: $(rama_de "$LAB_TREE") / $(rama_de "$LAB_SKILLS")"
   [ "$(estado "d['version']['number']")" = "$V1" ] && ok "T23 estado: version = v1 ($V1)" || mal "T23 version $(estado "d['version']['number']") (v1 $V1)"
@@ -238,7 +238,7 @@ if corre T23b; then
 import json, sys, re
 md, st, legacy = sys.argv[1], sys.argv[2], sys.argv[3]
 t = open(md, encoding='utf-8').read()
-t = re.sub(r'^@~/\.claude/[^/\n]+/README\.md$', legacy, t, flags=re.M)
+t = re.sub(r'^@~/\.claude/[^/\n]+/(?:README|INDEX)\.md$', legacy, t, flags=re.M)
 open(md, 'w', encoding='utf-8').write(t)
 d = json.load(open(st, encoding='utf-8'))
 for p in d.get('managed', []):
@@ -252,11 +252,11 @@ PY
   case "$SALIDA" in *"quitada"*"README.md"*) mal "T23b rollback dijo que quitó el import: $SALIDA" ;; *) ok "T23b …y no lo anunció como pieza quitada" ;; esac
   # sin ninguna línea de import, el arranque siguiente la repone
   # sin ninguna línea de import (el archivo puede quedar vacío: grep -v sale 1 y el mv va igual)
-  grep -v '/README.md' "$CLAUDE_MD_PATH" > "$CLAUDE_MD_PATH.tmp"; mv "$CLAUDE_MD_PATH.tmp" "$CLAUDE_MD_PATH"
-  grep -q '/README.md' "$CLAUDE_MD_PATH" && mal "T23b (armado) el import no se pudo sacar" || ok "T23b (armado) CLAUDE.md sin ninguna línea de import"
+  grep -v -E '/(README|INDEX)\.md$' "$CLAUDE_MD_PATH" > "$CLAUDE_MD_PATH.tmp"; mv "$CLAUDE_MD_PATH.tmp" "$CLAUDE_MD_PATH"
+  grep -q -E '/(README|INDEX)\.md$' "$CLAUDE_MD_PATH" && mal "T23b (armado) el import no se pudo sacar" || ok "T23b (armado) CLAUDE.md sin ninguna línea de import"
   estado_set "d['last_fetch']=None"
   harness startup >/dev/null 2>&1
-  grep -q '^@~/.claude/.*/README.md$' "$CLAUDE_MD_PATH" && ok "T23b el arranque repuso el @import que faltaba" || mal "T23b el arranque no repuso el import: $(cat "$CLAUDE_MD_PATH")"
+  grep -q '^@~/.claude/.*/INDEX.md$' "$CLAUDE_MD_PATH" && ok "T23b el arranque repuso el @import que faltaba (el de hoy: INDEX.md)" || mal "T23b el arranque no repuso el import: $(cat "$CLAUDE_MD_PATH")"
   grep -q "faltaba en CLAUDE.md: repuesto" "$(LOG)" && ok "T23b …y lo dejó en el registro" || mal "T23b el registro no dice que lo repuso"
 fi
 

@@ -3,7 +3,7 @@
 English · [Castellano](reference.es.md)
 
 What follows is for looking things up: installing by hand, profiles, what it writes on your machine, how it updates.
-To install with Claude Code you do not need to read it: start with the [front page](../.github/README.md).
+To install with Claude Code you do not need to read it: start with the [front page](../README.md).
 
 ## What it is and what it isn't
 
@@ -274,8 +274,8 @@ from.
 | `codegraph` | CodeGraph code index for the agents (informative: you install CodeGraph yourself) | `integrations.codegraph: true`, or `TYCON_CODEGRAPH=1` |
 | `mailbox` | uploads the record of each pipeline run to your organization's mailbox; the organization has to have it set up (today, an Azure storage account) | `integrations.mailbox: true`, or `TYCON_MAILBOX=1` (its key in `TYCON_MAILBOX_JSON`) |
 | `codex` | deploys the Codex side | `integrations.codex: true` or `"detect"`, or `TYCON_CODEX=1` |
-| `claude` | plugs Claude Code (hooks, settings, the README import) | `integrations.claude: true` or `"detect"`, or `TYCON_CLAUDE=1` |
-| `nightly` | notices from your organization's nightly jobs (dashboard, dependencies, retrospectives), which run from its operations repo: see [For an organization](../.github/README.md#for-an-organization) | `integrations.nightly: true`, or `TYCON_NIGHTLY=1` |
+| `claude` | plugs Claude Code (hooks, settings, the index import) | `integrations.claude: true` or `"detect"`, or `TYCON_CLAUDE=1` |
+| `nightly` | notices from your organization's nightly jobs (dashboard, dependencies, retrospectives), which run from its operations repo: see [For an organization](../README.md#for-an-organization) | `integrations.nightly: true`, or `TYCON_NIGHTLY=1` |
 | `telegram` | progress notices to a Telegram chat | `telegram.chat_id` in `~/.claude/tycon.json`, or `TYCON_TELEGRAM_CHAT_ID` |
 
 **The Codex side**: the same harness under Codex, translated and deployed automatically. It needs `codex` on the PATH
@@ -300,7 +300,7 @@ writes three blocks of rules into `~/.claude/CLAUDE.md`, between their own marke
 - `background-execution`: steps longer than two minutes run in the background and are announced first. Another hook
   measures what kept the conversation blocked (`TYCON_BLOCKING_METER=0`).
 - `tool-names`: the table with the exact name of every tool those rules mention.
-- The import line loads the harness `README.md` in every session: about 12 KB, in Spanish, with the index of the
+- The import line loads the harness `INDEX.md` in every session: about 13 KB, in Spanish, with the index of the
   guides and the always-on rules.
 - The links in `~/.claude/skills` and `~/.claude/agents` make the harness skills and reviewers available in all your
   sessions: the name and description of each one load in every session.

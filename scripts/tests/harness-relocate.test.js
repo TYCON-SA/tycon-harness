@@ -33,7 +33,7 @@ const { clone, home } = LABLIB.makeLab(LAB);
 test.after(() => { try { fs.rmSync(LAB, { recursive: true, force: true }); } catch (_) { /* nada */ } });
 
 const OLD_IMPORT = `@~/.claude/${PLACE.LEGACY_PLACE_NAME}/README.md`;
-const NEW_IMPORT = `@~/.claude/${PLACE.PLACE_NAME}/README.md`;
+const NEW_IMPORT = `@~/.claude/${PLACE.PLACE_NAME}/INDEX.md`;   // la de hoy: el índice pasó a INDEX.md
 const pipelineDir = (h) => path.join(h, '.claude', '.tycon-pipeline');
 const stateFile = (h) => path.join(pipelineDir(h), 'harness-state.json');
 
@@ -146,7 +146,10 @@ test('T24 Relocate_NeverFromStartupUpdateApply', () => {
   for (const cmd of [['startup'], ['update', '--check'], ['apply']]) harness(h, C, cmd, { TYCON_UPDATE: '0', TYCON_STARTUP_DETACH: '0' });
   assert.strictEqual(registered(h, C).total, before, 'startup, update o apply mudaron algo');
   assert.strictEqual(hookCommands(readJson(m.files.settings)).join('\n'), hooksBefore, 'cambiaron los hooks');
-  assert.strictEqual(fs.readFileSync(m.files.claudeMd, 'utf8'), mdBefore, 'cambió CLAUDE.md');
+  // la línea sigue por el nombre viejo; sólo cambia el archivo al que apunta (el índice pasó de README.md a INDEX.md el
+  // 2026-10-14): eso no es mudarla
+  const legacyIndex = OLD_IMPORT.replace(/README\.md$/, 'INDEX.md');
+  assert.strictEqual(fs.readFileSync(m.files.claudeMd, 'utf8'), mdBefore.split(OLD_IMPORT).join(legacyIndex), 'cambió CLAUDE.md más allá del archivo del índice');
   // y después de relocate, ni startup ni update ni apply vuelven a traer nada por el viejo (las copias que gestiona el
   // arnés —comandos, pre-commit global— no cuentan: se refrescan solas y su texto es del árbol)
   assert.strictEqual(harness(h, C, ['relocate']).rc, 0);

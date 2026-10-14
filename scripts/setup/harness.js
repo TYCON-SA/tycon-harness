@@ -95,9 +95,11 @@ const FETCH_WINDOW_MS = { auto: 10 * 60 * 1000, ask: 6 * 60 * 60 * 1000 };
 const FETCH_RETRY_MS = 10 * 60 * 1000;
 const BOOTSTRAP_FILES = ['bootstrap.js', 'bootstrap-fallback.sh', 'bootstrap-fallback.ps1'];
 const PROGRAM_DIR = 'program';                      // la copia fija del programa (tanda C): harness/program/
-const IMPORT_LINE = `@~/.claude/${PLACE.PLACE_NAME}/README.md`;
-// la línea con cualquiera de los dos nombres: escrita con el viejo ya está (story 8.19, AC 11)
-const IMPORT_LINES = [IMPORT_LINE, `@~/.claude/${PLACE.LEGACY_PLACE_NAME}/README.md`];
+// la línea que carga el índice (INDEX.md desde 2026-10-14); escrita con el nombre viejo del lugar (story 8.19, AC 11) o
+// apuntando al README.md de antes, ya está: se reescribe a la de hoy en su lugar (import-line.js)
+const IMPORT = require('./harness/import-line.js');
+const IMPORT_LINE = IMPORT.IMPORT_LINE;
+const IMPORT_LINES = IMPORT.ALL_FORMS;
 const APPLIER_TIMEOUT_MS = 15 * 60 * 1000;
 
 // La tabla cerrada: subcomando → opciones (flag | value) y, si acepta, los valores sueltos (positional).
@@ -1029,7 +1031,7 @@ function ownCandidates(ctx, state) {
 /** ¿Es una pieza de `harness.js` (no del aplicador)? Ésas las repone `install`, no `apply`. Un archivo de la copia
  *  fija lo es por estar en su carpeta: la lista crece con el programa (tanda C) y cambia entre versiones. */
 function isOwnPiece(ctx, p) {
-  // el `@import` del README es propio en sus DOS formas (la de hoy y la heredada): la vuelta atrás de una versión lo
+  // el `@import` del índice es propio en TODAS sus formas (la de hoy y las heredadas, import-line.js): la vuelta atrás de una versión lo
   // quitaba como «pieza que esta versión ya no trae» cuando el CLAUDE.md del dev tenía la forma vieja, y nadie lo reponía
   // (máquina Windows de un dev, 2026-10-07): la máquina quedaba sin las guías cargadas
   if (p.kind === 'import') return IMPORT_LINES.includes(String(p.id)) && path.resolve(String(p.where)) === path.resolve(claudeMdPath(ctx));
@@ -1205,9 +1207,10 @@ function ensureImport(ctx) {
   const file = claudeMdPath(ctx);
   let text = '';
   try { text = fs.readFileSync(file, 'utf8'); } catch (_) { text = ''; }
-  if (text.split('\n').some((l) => IMPORT_LINES.includes(l.trim()))) {
-    // con las dos (el código de antes de la 8.19, corrido después de una vuelta atrás, agrega la vieja): queda la del lugar
-    const d = mod('relocate').swapImport(text, { dedupeOnly: true });
+  if (text.split('\n').some(IMPORT.isIndexLine)) {
+    // una forma vieja (nombre viejo del lugar, o el README.md que era el índice) pasa a la de hoy en su lugar; con varias
+    // (el código de antes, corrido después de una vuelta atrás, agrega la suya) queda una
+    const d = IMPORT.rewrite(text);
     if (d.changed) mod('state').writeAtomic(file, d.text);
     return false;
   }
@@ -2869,9 +2872,10 @@ function cmdStartup(ctx) {
       const dropped = sw.switching ? dropForProfile(ctx, state, tree, a, (l) => log(`startup: ${l}`), sw.profile.value) : true;
       if (sw.switching) profileSwitchNotes(dropped).forEach((n) => log(`startup: ${n}`));
       recordPieces(ctx, state, a.report, a.shared);
-      // el `@import` del README: si falta (una vuelta atrás de otra versión lo quitó, 2026-10-07), se repone acá, en cada
-      // arranque, como la pieza propia que es; nadie más lo reponía y la máquina quedaba sin las guías cargadas
-      if (state.mode !== 'developer') { try { if (ensureImport(ctx)) log('startup: el @import del README faltaba en CLAUDE.md: repuesto'); } catch (e) { log(`startup: no pude reponer el @import (${e.message})`); } }
+      // el `@import` del índice: si falta (una vuelta atrás de otra versión lo quitó, 2026-10-07), se repone acá, en cada
+      // arranque, como la pieza propia que es; nadie más lo reponía y la máquina quedaba sin las guías cargadas. Con una
+      // forma vieja (el README.md que era el índice), la pasa a la de hoy
+      if (state.mode !== 'developer') { try { if (ensureImport(ctx)) log('startup: el @import del índice faltaba en CLAUDE.md: repuesto'); } catch (e) { log(`startup: no pude reponer el @import (${e.message})`); } }
       // sin saber qué sobraba, el perfil de antes queda anotado y el próximo arranque lo reintenta (clases 7 y 14)
       if (sw.profile && sw.profile.ok && dropped !== null) state.profile = { value: sw.profile.value, origin: sw.profile.origin };
       if (ctx.opts.force) {
@@ -3180,7 +3184,7 @@ function placeFacts(ctx, tree, { count = true } = {}) {
         // de CLAUDE.md cuenta SÓLO la línea de arranque, que es lo que relocate muda (pase adversarial de la tanda B, C3)
         let md = '';
         try { md = fs.readFileSync(claudeMdPath(ctx), 'utf8'); } catch (_) { md = ''; }
-        const lines = md.split('\n').filter((l) => l.trim() === IMPORT_LINES[1]).length;
+        const lines = md.split('\n').filter((l) => IMPORT.LEGACY_PLACE_FORMS.includes(l.trim())).length;
         if (lines) { registered.files.push({ file: 'CLAUDE.md', count: lines, permissions: 0 }); registered.total += lines; }
       } catch (e) { registered = { problem: e && e.message ? e.message : String(e) }; }
     }

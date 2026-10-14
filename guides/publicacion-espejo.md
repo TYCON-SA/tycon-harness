@@ -331,8 +331,8 @@ La copia lleva en su raíz lo que un repo público necesita, y los repos interno
 
 - `LICENSE` (Apache License 2.0, el texto canónico de la ASF byte a byte) y `NOTICE` (titular, marcas y una línea
   `* <ruta>` por cada derivada que sale, con su origen, su licencia, su copyright y el aviso MIT).
-- `.github/README.md` (inglés) y `.github/README.es.md` (castellano): la portada. Van en `.github/` porque GitHub la
-  muestra primero y el `README.md` de la raíz sigue siendo el que carga cada sesión del equipo.
+- `README.md` (inglés) y `README.es.md` (castellano): la portada, en la raíz desde el 2026-10-14. El índice de guías
+  que carga cada sesión pasó a `INDEX.md`.
 - `.github/CONTRIBUTING.md`, `.github/CODE_OF_CONDUCT.md` y `.github/SECURITY.md`.
 - `.github/workflows/ci.yml`: la CI del repo público (ver «La CI pública»).
 - `guides/incident-log.md` público: una página que dice que los casos con nombre viven en el repo del equipo.

@@ -134,7 +134,7 @@ test('T38 R5_Templates_NewProductBornWithNewPath — la plantilla de formularios
 
 // ── T49 · story 8.12, tanda R8 (AC 45) — las guías de entrada citan la ruta nueva y explican dónde vive cada cosa ──────
 const PIECES = path.join(ROOT, 'guides', 'piezas-del-arnes.md');
-const README = path.join(ROOT, 'README.md');
+const README = path.join(ROOT, 'INDEX.md');   // el índice: hasta 2026-10-14 se llamaba README.md
 const WHERE_TITLE = 'Dónde vive cada cosa';
 // las carpetas que el árbol tiene que nombrar, como mínimo
 const TREE_DIRS = ['scripts/setup/', 'scripts/hooks/', 'scripts/tools/', 'scripts/lib/', 'scripts/nightly/', 'scripts/instincts/',

@@ -28,7 +28,7 @@ const finding = (id, severity, kind, detail) => ({ id, severity, kind, detail })
 const gates = new Set(['PreToolUse', 'UserPromptSubmit', 'Stop']);
 /** Un mensaje sin lo que cambia de una corrida a otra (commits, fechas, rutas, números). */
 const normal = (s) => String(s).replace(/[0-9a-f]{7,40}/g, '#').replace(/\d{4}-\d{2}-\d{2}T[\d:.]+Z?/g, '@').replace(/[A-Za-z]:[\\/][^\s:·)]+|\/[^\s:·)]+/g, '~').replace(/\d+/g, 'N');
-const IMPORT_RX = new RegExp(`^@.*(?:${PLACE.PLACE_NAME}|${PLACE.LEGACY_PLACE_NAME}).*README\\.md\\s*$`);
+const IMPORT_RX = new RegExp(`^@.*(?:${PLACE.PLACE_NAME}|${PLACE.LEGACY_PLACE_NAME}).*(?:INDEX|README)\\.md\\s*$`);   // el índice: INDEX.md desde 2026-10-14 (antes README.md)
 
 /** El lector de configuración del árbol instalado, con el ambiente de la variante: `{ exit, error, stdout }`, o `null` si el árbol no lo trae. */
 function config(tree, args, env) {

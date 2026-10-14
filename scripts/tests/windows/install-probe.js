@@ -45,8 +45,9 @@ const NAME = 'install';
 const BLOCK_TIMEOUT_MS = 20 * 60 * 1000;
 // el lugar y el nombre viejo (story 8.19): se mira el que esté; falta el arnés sólo si no está ninguno (y se nombra el lugar)
 const LINKS = [[PLACE.PLACE_NAME, ''], [PLACE.LEGACY_PLACE_NAME, ''], ['agent-skills', ''], ['agents', 'agents'], ['skills', 'skills']];
-// la línea de import por cualquiera de los dos nombres del lugar (story 8.19): la escrita con el viejo ya está
-const IMPORT_LINES = [PLACE.PLACE_NAME, PLACE.LEGACY_PLACE_NAME].map((n) => `@~/.claude/${n}/README.md`);
+// la línea de import en cualquiera de sus formas (los dos nombres del lugar, story 8.19; README.md o INDEX.md): se cuentan
+// todas, y tiene que haber una
+const IMPORT_LINES = require('../../setup/harness/import-line.js').ALL_FORMS;
 const VARIANTS = [
   { id: 'plain', home: ['users', 'lab-user'], work: ['work', 'plain'] },
   { id: 'accent', home: ['users', 'usuario de práctica'], workInHome: ['proyectos'] },

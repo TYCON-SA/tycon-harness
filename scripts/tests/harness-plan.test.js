@@ -54,7 +54,7 @@ const freshApplier = () => ({
 });
 const freshOwn = () => [
   piece('startup-line', SETTINGS, 'SessionStart:bootstrap.js', 'add'),
-  piece('import', CLAUDE_MD, '@~/.claude/tycon-harness/README.md', 'add'),
+  piece('import', CLAUDE_MD, '@~/.claude/tycon-harness/INDEX.md', 'add'),
 ];
 const build = (over = {}) => PLAN.build(Object.assign({
   applier: freshApplier(), own: freshOwn(), effects: EFFECTS, home: HOME, env: {}, platform: 'darwin',

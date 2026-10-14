@@ -181,10 +181,9 @@ function present(piece, { home = os.homedir(), env = process.env, isStartupLine 
       return t !== null && new RegExp(`<!--\\s*TYCON_BLOCK:${name}\\s+START[\\s\\S]*?<!--\\s*TYCON_BLOCK:${name}\\s+END`).test(t);
     }
     case 'import': {
-      // con cualquiera de los dos nombres del lugar (story 8.19, AC 20): una vuelta atrás a la copia de antes de
-      // `relocate` deja la línea vieja y la pieza con el id nuevo, y la línea está
-      const P = require('./place.js');
-      const forms = [P.PLACE_NAME, P.LEGACY_PLACE_NAME].map((n) => `@~/.claude/${n}/README.md`);
+      // con cualquiera de sus formas — los dos nombres del lugar (story 8.19, AC 20) y el README.md que era el índice
+      // hasta que pasó a INDEX.md: una vuelta atrás deja la línea vieja y la pieza con el id nuevo, y la línea está
+      const forms = require('./import-line.js').ALL_FORMS;
       const ids = forms.includes(piece.id) ? forms : [piece.id];
       const t = text(piece.where);
       return t !== null && t.split('\n').some((l) => ids.includes(l.trim()));

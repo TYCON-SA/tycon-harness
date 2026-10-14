@@ -1,9 +1,9 @@
 # Instalación y mantenimiento — el arnés
 
 > Onboarding humano de **una sola vez** (setup por máquina, setup opcional, mantenimiento
-> del repo, troubleshooting). NO es contexto operativo para Claude: vive separada del README
-> para no inflar el contexto que se carga por sesión. El README es lo operativo de cada sesión;
-> el índice de las piezas es `guides/piezas-del-arnes.md`.
+> del repo, troubleshooting). NO es contexto operativo para Claude: vive separada del índice
+> (`INDEX.md`) para no inflar el contexto que se carga por sesión. El índice es lo operativo de cada
+> sesión; el índice de las piezas es `guides/piezas-del-arnes.md`. La portada para personas es `README.md`.
 
 ---
 
@@ -12,7 +12,7 @@
 
 ### 1. Instalar sin clonar
 
-Tres líneas por sistema, las de la portada (`.github/README.es.md`, «2. Bajar e instalar»): bajar el guion
+Tres líneas por sistema, las de la portada (`README.es.md`, «2. Bajar e instalar»): bajar el guion
 `get-harness.sh` / `.ps1` por la API de GitHub, sin credencial (el repo es público), leerlo, correrlo. El
 guion baja la versión publicada como archivos (sin git) a una carpeta temporal y sigue con `harness.js install
 --version latest`: el arnés queda en `~/.tycon/harness`, se actualiza solo, y `harness.js install` crea el enlace
@@ -26,8 +26,10 @@ Si el enlace ya apuntaba a otro clon válido, el instalador no lo mueve y lo dic
 
 ### 2. El import y la línea de arranque
 
-`harness.js install` escribe las dos: la línea `@~/.claude/tycon-harness/README.md` en `~/.claude/CLAUDE.md` (si
-falta) y la línea de arranque de cada sesión en `~/.claude/settings.json`. No hay que agregar nada a mano.
+`harness.js install` escribe las dos: la línea `@~/.claude/tycon-harness/INDEX.md` (el índice de guías) en
+`~/.claude/CLAUDE.md` (si falta) y la línea de arranque de cada sesión en `~/.claude/settings.json`. No hay que agregar
+nada a mano. Una máquina con la línea de antes (`…/README.md`, cuando el índice se llamaba así) la ve reescrita sola en
+la actualización siguiente.
 
 ### 3. Los enlaces a las skills y a los revisores (los crea el instalador)
 
@@ -214,7 +216,7 @@ Abrí una sesión nueva de Claude Code en cualquier proyecto y pedile:
 
 > "¿Qué guías de TYCON conocés?"
 
-Debería responder mencionando varias de las guías listadas en el README (`story-format.md`, `engram-workflow.md`, `advisor-rules-catalog.md`, etc.).
+Debería responder mencionando varias de las guías listadas en el índice, `INDEX.md` (`story-format.md`, `engram-workflow.md`, `advisor-rules-catalog.md`, etc.).
 
 Después pedile:
 
@@ -286,7 +288,7 @@ El script instala el CLI `codegraph`, autodetecta si el target es un repo suelto
 
 **Se corre una sola vez por máquina.** Además del setup del repo indicado, instala un hook `SessionStart` que de ahí en adelante auto-configura CodeGraph en cualquier *otro* repo que abras — no hay que volver a correr nada. Para optar por no usar el hook: `--no-auto` (`-NoAuto` en Windows).
 
-Que los agentes usen CodeGraph *por defecto* ya está cubierto: la sección "Regla siempre activa — CodeGraph" de este README se carga en toda sesión (self-gating — solo aplica a repos con `.codegraph/`).
+Que los agentes usen CodeGraph *por defecto* ya está cubierto: la sección "Regla siempre activa — CodeGraph" del índice (`INDEX.md`) se carga en toda sesión (self-gating — solo aplica a repos con `.codegraph/`).
 
 Detalles, modo automático y troubleshooting: `guides/codegraph-mcp.md`.
 
@@ -379,9 +381,9 @@ Detalle de diseño y asimetrías declaradas: `guides/codex-migration.md` y
 1. Crear el archivo `.md` en `guides/` con contenido en español y ejemplos copy-pasteables.
 2. Agregar la sección `## guides/nueva-guia.md` en **`guides/piezas-del-arnes.md`** —que es el índice
    de las piezas—, con la línea en cursiva de sus rutas y el detalle: por qué existe,
-   cómo se midió, su red de pruebas. El caso con nombre va al registro de incidentes, no a la guía. 🔴 **El README ya no lista piezas**: se importa ENTERO en
+   cómo se midió, su red de pruebas. El caso con nombre va al registro de incidentes, no a la guía. 🔴 **El índice (`INDEX.md`) ya no lista piezas**: se importa ENTERO en
    cada sesión y en cada subagente y tiene techo en bytes (`claude-md-blocks/budget.json` →
-   `imported`); agregarle una ficha es volver a inflar lo que se podó. Si el README
+   `imported`); agregarle una ficha es volver a inflar lo que se podó. Si el índice
    enlaza una sección de la guía, el ancla es el nombre de la sección en minúsculas, sin los caracteres
    que no sean letra, dígito, espacio, `-` o `_`, y con los espacios en `-`; un enlace sin destino
    frena el commit.
@@ -407,7 +409,7 @@ Si el cambio es mayor (ej: cambio de formato, regla nueva que cambia comportamie
 
 1. Remover el archivo.
 2. Remover las referencias: la fila de la tabla «Cuándo leer cada guía» y su sección de
-   `guides/piezas-del-arnes.md` (si el README la enlazaba, sacar también el enlace: uno sin destino
+   `guides/piezas-del-arnes.md` (si el índice la enlazaba, sacar también el enlace: uno sin destino
    frena el commit).
 3. Commit: `docs: descontinuar <guía> (motivo)`.
 
@@ -483,7 +485,7 @@ Regla que evita dos bugs históricos: reglas duplicadas que inflan el contexto (
 que viven solo en una guía y el modelo nunca ve (H20).
 
 **Qué se carga SIEMPRE en contexto (cada sesión):**
-- El `README.md` de este repo (vía el `@import` del `~/.claude/CLAUDE.md` del dev).
+- El `INDEX.md` de este repo, el índice de guías (vía el `@import` del `~/.claude/CLAUDE.md` del dev).
 - El `~/.claude/CLAUDE.md` personal del dev.
 - Las inyecciones automáticas de los MCP servers (engram "PROACTIVE SAVE", codegraph
   "don't grep first", telegram) — el server las mete solo, no hace falta repetirlas.
@@ -495,13 +497,13 @@ que viven solo en una guía y el modelo nunca ve (H20).
 
 **Las dos reglas que se derivan:**
 1. **H20 — no escondas reglas operativas solo en guías.** Si una regla la necesita el modelo
-   en TODA sesión → va en el README (que se carga). Las guías son para profundidad/detalle
+   en TODA sesión → va en el índice, `INDEX.md` (que se carga). Las guías son para profundidad/detalle
    topical. Y si un step del pipeline o un advisor DEPENDE de una guía, ese step DEBE
    referenciarla explícitamente (ej: `step-07c` → `definition-of-done.md`, `step-01` →
    `story-format.md`) para que se lea on-demand al ejecutarse.
 2. **H3 — una sola fuente canónica por regla.** Cada regla vive textual en UN solo archivo;
    el resto la referencia con un puntero (`Ver guides/X.md`), NO la re-escribe. **Y la copia
-   canónica debe estar en un archivo que SÍ carga** (README/CLAUDE.md) si es una regla
+   canónica debe estar en un archivo que SÍ carga** (INDEX.md/CLAUDE.md) si es una regla
    always-on — si no, el dedup la vuelve invisible. No dupliques en contexto lo que un MCP
    server ya inyecta solo.
 
@@ -524,14 +526,14 @@ Ahora:
 ## Troubleshooting
 
 **Claude no aplica las reglas de una guía:**
-- Las guías **NO se cargan solas** en contexto. Lo único que se importa es el **README**, vía el `@import` de tu `~/.claude/CLAUDE.md`. Las guías son lectura **on-demand**: Claude las abre con `Read` cuando aplica el trigger de la tabla "Cuándo leer cada guía". Si no las está aplicando, pedíle explícitamente que lea la guía.
-- Verificá el path absoluto del `@import` del README en tu `~/.claude/CLAUDE.md`.
+- Las guías **NO se cargan solas** en contexto. Lo único que se importa es el **índice** (`INDEX.md`), vía el `@import` de tu `~/.claude/CLAUDE.md`. Las guías son lectura **on-demand**: Claude las abre con `Read` cuando aplica el trigger de la tabla "Cuándo leer cada guía". Si no las está aplicando, pedíle explícitamente que lea la guía.
+- Verificá la línea del `@import` del índice en tu `~/.claude/CLAUDE.md`: `@~/.claude/tycon-harness/INDEX.md`.
 - `cd ~/.claude/tycon-harness && git pull` — puede que alguien haya modificado la guía.
-- Reiniciá la sesión de Claude Code (el `@import` del README se carga al inicio).
+- Reiniciá la sesión de Claude Code (el `@import` del índice se carga al inicio).
 
 **"Context too large" al iniciar sesión:**
-- Lo único que se carga siempre es el **README** (vía el `@import` de CLAUDE.md). Las guías y `story-format.md` **NO** se importan: un path en backticks dentro de la tabla "Cuándo leer" es texto, **no** un import (verificado empíricamente 2026-05-21 — un `@path` en un code-span nunca fue resuelto como import). Por eso este `INSTALL.md` existe: el onboarding humano se sacó del README para que el contexto por sesión sea mínimo.
-- Si igual se infla, revisá qué reglas/secciones agregaste al README y considerá moverlas a una guía on-demand.
+- Lo único que se carga siempre es el **índice**, `INDEX.md` (vía el `@import` de CLAUDE.md). Las guías y `story-format.md` **NO** se importan: un path en backticks dentro de la tabla "Cuándo leer" es texto, **no** un import (verificado empíricamente 2026-05-21 — un `@path` en un code-span nunca fue resuelto como import). Por eso este `INSTALL.md` existe: el onboarding humano se sacó del índice para que el contexto por sesión sea mínimo.
+- Si igual se infla, revisá qué reglas/secciones agregaste al índice y considerá moverlas a una guía on-demand.
 
 **Quiero sugerir un cambio a una guía:**
 - PR al repo. Los Project Administrators (el dev, otro dev) revisan y mergean.

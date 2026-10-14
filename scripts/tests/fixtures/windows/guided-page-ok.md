@@ -59,7 +59,7 @@ Bajar el propio guion va siempre sin credencial: si el 403 fue ahí, sólo queda
 6. Verificar (tres comandos):
    node "$env:USERPROFILE\.claude\{{harness-place}}\scripts\setup\harness.js" doctor
    @(Get-ChildItem "$env:USERPROFILE\.claude\skills" -Directory).Count
-   (Select-String -Path "$env:USERPROFILE\.claude\CLAUDE.md" -Pattern "README.md").Count
+   (Select-String -Path "$env:USERPROFILE\.claude\CLAUDE.md" -Pattern "INDEX.md").Count
    Esperado: doctor dice «perfil: full» (o «perfil: minimal» si pedí el mínimo) y cierra con «todo en orden» (o «N aviso(s), nada en rojo»); más de 40 skills; 1.
 
 7. Armame UN solo bloque de texto, para guardarlo o para pedir ayuda, con la salida de los pasos 1, 2 y 4 (el final), y

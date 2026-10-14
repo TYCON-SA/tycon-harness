@@ -262,7 +262,7 @@ check_install() { # <T> [minimal|full] — el perfil que tiene que haber quedado
   v="$(json "${OUT_DIR}/doctor.json" 'Array.isArray(d.fail) ? d.fail.length + "|" + d.fail.slice(0, 3).join(" · ") : "sin-lista"')"
   if [ "${v}" = "0|" ]; then ok "${t} harness.js doctor --json no trae ningún fail"; else no "${t} harness.js doctor --json: ${v:-no es JSON} $(head -c 200 "${OUT_DIR}/doctor.err")"; fi
   # CLAUDE.md: el @import una vez, y cada bloque del arnés salvo los que piden una integración apagada (AC 25)
-  n="$(grep -c -x -F '@~/.claude/tycon-harness/README.md' "${HOME}/.claude/CLAUDE.md" 2>/dev/null || true)"
+  n="$(grep -c -x -F '@~/.claude/tycon-harness/INDEX.md' "${HOME}/.claude/CLAUDE.md" 2>/dev/null || true)"
   if [ "${n:-0}" = 1 ]; then ok "${t} ~/.claude/CLAUDE.md tiene la línea del @import una vez"; else no "${t} la línea del @import aparece ${n:-0} veces en ~/.claude/CLAUDE.md"; fi
   v=""; n=0
   for f in "${CLONE}"/claude-md-blocks/*.md; do
@@ -401,8 +401,8 @@ serve_new_version() {
     1) : ;;
     *) echo "serve_new_version: el version.json de ${COPY_DIR} no se puede leer, o su número tiene otra forma"; return 1 ;;
   esac
-  mkdir -p "${COPY_DIR}/.github" && printf '\n<!-- clean-machine: una versión nueva, de laboratorio -->\n' >> "${COPY_DIR}/.github/README.md" \
-    && git -C "${COPY_DIR}" add -- .github/README.md \
+  printf '\n<!-- clean-machine: una versión nueva, de laboratorio -->\n' >> "${COPY_DIR}/README.md" \
+    && git -C "${COPY_DIR}" add -- README.md \
     && git -C "${COPY_DIR}" -c user.name=lab -c user.email=lab@example.com -c commit.gpgsign=false -c core.hooksPath=/dev/null \
          commit -q -m "clean-machine: una versión nueva de laboratorio${NEW_VERSION:+ (${NEW_VERSION})}"
 }

@@ -3,17 +3,17 @@
 Este archivo es el **detalle** de cada pieza del arnés: qué hace, por qué existe, cómo se
 midió y con qué red de pruebas entró. Es **lectura a demanda** — no se importa en ninguna sesión.
 
-**Este archivo es también el índice** (desde 2026-09-19): el [README](../README.md) se
-importa entero en cada sesión y en cada subagente —la línea `@…/README.md` vive en el
+**Este archivo es también el índice de las piezas** (desde 2026-09-19): el índice de guías, [INDEX.md](../INDEX.md)
+(hasta 2026-10-14, el README), se importa entero en cada sesión y en cada subagente —la línea `@…/INDEX.md` vive en el
 `~/.claude/CLAUDE.md` personal de cada dev, así que viaja a todos los repos— y ya no lista las piezas:
 su sección «Qué contiene» apunta acá. Las piezas se buscan con los títulos `## <nombre>` de este
-archivo. El README conserva lo que se usa en cada sesión (la tabla «Cuándo leer cada guía», las reglas
+archivo. El índice conserva lo que se usa en cada sesión (la tabla «Cuándo leer cada guía», las reglas
 siempre activas y los comandos del día a día) y tiene **techo medido** en
 `claude-md-blocks/budget.json` (sección `imported`).
 
 **Para agregar una pieza**: una sección `## <nombre>` en este archivo, con la línea en cursiva de las
 rutas que la componen, y —si cambia cuándo hay que leer algo— una fila en la tabla «Cuándo leer cada
-guía» del README. Un enlace del README a una sección que no existe sigue frenando el commit.
+guía» del índice (`INDEX.md`). Un enlace del índice a una sección que no existe sigue frenando el commit.
 
 **Por qué el índice salió del README**: medido en laboratorio,
 el hilo principal de cada corrida relee el piso en cada respuesta, y el índice de 110 líneas era la
@@ -34,7 +34,7 @@ acá **textuales**, sin perder una palabra.
 El árbol del arnés como está hoy, con la ruta entera de cada carpeta.
 
 ```
-README.md · INSTALL.md · story-format.md · engram-version · perfil-equipo.json
+INDEX.md · README.md · README.es.md · INSTALL.md · story-format.md · engram-version · perfil-equipo.json
 scripts/install-tycon-hooks.sh · .ps1   los llama la línea de arranque de cada máquina
 scripts/setup/              instalar y mantener cada máquina al día
 scripts/hooks/              lo que registra el instalador + los dos hooks globales de git — plano

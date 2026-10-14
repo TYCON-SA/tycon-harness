@@ -6,7 +6,7 @@
  * —el privado con el público encima— no tenga dos archivos en la misma ruta mientras el privado conserve el suyo).
  *
  * Los papeles son lo que hace de este repo un proyecto que se puede usar de afuera: `LICENSE`, `NOTICE`, las dos
- * portadas (`.github/README.md` y `.github/README.es.md`), `.github/CONTRIBUTING.md`, `.github/CODE_OF_CONDUCT.md`,
+ * portadas (`README.md` y `README.es.md`, en la raíz desde 2026-10-14), `.github/CONTRIBUTING.md`, `.github/CODE_OF_CONDUCT.md`,
  * `.github/SECURITY.md`, la CI (`.github/workflows/ci.yml`), las tres páginas de primeros pasos (`getting-started/`), el
  * guion de entrada (`scripts/setup/get-harness.{sh,ps1}`), la lista de remotos públicos
  * (`scripts/setup/public-remotes.json`) y la página de ejemplo del registro de incidentes (`guides/incident-log.md`).
@@ -49,7 +49,7 @@ const PUBLISHING = path.join(RAIZ, 'scripts', 'publishing');
 // Los papeles, por la ruta donde viven en este repo. Son los quince que en el privado eran plantillas de
 // scripts/publishing/public-files/<destino>, uno a uno.
 const PAPERS = [
-  '.github/CODE_OF_CONDUCT.md', '.github/CONTRIBUTING.md', '.github/README.es.md', '.github/README.md', '.github/SECURITY.md',
+  '.github/CODE_OF_CONDUCT.md', '.github/CONTRIBUTING.md', 'README.es.md', 'README.md', '.github/SECURITY.md',
   '.github/workflows/ci.yml', 'LICENSE', 'NOTICE', 'getting-started/linux.md', 'getting-started/mac.md',
   'getting-started/windows.md', 'guides/incident-log.md', 'scripts/setup/get-harness.ps1', 'scripts/setup/get-harness.sh',
   'scripts/setup/public-remotes.json',
@@ -143,7 +143,7 @@ const readPaper = (rel) => fs.readFileSync(path.join(RAIZ, rel), 'utf8');
 // La portada y su referencia (getting-started/reference(.es).md, donde viven desde 2026-10-14 los bloques de instalación
 // y todo lo de consultar), leídas juntas: los contratos buscan por título de sección, y ningún título se repite entre las dos
 const REFERENCE = { en: 'getting-started/reference.md', es: 'getting-started/reference.es.md' };
-const readCover = (lang) => `${readPaper({ en: '.github/README.md', es: '.github/README.es.md' }[lang])}\n${readPaper(REFERENCE[lang])}`;
+const readCover = (lang) => `${readPaper({ en: 'README.md', es: 'README.es.md' }[lang])}\n${readPaper(REFERENCE[lang])}`;
 const readJson = (abs) => JSON.parse(fs.readFileSync(abs, 'utf8'));
 
 /** Las líneas de un markdown con una marca de si están dentro de un cerco de código. */
@@ -276,7 +276,7 @@ function variableCorpus({ withHooks = false } = {}) {
 }
 const namedVariables = (text) => [...new Set(text.match(/\bTYCON_[A-Z0-9_]+\b/g) || [])];
 
-const README = { en: '.github/README.md', es: '.github/README.es.md' };
+const README = { en: 'README.md', es: 'README.es.md' };
 // Los pedidos de instalación guiada que un dev de afuera le pega a Claude Code (enlazados desde «Instalación»).
 // los tres (el de Linux desde la story 8.23 E: la portada lo enlaza y se reescribió con la misma bajada por la API)
 const GUIDED_PAPERS = ['getting-started/windows.md', 'getting-started/mac.md', 'getting-started/linux.md'];
@@ -439,7 +439,7 @@ test('Papeles_Portadas_MismoContratoEnDosIdiomas', async (t) => {
     const guidedTitle = SECTIONS.find((s) => s[0] === 'Install with Claude Code')[lang === 'en' ? 0 : 1];
     const install = section(text[lang], guidedTitle) || '';
     for (const guided of GUIDED_PAPERS) {
-      assert.ok(install.includes(`](../${guided})`), `${file}: «${guidedTitle}» tiene que enlazar a ../${guided}`);
+      assert.ok(install.includes(`](${guided})`), `${file}: «${guidedTitle}» tiene que enlazar a ${guided}`);
     }
   }
 
@@ -676,7 +676,7 @@ test('PublicFrontPage_OneLineInstall_BothLanguages', async (t) => {
       };
       // `bash get-harness.sh` seguido de la valla: la primera así es la de install:core (la de install:unattended lleva opciones)
       failsWith(real.replace(`${INSTALL_LINES.bash[2]}\n\`\`\``, `${INSTALL_LINES.bash[2]}\necho listo\n\`\`\``), 'install:core (bash)', 'una instalación de cuatro líneas');
-      failsWith(`${real}\n\`\`\`bash\necho '@~/.claude/tycon-harness/README.md' >> ~/.claude/CLAUDE.md\n\`\`\`\n`, '@import', 'un bloque que pide el @import a mano');
+      failsWith(`${real}\n\`\`\`bash\necho '@~/.claude/tycon-harness/INDEX.md' >> ~/.claude/CLAUDE.md\n\`\`\`\n`, '@import', 'un bloque que pide el @import a mano');
       failsWith(`${real}\nSi algo falla, corré guides-heal.js.\n`, 'guides-heal', 'una portada que nombra guides-heal');
       const copy = lang === 'en' ? 'copy' : 'copia';
       const version = lang === 'en' ? 'version' : 'versión';
@@ -770,7 +770,7 @@ const WINDOWS_GUARDS = ['PreToolUse:@tcg:safety-guard-pre.sh', 'PreToolUse:@tcg:
 function frontPageToken(e) {
   if (e.kind === 'block') return `\`${e.id.replace(/^TYCON_BLOCK:/, '')}\``;
   if (e.kind === 'setting') return e.id.split('.').pop();
-  if (e.kind === 'import') return 'README.md';
+  if (e.kind === 'import') return 'INDEX.md';   // el índice que carga la línea de import (hasta 2026-10-14, README.md)
   const variable = (String(e.switch || '').match(/\bTYCON_[A-Z0-9_]+/) || [])[0];
   if (variable) return variable;
   if (e.stores) return e.stores;
@@ -786,13 +786,13 @@ const effectName = (e) => String(e.id || e.id_pattern);
 const wholeToken = (token) => new RegExp(`${escapeRe(token)}(?![A-Za-z0-9_./-])`, 'g');
 const namesToken = (text, token) => wholeToken(token).test(text);
 /**
- * Los KB del README que la línea de import carga en cada sesión, TAL COMO SALE en la copia pública: el de la raíz sin sus
+ * Los KB del índice (INDEX.md; hasta 2026-10-14, el README) que la línea de import carga en cada sesión, TAL COMO SALE en la copia pública: el de la raíz sin sus
  * bloques internos (la misma transformación que le aplica el exportador). El del repo interno pesa más.
  */
 function importedReadmeKb() {
   const { internalBlocks } = require(path.join(PUBLISHING, 'public-copy.js'));
-  const r = internalBlocks(fs.readFileSync(path.join(RAIZ, 'README.md'), 'utf8'), 'README.md');
-  assert.deepStrictEqual(r.errors, [], 'README.md: sus bloques internos están mal marcados');
+  const r = internalBlocks(fs.readFileSync(path.join(RAIZ, 'INDEX.md'), 'utf8'), 'INDEX.md');
+  assert.deepStrictEqual(r.errors, [], 'INDEX.md: sus bloques internos están mal marcados');
   return Math.round(Buffer.byteLength(r.text, 'utf8') / 1024);
 }
 

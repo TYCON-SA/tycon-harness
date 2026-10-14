@@ -3,6 +3,9 @@
  * readme-index.test.js — el README se achica, pero ninguna pieza se queda sin dónde encontrarla
  * (story 7.7, 2026-09-19).
  *
+ * Desde el 2026-10-14 el índice se llama INDEX.md: README.md quedó como la portada para personas que muestra GitHub.
+ * Lo que este archivo dice del «README» vale para el índice, hoy INDEX.md; la base de T6 sigue siendo el README de antes.
+ *
  * El README se importa ENTERO en cada sesión y en cada subagente de cada dev. La 7.4 lo había vuelto
  * índice (una línea por pieza, 110 líneas); la 7.7 saca también el índice —las piezas se buscan en
  * `guides/piezas-del-arnes.md`, que se lee a demanda— y el README queda con lo que se usa en cada
@@ -77,10 +80,10 @@ test('Readme_IndiceCompleto (T6): cada ruta del «Qué contiene» de la base sig
   assert.ok(Array.isArray(rutas) && rutas.length >= 100, `la lista de la base tiene ${rutas && rutas.length} rutas; se esperaban las ~110 del índice`);
   // el índice se partió en dos: lo de uso diario queda en el README (se carga en cada sesión) y lo de quien mantiene el
   // arnés pasó a guides/mantener-el-arnes.md (a demanda), que el README nombra en su última fila
-  const donde = leer('guides/piezas-del-arnes.md') + '\n' + leer('README.md') + '\n' + leer('guides/mantener-el-arnes.md');
+  const donde = leer('guides/piezas-del-arnes.md') + '\n' + leer('INDEX.md') + '\n' + leer('guides/mantener-el-arnes.md');
   const faltan = rutas.filter((r) => !nombrada(r, donde));
   assert.deepEqual(faltan, [], `rutas del índice de la base que ya no nombra ni la guía de piezas, ni el README, ni la guía de mantener: ${faltan.join(', ')}`);
-  assert.ok(nombrada('guides/mantener-el-arnes.md', leer('README.md')), 'el README nombra la guía de mantener el arnés');
+  assert.ok(nombrada('guides/mantener-el-arnes.md', leer('INDEX.md')), 'el índice (INDEX.md) nombra la guía de mantener el arnés');
 });
 
 test('Readme_IndiceCompleto (T6): una ruta dentro de otra más larga NO cuenta como nombrada', () => {
@@ -94,9 +97,9 @@ test('Readme_IndiceCompleto (T6): una ruta dentro de otra más larga NO cuenta c
 });
 
 test('Readme_Tamano_Secciones (T5): ≤ 25 KB y las tres secciones de uso diario', () => {
-  const readme = leer('README.md');
+  const readme = leer('INDEX.md');
   const bytes = Buffer.byteLength(readme, 'utf8');
-  assert.ok(bytes <= TOPE_BYTES, `el README pesa ${bytes} bytes (tope ${TOPE_BYTES})`);
+  assert.ok(bytes <= TOPE_BYTES, `el índice (INDEX.md) pesa ${bytes} bytes (tope ${TOPE_BYTES})`);
   assert.match(readme, /^## Cuándo leer cada guía/m, 'falta la tabla «Cuándo leer cada guía»');
   assert.match(seccion(readme, '## Cuándo leer cada guía', '\n## '), /^\| .+ \| .+ \|$/m, 'la sección «Cuándo leer cada guía» no tiene tabla');
   assert.match(readme, /^## Regla siempre activa — CodeGraph/m, 'falta la regla siempre activa de CodeGraph');

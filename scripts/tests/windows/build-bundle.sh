@@ -155,7 +155,7 @@ CLONED_SHA="$(git -C "${WORK}/clone-check.git" rev-parse --verify --quiet 'refs/
 [ "${CLONED_SHA}" = "${COPY_SHA}" ] || refuse "el clon del bundle quedó en ${CLONED_SHA} y la copia es ${COPY_SHA}"
 rm -rf "${WORK}/clone-check.git"
 # los bloques de instalación: en la referencia desde 2026-10-14; una copia anterior los trae en la portada
-[ -f "${BRANCH_REPO}/getting-started/reference.md" ] || [ -f "${BRANCH_REPO}/.github/README.md" ] || refuse "la copia no trae ni su referencia (getting-started/reference.md) ni su portada (.github/README.md): el paso de instalación no tendría qué leer"
+[ -f "${BRANCH_REPO}/getting-started/reference.md" ] || [ -f "${BRANCH_REPO}/.github/README.md" ] || [ -f "${BRANCH_REPO}/README.md" ] || refuse "la copia no trae ni su referencia (getting-started/reference.md) ni su portada (.github/README.md): el paso de instalación no tendría qué leer"
 
 node -e '
   const [file, mode, pkg, harness, skills, copy] = process.argv.slice(1);

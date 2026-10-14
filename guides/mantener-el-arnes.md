@@ -1,7 +1,7 @@
 # Mantener el arnés — qué guía leer
 
 Lo que necesita quien mantiene el arnés o corre los procesos de la noche de una organización. No se carga en cada
-sesión: se lee a demanda, desde la fila «Mantener el arnés» del índice (`README.md`). Las guías de uso diario (stories,
+sesión: se lee a demanda, desde la fila «Mantener el arnés» del índice (`INDEX.md`). Las guías de uso diario (stories,
 git, pruebas, frenos) siguen en el índice.
 
 | Trabajando en... | Leer (a demanda) |

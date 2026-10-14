@@ -38,7 +38,7 @@ Si te falta algo, Claude te dice qué instalar y cómo.
 Es el camino recomendado y lleva unos 10 minutos. Claude corre casi todos los comandos; la bajada y la instalación
 corren en tu propia terminal.
 
-1. Abrí las instrucciones de tu sistema: [Windows](../getting-started/windows.md), [Mac](../getting-started/mac.md) o [Linux](../getting-started/linux.md).
+1. Abrí las instrucciones de tu sistema: [Windows](getting-started/windows.md), [Mac](getting-started/mac.md) o [Linux](getting-started/linux.md).
 2. Copiá el bloque entero de la «Parte 1». Abrí Claude Code en cualquier carpeta y pegalo en una conversación nueva.
 3. Claude te da las líneas que bajan el guion de instalación, lo muestran y lo corren: pegalas en tu propia terminal,
    así leés el guion antes de correrlo. Nada te pide iniciar sesión: el arnés nunca abre un navegador.
@@ -95,19 +95,19 @@ hoy corren sólo en TYCON, en Azure DevOps. Tampoco el vigilante de producción,
 
 | Si querés… | Leé |
 |---|---|
-| Instalar a mano, en Linux o sin nadie delante | [Instalar a mano](../getting-started/reference.es.md#instalar-a-mano) |
-| Saber qué escribe en tu máquina y cómo apagar cada cosa | [Qué escribe en tu máquina](../getting-started/reference.es.md#qué-escribe-en-tu-máquina-y-qué-hace-solo) |
-| Actualizar, volver atrás o desinstalar | [Cómo se actualiza](../getting-started/reference.es.md#cómo-se-actualiza) |
-| Usarlo con Codex | [Qué es opcional](../getting-started/reference.es.md#qué-es-opcional) |
-| Cambiar el arnés | [CONTRIBUTING.md](CONTRIBUTING.md) |
+| Instalar a mano, en Linux o sin nadie delante | [Instalar a mano](getting-started/reference.es.md#instalar-a-mano) |
+| Saber qué escribe en tu máquina y cómo apagar cada cosa | [Qué escribe en tu máquina](getting-started/reference.es.md#qué-escribe-en-tu-máquina-y-qué-hace-solo) |
+| Actualizar, volver atrás o desinstalar | [Cómo se actualiza](getting-started/reference.es.md#cómo-se-actualiza) |
+| Usarlo con Codex | [Qué es opcional](getting-started/reference.es.md#qué-es-opcional) |
+| Cambiar el arnés | [CONTRIBUTING.md](.github/CONTRIBUTING.md) |
 
 ## Licencia y marcas
 
-Apache License 2.0: ver [LICENSE](../LICENSE). [NOTICE](../NOTICE) lista el titular, las marcas y las atribuciones de
+Apache License 2.0: ver [LICENSE](LICENSE). [NOTICE](NOTICE) lista el titular, las marcas y las atribuciones de
 los archivos derivados de trabajo de terceros.
 
 TYCON y Bizuit son marcas de sus dueños, y la licencia no las otorga.
 Este arnés usa BMad Method, MIT; no está afiliado ni respaldado por BMad Code, LLC.
 
-Para contribuir, leé [CONTRIBUTING.md](CONTRIBUTING.md). Para reportar una vulnerabilidad, leé
-[SECURITY.md](SECURITY.md). Participar sigue el [código de conducta](CODE_OF_CONDUCT.md).
+Para contribuir, leé [CONTRIBUTING.md](.github/CONTRIBUTING.md). Para reportar una vulnerabilidad, leé
+[SECURITY.md](.github/SECURITY.md). Participar sigue el [código de conducta](.github/CODE_OF_CONDUCT.md).

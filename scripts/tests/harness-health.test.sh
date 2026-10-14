@@ -203,7 +203,7 @@ if corre REG-H3; then
   LAB_APPLIER_SUITE_FAIL=1 harness install --yes >/dev/null 2>&1; RC=$?
   [ "$RC" = 1 ] && [ "$(estado "(d.get('failed') or {}).get('reason')")" = health ] && ok "REG-H3 install con la salud rota sale 1 y anota failed" || mal "REG-H3 install roto: rc $RC failed=$(estado "d.get('failed')")"
   # algo para reponer (install no corta en «sin cambios»): la línea de import, escrita con cualquiera de los dos nombres del lugar
-  grep -v -e '^@~/.claude/tycon-harness/README.md$' -e '^@~/.claude/tycon-claude-guides/README.md$' "$CLAUDE_MD_PATH" > "$BASE/cm" ; cp "$BASE/cm" "$CLAUDE_MD_PATH"
+  grep -v -e '^@~/.claude/tycon-harness/INDEX.md$' -e '^@~/.claude/tycon-harness/README.md$' -e '^@~/.claude/tycon-claude-guides/README.md$' "$CLAUDE_MD_PATH" > "$BASE/cm" ; cp "$BASE/cm" "$CLAUDE_MD_PATH"
   SALIDA="$(harness install --yes 2>&1)"; RC=$?
   [ "$RC" = 0 ] && [ "$(estado "d.get('failed')")" = None ] && ok "REG-H3 la reinstalación sana pasa la salud y borra failed" || mal "REG-H3 reinstalación: rc $RC failed=$(estado "d.get('failed')") · $SALIDA"
   harness doctor >/dev/null 2>&1 && ok "REG-H3 doctor verde después" || mal "REG-H3 doctor sigue en rojo"

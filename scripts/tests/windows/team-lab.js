@@ -45,7 +45,7 @@ const PLACE = require('../../setup/harness/place.js');
 // antes de la 8.19 (la del viernes), sólo el viejo. Falta el arnés sólo si no está ninguno, y entonces se nombra el lugar.
 const LINK_NAMES = [PLACE.PLACE_NAME, PLACE.LEGACY_PLACE_NAME, 'agent-skills', 'agents', 'skills'];
 const placeNames = (home) => { const has = (n) => { try { fs.lstatSync(path.join(home, '.claude', n)); return true; } catch (_) { return false; } }; return has(PLACE.LEGACY_PLACE_NAME) && !has(PLACE.PLACE_NAME) ? new Set([PLACE.PLACE_NAME]) : new Set([PLACE.LEGACY_PLACE_NAME]); };
-const IMPORT_RX = new RegExp(`^@.*(?:${PLACE.PLACE_NAME}|${PLACE.LEGACY_PLACE_NAME}).*README\\.md\\s*$`);
+const IMPORT_RX = new RegExp(`^@.*(?:${PLACE.PLACE_NAME}|${PLACE.LEGACY_PLACE_NAME}).*(?:INDEX|README)\\.md\\s*$`);   // el índice: INDEX.md desde 2026-10-14 (antes README.md)
 // las dos formas del texto del alta (ver la cabecera)
 const SHAPE = Object.freeze({ two: 'two-clones', one: 'one-clone', none: 'no-clone' });
 const SHAPE_TEXT = Object.freeze({ 'two-clones': 'dos clones', 'one-clone': 'un solo clon', 'no-clone': 'sin clon (la versión instalada por la portada, story 8.23 E)' });

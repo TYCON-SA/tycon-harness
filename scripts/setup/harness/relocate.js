@@ -16,8 +16,8 @@
 //   2. (harness.js) toma la copia del mecanismo, `reason: relocate`;
 //   3. corre `--reroot <viejo> <lugar>` de `scripts/lib/legacy-names.js` (del árbol): reescribe hooks y demás, AGREGA la
 //      forma nueva al lado de cada permiso, y saca un hook que ya estaba por la ruta real del clon;
-//   4. cambia la línea `@~/.claude/<viejo>/README.md` de CLAUDE.md por la del lugar (si están las dos, queda una) y el id
-//      de su pieza registrada;
+//   4. cambia la línea `@~/.claude/<viejo>/README.md` de CLAUDE.md por la de hoy, `@~/.claude/<lugar>/INDEX.md` (si
+//      están las dos, queda una) y el id de su pieza registrada;
 //   5. dice una línea por archivo cambiado y el total.
 // No guarda estado: es textual e idempotente. Una corrida cortada se termina corriéndolo otra vez (nunca restaurando
 // desde una copia: se perdería lo que otra sesión guardó en el medio). Corre igual en `managed` y `developer` y no mira
@@ -30,32 +30,21 @@ const path = require('path');
 const PLACE = require('./place.js');
 
 const STEPS = ['after-snapshot', 'after-reroot', 'after-import'];
-const importLine = (name) => `@~/.claude/${name}/README.md`;
-const NEW_IMPORT = importLine(PLACE.PLACE_NAME);
-const OLD_IMPORT = importLine(PLACE.LEGACY_PLACE_NAME);
+const IMPORT = require('./import-line.js');
+const NEW_IMPORT = IMPORT.IMPORT_LINE;
+const OLD_IMPORT = IMPORT.LEGACY_PLACE_FORMS.find((l) => l.endsWith('/README.md'));
 const lexists = (p) => { try { fs.lstatSync(p); return true; } catch (_) { return false; } };
 const real = (p) => { try { return fs.realpathSync(p); } catch (_) { return null; } };
 const claudeMdPath = (ctx) => ctx.env.CLAUDE_MD_PATH || path.join(ctx.home, '.claude', 'CLAUDE.md');
 const trimmed = (l) => l.replace(/\r$/, '').trim();
 
 /**
- * CLAUDE.md con la línea del nombre viejo pasada al lugar; si ya estaba la del lugar, la vieja se va (queda una).
- * `dedupeOnly`: sólo saca la vieja cuando la nueva ya está (lo usa `install`, que no muda).
+ * CLAUDE.md con la línea del índice en su forma de hoy: la del nombre viejo (o la del README.md que era el índice) pasa al
+ * lugar y a INDEX.md; si ya estaba la de hoy, la vieja se va (queda una). La regla vive en import-line.js.
  */
-function swapImport(text, { dedupeOnly = false } = {}) {
-  const lines = String(text).split('\n');
-  const hasNew = lines.some((l) => trimmed(l) === NEW_IMPORT);
-  if (dedupeOnly && !hasNew) return { text, changed: 0 };
-  let changed = 0; let placed = hasNew;
-  const out = [];
-  for (const l of lines) {
-    if (trimmed(l) !== OLD_IMPORT) { out.push(l); continue; }
-    changed++;
-    if (placed) continue;
-    out.push(l.replace(OLD_IMPORT, NEW_IMPORT));
-    placed = true;
-  }
-  return { text: changed ? out.join('\n') : text, changed };
+function swapImport(text) {
+  const r = IMPORT.rewrite(text, { relocate: true });
+  return { text: r.text, changed: r.changed };
 }
 
 /** La biblioteca de `--reroot` del árbol, o el motivo por el que no está. */
@@ -98,14 +87,14 @@ function preconditions(ctx, state, { bootstrap }) {
   return out;
 }
 
-/** Los ids de las piezas `import` registradas que nombran el viejo (se pasan al lugar; si ya estaba, queda una). */
+/** Los ids de las piezas `import` registradas con una forma vieja (pasan a la de hoy; si ya estaba, queda una). */
 function relocatePieces(managed) {
   if (!Array.isArray(managed)) return { managed, changed: 0 };
   let changed = 0;
   const hasNew = (where) => managed.some((p) => p && p.kind === 'import' && p.id === NEW_IMPORT && p.where === where);
   const out = [];
   for (const p of managed) {
-    if (p && p.kind === 'import' && p.id === OLD_IMPORT) {
+    if (p && p.kind === 'import' && p.id !== NEW_IMPORT && IMPORT.ALL_FORMS.includes(p.id)) {
       changed++;
       if (hasNew(p.where) || out.some((x) => x && x.kind === 'import' && x.id === NEW_IMPORT && x.where === p.where)) continue;
       out.push(Object.assign({}, p, { id: NEW_IMPORT }));
