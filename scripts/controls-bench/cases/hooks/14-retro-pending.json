@@ -1452,8 +1452,176 @@
               }
             ]
           }
+        },
+        {
+          "id": "laboratorio-push-a-main-con-remoto-de-prueba-lo-DICE-y-no-anota",
+          "type": "must-block",
+          "__doc": "El caso que funda la regla (2026-10-14): un repo de juguete en la carpeta de trabajo temporal de una sesión, con .tycon/ y origin a un repo de PRUEBA que no tiene ninguna copia de trabajo fuera de las temporales. No se anota y se dice, con el comando del latido por si era de verdad. ROJO PREVIO: se anotaba, y el cierre del turno quedaba frenado por merges que ninguna retrospectiva tenía sentido escribir.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/",
+            "mkdir -p repos temporal/scratchpad/juguete && cd temporal/scratchpad/juguete && git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin https://github.com/acme-pruebas/juguete-web.git"
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "cwd": "${FIXTURE}/temporal/scratchpad/juguete",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git push origin main"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "LABORATORIO",
+              "NO lo registro",
+              "retro-heartbeat\\.js"
+            ],
+            "file_absent": [
+              "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl"
+            ]
+          },
+          "env": {
+            "TYCON_RETRO_LAB_DIRS": "${FIXTURE}/temporal",
+            "TYCON_REPOS_ROOT": "${FIXTURE}/repos"
+          }
+        },
+        {
+          "id": "laboratorio-push-a-main-sin-origin-lo-DICE-y-no-anota",
+          "type": "must-block",
+          "__doc": "Un repo de juguete sin origin en una carpeta temporal: no hay repo de verdad detrás. No se anota y se dice. ROJO PREVIO: se anotaba.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/",
+            "mkdir -p repos temporal/juguete && cd temporal/juguete && git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "cwd": "${FIXTURE}/temporal/juguete",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git push origin main"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "LABORATORIO",
+              "no tiene origin"
+            ],
+            "file_absent": [
+              "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl"
+            ]
+          },
+          "env": {
+            "TYCON_RETRO_LAB_DIRS": "${FIXTURE}/temporal",
+            "TYCON_REPOS_ROOT": "${FIXTURE}/repos"
+          }
+        },
+        {
+          "id": "registra-clon-descartable-en-carpeta-temporal-de-un-repo-con-copia-de-trabajo-afuera",
+          "type": "must-block",
+          "__doc": "GUARDA de no-regresión (verde antes y después, dicha como tal): el clon descartable de un repo de verdad vive en el temporal, pero su remoto tiene una copia de trabajo bajo la raíz de repos. Es un merge de verdad: se anota. Es la que se pone roja el día que alguien simplifique la regla a «en el temporal no se anota».",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/",
+            "mkdir -p repos/producto && cd repos/producto && git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin https://dev.azure.com/acme/Producto/_git/Producto",
+            "mkdir -p temporal/clon && cd temporal/clon && git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin https://dev.azure.com/acme/Producto/_git/Producto"
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "cwd": "${FIXTURE}/temporal/clon",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git push origin main"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "retro-pending: push a main registrado"
+            ],
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl",
+                "re": "\"repoPath\":\"[^\"]*/temporal/clon\""
+              }
+            ]
+          },
+          "env": {
+            "TYCON_RETRO_LAB_DIRS": "${FIXTURE}/temporal",
+            "TYCON_REPOS_ROOT": "${FIXTURE}/repos"
+          }
+        },
+        {
+          "id": "registra-clon-LOCAL-en-carpeta-temporal-de-una-copia-de-afuera",
+          "type": "must-block",
+          "__doc": "GUARDA de no-regresión: un clon hecho DESDE una copia de trabajo de afuera (su origin es una ruta) se sigue hasta ella, aunque esa copia no tenga remoto. Se anota.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/",
+            "mkdir -p repos/sin-remoto && cd repos/sin-remoto && git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "mkdir -p temporal && git clone -q repos/sin-remoto temporal/clon-local && mkdir -p temporal/clon-local/.tycon"
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "cwd": "${FIXTURE}/temporal/clon-local",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git push origin main"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "retro-pending: push a main registrado"
+            ],
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl",
+                "re": "\"repoPath\":\"[^\"]*/temporal/clon-local\""
+              }
+            ]
+          },
+          "env": {
+            "TYCON_RETRO_LAB_DIRS": "${FIXTURE}/temporal",
+            "TYCON_REPOS_ROOT": "${FIXTURE}/repos"
+          }
+        },
+        {
+          "id": "registra-repo-en-carpeta-temporal-si-no-hay-raiz-de-repos-la-duda-va-a-mas-control",
+          "type": "must-block",
+          "__doc": "Sin raíz de repos no se puede saber si el remoto tiene una copia de trabajo afuera: se anota, como siempre. ROJO PREVIO (de una versión que diera «sin copia» por «no pude mirar»): no se anotaba un merge que podía ser de verdad.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/",
+            "mkdir -p temporal/juguete && cd temporal/juguete && git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin https://github.com/acme-pruebas/juguete-web.git"
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "cwd": "${FIXTURE}/temporal/juguete",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git push origin main"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "retro-pending: push a main registrado"
+            ],
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl",
+                "re": "\"repoPath\":\"[^\"]*/temporal/juguete\""
+              }
+            ]
+          },
+          "env": {
+            "TYCON_RETRO_LAB_DIRS": "${FIXTURE}/temporal",
+            "TYCON_REPOS_ROOT": "${FIXTURE}/no-existe"
+          }
         }
-      ]
+      ],
+      "env": {
+        "TYCON_RETRO_LAB_DIRS": ""
+      },
+      "__env": "Las suites del banco arman sus repos en el temporal del sistema: acá se declara que no hay carpetas de laboratorio (TYCON_RETRO_LAB_DIRS vacía), para que los casos de siempre se midan como repos de verdad. Los casos de laboratorio (2026-10-14) declaran la suya, adentro del caso."
     },
     {
       "hook": "retro-pending.js (gate)",
@@ -1752,8 +1920,59 @@
               "y 1 más en ese repo: fff999eee888 .*--merge fff999eee888"
             ]
           }
+        },
+        {
+          "id": "deja-parar-si-el-pendiente-es-de-un-repo-de-LABORATORIO",
+          "type": "must-stay-quiet",
+          "__doc": "Una entrada vieja de un repo de laboratorio que sigue en pie (anotada antes de la regla) no frena el cierre del turno. ROJO PREVIO: el caso del 2026-10-14, tres bloqueos seguidos por un repo de juguete.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/",
+            "mkdir -p repos temporal/juguete && cd temporal/juguete && git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:'2026-10-14T06:56:00.000Z',sessionId:'bench-s1',repoPath:process.cwd()+'/temporal/juguete',sha:'abc123def456',branch:'main'})+'\\n')\""
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "stop_hook_active": false
+          },
+          "expect": {
+            "stdout_not_re": [
+              "decision"
+            ]
+          },
+          "env": {
+            "TYCON_RETRO_LAB_DIRS": "${FIXTURE}/temporal",
+            "TYCON_REPOS_ROOT": "${FIXTURE}/repos"
+          }
+        },
+        {
+          "id": "bloquea-pendiente-de-un-repo-en-carpeta-temporal-que-ya-no-esta",
+          "type": "must-block",
+          "__doc": "GUARDA de no-regresión: si la carpeta del repo ya no existe no se puede juzgar si era de laboratorio, y se reclama como siempre (un clon descartable de verdad que se borró sigue debiendo su retrospectiva).",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/",
+            "mkdir -p repos temporal",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:'2026-10-14T06:56:00.000Z',sessionId:'bench-s1',repoPath:process.cwd()+'/temporal/borrado',sha:'abc123def456',branch:'main'})+'\\n')\""
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "stop_hook_active": false
+          },
+          "expect": {
+            "stdout_re": [
+              "\"decision\"\\s*:\\s*\"block\"",
+              "--merge abc123def456"
+            ]
+          },
+          "env": {
+            "TYCON_RETRO_LAB_DIRS": "${FIXTURE}/temporal",
+            "TYCON_REPOS_ROOT": "${FIXTURE}/repos"
+          }
         }
-      ]
+      ],
+      "env": {
+        "TYCON_RETRO_LAB_DIRS": ""
+      },
+      "__env": "Las suites del banco arman sus repos en el temporal del sistema: acá se declara que no hay carpetas de laboratorio (TYCON_RETRO_LAB_DIRS vacía), para que los casos de siempre se midan como repos de verdad. Los casos de laboratorio (2026-10-14) declaran la suya, adentro del caso."
     },
     {
       "hook": "retro-pending.js (aviso)",
@@ -1899,7 +2118,11 @@
             ]
           }
         }
-      ]
+      ],
+      "env": {
+        "TYCON_RETRO_LAB_DIRS": ""
+      },
+      "__env": "Las suites del banco arman sus repos en el temporal del sistema: acá se declara que no hay carpetas de laboratorio (TYCON_RETRO_LAB_DIRS vacía), para que los casos de siempre se midan como repos de verdad. Los casos de laboratorio (2026-10-14) declaran la suya, adentro del caso."
     }
   ]
 }

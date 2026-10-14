@@ -402,10 +402,37 @@ if [ -f "${CATALOGO_REAL}" ] && [ -z "${AGENTES:-}" ]; then
 fi
 
 # ── C5 · el catálogo REAL: los números que publica la story ──────────────────────────────────────
+# Los tres números exactos son los del NÚCLEO y se miden en los dos lados: en el repo del equipo se leen sin las
+# secciones de los revisores que declara su paquete de clientes (packs/clients/pack.json), que el público no cuenta.
+# Antes la copia no los medía y el repo del equipo tenía escritos los suyos (364/363/361): el público contaba a mano lo
+# que el equipo tiene, y sacar un revisor de ese paquete ponía rojo este caso.
+DE_CLIENTES=""
+if [ -f "${RAIZ}/packs/clients/pack.json" ]; then
+  DE_CLIENTES="$(python3 -c "
+import json,sys
+print(' '.join(sorted(set(r['agent'] for r in json.load(open(sys.argv[1])).get('reviewers', [])))))" "${RAIZ}/packs/clients/pack.json")"; RC=$?
+  [ "${RC}" -eq 0 ] || mal "C5 · no pude leer el manifiesto del paquete de clientes (rc ${RC}) — sin él, los números del núcleo no se pueden separar"
+fi
+# El catálogo del núcleo: el real sin las secciones (de un «## … — `dueño`» al siguiente «## ») de esos revisores.
+NUCLEO="${BASE}/catalogo-nucleo.md"
+if [ -f "${CATALOGO_REAL}" ]; then
+  python3 - "${CATALOGO_REAL}" "${NUCLEO}" ${DE_CLIENTES} <<'PY'
+import re, sys
+origen, destino, fuera = sys.argv[1], sys.argv[2], set(sys.argv[3:])
+salida, saltear = [], False
+for linea in open(origen, encoding='utf-8').read().split('\n'):
+    if linea.startswith('## '):
+        m = re.search(r'`([^`]+)`\s*$', linea)
+        saltear = bool(m and m.group(1) in fuera)
+    if not saltear:
+        salida.append(linea)
+open(destino, 'w', encoding='utf-8').write('\n'.join(salida))
+PY
+fi
 if [ -f "${CATALOGO_REAL}" ] && [ -d "${RAIZ}/adapters/codex/agents" ]; then
-  leer "${CATALOGO_REAL}" "${RAIZ}/adapters/codex/agents" --json; RC=$?
+  leer "${NUCLEO}" "${RAIZ}/adapters/codex/agents" --json; RC=$?
   if [ "${RC}" -ne 0 ]; then
-    mal "C5 · el lector salió ${RC} sobre el catálogo real"
+    mal "C5 · el lector salió ${RC} sobre el catálogo del núcleo"
   else
     FIL="$(jq_py "d['filas']")"; REG="$(jq_py "d['reglas']")"; IDE="$(jq_py "d['identificadores']")"
     # story 7.2 (2026-09-16): ACCOV-C9 retirada → su fila deja de ser una definición: uno menos en los tres.
@@ -413,22 +440,21 @@ if [ -f "${CATALOGO_REAL}" ] && [ -d "${RAIZ}/adapters/codex/agents" ]; then
     # 2026-09-18 (BANCO-C5, «el caso se derrama sobre el entorno real»): uno más en los tres, y una
     # «sin verificación» más — la familia BANCO la verifica el rojo previo, no un guion.
     # 2026-10-02 (REACT-C6, «el backend llamado desde la raíz del servidor»): uno más en los tres.
-    # story 8.7: la copia pública sale sin las secciones de los revisores del paquete de clientes, así que sus tres
-    # números son otros y cambian con ese paquete, que afuera no se ve. Los exactos se miden en el repo del equipo; en la
-    # copia se dice que no se midieron y se exige lo que sí vale en los dos lados: la relación entre los tres.
-    if [ "${PUBLIC_COPY}" = 1 ]; then
-      echo "  ⏭   — C5 · NO MEDIDO: los tres números exactos del catálogo (filas=${FIL}, reglas=${REG}, identificadores=${IDE} acá) — la copia pública sale sin las secciones del paquete de clientes; se miden en el repo del equipo. No es un verde."
-      [ "${IDE}" -gt 0 ] 2>/dev/null && [ "${FIL}" -ge "${REG}" ] 2>/dev/null && [ "${REG}" -ge "${IDE}" ] 2>/dev/null \
-        && ok "C5 · en la copia los tres números guardan su relación (filas ≥ reglas ≥ identificadores > 0)" \
-        || mal "C5 · filas=${FIL} reglas=${REG} identificadores=${IDE}: no guardan la relación filas ≥ reglas ≥ identificadores > 0"
-    else
-    [ "${FIL}" = "364" ] && ok "C5 · 364 filas en el catálogo real" \
-      || mal "C5 · filas=${FIL}, esperaba 364 — si el catálogo creció, actualizá este número Y el de la story en el mismo commit"
-    [ "${REG}" = "363" ] && ok "C5 · 363 reglas = pares (dueño, regla), que es la unidad de la tabla" \
-      || mal "C5 · reglas=${REG}, esperaba 363 — rojo previo (números de 2026-09-16): contar identificadores fusiona SEC-C1/SEC-C2; contar filas duplica PIPE-C5"
-    [ "${IDE}" = "361" ] && ok "C5 · 361 identificadores distintos (con ACCOV-C1-EXT)" \
-      || mal "C5 · identificadores=${IDE}, esperaba 361 — rojo previo: con el regex viejo daba 7 menos (las 7 de I18N invisibles)"
-    fi
+    # 2026-10-14: los números pasan a ser los del núcleo, sin las secciones del paquete de clientes (en el repo del
+    # equipo eran 364/363/361 con las dos secciones de ese paquete: 15 filas, 15 reglas, 15 identificadores).
+    [ -z "${DE_CLIENTES}" ] || echo "  ·    — C5 · sin las secciones del paquete de clientes: ${DE_CLIENTES}"
+    [ "${FIL}" = "349" ] && ok "C5 · 349 filas en el catálogo del núcleo" \
+      || mal "C5 · filas=${FIL}, esperaba 349 — si el catálogo creció, actualizá este número Y el de la story en el mismo commit; en el repo del equipo, mirá también que su copia del catálogo no haya quedado atrás de la del público"
+    [ "${REG}" = "348" ] && ok "C5 · 348 reglas = pares (dueño, regla), que es la unidad de la tabla" \
+      || mal "C5 · reglas=${REG}, esperaba 348 — rojo previo (números de 2026-09-16): contar identificadores fusiona SEC-C1/SEC-C2; contar filas duplica PIPE-C5"
+    [ "${IDE}" = "346" ] && ok "C5 · 346 identificadores distintos (con ACCOV-C1-EXT)" \
+      || mal "C5 · identificadores=${IDE}, esperaba 346 — rojo previo: con el regex viejo daba 7 menos (las 7 de I18N invisibles)"
+  fi
+  # el resto se mide sobre el catálogo real entero
+  leer "${CATALOGO_REAL}" "${RAIZ}/adapters/codex/agents" --json; RC=$?
+  if [ "${RC}" -ne 0 ]; then
+    mal "C5 · el lector salió ${RC} sobre el catálogo real"
+  else
     I18N="$(jq_py "sum(1 for r in d['lista'] if r['regla'].startswith('I18N-'))")"
     [ "${I18N}" = "7" ] && ok "C5 · las 7 reglas del área con dígito están" \
       || mal "C5 · I18N tiene ${I18N} reglas, esperaba 7 — rojo previo: el defecto que esta story existe para cerrar"
