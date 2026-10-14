@@ -147,7 +147,7 @@ SYSTEM_COLLECTIONURI="https://dev.azure.com/o/" SYSTEM_TEAMPROJECT="P" BUILD_REP
 # 2026-10-14, Node 24: rojo sin ninguna tarea en el resumen)
 SUELTO_5001='(^|[^0-9a-fA-F])5001([^0-9a-fA-F]|$)'
 printf 'anotado en el commit de versión b5001e5.\n' | grep -qE "$SUELTO_5001" && no "el patrón del 5001 toma un sha corto" || ok "el patrón del 5001 no toma un sha corto (b5001e5)"
-printf '%s\n' '- [PR 5001](https://x/pullrequest/5001): la tarea' | grep -qE "$SUELTO_5001" && ok "…y sí ve el 5001 suelto" || no "el patrón del 5001 no ve el número suelto"
+printf '%s\n' 'la tarea 5001 quedó nombrada' | grep -qE "$SUELTO_5001" && ok "…y sí ve el 5001 suelto" || no "el patrón del 5001 no ve el número suelto"
 { [ "$RC" -eq 0 ] && [ "$(etiquetas)" = "PR-43 " ] && ! grep -qE "$SUELTO_5001" "$RES"; } 2>/dev/null \
   && ok "🔴 en un repo de Azure, «(#N)» al final de un merge no es un pedido: sin etiqueta" \
   || no "tarea etiquetada como pedido en Azure: [$(etiquetas)] $(cat "$RES" 2>/dev/null | tr '\n' ' ')"
