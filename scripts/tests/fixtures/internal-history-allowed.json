@@ -202,12 +202,6 @@
     {
       "file": "guides/publicacion-espejo.md",
       "form": "team-path",
-      "value": "new-product-templates",
-      "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
-    },
-    {
-      "file": "guides/publicacion-espejo.md",
-      "form": "team-path",
       "value": "onboarding",
       "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
     },
@@ -310,37 +304,7 @@
     {
       "file": "guides/publicacion-espejo.md",
       "form": "team-path",
-      "value": "scripts/tools/harness-map",
-      "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
-    },
-    {
-      "file": "guides/publicacion-espejo.md",
-      "form": "team-path",
       "value": "skills/bizuit-sdd",
-      "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
-    },
-    {
-      "file": "guides/publicacion-espejo.md",
-      "form": "team-path",
-      "value": "skills/core/signalr-realtime",
-      "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
-    },
-    {
-      "file": "guides/publicacion-espejo.md",
-      "form": "team-path",
-      "value": "skills/infrastructure",
-      "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
-    },
-    {
-      "file": "guides/publicacion-espejo.md",
-      "form": "team-path",
-      "value": "skills/projects",
-      "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
-    },
-    {
-      "file": "guides/publicacion-espejo.md",
-      "form": "team-path",
-      "value": "skills/tycon-alta-de-producto",
       "reason": "un dato de la guía de publicación, no una referencia para seguir: la ruta que el exportador deja afuera, tal como la traen las tablas «Qué entra» y «Exclusiones fijas» (scripts/tests/publishing-guide-tables.test.js las compara con la salida de --explain) y la lista de rutas vedadas del freno antes de publicar"
     },
     {
@@ -408,6 +372,12 @@
       "form": "team-path",
       "value": "inbox/instincts/descartados",
       "reason": "un dato de la guía, no una referencia para seguir: la carpeta local (sin versionar) donde el grabador deja lo descartado. El repo del equipo no la ve porque no la tiene versionada; en el público cae bajo una carpeta no pública, y ahí hace falta la declaración"
+    },
+    {
+      "file": "guides/nombres-en-ingles.md",
+      "form": "team-path",
+      "value": "perfil-equipo.json",
+      "reason": "un dato de la guía: el nombre de antes del perfil del equipo, que el arnés sigue leyendo sin fecha de retiro; el archivo vive en el repo del perfil de cada organización, no en esta copia"
     }
   ]
 }
