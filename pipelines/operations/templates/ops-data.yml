@@ -8,7 +8,9 @@
 #   · datos: `.dashboard/`, `inbox/`, `artifacts/`. Cada una queda IGUAL a la del repo de operaciones (lo que se movió
 #     o se borró allá, también acá). Si el repo no trae alguna —un repo recién creado no trae ninguna— no es un error:
 #     es la primera noche.
-#   · configuración, si está: `operations.json` (responsables y revisores), `scripts/nightly/dependencies/repos.json`
+#   · configuración, si está: `operations.json` (responsables y revisores), `team-repos.json` (la plataforma de la
+#     organización: con `operations.platform: github` los avisos de dependencias son issues; story 8.31),
+#     `scripts/nightly/dependencies/repos.json`
 #     (qué repos mira la revisión de dependencias) y `summary.json` (el resumen diario), y
 #     `scripts/nightly/dashboard/sources.json` y `declared.json` (qué espera el tablero). Lo que no trae queda como lo
 #     trae el arnés (los ejemplos públicos están en pipelines/operations/examples/).
@@ -34,7 +36,7 @@ steps:
       [ -d "$O/.git" ] || red "no está el checkout del repo de operaciones en $O (falta fetch-harness.yml antes)"
       [ -d "$S/.git" ] || red "no está el árbol del arnés en $S (falta fetch-harness.yml antes)"
       DATA_DIRS=(.dashboard inbox artifacts)
-      CONFIG_FILES=(operations.json scripts/nightly/dependencies/repos.json scripts/nightly/dependencies/summary.json scripts/nightly/dashboard/sources.json scripts/nightly/dashboard/declared.json)
+      CONFIG_FILES=(operations.json team-repos.json scripts/nightly/dependencies/repos.json scripts/nightly/dependencies/summary.json scripts/nightly/dashboard/sources.json scripts/nightly/dashboard/declared.json)
       ENTRIES=()
       for D in "${DATA_DIRS[@]}"; do
         [ -d "$O/$D" ] || continue

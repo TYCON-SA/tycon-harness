@@ -281,3 +281,53 @@ test('un `--repo` relativo no inventa ceguera (force-full falso en cada iteraci�
   assert.notEqual(out.ledger_blind, true,
     'comparar strings sin resolver hacía que `--repo .` no matcheara ninguna entrada del registro');
 });
+
+// ── La foto es de la vuelta; la versión que vio cada revisor, no (2026-10-14) ──────────────────
+// 🔴 El defecto: la foto de la vuelta se toma sola al lanzar el ÚLTIMO revisor. Un arreglo hecho
+// mientras corrían los revisores, pero ANTES de ese último lanzamiento, queda adentro de la foto: el
+// delta de la vuelta siguiente no lo trae, y el revisor que se había lanzado ANTES del arreglo —que
+// nunca lo vio— se saltea por «superficie no tocada». La corrección mira, por revisor, cuándo se
+// lanzó (el registro de lanzamientos que escribe el hook, no algo que el agente tipea), y trata como
+// no visto todo lo editado después de ESE lanzamiento.
+// ROJO PREVIO: `security-basics` (lanzado a t1, arreglo a t2, último revisor y foto a t3) salía en
+// `skipped` con «superficie no tocada».
+
+/** Registro de lanzamientos de la sesión, como lo escribe on-advisor-run.js. */
+function escribirRegistro(home, lineas) {
+  const dir = path.join(home, '.claude', '.tycon-pipeline', 'advisor-runs');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, `${SID}.jsonl`), lineas.map((l) => JSON.stringify(l)).join('\n') + '\n');
+}
+
+test('un arreglo hecho entre dos lanzamientos re-corre al revisor que se lanzó antes, y sólo a ése', () => {
+  const repo = mkRepoGit();
+  const real = path.join(repo, 'src', 'PluginManager.cs');
+  const A = 'tycon-plugin-security-basics';
+  const B = 'tycon-plugin-dotnet-conventions';      // también audita .cs
+  const base = Date.now() - 120000;
+  const t = (s) => new Date(base + s * 1000).toISOString();
+  // t0 arranca la vuelta 1 · t10 se lanza A · t20 se arregla el archivo · t30 se lanza B (el último) y sale la foto.
+  fs.writeFileSync(real, '// arreglo hecho mientras A ya estaba corriendo\n');
+  const seg = (base + 20000) / 1000;
+  fs.utimesSync(real, seg, seg);
+  const home = mkHome({
+    storyId: '9.3.1', repoPath: repo,
+    filesTouched: [real],
+    fileEvents: [{ path: real, ts: t(20) }],
+    iterations: { 1: { ts: t(30.3), filesSnapshot: [real] } },
+  });
+  escribirRegistro(home, [
+    { ts: t(0), event: 'step5-start', iter: 1, expected: [A, B], mode: 'advisors' },
+    { ts: t(10), advisor: A, story: '9.3.1', repo },
+    { ts: t(30), advisor: B, story: '9.3.1', repo },
+    { ts: t(30.2), event: 'auto-snapshot', iter: 1 },
+  ]);
+
+  const out = reloop(repo, home);
+  assert.equal(out.mode, 'smart-reloop');
+  assert.ok(out.rerun.includes(A),
+    `${A} se lanzó ANTES del arreglo y nunca lo vio — skipped: ${JSON.stringify(out.skipped.find((s) => s.name === A))}`);
+  assert.ok(out.skipped.some((s) => s.name === B),
+    `${B} se lanzó DESPUÉS del arreglo: re-correrlo sería gastar de más — rerun: ${out.rerun.join(', ')}`);
+  assert.ok((out.no_vistos_por_revisor || {})[A], 'y la salida dice qué archivos no vio cada revisor');
+});

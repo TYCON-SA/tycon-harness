@@ -1,56 +1,46 @@
 'use strict';
-// public-copy-messages.test.js — los textos que en la copia pública mandarían a una pieza que no viaja (story 8.10.3, tanda
-// A, AC 5 · T5).
+// public-copy-messages.test.js — los textos que en el arnés publicado mandarían a una pieza que no viaja (story 8.10.3,
+// tanda A, AC 5 · T5; story 8.26, AC 36).
 //
-// POR QUÉ EXISTE: tres piezas del arnés hablan de integraciones del equipo que la copia no trae —la llave del buzón de
-// corridas, el guion nocturno de dependencias y la lista de repos de producto—. En el repo
-// del equipo esos textos están bien: diagnostican algo real. En la copia le dicen a quien la usa que le falta algo, o que
-// corra algo que no existe. El exportador los cambia sólo en la copia con la transformación `public-texts`
-// (`allowlist.json → publicTexts`: el texto EXACTO, su versión pública, cuántas veces aparece y el motivo).
+// POR QUÉ EXISTE: tres piezas del arnés hablan de integraciones del equipo que el arnés publicado no trae —la llave del
+// buzón de corridas, el guion nocturno de dependencias y la lista de repos de producto—. Un texto que le dice a quien lo
+// usa que le falta algo, o que corra algo que no existe, es un diagnóstico falso.
 //
-// Qué fija, sobre los archivos de verdad y las entradas de verdad de la lista blanca:
-//   · cada una de las tres piezas tiene su entrada;
-//   · aplicadas, ninguna frase manda a la pieza que falta;
+// Hasta la story 8.26 el repo del equipo guardaba el texto «interno» y el exportador lo cambiaba sólo en la copia
+// (`allowlist.json → publicTexts`). Desde el AC 36 el repo de mantenimiento ya no arma la copia: el texto público es
+// el ÚNICO, en los dos lados, y la lista quedó vacía. Esta prueba fija eso:
+//   · cada pieza, tal como está en el árbol, no manda a la pieza que no viaja;
+//   · ninguna tiene ya una entrada en `publicTexts` (una entrada nueva volvería a pedir un texto interno que el
+//     público no tiene, y el árbol de mantenimiento —lo privado con el público encima— dejaría de poder clasificarse).
 // El bloque del mapa del pre-commit NO está entre ellas, a propósito (pase adversarial de la tanda A): una suite que viaja
 // (githook-renames.test.sh, H2) arma un mapa de juguete y espera que ese bloque frene; sin el generador, el bloque sólo
 // avisa con su propio mensaje.
-//   · en el repo, los archivos conservan los textos de hoy (el diagnóstico del equipo no se pierde).
-// Corre también en la copia: ahí la transformación ya se aplicó, y la prueba mira el ARCHIVO de la copia (no vuelve a
-// transformar nada). Cuál de los dos es se sabe por la tabla privada de reemplazos, que nunca viaja (pase de fallos
-// silenciosos de la tanda A: sin esa distinción, una copia con un texto sin transformar caía en la rama del repo, que
-// re-aplicaba la transformación por su cuenta, y daba verde).
 const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
 const path = require('path');
 
 const RAIZ = path.resolve(__dirname, '..', '..');
-const exportador = require('../publishing/export.js');
 const lista = JSON.parse(fs.readFileSync(path.join(RAIZ, 'scripts', 'publishing', 'allowlist.json'), 'utf8'));
 
-// Lo que no puede quedar en la copia, por pieza (la frase que manda a la pieza que no viaja).
+// Lo que no puede quedar, por pieza (la frase que manda a la pieza que no viaja), y la frase pública que la reemplazó:
+// el espejo, para que un archivo vacío o movido no pase por «no tiene la frase prohibida».
 const PIEZAS = [
-  { file: 'scripts/metrics/upload-runs.js', prohibido: /la copia del arnés está incompleta/ },
-  { file: 'scripts/hooks/dependencies-notice.js', prohibido: /nightly-dependencies\.js report/ },
-  { file: 'scripts/nightly/dashboard/dashboard.js', prohibido: /declarados en repos\.json/ },
+  { file: 'scripts/metrics/upload-runs.js', prohibido: /la copia del arnés está incompleta/, publico: 'Es una integración del equipo que la copia pública no trae' },
+  { file: 'scripts/hooks/dependencies-notice.js', prohibido: /nightly-dependencies\.js report/, publico: 'Se deciden en su pull request.' },
+  { file: 'scripts/nightly/dashboard/dashboard.js', prohibido: /declarados en repos\.json/, publico: 'la lista de productos del equipo no viene con la copia pública' },
 ];
-const entradas = (lista.publicTexts || []).filter((e) => e && e.root === 'arnes');
-const EN_EL_REPO = fs.existsSync(path.join(RAIZ, 'scripts', 'publishing', 'replacements.json'));
 
-test('PublicCopy_PieceThatDoesNotTravel_NoMessageSendsThere — los textos tienen su versión pública', () => {
+test('PublicCopy_PieceThatDoesNotTravel_NoMessageSendsThere — cada pieza trae el texto público, sin transformar nada', () => {
   for (const p of PIEZAS) {
-    const suyas = entradas.filter((e) => e.file === p.file);
-    assert.ok(suyas.length, `${p.file}: sin entrada en allowlist.json → publicTexts`);
     const fuente = fs.readFileSync(path.join(RAIZ, p.file), 'utf8');
-    let publico;
-    if (EN_EL_REPO) {
-      for (const e of suyas) assert.ok(fuente.includes(e.text), `${p.file}: el repo conserva el texto de hoy`);
-      publico = exportador.applyPublicTexts(`arnes/${p.file}`, fuente, entradas);
-    } else {
-      // en la copia: el archivo tal cual viajó, sin volver a transformarlo
-      publico = fuente;
-      assert.ok(!suyas.some((e) => fuente.includes(e.text)), `${p.file}: la copia trae el texto del repo sin transformar`);
-    }
-    assert.doesNotMatch(publico, p.prohibido, `${p.file}: en la copia no manda a la pieza que no viaja`);
+    assert.doesNotMatch(fuente, p.prohibido, `${p.file}: manda a la pieza que no viaja`);
+    assert.ok(fuente.includes(p.publico), `${p.file}: no trae su texto público («${p.publico}»)`);
   }
+});
+
+test('PublicCopy_NoInternalTextLeft_AC36 — ninguna de las tres piezas pide ya un texto interno (publicTexts)', () => {
+  const entradas = Array.isArray(lista.publicTexts) ? lista.publicTexts : [];
+  const suyas = entradas.filter((e) => e && PIEZAS.some((p) => p.file === e.file));
+  assert.deepStrictEqual(suyas.map((e) => e.file), [], 'una pieza volvió a declarar un texto interno en allowlist.json → publicTexts');
 });
