@@ -104,8 +104,9 @@ Un ejemplo: en ACME, Pedro administra y Juan programa.
    en GitHub, o con la dirección del repo si está en Azure DevOps. Desde ahí, cada actualización le trae también lo del
    equipo.
 
-**Lo que todavía no está.** Los procesos de la noche (dependencias, tablero, retrospectivas) todavía no se publicaron:
-hoy corren sólo en TYCON, en Azure DevOps. Tampoco el vigilante de producción, que todavía es propio de TYCON.
+**Los procesos de la noche.** En Azure DevOps, la revisión de dependencias, las métricas del ciclo y el tablero corren en
+tu organización con tres pipelines modelo y tu repo de operaciones: [cómo darlos de alta](pipelines/operations/README.md).
+En GitHub (Actions) todavía no están. El vigilante de producción no se publicó: todavía es propio de TYCON.
 
 ## Dónde seguir
 

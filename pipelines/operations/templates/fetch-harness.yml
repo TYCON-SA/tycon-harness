@@ -1,0 +1,48 @@
+# pipelines/operations/templates/fetch-harness.yml — el arnés y el repo de operaciones, en su lugar (story 8.30).
+#
+# La incluyen los tres modelos de pipelines/operations/ como PRIMER paso de cada trabajo. Hace tres cosas:
+#   1. Trae el arnés (el recurso `harness` que declara el pipeline: el repo público de GitHub, o una copia en Azure
+#      DevOps de la organización) a `$(Build.SourcesDirectory)` — la carpeta `s`. Es el árbol que corre.
+#   2. Trae el repo de operaciones (`self`: el repo donde vive el pipeline) a `$(Agent.BuildDirectory)/ops`. De ahí salen
+#      los datos y la configuración de la organización (los pone encima la plantilla ops-data.yml).
+#   3. Deja dicho qué arnés corre: `HARNESS_SOURCE` (la dirección del repo del arnés), `HARNESS_COMMIT` (su commit) y la
+#      etiqueta de la corrida `arnes-<sha corto>`. Sin poder leer el commit, rojo: sin saber qué arnés corre no se mide.
+#
+# El recurso se declara en cada pipeline, con nombre y rama fijos: `resources` no acepta parámetros. Para correr una
+# versión del arnés que no es la de `main`, se encola por la API con `resources.repositories.harness.refName`.
+
+parameters:
+  - name: nodeVersion
+    type: string
+    default: '20.x'
+
+steps:
+  - checkout: harness
+    path: s
+    fetchDepth: 1
+    persistCredentials: false
+  - checkout: self
+    path: ops
+    persistCredentials: true
+
+  - task: UseNode@1
+    inputs:
+      version: ${{ parameters.nodeVersion }}
+
+  - script: |
+      set -uo pipefail
+      S="$(Build.SourcesDirectory)"
+      if ! SHA=$(git -C "$S" rev-parse HEAD 2>&1); then
+        echo "##vso[task.logissue type=error]No pude leer el commit del arnés en $S: $SHA — sin saber qué arnés corre no se mide nada"
+        exit 1
+      fi
+      if [ ! -f "$S/scripts/ci/harness-tree.js" ] || [ ! -f "$S/scripts/ci/push-nightly-data.js" ]; then
+        echo "##vso[task.logissue type=error]Lo que trajo el recurso harness no es el arnés (o es una versión anterior a la 8.30): falta scripts/ci/harness-tree.js o scripts/ci/push-nightly-data.js"
+        exit 1
+      fi
+      URL=$(git -C "$S" remote get-url origin 2>/dev/null | sed -E 's#://[^/@]*@#://#') || URL="(sin origin)"
+      echo "el arnés sale de $URL, commit $SHA"
+      echo "##vso[task.setvariable variable=HARNESS_SOURCE]$URL"
+      echo "##vso[task.setvariable variable=HARNESS_COMMIT]$SHA"
+      echo "##vso[build.addbuildtag]arnes-${SHA:0:12}"
+    displayName: 'El arnés: dejar dicho de dónde sale y qué commit corre'

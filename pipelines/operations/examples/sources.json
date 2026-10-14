@@ -1,0 +1,481 @@
+{
+  "_comment": [
+    "EJEMPLO para una organización que corre los tres modelos de pipelines/operations/. Va en tu repo de operaciones en scripts/nightly/dashboard/sources.json.",
+    "Diferencia con el del arnés: el banco de controles, las suites y el vigilante de producción son del equipo que mantiene el arnés; acá no son obligatorios (sin datos salen «no medido» y la página se genera en verde).",
+    "La lista de fuentes ESPERADAS: el tablero recorre esta lista, nunca el directorio, para poder detectar una ausencia. max_age_days: pasado ese umbral la fuente sale gris y el tablero calla sus números."
+  ],
+  "sources": [
+    {
+      "id": "sdlc-stage",
+      "title": "Etapa del SDLC",
+      "pattern": "sdlc-stage-*.json",
+      "dir": ".",
+      "required": true,
+      "max_age_days": 2,
+      "written_by": "pipeline de operaciones, 06:00 UTC"
+    },
+    {
+      "id": "banco",
+      "title": "Banco de controles",
+      "pattern": "banco-*.json",
+      "dir": "controls-bench",
+      "required": false,
+      "max_age_days": 2,
+      "written_by": "pipeline de operaciones, 05:00 UTC"
+    },
+    {
+      "id": "suites",
+      "title": "Suites de prueba del arnés",
+      "pattern": "suites-*.json",
+      "dir": "controls-bench",
+      "required": false,
+      "max_age_days": 2,
+      "written_by": "pipeline de operaciones, 05:00 UTC"
+    },
+    {
+      "id": "dependencias",
+      "title": "Vulnerabilidades de dependencias",
+      "pattern": "dependencias-*.json",
+      "dir": "dependencias",
+      "required": true,
+      "max_age_days": 2,
+      "written_by": "pipeline de operaciones, 04:00 UTC"
+    },
+    {
+      "id": "vigilante",
+      "title": "Vigilante de producción",
+      "pattern": "vigilante-*.json",
+      "dir": "vigilante",
+      "required": false,
+      "max_age_days": 2,
+      "written_by": "pipeline de operaciones, 08:00 UTC"
+    },
+    {
+      "id": "capturer",
+      "title": "Métricas por merge",
+      "pattern": "metrics-*.json",
+      "dir": ".",
+      "required": false,
+      "max_age_days": 7,
+      "written_by": "el agente capturador, al mergear a main"
+    },
+    {
+      "id": "corridas",
+      "title": "Corridas del pipeline (vista sesión por sesión)",
+      "pattern": "*.json",
+      "dir": "~/.claude/.tycon-pipeline/timing-history",
+      "required": false,
+      "local": true,
+      "max_age_days": null,
+      "written_by": "el archivador del pipeline (marker.js), al cerrar cada corrida — en el disco de cada máquina, fuera de todo repo",
+      "_note": "La lee `dashboard.js --view runs` (story 2.14). Local y NO obligatoria: una máquina sin pipeline corrido no rompe el tablero, la página sale gris con motivo y exit 0. Sin umbral de edad: el registro no envejece, se acumula."
+    },
+    {
+      "id": "pasos-corrida",
+      "title": "Pasos por corrida (la variable que explica el costo)",
+      "pattern": "*.json",
+      "dir": "~/.claude/.tycon-pipeline/corridas-buzon",
+      "required": false,
+      "local": true,
+      "max_age_days": 14,
+      "written_by": "download-runs.js al abrir la sesión (en las máquinas con permiso de lectura) y el nocturno del tablero, que baja el buzón entero — los volcados los sube cada máquina al cerrar una corrida",
+      "_note": "La lee `pasosPorCorrida()` de dashboard.js con `scripts/metrics/steps-per-run.js` (story 7.12), y la BUSCA POR ID en esta lista: sin la entrada, la ficha sale «no medido — la fuente no está declarada» en vez de leer el buzón igual. Fuera de .dashboard, por eso `local: true` (el colector de las fuentes nocturnas la saltea). NO obligatoria: una máquina sin permiso sobre el buzón no rompe el tablero. La antigüedad se mide sobre la corrida MEDIDA más nueva: pasados 14 días sin ninguna, el número se calla — una mediana vieja tranquiliza sobre lo que cambió después. 14 y no 2: el buzón no se llena cada noche, se llena cuando alguien corre el pipeline."
+    }
+  ],
+  "reducer": {
+    "_comment": [
+      "El reductor (story 2.5): cuenta los registros de frenos y escapes que cada máquina sube al buzón de la 2.16",
+      "(y los de esta máquina, del disco) y le entrega a la página SÓLO números, por lista blanca.",
+      "Qué campos lee cada fuente lo decide el CÓDIGO (lista cerrada); acá sólo se elige entre ellos y se declara",
+      "la lista cerrada de VALORES que una dimensión puede publicar. Un valor fuera de la lista sale como «otro».",
+      "Una métrica sin lista, con una fuente, una dimensión o un tipo que el código no conoce, hace que el reductor se niegue.",
+      "piso: un valor publicado con menos de 3 eventos en la ventana sale «no medido: por debajo del piso»."
+    ],
+    "schema": 1,
+    "window_days": 30,
+    "floor": 3,
+    "expected_machines": [],
+    "metrics": {
+      "bloqueos": {
+        "source": "gates",
+        "dim": "control",
+        "type": "ratio",
+        "_note": "veces que un control del pipeline bloqueó (status/verdict/decision ∈ blocked, red, fail, failed, FAIL, rejected) sobre las evaluaciones registradas. Vocabulario medido en gates.log el 2026-09-15.",
+        "values": [
+          "atdd-commit",
+          "tests",
+          "deep-review-gate",
+          "build",
+          "acmatrix",
+          "dod",
+          "story-gate",
+          "advisors",
+          "atdd",
+          "story-evidence",
+          "qa-guide",
+          "mutation",
+          "advisors-iter",
+          "plan-approval",
+          "story-skill-gate",
+          "advisors-complete",
+          "atdd-preedit",
+          "tests-scope",
+          "step-order",
+          "smart-reloop",
+          "adversarial-pass",
+          "adversarial-result-gate",
+          "adversarial-skip",
+          "plan-auto-approve",
+          "review-a-done",
+          "sin-nombre",
+          "smoke-run",
+          "RUNTIME_WAIVER"
+        ]
+      },
+      "escapes": {
+        "source": "bypass",
+        "dim": "tipo",
+        "type": "conteo",
+        "_note": "escapes declarados en bypass.log, por type o, si no lo trae, por kind. Vocabulario medido el 2026-09-15 en el registro de esta máquina MÁS los tipos que el pipeline escribe (marker.js, story-skill-gate-io.js), que el pase adversarial encontró faltando.",
+        "values": [
+          "FULL_SUITE_RUN",
+          "SESSION_GUARD_OK",
+          "GIT_NO_VERIFY",
+          "DOD_EVIDENCE_MANUAL_WRITE",
+          "PR_A_MANO",
+          "DOD_BYPASS",
+          "ATDD_PREEDIT_BYPASS",
+          "ADVERSARIAL_RELAUNCH",
+          "ADVERSARIAL_SKIP_FORZADO",
+          "ADVERSARIAL_ABANDONADO",
+          "MUTATION_BYPASS",
+          "ATDD_BYPASS",
+          "MARKER_SKIPS_PLAN",
+          "STEP_OUT_OF_ORDER",
+          "MARKER_DROPS_PLAN",
+          "STORY_SKILL_BYPASS",
+          "STORY_SKILL_BYPASS_USED",
+          "DOD_BYPASS_UI",
+          "DOD_BYPASS_ACMATRIX",
+          "RUNTIME_WAIVER",
+          "sin-tipo"
+        ]
+      },
+      "frenos_bloqueos": {
+        "source": "frenos",
+        "dim": "freno",
+        "values_only": true,
+        "type": "ratio_bloqueo",
+        "_note": "story 2.6: de las veces que este freno tuvo algo que decidir, cuántas frenó. 🔴 `safety-guard` NO anota los `paso` (corre en cada comando de bash): su denominador es «veces que una regla peligrosa matcheó», no «comandos que corrieron». La ficha lo dice.",
+        "values": [
+          "safety-guard",
+          "test-scope-guard",
+          "pr-uno-por-repo",
+          "pr-sin-auto-complete",
+          "push-referencia-fantasma",
+          "prod-access-guard",
+          "engram-manifest",
+          "new-names",
+          "spanish-names",
+          "public-push-guard",
+          "internal-history"
+        ]
+      },
+      "frenos_escapes": {
+        "source": "frenos",
+        "dim": "freno",
+        "values_only": true,
+        "type": "ratio_escape",
+        "_note": "story 2.6: de esas mismas decisiones, cuántas lo saltearon con su escape declarado. Mismo denominador que `frenos_bloqueos` a propósito: los dos números de la misma regla van en la misma ficha.",
+        "values": [
+          "safety-guard",
+          "test-scope-guard",
+          "pr-uno-por-repo",
+          "pr-sin-auto-complete",
+          "push-referencia-fantasma",
+          "prod-access-guard",
+          "engram-manifest",
+          "new-names",
+          "spanish-names",
+          "internal-history"
+        ]
+      },
+      "evidencia_rechazada_por_hook": {
+        "source": "frenos",
+        "dim": "freno",
+        "type": "ratio_bloqueo",
+        "values_only": true,
+        "_note": "story 7.2: de las decisiones de los tres hooks del cierre sobre una evidencia (una transición de story a review/done, o una escritura a la carpeta de evidencia), cuántas la rechazaron. Es el número que dice si el cierre recortado alcanza: si baja a cero mientras suben los NOT-RUN de la matriz, el recorte se revisa. `values_only` en ésta y en las tres de la 2.6: comparten fuente y cada ficha cuenta lo suyo, sin «otro» cruzado.",
+        "values": [
+          "on-frontmatter-write",
+          "on-pre-commit",
+          "on-dod-evidence-guard"
+        ]
+      },
+      "cobertura_tocada_evaluo": {
+        "source": "gates",
+        "dim": "control",
+        "type": "ratio_evaluo",
+        "_note": "story 2.4: de las corridas de test-gate, cuántas pudieron evaluar el 75 % sobre las líneas tocadas (`cumple` o `habria-frenado` sobre todas, `no-medido` incluido). Reemplaza a la ficha que caminaba el disco buscando tests-result.json.",
+        "values": [
+          "cobertura-tocada"
+        ]
+      },
+      "cobertura_tocada_frenaria": {
+        "source": "gates",
+        "dim": "control",
+        "type": "ratio_habria_frenado",
+        "_note": "story 2.4: de las corridas que evaluaron, cuántas habrían frenado. Observación sin freno hasta el 2026-10-06; con este número se decide si el 75 % pasa a frenar.",
+        "values": [
+          "cobertura-tocada"
+        ]
+      },
+      "frenos_avisos": {
+        "source": "frenos",
+        "dim": "freno",
+        "values_only": true,
+        "type": "ratio_aviso",
+        "_note": "story 2.6: `push-referencia-fantasma` NUNCA bloquea — su único veredicto posible es `aviso`. Sin esta métrica la ficha lo publicaba «frenó 0, lo saltearon 0»: el «se ve igual que uno que nunca se disparó» que la story existe para eliminar, hecho realidad justo para uno de los seis (pase adversarial).",
+        "values": [
+          "safety-guard",
+          "test-scope-guard",
+          "pr-uno-por-repo",
+          "pr-sin-auto-complete",
+          "push-referencia-fantasma",
+          "prod-access-guard",
+          "engram-manifest",
+          "internal-history"
+        ]
+      },
+      "carriles": {
+        "source": "carriles",
+        "dim": "carril",
+        "type": "conteo",
+        "_note": "story 2.7: commits hechos desde una sesión, por el carril por el que entraron (una corrida del pipeline, un atajo declarado, o ninguno). Los commits hechos fuera de toda sesión (terminal, VS Code) no pasan por ningún hook: no se ven, y la ficha lo dice como «no medido». `ilegible`: el estado de la sesión existía pero no se pudo leer — no dice nada del carril, y por eso no se cuenta como `ninguno`.",
+        "values": [
+          "pipeline",
+          "adhoc",
+          "ninguno",
+          "ilegible"
+        ]
+      },
+      "hallazgos_por_gravedad": {
+        "source": "hallazgos",
+        "dim": "severidad",
+        "type": "conteo",
+        "values": [
+          "CRITICAL",
+          "WARNING"
+        ],
+        "_reason": "story 2.9: cuántos hallazgos tuvo el equipo, por gravedad y con cobertura de máquinas. La dimensión publicada es la GRAVEDAD, nunca la regla: la tabla por regla la arma prune.js, sin piso ni recorte. Lista cerrada medida sobre 732 hallazgos reales el 2026-09-16 (ya hay un valor fuera: severity «robustness»)."
+      },
+      "mutacion_puntaje": {
+        "source": "gates",
+        "dim": "control",
+        "type": "muestra_mutacion",
+        "values": [
+          "mutation"
+        ],
+        "_note": "story 2.8: los puntajes killed/total de cada chequeo de mutación que pudo medir, JUNTADOS de todas las máquinas (una mediana no se suma). Un chequeo sin los dos conteos, con total 0 o con killed > total no es una muestra: no midió. Medido el 2026-09-16: 16 de 110 chequeos de la ventana tienen puntaje, todos de una máquina."
+      },
+      "mutacion_chequeos": {
+        "source": "gates",
+        "dim": "estado",
+        "type": "ratio_mutacion_con_puntaje",
+        "values": [
+          "pass",
+          "warn-survivors",
+          "blocked",
+          "structural",
+          "error",
+          "timeout-posible-mutacion",
+          "sin-estado"
+        ],
+        "_note": "story 2.8: de los chequeos de mutación, cuántos dieron puntaje, por estado. Sirve para decir cuántos NO pudieron medir (structural: el chequeo sólo corre node --test; 90 de 110 en la ventana medida). Vocabulario de lib/mutation-gate.js (agent-skills)."
+      },
+      "qa_guia_estados": {
+        "source": "gates",
+        "dim": "estado",
+        "type": "conteo_qa_guia",
+        "values": [
+          "missing",
+          "stale",
+          "presente",
+          "no-aplica",
+          "sin-estado"
+        ],
+        "_note": "story 2.8: todas las líneas de la guía de QA por estado, con y sin registro completo. Hasta la 2.8 el aviso sólo anotaba missing y stale; presente y no-aplica los escribe on-pre-commit.js desde entonces."
+      },
+      "qa_guia_presente": {
+        "source": "gates",
+        "dim": "estado",
+        "type": "ratio_qa_presente",
+        "values": [
+          "presente",
+          "missing",
+          "stale"
+        ],
+        "_note": "story 2.8: de los cierres que necesitaban guía de QA, cuántos la tenían al día. SÓLO líneas con esquema 2 (registro completo): con las viejas, presente es 0 por construcción. no-aplica no entra al denominador."
+      }
+    }
+  },
+  "not_measurable_today": [
+    {
+      "what": "Costo en plata por story",
+      "reason": "decisión (2.13/2.14): el registro trae tokens y la vista los publica; una tabla de precios adentro del arnés envejece sin que nadie lo note. Si se quiere USD, va como dato declarado con review_before."
+    },
+    {
+      "what": "Duración de cada revisor",
+      "reason": "se registra el instante en que se lanza, no el de fin: no hay latencia ni paralelismo real"
+    },
+    {
+      "what": "Cuántas veces frenó cada control",
+      "reason": "los frenos previos a la herramienta registran el ESCAPE, no el BLOQUEO (la única excepción es el freno de mano)"
+    },
+    {
+      "what": "Horas humanas por story",
+      "reason": "Clockify tiene la duración y las stories tienen identificador, pero nada los une"
+    },
+    {
+      "what": "Despliegues a producción (DORA)",
+      "reason": "ningún archivo del arnés cuenta un despliegue; los productos sin pipeline de producción salen en la pregunta 5, contados desde la deuda declarada"
+    },
+    {
+      "what": "Efecto posterior al merge de un hallazgo",
+      "reason": "no hay enlace hallazgo → commit → incidente: no se puede medir si un revisor previno algo"
+    }
+  ],
+  "thresholds": {
+    "_comment": "El JUICIO vive acá, no en el dato: qué es verde, ámbar o rojo para cada ficha. Cambiar un umbral es una fila, no código. Sin fila, la ficha sale neutra (sin color de estado).",
+    "dod": {
+      "ok_min": 0.5,
+      "bad_max": 0.25,
+      "direction": "mayor_es_mejor"
+    },
+    "rework": {
+      "ok_max": 0.2,
+      "bad_min": 0.35,
+      "direction": "menor_es_mejor"
+    },
+    "mutacion": {
+      "ok_min": 0.8,
+      "bad_max": 0.5,
+      "direction": "mayor_es_mejor"
+    },
+    "cobertura_tocada_evaluo": {
+      "ok_min": 0.9,
+      "bad_max": 0.5,
+      "direction": "mayor_es_mejor"
+    },
+    "qa_guia": {
+      "ok_min": 0.8,
+      "bad_max": 0.3,
+      "direction": "mayor_es_mejor"
+    },
+    "estilo": {
+      "ok_min": 0.9,
+      "bad_max": 0.7,
+      "direction": "mayor_es_mejor"
+    },
+    "bloqueo": {
+      "ok_min": 0.95,
+      "bad_max": 0.85,
+      "direction": "mayor_es_mejor"
+    },
+    "vigilados": {
+      "ok_min": 0.99,
+      "bad_max": 0.5,
+      "direction": "mayor_es_mejor"
+    },
+    "bus_factor_productos_en_riesgo": {
+      "ok_max": 0,
+      "bad_min": 1,
+      "direction": "menor_es_mejor"
+    },
+    "escapes_regla_dominante": {
+      "ok_max": 0.5,
+      "bad_min": 0.8,
+      "direction": "menor_es_mejor"
+    },
+    "banco_rojos": {
+      "ok_max": 0,
+      "bad_min": 1,
+      "direction": "menor_es_mejor"
+    },
+    "suites_rojas": {
+      "ok_max": 0,
+      "bad_min": 1,
+      "direction": "menor_es_mejor"
+    },
+    "deps_hallazgos": {
+      "ok_max": 0,
+      "bad_min": 1,
+      "direction": "menor_es_mejor"
+    },
+    "contrato_v2": {
+      "ok_min": 0.9,
+      "bad_max": 0.5,
+      "direction": "mayor_es_mejor"
+    },
+    "corridas_al_final": {
+      "ok_min": 0.8,
+      "bad_max": 0.5,
+      "direction": "mayor_es_mejor",
+      "_note": "vista de corridas (2.14): qué fracción llega al paso 8"
+    },
+    "corridas_con_error": {
+      "ok_max": 0.4,
+      "bad_min": 0.8,
+      "direction": "menor_es_mejor",
+      "_note": "vista de corridas (2.14): corridas donde un control encontró un error — es el control funcionando, así que el rojo recién con 8 de 10"
+    }
+  },
+  "instrument": [
+    {
+      "what": "Ingesta de compilaciones",
+      "sub": "duración, éxito, cola, despliegues, corridas a medias",
+      "cost": "Es la única que sale a un sistema externo. Desbloquea las cuatro métricas DORA de una vez."
+    },
+    {
+      "what": "Edad en el estado actual",
+      "sub": "cuántas stories llevan más de 30 o 60 días paradas donde están",
+      "cost": "Derivable de lo que el snapshot ya publica (la fecha de la última transición), sin git nuevo. Medido el 2026-09-05: de las 181 en revisión, 77 de 158 pasan los 60 días y la mediana es 51. El tiempo por etapa NO lo rescata: excluye por diseño la etapa en la que la story está ahora."
+    }
+  ],
+  "prune": {
+    "_comment": "story 2.9 — el criterio de poda del catálogo de reglas. 🔴 Estos valores se commitean ANTES de correr el cruce sobre el material real (regla de la casa: hipótesis y n mínimo antes de mirar), y el cruce se NIEGA si falta uno o no tiene forma: un umbral por defecto en el código sería un criterio que nadie decidió. Cambiar un umbral después de ver la tabla es mover el arco; si hace falta, se cambia con el motivo al lado y la fecha.",
+    "window_days": 120,
+    "_window": "La misma para hallazgos y oportunidades. 120 días cubren desde junio, cuando empezaron los volcados con conteo por revisor.",
+    "threshold_opportunities": 20,
+    "threshold_months": 2,
+    "_threshold": "Una regla probada que nunca encontró nada es candidata a retiro sólo si su revisor corrió al menos 20 veces y en al menos 2 meses distintos. Debajo de eso sale «sin oportunidades suficientes»: nadie tuvo ocasión de probarla. Decidido por el dev el 2026-09-16 (recorrido acumulado, no dos cubetas).",
+    "floor": 1,
+    "floor_reason": "En la tabla por regla, «1 hallazgo» y «0 hallazgos» son la diferencia entre dejar una regla y retirarla. El piso de 3 del reductor existe para que un valor no identifique a una máquina; acá los valores son reglas del catálogo, no máquinas, y un piso mayor borraría la señal.",
+    "not_reviewers": [
+      "general-purpose",
+      "Explore",
+      "claude-code-guide"
+    ],
+    "_not_reviewers": "Lanzamientos que no son revisiones: se descartan del denominador y se cuentan aparte.",
+    "exam_max_days": 8,
+    "_exam": "El mismo umbral con que bench-notice.js calla los números viejos del examen periódico. Un examen más viejo, acotado o ausente deja «examinada» como no medido y ninguna regla sale candidata.",
+    "min_refuted": 3,
+    "_refuted": "Una regla va a revisión humana si tiene al menos 3 hallazgos refutados y son más de la mitad de los suyos. Medido: 3 refutados en 777 hallazgos, así que hoy se espera la cubeta vacía o casi — eso no es un defecto.",
+    "vocabularies": {
+      "severity": [
+        "CRITICAL",
+        "WARNING"
+      ],
+      "disposition": [
+        "fixed",
+        "open",
+        "deferred",
+        "waived",
+        "refuted"
+      ]
+    },
+    "_vocabularies": "Las listas CERRADAS con que el recolector proyecta cada hallazgo; lo que no está sale «otro» y se cuenta. Medidas sobre 732 hallazgos reales el 2026-09-16 (ya había un valor fuera: severity «robustness»). La de gravedad es la MISMA que reductor.metricas.hallazgos_por_gravedad.valores: un caso de collect-findings.test.sh (T13) exige que coincidan.",
+    "max_findings_days": 3,
+    "_max_days": "Una serie de hallazgos más vieja que esto no cuenta como medida (el recolector dejó de correr, o se apagó): ni la subida la declara medida ni el cruce la suma. 3 días, igual que el atraso del reductor."
+  }
+}

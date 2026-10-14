@@ -1,0 +1,163 @@
+# ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# El tablero del arnés — MODELO para cualquier organización en Azure DevOps (story 8.30)
+#
+# Cómo darlo de alta: pipelines/operations/README.md. Se copia a `pipelines/` del repo de operaciones y se cambia el
+# `name:` del recurso `harness` (marcado abajo).
+#
+# `artifacts/tablero-del-arnes.html` del repo de operaciones tiene UN escritor: este pipeline. Lee lo que dejaron los
+# otros nocturnos en `.dashboard/` (las fuentes que espera las declara `scripts/nightly/dashboard/sources.json` del repo
+# de operaciones; sin ese archivo, las del arnés), genera la página con `dashboard.js --nightly`, verifica el sello que
+# la página trae adentro (de hoy, de esta corrida y del snapshot de métricas más nuevo), la guarda en main y verifica lo
+# PUBLICADO. Corre después de las métricas: sin el snapshot del día, el sello no pasa.
+#
+# Opcional: el BUZÓN DE CORRIDAS (los registros de las máquinas del equipo, en un almacenamiento de Azure). Si la
+# organización tiene uno, se pasa el nombre de la conexión de servicio en el parámetro `mailboxConnection` (de sólo
+# lectura sobre ese almacenamiento, autorizada sólo para este pipeline). Sin buzón, las fichas del equipo salen «no leído»
+# y la página se genera igual.
+#
+# Permisos (una vez): la identidad de compilación del proyecto con «Contribute» sobre el repo de operaciones.
+# ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+
+trigger: none   # nunca por push: la página se genera una vez por noche
+pr: none
+
+schedules:
+  - cron: '30 8 * * *'   # 08:30 UTC: después de las métricas y de la revisión de dependencias
+    displayName: 'Tablero del arnés (nocturno)'
+    branches:
+      include: [main]
+    always: true
+
+parameters:
+  - name: efectos
+    displayName: 'Con efectos fuera de la corrida (guardar la página y verificar la publicada)'
+    type: boolean
+    default: true
+  - name: mailboxConnection
+    displayName: 'Conexión de servicio de Azure con lectura sobre el buzón de corridas (vacío: sin buzón)'
+    type: string
+    default: ''
+
+resources:
+  repositories:
+    - repository: harness
+      type: git                         # o `github`, con `endpoint: <conexión de servicio de GitHub>`
+      name: my-project/harness          # ← CAMBIAR: dónde está el arnés (en GitHub, la organización/repo público)
+      ref: refs/heads/main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+jobs:
+  - job: GenerateAndPublish
+    displayName: 'Generar la página del tablero y publicarla'
+    steps:
+      - template: pipelines/operations/templates/fetch-harness.yml@harness
+      - template: pipelines/operations/templates/ops-data.yml@harness
+
+      # Tolerante a propósito: si el buzón no se puede leer, la página se genera igual con el buzón «no leído» y la corrida
+      # queda naranja. Sin buzón declarado, el paso no existe.
+      - ${{ if ne(parameters.mailboxConnection, '') }}:
+          - task: AzureCLI@2
+            displayName: 'Bajar del buzón los registros y los volcados (sin conversaciones)'
+            continueOnError: true
+            inputs:
+              azureSubscription: ${{ parameters.mailboxConnection }}
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -u
+                BUZON="$(Agent.TempDirectory)/buzon/corridas-buzon"
+                RES="$(Agent.TempDirectory)/bajada.json"
+                mkdir -p "$(Agent.TempDirectory)/buzon"
+                TYCON_MAILBOX_DIR="$BUZON" node scripts/metrics/download-runs.js --json --no-threads --budget-ms 600000 > "$RES"
+                RC=$?
+                if [ "$RC" -eq 0 ] && node -e 'process.exit(JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).completo === true ? 0 : 1)' "$RES"; then
+                  echo "Buzón leído entero."
+                else
+                  # el estado (una palabra) y NUNCA el motivo, que nombra blobs y máquinas
+                  ESTADO="$(node -e 'try { const r = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); process.stdout.write(String((r && r.estado) || "sin_estado").replace(/[^a-z_]/g, "") || "sin_estado"); } catch (e) { process.stdout.write("sin_resultado"); }' "$RES")"
+                  echo "##vso[task.logissue type=warning]No se pudo leer el buzón entero: ${ESTADO} (download-runs salió $RC) — las fichas del equipo salen sin número"
+                  echo "##vso[task.complete result=SucceededWithIssues;]"
+                fi
+                exit 0
+
+      - script: |
+          set -u
+          # Los datos más nuevos de main del repo de operaciones: una corrida re-ejecutada otro día arranca con una copia
+          # vieja, y su página se rechazaría recién publicada. Se traen los datos y NO el código; lo que main borró, se borra.
+          if [ "$(Build.SourceBranch)" = "refs/heads/main" ]; then
+            if ! node scripts/ci/push-nightly-data.js sync -- .dashboard artifacts/tablero-del-arnes.html; then
+              echo "##vso[task.logissue type=error]No se pudieron traer de main del repo de operaciones los datos antes de generar la página"
+              exit 1
+            fi
+          fi
+        displayName: 'Traer de main del repo de operaciones los datos más nuevos'
+
+      - template: pipelines/operations/templates/check-tree.yml@harness
+
+      - script: |
+          set -u
+          BUZON="$(Agent.TempDirectory)/buzon/corridas-buzon"
+          if [ -d "$BUZON" ]; then
+            node scripts/nightly/dashboard/dashboard.js --nightly --mailbox "$BUZON" --mailbox-state "$(Agent.TempDirectory)/bajada.json"
+          else
+            node scripts/nightly/dashboard/dashboard.js --nightly
+          fi
+          RC=$?
+          case "$RC" in
+            0) ;;
+            2) echo "##vso[task.logissue type=warning]El tablero se generó con una fuente obligatoria ausente o vieja (exit 2): la página lo dice. Si esa fuente no existe en tu organización, sacala de las obligatorias en scripts/nightly/dashboard/sources.json del repo de operaciones"
+               echo "##vso[task.complete result=SucceededWithIssues;]" ;;
+            *) echo "##vso[task.logissue type=error]El generador del tablero no pudo medir o escribir la página (exit $RC)"
+               exit 1 ;;
+          esac
+          exit 0
+        displayName: 'Generar la página del tablero (modo nocturno)'
+
+      # La prueba de vida NO es «el archivo existe»: el sello tiene que ser de hoy, de ESTA corrida y del snapshot de
+      # métricas más nuevo. Si no, el paso falla y no se guarda nada.
+      - script: |
+          set -u
+          node scripts/nightly/dashboard/seal.js --verify artifacts/tablero-del-arnes.html --today "$(date -u +%Y-%m-%d)" --run "$(Build.BuildId)" --dashboard .dashboard
+        displayName: 'Prueba de vida: el sello de la página es de hoy y del snapshot más nuevo'
+
+      - script: |
+          set -eu
+          cd "$(Build.SourcesDirectory)"
+          # A main llega SÓLO la página, sobre la punta recién traída y con reintento. El sello se verifica ANTES de cada
+          # empuje sobre lo que se va a publicar (la página y el .dashboard de la punta, extraídos a $PUSH_DIR).
+          DAY=$(date -u +%Y-%m-%d)
+          node scripts/ci/push-nightly-data.js save \
+            --message "chore(tablero): página del arnés $DAY [nocturno]" \
+            --require artifacts/tablero-del-arnes.html \
+            --verify "node scripts/nightly/dashboard/seal.js --verify \"\$PUSH_DIR/artifacts/tablero-del-arnes.html\" --today \"$DAY\" --run \"$(Build.BuildId)\" --dashboard \"\$PUSH_DIR/.dashboard\"" \
+            --verify-export .dashboard \
+            -- artifacts/tablero-del-arnes.html
+        displayName: 'Guardar la página del día en el repo de operaciones'
+        condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'), eq('${{ parameters.efectos }}', 'true'))
+
+      # Lo publicado, no el disco: la página que abre la organización es la de main del repo de operaciones.
+      - script: |
+          set -u
+          cd "$(Build.SourcesDirectory)"
+          PUB="$(Agent.TempDirectory)/publicada.html"
+          if ! git fetch --quiet origin main; then
+            echo "##vso[task.logissue type=error]No se pudo traer main del repo de operaciones para verificar lo publicado"
+            exit 1
+          fi
+          if ! git show origin/main:artifacts/tablero-del-arnes.html > "$PUB"; then
+            echo "##vso[task.logissue type=error]La página del tablero no está en main del repo de operaciones"
+            exit 1
+          fi
+          if ! node scripts/nightly/dashboard/seal.js --verify "$PUB" --today "$(date -u +%Y-%m-%d)" --run "$(Build.BuildId)" --dashboard .dashboard; then
+            echo "##vso[task.logissue type=error]La página publicada no pasa la verificación del sello"
+            exit 1
+          fi
+          echo "La página publicada pasa la verificación."
+        displayName: 'Verificar la página publicada'
+        condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'), eq('${{ parameters.efectos }}', 'true'))
+
+      - script: rm -rf "$(Agent.TempDirectory)/buzon" "$(Agent.TempDirectory)/bajada.json" "$(Agent.TempDirectory)/publicada.html"
+        displayName: 'Borrar la copia del buzón'
+        condition: always()
