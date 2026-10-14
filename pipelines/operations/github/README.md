@@ -17,22 +17,52 @@ nada en una máquina: todo pasa en GitHub.
 
 - **Permiso de dueño (owner) de la organización**, o de administrador del repo de operaciones y de los repos a mirar.
 - **Una identidad para la noche, con su credencial.** Los workflows necesitan leer los repos de la organización y
-  escribir issues en los de los productos; el token propio de un workflow sólo ve su repo. Recomendado: **un usuario de
-  máquina** (una cuenta de GitHub sólo para esto, miembro de la organización) con un **token de acceso fino**
-  (*Settings → Developer settings → Personal access tokens → Fine-grained tokens*), con dueño la organización, acceso a
-  los repos a medir y a mirar, y estos permisos de repositorio: *Contents: Read*, *Issues: Read and write*,
-  *Metadata: Read*.
+  escribir issues en los de los productos; el token propio de un workflow sólo ve su repo. Hay dos caminos:
+  - **Recomendado: una GitHub App** de la organización (punto 1.1). Cada corrida le pide a GitHub un token que vence en
+    una hora, con los permisos justos para cada paso y sólo de los repos donde la App está instalada. No hay un token
+    fijo que se pueda filtrar ni que venza un día cualquiera, y no ocupa una cuenta de persona.
+  - **Alternativa: un usuario de máquina** (punto 1.2): una cuenta de GitHub sólo para esto, con un token de acceso
+    fino.
   - **No uses tu token personal.** Con él, lo que hace la noche y lo que hacés vos salen de la misma cuenta, y la noche
     deja de poder distinguir un issue que cerraste vos de uno que cerró ella (lo marca en el texto, pero cerrar o
     etiquetar sin comentar se lee como suyo).
-  - Un token fino **vence** (como mucho al año, o antes si la organización lo pide). El día que vence, la revisión de
-    dependencias sale en rojo con «la credencial no sirve (401)» y las métricas con «No se pudieron listar los repos».
-    Se renueva el token y se reemplaza el secreto (punto 3).
-  - Una GitHub App también sirve para leer y escribir, pero su identidad no se puede leer con el token: declarala en
-    `github.identity` de `repos.json` (punto 2).
 - **Que los repos a medir usen el arnés.** Las métricas sólo cuentan los repos que tienen la carpeta `.tycon/` o
   `.advisors/`. Un repo sin ninguna de las dos no se mide (no es un error).
 
+### 1.1 La GitHub App (recomendado)
+
+1. **Crearla.** En la organización: *Settings → Developer settings → GitHub Apps → New GitHub App*. Un nombre (por
+   ejemplo `<tu-org>-noche`); en *Homepage URL*, la dirección del repo de operaciones. En *Webhook*, destildá
+   *Active*: la App no recibe eventos. En *Where can this GitHub App be installed?*, **Only on this account**.
+2. **Permisos mínimos.** En *Repository permissions*, sólo estos tres: *Contents: Read-only*, *Issues: Read and write*
+   y *Metadata: Read-only* (GitHub lo pone solo). Ningún permiso de organización ni de cuenta. Los workflows además
+   piden cada token con menos: el que clona sólo lee, y el que escribe issues sólo escribe issues.
+3. **Los datos que van a los secretos.** En la página de la App, anotá el **Client ID**. Abajo, en *Private keys*,
+   *Generate a private key*: se baja un archivo `.pem`. Esa llave es la credencial: va al secreto del punto 3 y **no
+   se guarda en ninguna otra parte** (borrá el archivo cuando la cargues).
+4. **Instalarla sólo donde hace falta.** *Install App* → tu organización → **Only select repositories**: los repos a
+   medir y los que mira la revisión de dependencias. No hace falta el repo de operaciones (ahí escribe el token propio
+   del workflow) ni el repo público del arnés.
+5. **Su identidad.** El token de una App no deja leer con qué cuenta corre. Declarala en `github.identity` de
+   `repos.json` (punto 2) como `<nombre-corto-de-la-app>[bot]`: el nombre corto es el que aparece en la dirección de
+   la página de la App (`.../apps/<nombre-corto>`). Sin eso, la noche no cierra ni reabre ningún issue, y lo dice.
+
+La llave de una App no vence. Para cambiarla: generá una nueva, reemplazá el secreto y borrá la vieja en la página de
+la App. Para cortarle el acceso a la noche, borrá la llave o desinstalá la App.
+
+Con la App, las métricas miran los repos de **un** dueño: el del repo de operaciones, donde está instalada. Si
+`METRICS_OWNERS` nombra a otros dueños, sus repos privados no se pueden leer y salen como «Repos NO medidos»; para
+varios dueños, usá el usuario de máquina.
+
+### 1.2 El usuario de máquina (alternativa)
+
+Una cuenta de GitHub sólo para esto, miembro de la organización, con un **token de acceso fino** (*Settings → Developer
+settings → Personal access tokens → Fine-grained tokens*): dueño la organización, acceso a los repos a medir y a mirar,
+y estos permisos de repositorio: *Contents: Read*, *Issues: Read and write*, *Metadata: Read*.
+
+Un token fino **vence** (como mucho al año, o antes si la organización lo pide). El día que vence, la revisión de
+dependencias sale en rojo con «la credencial no sirve (401)» y las métricas con «No se pudieron listar los repos». Se
+renueva el token y se reemplaza el secreto (punto 3).
 ## 2. El repo de operaciones
 
 Creá un repo **privado**, por ejemplo `operations`, con una rama `main`. Sus archivos van en las **mismas rutas** en que
@@ -70,8 +100,10 @@ En el repo de operaciones, *Settings → Secrets and variables → Actions*:
 
 | Tipo | Nombre | Para qué |
 |---|---|---|
-| Secreto | `HARNESS_ORG_TOKEN` | La credencial del punto 1. Obligatorio para las métricas y la revisión de dependencias |
-| Variable | `HARNESS_REF` | La rama, el tag o el commit del arnés que corre cada noche. Vacía: `main`. **Recomendado: un tag o un commit**, y subirlo a conciencia: cada noche el arnés corre con la credencial de tu organización |
+| Variable | `HARNESS_APP_CLIENT_ID` | El *Client ID* de la GitHub App (punto 1.1). Con esta variable puesta, los workflows usan la App |
+| Secreto | `HARNESS_APP_PRIVATE_KEY` | La llave privada de la App: el contenido entero del archivo `.pem`, con sus líneas `-----BEGIN` y `-----END` |
+| Secreto | `HARNESS_ORG_TOKEN` | Sólo con el usuario de máquina (punto 1.2): su token. Si están la App y este secreto, gana la App |
+| Variable | `HARNESS_REF` | La rama, el tag o el commit del arnés que corre cada noche. Vacía: `main`, igual que las máquinas de los devs. Quien quiera fijar una versión pone acá un tag o un commit, y lo sube a conciencia: cada noche el arnés corre con la credencial de tu organización |
 | Variable | `METRICS_OWNERS` | Los dueños cuyos repos miden las métricas, separados por `;`. Vacía: el dueño de este repo |
 | Variable | `METRICS_REPO_PREFIX` | Si la organización mezcla repos de otros equipos: sólo los que empiezan así |
 | Variable y secreto | `TYCON_TELEGRAM_CHAT_ID` y `TELEGRAM_BOT_TOKEN` | El resumen diario de dependencias por Telegram. Sin el chat, no se manda |
@@ -79,8 +111,8 @@ En el repo de operaciones, *Settings → Secrets and variables → Actions*:
 Y en *Settings → Actions → General*: *Workflow permissions* puede quedar en «Read repository contents»; cada workflow
 pide para sí `contents: write` (para guardar en este repo) y nada más. Si `main` del repo de operaciones tiene reglas de
 protección, el token del workflow tiene que poder empujar ahí (o los guardados salen en rojo). Si la organización
-restringe qué acciones se pueden usar, permití `actions/checkout`, `actions/setup-node` y `actions/setup-dotnet`
-(van fijadas por el commit).
+restringe qué acciones se pueden usar, permití `actions/checkout`, `actions/setup-node`, `actions/setup-dotnet` y
+`actions/create-github-app-token` (van fijadas por el commit).
 
 ## 4. La primera corrida: sin efectos
 
@@ -118,9 +150,10 @@ que esperaba.
   arreglo es declarar la deuda). La noche reabre un issue que cerró ella si la vulnerabilidad vuelve; uno que cerró una
   persona, no.
 - **La página del tablero**: `artifacts/tablero-del-arnes.html` del repo de operaciones (bajala y abrila en el navegador).
-- **Una corrida en rojo** dice en su primer error por qué. Las causas de siempre: la credencial (vencida o sin permiso),
-  un JSON que no valida, `team-repos.json` que no nombra este repo como `operations`, o el repo de operaciones sin rama
-  `main`. Lo que en Azure es «naranja» acá es un aviso amarillo con la corrida en verde: mirá los avisos.
+- **Una corrida en rojo** dice en su primer error por qué. Las causas de siempre: la credencial (el token vencido, sin
+  permiso, o la App sin instalar en ese repo), un JSON que no valida, `team-repos.json` que no nombra este repo como
+  `operations`, o el repo de operaciones sin rama `main`. Lo que en Azure es «naranja» acá es un aviso amarillo con la
+  corrida en verde: mirá los avisos.
 
 ## Diferencias con los pipelines de Azure DevOps
 

@@ -204,11 +204,6 @@
    "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
   },
   {
-   "path": "scripts/tests/export.test.js",
-   "kind": "test",
-   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
-  },
-  {
    "path": "scripts/tests/fixtures/harness-managed-pieces.json",
    "kind": "test",
    "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"

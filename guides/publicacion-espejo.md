@@ -3,9 +3,16 @@
 > Script: `scripts/publishing/export.js`. Pruebas: `scripts/tests/export.test.js` (repos y configuraciones de mentira)
 > y, en el repo del equipo, la prueba contra los repos reales (§«La prueba de verdad»).
 
+> **Desde el corte a GitHub el exportador ya no arma la copia.** El repo público es la fuente: lo que se escribe ahí es
+> lo que sale. El exportador quedó como **control**: `--explain` clasifica el primer nivel de cada fuente, y la
+> clasificación (`whatShips`) la siguen usando como biblioteca el freno de nombres nuevos, el control de historia
+> interna, el reparto del repo de mantenimiento y el instalador. Pedirle una copia (`--output`) sale 2 diciéndolo. Lo
+> que esta guía cuenta del armado —los reemplazos, los papeles, el commit por plomería, el listado— describe cómo se
+> publicó hasta el corte.
+
 ## Qué es y qué no es
 
-El arnés se publica con **espejo**: los repos internos —el arnés
+El arnés se publicaba con **espejo**: los repos internos —el arnés
 y `agent-skills`— siguen siendo la fuente, con su memoria institucional y sus casos nominados, y **lo público es una
 copia que se arma cada vez**. El exportador arma esa copia para un paquete (`nucleo` o `bizuit`) y la deja en una
 carpeta local. **No publica nada**: no tiene remoto, no llama a ningún servicio y no toca los repos internos. Publicar
@@ -16,12 +23,10 @@ repos» o «cada repo», vale para las dos fuentes (§«Un solo repo interno»).
 ## Cómo se corre
 
 ```bash
-# la copia del núcleo, desde origin/main de los dos repos (la salida NO puede existir)
-node scripts/publishing/export.js --package core --output /tmp/copia-nucleo
-# con el resultado entero en JSON, desde otros commits
-node scripts/publishing/export.js --package bizuit --output /tmp/copia-bizuit --harness <ref> --agent-skills <ref> --json
 # el primer nivel de cada repo clasificado, las exclusiones fijas y las transformaciones (no escribe nada)
-node scripts/publishing/export.js --explain
+node scripts/publishing/export.js --explain [--json] [--harness <ref>] [--agent-skills <ref>]
+# lo que antes armaba la copia ya no existe: sale 2 diciéndolo
+node scripts/publishing/export.js --package core --output /tmp/copia-nucleo
 ```
 
 - Los repos se ubican como en el resto del arnés: `TYCON_GUIDES_DIR` (o el clon donde vive el script) y
@@ -31,9 +36,9 @@ node scripts/publishing/export.js --explain
 - Las tres configuraciones son, por defecto, las de `scripts/publishing/`: `allowlist.json` (pública),
   `replacements.json` y `denylist.json` (**privadas**). Las pruebas pasan unas sintéticas con `--allowlist`,
   `--replacements` y `--denied`.
-- **Salida**: `0` copia lista en `--output` (un repo git por fuente, `arnes/` y `agent-skills/`, con UN commit cada
-  uno) · `1` hallazgos: la copia se descarta y `--output` no se crea; el informe va a la salida estándar · `2` no pudo
-  armarla o mirarla (una configuración rota, una referencia que no es un commit, un repo que no está, un paquete
+- **Salida** (hasta el corte; hoy `--explain` sale 0 o 2, y pedir la copia sale 2): `0` copia lista en `--output` (un
+  repo git por fuente, `arnes/` y `agent-skills/`, con UN commit cada uno) · `1` hallazgos: la copia se descarta y
+  `--output` no se crea; el informe va a la salida estándar · `2` no pudo armarla o mirarla (una configuración rota, una referencia que no es un commit, un repo que no está, un paquete
   desconocido o el privado `clientes`, un glob de «in» muerto, una entrada del primer nivel sin clasificar, una
   exclusión fija que ya no coincide con nada…). «No pude mirar» nunca es «limpio».
 - Al lado de la salida queda el **listado de reemplazos**, `<salida>.reemplazos.md` (o `--report`). Es PRIVADO: nombra a
@@ -1042,225 +1047,26 @@ un merge de dos historias sin relación.
 
 ## La publicación
 
-El exportador arma la copia; `scripts/publishing/mirror.js` la lleva al repo público de GitHub y la
-mantiene, por un solo camino. El repo destino es el de `public-repos.json` —el único lugar con su
-nombre—, leído con `readPublicRepo()` de `export.js`. El mecanismo se prueba sin red
-contra un repo de mentira (`scripts/tests/mirror.test.js`), y lo corre solo su pipeline
-(§«El pipeline de publicación»). La primera publicación de verdad todavía no se hizo: hasta entonces nada de esto
-escribe en GitHub.
+Hasta el corte a GitHub el exportador armaba la copia y `scripts/publishing/mirror.js` la llevaba al repo público y
+absorbía los cambios ajenos (`plan`, `first` y `sync`). Desde el corte el repo público es la **fuente**: no hay copia
+que llevar, y esa mitad del guion se sacó. `plan`, `first` y `sync` salen 2 diciendo que ya no existen.
 
-**El flujo**, de un merge a `main` del interno al `main` público:
-
-1. Un merge a `main` del repo interno disparaba la publicación (hasta el corte a GitHub; desde entonces ya no la
-   dispara: queda la corrida diaria, §«El pipeline de publicación»). La corre su pipeline.
-2. `mirror.js` resuelve cada referencia interna a un sha, una sola vez —con un solo repo interno, un commit para las
-   dos fuentes (§«Un solo repo interno»)—, y corre el exportador una vez con la exportación que se publica, que es una
-   constante del código: `--package core,bizuit --single-repo` (§«El repo único»).
-3. Revisa lo que tiene que estar antes de escribir (abajo, «Lo que frena antes de escribir»).
-4. Arma un commit con ese árbol, más `version.json` con el número de esa sincronización (abajo, «La versión»), **sobre
-   la punta del `main` público** y lo empuja a una sola rama, `mirror/sync` (otra constante, nunca configurable). Fuera
-   de la primera publicación, ningún camino del código empuja a `main`.
-5. De esa rama sale **el** pull request de sincronización: uno solo, que se actualiza con cada merge del interno.
-6. Una persona lo aprueba y lo mergea en GitHub, con commit de merge. No lo mergea la App, no se mergea solo, y en
-   GitHub no se mergea ningún otro pull request (§«Cambios ajenos»).
-7. `verify` revisa con la lista privada lo que GitHub sirve —no lo que se empujó—, con toda su historia.
+Queda `verify`: clona lo publicado y lo revisa con la lista privada, con toda su historia. El repo que revisa es el de
+`public-repos.json` —el único lugar con su nombre—, leído con `readPublicRepo()` de `export.js`. Se prueba sin red
+contra un repo de mentira (`scripts/tests/mirror.test.js`) y lo corre solo su pipeline (§«El pipeline de
+publicación»).
 
 ```bash
-# el ensayo: qué se publicaría. Nunca empuja ni llama a nada que escriba
-node scripts/publishing/mirror.js plan [--harness <ref>] [--agent-skills <ref>] [--json]
 # lo publicado, contra la lista privada (sin token revisa lo que es público)
-node scripts/publishing/mirror.js verify [--strict] [--harness <ref>] [--agent-skills <ref>] [--json]
-# los dos que escriben: piden el token en TYCON_MIRROR_TOKEN y los corre el pipeline
-node scripts/publishing/mirror.js first     # la primera publicación, una sola vez, sobre un repo sin ninguna ref
-node scripts/publishing/mirror.js sync      # la sincronización: mirror/sync y el pull request único
+node scripts/publishing/mirror.js verify [--json] [--strict] [--report <archivo>] [--denied <f>] [--public-repos <f>]
 ```
-
-| Subcomando | Qué hace | Qué escribe en GitHub |
-|---|---|---|
-| `plan` | El ensayo: corre el exportador, lee la punta del `main` público y dice uno de cuatro estados | nada |
-| `first` | La primera publicación: un commit raíz con el árbol de la exportación más `version.json` (el `.1` de su fecha), y después `verify --strict`, cuyo código es el suyo. Si el repo ya tiene alguna ref, sale 2 sin empujar | sólo `refs/heads/main`, una vez |
-| `sync` | La sincronización: el commit sobre la punta pública y el pull request único | sólo `refs/heads/mirror/sync` y ese pull request |
-| `verify` | Clona lo publicado y lo revisa con el detector y la lista privada | nada |
-
-`import` todavía no existe (§«Cambios ajenos»). Un subcomando desconocido sale 2.
-
-- **Opciones**, las mismas para los cuatro subcomandos: `--harness <ref>` y `--agent-skills <ref>` (el commit de cada
-  repo interno; por defecto, el `HEAD` del arnés y `origin/main` de agent-skills; con un solo repo interno, un commit
-  para los dos —el del arnés— y `--agent-skills` sobra: §«Un solo repo interno»; `verify` los usa para su parte (f)),
-  `--json`, `--strict` (sólo `verify`) y las cuatro de configuración, que pasan tal cual al exportador y son las que
-  usan las pruebas: `--allowlist`, `--replacements`, `--denied` y `--public-repos`. Una opción con el valor vacío es un
-  error, no «el default».
-- **Variables**: `TYCON_MIRROR_TOKEN` (el token: el único lugar de donde se toma), `TYCON_MIRROR_API_URL` (la base de
-  la API; por defecto `https://api.github.com`) y `TYCON_MIRROR_GIT_BASE` (la base de la URL de git; por defecto
-  `https://github.com`). Las dos bases van con `https://`; sin cifrar (`http://`) sólo hacia la propia máquina, que es
-  donde las pruebas levantan una API de mentira y un repo `--bare` local (la de git acepta además `file://`, que es
-  una carpeta de esa máquina). Una base lleva sólo letras, números y `. _ ~ - : / [ ]`, sin usuario ni clave. Con
-  otra cosa, cualquier subcomando sale 2 antes de usar el token: ni git ni la API reciben nada. Y git **no sigue
-  redirecciones**, en ninguna llamada de red de los cuatro subcomandos: si el servidor contesta una redirección hacia
-  otro, la corrida sale 2 y el otro no recibe nada, tampoco el token. Los repos internos se ubican como los ubica el
-  exportador (`TYCON_GUIDES_DIR`, `TYCON_SKILLS_DIR`).
-- **Salida**: `0` bien · `1` hallazgos —los del exportador, «cambios ajenos sin traer», un término de la lista en un
-  texto que se iba a escribir, un push que GitHub rechazó, o los de `verify`— · `2` no pude, o falta una precondición.
-  Si el exportador sale 1 o 2, `mirror.js` sale con ese mismo código y reproduce su resumen. Un exportador que muere
-  con 1 sin decir qué encontró no es «hallazgos»: es «no pude» (2), con su motivo en una línea. «No pude leer» nunca
-  es «no hay nada»: sale 2 sin escribir.
-- **Lo que no se imprime**: el texto hallado, nunca. Una ruta que **es** un hallazgo tampoco: se cuenta, y en su lugar
-  va «(una ruta con un hallazgo: no se imprime)». Y lo que viene del repo público —una ruta, una línea de git— sale
-  saneado: en una línea, sin caracteres de control, con el largo acotado y sin nada que el agente de la corrida pueda
-  leer como una orden.
-- En la copia pública `mirror.js` viaja, pero sin la lista privada ni `public-repos.json` sale 2 diciendo qué falta,
-  como el exportador (se le pasan con `--denied` y `--public-repos`).
-
-**Los cuatro estados de `plan`.** En `--json` el estado va en la clave `state`, como un código en inglés (lo lee
-el programa de instalación); el mensaje, al lado, en castellano:
-
-| `state` | Mensaje | Cuándo |
-|---|---|---|
-| `unpublished` | no publicado | el repo público no tiene ninguna ref |
-| `unchanged` | sin cambios | el árbol de la exportación es igual al de `main` público, sin contar `version.json` |
-| `changes` | cambios | es distinto: trae la cuenta de agregados, modificados y borrados, y hasta 50 rutas (`version.json` no cuenta ni figura) |
-| `foreign-changes` | cambios ajenos sin traer | `main` público tiene un cambio que el interno todavía no decidió (§«Cambios ajenos») |
-
-`plan` sale 0 en los tres primeros y **1 con «cambios ajenos sin traer»**. Lee la punta de `main` sin credencial si el
-repo es público y con `TYCON_MIRROR_TOKEN` si está puesto; un repo privado sin token sale 2 («no pude leer: el repo es
-privado (o no existe) y falta el token de lectura»). Lee el repo antes de exportar y no llama a la API. Un repo que
-tiene refs pero no tiene `main` no es ninguno de los cuatro estados: `plan` y `sync` salen 2, porque no hay contra qué
-comparar.
-
-**Lo que frena antes de escribir** — todo sale 2, nombrando el caso y sin tocar GitHub:
-
-- **El nombre público**: `public-repos.json` falta o no se lee, no trae organización o repo, o alguno tiene caracteres
-  fuera de `[A-Za-z0-9._-]`.
-- **La exportación**: trae `pendientes`; trae más de un repo; le falta un papel (§«Los papeles»); su `LICENSE` no es
-  Apache-2.0; trae la skill de SDD de Bizuit, o `skills/tycon-create-story/` con ese nombre (§«Lo que se renombra o se
-  poda en la copia»); o ya trae `version.json`, que agrega la sincronización y no sale de ninguna fuente.
-- **Un `version.json` publicado que no se deja leer** (`plan` y `sync`): el de la punta de `main`, o el de la punta de
-  `mirror/sync` si es una sincronización. No es JSON, su número no tiene forma o su `source` no es un mapa: sale 2
-  diciendo cuál. Numerar como si no estuviera repetiría un número ya publicado. Qué hacer: si es el de `mirror/sync`,
-  se borra esa rama —es de la sincronización, y la corrida siguiente la vuelve a armar—; si es el de `main`, se
-  arregla allá con un commit que deje el archivo sano, que es un cambio ajeno y se resuelve como tal (§«Cambios
-  ajenos»). Después se vuelve a correr.
-- **Una forma de secreto de proveedor** en el árbol: las reglas `sas-azure`, `token-github`, `llave-anthropic`,
-  `llave-openai`, `token-telegram`, `llave-aws`, `llave-privada` y `jwt` del detector, más `token-slack`, que el
-  detector no tiene y declara `mirror.js`; elegidas por nombre y **sin** las excepciones `permitidos`. Dice archivo,
-  línea y regla, con el valor enmascarado.
-  El motivo y la salida, en §«Alertas de prueba en GitHub».
-- **Contenido y configuración de commits distintos**: el exportador lee su configuración del disco. Si el sha del arnés
-  no es el `HEAD` de su clon, o si alguno de los cuatro archivos de configuración por defecto (`allowlist.json`,
-  `replacements.json`, `denylist.json`, `public-repos.json`) difiere en el disco del que trae ese commit, `plan` lo
-  avisa —sin cambiar su código de salida— y `first` y `sync` salen 2. Un archivo pasado por opción no se compara.
-- **Un clon interno superficial** (del arnés o de agent-skills, con la historia recortada), con el repo ya publicado:
-  `plan` y `sync` salen 2 con «no pude leer la historia». Una marca de §«Cambios ajenos», o el commit con el que hay
-  que comparar, pueden estar en lo que el clon no trajo: lo que no se ve no es «no hay». Se trae la historia completa
-  y se vuelve a correr.
-- **Una sincronización anterior que este repo no conoce** (`plan` y `sync`, con un solo repo interno): si la última
-  sincronización mergeada nombra un commit que no está en la historia del que se publica, sale 2 nombrándolo, con la
-  causa (§«Un solo repo interno»).
-- **El token**: `first` y `sync` sin `TYCON_MIRROR_TOKEN` salen 2. Nunca se toma de `GH_TOKEN`, de `GITHUB_TOKEN`, del
-  llavero de `gh` ni de un ayudante de credenciales de git: quien tiene un token personal en su terminal no publica
-  por accidente con su cuenta. A git le llega por el ambiente, nunca en los argumentos de un proceso ni en
-  `.git/config`, y no aparece en ninguna salida.
-- **Las reglas de `main`** (`sync`, leídas por la API): se leen en toda corrida con el repo ya publicado, antes de
-  exportar. Si no alcanzan sale 2, aunque la corrida fuera a terminar en «sin cambios», en «hay una sincronización
-  más nueva» o en «cambios ajenos sin traer». Hace falta un ruleset —una protección clásica de rama
-  no cuenta— que pida pull request con al menos una aprobación, descarte las aprobaciones con cada empuje nuevo, exija
-  la aprobación del último empuje, prohíba el force push y el borrado, y exija al menos un chequeo: el chequeo que exige
-  GitHub (cuál es y qué corre: §«La CI pública»). Además el repo permite sólo
-  commits de merge, y su rama por defecto no es `mirror/sync`. Si la respuesta no trae un dato, también es 2.
-
-**El commit** usa la técnica del exportador (§«El commit: por plomería, reproducible»): git con la configuración
-aislada, la identidad fija de la copia (la constante `COMMIT_IDENTITY` que exporta `export.js`: no se copia en otro
-archivo), la fecha más reciente de los commits internos y tres trailers: `Mirror-Harness-Commit`,
-`Mirror-Agent-Skills-Commit` y `Mirror-Tree` (con un solo repo interno, los dos primeros nombran el mismo commit, y la
-fecha es la de ese commit). El de `first` no tiene padre; el de `sync` tiene como padre la punta del
-`main` público. Mismos commits internos y misma punta pública → mismo commit: un reintento no empuja nada. Su árbol es
-el **final** —el de la exportación más `version.json`—, y `Mirror-Tree` nombra ese mismo árbol.
-
-**La versión**. Cada commit que se publica lleva `version.json` en su raíz (su forma, en §«El repo
-único»). Lo agrega `mirror.js` por plomería sobre el árbol del exportador, con la función del exportador, y su texto
-pasa por la lista privada antes de escribirse, como los demás textos. El número es `YYYY.MM.DD.N`:
-
-- **La fecha** es la del commit de la sincronización: la mayor fecha de committer de los commits internos, en UTC.
-  Nunca el reloj ni el huso de la corrida.
-- **`N`** es 1 más el mayor `N` entre el `version.json` de la punta de `main` y el de la punta de `mirror/sync`,
-  contando sólo los de **esa misma fecha**; si ninguno es de esa fecha, 1. El de `mirror/sync` cuenta sólo si su punta
-  es una sincronización: otra cosa empujada ahí se reemplaza, no numera. Así dos sincronizaciones del mismo día dan
-  `.1` y `.2`, se haya mergeado la primera o no, y un commit interno del día siguiente vuelve a `.1`.
-- **El atajo, antes de numerar**: si la punta de `mirror/sync` ya es una sincronización de estos mismos commits
-  internos, sobre este mismo padre y con este mismo árbol, es esta misma corrida. No se renumera ni se empuja: un
-  reintento da el mismo commit, corra cuando corra.
-- **Sin cambios publicables no hay número nuevo**: el árbol de `main` se compara sin `version.json`. Si es el de la
-  exportación, la corrida termina en «sin cambios» aunque los commits internos, o el día, sean otros.
-- **El merge no cambia el número**: el pull request lleva a `main` el mismo archivo que había en la rama. La versión
-  estable **es** la que estaba en `mirror/sync`.
-- Se calcula **en cada pasada**: si el empuje pierde contra otra corrida, la que relee vuelve a numerar sobre lo que
-  encuentra.
-
-Un repo publicado antes de la versión numerada tiene su `main` sin `version.json`: el archivo aparece con la primera
-sincronización que trae cambios, y hasta que se mergea una instalación del canal estable muestra la versión derivada.
-Lo que la regla no cubre: si alguien borra `mirror/sync` a mano sin mergearla, el número siguiente repite el de la
-rama borrada.
-
-**Cómo termina `sync`**, en el orden en que lo decide:
-
-- «todavía no publicado: corré `first`» (0): el repo no tiene ninguna ref. No llama a la API ni exporta.
-- Las reglas de `main` no alcanzan (2): se leen acá, antes de exportar y de todo lo que sigue (arriba, «Lo que frena
-  antes de escribir»).
-- «cambios ajenos sin traer» (1): no empuja ni abre nada (§«Cambios ajenos»).
-- «hay una sincronización más nueva» (0): `mirror/sync` ya trae una sincronización de commits internos posteriores a
-  los de esta corrida. No empuja ni toca el pull request: una corrida vieja nunca lo retrocede. Se mira **antes** que
-  «sin cambios», así una corrida vieja tampoco cierra el pull request que abrió una más nueva.
-- «sin cambios» (0): el árbol es igual al de `main` público, sin contar `version.json`. No numera ni empuja, y si
-  había un pull request de sincronización abierto lo cierra con un comentario.
-- Con cambios (0): numera (arriba, «La versión»), empuja sólo a `refs/heads/mirror/sync`, con `--force-with-lease`
-  sobre lo que había (si la rama ya trae esta misma corrida, no renumera ni empuja), y crea el pull request o
-  actualiza el que está abierto; si ya dice lo mismo, no lo toca. Si alguien lo cerró a mano, crea uno nuevo. Nunca
-  hay dos abiertos.
-- Un término de la lista en el título, el cuerpo, la rama, `version.json`, el mensaje o la identidad del commit (1):
-  se revisan con el detector antes de cualquier escritura, y la salida dice dónde, nunca qué.
-- GitHub rechaza el push (1): el mensaje de GitHub, saneado —sin caracteres de control, con un tope de 1.000
-  caracteres por línea y sin nada que el agente de la corrida lea como una orden—, sin el token y sin reintentar. Si
-  el rechazo es de la
-  protección contra secretos, nombra el archivo que GitHub cita y remite a §«Alertas de prueba en GitHub».
-- No pudo leer algo de GitHub, o no pudo empujar (2): nada se decide por lo que no se pudo leer. Si falla la consulta
-  de pull requests abiertos, no crea ninguno ni empuja.
-- `mirror/sync` trae una sincronización de un commit interno que el clon no conoce (2): no se puede saber si es más
-  nueva, y no se pisa. Se trae la historia del interno y se vuelve a correr.
-- Otra corrida empujó la rama entre la lectura y el push: relee **una** vez y lo que haya entonces decide. Si vuelve
-  a perder, sale 2 sin insistir.
-- **Incompleto** (2): la corrida ya escribió algo en GitHub y el paso siguiente falló —el empuje se hizo y no se pudo
-  crear o actualizar el pull request, o no se pudo comentar o cerrar el que sobraba—. El mensaje no dice sólo qué
-  falló: trae una línea «Lo que quedó hecho» con el commit, si se empujó, y cómo quedó el pull request. En `--json`
-  va `outcome: "incomplete"`, con `commit`, `pushed` y `pullRequest`. Qué hacer: **volver a correr**. La corrida
-  siguiente crea, actualiza o cierra lo que faltó sin empujar de nuevo.
-
-`first` tiene tres salidas propias: si el repo deja de estar vacío mientras arma la publicación, sale 2 sin pisar
-nada; si GitHub rechaza el push, 1 con su mensaje; y si `main` quedó publicado pero `verify --strict` no dio 0, lo
-dice así y sale con el código de `verify`.
-
-El cuerpo del pull request trae los shas internos cortos, una línea «Versión `YYYY.MM.DD.N`» —quien lo aprueba está
-marcando esa versión como estable—, la cuenta de archivos agregados, modificados y borrados, y hasta 50 rutas.
-`version.json` no entra en la cuenta ni en las rutas: cambia en toda sincronización. La cantidad de reemplazos del exportador **no** va al cuerpo, que es público: si no es 0, va al resumen
-de la corrida interna como aviso (un nombre pasó el freno y se arregla en el interno).
-
-**Una ruta cuyo nombre hay que ocultar.** Si la lista aprende un nombre después de publicado, y ese nombre está en una
-ruta del público, el arreglo es sacar esa ruta: el interno la borra o la renombra y `sync` la saca del público. Una
-ruta **borrada** que trae un término de la lista no frena la sincronización y no se escribe en el cuerpo del pull
-request: en su lugar va «(una ruta que no se nombra)», y se cuenta entre los borrados. Tampoco la imprimen `plan` ni
-`sync` (clave `pathsHidden`). Una ruta **agregada o modificada** con un nombre de la lista sí frena (1): sale del
-interno, y ahí se arregla. El nombre viejo sigue en la historia pública (§«Si `verify` da 1»).
-
-**Empujar es publicar.** En un repo público la rama `mirror/sync` se lee apenas llega, y GitHub conserva los empujes
-reemplazados en la línea de tiempo del pull request. El filtro de lo que se hace público es lo que corre **antes** de
-empujar —el exportador, las precondiciones de arriba y la revisión de los textos—, no la aprobación: la aprobación
-decide qué entra a `main`.
 
 **Empujar es instalar**. Las dos ramas del repo público son los dos canales de instalación:
 `mirror/sync` es el canal «al día» (`latest`) y `main` el «estable» (`stable`). Marcar una versión estable **es**
 mergear el pull request de sincronización: sin etiquetas ni releases. La consecuencia: quien pueda empujar a `main`
 del interno, o cambiar el pipeline de publicación, llega a las máquinas que siguen el canal «al día» (§«La llave de la
 App»). Como `mirror/sync` se reescribe en cada sincronización, se consume con una rama local y `reset`, no con
-`pull`. El número de versión (`version.json`) lo pone la sincronización: arriba, «La versión».
+`pull`.
 
 **Quien mergea** lo hace con el correo anónimo que GitHub le da a su cuenta (la forma `<id>+<usuario>@…`, con la
 opción de mantener privado el correo), y el commit de merge queda firmado por el firmante automático de los commits
@@ -1309,29 +1115,14 @@ escribe en el público, y la misma que exige el freno al empujar (§«El freno a
 detector, que comparten los dos).
 Lo que sí se sigue mirando contra la lista son el nombre con que se firma y la cuenta que va adentro de ese correo.
 
-**Con el público como fuente: `--direct`.** Desde el corte ya no hay copia que llevar: las partes atadas a la
-sincronización desde lo interno —(f), (i) y (j)— dicen «no aplica» y los internos no se leen. Un commit del dueño
-escrito directo en `main` no es un «cambio ajeno». Sólo `verify` acepta la opción; `first` y `sync` se niegan.
+**Con el público como fuente.** Las partes atadas a la sincronización desde lo interno —(f), (i) y (j)— comparaban
+lo publicado con lo interno: ya no hay contra qué, y el informe las da siempre como «no aplica». Un commit del dueño
+escrito directo en `main` no es un «cambio ajeno». La opción `--direct`, que antes las apagaba, se sigue aceptando y no
+cambia nada.
 
 **El informe: `--report <archivo>`** deja en un archivo lo mismo que `--json` —el veredicto, cada lugar con lo que hay
 que hacer, lo que no se pudo mirar; nunca el texto hallado—, también si `verify` frenó antes de mirar nada. De ahí arma
 su aviso el pipeline (§«El pipeline de publicación», «El aviso»).
-
-**La parte (i)** no exporta nada ni compara árboles: todo sale del clon. En `main`, «su sincronización» es la última
-mergeada —el segundo padre del merge, o la raíz si es la primera publicación—, y el archivo de la punta tiene que ser
-**el mismo objeto** que el de ese commit (el merge no cambia el número, y nadie lo toca en `main`). En `mirror/sync`
-es la punta, si es una sincronización. De cada una mira:
-
-- que cada fuente de `source` sea el commit de **su** trailer (`harness` con `Mirror-Harness-Commit`, `agent_skills`
-  con `Mirror-Agent-Skills-Commit`), y que las fuentes sean las de los trailers que ese commit trae: categoría
-  `version-source`;
-- que la fecha de la versión sea la del commit, y que el orden cumpla la regla —`.1` en una primera publicación, y
-  mayor que el del commit sobre el que se armó si es de la misma fecha—: `version-number`. El número exacto no se
-  puede comprobar: pudo contar una punta de `mirror/sync` que ya fue reemplazada;
-- que el archivo se deje leer, y que en `main` sea el de su sincronización: `version-file`.
-
-Que el archivo **no esté** es un hallazgo (`version-missing`) sólo si esa cadena ya lo traía: la primera publicación
-salió sin él, y un `main` que nunca lo tuvo no da nada. `looked.i` cuenta los archivos que miró.
 
 Lo que no es un archivo se revisa bajo una ruta ficticia, que ninguna excepción por ruta de un archivo de verdad
 cubre: `<commit-identity>` (la identidad de los commits: ahí vive la única excepción de nombre de persona, la de
@@ -1428,10 +1219,12 @@ un disparo tiene que hacerlo a propósito.
 
 | `mode` | Qué corre | Quién lo encola |
 |---|---|---|
-| `sync` (por defecto) | `mirror.js sync`. En la corrida diaria, después `mirror.js verify --strict`, aunque `sync` haya fallado | los disparos automáticos, o una persona |
+| `sync` (por defecto) | En la corrida diaria, `mirror.js verify --strict`. A mano, nada: sale 2 (no se sincroniza desde lo interno) | los disparos automáticos |
 | `verify` | `mirror.js verify --strict` | una persona |
-| `plan` | `mirror.js plan`: el ensayo, no escribe nada | sólo una persona |
-| `first` | `mirror.js first`: la primera publicación, una sola vez | sólo una persona |
+| `plan`, `first` | nada: salen 2. Eran el ensayo y la primera publicación, de cuando el público era una copia | — |
+
+Desde el corte el grupo de variables trae el modo directo (`TYCON_MIRROR_DIRECT=1`): el pipeline sólo verifica, y
+`mirror.js` ya no tiene otra cosa que hacer.
 
 La corrida diaria es la única que mide sola las alertas del escaneo de secretos de GitHub: hace falta el token, y el
 banco nocturno no lo tiene ni lo debe tener. Por eso verifica aunque la sincronización esté frenada por un cambio
@@ -1621,7 +1414,10 @@ verdad, y no todo en la misma:
 
 ## Cambios ajenos
 
-El interno es la fuente. Un **cambio ajeno** es un commit del `main` público que no salió de una sincronización: cada
+*Esta sección es de antes del corte a GitHub: hoy el público es la fuente y `verify` da la parte (f) como «no aplica».
+Queda para entender lo publicado hasta entonces.*
+
+El interno era la fuente. Un **cambio ajeno** es un commit del `main` público que no salió de una sincronización: cada
 commit de la cadena de primer padre de `main` que la última sincronización mergeada no contiene —un merge cuyo segundo
 padre es un commit de la sincronización, o la publicación raíz— y que no es él mismo una sincronización mergeada.
 Aparece cuando alguien mergea en GitHub otro pull request o edita un archivo desde la web.
@@ -1676,13 +1472,10 @@ de afuera entra al interno y vuelve por la sincronización; el comando que la tr
 
 ## Si `verify` da 1
 
-Primero, qué parte dio 1 (la salida la nombra). Cuatro no son un nombre ni un secreto publicado, y tienen su salida
-propia: (f) es un cambio ajeno sin absorber (§«Cambios ajenos»); (g), una alerta abierta del escaneo de secretos
-(§«Alertas de prueba en GitHub»; si el secreto es de verdad, sigue acá); (h), el reporte privado de
-vulnerabilidades apagado, que se prende en la configuración del repo; e (i), un número de versión que no cierra con
-su sincronización (§«La publicación», «Qué mira `verify`»). La (i) no se arregla en GitHub: si alguien tocó
-`version.json` en `main`, es además un cambio ajeno, y la sincronización siguiente que se mergee deja otra vez el
-archivo de su commit.
+Primero, qué parte dio 1 (la salida la nombra). Dos no son un nombre ni un secreto publicado, y tienen su salida
+propia: (g), una alerta abierta del escaneo de secretos (§«Alertas de prueba en GitHub»; si el secreto es de verdad,
+sigue acá), y (h), el reporte privado de vulnerabilidades apagado, que se prende en la configuración del repo. Las
+partes (f), (i) y (j) ya no dan 1: con el público como fuente no corren (§«La publicación»).
 
 Las demás —(a) a (e), y (k), (l) y (m)— dicen que en lo publicado hay algo que la lista privada no deja salir: un
 nombre real, un correo o un secreto, en el contenido, en una ruta, en la historia, en la identidad o el mensaje de un
