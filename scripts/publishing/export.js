@@ -1,49 +1,30 @@
 #!/usr/bin/env node
 'use strict';
-// export.js — la copia pública de cada paquete del arnés (épica 8, story 8.4 · 2026-09-27)
+// export.js — la clasificación de lo que el arnés publica (épica 8, story 8.4 · 2026-09-27; story 8.26, AC 36)
 //
-// POR QUÉ EXISTE: el arnés se publica como código abierto con ESPEJO. Los repos internos siguen siendo la fuente
-// —con su memoria institucional y sus casos nominados— y lo público es una COPIA que se arma cada vez. Armarla a
-// mano no escala (la auditoría midió miles de líneas con nombres de clientes y personas) y no sale igual dos
-// veces. Este script la arma, y si algo no cierra, no deja nada:
-//   1. lee los OBJETOS de git del commit pedido: nunca el árbol de trabajo, nunca `git archive` (aplica los
-//      atributos locales de cada clon: export-ignore, export-subst, autocrlf);
-//   2. copia sólo lo que cubre la lista blanca (`allowlist.json`, pública), menos las EXCLUSIONES FIJAS de acá
-//      abajo, los `out` de la lista y los `afuera` privados de `replacements.json`;
-//   3. adapta por TRANSFORMACIONES CON NOMBRE lo que describe cosas que no viajan (revisores de otro paquete,
-//      suites cuyo código queda afuera, la máquina del examen, el .gitignore) — `--explain` las lista;
-//   4. reemplaza los nombres reales por anónimos que no rompen el código (`replacements.json`, PRIVADA: una forma
-//      por caja, así `AcmeCorp`→`ClienteA` sigue siendo un identificador; la prosa con espacio, sólo en `.md`);
-//   5. regenera las traducciones a Codex desde los `.md` ya reemplazados (se generan: no se reemplazan);
-//   6. controla: nombres pegados que el borde de palabra deja pasar, que todo compile, que ningún comando mande
-//      correr algo que no viaja, y el detector de la 8.1 sobre el contenido, las rutas y los metadatos;
-//   7. deja cada fuente como un repo nuevo con UN commit armado por plomería (sin hooks, firma, ignores ni
-//      identidad de la máquina): mismos shas fuente → mismo árbol y mismo commit, en cualquier máquina. Con
-//      `--single-repo` (story 8.7) las dos fuentes van juntas desde la raíz de UN repo: el que se publica.
+// POR QUÉ EXISTE: hasta el corte a GitHub el arnés se publicaba como ESPEJO. Los repos internos eran la fuente y este
+// guion ARMABA la copia pública: la lista blanca, las exclusiones fijas, las transformaciones con nombre, los
+// reemplazos de nombres reales por inventados, los papeles, las traducciones a Codex y un commit por plomería. Desde el
+// corte el repo público es la fuente: nadie arma una copia, y esa mitad se sacó (story 8.26, AC 36). Pedirle una copia
+// sale 2 diciéndolo.
 //
-// Desde la story 8.7 la copia lleva además sus papeles (licencia, NOTICE, portadas: sintéticos por paquete, con el
-// nombre público de `public-repos.json` puesto), saca los bloques internos de los .md, publica una skill con otro
-// nombre si la lista lo pide, deja en el manifiesto de terceros sólo los que se usan, y controla enlaces, rutas del
-// README, atribuciones y el nombre viejo que quede. `--package` acepta una lista (`core,bizuit`: la unión).
+// QUEDA EL CONTROL, que sigue haciendo falta mientras exista el repo de mantenimiento del equipo:
+//   · `--explain`: el primer nivel de cada fuente clasificado (qué entra, qué queda afuera y por qué), las exclusiones
+//     fijas y su cobertura. Una entrada sin clasificar o una exclusión que ya no cubre nada se marcan con 🛑.
+//   · la clasificación como biblioteca (`whatShips` y lo que la rodea): qué publica un commit y con qué contenido. La
+//     usan el freno de nombres nuevos (new-names.js), el control de historia interna, el reparto del repo de
+//     mantenimiento y el instalador (la capa del equipo).
+//   · los lectores que comparten otros guiones: el nombre público (`readPublicRepo`), el git aislado, los objetos de git.
 //
-// CÓMO FALLA: fuerte y sin dejar nada a medias. exit 0 = copia lista en --output · 1 = hallazgos (la copia se
-// descarta y <salida> no se crea) · 2 = no pude armarla o mirarla (configuración, referencia, repo, paquete, un
-// glob muerto, una entrada sin clasificar, una exclusión fija que ya no coincide con nada…). «No pude mirar»
-// nunca es «limpio». Los repos internos no se tocan y no se llama a ningún servicio: sólo git local y archivos.
+// CÓMO FALLA: exit 0 = clasificado · 2 = no pude clasificar (configuración, referencia, repo) o me pidieron armar una
+// copia. «No pude mirar» nunca es «limpio». No se llama a ningún servicio: sólo git local y archivos.
 //
 // A mano:
-//   node scripts/publishing/export.js --package core|bizuit|core,bizuit --output <carpeta-que-no-existe> [--json]
-//        [--single-repo]                           (las dos fuentes en UN repo, desde su raíz: el que se publica)
-//        [--stamp-version <YYYY.MM.DD.N>]          (sólo con --single-repo: la copia trae version.json con ese número)
+//   node scripts/publishing/export.js --explain [--json]
 //        [--harness <ref>] [--agent-skills <ref>]  (default origin/main · repos: TYCON_GUIDES_DIR y TYCON_SKILLS_DIR)
-//                                                  (el repo unido, story 8.18: las dos fuentes salen del commit de
-//                                                  --harness, partido por ruta; un --agent-skills que sea otro commit sale 2)
-//        [--report <ruta>]                         (listado PRIVADO de reemplazos · default <salida>.reemplazos.md)
 //        [--allowlist <f>] [--replacements <f>] [--denied <f>] [--public-repos <f>]   (default: los de scripts/publishing/)
-//   node scripts/publishing/export.js --explain [--json]    (el primer nivel clasificado y las transformaciones)
 // Guía: guides/publicacion-espejo.md
 
-const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -103,8 +84,10 @@ const ANONIMO_SEGURO = /^[A-Za-z0-9._/:@-]+$/;
 const signosRaros = (s) => (s.match(/[^A-Za-z0-9._/:@-]/g) || []).join('');
 const anonimoAceptable = (texto, anonimo) => ANONIMO_SEGURO.test(anonimo) || signosRaros(anonimo) === signosRaros(texto);
 const AUTOR = Object.freeze({ nombre: 'TYCON', email: 'arnes@tycon.com.ar' });
-const PRIVADO = 'PRIVADO: contiene los nombres reales, no se publica';
-const TOPE_DETALLE = 200;
+// story 8.26 (AC 36): desde el corte a GitHub el repo público es la fuente y nadie arma una copia. El exportador quedó
+// como CONTROL: clasifica (`--explain`, y `whatShips` para los frenos y el instalador) y verifica; pedirle una copia
+// sale 2 con este motivo.
+const NO_ARMA = 'ya no arma la copia: el repo público es la fuente (story 8.26, AC 36). Lo que queda es el control: --explain clasifica, y los frenos y el instalador leen la clasificación como biblioteca';
 // story 8.7 (AC 14): el nombre público vive en UN archivo, que lee sólo el exportador (y la sincronización de la 8.8) y
 // que no viaja: la copia lleva el nombre ya puesto en sus papeles
 const PUBLIC_REPOS = 'scripts/publishing/public-repos.json';
@@ -398,42 +381,6 @@ function internalBlobs(arboles) {
   const mapa = new Map();
   for (const arbol of arboles) for (const e of arbol) if (e.tipo === 'blob' && !mapa.has(e.ruta)) mapa.set(e.ruta, e.obj);
   return mapa;
-}
-
-/** El nombre que git le da a un archivo con esos bytes (sha1, o sha256 si el repo interno usa ese formato). */
-const blobId = (datos, largo) => crypto.createHash(largo === 64 ? 'sha256' : 'sha1').update(`blob ${datos.length}\0`).update(datos).digest('hex');
-
-/**
- * story 8.13.1 (AC 6): las rutas PUBLICADAS que el interno también trae, en esa misma ruta, con otro blob —un papel de
- * `public-files/` que reemplaza un archivo interno, un texto con reemplazos, una lista recortada—, cada una con el nombre
- * de lo que el exportador le hizo en ESTA corrida: sus `ajustes` —anotados con la clave de la copia (`arnes/…`), con la
- * ruta de su fuente o con la publicada— y `reemplazos` si el texto cambió por la tabla. Nunca sale de una lista escrita
- * a mano. Lo que sale sólo en el público (un papel cuyo destino el interno no tiene: LICENSE, los guiones de entrada) no
- * difiere de nada interno: no es un transformado. `generated` (el propio version.json) tampoco. Una ruta que difiere sin
- * ningún nombre no se anota: la frena `mirror.js verify` (parte j), que la nombra.
- */
-function transformedList(ctx, forma, ajustes) {
-  const internas = internalBlobs([ctx.arboles.arnes, ctx.arboles['agent-skills']]);
-  const largo = (internas.values().next().value || '').length;
-  const nombres = new Map();
-  for (const a of ajustes) {
-    if (a.transformacion === 'generated') continue;
-    if (!nombres.has(a.archivo)) nombres.set(a.archivo, new Set());
-    nombres.get(a.archivo).add(a.transformacion);
-  }
-  const lista = [];
-  for (const [ruta, a] of forma) {
-    if (ruta === VERSION_FILE && a.fuente === null) continue;
-    if (!internas.has(ruta) || internas.get(ruta) === blobId(a.datos, largo)) continue;
-    const claves = new Set([ruta, ...(a.fuente ? [`${a.fuente}/${a.destino}`, `${a.fuente}/${a.ruta}`] : FUENTES.map((f) => `${f}/${ruta}`))]);
-    const deEsta = new Set();
-    for (const k of claves) {
-      for (const n of nombres.get(k) || []) deEsta.add(n);
-      if (ctx.porArchivo && ctx.porArchivo.has(k)) deEsta.add('reemplazos');
-    }
-    if (deEsta.size) lista.push({ path: ruta, transform: [...deEsta].sort(porCodigo).join('+') });
-  }
-  return lista.sort((x, y) => porCodigo(x.path, y.path));
 }
 
 function leerJson(ruta, que) {
@@ -778,16 +725,6 @@ function isUnifiedCommit(repo, ref) {
   return require('./new-names.js').unifiedTree(listarArbol(repo, sha));
 }
 
-// Las rutas que los DOS repos traían y que en el repo unido son un solo archivo, del lado del arnés: el `.gitignore` (la
-// unión de los dos). La lista blanca conserva su forma, partida por fuente, y sigue nombrándolo en el «in» de las dos:
-// en el repo unido, el de la fuente que ya no lo trae no toma nada —lo que sale es lo que hay— y no es un glob muerto.
-// Una lista cerrada, a propósito: cualquier otro «in» que no coincide con nada de su fuente sigue saliendo 2.
-const UNION_SHARED = Object.freeze(['.gitignore']);
-function sharedInUnion(ctx, fuente, glob) {
-  return ctx.unified === true && UNION_SHARED.includes(glob)
-    && FUENTES.some((f) => f !== fuente && ctx.arboles[f].some((e) => e.ruta === glob));
-}
-
 function sourceRepo(fuente, dir) {
   if (!fs.existsSync(dir)) throw new NoPudo(`el repo fuente ${fuente} no está en ${dir}`);
   const r = git(dir, ['rev-parse', '--show-toplevel']);
@@ -854,46 +791,6 @@ function leerObjetos(repo, shas) {
   for (const sha of unicos) mapa.set(sha, OBJETOS_LEIDOS.get(clave(sha)));
   return mapa;
 }
-
-// ── La salida y el listado: nunca dentro de un repo fuente, nunca el HOME, nunca algo que ya existe ────────────
-function validarDestinos(salidaDada, informeDado, repos) {
-  const abs = path.resolve(salidaDada);
-  const padre = real(path.dirname(abs));
-  if (!padre) throw new NoPudo(`la carpeta que contendría la salida no existe: ${path.dirname(abs)}`);
-  const salida = path.join(padre, path.basename(abs));
-  const home = real(os.homedir()) || path.resolve(os.homedir());
-  if (salida === home) throw new NoPudo(`--output es tu HOME (${home}): la copia va en una carpeta nueva, nunca ahí`);
-  const informeAbs = path.resolve(informeDado);
-  const informePadre = real(path.dirname(informeAbs));
-  if (!informePadre) throw new NoPudo(`la carpeta del listado de reemplazos no existe: ${path.dirname(informeAbs)}`);
-  const informe = path.join(informePadre, path.basename(informeAbs));
-  for (const [que, ruta] of [['la salida', salida], ['el listado de reemplazos', informe]]) {
-    for (const [fuente, repo] of Object.entries(repos)) {
-      if (dentroDe(ruta, repo.top)) {
-        throw new NoPudo(`${que} (${ruta}) cae dentro del repo fuente ${fuente} (${repo.top}): la copia no se escribe dentro del repo que copia`);
-      }
-    }
-  }
-  if (dentroDe(informe, salida)) throw new NoPudo(`el listado de reemplazos (${informe}) cae dentro de la copia: es PRIVADO y va afuera`);
-  if (fs.existsSync(informe) && (fs.statSync(informe).isDirectory() || !esListado(informe))) {
-    throw new NoPudo(`el listado de reemplazos apunta a ${informe}, que ya existe y no es un listado del exportador: no lo piso`);
-  }
-  if (fs.existsSync(salida)) throw new NoPudo(`la salida ya existe: ${salida} — no la toco (la copia va en una carpeta nueva)`);
-  return { salida, informe };
-}
-
-// «No hay nada ahí» (no existe, es una carpeta, un tramo de la ruta es un archivo) es que no. Cualquier otro error de
-// lectura no es un «no»: un listado que no se deja leer sigue teniendo nombres reales.
-const esListado = (ruta) => {
-  let texto;
-  try {
-    texto = fs.readFileSync(ruta, 'utf8');
-  } catch (e) {
-    if (e && ['ENOENT', 'EISDIR', 'ENOTDIR'].includes(e.code)) return false;
-    throw new NoPudo(`no pude leer ${ruta} para saber si es un listado del exportador (${(e && e.code) || e})`);
-  }
-  return texto.split('\n', 1)[0].includes(PRIVADO);
-};
 
 // ── Clasificación del primer nivel ─────────────────────────────────────────────────────────────────────────────
 function reglasDeFuente(ctx, fuente) {
@@ -1327,71 +1224,6 @@ function comandosColgados(textos, existe) {
   return hallazgos;
 }
 
-function resumenDetector(r) {
-  const hallazgos = [...r.hallazgos].sort((a, b) =>
-    porCodigo(a.archivo, b.archivo) || a.linea - b.linea || porCodigo(a.regla, b.regla) || porCodigo(a.texto, b.texto));
-  const porCategoria = {};
-  for (const h of hallazgos) porCategoria[h.categoria] = (porCategoria[h.categoria] || 0) + 1;
-  return {
-    salida: hallazgos.length ? 1 : 0,
-    archivos: r.archivos,
-    excluidos: r.excluidos,
-    permitidos: r.permitidos,
-    hallazgos,
-    porCategoria: Object.fromEntries(Object.entries(porCategoria).sort((a, b) => porCodigo(a[0], b[0]))),
-  };
-}
-
-function detectar(config, rutas, base) {
-  try {
-    return resumenDetector(detector.detectar({ config, rutas, base }));
-  } catch (e) {
-    throw new NoPudo(`el detector no pudo mirar ${rutas.join(', ')}: ${e.message}`);
-  }
-}
-
-// ── La copia en disco y su commit ──────────────────────────────────────────────────────────────────────────────
-function recorrer(dir, base = dir, out = []) {
-  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-    const abs = path.join(dir, e.name);
-    if (e.isDirectory()) recorrer(abs, base, out);
-    else out.push(path.relative(base, abs).split(path.sep).join('/'));
-  }
-  return out;
-}
-
-function commitear(dir, archivos, mensaje, epoch) {
-  salidaGit(dir, ['init', '-q', '-b', 'main']);
-  // Sin reflog: `update-ref` lo escribiría con la identidad de la máquina (nombre y host de quien corre).
-  salidaGit(dir, ['config', 'core.logAllRefUpdates', 'false']);
-  const rutas = archivos.map((a) => a.ruta);
-  if (rutas.some((r) => r.includes('\n'))) throw new NoPudo(`${dir}: una ruta con salto de línea no se puede commitear por plomería`);
-  const shas = salidaGit(dir, ['hash-object', '-w', '--no-filters', '--stdin-paths'], { input: `${rutas.join('\n')}\n` }).trim().split('\n');
-  if (shas.length !== rutas.length) throw new NoPudo(`${dir}: hash-object devolvió ${shas.length} objetos para ${rutas.length} archivos`);
-  salidaGit(dir, ['update-index', '-z', '--index-info'], { input: `${archivos.map((a, i) => `${a.modo} ${shas[i]}\t${a.ruta}`).join('\0')}\0` });
-  const arbol = salidaGit(dir, ['write-tree']).trim();
-  const fecha = `@${epoch} +0000`;
-  const env = {
-    GIT_AUTHOR_NAME: AUTOR.nombre, GIT_AUTHOR_EMAIL: AUTOR.email, GIT_AUTHOR_DATE: fecha,
-    GIT_COMMITTER_NAME: AUTOR.nombre, GIT_COMMITTER_EMAIL: AUTOR.email, GIT_COMMITTER_DATE: fecha,
-  };
-  const commit = salidaGit(dir, ['-c', 'commit.gpgsign=false', '-c', 'i18n.commitEncoding=UTF-8', 'commit-tree', arbol, '-m', mensaje], { env }).trim();
-  salidaGit(dir, ['update-ref', 'refs/heads/main', commit], { env });
-  // Verificación: lo que se commiteó es exactamente lo que se quería, y el árbol de trabajo coincide con el commit.
-  const meta = salidaGit(dir, ['cat-file', '-p', 'HEAD']);
-  const firma = `${AUTOR.nombre} <${AUTOR.email}> ${epoch} +0000`;
-  if (!meta.includes(`\nauthor ${firma}\n`) || !meta.includes(`\ncommitter ${firma}\n`)) {
-    throw new NoPudo(`${dir}: el commit no quedó con la identidad y la fecha fijas:\n${meta}`);
-  }
-  if (salidaGit(dir, ['rev-list', '--count', 'HEAD']).trim() !== '1') throw new NoPudo(`${dir}: la copia no quedó con un único commit`);
-  if (salidaGit(dir, ['symbolic-ref', 'HEAD']).trim() !== 'refs/heads/main') throw new NoPudo(`${dir}: HEAD no quedó en main`);
-  // `update-index -q --refresh` sale 0 aunque haya diferencias (con -q no las cuenta): el control es el estado.
-  const estado = salidaGit(dir, ['status', '--porcelain', '--untracked-files=all']);
-  if (estado.trim()) throw new NoPudo(`${dir}: el árbol de trabajo no coincide con su commit:\n${estado}`);
-  if (fs.existsSync(path.join(dir, '.git', 'logs'))) throw new NoPudo(`${dir}: quedó un reflog con la identidad de la máquina`);
-  return { commit, arbol };
-}
-
 // ── La corrida ─────────────────────────────────────────────────────────────────────────────────────────────────
 const TEMPORALES = [];   // lo que creó ESTA corrida: lo único que se borra al salir
 function limpiar() {
@@ -1456,23 +1288,6 @@ function validarNombrePublico(datos, file) {
   return out;
 }
 
-/**
- * La lista de `--package` (story 8.7, AC 8): separada por comas, cada elemento por el alias de nombres viejos, sin
- * repetir, el núcleo primero y el resto en orden fijo (el orden en que se escriben no cambia el commit). Una lista de más
- * de uno sin el núcleo, un elemento vacío o un paquete privado salen 2; uno desconocido lo frena quien conoce la lista.
- */
-function packagesFromArg(arg) {
-  const crudos = String(arg).split(',').map((x) => x.trim());
-  if (crudos.some((x) => !x)) throw new NoPudo(`--package «${arg}»: un elemento vacío no es un paquete`);
-  const alias = new Map(nombresViejosDePaquete().map((e) => [e.old, e.new]));
-  const paquetes = [...new Set(crudos.map((x) => alias.get(x) || x))];
-  const privado = paquetes.find((p) => PAQUETES_PRIVADOS.includes(p));
-  if (privado) throw new NoPudo(`el paquete «${privado}» es privado: no se exporta nunca`);
-  if (paquetes.length > 1 && !paquetes.includes('core')) {
-    throw new NoPudo(`--package «${arg}»: una unión de paquetes lleva el núcleo (core): un paquete opcional va con el núcleo`);
-  }
-  return paquetes.sort((a, b) => (a === 'core' ? -1 : b === 'core' ? 1 : porCodigo(a, b)));
-}
 /** Los paquetes de una exportación: una lista, o el nombre de uno, o varios separados por coma. */
 const packageList = (P) => (Array.isArray(P) ? P : String(P).split(','));
 
@@ -1684,432 +1499,6 @@ function explicar(args, cfg) {
   return 0;
 }
 
-function exportar(args, cfg, ctx) {
-  if (!args.paquete) throw new NoPudo('falta --package (core | bizuit | core,bizuit)');
-  if (!args.salida) throw new NoPudo('falta --output <carpeta que no existe>');
-  // story 8.7 (AC 8): una lista; la unión es «un archivo sale si sale en alguno» (`packagesFromArg`)
-  const pedidos = packagesFromArg(args.paquete);
-  ctx.packages = pedidos;
-  ctx.paquete = pedidos.join(',');
-  ctx.singleRepo = Boolean(args.singleRepo);
-  // story 8.13 (AC 24): el número va a la raíz de la copia, y sin --single-repo esa raíz no es de ningún repo
-  if (args.stampVersion !== undefined) {
-    if (!ctx.singleRepo) throw new NoPudo(`--stamp-version va sólo con --single-repo: ${VERSION_FILE} va en la raíz del repo que se publica, y la copia de dos repos no tiene una`);
-    if (!VERSION_SHAPE.test(args.stampVersion)) throw new NoPudo(`--stamp-version ${JSON.stringify(args.stampVersion)}: no tiene la forma YYYY.MM.DD.N (N desde 1, sin ceros adelante)`);
-  }
-  ctx.informeDado = args.informe || `${path.resolve(args.salida)}.reemplazos.md`;
-  ctx.repos = ubicarRepos(args);
-  const destino = validarDestinos(args.salida, ctx.informeDado, ctx.repos);
-  ctx.salida = destino.salida;
-  ctx.informe = destino.informe;
-  prepararFuentes(ctx, args, cfg);
-  const paquetes = Object.keys(ctx.lista.packages).filter((p) => !p.startsWith('__'));
-  for (const P of pedidos) if (!paquetes.includes(P)) throw new NoPudo(`paquete desconocido: «${P}» (la lista blanca define: ${paquetes.join(', ')})`);
-  if (args.stampVersion !== undefined && !(ctx.lista.generated || []).some((g) => g.target === VERSION_FILE)) {
-    throw new NoPudo(`--stamp-version: ${VERSION_FILE} no está declarado en la lista blanca (allowlist.json → generated, con su motivo): el exportador no escribe un archivo que nadie declaró`);
-  }
-  const productos = unseenProducts(ctx);
-  if (productos.length) {
-    throw new NoPudo(`${PARIDAD} nombra ${productos.map((n) => `«${n}»`).join(', ')} y la lista de denegación no lo ve: cada producto dado de alta necesita su término en denylist.json (y su par en replacements.json), en el mismo commit que el alta`,
-      { unseenProducts: productos });
-  }
-  // AC 41 (story 8.10): un término sin par con una excepción de `permitidos` sale en la copia con el nombre y el detector
-  // en cero. Con la tabla VACÍA —la medición del termómetro, que cuenta los nombres sin taparlos— el control no aplica.
-  if (!ctx.pares.length) {
-    process.stderr.write('ℹ️ exportador: tabla de reemplazos vacía — no se controla que cada término tenga su par (es la medición del termómetro)\n');
-  } else {
-    const sinPar = termsWithoutPair(ctx.denegados.terminos, ctx.pares);
-    if (sinPar.length) {
-      throw new NoPudo(`${sinPar.map((x) => `terminos[${x.indice}] (${x.categoria})`).join(', ')}: sin par en la tabla de reemplazos. Cada término de la lista necesita un par cuyo real o alguna forma coincida con él — sin par, un nombre con una excepción de «permitidos» sale en la copia con el detector en cero`,
-        { termsWithoutPair: sinPar });
-    }
-  }
-
-  // 1 · el primer nivel de cada fuente está clasificado entero
-  const sinClasificar = FUENTES.flatMap((f) => primerNivel(ctx, f)).filter((r) => !r.reglas.length).map((r) => `${r.fuente}/${r.nombre}`);
-  if (sinClasificar.length) {
-    throw new NoPudo(`${sinClasificar.map((x) => `sin clasificar: ${x}`).join('\n  ')}\n  (una entrada nueva del primer nivel va a «in» de un paquete o a un «out» con motivo: --explain muestra la tabla)`,
-      { entradasSinClasificar: sinClasificar });
-  }
-
-  // 2 · la lista blanca contra las exclusiones fijas y contra el sha
-  const errores = [];
-  const globsSinUso = [];
-  // Una exclusión que ya no cubre ningún archivo deja salir el archivo con su nombre nuevo; el reemplazo que deja una
-  // mudanza en la ruta vieja no cuenta (story 8.9, AC 60): cubriría el glob viejo con la guía saliendo por la nueva.
-  const cobertura = coberturaExclusiones(ctx);
-  const sinArchivo = (x) => (x.archivos ? '' : ` — ¿se renombró?${x.reemplazos ? ' (sólo queda su reemplazo)' : ''}`);
-  // (en una unión, cada paquete de la lista con sus propios globs; un error repetido se dice una vez)
-  const errorUnaVez = (e) => { if (!errores.includes(e)) errores.push(e); };
-  for (const P of pedidos) {
-    for (const f of FUENTES) {
-      const def = ctx.lista.packages[P][f] || { in: [] };
-      const fijas = EXCLUIDOS_SIEMPRE.filter((x) => x.fuente === f);
-      for (const g of def.in) {
-        // una ruta exacta del `salvo` de la fija se nombra a propósito (story 8.26, tanda C): no es nombrar la exclusión
-        for (const x of fijas) if (nombraFija(g, x.glob) && !(x.salvo || []).includes(g)) errorUnaVez(`la lista blanca nombra una exclusión fija: ${f}/${g} (${x.glob}: ${x.motivo})`);
-        if (!ctx.arboles[f].some((e) => coincide(g, e.ruta)) && !sharedInUnion(ctx, f, g) && !globsSinUso.includes(`${f}: ${g}`)) globsSinUso.push(`${f}: ${g}`);
-      }
-      for (const x of cobertura.filter((y) => y.fuente === f && y.origen === 'fija')) {
-        if (!def.in.some((g) => intersectan(g, x.glob))) continue;
-        if (!x.archivos) errorUnaVez(`exclusión fija sin archivo: ${f}/${x.glob}${sinArchivo(x)}`);
-      }
-      // Lo mismo para los `out` de la lista y los `afuera` privados: renombrado, uno sin archivo deja salir el archivo nuevo.
-      for (const x of cobertura.filter((y) => y.fuente === f && ((y.origen === 'afuera' && y.paquete === P) || y.origen === 'afuera-privado'))) {
-        const g = x.origen === 'afuera' ? x.glob : ctx.afueraPrivado[x.indice].glob;
-        if (!def.in.some((e) => intersectan(e, g))) continue;
-        if (!x.archivos) errorUnaVez(`afuera sin archivo: ${f}/${g}${sinArchivo(x)}`);
-      }
-    }
-  }
-  if (globsSinUso.length) errores.push(`glob de «in» que no coincide con nada: ${globsSinUso.join(' · ')}`);
-  if (errores.length) throw new NoPudo(errores.join('\n  '), { globsSinUso });
-  ctx.globsSinUso = globsSinUso;
-
-  // 3 · lo declarado en la lista tiene que existir en el sha
-  const enArbol = (f, ruta) => ctx.arboles[f].find((e) => e.ruta === ruta);
-  const suitesSha = enArbol('arnes', 'scripts/tests/suites.json');
-  let suitesDelSha = null;
-  if (suitesSha) {
-    try {
-      suitesDelSha = JSON.parse(leerObjetos(ctx.repos.arnes, [suitesSha.obj]).get(suitesSha.obj).toString('utf8'));
-    } catch (e) {
-      throw new NoPudo(`scripts/tests/suites.json del arnés no es JSON válido (${e.message})`);
-    }
-  }
-  const registradas = suitesDelSha ? [].concat(suitesDelSha.diarias || [], suitesDelSha.semanales || []) : [];
-  // (las entradas de suites.json se llaman raiz/ruta; las de la lista, root/path)
-  // Una suite PARTIDA (story 8.22, tramo F) no está en suites.json: están sus partes, `<suite>.p<k>.test.<js|sh>`. Fuera va
-  // entera: la lista nombra el archivo (si no, saldría un archivo que nadie corre) y cada parte (si no, saldría una línea
-  // que carga un archivo que no está). Olvidar cualquiera de los dos lados frena.
-  const PARTE = /^(.*)\.p[1-9]\d*\.test\.(js|sh)$/;
-  const enteroDe = (ruta) => { const m = String(ruta).match(PARTE); return m ? `${m[1]}.test.${m[2]}` : null; };
-  const declaradas = new Set((ctx.lista.suitesOutside || []).map((x) => `${x.root}:${x.path}`));
-  for (const s of ctx.lista.suitesOutside || []) {
-    if (registradas.some((e) => e && e.raiz === s.root && e.ruta === s.path)) {
-      const entero = enteroDe(s.path);
-      if (entero && !declaradas.has(`${s.root}:${entero}`)) errores.push(`suitesOutside: ${s.root}:${s.path} es una parte de ${entero}, que no está en la lista: el archivo entero saldría sin sus partes`);
-      continue;
-    }
-    const partes = registradas.filter((e) => e && e.raiz === s.root && enteroDe(e.ruta) === s.path);
-    if (!partes.length) errores.push(`suitesOutside: ${s.root}:${s.path} no está en scripts/tests/suites.json — ¿se renombró?`);
-    for (const p of partes) if (!declaradas.has(`${p.raiz}:${p.ruta}`)) errores.push(`suitesOutside: ${s.root}:${s.path} corre por partes y su parte ${p.ruta} no está en la lista: saldría sin su archivo entero`);
-  }
-  for (const c of ctx.lista.casesOutside || []) if (!enArbol('arnes', c.path)) errores.push(`casesOutside: ${c.path} no existe en el arnés — ¿se renombró?`);
-  for (const archivo of Object.keys(ctx.lista.empty || {})) if (!archivo.startsWith('__') && !enArbol('arnes', archivo)) errores.push(`empty: ${archivo} no existe en el arnés`);
-  for (const s of ctx.lista.synthetic || []) if (!enArbol('arnes', s.from)) errores.push(`synthetic: ${s.from} no existe en el arnés`);
-  for (const e of ctx.lista.publicTexts || []) if (!enArbol(e.root, e.file)) errores.push(`publicTexts: ${e.root}:${e.file} no existe — ¿se renombró?`);
-  // story 8.7 (AC 10): la carpeta que se renombra existe en su fuente, y el nombre nuevo no pisa nada de ninguna
-  for (const r of ctx.lista.skillRenames || []) {
-    if (r.from === r.to) continue;
-    if (!ctx.arboles[r.source].some((e) => e.ruta.startsWith(`${r.from}/`))) errores.push(`skillRenames: ${r.source}/${r.from} no existe — ¿se renombró?`);
-    for (const f of FUENTES) {
-      if (ctx.arboles[f].some((e) => e.ruta === r.to || e.ruta.startsWith(`${r.to}/`))) errores.push(`skillRenames: ${r.to} ya existe en ${f}: el nombre nuevo pisaría algo que sale`);
-    }
-  }
-  if (errores.length) throw new NoPudo(errores.join('\n  '));
-
-  // 4 · el filtrado (la clasificación, compartida con el freno de nombres nuevos: story 8.10, AC 7)
-  const { incluidos, ajustes, pendientes, excluidosFijos, quitarRevisores } = filterPackage(ctx, pedidos);
-  ctx.excluidosFijos = excluidosFijos;
-
-  // Rutas que no se pueden escribir sin salirse de la copia o pisar su .git (un árbol armado a mano las puede tener).
-  // (Una ruta que empieza con comillas `hash-object --stdin-paths` la leería como una ruta entre comillas de C.)
-  const inseguras = incluidos.filter((e) => e.ruta.startsWith('"') || e.ruta.split('/').some((x) => x === '' || x === '.' || x === '..' || x.toLowerCase() === '.git'));
-  if (inseguras.length) {
-    throw new NoPudo(inseguras.map((e) => `ruta insegura en el árbol: ${JSON.stringify(e.clave)} (un segmento vacío, «.», «..» o «.git», o empieza con comillas)`).join('\n  '));
-  }
-
-  // enlaces simbólicos y submódulos: sólo salen blobs regulares
-  const raros = incluidos.filter((e) => e.tipo !== 'blob' || e.modo === '120000');
-  if (raros.length) {
-    const enlaces = raros.filter((e) => e.tipo === 'blob');
-    const destinos = new Map();
-    for (const f of FUENTES) {
-      const deF = enlaces.filter((e) => e.fuente === f);
-      for (const [k, v] of leerObjetos(ctx.repos[f], deF.map((e) => e.obj))) destinos.set(k, v);
-    }
-    throw new NoPudo(raros.map((e) => (e.tipo === 'commit'
-      ? `submódulo: ${e.clave} → commit ${e.obj} (sólo salen archivos regulares)`
-      : `enlace simbólico: ${e.clave} → ${destinos.get(e.obj).toString('utf8')} (sólo salen archivos regulares)`)).join('\n  '));
-  }
-  for (const f of FUENTES) {
-    if (!incluidos.some((e) => e.fuente === f)) throw new NoPudo(`el filtrado deja cero archivos en ${f} para el paquete ${ctx.paquete}: revisá la lista blanca`);
-  }
-  // Dos rutas —o dos carpetas— que sólo difieren en mayúsculas se pisan en un disco que no las distingue (el de macOS
-  // por defecto): la carpeta queda con la caja de la primera y un archivo pierde su modo. No se escriben. (Con
-  // --single-repo se mira además la forma final, desde la raíz única: `singleRepoShape`.)
-  caseCollisions(incluidos.map((e) => e.clave));
-
-  ctx.pendientes = pendientes;
-
-  // 5 · el contenido, de los objetos de git
-  const copia = new Map();
-  for (const f of FUENTES) {
-    const deF = incluidos.filter((e) => e.fuente === f);
-    const blobs = leerObjetos(ctx.repos[f], deF.map((e) => e.obj));
-    for (const e of deF) copia.set(e.clave, { fuente: f, ruta: e.ruta, modo: e.modo, datos: blobs.get(e.obj) });
-  }
-
-  // 6 · transformaciones con nombre (con el nombre público ya leído: los papeles lo llevan puesto; story 8.7, AC 14)
-  ctx.publicRepo = readPublicRepo(cfg.publicRepos);
-  transformar(ctx, copia, quitarRevisores, ajustes);
-  traducirRutasDelOtroRepo(ctx, copia, ajustes);
-  shimsWithoutMapEntry(ctx, copia);
-  generatedCollisions(ctx, copia);
-  // story 8.10.3, tanda B (AC 8): la marca de las rutas que no viajan, después de internal-blocks (una ruta que sólo nombra
-  // un bloque interno no sale) y de rutas-del-otro-repo (una ruta vieja ya traducida a su nombre nuevo sí viaja), y antes de
-  // los reemplazos (la ruta se mira tal como está en el repo) y de regenerar las traducciones a Codex (una .toml copia el
-  // texto de su .md). Sólo con el núcleo: un paquete solo es una capa sobre él y sus rutas apuntan a lo que el núcleo trae.
-  if (ctx.packages.includes('core')) markNotInCopy(ctx, copia, ajustes);
-
-  // 7 · reemplazos (texto por contenido, con la regla del detector; las traducciones a Codex se regeneran)
-  ctx.porArchivo = new Map();
-  ctx.totalPorPar = new Map();
-  for (const [clave, a] of copia) {
-    if (CODEX_TOML.test(clave) || detector.esBinario(a.datos)) continue;
-    const original = a.datos.toString('utf8');
-    const { texto, cuenta } = reemplazar(original, ctx.pares, clave.toLowerCase().endsWith('.md'));
-    if (!cuenta.size) continue;
-    if (!Buffer.from(original, 'utf8').equals(a.datos)) throw new NoPudo(`${clave} no es UTF-8 válido: no puedo reemplazar sin romperlo`);
-    a.datos = Buffer.from(texto, 'utf8');
-    ctx.porArchivo.set(clave, cuenta);
-    for (const [r, n] of cuenta) ctx.totalPorPar.set(r, (ctx.totalPorPar.get(r) || 0) + n);
-  }
-  ctx.paresSinUso = ctx.pares.map((p) => p.real).filter((r) => !ctx.totalPorPar.has(r));
-
-  // 8 · la copia en disco, en una carpeta hermana de la salida (mismo disco), y las traducciones a Codex
-  const tmp = `${ctx.salida}.exportando-${process.pid}`;
-  const aux = `${tmp}.trabajo`;
-  for (const d of [tmp, aux]) {
-    try {
-      fs.mkdirSync(d);
-    } catch (e) {
-      throw new NoPudo(`no pude crear la carpeta temporal ${d} (${e.code || e.message})`);
-    }
-    TEMPORALES.push(d);
-  }
-  // Node decide CommonJS o ESM mirando las carpetas de arriba: un package.json «module» encima de --output haría fallar
-  // la regeneración y los controles de una copia sana. La guarda es un package.json SIN «type» en la raíz de la copia
-  // (fuera de los dos repos; se va antes del commit): corta la búsqueda hacia arriba y deja que node decida por el
-  // contenido, como en el interno, que no tiene package.json (un «commonjs» forzado rompía los .js con `export`).
-  const guarda = path.join(tmp, 'package.json');
-  fs.writeFileSync(guarda, '{}\n');
-  for (const [clave, a] of [...copia.entries()].sort((x, y) => porCodigo(x[0], y[0]))) {
-    const abs = path.resolve(tmp, clave);
-    if (!dentroDe(abs, tmp)) throw new NoPudo(`la ruta ${clave} se escapa de la copia`);
-    fs.mkdirSync(path.dirname(abs), { recursive: true });
-    fs.writeFileSync(abs, a.datos);
-    fs.chmodSync(abs, a.modo === '100755' ? 0o755 : 0o644);
-  }
-  regenerarCodex(copia, tmp, aux);
-  // La copia final son las rutas CONOCIDAS (no los nombres que devuelve el disco: en uno que no distingue caja ni
-  // normalización, readdir puede devolver otra grafía) más lo que regeneró build/generate.js, que sólo puede ser una
-  // traducción a Codex que la lista deja salir.
-  const final = new Map();
-  for (const clave of [...copia.keys()].sort(porCodigo)) {
-    const a = copia.get(clave);
-    final.set(clave, { fuente: a.fuente, ruta: a.ruta, destino: clave.slice(a.fuente.length + 1), modo: a.modo, datos: fs.readFileSync(path.join(tmp, clave)) });
-  }
-  for (const clave of recorrer(tmp).filter((k) => FUENTES.some((f) => k.startsWith(`${f}/`)) && !copia.has(k)).sort(porCodigo)) {
-    const rutaNueva = clave.slice(clave.indexOf('/') + 1);
-    if (!CODEX_TOML.test(clave) || !saleEnElPaquete(ctx, 'arnes', rutaNueva)) {
-      throw new NoPudo(`build/generate.js dejó ${clave} en la copia y la lista no lo deja salir: sacá su revisor del manifiesto o dejá salir su .md`);
-    }
-    final.set(clave, { fuente: 'arnes', ruta: rutaNueva, destino: rutaNueva, modo: '100644', datos: fs.readFileSync(path.join(tmp, clave)) });
-  }
-  // story 8.7 (AC 11): ningún archivo cambia sin su ajuste — la traducción regenerada que no es su blob, también
-  codexAdjustments(ctx, final, ajustes);
-
-  // 8b · la forma final: un repo por fuente (como siempre), o uno solo con las dos desde su raíz (--single-repo)
-  ctx.repoNames = ctx.singleRepo ? [ctx.publicRepo.repo] : [...FUENTES];
-  const forma = ctx.singleRepo ? singleRepoShape(final, ajustes) : final;
-  // story 8.26 (AC 30): con el repo único, el .gitignore ignora las carpetas de las que no sale nada. Va antes de la
-  // lista de transformados (el archivo pasa a diferir del interno) y de escribir la copia
-  if (ctx.singleRepo) ignorePrivateFolders(ctx, forma, ajustes);
-  // story 8.13.1 (AC 6): la lista de transformados, de lo que esta corrida hizo (sólo con el repo único: es la forma que
-  // se publica). La lleva el --json —de ahí la toma la sincronización— y, con --stamp-version, el version.json
-  ctx.transformed = ctx.singleRepo ? transformedList(ctx, forma, ajustes) : null;
-  // story 8.13 (AC 24): el generado entra acá, antes de escribir el repo único, y pasa por el detector como cualquier archivo
-  ctx.generated = args.stampVersion === undefined ? [] : stampVersionFile(ctx, forma, ajustes, args.stampVersion);
-  ctx.ajustes = ajustes.sort((a, b) => porCodigo(a.archivo, b.archivo) || porCodigo(a.transformacion, b.transformacion) || porCodigo(a.detalle, b.detalle));
-  // la carpeta de cada repo de la copia, mientras se arma
-  const dirDe = new Map();
-  if (ctx.singleRepo) {
-    const uno = `${tmp}.repo`;
-    try {
-      fs.mkdirSync(uno);
-    } catch (e) {
-      throw new NoPudo(`no pude crear la carpeta temporal ${uno} (${e.code || e.message})`);
-    }
-    TEMPORALES.push(uno);
-    for (const [ruta, a] of [...forma.entries()].sort((x, y) => porCodigo(x[0], y[0]))) {
-      const abs = path.resolve(uno, ruta);
-      if (!dentroDe(abs, uno)) throw new NoPudo(`la ruta ${ruta} se escapa de la copia`);
-      fs.mkdirSync(path.dirname(abs), { recursive: true });
-      fs.writeFileSync(abs, a.datos);
-      fs.chmodSync(abs, a.modo === '100755' ? 0o755 : 0o644);
-    }
-    dirDe.set(ctx.publicRepo.repo, uno);
-  } else for (const f of FUENTES) dirDe.set(f, path.join(tmp, f));
-
-  // 9 · controles: se juntan todos antes de decidir
-  const textos = [...final.entries()].filter(([, a]) => !detector.esBinario(a.datos)).map(([k, a]) => [k, a.datos.toString('utf8')]);
-  // story 8.26 (AC 30): el bloque de carpetas del .gitignore entró sobre la forma final, después de armado `final`. Los
-  // controles de texto de acá abajo (un nombre pegado, una ruta vieja) tienen que leer el .gitignore que SALE: el nombre
-  // de una carpeta privada es texto nuevo en un archivo publicado, y el detector sólo ve un nombre con borde de palabra
-  if (ctx.singleRepo && forma.has('.gitignore')) {
-    const shipped = forma.get('.gitignore');
-    const key = `${shipped.fuente || 'arnes'}/.gitignore`;
-    const entry = [key, shipped.datos.toString('utf8')];
-    const at = textos.findIndex(([k]) => k === key);
-    if (at === -1) textos.push(entry); else textos[at] = entry;
-  }
-  const cfgDetector = detector.cargarConfig(ctx.denegados.ruta);
-  const rutasDeFinal = (k) => [...new Set([k, final.has(k) ? final.get(k).destino : k])];
-  const control = {
-    nombresPegados: nombresPegados(textos, ctx.denegados.terminos, cfgDetector.permitidos, rutasDeFinal),
-    compilacion: compilan(tmp, [...final.keys()], aux),
-    comandosColgados: comandosColgados(textos, new Set(final.keys())),
-    nombresViejos: mencionesViejas(textos, nombresViejos(ctx)),
-    // story 8.7: contra la forma final de la copia (en la de dos repos, con `arnes/` y `agent-skills/` hermanos). Sólo
-    // cuando la exportación incluye el núcleo (decisión 13 del coordinador, 2026-10-03): un paquete solo es una capa
-    // sobre el núcleo, no algo que se publique suelto, y sus enlaces apuntan a lo que el núcleo trae
-    ...(ctx.packages.includes('core') ? shapeControls(ctx, forma) : {}),
-  };
-  const enSuRepo = (k, a) => (ctx.singleRepo ? k : a.destino);
-  const sinMirar = [...forma].filter(([k, a]) => cfgDetector.excluir.some((g) => g.test(enSuRepo(k, a)))).map(([k]) => k);
-  if (sinMirar.length) {
-    throw new NoPudo(`el detector no miraría ${sinMirar.join(', ')} (denylist.json → excluir): un archivo que sale no puede quedar sin mirar — sacalo con un «out», no con «excluir»`);
-  }
-  ctx.detector = {};
-  for (const [nombre, dir] of dirDe) {
-    const r = detectar(ctx.denegados.ruta, [dir], dir);
-    if (r.excluidos !== 0) throw new NoPudo(`el detector excluyó ${r.excluidos} archivo(s) de ${nombre}: un archivo que no se miró no es un archivo limpio`);
-    if (!ctx.singleRepo) r.hallazgos = r.hallazgos.map((h) => ({ ...h, archivo: `${nombre}/${h.archivo}` }));
-    ctx.detector[nombre] = r;
-  }
-  const mirados = [...dirDe.keys()].reduce((n, nombre) => n + ctx.detector[nombre].archivos, 0);
-  if (mirados !== forma.size) throw new NoPudo(`el detector miró ${mirados} archivos y la copia tiene ${forma.size}: un archivo que no se miró no es un archivo limpio`);
-  const carpetas = new Set();
-  for (const clave of forma.keys()) {
-    const partes = clave.split('/');
-    for (let i = 1; i < partes.length; i++) carpetas.add(partes.slice(0, i).join('/'));
-  }
-  const rutas = [...new Set([...forma.keys(), ...carpetas])].sort(porCodigo);
-  const listaRutas = path.join(aux, 'rutas-de-la-copia.txt');
-  fs.writeFileSync(listaRutas, `${rutas.join('\n')}\n`);
-  ctx.detector.rutas = detectar(ctx.denegados.ruta, [listaRutas], aux);
-  if (ctx.detector.rutas.archivos !== 1 || ctx.detector.rutas.excluidos !== 0) {
-    throw new NoPudo('el detector no miró la lista de rutas de la copia (denylist.json → excluir la cubre): una ruta que no se miró no es una ruta limpia');
-  }
-  ctx.detector.rutas.hallazgos = ctx.detector.rutas.hallazgos.map((h) => ({ ...h, archivo: rutas[h.linea - 1] }));
-  // Un nombre pegado en una RUTA (`scripts/AcmeCorpProject/…`) pasa el borde de palabra del detector igual que en el texto.
-  // (las rutas no tienen excepción: un nombre pegado en una ruta se arregla renombrando)
-  control.nombresPegados.push(...nombresPegados([['(rutas)', rutas.join('\n')]], ctx.denegados.terminos)
-    .map((h) => ({ ...h, archivo: `(ruta) ${rutas[h.linea - 1]}`, linea: 0 })));
-  ctx.control = control;
-  ctx.archivos = Object.fromEntries(FUENTES.map((f) => [f, [...final.values()].filter((a) => a.fuente === f).length]));
-  // story 8.9 (AC 12): el termómetro de nombres en castellano, medido con el extractor del freno sobre lo que sale (cada
-  // archivo con la ruta con que sale: la de una skill renombrada es la nueva)
-  ctx.spanishNames = contarCastellano([...final.values()].map((a) => ({ ...a, ruta: a.destino })));
-  if (hayHallazgos(ctx)) { escribirListado(ctx); return 1; }
-  fs.rmSync(guarda);
-
-  // 10 · un commit por repo, por plomería; después, el detector sobre sus metadatos
-  const epoch = Math.max(...FUENTES.map((f) => ctx.fuentes[f].ct));
-  const mensaje = `Copia pública del arnés — paquete ${ctx.paquete}\n\n${FUENTES.map((f) => `${f}: ${ctx.fuentes[f].sha}`).join('\n')}\n`;
-  ctx.repos_copia = {};
-  ctx.detector.metadatos = {};
-  for (const [nombre, dir] of dirDe) {
-    const archivos = ctx.singleRepo
-      ? [...forma].map(([ruta, a]) => ({ ruta, modo: a.modo }))
-      : [...final.values()].filter((a) => a.fuente === nombre).map((a) => ({ ruta: a.destino, modo: a.modo }));
-    ctx.repos_copia[nombre] = commitear(dir, archivos, mensaje, epoch);
-    const meta = path.join(aux, `metadatos-${nombre}.txt`);
-    fs.writeFileSync(meta, salidaGit(dir, ['cat-file', '-p', 'HEAD']));
-    ctx.detector.metadatos[nombre] = detectar(ctx.denegados.ruta, [meta], aux);
-    if (ctx.detector.metadatos[nombre].archivos !== 1 || ctx.detector.metadatos[nombre].excluidos !== 0) {
-      throw new NoPudo(`el detector no miró los metadatos del commit de ${nombre} (denylist.json → excluir los cubre)`);
-    }
-  }
-  escribirListado(ctx);
-  if (hayHallazgos(ctx)) return 1;
-
-  // 11 · recién ahora, la copia pasa a llamarse <salida> (con --single-repo, el repo único; la carpeta de las dos fuentes
-  // en que se armó se va con los temporales)
-  const lista = ctx.singleRepo ? dirDe.get(ctx.publicRepo.repo) : tmp;
-  if (fs.existsSync(ctx.salida)) throw new NoPudo(`la salida apareció mientras se armaba la copia: ${ctx.salida} — no la toco`);
-  TEMPORALES.splice(TEMPORALES.indexOf(lista), 1);
-  try {
-    fs.renameSync(lista, ctx.salida);
-  } catch (e) {
-    TEMPORALES.push(lista);
-    throw new NoPudo(`no pude renombrar la copia a ${ctx.salida} (${e.code || e.message})`);
-  }
-  return 0;
-}
-
-/** Dos rutas (o carpetas) que sólo difieren en mayúsculas o en la forma de sus acentos: 2, nombrando las dos. */
-function caseCollisions(rutas) {
-  const minusculas = new Map();
-  for (const ruta of rutas) {
-    const partes = ruta.split('/');
-    for (let i = 1; i <= partes.length; i++) {
-      const prefijo = partes.slice(0, i).join('/');
-      // La clave iguala caja y normalización Unicode (NFC/NFD, «ſ»/«s»): el disco de macOS no las distingue.
-      const clave = prefijo.normalize('NFC').toUpperCase().toLowerCase();
-      const previo = minusculas.get(clave);
-      if (previo !== undefined && previo !== prefijo) {
-        throw new NoPudo(`dos rutas que sólo difieren en mayúsculas o en la forma de sus acentos no se pueden escribir en cualquier disco: ${previo} y ${prefijo}`);
-      }
-      minusculas.set(clave, prefijo);
-    }
-  }
-}
-
-// ── Los generados (story 8.13, AC 24): lo que la copia lleva sin que salga de ninguna fuente ─────────────────────────────
-/**
- * El destino de un generado declarado no puede salir ya de una fuente ni de un sintético: 2, nombrando los dos. Se mira
- * en toda exportación —con la opción o sin ella, y en las dos formas de la copia—, porque en la sincronización el
- * archivo lo agrega mirror.js encima de esta misma copia y pisaría el de la fuente sin avisar. La comparación iguala caja
- * y acentos, como `caseCollisions`: en un disco que no los distingue son el mismo archivo.
- */
-function generatedCollisions(ctx, copia) {
-  const igual = (s) => s.normalize('NFC').toUpperCase().toLowerCase();
-  for (const g of ctx.lista.generated || []) {
-    const destino = igual(g.target);
-    const pisa = [...copia.entries()].map(([clave, a]) => [clave, igual(clave.slice(a.fuente.length + 1))])
-      .find(([, ruta]) => ruta === destino || ruta.startsWith(`${destino}/`));
-    if (pisa) {
-      throw new NoPudo(`generated ${g.target}: su destino ya sale (${pisa[0]}) — un generado no sale de ninguna fuente: sacá ese archivo con un «out», o sacá la declaración de la lista`);
-    }
-  }
-}
-
-/** `version.json` en la raíz del repo único, con el número dado y el commit de cada fuente. Devuelve los generados que puso. */
-function stampVersionFile(ctx, forma, ajustes, version) {
-  if (forma.has(VERSION_FILE)) throw new NoPudo(`generated ${VERSION_FILE}: su destino ya sale en la copia`);
-  const datos = versionFileBytes({ version, source: { harness: ctx.fuentes.arnes.sha, agent_skills: ctx.fuentes['agent-skills'].sha }, transformed: ctx.transformed });
-  forma.set(VERSION_FILE, { fuente: null, ruta: VERSION_FILE, destino: VERSION_FILE, modo: '100644', datos });
-  caseCollisions([...forma.keys()].sort(porCodigo));
-  ajustes.push({ transformacion: 'generated', archivo: VERSION_FILE, detalle: `generado (--stamp-version): la versión ${version} y el commit de cada fuente` });
-  return [VERSION_FILE];
-}
-
-/** Las traducciones a Codex regeneradas que no son el blob de su ruta en el arnés (o que no estaban): van a `ajustes`. */
-function codexAdjustments(ctx, final, ajustes) {
-  const delArbol = new Map(ctx.arboles.arnes.filter((e) => e.tipo === 'blob').map((e) => [e.ruta, e]));
-  const tomls = [...final.entries()].filter(([k]) => CODEX_TOML.test(k));
-  const originales = leerObjetos(ctx.repos.arnes, tomls.map(([, a]) => delArbol.get(a.ruta)).filter(Boolean).map((e) => e.obj));
-  for (const [clave, a] of tomls) {
-    const e = delArbol.get(a.ruta);
-    if (e && originales.get(e.obj).equals(a.datos)) continue;
-    ajustes.push({ transformacion: 'traducciones-codex', archivo: clave,
-      detalle: e ? 'regenerada desde el .md de la copia: distinta de su blob' : 'regenerada desde el .md de la copia: no estaba en el arnés' });
-  }
-}
-
 // ── --single-repo (story 8.7, AC 11): las dos fuentes juntas desde la raíz de UN repo ──────────────────────────────────
 // Una ruta que llega de las dos fuentes sale 2, salvo las dos que tienen transformación con nombre: el .gitignore (unido)
 // y el pre-commit (los dos, con un despachador que corre los dos siempre).
@@ -2203,119 +1592,6 @@ function ignorePrivateFolders(ctx, forma, ajustes) {
   forma.set('.gitignore', { ...current, datos: Buffer.concat([body, ...glue, block]) });
   ajustes.push({ transformacion: 'gitignore-publico', archivo: `${current.fuente || 'arnes'}/.gitignore`,
     detalle: `ignora ${folders.length} carpeta(s) de primer nivel de las que no sale nada: ${folders.join(' ')}` });
-}
-
-function singleRepoShape(final, ajustes) {
-  const porRuta = new Map();
-  for (const [clave, a] of final) {
-    const lista = porRuta.get(a.destino) || [];
-    lista.push({ clave, a });
-    porRuta.set(a.destino, lista);
-  }
-  const forma = new Map();
-  const choques = [];
-  const poner = (ruta, a) => {
-    if (forma.has(ruta)) choques.push(ruta);
-    forma.set(ruta, a);
-  };
-  for (const [ruta, de] of [...porRuta].sort((x, y) => porCodigo(x[0], y[0]))) {
-    if (de.length === 1) { poner(ruta, de[0].a); continue; }
-    const arnes = de.find((x) => x.a.fuente === 'arnes');
-    const skills = de.find((x) => x.a.fuente === 'agent-skills');
-    if (ruta === '.gitignore') {
-      const lineas = (b) => b.toString('utf8').split('\n').filter((l, i, t) => !(i === t.length - 1 && l === ''));
-      const propias = lineas(arnes.a.datos);
-      const suma = [...propias, ...lineas(skills.a.datos).filter((l) => !propias.includes(l))];
-      poner(ruta, { fuente: null, ruta, destino: ruta, modo: arnes.a.modo, datos: Buffer.from(`${[...new Set(suma)].join('\n')}\n`, 'utf8') });
-      for (const x of [arnes, skills]) ajustes.push({ transformacion: 'merged-gitignore', archivo: `${x.a.fuente}/${x.a.ruta}`, detalle: 'unido en el .gitignore de la raíz: primero las líneas del arnés, sin repetir' });
-    } else if (ruta === PRE_COMMIT) {
-      poner(`${PRE_COMMIT}-harness`, { ...arnes.a, destino: `${PRE_COMMIT}-harness` });
-      poner(`${PRE_COMMIT}-skills`, { ...skills.a, destino: `${PRE_COMMIT}-skills` });
-      poner(PRE_COMMIT, { fuente: null, ruta: PRE_COMMIT, destino: PRE_COMMIT, modo: '100755', datos: Buffer.from(PRE_COMMIT_DISPATCHER, 'utf8') });
-      ajustes.push({ transformacion: 'merged-hooks', archivo: `arnes/${PRE_COMMIT}`, detalle: `pasa a ${PRE_COMMIT}-harness (lo corre el despachador)` });
-      ajustes.push({ transformacion: 'merged-hooks', archivo: `agent-skills/${PRE_COMMIT}`, detalle: `pasa a ${PRE_COMMIT}-skills (lo corre el despachador)` });
-      ajustes.push({ transformacion: 'merged-hooks', archivo: PRE_COMMIT, detalle: 'despachador generado: corre los dos pre-commit, siempre, cada uno en su proceso' });
-    } else choques.push(ruta);
-  }
-  if (choques.length) {
-    throw new NoPudo(`--single-repo: la misma ruta llega de las dos fuentes —se pisarían—: ${[...new Set(choques)].sort(porCodigo).join(', ')} (sacala de una con un «out», o dale una transformación con nombre)`);
-  }
-  // desde la raíz única, dos fuentes pueden chocar por la caja (`README.md` y `readme.md`) aunque en dos repos no (pase
-  // adversarial de la tanda A, false-negative-classification-2)
-  caseCollisions([...forma.keys()].sort(porCodigo));
-  return forma;
-}
-
-/** Los controles de la story 8.7, sobre la forma final de la copia (`forma`: ruta desde la carpeta de salida → archivo). */
-function shapeControls(ctx, forma) {
-  const enLaCopia = new Set();
-  for (const k of forma.keys()) {
-    const partes = k.split('/');
-    for (let i = 1; i <= partes.length; i++) enLaCopia.add(partes.slice(0, i).join('/'));
-  }
-  const existe = (p) => enLaCopia.has(p);
-  // una ruta desde la raíz de una fuente: en la copia de dos repos, en cualquiera de los dos
-  const desdeLaRaiz = (p, fuente) => (ctx.singleRepo ? existe(p) : (fuente ? [fuente] : FUENTES).some((f) => existe(`${f}/${p}`)));
-  const enForma = (ruta, fuente = 'arnes') => (ctx.singleRepo ? ruta : `${fuente}/${ruta}`);
-  const textos = new Map([...forma].map(([k, a]) => [k, a.datos]));
-  const primerNivel = new Set(FUENTES.flatMap((f) => ctx.arboles[f].map((e) => e.ruta.split('/')[0])));
-
-  // attributions: el NOTICE contra los `derived` del manifiesto de la copia (ya con la skill renombrada)
-  let attributions = [];
-  const manifiesto = forma.get(enForma(MANIFIESTO_TERCEROS));
-  if (manifiesto) {
-    let derived;
-    try {
-      derived = JSON.parse(manifiesto.datos.toString('utf8')).derived || [];
-    } catch (e) {
-      throw new NoPudo(`${MANIFIESTO_TERCEROS} de la copia no es JSON válido (${e.message}): sin él no sé qué atribuciones van en el NOTICE`);
-    }
-    const notice = forma.get(enForma('NOTICE'));
-    const fuenteDe = (d) => (d && d.repo === 'agent-skills' ? 'agent-skills' : 'arnes');
-    attributions = publicCopy.attributions(notice ? notice.datos.toString('utf8') : '', derived, (target, d) => desdeLaRaiz(target, fuenteDe(d)))
-      .map((h) => ({ ...h, file: enForma(h.file) }));
-  }
-
-  // skillRenameLeft: en la de dos repos, cada repo con sus rutas (las excepciones son rutas desde su raíz)
-  const skillRenameLeft = [];
-  for (const regla of (ctx.lista.skillRenames || []).filter((r) => r.from !== r.to)) {
-    if (ctx.singleRepo) skillRenameLeft.push(...publicCopy.renameLeft(textos, regla));
-    else {
-      for (const f of FUENTES) {
-        const deF = new Map([...textos].filter(([k]) => k.startsWith(`${f}/`)).map(([k, t]) => [k.slice(f.length + 1), t]));
-        skillRenameLeft.push(...publicCopy.renameLeft(deF, regla).map((h) => ({ ...h, file: `${f}/${h.file}` })));
-      }
-    }
-  }
-
-  // handWrittenPublicUrl: un papel que escribe a mano la URL del repo público (`.git` al final también cuenta)
-  const handWrittenPublicUrl = [];
-  const { org, repo } = ctx.publicRepo;
-  const aMano = new RegExp(`github\\.com[/:]${esc(org)}/${esc(repo)}(?:\\.git)?(?![A-Za-z0-9._-])`, 'i');
-  for (const p of ctx.papers || []) {
-    p.texto.split('\n').forEach((linea, i) => {
-      if (aMano.test(linea)) handWrittenPublicUrl.push({ file: enForma(p.target), from: p.from, line: i + 1 });
-    });
-  }
-
-  // story 8.10.3 (AC 9): cada repo de la copia con sus rutas desde su raíz
-  const delEquipo = rutasDelEquipo(ctx);
-  const desdeSuRaiz = [...forma].map(([k, a]) => [ctx.singleRepo ? k : k.slice(k.indexOf('/') + 1), a, k]);
-  const enLaCopiaDesdeLaRaiz = conCarpetas(desdeSuRaiz.map(([r]) => r));
-  const sinMarca = pathsNotInCopy(desdeSuRaiz.filter(([, a]) => !detector.esBinario(a.datos)).map(([r, a]) => [r, a.datos.toString('utf8')]), {
-    inRepo: (p) => delEquipo.has(p), inCopy: (p) => enLaCopiaDesdeLaRaiz.has(p), conventions: (ctx.lista.readerConventions || []).map((c) => c.path),
-    installPrefixes: installPrefixes(),
-  });
-  const claveDe = new Map(desdeSuRaiz.map(([r, , k]) => [r, k]));
-
-  return {
-    pathsNotInCopy: sinMarca.map((h) => ({ ...h, archivo: claveDe.get(h.archivo) || h.archivo })),
-    links: publicCopy.brokenLinks(textos, existe),
-    readmePaths: publicCopy.readmePaths(textos, primerNivel, (p) => desdeLaRaiz(p)),
-    attributions,
-    skillRenameLeft,
-    handWrittenPublicUrl,
-  };
 }
 
 /**
@@ -2427,33 +1703,6 @@ const deLaRaiz = (v) => !v.carpeta && !v.ruta.includes('/');
 const rutaViejaAjenaRe = (v, flags) => (deLaRaiz(v) || v.ajenaSoloTrasLaRaiz === true
   ? new RegExp(`${ANTES_SOLO_RAIZ()}${v.ruta.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}${DESPUES_DE_RUTA(v)}`, flags)
   : rutaViejaRe(v, flags));
-
-/**
- * Entre repos (story 8.9, AC 19 y pregunta 10 — decisión del dueño, tanda C0): una ruta vieja ya mudada que un repo
- * nombra del OTRO (el pre-commit de agent-skills llama guiones del arnés por su nombre viejo hasta el retiro, AC 1 d) se
- * traduce en la copia al nombre nuevo: la copia sale de los dos repos juntos y no tiene transición. La que un repo nombra
- * de sí mismo no se toca: la frena `mencionesViejas`. Del más específico al más general (un archivo antes que su carpeta).
- */
-function traducirRutasDelOtroRepo(ctx, copia, ajustes) {
-  const viejos = nombresViejos(ctx).rutas.slice().sort((a, b) => b.ruta.length - a.ruta.length);
-  if (!viejos.length) return;
-  const res = viejos.map((v) => ({ ...v, re: rutaViejaAjenaRe(v, 'g') }));
-  for (const [clave, a] of copia) {
-    if (CODEX_TOML.test(clave) || detector.esBinario(a.datos)) continue;
-    const ajenas = res.filter((v) => v.fuente !== a.fuente);
-    if (!ajenas.length) continue;
-    let texto = a.datos.toString('utf8');
-    const cambiadas = [];
-    for (const v of ajenas) {
-      if (!texto.includes(v.ruta)) continue;   // la expresión exige la ruta tal cual: sin ella no hay qué traducir
-      const nuevo = texto.replace(v.re, () => v.nueva);
-      if (nuevo !== texto) { cambiadas.push(`${v.ruta} → ${v.nueva}`); texto = nuevo; }
-    }
-    if (!cambiadas.length) continue;
-    a.datos = Buffer.from(texto, 'utf8');
-    ajustes.push({ transformacion: 'rutas-del-otro-repo', archivo: clave, detalle: `nombre viejo del otro repo, al nuevo: ${cambiadas.join(' · ')}` });
-  }
-}
 
 const FOTOS_DE_PRODUCTO = /^arnes\/scripts\/tests\/fixtures\/product-pipeline\//;
 function mencionesViejas(textos, viejos) {
@@ -2583,32 +1832,6 @@ function filterPackage(ctx, P) {
     }
   }
   return { incluidos, ajustes, pendientes: pendientes.sort((a, b) => porCodigo(a.ruta, b.ruta)), excluidosFijos, quitarRevisores, propios };
-}
-
-/** ¿La ruta sale en la exportación? En alguno de sus paquetes: «in» y ni una fija, ni un afuera de la lista, ni un
- *  afuera privado. */
-function saleEnElPaquete(ctx, f, ruta) {
-  return packageList(ctx.packages || ctx.paquete).some((P) => {
-    const def = ctx.lista.packages[P][f] || { in: [], out: [] };
-    return (def.in || []).some((g) => coincide(g, ruta))
-      && !EXCLUIDOS_SIEMPRE.some((x) => x.fuente === f && cubreFija(x, ruta))
-      && !(def.out || []).some((x) => coincide(x.glob, ruta))
-      && !ctx.afueraPrivado.some((x) => x.fuente === f && coincide(x.glob, ruta));
-  });
-}
-
-/** Los repos de la copia: uno por fuente, o uno solo (`--single-repo`) con el nombre público. */
-const copyRepoNames = (ctx) => ctx.repoNames || [...FUENTES];
-
-function hayHallazgos(ctx) {
-  const d = ctx.detector || {};
-  const m = d.metadatos || {};
-  return [
-    ...Object.values(ctx.control || {}),
-    ...copyRepoNames(ctx).map((f) => (d[f] ? d[f].hallazgos : [])),
-    d.rutas ? d.rutas.hallazgos : [],
-    ...copyRepoNames(ctx).map((f) => (m[f] ? m[f].hallazgos : [])),
-  ].some((lista) => lista.length > 0);
 }
 
 function transformar(ctx, copia, quitarRevisores, ajustes, P = ctx.paquete) {
@@ -2793,16 +2016,6 @@ function transformar(ctx, copia, quitarRevisores, ajustes, P = ctx.paquete) {
   if (!ctx.classifying) applyInternalBlocks(copia, ajustes);
 }
 
-/** El conjunto «ruta o carpeta» desde la raíz de su repo, de una lista de rutas. */
-function conCarpetas(rutas) {
-  const set = new Set();
-  for (const r of rutas) {
-    const partes = r.split('/');
-    for (let i = 1; i <= partes.length; i++) set.add(partes.slice(0, i).join('/'));
-  }
-  return set;
-}
-
 /** Las formas con que las skills y las guías nombran un archivo del arnés instalado: los mismos reconocedores que usa el
  *  control de comandos colgados (`PREFIJOS_COMANDO`: el lugar por sus dos nombres, la variable del arnés y la carpeta de
  *  las skills), con lo que queda como ruta desde la raíz del repo. Pares `[expresión, prefijo que queda]`. */
@@ -2815,28 +2028,6 @@ function installPrefixes() {
   } catch (e) {
     if (e && e.code === 'MODULE_NOT_FOUND') return [];
     throw e;
-  }
-}
-
-/** Las rutas del repo del equipo (los árboles de las dos fuentes) y las de la copia, desde la raíz de su repo. */
-function rutasDelEquipo(ctx) {
-  return conCarpetas(FUENTES.flatMap((f) => ctx.arboles[f].map((e) => e.ruta)));
-}
-
-/** not-in-copy (story 8.10.3, AC 8): la marca al lado de cada ruta del repo del equipo que la copia no trae. */
-function markNotInCopy(ctx, copia, ajustes) {
-  const delEquipo = rutasDelEquipo(ctx);
-  const enLaCopia = conCarpetas([...copia.keys()].map((k) => k.slice(k.indexOf('/') + 1)));
-  const opts = { inRepo: (p) => delEquipo.has(p), inCopy: (p) => enLaCopia.has(p), conventions: (ctx.lista.readerConventions || []).map((c) => c.path), installPrefixes: installPrefixes() };
-  for (const [clave, a] of copia) {
-    if (CODEX_TOML.test(clave) || !clave.toLowerCase().endsWith('.md') || detector.esBinario(a.datos)) continue;
-    const original = a.datos.toString('utf8');
-    const r = publicCopy.markPathsNotInCopy(original, clave.slice(clave.indexOf('/') + 1), opts);
-    if (!r.changed) continue;
-    // (pase adversarial de la tanda B, clase 9) como en los reemplazos: un .md que no es UTF-8 válido no se reescribe
-    if (!Buffer.from(original, 'utf8').equals(a.datos)) throw new NoPudo(`${clave} no es UTF-8 válido: no puedo marcar sus rutas sin romperlo`);
-    a.datos = Buffer.from(r.text, 'utf8');
-    ajustes.push({ transformacion: 'not-in-copy', archivo: sourceKey(clave, a), detalle: `${r.marked.length} ruta(s) del repo del equipo con su marca: ${[...new Set(r.marked.map((m) => m.path))].join(', ')}` });
   }
 }
 
@@ -2972,79 +2163,6 @@ function placeSynthetics(ctx, copia, ajustes, P) {
     ctx.placedSynthetics.push({ target: s.target, from: s.from, modo: e.modo, clave });
     ajustes.push({ transformacion: 'sinteticos', archivo: clave, detalle: `es el sintético ${s.from}: ${s.reason}` });
     if (conNombre) ajustes.push({ transformacion: 'public-name', archivo: clave, detalle: `{{public-org}}/{{public-repo}} → ${ctx.publicRepo.org}/${ctx.publicRepo.repo}` });
-  }
-}
-
-/**
- * story 8.7 (AC 30, paso cero, decisión 1): un reemplazo generado (o una carpeta que sólo tiene reemplazos) cuya ruta el
- * mapa de renombres no tiene, y que algo que sale nombra, es un error de configuración: sale 2 con archivo, línea y ruta.
- * Las que el mapa tiene las reescribe `rutas-del-otro-repo` o las frena `nombresViejos` (exit 1, T24 b de export-real).
- */
-function shimsWithoutMapEntry(ctx, copia) {
-  const legacy = require('../lib/legacy-names.js');
-  const enMapa = (f, ruta) => nombresViejos(ctx).todas.some((m) => m.fuente === f && (m.carpeta ? ruta.startsWith(`${m.ruta}/`) : ruta === m.ruta));
-  const huerfanas = [];
-  for (const [clave, a] of copia) {
-    if (!a.fuente || !a.ruta || CODEX_TOML.test(clave) || !legacy.supportsShim(a.ruta) || enMapa(a.fuente, a.ruta)) continue;
-    const datos = a.datos;
-    if (detector.esBinario(datos) || !datos.includes('tycon-legacy-shim') || !legacy.isShim(datos.toString('utf8'))) continue;
-    huerfanas.push({ fuente: a.fuente, ruta: a.ruta, carpeta: false, clave });
-  }
-  if (!huerfanas.length) return;
-  // la carpeta cuyos archivos son todos reemplazos sin entrada también es una ruta vieja
-  const deLasHuerfanas = new Set(huerfanas.map((h) => `${h.fuente}/${h.ruta}`));
-  const carpetas = [];
-  for (const h of huerfanas) {
-    for (let d = path.posix.dirname(h.ruta); d !== '.'; d = path.posix.dirname(d)) {
-      if (carpetas.some((c) => c.fuente === h.fuente && c.ruta === d)) continue;
-      const adentro = ctx.arboles[h.fuente].filter((e) => e.tipo === 'blob' && e.ruta.startsWith(`${d}/`));
-      if (adentro.length && adentro.every((e) => deLasHuerfanas.has(`${h.fuente}/${e.ruta}`))) carpetas.push({ fuente: h.fuente, ruta: d, carpeta: true });
-    }
-  }
-  const viejas = [...huerfanas, ...carpetas].map((v) => ({ ...v, re: rutaViejaRe(v), reAjena: rutaViejaAjenaRe(v) }));
-  const lectores = require('./spanish-names.js').LEGACY_READERS;
-  const menciones = [];
-  for (const [clave, a] of copia) {
-    if (CODEX_TOML.test(clave) || detector.esBinario(a.datos) || huerfanas.some((h) => h.clave === clave)) continue;
-    // la misma lista cerrada de excepciones que nombresViejos
-    if (clave === 'arnes/guides/nombres-en-ingles.md' || FOTOS_DE_PRODUCTO.test(clave)) continue;
-    if (clave.startsWith('arnes/') && lectores.has(clave.slice('arnes/'.length))) continue;
-    const repo = clave.startsWith('agent-skills/') ? 'agent-skills' : 'arnes';
-    a.datos.toString('utf8').split(/\r?\n/).forEach((linea, i) => {
-      for (const v of viejas) if ((v.fuente === repo ? v.re : v.reAjena).test(linea)) menciones.push(`${sourceKey(clave, a)}:${i + 1} nombra ${v.ruta}${v.carpeta ? '/' : ''}`);
-    });
-  }
-  if (menciones.length) {
-    throw new NoPudo(`ruta vieja sin entrada en el mapa (un reemplazo generado que ${MAPA_RENOMBRES} no tiene): agregala a ${MAPA_RENOMBRES} o corregí la mención en el interno:\n  · ${menciones.sort(porCodigo).join('\n  · ')}`);
-  }
-}
-
-/** Las traducciones a Codex se GENERAN desde los .md: se regeneran en la copia con su propio generador. */
-function regenerarCodex(copia, tmp, aux) {
-  const hayToml = [...copia.keys()].some((k) => CODEX_TOML.test(k));
-  const manifiesto = copia.has(`arnes/${MANIFIESTO_CODEX}`);
-  if (!hayToml && !manifiesto) return;
-  if (manifiesto && !hayToml) {
-    let advisors = [];
-    try { advisors = JSON.parse(copia.get(`arnes/${MANIFIESTO_CODEX}`).datos.toString('utf8')).advisors || []; } catch { advisors = null; }
-    if (Array.isArray(advisors) && advisors.length === 0) return;   // ningún revisor que traducir: nada que regenerar
-  }
-  const gen = path.join(tmp, 'arnes', 'build', 'generate.js');
-  if (!fs.existsSync(gen) || !manifiesto) {
-    throw new NoPudo('las traducciones a Codex salen sin su generador (arnes/build/generate.js) o sin su MANIFEST.json: no se pueden regenerar desde los .md reemplazados');
-  }
-  const env = {
-    PATH: process.env.PATH || '',
-    HOME: path.join(aux, 'home'),
-    CODEX_HOME: path.join(aux, 'codex'),
-    TYCON_AGENTS_DIR: path.join(tmp, 'agent-skills', 'agents'),
-  };
-  fs.mkdirSync(env.HOME, { recursive: true });
-  for (const args of [[], ['--check']]) {
-    const r = spawnSync(process.execPath, [gen, ...args], { cwd: path.join(tmp, 'arnes'), env, encoding: 'utf8' });
-    if (r.error || r.status !== 0) {
-      throw new NoPudo(`build/generate.js ${args.join(' ')} en la copia salió ${r.status}: ${`${r.stderr || ''}${r.stdout || ''}`.trim().split('\n').slice(-5).join(' | ')}`);
-    }
   }
 }
 
@@ -3202,35 +2320,6 @@ function whatShips(ctx) {
   return { packages, ofFile, preload };
 }
 
-// ── Informe, listado y salida ──────────────────────────────────────────────────────────────────────────────────
-const idDePar = (ctx, realDe) => `par-${ctx.pares.findIndex((p) => p.real === realDe) + 1}`;
-
-function escribirListado(ctx) {
-  const l = [`# Listado de reemplazos — ${PRIVADO}`, '', `- paquete: ${ctx.paquete}`];
-  for (const f of FUENTES) l.push(`- ${f}: ${ctx.fuentes[f].sha}`);
-  l.push('', '## Pares de la tabla (el número con que los nombra --json)', '');
-  l.push(ctx.pares.length ? ctx.pares.map((p) => `- ${idDePar(ctx, p.real)}: ${p.real}`).join('\n') : '(ninguno)');
-  l.push('', '## Reemplazos por archivo', '');
-  const archivos = [...ctx.porArchivo.keys()].sort(porCodigo);
-  if (!archivos.length) l.push('(ninguno)', '');
-  for (const archivo of archivos) {
-    const cuenta = ctx.porArchivo.get(archivo);
-    l.push(`### ${archivo}`);
-    for (const par of ctx.pares) if (cuenta.has(par.real)) l.push(`- ${par.real}: ${cuenta.get(par.real)}`);
-    l.push('');
-  }
-  l.push('## Ajustes de la copia', '');
-  if (!ctx.ajustes.length) l.push('(ninguno)');
-  for (const a of ctx.ajustes) l.push(`- ${a.archivo} · ${a.transformacion}: ${a.detalle}`);
-  l.push('', '## Pares sin uso (informativo)', '');
-  l.push(ctx.paresSinUso.length ? ctx.paresSinUso.map((r) => `- ${r}`).join('\n') : '(ninguno)', '');
-  try {
-    fs.writeFileSync(ctx.informe, l.join('\n'));
-  } catch (e) {
-    throw new NoPudo(`no pude escribir el listado de reemplazos ${ctx.informe} (${e.code || e.message})`);
-  }
-}
-
 /**
  * Los nombres en castellano de la copia (story 8.9): el freno los cuenta con su propio extractor. Se carga acá adentro
  * porque spanish-names.js usa este archivo. Si no se puede contar, el --json lo dice y el termómetro da rojo: la copia
@@ -3244,106 +2333,6 @@ function contarCastellano(entradas, raiz = RAIZ_PROPIA) {
   }
 }
 
-function resultadoJson(ctx, codigo, motivo) {
-  const base = {
-    resultado: codigo,
-    paquete: ctx.paquete || null,
-    salida: codigo === 0 ? ctx.salida : null,
-    informe: ctx.informe || null,
-    // Sólo las que llegaron a resolver: un 2 a mitad de camino deja una y no la otra.
-    fuentes: ctx.fuentes ? Object.fromEntries(Object.entries(ctx.fuentes).map(([f, v]) => [f, { ref: v.ref, sha: v.sha }])) : null,
-    // story 8.18: de cuántos repos se leyeron las dos fuentes — 1 (el repo unido, partido por ruta) o 2; null si no llegó a saberlo
-    physicalSources: ctx.unified === undefined ? null : (ctx.unified ? 1 : 2),
-  };
-  if (codigo === 2) return { ...base, motivo, globsSinUso: ctx.globsSinUso || [], entradasSinClasificar: ctx.entradasSinClasificar || [] };
-  return {
-    ...base,
-    archivos: ctx.archivos,
-    excluidosFijos: ctx.excluidosFijos,
-    pendientes: ctx.pendientes,
-    globsSinUso: ctx.globsSinUso,
-    entradasSinClasificar: [],
-    // Los pares van por su número en la tabla (`par-1`…), nunca por el real: la salida estándar no es un canal
-    // privado. Qué real es cada número lo dice el listado PRIVADO.
-    paresSinUso: ctx.paresSinUso.map((r) => idDePar(ctx, r)),
-    reemplazos: Object.fromEntries(ctx.pares.filter((p) => ctx.totalPorPar.has(p.real)).map((p) => [idDePar(ctx, p.real), ctx.totalPorPar.get(p.real)])),
-    ajustes: ctx.ajustes,
-    controles: ctx.control,
-    detector: ctx.detector,
-    spanishNames: ctx.spanishNames || null,
-    repos: ctx.repos_copia || null,
-    // story 8.7: lo nuevo nace en inglés; las claves de antes no cambian
-    packages: ctx.packages || null,
-    singleRepo: Boolean(ctx.singleRepo),
-    publicRepo: ctx.publicRepo || null,
-    renamed: ctx.renamed || [],
-    // story 8.13 (AC 24): los generados que esta copia trae (sin --stamp-version, ninguno)
-    generated: ctx.generated || [],
-    // story 8.13.1 (AC 6): las rutas publicadas que difieren del interno, con su ajuste (null sin --single-repo)
-    transformed: ctx.transformed === undefined ? null : ctx.transformed,
-  };
-}
-
-function informeHumano(ctx, codigo) {
-  const l = [];
-  if (codigo === 0) {
-    l.push(`✅ copia lista en ${ctx.salida} — paquete ${ctx.paquete}${ctx.singleRepo ? ' (un solo repo)' : ''}`);
-    if (ctx.singleRepo) {
-      const nombre = ctx.publicRepo.repo;
-      l.push(`   ${nombre}: ${FUENTES.map((f) => `${ctx.archivos[f]} de ${f} (desde ${corto(ctx.fuentes[f].sha)})`).join(' + ')} · commit ${corto(ctx.repos_copia[nombre].commit)}`);
-    } else for (const f of FUENTES) l.push(`   ${f}: ${ctx.archivos[f]} archivos · commit ${corto(ctx.repos_copia[f].commit)} (desde ${corto(ctx.fuentes[f].sha)})`);
-    if (ctx.pendientes.length) l.push(`   pendientes de otra story: ${ctx.pendientes.length} (--json los lista)`);
-    if (ctx.generated && ctx.generated.length) l.push(`   generados (--stamp-version): ${ctx.generated.join(', ')}`);
-    l.push(`   listado PRIVADO de reemplazos: ${ctx.informe}`);
-    return l.join('\n');
-  }
-  const d = ctx.detector || {};
-  const secciones = [
-    ['nombres pegados (el borde de palabra los deja pasar)', (ctx.control.nombresPegados || []).map((h) => `${h.archivo}${h.linea ? `:${h.linea}` : ''}  «${h.identificador}» (término ${h.termino})`)],
-    ['no compila', (ctx.control.compilacion || []).map((h) => `${h.archivo}  ${h.herramienta}: ${h.detalle}`)],
-    ['comandos que mandan correr algo que no viaja', (ctx.control.comandosColgados || []).map((h) => `${h.archivo}:${h.linea}  ${h.ruta}`)],
-    ['nombres viejos del mapa de renombres (la copia nace con los nuevos: nombrá el nuevo)', (ctx.control.nombresViejos || []).map((h) => `${h.archivo}:${h.linea}  ${h.ruta}`)],
-    // story 8.7
-    ['links — enlaces relativos a algo que no está en la copia', (ctx.control.links || []).map((h) => `${h.file}:${h.line} → ${h.target}`)],
-    ['readmePaths — rutas del README o el INSTALL que no están en la copia', (ctx.control.readmePaths || []).map((h) => `${h.file}:${h.line} → ${h.path}`)],
-    ['pathsNotInCopy — rutas del repo del equipo sin su marca', (ctx.control.pathsNotInCopy || []).map((h) => `${h.archivo}:${h.linea} → ${h.ruta}`)],
-    ['attributions — el NOTICE contra los derived del manifiesto de terceros', (ctx.control.attributions || []).map((h) => `${h.file}${h.line ? `:${h.line}` : ''}  ${h.path}: ${h.why}`)],
-    ['skillRenameLeft — el nombre viejo de una skill renombrada', (ctx.control.skillRenameLeft || []).map((h) => `${h.file}:${h.line}${h.text ? `  ${h.text}` : ''}`)],
-    ['handWrittenPublicUrl — la URL del repo público escrita a mano (usá {{public-org}}/{{public-repo}})', (ctx.control.handWrittenPublicUrl || []).map((h) => `${h.file}:${h.line}  (en ${h.from})`)],
-    ...copyRepoNames(ctx).map((f) => [`detector — contenido de ${f}`, (d[f] ? d[f].hallazgos : []).map((h) => `${h.archivo}:${h.linea}  [${h.categoria}/${h.regla}]  ${h.texto}`)]),
-    ['detector — rutas de la copia', (d.rutas ? d.rutas.hallazgos : []).map((h) => `(ruta) ${h.archivo}  [${h.categoria}/${h.regla}]  ${h.texto}`)],
-    ...copyRepoNames(ctx).map((f) => [`detector — metadatos del commit de ${f}`, ((d.metadatos || {})[f] ? d.metadatos[f].hallazgos : []).map((h) => `${h.linea}  [${h.categoria}/${h.regla}]  ${h.texto}`)]),
-  ].filter(([, items]) => items.length);
-  const total = secciones.reduce((n, [, items]) => n + items.length, 0);
-  l.push(`🛑 la copia NO sale: ${total} hallazgo(s) — se descartó y ${ctx.salida} no se creó`);
-  for (const [titulo, items] of secciones) {
-    l.push('', `${titulo} (${items.length}):`);
-    for (const it of items.slice(0, TOPE_DETALLE)) l.push(`  ${it}`);
-    if (items.length > TOPE_DETALLE) l.push(`  … y ${items.length - TOPE_DETALLE} más (--json trae todo)`);
-  }
-  l.push('', `listado PRIVADO de reemplazos: ${ctx.informe}`);
-  return l.join('\n');
-}
-
-/** La ruta del listado antes de validar nada (para borrar uno viejo en un exit 2 temprano). */
-function informeDeLosArgs(args) {
-  if (!args || (!args.informe && !args.salida)) return null;
-  return path.resolve(args.informe || `${path.resolve(args.salida)}.reemplazos.md`);
-}
-
-/**
- * Sin haber ubicado los repos fuente, un archivo dentro de un árbol de trabajo de git no se toca. «No es un repo» es
- * false; sin git en la máquina, también false (lo de siempre), pero dicho. Cualquier otro fallo de git (un permiso,
- * «dubious ownership», un .git roto) tira NoPudo con el texto de git: «no pude preguntar» no es «no es un repo»
- * (pendiente DEF-8.12-R2-GIT-AMBIGUO; el mismo criterio que `gitAt` de legacy-names.js).
- */
-function dentroDeUnRepo(p) {
-  const g = require('../lib/legacy-names.js').gitAt(path.dirname(p), ['rev-parse', '--is-inside-work-tree']);
-  if (g.failed) throw new NoPudo(`no pude preguntarle a git si ${p} cae dentro de un repo (${g.why})`);
-  if (g.notARepo && g.r.error) process.stderr.write(`⚠️ exportador: git no está en esta máquina: no pude preguntar si ${p} cae dentro de un repo — lo traté como fuera de uno\n`);
-  return !g.notARepo && g.r.stdout.trim() === 'true';
-}
-
 function main() {
   const ctx = {};
   let args = {};
@@ -3352,7 +2341,7 @@ function main() {
   // Lo que se escape de todo (incluso del manejo de un error) es un 2: node saldría con 1, que acá es «encontré algo».
   process.on('uncaughtException', (e) => {
     limpiar();
-    process.stderr.write(`⛔ exportador: no pude armar la copia — error no previsto: ${(e && e.stack) || e}\n`);
+    process.stderr.write(`⛔ exportador: error no previsto: ${(e && e.stack) || e}\n`);
     process.exit(2);
   });
   for (const s of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
@@ -3370,42 +2359,15 @@ function main() {
       process.exitCode = explicar(args, cfg);
       return;
     }
-    codigo = exportar(args, cfg, ctx);
-    process.stdout.write(`${args.json ? JSON.stringify(resultadoJson(ctx, codigo), null, 2) : informeHumano(ctx, codigo)}\n`);
+    // story 8.26 (AC 36): el exportador ya no arma la copia. Pedírsela sale 2 diciéndolo, sin escribir nada.
+    throw new NoPudo(NO_ARMA);
   } catch (e) {
     // Cualquier error —previsto o no— es un 2: el 1 significa «encontré algo» y un 0 sería una mentira.
     codigo = 2;
     limpiar();
-    if (e && e.extra) Object.assign(ctx, e.extra);
     const motivo = e instanceof NoPudo ? e.message : (e && e.stack) || String(e);
-    const viejo = ctx.informe || informeDeLosArgs(args);
-    let esViejo = false;
-    try {
-      esViejo = Boolean(viejo) && esListado(viejo);
-    } catch (err) {
-      process.stderr.write(`⚠️ exportador: ${err.message} — si lo es, tiene nombres reales: revisalo a mano\n`);
-    }
-    let fueraDeUnRepo = false;
-    if (esViejo && !ctx.informe) {
-      try {
-        fueraDeUnRepo = !dentroDeUnRepo(viejo);
-      } catch (err) {
-        // git falló de verdad: no se sabe si cae en un repo, así que no se toca, y se dice con el texto de git
-        esViejo = false;
-        process.stderr.write(`⛔ exportador: no pude armar la copia — ${err.message}: dejé el listado viejo ${viejo} — tiene nombres reales: revisalo y borralo a mano\n`);
-      }
-    }
-    if (esViejo && (ctx.informe || fueraDeUnRepo)) {
-      try {
-        fs.rmSync(viejo);
-      } catch (err) {
-        process.stderr.write(`⚠️ exportador: no pude borrar el listado viejo ${viejo} (${err.code || err.message}) — tiene nombres reales: borralo a mano\n`);
-      }
-    } else if (esViejo) {
-      process.stderr.write(`⚠️ exportador: dejé el listado viejo ${viejo}: cae dentro de un repo de git y sin haber ubicado los repos fuente no lo toco — tiene nombres reales: revisalo y borralo a mano\n`);
-    }
-    if (args.json) process.stdout.write(`${JSON.stringify(resultadoJson(ctx, 2, motivo), null, 2)}\n`);
-    process.stderr.write(`⛔ exportador: no pude armar la copia — ${motivo}\n`);
+    if (args.json) process.stdout.write(`${JSON.stringify({ resultado: 2, motivo }, null, 2)}\n`);
+    process.stderr.write(`⛔ exportador: ${motivo}\n`);
   }
   limpiar();
   // exitCode y no exit(): con la salida estándar en un pipe, exit() corta lo que todavía no se escribió (un --json
@@ -3461,6 +2423,6 @@ module.exports = {
 // vacíos y el termómetro salía «exporter.coincide is not a function» (export-real.test.sh rojo desde T20).
 if (require.main === module) {
   // story 8.9: las opciones y los paquetes con su nombre viejo siguen andando hasta el retiro
-  require('../lib/legacy-names.js').aliasArgv(MAPA_WHERE, { exitCode: 2, prefix: '⛔ exportador: no pude armar la copia — ' });
+  require('../lib/legacy-names.js').aliasArgv(MAPA_WHERE, { exitCode: 2, prefix: '⛔ exportador: ' });
   main();
 }

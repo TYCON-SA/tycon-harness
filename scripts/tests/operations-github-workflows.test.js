@@ -1,6 +1,6 @@
 'use strict';
 // operations-github-workflows.test.js — los workflows modelo de GitHub Actions para los procesos de la noche (story 8.31,
-// T1 a T8). Lee los YAML como texto (no hay biblioteca de YAML en el arnés, a propósito), corre de verdad el bloque que
+// T1 a T8; T9: la credencial por GitHub App, 2026-10-14). Lee los YAML como texto (no hay biblioteca de YAML en el arnés, a propósito), corre de verdad el bloque que
 // elige el arnés, prepare-tree.sh, operations-auth.sh y clone-repos.sh sobre repos de juguete, y nunca toca la red.
 const test = require('node:test');
 const assert = require('node:assert');
@@ -56,10 +56,32 @@ function brokenRules(text) {
   const perms = [...text.matchAll(/^( *)permissions:/gm)];
   if (perms.length !== 1 || perms[0][1] !== '' || !/^permissions:\n {2}contents: write\n(?! {2}\S)/m.test(text)) broken.push('permissions');
   const secrets = [...text.matchAll(/secrets\.([A-Za-z_]+)/g)].map((x) => x[1]);
-  if (secrets.some((s) => !['HARNESS_ORG_TOKEN', 'TELEGRAM_BOT_TOKEN'].includes(s))) broken.push('secrets');
-  // cada secreto (y el token del workflow) sólo como valor de una variable de env de un paso
+  if (secrets.some((s) => !['HARNESS_ORG_TOKEN', 'HARNESS_APP_PRIVATE_KEY', 'TELEGRAM_BOT_TOKEN'].includes(s))) broken.push('secrets');
+  // cada secreto (y el token del workflow, y el de la App) sólo como valor de una variable de env de un paso; la llave de
+  // la App, sólo como `private-key` del paso que pide el token; el token de la App, sólo solo o con HARNESS_ORG_TOKEN de
+  // respaldo, o comparado en un `if:`
+  const appSteps = steps(text).filter((x) => /uses: actions\/create-github-app-token@/.test(x));
+  const KEY_LINE = '          private-key: ${{ secrets.HARNESS_APP_PRIVATE_KEY }}';
   for (const l of text.split('\n')) {
-    if (/secrets\.|github\.token/.test(l) && !/^ {10}[A-Z_]+: \$\{\{ (secrets\.[A-Z_]+|github\.token) \}\}$/.test(l)) { broken.push('secret-scope'); break; }
+    if (!/secrets\.|github\.token|outputs\.token/.test(l)) continue;
+    const env = /^ {10}[A-Z_]+: \$\{\{ (secrets\.(HARNESS_ORG_TOKEN|TELEGRAM_BOT_TOKEN)|github\.token|steps\.[a-z-]+\.outputs\.token( \|\| secrets\.HARNESS_ORG_TOKEN)?) \}\}$/.test(l);
+    const key = l === KEY_LINE && appSteps.some((x) => x.split('\n').includes(l));
+    const cond = /^ {8}if: always\(\) && steps\.[a-z-]+\.outputs\.token != ''$/.test(l);
+    if (!env && !key && !cond) { broken.push('secret-scope'); break; }
+  }
+  if (text.split('\n').filter((l) => l === KEY_LINE).length !== appSteps.length) broken.push('secret-scope');
+  // el paso que pide el token de la App: sólo si está configurada, con la llave de los secretos, de la organización del
+  // repo de operaciones, con permisos pedidos por nombre (contenido de lectura; issues) y ninguna otra entrada
+  const WITH = { 'client-id': /^\$\{\{ vars\.HARNESS_APP_CLIENT_ID \}\}$/, 'private-key': /^\$\{\{ secrets\.HARNESS_APP_PRIVATE_KEY \}\}$/,
+    owner: /^\$\{\{ github\.repository_owner \}\}$/, 'permission-contents': /^read$/, 'permission-issues': /^(read|write)$/, 'skip-token-revoke': /^true$/ };
+  for (const st of appSteps) {
+    const cond = (st.match(/^ {8}if: (.*)$/m) || [])[1] || '';
+    const w = {};
+    for (const m of st.matchAll(/^ {10}([a-z-]+): (.*)$/gm)) w[m[1]] = m[2];
+    const ok = /^vars\.HARNESS_APP_CLIENT_ID != ''( && |$)/.test(cond) && /^ {8}id: [a-z-]+$/m.test(st)
+      && Object.entries(w).every(([k, v]) => WITH[k] && WITH[k].test(v))
+      && ['client-id', 'private-key', 'owner'].every((k) => k in w) && Object.keys(w).some((k) => k.startsWith('permission-'));
+    if (!ok) { broken.push('app-token'); break; }
   }
   for (const s of steps(text).filter((x) => /uses: actions\/checkout@/.test(x))) {
     if (!/persist-credentials: false/.test(s)) { broken.push('persist-credentials'); break; }
@@ -94,7 +116,21 @@ test('T2 GhModels_SecurityRules: los tres cumplen, y una copia alterada por regl
     'secret-scope': t.replace('    timeout-minutes: 90\n    env:\n', '    timeout-minutes: 90\n    env:\n      TODO_EL_TRABAJO: ${{ secrets.HARNESS_ORG_TOKEN }}\n'),
     'persist-credentials': t.replace('          path: ops\n          persist-credentials: false', '          path: ops'),
     'expression-in-run': t.replace('echo "issues: $(', 'echo "${{ inputs.harness_ref }}"\n          echo "issues: $('),
+    'app-token': t.replace('          permission-issues: write\n', '          permission-issues: write\n          permission-contents: write\n'),
   };
+  // más maneras de romper las reglas de la App, cada una por separado
+  const masAlteraciones = [
+    ['secret-scope', t.replace('          APP_TOKEN: ${{ steps.org-token.outputs.token }}\n', '          APP_TOKEN: ${{ steps.org-token.outputs.token }}\n          LLAVE: ${{ secrets.HARNESS_APP_PRIVATE_KEY }}\n')],
+    ['secret-scope', t.replace('GH_TOKEN: ${{ steps.org-token.outputs.token || secrets.HARNESS_ORG_TOKEN }}', 'GH_TOKEN: ${{ steps.org-token.outputs.token || secrets.TELEGRAM_BOT_TOKEN }}')],
+    ['app-token', t.replace("        id: org-token\n        if: vars.HARNESS_APP_CLIENT_ID != ''\n", '        id: org-token\n')],
+    ['app-token', t.replace('          permission-contents: read\n          permission-issues: read\n', '')],
+    ['app-token', t.replace('          owner: ${{ github.repository_owner }}\n          permission-issues: write\n', '          owner: otra-org\n          permission-issues: write\n')],
+    ['app-token', t.replace('          permission-issues: write\n', '          permission-issues: write\n          github-api-url: https://example.com\n')],
+  ];
+  for (const [rule, alterado] of masAlteraciones) {
+    assert.notStrictEqual(alterado, t, `una alteración de ${rule} no cambió nada`);
+    assert.ok(brokenRules(alterado).includes(rule), `una copia alterada para ${rule} no salió roja: ${brokenRules(alterado)}`);
+  }
   for (const [rule, alterado] of Object.entries(alteraciones)) {
     assert.notStrictEqual(alterado, t, `la alteración de ${rule} no cambió nada`);
     assert.ok(brokenRules(alterado).includes(rule), `la copia alterada para ${rule} no salió roja: ${brokenRules(alterado)}`);
@@ -305,7 +341,7 @@ test('T8 CloneRepos_DeclaredAndOrg: los declarados con el token sólo en la lín
   for (const d of ['web', 'api']) assert.doesNotMatch(fs.readFileSync(path.join(dest, 'acme', d, '.git', 'config'), 'utf8'), /extraheader/i, 'el token no queda en el clon');
   assert.doesNotMatch(r.stdout, /t0k3n/);
   r = spawnSync('bash', [sh, '--declared', dest], { input: '', encoding: 'utf8', env: cleanEnv({ GITHUB_SERVER_URL: `file://${server}` }) });
-  assert.strictEqual(r.status, 1); assert.match(r.stdout, /Falta el secreto HARNESS_ORG_TOKEN/);
+  assert.strictEqual(r.status, 1); assert.match(r.stdout, /Falta la credencial de la organización[^\n]*GitHub App[^\n]*HARNESS_ORG_TOKEN/);
   // --org: 101 repos en el listado (dos páginas), prefijo, una copia del arnés declarada en team-repos.json
   const repos = [{ name: 'web' }, { name: 'api' }, { name: 'harness-copy' }, { name: 'extra-0' }, { name: 'extra-1' }];
   for (let i = 0; i < 96; i++) repos.push({ name: `otro-${i}` });
@@ -332,4 +368,57 @@ test('T8 CloneRepos_DeclaredAndOrg: los declarados con el token sólo en la lín
   // un dueño que no se puede listar: rojo, no un barrido a medias
   r = spawnSync('bash', [sh, '--org', path.join(base, 'x'), '--team-repos', tr], { encoding: 'utf8', env: { ...env, OWNERS: 'nadie', TYCON_GH_CMD: FAKE_GH, FAKE_GH_STATE: state } });
   assert.strictEqual(r.status, 1, r.stdout); assert.match(r.stdout, /No se pudieron listar los repos de la organización: no pude saber qué es nadie/);
+});
+
+test('T9 GhModels_AppToken: la App es el camino recomendado y el usuario de máquina el respaldo; ningún token de la App vivo mientras corre código de los productos', () => {
+  const nombre = (st) => ((st.match(/^ {6}- name: (.*)$/m) || st.match(/^ {8}name: (.*)$/m) || [])[1] || '');
+  const SHA = /uses: actions\/create-github-app-token@[0-9a-f]{40} # v\d+\.\d+\.\d+$/m;
+  // las métricas: un token de sólo lectura, y el paso que clona lo toma con el secreto de respaldo
+  const m = steps(read('stage-metrics.yml'));
+  const mApp = m.filter((x) => /create-github-app-token@/.test(x));
+  assert.strictEqual(mApp.length, 1, 'stage-metrics pide un token de la App');
+  assert.match(mApp[0], SHA);
+  assert.deepStrictEqual([...mApp[0].matchAll(/^ {10}(permission-[a-z-]+): (.*)$/gm)].map((x) => `${x[1]}=${x[2]}`), ['permission-contents=read']);
+  assert.match(m.find((x) => /clone-repos\.sh --org/.test(x)), /^ {10}ORG_TOKEN: \$\{\{ steps\.org-token\.outputs\.token \|\| secrets\.HARNESS_ORG_TOKEN \}\}$/m);
+  // el tablero no habla con los repos de la organización: ninguna credencial de la organización
+  assert.doesNotMatch(read('team-dashboard.yml'), /create-github-app-token|HARNESS_ORG_TOKEN|HARNESS_APP_/);
+  // la revisión de dependencias: el orden es la regla
+  const d = steps(read('dependency-audit.yml'));
+  const at = (re) => { const i = d.findIndex((x) => re.test(x)); assert.ok(i >= 0, `falta el paso ${re}`); return i; };
+  const leer = at(/id: org-token$/m);
+  const clonar = at(/clone-repos\.sh --declared/);
+  const estado = at(/work-items\.js state/);
+  const revocar = at(/installation\/token/);
+  const revisar = at(/nightly-dependencies\.js run/);
+  const escribir = at(/id: org-token-issues$/m);
+  const issues = at(/work-items\.js run/);
+  assert.ok(leer < clonar && clonar < revocar && estado < revocar && revocar < revisar && revisar < escribir && escribir < issues,
+    `el orden: ${[leer, clonar, estado, revocar, revisar, escribir, issues].map((i) => nombre(d[i])).join(' → ')}`);
+  for (const i of [leer, escribir]) assert.match(d[i], SHA);
+  assert.match(d[leer], /^ {10}skip-token-revoke: true$/m, 'el de leer lo revoca el paso de revocar, no la acción al final');
+  assert.doesNotMatch(d[escribir], /skip-token-revoke/, 'el de los issues lo revoca la acción al terminar');
+  assert.match(d[escribir], /^ {10}permission-issues: write$/m); assert.doesNotMatch(d[escribir], /permission-contents/, 'el de los issues no lee código');
+  assert.match(d[revocar], /^ {8}if: always\(\) && steps\.org-token\.outputs\.token != ''$/m, 'se revoca también si un paso anterior falló');
+  // nadie usa el token de leer después de revocarlo; nadie usa el de los issues antes de pedirlo
+  d.forEach((st, i) => {
+    if (i > revocar) assert.doesNotMatch(st, /steps\.org-token\.outputs/, `${nombre(st)} usa el token de leer ya revocado`);
+    if (i < escribir) assert.doesNotMatch(st, /steps\.org-token-issues\.outputs/, `${nombre(st)} usa el token de los issues antes de pedirlo`);
+  });
+  // el paso que corre código de los productos no tiene ninguna credencial
+  assert.doesNotMatch(d[revisar], /TOKEN|secrets\.|outputs\.token/, 'la revisión no tiene credencial');
+  // el paso de revocar, corrido de verdad con un curl falso: 204 sigue; otra cosa es rojo y no sigue
+  const run = d[revocar].split('\n');
+  const body = run.slice(run.findIndex((l) => /^ {8}run: \|$/.test(l)) + 1).map((l) => l.replace(/^ {10}/, '')).join('\n');
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'revoke-')); dirs.push(base);
+  fs.writeFileSync(path.join(base, 'curl'), '#!/usr/bin/env bash\nprintf "%s\\n" "$@" > "$CURL_ARGS"\nprintf "%s" "$CURL_CODE"\n', { mode: 0o755 });
+  const correr = (code) => spawnSync('bash', ['-c', body], { encoding: 'utf8',
+    env: cleanEnv({ PATH: `${base}${path.delimiter}${process.env.PATH}`, APP_TOKEN: 'ghs_de_prueba', GITHUB_API_URL: 'https://api.example', CURL_CODE: code, CURL_ARGS: path.join(base, 'args') }) });
+  let r = correr('204');
+  assert.strictEqual(r.status, 0, `${r.stdout}${r.stderr}`);
+  const args = fs.readFileSync(path.join(base, 'args'), 'utf8');
+  assert.match(args, /^DELETE$/m); assert.match(args, /^https:\/\/api\.example\/installation\/token$/m); assert.match(args, /^Authorization: Bearer ghs_de_prueba$/m);
+  r = correr('401');
+  assert.strictEqual(r.status, 1, 'no revocado: rojo');
+  assert.match(r.stdout, /::error::No se pudo revocar la credencial de la App \(HTTP 401\)/);
+  assert.doesNotMatch(`${r.stdout}${r.stderr}`, /ghs_de_prueba/, 'el token no se imprime');
 });
