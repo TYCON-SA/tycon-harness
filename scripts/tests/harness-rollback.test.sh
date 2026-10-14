@@ -586,13 +586,16 @@ else
   T28_LN="$(node -p "require('$RAIZ/scripts/setup/harness/place.js').LEGACY_PLACE_NAME")"
   t28_both() { node -e 'const fs=require("fs");const [h,t,a,b]=process.argv.slice(1);const r=(p)=>{try{return fs.realpathSync(p)}catch(_){return null}};process.stdout.write(String(r(h+"/.claude/"+a)===fs.realpathSync(t)&&r(h+"/.claude/"+b)===fs.realpathSync(t)))' "$LAB_HOME" "$LAB_TREE" "$T28_PN" "$T28_LN"; }
   t28_repeated() { harness_lab_settings_commands | sort | uniq -d | wc -l | tr -d ' '; }
-  t28_lines() { grep -cxF -e "@~/.claude/$T28_PN/README.md" -e "@~/.claude/$T28_LN/README.md" "$CLAUDE_MD_PATH"; }
+  # la línea de hoy la dice import-line.js (desde el 2026-10-13 carga INDEX.md; el código de antes escribía README.md):
+  # se cuentan las dos formas con los dos nombres, y lo que se espera ver es la de hoy
+  T28_LINE="$(node -p "require('$RAIZ/scripts/setup/harness/import-line.js').IMPORT_LINE")"
+  t28_lines() { grep -cxF -e "@~/.claude/$T28_PN/README.md" -e "@~/.claude/$T28_LN/README.md" -e "@~/.claude/$T28_PN/INDEX.md" -e "@~/.claude/$T28_LN/INDEX.md" "$CLAUDE_MD_PATH"; }
   # la máquina como la deja esta story: los dos nombres, y lo registrado por el viejo mudado a mano
   node -e 'const fs=require("fs");const [t,p,o]=process.argv.slice(1);const ty=process.platform==="win32"?"junction":"dir";for(const a of [p,o]){try{fs.unlinkSync(a)}catch(_){try{fs.rmdirSync(a)}catch(_){}}}fs.symlinkSync(t,p,ty);fs.symlinkSync(p,o,ty)' "$LAB_TREE" "$LAB_HOME/.claude/$T28_PN" "$LAB_HOME/.claude/$T28_LN"
   printf '@~/.claude/%s/README.md\n' "$T28_LN" > "$CLAUDE_MD_PATH"
   harness relocate >/dev/null 2>&1; RC=$?
   T28_HOOKS="$(harness_lab_settings_commands | wc -l | tr -d ' ')"
-  [ "$RC" = 0 ] && [ "$(t28_lines)" = 1 ] && grep -qxF "@~/.claude/$T28_PN/README.md" "$CLAUDE_MD_PATH" && ok "T28 la máquina mudada: relocate 0 y una línea, la del lugar" || mal "T28 relocate rc $RC: $(cat "$CLAUDE_MD_PATH")"
+  [ "$RC" = 0 ] && [ "$(t28_lines)" = 1 ] && grep -qxF "$T28_LINE" "$CLAUDE_MD_PATH" && ok "T28 la máquina mudada: relocate 0 y una línea, la del lugar" || mal "T28 relocate rc $RC: $(cat "$CLAUDE_MD_PATH")"
   # el código de antes de la story, en el árbol
   for f in $(git -C "$RAIZ" ls-tree --name-only "$T28_FIXED" scripts/setup/harness/) scripts/setup/harness.js scripts/lib/canonical-path.js; do
     git -C "$RAIZ" show "$T28_FIXED:$f" > "$LAB_TREE/$f"
@@ -607,7 +610,7 @@ else
   # de vuelta al código nuevo
   harness_lab_git "$LAB_TREE" checkout -q -- scripts/setup scripts/lib
   harness install --yes >/dev/null 2>&1; RC=$?
-  [ "$RC" = 0 ] && [ "$(t28_lines)" = 1 ] && grep -qxF "@~/.claude/$T28_PN/README.md" "$CLAUDE_MD_PATH" && [ "$(t28_both)" = true ] && [ "$(t28_repeated)" = 0 ] \
+  [ "$RC" = 0 ] && [ "$(t28_lines)" = 1 ] && grep -qxF "$T28_LINE" "$CLAUDE_MD_PATH" && [ "$(t28_both)" = true ] && [ "$(t28_repeated)" = 0 ] \
     && ok "T28 de vuelta al código nuevo: una sola línea (la del lugar), los dos nombres resuelven, ningún hook repetido" \
     || mal "T28 de vuelta: rc $RC, líneas $(t28_lines): $(cat "$CLAUDE_MD_PATH" | tr '\n' ' '), los dos=$(t28_both), repetidos=$(t28_repeated)"
 fi

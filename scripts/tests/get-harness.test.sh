@@ -34,7 +34,9 @@ RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SRC="$RAIZ/scripts/publishing/public-files/scripts/setup/get-harness.sh"
 README_EN="$RAIZ/scripts/publishing/public-files/getting-started/reference.md"
 COPY=0
-if [ ! -f "$SRC" ] && [ -f "$RAIZ/scripts/setup/get-harness.sh" ]; then
+# desde el corte el guion se escribe en el público (scripts/setup/get-harness.sh): si está, es ése el que se mide, aunque
+# el árbol armado de un nocturno traiga todavía el papel viejo del repo del equipo (que ya no sigue los cambios)
+if [ -f "$RAIZ/scripts/setup/get-harness.sh" ]; then
   COPY=1; SRC="$RAIZ/scripts/setup/get-harness.sh"; README_EN="$RAIZ/getting-started/reference.md"
 fi
 GUARD_HOOK="$RAIZ/scripts/hooks/safety-guard-pre.sh"

@@ -768,7 +768,9 @@ test('T60b · laboratorio — con las fichas y repos.json en las carpetas viejas
   assert.strictEqual(f.watcherCards, 0, 'la mirada de producción no lee la cola vieja');
   assert.ok(f.dashboardProducts && f.dashboardProducts.estado === 'no_medido', 'el tablero, sin repos.json, dice no medido');
   // por ESE motivo, no porque la foto de la noche se haya puesto vieja
-  assert.match(String(f.dashboardProducts.motivo), /no hay productos declarados/, 'el tablero no mide porque no encontró repos.json');
+  // el motivo es el del tablero publicado: sin repos.json dice que la lista de productos del equipo no vino (antes del
+  // corte el repo del equipo decía «no hay productos declarados en repos.json»; desde el corte el texto es el del público)
+  assert.match(String(f.dashboardProducts.motivo), /lista de productos del equipo no viene/, 'el tablero no mide porque no encontró repos.json');
   assert.strictEqual(f.fetched, null, 'el paso que trae los repos falla sin repos.json');
 });
 
