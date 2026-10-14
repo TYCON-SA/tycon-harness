@@ -494,7 +494,7 @@ installer "$HV" "TYCON_SKILLS_DIR=$CLONE/skills" > "$T/i1.out" 2>&1; RC=$?
 # (story 8.36) la pregunta puede ir suelta o adentro de la tanda del aplicador: su plan pide el paso `skills-dir` con esos
 # argumentos (el intermediario anota el plan)
 if [ "$RC" -eq 0 ] && { grep -qF "scripts/lib/skills-dir.js --skills --installed" "$NODE_CALLS" \
-     || grep -F '"script":"skills-dir"' "$NODE_CALLS" | grep -qF '"args":["--skills","--installed"]'; }; then ok "(i) el .ps1 le pregunta a skills-dir.js dónde están las skills, con la variante de quien escribe (--skills --installed)"
+     || grep -F '"script":"skills-dir"' "$NODE_CALLS" | grep -F '"args":["--skills","--installed"]' >/dev/null; }; then ok "(i) el .ps1 le pregunta a skills-dir.js dónde están las skills, con la variante de quien escribe (--skills --installed)"
 else no "(i) el .ps1 (rc $RC) no llamó a skills-dir.js --skills --installed: «$(grep 'skills-dir' "$NODE_CALLS" | head -2 | tr '\n' ' ' | cut -c1-200)» $(brief "$T/i1.out" 160)"; fi
 N_INSTALLED="$(grep -c "\"node \\\\\"$HV/.claude/agent-skills/skills/" "$HV/.claude/settings.json" 2>/dev/null || true)"
 N_CLONE="$(grep -c "\"node \\\\\"$CLONE/skills/" "$HV/.claude/settings.json" 2>/dev/null || true)"
