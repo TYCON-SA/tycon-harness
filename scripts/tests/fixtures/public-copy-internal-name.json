@@ -552,6 +552,21 @@
    "path": "scripts/tests/harness-release.test.sh",
    "kind": "test",
    "why": "prueba (story 8.23, tanda B): la guarda del laboratorio comprueba que la carpeta temporal no cayó en el checkout del repo interno ni en agent-skills"
+  },
+  {
+   "path": "scripts/tests/windows-portable.test.js",
+   "kind": "test",
+   "why": "prueba: el clon del laboratorio portable lleva el nombre de la carpeta de antes, como lo dejaba el alta de dos clones"
+  },
+  {
+   "path": "scripts/tests/windows-probe.test.js",
+   "kind": "test",
+   "why": "prueba: el instalador de juguete deja los enlaces con el nombre viejo del lugar, como el de verdad"
+  },
+  {
+   "path": "scripts/tests/windows-rehearsal.test.js",
+   "kind": "test",
+   "why": "prueba: los textos del alta de juguete (dos clones y un clon) y el ensayo clonan y enlazan con el nombre de la carpeta de antes, como el alta del equipo que se ensaya"
   }
  ]
 }
