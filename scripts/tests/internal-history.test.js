@@ -17,7 +17,9 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
+const { spawnSync } = require('child_process');
 
 const RAIZ = path.resolve(__dirname, '..', '..');
 const LISTA = 'scripts/tests/fixtures/internal-history-allowed.json';
@@ -79,6 +81,9 @@ test('PublishedFiles_PrNumbers_OnlyDeclaredTestData', () => {
   const permitidos = declarados.filter((e) => e.form === 'pr-number');
   const archivos = publicados();
   assert.ok(archivos.length > 100, `pocos archivos publicados (${archivos.length}): la lista no se resolvió`);
+  // un pedido del repo público no es historia interna: se le pregunta a ese repo, y sólo si aparece uno sin declarar
+  const ih = require('../publishing/internal-history.js');
+  const lookup = ih.publicLookup(RAIZ);
   const vistos = new Set();
   const fuera = [];
   for (const f of archivos) {
@@ -89,11 +94,11 @@ test('PublishedFiles_PrNumbers_OnlyDeclaredTestData', () => {
       for (const m of linea.matchAll(NUMERO_DE_PR)) {
         const ok = permitidos.find((e) => e.file === f && m[0] === e.value);
         if (ok) vistos.add(`${ok.file}\0${ok.value}`);
-        else fuera.push(`${f}:${i + 1}: «${m[0]}»`);
+        else if (!ih.isPublicReference({ form: 'pr-number', value: m[0] }, lookup)) fuera.push(`${f}:${i + 1}: «${m[0]}»`);
       }
     });
   }
-  assert.deepStrictEqual(fuera, [], 'números de pull request en lo publicado, fuera de la lista de datos de prueba');
+  assert.deepStrictEqual(fuera, [], `números de pull request en lo publicado, fuera de la lista de datos de prueba${lookup.problem() ? ` (el repo público no contestó: ${lookup.problem()})` : ''}`);
   const sobran = permitidos.filter((e) => !vistos.has(`${e.file}\0${e.value}`)).map((e) => `${e.file}: «${e.value}»`);
   assert.deepStrictEqual(sobran, [], 'declaraciones que ya no aparecen (o el archivo ya no se publica): sacalas de la lista');
 });
@@ -117,4 +122,119 @@ test('PublishedProse_ZeroForms_GuardBlocksByDefault', () => {
   for (const [form, c] of Object.entries(config.forms)) {
     assert.ok(c.mode === 'block' || (c.mode === 'warn' && String(c.why || '').trim()), `${form}: frena, o avisa diciendo por qué`);
   }
+});
+
+// ── lo que ya es del repo público (deuda de las formas que no distinguían, story 8.26) ─────────────────────────────
+// Después del corte, un pedido o un commit del repo público son referencias legítimas. Tres formas —`pr-number`,
+// `private-commit` y el `#N` suelto de `azure-run`— le preguntan al repo público (`publicLookup`, con `git ls-remote`)
+// antes de contar. Un repo desnudo local hace de GitHub: publica cada pedido como `refs/pull/<N>/head`, como GitHub.
+// Lo de Azure sigue siendo interno, y si el público no contesta, nada es suyo: frena como antes.
+const n = (palabra, numero) => `${palabra}${numero}`;   // armados por partes: este archivo viaja y se recorre
+function gitIn(cwd, args) {
+  const r = spawnSync('git', ['-c', 'core.hooksPath=/dev/null', '-c', 'commit.gpgsign=false', ...args], {
+    cwd, encoding: 'utf8',
+    env: { PATH: process.env.PATH, HOME: cwd, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: os.devNull,
+      GIT_AUTHOR_NAME: 'Prueba', GIT_AUTHOR_EMAIL: '1+prueba@users.noreply.github.com', GIT_COMMITTER_NAME: 'Prueba', GIT_COMMITTER_EMAIL: '1+prueba@users.noreply.github.com' },
+  });
+  assert.strictEqual(r.status, 0, `git ${args.join(' ')}: ${r.stderr}`);
+  return r.stdout.trim();
+}
+/** El «GitHub» de juguete (con el pedido 100 y un commit publicado) y un clon con un commit que sólo tiene el equipo. */
+function publicLab(t) {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ih-publico-')));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const publico = path.join(root, 'publico.git');
+  const work = path.join(root, 'trabajo');
+  gitIn(root, ['init', '--quiet', '--bare', '--initial-branch=main', publico]);
+  gitIn(root, ['init', '--quiet', '--initial-branch=main', work]);
+  fs.writeFileSync(path.join(work, 'README.md'), 'un repo de juguete\n');
+  gitIn(work, ['add', '-A']);
+  gitIn(work, ['commit', '--quiet', '-m', 'lo publicado']);
+  const published = gitIn(work, ['rev-parse', 'HEAD']);
+  gitIn(work, ['remote', 'add', 'origin', publico]);
+  gitIn(work, ['push', '--quiet', 'origin', 'main']);
+  gitIn(root, ['--git-dir', publico, 'update-ref', 'refs/pull/100/head', published]);
+  gitIn(work, ['commit', '--quiet', '--allow-empty', '-m', 'sólo del equipo']);
+  const internal = gitIn(work, ['rev-parse', 'HEAD']);
+  return { root, publico, work, published, internal };
+}
+const formsOf = (found) => found.map((f) => f.form);
+
+test('PublicHistory_GithubMergeSubject_PublicPullRequest_Passes', (t) => {
+  const ih = require('../publishing/internal-history.js');
+  const fx = publicLab(t);
+  const subject = `Merge pull request ${n('#', 100)} from acme/una-rama`;
+  // sin preguntarle al público, el asunto con que GitHub mergea coincide con la forma desde el pedido 100
+  assert.deepStrictEqual(formsOf(ih.scan(subject, 'message')), ['pr-number']);
+  const lookup = ih.publicLookup(fx.work, fx.publico);
+  assert.deepStrictEqual(ih.scan(subject, 'message', lookup), [], 'el pedido 100 es del repo público: no es historia interna');
+  assert.deepStrictEqual(ih.scan(`lo del PR ${n('#', 100)}`, 'prose', lookup), [], 'en la prosa también');
+  assert.deepStrictEqual(ih.scan(n('ver #', 10000), 'prose', lookup).length, 1, 'un #N suelto que el público no tiene sigue siendo una corrida');
+  assert.strictEqual(lookup.problem(), null);
+});
+
+test('PublicHistory_AzurePullRequestNumber_Blocked', (t) => {
+  const ih = require('../publishing/internal-history.js');
+  const fx = publicLab(t);
+  const lookup = ih.publicLookup(fx.work, fx.publico);
+  // el asunto de un merge de Azure (sin numeral), «PR !N» y «PR N»: las formas de Azure cuentan aunque el número
+  // coincida con un pedido del público; y un #N que el público no tiene, también
+  for (const text of [`Merge pull request ${n('', 4504)} from docs/una-rama into main`, `Merge pull request ${n('', 100)} from dev into main`,
+    `el PR ${n('!', 100)}`, `el PR ${n('', 100)}`, `el PR ${n('#', 4504)}`]) {
+    assert.deepStrictEqual(formsOf(ih.scan(text, 'message', lookup)), ['pr-number'], text);
+  }
+  // las corridas son de Azure siempre, con numeral o sin él
+  assert.deepStrictEqual(formsOf(ih.scan(n('la corrida #', 12511), 'prose', lookup)), ['azure-run']);
+});
+
+test('PublicHistory_PublicCommit_Passes', (t) => {
+  const ih = require('../publishing/internal-history.js');
+  const fx = publicLab(t);
+  const lookup = ih.publicLookup(fx.work, fx.publico);
+  const short = fx.published.slice(0, 8);
+  assert.deepStrictEqual(formsOf(ih.scan(`hasta el commit \`${short}\``, 'prose')), ['private-commit'], 'sin preguntar, cuenta');
+  assert.deepStrictEqual(ih.scan(`hasta el commit \`${short}\``, 'prose', lookup), [], 'abreviado: es del repo público');
+  assert.deepStrictEqual(ih.scan(`hasta el commit ${fx.published}`, 'prose', lookup), [], 'entero');
+});
+
+test('PublicHistory_InternalOnlyCommit_Blocked', (t) => {
+  const ih = require('../publishing/internal-history.js');
+  const fx = publicLab(t);
+  const lookup = ih.publicLookup(fx.work, fx.publico);
+  // está en este clon, pero ninguna punta del público llega a él
+  assert.deepStrictEqual(formsOf(ih.scan(`hasta el commit \`${fx.internal.slice(0, 8)}\``, 'prose', lookup)), ['private-commit']);
+  // y uno que este clon ni tiene
+  assert.deepStrictEqual(formsOf(ih.scan(n('hasta el commit ', 'c6cbe1d4'), 'prose', lookup)), ['private-commit']);
+});
+
+test('PublicHistory_PublicRepoDoesNotAnswer_Blocked', (t) => {
+  const ih = require('../publishing/internal-history.js');
+  const fx = publicLab(t);
+  const lookup = ih.publicLookup(fx.work, path.join(fx.root, 'no-contesta.git'));
+  assert.deepStrictEqual(formsOf(ih.scan(`Merge pull request ${n('#', 100)} from acme/una-rama`, 'message', lookup)), ['pr-number']);
+  assert.deepStrictEqual(formsOf(ih.scan(`hasta el commit \`${fx.published.slice(0, 8)}\``, 'prose', lookup)), ['private-commit']);
+  assert.match(String(lookup.problem()), /no contestó/);
+  // sin decir cuál es el público y con un `origin` que no es de GitHub, tampoco se distingue (y se dice por qué)
+  const local = ih.publicLookup(fx.work);
+  assert.deepStrictEqual(formsOf(ih.scan(`lo del PR ${n('#', 100)}`, 'prose', local)), ['pr-number']);
+  assert.match(String(local.problem()), /origin/);
+});
+
+// De punta a punta: el control del commit, con la prosa stageada en un repo con la forma del público.
+test('PublicHistory_StagedProse_PublicReferencesPass_InternalOnesBlock', (t) => {
+  const ih = require('../publishing/internal-history.js');
+  const fx = publicLab(t);
+  const runOn = (text, publicRemote) => {
+    fs.mkdirSync(path.join(fx.work, 'guides'), { recursive: true });
+    fs.writeFileSync(path.join(fx.work, 'guides', 'a.md'), `# Guía\n\n${text}\n`);
+    gitIn(fx.work, ['add', '-A']);
+    return ih.run({ mode: 'staged', repo: fx.work, range: null, json: false, ref: 'HEAD', config: null, publicRemote });
+  };
+  const good = `Lo arregló el pull request ${n('#', 100)}, en el commit \`${fx.published.slice(0, 8)}\`.`;
+  assert.strictEqual(runOn(good, fx.publico).outcome, 'clean');
+  const silent = runOn(good, path.join(fx.root, 'no-contesta.git'));
+  assert.deepStrictEqual(silent.findings.map((f) => f.form).sort(), ['pr-number', 'private-commit']);
+  assert.match(String(silent.publicProblem), /no contestó/);
+  const bad = runOn(`Lo arregló el PR ${n('', 4504)}, en el commit \`${fx.internal.slice(0, 8)}\`.`, fx.publico);
+  assert.deepStrictEqual(bad.findings.map((f) => f.form).sort(), ['pr-number', 'private-commit']);
 });

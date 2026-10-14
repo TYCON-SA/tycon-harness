@@ -499,6 +499,15 @@ del equipo «se publica» lo dice el exportador y se lee el texto como sale (sin
 ruta de su destino; y también lo que un paquete deja pendiente para la copia que une los paquetes); en el repo
 público, todo lo versionado.
 
+Lo que ya es del repo público no es historia interna: un pedido o un commit de ese repo llevan a algún lado desde
+afuera, y el asunto con que GitHub mergea («Merge pull request #N from …») tiene la forma de un número de pedido desde
+el pedido 100. Tres formas lo distinguen preguntándole al repo público, una vez y sólo si hay algo que distinguir
+(`git ls-remote`, sin la API de GitHub): `pr-number` y el `#N` suelto de `azure-run` pasan si N es un pedido del
+público; `private-commit`, si el commit es del público (este clon lo tiene y se llega a él desde una punta del
+público). Lo de Azure sigue siendo interno: «PR N» sin numeral, «PR !N», «corrida N», «build N». El repo público es
+`origin` cuando es de GitHub, o el que se pasa con `--public-remote`. Si no contesta, nada es suyo: esas formas frenan
+como siempre, y el mensaje dice por qué.
+
 Cómo falla. Sale 0 si no hay nada, 1 con hallazgos y 2 si no pudo mirar; el mensaje dice el archivo, la línea y la
 forma, nunca el texto encontrado. Qué hace con eso lo decide el modo, escrito en `scripts/publishing/internal-history.json`
 (uno para el control y uno por forma: vale el más bajo): `block` no deja crear el commit, con 1 y con 2; `warn` dice lo
@@ -1666,9 +1675,10 @@ siendo las del repo anterior. Si el remoto no contesta —el freno espera 20 seg
 - el nombre de la rama o de la marca; en una marca anotada, además, el nombre que declara, su mensaje y quién la firmó;
 - un número de pedido en un mensaje o en un nombre de rama (la forma la define `scripts/publishing/internal-history.js`;
   los números de story del arnés pasan). Esa forma pide un espacio antes del número y un nombre de rama no tiene
-  espacios: el nombre se mira además con los separadores vueltos espacios (`arreglo/pr-123` cuenta). No cuenta el
-  número del asunto que GitHub le pone a un merge hecho en su web («Merge pull request #N from …»): es de un pedido
-  que ya es público. Si ese control no está en el arnés que corre, los números no se miden y el freno lo dice;
+  espacios: el nombre se mira además con los separadores vueltos espacios (`arreglo/pr-123` cuenta). No cuenta un
+  pedido del repo público —el asunto con que GitHub mergea, «Merge pull request #N from …», nombra uno—: el control le
+  pregunta al remoto al que se empuja (en un rango o en un `gh`, al `origin` de GitHub) y, si no contesta, cuenta. Si
+  ese control no está en el arnés que corre, los números no se miden y el freno lo dice;
 - una cabecera de más en un commit (la marca que un merge incrusta): es texto que se publica con él;
 - las **rutas vedadas**: `.engram/`, `specs/`, `tasks/`, `inbox/` _(del repo del equipo; no está en esta copia)_, `.advisors/`, `.dashboard/`, y las que sume la lista
   privada en `forbiddenPaths`;

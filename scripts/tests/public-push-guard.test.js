@@ -328,17 +328,42 @@ test('T22_PrNumberInMessageBranchAndTag_Blocked_StoryNumbersPass', (t) => {
     git(fx.work, ['branch', '-f', name, clean]);
     assertPassed(guard(fx, branchLine(fx, name)));
   }
-  // El asunto que GitHub le pone a un merge hecho en su web trae el número de un pedido que ya es público: ese número
-  // no cuenta. Sólo ése: el mismo número en el cuerpo, o la misma frase en otra línea, sí.
-  commitOn(fx, 'merge-de-la-web', { 'guides/e.md': 'limpio\n' }, 'Merge pull request #1234 from acme/una-rama\n\nun arreglo');
-  assertPassed(guard(fx, branchLine(fx, 'merge-de-la-web')));
-  const inBody = commitOn(fx, 'merge-con-cuerpo', { 'guides/f.md': 'limpio\n' }, 'Merge pull request #1234 from acme/una-rama\n\nsigue lo del PR 1235');
-  assertBlocked(fx, guard(fx, branchLine(fx, 'merge-con-cuerpo')), { category: 'historia-interna', place: new RegExp(`el mensaje del commit ${inBody.slice(0, 10)} \\(línea 3\\)`), secret: ['1235'] });
-  commitOn(fx, 'no-es-el-asunto', { 'guides/g.md': 'limpio\n' }, 'docs: una nota\n\nMerge pull request #1234 from acme/una-rama');
-  assertBlocked(fx, guard(fx, branchLine(fx, 'no-es-el-asunto')), { category: 'historia-interna', secret: ['1234'] });
-  // y lo demás de esa primera línea se mira igual: el nombre de la rama que nombra
+  // y lo demás del asunto de un merge se mira igual: el nombre de la rama que nombra
   commitOn(fx, 'merge-con-termino', { 'guides/h.md': 'limpio\n' }, `Merge pull request #1234 from acme/${TERM.toLowerCase()}-x`);
   assertBlocked(fx, guard(fx, branchLine(fx, 'merge-con-termino')), { category: 'cliente', place: /el mensaje del commit/ });
+});
+
+// El asunto con que GitHub mergea («Merge pull request #N from …») trae el número de un pedido del repo PÚBLICO: no es
+// historia interna, y desde el pedido 100 coincide con la forma del número de pedido. Ya no hay una salvedad por la forma
+// del asunto: el control le pregunta al repo al que se empuja qué pedidos tiene (`git ls-remote`, sin la API de GitHub).
+// Acá el desnudo local hace de GitHub y publica el pedido como lo publica GitHub, `refs/pull/<N>/head`.
+test('T22_PublicPullRequestNumber_Passes_AzureNumberAndUnansweredPublicRepo_Blocked', (t) => {
+  const fx = lab(t);
+  // armados por partes: este archivo viaja, y la prueba de los números de pedido lo recorre como a cualquier otro
+  const pr = (words, num) => [words, num].join(' ');
+  const publishPr = (n) => git(fx.root, ['--git-dir', fx.publicUrl, 'update-ref', `refs/pull/${n}/head`, git(fx.root, ['--git-dir', fx.publicUrl, 'rev-parse', 'main'])]);
+  commitOn(fx, 'merge-de-la-web', { 'guides/e.md': 'limpio\n' }, `Merge ${pr('pull request', '#100')} from acme/una-rama\n\nun arreglo`);
+  // sin ese pedido en el público, el número cuenta: es lo que lo distingue de uno del equipo
+  assertBlocked(fx, guard(fx, branchLine(fx, 'merge-de-la-web')), { category: 'historia-interna', secret: ['100'] });
+  publishPr(100);
+  assertPassed(guard(fx, branchLine(fx, 'merge-de-la-web')));
+  // en cualquier línea: un pedido del público, nombrado con numeral, no es historia interna
+  commitOn(fx, 'nota', { 'guides/g.md': 'limpio\n' }, `docs: una nota\n\nsigue lo del ${pr('pull request', '#100')}`);
+  assertPassed(guard(fx, branchLine(fx, 'nota')));
+  // el mismo número escrito como lo escribe Azure (sin numeral: el asunto de un merge de Azure, o «PR N»), y uno con
+  // numeral que el público no tiene, cuentan
+  const azure = commitOn(fx, 'merge-de-azure', { 'guides/f.md': 'limpio\n' }, `Merge ${pr('pull request', '100')} from dev into main`);
+  assertBlocked(fx, guard(fx, branchLine(fx, 'merge-de-azure')), { category: 'historia-interna', place: new RegExp(`el mensaje del commit ${azure.slice(0, 10)} \\(línea 1\\)`), secret: [] });
+  const other = commitOn(fx, 'merge-con-cuerpo', { 'guides/i.md': 'limpio\n' }, `Merge ${pr('pull request', '#100')} from acme/una-rama\n\nsigue lo del ${pr('PR', '#4504')}`);
+  assertBlocked(fx, guard(fx, branchLine(fx, 'merge-con-cuerpo')), { category: 'historia-interna', place: new RegExp(`el mensaje del commit ${other.slice(0, 10)} \\(línea 3\\)`), secret: ['4504'] });
+  // si el repo público no contesta, nada es suyo: frena, y dice por qué (una dirección de GitHub que git se niega a
+  // usar en esta prueba es un GitHub que no contesta)
+  const silent = guard(fx, branchLine(fx, 'merge-de-la-web'), { url: 'https://github.com/acme/arnes-de-prueba' });
+  assertBlocked(fx, silent, { category: 'historia-interna', secret: [] });
+  assert.match(String(silent.json.publicProblem), /no pude preguntarle al repo público qué pedidos tiene/);
+  const said = guard(fx, branchLine(fx, 'merge-de-la-web'), { url: 'https://github.com/acme/arnes-de-prueba', args: [] });
+  assert.strictEqual(said.status, 1, said.all);
+  assert.match(said.all, /no pude preguntarle al repo público qué pedidos tiene/, 'la salida dice por qué no lo distinguió');
 });
 
 test('T22_ForbiddenPaths_EveryPrivateFolderAndTheListOnes_Blocked_NewGuidePasses', (t) => {
