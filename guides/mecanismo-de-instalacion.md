@@ -611,7 +611,7 @@ instalada y el arranque lo avisa. Azure contesta la página de login (302) tanto
 dos son «sin credencial o no vale», nunca «sin red»; 403 es «sin permiso de lectura (Code: Read)»; 404 nombra el repo o el
 proyecto. El valor del PAT no aparece en ninguna salida ni registro.
 
-**Qué trae la capa (lista cerrada).** Tres rutas exactas —`perfil-equipo.json` _(del repo del equipo; no está en esta copia)_, `scripts/metrics/corridas-buzon.json` _(del repo del equipo; no está en esta copia)_ y
+**Qué trae la capa (lista cerrada).** Tres rutas exactas —el perfil, `team-profile.json` _(del repo del equipo; no está en esta copia)_ (o `perfil-equipo.json`, su nombre de antes, que sigue valiendo: con los dos, gana el nuevo y el de antes no se apila), `scripts/metrics/corridas-buzon.json` _(del repo del equipo; no está en esta copia)_ y
 el mapa de renombres `scripts/lib/renames.json` _(del repo del equipo; no está en esta copia)_ (hasta su retiro, 2026-11-17)— y
 revisores y skills del equipo por patrón: `packs/<paquete>/pack.json`, `agents/<nombre>.md` y los `.md`
 de una skill bajo `skills/` (su carpeta, con `SKILL.md`, a una, dos o tres carpetas de `skills/`: `skills/<s>`,

@@ -32,7 +32,7 @@
 #
 # 🔴 EL ORIGEN SE FIJA LA PRIMERA VEZ Y DESPUÉS SE COMPARA (story 8.3, revisor de seguridad de la vuelta 2). Desde la
 # 8.3 la organización del equipo sale de la configuración, y esa configuración la puede escribir el propio asistente
-# (~/.claude/tycon.json, perfil-equipo.json del clon): verificar la URL del remoto contra ella ya no alcanza para decir
+# (~/.claude/tycon.json, el perfil del equipo del clon): verificar la URL del remoto contra ella ya no alcanza para decir
 # «este clon es el del equipo». Lo que el asistente NO puede escribir es /opt/tycon, que es de root: la primera
 # instalación deja ahí (`production/trusted-origin.json`) la URL y la organización que una PERSONA aceptó por
 # teclado, y cada instalación siguiente exige las mismas. Un cambio se acepta sólo con `--change-origin` y otra
@@ -241,7 +241,8 @@ ARCHIVOS=(
   scripts/production/node-official.json
   scripts/setup/harness/tycon-home.js
 )
-# El mapa de nombres viejos (story 8.9): lo exige el arnés del equipo (el que trae perfil-equipo.json) —sin él la copia de
+# El mapa de nombres viejos (story 8.9): lo exige el arnés del equipo (el que trae su perfil, team-profile.json o
+# perfil-equipo.json, el nombre de antes) —sin él la copia de
 # /opt leería sólo los nombres nuevos, callada—; la copia pública no lo lleva a propósito (nace con los nombres nuevos y
 # legacy-names.js sin mapa es paso directo), así que ahí no se pide. Lo decide lo publicado (o el disco en --no-sudo),
 # nunca un archivo de la máquina. Tanda C0, [DEF-8.9-COPIA]: era el T25 de la copia. Lo cuida T19p de instalar-freno.test.sh.
@@ -278,7 +279,9 @@ if [ "$DESDE_RELEASE" = 0 ]; then
   # organización». Sólo el archivo AUSENTE es un candidato vacío (cazador de fallos silenciosos, vuelta 2).
   CFG_ERR="$(/usr/bin/mktemp)" || muere "no pude crear un archivo temporal"
   RC_ORG=0
-  ORG="$(/usr/bin/python3 - "${TYCON_ADO_ORG:-}" "${ADO_ORG:-}" "${HOME_USUARIO:+$CLAUDE_LEIDA/tycon.json}" "$ARNES/perfil-equipo.json" 2>"$CFG_ERR" <<'PY'
+  # el perfil del equipo con su nombre de hoy; si no está, el de antes, que sigue valiendo (con los dos, gana el nuevo)
+  PERFIL_ARNES="$ARNES/team-profile.json"; [ -f "$PERFIL_ARNES" ] || PERFIL_ARNES="$ARNES/perfil-equipo.json"
+  ORG="$(/usr/bin/python3 - "${TYCON_ADO_ORG:-}" "${ADO_ORG:-}" "${HOME_USUARIO:+$CLAUDE_LEIDA/tycon.json}" "$PERFIL_ARNES" 2>"$CFG_ERR" <<'PY'
 import json, re, sys
 # la misma forma canónica que tycon-config.js (normalizarOrg): https://dev.azure.com/<org>; acepta <org>.visualstudio.com,
 # usuario, barra final y espacios — sin esto, `${ORG##*/}` daba vacío y el clon del equipo se rechazaba
@@ -376,7 +379,7 @@ fi
 if [ "$SIN_SUDO" = 1 ] || [ "$DESDE_RELEASE" = 1 ]; then
   # en pruebas, el disco; la versión bajada también se copia del disco, pero YA VERIFICADA archivo por archivo (0a), y su
   # mapa de nombres viejos entra sólo si el manifiesto lo trae (decidido arriba)
-  if [ "$DESDE_RELEASE" = 0 ]; then { [ -f "$ARNES/perfil-equipo.json" ] || [ -f "$ARNES/$MAPA_NOMBRES" ]; } && CON_MAPA=1; fi
+  if [ "$DESDE_RELEASE" = 0 ]; then { [ -f "$ARNES/team-profile.json" ] || [ -f "$ARNES/perfil-equipo.json" ] || [ -f "$ARNES/$MAPA_NOMBRES" ]; } && CON_MAPA=1; fi
   if [ "$DESDE_RELEASE" = 1 ]; then
     # 🔴 sólo se copia lo que el manifiesto trae: un archivo puesto a mano en ~/.tycon/harness (renames.json en una versión
     # pública, por ejemplo) no existe en la versión y no entra a /opt (pase adversarial de la D, clases 4 y 17)
@@ -395,7 +398,7 @@ else
     || muere "no pude traer lo publicado (git fetch falló). Sin eso no instalo: el disco del clon lo puede tocar el asistente."
   REF="$(como_usuario /usr/bin/git -C "$ARNES" rev-parse FETCH_HEAD)" || muere "no pude leer lo que trajo el fetch"
   # ¿lo publicado es el arnés del equipo, o trae el mapa? (un listado que falla no es «no hay»: frena)
-  HAY="$(como_usuario /usr/bin/git -C "$ARNES" ls-tree --name-only "$REF" -- perfil-equipo.json "$MAPA_NOMBRES")" \
+  HAY="$(como_usuario /usr/bin/git -C "$ARNES" ls-tree --name-only "$REF" -- team-profile.json perfil-equipo.json "$MAPA_NOMBRES")" \
     || muere "no pude listar lo publicado (origin/main $REF) para saber si lleva el mapa de nombres viejos"
   [ -n "$HAY" ] && CON_MAPA=1
   como_usuario /usr/bin/git -C "$ARNES" archive "$REF" "${ARCHIVOS[@]}" $(extras_del_equipo) | /usr/bin/tar -x -C "$ORIGEN" \

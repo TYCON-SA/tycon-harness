@@ -481,7 +481,7 @@ test('T45 ProfileFold_Classify_MachineWins_TransitionKeysSkipped_LineText', () =
   const ctx2 = { home: home2, env: { TYCON_HOME: path.join(home2, '.tycon') }, platform: process.platform, opts: {} };
   const f2 = MH.__test.profileFold({ ctx: ctx2, oldTree: tree2, ownConfigData: null });
   assert.equal(f2.status, 'absent'); assert.deepEqual(f2.moves, []);
-  assert.match(MH.__test.profileFoldLine(f2, '/x/config.json'), /perfil del equipo: el clon no trae perfil-equipo\.json — nada que pasar/);
+  assert.match(MH.__test.profileFoldLine(f2, '/x/config.json'), /perfil del equipo: el clon no trae team-profile\.json \(ni perfil-equipo\.json, el nombre de antes\) — nada que pasar/);
   writeJson(path.join(tree2, 'perfil-equipo.json'), { packs: { default: 'all' } });
   const anulado = MH.__test.profileFold({ ctx: { ...ctx2, env: { ...ctx2.env, TYCON_PROFILE: '0' } }, oldTree: tree2, ownConfigData: null });
   assert.equal(anulado.status, 'absent', 'TYCON_PROFILE=0 corre sin perfil');

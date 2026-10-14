@@ -34,7 +34,7 @@ acá **textuales**, sin perder una palabra.
 El árbol del arnés como está hoy, con la ruta entera de cada carpeta.
 
 ```
-INDEX.md · README.md · README.es.md · INSTALL.md · story-format.md · engram-version · perfil-equipo.json
+INDEX.md · README.md · README.es.md · INSTALL.md · story-format.md · engram-version · team-profile.json
 scripts/install-tycon-hooks.sh · .ps1   los llama la línea de arranque de cada máquina
 scripts/setup/              instalar y mantener cada máquina al día
 scripts/hooks/              lo que registra el instalador + los dos hooks globales de git — plano
@@ -170,7 +170,7 @@ de los cinco revisores se re-corrió igual. Red: `tycon-pipeline/scripts/tests/p
 `package-equivalence.test.js` (contra la foto dorada de `main`, `tests/fixtures/equivalence-main.json`)
 y `scripts/tests/installed-packs.test.js`.
 
-## scripts/lib/tycon-config.js + perfil-equipo.json — la configuración del arnés
+## scripts/lib/tycon-config.js + team-profile.json — la configuración del arnés
 
 *`scripts/lib/tycon-config.js` · el perfil del equipo · `~/.claude/tycon.json` · el enlace `~/.claude/tycon-harness`
 (`scripts/lib/canonical-path.js --ensure-link`) · agent-skills `skills/tycon-pipeline/scripts/lib/harness-path.js` ·
