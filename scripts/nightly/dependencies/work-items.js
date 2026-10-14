@@ -1233,18 +1233,66 @@ const AYUDA = `work-items.js — el pedido de trabajo del líder (un Bug por pro
   --today <fecha>  fija la fecha (pruebas)
   --simulate       no escribe nada aunque «pedidos_activos» esté encendido
   --json           vuelca la sección «pedidos»
+  --team-repos <f> team-repos.json: con operations.platform «github» corre github-issues.js (issues en vez de Bugs).
+                   Por defecto el de la raíz del árbol; sin él, Azure
 
 Habla con Azure sólo por TYCON_ADO_CMD (por defecto az) y necesita AZURE_DEVOPS_EXT_PAT.
 Exit: 0 habló con Azure (los fallos por par van al snapshot) · 2 no pudo intentar nada.`;
 
+/**
+ * La plataforma de los avisos (story 8.31): `operations.platform` de team-repos.json (`--team-repos <f>`, por defecto el
+ * de la raíz del árbol, que trae el repo de operaciones). Sin el archivo, Azure, como siempre. Con un archivo que no
+ * valida, o pedido con `--team-repos` y ausente, no se adivina: `{ error }`.
+ * Devuelve `{ plataforma, argv }` con `--team-repos` ya sacado de los argumentos.
+ */
+function elegirPlataforma(argv) {
+  const out = [];
+  let archivo = path.join(RAIZ_REPO, 'team-repos.json'), explicito = false;
+  for (let i = 0; i < argv.length; i++) {
+    if (i >= 2 && argv[i] === '--team-repos') { archivo = path.resolve(String(argv[++i] || '')); explicito = true; } else out.push(argv[i]);
+  }
+  if (!explicito && !fs.existsSync(archivo)) return { plataforma: 'azure', argv: out };
+  const r = require('../../lib/team-repos.js').load(archivo);
+  if (!r.ok) return { error: `${archivo} no sirve para elegir la plataforma (${r.problems.map((p) => (p.path ? `${p.path}: ${p.message}` : p.message)).join('; ')}) — no se adivina` };
+  return { plataforma: r.data.operations.platform, argv: out };
+}
+
+/** Una entrada de GitHub en repos.json con la plataforma Azure es una mezcla (decisión 19 de la 8.31): no se adivina. */
+function mezclaEnAzure(configFile) {
+  let cfg;
+  try { cfg = JSON.parse(fs.readFileSync(configFile, 'utf8')); } catch { return null; }   // lo dice el camino de siempre
+  const gh = ((cfg && cfg.repos) || []).filter((r) => r && r.github && !r.ado).map((r) => r.ruta);
+  return gh.length ? `repos.json trae entradas de GitHub (${gh.join(', ')}) y la plataforma de la organización es Azure: una organización, una plataforma` : null;
+}
+
 function main() {
-  const a = parseArgs(process.argv);
+  const p = elegirPlataforma(process.argv);
+  if (p.error) { console.error(`error: ${p.error}`); return 2; }
+  if (p.plataforma === 'github') return require('./github-issues.js').main(p.argv);
+  const a = parseArgs(p.argv);
+  if (!a.error && (a.cmd === 'run' || a.cmd === 'state')) {
+    const mezcla = mezclaEnAzure(a.config);
+    if (mezcla) { console.error(`error: ${mezcla}`); return 2; }
+  }
   if (a.error) { console.error(`error: ${a.error}\n\n${AYUDA}`); return 2; }
   if (a.cmd === 'run') return correr(a);
   if (a.cmd === 'state') return volcar(a);
   console.log(AYUDA);
   return a.cmd === 'help' ? 0 : 2;
 }
+
+// Exportado para la 4.5 (subcomando `state`, `avisarCerradosVivos`): reusa `crearAz`, los tres
+// lectores de Azure y el patrón de marcadores por proyecto en vez de copiarlos.
+module.exports = { parseArgs, crearAz, proyectosDeFicha, paresPorPedir, ordenarYTopar, deducirDueno,
+  resolverIdentidad, leerAdministradores, leerIteracion, iteracionVigente, tokensDeEtiquetas, yaMarcado,
+  marcar, anotarPedido, fallidasDeAnoche, hablar, correr,
+  // story 8.31: el programa de los issues de GitHub reusa la regla de reintento
+  isNoWorkItemStep, elegirPlataforma,
+  // story 8.30
+  responsables, responsablesDeRepos,
+  // story 4.5
+  personaMasReciente, leerCategorias, leerPedidoDeAzure, buscarHuerfanos, volcar, avisarCerradosVivos, adoptarHuerfanos,
+  textoCerradoVivo };
 
 // 🔴 `process.exitCode`, NO `process.exit()`. Este guión lo ejecuta otro proceso y le parsea la
 // salida; en Node las escrituras a una tubería son ASINCRÓNICAS y `process.exit()` mata el proceso
@@ -1253,18 +1301,9 @@ function main() {
 // un error. `main` acá es sincrónica y no deja manejadores abiertos, así que con `exitCode` el
 // proceso termina solo, cuando terminó de escribir.
 // Caso: guides/incident-log.md#informe-cortado-por-la-tuberia-2026-09-28
+// story 8.31: va DESPUÉS de module.exports — github-issues.js (que este main puede cargar) usa lo que exporta este guion.
 if (require.main === module) {
   // story 8.9: los nombres viejos (subcomandos y opciones en castellano) siguen andando hasta el retiro
   require('../../lib/legacy-names.js').aliasArgv('scripts/nightly/dependencies/work-items.js', { exitCode: 2, prefix: 'error: ' });
   process.exitCode = main();
 }
-// Exportado para la 4.5 (subcomando `state`, `avisarCerradosVivos`): reusa `crearAz`, los tres
-// lectores de Azure y el patrón de marcadores por proyecto en vez de copiarlos.
-module.exports = { parseArgs, crearAz, proyectosDeFicha, paresPorPedir, ordenarYTopar, deducirDueno,
-  resolverIdentidad, leerAdministradores, leerIteracion, iteracionVigente, tokensDeEtiquetas, yaMarcado,
-  marcar, anotarPedido, fallidasDeAnoche, hablar, correr,
-  // story 8.30
-  responsables, responsablesDeRepos,
-  // story 4.5
-  personaMasReciente, leerCategorias, leerPedidoDeAzure, buscarHuerfanos, volcar, avisarCerradosVivos, adoptarHuerfanos,
-  textoCerradoVivo };

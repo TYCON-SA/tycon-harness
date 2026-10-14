@@ -1860,6 +1860,22 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.31 (T1 a T8): los workflows modelo de GitHub Actions para los procesos de la noche (pipelines/operations/github/) — los archivos en su lugar, las reglas de seguridad (sin pull_request_target, acciones por sha, permisos mínimos, secretos sólo en el env de un paso, ninguna expresión dentro de un run:) con una copia alterada por regla, los efectos que valen en una corrida programada, y prepare-tree.sh, operations-auth.sh, el bloque que elige el arnés y clone-repos.sh corridos de verdad sobre repos de juguete. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/operations-github-workflows.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.31 (T9 a T14): los avisos de dependencias como issues de GitHub (scripts/nightly/dependencies/github-issues.js) con un gh de mentira (tests/lib/fake-gh.js) — crear con etiquetas, marca y asignado verificado; no repetir; tope y reintentos; cerrar sólo lo suyo y reabrir lo que cerró; borrado, movido y 401; el volcado con la clave <repo>#<n>; la elección de plataforma de work-items.js por team-repos.json; y el cruce del nocturno con números de issue repetidos entre repos. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/github-issues.test.js",
+      "requiere": [],
+      "gate_only_when_touching": [
+        "scripts/nightly/**",
+        "scripts/lib/**"
+      ]
+    },
+    {
       "__nota": "story 8.10.3, tanda D (T17, pase adversarial): el buscador de identificadores de código en una copia (scripts/publishing/code-identifiers.js), que usa el bloque «8.10.3 D» de export-real sobre la copia de verdad. Con una lista y una copia de laboratorio: cada grafía se ve (pegada, con guion, con punto, en otra caja, con el separador repetido o escapado, empezando con un dígito), también en el nombre de un archivo o de una carpeta; una palabra más larga que lo contiene y la palabra común que el término declara no son hallazgo; el rojo nombra al término por su número; y nunca da verde sin mirar. Viaja: no usa la lista privada.",
       "raiz": "arnes",
       "ruta": "tests/code-identifiers.test.js",

@@ -1,0 +1,7 @@
+{
+  "__doc": "EJEMPLO para una organización en GitHub. Va en la raíz de tu repo de operaciones (además del perfil del equipo, si tenés uno). Lector y forma: scripts/lib/team-repos.js. public: el repo público del arnés (o tu copia pública); los workflows lo traen de ahí. operations: el repo donde corren los workflows (si no coincide, la noche sale en rojo). profile: el perfil del equipo; si tu organización no tiene uno, poné tu repo de operaciones. harness_copies: repos que son copias del arnés (las métricas no los miden).",
+  "version": 1,
+  "public": { "platform": "github", "org": "acme", "repo": "harness" },
+  "profile": { "platform": "github", "org": "acme", "repo": "harness-team-profile" },
+  "operations": { "platform": "github", "org": "acme", "repo": "operations" }
+}
