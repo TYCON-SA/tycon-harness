@@ -95,7 +95,8 @@ todos:
 
 Un ejemplo: en ACME, Pedro administra y Juan programa.
 
-1. Pedro crea los dos repos de ACME, en su Azure DevOps o en su GitHub, con acceso sólo para el equipo.
+1. Pedro crea los dos repos de ACME, en su Azure DevOps o en su GitHub, con acceso sólo para el equipo. Para el perfil
+   puede partir de [un perfil de ejemplo](https://github.com/TYCON-SA/harness-team-profile-example), listo para copiar.
 2. Pedro corre `node ~/.claude/tycon-harness/scripts/setup/harness.js team-config`. Se abre una página en su máquina,
    sin nada en internet, donde declara dónde vive cada repo y a quién se le asignan los avisos. La página revisa lo que
    escribe, lo guarda en el repo que corresponde y le ofrece el pull request.
