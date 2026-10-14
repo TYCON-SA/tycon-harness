@@ -107,7 +107,7 @@ An example: at ACME, Pedro is the administrator and Juan writes code.
    what belongs to the team.
 
 How the harness extends for your organization —the layers, the configuration page and a worked example— in an
-[interactive map](https://www.bizuit.com/sdd-harness/more/mapa-del-arnes.html) (in Spanish).
+[interactive map](https://www.bizuit.com/sdd-harness/more/mapa-del-arnes.html).
 
 **The nightly jobs.** On Azure DevOps, the dependency review, the cycle metrics and the dashboard run in your
 organization with three model pipelines and your operations repo: [how to set them up](pipelines/operations/README.md)
