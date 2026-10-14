@@ -267,6 +267,12 @@
       "requiere": []
     },
     {
+      "__nota": "el vigilante de producción (decisión 1 del dueño, story 8.26): el programa es público, con nombres inventados y apagado de fábrica; qué hosts mira es de cada organización (su repo de operaciones). Los umbrales de los casos salen del ejemplo pipelines/operations/examples/hosts.json.",
+      "raiz": "arnes",
+      "ruta": "tests/vigilante.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "arnes",
       "ruta": "tests/sync-codex-detection.test.sh",
       "requiere": []

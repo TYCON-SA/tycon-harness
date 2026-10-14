@@ -105,7 +105,6 @@
   },
   "__suitesOutside": "Suites que no viajan porque su código o sus datos quedan afuera: la suite y su entrada de scripts/tests/suites.json salen juntas. Una suite cuyo ARCHIVO no sale pierde su entrada sola; éstas son las que salen como archivo pero no andarían. La lista definitiva la da la corrida de las suites portables en la copia (tanda B, T22).",
   "suitesOutside": [
-    { "root": "arnes", "path": "tests/vigilante.test.js", "reason": "su código vive en scripts/nightly/watcher/, que queda afuera" },
     { "root": "arnes", "path": "tests/nightly-dependencies.test.sh", "reason": "su código vive en scripts/nightly/dependencies/, que queda afuera" },
     { "root": "arnes", "path": "tests/work-items.test.sh", "reason": "prueba scripts/nightly/dependencies/work-items.js, que queda afuera" },
     { "root": "arnes", "path": "tests/work-item-status.test.sh", "reason": "prueba scripts/nightly/dependencies/, que queda afuera" },
@@ -133,9 +132,7 @@
     { "root": "arnes", "path": "tests/mirror-pipeline.test.sh", "reason": "prueba pipelines/azure-pipelines-public-leak-check.yml y lee scripts/publishing/public-repos.json, que quedan afuera: en la copia no hay pipeline de publicación que medir (story 8.8, tanda B)" },
     { "root": "arnes", "path": "tests/legacy-names-product-pipeline.test.sh", "reason": "necesita un commit del repo del equipo (su dato de prueba BASE): afuera no corre nunca (story 8.10.3)" }
   ],
-  "casesOutside": [
-    { "path": "scripts/controls-bench/cases/hooks/31-vigilante.json", "reason": "prueba el CLI de scripts/nightly/watcher/, que queda afuera" }
-  ],
+  "casesOutside": [],
   "__empty": "Claves de un JSON del arnés que no viajan con su valor: quedan vacías y el resto del archivo igual.",
   "empty": {
     "scripts/controls-bench/exam-config.json": ["designated_machine"],
@@ -148,6 +145,7 @@
     { "path": ".engram/", "reason": "la memoria que engram exporta al repo para que viaje por git" },
     { "path": ".engram-project", "reason": "el archivo con que un repo dice cuál es su proyecto de engram" },
     { "path": ".dashboard/", "reason": "las métricas locales que el pipeline deja en el repo donde corre" },
+    { "path": "inbox/watcher/", "reason": "la cola de borradores del vigilante de producción: vive en el repo de operaciones de cada organización, donde la deja su pipeline nocturno (story 8.26, decisión 1)" },
     { "path": "_bmad/", "reason": "la configuración de BMAD que se instala en el repo de quien lo usa" },
     { "path": "qa/", "reason": "la guía del tester que el pipeline escribe al lado de las stories del repo" },
     { "path": "tasks", "reason": "la carpeta de pendientes de cada repo (la carpeta suelta)" },
