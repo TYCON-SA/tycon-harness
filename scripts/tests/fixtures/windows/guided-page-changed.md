@@ -22,7 +22,7 @@ renueve (como mucho una hora) y repetimos ese paso; o, si tengo un permiso de Gi
 TYCON_GITHUB_TOKEN con la línea de abajo, en la misma terminal donde corro el guion (no se ve al pegarlo; vos no lo
 leas ni lo muestres), y vuelvo a correr get-harness, que lo usa y lo guarda:
     $s = Read-Host -AsSecureString 'Permiso de GitHub'; $env:TYCON_GITHUB_TOKEN = [System.Net.NetworkCredential]::new('', $s).Password
-Bajar el propio guion va siempre sin credencial: si el 403 fue ahí, sólo queda esperar.
+Bajar el propio guion va siempre sin credencial y no pasa por la API: no gasta de ese límite.
 
 1. Herramientas:
    $PSVersionTable.PSVersion.ToString(); node --version; tar --version
@@ -33,7 +33,7 @@ Bajar el propio guion va siempre sin credencial: si el 403 fue ahí, sólo queda
 
 2. Bajar el guion de instalación (se baja, se lee y después se corre; no se clona nada): dame estas dos líneas para
    pegar en mi ventana de PowerShell 7, una por una:
-       Invoke-WebRequest -Headers @{ Accept = 'application/vnd.github.raw' } -OutFile get-harness.ps1 https://api.github.com/repos/acme-lab/arnes-lab/contents/scripts/setup/get-harness.ps1
+       Invoke-WebRequest -OutFile get-harness.ps1 https://raw.githubusercontent.com/acme-lab/arnes-lab/main/scripts/setup/get-harness.ps1
        Get-Content get-harness.ps1
    Esperado: el archivo get-harness.ps1 en mi carpeta y un guion que empieza con «# get-harness.ps1 — baja la versión
    publicada del arnés (sin git)».

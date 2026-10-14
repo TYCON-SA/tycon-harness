@@ -81,22 +81,23 @@ brew install node python
 ### 2. Bajar e instalar
 
 Abrí una terminal en cualquier carpeta y pegá las líneas de tu sistema, una por una: las de `bash` en Mac, Linux y WSL;
-las de `powershell` en Windows nativo. La primera baja el guion de instalación por la API de GitHub, sin credencial; la
-segunda lo muestra, para que leas lo que vas a correr; la tercera lo corre. El guion revisa los requisitos, baja la
-versión publicada como archivos (sin git, sin clon) a una carpeta temporal y sigue con `harness.js install --version
-latest` en la misma terminal. Son tres líneas a propósito: una bajada con tubería directa a un shell la bloquea el freno
-de comandos (`SUP-C1`). El guion nunca instala paquetes del sistema ni usa `sudo`. Las opciones de `install` van después
-de `--`: `bash get-harness.sh -- <opciones>`.
+las de `powershell` en Windows nativo. La primera baja el guion de instalación de la dirección pública de archivos de
+GitHub (`raw.githubusercontent.com`), sin credencial y sin pasar por la API; la segunda lo muestra, para que leas lo
+que vas a correr; la tercera lo corre. El guion revisa los requisitos, baja la versión publicada como archivos (sin
+git, sin clon) a una carpeta temporal y sigue con `harness.js install --version latest` en la misma terminal. Son
+tres líneas a propósito: una bajada con tubería directa a un shell la bloquea el freno de comandos (`SUP-C1`). El guion
+nunca instala paquetes del sistema ni usa `sudo`. Las opciones de `install` van después de `--`:
+`bash get-harness.sh -- <opciones>`.
 
 <!-- install:core -->
 ```bash
-curl -fsSL -H "Accept: application/vnd.github.raw" -o get-harness.sh https://api.github.com/repos/TYCON-SA/tycon-harness/contents/scripts/setup/get-harness.sh
+curl -fsSL -o get-harness.sh https://raw.githubusercontent.com/TYCON-SA/tycon-harness/main/scripts/setup/get-harness.sh
 less get-harness.sh
 bash get-harness.sh
 ```
 
 ```powershell
-Invoke-WebRequest -Headers @{ Accept = 'application/vnd.github.raw' } -OutFile get-harness.ps1 https://api.github.com/repos/TYCON-SA/tycon-harness/contents/scripts/setup/get-harness.ps1
+Invoke-WebRequest -OutFile get-harness.ps1 https://raw.githubusercontent.com/TYCON-SA/tycon-harness/main/scripts/setup/get-harness.ps1
 Get-Content get-harness.ps1
 pwsh -File get-harness.ps1
 ```
@@ -108,7 +109,7 @@ de nuevo. Con un permiso de GitHub propio te ahorrás la espera del guion: ponel
 esa terminal y corré el guion de nuevo (en Mac y Linux, `read -rs TYCON_GITHUB_TOKEN && export TYCON_GITHUB_TOKEN`; en
 PowerShell 7, `$env:TYCON_GITHUB_TOKEN = Read-Host -MaskInput`). El guion usa el permiso y lo guarda en
 `~/.tycon/config.json`, que sólo tu usuario puede leer; `harness.js config unset github.token` lo saca. La primera
-línea, la que baja el guion, nunca lleva credencial.
+línea, la que baja el guion, nunca lleva credencial y no pasa por la API: no gasta de ese límite.
 
 `install` no escribe nada sin avisarte antes: hace tres preguntas, después muestra el plan y pregunta «¿Instalo?». Para ver
 sólo el plan, sin instalar, agregá `--dry-run`.
@@ -162,13 +163,13 @@ para apuntarla. Qué cambia con esa clave está en «Qué escribe en tu máquina
 
 <!-- install:unattended -->
 ```bash
-curl -fsSL -H "Accept: application/vnd.github.raw" -o get-harness.sh https://api.github.com/repos/TYCON-SA/tycon-harness/contents/scripts/setup/get-harness.sh
+curl -fsSL -o get-harness.sh https://raw.githubusercontent.com/TYCON-SA/tycon-harness/main/scripts/setup/get-harness.sh
 less get-harness.sh
 bash get-harness.sh -- --profile minimal --yes
 ```
 
 ```powershell
-Invoke-WebRequest -Headers @{ Accept = 'application/vnd.github.raw' } -OutFile get-harness.ps1 https://api.github.com/repos/TYCON-SA/tycon-harness/contents/scripts/setup/get-harness.ps1
+Invoke-WebRequest -OutFile get-harness.ps1 https://raw.githubusercontent.com/TYCON-SA/tycon-harness/main/scripts/setup/get-harness.ps1
 Get-Content get-harness.ps1
 pwsh -File get-harness.ps1 -- --profile minimal --yes
 ```
@@ -178,8 +179,7 @@ Con `--yes` se acepta el plan sin que nadie lo vea: conviene mirarlo antes con `
 el bloque instala el mínimo, o `--profile full` para el arnés completo. Sin terminal el guion no pregunta nada. Donde
 muchas máquinas comparten una dirección, como un agente de compilación, el límite de arriba se alcanza seguido.
 `TYCON_GITHUB_TOKEN`, puesto como arriba, cubre lo que piden el guion y la instalación. La línea que baja el guion va
-sin credencial igual, y un 403 ahí sólo se pasa esperando: en una máquina así, bajá el guion una vez y guardalo con la
-imagen de la máquina.
+sin credencial igual y no pasa por la API: no gasta de ese límite, y el 403 de la API no la frena.
 
 **Modo desarrollador (para cambiar el arnés, no para usarlo).** Quien mantiene el arnés clona este repo e instala desde
 el clon: esa máquina corre el arnés desde el clon y actualizarlo es suyo (`harness.js link --local <clon>` apunta una
