@@ -415,7 +415,7 @@ if corre T33; then
     foto "$BASE/t33/antes"; COPIAS="$(copias_de repoint)"
     SALIDA="$(con_llave harness update 2>&1)"; RC=$?
     foto "$BASE/t33/despues"
-    [ "$RC" = 2 ] && printf '%s' "$SALIDA" | grep -q -- "$2" && printf '%s' "$SALIDA" | grep -q "$FRASE" \
+    [ "$RC" = 2 ] && printf '%s' "$SALIDA" | grep -- "$2" >/dev/null && printf '%s' "$SALIDA" | grep "$FRASE" >/dev/null \
       && ok "T33 $1: update sale 2 y nombra la causa" || mal "T33 $1: rc $RC, sin «$2»: $SALIDA"
     igual "$BASE/t33/antes" "$BASE/t33/despues" \
       && ok "T33 $1: no se movió NINGUNA de las dos fuentes ni nada del clon (aun con versión nueva publicada)" || mal "T33 $1: algo se movió: $(diff "$BASE/t33/antes" "$BASE/t33/despues" | head -8)"
@@ -806,7 +806,7 @@ if corre BACK; then
     foto "$BASE/back/antes"; COPIAS="$(copias_de repoint-back)"
     SALIDA="$(harness update 2>&1)"; RC=$?
     foto "$BASE/back/despues"
-    [ "$RC" = 2 ] && printf '%s' "$SALIDA" | grep -q -- "$2" && printf '%s' "$SALIDA" | grep -q "$FRASE_VUELTA" && printf '%s' "$SALIDA" | grep -q "movelo o borralo" \
+    [ "$RC" = 2 ] && printf '%s' "$SALIDA" | grep -- "$2" >/dev/null && printf '%s' "$SALIDA" | grep "$FRASE_VUELTA" >/dev/null && printf '%s' "$SALIDA" | grep "movelo o borralo" >/dev/null \
       && ok "BACK $1: la vuelta sale 2, nombra la ruta ($2) y qué hacer" || mal "BACK $1: rc $RC: $SALIDA"
     igual "$BASE/back/antes" "$BASE/back/despues" && [ "$(copias_de repoint-back)" = "$COPIAS" ] \
       && ok "BACK $1: no se tocó nada del clon" || mal "BACK $1: algo se movió: $(diff "$BASE/back/antes" "$BASE/back/despues" | head -8)"
@@ -1194,7 +1194,7 @@ if corre POP; then
   SALIDA="$(blind_git '* merge -q --ff-only refs/remotes/origin/*|* stash pop *' harness update 2>&1)"; RC=$?
   [ "$RC" != 0 ] && case "$SALIDA" in *"stash list"*) true ;; *) false ;; esac \
     && ok "POP advance: el merge y la reaplicación fallaron: update lo dice, nombrando stash list" || mal "POP advance (rc $RC) no dice dónde quedó lo del dev: $SALIDA"
-  sk stash show -p 'stash@{0}' 2>/dev/null | grep -q 'un cambio del dev sin commitear' \
+  sk stash show -p 'stash@{0}' 2>/dev/null | grep 'un cambio del dev sin commitear' >/dev/null \
     && ok "POP advance: …y lo del dev está en el stash (no se perdió nada)" || mal "POP advance: lo del dev no está en el stash: $(sk stash list)"
   # espejo: si sólo falla el merge, lo del dev vuelve al árbol de trabajo y no se habla de ningún stash
   sk stash pop -q >/dev/null 2>&1
@@ -1209,7 +1209,7 @@ if corre POP; then
   SALIDA="$(blind_git '* reset -q --hard *|* stash pop *' harness startup 2>&1)"; RC=$?
   AVISO="$SALIDA $(estado 'd.notice')"
   case "$AVISO" in *"stash list"*) ok "POP revert: el reset y la reaplicación fallaron: la vuelta lo dice, nombrando stash list" ;; *) mal "POP revert (rc $RC) no dice dónde quedó lo del dev: $AVISO" ;; esac
-  sk stash show -p 'stash@{0}' 2>/dev/null | grep -q 'otro cambio del dev sin commitear' \
+  sk stash show -p 'stash@{0}' 2>/dev/null | grep 'otro cambio del dev sin commitear' >/dev/null \
     && ok "POP revert: …y lo del dev está en el stash (no se perdió nada)" || mal "POP revert: lo del dev no está en el stash: $(sk stash list)"
   # espejo (tercera vuelta del revisor de pruebas): si sólo falla el reset, lo del dev vuelve a su lugar y no se nombra
   # ningún stash

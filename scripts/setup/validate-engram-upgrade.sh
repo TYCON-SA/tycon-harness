@@ -37,7 +37,7 @@ for R in "$ARNES" ${TYCON_ENGRAM_TEST_REPOS:-}; do
     continue
   fi
   OUT="$(cd "$R" && engram sync --import 2>&1)"
-  if echo "$OUT" | grep -qiE "error|panic|failed|corrupt|unsupported"; then
+  if echo "$OUT" | grep -iE "error|panic|failed|corrupt|unsupported" >/dev/null; then
     bad "$(basename $R): $(echo "$OUT" | head -2 | tr '\n' ' ')"
   else
     ok "$(basename $R): $(echo "$OUT" | grep -iE 'chunk|import' | head -1)"
@@ -58,7 +58,7 @@ if [ ! -f "$ARNES/.engram-project" ] && [ ! -d "$ARNES/.engram" ]; then
   echo "  – este repo no lleva memoria (sin .engram-project ni .engram/): no hay manifest que comparar — NO MEDIDO, no es un ✓"
 else
   OUT="$(cd "$ARNES" && engram sync --project tycon 2>&1)"
-  echo "$OUT" | grep -qiE "error|panic|failed" && bad "sync falló: $(echo "$OUT"|head -2)" || ok "sync escribió sin error"
+  echo "$OUT" | grep -iE "error|panic|failed" >/dev/null && bad "sync falló: $(echo "$OUT"|head -2)" || ok "sync escribió sin error"
   MV="$(python3 -c "import json;print(json.load(open('$ARNES/.engram/manifest.json'))['version'])" 2>/dev/null)"
   [ "$MV" = "1" ] && ok "manifest sigue en version 1 (mismo formato que 1.12)" \
     || bad "manifest cambió a version $MV — 1.20 NO es compatible, NO propagar"

@@ -1891,6 +1891,12 @@
       "requiere": []
     },
     {
+      "__nota": "Ningún guion de pruebas con pipefail pasa una tubería a `grep -q` (2026-10-14): con pipefail, `… | grep -q` es una carrera (grep corta apenas encuentra, lo de la izquierda muere por SIGPIPE y la tubería da falso). Así salían rojas de a ratos release-notes y otras en public-ci; se cambiaron 491 líneas de 71 suites a `| grep … >/dev/null`. También 4 líneas de dos guiones del producto (install-clockify-mcp.sh y validate-engram-upgrade.sh). Mira todos los .sh de scripts/ y skills/; viaja.",
+      "raiz": "arnes",
+      "ruta": "tests/grep-q-pipefail.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "Parte 1 de 2 de tests/internal-history-guard.test.js (ninguna suite pasa de 45 s; el archivo entero no se registra, scripts/tests/lib/suite-parts.js). story 8.26, tanda G1 (T27-T28): el control de historia interna en la prosa que se publica (scripts/publishing/internal-history.js) — las formas con su rojo y su verde, lo neto por archivo y por padre con commits de verdad en repos de juguete (con la forma del repo público y con la del repo del equipo, con lista y tabla sintéticas), los modos, la constancia y la cuenta de todo. Viaja: en la copia corre en modo público.",
       "raiz": "arnes",
       "ruta": "tests/internal-history-guard.p1.test.js",

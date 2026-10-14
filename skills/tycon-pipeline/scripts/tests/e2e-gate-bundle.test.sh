@@ -92,7 +92,7 @@ if [ "$RC" = "0" ] && [ -f "$T/recompilo.txt" ]; then
 else
   mal "C-02 no recompiló (exit $RC, rastro=$([ -f "$T/recompilo.txt" ] && echo sí || echo no))"
 fi
-evidencia "$T" | grep -qi "bundle: bundle recompilado" \
+evidencia "$T" | grep -i "bundle: bundle recompilado" >/dev/null \
   && ok "C-02 la evidencia deja dicho que se recompiló" \
   || mal "C-02 la evidencia no dice que se recompiló — un verde sin esa línea no se puede auditar"
 rm -rf "$T"
@@ -106,7 +106,7 @@ if [ "$RC" = "0" ] && [ ! -f "$T/recompilo.txt" ]; then
 else
   mal "C-03 un repo que no usa el control fue afectado (exit $RC)"
 fi
-evidencia "$T" | grep -qi "bundle: no declarado" \
+evidencia "$T" | grep -i "bundle: no declarado" >/dev/null \
   && ok "C-03 y la evidencia lo dice: «no declarado», no un silencio" \
   || mal "C-03 la evidencia no distingue «no declarado» de «al día»"
 rm -rf "$T"
@@ -120,7 +120,7 @@ if [ "$RC" = "0" ] && [ ! -f "$T/recompilo.txt" ]; then
 else
   mal "C-04 recompiló teniendo el bundle al día (exit $RC)"
 fi
-evidencia "$T" | grep -qi "bundle: bundle al día" \
+evidencia "$T" | grep -i "bundle: bundle al día" >/dev/null \
   && ok "C-04 la evidencia dice «al día»" || mal "C-04 la evidencia no dice que estaba al día"
 rm -rf "$T"
 
@@ -166,7 +166,7 @@ T=$(mktemp -d); montar "$T" "$NUEVO" "$VIEJO"; declarar "$T" nada; pagina_dev "$
 RC=$(correr "$T")
 [ "$RC" = "0" ] && ok "C-08 sin declarar, con dev.html y el bundle al día: corre (exit 0)" \
                 || mal "C-08 frenó con el bundle al día (exit $RC)"
-evidencia "$T" | grep -q "bundle: .*dev.html" && ok "C-08 la evidencia dice que lo detectó en dev.html, no «no declarado»" \
+evidencia "$T" | grep "bundle: .*dev.html" >/dev/null && ok "C-08 la evidencia dice que lo detectó en dev.html, no «no declarado»" \
                                               || { mal "C-08 la evidencia no dice de dónde salió el bundle"; evidencia "$T" | grep bundle; }
 rm -rf "$T"
 
@@ -175,7 +175,7 @@ T=$(mktemp -d); montar "$T" AUSENTE "$NUEVO"; declarar "$T" nada; pagina_dev "$T
 RC=$(correr "$T")
 [ "$RC" = "0" ] && ok "C-09 dev.html nombra un bundle que no existe: no se inventa un veredicto (exit 0)" \
                 || mal "C-09 frenó por un archivo que dev.html nombra pero no está (exit $RC)"
-evidencia "$T" | grep -qi "no existe" && ok "C-09 y la evidencia lo dice" || mal "C-09 la evidencia calla que el bundle no existe"
+evidencia "$T" | grep -i "no existe" >/dev/null && ok "C-09 y la evidencia lo dice" || mal "C-09 la evidencia calla que el bundle no existe"
 rm -rf "$T"
 
 echo

@@ -383,12 +383,12 @@ o3=$(aviso "$(cruce cerrados_vivos '[{"ficha":"abc12345","proyecto":"Proy A","pe
 o4=$(aviso "$(cruce no_leidos '[{"ficha":"abc12345","proyecto":"Proy A","pedido":101,"motivo":"x"}]')")
 o5=$(aviso "$(cruce huerfanos '[{"id":150,"proyecto":"Proy A","ficha":"abc12345"}]')")
 o6=$(aviso "$(cruce)")
-{ echo "$o1" | grep -q 'NO cruzó el estado de los pedidos' \
-  && echo "$o2" | grep -q 'no pudo leer el estado de los pedidos (sin token)' \
-  && echo "$o3" | grep -q '1 pedido(s) cerrado(s) con la vulnerabilidad viva — abc12345 en Proy A' \
-  && echo "$o4" | grep -q '1 pedido(s) no leído(s): no se puede decir que coincidan' \
-  && echo "$o5" | grep -q '1 Bug(s) del arnés que ninguna ficha nombra' \
-  && ! echo "$o6" | grep -qE 'cruzó|no pudo leer el estado|con la vulnerabilidad viva|no leído|ninguna ficha nombra'; } \
+{ echo "$o1" | grep 'NO cruzó el estado de los pedidos' >/dev/null \
+  && echo "$o2" | grep 'no pudo leer el estado de los pedidos (sin token)' >/dev/null \
+  && echo "$o3" | grep '1 pedido(s) cerrado(s) con la vulnerabilidad viva — abc12345 en Proy A' >/dev/null \
+  && echo "$o4" | grep '1 pedido(s) no leído(s): no se puede decir que coincidan' >/dev/null \
+  && echo "$o5" | grep '1 Bug(s) del arnés que ninguna ficha nombra' >/dev/null \
+  && ! echo "$o6" | grep -E 'cruzó|no pudo leer el estado|con la vulnerabilidad viva|no leído|ninguna ficha nombra' >/dev/null; } \
   && ok "T22: el arranque dice «NO cruzó» sin la clave, «no pudo leer» con consultado:false, y cobra cerrados vivos, no leídos y Bugs sueltos; con todo en orden no suma nada" \
   || no "T22: ausente=«$(echo "$o1" | tr '\n' ' ' | cut -c1-160)» · consultado-false=«$(echo "$o2" | tr '\n' ' ' | cut -c1-160)» · cerrado-vivo=«$(echo "$o3" | tr '\n' ' ' | cut -c1-200)» · no-leído=«$(echo "$o4" | tr '\n' ' ' | cut -c1-160)» · suelto=«$(echo "$o5" | tr '\n' ' ' | cut -c1-160)» · limpio=«$(echo "$o6" | tr '\n' ' ' | cut -c1-160)»"
 
@@ -402,14 +402,14 @@ volcado_ok(){
   { [ -n "$k" ] && [ -n "$v" ] && [ -n "$r" ] && [ "$k" -lt "$v" ] && [ "$v" -lt "$r" ]; } || { echo "orden incorrecto o paso ausente — clonar=$k volcar=$v revisión=$r"; return; }
   paso=$(sed -n "$(( k + 1 )),$(( v + 3 ))p" "$Y")     # en este YAML el `script:` va antes de su displayName
   rev=$(sed -n "$(( v + 4 )),${r}p" "$Y")
-  echo "$paso" | grep -Eq -- "$VOLCAR" || { echo "el paso no corre «state»"; return; }
-  echo "$paso" | grep -qF 'AZURE_DEVOPS_EXT_PAT: $(System.AccessToken)' || { echo "el paso no tiene el token"; return; }
-  echo "$paso" | grep -q 'set -uo pipefail' || { echo "el paso no tiene pipefail"; return; }
-  ! echo "$paso" | grep -Eq '^[[:space:]]*continueOnError:' || { echo "el paso tiene continueOnError"; return; }
-  echo "$paso" | grep -q 'task.logissue type=warning' || { echo "el código 2 no deja un warning"; return; }
-  echo "$paso" | grep -q 'task.setvariable variable=HOY_NOCTURNO' || { echo "el paso no publica la fecha de la noche"; return; }
-  echo "$paso" | grep -Eq -- "${HOY_OPC} \"[\$]HOY\"" || { echo "«state» no recibe --today"; return; }
-  echo "$rev" | grep -q 'HOY_NOCTURNO:-' || { echo "la revisión no toma la fecha del volcado"; return; }
+  echo "$paso" | grep -E -- "$VOLCAR" >/dev/null || { echo "el paso no corre «state»"; return; }
+  echo "$paso" | grep -F 'AZURE_DEVOPS_EXT_PAT: $(System.AccessToken)' >/dev/null || { echo "el paso no tiene el token"; return; }
+  echo "$paso" | grep 'set -uo pipefail' >/dev/null || { echo "el paso no tiene pipefail"; return; }
+  ! echo "$paso" | grep -E '^[[:space:]]*continueOnError:' >/dev/null || { echo "el paso tiene continueOnError"; return; }
+  echo "$paso" | grep 'task.logissue type=warning' >/dev/null || { echo "el código 2 no deja un warning"; return; }
+  echo "$paso" | grep 'task.setvariable variable=HOY_NOCTURNO' >/dev/null || { echo "el paso no publica la fecha de la noche"; return; }
+  echo "$paso" | grep -E -- "${HOY_OPC} \"[\$]HOY\"" >/dev/null || { echo "«state» no recibe --today"; return; }
+  echo "$rev" | grep 'HOY_NOCTURNO:-' >/dev/null || { echo "la revisión no toma la fecha del volcado"; return; }
   echo "ok"
 }
 sin_linea(){ grep -vF -- "$1" "$YAML"; }
@@ -445,8 +445,8 @@ real=$(node -e 'try { const c = require(process.argv[1]); const m = c.azure && c
 o7=$(aviso "$(cruce huerfanos_no_consultados '[{"proyecto":"ProyB","motivo":"no pude consultar los Bugs del arnés (salió 1)"}]')")
 o8=$(aviso 'null')
 o9=$(aviso '"no soy un objeto"')
-{ echo "$o7" | grep -q 'no se pudo buscar Bugs sueltos en 1 proyecto(s) — ProyB' \
-  && echo "$o8" | grep -q 'cruce del estado de los pedidos está ILEGIBLE' && echo "$o9" | grep -q 'ILEGIBLE'; } \
+{ echo "$o7" | grep 'no se pudo buscar Bugs sueltos en 1 proyecto(s) — ProyB' >/dev/null \
+  && echo "$o8" | grep 'cruce del estado de los pedidos está ILEGIBLE' >/dev/null && echo "$o9" | grep 'ILEGIBLE' >/dev/null; } \
   && ok "C1/D1 (story 4.5, 5b): el arranque dice cuando no se pudo buscar Bugs sueltos, y un cruce que no es un objeto se dice ILEGIBLE en vez de callar" \
   || no "C1/D1: no-consultados=«$(echo "$o7" | tr '\n' ' ' | cut -c1-200)» · null=«$(echo "$o8" | tr '\n' ' ' | cut -c1-200)» · string=«$(echo "$o9" | tr '\n' ' ' | cut -c1-160)»"
 

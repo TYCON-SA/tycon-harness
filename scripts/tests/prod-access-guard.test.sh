@@ -91,8 +91,8 @@ printf '{"servers":[{"host":"sembrado.database.windows.net","environment":"no-pr
 mkdir -p "$TMP/afuera/.tycon"; ( cd "$TMP/afuera" && git init -q . ) >/dev/null 2>&1
 printf '{"servers":[{"host":"prod-b.database.windows.net","environment":"no-produccion"}]}' > "$TMP/afuera/.tycon/production.json"
 JSON_INDICE="$(HOME="$CASA" TYCON_REPOS_ROOT="$REPOS" node "$INDICE" --json 2>/dev/null)"
-if printf '%s' "$JSON_INDICE" | grep -q "sembrado.database.windows.net"; then no "T12a · entró un catálogo de node_modules al índice"; else ok "T12a · node_modules no entra al índice"; fi
-if printf '%s' "$JSON_INDICE" | grep -q "prod-b.database.windows.net"; then no "T12b · entró un catálogo de FUERA de la raíz de repos"; else ok "T12b · un catálogo fuera de la raíz no entra"; fi
+if printf '%s' "$JSON_INDICE" | grep "sembrado.database.windows.net" >/dev/null; then no "T12a · entró un catálogo de node_modules al índice"; else ok "T12a · node_modules no entra al índice"; fi
+if printf '%s' "$JSON_INDICE" | grep "prod-b.database.windows.net" >/dev/null; then no "T12b · entró un catálogo de FUERA de la raíz de repos"; else ok "T12b · un catálogo fuera de la raíz no entra"; fi
 frena "T12c · un host de fuera de la raíz es DESCONOCIDO y se frena" "sqlcmd -S prod-b.database.windows.net -Q \"select 1\""
 
 # ── T13 · el mismo host con dos ambientes: gana producción ────────────────────────────────────
@@ -378,11 +378,11 @@ done
 # T26 · el motivo nombra el archivo que el shell iba a tocar y la palabra de donde sale; lo que no escribe pasa (AC 16)
 mundo
 rc="$(corre "rm -f $P/production-{index,memory}.json")"
-if [ "$rc" = 2 ] && grep "Motivo:" "$TMP/err" | grep -q "$NI" && grep "Motivo:" "$TMP/err" | grep -q "{index,memory}"; then
+if [ "$rc" = 2 ] && grep "Motivo:" "$TMP/err" | grep "$NI" >/dev/null && grep "Motivo:" "$TMP/err" | grep "{index,memory}" >/dev/null; then
   ok "8.14 T26a BlockMessage_NamesExpandedFile (R2: el archivo y la palabra)"
 else no "8.14 T26a BlockMessage_NamesExpandedFile (R2: rc=$rc) — $(grep -m1 Motivo "$TMP/err")"; fi
 rc="$(corre "rm -f $P/{production-index,production-memory}.json")"
-if [ "$rc" = 2 ] && grep "Motivo:" "$TMP/err" | grep -q -e "$NI" -e "$NM" && ! grep -q "ESCRIBE sobre ~/.claude/.tycon-pipeline\.\?$" "$TMP/err"; then
+if [ "$rc" = 2 ] && grep "Motivo:" "$TMP/err" | grep -e "$NI" -e "$NM" >/dev/null && ! grep -q "ESCRIBE sobre ~/.claude/.tycon-pipeline\.\?$" "$TMP/err"; then
   ok "8.14 T26b BlockMessage_NamesExpandedFile (L7 nombra el archivo, no la carpeta)"
 else no "8.14 T26b BlockMessage_NamesExpandedFile (L7: rc=$rc) — $(grep -m1 Motivo "$TMP/err")"; fi
 pasa "8.14 T26c NonWritersPass (N6: otros archivos de la raíz del pipeline)" "rm -f $P/{timing,active}-x.json"

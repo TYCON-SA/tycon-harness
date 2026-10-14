@@ -86,7 +86,7 @@ grep -q 'variable=hasTests;isOutput=true\]false' "$TMP/v2.yml" && ok "3d: --outp
 # ---------------------------------------------------------------- 4. --fail hace fallar SÓLO el paso elegido
 node "$V" "$TMP/p.yml" --fail 'Run tests' > "$TMP/v3.yml" 2>/dev/null; rc=$?
 [ "$rc" -eq 0 ] && [ "$(grep -c 'exit 1' "$TMP/v3.yml")" -eq 1 ] && ok "4: --fail inyecta exactamente un exit 1" || no "4: --fail inyectó $(grep -c 'exit 1' "$TMP/v3.yml") (rc=$rc)"
-awk '/Run tests with coverage/{f=1} f&&/exit 1/{print "ok"; exit}' "$TMP/v3.yml" | grep -q ok || true
+awk '/Run tests with coverage/{f=1} f&&/exit 1/{print "ok"; exit}' "$TMP/v3.yml" | grep ok >/dev/null || true
 node "$V" "$TMP/p.yml" --fail 'NoExiste' > /dev/null 2>"$TMP/err4.txt"; rc=$?
 [ "$rc" -ne 0 ] && grep -q "ningún paso coincide" "$TMP/err4.txt" && ok "4b: --fail sin coincidencia sale ≠0 — una prueba que no falla nada no prueba nada" || no "4b: --fail sin coincidencia salió $rc"
 

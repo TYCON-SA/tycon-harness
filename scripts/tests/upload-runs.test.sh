@@ -164,7 +164,7 @@ touch -t 202601010101 "${T}/h/2.1-2026-09-01T1000.json"
 subir "${T}" "${T}/h" "Mac-De-Prueba.local"
 N=$(( $(puts "${T}/b") - ANTES ))
 [ "${RC}" -eq 0 ] && [ "${N}" = "1" ] && ok "T3 sólo el hilo que creció se re-subió (1 PUT)" || mal "T3 rc=${RC}, ${N} PUT(s) (esperaba 1)"
-tail -1 "${T}/b/pedidos.jsonl" | grep -q '2.2-2026-09-02T1100.hilo.jsonl.gz' && ok "T3 y fue el hilo reescrito" || mal "T3 el PUT fue otro: $(tail -1 "${T}/b/pedidos.jsonl")"
+tail -1 "${T}/b/pedidos.jsonl" | grep '2.2-2026-09-02T1100.hilo.jsonl.gz' >/dev/null && ok "T3 y fue el hilo reescrito" || mal "T3 el PUT fue otro: $(tail -1 "${T}/b/pedidos.jsonl")"
 cmp -s "${T}/h/2.2-2026-09-02T1100.hilo.jsonl.gz" "${T}/b/blobs/corridas/mac-de-prueba/2.2-2026-09-02T1100.hilo.jsonl.gz" && ok "T3 el blob quedó sobrescrito con el contenido nuevo" || mal "T3 el blob no se sobrescribió"
 ANTES=$(puts "${T}/b"); subir "${T}" "${T}/h" "Mac-De-Prueba.local"
 [ "$(puts "${T}/b")" = "${ANTES}" ] && ok "T3 después del touch, la pasada siguiente sigue sin subir (el hash se recordó)" || mal "T3 el touch provocó una subida en la pasada siguiente"
@@ -227,14 +227,14 @@ for CODIGO in 403 404; do
   echo "${CODIGO}" > "${T}/b/modo"
   subir "${T}" "${T}/h" "maq-a"
   [ "${RC}" -ne 0 ] && [ "$(campo "${T}" estado)" = "llave_invalida" ] && ok "T5 ${CODIGO} → exit ${RC}, estado llave_invalida" || mal "T5 ${CODIGO} → rc=${RC} estado=$(campo "${T}" estado)"
-  campo "${T}" motivo | grep -q 'vencida o revocada' && ok "T5 ${CODIGO} → el motivo dice «vencida o revocada»" || mal "T5 ${CODIGO} → motivo: $(campo "${T}" motivo)"
+  campo "${T}" motivo | grep 'vencida o revocada' >/dev/null && ok "T5 ${CODIGO} → el motivo dice «vencida o revocada»" || mal "T5 ${CODIGO} → motivo: $(campo "${T}" motivo)"
   [ -z "$(en_registro "${T}")" ] && [ "$(campo "${T}" subido)" = "false" ] && ok "T5 ${CODIGO} → nada anotado, subido=false" || mal "T5 ${CODIGO} → anotó algo o subido=true"
 done
 T="${BASE}/t5-red"; buzon "${T}/b"; config "${T}/cfg.json"; corrida "${T}/h" "4.1-2026-09-04T0800"
 for p in ${PIDS}; do :; done; kill "${p}" 2>/dev/null; sleep 0.2   # el último buzón: puerto cerrado
 subir "${T}" "${T}/h" "maq-a"
 [ "${RC}" -ne 0 ] && [ "$(campo "${T}" estado)" = "sin_red" ] && ok "T5 puerto cerrado → exit ${RC}, estado sin_red" || mal "T5 puerto cerrado → rc=${RC} estado=$(campo "${T}" estado)"
-campo "${T}" motivo | grep -q 'sin red' && ! campo "${T}" motivo | grep -q 'vencida' && ok "T5 puerto cerrado → el motivo dice «sin red» y no habla de la llave" || mal "T5 puerto cerrado → motivo: $(campo "${T}" motivo)"
+campo "${T}" motivo | grep 'sin red' >/dev/null && ! campo "${T}" motivo | grep 'vencida' >/dev/null && ok "T5 puerto cerrado → el motivo dice «sin red» y no habla de la llave" || mal "T5 puerto cerrado → motivo: $(campo "${T}" motivo)"
 [ -z "$(en_registro "${T}")" ] && ok "T5 sin red → nada anotado" || mal "T5 sin red → anotó algo"
 T="${BASE}/t5-500"; buzon "${T}/b"; config "${T}/cfg.json"; corrida "${T}/h" "4.1-2026-09-04T0800"; echo 500 > "${T}/b/modo"
 subir "${T}" "${T}/h" "maq-a"
@@ -249,7 +249,7 @@ echo "2 403" > "${T}/b/despues"
 subir "${T}" "${T}/h" "maq-a"
 [ "${RC}" -ne 0 ] && [ "$(campo "${T}" estado)" = "llave_invalida" ] && [ "$(campo "${T}" subido)" = "false" ] && ok "T5b 403 después de 2 subidas → exit ${RC}, llave_invalida, subido=false" || mal "T5b rc=${RC} estado=$(campo "${T}" estado) subido=$(campo "${T}" subido)"
 [ "$(campo "${T}" subidos)" = "2" ] && [ "$(en_registro "${T}" | wc -l | tr -d ' ')" = "2" ] && ok "T5b los 2 que el servicio confirmó quedan anotados y contados" || mal "T5b subidos=$(campo "${T}" subidos), registro $(en_registro "${T}" | wc -l)"
-campo "${T}" motivo | grep -qi 'no se marcó nada más' && ! campo "${T}" motivo | grep -qi 'no se marcó nada;' && ok "T5b el motivo no se contradice («no se marcó nada más» + los que sí)" || mal "T5b motivo: $(campo "${T}" motivo)"
+campo "${T}" motivo | grep -i 'no se marcó nada más' >/dev/null && ! campo "${T}" motivo | grep -i 'no se marcó nada;' >/dev/null && ok "T5b el motivo no se contradice («no se marcó nada más» + los que sí)" || mal "T5b motivo: $(campo "${T}" motivo)"
 
 # ── T-E · los estados del contrato que no tenían caso (tests-coverage iter 1) ───────────────────
 # 🔴 rojo previo: dry_run, parcial, sin_registro y sin_maquina figuraban en el contrato y ningún caso los ejercía.
@@ -258,7 +258,7 @@ subir "${T}" "${T}/h" "maq-a" --dry-run
 [ "${RC}" -eq 0 ] && [ "$(campo "${T}" estado)" = "dry_run" ] && [ "$(campo "${T}" a_subir)" = "4" ] && [ "$(pedidos "${T}/b")" = "0" ] && [ ! -e "${T}/estado/mailbox-uploads.json" ] && ok "T-E --dry-run → exit 0, a_subir 4, ningún pedido, sin registro" || mal "T-E dry-run rc=${RC} estado=$(campo "${T}" estado) a_subir=$(campo "${T}" a_subir) pedidos=$(pedidos "${T}/b")"
 subir "${T}" "${T}/h" "maq-a"
 [ "${RC}" -eq 1 ] && [ "$(campo "${T}" estado)" = "parcial" ] && [ "$(campo "${T}" subido)" = "false" ] && [ "$(campo "${T}" subidos)" = "2" ] && ok "T-E un 409 (los dos archivos de la corrida rechazada) → parcial, exit 1, subido=false, los otros 2 sí subieron" || mal "T-E parcial rc=${RC} estado=$(campo "${T}" estado) subido=$(campo "${T}" subido) subidos=$(campo "${T}" subidos)"
-en_registro "${T}" | grep -q rechazado && mal "T-E el rechazado quedó anotado" || ok "T-E el rechazado no quedó anotado"
+en_registro "${T}" | grep rechazado >/dev/null && mal "T-E el rechazado quedó anotado" || ok "T-E el rechazado no quedó anotado"
 # una máquina que nunca corrió el pipeline NO tiene timing-history: eso es «nada que subir», no un fallo en cada arranque
 # 🔴 rojo previo (adversarial, integración): exit 1 «sin_registro» en TODAS las máquinas nuevas del equipo, cada arranque.
 subir "${T}" "${T}/no-hay-registro" "maq-a"
@@ -276,7 +276,7 @@ subir "${T}" "${T}/h" "..."
 T="${BASE}/t6"; buzon "${T}/b"; corrida "${T}/h" "5.1-2026-09-05T0700"
 subir "${T}" "${T}/h" "maq-a"          # sin cfg.json
 [ "${RC}" -ne 0 ] && [ "$(campo "${T}" estado)" = "sin_config" ] && [ "$(pedidos "${T}/b")" = "0" ] && ok "T6 sin corridas-buzon.json → exit ${RC}, estado sin_config, ningún pedido" || mal "T6 sin config → rc=${RC} estado=$(campo "${T}" estado) pedidos=$(pedidos "${T}/b")"
-campo "${T}" motivo | grep -q 'corridas-buzon.json' && ok "T6 y lo dice nombrando el archivo" || mal "T6 motivo: $(campo "${T}" motivo)"
+campo "${T}" motivo | grep 'corridas-buzon.json' >/dev/null && ok "T6 y lo dice nombrando el archivo" || mal "T6 motivo: $(campo "${T}" motivo)"
 echo '{"cuenta": "x",' > "${T}/cfg.json"
 subir "${T}" "${T}/h" "maq-a"
 [ "${RC}" -ne 0 ] && [ "$(campo "${T}" estado)" = "config_ilegible" ] && [ "$(pedidos "${T}/b")" = "0" ] && ok "T6 config ilegible → exit ${RC}, config_ilegible, ningún pedido" || mal "T6 ilegible → rc=${RC} estado=$(campo "${T}" estado)"

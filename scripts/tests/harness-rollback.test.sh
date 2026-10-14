@@ -202,7 +202,7 @@ if corre T23; then
   [ "$(estado "d['hold']['commit']")" = "$(etiqueta_v2)" ] && [ "$(estado "d['hold']['sources']['harness']")" = "$T2" ] && [ "$(estado "d['hold']['reason']")" = rollback ] \
     && ok "T23 estado: hold = v2 ($(etiqueta_v2)), con sus sources y reason rollback" || mal "T23 hold: $(estado "d.get('hold')")"
   [ "$(estado "[s for s in d['sources'] if s['name']=='harness'][0]['commit']")" = "$T1" ] && ok "T23 estado: sources[].commit = v1" || mal "T23 commit: $(estado "[(s['name'], s.get('commit')) for s in d['sources']]")"
-  ! estado "d['managed']" | grep -q 'lab-rollback.js' && ok "T23 el registro ya no trae el hook de v2" || mal "T23 managed sigue con el hook de v2"
+  ! estado "d['managed']" | grep 'lab-rollback.js' >/dev/null && ok "T23 el registro ya no trae el hook de v2" || mal "T23 managed sigue con el hook de v2"
   doctor_verde "T23 tras rollback"
   # dos arranques con la red habilitada: no avanzan, y el aviso lo dice con el comando para liberar
   for n in 1 2; do
@@ -448,7 +448,7 @@ if corre REG-H9; then
   [ "$POS" = 5 ] || mal "REG-H9 el escenario no quedó armado (el destino es la n.º «${POS}» más nueva, quiero la 5.ª): $(copias | tr '\n' ';')"
   SALIDA="$(harness rollback 2>&1)"; RC=$?
   [ "$RC" = 0 ] && ! grep -q 'no está o no coincide' <<<"$SALIDA" && ok "REG-H9 rollback sale 0 y lee la copia destino" || mal "REG-H9 rollback (rc $RC): $SALIDA"
-  copias | awk '{print $2}' | grep -qx "$DESTINO" && ok "REG-H9 la copia destino sobrevive a la retención" || mal "REG-H9 la copia destino $DESTINO se podó: $(copias | tr '\n' ';')"
+  copias | awk '{print $2}' | grep -x "$DESTINO" >/dev/null && ok "REG-H9 la copia destino sobrevive a la retención" || mal "REG-H9 la copia destino $DESTINO se podó: $(copias | tr '\n' ';')"
   ! hay "TYCON_BLOCK:$BLOCK_V2" "$CLAUDE_MD_PATH" && [ "$(head_de "$LAB_TREE")" = "$T1" ] \
     && ok "REG-H9 …y se restauró: bloque de v2 fuera, árbol en v1" || mal "REG-H9 no se restauró: tree $(head_de "$LAB_TREE") (v1 $T1); bloque v2 $(hay "TYCON_BLOCK:$BLOCK_V2" "$CLAUDE_MD_PATH" && echo sigue || echo fuera)"
 fi
@@ -488,7 +488,7 @@ fi
 if corre REG-H5; then
   v1_a_v2 "$BASE/reg-h5"
   for n in 1 2 3 4 5 6; do arranque_con_cambio "h5-$n"; done
-  copias | awk -v t="$T1" '$4==t && $3!="install"' | grep -q . && ok "REG-H5 tras 6 arranques que cambian settings.json, la copia de antes de la actualización sigue" \
+  copias | awk -v t="$T1" '$4==t && $3!="install"' | grep . >/dev/null && ok "REG-H5 tras 6 arranques que cambian settings.json, la copia de antes de la actualización sigue" \
     || mal "REG-H5 se podó la copia de antes de la actualización: $(copias | tr '\n' ';')"
   SALIDA="$(harness rollback 2>&1)"; RC=$?
   [ "$RC" = 0 ] && [ "$(head_de "$LAB_TREE")" = "$T1" ] && [ "$(head_de "$LAB_SKILLS")" = "$S1" ] && ! grep -q 'nada que deshacer' <<<"$SALIDA" \
@@ -513,7 +513,7 @@ if corre REG-DB; then
   harness install --yes >/dev/null 2>&1 || mal "REG-DB install falló"
   harness apply >/dev/null 2>&1 || mal "REG-DB apply falló"   # deja una copia con los commits de ahora (la de install no los trae)
   R0="$(head_de "$LAB_TREE")"
-  copias | awk -v t="$R0" '$4==t' | grep -q . || mal "REG-DB el laboratorio no dejó una copia con el commit instalado: $(copias | tr '\n' ';')"
+  copias | awk -v t="$R0" '$4==t' | grep . >/dev/null || mal "REG-DB el laboratorio no dejó una copia con el commit instalado: $(copias | tr '\n' ';')"
   harness_lab_publish_stable 2026.10.02.1
   harness_lab_git "$LAB_TREE" pull -q --ff-only origin main >/dev/null 2>&1   # el clon se mueve a mano, en main
   P1="$(head_de "$LAB_TREE")"

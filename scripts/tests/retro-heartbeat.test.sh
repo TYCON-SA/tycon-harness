@@ -109,7 +109,7 @@ if [ "${RC}" = "0" ] && [ -f "${ARCH1}" ]; then
   [ "${V}" = "3" ] && ok "T1 vueltas = 3: la del CLON de este repo, no la del otro repo (7) ni la del proyecto de prueba de la sesión (9)" \
     || bad "T1 vueltas" "esperaba 3 (clon), vino ${V} — mutación: elegir por número de story sin mirar el repo, o no reconocer el clon"
   DET="$(campo "${ARCH1}" 'd.metrics.advisor_rerun_loop_iterations.detail')"
-  echo "${DET}" | grep -q "revisores" && ok "T1 el detalle nombra la fuente (revisores por vuelta)" || bad "T1 detail" "${DET}"
+  echo "${DET}" | grep "revisores" >/dev/null && ok "T1 el detalle nombra la fuente (revisores por vuelta)" || bad "T1 detail" "${DET}"
   ID="$(campo "${ARCH1}" '[d.schema_version, d.project, d.captured_at, d.repo, d.merge_commit, d.story, d.run_dir, d.generated_by].join("|")')"
   # generated_by es un campo del registro: conserva el nombre de antes del renombre (story 8.9, AC 32)
   ESP="2.0|proyecto|${HOY}|${REPO_REAL}|${SHA1}|9.9|.advisors/pipeline-runs/9.9-20260916-1000/|retro-""latido.js"
@@ -123,11 +123,11 @@ if [ "${RC}" = "0" ] && [ -f "${ARCH1}" ]; then
   # antes del renombre, que se arma desde el mapa (no se escribe literal)
   RECOLECTOR_VIEJO="$(node -e 'const e=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).entries.find((x)=>x.kind==="file"&&x.new==="scripts/metrics/collect-findings.js");process.stdout.write(e?e.old.split("/").pop():"collect-findings.js")' "${RAIZ}/scripts/lib/renames.json" 2>/dev/null || echo collect-findings.js)"
   RECOLECTOR_RE="collect-findings\\.js|${RECOLECTOR_VIEJO//./\\.}"
-  printf '%s\n' "${NULOS}" | grep '^advisor_warnings_per_story=' | grep -qE "${RECOLECTOR_RE}" \
-    && printf '%s\n' "${NULOS}" | grep '^advisor_warnings_actioned_ratio=' | grep -qE "${RECOLECTOR_RE}" \
-    && printf '%s\n' "${NULOS}" | grep '^advisor_pipeline_runtime_failures=' | grep -q 'reviewers-cost.js' \
-    && printf '%s\n' "${NULOS}" | grep '^step_8_commit_skipped_rerun=' | grep -q 'complete-step' \
-    && printf '%s\n' "${NULOS}" | grep '^advisor_findings_on_verification_artifacts=' | grep -q 'a pedido' \
+  printf '%s\n' "${NULOS}" | grep '^advisor_warnings_per_story=' | grep -E "${RECOLECTOR_RE}" >/dev/null \
+    && printf '%s\n' "${NULOS}" | grep '^advisor_warnings_actioned_ratio=' | grep -E "${RECOLECTOR_RE}" >/dev/null \
+    && printf '%s\n' "${NULOS}" | grep '^advisor_pipeline_runtime_failures=' | grep 'reviewers-cost.js' >/dev/null \
+    && printf '%s\n' "${NULOS}" | grep '^step_8_commit_skipped_rerun=' | grep 'complete-step' >/dev/null \
+    && printf '%s\n' "${NULOS}" | grep '^advisor_findings_on_verification_artifacts=' | grep 'a pedido' >/dev/null \
     && ok "T1 cada motivo nombra quién la cubre (2.9, 2.15, el portón del paso 8, a pedido)" || bad "T1 motivos" "${NULOS}"
   VAL="$(F="${ARCH1}" LIB="${LIB}" DIR="${OUT1}" node -e '
     const m = require(process.env.LIB); const fs = require("fs");
@@ -254,7 +254,7 @@ LEDGER_DIR="${HOME}/.claude/.tycon-pipeline"
 printf '{"ts":"2026-09-16T10:00:00.000Z","sessionId":"s-test","repoPath":"%s","sha":"%s","branch":"main"}\n' "${REPO_REAL}" "${SHA1:0:12}" > "${LEDGER_DIR}/retro-pending.jsonl"
 REP="$(node "${TCG}/scripts/hooks/retro-pending.js" --report --days 36500 2>&1)"
 RC=$?
-echo "${REP}" | grep -q '"conRetro": 1' && echo "${REP}" | grep -q '"pendientes": 0' \
+echo "${REP}" | grep '"conRetro": 1' >/dev/null && echo "${REP}" | grep '"pendientes": 0' >/dev/null \
   && ok "AC5 retro-pending da el merge por cubierto con el archivo del latido" || bad "AC5 cobertura" "rc=${RC} · ${REP}"
 SER="$(node "${RAIZ}/scripts/lib/dashboard-series.js" --dir "${OUT1}" --json 2>&1)"
 RC=$?
@@ -492,7 +492,7 @@ fi
   # el archivo del latido con ESA punta lo da por cubierto (en modo pedido va la punta de la rama, no el commit de merge)
   node "${H20}/scripts/metrics/retro-heartbeat.js" --repo "${P20}" --merge "${TIP20}" > "${T20}/stdout" 2> "${T20}/stderr"
   REP20="$(node "${H20}/scripts/hooks/retro-pending.js" --report --days 36500 2>&1)"
-  echo "${REP20}" | grep -q '"conRetro": 1' && echo "${REP20}" | grep -q '"pendientes": 0' \
+  echo "${REP20}" | grep '"conRetro": 1' >/dev/null && echo "${REP20}" | grep '"pendientes": 0' >/dev/null \
     && ok "T20 el latido con la punta anotada da el pedido por cubierto" || bad "T20 cobertura" "${REP20}"
   rm -f "${H20}/.dashboard"/metrics-*.json
 

@@ -112,7 +112,7 @@ RESP="$(curl -sS -m 15 -X POST "$API/bot$TOKEN/$METHOD" \
 # tapa antes de imprimir nada.
 SAFE_RESP="${RESP//$TOKEN/<token>}"
 
-if printf '%s' "$RESP" | grep -q '"ok":true'; then
+if printf '%s' "$RESP" | grep '"ok":true' >/dev/null; then
   MSG_ID="$(printf '%s' "$RESP" | python3 -c "
 import json,sys
 try: print(json.load(sys.stdin)['result']['message_id'])

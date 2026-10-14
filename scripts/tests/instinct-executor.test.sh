@@ -90,18 +90,18 @@ run_observer() { # $1=PATH-extra  -> imprime el proposed_by del instinct escrito
 # ── 1. Solo claude en PATH → proposed_by claude/haiku ──
 mk_stub claude claude
 R=$(run_observer); ESPERADAS=$((ESPERADAS+1))
-echo "$R" | grep -q "claude/claude-haiku" && ok "solo-claude → Haiku" || bad "solo-claude" "esperaba claude/haiku, dio: $R"
+echo "$R" | grep "claude/claude-haiku" >/dev/null && ok "solo-claude → Haiku" || bad "solo-claude" "esperaba claude/haiku, dio: $R"
 rm -f "$LAB/bin/claude"
 
 # ── 2. Solo codex en PATH (dev SOLO-Codex) → proposed_by codex/gpt-5.4-mini ── EL DEFECTO ──
 mk_stub codex codex
 R=$(run_observer); ESPERADAS=$((ESPERADAS+1))
-echo "$R" | grep -q "codex/gpt-5.4-mini" && ok "solo-codex → gpt-5.4-mini (dev Codex-only ya recibe propuestas)" || bad "solo-codex" "esperaba codex/gpt-5.4-mini, dio: $R"
+echo "$R" | grep "codex/gpt-5.4-mini" >/dev/null && ok "solo-codex → gpt-5.4-mini (dev Codex-only ya recibe propuestas)" || bad "solo-codex" "esperaba codex/gpt-5.4-mini, dio: $R"
 
 # ── 3. auto con AMBOS → prefiere claude (Haiku, el más barato) ──
 mk_stub claude claude
 R=$(run_observer); ESPERADAS=$((ESPERADAS+1))
-echo "$R" | grep -q "claude/claude-haiku" && ok "ambos → auto prefiere Haiku" || bad "ambos-auto" "esperaba claude/haiku, dio: $R"
+echo "$R" | grep "claude/claude-haiku" >/dev/null && ok "ambos → auto prefiere Haiku" || bad "ambos-auto" "esperaba claude/haiku, dio: $R"
 
 # ── 4. TYCON_OBSERVER_EXECUTOR=codex fuerza codex aun con claude presente ──
 rm -rf "$PEND"/*dar* 2>/dev/null
@@ -133,7 +133,7 @@ else
   OBS_NUEVO="$OBS"; OBS="$ARBOL/$VIEJO"
   R=$(run_observer); ESPERADAS=$((ESPERADAS+1))
   OBS="$OBS_NUEVO"
-  echo "$R" | grep -q "claude/claude-haiku" && ok "T18 la ruta vieja ($VIEJO) escribe en la misma bandeja: la casa de la persona (el árbol de prueba no trae buzón)" \
+  echo "$R" | grep "claude/claude-haiku" >/dev/null && ok "T18 la ruta vieja ($VIEJO) escribe en la misma bandeja: la casa de la persona (el árbol de prueba no trae buzón)" \
     || bad "T18 ruta vieja del observador" "esperaba la propuesta en $PEND, dio: $R"
 fi
 

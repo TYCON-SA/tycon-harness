@@ -297,8 +297,8 @@ esac
 INTERNO=0; [ -d "$RAIZ/scripts/publishing/public-files" ] && INTERNO=1
 if [ "$INTERNO" = 0 ]; then
   echo "  ⏭️   — T10 NO MEDIDO: la copia pública no trae la lista del exportador. No es un verde."
-elif node "$RAIZ/scripts/publishing/export.js" --explain 2>&1 | grep -qE '\.dashboard/\*\*.*' \
-   && node "$RAIZ/scripts/publishing/export.js" --explain 2>&1 | grep -E '^\s+\.dashboard/' | grep -q 'fija'; then
+elif node "$RAIZ/scripts/publishing/export.js" --explain 2>&1 | grep -E '\.dashboard/\*\*.*' >/dev/null \
+   && node "$RAIZ/scripts/publishing/export.js" --explain 2>&1 | grep -E '^\s+\.dashboard/' | grep 'fija' >/dev/null; then
   ok "T10 la copia pública sigue excluyendo .dashboard/** como fija"
 else mal "T10 el exportador ya no lista .dashboard/** como exclusión fija"; fi
 
@@ -364,7 +364,7 @@ elif [ -f "$YML" ]; then
     && ok "T12 con --sdlc, --only-harness y aviso (no freno) en su falla" || mal "T12 falta --sdlc, --only-harness o el logissue de aviso"
   grep -qE 'echo "⏱ .*foto' "$YML" && ok "T12 imprime su duración" || mal "T12 no imprime la duración de la foto"
   # entre comillas simples: el comodín lo resuelve git (también contra lo borrado), no el shell
-  sed -n "${L_ADD:-1},\$p" "$YML" | sed -n '1,6p' | grep -q -- "-- .*'.dashboard/proyectos/\*.json'" \
+  sed -n "${L_ADD:-1},\$p" "$YML" | sed -n '1,6p' | grep -- "-- .*'.dashboard/proyectos/\*.json'" >/dev/null \
     && ok "T12 commitea .dashboard/proyectos/*.json" || mal "T12 el paso que guarda no lleva .dashboard/proyectos/*.json"
   # Pase adversarial (iter 1): «el más nuevo» por nombre puede ser el de ayer si el medidor no escribió hoy.
   if grep -q 'sdlc-stage-\$(date -u +%Y-%m-%d).json' <<<"$BLOQUE$(sed -n "$((L_FOTO-3)),${L_FOTO}p" "$YML")" && ! grep -q 'sdlc-stage-\*.json | tail' "$YML"; then

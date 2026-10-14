@@ -91,7 +91,7 @@ else
   # La raíz del commit se lista una vez: un error de git frena con su motivo, nunca pasa como «no trae la carpeta».
   ROOT_LIST="$(git -C "${REPO}" ls-tree --name-only "${HARNESS_SHA}" 2>&1)" || stop "no pude listar la raíz del commit ${HARNESS_SHA}: ${ROOT_LIST}"
   UNIFIED=""
-  if printf '%s\n' "${ROOT_LIST}" | grep -qxE 'agents|skills|packs'; then UNIFIED=1; fi
+  if printf '%s\n' "${ROOT_LIST}" | grep -xE 'agents|skills|packs' >/dev/null; then UNIFIED=1; fi
   if [ -n "${UNIFIED}" ]; then
     [ -z "${SKILLS_REF}" ] || stop "el commit ${HARNESS_SHA} es del repo unido: trae las skills adentro y --skills-ref no aplica"
     SK="${REPO}"; SKILLS_SHA="${HARNESS_SHA}"

@@ -19,33 +19,33 @@ url=""; hdr=""; out=""; fmt=""
 while [ $# -gt 0 ]; do case "$1" in -D) hdr="$2"; shift;; -o) out="$2"; shift;; -w) fmt="$2"; shift;; http*) url="$1";; esac; shift; done
 # SEC-C1: cada URL pedida queda anotada — las pruebas de nombres exigen que un nombre malo NO llegue a ninguna
 printf '%s\n' "${url//$'\n'/\\n}" >> "$STUB_DIR/urls.log"
-if echo "$url" | grep -q '/api/auth/login'; then
+if echo "$url" | grep '/api/auth/login' >/dev/null; then
   code=$(cat "$STUB_DIR/login.code" 2>/dev/null || echo 200)
   # "limite:N" = los primeros N logins devuelven 401 {"error":"Too Many Requests"}, después 200
-  if echo "$code" | grep -q '^limite:'; then n=$(grep -c '/api/auth/login' "$STUB_DIR/login.log" 2>/dev/null || echo 0); echo "$url" >> "$STUB_DIR/login.log"; if [ "$n" -lt "${code#limite:}" ]; then echo '{"error":"Too Many Requests"}' > "$out"; printf '401'; exit 0; fi; code=200; fi
+  if echo "$code" | grep '^limite:' >/dev/null; then n=$(grep -c '/api/auth/login' "$STUB_DIR/login.log" 2>/dev/null || echo 0); echo "$url" >> "$STUB_DIR/login.log"; if [ "$n" -lt "${code#limite:}" ]; then echo '{"error":"Too Many Requests"}' > "$out"; printf '401'; exit 0; fi; code=200; fi
   [ "$code" = "401" ] && { cat "$STUB_DIR/login.body" 2>/dev/null || echo '{"error":"Invalid credentials"}'; } > "$out"
   [ "$code" = "200" ] && { printf 'HTTP/1.1 200 OK\r\nSet-Cookie: admin_token=tok; Path=/\r\n\r\n' > "$hdr"; echo '{}' > "$out"; }
   printf '%s' "$code"; [ "$code" = "000" ] && exit 7; exit 0
 fi
-if echo "$url" | grep -q '^http[^ ]*/api/plugins/[^/]*/health$'; then
+if echo "$url" | grep '^http[^ ]*/api/plugins/[^/]*/health$' >/dev/null; then
   cuerpo=$(cat "$STUB_DIR/pluginhealth.json" 2>/dev/null || echo '{}')
   code=$(cat "$STUB_DIR/pluginhealth.code" 2>/dev/null || echo 200)
   # el guion pregunta este /health pidiendo el código con -w: cuerpo y código, como hace curl
   if [ -n "$fmt" ]; then printf '%s\n%s' "$cuerpo" "$code"; else printf '%s' "$cuerpo"; fi
   exit 0
 fi
-if echo "$url" | grep -q '/health$'; then
+if echo "$url" | grep '/health$' >/dev/null; then
   code=$(cat "$STUB_DIR/health.code" 2>/dev/null || echo 200)
   cuerpo=$(cat "$STUB_DIR/health.json" 2>/dev/null || echo '{}')
   [ -n "$fmt" ] && { printf '%s\n%s' "$cuerpo" "$code"; exit 0; }
   printf '%s' "$cuerpo"; exit 0
 fi
-if echo "$url" | grep -q '/api/admin/plugins/loaded'; then cat "$STUB_DIR/loaded.json" 2>/dev/null || cat "$STUB_DIR/plugins.json"; exit 0; fi
-if echo "$url" | grep -q '/api/admin/plugins'; then cat "$STUB_DIR/plugins.json"; exit 0; fi
+if echo "$url" | grep '/api/admin/plugins/loaded' >/dev/null; then cat "$STUB_DIR/loaded.json" 2>/dev/null || cat "$STUB_DIR/plugins.json"; exit 0; fi
+if echo "$url" | grep '/api/admin/plugins' >/dev/null; then cat "$STUB_DIR/plugins.json"; exit 0; fi
 # el código: con -o, el cuerpo va a ese archivo (code.body, si el caso lo pone; el humo lo muestra cuando falla)
-if echo "$url" | grep -q '/code$'; then [ -n "$out" ] && { cat "$STUB_DIR/code.body" 2>/dev/null || :; } > "$out"; printf '%s' "$(cat "$STUB_DIR/code.http" 2>/dev/null || echo '200 1234')"; exit 0; fi
+if echo "$url" | grep '/code$' >/dev/null; then [ -n "$out" ] && { cat "$STUB_DIR/code.body" 2>/dev/null || :; } > "$out"; printf '%s' "$(cat "$STUB_DIR/code.http" 2>/dev/null || echo '200 1234')"; exit 0; fi
 # story 2.10: /api/custom-forms/<f>/versions contesta versions-<f>.json con versions-<f>.code (default 200)
-if echo "$url" | grep -q '/api/custom-forms/[^/]*/versions$'; then
+if echo "$url" | grep '/api/custom-forms/[^/]*/versions$' >/dev/null; then
   f=$(echo "$url" | sed 's#.*/api/custom-forms/\([^/]*\)/versions$#\1#')
   cuerpo=$(cat "$STUB_DIR/versions-$f.json" 2>/dev/null || echo '[]'); code=$(cat "$STUB_DIR/versions-$f.code" 2>/dev/null || echo 200)
   echo "$url" >> "$STUB_DIR/versions.log"
@@ -54,7 +54,7 @@ if echo "$url" | grep -q '/api/custom-forms/[^/]*/versions$'; then
 fi
 # la lista: con -o y -w (como la pide el humo desde 2026-10-14) el cuerpo va al archivo y el código (forms.code,
 # default 200) a la salida; sin ellos, como antes
-if echo "$url" | grep -q '/api/custom-forms'; then
+if echo "$url" | grep '/api/custom-forms' >/dev/null; then
   if [ -n "$out" ]; then cat "$STUB_DIR/forms.json" > "$out"; printf '%s' "$(cat "$STUB_DIR/forms.code" 2>/dev/null || echo 200)"; exit 0; fi
   cat "$STUB_DIR/forms.json"; exit 0
 fi
@@ -286,7 +286,7 @@ mkc "$Z6" a 1.0.2 abc1234def5678 10; mkc "$Z6" b 1.0.2 abc1234def5678 10; mkc "$
 formularios_al_dia a b c; cur a abc1234def5678; cur b 9999999aaaa; cur c ABC1234
 reg_hf "$(job)" "$Z6"; rc=$?
 [ $rc -eq 0 ] && ok "2.10 T6 humo de formularios aprobado sigue saliendo 0" || no "🔴 2.10 T6 rc=$rc: $(cat "$TMP/err")"
-[ "$(lineas "$TMP/out")" = "2" ] && grep '^\[registro-despliegue\]' "$TMP/out" | grep -q '"artefacto":"a"' && grep '^\[registro-despliegue\]' "$TMP/out" | grep -q '"artefacto":"c"' && ! grep '^\[registro-despliegue\]' "$TMP/out" | grep -q '"artefacto":"b"' && ok "2.10 T6 dos líneas: a (mismo commit) y c (prefijo, sin mayúsculas); b ya estaba" || no "🔴 2.10 T6 líneas: $(grep '^\[registro-despliegue\]' "$TMP/out" | sed 's/^\[registro-despliegue\] //' | jq -rc '.artefacto' 2>/dev/null | tr '\n' ' ') — esperaba a y c"
+[ "$(lineas "$TMP/out")" = "2" ] && grep '^\[registro-despliegue\]' "$TMP/out" | grep '"artefacto":"a"' >/dev/null && grep '^\[registro-despliegue\]' "$TMP/out" | grep '"artefacto":"c"' >/dev/null && ! grep '^\[registro-despliegue\]' "$TMP/out" | grep '"artefacto":"b"' >/dev/null && ok "2.10 T6 dos líneas: a (mismo commit) y c (prefijo, sin mayúsculas); b ya estaba" || no "🔴 2.10 T6 líneas: $(grep '^\[registro-despliegue\]' "$TMP/out" | sed 's/^\[registro-despliegue\] //' | jq -rc '.artefacto' 2>/dev/null | tr '\n' ' ') — esperaba a y c"
 grep '^\[registro-despliegue\]' "$TMP/out" | sed 's/^\[registro-despliegue\] //' | jq -e 'select(.artefacto=="a") | .tipo=="formulario" and .estado=="desplegado" and .hash=="abc1234def5678"' >/dev/null && ok "2.10 T6 la línea de formulario trae tipo formulario y el commit del manifest" || no "2.10 T6 línea de formulario fuera de contrato"
 [ "$(grep -c '^##vso\[build.addbuildtag\]desplegado$' "$TMP/out")" = "1" ] && grep -qx '##vso\[build.addbuildtag\]a-1.0.2' "$TMP/out" && grep -qx '##vso\[build.addbuildtag\]c-1.0.2' "$TMP/out" && [ "$(etiquetas "$TMP/out")" = "3" ] && ok "2.10 T6 etiquetas: desplegado una vez + a-1.0.2 + c-1.0.2" || no "🔴 2.10 T6 etiquetas: $(grep addbuildtag "$TMP/out" | tr '\n' ' ')"
 grep -q '2 desplegado(s) en esta corrida · 1 ya estaban · 0 sin constancia · 0 sin anotar' "$TMP/err" && ok "2.10 T6 el resumen por stderr cuenta 2 · 1 · 0 · 0" || no "2.10 T6 resumen: $(grep '\[registro\]' "$TMP/err")"
@@ -302,7 +302,7 @@ echo '[{"version":"1.0.2","isCurrent":true}]' > "$TMP/versions-d.json"
 cur e abc1234
 reg_hf "$(job)" "$Z7"; rc=$?
 [ $rc -eq 0 ] && [ "$(lineas "$TMP/out")" = "0" ] && [ "$(etiquetas "$TMP/out")" = "0" ] && ok "2.10 T7 cinco formas de no saber → 0, ninguna línea, ninguna etiqueta" || no "🔴 2.10 T7 rc=$rc líneas=$(lineas "$TMP/out") etiquetas=$(etiquetas "$TMP/out") — no saber se leyó como saber"
-[ "$(grep -c 'logissue type=warning.*registro-despliegue' "$TMP/out")" = "1" ] && grep 'logissue type=warning.*registro-despliegue' "$TMP/out" | grep -q '5' && ok "2.10 T7 …con UN aviso que cuenta los 5" || no "2.10 T7 avisos: $(grep logissue "$TMP/out")"
+[ "$(grep -c 'logissue type=warning.*registro-despliegue' "$TMP/out")" = "1" ] && grep 'logissue type=warning.*registro-despliegue' "$TMP/out" | grep '5' >/dev/null && ok "2.10 T7 …con UN aviso que cuenta los 5" || no "2.10 T7 avisos: $(grep logissue "$TMP/out")"
 
 # ── T8 · nada subido en esta corrida: sin etiqueta desplegado
 Z8="$TMP/z8"; rm -rf "$Z8"; mkc "$Z8" a 1.0.2 abc1234 10; mkc "$Z8" b 1.0.2 abc1234 10
@@ -351,7 +351,7 @@ env "${REG[@]}" AGENT_TEMPDIRECTORY="$J" bash "$HP" https://host-secreto.cliente
 [ $rc -eq 0 ] && [ "$(lineas "$TMP/out")" = "1" ] && ! grep -q -e 'host-secreto' -e 'cliente.example' -e 'usuario-secreto' -e 'clave-secreta' "$TMP/out" "$TMP/err" && ok "2.10 T5 plugin: ni la dirección, ni el usuario, ni la clave en stdout+stderr" || no "🔴 2.10 T5 plugin: se filtró algo (rc=$rc): $(grep -h -e host-secreto -e usuario-secreto -e clave-secreta "$TMP/out" "$TMP/err")"
 plugin_sano host-secreto; J=$(job)
 env "${REG[@]}" AGENT_TEMPDIRECTORY="$J" bash "$HP" https://otro.example u p host-secreto 1.0.214 abc1234 >"$TMP/out" 2>"$TMP/err"
-grep '^\[registro-despliegue\]' "$TMP/out" | grep -q 'host-secreto' && ok "2.10 T5 control positivo: el marcador puesto en el artefacto SÍ aparece (la prueba sabe ponerse roja)" || no "2.10 T5 el control positivo no apareció — la prueba de fuga no prueba nada"
+grep '^\[registro-despliegue\]' "$TMP/out" | grep 'host-secreto' >/dev/null && ok "2.10 T5 control positivo: el marcador puesto en el artefacto SÍ aparece (la prueba sabe ponerse roja)" || no "2.10 T5 el control positivo no apareció — la prueba de fuga no prueba nada"
 formularios_al_dia a c; Z5="$TMP/z5"; rm -rf "$Z5"; mkc "$Z5" a 1.0.2 abc1234 10; mkc "$Z5" c 1.0.2 abc1234 10; cur a abc1234; cur c abc1234
 env "${REG[@]}" AGENT_TEMPDIRECTORY="$(job)" bash "$HF" https://host-secreto.cliente.example usuario-secreto clave-secreta "$Z5" >"$TMP/out" 2>"$TMP/err"; rc=$?
 [ $rc -eq 0 ] && [ "$(lineas "$TMP/out")" = "2" ] && grep -q 'host-secreto.cliente.example/api/custom-forms/a/versions' "$TMP/versions.log" && ! grep -q -e 'host-secreto' -e 'usuario-secreto' -e 'clave-secreta' "$TMP/out" "$TMP/err" && ok "2.10 T5 formularios: /versions se consultó en el host pero su dirección no sale" || no "🔴 2.10 T5 formularios: rc=$rc líneas=$(lineas "$TMP/out") o se filtró la dirección"
@@ -398,7 +398,7 @@ env -i HOME="$TMP" PATH="$GRANJA" STUB_DIR="$TMP" "${REG[@]}" AGENT_TEMPDIRECTOR
 # consulta —ni siquiera se entra al host— y el humo sale rojo diciendo por qué: no verificar nunca es verde.
 pedidos(){ if [ -s "$TMP/urls.log" ]; then wc -l < "$TMP/urls.log" | tr -d ' '; else echo 0; fi; }
 # toda línea con `##vso[` tiene que ser un aviso o un error del propio humo, al principio de la línea
-solo_logissue(){ ! cat "$TMP/out" "$TMP/err" | grep -F '##vso[' | grep -qv '^##vso\[task\.logissue type=\(error\|warning\)\]\[humo\]'; }
+solo_logissue(){ ! cat "$TMP/out" "$TMP/err" | grep -F '##vso[' | grep -v '^##vso\[task\.logissue type=\(error\|warning\)\]\[humo\]' >/dev/null; }
 dice_por_que(){ grep -q 'logissue type=error.*nombre.*no es válido' "$TMP/out" "$TMP/err"; }
 hp_nombre(){ # hp_nombre <nombre>: el host conoce ese plugin, sano, activo, default y del build abc1234
   plugin_sano x; jq -nc --arg n "$1" '[{pluginId:7,name:$n,version:"1.0.214",isActive:true,isDefault:true}]' > "$TMP/plugins.json"
@@ -477,7 +477,7 @@ malos=""; for f in $SAMPLE_FORMS; do grep -Fxq "http://stub/api/custom-forms/$f/
 # Regla: lo del paquete se valida (si no pasa, no se consulta y es rojo); lo del host no se valida —si no
 # coincide, el humo ya es rojo—, se muestra sin poder armar una orden de Azure.
 INY='##vso[task.setvariable variable=PWN]1'
-una_orden_por_linea(){ ! cat "$TMP/out" "$TMP/err" | grep -q '##vso\[.*##'; }
+una_orden_por_linea(){ ! cat "$TMP/out" "$TMP/err" | grep '##vso\[.*##' >/dev/null; }
 limpio(){ solo_logissue && una_orden_por_linea; }
 juzgar_por(){ # juzgar_por <patrón del motivo> <guion> <etiqueta> <rc> — el patrón lleva los acentos LITERALES: un '.' en
   # su lugar falla en Linux sin UTF-8 (la letra son dos bytes); medido en Ubuntu con bash 5.2

@@ -173,7 +173,7 @@ fi
 
 # --- Detección de stack ------------------------------------------------------
 _HAY_DOTNET=""
-if ls "$REPO"/*.sln >/dev/null 2>&1 || find "$REPO" -maxdepth 3 -name '*.csproj' -not -path '*/node_modules/*' 2>/dev/null | head -1 | grep -q .; then
+if ls "$REPO"/*.sln >/dev/null 2>&1 || find "$REPO" -maxdepth 3 -name '*.csproj' -not -path '*/node_modules/*' 2>/dev/null | head -1 | grep . >/dev/null; then
   _HAY_DOTNET="sí"
 fi
 

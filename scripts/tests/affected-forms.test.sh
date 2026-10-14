@@ -42,8 +42,8 @@ corre(){ printf '%s\n' "$@" | node "$SH_JS" --repo "$R" --changed - 2>"$TMP/err.
 mundo
 # ---------------------------------------------------------------- 1. el grafo sale del CÓDIGO
 G=$(node "$SH_JS" --repo "$R" --graph 2>/dev/null)
-echo "$G" | grep -q "form-b -> form-a" && ok "deriva del código que form-b depende de form-a" || no "🔴 no detectó el import cruzado: $G"
-echo "$G" | grep -q "form-c -> (nada)" && ok "…y que form-c no depende de nadie" || no "inventó una dependencia de form-c"
+echo "$G" | grep "form-b -> form-a" >/dev/null && ok "deriva del código que form-b depende de form-a" || no "🔴 no detectó el import cruzado: $G"
+echo "$G" | grep "form-c -> (nada)" >/dev/null && ok "…y que form-c no depende de nadie" || no "inventó una dependencia de form-c"
 
 # ---------------------------------------------------------------- 2. EL CASO DEL DEV
 # Tocar A tiene que arrastrar a B (que lo importa) y NO a C.
@@ -87,7 +87,7 @@ R7=$(node "$SH_JS" --repo "$R" --changed "$TMP/no-existe" 2>/dev/null)
 # ---------------------------------------------------------------- 8. un import a un paquete de npm NO es una dependencia
 echo "import React from 'react';" > "$R/form-c/src/z.ts"
 G2=$(node "$SH_JS" --repo "$R" --graph 2>/dev/null)
-echo "$G2" | grep -q "form-c -> (nada)" && ok "un import a un paquete de npm no cuenta como dependencia entre formularios" || no "🔴 confundió un paquete de npm con un formulario"
+echo "$G2" | grep "form-c -> (nada)" >/dev/null && ok "un import a un paquete de npm no cuenta como dependencia entre formularios" || no "🔴 confundió un paquete de npm con un formulario"
 
 # ---------------------------------------------------------------- 9. el pipeline y la documentación NO afectan
 # 🔴 Caso visto en vivo (2026-09-01): un cambio a `azure-pipelines.yml` disparaba las pruebas de

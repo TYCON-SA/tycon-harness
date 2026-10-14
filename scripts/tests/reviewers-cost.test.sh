@@ -498,7 +498,7 @@ correr --run "${HIST}/t5.json" --projects-dir "${PROJ}" --runs-dir "${RUNS}" --a
 eest="$(leer "${HIST}/t5.json" "r['estimado']['estado']")"; emot="$(leer "${HIST}/t5.json" "r['estimado'].get('motivo')")"
 emin="$(leer "${HIST}/t5.json" "'tokens_min' in r['estimado']")"; tk="$(leer "${HIST}/t5.json" "r['tokens_medidos']['total']")"
 sm="$(leer "${HIST}/t5.json" "r['estimado'].get('lanzamientos_sin_medir')")"
-if [ "${RC}" -eq 0 ] && [ "${eest}" = "no_medido" ] && echo "${emot}" | grep -q "2026-12-31" && [ "${emin}" = "false" ] && [ "${tk}" = "3000" ] && [ "${sm}" = "1" ]; then
+if [ "${RC}" -eq 0 ] && [ "${eest}" = "no_medido" ] && echo "${emot}" | grep "2026-12-31" >/dev/null && [ "${emin}" = "false" ] && [ "${tk}" = "3000" ] && [ "${sm}" = "1" ]; then
   ok "T6 · con el supuesto vencido: estimado no_medido con la fecha, sin cifra, 1 lanzamiento sin medir declarado; los 3000 medidos siguen"
 else
   bad "T6 · supuesto vencido" "rc=${RC} estado=${eest} motivo=${emot} tiene_min=${emin} medidos=${tk} sin_medir=${sm} (ignorar la fecha sigue publicando el número viejo) · ${OUT}"
@@ -565,14 +565,14 @@ if [ "${RCV}" -ne 0 ] || [ ! -f "${TMP}/vista.html" ]; then
 else
   # Las corridas se ordenan de la más nueva a la más vieja por hora de inicio: b (02-09, sin revisores) es la 0, a (01-09) es la 1.
   DA="$(node "${CL}" "${TMP}/vista.html" 1 2>&1)"; DB="$(node "${CL}" "${TMP}/vista.html" 0 2>&1)"
-  if echo "${DA}" | grep -q 'class="rev-med"' && echo "${DA}" | grep -q '3 k' && echo "${DA}" | grep -q 'class="rev-est"' && echo "${DA}" | grep -qi 'estimado' \
-     && echo "${DA}" | grep -q '60 k' && echo "${DA}" | grep -q '100 k'; then
+  if echo "${DA}" | grep 'class="rev-med"' >/dev/null && echo "${DA}" | grep '3 k' >/dev/null && echo "${DA}" | grep 'class="rev-est"' >/dev/null && echo "${DA}" | grep -i 'estimado' >/dev/null \
+     && echo "${DA}" | grep '60 k' >/dev/null && echo "${DA}" | grep '100 k' >/dev/null; then
     ok "T7 · el detalle muestra 3 k tokens con la marca de medido y «estimado 60 k–100 k» con la marca de estimado"
   else
     bad "T7 · marcas distintas" "pintar el estimado igual que lo medido falla acá · detalle=$(echo "${DA}" | head -c 600)"
   fi
-  echo "${DA}" | grep -q 'n=2 de 3' && ok "T7 · el denominador de los tokens medidos está al lado (n=2 de 3)" || bad "T7 · sin denominador" "$(echo "${DA}" | head -c 400)"
-  if echo "${DB}" | grep -qi 'sin medir' && ! echo "${DB}" | grep -q '0 tokens'; then
+  echo "${DA}" | grep 'n=2 de 3' >/dev/null && ok "T7 · el denominador de los tokens medidos está al lado (n=2 de 3)" || bad "T7 · sin denominador" "$(echo "${DA}" | head -c 400)"
+  if echo "${DB}" | grep -i 'sin medir' >/dev/null && ! echo "${DB}" | grep '0 tokens' >/dev/null; then
     ok "T7 · la corrida sin bloque de revisores dice «sin medir», no cero"
   else
     bad "T7 · ausencia ≠ cero en la vista" "$(echo "${DB}" | head -c 400)"
@@ -593,8 +593,8 @@ json.dump(c, open(d + '/c.json', 'w'), indent=1)
 PY2
   node "${TABLERO}" --view runs --runs-dir "${RDIR2}" --output "${TMP}/vista2.html" >/dev/null 2>&1
   DC="$(node "${CL}" "${TMP}/vista2.html" 0 2>&1)"
-  if echo "${DC}" | grep -q '5 lanzamientos vistos en la conversación; el archivador contó 3' && echo "${DC}" | grep -q '1 sin ubicar en la conversación' \
-     && echo "${DC}" | grep -q '2 vistos en la conversación que el registro no anotó' && echo "${DC}" | grep -q '1 no volvieron'; then
+  if echo "${DC}" | grep '5 lanzamientos vistos en la conversación; el archivador contó 3' >/dev/null && echo "${DC}" | grep '1 sin ubicar en la conversación' >/dev/null \
+     && echo "${DC}" | grep '2 vistos en la conversación que el registro no anotó' >/dev/null && echo "${DC}" | grep '1 no volvieron' >/dev/null; then
     ok "T7b · la vista avisa los dos padrones distintos (5 vs 3), 1 sin ubicar, 2 fuera del registro y 1 que no volvió"
   else
     bad "T7b · avisos de discrepancia" "$(echo "${DC}" | grep -o 'class="rev-nd"[^<]*' | head -5)"
@@ -633,7 +633,7 @@ cp "${RAIZ}/scripts/lib/legacy-names.js" "${TMP}/solo/scripts/lib/"
 volcado "${HIST9}/t9b.json" "${S}" 'null' '{"spawns": 1}'
 OUT="$(node "${SOLO}/tokens-digest.js" --run "${HIST9}/t9b.json" --projects-dir "${PROJ}" --runs-dir "${RUNS}" --json 2>&1)"; RC=$?
 cEst="$(leer "${HIST9}/t9b.json" "d['consumo']['estado']")"; rEst="$(leer "${HIST9}/t9b.json" "r.get('estado')")"; rMot="$(leer "${HIST9}/t9b.json" "r.get('motivo')")"
-if [ "${RC}" -eq 0 ] && [ "${cEst}" = "medido" ] && [ "${rEst}" = "no_medido" ] && echo "${rMot}" | grep -q "reviewers-cost"; then
+if [ "${RC}" -eq 0 ] && [ "${cEst}" = "medido" ] && [ "${rEst}" = "no_medido" ] && echo "${rMot}" | grep "reviewers-cost" >/dev/null; then
   ok "T9b · sin reviewers-cost.js al lado: consumo medido igual, revisores no_medido con el motivo (exit 0)"
 else
   bad "T9b · fail-open del encadenado" "rc=${RC} consumo=${cEst} revisores=${rEst} motivo=${rMot} (exigir el medidor rompería el rescate del hilo en un arnés atrasado) · ${OUT}"
@@ -643,7 +643,7 @@ fi
 volcado "${HIST9}/t9c.json" "${S}" 'null' '{"spawns": 1}'
 OUT="$(TYCON_NO_REVIEWER_COST=1 node "${DIGEST}" --run "${HIST9}/t9c.json" --projects-dir "${PROJ}" --runs-dir "${RUNS}" --json 2>&1)"; RC=$?
 cEst="$(leer "${HIST9}/t9c.json" "d['consumo']['estado']")"; rEst="$(leer "${HIST9}/t9c.json" "r.get('estado')")"; rMot="$(leer "${HIST9}/t9c.json" "r.get('motivo')")"
-if [ "${RC}" -eq 0 ] && [ "${cEst}" = "medido" ] && [ "${rEst}" = "no_medido" ] && echo "${rMot}" | grep -q "apagado"; then
+if [ "${RC}" -eq 0 ] && [ "${cEst}" = "medido" ] && [ "${rEst}" = "no_medido" ] && echo "${rMot}" | grep "apagado" >/dev/null; then
   ok "T9c · con TYCON_NO_REVIEWER_COST=1: consumo medido igual, revisores no_medido con motivo «apagado»"
 else
   bad "T9c · interruptor" "rc=${RC} consumo=${cEst} revisores=${rEst} motivo=${rMot} (un apagado sin motivo se lee igual que un medidor que no existe) · ${OUT}"
@@ -677,7 +677,7 @@ m.procesarCorrida = (v, o) => ({ volcado: v, revisores: { estado: 'medido', lanz
 const r = td.procesarCorrida('${HIST9}/t9.json', { projectsDir: '${PROJ}', runsDir: '${RUNS}', home: require('os').homedir() });
 console.log(String(r.no_persistido || ''));
 " 2>&1)"
-if echo "${r9e}" | grep -q "revisores: no pude escribir"; then
+if echo "${r9e}" | grep "revisores: no pude escribir" >/dev/null; then
   ok "T9e · el no_persistido del medidor sube al resultado del rescate (→ --run sale 2)"
 else
   bad "T9e · no_persistido perdido" "salió «${r9e}» (el rescate devolvía 0 con el bloque sin escribir)"
@@ -693,7 +693,7 @@ print(d.get('revisores_medidos'), d.get('revisores_no_medidos'), d.get('revisore
 " "${OUT}" 2>/dev/null)"
 OUTT="$(node "${DIGEST}" --all --history-dir "${HIST9}" --projects-dir "${PROJ}" --runs-dir "${RUNS}" 2>&1)"
 # En --all el medidor se vuelve a encadenar sobre los 4: t9, t9b, t9c → medidos ahora (el medidor está y no está apagado); t9d sigue borrada.
-if [ "${RC}" -eq 0 ] && [ "${r15}" = "3 1 0" ] && echo "${OUTT}" | grep -q "revisores medidos (story 2.15): 3 · no medidos: 1"; then
+if [ "${RC}" -eq 0 ] && [ "${r15}" = "3 1 0" ] && echo "${OUTT}" | grep "revisores medidos (story 2.15): 3 · no medidos: 1" >/dev/null; then
   ok "T15 · el barrido de tokens-digest cuenta revisores medidos 3 · no medidos 1 · separación rota 0, en JSON y en texto"
 else
   bad "T15 · contadores del barrido" "rc=${RC} json=«${r15}» (esperaba «3 1 0») texto=$(echo "${OUTT}" | grep revisores | head -2) (sin esto una separación rota en el arranque de sesión no se ve en ningún lado)"
@@ -701,13 +701,13 @@ fi
 
 # ── T10 (AC1) · la salida en texto plano dice lo mismo que el JSON ─────────────────────────────────
 correr --run "${HIST}/t2.json" "${COMUNES[@]}"
-if [ "${RC}" -eq 0 ] && echo "${OUT}" | grep -q "2 lanzamientos" && echo "${OUT}" | grep -q "tokens medidos 3000 (n=2 de 2)" && echo "${OUT}" | grep -q "estimado: vacio"; then
+if [ "${RC}" -eq 0 ] && echo "${OUT}" | grep "2 lanzamientos" >/dev/null && echo "${OUT}" | grep "tokens medidos 3000 (n=2 de 2)" >/dev/null && echo "${OUT}" | grep "estimado: vacio" >/dev/null; then
   ok "T10 · sin --json: «2 lanzamientos · … tokens medidos 3000 (n=2 de 2) · estimado: vacio …»"
 else
   bad "T10 · texto plano" "rc=${RC} salida=${OUT}"
 fi
 OUT="$(node "${MEDIDOR}" --all --history-dir "${HIST}" "${COMUNES[@]}" 2>&1)"; RC=$?
-if [ "${RC}" -eq 0 ] && echo "${OUT}" | grep -q "con duración medida: 10" && echo "${OUT}" | grep -q "revisores que no volvieron: 2"; then
+if [ "${RC}" -eq 0 ] && echo "${OUT}" | grep "con duración medida: 10" >/dev/null && echo "${OUT}" | grep "revisores que no volvieron: 2" >/dev/null; then
   ok "T10 · el resumen del barrido en texto plano trae los mismos números que el JSON"
 else
   bad "T10 · resumen en texto plano" "rc=${RC} salida=${OUT}"

@@ -134,10 +134,10 @@ case "$EXCL" in *"# tycon-layer"*) ok "T5 el bloque # tycon-layer está" ;; *) m
 [ "$(printf '%s\n' "$EXCL" | head -2)" = $'# lo mío\nmis-notas/' ] && ok "T5 lo de la persona, fuera del bloque, intacto" || mal "T5 lo de la persona cambió: $EXCL"
 FALTAN=""
 for l in /tasks/ /.dashboard/ /guides/incident-log.md /guides/despues-igual.md /scripts/herramienta-privada.sh; do
-  printf '%s\n' "$EXCL" | grep -qxF "$l" || FALTAN="$FALTAN $l"
+  printf '%s\n' "$EXCL" | grep -xF "$l" >/dev/null || FALTAN="$FALTAN $l"
 done
 [ -z "$FALTAN" ] && ok "T5 carpetas privadas enteras y archivos sueltos uno por uno" || mal "T5 faltan en el bloque:$FALTAN"
-printf '%s\n' "$EXCL" | grep -qxF /tasks/tarea.md && mal "T5 un archivo de una carpeta privada entera no va suelto" || ok "T5 dentro de una carpeta privada no hay líneas sueltas"
+printf '%s\n' "$EXCL" | grep -xF /tasks/tarea.md >/dev/null && mal "T5 un archivo de una carpeta privada entera no va suelto" || ok "T5 dentro de una carpeta privada no hay líneas sueltas"
 ST="$(g "$ARBOL" status --porcelain)"
 [ "$ST" = " M scripts/tests/suites.json" ] && ok "T5 git status muestra sólo el pisado" || mal "T5 git status: «${ST}»"
 [ "$(perm "$ARBOL/scripts/herramienta-privada.sh")" = 755 ] && [ "$(j "$MANIFIESTO" "[f['mode'] for f in d['files'] if f['path']=='scripts/herramienta-privada.sh'][0]")" = 100755 ] \
@@ -187,7 +187,7 @@ layer_apply "$BASE/git-4.log" "$BASE/capa-2.json"
 [ "$(j "$MANIFIESTO" "[f['path'] for f in d['files'] if f['path'].startswith('guides/despues-')]")" = "[]" ] \
   && ok "T5 …y salen del manifiesto" || mal "T5 siguen en el manifiesto: $(j "$MANIFIESTO" "[f['path'] for f in d['files']]")"
 EXCL="$(cat "$ARBOL/.git/info/exclude")"
-printf '%s\n' "$EXCL" | grep -q despues- && mal "T5 siguen en el bloque: $EXCL" || ok "T5 …y del bloque de exclude"
+printf '%s\n' "$EXCL" | grep despues- >/dev/null && mal "T5 siguen en el bloque: $EXCL" || ok "T5 …y del bloque de exclude"
 [ ! -e "$ARBOL/tasks/vieja.md" ] && [ "$(j "$MANIFIESTO" "any(f['path']=='tasks/vieja.md' for f in d['files'])")" = False ] \
   && ok "T5 el agregado que el interno borró se borra (su hash era el del manifiesto)" || mal "T5 tasks/vieja.md sigue"
 [ -f "$ARBOL/tasks/vieja-editada.md" ] && [ "$(sha "$ARBOL/tasks/vieja-editada.md")" = "$VIEJA_EDITADA" ] \

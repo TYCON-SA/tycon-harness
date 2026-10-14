@@ -36,7 +36,7 @@ if [ "${TOOL}" = node ]; then
   else no "${T31} el bloque install:core salió ${RC}; su última línea: «${LAST}»"; fi
 else
   N="$(grep -c -F "${NAMES_IT}" "${OUT_DIR}/install.out" || true)"
-  if [ "${RC}" -ne 0 ] && [ "${N}" = 1 ] && grep -F "${NAMES_IT}" "${OUT_DIR}/install.out" | grep -q -F "${POINTS}"; then
+  if [ "${RC}" -ne 0 ] && [ "${N}" = 1 ] && grep -F "${NAMES_IT}" "${OUT_DIR}/install.out" | grep -F "${POINTS}" >/dev/null; then
     ok "${T31} el bloque install:core sale ${RC} con UNA línea que nombra ${TOOL} y remite a los requisitos de la portada"
   else no "${T31} el bloque install:core salió ${RC} con ${N} línea(s) «${NAMES_IT}»: $(tail -n 3 "${OUT_DIR}/install.out" | tr '\n' ' ')"; fi
 fi
@@ -51,7 +51,7 @@ fi
 # ── T31 · con el instalador suelto: su propia línea, antes del candado, salida 1 ─────────────────────────────
 bash "${CLONE}/scripts/install-tycon-hooks.sh" > "${OUT_DIR}/installer.out" 2>&1; RC=$?
 N="$(grep -c -F "${NAMES_IT}" "${OUT_DIR}/installer.out" || true)"
-if [ "${RC}" -eq 1 ] && [ "${N}" = 1 ] && grep -F "${NAMES_IT}" "${OUT_DIR}/installer.out" | grep -q -F "${POINTS}"; then
+if [ "${RC}" -eq 1 ] && [ "${N}" = 1 ] && grep -F "${NAMES_IT}" "${OUT_DIR}/installer.out" | grep -F "${POINTS}" >/dev/null; then
   ok "${T31} el instalador suelto sale 1 con UNA línea que nombra ${TOOL} y remite a los requisitos de la portada"
 else no "${T31} el instalador suelto salió ${RC} (esperado 1) con ${N} línea(s) «${NAMES_IT}»: $(tail -n 3 "${OUT_DIR}/installer.out" | tr '\n' ' ')"; fi
 if nothing_written; then ok "${T31} tras el instalador suelto no hay nada escrito bajo ~/.claude"

@@ -87,7 +87,7 @@ SKIPS=$(grep '^prs' "$D/fixaz/llamadas.log" 2>/dev/null | grep -o '\$skip=[0-9]*
 [ "$RC" = 0 ] && [ "$(head -1 "$D/seccion.txt" 2>/dev/null)" = "PR abiertos hace más de 2 días: 103" ] && [ "$SKIPS" = '$skip=0 $skip=100 ' ] \
   && ok "T3 pide la página 2 (\$skip=100), para en la incompleta y cuenta los 103" \
   || no "T3 rc=$RC · pedidos: [$SKIPS] · $(head -1 "$D/seccion.txt" 2>/dev/null) · $(head -c 300 "$D/out.txt")"
-grep '^prs' "$D/fixaz/llamadas.log" 2>/dev/null | head -1 | grep -q '\$top=100' && grep -q 'searchCriteria.status=active' "$D/fixaz/llamadas.log" \
+grep '^prs' "$D/fixaz/llamadas.log" 2>/dev/null | head -1 | grep '\$top=100' >/dev/null && grep -q 'searchCriteria.status=active' "$D/fixaz/llamadas.log" \
   && ok "T3 cada página pide \$top=100 y sólo los activos" || no "T3 la consulta no pide \$top=100 / status=active"
 
 # T4 (AC 3) consulta_fallida_no_es_cero
@@ -147,7 +147,7 @@ RC=$(correr "$D")
 D="$TMP/t9"; mundo "$D"; prs "$D" 0 901:1
 ORG=https://dev.azure.com/configurada
 FIXAZ="$D/fixaz" TYCON_ADO_CMD="$DOBLE" TYCON_ADO_ORG="$ORG" node "$GUION" --today "$HOY" --out "$D/seccion.txt" > "$D/out.txt" 2>&1; RC=$?
-[ "$RC" = 0 ] && grep '^prs' "$D/fixaz/llamadas.log" | grep -qF "\"--org\",\"$ORG\"" \
+[ "$RC" = 0 ] && grep '^prs' "$D/fixaz/llamadas.log" | grep -F "\"--org\",\"$ORG\"" >/dev/null \
   && ok "T9 sin --org pregunta a la organización de la configuración del arnés ($ORG)" || no "T9 rc=$RC · $(head -c 300 "$D/out.txt")"
 
 # T10 (story 8.3, AC 10) — sin --org y sin organización configurada (HOME vacía, sin perfil): Azure DevOps está APAGADA:

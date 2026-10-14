@@ -63,7 +63,7 @@ if [ -f "$PUERTA" ]; then
       eval "$LINEA_CLIENTE"
       printf '%s' "$SALIDA" ) > "$TMP/t31.out" 2>&1
     salida_t31="$(cat "$TMP/t31.out" 2>/dev/null)"
-    if printf '%s' "$salida_t31" | grep -qiE "Unknown command|Unexpected argument|invalid argument|unknown shorthand|liner:"; then
+    if printf '%s' "$salida_t31" | grep -iE "Unknown command|Unexpected argument|invalid argument|unknown shorthand|liner:" >/dev/null; then
       no "T31 · el cliente REAL rechaza los flags de la puerta → no puede correr NINGUNA consulta: «$(printf '%s' "$salida_t31" | head -1)»"
     elif [ -z "$salida_t31" ]; then
       no "T31 · el cliente real no dijo nada: el caso no puede distinguir «aceptó los flags» de «no corrió»"

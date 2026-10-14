@@ -67,7 +67,7 @@ printf 'PRINT 1;\nGO\n' > database/055_ok.sql && git add database/055_ok.sql
 printf 'DELETE FROM Tabla; -- esto es el disco, no lo stageado\n' > database/055_ok.sql
 rc=$(correr "${CONF[@]}")
 { [ "$rc" -eq 0 ] && grep -q '055_ok.sql compila' "$TMP/o.txt" \
-  && [ "$(llamadas)" -eq 1 ] && head -1 "$TMP/entrada.log" | grep -qi '^SET NOEXEC ON' \
+  && [ "$(llamadas)" -eq 1 ] && head -1 "$TMP/entrada.log" | grep -i '^SET NOEXEC ON' >/dev/null \
   && grep -q 'PRINT 1;' "$TMP/entrada.log" && ! grep -q 'DELETE FROM Tabla' "$TMP/entrada.log" \
   && grep -Eq '(^| )-b( |$)' "$TMP/argv.log" && grep -Eq '(^| )-x( |$)' "$TMP/argv.log" \
   && grep -q -- '-S prueba.local' "$TMP/argv.log" && grep -q -- '-d Pruebas' "$TMP/argv.log"; } \
@@ -133,7 +133,7 @@ repo
 printf 'PRINT 1;\n' > database/059_ok.sql && git add database/059_ok.sql
 rc=$(correr "${CONF[@]}")
 todo="$(cat "$TMP/o.txt" "$TMP/argv.log" 2>/dev/null; cat "$TMP/h/.claude/.tycon-pipeline/sql-compile.jsonl" 2>/dev/null)"
-{ [ "$rc" -eq 0 ] && ! printf '%s' "$todo" | grep -q 'clave-que-no-debe-aparecer' && grep -q 'pass=clave-que-no-debe-aparecer' "$TMP/env.log"; } \
+{ [ "$rc" -eq 0 ] && ! printf '%s' "$todo" | grep 'clave-que-no-debe-aparecer' >/dev/null && grep -q 'pass=clave-que-no-debe-aparecer' "$TMP/env.log"; } \
   && ok "C8: 🔴 la contraseña le llega a sqlcmd por SQLCMDPASSWORD y no aparece en argv, en la salida ni en el registro" \
   || no "C8: rc=$rc · argv=$(cat "$TMP/argv.log" 2>/dev/null)"
 

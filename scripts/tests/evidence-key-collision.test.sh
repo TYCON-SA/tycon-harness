@@ -152,7 +152,7 @@ faltan=""
 [ -f "$E4/a__1.1-smoke-ledger.jsonl" ] || faltan="$faltan humo"
 [ -f "$E4/a__1.1-runtime-matrix.md" ] || faltan="$faltan matriz"
 case "$(basename "${macro:-x}")" in a__1.1-*) ;; *) faltan="$faltan dod(${macro:-sin ruta})";; esac
-ls "$E4" | grep -q '^a__1\.1-e2e-gate-' || faltan="$faltan gate-navegador"
+ls "$E4" | grep '^a__1\.1-e2e-gate-' >/dev/null || faltan="$faltan gate-navegador"
 [ -f "$E4/a__1.1-tests-result.json" ] || faltan="$faltan resultado-pruebas"
 viejos="$(ls "$E4" | grep '^1\.1-' | tr '\n' ' ')"
 if [ -z "$faltan" ] && [ -z "$viejos" ]; then ok "T4 humo, matriz, DoD, gate de navegador y resultado de pruebas usan a__1.1"
@@ -195,7 +195,7 @@ v6="$(veredicto_ac1 < "$TMP/m6.json")"
 if [ "$v6" != "RUNTIME" ] && [ "$v6" != "?" ]; then ok "T6 el humo viejo bajo 1.1 no cuenta (AC1: $v6)"
 else no "T6 el humo viejo bajo el número ambiguo no puede contar: AC1 dio «${v6}»"; fi
 huer="$(node -e 'const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));const o=r.orphans||{};console.log(((o.unowned||[]).map(f=>require("path").basename(f))).join(","))' "$TMP/m6.json" 2>/dev/null)"
-if echo "$huer" | grep -q '1.1-smoke-ledger.jsonl' && grep -q "$E6/1.1-smoke-ledger.jsonl" "$TMP/m6.md" && grep -qi 'huérfana' "$TMP/m6.md"; then
+if echo "$huer" | grep '1.1-smoke-ledger.jsonl' >/dev/null && grep -q "$E6/1.1-smoke-ledger.jsonl" "$TMP/m6.md" && grep -qi 'huérfana' "$TMP/m6.md"; then
   ok "T7 la evidencia vieja se reporta como huérfana, con su ruta"
 else no "T7 la huérfana tiene que aparecer en el reporte con su ruta: json «${huer}»"; fi
 amano="$(node -e 'const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));const o=r.orphans||{};console.log(((o.handRenamed||[]).map(f=>require("path").basename(f))).join(","))' "$TMP/m6.json" 2>/dev/null)"
@@ -208,14 +208,14 @@ L9="$TMP/l9"; rm -rf "$L9"; mkdir -p "$L9"; git -C "$L9" init -q
 story "$L9/.specs/a/stories/1-1-x.md" 1.1
 story "$L9/.specs/b/stories/1-1-y.md" 1.1
 out9="$(cd "$L9" && node "$AQUI/scripts/lib/lint-story-frontmatter.js" 2>&1)"; rc9=$?
-if [ $rc9 -eq 0 ] && echo "$out9" | grep -q 'repetid' && echo "$out9" | grep -q '.specs/a/stories/1-1-x.md' && echo "$out9" | grep -q '.specs/b/stories/1-1-y.md'; then
+if [ $rc9 -eq 0 ] && echo "$out9" | grep 'repetid' >/dev/null && echo "$out9" | grep '.specs/a/stories/1-1-x.md' >/dev/null && echo "$out9" | grep '.specs/b/stories/1-1-y.md' >/dev/null; then
   ok "T9 número repetido: el lint lo avisa con las dos rutas y sale 0"
 else no "T9 el lint tiene que avisar el 1.1 repetido con sus rutas y salir 0 (salió $rc9): $(echo "$out9" | tail -3 | tr '\n' ' ')"; fi
 L10="$TMP/l10"; rm -rf "$L10"; mkdir -p "$L10"; git -C "$L10" init -q
 story "$L10/.specs/a/stories/1-1-x.md" 1.1
 story "$L10/.specs/b/stories/2-1-y.md" 2.1
 out10="$(cd "$L10" && node "$AQUI/scripts/lib/lint-story-frontmatter.js" 2>&1)"; rc10=$?
-if [ $rc10 -eq 0 ] && ! echo "$out10" | grep -q 'repetid'; then ok "T10 números únicos: el lint no avisa"
+if [ $rc10 -eq 0 ] && ! echo "$out10" | grep 'repetid' >/dev/null; then ok "T10 números únicos: el lint no avisa"
 else no "T10 con números únicos no hay aviso (salió $rc10): $(echo "$out10" | grep repetid | head -2)"; fi
 
 # T11 — la convención, el incident-log y el README
@@ -235,7 +235,7 @@ else no "T11 faltan:$f11"; fi
 
 # T12 — sin recorrido completo del repo no hay clave adivinada
 out12="$(TYCON_EVIDENCE_KEY_BUDGET_MS=0 node "$SK/lib/evidence-key.js" "$W1/.specs/a/stories/1-1-x.md" 2>&1)"; rc12=$?
-if [ $rc12 -ne 0 ] && echo "$out12" | grep -qi 'no pude recorrer' && ! echo "$out12" | grep -qE '^(1\.1|a__1\.1)$'; then
+if [ $rc12 -ne 0 ] && echo "$out12" | grep -i 'no pude recorrer' >/dev/null && ! echo "$out12" | grep -E '^(1\.1|a__1\.1)$' >/dev/null; then
   ok "T12 recorrido incompleto: error dicho y sin clave (salió $rc12)"
 else no "T12 sin recorrido completo tiene que fallar sin devolver clave (salió $rc12): $out12"; fi
 
@@ -252,7 +252,7 @@ r13="$(node -e '
   const nota = (r.notMeasured || []).find((n) => /^dod_evidence:/.test(n)) || "";
   console.log((r.dod === null ? "dod-null" : "dod=" + JSON.stringify(r.dod)) + " | " + nota);
 ' "$AQUI/scripts/metrics/sdlc-stage-metrics.js" "$M13" 2>/dev/null)"
-if echo "$r13" | grep -q '^dod-null | dod_evidence: .*incompleto'; then ok "T13 medidor nocturno con recorrido incompleto: «no medido», sin clave adivinada"
+if echo "$r13" | grep '^dod-null | dod_evidence: .*incompleto' >/dev/null; then ok "T13 medidor nocturno con recorrido incompleto: «no medido», sin clave adivinada"
 else no "T13 con el recorrido incompleto el medidor no puede cruzar evidencia: «${r13}»"; fi
 
 # T14 — «no pude calcular la clave» no se dice como «no hay evidencia»: el portón de Azure y el freno del cambio de
@@ -262,7 +262,7 @@ e14="$(cd "$M5" && TYCON_EVIDENCE_KEY_BUDGET_MS=0 node -e '
   const fw = require(sk + "/on-frontmatter-write.js"), g = require(ci);
   console.log("azure:" + g.hayEvidencia(repo, "dod-runtime", "1.1", b) + " estado:" + fw.hasDodEvidence([repo], "1.1", b));
 ' "$SK" "$AQUI/scripts/ci/tycon-ci-gate.js" "$M5/.specs/b/stories/1-1-y.md" "$M5" 2>&1)"
-if echo "$e14" | grep -q 'azure:false estado:false' && [ "$(echo "$e14" | grep -c 'no pude calcular la clave')" -ge 2 ]; then
+if echo "$e14" | grep 'azure:false estado:false' >/dev/null && [ "$(echo "$e14" | grep -c 'no pude calcular la clave')" -ge 2 ]; then
   ok "T14 clave no calculable: sin evidencia y con el motivo dicho (portón de Azure y freno de estado)"
 else no "T14 sin clave no hay evidencia, y el motivo tiene que decirse: «$(echo "$e14" | tr '\n' ' ')»"; fi
 
@@ -282,7 +282,7 @@ else no "T15 test-gate.sh con la ruta de la story tiene que dejar a__1.1-tests-r
 # ── T16-T21: lo que encontró el pase adversarial de la iteración 1 (9 hallazgos, 4 causas) ──────────────────────────
 # claves(<ruta>...) imprime las claves separadas por espacio.
 claves(){ local out="" k; for p in "$@"; do k="$(clave "$p")"; out="$out ${k:-?}"; done; echo "${out# }"; }
-distintas(){ [ "$(printf '%s\n' $1 | sort -u | wc -l | tr -d ' ')" -eq "$(printf '%s\n' $1 | wc -l | tr -d ' ')" ] && ! echo "$1" | grep -q '?'; }
+distintas(){ [ "$(printf '%s\n' $1 | sort -u | wc -l | tr -d ' ')" -eq "$(printf '%s\n' $1 | wc -l | tr -d ' ')" ] && ! echo "$1" | grep '?' >/dev/null; }
 
 # T16 — el desempate de un tema repetido no choca con el nombre de otro tema (foo/bar.md · foo/baz.md · foo-bar/x.md)
 W16="$TMP/w16"; repo "$W16"
@@ -344,7 +344,7 @@ W22="$TMP/w22"; repo "$W22"; E22="$W22/.advisors/dod-runtime"; mkdir -p "$W22/af
 f22=""
 # espera <etiqueta> <exit esperado> <texto esperado en stderr> -- <comando...>
 espera(){ local et="$1" ex="$2" txt="$3"; shift 4; local err rc; err="$("$@" 2>&1 >/dev/null)"; rc=$?
-  if [ "$rc" -ne "$ex" ] || ! printf '%s' "$err" | grep -q -- "$txt"; then f22="$f22 $et(salió $rc: $(printf '%s' "$err" | head -1 | cut -c1-80))"; fi; }
+  if [ "$rc" -ne "$ex" ] || ! printf '%s' "$err" | grep -- "$txt" >/dev/null; then f22="$f22 $et(salió $rc: $(printf '%s' "$err" | head -1 | cut -c1-80))"; fi; }
 espera humo-ruta-inexistente 2 'no encontré la story' -- bash "$SK/smoke-run.sh" "$E22" "$W22/no-existe.md" --acs 1 -- true
 espera humo-id-con-barras 2 'no sirve para nombrar evidencia' -- bash "$SK/smoke-run.sh" "$E22" "../afuera/x" --acs 1 -- true
 espera humo-id-con-comillas 2 'no sirve para nombrar evidencia' -- bash "$SK/smoke-run.sh" "$E22" '1.1"x' --acs 1 -- true
@@ -353,7 +353,7 @@ espera gate-id-con-barras 1 'no sirve para nombrar evidencia' -- bash "$SK/e2e-g
 espera macro-ruta-inexistente 2 'no encontré la story' -- node "$SK/step-7c-macro.js" --story "$W22/no-existe.md" --scenario "$TMP/escenario.json" --evidence-dir "$E22" --dry-run
 espera macro-id-con-barras 2 'no sirve para nombrar evidencia' -- node "$SK/step-7c-macro.js" --story "../afuera/x" --scenario "$TMP/escenario.json" --evidence-dir "$E22" --dry-run
 r22="$(cd "$W22" && TYCON_EVIDENCE_DIR="$E22" node "$SK/lib/test-gate-report.js" vitest "$W22" "$W22" "$TMP/res" "$TMP/tr22.json" 0 "../afuera/x" 75 2026-10-05T12:00:00Z 2>&1 >/dev/null)"
-printf '%s' "$r22" | grep -q 'no sirve para nombrar evidencia' || f22="$f22 informe-sin-aviso($(printf '%s' "$r22" | head -1 | cut -c1-80))"
+printf '%s' "$r22" | grep 'no sirve para nombrar evidencia' >/dev/null || f22="$f22 informe-sin-aviso($(printf '%s' "$r22" | head -1 | cut -c1-80))"
 # Nada en la carpeta de evidencia, nada en la de al lado, nada suelto en .advisors/.
 [ -n "$(ls -A "$E22" 2>/dev/null)" ] && f22="$f22 evidencia-escrita($(ls -A "$E22" | tr '\n' ' '))"
 [ -n "$(ls -A "$W22/afuera" 2>/dev/null)" ] && f22="$f22 escribió-afuera($(ls -A "$W22/afuera" | tr '\n' ' '))"
