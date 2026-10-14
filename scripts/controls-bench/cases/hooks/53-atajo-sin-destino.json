@@ -1,0 +1,111 @@
+{
+  "__doc": "Atajos de nombres viejos (story 8.9) sin su destino (story 8.26, 2026-10-13). Cuando el repo privado se adelgazó, 106 de sus 114 atajos quedaron apuntando a destinos borrados, y el pre-commit de cada producto, que llama al lint de stories por un atajo, empezó a rechazar todo commit que tocara una story. Estos casos escriben los atajos con el generador REAL (legacy-names.js --write-shims) en un repo de juguete, les borran el destino como lo hizo el adelgazado y, sin arnés instalado al que caer, exigen ROJO nombrando el destino que falta: un atajo roto nunca sale 0 en silencio. El control positivo es el mismo atajo con su destino: corre y pasa los argumentos. Que con el arnés instalado el atajo caiga a él lo fija el caso del generador, en el público.",
+  "hooks": [
+    {
+      "hook": "atajo de nombre viejo (legacy-names.js --write-shims)",
+      "script": "${FIXTURE}/correr.sh",
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "cases": [
+        {
+          "id": "js-con-destino-corre-el-destino",
+          "type": "must-run",
+          "__doc": "Control positivo: el atajo .js generado corre su destino y le pasa los argumentos.",
+          "files": {
+            "map.json": "{\n \"__about\": \"mapa de juguete del caso\",\n \"entries\": [\n  {\n   \"kind\": \"file\",\n   \"old\": \"scripts/viejo.js\",\n   \"new\": \"scripts/lib/destino.js\",\n   \"callers\": [\n    \"products\"\n   ]\n  },\n  {\n   \"kind\": \"file\",\n   \"old\": \"scripts/viejo.sh\",\n   \"new\": \"scripts/lib/destino.sh\",\n   \"callers\": [\n    \"products\"\n   ]\n  }\n ]\n}\n",
+            "correr.sh": "#!/usr/bin/env bash\ncd \"$FIXTURE\"\nexport HOME=\"$FIXTURE/home\" TYCON_GUIDES_DIR=\nnode r/scripts/viejo.js a b\n"
+          },
+          "setup": [
+            "mkdir -p r/scripts/lib home && cp map.json r/scripts/lib/renames.json",
+            "printf 'console.log(\"DESTINO-OK \" + process.argv.slice(2).join(\" \"));\\n' > r/scripts/lib/destino.js",
+            "printf '#!/usr/bin/env bash\\necho \"DESTINO-OK $*\"\\n' > r/scripts/lib/destino.sh && chmod +x r/scripts/lib/destino.sh",
+            "TYCON_GUIDES_DIR= node \"$TCG/scripts/lib/legacy-names.js\" --write-shims --map \"$PWD/map.json\" --root \"$PWD/r\" >/dev/null",
+            "head -2 r/scripts/viejo.js | grep -q 'tycon-legacy-shim: scripts/lib/destino.js' && head -2 r/scripts/viejo.sh | grep -q 'tycon-legacy-shim: scripts/lib/destino.sh'"
+          ],
+          "stdin": {},
+          "expect": {
+            "stdout_re": [
+              "DESTINO-OK a b"
+            ]
+          }
+        },
+        {
+          "id": "js-sin-destino-ni-instalado-sale-rojo-nombrandolo",
+          "type": "must-run",
+          "__doc": "El atajo .js con el destino borrado y sin arnés instalado: rojo, nombrando el destino.",
+          "files": {
+            "map.json": "{\n \"__about\": \"mapa de juguete del caso\",\n \"entries\": [\n  {\n   \"kind\": \"file\",\n   \"old\": \"scripts/viejo.js\",\n   \"new\": \"scripts/lib/destino.js\",\n   \"callers\": [\n    \"products\"\n   ]\n  },\n  {\n   \"kind\": \"file\",\n   \"old\": \"scripts/viejo.sh\",\n   \"new\": \"scripts/lib/destino.sh\",\n   \"callers\": [\n    \"products\"\n   ]\n  }\n ]\n}\n",
+            "correr.sh": "#!/usr/bin/env bash\ncd \"$FIXTURE\"\nexport HOME=\"$FIXTURE/home\" TYCON_GUIDES_DIR=\nnode r/scripts/viejo.js a b\n"
+          },
+          "setup": [
+            "mkdir -p r/scripts/lib home && cp map.json r/scripts/lib/renames.json",
+            "printf 'console.log(\"DESTINO-OK \" + process.argv.slice(2).join(\" \"));\\n' > r/scripts/lib/destino.js",
+            "printf '#!/usr/bin/env bash\\necho \"DESTINO-OK $*\"\\n' > r/scripts/lib/destino.sh && chmod +x r/scripts/lib/destino.sh",
+            "TYCON_GUIDES_DIR= node \"$TCG/scripts/lib/legacy-names.js\" --write-shims --map \"$PWD/map.json\" --root \"$PWD/r\" >/dev/null",
+            "head -2 r/scripts/viejo.js | grep -q 'tycon-legacy-shim: scripts/lib/destino.js' && head -2 r/scripts/viejo.sh | grep -q 'tycon-legacy-shim: scripts/lib/destino.sh'",
+            "rm r/scripts/lib/destino.js r/scripts/lib/destino.sh"
+          ],
+          "stdin": {},
+          "expect": {
+            "exit": 1,
+            "stderr_re": [
+              "scripts/lib/destino\\.js"
+            ],
+            "stdout_not_re": [
+              "DESTINO-OK"
+            ]
+          }
+        },
+        {
+          "id": "sh-con-destino-corre-el-destino",
+          "type": "must-run",
+          "__doc": "Control positivo: el atajo .sh generado corre su destino y le pasa los argumentos.",
+          "files": {
+            "map.json": "{\n \"__about\": \"mapa de juguete del caso\",\n \"entries\": [\n  {\n   \"kind\": \"file\",\n   \"old\": \"scripts/viejo.js\",\n   \"new\": \"scripts/lib/destino.js\",\n   \"callers\": [\n    \"products\"\n   ]\n  },\n  {\n   \"kind\": \"file\",\n   \"old\": \"scripts/viejo.sh\",\n   \"new\": \"scripts/lib/destino.sh\",\n   \"callers\": [\n    \"products\"\n   ]\n  }\n ]\n}\n",
+            "correr.sh": "#!/usr/bin/env bash\ncd \"$FIXTURE\"\nexport HOME=\"$FIXTURE/home\" TYCON_GUIDES_DIR=\nbash r/scripts/viejo.sh a b\n"
+          },
+          "setup": [
+            "mkdir -p r/scripts/lib home && cp map.json r/scripts/lib/renames.json",
+            "printf 'console.log(\"DESTINO-OK \" + process.argv.slice(2).join(\" \"));\\n' > r/scripts/lib/destino.js",
+            "printf '#!/usr/bin/env bash\\necho \"DESTINO-OK $*\"\\n' > r/scripts/lib/destino.sh && chmod +x r/scripts/lib/destino.sh",
+            "TYCON_GUIDES_DIR= node \"$TCG/scripts/lib/legacy-names.js\" --write-shims --map \"$PWD/map.json\" --root \"$PWD/r\" >/dev/null",
+            "head -2 r/scripts/viejo.js | grep -q 'tycon-legacy-shim: scripts/lib/destino.js' && head -2 r/scripts/viejo.sh | grep -q 'tycon-legacy-shim: scripts/lib/destino.sh'"
+          ],
+          "stdin": {},
+          "expect": {
+            "stdout_re": [
+              "DESTINO-OK a b"
+            ]
+          }
+        },
+        {
+          "id": "sh-sin-destino-ni-instalado-sale-rojo-nombrandolo",
+          "type": "must-run",
+          "__doc": "El atajo .sh con el destino borrado y sin arnés instalado: rojo (127, el de bash sin el archivo), nombrando el destino.",
+          "files": {
+            "map.json": "{\n \"__about\": \"mapa de juguete del caso\",\n \"entries\": [\n  {\n   \"kind\": \"file\",\n   \"old\": \"scripts/viejo.js\",\n   \"new\": \"scripts/lib/destino.js\",\n   \"callers\": [\n    \"products\"\n   ]\n  },\n  {\n   \"kind\": \"file\",\n   \"old\": \"scripts/viejo.sh\",\n   \"new\": \"scripts/lib/destino.sh\",\n   \"callers\": [\n    \"products\"\n   ]\n  }\n ]\n}\n",
+            "correr.sh": "#!/usr/bin/env bash\ncd \"$FIXTURE\"\nexport HOME=\"$FIXTURE/home\" TYCON_GUIDES_DIR=\nbash r/scripts/viejo.sh a b\n"
+          },
+          "setup": [
+            "mkdir -p r/scripts/lib home && cp map.json r/scripts/lib/renames.json",
+            "printf 'console.log(\"DESTINO-OK \" + process.argv.slice(2).join(\" \"));\\n' > r/scripts/lib/destino.js",
+            "printf '#!/usr/bin/env bash\\necho \"DESTINO-OK $*\"\\n' > r/scripts/lib/destino.sh && chmod +x r/scripts/lib/destino.sh",
+            "TYCON_GUIDES_DIR= node \"$TCG/scripts/lib/legacy-names.js\" --write-shims --map \"$PWD/map.json\" --root \"$PWD/r\" >/dev/null",
+            "head -2 r/scripts/viejo.js | grep -q 'tycon-legacy-shim: scripts/lib/destino.js' && head -2 r/scripts/viejo.sh | grep -q 'tycon-legacy-shim: scripts/lib/destino.sh'",
+            "rm r/scripts/lib/destino.js r/scripts/lib/destino.sh"
+          ],
+          "stdin": {},
+          "expect": {
+            "exit": 127,
+            "stderr_re": [
+              "scripts/lib/destino\\.sh"
+            ],
+            "stdout_not_re": [
+              "DESTINO-OK"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
