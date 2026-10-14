@@ -69,6 +69,10 @@
 #     el del arnés: TYCON_CLEAN_MACHINE_SKILLS_REF no hace falta, y si pide otro commit se niega (`second_source`; lo
 #     prueba, sin docker, «T26 (fuentes)»).
 #   público (TYCON_CLEAN_MACHINE_SOURCE=<raíz del repo público>) — sobre ese repo, que es la unión. T29 sale NO MEDIDO.
+#   En el árbol del repo de MANTENIMIENTO adelgazado (`.tycon/internal-forms.json` con `layout: thin`, story 8.26) el
+#     modo interno ya no corre (AC 36: ese árbol no arma la copia; la copia es el repo público, que mide la máquina
+#     limpia en cada pedido). En el nocturno sale NO MEDIDO con ese motivo; pedida a mano, sale 1 diciendo cómo medir
+#     (con TYCON_CLEAN_MACHINE_SOURCE). Lo prueba, sin docker, «T34 (mantenimiento)».
 #     La versión esperada es la del `version.json` del árbol; si no lo trae, esa verificación sale NO MEDIDO.
 # TOPES: cada paso corre bajo `clean-machine/run-capped.js` (en macOS no hay `timeout`); al vencer mata el grupo, saca
 #   el contenedor y el paso sale en rojo con su nombre. TYCON_CLEAN_MACHINE_CAP_S pisa el tope de CADA paso;
@@ -779,6 +783,35 @@ t34() {
     ok "T34 con TYCON_CLEAN_MACHINE=0 no mide ni en el nocturno: NO MEDIDO con su motivo, ningún ✅, salida 0"
   else no "T34 con TYCON_CLEAN_MACHINE=0 en el nocturno: salida ${rc}, $(greens "${out}") ✅ — $(tail -n 2 "${out}" | tr '\n' ' ')"; fi
 
+  # el árbol del repo de mantenimiento adelgazado (story 8.26, AC 36): esta misma prueba, copiada a una raíz cuyo
+  # `.tycon/internal-forms.json` dice `layout: thin`. En el nocturno no arma ninguna copia: NO MEDIDO con el motivo,
+  # salida 0. Pedida a mano (con un docker de mentira en el PATH, para llegar a la elección del modo): salida 1, mismo
+  # motivo. El espejo: con TYCON_CLEAN_MACHINE_SOURCE puesta ya no es «el árbol de mantenimiento» y sigue de largo
+  # (sin docker, hasta su propio NO MEDIDO por docker).
+  mkdir -p "${d}/thin/scripts/tests" "${d}/thin/.tycon" "${d}/thin-bin"
+  cp "${SELF}" "${d}/thin/scripts/tests/clean-machine.test.sh" && cp -R "${LAB}" "${d}/thin/scripts/tests/clean-machine" \
+    && printf '{ "layout": "thin" }\n' > "${d}/thin/.tycon/internal-forms.json" \
+    && cp -R "${d}/bin/." "${d}/thin-bin/" && cp "${d}/fake/docker" "${d}/thin-bin/docker" \
+    || { no "T34 (mantenimiento) no pude armar la raíz adelgazada de juguete"; return; }
+  thin_inner() {
+    local o="$1" p="$2"; shift 2
+    env -u TYCON_CLEAN_MACHINE -u TF_BUILD -u BUILD_REASON -u TYCON_CLEAN_MACHINE_SOURCE -u TYCON_CLEAN_MACHINE_CAP_S \
+      -u TYCON_CLEAN_MACHINE_BUDGET_S -u TYCON_CLEAN_MACHINE_HARNESS_REF -u TYCON_CLEAN_MACHINE_SKILLS_REF \
+      PATH="${p}" TYCON_CLEAN_MACHINE_INNER=1 "$@" bash "${d}/thin/scripts/tests/clean-machine.test.sh" > "${o}" 2>&1
+  }
+  out="${d}/case-thin.out"; thin_inner "${out}" "${d}/bin" TF_BUILD=True BUILD_REASON=Schedule; rc=$?
+  if [ "${rc}" -eq 0 ] && grep -q '^⏭ clean-machine: NO MEDIDO — .*AC 36' "${out}" && [ "$(greens "${out}")" = 0 ]; then
+    ok "T34 (mantenimiento) el nocturno del árbol de mantenimiento no arma la copia: NO MEDIDO con su motivo (AC 36), ningún ✅, salida 0"
+  else no "T34 (mantenimiento) el nocturno del árbol de mantenimiento: salida ${rc}, $(greens "${out}") ✅ — $(tail -n 2 "${out}" | tr '\n' ' ')"; fi
+  out="${d}/case-thin-asked.out"; thin_inner "${out}" "${d}/thin-bin" TYCON_CLEAN_MACHINE=1; rc=$?
+  if [ "${rc}" -eq 1 ] && grep -q 'NO MEDIDO — .*AC 36' "${out}" && [ "$(greens "${out}")" = 0 ]; then
+    ok "T34 (mantenimiento) pedida a mano en el árbol de mantenimiento: no arma nada, dice cómo medir, salida 1"
+  else no "T34 (mantenimiento) pedida a mano en el árbol de mantenimiento: salida ${rc}, $(greens "${out}") ✅ — $(tail -n 2 "${out}" | tr '\n' ' ')"; fi
+  out="${d}/case-thin-source.out"; thin_inner "${out}" "${d}/bin" TF_BUILD=True BUILD_REASON=Schedule TYCON_CLEAN_MACHINE_SOURCE="${d}/source"; rc=$?
+  if [ "${rc}" -eq 1 ] && ! grep -q 'AC 36' "${out}" && grep -q 'NO MEDIDO — .*docker' "${out}"; then
+    ok "T34 (mantenimiento) el espejo: con TYCON_CLEAN_MACHINE_SOURCE el árbol de mantenimiento sí mide (acá, sin docker, hasta su NO MEDIDO por docker)"
+  else no "T34 (mantenimiento) el espejo con TYCON_CLEAN_MACHINE_SOURCE: salida ${rc} — $(tail -n 2 "${out}" | tr '\n' ' ')"; fi
+
   out="${d}/case4.out"; t="${SECONDS}"
   inner "${out}" "${d}/fake:${d}/bin" TYCON_CLEAN_MACHINE=1 TYCON_CLEAN_MACHINE_CAP_S=2 TYCON_CLEAN_MACHINE_SOURCE="${d}/source"; rc=$?
   t=$((SECONDS - t))
@@ -838,13 +871,29 @@ if [ "${TYCON_CLEAN_MACHINE_INNER:-}" != 1 ] && [ "${KEEP}" -eq 0 ]; then t34; c
 
 # ── compuerta 3 · política: ¿le toca medir? ──────────────────────────────────────────────────────────────────
 POLICY_WHY=""
+# maintenance_tree <raíz> — sale 0 si la raíz es el árbol del repo de MANTENIMIENTO adelgazado (story 8.26, tanda I): su
+# `.tycon/internal-forms.json` declara `"layout": "thin"`. Ese árbol (lo privado con el público encima) ya no arma la
+# copia pública (story 8.26, AC 36): la copia ES el repo público, y su CI mide la máquina limpia en cada pedido
+# (`public-ci.sh --clean-machine`, modo público). Un archivo ilegible no cuenta como adelgazado: se mide como siempre.
+MAINTENANCE_WHY="el árbol del repo de mantenimiento ya no arma la copia pública (story 8.26, AC 36): la máquina limpia la mide el repo público en cada pedido (public-ci.sh --clean-machine); acá va con TYCON_CLEAN_MACHINE_SOURCE=<clon del público>"
+maintenance_tree() {
+  [ -f "$1/.tycon/internal-forms.json" ] || return 1
+  node -e 'try { process.exit(JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).layout === "thin" ? 0 : 1); } catch (_) { process.exit(1); }' \
+    "$1/.tycon/internal-forms.json"
+}
 measures() {
   case "${TYCON_CLEAN_MACHINE:-}" in
     1) return 0 ;;
     0) POLICY_WHY="TYCON_CLEAN_MACHINE=0: quien corre pidió no medir"; return 1 ;;
   esac
   if [ -n "${TF_BUILD:-}" ]; then
-    [ "${BUILD_REASON:-}" = "Schedule" ] && return 0
+    if [ "${BUILD_REASON:-}" = "Schedule" ]; then
+      # el nocturno del repo de mantenimiento: sin un público que medir, no le toca (no es un rojo ni un verde)
+      if [ -z "${TYCON_CLEAN_MACHINE_SOURCE:-}" ] && [ -z "${ONLY}" ] && maintenance_tree "${ROOT}"; then
+        POLICY_WHY="${MAINTENANCE_WHY}"; return 1
+      fi
+      return 0
+    fi
     POLICY_WHY="corre en el nocturno, no en el control de cada cambio (BUILD_REASON=${BUILD_REASON:-sin definir}; TYCON_CLEAN_MACHINE=1 la fuerza)"
     return 1
   fi
@@ -887,6 +936,8 @@ elif [ -n "${SOURCE}" ]; then
   done
 else
   MODE=internal
+  # pedida a mano (TYCON_CLEAN_MACHINE=1) en el árbol de mantenimiento: no hay copia que armar, y se dice cómo medir
+  if maintenance_tree "${ROOT}"; then unable "${MAINTENANCE_WHY}"; fi
   for need in scripts/publishing/export.js scripts/publishing/allowlist.json scripts/publishing/replacements.json scripts/publishing/public-files/LICENSE; do
     [ -e "${ROOT}/${need}" ] || unable "modo interno sin exportador (falta ${need}): en el repo público va con TYCON_CLEAN_MACHINE_SOURCE=<raíz>"
   done

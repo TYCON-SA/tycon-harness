@@ -161,13 +161,8 @@
     { "path": "pipelines", "reason": "la carpeta de pipelines de CI de cada repo (la carpeta suelta: un pipeline concreto del equipo se marca)" },
     { "path": "specs", "reason": "la carpeta de stories de cada repo (la carpeta suelta: una story concreta del equipo se marca)" }
   ],
-  "__publicTexts": "Textos de código que en el repo del equipo diagnostican una integración del equipo y en la copia mandarían a una pieza que no viaja (story 8.10.3, AC 5): el texto EXACTO del repo (puede ocupar varios renglones), su versión pública (\"\" lo saca), cuántas veces aparece y por qué. Si no aparece esas veces, el armado sale 2. Los bloques internos sólo existen en los .md.",
-  "publicTexts": [
-    {"root": "arnes", "file": "scripts/metrics/upload-runs.js", "text": "Viene con el repo del arnés; si no está, la copia del arnés está incompleta", "public": "Es una integración del equipo que la copia pública no trae", "count": 1, "reason": "la llave del buzón de corridas no viaja: afuera no es una copia incompleta"},
-    {"root": "arnes", "file": "scripts/hooks/dependencies-notice.js", "text": "Se deciden en su pull request, o con: node scripts/nightly/dependencies/nightly-dependencies.js report", "public": "Se deciden en su pull request.", "count": 1, "reason": "el guion nocturno de dependencias no viaja (en la copia el aviso calla: no hay fichas)"},
-    {"root": "arnes", "file": "scripts/nightly/dashboard/dashboard.js", "text": "no hay productos declarados en repos.json", "public": "la lista de productos del equipo no viene con la copia pública", "count": 2, "reason": "la lista de repos de producto (scripts/nightly/dependencies/repos.json) no viaja"},
-    {"root": "arnes", "file": "scripts/nightly/dashboard/dashboard.js", "text": "no hay repos declarados en repos.json", "public": "la lista de repos del equipo no viene con la copia pública", "count": 1, "reason": "la lista de repos de producto (scripts/nightly/dependencies/repos.json) no viaja"}
-  ],
+  "__publicTexts": "Textos de código que en el repo del equipo diagnostican una integración del equipo y en la copia mandarían a una pieza que no viaja (story 8.10.3, AC 5): el texto EXACTO del repo (puede ocupar varios renglones), su versión pública (\"\" lo saca), cuántas veces aparece y por qué. Si no aparece esas veces, el armado sale 2. Los bloques internos sólo existen en los .md. Vacía desde la story 8.26 (AC 36): el repo de mantenimiento ya no arma la copia, y las tres piezas que la usaban (la llave del buzón de corridas, el aviso de dependencias y el tablero) quedaron con el texto público en los dos lados. La transformación sigue disponible para quien la declare.",
+  "publicTexts": [],
   "synthetic": [
     { "target": "scripts/ci/pipeline-debt.json", "from": "scripts/publishing/synthetic/pipeline-debt.json", "reason": "el real es la deuda de pipelines por repo de cliente y pipeline-debt.test.js necesita el archivo" },
     { "target": "scripts/nightly/dashboard/declared.json", "from": "scripts/publishing/synthetic/declared.json", "reason": "el real trae datos operativos del equipo; el tablero y dashboard.test.sh necesitan el archivo con su forma (story 8.10.3)" },
