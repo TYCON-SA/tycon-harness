@@ -108,8 +108,15 @@ test('Equivalencia_PublicPhoto_HoldsNoPackCase — la foto que viaja no trae los
   assert.deepEqual(Object.keys(publica.casos).filter((n) => dePaquete.includes(n)), [], 'un caso de paquete quedó en la foto que viaja');
   assert.deepEqual(Object.keys(publica.casos).sort(), CASOS.filter((c) => !c.paquete).map((c) => c.nombre).sort(),
     'la foto que viaja cubre exactamente los casos del núcleo');
-  if (SKIP_PUBLIC) { t.diagnostic(`NO MEDIDO: los casos del paquete de clientes (${SKIP_PUBLIC}); se miden en el repo del equipo`); return; }
-  assert.ok(dePaquete.length >= 2, `en el repo del equipo el paquete de clientes trae sus casos (hay ${dePaquete.length})`);
+  // Cada paquete instalado que trae su archivo de casos aporta al menos uno: un archivo que se carga y no aporta nada es
+  // un rojo, no «sin casos». Cuántos trae cada uno lo dice su archivo, no un número escrito acá (antes: «al menos 2» en
+  // el repo del equipo, que era contar a mano los casos de un paquete privado; sacar ese paquete o sus casos ponía rojo
+  // este caso).
+  const conArchivo = fs.readdirSync(PACKS_REALES).filter((p) => fs.existsSync(path.join(PACKS_REALES, p, 'equivalence-cases.js'))).sort();
+  for (const p of conArchivo) {
+    assert.ok(CASOS.some((c) => c.paquete === p), `el paquete ${p} trae equivalence-cases.js y no aportó ningún caso`);
+  }
+  if (!conArchivo.length) t.diagnostic(`ningún paquete instalado trae casos de equivalencia${SKIP_PUBLIC ? ` (${SKIP_PUBLIC})` : ''}: no hay casos de paquete que medir`);
 });
 
 let foto = null;
