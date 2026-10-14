@@ -2,10 +2,25 @@
 
 English · [Castellano](README.es.md)
 
-It adds to Claude Code (and to Codex, if you turn it on) the rules, guides and reviews that TYCON uses to build
-BIZUIT extensions (.NET and React).
-You ask for a change: Claude makes a plan, waits for your go-ahead, writes the code, runs the tests and readies the commit.
-Everything runs on your machine, inside Claude Code, and it sends your code nowhere.
+**An AI software development life cycle (AI SDLC), from spec to production and beyond**, for Claude Code and Codex.
+
+1. **Spec:** you and the agent write the story for the change: what has to be done and how it is tested. For a small
+   fix, asking for it in your own words is enough.
+2. **Code:** the agent makes the plan, waits for your go-ahead, and writes the code and the tests.
+3. **Review:** specialized reviewers (security, conventions, coverage) check the change before the commit.
+4. **Delivery:** the commit and the merge go through checks. For BIZUIT plugins it brings the scripts that deploy to
+   test and to production.
+5. **After:** every merge to main leaves its metrics file. The cycle dashboard and the nightly jobs (vulnerable
+   dependencies, rule pruning) run only at TYCON today and are being published.
+
+**It watches itself.** A test bench checks, on every change to the harness, that each control still blocks what it says
+it blocks. If you turn it on, it also watches your sessions and proposes new rules for you to approve.
+
+With the full profile, the checks block, they do not just warn: it does not rely on the model remembering the rules.
+Most of them were born from a real incident.
+
+**Each organization brings its own.** Its reviewers, skills and configuration travel in its team profile. TYCON brings
+its own for BIZUIT plugins.
 
 ## Before you install: what changes on your machine
 

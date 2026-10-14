@@ -24,6 +24,11 @@ on:
   push:
     branches: [main]
 
+# Un cambio nuevo en la misma rama (o en el mismo pedido) corta la corrida anterior: sólo importa la última.
+concurrency:
+  group: public-ci-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
