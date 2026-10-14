@@ -684,6 +684,11 @@ modo público (`TYCON_CLEAN_MACHINE=1` y `TYCON_CLEAN_MACHINE_SOURCE=<raíz>`: p
   sexto (`agent-skills-suites.tsv`, una línea `✅|❌<TAB>raiz/ruta`, ordenadas; la salida de cada una en
   `agent-skills-suites/`) y el reporte del banco (`bench.json`). Sin la variable va a una carpeta temporal, que el
   resumen nombra. El resto de las variables está en la cabecera del guion.
+- **`TYCON_PUBLIC_CI_PART=<parte>`** (opcional, 2026-10-14): corre sólo una parte de los pasos, para repartirlos en
+  trabajos que corren a la vez. `checks` es todo menos las portables; `suites-<i>-of-<n>` es sólo la parte `<i>` de las
+  portables, repartidas por peso con `scripts/ci/suites-shard.js` (juego `pr`). `checks` y las `<n>` partes de las
+  suites juntas son la corrida entera; una parte sola no es el veredicto, y el resumen lo dice. La CI de GitHub corre
+  así: una matriz Node × parte, con tres partes de las suites, y el job `public-ci` junta todas.
 - El sexto paso no corre `export-real.test.sh`: es la suite que corre este guion, y adentro de él sería infinita.
 - **El repo lo decide `--root`, no el entorno de quien llama.** El guion saca al arrancar las variables que git le pasa a
   lo que lanza un hook (`GIT_DIR`, `GIT_INDEX_FILE`, `GIT_WORK_TREE`, `GIT_COMMON_DIR`…): con ellas puestas listaría los
@@ -707,6 +712,7 @@ por un sintético, como los demás). Lo que tiene que cumplir lo verifica **por 
 | `range` | En un pull request, `public-ci.sh` corre con `--range origin/<base>...HEAD`. |
 | `clean-machine` | Toda llamada a `public-ci.sh` lleva `--clean-machine`. |
 | `aggregate-job` | El job `public-ci` corre siempre (`if: always()`), depende de todos los demás y falla si alguno no dio `success`. |
+| `parts` | La matriz parte la corrida en `checks` y `suites-1-of-<n>` … `suites-<n>-of-<n>`, todas, en orden y una vez, y la parte llega al guion desde la matriz: una que falta deja suites sin correr y el veredicto igual verde. |
 | `shape` | Las líneas de código del archivo son EXACTAMENTE las que el control lleva adentro (`SHAPE`), en ese orden. |
 
 🔴 **El job `public-ci` es el chequeo con nombre estable** que las reglas de la rama exigen: renombrarlo

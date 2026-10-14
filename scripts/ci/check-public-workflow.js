@@ -13,7 +13,7 @@
  * contracara: el control exige UNA forma de escribir cada cosa (la del `ci.yml` que hay); otra forma válida de YAML para
  * decir lo mismo sale roja, a propósito.
  *
- * LAS REGLAS (un id por regla; una línea por regla rota). Las diez primeras dicen POR QUÉ algo está mal:
+ * LAS REGLAS (un id por regla; una línea por regla rota). Las once primeras dicen POR QUÉ algo está mal:
  *   triggers             corre en `pull_request` y en `push` a `main`, y en nada más
  *   pull-request-target  `pull_request_target` no aparece en ninguna parte (ni en un comentario)
  *   secrets              no lee ningún secreto: ni el contexto de secretos ni el token por otro camino (ni en un comentario)
@@ -24,7 +24,10 @@
  *   range                en un pull request, `public-ci.sh` corre con `--range origin/<base>...HEAD`
  *   clean-machine        toda llamada a `public-ci.sh` lleva `--clean-machine`
  *   aggregate-job        el job `public-ci` corre siempre, depende de todos los demás y falla si alguno no terminó bien
- * …y la undécima es la red:
+ *   parts                la matriz parte la corrida en `checks` y `suites-1-of-<n>` … `suites-<n>-of-<n>`, todas, en orden y
+ *                        una vez, y la parte llega a public-ci.sh desde la matriz (`TYCON_PUBLIC_CI_PART: ${{ matrix.part }}`):
+ *                        una parte que falta deja suites sin correr y el veredicto igual verde (2026-10-14)
+ * …y la duodécima es la red:
  *   shape                las líneas de código del archivo son EXACTAMENTE las de `SHAPE` (abajo), en ese orden
  *
  * 🔴 POR QUÉ `shape` (pase adversarial del 2026-10-03, 13 clases de hallazgos con la misma enfermedad). Una regla que
@@ -75,13 +78,14 @@ const SHAPE = [
   '  contents: read',
   'jobs:',
   '  checks:',
-  '    name: Node ${{ matrix.node }}',
+  '    name: Node ${{ matrix.node }} · ${{ matrix.part }}',
   '    runs-on: ubuntu-latest',
   '    timeout-minutes: 90',
   '    strategy:',
   '      fail-fast: false',
   '      matrix:',
   '        node: [22, 24]',
+  '        part: [checks, suites-1-of-3, suites-2-of-3, suites-3-of-3]',
   '    steps:',
   pinned('      - uses: ', 'actions/checkout'),
   '        with:',
@@ -90,9 +94,10 @@ const SHAPE = [
   pinned('      - uses: ', 'actions/setup-node'),
   '        with:',
   '          node-version: ${{ matrix.node }}',
-  '      - name: Todos los pasos de la CI pública',
+  '      - name: Los pasos de la CI pública que le tocan a esta parte',
   '        env:',
   '          TYCON_PUBLIC_CI_OUT: ${{ runner.temp }}/public-ci',
+  '          TYCON_PUBLIC_CI_PART: ${{ matrix.part }}',
   '          BASE_REF: ${{ github.base_ref }}',
   '        run: |',
   '          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then',
@@ -345,6 +350,26 @@ const RULES = [
       const text = block.map((l) => l.body).join('\n');
       const looks = /needs\.\*\.result/.test(text) || ids.filter((id) => id !== 'public-ci').every((id) => text.includes(`needs.${id}.result`));
       if (!looks || !/\bsuccess\b/.test(text) || !/\bexit 1\b/.test(text)) return 'el job `public-ci` no mira el resultado de cada job (`needs.*.result`) ni falla si alguno no dio `success`';
+      return null;
+    },
+  },
+  {
+    id: 'parts',
+    check(lines) {
+      const decl = lines.filter((l) => l.code && /^part\s*:/.test(l.body));
+      if (decl.length !== 1) {
+        return decl.length ? `hay más de una lista \`part:\` (línea ${at(decl)})` : 'falta la lista `part:` de la matriz: la corrida no se reparte en partes que juntas sean la entera';
+      }
+      const parts = listAt(lines, lines.indexOf(decl[0]));
+      const n = parts.filter((p) => p !== 'checks').length;
+      const want = ['checks', ...Array.from({ length: n }, (_, k) => `suites-${k + 1}-of-${n}`)];
+      if (!n || parts.join(',') !== want.join(',')) {
+        return `la matriz parte la corrida en \`checks\` y \`suites-1-of-<n>\` … \`suites-<n>-of-<n>\`, todas, en orden y una vez (una que falta deja suites sin correr), y dice: ${parts.join(', ') || 'nada'} (línea ${decl[0].n})`;
+      }
+      const env = lines.filter((l) => l.code && /^TYCON_PUBLIC_CI_PART\s*:/.test(l.body));
+      if (env.length !== 1 || !/^\$\{\{\s*matrix\.part\s*\}\}$/.test(valueOf(env[0].body))) {
+        return `la parte que corre cada trabajo sale de la matriz: \`TYCON_PUBLIC_CI_PART: \${{ matrix.part }}\`${env.length ? ` (línea ${at(env)})` : ''}`;
+      }
       return null;
     },
   },
