@@ -82,22 +82,23 @@ brew install node python
 ### 2. Download and install
 
 Open a terminal in any folder and paste the lines for your system, one by one: the `bash` ones on Mac, Linux and WSL;
-the `powershell` ones on native Windows. The first downloads the install script through the GitHub API, with no
-credential; the second shows it, so you read what you are about to run; the third runs it. The script checks the
-requirements, downloads the published version as files (no git, no clone) to a temporary folder and continues with
-`harness.js install --version latest` in the same terminal. They are three lines on purpose: piping a download straight
-into a shell is blocked by the command guard (`SUP-C1`). The script never installs system packages nor uses `sudo`.
-Options for `install` go after `--`: `bash get-harness.sh -- <options>`.
+the `powershell` ones on native Windows. The first downloads the install script from GitHub's public file address
+(`raw.githubusercontent.com`), with no credential and without going through the API; the second shows it, so you
+read what you are about to run; the third runs it. The script checks the requirements, downloads the published
+version as files (no git, no clone) to a temporary folder and continues with `harness.js install --version latest` in
+the same terminal. They are three lines on purpose: piping a download straight into a shell is blocked by the command
+guard (`SUP-C1`). The script never installs system packages nor uses `sudo`. Options for `install` go after `--`:
+`bash get-harness.sh -- <options>`.
 
 <!-- install:core -->
 ```bash
-curl -fsSL -H "Accept: application/vnd.github.raw" -o get-harness.sh https://api.github.com/repos/TYCON-SA/tycon-harness/contents/scripts/setup/get-harness.sh
+curl -fsSL -o get-harness.sh https://raw.githubusercontent.com/TYCON-SA/tycon-harness/main/scripts/setup/get-harness.sh
 less get-harness.sh
 bash get-harness.sh
 ```
 
 ```powershell
-Invoke-WebRequest -Headers @{ Accept = 'application/vnd.github.raw' } -OutFile get-harness.ps1 https://api.github.com/repos/TYCON-SA/tycon-harness/contents/scripts/setup/get-harness.ps1
+Invoke-WebRequest -OutFile get-harness.ps1 https://raw.githubusercontent.com/TYCON-SA/tycon-harness/main/scripts/setup/get-harness.ps1
 Get-Content get-harness.ps1
 pwsh -File get-harness.ps1
 ```
@@ -109,7 +110,8 @@ permission of your own you can skip the wait for the script: put it in the `TYCO
 terminal and run the script again (on Mac and Linux, `read -rs TYCON_GITHUB_TOKEN && export TYCON_GITHUB_TOKEN`; in
 PowerShell 7, `$env:TYCON_GITHUB_TOKEN = Read-Host -MaskInput`). The script uses the permission and saves it in
 `~/.tycon/config.json`, readable only by your user; `harness.js config unset github.token` removes it. The first line,
-the one that downloads the script, never carries a credential.
+the one that downloads the script, never carries a credential and does not go through the API: it does not count
+against that limit.
 
 `install` writes nothing without telling you first: it asks three questions, then shows the plan and asks "¿Instalo?"
 (install?). To see only the plan, without installing, add `--dry-run`.
@@ -166,13 +168,13 @@ warn, with the command to point it. What that key changes is under "What it writ
 
 <!-- install:unattended -->
 ```bash
-curl -fsSL -H "Accept: application/vnd.github.raw" -o get-harness.sh https://api.github.com/repos/TYCON-SA/tycon-harness/contents/scripts/setup/get-harness.sh
+curl -fsSL -o get-harness.sh https://raw.githubusercontent.com/TYCON-SA/tycon-harness/main/scripts/setup/get-harness.sh
 less get-harness.sh
 bash get-harness.sh -- --profile minimal --yes
 ```
 
 ```powershell
-Invoke-WebRequest -Headers @{ Accept = 'application/vnd.github.raw' } -OutFile get-harness.ps1 https://api.github.com/repos/TYCON-SA/tycon-harness/contents/scripts/setup/get-harness.ps1
+Invoke-WebRequest -OutFile get-harness.ps1 https://raw.githubusercontent.com/TYCON-SA/tycon-harness/main/scripts/setup/get-harness.ps1
 Get-Content get-harness.ps1
 pwsh -File get-harness.ps1 -- --profile minimal --yes
 ```
@@ -182,8 +184,8 @@ With `--yes` it accepts the plan without anyone seeing it: look at it first with
 the profile: the block installs the minimal one, or `--profile full` for the whole harness. Without a terminal the
 script asks nothing. Where many machines share one address, such as a build agent, the limit above is reached often.
 `TYCON_GITHUB_TOKEN`, set as above, covers what the script and the install request. The line that downloads the script
-goes without a credential either way, and a 403 there only clears by waiting: on such a machine, download the script
-once and keep it with the machine's image.
+goes without a credential either way and does not go through the API: it does not count against that limit, and the
+API's 403 does not stop it.
 
 **Developer mode (to change the harness, not to use it).** Whoever maintains the harness clones this repository and
 installs from the clone: that machine runs the harness from the clone and updating it is theirs (`harness.js link

@@ -116,8 +116,10 @@ test('GuidedSteps_Manifest_HasItsShape', () => {
   assert.deepStrictEqual(m.steps.filter((s) => s.runs === 'person').map((s) => s.id), ['report']);
   // el comando de bajada va con los marcadores, como en la página interna: la ficha viaja sin que nadie le resuelva nada
   const download = m.steps.find((s) => s.id === 'download').commands[0].text;
-  assert.match(download, /repos\/\{\{public-org\}\}\/\{\{public-repo\}\}\/contents\/scripts\/setup\/get-harness\.ps1$/);
-  assert.ok(download.includes(m.lab.api_origin), 'trae el origen que el laboratorio reemplaza');
+  assert.match(download, /^Invoke-WebRequest -OutFile get-harness\.ps1 https:\/\/raw\.githubusercontent\.com\/\{\{public-org\}\}\/\{\{public-repo\}\}\/main\/scripts\/setup\/get-harness\.ps1$/);
+  assert.ok(download.includes(m.lab.download_origin), 'trae el origen que el laboratorio reemplaza');
+  // y no va por la API: sin credencial tiene un tope de 60 consultas por hora por conexión (deuda DEF-8.34-portada-por-la-api)
+  assert.doesNotMatch(download, /api\.github\.com/);
   // la página baja el guion SIN credencial (el repo de la versión publicada es público): ningún comando de la ficha
   // manda un permiso de GitHub, y la ficha declara que el GitHub de juguete sirve el repo sin permiso
   for (const s of G.machineSteps(m)) for (const c of s.commands) assert.doesNotMatch(c.text, /Authorization|TYCON_GITHUB_TOKEN|Bearer/, `${s.id}: «${c.text}» no lleva credencial`);
@@ -229,7 +231,7 @@ test('GuidedSteps_PageChanged_NamesTheStepAndRehearsesNothing', () => {
   // y no se ensaya nada. Es lo que pasa si la página y la ficha no cambian juntas
   const pageBefore = ok
     .replace('2. Bajar el guion', '2. El permiso de lectura de GitHub. Esto lo hago YO: PARÁ y decime que lo cree y lo pegue en una ventana.\n\n3. Bajar el guion')
-    .replace("-Headers @{ Accept = 'application/vnd.github.raw' }", "-Headers @{ Authorization = \"Bearer $env:TYCON_GITHUB_TOKEN\"; Accept = 'application/vnd.github.raw' }");
+    .replace('Invoke-WebRequest -OutFile', "Invoke-WebRequest -Headers @{ Authorization = \"Bearer $env:TYCON_GITHUB_TOKEN\"; Accept = 'application/vnd.github.raw' } -OutFile");
   const before = G.prepare({ read: read(pageBefore), manifest: m });
   assert.match(before.problem, /8 pasos numerados y la ficha 7/, 'un paso de más');
   assert.match(before.problem, /download/, 'y la bajada, que ya no es la de la ficha');
@@ -315,13 +317,14 @@ test('GuidedPage_NamesAndLabChanges_AreTheOnlyDifferences', () => {
   const block = G.readBlock(toyPage('guided-page-ok.md'), m).block;
   assert.strictEqual(G.checkPage(m, block, { names }).ok, true, 'con los dos marcadores reemplazados, calza');
   assert.strictEqual(G.checkPage(m, block).ok, false, 'sin reemplazarlos no: la página publicada trae el nombre');
-  // en el laboratorio cambia sólo el origen de la API, y sólo en el renglón que lo trae
+  // en el laboratorio cambia sólo el origen de la bajada del guion, y sólo en el renglón que lo trae
+  const rawOrigin = 'http://127.0.0.1:4457';
   const api = 'http://127.0.0.1:4455';
   const changed = [];
   for (const s of G.machineSteps(m)) for (const [i, c] of s.commands.entries()) {
     const real = G.withNames(c.text, names);
-    const lab = G.labText(real, m, api);
-    if (lab.changed) { changed.push(`${s.id}[${i}]`); assert.strictEqual(lab.text, real.split('https://api.github.com').join(api)); }
+    const lab = G.labText(real, m, rawOrigin);
+    if (lab.changed) { changed.push(`${s.id}[${i}]`); assert.strictEqual(lab.text, real.split('https://raw.githubusercontent.com').join(rawOrigin)); }
     else assert.strictEqual(lab.text, real, `${s.id}: ningún otro carácter se toca`);
   }
   assert.deepStrictEqual(changed, ['download[0]']);
@@ -405,6 +408,13 @@ test('ToyGitHub_Contents_AnswersTheRawFileOnlyWhenAsked', { skip: !has('git') &&
     for (const headers of [{ 'If-None-Match': plain.headers.get('etag') }, { 'If-None-Match': plain.headers.get('etag'), Accept: 'application/vnd.github.raw' }]) assert.strictEqual((await fetch(url, { headers })).status, 304);
     // y un archivo que no está sigue siendo 404, pedido como se pida
     assert.strictEqual((await fetch(`${api}/repos/acme-lab/arnes-lab/contents/no-such-file`, { headers: { Accept: 'application/vnd.github.raw' } })).status, 404);
+    // su «raw» (raw.githubusercontent.com, de donde la página baja el guion) lo sirve por rama, como GitHub: los mismos bytes
+    const rawOrigin = /^RAW=(.+)$/m.exec(fs.readFileSync(ports, 'utf8'))[1].trim();
+    const byBranch = await fetch(`${rawOrigin}/acme-lab/arnes-lab/main/scripts/setup/get-harness.ps1`);
+    assert.strictEqual(byBranch.status, 200);
+    assert.strictEqual(Buffer.from(await byBranch.arrayBuffer()).toString('utf8'), body);
+    assert.strictEqual((await fetch(`${rawOrigin}/acme-lab/arnes-lab/main/no-such-file`)).status, 404);
+    assert.strictEqual((await fetch(`${rawOrigin}/acme-lab/arnes-lab/otra-rama/scripts/setup/get-harness.ps1`)).status, 404, 'otra rama no: sólo main');
   } finally { if (server) server.kill(); fs.rmSync(base, { recursive: true, force: true }); }
 });
 
@@ -493,7 +503,7 @@ test('GuidedInstall_Judge_ExitsExpectAndRunWhen', () => {
       const seen = [];
       const partial = () => JSON.parse(fs.readFileSync(L.partialFile(out, 'onboarding'), 'utf8')).facts.variants.guided.commands;
       const followed = GI.followPage({
-        ctx: { manifest: m, guide: { names: TOY_NAMES }, api: 'http://127.0.0.1:4455', tokens: { github: 'permiso-de-juguete-0123456789abcdef' } },
+        ctx: { manifest: m, guide: { names: TOY_NAMES }, api: 'http://127.0.0.1:4455', raw: 'http://127.0.0.1:4457', tokens: { github: 'permiso-de-juguete-0123456789abcdef' } },
         // (sin el permiso de GitHub que pueda tener en su consola quien corre la suite: el juguete imprime el que haya)
         home: path.join(base, 'home'), env: Object.assign({}, process.env, { TYCON_GITHUB_TOKEN: '' }), ps, scratch: path.join(base, 'scratch'), cwd: path.join(base, 'window'), id: 'onboarding-guided', platform: 'linux',
         commands: facts.commands,
@@ -525,7 +535,7 @@ test('GuidedInstall_Judge_ExitsExpectAndRunWhen', () => {
       // (el permiso de juguete se arma por partes: escrito entero junto al nombre de la variable, el detector de
       // publicación lo toma por una credencial)
       const plain = GI.followPage({
-        ctx: { manifest: m, guide: { names: TOY_NAMES }, api: 'http://127.0.0.1:4455', tokens: { azure: 'permiso-de-azure-0123456789abcdef' } },
+        ctx: { manifest: m, guide: { names: TOY_NAMES }, api: 'http://127.0.0.1:4455', raw: 'http://127.0.0.1:4457', tokens: { azure: 'permiso-de-azure-0123456789abcdef' } },
         home: path.join(base, 'home-plain'), env: Object.assign({}, process.env, { TYCON_GITHUB_TOKEN: ['permiso-que-se-colo', '0123456789abcdef'].join('-') }), ps, scratch: path.join(base, 'scratch-plain'), cwd: path.join(base, 'window-plain'), id: 'onboarding-guided', platform: 'linux',
       });
       const plainRan = plain.commands.filter((c) => c.exit !== undefined);
@@ -1160,7 +1170,7 @@ test('PublishedCopy_WithoutWhatItMustBring_IsAnError', () => {
       const stateOf = (toy) => ({ remotes: { harness: { dir: toy.origin, target: toy.head } } });
       const published = { 'version.json': '{ "version": "2026.01.01.1" }\n', 'scripts/setup/get-harness.ps1': '# get-harness.ps1 — de juguete\n', 'scripts/setup/public-remotes.json': TOY_REMOTES };
       // la página cambió el comando de bajada: el motivo nombraría el repo
-      const moved = toyPage('guided-page-ok.md').replace('contents/scripts/setup/get-harness.ps1', 'contents/scripts/otro-lugar/get-harness.ps1');
+      const moved = toyPage('guided-page-ok.md').replace('main/scripts/setup/get-harness.ps1', 'main/scripts/otro-lugar/get-harness.ps1');
       const changed = GI.openLab({ lab, name: 'onboarding', state: stateOf(toyTree(base, 'changed', { today: Object.assign({ 'getting-started/windows.md': moved }, published) })) });
       assert.match(changed.problem, /la página .* y la ficha del ensayo no coinciden/);
       assert.match(changed.problem, /download/);
@@ -1388,11 +1398,11 @@ test('Probe_OneVariantThrows_TheOthersStillRun', () => {
     // lo que el laboratorio cambió lo anota TODA variante que corre, sin pisar a la otra: lo común una vez, lo propio
     // de cada una bajo su nombre
     const rec2 = L.recorder('onboarding', path.join(base, 'out2'));
-    const labCtx = { manifest: G.loadManifest(), api: 'http://127.0.0.1:4455', azureApi: 'http://127.0.0.1:4466' };
+    const labCtx = { manifest: G.loadManifest(), api: 'http://127.0.0.1:4455', raw: 'http://127.0.0.1:4457', azureApi: 'http://127.0.0.1:4466' };
     const changesOf = (home) => TL.variantEnv(home, { base: { PATH: process.env.PATH || '' }, api: labCtx.api, detectPath: '/nowhere', platform: 'linux' }).lab_changes;
     const one = GI.noteLabChanges(rec2, { ctx: labCtx, v: { id: 'guided', ps: 'pwsh' }, home: '/lab/users/guided', changes: changesOf('/lab/users/guided'), ps: null, env: {}, scratch: path.join(base, 's') });
     assert.deepStrictEqual(one.by_variant, { guided: { user_folder: '/lab/users/guided', shell: 'pwsh' } });
-    assert.deepStrictEqual([one.api_origin.to, one.api_origin.where, one.launched_with, one.env_set_with_team.TYCON_AZURE_API, one.execution_policy.effective], [labCtx.api, 'download[0]', TL.LAUNCHED_WITH, labCtx.azureApi, null]);
+    assert.deepStrictEqual([one.download_origin.to, one.download_origin.where, one.launched_with, one.env_set_with_team.TYCON_AZURE_API, one.execution_policy.effective], [labCtx.raw, 'download[0]', TL.LAUNCHED_WITH, labCtx.azureApi, null]);
     const two = GI.noteLabChanges(rec2, { ctx: labCtx, v: { id: 'guided-ps51', ps: 'powershell' }, home: '/lab/users/guided-ps51', changes: changesOf('/lab/users/guided-ps51'), ps: null, env: {}, scratch: path.join(base, 's'), own: { pwsh_removed_from: ['/usr/local/bin'] } });
     assert.strictEqual(two, one, 'el mismo dato del paso: la segunda no lo arma de nuevo');
     assert.deepStrictEqual(rec2.step.facts.lab_changes.by_variant, { guided: { user_folder: '/lab/users/guided', shell: 'pwsh' }, 'guided-ps51': { user_folder: '/lab/users/guided-ps51', shell: 'powershell', pwsh_removed_from: ['/usr/local/bin'] } });
@@ -1548,7 +1558,7 @@ test('Rehearsal_Caps_TheFortyMinuteCut_AndNoCredentials', { skip: !fs.existsSync
 function guidedReport() {
   const command = (step, text, exit, expected) => ({ step, runs: 'machine', text, exit, error: null, seconds: 1.2, expected, out: 'ok' });
   const session = (label, form, detached, waited_ms, ended_by) => ({ label, form, shell: '/bin/sh -c', hooks: [{ hook: 'startup-line', startup: 'new', exit: 0, error: null, ms: 900, out: '', err: '' }], wait: { detached, waited_ms, ended_by }, version: '2026.10.10.5' });
-  const labChangesOf = (byVariant) => ({ api_origin: { from: 'https://api.github.com', to: 'http://127.0.0.1:4455', where: 'download[0]' }, token: 'TYCON_GITHUB_TOKEN: no se pone en ningún paso (el GitHub de juguete sirve el repo como público, sin permiso)', env_set: { TYCON_RELEASE_API: 'http://127.0.0.1:4455' }, env_removed: ['TYCON_CODEX'], never_set: TL.ENV_NEVER, always: { GIT_TERMINAL_PROMPT: '0' }, launched_with: TL.LAUNCHED_WITH, execution_policy: { launched_with: 'Bypass', effective: 'Bypass' }, by_variant: byVariant });
+  const labChangesOf = (byVariant) => ({ download_origin: { from: 'https://raw.githubusercontent.com', to: 'http://127.0.0.1:4457', where: 'download[0]' }, token: 'TYCON_GITHUB_TOKEN: no se pone en ningún paso (el GitHub de juguete sirve el repo como público, sin permiso)', env_set: { TYCON_RELEASE_API: 'http://127.0.0.1:4455' }, env_removed: ['TYCON_CODEX'], never_set: TL.ENV_NEVER, always: { GIT_TERMINAL_PROMPT: '0' }, launched_with: TL.LAUNCHED_WITH, execution_policy: { launched_with: 'Bypass', effective: 'Bypass' }, by_variant: byVariant });
   const labChanges = labChangesOf({ guided: { user_folder: '/lab/users/guided', shell: 'pwsh' } });
   const notRehearsed = [{ step: 'report', what: 'el bloque de texto con el resultado del alta', why: 'armar el reporte lo hace el asistente con la persona' }, { step: null, what: 'la parte 2 de la página', why: 'todos sus pasos piden a la persona o salen a la red de verdad' }];
   const onboarding = { name: 'onboarding', status: 'measured', reason: null, wall_seconds: 240, cap_s: 1200, notes: ['una nota del ensayo, que el reporte muestra'], findings: [{ id: 'onboarding:guided:guided:expected:verify', kind: 'page', detail: 'verify: la cuenta de skills dio 12 y la página espera más de 40', severity: 'breaks', variant: 'guided' }], facts: {
@@ -1596,7 +1606,7 @@ test('Report_GuidedRun_RendersItsSectionsAndIsGreen', () => {
   assert.match(md, /no comparable: la ruta con barras invertidas sólo resuelve en Windows/);
   // lo que el laboratorio cambió, lo no ensayado, cada sesión (si se desprendió y cuánto tardó) y la capa del equipo
   assert.match(md, /## Lo que el laboratorio cambió/);
-  assert.match(md, /https:\/\/api\.github\.com.*http:\/\/127\.0\.0\.1:4455/);
+  assert.match(md, /el origen de la bajada del guion: .*https:\/\/raw\.githubusercontent\.com.*http:\/\/127\.0\.0\.1:4457/);
   assert.match(md, /Bypass/);
   assert.match(md, /## No ensayado/);
   assert.match(md, /armar el reporte lo hace el asistente con la persona/);

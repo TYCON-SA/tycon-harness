@@ -27,7 +27,7 @@ renueve (como mucho una hora) y repetimos ese paso; o, si tengo un permiso de Gi
 TYCON_GITHUB_TOKEN con la línea de abajo, en la misma terminal donde corro el guion (no se ve al pegarlo; vos no lo
 leas ni lo muestres), y vuelvo a correr get-harness, que lo usa y lo guarda:
     printf 'Permiso de GitHub: ' && read -rs TYCON_GITHUB_TOKEN && echo && export TYCON_GITHUB_TOKEN
-Bajar el propio guion va siempre sin credencial: si el 403 fue ahí, sólo queda esperar.
+Bajar el propio guion va siempre sin credencial y no pasa por la API: no gasta de ese límite.
 
 1. Herramientas:
    node --version; python3 --version; tar --version
@@ -42,7 +42,7 @@ Bajar el propio guion va siempre sin credencial: si el 403 fue ahí, sólo queda
 
 2. Bajar el guion de instalación (se baja, se lee y después se corre; no se clona nada): dame estas dos líneas para
    pegar en mi terminal, una por una:
-       curl -fsSL -H "Accept: application/vnd.github.raw" -o get-harness.sh https://api.github.com/repos/TYCON-SA/tycon-harness/contents/scripts/setup/get-harness.sh
+       curl -fsSL -o get-harness.sh https://raw.githubusercontent.com/TYCON-SA/tycon-harness/main/scripts/setup/get-harness.sh
        less get-harness.sh
    Esperado: el archivo get-harness.sh en mi carpeta y un guion de unas 120 líneas que empieza con «# get-harness.sh —
    baja la versión publicada del arnés (sin git)».
