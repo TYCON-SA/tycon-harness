@@ -531,7 +531,16 @@ test('InternalHistoryGuard_CountLine_WrittenWithoutTheText — cada corrida con 
   assert.deepStrictEqual(lines[0].forms, { 'product-story': 1, 'batch-code': 1 });
   assert.strictEqual(lines[0].mode, 'warn');
   assert.strictEqual(lines[0].blocked, false);
-  assert.ok(!JSON.stringify(lines[0]).includes('4.2') && !JSON.stringify(lines[0]).includes('B2'), 'sin el texto encontrado');
+  // sin el texto encontrado: los dos fragmentos se buscan FUERA de la hora (`ts`, con milésimas: «…:24.215Z» contiene
+  // «4.2» y la prueba salía roja de a ratos en public-ci) y las dos frases enteras, en todo el renglón
+  const sinTexto = (linea) => {
+    const { ts, ...resto } = linea;
+    const todo = JSON.stringify(linea);
+    return !JSON.stringify(resto).includes('4.2') && !JSON.stringify(resto).includes('B2') && !todo.includes('Story 4.2') && !todo.includes('tanda B2');
+  };
+  assert.ok(sinTexto({ ...lines[0], ts: '2026-10-14T11:14:24.215Z' }), 'una hora con «4.2» no es el texto encontrado');
+  assert.ok(!sinTexto({ ...lines[0], forms: { 'product-story': 'la Story 4.2' } }), 'espejo: el texto en un campo sí se ve');
+  assert.ok(sinTexto(lines[0]), 'sin el texto encontrado');
   // un commit limpio no escribe nada (con el control como está escrito: bajado por la variable sí deja su línea)
   git(l.repo, ['reset', '-q', '--hard']);
   stage(l.repo, { 'guides/a.md': '# Guía\n\nLimpia.\n' });
