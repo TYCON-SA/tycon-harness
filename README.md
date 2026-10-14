@@ -1,5 +1,8 @@
 # Índice de guías del arnés
 
+> **¿Llegaste desde GitHub?** Esto es el índice de guías que Claude carga en cada sesión, no la portada. La portada
+> está en [.github/README.es.md](.github/README.es.md) (castellano) y [.github/README.md](.github/README.md) (English).
+
 Este archivo se carga en cada sesión. Dice qué guía leer según la tarea: las guías no se cargan solas, se leen
 cuando la tarea lo pide. Vale igual con Claude Code y con Codex. Si algo del arnés no anda, el comando
 `/tycon-harness` dice la versión, si está bien instalado y si hay una nueva.

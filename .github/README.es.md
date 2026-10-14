@@ -16,7 +16,7 @@ querés. El completo cambia cosas en todos tus proyectos, no sólo en uno:
 - En un repo que trabaja con stories, Claude no edita código sin pasar por el proceso de stories del arnés.
 - Git pasa a usar una carpeta global para sus controles al commitear (`core.hooksPath`). Desde ahí, git deja de correr
   los controles propios de cada repo, los de `.git/hooks/`. Claude te pregunta antes de configurarla.
-- Una vez por día lee el historial de git de los repos vecinos al arnés. Lo que anota queda en tu máquina.
+- Una vez por día lee el historial de git de tus repos de proyectos (encuentra su carpeta por dónde usás Claude Code). Lo que anota queda en tu máquina.
 - Claude Code guarda tus conversaciones un año.
 
 Si no querés esto, pedí el perfil mínimo (`minimal`). Trae las guías, los revisores y el proceso de stories. No cambia
@@ -48,7 +48,8 @@ corren en tu propia terminal.
 Si en el camino instalás una herramienta, Claude te pide cerrar y abrir la terminal y Claude Code. Si el resumen dice
 «NO OK», guardalo: es lo que hay que mostrar al pedir ayuda.
 
-El arnés queda en `~/.tycon/harness`, como archivos bajados (sin git). No borres ni muevas esa carpeta: Claude Code lo
+El arnés queda en `~/.tycon/harness`, como archivos bajados (sin git). `~/.claude/tycon-harness` es un acceso directo a
+esa misma carpeta, y es el que usan los comandos de esta página. No borres ni muevas esa carpeta: Claude Code lo
 usa desde ahí, y se actualiza solo en ese lugar. Usar el arnés nunca necesita un clon de este repo.
 
 **Perfil mínimo.** Al pegar el bloque, escribí arriba «quiero el perfil mínimo». Claude instala `minimal` y no toca
@@ -87,8 +88,8 @@ Un ejemplo: en ACME, Pedro administra y Juan programa.
    en GitHub, o con la dirección del repo si está en Azure DevOps. Desde ahí, cada actualización le trae también lo del
    equipo.
 
-**Lo que todavía no está.** Los procesos de la noche corren hoy en Azure DevOps: para una organización que vive en
-GitHub faltan sus versiones para GitHub Actions. El vigilante de producción todavía es propio de TYCON y no se publica.
+**Lo que todavía no está.** Los procesos de la noche (dependencias, tablero, retrospectivas) todavía no se publicaron:
+hoy corren sólo en TYCON, en Azure DevOps. Tampoco el vigilante de producción, que todavía es propio de TYCON.
 
 ## Dónde seguir
 

@@ -17,7 +17,7 @@ one you want. The full profile changes things in all your projects, not just one
 - In a repo that works with stories, Claude does not edit code without going through the harness's story process.
 - Git starts using a global folder for its commit checks (`core.hooksPath`). From then on, git stops running each
   repo's own checks, the ones in `.git/hooks/`. Claude asks you before it sets it.
-- Once a day it reads the git history of the repos next to the harness. What it records stays on your machine.
+- Once a day it reads the git history of your project repos (it finds their folder from where you use Claude Code). What it records stays on your machine.
 - Claude Code keeps your conversations for a year.
 
 If you don't want this, ask for the minimal profile (`minimal`). It brings the guides, the reviewers and the story process.
@@ -50,7 +50,8 @@ run in your own terminal.
 If you install a tool along the way, Claude asks you to close and reopen the terminal and Claude Code. If the summary
 says "NO OK", keep it: it is what to show when you ask for help.
 
-The harness lives in `~/.tycon/harness`, as downloaded files (no git). Don't delete or move that folder: Claude Code
+The harness lives in `~/.tycon/harness`, as downloaded files (no git). `~/.claude/tycon-harness` is a shortcut to that
+same folder, and the commands on this page use it. Don't delete or move that folder: Claude Code
 uses it from there, and it updates itself in place. Using the harness never needs a clone of this repository.
 
 **Minimal profile.** When you paste the block, write "quiero el perfil mínimo" (I want the minimal profile) above it.
@@ -89,8 +90,8 @@ An example: at ACME, Pedro is the administrator and Juan writes code.
    if it is on GitHub, or with the repo's address if it is on Azure DevOps. From then on, every update also brings him
    what belongs to the team.
 
-**What is not there yet.** The nightly jobs run on Azure DevOps today: an organization that lives on GitHub still
-lacks their GitHub Actions versions. The production watcher is still TYCON's own and is not published.
+**What is not there yet.** The nightly jobs (dependencies, dashboard, retrospectives) are not published yet: today
+they run only at TYCON, on Azure DevOps. The production watcher is not published either: it is still TYCON's own.
 
 ## Where to go next
 
