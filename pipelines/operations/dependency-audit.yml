@@ -99,6 +99,13 @@ jobs:
             || { echo "##vso[task.logissue type=error]scripts/nightly/dependencies/repos.json no es JSON válido"; exit 1; }
           echo "pedidos de trabajo: $([ "$WI" = 1 ] && echo prendidos || echo 'apagados (azure.pedidos_activos no es true)')"
           echo "##vso[task.setvariable variable=WORK_ITEMS_ON]$WI"
+          # La primera noche de una organización no hay cola: se crea con sus tres carpetas (y su .gitkeep, que guardar
+          # lleva al repo de operaciones). Una cola que existe a medias (sin pending/) NO se completa acá: eso es una
+          # mudanza a medias, y el guion de los pull requests la frena con su motivo.
+          if [ ! -e inbox/dependencies ]; then
+            for D in pending promoted archived; do mkdir -p "inbox/dependencies/$D" && : > "inbox/dependencies/$D/.gitkeep"; done
+            echo "primera noche: se crea la cola inbox/dependencies (pending, promoted, archived)"
+          fi
         displayName: 'Leer la configuración de la organización (operations.json y repos.json)'
 
       - script: |

@@ -109,8 +109,10 @@ Mirá que termine en verde. Si sale «NO MEDIDO» o «Repos NO medidos», es un 
 Con efectos, a mano, en este orden (es el mismo de la noche):
 
 1. `stage-metrics` — deja el punto del día. El tablero lo necesita.
-2. `dependency-audit` — deja la foto de la noche y abre un pull request por cada hallazgo nuevo (como mucho dos por
-   noche, más las críticas: `presupuesto_de_ruido` en `repos.json`).
+2. `dependency-audit` — deja la foto de la noche. **La primera noche es la línea base**: lista lo que encuentra y no
+   abre nada, porque no hay con qué comparar. Desde la segunda abre un pull request por cada hallazgo (como mucho dos
+   por noche, más las críticas: `presupuesto_de_ruido` en `repos.json`). La cola de fichas (`inbox/dependencies/`) la
+   crea la primera corrida.
 3. `team-dashboard` — arma la página y la guarda.
 
 Después quedan programados solos: métricas 06:00 UTC, dependencias 04:00 UTC, tablero 08:30 UTC. Para cambiar el
