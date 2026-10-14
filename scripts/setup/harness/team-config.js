@@ -390,7 +390,7 @@ function editor(t) {
       if (!required && !d[k]) { box.append(el('div', { class: 'bar' }, el('button', { class: 'sec', text: 'Agregar: ' + title.toLowerCase(), onclick: () => { d[k] = { platform: 'azure', org: '', project: '', repo: '' }; render(); } }), el('span', { class: 'muted', text: hint }))); continue; }
       box.append(repoRow(title, hint, d[k], (v) => { d[k] = v; }, k, pr, required ? null : () => { delete d[k]; render(); }));
     }
-    box.append(el('h3', { text: 'Copias del arnés en la organización' }), el('p', { class: 'muted', text: 'Los repos que son copias del arnés, para que las métricas no cuenten dos veces la misma historia. Opcional.' }));
+    box.append(el('h3', { text: 'Copias del arnés en la organización' }), el('p', { class: 'muted', text: 'Los repos que son copias del arnés, para que las métricas no cuenten dos veces la misma historia: de ellas se mide sólo la de mantenimiento, si está en la lista. Opcional.' }));
     (d.harness_copies || []).forEach((rp, i) => box.append(repoRow('Copia ' + (i + 1), '', rp, (v) => { d.harness_copies[i] = v; }, 'harness_copies.' + i, pr, () => { d.harness_copies.splice(i, 1); if (!d.harness_copies.length) delete d.harness_copies; render(); })));
     box.append(el('button', { class: 'sec', text: 'Agregar una copia', onclick: () => { (d.harness_copies = d.harness_copies || []).push({ platform: 'azure', org: '', project: '', repo: '' }); render(); } }));
     return box;

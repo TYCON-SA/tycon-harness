@@ -365,6 +365,19 @@ test('T8 CloneRepos_DeclaredAndOrg: los declarados con el token sólo en la lín
   r = spawnSync('bash', [sh, '--org', destP, '--team-repos', tr], { encoding: 'utf8', env: { ...env, OWNERS: 'acme', PREFIX: 'extra-', TYCON_GH_CMD: FAKE_GH, FAKE_GH_STATE: state } });
   assert.strictEqual(r.status, 0, r.stdout);
   assert.deepStrictEqual(fs.readdirSync(destP).sort(), ['acme__extra-0', 'acme__extra-1']);
+  // la copia de mantenimiento SÍ se mide (DEF-8.30-copias-del-arnes-en-team-repos: la regla es la del lector, la misma que
+  // en Azure); las demás copias no. Y un team-repos.json que no valida es rojo, no «no hay copias».
+  const trM = path.join(base, 'team-repos-maintainers.json');
+  fs.writeFileSync(trM, JSON.stringify({ ...JSON.parse(fs.readFileSync(tr, 'utf8')), maintainers: { platform: 'github', org: 'ACME', repo: 'Extra-0' },
+    harness_copies: [{ platform: 'github', org: 'acme', repo: 'harness-copy' }, { platform: 'github', org: 'acme', repo: 'extra-0' }] }));
+  const destM = path.join(base, 'maint');
+  r = spawnSync('bash', [sh, '--org', destM, '--team-repos', trM], { encoding: 'utf8', env: { ...env, OWNERS: 'acme', PREFIX: 'extra-', TYCON_GH_CMD: FAKE_GH, FAKE_GH_STATE: state } });
+  assert.strictEqual(r.status, 0, r.stdout);
+  assert.deepStrictEqual(fs.readdirSync(destM).sort(), ['acme__extra-0', 'acme__extra-1'], 'la de mantenimiento se mide');
+  const trBad = path.join(base, 'team-repos-bad.json');
+  fs.writeFileSync(trBad, JSON.stringify({ ...JSON.parse(fs.readFileSync(tr, 'utf8')), harness_copies: [{ platform: 'github', org: 'acme' }] }));
+  r = spawnSync('bash', [sh, '--org', path.join(base, 'bad'), '--team-repos', trBad], { encoding: 'utf8', env: { ...env, OWNERS: 'acme', TYCON_GH_CMD: FAKE_GH, FAKE_GH_STATE: state } });
+  assert.strictEqual(r.status, 1, r.stdout); assert.match(r.stdout, /team-repos\.json no valida: harness_copies\.0\.repo/);
   // un dueño que no se puede listar: rojo, no un barrido a medias
   r = spawnSync('bash', [sh, '--org', path.join(base, 'x'), '--team-repos', tr], { encoding: 'utf8', env: { ...env, OWNERS: 'nadie', TYCON_GH_CMD: FAKE_GH, FAKE_GH_STATE: state } });
   assert.strictEqual(r.status, 1, r.stdout); assert.match(r.stdout, /No se pudieron listar los repos de la organización: no pude saber qué es nadie/);
