@@ -265,8 +265,8 @@ fi; rm -f /tmp/cmb-imp-$$.txt
 ENTRADAS=$(node -e '
 const { entradasDe } = require(process.argv[1]);
 const fs = require("fs"), cp = require("child_process");
-let txt; try { txt = cp.execFileSync("git", ["-C", process.argv[2], "show", "origin/main:README.md"], { encoding: "utf8", maxBuffer: 1 << 28 }); }
-catch { txt = fs.readFileSync(process.argv[2] + "/README.md", "utf8"); }
+let txt; try { txt = cp.execFileSync("git", ["-C", process.argv[2], "show", "origin/main:INDEX.md"], { encoding: "utf8", maxBuffer: 1 << 28 }); }
+catch { txt = fs.readFileSync(process.argv[2] + "/INDEX.md", "utf8"); }
 const anchas = entradasDe(txt);
 const L = txt.split("\n");
 const angostas = L.filter((l) => l.startsWith("- **["));
@@ -312,7 +312,7 @@ fi
 REAL=$(node -e '
 const { entradasDe, entradasCompletasDe } = require(process.argv[1]);
 const cp = require("child_process");
-let t; try { t = cp.execFileSync("git", ["-C", process.argv[2], "show", "origin/main:README.md"], { encoding: "utf8", maxBuffer: 1 << 28 }); }
+let t; try { t = cp.execFileSync("git", ["-C", process.argv[2], "show", "origin/main:INDEX.md"], { encoding: "utf8", maxBuffer: 1 << 28 }); }
 catch { console.log("SIN-ORIGIN"); process.exit(0); }
 const L = t.split("\n"); const i = L.findIndex((l) => /^## Qué contiene/.test(l));
 let f = L.length; for (let k = i + 1; k < L.length; k++) if (/^## /.test(L[k])) { f = k; break; }

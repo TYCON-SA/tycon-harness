@@ -238,7 +238,7 @@ if corre T23b; then
 import json, sys, re
 md, st, legacy = sys.argv[1], sys.argv[2], sys.argv[3]
 t = open(md, encoding='utf-8').read()
-t = re.sub(r'^@~/\.claude/[^/\n]+/README\.md$', legacy, t, flags=re.M)
+t = re.sub(r'^@~/\.claude/[^/\n]+/(?:README|INDEX)\.md$', legacy, t, flags=re.M)
 open(md, 'w', encoding='utf-8').write(t)
 d = json.load(open(st, encoding='utf-8'))
 for p in d.get('managed', []):
@@ -252,11 +252,11 @@ PY
   case "$SALIDA" in *"quitada"*"README.md"*) mal "T23b rollback dijo que quitó el import: $SALIDA" ;; *) ok "T23b …y no lo anunció como pieza quitada" ;; esac
   # sin ninguna línea de import, el arranque siguiente la repone
   # sin ninguna línea de import (el archivo puede quedar vacío: grep -v sale 1 y el mv va igual)
-  grep -v '/README.md' "$CLAUDE_MD_PATH" > "$CLAUDE_MD_PATH.tmp"; mv "$CLAUDE_MD_PATH.tmp" "$CLAUDE_MD_PATH"
-  grep -q '/README.md' "$CLAUDE_MD_PATH" && mal "T23b (armado) el import no se pudo sacar" || ok "T23b (armado) CLAUDE.md sin ninguna línea de import"
+  grep -v -E '/(README|INDEX)\.md$' "$CLAUDE_MD_PATH" > "$CLAUDE_MD_PATH.tmp"; mv "$CLAUDE_MD_PATH.tmp" "$CLAUDE_MD_PATH"
+  grep -q -E '/(README|INDEX)\.md$' "$CLAUDE_MD_PATH" && mal "T23b (armado) el import no se pudo sacar" || ok "T23b (armado) CLAUDE.md sin ninguna línea de import"
   estado_set "d['last_fetch']=None"
   harness startup >/dev/null 2>&1
-  grep -q '^@~/.claude/.*/README.md$' "$CLAUDE_MD_PATH" && ok "T23b el arranque repuso el @import que faltaba" || mal "T23b el arranque no repuso el import: $(cat "$CLAUDE_MD_PATH")"
+  grep -q '^@~/.claude/.*/INDEX.md$' "$CLAUDE_MD_PATH" && ok "T23b el arranque repuso el @import que faltaba (el de hoy: INDEX.md)" || mal "T23b el arranque no repuso el import: $(cat "$CLAUDE_MD_PATH")"
   grep -q "faltaba en CLAUDE.md: repuesto" "$(LOG)" && ok "T23b …y lo dejó en el registro" || mal "T23b el registro no dice que lo repuso"
 fi
 
