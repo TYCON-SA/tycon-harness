@@ -1302,6 +1302,12 @@
       "requiere": []
     },
     {
+      "__nota": "arreglo de la mudanza (sin story): en Windows la mudanza no arranca si otro programa tiene tomada una carpeta que va a renombrar o apartar — no sólo el estado: agent-skills como carpeta real y lo personal real que se muda; cada carpeta tomada se nombra con su código y se dice qué cerrar o que se reinicie Windows; un enlace no se prueba. El rename trabado se inyecta (no se reproduce fuera de Windows).",
+      "raiz": "arnes",
+      "ruta": "tests/move-home-busy.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "arreglo urgente del 2026-10-11 (sin story): la red de las suites que llaman código capaz de borrar — scripts/tests/lib/real-home-guard.js frena y anota todo intento de escribir, crear, mover o borrar en ~/.tycon, ~/.claude y ~/.codex de quien corre (y en TYCON_HOME), en el proceso de la suite y en los node que lanza; con el error tragado el proceso igual sale 1; fuera de esas carpetas y al leer no frena; un hijo con HOME de juguete recibe las mismas raíces y su laboratorio no se frena; por un enlace, y en las formas con callback y con promesa, también. La cargan move-home.test.js y harness-state.test.js (una prueba de «deshacer la mudanza» con el ambiente vacío borró el arnés instalado de una máquina mudada).",
       "raiz": "arnes",
       "ruta": "tests/real-home-guard.test.js",
