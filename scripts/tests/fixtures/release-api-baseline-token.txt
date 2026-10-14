@@ -1,0 +1,70 @@
+## install desde el clon
+## migrate --to-home
+GET /repos/TYCON-LAB/arnes-lab/git/ref/heads/main
+GET /repos/TYCON-LAB/arnes-lab/contents/version.json?ref=<sha>
+GET /repos/TYCON-LAB/arnes-lab/git/commits/<sha>
+GET /repos/TYCON-LAB/arnes-lab/tarball/<sha>
+GET /repos/wshobson/agents/tarball/<sha>
+GET /repos/bmad-code-org/BMAD-METHOD/tarball/<sha>
+GET /repos/bmad-code-org/BMAD-METHOD/tarball/<sha>
+GET /repos/bmad-code-org/BMAD-METHOD/tarball/<sha>
+GET /repos/wshobson/agents/tarball/<sha>
+GET /repos/vercel-labs/agent-skills/tarball/<sha>
+GET /repos/vercel-labs/agent-skills/tarball/<sha>
+GET /repos/sickn33/antigravity-awesome-skills/tarball/<sha>
+GET /repos/obra/superpowers/tarball/<sha>
+GET /repos/anthropics/skills/tarball/<sha>
+## update --check al día
+GET /repos/TYCON-LAB/arnes-lab/git/ref/heads/main
+GET /repos/TYCON-LAB/arnes-lab/contents/version.json?ref=<sha>
+## update --check al día, otra vez
+GET /repos/TYCON-LAB/arnes-lab/git/ref/heads/main
+## update --check con versión nueva
+GET /repos/TYCON-LAB/arnes-lab/git/ref/heads/main
+GET /repos/TYCON-LAB/arnes-lab/git/ref/heads/main
+GET /repos/TYCON-LAB/arnes-lab/contents/version.json?ref=<sha>
+## update --yes
+GET /repos/TYCON-LAB/arnes-lab/git/ref/heads/main
+GET /repos/TYCON-LAB/arnes-lab/git/commits/<sha>
+GET /repos/TYCON-LAB/arnes-lab/tarball/<sha>
+GET /repos/wshobson/agents/tarball/<sha>
+GET /repos/bmad-code-org/BMAD-METHOD/tarball/<sha>
+GET /repos/bmad-code-org/BMAD-METHOD/tarball/<sha>
+GET /repos/bmad-code-org/BMAD-METHOD/tarball/<sha>
+GET /repos/wshobson/agents/tarball/<sha>
+GET /repos/vercel-labs/agent-skills/tarball/<sha>
+GET /repos/vercel-labs/agent-skills/tarball/<sha>
+GET /repos/sickn33/antigravity-awesome-skills/tarball/<sha>
+GET /repos/obra/superpowers/tarball/<sha>
+GET /repos/anthropics/skills/tarball/<sha>
+## install --version latest
+GET /repos/TYCON-LAB/arnes-lab/git/ref/heads/main
+GET /repos/TYCON-LAB/arnes-lab/contents/version.json?ref=<sha>
+GET /repos/TYCON-LAB/arnes-lab/git/commits/<sha>
+GET /repos/TYCON-LAB/arnes-lab/tarball/<sha>
+GET /repos/wshobson/agents/tarball/<sha>
+GET /repos/bmad-code-org/BMAD-METHOD/tarball/<sha>
+GET /repos/bmad-code-org/BMAD-METHOD/tarball/<sha>
+GET /repos/bmad-code-org/BMAD-METHOD/tarball/<sha>
+GET /repos/wshobson/agents/tarball/<sha>
+GET /repos/vercel-labs/agent-skills/tarball/<sha>
+GET /repos/vercel-labs/agent-skills/tarball/<sha>
+GET /repos/sickn33/antigravity-awesome-skills/tarball/<sha>
+GET /repos/obra/superpowers/tarball/<sha>
+GET /repos/anthropics/skills/tarball/<sha>
+## install --version 2026.10.08.1
+GET /repos/TYCON-LAB/arnes-lab/commits?sha=main&path=version.json&per_page=100
+GET /repos/TYCON-LAB/arnes-lab/contents/version.json?ref=<sha>
+GET /repos/TYCON-LAB/arnes-lab/contents/version.json?ref=<sha>
+GET /repos/TYCON-LAB/arnes-lab/git/commits/<sha>
+GET /repos/TYCON-LAB/arnes-lab/tarball/<sha>
+GET /repos/wshobson/agents/tarball/<sha>
+GET /repos/bmad-code-org/BMAD-METHOD/tarball/<sha>
+GET /repos/bmad-code-org/BMAD-METHOD/tarball/<sha>
+GET /repos/bmad-code-org/BMAD-METHOD/tarball/<sha>
+GET /repos/wshobson/agents/tarball/<sha>
+GET /repos/vercel-labs/agent-skills/tarball/<sha>
+GET /repos/vercel-labs/agent-skills/tarball/<sha>
+GET /repos/sickn33/antigravity-awesome-skills/tarball/<sha>
+GET /repos/obra/superpowers/tarball/<sha>
+GET /repos/anthropics/skills/tarball/<sha>

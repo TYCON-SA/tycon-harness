@@ -242,6 +242,15 @@ check() { # <modo> <archivo…>: una línea con lo que encontró; exit 0 sólo s
   return "${PIPESTATUS[0]}"
 }
 
+# ── La suite corre por partes (2026-10-14, public-ci: tardaba ~440 s en el agente de GitHub y en uno lento pasó los
+# 900 s del tope, a punto de terminar). Entera —a mano— corre todos los bloques; como parte
+# (`installer-ps1.p<k>.test.sh`), sólo los suyos. Lo de afuera de los bloques —el laboratorio de arriba y las
+# funciones y listas de la tanda W3a— corre siempre: un bloque no puede depender de lo que dejó otro
+# (scripts/tests/lib/suite-parts.sh). La parte 1 va de (a) a (r); la 2, de (u) al final.
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/suite-parts.sh"
+suite_parts 2
+if suite_part 1; then   # ── parte 1 de 2: de (a) a (k) ──
+
 # ═══ (a) -Check sobre una HOME vacía: exit 0, lista lo que falta, no escribe nada ═══════════════════════════════
 HA="$(new_home check-empty)"
 BEFORE="$(listing "$HA")"
@@ -588,6 +597,8 @@ fresh_run "$T/k5.out"; RC=$?
 if [ "$RC" -eq 0 ] && grep -q 'core.hooksPath local vestigial removido' "$T/k5.out" && [ -z "$(hooks_path)" ]; then ok "(k) (espejo) una carpeta que no existe y que el repo no sigue: la destapa, como siempre"
 else no "(k) (espejo) carpeta inexistente (rc $RC): «$(said_hooks_path "$T/k5.out")» · hooksPath: «$(hooks_path)»"; fi
 
+fi   # ── fin de la parte 1 (de (a) a (k)); lo que sigue, hasta (n), corre en las dos partes ──
+
 # ═══ story 8.17, tanda W3a · el .ps1 registra lo que faltaba (T90 a T93) ════════════════════════════════════════
 # Lo esperado de estas secciones está ESCRITO ACÁ, control por control: si saliera de las tablas del .ps1, una fila que
 # falta en la tabla no se vería (así vivieron los 15 huecos). Todas las corridas con TYCON_HARNESS_LOCK_HELD=1 y
@@ -642,6 +653,9 @@ wrong_counts() { # <settings> <n> <evento|matcher|relpath>…: los que NO están
 }
 same_cmd() { [ "$(hook_cmd "$1" "$2" "$3" "$4")" = "$5" ]; }   # <settings> <evento> <matcher> <relpath> <comando esperado, entero>
 sh_state3() { local s="$1" r out=""; for r in safety-guard-pre.sh test-scope-guard-pre.sh engram-pre-commit.sh; do out="$out$(hook_n "$s" PreToolUse '*' "$r")"; done; printf '%s' "$out"; }   # <settings> → cuántas veces está cada .sh, en cualquier matcher
+hook_order() { # <settings>: una línea por hook, en el orden del archivo (evento, matcher, guion) — para decir QUÉ quedó fuera de lugar
+  node -e 'const s=require(process.argv[1]);for(const[e,b]of Object.entries(s.hooks||{}))for(const x of b)for(const h of x.hooks||[])console.log(e,x.matcher||"*",String(h.command||"").split("/").pop())' "$1" 2>&1
+}
 
 # los que faltaban y tienen sentido en Windows (AC 64), los dos reemplazados que sobraban, lo que queda afuera con su
 # motivo en windows-support.json (AC 68) y el opt-in que nace apagado
@@ -663,6 +677,8 @@ HELD=(TYCON_HARNESS_LOCK_HELD=1 TYCON_HARNESS_GIT_BASH_HEALTH=1)
 TEAM=(TYCON_CLOCKIFY=1 TYCON_ENGRAM=1 TYCON_NIGHTLY=1)
 lab_env "$GUARD" "${TEAM[@]}" -- node "$CLONE/scripts/lib/tycon-config.js" integrations --json > "$T/integrations-team.json" 2> "$T/integrations-team.err"
 [ $? -eq 0 ] || { echo "❌ installer-ps1: el lector de configuración no contestó con las integraciones del equipo: $(brief "$T/integrations-team.err")"; exit 1; }
+
+if suite_part 1; then   # ── parte 1 de 2: de (n) a (r) ──
 
 # ── (n) T90 · Ps1_RegistersMissingControls_EachOnce_DuplicatesGone ──────────────────────────────────────────────
 HT="$(new_home team)"; ST="$HT/.claude/settings.json"
@@ -784,9 +800,6 @@ back_to_factory() { # <qué se apagó>: con todo de fábrica otra vez, settings.
   team_run "${TEAM[@]}"; local rc=$?
   if [ "$rc" -eq 0 ] && cmp -s "$ST" "$T/t.settings.json"; then ok "(p) T92 $1: al volver a lo de fábrica, settings.json queda byte a byte como el de una instalación fresca (cada hook en su lugar)"
   else no "(p) T92 $1: al volver a lo de fábrica (rc $rc) settings.json no es el de la instalación fresca: $(diff <(hook_order "$T/t.settings.json") <(hook_order "$ST") | head -6 | tr '\n' ' ')"; fi
-}
-hook_order() { # <settings>: una línea por hook, en el orden del archivo (evento, matcher, guion) — para decir QUÉ quedó fuera de lugar
-  node -e 'const s=require(process.argv[1]);for(const[e,b]of Object.entries(s.hooks||{}))for(const x of b)for(const h of x.hooks||[])console.log(e,x.matcher||"*",String(h.command||"").split("/").pop())' "$1" 2>&1
 }
 # el espejo primero: con todo de fábrica, los tres .sh están
 if [ "$(n_of PreToolUse safety-guard-pre.sh)$(n_of PreToolUse test-scope-guard-pre.sh)$(n_of PreToolUse engram-pre-commit.sh)" = 111 ]; then ok "(p) T92 el espejo: con todo de fábrica, los tres .sh están registrados"
@@ -1053,6 +1066,10 @@ else no "(r) el espejo sin formas viejas (rc $RC): quedó «$(legacy_state "$SN"
 installer "$HN" "${HELD[@]}" > "$T/ln2.out" 2>&1; RC=$?
 if [ "$RC" -eq 0 ] && [ "$(legacy_state "$SN")" = "0 0 0 1 1" ]; then ok "(r) al apagar la integración engram se saca el del arnés y el hook propio que se llama igual queda"
 else no "(r) al apagar engram con un hook propio que se llama igual (rc $RC): quedó «$(legacy_state "$SN")» (esperaba «0 0 0 1 1») · $(brief "$T/ln2.out" 200)"; fi
+
+fi   # ── fin de la parte 1 ──
+
+if suite_part 2; then   # ── parte 2 de 2: de (u) al final ──
 
 # ── (u) Ps1_LaunchedByOldHarness_ShDeferredToNextRun · pase adversarial de la W3a (B1) ─────────────────────────────
 # La actualización que TRAE esta tanda la juzga la salud de la versión anterior (harness.js la carga antes de mover el
@@ -1594,7 +1611,8 @@ get_harness_ps1_section() {
   fi
   # (la ruta `/git/ref/heads/<rama>` de la API de GitHub no es una invocación de git: se descuenta antes de mirar)
   # (la primera línea trae el BOM UTF-8 antes del `#`: se saca antes de descontar los comentarios)
-  ps1_code() { LC_ALL=C sed '1s/^\xef\xbb\xbf//' "$src" | grep -vE '^\s*#' | sed 's#/git/##g'; }
+  # (y los nombres de las rutas públicas de la story 8.34 —`<repo>.git/info/refs`, `git-upload-pack`— tampoco)
+  ps1_code() { LC_ALL=C sed '1s/^\xef\xbb\xbf//' "$src" | grep -vE '^\s*#' | sed -e 's#/git/##g' -e 's#\.git/info/refs##g' -e 's#git-upload-pack##g'; }
   if ! ps1_code | grep -wE 'git|--depth' >/dev/null; then ok "get-harness.ps1 · no invoca git ni lo pide (sin clon: la versión se baja como archivos)"
   else no "get-harness.ps1 · todavía nombra git fuera de los comentarios: $(ps1_code | grep -nwE 'git|--depth' | head -2 | tr '\n' ' ')"; fi
   if [ "$(head -c 3 "$src" | od -An -tx1 | tr -d ' \n')" = efbbbf ]; then ok "get-harness.ps1 · empieza con el BOM UTF-8 (Windows PowerShell 5.1 lee mal un .ps1 sin él)"
@@ -1748,6 +1766,24 @@ PS
   if ! grep -q 'falta python3\|falta bash' "$gl/codex.out" && grep -q '/tarball/' "$gl/requests.log" && [ "$(tail -1 "$calls" 2>/dev/null)" = "${INSTALL_CALL},\"--tool\",\"codex\",\"--yes\"]" ]; then
     ok "get-harness.ps1 · con -- --tool codex y sin python3 ni bash: no son requisitos (los pide el aplicador de Claude Code), baja e instala"
   else no "get-harness.ps1 · con -- --tool codex sin python3 (rc $rc; llamada: $(tail -1 "$calls" 2>/dev/null)): $(brief "$gl/codex.out")"; fi
+  # T14 (story 8.34) · sin permiso y con las rutas públicas del juguete (TYCON_RELEASE_GIT / _ARCHIVE): main de info/refs y el
+  # comprimido de codeload, sin ninguna consulta a la API; con la API agotada (por la API: con permiso), la hora del tope
+  local gitb cdl reset hora
+  gitb="$(sed -n 's/^GIT=//p' "$gl/ports.env")"; cdl="$(sed -n 's/^CODELOAD=//p' "$gl/ports.env")"
+  printf '{ "auth": "none" }\n' > "$gl/control.json"
+  h="$(new_home gh-public)"; : > "$gl/requests.log"
+  ps_gh "$h" "$gl/bin-full" TYCON_RELEASE_GIT="$gitb" TYCON_RELEASE_ARCHIVE="$cdl" -- -- --yes > "$gl/public.out" 2>&1; rc=$?
+  if [ "$rc" -eq 0 ] && [ "$(tail -1 "$calls" 2>/dev/null)" = "${INSTALL_CALL},\"--yes\"]" ] && grep -q 'info/refs' "$gl/requests.log" && grep -q '/tar.gz/' "$gl/requests.log" && ! grep -q '"host":"api"' "$gl/requests.log"; then
+    ok "get-harness.ps1 · T14 sin permiso: main de info/refs y el comprimido de codeload, sin ninguna consulta a la API; corre install"
+  else no "get-harness.ps1 · T14 sin permiso por las rutas públicas (rc $rc; pedidos: $(sed 's/.*"path":"\([^"]*\)".*/\1/' "$gl/requests.log" | tr '\n' ' ')): $(brief "$gl/public.out")"; fi
+  reset=$(( $(date +%s) + 2400 )); hora="$(node -e 'const d=new Date(Number(process.argv[1])*1000);console.log(`${d.getHours()}`.padStart(2,"0")+":"+`${d.getMinutes()}`.padStart(2,"0"))' "$reset")"
+  printf '{ "auth": "none", "ratelimit": true, "ratelimit_reset": %s }\n' "$reset" > "$gl/control.json"
+  h="$(new_home gh-limited)"; n_calls="$(wc -l < "$calls" | tr -d ' ')"
+  ps_gh "$h" "$gl/bin-full" TYCON_GITHUB_TOKEN="$permit" -- -- --yes > "$gl/limited.out" 2>&1; rc=$?
+  if [ "$rc" -eq 1 ] && grep -q "hasta las $hora" "$gl/limited.out" && ! grep -q 'GitHub contestó 403' "$gl/limited.out" && [ "$(wc -l < "$calls" | tr -d ' ')" = "$n_calls" ]; then
+    ok "get-harness.ps1 · T14 la API en su tope: sale 1 con la hora ($hora), sin «GitHub contestó 403» y sin llamar a install"
+  else no "get-harness.ps1 · T14 la API en su tope (rc $rc): $(brief "$gl/limited.out")"; fi
+  printf '{ "auth": "none" }\n' > "$gl/control.json"
   kill "$srv" 2>/dev/null; wait "$srv" 2>/dev/null
 }
 if command -v git >/dev/null 2>&1; then get_harness_ps1_section
@@ -2020,8 +2056,9 @@ if grep -nE "$USER_DIR_SHAPES" "${BASH_SOURCE[0]}" >/dev/null 2>&1; then
 else
   ok "T79 la prueba no trae escrita ninguna ruta con forma de carpeta de usuario (viaja en la copia pública)"
 fi
+fi   # ── fin de la parte 2 ──
 
 echo
-echo "ℹ installer-ps1: una instalación entera del .ps1 con pwsh tardó ${ELAPSED_INSTALL} s"
+[ -z "${ELAPSED_INSTALL:-}" ] || echo "ℹ installer-ps1: una instalación entera del .ps1 con pwsh tardó ${ELAPSED_INSTALL} s"   # (la mide (b), en la parte 1)
 if [ "$FAILURES" -gt 0 ]; then echo "❌ installer-ps1: $FAILURES de $TOTAL en rojo"; exit 1; fi
 echo "✅ installer-ps1: todo verde ($TOTAL chequeos)"; exit 0

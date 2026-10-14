@@ -554,6 +554,11 @@
    "why": "prueba (story 8.23, tanda B): la guarda del laboratorio comprueba que la carpeta temporal no cayó en el checkout del repo interno ni en agent-skills"
   },
   {
+   "path": "scripts/tests/release-api-count.test.sh",
+   "kind": "test",
+   "why": "prueba (story 8.34): la misma guarda del laboratorio que harness-release.test.sh — la carpeta temporal no cayó en el checkout del repo interno ni en agent-skills"
+  },
+  {
    "path": "scripts/tests/harness-repo.test.sh",
    "kind": "test",
    "why": "prueba del reconocedor del repo del arnés por el remoto: arma remotos con el nombre interno (y parecidos) para probar cuáles se reconocen"

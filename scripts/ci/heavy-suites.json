@@ -103,10 +103,30 @@
         "agents/**"
       ]
     },
-    "installer-ps1.test.sh": {
-      "why": "~251 s en la validación 170 #11961 (2026-10-05). Corre el instalador de verdad (o el programa harness.js con su aplicador): hereda `shared` —el instalador y todo lo que instala— y suma su propia prueba, el laboratorio (scripts/tests/lib/), los datos de prueba y las carpetas que la prueba nombra, más las que nombra el instalador fuera de `shared` (scripts/metrics/, scripts/production/ y la lista de suites). Ante la duda, la carpeta entra. Un cambio que no toca nada de eso (guías, nocturnos, métricas sueltas, CI) no la corre en la rama; el banco nocturno la corre siempre. 2026-10-07 (story 8.22, tramo E, AC 33): skills/** y agents/** propios — el instalador real los instala listando la carpeta, y el lector no ve skills/ (es demasiado ancha para él) ni sigue un listado. De scripts/ ve lo que el instalador nombra. `deps`: \"graph\" — el grep de la suite es sobre la salida de sus pruebas, no sobre el repo: usa lo que el lector encuentra en su código, sin el «depende de todo». graph_whole_lines: 4 y graph_whole_sha: la cantidad y la huella de las líneas de su código que recorren algo cuando se revisó (2026-10-07): si cambian, vuelve a depender de todo hasta que alguien la mire.",
+    "installer-ps1.p1.test.sh": {
+      "why": "Una de las dos partes de installer-ps1.test.sh (partida el 2026-10-14); el criterio es el de la suite entera, que sigue: ~251 s en la validación 170 #11961 (2026-10-05). Corre el instalador de verdad (o el programa harness.js con su aplicador): hereda `shared` —el instalador y todo lo que instala— y suma su propia prueba, el laboratorio (scripts/tests/lib/), los datos de prueba y las carpetas que la prueba nombra, más las que nombra el instalador fuera de `shared` (scripts/metrics/, scripts/production/ y la lista de suites). Ante la duda, la carpeta entra. Un cambio que no toca nada de eso (guías, nocturnos, métricas sueltas, CI) no la corre en la rama; el banco nocturno la corre siempre. 2026-10-07 (story 8.22, tramo E, AC 33): skills/** y agents/** propios — el instalador real los instala listando la carpeta, y el lector no ve skills/ (es demasiado ancha para él) ni sigue un listado. De scripts/ ve lo que el instalador nombra. `deps`: \"graph\" — el grep de la suite es sobre la salida de sus pruebas, no sobre el repo: usa lo que el lector encuentra en su código, sin el «depende de todo». graph_whole_lines: 4 y graph_whole_sha: la cantidad y la huella de las líneas de su código que recorren algo cuando se revisó (2026-10-07): si cambian, vuelve a depender de todo hasta que alguien la mire.",
       "deps": "graph",
       "patterns": [
+        "scripts/tests/installer-ps1.p1.test.sh",
+        "scripts/tests/installer-ps1.test.sh",
+        "scripts/tests/lib/**",
+        "scripts/tests/fixtures/**",
+        "guides/**",
+        "scripts/*",
+        "scripts/metrics/**",
+        "scripts/production/**",
+        "scripts/tests/suites.json",
+        "skills/**",
+        "agents/**"
+      ],
+      "graph_whole_lines": 7,
+      "graph_whole_sha": "0c76eba37e5b"
+    },
+    "installer-ps1.p2.test.sh": {
+      "why": "Una de las dos partes de installer-ps1.test.sh (partida el 2026-10-14); el criterio es el de la suite entera, que sigue: ~251 s en la validación 170 #11961 (2026-10-05). Corre el instalador de verdad (o el programa harness.js con su aplicador): hereda `shared` —el instalador y todo lo que instala— y suma su propia prueba, el laboratorio (scripts/tests/lib/), los datos de prueba y las carpetas que la prueba nombra, más las que nombra el instalador fuera de `shared` (scripts/metrics/, scripts/production/ y la lista de suites). Ante la duda, la carpeta entra. Un cambio que no toca nada de eso (guías, nocturnos, métricas sueltas, CI) no la corre en la rama; el banco nocturno la corre siempre. 2026-10-07 (story 8.22, tramo E, AC 33): skills/** y agents/** propios — el instalador real los instala listando la carpeta, y el lector no ve skills/ (es demasiado ancha para él) ni sigue un listado. De scripts/ ve lo que el instalador nombra. `deps`: \"graph\" — el grep de la suite es sobre la salida de sus pruebas, no sobre el repo: usa lo que el lector encuentra en su código, sin el «depende de todo». graph_whole_lines: 4 y graph_whole_sha: la cantidad y la huella de las líneas de su código que recorren algo cuando se revisó (2026-10-07): si cambian, vuelve a depender de todo hasta que alguien la mire.",
+      "deps": "graph",
+      "patterns": [
+        "scripts/tests/installer-ps1.p2.test.sh",
         "scripts/tests/installer-ps1.test.sh",
         "scripts/tests/lib/**",
         "scripts/tests/fixtures/**",
@@ -203,6 +223,22 @@
       "group": "installer",
       "patterns": [
         "scripts/tests/harness-release.test.sh"
+      ]
+    },
+    "release-api-count.p1.test.sh": {
+      "why": "La suite de la story 8.34 (cuántas consultas a la API gasta cada operación de una versión bajada): suite del laboratorio del instalador, corre en la rama sólo cuando el cambio toca el instalador (grupo `installer`), como harness-release. Pesos ESTIMADOS (lo medido en la Mac, 18 y 24 s, llevado a la escala del agente): se renuevan con la primera validación de la rama.",
+      "group": "installer",
+      "patterns": [
+        "scripts/tests/release-api-count.test.sh",
+        "scripts/tests/release-api-count.p1.test.sh"
+      ]
+    },
+    "release-api-count.p2.test.sh": {
+      "why": "La suite de la story 8.34 (cuántas consultas a la API gasta cada operación de una versión bajada): suite del laboratorio del instalador, corre en la rama sólo cuando el cambio toca el instalador (grupo `installer`), como harness-release. Pesos ESTIMADOS (lo medido en la Mac, 18 y 24 s, llevado a la escala del agente): se renuevan con la primera validación de la rama.",
+      "group": "installer",
+      "patterns": [
+        "scripts/tests/release-api-count.test.sh",
+        "scripts/tests/release-api-count.p2.test.sh"
       ]
     },
     "harness-tools.test.sh": {

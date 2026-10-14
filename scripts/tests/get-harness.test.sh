@@ -18,6 +18,10 @@
 #     de lo escrito salvo `~/.tycon/config.json`.
 #   · T57 — cada línea de bash del bloque `install:script` de la portada pasa el freno de comandos; la tubería hacia un
 #     shell sale bloqueada con `SUP-C1`.
+#   · T14 (story 8.34) — sin permiso, el guion no usa la API de GitHub (main de `info/refs`, el comprimido de codeload): la
+#     instalación entera gasta UNA consulta (la de install, que verifica); si github.com no contesta, cae a la API; con la
+#     API agotada, el guion baja igual e install dice el tope y su hora —nunca «GitHub contestó 403»—; un 403 del tope en
+#     el guion (por la API) también dice la hora.
 #
 # Cómo mide, sin red y sin tocar la máquina: la HOME de juguete de `harness_lab_create`, el «GitHub» de juguete de
 # `harness_lab_release_server` (`TYCON_RELEASE_API`, la misma variable de prueba que usa release.js) con un nombre
@@ -93,8 +97,9 @@ FLOOR_SCRIPT="$(sed -n 's/^NODE_FLOOR=\([0-9][0-9]*\).*/\1/p' "$SRC")"
 if [ -n "$FLOOR_HARNESS" ] && [ "$FLOOR_SCRIPT" = "$FLOOR_HARNESS" ]; then ok "T54 el piso de Node del guion (${FLOOR_SCRIPT}) es el de harness.js (NODE_FLOOR)"
 else no "T54 el piso de Node del guion es «${FLOOR_SCRIPT}» y el de harness.js «${FLOOR_HARNESS}»"; fi
 # (la ruta `/git/ref/heads/<rama>` de la API de GitHub no es una invocación de git: se descuenta antes de mirar)
-if ! grep -vE '^\s*#' "$SRC" | sed 's#/git/##g' | grep -wE 'git|--depth' >/dev/null; then ok "T54 el guion no invoca git ni lo pide (sin clon: la versión se baja como archivos)"
-else no "T54 el guion todavía nombra git fuera de los comentarios: $(grep -vE '^\s*#' "$SRC" | sed 's#/git/##g' | grep -nwE 'git|--depth' | head -3 | tr '\n' ' ')"; fi
+# (y los nombres de las rutas públicas de la story 8.34 —`<repo>.git/info/refs`, `git-upload-pack`— tampoco)
+if ! grep -vE '^\s*#' "$SRC" | sed -e 's#/git/##g' -e 's#\.git/info/refs##g' -e 's#git-upload-pack##g' | grep -wE 'git|--depth' >/dev/null; then ok "T54 el guion no invoca git ni lo pide (sin clon: la versión se baja como archivos)"
+else no "T54 el guion todavía nombra git fuera de los comentarios: $(grep -vE '^\s*#' "$SRC" | sed -e 's#/git/##g' -e 's#\.git/info/refs##g' -e 's#git-upload-pack##g' | grep -nwE 'git|--depth' | head -3 | tr '\n' ' ')"; fi
 if [ "$COPY" = 0 ]; then
   if grep -qxF 'REPO="{{public-org}}/{{public-repo}}"' "$SRC"; then ok "T54 la dirección de fábrica del guion son los marcadores de la portada (REPO=\"{{public-org}}/{{public-repo}}\")"
   else no "T54 la línea REPO= del guion no trae los marcadores: $(grep -E '^REPO=' "$SRC" | tr '\n' ' ')"; fi
@@ -137,8 +142,8 @@ make_path "$LAB/path-nocurl" node tar python3 bash uname rm mktemp tr env ls gre
 # con `-- --tool codex` (sólo Codex) python3 no hace falta: el guion pasa los requisitos y llega a bajar (pase adversarial, clase 17)
 : > "$LAB_RELEASE_LOG"
 env -u TYCON_GITHUB_TOKEN PATH="$LAB/path-nopy" TYCON_RELEASE_API="$LAB_RELEASE_API" TYCON_THIRD_PARTY=0 "$REAL_BASH" "$GH" -- --tool codex --yes < /dev/null > "$BASE/t55-codex.out" 2>&1; RC=$?
-if ! grep -q 'falta python3' "$BASE/t55-codex.out" && [ "$(requests '/tarball/')" -ge 1 ]; then ok "T55 con -- --tool codex y sin python3: python3 no es requisito (lo pide el aplicador de Claude Code) y el guion llega a bajar"
-else no "T55 con -- --tool codex sin python3 (rc $RC, tarball $(requests '/tarball/')): $(brief "$BASE/t55-codex.out" 300)"; fi
+if ! grep -q 'falta python3' "$BASE/t55-codex.out" && [ "$(requests '/tar.gz/')" -ge 1 ]; then ok "T55 con -- --tool codex y sin python3: python3 no es requisito (lo pide el aplicador de Claude Code) y el guion llega a bajar"
+else no "T55 con -- --tool codex sin python3 (rc $RC, tar.gz $(requests '/tar.gz/')): $(brief "$BASE/t55-codex.out" 300)"; fi
 make_path "$LAB/path-nonode-nopy" tar "${BASICS[@]}"
 env -u TYCON_GITHUB_TOKEN PATH="$LAB/path-nonode-nopy" TYCON_RELEASE_API="$LAB_RELEASE_API" "$REAL_BASH" "$GH" -- --yes < /dev/null > "$BASE/t55-two.out" 2>&1; RC=$?
 if [ "$RC" -eq 1 ] && [ "$(grep -c 'falta node' "$BASE/t55-two.out")" = 1 ] && [ "$(grep -c 'falta python3' "$BASE/t55-two.out")" = 1 ]; then ok "T55 sin node ni python3: una línea por cada uno"
@@ -167,9 +172,13 @@ run_gh_tty s > "$BASE/t56a.out" 2>&1; RC=$?
 if [ "$RC" -eq 0 ] && installed_ok && grep -q '¿Instalo? \[s/N\]' "$BASE/t56a.out" && ! grep -q 'pegá el permiso' "$BASE/t56a.out"; then
   ok "T56 repo público, sin permiso, en una terminal: no pide nada, la pregunta «¿Instalo?» llega y la respuesta también; queda instalado (estado release, ~/.tycon/harness)"
 else no "T56 repo público en terminal (rc $RC, estado $(estado_kind)): $(brief "$BASE/t56a.out" 400)"; fi
-if [ "$(requests '/tarball/')" -ge 1 ] && [ "$(grep -c '"host":"codeload"' "$LAB_RELEASE_LOG")" -ge 2 ] && [ "$(grep -c '"host":"codeload".*"auth":true' "$LAB_RELEASE_LOG")" = 0 ]; then
-  ok "T56 el comprimido se pide por la API (tarball → codeload), dos veces (la del guion y la verificada de install), y a codeload nunca viaja una credencial"
-else no "T56 la bajada: tarball $(requests '/tarball/') · codeload $(grep -c '"host":"codeload"' "$LAB_RELEASE_LOG") · con credencial $(grep -c '"host":"codeload".*"auth":true' "$LAB_RELEASE_LOG")"; fi
+if [ "$(requests '/tar.gz/')" -ge 2 ] && [ "$(requests '/tarball/')" = 0 ] && [ "$(grep -c '"host":"codeload".*"auth":true' "$LAB_RELEASE_LOG")" = 0 ]; then
+  ok "T56 sin permiso el comprimido sale de codeload (tar.gz), dos veces (la del guion y la verificada de install), sin pasar por la API y sin credencial"
+else no "T56 la bajada: tar.gz $(requests '/tar.gz/') · tarball por la API $(requests '/tarball/') · con credencial $(grep -c '"host":"codeload".*"auth":true' "$LAB_RELEASE_LOG")"; fi
+# T14 (story 8.34): la instalación entera, sin permiso, gasta UNA consulta a la API (git/commits, la verificación de install)
+if [ "$(grep -c '"host":"api"' "$LAB_RELEASE_LOG")" = 1 ] && [ "$(requests 'git/commits/')" = 1 ] && [ "$(requests 'info/refs')" -ge 2 ]; then
+  ok "T14 sin permiso: el guion no le pide nada a la API (main de info/refs); la instalación entera gasta una consulta (git/commits)"
+else no "T14 consultas a la API: $(grep '"host":"api"' "$LAB_RELEASE_LOG" | sed 's/.*"path":"\([^"]*\)".*/\1/' | tr '\n' ' ') · info/refs $(requests 'info/refs')"; fi
 if [ ! -s "$LAB_GIT_WITNESS_LOG" ]; then ok "T56 git no se invocó ni una vez (ni el guion ni install)"; else no "T56 git se invocó: $(head -3 "$LAB_GIT_WITNESS_LOG" | tr '\n' ' ')"; fi
 if [ "$(tmp_left)" = 0 ]; then ok "T56 el árbol temporal del guion se borró"; else no "T56 quedaron $(tmp_left) carpeta(s) temporal(es) del guion en $LAB_TMP"; fi
 [ "$(node -e 'console.log(require(process.argv[1]).version)' "$(TYCON_DIR)/harness/version.json" 2>/dev/null)" = 2026.10.08.1 ] && ok "T56 la versión instalada es la publicada (2026.10.08.1)" || no "T56 la versión instalada no es 2026.10.08.1: $(cat "$(TYCON_DIR)/harness/version.json" 2>/dev/null | tr '\n' ' ')"
@@ -236,7 +245,7 @@ else no "T56 permiso con CRLF (rc $RC): $(brief "$BASE/t56h.out" 300)"; fi
 node -e 'const s=require("http").createServer((q,r)=>{r.writeHead(302,{Location:"file:///etc/passwd"});r.end()});s.listen(0,"127.0.0.1",()=>require("fs").writeFileSync(process.argv[1],String(s.address().port)))' "$BASE/redir.port" & REDIR_PID=$!
 for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do [ -s "$BASE/redir.port" ] && break; sleep 0.2; done
 harness_lab_release_fresh_home
-env -u TYCON_GITHUB_TOKEN TYCON_RELEASE_API="http://127.0.0.1:$(cat "$BASE/redir.port")" TYCON_THIRD_PARTY=0 bash "$GH" -- --yes < /dev/null > "$BASE/t56i.out" 2>&1; RC=$?
+env -u TYCON_GITHUB_TOKEN -u TYCON_RELEASE_GIT TYCON_RELEASE_API="http://127.0.0.1:$(cat "$BASE/redir.port")" TYCON_THIRD_PARTY=0 bash "$GH" -- --yes < /dev/null > "$BASE/t56i.out" 2>&1; RC=$?
 kill "$REDIR_PID" 2>/dev/null; wait "$REDIR_PID" 2>/dev/null
 if [ "$RC" -eq 1 ] && grep -q 'esquema que no es http' "$BASE/t56i.out" && ! grep -q 'GitHub contestó' "$BASE/t56i.out" && ! installed_ok && [ "$(tmp_left)" = 0 ]; then ok "T56 una redirección a file:// no se sigue: sale 1 diciéndolo (una sola vez: sin el genérico «GitHub contestó»), sin bajar ni instalar nada"
 else no "T56 redirección a file:// (rc $RC, estado $(estado_kind)): $(brief "$BASE/t56i.out" 300)"; fi
@@ -245,7 +254,7 @@ else no "T56 redirección a file:// (rc $RC, estado $(estado_kind)): $(brief "$B
 node -e 'const s=require("http").createServer((q,r)=>{if(/\/git\/ref\//.test(q.url)){r.writeHead(200,{"Content-Type":"application/json"});r.end(JSON.stringify({object:{sha:"0123456789abcdef0123456789abcdef01234567"}}));return}r.writeHead(302,{Location:"file:///etc/passwd"});r.end()});s.listen(0,"127.0.0.1",()=>require("fs").writeFileSync(process.argv[1],String(s.address().port)))' "$BASE/redir2.port" & REDIR_PID=$!
 for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do [ -s "$BASE/redir2.port" ] && break; sleep 0.2; done
 harness_lab_release_fresh_home
-env -u TYCON_GITHUB_TOKEN TYCON_RELEASE_API="http://127.0.0.1:$(cat "$BASE/redir2.port")" TYCON_THIRD_PARTY=0 bash "$GH" -- --yes < /dev/null > "$BASE/t56i2.out" 2>&1; RC=$?
+env -u TYCON_GITHUB_TOKEN -u TYCON_RELEASE_GIT TYCON_RELEASE_API="http://127.0.0.1:$(cat "$BASE/redir2.port")" TYCON_THIRD_PARTY=0 bash "$GH" -- --yes < /dev/null > "$BASE/t56i2.out" 2>&1; RC=$?
 kill "$REDIR_PID" 2>/dev/null; wait "$REDIR_PID" 2>/dev/null
 if [ "$RC" -eq 1 ] && grep -q 'bajo .* a una carpeta temporal' "$BASE/t56i2.out" && grep -q 'esquema que no es http' "$BASE/t56i2.out" && ! grep -q 'GitHub contestó' "$BASE/t56i2.out" && ! installed_ok && [ "$(tmp_left)" = 0 ]; then ok "T56 una redirección a file:// en la bajada del comprimido (con main ya resuelta): sale 1 con el motivo una sola vez, sin el genérico, sin instalar"
 else no "T56 redirección a file:// en la bajada (rc $RC, estado $(estado_kind)): $(brief "$BASE/t56i2.out" 300)"; fi
@@ -259,8 +268,28 @@ printf '#!/bin/bash\ncase " $* " in *" -tvzf "*) echo "-rw-r--r-- 0 0 0 0 Jan 1 
 harness_lab_release_control '{ "auth": "none" }'
 harness_lab_release_fresh_home; : > "$LAB_RELEASE_LOG"
 env -u TYCON_GITHUB_TOKEN PATH="$LAB/path-tarshim" TYCON_RELEASE_API="$LAB_RELEASE_API" TYCON_THIRD_PARTY=0 "$REAL_BASH" "$GH" -- --yes < /dev/null > "$BASE/t56k.out" 2>&1; RC=$?
-if [ "$RC" -eq 1 ] && grep -q 'no se pudo leer' "$BASE/t56k.out" && [ "$(requests '/tarball/')" -ge 1 ] && ! installed_ok && [ "$(tmp_left)" = 0 ]; then ok "T56 si falla el listado con tipos del tar aunque el de nombres ande: sale 1 diciéndolo, no abre el comprimido ni instala"
+if [ "$RC" -eq 1 ] && grep -q 'no se pudo leer' "$BASE/t56k.out" && [ "$(requests '/tar.gz/')" -ge 1 ] && ! installed_ok && [ "$(tmp_left)" = 0 ]; then ok "T56 si falla el listado con tipos del tar aunque el de nombres ande: sale 1 diciéndolo, no abre el comprimido ni instala"
 else no "T56 listado con tipos roto (rc $RC, estado $(estado_kind)): $(brief "$BASE/t56k.out" 300)"; fi
+# (l) T14 · github.com sin contestar: el guion mira main por la API (el respaldo) e instala igual
+harness_lab_release_control '{ "auth": "none" }'
+harness_lab_release_fresh_home; : > "$LAB_RELEASE_LOG"
+env -u TYCON_GITHUB_TOKEN TYCON_RELEASE_API="$LAB_RELEASE_API" TYCON_RELEASE_GIT=http://127.0.0.1:9 TYCON_THIRD_PARTY=0 bash "$GH" -- --yes < /dev/null > "$BASE/t14l.out" 2>&1; RC=$?
+if [ "$RC" -eq 0 ] && installed_ok && [ "$(requests 'git/ref/heads/main')" -ge 1 ]; then ok "T14 github.com sin contestar: el guion cae a la API para leer main e instala"
+else no "T14 github.com caído (rc $RC, ref por la API $(requests 'git/ref/heads/main')): $(brief "$BASE/t14l.out" 300)"; fi
+# (m) T14 · la API agotada: el guion baja igual (no la usa) e install dice el tope y la hora, nunca «GitHub contestó 403»
+RESET=$(( $(date +%s) + 2400 )); HORA="$(node -e 'const d=new Date(Number(process.argv[1])*1000);console.log(`${d.getHours()}`.padStart(2,"0")+":"+`${d.getMinutes()}`.padStart(2,"0"))' "$RESET")"
+harness_lab_release_control "{ \"auth\": \"none\", \"ratelimit\": true, \"ratelimit_reset\": $RESET }"
+harness_lab_release_fresh_home; : > "$LAB_RELEASE_LOG"
+run_gh -- --yes > "$BASE/t14m.out" 2>&1; RC=$?
+if [ "$RC" -ne 0 ] && grep -q 'bajo .* a una carpeta temporal' "$BASE/t14m.out" && grep -q "hasta las $HORA" "$BASE/t14m.out" && ! grep -q 'GitHub contestó 403' "$BASE/t14m.out" && ! installed_ok; then
+  ok "T14 con la API agotada: el guion baja por las rutas públicas e install dice el tope y la hora ($HORA), sin «GitHub contestó 403»"
+else no "T14 API agotada (rc $RC): $(brief "$BASE/t14m.out" 400)"; fi
+# (n) T14 · el tope en el guion mismo (por la API: con permiso): dice la hora, no «GitHub contestó 403»
+env TYCON_GITHUB_TOKEN="$LAB_PERMIT" TYCON_RELEASE_API="$LAB_RELEASE_API" TYCON_THIRD_PARTY=0 bash "$GH" -- --yes < /dev/null > "$BASE/t14n.out" 2>&1; RC=$?
+if [ "$RC" -eq 1 ] && grep -q "hasta las $HORA" "$BASE/t14n.out" && ! grep -q 'GitHub contestó 403' "$BASE/t14n.out"; then ok "T14 el tope de la API en el guion: sale 1 con la hora ($HORA)"
+else no "T14 tope en el guion (rc $RC): $(brief "$BASE/t14n.out" 300)"; fi
+harness_lab_release_control '{ "auth": "none" }'
+
 if [ ! -e "$PKG_CALLS" ]; then ok "T55/T56 en toda la suite nadie llamó a brew, apt, apt-get, sudo ni winget"; else no "alguien llamó a un gestor de paquetes: $(tr '\n' ' ' < "$PKG_CALLS")"; fi
 
 # ══ T57 · el freno de comandos: las líneas del bloque pasan, la tubería no ═════════════════════════════════════

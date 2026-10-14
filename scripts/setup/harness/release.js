@@ -8,17 +8,32 @@
 // clon no pasa por acá nunca (`state.isRelease`).
 //
 // ── CÓMO HABLA CON GITHUB ────────────────────────────────────────────────────────────────────────────────────────
-// Por la API, con el cliente propio (scripts/lib/http-get.js: proxy, tope, redirección sin reenviar la credencial):
+// SIN permiso guardado (story 8.34), por las rutas públicas de public-git.js, que no cuentan contra el tope de la API
+// (60 consultas por hora por conexión, aunque el repo sea público):
+//   · las ramas, de UN pedido a `info/refs` (`main` y `mirror/sync` juntas); el número, del raw de cada commit, salvo que
+//     el commit ya se conozca (el instalado, o una punta ya vista: `src.etags.tips`);
+//   · el comprimido, de codeload (`tar.gz/<sha>`), y los de terceros, igual;
+//   · a la API le queda UNA consulta por bajada: `git/commits/<sha>`, el árbol con el que se verifica (decisión D1 = A
+//     del dueño, 2026-10-14). `install --version <n>` sigue por la API (D2 = A).
+//   · Respaldo: `info/refs` sin red, con un 5xx o ilegible → se mira por la API, como antes, y se anota en el registro;
+//     un 401/404 de `info/refs` (así contesta GitHub un repo que no existe o no es público) no cae: es «no se ve». El raw
+//     caído → ese único `version.json` por la API.
+//   · El tope: un 403 con `X-RateLimit-Remaining: 0` deja la hora de renovación (`limitedUntil`); el arranque la guarda
+//     (`state.api_limited_until`) y hasta esa hora su cliente NO le pide nada a la API (`waitUntil`), avisa una vez y no lo
+//     cuenta como fallo. `update` a mano intenta una vez.
+// CON permiso guardado, por la API, igual que antes de la 8.34 (lo pidió el dueño; un repo privado sólo se ve así), con
+// el cliente propio (scripts/lib/http-get.js: proxy, tope, redirección sin reenviar la credencial):
 //   · la ref del canal: `git/ref/heads/<ref>` (la de `latest`, `mirror/sync`, lleva barra y va tal cual), con ETag;
 //     `latest` lee `main` si `mirror/sync` no está o su número es menor (la regla de sources.js);
-//   · `contents/version.json?ref=<commit>`: el número, con If-None-Match (un 304 no gasta cuota);
+//   · `contents/version.json?ref=<commit>`: el número, con If-None-Match (con permiso, un 304 no gasta cuota; sin
+//     permiso SÍ gasta, según la documentación de GitHub: por eso sin permiso no se usa);
 //   · `git/commits/<sha>`: el árbol del commit, con el que se verifica lo bajado;
 //   · `tarball/<sha>`: el comprimido DE ESE COMMIT (redirige a codeload con su propia llave en la URL);
 //   · `commits?sha=<ref>&path=version.json&per_page=100`: para ubicar un número pedido a mano (`install --version <n>`).
 // La credencial es la de github-auth.js (siempre el permiso pegado; nunca git). El repo sale de
 // `scripts/setup/public-remotes.json` del árbol que corre (la copia pública lo trae), o de `scripts/publishing/
 // public-repos.json` (el interno), o de `--repo <org/nombre>`. `TYCON_RELEASE_API` cambia la base de la API (sólo las
-// pruebas: el servidor de juguete).
+// pruebas: el servidor de juguete), y `TYCON_RELEASE_GIT` / `_RAW` / `_ARCHIVE` las de las rutas públicas (public-git.js).
 //
 // ── EL CAMBIO DE VERSIÓN, CON DIARIO ─────────────────────────────────────────────────────────────────────────────
 // La versión verificada se arma en `incoming/<v>/` (lector propio, scripts/lib/tar-reader.js; el árbol de git calculado
@@ -48,6 +63,7 @@ const TH = require('./tycon-home.js');
 const GA = require('./github-auth.js');
 const VO = require('./version-order.js');
 const TOOLS = require('./tools.js');
+const PG = require('./public-git.js');
 
 const API_DEFAULT = 'https://api.github.com';
 const API_VERSION = '2022-11-28';
@@ -101,29 +117,61 @@ function budgetS(env) { const n = Number(env.TYCON_UPDATE_NETWORK_BUDGET_S); ret
  * El cliente de la API para una corrida: `get(ruta, { etag, maxBytes, timeoutMs })` → `{ ok, status, headers, body,
  * json }` o `{ ok: false, kind, message }`. Lleva la credencial de github-auth.js (si hay) y respeta el tope total.
  */
-function client(ctx, { deadlineAt = null } = {}) {
+function client(ctx, { deadlineAt = null, waitUntil = null } = {}) {
   const env = ctx.env || process.env;
   const base = apiBase(env);
   const { token, problem } = GA.readToken({ env });
+  // sin permiso, las rutas públicas (story 8.34); con permiso, ninguna: el camino es el de la API, como antes
+  const pub = token ? null : PG.bases(env);
+  // el tope que contestó la API en esta corrida (la hora de renovación, en ms), y la espera que se respeta (el arranque)
+  const limit = { until: null };
   // el reloj se puede correr (`setDeadline`): mirar es corto y bajar es largo, y quien baja después de mirar no hereda lo que
   // sobró de la mirada (2026-10-09). `clock` cuenta desde cuándo corre y cuántos pedidos contestaron: con eso un fallo del
   // reloj se dice como lo que es («se acabó el tiempo») y no como «sin red»
   const clock = { deadline: deadlineAt || (Date.now() + budgetS(env) * 1000), since: Date.now(), answered: 0 };
   const http = lib('http-get.js');
   const get = (route, { etag = null, maxBytes = 8 * 1024 * 1024, timeoutMs = null } = {}) => {
+    // la espera del tope (decisión 6 de la 8.34): hasta la hora que dijo GitHub, ningún pedido a la API
+    if (waitUntil && Date.now() < waitUntil) return { ok: false, kind: 'limited', until: waitUntil, message: 'la API está en su tope' };
     const headers = Object.assign({ Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': API_VERSION }, GA.authHeaders(token));
     if (etag) headers['If-None-Match'] = etag;
     const leftMs = clock.deadline - Date.now();
     const r = http.getSync(/^https?:\/\//.test(route) ? route : `${base}${route}`, { headers, env, timeoutMs: timeoutMs || Math.max(1000, leftMs), deadlineAt: clock.deadline, maxBytes });
     if (!r.ok) { if (http.ranOutOfClock(r, { leftMs, answered: clock.answered })) r.outOfClock = { leftMs: Math.max(0, leftMs), answered: clock.answered, totalS: Math.round((clock.deadline - clock.since) / 1000) }; return r; }
     clock.answered += 1;
+    if (r.status === 403 && String(r.headers['x-ratelimit-remaining']) === '0') limit.until = resetOf(r.headers);
     let json = null;
     if (r.status !== 304 && /json/.test(String(r.headers['content-type'] || ''))) { try { json = JSON.parse(r.body.toString('utf8')); } catch (_) { json = null; } }
     return { ok: true, status: r.status, headers: r.headers, body: r.body, json, url: r.url };
   };
-  const c = { get, token, tokenProblem: problem, base, setDeadline: (at) => { clock.deadline = at; clock.since = Date.now(); clock.answered = 0; } };
+  // una ruta pública (github.com, raw, codeload): sin credencial nunca, con el mismo reloj
+  const getPublic = (url, { maxBytes = 8 * 1024 * 1024, timeoutMs = null } = {}) => {
+    const leftMs = clock.deadline - Date.now();
+    const r = http.getSync(url, { headers: { Accept: '*/*' }, env, timeoutMs: timeoutMs || Math.max(1000, leftMs), deadlineAt: clock.deadline, maxBytes });
+    if (!r.ok) { if (http.ranOutOfClock(r, { leftMs, answered: clock.answered })) r.outOfClock = { leftMs: Math.max(0, leftMs), answered: clock.answered, totalS: Math.round((clock.deadline - clock.since) / 1000) }; return r; }
+    clock.answered += 1;
+    return { ok: true, status: r.status, headers: r.headers, body: r.body, json: null, url: r.url };
+  };
+  const c = { get, getPublic, public: pub, token, tokenProblem: problem, base, setDeadline: (at) => { clock.deadline = at; clock.since = Date.now(); clock.answered = 0; } };
   Object.defineProperty(c, 'deadline', { enumerable: true, get: () => clock.deadline });
+  Object.defineProperty(c, 'limitedUntil', { enumerable: true, get: () => limit.until });
   return c;
+}
+
+/** La hora de renovación de un 403 del tope (`X-RateLimit-Reset`, en segundos), en ms; sin ella, dentro de una hora. */
+function resetOf(headers) {
+  const reset = Number((headers || {})['x-ratelimit-reset']);
+  return Number.isFinite(reset) && reset > 0 ? reset * 1000 : Date.now() + 3600 * 1000;
+}
+/** HH:MM en la hora local de la máquina. */
+function localHHMM(ms) { const d = new Date(ms); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; }
+/** El tope, dicho (decisión 7): hasta qué hora, en hora local; sin pedir un permiso como única salida. */
+function limitText(c, until) {
+  return `GitHub limita las consultas ${c.token ? 'de tu permiso' : 'sin permiso de esta conexión'} hasta las ${localHHMM(until)}`;
+}
+/** El aviso de una versión nueva que espera al tope: una sola vez por espera (el arranque) y el texto de `update` a mano. */
+function limitWaitText(c, until, version) {
+  return `hay versión nueva (${version}); ${limitText(c, until)}; se baja sola en el primer arranque después de esa hora. No hace falta hacer nada.`;
 }
 
 /** La frase de un fallo del reloj (`r.outOfClock`, de los dos clientes): nunca «sin red». */
@@ -138,6 +186,7 @@ function outOfClockText(r, what) {
  */
 function explainFailure(c, r, { what = 'la API de GitHub', probeUser = true, repo = null } = {}) {
   if (!r.ok) {
+    if (r.kind === 'limited') return { status: 'unknown', limitedUntil: r.until, reason: `${limitText(c, r.until)}: no le pido nada a la API hasta esa hora` };
     if (r.outOfClock) return { status: 'unknown', outOfClock: true, reason: outOfClockText(r, what) };
     if (r.kind === 'network') return { status: 'unknown', reason: `sin red: no pude hablar con ${what} (${r.code || r.message})` };
     if (r.kind === 'proxy-timeout' || r.kind === 'proxy') return { status: 'unknown', reason: `proxy sin respuesta: ${r.message}` };
@@ -149,9 +198,9 @@ function explainFailure(c, r, { what = 'la API de GitHub', probeUser = true, rep
   // `c.repos` (story 8.25): con la capa del equipo declarada, el permiso tiene que ver los DOS repos y la acción los nombra
   if (r.status === 401) return { status: 'blocked', reason: GA.explain401({ repos: c.repos || null }) };
   if (r.status === 403 && String(r.headers['x-ratelimit-remaining']) === '0') {
-    const reset = Number(r.headers['x-ratelimit-reset']);
-    const when = Number.isFinite(reset) && reset > 0 ? ` (se renueva a las ${new Date(reset * 1000).toISOString().slice(11, 16)} UTC)` : '';
-    return { status: 'unknown', reason: `límite de la API de GitHub${when}${c.token ? '' : ': con un permiso guardado el límite es 5000 por hora'}` };
+    // el tope (story 8.34, decisión 7): la hora local, y que se puede esperar; el permiso es una opción, no la única salida
+    const until = resetOf(r.headers);
+    return { status: 'unknown', limitedUntil: until, reason: `${limitText(c, until)}: probá de nuevo después de esa hora${c.token ? '' : ' (un permiso guardado tiene otro tope, pero el repo público no lo necesita)'}` };
   }
   if (r.status === 404) {
     let userStatus = null;
@@ -195,7 +244,13 @@ function versionAt(c, repo, sha, { etag = null } = {}) {
  * Lo que el canal apunta: `{ status: 'ok', ref, commit, version, note }` o `{ status: 'unknown'|'blocked', reason }`.
  * `stable` lee `main`; `latest` lee `mirror/sync` si está y su número no es menor que el de `main`, si no `main`.
  */
-function resolveChannel(c, repo, channel, { installed = null } = {}) {
+function resolveChannel(c, repo, channel, { installed = null, tips = null, log = null } = {}) {
+  if (c.public && !c.token) {
+    const p = resolvePublic(c, repo, channel, { tips });
+    if (!p.fallback) return p;
+    // el respaldo (decisión 4): github.com sin contestar o info/refs ilegible → la API, como antes, y queda dicho
+    if (log) log(`mirar: ${p.fallback}: miro por la API`);
+  }
   const main = refCommit(c, repo, MAIN_REF);
   if (!main.ok) return main.missing ? Object.assign({ status: 'blocked' }, { reason: explainFailure(c, main.raw, { what: 'el repo', repo }).reason }) : main;
   const mainVersion = versionAt(c, repo, main.sha);
@@ -215,12 +270,69 @@ function resolveChannel(c, repo, channel, { installed = null } = {}) {
 }
 
 /**
+ * Lo que el canal apunta, sin la API (story 8.34): las ramas de UN `info/refs` y el número del raw de cada commit (o de
+ * `tips`, los commits cuyo número ya se conoce: el instalado y las puntas ya vistas). La misma forma que `resolveChannel`,
+ * o `{ fallback: <por qué> }` cuando hay que mirar por la API.
+ */
+function resolvePublic(c, repo, channel, { tips = null } = {}) {
+  // `info/refs` tiene a lo sumo la mitad del reloj: si no contesta, al respaldo por la API le queda la otra mitad
+  const r = c.getPublic(PG.refsUrl(c.public, repo), { timeoutMs: Math.max(1000, Math.floor((c.deadline - Date.now()) / 2)) });
+  if (!r.ok) return { fallback: `github.com no contestó (${r.message || r.kind})` };
+  // un repo que no existe o no es público: GitHub contesta 401 (medido) o 404; no cae a la API, se dice como siempre
+  if (r.status === 401 || r.status === 404) return { status: 'blocked', reason: GA.explain404({ token: null, userStatus: null, repo: c.repos ? repo : null, repos: c.repos || null }) };
+  if (r.status !== 200) return { fallback: `github.com contestó ${r.status} a info/refs` };
+  const refs = PG.parseInfoRefs(r.body);
+  if (!refs.ok) return { fallback: `info/refs ilegible (${refs.reason})` };
+  const mainSha = refs.heads[MAIN_REF];
+  if (!mainSha) return { status: 'blocked', reason: GA.explain404({ token: null, userStatus: null, repo: c.repos ? repo : null, repos: c.repos || null }) };
+  const mainV = numberAt(c, repo, mainSha, tips);
+  if (!mainV.ok) return mainV;
+  const atMain = { status: 'ok', ref: MAIN_REF, commit: mainSha, etag: null, version: mainV.version, note: null };
+  if (channel !== 'latest') return atMain;
+  const syncSha = refs.heads[SYNC_REF];
+  if (!syncSha) return Object.assign(atMain, { note: `latest lee ${MAIN_REF}: el remoto no tiene ${SYNC_REF}` });
+  const syncV = numberAt(c, repo, syncSha, tips);
+  if (!syncV.ok) return syncV;
+  const cmp = VO.compare(syncV.version, atMain.version);
+  if (cmp === null || cmp < 0) return Object.assign(atMain, { note: `latest lee ${MAIN_REF}: ${SYNC_REF} no trae nada más nuevo que ${MAIN_REF}` });
+  return { status: 'ok', ref: SYNC_REF, commit: syncSha, etag: null, version: syncV.version, note: null };
+}
+
+/**
+ * El número de un commit sin la API: el que ya se conoce (`tips`), o el `version.json` del raw POR COMMIT (nunca por rama:
+ * su caché de 5 minutos podría dar un número viejo). Sólo vale un 200 que es un `version.json` con su número; cualquier
+ * otra cosa —sin red, sin respuesta, un 404, la página de un proxy que filtra (con 200 o con 404), algo que no se lee— es
+ * «raw caído» y se pide ese único `version.json` a la API (que distingue de verdad un commit sin version.json). El raw
+ * tiene a lo sumo la mitad del reloj, para que al respaldo le quede la otra (pase adversarial de la story 8.34).
+ * `{ ok, version }` (`version: null` si el commit no lo trae) o el motivo; lo que lee lo suma a `tips`.
+ */
+function numberAt(c, repo, sha, tips) {
+  if (tips && Object.prototype.hasOwnProperty.call(tips, sha)) return { ok: true, version: tips[sha] };
+  const r = c.getPublic(PG.rawUrl(c.public, repo, sha, 'version.json'), { timeoutMs: Math.max(1000, Math.floor((c.deadline - Date.now()) / 2)) });
+  let v = null;
+  if (r.ok && r.status === 200) { try { v = JSON.parse(r.body.toString('utf8').replace(/^\uFEFF/, '')); } catch (_) { v = null; } }
+  let out;
+  if (isObject(v) && typeof v.version === 'string') out = { ok: true, version: v.version };
+  else {
+    const a = versionAt(c, repo, sha);
+    if (!a.ok) return a;
+    out = { ok: true, version: a.absent ? null : a.version };
+  }
+  if (tips && out.version) tips[sha] = out.version;
+  return out;
+}
+
+/** Las puntas ya vistas que se guardan (`src.etags.tips`): las últimas pocas, nada más. */
+const TIPS_KEEP = 6;
+function keepTips(tips) { const e = Object.entries(tips || {}); return Object.fromEntries(e.slice(Math.max(0, e.length - TIPS_KEEP))); }
+
+/**
  * `update --check` de una instalación release: compara lo que apunta el canal con lo instalado, POR NÚMERO.
  * `{ status: 'up_to_date'|'new'|'older'|'unknown'|'blocked', code, lines, target? }`. Sella `src.etags` en memoria.
  */
-function check(ctx, state, { channel, log = null, deadlineAt = null } = {}) {
+function check(ctx, state, { channel, log = null, deadlineAt = null, waitUntil = null } = {}) {
   const src = S.releaseSource(state);
-  const c = client(ctx, { deadlineAt });
+  const c = client(ctx, { deadlineAt, waitUntil });
   if (c.tokenProblem) return { status: 'unknown', code: 2, lines: [`harness.js update: ${c.tokenProblem}`] };
   const ch = channel || state.channel || 'stable';
   const etags = isObject(src.etags) ? src.etags : {};
@@ -230,15 +342,20 @@ function check(ctx, state, { channel, log = null, deadlineAt = null } = {}) {
   const want = ch === 'latest' ? SYNC_REF : MAIN_REF;
   const cached = etags[`ref:${want}`];
   let t = null;
-  if (ch !== 'latest' && isObject(cached) && cached.etag && cached.sha) {
+  // (sin permiso no hay ETag: un 304 sin credencial gasta igual —story 8.34—; se mira por info/refs)
+  if (!c.public && ch !== 'latest' && isObject(cached) && cached.etag && cached.sha) {
     const same = refCommit(c, repo(src), want, { etag: cached.etag });
     if (same.ok && same.unchanged) t = { status: 'ok', ref: want, commit: cached.sha, version: cached.version || null, note: null };
-    else if (!same.ok && !same.missing) return { status: same.status || 'unknown', code: 2, lines: [`harness.js update: ${same.reason}`] };
+    else if (!same.ok && !same.missing) return { status: same.status || 'unknown', code: 2, lines: [`harness.js update: ${same.reason}`], limitedUntil: same.limitedUntil || null };
   }
   if (!t) {
-    t = resolveChannel(c, repo(src), ch, { installed: src.version });
-    if (t.status !== 'ok') return { status: t.status, code: 2, lines: [`harness.js update: ${t.reason}`] };
+    // los commits cuyo número ya se conoce: las puntas vistas y el instalado (ése no necesita el raw)
+    const tips = Object.assign({}, isObject(etags.tips) ? etags.tips : {});
+    if (src.commit && src.version) tips[src.commit] = src.version;
+    t = resolveChannel(c, repo(src), ch, { installed: src.version, tips, log });
+    if (t.status !== 'ok') return { status: t.status, code: 2, lines: [`harness.js update: ${t.reason}`], limitedUntil: t.limitedUntil || null };
     if (t.etag) src.etags = Object.assign({}, etags, { [`ref:${t.ref}`]: { etag: t.etag, sha: t.commit, version: t.version } });
+    if (c.public) src.etags = Object.assign({}, src.etags || etags, { tips: keepTips(tips) });
   }
   if (log && t.note) log(`update: ${t.note}`);
   const notes = t.note ? [t.note] : [];
@@ -289,7 +406,10 @@ function download(ctx, c, repoName, { commit, version, ref, log = null }) {
   if (!meta.ok || meta.status !== 200 || !meta.json || !meta.json.tree || typeof meta.json.tree.sha !== 'string') return Object.assign({ ok: false }, explainFailure(c, meta, { what: `el commit ${sha7(commit)}` }));
   const expectedTree = meta.json.tree.sha;
   const tarBudget = Number(ctx.env.TYCON_RELEASE_DOWNLOAD_BUDGET_S) > 0 ? Number(ctx.env.TYCON_RELEASE_DOWNLOAD_BUDGET_S) : TARBALL_BUDGET_S_DEFAULT;
-  const tar = c.get(`/repos/${repoName}/tarball/${commit}`, { maxBytes: MAX_TARBALL_BYTES, timeoutMs: tarBudget * 1000 });
+  // sin permiso, de codeload (story 8.34): el mismo archivo al que redirigía la API, sin gastar una consulta
+  const tar = c.public
+    ? c.getPublic(PG.tarUrl(c.public, repoName, commit), { maxBytes: MAX_TARBALL_BYTES, timeoutMs: tarBudget * 1000 })
+    : c.get(`/repos/${repoName}/tarball/${commit}`, { maxBytes: MAX_TARBALL_BYTES, timeoutMs: tarBudget * 1000 });
   if (!tar.ok || tar.status !== 200) return Object.assign({ ok: false }, explainFailure(c, tar, { what: 'el comprimido' }));
   try { fs.rmSync(dir, { recursive: true, force: true }); fs.mkdirSync(dir, { recursive: true }); } catch (e) { return { ok: false, status: 'blocked', reason: `no pude preparar ${dir}: ${e.message}` }; }
   const TR = lib('tar-reader.js');
@@ -299,6 +419,16 @@ function download(ctx, c, repoName, { commit, version, ref, log = null }) {
   if (got !== expectedTree) {
     fs.rmSync(dir, { recursive: true, force: true });
     return { ok: false, status: 'blocked', reason: `lo bajado no coincide con el commit ${sha7(commit)}: el árbol calculado es ${sha7(got)} y el del commit ${sha7(expectedTree)} — no instalo nada` };
+  }
+  // el número con el que se nombra la versión sale de algo verificado (story 8.34, decisión 5): el version.json del árbol
+  // verificado tiene que decir el número que se dio (el del raw, o el de la API)
+  if (version) {
+    let inTree = null;
+    try { inTree = JSON.parse(fs.readFileSync(path.join(dir, 'version.json'), 'utf8').replace(/^\uFEFF/, '')).version || null; } catch (_) { inTree = null; }
+    if (inTree !== version) {
+      fs.rmSync(dir, { recursive: true, force: true });
+      return { ok: false, status: 'blocked', reason: `el número publicado (${version}) no coincide con el del árbol verificado de ${sha7(commit)} (${inTree || 'sin version.json'}) — no instalo nada` };
+    }
   }
   const manifest = { schema: 1, repo: repoName, ref, commit, tree: expectedTree, version, downloaded_at: nowIso(), files: x.manifest };
   fs.writeFileSync(path.join(dir, MANIFEST_NAME), `${JSON.stringify(manifest, null, 1)}\n`);
@@ -398,7 +528,10 @@ function restoreThirdParty(ctx, c, incomingDir, { log = null, only = null } = {}
     if (!origin) return { failure: `el origen ${e.origin} no es un repo de GitHub` };
     const key = `${origin.org}/${origin.name}@${e.commit}`;
     if (!downloads.has(key)) {
-      const tar = c.get(`/repos/${origin.org}/${origin.name}/tarball/${e.commit}`, { maxBytes: MAX_TARBALL_BYTES, timeoutMs: TARBALL_BUDGET_S_DEFAULT * 1000 });
+      // sin permiso, de codeload (story 8.34); su verificación contra el árbol declarado no cambia
+      const tar = c.public
+        ? c.getPublic(PG.tarUrl(c.public, `${origin.org}/${origin.name}`, e.commit), { maxBytes: MAX_TARBALL_BYTES, timeoutMs: TARBALL_BUDGET_S_DEFAULT * 1000 })
+        : c.get(`/repos/${origin.org}/${origin.name}/tarball/${e.commit}`, { maxBytes: MAX_TARBALL_BYTES, timeoutMs: TARBALL_BUDGET_S_DEFAULT * 1000 });
       downloads.set(key, tar.ok && tar.status === 200 ? { body: tar.body } : { failure: explainFailure(c, tar, { what: 'su origen', probeUser: false }).reason });
     }
     return downloads.get(key);
@@ -1362,18 +1495,31 @@ function refreshTeam(ctx, state, { log = null, publicRepo = null } = {}) {
   }
 }
 
-function update(ctx, state, H, { mode = 'apply', log = null, snapshot = null, yes = false, policy = null, startedAt = null, teamRefresh = false } = {}) {
+function update(ctx, state, H, { mode = 'apply', log = null, snapshot = null, yes = false, policy = null, startedAt = null, teamRefresh = false, respectLimit = false } = {}) {
   const src = S.releaseSource(state);
   const channel = (policy && policy.channel) || state.channel || 'stable';
   const deadlineAt = (startedAt || Date.now()) + budgetS(ctx.env) * 1000;
-  const c0 = check(ctx, state, { channel, log, deadlineAt });
+  // la espera del tope de la API (story 8.34, decisión 6): el arranque la respeta (`respectLimit`); `update` a mano intenta
+  // una vez, porque lo pidió una persona. Una espera vencida se borra
+  const limitedAt = Date.parse(state.api_limited_until || '') || null;
+  if (limitedAt && Date.now() >= limitedAt) { state.api_limited_until = null; state.api_limited_notice = null; }
+  const waitUntil = respectLimit && limitedAt && Date.now() < limitedAt ? limitedAt : null;
+  const c0 = check(ctx, state, { channel, log, deadlineAt, waitUntil });
   // la capa del equipo en el lugar (story 8.25, A1b · AC 10): cuando en ESTA corrida no se instala una versión pública, y sólo si
   // quien llama lo pide (el arranque; `update` salvo --check/--dry-run). También sin poder mirar la copia (W1): la capa no depende
   // de GitHub. El resultado va aparte (`res.team`): el estado de la copia no cambia por la capa (W3)
   const withTeam = (res) => { if (teamRefresh && mode !== 'dry-run' && state.mode !== 'developer') res.team = refreshTeam(ctx, state, { log, publicRepo: repo(src) }); return res; };
-  if (c0.status === 'unknown') { state.last_fetch_failed = nowIso(); return withTeam(c0); }
+  if (c0.status === 'unknown') {
+    state.last_fetch_failed = nowIso();
+    if (c0.limitedUntil) { state.api_limited_until = new Date(c0.limitedUntil).toISOString(); return withTeam(Object.assign(c0, { status: 'limited' })); }
+    return withTeam(c0);
+  }
   state.last_fetch = nowIso();
   state.last_fetch_failed = null;
+  // sin una versión nueva no hay nada esperando al tope: la espera se borra (si no, doctor seguiría anunciando «se baja
+  // sola» una versión que no hay; revisor de fallos silenciosos de la story 8.34). Si vuelve a hacer falta la API, el
+  // primer 403 la anota de nuevo
+  if (c0.status === 'up_to_date' || c0.status === 'older') { state.api_limited_until = null; state.api_limited_notice = null; }
   if (c0.status === 'up_to_date' && mode === 'apply') {
     // una skill de terceros que no se pudo bajar al instalar (sin red, el origen caído) quedaba sin reponer hasta la
     // versión siguiente, y el aviso del aplicador mandaba a «harness.js update», que al día no hacía nada (pase adversarial
@@ -1381,7 +1527,7 @@ function update(ctx, state, H, { mode = 'apply', log = null, snapshot = null, ye
     const own = TH.ownPaths({ env: ctx.env });
     const missing = missingThirdParty(own.harness, own);
     if (missing.length) {
-      const c = client(ctx, { deadlineAt: Date.now() + Math.max(budgetS(ctx.env), TARBALL_BUDGET_S_DEFAULT) * 1000 });
+      const c = client(ctx, { deadlineAt: Date.now() + Math.max(budgetS(ctx.env), TARBALL_BUDGET_S_DEFAULT) * 1000, waitUntil });
       const tp = restoreThirdParty(ctx, c, own.harness, { log, only: missing });
       const still = missingThirdParty(own.harness, own);
       c0.lines = [...(c0.lines || []), `skills de terceros que faltaban (${missing.slice(0, 3).join(', ')}${missing.length > 3 ? ', …' : ''}): ${still.length ? `${missing.length - still.length} repuesta(s), ${still.length} siguen faltando` : 'repuestas'}`, ...tp.notes];
@@ -1404,8 +1550,15 @@ function update(ctx, state, H, { mode = 'apply', log = null, snapshot = null, ye
     return { status: 'new', code: 0, lines: [`se actualizaría: ${what}`, ...dataPlan] };
   }
 
-  const c = client(ctx, { deadlineAt: Date.now() + Math.max(budgetS(ctx.env), TARBALL_BUDGET_S_DEFAULT) * 1000 });
+  const c = client(ctx, { deadlineAt: Date.now() + Math.max(budgetS(ctx.env), TARBALL_BUDGET_S_DEFAULT) * 1000, waitUntil });
   const d = download(ctx, c, repo(src), { commit: t.commit, version: t.version, ref: t.ref, log });
+  // al tope: la versión nueva espera a la hora que dijo GitHub; no es un fallo (story 8.34, decisiones 6 y 7)
+  if (!d.ok && d.limitedUntil) {
+    state.last_fetch_failed = nowIso();
+    state.api_limited_until = new Date(d.limitedUntil).toISOString();
+    return withTeam({ status: 'limited', code: 2, limitedUntil: d.limitedUntil, lines: [limitWaitText(c, d.limitedUntil, t.version)] });
+  }
+  if (d.ok) { state.api_limited_until = null; state.api_limited_notice = null; }
   // (una versión nueva que no se pudo bajar ni instalar NO congela la capa del equipo: cada salida del camino de aplicar que no
   // termina en el cambio refresca la capa en el lugar — pase adversarial de la A1b, R-1. La de la salud roja no hace falta: la
   // versión queda `failed` y el arranque siguiente pasa por la rama «ya falló», que refresca)
@@ -1685,11 +1838,15 @@ function startup(ctx, state, H, { log, snapshot = null }) {
     const window = FETCH_WINDOW_MS[policy.apply] || FETCH_WINDOW_MS.auto;
     const sinceLook = Date.now() - (Date.parse(state.last_fetch || '') || 0);
     const sinceTry = Date.now() - (Date.parse(state.last_fetch_failed || '') || 0);
-    if (sinceLook < window) log(`startup: última mirada a la red hace menos de ${policy.apply === 'ask' ? '6 horas (política ask)' : '10 min'}: sin pedir nada`);
-    else if (sinceTry < FETCH_RETRY_MS) log('startup: el último intento de mirar (que no pudo) fue hace menos de 10 min: sin pedir nada');
+    // pasada la hora del tope de la API, el primer arranque baja lo que esperaba, sin esperar la ventana (story 8.34, AC 11)
+    const limitedAt = Date.parse(state.api_limited_until || '') || null;
+    const limitOver = Boolean(limitedAt && Date.now() >= limitedAt);
+    if (limitOver) log('startup: pasó la hora del tope de la API: miro y bajo lo que esperaba');
+    if (sinceLook < window && !limitOver) log(`startup: última mirada a la red hace menos de ${policy.apply === 'ask' ? '6 horas (política ask)' : '10 min'}: sin pedir nada`);
+    else if (sinceTry < FETCH_RETRY_MS && !limitOver) log('startup: el último intento de mirar (que no pudo) fue hace menos de 10 min: sin pedir nada');
     else {
       fetched = true;
-      const u = update(ctx, state, H, { mode: policy.apply === 'auto' ? 'apply' : 'check', log, snapshot: snap, policy, teamRefresh: true });
+      const u = update(ctx, state, H, { mode: policy.apply === 'auto' ? 'apply' : 'check', log, snapshot: snap, policy, teamRefresh: true, respectLimit: true });
       // la capa del equipo refrescada en el lugar (A1b · AC 10): su línea si no hay otra, su aviso se SUMA (W3), y con el perfil
       // cambiado la política se relee antes de grabar el estado (W12: si no, el arranque siguiente diría «el canal cambió»)
       if (u.team && u.team.status !== 'none' && u.team.status !== 'same') {
@@ -1707,8 +1864,13 @@ function startup(ctx, state, H, { log, snapshot = null }) {
       // la conversión trabada (8.33) no es una falla que se cuente: su aviso es el de una sola vez, de arriba
       const convertWait = u.status === 'waiting' && u.convert;
       if (['new', 'applied', 'up_to_date', 'older'].includes(u.status) || convertWait) R.clearUpdateFailure(ctx.home);
-      else if (!['held', 'skipped'].includes(u.status)) R.recordUpdateFailure(ctx.home, String(u.lines[0] || u.status).replace(/^harness\.js update: /, ''));
-      if (u.status === 'new') { const text = H.availableText(state, policy, u); notice = notice || text; log(`startup: ${text}`); line = text; }
+      // esperar al tope de la API no es un fallo: la hora se sabe (story 8.34, decisión 6)
+      else if (!['held', 'skipped', 'limited'].includes(u.status)) R.recordUpdateFailure(ctx.home, String(u.lines[0] || u.status).replace(/^harness\.js update: /, ''));
+      if (u.status === 'limited') {
+        // el aviso, UNA vez por espera (decisión 7); después, el registro y doctor
+        log(`startup: ${u.lines.join(' · ')}`);
+        if (state.api_limited_notice !== state.api_limited_until) { state.api_limited_notice = state.api_limited_until; notice = notice || u.lines[0].replace(/^harness\.js update: /, ''); line = u.lines[0]; }
+      } else if (u.status === 'new') { const text = H.availableText(state, policy, u); notice = notice || text; log(`startup: ${text}`); line = text; }
       else if (u.status === 'applied') { line = u.lines[0]; log(`startup: ${u.lines.join(' · ')}`); if (u.dataNotice) notice = notice ? `${notice} · ${u.dataNotice}` : u.dataNotice; }
       else if (u.status === 'up_to_date' || u.status === 'older') { if (u.status === 'older') log(`startup: ${u.lines.join(' · ')}`); }
       else if (u.status === 'failed') { notice = notice || state.notice; line = u.lines[0]; log(`startup: ${u.lines.join(' · ')}`); }
@@ -1933,6 +2095,8 @@ function doctorItems(ctx, state, { fetch = false, channel = null } = {}) {
     try { for (const it of teamDoctorItems(ctx, state, own.harness)) add(it.level, it.text); } catch (e) { add('warn', `capa del equipo: no pude revisarla (${e.message})`); }
     for (const it of sd.items) add(it.level === 'fail' ? 'warn' : it.level, it.text);
   }
+  // la espera del tope de la API (story 8.34): hasta qué hora, y que se baja sola después
+  { const until = Date.parse(state.api_limited_until || '') || null; if (until && Date.now() < until) add('warn', `${limitText({ token: GA.readToken({ env: ctx.env }).token }, until)}: la versión nueva se baja sola en el primer arranque después de esa hora`); }
   if (fetch) {
     const c = check(ctx, state, { channel: now });
     add(c.status === 'unknown' || c.status === 'blocked' ? 'warn' : 'ok', `red: ${c.lines[0].replace(/^harness\.js update: /, '')}`);

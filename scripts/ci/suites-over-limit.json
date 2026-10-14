@@ -81,11 +81,19 @@
         "why": "Suite del laboratorio del instalador. Por decisión del dueño corre en la validación de la rama sólo cuando el cambio toca el instalador (el grupo `installer` de scripts/ci/heavy-suites.json, con su costo aceptado); con cualquier otro cambio la corre el nocturno. Cuando corre pasa de 45 s (60 s medidos en el agente): son decenas de casos que instalan, actualizan y revisan sobre el laboratorio, de 2 a 12 s cada uno. Armar el laboratorio no es lo caro (0,85 s por vez, medido el 2026-10-07): prepararlo una sola vez no la baja. Bajaría con menos procesos por comando del instalador, que es código del producto y otra story."
       }
     },
-    "installer-ps1.test.sh": {
+    "installer-ps1.p1.test.sh": {
       "exception": {
         "signed_by": "el dueño del arnés",
         "date": "2026-10-07",
-        "why": "El gemelo de Windows del instalador, corrido con pwsh: 23 secciones parejas, casi todas una corrida de pwsh, que en el agente tarda ~1,9 veces lo de una Mac. No se pudo partir: tres secciones solas ya pasan de 45 s, y cortar por adentro de una sección es reescribirla.",
+        "why": "Parte 1 de 2 de installer-ps1.test.sh. La suite se partió el 2026-10-14 para que cada mitad entre con margen en el tope de 900 s de public-ci (entera tardaba ~440 s en el agente de GitHub y en uno lento lo pasó); cada mitad sigue pasando de 45 s. Es la excepción que el dueño firmó para la suite entera, pasada a sus dos partes sin cambiar la decisión: El gemelo de Windows del instalador, corrido con pwsh: 23 secciones parejas, casi todas una corrida de pwsh, que en el agente tarda ~1,9 veces lo de una Mac. No se pudo partir: tres secciones solas ya pasan de 45 s, y cortar por adentro de una sección es reescribirla.",
+        "until": "la medición final de la story 8.22 (tramo H)"
+      }
+    },
+    "installer-ps1.p2.test.sh": {
+      "exception": {
+        "signed_by": "el dueño del arnés",
+        "date": "2026-10-07",
+        "why": "Parte 2 de 2 de installer-ps1.test.sh. La suite se partió el 2026-10-14 para que cada mitad entre con margen en el tope de 900 s de public-ci (entera tardaba ~440 s en el agente de GitHub y en uno lento lo pasó); cada mitad sigue pasando de 45 s. Es la excepción que el dueño firmó para la suite entera, pasada a sus dos partes sin cambiar la decisión: El gemelo de Windows del instalador, corrido con pwsh: 23 secciones parejas, casi todas una corrida de pwsh, que en el agente tarda ~1,9 veces lo de una Mac. No se pudo partir: tres secciones solas ya pasan de 45 s, y cortar por adentro de una sección es reescribirla.",
         "until": "la medición final de la story 8.22 (tramo H)"
       }
     },

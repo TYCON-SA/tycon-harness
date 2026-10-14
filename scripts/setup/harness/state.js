@@ -7,6 +7,9 @@
 // aviso pendiente que imprime el hook síncrono), `last_fetch` / `last_apply` / `last_health`, `failed` y `bootstrap` (la
 // copia fija de arranque y sus sha256).
 //
+// Lo que suma la story 8.34, también aditivo: `api_limited_until` (hasta qué hora —ISO— el arranque no le pide nada a la
+// API de GitHub porque contestó su tope) y `api_limited_notice` (la espera de la que ya se avisó: el aviso sale una vez).
+//
 // Lo que suma la story 8.13.1 (AC 2), sin subir el `schema`: campos ADITIVOS. `source` (`internal` | `public`: de dónde
 // instala la máquina), `sources[].kind` (`tree` | `layer`: el árbol o la capa que se apila encima) y `sources[].reference`
 // (sólo en una capa: el clon interno de la persona, si existe; el clon de lectura del mecanismo va en su `dir`). Las
@@ -88,6 +91,8 @@ function defaults({ tree, sources, mode = 'managed', channel = 'stable', version
     last_apply: null,
     last_health: null,
     failed: null,
+    api_limited_until: null,
+    api_limited_notice: null,
     bootstrap: { version: null, sha256: {} },
   };
 }

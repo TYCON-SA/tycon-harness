@@ -44,6 +44,9 @@ LOG() { printf '%s' "$LAB_HOME/.claude/.tycon-pipeline/harness/startup.log"; }
 TYCON_DIR() { printf '%s' "$LAB_HOME/.tycon"; }
 # el nombre del lugar del arnés se lee de su definición, no se escribe (T36 de mirror-pipeline: coincide con el repo público)
 PLACE_NAME="$(node -p "require('$RAIZ/scripts/setup/harness/tycon-home.js').PLACE_NAME")"
+# por la API: sin las rutas públicas (sin TYCON_RELEASE_GIT, la salvaguarda de public-git.js): el camino de antes de la
+# story 8.34, que sigue siendo el de una máquina con permiso y el respaldo de una sin permiso cuando github.com no contesta
+por_api() { ( unset TYCON_RELEASE_GIT; "$@" ); }
 # el número de peticiones del servidor que matchean un patrón (en su registro)
 pedidos() { local n; n="$(grep -c -- "$1" "$LAB_RELEASE_LOG" 2>/dev/null)"; printf '%s' "${n:-0}"; }
 # instala la versión `latest` en una HOME fresca; deja en INSTALL_OUT y INSTALL_RC lo que salió
@@ -64,13 +67,14 @@ if corre T9; then
   [ "$(estado "d['version']['number']")" = 2026.10.07.1 ] && ok "versión instalada 2026.10.07.1" || mal "versión instalada: $(estado "d['version']['number']")"
   [ -f "$(TYCON_DIR)/harness/version.json" ] && ok "el árbol quedó en ~/.tycon/harness" || mal "no hay ~/.tycon/harness/version.json"
 
-  # al día en stable (main sin cambios): 0, y el segundo pedido de version.json lleva el ETag y no pide el comprimido
+  # al día en stable (main sin cambios): 0, y por la API el segundo pedido de version.json lleva el ETag y no pide el
+  # comprimido (sin permiso se mira por info/refs: lo cuenta release-api-count.test.sh, story 8.34)
   : > "$LAB_RELEASE_LOG"
-  out="$(harness_release update --check 2>&1)"; rc=$?
+  out="$(por_api harness_release update --check 2>&1)"; rc=$?
   [ "$rc" = 0 ] && ok "al día: --check sale 0 ($out)" || mal "al día: --check salió $rc: $out"
-  out="$(harness_release update --check 2>&1)"; rc=$?
+  out="$(por_api harness_release update --check 2>&1)"; rc=$?
   [ "$(pedidos '"ifNoneMatch":"\\"')" -ge 1 ] && ok "el segundo pedido de version.json lleva If-None-Match (304 barato)" || mal "ningún pedido llevó If-None-Match: $(harness_lab_release_log)"
-  [ "$(pedidos tarball)" = 0 ] && ok "--check no baja ningún comprimido" || mal "--check pidió el comprimido"
+  [ "$(( $(pedidos tarball) + $(pedidos tar.gz) ))" = 0 ] && ok "--check no baja ningún comprimido" || mal "--check pidió el comprimido"
   [ "$(pedidos 'git/ref/heads/main')" -ge 1 ] && ok "pidió la ref de main (stable)" || mal "no pidió git/ref/heads/main: $(harness_lab_release_log)"
 
   # stable: una versión nueva en main → 3 con el número
@@ -87,7 +91,7 @@ if corre T9; then
   harness_release channel latest >/dev/null 2>&1
   : > "$LAB_RELEASE_LOG"
   harness_lab_publish_sync 2026.10.07.5
-  out="$(harness_release update --check 2>&1)"; rc=$?
+  out="$(por_api harness_release update --check 2>&1)"; rc=$?
   [ "$rc" = 3 ] && ok "latest con mirror/sync mayor: 3" || mal "latest mayor: salió $rc: $out"
   [ "$(pedidos 'git/ref/heads/mirror/sync')" -ge 1 ] && ok "pidió la ref con barra (git/ref/heads/mirror/sync)" || mal "no pidió mirror/sync: $(harness_lab_release_log)"
   case "$out" in *2026.10.07.5*) ok "dice 2026.10.07.5" ;; *) mal "no dice 2026.10.07.5: $out" ;; esac
@@ -118,7 +122,7 @@ if corre T9; then
 
   # sin red: una IP no ruteable, dentro del tope
   t0=$(date +%s)
-  out="$(TYCON_RELEASE_API=http://10.255.255.1:9 TYCON_UPDATE_NETWORK_BUDGET_S=4 harness_release update --check 2>&1)"; rc=$?
+  out="$(TYCON_RELEASE_API=http://10.255.255.1:9 TYCON_UPDATE_NETWORK_BUDGET_S=4 por_api harness_release update --check 2>&1)"; rc=$?
   t1=$(date +%s)
   [ "$rc" = 2 ] && ok "sin red: --check sale 2" || mal "sin red: salió $rc: $out"
   case "$out" in *"sin red"*) ok "dice «sin red»" ;; *) mal "no dice «sin red»: $out" ;; esac
@@ -135,9 +139,9 @@ if corre T9; then
   [ "$rc" = 2 ] && ok "404 sin permiso: --check sale 2" || mal "404: salió $rc: $out"
   case "$out" in *"sin permiso"*) ok "dice «sin permiso»" ;; *) mal "404 sin su motivo: $out" ;; esac
   harness_lab_release_control '{ "auth": "none", "ratelimit": true }'
-  out="$(harness_release update --check 2>&1)"; rc=$?
+  out="$(por_api harness_release update --check 2>&1)"; rc=$?
   [ "$rc" = 2 ] && ok "límite de la API: --check sale 2" || mal "límite: salió $rc: $out"
-  case "$out" in *"límite"*) ok "dice «límite de la API»" ;; *) mal "límite sin su motivo: $out" ;; esac
+  case "$out" in *"GitHub limita las consultas"*"hasta las"*) ok "dice que GitHub limita las consultas, y hasta qué hora" ;; *) mal "límite sin su motivo: $out" ;; esac
   harness_lab_release_control '{ "auth": "none" }'
   kill "$LAB_RELEASE_PROCESS" 2>/dev/null
 fi
@@ -344,19 +348,19 @@ if corre T12; then
   out="$(harness_release update --yes 2>&1)"; rc=$?
   [ "$rc" = 0 ] && ok "update con terceros aplica" || mal "update con terceros salió $rc: $out"
   [ -f "$(TYCON_DIR)/harness/skills/lab-third/SKILL.md" ] && [ -f "$(TYCON_DIR)/harness/skills/lab-third-2/SKILL.md" ] && ok "las dos skills de terceros quedaron en harness/skills/" || mal "falta skills/lab-third*: $out · $(tail -3 "$(LOG)")"
-  [ "$(pedidos "tarball/$tp_commit")" = 1 ] && ok "las dos salieron de UN comprimido del origen" || mal "pidió el comprimido $(pedidos "tarball/$tp_commit") veces"
+  [ "$(pedidos "tar.gz/$tp_commit")" = 1 ] && ok "las dos salieron de UN comprimido del origen" || mal "pidió el comprimido $(pedidos "tar.gz/$tp_commit") veces"
   harness_lab_publish_stable 2026.10.07.6
   : > "$LAB_RELEASE_LOG"
   out="$(harness_release update --yes 2>&1)"; rc=$?
   [ "$rc" = 0 ] && [ -f "$(TYCON_DIR)/harness/skills/lab-third/SKILL.md" ] && ok "la segunda vez también está" || mal "segunda: rc=$rc"
-  [ "$(pedidos "tarball/$tp_commit")" = 0 ] && ok "y salió de la caché, sin pedirla otra vez" || mal "volvió a bajar la de terceros"
+  [ "$(( $(pedidos "tarball/$tp_commit") + $(pedidos "tar.gz/$tp_commit") ))" = 0 ] && ok "y salió de la caché, sin pedirla otra vez" || mal "volvió a bajar la de terceros"
   # la caché se verifica por los bytes, no por su manifiesto: un archivo tocado en la caché se vuelve a bajar
   cache_skill="$(ls -d "$(TYCON_DIR)"/third-party/*/skills__lab-third | head -1)"
   printf 'pisado\n' >> "$cache_skill/SKILL.md"
   harness_lab_publish_stable 2026.10.07.7
   : > "$LAB_RELEASE_LOG"
   out="$(harness_release update --yes 2>&1)"; rc=$?
-  [ "$rc" = 0 ] && [ "$(pedidos "tarball/$tp_commit")" -ge 1 ] && ok "la caché tocada no se usó: volvió a bajar del origen" || mal "la caché tocada se usó igual (rc=$rc, pedidos $(pedidos "tarball/$tp_commit"))"
+  [ "$rc" = 0 ] && [ "$(pedidos "tar.gz/$tp_commit")" -ge 1 ] && ok "la caché tocada no se usó: volvió a bajar del origen" || mal "la caché tocada se usó igual (rc=$rc, pedidos $(pedidos "tar.gz/$tp_commit"))"
   grep -q pisado "$(TYCON_DIR)/harness/skills/lab-third/SKILL.md" && mal "la skill instalada trae el archivo pisado" || ok "la skill instalada es la del árbol declarado"
   # ── story 8.23, tanda G (pase adversarial, clase 12 + revisores de la vuelta 2): con la versión AL DÍA, `update` repone
   # lo que falta o está mal de terceros (desde la caché, sin red), y la verificación del aplicador los ve por la caché ──
@@ -373,7 +377,7 @@ if corre T12; then
   out="$(harness_release update --yes 2>&1)"; rc=$?
   [ "$rc" = 0 ] && ! grep -q "contenido mal" "$(TYCON_DIR)/harness/skills/lab-third/SKILL.md" && ok "update AL DÍA repone la skill con el contenido mal (desde la caché)" || mal "update al día no la repuso: rc $rc: $out · $(tail -2 "$(TYCON_DIR)/harness/skills/lab-third/SKILL.md")"
   case "$out" in *"skills de terceros que faltaban (skills/lab-third)"*repuestas*) ok "…y lo dice" ;; *) mal "update no dice qué repuso: $out" ;; esac
-  [ "$(pedidos "tarball/$tp_commit")" = 0 ] && ok "…sin pedir el comprimido (la caché estaba bien)" || mal "al día volvió a bajar el comprimido"
+  [ "$(( $(pedidos "tarball/$tp_commit") + $(pedidos "tar.gz/$tp_commit") ))" = 0 ] && ok "…sin pedir el comprimido (la caché estaba bien)" || mal "al día volvió a bajar el comprimido"
   rm -rf "$(TYCON_DIR)/harness/skills/lab-third"
   out="$(harness_release update --yes 2>&1)"; rc=$?
   [ "$rc" = 0 ] && [ -f "$(TYCON_DIR)/harness/skills/lab-third/SKILL.md" ] && ok "update AL DÍA repone la skill que falta entera" || mal "update al día no repuso la que faltaba: rc $rc: $out"
@@ -390,7 +394,7 @@ if corre T12; then
   printf 'contenido mal\n' >> "$(TYCON_DIR)/harness/skills/lab-third/SKILL.md"
   : > "$LAB_RELEASE_LOG"
   out="$(harness_release update --yes 2>&1)"; rc=$?
-  [ "$rc" = 0 ] && [ "$(pedidos "tarball/$tp_commit")" = 0 ] && grep -q "contenido mal" "$(TYCON_DIR)/harness/skills/lab-third/SKILL.md" && ok "sin caché, al día (update sale 0, sin pedir el comprimido) no toca una skill presente con otro contenido: no puede saberlo sin red" || mal "sin caché, al día: rc $rc, pedidos $(pedidos "tarball/$tp_commit"), contenido $(tail -1 "$(TYCON_DIR)/harness/skills/lab-third/SKILL.md"): $out"
+  [ "$rc" = 0 ] && [ "$(( $(pedidos "tarball/$tp_commit") + $(pedidos "tar.gz/$tp_commit") ))" = 0 ] && grep -q "contenido mal" "$(TYCON_DIR)/harness/skills/lab-third/SKILL.md" && ok "sin caché, al día (update sale 0, sin pedir el comprimido) no toca una skill presente con otro contenido: no puede saberlo sin red" || mal "sin caché, al día: rc $rc, pedidos $(( $(pedidos "tarball/$tp_commit") + $(pedidos "tar.gz/$tp_commit") )), contenido $(tail -1 "$(TYCON_DIR)/harness/skills/lab-third/SKILL.md"): $out"
   case "$out" in *"que faltaban"*) mal "sin caché dijo que repuso algo: $out" ;; *) ok "…y no dice que repuso nada" ;; esac
   # el filtro del manifiesto: un destino fuera del árbol y un commit sin forma de sha se dicen y no se tocan
   manifest_malo="{ \"retirement\": \"done\", \"third_party\": [ $(entry_tp lab-third skills/lab-third), { \"name\": \"fuera\", \"install\": \"download\", \"origin\": \"https://github.com/$LAB_RELEASE_ORG/$LAB_RELEASE_NAME\", \"commit\": \"$tp_commit\", \"path\": \"skills/tycon-pipeline\", \"tree\": \"$tp_tree\", \"target\": \"../fuera-del-arbol\", \"license\": \"MIT\" }, { \"name\": \"sin-sha\", \"install\": \"download\", \"origin\": \"https://github.com/$LAB_RELEASE_ORG/$LAB_RELEASE_NAME\", \"commit\": \"abc\", \"path\": \"skills/tycon-pipeline\", \"tree\": \"$tp_tree\", \"target\": \"skills/sin-sha\", \"license\": \"MIT\" } ] }"
@@ -483,9 +487,9 @@ if corre T17; then
   out="$(PATH="$BASE/bin-sin-git" harness_release doctor 2>&1)"; rc=$?
   [ "$rc" = 0 ] && ok "sin git en el PATH, doctor sale 0" || mal "sin git: doctor salió $rc: $out"
   case "$out" in *"falta git"*) mal "pide git: $out" ;; *) ok "no pide git" ;; esac
-  [ "$(pedidos repos)" = 0 ] && ok "sin --fetch no sale a la red" || mal "doctor salió a la red sin --fetch"
+  [ "$(( $(pedidos repos) + $(pedidos info/refs) ))" = 0 ] && ok "sin --fetch no sale a la red" || mal "doctor salió a la red sin --fetch"
   out="$(harness_release doctor --fetch 2>&1)"
-  [ "$(pedidos repos)" -ge 1 ] && ok "--fetch sí mira la API" || mal "--fetch no miró la API"
+  [ "$(pedidos 'info/refs')" -ge 1 ] && ok "--fetch sí mira la red (info/refs: sin permiso no gasta la API)" || mal "--fetch no miró la red"
   case "$out" in *"red: "*) ok "y dice qué vio" ;; *) mal "no dice qué vio: $out" ;; esac
   kill "$LAB_RELEASE_PROCESS" 2>/dev/null
 fi
@@ -557,7 +561,7 @@ if corre T19; then
   [ "$rc" = 0 ] && ok "el respaldo sale 0" || mal "el respaldo salió $rc: $out"
   grep -q "install --version" "$(LOG)" && ok "sin previous/: el registro deja el comando install --version" || mal "el registro no nombra install --version: $(tail -2 "$(LOG)")"
   [ ! -s "$LAB_GIT_WITNESS_LOG" ] && ok "git no se invocó" || mal "el respaldo invocó git: $(head -2 "$LAB_GIT_WITNESS_LOG")"
-  [ "$(pedidos tarball)" = 0 ] && ok "no bajó nada" || mal "el respaldo pidió un comprimido"
+  [ "$(( $(pedidos tarball) + $(pedidos tar.gz) ))" = 0 ] && ok "no bajó nada" || mal "el respaldo pidió un comprimido"
   cp "$BASE/harness.js.sano" "$T/harness/scripts/setup/harness.js"
   # con previous/: vuelve a ella y aplica desde ~/.tycon/harness
   harness_lab_publish_stable 2026.10.07.2
@@ -625,7 +629,7 @@ if corre T15; then
   [ "$rc" = 0 ] && ok "rollback sale 0: $out" || mal "rollback salió $rc: $out"
   [ "$(estado "d['version']['number']")" = 2026.10.07.1 ] && ok "volvió a 2026.10.07.1" || mal "versión $(estado "d['version']['number']")"
   [ "$(j "$(TYCON_DIR)/harness/.tycon-release.json" "d['version']")" = 2026.10.07.1 ] && ok "harness/ es la .1" || mal "harness/ no es la .1"
-  [ "$(pedidos tarball)" = 0 ] && ok "no bajó nada" || mal "rollback pidió un comprimido"
+  [ "$(( $(pedidos tarball) + $(pedidos tar.gz) ))" = 0 ] && ok "no bajó nada" || mal "rollback pidió un comprimido"
   [ -n "$(estado "d['hold']")" ] && [ "$(estado "d['hold']['commit']")" = 2026.10.07.2 ] && ok "deja la retención sobre la .2" || mal "sin retención: $(estado "d['hold']")"
   out="$(harness_release update --check 2>&1)"; rc=$?
   case "$out" in *retenci*) ok "con la retención, update no avanza a la .2" ;; *) mal "update sin la retención: $out" ;; esac
