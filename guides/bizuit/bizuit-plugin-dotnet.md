@@ -588,10 +588,10 @@ Cuando un endpoint de lista alimenta una grilla server-side (paginación + sort 
 
 ## Referencias
 
-- **Skill core:** `~/.claude/skills/core/bizuit-backend-plugin-system/`
-- **Skill SafeQueryBuilder:** `~/.claude/skills/core/safe-query-builder/`
-- **Skill Dapper+SqlServer:** `~/.claude/skills/core/dotnet-dapper-sqlserver/`
-- **Skill feature CRUD:** `~/.claude/skills/core/feature-based-crud-endpoints/`
+- **Skill core:** `~/.claude/skills/bizuit-backend-plugin-system/`
+- **Skill SafeQueryBuilder:** `~/.claude/skills/safe-query-builder/`
+- **Skill Dapper+SqlServer:** `~/.claude/skills/dotnet-dapper-sqlserver/`
+- **Skill feature CRUD:** `~/.claude/skills/feature-based-crud-endpoints/`
 - **Template oficial (público):** <https://github.com/TYCON-SA/bizuit-custom-plugin-sample> — el esqueleto del plugin, sus pruebas y el host de desarrollo local (`src/DevHost/`). Para un plugin nuevo, se parte de ahí.
 - **Template de formularios (público):** <https://github.com/TYCON-SA/bizuit-custom-form-sample> — la infraestructura del formulario (build, pruebas, tsconfig) y un primer formulario.
 - **Ejemplos productivos:** Pacara BackEnd, Totora Backend, FRESNOBZExtBackend, EbanoPluginBackEnd
