@@ -76,7 +76,7 @@ queda afuera dentro de ella:
 | arnes | `artifacts/` _(del repo del equipo; no está en esta copia)_ `onboarding/` _(del repo del equipo; no está en esta copia)_ | afuera: páginas, charlas y onboarding del equipo |
 | agent-skills | `.githooks/` | entra (núcleo) |
 | agent-skills | `agents/` | entra: `agents/*.md` en el núcleo; los tres revisores de Bizuit (`agents/tycon-plugin-*-conventions.md`) en su paquete |
-| agent-skills | `skills/` | entra: en el núcleo `skills/tycon-*/`, `skills/check-story-drift/`, `skills/clocki/` y `skills/tycon-create-story/`; en bizuit `skills/{bizuit-backend-plugin-system,bizuit-custom-forms-system,bizuit-sdk-integration,safe-query-builder,esbuild-bundling,feature-based-crud-endpoints,dotnet-dapper-sqlserver,bizuit-new-product}/` (las tres últimas desde el 2026-10-05: las guías de Bizuit que salen las citan). Afuera: `skills/bizuit-sdd/` _(del repo del equipo; no está en esta copia)_ (deprecada, no se publica), `skills/core/signalr-realtime/` _(del repo del equipo; no está en esta copia)_ (describe el producto de un cliente; sólo serviría reescrita), `skills/tycon-alta-de-producto/` _(del repo del equipo; no está en esta copia)_ (infraestructura del equipo y las plantillas que quedan afuera) y `skills/tycon-pipeline/HISTORIA.md` _(del repo del equipo; no está en esta copia)_ (la historia de la skill, con casos del equipo) |
+| agent-skills | `skills/` | entra: en el núcleo `skills/tycon-*/`, `skills/check-story-drift/`, `skills/clocki/` y `skills/tycon-create-story/`; en bizuit `skills/{bizuit-backend-plugin-system,bizuit-custom-forms-system,bizuit-sdk-integration,safe-query-builder,esbuild-bundling,feature-based-crud-endpoints,dotnet-dapper-sqlserver,bizuit-new-product}/` (las tres últimas desde el 2026-10-05: las guías de Bizuit que salen las citan). Afuera: `skills/bizuit-sdd/` _(del repo del equipo; no está en esta copia)_ (deprecada, no se publica), `skills/core/signalr-realtime/` _(del repo del equipo; no está en esta copia)_ (describe el producto de un cliente; sólo serviría reescrita) y `skills/tycon-pipeline/HISTORIA.md` _(del repo del equipo; no está en esta copia)_ (la historia de la skill, con casos del equipo) |
 | agent-skills | `packs/` | afuera en el núcleo · entra en bizuit `packs/bizuit/pack.json` y `packs/bizuit/new-product-templates/` (las plantillas del alta de un producto); el de clientes no sale nunca |
 | agent-skills | `.tycon/` | afuera: la configuración del equipo para este repo |
 
@@ -112,7 +112,8 @@ Viven en el código (`EXCLUIDOS_SIEMPRE`), por repo y con su motivo, y **nunca s
 | arnes | `scripts/metrics/censo-*.json` `scripts/ci/product-parity.json` `scripts/ci/pipeline-debt.json` `scripts/metrics/corridas-buzon.json` _(del repo del equipo; no está en esta copia)_ | censos, productos y deuda por repo de cliente, la llave del buzón |
 | arnes | `team-profile.json` _(del repo del equipo; no está en esta copia)_ `perfil-equipo.json` _(del repo del equipo; no está en esta copia)_ (de «clase»: el clon tiene uno de los dos, o los dos en la transición) | el perfil del equipo, con su nombre de hoy y el de antes, que sigue valiendo |
 | arnes | `pipelines/**` | los pipelines del equipo (los nocturnos, el de pull request y sus pedazos compartidos) |
-| arnes | `scripts/nightly/dependencies/` _(del repo del equipo; no está en esta copia)_ `scripts/nightly/watcher/` _(del repo del equipo; no está en esta copia)_ `commands/tycon-vigilante.md` _(del repo del equipo; no está en esta copia)_ `scripts/controls-bench/ultimo-*.json` | operación interna y resultados del equipo |
+| arnes | `scripts/nightly/dependencies/repos.json` _(del repo del equipo; no está en esta copia)_ (de «clase») | la lista de repos del equipo que revisa el nocturno de dependencias |
+| arnes | `commands/tycon-vigilante.md` _(del repo del equipo; no está en esta copia)_ `scripts/controls-bench/ultimo-*.json` | operación interna y resultados del equipo |
 | arnes | `**/denylist*.json` `**/replacements*.json` | lo privado de la publicación: la lista de denegación y la tabla de reemplazos |
 | arnes | `scripts/lib/renames.json` _(del repo del equipo; no está en esta copia)_ (de «clase»: el retiro lo borra) | el mapa de renombres a inglés: los nombres viejos no viajan |
 | agent-skills | `skills/projects/` _(del repo del equipo; no está en esta copia)_ `skills/infrastructure/` _(del repo del equipo; no está en esta copia)_ | skills de proyectos de clientes y de la infraestructura de la empresa |
@@ -296,7 +297,7 @@ en la prueba. Cada una que se podría hacer portable queda para una story aparte
 
 | Por qué no viaja | Qué |
 |---|---|
-| Su código o sus datos quedan afuera | `vigilante`, `nightly-dependencies`, `work-items`, `work-item-status`, `daily-summary`, `open-pr-per-finding`, `nightly-publishes-report`, `suites-report`, `pr-verdict`, `nightly-dashboard`; el caso `hooks/31-vigilante.json` |
+| Su código o sus datos quedan afuera | `open-pr-per-finding`, `nightly-publishes-report`, `suites-report`, `pr-verdict`, `nightly-dashboard` |
 | Usa lo privado de la publicación | `export-real.test.sh` (la tabla y la lista de denegación no viajan) |
 | Espera a otra story (`pendientes` del `--json`) | de bizuit, sus traducciones a Codex, sus casos del banco y sus secciones del catálogo |
 
