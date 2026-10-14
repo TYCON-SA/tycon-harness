@@ -4167,12 +4167,15 @@ function cmdUninstall(ctx) {
     // la casa de los datos de las skills de la lista fija que la capa trae (AC 34): nada del arnés la borra; se nombra si existe
     let dataHomes = [];
     if (relOwn) { try { const TM = mod('team'); const lay = TM.readTeamManifest(relOwn.harness); dataHomes = TM.extrasInLayer(lay ? lay.files.map((f) => f.path) : []).map((e) => ({ e, dh: TM.dataHomeOf(e, { home: ctx.home, env: ctx.env }) })).filter((x) => fs.existsSync(x.dh.dir)).map((x) => `${x.dh.dir} (los datos de ${x.e.skill.slice('skills/'.length)}: tu conexión)`); } catch (e) { dataHomes = [`la casa de los datos de las skills de la lista fija (no pude calcularla: ${e.message}; nada del arnés la borra)`]; } }
+    // el módulo de la carpeta global de hooks de git se carga ANTES de U.run: corriendo desde la copia fija de arranque,
+    // U.run quita sus módulos y después ya no se podría cargar (harness-team.test.sh, «uninstall por la copia fija»)
+    const GHP = mod('git-hooks-path');
     const res = U.run(Object.assign({}, uctx, { snapshotDir: snap && snap.dir }), state, { log });
     finishSnapshot(ctx, snap, log);
     const lines = [...head, ...(res.lines || [])];
     // la carpeta global de hooks de git que puso el arnés (2026-10-14): con los hooks quitados, si quedara git no correría
     // ni los del arnés ni el .git/hooks/ de cada repo. Sólo si sigue siendo la que se puso
-    { const g = mod('git-hooks-path').release({ env: ctx.env, recorded: state.git_hooks_path, log }); if (g.line) lines.push(g.line); }
+    { const g = GHP.release({ env: ctx.env, recorded: state.git_hooks_path, log }); if (g.line) lines.push(g.line); }
     // la versión bajada (story 8.23, tanda B · AC 8): además de lo registrado, las carpetas de versiones de ~/.tycon y los
     // enlaces que apuntan adentro; quedan y se nombran el permiso (config.json) y la caché de terceros
     if (S.isRelease(state)) {
