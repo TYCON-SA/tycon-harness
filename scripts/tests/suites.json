@@ -1815,6 +1815,60 @@
       "requiere": [
         "agent-skills"
       ]
+    },
+    {
+      "__nota": "story 8.17, tanda W0 (T1-T5, T12, T13): los guiones que miden el arnés en un agente Windows (scripts/tests/windows/) y el contrato de pipelines/azure-pipelines-windows.yml. No mide Windows: mide a los que miden. El pipeline no se dispara solo y clona un bundle, nunca copia (T1); una herramienta ausente es un hecho y un buscador que falla es un error (T2); el settings.json que deja hoy el instalador de Windows contra la lista leída del de bash: los que faltan y los que correrían dos veces, por nombre (T3); el veredicto contra known-gaps.json, con un paso cortado por su tope de verdad (T4); nombres en inglés, y run.js negándose a medir fuera de un laboratorio (T5); la sesión real apagada y la credencial que nunca sale (T12); los quince «no se sabe» como hechos con su corrida (T13). Y un recorrido entero en modo de laboratorio sobre un arnés de juguete, sin el instalador real (~15 s). Nunca toca la carpeta de usuario de quien la corre.",
+      "raiz": "arnes",
+      "ruta": "tests/windows-probe.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.17, tanda W0 (R1-R7): los guiones que ENSAYAN la instalación del equipo en un agente Windows —el alta de un dev nuevo y la máquina del viernes que se actualiza a lo de hoy— y su parte del contrato de pipelines/azure-pipelines-windows.yml (el parámetro scenario y los trabajos Sources y Rehearsal). No mide Windows: mide a los que ensayan. El texto del alta de verdad trae todas las piezas que el ensayo corre (R2); cada diferencia entre la foto del viernes y la de hoy sale con su gravedad (R3); la corrida es roja sólo si no se pudo ensayar (R4); nadie mide fuera de un laboratorio (R5); los bundles de los dos repos (R6); y la copia de measure se arma con el exportador del commit que se mide, no con el de la rama del pipeline (R7, corrida 11678). El recorrido entero corre en modo de laboratorio sobre dos repos de juguete y necesita pwsh: sin él se saltea, con constancia. Tarda unos minutos: el gate de una story la corre sólo si toca sus guiones.",
+      "raiz": "arnes",
+      "ruta": "tests/windows-rehearsal.test.js",
+      "requiere": [],
+      "gate_only_when_touching": [
+        "scripts/tests/windows/**",
+        "scripts/tests/fixtures/windows/**",
+        "pipelines/**",
+        "onboarding/**",
+        "getting-started/**"
+      ]
+    },
+    {
+      "__nota": "story 8.28 (T1-T6, T8-T10, T12-T15, T17-T28): los guiones que ensayan el alta y la actualización en Windows SIGUIENDO LA PÁGINA PÚBLICA de instalación (getting-started/windows.md), comando por comando, y después la capa del equipo. No mide Windows: mide a los que ensayan. La página se lee por su marca y cada comando de la ficha (guided-steps.json) está escrito en el bloque que la persona copia, letra por letra: si la página cambia un comando, esto se pone rojo antes de que el ensayo corra a medias (T1-T4). Al laboratorio se le cambia una sola cosa, el origen de la API, y el ambiente se arma desde limpio (T5); el GitHub de juguete contesta el archivo crudo sólo cuando se lo piden (T6); cada comando se juzga por su código de salida y por lo esperado, que es un dato (T8); la sesión espera sólo por un trabajo desprendido que es nuevo y sigue vivo, con tope (T10); la foto de una versión bajada no trae nada de git (T14, T15); los dos ensayos eligen por lo que el árbol es, y a una copia publicada sin lo que tiene que traer se le dice «no pude ensayar» (T19, T20); los permisos de juguete se buscan en la salida cruda (T21); el git del laboratorio usa su propia carpeta de usuario (T23); los topes, el corte a los 40 minutos y ninguna credencial en el pipeline (T25); el reporte (T26) y los registros (T27). Todo con datos de juguete: segundos. Nunca toca la carpeta de usuario de quien la corre.",
+      "raiz": "arnes",
+      "ruta": "tests/windows-guided.test.js",
+      "requiere": [],
+      "gate_only_when_touching": [
+        "scripts/tests/windows/**",
+        "scripts/tests/fixtures/**",
+        "getting-started/**",
+        "scripts/setup/**",
+        "pipelines/**",
+        "onboarding/**"
+      ]
+    },
+    {
+      "__nota": "story 8.28 (T7, T11, T16): los mismos ensayos con EL PROGRAMA DE VERDAD, en modo de laboratorio, sobre un árbol publicado de juguete armado desde el árbol de trabajo (con la página y el guion de entrada puestos en su lugar y el nombre de un repo de juguete): el alta siguiendo la página —bajar el guion, el plan, instalar, los hooks de git, verificar—, la primera sesión con su espera, la capa del equipo contra el Azure DevOps de juguete, lab-state.json y count-hooks; y la máquina con una versión anterior que se actualiza sola al abrir una sesión. Imitar al exportador vale SÓLO acá: un verde dice que los guiones andan con el programa de verdad; que la copia publicada instala lo dicen el modo de laboratorio sobre la copia del exportador y el pipeline de Windows. Necesita pwsh: sin él se saltea, con constancia; en Windows no corre (ahí corre el ensayo de verdad). Tarda minutos: es del grupo del instalador. Nunca toca la carpeta de usuario de quien la corre.",
+      "raiz": "arnes",
+      "ruta": "tests/windows-guided-lab.test.js",
+      "requiere": [],
+      "__exclusive": "corre SOLA (2026-10-11): es un laboratorio que lanza muchos procesos (dos servidores de juguete, instalaciones, sesiones con su espera). En la validación #12776 de su rama corrió a la vez que windows-rehearsal.test.js —otro laboratorio— en un agente de 2 núcleos: las dos se frenaron entre sí, la otra pasó su tope de 186 s y quedó «no medida», y ésta terminó al borde del suyo. Sola no compite con nadie; en la validación la corre el trabajo del banco, después del banco.",
+      "exclusive": true,
+      "gate_only_when_touching": [
+        "scripts/tests/windows/**",
+        "scripts/tests/fixtures/**",
+        "getting-started/**",
+        "scripts/setup/**",
+        "onboarding/**"
+      ]
+    },
+    {
+      "__nota": "story 8.17 (P1-P7): los guiones que MIDEN la base portable —lo que trae la tanda W1— en un agente Windows, y su parte del contrato de pipelines/azure-pipelines-windows.yml (el escenario portable). No mide Windows: mide a los que miden. El escenario corre en los dos trabajos de los ensayos, cada parte por rehearse.js y las suites antes que el banco, sin copiar archivos, sin secretos y sin abrir sesiones del asistente (P1); los guiones de bash con finales de línea de Windows se cuentan archivo por archivo, hooks de git incluidos (P2); los totales de una suite, en las dos formas en que Node los escribe (P3); de un reporte del banco, un veredicto por caso, los rojos por su nombre y los casos que faltan, y los portones por ruta forma por forma (P4); el «En corto», esperado contra medido, y la corrida roja sólo si no se pudo medir (P5); nadie mide fuera de un laboratorio (P6); los bundles traen el «antes», el antepasado común con la rama principal (P7). Y un recorrido entero en modo de laboratorio sobre dos repos de juguete con core.autocrlf=true forzado: el clon nuevo, el que ya existía antes y después del paso que normaliza, y un banco de juguete (~10 s). Nunca toca la carpeta de usuario de quien la corre.",
+      "raiz": "arnes",
+      "ruta": "tests/windows-portable.test.js",
+      "requiere": []
     }
   ],
   "semanales": [

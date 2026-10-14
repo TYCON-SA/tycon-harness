@@ -275,8 +275,8 @@
         "scripts/tests/windows/release-photo.js",
         "scripts/tests/windows/onboarding-probe.js",
         "scripts/tests/windows/update-probe.js",
-        "scripts/publishing/public-files/getting-started/windows.md",
-        "scripts/publishing/public-files/scripts/setup/get-harness.ps1"
+        "getting-started/windows.md",
+        "scripts/setup/get-harness.ps1"
       ]
     },
     "integrations-off.p1.test.sh": {
