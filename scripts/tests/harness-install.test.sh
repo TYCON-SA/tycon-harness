@@ -824,11 +824,21 @@ PY
   }
   # los cuatro enlaces, cada uno a su lugar del clon (por la ruta real); si alguno no, lo nombra y devuelve 1
   links_to_clone() {
-    local pair name sub link
-    for pair in "$PLACE_NAME:" "agent-skills:" "skills:skills" "agents:agents"; do   # una máquina nueva: sin el viejo (tanda C)
-      name="${pair%%:*}"; sub="${pair#*:}"; link="$HOME/.claude/$name"
-      [ -L "$link" ] && [ "$(cd "$link" 2>/dev/null && pwd -P)" = "$(cd "$LAB_TREE/$sub" && pwd -P)" ] || { printf '%s' "$name"; return 1; }
+    local name side entry e link n=0
+    for name in "$PLACE_NAME" agent-skills; do   # una máquina nueva: sin el viejo (tanda C)
+      link="$HOME/.claude/$name"
+      [ -L "$link" ] && [ "$(cd "$link" 2>/dev/null && pwd -P)" = "$(cd "$LAB_TREE" && pwd -P)" ] || { printf '%s' "$name"; return 1; }
     done
+    # (story 8.35) skills y agents: carpetas reales del dev, con un enlace por CADA entrada del clon
+    for side in skills agents; do
+      { [ -d "$HOME/.claude/$side" ] && [ ! -L "$HOME/.claude/$side" ]; } || { printf '%s (no es carpeta real)' "$side"; return 1; }
+      for entry in "$LAB_TREE/$side"/*; do
+        [ -e "$entry" ] || continue
+        e="$(basename "$entry")"; link="$HOME/.claude/$side/$e"; n=$((n + 1))
+        [ -L "$link" ] && [ "$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$link")" = "$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$entry")" ] || { printf '%s' "$side/$e"; return 1; }
+      done
+    done
+    [ "$n" -gt 0 ] || { printf 'skills y agents (el clon no tiene entradas)'; return 1; }
   }
   # una máquina NUEVA: HOME vacía y UN clon del repo unido, en la carpeta que elige el dev
   new_machine() { # new_machine <dir>
@@ -884,7 +894,7 @@ PY
   [ "$RC" = 0 ] && ok "T37 con UN clon, harness.js install sale 0" || mal "T37 harness.js install salió $RC: $(printf '%s' "$SALIDA" | tail -4)"
   [ "$(estado "len(d['sources'])")" = 1 ] && [ "$(estado "d['sources'][0]['name']")" = harness ] && [ "$(estado "d['sources'][0]['url']")" = "$T37_ORIGIN" ] \
     && ok "T37 el estado tiene UNA fuente (harness), con el origin del clon" || mal "T37 fuentes: $(estado "[(s['name'], s['url']) for s in d['sources']]")"
-  BAD="$(links_to_clone)" && ok "T37 los cuatro enlaces existen: el lugar y agent-skills → el clon; skills y agents → adentro" || mal "T37 el enlace ~/.claude/${BAD} falta o apunta a otro lado: $(harness_lab_links | tr '\n' ' ')"
+  BAD="$(links_to_clone)" && ok "T37 los enlaces existen: el lugar y agent-skills → el clon; skills y agents, carpetas reales con un enlace por entrada" || mal "T37 el enlace ~/.claude/${BAD} falta o apunta a otro lado: $(harness_lab_links | tr '\n' ' ')"
   [ -f "$HOME/.claude/skills/tycon-pipeline/SKILL.md" ] && [ -n "$(ls "$HOME/.claude/agents"/*.md 2>/dev/null | head -1)" ] \
     && ok "T37 las skills y los revisores se ven desde ~/.claude/skills y ~/.claude/agents (donde los busca Claude Code)" || mal "T37 ~/.claude/skills/tycon-pipeline/SKILL.md o los revisores de ~/.claude/agents no se ven"
   read -r N_HOOKS N_REP <<< "$(hooks_census)"

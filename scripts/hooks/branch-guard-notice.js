@@ -406,8 +406,7 @@ function pwshMissingLines() {
   // (el de la Microsoft Store es un alias de ejecución —un punto de reanálisis de 0 bytes— y `stat` puede fallar sobre él:
   // cuenta la entrada como la ve `lstat`, salvo una carpeta: Windows sólo ejecuta `pwsh.exe`)
   const found = dirs.some((d) => { try { return !fs.lstatSync(path.join(d, 'pwsh.exe')).isDirectory(); } catch (_) { return false; } });
-  let stateDir;
-  try { const TH = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')); stateDir = TH.stateDir(os.homedir()); } catch (_) { stateDir = path.join(os.homedir(), '.claude', '.tycon-pipeline'); }
+  const stateDir = stateDirOf(os.homedir());
   const mark = path.join(stateDir, 'pwsh-missing-notice.json');
   if (found) { try { fs.rmSync(mark, { force: true }); } catch (_) { /* nada */ } return []; }
   if (fs.existsSync(mark)) return [];
