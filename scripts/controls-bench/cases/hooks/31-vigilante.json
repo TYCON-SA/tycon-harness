@@ -1,0 +1,207 @@
+{
+  "__doc": "Vigilante de producción (Tanda 3, 2026-08-31). Mira producción de noche, agrupa lo que huele mal y deja un borrador para que una persona decida — sin tocar nada. Estos casos corren el CLI real contra datos de prueba en disco (modo `--fixture`, sin red ni credenciales), con el patrón de envoltorio que ya usan las piezas que no son hooks (ver 21-hooks-sueltos.json). Lo que fijan es lo que hace que la pieza sirva y no se vuelva la casilla que nadie mira: que levante lo sub-umbral, que NO levante una noche normal, que un producto no consultado DEJE CONSTANCIA (una noche sin datos no puede parecerse a una noche tranquila), que no duplique un hallazgo repetido, y que el borrador no tenga forma de story (si la tuviera, lo bloquearía el propio arnés).",
+  "hooks": [
+    {
+      "hook": "vigilante.js (mirada nocturna de producción)",
+      "script": "${FIXTURE}/correr.sh",
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "cases": [
+        {
+          "id": "hay-anomalia-escribe-el-borrador-y-lo-avisa",
+          "type": "must-emit",
+          "files": {
+            "correr.sh": "#!/usr/bin/env bash\ncd \"$FIXTURE\"\nnode \"$TCG/scripts/nightly/watcher/vigilante.js\" run --config cfg.json --fixture datos --out out --pending vig --today 2026-08-31\n",
+            "prep.js": "const fs=require('fs');const c=JSON.parse(fs.readFileSync(process.env.TCG+'/pipelines/operations/examples/hosts.json','utf8'));c.productos=[{id:'acme',url:'x',env_user:'U',env_pass:'P',plugins:[],activo:true}];fs.writeFileSync('cfg.json',JSON.stringify(c))\nconst e=(t,m)=>({executedAt:t,pluginName:'GestionApi',endpoint:'POST /api/pagos/confirmar',statusCode:500,durationMs:30000,errorMessage:m});fs.writeFileSync('datos/acme.json',JSON.stringify({ejecuciones:[e('2026-08-31T02:00:00Z','Timeout expired (id 1)'),e('2026-08-31T06:00:00Z','Timeout expired (id 2)'),e('2026-08-31T10:00:00Z','Timeout expired (id 3)')],salud:{GestionApi:'Running'}}));const V=require(process.env.TCG+'/scripts/nightly/watcher/vigilante.js');const fp=V.huella('acme','GestionApi','POST /api/pagos/confirmar',500,'Timeout expired (id 1)');for(const d of ['2026-08-28','2026-08-29','2026-08-30'])fs.writeFileSync('out/vigilante-'+d+'.json',JSON.stringify({fecha:d,conteos:{acme:{[fp]:1}}}));"
+          },
+          "setup": [
+            "mkdir -p datos out vig/pending vig/promoted vig/archived",
+            "chmod +x correr.sh",
+            "node prep.js"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "vigilante"
+            }
+          },
+          "expect": {
+            "stdout_re": [
+              "1 hallazgo",
+              "Vigilante 2026-08-31"
+            ],
+            "dir_has_file": [
+              {
+                "dir": "${FIXTURE}/vig/pending",
+                "suffix": ".yaml"
+              }
+            ]
+          }
+        },
+        {
+          "id": "el-borrador-NO-tiene-forma-de-story",
+          "type": "must-emit",
+          "files": {
+            "correr.sh": "#!/usr/bin/env bash\ncd \"$FIXTURE\"\nnode \"$TCG/scripts/nightly/watcher/vigilante.js\" run --config cfg.json --fixture datos --out out --pending vig --today 2026-08-31 >/dev/null\ncat vig/pending/*.yaml\n",
+            "prep.js": "const fs=require('fs');const c=JSON.parse(fs.readFileSync(process.env.TCG+'/pipelines/operations/examples/hosts.json','utf8'));c.productos=[{id:'acme',url:'x',env_user:'U',env_pass:'P',plugins:[],activo:true}];fs.writeFileSync('cfg.json',JSON.stringify(c))\nfs.writeFileSync('datos/acme.json',JSON.stringify({ejecuciones:[],salud:{Roto:'Failed'}}));"
+          },
+          "setup": [
+            "mkdir -p datos out vig/pending vig/promoted vig/archived",
+            "chmod +x correr.sh",
+            "node prep.js"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "vigilante"
+            }
+          },
+          "expect": {
+            "stdout_re": [
+              "veredicto: pendiente",
+              "NO es una story"
+            ],
+            "stdout_not_re": [
+              "^story:",
+              "^approach:"
+            ]
+          },
+          "__nota": "Si el borrador declarara `story:` lo bloquearía story-skill-gate, y con `approach:` dispararía el recordatorio de work item en ADO. Que no los tenga no es un detalle de formato: es lo que le permite existir."
+        },
+        {
+          "id": "noche-normal-no-levanta-nada-y-no-avisa",
+          "type": "must-stay-quiet",
+          "files": {
+            "correr.sh": "#!/usr/bin/env bash\ncd \"$FIXTURE\"\nnode \"$TCG/scripts/nightly/watcher/vigilante.js\" run --config cfg.json --fixture datos --out out --pending vig --today 2026-08-31 > salida.txt\ngrep -c 'aviso' salida.txt || true\n",
+            "prep.js": "const fs=require('fs');const c=JSON.parse(fs.readFileSync(process.env.TCG+'/pipelines/operations/examples/hosts.json','utf8'));c.productos=[{id:'acme',url:'x',env_user:'U',env_pass:'P',plugins:[],activo:true}];fs.writeFileSync('cfg.json',JSON.stringify(c))\nfs.writeFileSync('datos/acme.json',JSON.stringify({ejecuciones:[{executedAt:'2026-08-31T02:00:00Z',pluginName:'P',endpoint:'GET /ok',statusCode:200}],salud:{P:'Running'}}));"
+          },
+          "setup": [
+            "mkdir -p datos out vig/pending vig/promoted vig/archived",
+            "chmod +x correr.sh",
+            "node prep.js"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "vigilante"
+            }
+          },
+          "expect": {
+            "stdout_re": [
+              "^0$"
+            ]
+          }
+        },
+        {
+          "id": "no-pudo-consultar-DEJA-CONSTANCIA",
+          "type": "must-emit",
+          "files": {
+            "correr.sh": "#!/usr/bin/env bash\ncd \"$FIXTURE\"\nnode \"$TCG/scripts/nightly/watcher/vigilante.js\" run --config cfg.json --fixture datos --out out --pending vig --today 2026-08-31\n",
+            "prep.js": "const fs=require('fs');const c=JSON.parse(fs.readFileSync(process.env.TCG+'/pipelines/operations/examples/hosts.json','utf8'));c.productos=[{id:'acme',url:'x',env_user:'U',env_pass:'P',plugins:[],activo:true}];fs.writeFileSync('cfg.json',JSON.stringify(c))"
+          },
+          "setup": [
+            "mkdir -p datos out vig/pending vig/promoted vig/archived",
+            "chmod +x correr.sh",
+            "node prep.js"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "vigilante"
+            }
+          },
+          "expect": {
+            "stdout_re": [
+              "NO MEDIDO",
+              "fixture ausente"
+            ]
+          },
+          "__nota": "La muerte silenciosa más probable de esta pieza: credenciales rotadas o host caído, y la noche sale igual de callada que una noche tranquila. Misma lección que incident-log#porton-ci-debut-no-corrio-2026-08-30."
+        },
+        {
+          "id": "un-hallazgo-repetido-no-crea-un-segundo-borrador",
+          "type": "must-emit",
+          "files": {
+            "correr.sh": "#!/usr/bin/env bash\ncd \"$FIXTURE\"\nnode \"$TCG/scripts/nightly/watcher/vigilante.js\" run --config cfg.json --fixture datos --out out --pending vig --today 2026-08-31 >/dev/null\nnode \"$TCG/scripts/nightly/watcher/vigilante.js\" run --config cfg.json --fixture datos --out out --pending vig --today 2026-09-01\nls -1 vig/pending | wc -l\n",
+            "prep.js": "const fs=require('fs');const c=JSON.parse(fs.readFileSync(process.env.TCG+'/pipelines/operations/examples/hosts.json','utf8'));c.productos=[{id:'acme',url:'x',env_user:'U',env_pass:'P',plugins:[],activo:true}];fs.writeFileSync('cfg.json',JSON.stringify(c))\nfs.writeFileSync('datos/acme.json',JSON.stringify({ejecuciones:[],salud:{Roto:'Failed'}}));"
+          },
+          "setup": [
+            "mkdir -p datos out vig/pending vig/promoted vig/archived",
+            "chmod +x correr.sh",
+            "node prep.js"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "vigilante"
+            }
+          },
+          "expect": {
+            "stdout_re": [
+              "repetidos: 1",
+              "nuevos: 0"
+            ]
+          }
+        },
+        {
+          "id": "un-problema-que-persiste-NO-se-auto-silencia",
+          "__nota": "Reproduce el peor hallazgo del pase adversarial: el auto-archivado a los 7 días miraba la fecha de CREACIÓN, así que un plugin caído ocho noches seguidas se archivaba como 'ignorado' y el dedup lo callaba PARA SIEMPRE. Un problema que persiste tiene que gritar más, no menos.",
+          "type": "must-emit",
+          "files": {
+            "correr.sh": "#!/usr/bin/env bash\ncd \"$FIXTURE\"\nfor d in 01 02 03 04 05 06 07 08 09; do node \"$TCG/scripts/nightly/watcher/vigilante.js\" run --config cfg.json --fixture datos --out out --pending vig --today 2026-09-$d >/dev/null; done\necho \"pendientes=$(ls -1 vig/pending | wc -l | tr -d ' ') archivados=$(ls -1 vig/archived | wc -l | tr -d ' ')\"\ngrep -h noches_seguidas vig/pending/*.yaml\n",
+            "prep.js": "const fs=require('fs');const c=JSON.parse(fs.readFileSync(process.env.TCG+'/pipelines/operations/examples/hosts.json','utf8'));c.productos=[{id:'acme',url:'x',env_user:'U',env_pass:'P',plugins:[],activo:true}];fs.writeFileSync('cfg.json',JSON.stringify(c))\nfs.writeFileSync('datos/acme.json',JSON.stringify({ejecuciones:[],salud:{Roto:'Failed'}}));"
+          },
+          "setup": [
+            "mkdir -p datos out vig/pending vig/promoted vig/archived",
+            "chmod +x correr.sh",
+            "node prep.js"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "vigilante"
+            }
+          },
+          "expect": {
+            "stdout_re": [
+              "pendientes=1 archivados=0",
+              "noches_seguidas: 9"
+            ]
+          }
+        },
+        {
+          "id": "el-aviso-respeta-el-presupuesto-pero-escribe-todo",
+          "__nota": "El tope es sobre el AVISO, jamás sobre el registro: lo que no entra en el mensaje se escribe igual en los borradores. Descartar en silencio es lo que esta casa no hace.",
+          "type": "must-emit",
+          "files": {
+            "correr.sh": "#!/usr/bin/env bash\ncd \"$FIXTURE\"\nnode \"$TCG/scripts/nightly/watcher/vigilante.js\" run --config cfg.json --fixture datos --out out --pending vig --today 2026-08-31\n",
+            "prep.js": "const fs=require('fs');const c=JSON.parse(fs.readFileSync(process.env.TCG+'/pipelines/operations/examples/hosts.json','utf8'));c.productos=[{id:'acme',url:'x',env_user:'U',env_pass:'P',plugins:[],activo:true}];fs.writeFileSync('cfg.json',JSON.stringify(c))\nfs.writeFileSync('datos/acme.json',JSON.stringify({ejecuciones:[],salud:{A:'Failed',B:'Failed',C:'Failed',D:'Failed'}}));"
+          },
+          "setup": [
+            "mkdir -p datos out vig/pending vig/promoted vig/archived",
+            "chmod +x correr.sh",
+            "node prep.js"
+          ],
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "vigilante"
+            }
+          },
+          "expect": {
+            "stdout_re": [
+              "4 hallazgo",
+              "y 2 de menor severidad"
+            ],
+            "dir_has_file": [
+              {
+                "dir": "${FIXTURE}/vig/pending",
+                "suffix": ".yaml"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
