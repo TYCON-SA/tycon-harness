@@ -1,0 +1,10 @@
+# Config del arnés para {{STORIES_REPO}} — el repo de las HISTORIAS de {{PRODUCT}}. No compila ni despliega
+# nada: su pipeline es sólo el portón de controles en cada pull request.
+
+# ── Cómo llega el trabajo a main ─────────────────────────────────────────────────────────────
+# `pr`: el merge va por Pull Request con auto-complete, no por push directo a main.
+merge:
+  mode: pr
+
+# Los repos que una entrega de {{PRODUCT}} puede tocar junta. Rutas relativas al directorio padre.
+repo_group: [{{BACKEND_REPO}}, {{FORMS_REPO}}]

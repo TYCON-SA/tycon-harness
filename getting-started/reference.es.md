@@ -152,8 +152,9 @@ En PowerShell, los demás comandos `node ~/.claude/…` de esta página se escri
 Si falta una herramienta, el guion (o `install`) corta con una línea que la nombra, con el comando para instalarla, y no
 escribe nada. Instalala y corré de nuevo `bash get-harness.sh` (el guion que ya bajaste).
 
-Con `full`, `install` puede avisar que git no tiene `core.hooksPath` global: los hooks de git quedan en `~/.git-hooks/`
-y git los usa recién cuando configurás esa clave. Antes de hacerlo, leé qué cambia en «Qué escribe en tu máquina».
+Con `full`, si git no tiene `core.hooksPath` global, `install` (y `apply`) la configuran en `~/.git-hooks/`, la carpeta
+de los hooks de git del arnés; el plan lo dice antes de tu «sí». Si ya tenés otra, no la tocan: avisan, con el comando
+para apuntarla. Qué cambia con esa clave está en «Qué escribe en tu máquina».
 
 ### Otras formas de instalar (opcionales)
 
@@ -227,8 +228,10 @@ El paquete opcional es el paquete del stack de TYCON: .NET + React/Next.js sobre
 `bizuit`. Son las convenciones con que TYCON desarrolla plugins sobre Bizuit; no es un producto de Bizuit.
 
 **Qué agrega**: tres revisores (`tycon-plugin-dotnet-conventions`, `tycon-plugin-react-conventions`,
-`tycon-plugin-nextjs-conventions`), sus guías y sus casos en el banco de controles. **Qué pide además**: el SDK de .NET
-de tu plugin.
+`tycon-plugin-nextjs-conventions`), sus guías y sus casos en el banco de controles, y la skill `bizuit-new-product`, que
+da de alta un producto nuevo (los repos de backend, formularios e historias, con pipelines que compilan, prueban y
+despliegan a staging y, con aprobación, a producción) desde las plantillas de `packs/bizuit/new-product-templates/`.
+**Qué pide además**: el SDK de .NET de tu plugin.
 
 **Viene apagado.** El repo lo trae, pero un repo de producto sólo lo usa si lo pide en su `.tycon/advisors.yaml` con
 `packs: [bizuit]`, o si tu máquina lo prende para todos los repos (`TYCON_PACKS_DEFAULT=all`, o `packs.default` en
@@ -339,9 +342,12 @@ vez cada 6 horas. Si la hay, avisa y espera: no la aplica sin que se lo pidas de
   al clon. Si `~/.claude/skills` o `~/.claude/agents` ya son carpetas de verdad, crea adentro un enlace por entrada y
   nunca pisa nada tuyo.
 - **Comandos de barra** copiados a `~/.claude/commands/` (`TYCON_NO_COMMANDS_SYNC=1` saltea la copia).
-- **Hooks globales de git** en `~/.git-hooks/` (`TYCON_NO_GIT_HOOKS=1` los saltea). git sólo los usa si configurás
-  `core.hooksPath` global, y con un `core.hooksPath` global git deja de correr los `.git/hooks/` de todos tus repos: el
-  hook del arnés corre en su lugar el `.githooks/pre-commit` de cada repo.
+- **Hooks globales de git** en `~/.git-hooks/` (`TYCON_NO_GIT_HOOKS=1` los saltea). git sólo los usa con
+  `core.hooksPath` global: si git no tiene ninguna, `install`, `apply` y el arranque (con la aplicación `auto`; con `ask`, el
+  aviso la pide y la pone `update --yes`) la apuntan a esa carpeta (una que ya tengas no
+  la tocan), y `uninstall` o el paso al perfil mínimo la sacan si sigue siendo ésa. Con un `core.hooksPath` global git
+  deja de correr los `.git/hooks/` de todos tus repos: el hook del arnés corre en su lugar el `.githooks/pre-commit` de
+  cada repo.
 - **Skills de terceros** bajadas de su origen a la carpeta `skills/` del clon: las que lista
   `scripts/publishing/third-party-skills.json`, cada una fijada a un commit (`TYCON_THIRD_PARTY=0` saltea el paso).
 - **Los archivos del propio mecanismo de instalación**: su estado y su copia fija de arranque en

@@ -45,6 +45,11 @@
 //   node scripts/publishing/export-compare.js trees <copia-antes> <copia-después> [--json]
 //        [--range <unión>..<punta> [--repo <clon>]] [--touched <lista>] [--allowlist <f>]
 //   node scripts/publishing/export-compare.js exclusions <explain-antes.json> <explain-después.json> [--json]
+//
+// DESDE EL CORTE A GITHUB (story 8.26, AC 36) el exportador de este repo ya no arma copias: `snapshot` con el de al lado
+// sale 2 (la exportación de cada paquete no sale), y `trees` no tiene copias nuevas que comparar. Quedan `diff` (sobre
+// fotos ya sacadas) y `exclusions` (sobre dos salidas de `--explain --json`). Para comparar copias de antes del corte,
+// `snapshot --exporter` con el `export.js` de un clon en un commit de entonces.
 // Guía: guides/publicacion-espejo.md
 
 const fs = require('fs');

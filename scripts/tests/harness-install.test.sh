@@ -60,7 +60,14 @@
 #         rutas y el comando si es otra, tiene su aviso si no existe, dice «no pude comparar» si es relativa, y nunca
 #         cambia la configuración de git.
 #
-# Uso: bash scripts/tests/harness-install.test.sh [--only T5|T9|T11|T12|T36|LAB|T29|T30|CANARY|T37|T39|S16|S16B|REG|RELOCATE|T79]
+#   HP  · (2026-10-14) la carpeta GLOBAL de hooks de git la pone `harness.js`, no sólo la avisa: el caso de una máquina
+#         instalada desde la versión bajada o mudada desde un clon, con los hooks del arnés en ~/.git-hooks y git sin
+#         carpeta global — `doctor` mandaba a `apply` y el aviso seguía igual. Con el aplicador real: `install` y `apply`
+#         la ponen si git no tiene ninguna (y `doctor` deja de avisar); el arranque no; otra carpeta, el interruptor de los
+#         hooks de git y un git que no deja escribir no se pisan; el perfil mínimo y `uninstall` la sacan sólo si sigue
+#         siendo la que puso el arnés.
+#
+# Uso: bash scripts/tests/harness-install.test.sh [--only T5|T9|T11|T12|T36|LAB|T29|T30|CANARY|T37|T39|S16|S16B|REG|RELOCATE|T79|HP]
 #   S16B · (story 8.16, tanda B · AC 44, T27) fuera de `install`, nada pregunta nada nuevo: el aplicador suelto,
 #         `startup`, `apply`, `rollback` y `uninstall` sin terminal hacen lo de siempre. Desde la tanda B toda llamada a
 #         `install` sin terminal de esta suite pasa `--yes` escrita acá (el ayudante `harness` no lo agrega solo).
@@ -1485,6 +1492,122 @@ if corre T79; then
     chmod 755 "$GH_DIR/cerrada"
     gh_warned "es otra que no se deja leer" "$GH_DIR/cerrada" "apunta a OTRA carpeta" "NO corren"
   fi
+  fi
+fi
+
+# ═══ HP · Apply_GitWithoutGlobalHooksDir_SetsIt_DoctorStopsWarning (2026-10-14) ═══════════════════════════════════════
+# El caso real: Windows 11, versión bajada, mudada desde un clon. `doctor` decía «el pre-push del arnés NO está puesto: git
+# no tiene carpeta global de hooks (core.hooksPath) — harness.js apply lo pone»; el dev corrió `apply`, actualizó, y el
+# aviso seguía igual: el aplicador (los dos guiones) sólo avisa y nunca toca esa clave, y nada más la ponía. Las máquinas
+# sin el aviso la tenían puesta a mano, del alta de cuando se instalaba desde un clon.
+# Lo que no se puede perder — `harness.js` con el aplicador REAL, y la configuración global de git en un archivo del
+# laboratorio (`GIT_CONFIG_GLOBAL`: nunca la de quien corre la prueba):
+#   · `install` sobre git sin ninguna la pone (la carpeta del instalador, con el pre-push del arnés adentro) y lo dice;
+#   · `apply` sobre una máquina sin ella (la mudada) la pone, y `doctor` deja de avisar el pre-push;
+#   · el arranque (`startup --force`) no la pone: sólo lo que pide una persona;
+#   · otra carpeta, `TYCON_NO_GIT_HOOKS=1` y un git que no deja escribir la configuración: no se pisa nada (con el último,
+#     el aviso dice que no pudo, con el comando a mano);
+#   · el perfil mínimo y `uninstall` la sacan si sigue siendo la que puso el arnés; si la persona la cambió, no.
+if corre HP; then
+  echo "HP · la carpeta global de hooks de git: install y apply la ponen, y nada más"
+  if ! harness_lab_team_machine "${BASE}/hp" real >/dev/null; then mal "HP no pude armar la máquina del equipo de laboratorio"; else
+  [ "${HOME}" = "${LAB_HOME}" ] && [ "${HOME}" != "${REAL_HOME:-}" ] || { echo "❌ harness-install: HP la HOME no es la de juguete (${HOME})"; exit 1; }
+  HP_CFG="${LAB}/hp-gitconfig"; : > "${HP_CFG}"
+  HP_OURS="${TYCON_GIT_HOOKS_DIR}"
+  hp() { SALIDA="$(GIT_CONFIG_GLOBAL="${HP_CFG}" harness_lab_isolated harness "$@" 2>&1 < /dev/null)"; RC=$?; }
+  hp_value() { GIT_CONFIG_GLOBAL="${HP_CFG}" git config --global --get core.hooksPath; }
+  hp_unset() { GIT_CONFIG_GLOBAL="${HP_CFG}" git config --global --unset core.hooksPath 2>/dev/null; true; }
+  hp_said_set() { printf '%s\n' "${SALIDA}" | grep -c 'git usa ahora la carpeta global de hooks del arnés'; }
+  hp_doctor_warns() { GIT_CONFIG_GLOBAL="${HP_CFG}" harness_lab_isolated harness doctor 2>&1 < /dev/null | grep -c 'pre-push del arnés NO'; }
+
+  # install sobre git sin carpeta global: la pone, con el pre-push del arnés adentro, y lo dice una vez (sin el aviso viejo)
+  hp install --yes
+  [ "${RC}" = 0 ] && [ "$(hp_value)" = "${HP_OURS}" ] && grep -q 'git-pre-push-global.sh' "${HP_OURS}/pre-push" && [ "$(hp_said_set)" = 1 ] \
+    && ! printf '%s' "${SALIDA}" | grep -q 'git no tiene core.hooksPath global' \
+    && ok "HP install sobre git sin carpeta global: la pone en la del instalador y lo dice, sin el aviso de «no tiene»" \
+    || mal "HP install (rc ${RC}, core.hooksPath=«$(hp_value)»): $(printf '%s' "${SALIDA}" | grep -i 'hooks' | head -3 | tr '\n' '|')"
+  [ "$(estado "(d.get('git_hooks_path') or {}).get('value')")" = "${HP_OURS}" ] && ok "HP …y la anota en el estado (la saca uninstall)" || mal "HP el estado no anota la carpeta: $(estado "d.get('git_hooks_path')")"
+
+  # la puso el arnés y la persona la sacó: el arranque no la vuelve a poner, ni con la política auto
+  hp_unset
+  TYCON_UPDATE_APPLY=auto hp startup --force
+  [ -z "$(hp_value)" ] && ok "HP si la puso el arnés y la persona la sacó, el arranque no la vuelve a poner" || mal "HP el arranque volvió a poner la que la persona sacó: «$(hp_value)»"
+  [ "$(hp_doctor_warns)" = 1 ] && ok "HP sin la clave, doctor avisa que el pre-push no está puesto" || mal "HP doctor sin la clave no avisó el pre-push"
+
+  # una máquina YA instalada sin la carpeta, que el arnés nunca puso (la mudada, o instalada antes de este arreglo): el
+  # caso que pidió el dueño — que sea transparente, sin que el dev corra nada
+  hp_forget() { python3 -c 'import json,sys; f=sys.argv[1]; d=json.load(open(f)); d.pop("git_hooks_path", None); json.dump(d, open(f, "w"), indent=2)' "${LAB_HOME}/.claude/.tycon-pipeline/harness-state.json"; }
+  hp_notice() { estado "d.get('notice') or ''"; }
+  hp_forget
+  # con la política ask: el arranque no la pone, y el aviso la pide; update --yes (con terminal, como pide ask) la pone
+  TYCON_UPDATE_APPLY=ask hp startup --force
+  [ -z "$(hp_value)" ] && case "$(hp_notice)" in *"falta la carpeta global de hooks de git"*"update --yes la pone"*) true ;; *) false ;; esac \
+    && ok "HP con ask, el arranque no la pone y el aviso la pide (update --yes)" || mal "HP ask: core.hooksPath=«$(hp_value)» aviso=«$(hp_notice)»"
+  SALIDA="$(harness_lab_pty - env GIT_CONFIG_GLOBAL="${HP_CFG}" TYCON_UPDATE_APPLY=ask TYCON_THIRD_PARTY=0 TYCON_NO_AZ_PROJECTS_REFRESH=1 TYCON_NO_UPLOAD_RUNS=1 TYCON_NO_DOWNLOAD_RUNS=1 TYCON_NO_COLLECT_FINDINGS=1 node "${LAB_TREE}/scripts/setup/harness.js" update --yes 2>&1)"; RC=$?
+  [ "$(hp_value)" = "${HP_OURS}" ] && [ "$(hp_said_set)" = 1 ] && case "$(hp_notice)" in *"falta la carpeta global"*) false ;; *) true ;; esac \
+    && ok "HP con ask, update --yes la pone, lo dice, y el aviso deja de pedirla" || mal "HP ask update --yes (rc ${RC}, core.hooksPath=«$(hp_value)», aviso «$(hp_notice)»): ${SALIDA}"
+  # con la política auto (la del perfil del equipo): la pone el arranque y lo dice UNA vez en el aviso
+  hp_unset; hp_forget
+  TYCON_UPDATE_APPLY=auto hp startup --force
+  [ "$(hp_value)" = "${HP_OURS}" ] && case "$(hp_notice)" in *"el arnés puso la carpeta global de hooks de git"*) true ;; *) false ;; esac \
+    && [ "$(estado "(d.get('git_hooks_path') or {}).get('value')")" = "${HP_OURS}" ] \
+    && ok "HP con auto, el arranque la pone, la anota y lo dice en el aviso" || mal "HP auto: core.hooksPath=«$(hp_value)» aviso=«$(hp_notice)»"
+  TYCON_UPDATE_APPLY=auto hp startup --force
+  case "$(hp_notice)" in *"carpeta global de hooks"*) mal "HP el arranque siguiente lo repite: «$(hp_notice)»" ;; *) ok "HP …y el arranque siguiente ya no lo repite (una sola vez)" ;; esac
+  hp_unset
+
+  # el caso real: apply sobre la máquina sin la clave la pone, y doctor deja de avisar
+  hp apply
+  [ "${RC}" = 0 ] && [ "$(hp_value)" = "${HP_OURS}" ] && [ "$(hp_said_set)" = 1 ] \
+    && ok "HP apply sobre git sin carpeta global (la máquina mudada): la pone y lo dice" || mal "HP apply (rc ${RC}, core.hooksPath=«$(hp_value)»): ${SALIDA}"
+  [ "$(hp_doctor_warns)" = 0 ] && ok "HP …y doctor deja de avisar el pre-push" || mal "HP después de apply, doctor sigue avisando el pre-push"
+  hp apply
+  [ "${RC}" = 0 ] && [ "$(hp_said_set)" = 0 ] && [ "$(hp_value)" = "${HP_OURS}" ] && ok "HP un segundo apply no la toca ni lo repite" || mal "HP segundo apply (rc ${RC}): ${SALIDA}"
+
+  # otra carpeta: no se pisa (byte a byte), y doctor no manda a apply
+  mkdir -p "${LAB}/hp-otra"
+  : > "${HP_CFG}"; GIT_CONFIG_GLOBAL="${HP_CFG}" git config --global core.hooksPath "${LAB}/hp-otra"; cp "${HP_CFG}" "${HP_CFG}.before"
+  hp apply
+  [ "${RC}" = 0 ] && cmp -s "${HP_CFG}" "${HP_CFG}.before" && [ "$(hp_said_set)" = 0 ] && ok "HP con otra carpeta, apply no la toca" || mal "HP otra carpeta (rc ${RC}): configuración $(cmp -s "${HP_CFG}" "${HP_CFG}.before" && echo igual || echo CAMBIADA)"
+  HP_DOC="$(GIT_CONFIG_GLOBAL="${HP_CFG}" harness_lab_isolated harness doctor 2>&1 < /dev/null | grep 'pre-push del arnés NO')"
+  case "${HP_DOC}" in *"apply no la cambia"*"git config --global core.hooksPath \"${HP_OURS}\""*) ok "HP …y doctor dice que apply no la cambia, con el comando para apuntarla" ;; *) mal "HP doctor con otra carpeta: «${HP_DOC}»" ;; esac
+
+  # el interruptor de los hooks de git: nada
+  : > "${HP_CFG}"
+  TYCON_NO_GIT_HOOKS=1 hp apply
+  [ "${RC}" = 0 ] && [ -z "$(hp_value)" ] && ok "HP con TYCON_NO_GIT_HOOKS=1, apply no la pone" || mal "HP TYCON_NO_GIT_HOOKS=1 (rc ${RC}): «$(hp_value)»"
+
+  # un git que no deja escribir la configuración: no se dice «✓», se avisa con el comando a mano, y apply sale 0
+  if [ "$(id -u)" = 0 ]; then echo "  ⏭ NO MEDIDO — HP la configuración que no se deja escribir: corriendo como root no hay"; else
+    mkdir -p "${LAB}/hp-cerrada" && : > "${LAB}/hp-cerrada/gitconfig" && chmod 555 "${LAB}/hp-cerrada"
+    SALIDA="$(GIT_CONFIG_GLOBAL="${LAB}/hp-cerrada/gitconfig" harness_lab_isolated harness apply 2>&1 < /dev/null)"; RC=$?
+    chmod 755 "${LAB}/hp-cerrada"
+    [ "${RC}" = 0 ] && [ "$(hp_said_set)" = 0 ] && printf '%s' "${SALIDA}" | grep -q 'no pude ponerla' && printf '%s' "${SALIDA}" | grep -q -F "git config --global core.hooksPath \"${HP_OURS}\"" && [ ! -s "${LAB}/hp-cerrada/gitconfig" ] \
+      && ok "HP git no deja escribir: avisa que no pudo, con el comando, sin «✓»" || mal "HP configuración cerrada (rc ${RC}): ${SALIDA}"
+  fi
+
+  # el perfil mínimo la saca si es la que puso el arnés…
+  : > "${HP_CFG}"; hp apply
+  [ "$(hp_value)" = "${HP_OURS}" ] || mal "HP no quedó puesta antes de medir el perfil mínimo: «$(hp_value)»"
+  printf '{ "install": { "profile": "minimal" } }\n' > "${LAB_HOME}/.claude/tycon.json"
+  hp apply
+  [ "${RC}" = 0 ] && [ -z "$(hp_value)" ] && [ "$(estado "d.get('git_hooks_path')")" = None ] && ok "HP pasar al perfil mínimo saca la carpeta que puso el arnés" || mal "HP perfil mínimo (rc ${RC}, core.hooksPath=«$(hp_value)», estado $(estado "d.get('git_hooks_path')")): ${SALIDA}"
+  rm -f "${LAB_HOME}/.claude/tycon.json"
+  hp apply
+  [ "$(hp_value)" = "${HP_OURS}" ] && ok "HP de vuelta a full, apply la pone otra vez" || mal "HP de vuelta a full: «$(hp_value)»"
+
+  # uninstall: si la persona la cambió, queda; si es la del arnés, sale
+  GIT_CONFIG_GLOBAL="${HP_CFG}" git config --global core.hooksPath "${LAB}/hp-otra"
+  hp uninstall --yes
+  [ "$(hp_value)" = "${LAB}/hp-otra" ] && ok "HP uninstall no saca una carpeta que la persona cambió" || mal "HP uninstall tocó la carpeta cambiada: «$(hp_value)»"
+  : > "${HP_CFG}"
+  hp install --yes
+  [ "$(hp_value)" = "${HP_OURS}" ] || mal "HP la reinstalación no la puso: «$(hp_value)»"
+  hp uninstall --dry-run
+  printf '%s' "${SALIDA}" | grep -q 'quita también la carpeta global de hooks de git que puso el arnés' && ok "HP uninstall --dry-run la nombra" || mal "HP uninstall --dry-run no la nombra: ${SALIDA}"
+  hp uninstall --yes
+  [ "${RC}" = 0 ] && [ -z "$(hp_value)" ] && printf '%s' "${SALIDA}" | grep -q 'quitado: la carpeta global de hooks de git que puso el arnés' \
+    && ok "HP uninstall saca la carpeta que puso el arnés" || mal "HP uninstall (rc ${RC}, core.hooksPath=«$(hp_value)»): $(printf '%s' "${SALIDA}" | tail -5)"
   fi
 fi
 

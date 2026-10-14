@@ -311,11 +311,16 @@ test('adhoc set con modelo: PIPELINE veta aunque el reason cite al user; ADHOC a
   const mkFakeClaude = (salida) => {
     const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'fakebin-'));
     const f = path.join(bin, 'claude');
-    // El falso exige el contrato real: sin --json-schema y --output-format json sale con error.
-    fs.writeFileSync(f, `#!/bin/sh\n[ "$1" = --version ] && { echo 2.1.280; exit 0; }\ncase "$*" in *--json-schema*) ;; *) echo 'falta --json-schema' >&2; exit 9;; esac\ncase "$*" in *'--output-format json'*) ;; *) echo 'falta --output-format json' >&2; exit 9;; esac\ncat <<'FIN'\n${salida}\nFIN\n`);
+    // El falso exige el contrato real: sin --json-schema y --output-format json sale con error. Y, como el CLI real, lee
+    // el prompt entero de la entrada antes de contestar: si sale sin leerlo, el clasificador recibe EPIPE de a ratos, lo
+    // toma como «claude falló» y decide la capa mecánica (public-ci, 2026-10-14: la APERTURA AUDITADA salió 2, no 0).
+    fs.writeFileSync(f, `#!/bin/sh\n[ "$1" = --version ] && { echo 2.1.280; exit 0; }\ncat > /dev/null\ncase "$*" in *--json-schema*) ;; *) echo 'falta --json-schema' >&2; exit 9;; esac\ncase "$*" in *'--output-format json'*) ;; *) echo 'falta --output-format json' >&2; exit 9;; esac\ncat <<'FIN'\n${salida}\nFIN\n`);
     fs.chmodSync(f, 0o755);
     return bin;
   };
+  // El falso lee la entrada: con 1 MB (más que el búfer del caño) un falso que no la lee da EPIPE siempre.
+  const lee = spawnSync(path.join(mkFakeClaude(sobre('ADHOC')), 'claude'), ['--json-schema', '{}', '--output-format', 'json'], { input: 'x'.repeat(1024 * 1024), encoding: 'utf8' });
+  assert.ok(!lee.error && lee.status === 0, `el claude falso tiene que leer la entrada como el real: ${lee.error && lee.error.code} rc ${lee.status}`);
   const run = (home, sid, reason, salida) => markerCli(home, sid, ['adhoc', 'set', JSON.stringify({ reason })], {
     TYCON_LANE_LLM: '1', PATH: `${mkFakeClaude(salida)}:${process.env.PATH}`,
   });

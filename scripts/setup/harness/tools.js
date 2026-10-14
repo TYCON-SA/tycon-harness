@@ -40,13 +40,27 @@ function codexHome({ home = os.homedir(), env = process.env } = {}) {
   return env.CODEX_HOME || path.join(home, '.codex');
 }
 
+/**
+ * ¿La ruta `p` sirve como el ejecutable que se encontró en el PATH? Un archivo ejecutable, sí. En Windows, además, lo que
+ * existe y no es una carpeta: el PowerShell 7 de la Microsoft Store vive en `…\AppData\Local\Microsoft\WindowsApps\
+ * pwsh.exe` como un alias de ejecución (un punto de reanálisis), y sobre él Node falla en `statSync` (EACCES/UNKNOWN)
+ * aunque `spawnSync('pwsh')` lo ejecute. Medido en una máquina Windows 11 del equipo (2026-10-14): `pwsh --version`
+ * daba 7.6.7 y `doctor` decía «falta pwsh en el PATH». No hay falso positivo: quien lo encuentra lo ejecuta después
+ * (`versionOf` en harness.js) y uno que no arranca sigue contando como faltante. `fsApi` se inyecta sólo en las pruebas.
+ */
+function runnableAt(p, platform = process.platform, fsApi = fs) {
+  try { fsApi.accessSync(p, fs.constants.X_OK); if (fsApi.statSync(p).isFile()) return true; } catch (_) { /* abajo */ }
+  if (platform !== 'win32') return false;
+  try { return !fsApi.lstatSync(p).isDirectory(); } catch (_) { return false; }
+}
+
 /** ¿`name` está en esa lista de carpetas? La ruta, o null (sin shell; en Windows con las extensiones de un ejecutable). */
-function findIn(name, pathValue, platform = process.platform) {
+function findIn(name, pathValue, platform = process.platform, fsApi = fs) {
   const dirs = String(pathValue || '').split(path.delimiter).filter(Boolean);
   const exts = platform === 'win32' ? ['.exe', '.cmd', '.bat', '.ps1', ''] : [''];
   for (const d of dirs) for (const ext of exts) {
     const p = path.join(d, name + ext);
-    try { fs.accessSync(p, fs.constants.X_OK); if (fs.statSync(p).isFile()) return p; } catch (_) { /* siguiente */ }
+    if (runnableAt(p, platform, fsApi)) return p;
   }
   return null;
 }
@@ -282,7 +296,8 @@ function plugCodex({ tree, home = os.homedir(), env = process.env, log = null, s
     say(reason);
     return { ok: false, out: '', pieces: [], warnings: [], reason };
   }
-  const childEnv = Object.assign({}, env);
+  // (forma con enlaces, story 8.33: los desplegadores arman sus rutas con `__dirname`; así nombran ~/.tycon/harness)
+  const childEnv = Object.assign({}, require('./tycon-home.js').keepLinkPathsEnv(env));
   if (snapshotDir) childEnv.TYCON_HARNESS_SNAPSHOT_DIR = snapshotDir; else delete childEnv.TYCON_HARNESS_SNAPSHOT_DIR;
   for (const k of ['TYCON_REPORT_PIECES', 'TYCON_PLAN_PIECES']) delete childEnv[k];   // las piezas las cuenta codexPieces
   const run = (script, args) => {
@@ -350,7 +365,7 @@ function recorded(state) {
 
 module.exports = {
   TOOLS, LABELS, DETECT,
-  codexHome, findIn, ownConfig, detect, parseOption, choose, reason, planLine, names, noneFound, codexDeployed, plugged, recorded, same,
+  codexHome, runnableAt, findIn, ownConfig, detect, parseOption, choose, reason, planLine, names, noneFound, codexDeployed, plugged, recorded, same,
   agentsMdPath, codexPieces, plugCodex, unplugged, unpluggedNotice, NOTICE_HEAD, NOTICE_TAIL,
   CODEX_TEAM_RECORD, TEAM_AGENT_NAME, codexTeamRecordPath, readCodexTeamRecord, writeCodexTeamRecord,
 };

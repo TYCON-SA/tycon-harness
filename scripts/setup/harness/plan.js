@@ -170,6 +170,12 @@ function describe(plan) {
 
   const writes = grouped(plan, changes);
   if (!plan.applierKnown) writes.push(`  - ${OLD_APPLIER}`);
+  // la carpeta global de hooks de git (2026-10-14): sin ella los hooks de git que se instalan no corren, y desde ahora la
+  // pone la instalación si git no tiene ninguna. Es configuración de git de la persona: el plan lo dice antes del «sí»
+  const gitHook = changes.find((p) => p.kind === 'git-hook');
+  if (gitHook && !(plan.env && plan.env.TYCON_NO_GIT_HOOKS === '1')) {
+    writes.push(`  - la carpeta global de hooks de git (core.hooksPath → ${display(plan, path.dirname(gitHook.where))}), sólo si git no tiene ninguna: con ella git corre los hooks del arnés en todos tus repos, en lugar del .git/hooks/ de cada uno. Si ya tenés una, no la toca`);
+  }
   section('escribe:', writes);
   section('cambia en cómo trabaja tu asistente:', uniq(withEffect
     .filter(({ p, e }) => p.kind === 'block' || p.kind === 'import' || (p.kind === 'hook' && e.blocks && e.blocks !== 'no'))

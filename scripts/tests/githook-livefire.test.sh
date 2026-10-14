@@ -790,9 +790,12 @@ mapa_lab() {
   cp "$RAIZ/scripts/tools/harness-map/"* "$T/repo/scripts/tools/harness-map/"
   cp "$RAIZ/artifacts/mapa-arnes.html" "$T/repo/artifacts/"
   cp "$RAIZ/onboarding/mini-class/mapa-del-arnes.html" "$T/repo/onboarding/mini-class/"
+  # el selector de idioma que el generador incrusta (onboarding/mini-class/i18n/inject.js, con su diccionario): sin él la
+  # pública no se genera y el cambio sano de C-27 se frenaría por eso
+  cp -R "$RAIZ/onboarding/mini-class/i18n" "$T/repo/onboarding/mini-class/"
   ( cd "$T/repo" && git add -A && git -c core.hooksPath=/dev/null -c user.email=b@b -c user.name=b commit -q -m mapa )
 }
-if [ ! -f "$RAIZ/artifacts/mapa-arnes.html" ] || [ ! -f "$RAIZ/scripts/tools/harness-map/censo.js" ]; then
+if [ ! -f "$RAIZ/artifacts/mapa-arnes.html" ] || [ ! -f "$RAIZ/scripts/tools/harness-map/census.js" ]; then
   # La copia pública no trae el mapa ni scripts/tools/harness-map/ (allowlist.json): no hay freno que disparar.
   echo "  ⚠️   — C-26/C-27 NO verificados: esta copia no trae el mapa del arnés. No es un verde."
 else
@@ -828,7 +831,7 @@ fi
 # mismo que la nueva (el revisor de retrospectiva de agent-skills sigue llamando la vieja hasta el retiro) y (d) el
 # pre-commit real lintea por la ruta nueva aunque la vieja no esté. Las rutas viejas salen del mapa, nunca escritas acá.
 # desde la R6 los yml del arnés viven en pipelines/ y la plantilla en pipelines/templates/
-R3_ARCHIVOS="pipelines/azure-pipelines.yml pipelines/azure-pipelines-pr.yml pipelines/azure-pipelines-vigilante.yml pipelines/templates/traer-repos.yml .githooks/pre-commit new-product-templates/stories/githooks-pre-commit build/check.js"
+R3_ARCHIVOS="pipelines/azure-pipelines.yml pipelines/azure-pipelines-pr.yml pipelines/azure-pipelines-vigilante.yml pipelines/templates/traer-repos.yml .githooks/pre-commit packs/bizuit/new-product-templates/stories/githooks-pre-commit build/check.js"
 R3_YML="pipelines/azure-pipelines.yml pipelines/azure-pipelines-pr.yml pipelines/azure-pipelines-vigilante.yml pipelines/templates/traer-repos.yml"
 # La copia pública (story 8.7) no trae los pipelines del equipo (el exportador deja afuera pipelines/**): un yml que ahí
 # no está no se puede parsear, y se dice. En el repo del equipo, que falte uno sigue siendo un rojo.

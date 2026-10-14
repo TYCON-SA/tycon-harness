@@ -15,8 +15,9 @@
  *   1. Instala el arnés DESDE UN CLON (`harness.js install --yes` corrido desde ese clon): la máquina de hoy.
  *   2. Publica una versión en el remoto (el clon NO se actualiza: la mudanza no hace git) y mira `migrate --to-home
  *      --dry-run`: sale 0, dice qué mueve, qué enchufa y qué deja como enlace, y no escribe.
- *   3. En Windows, con un archivo del estado abierto por otro proceso: `migrate --to-home` sale 1, nombra los archivos
- *      tomados y la máquina sigue siendo un clon. Fuera de Windows no se mide (en posix un rename no se traba) y se dice.
+ *   3. En Windows, con un archivo del estado abierto por otro proceso: `migrate --to-home` sale 1, nombra la carpeta
+ *      tomada y la máquina sigue siendo un clon. Con un archivo de agent-skills abierto (carpeta real, que la mudanza
+ *      aparta), ya `--dry-run` sale 1 y la nombra. Fuera de Windows no se mide (en posix un rename no se traba) y se dice.
  *   4. `migrate --to-home` de verdad: la versión en `~/.tycon/harness`, el estado en `~/.tycon/state`, el lugar,
  *      `agent-skills` y `.tycon-pipeline` como enlaces (uniones), la misma cuenta de hooks y ninguno que nombre el clon,
  *      el clon idéntico (archivos y `.git`). Después, `startup` y `doctor --json` en verde.
@@ -53,7 +54,11 @@ const kill = (p) => { if (p) { try { p.kill(); } catch (_) { /* ya */ } } };
 const realOrNull = (p) => { try { return fs.realpathSync(p); } catch (_) { return null; } };
 
 // con identidad propia: el agente de Windows no tiene user.name/user.email y `git commit` sale 128 (182 #12314)
-function git(dir, args, env) { return L.run('git', ['-C', dir, '-c', 'user.name=Lab', '-c', 'user.email=lab@example.com', ...args], { env, timeoutMs: 5 * 60 * 1000 }); }
+// …y sin los hooks de git de la carpeta de usuario del laboratorio: desde el 2026-10-14 `install` y la mudanza ponen ahí la
+// carpeta global de hooks del arnés, y su pre-push (el freno antes de publicar) frenaba las publicaciones de juguete del
+// propio ensayo, que van a un remoto de laboratorio declarado público (182 #13452). Lo que se mide es el arnés, no esto
+const LAB_NO_HOOKS = path.join(require('os').tmpdir(), 'tycon-lab-no-git-hooks');
+function git(dir, args, env) { return L.run('git', ['-C', dir, '-c', 'user.name=Lab', '-c', 'user.email=lab@example.com', '-c', `core.hooksPath=${LAB_NO_HOOKS}`, ...args], { env, timeoutMs: 5 * 60 * 1000 }); }
 
 /** Una versión numerada publicada sobre `main` del remoto, con la copia «autor». */
 function publish(author, number, env) {
@@ -289,11 +294,29 @@ function measure({ lab, platform = process.platform, baseEnv = process.env, allo
         const out = `${blocked.stdout}\n${blocked.stderr}`;
         rec.fact('locked_file', { exit: blocked.exit, kind: kindOf(), harness_dir: fs.existsSync(newTree) });
         if (blocked.exit !== 1) rec.finding('migrate:locked-file-not-refused', 'preconditions', `con un archivo del estado tomado, migrate salió ${blocked.exit} (tenía que salir 1 sin escribir): ${lastLines(out, 2)}`, 'W8', { severity: 'breaks' });
-        else if (!/tomados/.test(out)) rec.finding('migrate:locked-file-reason-missing', 'preconditions', `con un archivo tomado salió 1 pero no dice que están tomados: ${lastLines(out, 2)}`, 'W8', { severity: 'noise' });
+        else if (!/tomad[oa]s?/.test(out) || !/\.tycon-pipeline \(E[A-Z]+\)/.test(out)) rec.finding('migrate:locked-file-reason-missing', 'preconditions', `con un archivo tomado salió 1 pero no nombra la carpeta tomada con su código: ${lastLines(out, 2)}`, 'W8', { severity: 'noise' });
         if (kindOf() !== 'tree' || fs.existsSync(newTree)) rec.finding('migrate:locked-file-wrote', 'preconditions', 'con un archivo tomado la mudanza escribió igual', 'W8', { severity: 'breaks' });
         kill(held); holders.pop();
         wait(1500);
       } else rec.note('archivo tomado: sin PowerShell para abrirlo, no medido');
+      // 3 bis. una carpeta tomada que NO es el estado: agent-skills como carpeta real, con un archivo de una skill personal
+      // abierto (el caso de una máquina Windows: la mudanza falló a mitad de camino, al apartar agent-skills, con EPERM).
+      // Ya el plan (--dry-run) frena, nombra agent-skills con su código y dice qué cerrar; no escribe nada
+      const personalFile = path.join(skillsLink, 'skills', personal.skill, 'SKILL.md');
+      const heldSkills = personalArmed && linkKind(skillsLink) === 'directory' ? holdOpen(personalFile, env0) : null;
+      if (heldSkills) {
+        holders.push(heldSkills);
+        wait(1500);
+        const blocked2 = run(clone, ['migrate', '--to-home', '--dry-run', ...repoOption], 'dry_run_with_skills_locked');
+        const out2 = `${blocked2.stdout}\n${blocked2.stderr}`;
+        const said = { names_skills: /agent-skills \(E[A-Z]+\)/.test(out2), says_what: /VS Code/.test(out2) && /reinici/.test(out2) };
+        rec.fact('skills_locked', { exit: blocked2.exit, ...said, kind: kindOf(), harness_dir: fs.existsSync(newTree), skills: linkKind(skillsLink) });
+        if (blocked2.exit !== 1) rec.finding('migrate:skills-locked-not-refused', 'preconditions', `con un archivo de agent-skills tomado, migrate --dry-run salió ${blocked2.exit} (tenía que salir 1: la mudanza fallaría a mitad de camino al apartarla): ${lastLines(out2, 2)}`, 'W8', { severity: 'breaks' });
+        else if (!said.names_skills || !said.says_what) rec.finding('migrate:skills-locked-reason-missing', 'preconditions', `con agent-skills tomada salió 1 pero no la nombra con su código o no dice qué cerrar: ${lastLines(out2, 2)}`, 'W8', { severity: 'noise' });
+        if (kindOf() !== 'tree' || fs.existsSync(newTree) || linkKind(skillsLink) !== 'directory') rec.finding('migrate:skills-locked-wrote', 'preconditions', 'con agent-skills tomada el plan escribió o movió algo', 'W8', { severity: 'breaks' });
+        kill(heldSkills); holders.pop();
+        wait(1500);
+      } else rec.note(personalArmed ? 'agent-skills tomada: sin PowerShell para abrir el archivo, no medido' : 'agent-skills tomada: lo personal no se armó (agent-skills no es carpeta real), no medido');
     } else rec.note('archivos tomados: no medido fuera de Windows (en posix un rename no se traba)');
 
     // 4. la mudanza

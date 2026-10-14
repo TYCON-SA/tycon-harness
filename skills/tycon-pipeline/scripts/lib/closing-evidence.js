@@ -47,4 +47,35 @@ function esEvidenciaDeCierre(nombre) {
   return f.endsWith('.md') && !NO_ES_EVIDENCIA_DE_CIERRE.some((re) => re.test(f));
 }
 
-module.exports = { NO_ES_EVIDENCIA_DE_CIERRE, ES_EVIDENCIA_ADEMAS, esEvidenciaDeCierre };
+/*
+ * ── La unión de las tres fuentes, por AC (2026-10-14) ───────────────────────────────────────
+ * El freno del commit elegía UN archivo de evidencia (el que nombra más criterios) y le exigía que
+ * nombrara TODOS. Las stories que reparten la evidencia en lo que escribe la máquina —el registro de
+ * pruebas de humo, los gates E2E y las firmas del dev— no tienen un archivo que nombre todo: desde el
+ * 2026-10-13 casi cada cierre rebotaba, y la salida era habilitar a mano una escritura para que el
+ * agente redactara un `<id>-cierre.md` con la lista. Un resumen escrito por el agente reemplazaba a
+ * tres fuentes escritas por la máquina: lo más falsificable le ganaba a lo menos.
+ *
+ * Ahora un AC cuenta si aparece en la UNIÓN de las tres, con las MISMAS reglas de validez de la matriz
+ * por AC (runtime-matrix.js), sin recalcularlas acá: se lee el resultado de `compute()`.
+ *   · smoke  — una corrida del registro con salida 0, copia en gates.log y posterior al último cambio de
+ *              código (la matriz descarta las demás antes de anotarlas).
+ *   · e2e    — una fila E2E de la tabla `### Tests` con un gate PASS, con su copia en gates.log y fresco.
+ *   · firma  — el AC quedó aprobado por el dev desde su terminal, vigente para su declaración
+ *              (veredicto WAIVED-USER: la matriz sólo lo da si la firma engancha con la declaración actual).
+ * La matriz, el self-audit y el plan manual siguen sin contar (arriba): esto no los mira.
+ */
+function coberturaDeLaUnion(matriz) {
+  const porAc = new Map();
+  if (!matriz || matriz.structuralError || matriz.exempt || !matriz.perAc) return { porAc, cubiertos: new Set() };
+  for (const [k, v] of Object.entries(matriz.perAc)) {
+    const f = [];
+    if (v && v.fuentes && v.fuentes.smoke && v.fuentes.smoke.length) f.push('smoke');
+    if (v && v.fuentes && v.fuentes.e2e && v.fuentes.e2e.length) f.push('e2e');
+    if (v && v.verdict === 'WAIVED-USER') f.push('firma');
+    if (f.length) porAc.set(Number(k), f);
+  }
+  return { porAc, cubiertos: new Set(porAc.keys()) };
+}
+
+module.exports = { NO_ES_EVIDENCIA_DE_CIERRE, ES_EVIDENCIA_ADEMAS, esEvidenciaDeCierre, coberturaDeLaUnion };

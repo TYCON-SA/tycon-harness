@@ -30,7 +30,8 @@ querés. El completo cambia cosas en todos tus proyectos, no sólo en uno:
 - Claude te contesta en castellano, corto y con la conclusión primero.
 - En un repo que trabaja con stories, Claude no edita código sin pasar por el proceso de stories del arnés.
 - Git pasa a usar una carpeta global para sus controles al commitear (`core.hooksPath`). Desde ahí, git deja de correr
-  los controles propios de cada repo, los de `.git/hooks/`. Claude te pregunta antes de configurarla.
+  los controles propios de cada repo, los de `.git/hooks/`. La instalación la configura sólo si git no tiene ninguna, y
+  el plan te lo dice antes de tu «sí»; si ya tenés otra, no la toca.
 - Una vez por día lee el historial de git de tus repos de proyectos (encuentra su carpeta por dónde usás Claude Code). Lo que anota queda en tu máquina.
 - Claude Code guarda tus conversaciones un año.
 
@@ -57,7 +58,7 @@ corren en tu propia terminal.
 2. Copiá el bloque entero de la «Parte 1». Abrí Claude Code en cualquier carpeta y pegalo en una conversación nueva.
 3. Claude te da las líneas que bajan el guion de instalación, lo muestran y lo corren: pegalas en tu propia terminal,
    así leés el guion antes de correrlo. Nada te pide iniciar sesión: el arnés nunca abre un navegador.
-4. Claude te muestra el plan de instalación y espera tu «sí». Antes de tocar `core.hooksPath`, te vuelve a preguntar.
+4. Claude te muestra el plan de instalación y espera tu «sí». El plan dice si va a configurar `core.hooksPath`.
 5. Al final te arma un resumen que termina en «OK» o «NO OK». Cerrá Claude Code y abrilo de nuevo.
 
 Si en el camino instalás una herramienta, Claude te pide cerrar y abrir la terminal y Claude Code. Si el resumen dice
@@ -104,9 +105,14 @@ Un ejemplo: en ACME, Pedro administra y Juan programa.
    en GitHub, o con la dirección del repo si está en Azure DevOps. Desde ahí, cada actualización le trae también lo del
    equipo.
 
+Cómo se extiende el arnés para tu organización —las capas, la página de configuración y un recorrido de ejemplo— en un
+[mapa interactivo](https://www.bizuit.com/sdd-harness/more/mapa-del-arnes.html).
+
 **Los procesos de la noche.** En Azure DevOps, la revisión de dependencias, las métricas del ciclo y el tablero corren en
 tu organización con tres pipelines modelo y tu repo de operaciones: [cómo darlos de alta](pipelines/operations/README.md).
-En GitHub (Actions) todavía no están. El vigilante de producción no se publicó: todavía es propio de TYCON.
+En GitHub, los mismos tres corren como workflows de GitHub Actions, y los hallazgos de dependencias son issues en el
+repo de cada producto: [cómo darlos de alta](pipelines/operations/github/README.md). El vigilante de producción no se
+publicó: todavía es propio de TYCON.
 
 ## Dónde seguir
 

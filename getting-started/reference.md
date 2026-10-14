@@ -156,8 +156,9 @@ In PowerShell, write the other `node ~/.claude/…` commands on this page the sa
 If a tool is missing, the script (or `install`) stops with one line that names it, with the command to install it, and
 writes nothing. Install it and run `bash get-harness.sh` again (the script you already downloaded).
 
-With `full`, `install` may warn that git has no global `core.hooksPath`: the git hooks stay in `~/.git-hooks/` and git
-uses them only once you set that key. Before you do, read what changes under "What it writes on your machine".
+With `full`, if git has no global `core.hooksPath`, `install` (and `apply`) set it to `~/.git-hooks/`, the folder of the
+harness's git hooks; the plan says so before your "yes". If you already have another one, they leave it alone: they
+warn, with the command to point it. What that key changes is under "What it writes on your machine".
 
 ### Other ways to install (optional)
 
@@ -232,7 +233,9 @@ The optional pack is the TYCON stack pack: .NET + React/Next.js on Bizuit. Insid
 holds the conventions TYCON uses to build plugins on Bizuit; it is not a Bizuit product.
 
 **What it adds**: three reviewers (`tycon-plugin-dotnet-conventions`, `tycon-plugin-react-conventions`,
-`tycon-plugin-nextjs-conventions`), their guides and their cases in the bench of controls. **What else it needs**: the
+`tycon-plugin-nextjs-conventions`), their guides and their cases in the bench of controls, and the `bizuit-new-product`
+skill, which sets up a new product (backend, forms and stories repos, with pipelines that build, test and deploy to
+staging and, with approval, to production) from the templates in `packs/bizuit/new-product-templates/`. **What else it needs**: the
 .NET SDK your plugin targets.
 
 **It comes turned off.** The repo carries it, but a product repo only uses it if it asks for it in its
@@ -344,9 +347,12 @@ terminal (`node ~/.claude/tycon-harness/scripts/setup/harness.js update --yes`).
   the clone. If `~/.claude/skills` or `~/.claude/agents` already are real folders, it creates one link per entry inside
   them and never overwrites anything of yours.
 - **Slash commands** copied into `~/.claude/commands/` (`TYCON_NO_COMMANDS_SYNC=1` skips the copy).
-- **Global git hooks** in `~/.git-hooks/` (`TYCON_NO_GIT_HOOKS=1` skips them). git only uses them if you set
-  `core.hooksPath` globally, and with a global `core.hooksPath` git stops running the `.git/hooks/` of all your repos:
-  the harness hook runs each repo's `.githooks/pre-commit` instead.
+- **Global git hooks** in `~/.git-hooks/` (`TYCON_NO_GIT_HOOKS=1` skips them). git only uses them with a global
+  `core.hooksPath`: if git has none, `install`, `apply` and startup (with `auto` apply; with `ask`, the notice asks for it
+  and `update --yes` sets it) point it to that folder (one you already have is left alone),
+  and `uninstall` or the switch to the minimal profile remove it if it is still that one. With a global
+  `core.hooksPath` git stops running the `.git/hooks/` of all your repos: the harness hook runs each repo's
+  `.githooks/pre-commit` instead.
 - **Third-party skills** downloaded from their origins into the `skills/` folder of the clone: the ones listed in
   `scripts/publishing/third-party-skills.json`, each pinned to a commit (`TYCON_THIRD_PARTY=0` skips the step).
 - **The install mechanism's own files**: its state and its pinned startup copy in `~/.claude/.tycon-pipeline/`, the

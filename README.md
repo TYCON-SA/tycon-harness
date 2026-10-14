@@ -31,7 +31,8 @@ one you want. The full profile changes things in all your projects, not just one
   rules are in Spanish too; there is no English option today.
 - In a repo that works with stories, Claude does not edit code without going through the harness's story process.
 - Git starts using a global folder for its commit checks (`core.hooksPath`). From then on, git stops running each
-  repo's own checks, the ones in `.git/hooks/`. Claude asks you before it sets it.
+  repo's own checks, the ones in `.git/hooks/`. The installation sets it only if git has none, and the plan tells you
+  before your "yes"; if you already have another one, it leaves it alone.
 - Once a day it reads the git history of your project repos (it finds their folder from where you use Claude Code). What it records stays on your machine.
 - Claude Code keeps your conversations for a year.
 
@@ -59,7 +60,7 @@ run in your own terminal.
 2. The instructions are in Spanish. Copy the whole "Parte 1" block (part 1). Open Claude Code in any folder and paste it into a new conversation.
 3. Claude gives you the lines that download the install script, show it and run it: paste them in your own terminal,
    so you read the script before you run it. Nothing asks you to sign in: the harness never opens a browser.
-4. Claude shows you the install plan and waits for your "yes". Before it touches `core.hooksPath`, it asks again.
+4. Claude shows you the install plan and waits for your "yes". The plan says whether it will set `core.hooksPath`.
 5. At the end it writes a summary that ends in "OK" or "NO OK". Close Claude Code and open it again.
 
 If you install a tool along the way, Claude asks you to close and reopen the terminal and Claude Code. If the summary
@@ -106,10 +107,14 @@ An example: at ACME, Pedro is the administrator and Juan writes code.
    if it is on GitHub, or with the repo's address if it is on Azure DevOps. From then on, every update also brings him
    what belongs to the team.
 
+How the harness extends for your organization —the layers, the configuration page and a worked example— in an
+[interactive map](https://www.bizuit.com/sdd-harness/more/mapa-del-arnes.html).
+
 **The nightly jobs.** On Azure DevOps, the dependency review, the cycle metrics and the dashboard run in your
 organization with three model pipelines and your operations repo: [how to set them up](pipelines/operations/README.md)
-(in Spanish). On GitHub (Actions) they are not there yet. The production watcher is not published: it is still TYCON's
-own.
+(in Spanish). On GitHub, the same three run as GitHub Actions workflows, and the dependency findings become issues in
+each product repo: [how to set them up](pipelines/operations/github/README.md) (in Spanish). The production watcher is not
+published: it is still TYCON's own.
 
 ## Where to go next
 

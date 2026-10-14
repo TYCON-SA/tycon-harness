@@ -140,6 +140,12 @@
       "reason": "un número inventado: el título de un `gh pr create` que el freno tiene que frenar por traer un número de pedido; el caso del banco y su gemelo de PowerShell (story 8.26, tanda F2, T67)"
     },
     {
+      "file": "scripts/tests/work-items.test.sh",
+      "form": "pr-number",
+      "value": "PR !3015",
+      "reason": "un dato de la ficha de juguete (`pr_antes: 3015`, junto a `id: aa11bb22`): el texto que el pedido de trabajo arma con un rechazo anterior, que la prueba compara entero"
+    },
+    {
       "file": "getting-started/reference.es.md",
       "form": "story-bare",
       "value": "la 5.1",

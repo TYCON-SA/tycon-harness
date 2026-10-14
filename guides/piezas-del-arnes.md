@@ -51,7 +51,7 @@ guides/                     las guías
 claude-md-blocks/ · commands/ · adapters/ · build/
 pipelines/                  los seis azure-pipelines-*.yml
   pipelines/templates/      sus pedazos compartidos
-new-product-templates/
+packs/bizuit/               el paquete bizuit: su manifiesto y las plantillas para dar de alta un producto
 inbox/                      lo que espera que alguien decida
   inbox/instincts/          los instintos minados
   inbox/dependencies/ · inbox/watcher/   las fichas de los dos nocturnos
@@ -330,11 +330,12 @@ y **un paso que no pudo correr es rojo con «no pude correr», nunca un salto**:
 pasó. No corre el detector (necesita la lista privada) ni lee secretos. Sirve en la copia (un solo repo) y en el repo
 del equipo (dos): por eso la prueba nocturna de la copia corre el mismo guion en los dos lados y compara los veredictos.
 El workflow (`.github/workflows/ci.yml` en la copia) sólo lo llama, en
-Node 22 y 24, y termina en **un job llamado `public-ci`**: es el chequeo con nombre estable que las reglas de la rama
+Node 22 y 24 y partido en trabajos que corren a la vez (2026-10-14: entero tardaba ~30 min por Node; la parte `checks`
+y tres partes de las portables, `TYCON_PUBLIC_CI_PART`), y termina en **un job llamado `public-ci`**: es el chequeo con nombre estable que las reglas de la rama
 exigen, y renombrarlo deja los merges esperando un chequeo que no llega. `check-public-workflow.js` lee ese YAML **por
-texto** y verifica once reglas: diez que dicen por qué algo está mal (los disparadores, ningún secreto, cada acción fijada
+texto** y verifica doce reglas: once que dicen por qué algo está mal (los disparadores, ningún secreto, cada acción fijada
 por el sha de su commit, permiso de sólo lectura, la historia completa, la matriz, `--range` en un pull request,
-`--clean-machine` siempre y el job agregador que falla si alguno falló) y una, `shape`, que es la red: el control lleva
+`--clean-machine` siempre, el job agregador que falla si alguno falló y las partes, todas) y una, `shape`, que es la red: el control lleva
 adentro **la forma exacta** del `ci.yml` —sus líneas de código, una por una y en orden— y cualquier línea de más, de
 menos o distinta es rojo. 🔴 Por qué la forma exacta: una regla por texto no ve
 otra forma de escribir lo prohibido (una opción dentro de un comentario, un
@@ -606,6 +607,8 @@ De cada corrida del pipeline quedaban los tiempos, los frenos y cuántos agentes
 
 **La retrospectiva de cada merge a main, sin modelo** (2026-09-16). El paso 10b de `/tycon-merge-to-main` lanzaba el `tycon-retrospective-capturer` por cada merge: medido en 30 días, **87 lanzamientos, 8,3 h y 12,5 M tokens**, para archivos con casi todo en null; 4 de sus 6 métricas ya las publicaban otras piezas, una se confabulaba leyendo un archivo que no existe, y aguas abajo el archivo tiene **dos** consumidores: `first_pass_ratio` del nocturno SDLC y `retro-pending.js`. Ahora el 10b pregunta `retro-pending.js --judge` y, si el push no está exento, corre este script, que en **~150 ms** escribe el archivo 2.0 validado: la identidad del merge, **la última vuelta de revisión** de la corrida de esa story y las otras cinco en null con quién las cubre. El agente queda a pedido («retro con modelo»). 🔴 **Y el Stop-gate de `retro-pending.js` se recortó, no se borró**: dejó de emparejar agentes lanzados y exige el archivo — un agente lanzado ya no paga la deuda, la paga el archivo (rojo previo contra `origin/main`). 🔴 **Las vueltas tenían tres cuentas que no coincidían**: contra los revisores medidos por vuelta, la columna de la vista acertó 17 de 43, la foto más alta 39; el latido usa los revisores por vuelta y, si faltan, la foto más alta. Y **15 de las 28 corridas** del arnés guardan como repo un clon descartable ya borrado: se reconoce por la carpeta de sesión y se exige que la story exista en el repo del merge, porque en esas carpetas también hay proyectos de prueba con el mismo número de story. Cinco clases más, todas con su prueba en rojo antes del arreglo: worktrees del arnés (`--wt-`, `--merge`) que salían «sin volcado», rutas relativas de volcados viejos que cambiaban el resultado según la carpeta del comando, mayúsculas en macOS, un volcado ilegible de otra story con id más largo (`1.3-B-frontend`) que anulaba la métrica, y la foto del banco con los casos retirados. Nunca un 0 donde no hubo corrida, un volcado ilegible no se salta para tomar uno más viejo, y del volcado no sale nada más que números de vuelta y la fecha. Red: su suite (T1–T6, T8, T10, T11 y los modos de falla — 34 chequeos —, con 8 mutaciones y 6 regresiones verificadas en rojo). **La columna «vueltas» de la vista de corridas usa la MISMA función que el latido** (`vueltaDeVolcado`, exportada): contar las veces que se calculó el set de revisores acertaba 17 de 43 contra lo medido; el conteo viejo queda a la vista con su nombre («set de revisores calculado N veces»); la serie `first_pass_ratio` del nocturno lleva una `nota` con la fecha del cambio de método (`dashboard-runs.test.sh` 7.1-T1/T1b, rojo previo), un caso en `telemetry-leak.test.sh` y 4 casos nuevos del gate en `14-retro-pending.json` (8 de spawns retirados).
 
+**Los repos de laboratorio no deben retrospectiva** (2026-10-14). Una sesión probó una story con un repo de juguete en su carpeta de trabajo temporal (con `.tycon/` y `origin` a un repo de prueba en GitHub), empujó tres veces a main, y el cierre del turno quedó frenado por tres «merges sin retrospectiva». Ahora `retro-pending.js` no anota un push a main desde un repo de laboratorio, y lo dice con el comando del latido por si era de verdad; el freno y el aviso de arranque tampoco reclaman las entradas viejas de un repo de laboratorio que sigue en pie. Laboratorio es **las dos cosas**: vive en una carpeta temporal (la del sistema, `/tmp`, `/var/tmp`, `/var/folders` — ahí van las carpetas de trabajo de las sesiones; nunca el HOME) **y** su `origin` no lleva a un repo de verdad. 🔴 El cuidado de la regla es el clon descartable de un repo real, que también vive en el temporal: si su `origin` es una ruta que sale de las temporales, o si alguna copia de trabajo bajo la raíz de repos tiene su mismo remoto, se anota como siempre. Sin raíz de repos, con un remoto ilegible o con una carpeta que ya no existe, también: la duda va hacia más control. `--judge` informa `laboratorio` y su motivo. `TYCON_RETRO_LAB_DIRS` reemplaza la lista de carpetas temporales (vacía: ninguna; así miden sus repos las suites que los arman en el temporal). Red: 7 casos en `14-retro-pending.json` (3 con rojo previo y 4 guardas) y T11c de `retro-heartbeat.test.sh`.
+
 ## pipeline.js dod-checker-needed
 
 *(pipeline.js dod-checker-needed · deferrals-open · qa-legibilidad (AgentSkills) + la ficha «los hooks del cierre»)*
@@ -678,7 +681,7 @@ Auto-instalador idempotente del set canónico de hooks TYCON en `~/.claude/setti
 
 *(.githooks/pre-commit + scripts/hooks/git-pre-commit-global.sh)*
 
-El gate de **paridad Claude↔Codex** en el pre-commit. Corre `build/check.js`, que verifica tres cosas: los `.toml` de los advisors al día con su markdown canónico · todo hook del banco registrado del lado Codex o su divergencia declarada · **una pieza nueva entra CON sus casos en el banco o no entra** (`build/check-bank-coverage.js` — los dos primeros cuidan la migración, el tercero cuida el después: el advisor #29 que alguien cree cuando nadie recuerde la regla). Sólo corre si el commit toca `adapters/`, `build/`, `agents/` o los casos del banco: un gate que se siente impuesto en cada commit se termina salteando con `--no-verify`, y ahí se pierde también donde importaba. Probado rompiendo los tres a propósito + un commit de docs que no lo dispara. 🔴 **Un agujero silencioso del arnés entero**: con `core.hooksPath` global (que el sync de engram necesita), git **ignora los `.githooks/` de cada repo** — o sea que el lint de frontmatter de stories, el de la wiki y este gate estarían escritos, documentados, adoptados… y **nunca se ejecutarían**. El hook global versionado acá lo cierra **delegando** en el del repo antes de su propia tarea; lo instala `install-tycon-hooks.sh` con backup (opt-out `TYCON_NO_GIT_HOOKS=1`), y avisa si falta el `core.hooksPath` global en vez de tocar la config de git del dev por su cuenta.
+El gate de **paridad Claude↔Codex** en el pre-commit. Corre `build/check.js`, que verifica tres cosas: los `.toml` de los advisors al día con su markdown canónico · todo hook del banco registrado del lado Codex o su divergencia declarada · **una pieza nueva entra CON sus casos en el banco o no entra** (`build/check-bank-coverage.js` — los dos primeros cuidan la migración, el tercero cuida el después: el advisor #29 que alguien cree cuando nadie recuerde la regla). Sólo corre si el commit toca `adapters/`, `build/`, `agents/` o los casos del banco: un gate que se siente impuesto en cada commit se termina salteando con `--no-verify`, y ahí se pierde también donde importaba. Probado rompiendo los tres a propósito + un commit de docs que no lo dispara. 🔴 **Un agujero silencioso del arnés entero**: con `core.hooksPath` global (que el sync de engram necesita), git **ignora los `.githooks/` de cada repo** — o sea que el lint de frontmatter de stories, el de la wiki y este gate estarían escritos, documentados, adoptados… y **nunca se ejecutarían**. El hook global versionado acá lo cierra **delegando** en el del repo antes de su propia tarea; lo instala `install-tycon-hooks.sh` con backup (opt-out `TYCON_NO_GIT_HOOKS=1`), y si git no tiene `core.hooksPath` global, `harness.js` la apunta a `~/.git-hooks`: `install` (el plan lo dice antes del «sí»), `apply`, la mudanza y, en una máquina ya instalada, el arranque con la política `auto` (lo dice una vez en el aviso) o `update --yes` con `ask` (el aviso lo pide); si la puso el arnés y la persona la sacó, el arranque no la vuelve a poner; una que ya apunte a otra carpeta no se toca, sólo se avisa. `uninstall` y el paso al perfil mínimo la sacan si sigue siendo la que puso el arnés (2026-10-14: una máquina mudada quedaba con los hooks en `~/.git-hooks` y git sin mirarlos, y `doctor` mandaba a un `apply` que sólo avisaba).
 
 ## scripts/hooks/git-post-commit-global.sh
 
@@ -766,6 +769,36 @@ Bloques team-wide de `~/.claude/CLAUDE.md`, versionados acá y sincronizados a c
 *(scripts/setup/harness/tools.js + `scripts/setup/harness/tool-change.js` + `scripts/setup/agents-md-blocks.js` + `scripts/hooks/harness-startup.js`)*
 
 Cada herramienta, sus enchufes (2026-10-06). Por qué: quien sólo usa Codex **no podía instalar el arnés** — el instalador escribía en la carpeta de Claude Code aunque no estuviera, la actualización la disparaba sólo el arranque de Claude Code, y el lado Codex se armaba leyendo archivos de Claude (`AGENTS.md` era una copia entera del `CLAUDE.md`; los servidores MCP salían de `~/.claude.json`, y si faltaba, silencio). Ahora `install` **detecta** qué herramientas hay (el ejecutable en el `PATH` o la configuración propia de la herramienta — lo que el arnés despliega no cuenta: «ya desplegado» no es «instalada»), las nombra en el plan, y `--tool claude|codex` las fija; lo que enchufa queda **escrito en el estado**, porque el `PATH` de un arranque no es el de la persona. El enchufe de Codex corre en Node, el mismo camino en Mac, Linux y Windows: `agents-md-blocks.js` deja los bloques de `claude-md-blocks/` en `AGENTS.md` **entre sus marcas** (lo de la persona fuera de las marcas no se toca, y no viaja ningún `@import`), y `harness-startup.js` es el hook de arranque de Codex que corre la copia fija y **actualiza** el arnés, como la línea de arranque de Claude Code. Una máquina sin Claude Code vive entera en `~/.tycon` (su estado en `~/.tycon/state`) y nada se escribe en `~/.claude`. `tool-change.js` suma una herramienta después (`install --tool`) o saca una sola (`uninstall --tool`) sin tocar la otra. La comprobación de salud, que lanza hooks de verdad, los lanza con una carpeta de usuario temporal: si no, deja una carpeta del reloj en `~/.claude` durante la instalación. Pruebas: `scripts/tests/harness-tools.test.sh`, `agents-md-blocks.test.js`, los casos del banco de `harness-startup.js`, y en Windows el escenario `codex-only`. Detalle: `guides/mecanismo-de-instalacion.md` §«Cada herramienta, sus enchufes».
+
+## scripts/setup/harness/release.js — el cambio de versión con enlaces (Windows)
+
+*(scripts/setup/harness/release.js + `tycon-home.js` + `bootstrap.js` + `bootstrap-fallback.ps1`)*
+
+En Windows la versión bajada vive en `~/.tycon/versions/<versión>/`, y `~/.tycon/harness` y `~/.tycon/previous` son
+uniones (enlaces de carpeta) a la activa y a la anterior. Actualizar es cambiar la unión: ninguna carpeta en uso se mueve.
+Por qué: renombrar una carpeta en Windows falla si otro programa tiene un archivo abierto adentro, está parado adentro o
+la vigila. Con otra sesión de Claude Code o un VS Code abiertos, un cambio de versión que renombra carpetas espera al
+próximo arranque, y el próximo arranque encuentra lo mismo: la máquina queda atrasada sin saberlo. Medido en un agente de
+Windows antes de escribir el código: con la carpeta vieja tomada de esas tres formas, la unión se cambia en un milisegundo
+y los programas que la tenían siguen andando.
+
+- **Mac y Linux no cambian**: ahí renombrar una carpeta en uso funciona, y cambiar algo que anda no paga el riesgo. Las
+  pruebas de Mac recorren la forma de Windows con `TYCON_RELEASE_LINKS=1` (sólo de pruebas).
+- **El diario es otro archivo** (`~/.tycon/link-swap.json`): una copia fija de arranque más vieja borra `swap.json` si
+  `harness` existe. Un corte en cualquier etapa vuelve las dos uniones a donde estaban: el estado todavía dice esa versión.
+- **Nada escribe la ruta numerada.** Node resuelve la unión en `__dirname` (da `versions/<v>`); escrita en un archivo, ataría
+  la máquina a esa versión. El lugar de `~/.claude` y los enlaces de skills nombran `~/.tycon/harness`, y el aplicador y
+  el enchufe de Codex corren con `--preserve-symlinks`. PowerShell ya da la ruta del enlace.
+- **La limpieza** borra de `versions/` lo que ningún enlace usa, después de un arranque sano. Primero lo intenta renombrar:
+  en Windows eso falla entera si algo la tiene abierta, así nunca borra a medias una versión en uso. Lo tomado queda
+  anotado con su fecha; `doctor` lo lista, y el arranque avisa qué cerrar cuando la más vieja lleva 7 días.
+- **Una máquina Windows ya instalada se convierte una vez** (mover `harness/` a `versions/`): es el mismo renombre que fallaba.
+  Se intenta en silencio en cada arranque (la primera sesión del día suele arrancar con todo cerrado). Trabada, la versión
+  nueva espera en `versions/`; el aviso, con qué cerrar, el comando y reiniciar como último recurso, sale UNA vez recién a
+  los 3 días o 10 arranques. La conversión es de las dos carpetas: a medias cuenta como trabada.
+
+Red: `scripts/tests/harness-release-links.test.sh` (Mac, con la variable) y el escenario `no-clone` del 182, que mide todo
+con la versión activa tomada de verdad (`scripts/tests/windows/no-clone-probe.js` y `links-spike.js`).
 
 ## guides/response-style.md
 

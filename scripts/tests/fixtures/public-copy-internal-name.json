@@ -204,11 +204,6 @@
    "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
   },
   {
-   "path": "scripts/tests/export.test.js",
-   "kind": "test",
-   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
-  },
-  {
    "path": "scripts/tests/fixtures/harness-managed-pieces.json",
    "kind": "test",
    "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
@@ -297,6 +292,11 @@
    "path": "scripts/tests/harness-install.test.sh",
    "kind": "test",
    "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
+  },
+  {
+   "path": "scripts/tests/harness-map-public.test.sh",
+   "kind": "test",
+   "why": "prueba: el mapa público de verdad (sólo en el árbol del equipo) tiene que nombrar el repo con su nombre público y no con el interno; el nombre interno es lo que busca para frenar"
   },
   {
    "path": "scripts/tests/harness-place.test.js",
@@ -567,6 +567,21 @@
    "path": "scripts/tests/trimmed-close.test.sh",
    "kind": "test",
    "why": "prueba de los recortes del cierre: un caso arma el repo interno para probar que ahí el control no aplica"
+  },
+  {
+   "path": "scripts/tests/windows-portable.test.js",
+   "kind": "test",
+   "why": "prueba: el clon del laboratorio portable lleva el nombre de la carpeta de antes, como lo dejaba el alta de dos clones"
+  },
+  {
+   "path": "scripts/tests/windows-probe.test.js",
+   "kind": "test",
+   "why": "prueba: el instalador de juguete deja los enlaces con el nombre viejo del lugar, como el de verdad"
+  },
+  {
+   "path": "scripts/tests/windows-rehearsal.test.js",
+   "kind": "test",
+   "why": "prueba: los textos del alta de juguete (dos clones y un clon) y el ensayo clonan y enlazan con el nombre de la carpeta de antes, como el alta del equipo que se ensaya"
   }
  ]
 }

@@ -1,7 +1,3 @@
-# BIZUIT Custom Forms System
-
-Complete architecture and implementation guide for BIZUIT's dynamic custom forms platform.
-
 ---
 name: bizuit-custom-forms-system
 description: "BIZUIT Custom Forms - Dynamic form loading system with multi-tenant deployment, plugin architecture, hot reload, database-driven configuration, Next.js runtime, .NET backend API, and Azure DevOps CI/CD. Use when working with form deployment, plugin uploads, runtime configuration, or IIS multi-tenant hosting."
@@ -20,6 +16,11 @@ metadata:
     - feature-based-crud-endpoints
     - azure-sql-database
 ---
+
+# BIZUIT Custom Forms System
+
+Complete architecture and implementation guide for BIZUIT's dynamic custom forms platform.
+
 
 ## Overview
 

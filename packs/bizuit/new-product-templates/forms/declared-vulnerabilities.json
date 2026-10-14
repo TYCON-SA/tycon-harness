@@ -1,0 +1,14 @@
+{
+  "_lea_esto_primero": [
+    "Vulnerabilidades de dependencias DECLARADAS, con motivo y fecha de revision.",
+    "",
+    "Una vulnerabilidad alta o critica que NO este aca bloquea el pull request. Declararla NO apaga",
+    "el control: la registra con nombre y fecha. Cada entrada dice QUE AVISO ampara: una entrada",
+    "sin `advisories` no ampara nada.",
+    "",
+    "{{PRODUCT}} NACE VACIO ({{DATE}}) y la intencion es que se quede asi."
+  ],
+  "revision": "2026-12-31",
+  "motivo_general": "Ninguna declaracion. El producto nacio el {{DATE}} sin vulnerabilidades declaradas.",
+  "paquetes": []
+}

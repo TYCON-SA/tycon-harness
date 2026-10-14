@@ -129,7 +129,15 @@ try {
   const arregloDe = (repo) => `node ${JSON.stringify(path.join(__dirname, '..', 'lib', 'manifest-engram.js'))}`
     + ` repair --apply --repo ${JSON.stringify(path.join(escaneo.root, repo))}`;
   const { unpinned } = escaneo;
-  if (escaneo.error) sinVerificar.push(`no se pudieron escanear los repos — ${escaneo.error}`);
+  // 🔴 SIN RAÍZ DE REPOS (2026-10-14): el arnés no sabe dónde están los repos de esta máquina. Eso deja sin correr los
+  // chequeos que miran repos —y el de la memoria nunca exportada devolvía null por eso, que este aviso leía como «¿base
+  // corrupta?» con la base sana. Se dice UNA vez, con el motivo y cómo declararla, y los chequeos que la necesitan no corren.
+  const sinRaiz = !escaneo.root;
+  if (sinRaiz) {
+    let motivo = '';
+    try { const rr = require(path.join(__dirname, '..', 'lib', 'repos-root.js')); motivo = rr.describir(rr.resolveReposRoot()); } catch (_) { motivo = 'sin raíz de repos'; }
+    sinVerificar.push(`no sé dónde están tus repos, así que no pude revisar su memoria (repos sin nombre fijado, memoria partida, chunks fuera del índice ni memoria sin exportar) — ${motivo}. No es la base de engram: es que falta saber dónde mirar`);
+  } else if (escaneo.error) sinVerificar.push(`no se pudieron escanear los repos — ${escaneo.error}`);
   if (unpinned.length) {
     problemas.push(
       `${unpinned.length} repo(s) con memoria pero SIN nombre de proyecto fijado: ${unpinned.map((r) => r.repo).join(', ')}.\n` +
@@ -148,6 +156,7 @@ try {
   //    más importa salió de datos reales: en la carpeta de un producto había 359 observaciones de
   //    OTRO, y un automatismo ingenuo se las llevaba adentro sin vuelta atrás.
   try {
+    if (sinRaiz) throw Object.assign(new Error('sin raíz de repos'), { sinRaiz: true });
     if (!haySqlite || !HAY_BASE) throw new Error('sin sqlite3 o sin base');
     const heal = require(path.join(__dirname, '..', 'lib', 'engram-autoheal.js'));
     const { plan, motivo, sinBase } = heal.planificar();
@@ -199,9 +208,9 @@ try {
         '     Elegí por número SÓLO los que correspondan. NUNCA `all`: su emparejador ofrece proyectos ajenos.');
     }
   } catch (e) {
-    if (haySqlite && HAY_BASE) sinVerificar.push(`falló el chequeo de memoria partida: ${String(e && e.message || e).slice(0, 120)}`);
+    if (e && e.sinRaiz) { /* dicho arriba, una vez */ } else if (haySqlite && HAY_BASE) sinVerificar.push(`falló el chequeo de memoria partida: ${String(e && e.message || e).slice(0, 120)}`);
     // Sin el autoheal (clon viejo), se cae al aviso de siempre: mejor avisar que callar.
-    const partida = haySqlite ? audit.engramDirsWithMultipleProjects() : null;
+    const partida = haySqlite && !sinRaiz ? audit.engramDirsWithMultipleProjects() : null;
     if (partida && partida.length) {
       problemas.push(
         `${partida.length} directorio(s) con memoria repartida en varios nombres: ` +
@@ -214,7 +223,7 @@ try {
   // 3. Chunks fuera del índice: commiteados y de todos modos ilegibles para el equipo. Es el
   //    eslabón entre el archivo y el índice, y no lo cubre ninguno de los otros tres.
   try {
-    const desind = audit.engramChunksSinIndexar();   // no necesita sqlite3: sólo archivos
+    const desind = sinRaiz ? null : audit.engramChunksSinIndexar();   // no necesita sqlite3: sólo archivos
     if (desind && desind.length) {
       const totSin = desind.reduce((a, r) => a + (r.sinIndexar || []).length, 0);
       problemas.push(
@@ -227,8 +236,8 @@ try {
   } catch (e) { sinVerificar.push(`falló el chequeo de chunks fuera del índice: ${String(e && e.message || e).slice(0, 120)}`); }
 
   // 4. Memoria que nunca viajó — la más cara: no se recupera.
-  const varadas = (haySqlite && HAY_BASE) ? audit.engramUnexportedByRepo() : null;
-  if (haySqlite && HAY_BASE && varadas === null) sinVerificar.push('no se pudo leer la base de engram para ver qué memoria nunca se exportó (¿base corrupta, permisos, sqlite3 roto?)');
+  const varadas = (haySqlite && HAY_BASE && !sinRaiz) ? audit.engramUnexportedByRepo() : null;
+  if (haySqlite && HAY_BASE && !sinRaiz && varadas === null) sinVerificar.push('no se pudo leer la base de engram para ver qué memoria nunca se exportó (¿base corrupta, permisos, sqlite3 roto?)');
   if (varadas && varadas.length) {
     const total = varadas.reduce((a, r) => a + r.varadas, 0);
     problemas.push(

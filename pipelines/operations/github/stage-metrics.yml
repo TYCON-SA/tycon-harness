@@ -1,0 +1,173 @@
+# ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# Métricas del ciclo — MODELO de GitHub Actions para una organización que vive en GitHub (story 8.31)
+#
+# Cómo darlo de alta: pipelines/operations/github/README.md. Se copia a `.github/workflows/` del repo de operaciones,
+# sin cambiar nada: qué arnés corre lo dice `team-repos.json` del repo de operaciones.
+#
+# Métricas del ciclo de cada noche: hace lo mismo y en el mismo orden que el modelo de Azure
+# (pipelines/operations/stage-metrics.yml). Mide las métricas de etapa de las stories de los repos de la organización que
+# usan el arnés (los que tienen `.tycon/` o `.advisors/`) y guarda el punto del día en `.dashboard/sdlc-stage-<fecha>.json`
+# del repo de operaciones, más una foto por repo en `.dashboard/proyectos/`. Lo que cambia a propósito:
+#   · los repos se descubren con `clone-repos.sh --org`: los del dueño del repo de operaciones, o los de la variable
+#     METRICS_OWNERS (separados por `;`); la variable METRICS_REPO_PREFIX los acota por prefijo; las copias del arnés
+#     declaradas en `team-repos.json` (`harness_copies`) no se miden;
+#   · la credencial de la organización llega sólo al paso que descubre y clona. Recomendada: una GitHub App (variable
+#     HARNESS_APP_CLIENT_ID y secreto HARNESS_APP_PRIVATE_KEY), que da un token de una hora, de sólo lectura y sólo de
+#     los repos donde está instalada. Alternativa: un usuario de máquina, con su token en el secreto HARNESS_ORG_TOKEN.
+#     Con la App configurada, gana la App;
+#   · lo «naranja» de Azure es un aviso (::warning::) con la corrida en verde.
+# Efectos: una corrida programada SIEMPRE guarda (en ella `inputs` está vacío); una a mano, según `effects`.
+# ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+name: stage-metrics
+
+on:
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+    inputs:
+      effects:
+        description: 'Con efectos fuera de la corrida (guardar el punto del día)'
+        type: boolean
+        default: true
+      harness_ref:
+        description: 'Rama, tag o commit del arnés (vacío: la variable HARNESS_REF, o main)'
+        type: string
+        default: ''
+
+permissions:
+  contents: write
+
+concurrency:
+  group: harness-stage-metrics
+  cancel-in-progress: false
+
+jobs:
+  measure:
+    name: Medir los repos y guardar el punto del día
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      EFFECTS: ${{ github.event_name == 'schedule' || inputs.effects }}
+      # la clave de la corrida que usan el guardado y el sello del tablero (en Azure, Build.BuildId)
+      BUILD_BUILDID: ${{ github.run_id }}
+      SYSTEM_JOBATTEMPT: ${{ github.run_attempt }}
+    steps:
+      - name: El repo de operaciones
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: ops
+          persist-credentials: false
+
+      - name: Qué arnés corre (team-repos.json del repo de operaciones)
+        id: harness
+        working-directory: ops
+        env:
+          INPUT_REF: ${{ inputs.harness_ref }}
+          VAR_REF: ${{ vars.HARNESS_REF }}
+        run: |
+          set -euo pipefail
+          node - <<'JS'
+          const fs = require('fs');
+          const red = (m) => { console.log(`::error::${m} — no se mide nada`); process.exit(1); };
+          let t;
+          try { t = JSON.parse(fs.readFileSync('team-repos.json', 'utf8')); } catch (e) { red(`el repo de operaciones no trae un team-repos.json legible (${e.message})`); }
+          const p = t && t.public;
+          if (!p || p.platform !== 'github') red('team-repos.json: public tiene que ser el repo del arnés en GitHub (platform «github»)');
+          const name = /^[A-Za-z0-9._-]+$/;
+          if (!name.test(String(p.org || '')) || !name.test(String(p.repo || ''))) red('team-repos.json: public.org o public.repo no es un nombre de GitHub');
+          const ref = process.env.INPUT_REF || process.env.VAR_REF || 'main';
+          if (!/^[A-Za-z0-9._\/-]+$/.test(ref) || ref.includes('..') || /^refs\/pull\//.test(ref) || ref.startsWith('-')) red(`la referencia del arnés «${ref}» no es una rama, un tag ni un commit`);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `repository=${p.org}/${p.repo}\nref=${ref}\n`);
+          console.log(`el arnés: ${p.org}/${p.repo} @ ${ref}`);
+          JS
+
+      - name: El arnés
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ steps.harness.outputs.repository }}
+          ref: ${{ steps.harness.outputs.ref }}
+          path: harness
+          fetch-depth: 1
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Armar el árbol (los datos y la configuración de operaciones, encima del arnés)
+        env:
+          OPS_TOKEN: ${{ github.token }}
+        run: bash harness/pipelines/operations/github/prepare-tree.sh
+
+      # La credencial de la GitHub App, si está configurada: un token de instalación que vence en una hora, sólo con
+      # permiso de leer el contenido y sólo de los repos donde la App está instalada. Sin la App, el paso no corre y vale
+      # el secreto HARNESS_ORG_TOKEN (el usuario de máquina).
+      - name: La credencial de la organización (GitHub App, si está configurada)
+        id: org-token
+        if: vars.HARNESS_APP_CLIENT_ID != ''
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.HARNESS_APP_CLIENT_ID }}
+          private-key: ${{ secrets.HARNESS_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          permission-contents: read
+
+      - name: Descubrir y clonar (liviano) los repos de la organización
+        working-directory: harness
+        env:
+          ORG_TOKEN: ${{ steps.org-token.outputs.token || secrets.HARNESS_ORG_TOKEN }}
+          OWNERS: ${{ vars.METRICS_OWNERS }}
+          PREFIX: ${{ vars.METRICS_REPO_PREFIX }}
+        run: bash pipelines/operations/github/clone-repos.sh --org "${RUNNER_TEMP}/repos" --team-repos team-repos.json
+
+      - name: El árbol sigue siendo el que se armó (antes de medir)
+        working-directory: harness
+        run: |
+          set -uo pipefail
+          if ! OUT=$(node scripts/ci/harness-tree.js --check-tree --worktree --repo . 2>&1); then
+            echo "::error::$(printf '%s' "${OUT}" | tail -n 1) — no se mide nada"
+            exit 1
+          fi
+          echo "${OUT}"
+
+      - name: Medir y escribir el punto del día
+        working-directory: harness
+        run: |
+          set -euo pipefail
+          # El buscador oficial de stories vive en las skills del propio arnés; sin esa carpeta, el de respaldo.
+          if SK="$(node scripts/lib/skills-dir.js --skills)"; then
+            export TYCON_SKILLS_DIR="${SK}"
+            echo "el buscador de stories sale de: ${SK}"
+          else
+            echo "::warning::No hay carpeta de skills en el arnés (motivo arriba) — la medición sigue con el buscador de respaldo"
+          fi
+          node scripts/metrics/sdlc-stage-metrics.js --scan "${RUNNER_TEMP}/repos" --only-harness --dashboard .dashboard --snapshot 2>&1 \
+            | bash pipelines/operations/github/annotate.sh
+          SDLC=".dashboard/sdlc-stage-$(date -u +%Y-%m-%d).json"
+          node scripts/nightly/projects/snapshot.js --scan "${RUNNER_TEMP}/repos" --only-harness --sdlc "${SDLC}" --out .dashboard/proyectos 2>&1 \
+            | bash pipelines/operations/github/annotate.sh \
+            || echo "::warning::La foto por repo falló — el punto del día sigue"
+
+      - name: Validar el formato de las métricas por merge (aviso, no frena)
+        working-directory: harness
+        run: |
+          set -u
+          set +e   # GitHub corre el paso con bash -e: el código de salida se lee abajo, no corta acá
+          node scripts/lib/dashboard-series.js --validate --dir .dashboard
+          RC=$?
+          [ "${RC}" -eq 0 ] || echo "::warning::Métricas por merge: hay archivos que no cumplen el contrato (exit ${RC}). Modo aviso: no frena."
+          exit 0
+
+      - name: Guardar el punto del día en el repo de operaciones
+        if: env.EFFECTS == 'true' && github.ref == 'refs/heads/main'
+        working-directory: harness
+        env:
+          OPS_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          . pipelines/operations/github/operations-auth.sh
+          DAY=$(date -u +%Y-%m-%d)
+          node scripts/ci/push-nightly-data.js save \
+            --message "chore(metricas): snapshot SDLC ${DAY} [nocturno]" \
+            --require-daily '.dashboard/sdlc-stage-{day}.json' \
+            -- '.dashboard/sdlc-stage-*.json' '.dashboard/proyectos/*.json' 2>&1 | bash pipelines/operations/github/annotate.sh

@@ -248,6 +248,7 @@ const rutaCompleta = (r) => (r.subruta ? `${r.ruta}/${r.subruta}` : r.ruta);
 function ubicarRepo(entrada, raiz) {
   const directo = path.join(raiz, entrada.ruta);
   if (fs.existsSync(directo)) return { dir: directo };
+  if (!entrada.ado && entrada.github) return ubicarRepoDeGithub(entrada, raiz, directo);
   if (!entrada.ado) return { dir: directo };
 
   const clave = (proj, repo) => `${decodeURIComponent(proj)}/${decodeURIComponent(repo)}`.toLowerCase();
@@ -270,6 +271,25 @@ function ubicarRepo(entrada, raiz) {
     // dev.azure.com o con visualstudio.com, con credenciales adelante o sin ellas.
     const m = String(r.stdout || '').trim().match(/\/([^/]+)\/_git\/([^/\s]+?)(?:\.git)?$/);
     if (m && clave(m[1], m[2]) === buscada) return { dir: c, reubicado: true };
+  }
+  return { dir: directo };
+}
+
+/** Lo mismo para una entrada de GitHub (story 8.31): el remoto `github.com[:/]<dueño>/<repo>(.git)` es la identidad. */
+function ubicarRepoDeGithub(entrada, raiz, directo) {
+  const buscada = String(entrada.github).toLowerCase();
+  if (!/^[a-z0-9._-]+\/[a-z0-9._-]+$/.test(buscada)) return { dir: directo };
+  const candidatos = [];
+  for (const base of [path.dirname(directo), raiz]) {
+    let hijos = [];
+    try { hijos = fs.readdirSync(base, { withFileTypes: true }); } catch (_) { continue; }
+    for (const h of hijos) if (h.isDirectory()) candidatos.push(path.join(base, h.name));
+  }
+  for (const c of candidatos) {
+    const r = spawnSync('git', ['-C', c, 'remote', 'get-url', 'origin'], { encoding: 'utf8', timeout: 10000 });
+    if (r.status !== 0) continue;
+    const m = String(r.stdout || '').trim().match(/github\.com[:/]([^/\s]+)\/([^/\s]+?)(?:\.git)?\/?$/i);
+    if (m && `${m[1]}/${m[2]}`.toLowerCase() === buscada) return { dir: c, reubicado: true };
   }
   return { dir: directo };
 }
@@ -445,6 +465,9 @@ function agruparPresencias(repos) {
  */
 function proyectoDe(etiquetaRepo, cfg) {
   const e = ((cfg && cfg.repos) || []).find((r) => etiqueta(r) === etiquetaRepo);
+  // story 8.31: en GitHub el «proyecto» es el repo (`github: <dueño>/<repo>`): un issue vive en un repo, como un Bug en
+  // su proyecto. Una ficha de GitHub es (paquete, repo).
+  if (e && !e.ado && e.github) return String(e.github);
   const crudo = e && e.ado ? String(e.ado).split('/')[0]
     : e && e.producto ? String(e.producto)
     : String(etiquetaRepo).split('/')[0];
@@ -461,6 +484,9 @@ function proyectoDe(etiquetaRepo, cfg) {
  */
 function proyectoAzureDe(etiquetaRepo, cfg) {
   const e = ((cfg && cfg.repos) || []).find((r) => etiqueta(r) === etiquetaRepo);
+  // story 8.31: el lugar al que se le PIDE, también en GitHub (el repo `<dueño>/<repo>`, donde se abre el issue). El
+  // nombre se conserva: lo usan los guiones de pedidos de las dos plataformas, y cada uno rechaza la entrada ajena.
+  if (e && !e.ado && e.github) return String(e.github);
   if (!e || !e.ado) return null;
   const crudo = String(e.ado).split('/')[0];
   try { return decodeURIComponent(crudo); } catch { return crudo; }
@@ -1042,11 +1068,32 @@ const escribirSiCambio = (p, txt) => { if (fs.readFileSync(p, 'utf8') !== txt) f
  * `azure.pedidos_activos: true` (decisión del dev, 2026-09-13): con la pieza apagada ninguna ficha
  * tiene pedido, y la protección haría que ninguna volviera a ignorarse desde el merge.
  */
+/**
+ * ¿Los pedidos están prendidos? Los Bugs de Azure (`azure.pedidos_activos`) o los issues de GitHub
+ * (`github.issues_enabled`, story 8.31). Con cualquiera de los dos, una ficha sin pedido no es «nadie la miró».
+ */
+const pedidosActivos = (cfg) => !!(cfg && ((cfg.azure && cfg.azure.pedidos_activos === true)
+  || (cfg.github && cfg.github.issues_enabled === true)));
+
+/**
+ * La clave de un pedido en el volcado (story 8.31). En Azure, el número: un id de work item es único en la
+ * organización. En GitHub el número de un issue se repite entre repos: `<dueño>/<repo>#<n>`. Lo dice el volcado
+ * (`plataforma: "github"`); sin esa clave, el número, como siempre.
+ */
+const claveDePedido = (volcado, proyecto, id) => (volcado && volcado.plataforma === 'github' ? `${proyecto}#${id}` : String(id));
+
+/** Los motivos de cierre que cuentan como arreglado: fijos en GitHub (`completed`); en Azure, los de repos.json. */
+function vocabularioDeCierre(cfg, volcado) {
+  if (volcado && volcado.plataforma === 'github') return ['completed'];
+  return cfg && cfg.azure && Array.isArray(cfg.azure.motivos_arreglado) && cfg.azure.motivos_arreglado.length
+    && cfg.azure.motivos_arreglado.every((x) => typeof x === 'string') ? cfg.azure.motivos_arreglado : null;
+}
+
 function archivarIgnorados(pendingDir, hoy, cfg, volcado, frenados = []) {
   const dir = path.join(pendingDir, 'pending');
   if (!fs.existsSync(dir)) return [];
   const arch = path.join(pendingDir, 'archived');
-  const exigirPedido = !!(cfg && cfg.azure && cfg.azure.pedidos_activos === true);
+  const exigirPedido = pedidosActivos(cfg);
   const ids = [];
   for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.yaml'))) {
     const txt = fs.readFileSync(path.join(dir, f), 'utf8');
@@ -1140,6 +1187,8 @@ function leerVolcado(ruta) {
   }
   const lista = (x) => (Array.isArray(x) ? x.filter((y) => y && typeof y === 'object') : []);
   return { archivo: nombre, consultado: true, motivo: null, pedidos: v.pedidos,
+    // story 8.31: la plataforma decide la clave de cada pedido y el vocabulario de cierre
+    plataforma: v.plataforma === 'github' ? 'github' : 'azure',
     huerfanos: lista(v.huerfanos), huerfanos_no_consultados: lista(v.huerfanos_no_consultados) };
 }
 
@@ -1172,8 +1221,7 @@ function cruzarPedidos({ pendingDir, hoy, snapshot, volcado, cfg, apagadosEtiq =
     huerfanos: legible ? (volcado.huerfanos || []) : [],
     huerfanos_no_consultados: legible ? (volcado.huerfanos_no_consultados || []) : [],
   };
-  const voc = cfg && cfg.azure && Array.isArray(cfg.azure.motivos_arreglado) && cfg.azure.motivos_arreglado.length
-    && cfg.azure.motivos_arreglado.every((x) => typeof x === 'string') ? cfg.azure.motivos_arreglado : null;
+  const voc = vocabularioDeCierre(cfg, volcado);
   const medidos = new Set((snapshot.repos || []).filter((r) => r.medido).map(etiqueta));
   const enConfig = new Set(((cfg && cfg.repos) || []).map(etiqueta));
 
@@ -1200,7 +1248,7 @@ function cruzarPedidos({ pendingDir, hoy, snapshot, volcado, cfg, apagadosEtiq =
       for (const { proyecto: X, id } of pedidos) {
         const par = { ficha: idFicha, proyecto: X, pedido: id };
         if (!legible) { c.no_leidos.push({ ...par, motivo: c.motivo }); continue; }
-        const e = volcado.pedidos[String(id)];
+        const e = volcado.pedidos[claveDePedido(volcado, X, id)];
         if (!e || typeof e !== 'object') { c.no_leidos.push({ ...par, motivo: `el volcado no trae el pedido ${id}` }); continue; }
         if (e.leido !== true) { c.no_leidos.push({ ...par, motivo: String(e.motivo_no_leido || 'no leído, sin motivo escrito') }); continue; }
         const abierto = CATEGORIAS_ABIERTAS.includes(e.categoria);
@@ -1287,7 +1335,7 @@ function motivoParaNoIgnorar(pedidos, volcado, hoy) {
     return `sin volcado legible del estado de los pedidos (${(volcado && volcado.motivo) || 'sin volcado'})`;
   }
   for (const { proyecto, id } of pedidos) {
-    const e = volcado.pedidos[String(id)];
+    const e = volcado.pedidos[claveDePedido(volcado, proyecto, id)];
     if (!e || e.leido !== true) return `no pude leer el pedido de ${proyecto}`;
     if (CATEGORIAS_CERRADAS.includes(e.categoria)) return `el pedido de ${proyecto} está cerrado`;
     if (!CATEGORIAS_ABIERTAS.includes(e.categoria)) return `no pude leer el pedido de ${proyecto} (categoría ${e.categoria})`;
@@ -1447,21 +1495,42 @@ function prTexto(a) {
  */
 function cuerpoDeFicha(d, { destino = 'pr' } = {}) {
   const repos = d.repos || [], avisos = d.avisos || [];
+  // story 8.31: en un issue de GitHub, un `@algo` de un nombre de paquete menciona a una cuenta y un `#123` enlaza otro
+  // issue. Los nombres que vienen de afuera van en código: ahí GitHub no hace ninguna de las dos cosas.
+  const issue = destino === 'issue';
+  const cod = (s) => (issue ? `\`${String(s).replace(/`/g, "'")}\`` : s);
   const L = [
-    `Se publicó un aviso de seguridad que alcanza a **${d.paquete}** (severidad ${d.sev}) y que`,
+    `Se publicó un aviso de seguridad que alcanza a **${cod(d.paquete)}** (severidad ${d.sev}) y que`,
     `hoy toca ${repos.length} repo(s) del equipo. El código no cambió: cambió lo que se sabe del paquete.`,
     '',
     '**Repos alcanzados**',
-    ...repos.map((r) => `- ${r}`),
+    ...repos.map((r) => `- ${cod(r)}`),
     '',
     '**Avisos**',
     // Sin enlaces, el mismo marcador que escribe la ficha: un título «Avisos» sin nada debajo se lee
     // como un texto roto (pase adversarial de la 4.4). Con la ficha de siempre esto no cambia nada.
-    ...(avisos.length ? avisos : ['(el informe no trajo enlace)']).map((u) => `- ${u}`),
+    // un enlace a la base de avisos de GitHub no menciona ni enlaza nada más: va como enlace; lo demás, en código
+    ...(avisos.length ? avisos.map((u) => (/^https:\/\/github\.com\/advisories\/GHSA-[A-Za-z0-9-]+$/.test(String(u)) ? u : cod(u)))
+      : ['(el informe no trajo enlace)']).map((u) => `- ${u}`),
     '',
     `Detectado hace ${d.noches} noche(s) seguida(s).`,
     '',
   ];
+  if (issue) {
+    const ids = avisos.map((u) => String(u).split('/').pop()).filter((x) => /^GHSA-/i.test(x));
+    L.push(
+      '**Qué hacer**',
+      '- **Arreglarlo** = subir el paquete en este repo hasta una versión que el aviso dé por corregida. Cuando la revisión nocturna deje de verlo en `main`, este issue se cierra solo, con un comentario: cuándo llega a producción lo decide el equipo.',
+      '- **Declararlo como deuda** = si no viaja al navegador ni al servidor, anotarlo en el `vulnerabilidades-pendientes.json` del repo, con motivo y fecha de revisión (el issue queda abierto: la deuda no es un arreglo):',
+      '```',
+      JSON.stringify({ revision: 'AAAA-MM-DD', paquetes: [{ paquete: d.paquete, advisories: ids, motivo: 'por qué no aplica' }] }, null, 2),
+      '```',
+      '- **No aplica** = cerrarlo como «not planned». La revisión nocturna lo va a decir una vez mientras la vulnerabilidad siga en `main`: la salida sin arreglo es declarar la deuda.',
+      '',
+      `_Lo abrió la revisión nocturna de dependencias del arnés (ficha \`arnes:${d.id}\`). Cerrarlo como arreglado a mano no cierra el hallazgo: se cierra cuando la vulnerabilidad deja de aparecer, medida de noche._`,
+    );
+    return L;
+  }
   if (destino === 'pedido') {
     // El formato de la deuda es el REAL de `vulnerabilidades-pendientes.json` (revision, paquetes[],
     // advisories por identificador, motivo): una declaración que no nombra los avisos no ampara nada.
@@ -1567,7 +1636,8 @@ function clones(a) {
   for (const r of cfg.repos || []) {
     if (r.activo === false || !r.ruta || vistas.has(r.ruta)) continue;
     vistas.add(r.ruta);
-    console.log(`${r.ruta}\t${r.ado || ''}`);
+    // story 8.31: una entrada de GitHub da `<dueño>/<repo>`. Dos columnas siempre: el modelo de Azure lee dos.
+    console.log(`${r.ruta}\t${r.ado || r.github || ''}`);
   }
   return 0;
 }
@@ -1712,4 +1782,6 @@ module.exports = { huella, agruparHallazgos, agruparPresencias, proyectoDe, leer
   listaDe, ponerLista, etiqueta, soloRepo, leerTodasLasFichas, leerPedidos, cuerpoDeFicha, aHtml, archivarIgnorados,
   proyectoAzureDe,
   // story 4.5 — el cruce
-  presenciaDeFicha, leerVolcado, cruzarPedidos, motivoParaNoIgnorar, CATEGORIAS_ABIERTAS, CATEGORIAS_CERRADAS };
+  presenciaDeFicha, leerVolcado, cruzarPedidos, motivoParaNoIgnorar, CATEGORIAS_ABIERTAS, CATEGORIAS_CERRADAS,
+  // story 8.31 — GitHub
+  pedidosActivos, claveDePedido, vocabularioDeCierre };

@@ -1499,6 +1499,10 @@
       "reason": "inglés técnico, la pareja de allowlist (que el diccionario sí trae): el nombre de la lista de denegación del exportador desde la tanda C4 (scripts/publishing/denylist.json); lo decidió el dueño el 2026-10-01"
     },
     {
+      "words": ["symlinks"],
+      "reason": "inglés técnico de Node, no un nombre nuestro: las opciones --preserve-symlinks y --preserve-symlinks-main, con las que el aplicador y el enchufe de Codex conservan ~/.tycon/harness en __dirname en la forma con enlaces de Windows (story 8.33); lo decidió el dueño el 2026-10-14"
+    },
+    {
       "words": ["sdd"],
       "reason": "sigla en inglés (spec-driven development) de la carpeta de la skill bizuit-sdd: lo marcó --check-map al cargar census.py en la tanda C3 (2026-10-01)"
     },
