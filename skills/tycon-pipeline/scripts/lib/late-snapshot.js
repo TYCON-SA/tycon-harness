@@ -123,6 +123,71 @@ function ultimoRevisorDeLaRonda(lineas, iterEsperada) {
   return { ts, iso: new Date(ts).toISOString(), advisor, iter };
 }
 
+/**
+ * Qué versión del cambio vio CADA revisor de una vuelta: la hora en que se lanzó (2026-10-14).
+ *
+ * 🔴 Por qué no alcanza con el último revisor: la foto de la vuelta se toma al lanzar el último, y
+ * un arreglo hecho mientras corrían los demás queda ADENTRO de la foto. El revisor que se lanzó
+ * antes del arreglo no lo vio nunca, y el delta de la vuelta siguiente —que mira desde la foto— no
+ * lo trae: el revisor se saltea por «superficie no tocada». La hora de lanzamiento de cada uno ya
+ * está en el registro que escribe el hook en cada spawn real; no hace falta que nadie la declare.
+ *
+ * La vuelta se ubica por su `step5-start` con ese número de iteración. Se toma la ÚLTIMA y se
+ * extiende hacia atrás sobre los `step5-start` de la misma iteración que la preceden sin otra
+ * iteración en el medio (un reintento de `smart-reloop`, o el `--force-full-reloop` que lo sigue):
+ * así una sesión que corrió dos stories no mezcla vueltas, y un reintento no corre el inicio hacia
+ * adelante. Los lanzamientos se cuentan hasta el `step5-start` de la iteración siguiente.
+ *
+ * 🔴 Si un revisor se lanzó DOS veces en la vuelta (se cayó y se relanzó), cuenta el PRIMER
+ * lanzamiento: no se sabe cuál de los dos informes se usó, y el primero es el que vio menos.
+ *
+ * Sin vuelta registrada (otra sesión, registro borrado) no se finge nada: `medible: false` con el
+ * motivo, y quien llama decide lo conservador.
+ *
+ * @param {string[]} lineas líneas crudas del `advisor-runs/<sessionId>.jsonl`.
+ * @param {number} iter la iteración cuya vuelta se busca.
+ * @returns {{medible: boolean, motivo: string|null, inicioMs: number|null,
+ *            esperados: Set<string>, lanzamientos: Map<string, number>}}
+ */
+function vistaPorRevisor(lineas, iter) {
+  const vacio = (motivo) => ({ medible: false, motivo, inicioMs: null, esperados: new Set(), lanzamientos: new Map() });
+  const parsed = parseJsonl(lineas);
+  if (!parsed.length) return vacio('no hay registro de lanzamientos en esta sesión (advisor-runs/<sid>.jsonl vacío o ausente)');
+  const esInicio = (d) => d && d.event === 'step5-start';
+  let ancla = -1;
+  for (let i = parsed.length - 1; i >= 0; i--) {
+    if (esInicio(parsed[i]) && parsed[i].iter === iter) { ancla = i; break; }
+  }
+  if (ancla === -1) return vacio(`el registro no tiene el arranque de la vuelta ${iter} (step5-start con iter ${iter})`);
+  let desde = ancla;
+  for (let i = ancla - 1; i >= 0; i--) {
+    if (!esInicio(parsed[i])) continue;
+    if (parsed[i].iter !== iter) break;
+    desde = i;
+  }
+  const esperados = new Set();
+  const lanzamientos = new Map();
+  let inicioMs = null;
+  for (let i = desde; i < parsed.length; i++) {
+    const d = parsed[i];
+    if (!d) continue;
+    if (esInicio(d)) {
+      if (i > ancla && d.iter !== iter) break;      // empezó la vuelta siguiente
+      const t = Date.parse(d.ts);
+      if (Number.isFinite(t) && (inicioMs === null || t < inicioMs)) inicioMs = t;
+      for (const a of Array.isArray(d.expected) ? d.expected : []) if (typeof a === 'string') esperados.add(a);
+      continue;
+    }
+    if (typeof d.advisor !== 'string') continue;
+    const t = Date.parse(d.ts);
+    if (!Number.isFinite(t)) continue;
+    const previo = lanzamientos.get(d.advisor);
+    if (previo === undefined || t < previo) lanzamientos.set(d.advisor, t);
+  }
+  if (inicioMs === null) return vacio(`el arranque de la vuelta ${iter} no tiene hora legible`);
+  return { medible: true, motivo: null, inicioMs, esperados, lanzamientos };
+}
+
 function mtimeMs(p) {
   try { return fs.statSync(p).mtimeMs; } catch { return null; }
 }
@@ -209,4 +274,4 @@ function nombrados(posteriores) {
   };
 }
 
-module.exports = { codigoDespuesDelUltimoRevisor, ultimoRevisorDeLaRonda, esRevisor, nombrados, TOPE_NOMBRADOS };
+module.exports = { codigoDespuesDelUltimoRevisor, ultimoRevisorDeLaRonda, vistaPorRevisor, esRevisor, nombrados, TOPE_NOMBRADOS };
