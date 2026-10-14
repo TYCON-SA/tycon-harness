@@ -61,7 +61,9 @@ const PERSONAL_SIDES = Object.freeze(['skills', 'agents']);
 // la carpeta skills/ o agents/ de Claude Code: su ruta se la pide a tycon-home.js (la carpeta vieja vive al lado)
 const claudeSide = (home, side) => path.join(path.dirname(TH.installedSkillsDir(home)), side);
 // lo que puede haber en `~/.tycon` y es nuestro: cualquier otra cosa frena (AC 27)
-const OWN_ENTRIES = Object.freeze(['harness', 'previous', 'incoming', 'trash', 'third-party', 'team', 'state', 'backups', 'config.json', 'swap.json', JOURNAL_NAME]);
+// (`versions` y `link-swap.json`: la forma con enlaces de Windows, story 8.33; la mudanza nace en esa forma porque
+// instala con `release.swap`, que en Windows cambia enlaces)
+const OWN_ENTRIES = Object.freeze(['harness', 'previous', 'incoming', 'trash', 'third-party', 'team', 'state', 'backups', 'config.json', 'swap.json', 'versions', 'link-swap.json', JOURNAL_NAME]);
 const DIE_VAR = 'TYCON_MIGRATE_DIE_AT';
 const HEAD = 'harness.js migrate';
 
@@ -74,7 +76,8 @@ const isLink = (p) => { try { return fs.lstatSync(p).isSymbolicLink(); } catch (
 const isRealDir = (p) => { try { const st = fs.lstatSync(p); return st.isDirectory() && !st.isSymbolicLink(); } catch (_) { return false; } };
 const real = (p) => { try { return fs.realpathSync(p); } catch (_) { return null; } };
 const slash = (p) => String(p).replace(/\\/g, '/');
-const rmrf = (p) => { try { fs.rmSync(p, { recursive: true, force: true }); } catch (_) { /* queda: lo dice doctor */ } };
+// un enlace (la forma con enlaces de la 8.33) se quita como enlace: nunca se borra a través de él
+const rmrf = (p) => { try { if (TH.isLink(p)) TH.removeLink(p); else fs.rmSync(p, { recursive: true, force: true }); } catch (_) { /* queda: lo dice doctor */ } };
 const readJson = (file) => { try { return JSON.parse(fs.readFileSync(file, 'utf8').replace(/^﻿/, '')); } catch (_) { return null; } };
 const readText = (file) => { try { return fs.readFileSync(file, 'utf8'); } catch (_) { return null; } };
 function writeAtomic(file, text, mode) {
@@ -996,9 +999,10 @@ function undo(ctx, j, H, { log, why }) {
     if (typeof j.oldStateText === 'string' && isRealDir(p.oldStateDir)) writeAtomic(path.join(p.oldStateDir, S.FILE_NAME), j.oldStateText);
   } catch (e) { say(`no pude volver el estado (${e.message})`); }
   // la versión instalada (lo que esta mudanza puso en ~/.tycon)
-  if (!j.harnessExisted) { rmrf(p.own.harness); if (!j.previousExisted) rmrf(p.own.previous); }
+  if (!j.harnessExisted) { rmrf(p.own.harness); if (!j.previousExisted) rmrf(p.own.previous); if (j.versionsExisted === false) rmrf(p.own.versions); }
   if (j.incoming) rmrf(j.incoming);
   rmrf(p.own.journal);
+  rmrf(p.own.linkJournal);
   rmrf(journalPath(ctx));
   say(why);
 }
@@ -1069,7 +1073,7 @@ function migrate(ctx, H, { log = null, auto = false, state: given = null } = {})
     const j = {
       schema: 1, stage: 'start', at: nowIso(), version: target.version, commit: target.commit, ref: target.ref,
       repo: repo.url, repoName: repo.repo, oldTree: state.tree, incoming: d.dir, tools: [...tools],
-      harnessExisted: lexists(p.own.harness), previousExisted: lexists(p.own.previous),
+      harnessExisted: lexists(p.own.harness), previousExisted: lexists(p.own.previous), versionsExisted: lexists(p.own.versions),
       oldStateText: readText(S.paths(ctx.home).file),
       oldConfigText: pre.oldConfigData ? readText(p.oldConfig) : null, oldConfigLink: pre.oldConfigData && isLink(p.oldConfig) ? readlink(p.oldConfig) : null, ownConfigText: pre.ownConfigData ? readText(p.newConfig) : null,
       dashCopied: false, backupsMoved: false, notes: [],
@@ -1133,7 +1137,7 @@ function repair(ctx, H, { log = null } = {}) {
   const realLog = (l) => { if (log) log(l); else R.log(ctx.home, l); };
   const own = ownOf(ctx);
   // un cambio de versión a medias (swap.json): primero lo repara release.js, como siempre
-  if (lexists(own.journal)) REL.repair(ctx, { log: realLog });
+  if (lexists(own.journal) || lexists(own.linkJournal)) REL.repair(ctx, { log: realLog });
   const m = REL.readManifest(own.harness);
   const installed = STAGES.indexOf(j.stage) >= STAGES.indexOf('installed') && m && m.version === j.version;
   if (!installed) {

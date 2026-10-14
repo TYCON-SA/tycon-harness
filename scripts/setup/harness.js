@@ -478,7 +478,9 @@ function runClaudeApplier(ctx, tree, { log, snapshotDir = null, codex = null }) 
   // `TYCON_HARNESS_GIT_BASH_HEALTH=1`: la salud que va a juzgar esta corrida (la de ESTE programa) revisa un `.sh` con
   // el bash de Git en Windows (AC 72). Un harness.js de antes de la W3a no la pone, y el `.ps1` deja entonces los `.sh`
   // para la corrida siguiente: su salud los revisaba con el primer `bash` del PATH (pase adversarial de la W3a, B1)
-  const env = Object.assign({}, ctx.env, { TYCON_HARNESS_LOCK_HELD: '1', TYCON_HARNESS_GIT_BASH_HEALTH: '1' });
+  // (en la forma con enlaces —story 8.33, Windows— los Node que lance el aplicador conservan `~/.tycon/harness` en
+  // `__dirname`: lo que escriban nombra el enlace, no la carpeta numerada)
+  const env = Object.assign({}, mod('tycon-home').keepLinkPathsEnv(ctx.env), { TYCON_HARNESS_LOCK_HELD: '1', TYCON_HARNESS_GIT_BASH_HEALTH: '1' });
   if (snapshotDir) env.TYCON_HARNESS_SNAPSHOT_DIR = snapshotDir; else delete env.TYCON_HARNESS_SNAPSHOT_DIR;
   delete env[SHARED_DONE_ENV];
   // lo de Codex (story 8.23, tanda C): `done` = lo enchufa este programa, salteá tu bloque; `off` = esta máquina no lo
@@ -4026,7 +4028,10 @@ function cmdLink(ctx) {
     if (r.status !== 'ok') { const f = S.fail(r, { home: ctx.home }); return { code: f.code, lines: [f.line] }; }
     const state = r.state;
     if (state.mode === 'managed') return { code: 0, lines: [`ya en modo managed sobre ${state.tree}`] };
-    const target = state.tree_before && real(state.tree_before);
+    // (en la forma con enlaces —story 8.33— `tree_before` es `~/.tycon/harness`, un enlace: se vuelve a ESE nombre, no a la
+    // carpeta numerada a la que lleva hoy; con real() quedaban el estado y el lugar atados a una versión — pase adversarial)
+    const before = state.tree_before && mod('tycon-home').isLink(state.tree_before) ? path.resolve(state.tree_before) : null;
+    const target = before || (state.tree_before && real(state.tree_before));
     if (!target || !isHarnessClone(target)) return { code: 2, lines: [`harness.js link --managed: no hay un árbol anterior al que volver (${state.tree_before || 'sin tree_before'}): harness.js install desde un clon`] };
     const l = ensureLink(ctx, target, { link: target });
     if (!l.ok || !linkResolvesTo(ctx, target)) return { code: 2, lines: [`harness.js link --managed: no pude re-apuntar el enlace: ${l.out || l.err}`] };
@@ -4236,10 +4241,28 @@ function cmdUninstall(ctx) {
       if (keep.copied.length) lines.push(`capa del equipo: editado(s) a mano o dentro de una skill de la lista fija, conservado(s) en ${keep.dir}: ${keep.copied.join(', ')}`);
       const spared = new Set(keep.failedTrees.map((t) => (t === 'harness' ? own.harness : own.previous)));
       if (keep.problems.length) lines.push(`capa del equipo: no pude conservar ${keep.problems.join(' · ')} — ${[...spared].join(' y ')} queda(n) sin quitar`);
-      for (const d of [own.harness, own.previous, own.incoming, own.trash, own.journal]) {
+      // (en la forma con enlaces —story 8.33, Windows— `harness` y `previous` son enlaces: se quita el ENLACE, nunca se
+      // borra a través de él; las versiones viven en versions/, que se quita después)
+      const TH = mod('tycon-home');
+      const versionsSpared = [...spared].filter((d) => TH.isLink(d)).map((d) => TH.linkTarget(d)).filter(Boolean);
+      for (const d of [own.harness, own.previous, own.incoming, own.trash, own.journal, own.linkJournal]) {
         if (spared.has(d)) continue;
-        try { if (fs.existsSync(d)) { fs.rmSync(d, { recursive: true, force: true }); lines.push(`quitado: ${d}`); } } catch (e) { lines.push(`no pude quitar ${d}: ${e.message}`); }
+        try {
+          if (TH.isLink(d)) { TH.removeLink(d); lines.push(`quitado el enlace: ${d}`); }
+          else if (fs.existsSync(d)) { fs.rmSync(d, { recursive: true, force: true }); lines.push(`quitado: ${d}`); }
+        } catch (e) { lines.push(`no pude quitar ${d}: ${e.message}`); }
       }
+      try {
+        if (fs.existsSync(own.versions)) {
+          for (const n of fs.readdirSync(own.versions)) {
+            const v = path.join(own.versions, n);
+            if (versionsSpared.some((s) => path.resolve(s) === path.resolve(v))) { lines.push(`queda ${v}: tiene lo editado que no se pudo conservar`); continue; }
+            if (TH.isLink(v)) TH.removeLink(v); else fs.rmSync(v, { recursive: true, force: true });
+          }
+          if (!fs.readdirSync(own.versions).length) fs.rmdirSync(own.versions);
+          lines.push(`quitado: ${own.versions}`);
+        }
+      } catch (e) { lines.push(`no pude quitar todo ${own.versions} (${e.code || e.message}): si un programa tiene abierta una versión, cerralo y borrala a mano`); }
       for (const l of [linkPath(ctx.home), mod('tycon-home').installedSkillsDir(ctx.home)]) {
         try {
           const st = fs.lstatSync(l);
@@ -4247,7 +4270,7 @@ function cmdUninstall(ctx) {
           // contra la casa del arnés como se la nombra y resuelta (story 8.23, tanda C): con la HOME detrás de un enlace
           // (en Mac, la carpeta temporal) el enlace guarda la ruta resuelta y quedaba colgado
           const to = st.isSymbolicLink() ? path.resolve(path.dirname(l), fs.readlinkSync(l)) : null;
-          if (to && [own.root, real(own.root)].filter(Boolean).some((r) => to === r || to.startsWith(r + path.sep))) { fs.unlinkSync(l); lines.push(`quitado el enlace: ${l}`); }
+          if (to && [own.root, real(own.root)].filter(Boolean).some((r) => to === r || to.startsWith(r + path.sep))) { mod('tycon-home').removeLink(l); lines.push(`quitado el enlace: ${l}`); }
         } catch (_) { /* no está */ }
       }
       // ~/.tycon/team (la caché de la capa del equipo y lo conservado) se nombra sólo si existe: sin capa, la línea de siempre (AC 16)
