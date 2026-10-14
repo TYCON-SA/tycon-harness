@@ -290,11 +290,8 @@ en la prueba. Cada una que se podría hacer portable queda para una story aparte
 
 | Por qué no viaja | Qué |
 |---|---|
-| Su código o sus datos quedan afuera | `vigilante`, `nightly-dependencies`, `work-items`, `work-item-status`, `daily-summary`, `open-pr-per-finding`, `nightly-publishes-report`, `suites-report`, `pr-verdict`, `nightly-dashboard`, `states-dictionary`, `pre-commit-stories`, `mapa-arnes-censo`, `mapa-arnes-publico`, `steps-per-run`; el caso `hooks/31-vigilante.json` |
+| Su código o sus datos quedan afuera | `vigilante`, `nightly-dependencies`, `work-items`, `work-item-status`, `daily-summary`, `open-pr-per-finding`, `nightly-publishes-report`, `suites-report`, `pr-verdict`, `nightly-dashboard`, `mapa-arnes-censo`, `mapa-arnes-publico`; el caso `hooks/31-vigilante.json` |
 | Usa lo privado de la publicación | `export-real.test.sh` (la tabla y la lista de denegación no viajan) |
-| Reconoce al arnés por el remoto o lee el historial del repo interno: la copia es un commit sin remoto hasta que se publique | `harness-repo` (T15), `retro-heartbeat` (T11b), `trimmed-close` (T12; y su T8 audita el catálogo entero, al que en el núcleo le faltan las secciones de bizuit), `installer-codex-evidence` (lee un commit viejo del instalador) |
-| Lee datos del equipo que no viajan | `manifest-engram` (el índice real de `.engram/`), `forms-to-version` (`guides/incident-log.md`) |
-| Compara huellas del texto interno | `test-skill-contract.js` de agent-skills (el hash de cada párrafo del SKILL.md; regenerarlo necesita el historial) |
 | Espera a otra story (`pendientes` del `--json`) | de bizuit, sus traducciones a Codex, sus casos del banco y sus secciones del catálogo |
 
 Dos pruebas declaran la llave de su integración en vez de contar con que el perfil del equipo la prende:
