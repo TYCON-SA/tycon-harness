@@ -1,33 +1,28 @@
-# adapters/ — lo que cada herramienta consume (plan codex-migration.md §3)
+# adapters/ — lo que se traduce para Codex
 
-**El canónico se escribe UNA vez** (guías, reglas con ID, skills, scripts de hooks, los 28
-advisors en `agent-skills/agents/*.md`). Este directorio contiene solo lo que hay que
-**traducir o fragmentar** por herramienta.
+**No edites nada de esta carpeta a mano.** Todo sale de `node build/generate.js`, a partir de los revisores de
+`agents/*.md`. Para cambiar un revisor, editá su `.md` y regenerá.
 
-## Por qué NO hay `adapters/claude/`
+| Qué | Para qué |
+|---|---|
+| `codex/agents/*.toml` | Cada revisor como perfil de Codex: se corre con `codex exec -p <nombre>`. |
+| `codex/agents-native/*.toml` | Los mismos revisores como subagentes que una sesión de Codex lanza sola. |
+| `codex/agents/MANIFEST.json` | Qué revisores ya están traducidos. Un revisor entra sólo con sus casos de prueba en `scripts/controls-bench/cases/advisors/`. |
+| `codex/hooks.json` | Qué controles automáticos registra Codex. Los controles son los mismos de `scripts/hooks/`: no se traducen. |
 
-Claude Code consume el canónico **tal cual** (symlink/registración directa, sin copia): los
-advisors los lee de `~/.claude/agent-skills/agents/`, los hooks los registra
-`install-tycon-hooks.sh` apuntando a los scripts reales de `scripts/hooks/`. Crear una copia
-acá sería el drift que la migración existe para eliminar. Si algún día Claude necesita un
-fragmento propio que no pueda vivir en el canónico, recién ahí nace `claude/`.
+## Comandos
 
-## `codex/agents/*.toml` — GENERADOS, no editar
+- ¿Está al día? `node build/check.js`. Lo corre también el control antes de cada commit.
+- Regenerar: `node build/generate.js`. Instalar en tu máquina: `node build/generate.js --deploy`.
 
-Salida de `build/generate.js` (la única pieza de traducción del harness — principio 2).
-Cada `.toml` es un config-overlay de Codex que se despliega como
-`$CODEX_HOME/<name>.config.toml` y se invoca `codex exec -p <name>` (verificado
-empíricamente, Codex CLI 0.149.0, con `--strict-config`).
+## Un paso a mano en Codex
 
-- `MANIFEST.json` — qué advisors están migrados. Un advisor entra al manifest **con sus
-  casos en el banco** (`scripts/controls-bench/cases/advisors/`) — regla dura B2.
-- ¿Está al día? → `node build/check.js` (pre-commit / corrida diaria del instalador).
-- Regenerar → `node build/generate.js` · desplegar → `node build/generate.js --deploy`.
+Codex pide aprobar cada control la primera vez, y otra vez cada vez que su guion cambia. Se aprueban en una sesión de
+`codex`, con `/hooks`. Sin esa aprobación los controles no corren, y no dan error.
 
-## `codex/hooks.json` — fragmento de hooks del lado Codex
+## Por qué no hay `adapters/claude/`
 
-Los scripts de hooks son los REALES de `scripts/hooks/` (no se traducen: los 5 eventos y el
-bloqueo por exit 2 funcionan igual en Codex — inventario §A.1/§A.3, verificado B1/C). Lo único
-Codex-específico es el archivo de registración. `${TCG}` lo sustituye el instalador al
-desplegar (Etapa F; hasta entonces, deploy manual). Gotcha operativo: Codex exige **trust por
-hash** del hook (`/hooks` en sesión interactiva) y lo re-untrustea con cada cambio del script.
+Claude Code usa los originales sin traducir: los revisores de `agents/` y los controles de `scripts/hooks/`.
+
+El diseño completo está en [`guides/codex-migration.md`](../guides/codex-migration.md); el de los subagentes nativos, en
+[`guides/decisions/codex-etapa-g-diseno.md`](../guides/decisions/codex-etapa-g-diseno.md).

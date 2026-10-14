@@ -91,6 +91,9 @@ const SECTIONS = [
   ['What you need', 'Qué necesitás'],
   ['Install with Claude Code', 'Instalar con Claude Code'],
   ['Start working', 'Empezar a trabajar'],
+  // 2026-10-13 (pedido del dueño): la sección para quien arma el arnés en una organización, y una tabla de a dónde seguir
+  ['For an organization', 'Para una organización'],
+  ['Where to go next', 'Dónde seguir'],
   ['Reference', 'Referencia'],
   ['What it is and what it isn\'t', 'Qué es y qué no es'],
   ['Requirements', 'Requisitos'],
@@ -335,13 +338,14 @@ test('Papeles_Comunidad_SusSecciones', () => {
     assertEnglishParagraph(firstParagraph(text), file);
   }
 
-  // CONTRIBUTING: el flujo del espejo (8.8, S6), cómo correr lo de la CI, las dos reglas de escritura, licencia e idioma.
-  assert.match(contributing, /espejo/, 'CONTRIBUTING: tiene que decir que el repo es una copia espejo');
-  assert.match(contributing, /no se mergea en GitHub/, 'CONTRIBUTING: tiene que decir que un pull request no se mergea en GitHub');
-  assert.match(contributing, /próxima sincronización/, 'CONTRIBUTING: tiene que decir que el cambio vuelve en la próxima sincronización');
+  // CONTRIBUTING: los pull requests son bienvenidos (decisión del dueño, 2026-10-13: el público es la fuente, ya no un
+  // espejo), cómo correr lo de la CI, las dos reglas de escritura, licencia e idioma.
+  assert.doesNotMatch(contributing, /espejo|mirror|sincronizaci/i, 'CONTRIBUTING: el repo ya no es un espejo que se sincroniza');
+  assert.match(contributing, /bienvenidos/, 'CONTRIBUTING: tiene que decir que los pull requests son bienvenidos');
+  assert.match(contributing, /TYCON lo revisa y decide/, 'CONTRIBUTING: tiene que decir quién revisa y decide');
+  assert.match(contributing, /se mergea acá/, 'CONTRIBUTING: tiene que decir que uno aceptado se mergea en este repo');
   assert.match(contributing, /se cierra con su motivo/, 'CONTRIBUTING: tiene que decir que uno no aceptado se cierra con su motivo');
-  assert.match(contributing, /enlace al pull request original/, 'CONTRIBUTING: el crédito es el enlace al pull request original');
-  assert.match(contributing, /sin `Co-authored-by`/, 'CONTRIBUTING: tiene que decir que no se usa `Co-authored-by`');
+  assert.match(contributing, /\(un fork\)/, 'CONTRIBUTING: tiene que decir qué pasa por ahora con un pull request desde una copia');
   assert.ok(contributing.includes('bash scripts/ci/public-ci.sh'), 'CONTRIBUTING: falta cómo correr lo mismo que la CI');
   assert.ok(contributing.includes('guides/nombres-en-ingles.md'), 'CONTRIBUTING: falta la regla de nombres en inglés');
   assert.match(contributing, /nombres inventados/, 'CONTRIBUTING: falta la regla de ejemplos con nombres inventados');
@@ -1181,7 +1185,9 @@ const QUESTIONS_KEYWORDS = {
     'Pregunta una sola vez', 'con `--yes`', 'sobre una instalación que ya existe no pregunta nada', 'cómo cambiar el perfil o las integraciones'],
 };
 const UNATTENDED_FULL = { en: 'or `--profile full`', es: 'o `--profile full`' };
-const TEAM_ONLY = { en: 'team-only: they need infrastructure this repo does not ship', es: 'del equipo: piden infraestructura que este repo no trae' };
+// 2026-10-13: mailbox y nightly ya no se marcan como «del equipo, con infraestructura que este repo no trae», sino por lo que
+// son: piezas de la organización (su buzón, sus procesos de la noche, que corren desde su repo de operaciones)
+const TEAM_ONLY = { en: "your organization's", es: 'de tu organización' };
 function questionsProblems(text, lang) {
   const out = [];
   const inst = IN_INSTALL(text, lang);

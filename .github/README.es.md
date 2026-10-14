@@ -1,14 +1,16 @@
-# Arnés TYCON para Claude Code
+# Arnés TYCON para Claude Code y Codex
 
 [English](README.md) · Castellano
 
-Le suma a Claude Code las reglas, guías y revisiones con que TYCON desarrolla extensiones de BIZUIT (.NET y React).
+Le suma a Claude Code (y a Codex, si lo prendés) las reglas, guías y revisiones con que TYCON desarrolla extensiones
+de BIZUIT (.NET y React).
 Vos pedís un cambio: Claude arma un plan, espera tu visto bueno, programa, corre las pruebas y deja el commit listo.
 Todo corre en tu máquina, dentro de Claude Code, y no manda tu código a ningún lado.
 
 ## Antes de instalar: qué cambia en tu máquina
 
-La instalación recomendada pone el perfil completo (`full`). Cambia cosas en todos tus proyectos, no sólo en uno:
+Si instalás con Claude, como dice más abajo, queda el perfil completo (`full`); el comando a mano te pregunta cuál
+querés. El completo cambia cosas en todos tus proyectos, no sólo en uno:
 
 - Claude te contesta en castellano, corto y con la conclusión primero.
 - En un repo que trabaja con stories, Claude no edita código sin pasar por el proceso de stories del arnés.
@@ -17,7 +19,8 @@ La instalación recomendada pone el perfil completo (`full`). Cambia cosas en to
 - Una vez por día lee el historial de git de los repos vecinos al arnés. Lo que anota queda en tu máquina.
 - Claude Code guarda tus conversaciones un año.
 
-Si no querés esto, pedí el perfil mínimo (`minimal`): trae las guías, los revisores y el proceso de stories, y nada más.
+Si no querés esto, pedí el perfil mínimo (`minimal`). Trae las guías, los revisores y el proceso de stories. No cambia
+cómo te contesta Claude ni toca git. Deja un solo freno: el de comandos destructivos.
 Para sacar el arnés, `harness.js uninstall --dry-run` muestra qué quitaría, y `harness.js uninstall --yes` lo quita.
 
 ## Qué necesitás
@@ -60,7 +63,42 @@ usa desde ahí, y se actualiza solo en ese lugar. Usar el arnés nunca necesita 
 5. Claude te muestra el plan, espera tu visto bueno, programa y corre las pruebas y los revisores.
 6. Deja el commit preparado: nunca commitea ni sube cambios sin tu permiso.
 
-Si algo no anda, `node ~/.claude/tycon-harness/scripts/setup/harness.js doctor` dice qué falta, sin tocar nada.
+Si algo no anda, escribí `/tycon-harness` en Claude Code (qué versión tenés, si está bien instalado y si hay una nueva), o corré `node ~/.claude/tycon-harness/scripts/setup/harness.js doctor`, que dice qué falta. Ninguno de los dos toca nada.
+
+## Para una organización
+
+**Primero probalo solo.** Instalalo en tu máquina como dice arriba: no hace falta nada de tu organización. Si te sirve,
+se arma para el equipo con dos repos de la organización, que sólo ve tu equipo, además de éste, que es el mismo para
+todos:
+
+| Repo | Qué guarda | ¿Llega a cada máquina? |
+|---|---|---|
+| Éste (público) | el arnés | Sí |
+| El **perfil del equipo** (por ejemplo `harness-team-profile`) | la configuración que comparte el equipo y la lista de dónde vive cada repo de la organización (`team-repos.json`) | Sí, a cada máquina que instala con `--team` |
+| Las **operaciones del equipo** (por ejemplo `harness-team-operations`) | lo que corre de noche para la organización (dependencias, tablero, retrospectivas) y a quién se le asignan sus avisos (`operations.json`) | No: lo leen sólo esos procesos |
+
+Un ejemplo: en ACME, Pedro administra y Juan programa.
+
+1. Pedro crea los dos repos de ACME, en su Azure DevOps o en su GitHub, con acceso sólo para el equipo.
+2. Pedro corre `node ~/.claude/tycon-harness/scripts/setup/harness.js team-config`. Se abre una página en su máquina,
+   sin nada en internet, donde declara dónde vive cada repo y a quién se le asignan los avisos. La página revisa lo que
+   escribe, lo guarda en el repo que corresponde y le ofrece el pull request.
+3. Juan instala con `--team` y el perfil: `harness.js install --version latest --team acme/harness-team-profile` si está
+   en GitHub, o con la dirección del repo si está en Azure DevOps. Desde ahí, cada actualización le trae también lo del
+   equipo.
+
+**Lo que todavía no está.** Los procesos de la noche corren hoy en Azure DevOps: para una organización que vive en
+GitHub faltan sus versiones para GitHub Actions. El vigilante de producción todavía es propio de TYCON y no se publica.
+
+## Dónde seguir
+
+| Si querés… | Leé |
+|---|---|
+| Instalar a mano, en Linux o sin nadie delante | [Instalar a mano](#instalar-a-mano), más abajo |
+| Saber qué escribe en tu máquina y cómo apagar cada cosa | [Qué escribe en tu máquina](#qué-escribe-en-tu-máquina-y-qué-hace-solo) |
+| Actualizar, volver atrás o desinstalar | [Cómo se actualiza](#cómo-se-actualiza) |
+| Usarlo con Codex | [Qué es opcional](#qué-es-opcional) y [INSTALL.md](../INSTALL.md) |
+| Cambiar el arnés | [CONTRIBUTING.md](CONTRIBUTING.md) |
 
 ## Referencia
 
@@ -327,10 +365,10 @@ variable; `node ~/.claude/tycon-harness/scripts/lib/tycon-config.js explain` mue
 | `clockify` | los hooks de registro de horas en Clockify | `integrations.clockify: true`, o `TYCON_CLOCKIFY=1` |
 | `engram` | la memoria persistente de engram: sincroniza en cada commit y la revisa una vez por día | `integrations.engram: true`, o `TYCON_ENGRAM=1` |
 | `codegraph` | el índice de código de CodeGraph para los agentes (informativa: CodeGraph lo instalás vos) | `integrations.codegraph: true`, o `TYCON_CODEGRAPH=1` |
-| `mailbox` | del equipo: piden infraestructura que este repo no trae. Sube los registros de las corridas del pipeline a un buzón compartido | `integrations.mailbox: true`, o `TYCON_MAILBOX=1` (su llave en `TYCON_MAILBOX_JSON`) |
+| `mailbox` | sube los registros de cada corrida del pipeline a un buzón de tu organización; hace falta que la organización lo tenga armado (hoy, un almacenamiento de Azure) | `integrations.mailbox: true`, o `TYCON_MAILBOX=1` (su llave en `TYCON_MAILBOX_JSON`) |
 | `codex` | despliega el lado Codex | `integrations.codex: true` o `"detect"`, o `TYCON_CODEX=1` |
 | `claude` | enchufa Claude Code (hooks, ajustes, el import del README) | `integrations.claude: true` o `"detect"`, o `TYCON_CLAUDE=1` |
-| `nightly` | del equipo: piden infraestructura que este repo no trae. Los avisos de los trabajos nocturnos de tu equipo (tablero, dependencias, retrospectivas) | `integrations.nightly: true`, o `TYCON_NIGHTLY=1` |
+| `nightly` | los avisos de los procesos de la noche de tu organización (tablero, dependencias, retrospectivas), que corren desde su repo de operaciones: ver [Para una organización](#para-una-organización) | `integrations.nightly: true`, o `TYCON_NIGHTLY=1` |
 | `telegram` | avisos de progreso a un chat de Telegram | `telegram.chat_id` en `~/.claude/tycon.json`, o `TYCON_TELEGRAM_CHAT_ID` |
 
 **El lado Codex**: el mismo arnés bajo Codex, traducido y desplegado solo. Pide `codex` en el PATH y logueado, y
@@ -355,7 +393,7 @@ tres bloques de reglas en `~/.claude/CLAUDE.md`, entre sus propios marcadores, y
 - `background-execution`: los pasos de más de dos minutos corren en segundo plano y se anuncian antes. Otro hook mide
   lo que dejó bloqueada la conversación (`TYCON_BLOCKING_METER=0`).
 - `tool-names`: la tabla con el nombre exacto de cada herramienta que nombran esas reglas.
-- La línea de import carga en cada sesión el `README.md` del arnés: unos 18 KB, en castellano, con el índice de las
+- La línea de import carga en cada sesión el `README.md` del arnés: unos 12 KB, en castellano, con el índice de las
   guías y las reglas siempre activas.
 - Los enlaces de `~/.claude/skills` y `~/.claude/agents` dejan disponibles en todas tus sesiones las skills y los
   revisores del arnés: el nombre y la descripción de cada uno se cargan en cada sesión.
@@ -465,8 +503,6 @@ su archivo de métricas (`TYCON_RETRO_PENDING=0` lo apaga). El comando de más a
 `.tycon/`. Dos apagados del portón de edición: `TYCON_STORY_GATE=off` en tu ambiente (el agente no puede ponerla en la
 sesión en curso), y `pipeline.story_gate: false` en `.tycon/advisors.yaml`, commiteado, para ese repo.
 
-Este arnés usa BMad Method, MIT; no está afiliado ni respaldado por BMad Code, LLC.
-
 ## Sin red
 
 Sin red, la instalación igual termina (exit 0). El paso de terceros dice en una línea que no pudo preguntar a los
@@ -479,23 +515,23 @@ instalador. Sirve también si, con red, quedaron skills pendientes porque el pas
 
 ## Cómo se actualiza
 
-- **Versiones**: cada versión lleva un número `AAAA.MM.DD.N`, donde `N` es su orden dentro del día. `stable` es lo
-  que el equipo ya aprobó; `latest` es lo último sincronizado, todavía sin aprobar. Pasar de `latest` a `stable`
-  nunca baja de versión.
-- **Canal**: `stable` por defecto; `latest` sigue cada cambio. Se ve o se fija con
+- **Versiones**: cada versión lleva un número `AAAA.MM.DD.N`, donde `N` es su orden dentro del día. `stable` es `main` de
+  este repo, que sólo cambia por un pull request revisado. `latest` leería una rama de prueba si este repo la tuviera;
+  hoy no la tiene, así que los dos canales traen lo mismo. Pasar de `latest` a `stable` nunca baja de versión.
+- **Canal**: `stable` por defecto. Se ve o se fija con
   `node ~/.claude/tycon-harness/scripts/setup/harness.js channel [latest|stable]`, o con `TYCON_UPDATE_CHANNEL`.
 - **Política**: `ask` por defecto (avisa y espera); `auto` aplica sola. Se fija con `TYCON_UPDATE_APPLY` o con
-  `update.apply` en `~/.claude/tycon.json`. Elegir `latest` junto con `auto` te pide que lo confirmes: recibís lo que
-  el equipo empuja, en minutos, sin revisión tuya.
+  `update.apply` en `~/.claude/tycon.json`. Elegir `latest` junto con `auto` te pide que lo confirmes: recibís cada
+  cambio que entra a `main`, en minutos, sin revisión tuya.
 - **A mano**: `harness.js update --check` dice si hay versión nueva; `harness.js update --yes` la aplica;
   `harness.js version` muestra lo instalado; `harness.js doctor` diagnostica sin cambiar nada.
 - **Volver atrás**: `harness.js rollback --list` muestra las copias a las que se puede volver, y
   `harness.js rollback --to <copia>` vuelve a la que elijas. Después de volver atrás, el arnés deja de actualizarse
   solo hasta que lo sueltes con `harness.js rollback --release`.
 - **Quitar todo**: `harness.js uninstall --dry-run` muestra qué quitaría; `harness.js uninstall --yes` quita sólo lo que
-  registró el mecanismo, y deja intactos el clon y lo tuyo.
+  registró el mecanismo, y deja intacto lo tuyo.
 - **El arranque**: la línea de arranque corre desde una copia fija en `~/.claude/.tycon-pipeline/harness/`, no desde
-  el clon, así una actualización a medias no la rompe. `TYCON_UPDATE=0` apaga la actualización; `TYCON_UPDATE_CHANNEL` y
+  la carpeta que se actualiza, así una actualización a medias no la rompe. `TYCON_UPDATE=0` apaga la actualización; `TYCON_UPDATE_CHANNEL` y
   `TYCON_UPDATE_APPLY` fijan el canal y la política.
 
 Todos corren como `node ~/.claude/tycon-harness/scripts/setup/harness.js <comando>`.
@@ -508,5 +544,5 @@ los archivos derivados de trabajo de terceros.
 TYCON y Bizuit son marcas de sus dueños, y la licencia no las otorga.
 Este arnés usa BMad Method, MIT; no está afiliado ni respaldado por BMad Code, LLC.
 
-Para contribuir, leé [CONTRIBUTING.md](CONTRIBUTING.md) (el repo es un espejo). Para reportar una vulnerabilidad, leé
+Para contribuir, leé [CONTRIBUTING.md](CONTRIBUTING.md). Para reportar una vulnerabilidad, leé
 [SECURITY.md](SECURITY.md). Participar sigue el [código de conducta](CODE_OF_CONDUCT.md).
