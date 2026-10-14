@@ -61,7 +61,9 @@ const PERSONAL_SIDES = Object.freeze(['skills', 'agents']);
 // la carpeta skills/ o agents/ de Claude Code: su ruta se la pide a tycon-home.js (la carpeta vieja vive al lado)
 const claudeSide = (home, side) => path.join(path.dirname(TH.installedSkillsDir(home)), side);
 // lo que puede haber en `~/.tycon` y es nuestro: cualquier otra cosa frena (AC 27)
-const OWN_ENTRIES = Object.freeze(['harness', 'previous', 'incoming', 'trash', 'third-party', 'team', 'state', 'backups', 'config.json', 'swap.json', JOURNAL_NAME]);
+// (`versions` y `link-swap.json`: la forma con enlaces de Windows, story 8.33; la mudanza nace en esa forma porque
+// instala con `release.swap`, que en Windows cambia enlaces)
+const OWN_ENTRIES = Object.freeze(['harness', 'previous', 'incoming', 'trash', 'third-party', 'team', 'state', 'backups', 'config.json', 'swap.json', 'versions', 'link-swap.json', JOURNAL_NAME]);
 const DIE_VAR = 'TYCON_MIGRATE_DIE_AT';
 const HEAD = 'harness.js migrate';
 
@@ -74,7 +76,8 @@ const isLink = (p) => { try { return fs.lstatSync(p).isSymbolicLink(); } catch (
 const isRealDir = (p) => { try { const st = fs.lstatSync(p); return st.isDirectory() && !st.isSymbolicLink(); } catch (_) { return false; } };
 const real = (p) => { try { return fs.realpathSync(p); } catch (_) { return null; } };
 const slash = (p) => String(p).replace(/\\/g, '/');
-const rmrf = (p) => { try { fs.rmSync(p, { recursive: true, force: true }); } catch (_) { /* queda: lo dice doctor */ } };
+// un enlace (la forma con enlaces de la 8.33) se quita como enlace: nunca se borra a través de él
+const rmrf = (p) => { try { if (TH.isLink(p)) TH.removeLink(p); else fs.rmSync(p, { recursive: true, force: true }); } catch (_) { /* queda: lo dice doctor */ } };
 const readJson = (file) => { try { return JSON.parse(fs.readFileSync(file, 'utf8').replace(/^﻿/, '')); } catch (_) { return null; } };
 const readText = (file) => { try { return fs.readFileSync(file, 'utf8'); } catch (_) { return null; } };
 function writeAtomic(file, text, mode) {
@@ -848,12 +851,15 @@ function stageReplugged(ctx, j, H, log, { snap = null } = {}) {
   const policy = H.policyOf(ctx, p.own.harness);
   if (!policy.errors.length) { state.policy = { channel: policy.channel, apply: policy.apply, enabled: policy.enabled }; H.applyPolicy(ctx, state, policy); }
   H.copyBootstrap(ctx, p.own.harness, state, { version: j.version });
-  const a = H.runApplier(ctx, p.own.harness, { log, snapshotDir: snap && snap.dir, tools, force: true });
+  // `hooksPath`: la carpeta global de hooks de git, si git no tiene ninguna (2026-10-14: una máquina mudada quedaba con los
+  // hooks del arnés en ~/.git-hooks y git sin mirarlos — el freno antes de publicar no corría)
+  const a = H.runApplier(ctx, p.own.harness, { log, snapshotDir: snap && snap.dir, tools, force: true, hooksPath: true });
   state.last_apply = nowIso();
   if (!a.ok) return { ok: false, reason: `el aplicador del árbol nuevo falló (${a.reason})`, state };
   dropOldHooks(H.settingsPath(ctx), p.oldTreeReal, { newTree: p.own.harness, log });
   for (const w of a.warnings || []) j.notes = [...(j.notes || []), w];
   H.recordPieces(ctx, state, a.report, a.shared);
+  { const hp = H.noteHooksPath(state, a); if (hp) j.notes = [...(j.notes || []), hp]; }
   const prof = H.profileOf(ctx, p.own.harness);
   if (prof.ok) state.profile = { value: prof.value, origin: prof.origin };
   // la salud corre `doctor`, que lee el estado DEL DISCO: el que dice «clon» daría «el enlace no apunta al árbol». El
@@ -1037,9 +1043,10 @@ function undo(ctx, j, H, { log, why }) {
     if (typeof j.oldStateText === 'string' && isRealDir(p.oldStateDir)) writeAtomic(path.join(p.oldStateDir, S.FILE_NAME), j.oldStateText);
   } catch (e) { say(`no pude volver el estado (${e.message})`); }
   // la versión instalada (lo que esta mudanza puso en ~/.tycon)
-  if (!j.harnessExisted) { rmrf(p.own.harness); if (!j.previousExisted) rmrf(p.own.previous); }
+  if (!j.harnessExisted) { rmrf(p.own.harness); if (!j.previousExisted) rmrf(p.own.previous); if (j.versionsExisted === false) rmrf(p.own.versions); }
   if (j.incoming) rmrf(j.incoming);
   rmrf(p.own.journal);
+  rmrf(p.own.linkJournal);
   rmrf(journalPath(ctx));
   say(why);
 }
@@ -1110,7 +1117,7 @@ function migrate(ctx, H, { log = null, auto = false, state: given = null } = {})
     const j = {
       schema: 1, stage: 'start', at: nowIso(), version: target.version, commit: target.commit, ref: target.ref,
       repo: repo.url, repoName: repo.repo, oldTree: state.tree, incoming: d.dir, tools: [...tools],
-      harnessExisted: lexists(p.own.harness), previousExisted: lexists(p.own.previous),
+      harnessExisted: lexists(p.own.harness), previousExisted: lexists(p.own.previous), versionsExisted: lexists(p.own.versions),
       oldStateText: readText(S.paths(ctx.home).file),
       oldConfigText: pre.oldConfigData ? readText(p.oldConfig) : null, oldConfigLink: pre.oldConfigData && isLink(p.oldConfig) ? readlink(p.oldConfig) : null, ownConfigText: pre.ownConfigData ? readText(p.newConfig) : null,
       dashCopied: false, backupsMoved: false, notes: [],
@@ -1175,7 +1182,7 @@ function repair(ctx, H, { log = null } = {}) {
   const realLog = (l) => { if (log) log(l); else R.log(ctx.home, l); };
   const own = ownOf(ctx);
   // un cambio de versión a medias (swap.json): primero lo repara release.js, como siempre
-  if (lexists(own.journal)) REL.repair(ctx, { log: realLog });
+  if (lexists(own.journal) || lexists(own.linkJournal)) REL.repair(ctx, { log: realLog });
   const m = REL.readManifest(own.harness);
   const installed = STAGES.indexOf(j.stage) >= STAGES.indexOf('installed') && m && m.version === j.version;
   if (!installed) {

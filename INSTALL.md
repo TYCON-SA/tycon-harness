@@ -68,6 +68,15 @@ cambio. En cada sesión, la línea de arranque mira si hay una versión nueva de
 pregunta: no la aplica sin que lo pidas (`node ~/.claude/tycon-harness/scripts/setup/harness.js update --yes`).
 `TYCON_UPDATE=0` la apaga; `harness.js doctor` dice cómo quedó todo y `harness.js uninstall` quita sólo lo que registró.
 
+**En Windows, `~/.tycon/versions`.** Cada versión vive en su carpeta, `~/.tycon/versions/<versión>/`, y `~/.tycon/harness`
+y `~/.tycon/previous` son uniones (enlaces de carpeta) a la activa y a la anterior. Así la actualización anda con otras
+sesiones o VS Code abiertos: cambia la unión y no mueve la carpeta que alguien está usando. Una versión vieja se borra
+sola en un arranque cuando ningún programa la tiene abierta. Si `doctor` la lista como «pendiente de limpiar» hace días,
+cerrá las otras sesiones de Claude Code y de Codex y VS Code; si sigue, reiniciá la máquina. La primera vez, una máquina
+ya instalada pasa a esta forma sola: lo intenta en silencio en cada arranque. Si la carpeta sigue en uso tres días (o
+diez arranques), el arranque te avisa una vez qué cerrar y qué comando correr (`harness.js update --yes`, en una
+terminal suelta); mientras tanto `doctor` lo muestra como pendiente. En Mac y Linux no hay `versions/`: nada cambia.
+
 ### 5. Si trabajás con BIZUIT Extensions desde otra organización
 
 El arnés anda sin Azure DevOps, sin Clockify y sin engram: todo eso nace apagado y nada lo pide. Tres pasos te dejan
@@ -90,21 +99,23 @@ Con la capa del equipo instalada (`guides/mecanismo-de-instalacion.md`, «La cap
 si su perfil declara los paquetes, el perfil del equipo gana sobre ese archivo: ahí vale la variable, o `packs:` en el repo.
 Para arrancar un plugin o un formulario nuevo, las guías de guides/bizuit/ te mandan a los templates públicos.
 
-**2. Confirmá los hooks globales de git.** El instalador los copia a `~/.git-hooks/`, pero git los usa sólo si se lo
-decís, y eso no lo hace solo: es tu configuración global. Primero mirá si ya tenés una:
+**2. Confirmá los hooks globales de git.** El instalador los copia a `~/.git-hooks/`, y git los usa sólo con una
+carpeta global de hooks. Si git no tenía ninguna, `install` (o `apply`) la apuntó a esa carpeta; si ya tenías otra, no
+la tocó. Mirá cómo quedó:
 
 ```bash
 git config --global --get core.hooksPath
 ```
 
-Si no devuelve nada, activalos (en PowerShell, la misma línea con `"$env:USERPROFILE\.git-hooks"`):
+Si no devuelve nada (por ejemplo, git no dejó escribir la configuración), activalos a mano (en PowerShell, la misma línea
+con `"$env:USERPROFILE\.git-hooks"`):
 
 ```bash
 git config --global core.hooksPath ~/.git-hooks
 ```
 
-Si devuelve otra carpeta (husky, hooks tuyos), no la pises: decidí vos. Sin este paso, el arnés funciona igual, pero
-sin los controles que corren al commitear. `harness.js doctor` te dice si quedó.
+Si devuelve otra carpeta (husky, hooks tuyos), no la pises: decidí vos. Sin la carpeta global, el arnés funciona igual,
+pero sin los controles que corren al commitear. `harness.js doctor` te dice si quedó.
 
 **3. engram y Clockify son opcionales.** engram (memoria entre sesiones) se prende con `TYCON_ENGRAM=1` o
 `"integrations": { "engram": true }` en `~/.claude/tycon.json`; Clockify (horas), con `TYCON_CLOCKIFY=1` y

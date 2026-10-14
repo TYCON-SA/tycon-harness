@@ -1230,16 +1230,18 @@ test('Papers_ProfilesAndQuestions_UnattendedCarriesProfile_BothLanguages (T50)',
 // ── portada clara (2026-10-06): lo que cambia, ANTES de instalar, y lo que las instrucciones para Claude cumplen ────
 // La parte de arriba avisa, antes de los pasos, lo que el camino recomendado (`full`) cambia en todos los proyectos —
 // sobre todo `core.hooksPath`, el único efecto que puede apagar algo propio del lector— y cómo pedir `minimal`. Las dos
-// instrucciones que se le pegan a Claude cumplen esas promesas: preguntan antes de `core.hooksPath`, saben pedir el
-// perfil mínimo y piden el mismo Node que «Requisitos». Ninguno de los cuatro papeles dice «v20» (la portada pedía 22 en
-// los requisitos y v20 en los pasos: revisión del lector interno, F1).
+// instrucciones que se le pegan a Claude cumplen esas promesas: el plan que se muestra antes del «sí» dice si configura
+// `core.hooksPath` (desde el 2026-10-14 la pone la instalación si git no tiene ninguna: antes no la ponía nadie y una
+// máquina mudada quedaba sin el freno antes de publicar), saben pedir el perfil mínimo y piden el mismo Node que
+// «Requisitos». Ninguno de los cuatro papeles dice «v20» (la portada pedía 22 en los requisitos y v20 en los pasos:
+// revisión del lector interno, F1).
 const IN_BEFORE = sectionOf(at('Before you install: what changes on your machine'));
 const BEFORE_KEYWORDS = {
   both: ['`full`', '`minimal`', '`core.hooksPath`', '`.git/hooks/`', 'harness.js uninstall --dry-run'],
   en: ['in all your projects', 'in Spanish', 'for a year'],
   es: ['en todos tus proyectos', 'en castellano', 'un año'],
 };
-const GUIDE_KEYWORDS = ['node v22 o más', 'quiero el perfil mínimo', '--profile minimal', '.git/hooks/', 'esperá mi\n   sí'];
+const GUIDE_KEYWORDS = ['node v22 o más', 'quiero el perfil mínimo', '--profile minimal', '.git/hooks/', 'si configura la carpeta global de hooks de git) y preguntame si sigo'];
 function clearTopProblems(text, lang) {
   const out = [];
   const where = IN_BEFORE(text, lang);
