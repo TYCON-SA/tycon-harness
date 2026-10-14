@@ -1,7 +1,8 @@
 'use strict';
 // team.js — la capa del equipo sobre la versión bajada (story 8.25, tanda A1a).
 //
-// Qué resuelve: la versión publicada es la copia pública y no trae lo que es del equipo —el perfil (perfil-equipo.json)
+// Qué resuelve: la versión publicada es la copia pública y no trae lo que es del equipo —el perfil (team-profile.json; el
+// nombre de antes, perfil-equipo.json, sigue valiendo)
 // y la llave del buzón (scripts/metrics/corridas-buzon.json)—; la primera máquina mudada (2026-10-08) quedó con las
 // integraciones, el paquete por defecto y la política de fábrica. Acá vive la capa: un segundo repo privado (GitHub o Azure),
 // chico, con esos dos archivos y su declaración (team-layer.json), que `install --version … --team <org>/<repo>`, `update` y
@@ -35,8 +36,41 @@ const lib = (name) => require(path.join(__dirname, '..', '..', 'lib', name));
 // ciclo: team.js va antes que release.js en esa copia (170 #12506, tycon-home T2b)
 const rel = () => require(path.join(__dirname, 'release.js'));
 
-/** Los dos archivos de la A1, por su ruta exacta (D3): se aceptan aunque la versión no traiga su manifiesto. */
-const A1_PATHS = Object.freeze(['perfil-equipo.json', 'scripts/metrics/corridas-buzon.json']);
+/**
+ * El perfil del equipo se llama `team-profile.json` (lo que lee la máquina se nombra en inglés: guides/nombres-en-ingles.md).
+ * El nombre de antes, `perfil-equipo.json`, sigue valiendo sin fecha de retiro: vive en repos del equipo que el arnés no
+ * controla, y una máquina con una versión anterior sólo conoce ése. Se busca primero el nuevo; si no está, el de antes, con
+ * un aviso de una línea que dice cómo renombrarlo. Con los dos, gana el nuevo, el de antes no se apila y se avisa.
+ */
+const PROFILE_PATH = 'team-profile.json';
+const LEGACY_PROFILE_PATH = 'perfil-equipo.json';
+const PROFILE_PATHS = Object.freeze([PROFILE_PATH, LEGACY_PROFILE_PATH]);
+const isProfilePath = (p) => PROFILE_PATHS.includes(p);
+/** El perfil entre los archivos de una lista (`[{ path }]`): el del nombre nuevo si está; si no, el de antes; o undefined. */
+const profileFileOf = (files) => (files || []).find((f) => f && f.path === PROFILE_PATH) || (files || []).find((f) => f && f.path === LEGACY_PROFILE_PATH);
+/**
+ * El perfil del equipo en la raíz de un árbol: `{ file, name, exists, legacy, both }`. Sin ninguno, `file` es la ruta del
+ * nombre nuevo y `exists` es false. Nunca tira.
+ */
+function profileIn(dir) {
+  const has = (n) => { try { return fs.statSync(path.join(dir, n)).isFile(); } catch (_) { return false; } };
+  const fresh = has(PROFILE_PATH);
+  const legacy = has(LEGACY_PROFILE_PATH);
+  const name = fresh || !legacy ? PROFILE_PATH : LEGACY_PROFILE_PATH;
+  return { file: path.join(dir, name), name, exists: fresh || legacy, legacy: legacy && !fresh, both: fresh && legacy };
+}
+/**
+ * El aviso de una línea sobre el nombre del perfil, o null. `where`: 'layer' (el repo del equipo: el cambio va con la versión
+ * mínima de team-layer.json, o una máquina con una versión anterior rechazaría la capa entera) o 'tree' (un clon con el perfil).
+ */
+function profileNameNotice({ legacy = false, both = false } = {}, where = 'tree') {
+  if (both) return `el perfil del equipo está con los dos nombres: vale ${PROFILE_PATH} y ${LEGACY_PROFILE_PATH} no se usa — borralo (git rm ${LEGACY_PROFILE_PATH})`;
+  if (!legacy) return null;
+  const gate = where === 'layer' ? ' en el repo del equipo, y en el mismo commit subí requires.harness de team-layer.json a la versión de este arnés' : '';
+  return `el perfil del equipo usa el nombre de antes (${LEGACY_PROFILE_PATH}): sigue andando; para pasarlo al nuevo, git mv ${LEGACY_PROFILE_PATH} ${PROFILE_PATH}${gate}`;
+}
+/** Los archivos de la A1, por su ruta exacta (D3): se aceptan aunque la versión no traiga su manifiesto. El perfil, con sus dos nombres. */
+const A1_PATHS = Object.freeze([PROFILE_PATH, LEGACY_PROFILE_PATH, 'scripts/metrics/corridas-buzon.json']);
 /** El mapa de renombres (tanda A2b-AC33, AC 33): un dato que lee scripts/lib/legacy-names.js, validado contra la versión. */
 const RENAMES_PATH = 'scripts/lib/renames.json';
 /** Dónde vive cada repo del arnés de la organización (story 8.26, tanda J): la escribe la página de configuración y la valida
@@ -348,11 +382,19 @@ function planTeam(entries, { publicPaths = [], thirdPartyRoots = [], truncated =
     const ex = ext.entries.find((x) => x.skill === skill);
     if (ex && bytes > ex.maxBytes) problems.push({ path: skill, reason: `${skill} pesa ${bytes} bytes: más que su presupuesto de la lista fija (maxBytes ${ex.maxBytes})` });
   }
+  // el perfil con los dos nombres: gana el nuevo y el de antes no se apila; con sólo el de antes, vale igual. Las dos cosas se
+  // avisan en una línea (`notes`, que la línea del plan y la salida de install/update dicen)
+  const notes = [];
+  const legacyAt = files.findIndex((f) => f.path === LEGACY_PROFILE_PATH);
+  if (legacyAt >= 0) {
+    if (files.some((f) => f.path === PROFILE_PATH)) { total -= files[legacyAt].size; files.splice(legacyAt, 1); notes.push(profileNameNotice({ both: true }, 'layer')); }
+    else notes.push(profileNameNotice({ legacy: true }, 'layer'));
+  }
   problems.push(...setProblems(files.map((f) => f.path), { publicPaths, thirdPartyRoots }));
   if (!declaration) problems.push({ path: DECLARATION, reason: 'falta la declaración de la capa (team-layer.json en la raíz del repo del equipo)' });
   if (total > MAX_TOTAL_BYTES) problems.push({ path: '(total)', reason: `la capa pesa ${total} bytes${byExtra.size ? ' (sin las skills de la lista fija, que tienen su presupuesto)' : ''}: más de 1 MB en total (tope ${MAX_TOTAL_BYTES})` });
   if (files.length > MAX_FILES) problems.push({ path: '(total)', reason: `la capa trae ${files.length} archivos: más de ${MAX_FILES} archivos (tope)` });
-  return { ok: problems.length === 0, files: problems.length ? [] : files, problems, declaration, totalBytes: total };
+  return { ok: problems.length === 0, files: problems.length ? [] : files, problems, declaration, totalBytes: total, notes };
 }
 
 /**
@@ -731,24 +773,26 @@ function validateDeclaration(text, versionToInstall) {
  * con un entorno sin TYCON_PROFILE (la variable desviaría la lectura a otro archivo). Rechaza lo que el lector rechaza
  * (ilegible, clave fuera del vocabulario, valor personal) y las tres llaves que no viajan en la capa.
  */
-function validateProfile(text, { readerTree, home = os.homedir(), env = process.env } = {}) {
+function validateProfile(text, { readerTree, home = os.homedir(), env = process.env, name = PROFILE_PATH } = {}) {
   void env;   // a propósito: el lector corre con un entorno vacío (ninguna variable decide qué archivo es «el perfil»)
   const readerFile = path.join(readerTree || '', 'scripts', 'lib', 'tycon-config.js');
   let TC;
   try { TC = require(readerFile); } catch (e) { return { ok: false, reason: `el lector de configuración de la versión que va a quedar no carga (${readerFile}: ${(e && e.code) || e.message})` }; }
   if (typeof TC.leerPerfil !== 'function') return { ok: false, reason: 'el lector de configuración de la versión que va a quedar no sabe leer el perfil solo (es de antes de la tanda G de la story 8.23)' };
   let parsed;
-  try { parsed = JSON.parse(String(text).replace(/^﻿/, '')); } catch (e) { return { ok: false, reason: `perfil-equipo.json es ilegible (no es JSON: ${e.message})` }; }
+  try { parsed = JSON.parse(String(text).replace(/^﻿/, '')); } catch (e) { return { ok: false, reason: `${name} es ilegible (no es JSON: ${e.message})` }; }
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tycon-team-profile-'));
   try {
-    fs.writeFileSync(path.join(tmp, 'perfil-equipo.json'), `${JSON.stringify(parsed, null, 2)}\n`);
+    // en la temporal va con el nombre de antes A PROPÓSITO: el lector de una versión anterior (el de `readerTree`) sólo busca
+    // ése, y el de hoy lee los dos
+    fs.writeFileSync(path.join(tmp, LEGACY_PROFILE_PATH), `${JSON.stringify(parsed, null, 2)}\n`);
     const r = TC.leerPerfil({ arnes: tmp, home, env: {} });
     if (r.estado !== 'leido') {
       const why = (r.errores || []).map((e) => `${e.clave ? `${e.clave} · ` : ''}${e.motivo}`).join(' | ') || `estado ${r.estado}`;
-      return { ok: false, reason: `perfil-equipo.json de la capa: ${why}`, errors: r.errores || [] };
+      return { ok: false, reason: `${name} de la capa: ${why}`, errors: r.errores || [] };
     }
     const forbidden = r.entradas.filter((e) => FORBIDDEN_PROFILE_KEYS.includes(e.ruta)).map((e) => e.ruta);
-    if (forbidden.length) return { ok: false, reason: `perfil-equipo.json de la capa trae ${forbidden.join(', ')}: no viaja(n) en la capa del equipo hasta la A2 (describen la transición de los clones o mudan solas a toda máquina)` };
+    if (forbidden.length) return { ok: false, reason: `${name} de la capa trae ${forbidden.join(', ')}: no viaja(n) en la capa del equipo hasta la A2 (describen la transición de los clones o mudan solas a toda máquina)` };
     return { ok: true, entries: r.entradas };
   } finally {
     try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (_) { /* queda en la temporal */ }
@@ -797,7 +841,7 @@ function contentsAt(c, repo, file, sha) {
 }
 
 /** Los archivos que se juzgan por su CONTENIDO antes de escribir nada (momento 1 del AC 26): el perfil, los agentes, los SKILL.md y los manifiestos de paquete. */
-const isContentChecked = (p) => p === 'perfil-equipo.json' || p === TEAM_REPOS_PATH || /^agents\/[^/]+\.md$/.test(p)
+const isContentChecked = (p) => isProfilePath(p) || p === TEAM_REPOS_PATH || /^agents\/[^/]+\.md$/.test(p)
   || (p.startsWith('skills/') && path.posix.basename(p) === 'SKILL.md') || /^packs\/[^/]+\/pack\.json$/.test(p);
 const rmQuiet = (d) => { try { fs.rmSync(d, { recursive: true, force: true }); } catch (_) { /* queda en la temporal del sistema */ } };
 // las temporales de lo leído que todavía no se movieron a la caché: se borran al salir pase lo que pase (`--dry-run`, un aborto)
@@ -839,8 +883,9 @@ function judgeContentIn(dir, plan, read, { version, readerTree, home, env, head,
   const d = validateDeclaration(readText(DECLARATION), version);
   if (!d.ok) return fail({ ok: false, status: 'blocked', invalid: true, commit, reason: `${head} @ ${sha7(commit)}: ${d.reason}` });
   let profileEntries = null;
-  if (plan.files.some((f) => f.path === 'perfil-equipo.json')) {
-    const v = validateProfile(readText('perfil-equipo.json'), { readerTree, home, env });
+  const pfile = profileFileOf(plan.files);
+  if (pfile) {
+    const v = validateProfile(readText(pfile.path), { readerTree, home, env, name: pfile.path });
     if (!v.ok) return fail({ ok: false, status: 'blocked', invalid: true, commit, reason: `${head} @ ${sha7(commit)}: ${v.reason} — la capa no se apila (${plan.files.length} archivo(s) declarados)` });
     profileEntries = v.entries;
   }
@@ -896,7 +941,7 @@ function resolveTeam(c, repo, { version, readerTree, home = os.homedir(), env = 
   }, { version, readerTree, home, env, head, commit });
   if (!judged.ok) return judged;
   dropStaged(judged.dir);
-  return { ok: true, repo, host: 'github', ref: TEAM_REF, commit, tree, etag, files: plan.files, declaration: judged.declaration, totalBytes: plan.totalBytes, profileEntries: judged.profileEntries };
+  return { ok: true, repo, host: 'github', ref: TEAM_REF, commit, tree, etag, files: plan.files, declaration: judged.declaration, totalBytes: plan.totalBytes, profileEntries: judged.profileEntries, notes: plan.notes };
 }
 
 /**
@@ -918,7 +963,8 @@ function collisionReason(resolved, incomingDir, collision) {
 
 /** La línea del plan (`--dry-run`) y de la salida. */
 function planLine(resolved) {
-  return `capa del equipo ${resolved.repo} @ ${sha7(resolved.commit)}: ${resolved.files.length} archivo(s) (${resolved.declaration.name}; pide el arnés ${resolved.declaration.requires} o posterior) — ${resolved.files.map((f) => f.path).join(', ')}`;
+  const notes = Array.isArray(resolved.notes) && resolved.notes.length ? ` — aviso: ${resolved.notes.join(' · ')}` : '';
+  return `capa del equipo ${resolved.repo} @ ${sha7(resolved.commit)}: ${resolved.files.length} archivo(s) (${resolved.declaration.name}; pide el arnés ${resolved.declaration.requires} o posterior) — ${resolved.files.map((f) => f.path).join(', ')}${notes}`;
 }
 
 /** La carpeta de la caché de un commit; un commit sin forma de sha tira (nunca arma una ruta con él). */
@@ -1057,11 +1103,11 @@ function stackTeam(fetched, incomingDir, { home = os.homedir(), env = process.en
   const collision = foldedCollision(fetched.files.map((f) => f.path), relm);
   if (collision.length) return { ok: false, collision, reason: `la versión ${relm && relm.version ? relm.version : 'bajada'} trae ${collision.join(', ')}: choca con la capa del equipo (${resolved.repo}) y no se instala` };
   for (const f of fetched.files) if (!saneTarget(incomingDir, f.path)) return { ok: false, reason: `capa del equipo: ${JSON.stringify(f.path)} no es un destino dentro del árbol: no se apila nada` };
-  const pf = fetched.files.find((f) => f.path === 'perfil-equipo.json');
+  const pf = profileFileOf(fetched.files);
   if (pf) {
     let text;
     try { text = fs.readFileSync(path.join(fetched.cacheDir, ...pf.path.split('/')), 'utf8'); } catch (e) { return { ok: false, reason: `capa del equipo: no pude leer ${pf.path} de la caché (${e.code || e.message})` }; }
-    const v = validateProfile(text, { readerTree: incomingDir, home, env });
+    const v = validateProfile(text, { readerTree: incomingDir, home, env, name: pf.path });
     if (!v.ok) return { ok: false, invalid: true, reason: `capa del equipo (${resolved.repo}): ${v.reason} — la capa no se apila` };
   }
   // el momento 2 (AC 26): los nombres y los paquetes contra la versión que va a quedar
@@ -1095,9 +1141,9 @@ function carryTeam(harnessDir, incomingDir, { home = os.homedir(), env = process
   if (outside.length) return { ok: false, reason: `la capa del equipo instalada trae ${outside.join(', ')}, fuera de la lista cerrada: no se arrastra` };
   const setBad = setProblems(intact.map((f) => f.path)).filter((x) => !/versión|terceros/.test(x.reason));
   if (setBad.length) return { ok: false, reason: `la capa del equipo instalada no cumple la lista cerrada (${setBad.map((x) => `${x.path}: ${x.reason}`).join(' · ')}): no se arrastra` };
-  const pf = intact.find((f) => f.path === 'perfil-equipo.json');
+  const pf = profileFileOf(intact);
   if (pf) {
-    const v = validateProfile(fs.readFileSync(path.join(harnessDir, ...pf.path.split('/')), 'utf8'), { readerTree: incomingDir, home, env });
+    const v = validateProfile(fs.readFileSync(path.join(harnessDir, ...pf.path.split('/')), 'utf8'), { readerTree: incomingDir, home, env, name: pf.path });
     if (!v.ok) return { ok: false, invalid: true, reason: `la capa del equipo instalada (${m.repo} @ ${sha7(m.commit)}) no vale para la versión que va a quedar: ${v.reason} — no se arrastra` };
   }
   // los nombres y los paquetes contra la versión nueva (AC 19): una versión cuyo cargador no acepta la capa instalada tampoco la recibe
@@ -1206,11 +1252,11 @@ function refreshInPlace(fetched, harnessDir, { home = os.homedir(), env = proces
     if (collision.length) return { ok: false, collision, reason: `la versión instalada${relm && relm.version ? ` ${relm.version}` : ''} trae ${collision.join(', ')}: choca con la capa del equipo (${resolved.repo}) y la capa no se refresca` };
     const ours = (p) => isLayerPath(p) && saneTarget(harnessDir, p) && !publicPaths.has(foldPath(p));
     for (const f of fetched.files) if (!ours(f.path)) return { ok: false, reason: `capa del equipo: ${JSON.stringify(f.path)} no es un destino de la capa dentro del árbol: no se refresca nada` };
-    const pf = fetched.files.find((f) => f.path === 'perfil-equipo.json');
+    const pf = profileFileOf(fetched.files);
     if (pf) {
       let text;
       try { text = fs.readFileSync(path.join(fetched.cacheDir, ...pf.path.split('/')), 'utf8'); } catch (e) { return { ok: false, reason: `capa del equipo: no pude leer ${pf.path} de la caché (${e.code || e.message})` }; }
-      const v = validateProfile(text, { readerTree: harnessDir, home, env });
+      const v = validateProfile(text, { readerTree: harnessDir, home, env, name: pf.path });
       if (!v.ok) return { ok: false, invalid: true, reason: `capa del equipo (${resolved.repo}): ${v.reason} — la capa no se refresca` };
     }
     // el momento 2 (AC 26) contra la versión INSTALADA, por su lista: la capa vieja que ya está en harnessDir no cuenta (AC 18)
@@ -1703,6 +1749,7 @@ function layerPaths(tree) {
 }
 
 module.exports = {
+  PROFILE_PATH, LEGACY_PROFILE_PATH, PROFILE_PATHS, isProfilePath, profileFileOf, profileIn, profileNameNotice,
   CLOSED_PATHS, MANIFEST_NAME, DECLARATION, TEAM_REF, MAX_TOTAL_BYTES, MAX_FILES, FORBIDDEN_PROFILE_KEYS, TMP_PREFIX, PENDING_NAME, isLayerTemp,
   EXTRAS_FILE, MAX_EXTRAS, validateExtras, loadExtras, extrasEntryFor, extrasPathProblem, extrasReviewDue, dataHomeOf,
   extrasInLayer, findLegacyData, moveSkillData, extrasForeign, skillDataDoctor, blobStore,

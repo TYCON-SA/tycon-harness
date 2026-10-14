@@ -31,7 +31,7 @@
 // (`harness.js config set paths.maintainers <carpeta>`) · el clon que la máquina mantiene (`paths.maintained`) · el arnés
 // desde el que corre este guion. NUNCA el árbol que se empuja: la rama elegiría con qué lista se la mira. Los dos
 // primeros son una declaración: si están declarados y la lista no está, es «no pude mirar». En una máquina con el perfil
-// del equipo (`perfil-equipo.json`) la lista es obligatoria. Sin perfil y sin lista (alguien de afuera con su copia)
+// del equipo (`team-profile.json`, o `perfil-equipo.json`) la lista es obligatoria. Sin perfil y sin lista (alguien de afuera con su copia)
 // corre lo que no necesita lista, y lo dice.
 //
 // ¿ESA LISTA ESTÁ AL DÍA? (tanda H1c · AC 65 f). La lista se lee del disco de un clon, y nadie miraba si ese clon estaba
@@ -93,7 +93,9 @@ const detector = () => require(path.join(ROOT, 'scripts', 'publishing', 'detecto
 const harnessRepo = () => require(path.join(ROOT, 'scripts', 'lib', 'harness-repo.js'));
 
 const TREE_MARK = 'scripts/install-tycon-hooks.sh';
-const PROFILE = 'perfil-equipo.json';
+// el perfil del equipo con su nombre de hoy o el de antes (los dos dicen «este árbol es del equipo»)
+const PROFILES = ['team-profile.json', 'perfil-equipo.json'];
+const hasProfile = (dir) => PROFILES.some((n) => fs.existsSync(path.join(dir, n)));
 const LIST_PATH = 'scripts/publishing/denylist.json';
 const HISTORY_PATH = 'scripts/publishing/internal-history.js';
 const HOOK_MARK = 'git-pre-push-global.sh';
@@ -261,7 +263,7 @@ function listPlaces(env) {
   return out;
 }
 
-const isTeamMachine = (top) => fs.existsSync(path.join(ROOT, PROFILE)) || (Boolean(top) && fs.existsSync(path.join(top, PROFILE)));
+const isTeamMachine = (top) => hasProfile(ROOT) || (Boolean(top) && hasProfile(top));
 
 /**
  * La lista con que se mira. Tira `Blind` si la máquina tiene que tener lista y no la tiene, o si la que hay no se deja

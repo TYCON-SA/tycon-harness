@@ -6,7 +6,8 @@
  * EL AGUJERO QUE CIERRA. Hasta la 8.3 «dónde está el arnés», «dónde viven los repos», «cuál es la
  * organización de Azure DevOps» y «a quién avisar» estaban escritos en el código: valían en la
  * máquina donde se escribieron y en ninguna otra. Ahora salen de UNA sola cadena —variable de
- * entorno › archivo de la máquina (`~/.claude/tycon.json`) › perfil del equipo (`perfil-equipo.json`)
+ * entorno › archivo de la máquina (`~/.claude/tycon.json`) › perfil del equipo (`team-profile.json`, o
+ * `perfil-equipo.json`, el nombre de antes)
  * › apagado / sin valor— y `explicar` dice de dónde salió cada valor.
  *
  * Lo que estas pruebas sostienen:
@@ -279,7 +280,7 @@ test('T3 Config_ValorPersonalEnPerfil_Rechazado — lo personal invalida el perf
 test('T3 Config_PerfilRealDelEquipo_SinNadaPersonal — el perfil que viaja en el arnés es válido y no trae nada personal (NO MEDIDO sin él)', (t) => {
   // En la copia pública el perfil del equipo no viaja (story 8.4): sin él esta prueba no tiene qué mirar y lo dice —
   // NO MEDIDO, nunca un verde—. En el interno mide lo de siempre.
-  const rutaReal = path.join(SCRIPTS, '..', 'perfil-equipo.json');
+  const rutaReal = lib().perfilDelArbol(path.join(SCRIPTS, '..')).ruta;   // el nombre de hoy, o el de antes
   if (!fs.existsSync(rutaReal)) {
     console.log(`  ℹ NO MEDIDO — el perfil del equipo no está (${rutaReal}): la copia pública no lo trae. No se juzga acá.`);
     t.skip('perfil del equipo ausente: no medido');
@@ -584,7 +585,7 @@ test('T13 Config_UpdateKeys_DefaultsProfileErrors_InternalAskWarning — sin nad
   assert.equal(c.origenes['update.channel'], 'perfil');
   assert.equal(c.origenes['update.apply'], 'perfil');
   // …y el perfil REAL del equipo trae latest + auto (NO MEDIDO en la copia pública, que no lo trae)
-  const rutaReal = path.join(SCRIPTS, '..', 'perfil-equipo.json');
+  const rutaReal = lib().perfilDelArbol(path.join(SCRIPTS, '..')).ruta;   // el nombre de hoy, o el de antes
   if (fs.existsSync(rutaReal)) {
     const real = lib().leer({ env: {}, home: casa() });
     assert.equal(real.valores.update.channel, 'latest', 'el perfil del equipo pide el canal «al día»');
@@ -762,7 +763,7 @@ test('T31 Config_SkillsSourceKey_DefaultSeparate_OutOfVocabularyIsError — sin 
   // (e) el perfil REAL del equipo: la clave se crea en el código y el perfil no la trae hasta el corte (la prende el
   //     dueño, en su propio pull request). Con el perfil de hoy una máquina del equipo queda en `separate`. Si el
   //     perfil ya la trae, tiene que ser un valor del vocabulario, y se dice: esta prueba no frena el corte.
-  const rutaReal = path.join(SCRIPTS, '..', 'perfil-equipo.json');
+  const rutaReal = lib().perfilDelArbol(path.join(SCRIPTS, '..')).ruta;   // el nombre de hoy, o el de antes
   if (fs.existsSync(rutaReal)) {
     const real = lib().leer({ env: {}, home: casa() });
     assert.ok(['separate', 'unified'].includes(real.valores.update.skills_source));
@@ -840,7 +841,7 @@ test('T37 Packs_ApagadoPorDefectoSinPerfil (lector) — sin nada: none (default)
   assert.equal(g.stdout.trim(), 'none');
 
   // (f) el perfil REAL del equipo prende el paquete para todos: en el equipo nada cambia (NO MEDIDO en la copia pública)
-  const rutaReal = path.join(SCRIPTS, '..', 'perfil-equipo.json');
+  const rutaReal = lib().perfilDelArbol(path.join(SCRIPTS, '..')).ruta;   // el nombre de hoy, o el de antes
   if (fs.existsSync(rutaReal)) {
     const real = lib().leer({ env: {}, home: casa() });
     assert.equal(real.valores.packs.default, 'all', 'el perfil del equipo dice packs.default: all');
@@ -930,7 +931,7 @@ test('T65 Config_IntegrationKeysInEnglish — mailbox, nightly y "detect" se lee
 });
 
 test('T65 Config_TeamProfile_NewKeys — el perfil del equipo que viaja en el arnés escribe mailbox, nightly y "detect" (NO MEDIDO sin él)', (t) => {
-  const rutaReal = path.join(SCRIPTS, '..', 'perfil-equipo.json');
+  const rutaReal = lib().perfilDelArbol(path.join(SCRIPTS, '..')).ruta;   // el nombre de hoy, o el de antes
   if (!fs.existsSync(rutaReal)) return t.skip('NO MEDIDO — el perfil del equipo no está: la copia pública no lo trae');
   const perfil = JSON.parse(fs.readFileSync(rutaReal, 'utf8'));
   assert.deepEqual(Object.keys(perfil.integrations).sort(), ['clockify', 'codex', 'engram', 'mailbox', 'nightly']);
@@ -1249,7 +1250,7 @@ test('8.13.1 · T2 State_AdditiveFields_OldStateReadsAsInternalNoLayer_ConfigKey
 });
 
 test('8.13.1 · T2 Config_TeamProfile_UpdateSourceInternal — el perfil del equipo que viaja en el arnés trae update.source: internal y no paths.tree (NO MEDIDO sin él)', (t) => {
-  const rutaReal = path.join(SCRIPTS, '..', 'perfil-equipo.json');
+  const rutaReal = lib().perfilDelArbol(path.join(SCRIPTS, '..')).ruta;   // el nombre de hoy, o el de antes
   if (!fs.existsSync(rutaReal)) {
     console.log(`  ℹ NO MEDIDO — el perfil del equipo no está (${rutaReal}): la copia pública no lo trae.`);
     t.skip('perfil del equipo ausente: no medido');
@@ -1675,3 +1676,64 @@ test('8.29 · T17 Docs_PacksOrderSaidOnce @story-8.29 @ac-18 — donde se descri
   if (interno) assert.equal(medidos.length, siempre.length + guias.length, `en el árbol interno se miden los seis: ${medidos.join(', ')}`);
   else t.diagnostic(`medidos ${medidos.length} de ${siempre.length + guias.length} (copia sin perfil del equipo)`);
 });
+
+// ── El nombre del perfil: team-profile.json, y el de antes que sigue valiendo ───────────────────────────────────
+
+test('TPN Config_PerfilConSusDosNombres_NuevoViejoYLosDos — se busca primero team-profile.json; el de antes vale con un aviso; con los dos gana el nuevo', () => {
+  const L = lib();
+  assert.equal(L.NOMBRE_PERFIL, 'team-profile.json');
+  assert.equal(L.NOMBRE_PERFIL_VIEJO, 'perfil-equipo.json');
+  const escribir = (d, n, v) => fs.writeFileSync(path.join(d, n), typeof v === 'string' ? v : JSON.stringify(v, null, 2));
+  const NUEVO = { ado: { org: 'https://dev.azure.com/nuevo' }, integraciones: { engram: true } };
+  const VIEJO = { ado: { org: 'https://dev.azure.com/viejo' }, integraciones: { clockify: true } };
+
+  // (1) sólo el nombre nuevo: se lee, sin aviso
+  const a1 = arnesCon(null); escribir(a1, 'team-profile.json', NUEVO);
+  let c = cargar({ home: casa(), arnes: a1 });
+  assert.deepEqual(c.errores, []);
+  assert.equal(c.archivos.perfil.ruta, path.join(a1, 'team-profile.json'));
+  assert.equal(c.archivos.perfil.estado, 'leido');
+  assert.equal(c.archivos.perfil.aviso, null, 'con el nombre nuevo no hay nada que avisar');
+  assert.equal(c.valores.ado.org, 'https://dev.azure.com/nuevo'); assert.equal(c.origenes['ado.org'], 'perfil');
+  let r = L.leerPerfil({ arnes: a1, home: casa(), env: {} });
+  assert.equal(r.estado, 'leido'); assert.equal(r.ruta, path.join(a1, 'team-profile.json')); assert.equal(r.aviso, null);
+
+  // (2) sólo el de antes: sigue andando, con un aviso de UNA línea que dice cómo renombrarlo
+  const a2 = arnesCon(VIEJO);
+  c = cargar({ home: casa(), arnes: a2 });
+  assert.deepEqual(c.errores, []);
+  assert.equal(c.archivos.perfil.ruta, path.join(a2, 'perfil-equipo.json'));
+  assert.equal(c.valores.ado.org, 'https://dev.azure.com/viejo'); assert.equal(c.origenes['ado.org'], 'perfil');
+  assert.match(c.archivos.perfil.aviso, /nombre de antes \(perfil-equipo\.json\).*git mv perfil-equipo\.json team-profile\.json/);
+  assert.equal(c.archivos.perfil.aviso.includes('\n'), false, 'el aviso es una sola línea');
+  r = L.leerPerfil({ arnes: a2, home: casa(), env: {} });
+  assert.equal(r.estado, 'leido'); assert.match(r.aviso, /git mv perfil-equipo\.json team-profile\.json/);
+
+  // (3) los dos: gana el nuevo (sus valores, su ruta) y se avisa que el de antes sobra
+  const a3 = arnesCon(VIEJO); escribir(a3, 'team-profile.json', NUEVO);
+  c = cargar({ home: casa(), arnes: a3 });
+  assert.deepEqual(c.errores, []);
+  assert.equal(c.archivos.perfil.ruta, path.join(a3, 'team-profile.json'));
+  assert.equal(c.valores.ado.org, 'https://dev.azure.com/nuevo', 'con los dos gana el nuevo');
+  assert.equal(c.valores.integraciones.clockify, false, 'del de antes no se lee nada');
+  assert.match(c.archivos.perfil.aviso, /vale team-profile\.json y perfil-equipo\.json no se usa.*git rm perfil-equipo\.json/);
+  // …también cuando el de antes está roto: no se lee, así que no rompe nada
+  const a4 = arnesCon('{ roto'); escribir(a4, 'team-profile.json', NUEVO);
+  assert.deepEqual(cargar({ home: casa(), arnes: a4 }).errores, [], 'un perfil-equipo.json roto al lado del nuevo no se lee');
+
+  // (4) ninguno: ausente, sin aviso, y la ruta que se nombra es la del nombre nuevo
+  const a5 = arnesCon(null);
+  c = cargar({ home: casa(), arnes: a5 });
+  assert.equal(c.archivos.perfil.estado, 'ausente'); assert.equal(c.archivos.perfil.aviso, null);
+  assert.equal(c.archivos.perfil.ruta, path.join(a5, 'team-profile.json'));
+
+  // (5) TYCON_PROFILE manda y no avisa por el nombre (la ruta la eligió alguien a propósito)
+  c = cargar({ env: { TYCON_PROFILE: path.join(a2, 'perfil-equipo.json') }, home: casa(), arnes: a3 });
+  assert.equal(c.valores.ado.org, 'https://dev.azure.com/viejo'); assert.equal(c.archivos.perfil.aviso, null);
+
+  // (6) explain lo dice en una línea con el de antes; con el nombre nuevo, no
+  assert.match(L.explicar({ env: {}, home: casa(), arnes: a2 }), /\n  aviso: el perfil usa el nombre de antes \(perfil-equipo\.json\)/);
+  assert.doesNotMatch(L.explicar({ env: {}, home: casa(), arnes: a1 }), /aviso: el perfil/);
+  assert.equal(L.explicar({ env: {}, home: casa(), arnes: a2, json: true }).archivos.perfil.aviso.length > 0, true, 'explain --json lo trae en archivos.perfil.aviso');
+});
+

@@ -453,7 +453,7 @@ fi
 # 🔴 Configuración ROTA (ilegible, clave desconocida, tipo equivocado): se dice con archivo · clave · motivo y las
 #    integraciones quedan COMO ESTÁN — no se registran ni se remueven sus hooks y no se llama a nada. Un archivo roto
 #    no se lee como «todo apagado» (AC 2). Sin el lector (una copia parcial de este archivo): lo mismo, y se dice.
-# El equipo no nota nada: su perfil (perfil-equipo.json) prende lo de siempre. Afuera todo nace apagado hasta que se
+# El equipo no nota nada: su perfil (team-profile.json, o perfil-equipo.json) prende lo de siempre. Afuera todo nace apagado hasta que se
 # configura. `|| _RC=$?` y nunca `; _RC=$?`: este archivo corre con set -e (pase adversarial de la tanda A).
 # ============================================================
 INTEG_ESTADO="sin-lector"   # ok · rota · sin-lector

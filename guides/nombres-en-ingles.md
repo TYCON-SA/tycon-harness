@@ -53,6 +53,16 @@ retiro. Nunca se cambia al nombre nuevo sin probar los dos.
 Ejemplo: el pre-commit de agent-skills llamaba `${TCG}/scripts/publicacion/new-names.js`; desde que esa carpeta pasó a
 `scripts/publishing/` prueba la ruta nueva y, si no está (un arnés un pull atrás), la vieja, hasta el retiro.
 
+### Un archivo que vive en el repo del equipo
+
+El perfil del equipo pasó de `perfil-equipo.json` a `team-profile.json` sin entrada en el mapa. Ese archivo vive en el
+repo del perfil de cada organización, que el arnés no controla, y una máquina con una versión anterior sólo conoce el
+nombre de antes. Por eso el arnés lee los dos sin fecha de retiro: primero el nuevo; si no está, el de antes, con un
+aviso de una línea que dice cómo renombrarlo; con los dos, gana el nuevo y el de antes no se apila. La pareja de nombres
+está escrita en `scripts/setup/harness/team.js` y en `scripts/lib/tycon-config.js`. Un repo del equipo que renombra el
+suyo sube en el mismo commit `requires.harness` de `team-layer.json` a la versión que trae el nombre nuevo: una máquina
+anterior rechazaría el perfil entero.
+
 ## Cómo se renombra: el mapa y los nombres viejos
 
 Cada renombre sale de una entrada del mapa de renombres (`renames.json`) —nunca de un `sed` sobre una palabra suelta—, y el

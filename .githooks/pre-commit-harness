@@ -108,7 +108,8 @@ fi
 # con la clasificación del exportador y el índice que git le pasa al hook (también con `commit -a` y
 # `commit <ruta>`): retocar, mover o renombrar lo que ya estaba no frena. Va ANTES del filtro
 # RELEVANTES por el mismo motivo que el lint: casi todo lo que se publica (guías, scripts) no está en
-# esa lista. Sin el guion y sin perfil-equipo.json (un laboratorio) no dice nada; con el perfil, que
+# esa lista. Sin el guion y sin el perfil del equipo (team-profile.json, o perfil-equipo.json, el nombre de antes; un
+# laboratorio no lo trae) no dice nada; con el perfil, que
 # falte el guion es «no pude mirar». Apagado, con aviso en cada commit: TYCON_NEW_NAMES=0.
 # En un clon de la copia PUBLICADA (trae scripts/setup/public-remotes.json y no trae lista) el guion
 # corre en otro modo: ahí todo lo que se commitea se publica, y lo mira con la lista privada de la
@@ -122,7 +123,7 @@ if [ -f "$NEW_NAMES" ]; then
     echo "⛔ COMMIT RECHAZADO — nombres reales en lo que se publica, o no se pudo mirar (arriba dice dónde y cómo salir)." >&2
     exit 1
   fi
-elif [ -f "$REPO_ROOT/perfil-equipo.json" ]; then
+elif [ -f "$REPO_ROOT/team-profile.json" ] || [ -f "$REPO_ROOT/perfil-equipo.json" ]; then
   echo "⛔ COMMIT RECHAZADO — nombres nuevos: no pude mirar (falta ${NEW_NAMES}). El arnés del equipo tiene el freno; sin él no se mira, y no poder mirar no es verde." >&2
   exit 1
 fi
@@ -131,7 +132,7 @@ fi
 # Lo que alguien de afuera escribe para usar el núcleo (archivos, opciones, subcomandos, variables, claves de
 # configuración) va en inglés: un commit que mete un nombre castellano que no existía en lo que se publica no se
 # crea. Un nombre castellano que ya existe pasa hasta que su tanda lo renombre. Va antes del filtro RELEVANTES, como
-# el de arriba. En la copia pública (sin perfil-equipo.json) todo lo del repo cuenta como que sale. Apagado, con
+# el de arriba. En la copia pública (sin el perfil del equipo) todo lo del repo cuenta como que sale. Apagado, con
 # aviso en cada commit: TYCON_SPANISH_NAMES=0. Guía: guides/nombres-en-ingles.md.
 # Casos: scripts/tests/spanish-names.test.js y C-16..C-24 de githook-livefire.test.sh
 SPANISH_NAMES="$REPO_ROOT/scripts/publishing/spanish-names.js"
@@ -140,7 +141,7 @@ if [ -f "$SPANISH_NAMES" ]; then
     echo "⛔ COMMIT RECHAZADO — nombres nuevos en castellano en lo que se publica, o no se pudo mirar (arriba dice dónde y cómo salir)." >&2
     exit 1
   fi
-elif [ -f "$REPO_ROOT/perfil-equipo.json" ]; then
+elif [ -f "$REPO_ROOT/team-profile.json" ] || [ -f "$REPO_ROOT/perfil-equipo.json" ]; then
   echo "⛔ COMMIT RECHAZADO — nombres en castellano: no pude mirar (falta ${SPANISH_NAMES}). El arnés del equipo tiene el freno; sin él no se mira." >&2
   exit 1
 fi
@@ -150,7 +151,7 @@ fi
 # desde afuera. Mira lo que el commit AGREGA (neto, por archivo) a la prosa que se publica; el código y las pruebas no
 # son suyos. FRENA (scripts/publishing/internal-history.json → mode): dice dónde y el commit no se crea; una forma
 # escrita en aviso sólo avisa. Bajado a aviso en una corrida: TYCON_INTERNAL_HISTORY=warn; apagado, con aviso en cada
-# commit: TYCON_INTERNAL_HISTORY=0. Sin el guion y sin perfil-equipo.json (la copia pública, un laboratorio) no dice
+# commit: TYCON_INTERNAL_HISTORY=0. Sin el guion y sin el perfil del equipo (la copia pública, un laboratorio) no dice
 # nada; con el perfil, que falte el guion es «no pude mirar», y no poder mirar no es verde.
 # Casos: scripts/tests/internal-history-guard.test.js y scripts/controls-bench/cases/hooks/52-internal-history.json
 INTERNAL_HISTORY="$REPO_ROOT/scripts/publishing/internal-history.js"
@@ -159,7 +160,7 @@ if [ -f "$INTERNAL_HISTORY" ]; then
     echo "⛔ COMMIT RECHAZADO — historia interna en la prosa que se publica, o no se pudo mirar (arriba dice dónde y cómo salir)." >&2
     exit 1
   fi
-elif [ -f "$REPO_ROOT/perfil-equipo.json" ]; then
+elif [ -f "$REPO_ROOT/team-profile.json" ] || [ -f "$REPO_ROOT/perfil-equipo.json" ]; then
   echo "⛔ COMMIT RECHAZADO — historia interna: no pude mirar (falta ${INTERNAL_HISTORY}). El arnés del equipo tiene el control; sin él no se mira." >&2
   # el rechazo también queda en el registro de frenos (el guion que lo anotaría es justo el que falta); nunca cambia la salida
   if [ -f "$REPO_ROOT/scripts/lib/guard-record.js" ]; then

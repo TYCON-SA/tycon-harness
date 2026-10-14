@@ -2652,3 +2652,21 @@ test(`${T79} — n · la forma se decide por lo que el árbol era: un commit no 
   assert.strictEqual(r.code, 1, r.out);
   assert.match(r.out, /guides\/zz\.md:1\b[^\n]*\[cliente\]/);
 });
+
+// ── El perfil del equipo con su nombre de hoy (team-profile.json): sigue diciendo «este árbol es del equipo» ──────────────
+test('NewNames_TeamProfileNewName_StillTeamTree_FindsAndMissingListSaysWhichProfile', () => {
+  const l = lab();
+  git(l.arnes, ['mv', 'perfil-equipo.json', 'team-profile.json']); commit(l.arnes, 'el perfil con su nombre de hoy');
+  // con la lista: mira igual que con el nombre de antes
+  stage(l.arnes, { 'guides/x.md': withName });
+  let r = brake(l);
+  assert.strictEqual(r.code, 1, `con team-profile.json el árbol sigue siendo del equipo y mira\n${r.out}`);
+  assert.match(r.out, /guides\/x\.md:\d+[^\n]*AcmeCorp/);
+  resetLab(l.arnes);
+  // sin la lista: «no pude mirar», nombrando el perfil que el árbol trae
+  git(l.arnes, ['rm', '-q', LIST_REL]); commit(l.arnes, 'sin la lista');
+  stage(l.arnes, { 'guides/x.md': withName });
+  r = brake(l);
+  assert.strictEqual(r.code, 2, r.out);
+  assert.match(r.out, /no pude mirar[^\n]*el arnés tiene team-profile\.json/);
+});
