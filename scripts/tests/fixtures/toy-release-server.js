@@ -27,6 +27,8 @@
 //   git:      GET /o/n.git/info/refs?service=git-upload-pack   las refs en pkt-line (`git for-each-ref`
 //                                                   sobre el bare); 401 si el repo no es público o no existe, como GitHub
 //   raw:      GET /o/n/<sha>/<ruta>                los bytes del archivo en ese commit (404 si no está o el repo no es público)
+//   raw:      GET /o/n/main/<ruta>                 lo mismo en la punta de main (`ref_moved_to` incluido): de ahí baja el
+//                                                   guion de entrada la página pública
 //
 // El archivo de control (`--control`, JSON, releído en cada pedido) cambia el comportamiento sin reiniciar:
 //   auth        "none" (repo público) · "token:<valor>" (privado: sin credencial válida, /repos contesta 404 como
@@ -313,10 +315,12 @@ function rawHost(req, res) {
   log({ host: 'raw', method: req.method, path: u.pathname + u.search, auth: Boolean(req.headers.authorization), via_proxy: req.headers['x-toy-proxy'] === '1' });
   if (c.raw_down) { res.writeHead(503); return res.end('raw caído'); }
   if (c.raw_block) { res.writeHead(Number(c.raw_block), { 'Content-Type': 'text/html' }); return res.end('<html>Blocked by policy</html>'); }
-  const m = repo ? /^([0-9a-f]{40})\/(.+)$/.exec(u.pathname.slice(`/${keyOf(repo)}/`.length)) : null;
+  const m = repo ? /^([0-9a-f]{40}|main)\/(.+)$/.exec(u.pathname.slice(`/${keyOf(repo)}/`.length)) : null;
   if (!m || modeFor(c, repo) !== 'none') { res.writeHead(404); return res.end('404: Not Found'); }
   const file = decodeURIComponent(m[2]);
-  const r = git(['show', `${m[1]}:${file}`], { encoding: 'buffer' }, repo.bare);
+  // por rama, como GitHub: la punta de main (o la que dice `ref_moved_to`, igual que info/refs y la API)
+  const at = m[1] === 'main' ? (c.ref_moved_to || 'refs/heads/main') : m[1];
+  const r = git(['show', `${at}:${file}`], { encoding: 'buffer' }, repo.bare);
   if (r.status !== 0) { res.writeHead(404); return res.end('404: Not Found'); }
   let body = r.stdout;
   if (c.raw_version && file === 'version.json') { try { const v = JSON.parse(body.toString('utf8')); v.version = String(c.raw_version); body = Buffer.from(`${JSON.stringify(v, null, 2)}\n`); } catch (_) { /* tal cual */ } }

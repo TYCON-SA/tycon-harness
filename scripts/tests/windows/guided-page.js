@@ -47,7 +47,7 @@ function manifestProblems(m) {
   if (!m || typeof m !== 'object') return ['la ficha no es un objeto'];
   if (!m.page || !m.page.published || !m.page.mark || !m.page.fence) out.push('falta `page` con `published`, `mark` y `fence`');
   if (!m.needs || !m.needs.entry_script || !m.needs.names) out.push('falta `needs` con `entry_script` y `names`');
-  if (!m.lab || !m.lab.api_origin) out.push('falta `lab.api_origin`: el único origen que el laboratorio reemplaza');
+  if (!m.lab || !m.lab.download_origin) out.push('falta `lab.download_origin`: el único origen que el laboratorio reemplaza (el de la bajada del guion)');
   // sin este dato el laboratorio tendría que adivinar si sirve el repo con permiso o sin él: se dice, no se supone
   if (!m.lab || !AUTH_MODES.includes(m.lab.auth)) out.push(`\`lab.auth\` tiene que decir cómo sirve el repo el GitHub de juguete (${AUTH_MODES.join(' o ')}); dice ${JSON.stringify(m.lab && m.lab.auth)}`);
   const seen = new Set();
@@ -270,11 +270,14 @@ function prepare({ read, manifest }) {
   return { block: read1.block, names, page_name_from: manifest.needs.names, entry_script: manifest.needs.entry_script, entry_script_text: script, page_steps: checked.page_steps };
 }
 
-/** El único cambio que el laboratorio le hace a un comando de la página: el origen de la API. `{ text, changed, from, to }`. */
-function labText(text, m, labApi) {
-  const from = m.lab.api_origin;
-  if (!labApi || !String(text).includes(from)) return { text, changed: false };
-  return { text: String(text).split(from).join(labApi), changed: true, from, to: labApi };
+/**
+ * El único cambio que el laboratorio le hace a un comando de la página: el origen de la bajada del guion
+ * (raw.githubusercontent.com, por el «raw» del GitHub de juguete). `{ text, changed, from, to }`.
+ */
+function labText(text, m, labOrigin) {
+  const from = m.lab.download_origin;
+  if (!labOrigin || !String(text).includes(from)) return { text, changed: false };
+  return { text: String(text).split(from).join(labOrigin), changed: true, from, to: labOrigin };
 }
 
 /**
