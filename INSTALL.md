@@ -68,6 +68,15 @@ cambio. En cada sesión, la línea de arranque mira si hay una versión nueva de
 pregunta: no la aplica sin que lo pidas (`node ~/.claude/tycon-harness/scripts/setup/harness.js update --yes`).
 `TYCON_UPDATE=0` la apaga; `harness.js doctor` dice cómo quedó todo y `harness.js uninstall` quita sólo lo que registró.
 
+**En Windows, `~/.tycon/versions`.** Cada versión vive en su carpeta, `~/.tycon/versions/<versión>/`, y `~/.tycon/harness`
+y `~/.tycon/previous` son uniones (enlaces de carpeta) a la activa y a la anterior. Así la actualización anda con otras
+sesiones o VS Code abiertos: cambia la unión y no mueve la carpeta que alguien está usando. Una versión vieja se borra
+sola en un arranque cuando ningún programa la tiene abierta. Si `doctor` la lista como «pendiente de limpiar» hace días,
+cerrá las otras sesiones de Claude Code y de Codex y VS Code; si sigue, reiniciá la máquina. La primera vez, una máquina
+ya instalada pasa a esta forma sola: lo intenta en silencio en cada arranque. Si la carpeta sigue en uso tres días (o
+diez arranques), el arranque te avisa una vez qué cerrar y qué comando correr (`harness.js update --yes`, en una
+terminal suelta); mientras tanto `doctor` lo muestra como pendiente. En Mac y Linux no hay `versions/`: nada cambia.
+
 ### 5. Si trabajás con BIZUIT Extensions desde otra organización
 
 El arnés anda sin Azure DevOps, sin Clockify y sin engram: todo eso nace apagado y nada lo pide. Tres pasos te dejan

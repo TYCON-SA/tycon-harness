@@ -168,6 +168,13 @@ if runs T28; then
   done
   # desde acá la máquina es la del último corte (links), completada por el arranque: se mide el resultado entero
   [ -f "$(NEW_TREE)/version.json" ] && [ "$(j "$(NEW_TREE)/version.json" "d['version']")" = 2026.10.08.1 ] && ok "la versión 2026.10.08.1 vive en ~/.tycon/harness" || bad "~/.tycon/harness no trae la versión: $(ls "$(NEW_TREE)" 2>/dev/null | head -5 | tr '\n' ' ')"
+  # la forma con enlaces (story 8.33, T12): con TYCON_RELEASE_LINKS=1 (la forma de Windows, en Mac sólo de pruebas) la
+  # mudanza deja ~/.tycon/harness como enlace a versions/<v>; sin la variable, una carpeta, como siempre
+  if [ "${TYCON_RELEASE_LINKS:-}" = 1 ]; then
+    [ -L "$(NEW_TREE)" ] && case "$(readlink "$(NEW_TREE)")" in */versions/2026.10.08.1) true ;; *) false ;; esac && ok "con la forma con enlaces, ~/.tycon/harness es un enlace a versions/2026.10.08.1" || bad "con TYCON_RELEASE_LINKS=1 la mudanza no dejó el enlace: $(ls -la "$LAB_HOME/.tycon" | tr '\n' ' ')"
+  else
+    [ -d "$(NEW_TREE)" ] && [ ! -L "$(NEW_TREE)" ] && ok "~/.tycon/harness es una carpeta (sin la forma con enlaces)" || bad "~/.tycon/harness no es una carpeta"
+  fi
   [ -f "$(NEW_STATE)" ] && [ ! -L "$LAB_HOME/.tycon/state" ] && ok "el estado vive en ~/.tycon/state" || bad "el estado no está en ~/.tycon/state"
   [ "$(state "d['tree']")" = "$(NEW_TREE)" ] && ok "el estado apunta al árbol nuevo" || bad "el estado apunta a $(state "d['tree']")"
   [ -L "$LAB_HOME/.claude/.tycon-pipeline" ] && [ "$(cd "$LAB_HOME/.claude/.tycon-pipeline" && pwd -P)" = "$(cd "$LAB_HOME/.tycon/state" && pwd -P)" ] && ok "~/.claude/.tycon-pipeline es un enlace al estado nuevo" || bad ".tycon-pipeline no es un enlace al estado: $(link_to "$LAB_HOME/.claude/.tycon-pipeline")"

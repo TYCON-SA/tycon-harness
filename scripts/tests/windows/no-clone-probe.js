@@ -116,6 +116,8 @@ function measure({ lab, out, platform = process.platform, baseEnv = process.env,
   const env0 = T.rehearsalEnv(home, { base: baseEnv, platform });
   rec.fact('home', home);
   rec.fact('lab_mode', !isWin);
+  // 0. el sondeo de la story 8.33 (T1): ¿se cambia una unión con la versión vieja tomada? Va primero y no depende de nada
+  require('./links-spike.js').measureLinks({ base, env: env0, rec });
 
   // el remoto en el commit de hoy, la copia «autor» y la copia del programa (lo que una persona tendría bajado)
   const point = T.pointRemotes(state, 'target', env0);
@@ -218,6 +220,11 @@ function measure({ lab, out, platform = process.platform, baseEnv = process.env,
     rec.fact('after_update_2', { version: versionOf(), previous: fs.existsSync(path.join(own, 'previous', 'version.json')), journal: fs.existsSync(path.join(own, 'swap.json')) });
     if (up2.exit !== 0 || versionOf() !== '2030.02.01.2') rec.finding('no-clone:update-fails', 'update', `update --yes salió ${up2.exit}: ${lastLines(`${up2.stdout}\n${up2.stderr}`, 2)}`, 'W8', { severity: 'breaks' });
 
+    // 3. (story 8.33 · T16) en Windows la versión bajada vive en la forma con ENLACES: la activa tomada no frena nada
+    if (isWin) {
+      measureLinkLayout({ own, home, author, env0, env, run, versionOf, stateFile, rec, lockers, harnessJs });
+      // la mitad de la 8.23 (con previous/ tomada, la actualización espera) no aplica en la forma con enlaces
+    } else {
     // 3. el archivo tomado (T14): en previous/ durante un cambio → la actualización espera; en trash/ → la limpieza espera
     const v3 = publish(author, '2030.02.01.3', env0);
     if (!v3.ok) return { status: L.STATUS.error, reason: v3.reason };
@@ -256,12 +263,15 @@ function measure({ lab, out, platform = process.platform, baseEnv = process.env,
       rec.fact('trash_after_release', { exit: st2.exit, remaining: fs.existsSync(trash) ? fs.readdirSync(trash) : [] });
       if (fs.existsSync(path.join(trash, trashed[0]))) rec.finding('no-clone:trash-not-cleaned', 'startup', 'soltado el archivo, el arranque siguiente no borró lo apartado en trash/', 'W8', { severity: 'noise' });
     }
+    }
     if (hookCount() !== hooks0) rec.finding('no-clone:hook-count-changed', 'hooks', `la cuenta de hooks cambió entre versiones (${hooks0} → ${hookCount()})`, 'W8', { severity: 'loses-control' });
 
-    // 4. rollback, doctor, uninstall
-    const rb = run(tree, ['rollback'], 'rollback');
-    rec.fact('after_rollback', { version: versionOf() });
-    if (rb.exit !== 0 || versionOf() !== '2030.02.01.2') rec.finding('no-clone:rollback-fails', 'rollback', `rollback salió ${rb.exit} (versión ${versionOf()})`, 'W8', { severity: 'breaks' });
+    // 4. rollback (fuera de Windows: en Windows lo midió el paso 3 con la activa tomada), doctor, uninstall
+    if (!isWin) {
+      const rb = run(tree, ['rollback'], 'rollback');
+      rec.fact('after_rollback', { version: versionOf() });
+      if (rb.exit !== 0 || versionOf() !== '2030.02.01.2') rec.finding('no-clone:rollback-fails', 'rollback', `rollback salió ${rb.exit} (versión ${versionOf()})`, 'W8', { severity: 'breaks' });
+    }
     const doc = run(tree, ['doctor', '--json'], 'doctor', 400000);
     let fails = null;
     try { fails = JSON.parse(doc.stdout).fail; } catch (_) { fails = null; }
@@ -283,6 +293,145 @@ function measure({ lab, out, platform = process.platform, baseEnv = process.env,
     if (skillData) rec.note(skillData);
     return { status: L.STATUS.measured, reason: null };
   } finally { stopAll(); }
+}
+
+/**
+ * La forma con ENLACES en Windows (story 8.33 · T16, AC 3, 5, 7, 9, 10, 11 y 17): `~/.tycon/harness` es una unión a
+ * `versions/<v>`. Con la versión ACTIVA tomada —un archivo abierto, un proceso con su carpeta de trabajo adentro y un
+ * vigilante de carpetas, por la unión, como una sesión de Claude Code o un VS Code—: `update` aplica, `rollback` va y
+ * vuelve; la limpieza deja lo tomado y lo borra al soltarse; el respaldo de PowerShell vuelve a la anterior por la
+ * unión y repara un diario cortado; y una máquina en la forma de antes se convierte, trabada (el aviso UNA vez) y
+ * después suelta. Cada diferencia es un hallazgo con su gravedad. Nunca tira.
+ */
+function measureLinkLayout({ own, home, author, env0, env, run, versionOf, stateFile, rec, lockers, harnessJs }) {
+  const SP = require('./links-spike.js');
+  const harness = path.join(own, 'harness'), previous = path.join(own, 'previous'), versions = path.join(own, 'versions');
+  const target = (p) => { try { return path.resolve(path.dirname(p), fs.readlinkSync(p).replace(/^\\\\\?\\/, '')); } catch (_) { return null; } };
+  const isLinkP = (p) => { try { return fs.lstatSync(p).isSymbolicLink(); } catch (_) { return false; } };
+  const ls = (d) => { try { return fs.readdirSync(d); } catch (_) { return []; } };
+  const vdir = (v) => path.join(versions, v);
+  // (un archivo y una carpeta que una versión de verdad trae: version.json y scripts/, abiertos por la ruta que se da)
+  const hold = (dir) => { const hs = SP.holders('all', dir, env0, true, { file: 'version.json', cwd: 'scripts' }); lockers.push(...hs); wait(2500); return hs; };
+  const release = (hs) => { for (const h of hs) kill(h); wait(1500); };
+  const out = (r) => `${r.stdout}\n${r.stderr}`;
+  const breaks = (id, area, text) => rec.finding(`no-clone:${id}`, area, text, 'W8', { severity: 'breaks' });
+  const loses = (id, area, text) => rec.finding(`no-clone:${id}`, area, text, 'W8', { severity: 'loses-control' });
+  rec.fact('links_after_update_2', { harness: target(harness), previous: target(previous), versions: ls(versions) });
+  if (!isLinkP(harness)) { breaks('links-not-born', 'links', `después de install y update, ${harness} no es una unión (${ls(own).join(', ')})`); return; }
+
+  // a. AC 3: la activa tomada, update aplica en esa corrida
+  const v3 = publish(author, '2030.02.01.3', env0);
+  if (!v3.ok) { rec.note(`forma con enlaces: no pude publicar la .3 (${v3.reason}): no medido`); return; }
+  let hs = hold(harness);
+  const up = run(harness, ['update', '--yes'], 'links_update_active_held');
+  rec.fact('links_update_active_held', { exit: up.exit, version: versionOf(), harness: target(harness), previous: target(previous), alive: hs.map(SP.alive), failed: (stateFile() || {}).failed || null });
+  if (up.exit !== 0 || versionOf() !== '2030.02.01.3' || /espera/.test(out(up))) breaks('active-held-update-blocked', 'update', `con la versión activa tomada, update salió ${up.exit} (versión ${versionOf()}): ${lastLines(out(up), 2)}`);
+  if ((stateFile() || {}).failed) loses('active-held-marked-failed', 'update', 'con la activa tomada la versión quedó marcada failed');
+  release(hs);
+
+  // b. AC 7: rollback con la activa tomada, y otra vez
+  hs = hold(harness);
+  const rb = run(harness, ['rollback'], 'links_rollback_active_held');
+  const afterRb = { exit: rb.exit, version: versionOf(), harness: target(harness), previous: target(previous) };
+  const rb2 = run(harness, ['rollback'], 'links_rollback_twice');
+  rec.fact('links_rollback', { first: afterRb, second: { exit: rb2.exit, version: versionOf(), harness: target(harness), previous: target(previous) } });
+  if (afterRb.exit !== 0 || afterRb.version !== '2030.02.01.2') breaks('active-held-rollback-fails', 'rollback', `rollback con la activa tomada salió ${afterRb.exit} (versión ${afterRb.version}): ${lastLines(out(rb), 2)}`);
+  if (rb2.exit !== 0 || versionOf() !== '2030.02.01.3') breaks('rollback-twice-fails', 'rollback', `el segundo rollback salió ${rb2.exit} (versión ${versionOf()})`);
+  release(hs);
+
+  // c. AC 11: la limpieza deja lo tomado y lo borra al soltarse (la .1 ya no es destino de ningún enlace)
+  const old = vdir('2030.02.01.1');
+  if (fs.existsSync(old)) {
+    hs = hold(old);
+    const st1 = run(harness, ['startup'], 'links_startup_old_held');
+    const kept = fs.existsSync(path.join(old, 'version.json'));
+    release(hs);
+    const st2 = run(harness, ['startup'], 'links_startup_old_released');
+    rec.fact('links_cleanup', { held_exit: st1.exit, kept_while_held: kept, gone_after_release: !fs.existsSync(old), versions: ls(versions), pending: (stateFile() || {}).link_pending || null });
+    if (st1.exit !== 0) breaks('cleanup-held-startup-fails', 'startup', `el arranque con una versión vieja tomada salió ${st1.exit}`);
+    if (!kept) rec.note('la versión vieja tomada se borró igual (o quedó a medias): Windows lo dejó');
+    if (fs.existsSync(old)) rec.finding('no-clone:cleanup-not-after-release', 'startup', `soltada, el arranque no borró ${old}`, 'W8', { severity: 'noise' });
+    if (st2.exit !== 0) breaks('cleanup-startup-fails', 'startup', `el arranque después de soltar salió ${st2.exit}`);
+  } else rec.note(`forma con enlaces: ${old} ya no estaba antes de medir la limpieza (${ls(versions).join(', ')})`);
+
+  // d. AC 9 (T9): el respaldo de PowerShell con harness.js roto vuelve a la anterior por la unión
+  const ps = L.scanPath('pwsh', { env: env0 })[0] || L.scanPath('powershell', { env: env0 })[0];
+  const fallback = path.join(home, '.claude', '.tycon-pipeline', 'harness', 'bootstrap-fallback.ps1');
+  const prevTarget = target(previous), activeTarget = target(harness);
+  if (ps && fs.existsSync(fallback) && prevTarget && activeTarget) {
+    const js = path.join(activeTarget, 'scripts', 'setup', 'harness.js');
+    const good = fs.readFileSync(js);
+    fs.writeFileSync(js, 'esto no es javascript (\n');
+    const fb = L.run(ps, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', fallback], { env, timeoutMs: CMD_TIMEOUT_MS, cap: 4000 });
+    rec.fact('links_ps1_fallback', { exit: fb.exit, harness: target(harness), previous: target(previous), out: lastLines(out(fb), 3) });
+    if (!(target(harness) && path.resolve(target(harness)) === path.resolve(prevTarget))) breaks('ps1-fallback-no-retarget', 'fallback', `el respaldo de PowerShell no apuntó harness a la anterior (${prevTarget}): quedó en ${target(harness)} — ${lastLines(out(fb), 2)}`);
+    if (!fs.existsSync(activeTarget)) loses('ps1-fallback-moved-dir', 'fallback', `el respaldo de PowerShell movió o borró ${activeTarget}`);
+    fs.writeFileSync(js, good);
+    // e. AC 5 (T5): un diario cortado lo repara el respaldo de PowerShell: harness vuelve a donde estaba
+    try {
+      const was = target(harness);
+      fs.rmdirSync(harness); fs.symlinkSync(activeTarget, harness, 'junction');
+      fs.writeFileSync(path.join(own, 'link-swap.json'), `${JSON.stringify({ schema: 1, kind: 'swap', stage: 'harness-pointed', version: 'x', dest: activeTarget, harness_was: was, previous_was: null }, null, 2)}\n`);
+      const fr = L.run(ps, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', fallback], { env, timeoutMs: CMD_TIMEOUT_MS, cap: 4000 });
+      const back = target(harness);
+      rec.fact('links_ps1_repair', { exit: fr.exit, harness: back, journal: fs.existsSync(path.join(own, 'link-swap.json')) });
+      if (!(back && path.resolve(back) === path.resolve(was)) || fs.existsSync(path.join(own, 'link-swap.json'))) breaks('ps1-repair-fails', 'fallback', `el respaldo de PowerShell no reparó el diario cortado: harness → ${back} (era ${was}) — ${lastLines(out(fr), 2)}`);
+    } catch (e) { rec.note(`forma con enlaces: no pude armar el diario cortado para el respaldo (${e.code || e.message}): no medido`); }
+    // e2. (pase adversarial, clase 1) la conversión a medias: harness ya es unión y previous sigue siendo una carpeta
+    // TOMADA; con harness.js roto el respaldo no puede mover nada y no tiene que dejar la máquina sin harness
+    try {
+      const act = target(harness);
+      if (isLinkP(previous)) fs.rmdirSync(previous);
+      fs.cpSync(act, previous, { recursive: true });
+      const js2 = path.join(act, 'scripts', 'setup', 'harness.js');
+      const good2 = fs.readFileSync(js2);
+      fs.writeFileSync(js2, 'esto no es javascript (\n');
+      const hs2 = SP.holders('all', previous, env0, true, { file: 'version.json', cwd: 'scripts' }); lockers.push(...hs2); wait(2500);
+      const fh = L.run(ps, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', fallback], { env, timeoutMs: CMD_TIMEOUT_MS, cap: 4000 });
+      const still = fs.existsSync(path.join(harness, 'version.json'));
+      rec.fact('links_ps1_half_converted', { exit: fh.exit, harness_present: still, harness: target(harness), previous_real: fs.existsSync(previous) && !isLinkP(previous) });
+      if (!still) breaks('ps1-half-converted-loses-harness', 'fallback', `con la conversión a medias y harness.js roto, el respaldo de PowerShell dejó la máquina sin ${harness}`);
+      release(hs2);
+      fs.writeFileSync(js2, good2);
+      fs.rmSync(previous, { recursive: true, force: true });
+      if (prevTarget && fs.existsSync(prevTarget)) fs.symlinkSync(prevTarget, previous, 'junction');
+    } catch (e) { rec.note(`forma con enlaces: no pude armar la conversión a medias para el respaldo (${e.code || e.message}): no medido`); }
+    // el arranque reconcilia el estado con lo que quedó apuntado (la versión que el respaldo dejó)
+    run(harness, ['startup'], 'links_startup_after_fallback');
+  } else rec.note(`forma con enlaces: el respaldo de PowerShell no se midió (${!ps ? 'sin pwsh ni powershell' : !fs.existsSync(fallback) ? `no está ${fallback}` : 'sin enlaces armados'})`);
+
+  // f. AC 10 (decisión 7): una máquina en la forma de antes (carpetas reales), trabada y después suelta
+  try {
+    const keep = target(harness);
+    for (const n of [harness, previous]) if (isLinkP(n)) fs.rmdirSync(n);
+    fs.renameSync(keep, harness);
+    for (const n of ls(versions)) fs.rmSync(path.join(versions, n), { recursive: true, force: true });
+  } catch (e) { rec.note(`forma con enlaces: no pude armar la forma de antes para la conversión (${e.code || e.message}): no medido`); return; }
+  const vc = publish(author, '2030.02.01.39', env0);
+  if (!vc.ok) { rec.note(`conversión: no pude publicar (${vc.reason}): no medido`); return; }
+  hs = hold(harness);
+  outOfWindowAt(home, rec);
+  // ajuste del dueño (2026-10-14): los primeros arranques trabados intentan en silencio; el aviso sale UNA vez al llegar a
+  // 3 días o 10 arranques (acá: 9 intentos anotados a mano, y el décimo)
+  const c1 = run(harness, ['startup'], 'links_convert_held');
+  const silent = !/Cerrá/.test(out(c1));
+  const stf = path.join(home, '.claude', '.tycon-pipeline', 'harness-state.json');
+  try { const s = readJson(stf); if (s.link_convert) s.link_convert.attempts = 9; fs.writeFileSync(stf, `${JSON.stringify(s, null, 2)}\n`); } catch (e) { rec.note(`conversión: no pude anotar los intentos en el estado (${e.code || e.message})`); }
+  const c2 = run(harness, ['startup'], 'links_convert_held_tenth');
+  const said = /Cerrá/.test(out(c2));
+  const c2b = run(harness, ['startup'], 'links_convert_held_again');
+  rec.fact('links_convert_held', { exit: c1.exit, real_dir: fs.existsSync(harness) && !isLinkP(harness), waiting: ls(versions), version: versionOf(), silent_first: silent, said_tenth: said, said_again: /Cerrá/.test(out(c2b)) });
+  if (c1.exit !== 0) breaks('convert-held-startup-fails', 'convert', `el arranque con la conversión trabada salió ${c1.exit}`);
+  if (!ls(versions).some((n) => n.startsWith('2030.02.01.39'))) loses('convert-held-version-lost', 'convert', `con la conversión trabada la versión nueva no quedó en versions/ (${ls(versions).join(', ')})`);
+  if (!silent) rec.finding('no-clone:convert-held-not-silent', 'convert', `el primer arranque trabado ya avisó (tiene que intentar en silencio): ${lastLines(out(c1), 2)}`, 'W8', { severity: 'noise' });
+  if (!said) loses('convert-held-not-said', 'convert', `al décimo arranque trabado no dijo qué cerrar: ${lastLines(out(c2), 2)}`);
+  if (/Cerrá/.test(out(c2b))) rec.finding('no-clone:convert-held-said-twice', 'convert', 'el aviso de la conversión trabada se repitió en el arranque siguiente', 'W8', { severity: 'noise' });
+  release(hs);
+  outOfWindowAt(home, rec);
+  const c3 = run(harness, ['startup'], 'links_convert_released');
+  rec.fact('links_convert_released', { exit: c3.exit, harness: target(harness), previous: target(previous), version: versionOf() });
+  if (!isLinkP(harness) || versionOf() !== '2030.02.01.39') breaks('convert-not-after-release', 'convert', `soltada, la conversión no salió o no aplicó la versión (harness ${isLinkP(harness) ? `→ ${target(harness)}` : 'sigue carpeta'}, versión ${versionOf()})`);
+  void harnessJs;
 }
 
 /**
