@@ -181,13 +181,20 @@ function nameState(ruta, isValid = esClonDelArnes) {
   try { st = fs.lstatSync(ruta); } catch (_) { return { ruta, kind: 'F', direct: null, real: null }; }
   if (st.isSymbolicLink()) {
     let direct = null;
-    try { direct = path.resolve(path.dirname(ruta), fs.readlinkSync(ruta)); } catch (_) { direct = null; }
+    // (una unión de Windows se lee con el prefijo `\\?\`: sin sacarlo, no se compara con la ruta que se le dio)
+    try { direct = path.resolve(path.dirname(ruta), fs.readlinkSync(ruta).replace(/^\\\\\?\\/, '')); } catch (_) { direct = null; }
     const r = real(ruta);
     if (!r) return { ruta, kind: 'C', direct, real: null };
     return { ruta, kind: isValid(r) ? 'E' : 'N', direct, real: r };
   }
   if (st.isDirectory()) { const r = real(ruta) || ruta; return { ruta, kind: isValid(r) ? 'R' : 'X', direct: null, real: r }; }
   return { ruta, kind: 'A', direct: null, real: null };
+}
+
+/** La ruta tal cual si su último nombre es un enlace (la forma con enlaces de la 8.33); si no, null. */
+function stableName(p) {
+  if (!p) return null;
+  try { return fs.lstatSync(p).isSymbolicLink() ? path.resolve(p) : null; } catch (_) { return null; }
 }
 
 /** El `tree` del estado del mecanismo, si lo hay (sin validar el resto del estado). */
@@ -276,7 +283,11 @@ function placePlan({ clon, home, forzar = null, prefer = null, isValid = esClonD
     if (!isValid(f)) { plan.accion = 'invalid'; say(`✗ --link ${forzar}: no es un clon del arnés (no tiene scripts/install-tycon-hooks.sh); el lugar no se tocó`); return plan; }
     if (P.kind === 'R') { plan.accion = 'refused'; say(`✗ tycon: el lugar ${P.ruta} es una carpeta real (tu clon): no lo re-apunto; cloná en otra carpeta para usar el modo desarrollador`); return plan; }
     if (P.kind === 'X' || P.kind === 'A') { plan.accion = 'refused'; say(`✗ tycon: en ${P.ruta} hay ${KIND_WORD[P.kind]}, no un enlace: no lo piso (movelo y volvé a correrlo)`); return plan; }
-    if (!(P.kind === 'E' && same(P.real, f))) { plan.place = f; plan.accion = 'repointed'; }
+    // la forma con enlaces (story 8.33): si lo que se pide es un ENLACE (`~/.tycon/harness`, una unión en Windows), el lugar
+    // apunta a ese nombre, nunca a la carpeta numerada a la que lleva hoy: con la ruta real, la versión siguiente lo dejaría
+    // apuntando a la vieja
+    const stable = stableName(forzar);
+    if (!(P.kind === 'E' && same(P.real, f) && (!stable || (P.direct && same(P.direct, stable))))) { plan.place = stable || f; plan.accion = 'repointed'; }
     if (V.kind === 'R' && !same(V.real, f)) say(`ℹ tycon: el nombre viejo ${V.ruta} es una carpeta real (otro clon, ${V.real}): no lo toco`);
     else legacyFollows();
     return plan;
@@ -289,10 +300,12 @@ function placePlan({ clon, home, forzar = null, prefer = null, isValid = esClonD
   }
   if (P.kind === 'F' || P.kind === 'C' || P.kind === 'N') {
     if (V.kind === 'R') { plan.place = V.real; plan.accion = 'created'; return plan; }                     // L→R
-    if (V.kind === 'E') { plan.place = V.real; plan.accion = 'created'; legacyFollows(); return plan; }   // L→K · V→L
+    // (forma con enlaces, 8.33: si el viejo apunta a un ENLACE —`~/.tycon/harness`—, el lugar apunta a ese nombre, no a la
+    // carpeta numerada a la que lleva hoy)
+    if (V.kind === 'E') { plan.place = (V.direct && stableName(V.direct)) || V.real; plan.accion = 'created'; legacyFollows(); return plan; }   // L→K · V→L
     // L→D: el viejo no da un clon; el estado (o --prefer) antes que el clon que corre
     const pref = real(prefer || stateTree(home));
-    plan.place = pref && isValid(pref) ? pref : c;
+    plan.place = pref && isValid(pref) ? (stableName(prefer || stateTree(home)) || pref) : c;
     plan.accion = P.kind === 'F' ? 'created' : 'repaired';
     legacyFollows();
     return plan;
@@ -730,7 +743,9 @@ function linkEntries({ dir, src, written, id, check, links, home }) {
  */
 function ensureRepoLinks({ clone, home, check = false, only = null, links = null } = {}) {
   const given = path.resolve(clone || RAIZ);
-  const c = real(given) || given;
+  // la forma con enlaces (story 8.33): si el árbol se nombra por un enlace (`~/.tycon/harness`), los enlaces de ~/.claude
+  // apuntan adentro de ESE nombre, no de la carpeta numerada: con la ruta real, la versión siguiente los dejaría en la vieja
+  const c = stableName(given) || real(given) || given;
   // `plan`: con `check`, cada enlace con lo que le haría el instalador (add · update · remove · keep; story 8.16, AC 11)
   const out = { applies: isSingleRepo(c), lines: [], pieces: [], separate: null, plan: [] };
   if (!out.applies) return out;

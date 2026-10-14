@@ -296,7 +296,8 @@ function plugCodex({ tree, home = os.homedir(), env = process.env, log = null, s
     say(reason);
     return { ok: false, out: '', pieces: [], warnings: [], reason };
   }
-  const childEnv = Object.assign({}, env);
+  // (forma con enlaces, story 8.33: los desplegadores arman sus rutas con `__dirname`; así nombran ~/.tycon/harness)
+  const childEnv = Object.assign({}, require('./tycon-home.js').keepLinkPathsEnv(env));
   if (snapshotDir) childEnv.TYCON_HARNESS_SNAPSHOT_DIR = snapshotDir; else delete childEnv.TYCON_HARNESS_SNAPSHOT_DIR;
   for (const k of ['TYCON_REPORT_PIECES', 'TYCON_PLAN_PIECES']) delete childEnv[k];   // las piezas las cuenta codexPieces
   const run = (script, args) => {

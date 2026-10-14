@@ -1198,6 +1198,19 @@
       ]
     },
     {
+      "__nota": "story 8.33 (T2-T8, T10-T14): la versión bajada con ENLACES —la forma de Windows: ~/.tycon/harness y ~/.tycon/previous enlaces a ~/.tycon/versions/<v>—, ejercitada en Mac con la variable sólo de pruebas TYCON_RELEASE_LINKS=1 y una envoltura de fs.renameSync que simula la carpeta tomada: el cambio sin renombrar versiones y sin hueco, la activa tomada que igual se aplica, nada escrito que nombre versions/ (con Codex enchufado), la reparación de link-swap.json en cada etapa, el respaldo viejo que no toca el diario nuevo, rollback de ida y vuelta, la salud roja, la conversión trabada con su aviso de una vez, la limpieza y el aviso de los 7 días, uninstall sin borrar a través de un enlace y doctor. Sobre la máquina de juguete y el servidor de versiones de juguete; sin red real.",
+      "raiz": "arnes",
+      "ruta": "tests/harness-release-links.test.sh",
+      "requiere": [],
+      "gate_only_when_touching": [
+        "scripts/setup/**",
+        "scripts/lib/**",
+        "scripts/tests/lib/**",
+        "scripts/tests/fixtures/**",
+        "build/deploy-codex-*.js"
+      ]
+    },
+    {
       "__nota": "story 8.23 (tanda D, T27, T28, T29 y T32): la mudanza de una máquina del clon a ~/.tycon (harness.js migrate --to-home): las precondiciones sin escribir y el plan (--dry-run); la mudanza entera con diario (la versión en ~/.tycon/harness, el estado, la configuración fundida y el .dashboard en ~/.tycon, los hooks al árbol nuevo con la misma cuenta, los enlaces viejos) y sus cortes en cuatro puntos (el arranque completa o deshace); el clon de la persona intacto y declarable (paths.maintained); la llave install.home del perfil (una vez, la precondición reintenta, el fallo durante queda failed). Sobre la máquina de juguete instalada desde un clon y el servidor de versiones de juguete; sin red real.",
       "raiz": "arnes",
       "ruta": "tests/harness-move-home.test.sh",

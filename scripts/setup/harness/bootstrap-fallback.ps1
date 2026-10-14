@@ -75,6 +75,57 @@ if ((Test-Path $Log) -and ((Get-Item $Log).Length -gt 1048576)) { Move-Item -For
 $Release = $false
 if ((Test-Path $State) -and ((Get-Content $State -Raw) -match '"kind"\s*:\s*"release"')) { $Release = $true }
 $Repaired = ''
+
+# ── la forma con ENLACES (story 8.33): en Windows `harness` y `previous` son uniones a `versions\<v>\`. Su diario es
+# link-swap.json; un corte vuelve las dos uniones a donde estaban (la regla de release.js → repairLinks). Una unión se
+# quita con [IO.Directory]::Delete sin recursión: nunca se borra a través de ella. Ninguna carpeta se mueve.
+function Test-Link([string]$P) { try { $i = Get-Item -LiteralPath $P -Force -ErrorAction Stop; return [bool]($i.Attributes -band [IO.FileAttributes]::ReparsePoint) } catch { return $false } }
+function Get-LinkTarget([string]$P) { try { $t = (Get-Item -LiteralPath $P -Force -ErrorAction Stop).Target; if ($t -is [array]) { $t = $t[0] }; return ([string]$t) -replace '^\\\\\?\\', '' } catch { return '' } }
+function Remove-Link([string]$P) { if (Test-Link $P) { [System.IO.Directory]::Delete($P, $false) } }
+# (si crear la nueva falla después de quitar la vieja, se recrea la vieja: nunca queda el nombre sin enlace callado)
+function Set-Link([string]$P, [string]$Target) {
+    $Before = Get-LinkTarget $P
+    Remove-Link $P
+    try { New-Item -ItemType Junction -Path $P -Target $Target -ErrorAction Stop | Out-Null }
+    catch {
+        if ($Before -and -not (Test-Path $P)) { try { New-Item -ItemType Junction -Path $P -Target $Before -ErrorAction Stop | Out-Null } catch { throw "no pude apuntar $P a $Target y quedó sin enlace (antes iba a $Before): $($_.Exception.Message)" } }
+        throw
+    }
+}
+$LinkJournal = Join-Path $Own 'link-swap.json'
+if (Test-Path $LinkJournal) {
+    try { $LJ = Get-Content $LinkJournal -Raw | ConvertFrom-Json } catch { $LJ = $null }
+    $OwnHarness = Join-Path $Own 'harness'; $OwnPrevious = Join-Path $Own 'previous'
+    $Versions = [System.IO.Path]::GetFullPath((Join-Path $Own 'versions'))
+    # lo que el diario nombra tiene que estar en versions\ (un hijo directo), y los nombres sólo pueden ser los dos del
+    # arnés: un diario ajeno no hace apuntar ni crear nada fuera de ~/.tycon (revisor de seguridad; gemelo de release.js)
+    function In-Versions([string]$P) { if (-not $P) { return $false }; try { return ([System.IO.Path]::GetDirectoryName([System.IO.Path]::GetFullPath($P)) -eq $Versions) } catch { return $false } }
+    function Is-OwnName([string]$P) { if (-not $P) { return $false }; try { $f = [System.IO.Path]::GetFullPath($P); return ($f -eq [System.IO.Path]::GetFullPath($OwnHarness) -or $f -eq [System.IO.Path]::GetFullPath($OwnPrevious)) } catch { return $false } }
+    try {
+        if (-not $LJ) { $Repaired = "el diario $LinkJournal no se puede leer: lo dejo para que alguien lo mire" }
+        elseif ([string]$LJ.kind -eq 'convert') {
+            $moves = @($LJ.moves | Where-Object { $_ })
+            if (@($moves | Where-Object { -not (Is-OwnName ([string]$_.name)) -or -not (In-Versions ([string]$_.dest)) }).Count) { $Repaired = "el diario $LinkJournal nombra rutas que no son del arnés: lo dejo para que alguien lo mire"; $LJ = $null }
+            else {
+                foreach ($m in $moves) { if (-not (Test-Path $m.name) -and (Test-Path $m.dest)) { Set-Link ([string]$m.name) ([string]$m.dest) } }
+                $Repaired = if (Test-Path $OwnHarness) { 'completó la conversión a la forma con enlaces' } else { "la conversión quedó a medias y $OwnHarness no está: volvé a instalar con harness.js install --version latest" }
+            }
+        } elseif (@(@($LJ.harness_was, $LJ.previous_was, $LJ.dest) | Where-Object { $_ -and -not (In-Versions ([string]$_)) }).Count) {
+            $Repaired = "el diario $LinkJournal nombra rutas fuera de $Versions`: lo dejo para que alguien lo mire"; $LJ = $null
+        } else {
+            if (-not $LJ.harness_was -and $LJ.dest -and (Test-Path $LJ.dest)) { Set-Link $OwnHarness ([string]$LJ.dest) }
+            elseif ($LJ.harness_was -and (Test-Path $LJ.harness_was)) { if ((Get-LinkTarget $OwnHarness) -ne [string]$LJ.harness_was) { Set-Link $OwnHarness ([string]$LJ.harness_was) } }
+            if ($LJ.previous_was -and (Test-Path $LJ.previous_was)) { if ((Get-LinkTarget $OwnPrevious) -ne [string]$LJ.previous_was) { Set-Link $OwnPrevious ([string]$LJ.previous_was) } }
+            else { Remove-Link $OwnPrevious }
+            foreach ($t in @(Get-ChildItem -LiteralPath $Own -Force -ErrorAction SilentlyContinue | Where-Object { $_.Name -like 'harness.tycon-new-*' -or $_.Name -like 'previous.tycon-new-*' })) { Remove-Link $t.FullName }
+            # lo que dice es lo que quedó, no lo que se intentó (revisor de fallos silenciosos)
+            $Now = Get-LinkTarget $OwnHarness
+            $Repaired = if ($Now) { "el cambio de versión quedó a medias («$([string]$LJ.stage)»): harness volvió a $Now" } else { "el cambio de versión quedó a medias («$([string]$LJ.stage)») y no pude volver harness a ninguna versión: volvé a instalar con harness.js install --version latest" }
+        }
+        if ($LJ -and (Test-Path $OwnHarness)) { Remove-Item $LinkJournal -Force -ErrorAction SilentlyContinue }
+    } catch { $Repaired = "no pude reparar el cambio de enlaces ($($_.Exception.Message)); queda para el próximo arranque" }
+}
+
 $Journal = Join-Path $Own 'swap.json'
 if (Test-Path $Journal) {
     try { $J = Get-Content $Journal -Raw | ConvertFrom-Json } catch { $J = $null }
@@ -121,7 +172,16 @@ if ($Release) {
         $Why = 'node no está en el PATH: no puedo saber si harness.js arranca; no vuelvo a ninguna versión; '
     } elseif ($Broken) {
         $OwnPrevious = Join-Path $Own 'previous'
-        if (Test-Path $OwnPrevious) {
+        if ((Test-Link $Tree) -and (Test-Link $OwnPrevious) -and (Test-Path $OwnPrevious)) {
+            # la forma con enlaces (8.33): harness pasa a apuntar a la anterior; la rota queda sin enlace, para la limpieza
+            $Prev = Get-LinkTarget $OwnPrevious; $Rota = Get-LinkTarget $Tree
+            try { Set-Link $Tree $Prev; Remove-Link $OwnPrevious; $Why = "harness.js no arrancaba: volví a la versión anterior (el enlace harness → $Prev; la rota, $Rota, queda para la limpieza); " }
+            catch { $Why = "harness.js no arranca y no pude apuntar harness a la versión anterior ($($_.Exception.Message)); " }
+        } elseif ((Test-Link $Tree) -and (Test-Path $OwnPrevious)) {
+            # la conversión a medias (8.33): harness ya es una unión y previous sigue siendo una carpeta tomada. Mover la unión
+            # y después no poder mover previous dejaba la máquina sin harness (pase adversarial, clase 1): acá no se mueve nada
+            $Why = "harness.js no arranca y la versión anterior ($OwnPrevious) todavía es una carpeta en uso: cerrá las otras sesiones de Claude Code y de Codex y VS Code (si sigue, reiniciá) y corré node <copia>\scripts\setup\harness.js install --version latest; "
+        } elseif (Test-Path $OwnPrevious) {
             New-Item -ItemType Directory -Force -Path (Join-Path $Own 'trash') | Out-Null
             $Aside = Join-Path (Join-Path $Own 'trash') ("failed-" + (Get-Date).ToUniversalTime().ToString('yyyyMMdd-HHmmss'))
             try { Move-Item $Tree $Aside -ErrorAction Stop; Move-Item $OwnPrevious $Tree -ErrorAction Stop; $Why = "harness.js no arrancaba: volví a la versión anterior (previous → harness; la rota en $Aside); " }
