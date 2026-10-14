@@ -1207,7 +1207,7 @@
         "scripts/lib/**",
         "scripts/tests/lib/**",
         "scripts/tests/fixtures/**",
-        "build/deploy-codex-*.js"
+        "build/**"
       ]
     },
     {
