@@ -363,7 +363,7 @@ function updateFailureLine() {
 
 /**
  * La línea vieja del índice (2026-10-14: el índice de guías pasó de README.md a INDEX.md, y README.md quedó como la
- * portada). Una sesión que arrancó con `@~/.claude/tycon-harness/README.md` en ~/.claude/CLAUDE.md cargó la portada, no el
+ * portada). Una sesión cuya línea de CLAUDE.md apuntaba al README.md del arnés (la forma vieja) cargó la portada, no el
  * índice: la línea se reescribe acá (import-line.js, la misma regla que el aplicador y harness.js) y a ESTA sesión, que ya
  * leyó el CLAUDE.md, se le pasa el índice. El índice no entra entero en la salida de un aviso de arranque (Claude Code
  * guarda en un archivo lo que pasa de ~10 KB y deja sólo el comienzo), así que se le pide leerlo por su ruta. En Codex

@@ -28,6 +28,13 @@
       "retire_with": "8.23 tanda D (la mudanza) y tanda E",
       "retire_after": "2026-11-07",
       "retired_by": "8.24"
+    },
+    {
+      "path": "scripts/setup/harness/import-line.js",
+      "why": "la línea de ~/.claude/CLAUDE.md que carga el índice de guías nombra el lugar viejo (~/.claude/tycon-harness); es vieja y la story 8.24 la pasa a nombrar ~/.tycon/harness (AC 6)",
+      "retire_with": "8.24 (la línea de arranque pasa a nombrar ~/.tycon/harness)",
+      "retire_after": "2026-11-07",
+      "retired_by": "8.24"
     }
   ],
   "until_d": [

@@ -1,11 +1,11 @@
 {
   "__doc": "Story 8.23 (AC 4): el techo de «.claude» en el código. Por archivo, cuántas veces aparece «.claude» fuera de los enchufes de Claude Code (clase B: settings.json, settings.local.json, CLAUDE.md, skills/, agents/, commands/, projects/, plugins/, channels/, ~/.claude.json) y fuera de los archivos de legacy-home-names.json. Barrido: los archivos rastreados de scripts/, skills/, agents/, build/ y adapters/, sin pruebas (tests/, *.test.*, fixtures/, controls-bench/cases/) ni prosa (.md); los comentarios cuentan. La regla: el techo SÓLO BAJA. Un archivo que sube frena nombrando sus líneas (pedile la ruta a scripts/setup/harness/tycon-home.js); uno que baja frena pidiendo bajar el techo. Re-medir: node scripts/tests/tycon-home.test.js --measure > scripts/tests/fixtures/dot-claude-ceiling.json. Lo compara scripts/tests/tycon-home.test.js (T3). El cero se exige en la tanda E.",
   "__last_change": {
-    "date": "2026-10-11",
-    "direction": "baja dos, a propósito",
-    "reason": "Story 8.26, tanda G3: el revisor de deudas deja de citar el registro de incidentes por su ruta (la prosa de los revisores quedó sin historia interna), y sus dos traducciones a Codex pasan de 1 a 0 cada una. El total queda en 828."
+    "date": "2026-10-14",
+    "direction": "sube uno, a propósito (decisión del dueño)",
+    "reason": "scripts/lib/repos-root.js: su autoprueba arma un disco de Windows de mentira con la carpeta de sesiones de Claude Code (C:\\Users\\dev\\.claude), que es un enchufe de Claude Code y tiene que llamarse así (arreglo de la mudanza, e752107). Los otros dos comentarios que habían subido se reescribieron; import-line.js entra a legacy-home-names.json."
   },
-  "total": 825,
+  "total": 826,
   "files": {
     "adapters/codex/agents-native/http-resilience-reviewer.toml": 1,
     "adapters/codex/agents-native/migration-impact-analyzer.toml": 1,
@@ -102,7 +102,7 @@
     "scripts/lib/lint-story-frontmatter.js": 2,
     "scripts/lib/manifest-engram.js": 1,
     "scripts/lib/renames.json": 41,
-    "scripts/lib/repos-root.js": 31,
+    "scripts/lib/repos-root.js": 32,
     "scripts/lib/shell-parse.js": 2,
     "scripts/lib/skills-dir.js": 4,
     "scripts/lib/tycon-config.js": 29,
