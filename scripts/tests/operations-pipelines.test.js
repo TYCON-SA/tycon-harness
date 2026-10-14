@@ -196,3 +196,116 @@ test('T5 OpsData_FreshOrg_NotRed: un repo de operaciones recién creado (sin dat
   assert.match(r.out, /HARNESS_TREE\]/);
   assert.ok(!fs.existsSync(path.join(w.s, '.dashboard')), 'no inventa carpetas de datos');
 });
+
+// ── las copias del arnés en las métricas: de team-repos.json, no de una variable (DEF-8.30-copias-del-arnes-en-team-repos)
+// EL CASO: las métricas del modelo sabían qué repos son copias del arnés por una variable de la definición
+// (HARNESS_COPIES, y HARNESS_MEASURED_COPY la que cuenta). El dueño decidió (2026-10-14) que lo diga team-repos.json,
+// como el resto de los repos: un lugar menos que configurar. Se corre el paso «Descubrir y clonar» REAL del modelo, con
+// un `az` de mentira que contesta lo que el laboratorio declara y git de verdad contra repos locales.
+function discoverScript(vars) {
+  const block = steps(read('stage-metrics.yml')).find((s) => /displayName: 'Descubrir y clonar \(liviano\) los repos'/.test(s));
+  assert.ok(block, 'stage-metrics.yml trae el paso «Descubrir y clonar»');
+  const lines = block.split('\n');
+  const end = lines.findIndex((l) => /^ {8}displayName:/.test(l));
+  let body = lines.slice(1, end).map((l) => l.replace(/^ {10}/, '')).join('\n');
+  for (const [k, v] of Object.entries(vars)) body = body.split(`$(${k})`).join(v);
+  assert.doesNotMatch(body, /\$\([A-Z][A-Za-z]+\.[A-Za-z.]+\)/, 'no quedó ninguna macro de Azure sin reemplazar');
+  return body;
+}
+
+/** La organización del laboratorio: un proyecto con el arnés tres veces (la vieja, la de mantenimiento y un espejo), un
+ *  repo que sólo EMPIEZA igual que una copia, y un producto en un proyecto con espacio en el nombre. */
+function labOrg(teamRepos) {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'ops-copies-'));
+  dirs.push(base);
+  const job = path.join(base, 'job');
+  fs.mkdirSync(path.join(job, 'scripts', 'lib'), { recursive: true });
+  fs.copyFileSync(path.join(ROOT, 'scripts', 'lib', 'team-repos.js'), path.join(job, 'scripts', 'lib', 'team-repos.js'));
+  if (teamRepos !== undefined) fs.writeFileSync(path.join(job, 'team-repos.json'), typeof teamRepos === 'string' ? teamRepos : JSON.stringify(teamRepos));
+  const remotes = path.join(base, 'remotes');
+  const tsv = {};
+  for (const [proj, name] of [['Harness', 'old-harness'], ['Harness', 'maintainers'], ['Harness', 'mirror'], ['Harness', 'maintainers-docs'], ['Product One', 'app']]) {
+    const bare = path.join(remotes, `${proj}__${name}.git`);
+    fs.mkdirSync(bare, { recursive: true });
+    git(bare, ['init', '--quiet', '--bare']);
+    git(bare, ['symbolic-ref', 'HEAD', 'refs/heads/main']);
+    const w = path.join(base, 'w', `${proj}__${name}`);
+    git(base, ['clone', '--quiet', bare, w]);
+    write(w, { 'specs/story-1.1.md': '---\nstory: 1.1\nstatus: done\n---\n', '.tycon/x.json': '{}\n' });
+    git(w, ['add', '-A']); git(w, ['commit', '--quiet', '-m', 'base']); git(w, ['branch', '-M', 'main']); git(w, ['push', '--quiet', 'origin', 'main']);
+    tsv[proj] = `${tsv[proj] || ''}${name}\t${bare}\n`;
+  }
+  const az = path.join(base, 'az');
+  fs.mkdirSync(az);
+  fs.writeFileSync(path.join(az, 'projects.txt'), 'Harness\nProduct One\n');
+  for (const [p, t] of Object.entries(tsv)) fs.writeFileSync(path.join(az, `repos-${p}.tsv`), t);
+  const bin = path.join(base, 'bin');
+  fs.mkdirSync(bin);
+  fs.writeFileSync(path.join(bin, 'az'), `#!/usr/bin/env bash
+if [ "$1 $2 $3" = "devops project list" ]; then cat "$LAB_AZ/projects.txt"; exit 0; fi
+if [ "$1 $2" = "repos list" ]; then
+  P=""; while [ $# -gt 0 ]; do [ "$1" = "--project" ] && P="$2"; shift; done
+  cat "$LAB_AZ/repos-$P.tsv"; exit 0
+fi
+echo "az de mentira: consulta que el laboratorio no espera: $*" >&2; exit 1
+`, { mode: 0o755 });
+  return { base, job, az, bin };
+}
+function runDiscover(lab, vars = {}) {
+  const body = discoverScript({ 'System.AccessToken': 'token-de-prueba', 'System.CollectionUri': 'https://dev.azure.com/acme/',
+    'Agent.TempDirectory': path.join(lab.base, 'tmp'), 'Build.SourcesDirectory': lab.job });
+  const r = spawnSync('bash', ['-c', body], { cwd: lab.job, encoding: 'utf8',
+    env: cleanEnv({ LAB_AZ: lab.az, PATH: `${lab.bin}${path.delimiter}${process.env.PATH}`, ...vars }) });
+  const reposDir = path.join(lab.base, 'tmp', 'repos');
+  return { code: r.status, out: `${r.stdout}${r.stderr}`, cloned: fs.existsSync(reposDir) ? fs.readdirSync(reposDir).sort() : [] };
+}
+const azRepo = (project, repo) => ({ platform: 'azure', org: 'acme', project, repo });
+const teamRepos = (extra) => ({ version: 1, public: { platform: 'github', org: 'acme', repo: 'harness' }, profile: azRepo('Harness', 'profile'),
+  operations: azRepo('Harness', 'operations'), ...extra });
+
+test('T6 StageMetrics_CopiesFromTeamRepos: las copias las declara team-repos.json; se mide sólo la de mantenimiento', () => {
+  const lab = labOrg(teamRepos({ maintainers: azRepo('Harness', 'maintainers'),
+    harness_copies: [azRepo('Harness', 'old-harness'), azRepo('harness', 'MAINTAINERS'), azRepo('Harness', 'mirror')] }));
+  const r = runDiscover(lab);
+  assert.strictEqual(r.code, 0, r.out);
+  assert.deepStrictEqual(r.cloned, ['Harness__maintainers', 'Harness__maintainers-docs', 'Product One__app'],
+    'las otras copias no se bajan; la de mantenimiento sí, y el repo que sólo empieza igual no se confunde');
+  assert.match(r.out, /copias del arnés que no se miden: Harness\/old-harness Harness\/mirror$/m);
+  assert.doesNotMatch(r.out, /##vso\[task\.logissue/, 'sin avisos');
+  // sin mantenimiento declarado: ninguna copia se mide
+  const none = runDiscover(labOrg(teamRepos({ harness_copies: [azRepo('Harness', 'old-harness'), azRepo('Harness', 'maintainers')] })));
+  assert.strictEqual(none.code, 0, none.out);
+  assert.deepStrictEqual(none.cloned, ['Harness__maintainers-docs', 'Harness__mirror', 'Product One__app']);
+  // sin team-repos.json (es opcional en el modelo): se mide todo, como una organización sin copias
+  const bare = runDiscover(labOrg(undefined));
+  assert.strictEqual(bare.code, 0, bare.out);
+  assert.strictEqual(bare.cloned.length, 5);
+});
+
+test('T7 StageMetrics_OldVariables_NotReadAnymore: la variable de antes avisa; sin copias en team-repos.json, rojo sin bajar nada', () => {
+  const copies = teamRepos({ maintainers: azRepo('Harness', 'maintainers'), harness_copies: [azRepo('Harness', 'old-harness'), azRepo('Harness', 'maintainers')] });
+  // con las copias en team-repos.json, la variable vieja (que decía OTRA cosa) no manda: aviso para borrarla
+  let r = runDiscover(labOrg(copies), { HARNESS_COPIES: 'Harness/mirror;Harness/maintainers', HARNESS_MEASURED_COPY: 'Harness/mirror' });
+  assert.strictEqual(r.code, 0, r.out);
+  assert.match(r.out, /##vso\[task\.logissue type=warning\]HARNESS_COPIES y HARNESS_MEASURED_COPY ya no se leen/);
+  assert.deepStrictEqual(r.cloned, ['Harness__maintainers', 'Harness__maintainers-docs', 'Harness__mirror', 'Product One__app'], 'manda team-repos.json');
+  // la variable puesta y team-repos.json sin copias (o sin archivo): quien la puso tiene copias; medirlas dos veces en silencio, no
+  for (const [caso, lab, vars] of [
+    ['sin archivo', labOrg(undefined), { HARNESS_COPIES: 'Harness/old-harness;Harness/maintainers' }],
+    ['sin harness_copies', labOrg(teamRepos({})), { HARNESS_MEASURED_COPY: 'Harness/maintainers' }],
+  ]) {
+    r = runDiscover(lab, vars);
+    assert.notStrictEqual(r.code, 0, `${caso}: ${r.out}`);
+    assert.match(r.out, /##vso\[task\.logissue type=error\]HARNESS_COPIES y HARNESS_MEASURED_COPY ya no se leen: las copias del arnés se declaran en team-repos\.json/, caso);
+    assert.deepStrictEqual(r.cloned, [], `${caso}: no se bajó nada`);
+  }
+  // una variable vacía (o sólo separadores) es como no tenerla
+  r = runDiscover(labOrg(undefined), { HARNESS_COPIES: ' ; ' });
+  assert.strictEqual(r.code, 0, r.out);
+  // un team-repos.json que no valida: rojo con el motivo, sin bajar nada («no pude saber» no es «no hay copias»)
+  r = runDiscover(labOrg(teamRepos({ harness_copies: [azRepo('Harness', '')] })));
+  assert.notStrictEqual(r.code, 0, r.out);
+  assert.match(r.out, /harness_copies\.0\.repo/);
+  assert.match(r.out, /##vso\[task\.logissue type=error\]team-repos\.json no valida/);
+  assert.deepStrictEqual(r.cloned, []);
+});
