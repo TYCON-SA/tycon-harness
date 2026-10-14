@@ -117,10 +117,36 @@ HOME_LEIDA="${HOME_USUARIO:-${HOME:-}}"; CLAUDE_LEIDA="$HOME_LEIDA/.claude"
 # (revisor de seguridad de la tanda D: editar un archivo y recalcular su blob en el manifiesto pasaba). Lo que el asistente
 # NO puede escribir es GitHub: se recalcula el árbol de git de la carpeta desde el disco (sin cargar código del árbol: ese
 # código es lo que se verifica), se compara con el árbol del commit que registra el estado SEGÚN GITHUB (la API, con el
-# permiso de la persona si lo tiene guardado), y ese commit tiene que ser la punta publicada (main, o mirror/sync). Sin red,
-# sin permiso para ver el repo, con un árbol distinto o con una versión vieja: no se instala, y se dice. El origen de
+# permiso de la persona si lo tiene guardado), y ese commit tiene que ser la punta publicada (main, o mirror/sync) o un
+# commit anterior de main con el freno igual al de la punta (instala y avisa que hay una versión más nueva). Sin red,
+# sin permiso para ver el repo, con un árbol distinto, con un commit fuera de main o con un freno viejo: no se instala, y
+# se dice. El origen de
 # confianza pasa a ser el repo de GitHub y queda fijado con `repo` (así `doctor` sabe que este freno ya es el de la mudanza).
 # TYCON_RELEASE_API cambia la API (sólo pruebas: el servidor de versiones de juguete); con sudo el entorno viene limpio.
+# Lo que se copia a /opt (el freno, la puerta y lo que requieren). Escrito ANTES de 0a: con una versión bajada atrasada,
+# 0a exige que estos archivos sean byte a byte los de la punta de main (paso 5 del python).
+ARCHIVOS=(
+  scripts/hooks/prod-access-guard.js
+  scripts/lib/shell-parse.js
+  scripts/lib/repos-root.js
+  scripts/lib/tycon-config.js
+  scripts/lib/skills-dir.js
+  scripts/lib/guard-record.js
+  scripts/lib/legacy-names.js
+  scripts/production/production-index.js
+  scripts/production/tycon-prod-sql
+  scripts/production/node-shim.sh
+  scripts/production/load-key.command.template
+  scripts/production/managed-settings.tycon-production.json.template
+  scripts/production/node-official.json
+  scripts/setup/harness/tycon-home.js
+)
+# El mapa de nombres viejos (story 8.9): lo exige el arnés del equipo (el que trae su perfil, team-profile.json o
+# perfil-equipo.json, el nombre de antes) —sin él la copia de
+# /opt leería sólo los nombres nuevos, callada—; la copia pública no lo lleva a propósito (nace con los nombres nuevos y
+# legacy-names.js sin mapa es paso directo), así que ahí no se pide. Lo decide lo publicado (o el disco en --no-sudo),
+# nunca un archivo de la máquina. Tanda C0, [DEF-8.9-COPIA]: era el T25 de la copia. Lo cuida T19p de instalar-freno.test.sh.
+MAPA_NOMBRES=scripts/lib/renames.json
 DESDE_RELEASE=0; REPO_GITHUB=""
 if [ -f "$ARNES/.tycon-release.json" ] && [ ! -d "$ARNES/.git" ]; then
   DESDE_RELEASE=1
@@ -137,9 +163,10 @@ if [ -f "$ARNES/.tycon-release.json" ] && [ ! -d "$ARNES/.git" ]; then
   # otro repo después exige --change-origin y otra confirmación por teclado (revisor de seguridad de la D, vuelta 2)
   if [ "$SIN_SUDO" = 0 ]; then API_GITHUB="https://api.github.com"; else API_GITHUB="${TYCON_RELEASE_API:-https://api.github.com}"; fi
   # (2>&1: el motivo de python viaja en la variable, así `muere` lo imprime; cazador de fallos silenciosos de la D)
-  REPO_GITHUB="$(/usr/bin/python3 - "$ARNES" "$ESTADO_RELEASE" "$API_GITHUB" "$HOME_LEIDA/.tycon/config.json" "$LISTA_VERIFICADA" 2>&1 <<'PY'
+  REPO_GITHUB="$(/usr/bin/python3 - "$ARNES" "$ESTADO_RELEASE" "$API_GITHUB" "$HOME_LEIDA/.tycon/config.json" "$LISTA_VERIFICADA" "${ARCHIVOS[@]}" "$MAPA_NOMBRES" 2>&1 <<'PY'
 import hashlib, json, os, re, sys, urllib.request, urllib.error
 arnes, estado, api, token_file, lista = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]
+freno = sys.argv[6:]   # lo que se copia a /opt (ARCHIVOS y el mapa de nombres): tiene que ser igual al de la punta (paso 5)
 def muere(m): sys.stderr.write(m + "\n"); sys.exit(2)
 try:
     with open(os.path.join(arnes, ".tycon-release.json"), encoding="utf-8") as f: m = json.load(f)
@@ -210,43 +237,57 @@ for ref in ("main", "mirror/sync"):
     st2, r = get("/repos/%s/git/ref/heads/%s" % (repo, ref))
     if st2 == 200 and isinstance(r, dict): puntas[ref] = str(((r.get("object") or {}).get("sha")) or "")
 if not puntas: muere("GitHub no me dio la punta de main de %s: no instalo" % repo)
-if commit not in puntas.values(): muere("la versión instalada (%s) no es la punta publicada de %s (%s): actualizá el arnés (harness.js update) y volvé a instalar el freno" % (commit[:7], repo, ", ".join("%s %s" % (k, v[:7]) for k, v in puntas.items())))
+# 5. 🔴 un commit PUBLICADO de main: la punta, o uno anterior de main con el MISMO freno que la punta (2026-10-14).
+# Antes se exigía la punta exacta, y en un día de 30 publicaciones el freno no se podía instalar. Lo que la regla cuida
+# sigue en pie: (a) que el commit sea de main y no de una rama ni de un fork — GitHub sirve /git/commits/<sha> de
+# cualquier rama, y también de los forks, así que «existe y tiene este árbol» no alcanza: lo dice la comparación con la
+# punta, «behind» o «identical», con la base de la comparación igual al commit; (b) que no se instale un freno VIEJO
+# —una versión publicada antes de un arreglo del freno sigue verificando contra GitHub, y el asistente la puede bajar—:
+# los archivos que se copian a /opt tienen que ser byte a byte los de la punta. Atrasado con el mismo freno: instala y
+# avisa. Cualquier respuesta que no sea ésa (GitHub no contesta, 403, lista cortada): frena.
+aviso = ""
+if commit not in puntas.values():
+    punta = puntas.get("main") or ""
+    if not re.match(r"^[0-9a-f]{40}$", punta): muere("GitHub no me dio la punta de main de %s (sólo %s): la versión instalada (%s) no es la punta publicada y sin main no sé si es de main — no instalo" % (repo, ", ".join("%s %s" % (k, v[:7]) for k, v in puntas.items()), commit[:7]))
+    st3, cmp_ = get("/repos/%s/compare/%s...%s?per_page=1" % (repo, punta, commit))
+    if st3 != 200 or not isinstance(cmp_, dict): muere("GitHub contestó %s al comparar la versión instalada (%s) con la punta de main (%s) de %s: sin saber si es un commit publicado de main no instalo" % (st3, commit[:7], punta[:7], repo))
+    estado_cmp = str(cmp_.get("status") or "")
+    base_cmp = str(((cmp_.get("merge_base_commit") or {}).get("sha")) or "")
+    if estado_cmp not in ("behind", "identical") or base_cmp != commit: muere("la versión instalada (%s) NO es un commit publicado de main de %s (GitHub: «%s» respecto de la punta %s): una rama o un cambio local no se instala como freno — actualizá el arnés (harness.js update) y volvé a instalar el freno" % (commit[:7], repo, estado_cmp or "sin estado", punta[:7]))
+    arbol_punta = str(((((cmp_.get("base_commit") or {}).get("commit") or {}).get("tree") or {}).get("sha")) or "")
+    if not re.match(r"^[0-9a-f]{40}$", arbol_punta): muere("GitHub no me dio el árbol de la punta de main (%s) de %s: no puedo comparar el freno con el de la punta — no instalo" % (punta[:7], repo))
+    st4, t = get("/repos/%s/git/trees/%s?recursive=1" % (repo, arbol_punta))
+    if st4 != 200 or not isinstance(t, dict) or not isinstance(t.get("tree"), list): muere("GitHub contestó %s al pedir el árbol de la punta de main (%s) de %s: no puedo comparar el freno con el de la punta — no instalo" % (st4, punta[:7], repo))
+    if t.get("truncated") is not False: muere("GitHub me dio el árbol de la punta de main (%s) de %s cortado: no puedo comparar el freno con el de la punta — no instalo" % (punta[:7], repo))
+    en_punta = {str(e.get("path")): str(e.get("sha")) for e in t["tree"] if isinstance(e, dict) and e.get("type") == "blob"}
+    locales = {rel: h for _, rel, h in entradas}
+    distintos = [p for p in freno if locales.get(p) != en_punta.get(p)]
+    if distintos: muere("la versión instalada (%s) es de main pero VIEJA, y el freno cambió desde entonces en la punta (%s): %s — actualizá el arnés (harness.js update) y volvé a instalar el freno" % (commit[:7], punta[:7], ", ".join(distintos[:5]) + (" (+%d)" % (len(distintos) - 5) if len(distintos) > 5 else "")))
+    atras = cmp_.get("behind_by")
+    aviso = "hay una versión más nueva de %s (main %s%s); el freno que se instala es igual al de esa versión. Actualizá cuando puedas (harness.js update)" % (repo, punta[:7], (", %d commit%s adelante" % (atras, "" if atras == 1 else "s")) if isinstance(atras, int) else "")
 # la lista de lo verificado: sólo eso se copia (un archivo que está en el disco y no en el manifiesto no es de la versión)
 with open(lista, "w", encoding="utf-8") as f: f.write("".join(rel + "\n" for _, rel, _ in entradas))
 print(repo)
+if aviso: print(aviso)
 PY
 )" || muere "$REPO_GITHUB"
+  # la primera línea es el repo; la segunda, si la hay, el aviso de una versión atrasada con el mismo freno que la punta
+  AVISO_ATRASADA="$(printf '%s\n' "$REPO_GITHUB" | sed -n 2p)"
+  REPO_GITHUB="$(printf '%s\n' "$REPO_GITHUB" | sed -n 1p)"
   [ -n "$REPO_GITHUB" ] || muere "no pude saber de qué repo de GitHub se bajó la versión"
   URL="https://github.com/$REPO_GITHUB"
   ORG="github:$REPO_GITHUB"
-  ok "arnés: la versión bajada en $ARNES, verificada contra su manifiesto, el estado y GitHub (repo $REPO_GITHUB: el árbol del commit, que es la punta publicada)"
+  if [ -n "$AVISO_ATRASADA" ]; then
+    ok "arnés: la versión bajada en $ARNES, verificada contra su manifiesto, el estado y GitHub (repo $REPO_GITHUB: el árbol del commit, que es un commit publicado de main)"
+    echo "   ⚠ $AVISO_ATRASADA"
+  else
+    ok "arnés: la versión bajada en $ARNES, verificada contra su manifiesto, el estado y GitHub (repo $REPO_GITHUB: el árbol del commit, que es la punta publicada)"
+  fi
 fi
 
 DESTINO="$RAIZ/opt/tycon"
 MANAGED_PADRE="$RAIZ/Library/Application Support/ClaudeCode"
 MANAGED_D="$MANAGED_PADRE/managed-settings.d"
-ARCHIVOS=(
-  scripts/hooks/prod-access-guard.js
-  scripts/lib/shell-parse.js
-  scripts/lib/repos-root.js
-  scripts/lib/tycon-config.js
-  scripts/lib/skills-dir.js
-  scripts/lib/guard-record.js
-  scripts/lib/legacy-names.js
-  scripts/production/production-index.js
-  scripts/production/tycon-prod-sql
-  scripts/production/node-shim.sh
-  scripts/production/load-key.command.template
-  scripts/production/managed-settings.tycon-production.json.template
-  scripts/production/node-official.json
-  scripts/setup/harness/tycon-home.js
-)
-# El mapa de nombres viejos (story 8.9): lo exige el arnés del equipo (el que trae su perfil, team-profile.json o
-# perfil-equipo.json, el nombre de antes) —sin él la copia de
-# /opt leería sólo los nombres nuevos, callada—; la copia pública no lo lleva a propósito (nace con los nombres nuevos y
-# legacy-names.js sin mapa es paso directo), así que ahí no se pide. Lo decide lo publicado (o el disco en --no-sudo),
-# nunca un archivo de la máquina. Tanda C0, [DEF-8.9-COPIA]: era el T25 de la copia. Lo cuida T19p de instalar-freno.test.sh.
-MAPA_NOMBRES=scripts/lib/renames.json
 CON_MAPA=0
 # Un freno instalado antes de la story 8.7 carga la biblioteca de constancias por su nombre de antes (story 8.9, tanda C1:
 # así el freno no cambió y nadie reinstaló por el renombre); el de hoy la busca primero por su nombre nuevo y, si falta,
@@ -647,5 +688,6 @@ echo
 echo "✅ freno de producción instalado."
 echo "   Los hooks nuevos quedan activos en la SIGUIENTE sesión de Claude Code."
 echo "   Probalo ahí: sqlcmd -S <un host de producción> -Q 'select 1'   → tiene que quedar frenado"
+[ -n "${AVISO_ATRASADA:-}" ] && echo "   ⚠ $AVISO_ATRASADA"
 [ "$SIN_SUDO" = 0 ] && sudo -K 2>/dev/null   # no dejar la caché de sudo abierta (decisión 6)
 exit 0
