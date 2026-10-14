@@ -232,7 +232,9 @@ The optional pack is the TYCON stack pack: .NET + React/Next.js on Bizuit. Insid
 holds the conventions TYCON uses to build plugins on Bizuit; it is not a Bizuit product.
 
 **What it adds**: three reviewers (`tycon-plugin-dotnet-conventions`, `tycon-plugin-react-conventions`,
-`tycon-plugin-nextjs-conventions`), their guides and their cases in the bench of controls. **What else it needs**: the
+`tycon-plugin-nextjs-conventions`), their guides and their cases in the bench of controls, and the `bizuit-new-product`
+skill, which sets up a new product (backend, forms and stories repos, with pipelines that build, test and deploy to
+staging and, with approval, to production) from the templates in `packs/bizuit/new-product-templates/`. **What else it needs**: the
 .NET SDK your plugin targets.
 
 **It comes turned off.** The repo carries it, but a product repo only uses it if it asks for it in its

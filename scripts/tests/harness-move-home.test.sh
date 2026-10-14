@@ -13,12 +13,14 @@
 #   T29 · el clon de la persona no se toca (hash del `.git` y del árbol), y `paths.maintained` lo declara: `doctor` lo nombra.
 #   T32 · la llave `install.home: tycon` del perfil: el arranque migra una vez; una precondición que falla se avisa y se
 #         reintenta en cada sesión; un fallo DURANTE deshace, queda `failed` y no se reintenta solo (a mano sí).
+#   T14 · un clon de antes del lector de team-repos.json se muda con una capa que lo trae: la capa se juzga con los lectores
+#         de la versión que baja (el plan lo dice); una capa que esa versión rechaza sigue frenando, con la HOME idéntica.
 #
 # Laboratorio: scripts/tests/lib/harness-lab.sh (la máquina de juguete instalada DESDE UN CLON, con su clon viejo de
 # skills, más el servidor de versiones de juguete). Nunca ~/.claude ni ~/.tycon de verdad. 🔴 Sin pipes sobre el comando
 # medido.
 #
-# Uso: bash scripts/tests/harness-move-home.test.sh [--only T27|T28|T29|T32]
+# Uso: bash scripts/tests/harness-move-home.test.sh [--only T27|T28|T29|T32|T13|T14]
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "$ROOT/scripts/tests/lib/harness-lab.sh"
@@ -656,6 +658,58 @@ d=json.load(sys.stdin); s,c=sys.argv[1],sys.argv[2]; print("%s %s" % (json.dumps
   [ -f "$JOURNAL" ] && bad "el diario quedó: $(cat "$JOURNAL")" || ok "el diario se borró al terminar"
   OUT="$(node "$NEW/scripts/setup/harness.js" doctor 2>&1)"
   case "$OUT" in *"perfil:"*) ok "doctor del árbol nuevo sigue diciendo el perfil" ;; *) bad "doctor sin línea del perfil: $OUT" ;; esac
+  kill "$LAB_RELEASE_PROCESS" 2>/dev/null
+fi
+
+# ══ T14: el clon viejo, de antes del lector de team-repos.json ═══════════════════════════════════════════════════════
+# Un clon anterior a scripts/lib/team-repos.js no se podía mudar con una capa que trae team-repos.json: las precondiciones
+# juzgaban la capa con los lectores DEL CLON («la versión que va a quedar no trae su lector … la capa no se apila»). Ahora
+# el plan dice que la capa se valida con la versión que baja, y la mudanza la juzga con los lectores de esa versión, después
+# de bajarla y antes de escribir nada: una capa válida se apila; una que esa versión rechaza sigue frenando, con la HOME idéntica.
+if runs T14; then
+  echo "T14 · el clon sin el lector de team-repos.json: el plan y la mudanza validan la capa con la versión que baja; una capa inválida sigue frenando"
+  harness_lab_create "$BASE/lab14"
+  export TYCON_PROFILE=
+  printf '{ "install": { "profile": "full" } }\n' > "$LAB_TREE/perfil-equipo.json"   # el clon contesta la pregunta del perfil (como T13)
+  harness_lab_release_server
+  harness_lab_publish_stable 2026.10.08.1
+  harness_lab_team_repo
+  repos_14() { printf '{ "version": 1, "public": { "platform": "github", "org": "acme", "repo": "arnes" }, "profile": { "platform": "github", "org": "acme", "repo": "perfil" }, "operations": { "platform": "github", "org": "acme", "repo": "operaciones" }%s }\n' "$1" > "$LAB_AUTHOR_TEAM/team-repos.json"; }
+  repos_14 ""
+  harness_lab_team_publish "team-repos.json en la capa"
+  harness_lab_team_server
+  harness install --yes >"$BASE/lab14/install.out" 2>&1 || bad "la instalación desde el clon falló: $(tail -3 "$BASE/lab14/install.out" | tr '\n' ' ')"
+  harness_lab_team_set_clone_key
+  # el clon es de antes del lector: la versión publicada sí lo trae
+  rm -f "$LAB_TREE/scripts/lib/team-repos.js"
+  [ -f "$LAB_AUTHOR_TREE/scripts/lib/team-repos.js" ] && ok "la versión publicada trae el lector y el clon no" || bad "la versión publicada no trae scripts/lib/team-repos.js"
+  H0="$(harness_lab_home_hash)"
+  # (a) el plan: sale 0, nombra la capa con sus 3 archivos y dice que team-repos.json se valida con la versión que baja
+  OUT="$(harness migrate --to-home --dry-run 2>&1)"; RC=$?
+  [ "$RC" = 0 ] && ok "(a) --dry-run sale 0 aunque el clon no traiga el lector" || bad "(a) dry-run rc $RC: $OUT"
+  case "$OUT" in *MODULE_NOT_FOUND*|*"no trae su lector"*) bad "(a) el plan juzgó con el lector del clon: $OUT" ;; *) ok "(a) …sin juzgar con el lector del clon" ;; esac
+  case "$OUT" in *"capa del equipo $LAB_TEAM @ "*"3 archivo(s)"*) ok "(a) el plan nombra la capa y sus 3 archivos" ;; *) bad "(a) el plan no nombra la capa: $OUT" ;; esac
+  case "$OUT" in *"valida: "*"team-repos.json de la capa con los lectores de la versión 2026.10.08.1 (la que baja)"*) ok "(a) …y dice que team-repos.json se valida con la versión que baja" ;; *) bad "(a) el plan no dice con qué se valida: $OUT" ;; esac
+  [ "$(harness_lab_home_hash)" = "$H0" ] && ok "(a) --dry-run no escribió nada" || bad "(a) --dry-run escribió"
+  # (b) una capa que la versión que baja rechaza (una clave que su lector no admite): 1, nombrando el archivo, sin escribir nada
+  repos_14 ', "owners": ["x"]'
+  harness_lab_team_publish "team-repos.json que la versión rechaza"
+  OUT="$(harness migrate --to-home 2>&1)"; RC=$?
+  [ "$RC" = 1 ] && ok "(b) capa inválida para la versión que baja: migrate sale 1" || bad "(b) rc $RC: $OUT"
+  case "$OUT" in *"team-repos.json de la capa"*"owners"*"la capa no se apila"*) ok "(b) …nombrando la clave que esa versión rechaza" ;; *) bad "(b) no dice por qué: $OUT" ;; esac
+  case "$OUT" in *"$LAB_TREE"*) bad "(b) juzgó con el clon: $OUT" ;; *) ok "(b) …juzgada con la versión bajada, no con el clon" ;; esac
+  [ "$(harness_lab_home_hash)" = "$H0" ] && ok "(b) …y la HOME quedó idéntica (ni diario, ni incoming/, ni la capa)" || bad "(b) la HOME cambió: $(cd "$LAB_HOME" && find .tycon 2>/dev/null | head -5 | tr '\n' ' ')"
+  [ "$(state "d['sources'][0].get('kind','tree')")" != release ] && ok "(b) …y la máquina sigue en el clon" || bad "(b) la máquina dejó el clon"
+  # (c) la capa válida otra vez: la mudanza entera, con team-repos.json apilado
+  repos_14 ""
+  harness_lab_team_publish "team-repos.json válido otra vez"
+  OUT="$(harness migrate --to-home 2>&1)"; RC=$?
+  [ "$RC" = 0 ] && ok "(c) migrate --to-home sale 0 desde el clon sin el lector" || bad "(c) migrate rc $RC: $OUT"
+  NEW="$LAB_HOME/.tycon/harness"
+  [ -f "$NEW/team-repos.json" ] && [ -f "$NEW/scripts/lib/team-repos.js" ] && [ -f "$NEW/.tycon-team.json" ] && ok "(c) team-repos.json, su lector y el manifiesto de la capa están en ~/.tycon/harness" || bad "(c) falta algo en $NEW: $(ls -a "$NEW" 2>/dev/null | tr '\n' ' ')"
+  STATE="$LAB_HOME/.tycon/state/harness-state.json"
+  [ "$(j "$STATE" "d['team']['commit']")" = "$(harness_lab_team_head)" ] && [ "$(j "$STATE" "d['team']['files']")" = 3 ] && ok "(c) el estado trae team con el commit de la punta y los 3 archivos" || bad "(c) el estado no trae team: $(j "$STATE" "d.get('team')")"
+  [ "$(j "$STATE" "d['sources'][0]['kind']")" = release ] && ok "(c) …y la máquina es release" || bad "(c) no es release"
   kill "$LAB_RELEASE_PROCESS" 2>/dev/null
 fi
 

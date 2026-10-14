@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# .githooks/pre-commit — que ninguna story se vuelva invisible para el arnés TYCON.
+#
+# QUÉ FRENA
+# Una story cuyo frontmatter no se puede leer NO da error en ningún lado: las herramientas del
+# equipo (el validator, el backfill de back-links, los scripts de status, el gate de DoD) la
+# SALTEAN en silencio. Caso real 2026-07-24: 4 stories invisibles ~2 meses, una de ellas tapando
+# una deuda de evidencia de DoD. El lint replica el parser real de esas herramientas: si el lint
+# la lee, ellas también.
+#
+# CÓMO LLEGA ACÁ
+# El script vive SOLO en el arnés y se referencia por path — no se copia, para que no haya dos
+# versiones que se separen. El instalador del arnés deja en cada máquina el enlace
+# $HOME/.claude/tycon-harness, que apunta al arnés instalado; una máquina de antes del cambio de lugar
+# todavía tiene $HOME/.claude/tycon-claude-guides, y también se busca ahí.
+#
+# 🔴 Por qué este archivo recién sirve desde 2026-08-23: con `core.hooksPath` global, git IGNORA
+# los `.githooks/` de cada repo. Este hook sólo corre porque el hook global del arnés ahora DELEGA
+# en él. Antes de eso, un `.githooks/pre-commit` era decorativo: estaba, y no se ejecutaba nunca.
+#
+# Fail-open RUIDOSO: si falta el repo de guías avisa pero no bloquea — un repo hermano ausente es
+# un problema de setup de la máquina, no de este commit.
+
+set -uo pipefail
+
+if [ -z "${TYCON_GUIDES_DIR:-}" ]; then
+  TYCON_GUIDES_DIR="$HOME/.claude/tycon-harness"
+  [ -d "$TYCON_GUIDES_DIR" ] || [ ! -d "$HOME/.claude/tycon-claude-guides" ] || TYCON_GUIDES_DIR="$HOME/.claude/tycon-claude-guides"
+fi
+FM_LINT="$TYCON_GUIDES_DIR/scripts/lib/lint-story-frontmatter.js"
+
+# Se le pasan TODOS los `.md` del commit: el filtro "esto es una story" lo hace el lint, que es el
+# que sabe. Filtrarlos acá por ruta fue el bug de la primera versión — en un repo cuyas stories no
+# viven en `specs/stories/`, el hook no le pasaba nada y el lint decía "OK" sin mirar una sola.
+CHANGED_MD="$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.md$' || true)"
+[ -n "$CHANGED_MD" ] || exit 0
+
+if [ ! -f "$FM_LINT" ]; then
+  echo "⚠️  No encontré $FM_LINT — se saltea el lint de frontmatter de stories." >&2
+  echo "   Instalá el arnés (su INSTALL.md) o exportá TYCON_GUIDES_DIR." >&2
+  exit 0
+fi
+
+echo "▸ pre-commit: leyendo el frontmatter de las stories del commit…"
+# shellcheck disable=SC2086
+if ! node "$FM_LINT" $CHANGED_MD; then
+  echo "" >&2
+  echo "⛔ COMMIT RECHAZADO — hay stories que el arnés no puede leer (ver arriba)." >&2
+  echo "   No es cosmético: una story ilegible desaparece del validator, del backfill, de los" >&2
+  echo "   scripts de status y del gate de DoD, sin que nada avise." >&2
+  echo "   Si sabés lo que hacés: git commit --no-verify" >&2
+  exit 1
+fi
+exit 0
