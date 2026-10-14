@@ -104,6 +104,9 @@ Un ejemplo: en ACME, Pedro administra y Juan programa.
    en GitHub, o con la dirección del repo si está en Azure DevOps. Desde ahí, cada actualización le trae también lo del
    equipo.
 
+Cómo se extiende el arnés para tu organización —las capas, la página de configuración y un recorrido de ejemplo— en un
+[mapa interactivo](https://www.bizuit.com/sdd-harness/more/mapa-del-arnes.html).
+
 **Los procesos de la noche.** En Azure DevOps, la revisión de dependencias, las métricas del ciclo y el tablero corren en
 tu organización con tres pipelines modelo y tu repo de operaciones: [cómo darlos de alta](pipelines/operations/README.md).
 En GitHub, los mismos tres corren como workflows de GitHub Actions, y los hallazgos de dependencias son issues en el

@@ -106,6 +106,9 @@ An example: at ACME, Pedro is the administrator and Juan writes code.
    if it is on GitHub, or with the repo's address if it is on Azure DevOps. From then on, every update also brings him
    what belongs to the team.
 
+How the harness extends for your organization —the layers, the configuration page and a worked example— in an
+[interactive map](https://www.bizuit.com/sdd-harness/more/mapa-del-arnes.html) (in Spanish).
+
 **The nightly jobs.** On Azure DevOps, the dependency review, the cycle metrics and the dashboard run in your
 organization with three model pipelines and your operations repo: [how to set them up](pipelines/operations/README.md)
 (in Spanish). On GitHub, the same three run as GitHub Actions workflows, and the dependency findings become issues in
