@@ -3,9 +3,16 @@
 > Script: `scripts/publishing/export.js`. Pruebas: `scripts/tests/export.test.js` (repos y configuraciones de mentira)
 > y, en el repo del equipo, la prueba contra los repos reales (§«La prueba de verdad»).
 
+> **Desde el corte a GitHub el exportador ya no arma la copia.** El repo público es la fuente: lo que se escribe ahí es
+> lo que sale. El exportador quedó como **control**: `--explain` clasifica el primer nivel de cada fuente, y la
+> clasificación (`whatShips`) la siguen usando como biblioteca el freno de nombres nuevos, el control de historia
+> interna, el reparto del repo de mantenimiento y el instalador. Pedirle una copia (`--output`) sale 2 diciéndolo. Lo
+> que esta guía cuenta del armado —los reemplazos, los papeles, el commit por plomería, el listado— describe cómo se
+> publicó hasta el corte.
+
 ## Qué es y qué no es
 
-El arnés se publica con **espejo**: los repos internos —el arnés
+El arnés se publicaba con **espejo**: los repos internos —el arnés
 y `agent-skills`— siguen siendo la fuente, con su memoria institucional y sus casos nominados, y **lo público es una
 copia que se arma cada vez**. El exportador arma esa copia para un paquete (`nucleo` o `bizuit`) y la deja en una
 carpeta local. **No publica nada**: no tiene remoto, no llama a ningún servicio y no toca los repos internos. Publicar
@@ -16,12 +23,10 @@ repos» o «cada repo», vale para las dos fuentes (§«Un solo repo interno»).
 ## Cómo se corre
 
 ```bash
-# la copia del núcleo, desde origin/main de los dos repos (la salida NO puede existir)
-node scripts/publishing/export.js --package core --output /tmp/copia-nucleo
-# con el resultado entero en JSON, desde otros commits
-node scripts/publishing/export.js --package bizuit --output /tmp/copia-bizuit --harness <ref> --agent-skills <ref> --json
 # el primer nivel de cada repo clasificado, las exclusiones fijas y las transformaciones (no escribe nada)
-node scripts/publishing/export.js --explain
+node scripts/publishing/export.js --explain [--json] [--harness <ref>] [--agent-skills <ref>]
+# lo que antes armaba la copia ya no existe: sale 2 diciéndolo
+node scripts/publishing/export.js --package core --output /tmp/copia-nucleo
 ```
 
 - Los repos se ubican como en el resto del arnés: `TYCON_GUIDES_DIR` (o el clon donde vive el script) y
@@ -31,9 +36,9 @@ node scripts/publishing/export.js --explain
 - Las tres configuraciones son, por defecto, las de `scripts/publishing/`: `allowlist.json` (pública),
   `replacements.json` y `denylist.json` (**privadas**). Las pruebas pasan unas sintéticas con `--allowlist`,
   `--replacements` y `--denied`.
-- **Salida**: `0` copia lista en `--output` (un repo git por fuente, `arnes/` y `agent-skills/`, con UN commit cada
-  uno) · `1` hallazgos: la copia se descarta y `--output` no se crea; el informe va a la salida estándar · `2` no pudo
-  armarla o mirarla (una configuración rota, una referencia que no es un commit, un repo que no está, un paquete
+- **Salida** (hasta el corte; hoy `--explain` sale 0 o 2, y pedir la copia sale 2): `0` copia lista en `--output` (un
+  repo git por fuente, `arnes/` y `agent-skills/`, con UN commit cada uno) · `1` hallazgos: la copia se descarta y
+  `--output` no se crea; el informe va a la salida estándar · `2` no pudo armarla o mirarla (una configuración rota, una referencia que no es un commit, un repo que no está, un paquete
   desconocido o el privado `clientes`, un glob de «in» muerto, una entrada del primer nivel sin clasificar, una
   exclusión fija que ya no coincide con nada…). «No pude mirar» nunca es «limpio».
 - Al lado de la salida queda el **listado de reemplazos**, `<salida>.reemplazos.md` (o `--report`). Es PRIVADO: nombra a
