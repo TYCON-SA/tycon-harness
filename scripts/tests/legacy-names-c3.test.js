@@ -33,9 +33,9 @@ const REPORT = path.join(RAIZ, 'scripts', 'ci', 'suites-report.js');
 // Lo que el plan de la tanda aprobó (AC 37, re-medido al abrir la C3): 30 archivos, 1 con reemplazo.
 const EXPECTED_FILES = 30;
 const EXPECTED_SHIMS = 1;
-// Los ejecutables internos que quedan en castellano a propósito: el aviso del freno (lo protege el freno por nombre) y el
-// mapa del arnés (la story 8.12, tanda R4, mudó su carpeta a scripts/tools/harness-map/ conservando los nombres de archivo).
-const STILL_SPANISH = ['arnes:scripts/hooks/produccion-notice.js', 'arnes:scripts/tools/harness-map/censo.js', 'arnes:scripts/tools/harness-map/version-publica.js'];
+// Los ejecutables internos que quedan en castellano a propósito: el aviso del freno (lo protege el freno por nombre). El
+// código del mapa del arnés se renombró al inglés al pasar al repo público (census.js y public-version.js).
+const STILL_SPANISH = ['arnes:scripts/hooks/produccion-notice.js'];
 
 /**
  * agent-skills, por la regla común de scripts/lib/skills-dir.js: TYCON_SKILLS_DIR (el clon o su carpeta `skills`) › el

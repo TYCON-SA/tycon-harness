@@ -672,6 +672,18 @@
       "requiere": []
     },
     {
+      "__nota": "la versión pública del mapa del arnés se deriva de la privada: el generador (scripts/tools/harness-map/public-version.js) sobre un mapa de juguete (scripts/tests/fixtures/harness-map/), el pre-commit que la regenera y, en un repo sin el mapa interno, que tocar el código no frena. Los casos del mapa de verdad corren sólo en el árbol del equipo, con lo público encima; sin él dicen NO MEDIDO.",
+      "raiz": "arnes",
+      "ruta": "tests/harness-map-public.test.sh",
+      "requiere": []
+    },
+    {
+      "__nota": "el censo del mapa (scripts/tools/harness-map/census.js): toda pieza tiene lugar en alguna ficha o se excluye con motivo, y el tipo de cada ficha sale de su ruta; sobre arneses y mapas de juguete. Los dos casos que miden el mapa de verdad corren sólo en el árbol del equipo, con lo público encima; sin él dicen NO MEDIDO.",
+      "raiz": "arnes",
+      "ruta": "tests/harness-map-census.test.sh",
+      "requiere": []
+    },
+    {
       "raiz": "arnes",
       "ruta": "tests/deploy-codex-copies.test.sh",
       "requiere": []
