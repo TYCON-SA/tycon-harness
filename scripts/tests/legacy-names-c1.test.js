@@ -200,7 +200,7 @@ test('BatchC1_NightlyFolder_CensusWalksIt — el censo del mapa recorre scripts/
     fs.mkdirSync(path.join(lab, 'scripts', 'nightly', 'probe'), { recursive: true });
     fs.writeFileSync(path.join(lab, 'scripts', 'nightly', 'probe', 'piece-without-card.js'), 'module.exports = 1;\n');
     const skills = path.join(require(path.join(RAIZ, 'scripts', 'lib', 'skills-dir.js')).resolveSkillsDirs(process.env.TYCON_SKILLS_DIR || '').repo, 'skills');
-    const r = spawnSync(process.execPath, [path.join(lab, 'scripts', 'tools', 'harness-map', 'censo.js'), '--tcg', lab, '--skills', skills], { env: cleanEnv(), encoding: 'utf8' });
+    const r = spawnSync(process.execPath, [path.join(lab, 'scripts', 'tools', 'harness-map', 'census.js'), '--tcg', lab, '--skills', skills], { env: cleanEnv(), encoding: 'utf8' });
     if (/NO MEDIDO/.test(r.stderr)) { t.skip(`el censo no pudo medir: ${r.stderr.trim()}`); return; }   // salteada, nunca verde
     assert.strictEqual(r.status, 1, `${r.stdout}${r.stderr}`);
     assert.match(r.stderr, /scripts\/nightly\/probe\/piece-without-card\.js/);

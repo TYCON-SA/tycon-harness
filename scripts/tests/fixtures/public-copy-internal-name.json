@@ -299,6 +299,11 @@
    "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
   },
   {
+   "path": "scripts/tests/harness-map-public.test.sh",
+   "kind": "test",
+   "why": "prueba: el mapa público de verdad (sólo en el árbol del equipo) tiene que nombrar el repo con su nombre público y no con el interno; el nombre interno es lo que busca para frenar"
+  },
+  {
    "path": "scripts/tests/harness-place.test.js",
    "kind": "test",
    "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"

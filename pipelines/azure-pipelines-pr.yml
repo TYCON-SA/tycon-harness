@@ -374,9 +374,10 @@ jobs:
 
           # 4. La versión pública del mapa del arnés se DERIVA de la privada: acá se verifica que
           #    coincida (en la máquina el pre-commit la regenera; un pipeline no escribe en el repo).
-          if toco '^(artifacts/mapa-arnes\.html|scripts/tools/harness-map/|onboarding/mini-class/mapa-del-arnes\.html)'; then
+          #    Sin el mapa interno (el repo público: lo trae el del equipo) no hay pública que derivar.
+          if toco '^(artifacts/mapa-arnes\.html|scripts/tools/harness-map/|onboarding/mini-class/mapa-del-arnes\.html)' && [ -f artifacts/mapa-arnes.html ]; then
             echo "▸ versión pública del mapa del arnés…"
-            if node scripts/tools/harness-map/version-publica.js --input artifacts/mapa-arnes.html \
+            if node scripts/tools/harness-map/public-version.js --input artifacts/mapa-arnes.html \
                  --config scripts/tools/harness-map/publica.json --output "$(Agent.TempDirectory)/mapa-publico.html"; then
               cmp -s "$(Agent.TempDirectory)/mapa-publico.html" onboarding/mini-class/mapa-del-arnes.html \
                 || falla "onboarding/mini-class/mapa-del-arnes.html no coincide con lo que se genera desde la privada — se regenera con el pre-commit, no se edita a mano"
