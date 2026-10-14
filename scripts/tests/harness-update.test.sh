@@ -937,8 +937,12 @@ mira() { # mira <subcomando…>  — corre harness (SALIDA, RC) y anota si tocó
   local t0; t0=$(date +%s)
   SALIDA="$(harness "$@" 2>&1)"; RC=$?
   MIRA_S=$(( $(date +%s) - t0 ))
-  if [ "$(arbol_hash "$LAB_REMOTE_TREE")" != "$b1" ] || [ "$(arbol_hash "$INTERNAL_REMOTE")" != "$b2" ] || [ "$(arbol_hash "$INTERNAL/.git")" != "$p" ]; then
-    UNTOUCHED=0; echo "    (harness $* tocó un bare o el clon de la persona)"
+  local cual=""
+  [ "$(arbol_hash "$LAB_REMOTE_TREE")" != "$b1" ] && cual="$cual el bare del público"
+  [ "$(arbol_hash "$INTERNAL_REMOTE")" != "$b2" ] && cual="$cual el bare del interno"
+  [ "$(arbol_hash "$INTERNAL/.git")" != "$p" ] && cual="$cual el .git del clon de la persona"
+  if [ -n "$cual" ]; then
+    UNTOUCHED=0; echo "    (harness $* tocó:$cual)"
   fi
 }
 capa_lab() { # capa_lab <dir>  — la máquina del equipo con la copia pública y la capa (exporta INTERNAL, INTERNAL_REMOTE, READ, I1)
@@ -970,7 +974,17 @@ capa_lab() { # capa_lab <dir>  — la máquina del equipo con la copia pública 
   export I1="$(harness_lab_git "$INTERNAL" rev-parse HEAD)"
   version_publica 2026.10.06.1 "$I1" > "$a/version.json"
   harness_lab_git "$a" add -A >/dev/null; harness_lab_git "$a" commit -q -m "la copia pública de juguete" >/dev/null
-  harness_lab_git "$a" push -q origin main >/dev/null 2>&1
+  # 🔴 Los dos bare, sin mantenimiento automático en SU configuración (2026-10-14). El `push` de abajo corre del otro lado
+  #    un receive-pack, y git no le pasa el `-c` de harness_lab_git (en un transporte local borra GIT_CONFIG_PARAMETERS y
+  #    GIT_CONFIG_COUNT): el receive-pack lanzaba `git maintenance run --auto --detach` en el bare del público. Con git
+  #    2.55 eso reempaqueta los ~120 objetos sueltos del bare de fondo, mientras `mira install` saca la huella de antes:
+  #    «T8 algún comando escribió en un repo ajeno» sin que harness.js escribiera nada (public-ci, pedido #27: en la
+  #    huella faltaban objects/maintenance.lock, objects/pack/tmp_pack_* y los objetos sueltos). Con git 2.50 el
+  #    mantenimiento no reempaqueta un repo tan chico: en una Mac daba verde. Lo mide el caso de la traza, en T8.
+  for f in "$LAB_REMOTE_TREE" "$INTERNAL_REMOTE"; do
+    harness_lab_git "$f" config maintenance.auto false; harness_lab_git "$f" config gc.auto 0; harness_lab_git "$f" config receive.autogc false
+  done
+  GIT_TRACE2_EVENT="$1/push-trace.json" harness_lab_git "$a" push -q origin main >/dev/null 2>&1
   harness_lab_git "$LAB_TREE" pull -q --ff-only origin main >/dev/null 2>&1
   # un solo árbol: ~/.claude/agent-skills es el árbol (no hay clon aparte)
   rm -rf "$LAB_SKILLS"; ln -s "$LAB_TREE" "$LAB_HOME/.claude/agent-skills"
@@ -981,6 +995,11 @@ capa_lab() { # capa_lab <dir>  — la máquina del equipo con la copia pública 
 if corre T8; then
   echo "T8 · el commit de la capa: el más nuevo de main interno que es compatible"
   capa_lab "$BASE/t8"
+  # el armado no deja un mantenimiento de git corriendo de fondo en un repo que T8 mide (ver capa_lab). 🔴 rojo previo:
+  # sin la configuración de los bare, la traza del push trae el `git maintenance run --auto` que lanzó el receive-pack.
+  [ -s "$BASE/t8/push-trace.json" ] && ! grep '"child_start"' "$BASE/t8/push-trace.json" | grep -q '"maintenance"' \
+    && ok "T8 el push del armado no lanza el mantenimiento de git en el bare (la huella de antes no se cruza con un reempaquetado)" \
+    || mal "T8 el push del armado lanzó el mantenimiento de git en el bare, o no dejó traza: $(grep '"child_start"' "$BASE/t8/push-trace.json" 2>/dev/null | head -c 300)"
   mira install --yes --harness-clone "$INTERNAL"
   [ "$RC" = 0 ] && ok "T8 install --harness-clone sobre la copia pública: 0" || mal "T8 install --harness-clone: rc $RC: $SALIDA"
   [ "$(estado "d.get('source')")" = public ] && [ "$(capa kind)" = layer ] && [ "$(capa name)" = internal ] && [ "$(capa commit)" = "$I1" ] && [ "$(capa reference)" = "$(cd "$INTERNAL" && pwd -P)" ] \
