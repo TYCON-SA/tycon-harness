@@ -29,6 +29,14 @@
 # mano, y en el gate del commit de toda story que toque suites.json o el instalador. suites-coverage.test.js la lista
 # como excepción declarada, con este motivo.
 # Correr: bash scripts/tests/portable-suites.test.sh  (para probar la lista entera, no sólo las portables: TYCON_PORTABLE_ALL=1)
+#
+# UNA PARTE de las portables (TYCON_PORTABLE_SHARD=<i>/<n>, 2026-10-14): la CI pública de GitHub reparte este paso en
+# <n> trabajos que corren a la vez (scripts/ci/public-ci.sh, TYCON_PUBLIC_CI_PART=suites-<i>-of-<n>). El reparto es el
+# de la validación de Azure: scripts/ci/suites-shard.js, por peso, con el juego `pr` de scripts/ci/suites-weights.json;
+# las <n> partes juntas son todas las portables y ninguna queda en dos. Dentro de la parte arrancan primero las más
+# pesadas (con 4 a la vez, una larga que arranca última estira la parte entera). Un valor que no sea <i>/<n> con i
+# entre 1 y n, o un reparto que no se puede hacer (falta suites-shard.js, los pesos no se dejan leer), es ROJO: correr
+# todas, o ninguna, en silencio daría otro veredicto que el pedido. Una parte sin ninguna suite es rojo (cero no es verde).
 
 set -uo pipefail
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -94,11 +102,33 @@ const todas = [...(cfg.diarias || []), ...(cfg.semanales || [])].filter((e) => e
 const esYo = (e) => /portable-suites\.test\.sh$/.test(e.ruta);
 // TYCON_PORTABLE_ALL=1: diagnóstico para CLASIFICAR — corre la lista entera en este entorno; lo que falla necesita algo.
 const TODAS = process.env.TYCON_PORTABLE_ALL === '1';
-const portables = todas.filter((e) => (TODAS || (Array.isArray(e.requiere) && e.requiere.length === 0)) && !esYo(e));
+let portables = todas.filter((e) => (TODAS || (Array.isArray(e.requiere) && e.requiere.length === 0)) && !esYo(e));
 const sinRequiere = todas.filter((e) => !Array.isArray(e.requiere)).length;
 console.log(`suites-portables: ${todas.length} suites declaradas · ${portables.length} ${TODAS ? 'a correr (TYCON_PORTABLE_ALL=1: diagnóstico, no el veredicto de la clasificación)' : 'portables (requiere: [])'}` +
   (sinRequiere ? ` · ⚠️ ${sinRequiere} sin \`requiere\` (las juzga suites-coverage.test.js)` : ''));
 if (!portables.length) { console.log('❌ suites-portables: CERO portables — o nadie declaró `requiere: []` o la lista está rota. Cero no es verde.'); process.exit(1); }
+// una parte de las portables (TYCON_PORTABLE_SHARD=<i>/<n>, ver la cabecera): el reparto de scripts/ci/suites-shard.js
+const SHARD = process.env.TYCON_PORTABLE_SHARD || '';
+if (SHARD) {
+  const m = /^([1-9]\d*)\/([1-9]\d*)$/.exec(SHARD);
+  if (!m || Number(m[1]) > Number(m[2])) { console.log(`❌ suites-portables: TYCON_PORTABLE_SHARD=${SHARD} no es una parte: <i>/<n>, con i entre 1 y n`); process.exit(1); }
+  const [i, n] = [Number(m[1]), Number(m[2])];
+  let shard; let weights;
+  try {
+    shard = require(path.join(RAIZ, 'scripts', 'ci', 'suites-shard.js'));
+    weights = shard.readWeights(path.join(RAIZ, 'scripts', 'ci', 'suites-weights.json'), 'pr');
+  } catch (e) {
+    console.log(`❌ suites-portables: no pude repartir las portables para la parte ${i} de ${n}: ${String((e && e.message) || e).split('\n')[0]}`); process.exit(1);
+  }
+  const weightOf = (e) => { const b = path.posix.basename(e.ruta); return Object.prototype.hasOwnProperty.call(weights.weights, b) ? weights.weights[b] : weights.fallback; };
+  // assign() devuelve, por parte, los mismos objetos que recibe: cada uno lleva su entrada de suites.json
+  const parts = shard.assign(portables.map((e) => ({ name: path.posix.basename(e.ruta), entry: e })), weights, n);
+  const mine = parts[i - 1].suites.map((s) => s.entry);
+  console.log(`suites-portables: parte ${i} de ${n} (repartidas por peso con scripts/ci/suites-shard.js, juego pr): ${mine.length} de ${portables.length} portables · ~${Math.round(parts[i - 1].load)} s de peso`);
+  if (!mine.length) { console.log(`❌ suites-portables: a la parte ${i} de ${n} no le tocó ninguna portable: cero no es verde (¿más partes que portables?)`); process.exit(1); }
+  // primero las más pesadas (a igual peso, en el orden de suites.json)
+  portables = mine.map((e, at) => ({ e, at, w: weightOf(e) })).sort((a, b) => (b.w - a.w) || (a.at - b.at)).map((x) => x.e);
+}
 
 /** La HOME vacía de UNA suite: sólo los dos enlaces de instalación. Una por suite, así no se pisan entre sí. */
 let nCasa = 0;
