@@ -1308,12 +1308,14 @@ test('InternalHistoryGuard_PreCommitHook_RunsIt_StderrVisible_MissingScriptRejec
   const hook = fs.readFileSync(preCommitHook('harness', RAIZ), 'utf8');
   const at = hook.indexOf('INTERNAL_HISTORY="$REPO_ROOT/scripts/publishing/internal-history.js"');
   assert.ok(at > 0, 'el guion del pre-commit nombra al control');
-  const block = hook.slice(at, at + 900);
+  // el tramo entero del control, hasta su `fi` (no un ancho fijo: la condición del perfil, con sus dos nombres, lo alarga)
+  const block = hook.slice(at, hook.indexOf('\nfi\n', at) + 4);
   assert.match(block, /node "\$INTERNAL_HISTORY" --repo "\$REPO_ROOT" >\/dev\/null; then/, 'la línea de cuentas se calla; lo que dice (por la salida de errores) se ve');
   assert.ok(!/2>\s*\/dev\/null/.test(block), 'nunca se tapa lo que el control dice');
   assert.match(block, /COMMIT RECHAZADO — historia interna/);
   // con el control frenando, que falte el guion en un clon del equipo es «no pude mirar»: el commit no se crea
-  assert.match(block, /elif \[ -f "\$REPO_ROOT\/perfil-equipo\.json" \]; then\s*\n\s*echo "⛔ COMMIT RECHAZADO — historia interna: no pude mirar \(falta \$\{INTERNAL_HISTORY\}\)[^\n]*>&2\s*\n[\s\S]{0,500}?\n\s*exit 1\s*\n\s*fi/, 'si falta el guion en un clon del equipo, rechaza');
+  // (el perfil del equipo con su nombre de hoy o el de antes: los dos dicen «clon del equipo»)
+  assert.match(block, /elif \[ -f "\$REPO_ROOT\/team-profile\.json" \] \|\| \[ -f "\$REPO_ROOT\/perfil-equipo\.json" \]; then\s*\n\s*echo "⛔ COMMIT RECHAZADO — historia interna: no pude mirar \(falta \$\{INTERNAL_HISTORY\}\)[^\n]*>&2\s*\n[\s\S]{0,500}?\n\s*exit 1\s*\n\s*fi/, 'si falta el guion en un clon del equipo, rechaza');
   assert.match(block, /guard-record\.js" --guard internal-history --rule could-not-look --verdict bloqueo >\/dev\/null 2>&1 \|\| true/, 'y el rechazo queda en el registro de frenos, sin cambiar la salida');
   assert.ok(!/no encontré \$\{INTERNAL_HISTORY\}/.test(block), 'ya no avisa y sigue');
 });
@@ -1369,7 +1371,7 @@ test('InternalHistoryGuard_PreCommitHook_MissingScript_Live — sin el guion, un
     write(repo, {
       'guides/a.md': '# Guía\n\nPrimera línea.\n',
       ...(withLib ? { 'scripts/lib/guard-record.js': lib('scripts/lib/guard-record.js'), 'scripts/setup/harness/tycon-home.js': lib('scripts/setup/harness/tycon-home.js') } : {}),
-      ...(profile ? { 'perfil-equipo.json': '{}\n' } : {}),
+      ...(profile ? { [profile === true ? 'perfil-equipo.json' : profile]: '{}\n' } : {}),
     });
     const file = path.join(repo, '.git', 'hooks', 'pre-commit');
     fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -1385,6 +1387,11 @@ test('InternalHistoryGuard_PreCommitHook_MissingScript_Live — sin el guion, un
   assert.match(team.out, /COMMIT RECHAZADO — historia interna: no pude mirar/);
   assert.strictEqual(team.commits, '0');
   assert.deepStrictEqual(team.records.map((x) => `${x.freno}:${x.regla}:${x.veredicto}`), ['internal-history:could-not-look:bloqueo'], 'el rechazo queda en el registro de frenos');
+  // con el perfil en su nombre de hoy, igual: es un clon del equipo
+  const teamNew = run('team-profile.json');
+  assert.notStrictEqual(teamNew.status, 0, `con team-profile.json y sin el guion, el commit no se crea\n${teamNew.out}`);
+  assert.match(teamNew.out, /COMMIT RECHAZADO — historia interna: no pude mirar/);
+  assert.strictEqual(teamNew.commits, '0');
   const outside = run(false);
   assert.strictEqual(outside.status, 0, `sin perfil y sin el guion no hay qué mirar\n${outside.out}`);
   assert.doesNotMatch(outside.out, /historia interna/);

@@ -969,8 +969,8 @@ function refreshTeam(ctx, state, { log = null, publicRepo = null } = {}) {
   const lines = [];
   // si el perfil cambió se compara por su contenido antes y después, en CUALQUIER rama (pase adversarial, C-2: la reposición
   // desde la caché también lo cambia y la política se tiene que releer)
-  const profileFile = path.join(own.harness, 'perfil-equipo.json');
-  const profileNow = () => { try { return fs.readFileSync(profileFile, 'utf8'); } catch (_) { return null; } };
+  // el perfil con su nombre de hoy o el de antes (team.js → profileIn): un repo del equipo que lo renombra no cuenta como cambio
+  const profileNow = () => { try { return fs.readFileSync(TEAM.profileIn(own.harness).file, 'utf8'); } catch (_) { return null; } };
   const profileBefore = profileNow();
   try {
     const sameRepo = onDisk && onDisk.repo === state.team.repo;
@@ -1475,11 +1475,15 @@ function teamDoctorItems(ctx, state, tree) {
     for (const p of st.kept) out.push({ level: 'warn', text: `capa del equipo: ${p} editado a mano y ya no viene en la capa (${sha7(m.commit)}): se conservó; borralo a mano si no lo querés` });
     // el paquete de revisores del equipo (D-1, hasta la A2): con alguna integración del perfil de la capa prendida
     let integrationsOn = false;
-    try { const p = JSON.parse(fs.readFileSync(path.join(tree, 'perfil-equipo.json'), 'utf8')); integrationsOn = isObject(p.integrations) && Object.values(p.integrations).some((v) => v === true); } catch (e) {
+    const prof = TEAM.profileIn(tree);
+    try { const p = JSON.parse(fs.readFileSync(prof.file, 'utf8')); integrationsOn = isObject(p.integrations) && Object.values(p.integrations).some((v) => v === true); } catch (e) {
       integrationsOn = false;
       // sin perfil en la capa no hay nada que avisar; uno que no se puede leer se dice (fallos silenciosos, A2a vuelta 2)
-      if (e && e.code !== 'ENOENT') out.push({ level: 'warn', text: `capa del equipo: perfil-equipo.json no se puede leer (${e.code || e.message})` });
+      if (e && e.code !== 'ENOENT') out.push({ level: 'warn', text: `capa del equipo: ${prof.name} no se puede leer (${e.code || e.message})` });
     }
+    // el nombre del perfil: el de antes sigue andando, dicho en una línea suave (nunca un fallo)
+    const profNotice = TEAM.profileNameNotice(prof, 'layer');
+    if (profNotice) out.push({ level: 'ok', text: `capa del equipo: ${profNotice}` });
     // (A2a, AC 20: una capa que ya trae un paquete no lo dice)
     const layerHasPack = m.files.some((f) => /^packs\/[^/]+\/pack\.json$/.test(f.path));
     if (integrationsOn && !layerHasPack && !exists(path.join(tree, 'packs', 'clients', 'pack.json'))) out.push({ level: 'warn', text: 'capa del equipo: el paquete de revisores del equipo (packs/clients) todavía no está en esta máquina — llega con la parte 2 de la capa; mientras tanto el pipeline corre sin esos revisores' });

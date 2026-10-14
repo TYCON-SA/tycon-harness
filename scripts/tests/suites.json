@@ -1815,6 +1815,68 @@
       "requiere": [
         "agent-skills"
       ]
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/harness-repo.test.sh",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/retro-heartbeat.test.sh",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/installer-codex-evidence.test.sh",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/manifest-engram.test.sh",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/forms-to-version.test.sh",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/trimmed-close.test.sh",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/states-dictionary.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/pre-commit-stories.test.sh",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/steps-per-run.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.23, tanda E (T35): las guías de instalación dicen ~/.tycon, «usar no es mantener» y el modo desarrollador, y ninguna pide clonar para USAR el arnés (el clon queda para quien lo mantiene). Sólo lee archivos: no carga el laboratorio.",
+      "raiz": "arnes",
+      "ruta": "tests/docs-no-clone.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.10.3, tanda E (T18): la regla de un nombre inventado, sobre la tabla privada de reemplazos. Un inventado de cliente, persona, máquina o ejemplo no conserva del real la inicial, el largo exacto ni una palabra de cuatro letras o más que no sea estructural (la lista, con su motivo, va en la prueba), y dos reales no comparten inventado. Los casos de mentira prueban cada motivo y cada exención; el rojo nombra el par por su número y su categoría, nunca por su valor; y sin la tabla sale 2 («no pude medir»), nunca un salteo verde. La tabla es privada: en el público solo corren los casos de mentira y el de la tabla real sale SALTEADO con su motivo; en el árbol armado (con .tycon/internal-forms.json), que falte la tabla es 2.",
+      "raiz": "arnes",
+      "ruta": "tests/invented-names-rule.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/test-skill-contract.js",
+      "requiere": []
     }
   ],
   "semanales": [

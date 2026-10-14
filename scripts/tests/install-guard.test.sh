@@ -284,7 +284,7 @@ SH
     HARNESS_T19="$TMP/harness-t19"; ORG_T19="https://dev.azure.com/lab-org"
     rm -rf "$HARNESS_T19"; mkdir -p "$HARNESS_T19"
     # los archivos del instalador y, si este arnés es el del equipo, su perfil y su mapa (el instalador los exige juntos)
-    for f in $(sed -n '/^ARCHIVOS=(/,/^)/p' "$INSTALADOR" | grep '^  scripts/') scripts/lib/renames.json perfil-equipo.json; do
+    for f in $(sed -n '/^ARCHIVOS=(/,/^)/p' "$INSTALADOR" | grep '^  scripts/') scripts/lib/renames.json team-profile.json perfil-equipo.json; do
       [ -f "$AQUI/$f" ] || continue
       mkdir -p "$HARNESS_T19/$(dirname "$f")"; cp "$AQUI/$f" "$HARNESS_T19/$f"
     done
@@ -350,8 +350,10 @@ SH
     echo "⏭ instalar-freno: T19l/T19m/T19n/T19o salteados — el origin de este clon no es de Azure DevOps: el origen de confianza queda SIN PROBAR acá (no cuenta como verde)"
   else
     FALSO="$TMP/clon-falso"; rm -rf "$FALSO"; mkdir -p "$FALSO"
+    # el perfil del equipo de este árbol, con su nombre de hoy o el de antes
+    PERFIL_AQUI=team-profile.json; [ -f "$AQUI/$PERFIL_AQUI" ] || PERFIL_AQUI=perfil-equipo.json
     for f in $(sed -n '/^ARCHIVOS=(/,/^)/p' "$INSTALADOR" | grep '^  scripts/') scripts/lib/renames.json; do mkdir -p "$FALSO/$(dirname "$f")"; cp "$AQUI/$f" "$FALSO/$f"; done
-    cp "$AQUI/perfil-equipo.json" "$FALSO/"
+    cp "$AQUI/$PERFIL_AQUI" "$FALSO/"
     ( cd "$FALSO" && git init -q . && git remote add origin "https://uno@dev.azure.com/${ORG_REAL}/tycon-claude-guides/_git/tycon-claude-guides" ) >/dev/null 2>&1
     rm -rf "$TMP/sys6"; mkdir -p "$TMP/sys6/Library/Application Support/ClaudeCode" "$TMP/sys6/opt"
     FIJADO6="$TMP/sys6/opt/tycon/production/trusted-origin.json"
@@ -379,15 +381,15 @@ SH
 
     # T19m · un perfil ILEGIBLE frena con archivo y motivo (AC 2), no se lee como «sin organización» (cazador de fallos
     #        silenciosos, vuelta 2); un perfil AUSENTE sí es «sin organización»
-    printf '{ roto' > "$FALSO/perfil-equipo.json"
+    printf '{ roto' > "$FALSO/$PERFIL_AQUI"
     inst6 1 >"$TMP/o6" 2>&1; rc=$?
-    if [ "$rc" -ne 0 ] && grep -q "ROTA" "$TMP/o6" && grep -q "perfil-equipo.json" "$TMP/o6" && ! grep -q "sin organización de Azure DevOps configurada" "$TMP/o6"; then ok "T19m · perfil ilegible: frena nombrando el archivo y el motivo, no lo disfraza de «sin organización»"
+    if [ "$rc" -ne 0 ] && grep -q "ROTA" "$TMP/o6" && grep -q "$PERFIL_AQUI" "$TMP/o6" && ! grep -q "sin organización de Azure DevOps configurada" "$TMP/o6"; then ok "T19m · perfil ilegible: frena nombrando el archivo y el motivo, no lo disfraza de «sin organización»"
     else no "T19m · perfil ilegible mal reportado (rc=$rc): $(tail -1 "$TMP/o6")"; fi
-    rm -f "$FALSO/perfil-equipo.json"
+    rm -f "$FALSO/$PERFIL_AQUI"
     inst6 1 >"$TMP/o6" 2>&1; rc=$?
     if [ "$rc" -ne 0 ] && grep -q "sin organización" "$TMP/o6"; then ok "T19m · perfil ausente (y nada más configurado): «sin organización», que sí es la verdad"
     else no "T19m · perfil ausente mal reportado (rc=$rc): $(tail -1 "$TMP/o6")"; fi
-    cp "$AQUI/perfil-equipo.json" "$FALSO/"
+    cp "$AQUI/$PERFIL_AQUI" "$FALSO/"
 
     # T19n · un origen FIJADO ilegible (sólo root lo escribe: si está roto, alguien con root lo rompió) frena diciéndolo;
     #        no se lee como «vacío» ni se pisa
@@ -419,13 +421,36 @@ SH
     inst6 1 >"$TMP/o6" 2>&1; rc=$?
     if [ "$rc" -ne 0 ] && grep -q "renames.json" "$TMP/o6"; then ok "T19p · arnés del equipo sin el mapa de nombres viejos: no instala y lo nombra"
     else no "T19p · arnés del equipo sin el mapa instaló igual o no lo nombró (rc=$rc): $(tail -1 "$TMP/o6")"; fi
-    rm -f "$FALSO/perfil-equipo.json"
+    rm -f "$FALSO/$PERFIL_AQUI"
     rm -rf "$TMP/sys6/opt/tycon"; mkdir -p "$TMP/sys6/opt"
     TYCON_ADO_ORG="https://dev.azure.com/${ORG_REAL}" inst6 1 >"$TMP/o6" 2>&1; rc=$?
     if [ "$rc" -eq 0 ] && [ -f "$TMP/sys6/opt/tycon/lib/legacy-names.js" ] && [ ! -e "$TMP/sys6/opt/tycon/lib/renames.json" ]; then ok "T19p · copia pública (sin perfil ni mapa): instala, y sin mapa en /opt"
     else no "T19p · copia pública sin mapa no instaló, o dejó un mapa (rc=$rc): $(tail -1 "$TMP/o6")"; fi
-    cp "$AQUI/perfil-equipo.json" "$FALSO/"; cp "$AQUI/$MAPA_REL" "$FALSO/$MAPA_REL"
+    cp "$AQUI/$PERFIL_AQUI" "$FALSO/"; cp "$AQUI/$MAPA_REL" "$FALSO/$MAPA_REL"
   fi
+fi
+
+# ── T19q · la organización sale del perfil del equipo con su nombre de hoy (team-profile.json) o con el de antes
+#          (perfil-equipo.json); con los dos gana el nuevo, y el de antes ni se lee (roto, no frena). Sólo sobre el clon de
+#          laboratorio (nunca se escribe en el clon real). Un perfil hace que el instalador exija el mapa de nombres viejos:
+#          si este árbol no lo trae (la copia pública), el laboratorio lleva uno vacío.
+if [ -f "$INSTALADOR" ] && [ -n "${HARNESS_T19:-}" ] && [ "$HARNESS_T19" = "$TMP/harness-t19" ]; then
+  MAPA_Q=0
+  [ -f "$HARNESS_T19/scripts/lib/renames.json" ] || { printf '{ "retire_after": "2099-01-01", "entries": [] }\n' > "$HARNESS_T19/scripts/lib/renames.json"; MAPA_Q=1; }
+  for caso in nuevo viejo ambos; do
+    rm -f "$HARNESS_T19/team-profile.json" "$HARNESS_T19/perfil-equipo.json"
+    case "$caso" in
+      nuevo) printf '{ "ado": { "org": "%s" } }\n' "$ORG_T19" > "$HARNESS_T19/team-profile.json" ;;
+      viejo) printf '{ "ado": { "org": "%s" } }\n' "$ORG_T19" > "$HARNESS_T19/perfil-equipo.json" ;;
+      ambos) printf '{ "ado": { "org": "%s" } }\n' "$ORG_T19" > "$HARNESS_T19/team-profile.json"; printf '{ roto' > "$HARNESS_T19/perfil-equipo.json" ;;
+    esac
+    rm -rf "$TMP/sysq"; mkdir -p "$TMP/sysq/Library/Application Support/ClaudeCode" "$TMP/sysq/opt"
+    env -u TYCON_ADO_ORG -u ADO_ORG PATH="$TMP/bin:$PATH" TYCON_PROD_TEST_PATH="$TMP/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin" TYCON_PROD_NODE_LOCAL=1 TYCON_PROD_ROOT="$TMP/sysq" TYCON_PROD_HARNESS="$HARNESS_T19" TYCON_PROD_ACCEPT_ORIGIN=1 bash "$INSTALADOR" --no-sudo >"$TMP/oq" 2>&1; rc=$?
+    if [ "$rc" -eq 0 ] && grep -q "\"org\": \"$ORG_T19\"" "$TMP/sysq/opt/tycon/production/trusted-origin.json" 2>/dev/null; then ok "T19q · perfil «${caso}»: la organización sale del perfil y el freno se instala"
+    else no "T19q · perfil «${caso}»: no instaló o no tomó la organización del perfil (rc=$rc): $(tail -1 "$TMP/oq")"; fi
+  done
+  rm -f "$HARNESS_T19/team-profile.json" "$HARNESS_T19/perfil-equipo.json"
+  [ "$MAPA_Q" = 1 ] && rm -f "$HARNESS_T19/scripts/lib/renames.json"
 fi
 
 # ── T19e-i · lo que los revisores del Step 5 encontraron sin probar ─────────────────────────────
@@ -696,7 +721,7 @@ if [ -f "$INSTALADOR" ]; then
   rm -rf "$CASA30" "$SYS30"; mkdir -p "$ARNES30" "$CASA30/.tycon/state" "$SYS30/Library/Application Support/ClaudeCode" "$SYS30/opt" "$TMP/bin"
   [ -x "$TMP/bin/sudo" ] || { printf '#!/usr/bin/env bash\nexec "$@"\n' > "$TMP/bin/sudo"; chmod +x "$TMP/bin/sudo"; }
   [ -x "$TMP/bin/sqlcmd" ] || { printf '#!/usr/bin/env bash\necho "doble de sqlcmd para T30"; exit 0\n' > "$TMP/bin/sqlcmd"; chmod +x "$TMP/bin/sqlcmd"; }
-  for f in $(sed -n '/^ARCHIVOS=(/,/^)/p' "$INSTALADOR" | grep '^  scripts/') scripts/lib/renames.json perfil-equipo.json scripts/lib/git-tree-hash.js; do
+  for f in $(sed -n '/^ARCHIVOS=(/,/^)/p' "$INSTALADOR" | grep '^  scripts/') scripts/lib/renames.json team-profile.json perfil-equipo.json scripts/lib/git-tree-hash.js; do
     [ -f "$AQUI/$f" ] || continue
     mkdir -p "$ARNES30/$(dirname "$f")"; cp "$AQUI/$f" "$ARNES30/$f"
   done

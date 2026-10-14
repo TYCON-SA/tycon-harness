@@ -214,7 +214,7 @@ function resolve(c, { version, readerTree, home = os.homedir(), env = process.en
   const store = T.blobStore(env);
   const judged = T.judgeContent(plan, (p, sha) => { const have = sha ? store.get(sha) : null; return have ? { ok: true, buf: have, blob: sha } : itemAt(c, commit, p, sha); }, { version, readerTree, home, env, head, commit });
   if (!judged.ok) return judged;
-  return { ok: true, repo: src.url, host: 'azure', ref: TEAM_REF, commit, tree, etag: null, files: plan.files, declaration: judged.declaration, declarationSha: plan.declaration ? plan.declaration.sha : null, totalBytes: plan.totalBytes, profileEntries: judged.profileEntries, stagedDir: judged.dir };
+  return { ok: true, repo: src.url, host: 'azure', ref: TEAM_REF, commit, tree, etag: null, files: plan.files, declaration: judged.declaration, declarationSha: plan.declaration ? plan.declaration.sha : null, totalBytes: plan.totalBytes, profileEntries: judged.profileEntries, stagedDir: judged.dir, notes: plan.notes };
 }
 
 /**

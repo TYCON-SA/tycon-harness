@@ -16,7 +16,8 @@
  *                                      `TYCON_MAILBOX`, `TYCON_NIGHTLY`; `0`/`1`, y `detect` para Codex)
  *   2. el archivo de la máquina        (`~/.claude/tycon.json` — nunca versionado; es lo que toda sesión
  *                                      ve, incluidas las de la extensión de VS Code, que no cargan el rc)
- *   3. el perfil del equipo            (`perfil-equipo.json` en la raíz del arnés — versionado, sólo valores
+ *   3. el perfil del equipo            (`team-profile.json` en la raíz del arnés, o `perfil-equipo.json`, el nombre
+ *                                      de antes, que sigue valiendo — versionado, sólo valores
  *                                      del equipo; la exportación open source lo deja afuera)
  *   4. apagado / sin valor
  *
@@ -95,7 +96,27 @@ function leerVariableSinAnotar(env, nombre) {
     return e ? env[e.old] : undefined;
   } catch (_) { return undefined; }
 }
-const NOMBRE_PERFIL = 'perfil-equipo.json';
+// El perfil del equipo se llama team-profile.json; el nombre de antes, perfil-equipo.json, sigue valiendo sin fecha de
+// retiro (vive en repos del equipo y en clones que el arnés no controla). Se busca primero el nuevo; con los dos, gana el
+// nuevo. ESCRITOS acá, no importados de scripts/setup/harness/team.js: este archivo viaja solo a la copia del freno de
+// producción (/opt). La misma pareja: team.js → PROFILE_PATH / LEGACY_PROFILE_PATH.
+const NOMBRE_PERFIL = 'team-profile.json';
+const NOMBRE_PERFIL_VIEJO = 'perfil-equipo.json';
+/** El perfil en la raíz de un árbol: `{ ruta, nombre, viejo, ambos }` (sin ninguno, la ruta del nombre nuevo). Nunca tira. */
+function perfilDelArbol(arnes) {
+  const es = (n) => { try { return fs.statSync(path.join(arnes, n)).isFile(); } catch (_) { return false; } };
+  const nuevo = es(NOMBRE_PERFIL);
+  const viejo = es(NOMBRE_PERFIL_VIEJO);
+  const nombre = nuevo || !viejo ? NOMBRE_PERFIL : NOMBRE_PERFIL_VIEJO;
+  return { ruta: path.join(arnes, nombre), nombre, viejo: viejo && !nuevo, ambos: nuevo && viejo };
+}
+/** La línea suave sobre el nombre del perfil (el de antes, o los dos), o null. Nunca frena: el de antes sigue andando. */
+function avisoNombrePerfil(rp) {
+  if (!rp || rp.explicito || rp.anulado) return null;
+  if (rp.ambos) return `están ${NOMBRE_PERFIL} y ${NOMBRE_PERFIL_VIEJO}: vale ${NOMBRE_PERFIL} y ${NOMBRE_PERFIL_VIEJO} no se usa — borralo (git rm ${NOMBRE_PERFIL_VIEJO})`;
+  if (rp.viejo) return `el perfil usa el nombre de antes (${NOMBRE_PERFIL_VIEJO}): sigue andando; para pasarlo al nuevo, git mv ${NOMBRE_PERFIL_VIEJO} ${NOMBRE_PERFIL}`;
+  return null;
+}
 // Los dos nombres del lugar del arnés (story 8.19): ~/.claude/tycon-harness, y el viejo, que sigue resolviendo en las
 // máquinas ya instaladas. ESCRITOS acá, no importados de scripts/setup/harness/place.js: este archivo viaja solo a la
 // copia del freno de producción en /opt. Copia declarada en scripts/tests/fixtures/harness-place-names.json.
@@ -418,7 +439,8 @@ function rutaPerfil(env, arnes, home) {
   const v = perfil === undefined ? '' : String(perfil).trim();
   if (v === '0') return { ruta: null, anulado: true };
   if (v) return { ruta: path.resolve(expandirHome(v, home || os.homedir())), anulado: false, explicito: true };
-  return { ruta: path.join(arnes, NOMBRE_PERFIL), anulado: false };
+  const p = perfilDelArbol(arnes);
+  return { ruta: p.ruta, anulado: false, viejo: p.viejo, ambos: p.ambos };
 }
 
 /**
@@ -427,7 +449,8 @@ function rutaPerfil(env, arnes, home) {
  * máquina: la versión bajada no trae el perfil (el exportador lo deja afuera) y la primera máquina migrada quedó con las
  * integraciones, el paquete por defecto y la política de fábrica (2026-10-08). `TYCON_PROFILE` se respeta como en
  * `cargar` (una ruta explícita es «el perfil»; `0` es «sin perfil»).
- * @returns {{ estado: 'ausente'|'leido'|'roto'|'anulado', ruta: string|null, entradas: Array<{ ruta: string, seccion: string, clave: string, valor: any }>, errores: Array<{archivo, clave, motivo}> }}
+ * @returns {{ estado: 'ausente'|'leido'|'roto'|'anulado', ruta: string|null, entradas: Array<{ ruta: string, seccion: string, clave: string, valor: any }>, errores: Array<{archivo, clave, motivo}>, aviso?: string|null }}
+ *   `aviso`: la línea suave sobre el nombre del archivo (el de antes, o los dos; ver `avisoNombrePerfil`).
  *   `entradas` lleva cada valor con su ruta interna (`integraciones.engram`) y la sección y la clave CON EL NOMBRE DEL
  *   ARCHIVO de hoy (`integrations`, `engram`): lo que se escribe en otro archivo.
  */
@@ -447,7 +470,7 @@ function leerPerfil({ arnes, home = os.homedir(), env = process.env } = {}) {
     const [seccion, clave] = ruta.split('.');
     return { ruta, seccion: enArchivo(seccion), clave, valor };
   });
-  return { estado: 'leido', ruta: rp.ruta, entradas, errores: [] };
+  return { estado: 'leido', ruta: rp.ruta, entradas, errores: [], aviso: avisoNombrePerfil(rp) };
 }
 
 /** @returns {{estado:'ausente'|'leido'|'roto', datos?:object, motivo?:string}} */
@@ -791,7 +814,7 @@ function cargar(opts = {}) {
 
   return {
     valores, origenes, variables, errores, entorno, shadowed,
-    archivos: { maquina: { ruta: rm, estado: lm.estado }, perfil: { ruta: rp.ruta, estado: estadoPerfil } },
+    archivos: { maquina: { ruta: rm, estado: lm.estado }, perfil: { ruta: rp.ruta, estado: estadoPerfil, aviso: estadoPerfil === 'ausente' ? null : avisoNombrePerfil(rp) } },
     enlace: estadoEnlace({ home, arnes }),
     buzon: { llave: llaveBuzon, presente: hayLlaveBuzon },
     arnes, home,
@@ -944,6 +967,7 @@ function explicar(opts = {}) {
   L.push(`configuración del arnés · ${os.hostname()} · clon ${c.arnes}`);
   L.push(`  archivo de la máquina: ${c.archivos.maquina.ruta} (${c.archivos.maquina.estado})`);
   L.push(`  perfil del equipo: ${c.archivos.perfil.ruta || '—'} (${c.archivos.perfil.estado === 'anulado' ? 'anulado por TYCON_PROFILE=0' : c.archivos.perfil.estado})`);
+  if (c.archivos.perfil.aviso) L.push(`  aviso: ${c.archivos.perfil.aviso}`);
   L.push(`  paths.arnes = ${fmt(v.rutas.arnes)} (${o['rutas.arnes']})   enlace ${c.enlace.ruta}: ${enlaceTexto}`);
   L.push(`  paths.repos = ${v.rutas.repos ? `${v.rutas.repos} (${o['rutas.repos']})` : 'sin valor (la deduce scripts/lib/repos-root.js: sesiones, vecino; si nada la da, «sin raíz»)'}`);
   // la carpeta del árbol gestionado (story 8.13.1): siempre con valor, siempre con origen
@@ -1119,7 +1143,7 @@ function setKey(home = os.homedir(), clave, valorNuevo, { env = process.env, gua
 }
 
 module.exports = {
-  VOCABULARIO, DEFAULTS, PROFILE_WINS, INTEGRACIONES, LAS_OCHO, TOOLS, toolKeys, COMO_SE_PRENDE, VARIABLES, INTERRUPTORES_POR_HOOK, RAIZ_ARNES, NOMBRE_PERFIL, NOMBRE_ENLACE, PLACE_NAME, LEGACY_PLACE_NAME, DONDE_CLAVES, ConfigError,
+  VOCABULARIO, DEFAULTS, PROFILE_WINS, INTEGRACIONES, LAS_OCHO, TOOLS, toolKeys, COMO_SE_PRENDE, VARIABLES, INTERRUPTORES_POR_HOOK, RAIZ_ARNES, NOMBRE_PERFIL, NOMBRE_PERFIL_VIEJO, perfilDelArbol, avisoNombrePerfil, NOMBRE_ENLACE, PLACE_NAME, LEGACY_PLACE_NAME, DONDE_CLAVES, ConfigError,
   rutaMaquina, nombreArchivoMaquina, comoSePrende, rutaPerfil, leerPerfil, rutaLlaveBuzon, cargar, leer, leerParaHook, avisoParaHook, valor, explicar, estadoEnlace, formaPersonal,
   normalizarOrg, nombreDeOrganizacion, resolverRutaDeArchivo, personalEnComentario,
   esIntegracion, estadoIntegracion, integraciones, integracionParaComando, integracionParaHook, sinAnotar, setKey,

@@ -15,7 +15,7 @@
 //     anécdota se esconde en uno), y por párrafo: una forma partida por el corte de renglón se ve igual. Guiones,
 //     pruebas, datos y YAML no son de este control: ahí sigue valiendo scripts/tests/internal-history.test.js (sin
 //     números de pull request en nada de lo publicado).
-//   · Qué se publica: en el repo del equipo (trae `perfil-equipo.json`) lo dice el exportador (`whatShips`, como el freno
+//   · Qué se publica: en el repo del equipo (trae `team-profile.json`, o `perfil-equipo.json`) lo dice el exportador (`whatShips`, como el freno
 //     de nombres) y se lee el texto COMO SALE —sin los bloques internos, un papel de public-files/ con la ruta de su
 //     destino, y también lo que un paquete deja pendiente para la copia que une los paquetes—; en el repo público, todo
 //     lo versionado. Con el perfil y sin la tabla privada es «no pude mirar»: un clon del equipo incompleto no es el
@@ -57,7 +57,8 @@ const CONFIG_PATH = 'scripts/publishing/internal-history.json';
 const ALLOWED_PATH = 'scripts/tests/fixtures/internal-history-allowed.json';
 const LIST_PATH = 'scripts/publishing/allowlist.json';
 const TABLE_PATH = 'scripts/publishing/replacements.json';
-const PROFILE = 'perfil-equipo.json';
+// el perfil del equipo con su nombre de hoy o el de antes (los dos dicen «este árbol es del equipo»)
+const PROFILES = ['team-profile.json', 'perfil-equipo.json'];
 const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
 const ZONES = ['prose', 'code', 'message'];
 const PROSE_ROOTS = new Set(['guides', 'getting-started', '.github', 'claude-md-blocks', 'skills', 'commands', 'agents', 'packs']);
@@ -484,8 +485,9 @@ function loadConfig(args) {
 }
 /** ¿Es el repo del equipo o el público? Dos señales, como el freno de nombres: el perfil y la tabla privada. */
 function teamOrPublic(repo) {
-  if (!fs.existsSync(path.join(repo, PROFILE))) return 'public';
-  if (!fs.existsSync(path.join(repo, TABLE_PATH))) throw new CouldNot(`este clon trae ${PROFILE} (es del equipo) y le falta ${TABLE_PATH}: sin la tabla no sé qué sale, y un clon del equipo incompleto no es el repo público`);
+  const profile = PROFILES.find((n) => fs.existsSync(path.join(repo, n)));
+  if (!profile) return 'public';
+  if (!fs.existsSync(path.join(repo, TABLE_PATH))) throw new CouldNot(`este clon trae ${profile} (es del equipo) y le falta ${TABLE_PATH}: sin la tabla no sé qué sale, y un clon del equipo incompleto no es el repo público`);
   return 'team';
 }
 const published = (kind, repo, tree, name, config, strict) => (kind === 'team' ? publishedTeam(repo, tree, name, { strict }) : publishedPublic(repo, tree, config));

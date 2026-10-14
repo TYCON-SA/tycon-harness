@@ -28,6 +28,10 @@
 #   T12 · (A1b) rollback sigue a la capa del árbol que queda; uninstall conserva y nombra ~/.tycon/team y copia lo editado a
 #        kept-…/ (también desde la copia fija de arranque); sin capa, la línea de hoy.
 #
+#   TPN · el perfil con su nombre de hoy, team-profile.json: install --team con el repo del equipo que ya lo renombró deja
+#        team-profile.json (y no el de antes) y explain lo lee con origen «perfil»; con el nombre de antes, el plan avisa
+#        cómo renombrarlo; con los dos, el refresco deja sólo el nuevo y explain lee el nuevo.
+#
 #   T33 · (tanda A2b-AC33) la capa con el mapa de renombres real sobre una versión que no lo trae: install sale 0 y la
 #        máquina traduce una variable vieja, un subcomando viejo y un archivo de estado viejo igual que el árbol interno; el
 #        commit que saca el mapa (su retiro) lo borra en el refresco y deja de traducirlos.
@@ -36,7 +40,7 @@
 # checkout real. 🔴 Sin pipes sobre el comando medido. El perfil del laboratorio (TYCON_PROFILE) se VACÍA: la variable le
 # ganaría al árbol y el perfil que se mide es el de la capa.
 #
-# Uso: bash scripts/tests/harness-team.test.sh [--only T3|T6|T7|T8|T9|T10|T11|T12|T33]
+# Uso: bash scripts/tests/harness-team.test.sh [--only T3|T6|T7|T8|T9|T10|T11|T12|T33|TPN]
 set -uo pipefail
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "$RAIZ/scripts/tests/lib/harness-lab.sh"
@@ -817,6 +821,45 @@ $INTERNO"
   case "$SIN" in "undefined"*"subcomando viejo: distinto"*"$LAB_HOME/${NEW_STATE#\~/}") ok "(control) sin el mapa la máquina ya no traduce los nombres viejos" ;; *) mal "(control) sin el mapa no da lo esperado: $SIN" ;; esac
   case "$SIN" in *"at Module."*|*"node:internal"*|*"Error: Cannot find module"*) mal "(control) la sonda tiró: $SIN" ;; *) ok "(control) …sin trazas de error en las sondas" ;; esac
   case "$SIN" in *"subcomando viejo: distinto"*) ok "(control) …el subcomando viejo deja de andar" ;; *) mal "(control) el subcomando viejo sigue: $SIN" ;; esac
+  kill "$LAB_RELEASE_PROCESS" 2>/dev/null
+fi
+
+# ───────────────────────────────────────────── TPN ────────────────────────────────────────────────────────────────────
+if corre TPN; then
+  echo "TPN · el perfil del equipo con su nombre de hoy (team-profile.json), con el de antes y con los dos"
+  lab_team "$BASE/labpn"
+  # (a) con el nombre de antes (el repo de juguete nace así): el plan avisa en una línea cómo renombrarlo
+  OUT="$(harness install --version latest --team "$LAB_TEAM" --dry-run 2>&1)"; RC=$?
+  [ "$RC" = 0 ] && ok "(a) --dry-run con perfil-equipo.json sale 0" || mal "(a) --dry-run rc $RC: $OUT"
+  case "$OUT" in *"perfil-equipo.json, scripts/metrics/corridas-buzon.json — aviso: el perfil del equipo usa el nombre de antes (perfil-equipo.json): sigue andando; para pasarlo al nuevo, git mv perfil-equipo.json team-profile.json"*) ok "(a) el plan avisa cómo renombrarlo, en la misma línea" ;; *) mal "(a) el plan no avisa: $OUT" ;; esac
+  # (b) el repo del equipo renombra el perfil: install --team deja team-profile.json y no el de antes
+  harness_lab_git "$LAB_AUTHOR_TEAM" mv perfil-equipo.json team-profile.json >/dev/null
+  harness_lab_team_publish "el perfil pasa a team-profile.json"
+  OUT="$(harness install --version latest --team "$LAB_TEAM" --dry-run 2>&1)"
+  case "$OUT" in *"capa del equipo $LAB_TEAM @ "*"— aviso"*) mal "(b) el plan avisa con el nombre nuevo: $OUT" ;; *"capa del equipo $LAB_TEAM @ "*"2 archivo(s)"*"scripts/metrics/corridas-buzon.json, team-profile.json"*) ok "(b) el plan nombra team-profile.json, sin aviso" ;; *) mal "(b) el plan no nombra team-profile.json: $OUT" ;; esac
+  instala_team
+  [ "$INSTALL_RC" = 0 ] && ok "(b) install --team con team-profile.json sale 0" || mal "(b) install rc $INSTALL_RC: $INSTALL_OUT"
+  [ -f "$(NEW)/team-profile.json" ] && [ ! -e "$(NEW)/perfil-equipo.json" ] && ok "(b) ~/.tycon/harness tiene team-profile.json y no el de antes" || mal "(b) los perfiles en el árbol: $(ls "$(NEW)" | tr '\n' ' ')"
+  cmp -s "$(NEW)/team-profile.json" "$LAB_AUTHOR_TEAM/team-profile.json" && ok "(b) el perfil apilado es byte a byte el del repo del equipo" || mal "(b) el perfil apilado difiere"
+  case "$(explain_key "$(NEW)" ado org)" in *acme*" perfil") ok "(b) explain: ado.org del equipo con origen perfil" ;; *) mal "(b) explain ado.org: $(explain_key "$(NEW)" ado org)" ;; esac
+  [ "$(explain_key "$(NEW)" integraciones engram)" = "true perfil" ] && ok "(b) explain: engram prendida con origen perfil" || mal "(b) engram: $(explain_key "$(NEW)" integraciones engram)"
+  case "$(node "$(NEW)/scripts/lib/tycon-config.js" explain 2>&1)" in *"aviso: "*"perfil"*) mal "(b) explain avisa con el nombre nuevo" ;; *) ok "(b) explain no avisa con el nombre nuevo" ;; esac
+  [ "$(estado "d['channel']")" = latest ] && [ "$(estado "d['policy']['apply']")" = auto ] && ok "(b) la política del estado es la del perfil nuevo (latest · auto)" || mal "(b) política: $(estado "d.get('channel')") $(estado "d.get('policy')")"
+  JSON="$(harness_release doctor --json 2>/dev/null)"
+  [ "$(printf '%s' "$JSON" | jtxt "len(d['fail'])")" = 0 ] && ok "(b) doctor --json sin fail" || mal "(b) doctor fail: $(printf '%s' "$JSON" | jtxt "d['fail']")"
+  case "$(printf '%s' "$JSON" | jtxt "' '.join(d['warn'])")" in *"team-profile.json: de más"*) mal "(b) doctor cuenta el perfil «de más»" ;; *) ok "(b) doctor no cuenta team-profile.json como «de más»" ;; esac
+  # (c) los dos en el repo del equipo (con el de antes distinto): el refresco deja sólo el nuevo, y vale el nuevo
+  printf '%s\n' '{ "ado": { "org": "https://dev.azure.com/viejo" }, "integrations": { "engram": false } }' > "$LAB_AUTHOR_TEAM/perfil-equipo.json"
+  harness_lab_team_publish "vuelve el de antes, al lado del nuevo"
+  export TYCON_STARTUP_DETACH=0
+  ventana none
+  OUT="$(harness_release startup 2>&1)"; RC=$?
+  [ "$RC" = 0 ] && ok "(c) el arranque con los dos nombres en la capa sale 0" || mal "(c) startup rc $RC: $OUT"
+  [ "$(estado "d['team']['commit']")" = "$(team_head)" ] && ok "(c) la capa se refrescó al commit con los dos" || mal "(c) la capa no se refrescó: $(estado "d.get('team')") — $OUT"
+  [ -f "$(NEW)/team-profile.json" ] && [ ! -e "$(NEW)/perfil-equipo.json" ] && ok "(c) con los dos, el de antes no se apila" || mal "(c) los perfiles en el árbol: $(ls "$(NEW)" | tr '\n' ' ')"
+  case "$(explain_key "$(NEW)" ado org)" in *acme*" perfil") ok "(c) vale el nuevo (ado.org del nuevo)" ;; *) mal "(c) explain ado.org: $(explain_key "$(NEW)" ado org)" ;; esac
+  OUT="$(harness_release install --version latest --team "$LAB_TEAM" --dry-run 2>&1)"
+  case "$OUT" in *"aviso: el perfil del equipo está con los dos nombres: vale team-profile.json"*) ok "(c) el plan avisa que están los dos y que vale el nuevo" ;; *) mal "(c) el plan no avisa de los dos: $OUT" ;; esac
   kill "$LAB_RELEASE_PROCESS" 2>/dev/null
 fi
 

@@ -483,7 +483,7 @@ for k in ["ado.org","integraciones.clockify","integraciones.engram","integracion
   [ "$(harness_lab_home_hash)" = "$H0" ] && ok "…y la HOME quedó idéntica" || bad "la HOME cambió con el perfil roto"
   rm -f "$LAB_TREE/perfil-equipo.json"
   OUT="$(harness migrate --to-home --dry-run 2>&1)"
-  case "$OUT" in *"perfil del equipo: el clon no trae perfil-equipo.json — nada que pasar"*) ok "sin perfil, el plan lo dice y sigue" ;; *) bad "sin perfil el plan dice otra cosa: $(printf '%s\n' "$OUT" | grep -i perfil)" ;; esac
+  case "$OUT" in *"perfil del equipo: el clon no trae team-profile.json (ni perfil-equipo.json, el nombre de antes) — nada que pasar"*) ok "sin perfil, el plan lo dice y sigue" ;; *) bad "sin perfil el plan dice otra cosa: $(printf '%s\n' "$OUT" | grep -i perfil)" ;; esac
   OUT="$(harness migrate --to-home 2>&1)"; RC=$?
   [ "$RC" = 0 ] && [ "$(state "d['sources'][0]['kind']")" = release ] && ok "sin perfil la mudanza completa igual" || bad "sin perfil: rc $RC: $OUT"
   kill "$LAB_RELEASE_PROCESS" 2>/dev/null

@@ -97,7 +97,8 @@ is the same for everybody:
 
 An example: at ACME, Pedro is the administrator and Juan writes code.
 
-1. Pedro creates ACME's two repos, in its Azure DevOps or GitHub, with access only for the team.
+1. Pedro creates ACME's two repos, in its Azure DevOps or GitHub, with access only for the team. For the profile he can
+   start from [an example profile](https://github.com/TYCON-SA/harness-team-profile-example), ready to copy.
 2. Pedro runs `node ~/.claude/tycon-harness/scripts/setup/harness.js team-config`. A page opens on his machine, with
    nothing on the internet, where he declares where each repo lives and who gets the notices. The page checks what he
    writes, saves it in the right repo and offers him the pull request.
