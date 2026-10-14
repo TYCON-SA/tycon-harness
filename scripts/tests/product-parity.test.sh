@@ -452,5 +452,82 @@ CFG
 rc=$(cd "$TMP" && node "$CHK" --config "$TMP/c810c.json" >"$TMP/out.txt" 2>&1; echo $?)
 [ "$rc" -eq 2 ] && ok "8.10.3 · la marca con grupos es una contradicción: sale 2" || no "🔴 8.10.3 · marca con grupos salió $rc"
 
+# ---------------------------------------------------------------- las plantillas del alta de un producto (paquete bizuit)
+# NewProductTemplates_RenderedProduct_PassesThePipelineControls — un producto de juguete armado con las plantillas de
+# packs/bizuit/new-product-templates/ (marcadores reemplazados con nombres inventados) no deja ningún marcador vivo, y
+# sus pipelines pasan los controles de pipeline del arnés. Si una plantilla se queda atrás de los productos —un
+# disparador que construye con un merge de sólo documentación, un paso que publica con lo anterior en rojo—, esto lo dice
+# antes del próximo alta, no después.
+TPL="$AQUI/packs/bizuit/new-product-templates"
+if [ ! -d "$TPL/pipelines" ]; then
+  no "🔴 plantillas del alta: no está $TPL/pipelines"
+else
+  J="$TMP/juguete"; mkdir -p "$J/back" "$J/forms" "$J/stories"
+  rend(){ sed -e 's/{{PRODUCT}}/ACME/g' -e 's/{{PRODUCT_LOWER}}/acme/g' -e 's/{{PRODUCT_DESCRIPTION}}/producto de prueba/g' \
+    -e 's/{{BACKEND_REPO}}/AcmeBZExtBackend/g' -e 's/{{FORMS_REPO}}/AcmeBZExtForms/g' -e 's/{{STORIES_REPO}}/AcmeProyecto/g' \
+    -e 's/{{PLUGIN}}/acmebzextbackend/g' -e 's#{{ADO_ORG_URL}}#https://dev.azure.com/acme#g' -e 's/{{ADO_PROJECT}}/ACME/g' \
+    -e 's/{{ADO_WORK_ITEM_TYPE}}/User Story/g' -e 's#{{SERVER_URL}}#https://staging.acme.example#g' \
+    -e 's#{{PRODUCTION_URL}}#https://bizuit.acme.example#g' -e 's/{{SQL_HOST}}/localhost/g' -e 's/{{DATABASE}}/AcmeDb/g' \
+    -e 's/{{TABLE_PREFIX}}/AC_/g' -e 's/{{DOTNET_SDK}}/9.0.x/g' -e 's/{{DATE}}/2026-10-14/g' "$1" > "$2"; }
+  rend "$TPL/pipelines/backend-ci.yml" "$J/back/azure-pipelines.yml"
+  rend "$TPL/pipelines/backend-prod.yml" "$J/back/azure-pipelines-prod.yml"
+  rend "$TPL/pipelines/forms-ci.yml" "$J/forms/azure-pipelines.yml"
+  rend "$TPL/pipelines/forms-prod.yml" "$J/forms/azure-pipelines-prod.yml"
+  rend "$TPL/pipelines/stories-gate.yml" "$J/stories/azure-pipelines.yml"
+  for d in backend forms stories common; do for f in "$TPL/$d"/*; do
+    case "$f" in *.template) continue ;; esac   # el catálogo de producción se escribe con el editor, nunca con el shell
+    rend "$f" "$J/$( [ "$d" = backend ] && echo back || { [ "$d" = common ] && echo stories || echo "$d"; })/$(basename "$f")"
+  done; done
+  rc=$(node "$AQUI/scripts/ci/check-unreplaced-placeholders.js" "$J/back" "$J/forms" "$J/stories" >"$TMP/out.txt" 2>&1; echo $?)
+  [ "$rc" -eq 0 ] && ok "plantillas del alta: el producto de juguete no deja ningún marcador vivo" \
+    || no "🔴 plantillas del alta: marcadores vivos (salió $rc): $(cat "$TMP/out.txt")"
+  YMLS="$J/back/azure-pipelines.yml $J/back/azure-pipelines-prod.yml $J/forms/azure-pipelines.yml $J/forms/azure-pipelines-prod.yml $J/stories/azure-pipelines.yml"
+  for c in check-stage-dependencies check-conditional-writes check-tolerant-steps check-artifact-paths; do
+    # shellcheck disable=SC2086
+    rc=$(node "$AQUI/scripts/ci/$c.js" $YMLS >"$TMP/out.txt" 2>&1; echo $?)
+    [ "$rc" -eq 0 ] && ok "plantillas del alta: $c en verde sobre los cinco pipelines" \
+      || no "🔴 plantillas del alta: $c salió $rc: $(tail -5 "$TMP/out.txt")"
+  done
+  rc=$(node "$AQUI/scripts/ci/check-trigger-without-docs.js" --file "$J/back/azure-pipelines.yml" --file "$J/forms/azure-pipelines.yml" >"$TMP/out.txt" 2>&1; echo $?)
+  [ "$rc" -eq 0 ] && ok "plantillas del alta: ningún pipeline construye con un merge de sólo documentación" \
+    || no "🔴 plantillas del alta: check-trigger-without-docs salió $rc: $(tail -6 "$TMP/out.txt")"
+  if python3 -c 'import yaml' >/dev/null 2>&1; then
+    rotos=""; for y in $YMLS; do python3 -c 'import yaml,sys; yaml.safe_load(open(sys.argv[1]))' "$y" >/dev/null 2>&1 || rotos="$rotos $(basename "$(dirname "$y")")/$(basename "$y")"; done
+    [ -z "$rotos" ] && ok "plantillas del alta: los cinco pipelines parsean" || no "🔴 plantillas del alta: no parsean:$rotos"
+  else
+    ok "NO MEDIDO: sin python3 con yaml no puedo parsear los pipelines de las plantillas — no es un verde"
+  fi
+fi
+
+# NewProductTemplates_HonorEveryTrait — con la lista real de productos, cada rasgo que le aplica a un grupo se cumple en
+# la plantilla de ese grupo (salvo las diferencias declaradas). Un producto nuevo nace igual que los que ya están al día.
+if lista_real_de_productos; then
+  res=$(node -e '
+const fs=require("fs"),path=require("path");
+const [cfgP,tpl,chk]=process.argv.slice(1);
+const {bloqueRaiz,normalizarGrupo}=require(chk);
+const cfg=JSON.parse(fs.readFileSync(cfgP,"utf8"));
+const files={backend:["backend-ci.yml"],frontend:["forms-ci.yml"],formularios:["forms-ci.yml"],prod:["backend-prod.yml","forms-prod.yml"]};
+const decl=new Set((cfg.diferencias_declaradas||[]).map(d=>d.grupo+"/"+d.rasgo));
+const bad=[]; let vistos=0;
+for (const [g,def] of Object.entries(cfg.grupos||{})) {
+  const G=normalizarGrupo(def); if (!files[g]) continue;
+  for (const r of cfg.rasgos||[]) {
+    if (!(r.grupos ? r.grupos.includes(g) : !G.soloExplicitos)) continue;
+    const rx=new RegExp(r.patron,"m");
+    for (const f of files[g]) {
+      const t=fs.readFileSync(path.join(tpl,f),"utf8"); vistos++;
+      if (!rx.test(r.bloque ? (bloqueRaiz(t,r.bloque)||"") : t) && !decl.has(g+"/"+r.id)) bad.push(g+"/"+r.id+" en "+f);
+    }
+  }
+}
+if (!vistos) bad.push("no se comparó ningún rasgo: el caso no mide nada");
+console.log(bad.join(" · "));' "$AQUI/scripts/ci/product-parity.json" "$TPL/pipelines" "$CHK")
+  [ -z "$res" ] && ok "plantillas del alta: cumplen cada rasgo de la lista real de productos" \
+    || no "🔴 plantillas del alta: rasgos que no cumplen: $res"
+else
+  sin_lista_real "plantillas-cumplen-los-rasgos"
+fi
+
 echo "─────────────"
 if [ "$fallos" -eq 0 ]; then echo "✅ paridad-entre-productos: todo verde"; exit 0; else echo "❌ paridad-entre-productos: $fallos falla(s)"; exit 1; fi

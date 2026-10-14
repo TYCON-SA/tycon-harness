@@ -407,15 +407,12 @@ function mirrorEnv(fx, { credential, env = {}, guides = true } = {}) {
 }
 
 /**
- * Corre mirror.js: `args[0]` es el subcomando. Por defecto pasa la configuración sintética por opción y toma agent-skills
- * de su HEAD (los internos de mentira no tienen remoto); `config: false` y `refs: false` dejan los valores por defecto.
+ * Corre mirror.js: `args[0]` es el subcomando (desde la story 8.26, AC 36, sólo `verify`). Por defecto pasa la lista de
+ * denegación y el nombre público sintéticos por opción; `config: false` deja los valores por defecto.
  */
 function mirror(fx, args, opts = {}) {
   const extra = [];
-  if (opts.config !== false) {
-    extra.push('--allowlist', fx.cfg.allowlist, '--replacements', fx.cfg.replacements, '--denied', fx.cfg.denied, '--public-repos', fx.cfg.publicRepos);
-  }
-  if (opts.refs !== false) extra.push('--agent-skills', 'HEAD');
+  if (opts.config !== false) extra.push('--denied', fx.cfg.denied, '--public-repos', fx.cfg.publicRepos);
   return run(opts.script || MIRROR, [args[0], ...extra, ...args.slice(1)], mirrorEnv(fx, opts), fx.dir, { umask: opts.umask });
 }
 
@@ -434,46 +431,31 @@ async function mirrorReadOnly(fx, args, opts = {}) {
 // ── el estado del público, armado a mano ───────────────────────────────────────────────────────────────────────────
 let serial = 0;
 
-/** El exportador, tal como lo llama el guion, sobre los internos de la fixture: lo que contestó, y dónde dejó la copia. */
-function runExporter(fx) {
-  const out = path.join(fx.dir, 'out', `copy-${++serial}`);
-  const r = spawnSync(process.execPath, [EXPORTER, '--package', 'core,bizuit', '--single-repo', '--output', out,
-    '--allowlist', fx.cfg.allowlist, '--replacements', fx.cfg.replacements, '--denied', fx.cfg.denied, '--public-repos', fx.cfg.publicRepos,
-    '--harness', 'HEAD', '--agent-skills', 'HEAD', '--json'], {
-    cwd: fx.dir, encoding: 'utf8', env: { ...withoutGit(process.env), TYCON_GUIDES_DIR: fx.harness, TYCON_SKILLS_DIR: fx.skills },
-  });
-  return { r, out };
-}
-
-/** La copia que publicaría la corrida: el exportador, tal como lo llama el guion, sobre los internos de la fixture. */
-function exportCopy(fx) {
-  const { r, out } = runExporter(fx);
-  assert.strictEqual(r.status, 0, `la fixture no pudo exportar: ${r.stderr}\n${r.stdout}`);
-  const json = JSON.parse(r.stdout);
-  const only = Object.keys(json.repos);
-  assert.strictEqual(only.length, 1, 'la fixture exporta un solo repo');
-  return { dir: out, tree: json.repos[only[0]].arbol, harness: json.fuentes.arnes.sha, skills: json.fuentes['agent-skills'].sha };
-}
-
-const trailers = (copy) => `Mirror-Harness-Commit: ${copy.harness}\nMirror-Agent-Skills-Commit: ${copy.skills}\nMirror-Tree: ${copy.tree}\n`;
-
 /** La identidad fija con que el guion firma sus commits, como ambiente de git: sale del exportador, no se copia acá. */
 function mirrorIdentity() {
   const fixed = require(EXPORTER).COMMIT_IDENTITY;
   return { GIT_AUTHOR_NAME: fixed.nombre, GIT_AUTHOR_EMAIL: fixed.email, GIT_COMMITTER_NAME: fixed.nombre, GIT_COMMITTER_EMAIL: fixed.email };
 }
 
-/**
- * Deja en `main` del público lo que deja la primera publicación: un commit raíz con el árbol exportado, los tres
- * trailers y la identidad fija de la copia.
- */
+// Lo publicado de partida: un árbol limpio, escrito directo en el público (story 8.26, AC 36: el público es la fuente y
+// el exportador ya no arma la copia que antes se sembraba acá). `harness` y `skills` son los commits de los internos de
+// mentira, para los trailers de `syncCommit`: `verify` ya no los compara con nada.
+const SEED_FILES = {
+  'README.md': '# Arnés de mentira\n\nPara probar la verificación de lo publicado.\n',
+  'LICENSE': PAPERS.LICENSE,
+  'guides/guia.md': '# Guía\n\nSegunda versión.\n',
+  'scripts/hola.js': "'use strict';\nmodule.exports = () => 'hola';\n",
+  'skills/tycon-pipeline/SKILL.md': '---\nname: tycon-pipeline\n---\n\nOrquesta el pipeline.\n',
+};
+
+/** Deja en `main` del público un commit raíz con el árbol de partida y la identidad fija de la copia. */
 function seedPublication(fx) {
-  const copy = exportCopy(fx);
-  const date = nextDate();
-  const root = gitFx(copy.dir, ['commit-tree', copy.tree, '-m', `Primera publicación\n\n${trailers(copy)}`], { env: { ...mirrorIdentity(), GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date } });
-  gitFx(copy.dir, ['update-ref', 'refs/heads/seed', root]);
-  gitFx(fx.bare, ['fetch', '-q', copy.dir, 'refs/heads/seed:refs/heads/main']);
-  return { ...copy, commit: root };
+  const harness = gitFx(fx.harness, ['rev-parse', 'HEAD']);
+  const skills = gitFx(fx.skills, ['rev-parse', 'HEAD']);
+  const commit = publicCommit(fx, { files: SEED_FILES, identity: mirrorIdentity(),
+    message: (tree) => `Primera publicación\n\nMirror-Harness-Commit: ${harness}\nMirror-Agent-Skills-Commit: ${skills}\nMirror-Tree: ${tree}\n` });
+  const tree = gitFx(fx.bare, ['rev-parse', `${commit}^{tree}`]);
+  return { commit, tree, harness, skills };
 }
 
 /**
@@ -601,14 +583,14 @@ test('Mirror_PublicRepos_InvalidOrMissing_Exit2', async () => {
   ];
   for (const [name, prepare, reason] of cases) {
     const file = prepare();
-    for (const command of ['plan', 'first', 'sync', 'verify']) {
+    for (const command of ['verify']) {
       const r = await mirrorReadOnly(fx, [command, '--public-repos', file], { credential: READER });
       assert.strictEqual(r.code, 2, `${name}, ${command}: sale 2\n${r.all}`);
       assert.match(r.err, reason, `${name}, ${command}: dice el motivo`);
     }
   }
   // con --json el motivo también va en el objeto
-  const r = await mirrorReadOnly(fx, ['plan', '--json', '--public-repos', path.join(fx.dir, 'cfg', 'no-existe.json')]);
+  const r = await mirrorReadOnly(fx, ['verify', '--json', '--public-repos', path.join(fx.dir, 'cfg', 'no-existe.json')]);
   assert.strictEqual(r.code, 2, r.all);
   assert.strictEqual(r.json.exit, 2);
   assert.match(r.json.message, /no pude leer el nombre público/);
@@ -622,9 +604,37 @@ test('Mirror_PublicRepos_InvalidOrMissing_Exit2', async () => {
   assert.deepStrictEqual(pushes(fx), [], 'ningún push');
 });
 
-// ── T2 · AC 2 ──────────────────────────────────────────────────────────────────────────────────────────────────────
-// la skill que sale con otro nombre: su nombre de adentro va por partes (el exportador lo reescribe en lo que publica)
-const RENAMED_SKILL = ['skills/bmad', 'create', 'story'].join('-');
+// story 8.26 (AC 36, T36): la mitad que llevaba la copia del exportador al público y absorbía los cambios ajenos ya no
+// existe. Cada uno de sus tres subcomandos sale 2 diciendo que ya no existe —no «subcomando desconocido», que se leería
+// como un error de tipeo—, sin leer el público, sin la API y sin empujar; también con --json y con las opciones que
+// tenían. Lo que queda es verify, y `module.exports` ya no trae nada de la sincronización.
+test('T36 Exporter_ClassifiesAndVerifiesOnly_AbsorbHalfRemoved — mirror.js: plan, first y sync ya no existen; queda verify', async () => {
+  const fx = await fixture();
+  seedPublication(fx);
+  for (const command of ['plan', 'first', 'sync']) {
+    for (const extra of [[], ['--json'], ['--harness', 'HEAD', '--agent-skills', 'HEAD']]) {
+      const r = await mirrorReadOnly(fx, [command, ...extra], { credential: WRITER_T36 });
+      assert.strictEqual(r.code, 2, `${command} ${extra.join(' ')}: sale 2\n${r.all}`);
+      assert.match(r.err, new RegExp(`${command} ya no existe: el repo público es la fuente`), `${command}: dice que ya no existe\n${r.all}`);
+      assert.doesNotMatch(r.err, /subcomando desconocido/, `${command}: no se confunde con un error de tipeo`);
+      if (extra.includes('--json')) assert.strictEqual(r.json && r.json.exit, 2, `${command} --json: el código también en el objeto`);
+    }
+  }
+  assert.deepStrictEqual(fx.api.requests, [], 'ninguno leyó la API');
+  assert.deepStrictEqual(pushes(fx), [], 'ningún push');
+  // verify sigue, y es directo aunque no se lo pidan: las tres partes de la sincronización dicen «no aplica»
+  const v = await verifyRun(fx);
+  assert.strictEqual(v.code, 0, v.all);
+  assert.deepStrictEqual(v.json.notApplicable.map((x) => x.part).sort(), ['f', 'i', 'j'], 'f, i y j: no aplica');
+  assert.strictEqual(v.json.direct, true, 'verify es siempre directo');
+  const mod = require(MIRROR);
+  assert.deepStrictEqual(mod.COMMANDS, ['verify'], 'el único subcomando');
+  for (const gone of ['STATES', 'TRAILERS', 'MARKS', 'nextVersion', 'versionDay', 'isSingleRepoTree']) {
+    assert.strictEqual(mod[gone], undefined, `module.exports ya no trae ${gone}`);
+  }
+  assert.ok(!fs.readFileSync(MIRROR, 'utf8').includes("'--output'"), 'el guion no le pide al exportador que arme ninguna copia');
+});
+const WRITER_T36 = 'escritor-de-mentira-t36';
 
 /**
  * La regla del número de versión vive en scripts/setup/harness/version-order.js (la comparte el merge por pedido):
@@ -656,476 +666,6 @@ function labWithFakeExporter(fx, answer, code = 0) {
   ].join('\n'));
   return path.join(lab, 'scripts', 'publishing', 'mirror.js');
 }
-
-test('Mirror_Preconditions_Exit2', async () => {
-  // (a) una lista blanca que deja un pendiente
-  let fx = await fixture();
-  let allow = clone(ALLOWLIST);
-  allow.packages.core.arnes.out.push({ glob: 'guides/guia.md', reason: 'espera a otra story', until: '9.9' });
-  fx.config({ allowlist: allow });
-  let r = await mirrorReadOnly(fx, ['plan']);
-  assert.strictEqual(r.code, 2, r.all);
-  assert.match(r.err, /pendiente/);
-  assert.match(r.err, /guides\/guia\.md/, 'nombra el pendiente');
-  // lo que escribe frena igual, sin escribir: `first` sobre ese repo vacío y `sync` sobre uno ya publicado
-  r = await mirrorReadOnly(fx, ['first'], { credential: WRITER });
-  assert.strictEqual(r.code, 2, `first: ${r.all}`);
-  assert.match(r.err, /pendiente/, 'first: nombra el caso');
-  fx = await fixture();
-  seedPublication(fx);
-  fx.config({ allowlist: allow });
-  r = await mirrorReadOnly(fx, ['sync'], { credential: WRITER });
-  assert.strictEqual(r.code, 2, `sync: ${r.all}`);
-  assert.match(r.err, /pendiente/, 'sync: nombra el caso');
-  assert.ok(fx.api.requests.length > 0, 'control: sync llegó a exportar (leyó antes las reglas de main)');
-
-  // (b) una exportación con dos repos: la exportación del guion es una constante y da uno; se ensaya con un exportador de mentira
-  fx = await fixture();
-  const two = { resultado: 0, pendientes: [], reemplazos: {}, fuentes: {}, repos: { arnes: { commit: 'a'.repeat(40), arbol: 'b'.repeat(40) }, 'agent-skills': { commit: 'c'.repeat(40), arbol: 'd'.repeat(40) } } };
-  r = await mirrorReadOnly(fx, ['plan'], { script: labWithFakeExporter(fx, two) });
-  assert.strictEqual(r.code, 2, r.all);
-  assert.match(r.err, /2 repos/, 'dice cuántos repos trae la exportación');
-
-  // (c) un árbol sin .github/SECURITY.md
-  fx = await fixture();
-  allow = clone(ALLOWLIST);
-  allow.synthetic = allow.synthetic.filter((s) => s.target !== '.github/SECURITY.md');
-  fx.config({ allowlist: allow });
-  r = await mirrorReadOnly(fx, ['plan']);
-  assert.strictEqual(r.code, 2, r.all);
-  assert.match(r.err, /\.github\/SECURITY\.md/, 'nombra el papel que falta');
-  assert.doesNotMatch(r.err, /CONTRIBUTING/, 'y sólo ése');
-  r = await mirrorReadOnly(fx, ['first'], { credential: WRITER });
-  assert.strictEqual(r.code, 2, `first: ${r.all}`);
-  assert.match(r.err, /\.github\/SECURITY\.md/, 'first: nombra el papel que falta');
-
-  // (d) un LICENSE que no es Apache-2.0
-  fx = await fixture();
-  write(fx.harness, { [`${PAPERS_DIR}/LICENSE`]: 'MIT License\n\nPermission is hereby granted, free of charge…\n' });
-  commit(fx.harness, 'otra licencia');
-  r = await mirrorReadOnly(fx, ['plan']);
-  assert.strictEqual(r.code, 2, r.all);
-  assert.match(r.err, /LICENSE/);
-  assert.match(r.err, /Apache/, 'dice qué licencia tiene que ser');
-
-  // (e) un árbol con la skill que no se publica · (f) otro con la que sale con otro nombre, con su nombre de adentro
-  for (const folder of ['skills/bizuit-sdd', RENAMED_SKILL]) {
-    fx = await fixture();
-    write(fx.skills, { [`${folder}/SKILL.md`]: '---\nname: una-skill\n---\n\nUna skill.\n' });
-    commit(fx.skills, 'una skill que no puede salir así');
-    allow = clone(ALLOWLIST);
-    allow.packages.core['agent-skills'].in.push(`${folder}/**`);
-    fx.config({ allowlist: allow });
-    r = await mirrorReadOnly(fx, ['plan']);
-    assert.strictEqual(r.code, 2, `${folder}: ${r.all}`);
-    assert.ok(r.err.includes(`${folder}/`), `${folder}: nombra la carpeta\n${r.err}`);
-  }
-
-  // con todo en su lugar, el mismo ensayo sale 0: lo que frenaba arriba era cada precondición
-  fx = await fixture();
-  r = await mirrorReadOnly(fx, ['plan']);
-  assert.strictEqual(r.code, 0, r.all);
-});
-
-// ── T3 · AC 3 ──────────────────────────────────────────────────────────────────────────────────────────────────────
-// Cada valor, por partes: [las partes, la regla que lo reconoce]. Ninguna línea de este archivo trae uno entero.
-const PROVIDER_SHAPES = [
-  [['AKIA', 'ABCDEFGHIJKLMNOP'], '', 'llave-aws'],
-  [['ghp', 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6'], '_', 'token-github'],
-  [['xoxb', '1234567890', 'abcdefghijkl'], '-', 'token-slack'],
-  [['-----BEGIN RSA', 'PRIVATE KEY-----'], ' ', 'llave-privada'],
-];
-const NOT_PROVIDER_SHAPES = [
-  [['SERVICE_API', 'KEY=0123456789abcdef0123'], '_'],          // sólo la reconoce la regla que mira el nombre de la variable
-  [['Server=db;Database=x;Pass', 'word=clave-de-mentira;'], ''],   // una clave en una cadena de conexión
-];
-
-test('Mirror_ProviderSecretShapes_Exit2', async () => {
-  // los valores enteros en un archivo que sale, cubiertos por una excepción: el exportador los deja pasar
-  let fx = await fixture();
-  const whole = PROVIDER_SHAPES.map(([parts, glue], i) => `const v${i} = '${parts.join(glue)}';`);
-  write(fx.harness, { 'scripts/formas.js': `'use strict';\n${whole.join('\n')}\n` });
-  commit(fx.harness, 'valores con forma de secreto de proveedor');
-  const denied = denylist();
-  denied.permitidos = [{ archivo: 'scripts/formas.js', motivo: 'valores de laboratorio de una prueba' }];
-  fx.config({ denied });
-  let r = await mirrorReadOnly(fx, ['plan']);
-  assert.strictEqual(r.code, 2, r.all);
-  PROVIDER_SHAPES.forEach(([parts, glue, rule], i) => {
-    const value = parts.join(glue);
-    assert.ok(r.err.includes(`scripts/formas.js:${i + 2}`), `${rule}: nombra archivo y línea\n${r.err}`);
-    assert.ok(r.err.includes(rule), `${rule}: nombra la regla\n${r.err}`);
-    assert.ok(r.err.includes(`${value.slice(0, 4)}***`), `${rule}: el valor sale enmascarado\n${r.err}`);
-    assert.ok(!r.all.includes(value), `${rule}: el valor entero no aparece en ninguna salida`);
-  });
-  assert.match(r.err, /por partes/, 'dice cómo se arregla');
-  const j = await mirrorReadOnly(fx, ['plan', '--json']);
-  assert.strictEqual(j.code, 2, j.all);
-  assert.deepStrictEqual(j.json.secretShapes.map((h) => `${h.file}:${h.line} ${h.rule}`),
-    PROVIDER_SHAPES.map(([, , rule], i) => `scripts/formas.js:${i + 2} ${rule}`));
-  for (const [parts, glue] of PROVIDER_SHAPES) assert.ok(!j.all.includes(parts.join(glue)), 'tampoco en --json');
-  // lo que escribe frena igual, sin escribir nada: lo empujado ya es público
-  const w = await mirrorReadOnly(fx, ['first'], { credential: WRITER });
-  assert.strictEqual(w.code, 2, `first: ${w.all}`);
-  assert.match(w.err, /forma de secreto de proveedor/, 'first: dice por qué');
-
-  // los mismos, armados por partes en el código: ninguna línea trae el valor
-  fx = await fixture();
-  const inParts = PROVIDER_SHAPES.map(([parts, glue], i) => `const v${i} = ${JSON.stringify(parts)}.join(${JSON.stringify(glue)});`);
-  write(fx.harness, { 'scripts/formas.js': `'use strict';\n${inParts.join('\n')}\n` });
-  commit(fx.harness, 'los mismos valores, por partes');
-  r = await mirrorReadOnly(fx, ['plan']);
-  assert.strictEqual(r.code, 0, r.all);
-
-  // las dos formas que no son de proveedor, cubiertas por una excepción: frenan donde siempre (el exportador), no acá
-  fx = await fixture();
-  write(fx.harness, { 'scripts/otras.txt': `${NOT_PROVIDER_SHAPES.map(([parts, glue]) => parts.join(glue)).join('\n')}\n` });
-  commit(fx.harness, 'un secreto por el nombre de la variable y una cadena de conexión');
-  r = await mirrorReadOnly(fx, ['plan']);
-  assert.strictEqual(r.code, 1, `control: sin excepción, el exportador las frena\n${r.all}`);
-  denied.permitidos = [{ archivo: 'scripts/otras.txt', motivo: 'valores de laboratorio de una prueba' }];
-  fx.config({ denied });
-  r = await mirrorReadOnly(fx, ['plan']);
-  assert.strictEqual(r.code, 0, r.all);
-});
-
-// ── T4 · AC 4 ──────────────────────────────────────────────────────────────────────────────────────────────────────
-test('Mirror_Plan_ReportsStateWithoutWrites', async () => {
-  const fx = await fixture();
-  const head = () => gitFx(fx.harness, ['rev-parse', 'HEAD']);
-
-  // sin refs
-  let r = await mirrorReadOnly(fx, ['plan', '--json']);
-  assert.strictEqual(r.code, 0, r.all);
-  assert.strictEqual(r.json.state, 'unpublished');
-  assert.strictEqual(r.json.message, 'no publicado');
-  assert.strictEqual(r.json.harness.sha, head(), 'el arnés, por defecto, en su HEAD');
-  r = await mirrorReadOnly(fx, ['plan']);
-  assert.strictEqual(r.code, 0, r.all);
-  assert.match(r.out, /no publicado/);
-
-  // igual
-  const seed = seedPublication(fx);
-  r = await mirrorReadOnly(fx, ['plan', '--json']);
-  assert.strictEqual(r.code, 0, r.all);
-  assert.strictEqual(r.json.state, 'unchanged');
-  assert.strictEqual(r.json.message, 'sin cambios');
-  assert.strictEqual(r.json.tree, seed.tree, 'el árbol que se publicaría');
-  assert.strictEqual(r.json.publicTip, seed.commit, 'la punta de main del público');
-  assert.deepStrictEqual(r.json.warnings, []);
-
-  // las referencias por defecto: el arnés en su HEAD y agent-skills en origin/main, cada una resuelta una vez a un sha
-  gitFx(fx.skills, ['update-ref', 'refs/remotes/origin/main', 'HEAD']);
-  r = await mirrorReadOnly(fx, ['plan', '--json'], { refs: false });
-  assert.strictEqual(r.code, 0, r.all);
-  assert.deepStrictEqual(r.json.harness, { ref: 'HEAD', sha: head() });
-  assert.deepStrictEqual(r.json.agentSkills, { ref: 'origin/main', sha: gitFx(fx.skills, ['rev-parse', 'HEAD']) });
-  assert.strictEqual(r.json.state, 'unchanged');
-
-  // distinto: uno agregado, uno modificado, uno borrado
-  write(fx.harness, { 'scripts/nuevo.js': "'use strict';\nmodule.exports = 3;\n", 'guides/guia.md': '# Guía\n\nTercera versión.\n', 'scripts/hola.js': null });
-  commit(fx.harness, 'un cambio interno');
-  r = await mirrorReadOnly(fx, ['plan', '--json']);
-  assert.strictEqual(r.code, 0, r.all);
-  assert.strictEqual(r.json.state, 'changes');
-  assert.strictEqual(r.json.message, 'cambios');
-  assert.deepStrictEqual(r.json.counts, { added: 1, modified: 1, deleted: 1 });
-  assert.deepStrictEqual(r.json.paths, [
-    { status: 'modified', path: 'guides/guia.md' }, { status: 'deleted', path: 'scripts/hola.js' }, { status: 'added', path: 'scripts/nuevo.js' },
-  ]);
-  assert.strictEqual(r.json.pathsOmitted, 0);
-  r = await mirrorReadOnly(fx, ['plan']);
-  assert.match(r.out, /cambios/);
-  assert.match(r.out, /1 agregado.*1 modificado.*1 borrado/s);
-  assert.match(r.out, /scripts\/nuevo\.js/);
-
-  // muchas rutas: la cuenta entera y hasta 50 rutas
-  const many = {};
-  for (let i = 0; i < 60; i++) many[`guides/muchas/nota-${String(i).padStart(2, '0')}.md`] = `# Nota ${i}\n`;
-  write(fx.harness, many);
-  commit(fx.harness, 'sesenta archivos más');
-  r = await mirrorReadOnly(fx, ['plan', '--json']);
-  assert.strictEqual(r.json.state, 'changes', r.all);
-  assert.deepStrictEqual(r.json.counts, { added: 61, modified: 1, deleted: 1 });
-  assert.strictEqual(r.json.paths.length, 50);
-  assert.strictEqual(r.json.pathsOmitted, 13);
-
-  // un cambio ajeno sin absorber: un commit en el main público que no viene de una sincronización
-  const foreign = publicCommit(fx, { parents: [seed.commit], files: { 'docs/ajeno.md': '# Ajeno\n' }, message: 'Un cambio mergeado en GitHub' });
-  r = await mirrorReadOnly(fx, ['plan', '--json']);
-  assert.strictEqual(r.code, 1, r.all);
-  assert.strictEqual(r.json.state, 'foreign-changes');
-  assert.strictEqual(r.json.message, 'cambios ajenos sin traer');
-  assert.deepStrictEqual(r.json.foreign, [{ commit: foreign, paths: ['docs/ajeno.md'], absorbed: false, discarded: false }]);
-  r = await mirrorReadOnly(fx, ['plan']);
-  assert.strictEqual(r.code, 1, r.all);
-  assert.match(r.all, /cambios ajenos sin traer/);
-  assert.ok(r.all.includes(foreign) && r.all.includes('docs/ajeno.md'), 'dice el sha y la ruta');
-
-  assert.deepStrictEqual(fx.api.writes(), [], '0 pedidos de escritura en toda la prueba');
-  assert.deepStrictEqual(pushes(fx), [], 'ningún push en toda la prueba');
-});
-
-test('Mirror_Plan_ReportsStateWithoutWrites — un repo privado se lee con el token; sin él, sale 2 con su motivo', async () => {
-  const fx = await fixture();
-  seedPublication(fx);
-  fx.api.state.credential = READER;
-  fx.api.state.repo.private = true;
-  const github = fakeGit(fx, { requires: READER });
-  let r = await mirrorReadOnly(fx, ['plan', '--json'], { env: github.env });
-  assert.strictEqual(r.code, 2, r.all);
-  assert.match(r.err, /no pude leer: el repo es privado/);
-  assert.match(r.err, /falta el token de lectura/);
-  r = await mirrorReadOnly(fx, ['plan', '--json'], { env: github.env, credential: READER });
-  assert.strictEqual(r.code, 0, r.all);
-  assert.strictEqual(r.json.state, 'unchanged');
-  assert.ok(!r.all.includes(READER), 'el token no aparece en ninguna salida');
-  // con un token que GitHub no acepta: 2, y no dice «falta»
-  r = await mirrorReadOnly(fx, ['plan'], { env: github.env, credential: 'otro-lector-0002' });
-  assert.strictEqual(r.code, 2, r.all);
-  assert.doesNotMatch(r.err, /falta el token/);
-  assert.ok(!r.all.includes('otro-lector-0002'));
-  assert.deepStrictEqual(fx.api.writes(), []);
-});
-
-test('Mirror_Plan_ReportsStateWithoutWrites — qué es un cambio ajeno, y cuándo está absorbido (AC 8)', async () => {
-  const fx = await fixture();
-  const seed = seedPublication(fx);
-  const state = async () => {
-    const r = await mirrorReadOnly(fx, ['plan', '--json']);
-    assert.ok(r.json && r.json.state, r.all);
-    return r.json;
-  };
-  const merge = (first, second, from = second) => publicCommit(fx, { parents: [first, second], from, message: 'Merge pull request #1' });
-
-  // una sincronización mergeada no es un cambio ajeno
-  const sync = syncCommit(fx, seed, { parent: seed.commit });
-  const merged = merge(seed.commit, sync);
-  let j = await state();
-  assert.strictEqual(j.state, 'unchanged');
-  assert.deepStrictEqual(j.foreign, []);
-
-  // un commit posterior que no viene de una sincronización, sí: sólo él
-  const foreign = publicCommit(fx, { parents: [merged], files: { 'docs/ajeno.md': '# Ajeno\n' }, message: 'Un cambio mergeado en GitHub' });
-  j = await state();
-  assert.strictEqual(j.state, 'foreign-changes');
-  assert.deepStrictEqual(j.foreign.map((f) => f.commit), [foreign]);
-
-  // absorbido: su sha en una marca de la historia interna, en cualquiera de los dos repos. El interno es la fuente:
-  // lo que el público tiene de más se va con la sincronización siguiente
-  commit(fx.skills, `Traer un cambio del público\n\nPublic-Commit: ${foreign}`, { allowEmpty: true });
-  j = await state();
-  assert.strictEqual(j.state, 'changes');
-  assert.deepStrictEqual(j.foreign, [{ commit: foreign, paths: ['docs/ajeno.md'], absorbed: true, discarded: false }]);
-  assert.deepStrictEqual(j.paths, [{ status: 'deleted', path: 'docs/ajeno.md' }]);
-
-  // la marca tiene que estar en la historia HASTA el commit que se exporta: con el anterior, sigue sin absorber
-  j = (await mirrorReadOnly(fx, ['plan', '--json', '--agent-skills', 'HEAD~1'])).json;
-  assert.strictEqual(j.state, 'foreign-changes');
-
-  // otro, descartado: la marca y la del descarte, en el mismo commit
-  const dropped = publicCommit(fx, { parents: [foreign], files: { 'docs/otro.md': '# Otro\n' }, message: 'Otro cambio mergeado en GitHub' });
-  j = await state();
-  assert.strictEqual(j.state, 'foreign-changes');
-  assert.deepStrictEqual(j.foreign.filter((f) => !f.absorbed).map((f) => f.commit), [dropped]);
-  commit(fx.harness, `Descartar un cambio del público\n\nPublic-Commit: ${dropped}\nPublic-Commit-Discarded: no lo queremos`, { allowEmpty: true });
-  j = await state();
-  assert.strictEqual(j.state, 'changes');
-  assert.deepStrictEqual(j.foreign.map((f) => `${f.commit} ${f.absorbed} ${f.discarded}`), [`${dropped} true true`, `${foreign} true false`]);
-
-  // un merge cuyo segundo padre copia los trailers de una sincronización, con otro árbol, sigue siendo ajeno
-  const fake = publicCommit(fx, { parents: [dropped], files: { 'docs/falso.md': '# Falso\n' }, message: `Sincronización\n\n${trailers(seed)}`, ref: null });
-  const forged = merge(dropped, fake);
-  j = await state();
-  assert.strictEqual(j.state, 'foreign-changes');
-  assert.deepStrictEqual(j.foreign.filter((f) => !f.absorbed).map((f) => f.commit), [forged]);
-
-  // un cambio ajeno mergeado justo ANTES que la sincronización —que no lo contiene— no queda tapado por ese merge
-  gitFx(fx.bare, ['update-ref', 'refs/heads/main', merged]);
-  const early = publicCommit(fx, { parents: [merged], files: { 'docs/antes.md': '# Antes\n' }, message: 'Mergeado antes que la sincronización' });
-  const later = syncCommit(fx, seed, { parent: merged });
-  merge(early, later, early);
-  j = await state();
-  assert.strictEqual(j.state, 'foreign-changes');
-  assert.deepStrictEqual(j.foreign.map((f) => f.commit), [early]);
-
-  // un público que no salió de una publicación: todo es ajeno
-  for (const ref of refsOf(fx.bare).split('\n').filter(Boolean).map((l) => l.split(' ')[0])) gitFx(fx.bare, ['update-ref', '-d', ref]);
-  const alien = publicCommit(fx, { files: { 'README.md': '# Otro repo\n' }, message: 'Initial commit' });
-  j = await state();
-  assert.strictEqual(j.state, 'foreign-changes');
-  assert.deepStrictEqual(j.foreign.map((f) => `${f.commit} ${f.paths.join(',')}`), [`${alien} README.md`]);
-});
-
-// ── T5 · AC 4 ──────────────────────────────────────────────────────────────────────────────────────────────────────
-/**
- * El arnés de laboratorio: el interno de mentira con los guiones copiados adentro y la configuración SINTÉTICA con sus
- * nombres por defecto, commiteada. Así el guion lee «su» configuración del disco, como en el repo de verdad.
- */
-function labHarness(fx) {
-  for (const folder of ['publishing', 'lib']) {
-    const from = path.join(RAIZ, 'scripts', folder);
-    fs.mkdirSync(path.join(fx.harness, 'scripts', folder), { recursive: true });
-    for (const f of fs.readdirSync(from)) if (f.endsWith('.js')) fs.copyFileSync(path.join(from, f), path.join(fx.harness, 'scripts', folder, f));
-  }
-  copyVersionRule(fx.harness);
-  const allow = clone(ALLOWLIST);
-  allow.packages.core.arnes.out = [
-    { glob: 'guides/bizuit/*.md', reason: 'va al paquete bizuit' },
-    { glob: 'scripts/publishing/**', reason: 'laboratorio: los guiones copiados no son parte de lo que se prueba' },
-    { glob: 'scripts/lib/**', reason: 'laboratorio: los guiones copiados no son parte de lo que se prueba' },
-    { glob: 'scripts/setup/**', reason: 'laboratorio: los guiones copiados no son parte de lo que se prueba' },
-  ];
-  const defaults = { 'allowlist.json': allow, 'replacements.json': REPLACEMENTS, 'denylist.json': denylist(), 'public-repos.json': PUBLIC };
-  for (const [name, content] of Object.entries(defaults)) fs.writeFileSync(path.join(fx.harness, 'scripts', 'publishing', name), `${JSON.stringify(content, null, 2)}\n`);
-  commit(fx.harness, 'los guiones y su configuración por defecto');
-  return { script: path.join(fx.harness, 'scripts', 'publishing', 'mirror.js'), config: false, guides: false };
-}
-
-test('Mirror_Plan_ConfigFromAnotherCommit_WarnsOrExit2', async () => {
-  // (a) --harness que no es el HEAD del clon
-  let fx = await fixture();
-  let r = await mirrorReadOnly(fx, ['plan', '--json', '--harness', fx.first.harness]);
-  assert.strictEqual(r.code, 0, r.all);
-  assert.strictEqual(r.json.harness.sha, fx.first.harness);
-  assert.strictEqual(r.json.warnings.length, 1, 'plan avisa');
-  assert.match(r.json.warnings[0], /HEAD/);
-  r = await mirrorReadOnly(fx, ['plan', '--harness', fx.first.harness]);
-  assert.match(r.all, /HEAD/, 'el aviso también sale sin --json');
-  for (const command of ['first', 'sync']) {
-    r = await mirrorReadOnly(fx, [command, '--harness', fx.first.harness], { credential: READER });
-    assert.strictEqual(r.code, 2, `${command}: ${r.all}`);
-    assert.match(r.err, /HEAD/, `${command}: nombra la causa`);
-  }
-
-  // (b) el denylist.json POR DEFECTO modificado sin commitear, en un arnés de laboratorio
-  fx = await fixture();
-  const lab = labHarness(fx);
-  r = await mirrorReadOnly(fx, ['plan', '--json'], lab);
-  assert.strictEqual(r.code, 0, r.all);
-  assert.deepStrictEqual(r.json.warnings, [], 'control: con la configuración commiteada no hay nada que avisar');
-  const file = path.join(fx.harness, 'scripts', 'publishing', 'denylist.json');
-  fs.writeFileSync(file, `${JSON.stringify(denylist())}\n`);   // el mismo contenido con otro formato: sólo cambia el archivo
-  r = await mirrorReadOnly(fx, ['plan', '--json'], lab);
-  assert.strictEqual(r.code, 0, r.all);
-  assert.strictEqual(r.json.warnings.length, 1, 'plan avisa');
-  assert.match(r.json.warnings[0], /denylist\.json/);
-  for (const command of ['first', 'sync']) {
-    r = await mirrorReadOnly(fx, [command], { ...lab, credential: READER });
-    assert.strictEqual(r.code, 2, `${command}: ${r.all}`);
-    assert.match(r.err, /denylist\.json/, `${command}: nombra la causa`);
-  }
-
-  // (c) ese mismo archivo pasado por opción no se compara
-  r = await mirrorReadOnly(fx, ['plan', '--json', '--denied', file], lab);
-  assert.strictEqual(r.code, 0, r.all);
-  assert.deepStrictEqual(r.json.warnings, []);
-
-  // y los otros tres por defecto se miran igual: cada uno, modificado sin commitear, se nombra
-  for (const name of ['allowlist.json', 'replacements.json', 'public-repos.json']) {
-    const other = path.join(fx.harness, 'scripts', 'publishing', name);
-    const original = fs.readFileSync(other);
-    fs.writeFileSync(other, `${JSON.stringify(JSON.parse(original.toString('utf8')))}\n`);
-    r = await mirrorReadOnly(fx, ['plan', '--json', '--denied', file], lab);
-    assert.strictEqual(r.code, 0, `${name}: ${r.all}`);
-    assert.strictEqual(r.json.warnings.length, 1, `${name}: plan avisa`);
-    assert.ok(r.json.warnings[0].includes(name), `${name}: lo nombra`);
-    fs.writeFileSync(other, original);
-  }
-});
-
-// ── T6 · AC 5 ──────────────────────────────────────────────────────────────────────────────────────────────────────
-test('Mirror_Plan_ExporterFindings_PropagatesExit', async () => {
-  // un término de la lista sin par: el exportador encuentra el nombre en lo que sale y sale 1
-  let fx = await fixture();
-  write(fx.harness, { 'README.md': '# Arnés de mentira\n\nLo usa AcmeCorp todos los días.\n' });
-  commit(fx.harness, 'un nombre en lo que sale');
-  fx.config({ replacements: { pares: [], afuera: [] } });
-  let r = await mirrorReadOnly(fx, ['plan']);
-  assert.strictEqual(r.code, 1, r.all);
-  assert.match(r.err, /exportador/, 'dice de quién es el hallazgo');
-  assert.match(r.err, /README\.md:3/, 'reproduce el resumen: dónde');
-  assert.doesNotMatch(r.all, /AcmeCorp/, 'el resumen dice dónde, no qué: lo hallado no se imprime');
-  r = await mirrorReadOnly(fx, ['plan', '--json']);
-  assert.strictEqual(r.code, 1, r.all);
-  assert.strictEqual(r.json.exporter.exit, 1);
-  assert.ok(r.json.exporter.findings.some((h) => h.file === 'README.md' && h.line === 3 && h.category === 'cliente'), JSON.stringify(r.json.exporter));
-  // lo que escribe sale con ese mismo código, sin escribir nada
-  r = await mirrorReadOnly(fx, ['first'], { credential: WRITER });
-  assert.strictEqual(r.code, 1, `first: ${r.all}`);
-  assert.match(r.err, /exportador/, 'first: dice de quién es el hallazgo');
-
-  // una lista blanca con un glob muerto: el exportador sale 2
-  fx = await fixture();
-  const allow = clone(ALLOWLIST);
-  allow.packages.core.arnes.in.push('no-existe/**');
-  fx.config({ allowlist: allow });
-  r = await mirrorReadOnly(fx, ['plan']);
-  assert.strictEqual(r.code, 2, r.all);
-  assert.match(r.err, /exportador/);
-  assert.match(r.err, /no coincide con nada/, 'reproduce el motivo del exportador');
-  r = await mirrorReadOnly(fx, ['plan', '--json']);
-  assert.strictEqual(r.code, 2, r.all);
-  assert.strictEqual(r.json.exporter.exit, 2);
-});
-
-// ── T35 · AC 29 ────────────────────────────────────────────────────────────────────────────────────────────────────
-test('Mirror_RenamePublicRepo_OnlyTheFileChanges', async () => {
-  // el público se llama `name-a` y ya está publicado
-  const fx = await fixture({ publicRepo: { ...PUBLIC, repo: 'name-a' } });
-  const seed = seedPublication(fx);
-  let r = await mirrorReadOnly(fx, ['plan', '--json']);
-  assert.strictEqual(r.code, 0, r.all);
-  assert.strictEqual(r.json.state, 'unchanged');
-  assert.strictEqual(r.json.publicTip, seed.commit);
-  // el guion del token, con una llave generada acá: pide un token limitado al repo que dice el archivo
-  const keyFile = path.join(fx.dir, 'app-key.pem');
-  fs.writeFileSync(keyFile, crypto.generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs1', format: 'pem' }), { mode: 0o600 });
-  const mint = async () => {
-    const env = { ...mirrorEnv(fx), TYCON_MIRROR_APP_ID: '424242', TYCON_MIRROR_INSTALLATION_ID: '98765432', TYCON_MIRROR_APP_KEY_FILE: keyFile };
-    const before = fx.api.requests.length;
-    const t = await run(tokenScript, ['--public-repos', fx.cfg.publicRepos], env, fx.dir);
-    assert.strictEqual(t.code, 0, t.all);
-    const asked = fx.api.requests.slice(before);
-    assert.deepStrictEqual(asked.map((q) => `${q.method} ${q.path}`), ['POST /app/installations/98765432/access_tokens'], 'un solo pedido, el del token');
-    return { credential: t.out.trim(), repositories: asked[0].body.repositories };
-  };
-  let minted = await mint();
-  assert.deepStrictEqual(minted.repositories, ['name-a'], 'el pedido del token nombra el repo del archivo');
-
-  // se cambia SÓLO esa línea del archivo: el repo nuevo existe y todavía no tiene nada
-  const text = fs.readFileSync(fx.cfg.publicRepos, 'utf8');
-  const renamed = text.replace('"repo": "name-a"', '"repo": "name-b"');
-  assert.strictEqual(renamed.split('\n').filter((l, i) => l !== text.split('\n')[i]).length, 1, 'control: cambió una sola línea');
-  fs.writeFileSync(fx.cfg.publicRepos, renamed);
-  const other = bareRepo(fx, { org: PUBLIC.org, repo: 'name-b' });
-  r = await mirrorReadOnly(fx, ['plan', '--json']);
-  assert.strictEqual(r.code, 0, r.all);
-  assert.strictEqual(r.json.state, 'unpublished', 'plan mira el repo nuevo');
-  assert.strictEqual(refsOf(other), '');
-
-  // el guion del token, sin tocar nada más: el pedido nombra el repo nuevo
-  fx.api.reset();
-  minted = await mint();
-  assert.deepStrictEqual(minted.repositories, ['name-b'], 'el pedido del token nombra el repo nuevo');
-  assert.strictEqual(minted.credential, fx.api.state.installation, 'y entrega el token por su salida');
-
-  // `sync` también, con ese token: lo publicado y un cambio interno, en el repo nuevo. La rama y el pull request van
-  // ahí, y sólo ahí
-  const old = { bare: fx.bare, refs: refsOf(fx.bare) };
-  fx.bare = other;
-  seedPublication(fx);
-  internalChange(fx);
-  fx.api.reset();
-  fx.api.state.credential = minted.credential;
-  r = await syncRun(fx, ['--json'], { credential: minted.credential });
-  assert.strictEqual(r.code, 0, r.all);
-  assert.deepStrictEqual(r.pushed, [SYNC_REF]);
-  assert.strictEqual(tipOf(other, SYNC_REF), r.json.commit, 'la rama de la sincronización, en el repo nuevo');
-  assert.strictEqual(refsOf(old.bare), old.refs, 'el repo de antes, sin tocar');
-  assert.ok(fx.api.requests.length > 0 && fx.api.requests.every((q) => q.path.startsWith(`/repos/${PUBLIC.org}/name-b`)), 'todos los pedidos a la API nombran el repo nuevo');
-  assert.deepStrictEqual(r.json.pullRequest, { number: 1, action: 'created' });
-});
 
 // ── T24 · AC 15 ────────────────────────────────────────────────────────────────────────────────────────────────────
 /** `verify`, comprobando además que no escribe nada y que ninguna salida trae el nombre ni la URL del repo. */
@@ -1500,17 +1040,14 @@ test('T24_Verify_WhatToDo_DependsOnHowFarItGot_MainPullRequestOrJustABranchOrTag
     assert.ok(f, `${name}: falta el hallazgo «${category}»\n${r.all}`);
     check(f);
   };
+  // (un commit escrito directo en `main` ya no es un «cambio ajeno»: el público es la fuente, story 8.26 AC 36)
   reset();
   publicCommit(fx, { parents: [seed.commit], files: { 'docs/ajeno.md': '# Ajeno\n' }, message: 'Un cambio mergeado en GitHub' });
-  const toTheGuide = (f) => {
-    assert.deepStrictEqual([f.reach, f.action, f.rotateFirst], ['guide', 'see-guide', false]);
-    assert.match(f.todo, /^qué hacer: guides\/publicacion-espejo\.md, §«Si `verify` da 1»$/);
-  };
-  await one('un cambio ajeno', 'foreign-change', toTheGuide);
-  // …y con el repo privado sigue remitiendo a la guía: el consejo del repo privado toca sólo lo que nombraba la purga
+  const direct = await verifyRun(fx);
+  assert.strictEqual(direct.code, 0, `un commit directo en main no es un hallazgo\n${direct.all}`);
+  // con el repo privado el consejo toca sólo lo que nombraba la purga
   fx.api.state.credential = READER;
   fx.api.state.repo.private = true;
-  await one('un cambio ajeno, con el repo privado', 'foreign-change', toTheGuide, { credential: READER });
   reset();
   gitFx(fx.bare, ['update-ref', `refs/replace/${seed.commit}`, seed.commit]);
   await one('una ref de reemplazo', 'replace-ref', (f) => assert.deepStrictEqual([f.part, f.action], ['c', 'delete']));
@@ -1843,12 +1380,12 @@ test('T24_Verify_DirectMode_OwnerCommitOnMainIsNotForeign_AndANoreplyIdentityIsN
   const asOwner = { ...owner, GIT_COMMITTER_NAME: owner.GIT_AUTHOR_NAME, GIT_COMMITTER_EMAIL: owner.GIT_AUTHOR_EMAIL };
   const direct = publicCommit(fx, { parents: [seed.commit], files: { 'docs/nuevo.md': '# Nuevo\n' }, message: 'docs: una guía nueva', identity: asOwner });
 
-  // sin --direct: es un cambio ajeno a la sincronización (la parte f, como siempre)… y NADA más: el `noreply` no es un hallazgo
+  // sin --direct es lo mismo (story 8.26, AC 36: verify es siempre directo): ese commit no es ajeno, y el `noreply` no es
+  // un hallazgo
   let r = await verifyRun(fx);
-  assert.strictEqual(r.code, 1, r.all);
-  assert.deepStrictEqual(r.json.findings.map((f) => `${f.part} ${f.category}`), ['f foreign-change']);
-  assert.ok(r.json.findings[0].place.includes(direct));
-  assert.strictEqual(r.json.direct, false);
+  assert.strictEqual(r.code, 0, r.all);
+  assert.deepStrictEqual(r.json.findings, []);
+  assert.strictEqual(r.json.direct, true);
 
   // con --direct: el público es la fuente. Ese commit no es ajeno, y las tres partes de la sincronización dicen «no aplica»
   r = await verifyRun(fx, ['--direct']);
@@ -1857,7 +1394,7 @@ test('T24_Verify_DirectMode_OwnerCommitOnMainIsNotForeign_AndANoreplyIdentityIsN
   assert.deepStrictEqual(r.json.couldNotLook, []);
   assert.strictEqual(r.json.direct, true);
   assert.deepStrictEqual(r.json.notApplicable.map((n) => n.part).sort(), ['f', 'i', 'j']);
-  for (const n of r.json.notApplicable) assert.match(n.reason, /--direct/);
+  for (const n of r.json.notApplicable) assert.match(n.reason, /el público es la fuente/);
   const plain = await verifyPlain(fx, ['--direct']);
   for (const part of ['f', 'i', 'j']) assert.match(plain.out, new RegExp(`\\(${part}\\) [^\\n]*: no aplica — el público es la fuente`));
   // …y lo demás se sigue mirando igual: el contenido, la identidad, lo que no es git
@@ -1871,9 +1408,10 @@ test('T24_Verify_DirectMode_OwnerCommitOnMainIsNotForeign_AndANoreplyIdentityIsN
   r = await verifyRun(fx, ['--direct', '--strict'], { credential: READER });
   assert.strictEqual(r.code, 0, r.all);
   fx.api.reset();
-  // con --direct no hacen falta los internos: una sincronización anterior que el interno no conoce no es «no pude mirar»
+  // las opciones de los internos ya no existen: se rechazan, no se ignoran en silencio
   r = await verifyRun(fx, ['--direct', '--harness', 'HEAD']);
-  assert.strictEqual(r.code, 0, r.all);
+  assert.strictEqual(r.code, 2, r.all);
+  assert.match(r.err, /opción desconocida: --harness/);
 
   // el `noreply` no tapa lo que sí se mira: el NOMBRE con que firma y la CUENTA de adentro del correo, contra la lista
   const check = async (identity, expected, what) => {
@@ -1914,14 +1452,8 @@ test('Mirror_Verify_ExitCodesAndNotMeasured', async () => {
   assert.ok(fx.api.requests.every((q) => q.headers.authorization === `Bearer ${READER}`), 'a la API le habla con el token');
   fx.api.reset();
 
-  // un cambio ajeno sin absorber: 1
-  const foreign = publicCommit(fx, { parents: [seed.commit], files: { 'docs/ajeno.md': '# Ajeno\n' }, message: 'Un cambio mergeado en GitHub' });
-  r = await verifyRun(fx);
-  assert.strictEqual(r.code, 1, r.all);
-  assert.deepStrictEqual(partsOf(r), ['f']);
-  assert.ok(r.json.findings[0].place.includes(foreign), 'el lugar es el commit');
-  // absorbido en la historia interna (la marca, puesta a mano), deja de serlo. Su contenido se mira como el de cualquier commit.
-  commit(fx.harness, `Traer un cambio del público\n\nPublic-Commit: ${foreign}`, { allowEmpty: true });
+  // un commit escrito directo en main no es un cambio ajeno (el público es la fuente): 0
+  publicCommit(fx, { parents: [seed.commit], files: { 'docs/ajeno.md': '# Ajeno\n' }, message: 'Un cambio mergeado en GitHub' });
   r = await verifyRun(fx);
   assert.strictEqual(r.code, 0, r.all);
   gitFx(fx.bare, ['update-ref', 'refs/heads/main', seed.commit]);
@@ -1968,7 +1500,7 @@ test('Mirror_Verify_ExitCodesAndNotMeasured', async () => {
   r = await verifyRun(fx, ['--strict'], { credential: READER });
   assert.strictEqual(r.code, 0, r.all);
   assert.deepStrictEqual(r.json.notMeasured, []);
-  assert.deepStrictEqual(r.json.notApplicable.map((n) => n.part).sort(), ['g', 'h']);
+  assert.deepStrictEqual(r.json.notApplicable.map((n) => n.part).sort(), ['f', 'g', 'h', 'i', 'j'], 'g y h con el repo privado; f, i y j siempre');
   assert.strictEqual(r.json.private, true);
   assert.ok(!fx.api.requests.some((q) => /secret-scanning|private-vulnerability-reporting/.test(q.path)), 'no pregunta por lo que no existe');
   h = await verifyPlain(fx, ['--strict'], { credential: READER });
@@ -2030,90 +1562,13 @@ test('Mirror_Verify_ExitCodesAndNotMeasured', async () => {
   assert.deepStrictEqual(fx.api.requests, []);
 });
 
-// ── lo que escribe: `first` y `sync` ───────────────────────────────────────────────────────────────────────────────
+// ── el token y las credenciales ──────────────────────────────────────────────────────────────────────────────────────
 const WRITER = 'escritor-de-mentira-0002';
 const AMBIENT = 'credencial-del-ambiente-0003';
 const MAIN_REF = 'refs/heads/main';
 const SYNC_REF = 'refs/heads/mirror/sync';
-// el título del pull request de la sincronización: un texto del guion, que T17 mete en la lista para probar que se revisa
-const PR_TITLE = 'Sincronización con los repos internos';
 const tipOf = (bare, ref) => gitFx(bare, ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`], { tolerate: true }).stdout.trim();
-const headOf = (dir) => gitFx(dir, ['rev-parse', 'HEAD']);
 const base64 = (credential) => authHeader(credential).split(' ').pop();
-
-/** Un commit del público, abierto: padres, árbol, identidad, fechas y mensaje. */
-function commitFacts(bare, sha) {
-  const format = '%P%x00%T%x00%an <%ae>%x00%ad%x00%cn <%ce>%x00%cd%x00%B';
-  const [parents, tree, author, authored, committer, committed, body] = gitFx(bare, ['log', '-1', '--date=raw', `--format=${format}`, sha]).split('\0');
-  return { parents: parents ? parents.split(' ') : [], tree, author, authored, committer, committed, body };
-}
-
-/**
- * Lo que tiene que traer un commit de la sincronización: la identidad fija, la fecha del interno más reciente, los tres
- * trailers y —desde la story 8.13 (AC 24)— `version.json`: el árbol del commit es el FINAL (el de la exportación más ese
- * archivo), y `Mirror-Tree` nombra ese mismo. Con `version`, además, que el número sea ése.
- */
-function assertMirrorCommit(fx, sha, { parents, tree, subject, version = null }, name) {
-  const fixed = require(EXPORTER).COMMIT_IDENTITY;
-  const identity = `${fixed.nombre} <${fixed.email}>`;
-  const newest = Math.max(...[fx.harness, fx.skills].map((dir) => Number(gitFx(dir, ['log', '-1', '--format=%ct', 'HEAD']))));
-  const facts = commitFacts(fx.bare, sha);
-  assert.deepStrictEqual(facts.parents, parents, `${name}: los padres`);
-  assert.strictEqual(facts.tree, tree, `${name}: el árbol es el final (el de la exportación más version.json)`);
-  const stamped = gitFx(fx.bare, ['show', `${sha}:version.json`], { tolerate: true });
-  assert.strictEqual(stamped.status, 0, `${name}: el commit trae version.json en su raíz\n${stamped.stderr}`);
-  const file = JSON.parse(stamped.stdout);
-  assert.deepStrictEqual(file.source, { harness: headOf(fx.harness), agent_skills: headOf(fx.skills) }, `${name}: version.json nombra los dos commits internos`);
-  assert.strictEqual(stamped.stdout, require(EXPORTER).versionFileBytes(file).toString('utf8'), `${name}: sus bytes son los de la función del exportador`);
-  assert.strictEqual(file.version.split('.').slice(0, 3).join('.'), new Date(newest * 1000).toISOString().slice(0, 10).replace(/-/g, '.'),
-    `${name}: la fecha de la versión es la del commit interno más reciente, en UTC`);
-  if (version) assert.strictEqual(file.version, version, `${name}: el número`);
-  assert.strictEqual(facts.author, identity, `${name}: el autor es la identidad fija de la copia`);
-  assert.strictEqual(facts.committer, identity, `${name}: el committer también`);
-  assert.strictEqual(facts.authored, `${newest} +0000`, `${name}: la fecha es la del commit interno más reciente, en UTC`);
-  assert.strictEqual(facts.committed, `${newest} +0000`, `${name}: la del committer también`);
-  assert.strictEqual(facts.body.trim(), [subject, '',
-    `Mirror-Harness-Commit: ${headOf(fx.harness)}`, `Mirror-Agent-Skills-Commit: ${headOf(fx.skills)}`, `Mirror-Tree: ${tree}`].join('\n'), `${name}: el mensaje, con los tres trailers`);
-  assert.ok(!gitFx(fx.bare, ['cat-file', 'commit', sha]).includes('gpgsig'), `${name}: sin firma`);
-  return facts;
-}
-
-/**
- * Una corrida de `sync`, con lo que vale para todas (T14): el `main` del público queda en el mismo sha, y lo que el
- * `--bare` anota como empujado va sólo a la rama de la sincronización.
- */
-async function syncRun(fx, args = [], opts = {}) {
-  const before = tipOf(fx.bare, MAIN_REF);
-  const logged = pushes(fx).length;
-  const r = await mirror(fx, ['sync', ...args], { credential: WRITER, ...opts });
-  assert.strictEqual(tipOf(fx.bare, MAIN_REF), before, `sync ${args.join(' ')}: el main del público no se mueve\n${r.all}`);
-  r.pushed = pushes(fx).slice(logged);
-  assert.ok(r.pushed.every((ref) => ref === SYNC_REF), `sync ${args.join(' ')}: sólo se empuja a la rama de la sincronización (${r.pushed.join(', ')})`);
-  return r;
-}
-
-/** La configuración sintética con un término más en la lista (y su par en la tabla: sin par, el exportador no arranca). */
-function withTerm(term, { denied = denylist() } = {}) {
-  denied.terminos.push({ patron: term, categoria: 'cliente' });
-  const replacements = clone(REPLACEMENTS);
-  replacements.pares.push({ real: term, categoria: 'cliente', formas: [{ texto: term, anonimo: 'Otro-Texto' }] });
-  return { denied, replacements };
-}
-
-/** Una HOME con la configuración de git que rompería todo si el guion la leyera: hooks que fallan, firma obligatoria, otra rama. */
-function hostileHome(fx) {
-  const home = path.join(fx.dir, 'home');
-  const hooks = path.join(home, 'hooks');
-  const log = path.join(home, 'hook.log');
-  fs.mkdirSync(hooks, { recursive: true });
-  for (const name of ['pre-push', 'pre-commit', 'commit-msg', 'pre-receive', 'update', 'post-receive', 'reference-transaction']) {
-    fs.writeFileSync(path.join(hooks, name), `#!/bin/sh\necho ${name} >> "${log}"\nexit 1\n`);
-    fs.chmodSync(path.join(hooks, name), 0o755);
-  }
-  fs.writeFileSync(path.join(home, '.gitconfig'), ['[core]', `\thooksPath = ${hooks}`, '[commit]', '\tgpgsign = true', '[gpg]', '\tprogram = /usr/bin/false',
-    '[init]', '\tdefaultBranch = otra', '[push]', '\tdefault = matching', '[user]', '\tname = Persona De La Maquina', '\temail = persona@example.com', ''].join('\n'));
-  return { log, env: { HOME: home, XDG_CONFIG_HOME: path.join(home, '.config'), TYCON_NO_NIGHTLY_EXAM: '1', TYCON_NO_GUI_ENV: '1', TYCON_CODEX: '0' } };
-}
 
 // ── T23 · AC 14 ────────────────────────────────────────────────────────────────────────────────────────────────────
 test('Mirror_Token_OnlyExplicitNeverInArgsNorDisk', async () => {
@@ -2122,54 +1577,42 @@ test('Mirror_Token_OnlyExplicitNeverInArgsNorDisk', async () => {
     GIT_ASKPASS: '', GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'http.https://github.com/.extraheader', GIT_CONFIG_VALUE_0: authHeader('abc'),
   });
 
-  // sin el token explícito y con credenciales de la máquina en el ambiente: lo que escribe no arranca
+  // sin el token explícito y con credenciales de la máquina en el ambiente: verify lee lo que es público, y esas
+  // credenciales no viajan: ni a git ni a la API
   let fx = await fixture();
   seedPublication(fx);
   let github = fakeGit(fx);
   const ambient = { ...github.env, GH_TOKEN: AMBIENT, GITHUB_TOKEN: AMBIENT };
-  for (const command of ['first', 'sync']) {
-    const r = await mirrorReadOnly(fx, [command], { env: ambient });
-    assert.strictEqual(r.code, 2, `${command}: ${r.all}`);
-    assert.match(r.err, /falta el token \(TYCON_MIRROR_TOKEN\)/, `${command}: dice qué falta`);
-    assert.ok(!r.all.includes(AMBIENT), `${command}: la credencial del ambiente no aparece`);
-  }
-  assert.deepStrictEqual(fx.api.requests, [], 'ningún pedido a la API');
-  assert.deepStrictEqual(remoteCalls(github), [], 'ninguna llamada de git al público');
-  // lo que sólo lee sí corre, y esas credenciales no viajan: ni a git ni a la API
-  for (const command of ['plan', 'verify']) {
+  for (const command of ['verify']) {
     const r = await mirrorReadOnly(fx, [command, '--json'], { env: ambient });
     assert.strictEqual(r.code, 0, `${command}: ${r.all}`);
     assert.ok(!r.all.includes(AMBIENT), `${command}: la credencial del ambiente no aparece`);
   }
-  assert.ok(remoteCalls(github).length >= 2, 'control: git habló con el público');
+  assert.ok(remoteCalls(github).length >= 1, 'control: git habló con el público');
   assert.ok(gitCalls(github).every((c) => !('GIT_CONFIG_COUNT' in c.env) && !('GIT_CONFIG_VALUE_0' in c.env)), 'git no recibe ninguna cabecera');
   assert.ok(fx.api.requests.length > 0, 'control: verify habló con la API');
   assert.ok(fx.api.requests.every((q) => q.headers.authorization === undefined), 'la API no recibe ninguna credencial');
   assert.ok(!JSON.stringify(fx.api.requests).includes(AMBIENT));
 
-  // con el token explícito: el que escribe lo manda a git por el ambiente y a la API en su cabecera, y a ningún otro lado
+  // con el token explícito: verify lo manda a git por el ambiente y a la API en su cabecera, y a ningún otro lado
   const header = authHeader(WRITER);
-  for (const [command, extra] of [['first', ['--json']], ['first', []], ['sync', ['--json']], ['sync', []]]) {
+  for (const [command, extra] of [['verify', ['--json']], ['verify', []]]) {
     const name = `${command} ${extra.join(' ')}`;
     fx = await fixture();
-    if (command === 'sync') {
-      seedPublication(fx);
-      write(fx.harness, { 'scripts/nuevo.js': "'use strict';\nmodule.exports = 3;\n" });
-      commit(fx.harness, 'un cambio interno');
-    }
+    seedPublication(fx);
     const tmp = path.join(fx.dir, 'tmp');
     fs.mkdirSync(tmp);
     github = fakeGit(fx, { requires: WRITER, watch: { dir: tmp, needles: [WRITER, base64(WRITER)] } });
     fx.api.state.credential = WRITER;
     const r = await mirror(fx, [command, ...extra], { credential: WRITER, env: { ...github.env, TMPDIR: tmp, GH_TOKEN: AMBIENT, GITHUB_TOKEN: AMBIENT } });
     assert.strictEqual(r.code, 0, `${name}: ${r.all}`);
-    assert.deepStrictEqual(pushes(fx), [command === 'first' ? MAIN_REF : SYNC_REF], `${name}: control, la corrida empujó`);
+    assert.deepStrictEqual(pushes(fx), [], `${name}: verify no empuja`);
     // ninguna salida lo trae, ni entero ni en la cabecera
     for (const secret of [WRITER, base64(WRITER), AMBIENT]) assert.ok(!r.all.includes(secret), `${name}: el token no aparece en ninguna salida`);
     // ningún argumento de git lo trae; el ambiente trae la cabecera sólo cuando git habla con el público
     const calls = gitCalls(github);
     const remote = calls.filter((c) => / (ls-remote|fetch|push) /.test(c.args));
-    assert.ok(remote.some((c) => / push /.test(c.args)), `${name}: control, hubo un push`);
+    assert.ok(remote.some((c) => / fetch /.test(c.args)), `${name}: control, git habló con el público`);
     for (const c of calls) {
       assert.ok(!c.args.includes(WRITER) && !c.args.includes(base64(WRITER)), `${name}: ningún argumento de git trae el token (${c.args.slice(0, 80)})`);
       assert.ok(!('TYCON_MIRROR_TOKEN' in c.env), `${name}: git no hereda la variable del token`);
@@ -2194,836 +1637,7 @@ test('Mirror_Token_OnlyExplicitNeverInArgsNorDisk', async () => {
   }
 });
 
-// ── T7 · AC 6 ──────────────────────────────────────────────────────────────────────────────────────────────────────
-test('Mirror_First_EmptyRemote_OneRootCommitThenVerify', async () => {
-  let fx = await fixture();
-  const home = hostileHome(fx);
-  const planned = await mirrorReadOnly(fx, ['plan', '--json']);
-  assert.strictEqual(planned.json.state, 'unpublished', planned.all);
-
-  const r = await mirror(fx, ['first', '--json'], { credential: WRITER, env: home.env });
-  assert.strictEqual(r.code, 0, r.all);
-  // main, y ninguna otra ref; un solo commit, sin padre, con el árbol que anunció `plan`
-  const tip = tipOf(fx.bare, MAIN_REF);
-  assert.strictEqual(refsOf(fx.bare), `${MAIN_REF} ${tip}`, 'main, y ninguna otra ref');
-  assert.strictEqual(gitFx(fx.bare, ['rev-list', '--count', '--all']), '1', 'un solo commit');
-  assertMirrorCommit(fx, tip, { parents: [], tree: planned.json.tree, subject: 'Primera publicación' }, 'first');
-  assert.strictEqual(r.json.outcome, 'published');
-  assert.strictEqual(r.json.commit, tip);
-  assert.strictEqual(r.json.tree, planned.json.tree);
-  // el anotador del --bare ve el empuje (el control positivo de T14), y es uno solo
-  assert.deepStrictEqual(pushes(fx), [MAIN_REF]);
-  assert.deepStrictEqual(fx.api.writes(), [], 'first no escribe nada por la API');
-  // la configuración hostil de la máquina no entró: ni sus hooks, ni su firma, ni su identidad
-  assert.ok(!fs.existsSync(home.log), 'ningún hook de la máquina corrió');
-  assert.ok(!gitFx(fx.bare, ['cat-file', 'commit', tip]).includes('Persona De La Maquina'));
-  // después corrió verify --strict, con el token, y dio 0: ése es el código de first
-  assert.strictEqual(r.json.verify.exit, 0);
-  assert.strictEqual(r.json.verify.strict, true);
-  assert.deepStrictEqual(r.json.verify.findings, []);
-  assert.deepStrictEqual(r.json.verify.notMeasured, []);
-  assert.ok(fx.api.requests.some((q) => q.path.endsWith('/secret-scanning/alerts') && q.headers.authorization === `Bearer ${WRITER}`), 'verify leyó las alertas con el token');
-
-  // sin --json dice lo mismo: qué publicó y qué dio verify
-  fx = await fixture();
-  let h = await mirror(fx, ['first'], { credential: WRITER });
-  assert.strictEqual(h.code, 0, h.all);
-  assert.match(h.out, /mirror first: publicado/);
-  assert.ok(h.out.includes(tipOf(fx.bare, MAIN_REF).slice(0, 12)), 'dice el commit');
-  assert.match(h.out, /mirror verify:/, 'y trae lo que miró verify');
-
-  // el código de first es el de verify --strict: con un hallazgo, 1 — y lo publicado, publicado está
-  fx = await fixture();
-  fx.api.state.vulnerabilityReporting = { enabled: false };
-  h = await mirror(fx, ['first', '--json'], { credential: WRITER });
-  assert.strictEqual(h.code, 1, h.all);
-  assert.strictEqual(h.json.verify.exit, 1);
-  assert.deepStrictEqual(h.json.verify.findings.map((f) => f.part), ['h']);
-  assert.strictEqual(h.json.commit, tipOf(fx.bare, MAIN_REF), 'main quedó publicado');
-  assert.match(h.err, /publicado/, 'dice que la publicación está hecha');
-  // y es estricto: algo sin medir es 2
-  fx = await fixture();
-  fx.api.override = (q) => (q.path.includes('secret-scanning') ? { status: 403, json: { message: 'Resource not accessible by integration' } } : null);
-  h = await mirror(fx, ['first', '--json'], { credential: WRITER });
-  assert.strictEqual(h.code, 2, h.all);
-  assert.deepStrictEqual(h.json.verify.notMeasured.map((n) => n.part), ['g']);
-  assert.ok(tipOf(fx.bare, MAIN_REF), 'main quedó publicado');
-
-  // el mensaje del commit pasa por la lista antes de empujar: con un término, 1 sin escribir nada
-  fx = await fixture();
-  fx.config(withTerm('Mirror-Tree'));
-  h = await mirrorReadOnly(fx, ['first'], { credential: WRITER });
-  assert.strictEqual(h.code, 1, h.all);
-  assert.match(h.err, /el mensaje del commit/, 'dice dónde');
-  assert.match(h.err, /cliente/, 'y la categoría');
-  assert.doesNotMatch(h.all, /Mirror-Tree/, 'no lo hallado');
-});
-
-// ── T8 · AC 6 ──────────────────────────────────────────────────────────────────────────────────────────────────────
-test('Mirror_First_RemoteWithRefs_Exit2', async () => {
-  // una rama cualquiera
-  let fx = await fixture();
-  publicCommit(fx, { files: { 'README.md': '# Algo\n' }, message: 'Una rama cualquiera', ref: 'refs/heads/otra' });
-  let r = await mirrorReadOnly(fx, ['first'], { credential: WRITER });
-  assert.strictEqual(r.code, 2, r.all);
-  assert.match(r.err, /ya tiene 1 ref/);
-  assert.match(r.err, /sync/, 'dice qué sigue');
-  // un tag solo también es una ref
-  fx = await fixture();
-  const loose = publicCommit(fx, { files: { 'README.md': '# Algo\n' }, message: 'Un commit suelto', ref: null });
-  gitFx(fx.bare, ['tag', 'v0', loose]);
-  r = await mirrorReadOnly(fx, ['first', '--json'], { credential: WRITER });
-  assert.strictEqual(r.code, 2, r.all);
-  assert.match(r.json.message, /ya tiene 1 ref/);
-  // y lo ya publicado no se pisa
-  fx = await fixture();
-  seedPublication(fx);
-  r = await mirrorReadOnly(fx, ['first'], { credential: WRITER });
-  assert.strictEqual(r.code, 2, r.all);
-  assert.match(r.err, /ya tiene/);
-  assert.deepStrictEqual(fx.api.requests, [], 'ni un pedido a la API');
-
-  // el repo deja de estar vacío entre la lectura y el push (otra corrida publicó antes): tampoco se pisa
-  fx = await fixture();
-  const theirs = publicCommit(fx, { files: { 'README.md': '# Lo de la otra corrida\n' }, message: 'Primera publicación, de otra corrida', ref: null });
-  const github = fakeGit(fx, { onPush: (git) => [`${git} -C "${fx.bare}" update-ref ${MAIN_REF} ${theirs}`] });
-  r = await mirror(fx, ['first'], { credential: WRITER, env: github.env });
-  assert.strictEqual(r.code, 2, r.all);
-  assert.match(r.err, /dejó de estar vacío/);
-  assert.strictEqual(remoteCalls(github, 'push').length, 1, 'un solo intento');
-  assert.strictEqual(tipOf(fx.bare, MAIN_REF), theirs, 'main queda con lo que publicó la otra corrida');
-  assert.deepStrictEqual(pushes(fx), [], 'nada de esta corrida llegó');
-});
-
-// ── la sincronización ──────────────────────────────────────────────────────────────────────────────────────────────
-let changeCount = 0;
-/** Un cambio en el arnés interno de mentira, commiteado: por defecto, un archivo nuevo que sale en la copia. */
-function internalChange(fx, files) {
-  changeCount += 1;
-  write(fx.harness, files || { [`scripts/cambio-${changeCount}.js`]: `'use strict';\nmodule.exports = ${changeCount};\n` });
-  return commit(fx.harness, `un cambio interno (${changeCount})`);
-}
-
-/** Una fixture ya publicada (como la deja `first`) y, salvo que se pida que no, con un cambio interno sin sincronizar. */
-async function published({ change = true } = {}) {
-  const fx = await fixture();
-  const seed = seedPublication(fx);
-  if (change) internalChange(fx);
-  return { fx, seed };
-}
-
 const openPulls = (fx) => fx.api.state.pulls.filter((p) => p.state === 'open');
-const writesOf = (fx) => fx.api.writes().map((q) => `${q.method} ${q.path.replace(/^\/repos\/[^/]+\/[^/]+/, '')}`);
-
-/** Lo que hace una persona en GitHub: mergea el pull request de la sincronización, con un commit de merge. */
-function mergeSync(fx) {
-  const sync = tipOf(fx.bare, SYNC_REF);
-  const merged = publicCommit(fx, { parents: [tipOf(fx.bare, MAIN_REF), sync], from: sync, message: 'Merge pull request #1 from example-org/mirror/sync' });
-  for (const pr of openPulls(fx)) pr.state = 'closed';
-  return merged;
-}
-
-/** Una corrida de `sync` que no puede haber escrito nada: ni un push, ni la rama, ni un pedido de escritura a la API. */
-async function syncWithoutWrites(fx, args = [], opts = {}) {
-  const branch = tipOf(fx.bare, SYNC_REF);
-  const written = fx.api.writes().length;
-  const r = await syncRun(fx, args, opts);
-  assert.deepStrictEqual(r.pushed, [], `sync ${args.join(' ')}: ningún push\n${r.all}`);
-  assert.strictEqual(tipOf(fx.bare, SYNC_REF), branch, `sync ${args.join(' ')}: la rama de la sincronización, como estaba`);
-  assert.strictEqual(fx.api.writes().length, written, `sync ${args.join(' ')}: ningún pedido de escritura a la API`);
-  return r;
-}
-
-// ── T9 · AC 7 ──────────────────────────────────────────────────────────────────────────────────────────────────────
-test('Mirror_Sync_RulesMissing_Exit2NoPush', async () => {
-  const { fx } = await published();
-  const without = (type) => (s) => { s.rules = s.rules.filter((rule) => rule.type !== type); };
-  const inRule = (type, change) => (s) => { change(s.rules.find((rule) => rule.type === type).parameters); };
-  const allow = ['allow_merge_commit', 'allow_squash_merge', 'allow_rebase_merge'];
-  // [el caso, cómo queda la API, lo que el mensaje tiene que nombrar, cuántas cosas faltan]
-  const cases = [
-    ['sin pull_request', without('pull_request'), /falta la regla pull_request/, 1],
-    ['con 0 aprobaciones', inRule('pull_request', (p) => { p.required_approving_review_count = 0; }), /required_approving_review_count/, 1],
-    ['sin la cuenta de aprobaciones', inRule('pull_request', (p) => { delete p.required_approving_review_count; }), /required_approving_review_count/, 1],
-    ['sin dismiss_stale_reviews_on_push', inRule('pull_request', (p) => { delete p.dismiss_stale_reviews_on_push; }), /dismiss_stale_reviews_on_push/, 1],
-    ['con dismiss_stale_reviews_on_push apagado', inRule('pull_request', (p) => { p.dismiss_stale_reviews_on_push = false; }), /dismiss_stale_reviews_on_push/, 1],
-    ['sin require_last_push_approval', inRule('pull_request', (p) => { p.require_last_push_approval = false; }), /require_last_push_approval/, 1],
-    ['sin non_fast_forward', without('non_fast_forward'), /non_fast_forward/, 1],
-    ['sin deletion', without('deletion'), /deletion/, 1],
-    ['sin required_status_checks', without('required_status_checks'), /required_status_checks/, 1],
-    ['con required_status_checks sin ningún chequeo', inRule('required_status_checks', (p) => { p.required_status_checks = []; }), /required_status_checks/, 1],
-    ['con squash permitido', (s) => { s.repo.allow_squash_merge = true; }, /allow_squash_merge/, 1],
-    ['con rebase permitido', (s) => { s.repo.allow_rebase_merge = true; }, /allow_rebase_merge/, 1],
-    ['sin commits de merge', (s) => { s.repo.allow_merge_commit = false; }, /allow_merge_commit/, 1],
-    ['sin los campos allow_*', (s) => { for (const k of allow) delete s.repo[k]; }, /no trae allow_merge_commit[\s\S]*no trae allow_squash_merge[\s\S]*no trae allow_rebase_merge/, 3],
-    ['con mirror/sync como rama por defecto', (s) => { s.repo.default_branch = 'mirror/sync'; }, /rama por defecto/, 1],
-    ['sin la rama por defecto en la respuesta', (s) => { delete s.repo.default_branch; }, /default_branch/, 1],
-    ['sin nada', (s) => { s.rules = [{ type: 'creation' }]; s.repo.allow_squash_merge = true; }, /pull_request[\s\S]*non_fast_forward[\s\S]*deletion[\s\S]*required_status_checks[\s\S]*allow_squash_merge/, 5],
-  ];
-  for (const [name, mutate, reason, missing] of cases) {
-    fx.api.reset();
-    mutate(fx.api.state);
-    const r = await syncWithoutWrites(fx);
-    assert.strictEqual(r.code, 2, `${name}: sale 2\n${r.all}`);
-    assert.match(r.err, reason, `${name}: nombra lo que falta`);
-    assert.strictEqual(r.err.split('\n').filter((l) => l.startsWith('  · ')).length, missing, `${name}: nombra sólo lo que falta\n${r.err}`);
-    assert.ok(fx.api.requests.some((q) => q.path.endsWith('/rules/branches/main')), `${name}: leyó las reglas activas de main`);
-  }
-  // con la lista de reglas vacía, el mensaje del ruleset
-  fx.api.reset();
-  fx.api.state.rules = [];
-  let r = await syncWithoutWrites(fx);
-  assert.strictEqual(r.code, 2, r.all);
-  assert.ok(r.err.includes('sin ruleset: una protección clásica de rama no cuenta, hace falta un ruleset (TH6)'), r.err);
-  // en --json, lo que falta va en una lista
-  fx.api.reset();
-  fx.api.state.rules = fx.api.state.rules.filter((rule) => rule.type !== 'deletion');
-  r = await syncWithoutWrites(fx, ['--json']);
-  assert.strictEqual(r.code, 2, r.all);
-  assert.strictEqual(r.json.rules.missing.length, 1);
-  assert.match(r.json.rules.missing[0], /deletion/);
-  // lo que no se pudo leer no se da por bueno: la API contesta mal, contesta otra cosa, o no contesta
-  const unreadable = [
-    ['las reglas, 500', (q) => (q.path.endsWith('/rules/branches/main') ? { status: 500, json: {} } : null)],
-    ['las reglas, algo que no es una lista', (q) => (q.path.endsWith('/rules/branches/main') ? { status: 200, json: { message: 'otra cosa' } } : null)],
-    ['las reglas, algo que no es JSON', (q) => (q.path.endsWith('/rules/branches/main') ? { status: 200, raw: '<html>' } : null)],
-    ['los datos del repo, 404', (q) => (/^\/repos\/[^/]+\/[^/]+$/.test(q.path) ? { status: 404, json: {} } : null)],
-  ];
-  for (const [name, override] of unreadable) {
-    fx.api.reset();
-    fx.api.override = override;
-    r = await syncWithoutWrites(fx);
-    assert.strictEqual(r.code, 2, `${name}: sale 2\n${r.all}`);
-    assert.match(r.err, /la API contestó|no contestó una lista/, `${name}: dice que no pudo leer`);
-  }
-  fx.api.reset();
-  r = await syncWithoutWrites(fx, [], { env: { TYCON_MIRROR_API_URL: `http://127.0.0.1:${await closedPort()}` } });
-  assert.strictEqual(r.code, 2, r.all);
-  assert.match(r.err, /no pude hablar con la API/);
-
-  // control: con las reglas en su lugar, esa misma corrida empuja — y las leyó antes de empujar
-  fx.api.reset();
-  r = await syncRun(fx);
-  assert.strictEqual(r.code, 0, r.all);
-  assert.deepStrictEqual(r.pushed, [SYNC_REF]);
-  assert.ok(/^\/repos\/[^/]+\/[^/]+$/.test(fx.api.requests[0].path) && fx.api.requests[1].path.endsWith('/rules/branches/main'),
-    'antes de empujar pregunta si el repo es privado y, como es público, las reglas');
-  // varias reglas del mismo tipo (dos rulesets activos) valen juntas: alcanza con que una pida cada cosa
-  fx.api.reset();
-  internalChange(fx);
-  fx.api.state.rules = [{ type: 'pull_request', parameters: { required_approving_review_count: 0 } }, ...FULL_RULES()];
-  r = await syncRun(fx);
-  assert.strictEqual(r.code, 0, r.all);
-});
-
-test('Mirror_Sync_PrivateRepo_NoRulesRequired', async () => {
-  // 2026-10-06 (decisión del dueño): con el repo PRIVADO no se exige ninguna regla. GitHub Free no las admite en un
-  // privado (la API de reglas contesta 403) y el único que escribe es el dueño: exigirlas frenaba toda sincronización
-  // y obligaba a recrear el repo por cualquier cambio.
-  const { fx } = await published();
-  fx.api.reset();
-  internalChange(fx);
-  fx.api.state.repo.private = true;
-  fx.api.state.rules = [];
-  fx.api.state.repo.allow_squash_merge = true;
-  fx.api.override = (q) => (q.path.endsWith('/rules/branches/main') ? { status: 403, json: { message: 'Upgrade to GitHub Pro or make this repository public to enable this feature.' } } : null);
-  const r = await syncRun(fx);
-  assert.strictEqual(r.code, 0, `privado, sin reglas y con la API de reglas en 403: empuja igual\n${r.all}`);
-  assert.deepStrictEqual(r.pushed, [SYNC_REF]);
-  assert.ok(!fx.api.requests.some((q) => q.path.endsWith('/rules/branches/main')), 'ni pregunta por las reglas');
-  // el mismo repo, público: vuelven a exigirse
-  fx.api.reset();
-  internalChange(fx);
-  fx.api.state.repo.private = false;
-  fx.api.state.rules = [];
-  const pub = await syncWithoutWrites(fx);
-  assert.strictEqual(pub.code, 2, `público y sin reglas: no empuja\n${pub.all}`);
-});
-
-// ── T10 · AC 8 ─────────────────────────────────────────────────────────────────────────────────────────────────────
-test('Mirror_Sync_ForeignChangeNotAbsorbed_Exit1', async () => {
-  const { fx, seed } = await published();
-  const foreign = publicCommit(fx, { parents: [seed.commit], files: { 'docs/ajeno.md': '# Ajeno\n' }, message: 'Un cambio mergeado en GitHub' });
-  let r = await syncWithoutWrites(fx);
-  assert.strictEqual(r.code, 1, r.all);
-  assert.match(r.err, /cambios ajenos sin traer/);
-  assert.ok(r.err.includes(`· ${foreign} — docs/ajeno.md`), `el sha entero, con su ruta\n${r.err}`);
-  // en esta tanda: la marca que lo resuelve, y el aviso de que los dos comandos que la escriben todavía no existen
-  assert.ok(r.err.includes(`Public-Commit: ${foreign}`), 'la marca, con el sha');
-  assert.match(r.err, /import --commit/);
-  assert.match(r.err, /--discard/);
-  assert.match(r.err, /llegan con la tanda C/);
-  assert.ok(r.err.includes('guides/publicacion-espejo.md, §«Cambios ajenos»'), 'remite a la guía');
-  assert.strictEqual(tipOf(fx.bare, SYNC_REF), '', 'la rama no se creó');
-  assert.deepStrictEqual(openPulls(fx), [], 'ni se abrió nada');
-
-  r = await syncWithoutWrites(fx, ['--json']);
-  assert.strictEqual(r.code, 1, r.all);
-  assert.strictEqual(r.json.outcome, 'foreign-changes');
-  assert.strictEqual(r.json.state, 'foreign-changes');
-  assert.deepStrictEqual(r.json.foreign, [{ commit: foreign, paths: ['docs/ajeno.md'], absorbed: false, discarded: false }]);
-
-  // con una sincronización abierta de antes, tampoco la toca
-  const { fx: other } = await published();
-  r = await syncRun(other);
-  assert.strictEqual(r.code, 0, r.all);
-  const before = clone(other.api.state.pulls);
-  publicCommit(other, { parents: [tipOf(other.bare, MAIN_REF)], files: { 'docs/ajeno.md': '# Ajeno\n' }, message: 'Un cambio mergeado en GitHub' });
-  internalChange(other);
-  r = await syncWithoutWrites(other);
-  assert.strictEqual(r.code, 1, r.all);
-  assert.deepStrictEqual(other.api.state.pulls, before, 'el pull request abierto queda como estaba');
-});
-
-// ── T11 · AC 8 ─────────────────────────────────────────────────────────────────────────────────────────────────────
-test('Mirror_Sync_ForeignAbsorbedThenNewChange_Heals', async () => {
-  const fixedInGithub = '# Guía\n\nSegunda versión, corregida en GitHub.\n';
-  for (const discard of [false, true]) {
-    const name = discard ? 'descartado' : 'traído';
-    const { fx, seed } = await published({ change: false });
-    const internal = gitFx(fx.harness, ['show', 'HEAD:guides/guia.md']);
-    // alguien mergea en GitHub un cambio que no salió del interno
-    const foreign = publicCommit(fx, { parents: [seed.commit], files: { 'guides/guia.md': fixedInGithub }, message: 'Un cambio mergeado en GitHub' });
-    let r = await syncWithoutWrites(fx);
-    assert.strictEqual(r.code, 1, `${name}, control: sin absorber frena\n${r.all}`);
-
-    // el interno lo absorbe: un commit en una rama con la marca ESCRITA A MANO (la que va a escribir `import`), y su merge
-    gitFx(fx.harness, ['checkout', '-q', '-b', 'absorber']);
-    if (discard) {
-      commit(fx.harness, `chore: descarta un cambio ajeno del repo público\n\nPublic-Commit: ${foreign}\nPublic-Commit-Discarded: no lo queremos`, { allowEmpty: true });
-    } else {
-      write(fx.harness, { 'guides/guia.md': fixedInGithub });
-      commit(fx.harness, `fix: trae la corrección del repo público\n\nPublic-Commit: ${foreign}`);
-    }
-    gitFx(fx.harness, ['checkout', '-q', 'main']);
-    const date = nextDate();
-    gitFx(fx.harness, ['merge', '-q', '--no-ff', '-m', 'Merge de la rama que absorbe el cambio', 'absorber'], { env: { GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date } });
-    // y después, otro cambio interno
-    internalChange(fx, { 'scripts/despues.js': "'use strict';\nmodule.exports = 9;\n" });
-
-    r = await syncRun(fx, ['--json']);
-    assert.strictEqual(r.code, 0, `${name}: ${r.all}`);
-    assert.deepStrictEqual(r.pushed, [SYNC_REF], `${name}: empuja`);
-    assert.deepStrictEqual(r.json.foreign, [{ commit: foreign, paths: ['guides/guia.md'], absorbed: true, discarded: discard }], name);
-    // el commit nuevo: padre = la punta pública (que ya contiene el cambio ajeno), árbol = la exportación
-    const branch = tipOf(fx.bare, SYNC_REF);
-    assertMirrorCommit(fx, branch, { parents: [foreign], tree: r.json.tree, subject: 'Sincronización' }, name);
-    assert.strictEqual(gitFx(fx.bare, ['show', `${branch}:scripts/despues.js`]), "'use strict';\nmodule.exports = 9;", `${name}: trae el cambio interno`);
-    // el interno es la fuente: traído, queda la corrección; descartado, el público vuelve a lo del interno
-    assert.strictEqual(`${gitFx(fx.bare, ['show', `${branch}:guides/guia.md`])}\n`, discard ? `${internal}\n` : fixedInGithub, name);
-    assert.strictEqual(openPulls(fx).length, 1, `${name}: abre el pull request`);
-    assert.strictEqual(r.json.pullRequest.action, 'created', name);
-
-    // mergeado en el público, la corrida siguiente dice «sin cambios»
-    mergeSync(fx);
-    r = await syncWithoutWrites(fx);
-    assert.strictEqual(r.code, 0, `${name}: ${r.all}`);
-    assert.match(r.out, /sin cambios/, name);
-  }
-});
-
-// ── T12 · AC 9 ─────────────────────────────────────────────────────────────────────────────────────────────────────
-test('Mirror_Sync_SameTreeOrUnpublished_NoOp', async () => {
-  // un repo sin refs: todavía no publicado
-  let fx = await fixture();
-  let r = await syncWithoutWrites(fx);
-  assert.strictEqual(r.code, 0, r.all);
-  assert.ok(r.out.includes('todavía no publicado: corré `first`'), r.all);
-  assert.strictEqual(refsOf(fx.bare), '', 'el repo sigue sin refs');
-  assert.deepStrictEqual(fx.api.requests, [], 'ni un pedido a la API');
-  r = await syncWithoutWrites(fx, ['--json']);
-  assert.strictEqual(r.code, 0, r.all);
-  assert.strictEqual(r.json.outcome, 'unpublished');
-  assert.strictEqual(r.json.message, 'todavía no publicado: corré `first`');
-
-  // el árbol igual al del público, sin nada abierto: sin cambios, y nada más
-  ({ fx } = await published({ change: false }));
-  r = await syncWithoutWrites(fx);
-  assert.strictEqual(r.code, 0, r.all);
-  assert.match(r.out, /sin cambios/);
-
-  // con un pull request abierto desde mirror/sync: lo cierra con el comentario. Uno de otra rama no se toca,
-  // aunque la API lo devuelva sin que se lo pidan
-  const stale = () => [
-    { number: 4, state: 'open', title: 'Sincronización', body: 'Lo de antes', head: { ref: 'mirror/sync' }, base: { ref: 'main' } },
-    { number: 5, state: 'open', title: 'De otra rama', body: '', head: { ref: 'otra-rama' }, base: { ref: 'main' } },
-    { number: 6, state: 'open', title: 'Del fork de alguien', body: '', head: { ref: 'mirror/sync', label: 'alguien:mirror/sync' }, base: { ref: 'main' } },
-  ];
-  fx.api.state.pulls = stale();
-  fx.api.override = (q) => (q.method === 'GET' && q.path.endsWith('/pulls') ? { status: 200, json: fx.api.state.pulls.filter((p) => p.state === 'open') } : null);
-  r = await syncRun(fx, ['--json']);
-  assert.strictEqual(r.code, 0, r.all);
-  assert.deepStrictEqual(r.pushed, [], 'no empuja');
-  assert.strictEqual(r.json.outcome, 'unchanged');
-  assert.strictEqual(r.json.message, 'sin cambios');
-  assert.deepStrictEqual(r.json.pullRequest, { number: 4, action: 'closed' });
-  assert.deepStrictEqual(writesOf(fx), ['POST /issues/4/comments', 'PATCH /pulls/4'], 'el comentario, y después el cierre');
-  assert.match(fx.api.writes()[0].body.body, /ya no hay diferencias con el interno/);
-  assert.deepStrictEqual(fx.api.writes()[1].body, { state: 'closed' });
-  assert.deepStrictEqual(fx.api.state.pulls.map((p) => p.state), ['closed', 'open', 'open']);
-  // sin --json también lo dice; y la corrida siguiente ya no tiene nada que cerrar
-  fx.api.reset();
-  fx.api.state.pulls = stale().slice(0, 1);
-  r = await syncRun(fx);
-  assert.strictEqual(r.code, 0, r.all);
-  assert.match(r.out, /sin cambios/);
-  assert.match(r.out, /pull request nº 4.*cerrado/);
-  r = await syncWithoutWrites(fx);
-  assert.strictEqual(r.code, 0, r.all);
-
-  // si no puede leer los pull requests abiertos, no decide nada: 2
-  fx.api.reset();
-  fx.api.state.pulls = stale().slice(0, 1);
-  fx.api.override = (q) => (q.method === 'GET' && q.path.endsWith('/pulls') ? { status: 500, json: {} } : null);
-  r = await syncWithoutWrites(fx);
-  assert.strictEqual(r.code, 2, r.all);
-  assert.match(r.err, /pull requests abiertos/);
-});
-
-// ── T13 · AC 10 ────────────────────────────────────────────────────────────────────────────────────────────────────
-test('Mirror_Sync_Changes_DeterministicCommitOnPublicTip', async () => {
-  const { fx, seed } = await published();
-  const one = await syncRun(fx, ['--json'], { env: { TZ: 'Pacific/Kiritimati', LANG: 'C', LC_ALL: 'C' } });
-  assert.strictEqual(one.code, 0, one.all);
-  assert.strictEqual(one.json.outcome, 'synced');
-  assert.deepStrictEqual(one.pushed, [SYNC_REF]);
-  assert.strictEqual(one.json.pushed, true);
-  // el commit de la rama: padre = la punta pública, árbol = la exportación, identidad, fecha y trailers fijos
-  const branch = tipOf(fx.bare, SYNC_REF);
-  assert.strictEqual(one.json.commit, branch);
-  assert.strictEqual(one.json.publicTip, seed.commit);
-  assertMirrorCommit(fx, branch, { parents: [seed.commit], tree: one.json.tree, subject: 'Sincronización' }, 'sync');
-  assert.notStrictEqual(one.json.tree, seed.tree, 'control: el árbol cambió');
-
-  // la segunda, con otro huso, otro idioma y otra máscara de permisos: el mismo commit, y no empuja ni escribe
-  const written = fx.api.writes().length;
-  const two = await syncRun(fx, ['--json'], { env: { TZ: 'America/Anchorage', LANG: 'es_AR.UTF-8', LC_ALL: 'es_AR.UTF-8' }, umask: '077' });
-  assert.strictEqual(two.code, 0, two.all);
-  assert.strictEqual(two.json.commit, branch, 'mismos commits internos y misma punta pública: el mismo commit');
-  assert.deepStrictEqual(two.pushed, [], 'la segunda no empuja');
-  assert.strictEqual(two.json.pushed, false);
-  assert.strictEqual(tipOf(fx.bare, SYNC_REF), branch);
-  assert.strictEqual(fx.api.writes().length, written, 'ni toca el pull request: ya dice lo mismo');
-  assert.deepStrictEqual(two.json.pullRequest, { number: 1, action: 'unchanged' });
-
-  // y si la rama no estuviera, vuelve a armar exactamente ese commit
-  gitFx(fx.bare, ['update-ref', '-d', SYNC_REF]);
-  const three = await syncRun(fx, ['--json'], { env: { TZ: 'UTC', LANG: 'en_US.UTF-8' }, umask: '002' });
-  assert.strictEqual(three.code, 0, three.all);
-  assert.deepStrictEqual(three.pushed, [SYNC_REF]);
-  assert.strictEqual(tipOf(fx.bare, SYNC_REF), branch, 'el mismo sha en una corrida aparte');
-
-  // otra punta pública (alguien mergeó la sincronización) u otros commits internos: otro commit
-  mergeSync(fx);
-  internalChange(fx);
-  const four = await syncRun(fx, ['--json']);
-  assert.strictEqual(four.code, 0, four.all);
-  assert.notStrictEqual(four.json.commit, branch);
-  assert.deepStrictEqual(commitFacts(fx.bare, four.json.commit).parents, [tipOf(fx.bare, MAIN_REF)]);
-});
-
-// ── T14 · AC 1, 10 ─────────────────────────────────────────────────────────────────────────────────────────────────
-// Cada caso de sincronización de esta suite pasa por `syncRun`, que comprueba que `main` no se movió y que lo empujado
-// fue sólo a la rama de la sincronización. Acá, el control positivo —el anotador sí ve un empuje a `main` cuando lo
-// hay— y el recorrido entero sobre un mismo repo.
-test('Mirror_Sync_NeverWritesPublicMain', async () => {
-  const fx = await fixture();
-  let r = await mirror(fx, ['first'], { credential: WRITER });
-  assert.strictEqual(r.code, 0, r.all);
-  assert.deepStrictEqual(pushes(fx), [MAIN_REF], 'control: el anotador del --bare ve el empuje de first a main');
-  const main = tipOf(fx.bare, MAIN_REF);
-
-  r = await syncRun(fx);                       // sin cambios
-  assert.strictEqual(r.code, 0, r.all);
-  assert.deepStrictEqual(r.pushed, []);
-  internalChange(fx);
-  r = await syncRun(fx);                       // con cambios: crea la rama
-  assert.strictEqual(r.code, 0, r.all);
-  assert.deepStrictEqual(r.pushed, [SYNC_REF]);
-  r = await syncRun(fx);                       // repetida
-  assert.deepStrictEqual(r.pushed, []);
-  internalChange(fx);
-  r = await syncRun(fx);                       // con más cambios: reemplaza la rama
-  assert.strictEqual(r.code, 0, r.all);
-  assert.deepStrictEqual(r.pushed, [SYNC_REF]);
-  internalChange(fx, { 'guides/guia.md': null });
-  r = await syncRun(fx, ['--json']);           // con borrados
-  assert.deepStrictEqual(r.pushed, [SYNC_REF]);
-  r = await mirror(fx, ['first'], { credential: WRITER });   // y `first` otra vez no publica dos veces
-  assert.strictEqual(r.code, 2, r.all);
-
-  assert.strictEqual(tipOf(fx.bare, MAIN_REF), main, 'main quedó donde lo dejó first');
-  assert.deepStrictEqual(pushes(fx), [MAIN_REF, SYNC_REF, SYNC_REF, SYNC_REF], 'todo lo empujado después de first fue a la rama de la sincronización');
-  assert.deepStrictEqual(refsOf(fx.bare).split('\n').map((l) => l.split(' ')[0]), [MAIN_REF, SYNC_REF], 'y no hay ninguna otra ref');
-  assert.deepStrictEqual(commitFacts(fx.bare, tipOf(fx.bare, SYNC_REF)).parents, [main], 'la rama sale de main');
-
-  // en el código: dos lugares empujan, cada uno con su ref escrita adentro, y main está en uno solo
-  const sites = fs.readFileSync(MIRROR, 'utf8').split('\n').filter((l) => l.includes("['push'"));
-  assert.strictEqual(sites.length, 2, sites.join('\n'));
-  assert.strictEqual(sites.filter((l) => l.includes(':${MAIN}`')).length, 1, 'un solo lugar empuja a main');
-  assert.strictEqual(sites.filter((l) => l.includes(':${SYNC}`')).length, 1, 'el otro, a la rama de la sincronización');
-});
-
-// ── T15 · AC 10, 12 ────────────────────────────────────────────────────────────────────────────────────────────────
-test('Mirror_Sync_NewerSyncOnBranch_NoRegression', async () => {
-  const { fx } = await published({ change: false });
-  const oldSkills = headOf(fx.skills);
-  write(fx.skills, { 'skills/tycon-pipeline/tercero.md': '# Tercero\n' });
-  commit(fx.skills, 'un cambio interno más nuevo');
-  let r = await syncRun(fx, ['--json']);
-  assert.strictEqual(r.code, 0, r.all);
-  assert.deepStrictEqual(r.pushed, [SYNC_REF]);
-  const newer = tipOf(fx.bare, SYNC_REF);
-  const pulls = clone(fx.api.state.pulls);
-  assert.strictEqual(pulls.length, 1);
-
-  // una corrida vieja, con el agent-skills de antes: lo suyo ya está publicado, pero la rama trae algo más nuevo
-  r = await syncWithoutWrites(fx, ['--agent-skills', oldSkills]);
-  assert.strictEqual(r.code, 0, r.all);
-  assert.match(r.out, /hay una sincronización más nueva/);
-  r = await syncWithoutWrites(fx, ['--agent-skills', oldSkills, '--json']);
-  assert.strictEqual(r.json.outcome, 'newer-sync');
-  assert.strictEqual(r.json.message, 'hay una sincronización más nueva');
-  assert.strictEqual(r.json.syncTip, newer);
-  // una corrida vieja con cambios propios (el arnés nuevo, el agent-skills viejo): tampoco la pisa
-  internalChange(fx);
-  r = await syncRun(fx);
-  assert.strictEqual(r.code, 0, r.all);
-  assert.deepStrictEqual(r.pushed, [SYNC_REF], 'control: la corrida con todo lo nuevo sí reemplaza la rama');
-  const newest = tipOf(fx.bare, SYNC_REF);
-  const body = fx.api.state.pulls[0].body;
-  r = await syncWithoutWrites(fx, ['--agent-skills', oldSkills]);
-  assert.strictEqual(r.code, 0, r.all);
-  assert.match(r.out, /hay una sincronización más nueva/);
-  assert.strictEqual(tipOf(fx.bare, SYNC_REF), newest, 'la rama queda con lo nuevo');
-  assert.strictEqual(fx.api.state.pulls[0].body, body, 'y el pull request también');
-  assert.strictEqual(openPulls(fx).length, 1);
-
-  // la carrera: la vieja leyó la rama cuando todavía no estaba, y la nueva llega justo antes de su push
-  gitFx(fx.bare, ['update-ref', '-d', SYNC_REF]);
-  const github = fakeGit(fx, { onPush: (git) => [`${git} -C "${fx.bare}" update-ref ${SYNC_REF} ${newest}`] });
-  r = await syncRun(fx, ['--agent-skills', oldSkills], { env: github.env });
-  assert.strictEqual(r.code, 0, r.all);
-  assert.match(r.out, /hay una sincronización más nueva/);
-  assert.strictEqual(remoteCalls(github, 'push').length, 1, 'perdió el lease, releyó y no volvió a empujar');
-  assert.deepStrictEqual(r.pushed, [], 'nada llegó al público');
-  assert.strictEqual(tipOf(fx.bare, SYNC_REF), newest, 'la rama queda con lo nuevo');
-  assert.strictEqual(fx.api.state.pulls[0].body, body, 'y el pull request también');
-
-  // lo que NO es más nuevo se reemplaza: una rama con el arnés de antes y el agent-skills de después (ni lo uno ni lo otro)
-  const { fx: mixed, seed } = await published({ change: false });
-  const before = { harness: headOf(mixed.harness), skills: headOf(mixed.skills) };
-  write(mixed.skills, { 'skills/tycon-pipeline/tercero.md': '# Tercero\n' });
-  const after = commit(mixed.skills, 'agent-skills avanza');
-  internalChange(mixed);
-  syncCommit(mixed, { ...seed, harness: before.harness, skills: after }, { parent: seed.commit, files: { 'docs/de-antes.md': '# De antes\n' }, ref: SYNC_REF });
-  r = await syncRun(mixed, ['--agent-skills', before.skills]);
-  assert.strictEqual(r.code, 0, r.all);
-  assert.deepStrictEqual(r.pushed, [SYNC_REF], 'ni igual ni descendiente en los dos: no es más nueva, se reemplaza');
-  // una rama que no trae una sincronización (alguien empujó otra cosa) también se reemplaza
-  const { fx: odd, seed: oddSeed } = await published();
-  publicCommit(odd, { parents: [oddSeed.commit], files: { 'docs/otra-cosa.md': '# Otra cosa\n' }, message: 'Algo que no es una sincronización', ref: SYNC_REF });
-  r = await syncRun(odd);
-  assert.strictEqual(r.code, 0, r.all);
-  assert.deepStrictEqual(r.pushed, [SYNC_REF]);
-  // tampoco alcanza con copiar los trailers de una sincronización más nueva: el del árbol tiene que ser el suyo
-  write(odd.skills, { 'skills/tycon-pipeline/tercero.md': '# Tercero\n' });
-  const ahead = commit(odd.skills, 'agent-skills avanza');
-  publicCommit(odd, {
-    parents: [oddSeed.commit], files: { 'docs/falso.md': '# Falso\n' }, ref: SYNC_REF,
-    message: `Sincronización\n\n${trailers({ ...oddSeed, harness: headOf(odd.harness), skills: ahead })}`,
-  });
-  r = await syncRun(odd, ['--agent-skills', oddSeed.skills]);
-  assert.strictEqual(r.code, 0, r.all);
-  assert.deepStrictEqual(r.pushed, [SYNC_REF], 'una rama con trailers copiados no es una sincronización: se reemplaza');
-  // y una sincronización de un commit interno que este clon no conoce no se pisa ni se da por vieja: 2
-  const { fx: unknown, seed: unknownSeed } = await published();
-  syncCommit(unknown, { ...unknownSeed, harness: 'f'.repeat(40) }, { parent: unknownSeed.commit, files: { 'docs/de-otro-clon.md': '# De otro clon\n' }, ref: SYNC_REF });
-  r = await syncWithoutWrites(unknown);
-  assert.strictEqual(r.code, 2, r.all);
-  assert.match(r.err, /este clon no conoce/);
-});
-
-// ── T16 · AC 11 ────────────────────────────────────────────────────────────────────────────────────────────────────
-test('Mirror_Sync_OpensUpdatesReopensOnePr', async () => {
-  const { fx } = await published({ change: false });
-  const short = (dir) => headOf(dir).slice(0, 12);
-  // la primera, con cambios: crea el pull request
-  internalChange(fx, { 'scripts/nuevo.js': "'use strict';\nmodule.exports = 3;\n", 'guides/guia.md': '# Guía\n\nTercera versión.\n', 'scripts/hola.js': null });
-  let r = await syncRun(fx, ['--json']);
-  assert.strictEqual(r.code, 0, r.all);
-  assert.deepStrictEqual(r.pushed, [SYNC_REF]);
-  assert.deepStrictEqual(r.json.pullRequest, { number: 1, action: 'created' });
-  assert.deepStrictEqual(writesOf(fx), ['POST /pulls']);
-  const created = fx.api.writes()[0].body;
-  assert.deepStrictEqual(Object.keys(created).sort(), ['base', 'body', 'head', 'title']);
-  assert.strictEqual(created.head, 'mirror/sync', 'desde la rama de la sincronización');
-  assert.strictEqual(created.base, 'main', 'hacia main');
-  assert.ok(created.title.length > 0);
-  // el cuerpo: los shas internos cortos, la cuenta y las rutas
-  for (const text of [short(fx.harness), short(fx.skills), '1 agregado(s), 1 modificado(s), 1 borrado(s)', 'scripts/nuevo.js', 'guides/guia.md', 'scripts/hola.js']) {
-    assert.ok(created.body.includes(text), `el cuerpo trae «${text}»\n${created.body}`);
-  }
-  assert.strictEqual(openPulls(fx).length, 1);
-  const firstHarness = short(fx.harness);
-
-  // la segunda, con otro cambio: actualiza ese mismo
-  internalChange(fx, { 'scripts/otro.js': "'use strict';\nmodule.exports = 4;\n" });
-  r = await syncRun(fx, ['--json']);
-  assert.strictEqual(r.code, 0, r.all);
-  assert.deepStrictEqual(r.pushed, [SYNC_REF]);
-  assert.deepStrictEqual(r.json.pullRequest, { number: 1, action: 'updated' });
-  assert.deepStrictEqual(writesOf(fx), ['POST /pulls', 'PATCH /pulls/1']);
-  assert.strictEqual(fx.api.state.pulls.length, 1, 'no creó otro');
-  const updated = fx.api.state.pulls[0].body;
-  for (const text of [short(fx.harness), '2 agregado(s), 1 modificado(s), 1 borrado(s)', 'scripts/otro.js', 'scripts/nuevo.js']) {
-    assert.ok(updated.includes(text), `el cuerpo actualizado trae «${text}»\n${updated}`);
-  }
-  assert.ok(!updated.includes(firstHarness), 'y ya no el sha de la corrida anterior');
-
-  // la tercera, con el mismo commit, después de que alguien cerró el pull request a mano: crea uno nuevo sin empujar
-  fx.api.state.pulls[0].state = 'closed';
-  r = await syncRun(fx, ['--json']);
-  assert.strictEqual(r.code, 0, r.all);
-  assert.deepStrictEqual(r.pushed, [], 'sin empujar: la rama ya tiene ese commit');
-  assert.strictEqual(r.json.pushed, false);
-  assert.deepStrictEqual(r.json.pullRequest, { number: 2, action: 'created' });
-  assert.deepStrictEqual(fx.api.state.pulls.map((p) => p.state), ['closed', 'open'], 'nunca hay dos abiertos');
-  assert.strictEqual(fx.api.state.pulls[1].body, updated, 'con el mismo cuerpo');
-  // y la cuarta no toca nada
-  r = await syncWithoutWrites(fx, ['--json']);
-  assert.deepStrictEqual(r.json.pullRequest, { number: 2, action: 'unchanged' });
-  // sin --json dice qué pull request es
-  r = await syncWithoutWrites(fx);
-  assert.match(r.out, /pull request nº 2/);
-
-  // muchas rutas: la cuenta entera y hasta 50 rutas en el cuerpo
-  const many = {};
-  for (let i = 0; i < 60; i++) many[`guides/muchas/nota-${String(i).padStart(2, '0')}.md`] = `# Nota ${i}\n`;
-  internalChange(fx, many);
-  r = await syncRun(fx, ['--json']);
-  assert.strictEqual(r.code, 0, r.all);
-  const long = fx.api.state.pulls[1].body;
-  assert.ok(long.includes('62 agregado(s)'), long);
-  assert.strictEqual(long.split('\n').filter((l) => /^[+~-] /.test(l)).length, 50, 'hasta 50 rutas');
-  assert.match(long, /y 14 más/);
-
-  // otra corrida abrió el pull request entre la lista y el pedido (la API contesta 422 al crear): lo vuelve a leer y
-  // actualiza ése, sin crear otro
-  fx.api.state.pulls[1].state = 'closed';
-  fx.api.override = (q) => {
-    if (q.method !== 'POST' || !q.path.endsWith('/pulls')) return null;
-    fx.api.state.pulls.push({ number: 3, state: 'open', title: 'El de la otra corrida', body: 'Lo que escribió la otra corrida', head: { ref: 'mirror/sync' }, base: { ref: 'main' } });
-    return { status: 422, json: { message: 'Validation Failed', errors: [{ message: 'A pull request already exists' }] } };
-  };
-  r = await syncRun(fx, ['--json']);
-  assert.strictEqual(r.code, 0, r.all);
-  assert.deepStrictEqual(r.json.pullRequest, { number: 3, action: 'updated' });
-  assert.strictEqual(openPulls(fx).length, 1, 'un solo pull request abierto');
-  assert.strictEqual(fx.api.state.pulls[2].body, long);
-  // un 422 que no es eso (no aparece ninguno abierto): 2, sin inventar nada
-  fx.api.state.pulls[2].state = 'closed';
-  fx.api.override = (q) => (q.method === 'POST' && q.path.endsWith('/pulls') ? { status: 422, json: { message: 'Validation Failed' } } : null);
-  r = await syncRun(fx);
-  assert.strictEqual(r.code, 2, r.all);
-  assert.match(r.err, /la API contestó 422 al crear el pull request/);
-  assert.deepStrictEqual(openPulls(fx), []);
-});
-
-// ── T17 · AC 11 ────────────────────────────────────────────────────────────────────────────────────────────────────
-test('Mirror_Sync_DeniedTermInPrText_Exit1NoApiWrite', async () => {
-  // una ruta cambiada con un término de la lista en su nombre, que la copia deja pasar por una excepción por ruta
-  let { fx } = await published({ change: false });
-  const rel = `guides/${TERM}/nota.md`;
-  internalChange(fx, { [rel]: '# Nota\n' });
-  const denied = denylist();
-  denied.permitidos.push({ archivo: 'rutas-de-la-copia.txt', motivo: 'laboratorio: una ruta con un nombre de la lista' });
-  fx.config({ denied });
-  const planned = await mirrorReadOnly(fx, ['plan', '--json']);
-  assert.strictEqual(planned.code, 0, `control: el exportador la deja pasar\n${planned.all}`);
-  assert.deepStrictEqual(planned.json.paths, [{ status: 'added', path: rel }], 'control: la ruta sale con el nombre');
-  let r = await syncWithoutWrites(fx);
-  assert.strictEqual(r.code, 1, r.all);
-  assert.match(r.err, /el cuerpo del pull request/, 'dice dónde');
-  assert.match(r.err, /\[cliente\]/, 'y la categoría');
-  assert.ok(!r.all.includes(TERM), `no lo hallado\n${r.all}`);
-  assert.strictEqual(tipOf(fx.bare, SYNC_REF), '', 'antes de escribir: la rama no existe');
-  r = await syncWithoutWrites(fx, ['--json']);
-  assert.strictEqual(r.code, 1, r.all);
-  assert.ok(r.json.textFindings.some((f) => f.what === 'el cuerpo del pull request' && f.category === 'cliente'), JSON.stringify(r.json.textFindings));
-  assert.ok(!r.all.includes(TERM));
-
-  // los demás textos se revisan igual: el título, el mensaje del commit, y el comentario con que se cierra
-  const texts = fs.readFileSync(MIRROR, 'utf8');
-  for (const [term, where] of [['Mirror-Tree', /el mensaje del commit/], [PR_TITLE, /el título del pull request/]]) {
-    ({ fx } = await published());
-    fx.config(withTerm(term));
-    r = await syncWithoutWrites(fx);
-    assert.strictEqual(r.code, 1, `${term}: ${r.all}`);
-    assert.match(r.err, where, `${term}: dice dónde`);
-    assert.ok(texts.includes(term), `control: «${term}» es un texto del guion`);
-  }
-  ({ fx } = await published({ change: false }));
-  fx.api.state.pulls = [{ number: 4, state: 'open', title: 'Sincronización', body: 'Lo de antes', head: { ref: 'mirror/sync' }, base: { ref: 'main' } }];
-  fx.config(withTerm('diferencias con el interno'));
-  r = await syncWithoutWrites(fx);
-  assert.strictEqual(r.code, 1, r.all);
-  assert.match(r.err, /el comentario/);
-  assert.strictEqual(openPulls(fx).length, 1, 'el pull request sigue abierto');
-});
-
-// ── T18 · AC 11 ────────────────────────────────────────────────────────────────────────────────────────────────────
-test('Mirror_Sync_ReplacementsOnlyInInternalSummary', async () => {
-  const { fx } = await published({ change: false });
-  const before = (await mirrorReadOnly(fx, ['plan', '--json'])).json.replacements;
-  // un par de la tabla que se usa: un nombre real en lo que sale, que el exportador reemplaza
-  internalChange(fx, { 'guides/caso.md': `# Caso\n\nLo pidió ${TERM}, y ${TERM} lo aprobó.\n` });
-  let r = await syncRun(fx);
-  assert.strictEqual(r.code, 0, r.all);
-  assert.deepStrictEqual(r.pushed, [SYNC_REF]);
-  // el resumen de la corrida trae el aviso, con la cuenta
-  const notice = /(\d+) reemplazo\(s\): un nombre pasó el freno y se arregla en el interno/.exec(r.out);
-  assert.ok(notice, r.out);
-  assert.strictEqual(Number(notice[1]), before + 2, 'la cuenta del exportador');
-  // el pull request —que es público— no menciona reemplazos: ni el título, ni el cuerpo, ni el mensaje del commit
-  const pr = fx.api.state.pulls[0];
-  const message = commitFacts(fx.bare, tipOf(fx.bare, SYNC_REF)).body;
-  for (const text of [pr.title, pr.body, message, JSON.stringify(fx.api.writes().map((q) => q.body))]) {
-    assert.doesNotMatch(text, /reemplaz/i);
-    assert.ok(!text.includes(TERM));
-  }
-  assert.ok(pr.body.includes('guides/caso.md'), 'control: el cuerpo sí nombra el archivo');
-  r = await syncRun(fx, ['--json']);
-  assert.strictEqual(r.code, 0, r.all);
-  assert.strictEqual(r.json.replacements, before + 2, 'en --json, la cuenta va en su clave');
-});
-
-// ── T19 · AC 12 ────────────────────────────────────────────────────────────────────────────────────────────────────
-test('Mirror_Sync_LostLeaseOrApiError_NoSecondPr', async () => {
-  const lease = (c) => / --force-with-lease=(\S*) /.exec(c.args)[1];
-  // otra corrida empuja la rama entre la lectura y el push: se relee una vez, y termina con un solo pull request
-  let { fx, seed } = await published();
-  const other = syncCommit(fx, seed, { parent: seed.commit, files: { 'docs/otra-corrida.md': '# Otra corrida\n' } });
-  let github = fakeGit(fx, { onPush: (git) => [`${git} -C "${fx.bare}" update-ref ${SYNC_REF} ${other}`] });
-  let r = await syncRun(fx, ['--json'], { env: github.env });
-  assert.strictEqual(r.code, 0, r.all);
-  let tried = remoteCalls(github, 'push');
-  assert.deepStrictEqual(tried.map(lease), [`${SYNC_REF}:`, `${SYNC_REF}:${other}`], 'dos intentos: el segundo, con lo que encontró al releer');
-  assert.deepStrictEqual(r.pushed, [SYNC_REF], 'llegó un solo push');
-  assert.strictEqual(tipOf(fx.bare, SYNC_REF), r.json.commit, 'la rama queda con lo de esta corrida, que es más nueva');
-  assert.notStrictEqual(r.json.commit, other);
-  assert.deepStrictEqual(writesOf(fx), ['POST /pulls'], 'un solo pull request');
-  assert.strictEqual(openPulls(fx).length, 1);
-
-  // pierde otra vez: no insiste. Sale 2 sin abrir nada, y no quedó nada más viejo que lo que había
-  ({ fx, seed } = await published());
-  const one = syncCommit(fx, seed, { parent: seed.commit, files: { 'docs/una.md': '# Una\n' } });
-  const two = syncCommit(fx, seed, { parent: seed.commit, files: { 'docs/dos.md': '# Dos\n' } });
-  github = fakeGit(fx, { onPush: (git) => [one, two, one, two].map((sha) => `${git} -C "${fx.bare}" update-ref ${SYNC_REF} ${sha}`) });
-  r = await syncRun(fx, [], { env: github.env });
-  assert.strictEqual(r.code, 2, r.all);
-  assert.match(r.err, /otra corrida/);
-  tried = remoteCalls(github, 'push');
-  assert.deepStrictEqual(tried.map(lease), [`${SYNC_REF}:`, `${SYNC_REF}:${one}`], 'releyó una vez, y nada más');
-  assert.deepStrictEqual(r.pushed, []);
-  assert.strictEqual(tipOf(fx.bare, SYNC_REF), two, 'la rama queda con lo que dejó la otra corrida');
-  assert.deepStrictEqual(fx.api.writes(), [], 'sin abrir ningún pull request');
-
-  // la API contesta 500 al listar los pull requests abiertos: 2 sin crear ninguno (y sin empujar)
-  ({ fx } = await published());
-  fx.api.override = (q) => (q.method === 'GET' && q.path.endsWith('/pulls') ? { status: 500, json: { message: 'Server Error' } } : null);
-  r = await syncWithoutWrites(fx);
-  assert.strictEqual(r.code, 2, r.all);
-  assert.match(r.err, /la API contestó 500 al leer los pull requests abiertos/);
-  assert.strictEqual(tipOf(fx.bare, SYNC_REF), '');
-  // contesta algo que no es una lista: lo mismo
-  fx.api.override = (q) => (q.method === 'GET' && q.path.endsWith('/pulls') ? { status: 200, json: { message: 'otra cosa' } } : null);
-  r = await syncWithoutWrites(fx);
-  assert.strictEqual(r.code, 2, r.all);
-
-  // el push no llega a GitHub (sin red): 2, sin abrir nada, y sin la URL del repo en la salida
-  github = fakeGit(fx, { onPush: () => [`echo "fatal: unable to access 'file://${fx.github}/${PUBLIC.org}/${PUBLIC.repo}.git/': Could not resolve host" >&2; exit 128`] });
-  fx.api.override = null;
-  r = await syncWithoutWrites(fx, [], { env: github.env });
-  assert.strictEqual(r.code, 2, r.all);
-  assert.match(r.err, /no pude empujar/);
-  assert.match(r.err, /Could not resolve host/, 'con el motivo');
-  assert.ok(!r.all.includes(fx.github) && !r.all.includes(PUBLIC.repo), 'sin la URL ni el nombre del repo');
-
-  // falla al crear el pull request, con la rama ya empujada: 2. La corrida siguiente lo crea sin volver a empujar
-  fx.api.override = (q) => (q.method === 'POST' && q.path.endsWith('/pulls') ? { status: 500, json: { message: 'Server Error' } } : null);
-  r = await syncRun(fx);
-  assert.strictEqual(r.code, 2, r.all);
-  assert.match(r.err, /la API contestó 500 al crear el pull request/);
-  assert.deepStrictEqual(r.pushed, [SYNC_REF]);
-  assert.deepStrictEqual(openPulls(fx), []);
-  fx.api.override = null;
-  r = await syncRun(fx, ['--json']);
-  assert.strictEqual(r.code, 0, r.all);
-  assert.deepStrictEqual(r.pushed, []);
-  assert.deepStrictEqual(r.json.pullRequest, { number: 1, action: 'created' });
-  assert.strictEqual(openPulls(fx).length, 1);
-});
-
-// ── T20 · AC 12 ────────────────────────────────────────────────────────────────────────────────────────────────────
-test('Mirror_Push_RejectedByGithub_RawMessageNoRetry', async () => {
-  /** El público rechaza todo push con ese texto, como lo hace GitHub: por un `pre-receive`. Anota cada intento. */
-  const rejecting = (fx, said) => {
-    const attempts = path.join(fx.dir, 'attempts.log');
-    const hook = path.join(fx.bare, 'hooks', 'pre-receive');
-    fs.writeFileSync(hook, ['#!/bin/sh', 'cat > /dev/null', `echo intento >> "${attempts}"`, ...said.map((l) => `echo "${l}" >&2`), 'exit 1', ''].join('\n'));
-    fs.chmodSync(hook, 0o755);
-    return () => (fs.existsSync(attempts) ? fs.readFileSync(attempts, 'utf8').split('\n').filter(Boolean).length : 0);
-  };
-
-  // un rechazo con un texto fijo
-  let { fx } = await published();
-  const fixed = 'error: GH006: esta rama está protegida y no acepta este push';
-  let attempts = rejecting(fx, [fixed]);
-  let r = await syncWithoutWrites(fx);
-  assert.strictEqual(r.code, 1, r.all);
-  assert.ok(r.err.includes(`remote: ${fixed}`), `el texto de GitHub, tal cual\n${r.err}`);
-  assert.match(r.err, /no reintento/);
-  assert.strictEqual(attempts(), 1, 'un solo intento');
-  assert.doesNotMatch(r.err, /Alertas de prueba/, 'no es un rechazo por secretos');
-  assert.ok(!r.all.includes(WRITER) && !r.all.includes(base64(WRITER)), 'el token no aparece');
-  assert.deepStrictEqual(openPulls(fx), [], 'sin la rama no hay pull request');
-
-  // el rechazo de la protección contra secretos, que cita un archivo
-  ({ fx } = await published());
-  const protection = [
-    'error: GH013: Repository rule violations found for refs/heads/mirror/sync.',
-    '- GITHUB PUSH PROTECTION',
-    '  Push cannot contain secrets',
-    '  locations:',
-    '    - commit: 8728dbe67',
-    '      path: scripts/formas.js:4',
-    '    - commit: 8728dbe67',
-    '      path: guides/otra cosa.md:12',
-  ];
-  attempts = rejecting(fx, protection);
-  r = await syncWithoutWrites(fx);
-  assert.strictEqual(r.code, 1, r.all);
-  for (const line of protection) assert.ok(r.err.includes(`remote: ${line}`), `el texto de GitHub, tal cual: «${line}»\n${r.err}`);
-  assert.match(r.err, /protección contra secretos de GitHub, por scripts\/formas\.js/, 'nombra el archivo que GitHub cita');
-  assert.ok(r.err.includes('guides/publicacion-espejo.md, §«Alertas de prueba en GitHub»'), 'remite a la guía');
-  assert.strictEqual(attempts(), 1, 'un solo intento');
-  assert.ok(!r.all.includes(WRITER) && !r.all.includes(base64(WRITER)), 'el token no aparece');
-  r = await syncWithoutWrites(fx, ['--json']);
-  assert.strictEqual(r.code, 1, r.all);
-  assert.strictEqual(r.json.push.rejected, true);
-  assert.strictEqual(r.json.push.secretProtection, true);
-  assert.deepStrictEqual(r.json.push.files, ['scripts/formas.js', 'guides/otra cosa.md']);
-  assert.strictEqual(attempts(), 2, 'la segunda corrida, otro único intento');
-
-  // `first` rechazado dice lo mismo: 1 con el texto, sin reintentar, y main no queda
-  fx = await fixture();
-  attempts = rejecting(fx, [fixed]);
-  r = await mirrorReadOnly(fx, ['first'], { credential: WRITER });
-  assert.strictEqual(r.code, 1, r.all);
-  assert.ok(r.err.includes(`remote: ${fixed}`), r.err);
-  assert.strictEqual(attempts(), 1);
-});
 
 // ── BLOQUE T21-T22: inicio ───────────────────────────────────────────────────────────────────────────────────────
 // El token de instalación de la App (story 8.8, AC 13): `github-app-token.js` contra una API de mentira en 127.0.0.1,
@@ -3432,7 +2046,7 @@ test('Guide_IfVerifyFails_TwoCasesAndOwner', () => {
   const source = fs.readFileSync(MIRROR, 'utf8');
   assert.ok(source.includes(`'${rel}'`), 'el guion nombra la guía');
   const cited = [...new Set([...source.matchAll(/§«([^»]+)»/g)].map((m) => m[1].replace(/\\`/g, '`')))];
-  for (const title of ['Cambios ajenos', 'Alertas de prueba en GitHub', 'Si `verify` da 1']) assert.ok(cited.includes(title), `el guion remite a §«${title}»`);
+  for (const title of ['Alertas de prueba en GitHub', 'Si `verify` da 1']) assert.ok(cited.includes(title), `el guion remite a §«${title}»`);
   for (const title of cited) assert.ok(titles.includes(title), `el guion remite a §«${title}», y la guía tiene esa sección`);
 });
 
@@ -3443,9 +2057,6 @@ test('Guide_IfVerifyFails_TwoCasesAndOwner', () => {
 const OUTSIDER = { name: 'Colaboradora De Afuera', email: ['colaboradora', 'correo-inventado.dev'].join('@') };
 const OUTSIDER_NOREPLY = ['12345+colaboradora', 'users.noreply.github.com'].join('@');
 const identityOf = (name, email) => ({ GIT_AUTHOR_NAME: name, GIT_AUTHOR_EMAIL: email, GIT_COMMITTER_NAME: name, GIT_COMMITTER_EMAIL: email });
-// lo que el guion escribe donde iría una ruta que ES un hallazgo: en sus salidas, y en el cuerpo del pull request
-const HIDDEN_PATH = '(una ruta con un hallazgo: no se imprime)';
-const HIDDEN_IN_BODY = '- (una ruta que no se nombra)';
 
 /** Un servidor de esta máquina que anota lo que le llega y contesta 404: para ver a quién le habla git, y con qué. */
 function listener(headers = null) {
@@ -3464,95 +2075,6 @@ function listener(headers = null) {
     }));
   });
 }
-
-/** Como `labWithFakeExporter`, pero el exportador de mentira, corrido, hace lo que diga `body`. */
-function labWithExporterBody(fx, name, body) {
-  const lab = path.join(fx.dir, name);
-  fs.mkdirSync(path.join(lab, 'scripts', 'publishing'), { recursive: true });
-  fs.mkdirSync(path.join(lab, 'scripts', 'lib'), { recursive: true });
-  copyVersionRule(lab);
-  fs.copyFileSync(MIRROR, path.join(lab, 'scripts', 'publishing', 'mirror.js'));
-  fs.copyFileSync(path.join(PUBLISHING, 'detector.js'), path.join(lab, 'scripts', 'publishing', 'detector.js'));
-  fs.copyFileSync(path.join(RAIZ, 'scripts', 'lib', 'skills-dir.js'), path.join(lab, 'scripts', 'lib', 'skills-dir.js'));
-  fs.writeFileSync(path.join(lab, 'scripts', 'publishing', 'export.js'), ["'use strict';",
-    `module.exports = require(${JSON.stringify(EXPORTER)});`, 'if (require.main === module) {', body, '}', ''].join('\n'));
-  return path.join(lab, 'scripts', 'publishing', 'mirror.js');
-}
-
-// ── causas 19, 21 y 24 · AC 11, 23 ─────────────────────────────────────────────────────────────────────────────────
-test('Mirror_Sync_DeletedPathWithDeniedName_StillPublishes', async () => {
-  // una ruta ya publicada lleva un nombre que la lista aprende DESPUÉS; el interno la renombra
-  const name = 'Kramerica';
-  const old = `guides/${name}-notas.md`;
-  let fx = await fixture();
-  write(fx.harness, { [old]: '# Notas\n\nSin nombres adentro.\n' });
-  commit(fx.harness, 'una guía con un nombre que la lista todavía no conoce');
-  seedPublication(fx);
-  fx.config(withTerm(name));
-  let r = await verifyRun(fx);
-  assert.strictEqual(r.code, 1, `control: la lista nueva encuentra la ruta en lo publicado\n${r.all}`);
-  assert.deepStrictEqual(partsOf(r), ['b']);
-  write(fx.harness, { [old]: null, 'guides/notas.md': '# Notas\n\nSin nombres adentro.\n' });
-  commit(fx.harness, 'la guía, con un nombre que se puede publicar');
-
-  // `plan` cuenta el borrado y no imprime la ruta: es lo hallado
-  for (const args of [['plan', '--json'], ['plan']]) {
-    const planned = await mirrorReadOnly(fx, args);
-    assert.strictEqual(planned.code, 0, planned.all);
-    assert.ok(!planned.all.includes(name), `${args.join(' ')}: la ruta borrada no se imprime\n${planned.all}`);
-    assert.ok(planned.all.includes(HIDDEN_PATH), `${args.join(' ')}: dice que hay una ruta que no imprime\n${planned.all}`);
-    if (!planned.json) continue;
-    assert.strictEqual(planned.json.state, 'changes');
-    assert.deepStrictEqual(planned.json.counts, { added: 1, modified: 0, deleted: 1 }, 'la cuenta es la de siempre');
-    assert.deepStrictEqual(planned.json.paths, [{ status: 'deleted', path: HIDDEN_PATH }, { status: 'added', path: 'guides/notas.md' }]);
-    assert.strictEqual(planned.json.pathsHidden, 1);
-  }
-
-  // `sync` publica el arreglo: empuja y abre el pull request, sin el nombre en ningún texto
-  r = await syncRun(fx, ['--json']);
-  assert.strictEqual(r.code, 0, `el arreglo del interno se puede publicar\n${r.all}`);
-  assert.deepStrictEqual(r.pushed, [SYNC_REF]);
-  assert.deepStrictEqual(r.json.pullRequest, { number: 1, action: 'created' });
-  assert.strictEqual(r.json.pathsHidden, 1);
-  assert.ok(!r.all.includes(name), `ninguna salida trae el nombre\n${r.all}`);
-  const body = fx.api.state.pulls[0].body;
-  assert.ok(!JSON.stringify(fx.api.writes().map((q) => q.body)).includes(name), 'ningún texto escrito por la API trae el nombre');
-  assert.ok(body.includes('1 agregado(s), 0 modificado(s), 1 borrado(s)'), `el borrado se cuenta\n${body}`);
-  assert.deepStrictEqual(body.split('\n').filter((l) => /^[+~-] /.test(l)), [HIDDEN_IN_BODY, '+ guides/notas.md'], 'la ruta borrada no se escribe: va su lugar');
-  assert.ok(!commitFacts(fx.bare, r.json.commit).body.includes(name));
-  // sin --json dice lo mismo, y la segunda corrida no cambia nada
-  r = await syncWithoutWrites(fx);
-  assert.strictEqual(r.code, 0, r.all);
-  assert.ok(!r.all.includes(name) && r.out.includes(HIDDEN_PATH), r.all);
-  // mergeado, la ruta ya no está en main: la parte (b) queda en cero
-  mergeSync(fx);
-  assert.ok(!gitFx(fx.bare, ['ls-tree', '-r', '--name-only', 'main']).includes(name), 'main ya no trae la ruta');
-  r = await verifyRun(fx);
-  assert.ok(!partsOf(r).includes('b'), `la parte (b), en cero\n${r.all}`);
-
-  // un commit ajeno agrega en el público una ruta con un término; el interno lo descarta: la sincronización la saca
-  ({ fx } = await published({ change: false }));
-  const foreign = publicCommit(fx, { parents: [tipOf(fx.bare, MAIN_REF)], files: { [`docs/${TERM}-notas.md`]: '# Notas\n' }, message: 'Un cambio mergeado en GitHub' });
-  commit(fx.harness, `chore: descarta un cambio ajeno del repo público\n\nPublic-Commit: ${foreign}\nPublic-Commit-Discarded: no lo queremos`, { allowEmpty: true });
-  const planned = await mirrorReadOnly(fx, ['plan', '--json']);
-  assert.strictEqual(planned.code, 0, planned.all);
-  assert.deepStrictEqual(planned.json.counts, { added: 0, modified: 0, deleted: 1 });
-  assert.deepStrictEqual(planned.json.foreign, [{ commit: foreign, paths: [HIDDEN_PATH], absorbed: true, discarded: true }], 'la ruta del cambio ajeno tampoco se imprime');
-  assert.ok(!planned.all.includes(TERM), planned.all);
-  r = await syncRun(fx, ['--json']);
-  assert.strictEqual(r.code, 0, r.all);
-  assert.deepStrictEqual(r.pushed, [SYNC_REF]);
-  assert.ok(!r.all.includes(TERM) && !fx.api.state.pulls[0].body.includes(TERM));
-  assert.ok(!gitFx(fx.bare, ['ls-tree', '-r', '--name-only', r.json.commit]).includes(TERM), 'el commit de la sincronización saca la ruta');
-
-  // sin absorber, el mensaje de «cambios ajenos» tampoco la imprime
-  ({ fx } = await published({ change: false }));
-  const pending = publicCommit(fx, { parents: [tipOf(fx.bare, MAIN_REF)], files: { [`docs/${TERM}-notas.md`]: '# Notas\n' }, message: 'Un cambio mergeado en GitHub' });
-  r = await syncWithoutWrites(fx);
-  assert.strictEqual(r.code, 1, r.all);
-  assert.ok(r.err.includes(`· ${pending} — ${HIDDEN_PATH}`), r.err);
-  assert.ok(!r.all.includes(TERM), r.all);
-});
 
 // ── causa 16 · AC 13, 14 ───────────────────────────────────────────────────────────────────────────────────────────
 test('Mirror_Bases_PlainHttpOnlyToThisMachine_Exit2BeforeToken', async () => {
@@ -3584,7 +2106,7 @@ test('Mirror_Bases_PlainHttpOnlyToThisMachine_Exit2BeforeToken', async () => {
       [API, `file://${fx.github}`, /va con/],
     ];
     for (const [variable, value, reason] of refused) {
-      for (const command of ['plan', 'first', 'sync', 'verify']) {
+      for (const command of ['verify']) {
         const r = await mirrorReadOnly(fx, [command], { credential: WRITER, env: { ...github.env, [variable]: value } });
         assert.strictEqual(r.code, 2, `${variable}=${value}, ${command}: sale 2\n${r.all}`);
         assert.ok(r.err.includes(variable), `${variable}=${value}, ${command}: nombra la variable\n${r.err}`);
@@ -3598,78 +2120,30 @@ test('Mirror_Bases_PlainHttpOnlyToThisMachine_Exit2BeforeToken', async () => {
 
     // control: sin cifrar hacia la propia máquina sí. git le habla a ESE servidor, con la URL que se validó (la
     // normalizada, no el texto crudo) y con la cabecera
-    let r = await mirrorReadOnly(fx, ['plan'], { credential: WRITER, env: { ...github.env, [GIT]: `HTTP://127.0.0.1:${a.port}/` } });
+    const nobody = await closedPort();
+    let r = await mirrorReadOnly(fx, ['verify'], { credential: WRITER, env: { ...github.env, [GIT]: `HTTP://127.0.0.1:${a.port}/`, [API]: `http://127.0.0.1:${nobody}` } });
     assert.strictEqual(r.code, 2, `el servidor de mentira contesta 404: no pude leer\n${r.all}`);
-    assert.match(r.err, /no pude leer/);
+    assert.match(r.all, /no pude leer/);
     assert.ok(a.seen.length > 0 && a.seen.every((q) => q.url.startsWith(`/${PUBLIC.org}/${PUBLIC.repo}.git/`)), JSON.stringify(a.seen));
     assert.ok(a.seen.every((q) => String(q.authorization).toLowerCase() === `basic ${base64(WRITER)}`.toLowerCase()), 'con la cabecera de la corrida');
     assert.deepStrictEqual(b.seen, []);
-    const asked = remoteCalls(github, 'ls-remote');
+    const asked = remoteCalls(github, 'fetch');
     assert.strictEqual(asked.length, 1);
     assert.ok(asked[0].args.includes(` http://127.0.0.1:${a.port}/${PUBLIC.org}/${PUBLIC.repo}.git `), `a git le llega la URL normalizada\n${asked[0].args}`);
     assert.strictEqual(asked[0].env.GIT_CONFIG_KEY_0, `http.http://127.0.0.1:${a.port}/.extraheader`, 'y la cabecera va para esa misma base');
-    // las tres formas de nombrar a la propia máquina valen en la base de la API (`plan` no la llama: alcanza con que arranque)
+    // las tres formas de nombrar a la propia máquina valen en la base de la API: la regla de la base no la frena (nadie
+    // escucha en ese puerto, así que lo que dice es «no pude leer», nunca «sin cifrar»)
     for (const host of ['127.0.0.1', 'localhost', '[::1]']) {
-      r = await mirrorReadOnly(fx, ['plan'], { credential: WRITER, env: { [API]: `http://${host}:${a.port}` } });
-      assert.strictEqual(r.code, 0, `${host}: ${r.all}`);
+      r = await mirrorReadOnly(fx, ['verify'], { credential: WRITER, env: { [API]: `http://${host}:${nobody}` } });
+      assert.doesNotMatch(r.all, /sin cifrar|TYCON_MIRROR_API_URL/, `${host}: la base se acepta\n${r.all}`);
     }
     // y lo cifrado va a donde sea: la regla es sobre http://
-    r = await mirrorReadOnly(fx, ['plan'], { credential: WRITER, env: { [API]: 'https://api.example.org/v3' } });
-    assert.strictEqual(r.code, 0, r.all);
+    r = await mirrorReadOnly(fx, ['verify'], { credential: WRITER, env: { [API]: `https://127.0.0.1:${nobody}/v3` } });
+    assert.doesNotMatch(r.all, /sin cifrar|TYCON_MIRROR_API_URL/, r.all);
   } finally {
     await a.close();
     await b.close();
   }
-});
-
-// ── causa 14 · AC 8 ────────────────────────────────────────────────────────────────────────────────────────────────
-test('Mirror_Foreign_TreeTrailerAlone_IsNotASync', async () => {
-  const fixed = require(EXPORTER).COMMIT_IDENTITY;
-  const own = identityOf(fixed.nombre, fixed.email);
-  const outsider = identityOf('Alguien De Afuera', 'afuera@example.com');
-  const internal = (fx) => `Mirror-Harness-Commit: ${headOf(fx.harness)}\nMirror-Agent-Skills-Commit: ${headOf(fx.skills)}\n`;
-  // [el caso, la identidad, el mensaje según su árbol]: un commit que agrega un archivo, mergeado en GitHub con commit de merge
-  const cases = [
-    ['otro autor, y sólo el trailer de su árbol', outsider, () => (tree) => `Un aporte externo\n\nMirror-Tree: ${tree}\n`],
-    ['otro autor, con los tres trailers', outsider, (fx) => (tree) => `Sincronización\n\n${internal(fx)}Mirror-Tree: ${tree}\n`],
-    ['la identidad de la copia, y sólo el trailer de su árbol', own, () => (tree) => `Sincronización\n\nMirror-Tree: ${tree}\n`],
-    ['la identidad de la copia sólo como autor', { ...own, GIT_COMMITTER_NAME: 'Alguien De Afuera', GIT_COMMITTER_EMAIL: 'afuera@example.com' },
-      (fx) => (tree) => `Sincronización\n\n${internal(fx)}Mirror-Tree: ${tree}\n`],
-    ['un trailer interno que no es un sha', own, (fx) => (tree) => `Sincronización\n\nMirror-Harness-Commit: main\nMirror-Agent-Skills-Commit: ${headOf(fx.skills)}\nMirror-Tree: ${tree}\n`],
-  ];
-  for (const [name, identity, message] of cases) {
-    const { fx, seed } = await published({ change: false });
-    const head = publicCommit(fx, { parents: [seed.commit], files: { 'docs/aporte.md': '# Aporte\n' }, ref: null, message: message(fx), identity });
-    const merged = publicCommit(fx, { parents: [seed.commit, head], from: head, message: 'Merge pull request #9 from alguien/aporte' });
-    let r = await mirrorReadOnly(fx, ['plan', '--json']);
-    assert.strictEqual(r.code, 1, `${name}: plan\n${r.all}`);
-    assert.strictEqual(r.json.state, 'foreign-changes', name);
-    assert.deepStrictEqual(r.json.foreign, [{ commit: merged, paths: ['docs/aporte.md'], absorbed: false, discarded: false }], name);
-    r = await syncWithoutWrites(fx);
-    assert.strictEqual(r.code, 1, `${name}: sync\n${r.all}`);
-    assert.match(r.err, /cambios ajenos sin traer/, name);
-    r = await verifyRun(fx);
-    assert.strictEqual(r.code, 1, `${name}: verify\n${r.all}`);
-    assert.deepStrictEqual(partsOf(r), ['f'], name);
-  }
-  // un merge como segundo padre tampoco: la sincronización es UN commit sobre la punta pública
-  const { fx, seed } = await published({ change: false });
-  const side = publicCommit(fx, { parents: [seed.commit], files: { 'docs/lado.md': '# Lado\n' }, ref: null, message: 'Un lado', identity: own });
-  const two = publicCommit(fx, { parents: [seed.commit, side], from: side, ref: null, identity: own, message: (tree) => `Sincronización\n\n${internal(fx)}Mirror-Tree: ${tree}\n` });
-  const merged = publicCommit(fx, { parents: [seed.commit, two], from: two, message: 'Merge pull request #9' });
-  let r = await mirrorReadOnly(fx, ['plan', '--json']);
-  assert.strictEqual(r.code, 1, r.all);
-  assert.deepStrictEqual(r.json.foreign.map((f) => f.commit), [merged]);
-  // control: la sincronización de verdad, mergeada, no es un cambio ajeno
-  gitFx(fx.bare, ['update-ref', MAIN_REF, seed.commit]);
-  internalChange(fx);
-  r = await syncRun(fx);
-  assert.strictEqual(r.code, 0, r.all);
-  mergeSync(fx);
-  r = await mirrorReadOnly(fx, ['plan', '--json']);
-  assert.strictEqual(r.code, 0, r.all);
-  assert.strictEqual(r.json.state, 'unchanged');
-  assert.deepStrictEqual(r.json.foreign, []);
 });
 
 // ── causa 20 · AC 15 (c) ───────────────────────────────────────────────────────────────────────────────────────────
@@ -3712,7 +2186,7 @@ test('Mirror_Verify_PullOnlyCommits_ThirdPartyEmailNotJudged', async () => {
     // el contenido de un pull request se mira como siempre: un correo ahí sí es un hallazgo
     ['un correo en el contenido', () => aporte('refs/pull/7/head', identityOf(OUTSIDER.name, OUTSIDER.email), { 'docs/typo.md': `Escribile a ${OUTSIDER.email}.\n` }), ["a'"], 'email'],
     // el mismo correo en un commit alcanzable desde una rama o una etiqueta: no cambia nada
-    ['el correo, en un commit de main', () => aporte(MAIN_REF, identityOf(OUTSIDER.name, OUTSIDER.email)), ['c', 'f'], null],
+    ['el correo, en un commit de main', () => aporte(MAIN_REF, identityOf(OUTSIDER.name, OUTSIDER.email)), ['c'], 'email'],
     ['el correo, en un commit de otra rama', () => aporte('refs/heads/otra', identityOf(OUTSIDER.name, OUTSIDER.email)), ['c'], 'email'],
     ['el correo, en un commit con una etiqueta', () => gitFx(fx.bare, ['tag', 'v0', aporte(null, identityOf(OUTSIDER.name, OUTSIDER.email))]), ['c'], 'email'],
     ['el correo, en la cabeza de un pull request que además está en una rama', () => {
@@ -3730,94 +2204,6 @@ test('Mirror_Verify_PullOnlyCommits_ThirdPartyEmailNotJudged', async () => {
     clean(r, name);
     assert.ok(!r.all.includes(TERM), `${name}: sin el texto hallado`);
   }
-});
-
-// ── causa 25 · AC 5 ────────────────────────────────────────────────────────────────────────────────────────────────
-test('Mirror_Exporter_DiesWithoutFindings_Exit2WithReason', async () => {
-  const fx = await fixture();
-  const long = 'x'.repeat(600);
-  // [el caso, lo que hace el exportador corrido, lo que tiene que decir]
-  const cases = [
-    ['muere antes de arrancar (node sale 1, sin JSON)', "  throw new Error('MOTIVO-DEL-HIJO: algo se rompió antes de main()');", /MOTIVO-DEL-HIJO: algo se rompió antes de main\(\)/],
-    ['sale 1 con un JSON sin hallazgos', "  process.stdout.write('{}'); process.exitCode = 1;", /sin decir por qué|ningún hallazgo/],
-    ['sale 1 con algo que no es JSON', "  process.stdout.write('<html>'); process.stderr.write('MOTIVO-DEL-HIJO: otra cosa\\n'); process.exitCode = 1;", /MOTIVO-DEL-HIJO: otra cosa/],
-    ['muere con un motivo larguísimo', `  throw new Error('MOTIVO-DEL-HIJO ${long}');`, /MOTIVO-DEL-HIJO x+…/],
-  ];
-  for (const [name, body, reason] of cases) {
-    const script = labWithExporterBody(fx, `lab-${cases.findIndex((c) => c[0] === name)}`, body);
-    for (const command of ['plan', 'first']) {
-      const r = await mirrorReadOnly(fx, [command], { script, credential: WRITER });
-      assert.strictEqual(r.code, 2, `${name}, ${command}: «no pude», no «hallazgos»\n${r.all}`);
-      assert.match(r.err, /el exportador no pudo armar la copia \(salió 1\)/, `${name}, ${command}`);
-      assert.doesNotMatch(r.err, /0 hallazgo/, `${name}, ${command}: no inventa una cuenta de hallazgos`);
-      assert.match(r.err, reason, `${name}, ${command}: con el motivo del hijo\n${r.err}`);
-      const line = r.err.split('\n').find((l) => reason.test(l));
-      assert.ok(line.length < 320, `${name}, ${command}: en una línea recortada (${line.length})`);
-      assert.doesNotMatch(r.err, /\n\s+at /, `${name}, ${command}: sin la pila del hijo`);
-    }
-    const j = await mirrorReadOnly(fx, ['plan', '--json'], { script });
-    assert.strictEqual(j.code, 2, j.all);
-    assert.strictEqual(j.json.exit, 2);
-    assert.strictEqual(j.json.exporter.exit, 1, `${name}: el código del hijo, tal cual`);
-    assert.match(j.json.exporter.reason, reason, name);
-    assert.strictEqual(j.json.exporter.findings, undefined, name);
-  }
-  // control: con hallazgos de verdad sigue siendo 1 (T6), y un 2 del hijo sigue siendo 2 con su motivo
-  const script = labWithExporterBody(fx, 'lab-control', "  process.stderr.write('MOTIVO-DEL-HIJO: no pude\\n'); process.exitCode = 2;");
-  const r = await mirrorReadOnly(fx, ['plan'], { script });
-  assert.strictEqual(r.code, 2, r.all);
-  assert.match(r.err, /salió 2[\s\S]*MOTIVO-DEL-HIJO: no pude/);
-});
-
-// ── causa 10 · AC 8 ────────────────────────────────────────────────────────────────────────────────────────────────
-test('Mirror_ShallowInternalClone_Exit2NotAVerdict', async () => {
-  const { fx, seed } = await published({ change: false });
-  const fixedInGithub = '# Guía\n\nCorregida en GitHub.\n';
-  const foreign = publicCommit(fx, { parents: [seed.commit], files: { 'guides/guia.md': fixedInGithub }, message: 'Un cambio mergeado en GitHub' });
-  write(fx.harness, { 'guides/guia.md': fixedInGithub });
-  commit(fx.harness, `fix: trae la corrección del repo público\n\nPublic-Commit: ${foreign}`);
-  internalChange(fx, { 'scripts/despues.js': "'use strict';\nmodule.exports = 9;\n" });
-  const shallowOf = (dir, depth) => {
-    const out = path.join(path.dirname(dir), `shallow-${path.basename(dir)}-${depth}`);
-    const c = spawnSync('git', ['clone', '-q', '--depth', String(depth), `file://${dir}`, out], { encoding: 'utf8', env: { ...withoutGit(process.env), ...ISOLATED } });
-    assert.strictEqual(c.status, 0, c.stderr);
-    assert.strictEqual(headOf(out), headOf(dir), 'control: el mismo HEAD');
-    assert.strictEqual(gitFx(out, ['rev-parse', '--is-shallow-repository']), 'true', 'control: el clon es superficial');
-    return out;
-  };
-
-  // control: con la historia completa, el cambio ajeno está absorbido
-  let r = await mirrorReadOnly(fx, ['plan', '--json']);
-  assert.strictEqual(r.code, 0, r.all);
-  assert.deepStrictEqual(r.json.foreign.map((f) => f.absorbed), [true]);
-
-  // con el arnés superficial —traiga o no la marca en lo que trajo—, o con agent-skills superficial: «no pude leer la historia»
-  const clones = [
-    ['el arnés, con 1 commit', { TYCON_GUIDES_DIR: shallowOf(fx.harness, 1) }, /el arnés/],
-    ['el arnés, con 2 commits', { TYCON_GUIDES_DIR: shallowOf(fx.harness, 2) }, /el arnés/],
-    ['agent-skills, con 1 commit', { TYCON_SKILLS_DIR: shallowOf(fx.skills, 1) }, /agent-skills/],
-  ];
-  for (const [name, env, who] of clones) {
-    r = await mirrorReadOnly(fx, ['plan', '--json'], { env });
-    assert.strictEqual(r.code, 2, `${name}, plan: no es un veredicto\n${r.all}`);
-    assert.match(r.err, /no pude leer la historia/, name);
-    assert.match(r.err, /superficial/, name);
-    assert.match(r.err, who, `${name}: dice de qué repo`);
-    assert.strictEqual(r.json.state, undefined, `${name}: no dice «cambios ajenos sin traer»`);
-    r = await syncWithoutWrites(fx, [], { env });
-    assert.strictEqual(r.code, 2, `${name}, sync\n${r.all}`);
-    assert.match(r.err, /no pude leer la historia/, name);
-    r = await verifyRun(fx, [], { env });
-    assert.strictEqual(r.code, 2, `${name}, verify: no pudo mirar (f)\n${r.all}`);
-    assert.deepStrictEqual(r.json.findings, [], `${name}: sin un hallazgo que no existe`);
-    assert.deepStrictEqual(r.json.couldNotLook.map((x) => x.part), ['f'], name);
-    assert.match(r.json.couldNotLook[0].reason, /superficial/, name);
-  }
-  // un repo sin publicar no necesita la historia interna: `plan` contesta igual
-  const empty = await fixture();
-  r = await mirrorReadOnly(empty, ['plan', '--json'], { env: { TYCON_GUIDES_DIR: shallowOf(empty.harness, 1) } });
-  assert.strictEqual(r.code, 0, r.all);
-  assert.strictEqual(r.json.state, 'unpublished');
 });
 
 // ── lo que `verify` no miraba ──────────────────────────────────────────────────────────────────────────────────────
@@ -3987,18 +2373,6 @@ test('Mirror_ControlByteInMessage_NothingSkipped', async () => {
     assert.strictEqual(r.json.looked.c, expected, `${name}: sin un commit fantasma en la cuenta`);
     withoutTerm(r, name);
   }
-
-  // un cambio ajeno con ese byte en el mensaje es un cambio ajeno como cualquiera: con su sha y sus rutas
-  reset();
-  const foreign = publicCommit(fx, { parents: [seed.commit], files: { 'docs/ajeno.md': '# Ajeno\n' }, message: `Un cambio${SEP}mergeado en GitHub\n\notra línea${SEP}\n` });
-  r = await mirrorReadOnly(fx, ['plan', '--json']);
-  assert.strictEqual(r.code, 1, r.all);
-  assert.deepStrictEqual(r.json.foreign, [{ commit: foreign, paths: ['docs/ajeno.md'], absorbed: false, discarded: false }]);
-  // y la marca del interno se lee entera aunque el mensaje lo traiga: el descarte va en el mismo commit
-  commit(fx.harness, `chore: descarta un cambio ajeno\n\nPublic-Commit: ${foreign}\n${SEP}\nPublic-Commit-Discarded: no lo queremos`, { allowEmpty: true });
-  r = await mirrorReadOnly(fx, ['plan', '--json']);
-  assert.strictEqual(r.code, 0, r.all);
-  assert.deepStrictEqual(r.json.foreign, [{ commit: foreign, paths: ['docs/ajeno.md'], absorbed: true, discarded: true }]);
 });
 
 test('Mirror_Verify_MessageInAnotherEncoding_StillReviewed', async () => {
@@ -4076,34 +2450,6 @@ test('Mirror_Verify_SameBlobUnderTwoPaths_VerdictPerPath', async () => {
   }
 });
 
-// ── causa 5 · AC 5 ─────────────────────────────────────────────────────────────────────────────────────────────────
-test('Mirror_Plan_ExporterFindings_PathThatIsAFindingNotPrinted', async () => {
-  const mail = OUTSIDER.email;
-  // [el caso, los archivos del interno, con la tabla de reemplazos o sin ella, la categoría del hallazgo de adentro]
-  const cases = [
-    ['una ruta con el nombre, y otro hallazgo adentro', { [`guides/${TERM}/nota.md`]: `# Nota\n\nEscribir a ${mail}.\n` }, true, 'email'],
-    ['el nombre en la ruta y en el texto, sin par de reemplazo', { [`guides/${TERM}-alta.md`]: `# Alta\n\nLo usa ${TERM}.\n` }, false, 'cliente'],
-  ];
-  for (const [name, files, pairs, category] of cases) {
-    const fx = await fixture();
-    seedPublication(fx);
-    if (!pairs) fx.config({ replacements: { pares: [], afuera: [] } });
-    write(fx.harness, files);
-    commit(fx.harness, 'un cambio');
-    for (const args of [['plan'], ['plan', '--json'], ['sync']]) {
-      const r = await mirrorReadOnly(fx, args, { credential: WRITER });
-      assert.strictEqual(r.code, 1, `${name}, ${args.join(' ')}: ${r.all}`);
-      withoutTerm(r, `${name}, ${args.join(' ')}`);
-      assert.ok(!r.all.includes(mail), `${name}: ni el otro texto hallado`);
-      assert.match(r.err, /hallazgo\(s\) en lo que se publicaría/, name);
-      if (!r.json) continue;
-      assert.ok(r.json.exporter.findings.some((f) => f.section === 'detector' && f.category === category && f.file === null && f.line === 3),
-        `${name}: el hallazgo de adentro se cuenta, con su línea y sin su ruta\n${JSON.stringify(r.json.exporter)}`);
-    }
-  }
-  // control: una ruta limpia sí se imprime (T6 lo prueba con README.md:3)
-});
-
 // ── del revisor de seguridad: lo que viene del público se imprime saneado ──────────────────────────────────────────
 test('Mirror_Output_TextFromThePublicRepoIsSanitized', async () => {
   const { fx, seed, reset } = await verifyLab();
@@ -4137,70 +2483,6 @@ test('Mirror_Output_TextFromThePublicRepoIsSanitized', async () => {
     }
   }
 
-  // `plan` y `sync`: las rutas de un cambio ajeno, y las de lo que se borraría
-  for (const rel of [...hostile, 'docs/a.md\n```\n\n# Un título que no es del guion\n\n```text\nb.md']) {
-    const { fx: other, seed: published } = await verifyLab();
-    const foreign = publicCommit(other, { parents: [published.commit], files: { [rel]: '# Ajeno\n' }, message: 'Un cambio mergeado en GitHub' });
-    for (const args of [['plan'], ['plan', '--json'], ['sync']]) {
-      const r = await mirrorReadOnly(other, args, { credential: WRITER });
-      assert.strictEqual(r.code, 1, `${args.join(' ')}: ${r.all}`);
-      assert.ok(r.all.includes(foreign), 'control: nombra el commit');
-      dangerous(r, `${args.join(' ')}, cambio ajeno`);
-      if (r.json) assert.ok(r.json.foreign[0].paths.every((p) => !/[\x00-\x1f\x7f]/.test(p) && p.length < 400), JSON.stringify(r.json.foreign));
-    }
-    commit(other.harness, `chore: descarta un cambio ajeno\n\nPublic-Commit: ${foreign}\nPublic-Commit-Discarded: no lo queremos`, { allowEmpty: true });
-    let r = await mirrorReadOnly(other, ['plan', '--json']);
-    assert.strictEqual(r.code, 0, r.all);
-    assert.deepStrictEqual(r.json.paths.map((p) => p.status), ['deleted']);
-    assert.ok(!/[\x00-\x1f\x7f]/.test(r.json.paths[0].path) && r.json.paths[0].path.length < 400, JSON.stringify(r.json.paths));
-    dangerous(r, 'plan, lo que se borraría');
-    // y el cuerpo del pull request, que es público: la ruta va en UNA línea, sin poder cerrar el bloque ni abrir otro
-    r = await syncRun(other, ['--json']);
-    assert.strictEqual(r.code, 0, r.all);
-    dangerous(r, 'sync');
-    const body = other.api.state.pulls[0].body;
-    assert.strictEqual(body.split('\n').filter((l) => /^[+~-] /.test(l)).length, 1, `una ruta, una línea\n${body}`);
-    assert.strictEqual(body.split('\n').filter((l) => l.startsWith('```')).length, 2, `el bloque de rutas se abre y se cierra una vez\n${body}`);
-    assert.ok(!body.includes(ESC) && body.split('\n').every((l) => l.length < 400), body);
-  }
-
-  // lo que dice GitHub al rechazar un push sale tal cual, salvo lo que el agente leería como una orden
-  reset();
-  internalChange(fx);
-  const hook = path.join(fx.bare, 'hooks', 'pre-receive');
-  fs.writeFileSync(hook, ['#!/bin/sh', 'cat > /dev/null', `echo "error: GH006: rama protegida" >&2`, `echo "${command}" >&2`, 'exit 1', ''].join('\n'));
-  fs.chmodSync(hook, 0o755);
-  const r = await syncWithoutWrites(fx);
-  assert.strictEqual(r.code, 1, r.all);
-  assert.ok(r.err.includes('remote: error: GH006: rama protegida'), `el texto de GitHub, tal cual\n${r.err}`);
-  assert.ok(r.err.includes('task.setvariable variable=robado'), 'control: la línea está');
-  dangerous(r, 'un push rechazado');
-});
-
-// ── contrato de la salida ──────────────────────────────────────────────────────────────────────────────────────────
-// ── causa 12 · AC 4, 8 ─────────────────────────────────────────────────────────────────────────────────────────────
-test('Mirror_Foreign_PathsAreTheRealPaths', async () => {
-  const { fx, seed } = await published({ change: false });
-  // rutas que git, sin que se lo pidan de otra manera, escribe entre comillas y con escapes
-  const files = { 'guides/guía nueva.md': '# Guía nueva\n', 'docs/con "comillas".md': '# Comillas\n', 'docs/con\ttabulador.md': '# Tabulador\n' };
-  const real = ['docs/con?tabulador.md', 'docs/con "comillas".md', 'guides/guía nueva.md'];   // el de control, en una línea
-  const foreign = publicCommit(fx, { parents: [seed.commit], files, message: 'Un cambio mergeado en GitHub' });
-  let r = await mirrorReadOnly(fx, ['plan', '--json']);
-  assert.strictEqual(r.code, 1, r.all);
-  assert.deepStrictEqual(r.json.foreign, [{ commit: foreign, paths: real, absorbed: false, discarded: false }], 'las rutas, como son');
-  r = await mirrorReadOnly(fx, ['plan']);
-  assert.ok(r.all.includes(`· ${foreign} — ${real.join(', ')}`), `el mensaje dice las mismas\n${r.all}`);
-  // absorbido: las dos listas de rutas de la misma salida dicen lo mismo
-  commit(fx.harness, `chore: descarta un cambio ajeno\n\nPublic-Commit: ${foreign}\nPublic-Commit-Discarded: no lo queremos`, { allowEmpty: true });
-  r = await mirrorReadOnly(fx, ['plan', '--json']);
-  assert.strictEqual(r.code, 0, r.all);
-  assert.deepStrictEqual(r.json.paths.map((p) => p.path), real);
-  assert.deepStrictEqual(r.json.foreign[0].paths, r.json.paths.map((p) => p.path), 'la de los cambios ajenos y la de lo que cambiaría');
-  // la raíz de un público que no salió de una publicación también
-  const alien = await fixture();
-  const root = publicCommit(alien, { files: { 'guides/guía.md': '# Otra\n' }, message: 'Initial commit' });
-  r = await mirrorReadOnly(alien, ['plan', '--json']);
-  assert.deepStrictEqual(r.json.foreign.map((f) => `${f.commit} ${f.paths.join(',')}`), [`${root} guides/guía.md`]);
 });
 
 // ── causa 26 ───────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -4217,110 +2499,21 @@ test('Mirror_Json_EveryRunCarriesItsMessage', async () => {
     said.push(`${args.join(' ')} → ${r.code}`);
     return r.json;
   };
-  let j = await run(['plan']);
-  assert.strictEqual(j.message, 'no publicado');
-  j = await run(['first']);
-  assert.strictEqual(j.exit, 0, JSON.stringify(j));
-  assert.match(j.message, /primera publicación/);
-  assert.ok(typeof j.verify.message === 'string' && /sin hallazgos/.test(j.verify.message), 'el verify de adentro también');
-  j = await run(['verify', '--strict']);
+  seedPublication(fx);
+  let j = await run(['verify', '--strict']);
   assert.strictEqual(j.exit, 0);
   assert.strictEqual(j.message, 'sin hallazgos');
   j = await run(['verify'], { credential: null });
   assert.strictEqual(j.exit, 0);
   assert.match(j.message, /sin hallazgos.*NO MEDIDO \(g\)/, 'lo que no se midió también se dice ahí');
-  j = await run(['plan']);
-  assert.strictEqual(j.message, 'sin cambios');
-  j = await run(['sync']);
-  assert.strictEqual(j.message, 'sin cambios');
-  internalChange(fx);
-  j = await run(['plan']);
-  assert.strictEqual(j.message, 'cambios');
-  j = await run(['sync']);
-  assert.strictEqual(j.message, 'cambios');
-  // y las que frenan, como siempre
-  j = await run(['first']);
-  assert.strictEqual(j.exit, 2);
+  // y las que frenan, como siempre: hallazgos (1) y los subcomandos que ya no existen (2)
   fx.api.state.vulnerabilityReporting = { enabled: false };
   j = await run(['verify']);
   assert.strictEqual(j.exit, 1);
-  j = await run(['sync'], { credential: null });
-  assert.strictEqual(j.exit, 2);
-  assert.strictEqual(said.length, 11);
-});
-
-// ── del revisor de fallos silenciosos: lo que quedó hecho cuando el paso siguiente falla ───────────────────────────
-test('Mirror_Sync_FailsAfterPush_SaysWhatWasDone', async () => {
-  const failing = (method, pattern, status = 500) => (q) => (q.method === method && pattern.test(q.path) ? { status, json: { message: 'Server Error' } } : null);
-
-  // crear el pull request falla, con la rama recién empujada
-  let { fx } = await published();
-  fx.api.override = failing('POST', /\/pulls$/);
-  let r = await syncRun(fx, ['--json']);
-  assert.strictEqual(r.code, 2, r.all);
-  assert.deepStrictEqual(r.pushed, [SYNC_REF], 'control: el empuje llegó');
-  assert.strictEqual(r.json.outcome, 'incomplete');
-  assert.strictEqual(r.json.pushed, true, 'el --json dice que empujó');
-  assert.strictEqual(r.json.commit, tipOf(fx.bare, SYNC_REF), 'y qué commit');
-  assert.strictEqual(r.json.pullRequest, null, 'y que no hay pull request');
-  assert.strictEqual(r.json.state, 'changes');
-  assert.match(r.json.message, /la API contestó 500 al crear el pull request/);
-  assert.match(r.err, /Lo que quedó hecho: el commit [0-9a-f]{12} se empujó a mirror\/sync/);
-  assert.match(r.err, /la corrida siguiente lo crea sin volver a empujar/i);
-  // la misma, otra vez: ya no empuja, y lo dice
-  r = await syncRun(fx, ['--json']);
-  assert.strictEqual(r.code, 2, r.all);
-  assert.deepStrictEqual(r.pushed, []);
-  assert.strictEqual(r.json.pushed, false);
-  assert.strictEqual(r.json.commit, tipOf(fx.bare, SYNC_REF));
-  assert.match(r.err, /ya estaba en mirror\/sync/);
-
-  // actualizar el pull request falla, con la rama recién empujada
-  ({ fx } = await published());
-  r = await syncRun(fx);
-  assert.strictEqual(r.code, 0, r.all);
-  const before = fx.api.state.pulls[0].body;
-  internalChange(fx);
-  fx.api.override = failing('PATCH', /\/pulls\/1$/);
-  r = await syncRun(fx, ['--json']);
-  assert.strictEqual(r.code, 2, r.all);
-  assert.deepStrictEqual(r.pushed, [SYNC_REF]);
-  assert.strictEqual(r.json.outcome, 'incomplete');
-  assert.strictEqual(r.json.pushed, true);
-  assert.strictEqual(r.json.commit, tipOf(fx.bare, SYNC_REF));
-  assert.deepStrictEqual(r.json.pullRequest, { number: 1, action: 'not-updated' });
-  assert.match(r.json.message, /la API contestó 500 al actualizar el pull request nº 1/);
-  assert.match(r.err, /se empujó a mirror\/sync/, 'el texto también lo dice al actualizar');
-  assert.match(r.err, /el pull request nº 1 quedó con el texto de antes/);
-  assert.strictEqual(fx.api.state.pulls[0].body, before, 'control: el pull request quedó como estaba');
-  // la corrida siguiente lo actualiza sin volver a empujar
-  fx.api.override = null;
-  r = await syncRun(fx, ['--json']);
-  assert.strictEqual(r.code, 0, r.all);
-  assert.deepStrictEqual(r.pushed, []);
-  assert.deepStrictEqual(r.json.pullRequest, { number: 1, action: 'updated' });
-
-  // cerrar el pull request (ya no hay diferencias): falla el cierre con el comentario ya escrito, o falla el comentario
-  const stale = () => [{ number: 4, state: 'open', title: 'Sincronización', body: 'Lo de antes', head: { ref: 'mirror/sync' }, base: { ref: 'main' } }];
-  for (const [name, override, action, text, writes] of [
-    ['falla el cierre', failing('PATCH', /\/pulls\/4$/), 'commented', /el comentario ya quedó escrito en el pull request nº 4, que sigue abierto/, 1],
-    ['falla el comentario', failing('POST', /\/issues\/4\/comments$/), 'not-closed', /el pull request nº 4 quedó sin tocar/, 0],
-  ]) {
-    ({ fx } = await published({ change: false }));
-    fx.api.state.pulls = stale();
-    fx.api.override = override;
-    r = await syncRun(fx, ['--json']);
-    assert.strictEqual(r.code, 2, `${name}: ${r.all}`);
-    assert.deepStrictEqual(r.pushed, [], name);
-    assert.strictEqual(r.json.outcome, 'incomplete', name);
-    assert.strictEqual(r.json.pushed, false, name);
-    assert.deepStrictEqual(r.json.pullRequest, { number: 4, action }, name);
-    assert.deepStrictEqual(r.json.closed, [], name);
-    assert.strictEqual(r.json.state, 'unchanged', name);
-    assert.match(r.err, text, name);
-    assert.strictEqual(fx.api.state.comments.length, writes, `${name}: control`);
-    assert.strictEqual(openPulls(fx).length, 1, `${name}: sigue abierto`);
-  }
+  j = await mirror(fx, ['sync', '--json'], { credential: WRITER });
+  assert.strictEqual(j.code, 2, j.all);
+  assert.ok(j.json && j.json.exit === 2 && /ya no existe/.test(j.json.message), `sync --json: el motivo va en message\n${j.all}`);
+  assert.strictEqual(said.length, 3);
 });
 
 // ── la segunda vuelta de seguridad: tres lugares donde `verify` daba «limpio» sin haber mirado ─────────────────────
@@ -4451,15 +2644,14 @@ test('Mirror_Verify_WideEncodingOrUnknown_ReviewedOrCouldNotLook', async () => {
 
 test('Mirror_Git_NeverFollowsRedirects', async () => {
   // al nivel de los argumentos: toda llamada de git que habla con el público lleva la opción
-  for (const command of ['plan', 'first', 'sync', 'verify']) {
+  for (const command of ['verify']) {
     const fx = await fixture();
-    if (command !== 'first') seedPublication(fx);
-    if (command === 'sync') internalChange(fx);
+    seedPublication(fx);
     const github = fakeGit(fx);
     const r = await mirror(fx, [command], { credential: WRITER, env: github.env });
     assert.strictEqual(r.code, 0, `${command}: ${r.all}`);
     const remote = remoteCalls(github);
-    const kinds = { plan: ['ls-remote', 'fetch'], first: ['ls-remote', 'push', 'fetch'], sync: ['ls-remote', 'fetch', 'push'], verify: ['fetch'] }[command];
+    const kinds = ['fetch'];
     for (const kind of kinds) assert.ok(remote.some((c) => c.args.includes(` ${kind} `)), `${command}: control, hubo un ${kind}`);
     for (const c of remote) assert.ok(c.args.includes(' -c http.followRedirects=false '), `${command}: sin seguir redirecciones (${c.args.slice(0, 120)})`);
   }
@@ -4469,7 +2661,7 @@ test('Mirror_Git_NeverFollowsRedirects', async () => {
   const b = await listener();
   const a = await listener((req) => ({ Location: `http://127.0.0.1:${b.port}${req.url}` }));
   try {
-    for (const command of ['plan', 'first', 'sync', 'verify']) {
+    for (const command of ['verify']) {
       const before = a.seen.length;
       const r = await mirrorReadOnly(fx, [command, '--json'], { credential: WRITER, env: { TYCON_MIRROR_GIT_BASE: `http://127.0.0.1:${a.port}` } });
       assert.strictEqual(r.code, 2, `${command}: sale 2\n${r.all}`);
@@ -4481,494 +2673,6 @@ test('Mirror_Git_NeverFollowsRedirects', async () => {
   } finally {
     await a.close();
     await b.close();
-  }
-});
-
-// ══ story 8.13, tanda D (AC 24, T30) — la versión numerada: `version.json` ══════════════════════════════════════════
-// La mitad del espejo de T30 (la del exportador está en export.test.js). Lo que no se puede perder:
-//   · que una sincronización sin cambios publicables no numere ni empuje;
-//   · que el número sea función de lo publicado y de los commits internos, nunca del reloj: un reintento da el mismo commit;
-//   · que dos sincronizaciones del mismo día den `.1` y `.2`, con merge en el medio o sin él;
-//   · que `verify` valide el archivo en su parte (i), y que su ausencia en un `main` que nunca lo tuvo no sea un hallazgo.
-// LAS FECHAS VAN FIJADAS A MANO: el reloj de la fixture es global a este archivo (cada commit, cien segundos después del
-// anterior) y cruza la medianoche UTC según cuántas pruebas corrieron antes. Acá cada commit interno lleva su fecha.
-const VERSION_FILE = 'version.json';
-const DAY_ONE = '2030.01.15';
-const DAY_TWO = '2030.01.16';
-const utcAt = (day, hour, minute = 0) => {
-  const [y, m, d] = day.split('.').map(Number);
-  return Date.UTC(y, m - 1, d, hour, minute, 0) / 1000;
-};
-
-/** Un cambio en el arnés interno de mentira con la fecha de committer FIJADA: de ella sale la fecha de la versión. */
-function internalChangeAt(fx, epoch, files) {
-  changeCount += 1;
-  write(fx.harness, files || { [`scripts/cambio-${changeCount}.js`]: `'use strict';\nmodule.exports = ${changeCount};\n` });
-  const date = `@${epoch} +0000`;
-  gitFx(fx.harness, ['add', '-A']);
-  gitFx(fx.harness, ['commit', '-q', '-m', `un cambio interno (${changeCount})`], { env: { GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date } });
-  return headOf(fx.harness);
-}
-
-/** El `version.json` de una ref del público: su texto, leído (o `null` si esa ref no lo trae) y su blob. */
-function versionOf(fx, ref) {
-  const blob = gitFx(fx.bare, ['rev-parse', '--verify', '--quiet', `${ref}:${VERSION_FILE}`], { tolerate: true });
-  if (blob.status !== 0) return null;
-  const text = gitFx(fx.bare, ['show', `${ref}:${VERSION_FILE}`], { tolerate: true }).stdout;
-  return { blob: blob.stdout.trim(), text, json: JSON.parse(text) };
-}
-const versionText = (version, harness, skills) => require(EXPORTER).versionFileBytes({ version, source: { harness, agent_skills: skills } }).toString('utf8');
-
-/**
- * Una sincronización armada a mano en el público, con la fecha a elección y el `version.json` que se le pase (`file`: un
- * texto; `null` lo saca; sin `file`, queda el del árbol de partida). Los trailers son los de `seed`: así se rompe UNA cosa.
- */
-function datedSync(fx, seed, { parent = null, from = parent || seed.commit, epoch, file, ref = null }) {
-  const date = `@${epoch} +0000`;
-  return publicCommit(fx, {
-    parents: parent ? [parent] : [], from, ref, files: file === undefined ? {} : { [VERSION_FILE]: file },
-    identity: { ...mirrorIdentity(), GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date },
-    message: (tree) => `Sincronización\n\nMirror-Harness-Commit: ${seed.harness}\nMirror-Agent-Skills-Commit: ${seed.skills}\nMirror-Tree: ${tree}\n`,
-  });
-}
-
-test('Export_VersionJson_OnlyWhenTreeChanged_Deterministic_VerifyIgnores — la regla del número: la fecha por aritmética y el orden en el día', () => {
-  // 🔴 rojo previo: «rule.versionDay is not a function» (mirror.js no exportaba la regla)
-  const rule = require(MIRROR);
-  // la fecha UTC de un instante, sin el reloj ni el huso de la máquina: contra la de node, barriendo de 1970 a 2100
-  const iso = (epoch) => new Date(epoch * 1000).toISOString().slice(0, 10).replace(/-/g, '.');
-  for (const epoch of [0, 86399, 86400, utcAt('2000.02.29', 0), utcAt('2000.02.29', 23, 59), utcAt('2024.02.29', 12), utcAt('2024.12.31', 23, 59),
-    utcAt('2025.01.01', 0), utcAt('2030.01.15', 0), utcAt('2030.01.15', 23, 59), utcAt('2100.02.28', 23, 59), utcAt('2100.03.01', 0)]) {
-    assert.strictEqual(rule.versionDay(epoch), iso(epoch), `la fecha de ${epoch}`);
-  }
-  for (let epoch = 0; epoch < utcAt('2100.12.31', 0); epoch += 37 * 3600 + 11) {
-    if (rule.versionDay(epoch) !== iso(epoch)) assert.fail(`la fecha de ${epoch}: ${rule.versionDay(epoch)}, y es ${iso(epoch)}`);
-  }
-  assert.strictEqual(rule.versionDay(utcAt(DAY_ONE, 23, 59)), DAY_ONE);
-  // lo que no es un instante no da una fecha inventada
-  for (const bad of [NaN, -1, 1.5, '1700000000', null, undefined]) assert.throws(() => rule.versionDay(bad), /fecha/, `versionDay(${String(bad)})`);
-
-  // el orden en el día (D1): 1 + el mayor de los publicados con ESA fecha; si ninguno es de esa fecha, 1
-  const cases = [
-    [[], `${DAY_ONE}.1`, 'nada publicado'],
-    [[null, null], `${DAY_ONE}.1`, 'ni main ni la rama lo traen'],
-    [[`${DAY_ONE}.1`, null], `${DAY_ONE}.2`, 'main trae el .1 del día'],
-    [[null, `${DAY_ONE}.1`], `${DAY_ONE}.2`, 'la rama trae el .1 del día y main nada'],
-    [[`${DAY_ONE}.1`, `${DAY_ONE}.4`], `${DAY_ONE}.5`, 'el mayor de los dos'],
-    [[`${DAY_ONE}.4`, `${DAY_ONE}.1`], `${DAY_ONE}.5`, 'el mayor, esté donde esté'],
-    [[`${DAY_ONE}.9`, null], `${DAY_ONE}.10`, 'el orden es un número, no un texto'],
-    [['2030.01.14.7', '2029.12.31.3'], `${DAY_ONE}.1`, 'los de otra fecha no cuentan'],
-    [['2030.01.14.7', `${DAY_ONE}.2`], `${DAY_ONE}.3`, 'sólo cuenta el de la misma fecha'],
-    [[`${DAY_TWO}.6`, null], `${DAY_ONE}.1`, 'uno de una fecha posterior tampoco'],
-  ];
-  for (const [published, expected, name] of cases) assert.strictEqual(rule.nextVersion(DAY_ONE, published), expected, name);
-  // un publicado sin forma no se cuenta como «no hay»: tira
-  for (const bad of ['1.2', `${DAY_ONE}.0`, `${DAY_ONE}+abc1234`, 7]) assert.throws(() => rule.nextVersion(DAY_ONE, [bad]), /forma/, `nextVersion con ${String(bad)}`);
-  assert.throws(() => rule.nextVersion('2030.1.15', []), /fecha/);
-
-  // A18: sin `faketime` ni una variable que mueva la fecha — el código de la versión no lee el reloj, y eso se afirma acá
-  for (const file of [MIRROR, EXPORTER]) {
-    const source = fs.readFileSync(file, 'utf8');
-    const reads = source.split('\n').map((line, i) => [i + 1, line]).filter(([, line]) => /\bDate\b|performance\.now|hrtime/.test(line));
-    assert.deepStrictEqual(reads.map(([n]) => n), [], `${path.basename(file)} no lee el reloj: ni Date, ni performance.now, ni hrtime`);
-  }
-});
-
-// T62 (story 8.26, tanda E · AC 44): la fecha y el número que sigue viven en UN lugar, scripts/setup/harness/version-order.js
-// (que viaja en la copia: lo usa también el merge por pedido). La sincronización los toma de ahí.
-test('T62 NextVersion_OneImplementation_SharedWithTheSync', () => {
-  // 🔴 rojo previo: «shared.day is not a function» (version-order.js sólo comparaba)
-  const rule = require(MIRROR);
-  const shared = require(path.join(path.dirname(MIRROR), '..', 'setup', 'harness', 'version-order.js'));
-  const outcome = (fn) => { try { return { value: fn() }; } catch (e) { return { error: e.message }; } };
-  // los mismos resultados y los mismos motivos, entrada por entrada
-  for (const epoch of [0, 86399, 86400, utcAt('2000.02.29', 23, 59), utcAt(DAY_ONE, 0), utcAt(DAY_ONE, 23, 59), NaN, -1, 1.5, '1700000000', null, undefined]) {
-    assert.deepStrictEqual(outcome(() => rule.versionDay(epoch)), outcome(() => shared.day(epoch)), `la fecha de ${String(epoch)}`);
-  }
-  const lists = [[], [null, null], [`${DAY_ONE}.1`, null], [`${DAY_ONE}.4`, `${DAY_ONE}.1`], [`${DAY_ONE}.9`, null], ['2030.01.14.7', `${DAY_ONE}.2`],
-    [`${DAY_TWO}.6`, null], ['1.2'], [`${DAY_ONE}.0`], [`${DAY_ONE}+abc1234`], [7]];
-  for (const published of lists) {
-    assert.deepStrictEqual(outcome(() => rule.nextVersion(DAY_ONE, published)), outcome(() => shared.next(DAY_ONE, published)), `el número que sigue a ${JSON.stringify(published)}`);
-  }
-  assert.deepStrictEqual(outcome(() => rule.nextVersion('2030.1.15', [])), outcome(() => shared.next('2030.1.15', [])));
-  // la sincronización sigue saliendo con su código de «no pude» (2), no con un error suelto
-  assert.throws(() => rule.nextVersion(DAY_ONE, ['1.2']), (e) => e.exit === 2 && /forma/.test(e.message));
-  assert.throws(() => rule.versionDay(-1), (e) => e.exit === 2 && /fecha/.test(e.message));
-  // y no hay dos copias de la cuenta: mirror.js llama a la compartida
-  const source = fs.readFileSync(MIRROR, 'utf8');
-  assert.match(source, /versionOrder\(\)\.day\(/, 'mirror.js toma la fecha de version-order.js');
-  assert.match(source, /versionOrder\(\)\.next\(/, 'mirror.js toma el número que sigue de version-order.js');
-  assert.doesNotMatch(source, /146097/, 'la cuenta del calendario ya no está copiada en mirror.js');
-  // la compartida tampoco lee el reloj
-  const sharedSource = fs.readFileSync(path.join(path.dirname(MIRROR), '..', 'setup', 'harness', 'version-order.js'), 'utf8');
-  assert.doesNotMatch(sharedSource, /\bDate\b|performance\.now|hrtime/, 'version-order.js no lee el reloj');
-});
-
-test('Export_VersionJson_OnlyWhenTreeChanged_Deterministic_VerifyIgnores — dos sincronizaciones del mismo día dan .1 y .2, con merge en el medio y sin él; el merge no cambia el número; el día siguiente vuelve a .1', async () => {
-  // 🔴 rojo previo: `r.json.version` undefined (sync no numeraba) y el commit sin version.json
-  for (const merged of [true, false]) {
-    const name = merged ? 'con merge en el medio' : 'sin merge en el medio';
-    const { fx, seed } = await published({ change: false });
-    assert.strictEqual(versionOf(fx, MAIN_REF), null, 'control: la primera publicación de la fixture salió sin version.json');
-
-    internalChangeAt(fx, utcAt(DAY_ONE, 10));
-    let r = await syncRun(fx, ['--json']);
-    assert.strictEqual(r.code, 0, `${name}: ${r.all}`);
-    assert.deepStrictEqual(r.pushed, [SYNC_REF], name);
-    assert.strictEqual(r.json.version, `${DAY_ONE}.1`, `${name}: la primera del día`);
-    const one = tipOf(fx.bare, SYNC_REF);
-    assertMirrorCommit(fx, one, { parents: [seed.commit], tree: r.json.tree, subject: 'Sincronización', version: `${DAY_ONE}.1` }, name);
-    assert.notStrictEqual(r.json.tree, r.json.exportedTree, `${name}: el árbol final no es el de la exportación: lleva version.json`);
-    // el archivo no cuenta entre los cambios ni figura entre las rutas; el cuerpo del pull request dice la versión
-    assert.deepStrictEqual(r.json.counts, { added: 1, modified: 0, deleted: 0 }, `${name}: las cuentas no cuentan version.json`);
-    assert.ok(!r.json.paths.some((p) => p.path === VERSION_FILE), `${name}: ni lo listan`);
-    assert.ok(openPulls(fx)[0].body.split('\n').includes(`Versión \`${DAY_ONE}.1\``), `${name}: el cuerpo dice la versión\n${openPulls(fx)[0].body}`);
-    assert.ok(!openPulls(fx)[0].body.includes(VERSION_FILE), `${name}: y no lista el archivo`);
-
-    if (merged) mergeSync(fx);
-    internalChangeAt(fx, utcAt(DAY_ONE, 18));
-    r = await syncRun(fx, ['--json']);
-    assert.strictEqual(r.code, 0, `${name}: ${r.all}`);
-    assert.deepStrictEqual(r.pushed, [SYNC_REF], name);
-    assert.strictEqual(r.json.version, `${DAY_ONE}.2`, `${name}: la segunda del mismo día`);
-    const two = tipOf(fx.bare, SYNC_REF);
-    assertMirrorCommit(fx, two, { parents: [tipOf(fx.bare, MAIN_REF)], tree: r.json.tree, subject: 'Sincronización', version: `${DAY_ONE}.2` }, name);
-    assert.deepStrictEqual(r.json.counts, { added: merged ? 1 : 2, modified: 0, deleted: 0 }, `${name}: las cuentas, contra main`);
-    assert.ok(openPulls(fx)[0].body.split('\n').includes(`Versión \`${DAY_ONE}.2\``), `${name}: el cuerpo dice la versión nueva`);
-
-    // el merge del pull request no cambia el número: la versión estable ES la que había en la rama
-    const before = versionOf(fx, SYNC_REF);
-    mergeSync(fx);
-    const stable = versionOf(fx, MAIN_REF);
-    assert.strictEqual(stable.blob, before.blob, `${name}: en main, el mismo archivo`);
-    assert.strictEqual(stable.json.version, `${DAY_ONE}.2`, name);
-    r = await syncWithoutWrites(fx, ['--json']);
-    assert.strictEqual(r.code, 0, `${name}: ${r.all}`);
-    assert.strictEqual(r.json.outcome, 'unchanged', `${name}: mergeado, sin cambios (se compara sin version.json)`);
-    assert.strictEqual(r.json.version, `${DAY_ONE}.2`, `${name}: la versión que quedó publicada`);
-    assert.strictEqual(r.json.tree, gitFx(fx.bare, ['rev-parse', `${MAIN_REF}^{tree}`]), `${name}: y su árbol, el de main`);
-    const planned = await mirrorReadOnly(fx, ['plan', '--json']);
-    assert.strictEqual(planned.json.state, 'unchanged', `${name}: ${planned.all}`);
-    assert.strictEqual(planned.json.version, `${DAY_ONE}.2`, name);
-
-    // un commit interno del día siguiente: vuelve a .1
-    internalChangeAt(fx, utcAt(DAY_TWO, 9));
-    const next = await mirrorReadOnly(fx, ['plan', '--json'], { credential: WRITER });
-    assert.strictEqual(next.json.state, 'changes', `${name}: ${next.all}`);
-    assert.strictEqual(next.json.version, `${DAY_TWO}.1`, `${name}: plan anuncia el número`);
-    r = await syncRun(fx, ['--json']);
-    assert.strictEqual(r.code, 0, `${name}: ${r.all}`);
-    assert.strictEqual(r.json.version, `${DAY_TWO}.1`, `${name}: el día siguiente`);
-    assert.strictEqual(r.json.tree, next.json.tree, `${name}: plan y sync calculan lo mismo`);
-    assertMirrorCommit(fx, tipOf(fx.bare, SYNC_REF), { parents: [tipOf(fx.bare, MAIN_REF)], tree: r.json.tree, subject: 'Sincronización', version: `${DAY_TWO}.1` }, name);
-
-    // y lo que quedó publicado cumple la regla: la parte (i) de verify miró los dos archivos y no encontró nada
-    const v = await verifyRun(fx);
-    assert.strictEqual(v.code, 0, `${name}: ${v.all}`);
-    assert.deepStrictEqual(v.json.findings, [], name);
-    assert.strictEqual(v.json.looked.i, 2, `${name}: el de main y el de la rama`);
-  }
-});
-
-test('Export_VersionJson_OnlyWhenTreeChanged_Deterministic_VerifyIgnores — un reintento con las mismas entradas: el mismo commit, no empuja y no sube N', async () => {
-  // 🔴 rojo previo: `one.json.version` undefined
-  const { fx, seed } = await published({ change: false });
-  // 10:30 UTC del día uno: en Kiritimati (UTC+14) ya es el día dos, y la versión es la del día UTC
-  internalChangeAt(fx, utcAt(DAY_ONE, 10, 30));
-  const one = await syncRun(fx, ['--json'], { env: { TZ: 'Pacific/Kiritimati', LANG: 'C', LC_ALL: 'C' } });
-  assert.strictEqual(one.code, 0, one.all);
-  assert.deepStrictEqual(one.pushed, [SYNC_REF]);
-  assert.strictEqual(one.json.version, `${DAY_ONE}.1`, 'la fecha es la del commit interno en UTC, no la del huso de la corrida');
-  const branch = tipOf(fx.bare, SYNC_REF);
-  assertMirrorCommit(fx, branch, { parents: [seed.commit], tree: one.json.tree, subject: 'Sincronización', version: `${DAY_ONE}.1` }, 'la primera');
-
-  // el reintento, con otro huso, otro idioma y otra máscara: mismos shas internos y mismo padre → es esta misma corrida
-  const written = fx.api.writes().length;
-  const two = await syncWithoutWrites(fx, ['--json'], { env: { TZ: 'America/Anchorage', LANG: 'es_AR.UTF-8', LC_ALL: 'es_AR.UTF-8' }, umask: '077' });
-  assert.strictEqual(two.code, 0, two.all);
-  assert.strictEqual(two.json.outcome, 'synced');
-  assert.strictEqual(two.json.commit, branch, 'el mismo commit');
-  assert.strictEqual(two.json.pushed, false, 'no empuja');
-  assert.strictEqual(two.json.version, `${DAY_ONE}.1`, 'y no sube N: sin el atajo, la rama ya trae el .1 y saldría .2');
-  assert.strictEqual(two.json.tree, one.json.tree);
-  assert.deepStrictEqual(two.json.pullRequest, { number: 1, action: 'unchanged' });
-  assert.strictEqual(fx.api.writes().length, written);
-  // sin --json dice la versión
-  const said = await syncWithoutWrites(fx);
-  assert.ok(said.out.includes(`${DAY_ONE}.1`), said.out);
-
-  // «un día después» (A18): no hay reloj que mover. Lo que se prueba es la construcción: con la rama borrada, la corrida
-  // vuelve a armar EXACTAMENTE ese commit —la base es main, que no cambió—, corra cuando corra
-  gitFx(fx.bare, ['update-ref', '-d', SYNC_REF]);
-  const three = await syncRun(fx, ['--json'], { env: { TZ: 'UTC', LANG: 'en_US.UTF-8' }, umask: '002' });
-  assert.strictEqual(three.code, 0, three.all);
-  assert.deepStrictEqual(three.pushed, [SYNC_REF]);
-  assert.strictEqual(tipOf(fx.bare, SYNC_REF), branch, 'el mismo sha en una corrida aparte');
-  assert.strictEqual(three.json.version, `${DAY_ONE}.1`);
-
-  // control del atajo: con los mismos shas internos pero OTRO padre (alguien mergeó), ya no es la misma corrida.
-  // Mergeada, la exportación es la de main: sin cambios, y la rama queda como estaba
-  mergeSync(fx);
-  const four = await syncWithoutWrites(fx, ['--json']);
-  assert.strictEqual(four.json.outcome, 'unchanged', four.all);
-  assert.strictEqual(four.json.version, `${DAY_ONE}.1`);
-});
-
-test('Export_VersionJson_OnlyWhenTreeChanged_Deterministic_VerifyIgnores — sin cambios publicables: no numera ni empuja, aunque los commits internos y el día cambien', async () => {
-  // 🔴 rojo previo: con version.json en main, la corrida daba «cambios» (comparaba el árbol entero) y empujaba
-  const { fx } = await published({ change: false });
-  internalChangeAt(fx, utcAt(DAY_ONE, 10));
-  let r = await syncRun(fx, ['--json']);
-  assert.strictEqual(r.json.version, `${DAY_ONE}.1`, r.all);
-  mergeSync(fx);
-  const main = tipOf(fx.bare, MAIN_REF);
-  const stamped = versionOf(fx, MAIN_REF);
-  assert.strictEqual(stamped.json.version, `${DAY_ONE}.1`, 'control: main quedó con el .1');
-
-  // un commit interno que no cambia nada de lo que sale (una carpeta que nunca sale), y al día siguiente
-  const unpublished = internalChangeAt(fx, utcAt(DAY_TWO, 10), { 'tasks/nota.md': '# Una nota del equipo\n' });
-  assert.notStrictEqual(unpublished, stamped.json.source.harness, 'control: el commit interno es otro');
-  r = await syncWithoutWrites(fx, ['--json']);
-  assert.strictEqual(r.code, 0, r.all);
-  assert.strictEqual(r.json.outcome, 'unchanged');
-  assert.strictEqual(r.json.version, `${DAY_ONE}.1`, 'la versión sigue siendo la publicada: no hay número nuevo');
-  assert.strictEqual(tipOf(fx.bare, MAIN_REF), main);
-  assert.strictEqual(versionOf(fx, MAIN_REF).blob, stamped.blob, 'el version.json publicado, intacto');
-  const planned = await mirrorReadOnly(fx, ['plan', '--json']);
-  assert.strictEqual(planned.json.state, 'unchanged', planned.all);
-  assert.strictEqual(planned.json.counts, null);
-  // sin --json: sin cambios
-  r = await syncWithoutWrites(fx);
-  assert.match(r.out, /sin cambios/);
-
-  // el espejo: un cambio que SÍ sale, ese mismo día, numera — y es el .1 del día nuevo
-  internalChangeAt(fx, utcAt(DAY_TWO, 11));
-  r = await syncRun(fx, ['--json']);
-  assert.strictEqual(r.code, 0, r.all);
-  assert.deepStrictEqual(r.pushed, [SYNC_REF]);
-  assert.strictEqual(r.json.version, `${DAY_TWO}.1`);
-});
-
-test('Export_VersionJson_OnlyWhenTreeChanged_Deterministic_VerifyIgnores — first: la primera publicación sale con el .1, y plan lo anuncia', async () => {
-  // 🔴 rojo previo: `planned.json.version` undefined, y el commit raíz sin version.json
-  const fx = await fixture();
-  internalChangeAt(fx, utcAt(DAY_ONE, 10));
-  const planned = await mirrorReadOnly(fx, ['plan', '--json']);
-  assert.strictEqual(planned.json.state, 'unpublished', planned.all);
-  assert.strictEqual(planned.json.version, `${DAY_ONE}.1`, 'plan dice el número con que saldría');
-  assert.notStrictEqual(planned.json.tree, planned.json.exportedTree);
-
-  const r = await mirror(fx, ['first', '--json'], { credential: WRITER });
-  assert.strictEqual(r.code, 0, r.all);
-  assert.strictEqual(r.json.version, `${DAY_ONE}.1`);
-  assert.strictEqual(r.json.tree, planned.json.tree, 'first y plan calculan lo mismo');
-  assert.strictEqual(r.json.exportedTree, planned.json.exportedTree);
-  const tip = tipOf(fx.bare, MAIN_REF);
-  assertMirrorCommit(fx, tip, { parents: [], tree: planned.json.tree, subject: 'Primera publicación', version: `${DAY_ONE}.1` }, 'first');
-  // su verify --strict miró el archivo en la parte (i), y no encontró nada
-  assert.strictEqual(r.json.verify.exit, 0);
-  assert.deepStrictEqual(r.json.verify.findings, []);
-  assert.strictEqual(r.json.verify.looked.i, 1);
-  // sin --json dice la versión
-  const other = await fixture();
-  internalChangeAt(other, utcAt(DAY_ONE, 10));
-  const h = await mirror(other, ['first'], { credential: WRITER });
-  assert.strictEqual(h.code, 0, h.all);
-  assert.ok(h.out.includes(`${DAY_ONE}.1`), h.out);
-  assert.match(h.out, /\(i\)[^\n]*sin hallazgos/, 'y la parte (i) figura en lo que miró verify');
-
-  // la sincronización siguiente del mismo día cuenta desde el de main: .2
-  internalChangeAt(fx, utcAt(DAY_ONE, 11));
-  const s = await syncRun(fx, ['--json']);
-  assert.strictEqual(s.code, 0, s.all);
-  assert.strictEqual(s.json.version, `${DAY_ONE}.2`);
-});
-
-test('Export_VersionJson_OnlyWhenTreeChanged_Deterministic_VerifyIgnores — verify, parte (i): valida el archivo si está, y falla nombrando', async () => {
-  // 🔴 rojo previo: verify salía 0 con shas que no eran los de los trailers (no había parte (i): `looked.i` undefined)
-  const fx = await fixture();
-  const seed = seedPublication(fx);
-  const reset = () => {
-    for (const ref of refsOf(fx.bare).split('\n').filter(Boolean).map((l) => l.split(' ')[0])) gitFx(fx.bare, ['update-ref', '-d', ref]);
-    fx.api.reset();
-  };
-  const good = (n, day = DAY_ONE) => versionText(`${day}.${n}`, seed.harness, seed.skills);
-  const onlyVersion = (r, name) => {
-    assert.strictEqual(r.code, 1, `${name}: sale 1\n${r.all}`);
-    assert.deepStrictEqual(partsOf(r), ['i'], `${name}: la parte (i), y ninguna otra\n${r.all}`);
-  };
-
-  // un main sin version.json (la primera publicación salió sin él): sin hallazgo, y la parte dice que no había nada que mirar
-  gitFx(fx.bare, ['update-ref', MAIN_REF, seed.commit]);
-  let r = await verifyRun(fx);
-  assert.strictEqual(r.code, 0, r.all);
-  assert.deepStrictEqual(r.json.findings, []);
-  assert.strictEqual(r.json.looked.i, 0);
-  let h = await verifyPlain(fx);
-  assert.match(h.out, /\(i\)[^\n]*sin hallazgos/);
-  // ese main, con la primera sincronización numerada esperando en la rama: tampoco
-  datedSync(fx, seed, { parent: seed.commit, epoch: utcAt(DAY_ONE, 10), file: good(1), ref: SYNC_REF });
-  r = await verifyRun(fx);
-  assert.strictEqual(r.code, 0, r.all);
-  assert.strictEqual(r.json.looked.i, 1, 'el de la rama');
-
-  // lo sano: main con su .1, y la rama con el .2 del mismo día encima
-  reset();
-  let root = datedSync(fx, seed, { epoch: utcAt(DAY_ONE, 10), file: good(1), ref: MAIN_REF });
-  datedSync(fx, seed, { parent: root, epoch: utcAt(DAY_ONE, 12), file: good(2), ref: SYNC_REF });
-  r = await verifyRun(fx);
-  assert.strictEqual(r.code, 0, r.all);
-  assert.deepStrictEqual(r.json.findings, []);
-  assert.strictEqual(r.json.looked.i, 2);
-  // y mergeada: el archivo de main es el mismo blob que el de su última sincronización
-  const pending = tipOf(fx.bare, SYNC_REF);
-  publicCommit(fx, { parents: [root, pending], from: pending, message: 'Merge pull request #1 from example-org/mirror/sync' });
-  r = await verifyRun(fx);
-  assert.strictEqual(r.code, 0, r.all);
-  assert.deepStrictEqual(r.json.findings, []);
-
-  // shas que no coinciden con los trailers de su sincronización: 1, nombrando la fuente, el trailer y el commit
-  reset();
-  root = datedSync(fx, seed, { epoch: utcAt(DAY_ONE, 10), file: versionText(`${DAY_ONE}.1`, 'f'.repeat(40), seed.skills), ref: MAIN_REF });
-  r = await verifyRun(fx);
-  onlyVersion(r, 'shas que no coinciden');
-  assert.deepStrictEqual(r.json.findings.map((f) => f.category), ['version-source']);
-  assert.ok(r.json.findings[0].place.includes(root) && /harness/.test(r.json.findings[0].place) && r.json.findings[0].place.includes('Mirror-Harness-Commit'),
-    `nombra la fuente, su trailer y el commit\n${r.json.findings[0].place}`);
-  assert.ok(!/agent_skills/.test(r.json.findings[0].place), 'y sólo la que no coincide');
-  h = await verifyPlain(fx);
-  assert.strictEqual(h.code, 1, h.all);
-  assert.ok(h.all.includes('· (i) [version-source] '), h.all);
-  // una fuente de más, o una de menos: el conjunto de `source` es el de los trailers del commit
-  for (const [name, source] of [['una fuente de más', { harness: seed.harness, agent_skills: seed.skills, extra: 'e'.repeat(40) }], ['una de menos', { harness: seed.harness }]]) {
-    reset();
-    datedSync(fx, seed, { epoch: utcAt(DAY_ONE, 10), file: require(EXPORTER).versionFileBytes({ version: `${DAY_ONE}.1`, source }).toString('utf8'), ref: MAIN_REF });
-    r = await verifyRun(fx);
-    onlyVersion(r, name);
-    assert.deepStrictEqual(r.json.findings.map((f) => f.category), ['version-source'], name);
-  }
-
-  // un número fuera de la regla: la fecha que no es la de su commit…
-  reset();
-  root = datedSync(fx, seed, { epoch: utcAt(DAY_ONE, 10), file: good(1, DAY_TWO), ref: MAIN_REF });
-  r = await verifyRun(fx);
-  onlyVersion(r, 'la fecha no es la del commit');
-  assert.deepStrictEqual(r.json.findings.map((f) => f.category), ['version-number']);
-  assert.ok(r.json.findings[0].place.includes(root) && r.json.findings[0].place.includes(`${DAY_TWO}.1`) && r.json.findings[0].place.includes(DAY_ONE), r.json.findings[0].place);
-  // … una primera publicación que no es el .1 …
-  reset();
-  datedSync(fx, seed, { epoch: utcAt(DAY_ONE, 10), file: good(3), ref: MAIN_REF });
-  r = await verifyRun(fx);
-  onlyVersion(r, 'una raíz que no es el .1');
-  assert.deepStrictEqual(r.json.findings.map((f) => f.category), ['version-number']);
-  // … y una sincronización cuyo orden no es mayor que el del commit sobre el que se armó, el mismo día
-  reset();
-  root = datedSync(fx, seed, { epoch: utcAt(DAY_ONE, 10), file: good(1), ref: MAIN_REF });
-  const repeated = datedSync(fx, seed, { parent: root, epoch: utcAt(DAY_ONE, 12), file: good(1), ref: SYNC_REF });
-  r = await verifyRun(fx);
-  onlyVersion(r, 'el orden no sube');
-  assert.deepStrictEqual(r.json.findings.map((f) => f.category), ['version-number']);
-  assert.ok(r.json.findings[0].place.includes(repeated), `nombra el commit de la rama\n${r.json.findings[0].place}`);
-  // el espejo: con el día siguiente, el .1 encima de un .1 está bien
-  datedSync(fx, seed, { parent: root, epoch: utcAt(DAY_TWO, 9), file: good(1, DAY_TWO), ref: SYNC_REF });
-  r = await verifyRun(fx);
-  assert.strictEqual(r.code, 0, r.all);
-
-  // un archivo que no se deja leer: hallazgo, no «no está»
-  for (const [name, broken] of [['JSON roto', '{ "version": '], ['un número sin forma', versionText(`${DAY_ONE}.1`, seed.harness, seed.skills).replace(`${DAY_ONE}.1`, '1.2')], ['sin source', `${JSON.stringify({ version: `${DAY_ONE}.1` })}\n`]]) {
-    reset();
-    datedSync(fx, seed, { epoch: utcAt(DAY_ONE, 10), file: broken, ref: MAIN_REF });
-    r = await verifyRun(fx);
-    onlyVersion(r, name);
-    assert.deepStrictEqual(r.json.findings.map((f) => f.category), ['version-file'], name);
-  }
-
-  // en main, un archivo que no es el de su última sincronización mergeada (alguien lo cambió allá): (i), además del cambio ajeno
-  reset();
-  root = datedSync(fx, seed, { epoch: utcAt(DAY_ONE, 10), file: good(1), ref: MAIN_REF });
-  publicCommit(fx, { parents: [root], files: { [VERSION_FILE]: good(7) }, message: 'Un cambio hecho a mano en GitHub' });
-  r = await verifyRun(fx);
-  assert.strictEqual(r.code, 1, r.all);
-  assert.deepStrictEqual(partsOf(r), ['f', 'i']);
-  assert.deepStrictEqual(r.json.findings.filter((f) => f.part === 'i').map((f) => f.category), ['version-file']);
-  assert.ok(r.json.findings.find((f) => f.part === 'i').place.includes(root), 'nombra la sincronización de la que tendría que ser');
-
-  // la ausencia es un hallazgo sólo si ya estaba: una sincronización que lo saca, mergeada…
-  reset();
-  root = datedSync(fx, seed, { epoch: utcAt(DAY_ONE, 10), file: good(1), ref: MAIN_REF });
-  const without = datedSync(fx, seed, { parent: root, epoch: utcAt(DAY_ONE, 12), file: null });
-  publicCommit(fx, { parents: [root, without], from: without, message: 'Merge pull request #1 from example-org/mirror/sync' });
-  assert.strictEqual(versionOf(fx, MAIN_REF), null, 'control: main quedó sin el archivo');
-  r = await verifyRun(fx);
-  onlyVersion(r, 'main dejó de traerlo');
-  assert.deepStrictEqual(r.json.findings.map((f) => f.category), ['version-missing']);
-  // … o que espera en la rama, armada sobre un main que sí lo trae
-  reset();
-  root = datedSync(fx, seed, { epoch: utcAt(DAY_ONE, 10), file: good(1), ref: MAIN_REF });
-  const dropped = datedSync(fx, seed, { parent: root, epoch: utcAt(DAY_ONE, 12), file: null, ref: SYNC_REF });
-  r = await verifyRun(fx);
-  onlyVersion(r, 'la rama no lo trae y su padre sí');
-  assert.deepStrictEqual(r.json.findings.map((f) => f.category), ['version-missing']);
-  assert.ok(r.json.findings[0].place.includes(dropped), r.json.findings[0].place);
-  // una rama que no es una sincronización no se valida: no es de la cadena (sync la reemplaza)
-  reset();
-  root = datedSync(fx, seed, { epoch: utcAt(DAY_ONE, 10), file: good(1), ref: MAIN_REF });
-  publicCommit(fx, { parents: [root], files: { [VERSION_FILE]: '{ roto' }, message: 'Algo que no es una sincronización', ref: SYNC_REF });
-  r = await verifyRun(fx);
-  assert.strictEqual(r.code, 0, r.all);
-  assert.strictEqual(r.json.looked.i, 1, 'sólo el de main');
-});
-
-test('Export_VersionJson_OnlyWhenTreeChanged_Deterministic_VerifyIgnores — un version.json que no se deja leer en el público es un 2, nunca «empiezo en .1»', async () => {
-  // 🔴 rojo previo: sync salía 0 y empujaba (no leía el archivo del público)
-  for (const [name, broken] of [['JSON roto', '{ "version": '], ['un número sin forma', '{ "version": "1.2", "source": {} }\n'], ['no es un objeto', '"2030.01.15.1"\n']]) {
-    const { fx, seed } = await published({ change: false });
-    // main pasa a ser una primera publicación con ese archivo roto (una raíz de la sincronización: no es un cambio ajeno)
-    datedSync(fx, seed, { epoch: utcAt(DAY_ONE, 10), file: broken, ref: MAIN_REF });
-    internalChangeAt(fx, utcAt(DAY_ONE, 12));
-    const r = await syncWithoutWrites(fx, ['--json']);
-    assert.strictEqual(r.code, 2, `${name}: ${r.all}`);
-    assert.match(r.err, /version\.json[^\n]*main[^\n]*no se deja leer/, `${name}: dice cuál y dónde`);
-    assert.strictEqual(tipOf(fx.bare, SYNC_REF), '', `${name}: no empujó nada`);
-    const planned = await mirrorReadOnly(fx, ['plan']);
-    assert.strictEqual(planned.code, 2, `${name}, plan: ${planned.all}`);
-  }
-
-  // el de la rama de la sincronización también cuenta, si su punta es una sincronización
-  let { fx, seed } = await published({ change: false });
-  internalChangeAt(fx, utcAt(DAY_ONE, 12));
-  const unreadable = datedSync(fx, seed, { parent: seed.commit, epoch: utcAt(DAY_ONE, 10), file: '{ "version": ', ref: SYNC_REF });
-  let r = await syncWithoutWrites(fx);
-  assert.strictEqual(r.code, 2, r.all);
-  assert.match(r.err, /version\.json[^\n]*mirror\/sync[^\n]*no se deja leer/);
-  assert.strictEqual(tipOf(fx.bare, SYNC_REF), unreadable);
-  // el espejo: una rama que NO es una sincronización no cuenta, traiga lo que traiga — se reemplaza, y la versión es el .1
-  ({ fx, seed } = await published({ change: false }));
-  internalChangeAt(fx, utcAt(DAY_ONE, 12));
-  publicCommit(fx, { parents: [seed.commit], files: { [VERSION_FILE]: '{ "version": ' }, message: 'Algo que no es una sincronización', ref: SYNC_REF });
-  r = await syncRun(fx, ['--json']);
-  assert.strictEqual(r.code, 0, r.all);
-  assert.deepStrictEqual(r.pushed, [SYNC_REF]);
-  assert.strictEqual(r.json.version, `${DAY_ONE}.1`);
-  // y una sincronización de la rama SIN el archivo (una de antes de esta story) tampoco suma: .1
-  ({ fx, seed } = await published({ change: false }));
-  internalChangeAt(fx, utcAt(DAY_ONE, 12));
-  datedSync(fx, seed, { parent: seed.commit, epoch: utcAt(DAY_ONE, 10), ref: SYNC_REF });
-  r = await syncRun(fx, ['--json']);
-  assert.strictEqual(r.code, 0, r.all);
-  assert.strictEqual(r.json.version, `${DAY_ONE}.1`);
-
-  // una exportación que ya trae version.json no se publica: el archivo lo agrega la sincronización, no sale de una fuente
-  ({ fx } = await published({ change: false }));
-  write(fx.harness, { [VERSION_FILE]: '{ "version": "de la fuente" }\n' });
-  internalChangeAt(fx, utcAt(DAY_ONE, 12));
-  const list = clone(ALLOWLIST);
-  list.packages.core.arnes.in.push(VERSION_FILE);
-  fx.config({ allowlist: list });
-  for (const command of ['plan', 'sync']) {
-    r = command === 'plan' ? await mirrorReadOnly(fx, ['plan']) : await syncWithoutWrites(fx);
-    assert.strictEqual(r.code, 2, `${command}: ${r.all}`);
-    assert.match(r.err, /ya trae version\.json/, command);
   }
 });
 
@@ -4985,408 +2689,11 @@ test('Export_VersionJson_OnlyWhenTreeChanged_Deterministic_VerifyIgnores — un 
 // revisores y la lista blanca del equipo en la misma raíz. El arnés de juguete trae sólo lo último (`teamList`): solo,
 // sigue siendo uno de dos repos; unido con agent-skills, es el repo único.
 
-const TEAM_LIST = 'scripts/publishing/allowlist.json';
-
-/** El arnés de juguete pasa a traer la lista blanca en su lugar de siempre, como el de verdad (acá, un archivo cualquiera). */
-function teamList(fx) {
-  write(fx.harness, { [TEAM_LIST]: `${JSON.stringify({ __doc: 'la lista blanca del arnés de juguete: sólo marca el lugar' }, null, 2)}\n` });
-  return commit(fx.harness, 'el arnés trae su lista blanca');
-}
-
-/** Una fixture publicada desde DOS repos (como la deja `first`), con el arnés ya con su lista blanca. */
-async function publishedFromTwo({ change = false } = {}) {
-  const fx = await fixture();
-  teamList(fx);
-  const seed = seedPublication(fx);
-  if (change) internalChange(fx);
-  return { fx, seed };
-}
-
-/**
- * Los dos internos de la fixture, unidos en UN repo. Con `joined: false`, los archivos de agent-skills entran en un
- * commit cualquiera, SIN su historia. Devuelve la fixture vista desde ese repo (el arnés y las skills son la misma
- * carpeta, con su propia lista blanca) y `exporterNote`: con qué exportador se midió.
- */
-function unite(fx, { joined = true } = {}) {
-  const id = ++serial;
-  const dir = path.join(fx.dir, `single-${id}`);
-  gitFx(fx.dir, ['clone', '-q', fx.harness, dir]);
-  if (joined) {
-    const side = path.join(fx.dir, `skills-side-${id}`);
-    gitFx(fx.dir, ['clone', '-q', fx.skills, side]);
-    write(side, { '.gitignore': null });
-    commit(side, 'agent-skills deja su .gitignore: en el repo único queda el del arnés');
-    gitFx(dir, ['fetch', '-q', side, 'HEAD']);
-    const date = nextDate();
-    gitFx(dir, ['merge', '-q', '--no-ff', '--allow-unrelated-histories', '-m', 'la unión de las dos historias', 'FETCH_HEAD'],
-      { env: { GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date } });
-  } else {
-    const files = {};
-    for (const rel of gitFx(fx.skills, ['ls-files', '-z']).split('\0').filter((f) => f && f !== '.gitignore')) files[rel] = fs.readFileSync(path.join(fx.skills, rel));
-    write(dir, files);
-    commit(dir, 'agent-skills entra como archivos, sin su historia');
-  }
-  const single = { ...fx, harness: dir, skills: path.join(dir, 'skills'), cfg: { ...fx.cfg, allowlist: path.join(fx.dir, 'cfg', `allowlist-single-${id}.json`) } };
-  // en el repo único agent-skills ya no trae `.gitignore`: el que hay es el del arnés
-  const allow = clone(ALLOWLIST);
-  allow.packages.core['agent-skills'].in = allow.packages.core['agent-skills'].in.filter((g) => g !== '.gitignore');
-  const save = () => fs.writeFileSync(single.cfg.allowlist, `${JSON.stringify(allow, null, 2)}\n`);
-  save();
-  assert.ok(require(MIRROR).isSingleRepoTree(gitFx(dir, ['ls-tree', '-r', '-z', '--name-only', 'HEAD']).split('\0').filter(Boolean)),
-    'control: el repo único de juguete tiene la forma del de verdad (¿le falta `teamList` al arnés?)');
-  // 🔴 Sin salida de respaldo (revisión del tramo 2, vuelta 1): antes, si el exportador leía DOS repos, esta función le
-  // agregaba a la lista de la fixture la mitad de la otra fuente como excluida y T23/T24 seguían verdes con el exportador
-  // viejo. El exportador ya lee UNA fuente física partida por ruta (AC 19): que lea dos es un error, no otra forma de medir.
-  const probe = runExporter(single).r;
-  assert.strictEqual(probe.status, 0, `la fixture no pudo exportar el repo único: ${probe.stderr}\n${probe.stdout}`);
-  let physical;
-  try { physical = JSON.parse(probe.stdout).physicalSources; } catch (e) { assert.fail(`el --json del exportador no se pudo leer: ${e.message}\n${probe.stdout}`); }
-  assert.strictEqual(physical, 1, 'el exportador lee el repo único como UNA fuente física, partida por ruta');
-  single.onePhysicalSource = true;
-  single.exporterNote = 'medido con el exportador de una fuente física: parte el repo único en sus dos fuentes lógicas, por ruta';
-  return single;
-}
-
-// ── T23 de la 8.18 · AC 23 ─────────────────────────────────────────────────────────────────────────────────────────
-test('Mirror_OneCommit_BothTrailersSame_VersionJsonShapeKept', async (t) => {
-  // 🔴 rojo previo: desde un repo único, sin decir ningún commit, el guion tomaba agent-skills de «origin/main» —otro
-  // commit del mismo repo— y los dos trailers nombraban commits distintos
-
-  // qué es «el repo único»: lo dice el árbol del commit, y el guion y el exportador tienen que decir lo mismo. El
-  // criterio vive en new-names.js (`unifiedTree`), que el guion no puede cargar sin traer medio arnés: acá se cruzan
-  const rule = require(MIRROR).isSingleRepoTree;
-  const reference = require(path.join(PUBLISHING, 'new-names.js')).unifiedTree;
-  const whole = ['README.md', 'skills/tycon-pipeline/SKILL.md', 'agents/un-revisor.md', TEAM_LIST];
-  const trees = [whole, ...whole.map((gone) => whole.filter((p) => p !== gone)), [], ['skills/otra/SKILL.md', 'agents/un-revisor.md', TEAM_LIST],
-    ['skills/tycon-pipeline', 'agents', TEAM_LIST], ['skills/tycon-pipeline/a/b.js', 'agents/x/y.md', TEAM_LIST, 'packs/p/pack.json']];
-  for (const paths of trees) {
-    assert.strictEqual(rule(paths), reference(paths.map((ruta) => ({ ruta }))), `el guion y el exportador dicen lo mismo de [${paths.join(', ')}]`);
-  }
-  assert.strictEqual(rule(whole), true, 'control: el árbol entero es el del repo único');
-  assert.strictEqual(rule(whole.slice(1, 3)), false, 'control: sin la lista blanca (un clon de agent-skills solo) no lo es');
-
-  const fx = await fixture();
-  teamList(fx);
-  const single = unite(fx);
-  t.diagnostic(single.exporterNote);
-  const own = { refs: false };   // sin --agent-skills: como lo llama el pipeline
-  const head = headOf(single.harness);
-  assert.notStrictEqual(tipOf(single.harness, 'refs/remotes/origin/main'), head, 'control: en el repo único, origin/main NO es el commit que se publica');
-
-  // plan: UN commit interno, el del arnés, para las dos fuentes
-  const planned = await mirrorReadOnly(single, ['plan', '--json'], own);
-  assert.strictEqual(planned.code, 0, planned.all);
-  assert.strictEqual(planned.json.state, 'unpublished');
-  assert.strictEqual(planned.json.harness.sha, head);
-  assert.strictEqual(planned.json.agentSkills.sha, head, 'agent-skills sale del MISMO commit, no de origin/main');
-  assert.strictEqual(planned.json.singleRepo, true, 'y la corrida lo dice');
-  assert.deepStrictEqual(planned.json.warnings, []);
-  const said = await mirrorReadOnly(single, ['plan'], own);
-  assert.match(said.out, /un solo repo interno/, `sin --json también lo dice\n${said.out}`);
-
-  // first: los dos trailers con ese commit, `source` con las dos claves iguales, y la fecha, la de ese commit
-  let r = await mirror(single, ['first', '--json'], { credential: WRITER, ...own });
-  assert.strictEqual(r.code, 0, r.all);
-  const root = tipOf(single.bare, MAIN_REF);
-  assertMirrorCommit(single, root, { parents: [], tree: planned.json.tree, subject: 'Primera publicación' }, 'first, desde el repo único');
-  const stamped = JSON.parse(gitFx(single.bare, ['show', `${root}:version.json`]));
-  assert.deepStrictEqual(Object.keys(stamped.source), ['harness', 'agent_skills'], 'version.json no cambia de forma: las dos claves de siempre');
-  assert.strictEqual(stamped.source.harness, head);
-  assert.strictEqual(stamped.source.agent_skills, head);
-  // verify —con su parte (i), que compara cada fuente con SU trailer— no cambió, y no encuentra nada
-  assert.strictEqual(r.json.verify.exit, 0);
-  assert.deepStrictEqual(r.json.verify.findings, []);
-  assert.strictEqual(r.json.verify.looked.i, 1);
-
-  // sync: lo mismo sobre la punta pública, y un reintento da el mismo commit (el atajo compara los dos trailers)
-  internalChange(single);
-  r = await syncRun(single, ['--json'], own);
-  assert.strictEqual(r.code, 0, r.all);
-  assert.strictEqual(r.json.outcome, 'synced');
-  assert.deepStrictEqual(r.pushed, [SYNC_REF]);
-  assert.strictEqual(r.json.singleRepo, true);
-  const branch = tipOf(single.bare, SYNC_REF);
-  assertMirrorCommit(single, branch, { parents: [root], tree: r.json.tree, subject: 'Sincronización' }, 'sync, desde el repo único');
-  const again = await syncWithoutWrites(single, ['--json'], own);
-  assert.strictEqual(again.code, 0, again.all);
-  assert.strictEqual(again.json.commit, branch, 'un reintento: el mismo commit');
-  assert.strictEqual(again.json.pushed, false);
-
-  // `isSyncCommit` lo sigue reconociendo: mergeada, es el ancla de los cambios ajenos y lo publicado queda «sin cambios»
-  mergeSync(single);
-  const merged = await syncWithoutWrites(single, ['--json'], own);
-  assert.strictEqual(merged.code, 0, merged.all);
-  assert.strictEqual(merged.json.outcome, 'unchanged');
-  assert.deepStrictEqual(merged.json.foreign, [], 'el merge de la sincronización no es un cambio ajeno');
-  const v = await verifyRun(single, [], own);
-  assert.strictEqual(v.code, 0, v.all);
-  assert.deepStrictEqual(v.json.findings, []);
-  assert.ok(v.json.looked.i >= 1, 'la parte (i) miró el archivo publicado');
-
-  // el mismo commit dicho con otra referencia se acepta (así lo llaman las demás pruebas: --agent-skills HEAD)…
-  const same = await mirrorReadOnly(single, ['plan', '--json']);
-  assert.strictEqual(same.code, 0, same.all);
-  assert.strictEqual(same.json.agentSkills.sha, headOf(single.harness));
-  // …y otro commit para agent-skills no existe en un repo único: 2, nombrando los dos, sin escribir nada
-  const other = gitFx(single.harness, ['rev-parse', 'HEAD~1']);
-  for (const command of ['plan', 'sync']) {
-    const bad = command === 'plan' ? await mirrorReadOnly(single, ['plan', '--agent-skills', other], own) : await syncWithoutWrites(single, ['--agent-skills', other], own);
-    assert.strictEqual(bad.code, 2, `${command}: ${bad.all}`);
-    assert.match(bad.err, /un solo repo interno/, `${command}: dice por qué`);
-    assert.ok(bad.err.includes(other.slice(0, 12)) && bad.err.includes(headOf(single.harness).slice(0, 12)), `${command}: nombra los dos commits\n${bad.err}`);
-  }
-
-  // Lo decide el commit, no el disco: con el clon viejo de agent-skills todavía a mano (una máquina en transición, o la
-  // variable apuntando ahí), el repo único sigue siendo UNO y el otro clon ni se mira (ni el guion ni el exportador, que
-  // `unite` ya comprobó que lee una fuente física).
-  assert.strictEqual(single.onePhysicalSource, true, 'control: el exportador lee el repo único como una fuente física');
-  const elsewhere = { ...single, skills: fx.skills };
-  const there = await mirrorReadOnly(elsewhere, ['plan', '--json'], own);
-  assert.strictEqual(there.code, 0, there.all);
-  assert.strictEqual(there.json.singleRepo, true, 'con TYCON_SKILLS_DIR en otro clon, el repo único sigue siendo uno');
-  assert.strictEqual(there.json.agentSkills.sha, headOf(single.harness));
-
-  // el espejo: con dos repos físicos todo sigue como siempre — un commit por repo, cada uno en su trailer
-  const two = await mirrorReadOnly(fx, ['plan', '--json']);
-  assert.strictEqual(two.code, 0, two.all);
-  assert.strictEqual(two.json.singleRepo, false);
-  assert.strictEqual(two.json.harness.sha, headOf(fx.harness));
-  assert.strictEqual(two.json.agentSkills.sha, headOf(fx.skills));
-  assert.notStrictEqual(two.json.harness.sha, two.json.agentSkills.sha);
-});
-
-// ── T24 de la 8.18 · AC 24 ─────────────────────────────────────────────────────────────────────────────────────────
-test('Mirror_FirstSyncAfterUnion_RecognizesPrevious_StopsIfUnknown', async (t) => {
-  // 🔴 rojo previo: sin la historia de agent-skills, sync publicaba igual (no miraba si conocía la sincronización anterior)
-  const own = { refs: false };
-
-  // (a) publicado desde DOS repos: la punta pública nombra dos commits internos distintos. Después, la unión
-  const { fx, seed } = await publishedFromTwo();
-  assert.notStrictEqual(seed.harness, seed.skills, 'control: la publicación de la fixture nombra dos commits internos');
-  const single = unite(fx);
-  t.diagnostic(single.exporterNote);
-  let r = await mirrorReadOnly(single, ['plan', '--json'], own);
-  assert.strictEqual(r.code, 0, r.all);
-  assert.strictEqual(r.json.publicTip, seed.commit);
-  assert.strictEqual(r.json.state, 'unchanged', 'la reconoce como la anterior, y el árbol es el mismo salga de dos repos o de uno');
-  assert.deepStrictEqual(r.json.foreign, []);
-  // un cambio interno: el commit nuevo tiene a esa punta de padre, y nombra UN commit en sus dos trailers
-  internalChange(single);
-  r = await syncRun(single, ['--json'], own);
-  assert.strictEqual(r.code, 0, r.all);
-  assert.strictEqual(r.json.outcome, 'synced');
-  assert.deepStrictEqual(r.pushed, [SYNC_REF]);
-  assertMirrorCommit(single, tipOf(single.bare, SYNC_REF), { parents: [seed.commit], tree: r.json.tree, subject: 'Sincronización' }, 'la primera sincronización después de la unión');
-
-  // (b) una marca escrita en la historia de agent-skills ANTES de la unión se sigue viendo desde el repo único
-  const { fx: marked, seed: markedSeed } = await publishedFromTwo();
-  const foreign = publicCommit(marked, { parents: [markedSeed.commit], files: { 'docs/ajeno.md': '# Ajeno\n' }, message: 'Un cambio mergeado en GitHub' });
-  commit(marked.skills, `chore: descarta un cambio ajeno del repo público\n\nPublic-Commit: ${foreign}\nPublic-Commit-Discarded: no lo queremos`, { allowEmpty: true });
-  r = await mirrorReadOnly(unite(marked), ['plan', '--json'], own);
-  assert.strictEqual(r.code, 0, r.all);
-  assert.deepStrictEqual(r.json.foreign.map((f) => [f.commit, f.absorbed, f.discarded]), [[foreign, true, true]], 'la marca vive en la historia unida');
-
-  // (c) un pull request de sincronización abierto desde dos repos, sin mergear: el repo único lo reemplaza
-  const { fx: open, seed: openSeed } = await publishedFromTwo({ change: true });
-  r = await syncRun(open);
-  assert.deepStrictEqual(r.pushed, [SYNC_REF], `control: la sincronización desde dos repos quedó en la rama\n${r.all}`);
-  const pending = tipOf(open.bare, SYNC_REF);
-  const openSingle = unite(open);
-  internalChange(openSingle);
-  r = await syncRun(openSingle, ['--json'], own);
-  assert.strictEqual(r.code, 0, r.all);
-  assert.deepStrictEqual(r.pushed, [SYNC_REF], 'no es más nueva que el repo único: se reemplaza');
-  assert.notStrictEqual(tipOf(open.bare, SYNC_REF), pending);
-  assert.deepStrictEqual(r.json.pullRequest, { number: 1, action: 'updated' }, 'el mismo pull request, actualizado');
-  assertMirrorCommit(openSingle, tipOf(open.bare, SYNC_REF), { parents: [openSeed.commit], tree: r.json.tree, subject: 'Sincronización' }, 'sobre la punta de main, no sobre la rama');
-
-  // (d) el error: el repo desde el que corre NO trae la historia de agent-skills. Frena nombrando el commit y la causa
-  const { fx: cut, seed: lost } = await publishedFromTwo();
-  const alone = unite(cut, { joined: false });
-  internalChange(alone);
-  for (const command of ['sync', 'plan']) {
-    r = command === 'sync' ? await syncWithoutWrites(alone, [], own) : await mirrorReadOnly(alone, ['plan'], own);
-    assert.strictEqual(r.code, 2, `${command}, sin la historia de agent-skills: ${r.all}`);
-    assert.ok(r.err.includes(lost.skills), `${command}: nombra el commit de agent-skills que no encuentra\n${r.err}`);
-    assert.ok(!r.err.includes(lost.harness), `${command}: el del arnés sí está: no lo nombra`);
-    assert.match(r.err, /la historia de agent-skills no está unida/, `${command}: dice la causa`);
-    assert.match(r.err, /sincronización anterior/, command);
-  }
-  assert.strictEqual(tipOf(cut.bare, SYNC_REF), '', 'no empujó nada');
-  assert.deepStrictEqual(pushes(cut), [], 'ningún push llegó al público');
-
-  // (e) el otro error: un clon recortado del repo único, que no trae esos commits
-  const shallow = path.join(fx.dir, 'single-shallow');
-  const cloned = spawnSync('git', ['clone', '-q', '--depth', '1', `file://${single.harness}`, shallow], { encoding: 'utf8', env: { ...withoutGit(process.env), ...ISOLATED } });
-  assert.strictEqual(cloned.status, 0, cloned.stderr);
-  const trimmed = { ...single, harness: shallow, skills: path.join(shallow, 'skills') };
-  r = await syncWithoutWrites(trimmed, [], own);
-  assert.strictEqual(r.code, 2, `un clon recortado: ${r.all}`);
-  assert.ok(r.err.includes(seed.harness) || r.err.includes(seed.skills), `nombra el commit que no encuentra\n${r.err}`);
-  assert.match(r.err, /superficial/, 'y la causa');
-
-  // (f) y (g): los dos caminos de `requirePreviousSync` que no tenían prueba (revisión del tramo 2, vuelta 1). La
-  // sincronización anterior, ya mergeada en main, sale de C1, un cambio interno sobre la unión
-  const { fx: branched } = await publishedFromTwo();
-  const bs = unite(branched);
-  const union = headOf(bs.harness);
-  const c1 = internalChange(bs);
-  r = await syncRun(bs, ['--json'], own);
-  assert.strictEqual(r.json && r.json.outcome, 'synced', `control: la sincronización desde C1\n${r.all}`);
-  mergeSync(bs);
-  // (f) una rama divergida: C2 es hermano de C1 (los dos sobre la unión). Publicar C2 dejaría afuera lo ya publicado: 2
-  gitFx(bs.harness, ['checkout', '-q', '-b', 'divergida', union]);
-  const c2 = internalChange(bs);
-  for (const command of ['plan', 'sync']) {
-    r = command === 'plan' ? await mirrorReadOnly(bs, ['plan'], own) : await syncWithoutWrites(bs, [], own);
-    assert.strictEqual(r.code, 2, `${command}, desde una rama divergida: ${r.all}`);
-    assert.match(r.err, /no está en la historia del commit que se publicaría/, `${command}: dice la causa\n${r.err}`);
-    assert.ok(r.err.includes(c1) && r.err.includes(c2.slice(0, 12)), `${command}: nombra el commit publicado y el que se publicaría\n${r.err}`);
-  }
-  assert.deepStrictEqual(pushes(branched).filter((ref) => ref !== SYNC_REF), [], 'nada llegó a main');
-  // (g) una corrida vieja: publica la unión misma, ANTERIOR a C1. La comprobación la deja pasar (no es una rama que no
-  // trae lo publicado: lo publicado la contiene) y la decide lo de siempre: «hay cambios», sin «no pude mirar»
-  gitFx(bs.harness, ['checkout', '-q', '--detach', union]);
-  r = await mirrorReadOnly(bs, ['plan', '--json'], own);
-  assert.strictEqual(r.code, 0, `una corrida vieja sigue: ${r.all}`);
-  assert.doesNotMatch(r.all, /no está en la historia|no lo conoce/, 'sin el freno de la sincronización anterior');
-  assert.strictEqual(r.json.harness.sha, union);
-  assert.strictEqual(r.json.state, 'changes', 'lo de siempre: el árbol de la unión no es el publicado desde C1');
-
-  // el espejo: con dos repos físicos esta comprobación no corre — todo sigue como siempre
-  const still = await mirrorReadOnly(fx, ['plan', '--json']);
-  assert.strictEqual(still.code, 0, still.all);
-});
-
-// Pase adversarial del tramo 2 de la 8.18 (clase 16): `verify` (parte f) desde un solo repo interno no comprobaba que el
-// repo conociera la sincronización anterior. Sin la historia de agent-skills, las marcas que viven ahí no se ven y un
-// cambio ajeno ya descartado salía como hallazgo —manda a buscar algo que no existe—, cuando `plan` y `sync` frenan con 2.
-// 🔴 rojo previo verificado: verify salía 1 con findings [{ part: 'f', category: 'foreign-change' }] y nada en couldNotLook.
-test('Mirror_SingleRepo_Verify_UnknownPreviousSync_PartFCouldNotLook — sin la historia de agent-skills, la parte f es «no pude mirar»', async () => {
-  const own = { refs: false };
-  for (const joined of [false, true]) {
-    const { fx: marked, seed } = await publishedFromTwo();
-    const foreign = publicCommit(marked, { parents: [seed.commit], files: { 'docs/ajeno.md': '# Ajeno\n' }, message: 'Un cambio mergeado en GitHub' });
-    commit(marked.skills, `chore: descarta un cambio ajeno del repo público\n\nPublic-Commit: ${foreign}\nPublic-Commit-Discarded: no lo queremos`, { allowEmpty: true });
-    const r = await verifyRun(unite(marked, { joined }), [], own);
-    const f = r.json && r.json.findings.filter((x) => x.part === 'f');
-    const cant = r.json && r.json.couldNotLook.filter((x) => x.part === 'f');
-    if (!joined) {
-      assert.strictEqual(r.code, 2, `sin la historia: no pude mirar\n${r.all}`);
-      assert.deepStrictEqual(f, [], 'ningún cambio ajeno inventado');
-      assert.strictEqual(cant.length, 1, r.all);
-      assert.ok(cant[0].reason.includes(seed.skills), `nombra el commit que no encuentra: ${cant[0].reason}`);
-      assert.match(cant[0].reason, /la historia de agent-skills no está unida/, 'y la causa');
-    } else {
-      // el espejo: con la historia unida, la marca se ve y no hay nada que decir
-      assert.strictEqual(r.code, 0, `con la historia unida\n${r.all}`);
-      assert.deepStrictEqual([f, cant], [[], []]);
-    }
-  }
-});
-
 // ══ story 8.13.1, tanda A (AC 6, T7) — la lista de transformados viaja en el version.json publicado ═══════════════════
 // El version.json que llega al público lo escribe ESTA sincronización (`numberRun`, en `first` y en `sync`), no el
 // exportador: sin la lista acá, cada máquina con la capa privada vería «capa de otra versión». La lista es la del
 // exportador de esa corrida (su --json), y `verify` comprueba que nombra exactamente las rutas publicadas cuyo blob no
 // es el del commit interno de su sincronización. La mitad del exportador está en export.test.js.
-
-/** Las rutas de una ref del público (sin version.json) cuyo blob no es el de los internos de mentira en su HEAD. */
-function differingFromInternal(fx, ref) {
-  const blobs = (dir, rev) => gitFx(dir, ['ls-tree', '-r', rev]).split('\n').filter(Boolean).map((l) => l.split('\t'))
-    .filter(([meta]) => meta.split(' ')[1] === 'blob').map(([meta, rel]) => [rel, meta.split(' ')[2]]);
-  // los dos internos, el arnés primero: una ruta que traen los dos (el .gitignore) se compara con la del arnés
-  const internal = new Map([...blobs(fx.skills, 'HEAD'), ...blobs(fx.harness, 'HEAD')]);
-  // lo que sale sólo en el público (LICENSE, los papeles de .github/) no difiere de nada interno: no cuenta
-  return blobs(fx.bare, ref).filter(([rel, b]) => rel !== VERSION_FILE && internal.has(rel) && internal.get(rel) !== b).map(([rel]) => rel).sort();
-}
-
-test('T7 Export_And_MirrorSync_VersionJsonTransformed_Deterministic_NoPrivate_VerifyCatchesUndeclared — mirror.js: first y sync la escriben, verify la comprueba y frena con una ruta sin nombre', async () => {
-  const fx = await fixture();
-  // un papel de public-files/ que reemplaza una ruta que el interno también trae (guides/guia.md, con otro blob)
-  const allowlist = clone(ALLOWLIST);
-  allowlist.packages.core.arnes.out.push({ glob: 'guides/guia.md', reason: 'la copia trae la suya, de public-files' });
-  allowlist.synthetic.push(paper('guides/guia.md'));
-  fx.config({ allowlist });
-  internalChangeAt(fx, utcAt(DAY_ONE, 10), { [`${PAPERS_DIR}/guides/guia.md`]: '# Guía\n\nLa versión de afuera.\n' });
-  const r = await mirror(fx, ['first', '--json'], { credential: WRITER });
-  assert.strictEqual(r.code, 0, r.all);
-
-  // first: el version.json de la primera publicación trae la lista, con las rutas publicadas que difieren del interno
-  const one = versionOf(fx, MAIN_REF);
-  assert.ok(one && Array.isArray(one.json.transformed), `la primera publicación trae «transformed»\n${one && one.text}`);
-  assert.deepStrictEqual(one.json.transformed.map((t) => t.path), differingFromInternal(fx, MAIN_REF), 'exactamente las rutas que difieren, en orden');
-  const exported = runExporter(fx);
-  assert.strictEqual(exported.r.status, 0, exported.r.stderr);
-  const exportedJson = JSON.parse(exported.r.stdout);
-  const byPath = new Map(one.json.transformed.map((t) => [t.path, t.transform]));
-  assert.ok(String(byPath.get('guides/guia.md')).split('+').includes('sinteticos'), `guides/guia.md: con el ajuste que la reemplaza: ${byPath.get('guides/guia.md')}\n${one.text}`);
-  // el ajuste del papel se anota con el prefijo de su fuente (arnes/guides/guia.md); la lista trae la ruta publicada
-  assert.ok(exportedJson.ajustes.some((a) => a.transformacion === 'sinteticos' && a.archivo === 'arnes/guides/guia.md'), 'control: el ajuste trae el prefijo de su fuente');
-  // LICENSE sale sólo en el público: no difiere de nada interno
-  assert.ok(gitFx(fx.bare, ['ls-tree', '--name-only', MAIN_REF, '--', 'LICENSE']) === 'LICENSE', 'control: LICENSE se publicó');
-  assert.ok(!byPath.has('LICENSE'), `lo que sale sólo afuera no es un transformado\n${one.text}`);
-  assert.ok(!one.json.transformed.some((t) => /^(arnes|agent-skills)\//.test(t.path)), 'la ruta publicada, sin el prefijo de su fuente');
-  assert.ok(!one.json.transformed.some((t) => t.path === VERSION_FILE || /(^|\+)generated(\+|$)/.test(t.transform)), 'sin generated');
-  // es la lista del exportador de esa corrida, tal cual
-  assert.deepStrictEqual(one.json.transformed, exportedJson.transformed, 'la misma lista que trae el --json del exportador');
-  // y su verify --strict la miró, sin hallazgos
-  assert.strictEqual(r.json.verify.exit, 0, r.all);
-  assert.deepStrictEqual(r.json.verify.findings, []);
-  assert.strictEqual(r.json.verify.looked.j, 1, 'la parte (j) miró la lista de la primera publicación');
-
-  // sync (`numberRun`): la rama también la trae, y es la misma en las dos corridas (el cambio interno no se transforma)
-  internalChangeAt(fx, utcAt(DAY_ONE, 11));
-  const s = await syncRun(fx, ['--json']);
-  assert.strictEqual(s.code, 0, s.all);
-  const two = versionOf(fx, SYNC_REF);
-  assert.ok(two && Array.isArray(two.json.transformed), `la sincronización trae «transformed»\n${two && two.text}`);
-  assert.deepStrictEqual(two.json.transformed.map((t) => t.path), differingFromInternal(fx, SYNC_REF));
-  assert.deepStrictEqual(two.json.transformed, one.json.transformed, 'la misma lista en las dos corridas');
-  let v = await verifyRun(fx);
-  assert.strictEqual(v.code, 0, v.all);
-  assert.strictEqual(v.json.looked.j, 2, 'la de main y la de la rama');
-
-  // nada privado en el version.json publicado: el detector con la lista de la prueba, en 0
-  const publishedFile = path.join(fx.dir, 'version-publicado.json');
-  fs.writeFileSync(publishedFile, two.text);
-  const d = spawnSync(process.execPath, [path.join(PUBLISHING, 'detector.js'), '--config', fx.cfg.denied, publishedFile], { encoding: 'utf8' });
-  assert.strictEqual(d.status, 0, `el detector sobre version.json: ${d.stdout}${d.stderr}`);
-  assert.ok(!two.text.toLowerCase().includes(TERM.toLowerCase()), 'ni el nombre del cliente de la fixture');
-
-  // un transformado quitado de la lista a mano: verify sale 1 en (j), nombrando la ruta y el commit
-  const main = tipOf(fx.bare, MAIN_REF);
-  const branch = tipOf(fx.bare, SYNC_REF);
-  const seed = { commit: branch, harness: two.json.source.harness, skills: two.json.source.agent_skills };
-  const bytes = (transformed) => require(EXPORTER).versionFileBytes({ version: two.json.version, source: two.json.source, transformed }).toString('utf8');
-  const tampered = (transformed) => datedSync(fx, seed, { parent: main, from: branch, epoch: utcAt(DAY_ONE, 11), ref: SYNC_REF,
-    file: transformed === undefined ? require(EXPORTER).versionFileBytes({ version: two.json.version, source: two.json.source }).toString('utf8') : bytes(transformed) });
-  let bad = tampered(two.json.transformed.filter((t) => t.path !== 'guides/guia.md'));
-  v = await verifyRun(fx);
-  assert.strictEqual(v.code, 1, v.all);
-  assert.deepStrictEqual(partsOf(v), ['j'], `sólo la parte (j)\n${v.all}`);
-  assert.deepStrictEqual(v.json.findings.map((f) => f.category), ['transformed-undeclared']);
-  assert.ok(v.json.findings[0].place.includes('guides/guia.md') && v.json.findings[0].place.includes(bad), `nombra la ruta y el commit\n${v.json.findings[0].place}`);
-  const plain = await verifyPlain(fx);
-  assert.strictEqual(plain.code, 1, plain.all);
-  assert.ok(plain.all.includes('· (j) [transformed-undeclared] ') && plain.all.includes('guides/guia.md'), plain.all);
-  // una ruta de más (una que no difiere): también, nombrándola
-  bad = tampered([...two.json.transformed, { path: 'README.md', transform: 'inventada' }]);
-  v = await verifyRun(fx);
-  assert.strictEqual(v.code, 1, v.all);
-  assert.deepStrictEqual(v.json.findings.map((f) => `${f.part} ${f.category}`), ['j transformed-extra']);
-  assert.ok(v.json.findings[0].place.includes('README.md') && v.json.findings[0].place.includes(bad), v.json.findings[0].place);
-  // una sincronización sin la lista, armada sobre un main que la trae: hallazgo (la cadena ya la traía)
-  bad = tampered(undefined);
-  v = await verifyRun(fx);
-  assert.strictEqual(v.code, 1, v.all);
-  assert.deepStrictEqual(v.json.findings.map((f) => `${f.part} ${f.category}`), ['j transformed-missing']);
-  assert.ok(v.json.findings[0].place.includes(bad), v.json.findings[0].place);
-  // el espejo: con la lista entera otra vez, verify en 0
-  tampered(two.json.transformed);
-  v = await verifyRun(fx);
-  assert.strictEqual(v.code, 0, v.all);
-});
 
 test.after(async () => {
   if (api) await api.close();

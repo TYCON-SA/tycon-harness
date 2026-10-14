@@ -15,6 +15,7 @@
     {"glob": "skills/esbuild-bundling", "why": "del paquete bizuit: a una carpeta de skills/ para que cargue como skill (antes en skills/core/)"},
     {"glob": "skills/feature-based-crud-endpoints", "why": "del paquete bizuit: a una carpeta de skills/ para que cargue como skill (antes en skills/core/)"},
     {"glob": "skills/safe-query-builder", "why": "del paquete bizuit: a una carpeta de skills/ para que cargue como skill (antes en skills/core/)"},
+    {"glob": "skills/bizuit-new-product", "why": "del paquete bizuit: el alta de un producto BIZUIT con sus plantillas (packs/bizuit/new-product-templates/)"},
     {"glob": "skills/projects/*", "why": "ídem"},
     {"glob": "skills/infrastructure/*", "why": "ídem"},
     {"glob": "skills/bmad-analyze", "why": "medido: no existe en la historia de BMAD; idéntica al fork del equipo (effe89c4)"},

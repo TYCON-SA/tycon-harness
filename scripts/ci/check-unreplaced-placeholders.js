@@ -3,15 +3,15 @@
 // check-unreplaced-placeholders.js — que un alta no commitee un marcador de plantilla vivo
 //
 // POR QUÉ EXISTE (2026-09-28). Un alta de producto copia las plantillas de
-// `new-product-templates/` y les reemplaza los marcadores: `{{PRODUCTO}}`, `{{REPO_BACKEND}}`,
-// `{{PLUGIN}}`, `{{FECHA}}`… En una corrida simulada del alta contamos **~120 marcadores de 11
+// `new-product-templates/` (hoy, `packs/bizuit/new-product-templates/` del arnés) y les reemplaza los
+// marcadores: `{{PRODUCT}}`, `{{BACKEND_REPO}}`, `{{PLUGIN}}`, `{{DATE}}`… En una corrida simulada del alta contamos **~120 marcadores de 11
 // tipos repartidos en más de 20 archivos**, y ningún control miraba si quedaba alguno vivo.
 //
 // Un marcador que sobrevive NO da error: se lee como un valor más. Los dos casos que duelen:
-//   · `repo_group: [{{REPO_BACKEND}}, {{REPO_HISTORIAS}}]` en `.tycon/advisors.yaml` → los
+//   · `repo_group: [{{BACKEND_REPO}}, {{STORIES_REPO}}]` en `.tycon/advisors.yaml` → los
 //     revisores buscan repos hermanos que no existen y dicen «no encontré hermanos». Parece que
 //     el producto no tiene hermanos; en realidad nadie reemplazó nada.
-//   · `{{URL_SERVIDOR}}` o `{{HOST_SQL}}` en un CLAUDE.md → una instrucción que se lee como
+//   · `{{SERVER_URL}}` o `{{SQL_HOST}}` en un CLAUDE.md → una instrucción que se lee como
 //     decidida y manda a un servidor que no existe.
 //
 // QUÉ BUSCA: `{{NOMBRE_EN_MAYUSCULAS}}` — dos llaves, letras mayúsculas, dígitos y guión bajo.
@@ -177,7 +177,7 @@ function main(argv0) {
   if (hallazgos.length > 40) console.error(`  … y ${hallazgos.length - 40} más`);
   console.error('');
   console.error('Un marcador vivo NO da error en ningún lado: se lee como un valor más. Reemplazalos');
-  console.error('antes de commitear — la tabla de marcadores está en new-product-templates/README.md.');
+  console.error('antes de commitear — la tabla de marcadores está en packs/bizuit/new-product-templates/README.md del arnés.');
   return 1;
 }
 
