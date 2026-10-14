@@ -11,7 +11,10 @@
 #   · los repos se descubren con `clone-repos.sh --org`: los del dueño del repo de operaciones, o los de la variable
 #     METRICS_OWNERS (separados por `;`); la variable METRICS_REPO_PREFIX los acota por prefijo; las copias del arnés
 #     declaradas en `team-repos.json` (`harness_copies`) no se miden;
-#   · la credencial de la organización es el secreto HARNESS_ORG_TOKEN, sólo en el paso que descubre y clona;
+#   · la credencial de la organización llega sólo al paso que descubre y clona. Recomendada: una GitHub App (variable
+#     HARNESS_APP_CLIENT_ID y secreto HARNESS_APP_PRIVATE_KEY), que da un token de una hora, de sólo lectura y sólo de
+#     los repos donde está instalada. Alternativa: un usuario de máquina, con su token en el secreto HARNESS_ORG_TOKEN.
+#     Con la App configurada, gana la App;
 #   · lo «naranja» de Azure es un aviso (::warning::) con la corrida en verde.
 # Efectos: una corrida programada SIEMPRE guarda (en ella `inputs` está vacío); una a mano, según `effects`.
 # ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════
@@ -96,10 +99,23 @@ jobs:
           OPS_TOKEN: ${{ github.token }}
         run: bash harness/pipelines/operations/github/prepare-tree.sh
 
+      # La credencial de la GitHub App, si está configurada: un token de instalación que vence en una hora, sólo con
+      # permiso de leer el contenido y sólo de los repos donde la App está instalada. Sin la App, el paso no corre y vale
+      # el secreto HARNESS_ORG_TOKEN (el usuario de máquina).
+      - name: La credencial de la organización (GitHub App, si está configurada)
+        id: org-token
+        if: vars.HARNESS_APP_CLIENT_ID != ''
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.HARNESS_APP_CLIENT_ID }}
+          private-key: ${{ secrets.HARNESS_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          permission-contents: read
+
       - name: Descubrir y clonar (liviano) los repos de la organización
         working-directory: harness
         env:
-          ORG_TOKEN: ${{ secrets.HARNESS_ORG_TOKEN }}
+          ORG_TOKEN: ${{ steps.org-token.outputs.token || secrets.HARNESS_ORG_TOKEN }}
           OWNERS: ${{ vars.METRICS_OWNERS }}
           PREFIX: ${{ vars.METRICS_REPO_PREFIX }}
         run: bash pipelines/operations/github/clone-repos.sh --org "${RUNNER_TEMP}/repos" --team-repos team-repos.json

@@ -11,8 +11,12 @@
 #   · los avisos son ISSUES en el repo de cada producto (scripts/nightly/dependencies/github-issues.js, elegido por
 #     `work-items.js` porque `team-repos.json` dice `operations.platform: github`), no Bugs de Azure Boards;
 #   · NO hay pull request por hallazgo en el repo de operaciones: el issue es el lugar de decidir;
-#   · la credencial de la organización es el secreto HARNESS_ORG_TOKEN, sólo en los pasos que clonan y hablan con los
-#     issues; el paso que mira las dependencias (corre `dotnet restore` sobre código de los productos) no tiene ninguna;
+#   · la credencial de la organización llega sólo a los pasos que clonan y hablan con los issues; el paso que mira las
+#     dependencias (corre `dotnet restore` sobre código de los productos) no tiene ninguna. Recomendada: una GitHub App
+#     (variable HARNESS_APP_CLIENT_ID y secreto HARNESS_APP_PRIVATE_KEY): da tokens de una hora, con los permisos que
+#     pide cada paso y sólo de los repos donde está instalada; el de clonar se revoca ANTES de correr código de los
+#     productos, y el de los issues se pide después. Alternativa: un usuario de máquina, con su token en el secreto
+#     HARNESS_ORG_TOKEN. Con la App configurada, gana la App;
 #   · lo «naranja» de Azure es un aviso (::warning::) con la corrida en verde.
 #
 # Efectos: una corrida programada SIEMPRE tiene efectos (en ella `inputs` está vacío); una a mano, según `effects`. Con
@@ -123,10 +127,25 @@ jobs:
             echo "primera noche: se crea la cola inbox/dependencies (pending, promoted, archived)"
           fi
 
+      # La credencial de la GitHub App, si está configurada, para clonar y leer los issues: un token de instalación
+      # sólo de lectura y sólo de los repos donde la App está instalada. Se revoca antes de correr código de los
+      # productos (por eso no lo revoca la acción al final). Sin la App, el paso no corre y vale HARNESS_ORG_TOKEN.
+      - name: La credencial de la organización para leer (GitHub App, si está configurada)
+        id: org-token
+        if: vars.HARNESS_APP_CLIENT_ID != ''
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.HARNESS_APP_CLIENT_ID }}
+          private-key: ${{ secrets.HARNESS_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          permission-contents: read
+          permission-issues: read
+          skip-token-revoke: true
+
       - name: Clonar los repos declarados
         working-directory: harness
         env:
-          ORG_TOKEN: ${{ secrets.HARNESS_ORG_TOKEN }}
+          ORG_TOKEN: ${{ steps.org-token.outputs.token || secrets.HARNESS_ORG_TOKEN }}
         run: |
           set -uo pipefail
           node scripts/nightly/dependencies/nightly-dependencies.js clone-list | bash pipelines/operations/github/clone-repos.sh --declared "${RUNNER_TEMP}/repos"
@@ -135,7 +154,7 @@ jobs:
         if: env.ISSUES_ON == '1'
         working-directory: harness
         env:
-          GH_TOKEN: ${{ secrets.HARNESS_ORG_TOKEN }}
+          GH_TOKEN: ${{ steps.org-token.outputs.token || secrets.HARNESS_ORG_TOKEN }}
         run: |
           set -uo pipefail
           set +e   # GitHub corre el paso con bash -e: el código de salida se lee abajo, no corta acá
@@ -146,6 +165,19 @@ jobs:
           CODIGO=${PIPESTATUS[0]}
           [ "${CODIGO}" = 0 ] || echo "::warning::No se pudo leer el estado de los issues (código ${CODIGO}): la noche mide igual pero NO cruza — no es «coinciden»."
           exit 0
+
+      # Ningún token de la App vivo mientras corre código de los productos: el de leer se revoca acá, también si un paso
+      # anterior falló. Si no se puede revocar, no se sigue (el token de un usuario de máquina no se revoca: no hay App).
+      - name: Revocar la credencial de la App (antes de correr código de los productos)
+        if: always() && steps.org-token.outputs.token != ''
+        env:
+          APP_TOKEN: ${{ steps.org-token.outputs.token }}
+        run: |
+          set -uo pipefail
+          CODIGO=$(curl -sS -o /dev/null -w '%{http_code}' -X DELETE -H "Authorization: Bearer ${APP_TOKEN}" \
+            -H 'Accept: application/vnd.github+json' "${GITHUB_API_URL}/installation/token")
+          if [ "${CODIGO}" != 204 ]; then echo "::error::No se pudo revocar la credencial de la App (HTTP ${CODIGO}): no se corre código de los productos con ella viva"; exit 1; fi
+          echo "la credencial de la App para leer quedó revocada"
 
       - name: El árbol sigue siendo el que se armó (antes de medir)
         working-directory: harness
@@ -173,11 +205,24 @@ jobs:
           [ -f ".dashboard/dependencias/dependencias-${HOY}.json" ] || { echo "::error::No quedó el snapshot de ${HOY}: la noche no se miró"; exit 1; }
           if grep -q 'NO MEDIDO' "${RUNNER_TEMP}/deps-salida.txt"; then echo "::warning::Hubo repos que no se pudieron mirar (ver la salida). No medido NO es limpio."; fi
 
+      # La credencial de la App para escribir los issues, pedida DESPUÉS de mirar las dependencias: un token de una hora
+      # que sólo puede escribir issues, que no existe mientras corre código de los productos y que la acción revoca al
+      # terminar el trabajo. Sin la App, el paso no corre y vale HARNESS_ORG_TOKEN.
+      - name: La credencial de la organización para los issues (GitHub App, si está configurada)
+        id: org-token-issues
+        if: vars.HARNESS_APP_CLIENT_ID != '' && env.EFFECTS == 'true' && env.ISSUES_ON == '1'
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.HARNESS_APP_CLIENT_ID }}
+          private-key: ${{ secrets.HARNESS_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          permission-issues: write
+
       - name: Crear y comentar los issues
         if: env.EFFECTS == 'true' && env.ISSUES_ON == '1'
         working-directory: harness
         env:
-          GH_TOKEN: ${{ secrets.HARNESS_ORG_TOKEN }}
+          GH_TOKEN: ${{ steps.org-token-issues.outputs.token || secrets.HARNESS_ORG_TOKEN }}
         run: |
           set -uo pipefail
           set +e   # GitHub corre el paso con bash -e: el código de salida se lee abajo, no corta acá

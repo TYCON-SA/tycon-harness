@@ -300,7 +300,10 @@ if corre UNIT; then
   printf '#!/usr/bin/env bash\nif then fi\n' > "$LAB_TREE/scripts/hooks/broken.sh"
   printf 'setTimeout(()=>process.exit(0), 4000);\n' > "$SK/tycon-pipeline/slow.js"
   printf 'process.exit(0);\n' > "$SK/tycon-pipeline/fine.js"
-  printf '#!/usr/bin/env bash\nexit 0\n' > "$LAB_TREE/scripts/hooks/fine-stop.sh"
+  # el hook sano lee su payload, como los de verdad: uno que sale sin leerlo deja a spawnSync con EPIPE de a ratos, y la
+  # salud lo anota como «no pude lanzarlo» (T99 rojo de a ratos en public-ci, 2026-10-14). Ese aviso de la salud es
+  # otro arreglo, aparte
+  printf '#!/usr/bin/env bash\ncat > /dev/null\nexit 0\n' > "$LAB_TREE/scripts/hooks/fine-stop.sh"
   # doctores de mentira: uno en rojo, uno verde, uno que no arranca
   printf 'process.stdout.write(JSON.stringify({mode:"managed",fail:["fuente harness: algo rojo de laboratorio"],warn:[],ok:[]})); process.exitCode=1;\n' > "$U/doctor-red.js"
   printf 'process.stdout.write(JSON.stringify({mode:"managed",fail:[],warn:[],ok:["todo bien"]}));\n' > "$U/doctor-green.js"
@@ -451,7 +454,10 @@ if corre T99; then
   U="$LAB/unit"; mkdir -p "$U/path-first" "$U/git/bin"
   SK="$LAB_SKILLS/skills"
   HEALTH_JS="$RAIZ/scripts/setup/harness/health.js"
-  printf '#!/usr/bin/env bash\nexit 0\n' > "$LAB_TREE/scripts/hooks/fine-stop.sh"
+  # el hook sano lee su payload, como los de verdad: uno que sale sin leerlo deja a spawnSync con EPIPE de a ratos, y la
+  # salud lo anota como «no pude lanzarlo» (T99 rojo de a ratos en public-ci, 2026-10-14). Ese aviso de la salud es
+  # otro arreglo, aparte
+  printf '#!/usr/bin/env bash\ncat > /dev/null\nexit 0\n' > "$LAB_TREE/scripts/hooks/fine-stop.sh"
   printf '#!/usr/bin/env bash\nif then fi\n' > "$LAB_TREE/scripts/hooks/broken.sh"
   printf '#!/usr/bin/env bash\r\nexit 0\r\n' > "$LAB_TREE/scripts/hooks/crlf-guard.sh"
   printf 'process.stdout.write(JSON.stringify({mode:"managed",fail:[],warn:[],ok:["todo bien"]}));\n' > "$U/doctor-green.js"

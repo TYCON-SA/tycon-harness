@@ -13,8 +13,9 @@
 #       Markdown, `.advisors/` y `.tycon/`) en `<destino>/<dueño>__<repo>` (lo parten en `__` las métricas). El clon
 #       liviano baja contenido después: el token queda en la config de esos clones, en un trabajo que sólo lee Markdown.
 #
-# Necesita ORG_TOKEN (el secreto HARNESS_ORG_TOKEN, por env del paso). Habla con GitHub por TYCON_GH_CMD (por defecto
-# gh; un `.js` corre con node) y clona desde GITHUB_SERVER_URL (las pruebas usan una carpeta local).
+# Necesita ORG_TOKEN, por env del paso: el token de la GitHub App (recomendado) o el secreto HARNESS_ORG_TOKEN (un usuario
+# de máquina). Habla con GitHub por TYCON_GH_CMD (por defecto gh; un `.js` corre con node) y clona desde GITHUB_SERVER_URL
+# (las pruebas usan una carpeta local).
 # Un repo que no se pudo listar o clonar se NOMBRA (un barrido que se achica en silencio se lee igual que uno completo).
 # Salida: 0 (lo que falló va como ::warning::) · 1 sin credencial, sin poder listar a un dueño, o error de uso.
 set -uo pipefail
@@ -23,7 +24,7 @@ MODE="${1:-}"; DEST="${2:-}"; TEAM_REPOS=""
 [ "${3:-}" = "--team-repos" ] && TEAM_REPOS="${4:-}"
 case "${MODE}" in --declared|--org) ;; *) echo "uso: clone-repos.sh --declared <destino> | --org <destino> [--team-repos <archivo>]" >&2; exit 1 ;; esac
 [ -n "${DEST}" ] || { echo "uso: falta el destino" >&2; exit 1; }
-[ -n "${ORG_TOKEN:-}" ] || { echo "::error::Falta el secreto HARNESS_ORG_TOKEN (la credencial de la organización para leer sus repos): no se clonó nada"; exit 1; }
+[ -n "${ORG_TOKEN:-}" ] || { echo "::error::Falta la credencial de la organización para leer sus repos: la GitHub App (variable HARNESS_APP_CLIENT_ID y secreto HARNESS_APP_PRIVATE_KEY) o el secreto HARNESS_ORG_TOKEN. No se clonó nada"; exit 1; }
 SERVER="${GITHUB_SERVER_URL:-https://github.com}"
 AUTH="$(printf 'x-access-token:%s' "${ORG_TOKEN}" | base64 | tr -d '\n')"
 echo "::add-mask::${AUTH}"
