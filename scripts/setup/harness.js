@@ -371,7 +371,34 @@ function normalizeTreeEol(ctx, tree, log = null) {
  * lista lo enchufa este programa y al aplicador se le avisa (`TYCON_HARNESS_CODEX=done`) para que saltee su bloque; sin
  * Codex, que no lo despliegue (`off`).
  */
-function runApplier(ctx, tree, { log, snapshotDir = null, tools = undefined, force = false } = {}) {
+function runApplier(ctx, tree, { log, snapshotDir = null, tools = undefined, force = false, hooksPath = false } = {}) {
+  const a = runApplierOnly(ctx, tree, { log, snapshotDir, tools, force });
+  // la carpeta global de hooks de git (2026-10-14): sólo en lo que pide una persona (`install`, `apply`, la mudanza), nunca
+  // en el arranque. El aplicador sólo avisa que git no tiene ninguna; acá se pone, si corresponde (git-hooks-path.js)
+  if (hooksPath && a.ok) {
+    const prof = profileOf(ctx, tree);
+    const G = mod('git-hooks-path');
+    const g = G.ensure({ home: ctx.home, env: ctx.env, platform: ctx.platform, profile: prof.ok ? prof.value : null, log });
+    if (g.status === 'set' || g.status === 'failed') {
+      a.warnings = G.withoutUnsetWarning(a.warnings);
+      a.out = G.withoutUnsetWarning(String(a.out || '').split('\n')).join('\n');
+    }
+    if (g.status === 'failed') a.warnings = [...a.warnings, ...g.line.split('\n')];
+    a.gitHooksPath = g;
+  }
+  return a;
+}
+
+/** La carpeta global de hooks de git que puso esta corrida (`runApplier` con `hooksPath`), anotada en el estado: la línea
+ *  para la persona, o null. `uninstall` y el paso al perfil mínimo la sacan sólo si sigue siendo ésa. */
+function noteHooksPath(state, a) {
+  const g = a && a.gitHooksPath;
+  if (!g || g.status !== 'set') return null;
+  state.git_hooks_path = { value: g.value, at: nowIso() };
+  return g.line;
+}
+
+function runApplierOnly(ctx, tree, { log, snapshotDir = null, tools = undefined, force = false } = {}) {
   const T = mod('tools');
   if (tools === undefined) {
     const st = loadState(ctx);
@@ -1079,9 +1106,14 @@ function dropForProfile(ctx, state, tree, applied, log, profileValue) {
     const eff = mod('managed').readEffects(tree);
     if (!eff.ok) { if (log) log(`perfil: no pude leer qué trae cada perfil (${eff.reason}): no quito nada`); return null; }
     const drop = mod('profile').toRemove(state.managed, mod('shared').union(applied.report, applied.shared), (p) => isOwnPiece(ctx, p), { effects: eff.effects, profile: profileValue });
-    if (!drop.length) return { removed: [], kept: [] };
-    const r = mod('remove').removePieces(drop, { home: ctx.home, env: ctx.env, tree, log, platform: ctx.platform });
-    if (log) log(`perfil: quité ${r.removed.length} pieza(s) que el perfil nuevo no trae${r.kept.length ? `; quedaron ${r.kept.length}: ${r.kept.map((k) => k.why).join(' · ')}` : ''}`);
+    const r = drop.length ? mod('remove').removePieces(drop, { home: ctx.home, env: ctx.env, tree, log, platform: ctx.platform }) : { removed: [], kept: [] };
+    if (drop.length && log) log(`perfil: quité ${r.removed.length} pieza(s) que el perfil nuevo no trae${r.kept.length ? `; quedaron ${r.kept.length}: ${r.kept.map((k) => k.why).join(' · ')}` : ''}`);
+    // fuera de full no hay hooks de git del arnés: la carpeta global que puso el arnés se saca (2026-10-14), si sigue siendo ésa
+    if (profileValue !== 'full' && state.git_hooks_path) {
+      const g = mod('git-hooks-path').release({ env: ctx.env, recorded: state.git_hooks_path, log });
+      if (g.status === 'removed' || g.status === 'none' || g.status === 'kept') state.git_hooks_path = null;
+      if (g.line && g.status !== 'removed') r.kept = [...(r.kept || []), { why: g.line }];
+    }
     return r;
   } catch (e) {
     if (log) log(`perfil: no pude quitar lo que el perfil nuevo no trae (${(e && e.message) || e})`);
@@ -1511,7 +1543,7 @@ function redetectSources(state, detected, tree, notes, blind = []) {
 function releaseHelpers(ctx) {
   const S = mod('state');
   return {
-    takeSnapshot, finishSnapshot, runApplier, runHealth, recordPieces, ensureLink, linkResolvesTo, ensureImport, copyBootstrap,
+    takeSnapshot, finishSnapshot, runApplier, noteHooksPath, runHealth, recordPieces, ensureLink, linkResolvesTo, ensureImport, copyBootstrap,
     settingsPath, policyOf, applyPolicy, installQuestions, writeAnswers, profileOf, machineProfile, holdText, availableText,
     applyHint, REEVALUATED_NOTICE, engramOn, missingRequirement, profileSwitch, dropForProfile, profileSwitchNotes, toolChoice, withAnswers, toolNotice,
     engramSync: (c) => {
@@ -1903,7 +1935,7 @@ function cmdInstall(ctx) {
     let applied = null;
     if (!fromExisting) {
       // con las herramientas que eligió ESTA corrida (story 8.23, tanda C): el estado todavía no las tiene escritas
-      const a = runApplier(ctx, tree, { log: (l) => R.log(ctx.home, `install: ${l}`), snapshotDir: snap && snap.dir, tools: tc ? tc.tools : undefined, force: true });
+      const a = runApplier(ctx, tree, { log: (l) => R.log(ctx.home, `install: ${l}`), snapshotDir: snap && snap.dir, tools: tc ? tc.tools : undefined, force: true, hooksPath: true });
       applied = a;
       state.last_apply = nowIso();
       if (!a.ok) {
@@ -1924,6 +1956,7 @@ function cmdInstall(ctx) {
       const dropped = switching ? dropForProfile(ctx, state, tree, a, (l) => R.log(ctx.home, `install: ${l}`), profNow.ok ? profNow.value : null) : true;
       if (switching) notes.push(...profileSwitchNotes(dropped));
       recordPieces(ctx, state, a.report, a.shared);
+      { const hp = noteHooksPath(state, a); if (hp) notes.push(hp); }
       // el perfil nuevo se anota sólo si el cambio se pudo hacer entero: si no se supo qué sobraba (sin reporte), queda el
       // de antes y la próxima corrida lo reintenta (pase adversarial de la tanda C, clases 7 y 14)
       if (profNow.ok && dropped !== null) state.profile = { value: profNow.value, origin: profNow.origin };
@@ -3084,7 +3117,7 @@ function cmdApply(ctx) {
     // el cambio de perfil por el archivo o la variable (story 8.16, AC 26): como en startup, con su copia y sin preguntar
     const sw = profileSwitch(ctx, r.state, r.state.tree, log);
     const snap = sw.snap || takeSnapshot(ctx, r.state.tree, { reason: 'apply', from: r.state.version && r.state.version.number, log, state: r.state });
-    const a = runApplier(ctx, r.state.tree, { log, snapshotDir: snap && snap.dir });
+    const a = runApplier(ctx, r.state.tree, { log, snapshotDir: snap && snap.dir, hooksPath: true });
     r.state.last_apply = nowIso();
     const extra = [];
     if (a.ok) {
@@ -3092,12 +3125,17 @@ function cmdApply(ctx) {
       const dropped = sw.switching ? dropForProfile(ctx, r.state, r.state.tree, a, log, sw.profile.value) : true;
       if (sw.switching) extra.push(...profileSwitchNotes(dropped));
       recordPieces(ctx, r.state, a.report, a.shared);
+      // la carpeta global de hooks de git, si `apply` la puso (doctor manda acá cuando git no tiene ninguna); y si git no
+      // la dejó escribir, el aviso con el comando a mano
+      const hp = noteHooksPath(r.state, a);
+      if (hp) extra.push(hp);
+      else if (a.gitHooksPath && a.gitHooksPath.status === 'failed') extra.push(...a.gitHooksPath.line.split('\n'));
       if (sw.profile && sw.profile.ok && dropped !== null) r.state.profile = { value: sw.profile.value, origin: sw.profile.origin };
     }
     S.write(ctx.home, r.state);
     finishSnapshot(ctx, snap, log);
     if (a.ok && (sw.switching || sw.notice)) return { code: 0, lines: [`aplicador corrido desde ${r.state.tree}`, ...(sw.switching ? [`perfil de instalación: ${sw.profile.value} (copia de antes en ${snap ? snap.dir : '—'})`] : []), ...(sw.notice ? [sw.notice] : []), ...extra] };
-    return { code: a.ok ? 0 : 1, lines: a.ok ? [`aplicador corrido desde ${r.state.tree}`] : [`harness.js apply: ${a.reason}`, ...(a.out ? a.out.split('\n').slice(-5) : [])] };
+    return { code: a.ok ? 0 : 1, lines: a.ok ? [`aplicador corrido desde ${r.state.tree}`, ...extra] : [`harness.js apply: ${a.reason}`, ...(a.out ? a.out.split('\n').slice(-5) : [])] };
   }, { env: ctx.env, onBusy: busy });
 }
 
@@ -3749,6 +3787,11 @@ function doctorPublishGuardItems(ctx, tree, prof, add, extra) {
     const notExpected = off ? 'TYCON_NO_GIT_HOOKS=1' : (prof && prof.ok ? `el perfil es ${prof.value}` : 'no se pudo leer el perfil');
     const level = out.hook.expected ? 'warn' : 'ok';
     const tail = out.hook.expected ? ' — harness.js apply lo pone' : ` — acá no se espera (${notExpected})`;
+    // la carpeta que llena el aplicador; si git mira OTRA, apply no la cambia (puede ser de otra herramienta)
+    const G2 = mod('git-hooks-path');
+    const oursDir = G2.hooksDir({ home: ctx.home, env });
+    const sameDir = (d) => { try { return path.resolve(d) === path.resolve(oursDir) || (fs.existsSync(d) && fs.existsSync(oursDir) && fs.realpathSync(d) === fs.realpathSync(oursDir)); } catch (_) { return false; } };
+    const otherTail = () => ` — harness.js apply no la cambia (puede ser de otra herramienta): para usar la del arnés, git config --global core.hooksPath "${G2.valueFor(oursDir, ctx.platform)}"`;
     // `--type=path`: git expande `~` como lo va a usar. Lee la configuración global de quien corre (HOME, GIT_CONFIG_GLOBAL)
     // `--includes`: con `--global` git NO sigue los archivos incluidos (`[include]`) salvo que se lo pidan, y al correr un
     // hook sí los sigue: con la carpeta puesta desde un archivo incluido esto decía «git no tiene carpeta global de
@@ -3760,7 +3803,9 @@ function doctorPublishGuardItems(ctx, tree, prof, add, extra) {
     if (r.error && r.error.code === 'ENOENT') say('ok', 'no pude mirar la carpeta global de hooks: git no está en esta máquina (sin git no hay empuje que frenar)');
     else if (r.error || (r.status !== 0 && r.status !== 1)) say(level, `no pude mirar la carpeta global de hooks de git (git config ${r.error ? 'no contestó' : `salió ${r.status}`})`);
     else if (!dir) say(level, `el pre-push del arnés NO está puesto: git no tiene carpeta global de hooks (core.hooksPath)${tail}`);
-    else if (!path.isAbsolute(dir)) say(level, `el pre-push del arnés NO está puesto para todos los repos: la carpeta global de hooks de git es relativa (${dir}), y entonces cada repo mira la suya${tail}`);
+    // una carpeta que ya está puesta (otra herramienta, una relativa) `apply` no la cambia: el aviso dice cómo apuntarla a
+    // mano, no «apply lo pone» (2026-10-14: doctor mandaba a apply y el aviso seguía igual)
+    else if (!path.isAbsolute(dir)) say(level, `el pre-push del arnés NO está puesto para todos los repos: la carpeta global de hooks de git es relativa (${dir}), y entonces cada repo mira la suya${out.hook.expected ? otherTail() : tail}`);
     else {
       const hook = path.join(dir, 'pre-push');
       out.hook.path = hook;
@@ -3772,7 +3817,7 @@ function doctorPublishGuardItems(ctx, tree, prof, add, extra) {
       Object.assign(out.hook, { placed, runnable });
       if (placed && runnable) say('ok', `el pre-push del arnés está en la carpeta global de hooks de git (${hook})`);
       else if (placed) say(level, `el pre-push del arnés está en la carpeta global de hooks de git (${hook}) pero sin permiso de ejecución: git no lo corre${out.hook.expected ? ' — chmod +x, o harness.js apply' : tail}`);
-      else say(level, `el pre-push del arnés NO está en la carpeta global de hooks de git (git mira ${hook}, y ése no es el del arnés)${tail}`);
+      else say(level, `el pre-push del arnés NO está en la carpeta global de hooks de git (git mira ${hook}, y ése no es el del arnés)${out.hook.expected && !sameDir(dir) ? otherTail() : tail}`);
     }
   } catch (e) { say('warn', `no pude mirar el pre-push (${kind(e)})`); }
 
@@ -4094,6 +4139,8 @@ function cmdUninstall(ctx) {
   const uctx = Object.assign({}, ctx, { tree: read.state.tree });
   const plan = U.plan(uctx, read.state);
   const planLines = typeof U.describePlan === 'function' ? U.describePlan(plan) : planText(plan);
+  // la carpeta global de hooks de git que puso el arnés (2026-10-14): el plan la nombra si sigue siendo ésa
+  { const rec = read.state.git_hooks_path; if (rec && rec.value) { const now = mod('git-hooks-path').read({ env: ctx.env }); if (now.status === 'set' && now.value === rec.value) planLines.push(`quita también la carpeta global de hooks de git que puso el arnés (core.hooksPath = ${rec.value})`); } }
   if (ctx.opts['dry-run']) return { code: 0, lines: [...head, ...planLines] };
   if (!ctx.opts.yes) {
     if (!process.stdin.isTTY) return { code: 2, lines: [...head, ...planLines, 'harness.js uninstall: sin --yes y sin terminal no hago nada (harness.js uninstall --yes)'] };
@@ -4123,6 +4170,9 @@ function cmdUninstall(ctx) {
     const res = U.run(Object.assign({}, uctx, { snapshotDir: snap && snap.dir }), state, { log });
     finishSnapshot(ctx, snap, log);
     const lines = [...head, ...(res.lines || [])];
+    // la carpeta global de hooks de git que puso el arnés (2026-10-14): con los hooks quitados, si quedara git no correría
+    // ni los del arnés ni el .git/hooks/ de cada repo. Sólo si sigue siendo la que se puso
+    { const g = mod('git-hooks-path').release({ env: ctx.env, recorded: state.git_hooks_path, log }); if (g.line) lines.push(g.line); }
     // la versión bajada (story 8.23, tanda B · AC 8): además de lo registrado, las carpetas de versiones de ~/.tycon y los
     // enlaces que apuntan adentro; quedan y se nombran el permiso (config.json) y la caché de terceros
     if (S.isRelease(state)) {

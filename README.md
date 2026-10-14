@@ -31,7 +31,8 @@ one you want. The full profile changes things in all your projects, not just one
   rules are in Spanish too; there is no English option today.
 - In a repo that works with stories, Claude does not edit code without going through the harness's story process.
 - Git starts using a global folder for its commit checks (`core.hooksPath`). From then on, git stops running each
-  repo's own checks, the ones in `.git/hooks/`. Claude asks you before it sets it.
+  repo's own checks, the ones in `.git/hooks/`. The installation sets it only if git has none, and the plan tells you
+  before your "yes"; if you already have another one, it leaves it alone.
 - Once a day it reads the git history of your project repos (it finds their folder from where you use Claude Code). What it records stays on your machine.
 - Claude Code keeps your conversations for a year.
 
@@ -59,7 +60,7 @@ run in your own terminal.
 2. The instructions are in Spanish. Copy the whole "Parte 1" block (part 1). Open Claude Code in any folder and paste it into a new conversation.
 3. Claude gives you the lines that download the install script, show it and run it: paste them in your own terminal,
    so you read the script before you run it. Nothing asks you to sign in: the harness never opens a browser.
-4. Claude shows you the install plan and waits for your "yes". Before it touches `core.hooksPath`, it asks again.
+4. Claude shows you the install plan and waits for your "yes". The plan says whether it will set `core.hooksPath`.
 5. At the end it writes a summary that ends in "OK" or "NO OK". Close Claude Code and open it again.
 
 If you install a tool along the way, Claude asks you to close and reopen the terminal and Claude Code. If the summary

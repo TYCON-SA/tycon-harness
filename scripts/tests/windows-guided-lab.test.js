@@ -155,7 +155,13 @@ test('GuidedInstall_LabRun_ToyPublishedTree_FollowsThePage', { skip: SKIP }, () 
   const by = (id) => v.commands.filter((c) => c.step === id);
   assert.deepStrictEqual(by('download').map((c) => c.exit), [0, 0]);
   assert.deepStrictEqual([by('plan')[0].exit, by('install')[0].exit], [0, 0], `el plan y la instalación salieron 0: ${by('install')[0].err}`);
-  assert.deepStrictEqual(by('git-hooks').map((c) => c.exit), [1, 0], 'en una máquina limpia el primero sale 1 (no hay carpeta) y el segundo la pone');
+  // en una máquina limpia la instalación ya puso la carpeta global de hooks de git (2026-10-14: antes no la ponía nadie, y
+  // una máquina instalada o mudada sin este paso quedaba sin el freno antes de publicar): el primero sale 0 con la carpeta
+  // del arnés, y el segundo —el de la página para cuando no devuelve nada— no hace falta
+  const gh = by('git-hooks');
+  assert.strictEqual(gh[0].exit, 0, `el primero sale 0: la instalación ya la puso (${gh[0].out || gh[0].err})`);
+  assert.ok(/\.git-hooks\s*$/.test(String(gh[0].out || '')), `y devuelve la carpeta del arnés: «${gh[0].out}»`);
+  assert.ok(gh[1].skipped && gh[1].exit === undefined, `el segundo no corre: ${gh[1].skipped || `salió ${gh[1].exit}`}`);
   for (const c of ran) for (const e of c.expected || []) if (e.comparable !== false) assert.strictEqual(e.ok, true, `${c.step}: ${e.what} — esperado ${e.expected}, dio ${e.measured}`);
   // lo que no se puede comparar fuera de Windows se dice, no se saltea callado
   assert.ok(by('verify').some((c) => /sólo resuelve en Windows/.test(c.not_comparable || '')), 'el diagnóstico por la ruta con barras invertidas: no comparable, con su motivo');

@@ -1302,6 +1302,12 @@
       "requiere": []
     },
     {
+      "__nota": "arreglo del 2026-10-14 (sin story): la carpeta global de hooks de git (core.hooksPath) la pone harness.js, no sólo la avisa — una máquina con la versión bajada, mudada desde un clon, tenía los hooks del arnés en ~/.git-hooks y git sin carpeta global, y doctor mandaba a apply sin que apply la pusiera. Pruebas del módulo scripts/setup/harness/git-hooks-path.js: la pone sólo si git no tiene ninguna, en full, con el pre-push del arnés en la carpeta; nunca pisa otra; git que no deja escribir avisa con el comando; saca sólo la que puso. De punta a punta: harness-install.test.sh, sección HP.",
+      "raiz": "arnes",
+      "ruta": "tests/git-hooks-path.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "arreglo urgente del 2026-10-11 (sin story): la red de las suites que llaman código capaz de borrar — scripts/tests/lib/real-home-guard.js frena y anota todo intento de escribir, crear, mover o borrar en ~/.tycon, ~/.claude y ~/.codex de quien corre (y en TYCON_HOME), en el proceso de la suite y en los node que lanza; con el error tragado el proceso igual sale 1; fuera de esas carpetas y al leer no frena; un hijo con HOME de juguete recibe las mismas raíces y su laboratorio no se frena; por un enlace, y en las formas con callback y con promesa, también. La cargan move-home.test.js y harness-state.test.js (una prueba de «deshacer la mudanza» con el ambiente vacío borró el arnés instalado de una máquina mudada).",
       "raiz": "arnes",
       "ruta": "tests/real-home-guard.test.js",

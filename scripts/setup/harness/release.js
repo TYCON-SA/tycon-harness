@@ -896,7 +896,7 @@ function cmdInstall(ctx, H) {
       pieces.push('config');
     }
     // 9. los enchufes de cada herramienta (el aplicador es el de Claude Code; el de Codex, en Node) y la salud
-    const a = H.runApplier(ctx, tree, { log, snapshotDir: snap && snap.dir, tools: tc.tools, force: true });
+    const a = H.runApplier(ctx, tree, { log, snapshotDir: snap && snap.dir, tools: tc.tools, force: true, hooksPath: true });
     state.last_apply = nowIso();
     if (!a.ok) {
       state.last_health = null;
@@ -910,6 +910,9 @@ function cmdInstall(ctx, H) {
     // lo que el enchufe de Codex le dice a la persona (un servidor MCP que falta, los hooks a aprobar) va al cierre
     if (tc.tools.includes('codex')) for (const w of a.warnings || []) if (!notes.includes(w)) notes.push(w);
     H.recordPieces(ctx, state, a.report, a.shared);
+    // la carpeta global de hooks de git (2026-10-14): si git no tenía ninguna, la puso el aplicador de arriba; se dice, y
+    // si git no la dejó escribir, el aviso con el comando a mano (los demás avisos del aplicador no llegan a este cierre)
+    { const hp = H.noteHooksPath(state, a); if (hp) notes.push(hp); else if (a.gitHooksPath && a.gitHooksPath.status === 'failed') notes.push(...a.gitHooksPath.line.split('\n')); }
     const prof = H.profileOf(ctx, tree);
     if (prof.ok) state.profile = { value: prof.value, origin: prof.origin };
     S.write(ctx.home, state);
