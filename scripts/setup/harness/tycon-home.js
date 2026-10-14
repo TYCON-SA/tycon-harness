@@ -228,7 +228,89 @@ function ownPaths({ env = process.env } = {}) {
     thirdParty: path.join(root, 'third-party'),
     config: path.join(root, 'config.json'),
     journal: path.join(root, 'swap.json'),
+    // la forma con enlaces (story 8.33): las versiones, cada una en su carpeta numerada, y el diario del cambio de enlaces
+    versions: path.join(root, 'versions'),
+    linkJournal: path.join(root, 'link-swap.json'),
   };
+}
+
+// ── LA FORMA CON ENLACES (story 8.33, 2026-10-14) ─────────────────────────────────────────────────────────────────
+// En Windows renombrar una carpeta con un archivo abierto, con un proceso parado adentro o con un vigilante falla: con
+// otra sesión o un VS Code abiertos, el cambio de versión por `rename` esperaba para siempre. En Windows `harness` y
+// `previous` son UNIONES a `versions/<v>/`, y cambiar de versión es cambiar la unión: medido en el agente de Windows
+// (182 #13451), anda con la carpeta vieja tomada de las tres formas. Mac y Linux siguen con carpetas reales y `rename`
+// (decisión 2 del dueño); las pruebas de Mac ejercitan esta forma con `TYCON_RELEASE_LINKS=1` (sólo de pruebas), con
+// enlaces simbólicos. Las funciones viven acá porque viajan con la copia fija del programa (ver la cabecera).
+
+/** ¿Esta máquina usa la forma con enlaces? Windows siempre; en otra plataforma, sólo la variable de pruebas. */
+function linksMode({ env = process.env, platform = process.platform } = {}) {
+  return platform === 'win32' || String(env.TYCON_RELEASE_LINKS || '') === '1';
+}
+/** ¿`p` es un enlace (simbólico o unión)? Sin seguirlo. */
+function isLink(p) { try { return fs.lstatSync(p).isSymbolicLink(); } catch (_) { return false; } }
+/** A dónde apunta el enlace `p`, como ruta absoluta (o null si no es un enlace). Una unión de Windows se lee sin `\\?\`. */
+function linkTarget(p) {
+  if (!isLink(p)) return null;
+  try {
+    const t = fs.readlinkSync(p).replace(/^\\\\\?\\/, '');
+    return path.resolve(path.dirname(p), t);
+  } catch (_) { return null; }
+}
+/** Crea el enlace `at` → `target` (una unión en Windows: un enlace simbólico de carpeta pide privilegios). */
+function makeLink(target, at, { platform = process.platform } = {}) {
+  fs.mkdirSync(path.dirname(at), { recursive: true });
+  fs.symlinkSync(target, at, platform === 'win32' ? 'junction' : 'dir');
+}
+/** Quita el enlace `at` sin tocar a dónde apunta (nunca un borrado recursivo: en Windows una unión se quita como carpeta). */
+function removeLink(at) {
+  if (!isLink(at)) return false;
+  try { fs.unlinkSync(at); } catch (_) { fs.rmdirSync(at); }
+  return true;
+}
+const TMP_LINK_MARK = '.tycon-new-';
+/**
+ * Pone el enlace `at` apuntando a `target`. Crea antes el nuevo con un nombre temporal: si eso falla, no se tocó nada.
+ * En posix el temporal reemplaza al viejo con un `rename` atómico (nadie ve `at` ausente); en Windows `rename` sobre una
+ * unión no anda, así que se quita la vieja y se renombra la temporal (un hueco de ~1 ms, medido). Si el reemplazo falla,
+ * `at` se recrea hacia lo que era y tira. Un `at` que existe y NO es un enlace no se toca: tira.
+ */
+function pointLink(at, target, { platform = process.platform } = {}) {
+  let present = true;
+  try { fs.lstatSync(at); } catch (_) { present = false; }
+  if (!present) { makeLink(target, at, { platform }); return; }
+  const before = linkTarget(at);
+  if (!before) throw new Error(`${at} no es un enlace: no lo reemplazo`);
+  const tmp = `${at}${TMP_LINK_MARK}${process.pid}`;
+  removeLink(tmp);
+  makeLink(target, tmp, { platform });
+  try {
+    if (platform === 'win32') { removeLink(at); fs.renameSync(tmp, at); } else fs.renameSync(tmp, at);
+  } catch (e) {
+    try { fs.lstatSync(at); } catch (_) { try { makeLink(before, at, { platform }); } catch (_e) { /* lo repara el diario */ } }
+    try { removeLink(tmp); } catch (_) { /* nada */ }
+    throw e;
+  }
+}
+/**
+ * El ambiente para los procesos que ESCRIBEN rutas del árbol (el aplicador, el enchufe de Codex) en la forma con
+ * enlaces: Node resuelve el enlace en `__dirname` (182 #13451: da `versions/<v>`), y una ruta así escrita en un archivo
+ * ataría la máquina a esa versión. Con `--preserve-symlinks` y `--preserve-symlinks-main` en `NODE_OPTIONS` (los
+ * heredan todos los Node que se lancen abajo), `__dirname` queda en `~/.tycon/harness`. Fuera de esa forma, `env` tal cual.
+ */
+function keepLinkPathsEnv(env = process.env) {
+  if (!linksMode({ env })) return env;
+  const flags = ['--preserve-symlinks', '--preserve-symlinks-main'];
+  const now = String(env.NODE_OPTIONS || '');
+  const add = flags.filter((f) => !now.split(/\s+/).includes(f));
+  return add.length ? Object.assign({}, env, { NODE_OPTIONS: [now, ...add].filter(Boolean).join(' ') }) : env;
+}
+
+/** Los enlaces temporales que dejó un `pointLink` cortado al lado de `at` (los saca la reparación). */
+function strayTempLinks(at) {
+  const dir = path.dirname(at), base = `${path.basename(at)}${TMP_LINK_MARK}`;
+  let names = [];
+  try { names = fs.readdirSync(dir); } catch (_) { return []; }
+  return names.filter((n) => n.startsWith(base)).map((n) => path.join(dir, n)).filter(isLink);
 }
 
 module.exports = {
@@ -236,5 +318,6 @@ module.exports = {
   placePath, legacyPlacePath, isHarnessClone, resolvePlace, claudeDir,
   harnessDir, stateDir, configFile, backupsDir, installedSkillsDir, maintainedDir, dashboardDir, home, ownPaths, isReleaseMachine, maintainedPath,
   maintainersClone,
+  linksMode, isLink, linkTarget, makeLink, removeLink, pointLink, strayTempLinks, keepLinkPathsEnv,
   ownStateDir, legacyStateDir, legacyConfigFile, livesInOwnHome, ownHomeStale, dropStaleOwnHome, adoptOwnHome, stateDirs,
 };

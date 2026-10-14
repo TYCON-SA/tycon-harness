@@ -17,7 +17,12 @@
 # Laboratorio: scripts/tests/lib/harness-lab.sh (la máquina sin arnés + el servidor de juguete). Nunca ~/.claude ni el
 # checkout real. 🔴 Sin pipes sobre el comando medido.
 #
-# Uso: bash scripts/tests/harness-release.test.sh [--only T9|T11]
+#   HP  · (2026-10-14) la carpeta global de hooks de git en la versión bajada, sin que el dev corra nada: con la
+#         política auto el arranque la pone, la anota y lo dice una vez en el aviso; con ask el aviso la pide y la pone
+#         `update --yes`; sin el pre-push del arnés en su lugar no la pone; si la persona la sacó, el arranque no la vuelve
+#         a poner.
+#
+# Uso: bash scripts/tests/harness-release.test.sh [--only T9|T11|HP]
 set -uo pipefail
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "$RAIZ/scripts/tests/lib/harness-lab.sh"
@@ -798,6 +803,46 @@ if corre T47; then
   case "$out" in *"harness-parity.json: de más"*) ok "…y el mismo archivo adentro del árbol sí (lo que pasaba antes de la G)" ;; *) mal "el reporte adentro del árbol no se cuenta como de más: $(printf '%s\n' "$out" | grep parity)" ;; esac
   rm -rf "$T/harness/scripts/controls-bench"
   kill "$LAB_RELEASE_PROCESS" 2>/dev/null
+fi
+
+# ═══ HP · la versión bajada: la carpeta global de hooks de git llega sola (2026-10-14) ═══════════════════════════════════
+# El caso: máquinas del equipo ya instaladas (versión bajada, o mudadas) con los hooks del arnés en ~/.git-hooks y git sin
+# carpeta global de hooks: el freno antes de publicar no corría, y sólo `install`, `apply` y la mudanza la ponían. El
+# dueño pidió que llegue sola. El aplicador de juguete no deja el pre-push del arnés: se pone a mano, como lo deja el real.
+if corre HP; then
+  echo "HP · la versión bajada: el arranque (auto) y update --yes ponen la carpeta global de hooks de git"
+  harness_lab_create "${BASE}/labhp"
+  harness_lab_release_server
+  harness_lab_publish_stable 2026.10.07.1
+  harness_lab_release_fresh_home
+  HPCFG="${LAB}/hp-gitconfig"; : > "${HPCFG}"
+  hpv() { GIT_CONFIG_GLOBAL="${HPCFG}" git config --global --get core.hooksPath; }
+  hpn() { estado "d.get('notice') or ''"; }
+  hpforget() { python3 -c 'import json,sys; f=sys.argv[1]; d=json.load(open(f)); d.pop("git_hooks_path", None); json.dump(d, open(f, "w"), indent=2)' "$(ESTADO)"; }
+  out="$(GIT_CONFIG_GLOBAL="${HPCFG}" harness install --version latest --yes 2>&1)"; rc=$?
+  [ "${rc}" = 0 ] && [ -z "$(hpv)" ] && ok "sin el pre-push del arnés en su lugar, install no la pone" || mal "install (rc ${rc}, core.hooksPath=«$(hpv)»): ${out}"
+  mkdir -p "${TYCON_GIT_HOOKS_DIR}" && printf '#!/usr/bin/env bash\n# git-pre-push-global.sh (laboratorio)\nexit 0\n' > "${TYCON_GIT_HOOKS_DIR}/pre-push" && chmod +x "${TYCON_GIT_HOOKS_DIR}/pre-push"
+  # ask: el arranque no la pone y el aviso la pide
+  GIT_CONFIG_GLOBAL="${HPCFG}" TYCON_UPDATE_APPLY=ask harness_release startup --force >/dev/null 2>&1
+  [ -z "$(hpv)" ] && case "$(hpn)" in *"falta la carpeta global de hooks de git"*"update --yes la pone"*) true ;; *) false ;; esac \
+    && ok "con ask, el arranque no la pone y el aviso la pide" || mal "ask: core.hooksPath=«$(hpv)» aviso=«$(hpn)»"
+  # auto (la del perfil del equipo): la pone el arranque, la anota y lo dice una vez
+  GIT_CONFIG_GLOBAL="${HPCFG}" TYCON_UPDATE_APPLY=auto harness_release startup --force >/dev/null 2>&1
+  [ "$(hpv)" = "${TYCON_GIT_HOOKS_DIR}" ] && case "$(hpn)" in *"el arnés puso la carpeta global de hooks de git"*) true ;; *) false ;; esac \
+    && [ "$(estado "(d.get('git_hooks_path') or {}).get('value')")" = "${TYCON_GIT_HOOKS_DIR}" ] \
+    && ok "con auto, el arranque la pone, la anota y lo dice en el aviso" || mal "auto: core.hooksPath=«$(hpv)» aviso=«$(hpn)»"
+  GIT_CONFIG_GLOBAL="${HPCFG}" TYCON_UPDATE_APPLY=auto harness_release startup --force >/dev/null 2>&1
+  case "$(hpn)" in *"carpeta global de hooks"*) mal "el arranque siguiente lo repite: «$(hpn)»" ;; *) ok "…y el arranque siguiente ya no lo dice" ;; esac
+  # la persona la sacó: el arranque no la vuelve a poner
+  GIT_CONFIG_GLOBAL="${HPCFG}" git config --global --unset core.hooksPath
+  GIT_CONFIG_GLOBAL="${HPCFG}" TYCON_UPDATE_APPLY=auto harness_release startup --force >/dev/null 2>&1
+  [ -z "$(hpv)" ] && ok "si la persona la sacó, el arranque no la vuelve a poner" || mal "el arranque volvió a ponerla: «$(hpv)»"
+  # update que aplica (acá con auto: sin terminal, --yes exige auto) la pone en una máquina que el arnés nunca la puso
+  hpforget
+  out="$(GIT_CONFIG_GLOBAL="${HPCFG}" TYCON_UPDATE_APPLY=auto harness_release update --yes 2>&1)"; rc=$?
+  [ "$(hpv)" = "${TYCON_GIT_HOOKS_DIR}" ] && case "${out}" in *"git usa ahora la carpeta global de hooks del arnés"*) true ;; *) false ;; esac \
+    && ok "update --yes la pone y lo dice" || mal "update --yes (rc ${rc}, core.hooksPath=«$(hpv)»): ${out}"
+  kill "${LAB_RELEASE_PROCESS}" 2>/dev/null
 fi
 
 if [ "$FALLOS" = 0 ]; then echo "harness-release: todo verde"; else echo "❌ harness-release: $FALLOS fallo(s)"; exit 1; fi

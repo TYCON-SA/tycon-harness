@@ -1204,6 +1204,19 @@
       ]
     },
     {
+      "__nota": "story 8.33 (T2-T8, T10-T14): la versión bajada con ENLACES —la forma de Windows: ~/.tycon/harness y ~/.tycon/previous enlaces a ~/.tycon/versions/<v>—, ejercitada en Mac con la variable sólo de pruebas TYCON_RELEASE_LINKS=1 y una envoltura de fs.renameSync que simula la carpeta tomada: el cambio sin renombrar versiones y sin hueco, la activa tomada que igual se aplica, nada escrito que nombre versions/ (con Codex enchufado), la reparación de link-swap.json en cada etapa, el respaldo viejo que no toca el diario nuevo, rollback de ida y vuelta, la salud roja, la conversión trabada con su aviso de una vez, la limpieza y el aviso de los 7 días, uninstall sin borrar a través de un enlace y doctor. Sobre la máquina de juguete y el servidor de versiones de juguete; sin red real.",
+      "raiz": "arnes",
+      "ruta": "tests/harness-release-links.test.sh",
+      "requiere": [],
+      "gate_only_when_touching": [
+        "scripts/setup/**",
+        "scripts/lib/**",
+        "scripts/tests/lib/**",
+        "scripts/tests/fixtures/**",
+        "build/**"
+      ]
+    },
+    {
       "__nota": "Parte 1 de 2 de tests/release-api-count.test.sh (story 8.22, tramo F: ninguna suite pasa de 45 s; el archivo entero no se registra, scripts/tests/lib/suite-parts.sh). story 8.34 (T2-T13, T18): cuántas consultas a la API de GitHub gasta cada operación de una versión bajada, sin permiso (mirar 0, bajar 1, terceros 0, instalar 1, la mudanza 1) — por info/refs, el raw por commit y codeload del GitHub de juguete, que cobra el 304 sin credencial —; el respaldo por la API (github.com caído o ilegible; 401 no cae; raw caído, una consulta); la verificación (comprimido cambiado o cortado, el número del raw contra el del árbol); el tope (esperar hasta la hora, avisar una vez, no contarlo como fallo; update a mano intenta una vez; install --version dice la hora); y con permiso, los pedidos a la API iguales, pedido por pedido, a la línea de base grabada antes de la story (fixtures/release-api-baseline-token.txt). Sin red real: todo en localhost.",
       "raiz": "arnes",
       "ruta": "tests/release-api-count.p1.test.sh",
@@ -1329,6 +1342,12 @@
       "__nota": "story 8.23 (tanda D, pase adversarial): lo confirmado sobre la mudanza como pruebas unitarias de move-home.js — los hooks del clon con un espacio en la ruta se reconocen; un guion que la versión nueva no trae se saca y no se re-apunta; la fusión de la configuración pasa los nombres viejos de sección a los de hoy y funde un tycon.json que es un enlace; una excepción adentro de una etapa vuelve como fallo (undo + failed) y la copia de seguridad sigue al estado mudado.",
       "raiz": "arnes",
       "ruta": "tests/move-home.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "arreglo del 2026-10-14 (sin story): la carpeta global de hooks de git (core.hooksPath) la pone harness.js, no sólo la avisa — una máquina con la versión bajada, mudada desde un clon, tenía los hooks del arnés en ~/.git-hooks y git sin carpeta global, y doctor mandaba a apply sin que apply la pusiera. Pruebas del módulo scripts/setup/harness/git-hooks-path.js: la pone sólo si git no tiene ninguna, en full, con el pre-push del arnés en la carpeta; nunca pisa otra; git que no deja escribir avisa con el comando; saca sólo la que puso. De punta a punta: harness-install.test.sh, sección HP.",
+      "raiz": "arnes",
+      "ruta": "tests/git-hooks-path.test.js",
       "requiere": []
     },
     {
