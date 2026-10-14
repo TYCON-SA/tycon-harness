@@ -860,7 +860,9 @@ json.dump(m, open(p, "w"), indent=1)' "$NUEVA32/.tycon-release.json" "$LIB32"
     out="$(aviso32 "$NUEVA32")"
     if printf '%s' "$out" | grep -q "el freno quedó viejo: reinstalalo" && printf '%s' "$out" | grep -q "repos-root.js" && ! printf '%s' "$out" | grep -q "alguien lo cambió"; then
       ok "T32i · el arnés bajó una versión nueva: «el freno quedó viejo: reinstalalo», nombrando la biblioteca, y no «alguien lo cambió»"
-    else no "T32i · con una versión nueva — $(printf '%s' "$out" | head -c 400)"; fi
+    # el rojo muestra las líneas que decide la condición, no los primeros 400 caracteres: el 2026-10-14 (public-ci, Node 22)
+    # salió rojo con «quedó viejo» y «repos-root.js» a la vista, y lo que lo hizo fallar quedó fuera del recorte
+    else no "T32i · con una versión nueva — $(printf '%s\n' "$out" | grep -E 'quedó viejo|repos-root\.js|alguien lo cambió' | head -8 | cut -c1-300) [$(printf '%s' "$out" | wc -l | tr -d ' ') líneas]"; fi
     cp "$INST32" "$TMP/guardada-32.js"; printf '\n// retocada en /opt\n' >> "$INST32"
     out="$(aviso32 "$ARNES30")"
     if printf '%s' "$out" | grep -q "alguien lo cambió" && printf '%s' "$out" | grep -q "repos-root.js"; then ok "T32j · gemelo: tocar una biblioteca en /opt sigue gritando «alguien lo cambió» y la nombra"
