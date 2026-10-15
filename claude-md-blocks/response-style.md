@@ -67,7 +67,9 @@ en el reporte**: va a un archivo y el reporte devuelve la ruta, todo en menos de
 prosa. "Limpio, 0 hallazgos" es un reporte completo: no se enumera lo que se revisó y salió bien, y
 sin hallazgos tampoco hace falta archivo. Los advisors con formato propio (tabla por rule ID) no lo
 pierden: esa tabla va al archivo. (Esto también está cableado en cada `agents/tycon-*.md` §"Cómo se
-devuelve un reporte".)
+devuelve un reporte".) **Excepción**: si quien lanza al revisor declara que su salida la lee un
+programa y pide el reporte completo, la lista entera de hallazgos con su código de regla no es volcar
+detalle.
 
 Al orquestador le toca, porque el subagente no puede adivinarlo:
 - **Todo lanzamiento cierra con esta instrucción de formato** — y con la RUTA del archivo si el

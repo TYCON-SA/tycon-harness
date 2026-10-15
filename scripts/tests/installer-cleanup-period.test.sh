@@ -30,7 +30,9 @@ export TYCON_NO_THREAD_RESCUE=1 TYCON_NO_UPLOAD_RUNS=1 TYCON_NO_DOWNLOAD_RUNS=1 
 #    quien corre la suite, cada corrida desplegaba Codex en un home vacío, lanzaba el disparo real de Codex (con red) y la
 #    auditoría de paridad dejaba rojos falsos en .bench; y el respaldo del medidor podía escribir en .dashboard. Se apagan
 #    EN CADA LLAMADA (env), no sólo exportadas: así le ganan al ambiente de quien corre la suite (lo prueba el chequeo 6).
-AISLADO=(env TYCON_CODEX=0 TYCON_BENCH_DAILY=0 TYCON_STAGE_METRICS=0 CODEX_HOME="$T/codex-home")
+# CLAUDE_CODE_PLUGIN_DIRS fuera: la pone el instalador en cada máquina con el arnés (story 7.27) y, heredada, la
+# instalación de prueba anotaba la carpeta de mods DE VERDAD de quien corre la suite (harness-uninstall, 2026-10-15).
+AISLADO=(env -u CLAUDE_CODE_PLUGIN_DIRS TYCON_CODEX=0 TYCON_BENCH_DAILY=0 TYCON_STAGE_METRICS=0 CODEX_HOME="$T/codex-home")
 correr() { TYCON_SETTINGS_PATH="$1" "${AISLADO[@]}" bash "$INST" >/dev/null 2>&1; }
 leer()   { python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('cleanupPeriodDays'))" "$1"; }
 

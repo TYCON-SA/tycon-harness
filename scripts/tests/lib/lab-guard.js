@@ -11,8 +11,8 @@
  *
  * Qué frena: una carpeta cuya ruta contiene el nombre viejo del lugar, `agent-skills` o `.claude` (en cualquier lugar de la
  * ruta: la más estricta de las guardas que había). Con `place: true` (`--place` en la línea de comandos), también el
- * nombre nuevo. No va siempre porque es además el prefijo con que varias suites nombran su carpeta temporal
- * (`tycon-harness-state-…`): ahí frenaría al laboratorio mismo.
+ * nombre nuevo. No va siempre porque es además el prefijo con que varias suites nombran su carpeta temporal (el nombre
+ * nuevo seguido de `-state-…`): ahí frenaría al laboratorio mismo.
  *
  * Uso desde JavaScript (tira un Error):
  *   require('./lib/lab-guard.js').labGuard(BASE, 'harness-state');
