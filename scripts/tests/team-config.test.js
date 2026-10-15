@@ -289,3 +289,58 @@ test('T11 RealReaders_PickedFromTheTree_ExampleLoads_ProblemsCarryTheFieldPath',
     assert.deepStrictEqual(noDefault.problems.map((x) => x.path), ['owners.default']);
   });
 });
+
+// story 2.24 (AC 23): el buzón de corridas de la organización, en un panel de sólo lectura. La llave es una credencial y la
+// página no guarda credenciales: el servidor arma una proyección con leerConfig y los NOMBRES de los parámetros de la firma.
+test('T21 2.24-TeamConfig_BuzonSoloLecturaSinFirma', async () => {
+  const tree = path.join(__dirname, '..', '..');
+  const sig = 'FIRMAsecreta' + 'DePrueba123';   // armada por partes: una firma de mentira entera en el código frena el empuje
+  const file = path.join(tmp('buzon'), 'corridas-buzon.json');
+  fs.writeFileSync(file, JSON.stringify({ cuenta: 'cuentadeprueba', contenedor: 'corridas', politica: 'subida-prueba', vence: '2099-01-01', tenant: '00000000-0000-0000-0000-000000000000', sas: `sv=2022-11-02&si=subida-prueba&sr=c&spr=https&sig=${sig}` }));
+  await withPage({ tree, readers: { repos: toyReader, operations: null }, mailboxFile: file }, async (p) => {
+    const s = await api(p, 'state');
+    const m = s.json.mailbox;
+    assert.deepStrictEqual({ hay: m.hay, cuenta: m.cuenta, contenedor: m.contenedor, politica: m.politica, vence: m.vence, permisos_propios: m.permisos_propios },
+      { hay: true, cuenta: 'cuentadeprueba', contenedor: 'corridas', politica: 'subida-prueba', vence: '2099-01-01', permisos_propios: null });
+    assert.ok(m.parametros.includes('sig') && m.parametros.includes('si'), 'los nombres de los parámetros, sin valores');
+    const page = await request(p.port, { pathname: `/?k=${p.token}` });
+    for (const r of [s.text, page.text]) {
+      assert.ok(!r.includes(sig), 'ninguna respuesta trae la firma');
+      assert.ok(!r.includes('sv=2022-11-02'), 'ni la SAS entera');
+    }
+    assert.match(page.text, /--check-create-only/, 'la página da el comando para comprobar «sólo crear» desde una máquina');
+    const save = await api(p, 'save', { target: 'mailbox', data: { cuenta: 'otra' } });
+    assert.strictEqual(save.json.ok, false, 'no hay acción de guardar para el buzón');
+    assert.strictEqual(JSON.parse(fs.readFileSync(file, 'utf8')).cuenta, 'cuentadeprueba', 'el archivo no se tocó');
+  });
+});
+
+test('T21b 2.24-TeamConfig_PermisosPropios_LlaveRota_SeDicen', () => {
+  const tree = path.join(__dirname, '..', '..');
+  const dir = tmp('buzon-b');
+  const cw = path.join(dir, 'cw.json');
+  fs.writeFileSync(cw, JSON.stringify({ cuenta: 'cuentadeprueba', contenedor: 'corridas', vence: '2099-01-01', sas: 'sv=2022-11-02&si=p&sp=cw&sr=c&sig=x' }));
+  assert.strictEqual(TC.mailboxSummary(tree, cw).permisos_propios, 'cw', 'la firma con permisos propios lo dice');
+  const roto = path.join(dir, 'roto.json');
+  fs.writeFileSync(roto, '{"cuenta": ');
+  const r = TC.mailboxSummary(tree, roto);
+  assert.strictEqual(r.hay, false);
+  assert.match(r.problema, /JSON/, 'una llave rota se dice, no se toma por «sin buzón»');
+  const sinGuion = TC.mailboxSummary(tmp('arbol-vacio'), roto);
+  assert.match(sinGuion.problema, /no trae la subida/, 'un árbol sin el guion: esta versión no lo trae');
+  // un guion que está pero no carga (un error de sintaxis) no es «esta versión no lo trae»: se dice con su código
+  const roto2 = tmp('arbol-roto');
+  fs.mkdirSync(path.join(roto2, 'scripts', 'metrics'), { recursive: true });
+  fs.writeFileSync(path.join(roto2, 'scripts', 'metrics', 'upload-runs.js'), 'module.exports = {;\n');
+  const noCarga = TC.mailboxSummary(roto2, roto);
+  assert.strictEqual(noCarga.hay, false);
+  assert.match(noCarga.problema, /no se pudo cargar scripts\/metrics\/upload-runs\.js \(SyntaxError\)/);
+});
+
+test('T22 2.24-TeamConfig_SinBuzon_DiceQueNoSeSube', async () => {
+  const tree = path.join(__dirname, '..', '..');
+  await withPage({ tree, readers: { repos: toyReader, operations: null }, mailboxFile: path.join(tmp('sin-buzon'), 'corridas-buzon.json') }, async (p) => {
+    assert.deepStrictEqual((await api(p, 'state')).json.mailbox, { hay: false });
+    assert.match((await request(p.port, { pathname: `/?k=${p.token}` })).text, /sin buzón: esta organización no sube corridas/);
+  });
+});
