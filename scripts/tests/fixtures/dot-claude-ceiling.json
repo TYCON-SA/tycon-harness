@@ -1,11 +1,11 @@
 {
   "__doc": "Story 8.23 (AC 4): el techo de «.claude» en el código. Por archivo, cuántas veces aparece «.claude» fuera de los enchufes de Claude Code (clase B: settings.json, settings.local.json, CLAUDE.md, skills/, agents/, commands/, projects/, plugins/, channels/, ~/.claude.json) y fuera de los archivos de legacy-home-names.json. Barrido: los archivos rastreados de scripts/, skills/, agents/, build/ y adapters/, sin pruebas (tests/, *.test.*, fixtures/, controls-bench/cases/) ni prosa (.md); los comentarios cuentan. La regla: el techo SÓLO BAJA. Un archivo que sube frena nombrando sus líneas (pedile la ruta a scripts/setup/harness/tycon-home.js); uno que baja frena pidiendo bajar el techo. Re-medir: node scripts/tests/tycon-home.test.js --measure > scripts/tests/fixtures/dot-claude-ceiling.json. Lo compara scripts/tests/tycon-home.test.js (T3). El cero se exige en la tanda E.",
   "__last_change": {
-    "date": "2026-10-14",
-    "direction": "sube 83 a propósito (decisión del dueño): la copia propia del freno de producción",
-    "reason": "scripts/production/guard-libs/: el freno de producción se instala con su propia copia de las siete bibliotecas compartidas que carga (repos-root, tycon-config, legacy-names, skills-dir, guard-record, shell-parse y tycon-home), para que un cambio en el resto del arnés no le pida reinstalar con la contraseña del Mac. Las copias son byte a byte las compartidas de hoy y suman sus mismas apariciones (83); no pueden pedirle la ruta al árbol porque corren desde /opt/tycon. Bajan cuando quien mantiene las refresca después de que bajen las compartidas (guard-libs-check.js refresh). Total 822 → 905."
+    "date": "2026-10-15",
+    "direction": "baja una",
+    "reason": "scripts/nightly/dashboard/runs.js dejó de armar a mano la ruta de las skills instaladas, y el techo no se bajó en ese mismo cambio. Total 905 → 904."
   },
-  "total": 905,
+  "total": 904,
   "files": {
     "adapters/codex/agents-native/http-resilience-reviewer.toml": 1,
     "adapters/codex/agents-native/migration-impact-analyzer.toml": 1,
@@ -120,7 +120,7 @@
     "scripts/nightly/dashboard/dashboard.js": 5,
     "scripts/nightly/dashboard/prune.js": 1,
     "scripts/nightly/dashboard/reducer.js": 2,
-    "scripts/nightly/dashboard/runs.js": 11,
+    "scripts/nightly/dashboard/runs.js": 10,
     "scripts/nightly/dashboard/sources.json": 2,
     "scripts/nightly/open-prs/open-prs.js": 1,
     "scripts/production/guard-libs/lib/guard-record.js": 2,
