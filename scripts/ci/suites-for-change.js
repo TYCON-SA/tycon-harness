@@ -279,9 +279,27 @@ function readOverLimit(file) {
 /**
  * Lo que falta decidir y lo que sobra: cada suite de `weights` (nombre → segundos en el agente) que pasa del límite tiene
  * que tener entrada, y cada entrada tiene que ser de una suite de la lista que hoy pasa del límite.
+ * Lo que pide decisión se juzga parte por parte: partir una suite es la forma de que cada parte entre en el límite.
+ * Pero la excepción firmada de una parte NO sobra si la suite entera (la suma de sus partes) pasa del límite: el grupo del
+ * laboratorio del instalador de scripts/ci/heavy-suites.json juzga entera la suite partida («el criterio es el de la
+ * suite entera») y su control exige la decisión en cada parte. Sin esto las dos reglas se contradecían (nocturno del
+ * 2026-10-15: dos partes de 27 y 35 s, entera 62 s, salían «la entrada sobra» acá y «sin decisión» allá). Sólo la
+ * excepción: una parte liviana mandada «al nocturno» se sigue juzgando sola, porque esa decisión la saca de la validación.
  */
+const SPLIT_PART = /^(.*)\.p[1-9]\d*\.test\.(js|sh)$/;
+function wholeWeights(weights) {
+  const whole = (n) => { const m = SPLIT_PART.exec(n); return m ? `${m[1]}.test.${m[2]}` : n; };
+  const sum = {};
+  for (const [n, w] of Object.entries(weights || {})) {
+    const k = whole(n);
+    sum[k] = typeof w === 'number' && (sum[k] === undefined || typeof sum[k] === 'number') ? (sum[k] || 0) + w : null;
+  }
+  return Object.fromEntries(Object.keys(weights || {}).map((n) => [n, sum[whole(n)] === null ? (weights || {})[n] : sum[whole(n)]]));
+}
 function overLimitProblems(cfg, weights, suiteNames) {
   const out = [];
+  const judged = wholeWeights(weights);
+  const shown = (n) => (judged[n] === (weights || {})[n] ? `${judged[n]} s` : `${judged[n]} s entera, ${weights[n]} s esta parte`);
   for (const [name, w] of Object.entries(weights || {})) {
     if (typeof w !== 'number' || w <= cfg.limit || LEGACY_NAMES.test(name)) continue;
     if (!cfg.suites.has(name)) out.push(`${name} pasa de ${cfg.limit} s (${w} s) y nadie decidió qué hacer: se parte, va al nocturno o lleva una excepción firmada`);
@@ -289,7 +307,9 @@ function overLimitProblems(cfg, weights, suiteNames) {
   for (const name of cfg.suites.keys()) {
     if (!suiteNames.has(name)) out.push(`${name} tiene una decisión y no está en suites.json: si se renombró o se partió, la entrada sobra`);
     else if (typeof (weights || {})[name] !== 'number') out.push(`${name} tiene una decisión y no tiene peso medido en el juego de la validación: la entrada sobra`);
-    else if (weights[name] <= cfg.limit) out.push(`${name} tiene una decisión y ya no pasa de ${cfg.limit} s (${weights[name]} s): la entrada sobra`);
+    else if ((cfg.suites.get(name) || {}).exception ? judged[name] <= cfg.limit : weights[name] <= cfg.limit) {
+      out.push(`${name} tiene una decisión y ya no pasa de ${cfg.limit} s (${(cfg.suites.get(name) || {}).exception ? shown(name) : `${weights[name]} s`}): la entrada sobra`);
+    }
   }
   return out;
 }
