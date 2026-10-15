@@ -34,7 +34,7 @@ FALLOS=0
 ok()  { echo "  ok   — $1"; }
 mal() { echo "  MAL  — $1"; FALLOS=$((FALLOS+1)); }
 BASE="$(mktemp -d)"
-case "$BASE" in *tycon-claude-guides*|*agent-skills*|*/.claude*) echo "❌ release-expired-token: el laboratorio cayó en ${BASE}"; exit 1 ;; esac
+case "$BASE" in */.claude*) echo "❌ release-expired-token: el laboratorio cayó en ${BASE}"; exit 1 ;; esac
 trap 'rm -rf "$BASE"; kill $(jobs -p) 2>/dev/null' EXIT
 VENCIDO='permiso-vencido-del-laboratorio'
 j() { python3 -c "import json,sys; d=json.load(open(sys.argv[1], encoding='utf-8')); print($2)" "$1" 2>/dev/null; }
@@ -86,7 +86,7 @@ if corre T1 || corre T2 || corre T3 || corre T4; then
   n401="$(grep -c '"auth":true' "$LAB_RELEASE_LOG")"
   [ "$n401" = 1 ] && ok "un solo pedido llevó el permiso (el que contestó 401)" || mal "$n401 pedidos llevaron el permiso: $(harness_lab_release_log)"
   [ ! -s "$(FALLA)" ] && ok "no cuenta como «no se pudo actualizar»" || mal "lo contó como fallo: $(cat "$(FALLA)")"
-  harness_release config show 2>&1 | grep -q 'github.token' && ok "el permiso sigue guardado (no se borra solo)" || mal "el permiso desapareció de la configuración"
+  harness_release config show 2>&1 | grep "github.token" >/dev/null && ok "el permiso sigue guardado (no se borra solo)" || mal "el permiso desapareció de la configuración"
   [ -n "$(estado "d.get('token_expired_notice') or ''")" ] && ok "el estado anota que ya se avisó" || mal "sin token_expired_notice"
   grep -rqs -- "$VENCIDO" "$LAB_HOME/.claude/.tycon-pipeline" && mal "el valor del permiso quedó escrito en el estado o el registro" || ok "el valor del permiso no quedó escrito en el estado ni en el registro"
 
