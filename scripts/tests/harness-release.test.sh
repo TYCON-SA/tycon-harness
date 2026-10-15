@@ -70,8 +70,14 @@ if corre T9; then
   # al día en stable (main sin cambios): 0, y por la API el segundo pedido de version.json lleva el ETag y no pide el
   # comprimido (sin permiso se mira por info/refs: lo cuenta release-api-count.test.sh, story 8.34)
   : > "$LAB_RELEASE_LOG"
+  # (2026-10-15, una máquina del equipo en Windows) la falla que anotaron arranques viejos se borra con una mirada sana a
+  # mano; si no, doctor y cada sesión seguían diciendo «no se pudo actualizar» con el arnés al día
+  falla="$(node -e "console.log(require(process.argv[1]).paths(process.argv[2]).failuresFile)" "$LAB_HOME/.tycon/harness/scripts/setup/harness/state.js" "$LAB_HOME")"
+  mkdir -p "$(dirname "$falla")"
+  printf '{"since":"2026-10-14T14:38:47.224Z","count":4,"reason":"EPERM","last":"2026-10-15T09:00:00.000Z","kind":"update"}\n' > "$falla"
   out="$(por_api harness_release update --check 2>&1)"; rc=$?
   [ "$rc" = 0 ] && ok "al día: --check sale 0 ($out)" || mal "al día: --check salió $rc: $out"
+  [ ! -e "$falla" ] && ok "al día: la mirada sana a mano borró la falla vieja de los arranques" || mal "la falla vieja quedó después de un --check sano: $falla"
   out="$(por_api harness_release update --check 2>&1)"; rc=$?
   [ "$(pedidos '"ifNoneMatch":"\\"')" -ge 1 ] && ok "el segundo pedido de version.json lleva If-None-Match (304 barato)" || mal "ningún pedido llevó If-None-Match: $(harness_lab_release_log)"
   [ "$(( $(pedidos tarball) + $(pedidos tar.gz) ))" = 0 ] && ok "--check no baja ningún comprimido" || mal "--check pidió el comprimido"

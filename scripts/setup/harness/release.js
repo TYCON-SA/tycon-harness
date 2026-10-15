@@ -1999,6 +1999,9 @@ function cmdUpdate(ctx, state, H, { log, asked = null }) {
   const u = update(ctx, state, H, { mode, log, yes: Boolean(ctx.opts.yes), policy, startedAt: Date.now(), teamRefresh: !ctx.opts.check && !ctx.opts['dry-run'] });
   if (u.status === 'applied') { R.clearNotice(state); if (u.backup) u.lines = [...u.lines, R.updateBackupLine(u.backup)]; }
   else if (mode === 'check' && u.status === 'new') R.setNotice(state, H.availableText(state, policy, u));
+  // una mirada sana a mano borra la falla que anotaron arranques anteriores, como lo hace el arranque (2026-10-15: en
+  // una máquina del equipo en Windows, el aviso «no se pudo actualizar desde ayer» seguía con el arnés ya al día)
+  if (mode !== 'dry-run' && ['new', 'applied', 'up_to_date', 'older'].includes(u.status)) R.clearUpdateFailure(ctx.home);
   else if (u.status === 'up_to_date' && state.notice && !H.REEVALUATED_NOTICE.test(state.notice)) R.clearNotice(state);
   if (u.team && u.team.lines && u.team.lines.length) {
     u.lines = [...(u.lines || []), ...u.team.lines];

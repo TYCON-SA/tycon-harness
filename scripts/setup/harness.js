@@ -3100,6 +3100,8 @@ function cmdUpdate(ctx) {
     // de arranque no la recuerda—; «al día», sin el aviso que dejó una mirada anterior. Lo que no sale de mirar no se toca
     else if (mode === 'check' && u.status === 'new') R.setNotice(state, availableText(state, policy, u));
     else if (u.status === 'up_to_date' && state.notice && !REEVALUATED_NOTICE.test(state.notice)) R.clearNotice(state);
+    // una mirada sana a mano borra la falla anotada por arranques anteriores, como lo hace el arranque (2026-10-15)
+    if (mode !== 'dry-run' && ['new', 'applied', 'up_to_date'].includes(u.status)) R.clearUpdateFailure(ctx.home);
     if (lifted.length) u.lines = [...lifted, ...u.lines];
     // la carpeta global de hooks de git (2026-10-14): un update que aplica la pone si falta (el aviso de `ask` la pedía)
     if (mode === 'apply' && !['failed', 'busy'].includes(u.status)) {
