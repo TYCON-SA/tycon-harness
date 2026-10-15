@@ -440,6 +440,9 @@ function runApplier(name, extraEnv) {
   }, extraEnv);
   for (const k of Object.keys(env)) if (env[k] === undefined) delete env[k];
   delete env.TF_BUILD;
+  // CLAUDE_CODE_PLUGIN_DIRS fuera: la pone el instalador en cada máquina con el arnés (story 7.27) y, heredada, la
+  // instalación de prueba anotaba la carpeta de mods DE VERDAD de quien corre la suite (harness-uninstall, 2026-10-15).
+  delete env.CLAUDE_CODE_PLUGIN_DIRS;
   const r = spawnSync('bash', [INSTALLER], { encoding: 'utf8', timeout: 300000, env });
   return { home, settings, gitHooks, rc: r.status, all: (r.stdout || '') + (r.stderr || '') };
 }
