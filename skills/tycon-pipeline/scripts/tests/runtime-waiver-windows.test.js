@@ -75,10 +75,17 @@ test('@story-waiver-windows PowerShell se lanza conectado a la consola y por su 
   //    oculta y la cuenta daba 1 siempre: nadie firmaba, ni la persona. Y sin ruta, Windows lo busca primero en el repo.
   conAmbiente({ ...WIN, SystemRoot: 'C:\\Windows' }, (W) => {
     let visto = null;
-    W.consolaNueva({ spawnSync: (cmd, args, o) => { visto = { cmd, o }; return { status: 0, stdout: '2' }; } });
+    W.consolaNueva({ pid: 4242, spawnSync: (cmd, args, o) => { visto = { cmd, args, o }; return { status: 0, stdout: '2' }; } });
     assert.match(visto.cmd, /System32[\\/]WindowsPowerShell[\\/]v1\.0[\\/]powershell\.exe$/);
     assert.equal(visto.o.windowsHide, false);
     assert.equal(visto.o.stdio[0], 'inherit', 'hereda la consola de la ventana');
+    // 🔴 rojo previo (ensayo de Windows 13585): en una ventana nueva de verdad la cuenta dio 0 — PowerShell no quedaba
+    //    conectado. Se conecta explícito a la consola de ESTE proceso antes de contar.
+    assert.match(visto.args.join(' '), /AttachConsole\(4242\)/);
+    assert.match(visto.args.join(' '), /FreeConsole\(\)/);
+    const sinConsola = W.consolaNueva({ run: () => ({ status: 3, stdout: 'SIN-CONSOLA\r\n' }) });
+    assert.equal(sinConsola.nueva, false);
+    assert.match(sinConsola.motivo, /no tiene una consola/);
   });
 });
 

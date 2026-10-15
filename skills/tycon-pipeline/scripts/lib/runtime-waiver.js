@@ -148,10 +148,19 @@ function consolaNueva(opts = {}) {
   //    acá es la consola de la ventana (enVentana ya comprobó que lo es), y no pide ventana oculta.
   const sp = opts.spawnSync || require('child_process').spawnSync;
   const run = opts.run || ((cmd, args) => sp(cmd, args, { encoding: 'utf8', windowsHide: false, timeout: 30000, stdio: ['inherit', 'pipe', 'pipe'] }));
-  const ps = 'Add-Type -TypeDefinition \'using System.Runtime.InteropServices; public static class C { [DllImport("kernel32.dll")] public static extern uint GetConsoleProcessList(uint[] l, uint n); }\'; '
+  // 🔴 Ensayo de Windows 13585: en una ventana nueva de verdad la cuenta dio 0 — PowerShell no quedaba conectado a esa
+  //    consola. Ahora se conecta EXPLÍCITO a la consola de este proceso (FreeConsole + AttachConsole(pid)) antes de contar:
+  //    la cuenta es la de NUESTRA consola, la arme Node como la arme. Sin consola a la que conectarse, no hay cuenta.
+  const pid = opts.pid || process.pid;
+  const ps = 'Add-Type -TypeDefinition \'using System.Runtime.InteropServices; public static class C { '
+    + '[DllImport("kernel32.dll")] public static extern bool FreeConsole(); '
+    + '[DllImport("kernel32.dll")] public static extern bool AttachConsole(uint p); '
+    + '[DllImport("kernel32.dll")] public static extern uint GetConsoleProcessList(uint[] l, uint n); }\'; '
+    + `[C]::FreeConsole() | Out-Null; if (-not [C]::AttachConsole(${Number(pid)})) { 'SIN-CONSOLA'; exit 3 }; `
     + '$l = New-Object uint[] 64; [C]::GetConsoleProcessList($l, 64)';
   for (const exe of [delSistema('WindowsPowerShell', 'v1.0', 'powershell.exe')]) {
     const r = run(exe, ['-NoProfile', '-NonInteractive', '-Command', ps]);
+    if (r && r.status === 3 && /SIN-CONSOLA/.test(String(r.stdout || ''))) return { nueva: false, conectados: 0, motivo: 'este proceso no tiene una consola a la que conectarse' };
     if (!r || r.error || r.status !== 0) continue;
     const n = Number(String(r.stdout || '').trim().split(/\r?\n/).pop());
     // exactamente 2: éste y el PowerShell que pregunta. 0 o 1 = este proceso no tiene consola (un proceso desprendido
