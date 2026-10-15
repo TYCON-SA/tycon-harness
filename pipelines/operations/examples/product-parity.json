@@ -1,0 +1,36 @@
+{
+  "_lea_esto_primero": [
+    "EJEMPLO de la lista de productos de una organización (story 2.25). Va en tu repo de operaciones en scripts/ci/product-parity.json: la plantilla ops-data.yml (o prepare-tree.sh en GitHub) la pone encima del arnés, y la revisión nocturna de dependencias compara los pipelines de los productos con ella y deja .dashboard/paridad/paridad-<día>.json.",
+    "Sin este archivo el arnés usa su copia pública, que dice sin_productos: el resultado sale «sin productos», nunca un verde.",
+    "grupos: los repos que tienen que hacer lo mismo. Cada entrada: producto, ruta (la carpeta donde la noche lo clona; la misma que en repos.json) y, si la revisión de dependencias no lo clona, dónde vive: ado: \"<proyecto>/<repo>\" (el proyecto codificado, como en repos.json) en Azure DevOps, o github: \"<dueño>/<repo>\" en GitHub. Una entrada de la otra plataforma no se clona y sale «no medido».",
+    "Un grupo puede leer otro archivo (archivo). Una organización en GitHub compara sus workflows así: { \"archivo\": \".github/workflows/ci.yml\", \"repos\": [ ... con github: ... ] }.",
+    "rasgos: lo que se busca en el archivo de cada repo (patron, una expresión regular); bloque acota a un bloque de nivel raíz del YAML; exigido: que nadie lo cumpla también es un hallazgo.",
+    "diferencias_declaradas: una diferencia legítima, con motivo y fecha de revisión. Vencida, deja de amparar y cuenta como divergencia."
+  ],
+  "grupos": {
+    "backend": [
+      { "producto": "Acme Uno", "ruta": "AcmeUno/Back", "ado": "Acme%20Uno/Back" },
+      { "producto": "Acme Dos", "ruta": "AcmeDos/Back" }
+    ],
+    "frontend": [
+      { "producto": "Acme Uno", "ruta": "AcmeUno/Front" },
+      { "producto": "Acme Dos", "ruta": "AcmeDos/Front" }
+    ],
+    "prod": {
+      "archivo": "azure-pipelines-prod.yml",
+      "solo_rasgos_que_lo_nombren": true,
+      "repos": [
+        { "producto": "Acme Uno", "ruta": "AcmeUno/Back", "ado": "Acme%20Uno/Back" },
+        { "producto": "Acme Dos", "ruta": "AcmeDos/Back" }
+      ]
+    }
+  },
+  "rasgos": [
+    { "id": "dispara-tests", "que": "construye cuando el cambio toca sólo las pruebas", "patron": "^\\s*- tests?/\\*\\*", "bloque": "trigger" },
+    { "id": "reintento-host", "que": "reintenta cuando el host limita (429)", "patron": "Too Many Requests|429" },
+    { "id": "aprobacion-prod", "que": "producción pasa por un entorno con aprobación", "patron": "environment:", "grupos": ["prod"] }
+  ],
+  "diferencias_declaradas": [
+    { "grupo": "frontend", "rasgo": "reintento-host", "motivo": "ejemplo: los formularios no llaman al host desde el pipeline", "fecha": "2026-10-15", "revision": "2099-12-31" }
+  ]
+}

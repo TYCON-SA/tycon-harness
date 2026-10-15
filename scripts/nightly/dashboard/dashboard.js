@@ -64,6 +64,14 @@ const args = process.argv.slice(2);
 const flag = (n) => args.includes(n);
 const valor = (n, d) => { const i = args.indexOf(n); return i >= 0 && args[i + 1] ? args[i + 1] : d; };
 const NOCTURNO = flag('--nightly');
+/**
+ * El día de la página (AAAA-MM-DD, UTC): `TYCON_TODAY` si es una fecha, si no el reloj (story 2.21, AC 6 y 9). Es el que
+ * usa el reductor, y así las pruebas fijan el mes en curso, el vencimiento de la observación y la ventana del equipo.
+ */
+function hoyUTC() {
+  const h = readEnv('TYCON_TODAY', { where: 'scripts/nightly/dashboard/dashboard.js' });
+  return typeof h === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(h) && !Number.isNaN(Date.parse(`${h}T00:00:00Z`)) ? h : new Date().toISOString().slice(0, 10);
+}
 
 // `--dir` existe para poder PROBAR el camino gris: sin él, el único escenario que importa
 // (una fuente ausente o vieja) sólo se podría verificar rompiendo el repo de verdad.
@@ -82,9 +90,10 @@ function leerFuente(f) {
     const rx = new RegExp('^' + f.pattern.replace(/[.]/g, '\\.').replace(/\*/g, '.*') + '$');
     archivos = fs.readdirSync(dir).filter((n) => rx.test(n)).sort();
   } catch (e) {
-    // 🔴 El texto del error se CONSERVA. Tapar el error convierte "no pude preguntar" en
-    //    "pregunté y no hay", que es la mentira más barata de producir y la más cara de detectar.
-    return { ...f, leida: false, motivo: `no se pudo leer ${dir}: ${e.code || e.message}`, archivos: 0 };
+    // 🔴 El error se DICE —tapar el error convierte "no pude preguntar" en "pregunté y no hay", la mentira más barata
+    //    de producir y la más cara de detectar—, pero por la fuente y su carpeta RELATIVA y con el código del error:
+    //    la ruta absoluta trae el disco de quien la generó, y la página se publica (story 2.21, la prueba de fuga C-11).
+    return { ...f, leida: false, motivo: `no se pudo leer la carpeta de la fuente «${f.id}» (${f.dir}): ${e.code === 'ENOENT' ? 'no existe' : (e.code || e.name || 'error')}`, archivos: 0 };
   }
   if (archivos.length === 0) {
     return { ...f, leida: false, motivo: `no hay ningún archivo que cumpla "${f.pattern}" en ${f.dir}`, archivos: 0 };
@@ -92,7 +101,7 @@ function leerFuente(f) {
   const ultimo = archivos[archivos.length - 1];
   let doc = null;
   try { doc = JSON.parse(fs.readFileSync(path.join(dir, ultimo), 'utf8')); }
-  catch (e) { return { ...f, leida: false, motivo: `el último archivo (${ultimo}) es ilegible: ${e.message}`, archivos: archivos.length }; }
+  catch (e) { return { ...f, leida: false, motivo: `el último archivo (${ultimo}) es ilegible: ${e instanceof SyntaxError ? 'no es JSON válido' : (e.code || e.name || 'error')}`, archivos: archivos.length }; }
   return {
     ...f, leida: true, motivo: null, archivos: archivos.length, ultimoArchivo: ultimo,
     fechas: archivos.map(fechaDelNombre).filter(Boolean),
@@ -118,7 +127,12 @@ function colectar() {
   const buzon = !NOCTURNO ? { estado: 'no_aplica' }
     : !valor('--mailbox', null) ? { estado: 'no_leido', motivo: 'no se le pasó la carpeta del buzón (--mailbox)' }
       : estadoDelBuzon(valor('--mailbox-state', null));
-  const paneles = { corriendo: fuentes.map(fuenteParaSalida), encuentra: encuentra(por), mejora: mejora(por), local: { ...local(), ...localExtra(ctx), ...equipo(cfg, buzon), pasos: pasosPorCorrida(cfg, buzon) }, extra: extra(por, ctx), poda: podaPanel(buzon) };
+  const eq = equipo(cfg, buzon);
+  const L = { ...local(buzon), ...localExtra(ctx), ...eq, pasos: pasosPorCorrida(cfg, buzon) };
+  // story 2.21: en el nocturno la duración de la suite sale de los registros de todas las máquinas (el reductor); en una
+  // máquina, de su propio gates.log, con la misma lectura de la línea
+  if (NOCTURNO) L.gates_dur = eq.suite_duracion;
+  const paneles = { corriendo: fuentes.map(fuenteParaSalida), encuentra: encuentra(por), mejora: mejora(por), local: L, extra: extra(por, ctx, cfg), poda: podaPanel(buzon) };
   return { hoy, cfg, fuentes, por, faltantes, paneles, cobertura: cobertura(fuentes), buzon };
 }
 
@@ -147,10 +161,34 @@ function encuentra(por) {
   m.banco_regresiones = desde(por.banco, (d) => medida(d.baselineRegressions, d.ran, d.ran, { unidad: 'conteo', den_etiqueta: 'casos' }));
   m.banco_paridad = desde(por.banco, (d) => medida(d.parityBreaks, d.ran, d.ran, { unidad: 'conteo', den_etiqueta: 'casos' }));
   m.suites = desde(por.suites, (d) => {
-    // Un trabajo del nocturno que no terminó deja sus suites sin medir (suites-report.js: `complete`, `unmeasured`):
-    // contarlas como rojas sobre un denominador encogido sería un número sin sentido. Gris, como dependencias.
-    if (d.complete === false) return noMedida(`la noche quedó incompleta: ${(d.unmeasured || []).length} suites sin medir`);
-    return medida((d.failures || []).length, d.corridas, d.corridas, { unidad: 'conteo', den_etiqueta: 'suites' });
+    // Decisión G6 del dueño (story 2.21): las rojas se cuentan aunque falte alguna, y la ficha dice cuáles faltan. Una
+    // sola regla para todo reporte: `failures` menos `unmeasured` (suites-report.js). Antes, una sola suite sin medir
+    // ponía la ficha gris y escondía las rojas que el aviso de arranque sí mostraba.
+    const failures = Array.isArray(d.failures) ? d.failures : [];
+    const corridas = Number(d.corridas);
+    const conLista = Array.isArray(d.unmeasured);
+    // Incompleta y sin decir qué falta: no se sabe qué restar.
+    if (d.complete === false && !conLista) return noMedida('el reporte dice que la noche quedó incompleta pero no dice qué suites faltan');
+    const sinMedir = conLista ? d.unmeasured : [];
+    const marca = (n) => String(n).replace(/\s*\(no-medida\)$/, '');
+    // `corridas` es lo que dice `ran` (las suites que ARRANCARON): una suite cortada a mitad de camino está adentro, y
+    // la de un trabajo que murió antes de arrancarla, no (suites-shard.js `readShard`). Con la lista `ran` en el reporte
+    // se resta sólo lo que está adentro y el total suma lo que nunca arrancó; sin la lista (un reporte anterior a la
+    // 8.9 C3), se toma lo de siempre: todas adentro. Restarlas dos veces encogía el denominador y, con medio nocturno
+    // caído, decía «ninguna suite se midió» escondiendo las rojas (pase adversarial de la story 2.21).
+    const ran = Array.isArray(d.ran) ? new Set(d.ran.map(String)) : null;
+    const adentro = ran ? sinMedir.filter((n) => ran.has(marca(n))).length : sinMedir.length;
+    const total = Number.isFinite(corridas) ? corridas + (sinMedir.length - adentro) : NaN;
+    const medidas = Number.isFinite(corridas) ? corridas - adentro : NaN;
+    if (!Number.isFinite(corridas) || corridas <= 0 || medidas <= 0) return noMedida('ninguna suite se midió esta noche');
+    const rojas = failures.filter((f) => !sinMedir.includes(f)).length;
+    const otroLado = d.measuredElsewhere && typeof d.measuredElsewhere === 'object' && !Array.isArray(d.measuredElsewhere) ? Object.entries(d.measuredElsewhere) : [];
+    const detalle = [
+      sinMedir.length ? `${sinMedir.length} sin medir: ${sinMedir.map(marca).join(', ')}` : null,
+      otroLado.length ? `${otroLado.length} se mide en otro lado: ${otroLado.map(([n, por]) => `${n} — ${por}`).join(' · ')}` : null,
+      typeof d.measuredElsewhereProblem === 'string' && d.measuredElsewhereProblem ? d.measuredElsewhereProblem : null,
+    ].filter(Boolean).join(' · ');
+    return medida(rojas, medidas, total, { unidad: 'conteo', den_etiqueta: 'suites', ...(detalle ? { detalle } : {}) });
   });
   m.deps_hallazgos = desde(por.dependencias, (d) => {
     if (d.corrida_completa === false) return noMedida(`la corrida quedó incompleta: ${(d.no_medidos || []).length} repos sin medir`);
@@ -278,13 +316,109 @@ function leerJsonl(ruta, max) {
   return out;
 }
 
-function local() {
+/**
+ * La lectura de las corridas archivadas (story 2.21, AC 11): la página de una máquina la usa sobre su `timing-history/`
+ * y el nocturno sobre los volcados del buzón. UNA sola lectura, así la misma corrida da el mismo número en las dos.
+ * `archivos`: rutas, o `{ ruta, grupo }` (el grupo es la máquina, para el denominador «de M máquinas»). Del volcado salen
+ * sólo el inicio y el último toque del marcador, `costo.spawns`, `costo.iteraciones` y los tiempos de los pasos: ni la
+ * story, ni la ruta, ni nada más. Un JSON sano sin `marker` (la cobertura que sube cada máquina) no es una corrida; uno
+ * que no se puede leer puede serlo: cuenta en el denominador y no en la mediana, y el detalle lo dice.
+ * `opts`: `vacio` (el motivo sin ninguna corrida) y `etiqueta(grupos)` (el denominador).
+ */
+function leerCorridas(archivos, opts = {}) {
+  const etiqueta = opts.etiqueta || (() => 'corridas');
+  const dur = [], spawns = [], iters = [], trab = [], esp = [];
+  const grupos = new Set();
+  let ultima = null, tiempos = null, sinTiempos = null, total = 0, ilegibles = 0;
+  try { tiempos = require('../../metrics/step-times.js'); }
+  // el código o la clase del error, nunca su mensaje: trae rutas del disco y la página del nocturno se commitea
+  catch (e) { sinTiempos = `scripts/metrics/step-times.js no se pudo cargar (${e.code || e.name || 'error'}): trabajo y espera no se miden`; }
+  for (const a of archivos) {
+    const ruta = typeof a === 'string' ? a : a.ruta;
+    let o; try { o = JSON.parse(fs.readFileSync(ruta, 'utf8')); } catch (e) { total += 1; ilegibles += 1; if (a.grupo) grupos.add(a.grupo); continue; }
+    if (!o || typeof o !== 'object' || !o.marker || typeof o.marker !== 'object') continue;
+    total += 1; if (a.grupo) grupos.add(a.grupo);
+    const mk = o.marker, co = o.costo || {};
+    if (typeof o.archivedAt === 'string' && (!ultima || o.archivedAt > ultima)) ultima = o.archivedAt;
+    const ini = Date.parse(mk.startedAt || ''), fin = Date.parse(mk.lastTouch || '');
+    if (Number.isFinite(ini) && Number.isFinite(fin) && fin > ini) dur.push((fin - ini) / 3600000);
+    if (Number.isFinite(co.spawns)) spawns.push(co.spawns);
+    if (Number.isFinite(co.iteraciones)) iters.push(co.iteraciones);
+    if (tiempos) {
+      const t = tiempos.tiempos(mk.stepTimings || {}, { inicio: mk.startedAt });
+      if (t.trabajo_ms !== null && t.trabajo_medido) trab.push(t.trabajo_ms / 3600000);
+      if (t.espera_humana_ms !== null) esp.push(t.espera_humana_ms / 3600000);
+    }
+  }
+  if (!total) { const n = noMedida(opts.vacio || 'no hay ninguna corrida'); return { corridas: n, agentes: n, vueltas: n, trabajo_espera: n, maquinas: 0 }; }
+  const den = etiqueta(grupos.size);
+  const rotos = ilegibles ? ` · ${ilegibles} volcado(s) no se pudieron leer (¿subida cortada?): cuentan en el total, no en la mediana` : '';
+  const edad = edadDias(ultima, Date.now());
+  const nota = edad !== null && edad > 2 ? ` · la última corrida es de ${edadTexto(edad)}` : '';
+  return {
+    maquinas: grupos.size,
+    trabajo_espera: sinTiempos ? noMedida(sinTiempos) : (trab.length || esp.length)
+      ? { estado: 'medido', trabajo: trab.length ? mediana(trab) : null, n_trabajo: trab.length, espera: esp.length ? mediana(esp) : null, n_espera: esp.length, total }
+      : noMedida('ninguna corrida anotó el arranque de sus pasos (las anteriores a la story 2.7 no lo tienen)'),
+    corridas: dur.length
+      ? medida(mediana(dur), dur.length, total, { unidad: 'conteo', den_etiqueta: den, detalle: `máximo ${num1(Math.max(...dur))} h${nota}${rotos}` })
+      : noMedida('ninguna corrida dejó su duración'),
+    agentes: spawns.length
+      ? medida(mediana(spawns), spawns.length, total, { unidad: 'conteo', den_etiqueta: den, detalle: `máximo ${Math.max(...spawns)}${rotos}` })
+      : noMedida('ninguna corrida registró cuántos agentes lanzó'),
+    vueltas: iters.length
+      ? medida(mediana(iters), iters.length, total, { unidad: 'conteo', den_etiqueta: den, detalle: `máximo ${Math.max(...iters)}${rotos}` })
+      : noMedida('ninguna corrida registró sus vueltas de revisión'),
+  };
+}
+
+/** Los `.json` bajo una carpeta de máquina del buzón, siguiendo enlaces sin volver sobre sí mismos. */
+function jsonsDe(dir, malas, vistas = new Set()) {
+  let real; try { real = fs.realpathSync(dir); } catch (e) { malas.push(e.code || 'ilegible'); return []; }
+  if (vistas.has(real)) return [];
+  vistas.add(real);
+  let ents; try { ents = fs.readdirSync(dir, { withFileTypes: true }); } catch (e) { malas.push(e.code || 'ilegible'); return []; }
+  const out = [];
+  for (const it of ents) {
+    const p = path.join(dir, it.name);
+    let carpeta = it.isDirectory(), archivo = it.isFile();
+    if (it.isSymbolicLink()) { try { const st = fs.statSync(p); carpeta = st.isDirectory(); archivo = st.isFile(); } catch (e) { malas.push(e.code || 'ilegible'); continue; } }
+    if (carpeta) out.push(...jsonsDe(p, malas, vistas));
+    else if (archivo && it.name.endsWith('.json')) out.push(p);
+  }
+  return out;
+}
+
+/**
+ * Las corridas en el nocturno (story 2.21, decisión G7): de los volcados `<máquina>/*.json` del buzón que el nocturno ya
+ * baja, con la misma lectura que la página de una máquina. Sin el buzón entero, nada: la mitad de las máquinas no es el
+ * equipo (story 2.12). Nunca lee `timing-history/` del disco: el agente no es una máquina del equipo.
+ */
+function corridasDelBuzon(buzon) {
+  const todas = (n) => ({ corridas: n, agentes: n, vueltas: n, trabajo_espera: n, maquinas: null });
+  if (buzon.estado !== 'leido') return todas(noLeido(buzon));
+  const dir = path.resolve(valor('--mailbox', path.join(stateDirOf(require('os').homedir()), 'corridas-buzon')));
+  let ents;
+  try { ents = fs.readdirSync(dir, { withFileTypes: true }); }
+  catch (e) { return todas(noMedida(`no se pudo leer la carpeta bajada del buzón (${e.code || 'error'}): no es un buzón vacío`)); }
+  const archivos = [], malas = [];
+  for (const en of ents) {
+    let carpeta = en.isDirectory();
+    if (en.isSymbolicLink()) { try { carpeta = fs.statSync(path.join(dir, en.name)).isDirectory(); } catch (e) { malas.push(e.code || 'ilegible'); continue; } }
+    if (!carpeta || en.name.startsWith('.')) continue;
+    for (const ruta of jsonsDe(path.join(dir, en.name), malas)) archivos.push({ ruta, grupo: en.name });
+  }
+  // Sin una máquina, la mediana no es la del equipo — el mismo criterio que los pasos por corrida (story 7.12).
+  if (malas.length) return todas(noMedida(`${malas.length} carpeta(s) del buzón de corridas no se pudieron leer: la mediana saldría sin sus corridas, y eso no es la del equipo`));
+  return leerCorridas(archivos, { vacio: 'el buzón no tiene corridas', etiqueta: (m) => `corridas, de ${m} máquina${m === 1 ? '' : 's'}` });
+}
+
+function local(buzon = { estado: 'no_aplica' }) {
   if (NOCTURNO) {
-    const corrida = noAplica('las corridas del pipeline viven en cada máquina (la vista de corridas las muestra una por una)');
     return {
-      gates_dur: noAplica('la duración de la suite sale del registro de controles de cada máquina'),
+      // la duración de la suite la pone colectar() con la cuenta del equipo (story 2.21)
       freno: noAplica('el freno de mano anota en el disco de cada máquina'),
-      corridas: corrida, agentes: corrida, vueltas: corrida, trabajo_espera: corrida,
+      ...corridasDelBuzon(buzon),
       estilo: noAplica('el medidor de estilo vive en cada máquina'),
       bloqueo: noAplica('el medidor de bloqueos vive en cada máquina'),
     };
@@ -300,15 +434,18 @@ function local() {
   if (!fs.existsSync(gates)) { m.gates_dur = falta('el registro de frenos'); }
   else {
     try {
+      // la lectura de la línea es la del reductor (story 2.21, AC 13): la misma muestra que la cuenta del equipo
+      const { duracionSuite } = require('./reducer');
       const durTests = [];
       for (const d of leerJsonl(gates)) {
-        if (!d) continue;
-        const n = d.name || d.check || d.gate;
-        if (n === 'tests' && Number.isFinite(d.durationMs)) durTests.push(d.durationMs);
+        const s = duracionSuite(d);
+        if (s !== null) durTests.push(s);
       }
+      let maximo = -Infinity;
+      for (const x of durTests) if (x > maximo) maximo = x;
       m.gates_dur = durTests.length
-        ? medida(mediana(durTests) / 1000, durTests.length, durTests.length,
-            { unidad: 'conteo', den_etiqueta: 'corridas de la suite', detalle: `máximo ${num1(Math.max(...durTests) / 60000)} minutos` })
+        ? medida(mediana(durTests), durTests.length, durTests.length,
+            { unidad: 'conteo', den_etiqueta: 'corridas de la suite', detalle: `máximo ${num1(maximo / 60)} minutos` })
         : noMedida('ninguna corrida de tests dejó su duración');
     } catch (e) { m.gates_dur = noMedida(`el registro de frenos no se pudo leer: ${e.code || e.message}`); }
   }
@@ -329,46 +466,15 @@ function local() {
   })();
 
   // 4 · Corridas completas del pipeline: duración, agentes y vueltas.
+  // (la lectura es leerCorridas(), la misma del nocturno sobre el buzón: story 2.21)
   const th = path.join(stateDirOf(require('os').homedir()), 'timing-history');
   const vacio = () => { m.corridas = falta('el registro de corridas'); m.agentes = m.corridas; m.vueltas = m.corridas; };
   if (!fs.existsSync(th)) vacio();
   else {
     try {
-      const archivos = fs.readdirSync(th).filter((n) => n.endsWith('.json'));
-      const dur = [], spawns = [], iters = [], trab = [], esp = [];
-      let ultima = null;
-      let tiempos = null;
-      let sinTiempos = null;
-      try { tiempos = require('../../metrics/step-times.js'); }
-      catch (e) { sinTiempos = `scripts/metrics/step-times.js no se pudo cargar (${e.code || e.message}): trabajo y espera no se miden`; }
-      for (const a of archivos) {
-        let o; try { o = JSON.parse(fs.readFileSync(path.join(th, a), 'utf8')); } catch (e) { continue; }
-        const mk = o.marker || {}, co = o.costo || {};
-        if (o.archivedAt && (!ultima || o.archivedAt > ultima)) ultima = o.archivedAt;
-        const ini = Date.parse(mk.startedAt || ''), fin = Date.parse(mk.lastTouch || '');
-        if (Number.isFinite(ini) && Number.isFinite(fin) && fin > ini) dur.push((fin - ini) / 3600000);
-        if (Number.isFinite(co.spawns)) spawns.push(co.spawns);
-        if (Number.isFinite(co.iteraciones)) iters.push(co.iteraciones);
-        if (tiempos) {
-          const t = tiempos.tiempos(mk.stepTimings || {}, { inicio: mk.startedAt });
-          if (t.trabajo_ms !== null && t.trabajo_medido) trab.push(t.trabajo_ms / 3600000);
-          if (t.espera_humana_ms !== null) esp.push(t.espera_humana_ms / 3600000);
-        }
-      }
-      m.trabajo_espera = sinTiempos ? noMedida(sinTiempos) : (trab.length || esp.length)
-        ? { estado: 'medido', trabajo: trab.length ? mediana(trab) : null, n_trabajo: trab.length, espera: esp.length ? mediana(esp) : null, n_espera: esp.length, total: archivos.length }
-        : noMedida('ninguna corrida anotó el arranque de sus pasos (las anteriores a la story 2.7 no lo tienen)');
-      const edad = edadDias(ultima, Date.now());
-      const nota = edad !== null && edad > 2 ? `la última corrida es de ${edadTexto(edad)}` : null;
-      m.corridas = dur.length
-        ? medida(mediana(dur), dur.length, archivos.length, { unidad: 'conteo', den_etiqueta: 'corridas', detalle: `máximo ${num1(Math.max(...dur))} h${nota ? ' · ' + nota : ''}` })
-        : noMedida('ninguna corrida dejó su duración');
-      m.agentes = spawns.length
-        ? medida(mediana(spawns), spawns.length, archivos.length, { unidad: 'conteo', den_etiqueta: 'corridas', detalle: `máximo ${Math.max(...spawns)}` })
-        : noMedida('ninguna corrida registró cuántos agentes lanzó');
-      m.vueltas = iters.length
-        ? medida(mediana(iters), iters.length, archivos.length, { unidad: 'conteo', den_etiqueta: 'corridas', detalle: `máximo ${Math.max(...iters)}` })
-        : noMedida('ninguna corrida registró sus vueltas de revisión');
+      const archivos = fs.readdirSync(th).filter((n) => n.endsWith('.json')).map((n) => path.join(th, n));
+      const r = leerCorridas(archivos, { vacio: 'ninguna corrida dejó su duración' });
+      m.corridas = r.corridas; m.agentes = r.agentes; m.vueltas = r.vueltas; m.trabajo_espera = r.trabajo_espera;
     } catch (e) { vacio(); }
   }
 
@@ -398,7 +504,7 @@ function equipo(cfg, buzon = { estado: 'no_aplica' }) {
   // story 2.12: en el nocturno, sin el buzón entero no hay fichas del equipo — nunca «ninguna máquina reportó».
   if (NOCTURNO && buzon.estado !== 'leido') {
     const n = noLeido(buzon);
-    return { bloqueos: n, escapes: n, escapes_dom: n, frenos: n, evidencia_cierre: n, carriles: n, cobertura_tocada: n, mutacion: n, qa_guia: n, cobertura_maquinas: n.motivo, maquinas_equipo: null };
+    return { bloqueos: n, escapes: n, escapes_dom: n, frenos: n, evidencia_cierre: n, carriles: n, cobertura_tocada: n, mutacion: n, qa_guia: n, suite_duracion: n, cobertura_maquinas: n.motivo, maquinas_equipo: null };
   }
   const reductor = require('./reducer');
   let j;
@@ -407,14 +513,14 @@ function equipo(cfg, buzon = { estado: 'no_aplica' }) {
       // 🔴 El nocturno no lee registros del disco: el agente no es una máquina del equipo (story 2.12).
       registros: NOCTURNO ? null : path.resolve(valor('--logs', path.join(stateDirOf(require('os').homedir())))),
       buzon: path.resolve(valor('--mailbox', path.join(stateDirOf(require('os').homedir()), 'corridas-buzon'))),
-      cfg, hoy: new Date().toISOString().slice(0, 10),
+      cfg, hoy: hoyUTC(),
     });
   } catch (e) {
     // Una falla inesperada de la cuenta no tira la página entera: las dos fichas quedan no medidas con motivo.
     j = { estado: 'no_medido', motivo: `la cuenta de los registros falló (${e.code || e.name || 'error'})` };
   }
   const cobertura_maquinas = reductor.textoCobertura(j);
-  if (j.estado !== 'medido') { const n = noMedida(j.motivo); return { bloqueos: n, escapes: n, escapes_dom: n, frenos: n, evidencia_cierre: n, carriles: n, cobertura_tocada: n, mutacion: n, qa_guia: n, cobertura_maquinas, maquinas_equipo: null }; }
+  if (j.estado !== 'medido') { const n = noMedida(j.motivo); return { bloqueos: n, escapes: n, escapes_dom: n, frenos: n, evidencia_cierre: n, carriles: n, cobertura_tocada: n, mutacion: n, qa_guia: n, suite_duracion: n, cobertura_maquinas, maquinas_equipo: null }; }
   // Cuántas máquinas entraron a la cuenta (las esperadas que reportaron y las no declaradas): lo lleva el sello.
   const maquinas_equipo = j.cobertura.reportaron + j.cobertura.sin_declarar.length;
   const piso = j.piso;
@@ -529,8 +635,16 @@ function equipo(cfg, buzon = { estado: 'no_aplica' }) {
   // `cobertura-tocada` en gates.log; acá se cuenta, en todas las máquinas, cuántas corridas pudieron
   // evaluar el umbral y cuántas de ésas habrían frenado. Reemplaza a la ficha que caminaba el disco de
   // quien generaba la página buscando tests-result.json («2 de 16 proyectos»).
-  // Misma fecha que OBS_HASTA en test-gate.sh (AgentSkills): si se corre la observación, se mueven las dos.
-  const OBS_COBERTURA_HASTA = '2026-10-06';
+  // La fecha de la observación sale de UNA definición, la del informe de test-gate (story 2.21, AC 9): una copia acá
+  // envejeció sola («en observación hasta el 2026-10-06» nueve días después). Vencida se dice; decidir si el umbral
+  // frena es del dueño, no de esta página. Si el módulo no carga (una copia de scripts/ sola), el pie lo dice.
+  const observacion = (() => {
+    let obs;
+    try { obs = require(path.join(__dirname, '..', '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'test-gate-report.js')).OBS_HASTA; }
+    catch (e) { return `no se pudo leer la fecha de la observación (${e.code || e.name || 'error'}): no frena`; }
+    if (typeof obs !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(obs)) return 'no se pudo leer la fecha de la observación (sin forma de fecha): no frena';
+    return hoyUTC() > obs ? `la observación terminó el ${obs} y no se decidió: sigue sin frenar` : `en observación hasta el ${obs}, no frena`;
+  })();
   const ce = j.metricas.cobertura_tocada_evaluo, cf = j.metricas.cobertura_tocada_frenaria;
   let cobertura_tocada;
   if (!ce || !cf) cobertura_tocada = noMedida('la configuración del reductor no declara las métricas de cobertura de las líneas tocadas');
@@ -543,7 +657,7 @@ function equipo(cfg, buzon = { estado: 'no_aplica' }) {
     else {
       cobertura_tocada = {
         ...ratio(corridas.num, corridas.den), den_etiqueta: 'corridas de test-gate',
-        detalle: `${ventana} · habría frenado ${frenaria.num} de ${corridas.num} · en observación hasta el ${OBS_COBERTURA_HASTA}, no frena${parcial(ce, 'cobertura')}`,
+        detalle: `${ventana} · habría frenado ${frenaria.num} de ${corridas.num} · ${observacion}${parcial(ce, 'cobertura')}`,
       };
     }
   }
@@ -601,7 +715,25 @@ function equipo(cfg, buzon = { estado: 'no_aplica' }) {
       };
     }
   }
-  return { bloqueos, escapes, escapes_dom, frenos, evidencia_cierre, carriles, cobertura_tocada, mutacion, qa_guia, cobertura_maquinas, maquinas_equipo };
+  // ── story 2.21 · la duración de la suite, de todas las máquinas (decisión G7) ─────────────────────────────────
+  // gates.log ya viaja entero al buzón (story 2.5): el reductor junta la duración de cada corrida de `tests` en una
+  // distribución —la mediana sale de la unión de las muestras, nunca promediando medianas— dentro de su ventana.
+  const sd = j.metricas.suite_duracion;
+  let suite_duracion;
+  if (!sd || !Array.isArray(sd.muestras)) suite_duracion = noMedida('la configuración del reductor no declara la duración de la suite');
+  else if (sinMaquinas || sd.midieron === 0) suite_duracion = noMedida(sinMaquinas ? 'ninguna máquina reportó sus registros' : 'ninguna máquina pudo leer su registro de controles (gates.log), que es donde queda la duración de la suite');
+  else if (!sd.muestras.length) suite_duracion = noMedida('ninguna corrida de tests dejó su duración');
+  // el piso, como la mutación y todas las fichas del equipo: un corte chico es un evento con su máquina, no una estadística
+  else if (sd.muestras.length < piso) suite_duracion = noMedida(`por debajo del piso (${sd.muestras.length} corrida${sd.muestras.length === 1 ? '' : 's'} de la suite en la ventana; hacen falta ${piso})`);
+  else {
+    let maximo = -Infinity;
+    for (const x of sd.muestras) if (x > maximo) maximo = x;
+    suite_duracion = medida(mediana(sd.muestras), sd.muestras.length, sd.muestras.length, {
+      unidad: 'conteo', den_etiqueta: 'corridas de la suite',
+      detalle: `${ventana} · máximo ${num1(maximo / 60)} minutos · midieron ${sd.midieron} de ${sd.maquinas} máquina${sd.maquinas === 1 ? '' : 's'}`,
+    });
+  }
+  return { bloqueos, escapes, escapes_dom, frenos, evidencia_cierre, carriles, cobertura_tocada, mutacion, qa_guia, suite_duracion, cobertura_maquinas, maquinas_equipo };
 }
 
 // ─────────────── el criterio de poda: hallazgos por regla, con su denominador (story 2.9) ───────────────
@@ -745,7 +877,7 @@ function contexto() {
   return { repos, productos, debt, declarados: (declarados && declarados.declared) || [] };
 }
 
-function extra(por, ctx) {
+function extra(por, ctx, cfg) {
   const m = {};
   const sdlc = por['sdlc-stage'];
 
@@ -856,7 +988,22 @@ function extra(por, ctx) {
     if (!t || !Object.keys(t).length) return noMedida('el snapshot no trae el tiempo por etapa');
     const es = Object.entries(t).filter(([, v]) => v && Number.isFinite(v.median) && Number.isFinite(v.n));
     if (!es.length) return noMedida('el snapshot trae la clave pero ninguna etapa con mediana y n');
-    const [lenta, s] = [...es].sort((a, b) => b[1].median - a[1].median)[0];
+    // story 2.21 (AC 7): «donde se queda parado el trabajo» no puede ser un estado TERMINAL (`done` es el final, no una
+    // espera) ni una etapa con menos stories que el piso del reductor (con los datos del 2026-10-15, `backlog` con 2
+    // stories le ganaba por milésimas a `review` con 344). Los terminales salen del diccionario de estados —los grupos
+    // `cerrado` y `sin_entrega`—, nunca de una lista escrita acá; el detalle sigue listando todas las etapas.
+    const floor = cfg && cfg.reducer ? cfg.reducer.floor : undefined;
+    if (!Number.isInteger(floor) || floor < 1) return noMedida('la configuración del reductor no declara el piso (reducer.floor)');
+    let terminales;
+    try {
+      const dic = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'metrics', 'states.json'), 'utf8'));
+      const g = dic && dic.groups;
+      if (!g || !Array.isArray(g.cerrado) || !Array.isArray(g.sin_entrega)) throw new Error('sin los grupos cerrado y sin_entrega');
+      terminales = new Set([...g.cerrado, ...g.sin_entrega]);
+    } catch (e) { return noMedida('no pude leer el diccionario de estados (scripts/metrics/states.json): sin él no se sabe qué etapa es terminal'); }
+    const candidatas = es.filter(([k, v]) => !terminales.has(k) && v.n >= floor);
+    if (!candidatas.length) return noMedida(`ninguna etapa no terminal llega al piso de ${floor} stories`, { detalle: es.map(([k, v]) => `${k} ${num1(v.median)} d · n=${v.n}`).join(' · ') });
+    const [lenta, s] = [...candidatas].sort((a, b) => b[1].median - a[1].median)[0];
     return medida(s.median, s.n, s.n, { unidad: 'dias', den_etiqueta: `stories que pasaron por ${lenta}`,
       detalle: es.map(([k, v]) => `${k} ${num1(v.median)} d · n=${v.n}`).join(' · '),
       etapa_lenta: lenta });
@@ -927,12 +1074,14 @@ function extra(por, ctx) {
       const con = par(x.con_corrida), sin = par(x.sin_constancia);
       if (!con || !sin) continue;
       conCarpeta += 1;
+      // Texto PLANO (story 2.21, AC 8): lo escapa `ficha()` una sola vez. Con `<b>` y `esc()` acá, la página mostraba
+      // `&lt;b&gt;` y el `--json` llevaba etiquetas.
       if (con.den >= nMin && sin.den >= nMin) {
         comparables += 1;
-        lineas.push(`<b>${esc(nombre(r))}</b>: con corrida volvieron ${con.num} de ${con.den} (${pctDe(con)}) · sin constancia ${sin.num} de ${sin.den} (${pctDe(sin)})`);
+        lineas.push(`${nombre(r)}: con corrida volvieron ${con.num} de ${con.den} (${pctDe(con)}) · sin constancia ${sin.num} de ${sin.den} (${pctDe(sin)})`);
       } else {
         const falta = [con.den < nMin ? `${nMin - con.den} con corrida` : null, sin.den < nMin ? `${nMin - sin.den} sin constancia` : null].filter(Boolean).join(' y ');
-        lineas.push(`${esc(nombre(r))}: todavía no se compara — faltan ${falta} (desde ${esc(String(x.desde || '?'))})`);
+        lineas.push(`${nombre(r)}: todavía no se compara — faltan ${falta} (desde ${String(x.desde || '?')})`);
       }
     }
     const sinCarpeta = rs.length - conCarpeta;
@@ -992,10 +1141,7 @@ function extra(por, ctx) {
 // Más anillo local: calidad de las pruebas y dependencia de personas.
 function localExtra(ctx) {
   if (NOCTURNO) {
-    return {
-      bus_factor: noAplica('se mide sobre los repos clonados en una máquina'),
-      repos_declarados: noAplica('compara la lista declarada contra los repos clonados en una máquina'),
-    };
+    return { bus_factor: noAplica('se mide sobre los repos clonados en una máquina') };
   }
   const m = {};
 
@@ -1028,17 +1174,8 @@ function localExtra(ctx) {
     }
   }
 
-  // Repos declarados contra repos en el disco.
-  try {
-    let enDisco = 0;
-    const mirar = (dir, prof) => {
-      if (prof > 2) return;
-      let ents; try { ents = fs.readdirSync(dir, { withFileTypes: true }); } catch (e) { return; }
-      for (const e of ents) { if (!e.isDirectory()) continue; if (e.name === '.git') { enDisco++; continue; } if (!e.name.startsWith('.') && e.name !== 'node_modules') mirar(path.join(dir, e.name), prof + 1); }
-    };
-    mirar(SRC, 0);
-    m.repos_declarados = enDisco ? medida(ctx.repos.length, ctx.repos.length, enDisco, { unidad: 'conteo', den_etiqueta: 'repos en este disco', detalle: 'lo que no está declarado no lo mira ningún nocturno' }) : noMedida('no se encontró ningún repo en el disco');
-  } catch (e) { m.repos_declarados = noMedida(`no se pudo recorrer el disco: ${e.message}`); }
+  // Los repos declarados contra el disco ya no son de esta página (story 2.21, decisión G7): son de cada máquina y los
+  // dice `harness.js doctor`, contra la lista de la organización.
   return m;
 }
 
@@ -1085,6 +1222,9 @@ function filaFuente(f) {
 function grafico(lm) {
   if (!lm || lm.estado !== 'medido') return `<div class="tile blind">${chip('blind', 'no medido')}<div class="t-label">Vida de una story por mes de cierre</div><div class="t-val">falta</div><div class="t-den">${esc((lm && lm.motivo) || '')}</div></div>`;
   const meses = lm.meses.slice(-8);
+  // story 2.21 (AC 6): el mes UTC de hoy todavía no cerró. Se dibuja, con la palabra «en curso»; la nota habla del último
+  // mes ANTERIOR. Llamarlo cerrado con quince días de datos era lo que engañaba.
+  const enCurso = hoyUTC().slice(0, 7);
   const W = 720, H = 250, x0 = 58, x1 = 700, base = 200, top = 20;
   const maxV = Math.max(30, ...meses.map((x) => Math.max(x.mean, x.median)));
   const y = (v) => base - (v / maxV) * (base - top);
@@ -1102,11 +1242,13 @@ function grafico(lm) {
     s += `<text x="${cx}" y="${y(mth.median) - 6}" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11.5" font-weight="600" fill="var(--ink)">${num1(mth.median)}</text>`;
     s += `<text x="${cx}" y="${y(mth.mean) - 9}" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="11" fill="var(--ink-2)">${num1(mth.mean)}</text>`;
     s += `<text x="${cx}" y="220" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="var(--ink-2)">${NOM[mth.month.slice(5, 7)] || mth.month} ${mth.month.slice(2, 4)}</text>`;
-    s += `<text x="${cx}" y="236" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="var(--ink-3)">n=${mth.n}</text>`;
+    s += `<text x="${cx}" y="236" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" fill="var(--ink-3)">n=${mth.n}${mth.month === enCurso ? ' · en curso' : ''}</text>`;
   });
   s += '</svg>';
-  const ult = meses[meses.length - 1];
-  const nota = ult ? `Último mes cerrado (${ult.month}): mediana ${num1(ult.median)} días, media ${num1(ult.mean)}. <b>La distancia entre las dos es el número que importa</b>: cuando se abre, hay trabajo parado semanas que el promedio esconde.` : '';
+  const cerrados = lm.meses.filter((x) => x.month < enCurso);
+  const ult = cerrados[cerrados.length - 1];
+  const nota = ult ? `Último mes cerrado (${esc(ult.month)}): mediana ${num1(ult.median)} días, media ${num1(ult.mean)}. <b>La distancia entre las dos es el número que importa</b>: cuando se abre, hay trabajo parado semanas que el promedio esconde.`
+    : meses.length ? 'La serie trae sólo el mes en curso: todavía no hay un mes cerrado en la serie.' : '';
   return `<div class="chart-card"><div class="chart-head"><div class="chart-title">Vida de una story, por mes de cierre — días</div><div class="legend"><span><i class="bar-key"></i>mediana</span><span><i class="ring-key"></i>media</span></div></div><div class="chart-scroll">${s}</div><p class="chart-note">${nota}</p></div>`;
 }
 
@@ -1208,6 +1350,11 @@ function render(d) {
     ? `<i>Trabajo y espera: ${esc(te.motivo)}.</i>`
     : `De punta a punta no es lo mismo que trabajo: <b>${te.trabajo === null ? 'trabajo sin medir' : `${num1(te.trabajo)} h de trabajo`}</b> (n=${te.n_trabajo} de ${te.total}) y <b>${te.espera === null ? 'espera sin medir' : `${num1(te.espera)} h esperando a una persona`}</b> (n=${te.n_espera} de ${te.total}), medianas de las corridas que anotaron el arranque de sus pasos.`;
 
+  // ── story 2.21: en el nocturno, la duración, los agentes y las vueltas salen del buzón — se dice de cuántas máquinas
+  const notaCorridasNocturno = Number.isInteger(L.maquinas)
+    ? `La duración, los agentes y las vueltas de una corrida salen del buzón de corridas, de ${L.maquinas} máquina${L.maquinas === 1 ? '' : 's'}, con la misma lectura que la página de una máquina; los pasos, también.`
+    : 'La duración, los agentes y las vueltas de una corrida salen del buzón de corridas, que esta noche no se pudo leer entero; los pasos, también.';
+
   // ── pregunta 4: escapes — la regla dominante
   const escapesDom = L.escapes_dom || null;   // story 2.5: se calcula desde los conteos juntados, no parseando el texto del detalle
 
@@ -1290,14 +1437,14 @@ footer{margin-top:40px;padding-top:16px;border-top:1px solid var(--line);font-si
     ${F('dod', 'Cierres que dejaron prueba de que la cosa anda corriendo', M.dod, pct, { bad: 'rojo', warn: 'atención', ok: 'bien' }, E.repos_en_cero_dod && E.repos_en_cero_dod.estado === 'medido' && E.repos_en_cero_dod.valor > 0 ? `<b>${E.repos_en_cero_dod.valor} de ${E.repos_en_cero_dod.total} repos en cero</b>: ${esc(E.repos_en_cero_dod.detalle)}. No es que estén rotos: es que de esos cierres no queda constancia.` : null)}
     ${F('rework', 'Lo que vuelve: stories con un seguimiento posterior', M.rework, pct, { bad: 'concentrado', warn: 'atención', ok: 'bien' }, reworkTop ? `Los que más vuelven: ${reworkTop}.` : null)}
     ${F('', 'Por qué volvió: defecto nuestro contra cambio de requisito', E.rework_por_causa, entero, {}, pieCausas)}
-    ${F('', '¿Vuelve menos lo que pasó por el pipeline? Por repo, con corrida contra sin constancia', E.rework_por_carril, entero, {}, `${E.rework_por_carril && E.rework_por_carril.detalle ? E.rework_por_carril.detalle + '. ' : ''}La hipótesis y el mínimo por grupo se escribieron <b>antes</b> de mirar un número (<code>scripts/metrics/lane-hypothesis.json</code>) y el resultado se publica aunque salga en contra del pipeline. «Sin constancia» no quiere decir «a mano»: una corrida que no se guardó en el repo cae ahí. Nunca se suma entre productos.`)}
+    ${F('', '¿Vuelve menos lo que pasó por el pipeline? Por repo, con corrida contra sin constancia', E.rework_por_carril, entero, {}, `La hipótesis y el mínimo por grupo se escribieron <b>antes</b> de mirar un número (<code>scripts/metrics/lane-hypothesis.json</code>) y el resultado se publica aunque salga en contra del pipeline. «Sin constancia» no quiere decir «a mano»: una corrida que no se guardó en el repo cae ahí. Nunca se suma entre productos.`)}
     ${F('', dInc && dInc.titulo ? dInc.titulo : 'Incidentes de producción detectados por una máquina', dInc, entero, {}, 'Es un dato <b>declarado</b> por una persona, no producido por un registro: se muestra, no se juzga, y vence.')}
   </div>
 </section>
 
 <section class="q">
   ${cabecera('3', '¿Las pruebas prueban algo?', q3, q3 === 'bad' ? 'rojo' : q3 === 'warn' ? 'atención' : 'bien')}
-  <p class="q-note">La pregunta que separa un tablero honesto de uno decorativo. Una suite en verde no dice nada por sí sola: lo que dice algo es <strong>si esas pruebas se rompen cuando el código se rompe</strong>. <em>La mutación, la cobertura y la guía de QA cuentan los registros de todas las máquinas que los suben, y cada ficha dice de cuántas sale su número; ${NOCTURNO ? 'la duración de la suite sale del registro de cada máquina, y el nocturno no lo tiene' : 'la duración de la suite sale todavía de esta máquina'}.</em></p>
+  <p class="q-note">La pregunta que separa un tablero honesto de uno decorativo. Una suite en verde no dice nada por sí sola: lo que dice algo es <strong>si esas pruebas se rompen cuando el código se rompe</strong>. <em>La mutación, la cobertura y la guía de QA cuentan los registros de todas las máquinas que los suben, y cada ficha dice de cuántas sale su número; ${NOCTURNO ? 'la duración de la suite, también: sale del registro de controles que sube cada máquina' : 'la duración de la suite sale todavía de esta máquina'}.</em></p>
   <div class="grid">
     ${F('mutacion', 'Puntaje de mutación: proporción de mutantes que las pruebas matan (mediana)', L.mutacion, pct, { bad: 'flojo', warn: 'hubo ceros', ok: 'bien' }, 'Un chequeo que <b>no pudo medir</b> —hoy el chequeo sólo sabe correr las pruebas de Node, así que en .NET y React no mide— se cuenta aparte y <b>nunca es un 0 %</b>.')}
     ${F('cobertura_tocada_evaluo', 'Corridas de pruebas que evaluaron el umbral del 75 % sobre las líneas tocadas', L.cobertura_tocada, pct, { bad: 'casi nunca mide', warn: 'parcial', ok: 'bien' }, 'La cobertura se mide sobre las <b>líneas que la story agregó o modificó</b>, no sólo sobre los archivos que creó (medido: casi ninguna story crea archivos, y el umbral no juzgaba nada). Una corrida no evalúa cuando su herramienta no produce cobertura o no hubo líneas de código tocadas. <b>En observación</b>: el detalle dice hasta cuándo y cuántas habrían frenado, y con ese número se decide si el 75 % pasa a frenar. Cuenta todas las máquinas.')}
@@ -1308,9 +1455,9 @@ footer{margin-top:40px;padding-top:16px;border-top:1px solid var(--line);font-si
 
 <section class="q">
   ${cabecera('4', '¿Los controles sirven, o estorban?', q4, q4 === 'bad' ? 'una regla concentra todo' : q4 === 'warn' ? 'atención' : 'bien')}
-  <p class="q-note">Un catálogo de reglas sólo puede crecer si nadie mide cuáles frenan de verdad y cuáles se esquivan todos los días. <strong>Éste es el panel que decide qué regla se retira</strong>. <em>Frenos y escapes, de todas las máquinas: ${esc(L.cobertura_maquinas || 'sin cobertura de máquinas')}. ${NOCTURNO ? 'La duración, los agentes y las vueltas de una corrida viven en cada máquina: el nocturno no los mide. Los pasos sí: salen del buzón de corridas.' : 'La duración, los agentes y las vueltas salen de los registros de esta máquina; los pasos, del buzón de corridas de todas.'}</em></p>
+  <p class="q-note">Un catálogo de reglas sólo puede crecer si nadie mide cuáles frenan de verdad y cuáles se esquivan todos los días. <strong>Éste es el panel que decide qué regla se retira</strong>. <em>Frenos y escapes, de todas las máquinas: ${esc(L.cobertura_maquinas || 'sin cobertura de máquinas')}. ${NOCTURNO ? notaCorridasNocturno : 'La duración, los agentes y las vueltas salen de los registros de esta máquina; los pasos, del buzón de corridas de todas.'}</em></p>
   <div class="grid">
-    ${F('', 'Veces que un freno bloqueó de verdad una acción', L.bloqueos, entero, {}, null)}
+    ${F('', 'Veces que un control del pipeline bloqueó una acción', L.bloqueos, entero, {}, 'Cuenta las evaluaciones de los <b>controles del pipeline</b> (el registro de controles, <code>gates.log</code>) que bloquearon. Los frenos previos a la herramienta —los que corren antes de cada comando— son otra cuenta, de otro registro: están en la ficha siguiente.')}
     ${F('', 'Los frenos previos a la herramienta: cuántas veces frenaron, y cuántas los saltearon', L.frenos, entero, {}, 'Los dos números de la misma regla, juntos: sin el primero, un freno que funcionó todo el mes se ve igual que uno que nunca se disparó. <b>El total es una cuenta, no un porcentaje</b>: los seis no comparten denominador —el freno de comandos peligrosos no cuenta los «dejé pasar», porque corre en cada comando de la terminal—, así que la proporción vive por freno, cada uno con el suyo.')}
     ${F('', 'Los hooks del cierre: de sus decisiones sobre una evidencia, cuántas la rechazaron', L.evidencia_cierre, pct, {}, 'Cuenta a los tres frenos que impiden cerrar una story sin evidencia: el del cambio de estado, el del commit y el que no deja escribir evidencia a mano. Proporción de rechazos: <b>es el número que dice si el cierre mínimo alcanza</b>. El cierre soltó los revisores que releían la evidencia con un modelo; si este número baja a cero mientras suben los criterios sin correr de la matriz, el recorte se revisa.')}
     ${F('escapes_regla_dominante', 'Escapes concentrados en una sola regla', escapesDom, pct, { bad: 'una regla concentra todo', warn: 'atención', ok: 'repartido' }, L.escapes && L.escapes.estado === 'medido' ? `${L.escapes.valor} escapes declarados en total. <b>Eso no es abuso: es un tope puesto donde molesta</b>, y se recalibra o se retira.${escapesDom && escapesDom.detalle && /FULL_SUITE_RUN/.test(escapesDom.detalle) ? ' <b>Acá la dominante es una declaración esperada, no un freno esquivado</b>: correr la suite completa está permitido y se declara — la regla existe para que no se corra sin querer, no para impedirla.' : ''}` : null)}
@@ -1341,7 +1488,6 @@ footer{margin-top:40px;padding-top:16px;border-top:1px solid var(--line);font-si
     ${F('bus_factor_productos_en_riesgo', 'Productos donde una sola persona hizo el 75 % o más de los commits del último año', L.bus_factor, entero, { bad: 'una persona', warn: 'atención', ok: 'repartido' }, 'La diferencia entre los concentrados y los repartidos no es el tamaño ni la antigüedad: es quién los arrancó.')}
     ${F('vigilados', 'Productos con algo mirando su producción todas las noches', E.vigilados, pct, { bad: 'casi ninguno', warn: 'parcial', ok: 'todos' })}
     ${F('', 'Productos sin pipeline de producción', E.sin_prod, entero, {}, 'No es una métrica de calidad: es exposición. Para ellos «despliegues» es estructuralmente cero y la página tiene que decir <b>«sin pipeline»</b>, nunca «0».')}
-    ${F('', 'Repos declarados al arnés, contra los que hay en este disco', L.repos_declarados, entero, {}, null)}
   </div>
 </section>
 

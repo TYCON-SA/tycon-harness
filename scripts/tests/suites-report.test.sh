@@ -190,6 +190,55 @@ node "$SCRIPT" --rep "$TMP/rep.json" --build 1010 --runs 1 --failures "" --detai
   && ok "R9b: un registro ilegible no da nada por «no viaja»: lo dice y deja las desaparecidas como siempre" \
   || no "R9b: rc=$rc · $(cat "$TMP/rep.json" 2>/dev/null) · $(cat "$TMP/r9b.err")"
 
+# ── R10. «se mide en otro lado» (story 2.21, AC 3) ───────────────────────────────────────────────────────────────
+# Una suite cuyo registro declara `measured_elsewhere` y que llega «(no-medida)» no es una suite que falta: la mide otro
+# pipeline. Sale de `failures` y de `unmeasured`, va a `measuredElsewhere` con su motivo, sigue en `ran` y no vuelve
+# incompleta la noche. La declaración cubre sólo «no medida»: corrida y roja, sigue roja (R11).
+printf '{"diarias":[{"raiz":"arnes","ruta":"tests/lab-a.test.sh"},{"raiz":"arnes","ruta":"tests/lab-limpia.test.sh","measured_elsewhere":"la mide la CI del repo público en cada pedido"}],"semanales":[]}\n' > "$TMP/r10-decl.json"
+printf '{"diarias":[{"raiz":"arnes","ruta":"tests/lab-a.test.sh"},{"raiz":"arnes","ruta":"tests/lab-limpia.test.sh"}],"semanales":[]}\n' > "$TMP/r10-sin.json"
+printf 'lab-a.test.sh\nlab-limpia.test.sh\n' > "$TMP/r10-ran.txt"
+node -e 'require("fs").writeFileSync(process.argv[1], JSON.stringify({kind:"bash-tests",ts:new Date().toISOString(),build:"1",corridas:2,failures:[],motivos:{},ran:["lab-a.test.sh","lab-limpia.test.sh"]}))' "$TMP/r10-prev.json"
+# (a) con dos --registry, uno solo la declara: alcanza
+node "$SCRIPT" --rep "$TMP/rep.json" --build 1011 --runs 2 --failures "lab-limpia.test.sh(no-medida)" --detail "$TMP/r7" \
+  --ran "$TMP/r10-ran.txt" --previous "$TMP/r10-prev.json" --registry "$TMP/r10-sin.json" --registry "$TMP/r10-decl.json" 2>"$TMP/r10.err"; rc=$?
+{ [ "$rc" -eq 0 ] && [ "$(campo 'r.failures.length')" = 0 ] && [ "$(campo 'JSON.stringify(r.unmeasured)')" = '[]' ] \
+  && [ "$(campo 'r.complete')" = true ] && [ "$(campo 'r.measuredElsewhere["lab-limpia.test.sh"]')" = "la mide la CI del repo público en cada pedido" ] \
+  && [ "$(campo 'r.ran.includes("lab-limpia.test.sh")')" = true ] && [ "$(campo 'r.disappeared.length')" = 0 ] \
+  && [ "$(campo 'r.measuredElsewhereProblem === undefined')" = true ]; } \
+  && ok "R10 MeasuredElsewhere_NoMedidaSaleDeUnmeasured @story-2.21 @ac-3: declarada en uno de dos registros → measuredElsewhere, fuera de failures y unmeasured, sigue en ran, noche completa" \
+  || no "R10: rc=$rc · $(cat "$TMP/rep.json" 2>/dev/null) · $(cat "$TMP/r10.err")"
+# (b) sin --registry ni --ran: el registro por defecto es scripts/tests/suites.json, al lado del guion (copia de laboratorio)
+mkdir -p "$TMP/lab/scripts/ci" "$TMP/lab/scripts/tests" "$TMP/lab/scripts/metrics" "$TMP/lab/scripts/lib"
+cp "$SCRIPT" "$TMP/lab/scripts/ci/" && cp "$AQUI/scripts/metrics/tokens-digest.js" "$TMP/lab/scripts/metrics/" \
+  && cp "$AQUI/scripts/lib/legacy-names.js" "$TMP/lab/scripts/lib/" \
+  && { [ ! -f "$AQUI/scripts/ci/legacy-options.js" ] || cp "$AQUI/scripts/ci/legacy-options.js" "$TMP/lab/scripts/ci/"; } \
+  && cp "$TMP/r10-decl.json" "$TMP/lab/scripts/tests/suites.json"
+node "$TMP/lab/scripts/ci/suites-report.js" --rep "$TMP/rep.json" --build 1012 --runs 2 --failures "lab-limpia.test.sh(no-medida) lab-a.test.sh" --detail "$TMP/r7" 2>"$TMP/r10b.err"; rc=$?
+{ [ "$rc" -eq 0 ] && [ "$(campo 'r.failures.join()')" = "lab-a.test.sh" ] && [ "$(campo 'r.complete')" = true ] \
+  && [ "$(campo 'Object.keys(r.measuredElsewhere).join()')" = "lab-limpia.test.sh" ] && [ "$(campo 'r.motivos["lab-limpia.test.sh(no-medida)"] === undefined')" = true ]; } \
+  && ok "R10b @story-2.21 @ac-3: sin --registry ni --ran lee el registro de al lado del guion; la roja de verdad queda" \
+  || no "R10b: rc=$rc · $(cat "$TMP/rep.json" 2>/dev/null) · $(cat "$TMP/r10b.err")"
+
+# ── R11. la declarada que corrió y salió ROJA sigue roja (story 2.21, AC 3) ─────────────────────────────────────────
+printf '❌ lab-limpia: se rompió de verdad\n' > "$TMP/r7/lab-limpia.test.sh.txt"
+node "$SCRIPT" --rep "$TMP/rep.json" --build 1013 --runs 2 --failures "lab-limpia.test.sh" --detail "$TMP/r7" --registry "$TMP/r10-decl.json" 2>/dev/null; rc=$?
+{ [ "$rc" -eq 0 ] && [ "$(campo 'r.failures.join()')" = "lab-limpia.test.sh" ] && [ "$(campo 'JSON.stringify(r.measuredElsewhere)')" = '{}' ]; } \
+  && ok "R11 MeasuredElsewhere_RojaSigueRoja @story-2.21 @ac-3: la declaración cubre sólo «no medida»; corrida y roja, sigue en failures" \
+  || no "R11: rc=$rc · $(cat "$TMP/rep.json" 2>/dev/null)"
+
+# ── R12. una declaración que no se puede leer no reclasifica nada (story 2.21, AC 4) ──────────────────────────────
+r12(){ node "$SCRIPT" --rep "$TMP/rep.json" --build 1014 --runs 2 --failures "lab-limpia.test.sh(no-medida)" --detail "$TMP/r7" --registry "$1" 2>/dev/null; }
+printf '{ roto' > "$TMP/r12-roto.json"
+printf '{"diarias":[{"raiz":"arnes","ruta":"tests/lab-limpia.test.sh","measured_elsewhere":"   "}]}\n' > "$TMP/r12-vacia.json"
+printf '{"diarias":[{"raiz":"arnes","ruta":"tests/lab-limpia.test.sh","measured_elsewhere":7}]}\n' > "$TMP/r12-numero.json"
+for caso in roto vacia numero; do
+  r12 "$TMP/r12-$caso.json"; rc=$?
+  { [ "$rc" -eq 0 ] && [ "$(campo 'JSON.stringify(r.unmeasured)')" = '["lab-limpia.test.sh(no-medida)"]' ] && [ "$(campo 'r.complete')" = false ] \
+    && [ "$(campo 'JSON.stringify(r.measuredElsewhere)')" = '{}' ] && [ -n "$(campo 'r.measuredElsewhereProblem || ""')" ]; } \
+    && ok "R12 MeasuredElsewhere_RegistroIlegibleNoReclasifica @story-2.21 @ac-4 ($caso): sigue en unmeasured y el reporte dice el problema" \
+    || no "R12 ($caso): rc=$rc · $(cat "$TMP/rep.json" 2>/dev/null)"
+done
+
 echo
 total=$((pasaron + fallos))
 [ "$fallos" -eq 0 ] && { echo "✅ reporte-suites: $pasaron/$total"; exit 0; } \

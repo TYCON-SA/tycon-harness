@@ -529,5 +529,353 @@ else
   sin_lista_real "plantillas-cumplen-los-rasgos"
 fi
 
+# ================================================================ story 2.25 — el resultado fechado y la lista para clonar
+# La revisión nocturna de dependencias corre el control cada noche y guarda lo que dice en un archivo con fecha
+# (`--out`), que lee el sitio de la organización. Lo que imprime y su código de salida no cambian (decisión 10).
+# publicado <dir>: el azure-pipelines.yml de <dir> queda en un commit y en origin/main (como un clon de la noche)
+publicado(){ ( cd "$1" && git init -q -b main . && git config user.email t@t && git config user.name t \
+  && git add -A && git commit -qm publicado && git remote add origin . && git update-ref refs/remotes/origin/main HEAD ) >/dev/null 2>&1; }
+yml(){ mkdir -p "$1"; printf '%s\n' "$2" > "$1/azure-pipelines.yml"; }   # yml <dir> <contenido>
+corre_out(){ node "$CHK" --config "$1" --root "$2" "${@:3}" >"$TMP/out.txt" 2>&1; echo $?; }
+# chk <archivo> <cuerpo js>: el cuerpo recibe `r` (el JSON) y `bad` (lo que falla); imprime los problemas o nada
+chk(){ node -e 'const fs=require("fs"); let r; try { r=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); } catch (e) { console.log("no hay archivo legible: "+String(e.message).split("\n")[0]); process.exit(0); }
+const bad=[]; new Function("r","bad",process.argv[2])(r,bad); console.log(bad.join(" · "));' "$1" "$2"; }
+CLAVES='["v","fecha","generated_at","estado","motivo","comparaciones","divergencias","declaradas","vencidas","grupos_sin_comparar","no_medidos","desde_disco","por_ruta","rc"]'
+cfg3(){ # <archivo> <rasgos json> [diferencias json] — tres productos de backend
+  cat > "$1" <<CFG
+{ "grupos": { "backend": [
+    { "producto": "ProdA", "ruta": "ProdA/Back" }, { "producto": "ProdB", "ruta": "ProdB/Back" }, { "producto": "ProdC", "ruta": "ProdC/Back" } ] },
+  "rasgos": $2,
+  "diferencias_declaradas": ${3:-[]} }
+CFG
+}
+R_REINTENTO='[ { "id": "reintento", "que": "reintento del ingreso", "patron": "Too Many Requests" } ]'
+
+# ---------------------------------------------------------------- T1 · Out_ClavesExactas_Medido @story-2.25 @ac-1 @ac-2
+W="$TMP/w1"; rm -rf "$W"
+for p in ProdA ProdB ProdC; do yml "$W/$p/Back" 'grep Too Many Requests'; publicado "$W/$p/Back"; done
+cfg3 "$TMP/t1.json" "$R_REINTENTO"
+rc=$(corre_out "$TMP/t1.json" "$W"); cp "$TMP/out.txt" "$TMP/t1-sin-out.txt"
+[ -e "$TMP/r1" ] && no "T1 algo creó $TMP/r1 sin --out"
+rc=$(corre_out "$TMP/t1.json" "$W" --out "$TMP/r1/sub/paridad.json")
+res=$(chk "$TMP/r1/sub/paridad.json" "
+const want=$CLAVES; const got=Object.keys(r);
+if (JSON.stringify([...got].sort())!==JSON.stringify([...want].sort())) bad.push('claves: '+got.join(','));
+if (r.v!==1) bad.push('v='+r.v);
+if (r.fecha!==new Date().toISOString().slice(0,10)) bad.push('fecha='+r.fecha);
+if (!/^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d(\\.\\d+)?Z$/.test(r.generated_at||'')) bad.push('generated_at='+r.generated_at);
+if (r.estado!=='medido') bad.push('estado='+r.estado);
+if (r.motivo!==null) bad.push('motivo='+r.motivo);
+if (r.rc!==0) bad.push('rc='+r.rc);
+if (r.comparaciones!==1) bad.push('comparaciones='+r.comparaciones);
+if (!Array.isArray(r.por_ruta)||r.por_ruta.length!==3) bad.push('por_ruta='+JSON.stringify(r.por_ruta));
+for (const e of r.por_ruta||[]) if (e.estado!=='medido'||e.divergencias!==0||e.vencidas!==0||e.motivo!==null) bad.push('por_ruta '+JSON.stringify(e));
+")
+{ [ "$rc" -eq 0 ] && [ -z "$res" ]; } && ok "T1 Out_ClavesExactas_Medido: las 14 claves, medido, por_ruta con una entrada por ruta" \
+  || no "🔴 T1 rc=$rc: ${res:-sin detalle} — $(tail -3 "$TMP/out.txt")"
+cmp -s "$TMP/out.txt" "$TMP/t1-sin-out.txt" && ok "T1 …y la salida de texto es la misma con y sin --out" \
+  || no "🔴 T1 la salida de texto cambió con --out: $(diff "$TMP/t1-sin-out.txt" "$TMP/out.txt" | head -4)"
+
+# ---------------------------------------------------------------- T2 · Out_Divergencia_YExigidoQueNadieCumple @ac-1
+W="$TMP/w2"; rm -rf "$W"
+yml "$W/ProdA/Back" 'grep Too Many Requests'; yml "$W/ProdB/Back" 'sin reintento'; yml "$W/ProdC/Back" 'grep Too Many Requests'
+for p in ProdA ProdB ProdC; do publicado "$W/$p/Back"; done
+cfg3 "$TMP/t2.json" '[ { "id": "reintento", "que": "reintento del ingreso", "patron": "Too Many Requests" },
+  { "id": "restaura", "que": "restaurar antes de escanear", "patron": "dotnet restore", "exigido": true } ]'
+rc=$(corre_out "$TMP/t2.json" "$W" --out "$TMP/r2.json")
+res=$(chk "$TMP/r2.json" "
+const d=r.divergencias||[]; if (d.length!==2) bad.push('divergencias='+JSON.stringify(d));
+const a=d.find(x=>x.rasgo==='reintento'), b=d.find(x=>x.rasgo==='restaura');
+if (!a||a.grupo!=='backend'||a.que!=='reintento del ingreso'||JSON.stringify(a.tienen)!=='[\"ProdA\",\"ProdC\"]'||JSON.stringify(a.no_tienen)!=='[\"ProdB\"]'||'ninguno' in a) bad.push('reintento='+JSON.stringify(a));
+if (!b||JSON.stringify(b.tienen)!=='[]'||b.ninguno!==true||(b.no_tienen||[]).length!==3) bad.push('restaura='+JSON.stringify(b));
+if (r.rc!==1||r.estado!=='medido') bad.push('rc='+r.rc+' estado='+r.estado);
+// cada repo cuenta los rasgos en que quedó del lado distinto: B en los dos, A y C sólo en el que nadie cumple
+const pr=Object.fromEntries((r.por_ruta||[]).map(e=>[e.ruta,e.divergencias]));
+if (pr['ProdB/Back']!==2||pr['ProdA/Back']!==1||pr['ProdC/Back']!==1) bad.push('por_ruta='+JSON.stringify(pr));
+")
+{ [ "$rc" -eq 1 ] && [ -z "$res" ]; } && ok "T2 Out_Divergencia_YExigidoQueNadieCumple: tienen/no_tienen, ninguno: true y las cantidades por ruta" \
+  || no "🔴 T2 rc=$rc: ${res:-sin detalle}"
+
+# ---------------------------------------------------------------- T3 · Out_Parcial_RepoAusenteYDesdeDisco @ac-2 @ac-4
+W="$TMP/w3"; rm -rf "$W"
+yml "$W/ProdA/Back" 'grep Too Many Requests'; yml "$W/ProdB/Back" 'grep Too Many Requests'; publicado "$W/ProdA/Back"; publicado "$W/ProdB/Back"
+yml "$W/ProdD/Back" 'grep Too Many Requests'                  # sin origin/main: se lee del disco
+mkdir -p "$W/ProdE/Back"                                      # la carpeta está, el archivo no (ni publicado ni en disco)
+yml "$W/ProdF/Web" 'grep Too Many Requests'; publicado "$W/ProdF/Web"   # un grupo de un solo repo
+cat > "$TMP/t3.json" <<'CFG'
+{ "grupos": {
+    "backend": [ { "producto": "ProdA", "ruta": "ProdA/Back" }, { "producto": "ProdB", "ruta": "ProdB/Back" },
+                 { "producto": "ProdC", "ruta": "ProdC/Back" }, { "producto": "ProdD", "ruta": "ProdD/Back" },
+                 { "producto": "ProdE", "ruta": "ProdE/Back" } ],
+    "sitio": [ { "producto": "ProdF", "ruta": "ProdF/Web" } ] },
+  "rasgos": [ { "id": "reintento", "que": "reintento del ingreso", "patron": "Too Many Requests" } ],
+  "diferencias_declaradas": [] }
+CFG
+rc=$(corre_out "$TMP/t3.json" "$W" --out "$TMP/r3.json")
+res=$(chk "$TMP/r3.json" "
+if (r.estado!=='parcial'||r.rc!==0) bad.push('estado='+r.estado+' rc='+r.rc);
+const nm=Object.fromEntries((r.no_medidos||[]).map(x=>[x.producto,x]));
+if (!nm.ProdC||nm.ProdC.motivo!=='no está en la carpeta de los clones'||nm.ProdC.ruta!=='ProdC/Back'||nm.ProdC.grupo!=='backend') bad.push('ProdC='+JSON.stringify(nm.ProdC));
+if (!nm.ProdE||nm.ProdE.motivo!=='no se pudo leer azure-pipelines.yml ni de origin/main ni del disco') bad.push('ProdE='+JSON.stringify(nm.ProdE));
+if (JSON.stringify(r.desde_disco)!=='[{\"grupo\":\"backend\",\"producto\":\"ProdD\"}]') bad.push('desde_disco='+JSON.stringify(r.desde_disco));
+if ((r.grupos_sin_comparar||[]).length!==1||r.grupos_sin_comparar[0].grupo!=='sitio'||!r.grupos_sin_comparar[0].motivo) bad.push('grupos_sin_comparar='+JSON.stringify(r.grupos_sin_comparar));
+const pr=Object.fromEntries((r.por_ruta||[]).map(e=>[e.ruta,e.estado+'/'+e.motivo]));
+const want={'ProdA/Back':'medido/null','ProdB/Back':'medido/null','ProdC/Back':'no_medido/sin_clon','ProdD/Back':'desde_disco/null','ProdE/Back':'no_medido/ilegible','ProdF/Web':'no_medido/grupo_sin_comparar'};
+if (JSON.stringify(pr)!==JSON.stringify(want)) bad.push('por_ruta='+JSON.stringify(pr));
+")
+{ [ "$rc" -eq 0 ] && [ -z "$res" ]; } && ok "T3 Out_Parcial_RepoAusenteYDesdeDisco: parcial con salida 0, los dos motivos, desde el disco y el grupo sin comparar" \
+  || no "🔴 T3 rc=$rc: ${res:-sin detalle}"
+
+# ---------------------------------------------------------------- T4 · Out_NoMedido_ConfigRotaORasgoSinPatron @ac-2
+echo '{ roto' > "$TMP/t4a.json"
+cfg3 "$TMP/t4b.json" '[ { "id": "sin-patron", "que": "un rasgo sin patrón" } ]'
+cfg3 "$TMP/t4c.json" "$R_REINTENTO" '[{"grupo":"backend","rasgo":"reintento","motivo":"x","fecha":"2026-09-01"}]'
+t4=""
+for c in a:2 b:2 c:1; do
+  k="${c%%:*}"; want="${c##*:}"
+  rc=$(corre_out "$TMP/t4$k.json" "$TMP/w1" --out "$TMP/r4$k.json")
+  res=$(chk "$TMP/r4$k.json" "if (r.estado!=='no_medido'||typeof r.motivo!=='string'||!r.motivo||r.rc!==$want) bad.push('estado='+r.estado+' motivo='+r.motivo+' rc='+r.rc);")
+  { [ "$rc" -eq "$want" ] && [ -z "$res" ]; } || t4="$t4 [$k: rc=$rc ${res}]"
+done
+[ -z "$t4" ] && ok "T4 Out_NoMedido_ConfigRotaORasgoSinPatron: no_medido con motivo; rc 2, 2 y 1 (los de siempre)" || no "🔴 T4$t4"
+
+# ---------------------------------------------------------------- T5 · Out_SinProductos @ac-2 @ac-9
+# La copia pública trae la marca; con la lista real debajo (repo del equipo) se usa una igual.
+if [ "$ESTADO_LISTA" = copia ]; then T5CFG="$AQUI/scripts/ci/product-parity.json"; else
+  T5CFG="$TMP/t5.json"; printf '%s\n' '{ "sin_productos": "copia pública", "grupos": {}, "rasgos": [], "diferencias_declaradas": [] }' > "$T5CFG"; fi
+rc=$(corre_out "$T5CFG" "$TMP/w1" --out "$TMP/r5.json")
+res=$(chk "$TMP/r5.json" "if (r.estado!=='sin_productos'||r.comparaciones!==0||r.rc!==0||!r.motivo) bad.push(JSON.stringify(r));")
+{ [ "$rc" -eq 0 ] && [ -z "$res" ]; } && ok "T5 Out_SinProductos: sin_productos, 0 comparaciones, rc 0" || no "🔴 T5 rc=$rc: $res"
+
+# ---------------------------------------------------------------- T6 · Vencida_NoAmparaYSigueComparando @ac-3
+W="$TMP/w6"; rm -rf "$W"
+yml "$W/ProdA/Back" 'grep Too Many Requests'; yml "$W/ProdB/Back" 'sin reintento'
+yml "$W/ProdA/Front" 'npm audit'; yml "$W/ProdB/Front" 'nada'
+for d in ProdA/Back ProdB/Back ProdA/Front ProdB/Front; do publicado "$W/$d"; done
+cat > "$TMP/t6.json" <<'CFG'
+{ "grupos": {
+    "backend":  [ { "producto": "ProdA", "ruta": "ProdA/Back" },  { "producto": "ProdB", "ruta": "ProdB/Back" } ],
+    "frontend": [ { "producto": "ProdA", "ruta": "ProdA/Front" }, { "producto": "ProdB", "ruta": "ProdB/Front" } ] },
+  "rasgos": [ { "id": "reintento", "que": "reintento del ingreso", "patron": "Too Many Requests", "grupos": ["backend"] },
+              { "id": "audita",    "que": "audita npm",            "patron": "npm audit",          "grupos": ["frontend"] } ],
+  "diferencias_declaradas": [ { "grupo": "backend", "rasgo": "reintento", "motivo": "prueba", "fecha": "2020-01-01", "revision": "2020-06-01" } ] }
+CFG
+rc=$(corre_out "$TMP/t6.json" "$W" --out "$TMP/r6.json")
+res=$(chk "$TMP/r6.json" "
+const d=(r.divergencias||[]).map(x=>x.grupo+'/'+x.rasgo).sort().join(',');
+if (d!=='backend/reintento,frontend/audita') bad.push('divergencias='+d);
+if (JSON.stringify(r.vencidas)!=='[{\"grupo\":\"backend\",\"rasgo\":\"reintento\",\"revision\":\"2020-06-01\"}]') bad.push('vencidas='+JSON.stringify(r.vencidas));
+if ((r.declaradas||[]).length!==0) bad.push('declaradas='+JSON.stringify(r.declaradas));
+if (r.rc!==1) bad.push('rc='+r.rc);
+const pr=Object.fromEntries((r.por_ruta||[]).map(e=>[e.ruta,e.vencidas]));
+if (pr['ProdA/Back']!==1||pr['ProdB/Back']!==1||pr['ProdA/Front']!==0) bad.push('vencidas por ruta='+JSON.stringify(pr));
+")
+{ [ "$rc" -eq 1 ] && [ -z "$res" ] && grep -q 'venció el 2020-06-01' "$TMP/out.txt" && grep -q 'frontend · audita npm' "$TMP/out.txt"; } \
+  && ok "T6 Vencida_NoAmparaYSigueComparando: la vencida cuenta, se dice, y el otro grupo se compara igual" \
+  || no "🔴 T6 rc=$rc: ${res:-} — $(head -4 "$TMP/out.txt")"
+
+# ---------------------------------------------------------------- T7 · Out_SinRutasAbsolutasNiTextoDeYaml @ac-5
+W="$TMP/MARCA_RAIZ_7q/clones"; rm -rf "$TMP/MARCA_RAIZ_7q"
+yml "$W/ProdA/Back" "$(printf '# MARCA_YAML_7q comentario\ngrep Too Many Requests')"; yml "$W/ProdB/Back" 'sin reintento'
+publicado "$W/ProdA/Back"; publicado "$W/ProdB/Back"
+cfg3 "$TMP/t7.json" "$R_REINTENTO"
+rc=$(corre_out "$TMP/t7.json" "$W" --out "$TMP/r7.json")
+if [ -f "$TMP/r7.json" ] && ! grep -Eq 'MARCA_RAIZ_7q|MARCA_YAML_7q|grep Too Many|"/(Users|home|tmp|private|var)/' "$TMP/r7.json" && ! grep -qF "$TMP" "$TMP/r7.json"; then
+  ok "T7 Out_SinRutasAbsolutasNiTextoDeYaml: ni la carpeta de los clones ni el texto de los YAML"
+else
+  no "🔴 T7 el resultado trae rutas o texto de los YAML: $(grep -Eo 'MARCA_[A-Z_0-9a-z]+|"/[^"]*"' "$TMP/r7.json" 2>/dev/null | head -3)"
+fi
+
+# ---------------------------------------------------------------- T8 · CloneList_SoloLosQueFaltanConDireccion @ac-6
+W="$TMP/w8"; rm -rf "$W"; mkdir -p "$W/Acme/Uno/.git"
+cat > "$TMP/t8.json" <<'CFG'
+{ "grupos": { "backend": [
+    { "producto": "Uno",    "ruta": "Acme/Uno",  "ado": "Acme/Uno" },
+    { "producto": "Dos",    "ruta": "Acme/Dos",  "ado": "Acme/Dos" },
+    { "producto": "Tres",   "ruta": "Uno/Back", "ado": "Acme%20Uno/Back" },
+    { "producto": "Cuatro", "ruta": "Acme/cuatro", "github": "acme/cuatro" },
+    { "producto": "Cinco",  "ruta": "Acme/Cinco" } ],
+  "prod": { "archivo": "azure-pipelines-prod.yml", "repos": [ { "producto": "Dos", "ruta": "Acme/Dos", "ado": "Acme/Dos" } ] } },
+  "rasgos": [ { "id": "reintento", "que": "reintento", "patron": "x" } ], "diferencias_declaradas": [] }
+CFG
+out8=$(node "$CHK" clone-list --root "$W" --config "$TMP/t8.json" 2>"$TMP/err8"); rc=$?
+want8="$(printf 'Acme/Dos\tAcme/Dos\nUno/Back\tAcme%%20Uno/Back\nAcme/cuatro\tacme/cuatro')"
+{ [ "$rc" -eq 0 ] && [ "$out8" = "$want8" ]; } && ok "T8 CloneList_SoloLosQueFaltanConDireccion: tres líneas en orden, una vez por ruta, el %20 tal cual" \
+  || no "🔴 T8 rc=$rc salida: $(printf '%s' "$out8" | tr '\t\n' '→|')"
+outA=$(node "$CHK" clone-list --root "$W" --config "$TMP/t8.json" --platform azure 2>"$TMP/err8a"); rcA=$?
+outG=$(node "$CHK" clone-list --root "$W" --config "$TMP/t8.json" --platform github 2>"$TMP/err8g"); rcG=$?
+{ [ "$rcA" -eq 0 ] && [ "$outA" = "$(printf 'Acme/Dos\tAcme/Dos\nUno/Back\tAcme%%20Uno/Back')" ] && grep -q 'Acme/cuatro' "$TMP/err8a" \
+  && [ "$rcG" -eq 0 ] && [ "$outG" = "$(printf 'Acme/cuatro\tacme/cuatro')" ] && grep -q 'Acme/Dos' "$TMP/err8g"; } \
+  && ok "T8 …y con --platform, la entrada de la otra plataforma no se clona: se avisa" \
+  || no "🔴 T8 --platform: azure rc=$rcA [$(printf '%s' "$outA" | tr '\t\n' '→|')] github rc=$rcG [$(printf '%s' "$outG" | tr '\t\n' '→|')] avisos: $(cat "$TMP/err8a" "$TMP/err8g" | head -2)"
+
+# ---------------------------------------------------------------- T9 · CloneList_ConfigIlegibleOSinProductos @ac-6
+out9=$(node "$CHK" clone-list --root "$W" --config "$TMP/t4a.json" 2>/dev/null); rc9=$?
+out9b=$(node "$CHK" clone-list --root "$W" --config "$T5CFG" 2>/dev/null); rc9b=$?
+{ [ "$rc9" -eq 2 ] && [ -z "$out9" ] && [ "$rc9b" -eq 0 ] && [ -z "$out9b" ]; } \
+  && ok "T9 CloneList_ConfigIlegibleOSinProductos: ilegible sale 2 sin líneas; sin productos, 0 sin líneas" \
+  || no "🔴 T9 ilegible rc=$rc9 [$out9] · sin productos rc=$rc9b [$out9b]"
+
+# ---------------------------------------------------------------- T15 · Ejemplo_ValidaYSinNombresReales @ac-13
+EJ="$AQUI/pipelines/operations/examples/product-parity.json"
+if [ ! -f "$EJ" ]; then no "🔴 T15 no está el ejemplo $EJ"; else
+  mkdir -p "$TMP/w15"
+  rc=$(corre_out "$EJ" "$TMP/w15" --out "$TMP/r15.json")
+  res=$(chk "$EJ" "
+const gs=Object.entries(r.grupos||{}); if (!gs.length) bad.push('sin grupos');
+for (const x of r.rasgos||[]) { if (!x.id||typeof x.patron!=='string') bad.push('rasgo sin id/patron'); else try { new RegExp(x.patron,'m'); } catch (e) { bad.push(x.id+': patrón ilegible'); } }
+for (const d of r.diferencias_declaradas||[]) for (const k of ['grupo','rasgo','motivo','fecha','revision']) if (!d[k]) bad.push('declarada sin '+k);
+const nombres=[]; for (const [,g] of gs) for (const e of (Array.isArray(g)?g:g.repos)||[]) nombres.push(e.producto, e.ruta, e.ado||'', e.github||'');
+for (const n of nombres.filter(Boolean)) if (!/^acme/i.test(n.replace(/%20/g,' '))) bad.push('nombre que no es acme: '+n);
+const conDir=gs.flatMap(([,g])=>(Array.isArray(g)?g:g.repos)||[]);
+if (!conDir.some(e=>e.ado||e.github)) bad.push('el ejemplo no muestra dónde vive ningún repo (ado o github)');
+if (!/github/.test(JSON.stringify(r._lea_esto_primero||''))||!/\\.github\\/workflows\\//.test(JSON.stringify(r._lea_esto_primero||''))) bad.push('el ejemplo no explica cómo compara una organización de GitHub');")
+  res2=$(chk "$TMP/r15.json" "if (r.estado!=='no_medido'||/configuración|rasgo|diferencia declarada/.test(r.motivo||'')) bad.push('estado='+r.estado+' motivo='+r.motivo);")
+  { [ -z "$res" ] && [ -z "$res2" ]; } && ok "T15 Ejemplo_ValidaYSinNombresReales: el control lo lee sin error de forma, sólo nombres acme" \
+    || no "🔴 T15 ${res} ${res2}"
+fi
+
+# ---------------------------------------------------------------- T16 · Contrato_ParaElSitio @ac-12
+t16=""
+for f in r1/sub/paridad r3 r4a r4b r4c r5; do
+  res=$(chk "$TMP/$f.json" "
+if (!['medido','parcial','no_medido','sin_productos'].includes(r.estado)) bad.push('estado='+r.estado);
+if (!Array.isArray(r.por_ruta)) { bad.push('por_ruta no es lista'); return; }
+for (const e of r.por_ruta) {
+  if (JSON.stringify(Object.keys(e).sort())!=='[\"divergencias\",\"estado\",\"motivo\",\"ruta\",\"vencidas\"]') bad.push('claves '+Object.keys(e));
+  if (typeof e.ruta!=='string'||!['medido','desde_disco','no_medido'].includes(e.estado)) bad.push(JSON.stringify(e));
+  if (![null,'sin_clon','ilegible','grupo_sin_comparar','declaracion_incompleta'].includes(e.motivo)) bad.push('motivo libre: '+e.motivo);
+  if (!Number.isInteger(e.divergencias)||!Number.isInteger(e.vencidas)) bad.push('cantidades '+JSON.stringify(e));
+}")
+  [ -z "$res" ] || t16="$t16 [$f: $res]"
+done
+vistos=$(for f in r1/sub/paridad r3 r4a r5; do node -e 'try{console.log(require(process.argv[1]).estado)}catch(e){}' "$TMP/$f.json"; done | sort -u | tr '\n' ' ')
+[ "$vistos" = "medido no_medido parcial sin_productos " ] || t16="$t16 [estados vistos: $vistos]"
+[ -z "$t16" ] && ok "T16 Contrato_ParaElSitio: los cuatro estados, por_ruta con tipos y motivos de lista cerrada" || no "🔴 T16$t16"
+
+# ---------------------------------------------------------------- T17 · NoRegresion_CasosDeSiempre_YEntradaConDireccion @ac-14
+# (los casos de siempre son los de arriba, que siguen en este archivo). Una entrada con `ado` no le cambia nada al control
+# de los disparadores.
+W="$TMP/w17"; rm -rf "$W"
+for p in ProdA ProdB; do yml "$W/$p/Back" "$(printf 'trigger:\n  branches:\n    include: [main]\n  paths:\n    include:\n      - src/**\n')"; publicado "$W/$p/Back"; done
+cat > "$TMP/t17.json" <<'CFG'
+{ "grupos": { "backend": [ { "producto": "ProdA", "ruta": "ProdA/Back", "ado": "Acme/ProdA" }, { "producto": "ProdB", "ruta": "ProdB/Back", "github": "acme/prodb" } ] },
+  "rasgos": [], "diferencias_declaradas": [] }
+CFG
+sed -e 's/, "ado": "Acme\/ProdA"//' -e 's/, "github": "acme\/prodb"//' "$TMP/t17.json" > "$TMP/t17b.json"
+node "$AQUI/scripts/ci/check-trigger-without-docs.js" --root "$W" --config "$TMP/t17.json" >"$TMP/o17a.txt" 2>&1; ra=$?
+node "$AQUI/scripts/ci/check-trigger-without-docs.js" --root "$W" --config "$TMP/t17b.json" >"$TMP/o17b.txt" 2>&1; rb=$?
+{ [ "$ra" -eq "$rb" ] && cmp -s "$TMP/o17a.txt" "$TMP/o17b.txt"; } && ok "T17 NoRegresion_EntradaConDireccion: el control de los disparadores ignora ado/github (rc $ra en los dos)" \
+  || no "🔴 T17 con dirección rc=$ra, sin dirección rc=$rb: $(diff "$TMP/o17b.txt" "$TMP/o17a.txt" | head -3)"
+
+# ---------------------------------------------------------------- T18 · Fuente_ParidadDeclarada @ac-17
+t18=""
+for f in "$AQUI/scripts/nightly/dashboard/sources.json" "$AQUI/pipelines/operations/examples/sources.json"; do
+  res=$(chk "$f" "const s=(r.sources||[]).find(x=>x.id==='paridad');
+if (!s||s.dir!=='paridad'||s.pattern!=='paridad-*.json'||s.required!==false||s.max_age_days!==2||!s.title||!s.written_by) bad.push(JSON.stringify(s||'sin la fuente paridad'));")
+  [ -z "$res" ] || t18="$t18 [${f#$AQUI/}: $res]"
+done
+[ -z "$t18" ] && ok "T18 Fuente_ParidadDeclarada: sources.json público y del ejemplo declaran la fuente paridad" || no "🔴 T18$t18"
+
+# ================================================================ story 2.25 — lo que confirmó el pase adversarial
+# ---------------------------------------------------------------- A1 · un grupo al que no le aplica ningún rasgo no se cuenta como medido
+# Con la lista real del equipo, el grupo de los sitios web (sólo rasgos que lo nombren, y ninguno lo nombra) salía «medido · 0»
+# en por_ruta: el sitio lo mostraría «en orden» sin haberlo comparado con nada. Un repo que no está en juego no va a por_ruta
+# ni a la lista para clonar.
+W="$TMP/wa1"; rm -rf "$W"
+for p in ProdA ProdB; do yml "$W/$p/Back" 'grep Too Many Requests'; publicado "$W/$p/Back"; done
+yml "$W/Web/X" 'trigger: none'; yml "$W/Web/Y" 'trigger: [main]'; publicado "$W/Web/X"; publicado "$W/Web/Y"
+cat > "$TMP/a1.json" <<'CFG'
+{ "grupos": {
+    "backend": [ { "producto": "ProdA", "ruta": "ProdA/Back" }, { "producto": "ProdB", "ruta": "ProdB/Back" } ],
+    "sitio": { "solo_rasgos_que_lo_nombren": true, "repos": [ { "producto": "WX", "ruta": "Web/X", "ado": "Acme/X" }, { "producto": "WY", "ruta": "Web/Z", "ado": "Acme/Z" } ] } },
+  "rasgos": [ { "id": "reintento", "que": "reintento", "patron": "Too Many Requests" } ],
+  "diferencias_declaradas": [] }
+CFG
+rc=$(corre_out "$TMP/a1.json" "$W" --out "$TMP/ra1.json")
+res=$(chk "$TMP/ra1.json" "const rutas=(r.por_ruta||[]).map(e=>e.ruta).join(',');
+if (rutas!=='ProdA/Back,ProdB/Back') bad.push('por_ruta='+rutas); if (r.estado!=='medido'||r.rc!==0) bad.push('estado='+r.estado+' rc='+r.rc);")
+cl=$(node "$CHK" clone-list --root "$W" --config "$TMP/a1.json" 2>/dev/null)
+{ [ "$rc" -eq 0 ] && [ -z "$res" ] && [ -z "$cl" ]; } && ok "A1 GrupoSinRasgos_NoSaleMedido: sus repos no van a por_ruta ni a la lista para clonar" \
+  || no "🔴 A1 rc=$rc: ${res} · clone-list: [$(printf '%s' "$cl" | tr '\t\n' '→|')]"
+
+# ---------------------------------------------------------------- A2 · una revisión que no es AAAA-MM-DD no ampara para siempre
+rm -rf "$TMP/w"; mundo "$TMP/w" 'grep Too Many Requests' 'sin reintento'
+a2=""
+for X in '"2026/09/01"' '"2026-9-1"' '20260901' '"permanente"'; do
+  printf '%s\n' "{ \"grupos\": { \"backend\": [ { \"producto\": \"ProdA\", \"ruta\": \"ProdA/Back\" }, { \"producto\": \"ProdB\", \"ruta\": \"ProdB/Back\" } ] },
+    \"rasgos\": [ { \"id\": \"reintento\", \"que\": \"reintento\", \"patron\": \"Too Many Requests\" } ],
+    \"diferencias_declaradas\": [ { \"grupo\": \"backend\", \"rasgo\": \"reintento\", \"motivo\": \"m\", \"fecha\": \"2025-01-01\", \"revision\": $X } ] }" > "$TMP/a2.json"
+  rc=$(corre_out "$TMP/a2.json" "$TMP/w" --out "$TMP/ra2.json")
+  res=$(chk "$TMP/ra2.json" "if (r.estado!=='no_medido'||!/revision/.test(r.motivo||'')||r.rc!==1) bad.push('estado='+r.estado+' motivo='+r.motivo+' rc='+r.rc);")
+  { [ "$rc" -eq 1 ] && [ -z "$res" ]; } || a2="$a2 [$X: rc=$rc $res]"
+done
+[ -z "$a2" ] && ok "A2 RevisionSinFormato_EsIncompleta: una revisión que no es AAAA-MM-DD frena como una declaración incompleta" || no "🔴 A2$a2"
+
+# ---------------------------------------------------------------- A3 · dos repos del mismo producto en un grupo no se pisan
+W="$TMP/wa3"; rm -rf "$W"
+yml "$W/ProdA/Back1" 'grep Too Many Requests'; yml "$W/ProdA/Back2" 'sin reintento'; yml "$W/ProdB/Back" 'grep Too Many Requests'
+for d in ProdA/Back1 ProdA/Back2 ProdB/Back; do publicado "$W/$d"; done
+cat > "$TMP/a3.json" <<'CFG'
+{ "grupos": { "backend": [ { "producto": "ProdA", "ruta": "ProdA/Back1" }, { "producto": "ProdA", "ruta": "ProdA/Back2" }, { "producto": "ProdB", "ruta": "ProdB/Back" } ] },
+  "rasgos": [ { "id": "reintento", "que": "reintento", "patron": "Too Many Requests" } ], "diferencias_declaradas": [] }
+CFG
+rc=$(corre_out "$TMP/a3.json" "$W" --out "$TMP/ra3.json")
+res=$(chk "$TMP/ra3.json" "const d=(r.divergencias||[])[0]||{};
+if (JSON.stringify(d.no_tienen)!=='[\"ProdA (ProdA/Back2)\"]'||(d.tienen||[]).length!==2) bad.push('divergencia='+JSON.stringify(d));
+const pr=Object.fromEntries((r.por_ruta||[]).map(e=>[e.ruta,e.divergencias]));
+if (pr['ProdA/Back2']!==1||pr['ProdA/Back1']!==0||pr['ProdB/Back']!==0) bad.push('por_ruta='+JSON.stringify(pr));")
+{ [ "$rc" -eq 1 ] && [ -z "$res" ]; } && ok "A3 ProductoRepetido_NoSePisa: los dos repos del mismo producto se comparan y se nombran por su ruta" || no "🔴 A3 rc=$rc: $res"
+
+# ---------------------------------------------------------------- A4 · una configuración degenerada deja su archivo, sin caerse
+printf '%s\n' '{ "grupos": { "backend": [ { "producto": "ProdA", "ruta": "ProdA/Back" }, { "producto": "ProdB", "ruta": "ProdB/Back" } ] }, "diferencias_declaradas": [] }' > "$TMP/a4a.json"
+printf '%s\n' '{ "grupos": { "backend": [ { "producto": "ProdA" }, { "producto": "ProdB", "ruta": "ProdB/Back" } ] }, "rasgos": [], "diferencias_declaradas": [] }' > "$TMP/a4b.json"
+a4=""
+for k in a b; do
+  rc=$(corre_out "$TMP/a4$k.json" "$TMP/w" --out "$TMP/ra4$k.json")
+  res=$(chk "$TMP/ra4$k.json" "if (r.estado!=='no_medido'||!r.motivo||r.rc!==2) bad.push('estado='+r.estado+' rc='+r.rc);")
+  { [ "$rc" -eq 2 ] && [ -z "$res" ] && ! grep -q 'TypeError' "$TMP/out.txt"; } || a4="$a4 [$k: rc=$rc $res $(grep -m1 Error "$TMP/out.txt")]"
+done
+rc=$(node "$CHK" --root "$TMP/w" --config >"$TMP/out.txt" 2>&1; echo $?)
+{ [ "$rc" -eq 2 ] && ! grep -q 'TypeError' "$TMP/out.txt"; } || a4="$a4 [--config sin valor: rc=$rc $(grep -m1 Error "$TMP/out.txt")]"
+[ -z "$a4" ] && ok "A4 ConfigDegenerada_DejaSuArchivo: sin rasgos, una entrada sin ruta o --config sin valor salen 2 con su motivo" || no "🔴 A4$a4"
+
+# ---------------------------------------------------------------- A5 · una vencida sin nada que comparar sale 1 (AC 3)
+cat > "$TMP/a5.json" <<'CFG'
+{ "grupos": { "backend": [ { "producto": "ProdA", "ruta": "NoEsta/A" }, { "producto": "ProdB", "ruta": "NoEsta/B" } ] },
+  "rasgos": [ { "id": "reintento", "que": "reintento", "patron": "Too Many Requests" } ],
+  "diferencias_declaradas": [ { "grupo": "backend", "rasgo": "reintento", "motivo": "m", "fecha": "2020-01-01", "revision": "2020-06-01" } ] }
+CFG
+rc=$(corre_out "$TMP/a5.json" "$TMP/w" --out "$TMP/ra5.json")
+res=$(chk "$TMP/ra5.json" "if (r.estado!=='no_medido'||r.rc!==1||(r.vencidas||[]).length!==1) bad.push('estado='+r.estado+' rc='+r.rc);")
+{ [ "$rc" -eq 1 ] && [ -z "$res" ]; } && ok "A5 VencidaSinComparar_Sale1: no medido, y la vencida sale 1 como siempre" || no "🔴 A5 rc=$rc: $res"
+
+# ---------------------------------------------------------------- A6 · el día del archivo es el de la noche (--today), y un temporal no queda colgado
+rc=$(corre_out "$TMP/t1.json" "$TMP/w1" --today 2026-01-02 --out "$TMP/ra6.json")
+res=$(chk "$TMP/ra6.json" "if (r.fecha!=='2026-01-02') bad.push('fecha='+r.fecha);")
+mkdir -p "$TMP/ra6dir/ocupado/x"; : > "$TMP/ra6dir/ocupado/x/y"
+node "$CHK" --config "$TMP/t1.json" --root "$TMP/w1" --out "$TMP/ra6dir/ocupado" >/dev/null 2>&1
+quedo=$(ls "$TMP/ra6dir" | grep -c '\.tmp-' || true)
+{ [ -z "$res" ] && [ "$quedo" -eq 0 ]; } && ok "A6 FechaDeLaNoche_YSinTemporal: --today manda en la fecha; si no se pudo escribir, no queda el temporal" \
+  || no "🔴 A6 ${res} · temporales que quedaron: $quedo"
+# --today también manda al vencer (una revisión entre --today y el reloj), y uno sin forma avisa y usa el día UTC
+rm -rf "$TMP/w"; mundo "$TMP/w" 'grep Too Many Requests' 'sin reintento'
+config "$TMP/a6b.json" '[{"grupo":"backend","rasgo":"reintento","motivo":"m","fecha":"2025-01-01","revision":"2026-01-01"}]'
+rc=$(corre_out "$TMP/a6b.json" "$TMP/w" --today 2025-06-01 --out "$TMP/ra6b.json")
+res=$(chk "$TMP/ra6b.json" "if ((r.vencidas||[]).length!==0||(r.declaradas||[]).length!==1||r.rc!==0) bad.push('vencidas='+JSON.stringify(r.vencidas)+' rc='+r.rc);")
+rc2=$(corre_out "$TMP/t1.json" "$TMP/w1" --today 2026/01/02 --out "$TMP/ra6c.json")
+res2=$(chk "$TMP/ra6c.json" "if (r.fecha!==new Date().toISOString().slice(0,10)) bad.push('fecha='+r.fecha);")
+{ [ "$rc" -eq 0 ] && [ -z "$res" ] && [ -z "$res2" ] && grep -q 'no es AAAA-MM-DD' "$TMP/out.txt"; } \
+  && ok "A6 …--today manda al vencer, y uno sin forma avisa y usa el día UTC" || no "🔴 A6b rc=$rc ${res} ${res2} $(grep -m1 today "$TMP/out.txt")"
+
+# ---------------------------------------------------------------- A7 · una dirección con «.» o «..» no se clona
+cat > "$TMP/a7.json" <<'CFG'
+{ "grupos": { "backend": [ { "producto": "A", "ruta": "Acme/A", "ado": "../A" }, { "producto": "B", "ruta": "Acme/B", "ado": "Acme/.." }, { "producto": "C", "ruta": "Acme/C", "ado": "Acme/C" } ] },
+  "rasgos": [ { "id": "reintento", "que": "reintento", "patron": "x" } ], "diferencias_declaradas": [] }
+CFG
+out7=$(node "$CHK" clone-list --root "$TMP/vacio7" --config "$TMP/a7.json" 2>"$TMP/err7"); rc=$?
+{ [ "$rc" -eq 0 ] && [ "$out7" = "$(printf 'Acme/C\tAcme/C')" ] && grep -q '\.\./A' "$TMP/err7"; } && ok "A7 DireccionConPuntos_NoSeClona: se avisa y no se clona" \
+  || no "🔴 A7 rc=$rc [$(printf '%s' "$out7" | tr '\t\n' '→|')] $(head -2 "$TMP/err7")"
+
 echo "─────────────"
 if [ "$fallos" -eq 0 ]; then echo "✅ paridad-entre-productos: todo verde"; exit 0; else echo "❌ paridad-entre-productos: $fallos falla(s)"; exit 1; fi

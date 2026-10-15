@@ -44,6 +44,14 @@
  * 🔴 `--public-notices` (story 8.26, tanda C, AC 45): el aviso de Azure lleva la cuenta y texto fijo; los nombres, en la
  * salida común (el control del pedido del repo público es público).
  *
+ * 🔴 «Se mide en otro lado» (story 2.21, AC 3-4). Una suite cuya entrada del registro declara `measured_elsewhere: "<dónde
+ * y por qué>"` y que llega «(no-medida)» no es una suite que faltó: la mide otro pipeline (clean-machine, la CI pública en
+ * cada pedido). Sale de `failures`, `motivos` y `unmeasured`, va a `measuredElsewhere` ({nombre: motivo}), sigue en `ran`
+ * y no vuelve incompleta la noche. La declaración cubre SÓLO «no medida»: corrida y roja, sigue roja. El registro es
+ * `--registry` (declarada si cualquiera la declara) o, sin la opción, `scripts/tests/suites.json` al lado de este guion.
+ * Un registro ilegible, o una declaración vacía o que no es texto, no reclasifica nada: el reporte trae
+ * `measuredElsewhereProblem` con el motivo — «no pude leer la declaración» nunca es «está declarada».
+ *
  * Uso (desde pipelines/azure-pipelines-banco.yml y pipelines/azure-pipelines-pr.yml):
  *   node scripts/ci/suites-report.js --rep <ultimo-suites.json> --build <id> --runs <N>
  *     --failures "<nombres separados por espacio>" --detail <dir con <nombre>.txt de cada roja> [--retries <json>]
@@ -101,6 +109,29 @@ function suitesDeLosRegistros(rutas) {
 
 // La marca que scripts/ci/suites-shard.js le pega a una suite cuyo trabajo no terminó. No es una roja: no se midió.
 const UNMEASURED = /\(no-medida\)$/;
+
+/**
+ * Las suites que algún registro declara «se mide en otro lado» ({nombre: motivo}), o { problema } si alguno no se deja
+ * leer o trae una declaración sin forma: entonces no se reclasifica ninguna (story 2.21, AC 4).
+ */
+function medidasEnOtroLado(rutas) {
+  const declaradas = {};
+  for (const ruta of rutas) {
+    let d;
+    try { d = JSON.parse(fs.readFileSync(ruta, 'utf8')); }
+    catch (e) { return { problema: `no pude leer el registro de suites ${path.basename(ruta)} (${e.code === 'ENOENT' ? 'no está' : e instanceof SyntaxError ? 'no es JSON válido' : (e.code || e.name || 'error')}): ninguna suite se da por medida en otro lado` }; }
+    for (const lista of Object.values(d || {})) {
+      if (!Array.isArray(lista)) continue;
+      for (const s of lista) {
+        if (!s || typeof s.ruta !== 'string' || !Object.prototype.hasOwnProperty.call(s, 'measured_elsewhere')) continue;
+        const m = s.measured_elsewhere;
+        if (typeof m !== 'string' || !m.trim()) return { problema: `la suite ${path.posix.basename(s.ruta)} declara measured_elsewhere sin un motivo de texto: ninguna suite se da por medida en otro lado` };
+        declaradas[path.posix.basename(s.ruta)] = m.trim();
+      }
+    }
+  }
+  return { declaradas };
+}
 
 function motivoDe(nombre, detalleDir) {
   if (/\(ausente\)$/.test(nombre)) return 'la suite no está en el clon: no se midió';
@@ -169,7 +200,19 @@ function main() {
     catch (e) { console.error(`⚠️  suites-report: no pude leer la lista de suites corridas (${rutaRan}): ${e.message} — el reporte sale sin ella y sin comparar`); }
   }
   const anterior = ran ? fotoAnterior(arg('--previous') || rep) : null;
-  const failures = String(arg('--failures') || '').trim().split(/\s+/).filter(Boolean);
+  let failures = String(arg('--failures') || '').trim().split(/\s+/).filter(Boolean);
+  // «Se mide en otro lado» (story 2.21): sólo las que llegan «(no-medida)» y su registro declara dónde se miden.
+  const rutasRegistro = args('--registry');
+  const otroLado = medidasEnOtroLado(rutasRegistro.length ? rutasRegistro : [path.join(__dirname, '..', 'tests', 'suites.json')]);
+  const measuredElsewhere = {};
+  if (otroLado.declaradas) {
+    failures = failures.filter((f) => {
+      const nombre = f.replace(UNMEASURED, '');
+      if (!UNMEASURED.test(f) || !Object.prototype.hasOwnProperty.call(otroLado.declaradas, nombre)) return true;
+      measuredElsewhere[nombre] = otroLado.declaradas[nombre];
+      return false;
+    });
+  } else console.error(`⚠️  suites-report: ${otroLado.problema}`);
   const motivos = {};
   for (const f of failures) motivos[f] = motivoDe(f, arg('--detail'));
   // 🔴 «No medida» no es «roja» (revisión del 2026-10-04). Las dos viajan en `failures` —el control de cada cambio
@@ -211,13 +254,15 @@ function main() {
     reintentos,
     unmeasured,
     complete: unmeasured.length === 0,
+    measuredElsewhere,
   };
+  if (otroLado.problema) reporte.measuredElsewhereProblem = otroLado.problema;
   if (notRun) reporte.notRun = notRun;
   if (ran) {
     reporte.ran = ran;
     const { f } = cargarRenombres();
-    let perdidas = desaparecidas(anterior, ran, f, unmeasured, Object.keys(notRun || {}));
-    const rutasRegistro = args('--registry');
+    // la que se mide en otro lado tampoco «desapareció»: corrió (sigue en `ran`) y está nombrada en `measuredElsewhere`
+    let perdidas = desaparecidas(anterior, ran, f, unmeasured, [...Object.keys(notRun || {}), ...Object.keys(measuredElsewhere)]);
     const registro = rutasRegistro.length ? suitesDeLosRegistros(rutasRegistro) : null;
     if (registro) {
       const viajan = new Set([...registro].map(f));

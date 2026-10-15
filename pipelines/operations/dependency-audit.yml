@@ -181,6 +181,57 @@ jobs:
       - template: pipelines/operations/templates/check-tree.yml@harness
 
       - script: |
+          # ¿Los pipelines de los productos hacen lo mismo? (story 2.25). Va ANTES de correr la revisión, que ejecuta código
+          # de los productos, y sobre los mismos clones de main. Deja .dashboard/paridad/paridad-<día>.json para el sitio de
+          # la organización. Nunca pone roja la noche: una divergencia o un repo sin medir son un aviso. El aviso sale de lo
+          # que dice el archivo, no del código de salida solo (un «parcial» sin divergencias sale 0).
+          set -uo pipefail
+          cd "$(Build.SourcesDirectory)"
+          INICIO=$(date +%s)
+          HOY="${HOY_NOCTURNO:-$(date -u +%Y-%m-%d)}"
+          echo "##vso[task.setvariable variable=HOY_NOCTURNO]$HOY"
+          CLONES="$(Agent.TempDirectory)/repos"
+          mkdir -p "$CLONES"
+          ORG="$(System.CollectionUri)"
+          # Lo que la lista de productos declara y la revisión de dependencias no trajo (con `ado` en la entrada).
+          # El código de la lista se lee: si no se pudo armar, se dice (el resultado dice por qué).
+          LISTA=$(node scripts/ci/check-product-parity.js clone-list --root "$CLONES" --platform azure) \
+            || echo "##vso[task.logissue type=warning]Paridad: no se pudo armar la lista de lo que falta clonar (código $?) — el resultado dice por qué"
+          while IFS=$'\t' read -r RUTA ADO; do
+            [ -z "$RUTA" ] && continue
+            PROJ="${ADO%%/*}"; RNAME="${ADO##*/}"
+            mkdir -p "$(dirname "$CLONES/$RUTA")"
+            if ! ERR=$(git -c http.extraheader="AUTHORIZATION: bearer $SYSTEM_ACCESSTOKEN" \
+                 clone --quiet --depth=1 --branch "$(RAMA_ANALIZADA)" \
+                 "${ORG}${PROJ}/_git/${RNAME}" "$CLONES/$RUTA" 2>&1); then
+              echo "##vso[task.logissue type=warning]Paridad: no se pudo clonar $PROJ/$RNAME: $(printf '%s' "$ERR" | tr '\r\n' '  ' | sed 's/##vso/## vso/g')"
+            fi
+          done <<< "$LISTA"
+          OUT="$(Build.SourcesDirectory)/.dashboard/paridad/paridad-$HOY.json"
+          rm -f "$OUT"
+          node scripts/ci/check-product-parity.js --root "$CLONES" \
+            --today "$HOY" --out "$OUT"
+          RC=$?
+          echo "paridad: $(( $(date +%s) - INICIO )) s · código $RC"
+          if [ "$RC" != 0 ] && [ "$RC" != 1 ] && [ "$RC" != 2 ] || [ ! -f "$OUT" ]; then
+            echo "##vso[task.logissue type=warning]Paridad de los productos: la paridad no dejó su resultado (código $RC)"
+            exit 0
+          fi
+          AVISO=$(node -e '
+            const r = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+            const n = (r.divergencias || []).length, v = (r.vencidas || []).length;
+            const s = (r.por_ruta || []).filter((e) => e.estado !== "medido").length + (r.grupos_sin_comparar || []).length;
+            if (r.estado === "no_medido") console.log(`no medido: ${r.motivo}`);
+            else if (r.estado === "parcial") console.log(`${n} divergencias · ${v} vencidas · ${s} sin medir`);
+            else if (r.estado === "medido" && (n || v)) console.log(`${n} divergencias · ${v} vencidas`);
+          ' "$OUT") || AVISO="la paridad no dejó su resultado (el archivo no se pudo leer)"
+          [ -z "$AVISO" ] || echo "##vso[task.logissue type=warning]Paridad de los productos: $(printf '%s' "$AVISO" | tr '\r\n' '  ' | sed 's/##vso/## vso/g')"
+          exit 0
+        displayName: 'Comparar los pipelines de los productos (paridad)'
+        env:
+          SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+
+      - script: |
           # 🔴 pipefail no es decorativo: sin él, el exit del paso es el de `tee` y un nocturno caído quedaría VERDE.
           set -uo pipefail
           cd "$(Build.SourcesDirectory)"
@@ -269,12 +320,12 @@ jobs:
       - script: |
           set -eu
           cd "$(Build.SourcesDirectory)"
-          # A main del repo de operaciones llega SÓLO lo que la noche escribió en estas dos carpetas, sobre la punta recién
-          # traída y con reintento. El checkout no se mueve. La foto de hoy tiene que estar.
+          # A main del repo de operaciones llega SÓLO lo que la noche escribió en estas carpetas (la paridad, story 2.25),
+          # sobre la punta recién traída y con reintento. El checkout no se mueve. La foto de hoy tiene que estar.
           node scripts/ci/push-nightly-data.js save \
             --message "chore(dependencias): revisión nocturna $(date -u +%Y-%m-%d) [nocturno]" \
             --require-daily '.dashboard/dependencias/dependencias-{day}.json' \
-            -- .dashboard/dependencias inbox/dependencies
+            -- .dashboard/dependencias inbox/dependencies .dashboard/paridad
         displayName: 'Guardar el snapshot y las fichas en el repo de operaciones'
         condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'), eq('${{ parameters.efectos }}', 'true'))
 
