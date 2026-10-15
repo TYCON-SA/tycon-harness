@@ -72,7 +72,12 @@ function entorno() {
   fs.symlinkSync(RAIZ, path.join(home, '.claude', 'agent-skills'));
   fs.mkdirSync(path.join(repo, 'specs'), { recursive: true });
   fs.mkdirSync(path.join(repo, 'src'));
-  const git = (...a) => execFileSync('git', ['-C', repo, ...a], { stdio: 'ignore' });
+  // fechas fijas y sin el mantenimiento automático de git: el sha sale siempre igual y nada corre de fondo
+  // mientras la prueba mira el repo (guides/test-execution-discipline.md)
+  const FECHA = '2026-01-01T10:00:00';
+  const git = (...a) => execFileSync('git', ['-c', 'maintenance.auto=false', '-c', 'gc.auto=0', '-C', repo, ...a], {
+    stdio: 'ignore', env: { ...process.env, GIT_AUTHOR_DATE: FECHA, GIT_COMMITTER_DATE: FECHA },
+  });
   git('init', '-q', '-b', 'feat/x');
   git('config', 'user.email', 't@t');
   git('config', 'user.name', 't');
