@@ -445,12 +445,12 @@ if [ -f "${CATALOGO_REAL}" ] && [ -d "${RAIZ}/adapters/codex/agents" ]; then
     # 2026-10-14: los números pasan a ser los del núcleo, sin las secciones del paquete de clientes (en el repo del
     # equipo eran 364/363/361 con las dos secciones de ese paquete: 15 filas, 15 reglas, 15 identificadores).
     [ -z "${DE_CLIENTES}" ] || echo "  ·    — C5 · sin las secciones del paquete de clientes: ${DE_CLIENTES}"
-    [ "${FIL}" = "350" ] && ok "C5 · 350 filas en el catálogo del núcleo" \
-      || mal "C5 · filas=${FIL}, esperaba 350 — si el catálogo creció, actualizá este número Y el de la story en el mismo commit; en el repo del equipo, mirá también que su copia del catálogo no haya quedado atrás de la del público"
-    [ "${REG}" = "349" ] && ok "C5 · 349 reglas = pares (dueño, regla), que es la unidad de la tabla" \
-      || mal "C5 · reglas=${REG}, esperaba 349 — rojo previo (números de 2026-09-16): contar identificadores fusiona SEC-C1/SEC-C2; contar filas duplica PIPE-C5"
-    [ "${IDE}" = "347" ] && ok "C5 · 347 identificadores distintos (con ACCOV-C1-EXT)" \
-      || mal "C5 · identificadores=${IDE}, esperaba 347 — rojo previo: con el regex viejo daba 7 menos (las 7 de I18N invisibles)"
+    [ "${FIL}" = "352" ] && ok "C5 · 352 filas en el catálogo del núcleo" \
+      || mal "C5 · filas=${FIL}, esperaba 352— si el catálogo creció, actualizá este número Y el de la story en el mismo commit; en el repo del equipo, mirá también que su copia del catálogo no haya quedado atrás de la del público"
+    [ "${REG}" = "351" ] && ok "C5 · 351 reglas = pares (dueño, regla), que es la unidad de la tabla" \
+      || mal "C5 · reglas=${REG}, esperaba 351— rojo previo (números de 2026-09-16): contar identificadores fusiona SEC-C1/SEC-C2; contar filas duplica PIPE-C5"
+    [ "${IDE}" = "349" ] && ok "C5 · 349 identificadores distintos (con ACCOV-C1-EXT)" \
+      || mal "C5 · identificadores=${IDE}, esperaba 349— rojo previo: con el regex viejo daba 7 menos (las 7 de I18N invisibles)"
   fi
   # el resto se mide sobre el catálogo real entero
   leer "${CATALOGO_REAL}" "${RAIZ}/adapters/codex/agents" --json; RC=$?

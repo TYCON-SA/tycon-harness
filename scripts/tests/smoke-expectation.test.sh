@@ -75,7 +75,7 @@ fi
 
 # ── T2 — un humo con criterios y sin expectativa no corre; sin criterios, sí ──────────────────────────────────
 salida="$(bash "$SMOKE" "$EV" 9.2 --acs 3 -- touch "$TMP/testigo2" 2>&1)"; rc=$?
-if [ "$rc" = 2 ] && [ ! -e "$TMP/testigo2" ] && echo "$salida" | grep -q -- '--pass-if'; then
+if [ "$rc" = 2 ] && [ ! -e "$TMP/testigo2" ] && echo "$salida" | grep -- '--pass-if' >/dev/null; then
   ok "T2 --acs sin --pass-if sale 2 sin correr y muestra la forma correcta"
 else
   no "T2 --acs sin --pass-if: rc=$rc, testigo $( [ -e "$TMP/testigo2" ] && echo creado || echo ausente ), mensaje: $salida"
@@ -139,7 +139,7 @@ cp "$SK/lib/evidence-key.js" "$SIN/lib/" 2>/dev/null
 aviso="$(bash "$SIN/smoke-run.sh" "$EV" 9.7 --acs 1 --pass-if "conecta con ${PW_KEY}=abc123" -- echo "${PW_KEY}=abc123" 2>&1 >/dev/null)"
 R="$EV/9.7-smoke-ledger.jsonl"
 if [ -f "$R" ] && ! grep -q 'abc123' "$R" && [ "$(ultima "$R" 'e.output')" = null ] \
-  && [ "$(ultima "$R" 'e.v')" = 2 ] && [ ! -e "$EV/9.7-smoke-outputs" ] && echo "$aviso" | grep -q 'tapado' \
+  && [ "$(ultima "$R" 'e.v')" = 2 ] && [ ! -e "$EV/9.7-smoke-outputs" ] && echo "$aviso" | grep 'tapado' >/dev/null \
   && [ -z "$(ls -A "$TMPDIR")" ]; then
   ok "T7 sin smoke-secrets.js: ni la expectativa ni la salida se escriben, y queda el aviso"
 else
@@ -231,7 +231,7 @@ dura=$(( $(date +%s) - inicio ))
 f20="$EV/$(ultima "$EV/9.20-smoke-ledger.jsonl" 'e.output' 2>/dev/null)"
 sleep 5
 # La marca va dentro del sello: el sha del registro y del espejo es el del archivo con la marca.
-if [ "$rc" = 0 ] && [ "$dura" -lt 15 ] && echo "$aviso" | grep -q 'proceso de fondo' \
+if [ "$rc" = 0 ] && [ "$dura" -lt 15 ] && echo "$aviso" | grep 'proceso de fondo' >/dev/null \
   && [ -f "$f20" ] && grep -q 'listo' "$f20" && grep -q 'un proceso de fondo la mantenía abierta' "$f20" \
   && [ "$(ultima "$EV/9.20-smoke-ledger.jsonl" 'e.output_sha')" = "$(sha "$f20")" ] \
   && [ "$(ultima "$GATES" 'e.story==="9.20"?e.output_sha:""')" = "$(sha "$f20")" ] \
@@ -266,8 +266,9 @@ fi
 # ── T17 — el paso 7c dice la regla ───────────────────────────────────────────────────────────────────────────
 P7="$SK/../steps/step-07c-dod-runtime-gate.md"
 parrafo="$(awk '/^#+ .*Sembrar el «Given»/{f=1;next} f&&/^#/{exit} f' "$P7")"
-if [ -n "$parrafo" ] && echo "$parrafo" | grep -q 'sin `--acs`' && echo "$parrafo" | grep -q '«Then»' \
-  && echo "$parrafo" | grep -q 'runtime_not_verifiable:' && echo "$parrafo" | grep -q 'DODRT-C10'; then
+# Sin `| grep -q` con pipefail: grep -q corta la tubería al primer calce y el echo puede salir por SIGPIPE (rojo al azar).
+if [ -n "$parrafo" ] && echo "$parrafo" | grep 'sin `--acs`' >/dev/null && echo "$parrafo" | grep '«Then»' >/dev/null \
+  && echo "$parrafo" | grep 'runtime_not_verifiable:' >/dev/null && echo "$parrafo" | grep 'DODRT-C10' >/dev/null; then
   ok "T17 el paso 7c tiene el párrafo de la regla (sembrar el «Given» sí; escribir el «Then» no cuenta)"
 else
   no "T17 el paso 7c no tiene el párrafo «Sembrar el «Given»» con sus cuatro piezas"
