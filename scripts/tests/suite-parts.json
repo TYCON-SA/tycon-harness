@@ -461,6 +461,47 @@
         "T85 DiskNote_IsOnEveryLine_AlsoOnTheRedOnes": 4.9,
         "T85 PhotoDatedInTheFuture_IsNotGreen": 2.4
       }
+    },
+    "maintainers-sync.test.js": {
+      "parts": 3,
+      "seconds": {
+        "T1 Sync_UpToDate_NothingMoves — al día: resultado al-dia escrito, HEAD y árbol iguales": 0.6,
+        "T2 Sync_BehindAndClean_FastForwards — atrás y limpio: avanza a origin/main y lo anota": 0.8,
+        "T3 Sync_TrackedChange_DoesNotTouch — un cambio rastreado sin commitear frena: nada se mueve": 0.5,
+        "T4 Sync_OtherBranch_DoesNotTouch — en otra rama no se toca": 0.6,
+        "T5 Sync_Diverged_DoesNotTouch — main local y origin/main separados: no se toca": 0.7,
+        "T6 Sync_NoKey_DoesNothing — sin paths.maintainers: ni git ni resultado": 0.4,
+        "T7 Sync_LocalAhead_DoesNotTouch — commits propios sin empujar: no se toca": 0.6,
+        "T8 Sync_OperationInProgress_DoesNotTouch — un merge con conflicto a medias: no se toca": 0.4,
+        "T9 Sync_UntrackedCollision_NamesFiles — un sin seguimiento que lo nuevo agrega frena; uno ajeno no": 1.1,
+        "T10 Sync_BadKey_SaysWhy — una clave que no sirve se dice, sin citar la configuración": 0.5,
+        "T11 Sync_SameAsHarnessTree_Skips — la clave apunta al clon del arnés: no hace nada": 0.3,
+        "T12 Sync_LockBusy_Skips_StaleLockTaken — candado vivo frena; viejo o de un proceso muerto se pisa": 1.4,
+        "T13 Classify_FetchErrors — red, permiso u otra cosa": 0.0,
+        "T14 Redact_CredentialsNeverShown — un permiso en una dirección no llega ni al resultado ni al aviso": 0.5,
+        "T15 Notice_ProblemOnce_SilentStates — una línea la primera vez; nada después ni para lo que calla": 0.3,
+        "T16 Hook_LaunchesInBackground_E2E — el aviso lanza de fondo, no espera, y dice lo pendiente una vez": 1.7,
+        "T17 Hook_OffVar_LooseCopy_BrokenPiece — apagado, suelto, pieza rota o resultado ilegible: sale 0 sin líneas de esto": 4.9,
+        "T18 Relay_ForcedShim_StillSyncs — el camino de Windows (relevo) también pone al día": 0.9,
+        "T19 Sync_MinimalOrUnknownProfile_DoesNothing — perfil minimal o sin saber: ni git ni resultado": 0.5,
+        "T22 Catalogs_DeclareThePiece — la lista de efectos, la de hooks, INSTALL y la guía de piezas la nombran": 0.0,
+        "T23 Sync_NoRemote_SaysSo — un clon sin origin: sin-remoto, y el aviso lo dice": 0.5,
+        "T24 Sync_FetchErrors_EndToEnd — permiso avisa; red y tope callan; sin red más de 3 días avisa": 2.7,
+        "T25 Sync_MergeFails_Fallo — git se niega a avanzar: fallo con su motivo, nada tocado": 0.7,
+        "T26 Sync_DetachedHead_SaysNoBranch — HEAD suelto: otra-rama sin nombre y su frase": 0.4,
+        "T27 Sync_StagedRename_NamesNewPath — un renombre sin commitear nombra la ruta nueva, una vez": 0.4,
+        "T28 Notice_MinimalProfile_Silent — en minimal ni lo de antes se avisa, ni una clave rota se escribe": 0.2,
+        "T29 Hook_DoesNotWait_SlowFetch — con un fetch de 6 s el hook vuelve antes; el hijo no retiene su salida": 12.8,
+        "T30 Notice_SanitizesFields_GitEnvStripped — una línea sin controles; GIT_DIR heredado no desvía el merge": 1.4,
+        "T31 Adv_RenameInWorktreeColumn — un renombre en la columna del árbol (add -N) nombra sólo la ruta nueva": 0.7,
+        "T32 Adv_FetchRefspecWithoutMain — un clon que no mapea main igual trae origin/main y avanza": 1.2,
+        "T33 Adv_ClassifyNumbersInNetworkErrors — un 401/403 suelto (milisegundos, puerto, host) no es permiso": 0.0,
+        "T34 Adv_UntrackedPrefixCollision — un sin seguimiento que choca como carpeta o archivo se nombra": 2.2,
+        "T35 Adv_RedactKeepsLongPathSegments — una ruta o una rama larga no se tapa; un permiso suelto sí": 0.0,
+        "T37 ErrorBranches_SubfolderLockLaunchAndMore — subcarpeta, candado imposible, lanzamiento que tira, y «y N más»": 1.3,
+        "T38 Iter2_RedactEnvInvisibleAndRelay — más formas de permiso, más variables de git, invisibles y el relevo": 0.0,
+        "T36 Adv_UntrackedLeadingSpaceName — un nombre con espacio adelante choca igual, aunque sea el primero": 1.0
+      }
     }
   }
 }
