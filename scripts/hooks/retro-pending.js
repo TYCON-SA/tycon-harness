@@ -591,7 +591,10 @@ function record(event) {
 function identidadDelOrigin(root) {
   let r;
   try { r = resolverRemoto(root); } catch { return { estado: 'error' }; }
-  if (r && r.id && r.id.nombre) return { estado: 'nombre', nombre: String(r.id.nombre).toLowerCase() };
+  // Sólo un origin de AZURE tiene un nombre comparable con el `--repository` de `az repos`: uno de GitHub (u otro host)
+  // no lo contradice ni lo confirma — es «sin identidad» para esta pregunta (lo pide retro-heartbeat.test.sh T20).
+  if (r && r.id && r.id.nombre && r.id.org) return { estado: 'nombre', nombre: String(r.id.nombre).toLowerCase() };
+  if (r && r.id) return { estado: 'sin-identidad' };
   if (r && (r.por === 'sin-origin' || r.por === 'remoto-ilegible')) return { estado: 'sin-identidad' };
   return { estado: 'error' };   // tope de saltos o una respuesta que no se entiende
 }
