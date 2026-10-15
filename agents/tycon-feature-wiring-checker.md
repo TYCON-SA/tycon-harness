@@ -81,7 +81,7 @@ Ninguno de los demás advisors (`tycon-plugin-react-conventions`, `tycon-plugin-
 - Express / Node.js backend
 - Solid.js / Qwik / otros frameworks emergentes
 
-Si el `package.json` no tiene `react` como dep o tiene `vue`/`@angular/core`/`svelte` → advisor **skipea con OK** y emite mensaje:
+Si el `package.json` no declara `react` en ninguna sección de dependencias (también cuenta `peerDependencies`) o tiene `vue`/`@angular/core`/`svelte` → advisor **skipea con OK** y emite mensaje:
 
 ```
 tycon-feature-wiring-checker — stack no soportado (detectado: <stack>).
@@ -424,8 +424,8 @@ no lo afecta) — el cambio le llega igual.
 ## Workflow
 
 1. **Stack detection** (skip automático):
-   - Leer `package.json` del repo. Si no tiene `react` O tiene `vue`/`@angular/core`/`svelte` → emit "stack no soportado" + status OK. Stop.
-   - Si tiene `next` en deps → este advisor NO aplica (V1 cubre React SPA / plugin Bizuit, no Next.js — el wiring de Next.js Server Components es ortogonal). Skip + OK.
+   - Leer `package.json` del repo. Si no declara `react` en ninguna sección de dependencias (también `peerDependencies`) O tiene `vue`/`@angular/core`/`svelte` → emit "stack no soportado" + status OK. Stop.
+   - Si declara `next` en cualquier sección de dependencias (salvo un peer marcado optativo en `peerDependenciesMeta`) → este advisor NO aplica (V1 cubre React SPA / plugin Bizuit, no Next.js — el wiring de Next.js Server Components es ortogonal). Skip + OK.
    - Si tiene `react` + (esbuild o no-next) → corre frontend rules.
    - Si hay `.cs` modificados y proyecto tiene `IPluginEndpointBuilder` / `Bizuit.Backend.*` referencias → corre WIRING-W3 (REST caller detection).
 

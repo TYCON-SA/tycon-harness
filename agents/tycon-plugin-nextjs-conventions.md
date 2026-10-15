@@ -84,7 +84,7 @@ Las reglas viven canónicamente en `guides/bizuit/bizuit-plugin-nextjs.md` del a
 
 1. **Leer guía runtime**: `~/.claude/tycon-harness/guides/bizuit/bizuit-plugin-nextjs.md`.
 2. **Identificar archivos cambiados**: `.tsx`, `.ts` en `app/`, `pages/`, `components/`, `lib/`, `utils/`, `actions/`.
-3. **Detectar framework**: verificar `package.json` tiene `"next"` como dep. Si no, skipear (es otro tipo de React). Si sí, leer la versión para aplicar reglas version-specific (NEXT-W10, cache behavior).
+3. **Detectar framework**: verificar que `package.json` declara `"next"` en cualquiera de sus secciones de dependencias (también `peerDependencies`). Si no, skipear (es otro tipo de React). Si sí, leer la versión para aplicar reglas version-specific (NEXT-W10, cache behavior).
 4. **Aplicar reglas del catálogo** via regex + AST básico:
    - NEXT-C1: grep `NEXT_PUBLIC_` + heurística sobre nombres que sugieren secreto
    - NEXT-C2: grep `"use server"` o archivos `route.ts` + verificar presencia de Zod/schema validation
@@ -109,7 +109,7 @@ Las reglas viven canónicamente en `guides/bizuit/bizuit-plugin-nextjs.md` del a
 
 ## Framework detection
 
-- `package.json` con `"next"` en dependencies → corre el advisor
+- `package.json` con `"next"` en cualquier sección de dependencias (también `peerDependencies`) → corre el advisor
 - `package.json` sin `"next"` → skipea (deja el trabajo a `tycon-plugin-react-conventions` si aplica)
 - `next.config.js` / `next.config.ts` presentes → refuerza la detección
 

@@ -671,14 +671,34 @@ function selectE2eApps(cfg, changedFiles) {
 // feature-wiring se perdían. Ahora: por cada archivo modificado se busca el
 // package.json ancestro más cercano (bounded al repo) y se mergean las deps;
 // fallback adicional: subdirectorios de primer nivel del repo.
+// Las secciones de un package.json que declaran dependencias. 2026-10-15: se leían sólo dependencies y devDependencies, y
+// un formulario de Bizuit declara React SÓLO en peerDependencies (lo provee el host): la detección daba hasReact:false y
+// el revisor de React no entraba (story de dos repos de un producto del equipo; sumado a mano encontró dos avisos reales).
+// Una sola lista para la detección y para dependenciaCambiada.
+const SECCIONES_DE_DEPENDENCIAS = ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies'];
+// `sinPeerOptativos`: para DETECTAR el stack, un peer marcado optativo (`peerDependenciesMeta.<x>.optional`) no cuenta —
+// una librería que se lleva bien con Next si el host lo tiene no es una app Next. Para dependenciaCambiada sí cuenta.
+function depsDelPaquete(pkg, { sinPeerOptativos = false } = {}) {
+  const out = {};
+  for (const k of SECCIONES_DE_DEPENDENCIAS) Object.assign(out, (pkg && pkg[k]) || {});
+  const meta = (pkg && pkg.peerDependenciesMeta) || {};
+  if (sinPeerOptativos) {
+    for (const [nombre, m] of Object.entries(meta)) {
+      const enOtraSeccion = ['dependencies', 'devDependencies', 'optionalDependencies'].some((k) => pkg[k] && pkg[k][nombre]);
+      if (m && m.optional === true && !enOtraSeccion) delete out[nombre];
+    }
+  }
+  return out;
+}
 function collectPackageDeps(repo, files) {
   const deps = {};
   const seen = new Set();
+  const leidos = [];   // los package.json que existían y se pudieron leer: el aviso de detectStack los nombra
   const mergeFrom = (pkgPath) => {
     if (seen.has(pkgPath)) return;
     seen.add(pkgPath);
     const pkg = readJson(pkgPath);
-    if (pkg) Object.assign(deps, pkg.dependencies || {}, pkg.devDependencies || {});
+    if (pkg) { Object.assign(deps, depsDelPaquete(pkg, { sinPeerOptativos: true })); leidos.push(pkgPath); }
   };
   mergeFrom(path.join(repo, 'package.json'));
   const repoNorm = path.resolve(repo);
@@ -715,7 +735,9 @@ function collectPackageDeps(repo, files) {
       }
     } catch { /* ignore */ }
   }
-  return { deps, packagesFound: seen.size > 0 && Object.keys(deps).length > 0, fueraDeGit };
+  // «Encontrado» es «se leyó alguno», aunque no traiga dependencias: antes pedía además alguna dependencia, y un
+  // package.json sin ellas daba el aviso falso «sin package.json encontrado» (revisión del 2026-10-15).
+  return { deps, packagesFound: leidos.length > 0, fueraDeGit, leidos };
 }
 
 // ── FIX-4(a) (2026-08-25): ¿el diff de un package.json toca una DEPENDENCIA? ────────────────────
@@ -728,17 +750,15 @@ function collectPackageDeps(repo, files) {
 // vez de caminar el diff: con `-U0` no hay contexto, así que una línea `+  "react": "18.3.0"` es
 // indistinguible de una entrada de `"scripts"`. Comparar los objetos parseados dice exactamente lo
 // que la regla quiere saber.
+// Las cuatro secciones cuentan (2026-10-15). peerDependencies ya contaba y se mantiene a propósito: en un formulario de
+// Bizuit el rango peer de react ES el React que tiene que poner el host, y cambiarlo cambia ese contrato — lo que mira
+// REACT-W14 (peer desalineado). optionalDependencies se suma: se instalan cuando se puede, así que un cambio ahí cambia lo
+// que corre igual que uno en dependencies.
 function dependenciaCambiada(repo, files) {
   const pkgs = files.filter((f) => /(^|\/)package\.json$/.test(String(f).replace(/\\/g, '/')));
   if (!pkgs.length) return false;
   const { execFileSync } = require('child_process');
-  const mapa = (obj) => {
-    const out = {};
-    for (const k of ['dependencies', 'devDependencies', 'peerDependencies']) {
-      Object.assign(out, (obj && obj[k]) || {});
-    }
-    return out;
-  };
+  const mapa = depsDelPaquete;
   for (const f of pkgs) {
     const rel = path.isAbsolute(f) ? path.relative(repo, f) : f;
     const abs = path.isAbsolute(f) ? f : path.join(repo, f);
@@ -760,7 +780,7 @@ function dependenciaCambiada(repo, files) {
 }
 
 function detectStack(repo, files) {
-  const { deps, packagesFound, fueraDeGit } = collectPackageDeps(repo, files);
+  const { deps, packagesFound, fueraDeGit, leidos } = collectPackageDeps(repo, files);
   const csModified = anyFileMatches(files, /\.(cs|csproj)$/i);
   const tsxModified = anyFileMatches(files, /\.(tsx|ts|jsx|js)$/i);
   // PIPE-DETECT (2026-09-17): un guion `.sh` es código. Los de CI despliegan y frenan en
@@ -799,6 +819,13 @@ function detectStack(repo, files) {
   // detección de framework es ciega — que se vea, no que falle en silencio.
   if (tsxModified && !packagesFound) {
     det.warning = 'sin package.json encontrado (ni en raíz, ni ancestros de los files, ni subdirs) — detección React/Next ciega; verificá --repo';
+  }
+  // 2026-10-15: con algún package.json leído y un .tsx/.jsx en el diff, que no aparezca ningún framework no puede pasar
+  // callado — fue así como el revisor de React quedó afuera sin que nadie lo viera. Sólo .tsx/.jsx: un .ts de un backend
+  // de Node no tiene por qué traer React.
+  if (packagesFound && !det.hasReact && !det.hasNext && anyFileMatches(files, /\.(tsx|jsx)$/i)) {
+    const nota = `hay .tsx/.jsx y no detecté React ni Next en ${leidos.slice(0, 4).join(', ')}${leidos.length > 4 ? ', …' : ''} (se leen dependencies, devDependencies, peerDependencies y optionalDependencies)`;
+    det.warning = det.warning ? `${det.warning} · ${nota}` : nota;
   }
   // Story 7.26: un archivo JS/TS fuera de `--repo` y de todo repo git no tiene package.json que buscar. Se dice.
   if (fueraDeGit.length) {

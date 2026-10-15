@@ -1,6 +1,6 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/tycon-feature-wiring-checker.md
-# source_sha256: 8850233e360b10a87b411ec4a6aa7664629e7f13af40a6dcfc59095b45bb896e
+# source_sha256: 8d75b2b7ecfe79fa222d9f3c5ac2d4a592232d9a9b742eaaf5f268baf108469c
 # Se despliega como $CODEX_HOME/tycon-feature-wiring-checker.config.toml y se invoca: codex exec -p tycon-feature-wiring-checker
 # ⚠️ codex exec se cuelga para siempre si le queda stdin abierto: invocarlo SIEMPRE con < /dev/null
 # ⚠️ ASIMETRÍA DECLARADA — servidor MCP "codegraph" NO se declara acá: La ruta del índice cambia por repo (`codegraph serve --mcp --path <repo>`), y el perfil de advisor es un archivo fijo: no hay dónde poner la ruta. Del lado Claude codegraph ya es opt-in por repo (la mayoría corre sin él) y los fixtures del banco son repos efímeros SIN índice, así que ningún caso lo mide. El advisor cae al escalón siguiente de su cascada de lookup. Revisar en la Etapa F junto con el instalador.
@@ -92,7 +92,7 @@ Ninguno de los demás advisors (`tycon-plugin-react-conventions`, `tycon-plugin-
 - Express / Node.js backend
 - Solid.js / Qwik / otros frameworks emergentes
 
-Si el `package.json` no tiene `react` como dep o tiene `vue`/`@angular/core`/`svelte` → advisor **skipea con OK** y emite mensaje:
+Si el `package.json` no declara `react` en ninguna sección de dependencias (también cuenta `peerDependencies`) o tiene `vue`/`@angular/core`/`svelte` → advisor **skipea con OK** y emite mensaje:
 
 ```
 tycon-feature-wiring-checker — stack no soportado (detectado: <stack>).
@@ -435,8 +435,8 @@ no lo afecta) — el cambio le llega igual.
 ## Workflow
 
 1. **Stack detection** (skip automático):
-   - Leer `package.json` del repo. Si no tiene `react` O tiene `vue`/`@angular/core`/`svelte` → emit \"stack no soportado\" + status OK. Stop.
-   - Si tiene `next` en deps → este advisor NO aplica (V1 cubre React SPA / plugin Bizuit, no Next.js — el wiring de Next.js Server Components es ortogonal). Skip + OK.
+   - Leer `package.json` del repo. Si no declara `react` en ninguna sección de dependencias (también `peerDependencies`) O tiene `vue`/`@angular/core`/`svelte` → emit \"stack no soportado\" + status OK. Stop.
+   - Si declara `next` en cualquier sección de dependencias (salvo un peer marcado optativo en `peerDependenciesMeta`) → este advisor NO aplica (V1 cubre React SPA / plugin Bizuit, no Next.js — el wiring de Next.js Server Components es ortogonal). Skip + OK.
    - Si tiene `react` + (esbuild o no-next) → corre frontend rules.
    - Si hay `.cs` modificados y proyecto tiene `IPluginEndpointBuilder` / `Bizuit.Backend.*` referencias → corre WIRING-W3 (REST caller detection).
 
