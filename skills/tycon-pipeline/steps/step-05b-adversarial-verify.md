@@ -250,7 +250,8 @@ declarala como **propia**. Cuenta igual que una promovida, y tampoco se cree: el
 cada ruta esté en el repo, exista, sea una prueba (el criterio del freno ATDD) y se haya editado en esta
 corrida DESPUÉS del lanzamiento del pase (un evento de edición posterior, o la fecha del archivo
 posterior: la edición por consola también cuenta). Una misma ruta cubre varios hallazgos. En una story de dos repos, la prueba puede vivir en el repo hermano si la corrida
-editó ese repo: se anota como `(<repo>) <ruta>`. Sin esta casilla habría que anotar como «diferido» lo que
+editó ese repo: se anota como `(<repo>) <ruta>` —`<repo>` es el nombre del hermano declarado, una ruta relativa
+al repo de la corrida (`../FrontEnd`) o el nombre de una carpeta vecina— o con la ruta absoluta. Sin esta casilla habría que anotar como «diferido» lo que
 está arreglado con prueba. Igual que la promovida, se escribe ACÁ, al procesar el resultado y en
 rojo: el fix del re-loop la pone en verde. Así el resultado se anota en el join y `next` avanza.
 
