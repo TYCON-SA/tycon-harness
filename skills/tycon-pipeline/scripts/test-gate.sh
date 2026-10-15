@@ -59,7 +59,11 @@ STORY_ID="${STORY_ARG:-unknown}"
 unset TYCON_EVIDENCE_KEY TYCON_EVIDENCE_KEY_FAILED
 case "$STORY_ARG" in
   *.md)
-    if [ ! -f "$STORY_ARG" ]; then
+    # La corrida del repo hermano (story 7.26) no escribe copia sellada: se nombra con la clave de la story y pisaría
+    # la del repo de la story. Su resultado viaja en `companions` del artefacto de ese repo.
+    if [[ "${TYCON_TEST_GATE_COMPANION:-}" == "1" ]]; then
+      export TYCON_EVIDENCE_KEY_FAILED="corrida del repo hermano: la copia sellada es la del repo de la story (su resultado va en companions)"
+    elif [ ! -f "$STORY_ARG" ]; then
       export TYCON_EVIDENCE_KEY_FAILED="no encontré la story $STORY_ARG"
     else
       if _TG_KEY="$(node "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/evidence-key.js" "$STORY_ARG" 2>&1)"; then
@@ -90,6 +94,91 @@ marcar_tests_en_rojo() {
   ( cd "$REPO" && TYCON_TEST_GATE=1 node "$MARKER_JS" run-check tests -- \
       node -e 'console.error("test-gate: " + process.argv[1]); process.exit(Number(process.argv[2]))' "$motivo" "$codigo" ) >&2 || true
 }
+
+# --- El repo hermano (story 7.26) ----------------------------------------------
+# Una story que vive en este repo y cambia otro declarado en `.tycon/advisors.yaml → evidence.companion_repos` (el repo
+# hermano): al SALIR —por cualquiera de las salidas de abajo, también la 3 «sin pruebas acá», porque el repo de la story
+# puede no tener suite y el código vivir en el hermano— se corre este mismo gate sobre cada hermano en el que la story
+# declara archivos, con el alcance deducido de esos archivos. Antes la suite del hermano no la corría ningún portón
+# (corrida de una story de dos repos de un producto del equipo, 2026-10-14).
+#   · El resultado de cada hermano va a `companions` del artefacto de ESTE repo, y `all_green` dice el total.
+#   · La salida combina: el código de este repo si falló; si no, el del primer hermano que falló. «Sin pruebas» (3) no
+#     es falla; un repo sin pruebas con el hermano verde sale 0.
+#   · Si el total es rojo, el check `tests` del marcador queda en rojo: la corrida del hermano escribe el suyo al
+#     terminar y no puede dejar en verde un repo rojo.
+#   · La corrida del hermano no sigue a los hermanos del hermano (TYCON_TEST_GATE_COMPANION=1) ni sella evidencia.
+REPO_STORY="$REPO"   # la raíz que recibió el gate; REPO se mueve si hay alcance
+correr_hermanos_al_salir() {
+  local rc=$?
+  trap - EXIT
+  if [[ "${TYCON_TEST_GATE_COMPANION:-}" == "1" || -z "$STORY_ARG" || ! -f "$STORY_ARG" ]]; then exit "$rc"; fi
+  local story_abs blancos err
+  story_abs="$(cd "$(dirname "$STORY_ARG")" && pwd)/$(basename "$STORY_ARG")"
+  err="$(mktemp /tmp/test-gate-hermanos-XXXXXX)"
+  if ! blancos="$(node "$SCRIPT_DIR/lib/companion-repos.js" targets "$REPO_STORY" "$story_abs" 2>"$err")"; then
+    # «No pude averiguar» no es «no hay hermanos»: con el repo en verde, salir 0 dejaba sin correr la suite de un
+    # hermano que la story toca. Sale 4 (el «no sé qué correr» del gate) y el check `tests` queda en rojo.
+    echo "[test-gate] 🔴 no pude averiguar los repos hermanos que toca la story ($(head -1 "$err")): sus suites NO se corrieron, y eso no es verde" >&2
+    rm -f "$err"
+    local fin="$rc"
+    [[ "$rc" == "0" || "$rc" == "3" ]] && fin=4
+    marcar_tests_en_rojo "$fin" "no pude averiguar los repos hermanos que toca la story: sus suites no se corrieron"
+    exit "$fin"
+  fi
+  # Los avisos (un hermano declarado que no está en disco, un alcance que no se pudo deducir) se dicen siempre.
+  cat "$err" >&2
+  rm -f "$err"
+  [[ -z "$blancos" ]] && exit "$rc"
+  local filas="" final="$rc" root scope archivos hrc
+  while IFS=$'\x1f' read -r root scope archivos; do
+    [[ -z "$root" ]] && continue
+    echo "[test-gate] repo hermano $(basename "$root"): la story declara ahí ${archivos//,/, } → corre su suite${scope:+ (alcance $scope)}" >&2
+    hrc=0
+    # TYCON_TEST_GATE_STORY_REPO: el repo de la story, para que el cruce de cobertura del hermano mire sólo lo que la
+    # story crea en él (lib/companion-repos.js declared-in).
+    # `< /dev/null`: la lista de hermanos entra al bucle por la entrada estándar; una suite que la lee se tragaba los
+    # hermanos siguientes, que quedaban sin correr y sin aviso (revisor de fallas silenciosas, vuelta 2).
+    if [[ -n "$scope" ]]; then
+      TYCON_TEST_GATE_COMPANION=1 TYCON_TEST_GATE_STORY_REPO="$REPO_STORY" TYCON_TEST_SCOPE= bash "$SCRIPT_DIR/test-gate.sh" "$root" "$story_abs" "$scope" < /dev/null || hrc=$?
+    else
+      # Sin alcance propio: el de este repo (TYCON_TEST_SCOPE) no vale para el hermano.
+      TYCON_TEST_GATE_COMPANION=1 TYCON_TEST_GATE_STORY_REPO="$REPO_STORY" TYCON_TEST_SCOPE= bash "$SCRIPT_DIR/test-gate.sh" "$root" "$story_abs" < /dev/null || hrc=$?
+    fi
+    filas+="${root}"$'\x1f'"${scope}"$'\x1f'"${archivos}"$'\x1f'"${hrc}"$'\n'
+    if [[ "$final" == "0" || "$final" == "3" ]] && [[ "$hrc" != "0" && "$hrc" != "3" ]]; then final="$hrc"; fi
+    if [[ "$final" == "3" && "$hrc" == "0" ]]; then final=0; fi
+  done <<< "$blancos"
+  node -e '
+    const fs = require("fs"), p = require("path");
+    const [out, ts, storyId, rc, final, filas] = process.argv.slice(1);
+    const companions = filas.split("\n").filter(Boolean).map((l) => {
+      const [root, scope, archivos, exit] = l.split("\x1f");
+      const n = Number(exit);
+      return { root, scope: scope || null, files: archivos.split(",").filter(Boolean), exit: n, green: n === 0,
+        no_suite: n === 3, artifact: p.join(root, ".advisors", "tests-result.json") };
+    });
+    let art = null;
+    try { art = JSON.parse(fs.readFileSync(out, "utf8")); } catch (_e) { art = null; }
+    // Un artefacto de OTRA corrida (la salida 3 no escribe uno) no se completa: se reemplaza por uno de ésta.
+    if (!art || art.ts !== ts) {
+      art = { ts, story_id: storyId, runner: null, repo: null, suite_exit: Number(rc), suite_green: false,
+        no_suite_here: Number(rc) === 3, totals: {},
+        coverage: { per_new_file: {}, new_files_pct: null, threshold: null, meets_threshold: null },
+        provenance: `test-gate.sh: el repo de la story no corrió suite propia (salida ${rc}); el resultado de los repos hermanos está en companions` };
+    }
+    art.companions = companions;
+    art.all_green = Number(final) === 0;
+    fs.mkdirSync(p.dirname(out), { recursive: true });
+    fs.writeFileSync(out, JSON.stringify(art, null, 2) + "\n");
+  ' "$OUT_FILE" "$TS" "$STORY_ID" "$rc" "$final" "$filas" \
+    || echo "[test-gate] ⚠️  no pude anotar los repos hermanos en $OUT_FILE (mirá el error de arriba)" >&2
+  if [[ "$final" != "0" ]]; then
+    marcar_tests_en_rojo "$final" "el total de la story (este repo + sus repos hermanos) no está en verde: salida $final"
+  fi
+  echo "[test-gate] repos hermanos: resultado total → salida $final (este repo: $rc)" >&2
+  exit "$final"
+}
+trap correr_hermanos_al_salir EXIT
 
 # --- Alcance: explícito, deducido, o FRENO -----------------------------------
 # Override explícito: en un repo con DOS stacks, el caller manda. Tercer posicional o env var.
@@ -419,7 +508,18 @@ fi
 # reportar "added" apenas se commitea, así que en una iteración de fix POSTERIOR al commit
 # la lista de archivos nuevos queda vacía y el cruce se perdía sin decir nada (hallazgo de
 # una persona del equipo, 2026-08-25 — el `null` del reporte se leía igual que "esto está bien" — guides/incident-log.md#case-declared-new-files-cross-lost-2026-08-25).
-DECLARED_NEW="$(node "$SCRIPT_DIR/lib/test-scope.js" "$REPO" "$STORY_ARG" --files-to-create 2>/dev/null || true)"
+# Sin los que viven en un repo hermano (story 7.26): ésos los cruza la corrida del hermano, y acá salían como
+# «declarados que no existen». En la corrida DEL hermano, al revés: sólo los que la story crea en él.
+# Si la consulta falla, su error queda a la vista (stderr) y se cae a la lista de siempre.
+if [[ -n "$STORY_ARG" && -f "$STORY_ARG" && "${TYCON_TEST_GATE_COMPANION:-}" == "1" && -n "${TYCON_TEST_GATE_STORY_REPO:-}" ]] \
+  && DECLARED_NEW="$(node "$SCRIPT_DIR/lib/companion-repos.js" declared-in "$TYCON_TEST_GATE_STORY_REPO" "$STORY_ARG" "$REPO_STORY")"; then
+  :
+elif [[ -n "$STORY_ARG" && -f "$STORY_ARG" && "${TYCON_TEST_GATE_COMPANION:-}" != "1" ]] \
+  && DECLARED_NEW="$(node "$SCRIPT_DIR/lib/companion-repos.js" declared-here "$REPO_STORY" "$STORY_ARG")"; then
+  :
+else
+  DECLARED_NEW="$(node "$SCRIPT_DIR/lib/test-scope.js" "$REPO" "$STORY_ARG" --files-to-create 2>/dev/null || true)"
+fi
 TEST_PROJECT_COUNT="${#TEST_PROJECTS[@]}"
 # Huella del código que esta corrida midió (fix 2026-08-28, TESTGATE-DEDUCTOR-LAYOUT-GAP-1
 # parte 2): step-07b la compara con `suite-freshness.js check` al salir del loop de

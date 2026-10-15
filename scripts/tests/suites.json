@@ -514,6 +514,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 7.26: una story de dos repos — el pipeline sigue al repo hermano en los revisores, el contexto, el test-gate, las vueltas y el pase adversarial.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/companion-repos.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/large-output.test.js",
       "requiere": []

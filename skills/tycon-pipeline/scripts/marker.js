@@ -1989,8 +1989,21 @@ function verificarPruebasPropias(rutas, marker, tipo) {
     ? tocadasEventos.filter((ev) => Date.parse(ev.ts) > desde).map((ev) => clave(ev.path))
     : []);
   const en = [];
+  // `(<repo>) <ruta>` (story 7.26): la forma que el step-05b pide escribir para una prueba del repo hermano, y que hasta
+  // acá se tomaba como una ruta relativa al repo («no existe»). <repo> se prueba como hermano declarado, como ruta y
+  // como carpeta vecina (lib/companion-repos.js, decisión D7); lo que resuelve pasa por las mismas cuatro verificaciones.
+  const companionLib = require('./lib/companion-repos.js');
+  const hermanos = companionLib.companionRoots(base, marker && marker.storyPath, {
+    onMissing: (nombre, quien) => console.error(`⚠ el repo hermano «${nombre}» que declara ${companionLib.label(quien)}/.tycon/advisors.yaml no está en disco`),
+  });
   for (const ruta of rutas) {
-    const abs = path.resolve(base, ruta);
+    let abs = path.resolve(base, ruta);
+    const conRepo = companionLib.parseRepoPrefixed(ruta);
+    if (conRepo) {
+      const { root, tried } = companionLib.resolveRepoRef(conRepo.ref, base, hermanos);
+      if (!root) falla(ruta, `«${conRepo.ref}» no es un repo git que encontré (probé ${tried.join(' · ')})`);
+      abs = path.resolve(root, conRepo.rest);
+    }
     const k = clave(abs);
     let esArchivo = false;
     try { esArchivo = fs.statSync(abs).isFile(); } catch (_e) { esArchivo = false; }

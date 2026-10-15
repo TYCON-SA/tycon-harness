@@ -233,6 +233,13 @@ En una sola corrida: suite de tests + coverage, exit code REAL → `marker.check
 
 Si test-gate reporta rojo → mismo tratamiento que build fallido: pausar, mostrar el resultado, corregir y re-correr.
 
+**Story de dos repos**: si la story declara en `files_to_create`/`files_to_modify` archivos de un repo
+hermano (`.tycon/advisors.yaml → evidence.companion_repos`; escritos relativos al hermano o con `<nombre>/` adelante),
+el gate corre al terminar el mismo gate sobre ese hermano, con el alcance deducido de esos archivos. Su resultado va a
+`companions` de `tests-result.json` y `all_green` dice el total; la salida es la del repo si falló, si no la del primer
+hermano rojo (un repo sin pruebas con el hermano verde sale `0`), y un total rojo deja el check `tests` en rojo. La
+copia sellada de evidencia es sólo la del repo de la story.
+
 **Repos con `scripts/tests/suites.json` (el arnés):** las suites corren en paralelo (la mitad
 de los núcleos; `TYCON_SUITES_MAX_WORKERS=N` lo cambia, `=1` es la serie de antes), las `exclusive` corren
 solas al final, y las que declaran `gate_only_when_touching` se DIFIEREN si la story no toca esas carpetas

@@ -28,6 +28,7 @@ const path = require('path');
 const { stateDir: stateDirOf } = require('./lib/state-dir.js');   // story 8.23 (A2): la carpeta del estado, de una sola pieza
 const os = require('os');
 const honesty = require('./lib/ledger-honesty.js');
+const companionLib = require('./lib/companion-repos.js');   // story 7.26: el repo hermano de una story de dos repos
 
 // ── log de invocaciones reales de advisors (CF-2 2026-05-21) ─────────────────
 // El hook on-advisor-run.js (PreToolUse Task) registra cada subagent spawneado acá.
@@ -262,12 +263,20 @@ function gitAddedLinesByFile(repo) {
 
 // Como readDiffContents pero content = SOLO líneas agregadas cuando git lo permite.
 function readAddedContents(repo, files, exts) {
-  const git = gitAddedLinesByFile(repo);
   const out = [];
   for (const f of files) {
     if (exts && !exts.some((e) => f.endsWith(e))) continue;
     const abs = path.isAbsolute(f) ? f : path.join(repo, f);
-    const rel = path.isAbsolute(f) ? path.relative(repo, f) : f;
+    let rel = path.isAbsolute(f) ? path.relative(repo, f) : f;
+    let raiz = repo;
+    // Story 7.26: un archivo del repo hermano (fuera de `--repo`) se mira con el git de SU repo. Antes quedaba
+    // `../Front/…`, no aparecía en el diff de `--repo` y se leía el archivo entero: un `try` viejo del hermano
+    // disparaba al cazador de fallos silenciosos como si fuera nuevo.
+    if (path.relative(path.resolve(repo), path.resolve(abs)).startsWith('..')) {
+      const o = companionLib.ownerOf(f, repo);
+      if (o.root) { raiz = o.root; rel = o.rel; }
+    }
+    const git = gitAddedLinesByFile(raiz);
     if (git.gitOk && !git.untracked.has(rel) && git.byFile.has(rel)) {
       const added = git.byFile.get(rel).join('\n');
       if (added) out.push({ file: f, content: added.slice(0, 200000) });
@@ -673,12 +682,24 @@ function collectPackageDeps(repo, files) {
   };
   mergeFrom(path.join(repo, 'package.json'));
   const repoNorm = path.resolve(repo);
+  const fueraDeGit = [];
   for (const f of files) {
     if (!/\.(tsx|ts|jsx|js)$/i.test(f)) continue;
-    let dir = path.dirname(path.isAbsolute(f) ? f : path.join(repo, f));
+    let dir = path.resolve(path.dirname(path.isAbsolute(f) ? f : path.join(repo, f)));
     // Walk-up acotado: no salir del repo, no pasar por node_modules.
+    // Story 7.26: un archivo del repo hermano (fuera de `--repo`) sube hasta la raíz git de SU repo. Antes el tope era
+    // siempre `--repo`, así que su package.json no se leía nunca: «detección React/Next ciega» y, con ella, afuera
+    // los revisores de React y de cableado (corrida de una story de dos repos de un producto del equipo, 2026-10-14).
+    let tope = repoNorm;
+    if (!dir.startsWith(repoNorm)) {
+      const raizDelArchivo = companionLib.gitRootOf(dir);
+      // Fuera de todo repo git no hay tope seguro para subir: no se busca, pero se DICE (detectStack lo pone en el aviso).
+      if (!raizDelArchivo) { fueraDeGit.push(f); continue; }
+      tope = raizDelArchivo;
+      dir = companionLib.real(dir);   // ruta real también si la carpeta ya no existe (archivo borrado)
+    }
     for (let depth = 0; depth < 12; depth++) {
-      if (!path.resolve(dir).startsWith(repoNorm)) break;
+      if (!path.resolve(dir).startsWith(tope)) break;
       if (path.basename(dir) !== 'node_modules') mergeFrom(path.join(dir, 'package.json'));
       const parent = path.dirname(dir);
       if (parent === dir) break;
@@ -694,7 +715,7 @@ function collectPackageDeps(repo, files) {
       }
     } catch { /* ignore */ }
   }
-  return { deps, packagesFound: seen.size > 0 && Object.keys(deps).length > 0 };
+  return { deps, packagesFound: seen.size > 0 && Object.keys(deps).length > 0, fueraDeGit };
 }
 
 // ── FIX-4(a) (2026-08-25): ¿el diff de un package.json toca una DEPENDENCIA? ────────────────────
@@ -739,7 +760,7 @@ function dependenciaCambiada(repo, files) {
 }
 
 function detectStack(repo, files) {
-  const { deps, packagesFound } = collectPackageDeps(repo, files);
+  const { deps, packagesFound, fueraDeGit } = collectPackageDeps(repo, files);
   const csModified = anyFileMatches(files, /\.(cs|csproj)$/i);
   const tsxModified = anyFileMatches(files, /\.(tsx|ts|jsx|js)$/i);
   // PIPE-DETECT (2026-09-17): un guion `.sh` es código. Los de CI despliegan y frenan en
@@ -778,6 +799,11 @@ function detectStack(repo, files) {
   // detección de framework es ciega — que se vea, no que falle en silencio.
   if (tsxModified && !packagesFound) {
     det.warning = 'sin package.json encontrado (ni en raíz, ni ancestros de los files, ni subdirs) — detección React/Next ciega; verificá --repo';
+  }
+  // Story 7.26: un archivo JS/TS fuera de `--repo` y de todo repo git no tiene package.json que buscar. Se dice.
+  if (fueraDeGit.length) {
+    const nota = `${fueraDeGit.length} archivo(s) JS/TS fuera de --repo y de todo repo git (${fueraDeGit.slice(0, 3).join(', ')}${fueraDeGit.length > 3 ? ', …' : ''}): su package.json no se buscó`;
+    det.warning = det.warning ? `${det.warning} · ${nota}` : nota;
   }
   return det;
 }
@@ -884,9 +910,12 @@ function computeConditional(repo, files, extras = []) {
     out.push('signalr-client-reviewer');
   }
   // (el revisor de plugins hermanos vive en el paquete `clients` desde la story 8.2 — entra por `extras`)
-  // feature-wiring: react(no next) + .tsx, OR .cs con endpoints.Map* + IPluginEndpointBuilder
+  // feature-wiring: una pantalla (.tsx/.jsx) que no es de Next, OR .cs con endpoints.Map* + IPluginEndpointBuilder.
+  // Story 7.26: ya NO depende de detectar React. Con la detección ciega (un package.json que no se encontró) el revisor
+  // quedaba afuera del set y del expected[], y check-count no podía reclamarlo. Next detectado lo sigue excluyendo: su
+  // superficie la cubre su propio revisor.
   const det = detectStack(repo, files);
-  if ((det.hasReact && !det.hasNext && anyFileMatches(files, /\.tsx$/)) ||
+  if ((!det.hasNext && anyFileMatches(files, /\.(tsx|jsx)$/)) ||
       anyContentMatches(csContents, /endpoints\.Map(Get|Post|Put|Delete|Patch)\(/)) {
     out.push('tycon-feature-wiring-checker');
   }
@@ -1627,7 +1656,14 @@ function computeSmartReloop({ repo, story, files, iter, forceFullReloop, costTie
   // iteración 2 los contó en el delta. Esos nombres no siguen la convención de probes, así que el filtro
   // por nombre no los ve; el filtro por lugar sí. Se conserva la carpeta de la story: en los productos
   // con repo de specs aparte, la story vive fuera de `--repo` y editarla es trabajo de la corrida.
-  const raicesDelDelta = [repo, ...(story ? [path.dirname(path.resolve(String(story)))] : [])];
+  // 🔴 Los repos hermanos también (story 7.26): en una story de dos repos, los arreglos del hermano quedaban afuera del
+  // delta y los revisores de su superficie se salteaban por «superficie no tocada» — tres vueltas seguidas en la corrida
+  // de una story de un producto del equipo (2026-10-14). Sus archivos entran por las mismas fuentes que los del repo.
+  const hermanosDelDelta = companionLib.companionRoots(repo, story, {
+    onMissing: (nombre, quien) => process.stderr.write(`⚠ el repo hermano «${nombre}» que declara ${companionLib.label(quien)}/.tycon/advisors.yaml no está en disco: sus ediciones no entran al delta\n`),
+  });
+  const raicesDelDelta = [repo, ...(story ? [path.dirname(path.resolve(String(story)))] : []), ...hermanosDelDelta];
+  const workingTreeDeTodos = () => [repo, ...hermanosDelDelta].flatMap((r) => gitArchivosDelWorkingTree(r));
   const delRepo = (files) => files.filter((f) => raicesDelDelta.some((r) => honesty.esDelRepo(f, r)));
   const currentFiles = delRepo(honesty.sinProbes(marker.filesTouched || []));
   const prevSet = new Set(prevSnapshot);
@@ -1705,7 +1741,7 @@ function computeSmartReloop({ repo, story, files, iter, forceFullReloop, costTie
     // 4ta fuente (2026-08-26): el working tree según git, filtrado por mtime posterior a la foto.
     // Las tres de arriba iteran sobre `filesTouched` — si el hook nunca vio el archivo, ninguna lo
     // encuentra. Ésta sí. Los probes del pase adversarial NO cuentan (no son trabajo del repo).
-    for (const f of honesty.sinProbes(gitArchivosDelWorkingTree(repo))) {
+    for (const f of honesty.sinProbes(workingTreeDeTodos())) {
       try {
         const mt = fs.statSync(f).mtimeMs;
         if (mt > cutoff) { deltaByGit.push(f); if (!horaDe.has(f)) horaDe.set(f, mt); }
@@ -1785,7 +1821,7 @@ function computeSmartReloop({ repo, story, files, iter, forceFullReloop, costTie
     for (const e of Array.isArray(marker.fileEvents) ? marker.fileEvents : []) {
       if (e && e.path && e.ts && delRepo(honesty.sinProbes([e.path])).length) anotarEdicion(e.path, new Date(e.ts).getTime());
     }
-    for (const f of [...currentFiles, ...honesty.sinProbes(gitArchivosDelWorkingTree(repo))]) {
+    for (const f of [...currentFiles, ...honesty.sinProbes(workingTreeDeTodos())]) {
       try { anotarEdicion(f, fs.statSync(f).mtimeMs); } catch { /* borrado → si es nuevo, lo cubre el delta por nombre */ }
     }
   }
@@ -2194,12 +2230,32 @@ function buildAdvisorContext({ repo, story, files, iter }) {
     const { execFileSync } = require('child_process');
     const storyContent = story ? readText(story) : '';
     const digest = buildStoryDigest(storyContent);
-    let rawDiff = '';
-    try {
-      rawDiff = execFileSync('git', ['-C', repo, 'diff', 'HEAD', '--', ...files.map((f) => (path.isAbsolute(f) ? f : path.join(repo, f)))], {
-        encoding: 'utf8', maxBuffer: 50 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'],
+    // ── El diff POR REPO (story 7.26) ─────────────────────────────────────────────────────────────────────────
+    // ANTES: un solo `git -C repo diff HEAD -- <todas las rutas>`. Con UNA ruta del repo hermano, git sale con
+    // «… is outside repository» y se perdía el diff de TODOS los archivos, también los del repo; el texto de reemplazo
+    // decía «repo sin git» y un revisor lo repitió como causa (corrida de una story de dos repos de un producto del
+    // equipo, 2026-10-14). AHORA: los archivos se agrupan por su repo git; el del `--repo` va como siempre y cada
+    // hermano en su propia sección, con sus archivos escritos `(<nombre>) <ruta>`, la forma del step-05b. Si git falla
+    // en un repo, se dice cuál y por qué, y los demás conservan su diff.
+    const grupos = companionLib.groupByRepo(files, repo);
+    const propios = grupos.filter((g) => g.propio).flatMap((g) => g.files.map((x) => x.original));
+    const hermanos = grupos.filter((g) => !g.propio);
+    const gitDiff = (cwd, rutas) => {
+      const r = require('child_process').spawnSync('git', ['-C', cwd, 'diff', 'HEAD', '--', ...rutas], {
+        encoding: 'utf8', maxBuffer: 50 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'],
       });
-    } catch { rawDiff = ''; }
+      if (r.error || r.status !== 0) {
+        const motivo = String((r.stderr || '').split('\n').find((l) => l.trim()) || (r.error && r.error.message) || `salió ${r.status}`).trim();
+        return { text: '', error: motivo };
+      }
+      return { text: r.stdout || '', error: null };
+    };
+    // Con `--files` vacío el alcance es el working tree entero del repo (como siempre). Con `--files` sólo del
+    // hermano, el repo no aporta diff: un `git diff HEAD --` sin rutas traería todo el working tree, que nadie pidió.
+    const principal = files.length && !propios.length
+      ? { text: '', error: null, sinArchivos: true }
+      : gitDiff(repo, propios.map((f) => (path.isAbsolute(f) ? f : path.join(repo, f))));
+    const rawDiff = principal.text;
 
     // ── Cap POR ARCHIVO, no global (fix 2026-07-28) ────────────────────────
     // ANTES: `.slice(0, 150000)` global. Cortaba por la cola A MITAD DE UN HUNK y en
@@ -2213,17 +2269,31 @@ function buildAdvisorContext({ repo, story, files, iter }) {
     // y todo lo recortado queda LISTADO explícito para que el advisor sepa qué abrir.
     const PER_FILE_CAP = 12000;
     const DIFF_TOTAL_CAP = 150000;
-    const diffChunks = [];
-    for (const chunk of rawDiff.split(/(?=^diff --git )/m)) {
-      if (!chunk.trim()) continue;
-      const m = chunk.match(/^diff --git a\/(\S+) b\/(\S+)/);
-      diffChunks.push({ file: m ? m[2] : null, text: chunk });
-    }
+    const trocear = (texto, etiqueta) => {
+      const out = [];
+      for (const chunk of texto.split(/(?=^diff --git )/m)) {
+        if (!chunk.trim()) continue;
+        const m = chunk.match(/^diff --git a\/(\S+) b\/(\S+)/);
+        const file = m ? m[2] : null;
+        out.push({ file: file && etiqueta ? `(${etiqueta}) ${file}` : file, text: chunk, grupo: null });
+      }
+      return out;
+    };
+    const diffChunks = trocear(rawDiff, null);
+    // Los hermanos, cada uno con su git (story 7.26). `seccionesHermanos` conserva el orden y el error de cada uno.
+    const seccionesHermanos = hermanos.map((g, i) => {
+      const etiqueta = g.root ? companionLib.label(g.root) : null;
+      if (!g.root) return { etiqueta: null, root: null, error: 'no están dentro de ningún repo git', files: g.files, diff: '' };
+      const d = gitDiff(g.root, g.files.map((x) => x.abs));
+      diffChunks.push(...trocear(d.text, etiqueta).map((c) => ({ ...c, grupo: i })));
+      return { etiqueta, root: g.root, error: d.error, files: g.files, diff: '' };
+    });
     const truncatedFiles = [];   // recortados a PER_FILE_CAP
     const droppedFiles = [];     // no pegados por cap global
     let diff = '';
+    let pegado = 0;              // el cap global cuenta TODOS los repos juntos
     for (const c of diffChunks) {
-      if (diff.length >= DIFF_TOTAL_CAP) {
+      if (pegado >= DIFF_TOTAL_CAP) {
         droppedFiles.push(c.file || '(chunk sin archivo)');
         continue;
       }
@@ -2235,9 +2305,15 @@ function buildAdvisorContext({ repo, story, files, iter }) {
           `\n[… hunk recortado a ${Math.round(PER_FILE_CAP / 1000)}K — el archivo sigue; abrilo con Read si tu auditoría lo necesita]\n`;
         truncatedFiles.push(c.file || '(chunk sin archivo)');
       }
-      diff += text;
+      pegado += text.length;
+      if (c.grupo !== null) seccionesHermanos[c.grupo].diff += text;
+      else diff += text;
     }
-    if (!diffChunks.length) diff = '(git diff no disponible o vacío — repo sin git, error, o sin cambios trackeados)';
+    if (!diffChunks.some((c) => c.grupo === null)) {
+      diff = principal.error ? `(repo \`${companionLib.label(repo)}\`: git falló — ${principal.error})`
+        : principal.sinArchivos ? '(ningún archivo de `--files` es de este repo: el cambio está en los repos hermanos, abajo)'
+          : '(git diff vacío — sin cambios trackeados en estos archivos; los nuevos sin seguimiento van más abajo)';
+    }
 
     // Lista de archivos REAL: la que se muestra sale del diff + los untracked, no del
     // `--files` recibido. Fix 2026-07-28: cuando `--files` venía vacío el encabezado decía
@@ -2249,11 +2325,20 @@ function buildAdvisorContext({ repo, story, files, iter }) {
     // Si `--files` vino vacío, el scope real del context es "todo el working tree" (que es
     // lo que el `git diff HEAD` de arriba ya devolvió) — así que los untracked también salen
     // de git, no de la lista vacía. Los caps de abajo siguen gobernando el peso.
-    const untrackedCandidates = files.length ? files : [...git.untracked];
+    const untrackedCandidates = files.length ? propios : [...git.untracked];
+    // `{ nombre, abs }`: el nombre es como se lista (relativo al repo, o `(<hermano>) <ruta>` para los del hermano).
     const untrackedInDiff = untrackedCandidates.filter((f) => {
       const rel = path.isAbsolute(f) ? path.relative(repo, f) : f;
       return git.untracked.has(rel);
-    });
+    }).map((f) => ({ nombre: path.isAbsolute(f) ? path.relative(repo, f) : f, abs: path.isAbsolute(f) ? f : path.join(repo, f) }));
+    // Los nuevos sin seguimiento de cada hermano, con el git de SU repo (story 7.26).
+    const hermanosSinNuevos = [];   // hermanos cuyo git no pudo listar sus archivos nuevos: se dice, no se calla
+    for (const s of seccionesHermanos) {
+      if (!s.root) continue;
+      const gh = gitAddedLinesByFile(s.root);
+      if (!gh.gitOk) { hermanosSinNuevos.push(s.etiqueta); continue; }
+      for (const x of s.files) if (gh.untracked.has(x.rel)) untrackedInDiff.push({ nombre: `(${s.etiqueta}) ${x.rel}`, abs: x.abs });
+    }
     // Cap del payload (auditoría 2026-06-11): el context de 9.4 iter 1 pesó 147KB
     // (22 archivos con contenido completo, incl. CLAUDE.md y otra story .md) y viajó
     // a 41 spawns ≈ ~1.5M tokens SOLO de payload repetido. Reglas: (a) contenido
@@ -2265,8 +2350,7 @@ function buildAdvisorContext({ repo, story, files, iter }) {
     const UNTRACKED_TOTAL_CAP = 100000;
     let untrackedSection = '';
     const omittedFromContext = [];
-    for (const f of untrackedInDiff) {
-      const abs = path.isAbsolute(f) ? f : path.join(repo, f);
+    for (const { nombre: f, abs } of untrackedInDiff) {
       if (!CODE_FULL_RE.test(f)) {
         omittedFromContext.push(`${f} (no-código — usar Read si tu audit lo necesita)`);
         continue;
@@ -2278,6 +2362,9 @@ function buildAdvisorContext({ repo, story, files, iter }) {
       const c = readText(abs).slice(0, 30000);
       if (c) untrackedSection += `\n### ${f} (archivo NUEVO — contenido completo)\n\n\`\`\`\n${c}\n\`\`\`\n`;
     }
+    for (const h of hermanosSinNuevos) {
+      omittedFromContext.push(`(repo hermano \`${h}\`: git no pudo listar sus archivos nuevos sin seguimiento — si la story crea alguno ahí, abrilo con Read)`);
+    }
     if (omittedFromContext.length) {
       untrackedSection += `\n### Archivos del diff NO incluidos en este context (leélos con Read si tu audit los necesita)\n\n` +
         omittedFromContext.map((o) => `- ${o}`).join('\n') + '\n';
@@ -2285,10 +2372,22 @@ function buildAdvisorContext({ repo, story, files, iter }) {
     // Lista mostrada = unión de lo que el caller pidió + lo que el diff realmente trajo +
     // los untracked. Nunca puede quedar vacía teniendo contenido adentro.
     const shownFiles = [...new Set([
-      ...files.map((f) => (path.isAbsolute(f) ? path.relative(repo, f) : f)),
+      ...propios.map((f) => (path.isAbsolute(f) ? path.relative(repo, f) : f)),
+      ...seccionesHermanos.flatMap((s) => s.files.map((x) => (s.root ? `(${s.etiqueta}) ${x.rel}` : x.original))),
       ...filesFromDiff,
-      ...untrackedInDiff.map((f) => (path.isAbsolute(f) ? path.relative(repo, f) : f)),
+      ...untrackedInDiff.map((u) => u.nombre),
     ])].filter(Boolean).sort();
+    // Una sección por hermano, después del diff del repo (story 7.26).
+    const bloquesHermanos = seccionesHermanos.flatMap((s) => [
+      '',
+      s.root ? `## Diff del repo hermano \`${s.etiqueta}\` (git diff HEAD en ${s.root})` : '## Archivos fuera de todo repo git',
+      '',
+      '```diff',
+      s.diff || (!s.root ? `(${s.files.map((x) => x.original).join(', ')}: ${s.error})`
+        : s.error ? `(repo hermano \`${s.etiqueta}\`: git falló — ${s.error})`
+          : '(git diff vacío — sin cambios trackeados en estos archivos; los nuevos sin seguimiento van más abajo)'),
+      '```',
+    ]);
 
     const recorteSection = [];
     if (truncatedFiles.length || droppedFiles.length) {
@@ -2325,6 +2424,7 @@ function buildAdvisorContext({ repo, story, files, iter }) {
       '```diff',
       diff || '(vacío)',
       '```',
+      ...bloquesHermanos,
       ...recorteSection,
       untrackedSection,
     ].join('\n');
