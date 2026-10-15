@@ -354,8 +354,11 @@ EOF
   if command -v pwsh >/dev/null 2>&1; then
     mkdir -p "$T/ps/lib"; : > "$T/ps/lib/legacy-names.js"
     # (story 8.36) el bloque llama a las funciones de la tanda de Node: van delante. Sin applier-batch.js en esta carpeta,
-    # la tanda no corre y el bloque hace su llamada suelta, como antes
+    # la tanda no corre y el bloque hace su llamada suelta, como antes. La ruta del guion y sus argumentos se definen ahora
+    # con la tanda de aplicación, antes del bloque: el recorte los trae con la misma forma
     { printf '$ErrorActionPreference = "Stop"; $Check = $false; $ClaudeDir = "%s"\n' "$H4/.claude"
+      printf '%s\n' '$LegacyNames = Join-Path (Join-Path $PSScriptRoot "lib") "legacy-names.js"' \
+        '$lnArgs = @("--migrate-machine", "--guides", (Split-Path -Parent $PSScriptRoot), "--skills", $AgentSkillsRepo)'
       sed -n '/^# ── La tanda de Node (story 8.36)/,/^# ── fin de la tanda de Node/p' "$PS_I"
       sed -n '/^# ── Los nombres viejos (story 8.9/,/^# Load settings.json/p' "$PS_I" | sed '$d'
     } > "$T/ps/frag.ps1"

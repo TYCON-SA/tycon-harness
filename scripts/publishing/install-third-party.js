@@ -599,8 +599,9 @@ function proprietaryNotice(manifest, env, daily) {
 }
 
 // ── CLI ────────────────────────────────────────────────────────────────────────────────────────────────────────
-function main() {
-  const argv = process.argv.slice(2);
+// `argv` (story 8.36): la tanda del aplicador (scripts/setup/applier-batch.js) la llama en su mismo proceso con sus
+// argumentos; corrida como programa, los de la línea de comandos
+function main(argv = process.argv.slice(2)) {
   const opt = { check: false };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--repo') opt.repo = argv[++i];
@@ -623,4 +624,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { run, treeSha, blobSha, diskListing, checkReleaseTree, classifyFetchError };
+module.exports = { run, treeSha, blobSha, diskListing, checkReleaseTree, classifyFetchError, cli: main };
