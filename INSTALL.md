@@ -208,7 +208,7 @@ apaga sólo con su variable en `0`—, y de los dos que nacen prendidos y son de
 | `blocking-notice.js` | UserPromptSubmit | Cobra el veredicto del medidor de bloqueo del turno anterior | No | full | `TYCON_BLOCKING_METER=0` |
 | `large-read-meter.js` | Stop | Mide cuánto se leyó de un solo archivo en el turno; anota y no avisa | No | full | `TYCON_READ_METER=0` |
 | `harness-bootstrap-heal.sh` | SessionStart | Si la línea de arranque hace los `git pull` pero no corre el instalador, le agrega la llamada (con copia de seguridad) | No | minimal y full | `TYCON_NO_BOOTSTRAP_HEAL=1` |
-| `branch-guard-notice.js` | SessionStart | Avisa si el clon del arnés o el de las skills no está en `main`, o está atrasado | No | minimal y full | `TYCON_BRANCH_GUARD=0` |
+| `branch-guard-notice.js` | SessionStart | Avisa si el clon del arnés o el de las skills no está en `main`, o está atrasado; con `paths.maintainers`, pone al día de fondo el clon de mantenimiento (sólo en full) | No | minimal y full | `TYCON_BRANCH_GUARD=0` · `TYCON_MAINTAINERS_SYNC=0` |
 | `retro-pending.js` | PostToolUse (Bash) | Anota cada `git push` a `main` de un repo bajo el arnés | No | full | `TYCON_RETRO_PENDING=0` |
 | `retro-pending.js` | Stop | No deja cerrar el turno si un merge a `main` no tiene su archivo de métricas (tope: tres veces seguidas) | Sí | full | `TYCON_RETRO_PENDING=0` |
 | `retro-pending.js` | SessionStart | Lista los merges a `main` que no tienen su archivo de métricas | No | full | `TYCON_RETRO_PENDING=0` |

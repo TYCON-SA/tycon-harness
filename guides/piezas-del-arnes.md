@@ -852,6 +852,24 @@ del arnés, y la actualización —que deja sólo lo que la versión trae— lo 
 Red: `scripts/tests/repo-links-real-folders.test.sh`, `scripts/tests/branch-guard-notice.test.sh` (T12-T13) y el escenario
 `no-clone` del 182, que convierte la forma vieja con el aplicador de PowerShell de verdad.
 
+## scripts/lib/maintainers-sync.js — el arranque pone al día el clon de mantenimiento
+
+*(scripts/lib/maintainers-sync.js + `scripts/hooks/branch-guard-notice.js`)*
+
+Sólo en una máquina que declara el clon del repo de mantenimiento (`paths.maintainers`). De ahí cada sesión carga la
+portada privada y los avisos leen la noche; el arranque ponía al día el clon del arnés y no ése, que quedaba días atrás
+en silencio. Ahora el aviso de arranque lanza, de fondo y sin esperarla, una puesta al día: trae `origin/main` y avanza
+con `merge --ff-only` sólo si el clon está en `main`, sin cambios rastreados, sin operación a medias y atrás. Cualquier
+otra cosa (otra rama, cambios propios, commits sin empujar, divergido, archivos sin seguimiento que lo nuevo agrega) no
+se toca: un cambio en ese checkout es trabajo de alguien y no se aparta con un stash. El resultado queda en
+`maintainers-sync.json`, en la carpeta del estado, y la sesión siguiente lo dice en una línea, una vez, sólo si pide
+algo a la persona; «avanzó», «al día» y «sin red» callan. Por qué de fondo: medido, Claude Code lee los `@import` al
+arrancar en paralelo con los hooks, sin esperarlos; la bajada la ve la sesión siguiente. Sólo en el perfil completo; en
+Windows corre detrás de un relevo con `windowsHide`, como el arranque. Off: `TYCON_MAINTAINERS_SYNC=0`.
+
+Red: `scripts/tests/maintainers-sync.test.js` (clones de laboratorio con el origen en una carpeta local) y el escenario
+`update` del 182.
+
 ## guides/response-style.md
 
 El porqué del bloque de estilo de respuesta que se carga en cada sesión (`claude-md-blocks/response-style.md`): la regla madre completa con su plantilla de avance, por qué el detalle tiene un destino obligatorio, por qué el reporte de un subagente también es una respuesta, el medidor en detalle (por qué cuenta caracteres y no líneas, por qué no bloquea, umbrales, opt-out), y **qué quedó en el bloque a propósito** para que la próxima poda no lo saque. Nació de la poda del 2026-09-03: el bloque pesaba 17.034 bytes —el 36% del `CLAUDE.md` que cada máquina carga en cada sesión— y bajó a 6.270 sin perder una regla (el `CLAUDE.md` completo, de 46.706 a ≈35.942, −23%). 🔴 Una poda verifica que cada frase que saca del bloque esté en su destino: sin el objetivo de ~10 líneas, el único número que queda es el umbral del medidor (13), y el objetivo sube sin que nadie lo decida. Tras esa poda el bloque más pesado pasó a ser el de ADO (`ado-runs-list-lag.md`), y el 2026-09-06 se le aplicó el mismo patrón: 9.979 → 4.134 bytes (ver la entrada de `guides/ado-cola-y-listados.md`).
