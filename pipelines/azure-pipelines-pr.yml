@@ -668,7 +668,7 @@ jobs:
           # cosas. 600 s: el banco tarda ~3 min en el agente. Un reporte que haya dejado antes del corte no vale.
           CAP="${BENCH_CAP_SECONDS:-600}"
           case "$CAP" in ''|0|*[!0-9]*)
-            echo "##vso[task.logissue type=warning]banco: BENCH_CAP_SECONDS no es un número de segundos («$CAP») — uso 600"
+            echo "##vso[task.logissue type=warning]banco: BENCH_CAP_SECONDS no es un número de segundos («${CAP}») — uso 600"
             CAP=600 ;;
           esac
           MARK="$(Agent.TempDirectory)/banco.capped"; rm -f "$MARK"

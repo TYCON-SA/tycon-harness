@@ -76,6 +76,13 @@ function firstArg(line, name) {
   return quoted(line, line.indexOf(`${name} "`, at) + name.length + 2);
 }
 
+/**
+ * ¿Es segura esta interpolación? `${VAR}` y `$VAR` son la misma variable: la forma con llaves es la que pide el bash 3.2 de
+ * macOS cuando la sigue un carácter no ASCII (scripts/ci/check-bash32-quoting.sh), y pasar a llaves no puede volver
+ * «de afuera» una variable de la lista (2026-10-15: «${CAP}» en el paso del banco).
+ */
+const isSafe = (v) => SAFE.has(v) || SAFE.has(v.replace(/^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$/, '$$$1'));
+
 /** El texto del aviso: desde `##vso[task.logissue` hasta la comilla que cierra el `echo` (lo de después es otra cosa). */
 const noticeText = (line) => quoted(line, line.indexOf('##vso[task.logissue'));
 
@@ -92,7 +99,7 @@ test('T45 PublicValidation_LogIssuesFixedTextOnly_NoInterpolationOutsideSafeList
         const text = noticeText(line);
         const isHelper = /^\s*(falla|red)\(\)/.test(line);
         for (const v of interpolations(text)) {
-          if (SAFE.has(v) || (isHelper && v === '$1')) continue;
+          if (isSafe(v) || (isHelper && v === '$1')) continue;
           bad.push(`${rel}:${i + 1} interpola ${v}`);
         }
       }
@@ -101,7 +108,7 @@ test('T45 PublicValidation_LogIssuesFixedTextOnly_NoInterpolationOutsideSafeList
         const arg = firstArg(line, h);
         if (arg === null) continue;
         for (const v of interpolations(arg.replace(PICK, ''))) {
-          if (!SAFE.has(v)) bad.push(`${rel}:${i + 1} ${h} recibe ${v} en el texto del aviso`);
+          if (!isSafe(v)) bad.push(`${rel}:${i + 1} ${h} recibe ${v} en el texto del aviso`);
         }
       }
     });
@@ -114,6 +121,9 @@ test('T45 PublicValidation_TheRuleItself_CatchesTheCasesItIsFor', () => {
   // la regla misma, para que la de arriba no apruebe por una búsqueda mal escrita
   assert.deepStrictEqual(interpolations('No se pudo clonar $ADO: $ERR — y $(tr x < "$F") y $((A+1))'), ['$ADO', '$ERR', '$(tr x < "$F")']);
   assert.strictEqual(firstArg('  falla "el banco: $(cat x)" "$ERR"', 'falla'), 'el banco: $(cat x)');
+  // con llaves o sin ellas, la misma variable; una de afuera sigue siendo de afuera, y un modificador no se normaliza
+  assert.ok(isSafe('${CAP}') && isSafe('$CAP'));
+  assert.ok(!isSafe('${ERR}') && !isSafe('${CAP:-x}'));
   assert.strictEqual(firstArg(`  [ "$RC" = 0 ] || falla "$([ "$RC" = 1 ] && echo 'uno' || echo 'dos')"`, 'falla').replace(PICK, ''), '');
 });
 

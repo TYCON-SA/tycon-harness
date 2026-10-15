@@ -448,9 +448,13 @@ function tcgDeMentira(nombre = 'repo-del-arnes.js') { // un arnés cuyo criterio
 // así que repo-del-arnes.js no encuentra agent-skills para derivar su identidad del origin de la máquina.
 // La variable la lee sólo el arnés, con su nombre en inglés y el viejo andando por alias desde la story 8.9 (tanda B1).
 const IDENTIDADES_ARNES = { TYCON_HARNESS_IDENTITIES: 'https://dev.azure.com/org-del-equipo/tycon-claude-guides/_git/tycon-claude-guides,https://org-del-equipo.visualstudio.com/AgentSkills/_git/AgentSkills' };
-function tcgDeVerdad() { // la lib real, donde esté: variable, cwd (así corre el nocturno) o la ruta canónica
-  const cand = [process.env.TYCON_GUIDES_DIR, process.env.TCG, process.cwd(), path.join(os.homedir(), 'SourceCode', 'tycon-claude-guides')];
-  return cand.find((d) => d && fs.existsSync(path.join(d, 'scripts', 'lib', 'repo-del-arnes.js'))) || null;
+// La lib real, donde esté: variable, cwd (así corre el nocturno) o el arnés instalado. Se reconoce por el criterio con su
+// nombre de HOY: buscarlo por el de antes (`repo-del-arnes.js`) salteaba la prueba en la copia pública, y desde la carpeta del
+// repo privado —que todavía guarda ese archivo viejo y no el código del portón— la corría contra un árbol sin el criterio y
+// salía roja (2026-10-15).
+function tcgDeVerdad() {
+  const cand = [process.env.TYCON_GUIDES_DIR, process.env.TCG, process.cwd(), path.join(os.homedir(), '.tycon', 'harness')];
+  return cand.find((d) => d && fs.existsSync(path.join(d, 'scripts', 'lib', 'harness-repo.js'))) || null;
 }
 
 test('harness: el portón le cree al criterio del arnés, no a la carpeta — en los dos sentidos', () => {
@@ -567,7 +571,7 @@ test('harness: sin la lib del arnés (máquina atrasada) decide la carpeta, como
 
 test('harness: con el criterio REAL del arnés — clon por su remoto, producto bajo carpeta con nombre del arnés', (t) => {
   const tcg = tcgDeVerdad();
-  if (!tcg) return t.skip('NO MEDIDO: no encontré tycon-claude-guides/scripts/lib/harness-repo.js (TYCON_GUIDES_DIR · TCG · cwd · ruta canónica)');
+  if (!tcg) return t.skip('NO MEDIDO: no encontré scripts/lib/harness-repo.js (TYCON_GUIDES_DIR · TCG · cwd · ~/.tycon/harness)');
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'porton-'));
   const clon = repoGit(path.join(base, 'scratchpad', 'as'), 'https://otro@org-del-equipo.visualstudio.com/AgentSkills/_git/AgentSkills');
   const producto = repoGit(path.join(base, 'tycon-claude-guides', 'MiProducto'), 'https://org-del-equipo@dev.azure.com/org-del-equipo/UnProducto/_git/Backend');
