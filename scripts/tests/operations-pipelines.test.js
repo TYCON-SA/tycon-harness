@@ -309,3 +309,131 @@ test('T7 StageMetrics_OldVariables_NotReadAnymore: la variable de antes avisa; s
   assert.match(r.out, /##vso\[task\.logissue type=error\]team-repos\.json no valida/);
   assert.deepStrictEqual(r.cloned, []);
 });
+
+// ── story 2.25: la paridad de los productos, cada noche, dentro de la revisión de dependencias (T10-T12) ──────────
+const PARITY = 'Comparar los pipelines de los productos (paridad)';
+const named = (text, name) => steps(text).findIndex((s) => s.includes(`displayName: '${name}'`));
+/** El guion de un paso `- script: |` de un modelo, con las macros de Azure reemplazadas. */
+function stepScript(model, name, vars) {
+  const s = steps(read(model))[named(read(model), name)];
+  assert.ok(s, `${model}: falta el paso «${name}»`);
+  const m = s.match(/- script: \|\n([\s\S]*?)\n {8}displayName:/);
+  assert.ok(m, `${model}: «${name}» es un paso script`);
+  let body = m[1].split('\n').map((l) => l.replace(/^ {10}/, '')).join('\n');
+  for (const [k, v] of Object.entries(vars)) body = body.split(`$(${k})`).join(v);
+  assert.doesNotMatch(body, /\$\([A-Z][A-Za-z]+\.[A-Za-z.]+\)/, 'no quedó ninguna macro de Azure sin reemplazar');
+  return body;
+}
+
+test('T10 DependencyAudit_PasoParidad_OrdenYSalida @story-2.25 @ac-7 @ac-11 @ac-15: entre el control del árbol y la revisión; credencial, día, rc antes de tuberías, aviso por el archivo, sale 0', () => {
+  const text = read('dependency-audit.yml');
+  const all = steps(text);
+  const tree = all.findIndex((s) => /- template: pipelines\/operations\/templates\/check-tree\.yml@harness/.test(s));
+  const parity = named(text, PARITY);
+  const run = named(text, 'Correr la revisión de dependencias');
+  assert.ok(tree >= 0 && parity > tree && run > parity, `orden: árbol ${tree} < paridad ${parity} < revisión ${run}`);
+  const s = all[parity];
+  assert.match(s, /^ {8}env:\n {10}SYSTEM_ACCESSTOKEN: \$\(System\.AccessToken\)$/m, 'la credencial va en su env');
+  assert.match(s, /HOY="\$\{HOY_NOCTURNO:-\$\(date -u \+%Y-%m-%d\)\}"/, 'el día, como la revisión');
+  assert.match(s, /##vso\[task\.setvariable variable=HOY_NOCTURNO\]\$HOY/, 'y lo publica');
+  assert.match(s, /LISTA=\$\(node scripts\/ci\/check-product-parity\.js clone-list --root "\$CLONES" --platform azure\) \\\n\s+\|\| echo "##vso\[task\.logissue type=warning\]/, 'pide lo que falta clonar, de su plataforma, y si no puede lo dice');
+  assert.match(s, /done <<< "\$LISTA"/, 'clona desde la lista ya leída');
+  assert.match(s, /\$\(printf '%s' "\$ERR" \| tr '\\r\\n' '  ' \| sed 's\/##vso\/## vso\/g'\)/, 'el error del clon no puede dar órdenes al agente (ni con \\r)');
+  assert.match(s, /\$\(printf '%s' "\$AVISO" \| tr '\\r\\n' '  ' \| sed 's\/##vso\/## vso\/g'\)/, 'el aviso tampoco');
+  const lines = s.split('\n');
+  const cmd = lines.findIndex((l) => /check-product-parity\.js --root/.test(l));
+  assert.ok(cmd > 0, 'corre el control');
+  let end = cmd; while (/\\\s*$/.test(lines[end])) end += 1;
+  assert.doesNotMatch(lines.slice(cmd, end + 1).join('\n'), /\|/, 'el control no va en una tubería');
+  assert.match(lines[end + 1] || '', /^\s*RC=\$\?$/, 'el código se lee en la línea siguiente');
+  assert.match(lines.slice(cmd, end + 1).join('\n'), /--today "\$HOY" --out "\$OUT"/, 'el día del archivo es el de la noche');
+  assert.match(s, /OUT="\$\(Build\.SourcesDirectory\)\/\.dashboard\/paridad\/paridad-\$HOY\.json"/);
+  assert.match(s, /node -e/, 'el aviso sale del archivo');
+  assert.match(s, /\n\s+exit 0\n {8}displayName:/, 'el paso sale siempre 0');
+  assert.doesNotMatch(s, /continueOnError|telegram|daily-summary/i, 'no avisa por ningún canal ni se esconde');
+  // los pasos de antes, en el mismo orden entre sí
+  const before = ['Leer la configuración de la organización (operations.json y repos.json)', 'Registrar lo que se decidió en los pull requests',
+    'Clonar los repos declarados', 'Volcar el estado de los pedidos de trabajo', 'Correr la revisión de dependencias', 'Crear los pedidos de trabajo',
+    'Entregar el resumen (si hay bot de Telegram)', 'Guardar el snapshot y las fichas en el repo de operaciones', 'Abrir un pull request por hallazgo (ahí se decide)',
+    'Denunciar que los pedidos no se intentaron'].map((n) => named(text, n));
+  assert.ok(before.every((i, k) => i >= 0 && (k === 0 || i > before[k - 1])), `los pasos de siempre, en su orden: ${before.join(',')}`);
+});
+
+/** El paso de la paridad corrido de verdad: <base>/s es el árbol, <base>/t/repos los clones, <base>/org la organización. */
+function parityLab(cfg, { clones = {}, org = {}, script = true } = {}) {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'ops-parity-'));
+  dirs.push(base);
+  const s = path.join(base, 's');
+  const temp = path.join(base, 't');
+  fs.mkdirSync(path.join(s, 'scripts', 'ci'), { recursive: true });
+  if (script) for (const f of ['check-product-parity.js', 'legacy-options.js']) fs.copyFileSync(path.join(ROOT, 'scripts', 'ci', f), path.join(s, 'scripts', 'ci', f));
+  fs.writeFileSync(path.join(s, 'scripts', 'ci', 'product-parity.json'), JSON.stringify(cfg));
+  const publish = (dir, yml, bare) => {
+    fs.mkdirSync(dir, { recursive: true });
+    git(dir, ['init', '--quiet', '-b', 'main']);
+    write(dir, { 'azure-pipelines.yml': yml });
+    git(dir, ['add', '-A']); git(dir, ['commit', '--quiet', '-m', 'p']);
+    if (!bare) { git(dir, ['remote', 'add', 'origin', '.']); git(dir, ['update-ref', 'refs/remotes/origin/main', 'HEAD']); }
+  };
+  for (const [ruta, yml] of Object.entries(clones)) publish(path.join(temp, 'repos', ruta), yml);
+  for (const [ado, yml] of Object.entries(org)) { const [p, r] = ado.split('/'); publish(path.join(base, 'org', p, '_git', r), yml, true); }
+  const body = stepScript('dependency-audit.yml', PARITY, { 'Build.SourcesDirectory': s, 'Agent.TempDirectory': temp, 'System.CollectionUri': `file://${base}/org/`, RAMA_ANALIZADA: 'main' });
+  assert.doesNotMatch(body, /\$\([A-Z_]+\)/, 'ninguna variable del pipeline sin reemplazar');
+  const r = spawnSync('bash', ['-c', body], { env: cleanEnv({ SYSTEM_ACCESSTOKEN: 'token-de-prueba', HOY_NOCTURNO: '2026-01-02' }), encoding: 'utf8' });
+  const file = path.join(s, '.dashboard', 'paridad', 'paridad-2026-01-02.json');
+  return { code: r.status, out: `${r.stdout}${r.stderr}`, temp, result: fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : null };
+}
+const grupo = (...repos) => ({ grupos: { backend: repos }, rasgos: [{ id: 'reintento', que: 'reintento', patron: 'Too Many Requests' }], diferencias_declaradas: [] });
+
+test('T10b DependencyAudit_PasoParidad_Corre @story-2.25 @ac-7: clona lo que falta, deja el archivo del día y avisa por lo que dice el archivo, nunca por el código solo', () => {
+  // medido y en orden: uno ya clonado, el otro lo clona el paso; ningún aviso
+  let r = parityLab(grupo({ producto: 'Acme Uno', ruta: 'Acme/Uno' }, { producto: 'Acme Dos', ruta: 'Acme/Dos', ado: 'Acme/Dos' }),
+    { clones: { 'Acme/Uno': 'Too Many Requests\n' }, org: { 'Acme/Dos': 'Too Many Requests\n' } });
+  assert.strictEqual(r.code, 0, r.out);
+  assert.strictEqual(r.result && r.result.estado, 'medido', r.out);
+  assert.doesNotMatch(r.out, /task\.logissue/, 'medido y en orden: nada');
+  assert.match(r.out, /##vso\[task\.setvariable variable=HOY_NOCTURNO\]2026-01-02/);
+  assert.match(r.out, /paridad: \d+ s/, 'imprime el tiempo del paso');
+  assert.doesNotMatch(fs.readFileSync(path.join(r.temp, 'repos', 'Acme', 'Dos', '.git', 'config'), 'utf8'), /extraheader|token-de-prueba/, 'el clon no guarda la credencial');
+  // una divergencia: aviso con las cantidades
+  r = parityLab(grupo({ producto: 'Acme Uno', ruta: 'Acme/Uno' }, { producto: 'Acme Dos', ruta: 'Acme/Dos' }),
+    { clones: { 'Acme/Uno': 'Too Many Requests\n', 'Acme/Dos': 'nada\n' } });
+  assert.strictEqual(r.code, 0, r.out);
+  assert.match(r.out, /##vso\[task\.logissue type=warning\][^\n]*1 divergencias · 0 vencidas/);
+  // parcial SIN divergencias sale 0 del control: igual avisa, por el archivo
+  r = parityLab(grupo({ producto: 'Acme Uno', ruta: 'Acme/Uno' }, { producto: 'Acme Dos', ruta: 'Acme/Dos' }, { producto: 'Acme Tres', ruta: 'Acme/Tres' }),
+    { clones: { 'Acme/Uno': 'Too Many Requests\n', 'Acme/Dos': 'Too Many Requests\n' } });
+  assert.strictEqual(r.code, 0, r.out);
+  assert.strictEqual(r.result && r.result.rc, 0, r.out);
+  assert.match(r.out, /##vso\[task\.logissue type=warning\][^\n]*0 divergencias · 0 vencidas · 1 sin medir/);
+  // sin productos: nada
+  r = parityLab({ sin_productos: 'sin lista de la organización', grupos: {}, rasgos: [], diferencias_declaradas: [] });
+  assert.strictEqual(r.code, 0, r.out);
+  assert.strictEqual(r.result && r.result.estado, 'sin_productos', r.out);
+  assert.doesNotMatch(r.out, /task\.logissue/);
+  // no medido: con su motivo
+  r = parityLab(grupo({ producto: 'Acme Uno', ruta: 'Acme/Uno' }));
+  assert.strictEqual(r.code, 0, r.out);
+  assert.match(r.out, /##vso\[task\.logissue type=warning\][^\n]*no medido: /);
+  // el control no dejó el archivo: se dice, y el paso sigue
+  r = parityLab(grupo({ producto: 'Acme Uno', ruta: 'Acme/Uno' }), { script: false });
+  assert.strictEqual(r.code, 0, r.out);
+  assert.match(r.out, /##vso\[task\.logissue type=warning\][^\n]*la paridad no dejó su resultado/);
+});
+
+test('T11 DependencyAudit_GuardaLaParidad @story-2.25 @ac-7: guardar lleva .dashboard/paridad', () => {
+  const s = steps(read('dependency-audit.yml')).find((x) => /push-nightly-data\.js save/.test(x));
+  assert.match(s, /-- \.dashboard\/dependencias inbox\/dependencies \.dashboard\/paridad\s*$/m);
+});
+
+test('T12 OpsData_TraeLaListaDeLaOrganizacion @story-2.25 @ac-9: la lista de productos de operaciones va encima; sin ella queda la del arnés', () => {
+  assert.match(read('templates/ops-data.yml'), /CONFIG_FILES=\([^)]*scripts\/ci\/product-parity\.json[^)]*\)/);
+  for (const [ops, want] of [[{ 'scripts/ci/product-parity.json': '{"de":"la organización"}\n' }, 'la organización'], [{}, 'del arnés']]) {
+    const w = agent({ 'operations.json': '{"version":1,"owners":{"default":"lider@acme.example"}}\n', ...ops });
+    write(w.s, { 'scripts/ci/product-parity.json': '{"sin_productos":"del arnés"}\n' });
+    git(w.s, ['add', '-A']); git(w.s, ['commit', '--quiet', '-m', 'la copia pública']);
+    const r = runOpsData(w);
+    assert.strictEqual(r.code, 0, r.out);
+    assert.match(fs.readFileSync(path.join(w.s, 'scripts', 'ci', 'product-parity.json'), 'utf8'), new RegExp(want));
+  }
+});

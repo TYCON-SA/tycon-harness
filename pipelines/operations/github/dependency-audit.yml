@@ -149,6 +149,14 @@ jobs:
         run: |
           set -uo pipefail
           node scripts/nightly/dependencies/nightly-dependencies.js clone-list | bash pipelines/operations/github/clone-repos.sh --declared "${RUNNER_TEMP}/repos"
+          # Lo que la lista de productos declara y la revisión no trajo (story 2.25), con la credencial todavía viva. En otra
+          # invocación, DESPUÉS: en la misma tubería, clone-list no vería los clones de arriba y los pediría de nuevo. Y nunca
+          # corta el paso (GitHub lo corre con bash -e): una lista rota no puede llevarse la revisión de dependencias.
+          LISTA="$(node scripts/ci/check-product-parity.js clone-list --root "${RUNNER_TEMP}/repos" --platform github)" \
+            || echo "::warning::Paridad: no se pudo armar la lista de lo que falta clonar (código $?) — el resultado dice por qué"
+          if [ -n "${LISTA}" ]; then
+            printf '%s\n' "${LISTA}" | bash pipelines/operations/github/clone-repos.sh --declared "${RUNNER_TEMP}/repos" || echo "::warning::Paridad: el clon de lo que falta terminó con código $? — esos repos van a salir «no medido»"
+          fi
 
       - name: Volcar el estado de los issues (sólo lee)
         if: env.ISSUES_ON == '1'
@@ -188,6 +196,37 @@ jobs:
             exit 1
           fi
           echo "${OUT}"
+
+      # ¿Los workflows de los productos hacen lo mismo? (story 2.25). Antes de correr código de los productos, sobre los
+      # mismos clones. Nunca pone roja la noche: el aviso sale de lo que dice el archivo, no del código de salida solo.
+      - name: Comparar los pipelines de los productos (paridad)
+        working-directory: harness
+        run: |
+          set -uo pipefail
+          set +e   # GitHub corre el paso con bash -e: el código de salida se lee abajo, no corta acá
+          INICIO=$(date +%s)
+          HOY="${HOY_NOCTURNO:-$(date -u +%Y-%m-%d)}"
+          echo "HOY_NOCTURNO=${HOY}" >> "${GITHUB_ENV}"
+          OUT=".dashboard/paridad/paridad-${HOY}.json"
+          rm -f "${OUT}"
+          node scripts/ci/check-product-parity.js --root "${RUNNER_TEMP}/repos" --today "${HOY}" --out "${OUT}" 2>&1 | bash pipelines/operations/github/annotate.sh
+          RC=${PIPESTATUS[0]}
+          echo "paridad: $(( $(date +%s) - INICIO )) s · código ${RC}"
+          if { [ "${RC}" != 0 ] && [ "${RC}" != 1 ] && [ "${RC}" != 2 ]; } || [ ! -f "${OUT}" ]; then
+            echo "::warning::Paridad de los productos: la paridad no dejó su resultado (código ${RC})"
+            exit 0
+          fi
+          AVISO=$(node -e '
+            const r = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+            const n = (r.divergencias || []).length, v = (r.vencidas || []).length;
+            const s = (r.por_ruta || []).filter((e) => e.estado !== "medido").length + (r.grupos_sin_comparar || []).length;
+            if (r.estado === "no_medido") console.log(`no medido: ${r.motivo}`);
+            else if (r.estado === "parcial") console.log(`${n} divergencias · ${v} vencidas · ${s} sin medir`);
+            else if (r.estado === "medido" && (n || v)) console.log(`${n} divergencias · ${v} vencidas`);
+          ' "${OUT}") || AVISO="la paridad no dejó su resultado (el archivo no se pudo leer)"
+          # el texto sale de la lista de la organización: ni un salto de línea ni «::» pueden dar órdenes al workflow
+          [ -z "${AVISO}" ] || echo "::warning::Paridad de los productos: $(printf '%s' "${AVISO}" | tr '\r\n' '  ' | sed 's/::/: :/g')"
+          exit 0
 
       - name: Correr la revisión de dependencias
         working-directory: harness
@@ -261,7 +300,7 @@ jobs:
           node scripts/ci/push-nightly-data.js save \
             --message "chore(dependencias): revisión nocturna $(date -u +%Y-%m-%d) [nocturno]" \
             --require-daily '.dashboard/dependencias/dependencias-{day}.json' \
-            -- .dashboard/dependencias inbox/dependencies 2>&1 | bash pipelines/operations/github/annotate.sh
+            -- .dashboard/dependencias inbox/dependencies .dashboard/paridad 2>&1 | bash pipelines/operations/github/annotate.sh
 
       # El rojo de «los issues no se intentaron» va acá, después de guardar: la noche no se pierde por eso.
       - name: Denunciar que los issues no se intentaron
