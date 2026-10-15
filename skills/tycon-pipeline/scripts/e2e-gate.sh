@@ -101,6 +101,12 @@ escribir_evidencia() {
     echo "## Tests corridos (títulos completos — contrato DODRT-C8)"
     echo "${TITULOS:-}"
     echo ""
+    # Story 7.24: lo que el cierre le muestra al dev antes de pedir el commit. Va SIEMPRE, como las otras: sin
+    # capturas dice por qué (una sección ausente no distingue «no hubo» de «este gate es viejo»).
+    echo "## Capturas"
+    if [ -n "${CAPTURAS_LISTA:-}" ]; then echo "$CAPTURAS_LISTA"
+    else echo "${CAPTURAS_NOTA:-ninguna — el gate terminó antes de correr las pruebas}"; fi
+    echo ""
     # La sección va SIEMPRE, aunque no haya salida: una sección ausente es ambigua —
     # no se distingue "corrió y no hubo errores" de "este gate es viejo y no la escribe".
     # Es el mismo modo de falla que "## Tests corridos" (DODRT-C8): el silencio no informa.
@@ -242,11 +248,65 @@ fi
 # --- Correr Playwright --------------------------------------------------------
 cd "$FRONTEND_DIR" || fail_precondition "frontend_dir inexistente: $FRONTEND_DIR"
 
+# --- Capturas de los specs de la story (story 7.24) ---------------------------
+# 🔴 Caso disparador (2026-10-14, guides/incident-log.md#case-screen-passed-all-controls-unreadable-2026-10-14): una ventana pasó todos los controles y
+# nadie la vio antes del merge; el dueño la encontró «inentendible» en staging. Con filtro (los specs de la story), el
+# gate fuerza `screenshot: 'on'` con una config ENVOLTORIO temporal que importa la del repo —la del repo no se toca— y
+# copia a la evidencia las imágenes que lista el reporte (también las que el spec adjunta con `testInfo.attach`).
+# Las capturas NUNCA cambian el veredicto: si el envoltorio no carga (se prueba con `--list`), corre como siempre y la
+# evidencia dice el motivo. Sin filtro no se guardan: la corrida completa no es la de la story.
+CAPTURAS_NOTA=""; CAPTURAS_LISTA=""; CONFIG_ARGS=(); ENVOLTORIO=""
+if [ ${#SPEC_FILTERS[@]} -eq 0 ]; then
+  CAPTURAS_NOTA="ninguna — corrida completa sin filtro: las capturas se guardan sólo para los specs de la story"
+else
+  BASE_CFG=""
+  for c in playwright.config.ts playwright.config.mts playwright.config.js playwright.config.mjs playwright.config.cjs; do
+    [ -f "$c" ] && { BASE_CFG="$c"; break; }
+  done
+  if [ -z "$BASE_CFG" ]; then
+    CAPTURAS_NOTA="ninguna — no encontré playwright.config.* en $FRONTEND_DIR: no se pudo forzar la captura"
+  else
+    case "$BASE_CFG" in *.ts|*.js) BASE_IMPORT="./${BASE_CFG%.*}" ;; *) BASE_IMPORT="./$BASE_CFG" ;; esac
+    ENVOLTORIO="$PWD/.tycon-e2e-captures-$$.config.ts"
+    trap 'rm -f "$ENVOLTORIO" "$ENVOLTORIO.err"' EXIT
+    cat > "$ENVOLTORIO" <<ENV
+// Generado por el gate E2E del arnés (story 7.24); se borra al terminar. Fuerza la captura sin tocar la config del repo.
+import base from '$BASE_IMPORT';
+const b: any = (base as any)?.default ?? base;
+const on = (u: any) => ({ ...(u || {}), screenshot: 'on' });
+export default { ...b, use: on(b.use), ...(Array.isArray(b.projects) ? { projects: b.projects.map((p: any) => ({ ...p, use: on(p.use) })) } : {}) };
+ENV
+    if npx playwright test --config "$ENVOLTORIO" --list ${SPEC_FILTERS[@]+"${SPEC_FILTERS[@]}"} > /dev/null 2> "$ENVOLTORIO.err" < /dev/null; then
+      CONFIG_ARGS=(--config "$ENVOLTORIO")
+    else
+      CAPTURAS_NOTA="ninguna — no se pudo forzar la captura (la config envuelta no cargó: $(grep -m1 . "$ENVOLTORIO.err" 2>/dev/null | cut -c1-200)); corrió con la config del repo"
+      rm -f "$ENVOLTORIO"
+    fi
+  fi
+fi
+
 JSON_OUT="$(mktemp)"
 # ${arr[@]+...}: expansión bash-3.2-safe — el array vacío con `set -u` es 'unbound variable'
 # en el bash de macOS y el modo full-suite abortaba sin escribir evidencia.
-npx playwright test --workers=1 --reporter=json ${SPEC_FILTERS[@]+"${SPEC_FILTERS[@]}"} > "$JSON_OUT" 2> "$JSON_OUT.err"
+npx playwright test ${CONFIG_ARGS[@]+"${CONFIG_ARGS[@]}"} --workers=1 --reporter=json ${SPEC_FILTERS[@]+"${SPEC_FILTERS[@]}"} > "$JSON_OUT" 2> "$JSON_OUT.err"
 EXIT_CODE=$?
+[ -n "$ENVOLTORIO" ] && rm -f "$ENVOLTORIO" "$ENVOLTORIO.err"
+
+if [ ${#CONFIG_ARGS[@]} -gt 0 ]; then
+  # Lo que no se pudo copiar (imagen que falta, reporte ilegible, el propio comando que falla) se ESCRIBE en la
+  # sección: callado, salía como «ningún test corrió» y escondía la causa. Nunca cambia el veredicto.
+  CAPTURAS_LISTA="$(node "$(dirname "${BASH_SOURCE[0]}")/lib/e2e-evidence.js" captures "$JSON_OUT" "$EVIDENCE_DIR/${STORY_ID}-captures-${TS}" 2> "$JSON_OUT.cap")"
+  CAP_RC=$?
+  CAP_ERR="$(cut -c1-300 "$JSON_OUT.cap" 2>/dev/null | head -10)"; rm -f "$JSON_OUT.cap"
+  [ "$CAP_RC" -eq 0 ] || CAP_ERR="la copia de capturas falló (exit $CAP_RC)${CAP_ERR:+: $CAP_ERR}"
+  if [ -n "$CAPTURAS_LISTA" ]; then
+    [ -z "$CAP_ERR" ] || CAPTURAS_LISTA="$CAPTURAS_LISTA"$'\n'"$(printf '%s\n' "$CAP_ERR" | sed 's/^/· /')"
+  elif [ -n "$CAP_ERR" ]; then
+    CAPTURAS_NOTA="ninguna — $(printf '%s' "$CAP_ERR" | tr '\n' ';')"
+  else
+    CAPTURAS_NOTA="ninguna — la corrida no dejó imágenes (¿ningún test llegó a correr?)"
+  fi
+fi
 
 read -r TOTAL PASSED FAILED SKIPPED <<< "$(node -e 'const l=require(process.argv[2]);const fs=require("fs");let j={};try{j=JSON.parse(fs.readFileSync(process.argv[1],"utf8"))}catch(e){};const t=l.totals(j);console.log(t.total,t.passed,t.failed,t.skipped)' "$JSON_OUT" "$(dirname "${BASH_SOURCE[0]}")/lib/e2e-evidence.js")"
 

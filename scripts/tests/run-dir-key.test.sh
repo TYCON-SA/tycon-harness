@@ -141,6 +141,9 @@ story "$M4/docs/voz/epic-05/1-1-x.md" 1.1 "$UI"; story "$M4/docs/voz/epic-07/1-1
 QA4="$M4/docs/voz/qa"; mkdir -p "$QA4"
 printf 'Usuario por defecto: operador\n\n## AC 1\nAbrir la pantalla y mirar el resultado.\n' > "$QA4/epic-07__1.1-pasos.md"
 printf 'veredicto: OK\n' > "$QA4/epic-07__1.1-legibilidad.md"
+# Story 7.24: una story de pantalla también necesita la revisión de su pantalla, con la misma clave.
+printf 'veredicto: OK\nscreens: src/Pantalla.tsx\ncaptures: ninguna — sin E2E en esta prueba\n' > "$QA4/epic-07__1.1-legibilidad-ui.md"
+mkdir -p "$M4/src"; printf 'export const P = () => <p>Pantalla de prueba</p>;\n' > "$M4/src/Pantalla.tsx"
 ca="$(node "$SK/qa-guide.js" --story "$M4/docs/voz/epic-05/1-1-x.md" --check 2>&1)"; rca=$?
 cb="$(node "$SK/qa-guide.js" --story "$M4/docs/voz/epic-07/1-1-y.md" --check 2>&1)"; rcb=$?
 ga="$(node "$SK/qa-guide.js" --story "$M4/docs/voz/epic-05/1-1-x.md" --out "$TMP/m4/qa-a.html" 2>&1)"
@@ -227,6 +230,9 @@ files_to_modify:
   - src/Pantalla.tsx"
 mkdir -p "$M8/qa"; printf 'Usuario por defecto: operador\n\n## AC 1\nAbrir la pantalla y mirar el resultado.\n' > "$M8/qa/1.9-pasos.md"
 printf 'veredicto: OK\n' > "$M8/qa/1.9-legibilidad.md"
+printf 'veredicto: OK\nscreens: src/Pantalla.tsx\ncaptures: ninguna — sin E2E en esta prueba\n' > "$M8/qa/1.9-legibilidad-ui.md"
+# Story 7.24: una pantalla declarada que no está en el disco frena (no se puede revisar lo que no se ve).
+mkdir -p "$M8/src"; printf 'export const P = () => <p>Pantalla de prueba</p>;\n' > "$M8/src/Pantalla.tsx"
 node -e '
   const [sk, repo] = process.argv.slice(1);
   const w = require(sk + "/lib/runtime-waiver.js");
