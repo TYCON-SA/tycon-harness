@@ -990,7 +990,7 @@ test('T48 PrShards_BenchThatHangs_IsCutByItsOwnCapAndTheJobGoesOn — un banco c
 // pegado a un carácter que no es ASCII parte la variable (el control de scripts/ci/check-bash32-quoting.sh, que el
 // pre-commit pasa sólo sobre los .sh). Caso 2026-10-15: un «($CAP)» con comillas angulares en el paso del banco dejó roja la
 // prueba del banco colgado en toda Mac (`CAP` más un byte: unbound variable), y en Azure, con bash 5, no se veía.
-// ROJO PREVIO: con el «$CAP» de antes en azure-pipelines-pr.yml, este caso sale rojo nombrando la línea 671.
+// ROJO PREVIO: con el «$CAP» de antes en pipelines/azure-pipelines-pr.yml, este caso sale rojo nombrando la línea 671.
 test('T48 PrShards_PipelineBashSteps_NoVariableGluedToNonAscii — ningún pipeline pega $VAR a un carácter no ASCII', { skip: NO_BASH }, () => {
   const yamls = fs.readdirSync(path.join(ROOT, 'pipelines'), { recursive: true }).map(String).filter((f) => /\.ya?ml$/.test(f)).map((f) => path.join('pipelines', f));
   assert.ok(yamls.length > 0, 'no encontré pipelines que mirar: el caso no mide nada');
