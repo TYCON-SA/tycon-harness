@@ -25,11 +25,14 @@
  * en rojo), y acá se usa primero esa cola. El rescate por conversación queda para las corridas
  * anteriores, que no la tienen.
  *
- * DÓNDE VIVE, Y POR QUÉ NO VIAJA
- * ------------------------------
- * Todo va a `~/.claude/.tycon-pipeline/timing-history/`, fuera de todo repositorio. El hilo contiene
- * prompts, rutas del disco y código de cliente. La copia del volcado que `marker.js` deja en
- * `.advisors/pipeline-runs/` la ignora git (verificado: `.gitignore:14`).
+ * DÓNDE VIVE, Y ADÓNDE VIAJA
+ * --------------------------
+ * Todo va a `~/.claude/.tycon-pipeline/timing-history/`, fuera de todo repositorio: el hilo contiene
+ * prompts, rutas del disco y código de cliente, y no va a ningún repo. La copia del volcado que `marker.js`
+ * deja en `.advisors/pipeline-runs/` la ignora git (verificado: `.gitignore:14`). Desde ahí SÍ viaja al
+ * buzón de corridas de la organización: lo sube `upload-runs.js` (el volcado y el hilo desde la story 2.16;
+ * el cambio de git desde la 2.19), a un contenedor que leen sólo quienes tienen el rol de lectura, y se
+ * guarda entero y sin vencimiento (decisión del dueño, 2026-10-15, story 2.24).
  *
  * 🔴 CUATRO COSAS QUE SE MIDIERON ANTES DE ESCRIBIRLAS, no se supusieron:
  *
