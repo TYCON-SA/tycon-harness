@@ -480,6 +480,55 @@ La **revisión nocturna de dependencias** (2026-09-01). Los pipelines tienen tre
 
 **El pull request trabado** (2026-09-17): el resumen diario de Telegram termina con los PR de **toda la organización** que llevan más de 2 días abiertos, uno por línea (`#id proyecto/repo — autor — N días`), los 10 más nuevos y «(+N más)». Por qué: un pull request creado **con auto-completar** cuyo build falla porque `main` está roto queda esperando un verde imposible aunque el arreglo entre por otro lado (medido: **13 días**). El freno de auto-completar no alcanza: el hueco es que nadie se entera. Versión chica: **el criterio es la antigüedad** (no se diagnostica por qué está trabado: medido, `mergeStatus` dice `succeeded` en un PR trabado y el log del build se borra a los ~8 días), **sólo avisa al dev**, y quedan fuera los borradores y las ramas de las colas del arnés (`vigilante/*`, `dependencias/*`), que ya tienen su rubro. Lo corre el pipeline del vigilante en un paso propio antes de la entrega, y `daily-summary.js deliver --extra <archivo>` lo pega **al final del mismo mensaje**, acotado aparte (13 líneas, 590 caracteres) para no recortarle nada al resto y quedar bajo los 4096 de Telegram. 🔴 **No medido no es cero**: si Azure no contesta, la sección dice «no se pudo consultar (<motivo>)» y el paso queda naranja; si el paso ni llegó a escribirla, el resumen sale igual con esa línea. Paginado de a 100 hasta una página incompleta (el endpoint corta en 101 sin avisar). El `az` de mentira compartido (`scripts/tests/lib/fake-az.sh`) escribe sincrónico: si termina el proceso antes de vaciar la salida, corta toda respuesta de más de ~64 KB. Tres reglas más, cada una con su caso: los nombres de proyecto, repo y autor pasan sin `##` (Azure interpreta `##vso[` en cualquier línea de la consola del paso: un nombre así fijaba variables de la corrida), la sección se recorta por **líneas enteras** y las suma a «(+N más)» (el recorte por caracteres se comía PR con nombres largos sin avisar), y un PR sin fecha legible se **cuenta** en vez de desaparecer. Red: `scripts/tests/open-prs.test.sh` (15 chequeos) y T33–T33e en `daily-summary.test.sh` (12 chequeos).
 
+También deja, con `--json <archivo>`, lo que lee el sitio de la organización: por PR, número,
+proyecto, repo, días, la identidad única del autor y el enlace, **nunca el título ni el nombre para mostrar**. Lo corre el
+nocturno del tablero y lo guarda en `.dashboard/open-prs/` del repo de operaciones; en GitHub declara «no medido».
+
+## scripts/nightly/assigned/assigned-items.js
+
+**Lo que cada persona tiene asignado, de cada noche.** El sitio de la organización le muestra a
+cada dev sus pedidos abiertos sin consultar la plataforma en vivo (eso le pediría una credencial con lectura de toda la
+organización): este guion, en el nocturno del tablero, deja `.dashboard/assigned/assigned-<día>.json` con id, proyecto,
+tipo, estado, la identidad del asignado, días en el estado, enlace y si es un Bug de dependencias del arnés. Lista blanca:
+**nunca el título**. Una WIQL acotada a cada proyecto de `repos.json` y los campos en lotes de 200. 🔴 **No medido no es
+cero**: si una consulta falla, el archivo dice `no_medido` con el motivo y el guion sale 1; en GitHub declara «los pull
+requests y los pedidos de GitHub todavía no se leen». Red: `scripts/tests/assigned-items.test.js` (con `fake-az.sh`, que
+suma el lote de work items).
+
+## scripts/site/ — el sitio de la organización
+
+**Un solo sitio para toda la organización, donde cada uno ve lo suyo y quienes mantienen ven todo.**
+Un servidor de Node **sin dependencias**, en Docker (`scripts/site/Dockerfile`) o con
+Node solo, que no depende de Claude ni de Codex. Lo que lo sostiene:
+
+- **El inicio de sesión lo hace el propio sitio** (`oidc.js` y un archivo por proveedor en `auth-providers/`: el `oidc`
+  genérico, Entra ID, Google y GitHub), con código de autorización, PKCE, `state` y `nonce`. La firma del `id_token` la
+  verifica `crypto` (sólo RS256 y ES256), y cada chequeo tiene su prueba con un token armado mal. Cada proveedor se
+  limita a la organización a su manera: un inquilino, el dominio de Google Workspace o la organización de GitHub. 🔴
+  **La identidad nunca sale de una cabecera** de un proxy o de la plataforma.
+- **La sesión vive en una cookie firmada**, de 8 horas fijas, igual que el intento de inicio: el sitio puede reiniciarse
+  o tener varias réplicas. **El rol se recalcula en cada pedido** (`access.js`). Mantenedor es quien está en
+  `site.maintainers` de `operations.json` (o el primer mantenedor de la instalación mientras esa lista no existe). Persona
+  es quien tiene una máquina en `people` de `operations.json`. El resto queda sin rol y ve una página sin datos.
+- **Un solo camino para los datos**: la tabla de rutas de `server.js`. Una ruta que no declara quién puede verla hace que
+  el sitio no arranque, y cada ruta recibe el modelo **ya filtrado** para quien pide.
+- **Lee directo de las fuentes** (`sources.js`): el repo de operaciones, clonado con la credencial en una cabecera
+  (nunca en el disco), y el buzón de corridas con una SAS de **sólo lectura** o la identidad administrada. Lo de cada
+  nube vive sólo en `cloud/`. Las fotos se copian con **lista blanca**: ningún título, diagnóstico ni mensaje llega al
+  modelo. En pantalla se ve un estado de lista cerrada, y el motivo crudo va sólo al registro.
+- **El refresco** es cada 15 minutos y conserva el último bueno. Si `operations.json` deja de validar, vale el último
+  bueno 24 horas, con una banda para quienes mantienen; después **el sitio se frena para todos**. El plazo se guarda en
+  `SITE_DATA_DIR`, así un reinicio no lo vuelve a empezar. Hay tres sondas: `/livez` dice si el proceso vive, `/healthz`
+  si el sitio está sano (con el freno da 503) y `/readyz` si ya cargó las fuentes.
+- **Las pestañas** (`views.js`) son Inicio (qué decidir hoy, o lo del dev), Proyectos y Arnés. Las arma el servidor, sin
+  JavaScript de afuera y sin `<script>` en línea. «No medido» nunca es 0.
+
+Lo que NO hace: no escribe en ningún repo, no acciona nada y no baja conversaciones. Red: las suites `site-server`,
+`site-oidc`, `site-access`, `site-sources`, `site-views` y `site-leak` (la **prueba de fuga**, que recorre la tabla de
+rutas con marcadores de otra persona y texto libre sembrado). Todo corre sin red: el emisor OIDC
+(`tests/lib/fake-oidc.js`), GitHub (`fake-github-oauth.js`), el repo (`git-http-server.js`) y el buzón son locales. Las
+pestañas Corridas y Configuración, el quién es quién y el despliegue llegan aparte.
+
 ## guides/ado-cola-y-listados.md
 
 El porqué del bloque de Azure DevOps que se carga en cada sesión (`claude-md-blocks/ado-runs-list-lag.md`): sus **seis reglas** —un listado atrasado no prueba que el trigger no disparó, el listado no es la cola, cancelar la corrida no saca su pedido de trabajo, un vigilante avisa y no re-encola, una salida vacía puede ser un `az` que falló, y `succeeded` habla de staging— con sus comandos. **Poda del 2026-09-06**: el bloque pesaba 9.979 bytes (el 27 % del `CLAUDE.md`) y bajó a **4.134 sin perder una regla**; el `CLAUDE.md` completo pasó de 36.880 a **31.035**. Verificado frase por frase contra la versión anterior antes de pisarla. 🔴 Un bloque que nadie mide es también un bloque que nadie relee: la poda encontró una regla ya retirada que el bloque seguía repitiendo en cada sesión.

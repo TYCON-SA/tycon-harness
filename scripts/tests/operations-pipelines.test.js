@@ -437,3 +437,19 @@ test('T12 OpsData_TraeLaListaDeLaOrganizacion @story-2.25 @ac-9: la lista de pro
     assert.match(fs.readFileSync(path.join(w.s, 'scripts', 'ci', 'product-parity.json'), 'utf8'), new RegExp(want));
   }
 });
+
+// story 2.23 (AC 16, T32): lo que deja la noche para el sitio de la organización. Los dos productores corren con los datos
+// de operaciones ya traídos y antes de generar la página, y se guardan con la página (bajo .dashboard, que el sync trajo).
+// La foto de despliegues de la 2.22 todavía no está en el modelo: cuando entre, los productores van después de ella.
+test('T32 TeamDashboard_ProductoresDelSitio', () => {
+  const y = read('team-dashboard.yml');
+  const i = (re) => y.search(re);
+  const traer = i(/displayName: 'Traer de main del repo de operaciones/);
+  const prod = i(/displayName: 'Lo que deja la noche para el sitio/);
+  const generar = i(/displayName: 'Generar la página del tablero \(modo nocturno\)'/);
+  assert.ok(traer >= 0 && prod > traer && generar > prod, 'traer → productores → generar');
+  assert.match(y, /open-prs\.js --today "\$DAY" --org "\$\(System\.CollectionUri\)" --json "\.dashboard\/open-prs\/open-prs-\$DAY\.json"/);
+  assert.match(y, /assigned-items\.js --today "\$DAY" --org "\$\(System\.CollectionUri\)" --out \.dashboard\/assigned/);
+  assert.match(y, /-- artifacts\/tablero-del-arnes\.html \.dashboard\/open-prs \.dashboard\/assigned\n/, 'se guardan con la página');
+  assert.match(y, /push-nightly-data\.js sync -- \.dashboard /, 'el sync trae .dashboard: guardar sus carpetas no sale 2');
+});

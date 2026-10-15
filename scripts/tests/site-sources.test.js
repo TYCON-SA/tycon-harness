@@ -1,0 +1,440 @@
+'use strict';
+/*
+ * site-sources.test.js — las fuentes del sitio de la organización y su refresco (story 2.23, AC 13 a 15).
+ *
+ * T21 RepoDeOperaciones_CredencialNuncaEnElDisco    T25 Refresco_FallaYConservaElUltimoBueno
+ * T22 Buzon_SoloConCredencialDeLectura              T40 Configuracion_UltimoBuenoBandaYFreno
+ * T24 Despertar_CargandoYDespues                    T41 Configuracion_PlazoNoSeReiniciaAlDespertar
+ *
+ * Sin red: el repo de operaciones es un repo git por HTTP local que exige la cabecera (lib/git-http-server.js), el buzón
+ * un servidor local con la forma de Azure Blob, y la identidad administrada un servidor local que hace de la plataforma.
+ */
+const test = require('node:test');
+const assert = require('node:assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const http = require('http');
+const { spawnSync } = require('child_process');
+const { arrancarRepoHttp, repoConArchivos, hayHttpBackend } = require('./lib/git-http-server.js');
+const { arrancarEmisor } = require('./lib/fake-oidc.js');
+const H = require('./lib/site-harness.js');
+
+const sources = require(path.join(H.SITE, 'sources.js'));
+const { crearFuentes, estadoDeLaConfiguracion, correr } = sources;
+const { validarConfiguracion } = require(path.join(H.SITE, 'server.js'));
+const HOY = '2026-10-15';
+const T0 = Date.parse(`${HOY}T12:00:00Z`);
+const HORA = 3600000;
+const TOKEN = `tok-${Date.now().toString(36)}`;
+const CABECERA = `Basic ${Buffer.from(`x-access-token:${TOKEN}`).toString('base64')}`;
+// sin git http-backend se saltea con constancia; en CI (CI=true) NO se saltea: un «verde» con estas pruebas salteadas no
+// cubre el AC 13 a 15 (revisor de cobertura de la 2.23)
+const SIN_BACKEND = !hayHttpBackend() && !process.env.CI && 'git http-backend no está en esta máquina: el repo por HTTP no se puede armar';
+const tmp = (p) => fs.mkdtempSync(path.join(os.tmpdir(), p));
+/** Entrar con el reloj del sitio: el id_token lleva iat y exp de ESE reloj, no del real. */
+const entrar = async (h, emisor, email, t) => (await H.ingresar(h, emisor, { sub: `s-${email}`, email, email_verified: true, iat: Math.floor(t / 1000), exp: Math.floor(t / 1000) + 3600 })).sesion;
+
+/** Repo + buzón + fuentes, todo local. */
+async function montar({ archivos = {}, config, blobs = {}, mailbox = true, sasExtra = {}, credBuzon, ahora = () => T0, dataDir, firstMaintainer } = {}) {
+  const raiz = tmp('site-src-');
+  const cfgOps = config || { version: 1, owners: { default: 'lead@acme.example' }, site: { maintainers: ['lead@acme.example'], ...(mailbox ? { mailbox: { provider: 'azure-blob', account: 'acmeruns', container: 'runs' } } : {}) } };
+  const repo = repoConArchivos(raiz, 'ops.git', H.archivosDeOperaciones({ config: cfgOps, extra: archivos }), path.join(raiz, 'trabajo'));
+  const git = await arrancarRepoHttp({ raiz, cabecera: CABECERA });
+  const buzon = await H.arrancarBuzon({ blobs });
+  const env = H.envBase({ SITE_OPERATIONS_REPO: git.url('ops.git'), SITE_OPERATIONS_TOKEN: TOKEN, ...(credBuzon === undefined ? { SITE_MAILBOX_SAS: H.sas(sasExtra) } : credBuzon), ...(firstMaintainer ? { SITE_FIRST_MAINTAINER: firstMaintainer } : {}) });
+  const v = validarConfiguracion(env);
+  assert.ok(v.ok, JSON.stringify(v.problemas));
+  const llamadas = [];
+  const spawn = (cmd, args, opts) => { llamadas.push({ cmd, args, env: opts && opts.env }); return correr(cmd, args, opts); };
+  const registro = [];
+  const dir = dataDir || tmp('site-data-');
+  const fuentes = crearFuentes({ cfg: v.cfg, dataDir: dir, log: (l) => registro.push(l), ahora, spawn, urlBuzon: buzon.base });
+  return {
+    raiz, repo, git, buzon, env, cfg: v.cfg, fuentes, llamadas, registro, dataDir: dir,
+    cerrar: async () => { fuentes.detener(); await git.cerrar(); await buzon.cerrar(); fs.rmSync(raiz, { recursive: true, force: true }); },
+  };
+}
+
+test('T21 RepoDeOperaciones_CredencialNuncaEnElDisco', { skip: SIN_BACKEND }, async () => {
+  const m = await montar();
+  try {
+    await m.fuentes.refrescar();
+    assert.ok(m.git.pedidos.length > 0 && m.git.pedidos.every((p) => p.conCabecera), 'cada pedido al repo lleva la cabecera');
+    assert.strictEqual(m.fuentes.estado().cargado, true);
+    assert.strictEqual(m.fuentes.config().site.maintainers[0], 'lead@acme.example', 'leyó operations.json del clon');
+    const clon = path.join(m.dataDir, 'operaciones');
+    const gitConfig = fs.readFileSync(path.join(clon, '.git', 'config'), 'utf8');
+    const b64 = CABECERA.split(' ')[1];
+    assert.ok(!gitConfig.includes(TOKEN) && !gitConfig.includes(b64), 'ni el token ni la cabecera en .git/config');
+    assert.match(gitConfig, new RegExp(`url = ${m.git.url('ops.git').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\n`), 'la dirección, sin credencial');
+    for (const l of m.llamadas) {
+      assert.ok(!l.args.some((a) => a.includes(TOKEN) || a.includes(b64)), `ningún argumento con la credencial: git ${l.args.join(' ')}`);
+      assert.ok(Object.keys(l.env || {}).some((k) => /^GIT_CONFIG_(KEY|VALUE)_\d+$/.test(k)), 'la cabecera va por variables de git');
+    }
+    // un segundo refresco hace fetch sobre el mismo clon
+    m.repo.cambiar({ 'scripts/nightly/dashboard/declared.json': { declared: [] } });
+    await m.fuentes.refrescar();
+    assert.deepStrictEqual(m.fuentes.modelo().declarados.lista, [], 'el fetch trajo el cambio');
+    assert.ok(m.llamadas.some((l) => l.args.includes('fetch')));
+    assert.ok(!m.registro.join('\n').includes(TOKEN), 'tampoco en el registro');
+  } finally { await m.cerrar(); }
+});
+
+test('T22 Buzon_SoloConCredencialDeLectura', { skip: SIN_BACKEND }, async () => {
+  const blobs = { 'maq-a-11111111/s1.json': H.volcado('s1', `${HOY}T08:00:00Z`) };
+  const buenos = [['sp=rl', {}]];
+  const malos = [['sp=rlw', { sp: 'rlw' }], ['sp=c', { sp: 'c' }], ['sp=rlm', { sp: 'rlm' }], ['sp=rlx', { sp: 'rlx' }], ['sr=b', { sr: 'b' }],
+    ['de cuenta', { sr: null, ss: 'b', srt: 'co' }], ['sin si', { si: null }], ['vencida', { se: '2020-01-01T00:00:00Z' }], ['sp=r sin l', { sp: 'r' }],
+    ['sp repetido', { __crudo: 'sp=rlw' }]];
+  for (const [caso, extra] of [...buenos, ...malos]) {
+    const m = await montar({ blobs, sasExtra: extra });
+    try {
+      await m.fuentes.refrescar();
+      const c = m.fuentes.modelo().corridas;
+      if (caso === 'sp=rl') {
+        assert.strictEqual(c.estado, 'medido', caso);
+        assert.strictEqual(c.lista.length, 1);
+        assert.ok(m.buzon.pedidos.length > 0 && m.buzon.pedidos.every((p) => /[?&]sig=/.test(p.query) && p.auth === null), 'la SAS en la consulta y ningún Bearer');
+      } else {
+        assert.strictEqual(c.estado, 'no_medido', caso);
+        assert.strictEqual(c.codigo, 'credencial_rechazada', caso);
+        assert.strictEqual(m.buzon.pedidos.length, 0, `${caso}: no se usa`);
+      }
+    } finally { await m.cerrar(); }
+  }
+  // la identidad administrada: el token lo da un servidor local que hace de la plataforma
+  const plataforma = http.createServer((req, res) => {
+    const u = new URL(req.url, 'http://127.0.0.1');
+    const ok = req.headers['x-identity-header'] === 'cabecera-plataforma' && u.searchParams.get('resource') === 'https://storage.azure.com/';
+    res.writeHead(ok ? 200 : 400, { 'content-type': 'application/json' });
+    res.end(JSON.stringify(ok ? { access_token: 'tok-identidad', expires_on: String(Math.floor(Date.now() / 1000) + 3600) } : { error: 'mal' }));
+  });
+  await new Promise((r) => plataforma.listen(0, '127.0.0.1', r));
+  const antes = { e: process.env.IDENTITY_ENDPOINT, h: process.env.IDENTITY_HEADER };
+  process.env.IDENTITY_ENDPOINT = `http://127.0.0.1:${plataforma.address().port}/msi/token`;
+  process.env.IDENTITY_HEADER = 'cabecera-plataforma';
+  const m = await montar({ blobs, credBuzon: { SITE_MAILBOX_IDENTITY: 'managed' } });
+  try {
+    await m.fuentes.refrescar();
+    assert.strictEqual(m.fuentes.modelo().corridas.estado, 'medido', 'con la identidad administrada');
+    assert.ok(m.buzon.pedidos.every((p) => p.auth === 'Bearer tok-identidad' && !/sig=/.test(p.query)));
+  } finally {
+    await m.cerrar();
+    plataforma.close();
+    for (const [k, v] of [['IDENTITY_ENDPOINT', antes.e], ['IDENTITY_HEADER', antes.h]]) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+  }
+});
+
+test('T24 Despertar_CargandoYDespues', { skip: SIN_BACKEND }, async () => {
+  const emisor = await arrancarEmisor();
+  const m = await montar({ blobs: { 'maq-a-11111111/s1.json': H.volcado('s1', `${HOY}T08:00:00Z`) } });
+  let h = null;
+  try {
+    h = await H.arrancarSitio({ env: { ...m.env, SITE_OIDC_ISSUER: emisor.issuer }, fuentes: m.fuentes, ahora: () => T0 });
+    const s = await entrar(h, emisor, 'lead@acme.example', T0);
+    assert.ok(s, 'entró');
+    const antes = await h.pedir('/', { cookie: s });
+    assert.strictEqual(antes.status, 503, 'antes de la primera lectura');
+    assert.strictEqual(antes.headers['retry-after'], '5');
+    assert.match(antes.texto, /cargando las fuentes/);
+    assert.ok(!/Dependencias nuevas/.test(antes.texto), 'nunca una página con ceros');
+    await m.fuentes.refrescar();
+    const despues = await h.pedir('/', { cookie: s });
+    assert.strictEqual(despues.status, 200);
+    assert.match(despues.texto, /Dependencias nuevas/);
+  } finally { if (h) await h.cerrar(); await m.cerrar(); await emisor.cerrar(); }
+  // primera lectura con el buzón caído y una foto que falta: filas «no medido» con su estado, nunca 0
+  const m2 = await montar({ archivos: { [`.dashboard/vigilante/vigilante-${HOY}.json`]: null } });
+  try {
+    m2.buzon.st.modo = 500;
+    await m2.fuentes.refrescar();
+    const mod = m2.fuentes.modelo();
+    assert.strictEqual(m2.fuentes.estado().cargado, true);
+    assert.strictEqual(mod.corridas.estado, 'no_medido');
+    assert.ok(['sin_red', 'parcial'].includes(mod.corridas.codigo), mod.corridas.codigo);
+    assert.strictEqual(mod.vigilante.estado, 'no_medido');
+    assert.strictEqual(mod.vigilante.codigo, 'sin_foto');
+    assert.strictEqual(mod.dependencias.estado, 'medido');
+    // lo que va a la pantalla es un estado de lista cerrada: nunca un motivo crudo con rutas o blobs
+    const texto = JSON.stringify(mod);
+    assert.ok(!texto.includes(m2.dataDir) && !texto.includes(m2.buzon.base) && !texto.includes(m2.raiz), 'sin rutas ni direcciones en el modelo');
+    assert.ok(m2.registro.some((l) => /buz/.test(l)), 'el motivo crudo va al registro');
+  } finally { await m2.cerrar(); }
+});
+
+test('T25 Refresco_FallaYConservaElUltimoBueno', { skip: SIN_BACKEND }, async () => {
+  let t = T0;
+  const m = await montar({ ahora: () => t, archivos: { [`.dashboard/vigilante/vigilante-${HOY}.json`]: null, '.dashboard/vigilante/vigilante-2026-10-12.json': { fecha: '2026-10-12', productos: {}, resumen: { rubros: { pendientes: { valor: [] }, aceptadas_sin_story: { valor: [] } } } } } });
+  try {
+    await m.fuentes.refrescar();
+    const primero = JSON.parse(JSON.stringify(m.fuentes.modelo()));
+    assert.strictEqual(primero.vigilante.estado, 'no_medido', 'del 12 con max_age_days 2: vieja');
+    assert.strictEqual(primero.vigilante.codigo, 'fuente_vieja');
+    assert.strictEqual(primero.vigilante.fecha, '2026-10-12', 'con la fecha');
+    assert.strictEqual(m.fuentes.estado().bandaRefresco, null);
+    t += HORA;
+    m.git.caido = true;
+    await m.fuentes.refrescar();
+    assert.deepStrictEqual(m.fuentes.modelo(), primero, 'el modelo anterior entero, no vacío');
+    const b = m.fuentes.estado().bandaRefresco;
+    assert.ok(b, 'la banda');
+    assert.strictEqual(b.desde, t, 'con la hora');
+    assert.ok(['sin_red', 'credencial_rechazada', 'parcial'].includes(b.estado), b.estado);
+    m.git.caido = false;
+    t += HORA;
+    await m.fuentes.refrescar();
+    assert.strictEqual(m.fuentes.estado().bandaRefresco, null, 'el refresco bueno saca la banda');
+  } finally { await m.cerrar(); }
+});
+
+test('T40 Configuracion_UltimoBuenoBandaYFreno', { skip: SIN_BACKEND }, async () => {
+  // la regla, pura
+  assert.deepStrictEqual(estadoDeLaConfiguracion({ hayUltimoBueno: true, fallaDesde: null, ahora: T0 }).estado, 'vigente');
+  assert.strictEqual(estadoDeLaConfiguracion({ hayUltimoBueno: true, fallaDesde: T0, ahora: T0 + 23 * HORA + 59 * 60000 }).estado, 'ultimo_bueno');
+  assert.strictEqual(estadoDeLaConfiguracion({ hayUltimoBueno: true, fallaDesde: T0, ahora: T0 + 24 * HORA + 60000 }).estado, 'frenado');
+  assert.strictEqual(estadoDeLaConfiguracion({ hayUltimoBueno: false, fallaDesde: T0, ahora: T0 }).estado, 'frenado');
+
+  let t = T0 - HORA;
+  const emisor = await arrancarEmisor();
+  const m = await montar({ ahora: () => t });
+  let h = null;
+  try {
+    await m.fuentes.refrescar();
+    h = await H.arrancarSitio({ env: { ...m.env, SITE_OIDC_ISSUER: emisor.issuer }, fuentes: m.fuentes, ahora: () => t });
+    let s = await entrar(h, emisor, 'lead@acme.example', t);
+    // a las 0 h, operations.json deja de validar (una clave desconocida)
+    t = T0;
+    s = await entrar(h, emisor, 'lead@acme.example', t);
+    m.repo.cambiar({ 'operations.json': { version: 1, owners: { default: 'lead@acme.example' }, site: { maintainers: ['lead@acme.example'] }, clave_nueva: 1 } });
+    await m.fuentes.refrescar();
+    let e = m.fuentes.estado();
+    assert.strictEqual(e.frenado, null);
+    assert.strictEqual(e.bandaConfig.desde, T0);
+    assert.match(e.bandaConfig.motivo, /clave_nueva/, 'con la ruta de cada problema');
+    assert.strictEqual(m.fuentes.config().site.maintainers[0], 'lead@acme.example', 'vale el último bueno');
+    const ini = await h.pedir('/', { cookie: s });
+    assert.strictEqual(ini.status, 200);
+    assert.match(ini.texto, /la configuración de la organización no se pudo releer desde/, 'quien mantiene ve la banda');
+    // a las 23 h 59 min, igual
+    t = T0 + 23 * HORA + 59 * 60000;
+    await m.fuentes.refrescar();
+    assert.strictEqual(m.fuentes.estado().frenado, null);
+    // a las 24 h 1 min, frenado para todos: cada ruta de la tabla trae sólo la página del freno
+    t = T0 + 24 * HORA + 60000;
+    s = await entrar(h, emisor, 'lead@acme.example', t);
+    await m.fuentes.refrescar();
+    e = m.fuentes.estado();
+    assert.ok(e.frenado, 'frenado');
+    const { RUTAS } = require(path.join(H.SITE, 'server.js'));
+    for (const r of RUTAS) {
+      const res = await h.pedir(r.path, { cookie: s });
+      assert.strictEqual(res.status, 503, r.path);
+      assert.ok(!/clave_nueva|operations\.json|Dependencias nuevas/.test(res.texto), `${r.path}: sin rutas ni nombres del archivo, sin datos`);
+    }
+    assert.match((await h.pedir('/', { cookie: s })).texto, /el sitio está frenado desde .*: la configuración de la organización no valida; se destraba cuando un refresco la lee bien/);
+    const hz = await h.pedir('/healthz');
+    assert.strictEqual(hz.status, 503);
+    assert.strictEqual(hz.json.ok, false);
+    assert.match(hz.json.motivo, /^la configuración de la organización no valida desde \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC$/);
+    assert.deepStrictEqual([(await h.pedir('/livez')).status, (await h.pedir('/readyz')).status], [200, 200]);
+    // el primer refresco que lo lee bien destraba
+    m.repo.cambiar({ 'operations.json': { version: 1, owners: { default: 'lead@acme.example' }, site: { maintainers: ['lead@acme.example'], mailbox: { provider: 'azure-blob', account: 'acmeruns', container: 'runs' } } } });
+    t += HORA;
+    await m.fuentes.refrescar();
+    e = m.fuentes.estado();
+    assert.deepStrictEqual([e.frenado, e.bandaConfig], [null, null]);
+    assert.strictEqual((await h.pedir('/', { cookie: s })).status, 200);
+    // otra fuente caída: banda «no se pudo actualizar» y sin freno
+    m.buzon.st.modo = 500;
+    t += HORA;
+    await m.fuentes.refrescar();
+    e = m.fuentes.estado();
+    assert.strictEqual(e.frenado, null);
+    assert.ok(e.bandaRefresco, 'banda de la otra fuente');
+  } finally { if (h) await h.cerrar(); await m.cerrar(); await emisor.cerrar(); }
+  // una persona no ve la banda de la configuración (con fuentes fijas: el lector todavía no admite `people`, 2.28)
+  const emisor2 = await arrancarEmisor();
+  const cfgPersona = { version: 1, owners: { default: 'lead@acme.example' }, site: { maintainers: ['lead@acme.example'] }, people: { machines: { 'maq-a-11111111': { person: 'dev.a@acme.example', reported_sha256: null } } } };
+  const h2 = await H.arrancarSitio({ env: H.envBase({ SITE_OIDC_ISSUER: emisor2.issuer }), fuentes: H.fuentesFijas({ config: cfgPersona, bandaConfig: { desde: T0, motivo: 'clave_nueva: clave desconocida' } }) });
+  try {
+    const sp = await entrar(h2, emisor2, 'dev.a@acme.example', Date.now());
+    const r = await h2.pedir('/', { cookie: sp });
+    assert.strictEqual(r.status, 200);
+    assert.ok(!/no se pudo releer|clave_nueva/.test(r.texto), 'la persona sigue viendo lo suyo, sin la banda');
+  } finally { await h2.cerrar(); await emisor2.cerrar(); }
+});
+
+test('T41 Configuracion_PlazoNoSeReiniciaAlDespertar', { skip: SIN_BACKEND }, async () => {
+  let t = T0 - HORA;
+  const dataDir = tmp('site-data-t41-');
+  const m = await montar({ ahora: () => t, dataDir });
+  try {
+    await m.fuentes.refrescar();
+    t = T0;
+    m.repo.cambiar({ 'operations.json': '{ roto' });
+    await m.fuentes.refrescar();
+    assert.strictEqual(m.fuentes.estado().bandaConfig.desde, T0);
+    m.fuentes.detener();
+    // el proceso se reinicia a las 23 h con el mismo SITE_DATA_DIR y el archivo todavía roto
+    t = T0 + 23 * HORA;
+    const otra = crearFuentes({ cfg: m.cfg, dataDir, log: () => {}, ahora: () => t, urlBuzon: m.buzon.base });
+    await otra.refrescar();
+    assert.strictEqual(otra.estado().frenado, null, 'sigue con el último bueno');
+    assert.strictEqual(otra.estado().bandaConfig.desde, T0, 'el plazo cuenta desde la primera falla, no desde el reinicio');
+    assert.strictEqual(otra.config().site.maintainers[0], 'lead@acme.example');
+    t = T0 + 24 * HORA + 60000;
+    await otra.refrescar();
+    assert.ok(otra.estado().frenado, 'se frena a las 24 h (no a las 47)');
+    otra.detener();
+    assert.ok(!fs.readdirSync(dataDir).some((f) => f.includes('.tmp')), 'escrito de forma atómica: sin temporales');
+  } finally { await m.cerrar(); fs.rmSync(dataDir, { recursive: true, force: true }); }
+  // arranque con el archivo roto y SITE_DATA_DIR vacío: frenado desde el arranque, también para el primer mantenedor
+  const emisor = await arrancarEmisor();
+  const m2 = await montar({ config: { version: 1 }, firstMaintainer: 'first@acme.example' });
+  let h = null;
+  try {
+    await m2.fuentes.refrescar();
+    assert.ok(m2.fuentes.estado().frenado, 'sin último bueno: freno inmediato');
+    h = await H.arrancarSitio({ env: { ...m2.env, SITE_OIDC_ISSUER: emisor.issuer }, fuentes: m2.fuentes });
+    const s = await entrar(h, emisor, 'first@acme.example', Date.now());
+    const r = await h.pedir('/', { cookie: s });
+    assert.strictEqual(r.status, 503);
+    assert.match(r.texto, /el sitio está frenado/);
+  } finally { if (h) await h.cerrar(); await m2.cerrar(); await emisor.cerrar(); }
+});
+
+// ── Revisores y pase adversarial de la story 2.23, vuelta 1 ─────────────────────────────────────────────────────────
+const g = (cwd, ...a) => { const r = spawnSync('git', a, { cwd, encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_NAME: 'p', GIT_AUTHOR_EMAIL: 'p@acme.example', GIT_COMMITTER_NAME: 'p', GIT_COMMITTER_EMAIL: 'p@acme.example' } }); if (r.status !== 0) throw new Error(r.stderr); };
+
+test('2.23-R1 Buzon_IncompletoEsParcial', async () => {
+  // bajar() devuelve 'bajado' también cuando se acabó el presupuesto: `completo` es el criterio, no el estado
+  const nube = { PROVEEDORES_DE_BUZON: ['azure-blob'], bajarBuzon: async () => ({ codigo: 0, res: { estado: 'bajado', completo: false, sin_tiempo: 4, bajados: 2 } }) };
+  const dataDir = tmp('site-r1-');
+  const v = validarConfiguracion(H.envBase({ SITE_MAILBOX_SAS: H.sas() }));
+  const raiz = tmp('site-r1-repo-');
+  try {
+    repoConArchivos(raiz, 'ops.git', H.archivosDeOperaciones({ config: { version: 1, owners: { default: 'lead@acme.example' }, site: { maintainers: ['lead@acme.example'], mailbox: { provider: 'azure-blob', account: 'acmeruns', container: 'runs' } } } }), path.join(raiz, 'trabajo'));
+    // sin red: el «repo» es el bare local por ruta (el clon lo hace git sin HTTP)
+    const f = crearFuentes({ cfg: { ...v.cfg, operationsRepo: path.join(raiz, 'ops.git') }, dataDir, log: () => {}, nubes: [nube] });
+    await f.refrescar();
+    assert.strictEqual(f.modelo().corridas.estado, 'no_medido');
+    assert.strictEqual(f.modelo().corridas.codigo, 'parcial');
+    assert.strictEqual(f.estado().bandaRefresco.estado, 'parcial', 'con banda');
+  } finally { fs.rmSync(dataDir, { recursive: true, force: true }); fs.rmSync(raiz, { recursive: true, force: true }); }
+});
+
+test('2.23-R2 Repo_EstadosDeGitYRemotoCambiado', { skip: SIN_BACKEND }, async () => {
+  const { estadoDeGit } = require(path.join(H.SITE, 'sources.js'));
+  assert.strictEqual(estadoDeGit("remote: TF401019: The Git repository with name or identifier ops does not exist or you do not have permissions\nfatal: repository 'x' not found"), 'sin_permiso');
+  assert.strictEqual(estadoDeGit('fatal: Authentication failed for x'), 'credencial_rechazada');
+  assert.strictEqual(estadoDeGit("fatal: unable to access 'x': Could not resolve host: git.acme.example"), 'sin_red');
+  // con el mismo SITE_DATA_DIR y otro SITE_OPERATIONS_REPO, se lee el repo nuevo (no el remoto guardado en el clon)
+  const m = await montar();
+  try {
+    await m.fuentes.refrescar();
+    const otro = repoConArchivos(m.raiz, 'otro.git', H.archivosDeOperaciones({ extra: { 'scripts/nightly/dashboard/declared.json': { declared: [{ id: 'del-otro', review_before: '2026-12-01' }] } } }), path.join(m.raiz, 'trabajo-otro'));
+    void otro;
+    const f2 = crearFuentes({ cfg: { ...m.cfg, operationsRepo: m.git.url('otro.git') }, dataDir: m.dataDir, log: () => {}, urlBuzon: m.buzon.base });
+    await f2.refrescar();
+    assert.deepStrictEqual(f2.modelo().declarados.lista.map((d) => d.id), ['del-otro']);
+    f2.detener();
+  } finally { await m.cerrar(); }
+});
+
+test('2.23-R3 Clon_SinEnlacesNiRutasDeAfuera', { skip: SIN_BACKEND }, async () => {
+  const afuera = path.join(tmp('site-r3-afuera-'), 'secreto.txt');
+  fs.writeFileSync(afuera, 'SECRETO-DE-AFUERA');
+  const m = await montar({ archivos: { 'scripts/nightly/dashboard/sources.json': { sources: [{ id: 'escape', pattern: '*.txt', dir: '../../..', max_age_days: 2 }, { id: 'vigilante', pattern: 'vigilante-*.json', dir: 'vigilante', max_age_days: 2 }], thresholds: {} } } });
+  try {
+    // el tablero del repo pasa a ser un enlace a un archivo de afuera, y la carpeta del vigilante, un enlace a una de afuera
+    const t = path.join(m.repo.trabajo, 'artifacts', 'tablero-del-arnes.html');
+    fs.rmSync(t); fs.symlinkSync(afuera, t);
+    const dirAfuera = path.join(path.dirname(afuera), 'vig');
+    fs.mkdirSync(dirAfuera);
+    fs.writeFileSync(path.join(dirAfuera, `vigilante-${HOY}.json`), JSON.stringify({ fecha: HOY, productos: { 'SECRETO-DE-AFUERA': {} }, resumen: { rubros: {} } }));
+    const vig = path.join(m.repo.trabajo, '.dashboard', 'vigilante');
+    fs.rmSync(vig, { recursive: true, force: true }); fs.symlinkSync(dirAfuera, vig);
+    g(m.repo.trabajo, 'add', '-A'); g(m.repo.trabajo, 'commit', '-q', '-m', 'enlace'); g(m.repo.trabajo, 'push', '-q', 'origin', 'main');
+    await m.fuentes.refrescar();
+    const texto = JSON.stringify(m.fuentes.modelo());
+    assert.ok(!texto.includes('SECRETO-DE-AFUERA'), 'un enlace del repo no lleva a un archivo de afuera');
+    const lista = m.fuentes.modelo().sources.lista;
+    assert.ok(!lista.some((s) => s.id === 'escape'), 'un `dir` con .. ni se lee: queda fuera de la lista de fuentes');
+    assert.ok(lista.some((s) => s.id === 'vigilante'), 'la fuente bien declarada sí está en la lista');
+    assert.strictEqual(m.fuentes.modelo().vigilante.estado, 'no_medido', 'una carpeta que es un enlace a otra de afuera no se lee');
+  } finally { await m.cerrar(); fs.rmSync(path.dirname(afuera), { recursive: true, force: true }); }
+});
+
+test('2.23-R4 Repo_ConIdentidadAdministradaYErroresDeLaPlataforma', { skip: SIN_BACKEND }, async () => {
+  // AC 1 y 15: el repo de operaciones con SITE_OPERATIONS_IDENTITY=managed (el token lo da la plataforma, va como Bearer)
+  const raiz = tmp('site-r4-');
+  repoConArchivos(raiz, 'ops.git', H.archivosDeOperaciones(), path.join(raiz, 'trabajo'));
+  const git = await arrancarRepoHttp({ raiz, cabecera: 'Bearer tok-del-repo' });
+  let modo = 200;
+  const plataforma = http.createServer((req, res) => { res.writeHead(modo, { 'content-type': 'application/json' }); res.end(JSON.stringify(modo === 200 ? { access_token: 'tok-del-repo' } : { error: 'no' })); });
+  await new Promise((r) => plataforma.listen(0, '127.0.0.1', r));
+  const antes = { e: process.env.IDENTITY_ENDPOINT, h: process.env.IDENTITY_HEADER };
+  process.env.IDENTITY_ENDPOINT = `http://127.0.0.1:${plataforma.address().port}/msi/token`;
+  process.env.IDENTITY_HEADER = 'h';
+  const dataDir = tmp('site-r4-data-');
+  try {
+    const v = validarConfiguracion(H.envBase({ SITE_OPERATIONS_REPO: git.url('ops.git'), SITE_OPERATIONS_TOKEN: undefined, SITE_OPERATIONS_IDENTITY: 'managed' }));
+    assert.ok(v.ok, JSON.stringify(v.problemas));
+    const f = crearFuentes({ cfg: v.cfg, dataDir, log: () => {} });
+    await f.refrescar();
+    assert.ok(git.pedidos.length && git.pedidos.every((p) => p.conCabecera), 'el repo se leyó con el token de la identidad');
+    assert.strictEqual(f.estado().frenado, null);
+    // la plataforma rechaza: credencial_rechazada; sin la plataforma: sin_configurar
+    const az = require(path.join(H.SITE, 'cloud', 'azure.js'));
+    modo = 403;
+    assert.strictEqual((await az.tokenDeIdentidad('x')).estado, 'credencial_rechazada');
+    modo = 500;
+    assert.strictEqual((await az.tokenDeIdentidad('x')).estado, 'sin_permiso');
+    assert.strictEqual((await az.tokenDeIdentidad('x', {})).estado, 'sin_configurar');
+    f.detener();
+  } finally {
+    await git.cerrar(); plataforma.close(); fs.rmSync(raiz, { recursive: true, force: true }); fs.rmSync(dataDir, { recursive: true, force: true });
+    for (const [k, val] of [['IDENTITY_ENDPOINT', antes.e], ['IDENTITY_HEADER', antes.h]]) { if (val === undefined) delete process.env[k]; else process.env[k] = val; }
+  }
+});
+
+test('2.23-R5 Fotos_IlegiblesYAusentesNoSonCero', () => {
+  const raiz = tmp('site-r5-');
+  const clon = path.join(raiz, 'operaciones');
+  const escribir = (rel, c) => { fs.mkdirSync(path.dirname(path.join(clon, rel)), { recursive: true }); fs.writeFileSync(path.join(clon, rel), typeof c === 'string' ? c : JSON.stringify(c)); };
+  try {
+    for (const [rel, c] of Object.entries(H.archivosDeOperaciones())) escribir(rel, c);
+    escribir('scripts/nightly/dashboard/declared.json', '{ roto');
+    escribir('.dashboard/proyectos/Roto__Roto.json', '{ roto');
+    escribir('.dashboard/proyectos/Raro\nnombre__X.json', '{ roto');   // git admite saltos de línea en un nombre de archivo
+    // fotos con forma inesperada: sin `results`, sin `failures` — nunca «0 rojas»
+    escribir(`.dashboard/controls-bench/banco-${HOY}.json`, { ts: `${HOY}T05:00:00Z`, ran: 10 });
+    escribir(`.dashboard/controls-bench/suites-${HOY}.json`, { ts: `${HOY}T05:00:00Z`, corridas: 10 });
+    escribir(`.dashboard/paridad/paridad-${HOY}.json`, '{ rota');
+    // una foto de la noche que dice «medido» y no trae su lista no es «0 PR» ni «la noche no la midió»: está mal formada
+    escribir(`.dashboard/open-prs/open-prs-${HOY}.json`, { estado: 'medido' });
+    escribir(`.dashboard/assigned/assigned-${HOY}.json`, { estado: 'medido' });
+    fs.rmSync(path.join(clon, 'scripts', 'nightly', 'dependencies', 'repos.json'));
+    const registro = [];
+    const m = sources.construirDesdeClon(clon, { ahora: T0, log: (l) => registro.push(l) });
+    assert.strictEqual(m.declarados.codigo, 'ilegible', 'declared.json roto no es «sin foto»');
+    assert.strictEqual(m.proyectos.codigo, 'parcial', 'una foto por proyecto ilegible deja la fuente parcial');
+    assert.strictEqual(m.productosFuente.estado, 'no_medido', 'sin repos.json, los productos no son «ninguno»');
+    assert.ok(registro.some((l) => /Roto__Roto/.test(l)), 'la foto ilegible se nombra en el registro');
+    assert.deepStrictEqual([m.banco.estado, m.banco.codigo], ['no_medido', 'ilegible'], 'banco sin results: ilegible, no 0 rojos');
+    assert.deepStrictEqual([m.suites.estado, m.suites.codigo], ['no_medido', 'ilegible'], 'suites sin failures: ilegible, no 0 rojas');
+    assert.strictEqual(m.paridad.codigo, 'ilegible', 'una paridad rota no es «la noche no la dejó»');
+    assert.deepStrictEqual([m.prs.codigo, m.pedidos.codigo], ['ilegible', 'ilegible'], 'medido sin la lista: ilegible');
+    assert.ok(registro.some((l) => /PR del .* dice medido y no trae la lista/.test(l)) && registro.some((l) => /pedidos asignados del .* dice medido/.test(l)), 'y se registra');
+    // el registro sale sin saltos de línea aunque el nombre de un archivo los traiga (revisión de seguridad, vuelta 2)
+    assert.ok(registro.length > 0 && registro.every((l) => !/[\n\r]/.test(l)), 'ninguna línea del registro con saltos');
+    assert.ok(registro.some((l) => /Raro nombre__X/.test(l)), 'el nombre con salto se registra en una sola línea');
+    // una foto que no se puede leer se nombra en el registro, también la de las fuentes sin registro propio (vuelta 3)
+    escribir(`.dashboard/vigilante/vigilante-${HOY}.json`, '{ roto');
+    const r2 = [];
+    const m2 = sources.construirDesdeClon(clon, { ahora: T0, log: (l) => r2.push(l) });
+    assert.strictEqual(m2.vigilante.codigo, 'ilegible');
+    assert.ok(r2.some((l) => /vigilante/.test(l)), 'el vigilante ilegible queda en el registro');
+  } finally { fs.rmSync(raiz, { recursive: true, force: true }); }
+});

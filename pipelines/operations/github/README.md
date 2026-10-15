@@ -162,4 +162,7 @@ que esperaba.
 - Los avisos de dependencias son **issues en el repo del producto**, no Bugs de Azure Boards, y **no hay pull request por
   hallazgo** en el repo de operaciones: el issue es el lugar de decidir. Ninguna ficha pasa a `promoted/`.
 - No hay buzón de corridas en el tablero: las fichas del equipo salen «no leído».
+- Lo que deja la noche para el sitio de la organización (story 2.23): `team-dashboard` escribe igual
+  `.dashboard/open-prs/open-prs-<día>.json` y `.dashboard/assigned/assigned-<día>.json`, los dos con `estado: no_medido`
+  y «los pull requests y los pedidos de GitHub todavía no se leen». El sitio lo muestra así, nunca como cero.
 - Qué arnés corre lo dice `team-repos.json`, no una línea del YAML.
