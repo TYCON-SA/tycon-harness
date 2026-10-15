@@ -172,6 +172,7 @@ function consolaNueva(opts = {}) {
   };
   let detalle = '';
   for (const exe of [delSistema('WindowsPowerShell', 'v1.0', 'powershell.exe')]) {
+    try { fs.unlinkSync(archivo); } catch { /* lo normal: no existe */ } // uno dejado de antemano no cuenta
     const r = run(exe, ['-NoProfile', '-NonInteractive', '-Command', ps]);
     let escrito = null;
     try { escrito = fs.readFileSync(archivo, 'utf8'); } catch { /* PowerShell no llegó a escribirlo */ }
