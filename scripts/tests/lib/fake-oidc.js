@@ -16,6 +16,9 @@
  *   · `apagar()` / `prender()` → el emisor contesta 503 a todo (el arranque sin emisor).
  *
  * Los tokens se arman al correr: ninguno vive escrito en un archivo.
+ *
+ * stable-data: el emisor firma `iat` y `exp` con la hora real, como uno de verdad; quien quiere otra hora la pasa en las
+ * claims. Lo que las pruebas comparan son plazos contra el reloj del sitio, nunca una fecha fija.
  */
 const http = require('http');
 const crypto = require('crypto');

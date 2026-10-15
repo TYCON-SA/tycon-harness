@@ -11,6 +11,9 @@
  * T11 Callback_StateYNonceDeUnSoloUso                  T35 Jwks_ClaveNuevaSeVuelveABajar
  * T12 Microsoft_EmisorDeCualquierOrganizacion_NoArranca T36 Google_SoloElDominioDeLaOrganizacion
  * T37 GitHub_CorreoVerificadoYMiembroDeLaOrganizacion  T38 Oidc_Generico_DominioPermitido
+ *
+ * stable-data: cada prueba arranca su reloj controlado (`t`) desde la hora real, porque el emisor de mentira firma con
+ * ella; lo que se prueba son plazos (±5 minutos, 10 minutos, 8 horas) sobre ese reloj, nunca una fecha fija.
  */
 const test = require('node:test');
 const assert = require('node:assert');

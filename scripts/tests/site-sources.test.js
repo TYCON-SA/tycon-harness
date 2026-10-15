@@ -26,7 +26,9 @@ const { validarConfiguracion } = require(path.join(H.SITE, 'server.js'));
 const HOY = '2026-10-15';
 const T0 = Date.parse(`${HOY}T12:00:00Z`);
 const HORA = 3600000;
-const TOKEN = `tok-${Date.now().toString(36)}`;
+// stable-data: el emisor de mentira firma con la hora real, como uno de verdad, y el sitio de estas pruebas corre con su
+// reloj de verdad; lo que se compara son plazos (la sesión, el token de la identidad), nunca una fecha fija.
+const TOKEN = `tok-${require('crypto').randomBytes(6).toString('hex')}`;
 const CABECERA = `Basic ${Buffer.from(`x-access-token:${TOKEN}`).toString('base64')}`;
 // sin git http-backend se saltea con constancia; en CI (CI=true) NO se saltea: un «verde» con estas pruebas salteadas no
 // cubre el AC 13 a 15 (revisor de cobertura de la 2.23)
@@ -305,7 +307,7 @@ test('T41 Configuracion_PlazoNoSeReiniciaAlDespertar', { skip: SIN_BACKEND }, as
 });
 
 // ── Revisores y pase adversarial de la story 2.23, vuelta 1 ─────────────────────────────────────────────────────────
-const g = (cwd, ...a) => { const r = spawnSync('git', a, { cwd, encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_NAME: 'p', GIT_AUTHOR_EMAIL: 'p@acme.example', GIT_COMMITTER_NAME: 'p', GIT_COMMITTER_EMAIL: 'p@acme.example' } }); if (r.status !== 0) throw new Error(r.stderr); };
+const g = (cwd, ...a) => { const r = spawnSync('git', ['-c', 'maintenance.auto=false', '-c', 'gc.auto=0', ...a], { cwd, encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_NAME: 'p', GIT_AUTHOR_EMAIL: 'p@acme.example', GIT_COMMITTER_NAME: 'p', GIT_COMMITTER_EMAIL: 'p@acme.example', GIT_AUTHOR_DATE: '2026-10-15T12:00:00Z', GIT_COMMITTER_DATE: '2026-10-15T12:00:00Z' } }); if (r.status !== 0) throw new Error(r.stderr); };
 
 test('2.23-R1 Buzon_IncompletoEsParcial', async () => {
   // bajar() devuelve 'bajado' también cuando se acabó el presupuesto: `completo` es el criterio, no el estado

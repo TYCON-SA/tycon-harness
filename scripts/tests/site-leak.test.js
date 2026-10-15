@@ -139,7 +139,7 @@ test('T32 Fuga_PersonaA_NoVeNadaDeB', async () => {
 
 test('T32b Fuga_MotivosCrudosNoLleganALaPantalla', { skip: !hayHttpBackend() && !process.env.CI && 'git http-backend no está en esta máquina (en CI no se saltea)' }, async () => {
   const raiz = fs.mkdtempSync(path.join(os.tmpdir(), 'site-fuga-b-'));
-  const token = `tok-${Date.now().toString(36)}`;
+  const token = `tok-${require('crypto').randomBytes(6).toString('hex')}`;
   const config = { version: 1, owners: { default: LEAD }, site: { maintainers: [LEAD], mailbox: { provider: 'azure-blob', account: 'acmeruns', container: 'runs' } } };
   repoConArchivos(raiz, 'ops.git', H.archivosDeOperaciones({ config, extra: { [`.dashboard/vigilante/vigilante-${HOY}.json`]: '{ roto' } }), path.join(raiz, 'trabajo'));
   const git = await arrancarRepoHttp({ raiz, cabecera: `Basic ${Buffer.from(`x-access-token:${token}`).toString('base64')}` });

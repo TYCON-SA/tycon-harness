@@ -38,6 +38,7 @@ async function procesoVivo(env) {
   let salida = '';
   hijo.stdout.on('data', (c) => { salida += c; });
   hijo.stderr.on('data', (c) => { salida += c; });
+  // stable-data: el reloj sólo pone el plazo de espera del arranque del proceso hijo; no entra en lo que se compara.
   const hasta = Date.now() + 20000;
   while (!/escuchando en el puerto/.test(salida)) {
     if (Date.now() > hasta || hijo.exitCode !== null) throw new Error(`el sitio no arrancó: ${salida}`);
@@ -178,7 +179,7 @@ test('T39 Nucleo_SinNube', { skip: !hayHttpBackend() && !process.env.CI && 'git 
   assert.deepStrictEqual(malos, []);
   // y el arranque real sin ninguna variable de una nube: oidc, el repo con token y el buzón con SAS
   const raiz = fs.mkdtempSync(path.join(os.tmpdir(), 'site-t39-'));
-  const token = `tok-${Date.now().toString(36)}`;
+  const token = `tok-${require('crypto').randomBytes(6).toString('hex')}`;
   repoConArchivos(raiz, 'ops.git', H.archivosDeOperaciones({ config: { version: 1, owners: { default: 'lead@acme.example' }, site: { maintainers: ['lead@acme.example'] } } }), path.join(raiz, 'trabajo'));
   const git = await arrancarRepoHttp({ raiz, cabecera: `Basic ${Buffer.from(`x-access-token:${token}`).toString('base64')}` });
   const emisor = await arrancarEmisor();

@@ -67,7 +67,8 @@ async function arrancarRepoHttp({ raiz, cabecera }) {
 
 /** Un repo bare `<raiz>/<nombre>` con una rama main y los archivos dados ({ ruta: contenido }). Devuelve el clon de trabajo. */
 function repoConArchivos(raiz, nombre, archivos, trabajo) {
-  const g = (cwd, ...a) => { const r = spawnSync('git', a, { cwd, encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_NAME: 'p', GIT_AUTHOR_EMAIL: 'p@acme.example', GIT_COMMITTER_NAME: 'p', GIT_COMMITTER_EMAIL: 'p@acme.example' } }); if (r.status !== 0) throw new Error(`git ${a.join(' ')}: ${r.stderr}`); return r.stdout; };
+  // fechas fijas (el sha sale siempre igual) y sin el mantenimiento automático de git, que tocaría el .git del laboratorio
+  const g = (cwd, ...a) => { const r = spawnSync('git', ['-c', 'maintenance.auto=false', '-c', 'gc.auto=0', ...a], { cwd, encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_NAME: 'p', GIT_AUTHOR_EMAIL: 'p@acme.example', GIT_COMMITTER_NAME: 'p', GIT_COMMITTER_EMAIL: 'p@acme.example', GIT_AUTHOR_DATE: '2026-10-15T12:00:00Z', GIT_COMMITTER_DATE: '2026-10-15T12:00:00Z' } }); if (r.status !== 0) throw new Error(`git ${a.join(' ')}: ${r.stderr}`); return r.stdout; };
   const bare = path.join(raiz, nombre);
   g(raiz, 'init', '-q', '--bare', '-b', 'main', bare);
   g(bare, 'config', 'http.receivepack', 'true');
