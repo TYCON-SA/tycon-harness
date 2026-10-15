@@ -825,7 +825,7 @@ t34() {
     out="${d}/case-thin-manual${asked:+-asked}.out"
     # shellcheck disable=SC2086 # ${asked} vacío no es un argumento
     thin_inner "${out}" "${d}/thin-bin" TF_BUILD=True BUILD_REASON=Manual ${asked}; rc=$?
-    if [ "${rc}" -eq 0 ] && tail -n 1 "${out}" | grep -q '^⏭ clean-machine: NO MEDIDO — .*AC 36' && [ "$(greens "${out}")" = 0 ]; then
+    if [ "${rc}" -eq 0 ] && tail -n 1 "${out}" | grep '^⏭ clean-machine: NO MEDIDO — .*AC 36' >/dev/null && [ "$(greens "${out}")" = 0 ]; then
       ok "T34 Mantenimiento_PedidaAMano_NoMedido @story-2.21 @ac-5 (BUILD_REASON=Manual${asked:+, ${asked}}): NO MEDIDO con el motivo de mantenimiento como última línea, ningún ✅, salida 0"
     else no "T34 Mantenimiento_PedidaAMano_NoMedido (BUILD_REASON=Manual${asked:+, ${asked}}): salida ${rc}, $(greens "${out}") ✅ — $(tail -n 2 "${out}" | tr '\n' ' ')"; fi
   done

@@ -1061,8 +1061,8 @@ maquina_bajada "${C}/buzon" "maq-c" "${D1}" medido no_medido; gz "${C}/tmp-b/gat
 RC="$(contar "${C}")"
 TXT="$(cat "${C}/out")"
 A_LOCAL="$(TYCON_MACHINE=maquina-local node "${REDUCTOR}" --alias)"; A_B="$(node "${REDUCTOR}" --alias-of maq-b)"; A_C="$(node "${REDUCTOR}" --alias-of maq-c)"
-{ [ "${RC}" = "0" ] && printf '%s' "${TXT}" | grep -q "+3 sin declarar" && printf '%s' "${TXT}" | grep -q "${A_B}" && printf '%s' "${TXT}" | grep -q "${A_C}" \
-  && printf '%s' "${TXT}" | grep -q "${A_LOCAL}" && printf '%s' "${TXT}" | grep -q 'reducer.expected_machines'; } \
+{ [ "${RC}" = "0" ] && printf '%s' "${TXT}" | grep "+3 sin declarar" >/dev/null && printf '%s' "${TXT}" | grep "${A_B}" >/dev/null && printf '%s' "${TXT}" | grep "${A_C}" >/dev/null \
+  && printf '%s' "${TXT}" | grep "${A_LOCAL}" >/dev/null && printf '%s' "${TXT}" | grep 'reducer.expected_machines' >/dev/null; } \
   && ok "2.21-T15 las tres sin declarar, por alias, y el texto dice que se declaran en reducer.expected_machines" \
   || mal "2.21-T15 rc=${RC} texto=«${TXT}»"
 
