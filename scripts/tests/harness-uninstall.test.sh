@@ -96,7 +96,12 @@ ENV_UNSET=(-u TYCON_SETTINGS_PATH -u CLAUDE_MD_PATH -u CODEX_AGENTS_MD_PATH -u T
      -u TYCON_HARNESS_LOCK_HELD -u TYCON_HARNESS_SHARED_DONE -u TYCON_NO_AUTOINSTALL -u TYCON_NO_CLAUDEMD_SYNC -u TYCON_NO_COMMANDS_SYNC
      -u TYCON_NO_GIT_HOOKS -u TYCON_THIRD_PARTY -u TYCON_ENGRAM_HOOK -u TYCON_SAFETY_GUARD -u TYCON_TEST_SCOPE_GUARD
      -u TYCON_SESSION_GUARD -u TYCON_TG_ZOMBIE_SWEEP -u TYCON_CLOCKIFY -u TYCON_ENGRAM -u TYCON_NIGHTLY -u TYCON_ADO_ORG
-     -u ADO_ORG -u TYCON_REPOS_ROOT -u TF_BUILD -u XDG_CONFIG_HOME -u TYCON_GUIDES_DIR -u TYCON_SKILLS_DIR)
+     -u ADO_ORG -u TYCON_REPOS_ROOT -u TF_BUILD -u XDG_CONFIG_HOME -u TYCON_GUIDES_DIR -u TYCON_SKILLS_DIR
+     -u CLAUDE_CODE_PLUGIN_DIRS)
+# 🔴 CLAUDE_CODE_PLUGIN_DIRS (2026-10-15): desde la 7.27 el instalador la pone en cada máquina con el arnés (la carpeta de
+#    sus mods), y la instalación SUMA lo que trae la terminal cuando settings.json no la tiene (plugin-dirs.js, addDir con
+#    `inherited`). Heredada, la instalación de prueba anotaba la carpeta de mods DE VERDAD de quien corre la suite; la
+#    desinstalación saca sólo la propia y T26/T27 salían con 4 MAL en cualquier máquina con el arnés instalado.
 base() { # base <home> → el ambiente aislado común (en el arreglo RUN_ENV)
   RUN_ENV=(env "${ENV_UNSET[@]}" HOME="$1" TYCON_PROFILE=0 TYCON_INSTALL_PROFILE=full TYCON_CODEX=0 CODEX_HOME="$1/.codex" TYCON_GIT_HOOKS_DIR="$1/.git-hooks"
        TYCON_NO_NIGHTLY_EXAM=1 TYCON_NO_GUI_ENV=1 LAUNCHCTL_BIN=/usr/bin/true TYCON_BENCH_DAILY=0 TYCON_STAGE_METRICS=0

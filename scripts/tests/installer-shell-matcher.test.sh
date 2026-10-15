@@ -47,7 +47,9 @@ SK="$HOME/.claude/agent-skills/skills"; mkdir -p "$SK/tycon-pipeline"
 node -e 'for (const h of require(process.argv[1]).hooks) if (!h.spec.startsWith("@tcg:")) console.log(h.spec)' "$ROOT/scripts/setup/hooks-list.json" | sort -u | while IFS= read -r rel; do
   mkdir -p "$SK/$(dirname "$rel")" && : > "$SK/$rel"
 done
-ISOLATED=(env TYCON_CODEX=0 TYCON_BENCH_DAILY=0 TYCON_STAGE_METRICS=0 CODEX_HOME="$T/codex-home")
+# CLAUDE_CODE_PLUGIN_DIRS fuera: la pone el instalador en cada máquina con el arnés (story 7.27) y, heredada, la
+# instalación de prueba anotaba la carpeta de mods DE VERDAD de quien corre la suite (harness-uninstall, 2026-10-15).
+ISOLATED=(env -u CLAUDE_CODE_PLUGIN_DIRS TYCON_CODEX=0 TYCON_BENCH_DAILY=0 TYCON_STAGE_METRICS=0 CODEX_HOME="$T/codex-home")
 run() { TYCON_SETTINGS_PATH="$1" "${ISOLATED[@]}" bash "$INST" "${@:2}"; }   # <settings> [args] → el instalador; exit code real
 
 # Los hooks que miran comandos, en su evento (los de agent-skills por su ruta dentro de skills/).
