@@ -73,7 +73,7 @@ test('RehearsalPipeline_Yaml_ScenarioParameter_TwoJobs_NoSecrets_TagsFetched', {
   const scenario = /- name: scenario\n\s+displayName: .*\n\s+type: string\n\s+default: (\w+)\n\s+values:\n((?:\s+- [\w-]+\n)+)/.exec(params);
   assert.ok(scenario, 'el parámetro scenario, con su lista cerrada de valores');
   assert.strictEqual(scenario[1], 'measure', 'por defecto, measure');
-  assert.deepStrictEqual(scenario[2].trim().split('\n').map((l) => l.replace(/^\s*-\s*/, '').trim()).filter(Boolean), ['measure', 'onboarding', 'update', 'portable', 'no-clone', 'codex-only', 'console-windows', 'migrate', 'all']);   // no-clone: story 8.23 B · codex-only: 8.23 C
+  assert.deepStrictEqual(scenario[2].trim().split('\n').map((l) => l.replace(/^\s*-\s*/, '').trim()).filter(Boolean), ['measure', 'onboarding', 'update', 'portable', 'no-clone', 'codex-only', 'console-windows', 'migrate', 'waiver', 'all']);   // no-clone: story 8.23 B · codex-only: 8.23 C
   for (const p of ['harnessRef', 'skillsRef', 'fridayTag']) assert.match(params, new RegExp(`- name: ${p}\\n\\s+displayName: .*\\n\\s+type: string\\n`), `el parámetro ${p}`);
   // la marca del viernes: el parámetro va vacío y cada fuente lo resuelve (story 8.26, tanda D): con azure, la de
   // siempre —en el paso que arma los bundles de los dos repos—; con github no hay una por defecto
@@ -85,9 +85,9 @@ test('RehearsalPipeline_Yaml_ScenarioParameter_TwoJobs_NoSecrets_TagsFetched', {
   const job = (name) => code.slice(code.indexOf(`- job: ${name}`), jobs[jobs.indexOf(name) + 1] ? code.indexOf(`- job: ${jobs[jobs.indexOf(name) + 1]}`) : undefined);
   for (const name of ['Bundle', 'Windows']) assert.match(job(name), /condition: .*in\('\$\{\{ parameters\.scenario \}\}', 'measure', 'all'\)/, `${name} corre con measure y all`);
   // (y con portable, el escenario de la base portable: su contrato es windows-portable.test.js, P1)
-  for (const name of ['Sources', 'Rehearsal']) assert.match(job(name), /condition: .*in\('\$\{\{ parameters\.scenario \}\}', 'onboarding', 'update', 'portable', 'no-clone', 'codex-only', 'console-windows', 'migrate', 'all'\)/, `${name} corre con onboarding, update, portable, no-clone, codex-only, console-windows y all`);
+  for (const name of ['Sources', 'Rehearsal']) assert.match(job(name), /condition: .*in\('\$\{\{ parameters\.scenario \}\}', 'onboarding', 'update', 'portable', 'no-clone', 'codex-only', 'console-windows', 'migrate', 'waiver', 'all'\)/, `${name} corre con onboarding, update, portable, no-clone, codex-only, console-windows y all`);
   // cada escenario aparte corre SU paso del ensayo, y sólo con su valor (story 8.23, tandas B y C)
-  for (const own of ['no-clone', 'codex-only', 'console-windows', 'migrate']) {
+  for (const own of ['no-clone', 'codex-only', 'console-windows', 'migrate', 'waiver']) {
     assert.match(job('Rehearsal'), new RegExp(`- \\$\\{\\{ if eq\\(parameters\\.scenario, '${own}'\\) \\}\\}:\\n\\s+- script: node scripts/tests/windows/rehearse\\.js step ${own} --lab "\\$\\(lab\\)" --out "\\$\\(report\\)"`), `el escenario ${own} corre su paso`);
   }
   // los dos repos se traen en Linux, con historia y etiquetas (la marca del viernes es una etiqueta), y viajan como bundles

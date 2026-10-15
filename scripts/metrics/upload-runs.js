@@ -9,24 +9,34 @@
  * instalador en cada arranque, en segundo plano, después del barrido de la 2.13. Todas las máquinas del
  * equipo suben; sólo pueden leer quienes tienen el rol de lectura (lo baja `download-runs.js`, con su cuenta).
  *
- * 🔴 LA LLAVE SÓLO ESCRIBE. `corridas-buzon.json` (commiteado, excepción escrita a la política de
- *    credenciales del repo) trae una SAS atada a una política guardada del contenedor con permisos `cw`:
- *    no lista, no lee, no borra — ni siquiera lo propio. Por eso:
- *      · este guion sólo hace PUT, y se NIEGA (exit 2) si la SAS trae permisos de lectura/listado/borrado
- *        propios (`sp=` con r, l, d…) o si es una SAS de CUENTA (`ss=`/`srt=`);
+ * 🔴 LA LLAVE SÓLO CREA (story 2.24). `corridas-buzon.json` (en la capa del equipo, excepción escrita a la política de
+ *    credenciales del repo) trae una SAS atada a una política guardada del contenedor con permiso `c` («sólo crear»): crea blobs
+ *    nuevos y nada más —no pisa uno que ya está, no lista, no lee, no borra—. Por eso:
+ *      · este guion sólo hace PUT, cada uno con `If-None-Match: *` (no pisar vale aunque la política dejara), y se
+ *        NIEGA (exit 2) si la SAS trae permisos propios de lectura/listado/borrado (`sp=` con r, l, d…), permisos
+ *        propios que dejen escribir (`sp=` con w o a), o si es una SAS de CUENTA (`ss=`/`srt=`);
+ *      · NADA SE PISA: la primera subida de una corrida va a `<maquina>/<archivo>`; lo que se vuelve a subir porque
+ *        cambió va a `<maquina>/v<AAAAMMDDTHHMMSSmmmZ>/<archivo>` (el inicio de la pasada, en UTC, monótono por
+ *        archivo), y la bajada toma la versión más nueva;
  *      · qué ya subió lo recuerda un REGISTRO LOCAL (`~/.claude/.tycon-pipeline/mailbox-uploads.json`:
- *        tamaño, mtime y sha256 por archivo), que se anota archivo por archivo y SÓLO después de que el
- *        servicio confirmó con 201. Un corte a mitad nunca queda como «subido».
+ *        tamaño, mtime, sha256, blob y versión por archivo), que se anota archivo por archivo y SÓLO después de que
+ *        el servicio confirmó con 201. Un corte a mitad nunca queda como «subido».
+ *    Retención: sin vencimiento (decisión del dueño, 2026-10-15): el buzón guarda la conversación entera.
  *
- * 🔴 «NO SUBIDO» NUNCA SE LEE COMO «SUBIDO». Llave vencida o revocada (403/404) y sin red son motivos
- *    distintos — el primero pide rotar la llave, el segundo esperar—, y ninguno marca nada. Sale ≠ 0; el
- *    instalador lo corre de fondo, así que no pone rojo el arranque: queda en `upload-runs.log`.
+ * 🔴 «NO SUBIDO» NUNCA SE LEE COMO «SUBIDO». Los códigos del servicio se separan (medidos en un contenedor de
+ *    laboratorio, story 2.24): «ya existe» (409 BlobAlreadyExists, 403 UnauthorizedBlobOverwrite) se reintenta UNA
+ *    vez con una versión nueva —la llave no lee, así que no puede saber si lo que está es igual—; la política que no
+ *    deja crear (403 AuthorizationPermissionMismatch) es `llave_sin_permiso`; la llave vencida, revocada o inválida
+ *    (403 AuthenticationFailed, otro 403, 404) es `llave_invalida`; y sin red es otro motivo. Ninguno marca nada.
+ *    Sale ≠ 0; el instalador lo corre de fondo, así que no pone rojo el arranque: queda en `upload-runs.log`.
  *
  * 🔴 Y LOS REGISTROS DE FRENOS Y ESCAPES (story 2.5, rediseño 2026-09-15): una vez por día prepara
  *    `gates.log.gz`, `bypass.log.gz` (los registros completos de `~/.claude/.tycon-pipeline/`, comprimidos) y
  *    un `cobertura.json` que dice si pudo leer cada uno, en `~/.claude/.tycon-pipeline/registros-buzon/`, y los
- *    sube como `<maquina>/registros/<archivo>` ANTES que las corridas —pesan poco y al final de la cola no
+ *    sube como UN JUEGO ENTERO bajo `<maquina>/registros/v<momento de la preparación>/<archivo>` (story 2.24: todos,
+ *    también el idéntico al de ayer) ANTES que las corridas —pesan poco y al final de la cola no
  *    entrarían—, con la cobertura al final de los tres: es la marca de que los de arriba están completos. Un
+ *    «ya existe» en un archivo del juego no se reintenta: el juego falla en esa pasada y se re-prepara. Un
  *    registro que no existe se DECLARA (`no_medido`) y no se sube vacío. De esa carpeta no sube nada más. La
  *    cuenta la hace `scripts/nightly/dashboard/reducer.js`, donde el buzón está bajado; lo que llega a la página del
  *    equipo es sólo la cuenta. Entre esos registros va también `legacy-names.jsonl` (story 8.9, AC 52: los usos de nombres
@@ -45,15 +55,23 @@
  *
  * Uso:
  *   node scripts/metrics/upload-runs.js [--json] [--dry-run] [--budget-ms N]
+ *   node scripts/metrics/upload-runs.js --check-create-only [--json]
+ *
+ *   --check-create-only (story 2.24): comprueba desde una máquina que la política del buzón no deja pisar. Vuelve a
+ *   subir LOS MISMOS BYTES del blob confirmado más chico de esta máquina (cuyo archivo local tiene todavía el mismo
+ *   sha256) a su nombre, sin If-None-Match: 403 UnauthorizedBlobOverwrite → «la política no deja pisar» (exit 0);
+ *   201 → la política dejó escribir, o el blob ya no estaba (exit 1). Nunca manda bytes distintos de los confirmados.
  *
  * Contrato de salida:
  *   0 → subió, no había nada nuevo, o --dry-run (con o sin aviso de vencimiento), o corre dentro de una corrida de
  *       Azure DevOps (`agente_ci`, story 2.12: un agente de CI no es una máquina del equipo)
- *   1 → no pudo (sin llave, llave ilegible, vencida/revocada, sin red, el servicio falló, algo ilegible)
- *   2 → se negó (la llave permite leer, listar o borrar, o es de cuenta)
+ *   1 → no pudo (sin llave, llave ilegible, vencida/revocada, la política no deja crear, sin red, el servicio falló,
+ *       algo ilegible)
+ *   2 → se negó (la llave permite leer, listar, borrar o escribir, o es de cuenta)
  *
  * Variables (para el banco de pruebas): TYCON_MAILBOX_JSON, TYCON_MAILBOX_URL_BASE, TYCON_TIMING_HISTORY,
- * TYCON_UPLOADS_LOG, TYCON_MACHINE, TYCON_LOGS_SOURCE, TYCON_LOGS_DIR, TYCON_TODAY.
+ * TYCON_UPLOADS_LOG, TYCON_MACHINE, TYCON_LOGS_SOURCE, TYCON_LOGS_DIR, TYCON_TODAY, TYCON_NOW (el inicio de la pasada,
+ * ISO: fija la versión).
  * Apagado desde el instalador: TYCON_NO_UPLOAD_RUNS=1.
  */
 
@@ -155,10 +173,10 @@ function integracionBuzon(llave = 'mailbox') {
 
 /**
  * Lee y valida `corridas-buzon.json`. Devuelve { cfg } o { estado, motivo }. `sas` sin `?` inicial.
- * La usan la subida (necesita `sas`) y la bajada (necesita `tenant`): `requiere` dice qué campos exige.
+ * La usan la subida (necesita `sas`) y la bajada (necesita `tenant`): `requiere` dice qué campos exige. `ruta` (story 2.24)
+ * la pasa el panel de sólo lectura de `team-config`; sin ella, la de siempre.
  */
-function leerConfig(requiere = ['cuenta', 'contenedor', 'sas', 'vence']) {
-  const ruta = rutaConfig();
+function leerConfig(requiere = ['cuenta', 'contenedor', 'sas', 'vence'], ruta = rutaConfig()) {
   let texto;
   try { texto = fs.readFileSync(ruta, 'utf8'); }
   catch (e) {
@@ -180,15 +198,59 @@ function leerConfig(requiere = ['cuenta', 'contenedor', 'sas', 'vence']) {
   return { cfg: limpio, ruta };
 }
 
-/** Por qué esta SAS NO se acepta para subir, o null. Nunca imprime la firma. */
+/**
+ * Por qué esta SAS NO se acepta para subir: { estado, motivo }, o null. Nunca imprime la firma. Sin permisos propios
+ * (`sp`) la SAS toma los de su política guardada; con `sp`, sólo se acepta `c` (story 2.24: una llave que puede pisar
+ * no es la del buzón).
+ */
 function negativaDeLaLlave(sas) {
   const p = new URLSearchParams(sas);
-  if (!p.get('sig')) return 'la SAS del buzón no trae firma (sig): no es una llave';
-  if (p.has('ss') || p.has('srt')) return 'la SAS del buzón es de CUENTA (ss/srt): sólo se acepta una SAS de contenedor atada a una política de escritura';
+  const no = (motivo, estado = 'llave_con_lectura') => ({ estado, motivo });
+  if (!p.get('sig')) return no('la SAS del buzón no trae firma (sig): no es una llave');
+  if (p.has('ss') || p.has('srt')) return no('la SAS del buzón es de CUENTA (ss/srt): sólo se acepta una SAS de contenedor atada a una política de escritura');
   const sp = p.get('sp');
-  if (sp && /[^cwa]/.test(sp)) return `la SAS del buzón trae permisos propios «${sp}» que permiten más que escribir (leer, listar o borrar): esta llave no se acepta`;
-  if (!p.get('si')) return 'la SAS del buzón no está atada a una política guardada (si): no se puede revocar sin rotar la cuenta';
+  if (sp && /[^cwa]/.test(sp)) return no(`la SAS del buzón trae permisos propios «${sp}» que permiten más que escribir (leer, listar o borrar): esta llave no se acepta`);
+  if (sp && /[wa]/.test(sp)) return no(`la SAS del buzón trae permisos propios «${sp}» que dejan pisar blobs que ya están: sólo se acepta «c» (sólo crear) o ninguno`, 'llave_con_escritura');
+  if (!p.get('si')) return no('la SAS del buzón no está atada a una política guardada (si): no se puede revocar sin rotar la cuenta');
   return null;
+}
+
+/** El inicio de la pasada, en ms (story 2.24). TYCON_NOW (ISO) sólo para el banco de pruebas. */
+function ahoraMs() {
+  const t = Date.parse(variable('TYCON_NOW') || '');
+  return Number.isFinite(t) ? t : Date.now();
+}
+// La forma de una versión: la carpeta `v<AAAAMMDDTHHMMSSmmmZ>`. La bajada la importa: una sola definición.
+const FORMA_VERSION = /^v\d{8}T\d{9}Z$/;
+/** Una versión, desde ms. */
+function versionDe(ms) { return `v${new Date(ms).toISOString().replace(/[-:.]/g, '')}`; }
+/** Los ms de una versión, o null si no tiene la forma. */
+function msDeVersion(v) {
+  if (typeof v !== 'string' || !FORMA_VERSION.test(v)) return null;
+  const m = /^v(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(\d{3})Z$/.exec(v);
+  const iso = `${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}.${m[7]}Z`;
+  const t = Date.parse(iso);
+  // ida y vuelta: Date.parse normaliza el desborde (un 30 de febrero sería el 2 de marzo); una fecha imposible no es versión
+  return Number.isFinite(t) && new Date(t).toISOString() === iso ? t : null;
+}
+/** Una versión que nunca retrocede: max(desde, la anterior + 1 ms) (story 2.24, decisión 4). */
+function versionMonotona(desdeMs, anterior) {
+  const prev = typeof anterior === 'number' ? anterior : msDeVersion(anterior);
+  return versionDe(prev === null ? desdeMs : Math.max(desdeMs, prev + 1));
+}
+
+/**
+ * Qué dijo el buzón a un PUT (story 2.24, códigos medidos en el laboratorio): 'creado' · 'ya_existe' (409
+ * BlobAlreadyExists, 403 UnauthorizedBlobOverwrite) · 'sin_permiso' (403 AuthorizationPermissionMismatch: la política
+ * no deja crear) · 'llave' (otro 403, 404: vencida, revocada o inválida) · 'servicio' (5xx) · 'otro'.
+ */
+function respuestaDelBuzon(r) {
+  if (r.status === 201) return 'creado';
+  if ((r.status === 409 && r.codigo === 'BlobAlreadyExists') || (r.status === 403 && r.codigo === 'UnauthorizedBlobOverwrite')) return 'ya_existe';
+  if (r.status === 403 && r.codigo === 'AuthorizationPermissionMismatch') return 'sin_permiso';
+  if (r.status === 403 || r.status === 404) return 'llave';
+  if (r.status >= 500) return 'servicio';
+  return 'otro';
 }
 
 function urlBase(cfg) {
@@ -290,10 +352,16 @@ function prepararRegistros(opts = {}) {
   catch (e) { if (e.code === 'ENOENT') return { estado: 'sin_carpeta' }; throw e; }
   if (!st.isDirectory()) throw Object.assign(new Error('la carpeta del pipeline no es un directorio'), { code: 'ENOTDIR' });
   const coberturaArchivo = path.join(destino, 'cobertura.json');
+  // story 2.24: el momento de la preparación (`preparado`) es la versión del juego en el buzón. Una cobertura de hoy SIN
+  // `preparado` —la de antes de la 2.24, o una invalidada por un «ya existe»— se vuelve a preparar, con un momento que
+  // nunca retrocede respecto del anterior (`preparado` o `invalidado`).
+  let anterior = null;
   try {
     const c = JSON.parse(fs.readFileSync(coberturaArchivo, 'utf8'));
-    if (c && c.esquema === 1 && c.fecha === dia) return { estado: 'ya_preparado_hoy' };
+    if (c && c.esquema === 1 && c.fecha === dia && msDeVersion(c.preparado) !== null) return { estado: 'ya_preparado_hoy', version: c.preparado };
+    if (c) anterior = [c.preparado, c.invalidado].map(msDeVersion).filter((x) => x !== null).sort((a, b) => b - a)[0];
   } catch (_) { /* primera vez, o ilegible: se prepara */ }
+  const preparado = versionMonotona(ahoraMs(), anterior === undefined ? null : anterior);
   fs.mkdirSync(destino, { recursive: true });
   const fuentes = {};
   for (const archivo of REGISTROS) {
@@ -347,8 +415,21 @@ function prepararRegistros(opts = {}) {
   try { facts = placeFactsForMailbox(dia); } catch (e) { facts = { schema: 1, day: dia, place: { status: 'no_medido', reason: `no se pudo mirar (${(e && e.code) || 'error'})` } }; }
   if (facts) escribirAtomico(lugar, `${JSON.stringify(facts, null, 1)}\n`);
   else { try { fs.unlinkSync(lugar); } catch (_) { /* no estaba */ } }
-  escribirAtomico(coberturaArchivo, `${JSON.stringify({ esquema: 1, fecha: dia, fuentes }, null, 1)}\n`);
-  return { estado: 'preparado', fuentes };
+  escribirAtomico(coberturaArchivo, `${JSON.stringify({ esquema: 1, fecha: dia, preparado, fuentes }, null, 1)}\n`);
+  return { estado: 'preparado', fuentes, version: preparado };
+}
+
+/**
+ * Invalida la preparación local de registros (story 2.24, AC 10): le quita `preparado` a la cobertura y anota la versión
+ * fallida en `invalidado`, para que la pasada siguiente —aunque sea el mismo día— re-prepare el juego con un momento
+ * posterior. Tira si no puede escribir.
+ */
+function invalidarPreparacion(dirRegistros, version) {
+  const archivo = path.join(dirRegistros, 'cobertura.json');
+  const c = JSON.parse(fs.readFileSync(archivo, 'utf8'));
+  delete c.preparado;
+  c.invalidado = version;
+  escribirAtomico(archivo, `${JSON.stringify(c, null, 1)}\n`);
 }
 
 /**
@@ -463,23 +544,27 @@ function archivosDelRegistro(dir) {
 
 /**
  * Un PUT de blob. Resuelve { status } o { error } — nunca rechaza. `cuerpo` es un Buffer entero en
- * memoria: el blob se manda entero o no se manda (los hilos pesan cientos de KB).
+ * memoria: el blob se manda entero o no se manda (los hilos pesan cientos de KB). Con `If-None-Match: *` siempre
+ * (story 2.24): no pisar vale desde la subida, aunque la política del contenedor dejara escribir. Sólo el chequeo de
+ * `--check-create-only` la saca (`pisar: true`), para probar que la política no deja.
  */
-function ponerBlob(url, cuerpo, md5, timeoutMs) {
+function ponerBlob(url, cuerpo, md5, timeoutMs, opciones = {}) {
   return new Promise((resolve) => {
     const u = new URL(url);
     const mod = u.protocol === 'http:' ? http : https;
     let hecho = false;
     const fin = (r) => { if (!hecho) { hecho = true; resolve(r); } };
+    const headers = {
+      'x-ms-blob-type': 'BlockBlob',
+      'x-ms-version': X_MS_VERSION,
+      'Content-Length': cuerpo.length,
+      'Content-MD5': md5,
+      'Content-Type': 'application/octet-stream',
+    };
+    if (opciones.pisar !== true) headers['If-None-Match'] = '*';
     const req = mod.request(u, {
       method: 'PUT',
-      headers: {
-        'x-ms-blob-type': 'BlockBlob',
-        'x-ms-version': X_MS_VERSION,
-        'Content-Length': cuerpo.length,
-        'Content-MD5': md5,
-        'Content-Type': 'application/octet-stream',
-      },
+      headers,
       timeout: timeoutMs,
     }, (res) => {
       const trozos = [];
@@ -496,8 +581,10 @@ function ponerBlob(url, cuerpo, md5, timeoutMs) {
 async function subir(opts = {}) {
   const res = {
     subido: false, estado: null, motivo: null, maquina: null,
-    a_subir: 0, subidos: 0, bytes: 0, sin_tiempo: 0, aviso_vence: null,
+    a_subir: 0, subidos: 0, bytes: 0, sin_tiempo: 0, ya_existian: 0, aviso_vence: null,
   };
+  // story 2.24: el inicio de la pasada es la versión de todo lo que esta pasada vuelve a subir
+  const pasada = ahoraMs();
   const log = (m) => { if (opts.log) opts.log(m); };
   // 🔴 Una pasada que no terminó bien NUNCA dice «subido», aunque haya subido algo antes de fallar: lo
   //    confirmado queda anotado y contado en `subidos`; `subido` es el veredicto de la pasada (AC3).
@@ -528,7 +615,7 @@ async function subir(opts = {}) {
   if (!lc.cfg) return fin(1, lc.estado, lc.motivo);
   const { cfg } = lc;
   const negativa = negativaDeLaLlave(cfg.sas);
-  if (negativa) return fin(2, 'llave_con_lectura', negativa);
+  if (negativa) return fin(2, negativa.estado, negativa.motivo);
 
   const dias = diasHasta(cfg.vence.trim());
   if (dias <= DIAS_AVISO_VENCE) {
@@ -554,14 +641,17 @@ async function subir(opts = {}) {
   res.registros = prep.estado;
   // story 8.19 (AC 21): lo que va en place.json, también en la salida (--json)
   try { res.place = JSON.parse(fs.readFileSync(path.join(dirRegistros, 'place.json'), 'utf8')); } catch (_) { res.place = null; }
-  if (prep.estado !== 'sin_carpeta') {
+  // story 2.24: el juego del día sube ENTERO bajo `registros/v<momento de la preparación>/`; la clave en el registro
+  // local lleva la versión, así un archivo idéntico al de ayer sube igual con el juego nuevo.
+  const juego = typeof prep.version === 'string' && FORMA_VERSION.test(prep.version) ? prep.version : null;
+  if (prep.estado !== 'sin_carpeta' && juego) {
     let nombres = [];
     try { nombres = fs.readdirSync(dirRegistros).filter((x) => FORMA_REGISTRO.test(x)); }
     catch (e) { if (e.code !== 'ENOENT') noLeidos.push(`registros de frenos y escapes (${e.code || 'error'})`); }
     nombres.sort((a, b) => (a === 'cobertura.json') - (b === 'cobertura.json') || (a < b ? -1 : a > b ? 1 : 0));
-    for (const f of nombres) entradas.push({ dir: dirRegistros, f, clave: `${maquina}/registros/${f}`, blob: `${maquina}/registros/${f}` });
-  }
-  try { for (const f of archivosDelRegistro(origen)) entradas.push({ dir: origen, f, clave: `${maquina}/${f}`, blob: `${maquina}/${f}` }); }
+    for (const f of nombres) entradas.push({ dir: dirRegistros, f, juego, clave: `${maquina}/registros/${juego}/${f}`, blob: `${maquina}/registros/${juego}/${f}` });
+  } else if (prep.estado !== 'sin_carpeta') noLeidos.push('registros de frenos y escapes (la preparación no tiene momento: no se sabe su versión)');
+  try { for (const f of archivosDelRegistro(origen)) entradas.push({ dir: origen, f, juego: null, clave: `${maquina}/${f}`, blob: `${maquina}/${f}` }); }
   catch (e) {
     // Una máquina que nunca corrió el pipeline no tiene la carpeta: es «nada que subir» de corridas, no un fallo en cada arranque.
     if (e.code !== 'ENOENT') return fin(1, 'sin_registro', `no se pudo leer el registro de corridas ${origen} (${e.code || e.message})`);
@@ -584,7 +674,10 @@ async function subir(opts = {}) {
 
   let cambioRegistro = false;
   const pendientes = [];
-  for (const { dir, f, clave, blob } of entradas) {
+  // story 2.24 (AC 6): un archivo del juego ya confirmado que cambió NO se vuelve a mandar a su nombre: el juego se
+  // da por roto en esta pasada y se re-prepara (la pasada siguiente lo sube entero bajo otra versión).
+  const juegosRotos = new Set();
+  for (const { dir, f, clave, blob, juego: suJuego } of entradas) {
     const local = path.join(dir, f);
     let st;
     try { st = fs.statSync(local); } catch (e) { if (e.code !== 'ENOENT') noLeidos.push(`${f} (${e.code || e.message})`); continue; }
@@ -600,7 +693,15 @@ async function subir(opts = {}) {
       cambioRegistro = true;
       continue;
     }
-    pendientes.push({ f, dir, clave, blob, mtimeMs: st.mtimeMs, size: cuerpo.length, sha256 });
+    if (prev && suJuego) { juegosRotos.add(suJuego); continue; }
+    // story 2.24: lo que ya se confirmó y cambió va a una versión —el inicio de la pasada, monótono por archivo—, nunca
+    // al nombre anterior. Una entrada de antes de la 2.24 (sin `blob`) apunta al nombre de siempre.
+    if (prev && !suJuego) {
+      const version = versionMonotona(pasada, prev.version);
+      pendientes.push({ f, dir, clave, blob: `${maquina}/${version}/${f}`, version, previa: prev.version || null, juego: null, mtimeMs: st.mtimeMs, size: cuerpo.length, sha256 });
+      continue;
+    }
+    pendientes.push({ f, dir, clave, blob, version: null, previa: null, juego: suJuego || null, mtimeMs: st.mtimeMs, size: cuerpo.length, sha256 });
   }
   res.a_subir = pendientes.length;
 
@@ -615,6 +716,24 @@ async function subir(opts = {}) {
   const inicio = Date.now();
   const tope = Number.isFinite(opts.budgetMs) ? opts.budgetMs : 90000;
   const noSubidos = [];
+  // story 2.24 (AC 10): un juego de registros que falló por «ya existe» (o que cambió después de confirmado) no se
+  // reintenta archivo por archivo: se invalida la preparación local, se sacan del registro local sus claves y el resto
+  // del juego no se manda en esta pasada. Nunca queda en el buzón una versión con cobertura y sin alguno de sus registros.
+  const juegosFallidos = new Set();
+  const fallarJuego = (version, motivo) => {
+    if (juegosFallidos.has(version)) return;
+    juegosFallidos.add(version);
+    noSubidos.push(`juego de registros ${version} (${motivo}: se re-prepara en la pasada siguiente)`);
+    try { invalidarPreparacion(dirRegistros, version); }
+    catch (e) { noLeidos.push(`registros de frenos y escapes (no se pudo invalidar la preparación: ${e.code || 'error'})`); }
+    const prefijo = `${maquina}/registros/${version}/`;
+    let saco = false;
+    for (const k of Object.keys(registro.archivos)) if (k.startsWith(prefijo)) { delete registro.archivos[k]; saco = true; }
+    if (saco) { try { guardar(); } catch (_) { /* la pasada siguiente usa otra versión: estas claves no se vuelven a mirar */ } }
+  };
+  for (const v of juegosRotos) fallarJuego(v, 'un registro cambió después de confirmado');
+  const urlDe = (blob) => `${base}/${encodeURIComponent(cfg.contenedor)}/${blob.split('/').map(encodeURIComponent).join('/')}?${cfg.sas}`;
+  const confirmadosAntes = () => (res.subidos ? ` — los ${res.subidos} archivo(s) que el servicio confirmó antes sí quedaron anotados` : '');
   // 🔴 La cobertura de registros sube sólo si en ESTA pasada no falló ningún registro: si no, quedaría en el buzón
   //    una cobertura nueva declarando «medido» un registro que sigue siendo el viejo.
   const esRegistro = (p) => p.blob.includes('/registros/') && p.f !== 'cobertura.json';
@@ -622,10 +741,11 @@ async function subir(opts = {}) {
   //    Antes se reconocía por «.log.gz », que no ve `hallazgos.jsonl.gz`; y ampliarlo a «.jsonl.gz » a secas
   //    lo dispararía también por el hilo de una corrida (`*.hilo.jsonl.gz`).
   const esFallaDeRegistro = (x) => x.startsWith('registros de frenos y escapes') || REGISTROS.some((r) => x.startsWith(`${r}.gz `));
-  let registroFallido = noLeidos.some(esFallaDeRegistro);
+  let registroFallido = noLeidos.some(esFallaDeRegistro) || juegosFallidos.size > 0;
   for (let i = 0; i < pendientes.length; i++) {
     if (Date.now() - inicio > tope) { res.sin_tiempo = pendientes.length - i; break; }
     const p = pendientes[i];
+    if (p.juego && juegosFallidos.has(p.juego)) continue;
     if (p.f === 'cobertura.json' && p.blob.includes('/registros/') && registroFallido) {
       noSubidos.push('cobertura.json de registros (retenida: un registro de esta pasada no subió)');
       continue;
@@ -638,21 +758,41 @@ async function subir(opts = {}) {
     // El archivo cambió entre el recorrido y la subida (el barrido de la 2.13 lo reescribió): va lo de ahora.
     const sha256 = crypto.createHash('sha256').update(cuerpo).digest('hex');
     const md5 = crypto.createHash('md5').update(cuerpo).digest('base64');
-    const url = `${base}/${encodeURIComponent(cfg.contenedor)}/${p.blob.split('/').map(encodeURIComponent).join('/')}?${cfg.sas}`;
-    const r = await ponerBlob(url, cuerpo, md5, Math.max(30000, Math.min(120000, cuerpo.length / 50)));
+    const tiempo = Math.max(30000, Math.min(120000, cuerpo.length / 50));
+    let blob = p.blob;
+    let version = p.version;
+    let r = await ponerBlob(urlDe(blob), cuerpo, md5, tiempo);
+    let reintentado = false;
+    // story 2.24 (AC 7): «ya existe» en un archivo de corrida → UNA vez más, con una versión nueva (la llave no lee: no
+    // puede saber si lo que está es igual a lo de la máquina, y un duplicado cuesta menos que un dato viejo).
+    if (!r.error && respuestaDelBuzon(r) === 'ya_existe' && !p.juego) {
+      reintentado = true;
+      const vistas = [msDeVersion(version), msDeVersion(p.previa)].filter((x) => x !== null);
+      version = versionMonotona(Math.max(ahoraMs(), pasada), vistas.length ? Math.max(...vistas) : null);
+      blob = `${maquina}/${version}/${p.f}`;
+      r = await ponerBlob(urlDe(blob), cuerpo, md5, tiempo);
+    }
     if (r.error) {
       const c = r.error.code || r.error.message;
       return fin(1, 'sin_red', `sin red o sin respuesta del buzón (${c}) al subir ${p.f}: no se marcó nada más; sube en el próximo arranque${res.subidos ? ` — los ${res.subidos} archivo(s) confirmados antes del corte sí quedaron anotados` : ''}`);
     }
-    if (r.status === 403 || r.status === 404) {
-      return fin(1, 'llave_invalida', `el buzón rechazó la llave (${r.status}${r.codigo ? ` ${r.codigo}` : ''}): vencida o revocada, o inválida — hay que rotarla (corridas-buzon.json → "rotar", vence ${cfg.vence}). No se marcó nada más${res.subidos ? ` — los ${res.subidos} archivo(s) que el servicio confirmó antes sí quedaron anotados` : ''}`);
+    const codigo = `${r.status}${r.codigo ? ` ${r.codigo}` : ''}`;
+    const tipo = respuestaDelBuzon(r);
+    if (tipo === 'sin_permiso') {
+      return fin(1, 'llave_sin_permiso', `la política del buzón no deja crear (política ${cfg.politica || '?'}): revisarla (${codigo} al subir ${p.f}). No se marcó nada más${confirmadosAntes()}`);
     }
-    if (r.status >= 500) {
-      return fin(1, 'servicio_fallo', `el servicio del buzón falló (${r.status}${r.codigo ? ` ${r.codigo}` : ''}) al subir ${p.f}: no se marcó nada más; se reintenta en el próximo arranque${res.subidos ? ` — los ${res.subidos} archivo(s) confirmados antes sí quedaron anotados` : ''}`);
+    if (tipo === 'llave') {
+      return fin(1, 'llave_invalida', `el buzón rechazó la llave (${codigo}): vencida o revocada, o inválida — hay que rotarla (corridas-buzon.json → "rotar", vence ${cfg.vence}). No se marcó nada más${confirmadosAntes()}`);
     }
-    if (r.status !== 201) { noSubidos.push(`${p.f} (${r.status}${r.codigo ? ` ${r.codigo}` : ''})`); if (esRegistro(p)) registroFallido = true; continue; }
-    // 🔴 recién con el 201 se anota — y se persiste ya, archivo por archivo
-    registro.archivos[p.clave] = { size: cuerpo.length, mtimeMs: Math.min(stAntes.mtimeMs, p.mtimeMs), sha256, subido: new Date().toISOString() };
+    if (tipo === 'servicio') {
+      return fin(1, 'servicio_fallo', `el servicio del buzón falló (${codigo}) al subir ${p.f}: no se marcó nada más; se reintenta en el próximo arranque${confirmadosAntes()}`);
+    }
+    if (tipo === 'ya_existe' && p.juego) { fallarJuego(p.juego, `${p.f} ya existía (${codigo})`); registroFallido = true; continue; }
+    if (tipo === 'ya_existe') { noSubidos.push(`${p.f} (${codigo}: ya existía también con una versión nueva)`); continue; }
+    if (tipo !== 'creado') { noSubidos.push(`${p.f} (${codigo})`); if (esRegistro(p)) registroFallido = true; continue; }
+    if (reintentado) res.ya_existian += 1;
+    // 🔴 recién con el 201 se anota — y se persiste ya, archivo por archivo (story 2.24: con el blob y la versión)
+    registro.archivos[p.clave] = { size: cuerpo.length, mtimeMs: Math.min(stAntes.mtimeMs, p.mtimeMs), sha256, subido: new Date().toISOString(), blob, version: version || p.juego || null };
     try { guardar(); }
     catch (e) { return fin(1, 'registro_ilegible', `${p.f} subió pero el registro de subidas ${rutaRegistro} no se pudo escribir (${e.code || e.message}): la pasada siguiente lo volvería a subir`); }
     res.subidos += 1;
@@ -676,7 +816,66 @@ async function subir(opts = {}) {
   return fin(0, 'subido');
 }
 
-module.exports = { placeFactsForMailbox, subir, nombreDeMaquina, normalizarNombreDeMaquina, leerConfig, integracionBuzon, negativaDeLaLlave, rutaConfig, urlBase, FORMA_MAQUINA, FORMA_ARCHIVO, FORMA_REGISTRO, REGISTROS, prepararRegistros, usosParaElBuzon, X_MS_VERSION };
+/**
+ * --check-create-only (story 2.24, AC 16): ¿la política del buzón deja pisar? Vuelve a subir LOS MISMOS BYTES del blob
+ * confirmado más chico de esta máquina —cuyo archivo local tiene todavía el sha256 anotado— a su nombre, SIN
+ * If-None-Match. Con la política «sólo crear» el buzón contesta 403 UnauthorizedBlobOverwrite. Nunca manda bytes
+ * distintos de los confirmados: en el peor caso (la política deja escribir) el blob queda igual. Nunca imprime la firma.
+ */
+async function chequearSoloCrear(opts = {}) {
+  const res = { estado: null, motivo: null, maquina: null };
+  const fin = (codigo, estado, motivo) => { res.estado = estado; if (motivo) res.motivo = motivo; return { codigo, res }; };
+  const integ = integracionBuzon();
+  if (integ.error) return fin(2, 'config_rota', integ.error);
+  if (!integ.prendida) return fin(0, 'apagado', integ.apagada);
+  const lc = leerConfig();
+  if (!lc.cfg) return fin(1, lc.estado, lc.motivo);
+  const { cfg } = lc;
+  const negativa = negativaDeLaLlave(cfg.sas);
+  if (negativa) return fin(2, negativa.estado, negativa.motivo);
+  const maquina = nombreDeMaquina();
+  res.maquina = maquina || null;
+  if (!maquina || !FORMA_MAQUINA.test(maquina)) return fin(1, 'sin_maquina', 'no se pudo saber el nombre de esta máquina (hostname vacío o sin forma de nombre)');
+  const origen = path.resolve(process.env.TYCON_TIMING_HISTORY || path.join(CASA_PIPELINE, 'timing-history'));
+  const dirRegistros = path.resolve(variable('TYCON_LOGS_DIR') || path.join(CASA_PIPELINE, 'registros-buzon'));
+  const rutaRegistro = path.resolve(variable('TYCON_UPLOADS_LOG') || path.join(CASA_PIPELINE, 'mailbox-uploads.json'));
+  let registro = null;
+  try {
+    const r = JSON.parse(fs.readFileSync(resolveFile(rutaRegistro, { where: DONDE }), 'utf8'));
+    if (r && r.destino === `${cfg.cuenta}/${cfg.contenedor}` && r.archivos && typeof r.archivos === 'object') registro = r;
+  } catch (_) { /* sin registro: no medido */ }
+  if (!registro) return fin(1, 'no_medido', `no medido: esta máquina no tiene un registro de subidas a este buzón (${rutaRegistro}): no hay un blob confirmado que volver a subir`);
+  // el archivo local de cada clave: `<maq>/registros/[v…/]<f>` → la preparación; `<maq>/<f>` → el registro de corridas
+  const candidatos = [];
+  for (const [clave, e] of Object.entries(registro.archivos)) {
+    if (!clave.startsWith(`${maquina}/`) || !e || typeof e.sha256 !== 'string' || !Number.isInteger(e.size)) continue;
+    const partes = clave.split('/');
+    const f = partes[partes.length - 1];
+    const local = partes[1] === 'registros' ? path.join(dirRegistros, f) : (partes.length === 2 ? path.join(origen, f) : null);
+    if (local) candidatos.push({ clave, e, f, local });
+  }
+  candidatos.sort((a, b) => a.e.size - b.e.size || (a.clave < b.clave ? -1 : 1));
+  for (const c of candidatos) {
+    let cuerpo;
+    try { cuerpo = fs.readFileSync(c.local); } catch (_) { continue; }
+    if (crypto.createHash('sha256').update(cuerpo).digest('hex') !== c.e.sha256) continue;
+    const blob = typeof c.e.blob === 'string' && c.e.blob.startsWith(`${maquina}/`) ? c.e.blob : c.clave;
+    const md5 = crypto.createHash('md5').update(cuerpo).digest('base64');
+    const url = `${urlBase(cfg)}/${encodeURIComponent(cfg.contenedor)}/${blob.split('/').map(encodeURIComponent).join('/')}?${cfg.sas}`;
+    const r = await ponerBlob(url, cuerpo, md5, 30000, { pisar: true });
+    res.archivo = c.f;
+    res.bytes = cuerpo.length;
+    if (r.error) return fin(1, 'sin_red', `sin red o sin respuesta del buzón (${r.error.code || r.error.message}): no se pudo comprobar`);
+    const codigo = `${r.status}${r.codigo ? ` ${r.codigo}` : ''}`;
+    res.respuesta = codigo;
+    if (r.status === 403 && r.codigo === 'UnauthorizedBlobOverwrite') return fin(0, 'solo_crear', `la política no deja pisar (${codigo}, política ${cfg.politica || '?'}): el buzón sólo crea`);
+    if (r.status === 201) return fin(1, 'dejo_escribir', `la política dejó escribir, o el blob ya no estaba (201, política ${cfg.politica || '?'}): lo verifica con az storage blob show alguien con el rol de lectura. Se mandaron los mismos bytes confirmados: el blob quedó igual`);
+    return fin(1, 'otro', `el buzón contestó ${codigo} al volver a subir los mismos bytes (política ${cfg.politica || '?'}): no prueba ni «sólo crear» ni lo contrario`);
+  }
+  return fin(1, 'no_medido', `no medido: ningún blob confirmado de esta máquina tiene todavía su archivo local con el mismo sha256 (${candidatos.length} anotado(s)): no se manda nada distinto de lo confirmado`);
+}
+
+module.exports = { placeFactsForMailbox, subir, chequearSoloCrear, respuestaDelBuzon, versionDe, msDeVersion, FORMA_VERSION, nombreDeMaquina, normalizarNombreDeMaquina, leerConfig, integracionBuzon, negativaDeLaLlave, rutaConfig, urlBase, FORMA_MAQUINA, FORMA_ARCHIVO, FORMA_REGISTRO, REGISTROS, prepararRegistros, usosParaElBuzon, X_MS_VERSION };
 
 if (require.main === module) {
   const args = process.argv.slice(2);
@@ -684,7 +883,8 @@ if (require.main === module) {
   const json = args.includes('--json');
   const budget = valor('--budget-ms');
   const stamp = () => new Date().toISOString().slice(0, 19).replace('T', ' ');
-  subir({
+  const accion = args.includes('--check-create-only') ? chequearSoloCrear : subir;
+  accion({
     dryRun: args.includes('--dry-run'),
     budgetMs: budget !== undefined ? Number(budget) : undefined,
     log: (m) => (json ? console.error : console.log)(`[${stamp()}] ${m}`),

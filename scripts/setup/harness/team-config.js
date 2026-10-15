@@ -269,7 +269,7 @@ function start(opts = {}) {
     }
     if (!u.pathname.startsWith('/api/')) return send(res, 404, { ok: false, message: 'no existe' });
     if (req.headers['x-harness-key'] !== token) return send(res, 403, { ok: false, message: 'falta la llave de la página' });
-    if (req.method === 'GET' && u.pathname === '/api/state') return send(res, 200, { ok: true, targets: state() });
+    if (req.method === 'GET' && u.pathname === '/api/state') return send(res, 200, { ok: true, targets: state(), mailbox: mailboxSummary(tree, opts.mailboxFile) });
     if (req.method !== 'POST') return send(res, 405, { ok: false, message: 'método no permitido' });
     if (req.headers.origin && req.headers.origin !== `http://${self}`) return send(res, 403, { ok: false, message: 'pedido desde otra página' });
     if (!/^application\/json\b/.test(String(req.headers['content-type'] || ''))) return send(res, 415, { ok: false, message: 'se espera JSON' });
@@ -379,8 +379,19 @@ function listField(label, list, set, p, problems) {
   return box;
 }
 
-const S = { targets: [], drafts: {}, problems: {}, notes: {} };
-async function load() { const r = await api('state'); S.targets = r.targets; for (const t of r.targets) { S.drafts[t.id] = clone(t.data || (t.id === 'repos' ? { version: 1 } : { version: 1, owners: { default: '' } })); S.problems[t.id] = t.problems || []; } render(); }
+const S = { targets: [], drafts: {}, problems: {}, notes: {}, mailbox: null };
+// story 2.24: el buzón de corridas, sólo lectura — la página nunca recibe la firma
+function mailboxSection(m) {
+  const s = el('section', {}, el('h2', { text: 'El buzón de corridas' }), el('p', { class: 'muted', text: 'Sólo lectura: la llave es una credencial y esta página no la muestra ni la guarda. Se cambia en el archivo de la capa del equipo (scripts/metrics/corridas-buzon.json).' }));
+  if (!m || !m.hay) { s.append(el('p', { text: m && m.problema ? 'El buzón no se pudo leer: ' + m.problema : 'sin buzón: esta organización no sube corridas' })); return s; }
+  s.append(el('ul', {},
+    el('li', { text: 'Cuenta: ' + m.cuenta }), el('li', { text: 'Contenedor: ' + m.contenedor }),
+    el('li', { text: 'Política: ' + (m.politica || 'sin nombre') }), el('li', { text: 'Vence: ' + m.vence }),
+    el('li', { text: 'Permisos propios de la firma: ' + (m.permisos_propios || 'ninguno (los toma de la política)') })));
+  s.append(el('p', { text: '«Sólo crear» no se puede comprobar desde esta página. Lo comprueba una máquina del equipo con:' }), el('pre', { text: 'node scripts/metrics/upload-runs.js --check-create-only' }));
+  return s;
+}
+async function load() { const r = await api('state'); S.targets = r.targets; S.mailbox = r.mailbox || null; for (const t of r.targets) { S.drafts[t.id] = clone(t.data || (t.id === 'repos' ? { version: 1 } : { version: 1, owners: { default: '' } })); S.problems[t.id] = t.problems || []; } render(); }
 
 function editor(t) {
   const d = S.drafts[t.id]; const pr = S.problems[t.id] || [];
@@ -444,11 +455,40 @@ function section(t) {
   return s;
 }
 function showNote(id, ok, text) { S.notes[id] = { ok, text }; render(); }
-function render() { app.replaceChildren(...S.targets.map(section)); }
+function render() { app.replaceChildren(...S.targets.map(section), mailboxSection(S.mailbox)); }
 document.getElementById('quit').addEventListener('click', async () => { await api('quit', {}); app.replaceChildren(el('p', { text: 'Página cerrada. Podés cerrar esta pestaña.' })); });
 load().catch((e) => app.replaceChildren(el('p', { class: 'err', text: 'No pude cargar la página: ' + e.message })));
 })();
 </script></body></html>`;
+}
+
+/**
+ * El buzón de corridas de la organización, para mostrar (story 2.24, AC 23): una PROYECCIÓN de la llave
+ * (`scripts/metrics/corridas-buzon.json` de la capa del equipo, leída con `leerConfig` del árbol) — cuenta, contenedor,
+ * política, vencimiento, los permisos propios de la firma si los trae, y los NOMBRES de sus parámetros. La firma no
+ * sale de acá: la llave es una credencial y la página no guarda credenciales. Sin el archivo: `{ hay: false }`.
+ */
+function mailboxSummary(tree, file) {
+  let lib;
+  const guion = path.join(tree, 'scripts', 'metrics', 'upload-runs.js');
+  try { lib = require(guion); }
+  catch (e) {
+    // sólo «el archivo no está» es «esta versión no lo trae»; otro error (uno de sintaxis, una dependencia que falta) se dice con su código
+    if (e && e.code === 'MODULE_NOT_FOUND' && !fs.existsSync(guion)) return { hay: false, problema: 'esta versión del arnés no trae la subida al buzón' };
+    return { hay: false, problema: `no se pudo cargar scripts/metrics/upload-runs.js (${(e && (e.code || e.name)) || 'error'})` };
+  }
+  const lc = lib.leerConfig(['cuenta', 'contenedor', 'sas', 'vence'], file || undefined);
+  if (!lc.cfg) return lc.estado === 'sin_config' ? { hay: false } : { hay: false, problema: lc.motivo };
+  const firma = new URLSearchParams(lc.cfg.sas);
+  return {
+    hay: true,
+    cuenta: lc.cfg.cuenta,
+    contenedor: lc.cfg.contenedor,
+    politica: typeof lc.cfg.politica === 'string' ? lc.cfg.politica : null,
+    vence: lc.cfg.vence,
+    permisos_propios: firma.get('sp') || null,
+    parametros: [...new Set(firma.keys())],
+  };
 }
 
 /** Las carpetas que la máquina ya declaró (`paths.team`, `paths.operations`), o null. Sin configuración legible: null (la página las pide). */
@@ -462,4 +502,4 @@ function declaredClones({ env = process.env } = {}) {
   return { repos: pick(p.team), operations: pick(p.operations) };
 }
 
-module.exports = { TARGETS, start, declaredClones, readTarget, saveTarget, proposalPlan, runProposal, remoteOf, browserCommand, cloneProblem, formatJson, loadReader, NO_PERMISSION, TEAM_REPOS_SINCE, profileGateProblem };
+module.exports = { TARGETS, start, declaredClones, mailboxSummary, readTarget, saveTarget, proposalPlan, runProposal, remoteOf, browserCommand, cloneProblem, formatJson, loadReader, NO_PERMISSION, TEAM_REPOS_SINCE, profileGateProblem };
