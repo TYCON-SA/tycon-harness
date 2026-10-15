@@ -51,6 +51,12 @@
       "retired_by": "8.24"
     },
     {
+      "path": "scripts/production/guard-libs/lib/guard-record.js",
+      "why": "la copia propia del freno de producción (2026-10-14) de scripts/lib/guard-record.js: es la que viaja a /opt, byte a byte la compartida, con el mismo respaldo; se retira cuando la compartida lo saque y quien mantiene refresque la copia (guard-libs-check.js refresh)",
+      "retire_after": "2026-11-07",
+      "retired_by": "8.24"
+    },
+    {
       "path": "scripts/lib/legacy-names.js",
       "why": "viaja al freno de producción en /opt: desde la tanda D (2026-10-08) le pide la carpeta del estado a tycon-home.js si está al lado (en /opt viaja su copia) y sólo sin ella arma la de siempre: la mención queda como respaldo",
       "retire_after": "2026-11-07",

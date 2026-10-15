@@ -250,6 +250,15 @@ freno que molesta sin motivo es el que alguien termina apagando.
   corre, al día; distinto pero igual a la constancia, «quedó viejo»; distinto de las dos, «alguien lo cambió». Nunca
   contra el clon que la máquina mantiene, que no trae los mismos bytes que la versión que se baja. Un freno instalado
   antes de la constancia no la tiene: ante un desajuste dice «quedó viejo», y reinstalar la deja escrita.
+- **La copia propia** (desde 2026-10-14): el freno no se instala con las bibliotecas compartidas del arnés (la raíz de
+  repos, la configuración, dónde vive cada cosa…), que cambian casi todos los días por motivos ajenos al freno y hacían
+  pedir la contraseña del Mac en cada versión. Se instala con su copia, `scripts/production/guard-libs/`, y el aviso
+  compara sólo eso y las piezas del freno: un cambio en el resto del arnés ya no pide reinstalar. La copia se actualiza
+  a conciencia: `node scripts/production/guard-libs-check.js` (lo corre `install-guard.test.sh`, T34) frena cuando una
+  compartida cambió en algo que el freno usa y nadie lo decidió, dice qué difiere, y ofrece `refresh` (la copia pasa a
+  ser la compartida; el freno cambia y cada máquina reinstala una vez) o `keep` (queda la copia; se anota que se miró).
+  Lo que difiere sólo en lo que el freno no usa se dice y no frena. Un freno instalado antes de la copia propia pide
+  reinstalar una sola vez más, y ese aviso lo explica.
 - Red: `scripts/tests/prod-access-guard.test.sh`, `tycon-prod-sql.test.sh`, `install-guard.test.sh`
   y los casos `40-prod-access-guard.json` / `41-produccion-notice.json` del banco.
 - Registro de ayuda: `~/.claude/.tycon-pipeline/production.log` (nunca la sentencia, sólo su huella).
