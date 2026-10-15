@@ -28,6 +28,8 @@
 #   T23  sin temporal para la salida (mktemp falla) el comando corre, conserva su código y queda output: null
 #
 # 🔴 HOME falso siempre: el espejo de los humos (`gates.log`) vive bajo el home.
+# stable-data: lee el reloj a propósito y no compara contra un valor fijo: mide cuánto tarda un humo con un proceso de
+# fondo (T20), y el sello de cada humo lo pone smoke-run.sh con la hora real, que es lo que se prueba.
 # Correr: bash scripts/tests/smoke-expectation.test.sh
 set -uo pipefail
 AQUI="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

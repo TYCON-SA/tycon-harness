@@ -176,7 +176,6 @@
     "scripts/tests/deploy-plugin.test.sh",
     "scripts/tests/download-runs.test.sh",
     "scripts/tests/engram-rescue.test.js",
-    "scripts/tests/evidence-key-collision.test.sh",
     "scripts/tests/fixtures/bootstrap-legacy-place.js",
     "scripts/tests/fixtures/toy-release-server.js",
     "scripts/tests/get-harness.test.sh",

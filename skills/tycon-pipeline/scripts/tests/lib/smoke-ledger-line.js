@@ -19,6 +19,8 @@
  *        [--cmd 'curl -s http://app/x'] [--mutates] [--repo <ruta>] [--no-mirror]
  *        [--pass-if <texto> [--fail-if <texto>] [--output-text <texto>]]
  */
+// stable-data: el sello por defecto es la hora real a propósito: la matriz descarta la evidencia más vieja que el código,
+// y una hora fija se pudriría (caso «fechas podridas», 2026-08-13). Quien necesita un sello fijo lo pasa con `ts`.
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
