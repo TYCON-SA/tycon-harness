@@ -1,4 +1,4 @@
-# Step 5b — Adversarial deep-verify (reproduce-or-refute)
+# Pase adversarial
 
 **Objetivo**: correr un pase adversarial que **EJECUTA** el código del diff (bundlea/compila/parsea + corre
 probes contra datos/corpus reales) para CONFIRMAR o REFUTAR bugs de correctitud — la capa que los 6 advisors

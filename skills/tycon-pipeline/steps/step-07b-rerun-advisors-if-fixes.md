@@ -1,4 +1,4 @@
-# Step 7b — Re-correr advisors si hubo fixes (decisión automática)
+# Revisores, otra vuelta
 
 **Objetivo**: cerrar el loop post-Step 7 — si la decisión del usuario (o el auto-flow)
 resultó en **fixes de código aplicados**, el diff que los advisors auditaron ya no es el

@@ -1,4 +1,4 @@
-# Step 4 — Ejecutar implementación + build gate
+# Implementar y correr las pruebas
 
 **Objetivo**: el skill BMAD elegido en Step 2 ahora ejecuta el plan aprobado en Step 3. Después se corre build para verificar que el código compila antes de invocar advisors.
 

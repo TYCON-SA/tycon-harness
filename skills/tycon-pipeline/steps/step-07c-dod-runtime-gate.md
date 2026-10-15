@@ -1,4 +1,4 @@
-# Step 7c — DoD Runtime Gate (MANDATORY)
+# Probar en vivo
 
 **Objetivo**: bloquear el avance a Step 8 (commit prep) hasta que exista evidencia
 de Definition of Done runtime — smoke check ejecutado, E2E specs corridos,

@@ -231,8 +231,9 @@ function verificar(skillPath) {
   // T4 — las tres correcciones del laboratorio
   const cuerpo = sinFrontmatter(skill);
   if (!/test-gate[\s\S]{0,400}\b4\b[^\n]*(FRENO|frena)/i.test(cuerpo)) fallas.push('T4 SkillMd_CorreccionesLab: falta el exit 4 (FRENO) del test-gate');
-  if (!/Step 8[^\n]*marker\.js clear[^\n]*review/i.test(cuerpo)) fallas.push('T4 SkillMd_CorreccionesLab: falta el cierre del Step 8 (`marker.js clear` + story en review)');
-  if (!/Corrido de verdad: N de T/.test(cuerpo)) fallas.push('T4 SkillMd_CorreccionesLab: falta el resumen de la matriz del Step 7 («Corrido de verdad: N de T…»)');
+  // los pasos, por su nombre llano (story 7.23): «Preparar el commit» es el que era el Step 8; «Hallazgos», el 7
+  if (!/Preparar el commit[^\n]*marker\.js clear[^\n]*review/i.test(cuerpo)) fallas.push('T4 SkillMd_CorreccionesLab: falta el cierre de «Preparar el commit» (`marker.js clear` + story en review)');
+  if (!/Corrido de verdad: N de T/.test(cuerpo)) fallas.push('T4 SkillMd_CorreccionesLab: falta el resumen de la matriz en «Hallazgos» («Corrido de verdad: N de T…»)');
 
   return fallas;
 }
@@ -253,7 +254,7 @@ if (require.main === module) {
       for (const f of fallas) console.log('   ' + f);
       process.exit(1);
     }
-    console.log('✅ test-skill-contract: SKILL.md ≤ 25 KB, contrato completo, historia conservada, correcciones del laboratorio presentes');
+    console.log('✅ test-skill-contract (SkillMd_ContractWithinCap, T6 de la story 7.23): SKILL.md ≤ 25 KB, contrato completo, historia conservada, correcciones del laboratorio presentes');
   } catch (e) {
     console.log(`❌ test-skill-contract: no pude correr — ${e.message}`);
     process.exit(1);

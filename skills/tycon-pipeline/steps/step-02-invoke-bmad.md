@@ -1,4 +1,4 @@
-# Step 2 — Invocar skill BMAD en plan mode
+# Armar el plan
 
 **Objetivo**: invocar el skill BMAD apropiado según el story, pedirle que genere un plan de implementación en plan mode (NO ejecuta código todavía).
 

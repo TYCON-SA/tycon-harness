@@ -1,4 +1,4 @@
-# Step 0 — Preflight checks
+# Arranque
 
 **Objetivo**: verificaciones críticas ANTES de arrancar el pipeline. Si alguna falla, pausa para decisión del usuario.
 
@@ -36,10 +36,10 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js find-by-stor
 Detectados N markers activos en sesiones distintas a la actual:
   • sessionId=abc12345… started=<date> lastTouch=<date>
     repoPath=<path>
-    stepsCompleted=[0,1,2,3] stepsPending=[4,5,6,7,8] filesTouched=N
+    hechos: Arranque, Validar la story, Armar el plan, Aprobar el plan · pendientes: Implementar y correr las pruebas, … · filesTouched=N
 
-NO arrancar Step 0 desde cero — vas a:
-  • Re-ejecutar steps ya hechos (Step 1 validator, Step 2 BMAD plan).
+NO arrancar la corrida desde cero («Arranque») — vas a:
+  • Re-ejecutar pasos ya hechos («Validar la story», «Armar el plan»).
   • Re-preguntar decisiones ya tomadas al user.
   • Re-implementar archivos ya creados → colisión Write.
   • Abrir 2do timer Clockify encima del 1ro (doble cobro).
@@ -51,11 +51,11 @@ Opciones:
     3. Adoptar el marker de la otra sesión (copia COMPLETA sin pérdida:
        filesTouched, iterations, checks, dodRuntimeChecked):
        marker.js adopt-session <sessionId>
-    4. Arrancar desde primer step pending (NO Step 0).
+    4. Arrancar desde el primer paso pendiente (NO desde «Arranque»).
 
 (b) Si la otra sesión está MUERTA (la sesión crasheó / el dev cerró):
     node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js clear-session <sessionId>
-    después arrancar fresh con Step 0.
+    después arrancar de nuevo desde «Arranque».
 
 (c) Si querés DOS sesiones en paralelo sobre la misma story (raro — implica
     branches Git distintas):
@@ -232,7 +232,7 @@ Si al arrancar el pipeline detectás que `status:` YA es `in-progress` y PIPE-C0
 ```
 🟡 ALERTA — Story X.Y.Z tiene status: in-progress sin marker activo
 
-Esto indica un pipeline previo que NO terminó (sesión cerrada sin completar Step 8/9).
+Esto indica un pipeline previo que NO terminó (sesión cerrada sin «Preparar el commit» ni «Cerrar en ADO»).
 
 Last touch del frontmatter (git log): <fecha>
 
@@ -241,7 +241,7 @@ Opciones:
     para ver archivos sin commitear, y continuá desde donde quedó.
 (b) RESET — el trabajo previo se descarta, volvé `status: ready-for-dev` con:
     marker.js update-story-status "<STORY_PATH>" "ready-for-dev"
-    y arrancá Step 0 fresh. Cualquier archivo sin commitear se pierde si
+    y arrancá de nuevo desde «Arranque». Cualquier archivo sin commitear se pierde si
     hacés `git checkout`.
 (c) Cancelar.
 ```

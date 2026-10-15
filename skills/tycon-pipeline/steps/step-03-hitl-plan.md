@@ -1,4 +1,4 @@
-# Step 3 — HITL Checkpoint: aprobar plan
+# Aprobar el plan
 
 **Objetivo**: pedir aprobación explícita del usuario antes de que BMAD ejecute el plan.
 

@@ -1,4 +1,4 @@
-# Step 5 — Invocar advisors en paralelo
+# Revisores
 
 **Objetivo**: correr los advisors post-implementación sobre el diff resultante de Step 4. A.i: siempre se corren los aplicables al tipo de proyecto, sin flags para saltear.
 
@@ -203,8 +203,8 @@ Referencia humana de la tabla anterior: este archivo en git history.
 **Antes** de invocar los advisors, el orquestador DEBE anunciar explícitamente qué advisors va a correr y cuáles se saltean con razón. El anuncio DEBE listar los **3 sets**: base, completitud, condicionales. Sin el anuncio explícito de los 3 sets → bug.
 
 ```
-Step 5 advisors:
-  mech-check: X findings confirmados (→ directo a Step 6 sin advisor);
+Revisores:
+  mech-check: X findings confirmados (→ directo a «Hallazgos» sin advisor);
               escala (llm_escalation): tycon-deferral-tracker [o "ninguno"].
   Paquetes: bizuit (3 revisores) · clients (2) [o "packs: [] — SIN paquetes instalados, corre sólo el núcleo";
             si `packs_declarados` no es null: "restringido por el repo a: <lista>" — un [] ahí es «restringido a ninguno», no «ninguno instalado»].
@@ -220,7 +220,7 @@ Step 5 advisors:
                  + migration-impact-analyzer (database/*.sql)
                  [O "ninguno aplica para este diff" si no hay triggers].
   Skipped: <revisor de paquete> (su condición no se cumplió: no hay .cs) — solo si aplica.
-  Total: N advisors a invocar en ventana deslizante de <cap> vivos (<4 | 2 — el 5b está en vuelo>).
+  Total: N advisors a invocar en ventana deslizante de <cap> vivos (<4 | 2 — el pase adversarial está en vuelo>).
 ```
 
 Si la detección resulta ambigua (ej: monorepo con `.cs` y `.tsx` pero ningún file cambiado en uno de los lados), **preguntar al usuario** qué advisors correr antes de seguir.
@@ -230,7 +230,7 @@ Si la detección resulta ambigua (ej: monorepo con `.cs` y `.tsx` pero ningún f
 Después de recibir reportes de todos los advisors invocados, **antes de avanzar a Step 6**, el orquestador DEBE chequear:
 
 ```
-Step 5 verification:
+Revisores, verificación:
   Set base esperado: 4. Ejecutados: <count_base>.
   Set completitud esperado: spec-first + feature-wiring (pantalla o endpoint en el diff); ac-coverage y
   deferral-tracker según iter (1 sí si aplican / ≥2 solo escalados) — el expected[]

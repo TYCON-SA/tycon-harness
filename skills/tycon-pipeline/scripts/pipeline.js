@@ -2520,21 +2520,9 @@ function parseFrontmatterList(content, key) {
 // skip-conditions se cumplen mecánicamente, en vez de derivarlo de la prosa del
 // SKILL (fuente de los skips-por-inferencia E.i). Validar en corridas reales
 // antes de borrar prosa del SKILL (secuencia acordada con el plan H17).
-const STEP_SEQUENCE = [
-  { id: '0', file: 'step-00-preflight.md' },
-  { id: '0b', file: 'step-00b-clocki-start.md' },
-  { id: '0c', file: 'step-00c-ado-mark-active.md' },
-  { id: '1', file: 'step-01-validate-story.md' },
-  { id: '2', file: 'step-02-invoke-bmad.md' },
-  { id: '3', file: 'step-03-hitl-plan.md' },
-  { id: '4', file: 'step-04-execute.md' },
-  { id: '5', file: 'step-05-advisors-parallel.md' },
-  { id: '5b', file: 'step-05b-adversarial-verify.md' },
-  { id: '6', file: 'step-06-consolidated-report.md' },
-  { id: '7', file: 'step-07-hitl-approve.md' },
-  { id: '7c', file: 'step-07c-dod-runtime-gate.md' },
-  { id: '8', file: 'step-08-commit-prep.md' },
-];
+// La secuencia sale de la tabla única de pasos (story 7.23): los trece que recorre `next`, sin el 7b ni el 9.
+const STEPS_TABLE = require('./lib/steps.js');
+const STEP_SEQUENCE = STEPS_TABLE.STEPS.filter((s) => s.inSequence !== false).map(({ id, file }) => ({ id, file }));
 const STEPS_DIR = path.join(os.homedir(), '.claude', 'agent-skills', 'skills', 'tycon-pipeline', 'steps');
 // Sub-steps que se cierran con un marker FLAG (no con complete-step N): computeNext lo usa para el hint.
 const SUBSTEP_FLAG = { '0b': 'clockiStarted', '0c': 'adoMarkedActive', '5b': 'deepReviewDone' };
@@ -2544,19 +2532,19 @@ const SUBSTEP_FLAG = { '0b': 'clockiStarted', '0c': 'adoMarkedActive', '5b': 'de
 // comando que sale 2.
 const NOTA_CIERRE_5B = 'si el pase corrió, marker.js mark-adversarial-result <N confirmados> --type 5b --run <runId> --model <modelo> '
   + '--tests <k> [--own <p> --in "<rutas>"] [--deferred <d> --reason "…"]; si no corre, marker.js mark-adversarial-skipped '
-  + '--files <archivos de código del diff> (lo decide el portón). Los dos cierran el 5b (la bandera ya no se escribe a mano)';
+  + '--files <archivos de código del diff> (lo decide el portón). Los dos cierran el pase adversarial (la bandera ya no se escribe a mano)';
 // El 7c tampoco se cierra con `complete-step`, ni se saltea en silencio (2026-10-03). El cierre del paso 8 exige
 // `dodRuntimeChecked` SIEMPRE —la story exenta la deja con «exenta: …»—, así que `next` no puede dar el 7c por
 // salteado y mandar al 8: dos corridas del mismo día chocaron contra ese freno después de obedecer a `next` (una con
 // modelo en una máquina limpia, otra del arnés). El motivo mecánico del salteo sigue a la vista en `skip_mechanical`.
 const NOTA_CIERRE_7C = 'marker.js mark-dod-runtime-checked \'{"verdict":"PASS","evidencePath":"<ruta de la evidencia>"}\'';
 const NOTA_7C_EXENTA = 'La story está exenta de la verificación en vivo (dod_runtime_exempt: true): no hay nada que correr, pero el cierre '
-  + 'del paso 8 pide su constancia. Dejala con: marker.js mark-dod-runtime-checked \'{"verdict":"PASS","evidencePath":"exenta: <la razón del frontmatter>"}\'.';
+  + 'de «Preparar el commit» pide su constancia. Dejala con: marker.js mark-dod-runtime-checked \'{"verdict":"PASS","evidencePath":"exenta: <la razón del frontmatter>"}\'.';
 
 function computeNext() {
   const marker = readSessionMarker();
   if (!marker || !marker.storyId) {
-    return { error: 'sin marker activo en esta sesión — arrancá con `pipeline.js start --story <spec> --repo <dir>` (o marker.js set en Step 0)' };
+    return { error: 'sin marker activo en esta sesión — arrancá con `pipeline.js start --story <spec> --repo <dir>` (o marker.js set en el «Arranque»)' };
   }
   const story = marker.storyPath ? readText(marker.storyPath) : '';
   const fm = parseFrontmatterPipeline(story);
@@ -2597,7 +2585,7 @@ function computeNext() {
     } else {
       done = completedNums.has(s.id);
     }
-    const entry = { step: s.id, file: path.join(STEPS_DIR, s.file), done, ...(skip ? { skip_mechanical: skip } : {}) };
+    const entry = { step: s.id, name: STEPS_TABLE.stepName(s.id), file: path.join(STEPS_DIR, s.file), done, ...(skip ? { skip_mechanical: skip } : {}) };
     stepState.push(entry);
     // El 7c es el único sub-paso cuyo salteo deja constancia: sin ella el paso 8 no cierra (ver NOTA_CIERRE_7C).
     if (!nextStep && !done && (!skip || s.id === '7c')) nextStep = entry;
@@ -2607,7 +2595,7 @@ function computeNext() {
   // Pre-condiciones del next conocidas por el script.
   const preconditions = [];
   if (nextStep && nextStep.step === '8') {
-    preconditions.push({ id: 'dodRuntimeChecked', satisfied: marker.dodRuntimeChecked === true, detail: 'Step 7c debe haber pasado (marker.dodRuntimeChecked)' });
+    preconditions.push({ id: 'dodRuntimeChecked', satisfied: marker.dodRuntimeChecked === true, detail: '«Probar en vivo» debe haber pasado (marker.dodRuntimeChecked)' });
     const checks = marker.checks || {};
     for (const c of ['build', 'tests', 'advisors']) {
       if (checks[c]) preconditions.push({ id: `check-${c}`, satisfied: checks[c] === 'green', detail: `marker.checks.${c}=${checks[c]} (provenance: ${(marker.checksProvenance || {})[c] || 'desconocida'})` });
@@ -2630,14 +2618,16 @@ function computeNext() {
     adversarial: adv,
     adversarial_is_ours: advIsOurs,
     next_step: nextStep ? nextStep.step : null,
+    // el nombre llano del paso (story 7.23): es lo que se le dice al dueño; `next_step` queda para los comandos
+    step_name: nextStep ? nextStep.name : null,
     next_step_file: nextStep ? nextStep.file : null,
     preconditions,
     steps: stepState,
     note: exempt7c
-      ? NOTA_7C_EXENTA
+      ? `Sigue «${nextStep.name}». ${NOTA_7C_EXENTA}`
       : nextStep
-      ? `Leé SOLO ${path.basename(nextStep.file)} y ejecutalo. Los skips listados son mecánicos (verificables) — no infieras otros (regla E.i). Al completar: ${nextStep.step === '5b' ? NOTA_CIERRE_5B : nextStep.step === '7c' ? NOTA_CIERRE_7C : SUBSTEP_FLAG[nextStep.step] ? `marker.js set-flag ${SUBSTEP_FLAG[nextStep.step]} true` : nextStep.step === '3' ? 'marker.js complete-step 3 --approved "<cita textual de la aprobación del user>" (Nivel 2 LOW-risk: --auto-approved "<criterios>"). Hasta entonces el portón de carril DENIEGA cualquier Edit/Write de código' : nextStep.step === '5' ? 'marker.js run-check advisors -- pipeline.js check-count … y recién después marker.js complete-step 5 (bloquea sin el verde real)' : `marker.js complete-step ${nextStep.step}`}.${adv && advIsOurs === false ? ' ⚠️ marker.adversarial es de OTRA sesión (huérfano) → en step-05b se relanza, ver §JOIN.' : ''}`
-      : 'No quedan steps pendientes — cerrá con marker.js clear (o step-09 si vas a cerrar la story en ADO).',
+      ? `Sigue «${nextStep.name}». Leé SOLO ${path.basename(nextStep.file)} y ejecutalo. Los skips listados son mecánicos (verificables) — no infieras otros (regla E.i). Al completar: ${nextStep.step === '5b' ? NOTA_CIERRE_5B : nextStep.step === '7c' ? NOTA_CIERRE_7C : SUBSTEP_FLAG[nextStep.step] ? `marker.js set-flag ${SUBSTEP_FLAG[nextStep.step]} true` : nextStep.step === '3' ? 'marker.js complete-step 3 --approved "<cita textual de la aprobación del user>" (Nivel 2 LOW-risk: --auto-approved "<criterios>"). Hasta entonces el portón de carril DENIEGA cualquier Edit/Write de código' : nextStep.step === '5' ? 'marker.js run-check advisors -- pipeline.js check-count … y recién después marker.js complete-step 5 (bloquea sin el verde real)' : `marker.js complete-step ${nextStep.step}`}.${adv && advIsOurs === false ? ' ⚠️ marker.adversarial es de OTRA sesión (huérfano) → en el pase adversarial se relanza, ver §JOIN de step-05b-adversarial-verify.md.' : ''}`
+      : 'No quedan pasos pendientes — cerrá con marker.js clear (o step-09-ado-story-closure.md si vas a cerrar la story en ADO: «Cerrar en ADO»).',
   };
 }
 
@@ -2866,7 +2856,7 @@ function computeStart(args) {
     actions_done: actions,
     e2e_gap: e2eCfg.gap ? e2eCfg.warning : null,
     spec_stale: stale,
-    next: 'pipeline.js next te dice el próximo step (0b clocki / 0c ADO / 1 validate)',
+    next: 'pipeline.js next te dice el próximo paso (el reloj de Clockify, el pedido en ADO o validar la story)',
   };
 }
 

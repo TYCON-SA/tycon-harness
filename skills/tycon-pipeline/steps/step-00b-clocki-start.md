@@ -1,4 +1,4 @@
-# Step 0b — Clocki time tracking start
+# Arranque: reloj de Clockify
 
 **Objetivo**: abrir una entry en Clockify con el título de la story al arrancar la implementación. Pre-requisito: Clockify MCP instalado (ver `~/.claude/tycon-harness/guides/clockify-mcp.md`). Si no está instalado, este step se saltea silenciosamente — no bloquea el pipeline.
 
@@ -109,7 +109,7 @@ Si CUALQUIER paso falla (MCP no responde, project no resuelve, write a active.js
 Archivo `step-00b-clocki.md` en `.advisors/pipeline-runs/<clave>-<sello>/`:
 
 ```markdown
-# Step 0b — Clocki start
+# Arranque: reloj de Clockify
 
 - description: Story <N.M> — Webhook handler
 - workspaceId: ws-xxx

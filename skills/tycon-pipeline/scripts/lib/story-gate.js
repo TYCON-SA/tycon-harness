@@ -176,7 +176,7 @@ function computeStoryGate({
       return {
         action: 'block',
         kind: 'plan',
-        reason: `Step 3 (plan aprobado) sigue pendiente en el marker de la story ${marker.storyId}`,
+        reason: `«Aprobar el plan» sigue pendiente en el marker de la story ${marker.storyId}`,
       };
     }
     return { action: 'pass', reason: 'pipeline activo (marker) — carril story' };
@@ -236,18 +236,18 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via } 
     return [
       `⛔ tycon-pipeline — CÓDIGO ANTES DEL PLAN APROBADO (story ${marker?.storyId || '?'})`,
       viaLine + '',
-      `  Ibas a editar código (${f}) y el Step 3 —el user aprueba el plan— todavía está PENDIENTE en el`,
+      `  Ibas a editar código (${f}) y «Aprobar el plan» —el user aprueba el plan— todavía está PENDIENTE en el`,
       '  marker. El orden del pipeline es: validar story → BMAD arma plan → EL USER LO APRUEBA → recién ahí',
       '  tests (ATDD) y código. Saltearse el HITL del plan es exactamente lo que este portón impide.',
       '',
       '  Salidas:',
-      '   1. Si todavía no mostraste el plan → terminá Steps 1-2 (`pipeline.js next` te dice cuál va) y',
+      '   1. Si todavía no mostraste el plan → terminá «Validar la story» y «Armar el plan» (`pipeline.js next` te dice cuál va) y',
       '      presentáselo al user. NO codees "mientras tanto".',
       '   2. Si el user YA aprobó el plan (palabras claras de proceder, sin condiciones) →',
       `        node ${MARKER_JS} complete-step 3 --approved "<cita textual de la aprobación>"`,
       '      (auto-aprobación Nivel 2, SOLO story LOW-risk — se verifica: `--auto-approved "<criterios>"`).',
       '   3. Si estás retomando un pipeline (sesión nueva / compactación) → `pipeline.js next` +',
-      '      `marker.js get` y cerrá los steps que efectivamente ya pasaron, con su evidencia.',
+      '      `marker.js get` y cerrá los pasos que efectivamente ya pasaron, con su evidencia.',
       '',
       '  No hay escape por comando para este portón: la aprobación del plan es del user, no del agente',
       '  (el kill-switch del dev TYCON_STORY_GATE=off apaga el hook entero; la config por repo NO apaga éste).',
@@ -290,7 +290,7 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via } 
     '       Si NO existe todavía: primero la story (Mary+GOLD), después el pipeline:',
     '         Skill(skill="bmad-agent-analyst", …)  ← alcance aún difuso (discovery con Mary)',
     '         Skill(skill="tycon-create-story", …)   ← alcance acordado',
-    '       El pipeline setea el marker en el Step 0 y este portón se abre solo.',
+    '       El pipeline setea el marker en el «Arranque» y este portón se abre solo.',
     '',
     '   (b) HOTFIX / AJUSTE CHICO SIN STORY (bug puntual, refactor acotado, cleanup) → carril ad-hoc:',
     `         node ${MARKER_JS} adhoc set '{"reason":"<qué y por qué, en palabras del user>"}'`,

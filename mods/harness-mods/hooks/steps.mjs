@@ -1,23 +1,24 @@
 // Los pasos del pipeline de una story, como los muestra el cartel (story 7.27).
 //
-// Copia de `STEP_SEQUENCE` y `SUBSTEP_FLAG` de skills/tycon-pipeline/scripts/pipeline.js: el plugin corre sin Node y
-// no puede leer ese archivo. scripts/tests/harness-mods.test.js (T16) frena si las dos listas se separan.
+// Copia de `STEP_SEQUENCE` y `SUBSTEP_FLAG` de skills/tycon-pipeline/scripts/pipeline.js, con los nombres llanos de
+// skills/tycon-pipeline/scripts/lib/steps.js (story 7.23): el plugin corre sin Node y no puede leer esos archivos.
+// scripts/tests/harness-mods.test.js (T16) frena si los ids o los nombres se separan.
 
-/** Cada paso: su id (el del marker) y el nombre que lee el dev. */
+/** Cada paso: su id (el del marker) y el nombre que lee el dev — el único que se le muestra, sin el id. */
 export const STEPS = [
-  { id: '0', name: 'preparación' },
-  { id: '0b', name: 'registro de horas' },
-  { id: '0c', name: 'pedido en Azure' },
-  { id: '1', name: 'validar la story' },
-  { id: '2', name: 'plan' },
-  { id: '3', name: 'aprobar el plan' },
-  { id: '4', name: 'implementación' },
-  { id: '5', name: 'revisores' },
-  { id: '5b', name: 'búsqueda de fallas' },
-  { id: '6', name: 'reporte' },
-  { id: '7', name: 'aprobar hallazgos' },
-  { id: '7c', name: 'verificación en vivo' },
-  { id: '8', name: 'commit' },
+  { id: '0', name: 'Arranque' },
+  { id: '0b', name: 'Arranque: reloj de Clockify' },
+  { id: '0c', name: 'Arranque: pedido en ADO' },
+  { id: '1', name: 'Validar la story' },
+  { id: '2', name: 'Armar el plan' },
+  { id: '3', name: 'Aprobar el plan' },
+  { id: '4', name: 'Implementar y correr las pruebas' },
+  { id: '5', name: 'Revisores' },
+  { id: '5b', name: 'Pase adversarial' },
+  { id: '6', name: 'Hallazgos: el informe' },
+  { id: '7', name: 'Hallazgos: la decisión' },
+  { id: '7c', name: 'Probar en vivo' },
+  { id: '8', name: 'Preparar el commit' },
 ];
 
 /** Los sub-pasos que se dan por hechos con una bandera del marker (el 7c, como en `computeNext`). */

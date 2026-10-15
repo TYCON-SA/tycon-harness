@@ -1,4 +1,4 @@
-# Step 1 — Validar la story
+# Validar la story
 
 **Objetivo**: invocar el advisor `tycon-story-validator` sobre el path del story que el user pasó. Reportar issues. Si hay CRITICAL, pausar antes de seguir.
 
@@ -23,7 +23,7 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js followups-
 - **exit 0 / `has_section: false` o `open: 0`** → no hay deuda de review; seguir normal.
 - **exit 3 / `open > 0`** → ANUNCIAR al user: *"Esta story tiene {open} review follow-up(s) de
   advisors sin resolver de una corrida previa: {items}. Los priorizamos antes de re-implementar
-  (regla bmad-dev-story Step 3)."* El dev decide: resolverlos primero (marcar `[x]` al arreglar
+  (regla de bmad-dev-story: los follow-ups de revisión van antes que las tareas nuevas)."* El dev decide: resolverlos primero (marcar `[x]` al arreglar
   cada uno en el código) o waivearlos explícitamente. NO arrancar coding nuevo ignorándolos.
 
 ## Acción

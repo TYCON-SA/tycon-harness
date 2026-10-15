@@ -1,4 +1,4 @@
-# Step 8 — Preparar commit (no commitear automático)
+# Preparar el commit
 
 **Objetivo**: armar un mensaje de commit bien formado según las convenciones TYCON. **NO ejecuta `git commit`**. Deja el mensaje listo para que el dev lo revise y commitee manualmente.
 
@@ -27,13 +27,13 @@ diff_at_last_step_06 := snapshot del diff cuando se corrieron los advisors
 diff_now := snapshot del diff actual
 
 si diff_at_last_step_06 != diff_now:
-  STOP — no continuar Step 8.
-  Mensaje al usuario: "Detecté cambios al código desde la última corrida de advisors.
-  Antes de armar commit, vuelvo a Step 5 para re-auditar el diff actualizado."
-  GOTO Step 5 con iteration: N+1.
+  STOP — no seguir preparando el commit.
+  Mensaje al usuario: "Detecté cambios al código desde la última corrida de revisores.
+  Antes de armar el commit, vuelvo a «Revisores» para re-auditar el diff actualizado."
+  GOTO «Revisores» con iteration: N+1.
 
 si diff_at_last_step_06 == diff_now:
-  Continuar Step 8.
+  Seguir preparando el commit.
 ```
 
 **Por qué**: después de fixes mayores sobre lo que reportaron los advisors, arrancar el Step 8 SIN re-correrlos deja ese código nuevo sin auditar, y sólo lo nota una persona. El pipeline DEBE evitar este pattern automáticamente.
