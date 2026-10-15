@@ -64,15 +64,24 @@ http.createServer((req, res) => {
     const tam = Number(leer('pagina', '5000'));
     const trozo = nombres.slice(desde, desde + tam);
     const sig = desde + tam < nombres.length ? String(desde + tam) : '';
+    // story 2.24: `fechas` = JSON { nombre: [creado ISO | null, modificado ISO] }; sin entrada, las dos son el mtime del archivo.
+    let fechas = {};
+    try { fechas = JSON.parse(leer('fechas', '{}')); } catch (_) { fechas = {}; }
     const blobs = trozo.map((n) => {
       const b = fs.readFileSync(path.join(raiz, n));
       const md5 = leer('sin-md5', '') ? '' : crypto.createHash('md5').update(b).digest('base64');
-      return `<Blob><Name>${xml(n)}</Name><Properties><Content-Length>${b.length}</Content-Length><Content-MD5>${md5}</Content-MD5><Etag>0x${crypto.createHash('sha1').update(b).digest('hex').slice(0, 16)}</Etag></Properties></Blob>`;
+      const mt = fs.statSync(path.join(raiz, n)).mtime.toUTCString();
+      const [creado, modificado] = fechas[n] || [mt, mt];
+      const rfc = (iso) => (/^\d{4}-/.test(iso) ? new Date(iso).toUTCString() : iso);
+      const fechasXml = `${creado ? `<Creation-Time>${rfc(creado)}</Creation-Time>` : ''}${modificado ? `<Last-Modified>${rfc(modificado)}</Last-Modified>` : ''}`;
+      return `<Blob><Name>${xml(n)}</Name><Properties>${fechasXml}<Content-Length>${b.length}</Content-Length><Content-MD5>${md5}</Content-MD5><Etag>0x${crypto.createHash('sha1').update(b).digest('hex').slice(0, 16)}</Etag></Properties></Blob>`;
     }).join('');
     res.writeHead(200, { 'content-type': 'application/xml' });
     return res.end(`<?xml version="1.0" encoding="utf-8"?><EnumerationResults ContainerName="${cont}"><Blobs>${blobs}</Blobs><NextMarker>${sig}</NextMarker></EnumerationResults>`);
   }
   const archivo = path.join(raiz, ...partes);
+  // story 2.24: `falla-get` = un nombre al que el GET contesta 500 (el servicio falla con ese blob)
+  if (leer('falla-get', '') === partes.join('/')) { res.writeHead(500); return res.end('<Error><Code>InternalError</Code></Error>'); }
   if (!fs.existsSync(archivo)) { res.writeHead(404); return res.end(); }
   let b = fs.readFileSync(archivo);
   const md5 = crypto.createHash('md5').update(b).digest('base64');
@@ -543,6 +552,225 @@ for REG in hallazgos.jsonl legacy-names.jsonl; do
   [ "${RC}" -eq 1 ] && [ ! -e "${L8}/cobertura.json" ] \
     && ok "8.9-E ${REG}.gz ilegible en la copia local → la cobertura de esa máquina queda retenida (sale 1)" \
     || mal "8.9-E ${REG}.gz ilegible: rc=${RC}, cobertura $( [ -e "${L8}/cobertura.json" ] && echo escrita || echo retenida)"
+done
+
+# ════ story 2.24 · el bajador toma la última versión y deja el espejo como hoy ═══════════════════════════════════
+VA=v20261020T100000000Z; VB=v20261021T100000000Z
+gets_de() { if [ -f "$1/pedidos.jsonl" ]; then grep -v 'comp=list' "$1/pedidos.jsonl" | grep '"metodo":"GET"' | grep -c "$2" || true; else echo 0; fi; }
+cobertura_de() {  # <archivo> <fuentes medidas, separadas por coma> → una cobertura válida que declara esas fuentes medidas
+  python3 - "$1" "$2" <<'PY'
+import json, sys
+f = {k: {'estado': 'medido', 'bytes': 10} for k in sys.argv[2].split(',') if k}
+f.setdefault('hallazgos', {'estado': 'no_medido', 'motivo': 'no existe'})
+json.dump({'esquema': 1, 'fecha': '2026-10-20', 'preparado': 'v20261020T100000000Z', 'fuentes': f}, open(sys.argv[1], 'w'))
+PY
+}
+gz_de() { mkdir -p "$(dirname "$1")"; printf '{"ts":"2026-10-20T10:00:00Z","name":"%s","status":"green"}\n' "$2" | gzip -c > "$1"; }
+
+# ── 2.24 T14 · Corrida_TomaLaMasNueva_EnLaRutaDeSiempre (AC 11) ── 🔴 rojo previo: bajar todas y que gane la última del listado.
+T="${BASE}/t224-14"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
+C="${T}/b/blobs/corridas"
+blob "${T}/b" "maq-x/1.1-2026-10-01T1000.json" 300
+blob "${T}/b" "maq-x/${VB}/1.1-2026-10-01T1000.json" 320
+blob "${T}/b" "maq-x/${VA}/1.1-2026-10-01T1000.json" 310
+bajar "${T}" "${T}/bin/az"
+[ "${RC}" -eq 0 ] && cmp -s "${C}/maq-x/${VB}/1.1-2026-10-01T1000.json" "${T}/estado/corridas-buzon/maq-x/1.1-2026-10-01T1000.json" \
+  && [ "$(campo "${T}" versiones_viejas)" = "2" ] && [ "$(gets "${T}/b")" = "1" ] && [ ! -d "${T}/estado/corridas-buzon/maq-x/${VA}" ] && [ ! -d "${T}/estado/corridas-buzon/maq-x/${VB}" ] \
+  && [ "$(campo "${T}" completo)" = "true" ] \
+  && ok "2.24-T14 baja sólo la versión más nueva, a <máquina>/<archivo> (la ruta de siempre), versiones_viejas 2, un solo GET, completo" \
+  || mal "2.24-T14 rc=${RC} viejas=$(campo "${T}" versiones_viejas) gets=$(gets "${T}/b") completo=$(campo "${T}" completo) · $(ls -R "${T}/estado/corridas-buzon" 2>&1 | head -6 | tr '\n' ' ')"
+
+# ── 2.24 T15 · NoThreads_OmiteHilosDeTodasLasVersiones (AC 11) ── 🔴 rojo previo: una versión del hilo baja.
+T="${BASE}/t224-15"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
+blob "${T}/b" "maq-x/1.1-2026-10-01T1000.json" 300
+blob "${T}/b" "maq-x/1.1-2026-10-01T1000.hilo.jsonl.gz" 300
+blob "${T}/b" "maq-x/${VA}/1.1-2026-10-01T1000.hilo.jsonl.gz" 300
+blob "${T}/b" "maq-x/${VB}/1.1-2026-10-01T1000.cambio.json.gz" 300
+bajar "${T}" "${T}/bin/az" --no-threads
+[ "${RC}" -eq 0 ] && [ "$(campo "${T}" omitidos)" = "3" ] && [ -z "$(find "${T}/estado" -name '*.hilo.jsonl.gz' -o -name '*.cambio.json.gz' 2>/dev/null)" ] \
+  && ! grep -q 'hilo.jsonl.gz\|cambio.json.gz' "${T}/b/pedidos.jsonl" \
+  && ok "2.24-T15 con --no-threads, ni el hilo ni el cambio de ninguna versión bajan; omitidos los cuenta (3)" || mal "2.24-T15 rc=${RC} omitidos=$(campo "${T}" omitidos)"
+
+# ── 2.24 T16 · Registros_JuegoMasNuevoConCobertura_SaltaIncompleto (AC 12) ── 🔴 rojo previo: tomar B.
+T="${BASE}/t224-16"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
+C="${T}/b/blobs/corridas/maq-x/registros"
+gz_de "${C}/gates.log.gz" plano; cobertura_de "${C}/cobertura.json" gates
+gz_de "${C}/${VA}/gates.log.gz" versionA; cobertura_de "${C}/${VA}/cobertura.json" gates
+gz_de "${C}/${VB}/gates.log.gz" versionB
+bajar "${T}" "${T}/bin/az"
+E="${T}/estado/corridas-buzon/maq-x/registros"
+[ "${RC}" -eq 0 ] && cmp -s "${C}/${VA}/gates.log.gz" "${E}/gates.log.gz" && cmp -s "${C}/${VA}/cobertura.json" "${E}/cobertura.json" \
+  && [ "$(campo "${T}" versiones_incompletas)" = "1" ] && [ "$(gets_de "${T}/b" "${VB}")" = "0" ] \
+  && ok "2.24-T16 toma el juego más nuevo COMPLETO (A), saltea el B sin cobertura (versiones_incompletas 1) y no lo baja" \
+  || mal "2.24-T16 rc=${RC} incompletas=$(campo "${T}" versiones_incompletas) gets B=$(gets_de "${T}/b" "${VB}") · $(gunzip -c "${E}/gates.log.gz" 2>&1 | head -c 80)"
+
+# ── 2.24 T30 · Registros_FuenteMedidaSinArchivo_Saltea (AC 12) ── 🔴 rojo previo: tomar B por tener cobertura.
+T="${BASE}/t224-30"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
+C="${T}/b/blobs/corridas/maq-x/registros"
+gz_de "${C}/${VA}/gates.log.gz" versionA; gz_de "${C}/${VA}/bypass.log.gz" versionA; cobertura_de "${C}/${VA}/cobertura.json" gates,bypass
+gz_de "${C}/${VB}/gates.log.gz" versionB; cobertura_de "${C}/${VB}/cobertura.json" gates,bypass
+bajar "${T}" "${T}/bin/az"
+E="${T}/estado/corridas-buzon/maq-x/registros"
+[ "${RC}" -eq 0 ] && cmp -s "${C}/${VA}/gates.log.gz" "${E}/gates.log.gz" && cmp -s "${C}/${VA}/bypass.log.gz" "${E}/bypass.log.gz" && cmp -s "${C}/${VA}/cobertura.json" "${E}/cobertura.json" \
+  && [ "$(campo "${T}" versiones_incompletas)" = "1" ] \
+  && ok "2.24-T30 una versión con cobertura que declara bypass medido y sin bypass.log.gz se saltea: queda A" \
+  || mal "2.24-T30 rc=${RC} incompletas=$(campo "${T}" versiones_incompletas) · $(gunzip -c "${E}/gates.log.gz" 2>&1 | head -c 80)"
+
+# ── 2.24 T16b · Registros_CoberturaQueNoSeLee_NoEsIncompleta (AC 12; revisor de fallos silenciosos, vuelta 1) ──
+# 🔴 rojo previo: un 500 al pedir la cobertura del juego más nuevo, o una cobertura ilegible, se contaba como «juego
+#    incompleto»: el espejo quedaba con la versión anterior y la bajada decía exit 0, completo true.
+T="${BASE}/t224-16b"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
+C="${T}/b/blobs/corridas/maq-x/registros"
+gz_de "${C}/${VA}/gates.log.gz" versionA; cobertura_de "${C}/${VA}/cobertura.json" gates
+gz_de "${C}/${VB}/gates.log.gz" versionB; cobertura_de "${C}/${VB}/cobertura.json" gates
+echo "maq-x/registros/${VB}/cobertura.json" > "${T}/b/falla-get"
+bajar "${T}" "${T}/bin/az"
+[ "${RC}" -eq 1 ] && [ "$(campo "${T}" estado)" = "servicio_fallo" ] && [ "$(campo "${T}" completo)" = "false" ] && [ ! -e "${T}/estado/corridas-buzon/maq-x/registros/gates.log.gz" ] \
+  && ok "2.24-T16b un 500 al leer la cobertura del juego más nuevo: servicio_fallo, exit 1, completo false, no baja la versión vieja" \
+  || mal "2.24-T16b 500: rc=${RC} estado=$(campo "${T}" estado) completo=$(campo "${T}" completo)"
+rm -f "${T}/b/falla-get"; echo "maq-x/registros/${VB}/cobertura.json" > "${T}/b/corromper"
+bajar "${T}" "${T}/bin/az"
+[ "${RC}" -eq 1 ] && [ "$(campo "${T}" estado)" = "parcial" ] && [ "$(campo "${T}" completo)" = "false" ] && [ "$(campo "${T}" versiones_incompletas)" = "0" ] \
+  && campo "${T}" no_leidos | grep 'cobertura ilegible' >/dev/null && cmp -s "${C}/${VA}/gates.log.gz" "${T}/estado/corridas-buzon/maq-x/registros/gates.log.gz" \
+  && ok "2.24-T16c una cobertura ilegible se nombra (parcial, exit 1, completo false), no cuenta como incompleta, y el espejo queda con la versión anterior" \
+  || mal "2.24-T16c ilegible: rc=${RC} estado=$(campo "${T}" estado) incompletas=$(campo "${T}" versiones_incompletas) no_leidos=$(campo "${T}" no_leidos)"
+
+# ── 2.24 T17 · VersionMalFormada_Ignorada (AC 14) ── 🔴 rojo previo: una versión mal formada se baja o tumba la pasada.
+T="${BASE}/t224-17"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
+blob "${T}/b" "maq-x/v2026/x.json" 50
+blob "${T}/b" "maq-x/otra/x.json" 50
+blob "${T}/b" "maq-x/registros/vX/gates.log.gz" 50
+bajar "${T}" "${T}/bin/az"
+[ "${RC}" -eq 0 ] && [ "$(campo "${T}" ignorados)" = "3" ] && [ ! -e "${T}/estado/corridas-buzon/maq-x" ] \
+  && python3 -c "import json,sys; n=json.load(open(sys.argv[1]))['ignorados_nombres']; assert sorted(n)==['maq-x/otra/x.json','maq-x/registros/vX/gates.log.gz','maq-x/v2026/x.json'], n" "${T}/out.json" \
+  && ok "2.24-T17 versión mal formada u otra subcarpeta: ignorados 3, nombrados, nada en el disco" || mal "2.24-T17 rc=${RC} ignorados=$(campo "${T}" ignorados) $(campo "${T}" ignorados_nombres)"
+
+# ── 2.24 T20 · Lectores_IgualConVersionesQueConNombresDeSiempre (AC 13) ── 🔴 rojo previo: un lector que lee la carpeta v….
+T="${BASE}/t224-20"
+for B in plano versionado; do buzon "${T}/${B}"; done
+mkdir -p "${T}/fuente/maq-x/registros"
+printf '{"archivedAt":"2026-10-20T10:00:00.000Z","marker":{"storyId":"7.1","sessionId":"sid-71"}}\n' > "${T}/fuente/maq-x/7.1-2026-10-20T1000.json"
+printf '{"archivedAt":"2026-10-20T11:00:00.000Z","marker":{"storyId":"7.2","sessionId":"sid-72"}}\n' > "${T}/fuente/maq-x/7.2-2026-10-20T1100.json"
+gz_de "${T}/fuente/maq-x/registros/gates.log.gz" tests; gz_de "${T}/fuente/maq-x/registros/bypass.log.gz" bypass
+cobertura_de "${T}/fuente/maq-x/registros/cobertura.json" gates,bypass
+# plano: los nombres de siempre
+cp -R "${T}/fuente/maq-x" "${T}/plano/blobs/corridas/maq-x"
+# versionado: el mismo contenido final, con una versión vieja distinta debajo
+P="${T}/versionado/blobs/corridas/maq-x"; mkdir -p "${P}/registros/${VB}" "${P}/${VB}"
+printf '{"archivedAt":"2026-10-20T10:00:00.000Z","marker":{"storyId":"7.1","sessionId":"sid-viejo"}}\n' > "${P}/7.1-2026-10-20T1000.json"
+cp "${T}/fuente/maq-x/7.1-2026-10-20T1000.json" "${P}/${VB}/"
+cp "${T}/fuente/maq-x/7.2-2026-10-20T1100.json" "${P}/"
+gz_de "${P}/registros/gates.log.gz" viejo; cobertura_de "${P}/registros/cobertura.json" gates
+cp "${T}/fuente/maq-x/registros/"* "${P}/registros/${VB}/"
+TABLERO="${RAIZ}/scripts/nightly/dashboard/dashboard.js"
+for B in plano versionado; do
+  config "${T}/${B}/cfg.json"; az_doble "${T}/${B}" token
+  echo token-bueno > "${T}/${B}/token"
+  URL_BUZON="http://127.0.0.1:$(cat "${T}/${B}/puerto")"
+  bajar "${T}/${B}" "${T}/${B}/bin/az" --no-threads
+  cp "${T}/${B}/out.json" "${T}/${B}-estado.json"
+  E="${T}/${B}/estado/corridas-buzon"
+  # la hora en que se generó cada modelo no es un número del buzón: se saca antes de comparar
+  sin_hora() { python3 -c "
+import json, sys
+def f(x):
+    if isinstance(x, dict): return {k: f(v) for k, v in x.items() if not k.startswith('generad')}
+    if isinstance(x, list): return [f(v) for v in x]
+    return x
+t = sys.stdin.read()
+i = 0 if t.startswith('{') else t.find('\n{') + 1
+print(json.dumps(f(json.JSONDecoder().raw_decode(t[i:])[0]), sort_keys=True, indent=1))" 2>/dev/null; }
+  TYCON_MACHINE=maq-otra node "${TABLERO}" --view runs --runs-dir "${T}/vacio" --mailbox "${E}" --json --dry-run 2>/dev/null | sed "s#${E}#ESPEJO#g" | sin_hora > "${T}/${B}-runs.json"
+  TYCON_MACHINE=maq-otra node "${TABLERO}" --nightly --mailbox "${E}" --mailbox-state "${T}/${B}-estado.json" --json > "${T}/${B}-noche.crudo" 2>/dev/null
+  # el nocturno imprime su resumen de fuentes y después el modelo en JSON: se toma el JSON
+  sed "s#${E}#ESPEJO#g; s#${T}/${B}#CASO#g" "${T}/${B}-noche.crudo" | sin_hora > "${T}/${B}-noche.json"
+done
+if [ "$(campo "${T}/plano" completo)" = "true" ] && [ "$(campo "${T}/versionado" completo)" = "true" ] && diff -r "${T}/plano/estado/corridas-buzon/maq-x" "${T}/versionado/estado/corridas-buzon/maq-x" >/dev/null \
+   && [ -s "${T}/plano-runs.json" ] && cmp -s "${T}/plano-runs.json" "${T}/versionado-runs.json" && [ -s "${T}/plano-noche.json" ] && cmp -s "${T}/plano-noche.json" "${T}/versionado-noche.json"; then
+  ok "2.24-T20 un buzón versionado y uno plano con el mismo contenido dan el mismo espejo, la misma vista de corridas y la misma página del equipo (completo en los dos)"
+else
+  mal "2.24-T20 completo plano=$(campo "${T}/plano" completo) versionado=$(campo "${T}/versionado" completo) · espejos: $(diff -rq "${T}/plano/estado/corridas-buzon/maq-x" "${T}/versionado/estado/corridas-buzon/maq-x" 2>&1 | head -3) · runs $(cmp "${T}/plano-runs.json" "${T}/versionado-runs.json" 2>&1) · noche $(cmp "${T}/plano-noche.json" "${T}/versionado-noche.json" 2>&1) $(wc -c < "${T}/plano-noche.json") · $(head -c 300 "${T}/plano-noche.crudo")"
+fi
+
+# ── 2.24 T18 · OverwritesReport_SoloListaYCuentaSinNombres (story 2.24, AC 1, 2, 15) ──────────────────────────────
+# 🔴 rojo previo: el informe no existe (la bandera se ignora y baja todo), o nombra las máquinas (se llaman como personas).
+T="${BASE}/t224-18"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
+blob "${T}/b" "mac-a/1.1-2026-10-01T1000.json" 300
+blob "${T}/b" "mac-a/1.1-2026-10-01T1000.hilo.jsonl.gz" 300
+blob "${T}/b" "mac-a/registros/gates.log.gz" 100
+blob "${T}/b" "mac-a/registros/cobertura.json" 100
+blob "${T}/b" "mac-a/otra/x.json" 50
+blob "${T}/b" "mac-b/2.1-2026-09-20T1000.json" 300
+blob "${T}/b" "mac-b/2.1-2026-09-20T1000.cambio.json.gz" 300
+blob "${T}/b" "mac-c/3.1-2026-10-10T1000.json" 300
+blob "${T}/b" "mac-c/3.2-2026-10-10T1100.json" 300
+HACE20="$(python3 -c "import datetime; print((datetime.datetime.utcnow()-datetime.timedelta(days=20)).strftime('%Y-%m-%dT%H:%M:%SZ'))")"
+AYER="$(python3 -c "import datetime; print((datetime.datetime.utcnow()-datetime.timedelta(days=1)).strftime('%Y-%m-%dT%H:%M:%SZ'))")"
+cat > "${T}/b/fechas" <<JSON
+{"mac-a/1.1-2026-10-01T1000.json": ["${AYER}", "${AYER}"],
+ "mac-a/1.1-2026-10-01T1000.hilo.jsonl.gz": ["2026-10-01T10:00:00Z", "2026-10-01T10:01:00Z"],
+ "mac-a/registros/gates.log.gz": ["2026-10-01T10:00:00Z", "${AYER}"],
+ "mac-a/registros/cobertura.json": [null, "${AYER}"],
+ "mac-b/2.1-2026-09-20T1000.json": ["${HACE20}", "${HACE20}"],
+ "mac-b/2.1-2026-09-20T1000.cambio.json.gz": ["${HACE20}", "${HACE20}"],
+ "mac-c/3.1-2026-10-10T1000.json": ["${AYER}", "${AYER}"],
+ "mac-c/3.2-2026-10-10T1100.json": ["${AYER}", null]}
+JSON
+ESP="${T}/estado/corridas-buzon"
+mkdir -p "${ESP}/mac-a/registros" "${ESP}/mac-b/registros" "${ESP}/mac-c/registros"
+printf '{"schema":1,"day":"2026-10-15","install":{"mode":"managed","version":"2099.01.01.1","team":null}}\n' > "${ESP}/mac-a/registros/place.json"
+printf '{"schema":1,"day":"2026-09-25","install":{"mode":"managed","version":null,"team":null}}\n' > "${ESP}/mac-b/registros/place.json"
+printf '{"schema":1,"day":"2026-10-12","install":{"mode":"managed","version":"2026.01.01.1","team":null}}\n' > "${ESP}/mac-c/registros/place.json"
+espejo_sha() { find "${ESP}" -type f -exec shasum {} + 2>/dev/null | sort | shasum; }
+ANTES_ESP="$(espejo_sha)"
+bajar "${T}" "${T}/bin/az" --overwrites-report
+ALIAS_A="$(node "${RAIZ}/scripts/nightly/dashboard/reducer.js" --alias-of mac-a)"
+ALIAS_B="$(node "${RAIZ}/scripts/nightly/dashboard/reducer.js" --alias-of mac-b)"
+ALIAS_C="$(node "${RAIZ}/scripts/nightly/dashboard/reducer.js" --alias-of mac-c)"
+if [ "${RC}" -eq 0 ] && python3 - "${T}/out.json" "${ALIAS_A}" "${ALIAS_B}" "${ALIAS_C}" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1])); a, b, c = sys.argv[2:5]
+assert d['estado'] == 'medido', d
+assert d['blobs'] == 9 and d['reescritos'] == 2 and d['sin_fecha_de_creacion'] == 1 and d['sin_fecha_de_modificacion'] == 1 and d['ignorados'] == 1, d
+t = d['por_tipo']
+assert t['registros'] == {'blobs': 2, 'reescritos': 1, 'sin_fecha_de_creacion': 1, 'sin_fecha_de_modificacion': 0}, t
+# un blob sin fecha de modificación es «no medido», nunca «no re-escrito» (revisor de fallos silenciosos, vuelta 1)
+assert t['hilo']['reescritos'] == 1 and t['volcado'] == {'blobs': 4, 'reescritos': 0, 'sin_fecha_de_creacion': 0, 'sin_fecha_de_modificacion': 1}, t
+assert t['cambio']['blobs'] == 1 and t['ignorado']['blobs'] == 1, t
+m = {x['alias']: x for x in d['maquinas']}
+assert set(m) == {a, b, c}, m
+assert m[a]['blobs'] == 4 and m[a]['reescritos'] == 2 and m[a]['sin_fecha_de_creacion'] == 1, m[a]
+assert m[a]['version'] == '2099.01.01.1' and m[a]['version_dia'] == '2026-10-15' and m[a]['lista'] == 'sí', m[a]
+assert m[b]['version'] is None and m[b]['version_dia'] == '2026-09-25' and m[b]['lista'] == 'no medido', m[b]
+assert m[c]['version'] == '2026.01.01.1' and m[c]['lista'] == 'no', m[c]
+assert d['ausentes'] == [b], d['ausentes']
+assert isinstance(d.get('version_solo_crear'), str) and d.get('dias_ausente') == 14, d
+PY
+then ok "2.24-T18 el informe cuenta re-escritos por tipo y por alias, aparte los sin fecha de creación, la versión de cada máquina y las ausentes"
+else mal "2.24-T18 rc=${RC} · $(head -c 600 "${T}/out.json") · $(head -2 "${T}/err.txt")"; fi
+[ "$(gets "${T}/b")" = "0" ] && [ "$(espejo_sha)" = "${ANTES_ESP}" ] \
+  && ok "2.24-T18 sólo lista: ningún GET de blob y el espejo quedó igual" || mal "2.24-T18 GET de blobs=$(gets "${T}/b"), espejo cambió: $(find "${ESP}" -type f | head -5)"
+grep -q 'mac-a\|mac-b\|mac-c' "${T}/out.json" "${T}/err.txt" && mal "2.24-T18 el informe nombra una máquina: $(grep -o 'mac-[abc][^"]*' "${T}/out.json" "${T}/err.txt" | head -2)" \
+  || ok "2.24-T18 ni el informe ni sus avisos nombran una máquina (sólo alias)"
+
+# ── 2.24 T19 · OverwritesReport_SinPermiso_NoMedido (story 2.24, AC 1) ────────────────────────────────────────────
+# 🔴 rojo previo: sin el rol el informe falla con exit ≠ 0, o crea la carpeta del espejo.
+for MODO in bad-token no-session; do
+  T="${BASE}/t224-19-${MODO}"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" "${MODO}"
+  blob "${T}/b" "mac-a/1.1-2026-10-01T1000.json" 300
+  bajar "${T}" "${T}/bin/az" --overwrites-report
+  [ "${RC}" -eq 0 ] && [ "$(campo "${T}" estado)" = "no_medido" ] && [ -n "$(campo "${T}" motivo)" ] && [ "$(campo "${T}" motivo)" != "null" ] && [ ! -e "${T}/estado" ] \
+    && ok "2.24-T19 (${MODO}) sin permiso: exit 0, «no medido» con su motivo, sin carpeta creada" \
+    || mal "2.24-T19 (${MODO}) rc=${RC} estado=$(campo "${T}" estado) motivo=$(campo "${T}" motivo) · $(ls "${T}" | tr '\n' ' ')"
+done
+# 2.24 T19b · el listado que falla por otra cosa que el permiso NO es «no medido» con exit 0: es un error (cobertura de pruebas, vuelta 1)
+for CODIGO in 404 500; do
+  T="${BASE}/t224-19b-${CODIGO}"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
+  echo "${CODIGO}" > "${T}/b/modo-lista"
+  bajar "${T}" "${T}/bin/az" --overwrites-report
+  ESPERA=sin_contenedor; [ "${CODIGO}" = 500 ] && ESPERA=servicio_fallo
+  [ "${RC}" -eq 1 ] && [ "$(campo "${T}" estado)" = "${ESPERA}" ] && [ ! -e "${T}/estado" ] \
+    && ok "2.24-T19b listado ${CODIGO} → ${ESPERA}, exit 1, sin carpeta" || mal "2.24-T19b listado ${CODIGO}: rc=${RC} estado=$(campo "${T}" estado)"
 done
 
 echo
