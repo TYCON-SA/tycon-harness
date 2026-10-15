@@ -1253,6 +1253,18 @@
       ]
     },
     {
+      "__nota": "2026-10-14 (la máquina de un dev): un permiso de GitHub guardado que venció no frena la actualización del repo público. Con el GitHub de juguete contestando 401 a un permiso que no conoce y 200 sin permiso: el arranque baja la versión nueva por las rutas públicas y lo dice en una línea (venció, no hace falta, cómo sacarlo), una sola vez; después del 401 ningún pedido lleva el permiso; no cuenta como fallo; el permiso no se borra solo; update --check a mano lo dice; doctor lo pinta amarillo, nunca rojo; sacado el permiso la marca se borra; una instalación nueva con el permiso vencido se instala; con el repo privado el 401 se dice como siempre. Sin red real: todo en localhost.",
+      "raiz": "arnes",
+      "ruta": "tests/release-expired-token.test.sh",
+      "requiere": [],
+      "gate_only_when_touching": [
+        "scripts/setup/**",
+        "scripts/lib/**",
+        "scripts/tests/lib/**",
+        "scripts/tests/fixtures/**"
+      ]
+    },
+    {
       "__nota": "story 8.35 (T2-T11): ~/.claude/skills y ~/.claude/agents siempre carpetas reales con un enlace por entrada del arnés (canonical-path.js ensureRepoLinks): la instalación nueva, la conversión de la forma vieja (enlace a la carpeta entera) moviendo lo propio, synced/ y .trash/ a la carpeta real sin borrar nada a través del enlace, el corte retomado, lo tomado (simulado) que no frena, el choque de nombres, el enlace a otro clon intacto, una versión nueva con la forma de enlaces de la 8.33, uninstall y doctor. Sobre un árbol de juguete y la máquina de juguete de la 8.23; sin red real.",
       "raiz": "arnes",
       "ruta": "tests/repo-links-real-folders.test.sh",
