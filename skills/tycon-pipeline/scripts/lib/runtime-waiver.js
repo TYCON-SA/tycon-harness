@@ -161,7 +161,9 @@ function consolaNueva(opts = {}) {
     + '[DllImport("kernel32.dll")] public static extern bool AttachConsole(uint p); '
     + '[DllImport("kernel32.dll", SetLastError = true)] public static extern uint GetConsoleProcessList(uint[] l, uint n); }\'; '
     + `[C]::FreeConsole() | Out-Null; if (-not [C]::AttachConsole(${Number(pid)})) { 'SIN-CONSOLA'; exit 3 }; `
-    + '$l = New-Object uint[] 64; $n = [C]::GetConsoleProcessList($l, 64); '
+    // 🔴 Ensayo de Windows 13592: error 87 (parámetro inválido). `uint[]` no existe en el PowerShell de Windows (5.1; el
+    //    atajo `uint` llegó en la 6.2): New-Object fallaba, la lista quedaba nula y Windows rechazaba la pregunta.
+    + '$l = New-Object System.UInt32[] 64; $n = [C]::GetConsoleProcessList($l, 64); '
     + '$e = [Runtime.InteropServices.Marshal]::GetLastWin32Error(); '
     + `[IO.File]::WriteAllText('${archivo.replace(/'/g, "''")}', "$n $e"); $n`;
   const leerNumero = (texto) => {

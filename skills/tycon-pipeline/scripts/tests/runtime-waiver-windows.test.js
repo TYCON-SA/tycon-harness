@@ -83,6 +83,9 @@ test('@story-waiver-windows PowerShell se lanza conectado a la consola y por su 
     //    conectado. Se conecta explícito a la consola de ESTE proceso antes de contar.
     assert.match(visto.args.join(' '), /AttachConsole\(4242\)/);
     assert.match(visto.args.join(' '), /FreeConsole\(\)/);
+    // 🔴 rojo previo (ensayo de Windows 13592, error 87): `uint[]` no existe en PowerShell 5.1 y la lista quedaba nula.
+    assert.match(visto.args.join(' '), /New-Object System\.UInt32\[\] 64/);
+    assert.doesNotMatch(visto.args.join(' '), /New-Object uint\[\]/);
     const sinConsola = W.consolaNueva({ run: () => ({ status: 3, stdout: 'SIN-CONSOLA\r\n' }) });
     assert.equal(sinConsola.nueva, false);
     assert.match(sinConsola.motivo, /no tiene una consola/);
