@@ -34,6 +34,9 @@ const SCRIPTS = {
   'tycon-config': path.join(ROOT, 'scripts', 'lib', 'tycon-config.js'),
   'legacy-names': path.join(ROOT, 'scripts', 'lib', 'legacy-names.js'),
   'apply-hooks': path.join(ROOT, 'scripts', 'setup', 'apply-hooks.js'),
+  // tanda B (story 8.36, Task 6): los enlaces y el paso de terceros
+  'canonical-path': path.join(ROOT, 'scripts', 'lib', 'canonical-path.js'),
+  'install-third-party': path.join(ROOT, 'scripts', 'publishing', 'install-third-party.js'),
 };
 
 const labs = [];
@@ -92,7 +95,8 @@ function snapshot(home) {
     for (const e of fs.readdirSync(d, { withFileTypes: true }).sort((x, y) => x.name.localeCompare(y.name))) {
       const p = path.join(d, e.name);
       const rel = norm(path.relative(home, p), home);
-      if (e.isDirectory()) walk(p);
+      if (e.isSymbolicLink()) out[rel] = `(enlace) → ${norm(fs.readlinkSync(p), home)}`;   // los enlaces del lugar: a dónde apuntan
+      else if (e.isDirectory()) walk(p);
       else out[rel] = /\.bak/.test(e.name) ? '(respaldo)' : norm(fs.readFileSync(p, 'utf8'), home);
     }
   };
@@ -154,14 +158,55 @@ test('T1 Batch_SameAsSeparateCall — cada paso de la lista, en cada estado, igu
   }
 });
 
+test('T1d Batch_LinkAndThirdPartySteps_SameAsSeparateCall — los enlaces y el paso de terceros (tanda B), en cada estado', () => {
+  const PLACE = require(path.join(ROOT, 'scripts', 'setup', 'harness', 'place.js'));
+  const placeIn = (h) => path.join(h, '.claude', PLACE.PLACE_NAME);
+  const placed = (h) => { fs.symlinkSync(ROOT, placeIn(h), 'dir'); };
+  const dangling = (h) => { fs.symlinkSync(path.join(h, 'no-esta'), placeIn(h), 'dir'); };
+  const otherClone = (h) => { fs.mkdirSync(path.join(h, 'otro-clon', 'scripts'), { recursive: true }); fs.symlinkSync(path.join(h, 'otro-clon'), placeIn(h), 'dir'); };
+  const repoLinked = (h) => { fs.symlinkSync(ROOT, path.join(h, '.claude', 'agent-skills'), 'dir'); };
+  const off = { TYCON_THIRD_PARTY: '0' };
+  const cases = [
+    ['el lugar del arnés, por estrenar', sane, { script: 'canonical-path', args: ['--ensure-link', '--clone', ROOT] }],
+    ['el lugar del arnés, ya puesto', placed, { script: 'canonical-path', args: ['--ensure-link', '--clone', ROOT] }],
+    ['el lugar del arnés, colgado', dangling, { script: 'canonical-path', args: ['--ensure-link', '--clone', ROOT] }],
+    ['el lugar del arnés, con -Check', sane, { script: 'canonical-path', args: ['--ensure-link', '--clone', ROOT, '--check'] }],
+    ['el lugar del arnés, con un -Link que no se puede cumplir (sale 2)', sane, { script: 'canonical-path', args: ['--ensure-link', '--clone', ROOT, '--link', '<HOME>/no-esta'] }],
+    ['el enlace de agent-skills, por estrenar', placed, { script: 'canonical-path', args: ['--ensure-repo-links', '--clone', ROOT, '--only', 'agent-skills'] }],
+    ['el enlace de agent-skills, con -Check', placed, { script: 'canonical-path', args: ['--ensure-repo-links', '--clone', ROOT, '--only', 'agent-skills', '--check'] }],
+    ['los enlaces de agents y skills, por estrenar', (h) => { placed(h); repoLinked(h); }, { script: 'canonical-path', args: ['--ensure-repo-links', '--clone', ROOT, '--only', 'entries'] }],
+    ['el enlace de agent-skills, ya puesto', (h) => { placed(h); repoLinked(h); }, { script: 'canonical-path', args: ['--ensure-repo-links', '--clone', ROOT, '--only', 'agent-skills'] }],
+    ['terceros prendido sobre un clon de juguete', (h) => { placed(h); fs.mkdirSync(path.join(h, 'juguete', 'skills'), { recursive: true }); }, { script: 'install-third-party', args: ['--repo', '<HOME>/juguete'] }],
+    ['--only mal escrito (uso)', sane, { script: 'canonical-path', args: ['--ensure-repo-links', '--clone', ROOT, '--only', 'otra-cosa'] }],
+    ['el aviso, sin el lugar', sane, { script: 'canonical-path', args: [] }],
+    ['el aviso, con el lugar en otro clon', otherClone, { script: 'canonical-path', args: [] }],
+    ['las piezas del lugar', placed, { script: 'canonical-path', args: ['--place-pieces', '--home', '<HOME>'] }],
+    ['terceros apagado', (h) => { placed(h); repoLinked(h); }, { script: 'install-third-party', args: ['--repo', ROOT], env: off }],
+    ['terceros, revisión sin red (-Check)', (h) => { placed(h); repoLinked(h); }, { script: 'install-third-party', args: ['--repo', ROOT, '--check'] }],
+    ['terceros, opción desconocida', sane, { script: 'install-third-party', args: ['--no-such-option'] }],
+  ];
+  for (const [label, setup, step] of cases) {
+    const [a, b] = twoHomes('t1d', setup);
+    assertSame(step, a, b, label);
+  }
+});
+
 test('T1b Batch_SameAsSeparateCall_InApplierOrder — la lectura y la aplicación, juntas, como las corre el aplicador', () => {
   const read = [
+    { id: 'place', script: 'canonical-path', args: ['--ensure-link', '--clone', ROOT] },
+    { id: 'links', script: 'canonical-path', args: ['--ensure-repo-links', '--clone', ROOT, '--only', 'agent-skills'] },
+    { id: 'notice', script: 'canonical-path', args: [] },
     { id: 'skills', script: 'skills-dir', args: ['--skills', '--installed'], env: { TYCON_SKILLS_DIR: '' } },
     { id: 'source', script: 'skills-dir', args: ['--source', '--installed'], env: { TYCON_SKILLS_DIR: '' } },
     { id: 'integrations', script: 'tycon-config', args: ['integrations', '--json'] },
     { id: 'profile', script: 'tycon-config', args: ['get', 'install.profile'] },
+    { id: 'pieces', script: 'canonical-path', args: ['--place-pieces', '--home', '<HOME>'] },
   ];
-  const apply = [Object.assign({ id: 'legacy' }, legacyStep), Object.assign({ id: 'apply' }, applyStep)];
+  const apply = [
+    { id: 'third', script: 'install-third-party', args: ['--repo', ROOT, '--check'] },
+    { id: 'entries', script: 'canonical-path', args: ['--ensure-repo-links', '--clone', ROOT, '--only', 'entries'] },
+    Object.assign({ id: 'legacy' }, legacyStep), Object.assign({ id: 'apply' }, applyStep),
+  ];
   for (const [label, setup] of [['sana', (h) => { installedSkills(h); emptySettings(h); }], ['configuración rota', (h) => { installedSkills(h); emptySettings(h); brokenConfig(h); }]]) {
     const [a, b] = twoHomes('t1b', setup);
     for (const plan of [read, apply]) {

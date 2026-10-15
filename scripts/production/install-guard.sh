@@ -234,7 +234,16 @@ try:
     with open(token_file, encoding="utf-8") as f: j = json.load(f)
     token = str(((j or {}).get("github") or {}).get("token") or "").strip()
 except Exception: token = ""
+vencido = [False]   # el permiso guardado contestó 401 y el repo se leyó sin él: va en la tercera línea de la salida
+def lee_sin_permiso():
+    # ¿el repo se lee sin permiso? `info/refs` sin credencial contesta 200 (2026-10-14: un permiso vencido contra el repo público)
+    if not gitbase: return False
+    req = urllib.request.Request(gitbase.rstrip("/") + "/" + repo + ".git/info/refs?service=git-upload-pack", headers={"User-Agent": "tycon-install-guard"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r: return r.status == 200
+    except Exception: return False
 def get(route):
+    global token
     req = urllib.request.Request(api.rstrip("/") + route, headers={"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "tycon-install-guard"})
     if token: req.add_header("Authorization", "Bearer " + token)
     try:
@@ -245,6 +254,10 @@ def get(route):
             try: hora = time.strftime("%H:%M", time.localtime(int(e.headers.get("X-RateLimit-Reset"))))
             except Exception: hora = "dentro de una hora"
             muere("GitHub limita las consultas %s hasta las %s: no instalo el freno; volvé a correrlo después de esa hora" % ("de tu permiso" if token else "sin permiso de esta conexión", hora))
+        # un permiso guardado que venció (401) y el repo se lee sin él: se sigue SIN el permiso (el resto, por info/refs) y se dice
+        if e.code == 401 and token and lee_sin_permiso():
+            token = ""; vencido[0] = True
+            return get(route)
         return e.code, None
     except Exception as e: muere("no pude preguntarle a GitHub por el repo %s (%s): sin eso no instalo — el disco lo puede tocar el asistente" % (repo, e))
 def puntas_publicas():
@@ -304,11 +317,14 @@ if commit not in puntas.values():
 # la lista de lo verificado: sólo eso se copia (un archivo que está en el disco y no en el manifiesto no es de la versión)
 with open(lista, "w", encoding="utf-8") as f: f.write("".join(rel + "\n" for _, rel, _ in entradas))
 print(repo)
-if aviso: print(aviso)
+print(aviso or "")
+if vencido[0]: print("el permiso de GitHub guardado venció o se revocó (401), pero no hace falta: el repo del arnés es público y sigo sin él. Para sacarlo: harness.js config unset github.token")
 PY
 )" || muere "$REPO_GITHUB"
-  # la primera línea es el repo; la segunda, si la hay, el aviso de una versión atrasada con el mismo freno que la punta
+  # la primera línea es el repo; la segunda, si la hay, el aviso de una versión atrasada con el mismo freno que la punta; la
+  # tercera, si la hay, que el permiso guardado venció y el repo público se leyó sin él (2026-10-14)
   AVISO_ATRASADA="$(printf '%s\n' "$REPO_GITHUB" | sed -n 2p)"
+  AVISO_VENCIDO="$(printf '%s\n' "$REPO_GITHUB" | sed -n 3p)"
   REPO_GITHUB="$(printf '%s\n' "$REPO_GITHUB" | sed -n 1p)"
   [ -n "$REPO_GITHUB" ] || muere "no pude saber de qué repo de GitHub se bajó la versión"
   URL="https://github.com/$REPO_GITHUB"
@@ -319,6 +335,7 @@ PY
   else
     ok "arnés: la versión bajada en $ARNES, verificada contra su manifiesto, el estado y GitHub (repo $REPO_GITHUB: el árbol del commit, que es la punta publicada)"
   fi
+  [ -n "$AVISO_VENCIDO" ] && echo "   ⚠ $AVISO_VENCIDO"
 fi
 
 DESTINO="$RAIZ/opt/tycon"

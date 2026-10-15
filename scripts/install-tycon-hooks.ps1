@@ -434,6 +434,40 @@ function Write-PieceReport {
 # apunte a otro clon válido (sólo -Link <ruta> lo re-apunta) y no pisa una carpeta real. Respeta -Check.
 # VERIFICADO SÓLO POR LECTURA (sin máquina Windows del autor): deuda declarada, igual que el aviso de abajo.
 $rutaCanonica = Join-Path (Join-Path $PSScriptRoot 'lib') 'canonical-path.js'
+$SkillsDirJs = Join-Path (Join-Path $PSScriptRoot 'lib') 'skills-dir.js'
+$cfgJs = Join-Path (Join-Path $PSScriptRoot 'lib') 'tycon-config.js'
+# ¿este clon trae skills/ y agents/? (la condición de Invoke-RepoLinks, más abajo: sin ellas, sin enlaces del repo único)
+$RepoLinksHere = (Test-Path (Join-Path (Join-Path (Split-Path -Parent $PSScriptRoot) 'skills') 'tycon-pipeline')) -and (Test-Path (Join-Path (Split-Path -Parent $PSScriptRoot) 'agents'))
+
+# La lectura, en una tanda (story 8.36): en el orden de siempre, el lugar del arnés, el enlace de agent-skills, el aviso
+# de «el arnés no está donde cree», dónde están las skills y de dónde salió esa carpeta (las dos preguntas de
+# Get-InstalledSkillsDir, sin la variable TYCON_SKILLS_DIR), qué integraciones están prendidas, el perfil de instalación
+# y las piezas del lugar. Cada respuesta se usa, y lo que dice se imprime, en su lugar de siempre. Las de la
+# configuración se hacían más abajo: leerlas acá no cambia lo que contestan (lo que corre en el medio no toca la
+# configuración del arnés). Cada paso entra sólo si su guion está, como cada llamada suelta lo mira antes de correr.
+# Con -Link no hay tanda: un -Link que no se puede cumplir sale 2 antes de tocar nada más, como siempre.
+$ReadBatch = $null
+if (-not $Link) {
+    $readSteps = @()
+    if (Test-Path $rutaCanonica) {
+        $readSteps += @{ id = 'place'; script = 'canonical-path'; args = @(@('--ensure-link', '--clone', (Split-Path -Parent $PSScriptRoot)) + @(if ($Check) { '--check' })) }
+        if ($RepoLinksHere) { $readSteps += @{ id = 'links'; script = 'canonical-path'; args = @(@('--ensure-repo-links', '--clone', (Split-Path -Parent $PSScriptRoot), '--only', 'agent-skills') + @(if ($Check) { '--check' })) } }
+        $readSteps += @{ id = 'notice'; script = 'canonical-path'; args = @() }
+    }
+    if (Test-Path $SkillsDirJs) {
+        $readSteps += @{ id = 'skills'; script = 'skills-dir'; args = @('--skills', '--installed'); env = @{ TYCON_SKILLS_DIR = $null } }
+        $readSteps += @{ id = 'source'; script = 'skills-dir'; args = @('--source', '--installed'); env = @{ TYCON_SKILLS_DIR = $null } }
+    }
+    if (Test-Path $cfgJs) {
+        $readSteps += @{ id = 'integrations'; script = 'tycon-config'; args = @('integrations', '--json') }
+        $readSteps += @{ id = 'profile'; script = 'tycon-config'; args = @('get', 'install.profile') }
+    }
+    if ($script:PiecesTmp -and (Test-Path $rutaCanonica)) {
+        $readSteps += @{ id = 'pieces'; script = 'canonical-path'; args = @('--place-pieces', '--home', (Get-TyconHome)) }
+    }
+    $ReadBatch = Invoke-NodeBatch $readSteps
+}
+
 if ((Test-Path $rutaCanonica) -and (Get-Command node -ErrorAction SilentlyContinue)) {
     $clon = Split-Path -Parent $PSScriptRoot
     $enlaceArgs = @('--ensure-link', '--clone', $clon)
@@ -442,10 +476,15 @@ if ((Test-Path $rutaCanonica) -and (Get-Command node -ErrorAction SilentlyContin
     # EAP=Continue + try/catch (story 8.17, W3W4): con 'Stop' global, una llamada que tira acá mataba el instalador con el
     # candado tomado. Un node que sale distinto de 0 no tira: se mira $LASTEXITCODE.
     $enlaceRc = 0
-    $eapE = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-    try { & node $rutaCanonica @enlaceArgs; $enlaceRc = $LASTEXITCODE }
-    catch { $enlaceRc = -1; Write-Host "⚠ tycon: no pude lanzar canonical-path.js para el lugar del arnés ($(Get-ErrText $_)) — sigo sin tocarlo" }
-    finally { $ErrorActionPreference = $eapE }
+    if ($ReadBatch -and $ReadBatch['place']) {
+        # lo corrió la tanda de lectura: lo que escribió, otra vez acá, por su canal y en su orden
+        Write-NodeChunks $ReadBatch['place'].Chunks; $enlaceRc = $ReadBatch['place'].Rc
+    } else {
+        $eapE = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+        try { & node $rutaCanonica @enlaceArgs; $enlaceRc = $LASTEXITCODE }
+        catch { $enlaceRc = -1; Write-Host "⚠ tycon: no pude lanzar canonical-path.js para el lugar del arnés ($(Get-ErrText $_)) — sigo sin tocarlo" }
+        finally { $ErrorActionPreference = $eapE }
+    }
     if ($enlaceRc -eq 2) { Exit-Installer 2 }   # sólo un -Link que no se puede cumplir sale 2; un enlace que no se pudo escribir avisa y el instalador sigue
 } elseif ($Link) {
     # una línea limpia por la salida de error (AC 36): Write-Error, con $ErrorActionPreference='Stop', imprime el formato de
@@ -472,6 +511,9 @@ function Invoke-RepoLinks([string]$Only) {
     $root = Split-Path -Parent $PSScriptRoot
     if (-not ((Test-Path (Join-Path (Join-Path $root 'skills') 'tycon-pipeline')) -and (Test-Path (Join-Path $root 'agents')))) { return }
     if (-not (Test-Path $rutaCanonica)) { return }
+    # lo corrió una tanda (story 8.36): agent-skills la de lectura, entries la de aplicación. Lo que escribió, otra vez acá
+    $fromBatch = if ($Only -eq 'agent-skills') { if ($script:ReadBatch) { $script:ReadBatch['links'] } } else { if ($script:ApplyBatch) { $script:ApplyBatch['entries'] } }
+    if ($fromBatch) { Write-NodeChunks $fromBatch.Chunks; return }
     $rlArgs = @('--ensure-repo-links', '--clone', (Split-Path -Parent $PSScriptRoot), '--only', $Only)
     if ($Check) { $rlArgs += '--check' }
     try { & node $rutaCanonica @rlArgs } catch { }   # un enlace que no se pudo escribir avisa, no frena
@@ -496,7 +538,11 @@ if (Test-Path $legacyNamesPs1) {
 }
 if (-not $legacyLoaded -or -not (Get-Command Get-LegacyEnv -ErrorAction SilentlyContinue)) { function Get-LegacyEnv([string]$Name, [string]$Where) { return [Environment]::GetEnvironmentVariable($Name) } }
 if ((Get-LegacyEnv 'TYCON_NO_CANONICAL_PATH' -Where 'scripts/install-tycon-hooks.ps1') -ne '1') {
-    if (Test-Path $rutaCanonica) { try { & node $rutaCanonica 2>$null } catch { } }
+    if (Test-Path $rutaCanonica) {
+        # lo corrió la tanda de lectura (story 8.36): su salida estándar acá, como la llamada suelta con `2>$null`
+        if ($ReadBatch -and $ReadBatch['notice']) { Write-NodeChunks @($ReadBatch['notice'].Chunks | Where-Object { $_ -and $_.Substring(0, 1) -eq 'o' }) }
+        else { try { & node $rutaCanonica 2>$null } catch { } }
+    }
 }
 
 # ============================================================
@@ -514,8 +560,7 @@ $Settings    = Join-Path $ClaudeDir 'settings.json'
 # Devuelve la línea que da la biblioteca, o $null si la carpeta no existe (su motivo queda en $script:SkillsWhy).
 # Va acá y no antes: en el repo único, Invoke-RepoLinks 'agent-skills' acaba de dejar el enlace, que es «lo instalado».
 # ⚠️ Medido con pwsh en macOS (installer-ps1.test.sh); en Windows, NO MEDIDO (misma deuda declarada que el resto del .ps1).
-$SkillsDirJs = Join-Path (Join-Path $PSScriptRoot 'lib') 'skills-dir.js'
-$SkillsWhy = ''
+$SkillsWhy = ''   # ($SkillsDirJs se define arriba, con la tanda de lectura)
 function Get-InstalledSkillsDir([string]$Field) {
     # Sin la biblioteca (una copia parcial de este archivo): lo de siempre, la ruta instalada. Es el único lugar donde
     # queda escrita, y sólo vale cuando no hay a quién preguntarle.
@@ -552,29 +597,16 @@ function Get-InstalledSkillsDir([string]$Field) {
     $script:SkillsWhy = if ($first) { $first -replace '^skills-dir: ', '' } else { "scripts/lib/skills-dir.js no contestó (salió $rc)" }
     return $null
 }
-# La lectura, en una tanda (story 8.36): dónde están las skills y de dónde salió esa carpeta (las dos preguntas de
-# Get-InstalledSkillsDir, sin la variable TYCON_SKILLS_DIR), qué integraciones están prendidas y el perfil de instalación.
-# Las dos de la configuración se hacían más abajo: leerlas acá no cambia lo que contestan (lo que corre en el medio no
-# toca la configuración del arnés), y cada respuesta se usa, y lo que dice se imprime, en su lugar de siempre. Cada
-# paso entra sólo si su guion está, como cada llamada suelta lo mira antes de correr.
-$cfgJs = Join-Path (Join-Path $PSScriptRoot 'lib') 'tycon-config.js'
-$readSteps = @()
-if (Test-Path $SkillsDirJs) {
-    $readSteps += @{ id = 'skills'; script = 'skills-dir'; args = @('--skills', '--installed'); env = @{ TYCON_SKILLS_DIR = $null } }
-    $readSteps += @{ id = 'source'; script = 'skills-dir'; args = @('--source', '--installed'); env = @{ TYCON_SKILLS_DIR = $null } }
-}
-if (Test-Path $cfgJs) {
-    $readSteps += @{ id = 'integrations'; script = 'tycon-config'; args = @('integrations', '--json') }
-    $readSteps += @{ id = 'profile'; script = 'tycon-config'; args = @('get', 'install.profile') }
-}
-$ReadBatch = Invoke-NodeBatch $readSteps
+# (las dos preguntas de Get-InstalledSkillsDir, como las de la configuración, corren en la tanda de lectura, arriba)
 $AgentSkills = Get-InstalledSkillsDir '--skills'
 $SkillsFrom  = if ($AgentSkills) { Get-InstalledSkillsDir '--source' } else { $null }
 
 # los dos nombres del lugar (junctions) son del arnés aunque esta corrida no los haya tocado: una pieza `link` por cada
-# nombre que ES un enlace, y lo pregunta Node, como el .sh (story 8.19, AC 11 y 13)
+# nombre que ES un enlace, y lo pregunta Node, como el .sh (story 8.19, AC 11 y 13). Lo trae la tanda de lectura.
 if ($script:PiecesTmp -and (Test-Path $rutaCanonica) -and (Get-Command node -ErrorAction SilentlyContinue)) {
-    foreach ($pieceLine in @(& node $rutaCanonica '--place-pieces' '--home' (Split-Path -Parent $ClaudeDir) 2>$null)) {
+    $pieceLines = if ($ReadBatch -and $ReadBatch['pieces']) { @(Split-NativeLines (Get-ChunkText $ReadBatch['pieces'].Chunks 'o')) }
+                  else { @(& node $rutaCanonica '--place-pieces' '--home' (Split-Path -Parent $ClaudeDir) 2>$null) }
+    foreach ($pieceLine in $pieceLines) {
         $parts = "$pieceLine" -split "`t"
         if ($parts.Count -eq 3 -and $parts[0] -eq 'link') { Record-Piece 'link' $parts[1] $parts[2] }
     }
@@ -644,13 +676,52 @@ function Invoke-HarnessFromExisting {
     }
 }
 
+# ── La aplicación, en una tanda (story 8.36) ──────────────────────────────────────────────────────────────────────
+# En el orden de siempre: las skills de terceros, los enlaces de agents y skills, los nombres viejos y los hooks de
+# settings.json (más abajo). Entre esos pasos este archivo sólo imprime y anota (el estado de las integraciones y del
+# perfil, el plan, las piezas): nada de lo que hacen depende de eso. Cada resultado se usa, y lo que escribió se imprime,
+# en su lugar de siempre. El temporal del aplicador se pide acá; si no se puede, el registro de hooks corre suelto más
+# abajo, que lo vuelve a pedir y dice por qué no pudo. Cada paso entra sólo si su guion está, como cada llamada suelta.
+$ThirdPartyJs = Join-Path (Join-Path $PSScriptRoot 'publishing') 'install-third-party.js'
+$tpArgs = @()
+if ($Check) { $tpArgs += '--check' }
+# los argumentos de las dos llamadas sueltas de abajo, para la tanda: la del modo revisión sin el enlace todavía y la de
+# siempre (las dos explicadas abajo)
+$tpRunArgs = if ($CheckInClone) { @('--repo', $CheckInClone, '--check') } else { @(@('--repo', $AgentSkillsRepo) + $tpArgs) }
+$LegacyNames = Join-Path (Join-Path $PSScriptRoot 'lib') 'legacy-names.js'
+$lnArgs = @('--migrate-machine', '--guides', (Split-Path -Parent $PSScriptRoot), '--skills', $AgentSkillsRepo)
+if ($Check) { $lnArgs += '--check' }
+$ApplyJs = Join-Path (Join-Path $PSScriptRoot 'setup') 'apply-hooks.js'
+function New-ApplyArgs([string]$JsonOut) {
+    $a = @('--settings', $Settings, '--hooks-dir', (Join-Path $PSScriptRoot 'hooks'), '--skills', $AgentSkills, '--platform', 'windows', '--json-out', $JsonOut)
+    if ($Check) { $a += '--check' }
+    return , $a
+}
+$ApplyOut = $null
+try { $ApplyOut = [IO.Path]::GetTempFileName() } catch { $ApplyOut = $null }
+# Las piezas y el plan que anota el registro de hooks van, dentro de la tanda, a temporales propios, y se suman a los de
+# esta corrida en el lugar donde corría su llamada suelta (más abajo): así quedan en el mismo orden que sin la tanda,
+# después de las de terceros que este archivo anota en el medio. Si no hay temporal, anota directo (mismo contenido).
+$ApplyPiecesTmp = $null; $ApplyPlanTmp = $null
+try { if ($PiecesTmp) { $ApplyPiecesTmp = [IO.Path]::GetTempFileName() } } catch { $ApplyPiecesTmp = $null }
+try { if ($PlanTmp) { $ApplyPlanTmp = [IO.Path]::GetTempFileName() } } catch { $ApplyPlanTmp = $null }
+$applyEnv = @{}
+if ($ApplyPiecesTmp) { $applyEnv.TYCON_REPORT_PIECES = $ApplyPiecesTmp }
+if ($ApplyPlanTmp) { $applyEnv.TYCON_PLAN_PIECES = $ApplyPlanTmp }
+$applySteps = @()
+if (Test-Path $ThirdPartyJs) { $applySteps += @{ id = 'third'; script = 'install-third-party'; args = $tpRunArgs } }
+if ($RepoLinksHere -and (Test-Path $rutaCanonica)) { $applySteps += @{ id = 'entries'; script = 'canonical-path'; args = @(@('--ensure-repo-links', '--clone', (Split-Path -Parent $PSScriptRoot), '--only', 'entries') + @(if ($Check) { '--check' })) } }
+if (Test-Path $LegacyNames) { $applySteps += @{ id = 'legacy'; script = 'legacy-names'; args = $lnArgs } }
+if ($ApplyOut -and (Test-Path $ApplyJs)) { $applySteps += @{ id = 'apply'; script = 'apply-hooks'; args = (New-ApplyArgs $ApplyOut); env = $applyEnv } }
+$ApplyBatch = Invoke-NodeBatch $applySteps
+
 # ── Las skills de terceros vuelven a su lugar (story 8.5; espejo del .sh, mismos argumentos) ──────────────────
 # Restituye lo ajeno desde la historia del clon (sin red) o desde su origen (con el retiro hecho, tope 20 s), sin
 # borrar ni pisar nada. Todo aviso por stdout; apagado con TYCON_THIRD_PARTY=0, y lo dice.
-if ((Test-Path (Join-Path (Join-Path $PSScriptRoot 'publishing') 'install-third-party.js')) -and (Get-Command node -ErrorAction SilentlyContinue)) {
-    $tpArgs = @()
-    if ($Check) { $tpArgs += '--check' }
-    if ($CheckInClone) {
+if ((Test-Path $ThirdPartyJs) -and (Get-Command node -ErrorAction SilentlyContinue)) {
+    # lo corrió la tanda de aplicación: lo que escribió, otra vez acá; si no, la llamada suelta
+    if ($ApplyBatch -and $ApplyBatch['third']) { Write-NodeChunks $ApplyBatch['third'].Chunks }
+    elseif ($CheckInClone) {
         # -Check en el repo único sin el enlace todavía (decisión C16): la revisión de terceros mira el clon, como el resto
         # de esta corrida. Con la ruta del enlace (que no existe) decía «no es un clon de agent-skills» y no revisaba nada.
         try { & node (Join-Path (Join-Path $PSScriptRoot 'publishing') 'install-third-party.js') --repo $CheckInClone --check } catch { }
@@ -791,25 +862,6 @@ $ProfileOff = @()   # lo que se saca por el perfil (su línea lo dice)
 # Las rutas de archivos renombrados a inglés, a su nombre nuevo, en settings.json (hooks y permisos),
 # settings.local.json, ~/.codex/hooks.json y ~/.git-hooks/*, comparando la ruta COMPLETA. Va antes de cargar
 # settings.json, así el bloque de hooks encuentra el nuevo ya registrado y no lo duplica. Con el mapa vacío no toca nada.
-$LegacyNames = Join-Path (Join-Path $PSScriptRoot 'lib') 'legacy-names.js'
-$lnArgs = @('--migrate-machine', '--guides', (Split-Path -Parent $PSScriptRoot), '--skills', $AgentSkillsRepo)
-if ($Check) { $lnArgs += '--check' }
-# La aplicación, en una tanda (story 8.36): los nombres viejos y los hooks de settings.json (más abajo), que corrían uno
-# detrás del otro sin nada en el medio salvo imprimir lo de los nombres viejos. Cada resultado se usa, y lo que escribió
-# se imprime, en su lugar de siempre. El temporal del aplicador se pide acá; si no se puede, el registro de hooks corre
-# suelto más abajo, que lo vuelve a pedir y dice por qué no pudo.
-$ApplyJs = Join-Path (Join-Path $PSScriptRoot 'setup') 'apply-hooks.js'
-function New-ApplyArgs([string]$JsonOut) {
-    $a = @('--settings', $Settings, '--hooks-dir', (Join-Path $PSScriptRoot 'hooks'), '--skills', $AgentSkills, '--platform', 'windows', '--json-out', $JsonOut)
-    if ($Check) { $a += '--check' }
-    return , $a
-}
-$ApplyOut = $null
-try { $ApplyOut = [IO.Path]::GetTempFileName() } catch { $ApplyOut = $null }
-$applySteps = @()
-if (Test-Path $LegacyNames) { $applySteps += @{ id = 'legacy'; script = 'legacy-names'; args = $lnArgs } }
-if ($ApplyOut -and (Test-Path $ApplyJs)) { $applySteps += @{ id = 'apply'; script = 'apply-hooks'; args = (New-ApplyArgs $ApplyOut) } }
-$ApplyBatch = Invoke-NodeBatch $applySteps
 if ((Test-Path $LegacyNames) -and (Get-Command node -ErrorAction SilentlyContinue)) {
     $lnOut = @(); $lnRc = 0
     if ($ApplyBatch -and $ApplyBatch['legacy']) {
@@ -874,11 +926,18 @@ $applyRc = 1
 if ($ApplyBatch -and $ApplyBatch['apply']) {
     # lo corrió la tanda de la aplicación (más arriba): lo que escribió, otra vez acá, por su canal y en su orden
     Write-NodeChunks $ApplyBatch['apply'].Chunks; $applyRc = $ApplyBatch['apply'].Rc
+    # sus piezas y su plan, recién ahora: en el mismo lugar y orden que con la llamada suelta (ver $ApplyPiecesTmp, arriba)
+    foreach ($pair in @(@($ApplyPiecesTmp, $PiecesTmp), @($ApplyPlanTmp, $PlanTmp))) {
+        if (-not $pair[0] -or -not $pair[1]) { continue }
+        try { [IO.File]::AppendAllText($pair[1], [IO.File]::ReadAllText($pair[0])) }
+        catch { if ($pair[1] -eq $PlanTmp) { $script:PlanIncomplete = $true } else { Write-Host "⚠ tycon: no pude sumar los hooks al reporte de piezas ($(Get-ErrText $_))" } }
+    }
 } else {
     $applyArgs = New-ApplyArgs $ApplyOut
     $eap = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
     try { & node $ApplyJs @applyArgs; $applyRc = $LASTEXITCODE } catch { Write-Host "✗ tycon: no pude lanzar apply-hooks.js ($($_.Exception.Message))" } finally { $ErrorActionPreference = $eap }
 }
+foreach ($f in @($ApplyPiecesTmp, $ApplyPlanTmp)) { if ($f) { Remove-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue } }
 $Apply = $null
 if ($applyRc -eq 0) {
     try { $Apply = [IO.File]::ReadAllText($ApplyOut) | ConvertFrom-Json } catch { $Apply = $null }

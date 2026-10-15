@@ -22,7 +22,13 @@
 //     (`state.api_limited_until`) y hasta esa hora su cliente NO le pide nada a la API (`waitUntil`), avisa una vez y no lo
 //     cuenta como fallo. `update` a mano intenta una vez.
 // CON permiso guardado, por la API, igual que antes de la 8.34 (lo pidió el dueño; un repo privado sólo se ve así), con
-// el cliente propio (scripts/lib/http-get.js: proxy, tope, redirección sin reenviar la credencial):
+// el cliente propio (scripts/lib/http-get.js: proxy, tope, redirección sin reenviar la credencial).
+// Un permiso guardado que VENCIÓ (2026-10-14, la máquina de un dev): GitHub contesta 401 aunque el repo sea público, y el
+// arnés quedaba sin actualizarse por un permiso que no hacía falta. Ante un 401 de un repo `/repos/<org>/<n>/…`, el cliente
+// mira si ese repo se lee sin permiso (`info/refs` sin credencial, 200): si sí, sigue SIN el permiso —las rutas públicas de
+// arriba— por el resto del proceso, y la máquina lo dice una vez (`EXPIRED_TOKEN_TEXT`, `state.token_expired_notice`); el
+// permiso no se borra solo. Si el repo no se lee sin permiso (privado), el 401 se dice como siempre. El cliente del repo
+// del equipo (team.js, `keepToken`) no cambia: ahí el permiso sí puede hacer falta.
 //   · la ref del canal: `git/ref/heads/<ref>` (la de `latest`, `mirror/sync`, lleva barra y va tal cual), con ETag;
 //     `latest` lee `main` si `mirror/sync` no está o su número es menor (la regla de sources.js);
 //   · `contents/version.json?ref=<commit>`: el número, con If-None-Match (con permiso, un 304 no gasta cuota; sin
@@ -74,6 +80,15 @@ const TARBALL_BUDGET_S_DEFAULT = 120;
 const MAX_TARBALL_BYTES = 256 * 1024 * 1024;
 const LOCATE_PAGE = 100;
 
+// el permiso guardado que GitHub rechazó (401) contra un repo público, en ESTE proceso (sólo en memoria, nunca escrito):
+// los clientes que se arman después ya no lo mandan. Y lo que se sabe de cada repo: si se lee sin permiso
+let EXPIRED_TOKEN = null;
+const READS_WITHOUT_TOKEN = new Map();
+const EXPIRED_TOKEN_TEXT = 'el permiso de GitHub guardado venció o se revocó (401), pero no hace falta: el repo del arnés es público y se actualiza sin él. Para sacarlo: harness.js config unset github.token';
+const ROUTE_REPO = /^\/repos\/([A-Za-z0-9._-]+\/[A-Za-z0-9._-]+)\//;
+/** ¿El permiso guardado de esta máquina es el que GitHub rechazó en este proceso? */
+function tokenExpired(env) { const t = GA.readToken({ env }).token; return Boolean(t && EXPIRED_TOKEN === t); }
+
 const nowIso = () => new Date().toISOString();
 const sha7 = (s) => (s ? String(s).slice(0, 7) : '—');
 const isObject = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
@@ -117,10 +132,15 @@ function budgetS(env) { const n = Number(env.TYCON_UPDATE_NETWORK_BUDGET_S); ret
  * El cliente de la API para una corrida: `get(ruta, { etag, maxBytes, timeoutMs })` → `{ ok, status, headers, body,
  * json }` o `{ ok: false, kind, message }`. Lleva la credencial de github-auth.js (si hay) y respeta el tope total.
  */
-function client(ctx, { deadlineAt = null, waitUntil = null } = {}) {
+function client(ctx, { deadlineAt = null, waitUntil = null, keepToken = false } = {}) {
   const env = ctx.env || process.env;
   const base = apiBase(env);
-  const { token, problem } = GA.readToken({ env });
+  const read = GA.readToken({ env });
+  const problem = read.problem;
+  let token = read.token;
+  // un permiso que ya contestó 401 contra un repo público en este proceso no se vuelve a mandar (`keepToken`: el repo del equipo)
+  let expired = false;
+  if (token && !keepToken && EXPIRED_TOKEN === token) { token = null; expired = true; }
   // sin permiso, las rutas públicas (story 8.34); con permiso, ninguna: el camino es el de la API, como antes
   const pub = token ? null : PG.bases(env);
   // el tope que contestó la API en esta corrida (la hora de renovación, en ms), y la espera que se respeta (el arranque)
@@ -130,7 +150,7 @@ function client(ctx, { deadlineAt = null, waitUntil = null } = {}) {
   // reloj se dice como lo que es («se acabó el tiempo») y no como «sin red»
   const clock = { deadline: deadlineAt || (Date.now() + budgetS(env) * 1000), since: Date.now(), answered: 0 };
   const http = lib('http-get.js');
-  const get = (route, { etag = null, maxBytes = 8 * 1024 * 1024, timeoutMs = null } = {}) => {
+  const get = (route, { etag = null, maxBytes = 8 * 1024 * 1024, timeoutMs = null, retry = true } = {}) => {
     // la espera del tope (decisión 6 de la 8.34): hasta la hora que dijo GitHub, ningún pedido a la API
     if (waitUntil && Date.now() < waitUntil) return { ok: false, kind: 'limited', until: waitUntil, message: 'la API está en su tope' };
     const headers = Object.assign({ Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': API_VERSION }, GA.authHeaders(token));
@@ -139,6 +159,12 @@ function client(ctx, { deadlineAt = null, waitUntil = null } = {}) {
     const r = http.getSync(/^https?:\/\//.test(route) ? route : `${base}${route}`, { headers, env, timeoutMs: timeoutMs || Math.max(1000, leftMs), deadlineAt: clock.deadline, maxBytes });
     if (!r.ok) { if (http.ranOutOfClock(r, { leftMs, answered: clock.answered })) r.outOfClock = { leftMs: Math.max(0, leftMs), answered: clock.answered, totalS: Math.round((clock.deadline - clock.since) / 1000) }; return r; }
     clock.answered += 1;
+    // el permiso vencido contra un repo que se lee sin permiso: se sigue sin él (y el pedido se repite sin credencial, salvo
+    // que quien llama prefiera volver a mirar por las rutas públicas: `retry: false`)
+    if (r.status === 401 && token && !keepToken && withoutToken(route)) {
+      EXPIRED_TOKEN = token; token = null; expired = true; c.token = null; c.public = PG.bases(env);
+      if (retry) return get(route, { etag, maxBytes, timeoutMs });
+    }
     if (r.status === 403 && String(r.headers['x-ratelimit-remaining']) === '0') limit.until = resetOf(r.headers);
     let json = null;
     if (r.status !== 304 && /json/.test(String(r.headers['content-type'] || ''))) { try { json = JSON.parse(r.body.toString('utf8')); } catch (_) { json = null; } }
@@ -152,7 +178,18 @@ function client(ctx, { deadlineAt = null, waitUntil = null } = {}) {
     clock.answered += 1;
     return { ok: true, status: r.status, headers: r.headers, body: r.body, json: null, url: r.url };
   };
+  /** ¿El repo de esta ruta de la API se lee sin permiso? `info/refs` sin credencial con 200 (una vez por repo y proceso). */
+  const withoutToken = (route) => {
+    const m = ROUTE_REPO.exec(String(route));
+    if (!m) return false;
+    if (!READS_WITHOUT_TOKEN.has(m[1])) {
+      const r = getPublic(PG.refsUrl(PG.bases(env), m[1]), { timeoutMs: Math.max(1000, Math.floor((clock.deadline - Date.now()) / 2)) });
+      READS_WITHOUT_TOKEN.set(m[1], Boolean(r.ok && r.status === 200));
+    }
+    return READS_WITHOUT_TOKEN.get(m[1]);
+  };
   const c = { get, getPublic, public: pub, token, tokenProblem: problem, base, setDeadline: (at) => { clock.deadline = at; clock.since = Date.now(); clock.answered = 0; } };
+  Object.defineProperty(c, 'expiredToken', { enumerable: true, get: () => expired });
   Object.defineProperty(c, 'deadline', { enumerable: true, get: () => clock.deadline });
   Object.defineProperty(c, 'limitedUntil', { enumerable: true, get: () => limit.until });
   return c;
@@ -215,8 +252,8 @@ function explainFailure(c, r, { what = 'la API de GitHub', probeUser = true, rep
 // ── mirar: la ref del canal y su número ───────────────────────────────────────────────────────────────────────────
 
 /** El commit de una ref: `{ ok, sha, etag, unchanged }` o `{ ok: false, missing }` / el motivo de explainFailure. */
-function refCommit(c, repo, ref, { etag = null } = {}) {
-  const r = c.get(`/repos/${repo}/git/ref/heads/${ref}`, { etag });
+function refCommit(c, repo, ref, { etag = null, retry = true } = {}) {
+  const r = c.get(`/repos/${repo}/git/ref/heads/${ref}`, { etag, retry });
   if (r.ok && r.status === 304) return { ok: true, unchanged: true, etag };
   if (r.ok && r.status === 200 && r.json && r.json.object && typeof r.json.object.sha === 'string') return { ok: true, sha: r.json.object.sha, etag: r.headers.etag || null };
   if (r.ok && r.status === 404 && etag === null) {
@@ -251,7 +288,10 @@ function resolveChannel(c, repo, channel, { installed = null, tips = null, log =
     // el respaldo (decisión 4): github.com sin contestar o info/refs ilegible → la API, como antes, y queda dicho
     if (log) log(`mirar: ${p.fallback}: miro por la API`);
   }
-  const main = refCommit(c, repo, MAIN_REF);
+  const hadToken = Boolean(c.token);
+  const main = refCommit(c, repo, MAIN_REF, { retry: false });
+  // el permiso guardado venció y el repo se lee sin él: se vuelve a mirar por las rutas públicas (una sola vez: ya sin permiso)
+  if (hadToken && !c.token && c.public) return resolveChannel(c, repo, channel, { installed, tips, log });
   if (!main.ok) return main.missing ? Object.assign({ status: 'blocked' }, { reason: explainFailure(c, main.raw, { what: 'el repo', repo }).reason }) : main;
   const mainVersion = versionAt(c, repo, main.sha);
   if (!mainVersion.ok) return mainVersion;
@@ -344,9 +384,10 @@ function check(ctx, state, { channel, log = null, deadlineAt = null, waitUntil =
   let t = null;
   // (sin permiso no hay ETag: un 304 sin credencial gasta igual —story 8.34—; se mira por info/refs)
   if (!c.public && ch !== 'latest' && isObject(cached) && cached.etag && cached.sha) {
-    const same = refCommit(c, repo(src), want, { etag: cached.etag });
+    const same = refCommit(c, repo(src), want, { etag: cached.etag, retry: false });
     if (same.ok && same.unchanged) t = { status: 'ok', ref: want, commit: cached.sha, version: cached.version || null, note: null };
-    else if (!same.ok && !same.missing) return { status: same.status || 'unknown', code: 2, lines: [`harness.js update: ${same.reason}`], limitedUntil: same.limitedUntil || null };
+    // (el permiso venció y el repo se lee sin él: abajo se mira por las rutas públicas)
+    else if (!same.ok && !same.missing && !c.expiredToken) return { status: same.status || 'unknown', code: 2, lines: [`harness.js update: ${same.reason}`], limitedUntil: same.limitedUntil || null };
   }
   if (!t) {
     // los commits cuyo número ya se conoce: las puntas vistas y el instalado (ése no necesita el raw)
@@ -1231,7 +1272,7 @@ function cmdInstall(ctx, H) {
     // la conexión vieja de una skill de la lista que la capa trae (tanda A2c · AC 35): el plan dice qué se copiaría, sin escribir
     const st0 = read.status === 'ok' ? read.state : null;
     const dataPlan = teamPlan ? TEAM.moveSkillData({ home: ctx.home, env: ctx.env, dryRun: true, team: Object.assign({}, st0 && st0.team), layerPaths: teamPlan.files.map((f) => f.path), migrateHome: st0 && st0.migrate_home, previousDir: TH.ownPaths({ env: ctx.env }).previous }).lines : [];
-    return { code: 0, lines: [`se instalaría ${what}`, tc.line, ...teamLine, ...dataPlan, ...(target.note ? [target.note] : [])] };
+    return { code: 0, lines: [`se instalaría ${what}`, tc.line, ...teamLine, ...dataPlan, ...(target.note ? [target.note] : []), ...(tokenExpired(ctx.env) ? [EXPIRED_TOKEN_TEXT] : [])] };
   }
   if (!ctx.opts.yes && !P.isTerminal()) return { code: 2, lines: [`se instala ${what}`, tc.line, 'harness.js install: sin `--yes` y sin terminal no escribo nada: harness.js install --version ' + wanted + ' --yes'] };
 
@@ -1379,7 +1420,7 @@ function cmdInstall(ctx, H) {
     for (const l of moved.lines) { notes.push(l); log(l); }
     S.write(ctx.home, state);
     H.finishSnapshot(ctx, snap, log);
-    return { code: 0, lines: [`arnés instalado en modo managed · ${tree} (versión bajada, sin git)`, `versión: ${target.version} (${target.ref} ${sha7(target.commit)}) de ${repoInfo.url}`, ...(teamStack ? [`${TEAM.planLine(teamPlan)} → apilada en ${tree}`] : []), `canal: ${state.channel} · aplicación: ${policyNow.apply}`, `herramientas enchufadas: ${TOOLS.names(state.tools)}`, `piezas escritas: ${pieces.join(', ')}`, ...notes] };
+    return { code: 0, lines: [`arnés instalado en modo managed · ${tree} (versión bajada, sin git)`, `versión: ${target.version} (${target.ref} ${sha7(target.commit)}) de ${repoInfo.url}`, ...(teamStack ? [`${TEAM.planLine(teamPlan)} → apilada en ${tree}`] : []), `canal: ${state.channel} · aplicación: ${policyNow.apply}`, `herramientas enchufadas: ${TOOLS.names(state.tools)}`, `piezas escritas: ${pieces.join(', ')}`, ...notes, ...(tokenExpired(ctx.env) ? [EXPIRED_TOKEN_TEXT] : [])] };
   }, { env: ctx.env, onBusy: (lock) => ({ code: 3, lines: [`harness.js: ${lock.reason || 'otra sesión está actualizando'}`] }) });
 }
 
@@ -1877,8 +1918,16 @@ function startup(ctx, state, H, { log, snapshot = null }) {
       else if (u.status === 'held' || u.status === 'skipped' || convertWait) log(`startup: ${u.lines.join(' · ')}`);
       else if (u.status === 'unknown' && /sin red/.test(u.lines[0])) { log(`startup: ${u.lines.join(' · ')}`); line = 'arnés: sin red, no se actualizó'; }
       else { log(`startup: ${u.lines.join(' · ')}`); notice = notice || u.lines[0].replace(/^harness\.js update: /, ''); line = u.lines[0]; }
+      // el permiso guardado venció y el repo se leyó sin él (2026-10-14): una línea, sin frenar, UNA vez mientras siga ese
+      // permiso; con un permiso que vuelve a servir, la marca se borra (y uno nuevo que venza se avisa de nuevo)
+      if (tokenExpired(ctx.env)) {
+        log(`startup: ${EXPIRED_TOKEN_TEXT}`);
+        if (!state.token_expired_notice) { state.token_expired_notice = nowIso(); notice = notice ? `${notice} · ${EXPIRED_TOKEN_TEXT}` : EXPIRED_TOKEN_TEXT; line = line ? `${line} · ${EXPIRED_TOKEN_TEXT}` : EXPIRED_TOKEN_TEXT; }
+      } else if (['new', 'applied', 'up_to_date', 'older'].includes(u.status)) state.token_expired_notice = null;
     }
   }
+  // sin permiso guardado, no hay nada que avisar: la marca se borra
+  if (state.token_expired_notice && !GA.readToken({ env: ctx.env }).token) state.token_expired_notice = null;
   // el cambio de perfil (story 8.16, AC 26), como en un clon; y el aplicador, SIEMPRE, con el registro de lo que dejó
   const applierTree = state.mode === 'developer' ? state.tree : own.harness;
   const sw = H.profileSwitch(ctx, state, applierTree, log);
@@ -1970,6 +2019,9 @@ function cmdUpdate(ctx, state, H, { log, asked = null }) {
     if (hp.line) u.lines = [...(u.lines || []), ...hp.line.split('\n')];
     if (hp.notice) R.setNotice(state, hp.notice); else R.clearNotice(state);
   }
+  // el permiso guardado venció y el repo se leyó sin él: a mano se dice siempre, en una línea (no cambia la salida)
+  if (tokenExpired(ctx.env)) { u.lines = [...(u.lines || []), EXPIRED_TOKEN_TEXT]; log(`update: ${EXPIRED_TOKEN_TEXT}`); if (!state.token_expired_notice) state.token_expired_notice = nowIso(); }
+  else if (['new', 'applied', 'up_to_date', 'older'].includes(u.status)) state.token_expired_notice = null;
   S.write(ctx.home, state);
   if (mode === 'check' && u.status === 'new' && !ctx.opts.check) return { code: 3, lines: [...u.lines, `la política es «ask»: aplicá con ${H.applyHint}`] };
   return { code: u.code, lines: u.lines };
@@ -2119,6 +2171,8 @@ function doctorItems(ctx, state, { fetch = false, channel = null } = {}) {
     const c = check(ctx, state, { channel: now });
     add(c.status === 'unknown' || c.status === 'blocked' ? 'warn' : 'ok', `red: ${c.lines[0].replace(/^harness\.js update: /, '')}`);
   }
+  // el permiso guardado que venció contra el repo público (2026-10-14): amarillo, nunca rojo — la máquina se actualiza igual
+  if (tokenExpired(ctx.env) || (state.token_expired_notice && GA.readToken({ env: ctx.env }).token)) add('warn', EXPIRED_TOKEN_TEXT);
   return items;
 }
 
@@ -2136,7 +2190,7 @@ function versionJson(state, { channel = null } = {}) {
 module.exports = {
   startup, cmdUpdate, doctorItems, versionLine, versionJson, FETCH_WINDOW_MS,
   MANIFEST_NAME, MAIN_REF, SYNC_REF, API_DEFAULT,
-  githubRepoOf, repoOf, apiBase, client, explainFailure, refCommit, versionAt, resolveChannel, check, locateVersion,
+  githubRepoOf, repoOf, apiBase, client, explainFailure, tokenExpired, EXPIRED_TOKEN_TEXT, refCommit, versionAt, resolveChannel, check, locateVersion,
   download, readManifest, restoreThirdParty, swap, swapBack, repair, cleanupDeferred, isNamed, makeSource,
   convertLayout, swapLinks, swapBackLinks, repairLinks,
   cmdInstall, update, rollback, auditTree,

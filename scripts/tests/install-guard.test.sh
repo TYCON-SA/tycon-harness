@@ -14,6 +14,7 @@
 #   T32 — en una máquina con una versión BAJADA, el aviso de arranque juzga el freno contra esa versión y contra la
 #         constancia que deja el instalador, no contra el clon que la máquina mantiene: recién instalado es «al día»,
 #         tras una versión nueva «quedó viejo», y una biblioteca retocada en /opt sigue siendo «alguien lo cambió».
+#   T34 — (2026-10-14) con el permiso guardado vencido y el repo público, el instalador sigue sin él y lo dice.
 #   T33 — el freno usa SÓLO el intérprete de root (/opt/tycon/bin/node): si falta, tiene otro dueño
 #         o su huella no coincide, un comando que nombra una base sale 2 (y uno que no, pasa).
 #
@@ -1057,6 +1058,16 @@ PY
   rm -rf "$SYS30/opt/tycon"; mkdir -p "$SYS30/opt"; : > "$SRV30/requests.log"
   if TYCON_RELEASE_GIT="$GIT30" instala30 && [ "$(grep '"host":"api"' "$SRV30/requests.log" | grep -c 'git/commits/')" = 1 ] && [ "$(grep '"host":"api"' "$SRV30/requests.log" | grep -c 'git/ref/heads/')" = 2 ] && ! grep -q 'info/refs' "$SRV30/requests.log"; then ok "T15 · con permiso, el freno pide a la API lo mismo que antes (el commit y las dos puntas), sin info/refs"
   else no "T15 · con permiso, los pedidos cambiaron: $(sed 's/.*"path":"\([^"]*\)".*/\1/' "$SRV30/requests.log" | tr '\n' ' ')"; fi
+  # T34 (2026-10-14) · el permiso guardado VENCIÓ y el repo es público (GitHub contesta 401 al permiso, 200 sin él): instala
+  # sin el permiso y dice en una línea que venció, que no hace falta y cómo sacarlo
+  printf '{ "auth": "none", "reject_unknown_token": true }\n' > "$SRV30/control.json"
+  printf '{ "github": { "token": "permiso-vencido-de-laboratorio" } }\n' > "$CASA30/.tycon/config.json"
+  rm -rf "$SYS30/opt/tycon"; mkdir -p "$SYS30/opt"; : > "$SRV30/requests.log"
+  if TYCON_RELEASE_GIT="$GIT30" instala30 && [ -f "$SYS30/opt/tycon/production/trusted-origin.json" ] && grep -q 'no hace falta: el repo del arnés es público' "$TMP/inst-30" && grep -q 'config unset github.token' "$TMP/inst-30" && grep -q 'info/refs' "$SRV30/requests.log"; then
+    ok "T34 · el permiso guardado vencido con el repo público: instala sin él y dice cómo sacarlo"
+  else no "T34 · permiso guardado vencido: $(grep '⛔' "$TMP/inst-30" | head -1 | cut -c1-240) · $(tail -2 "$TMP/inst-30" | tr '\n' ' ' | cut -c1-240)"; fi
+  printf '{ "auth": "token:permiso-de-laboratorio" }\n' > "$SRV30/control.json"
+  printf '{ "github": { "token": "permiso-de-laboratorio" } }\n' > "$CASA30/.tycon/config.json"
   # (h) un archivo puesto a mano en ~/.tycon/harness que la versión NO trae (renames.json en una versión pública): su sola
   # presencia no lo mete en /opt (pase adversarial de la D, clases 4 y 17)
   rm -rf "$SYS30/opt/tycon"; mkdir -p "$SYS30/opt"
