@@ -89,8 +89,8 @@ function main() {
     const m = io.readMarker(io.DEFAULT_STATE_DIR, resolveSessionId(null));
     repoDeLaCorrida = m && m.repoPath ? m.repoPath : null;
   } catch { repoDeLaCorrida = null; }   // sin marcador legible, queda sólo la carpeta de la llamada
-  // La carpeta de la llamada vale sólo si es un repo git (su raíz): desde la carpeta de la persona o desde ~/.claude no
-  // se escribe (vuelta 3 de revisores).
+  // La carpeta de la llamada vale sólo si es un repo git (su raíz): desde la carpeta de la persona o desde la de la
+  // configuración de la herramienta no se escribe (vuelta 3 de revisores).
   let repoDeLaCarpeta = null;
   try {
     repoDeLaCarpeta = require('child_process').execFileSync('git', ['-C', process.cwd(), 'rev-parse', '--show-toplevel'],
