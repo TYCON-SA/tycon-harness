@@ -152,22 +152,37 @@ function consolaNueva(opts = {}) {
   //    consola. Ahora se conecta EXPLÍCITO a la consola de este proceso (FreeConsole + AttachConsole(pid)) antes de contar:
   //    la cuenta es la de NUESTRA consola, la arme Node como la arme. Sin consola a la que conectarse, no hay cuenta.
   const pid = opts.pid || process.pid;
+  // 🔴 Ensayo de Windows 13590: con la consola reconectada, PowerShell no imprimió nada y una salida vacía se leía como
+  //    «0 conectados». La cuenta viaja por un archivo (no depende de adónde quedó apuntando la salida) y sólo vale un
+  //    número escrito: sin número, «no pude preguntar», con lo que PowerShell haya dicho.
+  const archivo = path.join(os.tmpdir(), `tycon-waiver-consola-${process.pid}-${Date.now()}.txt`);
   const ps = 'Add-Type -TypeDefinition \'using System.Runtime.InteropServices; public static class C { '
     + '[DllImport("kernel32.dll")] public static extern bool FreeConsole(); '
     + '[DllImport("kernel32.dll")] public static extern bool AttachConsole(uint p); '
-    + '[DllImport("kernel32.dll")] public static extern uint GetConsoleProcessList(uint[] l, uint n); }\'; '
+    + '[DllImport("kernel32.dll", SetLastError = true)] public static extern uint GetConsoleProcessList(uint[] l, uint n); }\'; '
     + `[C]::FreeConsole() | Out-Null; if (-not [C]::AttachConsole(${Number(pid)})) { 'SIN-CONSOLA'; exit 3 }; `
-    + '$l = New-Object uint[] 64; [C]::GetConsoleProcessList($l, 64)';
+    + '$l = New-Object uint[] 64; $n = [C]::GetConsoleProcessList($l, 64); '
+    + '$e = [Runtime.InteropServices.Marshal]::GetLastWin32Error(); '
+    + `[IO.File]::WriteAllText('${archivo.replace(/'/g, "''")}', "$n $e"); $n`;
+  const leerNumero = (texto) => {
+    const m = String(texto || '').match(/^\s*(\d+)(?:\s+(\d+))?\s*$/m);
+    return m ? { n: Number(m[1]), error: m[2] !== undefined ? Number(m[2]) : null } : null;
+  };
+  let detalle = '';
   for (const exe of [delSistema('WindowsPowerShell', 'v1.0', 'powershell.exe')]) {
     const r = run(exe, ['-NoProfile', '-NonInteractive', '-Command', ps]);
+    let escrito = null;
+    try { escrito = fs.readFileSync(archivo, 'utf8'); } catch { /* PowerShell no llegó a escribirlo */ }
+    try { fs.unlinkSync(archivo); } catch { /* no estaba */ }
     if (r && r.status === 3 && /SIN-CONSOLA/.test(String(r.stdout || ''))) return { nueva: false, conectados: 0, motivo: 'este proceso no tiene una consola a la que conectarse' };
+    detalle = `${String((r && r.stdout) || '').trim()} ${String((r && r.stderr) || '').trim()}`.trim().slice(0, 300);
     if (!r || r.error || r.status !== 0) continue;
-    const n = Number(String(r.stdout || '').trim().split(/\r?\n/).pop());
+    const leido = leerNumero(escrito) || leerNumero(r.stdout);
     // exactamente 2: éste y el PowerShell que pregunta. 0 o 1 = este proceso no tiene consola (un proceso desprendido
     // devuelve 0): tampoco es la ventana. 3 o más = la consola es de alguien más (la del agente, con su intérprete).
-    if (Number.isFinite(n)) return { nueva: n === 2, conectados: n };
+    if (leido) return Object.assign({ nueva: leido.n === 2, conectados: leido.n }, leido.n === 0 && leido.error ? { error: leido.error } : {});
   }
-  return { nueva: false, conectados: null, motivo: 'no pude preguntarle a Windows qué procesos usan esta consola (PowerShell no contestó)' };
+  return Object.assign({ nueva: false, conectados: null, motivo: 'no pude preguntarle a Windows qué procesos usan esta consola (PowerShell no contestó)' }, detalle ? { detalle } : {});
 }
 
 /** ¿Esta corrida es la de la ventana nueva? Marca + entrada y salida en una consola + consola sin nadie más. Se

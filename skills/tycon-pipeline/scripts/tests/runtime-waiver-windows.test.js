@@ -89,6 +89,27 @@ test('@story-waiver-windows PowerShell se lanza conectado a la consola y por su 
   });
 });
 
+test('@story-waiver-windows la cuenta viaja por un archivo, y una salida vacía no es «0 conectados»', () => {
+  // 🔴 rojo previo (ensayo de Windows 13590): con la consola reconectada PowerShell no imprimió nada, y '' se leía como
+  //    0: la ventana de la persona quedaba como «sin consola» y no firmaba nadie.
+  conAmbiente({ ...WIN }, (W) => {
+    const vacia = W.consolaNueva({ run: () => ({ status: 0, stdout: '', stderr: 'algo dijo' }) });
+    assert.equal(vacia.conectados, null, JSON.stringify(vacia));
+    assert.equal(vacia.nueva, false);
+    assert.match(vacia.detalle, /algo dijo/);
+    const porArchivo = (contenido) => (cmd, args) => {
+      const m = args.join(' ').match(/WriteAllText\('([^']+)'/);
+      assert.ok(m, 'el guion escribe la cuenta en un archivo');
+      fs.writeFileSync(m[1], contenido);
+      return { status: 0, stdout: '' };
+    };
+    assert.equal(W.consolaNueva({ run: porArchivo('2 0') }).nueva, true, 'la ventana nueva, contada en el archivo');
+    const cero = W.consolaNueva({ run: porArchivo('0 6') });
+    assert.equal(cero.nueva, false);
+    assert.equal(cero.error, 6, 'con 0, el código de error de Windows queda a la vista');
+  });
+});
+
 test('@story-waiver-windows la frase: tres palabras distintas de la lista, y sólo la frase exacta firma', () => {
   conAmbiente(WIN, (W) => {
     for (let i = 0; i < 50; i += 1) {
