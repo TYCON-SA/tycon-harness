@@ -45,7 +45,7 @@ FALLOS=0
 ok()  { echo "  ok   — $1"; }
 mal() { echo "  MAL  — $1"; FALLOS=$((FALLOS+1)); }
 BASE="$(mktemp -d)"
-case "$BASE" in *tycon-claude-guides*|*agent-skills*|*/.claude*) echo "❌ release-api-count: el laboratorio cayó en ${BASE}"; exit 1 ;; esac
+node "$RAIZ/scripts/tests/lib/lab-guard.js" "$BASE" release-api-count || exit 1
 trap 'rm -rf "$BASE"; kill $(jobs -p) 2>/dev/null' EXIT
 BASELINE="$RAIZ/scripts/tests/fixtures/release-api-baseline-token.txt"
 j() { python3 -c "import json,sys; d=json.load(open(sys.argv[1], encoding='utf-8')); print($2)" "$1" 2>/dev/null; }

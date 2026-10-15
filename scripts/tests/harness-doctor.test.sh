@@ -38,7 +38,7 @@ FALLOS=0
 ok()  { echo "  ok   — $1"; }
 mal() { echo "  MAL  — $1"; FALLOS=$((FALLOS+1)); }
 BASE="$(mktemp -d)"
-case "$BASE" in *tycon-claude-guides*|*agent-skills*|*/.claude*) echo "❌ harness-doctor: el laboratorio cayó en ${BASE}"; exit 1 ;; esac
+node "$RAIZ/scripts/tests/lib/lab-guard.js" "$BASE" harness-doctor || exit 1
 trap 'kill $(jobs -p) 2>/dev/null; rm -rf "$BASE"' EXIT   # (el servidor de versiones de juguete de T79, si quedó vivo)
 j() { python3 -c "import json,sys; d=json.load(open(sys.argv[1], encoding='utf-8')); print($2)" "$1" 2>/dev/null; }
 jtxt() { python3 -c "import json,sys; d=json.loads(sys.stdin.read()); print($1)" 2>/dev/null; }

@@ -41,7 +41,7 @@ FALLOS=0
 ok()  { echo "  ok   — $1"; }
 mal() { echo "  MAL  — $1"; FALLOS=$((FALLOS+1)); }
 T="$(mktemp -d "${TMPDIR:-/tmp}/harness-plan.XXXXXX")"
-case "$T" in *tycon-claude-guides*|*agent-skills*|*/.claude*) echo "❌ harness-plan: el laboratorio cayó en ${T}"; exit 1 ;; esac
+node "$RAIZ/scripts/tests/lib/lab-guard.js" "$T" harness-plan || exit 1
 trap 'rm -rf "$T"' EXIT
 ORIG_TMPDIR="${TMPDIR:-/tmp}"
 j() { python3 -c "import json,sys; d=json.load(open(sys.argv[1], encoding='utf-8')); print($2)" "$1" 2>/dev/null; }

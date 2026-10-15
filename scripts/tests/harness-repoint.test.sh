@@ -97,7 +97,7 @@ NO_MEDIDOS=0
 no_medido() { echo "  ⏭   — $1 NO MEDIDO: $2"; NO_MEDIDOS=$((NO_MEDIDOS+1)); }
 T_INICIO=$(date +%s)
 BASE="$(mktemp -d)"
-case "$BASE" in *tycon-claude-guides*|*agent-skills*|*/.claude*) echo "❌ harness-repoint: el laboratorio cayó en ${BASE}"; exit 1 ;; esac
+node "$RAIZ/scripts/tests/lib/lab-guard.js" "$BASE" harness-repoint || exit 1
 # u+rwx (no sólo u+w): una carpeta que una prueba dejó en `chmod 000` también se puede recorrer y borrar
 trap 'chmod -R u+rwx "$BASE" 2>/dev/null; rm -rf "$BASE"' EXIT
 [ -f "$RAIZ/scripts/setup/harness/repoint.js" ] || mal "falta scripts/setup/harness/repoint.js (la feature no existe)"

@@ -85,7 +85,7 @@ mal() { echo "  MAL  — $1"; FALLOS=$((FALLOS+1)); }
 # bajo $TMPDIR también en Mac (su mktemp -d sin plantilla lo ignora): con TMPDIR=/tmp se reproduce el agente de la CI
 ORIG_TMPDIR="${TMPDIR:-/tmp}"   # el laboratorio cambia TMPDIR: T11 compara contra el de la máquina
 BASE="$(mktemp -d "${TMPDIR:-/tmp}/harness-install.XXXXXX")"
-case "$BASE" in *tycon-claude-guides*|*agent-skills*|*/.claude*) echo "❌ harness-install: el laboratorio cayó en ${BASE}"; exit 1 ;; esac
+node "$RAIZ/scripts/tests/lib/lab-guard.js" "$BASE" harness-install || exit 1
 PERSISTENT=""   # T11: la carpeta del clon propio cuando el laboratorio cae bajo /tmp (ver T11)
 trap 'rm -rf "$BASE" ${PERSISTENT:+"$PERSISTENT"}' EXIT
 ORIG_PATH="$PATH"

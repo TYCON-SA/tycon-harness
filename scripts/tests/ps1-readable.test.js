@@ -47,7 +47,7 @@ const PARSER = path.join(__dirname, 'lib', 'parse-ps1-legacy.ps1');
 const BOM = Buffer.from([0xEF, 0xBB, 0xBF]);
 
 const BASE = fs.mkdtempSync(path.join(os.tmpdir(), 'tycon-ps-readable-'));
-if (/tycon-claude-guides|agent-skills|\.claude/.test(BASE)) throw new Error(`el laboratorio cayó en ${BASE}`);
+require('./lib/lab-guard.js').labGuard(BASE, 'ps1-readable');
 process.on('exit', () => fs.rmSync(BASE, { recursive: true, force: true }));
 
 const which = (name) => {

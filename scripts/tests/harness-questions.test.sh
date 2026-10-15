@@ -44,8 +44,7 @@ FALLOS=0
 ok()  { echo "  ok   — $1"; }
 mal() { echo "  MAL  — $1"; FALLOS=$((FALLOS+1)); }
 T="$(mktemp -d "${TMPDIR:-/tmp}/harness-questions.XXXXXX")"; T="$(cd "$T" && pwd)"
-PUB_NAME="$(node -p "require(process.argv[1]).PLACE_NAME" "$RAIZ/scripts/setup/harness/place.js" 2>/dev/null || echo tycon-claude-guides)"   # el lugar, de place.js (8.19)
-case "$T" in *tycon-claude-guides*|*"$PUB_NAME"*|*agent-skills*|*/.claude*) echo "❌ harness-questions: el laboratorio cayó en ${T}"; exit 1 ;; esac
+node "$RAIZ/scripts/tests/lib/lab-guard.js" "$T" harness-questions --place || exit 1
 trap 'rm -rf "$T"' EXIT
 
 # shellcheck source=lib/harness-lab.sh

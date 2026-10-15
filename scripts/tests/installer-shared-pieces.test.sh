@@ -59,7 +59,7 @@ FALLOS=0
 ok()  { echo "  ok   — $1"; }
 mal() { echo "  MAL  — $1"; FALLOS=$((FALLOS+1)); }
 T="$(mktemp -d "${TMPDIR:-/tmp}/shared-pieces.XXXXXX")"
-case "$T" in *tycon-claude-guides*|*agent-skills*|*/.claude*) echo "❌ installer-shared-pieces: el laboratorio cayó en ${T}"; exit 1 ;; esac
+node "$RAIZ/scripts/tests/lib/lab-guard.js" "$T" installer-shared-pieces || exit 1
 trap 'rm -rf "$T"' EXIT
 
 VAR_ENV="CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR"

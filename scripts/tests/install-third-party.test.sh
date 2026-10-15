@@ -17,7 +17,7 @@ set -u
 TCG="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 STEP="$TCG/scripts/publishing/install-third-party.js"
 BASE="$(mktemp -d /tmp/tycon-terceros.XXXXXX)"
-case "$BASE" in *tycon-claude-guides*|*agent-skills*|*.claude*) echo "❌ install-third-party: el laboratorio cayó en ${BASE}"; exit 1 ;; esac
+node "$TCG/scripts/tests/lib/lab-guard.js" "$BASE" install-third-party || exit 1
 SRV_PID=""
 trap '[ -n "$SRV_PID" ] && kill "$SRV_PID" 2>/dev/null; rm -rf "$BASE"' EXIT
 FALLAS=0

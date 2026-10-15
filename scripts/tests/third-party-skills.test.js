@@ -24,6 +24,7 @@ const { spawnSync } = require('child_process');
 const { sinGitDelPadre } = require('../lib/clean-git-env.js');
 const { resolveSkillsDirs } = require('../lib/skills-dir.js');
 const { preCommitHook } = require('./lib/pre-commit-hook.js');
+const { labGuard } = require('./lib/lab-guard.js');
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const COVERAGE = path.join(ROOT, 'scripts', 'publishing', 'third-party-coverage.js');
@@ -44,7 +45,7 @@ function git(dir, args) {
 }
 function tmp(prefix) {
   const d = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
-  assert.doesNotMatch(d, /tycon-claude-guides|agent-skills|\.claude/, 'el laboratorio no puede vivir bajo una ruta del arnés');
+  labGuard(d, 'third-party-skills');
   return d;
 }
 function write(root, files) {

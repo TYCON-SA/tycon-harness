@@ -28,7 +28,7 @@ const KNOWN = FIXTURE.forms.filter((f) => f.expect === 'known');
 const UNKNOWN = FIXTURE.forms.filter((f) => f.expect === 'unknown');
 
 const BASE = fs.mkdtempSync(path.join(os.tmpdir(), 'tycon-startup-line-'));
-if (/tycon-claude-guides|agent-skills|\.claude/.test(BASE)) throw new Error(`el laboratorio cayó en ${BASE}`);
+require('./lib/lab-guard.js').labGuard(BASE, 'harness-startup-line');
 process.on('exit', () => fs.rmSync(BASE, { recursive: true, force: true }));
 
 const BOOTSTRAP_MARK = '.tycon-pipeline/harness/bootstrap.js';

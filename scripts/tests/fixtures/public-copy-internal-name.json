@@ -289,21 +289,6 @@
    "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
   },
   {
-   "path": "scripts/tests/harness-channel.test.sh",
-   "kind": "test",
-   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
-  },
-  {
-   "path": "scripts/tests/harness-doctor.test.sh",
-   "kind": "test",
-   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
-  },
-  {
-   "path": "scripts/tests/harness-eol.test.sh",
-   "kind": "test",
-   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
-  },
-  {
    "path": "scripts/tests/harness-health.test.sh",
    "kind": "test",
    "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
@@ -329,31 +314,6 @@
    "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
   },
   {
-   "path": "scripts/tests/harness-profile.test.sh",
-   "kind": "test",
-   "why": "guarda del laboratorio: se niega a correr si la carpeta temporal cae dentro de un clon del arnés, por el nombre interno y el público"
-  },
-  {
-   "path": "scripts/tests/harness-questions.test.sh",
-   "kind": "test",
-   "why": "guarda del laboratorio: se niega a correr si la carpeta temporal cae dentro de un clon del arnés, por el nombre interno y el público"
-  },
-  {
-   "path": "scripts/tests/harness-repoint.test.sh",
-   "kind": "test",
-   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
-  },
-  {
-   "path": "scripts/tests/harness-rollback.test.sh",
-   "kind": "test",
-   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
-  },
-  {
-   "path": "scripts/tests/harness-snapshot.test.js",
-   "kind": "test",
-   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
-  },
-  {
    "path": "scripts/tests/harness-startup-line.test.js",
    "kind": "test",
    "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
@@ -369,27 +329,12 @@
    "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
   },
   {
-   "path": "scripts/tests/harness-update.test.sh",
-   "kind": "test",
-   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
-  },
-  {
    "path": "scripts/tests/install-effects.test.js",
    "kind": "test",
    "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
   },
   {
    "path": "scripts/tests/install-guard.test.sh",
-   "kind": "test",
-   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
-  },
-  {
-   "path": "scripts/tests/install-third-party.test.sh",
-   "kind": "test",
-   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
-  },
-  {
-   "path": "scripts/tests/installer-repeated-hooks.test.sh",
    "kind": "test",
    "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
   },
@@ -444,22 +389,12 @@
    "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
   },
   {
-   "path": "scripts/tests/ps1-readable.test.js",
-   "kind": "test",
-   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
-  },
-  {
    "path": "scripts/tests/public-copy.test.js",
    "kind": "test",
    "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
   },
   {
    "path": "scripts/tests/sync-codex-detection.test.sh",
-   "kind": "test",
-   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
-  },
-  {
-   "path": "scripts/tests/third-party-skills.test.js",
    "kind": "test",
    "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
   },
@@ -567,16 +502,6 @@
    "path": "skills/tycon-story-followup-link/scripts/on-story-create.js",
    "kind": "functional",
    "why": "reconocedor: salta las stories del propio arnés, por el nombre interno y el público"
-  },
-  {
-   "path": "scripts/tests/harness-release.test.sh",
-   "kind": "test",
-   "why": "prueba (story 8.23, tanda B): la guarda del laboratorio comprueba que la carpeta temporal no cayó en el checkout del repo interno ni en agent-skills"
-  },
-  {
-   "path": "scripts/tests/release-api-count.test.sh",
-   "kind": "test",
-   "why": "prueba (story 8.34): la misma guarda del laboratorio que harness-release.test.sh — la carpeta temporal no cayó en el checkout del repo interno ni en agent-skills"
   },
   {
    "path": "scripts/tests/harness-repo.test.sh",
