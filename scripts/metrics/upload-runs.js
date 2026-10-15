@@ -54,7 +54,7 @@
  * Nada de esto pregunta ni abre un login: no usa git, ni `az`, ni credenciales de la persona.
  *
  * Uso:
- *   node scripts/metrics/upload-runs.js [--json] [--dry-run] [--budget-ms N]
+ *   node scripts/metrics/upload-runs.js [--json] [--dry-run] [--budget-ms N] [--log <archivo>]
  *   node scripts/metrics/upload-runs.js --check-create-only [--json]
  *
  *   --check-create-only (story 2.24): comprueba desde una máquina que la política del buzón no deja pisar. Vuelve a
@@ -877,9 +877,35 @@ async function chequearSoloCrear(opts = {}) {
 
 module.exports = { placeFactsForMailbox, subir, chequearSoloCrear, respuestaDelBuzon, versionDe, msDeVersion, FORMA_VERSION, nombreDeMaquina, normalizarNombreDeMaquina, leerConfig, integracionBuzon, negativaDeLaLlave, rutaConfig, urlBase, FORMA_MAQUINA, FORMA_ARCHIVO, FORMA_REGISTRO, REGISTROS, prepararRegistros, usosParaElBuzon, X_MS_VERSION };
 
+/**
+ * `--log <archivo>`: la salida (la estándar y la de error) se AGREGA a ese archivo, que pasado ~512 KB se mueve a `.1`.
+ * Lo usa el arranque de Windows (2026-10-15): un proceso de fondo de PowerShell no puede agregar a un archivo, y
+ * sobrescribir el registro borraría el aviso de vencimiento de la llave, que sale una vez por día (la razón del `>>` y
+ * del `rotar` del instalador .sh, que no lo usa). Si el registro no se puede abrir, la salida queda donde estaba.
+ */
+function salidaAlRegistro(archivo) {
+  try {
+    fs.mkdirSync(path.dirname(path.resolve(archivo)), { recursive: true });
+    try { if (fs.statSync(archivo).size > 524288) fs.renameSync(archivo, `${archivo}.1`); } catch (_) { /* no había registro */ }
+    const fd = fs.openSync(archivo, 'a');
+    const escribir = (trozo, enc, cb) => {
+      try { fs.writeSync(fd, typeof trozo === 'string' ? trozo : Buffer.from(trozo)); } catch (_) { /* el registro es lo de menos */ }
+      if (typeof enc === 'function') enc(); else if (typeof cb === 'function') cb();
+      return true;
+    };
+    process.stdout.write = escribir;
+    process.stderr.write = escribir;
+    return true;
+  } catch (e) {
+    console.error(`no pude abrir el registro ${archivo}: ${e.message} — la salida sigue por la terminal`);
+    return false;
+  }
+}
+
 if (require.main === module) {
   const args = process.argv.slice(2);
   const valor = (n) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : undefined; };
+  if (valor('--log')) salidaAlRegistro(valor('--log'));
   const json = args.includes('--json');
   const budget = valor('--budget-ms');
   const stamp = () => new Date().toISOString().slice(0, 19).replace('T', ' ');
