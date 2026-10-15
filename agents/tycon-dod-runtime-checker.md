@@ -282,17 +282,19 @@ Detalle completo de cada regla: `~/.claude/tycon-harness/guides/advisor-rules-ca
 
 #### [DODRT-W3] Smoke/script/E2E contra staging/prod con URL shape de DevHost (BZURL)
 
-**Qué detecta**: evidencia de smoke, scripts o specs E2E que apuntan a un host Bizuit staging/prod (`https://<host>/...`, NO `localhost:5001`) usando el shape de ruta de DevHost (`/api/{ruta}`) **sin** el prefijo `/api/plugins/{pluginName}/{version}/`. También: diagnóstico "endpoint roto en staging" ante un 404 body-vacío cuando el mismo path funciona en DevHost — el 404 es la URL mal armada, no el endpoint.
+**Qué detecta**: evidencia de smoke, scripts o specs E2E que apuntan a un host Bizuit staging/prod (`https://<host>/...`, NO `localhost:5001`) usando el shape de ruta de DevHost (`/api/{ruta}`) **sin** el prefijo `/api/plugins/{pluginName}/`. También: diagnóstico "endpoint roto en staging" ante un 404 body-vacío cuando el mismo path funciona en DevHost — el 404 es la URL mal armada, no el endpoint.
 
-**Heurística**: grep en `smoke-check.md` / scripts `.sh` / specs E2E por URLs `https?://` que no sean localhost. Si el path empieza con `/api/` pero NO contiene `/api/plugins/` → WARNING. El nombre + versión correctos salen del `plugin.json` del repo.
+**Heurística**: grep en `smoke-check.md` / scripts `.sh` / specs E2E por URLs `https?://` que no sean localhost. Si el path empieza con `/api/` pero NO contiene `/api/plugins/` → WARNING. El nombre correcto sale del `plugin.json` del repo. **La versión NO va en la ruta**: el host sirve la versión activa del plugin.
+
+**Qué NO marca**: una URL que ya lleva `/api/plugins/{pluginName}/` no es W3, lleve o no la versión detrás. La forma sin versión es la correcta; la con versión el host la contesta con 404 `{"error":"Endpoint not found"}`, pero W3 existe para el prefijo faltante y no la marca. Si un smoke con versión falló con ese 404, el diagnóstico es "sobra la versión en la ruta", no "endpoint roto": decilo en el texto del reporte, sin abrir un finding nuevo.
 
 **Output ejemplo**:
 
 ```
-[DODRT-W3] smoke-check.md línea 12: `https://test.bizuit.example/api/pedidos/123` — target staging sin prefijo de plugin. Fix: `https://test.bizuit.example/api/plugins/ceibo/1.0.0/pedidos/123` (nombre+versión de plugin.json). Ver tabla BZURL en definition-of-done.md §1.
+[DODRT-W3] smoke-check.md línea 12: `https://test.bizuit.example/api/pedidos/123` — target staging sin prefijo de plugin. Fix: `https://test.bizuit.example/api/plugins/ceibo/pedidos/123` (nombre de plugin.json, sin versión). Ver tabla BZURL en definition-of-done.md §1.
 ```
 
-**Por qué**: es un error recurrente entre proyectos (regla promovida 2026-07-15) — smokear staging con rutas DevHost y diagnosticar el 404 como bug del endpoint.
+**Por qué**: es un error recurrente entre proyectos (regla promovida 2026-07-15) — smokear staging con rutas DevHost y diagnosticar el 404 como bug del endpoint. Hasta el 2026-10-14 el arreglo sugerido metía la versión en la ruta; el host nunca la aceptó (medido en seis inquilinos de prueba y en su código), y el humo de despliegue del arnés siempre llamó sin versión.
 
 ## Workflow
 

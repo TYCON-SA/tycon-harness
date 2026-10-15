@@ -100,14 +100,15 @@ script, E2E, debugging), determinar el entorno target. La ruta cambia de shape:
 | Entorno | Shape de la URL |
 |---|---|
 | **DevHost local** (`devhost.sh`) | `http://localhost:5001/api/{ruta}` — **SIN** nombre de plugin |
-| **Staging / Prod** (host Bizuit, ej. test.bizuit.example) | `https://<host>/api/plugins/{pluginName}/{version}/{ruta}` — **CON** nombre de plugin + versión |
+| **Staging / Prod** (host Bizuit, ej. test.bizuit.example) | `https://<host>/api/plugins/{pluginName}/{ruta}` — **CON** nombre de plugin, **SIN** versión: el host sirve la versión activa |
 | **Frontend** (formulario) | `${dashboardParams.pluginApiUrl}/{pluginName}/{ruta}` — la base la da el host. NUNCA `fetch('/api/…')` desde la raíz ni la versión a mano |
 
-Señal del error: **404 con body vacío en staging/prod** cuando el mismo path funciona en
-DevHost = casi siempre falta el prefijo `/plugins/{pluginName}/{version}` — NO es un bug
-del endpoint. En un formulario, **503** = `fetch` desde la raíz. Detalle: guides/bizuit/bizuit-plugin-dotnet.md §7 y
-guides/bizuit/bizuit-plugin-react.md §3. Incidente recurrente multi-proyecto — regla promovida
-2026-07-15.
+Señal del error en staging/prod, con un path que funciona en DevHost: **404 con body vacío** =
+falta el prefijo `/plugins/{pluginName}`; **404 `{"error":"Endpoint not found"}`** = sobra algo
+en la ruta del plugin, casi siempre la versión. Ninguno es un bug del endpoint. En un formulario,
+**503** = `fetch` desde la raíz. Detalle: guides/bizuit/bizuit-plugin-dotnet.md §7 y
+guides/bizuit/bizuit-plugin-react.md §3. Regla promovida 2026-07-15; la versión salió el
+2026-10-14 (el host nunca la aceptó: con versión, 404 en todos los entornos medidos).
 
 ---
 

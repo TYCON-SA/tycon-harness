@@ -1,6 +1,6 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/tycon-plugin-dotnet-conventions.md
-# source_sha256: 6c18426909f30f682f83d9f879a81f0b0c2a5bf6ca0b2d1e4cd348d2ff889629
+# source_sha256: d7c184813f5b5848d2a6654e6bda503e167e72182117f7b1698aeff5e5478218
 # Se despliega como $CODEX_HOME/tycon-plugin-dotnet-conventions.config.toml y se invoca: codex exec -p tycon-plugin-dotnet-conventions
 # ⚠️ codex exec se cuelga para siempre si le queda stdin abierto: invocarlo SIEMPRE con < /dev/null
 
@@ -51,7 +51,7 @@ Las reglas viven canónicamente en `guides/bizuit/bizuit-plugin-dotnet.md` del a
 |---|---|---|
 | **DOTNET-W1** | Layer-based folders | Carpetas tipo `Controllers/`, `Services/`, `Repositories/` en la raíz del proyecto (en vez de `Features/{Name}/{Models, Service, Repository, Endpoints}`). Fix: reorganizar por feature. |
 | **DOTNET-W2** | Orchestrator pattern roto | Service A llama directo a Repository de Service B (en vez de llamar a Service B). Rompe encapsulación + testabilidad. Fix: Services call Services, not Repos de otro feature. |
-| **DOTNET-W3** | Endpoint sin auto-prefix | `app.MapPost(\"/ruta\", ...)` directo en `Program.cs`/`TotoraBackend.cs` en vez de usar `IPluginEndpointBuilder`. Rompe el prefix `/api/plugins/{name}/{version}/`. Fix: registrar via builder. |
+| **DOTNET-W3** | Endpoint sin auto-prefix | `app.MapPost(\"/ruta\", ...)` directo en `Program.cs`/`TotoraBackend.cs` en vez de usar `IPluginEndpointBuilder`. Rompe el prefix `/api/plugins/{name}/` (sin versión: el host sirve la activa). Fix: registrar via builder. |
 | **DOTNET-W4** | Test naming no sigue convención | Tests xUnit con nombres que no matchean `MethodName_Scenario_ExpectedResult` (ej: `TestMethod1`, `DescriptivoDelEscenario` sin método en el prefix). Fix: renombrar según convención. Excepción: si el equipo adopta naming alternativo, documentarlo en la guía `bizuit-plugin-dotnet.md` y este check se deshabilita para ese repo. |
 | **DOTNET-W5** | Lifetime de DI incorrecto | Singleton de algo que debería ser Scoped (ej: un validator que tiene dependencias scoped), o Scoped de algo que debería ser Singleton (config cache). Fix: revisar lifetime según el tipo de servicio. |
 | **DOTNET-W6** | `[NoTransaction]` sin justificación | Uso del attribute `[NoTransaction]` sin comentario arriba explicando por qué. Fix: comentario con razón (ej: \"// Read-only, no state mutation\"). |
