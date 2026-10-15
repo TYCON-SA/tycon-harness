@@ -1616,6 +1616,233 @@
             "TYCON_RETRO_LAB_DIRS": "${FIXTURE}/temporal",
             "TYCON_REPOS_ROOT": "${FIXTURE}/no-existe"
           }
+        },
+        {
+          "id": "pr-create-desde-carpeta-sin-repo-lo-dice",
+          "type": "must-block",
+          "__doc": "Story 7.25, T12 (AC 8). La sesión está en la carpeta que agrupa los repos, que no es un repo, y el repositorio viene en una variable: no se sabe a qué repo fue. Antes salía 0 sin entrada y sin decir nada (caso real 2026-10-14). Ahora lo dice, con el comando del latido.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/",
+            "mkdir -p ws/Backend && cd ws/Backend && git init -q -b main . && mkdir -p .tycon && echo Backend > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin https://dev.azure.com/acme/Prod/_git/Backend && git checkout -q -b feat/x",
+            "mkdir -p ws/FrontEnd && cd ws/FrontEnd && git init -q -b main . && mkdir -p .tycon && echo FrontEnd > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin https://dev.azure.com/acme/Prod/_git/FrontEnd && git checkout -q -b feat/x"
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "cwd": "${FIXTURE}/ws",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr create --org https://dev.azure.com/acme --project Prod --repository $1 --source-branch feat/x --target-branch main"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "no pude resolver"
+            ],
+            "file_absent": [
+              "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl"
+            ]
+          }
+        },
+        {
+          "id": "pr-create-repository-literal-de-hermano-anota-el-hermano",
+          "type": "must-block",
+          "__doc": "Story 7.25, T13 (AC 7). La sesión está en FrontEnd y el pedido nombra Backend: el merge es de Backend. Antes quedaba anotado contra FrontEnd, con la punta de FrontEnd.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/",
+            "mkdir -p ws/Backend && cd ws/Backend && git init -q -b main . && mkdir -p .tycon && echo Backend > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin https://dev.azure.com/acme/Prod/_git/Backend && git checkout -q -b feat/x",
+            "mkdir -p ws/FrontEnd && cd ws/FrontEnd && git init -q -b main . && mkdir -p .tycon && echo FrontEnd > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin https://dev.azure.com/acme/Prod/_git/FrontEnd && git checkout -q -b feat/x"
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "cwd": "${FIXTURE}/ws/FrontEnd",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr create --org https://dev.azure.com/acme --project Prod --repository Backend --source-branch feat/x --target-branch main"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl",
+                "re": "ws/Backend\""
+              }
+            ],
+            "file_not_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl",
+                "re": "FrontEnd"
+              }
+            ]
+          }
+        },
+        {
+          "id": "pr-create-repository-literal-desde-el-grupo-anota-el-hijo",
+          "type": "must-block",
+          "__doc": "Story 7.25, T14 (AC 7). La sesión está en la carpeta que agrupa los repos y el pedido nombra Backend: se busca el repo con ese origin entre los hijos.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/",
+            "mkdir -p ws/Backend && cd ws/Backend && git init -q -b main . && mkdir -p .tycon && echo Backend > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin https://dev.azure.com/acme/Prod/_git/Backend && git checkout -q -b feat/x",
+            "mkdir -p ws/FrontEnd && cd ws/FrontEnd && git init -q -b main . && mkdir -p .tycon && echo FrontEnd > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin https://dev.azure.com/acme/Prod/_git/FrontEnd && git checkout -q -b feat/x"
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "cwd": "${FIXTURE}/ws",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr create --org https://dev.azure.com/acme --project Prod --repository Backend --source-branch feat/x --target-branch main"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl",
+                "re": "ws/Backend\""
+              }
+            ]
+          }
+        },
+        {
+          "id": "pr-create-repository-que-no-esta-lo-dice",
+          "type": "must-block",
+          "__doc": "Story 7.25, T15 (AC 7). El pedido nombra un repositorio que ninguna copia de la carpeta, sus hijos ni sus hermanos tiene como origin: no se anota contra la carpeta (sería una atribución falsa); se dice.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/",
+            "mkdir -p ws/Backend && cd ws/Backend && git init -q -b main . && mkdir -p .tycon && echo Backend > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin https://dev.azure.com/acme/Prod/_git/Backend && git checkout -q -b feat/x",
+            "mkdir -p ws/FrontEnd && cd ws/FrontEnd && git init -q -b main . && mkdir -p .tycon && echo FrontEnd > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin https://dev.azure.com/acme/Prod/_git/FrontEnd && git checkout -q -b feat/x"
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "cwd": "${FIXTURE}/ws/FrontEnd",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr create --org https://dev.azure.com/acme --project Prod --repository Otro --source-branch feat/x --target-branch main"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "no pude resolver"
+            ],
+            "file_absent": [
+              "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl"
+            ]
+          }
+        },
+        {
+          "id": "pr-create-repository-en-variable-usa-la-carpeta",
+          "type": "must-block",
+          "__doc": "Story 7.25, T16 (AC 8). El repositorio viene en una variable y la sesión está en un repo: vale el repo de la carpeta (lo que ya andaba, fijado).",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/",
+            "mkdir -p ws/Backend && cd ws/Backend && git init -q -b main . && mkdir -p .tycon && echo Backend > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin https://dev.azure.com/acme/Prod/_git/Backend && git checkout -q -b feat/x",
+            "mkdir -p ws/FrontEnd && cd ws/FrontEnd && git init -q -b main . && mkdir -p .tycon && echo FrontEnd > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin https://dev.azure.com/acme/Prod/_git/FrontEnd && git checkout -q -b feat/x"
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "cwd": "${FIXTURE}/ws/Backend",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr create --org https://dev.azure.com/acme --project Prod --repository $1 --source-branch feat/x --target-branch main"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl",
+                "re": "ws/Backend\""
+              }
+            ]
+          }
+        },
+        {
+          "id": "pr-create-con-cd-literal-desde-el-grupo-anota-el-repo-del-cd",
+          "type": "must-block",
+          "__doc": "Story 7.25, T18 (AC 8). La sesión está en la carpeta que agrupa los repos y el comando entra con un cd literal. Antes el cd no se seguía nunca (dirDelPrCreate le pasaba texto a un lector de fichas, tiraba y el catch lo tapaba): la misma forma del caso del 2026-09-24.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/",
+            "mkdir -p ws/Backend && cd ws/Backend && git init -q -b main . && mkdir -p .tycon && echo Backend > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin https://dev.azure.com/acme/Prod/_git/Backend && git checkout -q -b feat/x",
+            "mkdir -p ws/FrontEnd && cd ws/FrontEnd && git init -q -b main . && mkdir -p .tycon && echo FrontEnd > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin https://dev.azure.com/acme/Prod/_git/FrontEnd && git checkout -q -b feat/x"
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "cwd": "${FIXTURE}/ws",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "cd ${FIXTURE}/ws/Backend && az repos pr create --org https://dev.azure.com/acme --project Prod --source-branch feat/x --target-branch main"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl",
+                "re": "ws/Backend\""
+              }
+            ]
+          }
+        },
+        {
+          "id": "pr-create-con-cd-sin-resolver-lo-dice",
+          "type": "must-block",
+          "__doc": "Story 7.25, T20 (AC 8). El cd del comando usa una variable que el comando no define: no se sabe en qué carpeta corrió el pedido. No se anota contra la carpeta de la sesión; se dice, con el motivo.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/",
+            "mkdir -p ws/Backend && cd ws/Backend && git init -q -b main . && mkdir -p .tycon && echo Backend > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin https://dev.azure.com/acme/Prod/_git/Backend && git checkout -q -b feat/x",
+            "mkdir -p ws/FrontEnd && cd ws/FrontEnd && git init -q -b main . && mkdir -p .tycon && echo FrontEnd > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin https://dev.azure.com/acme/Prod/_git/FrontEnd && git checkout -q -b feat/x"
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "cwd": "${FIXTURE}/ws/FrontEnd",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "cd $DESTINO && az repos pr create --org https://dev.azure.com/acme --project Prod --source-branch feat/x --target-branch main"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "no pude resolver",
+              "cd que no se pudo seguir"
+            ],
+            "file_absent": [
+              "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl"
+            ]
+          }
+        },
+        {
+          "id": "pr-create-sin-la-rama-en-el-clon-anota-la-punta-de-head-y-lo-dice",
+          "type": "must-block",
+          "__doc": "Story 7.25, T21 (AC 7). La rama de --source-branch no está en este clon: la entrada se anota con la punta de HEAD y lo dice en `punta` (puede no ser lo que se mergea).",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/",
+            "mkdir -p ws/Backend && cd ws/Backend && git init -q -b main . && mkdir -p .tycon && echo Backend > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin https://dev.azure.com/acme/Prod/_git/Backend && git checkout -q -b feat/x",
+            "mkdir -p ws/FrontEnd && cd ws/FrontEnd && git init -q -b main . && mkdir -p .tycon && echo FrontEnd > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin https://dev.azure.com/acme/Prod/_git/FrontEnd && git checkout -q -b feat/x"
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "cwd": "${FIXTURE}/ws",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "az repos pr create --org https://dev.azure.com/acme --project Prod --repository Backend --source-branch otra-rama --target-branch main"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "file_contains": [
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl",
+                "re": "ws/Backend\""
+              },
+              {
+                "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/retro-pending.jsonl",
+                "re": "\"punta\":\"HEAD: la rama otra-rama no está en este clon\""
+              }
+            ]
+          }
         }
       ],
       "env": {
