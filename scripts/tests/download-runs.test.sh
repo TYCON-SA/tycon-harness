@@ -631,7 +631,7 @@ bajar "${T}" "${T}/bin/az"
 rm -f "${T}/b/falla-get"; echo "maq-x/registros/${VB}/cobertura.json" > "${T}/b/corromper"
 bajar "${T}" "${T}/bin/az"
 [ "${RC}" -eq 1 ] && [ "$(campo "${T}" estado)" = "parcial" ] && [ "$(campo "${T}" completo)" = "false" ] && [ "$(campo "${T}" versiones_incompletas)" = "0" ] \
-  && campo "${T}" no_leidos | grep -q 'cobertura ilegible' && cmp -s "${C}/${VA}/gates.log.gz" "${T}/estado/corridas-buzon/maq-x/registros/gates.log.gz" \
+  && campo "${T}" no_leidos | grep 'cobertura ilegible' >/dev/null && cmp -s "${C}/${VA}/gates.log.gz" "${T}/estado/corridas-buzon/maq-x/registros/gates.log.gz" \
   && ok "2.24-T16c una cobertura ilegible se nombra (parcial, exit 1, completo false), no cuenta como incompleta, y el espejo queda con la versión anterior" \
   || mal "2.24-T16c ilegible: rc=${RC} estado=$(campo "${T}" estado) incompletas=$(campo "${T}" versiones_incompletas) no_leidos=$(campo "${T}" no_leidos)"
 

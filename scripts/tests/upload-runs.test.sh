@@ -388,7 +388,7 @@ R2="$(regdir "${T}")"
 [ "${R2}" != "${R}" ] && gunzip -c "${R2}/gates.log.gz" 2>/dev/null | cmp -s - "${T}/reg/gates.log" && grep -q '"fecha": *"2026-09-16"' "${R2}/cobertura.json" && diff -r "${T}/juego-viejo" "${R}" >/dev/null \
   && ok "2.5-T1 al día siguiente vuelven a subir, con lo que creció, bajo otra versión (la de ayer, igual)" || mal "2.5-T1 el día siguiente no re-subió bajo otra versión: rc=${RC} ${R} → ${R2} $(cat "${R2}/cobertura.json" 2>&1 | head -c 200)"
 MAQ_A="${T}/b/blobs/corridas/maq-a"
-! ls "${MAQ_A}/registros" | grep -qv '^v' && ok "2.5-T1 nunca más a registros/<archivo> plano" || mal "2.5-T1 algo subió plano: $(ls "${MAQ_A}/registros")"
+! ls "${MAQ_A}/registros" | grep -v '^v' >/dev/null && ok "2.5-T1 nunca más a registros/<archivo> plano" || mal "2.5-T1 algo subió plano: $(ls "${MAQ_A}/registros")"
 
 # ── 2.6 T10 · el TERCER registro (la constancia de los frenos) viaja por el mismo camino (story 2.6, AC7) ──
 # 🔴 rojo previo: dejar `frenos.jsonl` fuera de la lista de registros → el reductor se NIEGA a contarlo
@@ -1002,7 +1002,7 @@ T="${BASE}/t224-7"; buzon "${T}/b"; config "${T}/cfg.json"; corrida "${T}/h" "3.
 echo "AuthorizationPermissionMismatch *" > "${T}/b/codigo403"
 subir "${T}" "${T}/h" "maq-a"
 [ "${RC}" -eq 1 ] && [ "$(campo "${T}" estado)" = "llave_sin_permiso" ] && [ "$(puts "${T}/b")" = "1" ] && [ -z "$(en_registro "${T}")" ] \
-  && campo "${T}" motivo | grep -q 'no deja crear' && campo "${T}" motivo | grep -q 'subida-prueba' && ! campo "${T}" motivo | grep -qi 'vencida' \
+  && campo "${T}" motivo | grep 'no deja crear' >/dev/null && campo "${T}" motivo | grep 'subida-prueba' >/dev/null && ! campo "${T}" motivo | grep -i 'vencida' >/dev/null \
   && ok "2.24-T7 403 AuthorizationPermissionMismatch → llave_sin_permiso, exit 1, un solo PUT, nada anotado, el motivo nombra la política y no dice «vencida»" \
   || mal "2.24-T7 rc=${RC} estado=$(campo "${T}" estado) puts=$(puts "${T}/b") motivo=$(campo "${T}" motivo)"
 
@@ -1011,7 +1011,7 @@ for CASO in authfail sincodigo 404; do
   T="${BASE}/t224-8-${CASO}"; buzon "${T}/b"; config "${T}/cfg.json"; corrida "${T}/h" "3.1-2026-10-03T1000"
   case "${CASO}" in authfail) echo "AuthenticationFailed *" > "${T}/b/codigo403" ;; sincodigo) echo "- *" > "${T}/b/codigo403" ;; 404) echo 404 > "${T}/b/modo" ;; esac
   subir "${T}" "${T}/h" "maq-a"
-  [ "${RC}" -eq 1 ] && [ "$(campo "${T}" estado)" = "llave_invalida" ] && [ "$(puts "${T}/b")" = "1" ] && campo "${T}" motivo | grep -q 'vencida o revocada' \
+  [ "${RC}" -eq 1 ] && [ "$(campo "${T}" estado)" = "llave_invalida" ] && [ "$(puts "${T}/b")" = "1" ] && campo "${T}" motivo | grep 'vencida o revocada' >/dev/null \
     && ok "2.24-T8 (${CASO}) → llave_invalida como hoy, sin reintento" || mal "2.24-T8 (${CASO}) rc=${RC} estado=$(campo "${T}" estado) puts=$(puts "${T}/b")"
 done
 
@@ -1048,7 +1048,7 @@ subir "${T}" "${T}/h" "maq-a"
 cp "${T}/h/4.0-2026-10-04T0900.json" "${T}/el-mas-chico"
 echo c > "${T}/b/politica"; : > "${T}/b/pedidos.jsonl"
 subir "${T}" "${T}/h" "maq-a" --check-create-only
-python3 - "${T}/b/pedidos.jsonl" <<'PY' && [ "${RC}" -eq 0 ] && campo "${T}" motivo | grep -q 'la política no deja pisar' \
+python3 - "${T}/b/pedidos.jsonl" <<'PY' && [ "${RC}" -eq 0 ] && campo "${T}" motivo | grep 'la política no deja pisar' >/dev/null \
   && ok "2.24-T10 (política c) un PUT de los mismos bytes del confirmado más chico, sin If-None-Match → 403 → «la política no deja pisar», exit 0" || mal "2.24-T10 política c: rc=${RC} motivo=$(campo "${T}" motivo) $(cut -c1-200 "${T}/b/pedidos.jsonl")"
 import json, sys
 ps = [json.loads(l) for l in open(sys.argv[1])]
@@ -1056,7 +1056,7 @@ assert len(ps) == 1 and ps[0]['metodo'] == 'PUT' and ps[0]['inm'] is None and ps
 PY
 rm -f "${T}/b/politica"; : > "${T}/b/pedidos.jsonl"
 subir "${T}" "${T}/h" "maq-a" --check-create-only
-[ "${RC}" -eq 1 ] && campo "${T}" motivo | grep -q 'dejó escribir, o el blob ya no estaba' && cmp -s "${T}/el-mas-chico" "${T}/b/blobs/corridas/maq-a/4.0-2026-10-04T0900.json" \
+[ "${RC}" -eq 1 ] && campo "${T}" motivo | grep 'dejó escribir, o el blob ya no estaba' >/dev/null && cmp -s "${T}/el-mas-chico" "${T}/b/blobs/corridas/maq-a/4.0-2026-10-04T0900.json" \
   && ok "2.24-T10 (política cw) 201 → «dejó escribir, o el blob ya no estaba», exit 1, y el cuerpo recibido es idéntico al confirmado" || mal "2.24-T10 política cw: rc=${RC} motivo=$(campo "${T}" motivo)"
 printf '{"chico":2}\n' > "${T}/h/4.0-2026-10-04T0900.json"   # el más chico cambió en la máquina: otro sha, no se usa
 : > "${T}/b/pedidos.jsonl"
@@ -1080,7 +1080,7 @@ subir "${T}" "${T}/h" "maq-a" --check-create-only
 subir "${T}" "${T}/h" "maq-a"
 echo 500 > "${T}/b/modo"
 subir "${T}" "${T}/h" "maq-a" --check-create-only
-[ "${RC}" -eq 1 ] && [ "$(campo "${T}" estado)" = "otro" ] && campo "${T}" motivo | grep -q '500 InternalError' \
+[ "${RC}" -eq 1 ] && [ "$(campo "${T}" estado)" = "otro" ] && campo "${T}" motivo | grep '500 InternalError' >/dev/null \
   && ok "2.24-T10 otro código a la sonda (500) → lo dice con su código, exit 1" || mal "2.24-T10 500: rc=${RC} estado=$(campo "${T}" estado) motivo=$(campo "${T}" motivo)"
 
 # ── 2.24 T11 · LlaveSpConEscritura_SeNiega (AC 18) ── 🔴 rojo previo: `/[^cwa]/` de hoy deja pasar `cw`.
@@ -1114,9 +1114,9 @@ FUERA="$(grep -n 'blob\.core\.windows\.net' "${RAIZ}"/scripts/metrics/*.js "${RA
 PIEZAS="${RAIZ}/guides/piezas-del-arnes.md"
 SECCION="$(awk '/upload-runs\.js/ && /^#/ {p=1; print; next} p && /^#/ {exit} p' "${PIEZAS}")"
 CABECERA="$(sed -n '1,60p' "${SUBIR}")"
-if echo "${SECCION}" | grep -q 'sólo crear' && echo "${SECCION}" | grep -q 'sin vencimiento' && echo "${SECCION}" | grep -q 'UnauthorizedBlobOverwrite' \
-   && echo "${CABECERA}" | grep -q 'sólo crear' && ! printf '%s\n%s' "${SECCION}" "${CABECERA}" | grep -q 'revisar en 2027-03' \
-   && ! printf '%s\n%s' "${SECCION}" "${CABECERA}" | grep -q 'permisos `cw`'; then
+if echo "${SECCION}" | grep 'sólo crear' >/dev/null && echo "${SECCION}" | grep 'sin vencimiento' >/dev/null && echo "${SECCION}" | grep 'UnauthorizedBlobOverwrite' >/dev/null \
+   && echo "${CABECERA}" | grep 'sólo crear' >/dev/null && ! printf '%s\n%s' "${SECCION}" "${CABECERA}" | grep 'revisar en 2027-03' >/dev/null \
+   && ! printf '%s\n%s' "${SECCION}" "${CABECERA}" | grep 'permisos `cw`' >/dev/null; then
   ok "2.24-T24 la guía y la cabecera dicen «sólo crear»; la guía, «sin vencimiento» y el síntoma de la máquina con código de antes"
 else
   mal "2.24-T24 la guía o la cabecera siguen con el texto viejo (sección: $(echo "${SECCION}" | head -c 120))"

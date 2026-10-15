@@ -906,8 +906,8 @@ fi
 # ── 2.24 T23 · Cabecera_DiceQueElHiloViajaAlBuzon (story 2.24, AC 20) ──────────────────────────────────────────
 # 🔴 rojo previo: la cabecera decía «POR QUÉ NO VIAJA» y no nombraba la subida al buzón (story 2.16), que sí lo lleva.
 CAB23="$(awk '/DÓNDE VIVE/{p=1} p{print} /CUATRO COSAS QUE SE MIDIERON/{exit}' "$DIGEST")"
-if echo "$CAB23" | grep -q 'buzón' && echo "$CAB23" | grep -q 'upload-runs.js' && echo "$CAB23" | grep -q 'sin vencimiento' \
-   && ! echo "$CAB23" | grep -q 'POR QUÉ NO VIAJA'; then
+if echo "$CAB23" | grep 'buzón' >/dev/null && echo "$CAB23" | grep 'upload-runs.js' >/dev/null && echo "$CAB23" | grep 'sin vencimiento' >/dev/null \
+   && ! echo "$CAB23" | grep 'POR QUÉ NO VIAJA' >/dev/null; then
   ok "T23 · 2.24 la cabecera dice que el hilo viaja al buzón (upload-runs.js), entero y sin vencimiento"
 else
   bad "T23 · 2.24 la cabecera" "$(echo "$CAB23" | head -4 | tr '\n' ' ')"
