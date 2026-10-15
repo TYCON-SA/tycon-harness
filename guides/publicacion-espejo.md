@@ -717,14 +717,14 @@ por un sintético, como los demás). Lo que tiene que cumplir lo verifica **por 
 
 | Regla | Qué exige |
 |---|---|
-| `triggers` | Corre en `pull_request` y en `push` a `main`, y en nada más. |
+| `triggers` | Corre en `pull_request`, en `merge_group` (la cola de merge, que prueba cada pedido combinado con los que entraron antes) y en `push` a `main`, y en nada más. |
 | `pull-request-target` | Ese disparador no aparece en ninguna parte: corre el código del pull request con los permisos del repo. |
 | `secrets` | No lee ningún secreto, tampoco el token por otro camino (con punto, por índice o volcando el contexto entero). |
 | `uses-by-sha` | Cada `uses:` va fijado por el sha completo de su commit, con el tag como comentario. |
 | `permissions` | Un solo bloque `permissions`, arriba de todo, con `contents: read`. |
 | `fetch-depth` | El checkout trae la historia completa (`fetch-depth: 0`): la necesita `--range`. |
 | `node-matrix` | La matriz (`strategy: matrix:`) es Node 22 y 24, y es la que se instala. |
-| `range` | En un pull request, `public-ci.sh` corre con `--range origin/<base>...HEAD`. |
+| `range` | En un pull request y en la cola de merge, `public-ci.sh` corre con `--range origin/<base>...HEAD`. |
 | `clean-machine` | Toda llamada a `public-ci.sh` lleva `--clean-machine`. |
 | `aggregate-job` | El job `public-ci` corre siempre (`if: always()`), depende de todos los demás y falla si alguno no dio `success`. |
 | `parts` | La matriz parte la corrida en `checks` y `suites-1-of-<n>` … `suites-<n>-of-<n>`, todas, en orden y una vez, y la parte llega al guion desde la matriz: una que falta deja suites sin correr y el veredicto igual verde. |

@@ -2,9 +2,11 @@
 #
 # Lo que este archivo tiene que cumplir lo verifica scripts/ci/check-public-workflow.js (lo corre
 # scripts/tests/public-ci.test.sh), regla por regla. Cambiarlo sin leer ese control termina en un rojo:
-#   · corre en un pull request y en un push a main, y en nada más. Un pull request de un fork corre SIN permisos de
-#     escritura y sin ningún dato reservado del repo: por eso el disparador es el común y nunca el que corre con los
-#     permisos del repo de destino;
+#   · corre en un pull request, en la cola de merge (merge_group) y en un push a main, y en nada más. Un pull request de
+#     un fork corre SIN permisos de escritura y sin ningún dato reservado del repo: por eso el disparador es el común y
+#     nunca el que corre con los permisos del repo de destino. La cola (2026-10-15) prueba cada pedido combinado con los
+#     que entraron antes que él, en orden, antes de que llegue a main: corre sobre una rama temporal
+#     gh-readonly-queue/main/…, con la misma CI que un pedido y el freno de nombres comparando contra main;
 #   · el permiso del token es de sólo lectura y no se usa en ningún paso;
 #   · cada acción de terceros va fijada por el sha completo de su commit, con el tag al lado como comentario: un tag se
 #     puede mover; un sha, no;
@@ -29,8 +31,10 @@ on:
   pull_request:
   push:
     branches: [main]
+  merge_group:
 
 # Un cambio nuevo en la misma rama (o en el mismo pedido) corta la corrida anterior: sólo importa la última.
+# En la cola cada grupo tiene su propia rama (gh-readonly-queue/main/pr-<n>-<sha>): los grupos no se cortan entre sí.
 concurrency:
   group: public-ci-${{ github.ref }}
   cancel-in-progress: true
@@ -60,10 +64,11 @@ jobs:
         env:
           TYCON_PUBLIC_CI_OUT: ${{ runner.temp }}/public-ci
           TYCON_PUBLIC_CI_PART: ${{ matrix.part }}
-          BASE_REF: ${{ github.base_ref }}
+          BASE_REF: ${{ github.base_ref || github.event.merge_group.base_ref }}
         run: |
-          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
-            bash scripts/ci/public-ci.sh --clean-machine --range "origin/${BASE_REF}...HEAD"
+          # en un pedido BASE_REF es «main»; en la cola es «refs/heads/main»: se le saca el prefijo
+          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ] || [ "${GITHUB_EVENT_NAME}" = "merge_group" ]; then
+            bash scripts/ci/public-ci.sh --clean-machine --range "origin/${BASE_REF#refs/heads/}...HEAD"
           else
             bash scripts/ci/public-ci.sh --clean-machine
           fi
