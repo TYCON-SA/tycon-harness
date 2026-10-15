@@ -1,8 +1,27 @@
 {
-  "__doc": "EJEMPLO para una organización en GitHub. Va en la raíz de tu repo de operaciones. Lector y forma: scripts/lib/operations-config.js. Identidades: usuarios de GitHub. owners.default es el responsable de respaldo: se lo menciona en cada issue y se le asigna el issue de un repo sin responsable declarado. owners.by_project asigna directo los issues de un repo (la clave es <dueño>/<repo>, como en repos.json). Quien recibe un issue tiene que tener acceso a ese repo: si no, GitHub no lo asigna y la noche lo dice.",
+  "__doc": "EJEMPLO para una organización en GitHub. Va en la raíz de tu repo de operaciones. Lector y forma: scripts/lib/operations-config.js. Identidades: usuarios de GitHub. owners.default es el responsable de respaldo: se lo menciona en cada issue y se le asigna el issue de un repo sin responsable declarado. owners.by_project asigna directo los issues de un repo (la clave es <dueño>/<repo>, como en repos.json). Quien recibe un issue tiene que tener acceso a ese repo: si no, GitHub no lo asigna y la noche lo dice. people (opcional): quién es quién en el sitio de la organización, con correos (no usuarios de GitHub); lo escribe un mantenedor, ver el README.",
   "version": 1,
   "owners": {
     "default": "acme-lead",
     "by_project": { "acme/web-frontend": "acme-web-owner" }
+  },
+  "people": {
+    "machines": {
+      "maq-uno-1a2b3c4d": {
+        "person": "dev.uno@acme.example",
+        "reported_sha256": "f55f6ca28369fdecdca8e76904d8d95db291271b2cc4ae7a617ac7c00ecca544",
+        "confirmed_by": "lider@acme.example",
+        "confirmed_on": "2026-10-15"
+      },
+      "maq-dos-5e6f7a8b": {
+        "person": "dev.dos@acme.example",
+        "reported_sha256": null,
+        "confirmed_by": "lider@acme.example",
+        "confirmed_on": "2026-10-15"
+      }
+    },
+    "projects": {
+      "dev.dos@acme.example": { "add": ["Acme Web"], "remove": ["Acme Mobile"] }
+    }
   }
 }

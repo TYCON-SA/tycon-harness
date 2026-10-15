@@ -1,0 +1,101 @@
+{
+  "__doc": "Aviso de arranque del correo de git (story 2.28, decisión 1 · AC 30). La máquina que sube al buzón informa en place.json el correo GLOBAL de git de quien la usa; este aviso se lo dice al dev UNA vez, con cómo verlo y cambiarlo, y deja un sello en la carpeta de estado con la HUELLA del correo, nunca el correo. Con el sello de ese correo calla; sin correo o con el buzón apagado calla y no sella. El buzón se prende por variable (TYCON_MAILBOX=1) con el lector de la configuración copiado al lado: sin él, la integración se leería prendida siempre y el caso del buzón apagado no probaría nada. Los correos son inventados.",
+  "hooks": [
+    {
+      "hook": "owner-email-notice.js (tu máquina le informa al equipo tu correo de git, dicho una vez)",
+      "script": "${FIXTURE}/tcg/scripts/hooks/owner-email-notice.js",
+      "event": "SessionStart",
+      "matcher": "*",
+      "cases": [
+        {
+          "id": "primer-arranque-dice-el-correo-y-sella-la-huella",
+          "type": "must-emit",
+          "__doc": "T42 · AC 30. Primer arranque con correo de git y el buzón prendido: un renglón con el correo y los dos comandos (verlo y cambiarlo), y el sello con la huella sha256 del correo normalizado. ROJO PREVIO: guardar el correo en el sello (es un dato de la persona), o avisar sin decir cómo cambiarlo.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/metrics tcg/scripts/lib tcg/scripts/setup/harness && cp $TCG/scripts/hooks/owner-email-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/metrics/upload-runs.js tcg/scripts/metrics/ && cp $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/tycon-config.js tcg/scripts/lib/ && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/",
+            "printf '[user]\\n\\temail = Persona.Banco@Ejemplo.Test\\n' >> \"${HOME}/.gitconfig\""
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "env": {
+            "TYCON_MAILBOX": "1"
+          },
+          "expect": {
+            "stdout_re": [
+              "Tu máquina le informa al equipo tu correo de git \\(persona\\.banco@ejemplo\\.test\\)",
+              "`git config --global user\\.email`",
+              "`git config --global user\\.email <otro>`"
+            ],
+            "file_contains": [
+              { "path": "${HOME}/.claude/.tycon-pipeline/owner-email-notice.json", "re": "\"email_sha256\": \"cf613f9312a07c2d0b3c7ef3b0a9bd1b719c027ed2aaa8fcc1d96479327852d4\"" }
+            ],
+            "file_not_contains": [
+              { "path": "${HOME}/.claude/.tycon-pipeline/owner-email-notice.json", "re": "persona\\.banco|ejemplo\\.test" }
+            ]
+          }
+        },
+        {
+          "id": "segundo-arranque-con-el-sello-calla",
+          "type": "must-stay-quiet",
+          "__doc": "T42 · AC 30. El sello ya tiene la huella de ese correo (escrita como la deja el primer arranque): el aviso calla. ROJO PREVIO: decirlo en cada arranque — un aviso de todos los días se deja de leer.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/metrics tcg/scripts/lib tcg/scripts/setup/harness && cp $TCG/scripts/hooks/owner-email-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/metrics/upload-runs.js tcg/scripts/metrics/ && cp $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/tycon-config.js tcg/scripts/lib/ && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/",
+            "printf '[user]\\n\\temail = persona.banco@ejemplo.test\\n' >> \"${HOME}/.gitconfig\"",
+            "mkdir -p \"${HOME}/.claude/.tycon-pipeline\" && printf '{\"email_sha256\": \"cf613f9312a07c2d0b3c7ef3b0a9bd1b719c027ed2aaa8fcc1d96479327852d4\", \"notified_at\": \"2026-10-15T12:00:00.000Z\"}\\n' > \"${HOME}/.claude/.tycon-pipeline/owner-email-notice.json\""
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "env": {
+            "TYCON_MAILBOX": "1"
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "sin-user-email-calla-y-no-sella",
+          "type": "must-stay-quiet",
+          "__doc": "T43 · AC 30. La configuración global de git no trae user.email (la máquina informa `no_medido`): el aviso calla y no deja sello. ROJO PREVIO: avisar un correo que la máquina no manda, o sellar y callar después cuando la persona sí lo configure.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/metrics tcg/scripts/lib tcg/scripts/setup/harness && cp $TCG/scripts/hooks/owner-email-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/metrics/upload-runs.js tcg/scripts/metrics/ && cp $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/tycon-config.js tcg/scripts/lib/ && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/"
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "env": {
+            "TYCON_MAILBOX": "1"
+          },
+          "expect": {
+            "exit": 0,
+            "file_absent": [
+              "${HOME}/.claude/.tycon-pipeline/owner-email-notice.json"
+            ]
+          }
+        },
+        {
+          "id": "buzon-apagado-calla-y-no-sella",
+          "type": "must-stay-quiet",
+          "__doc": "T43 · AC 30. Con correo de git pero el buzón apagado (TYCON_MAILBOX=0) la máquina no informa nada: el aviso calla y no deja sello. ROJO PREVIO: decirle al dev que su máquina manda un correo que no manda.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/metrics tcg/scripts/lib tcg/scripts/setup/harness && cp $TCG/scripts/hooks/owner-email-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/metrics/upload-runs.js tcg/scripts/metrics/ && cp $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/tycon-config.js tcg/scripts/lib/ && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/",
+            "printf '[user]\\n\\temail = persona.banco@ejemplo.test\\n' >> \"${HOME}/.gitconfig\""
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "env": {
+            "TYCON_MAILBOX": "0"
+          },
+          "expect": {
+            "exit": 0,
+            "file_absent": [
+              "${HOME}/.claude/.tycon-pipeline/owner-email-notice.json"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

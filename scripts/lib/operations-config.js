@@ -6,16 +6,31 @@
 // a mano —un mail de respaldo escrito en el código y dos variables de las definiciones de Azure—, y una organización
 // nueva no tenía dónde decir los suyos. `operations.json`, en la raíz del repo de operaciones de la organización, lo
 // declara. Ese repo NO se instala en las máquinas: la lista de personas no le llega a todo el equipo (decisión del
-// dueño). La leen sólo los pipelines de operaciones. Quién puede cambiarla lo deciden los permisos de ese repo.
+// dueño). La leen los pipelines de operaciones y el sitio de la organización. Quién puede cambiarla lo deciden los
+// permisos de ese repo.
 //
 // LA FORMA (versión 1):
 //   { "version": 1,
 //     "owners": { "default": <identidad>,                    obligatorio — a quién, cuando no se deduce un dueño
 //                 "by_project": { "<proyecto>": <identidad> } },  opcional — el responsable de cada proyecto
 //     "reviewers": { "dependencies": [<identidad>, …],      opcional — quiénes revisan los pedidos de dependencias
-//                    "watcher": [<identidad>, …] } }         opcional — y los del vigilante
+//                    "watcher": [<identidad>, …] },          opcional — y los del vigilante
+//     "people": {                                            opcional — quién es quién (story 2.28)
+//       "machines": { "<máquina>": {                         opcional — cada máquina confirmada por un mantenedor
+//           "person": <correo>,                              la persona dueña de las corridas de esa máquina
+//           "reported_sha256": <64 hexadecimales> | null,    la huella del correo que informaba la máquina al confirmar
+//           "confirmed_by": <correo>,                        quién la confirmó
+//           "confirmed_on": "AAAA-MM-DD" } },                y qué día
+//       "projects": { "<correo>": {                          opcional — corrige «dónde trabaja» cada persona
+//           "add": [<producto>, …],                          productos que se suman a los deducidos
+//           "remove": [<producto>, …] } } } }                y los que se sacan (un producto no va en las dos)
 //   <identidad> = el nombre único de la plataforma: el principalName de Azure (el que viaja en System.AssignedTo) o
 //   el usuario de GitHub. Nunca un chat de Telegram ni un token: esos siguen en el grupo de variables secreto.
+//   <máquina> = la carpeta de la máquina en el buzón de corridas, con la forma FORMA_MAQUINA (minúsculas, sin espacios).
+//   <correo> = un correo con forma de correo; se compara sin mayúsculas ni espacios alrededor (lo hace people.js).
+//   `reported_sha256` es el sha256 del correo informado, en minúsculas y sin espacios alrededor; NUNCA el correo en
+//   claro: el archivo queda en la historia de git del repo de operaciones para siempre. `null` si la máquina no
+//   informaba correo al confirmarla.
 //   Las claves que empiezan con `__` son comentarios; cualquier otra desconocida es un problema en su ruta.
 //
 // EL CONTRATO: el mismo de scripts/lib/team-repos.js — `parse(text)` → `{ ok, data, problems: [{ path, message }] }`,
@@ -26,11 +41,20 @@
 const fs = require('fs');
 
 const VERSION = 1;
-const KEYS = ['version', 'owners', 'reviewers'];
+const KEYS = ['version', 'owners', 'reviewers', 'people'];
 const OWNER_KEYS = ['default', 'by_project'];
 const REVIEWER_KEYS = ['dependencies', 'watcher'];
+const PEOPLE_KEYS = ['machines', 'projects'];
+const MACHINE_KEYS = ['person', 'reported_sha256', 'confirmed_by', 'confirmed_on'];
+const PROJECT_KEYS = ['add', 'remove'];
 // Una identidad: sin espacios ni controles; un principalName de Azure (usuario@dominio) o un usuario de GitHub.
 const IDENTITY = /^[^\s@]+(@[^\s@]+)?$/;
+// El nombre de la carpeta de una máquina en el buzón. COPIADA de scripts/metrics/upload-runs.js (no se importa: este
+// lector viaja solo y no carga nada fuera de fs). T23 de scripts/tests/team-repos.test.js exige que las dos sean iguales.
+const FORMA_MAQUINA = /^[a-z0-9][a-z0-9._-]*$/;
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const SHA256 = /^[0-9a-f]{64}$/;
+const DAY = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 const isObject = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
 const comment = (k) => k.startsWith('__');
@@ -43,6 +67,74 @@ function identityProblems(v, at) {
 
 function unknownKeys(obj, allowed, at) {
   return Object.keys(obj).filter((k) => !comment(k) && !allowed.includes(k)).map((k) => ({ path: at ? `${at}.${k}` : k, message: 'clave desconocida' }));
+}
+
+function emailProblems(v, at) {
+  if (typeof v !== 'string' || !v.trim()) return [{ path: at, message: 'tiene que ser un correo (un texto no vacío)' }];
+  if (!EMAIL.test(v)) return [{ path: at, message: `«${v}» no tiene forma de correo (usuario@dominio, sin espacios)` }];
+  return [];
+}
+
+function dayProblems(v, at) {
+  const m = typeof v === 'string' ? DAY.exec(v) : null;
+  if (!m) return [{ path: at, message: 'tiene que ser un día con la forma AAAA-MM-DD' }];
+  const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+  if (d.getUTCFullYear() !== +m[1] || d.getUTCMonth() !== +m[2] - 1 || d.getUTCDate() !== +m[3]) return [{ path: at, message: `«${v}» no es un día que exista` }];
+  return [];
+}
+
+// Quién es quién (story 2.28). Una máquina con nombre mal formado se marca y su entrada se revisa igual.
+function peopleProblems(people) {
+  if (!isObject(people)) return [{ path: 'people', message: 'tiene que ser un objeto { "machines": …, "projects": … }' }];
+  const problems = [...unknownKeys(people, PEOPLE_KEYS, 'people')];
+  const { machines, projects } = people;
+  if (machines !== undefined) {
+    if (!isObject(machines)) problems.push({ path: 'people.machines', message: 'tiene que ser un objeto { "<máquina>": { person, reported_sha256, confirmed_by, confirmed_on } }' });
+    else for (const [name, entry] of Object.entries(machines)) {
+      if (comment(name)) continue;
+      const at = `people.machines.${name}`;
+      if (!FORMA_MAQUINA.test(name)) problems.push({ path: at, message: `«${name}» no es un nombre de máquina: el de su carpeta en el buzón, en minúsculas, sin espacios` });
+      if (!isObject(entry)) { problems.push({ path: at, message: 'tiene que ser un objeto { person, reported_sha256, confirmed_by, confirmed_on }' }); continue; }
+      problems.push(...unknownKeys(entry, MACHINE_KEYS, at));
+      for (const k of MACHINE_KEYS) if (entry[k] === undefined) problems.push({ path: `${at}.${k}`, message: k === 'reported_sha256' ? 'falta (null si la máquina no informaba correo)' : 'falta' });
+      if (entry.person !== undefined) problems.push(...emailProblems(entry.person, `${at}.person`));
+      if (entry.confirmed_by !== undefined) problems.push(...emailProblems(entry.confirmed_by, `${at}.confirmed_by`));
+      if (entry.confirmed_on !== undefined) problems.push(...dayProblems(entry.confirmed_on, `${at}.confirmed_on`));
+      const sha = entry.reported_sha256;
+      // el mensaje no repite el valor: si alguien pegó el correo en claro, no se copia a la salida ni al registro
+      if (sha !== undefined && sha !== null && (typeof sha !== 'string' || !SHA256.test(sha))) problems.push({ path: `${at}.reported_sha256`, message: 'tiene que ser la huella del correo informado (64 hexadecimales en minúsculas) o null; nunca el correo en claro' });
+    }
+  }
+  if (projects !== undefined) {
+    if (!isObject(projects)) problems.push({ path: 'people.projects', message: 'tiene que ser un objeto { "<correo>": { "add": […], "remove": […] } }' });
+    else {
+      // los correos se comparan sin mayúsculas ni espacios (decisión 7): dos claves que son el mismo correo se pisarían
+      const vistas = new Map();
+      for (const who of Object.keys(projects)) {
+        if (comment(who)) continue;
+        const norm = who.trim().toLowerCase();
+        if (vistas.has(norm)) problems.push({ path: `people.projects.${who}`, message: `es el mismo correo que «${vistas.get(norm)}» (sin distinguir mayúsculas): va en una sola clave` });
+        else vistas.set(norm, who);
+      }
+    }
+    if (isObject(projects)) for (const [who, fix] of Object.entries(projects)) {
+      if (comment(who)) continue;
+      const at = `people.projects.${who}`;
+      if (!EMAIL.test(who)) { problems.push({ path: at, message: `«${who}» no tiene forma de correo (usuario@dominio, sin espacios)` }); continue; }
+      if (!isObject(fix)) { problems.push({ path: at, message: 'tiene que ser un objeto { "add": […], "remove": […] }' }); continue; }
+      problems.push(...unknownKeys(fix, PROJECT_KEYS, at));
+      for (const k of PROJECT_KEYS) {
+        const list = fix[k];
+        if (list === undefined) continue;
+        if (!Array.isArray(list)) { problems.push({ path: `${at}.${k}`, message: 'tiene que ser una lista de productos' }); continue; }
+        list.forEach((p, i) => { if (typeof p !== 'string' || !p.trim()) problems.push({ path: `${at}.${k}.${i}`, message: 'tiene que ser el nombre de un producto (un texto no vacío)' }); });
+      }
+      if (Array.isArray(fix.add) && Array.isArray(fix.remove)) {
+        fix.remove.forEach((p, i) => { if (typeof p === 'string' && p.trim() && fix.add.includes(p)) problems.push({ path: `${at}.remove.${i}`, message: `«${p}» está en add y en remove: va en una sola` }); });
+      }
+    }
+  }
+  return problems;
 }
 
 function validate(doc) {
@@ -80,6 +172,8 @@ function validate(doc) {
       }
     }
   }
+
+  if (doc.people !== undefined) problems.push(...peopleProblems(doc.people));
   return problems;
 }
 
@@ -109,7 +203,7 @@ function ownerFor(data, project) {
   return Object.prototype.hasOwnProperty.call(bp, project) ? bp[project] : data.owners.default;
 }
 
-module.exports = { VERSION, KEYS, OWNER_KEYS, REVIEWER_KEYS, parse, load, ownerFor };
+module.exports = { VERSION, KEYS, OWNER_KEYS, REVIEWER_KEYS, PEOPLE_KEYS, MACHINE_KEYS, PROJECT_KEYS, FORMA_MAQUINA, parse, load, ownerFor };
 
 if (require.main === module) {
   const args = process.argv.slice(2);

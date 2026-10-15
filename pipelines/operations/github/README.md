@@ -72,7 +72,7 @@ los lee el arnés (los ejemplos están en `pipelines/operations/examples/github/
 | Ruta en el repo de operaciones | Qué es | Obligatorio |
 |---|---|---|
 | `team-repos.json` | Dónde vive cada repo del arnés de tu organización. `public`: el repo público del arnés (de ahí lo traen los workflows); `operations`: este repo (si no coincide, la noche sale en rojo); `profile`: el perfil de tu equipo (si no tenés uno, poné este repo). Forma: `scripts/lib/team-repos.js` | Sí |
-| `operations.json` | A quién se asignan los issues (`owners.default`, y `owners.by_project` con la clave `<dueño>/<repo>`). Identidades: usuarios de GitHub. Forma: `scripts/lib/operations-config.js` | Sí, para la revisión de dependencias |
+| `operations.json` | A quién se asignan los issues (`owners.default`, y `owners.by_project` con la clave `<dueño>/<repo>`). Identidades: usuarios de GitHub. Y, si querés, quién es quién en el sitio de la organización (`people`, más abajo). Forma: `scripts/lib/operations-config.js` | Sí, para la revisión de dependencias |
 | `scripts/nightly/dependencies/repos.json` | Qué repos mira la revisión de dependencias (`github`: `<dueño>/<repo>`; `tipo`: `npm` o `nuget`) y el bloque `github` (`issues_enabled`, `identity`) | Sí, para la revisión de dependencias |
 | `scripts/nightly/dashboard/sources.json` | Qué fuentes espera el tablero. Usá el de `pipelines/operations/examples/sources.json` | Sí, para el tablero |
 | `scripts/ci/product-parity.json` | Opcional. Los productos que tienen que hacer lo mismo, con `archivo: ".github/workflows/<nombre>.yml"` en cada grupo (ejemplo: `pipelines/operations/examples/product-parity.json`). Un repo que la revisión de dependencias no clona lleva `github: "<dueño>/<repo>"`. Sin el archivo, la paridad sale «sin productos» | No |
@@ -95,6 +95,33 @@ node -e "JSON.parse(require('fs').readFileSync('scripts/nightly/dependencies/rep
 
 Lo demás (`.dashboard/`, `inbox/`, `artifacts/`) lo crean los workflows. Un repo de operaciones recién creado no los
 trae, y está bien.
+
+### Quién es quién: la clave `people` (opcional)
+
+`people` dice de quién es cada máquina del equipo, para que en el sitio de la organización cada persona vea sólo sus
+corridas. Sin `people`, nadie ve corridas ajenas y las de una máquina sin confirmar las ve sólo quien mantiene. Acá van
+**correos**, no usuarios de GitHub: el sitio compara con el correo con que la persona inicia sesión.
+
+- **`people.machines`**: una entrada por máquina, con el nombre de su carpeta en el buzón de corridas
+  (`<nombre>-<código>`, por ejemplo `maq-uno-1a2b3c4d`). Cada máquina informa el correo de git de su dev; un
+  mantenedor lo revisa y confirma la máquina escribiendo `person` (el correo de la persona en la organización, que puede
+  no ser el informado), `reported_sha256`, `confirmed_by` (quién confirma) y `confirmed_on` (el día, `AAAA-MM-DD`).
+- **`reported_sha256` es la huella del correo que informaba la máquina, nunca el correo.** Este archivo queda en la
+  historia de git para siempre: un correo personal no tiene que quedar ahí. Quien mantiene ve el correo informado en el
+  espejo del buzón. Si la máquina no informaba correo, va `null`. Si la máquina empieza a informar otro correo, la
+  confirmación se cae hasta que alguien la vuelva a confirmar.
+- **`people.projects`**: corrige en qué productos trabaja cada persona (los productos de `repos.json`). `add` suma
+  productos a los que se deducen de sus corridas y sus issues; `remove` los saca. Un producto no va en las dos.
+
+La huella se calcula así, con el correo tal como lo informa la máquina (se pasa a minúsculas y sin espacios alrededor):
+
+```bash
+node -e "console.log(require('crypto').createHash('sha256').update(process.argv[1].trim().toLowerCase()).digest('hex'))" "<correo informado>"
+```
+
+Cada confirmación entra por pull request revisado, como cualquier cambio de este archivo. Antes de abrirlo, validalo
+con `node scripts/lib/operations-config.js operations.json` de un arnés que ya conozca `people`: uno anterior lo
+rechaza y frena la revisión de dependencias.
 
 ## 3. Secretos, variables y permisos del repo de operaciones
 

@@ -290,6 +290,37 @@ test('T11 RealReaders_PickedFromTheTree_ExampleLoads_ProblemsCarryTheFieldPath',
   });
 });
 
+// story 2.28 (AC 19): la página no dibuja `people` (quién es quién), pero tampoco la pierde. Se hace lo que hace la
+// página: lee el estado, cambia el responsable por defecto en el borrador y guarda el borrador entero.
+test('T24 GuardarOwners_ConservaPeople', async () => {
+  const tree = path.join(__dirname, '..', '..');
+  const ops = cloneWithRemote().dir;
+  const file = path.join(ops, 'operations.json');
+  const people = {
+    machines: {
+      'maq-uno-1a2b3c4d': { person: 'dev.uno@acme.example', reported_sha256: 'a'.repeat(64), confirmed_by: 'lead@acme.example', confirmed_on: '2026-10-15' },
+      'maq-dos-5e6f7a8b': { person: 'dev.dos@acme.example', reported_sha256: null, confirmed_by: 'lead@acme.example', confirmed_on: '2026-10-15' },
+    },
+    projects: { 'dev.uno@acme.example': { add: ['Gama'], remove: ['Beta'] } },
+  };
+  fs.writeFileSync(file, TC.formatJson({ version: 1, owners: { default: 'lead@acme.example' }, people }));
+  await withPage({ tree, clones: { operations: ops } }, async (p) => {
+    const t = (await api(p, 'state')).json.targets.find((x) => x.id === 'operations');
+    assert.deepStrictEqual([t.state, t.problems], ['loaded', []], 'el lector acepta people');
+    const draft = JSON.parse(JSON.stringify(t.data));
+    draft.owners.default = 'otro-lead@acme.example';
+    const r = (await api(p, 'save', { target: 'operations', data: draft })).json;
+    assert.strictEqual(r.ok, true, JSON.stringify(r.problems));
+  });
+  const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
+  assert.strictEqual(saved.owners.default, 'otro-lead@acme.example', 'el cambio de owners se guardó');
+  assert.deepStrictEqual(saved.people, people, 'people sigue igual');
+  // y el texto de alcance ya no dice que lo leen sólo los procesos de la noche: lo lee también el sitio de la organización
+  const reach = TC.TARGETS.find((x) => x.id === 'operations').reach;
+  assert.doesNotMatch(reach, /sólo los procesos de la noche/);
+  assert.match(reach, /el sitio de la organización/);
+});
+
 // story 2.24 (AC 23): el buzón de corridas de la organización, en un panel de sólo lectura. La llave es una credencial y la
 // página no guarda credenciales: el servidor arma una proyección con leerConfig y los NOMBRES de los parámetros de la firma.
 test('T21 2.24-TeamConfig_BuzonSoloLecturaSinFirma', async () => {

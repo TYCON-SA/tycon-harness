@@ -35,7 +35,7 @@ lee el arnés (los ejemplos están en `pipelines/operations/examples/` del arné
 
 | Ruta en el repo de operaciones | Qué es | Obligatorio |
 |---|---|---|
-| `operations.json` | A quién se asignan los pedidos de trabajo y quiénes revisan los pull requests. Forma: `scripts/lib/operations-config.js` | Sí, para la revisión de dependencias |
+| `operations.json` | A quién se asignan los pedidos de trabajo y quiénes revisan los pull requests; y, si querés, quién es quién en el sitio de la organización (`people`, más abajo). Forma: `scripts/lib/operations-config.js` | Sí, para la revisión de dependencias |
 | `scripts/nightly/dependencies/repos.json` | Qué repos mira la revisión de dependencias (`ado`: `<proyecto>/<repo>`; `tipo`: `npm` o `nuget`) | Sí, para la revisión de dependencias |
 | `team-repos.json` | Opcional. Dónde vive cada repo del arnés de tu organización (forma: `scripts/lib/team-repos.js`). Si está, tiene que validar: con `operations.platform: github` los avisos de dependencias son issues de GitHub, no pedidos de trabajo; y si tu organización tiene copias del repo del arnés con stories, van en `harness_copies` (las métricas no las miden, salvo la de `maintainers` si está en la lista) | No |
 | `scripts/nightly/dashboard/sources.json` | Qué fuentes espera el tablero. Usá el ejemplo: el del arnés espera fuentes que tu organización no tiene | Sí, para el tablero |
@@ -55,6 +55,32 @@ node -e "JSON.parse(require('fs').readFileSync('scripts/nightly/dependencies/rep
 
 Lo demás (`.dashboard/`, `inbox/`, `artifacts/`) lo crean los pipelines. Un repo de operaciones recién creado no los
 trae, y está bien.
+
+### Quién es quién: la clave `people` (opcional)
+
+`people` dice de quién es cada máquina del equipo, para que en el sitio de la organización cada persona vea sólo sus
+corridas. Sin `people`, nadie ve corridas ajenas y las de una máquina sin confirmar las ve sólo quien mantiene.
+
+- **`people.machines`**: una entrada por máquina, con el nombre de su carpeta en el buzón de corridas
+  (`<nombre>-<código>`, por ejemplo `maq-uno-1a2b3c4d`). Cada máquina informa el correo de git de su dev; un
+  mantenedor lo revisa y confirma la máquina escribiendo `person` (el correo de la persona en la organización, que puede
+  no ser el informado), `reported_sha256`, `confirmed_by` (quién confirma) y `confirmed_on` (el día, `AAAA-MM-DD`).
+- **`reported_sha256` es la huella del correo que informaba la máquina, nunca el correo.** Este archivo queda en la
+  historia de git para siempre: un correo personal no tiene que quedar ahí. Quien mantiene ve el correo informado en el
+  espejo del buzón. Si la máquina no informaba correo, va `null`. Si la máquina empieza a informar otro correo, la
+  confirmación se cae hasta que alguien la vuelva a confirmar.
+- **`people.projects`**: corrige en qué productos trabaja cada persona (los productos de `repos.json`). `add` suma
+  productos a los que se deducen de sus corridas y sus pedidos; `remove` los saca. Un producto no va en las dos.
+
+La huella se calcula así, con el correo tal como lo informa la máquina (se pasa a minúsculas y sin espacios alrededor):
+
+```bash
+node -e "console.log(require('crypto').createHash('sha256').update(process.argv[1].trim().toLowerCase()).digest('hex'))" "<correo informado>"
+```
+
+Cada confirmación entra por pedido revisado, como cualquier cambio de este archivo. Antes de abrirlo, validalo con
+`node scripts/lib/operations-config.js operations.json` de un arnés que ya conozca `people`: uno anterior lo rechaza y
+frena la revisión de dependencias.
 
 ## 3. Permisos de la identidad de los pipelines
 

@@ -2033,6 +2033,18 @@
       "requiere": []
     },
     {
+      "__nota": "story 2.28 (AC 30 · T42-T43): el aviso de arranque «tu máquina le informa al equipo tu correo de git» (scripts/hooks/owner-email-notice.js). Con un HOME de prueba por caso y el buzón prendido por variable: lo dice una vez con el correo y los dos comandos, calla en los arranques siguientes, lo vuelve a decir si el correo cambia, y el sello guarda la huella, nunca el correo. Calla y no sella sin user.email, con el buzón apagado, con la subida apagada, en un agente de compilación o apagado por variable; con la carpeta de estado sin permiso calla y sale 0; un git falso al frente del PATH nunca se llama. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/owner-email-notice.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 2.28 (T4, T7-T19, T22, T41): quién es quién (scripts/lib/people.js). Los correos que informan las máquinas del espejo (sin escribir ni tirar, con el JSON roto), los cuatro estados de una máquina y la carpeta vieja compartida, quién ve qué máquina (el mantenedor todo, la persona lo suyo, la corrida suelta sólo el mantenedor), la comparación sin mayúsculas, el plazo de 24 horas de la configuración rota y el freno, las máquinas por confirmar, dónde trabaja cada persona en productos de repos.json (sin adivinar), la vista de una persona sin nada de otra, y que el código no trae valores de ninguna organización. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/people.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.26, tanda H1a (T73): cómo guardan los nocturnos lo que escribieron (scripts/ci/push-nightly-data.js). Con un remoto desnudo y el clon de un trabajo, con git de verdad: con un commit local debajo de HEAD y main adelantada, a main llega sólo lo que el paso escribió (lo nuevo sin seguimiento, lo ignorado, lo borrado, lo renombrado y lo binario), nunca ese commit ni sus borrados, y el checkout no se mueve; dos guardados del mismo trabajo se componen y el que no viajó lo lleva el siguiente; lo que otro trabajo escribió en la misma carpeta queda; un choque sale rojo nombrando el archivo; el archivo del día y la verificación del paso se comprueban antes de empujar; tres rechazos salen 1 diciendo que no viajó; sync trae sólo datos sin mover HEAD; la guarda del árbol corre antes de guardar, con el guion que la plantilla guardó para la corrida si lo guardó, y sin HARNESS_TREE no se guarda. Sin red.",
       "raiz": "arnes",
       "ruta": "tests/push-nightly-data.test.js",

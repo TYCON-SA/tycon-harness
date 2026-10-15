@@ -26,6 +26,10 @@
  *     medida el cruce se NIEGA: cero hallazgos no medidos se leerían como «no encontró nada».
  *  🔴 La misma corrida puede llegar por dos máquinas (la evidencia viaja por git): cuenta una vez, por
  *     su huella `corrida`. Y un volcado archivado dos veces cuenta una, el más nuevo, por su sesión.
+ *  🔴 Story 2.28: cada máquina sube a `<nombre>-<código>`. Una carpeta vieja que el bajador declara en
+ *     `.carpetas-de-maquina.json` como unida o compartida no es una máquina más en ninguna de las dos
+ *     puntas; una que siguió recibiendo sí (es otra máquina que no actualizó). Sin ese archivo, cada
+ *     carpeta cuenta como antes y se dice.
  *   banco        si la regla tiene un caso que la obliga a marcar (`must-flag`) y si el examen
  *                periódico lo corrió.
  *
@@ -86,7 +90,7 @@ const zlib = require('zlib');
 const catalogoDeReglas = require('../../lib/rules-catalog.js');
 const { readEnv } = require('../../lib/legacy-names.js');
 const { estadoDeLaSerie, serieCoincide, conteosDelSello } = require('../../metrics/collect-findings.js');
-const { aliasDeNombre } = require('./reducer.js');
+const { aliasDeNombre, leerUnionesDeCarpetas } = require('./reducer.js');
 
 const RAIZ = path.resolve(__dirname, '..', '..', '..');
 const casaPipeline = () => path.join(stateDirOf(os.homedir()));
@@ -183,7 +187,7 @@ function sumarConteos(destino, sello) {
  * recolector (`estadoDeLaSerie` acá; `serieCoincide` + la fecha de su sello para las del buzón). De cada
  * máquina medida quedan sus hallazgos y el conjunto de volcados cuya corrida se leyó (el denominador).
  */
-function leerHallazgos({ local, claveLocal, buzon, ventana, fuera, hoy, fuentes, maxDias }) {
+function leerHallazgos({ local, claveLocal, buzon, ventana, fuera, hoy, fuentes, maxDias, viejas = new Set() }) {
   const acc = { lista: [], duplicados: 0, medidas: new Map(), sinMedir: [], buzonIlegible: false, recolector: {} };
   const duenaDe = new Map();   // corrida → máquina que la aportó primero
 
@@ -220,6 +224,9 @@ function leerHallazgos({ local, claveLocal, buzon, ventana, fuera, hoy, fuentes,
   entradas.sort((a, b) => a.name.localeCompare(b.name));
   for (const e of entradas) {
     if (!e.isDirectory() || acc.medidas.has(e.name)) continue;
+    // story 2.28: una carpeta vieja unida o compartida no es una máquina más: lo suyo está en las carpetas nuevas, que
+    // reciben el registro entero.
+    if (viejas.has(e.name)) continue;
     // 🔴 Los motivos de acá son FIJOS o llevan sólo fechas y conteos: la cobertura viene de otra máquina y
     //    su texto no se publica.
     const no = (motivo) => acc.sinMedir.push({ clave: e.name, local: false, motivo });
@@ -274,7 +281,7 @@ function formaDelConteo(pt) {
   return valores.every((n) => Number.isInteger(n) && n >= 0) ? 'ok' : 'ilegible';
 }
 
-function leerHistoria({ local, claveLocal, buzon, ventana, fuera, noRevisores, medidas }) {
+function leerHistoria({ local, claveLocal, buzon, ventana, fuera, noRevisores, medidas, viejas = new Set() }) {
   const candidatos = [];
   let carpetasIlegibles = 0;
   const juntar = (dir, clave) => {
@@ -289,7 +296,8 @@ function leerHistoria({ local, claveLocal, buzon, ventana, fuera, noRevisores, m
   if (local) juntar(local, claveLocal);   // sin ruta (el nocturno): la historia sale sólo del buzón
   try {
     const dirs = fs.readdirSync(buzon, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).sort();
-    for (const n of dirs) juntar(path.join(buzon, n), n);
+    // story 2.28: las corridas de una carpeta vieja unida o compartida tampoco suman aparte (las de la nueva son las mismas)
+    for (const n of dirs) if (!viejas.has(n)) juntar(path.join(buzon, n), n);
   } catch (e) { if (e.code !== 'ENOENT') carpetasIlegibles += 1; }
   // Un mismo archivo, en el disco y en el buzón (o en dos carpetas de una máquina renombrada), cuenta UNA vez — y la copia
   // que queda es la de una máquina que lo tiene LEÍDO en su serie, después la de una medida y recién después la de
@@ -452,9 +460,18 @@ function podar(opts = {}) {
   // 🔴 story 2.12: el nocturno de Azure no es una máquina del equipo. Con `sinLocal`, ninguna de las dos puntas lee
   //    el disco de quien corre el cruce: numerador y denominador salen de las MISMAS máquinas del buzón.
   const sinLocal = opts.sinLocal === true;
+  // story 2.28 (decisiones 12 y 13): las carpetas viejas del buzón las declara el bajador en `.carpetas-de-maquina.json`.
+  // Sin ese archivo no se une nada (cada carpeta cuenta como hoy) y se dice. Sin buzón, no hay nada que unir ni que decir.
+  let uniones = null;
+  try { if (fs.statSync(buzon).isDirectory()) uniones = leerUnionesDeCarpetas(buzon); }
+  catch (e) { uniones = e && e.code === 'ENOENT' ? null : { estado: 'no_medidas', motivo: `la carpeta del buzón no se pudo mirar (${(e && e.code) || 'error'}): uniones de carpetas no medidas` }; }
+  // Sólo la `unida` (sus registros están en la nueva) y la `compartida` (duplica a alguna declarante) no cuentan aparte. Una
+  // `siguio_recibiendo` es otra máquina que todavía no actualizó: cuenta como una máquina propia, como siempre.
+  const viejas = new Set(uniones && uniones.estado === 'medidas'
+    ? [...uniones.carpetas].filter(([, u]) => u.estado === 'unida' || u.estado === 'compartida').map(([n]) => n) : []);
   const hall = leerHallazgos({
     local: sinLocal ? null : (opts.hallazgos || variable('TYCON_FINDINGS_OUTPUT') || path.join(casa, 'hallazgos.jsonl')),
-    claveLocal, buzon, ventana, fuera, hoy, fuentes: rutaFuentes, maxDias: conf.max_dias_hallazgos,
+    claveLocal, buzon, ventana, fuera, hoy, fuentes: rutaFuentes, maxDias: conf.max_dias_hallazgos, viejas,
   });
   // 🔴 Sin numerador no hay poda: cero hallazgos que nadie midió se leerían como «no encontró nada».
   if (hall.medidas.size === 0) {
@@ -463,7 +480,7 @@ function podar(opts = {}) {
   }
   const hist = leerHistoria({
     local: sinLocal ? null : (opts.historia || variable('TYCON_HISTORY_DIR') || path.join(casa, 'timing-history')),
-    claveLocal, buzon, ventana, fuera, noRevisores: conf.no_revisores, medidas: hall.medidas,
+    claveLocal, buzon, ventana, fuera, noRevisores: conf.no_revisores, medidas: hall.medidas, viejas,
   });
   if (hist.conDenominador === 0) {
     throw new NoMedido(`ninguna corrida de las máquinas medidas trae el conteo de sus revisores, y sin denominador no hay poda${hist.carpetasIlegibles ? ` (${hist.carpetasIlegibles} carpeta(s) de corridas no se pudieron leer)` : ''}`);
@@ -551,6 +568,8 @@ function podar(opts = {}) {
         // 🔴 Por ALIAS, nunca por nombre: el nombre de una máquina suele ser el de su dueño.
         maquinas_sin_medir: hall.sinMedir.map((m) => ({ alias: m.clave === SIN_NOMBRE ? 'esta máquina' : aliasDeNombre(m.clave), local: m.local, motivo: m.motivo })),
         buzon_ilegible: hall.buzonIlegible,
+        // story 2.28: sin nombres de carpeta, sólo el estado y nuestro motivo
+        uniones_de_carpetas: uniones ? (uniones.estado === 'medidas' ? { estado: 'medidas', viejas_no_contadas: viejas.size } : { estado: 'no_medidas', motivo: uniones.motivo }) : null,
         recolector: hall.recolector,
       },
       banco: {
@@ -608,6 +627,9 @@ function main() {
   for (const e of ESTADOS) console.log(`  ${e.padEnd(31)} ${res.resumen[e]}`);
   console.log(`Denominador: ${c.corridas.con_denominador} de ${c.corridas.total} corridas · hallazgos: ${c.hallazgos.contados} de ${c.hallazgos.maquinas} máquina(s) medida(s)`);
   for (const m of c.hallazgos.maquinas_sin_medir) console.log(`  sin medir: ${m.alias} — ${m.motivo}`);
+  const un = c.hallazgos.uniones_de_carpetas;
+  if (un && un.estado === 'no_medidas') console.log(`  uniones de carpetas no medidas (${un.motivo}): cada carpeta del buzón cuenta como una máquina`);
+  else if (un && un.viejas_no_contadas) console.log(`  ${un.viejas_no_contadas} carpeta(s) vieja(s) del buzón no se cuentan aparte: lo suyo está en las carpetas nuevas`);
   if (c.corridas.descartadas_sin_hallazgos) console.log(`  ${c.corridas.descartadas_sin_hallazgos} corrida(s) descartadas: son de máquinas sin hallazgos medidos`);
   console.log(c.examen.estado === 'medido'
     ? `Banco: ${c.banco.con_caso} con caso · ${c.banco.examinadas} examinadas · ${c.banco.rotas} rotas · ${c.banco.huerfanos} caso(s) huérfano(s) · examen del ${c.examen.fecha}`

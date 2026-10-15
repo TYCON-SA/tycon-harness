@@ -74,6 +74,46 @@ t('la mediana y los percentiles salen de las corridas medidas', () => {
   assert.ok(r.pasos.p25 < r.pasos.mediana && r.pasos.mediana < r.pasos.p75, 'los percentiles ordenan');
 });
 
+t('story 2.28: no entra a registros/ — place.json trae el correo de git de la persona y no es un volcado', () => {
+  // 🔴 rojo previo: el recorrido abría todo .json del espejo, también `<maq>/registros/place.json` (con `owner`).
+  const { medir } = require(MOD);
+  const buzon = escenario();
+  const reg = path.join(buzon, 'maquina-1', 'registros');
+  fs.mkdirSync(reg, { recursive: true });
+  fs.writeFileSync(path.join(reg, 'place.json'), JSON.stringify({ schema: 1, owner: { email: 'zqx@ejemplo.test' } }));
+  const abiertos = [];
+  const orig = fs.readFileSync;
+  fs.readFileSync = function (p, ...r) { abiertos.push(String(p)); return orig.call(this, p, ...r); };
+  let r;
+  try { r = medir({ buzon }); } finally { fs.readFileSync = orig; }
+  assert.ok(!abiertos.some((p) => p.endsWith('place.json')), `abrió place.json: ${abiertos.filter((p) => /registros/.test(p)).join(', ')}`);
+  assert.strictEqual(r.corridas, 4, 'las corridas se cuentan igual');
+});
+
+t('story 2.28: la misma corrida en la carpeta vieja y en la nueva de una máquina cuenta UNA vez', () => {
+  // 🔴 rojo previo (pase adversarial, clase 2): cada máquina vuelve a subir lo de su disco a su carpeta nueva
+  //    `<nombre>-<código>`, y el recorrido sumaba la copia vieja y la nueva: corridas 2, mediana corrida.
+  const { medir } = require(MOD);
+  const buzon = escenario();
+  const nueva = path.join(buzon, 'maquina-1-1a2b3c4d');
+  fs.mkdirSync(nueva, { recursive: true });
+  for (const f of fs.readdirSync(path.join(buzon, 'maquina-1'))) fs.copyFileSync(path.join(buzon, 'maquina-1', f), path.join(nueva, f));
+  const r = medir({ buzon });
+  assert.strictEqual(r.corridas, 4, `las cuatro corridas medidas, una vez cada una (fueron ${r.corridas})`);
+  assert.strictEqual(r.sin_medir, 1, 'y la sin medir también una vez');
+  // entre una copia sin medir (la vieja) y una medida (la nueva) de la MISMA corrida, vale la medida
+  // 🔴 rojo previo (segunda vuelta de fallos silenciosos): la primera copia, sin medir, tapaba a la medida
+  const b2 = escenario();
+  const vieja = path.join(b2, 'maquina-1', '1.5-2026-09-18.json');
+  const d = JSON.parse(fs.readFileSync(vieja, 'utf8'));
+  fs.mkdirSync(path.join(b2, 'maquina-1-1a2b3c4d'), { recursive: true });
+  d.consumo = { estado: 'medido', respuestas: 900, tokens: { in: 1 } };
+  fs.writeFileSync(path.join(b2, 'maquina-1-1a2b3c4d', '1.5-2026-09-18.json'), JSON.stringify(d));
+  const r2 = medir({ buzon: b2 });
+  assert.strictEqual(r2.corridas, 5, `la copia medida cuenta (fueron ${r2.corridas})`);
+  assert.strictEqual(r2.sin_medir, 0, 'y ya no cuenta como sin medir');
+});
+
 t('una corrida sin consumo medido se cuenta aparte y NO se estima', () => {
   // 🔴 La regla que el arnés ya pagó dos veces: un dato que no se pudo leer no vale cero ni se
   // promedia con los demás. Si entrara al cociente, bajaría la mediana y nadie sabría por qué.
