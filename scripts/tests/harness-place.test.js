@@ -675,3 +675,64 @@ test('T51 TestsAndBench_TwinCasesWithPublicName', () => {
   assert.ok(missing(`"mkdir -p ${PLACE.LEGACY_PLACE_NAME}/MiProducto && cd x"`), 'el espejo de T51: un caso sin gemelo');
   assert.strictEqual(missing(`"mkdir -p ${PLACE.LEGACY_PLACE_NAME}/a && x" "mkdir -p ${PLACE.PLACE_NAME}/a && x"`), null, 'el espejo de T51: con gemelo');
 });
+
+// ═══ La guarda del laboratorio (2026-10-15) ══════════════════════════════════════════════════════════════════════════
+// Las suites protegen la carpeta real con scripts/tests/lib/lab-guard.js, que toma el nombre del lugar de place.js. La
+// guarda escrita a mano, con el nombre adentro, se copiaba de suite en suite y caía en T49 recién en el pedido (siete
+// ramas, 2026-10-14). Se barre lo que se publica de scripts/: las pruebas de skills/ pueden correr desde un clon sin
+// scripts/ al lado y guardan su copia, declarada en public-copy-internal-name.json.
+const LAB_GUARD = 'scripts/tests/lib/lab-guard.js';
+/** Las líneas que escriben a mano la guarda con el nombre viejo del lugar: [archivo:línea]. */
+function handWrittenLabGuards(files, readText) {
+  const n = PLACE.LEGACY_PLACE_NAME.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // la lista de la guarda (`*<n>*|*agent-skills*|*/.claude*` en shell, `/<n>|agent-skills|\.claude/` en JavaScript) o su mensaje
+  const rx = new RegExp(`${n}\\*?\\|\\*?agent-skills\\*?\\|\\*?/?\\\\?\\.claude|${n}.*laboratorio cayó|laboratorio cayó.*${n}`);
+  const bad = [];
+  for (const f of files) {
+    const text = readText(f);
+    if (text === null) continue;
+    text.split('\n').forEach((l, i) => { if (rx.test(l) && !LEGACY_PATH_RX.test(l)) bad.push(`${f}:${i + 1}: ${l.trim().slice(0, 120)}`); });
+  }
+  return bad;
+}
+
+test('T60 LabGuard_NameFromPlace_NoSuiteWritesItByHand', () => {
+  const guard = (...args) => spawnSync(process.execPath, [path.join(ROOT, LAB_GUARD), ...args], { encoding: 'utf8' });
+  const t = tmp('t60-');
+  // conducta: fuera, sale 0 y no dice nada; en el nombre viejo, en agent-skills o con .claude en la ruta, sale 1 y lo dice
+  assert.deepStrictEqual([guard(t, 'suite-x').status, guard(t, 'suite-x').stdout], [0, '']);
+  for (const d of [path.join(t, PLACE.LEGACY_PLACE_NAME, 'x'), path.join(t, 'agent-skills'), path.join(t, '.claude', 'x'), path.join(t, 'casa.claude')]) {
+    const r = guard(d, 'suite-x');
+    assert.deepStrictEqual([r.status, r.stdout.trim()], [1, `❌ suite-x: el laboratorio cayó en ${d}`], d);
+  }
+  // el nombre nuevo, sólo con --place (es también el prefijo de carpetas temporales de varias suites)
+  const pub = path.join(t, `${PLACE.PLACE_NAME}-state-x`);
+  assert.deepStrictEqual([guard(pub, 'suite-x').status, guard(pub, 'suite-x', '--place').status], [0, 1]);
+  // las barras de Windows cuentan como «/»
+  assert.strictEqual(guard('C:\\Users\\lab\\.claude\\x', 'suite-x').status, 1);
+  // mal llamado: 2, sin decidir nada
+  for (const args of [[], [t], [t, 'suite-x', '--other'], [t, 'suite-x', '--place', 'de-más']]) assert.strictEqual(guard(...args).status, 2, JSON.stringify(args));
+  // desde JavaScript: tira con el mismo mensaje
+  const { labGuard } = require(path.join(ROOT, LAB_GUARD));
+  assert.doesNotThrow(() => labGuard(t, 'suite-x'));
+  assert.throws(() => labGuard(path.join(t, 'agent-skills'), 'suite-x'), /suite-x: el laboratorio cayó en /);
+  // sin place.js no hay nombres: no deja correr
+  const lone = tmp('t60-lone-');
+  fs.mkdirSync(path.join(lone, 'scripts', 'tests', 'lib'), { recursive: true });
+  fs.copyFileSync(path.join(ROOT, LAB_GUARD), path.join(lone, LAB_GUARD));
+  assert.notStrictEqual(spawnSync(process.execPath, [path.join(lone, LAB_GUARD), t, 'suite-x'], { encoding: 'utf8' }).status, 0, 'sin place.js, la guarda no deja correr');
+  // el barrido: nada en scripts/ que se publica escribe la guarda a mano (lo que no se publica puede nombrar al repo interno)
+  const ships = shippedPredicate() || (() => true);
+  const files = sweepScope(ROOT).filter((f) => f.startsWith('scripts/') && /\.(sh|js|mjs|ps1)$/.test(f) && f !== LAB_GUARD).filter(ships);
+  assert.ok(files.length > 300, `pocos archivos encontrados: ${files.length}`);
+  assert.deepStrictEqual(handWrittenLabGuards(files, textOrNull), [], `guarda del laboratorio escrita a mano con el nombre del lugar: usá ${LAB_GUARD}`);
+  // el espejo: las tres formas que había se ven; la ruta del lugar y la llamada a la guarda, no
+  const L = PLACE.LEGACY_PLACE_NAME;
+  const seeded = {
+    'a.sh': `case "$BASE" in *${L}*|*agent-skills*|*/.claude*) echo "❌ a: el laboratorio cayó en \${BASE}"; exit 1 ;; esac\n`,
+    'b.js': `if (/${L}|agent-skills|\\.claude/.test(BASE)) throw new Error(\`el laboratorio cayó en \${BASE}\`);\n`,
+    'c.js': `  assert.doesNotMatch(d, /${L}|agent-skills|\\.claude/, 'x');\n`,
+    'd.sh': `node "$RAIZ/${LAB_GUARD}" "$BASE" d || exit 1\nls ~/.claude/${L} ~/.claude/agent-skills\n`,
+  };
+  assert.deepStrictEqual(handWrittenLabGuards(Object.keys(seeded), (f) => seeded[f]).map((x) => x.split(':')[0]), ['a.sh', 'b.js', 'c.js'], 'el espejo de T60');
+});

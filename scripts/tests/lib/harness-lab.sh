@@ -340,7 +340,7 @@ _harness_lab_repo() { # _harness_lab_repo <semilla> <remoto> <autor> <clon>
 harness_lab_create() { # harness_lab_create <dir>
   local dir="${1:-}"
   case "$dir" in /*) ;; *) echo "harness-lab: «${dir}» no es una ruta absoluta — pasá una carpeta de mktemp -d" >&2; return 2 ;; esac
-  case "$dir" in *tycon-claude-guides*|*agent-skills*|*/.claude*) echo "harness-lab: el laboratorio cayó en ${dir}: ahí no" >&2; return 2 ;; esac
+  node "$HARNESS_LAB_RAIZ/scripts/tests/lib/lab-guard.js" "$dir" harness-lab >&2 || return 2
   mkdir -p "$dir" || return 1
   export LAB="$(cd "$dir" && pwd)"
   export LAB_HOME="$LAB/home" LAB_BIN="$LAB/bin" LAB_TMP="$LAB/tmp"
@@ -702,7 +702,7 @@ harness_lab_team_machine() { # harness_lab_team_machine <dir> [toy|real]
   local dir="${1:-}" kind="${2:-toy}"
   case "$kind" in toy|real) ;; *) echo "harness-lab: harness_lab_team_machine <dir> [toy|real] — «${kind}» no existe" >&2; return 2 ;; esac
   case "$dir" in /*) ;; *) echo "harness-lab: «${dir}» no es una ruta absoluta — pasá una carpeta de mktemp -d" >&2; return 2 ;; esac
-  case "$dir" in *tycon-claude-guides*|*agent-skills*|*/.claude*) echo "harness-lab: el laboratorio cayó en ${dir}: ahí no" >&2; return 2 ;; esac
+  node "$HARNESS_LAB_RAIZ/scripts/tests/lib/lab-guard.js" "$dir" harness-lab >&2 || return 2
   mkdir -p "$dir" || return 1
   export LAB="$(cd "$dir" && pwd)"
   export LAB_KIND="$kind"

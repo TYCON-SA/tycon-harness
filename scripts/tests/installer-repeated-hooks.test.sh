@@ -48,7 +48,7 @@ not_measured() { echo "  ⏭ NO MEDIDO — $1"; NOT_MEASURED=$((NOT_MEASURED+1))
 command -v python3 >/dev/null 2>&1 && command -v node >/dev/null 2>&1 && command -v git >/dev/null 2>&1 \
   || { echo "⏭ installer-repeated-hooks: NO MEDIDO — faltan python3, node o git en esta máquina"; exit 0; }
 BASE="$(mktemp -d)" && BASE="$(cd "$BASE" && pwd -P)" || { echo "❌ installer-repeated-hooks: no pude crear la carpeta temporal"; exit 1; }
-case "$BASE" in *tycon-claude-guides*|*agent-skills*|*/.claude*) echo "❌ installer-repeated-hooks: el laboratorio cayó en ${BASE}"; exit 1 ;; esac
+node "$RAIZ/scripts/tests/lib/lab-guard.js" "$BASE" installer-repeated-hooks || exit 1
 trap 'chmod -R u+rwx "$BASE" 2>/dev/null; rm -rf "$BASE"' EXIT
 
 # el aplicador real, llamado por ESA carpeta del árbol (la del clon, o la misma escrita con otra caja)

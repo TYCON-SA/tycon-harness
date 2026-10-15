@@ -146,6 +146,11 @@ su HOME falsa a mano y a su manera, y alguna termina ensuciando los registros re
   falsa. Nunca «el registro real no creció»: las sesiones del dev escriben ahí al mismo tiempo.
 - En `node --test`, lo mismo a mano: HOME temporal ANTES de los `require` (hay rutas que se fijan al cargar
   el módulo) y devuelta en `test.after`, con una afirmación positiva sobre la temporal.
+- La carpeta del laboratorio se protege con `scripts/tests/lib/lab-guard.js`: en bash,
+  `node "$RAIZ/scripts/tests/lib/lab-guard.js" "$BASE" <suite> || exit 1`; en `node --test`,
+  `labGuard(BASE, '<suite>')`. Frena si la carpeta cae en un clon del arnés, en agent-skills o en `.claude`, y toma
+  el nombre del lugar de `place.js`. Motivo: copiada a mano de una suite vieja, la guarda traía escrito el nombre del
+  repo interno, y el control de lo publicado la frenaba recién en el pedido. `harness-place.test.js` frena la copia.
 
 ## Una prueba no depende de un sha ni de una hora
 

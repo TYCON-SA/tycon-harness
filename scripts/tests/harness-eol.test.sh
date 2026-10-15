@@ -28,7 +28,7 @@ FALLOS=0
 ok()  { echo "  ok   — $1"; }
 mal() { echo "  MAL  — $1"; FALLOS=$((FALLOS+1)); }
 BASE="$(mktemp -d "${TMPDIR:-/tmp}/harness-eol.XXXXXX")"
-case "$BASE" in *tycon-claude-guides*|*agent-skills*|*/.claude*) echo "❌ harness-eol: el laboratorio cayó en ${BASE}"; exit 1 ;; esac
+node "$RAIZ/scripts/tests/lib/lab-guard.js" "$BASE" harness-eol || exit 1
 trap 'chmod -R u+rwx "$BASE" 2>/dev/null; rm -rf "$BASE"' EXIT   # el chmod: un caso deja una carpeta sin permiso de escritura
 REGISTRO() { printf '%s' "$LAB_HOME/.claude/.tycon-pipeline/harness/startup.log"; }
 APPLIER="scripts/install-tycon-hooks.sh"

@@ -30,7 +30,7 @@ const SNAPSHOT = path.join(RAIZ, 'scripts', 'setup', 'harness', 'snapshot.js');
 const INSTALLER = path.join(RAIZ, 'scripts', 'install-tycon-hooks.sh');
 
 const BASE = fs.mkdtempSync(path.join(os.tmpdir(), 'tycon-harness-snapshot-'));
-if (/tycon-claude-guides|agent-skills|\.claude/.test(BASE)) throw new Error(`el laboratorio cayó en ${BASE}`);
+require('./lib/lab-guard.js').labGuard(BASE, 'harness-snapshot');
 process.on('exit', () => fs.rmSync(BASE, { recursive: true, force: true }));
 
 const snapshot = () => require(SNAPSHOT);

@@ -21,7 +21,7 @@
 set -u
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 BASE="$(mktemp -d "${TMPDIR:-/tmp}/tycon-harness-bootstrap.XXXXXX")"
-case "$BASE" in *tycon-claude-guides*|*agent-skills*|*/.claude*) echo "❌ harness-bootstrap: el laboratorio cayó en ${BASE}"; exit 1 ;; esac
+node "$RAIZ/scripts/tests/lib/lab-guard.js" "$BASE" harness-bootstrap || exit 1
 trap 'rm -rf "$BASE"' EXIT
 FALLAS=0
 ok() { echo "✅ harness-bootstrap: $1"; }

@@ -67,7 +67,7 @@ FALLOS=0
 ok()  { echo "  ok   — $1"; }
 mal() { echo "  MAL  — $1"; FALLOS=$((FALLOS+1)); }
 T="$(mktemp -d)"
-case "$T" in *tycon-claude-guides*|*agent-skills*|*/.claude*) echo "❌ harness-uninstall: el laboratorio cayó en ${T}"; exit 1 ;; esac
+node "$RAIZ/scripts/tests/lib/lab-guard.js" "$T" harness-uninstall || exit 1
 trap 'rm -rf "$T"' EXIT
 [ -f "$FIX" ] || { echo "❌ harness-uninstall: falta la lista declarada $FIX"; exit 1; }
 

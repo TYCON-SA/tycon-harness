@@ -38,7 +38,7 @@ const HARNESS = path.join(RAIZ, 'scripts', 'setup', 'harness.js');
 const SUBCOMMANDS = ['install', 'startup', 'update', 'apply', 'version', 'doctor', 'channel', 'rollback', 'uninstall', 'link', 'relocate'];
 
 const BASE = fs.mkdtempSync(path.join(os.tmpdir(), 'tycon-harness-state-'));
-if (/tycon-claude-guides|agent-skills|\.claude/.test(BASE)) throw new Error(`el laboratorio cayó en ${BASE}`);
+require('./lib/lab-guard.js').labGuard(BASE, 'harness-state');
 process.on('exit', () => fs.rmSync(BASE, { recursive: true, force: true }));
 
 function casa(nombre) {

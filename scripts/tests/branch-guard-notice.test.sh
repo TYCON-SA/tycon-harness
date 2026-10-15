@@ -15,7 +15,7 @@
 set -u
 TCG="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 BASE="$(mktemp -d /tmp/tycon-branch-guard.XXXXXX)"
-case "$BASE" in *tycon-claude-guides*|*agent-skills*|*.claude*) echo "❌ branch-guard-notice: el laboratorio cayó en ${BASE}"; exit 1 ;; esac
+node "$TCG/scripts/tests/lib/lab-guard.js" "$BASE" branch-guard-notice || exit 1
 trap 'rm -rf "$BASE"' EXIT
 FALLAS=0
 ok() { echo "✅ branch-guard-notice: $1"; }
