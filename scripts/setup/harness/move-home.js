@@ -660,7 +660,7 @@ function stageConfigMoved(ctx, j, log) {
     if (!Object.prototype.hasOwnProperty.call(merged[m.section], m.key)) { merged[m.section][m.key] = m.value; folded++; }
   }
   j.profileFolded = folded;
-  // la raíz de los repos: en la sección de rutas con el nombre que ya traiga el archivo (`paths`, o `rutas`, el de antes);
+  // la raíz de los repos: en la sección de rutas con el nombre que ya traiga el archivo (`paths`, o su nombre de antes);
   // si ya trae `repos`, gana lo escrito
   if (reposValue) {
     const section = ['paths', 'rutas'].find((k) => isObject(merged[k])) || 'paths';
