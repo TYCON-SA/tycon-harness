@@ -59,5 +59,5 @@ repo).
 - **El buzón de corridas**, en el almacenamiento de Azure: cada máquina sube ahí lo que midió.
 - **La capa del equipo** y los repos y pipelines de cada producto, si la organización los tiene ahí.
 
-Una organización que vive en GitHub corre los mismos procesos de la noche como GitHub Actions:
-`pipelines/operations/github/README.md`.
+Una organización que vive en GitHub corre los mismos procesos de la noche como GitHub Actions: cómo se instalan lo
+explica el README de la carpeta de operaciones para GitHub, dentro de la carpeta de pipelines.

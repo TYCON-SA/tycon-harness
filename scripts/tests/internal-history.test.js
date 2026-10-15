@@ -130,11 +130,17 @@ test('PublishedProse_ZeroForms_GuardBlocksByDefault', () => {
 // antes de contar. Un repo desnudo local hace de GitHub: publica cada pedido como `refs/pull/<N>/head`, como GitHub.
 // Lo de Azure sigue siendo interno, y si el público no contesta, nada es suyo: frena como antes.
 const n = (palabra, numero) => `${palabra}${numero}`;   // armados por partes: este archivo viaja y se recorre
+// 🔴 Fecha, autor y committer fijos: el sha de cada commit del laboratorio sale siempre igual. Antes salía de la hora
+// de la corrida, y cuando sus primeros 8 caracteres eran sólo dígitos (~2,3 % de las corridas) la forma
+// `private-commit`, que pide dígito y letra, no los veía y tres casos daban rojo de azar (story 8.38). Y el
+// mantenimiento automático de git, apagado: no queda nada de fondo tocando el laboratorio.
+const FECHA_FIJA = '2026-10-15T00:00:00Z';
 function gitIn(cwd, args) {
-  const r = spawnSync('git', ['-c', 'core.hooksPath=/dev/null', '-c', 'commit.gpgsign=false', ...args], {
+  const r = spawnSync('git', ['-c', 'core.hooksPath=/dev/null', '-c', 'commit.gpgsign=false', '-c', 'maintenance.auto=false', '-c', 'gc.auto=0', ...args], {
     cwd, encoding: 'utf8',
     env: { PATH: process.env.PATH, HOME: cwd, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: os.devNull,
-      GIT_AUTHOR_NAME: 'Prueba', GIT_AUTHOR_EMAIL: '1+prueba@users.noreply.github.com', GIT_COMMITTER_NAME: 'Prueba', GIT_COMMITTER_EMAIL: '1+prueba@users.noreply.github.com' },
+      GIT_AUTHOR_NAME: 'Prueba', GIT_AUTHOR_EMAIL: '1+prueba@users.noreply.github.com', GIT_COMMITTER_NAME: 'Prueba', GIT_COMMITTER_EMAIL: '1+prueba@users.noreply.github.com',
+      GIT_AUTHOR_DATE: FECHA_FIJA, GIT_COMMITTER_DATE: FECHA_FIJA },
   });
   assert.strictEqual(r.status, 0, `git ${args.join(' ')}: ${r.stderr}`);
   return r.stdout.trim();
@@ -156,8 +162,30 @@ function publicLab(t) {
   gitIn(root, ['--git-dir', publico, 'update-ref', 'refs/pull/100/head', published]);
   gitIn(work, ['commit', '--quiet', '--allow-empty', '-m', 'sólo del equipo']);
   const internal = gitIn(work, ['rev-parse', 'HEAD']);
-  return { root, publico, work, published, internal };
+  return { root, publico, work, published: prefijoCitable(published, 'publicado'), internal: prefijoCitable(internal, 'del equipo') };
 }
+/** Los casos citan los primeros 8 caracteres del sha: con fecha fija salen siempre iguales, pero si un cambio del
+ * laboratorio los dejara sin dígito o sin letra, `private-commit` no los vería. Eso se dice acá, con su motivo, y no como
+ * un rojo de la regla. */
+function prefijoCitable(sha, cual) {
+  const p = sha.slice(0, 8);
+  assert.ok(/[0-9]/.test(p) && /[a-f]/.test(p), `el commit ${cual} del laboratorio quedó con el prefijo ${p}, sin dígito y letra: la forma private-commit no lo ve. Cambiá FECHA_FIJA (story 8.38)`);
+  return sha;
+}
+
+test('PublicHistory_LabPrefix_WithoutDigitOrLetter_SaysWhy', () => {
+  assert.throws(() => prefijoCitable(`12345678${'a'.repeat(32)}`, 'de prueba'), /prefijo 12345678, sin dígito y letra/);
+  assert.throws(() => prefijoCitable(`abcdefab${'1'.repeat(32)}`, 'de prueba'), /sin dígito y letra/);
+  const bueno = `1234567a${'0'.repeat(32)}`;
+  assert.strictEqual(prefijoCitable(bueno, 'de prueba'), bueno);
+});
+
+test('PublicHistory_LabSha_SameEveryRun', (t) => {
+  const a = publicLab(t);
+  const b = publicLab(t);
+  assert.strictEqual(a.published, b.published, 'con fecha fija el commit publicado sale igual en cada laboratorio');
+  assert.strictEqual(a.internal, b.internal, 'y el del equipo también');
+});
 const formsOf = (found) => found.map((f) => f.form);
 
 test('PublicHistory_GithubMergeSubject_PublicPullRequest_Passes', (t) => {

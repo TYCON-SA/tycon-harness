@@ -14,7 +14,13 @@ no(){ echo "❌ notas: $1"; fallos=$((fallos+1)); }
 
 cd "$TMP" && git init -q . && git config user.email t@t && git config user.name t
 mkdir -p src
-c(){ echo "$RANDOM" > src/a.txt; git add -A; git commit -q -m "$1"; }
+# 🔴 Cada commit escribe un número que sube, no `$RANDOM`: si `$RANDOM` repetía el valor anterior (~1 en 4000 corridas),
+#    el commit no se creaba («nothing to commit», que acá no frena) y se perdía un cambio que la prueba busca. Fecha fija y
+#    sin el mantenimiento automático de git: nada cambia entre corridas ni queda corriendo de fondo (story 8.38).
+N_COMMIT=0
+export GIT_AUTHOR_DATE=2026-10-15T00:00:00Z GIT_COMMITTER_DATE=2026-10-15T00:00:00Z
+export GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=maintenance.auto GIT_CONFIG_VALUE_0=false GIT_CONFIG_KEY_1=gc.auto GIT_CONFIG_VALUE_1=0
+c(){ N_COMMIT=$((N_COMMIT + 1)); echo "$N_COMMIT" > src/a.txt; git add -A; git commit -q -m "$1" || no "el commit «$1» del laboratorio no se creó"; }
 # 🔴 El marcador del build anterior va SOLO al principio. Cazado por este mismo test al
 # escribirlo: con un "chore: update versions" en el medio, el guion arranca la lista DESDE AHÍ
 # —que es lo correcto, porque ese commit ES un build anterior— y los cambios previos quedan fuera
@@ -188,7 +194,9 @@ grep -q "fetchDepth" "$TMP/e14.txt" \
 # RESPALDO publicaba los otros dos tal cual al administrador. Sólo se ve cuando main tiene un cambio
 # propio que dev no trae — si no, git simplifica la historia y el merge ni aparece —: por eso cada
 # repo de este bloque lleva uno.
-export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null
+# Suma core.hooksPath a lo de arriba (el mantenimiento automático apagado): reasignar GIT_CONFIG_COUNT a 1 lo volvía a
+# prender en los commits de este bloque (story 8.38).
+export GIT_CONFIG_COUNT=3 GIT_CONFIG_KEY_2=core.hooksPath GIT_CONFIG_VALUE_2=/dev/null
 armar_merge(){  # $1 = asunto del merge · $2 = "con-build" deja un build anterior antes de ramificar
   local d; d="$(mktemp -d "$TMP/merge.XXXX")"
   cd "$d" && git init -q . && git checkout -q -b main && git config user.email t@t && git config user.name t

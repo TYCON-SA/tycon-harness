@@ -38,10 +38,14 @@ const SID = 'test-validador-reloop';
 const VAL = 'tycon-story-validator';
 
 // El arnés se resuelve ANTES de falsear el HOME (con HOME falso la ruta canónica no existe).
-const TCG = [process.env.TYCON_GUIDES_DIR, process.env.TCG, process.cwd(), path.join(os.homedir(), 'SourceCode', 'tycon-claude-guides')]
+// 🔴 Primero el repo en el que vive esta prueba, y los guiones por su nombre de hoy. Antes buscaba
+// `costo-revisores.js` y `veredicto-validador.js` (los nombres de antes del paso al inglés) y, en una máquina con el
+// clon viejo todavía en `~/SourceCode/tycon-claude-guides`, tomaba esa carpeta: ocho casos en rojo sobre main (story 8.38).
+// El repo propio va antes que TYCON_GUIDES_DIR: lo que se prueba es este árbol, no el que diga el ambiente.
+const TCG = [path.resolve(__dirname, '..', '..', '..', '..'), process.env.TYCON_GUIDES_DIR, process.env.TCG, process.cwd()]
   .filter(Boolean)
-  .find((d) => fs.existsSync(path.join(d, 'scripts', 'metrics', 'costo-revisores.js')) && fs.existsSync(path.join(d, 'scripts', 'lib', 'veredicto-validador.js')));
-const SIN_ARNES = 'NO MEDIDO: no encontré tycon-claude-guides con scripts/lib/validator-verdict.js (TYCON_GUIDES_DIR · TCG · cwd · ruta canónica)';
+  .find((d) => fs.existsSync(path.join(d, 'scripts', 'metrics', 'reviewers-cost.js')) && fs.existsSync(path.join(d, 'scripts', 'lib', 'validator-verdict.js')));
+const SIN_ARNES = 'NO MEDIDO: no encontré el arnés con scripts/metrics/reviewers-cost.js y scripts/lib/validator-verdict.js (TYCON_GUIDES_DIR · TCG · la raíz de este repo · cwd)';
 
 const T5 = Date.parse('2026-09-17T10:00:00.000Z');
 const en = (min) => new Date(T5 + min * 60000).toISOString();
@@ -123,6 +127,12 @@ function ultimoExpected(home) {
 
 const LIMPIO = 'limpio';
 const HALLAZGOS = 'hallazgos (VAL-W15) · bloquea: no';
+
+// El repo en el que vive esta prueba siempre trae los dos guiones: si no los encuentra, el árbol está roto, y los casos
+// de abajo no pueden salir «salteados» en verde (story 8.38).
+test('ValidatorReloop_HarnessFound_NotSkipped', () => {
+  assert.ok(TCG, SIN_ARNES);
+});
 
 // ── T8 · ValidadorReloop_DosLimpios_SeDescuenta (AC 6) ─────────────────────────────────────────────
 // Mutación: no descontar nunca (el validador sigue en el set), o descontar sin sacarlo del `expected`

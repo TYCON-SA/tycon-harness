@@ -1927,6 +1927,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.38: una prueba nueva no depende de un sha ni de una hora que cambian. Las pruebas que crean commits fijan GIT_AUTHOR_DATE y GIT_COMMITTER_DATE y apagan el mantenimiento automático de git; las que leen el reloj inyectan la fecha o lo declaran con «stable-data: <motivo>». Las que ya existían están en fixtures/stable-test-data-baseline.json (y, en el repo del equipo, en …baseline.team.json), una lista que sólo puede achicarse. Mira las pruebas de scripts/ y skills/; viaja.",
+      "raiz": "arnes",
+      "ruta": "tests/stable-test-data.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "Parte 1 de 2 de tests/internal-history-guard.test.js (ninguna suite pasa de 45 s; el archivo entero no se registra, scripts/tests/lib/suite-parts.js). story 8.26, tanda G1 (T27-T28): el control de historia interna en la prosa que se publica (scripts/publishing/internal-history.js) — las formas con su rojo y su verde, lo neto por archivo y por padre con commits de verdad en repos de juguete (con la forma del repo público y con la del repo del equipo, con lista y tabla sintéticas), los modos, la constancia y la cuenta de todo. Viaja: en la copia corre en modo público.",
       "raiz": "arnes",
       "ruta": "tests/internal-history-guard.p1.test.js",
