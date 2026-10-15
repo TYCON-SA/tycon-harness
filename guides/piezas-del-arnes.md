@@ -49,6 +49,7 @@ scripts/controls-bench/ · scripts/metrics/ · scripts/production/ · scripts/pu
 guides/                     las guías
   guides/bizuit/ · guides/decisions/   las de Bizuit · decisiones y diseños fechados
 claude-md-blocks/ · commands/ · adapters/ · build/
+mods/harness-mods/          los mods de Claude Code del arnés (el cartel de la corrida, /pipeline, /mods)
 pipelines/                  los seis azure-pipelines-*.yml
   pipelines/templates/      sus pedazos compartidos
 packs/bizuit/               el paquete bizuit: su manifiesto y las plantillas para dar de alta un producto
@@ -761,6 +762,22 @@ La pieza que arregla al que arregla a los demás. Todo el arnés se propaga por 
 *(tycon-pipeline/scripts/lib/guides-heal.js (en agent-skills) + scripts/hooks/branch-guard-notice.js)*
 
 El arnés que **se bloquea a sí mismo** (2026-09-03). La línea de arranque hace `git pull` de este repo y después corre el instalador que vive **adentro**; ese pull se niega a avanzar si un archivo modificado localmente también cambió en origin — y hay un archivo que **modifica el capturador de retrospectivas**, sin commitear, en la máquina donde corre. Como ese archivo cambia seguido, el pull falla cada día; el error se descarta a propósito (una red caída no puede romper el arranque), así que **el instalador sigue corriendo cada día, en su versión vieja, reportando todo bien**. Medido: 272 commits atrás en seis días, `agent-skills` al día — porque su pull llevaba `--autostash` y el de este repo no. **Una palabra**. Efecto visible: un freno llega (viaja por agent-skills) sin el hook que lo abre (lo registra el instalador), y desde adentro de una máquina atrasada no hay forma de saberlo. 🔴 **El arreglo durable no puede viajar por el camino roto** (mismo callejón que `harness-bootstrap-heal.sh`): la línea canónica con `--autostash` en los dos pulls y el instalador que **normaliza la línea de cada máquina** (agrega sólo lo que falta, con backup) llegan por el pull… que está bloqueado. Por eso la sanadora vive en `agent-skills` y se invoca desde `on-prompt.js`, enchufado en todas las máquinas desde mayo: una vez por sesión, **en local** (`merge --ff-only` contra el `origin/main` que el arranque ya trajo — el pull hace el fetch aunque el merge falle; sale a la red sólo si nadie hizo fetch en 3 días, con tope de 15 s), si el clon está atrás y no divergió guarda aparte lo local, avanza, lo reaplica y corre el instalador **nuevo** en segundo plano; si divergió, no toca y avisa. `branch-guard-notice.js` pasa a gritar también con un clon **en main pero atrasado**, nombrando el archivo que traba: "clon válido" es "en main **y** al día". 🔴 **La línea de arranque ya protegida tiene su propia puerta de trabarse**: la primera vez que lo local no se puede reaplicar sobre lo nuevo, git guarda lo tuyo en el stash **y deja el archivo con marcadores de conflicto** (`UU`); desde ahí ningún pull entra ("unmerged files"), con cero commits atrás, y el consejo obvio (`git stash`) git lo rechaza. La sanadora detecta ese estado y limpia **sólo los archivos en conflicto** (checkout de HEAD sobre ellos, después de verificar que están en ese stash y tienen los marcadores adentro) — nunca un `reset --hard`: el reset borra lo que el dev siguió editando después de quedar trabado, que no está en ningún stash. Un conflicto ajeno (un merge del dev) o uno resuelto a mano sin `git add` no se toca. En ese estado el pull del arranque muere antes de fetchear, así que ahí la sanadora sí sale a la red. El consejo manual de las dos piezas es el que funciona en cada estado. Windows: el `.ps1` **no normaliza** la línea (deuda declarada — la cubre la sanadora en cada choque, y el instalador lo lanza sólo si hay `pwsh`, que es lo que el `.ps1` requiere). Los hooks nuevos quedan activos en la sesión **siguiente** (Claude Code lee `settings.json` al arrancar); el aviso lo dice. Off: `TYCON_GUIDES_HEAL=0`. Red: `controls-bench/cases/hooks/37-guides-heal.json` (13 — los que pesan: el clon trabado por el arranque, el conflicto ajeno que NO se toca, el no-trackeado que lo publicado agrega, y el que se pone rojo si se borra la limpieza del conflicto) + `03-session-start.json` (+3 de branch-guard).
+
+## mods/harness-mods/
+
+*(mods/harness-mods/ + scripts/setup/harness/plugin-dirs.js)*
+
+**El cartel de la corrida, para todo el equipo** (2026-10-15). Un plugin de Claude Code que dibuja arriba del prompt en
+qué paso va la corrida del pipeline de la sesión (story, paso, cuántos de 9, minutos del paso y del total, contexto, y
+«te espera» en amarillo con un aviso una vez por paso), más `/pipeline` (la tabla de pasos) y `/mods` (listar los mods
+del arnés; `hide`/`show` en la sesión; `off`/`on` para siempre, guardado en el almacén propio del plugin). **Sin dinero**:
+el dueño lo sacó a propósito. Por qué: el cartel vivía en una sola Mac, sin repo ni pruebas, y se perdió. El instalador
+**suma** su carpeta a `CLAUDE_CODE_PLUGIN_DIRS` (las carpetas del dev quedan; la desinstalación saca sólo la propia).
+Los pasos son una copia de `STEP_SEQUENCE` de `pipeline.js` (el plugin corre sin Node): si se separan, la prueba frena.
+Sólo Claude Code (Codex no tiene mods: declarado en `adapters/codex/hooks.json`). Red:
+`scripts/tests/harness-mods.test.js` (17 casos con node, sin red) y `scripts/tests/harness-mods-plugin.test.sh`
+(`claude plugin validate` + `claude plugin test` en el motor real; sin un `claude` que traiga `plugin test`, se saltea con
+constancia). Corren en la suite diaria.
 
 ## claude-md-blocks/
 

@@ -24,6 +24,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const PD = require('./plugin-dirs.js');   // story 7.27
 
 const KINDS = ['hook', 'setting', 'block', 'import', 'startup-line', 'link', 'command', 'git-hook', 'launch-agent', 'codex', 'third-party', 'file'];
 const EVENTS = ['PreToolUse', 'PostToolUse', 'SessionStart', 'SessionEnd', 'Stop', 'SubagentStop', 'UserPromptSubmit', 'Notification', 'PreCompact'];
@@ -171,6 +172,8 @@ function present(piece, { home = os.homedir(), env = process.env, isStartupLine 
       const s = json(piece.where);
       const v = s ? getPath(s, piece.id) : undefined;
       if (v === undefined) return false;
+      // la carpeta de los mods (story 7.27) es un elemento de una lista que también tiene las carpetas del dev
+      if (piece.id === PD.PLUGIN_DIRS_ID) return PD.hasDir(v, piece.value, { home });
       // con el valor que puso el arnés: si el dev lo cambió, el ajuste es suyo (el aplicador tampoco lo reporta)
       return 'value' in piece ? JSON.stringify(v) === JSON.stringify(piece.value) : true;
     }

@@ -139,3 +139,67 @@ test('advisors SÍ sigue abortando con --story inexistente (su contrato no cambi
   assert.equal(r.status, 2, `esperaba exit 2, dio ${r.status}`);
   assert.match(r.stderr, /--story NO existe/);
 });
+
+// ── Story 7.25: un archivo que no está en el disco NI en HEAD es un fantasma, no un borrado ─────────
+// Caso de un producto del equipo (2026-10-14): `--files a.cs,b.cs,c.cs` en UN argumento, sin espacios. La guarda de
+// arriba sólo mira el argumento con espacios, así que pasaba; `densidadDelDiff` contaba 0 líneas y el gate daba LOW con
+// `run:false` sobre un cambio de ~955 líneas. Un borrado del cambio sigue pasando: git lo conoce en HEAD.
+
+const { execFileSync } = require('child_process');
+
+function mkGitRepo() {
+  const r = mkRepo();
+  const g = (...a) => execFileSync('git', ['-C', r, ...a], { stdio: ['ignore', 'pipe', 'pipe'] });
+  g('init', '-q');
+  fs.writeFileSync(path.join(r, 'src', 'borrado.cs'), '// se va\n');
+  g('add', '-A');
+  g('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'base');
+  for (let i = 0; i < 40; i++) fs.appendFileSync(path.join(r, 'src', 'a.cs'), `int x${i};\n`);
+  return r;
+}
+
+test('T1 DeepReviewGate_FilesConComas_Aborta — deep-review-gate y risk-class frenan con el fantasma', () => {
+  const repo = mkGitRepo();
+  for (const cmd of ['deep-review-gate', 'risk-class']) {
+    const r = run(cmd, repo, ['src/a.cs,src/b.cs,src/c.cs']);
+    assert.equal(r.status, 2, `${cmd}: esperaba exit 2, dio ${r.status}. stdout: ${r.stdout}`);
+    assert.match(r.stderr, /src\/a\.cs,src\/b\.cs,src\/c\.cs/, `${cmd}: tiene que nombrar el fantasma`);
+    assert.match(r.stderr, /--allow-missing-files/, `${cmd}: y la salida consciente`);
+    assert.equal(r.stdout.trim(), '', `${cmd}: sin veredicto sobre una entrada rota`);
+  }
+});
+
+test('T2 DeepReviewGate_RutaAbsolutaFantasmaDeOtroRepo_Aborta', () => {
+  const repo = mkGitRepo();
+  const otro = mkGitRepo();
+  const r = run('deep-review-gate', repo, ['src/a.cs', path.join(otro, 'front', 'Ventana.tsx')]);
+  assert.equal(r.status, 2, `esperaba exit 2, dio ${r.status}. stdout: ${r.stdout}`);
+  assert.match(r.stderr, /Ventana\.tsx/);
+});
+
+test('T22 DeepReviewGate_FantasmaFueraDeGit_LoDice — sin git a quien preguntar, frena y dice que no pudo confirmar', () => {
+  const repo = mkRepo();   // sin git: nadie puede decir si es un borrado
+  const r = run('deep-review-gate', repo, ['src/a.cs', 'src/se-fue.cs']);
+  assert.equal(r.status, 2, `stdout: ${r.stdout}`);
+  assert.match(r.stderr, /no pude preguntarle a git/);
+  assert.match(r.stderr, /--allow-missing-files/);
+});
+
+test('T3 DeepReviewGate_ArchivoBorradoPorElCambio_NoAborta — un borrado es un cambio legítimo', () => {
+  const repo = mkGitRepo();
+  fs.rmSync(path.join(repo, 'src', 'borrado.cs'));
+  for (const cmd of ['deep-review-gate', 'risk-class']) {
+    const r = run(cmd, repo, ['src/a.cs', 'src/borrado.cs']);
+    assert.equal(r.status, 0, `${cmd}: stderr: ${r.stderr}`);
+    assert.ok(JSON.parse(r.stdout), `${cmd}: con veredicto`);
+  }
+});
+
+test('T4 DeepReviewGate_AllowMissingFiles_NoAborta', () => {
+  const repo = mkGitRepo();
+  const r = spawnSync(process.execPath,
+    [PIPELINE, 'deep-review-gate', '--repo', repo, '--story', path.join(repo, 'story.md'), '--allow-missing-files',
+      '--files', 'src/a.cs,src/b.cs'], { encoding: 'utf8', env: { ...process.env, HOME } });
+  assert.equal(r.status, 0, `stderr: ${r.stderr}`);
+  assert.ok('run' in JSON.parse(r.stdout));
+});

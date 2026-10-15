@@ -63,8 +63,11 @@ const APPLIER = 'scripts/setup/apply-hooks.js';
 function canonicalSettings(root) {
   const { TOP_CANONICAL, ENV_CANONICAL } = require(path.join(root, APPLIER));
   assert.ok(TOP_CANONICAL && ENV_CANONICAL, `${APPLIER}: no exporta TOP_CANONICAL y ENV_CANONICAL`);
-  return [...Object.keys(TOP_CANONICAL), ...Object.keys(ENV_CANONICAL).map((k) => `env.${k}`)];
+  // story 7.27: más la carpeta de los mods, que el aplicador SUMA a CLAUDE_CODE_PLUGIN_DIRS (no es una clave canónica)
+  const { PLUGIN_DIRS_ID } = require(path.join(root, PLUGIN_DIRS));
+  return [...Object.keys(TOP_CANONICAL), ...Object.keys(ENV_CANONICAL).map((k) => `env.${k}`), PLUGIN_DIRS_ID];
 }
+const PLUGIN_DIRS = 'scripts/setup/harness/plugin-dirs.js';
 
 /**
  * Los lanzamientos de fondo del instalador: `[{ line, text }]`. Uno es: una orden con `nohup` o `setsid` (hasta el `&`
@@ -182,7 +185,7 @@ function crossProblems(root, effects) {
   for (const id of ids('block')) if (!blocks.has(id)) out.push(`entrada sin bloque: ${id} no está en claude-md-blocks/`);
   const settings = new Set(canonicalSettings(root));
   for (const id of settings) if (!ids('setting').has(id)) out.push(`ajuste sin entrada: ${id}`);
-  for (const id of ids('setting')) if (!settings.has(id)) out.push(`entrada sin ajuste: ${id} no está en TOP_CANONICAL ni en ENV_CANONICAL`);
+  for (const id of ids('setting')) if (!settings.has(id)) out.push(`entrada sin ajuste: ${id} no está en TOP_CANONICAL, ENV_CANONICAL ni es la carpeta de los mods`);
   if (byKind('import').length !== 1) out.push(`el import del README: tiene que haber una entrada y hay ${byKind('import').length}`);
 
   // la lista declarada del aplicador: cada pieza suya tiene entrada, y cada entrada (que no sea una tarea) es una pieza
@@ -266,7 +269,7 @@ function toyTree(mutate = {}) {
     fs.cpSync(path.join(ROOT, rel), path.join(dir, rel), { recursive: true });
   };
   const sources = [...new Set(managed.readEffects(ROOT).effects.filter((e) => e.kind === 'task').map((e) => e.source.file))];
-  for (const rel of [INSTALLER, INSTALLER_PS1, PIECES, APPLIER, 'scripts/setup/hooks-list.json', 'claude-md-blocks', 'scripts/hooks', ...sources.filter((f) => f !== INSTALLER)]) copy(rel);
+  for (const rel of [INSTALLER, INSTALLER_PS1, PIECES, APPLIER, PLUGIN_DIRS, 'scripts/setup/hooks-list.json', 'claude-md-blocks', 'scripts/hooks', ...sources.filter((f) => f !== INSTALLER)]) copy(rel);
   if (mutate.installer) fs.writeFileSync(path.join(dir, INSTALLER), mutate.installer(read(dir, INSTALLER)));
   return dir;
 }

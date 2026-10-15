@@ -830,6 +830,7 @@ for want in ("echo ajeno-stop", "echo ajeno-pre"):
     if want not in cmds: bad.append("se perdió el hook ajeno «%s»" % want)
 if s.get("cleanupPeriodDays") != 30: bad.append("cleanupPeriodDays (30, cambiado por el dev) no se quedó: %r" % s.get("cleanupPeriodDays"))
 if "CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR" in (s.get("env") or {}): bad.append("la variable de env del arnés sigue")
+if "harness-mods" in str((s.get("env") or {}).get("CLAUDE_CODE_PLUGIN_DIRS", "")): bad.append("la carpeta de los mods del arnés sigue en CLAUDE_CODE_PLUGIN_DIRS")
 if s.get("permissions") != {"allow": ["Bash(ls:*)"]}: bad.append("los permisos del dev cambiaron")
 md = open(os.path.join(claude, "CLAUDE.md"), encoding="utf-8").read()
 if "TYCON_BLOCK" in md or "@~/.claude/tycon-claude-guides/README.md" in md or "@~/.claude/tycon-harness/README.md" in md or "@~/.claude/tycon-harness/INDEX.md" in md: bad.append("CLAUDE.md conserva bloques o el @import (por cualquiera de los dos nombres del lugar)")
@@ -879,7 +880,8 @@ import glob, json, os, sys
 state_file, log_file, tree = sys.argv[1:4]
 managed = json.load(open(state_file, encoding="utf-8")).get("managed") or []
 keys = [(p["kind"], p["id"]) for p in managed if p["kind"] in ("setting", "command")]
-want = [("setting", "cleanupPeriodDays"), ("setting", "env.CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR")]
+want = [("setting", "cleanupPeriodDays"), ("setting", "env.CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR"),
+        ("setting", "env.CLAUDE_CODE_PLUGIN_DIRS")]   # story 7.27: la carpeta de los mods del arnés
 names = [os.path.basename(c) for c in glob.glob(os.path.join(tree, "commands", "*.md"))]
 want += [("command", n) for n in names]
 bad = []

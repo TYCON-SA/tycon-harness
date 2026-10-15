@@ -23,6 +23,17 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/harness-mods.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 7.27: el plugin de los mods en el motor de Claude Code (claude plugin validate + test); sin un claude que traiga «plugin test», se saltea con constancia",
+      "raiz": "arnes",
+      "ruta": "tests/harness-mods-plugin.test.sh",
+      "requiere": ["modelo"]
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/instinct-executor.test.sh",
       "requiere": [],
       "exclusive": true
@@ -501,6 +512,16 @@
     {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/files-arity-gate.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/bash-write-variables.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/replace-section.test.js",
       "requiere": []
     },
     {

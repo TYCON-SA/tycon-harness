@@ -80,6 +80,8 @@ else ok "con TYCON_CODEX=0 explícito gana el apagado, aunque haya evidencia"; f
 mkdir -p "$T/tcg/scripts/lib" "$T/tcg/scripts/hooks" "$T/tcg/scripts/setup"; cp "$INST" "$T/tcg/scripts/install-tycon-hooks.sh"
 # desde la story 8.17 (W3) el instalador registra los hooks con el aplicador y su lista: viajan con él
 cp "$RAIZ/scripts/setup/apply-hooks.js" "$RAIZ/scripts/setup/hooks-list.json" "$T/tcg/scripts/setup/"
+# desde la story 7.27 el aplicador usa scripts/setup/harness/plugin-dirs.js (y éste, place.js): la carpeta viaja entera
+cp -R "$RAIZ/scripts/setup/harness" "$T/tcg/scripts/setup/"
 echo "throw new Error('modulo-roto-de-prueba');" > "$T/tcg/scripts/lib/harness-parity.js"
 S="$(correr "$T/tcg/scripts/install-tycon-hooks.sh" "$CON")"
 case "$S" in

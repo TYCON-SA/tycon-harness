@@ -44,6 +44,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const PD = require('./plugin-dirs.js');   // story 7.27: la carpeta de los mods del arnés en CLAUDE_CODE_PLUGIN_DIRS
 
 /** La clase de estas piezas: el `when` de la lista declarada (scripts/tests/fixtures/harness-managed-pieces.json). */
 const ORIGIN = 'shared';
@@ -109,7 +110,7 @@ function writeAtomic(file, text, mode) {
 /**
  * Las dos claves de settings.json. Devuelve `{ ok, pieces, changed, notes, reason }`; con `ok: false` no escribió nada.
  */
-function applySettings(file, { withBackup }) {
+function applySettings(file, { withBackup, home = os.homedir(), platform = process.platform, mods = true, inherited = undefined }) {
   const out = { ok: true, pieces: [], changed: [], notes: [], reason: null };
   const fail = (reason) => Object.assign(out, { ok: false, pieces: [], changed: [], reason });
   let raw = null;
@@ -134,12 +135,19 @@ function applySettings(file, { withBackup }) {
 
   const needTop = Object.keys(TOP_CANONICAL).filter((k) => !has(s, k));
   const needEnv = Object.keys(ENV_CANONICAL).filter((k) => !has(s, 'env') || !has(s.env, k));
-  if (needTop.length || needEnv.length) {
+  // la carpeta de los mods del arnés se SUMA a la variable (story 7.27): las carpetas del dev quedan
+  const sep = PD.separator(platform);
+  const modsDir = PD.ourDir(home);
+  // con TYCON_NO_MODS=1 (`mods: false`) no se toca la variable ni se anota la pieza
+  const dirs = mods ? PD.addDir(has(s, 'env') ? s.env[PD.PLUGIN_DIRS_KEY] : undefined, modsDir, { sep, home, inherited }) : { changed: false, dropped: [] };
+  for (const d of dirs.dropped) out.notes.push(`saqué ${d} de env.${PD.PLUGIN_DIRS_KEY} en ${file}: es el cartel viejo y esa carpeta ya no existe (ahora viene con el arnés)`);
+  if (needTop.length || needEnv.length || dirs.changed) {
     // el orden de inserción del python del aplicador: `hooks` (su setdefault), las claves de raíz, `env`
     if (!has(s, 'hooks')) s.hooks = {};
     for (const k of needTop) s[k] = TOP_CANONICAL[k];
     if (!has(s, 'env')) s.env = {};
     for (const k of needEnv) s.env[k] = ENV_CANONICAL[k];
+    if (dirs.changed) s.env[PD.PLUGIN_DIRS_KEY] = dirs.value;
     let bak = null;
     try {
       if (withBackup && raw !== null) { bak = `${file}.bak.${stamp()}`; fs.copyFileSync(file, bak); }
@@ -152,7 +160,7 @@ function applySettings(file, { withBackup }) {
       const kept = left.length ? `; no pude borrar ${left.join(' ni ')}: borralo a mano` : '';
       return fail(`no pude escribir ${file} (${(e && e.code) || e.message}): las claves del arnés no se agregaron${kept}`);
     }
-    out.changed.push(...needTop, ...needEnv.map((k) => `env.${k}`));
+    out.changed.push(...needTop, ...needEnv.map((k) => `env.${k}`), ...(dirs.changed ? [PD.PLUGIN_DIRS_ID] : []));
   }
   // del arnés sólo con SU valor (si el dev fijó otro, es suya y no se anota); el `value` va al registro para que doctor
   // vea si lo cambia después
@@ -165,6 +173,8 @@ function applySettings(file, { withBackup }) {
     if (env[k] === v) out.pieces.push({ kind: 'setting', where: file, id: `env.${k}`, value: v });
     else out.notes.push(`env.${k} ya vale ${JSON.stringify(env[k])} en ${file}: lo fijaste vos, gana tu valor (el arnés usa ${JSON.stringify(v)})`);
   }
+  // la carpeta de los mods: la pieza es la carpeta (un elemento de la lista), no el valor entero de la variable
+  if (mods && PD.hasDir(env[PD.PLUGIN_DIRS_KEY], modsDir, { sep, home })) out.pieces.push({ kind: 'setting', where: file, id: PD.PLUGIN_DIRS_ID, value: modsDir });
   return out;
 }
 
@@ -215,14 +225,14 @@ function applyCommands({ home, env, tree }) {
  *   `pieces`: lo que va al registro. `changed`: lo que escribió ESTA corrida (`cleanupPeriodDays`, `env.<VAR>`,
  *   `command:<archivo>`). `ok: false` (con `reason`): settings.json no se pudo leer o escribir y no se hizo nada.
  */
-function applyShared({ home = os.homedir(), env = process.env, tree = null, backup, log = null, settings = true } = {}) {
+function applyShared({ home = os.homedir(), env = process.env, tree = null, backup, log = null, settings = true, platform = process.platform } = {}) {
   const out = { ok: true, origin: ORIGIN, pieces: [], changed: [], notes: [], reason: null };
   const say = (line) => { try { if (log) log(line); } catch (_) { /* el registro nunca frena */ } };
   try {
     const withBackup = backup === undefined ? !env.TYCON_HARNESS_SNAPSHOT_DIR : Boolean(backup);
     // `settings: false` (story 8.16, tanda C): fuera del perfil full los dos ajustes no se escriben ni se anotan; los
     // comandos sí (están en los dos perfiles). Si estaban, los saca el cambio de perfil de harness.js, con su copia.
-    const s = settings === false ? { ok: true, pieces: [], changed: [], notes: [], reason: null } : applySettings(settingsFile(home, env), { withBackup });
+    const s = settings === false ? { ok: true, pieces: [], changed: [], notes: [], reason: null } : applySettings(settingsFile(home, env), { withBackup, home, platform, mods: env.TYCON_NO_MODS !== '1', inherited: env[PD.PLUGIN_DIRS_KEY] });
     out.notes.push(...s.notes);
     if (!s.ok) {
       out.ok = false; out.reason = s.reason;
@@ -248,6 +258,7 @@ function isShared(piece) {
   if (!isObject(piece) || typeof piece.id !== 'string') return false;
   if (piece.kind === 'command') return true;
   if (piece.kind !== 'setting') return false;
+  if (piece.id === PD.PLUGIN_DIRS_ID) return true;
   return has(TOP_CANONICAL, piece.id) || (piece.id.startsWith('env.') && has(ENV_CANONICAL, piece.id.slice(4)));
 }
 

@@ -371,6 +371,9 @@ _harness_lab_machine() {
   export CODEX_HOME="$LAB_HOME/.codex" TYCON_GIT_HOOKS_DIR="$LAB_HOME/.git-hooks" LAUNCHCTL_BIN="$LAB_BIN/launchctl"
   export LAB_APPLIER_CHECK_LOG="$LAB/lab-applier-check.log"   # las corridas con --check, fuera de la HOME (story 8.16)
   export TYCON_NO_NIGHTLY_EXAM=1 TYCON_NO_GUI_ENV=1 TYCON_CODEX=0 TYCON_BENCH_DAILY=0 TYCON_STAGE_METRICS=0
+  # story 7.27: la carpeta de los mods no se suma a CLAUDE_CODE_PLUGIN_DIRS en el laboratorio (la prueba propia es
+  # scripts/tests/harness-mods.test.js); así los settings.json esperados de las demás suites quedan como estaban
+  export TYCON_NO_MODS=1
   # story 8.23 (tanda C): `install` enchufa las herramientas que DETECTA; la máquina de juguete de siempre es «con
   # Claude Code y sin Codex», dicho por sus llaves (el agente de la validación no tiene ninguna de las dos instalada).
   # Las suites que prueban la detección (harness-tools.test.sh) las sacan con `harness_lab_tools`.

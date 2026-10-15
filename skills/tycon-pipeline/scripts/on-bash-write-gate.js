@@ -219,6 +219,28 @@ function resolveTarget(target, cwd, platform = process.platform, { homeVariable 
   return P.isAbsolute(expanded) ? expanded : P.resolve(nativePath(cwd, platform), expanded);
 }
 
+// ── variables del comando (story 7.25 del arnés, 2026-10-15) ─────────────────────────────────────
+// `SP=<scratchpad>; python3 -c "open('$SP/x.cs','w')"` salió frenado como «EDICIÓN INVISIBLE»: el destino se resolvía
+// tal cual, `<repo>/$SP/x.cs`, y quedaba adentro del repo de la corrida (caso de un producto del equipo, 2026-10-14).
+// Las variables las expande `lib/command-vars.js`: con el valor que tenían EN ESE PUNTO del comando, y si el comando no
+// las asignó, con el ambiente. Lo que no se puede saber sin ejecutar (`$(…)`, `${VAR:-x}`, una variable que nadie
+// define) queda «sin resolver»: se resuelve como siempre (del lado seguro: si cae en el repo, frena) y queda marcado,
+// para que el mensaje diga que no se pudo resolver en vez de presentarlo como código del repo sin más.
+// (La primera versión usaba el lector compartido `scripts/lib/shell-parse.js`; el pase adversarial mostró que para esto
+// da rutas falsas — la cabecera de command-vars.js dice por qué.)
+const { expandirRuta } = require('./lib/command-vars.js');
+
+/**
+ * Cada destino de escritura del comando, con su ruta absoluta: `[{ raw, abs, sinResolver: [nombres] }]`.
+ * `sinResolver` lista lo que no se pudo resolver (vacía si se resolvió todo).
+ */
+function destinosResueltos(cmd, cwd, platform = process.platform) {
+  return extractWriteTargets(cmd).map((raw) => {
+    const { valor, sinResolver } = expandirRuta(cmd, raw);
+    return { raw, abs: resolveTarget(valor, cwd, platform, { homeVariable: true }), sinResolver };
+  });
+}
+
 function renameOrCopyOfExistingStory(cmd, cwd) {
   const seg = splitSegments(stripNonCommandText(cmd)).find((sg) => /^(?:\w+=\S+\s+)*(?:sudo\s+)?(?:cp|mv|git\s+mv)\b/.test(sg.trim()));
   if (!seg) return null;
@@ -297,7 +319,10 @@ function handle(event, opts = {}) {
   const sessionId = resolveSessionId(event?.session_id);
   const io = require('./lib/story-gate-io.js');
   const stateDir = opts.stateDir || io.DEFAULT_STATE_DIR;
-  const absTargets = targets.map((t) => resolveTarget(t, cwd, process.platform, { homeVariable: true }));
+  // story 7.25: con las variables del comando (y del ambiente) expandidas; lo no resuelto queda anotado para el mensaje
+  const resueltos = destinosResueltos(cmd, cwd);
+  const absTargets = resueltos.map((d) => d.abs);
+  const sinResolverDe = new Map(resueltos.filter((d) => d.sinResolver.length).map((d) => [d.abs, d]));
   // Antes de decidir y aunque los frenos estén apagados: dónde escribió la consola es un dato de la
   // corrida, no una decisión del freno (story 2.19).
   anotarEscriturasConsola(stateDir, sessionId, absTargets);
@@ -309,10 +334,17 @@ function handle(event, opts = {}) {
   if (!laneOff) {
     const passedCode = [];
     for (const abs of absTargets) {
-      if (!isCodeFile(abs) && !isInside(stateDir, abs)) continue;
-      const r = io.evaluate({ filePath: abs, sessionId, cwd, via, stateDir });
-      if (r.verdict.action === 'block') return { block: r.message + '\n' };
-      if (isCodeFile(abs)) passedCode.push(abs);
+      // un destino con una variable sin resolver PUEDE ser código aunque su ruta cruda no tenga la extensión
+      // (`cat > $F`, `src/x.$EXT` — vuelta 7 de revisores): para el registro cuenta como código
+      // …salvo que la extensión ESCRITA (sin variables) diga que no es código: `$OUT/notes.md` pasa como cualquier .md
+      const extLiteral = /\.([^./\\$`{}]+)$/.exec(path.basename(abs));
+      const quizasCodigo = isCodeFile(abs) || (sinResolverDe.has(abs) && !extLiteral);
+      if (!quizasCodigo && !isInside(stateDir, abs)) continue;
+      if (isCodeFile(abs) || isInside(stateDir, abs)) {
+        const r = io.evaluate({ filePath: abs, sessionId, cwd, via, stateDir });
+        if (r.verdict.action === 'block') return { block: r.message + '\n' };
+      }
+      if (quizasCodigo) passedCode.push(abs);
     }
     // ── TERCERA RESPONSABILIDAD (2026-09-21): que el REGISTRO no se quede ciego ────────────────
     // El carril ya dijo que esta sesión PUEDE editar. Falta la otra mitad: si la edición va por
@@ -327,9 +359,22 @@ function handle(event, opts = {}) {
       const vis = lv.evaluarVisibilidad({
         marker,
         codeTargets: passedCode,
-        dentroDelRepo: (f, repo) => isInside(repo, f),
+        // un destino con una variable sin resolver PUEDE caer en el repo: cuenta como adentro, aunque la ruta cruda
+        // anclada al cwd quede afuera (vuelta 6: con la sesión parada en otra carpeta pasaba callado)
+        dentroDelRepo: (f, repo) => isInside(repo, f) || sinResolverDe.has(f),
         off: process.env.TYCON_LEDGER_VISIBLE,
       });
+      if (vis.escaped && vis.escaped.length) {
+        // El escape del dev deja su línea (story 7.25): el mensaje del freno lo prometía y no se escribía nada.
+        try {
+          fs.appendFileSync(path.join(stateDir, 'gates.log'), JSON.stringify({
+            ts: new Date().toISOString(), sessionId,
+            repoPath: (marker && marker.repoPath) || null, name: 'ledger-visible', status: 'escaped',
+            storyId: (marker && marker.storyId) || null, files: vis.escaped.length, paths: vis.escaped, via,
+            reason: 'TYCON_LEDGER_VISIBLE=off en el ambiente de la sesión',
+          }) + '\n', 'utf8');
+        } catch (e) { logHookError(e); }
+      }
       if (vis.block) {
         try {
           // Constancia en gates.log (misma forma que el resto). El freno NO depende de esto: si el
@@ -340,13 +385,28 @@ function handle(event, opts = {}) {
             storyId: (marker && marker.storyId) || null, files: vis.files.length, via,
           }) + '\n', 'utf8');
         } catch { /* el freno no depende del log */ }
-        return { block: lv.mensaje(vis.files, marker && marker.storyId) + '\n' };
+        const sinResolver = vis.files.filter((f) => sinResolverDe.has(f))
+          .map((f) => ({ file: f, vars: sinResolverDe.get(f).sinResolver }));
+        return { block: lv.mensaje(vis.files, marker && marker.storyId, { sinResolver }) + '\n' };
+      }
+      // Un destino sin resolver que pasa (sin corrida abierta, o con el escape) no queda callado: constancia en
+      // gates.log con la ruta (vuelta 8 de revisores). No suma al cupo ad-hoc: no se sabe qué archivo es.
+      const dudosos = passedCode.filter((f) => sinResolverDe.has(f));
+      if (dudosos.length) {
+        try {
+          fs.appendFileSync(path.join(stateDir, 'gates.log'), JSON.stringify({
+            ts: new Date().toISOString(), sessionId,
+            repoPath: (marker && marker.repoPath) || null, name: 'ledger-visible', status: 'unresolved-passed',
+            storyId: (marker && marker.storyId) || null, files: dudosos.length, paths: dudosos, via,
+            reason: vis.reason || 'destino con una variable sin resolver',
+          }) + '\n', 'utf8');
+        } catch (e) { logHookError(e); }
       }
     }
 
     // Cupo ad-hoc (H9): Bash no tiene PostToolUse nuestro, así que el registro va acá (best-effort: el
     // comando puede fallar después, pero sin esto un hotfix hecho con heredocs nunca suma al cupo).
-    for (const abs of passedCode) {
+    for (const abs of passedCode.filter((f) => isCodeFile(f))) {   // un destino sin resolver no suma al cupo: no se sabe cuál es
       try { io.recordAdhocFile(stateDir, sessionId, abs); } catch { /* best-effort */ }
     }
   }
@@ -360,7 +420,8 @@ function handle(event, opts = {}) {
       try { ({ declaresStoryIdentity: declares } = require('./lib/story-discovery.js')); } catch { /* fallback regex */ }
       const hds = heredocs(cmd);
       const sameFile = (a, b) => String(a).replace(/\\/g, '/').toLowerCase() === String(b).replace(/\\/g, '/').toLowerCase();
-      const resolveT = (t) => resolveTarget(t, cwd);
+      // el mismo destino que se juzgó arriba, con las variables del comando expandidas (story 7.25)
+      const resolveT = (t) => { const d = resueltos.find((x) => x.raw === t); return d ? d.abs : resolveTarget(t, cwd); };
       // Un cuerpo sin target atribuible sólo se usa si el comando escribe UN solo .md nuevo (F2).
       const orphanBody = hds.filter((h) => !h.target && declares(h.body)).map((h) => h.body)[0] || null;
       const inline = hds.length ? null : inlineStoryText(cmd, declares);
@@ -385,7 +446,7 @@ function handle(event, opts = {}) {
   return null;
 }
 
-module.exports = { handle, resolveTarget, extractWriteTargets, stripNonCommandText, leadingCd, heredocs, heredocBodies, inlineStoryText, nameSuggestsStory, renameOrCopyOfExistingStory };
+module.exports = { handle, resolveTarget, destinosResueltos, extractWriteTargets, stripNonCommandText, leadingCd, heredocs, heredocBodies, inlineStoryText, nameSuggestsStory, renameOrCopyOfExistingStory };
 
 if (require.main === module) {
   let event = null;
