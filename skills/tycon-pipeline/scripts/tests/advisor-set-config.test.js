@@ -169,6 +169,93 @@ test('sin react ni next, un cambio de dependencia no trae revisor de convencione
   assert.deepEqual(set(d, 'package.json'), []);
 });
 
+// ── React/Next declarados fuera de dependencies (2026-10-15) ──────────────────────────────────
+// Un formulario de Bizuit declara React SÓLO en peerDependencies: lo provee el host. La detección leía
+// dependencies + devDependencies, así que en esos repos salía hasReact:false y el revisor de React no
+// entraba (caso real: una story de dos repos de un producto del equipo; sumado a mano encontró dos avisos
+// reales). Se leen las cuatro secciones; y un .tsx sin framework detectado lo dice, con lo que se leyó.
+function salida(d, ...files) {
+  const r = spawnSync(process.execPath, [PIPELINE, 'advisors', '--repo', d, '--files', ...files],
+    { encoding: 'utf8', timeout: 30000, env: {
+      PATH: process.env.PATH, HOME: HOME_AISLADO, LANG: 'en_US.UTF-8', TYCON_SESSION_ID: 'advisor-set-config-test',
+      TYCON_PACKS_DIR: PACKS_REALES, TYCON_PACKS_DEFAULT: 'all', ...(ARNES ? { TYCON_GUIDES_DIR: ARNES } : {}),
+    } });
+  return JSON.parse(r.stdout || '{}');
+}
+function repoConPaquete(secciones) {
+  const d = repo();
+  fs.writeFileSync(path.join(d, 'package.json'), JSON.stringify({ name: 'x', ...secciones }, null, 2) + '\n');
+  fs.writeFileSync(path.join(d, 'src', 'X.tsx'), 'export const X = () => null;\n');
+  git(d, 'add', '-A');
+  git(d, '-c', 'user.email=b@b', '-c', 'user.name=b', 'commit', '-q', '-m', 'paquete');
+  return d;
+}
+
+test('React sólo en peerDependencies (un formulario de Bizuit) trae al revisor de React', () => {
+  const out = salida(repoConPaquete({ peerDependencies: { react: '^18.3.1' }, dependencies: { dayjs: '1.0.0' } }), 'src/X.tsx');
+  assert.equal(out.detection.hasReact, true, JSON.stringify(out.detection));
+  assert.ok(out.all.includes(REACT), `dio: ${out.all}`);
+});
+
+test('Next sólo en peerDependencies trae al revisor de Next, no al de React', () => {
+  const out = salida(repoConPaquete({ peerDependencies: { react: '^18.3.1', next: '^14.2.0' } }), 'src/X.tsx');
+  assert.equal(out.detection.hasNext, true, JSON.stringify(out.detection));
+  assert.ok(out.all.includes(NEXT) && !out.all.includes(REACT), `dio: ${out.all}`);
+});
+
+test('React en optionalDependencies también cuenta', () => {
+  const out = salida(repoConPaquete({ optionalDependencies: { react: '^18.3.1' } }), 'src/X.tsx');
+  assert.equal(out.detection.hasReact, true, JSON.stringify(out.detection));
+});
+
+test('un .tsx sin React ni Next en los package.json leídos lo dice, con las rutas', () => {
+  const d = repoConPaquete({ dependencies: { lodash: '4.0.0' } });
+  const out = salida(d, 'src/X.tsx');
+  assert.equal(out.detection.hasReact, false);
+  assert.match(String(out.detection.warning), /hay \.tsx\/\.jsx y no detecté React ni Next/, JSON.stringify(out.detection));
+  assert.ok(String(out.detection.warning).includes(path.join(fs.realpathSync(d), 'package.json'))
+    || String(out.detection.warning).includes(path.join(d, 'package.json')), out.detection.warning);
+});
+
+test('un next peer marcado como optativo no hace del repo un repo Next', () => {
+  // Una librería de componentes que se lleva bien con Next si el host lo tiene: no es una app Next.
+  const out = salida(repoConPaquete({
+    peerDependencies: { react: '^18.3.1', next: '^14.2.0' }, peerDependenciesMeta: { next: { optional: true } },
+  }), 'src/X.tsx');
+  assert.equal(out.detection.hasNext, false, JSON.stringify(out.detection));
+  assert.ok(out.all.includes(REACT) && !out.all.includes(NEXT), `dio: ${out.all}`);
+});
+
+test('un package.json sin dependencias y un .tsx: avisa lo nuevo, no «sin package.json»', () => {
+  const out = salida(repoConPaquete({}), 'src/X.tsx');
+  assert.match(String(out.detection.warning), /no detecté React ni Next en /, JSON.stringify(out.detection));
+  assert.doesNotMatch(String(out.detection.warning), /sin package\.json encontrado/);
+});
+
+test('un .ts sin React no avisa: un backend de Node no tiene por qué tenerlo', () => {
+  const d = repoConPaquete({ dependencies: { lodash: '4.0.0' } });
+  fs.writeFileSync(path.join(d, 'src', 'y.ts'), 'export const y = 1;\n');
+  assert.equal(salida(d, 'src/y.ts').detection.warning, undefined);
+});
+
+test('un cambio de rango en peerDependencies cuenta como dependencia cambiada (el React que pone el host)', () => {
+  const d = repoConPaquete({ peerDependencies: { react: '^18.2.0' } });
+  const p = path.join(d, 'package.json');
+  const j = JSON.parse(fs.readFileSync(p, 'utf8'));
+  j.peerDependencies.react = '^18.3.1';
+  fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n');
+  assert.deepEqual(set(d, 'package.json'), [REACT]);
+});
+
+test('un cambio en optionalDependencies cuenta como dependencia cambiada', () => {
+  const d = repoConPaquete({ dependencies: { react: '18.3.1' }, optionalDependencies: { fsevents: '2.3.2' } });
+  const p = path.join(d, 'package.json');
+  const j = JSON.parse(fs.readFileSync(p, 'utf8'));
+  j.optionalDependencies.fsevents = '2.3.3';
+  fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n');
+  assert.deepEqual(set(d, 'package.json'), [REACT]);
+});
+
 // ── no-regresión ──────────────────────────────────────────────────────────────────────────────
 test('el set base de un diff CON código no cambia', () => {
   const d = repo();

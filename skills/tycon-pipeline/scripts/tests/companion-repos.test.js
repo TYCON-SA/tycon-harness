@@ -73,7 +73,7 @@ const STORY = (archivos = {}) => {
  * El laboratorio de §Medición previa de la story: `Back` (un .cs) y `Front` (React en `app/`), los dos con cambios sin
  * commitear. `declarar`: Back declara a Front como hermano (commiteado, como en un repo real).
  */
-function laboratorio({ declarar = true, frontBase = 'export const X = () => null;\n', story } = {}) {
+function laboratorio({ declarar = true, frontBase = 'export const X = () => null;\n', story, frontPaquete } = {}) {
   const raiz = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'hermano-lab-')));
   const back = repoGit(path.join(raiz, 'Back'), {
     'src/A.cs': 'class A {}\n',
@@ -81,7 +81,7 @@ function laboratorio({ declarar = true, frontBase = 'export const X = () => null
     ...(declarar ? { '.tycon/advisors.yaml': 'evidence:\n  companion_repos:\n    - Front\n' } : {}),
   });
   const front = repoGit(path.join(raiz, 'Front'), {
-    'app/package.json': JSON.stringify({ name: 'app', version: '1.0.0', dependencies: { react: '18.3.1' } }, null, 2) + '\n',
+    'app/package.json': JSON.stringify(frontPaquete || { name: 'app', version: '1.0.0', dependencies: { react: '18.3.1' } }, null, 2) + '\n',
     'app/src/X.tsx': frontBase,
   });
   fs.writeFileSync(path.join(back, 'src', 'A.cs'), 'class A { void M() {} }\n');
@@ -129,6 +129,16 @@ test('advisors: el package.json del hermano detecta React y no avisa detección 
     assert.equal(out.detection.warning, undefined, `${i}: no avisa detección ciega`);
     assert.ok(out.all.includes('tycon-feature-wiring-checker'), `${i}: ${out.all}`);
   }
+});
+
+// El caso real del 2026-10-15: la story vive en el backend y el formulario en el repo hermano declara React SÓLO en
+// peerDependencies (lo provee el host de Bizuit). El package.json se encontraba bien; lo que no se leía era esa sección.
+test('advisors: un formulario hermano con React sólo en peerDependencies trae al revisor de React', () => {
+  const lab = laboratorio({ frontPaquete: { name: 'app', version: '1.0.0', peerDependencies: { react: '^18.3.1' }, dependencies: { dayjs: '1.11.0' } } });
+  const out = advisors(lab, casa(), 't2-peer', ['src/A.cs', path.join(lab.front, 'app', 'src', 'X.tsx')]);
+  assert.equal(out.detection.hasReact, true, JSON.stringify(out.detection));
+  assert.equal(out.detection.warning, undefined, 'no avisa detección ciega');
+  assert.ok(out.all.includes('tycon-plugin-react-conventions'), `${out.all}`);
 });
 
 test('advisors: un .tsx sin React detectable trae al revisor de cableado; con Next no', () => {

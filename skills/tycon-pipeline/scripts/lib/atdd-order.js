@@ -86,11 +86,13 @@ function isTestPath(p) {
  * (APFS y NTFS no distinguen mayúsculas, y en Windows los eventos llegan con `\`).
  */
 function adentroDelRepo(evs, repoPath) {
-  if (typeof repoPath !== 'string' || repoPath === '') return evs;
-  const raiz = repoPath.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+  // una raíz, o varias (la del repo de la story más sus hermanos declarados, story de dos repos 2026-10-15)
+  const lista = (Array.isArray(repoPath) ? repoPath : [repoPath]).filter((r) => typeof r === 'string' && r !== '');
+  if (!lista.length) return evs;
+  const raices = lista.map((r) => r.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase());
   return evs.filter((e) => {
     const p = String((e && e.path) || '').replace(/\\/g, '/').toLowerCase();
-    return p === raiz || p.startsWith(`${raiz}/`);
+    return raices.some((raiz) => p === raiz || p.startsWith(`${raiz}/`));
   });
 }
 
@@ -121,7 +123,8 @@ function isImplPath(p) {
  * que no tienen el dato).
  *
  * @param {Array<{path: string, ts: string}>} fileEvents
- * @param {string} [repoPath] - raíz del repo de la story; los eventos de afuera se descartan
+ * @param {string|string[]} [repoPath] - raíz del repo de la story (o la lista: la story y sus repos hermanos); los
+ *   eventos de afuera se descartan
  * @returns {{verdict:'green'|'blocked'|'warn-no-tests'|'warn-unknown', firstTest:?string,
  *            firstImpl:?string, firstTestTs:?string, firstImplTs:?string, reason:string}}
  */
