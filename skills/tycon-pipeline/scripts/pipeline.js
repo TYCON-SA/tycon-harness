@@ -3527,7 +3527,10 @@ function computeDeepReviewGate(args) {
     };
   }
   const densidad = densidadDelDiff(args.repo, args.files, { allowMissing: Boolean(args.allowMissingFiles) });
-  const noMedidos = densidad.noMedidos.length ? { archivos_no_medidos: densidad.noMedidos } : {};
+  const noMedidos = {
+    ...(densidad.noMedidos.length ? { archivos_no_medidos: densidad.noMedidos } : {}),
+    ...(densidad.ausentes.length ? { archivos_ausentes_permitidos: densidad.ausentes } : {}),
+  };
   if (densidad.lineas >= densidad.umbral) {
     return {
       run: true, risk: 'dense', model, ...extras,
@@ -3595,14 +3598,30 @@ function densidadDelDiff(repo, files, { allowMissing = false } = {}) {
   const { spawnSync: sp } = require('child_process');
   let lineas = 0;
   const noMedidos = [];
+  const ausentes = [];   // con --allow-missing-files: ausentes y sin trackear, contados 0 a sabiendas
   for (const f of (Array.isArray(files) ? files : [])) {
     if (!/\.(js|mjs|cjs|ts|tsx|jsx|cs|py|go|rb|sh|sql|vue|svelte)$/i.test(f)) continue;
     const o = companionLib.ownerOf(f, repo || process.cwd());
     const abs = o.abs;
+    if (!o.root) {
+      // `ownerOf` sube un número fijo de carpetas buscando `.git`: un archivo más hondo se le escapa. Se le pregunta a git
+      // desde la carpeta existente más cercana.
+      let dir = path.dirname(abs);
+      while (!fs.existsSync(dir) && path.dirname(dir) !== dir) dir = path.dirname(dir);
+      const top = sp('git', ['-C', dir, 'rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+      const raiz = top.status === 0 ? String(top.stdout || '').trim() : '';
+      if (raiz) {
+        o.root = raiz;
+        o.rel = path.relative(fs.realpathSync(raiz), path.join(fs.realpathSync(dir), path.relative(dir, abs))).split(path.sep).join('/');
+      }
+    }
     // `ownerOf` da como raíz la carpeta de `--repo` aunque no sea un repo git: eso tampoco se puede medir
     if (!o.root || !companionLib.gitRootOf(o.root)) { noMedidos.push({ file: f, motivo: 'no está dentro de ningún repo git' }); continue; }
     const ls = sp('git', ['-C', o.root, 'ls-files', '--error-unmatch', '--', o.rel], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
     if (ls.error) { noMedidos.push({ file: f, motivo: `no pude correr git (${ls.error.message})` }); continue; }
+    // `ls-files --error-unmatch`: 0 = trackeado, 1 = no trackeado. Cualquier otra salida (128 por safe.directory o un repo
+    // roto, una señal) es «git no pudo decir», no «no trackeado»: sumarlo entero era el error que esto arregla.
+    if (ls.status !== 0 && ls.status !== 1) { noMedidos.push({ file: f, motivo: `git no pudo decir si está trackeado en ${o.root} (salida ${ls.status === null ? `señal ${ls.signal}` : ls.status})` }); continue; }
     const tracked = ls.status === 0;
     if (tracked) {
       const r = sp('git', ['-C', o.root, 'diff', '--numstat', 'HEAD', '--', o.rel], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
@@ -3616,14 +3635,17 @@ function densidadDelDiff(repo, files, { allowMissing = false } = {}) {
       let texto;
       try { texto = fs.readFileSync(abs, 'utf8'); } catch (e) {
         // con `--allow-missing-files` quien llama ya dijo que puede haber archivos que no están (borrados): ausente = 0
-        if (allowMissing && e.code === 'ENOENT') continue;
+        // borrado por el cambio (`git rm`, o el nombre viejo de un `git mv`): no está en el índice ni en el disco, pero
+        // sí en HEAD. Agrega 0 líneas, medido (revisión adversarial: cortaba stories de un solo repo).
+        if (e.code === 'ENOENT' && sp('git', ['-C', o.root, 'cat-file', '-e', `HEAD:${o.rel}`], { stdio: 'ignore' }).status === 0) continue;
+        if (allowMissing && e.code === 'ENOENT') { ausentes.push(f); continue; }
         noMedidos.push({ file: f, motivo: `no está trackeado en ${o.root} y no lo pude leer (${e.code || e.message})` });
         continue;
       }
       lineas += texto.split('\n').length;
     }
   }
-  return { lineas, umbral, noMedidos };
+  return { lineas, umbral, noMedidos, ausentes };
 }
 
 // ── pipeline.js timing-report — Fase 0 instrumentación (auditoría 2026-06-09) ─
@@ -3833,15 +3855,18 @@ function computeDepGate({ repo, story }) {
   //    (`evidence.companion_repos`). Mirando sólo el repo de la story, un paquete nuevo del hermano no se veía.
   let raices = [repo];
   let hermanosError = null;
-  try { raices = [repo, ...companionLib.companionRoots(repo, storyAbs)]; } catch (e) { hermanosError = e.message; }
-  let diff = '';
+  const hermanosFaltan = [];
+  try {
+    raices = [repo, ...companionLib.companionRoots(repo, storyAbs, { onMissing: (nombre, quien) => hermanosFaltan.push({ repo: nombre, motivo: `declarado en ${quien} y no está en disco` }) })];
+  } catch (e) { hermanosError = e.message; }
+  const diffs = [];
   const sinMedir = [];
   for (const raiz of raices) {
     try {
-      diff += execFileSync('git', ['-C', raiz, 'diff', 'HEAD', '--unified=0', '--',
+      diffs.push(execFileSync('git', ['-C', raiz, 'diff', 'HEAD', '--unified=0', '--',
         'package.json', '*/package.json', '**/package.json',
         '*.csproj', '**/*.csproj', 'Directory.Packages.props', '**/Directory.Packages.props'],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }) + '\n';
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }));
     } catch {
       if (raiz === repo) return { gate: 'skip', reason: 'repo sin git o `git diff HEAD` falló — dep-gate no aplica', new_deps: [] };
       sinMedir.push(raiz);
@@ -3861,14 +3886,17 @@ function computeDepGate({ repo, story }) {
     }
     return out;
   };
-  const added = [];
-  const removedNames = new Set();
-  for (const line of diff.split(/\r?\n/)) {
-    for (const d of parseDepLine(line, '+')) added.push(d);
-    for (const d of parseDepLine(line, '-')) removedNames.add(d.name);
-  }
   const seen = new Set();
-  const deps = added.filter((d) => (removedNames.has(d.name) || seen.has(d.name)) ? false : seen.add(d.name));
+  const deps = [];
+  for (const diffDeUnRepo of diffs) {
+    const added = [];
+    const removedNames = new Set();
+    for (const line of diffDeUnRepo.split(/\r?\n/)) {
+      for (const d of parseDepLine(line, '+')) added.push(d);
+      for (const d of parseDepLine(line, '-')) removedNames.add(d.name);
+    }
+    for (const d of added) if (!removedNames.has(d.name) && !seen.has(d.name)) { seen.add(d.name); deps.push(d); }
+  }
   const declared = [];
   const undeclared = [];
   for (const d of deps) {
@@ -3876,7 +3904,7 @@ function computeDepGate({ repo, story }) {
     (re.test(storyText) ? declared : undeclared).push(d.name);
   }
   // un hermano que no se pudo diffear no es «sin dependencias nuevas»: se dice
-  const noMedidos = [...sinMedir.map((r) => ({ repo: r, motivo: '`git diff HEAD` falló' })),
+  const noMedidos = [...sinMedir.map((r) => ({ repo: r, motivo: '`git diff HEAD` falló' })), ...hermanosFaltan,
     ...(hermanosError ? [{ repo: null, motivo: `no pude leer los repos hermanos declarados: ${hermanosError}` }] : [])];
   return {
     gate: undeclared.length ? 'pause' : 'pass',

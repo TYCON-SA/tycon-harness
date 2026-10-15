@@ -1058,6 +1058,17 @@ test('@story-7.26 computeDepGate: en una story de dos repos mira también el rep
   assert.deepEqual(r.undeclared, ['axios']);
   assert.deepEqual(r.declared, ['zod']);
   assert.ok(r.repos.includes(front), 'dice qué repos miró');
+  // un hermano declarado que no está en disco no desaparece callado
+  fs.writeFileSync(path.join(back, '.tycon', 'advisors.yaml'), 'evidence:\n  companion_repos:\n    - Front\n    - NoExiste\n');
+  const r2 = computeDepGate({ repo: back, story });
+  assert.ok((r2.repos_no_medidos || []).some((n) => n.repo === 'NoExiste'), JSON.stringify(r2));
+  // cada repo por separado: quitar `axios` del backend y agregarlo en el frontend ES una dependencia nueva del frontend
+  fs.writeFileSync(path.join(back, '.tycon', 'advisors.yaml'), 'evidence:\n  companion_repos:\n    - Front\n');
+  fs.writeFileSync(path.join(back, 'package.json'), '{\n  "dependencies": {\n    "axios": "^1.6.0"\n  }\n}\n');
+  execFileSync('git', ['-C', back, 'add', '-A']); execFileSync('git', ['-C', back, 'commit', '-qm', 'axios en el back']);
+  fs.writeFileSync(path.join(back, 'package.json'), '{\n  "dependencies": {\n  }\n}\n');
+  const r3 = computeDepGate({ repo: back, story });
+  assert.ok(r3.undeclared.includes('axios'), `quitado en un repo y agregado en el otro sigue siendo nuevo: ${JSON.stringify(r3)}`);
   fs.rmSync(raiz, { recursive: true, force: true });
 });
 

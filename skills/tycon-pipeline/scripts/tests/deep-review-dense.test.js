@@ -210,3 +210,42 @@ test('@story-7.26 lo medido ya pasa el umbral: corre el pase y el veredicto igua
   assert.equal(v.lineas_agregadas, 401);
   assert.deepEqual(v.archivos_no_medidos.map((n) => n.file), [f]);
 });
+
+test('@story-7.26 git que no puede decir si un archivo está trackeado (repo roto) no es «no trackeado»: no se suma entero', () => {
+  // 🔴 rojo previo (revisor de fallos silenciosos): cualquier salida ≠ 0 de `ls-files --error-unmatch` se leía como «no
+  //    trackeado» y el archivo se sumaba ENTERO — el mismo error de las 1464 líneas. Un `.git` vacío da 128.
+  const a = mkRepoConScope(40);
+  const roto = fs.mkdtempSync(path.join(os.tmpdir(), 'dense-roto-'));
+  fs.mkdirSync(path.join(roto, '.git'));
+  const f = path.join(roto, 'grande.js');
+  fs.writeFileSync(f, Array.from({ length: 500 }, (_, i) => `const g${i} = ${i};`).join('\n') + '\n');
+  const r = gateCrudo(a, {}, ['--files', f]);
+  assert.equal(r.status, 2, `${r.stdout}${r.stderr}`);
+  assert.match(r.stderr, /no pude medir 1 archivo/);
+  assert.doesNotMatch(r.stdout, /"lineas_agregadas": 501/);
+});
+
+test('@story-7.26 un archivo borrado por el cambio (git rm) cuenta 0 líneas: no corta una story de un solo repo', () => {
+  // 🔴 rojo previo (revisión adversarial): fuera del índice y del disco caía en «no medido» y el portón cortaba con
+  //    salida 2 lo que antes salteaba por LOW. Está en HEAD: agrega 0 líneas.
+  const a = mkRepoConScope(40);
+  git(a, 'add', '-A');
+  git(a, 'commit', '-q', '-m', 'base');
+  git(a, 'rm', '-q', 'src/vista.js');
+  const v = gate(a, {}, 'src/vista.js');
+  assert.equal(v.run, false);
+  assert.equal(v.lineas_agregadas, 0);
+  assert.equal(v.archivos_no_medidos, undefined);
+});
+
+test('@story-7.26 un archivo del repo hermano a más de 12 carpetas de su raíz igual se mide', () => {
+  const a = mkRepoConScope(40);
+  const { b } = repoConArchivoTrackeado(10);
+  const hondo = path.join(b, ...Array.from({ length: 14 }, (_, i) => `n${i}`));
+  fs.mkdirSync(hondo, { recursive: true });
+  const f = path.join(hondo, 'hondo.ts');
+  fs.writeFileSync(f, 'export const h = 1;\n');
+  const v = gate(a, {}, f);
+  assert.equal(v.archivos_no_medidos, undefined, JSON.stringify(v));
+  assert.equal(v.lineas_agregadas, 2);
+});

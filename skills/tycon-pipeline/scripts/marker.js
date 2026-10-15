@@ -822,11 +822,16 @@ function cmdCompleteStep(nRaw, flags) {
       try {
         const companionLib = require('./lib/companion-repos.js');
         const storyAbs = marker.storyPath ? path.resolve(marker.repoPath, marker.storyPath) : null;
-        raices = [marker.repoPath, ...companionLib.companionRoots(marker.repoPath, storyAbs)];
+        const faltan = [];
+        raices = [marker.repoPath, ...companionLib.companionRoots(marker.repoPath, storyAbs, { onMissing: (nombre) => faltan.push(nombre) })];
+        if (faltan.length) hermanosError = `declarados y no están en disco: ${faltan.join(', ')}`;
       } catch (e) { hermanosError = e.message; }
     }
     const r = computeAtddOrder(marker.fileEvents, raices);
-    if (hermanosError) r.reason = `${r.reason} (no pude leer los repos hermanos declarados: ${hermanosError}; se miró sólo el repo de la story)`;
+    if (hermanosError) {
+      r.reason = `${r.reason} (repos hermanos: ${hermanosError}; esos no se miraron)`;
+      console.error(`⚠️  freno ATDD: repos hermanos — ${hermanosError}; esos no se miraron.`);
+    }
     // El flag `atddBypass` (el escape que dicta el portón pre-edit) vale también acá: un solo
     // bypass declarado cubre la corrida entera — obligar a declararlo dos veces con dos nombres
     // distintos era dejar al dev contra una segunda pared (hallazgo F3 del review adversarial
