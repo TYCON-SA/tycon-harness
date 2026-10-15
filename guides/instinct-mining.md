@@ -75,7 +75,7 @@ Resueltas durante la implementación 2026-05-23 (cierre del [instinct-mining-v1-
 | **Trigger** | SessionStart hook con throttle 12h. No cron (no hay razón para "de noche"). El hook spawna detached → no bloquea el inicio de sesión. |
 | **Observer** | `scripts/instincts/instinct-observer.js` (Node) es **agnóstico de herramienta** (2026-08-24): usa el modelo de la que la máquina tenga — `claude`→Haiku, `codex`→gpt-5.4-mini, o `ollama`→modelo local. **No requiere API key separada** — usa la suscripción del dev. Costo marginal ~$0 con suscripción en cualquiera de las dos. Cada instinct guarda `proposed_by: <ejecutor>/<modelo>` para medir aceptación por ejecutor. |
 | **Logging** | JSONL local por máquina en `~/.claude/tycon-observations/<YYYY-MM>.jsonl`. NO va al repo. Sanitization estricta igualmente (defense in depth): `$HOME` redact, regex de secrets, truncate 500 chars, exclusion de `specs/clients/*`. |
-| **Storage** | `pending/promoted/archived/drafts/` viven en el **buzón**: `inbox/instincts/` _(del repo del equipo; no está en esta copia)_ del árbol del arnés **si ese árbol lo trae** (el clon de quien mantiene el arnés: ahí cruzan máquinas vía git pull/push normal), y si no lo trae (un arnés instalado desde una versión bajada), en la carpeta de usuario de la persona. Ver «Dónde viven las propuestas», abajo. `descartados/` es constancia local de lo que la revisión descartó en esa máquina. |
+| **Storage** | `pending/promoted/archived/drafts/` viven en el **buzón**: `inbox/instincts/` _(del repo del equipo; no está en esta copia)_ del árbol del arnés **si ese árbol lo trae** (el clon de quien mantiene el arnés: ahí cruzan máquinas vía git pull/push normal); si no lo trae (un arnés instalado desde una versión bajada), en el buzón del clon del repo privado de mantenimiento que declare la máquina (`paths.maintainers`), si lo trae; y si no, en la carpeta de usuario de la persona. Ver «Dónde viven las propuestas», abajo. `descartados/` es constancia local de lo que la revisión descartó en esa máquina. |
 | **Threshold** | ≥3 ocurrencias en el JSONL + confidence ≥0.85 del LLM. |
 | **Dedup** | Hash determinístico de `trigger + action`. Si ya existe en pending/promoted/archived, skip. |
 | **Lo que ya existe** (2026-09-10 y 2026-09-14) | El hash sólo frena el texto idéntico: medido en una semana, 11 de 14 propuestas repetían algo ya decidido o un control que ya corre. Todo se lee del disco en cada corrida. El prompt que propone lleva sólo los **nombres** de revisores, hooks y skills (así desde el 2026-09-10): con los instintos decididos adentro, medido, el modelo los copiaba como ejemplos. Lo que pasa la confianza y el hash va a una **segunda llamada** que sólo clasifica, contra los instintos decididos (con su proyecto, la acción de los aprobados y el motivo de los rechazados) y el catálogo detallado (qué audita cada revisor, el pre-commit y `scripts/ci/`). Se descarta lo que la revisión cita empezando por un hash o una pieza que **su prompt mostró**; una categoría, una frase negativa, una salvedad justo después («[hash] — not the same») o algo que no mostró no descarta nada. Una variante del mismo hábito en **otro** proyecto no cuenta como repetición —se le pide al modelo y el guion lo verifica con el proyecto de cada decidido—: decidís vos si generalizarla. Lo descartado queda en `inbox/instincts/descartados/` (local, fuera de git), un archivo por propuesta con lo que lo cubre y cuántas veces se descartó, y `/tycon-instincts review` lo resume: sin eso, un descarte de más se vería igual que una semana sin nada nuevo. Si esa carpeta no se puede escribir, el observador lo dice y sigue. Si la revisión falla o no se entiende, lo propuesto llega igual, y el log lo dice. |
@@ -266,18 +266,22 @@ La regla, que vive en una sola pieza (`scripts/instincts/instinct-dirs.js`):
 | | Dónde se escribe | Cómo se reconoce |
 |---|---|---|
 | **Clon de quien mantiene el arnés** | `inbox/instincts/` _(del repo del equipo; no está en esta copia)_ del árbol, como siempre | El árbol **trae su buzón**: existe `inbox/instincts/README.md` _(del repo del equipo; no está en esta copia)_ (lo versiona el repo; ningún guion lo crea) |
-| **Arnés instalado** (o cualquier árbol que no trae buzón) | La casa de la persona: `<estado>/inbox/instincts/` | No existe ese archivo. `<estado>` es la carpeta de estado del arnés en esa máquina (`~/.tycon/state`, o la de siempre dentro de la carpeta de Claude Code si la máquina todavía no se mudó) |
+| **Arnés instalado en la máquina de quien mantiene** (el árbol no trae buzón y la configuración declara el clon del repo privado de mantenimiento, `paths.maintainers`) | El buzón de ese clon: `<clon privado>/inbox/instincts/`, versionado, así llega a las otras máquinas de quien mantiene | Ese clon trae su buzón (el mismo `README.md`) |
+| **Arnés instalado** (o cualquier árbol que no trae buzón, sin clon privado con buzón) | La casa de la persona: `<estado>/inbox/instincts/` | No existe ese archivo. `<estado>` es la carpeta de estado del arnés en esa máquina (`~/.tycon/state`, o la de siempre dentro de la carpeta de Claude Code si la máquina todavía no se mudó) |
 
-- **Se lee en todos los lugares**: donde se escribe, lo que haya quedado en el árbol, la casa, y el buzón del clon que la
-  máquina declara que mantiene (`paths.maintained`). Lo ya decidido en cualquiera de ellos no se vuelve a proponer.
+- **Se lee en todos los lugares**: donde se escribe, el buzón del clon privado (después del árbol, antes de la casa), lo
+  que haya quedado en el árbol, la casa, y el buzón del clon que la máquina declara que mantiene (`paths.maintained`).
+  Lo ya decidido en cualquiera de ellos no se vuelve a proponer.
 - **Nadie crea una carpeta por leer**: nacen al escribir el primer archivo.
 - **Aprobar y rechazar** mueven el archivo dentro del lugar donde estaba; el observador escribe sólo donde se escribe.
 - **Para ver dónde está cada cosa**: `/tycon-instincts status` (una línea por lugar con sus cuentas; el de escritura,
   marcado), o `node scripts/instincts/instinct-dirs.js`.
 - **Lo que no se pudo leer, se dice.** Una carpeta que existe y no se deja leer nunca se muestra como vacía: `list` lo
   avisa, `status` pone «?» en vez de un número, y el observador lo anota en su registro. Y si un lugar entero quedó sin
-  mirar (el clon declarado no existe o no trae su buzón, la configuración de la máquina está rota), `status` lo dice en
-  un renglón que empieza con «!».
+  mirar (el clon declarado —el mantenido o el privado— no existe o no trae su buzón, la configuración de la máquina está
+  rota), `status` lo dice en un renglón que empieza con «!». Si el buzón del clon privado existe y no se deja mirar, no
+  se escribe en la casa en su lugar: el observador no escribe nada y lo anota en su registro; `status` y `list` siguen
+  mostrando lo de la casa, sin marcar un lugar de escritura, y dicen por qué.
 - **El registro del observador** (`observer.log`) vive en el lugar donde se escribe. Si el disparador del arranque no
   puede usarlo —falta la pieza, no se sabe dónde es la casa, el archivo no abre—, el observador corre igual y su registro
   va a uno de reserva al lado del sello del disparador (`instinct-observer.fallback.log`, en la carpeta de usuario), con
@@ -285,7 +289,8 @@ La regla, que vive en una sola pieza (`scripts/instincts/instinct-dirs.js`):
 
 Lo que hay que saber de la casa de la persona:
 
-1. **No viaja por git.** En un arnés instalado no tenía por dónde viajar.
+1. **No viaja por git.** En un arnés instalado no tenía por dónde viajar; por eso, si la máquina declara un clon del
+   repo privado de mantenimiento con buzón, se escribe ahí y no en la casa.
 2. **Desinstalar el arnés se la lleva** en una máquina que vive en `~/.tycon`: se borra la carpeta de estado, y con ella
    las pendientes y las rechazadas. Lo aprobado ya quedó en la memoria (es lo que hace `approve`) y las observaciones
    crudas viven aparte, así que el observador vuelve a proponer.

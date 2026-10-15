@@ -42,7 +42,7 @@
       ],
       "tracked": true,
       "today": "dentro del clon, «los commiteás vos» (descartados/ y los registros, ignorados por inbox/instincts/.gitignore)",
-      "public": "fuera del árbol (story 8.27, decisión del dueño del 2026-10-09): un árbol que no trae su buzón —no tiene inbox/instincts/README.md— escribe en la carpeta de usuario de la persona, <estado>/inbox/instincts/; adentro del árbol sólo si lo trae (el clon de mantenedor, o un clon con la capa privada entera apilada, que trae ese archivo)",
+      "public": "fuera del árbol (story 8.27, decisión del dueño del 2026-10-09): un árbol que no trae su buzón —no tiene inbox/instincts/README.md— escribe en el buzón del clon del repo privado de mantenimiento que declare la máquina (paths.maintainers), si lo trae, y si no en la carpeta de usuario de la persona, <estado>/inbox/instincts/; adentro del árbol sólo si lo trae (el clon de mantenedor, o un clon con la capa privada entera apilada, que trae ese archivo)",
       "code": [
         "scripts/instincts/instinct-dirs.js",
         "scripts/instincts/instinct-observer.js",
