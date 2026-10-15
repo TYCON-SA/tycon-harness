@@ -117,9 +117,9 @@ Luego:
 | Target del smoke | URL |
 |---|---|
 | DevHost local | `http://localhost:5001/api/{ruta}` — SIN nombre de plugin |
-| Staging / prod (host Bizuit) | `https://<host>/api/plugins/{pluginName}/{version}/{ruta}` — CON nombre de plugin + versión |
+| Staging / prod (host Bizuit) | `https://<host>/api/plugins/{pluginName}/{ruta}` — CON nombre de plugin, SIN versión (el host sirve la versión activa) |
 
-Un smoke contra staging con el shape de DevHost devuelve **404 body-vacío** — falso negativo que se diagnostica como "endpoint roto" cuando es la URL. Incidente recurrente multi-proyecto (2026-07-15). Detalle: `bizuit/bizuit-plugin-dotnet.md` §7.
+Un smoke contra staging con el shape de DevHost devuelve **404 body-vacío** — falso negativo que se diagnostica como "endpoint roto" cuando es la URL. Con la versión metida en la ruta devuelve **404 `{"error":"Endpoint not found"}`**: tampoco es el endpoint. Incidente recurrente multi-proyecto (2026-07-15; la versión salió de la regla el 2026-10-14). Detalle: `bizuit/bizuit-plugin-dotnet.md` §7.
 
 Ejemplo:
 
