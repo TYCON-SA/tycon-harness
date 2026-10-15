@@ -84,7 +84,8 @@
         "scripts/tests/fixtures/team-layer-paths.json",
         "scripts/tests/fixtures/relocate-machine/**",
         "scripts/tests/fixtures/layer-lab-allowlist.json",
-        "scripts/tests/fixtures/layer-lab-table.json"
+        "scripts/tests/fixtures/layer-lab-table.json",
+        "scripts/tests/fixtures/release-api-baseline-token.txt"
       ]
     }
   },
@@ -300,6 +301,13 @@
         "scripts/tests/harness-team.test.sh"
       ]
     },
+    "harness-release-links.test.sh": {
+      "why": "Suite del laboratorio del instalador: corre en la rama sólo cuando el cambio toca el instalador (grupo `installer`, arriba, con su costo aceptado y la decisión del dueño para la clase entera, 2026-10-08). Entró a main con la story 8.33 (la versión bajada con enlaces, la forma de Windows) sin peso medido: la frenó la guardia de T32 en el nocturno del 2026-10-15. Hasta entonces se elegía por su `gate_only_when_touching` de suites.json; ése sigue siendo el del portón de cada story.",
+      "group": "installer",
+      "patterns": [
+        "scripts/tests/harness-release-links.test.sh"
+      ]
+    },
     "windows-guided-lab.test.js": {
       "why": "Suite del laboratorio del instalador: el alta y la actualización en Windows siguiendo la página pública de instalación, con el programa de verdad y en modo de laboratorio (story 8.28): baja el guion de entrada del GitHub de juguete, instala, suma la capa del equipo contra el Azure DevOps de juguete, y una máquina con una versión anterior se actualiza sola al abrir una sesión. Unos minutos en la Mac. Corre en la rama sólo cuando el cambio toca el instalador (grupo `installer`, arriba, con su costo aceptado y la decisión del dueño para la clase entera, 2026-10-08) o lo que ella misma sigue: la página, el guion de entrada y los guiones del ensayo guiado, nombrados uno por uno. El banco nocturno la corre siempre.",
       "group": "installer",
@@ -378,7 +386,10 @@
       ]
     },
     "install-guard.test.sh": {
-      "why": "~27 s en la validación 170 #11961 (2026-10-05). Prueba una pieza que instala el instalador: hereda `shared` —el instalador y todo lo que instala— y suma su propia prueba, el laboratorio (scripts/tests/lib/), los datos de prueba y las carpetas que la prueba nombra. Ante la duda, la carpeta entra. Un cambio que no toca nada de eso (guías, nocturnos, métricas sueltas, CI) no la corre en la rama; el banco nocturno la corre siempre.",
+      "why": "~27 s en la validación 170 #11961 (2026-10-05). Prueba una pieza que instala el instalador: hereda `shared` —el instalador y todo lo que instala— y suma su propia prueba, el laboratorio (scripts/tests/lib/), los datos de prueba y las carpetas que la prueba nombra. Ante la duda, la carpeta entra. Un cambio que no toca nada de eso (guías, nocturnos, métricas sueltas, CI) no la corre en la rama; el banco nocturno la corre siempre. `deps`: \"graph\" (nocturno del 2026-10-15) — su única línea que el lector toma por «recorre el repo» es un grep sobre el registro del servidor de versiones de juguete (requests.log), no sobre el repo: usa lo que el lector encuentra en su código. graph_whole_lines: 1 y graph_whole_sha: la cantidad y la huella de esa línea cuando se revisó; si cambian, vuelve a depender de todo hasta que alguien la mire.",
+      "deps": "graph",
+      "graph_whole_lines": 1,
+      "graph_whole_sha": "c9a9322e6188",
       "patterns": [
         "scripts/tests/install-guard.test.sh",
         "scripts/tests/lib/**",

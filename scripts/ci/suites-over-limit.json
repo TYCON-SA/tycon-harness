@@ -150,6 +150,27 @@
         "why": "Suite del laboratorio del instalador (el guion de entrada de la portada SIN git, story 8.23 tanda E). Entra por la decisión del dueño para la clase entera («Regla para todas», 2026-10-08): toda suite del laboratorio que pase de 45 s corre en la validación de la rama sólo cuando el cambio toca el instalador (el grupo `installer` de scripts/ci/heavy-suites.json, con su costo aceptado) y lleva esta excepción. Cuando corre pasa de 45 s: unos 120 s medidos en la Mac (seis instalaciones completas contra el GitHub de juguete: público, privado sin permiso, con la variable, por terminal, con el permiso guardado, con uno que no vale), antes 8 s cuando clonaba. Son 31 verificaciones; armar el laboratorio no es lo caro."
       }
     },
+    "release-api-count.p1.test.sh": {
+      "exception": {
+        "signed_by": "el dueño del arnés",
+        "date": "2026-10-08",
+        "why": "Parte 1 de 2 de release-api-count.test.sh (story 8.34): cuántas consultas a la API de GitHub hace la versión bajada, sobre el laboratorio del instalador. Entra por la decisión del dueño para la clase entera («Regla para todas», 2026-10-08): toda suite del laboratorio que pase de 45 s corre en la validación de la rama sólo cuando el cambio toca el instalador (el grupo `installer` de scripts/ci/heavy-suites.json, con su costo aceptado) y lleva esta excepción, sin otra firma por suite. Se juzga entera, como dice su entrada en heavy-suites.json: sus dos partes suman ~62 s (27 s ésta, ESTIMADO en suites-weights.json); la escribió el nocturno del 2026-10-15, que la encontró sin decisión."
+      }
+    },
+    "release-api-count.p2.test.sh": {
+      "exception": {
+        "signed_by": "el dueño del arnés",
+        "date": "2026-10-08",
+        "why": "Parte 2 de 2 de release-api-count.test.sh (story 8.34): cuántas consultas a la API de GitHub hace la versión bajada, sobre el laboratorio del instalador. Entra por la decisión del dueño para la clase entera («Regla para todas», 2026-10-08): toda suite del laboratorio que pase de 45 s corre en la validación de la rama sólo cuando el cambio toca el instalador (el grupo `installer` de scripts/ci/heavy-suites.json, con su costo aceptado) y lleva esta excepción, sin otra firma por suite. Se juzga entera, como dice su entrada en heavy-suites.json: sus dos partes suman ~62 s (35 s ésta, ESTIMADO en suites-weights.json); la escribió el nocturno del 2026-10-15, que la encontró sin decisión."
+      }
+    },
+    "harness-release-links.test.sh": {
+      "exception": {
+        "signed_by": "el dueño del arnés",
+        "date": "2026-10-08",
+        "why": "Suite del laboratorio del instalador (la versión bajada con enlaces, la forma de Windows, story 8.33). Entra por la decisión del dueño para la clase entera («Regla para todas», 2026-10-08): toda suite del laboratorio que pase de 45 s corre en la validación de la rama sólo cuando el cambio toca el instalador (el grupo `installer` de scripts/ci/heavy-suites.json, con su costo aceptado) y lleva esta excepción, sin otra firma por suite. Cuando corre pasa de 45 s: 103 s medidos en la Mac, porque entró a main sin peso medido en el agente (la frenó la guardia de T32 en el nocturno del 2026-10-15; la próxima medición lo corrige)."
+      }
+    },
     "harness-move-home.test.sh": {
       "exception": {
         "signed_by": "el dueño del arnés",

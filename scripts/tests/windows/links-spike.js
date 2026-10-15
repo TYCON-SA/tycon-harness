@@ -18,7 +18,7 @@
  *         · `Move-Item` de PowerShell sobre la unión (lo que hace el respaldo .ps1 de una copia fija vieja);
  *         · renombrar la carpeta vieja (lo que usa la limpieza para saber si está libre).
  *       Y sobre una copia con un archivo tomado, qué deja un borrado recursivo (si borra a medias).
- *   (b) una unión que apunta a otra unión (`~/.claude/tycon-harness` → `~/.tycon/harness` → `versions/<v>`): se lee bien
+ *   (b) una unión que apunta a otra unión (el lugar del arnés en `~/.claude` → `~/.tycon/harness` → `versions/<v>`): se lee bien
  *       antes y después del cambio.
  *   (c) qué devuelven `__dirname`, `realpath` y `require.main.filename` de Node, y `$PSScriptRoot` de PowerShell 7 y 5.1,
  *       al correr un guion por la unión y por la cadena.
@@ -123,7 +123,8 @@ function measureLinks({ base, env, rec, isWin = L.isWin() }) {
     makeVersion(v1, 'v1');
     makeVersion(v2, 'v2');
     const harness = path.join(root, 'harness');
-    const chain = path.join(root, 'claude-tycon-harness');
+    // (sin escribir el nombre del lugar: coincide con el del repo público, que windows-probe.test.js no deja nombrar)
+    const chain = path.join(root, 'claude-place');
     makeLink(v1, harness, isWin);
     makeLink(harness, chain, isWin);
 
