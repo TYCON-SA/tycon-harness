@@ -324,9 +324,16 @@ harness_lab_publish_stable 2026.10.02.1
 harness_lab_git "$LAB_TREE" pull -q --ff-only origin main >/dev/null 2>&1   # un pull a mano en main, antes de la primera actualización
 JSON="$(harness doctor --json 2>/dev/null)"; RC=$?
 [ "$RC" != 0 ] && case "$(rojo_head "$JSON")" in *"no es el commit registrado"*"commit publicado"*"harness.js update"*"lo re-registra"*) true ;; *) false ;; esac && ok "T19 copia pública, pull a mano en main: rojo, y dice que update lo re-registra" || mal "T19 copia pública (pull): rc $RC «$(rojo_head "$JSON")»"
+# T40b (2026-10-15, una máquina del equipo en Windows): la falla que dejaron arranques viejos se borra cuando la
+# actualización a mano sale bien; si no, doctor y cada sesión seguían diciendo «no se pudo actualizar» con el arnés al día
+FALLA2="$(node -e "console.log(require(process.argv[1]).paths(process.argv[2]).failuresFile)" "$LAB_TREE/scripts/setup/harness/state.js" "$LAB_HOME")"
+mkdir -p "$(dirname "$FALLA2")"
+printf '{"since":"2026-10-14T14:38:47.224Z","count":4,"reason":"no pude apartar la versión activa (EPERM)","last":"2026-10-15T09:00:00.000Z","kind":"update"}\n' > "$FALLA2"
 TYCON_UPDATE_APPLY=auto harness update >/dev/null 2>&1; RC=$?
 JSON="$(harness doctor --json 2>/dev/null)"
 [ "$RC" = 0 ] && [ -z "$(rojo_head "$JSON")" ] && ok "T19 …y es cierto: update lo re-registra y el rojo se va" || mal "T19 copia pública: update (rc $RC) no re-registró: «$(rojo_head "$JSON")»"
+[ "$RC" = 0 ] && [ ! -e "$FALLA2" ] && [ "$(printf '%s' "$JSON" | jtxt "any('no se pudo actualizar' in w for w in d['warn'])")" = False ] \
+  && ok "T40b una actualización a mano que sale bien borra la falla vieja: doctor ya no la dice" || mal "T40b la falla vieja quedó después de un update sano (rc $RC, archivo $([ -e "$FALLA2" ] && echo sigue || echo borrado))"
 # espejo: con un commit propio en main, doctor NO promete el re-registro: dice qué hay y un comando que se puede correr
 harness_lab_git "$LAB_TREE" commit -q --allow-empty -m "commit propio" >/dev/null
 JSON="$(harness doctor --json 2>/dev/null)"; RC=$?
