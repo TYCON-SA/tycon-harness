@@ -10,7 +10,7 @@ import { atom, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
 
 import type { Snapshot } from '../types'
-import { readRun, boardLine, pipelineTable, warnKey, stickyWaiting, addWarned, stateDirs, NO_RUN_TEXT } from './run.mjs'
+import { readRun, boardLine, pipelineTable, warnKey, waitingToast, stickyWaiting, addWarned, stateDirs, NO_RUN_TEXT } from './run.mjs'
 import { runModsCommand, isActive, isShown } from './mods.mjs'
 
 const BOARD = 'pipeline-board'
@@ -68,7 +68,7 @@ async function refresh($: any): Promise<void> {
     // se anota de una vez: dos refrescos a la par no dan dos avisos (clase 4)
     let added = false
     await update($, warned, (w) => { const r = addWarned(w, key); added = r.added; return r.list })
-    if (added) $.ui.toast(`Story ${run.storyId}: el paso ${run.current?.id} (${run.current?.name}) te espera — contestá en el chat`)
+    if (added) $.ui.toast(waitingToast(run))
   }
 }
 

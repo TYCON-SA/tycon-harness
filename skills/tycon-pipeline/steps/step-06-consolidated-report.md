@@ -1,4 +1,4 @@
-# Step 6 — Consolidar reportes en uno solo
+# Hallazgos: el informe
 
 **Objetivo**: juntar los outputs de los 3 (o N) advisors del Step 5 en un solo reporte estructurado para el usuario. Aquí NO corre nada nuevo — es lógica del orchestrator.
 

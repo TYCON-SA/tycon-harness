@@ -118,9 +118,9 @@ function preEditBlockMessage({ filePath, storyId, storyPath }) {
   const rel = path.basename(String(filePath || ''));
   return [
     `🔴 ATDD — edición DENEGADA: "${rel}" es el primer archivo de código de esta corrida y todavía no se`,
-    `   escribió ningún test (Story ${storyId || '?'}, sub-paso 4.0 del pipeline).`,
+    `   escribió ningún test (Story ${storyId || '?'}, pruebas primero en «Implementar y correr las pruebas»).`,
     '',
-    '   Por qué frena ACÁ y no al final: los dos frenos que ya existían (el cierre del step 4 y el',
+    '   Por qué frena ACÁ y no al final: los dos frenos que ya existían (el cierre de ese paso y el',
     '   commit) avisan cuando la implementación ya está escrita — o sea, cuando el trabajo mal hecho',
     '   ya se hizo y hay que tirarlo. Un test escrito después describe lo que el código hace, no lo',
     '   que el AC pide, y queda verde igual cuando el código está mal.',
@@ -138,7 +138,7 @@ function preEditBlockMessage({ filePath, storyId, storyPath }) {
     '',
     '         node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js set-flag atddBypass true',
     '',
-    '       Queda en bypass.log con el detalle — no es un skip silencioso, y el cierre del step 4',
+    '       Queda en bypass.log con el detalle — no es un skip silencioso, y el cierre de ese paso',
     '       lo va a seguir reportando.',
   ].filter((l) => l !== '').join('\n');
 }

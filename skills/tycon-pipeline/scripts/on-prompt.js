@@ -27,6 +27,7 @@ const os = require('os');
 const path = require('path');
 const { stateDir: stateDirOf } = require('./lib/state-dir.js');   // story 8.23 (A2): la carpeta del estado, de una sola pieza
 const { resolveSessionId } = require('./lib/session-id.js');
+const { stepNames } = require('./lib/steps.js');   // story 7.23: al dueño, los pasos por su nombre llano
 
 // Multi-sesión sin race (2026-05-17): marker per-session en active/<sessionId>.json.
 const STATE_DIR = path.join(stateDirOf(os.homedir()));
@@ -269,16 +270,16 @@ const marker = readMarker(sessionId);
 // Caso 1: marker activo + steps pendientes + stop keywords detectados.
 if (marker && Array.isArray(marker.stepsPending) && marker.stepsPending.length > 0) {
   if (matches(prompt, STOP_PATTERNS)) {
-    const pendingList = marker.stepsPending.join(', ');
+    const pendingList = stepNames(marker.stepsPending);
     const hasAdvisorsStep = marker.stepsPending.includes(5);
     emit(
       `tycon-pipeline STOP-detect: marker activo para Story ${marker.storyId} (sprint ${marker.sprint ?? '?'}) ` +
-        `con steps pendientes [${pendingList}].\n\n` +
+        `con pasos pendientes: ${pendingList}.\n\n` +
         `El prompt del user parece indicar cierre, pero el pipeline NO terminó.\n\n` +
         (hasAdvisorsStep
-          ? `🔴 Step 5 (advisors paralelos) pendiente — NO declarar "done" sin correr el set ` +
+          ? `🔴 «Revisores» (advisors en paralelo) pendiente — NO declarar "done" sin correr el set ` +
             `completo (4 base + 3 completitud + condicionales). Ver SKILL.md sección ` +
-            `"Step 5 advisors checklist (MANDATORY)".\n\n`
+            `"Revisores: checklist (MANDATORY)".\n\n`
           : ``) +
         `Acciones válidas:\n` +
         `  (a) Continuar pipeline: ejecutar los steps pendientes en orden.\n` +
@@ -307,14 +308,14 @@ if (!marker && matches(prompt, INTENT_PATTERNS)) {
     if (otherSessions.length > 0) {
       const lines = otherSessions
         .map((m) => {
-          const stepsPending = (m.stepsPending || []).join(', ');
-          const stepsDone = (m.stepsCompleted || []).join(', ');
+          const stepsPending = stepNames(m.stepsPending);
+          const stepsDone = stepNames(m.stepsCompleted);
           const filesCount = Array.isArray(m.filesTouched) ? m.filesTouched.length : 0;
           const sid8 = (m.sessionId || '').slice(0, 8);
           return (
             `  • sessionId=${sid8}… started=${m.startedAt} lastTouch=${m.lastTouch}\n` +
             `    repoPath=${m.repoPath}\n` +
-            `    stepsCompleted=[${stepsDone}] stepsPending=[${stepsPending}] filesTouched=${filesCount}`
+            `    hechos: ${stepsDone || '—'} · pendientes: ${stepsPending || '—'} · filesTouched=${filesCount}`
           );
         })
         .join('\n');
@@ -322,8 +323,8 @@ if (!marker && matches(prompt, INTENT_PATTERNS)) {
         `🛑 tycon-pipeline CROSS-SESSION CONFLICT: Story ${intentStoryId} YA tiene pipeline activo ` +
           `en ${otherSessions.length} sesión${otherSessions.length > 1 ? 'es' : ''} distinta${otherSessions.length > 1 ? 's' : ''}:\n` +
           lines +
-          `\n\n🔴 NO arrancar Step 0 desde cero — vas a:\n` +
-          `   • Re-ejecutar Step 1 validator + Step 2 BMAD plan ya hechos.\n` +
+          `\n\n🔴 NO arrancar la corrida desde cero («Arranque») — vas a:\n` +
+          `   • Re-ejecutar «Validar la story» y «Armar el plan», ya hechos.\n` +
           `   • Re-preguntar decisiones ya tomadas al user.\n` +
           `   • Re-implementar archivos ya creados en la otra sesión (colisión Write).\n` +
           `   • Re-correr advisors innecesariamente.\n` +
@@ -335,7 +336,7 @@ if (!marker && matches(prompt, INTENT_PATTERNS)) {
           `       2. \`git status\` en el/los repo/s — verificá archivos pending.\n` +
           `       3. Setear MARKER en TU sessionId con el state heredado:\n` +
           `          node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js set '{...}'.\n` +
-          `       4. Arrancar desde el primer step pending (NO desde Step 0).\n\n` +
+          `       4. Arrancar desde el primer paso pendiente (NO desde «Arranque»).\n\n` +
           `   (b) Si la otra sesión está MUERTA (Claude crasheó / dev cerró ventana): \n` +
           `       node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js clear-session <sessionId>\n` +
           `       después podés arrancar fresh.\n\n` +
@@ -355,7 +356,7 @@ if (!marker && matches(prompt, INTENT_PATTERNS)) {
     ? `\n\n🟡 REGLA H.i — SESIÓN FRESCA (auditoría 2026-06-11): esta sesión ya lleva ` +
       `~${loadedMB.toFixed(1)}MB de transcript (trabajo previo sustancial). Correr el pipeline acá ` +
       `multiplica el costo: cada turno re-lee TODO el contexto acumulado (caso 9.4: 399M de cache ` +
-      `reads + compactación a mitad del Step 5). ANTES del Step 0, RECOMENDALE al user arrancar la ` +
+      `reads + compactación a mitad de «Revisores»). ANTES del «Arranque», RECOMENDALE al user arrancar la ` +
       `story en una SESIÓN NUEVA (o /clear) — el estado vive en el marker + filesystem + engram, ` +
       `no se pierde nada. El user decide.`
     : '';
@@ -364,17 +365,17 @@ if (!marker && matches(prompt, INTENT_PATTERNS)) {
     `tycon-pipeline INTENT-detect: el prompt del user parece arrancar implementación ` +
       `de una story Mary+GOLD, pero NO hay marker activo del pipeline.\n\n` +
       `🔴 Anti-pattern conocido — si vas paso a paso manual:\n` +
-      `   • Te saltás Step 5 (advisors paralelos) por inferencia conversacional (caso real Story 1.7.1 2026-05-15).\n` +
+      `   • Te saltás «Revisores» (advisors en paralelo) por inferencia conversacional (caso real Story 1.7.1 2026-05-15).\n` +
       `   • No hay enforcement de DoD (smoke runtime + tests + advisors).\n` +
       `   • El commit prep no sabe qué archivos tocaste sin marker.\n\n` +
       `Acciones recomendadas (en orden de preferencia):\n` +
       `   (a) Invocar el skill canonical: Skill(skill="tycon-pipeline", args="implementemos la story X.Y.Z"). ` +
-      `        El skill orquesta los 10 steps (incluido Step 5 advisors) y setea el marker automáticamente.\n` +
+      `        El skill orquesta todos los pasos (incluidos los revisores) y setea el marker automáticamente.\n` +
       `   (b) Retomando una corrida previa (sesión nueva / crash): \`pipeline.js start --story <spec> --repo <dir>\` ` +
       `detecta el marker/in-progress y ofrece adopt-session o resume. NO armes un marker a mano con stepsPending ` +
-      `parcial: sin el Step 3 pendiente te saltea la aprobación del plan (queda en bypass.log).\n\n` +
+      `parcial: sin «Aprobar el plan» pendiente te saltea la aprobación del plan (queda en bypass.log).\n\n` +
       `🔒 Portón de carril (2026-08-19): en un repo bajo el arnés, el primer Edit/Write de CÓDIGO sin marker ` +
-      `(ni ad-hoc declarado) se DENIEGA — y con marker, se deniega hasta que el Step 3 (plan aprobado) esté cerrado. ` +
+      `(ni ad-hoc declarado) se DENIEGA — y con marker, se deniega hasta que «Aprobar el plan» esté cerrado. ` +
       `No es un aviso: es un portón.\n\n` +
       `🔒 Este prompt es un pedido de STORY (2026-08-27): declarar un ad-hoc CITÁNDOLO se deniega ` +
       `(veto mecánico ADHOC_DENIED_STORY_QUOTE — citar el pedido de la story como autorización del atajo es el ` +

@@ -87,9 +87,9 @@ export function readRun(text, now) {
   };
 }
 
-/** El renglón del cartel. `contextPercent` puede faltar. */
+/** El renglón del cartel. `contextPercent` puede faltar. El paso va por su nombre, sin el id (story 7.23). */
 export function boardLine(run, contextPercent) {
-  const step = run.current ? `paso ${run.current.id} (${run.current.name})` : 'paso —';
+  const step = run.current ? run.current.name : 'sin paso abierto';
   const pct = typeof contextPercent === 'number' && Number.isFinite(contextPercent) ? Math.round(contextPercent) : null;
   const parts = [
     `Story ${run.storyId}`,
@@ -140,6 +140,12 @@ export function stateDirs(vars) {
   return out;
 }
 
+/** El texto del aviso «te espera»: el paso por su nombre, sin el id (story 7.23). */
+export function waitingToast(run) {
+  const step = run && run.current ? run.current.name : 'El pipeline';
+  return `Story ${run ? run.storyId : '?'}: ${step} te espera — contestá en el chat`;
+}
+
 /** La clave del aviso «te espera» si corresponde darlo ahora; `null` si no espera o ya se avisó. */
 export function warnKey(run, warned) {
   if (!run || !run.waiting || !run.current) return null;
@@ -149,9 +155,9 @@ export function warnKey(run, warned) {
 
 /** La respuesta de /pipeline: un resumen y la tabla de pasos (en Markdown). */
 export function pipelineTable(run) {
-  const head = `Story ${run.storyId} — ${run.current ? `paso ${run.current.id} (${run.current.name})` : 'sin paso abierto'}` +
+  const head = `Story ${run.storyId} — ${run.current ? run.current.name : 'sin paso abierto'}` +
     ` · ${run.done} de ${run.total} pasos hechos · ${show(run.minutesTotal)} min en total${run.waiting ? ' · te espera' : ''}`;
-  const lines = [head, '', '| Paso | Qué | Estado | Tiempo |', '|---|---|---|---|'];
-  for (const r of run.rows) lines.push(`| ${r.id} | ${r.name} | ${r.state} | ${r.minutes === null ? '—' : `${r.minutes} min`} |`);
+  const lines = [head, '', '| Paso | Estado | Tiempo |', '|---|---|---|'];
+  for (const r of run.rows) lines.push(`| ${r.name} | ${r.state} | ${r.minutes === null ? '—' : `${r.minutes} min`} |`);
   return lines.join('\n');
 }

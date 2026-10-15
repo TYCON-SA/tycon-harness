@@ -367,26 +367,24 @@ D="$(cliente "${T}/o.html" all)"
 grep -q 'nuevo-freno-desconocido' <<< "${D}" && ok "T12b el control desconocido aparece con su nombre técnico" || mal "T12b el control desconocido desapareció"
 rm -rf "${T}"
 
-# ── T13 · los nombres de paso salen del skill; sin skill, números con motivo ───────────────────
-# 🔴 rojo previo: tipear los nombres (se separan del skill) / callar la ausencia.
+# ── T13 · 7.23-T5 Dashboard_StepNamesFromTable — los nombres de paso salen de lib/steps.js ─────
+# 🔴 rojo previo: leer el título `# Step N — …` de cada archivo de paso (la story 7.23 los cambia por el nombre
+# llano) / tipear los nombres acá (se separan de la tabla). Un archivo de paso con otro título no cambia nada:
+# TYCON_SKILLS_DIR apunta a propósito a un skill con un título viejo, para probar que ya no se lee de ahí.
 T=$(mktemp -d); volcado "${T}/r" "${S1}"
 mkdir -p "${T}/skills/tycon-pipeline/steps"
-printf '# Step 0 — NOMBRE_DEL_SKILL_0\n\ntexto\n' > "${T}/skills/tycon-pipeline/steps/step-00-preflight.md"
-printf '# Step 4 — NOMBRE_DEL_SKILL_4\n' > "${T}/skills/tycon-pipeline/steps/step-04-execute.md"
+printf '# Step 4 — TITULO_VIEJO\n' > "${T}/skills/tycon-pipeline/steps/step-04-execute.md"
 J="$(TYCON_SKILLS_DIR="${T}/skills" modelo_json "${T}/r")"
 python3 -c "
 import json,sys; p=json.loads(sys.argv[1])['pasos']
-assert p['fuente']=='skill', p
-assert p['nombres'][0]=='NOMBRE_DEL_SKILL_0' and p['nombres'][4]=='NOMBRE_DEL_SKILL_4', p['nombres']
-" "${J}" && ok "T13 con el skill, los pasos se llaman como su step-0N-*.md" || mal "T13 los nombres no salen del skill"
-mkdir -p "${T}/vacio"
-J="$(TYCON_SKILLS_DIR="${T}/vacio" modelo_json "${T}/r")"
-python3 -c "
-import json,sys; p=json.loads(sys.argv[1])['pasos']
-assert p['fuente']=='numeros' and p['motivo'], p
-" "${J}" && ok "T13 sin el skill, fuente=numeros con motivo" || mal "T13 sin el skill no declara el motivo"
-TYCON_SKILLS_DIR="${T}/vacio" node "${TABLERO}" --view runs --runs-dir "${T}/r" --output "${T}/o.html" >/dev/null 2>&1
-grep -q 'no está en esta máquina' "${T}/o.html" && ok "T13 la página declara que el skill no está" || mal "T13 la página calla que los pasos van sin nombre"
+assert p['fuente']=='tabla', p
+n=p['nombres']
+assert len(n)==9, n
+assert n[0]=='Arranque' and n[4]=='Implementar y correr las pruebas' and n[5]=='Revisores' and n[8]=='Preparar el commit', n
+assert 'TITULO_VIEJO' not in json.dumps(n), n
+" "${J}" && ok "T13 (7.23-T5) los pasos se llaman como en lib/steps.js, no como el título de su archivo" || mal "T13 (7.23-T5) los nombres no salen de lib/steps.js: ${J:0:300}"
+R="$(node -e "const p=require('${RAIZ}/scripts/nightly/dashboard/runs.js').nombresDePasos('${T}/nada/steps.js');console.log(p.fuente+' · '+p.nombres.join(',')+' · '+p.motivo)")"
+grep -q '^numeros · 0,1,2,3,4,5,6,7,8 · .*no se pudo cargar' <<< "${R}" && ok "T13 sin la tabla, números con motivo" || mal "T13 sin la tabla dio: ${R}"
 rm -rf "${T}"
 
 # ── T13b · las notas (fuera de ventana, evaluaciones previas) van FUERA del SVG ────────────────
@@ -490,13 +488,28 @@ T=$(mktemp -d); node "${TABLERO}" --view runz --output "${T}/o.html" >/dev/null 
 [ "${RC}" -eq 1 ] && [ ! -f "${T}/o.html" ] && ok "T25 --view desconocida → exit 1 sin página" || mal "T25 --view desconocida: rc=${RC}"
 rm -rf "${T}"
 
-# ── T26 · nombresDePasos distingue «no está» de «no se pudo leer» ─────────────────────────────
-# 🔴 rojo previo (cazador de fallos silenciosos): cualquier error decía «no está en esta máquina».
-T=$(mktemp -d); mkdir -p "${T}/s1/tycon-pipeline"; touch "${T}/s1/tycon-pipeline/steps"   # un ARCHIVO donde va la carpeta → ENOTDIR
-R="$(TYCON_SKILLS_DIR="${T}/s1" node -e "console.log(require('${CORR}').nombresDePasos().motivo)")"
-grep -q 'no se pudo leer' <<< "${R}" && ok "T26 carpeta ilegible → «no se pudo leer (ENOTDIR)»" || mal "T26 ilegible se reportó como: ${R}"
-R="$(TYCON_SKILLS_DIR="${T}/nada" node -e "console.log(require('${CORR}').nombresDePasos().motivo)")"
-grep -q 'no está en esta máquina' <<< "${R}" && ok "T26 carpeta ausente → «no está en esta máquina»" || mal "T26 ausente se reportó como: ${R}"
+# ── T26 · nombresDePasos dice por qué no pudo cargar la tabla ─────────────────────────────────
+# 🔴 rojo previo (cazador de fallos silenciosos): una tabla rota no se puede leer como «sin tabla». Desde la 7.23 los
+# nombres salen de lib/steps.js; el motivo trae el código del error.
+T=$(mktemp -d); printf 'module.exports = {' > "${T}/rota.js"
+R="$(node -e "console.log(require('${CORR}').nombresDePasos('${T}/rota.js').motivo)")"
+grep -q 'no se pudo cargar (SyntaxError\|no se pudo cargar (.*Unexpected' <<< "${R}" && ok "T26 tabla rota → «no se pudo cargar» con su error" || mal "T26 tabla rota se reportó como: ${R}"
+R="$(node -e "console.log(require('${CORR}').nombresDePasos('${T}/nada.js').motivo)")"
+grep -q 'no se pudo cargar (MODULE_NOT_FOUND, .*nada\.js)' <<< "${R}" && ok "T26 tabla ausente → «no se pudo cargar (MODULE_NOT_FOUND, <ruta>)»" || mal "T26 ausente se reportó como: ${R}"
+# 🔴 rojo previo (pase adversarial de la 7.23, algorithmic-correctness-1): sólo el `require` estaba protegido; una tabla
+# que carga pero exporta null, o cuyo `stepName` lanza, tiraba el tablero entero en vez de degradar a números.
+printf 'module.exports = null;\n' > "${T}/nula.js"
+printf "module.exports = { stepName: () => { throw new Error('boom /ruta/de/la/maquina'); } };\n" > "${T}/lanza.js"
+printf "module.exports = { stepName: () => { throw null; } };\n" > "${T}/lanza-nulo.js"
+for t in nula lanza lanza-nulo; do
+  R="$(node -e "const p=require('${CORR}').nombresDePasos('${T}/${t}.js');console.log(p.fuente+' · '+p.nombres.join(',')+' · '+p.motivo)" 2>&1)"
+  grep -q '^numeros · 0,1,2,3,4,5,6,7,8 · la tabla de pasos' <<< "${R}" && ! grep -q 'ruta/de/la/maquina' <<< "${R}" \
+    && ok "T26 tabla mal armada (${t}) → números con motivo, sin caerse y sin el mensaje del error" || mal "T26 tabla mal armada (${t}) dio: ${R}"
+done
+# una tabla que nombra sólo algunos pasos: los que tiene, por nombre; los demás por número, y el motivo dice cuáles
+printf "module.exports = { stepName: (i) => (i === 4 ? 'Cuatro' : null) };\n" > "${T}/parcial.js"
+R="$(node -e "const p=require('${CORR}').nombresDePasos('${T}/parcial.js');console.log(p.fuente+' · '+p.nombres.join(',')+' · '+p.motivo)" 2>&1)"
+grep -q '^tabla · 0,1,2,3,Cuatro,5,6,7,8 · la tabla de pasos no nombra el/los paso(s) 0, 1, 2, 3, 5, 6, 7, 8' <<< "${R}" && ok "T26 tabla parcial → los nombres que tiene y el motivo de los que faltan" || mal "T26 tabla parcial dio: ${R}"
 rm -rf "${T}"
 
 # ── T27 · el umbral de la ficha sale de sources.json, no del cliente ──────────────────────────

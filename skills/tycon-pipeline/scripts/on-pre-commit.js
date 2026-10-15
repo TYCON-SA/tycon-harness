@@ -1686,7 +1686,7 @@ function main() {
       for (const sPath of (v.searched || [])) lines.push(`       buscado: ${sPath}`);
       for (const viejo of (v.legacy || [])) lines.push(`       no cuenta (carpeta vieja bajo un número que comparten varias stories — no dice de cuál es; no se tocó): ${viejo}`);
       lines.push('     Salidas:');
-      lines.push('       (a) Correr el pipeline sobre la story (Step 5 advisors incluido):');
+      lines.push('       (a) Correr el pipeline sobre la story (con sus revisores):');
       lines.push('           node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js start --story <spec> --repo <repo>');
       lines.push('       (b) Story SIN nada que auditar (docs/config puros) — lo decide el DEV, en el frontmatter:');
       lines.push('           advisors_exempt: true');

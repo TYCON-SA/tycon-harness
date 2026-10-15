@@ -1,4 +1,4 @@
-# Step 7 — HITL Checkpoint condicional (B.ii)
+# Hallazgos: la decisión
 
 **Objetivo**: decidir si el pipeline se pausa para aprobación del usuario o fluye directo al commit prep.
 

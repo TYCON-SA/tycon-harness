@@ -1,4 +1,4 @@
-# Step 0c — Marcar Work Item ADO como Active al iniciar pipeline
+# Arranque: pedido en ADO
 
 **Objetivo**: cuando el dev invoca el pipeline para trabajar una story, transicionar el work item de Azure DevOps del estado inicial (`New` / `To Do` / `Approved`) a **`Active`** (o equivalente según process template). Espejo de simetría con `step-09-ado-story-closure.md` que cierra el ciclo.
 

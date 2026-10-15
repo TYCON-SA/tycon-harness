@@ -188,41 +188,33 @@ function clasificar(status) {
 }
 
 /**
- * Los nombres de los pasos se LEEN de los archivos del skill (`steps/step-0N-*.md`, primera línea
- * `# Step N — título`), no se tipean: tipeados se separan del skill. Si el skill no está en la
- * máquina, van los números y la página lo declara.
+ * Los nombres de los pasos salen de la tabla única del pipeline (`skills/tycon-pipeline/scripts/lib/steps.js`, story
+ * 7.23), no se tipean ni se leen del título de cada archivo de paso. Son los de 0 a 8: los que tienen marca en
+ * `stepTimings`. Si la tabla no se puede cargar, van los números y la página lo declara con el motivo.
  */
-function nombresDePasos() {
-  const base = process.env.TYCON_SKILLS_DIR
-    ? path.resolve(process.env.TYCON_SKILLS_DIR)
-    : path.join(os.homedir(), '.claude', 'agent-skills', 'skills');
-  const dir = path.join(base, 'tycon-pipeline', 'steps');
+const TABLA_DE_PASOS = path.join(__dirname, '..', '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'steps.js');
+function nombresDePasos(tabla = TABLA_DE_PASOS) {
   const nombres = Array.from({ length: 9 }, (_, i) => String(i));
-  let hallados = 0;
-  const ilegibles = [];
-  let archivos;
-  const donde = dir.split(/[\\/]/).slice(-4).join('/');
-  try { archivos = fs.readdirSync(dir); }
-  catch (e) {
-    // «No está» y «no se pudo leer» no son lo mismo (cazador de fallos silenciosos, 2.14).
-    const motivo = e.code === 'ENOENT'
-      ? `el skill tycon-pipeline no está en esta máquina (${donde}): los pasos van por número, sin nombre`
-      : `la carpeta de pasos del skill no se pudo leer (${e.code || e.message}, ${donde}): los pasos van por número, sin nombre`;
-    return { nombres, fuente: 'numeros', motivo };
+  const faltan = [];
+  try {
+    const T = require(tabla);
+    // una tabla que carga pero está mal armada (exporta null, `stepName` que lanza) degrada igual que una que no
+    // carga: el tablero no se cae entero por los nombres (pase adversarial de la 7.23)
+    for (let i = 0; i < nombres.length; i++) {
+      const n = T && typeof T.stepName === 'function' ? T.stepName(i) : null;
+      if (typeof n === 'string' && n) nombres[i] = n; else faltan.push(i);
+    }
+  } catch (e) {
+    // «No está» y «está rota» no son lo mismo (cazador de fallos silenciosos, 2.14): el motivo lleva el tipo de error,
+    // nunca su mensaje (puede traer rutas de la máquina, y la página se publica); algo lanzado que no es un Error, igual.
+    const codigo = (e && e.code) || (e instanceof SyntaxError ? 'SyntaxError' : (e && e.name) || 'error');
+    const donde = String(tabla).split(/[\\/]/).slice(-5).join('/');
+    return { nombres: nombres.map((_, i) => String(i)), fuente: 'numeros', motivo: `la tabla de pasos del pipeline no se pudo cargar (${codigo}, ${donde}): los pasos van por número, sin nombre` };
   }
-  for (const f of archivos) {
-    const m = f.match(/^step-0([0-8])-[^/]*\.md$/); // sólo 0..8: son los que tienen marca en stepTimings
-    if (!m) continue;
-    let primera;
-    try { primera = fs.readFileSync(path.join(dir, f), 'utf8').split('\n')[0]; }
-    catch (e) { ilegibles.push(`${f} (${e.code || e.message})`); continue; }
-    const t = primera.match(/^#\s*Step\s+(\d)\s*[—–-]\s*(.+?)\s*$/);
-    if (t && Number(t[1]) === Number(m[1])) { nombres[Number(m[1])] = t[2]; hallados++; }
+  if (faltan.length === nombres.length) {
+    return { nombres, fuente: 'numeros', motivo: 'la tabla de pasos del pipeline no trae los nombres de 0 a 8: los pasos van por número, sin nombre' };
   }
-  if (!hallados) {
-    return { nombres, fuente: 'numeros', motivo: `el skill tycon-pipeline está en ${donde} pero no tiene archivos step-0N-*.md legibles${ilegibles.length ? ` (${ilegibles.join(', ')})` : ''}: los pasos van por número, sin nombre` };
-  }
-  return { nombres, fuente: 'skill', motivo: ilegibles.length ? `${ilegibles.length} archivo(s) de paso no se pudieron leer: ${ilegibles.join(', ')}` : null };
+  return { nombres, fuente: 'tabla', motivo: faltan.length ? `la tabla de pasos no nombra el/los paso(s) ${faltan.join(', ')}: van por número` : null };
 }
 
 /**
@@ -951,7 +943,7 @@ function render(M) {
     : M.multi && M.corridas.length
       ? `<div class="banda gris"><b>Sin registro de corridas propio en esta máquina.</b> ${esc(M.registro.motivo)} La página sale sólo con lo bajado del buzón: las corridas de esta máquina, si las hay, faltan.</div>`
       : `<div class="banda gris"><b>Sin registro de corridas en esta máquina.</b> ${esc(M.registro.motivo)} Las fichas salen con trama, y eso no es cero.</div>`;
-  const bandaPasos = M.pasos.fuente !== 'skill' ? `<div class="banda gris">${esc(M.pasos.motivo)}</div>` : '';
+  const bandaPasos = M.pasos.fuente !== 'tabla' || M.pasos.motivo ? `<div class="banda gris">${esc(M.pasos.motivo)}</div>` : '';
   const bandaRescate = M.sin_rescate ? `<div class="banda gris">${esc(M.sin_rescate)}</div>` : '';
   const bandaTiempos = M.sin_tiempos ? `<div class="banda gris">${esc(M.sin_tiempos)}</div>` : '';
   const bandaUmbrales = M.umbrales_motivo ? `<div class="banda gris">${esc(M.umbrales_motivo)}</div>` : '';
@@ -2041,7 +2033,7 @@ function main(opts = {}) {
   log(`Corridas: ${N} corrida${N === 1 ? '' : 's'} de ${M.archivos} archivos · ${M.duplicados} duplicado${M.duplicados === 1 ? '' : 's'} · ${M.ilegibles} no se pudieron leer`);
   log(`  con consumo medido: ${M.corridas.filter((c) => c.consumo.estado === 'medido').length} · con controles: ${M.corridas.filter((c) => c.controles).length} · llegaron al paso 8: ${M.corridas.filter((c) => c.llego_al_final).length}`);
   if (M.registro.estado !== 'medido') log(`  registro NO MEDIDO: ${M.registro.motivo}`);
-  if (M.pasos.fuente !== 'skill') log(`  pasos por número: ${M.pasos.motivo}`);
+  if (M.pasos.fuente !== 'tabla' || M.pasos.motivo) log(`  pasos por número: ${M.pasos.motivo}`);
   if (M.umbrales_motivo) log(`  umbrales NO LEÍDOS: ${M.umbrales_motivo}`);
   if (M.sin_rescate) log(`  rescate NO CARGADO: ${M.sin_rescate}`);
   if (M.multi) {

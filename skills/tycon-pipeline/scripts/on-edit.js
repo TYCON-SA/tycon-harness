@@ -183,13 +183,13 @@ function handle(event) {
         `tycon-pipeline EDIT-detect: estás editando un archivo referenciado por una story Mary+GOLD ` +
         `(\`${story.storyId}\` en \`${story.storyPath}\`) **sin marker activo del pipeline**.\n\n` +
         `Esto significa que ningún hook va a recordarte:\n` +
-        `   • Correr Step 5 (advisors paralelos) cuando termines.\n` +
-        `   • Bloquear "done" si quedan steps pendientes.\n` +
+        `   • Correr los revisores en paralelo cuando termines.\n` +
+        `   • Bloquear "done" si quedan pasos pendientes.\n` +
         `   • Asociar este archivo al diff de la story para el commit prep.\n` +
         // 2026-07-28 — las tres de abajo se perdieron EN SILENCIO en la misma sesión, una por una,
         // y las tres las detectó el dev leyendo el transcript. Si trabajar fuera del pipeline es
         // legítimo, al menos tiene que ser RUIDOSO: acá se enumera lo que te estás perdiendo.
-        `   • Escribir los tests ANTES del código (sub-paso 4.0). El gate del commit avisa igual,\n` +
+        `   • Escribir los tests ANTES del código (pruebas primero, en «Implementar y correr las pruebas»). El gate del commit avisa igual,\n` +
         `     pero recién cuando ya está escrito al revés.\n` +
         `   • Generar la guía de prueba manual derivada de los ACs:\n` +
         `     node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/qa-guide.js --story <story.md>\n` +
