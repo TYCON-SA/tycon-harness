@@ -440,15 +440,17 @@ if [ -f "${CATALOGO_REAL}" ] && [ -d "${RAIZ}/adapters/codex/agents" ]; then
     # 2026-09-18 (BANCO-C5, «el caso se derrama sobre el entorno real»): uno más en los tres, y una
     # «sin verificación» más — la familia BANCO la verifica el rojo previo, no un guion.
     # 2026-10-02 (REACT-C6, «el backend llamado desde la raíz del servidor»): uno más en los tres.
+    # 2026-10-14 (story 7.24, VAL-W16 «el AC le muestra al usuario identificadores internos»): uno más en los tres
+    # (y la misma fila en la copia del catálogo del repo del equipo).
     # 2026-10-14: los números pasan a ser los del núcleo, sin las secciones del paquete de clientes (en el repo del
     # equipo eran 364/363/361 con las dos secciones de ese paquete: 15 filas, 15 reglas, 15 identificadores).
     [ -z "${DE_CLIENTES}" ] || echo "  ·    — C5 · sin las secciones del paquete de clientes: ${DE_CLIENTES}"
-    [ "${FIL}" = "349" ] && ok "C5 · 349 filas en el catálogo del núcleo" \
-      || mal "C5 · filas=${FIL}, esperaba 349 — si el catálogo creció, actualizá este número Y el de la story en el mismo commit; en el repo del equipo, mirá también que su copia del catálogo no haya quedado atrás de la del público"
-    [ "${REG}" = "348" ] && ok "C5 · 348 reglas = pares (dueño, regla), que es la unidad de la tabla" \
-      || mal "C5 · reglas=${REG}, esperaba 348 — rojo previo (números de 2026-09-16): contar identificadores fusiona SEC-C1/SEC-C2; contar filas duplica PIPE-C5"
-    [ "${IDE}" = "346" ] && ok "C5 · 346 identificadores distintos (con ACCOV-C1-EXT)" \
-      || mal "C5 · identificadores=${IDE}, esperaba 346 — rojo previo: con el regex viejo daba 7 menos (las 7 de I18N invisibles)"
+    [ "${FIL}" = "350" ] && ok "C5 · 350 filas en el catálogo del núcleo" \
+      || mal "C5 · filas=${FIL}, esperaba 350 — si el catálogo creció, actualizá este número Y el de la story en el mismo commit; en el repo del equipo, mirá también que su copia del catálogo no haya quedado atrás de la del público"
+    [ "${REG}" = "349" ] && ok "C5 · 349 reglas = pares (dueño, regla), que es la unidad de la tabla" \
+      || mal "C5 · reglas=${REG}, esperaba 349 — rojo previo (números de 2026-09-16): contar identificadores fusiona SEC-C1/SEC-C2; contar filas duplica PIPE-C5"
+    [ "${IDE}" = "347" ] && ok "C5 · 347 identificadores distintos (con ACCOV-C1-EXT)" \
+      || mal "C5 · identificadores=${IDE}, esperaba 347 — rojo previo: con el regex viejo daba 7 menos (las 7 de I18N invisibles)"
   fi
   # el resto se mide sobre el catálogo real entero
   leer "${CATALOGO_REAL}" "${RAIZ}/adapters/codex/agents" --json; RC=$?

@@ -690,7 +690,7 @@ o descarga) para que viajen con la historia — no depende de localStorage. Los 
 muestran su razón + el test que los cubre. Preámbulo de setup: `<repo>/specs/qa/preamble.md`
 (ofrece que el dev/agente levante el entorno, no que el tester corra comandos).
 
-🔴 **CANDADO de 5 capas (obligatorio para stories de UI)** — `qa-guide.js --check --story <spec>`
+🔴 **CANDADO por capas (obligatorio para stories de UI)** — `qa-guide.js --check --story <spec>`
 verifica que la guía esté LISTA antes de cerrar, y `marker.js complete-step 8` lo corre (bloquea
 si falla, sin bypass por env var — igual que la matriz):
 1. **Existe** el archivo de pasos-tester `specs/qa/<sid>-pasos.md`.
@@ -710,10 +710,37 @@ si falla, sin bypass por env var — igual que la matriz):
    `node <skill>/scripts/pipeline.js qa-readability --story <abs spec.md> --repo <repo> --marks <n>`
    (`qa-legibilidad` en `gates.log`, n = marcas resueltas). Sin esa línea la capa 4 no se distingue en
    el registro de agentes y no se puede juzgar si rinde. Stories sin UI: no corre (como siempre).
+   **Cada marca se anota en su línea, citando el texto entre «»**: `- «<texto citado>» — qué confunde — resuelta
+   en: <archivo>`. Si el texto citado sigue en una pantalla de la story, el candado lo frena (capa 8): la marca se
+   resolvió en la guía y no en la pantalla.
+4b. **Review de legibilidad de la PANTALLA (story 7.24)** — el mismo sub-agente "tester no técnico", ahora
+   sobre lo que ve el usuario. 🔴 Caso disparador (2026-10-14): una ventana pasó 14 AC, tres vueltas de
+   revisores, el pase adversarial y cinco E2E reales; el dueño la abrió en staging y la vio «inentendible»
+   (números internos en lugar de nombres, y frases como «Tiene 1 facturas sin pagar»; el caso con nombre:
+   `guides/incident-log.md#case-screen-passed-all-controls-unreadable-2026-10-14`). La capa 4 sólo leía la guía, y las 9 marcas
+   del revisor se resolvieron reescribiendo la guía: el texto malo siguió en la pantalla. Cómo:
+   - Insumos: `node <skill>/scripts/qa-guide.js --story <abs spec.md> --ui-texts` (los textos visibles de cada
+     pantalla de la story, sin el código) y las capturas de la última evidencia del gate E2E (sección
+     `## Capturas`). El sub-agente juzga si se entiende y si anticipa el resultado — no la estética.
+   - Las marcas se resuelven **EN LA PANTALLA** (el código). Si cambia la pantalla, re-correr el gate E2E
+     (scoped) para que las capturas y la matriz queden al día.
+   - Resultado en `specs/qa/<sid>-legibilidad-ui.md` (misma carpeta y clave que la guía) con `veredicto: OK`,
+     `screens:` (cada pantalla que leyó) y `captures:` (las rutas que miró, o `ninguna — <motivo>`). Marcas
+     citadas con «» como en la capa 4; un texto que se queda a propósito lleva `keep: <por qué>` en su línea.
+   - Marca medible: `node <skill>/scripts/pipeline.js qa-readability --story <abs spec.md> --repo <repo> --marks <n> --scope ui`
+     (`qa-legibilidad-ui` en `gates.log`).
 5. **Usuario de prueba declarado** (determinístico, DODRT-C7 2026-07-13): cada AC `RUNTIME` resuelve
    un usuario — `Usuario:` propio, `Usuario por defecto:` del archivo, o `Usuario: —` (sin login).
    Frena si alguno queda sin declarar (así ninguna guía se cierra sin decir con qué rol probar cada
    AC).
+7. **La pantalla revisada** (story 7.24): existe `<sid>-legibilidad-ui.md` con `veredicto: OK`, `captures:` (las
+   rutas que nombra existen) y `screens:` que nombra cada pantalla de la story (`.tsx/.jsx/.vue/.svelte` de
+   `files_to_create`, `files_to_modify` y del File List). Una pantalla declarada que no está en el disco —buscada
+   en el repo de la story, en la carpeta que lo contiene y en los repos acompañantes— frena: o se saca de la
+   lista, o se declara el repo donde vive.
+8. **Ninguna marca tapada** (story 7.24, determinístico): una cita «…» de tres palabras o más, en cualquiera de los
+   dos archivos de legibilidad, que sigue en una pantalla de la story —literal o como mensaje armado— frena,
+   salvo que su línea traiga `keep: <por qué>` (no frena y el candado la imprime siempre).
 
 ## Output del step
 
