@@ -12,6 +12,8 @@
 #         vive en `scripts/publishing/public-files/.github/workflows/`; en la copia pública, en `.github/workflows/`) y
 #         da rojo, nombrando la regla, con cada copia alterada: una alteración por regla, y una por cada forma de
 #         escribir lo prohibido que las reglas con nombre no ven (ahí la roja es `shape`, la forma exacta del archivo).
+#         Entre ellas, la regla `after-queue` (2026-10-15): cada job se saltea en el push a main de la cola de merge y
+#         sólo en ése; una condición que saltea de más, o un job sin ella, es rojo.
 #   T24 · PublicCi_PartesQueJuntasSonTodo (2026-10-14) — la corrida partida para correr a la vez: con
 #         TYCON_PUBLIC_CI_PART=checks corren todos los pasos menos las portables; con suites-<i>-of-<n>, sólo las portables
 #         con su parte (TYCON_PORTABLE_SHARD=<i>/<n>); un valor que no es una parte sale 2 sin correr nada. Y
@@ -550,13 +552,13 @@ else
   altered "con la rama base de la cola sin sacarle el prefijo refs-heads" "" 'return t.replace("${BASE_REF#refs/heads/}", "${BASE_REF}");'
   altered "clase 5: un filtro bajo merge_group" "" 'return t.replace(/^  merge_group:$/m, "  merge_group:\n    types: [destroyed]");'
   altered "sin --clean-machine en una llamada" "clean-machine" 'return t.replace(/(public-ci\.sh) --clean-machine$/m, "$1");'
-  altered "con el job public-ci sin if always" "aggregate-job" 'return t.replace(/^    if: always\(\)\n/m, "");'
+  altered "con el job public-ci sin if always" "aggregate-job after-queue" 'return t.replace(/^    if: always\(\) && .*\n/m, "");'
   altered "con el job public-ci que no espera a los demás" "aggregate-job" 'return t.replace(/^    needs: .*\n/m, "");'
   altered "con el job public-ci con otro nombre visible" "aggregate-job" 'return t.replace(/^  public-ci:\n/m, "  public-ci:\n    name: all green\n");'
   altered "con el job public-ci que no mira los resultados" "aggregate-job" 'return t.replace(/needs\.\*\.result/, "needs.*.outputs");'
   altered "con un job que deja pasar su rojo" "aggregate-job" 'return t.replace(/^(    runs-on: .*)$/m, "$1\n    continue-on-error: true");'
   # lo que el control no encuentra es rojo, nunca limpio: una regla cuyo bloque no existe no se da por cumplida
-  altered "sin on ni jobs" "aggregate-job clean-machine fetch-depth node-matrix parts permissions range triggers" 'return "name: x\n";'
+  altered "sin on ni jobs" "after-queue aggregate-job clean-machine fetch-depth node-matrix parts permissions range triggers" 'return "name: x\n";'
   altered "sin el bloque de la matriz" "node-matrix parts" 'return t.replace(/^    strategy:\n(?:      .*\n)+/m, "");'
   altered "con la lista de Node fuera de matrix" "node-matrix" 'return t.replace(/^      matrix:$/m, "      versions:");'
   altered "con matrix fuera de strategy" "node-matrix" 'return t.replace(/^    strategy:$/m, "    defaults:");'
@@ -584,7 +586,7 @@ else
   altered "clase 3: un job salteado cuenta como aprobado" "" 'return t.replace("[ \"${r}\" = \"success\" ] || exit 1", "[ \"${r}\" = \"success\" ] || [ \"${r}\" = \"skipped\" ] || exit 1");'
   altered "clase 4: un exclude en la matriz" "" 'return t.replace(/^(        node: \[22, 24\])$/m, "$1\n        exclude:\n          - node: 24");'
   altered "clase 5: un filtro bajo pull_request" "" 'return t.replace(/^  pull_request:$/m, "  pull_request:\n    types: [closed]");'
-  altered "clase 8: un job en estilo flujo con permisos de escritura" "" 'return t.replace(/^  public-ci:\n/m, "  extra: { runs-on: ubuntu-latest, permissions: write-all, steps: [ { run: \"echo hola\" } ] }\n  public-ci:\n").replace("needs: [checks]", "needs: [checks, extra]");'
+  altered "clase 8: un job en estilo flujo con permisos de escritura" "after-queue" 'return t.replace(/^  public-ci:\n/m, "  extra: { runs-on: ubuntu-latest, permissions: write-all, steps: [ { run: \"echo hola\" } ] }\n  public-ci:\n").replace("needs: [checks]", "needs: [checks, extra]");'
   altered "clase 9: un if propio en el paso del job public-ci" "" 'return t.replace(/^(      - name: Todos los jobs terminaron bien)$/m, "$1\n        if: github.event_name == \x27push\x27");'
   altered "clase 10: la llamada escrita de otra forma" "" 'return t.replace(/bash scripts\/ci\/public-ci\.sh --clean-machine$/m, "bash ./scripts/ci/public-ci.sh");'
   altered "clase 11: el rojo de la llamada se pierde con || true" "" 'return t.replace(/(public-ci\.sh --clean-machine)$/m, "$1 || true");'
@@ -599,7 +601,7 @@ else
   altered "clase 17: fetch-depth 0 fuera de with" "" 'return t.replace("        with:\n          fetch-depth: 0\n          persist-credentials: false\n", "        env:\n          fetch-depth: 0\n");'
   altered "clase 20: exit 1 sólo dentro de un echo" "" 'return t.replace("[ \"${r}\" = \"success\" ] || exit 1", "[ \"${r}\" = \"success\" ] || echo \"exit 1\"");'
   # lo que el pase dejó «a verificar aparte» (otra regla u otro mecanismo que el de su clase)
-  altered "aparte: un uses por rama dentro de una lista en estilo flujo" "uses-by-sha" 'return t.replace(/^  public-ci:\n/m, "  extra: { runs-on: ubuntu-latest, steps: [uses: evil/action@main] }\n  public-ci:\n").replace("needs: [checks]", "needs: [checks, extra]");'
+  altered "aparte: un uses por rama dentro de una lista en estilo flujo" "uses-by-sha after-queue" 'return t.replace(/^  public-ci:\n/m, "  extra: { runs-on: ubuntu-latest, steps: [uses: evil/action@main] }\n  public-ci:\n").replace("needs: [checks]", "needs: [checks, extra]");'
   altered "aparte: la condición del pull request invertida" "" 'return t.replace("= \"pull_request\" ]", "!= \"pull_request\" ]");'
   altered "aparte: un if en el paso que corre el guion" "" 'return t.replace(/^(      - name: Los pasos de la CI pública que le tocan a esta parte)$/m, "$1\n        if: ${{ false }}");'
   altered "aparte: sin persist-credentials false en el checkout" "" 'return t.replace(/^          persist-credentials: false\n/m, "");'
@@ -615,6 +617,14 @@ else
   altered "sin pasarle la parte al guion" "parts" 'return t.replace(/^          TYCON_PUBLIC_CI_PART: .*\n/m, "");'
   # otra cuenta de partes, completa, cumple la regla con nombre: la frena sólo la forma exacta (cambiarla es cambiar SHAPE)
   altered "con cuatro partes de las suites, todas" "=shape" 'return t.replace("part: [checks, suites-1-of-3, suites-2-of-3, suites-3-of-3]", "part: [checks, suites-1-of-4, suites-2-of-4, suites-3-of-4, suites-4-of-4]");'
+  # el push a main que hace la cola al entrar un pedido no corre nada (2026-10-15: la cola ya probó ese commit), y sólo
+  # ése: cualquier otro push a main —el merge directo de un administrador— corre entero, y un pedido o la cola, igual
+  altered "sin la condición de la cola en el job de la matriz" "after-queue" 'return t.replace(/^    if: github\.event_name .*\n/m, "");'
+  altered "salteando todo push a main" "after-queue" 'return t.replace(/^    if: github\.event_name != \x27push\x27 \|\| .*$/m, "    if: github.event_name != \x27push\x27");'
+  altered "salteando todo lo que empuja el bot, también la cola" "after-queue" 'return t.replace(/^    if: github\.event_name != \x27push\x27 \|\| /m, "    if: ");'
+  altered "salteando el push de cualquiera que no sea el bot" "after-queue" 'return t.replace(/^(    if: github\.event_name .*)!= \x27github-merge-queue\[bot\]\x27$/m, "$1== \x27github-merge-queue[bot]\x27");'
+  altered "con el job public-ci sólo con always" "after-queue" 'return t.replace(/^    if: always\(\) && .*$/m, "    if: always()");'
+  altered "con el job public-ci con la condición y sin always" "aggregate-job after-queue" 'return t.replace(/^    if: always\(\) && \((.*)\)$/m, "    if: $1");'
   # no pudo leer: 2, no un verde
   node "${CHECK}" "${T}/alt/no-such-file.yml" > "${T}/check.out" 2>&1; is "T22 un archivo que no existe sale 2 (no pude leer)" 2 "$?"
   node "${CHECK}" > "${T}/check.out" 2>&1; is "T22 sin archivo sale 2" 2 "$?"

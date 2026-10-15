@@ -13,7 +13,7 @@
  * contracara: el control exige UNA forma de escribir cada cosa (la del `ci.yml` que hay); otra forma válida de YAML para
  * decir lo mismo sale roja, a propósito.
  *
- * LAS REGLAS (un id por regla; una línea por regla rota). Las once primeras dicen POR QUÉ algo está mal:
+ * LAS REGLAS (un id por regla; una línea por regla rota). Las doce primeras dicen POR QUÉ algo está mal:
  *   triggers             corre en `pull_request`, en `merge_group` (la cola de merge) y en `push` a `main`, y en nada más
  *   pull-request-target  `pull_request_target` no aparece en ninguna parte (ni en un comentario)
  *   secrets              no lee ningún secreto: ni el contexto de secretos ni el token por otro camino (ni en un comentario)
@@ -27,7 +27,11 @@
  *   parts                la matriz parte la corrida en `checks` y `suites-1-of-<n>` … `suites-<n>-of-<n>`, todas, en orden y
  *                        una vez, y la parte llega a public-ci.sh desde la matriz (`TYCON_PUBLIC_CI_PART: ${{ matrix.part }}`):
  *                        una parte que falta deja suites sin correr y el veredicto igual verde (2026-10-14)
- * …y la duodécima es la red:
+ *   after-queue          cada job se saltea en el push a main que hace la cola de merge, y SÓLO en ése: la cola ya probó
+ *                        ese commit (2026-10-15). La condición es exacta: una que saltea más (todo push, o un pedido) deja
+ *                        sin correr un merge directo de un administrador —la salida de urgencia—; el job `public-ci` la
+ *                        suma detrás de `always()`, que en los demás eventos sigue mandando
+ * …y la decimotercera es la red:
  *   shape                las líneas de código del archivo son EXACTAMENTE las de `SHAPE` (abajo), en ese orden
  *
  * 🔴 POR QUÉ `shape` (pase adversarial del 2026-10-03, 13 clases de hallazgos con la misma enfermedad). Una regla que
@@ -55,6 +59,12 @@ const fs = require('fs');
 
 const INVOCATION = /\bbash\s+scripts\/ci\/public-ci\.sh\b/;
 
+/**
+ * La condición de cada job: verdadera en todo evento menos el push a main que hace la cola de merge al entrar un pedido
+ * (quien empuja es su bot). Ese commit ya lo probó la cola; cualquier otro push a main corre entero.
+ */
+const AFTER_QUEUE = "github.event_name != 'push' || github.actor != 'github-merge-queue[bot]'";
+
 /** Una línea `uses:` de la forma: la acción es fija; el sha completo y el tag del comentario son un patrón. */
 const pinned = (prefix, action) => ({
   re: new RegExp(`^${`${prefix}${action}`.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}@[0-9a-f]{40} # v\\d+\\.\\d+\\.\\d+$`),
@@ -80,6 +90,7 @@ const SHAPE = [
   'jobs:',
   '  checks:',
   '    name: Node ${{ matrix.node }} · ${{ matrix.part }}',
+  `    if: ${AFTER_QUEUE}`,
   '    runs-on: ubuntu-latest',
   '    timeout-minutes: 90',
   '    strategy:',
@@ -118,7 +129,7 @@ const SHAPE = [
   '            echo "::endgroup::"',
   '          done',
   '  public-ci:',
-  '    if: always()',
+  `    if: always() && (${AFTER_QUEUE})`,
   '    needs: [checks]',
   '    runs-on: ubuntu-latest',
   '    timeout-minutes: 5',
@@ -346,7 +357,7 @@ const RULES = [
       const name = kid('name');
       if (name && unquote(valueOf(name.body)) !== 'public-ci') return `el job \`public-ci\` se muestra con otro nombre (línea ${name.n}): el chequeo exigido dejaría de llegar`;
       const cond = kid('if');
-      if (!cond || !/^(\$\{\{\s*)?always\(\)(\s*\}\})?$/.test(valueOf(cond.body))) return 'el job `public-ci` lleva `if: always()`: sin eso se saltea cuando otro falla, y un chequeo salteado cuenta como aprobado';
+      if (!cond || !/^(\$\{\{\s*)?always\(\)(\s*&&.*?)?(\s*\}\})?$/.test(valueOf(cond.body))) return 'el job `public-ci` lleva `if: always()`: sin eso se saltea cuando otro falla, y un chequeo salteado cuenta como aprobado';
       const needs = kid('needs');
       const waits = needs ? listAt(lines, lines.indexOf(needs)) : [];
       const missing = ids.filter((id) => id !== 'public-ci' && !waits.includes(id));
@@ -375,6 +386,22 @@ const RULES = [
         return `la parte que corre cada trabajo sale de la matriz: \`TYCON_PUBLIC_CI_PART: \${{ matrix.part }}\`${env.length ? ` (línea ${at(env)})` : ''}`;
       }
       return null;
+    },
+  },
+  {
+    id: 'after-queue',
+    check(lines) {
+      const i = topLevel(lines, 'jobs');
+      if (i < 0) return 'no hay un único `jobs:` arriba de todo';
+      const jobs = childrenOf(blockOf(lines, i));
+      if (!jobs.length) return 'no hay ningún job';
+      const bad = jobs.filter((job) => {
+        const id = unquote(job.body.replace(/\s*:.*$/, ''));
+        const cond = childrenOf(blockOf(lines, lines.indexOf(job))).find((l) => /^if\s*:/.test(l.body));
+        const want = id === 'public-ci' ? `always() && (${AFTER_QUEUE})` : AFTER_QUEUE;
+        return !cond || valueOf(cond.body) !== want;
+      });
+      return bad.length ? `el job ${bad.map((l) => `\`${unquote(l.body.replace(/\s*:.*$/, ''))}\``).join(', ')} no lleva \`if: ${AFTER_QUEUE}\` (en \`public-ci\`, detrás de \`always() && \`): se saltea sólo el push a main de la cola, que ya probó ese commit (línea ${at(bad)})` : null;
     },
   },
   {

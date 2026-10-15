@@ -7,6 +7,10 @@
 #     nunca el que corre con los permisos del repo de destino. La cola (2026-10-15) prueba cada pedido combinado con los
 #     que entraron antes que él, en orden, antes de que llegue a main: corre sobre una rama temporal
 #     gh-readonly-queue/main/…, con la misma CI que un pedido y el freno de nombres comparando contra main;
+#   · el push a main que hace la cola al entrar un pedido NO corre nada (2026-10-15): la cola ya probó exactamente ese
+#     commit. Cada job lleva la misma condición: se saltea sólo cuando el evento es `push` y quien empujó es
+#     `github-merge-queue[bot]`. Cualquier otro push a main corre entero, como el merge directo de un administrador que
+#     salteó la cola (la salida de urgencia). En un pedido y en la cola la condición es siempre verdadera: no cambia nada;
 #   · el permiso del token es de sólo lectura y no se usa en ningún paso;
 #   · cada acción de terceros va fijada por el sha completo de su commit, con el tag al lado como comentario: un tag se
 #     puede mover; un sha, no;
@@ -45,6 +49,7 @@ permissions:
 jobs:
   checks:
     name: Node ${{ matrix.node }} · ${{ matrix.part }}
+    if: github.event_name != 'push' || github.actor != 'github-merge-queue[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     strategy:
@@ -87,9 +92,10 @@ jobs:
   # El chequeo con nombre estable. Corre SIEMPRE (un job que depende de otro que falló se saltea, y un chequeo salteado
   # cuenta como aprobado): mira el resultado de cada job del que depende y falla si alguno no terminó bien. El resultado
   # de un job con matriz es uno solo para todas sus combinaciones: `success` sólo si TODAS (cada Node, cada parte)
-  # terminaron bien; una que falló, se canceló o no corrió lo deja en otra cosa, y acá eso es rojo.
+  # terminaron bien; una que falló, se canceló o no corrió lo deja en otra cosa, y acá eso es rojo. La única excepción es
+  # el push a main que hace la cola al entrar un pedido: ahí se saltea con los demás (la cola ya probó ese commit).
   public-ci:
-    if: always()
+    if: always() && (github.event_name != 'push' || github.actor != 'github-merge-queue[bot]')
     needs: [checks]
     runs-on: ubuntu-latest
     timeout-minutes: 5
