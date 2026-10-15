@@ -20,8 +20,13 @@
 # Uso:
 #   .\sync-claude-md-blocks.ps1          # sincroniza
 #   .\sync-claude-md-blocks.ps1 -Check   # reporta qué está desactualizado, no modifica
+#
+# -Given (story 8.36; lo pasa install-tycon-hooks.ps1): lo que el lector de configuración ya le contestó al aplicador en
+# esta misma corrida —@{ ProfileRc; ProfileOut; IntegRc; IntegOut }, el código y la salida de `get install.profile` y de
+# `integrations --json`—. Con eso no vuelve a lanzar Node para preguntarlo; lo interpreta igual. Sin -Given (corrido
+# suelto), pregunta como siempre.
 
-param([switch]$Check)
+param([switch]$Check, [hashtable]$Given)
 
 $ErrorActionPreference = 'Continue'
 
@@ -110,12 +115,16 @@ $script:SyncProfile = $null
 function Get-SyncProfile([string]$Reader) {
     if ($null -eq $script:SyncProfile) {
         $value = $null; $why = $null
-        if (-not (Test-Path $Reader)) { $why = 'no encontré el lector de configuración (scripts/lib/tycon-config.js)' }
-        elseif (-not (Get-Command node -ErrorAction SilentlyContinue)) { $why = 'falta node en el PATH' }
+        $known = $Given -and $Given.ContainsKey('ProfileRc')   # ya lo leyó el aplicador (ver -Given, arriba)
+        if (-not $known -and -not (Test-Path $Reader)) { $why = 'no encontré el lector de configuración (scripts/lib/tycon-config.js)' }
+        elseif (-not $known -and -not (Get-Command node -ErrorAction SilentlyContinue)) { $why = 'falta node en el PATH' }
         else {
             try {
-                $out = (& node $Reader get install.profile 2>$null | Out-String).Trim()
-                $rc = $LASTEXITCODE
+                if ($known) { $out = ("$($Given.ProfileOut)" | Out-String).Trim(); $rc = $Given.ProfileRc }
+                else {
+                    $out = (& node $Reader get install.profile 2>$null | Out-String).Trim()
+                    $rc = $LASTEXITCODE
+                }
                 if ($rc -eq 3) { $value = 'full' }
                 elseif ($rc -eq 0 -and $SyncProfiles -contains $out) { $value = $out }
                 elseif ($rc -eq 2) { $why = 'configuración rota: `node scripts/lib/tycon-config.js validate` dice qué' }
@@ -133,12 +142,16 @@ $script:SyncIntegrations = $null
 function Get-SyncIntegrationState([string]$Name, [string]$Reader) {
     if ($null -eq $script:SyncIntegrations) {
         $data = $null; $why = $null
-        if (-not (Test-Path $Reader)) { $why = 'no encontré el lector de configuración (scripts/lib/tycon-config.js)' }
-        elseif (-not (Get-Command node -ErrorAction SilentlyContinue)) { $why = 'falta node en el PATH' }
+        $known = $Given -and $Given.ContainsKey('IntegRc')   # ya lo leyó el aplicador (ver -Given, arriba)
+        if (-not $known -and -not (Test-Path $Reader)) { $why = 'no encontré el lector de configuración (scripts/lib/tycon-config.js)' }
+        elseif (-not $known -and -not (Get-Command node -ErrorAction SilentlyContinue)) { $why = 'falta node en el PATH' }
         else {
             try {
-                $out = & node $Reader integrations --json 2>$null
-                $rc = $LASTEXITCODE
+                if ($known) { $out = $Given.IntegOut; $rc = $Given.IntegRc }
+                else {
+                    $out = & node $Reader integrations --json 2>$null
+                    $rc = $LASTEXITCODE
+                }
                 if ($rc -eq 2) { $why = 'configuración rota: `node scripts/lib/tycon-config.js validate` dice qué' }
                 elseif ($rc -ne 0) { $why = "el lector de configuración falló (exit $rc)" }
                 else { $data = ($out | Out-String) | ConvertFrom-Json }

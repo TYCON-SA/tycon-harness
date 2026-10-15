@@ -37,6 +37,9 @@
  *    que `harness.js doctor`), el sha256 de la copia fija de arranque contra el del árbol, y si las skills salen de un
  *    clon aparte y de qué commit—. Es la evidencia con la que la story 8.15 retira el nombre viejo. Sólo números, hashes
  *    y nombres de archivo; un dato que no se pudo leer va `no_medido`. Una máquina sin el mecanismo no lo sube.
+ *    Desde la story 8.26 (AC 40) trae también `install`: el modo (`managed` es la versión bajada), el número de versión
+ *    y la capa del equipo (nombre, archivos y commit), lo mismo que `doctor --json`, para saber cómo está cada máquina
+ *    sin pedirle a nadie que corra nada.
  *
  * Nada de esto pregunta ni abre un login: no usa git, ni `az`, ni credenciales de la persona.
  *
@@ -405,7 +408,31 @@ function placeFactsForMailbox(day) {
   let commit = notMeasured('sin carpeta de la que salgan las skills');
   if (skillsDir) { try { commit = headCommit(skillsDir); } catch (e) { commit = notMeasured(`no se pudo leer el commit (${code(e)})`); } }
   out.skills = { separate, commit };
+  out.install = installFacts(state);
   return out;
+}
+/**
+ * Cómo está instalado el arnés en esta máquina, como lo dice `harness.js doctor --json` (story 8.26, AC 40: versión
+ * bajada y capa del equipo en todas las máquinas, sin pedirle nada a nadie). Sale del mismo estado que lee `doctor`
+ * (`harness-state.json`), y viaja sólo lo que no identifica a nadie: el modo, el número de versión y, de la capa del
+ * equipo, su nombre corto, cuántos archivos trajo y su commit. Nunca la dirección del repo de la capa. Un estado
+ * ilegible es `no_medido`; un campo que no tiene la forma esperada va `null` (no se adivina).
+ */
+function installFacts(state) {
+  if (!state || typeof state !== 'object') return { status: 'no_medido', reason: 'harness-state.json ilegible' };
+  const mode = typeof state.mode === 'string' && /^[a-z][a-z-]{0,19}$/.test(state.mode) ? state.mode : null;
+  const v = state.version && typeof state.version === 'object' ? state.version.number : null;
+  const version = typeof v === 'string' && /^\d{4}\.\d{2}\.\d{2}\.\d{1,4}$/.test(v) ? v : null;
+  let team = null;
+  if (state.team && typeof state.team === 'object') {
+    const t = state.team;
+    team = {
+      name: typeof t.name === 'string' && /^[\w.-]{1,40}$/.test(t.name) ? t.name : null,
+      files: Number.isInteger(t.files) && t.files >= 0 ? t.files : null,
+      commit: typeof t.commit === 'string' && /^[0-9a-f]{40}$/.test(t.commit) ? t.commit : null,
+    };
+  }
+  return { mode, version, team };
 }
 /**
  * El commit de HEAD de un clon, LEYENDO .git (sin invocar git: este guion no usa git para nada, T18). Sigue `gitdir:` de

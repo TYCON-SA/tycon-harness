@@ -799,6 +799,7 @@ assert b["same"] is True and len(b["fixed_sha256"]) == 64 and b["fixed_sha256"] 
 s = d["skills"]
 assert s["separate"] is False and s["commit"] == {"status": "no_medido", "reason": s["commit"]["reason"]} and s["commit"]["reason"], s
 assert json.load(open(out))["place"]["place"]["name"] == pn, "upload-runs --json no trae place"
+assert d["install"] == {"mode": "managed", "version": None, "team": None}, d["install"]
 PY
 HOME="${T}/casa" USERPROFILE="${T}/casa" subir_reg "${T}" "${T}/h" "${T}/reg" 2026-10-05 "maq-a"
 [ "${RC}" -eq 0 ] && cmp -s "${T}/b/blobs/corridas/maq-a/registros/place.json" "${P29}" && ok "8.19-B T29 place.json llega al buzón como <maquina>/registros/place.json" || mal "8.19-B T29 no llegó (rc=${RC}): $(ls "${T}/b/blobs/corridas/maq-a/registros" 2>&1 | tr '\n' ' ')"
@@ -817,6 +818,39 @@ node -e 'const fs=require("fs");const [o,x]=process.argv.slice(1);fs.unlinkSync(
 HOME="${T}/casa" USERPROFILE="${T}/casa" subir_reg "${T}" "${T}/h" "${T}/reg" 2026-10-05 "maq-a" --dry-run
 [ "$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['legacy']['kind'])" "${T}/estado/registros-buzon/place.json" 2>&1)" = dangling ] \
   && ok "8.19-B T29 el viejo colgado con el lugar sano: dangling" || mal "8.19-B T29 colgado: $(cat "${T}/estado/registros-buzon/place.json" 2>&1 | head -c 300)"
+# ── 8.26 T40 · Mailbox_PlaceJson_SaysReleaseVersionAndTeamLayer_NeverTheLayerUrl (story 8.26 · AC 40) ────────────────
+# `install` dice lo que `doctor --json` dice de la instalación —el modo, la versión y la capa del equipo— desde el mismo
+# estado, para juntar el AC 40 de todas las máquinas sin pedirle nada a nadie. La dirección del repo de la capa no viaja;
+# un campo con otra forma va null; un estado ilegible, no_medido.
+# 🔴 rojo previo: sin esto, saber si cada máquina está en la versión bajada y con la capa pedía a cada dev correr doctor.
+T="${BASE}/t40"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"; casa29 "${T}/casa" "${T}/clon"
+printf '{"schema":1,"mode":"managed","tree":"%s","sources":[],"version":{"number":"2026.10.14.51","installed_at":"2026-10-14T21:13:09.465Z"},"team":{"repo":"https://servidor.example/org/_git/capa-secreta","name":"equipo","files":84,"commit":"556dd0f400cb9eedcfed29a4de6313dda547158c"}}\n' "${T}/clon" > "${T}/casa/.claude/.tycon-pipeline/harness-state.json"
+HOME="${T}/casa" USERPROFILE="${T}/casa" subir_reg "${T}" "${T}/h" "${T}/reg" 2026-10-05 "maq-a" --dry-run
+python3 - "${T}/estado/registros-buzon/place.json" <<'PY' && ok "8.26 T40 place.json dice versión bajada, número y capa del equipo, sin la dirección de la capa" || mal "8.26 T40 install: $(cat "${T}/estado/registros-buzon/place.json" 2>&1 | head -c 500)"
+import json, sys
+texto = open(sys.argv[1], encoding="utf-8").read()
+assert "capa-secreta" not in texto and "servidor.example" not in texto, texto
+i = json.loads(texto)["install"]
+assert i == {"mode": "managed", "version": "2026.10.14.51", "team": {"name": "equipo", "files": 84, "commit": "556dd0f400cb9eedcfed29a4de6313dda547158c"}}, i
+PY
+T="${BASE}/t40b"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"; casa29 "${T}/casa" "${T}/clon"
+printf '{"schema":1,"mode":"Managed Mode","tree":"%s","sources":[],"version":{"number":"último"},"team":{"name":"con espacios y /barras","files":-3,"commit":"corto"}}\n' "${T}/clon" > "${T}/casa/.claude/.tycon-pipeline/harness-state.json"
+HOME="${T}/casa" USERPROFILE="${T}/casa" subir_reg "${T}" "${T}/h" "${T}/reg" 2026-10-05 "maq-a" --dry-run
+python3 - "${T}/estado/registros-buzon/place.json" <<'PY' && ok "8.26 T40 un campo con otra forma va null: no se adivina ni se copia" || mal "8.26 T40 formas raras: $(cat "${T}/estado/registros-buzon/place.json" 2>&1 | head -c 500)"
+import json, sys
+texto = open(sys.argv[1], encoding="utf-8").read()
+assert "barras" not in texto and "último" not in texto and "Managed Mode" not in texto, texto
+i = json.loads(texto)["install"]
+assert i == {"mode": None, "version": None, "team": {"name": None, "files": None, "commit": None}}, i
+PY
+T="${BASE}/t40c"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"; casa29 "${T}/casa" "${T}/clon"
+echo '{ esto no es json' > "${T}/casa/.claude/.tycon-pipeline/harness-state.json"
+HOME="${T}/casa" USERPROFILE="${T}/casa" subir_reg "${T}" "${T}/h" "${T}/reg" 2026-10-05 "maq-a" --dry-run
+python3 - "${T}/estado/registros-buzon/place.json" <<'PY' && ok "8.26 T40 el estado ilegible: install no_medido con motivo" || mal "8.26 T40 estado ilegible: $(cat "${T}/estado/registros-buzon/place.json" 2>&1 | head -c 400)"
+import json, sys
+i = json.load(open(sys.argv[1]))["install"]
+assert i.get("status") == "no_medido" and i.get("reason"), i
+PY
 # una máquina sin el mecanismo instalado no sube place.json (no participa: no es «no medido»)
 T="${BASE}/t29c"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"; mkdir -p "${T}/casa"
 HOME="${T}/casa" USERPROFILE="${T}/casa" subir_reg "${T}" "${T}/h" "${T}/reg" 2026-10-05 "maq-a" --dry-run
