@@ -1,0 +1,6 @@
+{
+  "name": "harness-mods",
+  "version": "0.1.0",
+  "description": "Los mods del arnés TYCON: el cartel de la corrida del pipeline arriba del prompt, /pipeline y /mods para ocultarlos o apagarlos.",
+  "types": "./types/index.d.ts"
+}

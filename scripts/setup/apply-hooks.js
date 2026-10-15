@@ -51,6 +51,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const PD = require('./harness/plugin-dirs.js');   // story 7.27: la carpeta de los mods del arnés en CLAUDE_CODE_PLUGIN_DIRS
 
 const SETUP_DIR = __dirname;
 const SCRIPTS_DIR = path.dirname(SETUP_DIR);
@@ -650,8 +651,13 @@ function main(argv = process.argv.slice(2), env = process.env, { runConfig = nul
   const envObj = sharedDone ? {} : (settings.env && typeof settings.env === 'object' ? settings.env : (settings.env = {}));
   if (!sharedDone) {
     for (const [k, v] of Object.entries(ENV_CANONICAL)) if (!(k in envObj)) { envObj[k] = v; r.envAdded.push(k); }
+    // la carpeta de los mods del arnés se suma a la de los del dev (story 7.27; la misma unión que shared.js)
+    // (con TYCON_NO_MODS=1 no se toca)
+    const dirs = env.TYCON_NO_MODS === '1' ? { changed: false } : PD.addDir(envObj[PD.PLUGIN_DIRS_KEY], PD.ourDir(home), { sep: PD.separator(platform), home, inherited: env[PD.PLUGIN_DIRS_KEY] });
+    if (dirs.changed) { envObj[PD.PLUGIN_DIRS_KEY] = dirs.value; r.envAdded.push(PD.PLUGIN_DIRS_KEY); r.pluginDirsAdded = true; }
     if (r.envAdded.length) added.push(['env', '', `env:${r.envAdded.join(',')}`, 'variable canónica del arnés']);
   }
+  const modsPiece = !sharedDone && env.TYCON_NO_MODS !== '1' && PD.hasDir(envObj[PD.PLUGIN_DIRS_KEY], PD.ourDir(home), { sep: PD.separator(platform), home });
 
   const where = settingsPath;
   appendLines(env.TYCON_REPORT_PIECES, [
@@ -659,6 +665,7 @@ function main(argv = process.argv.slice(2), env = process.env, { runConfig = nul
     ...(sharedDone ? [] : [
       ...Object.entries(TOP_CANONICAL).filter(([k, v]) => settings[k] === v).map(([k, v]) => `setting\t${where}\t${k}\t${JSON.stringify(v)}`),
       ...Object.entries(ENV_CANONICAL).filter(([k, v]) => envObj[k] === v).map(([k, v]) => `setting\t${where}\tenv.${k}\t${JSON.stringify(v)}`),
+      ...(modsPiece ? [`setting\t${where}\t${PD.PLUGIN_DIRS_ID}\t${JSON.stringify(PD.ourDir(home))}`] : []),
     ]),
   ]);
   if (a.check) {
@@ -674,6 +681,7 @@ function main(argv = process.argv.slice(2), env = process.env, { runConfig = nul
       ...(sharedDone ? [] : [
         ...Object.entries(TOP_CANONICAL).map(([k, v]) => (r.topAdded.includes(k) ? `setting\t${where}\t${k}\tadd` : settings[k] === v ? `setting\t${where}\t${k}\tkeep` : null)).filter(Boolean),
         ...Object.entries(ENV_CANONICAL).map(([k, v]) => (r.envAdded.includes(k) ? `setting\t${where}\tenv.${k}\tadd` : envObj[k] === v ? `setting\t${where}\tenv.${k}\tkeep` : null)).filter(Boolean),
+        ...(modsPiece ? [`setting\t${where}\t${PD.PLUGIN_DIRS_ID}\t${r.pluginDirsAdded ? 'add' : 'keep'}`] : []),
       ]),
     ]);
     if (!planOk) throw new ApplyError(`no pude anotar los hooks en el plan (${env.TYCON_PLAN_PIECES}): el plan quedaría incompleto y no se escribe`);

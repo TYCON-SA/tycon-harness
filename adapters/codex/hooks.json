@@ -296,6 +296,11 @@
       ]
     },
     {
+      "log": "Mods (mods/harness-mods) — SOLO Claude Code (Codex no tiene mods)",
+      "verdict": "ASIMETRÍA A PROPÓSITO (2026-10-15, story 7.27): los mods son plugins de función de Claude Code (dibujan arriba del prompt y suman comandos de barra); Codex no tiene nada equivalente. El cartel de la corrida y /mods existen sólo en sesiones Claude; el pipeline de Codex sigue igual, sin el cartel.",
+      "scripts": []
+    },
+    {
       "log": "PostToolUse · Artifact — SOLO Claude Code (Codex no tiene la tool)",
       "verdict": "ASIMETRÍA A PROPÓSITO (2026-08-30): la tool Artifact (publicar páginas en claude.ai) existe únicamente en Claude Code — Codex nunca emite ese tool_name, así que no hay evento que registrar de su lado ni conducta que traducir. Los artefactos nacen sólo en sesiones Claude y el archivado al repo (<repo>/artifacts/ + índice con la URL) lo cubre el hook del lado Claude. Caso 28 del banco con tools:['claude'] y la misma asimetría declarada.",
       "scripts": [
