@@ -2531,8 +2531,36 @@ function cmdRuntimeWaiver(storyArg) {
     process.exit(2);
   }
 
+  // 🔴 Windows (decisión del dueño, 2026-10-15): no hay /dev/tty. El comando se vuelve a lanzar en una ventana de consola
+  // NUEVA y visible, y sólo ésa firma (lib/runtime-waiver.js, «WINDOWS»). Acá, fuera de la ventana, sólo se abre y se espera.
+  if (waiver.esWindows() && process.env[waiver.MARCA_VENTANA] !== '1') {
+    console.error(`🪟 Abro una ventana nueva, «Firma del waiver»: seguí ahí. Tenés ${Math.round(waiver.topeVentanaS() / 60)} minutos.`);
+    const v = waiver.abrirVentana({ script: __filename, args: ['runtime-waiver', storyPath] });
+    if (v.estado === 'vencida') {
+      console.error(`🔒 marker.js runtime-waiver: la ventana venció a los ${v.tope} s sin firmar — no se firmó nada${v.pid ? ` (la ventana arrancó: pid ${v.pid})` : ' (la ventana no llegó a arrancar el comando)'}.`);
+      process.exit(1);
+    }
+    if (v.estado === 'no-abrio') {
+      console.error(`🔒 marker.js runtime-waiver: no pude abrir la ventana de la firma (${v.motivo}) — no se firmó nada.`);
+      process.exit(2);
+    }
+    process.exit(v.codigo === 0 ? 0 : (v.codigo || 1));
+  }
+  if (waiver.esWindows()) {
+    waiver.anotarVentana();
+    // en la ventana, toda salida espera un Enter antes de cerrarse: que la persona lea el resultado (el tope igual corre)
+    process.on('exit', () => waiver.pausaFinal());
+  }
+
   // Freno físico ANTES de computar nada: si no hay terminal, ni arrancamos.
   if (!waiver.hasTty()) {
+    if (waiver.esWindows()) {
+      console.error('🔒 marker.js runtime-waiver BLOQUEADO — en Windows firma sólo la ventana NUEVA que abre este mismo comando,');
+      console.error('   con la consola sin ningún otro proceso conectado. Corrido con la entrada redirigida, o desde la consola');
+      console.error('   del agente, no firma. Lo corre EL USUARIO, en su terminal:');
+      console.error(`     node ${__filename} runtime-waiver ${storyPath}`);
+      process.exit(2);
+    }
     console.error('🔒 marker.js runtime-waiver BLOQUEADO — requiere una terminal interactiva real (/dev/tty).');
     console.error('   Este es el candado user-only: el agente corre sin terminal y NO puede ejecutarlo.');
     console.error('   Lo corre EL USUARIO, en su terminal:');
@@ -2621,7 +2649,13 @@ function cmdRuntimeWaiver(storyArg) {
     process.exit(1);
   }
 
-  const approvedBy = process.env.USER || process.env.LOGNAME || 'tty-user';
+  // En Windows, la última llave: la frase al azar que sólo se ve en la ventana.
+  if (waiver.esWindows() && !waiver.confirmarFrase()) {
+    console.error('\n🔒 marker.js runtime-waiver: la frase no coincide — no se firmó nada.');
+    process.exit(1);
+  }
+
+  const approvedBy = process.env.USER || process.env.LOGNAME || process.env.USERNAME || 'tty-user';
   // 🔴 2026-07-29 — la aprobación se ancla a la DECLARACIÓN de cada AC (su razón + el test que lo
   // cubre) y se firma DENTRO del repo, en `.tycon/runtime-waivers.jsonl`. Antes iba sólo al log del
   // home, anclada al `matrixHash`: como ese hash pinnea la evidencia de `.advisors/` (gitignoreada),

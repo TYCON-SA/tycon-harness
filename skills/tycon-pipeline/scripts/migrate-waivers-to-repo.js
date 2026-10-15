@@ -218,6 +218,20 @@ function main(argv) {
     return;
   }
 
+  // 🔴 Windows (decisión del dueño, 2026-10-15): no hay /dev/tty; firma sólo una ventana de consola NUEVA que abre este
+  //    mismo comando (lib/runtime-waiver.js, «WINDOWS»). Fuera de esa ventana, se abre y se espera.
+  if (waiver.esWindows() && process.env[waiver.MARCA_VENTANA] !== '1') {
+    console.error(`\n🪟 Abro una ventana nueva, «Firma de la migración»: seguí ahí. Tenés ${Math.round(waiver.topeVentanaS() / 60)} minutos.`);
+    const v = waiver.abrirVentana({ script: __filename, args: argv, titulo: 'Firma de la migración' });
+    if (v.estado === 'vencida') { console.error(`🔒 la ventana venció a los ${v.tope} s sin firmar — no se escribió nada.`); process.exit(3); }
+    if (v.estado === 'no-abrio') { console.error(`🔒 no pude abrir la ventana de la firma (${v.motivo}) — no se escribió nada.`); process.exit(3); }
+    process.exit(v.codigo === 0 ? 0 : (v.codigo || 1));
+  }
+  if (waiver.esWindows()) {
+    waiver.anotarVentana();
+    process.on('exit', () => waiver.pausaFinal());
+  }
+
   // 🔴 El candado: escribir es firmar, y firmar es del dev. Sin terminal no se escribe nada.
   if (!waiver.hasTty()) {
     console.error('\n🔒 migrate-waivers-to-repo.js --apply BLOQUEADO — requiere una terminal interactiva real (/dev/tty).');
@@ -228,6 +242,10 @@ function main(argv) {
   const respuesta = waiver.promptTty(`\nSe van a firmar ${migradas} aprobaciones en ${plan.size} repo(s), contra el texto ACTUAL de cada AC.\nEscribí MIGRAR para confirmar: `);
   if (respuesta !== 'MIGRAR') {
     console.error('\nmigrate-waivers-to-repo.js: no confirmaste — no se escribió nada.');
+    process.exit(1);
+  }
+  if (waiver.esWindows() && !waiver.confirmarFrase()) {
+    console.error('\nmigrate-waivers-to-repo.js: la frase no coincide — no se escribió nada.');
     process.exit(1);
   }
   const escritas = escribirPlan(plan);

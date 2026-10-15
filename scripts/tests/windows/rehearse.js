@@ -76,9 +76,12 @@ const SCENARIOS = Object.freeze({
   // story 8.23 (tanda D): la mudanza de una máquina del clon a ~/.tycon en Windows —el plan, el archivo tomado que frena,
   // la mudanza con uniones y los hooks al árbol nuevo—. Va aparte, como `no-clone`
   migrate: ['inventory', 'migrate'],
+  // la firma del waiver en Windows (decisión del dueño, 2026-10-15): sin persona, desde un proceso como el del agente, no se
+  // firma. Va aparte, `all` no lo incluye
+  waiver: ['inventory', 'waiver'],
 });
 // todos los pasos que este guion sabe correr, en el orden en que salen en el reporte
-const STEP_ORDER = Object.freeze([...SCENARIOS.all, ...Object.keys(PORTABLE_STEPS), 'no-clone', 'codex-only', 'console-windows', 'migrate']);
+const STEP_ORDER = Object.freeze([...SCENARIOS.all, ...Object.keys(PORTABLE_STEPS), 'no-clone', 'codex-only', 'console-windows', 'migrate', 'waiver']);
 // los pasos propios de los ensayos, con su tope en segundos (los demás son los de run.js, con el suyo)
 const OWN_STEPS = Object.freeze(Object.assign({
   // los dos ensayos del equipo: ninguna corrida suya pasa de 40 minutos (medido: unos 9 y unos 4). El tope de cada
@@ -89,6 +92,7 @@ const OWN_STEPS = Object.freeze(Object.assign({
   'codex-only': { script: path.join(HERE, 'codex-only-probe.js'), cap: 2400, pass: ['allow-temp'] },
   'console-windows': { script: path.join(HERE, 'console-windows-probe.js'), cap: 600, pass: ['allow-temp'] },
   migrate: { script: path.join(HERE, 'migrate-probe.js'), cap: 2400, pass: ['allow-temp'] },
+  waiver: { script: path.join(HERE, 'waiver-probe.js'), cap: 600, pass: ['allow-temp'] },
 }, Object.fromEntries(Object.entries(PORTABLE_STEPS).map(([part, cap]) => [part, { script: path.join(HERE, 'portable-probe.js'), cap, pass: ['allow-temp'], args: ['--part', part] }]))));
 const OPTIONS = {
   '--lab': 'value', '--out': 'value', '--sources': 'value', '--scenario': 'value', '--cap': 'value', '--only': 'value',

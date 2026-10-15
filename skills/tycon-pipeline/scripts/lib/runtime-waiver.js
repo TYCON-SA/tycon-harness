@@ -102,9 +102,144 @@ function canonical(e) {
   return JSON.stringify(base);
 }
 
+// ── WINDOWS: la firma vive en una VENTANA NUEVA (decisión del dueño, 2026-10-15, opción A) ─────────────────────────
+// En Windows nativo no hay /dev/tty: el candado de arriba frenaba SIEMPRE, también a la persona en PowerShell, y una story
+// con `runtime_not_verifiable` quedaba sin salida (caso real, un dev del equipo). Leer la consola propia (CONIN$) no sirve:
+// los procesos del agente en Windows suelen tener una consola OCULTA adjunta, así que abriría y quedaría esperando teclas que
+// nadie ve (o que el agente inyecta). Lo que se hace:
+//   1. el comando, en Windows, se vuelve a lanzar a sí mismo en una ventana de consola NUEVA y visible (`start … /wait`);
+//   2. sólo ahí firma: el proceso de la ventana exige la marca de la ventana, su entrada y salida en la consola, y una
+//      consola NUEVA de verdad —a la que no está conectado ningún otro proceso del que la abrió—;
+//   3. antes de firmar pide escribir una frase al azar de 3 palabras que sólo se muestra en esa ventana;
+//   4. el que la abrió espera hasta 5 minutos; vencido el plazo cierra la ventana y no se firma nada.
+// El MISMO nivel de garantía que en Mac (ver «LÍMITE HONESTO» arriba): el agente puede ABRIR la ventana —aparece en el
+// escritorio de la persona—, pero no escribir en ella sin un acto evidente (conectarse a esa consola e inyectar teclas,
+// como envolver el comando con `script` en Mac). Mac y Linux no cambian.
+const VENTANA_TOPE_S = 300;
+const MARCA_VENTANA = 'TYCON_WAIVER_IN_WINDOW';
+const PALABRAS = Object.freeze(['arbol', 'barco', 'campo', 'dedo', 'faro', 'gato', 'hielo', 'isla', 'jarra', 'lago',
+  'mano', 'nube', 'oro', 'pato', 'queso', 'rio', 'sol', 'tren', 'uva', 'vela', 'mesa', 'llave', 'luna', 'piedra', 'pan',
+  'reloj', 'silla', 'torre', 'vaso', 'zorro', 'canto', 'brisa', 'cobre', 'duna', 'flor', 'gota', 'humo', 'lana', 'miel',
+  'nieve', 'ola', 'perla', 'rama', 'sal', 'tinta', 'valle', 'yeso', 'cuerda']);
+
+/** ¿Esta corrida es la de Windows? `TYCON_WAIVER_PLATFORM` existe sólo para que las pruebas ejerciten la rama en Mac. */
+function esWindows() { return (process.env.TYCON_WAIVER_PLATFORM || process.platform) === 'win32'; }
+
+/**
+ * ¿La consola de este proceso es NUEVA, sin otro proceso conectado? Se pregunta a Windows (GetConsoleProcessList) con
+ * PowerShell, que al correr se conecta a la misma consola: en una ventana recién abierta por el arnés la lista trae dos
+ * procesos (éste y ese PowerShell); en la consola del agente aparecen además su intérprete y lo que lanzó. Sin poder
+ * preguntar, no: «no pude mirar» no es «está sola». `opts.run` sólo para las pruebas.
+ */
+function consolaNueva(opts = {}) {
+  const run = opts.run || ((cmd, args) => require('child_process').spawnSync(cmd, args, { encoding: 'utf8', windowsHide: true, timeout: 30000, stdio: ['ignore', 'pipe', 'pipe'] }));
+  const ps = 'Add-Type -TypeDefinition \'using System.Runtime.InteropServices; public static class C { [DllImport("kernel32.dll")] public static extern uint GetConsoleProcessList(uint[] l, uint n); }\'; '
+    + '$l = New-Object uint[] 64; [C]::GetConsoleProcessList($l, 64)';
+  for (const exe of ['powershell.exe', 'pwsh.exe']) {
+    const r = run(exe, ['-NoProfile', '-NonInteractive', '-Command', ps]);
+    if (!r || r.error || r.status !== 0) continue;
+    const n = Number(String(r.stdout || '').trim().split(/\r?\n/).pop());
+    // exactamente 2: éste y el PowerShell que pregunta. 0 o 1 = este proceso no tiene consola (un proceso desprendido
+    // devuelve 0): tampoco es la ventana. 3 o más = la consola es de alguien más (la del agente, con su intérprete).
+    if (Number.isFinite(n)) return { nueva: n === 2, conectados: n };
+  }
+  return { nueva: false, conectados: null, motivo: 'no pude preguntarle a Windows qué procesos usan esta consola (PowerShell no contestó)' };
+}
+
+/** ¿Esta corrida es la de la ventana nueva? Marca + entrada y salida en una consola + consola sin nadie más. Se
+ *  pregunta una vez por proceso (cada pregunta a Windows lanza un PowerShell); con `opts` (las pruebas), siempre. */
+let enVentanaCache = null;
+function enVentana(opts = {}) {
+  if (process.env[MARCA_VENTANA] !== '1') return false;
+  const sinOpts = Object.keys(opts).length === 0;
+  if (sinOpts && enVentanaCache !== null) return enVentanaCache;
+  const r = enVentanaSinCache(opts);
+  if (sinOpts) enVentanaCache = r;
+  return r;
+}
+function enVentanaSinCache(opts) {
+  const stdin = opts.stdinIsTTY !== undefined ? opts.stdinIsTTY : process.stdin.isTTY === true;
+  const stdout = opts.stdoutIsTTY !== undefined ? opts.stdoutIsTTY : process.stdout.isTTY === true;
+  if (!stdin || !stdout) return false;
+  return consolaNueva(opts).nueva;
+}
+
+/** La frase al azar: 3 palabras distintas de la lista. `rnd` sólo para las pruebas. */
+function fraseAlAzar(rnd = (n) => require('crypto').randomInt(n)) {
+  const elegidas = [];
+  while (elegidas.length < 3) {
+    const p = PALABRAS[rnd(PALABRAS.length)];
+    if (!elegidas.includes(p)) elegidas.push(p);
+  }
+  return elegidas.join(' ');
+}
+const normalizarFrase = (s) => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+/**
+ * La última confirmación en Windows: muestra una frase al azar y pide escribirla tal cual. Devuelve true sólo si coincide.
+ * `opts.prompt` y `opts.frase` sólo para las pruebas.
+ */
+function confirmarFrase(opts = {}) {
+  const frase = opts.frase || fraseAlAzar();
+  const prompt = opts.prompt || promptTty;
+  const escrito = prompt(`\nPara firmar, escribí estas tres palabras tal como están:\n\n    ${frase}\n\n> `);
+  return normalizarFrase(escrito) === normalizarFrase(frase);
+}
+
+/** En la ventana, antes de cerrarse: que la persona alcance a leer el resultado (el tope del que la abrió igual corre). */
+function pausaFinal() {
+  if (!esWindows() || process.env[MARCA_VENTANA] !== '1') return;
+  try { promptTty('\n(Enter para cerrar esta ventana) '); } catch { /* sin consola: nada que esperar */ }
+}
+
+/** El tope de la ventana en segundos: 300, o menos si `TYCON_WAIVER_TIMEOUT_S` lo baja (nunca lo sube). */
+function topeVentanaS() {
+  const env = Number(process.env.TYCON_WAIVER_TIMEOUT_S);
+  return Number.isFinite(env) && env > 0 ? Math.min(env, VENTANA_TOPE_S) : VENTANA_TOPE_S;
+}
+
+/**
+ * Abre la ventana nueva y espera. `script` y `args` son lo que corre adentro (el mismo comando). Devuelve
+ * `{ estado: 'cerrada', codigo }`, `{ estado: 'vencida' }` (pasó el tope: se la cerró, no se firmó nada) o
+ * `{ estado: 'no-abrio', motivo }`. `opts.spawn` y `opts.kill` sólo para las pruebas.
+ */
+function abrirVentana({ script, args = [], titulo = 'Firma del waiver', spawn, kill } = {}) {
+  const cp = require('child_process');
+  const todo = [process.execPath, script, ...args];
+  const malo = todo.find((a) => /["%\r\n]/.test(String(a)));
+  if (malo) return { estado: 'no-abrio', motivo: `una ruta trae un carácter que la consola de Windows no deja pasar entre comillas (${malo})` };
+  const pidFile = path.join(os.tmpdir(), `tycon-waiver-ventana-${process.pid}-${Date.now()}.pid`);
+  const linea = `start "${titulo}" /wait ${todo.map((a) => `"${a}"`).join(' ')}`;
+  const tope = topeVentanaS();
+  const correr = spawn || ((cmd, a, o) => cp.spawnSync(cmd, a, o));
+  const r = correr('cmd.exe', ['/d', '/s', '/c', `"${linea}"`], {
+    windowsVerbatimArguments: true, windowsHide: false, stdio: 'inherit', timeout: tope * 1000,
+    env: { ...process.env, [MARCA_VENTANA]: '1', TYCON_WAIVER_WINDOW_PROCESS_FILE: pidFile },
+  });
+  const vencida = r && r.error && (r.error.code === 'ETIMEDOUT' || r.signal === 'SIGTERM');
+  let pid = null;
+  try { pid = Number(fs.readFileSync(pidFile, 'utf8').trim()) || null; } catch { /* la ventana no llegó a anotarse */ }
+  try { fs.unlinkSync(pidFile); } catch { /* ya no estaba */ }
+  if (vencida) {
+    if (pid) (kill || ((p) => cp.spawnSync('taskkill', ['/PID', String(p), '/T', '/F'], { windowsHide: true, stdio: 'ignore' })))(pid);
+    return { estado: 'vencida', tope, pid };
+  }
+  if (!r || r.error) return { estado: 'no-abrio', motivo: r && r.error ? r.error.message : 'sin respuesta de la consola' };
+  if (!pid) return { estado: 'no-abrio', motivo: 'la ventana no llegó a arrancar el comando', codigo: r.status };
+  return { estado: 'cerrada', codigo: r.status };
+}
+
+/** Lo primero que hace el proceso de la ventana: anotarse, para que el que la abrió la pueda cerrar al vencer el plazo. */
+function anotarVentana() {
+  const f = process.env.TYCON_WAIVER_WINDOW_PROCESS_FILE;
+  if (f) { try { fs.writeFileSync(f, String(process.pid)); } catch { /* sin anotarse, el plazo igual cierra el comando */ } }
+}
+
 // ¿Hay una terminal interactiva real? open(/dev/tty) es no-bloqueante: falla YA con
 // ENXIO si no hay terminal controladora (caso del agente). No hace falta leer nada.
+// En Windows: sólo la ventana nueva (ver arriba).
 function hasTty() {
+  if (esWindows()) return enVentana();
   let fd;
   try { fd = fs.openSync('/dev/tty', 'r'); } catch { return false; }
   try { fs.closeSync(fd); } catch { /* ignore */ }
@@ -112,7 +247,22 @@ function hasTty() {
 }
 
 // Prompt + lectura de UNA línea DESDE /dev/tty (no stdin). Tira si no hay terminal.
+// En Windows, dentro de la ventana nueva: de su consola (la entrada y salida estándar de esa ventana).
 function promptTty(message) {
+  if (esWindows()) {
+    if (!enVentana()) throw new Error('NO_TTY: en Windows este comando firma sólo en la ventana nueva que abre él mismo. El agente no puede ejecutarlo — lo corre el usuario.');
+    fs.writeSync(1, message);
+    const bytes = [];
+    const one = Buffer.alloc(1);
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      let n;
+      try { n = fs.readSync(0, one, 0, 1, null); } catch { break; }
+      if (n === 0 || one[0] === 0x0a) break;
+      if (one[0] !== 0x0d) bytes.push(one[0]);
+    }
+    return Buffer.from(bytes).toString('utf8').trim();
+  }
   let wfd;
   try { wfd = fs.openSync('/dev/tty', 'w'); } catch (e) {
     throw new Error('NO_TTY: este comando requiere una terminal interactiva real. El agente no puede ejecutarlo — lo corre el usuario.');
@@ -321,4 +471,6 @@ function discardedFor(story, arg2) {
 
 module.exports = {
   hasTty, promptTty, appendWaiver, waivedAcs, verifyChain, waiverLogPath, repoWaiverLogPath, declHashFor, discardedFor,
+  esWindows, enVentana, consolaNueva, abrirVentana, anotarVentana, confirmarFrase, fraseAlAzar, pausaFinal, topeVentanaS,
+  MARCA_VENTANA, VENTANA_TOPE_S, PALABRAS,
 };
