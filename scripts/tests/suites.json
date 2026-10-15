@@ -1888,6 +1888,12 @@
       "requiere": []
     },
     {
+      "__nota": "La firma del waiver en Windows (decisión del dueño, 2026-10-15): en Windows no hay /dev/tty y nadie podía firmar. El comando abre una ventana de consola NUEVA y visible; sólo ésa firma (marca, consola en la entrada y la salida, y consola sin otros procesos conectados), con una frase al azar de 3 palabras y un tope de 5 minutos. La rama de Windows se ejercita en cualquier sistema; que sin persona no se firma en un Windows de verdad lo mide el ensayo (escenario waiver).",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/runtime-waiver-windows.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "`git add X && git commit` en una sola línea (2026-10-14): el freno del commit corre antes que el comando entero y veía la versión vieja de X stageada. Si lo que precede al commit son `git add` simples encadenados con && o ;, evalúa una copia del índice con esos add aplicados (lib/chained-add.js); si no, mira lo stageado hoy y, al frenar, pide el add aparte. Corre el hook de verdad: el arreglo que trae el add cuenta; un add de otro archivo no cambia nada; un add que trae una versión rota sobre una sana frena (antes pasaba); lo que no se puede reproducir pide el add aparte; el índice real nunca cambia.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/pre-commit-chained-add.test.js",
