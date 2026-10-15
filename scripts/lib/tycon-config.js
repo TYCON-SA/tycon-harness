@@ -1146,14 +1146,16 @@ module.exports = {
   VOCABULARIO, DEFAULTS, PROFILE_WINS, INTEGRACIONES, LAS_OCHO, TOOLS, toolKeys, COMO_SE_PRENDE, VARIABLES, INTERRUPTORES_POR_HOOK, RAIZ_ARNES, NOMBRE_PERFIL, NOMBRE_PERFIL_VIEJO, perfilDelArbol, avisoNombrePerfil, NOMBRE_ENLACE, PLACE_NAME, LEGACY_PLACE_NAME, DONDE_CLAVES, ConfigError,
   rutaMaquina, nombreArchivoMaquina, comoSePrende, rutaPerfil, leerPerfil, rutaLlaveBuzon, cargar, leer, leerParaHook, avisoParaHook, valor, explicar, estadoEnlace, formaPersonal,
   normalizarOrg, nombreDeOrganizacion, resolverRutaDeArchivo, personalEnComentario,
-  esIntegracion, estadoIntegracion, integraciones, integracionParaComando, integracionParaHook, sinAnotar, setKey,
+  esIntegracion, estadoIntegracion, integraciones, integracionParaComando, integracionParaHook, sinAnotar, setKey, cli,
 };
 
 // ── CLI ──────────────────────────────────────────────────────────────────────────────────────────
-if (require.main === module) {
-  // Los subcomandos y opciones viejos siguen andando (story 8.9, tanda B3a): sólo acá, nunca al cargar la biblioteca.
-  if (legacy) legacy.aliasArgv('scripts/lib/tycon-config.js', { exitCode: 2 });
-  const argv = process.argv.slice(2);
+/**
+ * La línea de comandos, como función (story 8.36): sale con `process.exit`, como siempre. La llama el arranque de este
+ * archivo como programa y la tanda del aplicador (scripts/setup/applier-batch.js), que atrapa esa salida en su mismo
+ * proceso. Los nombres viejos de subcomandos y opciones los traduce el arranque, antes de llamarla.
+ */
+function cli(argv) {
   const cmd = argv[0];
   const usage = 'uso: tycon-config.js explain [--json] | get <clave> | validate [--hook] | key <integracion> [--hook [--switch VAR]] | integrations [--shell|--json] | set <clave> <valor>';
   // `set <clave> <valor>` (story 8.16, tanda D · AC 34): lo que antes se editaba a mano en ~/.claude/tycon.json, con el
@@ -1237,4 +1239,10 @@ if (require.main === module) {
   }
   process.stderr.write(`${usage}\n`);
   process.exit(2);
+}
+
+if (require.main === module) {
+  // Los subcomandos y opciones viejos siguen andando (story 8.9, tanda B3a): sólo acá, nunca al cargar la biblioteca.
+  if (legacy) legacy.aliasArgv('scripts/lib/tycon-config.js', { exitCode: 2 });
+  cli(process.argv.slice(2));
 }

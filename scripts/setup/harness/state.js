@@ -9,6 +9,8 @@
 //
 // Lo que suma la story 8.34, también aditivo: `api_limited_until` (hasta qué hora —ISO— el arranque no le pide nada a la
 // API de GitHub porque contestó su tope) y `api_limited_notice` (la espera de la que ya se avisó: el aviso sale una vez).
+// Y desde 2026-10-14, `token_expired_notice` (cuándo se avisó que el permiso de GitHub guardado venció y el repo público se
+// leyó sin él: el aviso sale una vez mientras siga ese permiso; release.js la borra cuando el permiso sirve o ya no está).
 //
 // Lo que suma la story 8.13.1 (AC 2), sin subir el `schema`: campos ADITIVOS. `source` (`internal` | `public`: de dónde
 // instala la máquina), `sources[].kind` (`tree` | `layer`: el árbol o la capa que se apila encima) y `sources[].reference`
@@ -93,6 +95,7 @@ function defaults({ tree, sources, mode = 'managed', channel = 'stable', version
     failed: null,
     api_limited_until: null,
     api_limited_notice: null,
+    token_expired_notice: null,
     bootstrap: { version: null, sha256: {} },
   };
 }

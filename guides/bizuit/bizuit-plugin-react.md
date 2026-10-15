@@ -8,7 +8,7 @@ Guía consolidada para el equipo TYCON sobre plugins frontend React en la plataf
 >
 > **Sin acceso a ese repo** (un dev de otra organización): el punto de partida es el template público de formularios, <https://github.com/TYCON-SA/bizuit-custom-form-sample>, con los paquetes npm `@tyconsa/bizuit-form-sdk` y `@tyconsa/bizuit-ui-components`. El backend que lo acompaña sale del template público del plugin, <https://github.com/TYCON-SA/bizuit-custom-plugin-sample>.
 
-> **🌐 Regla de routing por entorno (BZURL)**: en **código frontend** la base de la URL la da el host en `dashboardParams.pluginApiUrl` y el código le agrega `/<plugin>/<ruta>` — nunca un `fetch('/api/...')` desde la raíz del servidor, nunca la versión a mano (código y síntomas en §3). Pero al **testear/debuggear a mano contra staging/prod** (curl, browser devtools, E2E apuntando al host), la URL real SÍ lleva el prefijo: `https://<host>/api/plugins/{pluginName}/{version}/{ruta}`. DevHost local NO lo lleva (`http://localhost:5001/api/{ruta}`). Un 404 body-vacío en staging con un path que anda en DevHost = URL mal armada, no un bug. Incidente recurrente multi-proyecto (regla reforzada 2026-07-15).
+> **🌐 Regla de routing por entorno (BZURL)**: en **código frontend** la base de la URL la da el host en `dashboardParams.pluginApiUrl` y el código le agrega `/<plugin>/<ruta>` — nunca un `fetch('/api/...')` desde la raíz del servidor, nunca la versión a mano (código y síntomas en §3). Pero al **testear/debuggear a mano contra staging/prod** (curl, browser devtools, E2E apuntando al host), la URL real SÍ lleva el prefijo del plugin, y tampoco ahí la versión: `https://<host>/api/plugins/{pluginName}/{ruta}`. DevHost local NO lo lleva (`http://localhost:5001/api/{ruta}`). Un 404 body-vacío en staging con un path que anda en DevHost = falta el prefijo; un 404 `{"error":"Endpoint not found"}` = sobra algo en la ruta, casi siempre la versión. Ninguno es un bug. Incidente recurrente multi-proyecto (regla reforzada 2026-07-15; la versión salió de la regla el 2026-10-14).
 
 ---
 
@@ -84,7 +84,7 @@ const r = await fetch(`${pluginApiUrl}/${PLUGIN_NAME}/ordenes/${id}`, { headers 
   → **404** en el host.
 - ❌ NUNCA agregar la versión ni `/v1` a mano: la resuelve el host.
 - Para curl/debug manual contra staging/prod la URL completa SÍ lleva
-  `/api/plugins/{pluginName}/{version}/` (ver callout BZURL al tope).
+  `/api/plugins/{pluginName}/`, sin versión (ver callout BZURL al tope).
 - Antes de escribir el primer servicio de un formulario nuevo, abrir el de un formulario hermano
   del equipo y copiar cómo arma la base: el patrón es uniforme entre todos.
 - Multipart uploads: usar `toDirectBackendUrl()` para bypass del proxy

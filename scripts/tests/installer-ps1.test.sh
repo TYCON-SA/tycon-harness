@@ -94,7 +94,16 @@ printf '#!/bin/sh\n# launchctl de mentira: no carga nada en la máquina real\nex
 REAL_NODE="$(command -v node)"
 NODE_CALLS="$T/node-calls.log"; : > "$NODE_CALLS"
 # el intermediario: anota los argumentos y le pasa la posta al node de verdad
-printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> "%s"\nexec "%s" "$@"\n' "$NODE_CALLS" "$REAL_NODE" > "$T/bin/node"; chmod +x "$T/bin/node"
+# (story 8.36) a la tanda del aplicador (`applier-batch.js --plan <archivo>`) le anota además cada paso de su plan como
+# la llamada suelta que reemplaza («(tanda) scripts/…/<guion>.js <argumentos>»): lo que se mira acá es a quién se le
+# pregunta y con qué, no cuántos procesos lo hacen. El que lee el plan no hereda NODE_OPTIONS (no lo cuenta el T4).
+cat > "$T/bin/node" <<EOF
+#!/bin/sh
+printf "%s\\n" "\$*" >> "$NODE_CALLS"
+case "\$1 \$2" in *applier-batch.js\ --plan) env -u NODE_OPTIONS "$REAL_NODE" -e 'const at = { "skills-dir": "lib", "tycon-config": "lib", "legacy-names": "lib", "canonical-path": "lib", "apply-hooks": "setup", "install-third-party": "publishing" }; for (const s of JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).steps) console.log("(tanda) scripts/" + at[s.script] + "/" + s.script + ".js " + s.args.join(" "))' "\$3" >> "$NODE_CALLS" 2>/dev/null ;; esac
+exec "$REAL_NODE" "\$@"
+EOF
+chmod +x "$T/bin/node"
 # cómo empieza el comando de un .sh registrado: `bash "<ruta del guion>"`. La W4 (AC 29) lo había pasado a la ruta
 # absoluta del bash de Git entre comillas; la W3W4 lo volvió atrás (medido en el agente Windows, corrida 11979: lanzado
 # por PowerShell era un error de sintaxis, y Claude Code lanza los hooks con el bash de Git, donde `bash` ya es ése).
@@ -1723,6 +1732,26 @@ PS
   ps_gh "$h" "$gl/bin-full" TYCON_GITHUB_TOKEN="otro-$permit" -- -- --yes > "$gl/bad.out" 2>&1; rc=$?
   if [ "$rc" -eq 1 ] && grep -qiE 'no vale|venci|401' "$gl/bad.out" && ! grep -q '/tarball/' "$gl/requests.log" && [ "$(tmp_left)" = 0 ]; then ok "get-harness.ps1 · un permiso que no vale: sale 1 diciéndolo (venció o se revocó) y no baja nada"
   else no "get-harness.ps1 · permiso que no vale (rc $rc): $(brief "$gl/bad.out")"; fi
+  # un permiso que VENCIÓ con el repo público (2026-10-14): GitHub contesta 401 aunque el repo se lea sin permiso. El guion
+  # sigue sin él (main de info/refs, el comprimido de codeload) y no lo guarda; el de la variable lo dice el guion, el guardado
+  # en ~/.tycon/config.json lo dice install (acá un harness.js de juguete: se mide que se instala sin mandarlo y sin guardarlo)
+  local gitb cl; gitb="$(sed -n 's/^GIT=//p' "$gl/ports.env")"; cl="$(sed -n 's/^CODELOAD=//p' "$gl/ports.env")"
+  printf '{ "auth": "none", "reject_unknown_token": true }\n' > "$gl/control.json"
+  h="$(new_home gh-expired-env)"; : > "$gl/requests.log"; n_calls="$(wc -l < "$calls" | tr -d ' ')"
+  ps_gh "$h" "$gl/bin-full" TYCON_RELEASE_GIT="$gitb" TYCON_RELEASE_ARCHIVE="$cl" TYCON_GITHUB_TOKEN="vencido-$permit" -- -- --yes > "$gl/expired-env.out" 2>&1; rc=$?
+  if [ "$rc" -eq 0 ] && [ "$(tail -1 "$calls")" = "${INSTALL_CALL},\"--yes\"]" ] && ! tail -n +"$((n_calls+1))" "$calls" | grep '"config","set"' >/dev/null \
+     && grep -q 'TYCON_GITHUB_TOKEN venció o se revocó (401), pero no hace falta' "$gl/expired-env.out" && grep -q '"host":"codeload"' "$gl/requests.log" \
+     && ! grep -q '/tarball/' "$gl/requests.log" && ! grep -qF "vencido-$permit" "$gl/expired-env.out"; then
+    ok "get-harness.ps1 · TYCON_GITHUB_TOKEN vencido con el repo público: instala sin él (info/refs y codeload), lo dice y no lo guarda"
+  else no "get-harness.ps1 · TYCON_GITHUB_TOKEN vencido (rc $rc; llamadas: $(tail -2 "$calls" | tr '\n' ' ')): $(brief "$gl/expired-env.out")"; fi
+  h="$(new_home gh-expired-saved)"; : > "$gl/requests.log"; n_calls="$(wc -l < "$calls" | tr -d ' ')"
+  mkdir -p "$h/.tycon" && printf '{ "github": { "token": "vencido-%s" } }\n' "$permit" > "$h/.tycon/config.json"
+  ps_gh "$h" "$gl/bin-full" TYCON_RELEASE_GIT="$gitb" TYCON_RELEASE_ARCHIVE="$cl" -- -- --yes > "$gl/expired-saved.out" 2>&1; rc=$?
+  if [ "$rc" -eq 0 ] && [ "$(tail -1 "$calls")" = "${INSTALL_CALL},\"--yes\"]" ] && ! tail -n +"$((n_calls+1))" "$calls" | grep '"config","set"' >/dev/null \
+     && grep -q '"host":"codeload"' "$gl/requests.log" && ! grep -q '/tarball/' "$gl/requests.log" && ! grep -q 'no vale (401)' "$gl/expired-saved.out"; then
+    ok "get-harness.ps1 · el permiso guardado vencido con el repo público: instala sin él (info/refs y codeload), sin frenar"
+  else no "get-harness.ps1 · permiso guardado vencido (rc $rc): $(brief "$gl/expired-saved.out")"; fi
+  printf '{ "auth": "token:%s" }\n' "$permit" > "$gl/control.json"
   # una redirección a un esquema que no es http(s) (un servidor hostil que manda a file://) no se sigue: sale 1 diciéndolo y
   # sin llamar a install; una TYCON_RELEASE_API que no es http(s) sale 2 antes de tocar la red (vuelta 2 de la E, seguridad)
   local redir_pid; node -e 'const s=require("http").createServer((q,r)=>{r.writeHead(302,{Location:"file:///etc/passwd"});r.end()});s.listen(0,"127.0.0.1",()=>require("fs").writeFileSync(process.argv[1],String(s.address().port)))' "$gl/redir.port" & redir_pid=$!
@@ -2045,6 +2074,184 @@ else
   gh_set "$GH_LAB/otra"; gh_run "PATH=$GH_LAB/no-git" -- -Check
   gh_unread "git no está en el PATH (con -Check)" "no pude lanzar git"
 fi
+
+# ═══ (ab) story 8.36 · la tanda: menos procesos de Node por arranque, y lo mismo hecho (T4, T6, T7, T8) ═══════════════
+# El aplicador corre en cada arranque. Cada proceso de Node cuesta ~50-100 ms en lanzarse desde PowerShell en Windows.
+# Cada Node que arranca se cuenta con `NODE_OPTIONS=--require <contador>`, que ve también los que un guion lanza por su
+# cuenta con su propia ruta de node (el intermediario del PATH no los ve). Lo hecho se compara contra el mismo aplicador
+# SIN la tanda (las llamadas sueltas de antes, que quedan como respaldo): la misma salida en el mismo orden, el mismo
+# settings.json, el mismo reporte de piezas y el mismo CLAUDE.md, byte a byte.
+COUNTER="$T/node-counter.js"; COUNTED="$T/node-counted.txt"
+cat > "$COUNTER" <<EOF
+require('fs').appendFileSync('$COUNTED', (process.argv[1] ? require('path').basename(process.argv[1]) : '-e') + '\n');
+EOF
+count_of() { grep -c -x -F -- "$1" "$COUNTED" 2>/dev/null || true; }   # <guion>: cuántas veces arrancó en la corrida contada
+# los clones de comparación: sin la tanda, y con una tanda que sale 1 sin dejar su resultado
+CLONE_NB="$T/clone-nobatch"; CLONE_BAD="$T/clone-badbatch"; CLONE_CUT="$T/clone-cutbatch"   # (el cortado lo arma T7b)
+CLONE_MISS="$T/clone-missing"; CLONE_MISS_NB="$T/clone-missing-nobatch"   # sin skills-dir.js, con la tanda y sin ella (T7c)
+cp -R "$CLONE" "$CLONE_NB" && rm -f "$CLONE_NB/scripts/setup/applier-batch.js" \
+  && cp -R "$CLONE" "$CLONE_BAD" && printf 'process.exit(1);\n' > "$CLONE_BAD/scripts/setup/applier-batch.js" \
+  || no "(ab) no pude armar los clones de comparación"
+ab_norm() { # <archivo> <home>: la salida o el archivo, con la HOME y los tres clones escritos igual, y sin sellos de hora
+  sed -e "s#$2#<HOME>#g" -e "s#$CLONE_NB#<CLONE>#g" -e "s#$CLONE_BAD#<CLONE>#g" -e "s#$CLONE_CUT#<CLONE>#g" \
+    -e "s#$CLONE_MISS_NB#<CLONE>#g" -e "s#$CLONE_MISS#<CLONE>#g" -e "s#$CLONE#<CLONE>#g" \
+    -e 's#\(\.bak[.-][A-Za-z-]*\)[0-9][0-9TZ:.-]*#\1<SELLO>#g' "$1" 2>/dev/null
+}
+ab_run() { # <clon> <home> <nombre> [VAR=val …]: una corrida como la del arranque (candado tomado, con reporte), contada
+  local clone="$1" h="$2" name="$3"; shift 3
+  : > "$COUNTED"
+  LAB_INSTALLER="$clone/scripts/install-tycon-hooks.ps1" installer "$h" "${HELD[@]}" "NODE_OPTIONS=--require $COUNTER" "$@" \
+    -- --report-json "$h/report.json" > "$T/ab-$name.out" 2>&1
+  AB_RC=$?
+  cp "$COUNTED" "$T/ab-$name.counted" 2>/dev/null
+}
+ab_same() { # <nombre> <home A> <home B> <etiqueta>: lo hecho por la corrida A (con la tanda) igual que por la B
+  local name="$1" ha="$2" hb="$3" what="$4" diffs=""
+  [ "$(ab_norm "$T/ab-$name-a.out" "$ha")" = "$(ab_norm "$T/ab-$name-b.out" "$hb")" ] || diffs="$diffs salida"
+  [ "$(ab_norm "$ha/.claude/settings.json" "$ha")" = "$(ab_norm "$hb/.claude/settings.json" "$hb")" ] || diffs="$diffs settings.json"
+  [ "$(ab_norm "$ha/report.json" "$ha")" = "$(ab_norm "$hb/report.json" "$hb")" ] || diffs="$diffs reporte"
+  cmp -s "$ha/.claude/CLAUDE.md" "$hb/.claude/CLAUDE.md" || diffs="$diffs CLAUDE.md"
+  if [ -z "$diffs" ]; then ok "$what: la misma salida en el mismo orden, el mismo settings.json, el mismo reporte y el mismo CLAUDE.md"
+  else
+    no "$what: distinto en:$diffs"
+    diff <(ab_norm "$T/ab-$name-a.out" "$ha") <(ab_norm "$T/ab-$name-b.out" "$hb") | head -12 | sed 's/^/      /'
+  fi
+}
+ab_pair() { # <nombre> <clon B> <setup> [VAR=val …]: dos HOME iguales armadas por <setup>, una corrida con la tanda y otra con B
+  local name="$1" cloneb="$2" setup="$3"; shift 3
+  AB_A="$(new_home "ab-$name-a")"; AB_B="$(new_home "ab-$name-b")"
+  "$setup" "$AB_A" "$CLONE"; "$setup" "$AB_B" "$cloneb"   # cada HOME, armada por el clon que la va a correr
+  ab_run "$CLONE" "$AB_A" "$name-a" "$@"; AB_RC_A=$AB_RC
+  ab_run "$cloneb" "$AB_B" "$name-b" "$@"; AB_RC_B=$AB_RC
+  [ "$AB_RC_A" = "$AB_RC_B" ] || no "(ab) $name: la corrida con la tanda salió $AB_RC_A y la de comparación $AB_RC_B · $(brief "$T/ab-$name-a.out" 200)"
+}
+# los estados: una máquina ya instalada (lo de cada arranque), una por estrenar con la configuración rota y la línea del
+# índice vieja en CLAUDE.md, y una por estrenar sana con el sync de bloques prendido
+ab_installed() { LAB_INSTALLER="$2/scripts/install-tycon-hooks.ps1" installer "$1" "${HELD[@]}" > /dev/null 2>&1; printf '# mío\n@~/.claude/tycon-harness/INDEX.md\n' > "$1/.claude/CLAUDE.md"; }
+ab_broken_old() { mkdir -p "$1/.claude"; printf '{ roto' > "$1/.claude/tycon.json"; printf '# mío\n@~/.claude/tycon-harness/README.md\n' > "$1/.claude/CLAUDE.md"; }
+ab_fresh() { mkdir -p "$1/.claude"; printf '# mío\n@~/.claude/tycon-harness/README.md\n' > "$1/.claude/CLAUDE.md"; }
+
+# ── T4 · Ps1_NodeProcessesPerRun: una corrida del arranque en una máquina ya instalada lanza como mucho 3 Node ──────
+# (la tanda de lectura, la de aplicación y la línea del índice, que queda suelta; la tanda A sola dejaba 9)
+ab_pair steady "$CLONE_NB" ab_installed
+N_A=$(wc -l < "$T/ab-steady-a.counted" | tr -d ' '); N_B=$(wc -l < "$T/ab-steady-b.counted" | tr -d ' ')
+echo "ℹ installer-ps1: (ab) procesos de Node en una corrida del arranque — con la tanda: $N_A ($(sort "$T/ab-steady-a.counted" | uniq -c | awk '{printf "%s %s · ", $2, $1}')) · sin ella: $N_B"
+if [ "$AB_RC_A" = 0 ] && [ "$N_A" -gt 0 ] && [ "$N_A" -le 3 ]; then ok "T4 una corrida del arranque lanza $N_A procesos de Node (≤ 3; sin la tanda, $N_B)"
+else no "T4 una corrida del arranque lanzó $N_A procesos de Node (tope 3; salió $AB_RC_A) · $(brief "$T/ab-steady-a.out" 200)"; fi
+ab_same steady "$AB_A" "$AB_B" "T6 máquina ya instalada, con la tanda y sin ella"
+
+# ── T6 · Ps1_SameOutputOrderAndClaudeMd: configuración rota, hooks por agregar, la línea del índice vieja ───────────
+ab_pair broken "$CLONE_NB" ab_broken_old TYCON_NO_CLAUDEMD_SYNC=0
+ab_same broken "$AB_A" "$AB_B" "T6 configuración rota y la línea del índice vieja, con la tanda y sin ella"
+ab_pair fresh "$CLONE_NB" ab_fresh TYCON_NO_CLAUDEMD_SYNC=0
+ab_same fresh "$AB_A" "$AB_B" "T6 máquina por estrenar con el sync de bloques, con la tanda y sin ella"
+AB_FRESH_A="$AB_A"
+
+# ── T8 · Sync_UsesGivenConfig_NoNode: el sync llamado por el aplicador no le pregunta a Node; suelto, sí ─────────────
+TC_A=$(grep -c -x -F -- tycon-config.js "$T/ab-fresh-a.counted" 2>/dev/null || true)
+if [ "$TC_A" = 0 ]; then ok "T8 con el sync prendido, ninguna corrida de tycon-config.js en un proceso propio (la configuración se lee una vez, en la tanda)"
+else no "T8 con el sync prendido, tycon-config.js arrancó $TC_A vez/veces en un proceso propio"; fi
+SYNC_H="$(new_home ab-sync)"; ab_fresh "$SYNC_H"
+: > "$COUNTED"
+lab_env "$SYNC_H" TYCON_NO_CLAUDEMD_SYNC=0 "NODE_OPTIONS=--require $COUNTER" -- pwsh -NoProfile -NonInteractive -File "$CLONE/scripts/setup/sync-claude-md-blocks.ps1" > "$T/ab-sync.out" 2>&1
+TC_S=$(count_of tycon-config.js)
+if [ "${TC_S:-0}" -ge 1 ]; then ok "T8 el sync corrido suelto le pregunta a tycon-config.js como antes ($TC_S vez/veces)"
+else no "T8 el sync corrido suelto no le preguntó a tycon-config.js · $(brief "$T/ab-sync.out" 200)"; fi
+# el espejo: después de la corrida del aplicador (su sync usó lo que el aplicador leyó), el sync suelto —que le pregunta
+# a Node él mismo— sobre esa misma HOME no tiene nada que cambiar
+cp "$AB_FRESH_A/.claude/CLAUDE.md" "$T/ab-fresh-claude.md" 2>/dev/null
+lab_env "$AB_FRESH_A" TYCON_NO_CLAUDEMD_SYNC=0 -- pwsh -NoProfile -NonInteractive -File "$CLONE/scripts/setup/sync-claude-md-blocks.ps1" > "$T/ab-sync2.out" 2>&1
+if [ -s "$T/ab-fresh-claude.md" ] && cmp -s "$T/ab-fresh-claude.md" "$AB_FRESH_A/.claude/CLAUDE.md"; then ok "T8 el sync suelto, preguntando él mismo, no cambia nada de lo que dejó el sync del aplicador con lo que el aplicador leyó"
+else no "T8 el sync suelto cambió el CLAUDE.md que dejó el del aplicador · $(diff "$T/ab-fresh-claude.md" "$AB_FRESH_A/.claude/CLAUDE.md" | head -4 | tr '\n' ' ' | cut -c1-200)"; fi
+
+# ── T7 · Ps1_WithoutBatch_SeparateCalls: una tanda que sale 1 sin su resultado deja lo mismo que sin la tanda ──────────
+ab_pair badbatch "$CLONE_BAD" ab_fresh TYCON_NO_CLAUDEMD_SYNC=0
+ab_same badbatch "$AB_A" "$AB_B" "T7 con una tanda que sale 1 sin resultado (las llamadas sueltas de respaldo)"
+
+# ── T6b · con el paso de terceros prendido, el plan y el reporte quedan en el mismo orden que sin la tanda ─────────────
+# (pase adversarial de la tanda B: el registro de hooks, dentro de la tanda, anotaba sus piezas antes que las de
+# terceros que este archivo anota después; ahora van a un temporal propio y se suman en su lugar de siempre). Sin red:
+# el plan con -Check (la revisión de terceros no baja nada) y el reporte con un manifiesto vacío y una skill de terceros
+# ya «completa» en el estado.
+printf '{\n  "third_party": []\n}\n' > "$T/tp-empty-manifest.json"
+ab_tp_state() { mkdir -p "$1/.claude/.tycon-pipeline"; printf '{"entries":{"skills/tycon-pipeline/":{"complete":true}}}\n' > "$1/.claude/.tycon-pipeline/third-party-state.json"; }
+for side in a b; do
+  clone="$CLONE"; [ "$side" = b ] && clone="$CLONE_NB"
+  h="$(new_home "ab-tpplan-$side")"
+  LAB_INSTALLER="$clone/scripts/install-tycon-hooks.ps1" installer "$h" "${HELD[@]}" TYCON_THIRD_PARTY=1 -- -Check -PlanJson "$h/plan.json" > "$T/ab-tpplan-$side.out" 2>&1
+  eval "TP_PLAN_$side=\"\$h\""
+done
+if [ -s "$TP_PLAN_a/plan.json" ] && [ "$(ab_norm "$TP_PLAN_a/plan.json" "$TP_PLAN_a")" = "$(ab_norm "$TP_PLAN_b/plan.json" "$TP_PLAN_b")" ] \
+   && [ "$(ab_norm "$T/ab-tpplan-a.out" "$TP_PLAN_a")" = "$(ab_norm "$T/ab-tpplan-b.out" "$TP_PLAN_b")" ]; then
+  ok "T6b con terceros prendido, -Check -PlanJson da el mismo plan, en el mismo orden, con la tanda y sin ella"
+else no "T6b con terceros prendido, el plan con la tanda y sin ella difiere · $(diff <(ab_norm "$TP_PLAN_a/plan.json" "$TP_PLAN_a") <(ab_norm "$TP_PLAN_b/plan.json" "$TP_PLAN_b") | head -4 | tr '\n' ' ' | cut -c1-200)"; fi
+ab_tp_fresh() { ab_fresh "$1"; ab_tp_state "$1"; }
+ab_pair tpreport "$CLONE_NB" ab_tp_fresh TYCON_THIRD_PARTY=1 "TYCON_THIRD_PARTY_MANIFEST=$T/tp-empty-manifest.json"
+ab_same tpreport "$AB_A" "$AB_B" "T6b con terceros prendido y una skill de terceros completa, con la tanda y sin ella (el reporte, en el mismo orden)"
+grep -q '"kind": "third-party"' "$AB_A/report.json" 2>/dev/null && ok "T6b el reporte trae la pieza de terceros (el caso mide algo)" \
+  || no "T6b el reporte no trae ninguna pieza de terceros: el caso no mide el orden"
+
+# ── T6c · el aviso apagado con TYCON_NO_CANONICAL_PATH=1: igual con la tanda y sin ella ─────────────────────────────────
+ab_pair nocanon "$CLONE_NB" ab_installed TYCON_NO_CANONICAL_PATH=1
+ab_same nocanon "$AB_A" "$AB_B" "T6c con el aviso del lugar apagado (TYCON_NO_CANONICAL_PATH=1), con la tanda y sin ella"
+
+# ── T7c · un guion que falta: ese paso no entra a la tanda y corre suelto; el resto sale de la tanda ────────────────────
+cp -R "$CLONE" "$CLONE_MISS" && rm -f "$CLONE_MISS/scripts/lib/skills-dir.js" \
+  && cp -R "$CLONE_NB" "$CLONE_MISS_NB" && rm -f "$CLONE_MISS_NB/scripts/lib/skills-dir.js" \
+  || no "(ab) no pude armar los clones sin skills-dir.js"
+ab_pair missing "$CLONE_MISS_NB" ab_installed
+# (ab_pair arma la A con $CLONE: se rehace con el clon al que le falta el guion)
+AB_A="$(new_home ab-missing2-a)"; ab_installed "$AB_A" "$CLONE_MISS"; ab_run "$CLONE_MISS" "$AB_A" missing-a; AB_RC_A=$AB_RC
+[ "$AB_RC_A" = "$AB_RC_B" ] || no "(ab) missing: con la tanda salió $AB_RC_A y sin ella $AB_RC_B"
+ab_same missing "$AB_A" "$AB_B" "T7c sin scripts/lib/skills-dir.js en el clon, con la tanda y sin ella"
+grep -q 'applier-batch.js' "$T/ab-missing-a.counted" && ok "T7c …y la tanda corrió igual para el resto de los pasos" \
+  || no "T7c sin skills-dir.js la tanda no corrió: $(sort "$T/ab-missing-a.counted" | uniq -c | tr '\n' ' ')"
+
+# ── T7d · un -Link que no se puede cumplir, con la biblioteca: sin tanda de lectura, sale 2 y no toca nada más ─────────
+for side in a b; do
+  clone="$CLONE"; [ "$side" = b ] && clone="$CLONE_NB"
+  h="$(new_home "ab-badlink-$side")"
+  : > "$COUNTED"
+  LAB_INSTALLER="$clone/scripts/install-tycon-hooks.ps1" installer "$h" "${HELD[@]}" "NODE_OPTIONS=--require $COUNTER" -- -Link "$T/no-esta-$side" > "$T/ab-badlink-$side.out" 2>&1
+  eval "BL_RC_$side=\$?; BL_H_$side=\"\$h\""
+  cp "$COUNTED" "$T/ab-badlink-$side.counted"
+done
+BL_OUT_A="$(ab_norm "$T/ab-badlink-a.out" "$BL_H_a" | sed "s#$T/no-esta-a#<NO-ESTA>#g")"; BL_OUT_B="$(ab_norm "$T/ab-badlink-b.out" "$BL_H_b" | sed "s#$T/no-esta-b#<NO-ESTA>#g")"
+if [ "$BL_RC_a" = 2 ] && [ "$BL_RC_b" = 2 ] && [ "$BL_OUT_A" = "$BL_OUT_B" ] && ! grep -q 'applier-batch.js' "$T/ab-badlink-a.counted" \
+   && [ "$(listing "$BL_H_a" | sed "s#$BL_H_a##g")" = "$(listing "$BL_H_b" | sed "s#$BL_H_b##g")" ]; then
+  ok "T7d un -Link imposible sale 2, sin tanda de lectura, con la misma salida y la misma HOME que sin la tanda"
+else no "T7d -Link imposible: rc $BL_RC_a/$BL_RC_b · tanda: $(grep -c applier-batch.js "$T/ab-badlink-a.counted") · $(brief "$T/ab-badlink-a.out" 160)"; fi
+
+# ── T7b · una tanda que se corta a mitad: lo anotado se usa, lo que falta corre suelto, y se dice ─────────────────────
+# La tanda de verdad, con la tercera escritura de su resultado rota: en cada tanda corren dos pasos y queda anotado uno.
+# El segundo ya hizo su trabajo y se repite suelto (no lo vuelve a hacer; su aviso puede no salir). Lo que importa: el
+# mismo settings.json, el mismo reporte y el mismo CLAUDE.md que sin la tanda, y una línea que lo dice.
+cp -R "$CLONE" "$CLONE_CUT" && mv "$CLONE_CUT/scripts/setup/applier-batch.js" "$CLONE_CUT/scripts/setup/applier-batch-real.js" \
+  && cat > "$CLONE_CUT/scripts/setup/applier-batch.js" <<'EOF' || no "(ab) no pude armar el clon con la tanda que se corta"
+// laboratorio (installer-ps1, T7b): la tanda de verdad, con la tercera escritura de SU resultado rota (sólo esa: los
+// pasos también escriben con un renombrado, y ésos tienen que andar)
+const fs = require('fs');
+const path = require('path');
+const out = path.resolve(process.argv[process.argv.indexOf('--out') + 1]);
+const rename = fs.renameSync;
+let n = 0;
+fs.renameSync = (a, b) => {
+  if (path.resolve(String(b)) === out && ++n === 3) throw Object.assign(new Error('disco lleno (laboratorio)'), { code: 'EIO' });
+  return rename(a, b);
+};
+process.exitCode = require('./applier-batch-real.js').main(process.argv.slice(2));
+EOF
+AB_A="$(new_home ab-cut-a)"; AB_B="$(new_home ab-cut-b)"; ab_fresh "$AB_A" "$CLONE_CUT"; ab_fresh "$AB_B" "$CLONE_NB"
+ab_run "$CLONE_CUT" "$AB_A" cut-a TYCON_NO_CLAUDEMD_SYNC=0; AB_RC_A=$AB_RC
+ab_run "$CLONE_NB" "$AB_B" cut-b TYCON_NO_CLAUDEMD_SYNC=0; AB_RC_B=$AB_RC
+cut_diffs=""
+[ "$AB_RC_A" = "$AB_RC_B" ] || cut_diffs="$cut_diffs código($AB_RC_A/$AB_RC_B)"
+[ "$(ab_norm "$AB_A/.claude/settings.json" "$AB_A")" = "$(ab_norm "$AB_B/.claude/settings.json" "$AB_B")" ] || cut_diffs="$cut_diffs settings.json"
+[ "$(ab_norm "$AB_A/report.json" "$AB_A")" = "$(ab_norm "$AB_B/report.json" "$AB_B")" ] || cut_diffs="$cut_diffs reporte"
+cmp -s "$AB_A/.claude/CLAUDE.md" "$AB_B/.claude/CLAUDE.md" || cut_diffs="$cut_diffs CLAUDE.md"
+CUT_SAID="$(grep 'la tanda de Node se cortó antes de terminar' "$T/ab-cut-a.out" | grep -c 'applier-batch: no pude escribir el resultado.*(EIO)' || true)"   # con su causa
+if [ -z "$cut_diffs" ] && [ "$CUT_SAID" = 2 ]; then ok "T7b una tanda que se corta a mitad deja el mismo settings.json, reporte y CLAUDE.md que sin ella, y lo dice (una línea por tanda)"
+else no "T7b tanda cortada: distinto en:${cut_diffs:- nada} · avisos: $CUT_SAID (esperaba 2) · $(brief "$T/ab-cut-a.out" 200)"; fi
 
 # ── Esta prueba viaja en la copia pública: no puede traer escrita una ruta con forma de carpeta de usuario ─────────────
 # (story 8.26, tanda H1c: dos rutas de ejemplo de ese tipo hacían que el detector de publicación las leyera como la ruta

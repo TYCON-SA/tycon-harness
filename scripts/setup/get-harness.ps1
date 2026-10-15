@@ -185,14 +185,19 @@ try {
   # sin permiso, el commit de main sale de info/refs (0 consultas a la API); un 401/404 es un repo que no se ve sin permiso
   # (se pide); sin red, un 5xx o algo que no es git → la API, como antes
   $Sha = ''
+  $Refs = Join-Path $Tmp 'refs'
+  # el commit de main de info/refs, o '' si lo que contestó no es la lista de ramas
+  function MainOfRefs {
+    $text = [IO.File]::ReadAllText($Refs, [Text.Encoding]::GetEncoding('ISO-8859-1'))
+    $m = [regex]::Match($text, '([0-9a-f]{40}) refs/heads/main[\x00\n]')
+    if ($text.StartsWith("001e# service=git-upload-pack`n0000") -and $m.Success) { return $m.Groups[1].Value }
+    return ''
+  }
   if (-not $Token -and $Public) {
-    $Refs = Join-Path $Tmp 'refs'
     $Code = Fetch "$GitBase/$Repo.git/info/refs?service=git-upload-pack" $Refs
     if ($Code -eq 200) {
-      $text = [IO.File]::ReadAllText($Refs, [Text.Encoding]::GetEncoding('ISO-8859-1'))
-      $m = [regex]::Match($text, '([0-9a-f]{40}) refs/heads/main[\x00\n]')
-      if ($text.StartsWith("001e# service=git-upload-pack`n0000") -and $m.Success) { $Sha = $m.Groups[1].Value }
-      else { Say 'github.com contestó algo que no es la lista de ramas: miro por la API' }
+      $Sha = MainOfRefs
+      if (-not $Sha) { Say 'github.com contestó algo que no es la lista de ramas: miro por la API' }
     } elseif ($Code -eq 401 -or $Code -eq 404) { Ask }
     elseif ($Code -ne -2) { Say "github.com no contestó ($Code): miro por la API" }
   }
@@ -201,6 +206,17 @@ try {
   if (-not $Sha) {
     $Code = Fetch "$Api/repos/$Repo/git/ref/heads/main" $Ref
     if (-not $Token -and ($Code -eq 401 -or $Code -eq 404)) { Ask; $Code = Fetch "$Api/repos/$Repo/git/ref/heads/main" $Ref }
+  }
+  # un permiso que venció (401) y el repo se lee sin él (info/refs sin credencial, 200): se sigue SIN el permiso y no se
+  # guarda. El guardado en ~/.tycon/config.json lo dice install (la misma línea que el arranque); el de la variable, acá
+  if ($Code -eq 401 -and $Token -and $Public) {
+    $t0 = $Token; $script:Token = ''
+    if ((Fetch "$GitBase/$Repo.git/info/refs?service=git-upload-pack" $Refs) -eq 200) { $Sha = MainOfRefs }
+    if ($Sha) {
+      $Code = 200
+      if ($Save) { Say 'el permiso de GitHub de TYCON_GITHUB_TOKEN venció o se revocó (401), pero no hace falta: el repo del arnés es público. Sigo sin él y no lo guardo.' }
+      $script:Save = $false
+    } else { $script:Token = $t0 }
   }
   switch ($Code) {
     200 { }

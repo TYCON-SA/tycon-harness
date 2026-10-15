@@ -1465,9 +1465,12 @@ function selftest() {
   return malos ? 1 : 0;
 }
 
-if (require.main === module) {
-  aliasArgv('scripts/lib/canonical-path.js', { exitCode: 2 });   // los nombres viejos siguen andando (story 8.9, tanda B3a)
-  const argv = process.argv.slice(2);
+/**
+ * La línea de comandos, como función (story 8.36): sale con `process.exit`, como siempre. La llama el arranque de este
+ * archivo como programa y la tanda del aplicador (scripts/setup/applier-batch.js), que atrapa esa salida en su mismo
+ * proceso. Los nombres viejos de las opciones los traduce el arranque, antes de llamarla.
+ */
+function cli(argv) {
   if (argv.includes('--selftest')) process.exit(selftest());
   const arg = (k) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : undefined; };
   if (argv.includes('--ensure-link')) {
@@ -1517,6 +1520,11 @@ if (require.main === module) {
   if (m) console.log(m);
   process.exit(0);
 }
-module.exports = { aviso, asegurarEnlace, estadoEnlace, rutaEnlace, esClonDelArnes, ensurePlace, placePieces, placePlan, nameState, pointName, removeName, takePlaceLock, LEGACY_FOR_NEW_MACHINES, ensureRepoLinks, isSingleRepo, REPO_LINKS, separateSkillsClone, ignoreSyncedSkills, ownHardLink, forgetHardLink, hardLinksFile };
+
+if (require.main === module) {
+  aliasArgv('scripts/lib/canonical-path.js', { exitCode: 2 });   // los nombres viejos siguen andando (story 8.9, tanda B3a)
+  cli(process.argv.slice(2));
+}
+module.exports = { aviso, asegurarEnlace, estadoEnlace, rutaEnlace, esClonDelArnes, ensurePlace, placePieces, placePlan, nameState, pointName, removeName, takePlaceLock, LEGACY_FOR_NEW_MACHINES, ensureRepoLinks, isSingleRepo, REPO_LINKS, separateSkillsClone, ignoreSyncedSkills, ownHardLink, forgetHardLink, hardLinksFile, cli };
 // el nombre del lugar, como siempre se exportó (story 8.19: sale de place.js, cargada al pedirlo)
 Object.defineProperty(module.exports, 'NOMBRE_ENLACE', { enumerable: true, get: () => PLACE().PLACE_NAME });

@@ -164,6 +164,84 @@ function Get-ErrText($ErrorRecord) {
     while ($e.InnerException) { $e = $e.InnerException }
     return ("$($e.Message)" -replace '\s+', ' ').Trim()
 }
+
+# ── La tanda de Node (story 8.36) ─────────────────────────────────────────────────────────────────────────────────
+# Este aplicador corre en cada arranque y lanzaba unos 16 procesos de Node; PowerShell gasta ~50-100 ms en lanzar cada
+# uno. scripts/setup/applier-batch.js corre varios pasos en UN proceso y devuelve de cada uno su código y lo que
+# escribió, cada trozo con su canal (`o` la salida, `e` la de error) y en orden. Cada llamada de más abajo usa ese
+# resultado si la tanda lo trajo; si no (sin la tanda, o una tanda que no dejó su resultado), hace su llamada suelta de
+# siempre. La tanda no saca ningún respaldo. Invoke-NodeBatch devuelve @{ <id> = @{ Rc; Chunks } } o $null.
+$BatchJs = Join-Path (Join-Path $PSScriptRoot 'setup') 'applier-batch.js'
+function Invoke-NodeBatch([object[]]$Steps) {
+    if (-not $Steps -or -not $Steps.Count -or -not (Test-Path $script:BatchJs)) { return $null }
+    $plan = $null; $out = $null
+    $eapB = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+    try {
+        $plan = [IO.Path]::GetTempFileName()
+        $out = "$plan.out.json"
+        [IO.File]::WriteAllText($plan, (ConvertTo-Json -InputObject @{ steps = $Steps } -Depth 6 -Compress), (New-Object System.Text.UTF8Encoding($false)))
+        $errB = "$plan.err.txt"
+        & node $script:BatchJs --plan $plan --out $out 2>$errB | Out-Null
+        $batchRc = $LASTEXITCODE
+        # la causa, si la tanda dijo algo (su primera línea): va en el aviso de más abajo
+        $whyB = ''
+        try { $whyB = "$(@(Get-Content -LiteralPath $errB -Encoding UTF8 -ErrorAction Stop) | Where-Object { $_ } | Select-Object -First 1)".Trim() } catch { }
+        # sin resultado no corrió ningún paso (el plan estaba mal, o no pudo empezar a anotar): las sueltas, en silencio
+        if (-not (Test-Path -LiteralPath $out)) { return $null }
+        # con resultado, lo anotado ya corrió y se usa; lo que falta corre suelto. Si la tanda se cortó, se dice: un paso
+        # que corrió sin quedar anotado se repite suelto, y su aviso puede no salir (lo que ya hizo no lo vuelve a hacer)
+        $doc = $null
+        try { $doc = [IO.File]::ReadAllText($out) | ConvertFrom-Json } catch { $doc = $null }
+        $res = @{}
+        if ($doc -and $doc.steps) {
+            foreach ($p in @($doc.steps.PSObject.Properties)) {
+                $res[$p.Name] = @{ Rc = [int]$p.Value.rc; Chunks = @($p.Value.chunks | ForEach-Object { [string]$_ }) }
+            }
+        }
+        if ($batchRc -ne 0 -or -not $doc -or $doc.complete -ne $true) {
+            Write-Host "⚠ tycon: la tanda de Node se cortó antes de terminar (salió $batchRc$(if ($whyB) { ": $whyB" })): lo que no dejó anotado corre suelto, y un paso que ya había corrido puede no repetir su aviso"
+        }
+        if (-not $res.Count) { return $null }
+        return $res
+    } catch { return $null }
+    finally {
+        $ErrorActionPreference = $eapB
+        foreach ($f in @($plan, $out, $errB)) { if ($f) { Remove-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue } }
+    }
+}
+# lo que un paso escribió por un canal (`o` u `e`), junto
+function Get-ChunkText($Chunks, [string]$Kind) {
+    return (-join @($Chunks | Where-Object { $_ -and $_.Substring(0, 1) -eq $Kind } | ForEach-Object { $_.Substring(1) }))
+}
+# un texto en renglones, como PowerShell parte la salida de un programa: sin el renglón vacío del salto final, y sin `\r`
+function Split-NativeLines([string]$Text) {
+    if (-not $Text) { return @() }
+    $lines = $Text -split "`n"
+    if ($lines[-1] -eq '') { $lines = $lines[0..($lines.Count - 2)] }
+    return @($lines | ForEach-Object { $_.TrimEnd("`r") })
+}
+# los dos canales en renglones, en el orden en que se escribieron (lo que da `2>&1` en una llamada suelta)
+function Get-MergedLines($Chunks) {
+    $buf = @{ o = ''; e = '' }
+    $lines = New-Object System.Collections.Generic.List[string]
+    foreach ($c in @($Chunks)) {
+        if (-not $c) { continue }
+        $k = $c.Substring(0, 1)
+        $buf[$k] += $c.Substring(1)
+        while (($i = $buf[$k].IndexOf("`n")) -ge 0) { $lines.Add($buf[$k].Substring(0, $i).TrimEnd("`r")); $buf[$k] = $buf[$k].Substring($i + 1) }
+    }
+    foreach ($k in @('o', 'e')) { if ($buf[$k]) { $lines.Add($buf[$k].TrimEnd("`r")) } }
+    return $lines.ToArray()
+}
+# lo que un paso escribió, otra vez por su canal y en su orden: donde antes salía lo que escribía su llamada suelta
+function Write-NodeChunks($Chunks) {
+    foreach ($c in @($Chunks)) {
+        if (-not $c) { continue }
+        if ($c.Substring(0, 1) -eq 'o') { [Console]::Out.Write($c.Substring(1)) } else { [Console]::Error.Write($c.Substring(1)) }
+    }
+    [Console]::Out.Flush(); [Console]::Error.Flush()
+}
+# ── fin de la tanda de Node (las pruebas que corren un bloque suelto de este archivo copian hasta acá) ──────────────
 # Sin lock.js (una copia parcial del árbol) sigue sin candado, y lo DICE en una línea, como cuando lock.js no contesta
 # (story 8.17, W3W4: antes seguía callado).
 if (-not $Check -and $env:TYCON_HARNESS_LOCK_HELD -ne '1' -and -not (Test-Path $LockJs)) {
@@ -356,6 +434,40 @@ function Write-PieceReport {
 # apunte a otro clon válido (sólo -Link <ruta> lo re-apunta) y no pisa una carpeta real. Respeta -Check.
 # VERIFICADO SÓLO POR LECTURA (sin máquina Windows del autor): deuda declarada, igual que el aviso de abajo.
 $rutaCanonica = Join-Path (Join-Path $PSScriptRoot 'lib') 'canonical-path.js'
+$SkillsDirJs = Join-Path (Join-Path $PSScriptRoot 'lib') 'skills-dir.js'
+$cfgJs = Join-Path (Join-Path $PSScriptRoot 'lib') 'tycon-config.js'
+# ¿este clon trae skills/ y agents/? (la condición de Invoke-RepoLinks, más abajo: sin ellas, sin enlaces del repo único)
+$RepoLinksHere = (Test-Path (Join-Path (Join-Path (Split-Path -Parent $PSScriptRoot) 'skills') 'tycon-pipeline')) -and (Test-Path (Join-Path (Split-Path -Parent $PSScriptRoot) 'agents'))
+
+# La lectura, en una tanda (story 8.36): en el orden de siempre, el lugar del arnés, el enlace de agent-skills, el aviso
+# de «el arnés no está donde cree», dónde están las skills y de dónde salió esa carpeta (las dos preguntas de
+# Get-InstalledSkillsDir, sin la variable TYCON_SKILLS_DIR), qué integraciones están prendidas, el perfil de instalación
+# y las piezas del lugar. Cada respuesta se usa, y lo que dice se imprime, en su lugar de siempre. Las de la
+# configuración se hacían más abajo: leerlas acá no cambia lo que contestan (lo que corre en el medio no toca la
+# configuración del arnés). Cada paso entra sólo si su guion está, como cada llamada suelta lo mira antes de correr.
+# Con -Link no hay tanda: un -Link que no se puede cumplir sale 2 antes de tocar nada más, como siempre.
+$ReadBatch = $null
+if (-not $Link) {
+    $readSteps = @()
+    if (Test-Path $rutaCanonica) {
+        $readSteps += @{ id = 'place'; script = 'canonical-path'; args = @(@('--ensure-link', '--clone', (Split-Path -Parent $PSScriptRoot)) + @(if ($Check) { '--check' })) }
+        if ($RepoLinksHere) { $readSteps += @{ id = 'links'; script = 'canonical-path'; args = @(@('--ensure-repo-links', '--clone', (Split-Path -Parent $PSScriptRoot), '--only', 'agent-skills') + @(if ($Check) { '--check' })) } }
+        $readSteps += @{ id = 'notice'; script = 'canonical-path'; args = @() }
+    }
+    if (Test-Path $SkillsDirJs) {
+        $readSteps += @{ id = 'skills'; script = 'skills-dir'; args = @('--skills', '--installed'); env = @{ TYCON_SKILLS_DIR = $null } }
+        $readSteps += @{ id = 'source'; script = 'skills-dir'; args = @('--source', '--installed'); env = @{ TYCON_SKILLS_DIR = $null } }
+    }
+    if (Test-Path $cfgJs) {
+        $readSteps += @{ id = 'integrations'; script = 'tycon-config'; args = @('integrations', '--json') }
+        $readSteps += @{ id = 'profile'; script = 'tycon-config'; args = @('get', 'install.profile') }
+    }
+    if ($script:PiecesTmp -and (Test-Path $rutaCanonica)) {
+        $readSteps += @{ id = 'pieces'; script = 'canonical-path'; args = @('--place-pieces', '--home', (Get-TyconHome)) }
+    }
+    $ReadBatch = Invoke-NodeBatch $readSteps
+}
+
 if ((Test-Path $rutaCanonica) -and (Get-Command node -ErrorAction SilentlyContinue)) {
     $clon = Split-Path -Parent $PSScriptRoot
     $enlaceArgs = @('--ensure-link', '--clone', $clon)
@@ -364,10 +476,15 @@ if ((Test-Path $rutaCanonica) -and (Get-Command node -ErrorAction SilentlyContin
     # EAP=Continue + try/catch (story 8.17, W3W4): con 'Stop' global, una llamada que tira acá mataba el instalador con el
     # candado tomado. Un node que sale distinto de 0 no tira: se mira $LASTEXITCODE.
     $enlaceRc = 0
-    $eapE = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-    try { & node $rutaCanonica @enlaceArgs; $enlaceRc = $LASTEXITCODE }
-    catch { $enlaceRc = -1; Write-Host "⚠ tycon: no pude lanzar canonical-path.js para el lugar del arnés ($(Get-ErrText $_)) — sigo sin tocarlo" }
-    finally { $ErrorActionPreference = $eapE }
+    if ($ReadBatch -and $ReadBatch['place']) {
+        # lo corrió la tanda de lectura: lo que escribió, otra vez acá, por su canal y en su orden
+        Write-NodeChunks $ReadBatch['place'].Chunks; $enlaceRc = $ReadBatch['place'].Rc
+    } else {
+        $eapE = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+        try { & node $rutaCanonica @enlaceArgs; $enlaceRc = $LASTEXITCODE }
+        catch { $enlaceRc = -1; Write-Host "⚠ tycon: no pude lanzar canonical-path.js para el lugar del arnés ($(Get-ErrText $_)) — sigo sin tocarlo" }
+        finally { $ErrorActionPreference = $eapE }
+    }
     if ($enlaceRc -eq 2) { Exit-Installer 2 }   # sólo un -Link que no se puede cumplir sale 2; un enlace que no se pudo escribir avisa y el instalador sigue
 } elseif ($Link) {
     # una línea limpia por la salida de error (AC 36): Write-Error, con $ErrorActionPreference='Stop', imprime el formato de
@@ -394,6 +511,9 @@ function Invoke-RepoLinks([string]$Only) {
     $root = Split-Path -Parent $PSScriptRoot
     if (-not ((Test-Path (Join-Path (Join-Path $root 'skills') 'tycon-pipeline')) -and (Test-Path (Join-Path $root 'agents')))) { return }
     if (-not (Test-Path $rutaCanonica)) { return }
+    # lo corrió una tanda (story 8.36): agent-skills la de lectura, entries la de aplicación. Lo que escribió, otra vez acá
+    $fromBatch = if ($Only -eq 'agent-skills') { if ($script:ReadBatch) { $script:ReadBatch['links'] } } else { if ($script:ApplyBatch) { $script:ApplyBatch['entries'] } }
+    if ($fromBatch) { Write-NodeChunks $fromBatch.Chunks; return }
     $rlArgs = @('--ensure-repo-links', '--clone', (Split-Path -Parent $PSScriptRoot), '--only', $Only)
     if ($Check) { $rlArgs += '--check' }
     try { & node $rutaCanonica @rlArgs } catch { }   # un enlace que no se pudo escribir avisa, no frena
@@ -418,7 +538,11 @@ if (Test-Path $legacyNamesPs1) {
 }
 if (-not $legacyLoaded -or -not (Get-Command Get-LegacyEnv -ErrorAction SilentlyContinue)) { function Get-LegacyEnv([string]$Name, [string]$Where) { return [Environment]::GetEnvironmentVariable($Name) } }
 if ((Get-LegacyEnv 'TYCON_NO_CANONICAL_PATH' -Where 'scripts/install-tycon-hooks.ps1') -ne '1') {
-    if (Test-Path $rutaCanonica) { try { & node $rutaCanonica 2>$null } catch { } }
+    if (Test-Path $rutaCanonica) {
+        # lo corrió la tanda de lectura (story 8.36): su salida estándar acá, como la llamada suelta con `2>$null`
+        if ($ReadBatch -and $ReadBatch['notice']) { Write-NodeChunks @($ReadBatch['notice'].Chunks | Where-Object { $_ -and $_.Substring(0, 1) -eq 'o' }) }
+        else { try { & node $rutaCanonica 2>$null } catch { } }
+    }
 }
 
 # ============================================================
@@ -436,8 +560,7 @@ $Settings    = Join-Path $ClaudeDir 'settings.json'
 # Devuelve la línea que da la biblioteca, o $null si la carpeta no existe (su motivo queda en $script:SkillsWhy).
 # Va acá y no antes: en el repo único, Invoke-RepoLinks 'agent-skills' acaba de dejar el enlace, que es «lo instalado».
 # ⚠️ Medido con pwsh en macOS (installer-ps1.test.sh); en Windows, NO MEDIDO (misma deuda declarada que el resto del .ps1).
-$SkillsDirJs = Join-Path (Join-Path $PSScriptRoot 'lib') 'skills-dir.js'
-$SkillsWhy = ''
+$SkillsWhy = ''   # ($SkillsDirJs se define arriba, con la tanda de lectura)
 function Get-InstalledSkillsDir([string]$Field) {
     # Sin la biblioteca (una copia parcial de este archivo): lo de siempre, la ruta instalada. Es el único lugar donde
     # queda escrita, y sólo vale cuando no hay a quién preguntarle.
@@ -445,33 +568,45 @@ function Get-InstalledSkillsDir([string]$Field) {
     $prevVar = $env:TYCON_SKILLS_DIR
     $eap = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
     $lines = @(); $rc = 0
-    try {
-        $env:TYCON_SKILLS_DIR = ''
-        # Un node que sale distinto de 0 NO lanza en PowerShell: se mira $LASTEXITCODE, como las otras llamadas de este archivo.
-        # la salida y el error POR SEPARADO: con `2>&1` un aviso por stderr (el del enlace que falta) podía quedar como la
-        # primera línea y tomarse por la carpeta de skills
-        $errTmp = [IO.Path]::GetTempFileName()
-        try {
-            $lines = @(& node $SkillsDirJs $Field --installed 2>$errTmp | ForEach-Object { "$_" }); $rc = $LASTEXITCODE
-            if ($rc -ne 0 -and -not $lines.Count) { $lines = @(Get-Content -LiteralPath $errTmp -Encoding UTF8 -ErrorAction SilentlyContinue | ForEach-Object { "$_" }) }
-        } finally { Remove-Item -LiteralPath $errTmp -Force -ErrorAction SilentlyContinue }
-    } catch { $lines = @("$($_.Exception.Message)"); $rc = -1 }
-    finally {
+    # lo que trajo la tanda de la lectura (story 8.36): la misma llamada, sin la variable; si no lo trajo, la suelta
+    $fromBatch = if ($script:ReadBatch) { $script:ReadBatch[$(if ($Field -eq '--source') { 'source' } else { 'skills' })] } else { $null }
+    if ($fromBatch) {
         $ErrorActionPreference = $eap
-        if ($null -eq $prevVar) { Remove-Item Env:TYCON_SKILLS_DIR -ErrorAction SilentlyContinue } else { $env:TYCON_SKILLS_DIR = $prevVar }
+        $rc = $fromBatch.Rc
+        $lines = @(Split-NativeLines (Get-ChunkText $fromBatch.Chunks 'o'))
+        if ($rc -ne 0 -and -not $lines.Count) { $lines = @(Split-NativeLines (Get-ChunkText $fromBatch.Chunks 'e')) }
+    } else {
+        try {
+            $env:TYCON_SKILLS_DIR = ''
+            # Un node que sale distinto de 0 NO lanza en PowerShell: se mira $LASTEXITCODE, como las otras llamadas de este archivo.
+            # la salida y el error POR SEPARADO: con `2>&1` un aviso por stderr (el del enlace que falta) podía quedar como la
+            # primera línea y tomarse por la carpeta de skills
+            $errTmp = [IO.Path]::GetTempFileName()
+            try {
+                $lines = @(& node $SkillsDirJs $Field --installed 2>$errTmp | ForEach-Object { "$_" }); $rc = $LASTEXITCODE
+                if ($rc -ne 0 -and -not $lines.Count) { $lines = @(Get-Content -LiteralPath $errTmp -Encoding UTF8 -ErrorAction SilentlyContinue | ForEach-Object { "$_" }) }
+            } finally { Remove-Item -LiteralPath $errTmp -Force -ErrorAction SilentlyContinue }
+        } catch { $lines = @("$($_.Exception.Message)"); $rc = -1 }
+        finally {
+            $ErrorActionPreference = $eap
+            if ($null -eq $prevVar) { Remove-Item Env:TYCON_SKILLS_DIR -ErrorAction SilentlyContinue } else { $env:TYCON_SKILLS_DIR = $prevVar }
+        }
     }
     $first = if ($lines.Count) { "$($lines[0])".Trim() } else { '' }
     if ($rc -eq 0 -and $first) { return $first }
     $script:SkillsWhy = if ($first) { $first -replace '^skills-dir: ', '' } else { "scripts/lib/skills-dir.js no contestó (salió $rc)" }
     return $null
 }
+# (las dos preguntas de Get-InstalledSkillsDir, como las de la configuración, corren en la tanda de lectura, arriba)
 $AgentSkills = Get-InstalledSkillsDir '--skills'
 $SkillsFrom  = if ($AgentSkills) { Get-InstalledSkillsDir '--source' } else { $null }
 
 # los dos nombres del lugar (junctions) son del arnés aunque esta corrida no los haya tocado: una pieza `link` por cada
-# nombre que ES un enlace, y lo pregunta Node, como el .sh (story 8.19, AC 11 y 13)
+# nombre que ES un enlace, y lo pregunta Node, como el .sh (story 8.19, AC 11 y 13). Lo trae la tanda de lectura.
 if ($script:PiecesTmp -and (Test-Path $rutaCanonica) -and (Get-Command node -ErrorAction SilentlyContinue)) {
-    foreach ($pieceLine in @(& node $rutaCanonica '--place-pieces' '--home' (Split-Path -Parent $ClaudeDir) 2>$null)) {
+    $pieceLines = if ($ReadBatch -and $ReadBatch['pieces']) { @(Split-NativeLines (Get-ChunkText $ReadBatch['pieces'].Chunks 'o')) }
+                  else { @(& node $rutaCanonica '--place-pieces' '--home' (Split-Path -Parent $ClaudeDir) 2>$null) }
+    foreach ($pieceLine in $pieceLines) {
         $parts = "$pieceLine" -split "`t"
         if ($parts.Count -eq 3 -and $parts[0] -eq 'link') { Record-Piece 'link' $parts[1] $parts[2] }
     }
@@ -541,13 +676,52 @@ function Invoke-HarnessFromExisting {
     }
 }
 
+# ── La aplicación, en una tanda (story 8.36) ──────────────────────────────────────────────────────────────────────
+# En el orden de siempre: las skills de terceros, los enlaces de agents y skills, los nombres viejos y los hooks de
+# settings.json (más abajo). Entre esos pasos este archivo sólo imprime y anota (el estado de las integraciones y del
+# perfil, el plan, las piezas): nada de lo que hacen depende de eso. Cada resultado se usa, y lo que escribió se imprime,
+# en su lugar de siempre. El temporal del aplicador se pide acá; si no se puede, el registro de hooks corre suelto más
+# abajo, que lo vuelve a pedir y dice por qué no pudo. Cada paso entra sólo si su guion está, como cada llamada suelta.
+$ThirdPartyJs = Join-Path (Join-Path $PSScriptRoot 'publishing') 'install-third-party.js'
+$tpArgs = @()
+if ($Check) { $tpArgs += '--check' }
+# los argumentos de las dos llamadas sueltas de abajo, para la tanda: la del modo revisión sin el enlace todavía y la de
+# siempre (las dos explicadas abajo)
+$tpRunArgs = if ($CheckInClone) { @('--repo', $CheckInClone, '--check') } else { @(@('--repo', $AgentSkillsRepo) + $tpArgs) }
+$LegacyNames = Join-Path (Join-Path $PSScriptRoot 'lib') 'legacy-names.js'
+$lnArgs = @('--migrate-machine', '--guides', (Split-Path -Parent $PSScriptRoot), '--skills', $AgentSkillsRepo)
+if ($Check) { $lnArgs += '--check' }
+$ApplyJs = Join-Path (Join-Path $PSScriptRoot 'setup') 'apply-hooks.js'
+function New-ApplyArgs([string]$JsonOut) {
+    $a = @('--settings', $Settings, '--hooks-dir', (Join-Path $PSScriptRoot 'hooks'), '--skills', $AgentSkills, '--platform', 'windows', '--json-out', $JsonOut)
+    if ($Check) { $a += '--check' }
+    return , $a
+}
+$ApplyOut = $null
+try { $ApplyOut = [IO.Path]::GetTempFileName() } catch { $ApplyOut = $null }
+# Las piezas y el plan que anota el registro de hooks van, dentro de la tanda, a temporales propios, y se suman a los de
+# esta corrida en el lugar donde corría su llamada suelta (más abajo): así quedan en el mismo orden que sin la tanda,
+# después de las de terceros que este archivo anota en el medio. Si no hay temporal, anota directo (mismo contenido).
+$ApplyPiecesTmp = $null; $ApplyPlanTmp = $null
+try { if ($PiecesTmp) { $ApplyPiecesTmp = [IO.Path]::GetTempFileName() } } catch { $ApplyPiecesTmp = $null }
+try { if ($PlanTmp) { $ApplyPlanTmp = [IO.Path]::GetTempFileName() } } catch { $ApplyPlanTmp = $null }
+$applyEnv = @{}
+if ($ApplyPiecesTmp) { $applyEnv.TYCON_REPORT_PIECES = $ApplyPiecesTmp }
+if ($ApplyPlanTmp) { $applyEnv.TYCON_PLAN_PIECES = $ApplyPlanTmp }
+$applySteps = @()
+if (Test-Path $ThirdPartyJs) { $applySteps += @{ id = 'third'; script = 'install-third-party'; args = $tpRunArgs } }
+if ($RepoLinksHere -and (Test-Path $rutaCanonica)) { $applySteps += @{ id = 'entries'; script = 'canonical-path'; args = @(@('--ensure-repo-links', '--clone', (Split-Path -Parent $PSScriptRoot), '--only', 'entries') + @(if ($Check) { '--check' })) } }
+if (Test-Path $LegacyNames) { $applySteps += @{ id = 'legacy'; script = 'legacy-names'; args = $lnArgs } }
+if ($ApplyOut -and (Test-Path $ApplyJs)) { $applySteps += @{ id = 'apply'; script = 'apply-hooks'; args = (New-ApplyArgs $ApplyOut); env = $applyEnv } }
+$ApplyBatch = Invoke-NodeBatch $applySteps
+
 # ── Las skills de terceros vuelven a su lugar (story 8.5; espejo del .sh, mismos argumentos) ──────────────────
 # Restituye lo ajeno desde la historia del clon (sin red) o desde su origen (con el retiro hecho, tope 20 s), sin
 # borrar ni pisar nada. Todo aviso por stdout; apagado con TYCON_THIRD_PARTY=0, y lo dice.
-if ((Test-Path (Join-Path (Join-Path $PSScriptRoot 'publishing') 'install-third-party.js')) -and (Get-Command node -ErrorAction SilentlyContinue)) {
-    $tpArgs = @()
-    if ($Check) { $tpArgs += '--check' }
-    if ($CheckInClone) {
+if ((Test-Path $ThirdPartyJs) -and (Get-Command node -ErrorAction SilentlyContinue)) {
+    # lo corrió la tanda de aplicación: lo que escribió, otra vez acá; si no, la llamada suelta
+    if ($ApplyBatch -and $ApplyBatch['third']) { Write-NodeChunks $ApplyBatch['third'].Chunks }
+    elseif ($CheckInClone) {
         # -Check en el repo único sin el enlace todavía (decisión C16): la revisión de terceros mira el clon, como el resto
         # de esta corrida. Con la ruta del enlace (que no existe) decía «no es un clon de agent-skills» y no revisaba nada.
         try { & node (Join-Path (Join-Path $PSScriptRoot 'publishing') 'install-third-party.js') --repo $CheckInClone --check } catch { }
@@ -604,15 +778,24 @@ if ($PiecesTmp -and $env:TYCON_THIRD_PARTY -ne '0') {
 # ============================================================
 $IntegEstado = 'sin-lector'
 $Integ = @{}
-$cfgJs = Join-Path (Join-Path $PSScriptRoot 'lib') 'tycon-config.js'
+# lo que contestó el lector (su código y su salida), para el sync de bloques: no vuelve a preguntar (story 8.36)
+$CfgIntegRc = $null; $CfgIntegOut = $null
 if ((Test-Path $cfgJs) -and (Get-Command node -ErrorAction SilentlyContinue)) {
     try {
-        # stderr APARTE del JSON (un aviso de node por stderr con rc 0 rompia ConvertFrom-Json y dejaba «sin-lector»), y sin
-        # $ErrorActionPreference='Stop' mientras corre node: en Windows PowerShell 5.1 una linea por stderr seria NativeCommandError
-        $errTmp = [System.IO.Path]::GetTempFileName()
-        $eap = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-        try { $out = & node $cfgJs integrations --json 2>$errTmp; $rc = $LASTEXITCODE } finally { $ErrorActionPreference = $eap }
-        $err = if (Test-Path $errTmp) { (Get-Content $errTmp -Raw -ErrorAction SilentlyContinue); Remove-Item $errTmp -ErrorAction SilentlyContinue } else { '' }
+        if ($ReadBatch -and $ReadBatch['integrations']) {
+            # lo leyó la tanda de la lectura (más arriba): la misma llamada
+            $rc = $ReadBatch['integrations'].Rc
+            $out = @(Split-NativeLines (Get-ChunkText $ReadBatch['integrations'].Chunks 'o'))
+            $err = Get-ChunkText $ReadBatch['integrations'].Chunks 'e'
+        } else {
+            # stderr APARTE del JSON (un aviso de node por stderr con rc 0 rompia ConvertFrom-Json y dejaba «sin-lector»), y sin
+            # $ErrorActionPreference='Stop' mientras corre node: en Windows PowerShell 5.1 una linea por stderr seria NativeCommandError
+            $errTmp = [System.IO.Path]::GetTempFileName()
+            $eap = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+            try { $out = & node $cfgJs integrations --json 2>$errTmp; $rc = $LASTEXITCODE } finally { $ErrorActionPreference = $eap }
+            $err = if (Test-Path $errTmp) { (Get-Content $errTmp -Raw -ErrorAction SilentlyContinue); Remove-Item $errTmp -ErrorAction SilentlyContinue } else { '' }
+        }
+        $CfgIntegRc = $rc; $CfgIntegOut = ($out | Out-String)
         if ($rc -eq 0) {
             $j = ($out | Out-String) | ConvertFrom-Json
             foreach ($p in $j.PSObject.Properties) { $Integ[$p.Name] = $p.Value }
@@ -642,11 +825,18 @@ function Integ-Prendida([string]$k) {
 # su variable en `1`. Rota o sin lector: lo que depende del perfil QUEDA COMO ESTÁ (ni se registra ni se saca), y se dice.
 # Este instalador filtra SUS listas: lo que en Windows no registra en full (story 8.17) tampoco aparece en minimal.
 $ProfileState = 'sin-lector'; $ProfileValue = $null
+$CfgProfileRc = $null; $CfgProfileOut = $null   # para el sync de bloques (story 8.36), como $CfgIntegRc
 if ((Test-Path $cfgJs) -and (Get-Command node -ErrorAction SilentlyContinue)) {
-    $eap = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-    # con catch (story 8.17, W3W4): un try/finally solo dejaba pasar lo que tiraba y mataba el instalador con el candado tomado
-    try { $pOut = ((& node $cfgJs get install.profile 2>$null) | Out-String).Trim(); $pRc = $LASTEXITCODE }
-    catch { $pOut = ''; $pRc = -1 } finally { $ErrorActionPreference = $eap }
+    if ($ReadBatch -and $ReadBatch['profile']) {
+        # lo leyó la tanda de la lectura (más arriba): la misma llamada
+        $pOut = ((Split-NativeLines (Get-ChunkText $ReadBatch['profile'].Chunks 'o')) | Out-String).Trim(); $pRc = $ReadBatch['profile'].Rc
+        $CfgProfileRc = $pRc; $CfgProfileOut = $pOut
+    } else {
+        $eap = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+        # con catch (story 8.17, W3W4): un try/finally solo dejaba pasar lo que tiraba y mataba el instalador con el candado tomado
+        try { $pOut = ((& node $cfgJs get install.profile 2>$null) | Out-String).Trim(); $pRc = $LASTEXITCODE; $CfgProfileRc = $pRc; $CfgProfileOut = $pOut }
+        catch { $pOut = ''; $pRc = -1 } finally { $ErrorActionPreference = $eap }
+    }
     if ($pRc -eq 3) { $ProfileState = 'ok' }
     elseif ($pRc -eq 0 -and @('minimal', 'full') -contains $pOut) { $ProfileState = 'ok'; $ProfileValue = $pOut }
     else { $ProfileState = 'rota' }
@@ -672,17 +862,19 @@ $ProfileOff = @()   # lo que se saca por el perfil (su línea lo dice)
 # Las rutas de archivos renombrados a inglés, a su nombre nuevo, en settings.json (hooks y permisos),
 # settings.local.json, ~/.codex/hooks.json y ~/.git-hooks/*, comparando la ruta COMPLETA. Va antes de cargar
 # settings.json, así el bloque de hooks encuentra el nuevo ya registrado y no lo duplica. Con el mapa vacío no toca nada.
-$LegacyNames = Join-Path (Join-Path $PSScriptRoot 'lib') 'legacy-names.js'
 if ((Test-Path $LegacyNames) -and (Get-Command node -ErrorAction SilentlyContinue)) {
-    $lnArgs = @('--migrate-machine', '--guides', (Split-Path -Parent $PSScriptRoot), '--skills', $AgentSkillsRepo)
-    if ($Check) { $lnArgs += '--check' }
-    # Un node que se cae NO lanza en PowerShell: se mira $LASTEXITCODE, como las otras llamadas a node de este archivo.
-    # EAP=Continue mientras corre (en Windows PowerShell 5.1 una línea por stderr sería NativeCommandError).
     $lnOut = @(); $lnRc = 0
-    $eap = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-    try { $lnOut = @(& node $LegacyNames @lnArgs 2>&1 | ForEach-Object { "$_" }); $lnRc = $LASTEXITCODE }
-    catch { $lnOut = @("$($_.Exception.Message)"); $lnRc = -1 }
-    finally { $ErrorActionPreference = $eap }
+    if ($ApplyBatch -and $ApplyBatch['legacy']) {
+        # lo corrió la tanda de la aplicación: sus dos canales en renglones, como los da `2>&1`
+        $lnOut = @(Get-MergedLines $ApplyBatch['legacy'].Chunks); $lnRc = $ApplyBatch['legacy'].Rc
+    } else {
+        # Un node que se cae NO lanza en PowerShell: se mira $LASTEXITCODE, como las otras llamadas a node de este archivo.
+        # EAP=Continue mientras corre (en Windows PowerShell 5.1 una línea por stderr sería NativeCommandError).
+        $eap = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+        try { $lnOut = @(& node $LegacyNames @lnArgs 2>&1 | ForEach-Object { "$_" }); $lnRc = $LASTEXITCODE }
+        catch { $lnOut = @("$($_.Exception.Message)"); $lnRc = -1 }
+        finally { $ErrorActionPreference = $eap }
+    }
     if ($lnRc -ne 0) {
         $lnErr = $lnOut | Where-Object { $_ -like '⛔*' } | Select-Object -First 1
         if (-not $lnErr) { $lnErr = $lnOut | Select-Object -Last 1 }
@@ -722,18 +914,30 @@ if ((Test-Path $LegacyNames) -and (Get-Command node -ErrorAction SilentlyContinu
 # la lista excluye de Windows (platforms.windows: false, con el motivo en scripts/setup/windows-support.json) no se toca.
 # Lista rota o settings.json roto: el aplicador sale distinto de 0 nombrando el archivo, no escribe nada, y este instalador
 # sale 1 acá. Las piezas y el plan los anota el propio aplicador en TYCON_REPORT_PIECES y TYCON_PLAN_PIECES.
-$ApplyJs = Join-Path (Join-Path $PSScriptRoot 'setup') 'apply-hooks.js'
-try { $ApplyOut = [IO.Path]::GetTempFileName() }
-catch {
-    # sin un temporal no hay dónde leer lo que hizo el aplicador (story 8.17, W3W4: antes tiraba con el candado tomado)
-    Write-Host "✗ tycon: no registré los hooks: no pude crear un archivo temporal ($(Get-ErrText $_)); settings.json quedó como estaba"
-    Exit-Installer 1
+if (-not $ApplyOut) {
+    try { $ApplyOut = [IO.Path]::GetTempFileName() }
+    catch {
+        # sin un temporal no hay dónde leer lo que hizo el aplicador (story 8.17, W3W4: antes tiraba con el candado tomado)
+        Write-Host "✗ tycon: no registré los hooks: no pude crear un archivo temporal ($(Get-ErrText $_)); settings.json quedó como estaba"
+        Exit-Installer 1
+    }
 }
-$applyArgs = @('--settings', $Settings, '--hooks-dir', (Join-Path $PSScriptRoot 'hooks'), '--skills', $AgentSkills, '--platform', 'windows', '--json-out', $ApplyOut)
-if ($Check) { $applyArgs += '--check' }
 $applyRc = 1
-$eap = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-try { & node $ApplyJs @applyArgs; $applyRc = $LASTEXITCODE } catch { Write-Host "✗ tycon: no pude lanzar apply-hooks.js ($($_.Exception.Message))" } finally { $ErrorActionPreference = $eap }
+if ($ApplyBatch -and $ApplyBatch['apply']) {
+    # lo corrió la tanda de la aplicación (más arriba): lo que escribió, otra vez acá, por su canal y en su orden
+    Write-NodeChunks $ApplyBatch['apply'].Chunks; $applyRc = $ApplyBatch['apply'].Rc
+    # sus piezas y su plan, recién ahora: en el mismo lugar y orden que con la llamada suelta (ver $ApplyPiecesTmp, arriba)
+    foreach ($pair in @(@($ApplyPiecesTmp, $PiecesTmp), @($ApplyPlanTmp, $PlanTmp))) {
+        if (-not $pair[0] -or -not $pair[1]) { continue }
+        try { [IO.File]::AppendAllText($pair[1], [IO.File]::ReadAllText($pair[0])) }
+        catch { if ($pair[1] -eq $PlanTmp) { $script:PlanIncomplete = $true } else { Write-Host "⚠ tycon: no pude sumar los hooks al reporte de piezas ($(Get-ErrText $_))" } }
+    }
+} else {
+    $applyArgs = New-ApplyArgs $ApplyOut
+    $eap = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+    try { & node $ApplyJs @applyArgs; $applyRc = $LASTEXITCODE } catch { Write-Host "✗ tycon: no pude lanzar apply-hooks.js ($($_.Exception.Message))" } finally { $ErrorActionPreference = $eap }
+}
+foreach ($f in @($ApplyPiecesTmp, $ApplyPlanTmp)) { if ($f) { Remove-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue } }
 $Apply = $null
 if ($applyRc -eq 0) {
     try { $Apply = [IO.File]::ReadAllText($ApplyOut) | ConvertFrom-Json } catch { $Apply = $null }
@@ -805,7 +1009,15 @@ if ($Check) {
 $syncBlocks = Join-Path (Join-Path $PSScriptRoot 'setup') 'sync-claude-md-blocks.ps1'
 if (Test-Path $syncBlocks) {
     # con -Check revisa sin escribir: dice qué bloque está desactualizado (story 8.17, W4 · AC 31)
-    try { if ($Check) { & $syncBlocks -Check } else { & $syncBlocks } } catch { }
+    # lo que el lector de configuración ya contestó (story 8.36): el sync no vuelve a preguntarle a Node. Sólo si este sync
+    # sabe recibirlo (una copia parcial con el sync de antes lo llamaría con un parámetro que no conoce y no correría).
+    $syncGiven = @{}
+    if ($null -ne $CfgProfileRc) { $syncGiven.ProfileRc = $CfgProfileRc; $syncGiven.ProfileOut = $CfgProfileOut }
+    if ($null -ne $CfgIntegRc) { $syncGiven.IntegRc = $CfgIntegRc; $syncGiven.IntegOut = $CfgIntegOut }
+    $syncArgs = @{}
+    if ($Check) { $syncArgs.Check = $true }
+    try { if ($syncGiven.Count -and (Get-Command $syncBlocks -ErrorAction Stop).Parameters.ContainsKey('Given')) { $syncArgs.Given = $syncGiven } } catch { }
+    try { & $syncBlocks @syncArgs } catch { }
 }
 
 # La línea de ~/.claude/CLAUDE.md que carga el índice de guías: desde 2026-10-14 el índice es INDEX.md y README.md es la

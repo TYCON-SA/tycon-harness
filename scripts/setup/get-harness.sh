@@ -89,10 +89,10 @@ ask() { # sin permiso y el repo no se lee: en la terminal se pide sin eco; sin t
   say "el repo $REPO no se puede leer sin tu permiso de GitHub: uno de sólo lectura (Fine-grained, Contents: read) en $TOKEN_URL"; printf 'get-harness: pegá el permiso de GitHub y Enter: ' >&2
   IFS= read -rs TOKEN; printf '\n' >&2; TOKEN="$(printf '%s' "$TOKEN" | tr -d '\r\n')"; SAVE=1; if [ -z "$TOKEN" ]; then say "sin permiso no puedo bajar la versión: no bajé nada"; exit 1; fi
 }
-SHA=""; REF="$TMP/ref.json"; CODE=200   # sin permiso, main de info/refs; 401/404: se pide el permiso; otra cosa: la API
-if [ -z "$TOKEN" ] && [ "$PUB" = 1 ]; then CODE="$(fetch "$GITBASE/$REPO.git/info/refs?service=git-upload-pack" "$TMP/refs")"; case "$CODE" in 401|404) ask ;; esac
-  [ "$CODE" = 200 ] && SHA="$(node -e 'const t=require("fs").readFileSync(process.argv[1],"latin1");const m=t.startsWith("001e# service=git-upload-pack\n0000")&&/([0-9a-f]{40}) refs\/heads\/main[\0\n]/.exec(t);if(m)process.stdout.write(m[1])' "$TMP/refs")"; fi
+SHA=""; REF="$TMP/ref.json"; CODE=200; refs() { CODE="$(fetch "$GITBASE/$REPO.git/info/refs?service=git-upload-pack" "$TMP/refs")"; [ "$CODE" = 200 ] && SHA="$(node -e 'const t=require("fs").readFileSync(process.argv[1],"latin1");const m=t.startsWith("001e# service=git-upload-pack\n0000")&&/([0-9a-f]{40}) refs\/heads\/main[\0\n]/.exec(t);if(m)process.stdout.write(m[1])' "$TMP/refs")"; return 0; }   # sin permiso, main de info/refs; 401/404: se pide el permiso; otra cosa: la API
+if [ -z "$TOKEN" ] && [ "$PUB" = 1 ]; then refs; case "$CODE" in 401|404) ask ;; esac; fi
 [ -z "$SHA" ] && { CODE="$(fetch "$API/repos/$REPO/git/ref/heads/main" "$REF")"; if [ -z "$TOKEN" ] && { [ "$CODE" = 401 ] || [ "$CODE" = 404 ]; }; then ask; CODE="$(fetch "$API/repos/$REPO/git/ref/heads/main" "$REF")"; fi; }
+if [ "$CODE" = 401 ] && [ -n "$TOKEN" ] && [ "$PUB" = 1 ]; then T0="$TOKEN"; TOKEN=""; refs; if [ -n "$SHA" ]; then CODE=200; [ "$SAVE" = 1 ] && say "el permiso de GitHub de TYCON_GITHUB_TOKEN venció o se revocó (401), pero no hace falta: el repo del arnés es público. Sigo sin él y no lo guardo."; SAVE=0; else TOKEN="$T0"; CODE=401; fi; fi   # un permiso vencido (401) y el repo se lee sin él: se sigue SIN el permiso y no se guarda; el guardado lo dice install
 case "$CODE" in
   200) ;; 403) limited; say "GitHub contestó 403 al pedir la rama main de $REPO. No bajé nada."; exit 1 ;;
   401) say "el permiso de GitHub no vale (401): venció o se revocó. Creá otro en $TOKEN_URL y pegalo con harness.js config set github.token. No bajé nada."; exit 1 ;;

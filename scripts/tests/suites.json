@@ -1265,6 +1265,18 @@
       ]
     },
     {
+      "__nota": "2026-10-14 (la máquina de un dev): un permiso de GitHub guardado que venció no frena la actualización del repo público. Con el GitHub de juguete contestando 401 a un permiso que no conoce y 200 sin permiso: el arranque baja la versión nueva por las rutas públicas y lo dice en una línea (venció, no hace falta, cómo sacarlo), una sola vez; después del 401 ningún pedido lleva el permiso; no cuenta como fallo; el permiso no se borra solo; update --check a mano lo dice; doctor lo pinta amarillo, nunca rojo; sacado el permiso la marca se borra; una instalación nueva con el permiso vencido se instala; con el repo privado el 401 se dice como siempre. Sin red real: todo en localhost.",
+      "raiz": "arnes",
+      "ruta": "tests/release-expired-token.test.sh",
+      "requiere": [],
+      "gate_only_when_touching": [
+        "scripts/setup/**",
+        "scripts/lib/**",
+        "scripts/tests/lib/**",
+        "scripts/tests/fixtures/**"
+      ]
+    },
+    {
       "__nota": "story 8.35 (T2-T11): ~/.claude/skills y ~/.claude/agents siempre carpetas reales con un enlace por entrada del arnés (canonical-path.js ensureRepoLinks): la instalación nueva, la conversión de la forma vieja (enlace a la carpeta entera) moviendo lo propio, synced/ y .trash/ a la carpeta real sin borrar nada a través del enlace, el corte retomado, lo tomado (simulado) que no frena, el choque de nombres, el enlace a otro clon intacto, una versión nueva con la forma de enlaces de la 8.33, uninstall y doctor. Sobre un árbol de juguete y la máquina de juguete de la 8.23; sin red real.",
       "raiz": "arnes",
       "ruta": "tests/repo-links-real-folders.test.sh",
@@ -1711,6 +1723,12 @@
       "__nota": "story 8.18, tramo 1 (T10, contrato C3): dónde busca el arnés las skills. resolveSkillsDirs() de scripts/lib/skills-dir.js contesta la variable TYCON_SKILLS_DIR (raíz o carpeta), si no el propio clon cuando es unido (isSingleRepo), si no ~/.claude/agent-skills; con dos repos físicos no cambia nada. resolveInstalledSkillsDirs(), para quien escribe rutas en la máquina, sigue dando la instalada mientras exista (hallazgo I12). Y el modo de línea de comandos que usa el instalador desde bash: una línea y 0, 1 con el motivo si la carpeta no existe, 2 por uso. Cada caso arma un clon de juguete con su copia de la biblioteca y una HOME de juguete.",
       "raiz": "arnes",
       "ruta": "tests/skills-dir.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.36 (T1-T3): la tanda del aplicador (scripts/setup/applier-batch.js) corre varios pasos de Node en un solo proceso. Cada paso de la lista cerrada (skills-dir, tycon-config, legacy-names, apply-hooks), en una HOME de juguete con cada estado que el aplicador conoce, contesta igual que su llamada suelta: código, salida, salida de error y lo que deja en el disco; también juntos, en el orden del aplicador. Un paso que tira o llama a process.exit cuenta como un Node caído y el resto corre; uno fuera de la lista: sale 2 sin correr nada. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/applier-batch.test.js",
       "requiere": []
     },
     {

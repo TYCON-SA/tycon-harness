@@ -1601,17 +1601,23 @@ module.exports = {
   LegacyNamesError, KINDS, CALLERS, NO_SHIM_CALLERS, SHIM_MARK, DEFAULT_MAP, loadMap, entriesOf, usableEntries, expand, needsShim,
   supportsShim, pathProblem, within, readEnv, envNames, aliasOptions, aliasArgv, resolveFile, prepareStateWrite, oldPathOf, readKeys, readKeysDeep, recordUse,
   isShim, shimTarget, resolveShimsInCommand, writeShims, migrateMachine, machineRewrites, relativePermissionRewrites, shellLines, oldStillReal, isMoved, gitAt,
-  repoForms, placeForms, rerootText, rerootMachine, countRegistered, rerootFiles,
+  repoForms, placeForms, rerootText, rerootMachine, countRegistered, rerootFiles, cli,
 };
+
+/**
+ * La línea de comandos entera, como función (story 8.36): lo mismo que corre el arranque de este archivo como programa,
+ * con su `try/catch`. Devuelve el código de salida. La llama la tanda del aplicador (scripts/setup/applier-batch.js).
+ */
+function cli(argv) {
+  try {
+    return main(argv);
+  } catch (e) {
+    process.stderr.write(`⛔ legacy-names: ${e instanceof LegacyNamesError ? e.message : (e && e.stack) || e}\n`);
+    return 2;
+  }
+}
 
 // DESPUÉS del `module.exports`, no antes (pase adversarial del tramo 1 de la story 8.18, hallazgos 10 y 11): como módulo
 // principal, `main()` llega a skills-dir.js → canonical-path.js, que importa ESTE archivo; con las exportaciones todavía
 // sin asignar, Node escribía dos avisos de dependencia circular por stderr en cada corrida en un clon unido.
-if (require.main === module) {
-  try {
-    process.exitCode = main(process.argv.slice(2));
-  } catch (e) {
-    process.stderr.write(`⛔ legacy-names: ${e instanceof LegacyNamesError ? e.message : (e && e.stack) || e}\n`);
-    process.exitCode = 2;
-  }
-}
+if (require.main === module) process.exitCode = cli(process.argv.slice(2));

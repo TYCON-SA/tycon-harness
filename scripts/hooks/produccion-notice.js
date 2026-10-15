@@ -14,7 +14,8 @@
  * es «quedó vieja» (rojo); una que no coincide con ninguna publicada es «alterada» (rojo). Y reverifica
  * las huellas de `/opt/tycon/huellas.json` contra los archivos instalados (AC 29). Compara el freno, la puerta, el
  * lanzador, la configuración administrada y las bibliotecas que el freno requiere (story 8.14, AC 21:
- * `BIBLIOTECAS_DEL_FRENO`).
+ * `BIBLIOTECAS_DEL_FRENO`) — desde el 2026-10-14, contra la COPIA PROPIA del freno (scripts/production/guard-libs/), no
+ * contra las bibliotecas compartidas: un cambio en el resto del arnés ya no pide reinstalar.
  *
  * EN UNA VERSIÓN BAJADA (2026-10-09): el arnés que corre no es un clon (`~/.tycon/harness`, sin git) y el freno se
  * instala desde ESA carpeta, que no trae los mismos bytes que el clon interno. La referencia pasa a ser la versión que
@@ -130,17 +131,22 @@ function rutasViejas(rutaEnRepo) {
 }
 
 /**
+ * @param {string} [antes] de dónde lo copiaba el instalador antes de la copia propia (la biblioteca compartida): un freno
+ *   instalado entonces coincide con una versión publicada de ESA ruta, y es «quedó viejo», no «alguien lo cambió»
  * @returns {'al-dia'|'vieja'|'alterada'|'sin-publicado'} estado de lo instalado contra origin/main
  */
-function estadoContraPublicado(instalado, rutaEnRepo) {
+function estadoContraPublicado(instalado, rutaEnRepo, antes) {
   const blob = blobDe(instalado);
   if (!blob) return 'alterada';
   const actual = git(['rev-parse', `origin/main:${rutaEnRepo}`]);
   if (actual.status !== 0) return 'sin-publicado';
   if (actual.stdout.trim() === blob) return 'al-dia';
   // 🔴 En la historia de la ruta NUEVA y de la VIEJA (story 8.9, AC 47): `git log -- <ruta nueva>` no sigue el renombre,
-  // así que una copia instalada antes de él no coincidía con nada y se leía «alguien lo cambió».
-  for (const ruta of [rutaEnRepo, ...rutasViejas(rutaEnRepo)]) {
+  // así que una copia instalada antes de él no coincidía con nada y se leía «alguien lo cambió». Lo mismo con la copia
+  // propia (2026-10-14): una biblioteca instalada antes de ella sale de la historia de la compartida.
+  const rutas = [rutaEnRepo, ...rutasViejas(rutaEnRepo)];
+  if (antes) rutas.push(antes, ...rutasViejas(antes));
+  for (const ruta of rutas) {
     const hist = git(['log', '--format=%H', '-n', '100', 'origin/main', '--', ruta]);
     if (hist.status !== 0) continue;
     for (const commit of hist.stdout.split('\n').filter(Boolean)) {
@@ -184,9 +190,10 @@ function blobsDe(archivo) {
  * El estado de lo instalado en una versión bajada, que no tiene historia de git.
  * @param {Map<string,string>} corre lo que publica la versión que corre
  * @param {Map<string,string>|null} dejado lo que dejó el instalador; null = un freno instalado antes de la constancia
+ * @param {string} [antes] la ruta de la biblioteca compartida de la que salía antes de la copia propia
  * @returns {'al-dia'|'vieja'|'alterada'|'sin-publicado'}
  */
-function estadoContraVersionBajada(instalado, rutaEnRepo, corre, dejado) {
+function estadoContraVersionBajada(instalado, rutaEnRepo, corre, dejado, antes) {
   const blob = blobSinGit(instalado);
   if (!blob) return 'alterada';
   const publicado = corre.get(rutaEnRepo);
@@ -195,7 +202,9 @@ function estadoContraVersionBajada(instalado, rutaEnRepo, corre, dejado) {
   // Sin constancia no hay con qué decir «alguien lo cambió»: es un freno instalado antes de ella (o desde el clon, antes
   // de la mudanza) y lo que le toca es reinstalar, que la deja escrita. La puerta y el freno los cubren igual sus huellas.
   if (!dejado) return 'vieja';
-  return dejado.get(rutaEnRepo) === blob ? 'vieja' : 'alterada';
+  // una constancia de antes de la copia propia anota la biblioteca con la ruta de la compartida, de donde se copió
+  const anotado = dejado.has(rutaEnRepo) ? dejado.get(rutaEnRepo) : (antes ? dejado.get(antes) : undefined);
+  return anotado === blob ? 'vieja' : 'alterada';
 }
 
 // El texto exacto: lo busca la prueba T51 de la story 8.9 y lo lee la persona en cada arranque.
@@ -211,17 +220,26 @@ const AVISO_VIEJO = 'el freno quedó viejo: reinstalalo';
  * exactamente lo que cargó. La de las constancias se compara por su nombre de hoy: desde la story 8.7 (tanda B) el freno
  * la carga primero por ése y sólo si falta por el de antes (el instalador la deja con los dos).
  */
+// 🔴 LA COPIA PROPIA (2026-10-14, decisión del dueño): ese costo se pagaba casi en cada versión, porque las bibliotecas
+// compartidas cambian todo el tiempo por motivos que no son del freno. Ahora `repo` es la copia del freno
+// (scripts/production/guard-libs/), que cambia sólo cuando alguien lo decide (guard-libs-check.js); `antes` es la
+// compartida de la que se copiaba hasta entonces: un freno instalado así se reconoce como «quedó viejo», no «alterado».
+const COPIA_PROPIA = 'scripts/production/guard-libs/';
 const BIBLIOTECAS_DEL_FRENO = [
-  { opt: 'lib/shell-parse.js', repo: 'scripts/lib/shell-parse.js' },
+  { opt: 'lib/shell-parse.js', repo: `${COPIA_PROPIA}lib/shell-parse.js`, antes: 'scripts/lib/shell-parse.js' },
   { opt: 'production/production-index.js', repo: 'scripts/production/production-index.js' },
-  { opt: 'lib/guard-record.js', repo: 'scripts/lib/guard-record.js' },
-  { opt: 'lib/repos-root.js', repo: 'scripts/lib/repos-root.js' },
-  { opt: 'lib/tycon-config.js', repo: 'scripts/lib/tycon-config.js' },
-  { opt: 'lib/legacy-names.js', repo: 'scripts/lib/legacy-names.js' },
-  { opt: 'lib/skills-dir.js', repo: 'scripts/lib/skills-dir.js' },
+  { opt: 'lib/guard-record.js', repo: `${COPIA_PROPIA}lib/guard-record.js`, antes: 'scripts/lib/guard-record.js' },
+  { opt: 'lib/repos-root.js', repo: `${COPIA_PROPIA}lib/repos-root.js`, antes: 'scripts/lib/repos-root.js' },
+  { opt: 'lib/tycon-config.js', repo: `${COPIA_PROPIA}lib/tycon-config.js`, antes: 'scripts/lib/tycon-config.js' },
+  { opt: 'lib/legacy-names.js', repo: `${COPIA_PROPIA}lib/legacy-names.js`, antes: 'scripts/lib/legacy-names.js' },
+  { opt: 'lib/skills-dir.js', repo: `${COPIA_PROPIA}lib/skills-dir.js`, antes: 'scripts/lib/skills-dir.js' },
   // dónde vive cada cosa en la máquina (story 8.23, tanda D · AC 30): tycon-config.js y skills-dir.js la cargan si está
-  { opt: 'setup/harness/tycon-home.js', repo: 'scripts/setup/harness/tycon-home.js' },
+  { opt: 'setup/harness/tycon-home.js', repo: `${COPIA_PROPIA}setup/harness/tycon-home.js`, antes: 'scripts/setup/harness/tycon-home.js' },
 ];
+// La única vez que pide reinstalar por la copia propia: un freno instalado antes de ella. Lo dice la constancia del
+// instalador (sus rutas son las de la copia desde ese día); sin constancia, o ilegible, es de antes.
+const TEXTO_COPIA_PROPIA = '   Esta vez es por un cambio de fondo: desde esta versión el freno lleva su propia copia de las bibliotecas que usa. Después de reinstalar, sólo te va a pedir reinstalar cuando cambie el freno, no cada vez que cambia el resto del arnés.';
+const instaladoConCopiaPropia = (dejado) => !!dejado && [...dejado.keys()].some((p) => p.startsWith(COPIA_PROPIA));
 
 function main() {
   // ── 1. el índice (AC 2) ──────────────────────────────────────────────────────────────────────
@@ -288,7 +306,7 @@ function main() {
   // las bibliotecas del freno (story 8.14, AC 21): se comparan contra lo publicado como las piezas. Una que falta se dice
   // sólo si nada más pide reinstalar: en una copia de antes del renombre faltan por estar con su nombre viejo, y eso ya
   // lo dice «quedó viejo».
-  const bibliotecas = BIBLIOTECAS_DEL_FRENO.map((b) => ({ instalado: path.join(OPT, b.opt), repo: b.repo, nombre: `la biblioteca ${path.basename(b.opt)}` }));
+  const bibliotecas = BIBLIOTECAS_DEL_FRENO.map((b) => ({ instalado: path.join(OPT, b.opt), repo: b.repo, antes: b.antes, nombre: `la biblioteca ${path.basename(b.opt)}` }));
   const bibliotecasFaltan = bibliotecas.filter((b) => !existe(b.instalado));
   const aMediasPorBibliotecas = () => avisos.push(`🔴 el freno está instalado A MEDIAS: falta ${bibliotecasFaltan.map((f) => f.nombre).join(', ')}. Reinstalalo: open ${INSTALADOR}`);
   let administradaVieja = false;   // la administrada es de antes del renombre: «quedó viejo» ya lo dice todo
@@ -311,7 +329,7 @@ function main() {
       } else {
         // 🟠 una constancia que está y no se lee no es «no hay constancia»: sin esto, romperla callaba «alguien lo cambió»
         if (!dejado && existe(CONSTANCIA_INSTALADO)) avisos.push(`🟠 no pude leer la constancia de lo que dejó el instalador del freno (/opt/tycon/production/installed-files.json): no puedo decir si alguien cambió el freno. Reinstalalo: open ${INSTALADOR}`);
-        estadoDe = (p) => estadoContraVersionBajada(p.instalado, p.repo, corre, dejado);
+        estadoDe = (p) => estadoContraVersionBajada(p.instalado, p.repo, corre, dejado, p.antes);
         textoAlterada = 'el freno instalado NO coincide con la versión del arnés que corre ni con lo que dejó el instalador';
         causaAlterada = 'alguien lo cambió';
       }
@@ -325,7 +343,7 @@ function main() {
       avisos.push(`🟠 no pude leer lo publicado del arnés (origin/main en ${ARNES}): no puedo decir si el freno instalado está al día ni si alguien lo cambió.`);
       if (bibliotecasFaltan.length) aMediasPorBibliotecas();
     } else {
-      estadoDe = (p) => estadoContraPublicado(p.instalado, p.repo);
+      estadoDe = (p) => estadoContraPublicado(p.instalado, p.repo, p.antes);
     }
     if (estadoDe) {
       const comparadas = [...piezas, ...bibliotecas.filter((b) => !bibliotecasFaltan.includes(b))];
@@ -337,6 +355,7 @@ function main() {
         avisos.push(`   Reinstalalo desde lo publicado: open ${INSTALADOR}`);
       } else if (viejas.length) {
         avisos.push(`🔴 ${AVISO_VIEJO} (${viejas.map((v) => v.nombre).join(', ')}): el arnés publicó una versión nueva.`);
+        if (!instaladoConCopiaPropia(blobsDe(CONSTANCIA_INSTALADO))) avisos.push(TEXTO_COPIA_PROPIA);
         avisos.push(`   Actualizalo (pide tu contraseña del Mac): open ${INSTALADOR}`);
       } else if (bibliotecasFaltan.length) {
         aMediasPorBibliotecas();
@@ -424,7 +443,7 @@ function main() {
 
 if (COMO_MODULO) {
   // para las pruebas (story 8.9, T51): el juicio contra lo publicado, sin correr el aviso
-  module.exports = { estadoContraPublicado, estadoContraVersionBajada, blobsDe, rutasViejas, AVISO_VIEJO, BIBLIOTECAS_DEL_FRENO };
+  module.exports = { estadoContraPublicado, estadoContraVersionBajada, blobsDe, rutasViejas, AVISO_VIEJO, BIBLIOTECAS_DEL_FRENO, COPIA_PROPIA, TEXTO_COPIA_PROPIA, instaladoConCopiaPropia };
 } else {
   try { main(); } catch (e) {
     // un aviso que se rompe no puede romper el arranque de la sesión
