@@ -485,7 +485,7 @@ function record(event) {
   // sesión. `puntos` trae una entrada por entrega; `resuelto:false` es "no sé", y eso NO se
   // convierte en el repo de la sesión: se dice más abajo.
   const puntos = isPrCreate
-    ? [{ dir: dirDelPrCreate(cmd, cwd), st: cmd, resuelto: true }]
+    ? pedidosDeAz(cmd, cwd)   // story 7.25: cada pedido con SU repo, o «no sé» (nunca la carpeta de la sesión a ciegas)
     // `envoltorios: true`: un `time git push` o un `/usr/bin/git push` son un push. Acá se REGISTRA
     // lo que ya pasó, así que reconocer de más no frena a nadie; no verlo sí pierde una
     // retrospectiva (o, peor, la publica como "no pude resolver" habiendo podido).
@@ -516,7 +516,7 @@ function record(event) {
   // No hace falta dedup: `anotar` ya se niega a repetir una entry con el mismo repoPath + sha.
   for (const p of puntos) {
     if (!p.resuelto) { irresoluble = true; continue; }
-    const e = anotar(event, cmd, p, { isPrCreate, prTarget });
+    const e = anotar(event, cmd, p, { isPrCreate, prTarget, sha: p.sha, punta: p.punta });
     if (e) anotadas.push(e);
   }
   // "No pude saber a qué repo fue" no se publica como si fuera el repo de la sesión — que es
@@ -535,9 +535,12 @@ function record(event) {
   // este recorte no lo toca: el punto sintético NUNCA anota nada (es `resuelto:false`), así que
   // acá no se pierde ni una entrada — sólo el aviso.
   if (pedidoSinUbicar || (irresoluble && (isPrCreate || puntos.some((p) => !p.resuelto && !p.mencion && /\bpush\b[^|;&\n]*\b(main|master)\b/.test(p.st || cmd))))) {
+    const motivosAz = puntos.filter((p) => isPrCreate && !p.resuelto && p.motivo).map((p) => p.motivo);
     const que = pedidoSinUbicar
       ? 'ese pedido de GitHub hacia main (la carpeta o el repo los arma la terminal, o el --repo del comando no es el origin de esa carpeta)'
-      : 'ese push a main (una variable que el comando no define, o un git adentro de otro comando)';
+      : isPrCreate
+        ? `ese pedido de merge a main (az repos pr create: ${[...new Set(motivosAz)].join('; ') || 'no se sabe en qué repo corrió'})`
+        : 'ese push a main (una variable que el comando no define, o un git adentro de otro comando)';
     process.stderr.write(`retro-pending: no pude resolver a qué repo fue ${que} — NO lo registro contra este repo: sería una atribución falsa. Si fue un merge a main, corré el latido nombrando el repo y el merge: node "${LATIDO}" --repo <repo> --merge <sha>.\n`);
     process.exit(2);
   }
@@ -566,19 +569,128 @@ function record(event) {
   process.exit(2);
 }
 
-// Dónde corre el `az repos pr create` que apunta a main. La DETECCIÓN sigue siendo la del lector
-// compartido (az.segmentos sobre el comando entero, con conciencia de comillas): acá sólo se
-// averigua el directorio, y si el recorrido simple no ubica la sentencia vale el cwd de la sesión,
-// como siempre — nunca se pierde un registro por esto.
-function dirDelPrCreate(cmd, base) {
-  try {
-    for (const s of destinoGit.recorrer(cmd, base).statements) {
-      if (s.esCd || !az.pareceAzPr(s.st) || az.verboDePr(s.st) !== 'create') continue;
-      if (!/^(main|master)$/.test(String(az.flagDe(s.st, 'target-branch', 't') || ''))) continue;
-      return s.dir || base;
+// ── a qué repo va cada `az repos pr create` hacia main (story 7.25 del arnés, 2026-10-15) ──────────
+// La DETECCIÓN sigue siendo la del lector compartido (az.segmentos sobre el comando entero, con conciencia de comillas);
+// acá se averigua el REPO de cada pedido. Hasta la 7.25 esto era `dirDelPrCreate`, y estaba roto de una forma que nadie
+// veía: le pasaba a `az.verboDePr` el TEXTO de la sentencia cuando ese lector espera las fichas ya cortadas; tiraba
+// (`seg.filter is not a function`), el `catch` lo tapaba y devolvía la carpeta de la sesión. O sea que ningún `cd` de un
+// pedido se siguió nunca: con la sesión en la carpeta que agrupa los repos (no es un repo), el pedido no dejaba entrada y
+// el hook salía 0 sin decir nada — dos veces medido, 2026-09-24 y 2026-10-14, en el mismo producto del equipo.
+// Ahora, por cada pedido hacia main:
+//   · la carpeta: la de la sesión con los `cd` del comando seguidos; un `cd` que no se puede resolver es «no sé»;
+//   · el repo: si `--repository` es un nombre escrito, el repo cuyo `origin` es ESE repositorio — la carpeta, uno de
+//     sus subdirectorios o uno de sus hermanos (mismo padre); si viene en una variable o no viene, el repo de la carpeta;
+//   · sin repo: «no sé» (`resuelto:false`) — quien llama lo dice; nunca se anota contra la carpeta de la sesión, que
+//     sería la atribución falsa que este hook ya cerró para los pushes el 2026-09-15.
+// La punta es la de `--source-branch` si el repo la conoce (local o del remoto), y si no la de HEAD.
+/**
+ * La identidad del `origin` de un repo, en tres estados que NO se mezclan (revisores de la 7.25):
+ *   `{ estado: 'nombre', nombre }` · `{ estado: 'sin-identidad' }` (no tiene origin, o es uno que no es un remoto) ·
+ *   `{ estado: 'error' }` (leerlo falló). Sólo «sin identidad» deja caer al repo de la carpeta; un error es «no sé».
+ */
+function identidadDelOrigin(root) {
+  let r;
+  try { r = resolverRemoto(root); } catch { return { estado: 'error' }; }
+  if (r && r.id && r.id.nombre) return { estado: 'nombre', nombre: String(r.id.nombre).toLowerCase() };
+  if (r && (r.por === 'sin-origin' || r.por === 'remoto-ilegible')) return { estado: 'sin-identidad' };
+  return { estado: 'error' };   // tope de saltos o una respuesta que no se entiende
+}
+function raizGit(dir) { return dir && fs.existsSync(dir) ? git(dir, ['rev-parse', '--show-toplevel']) : null; }
+/** ¿git no pudo contestar en una carpeta que SÍ parece un repo (tiene .git)? — dueño distinto, safe.directory, git roto */
+function gitNoContesto(dir) { return Boolean(dir) && fs.existsSync(path.join(dir, '.git')) && !raizGit(dir); }
+function subcarpetas(dir, errores) {
+  try { return fs.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory() && !e.name.startsWith('.')).map((e) => path.join(dir, e.name)); }
+  catch (e) { errores.push(`no pude listar ${dir} (${e.code || e.message})`); return []; }
+}
+/**
+ * El repo cuyo origin se llama `nombre`, buscando en la carpeta, sus hijos y sus hermanos: `{ root, errores }`, con
+ * `root` null si no está. `errores` junta lo que no se pudo mirar (una carpeta que no se lista, un origin que no se lee),
+ * para que el «no pude resolver» diga el motivo real y no «ningún repo con ese origin».
+ */
+function repoPorNombre(dir, nombre) {
+  const buscado = String(nombre).toLowerCase();
+  const errores = [];
+  const propia = raizGit(dir);
+  const padre = path.dirname(propia || dir);
+  const candidatas = [propia, ...subcarpetas(dir, errores), ...subcarpetas(padre, errores)].filter(Boolean);
+  const vistas = new Set();
+  for (const c of candidatas) {
+    const root = raizGit(c);
+    if (!root && gitNoContesto(c)) { errores.push(`git no pudo leer ${c}`); continue; }
+    if (!root || vistas.has(root)) continue;
+    vistas.add(root);
+    const id = identidadDelOrigin(root);
+    if (id.estado === 'nombre' && id.nombre === buscado) return { root, errores };
+    if (id.estado === 'error') errores.push(`no pude leer el origin de ${root}`);
+  }
+  return { root: null, errores };
+}
+function pedidosDeAz(cmd, base) {
+  const out = [];
+  let statements = [];
+  let errorAlRecorrer = null;
+  try { statements = destinoGit.recorrer(cmd, base).statements; } catch (e) { statements = []; errorAlRecorrer = (e && e.message) || String(e); }
+  for (const s of statements) {
+    // Un error al leer UNA sentencia no puede perder el pedido en silencio (el `catch` de main sale 0): se dice.
+    try {
+      const p = pedidoDeUnaSentencia(s);
+      if (p) out.push(p);
+    } catch (e) {
+      out.push({ resuelto: false, st: s.st, motivo: `error al leer el pedido (${(e && e.message) || e})` });
     }
-  } catch { /* fail-open al cwd de la sesión */ }
-  return base;
+  }
+  // El lector de sentencias no ubicó el pedido (adentro de otro comando, de un heredoc): no se sabe dónde corrió.
+  if (!out.length) {
+    out.push({ resuelto: false, st: cmd, motivo: errorAlRecorrer ? `no pude leer el comando (${errorAlRecorrer})` : 'el pedido está adentro de otro comando' });
+  }
+  return out;
+}
+
+/** El punto de UNA sentencia `az repos pr create` hacia main, o null si la sentencia no es eso. */
+function pedidoDeUnaSentencia(s) {
+  {
+    if (s.esCd || !az.pareceAzPr(s.st)) return null;
+    const seg = az.segmentos(s.st).find((x) => az.verboDePr(x) === 'create');
+    if (!seg) return null;
+    if (!/^(main|master)$/.test(String(az.flagDe(seg, 'target-branch', 't') || ''))) return null;
+    if (!s.dir) return { resuelto: false, st: s.st, motivo: 'un cd que no se pudo seguir' };
+    const repoFlag = az.flagDe(seg, 'repository', 'r');
+    const escrito = repoFlag && !/[$`]/.test(repoFlag) && repoFlag !== 'true' ? repoFlag : null;
+    let root = null;
+    let motivo = null;
+    if (escrito) {
+      const busqueda = repoPorNombre(s.dir, escrito);
+      root = busqueda.root;
+      // Sin coincidencia, el repo de la carpeta vale SÓLO si su origin no se puede leer (sin origin, o uno que no es un
+      // remoto): ahí no hay identidad que contradiga al --repository, y es lo que hacía este hook antes de la 7.25.
+      const propia = root ? null : raizGit(s.dir);
+      const idPropia = propia ? identidadDelOrigin(propia) : null;
+      if (idPropia && idPropia.estado === 'sin-identidad') root = propia;
+      if (!root) {
+        if (idPropia && idPropia.estado === 'error') busqueda.errores.push(`no pude leer el origin de ${propia}`);
+        if (!propia && gitNoContesto(s.dir)) busqueda.errores.push(`git no pudo leer ${s.dir}`);
+        const errores = [...new Set(busqueda.errores)];
+        motivo = errores.length
+          ? `--repository ${escrito}: no lo encontré y hubo lo que no pude mirar — ${errores.slice(0, 3).join('; ')}`
+          : `--repository ${escrito}: ningún repo con ese origin en la carpeta, sus hijos ni sus hermanos`;
+      }
+    } else {
+      root = raizGit(s.dir);
+      if (!root) {
+        motivo = gitNoContesto(s.dir)
+          ? `git no pudo leer ${s.dir} (¿otro dueño o safe.directory?) y --repository no nombra un repo`
+          : 'la carpeta del comando no es un repo y --repository no nombra uno';
+      }
+    }
+    if (!root) return { resuelto: false, st: s.st, motivo };
+    const fuente = az.flagDe(seg, 'source-branch', 's');
+    const ref = fuente && !/[$`]/.test(fuente) ? [`refs/heads/${fuente.replace(/^refs\/heads\//, '')}`, `refs/remotes/origin/${fuente.replace(/^refs\/heads\//, '')}`]
+      .find((r) => git(root, ['rev-parse', '--verify', '--quiet', r])) : null;
+    // Sin la rama de --source-branch en este clon, la punta es la de HEAD, y la entrada lo dice (`punta`): puede no ser
+    // lo que se mergea. No es un «no sé» que frene: HEAD es la mejor punta conocida y el merge sí fue de este repo.
+    const punta = ref ? null : (fuente && !/[$`]/.test(fuente) ? `HEAD: la rama ${fuente} no está en este clon` : 'HEAD: el pedido no nombra --source-branch legible');
+    return { resuelto: true, dir: root, st: s.st, sha: ref ? git(root, ['rev-parse', ref]) : null, punta };
+  }
 }
 
 // ── los pedidos de GitHub ──────────────────────────────────────────────────────────────────────────
@@ -700,6 +812,7 @@ function anotar(event, cmd, punto, ctx) {
   if (!sha) return null;
   const entry = { ts: new Date().toISOString(), sessionId: sessionIdOf(event), repoPath: root, sha: sha.slice(0, 12), branch: target, cmd: cmd.slice(0, 120) };
   if (juicio && juicio.exento) Object.assign(entry, { exento: juicio.exento, motivo: juicio.motivo, commits: juicio.commits, archivos: juicio.archivos.slice(0, 40) });
+  if (ctx.isPrCreate && !ctx.sha && ctx.punta) entry.punta = ctx.punta;   // story 7.25: la punta cayó a HEAD, dicho
   if (readJsonl(LEDGER).some((e) => e.repoPath === root && e.sha === entry.sha)) return null;
   fs.mkdirSync(STATE_DIR, { recursive: true });
   fs.appendFileSync(LEDGER, JSON.stringify(entry) + '\n', 'utf8');
