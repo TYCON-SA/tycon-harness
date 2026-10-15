@@ -681,7 +681,11 @@ function compute(opts) {
   const sid = storyIdFrom(fm, storyPath);
 
   if (/^dod_runtime_exempt:\s*true\b/m.test(fm)) {
-    return { sid, exempt: true, green: true, hash: 'exempt', perAc: {}, warnings: [], acs: [] };
+    // el repo y los totales también en la exenta (story 7.27): el candado de la guía QA busca las pantallas desde
+    // `repoRoot` y el generador de la guía lee `stats`; sin ellos, «la pantalla no está en el disco» y un TypeError
+    const repoRoot = opts.repoRoot ? path.resolve(opts.repoRoot) : discoverRepoRoot(storyPath);
+    const stats = { total: 0, runtime: 0, notRun: 0, accionNoEjercida: 0, notVerifiable: 0, waived: 0, exentosC8: 0 };
+    return { sid, exempt: true, green: true, hash: 'exempt', perAc: {}, warnings: [], acs: [], repoRoot, stats };
   }
   // La CLAVE de la evidencia (story 1.17). Si no se puede decidir —no se pudo recorrer el repo entero para
   // saber si el número se repite— la matriz NO adivina: es un error estructural (fail-closed).
