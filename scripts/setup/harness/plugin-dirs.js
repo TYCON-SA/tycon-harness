@@ -20,9 +20,9 @@ const PLUGIN_DIRS_KEY = 'CLAUDE_CODE_PLUGIN_DIRS';
 const PLUGIN_DIRS_ID = `env.${PLUGIN_DIRS_KEY}`;
 const OLD_MOD = path.join('.claude', 'tycon-mods', 'tablero-corrida');
 
-/** La carpeta del plugin de los mods del arnés, por la ruta canónica del arnés instalado. */
+/** La carpeta del plugin de los mods del arnés, por la ruta canónica del arnés instalado (la arma sólo place.js). */
 function ourDir(home) {
-  return path.join(home, '.claude', 'tycon-harness', 'mods', 'harness-mods');
+  return path.join(require('./place.js').placePath(home), 'mods', 'harness-mods');
 }
 
 /** El separador de la variable en la plataforma (`win32` como `process.platform`, o `windows` como el aplicador). */

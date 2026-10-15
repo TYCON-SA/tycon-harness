@@ -51,7 +51,10 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const PD = require('./harness/plugin-dirs.js');   // story 7.27: la carpeta de los mods del arnés en CLAUDE_CODE_PLUGIN_DIRS
+// story 7.27: la carpeta de los mods del arnés en CLAUDE_CODE_PLUGIN_DIRS. Se carga recién al escribir settings.json:
+// hay quien carga este archivo solo, sin su carpeta, para usar sus funciones (count-hooks.js, los laboratorios).
+let pluginDirs = null;
+const PDmod = () => pluginDirs || (pluginDirs = require('./harness/plugin-dirs.js'));
 
 const SETUP_DIR = __dirname;
 const SCRIPTS_DIR = path.dirname(SETUP_DIR);
@@ -649,15 +652,15 @@ function main(argv = process.argv.slice(2), env = process.env, { runConfig = nul
 
   // la variable de `env` (después del informe, como en el .sh: escribe el archivo pero no tiene línea propia)
   const envObj = sharedDone ? {} : (settings.env && typeof settings.env === 'object' ? settings.env : (settings.env = {}));
+  // la carpeta de los mods del arnés (story 7.27; la misma unión que shared.js): con TYCON_NO_MODS=1 no se toca
+  const PD = sharedDone || env.TYCON_NO_MODS === '1' ? null : PDmod();
   if (!sharedDone) {
     for (const [k, v] of Object.entries(ENV_CANONICAL)) if (!(k in envObj)) { envObj[k] = v; r.envAdded.push(k); }
-    // la carpeta de los mods del arnés se suma a la de los del dev (story 7.27; la misma unión que shared.js)
-    // (con TYCON_NO_MODS=1 no se toca)
-    const dirs = env.TYCON_NO_MODS === '1' ? { changed: false } : PD.addDir(envObj[PD.PLUGIN_DIRS_KEY], PD.ourDir(home), { sep: PD.separator(platform), home, inherited: env[PD.PLUGIN_DIRS_KEY] });
+    const dirs = !PD ? { changed: false } : PD.addDir(envObj[PD.PLUGIN_DIRS_KEY], PD.ourDir(home), { sep: PD.separator(platform), home, inherited: env[PD.PLUGIN_DIRS_KEY] });
     if (dirs.changed) { envObj[PD.PLUGIN_DIRS_KEY] = dirs.value; r.envAdded.push(PD.PLUGIN_DIRS_KEY); r.pluginDirsAdded = true; }
     if (r.envAdded.length) added.push(['env', '', `env:${r.envAdded.join(',')}`, 'variable canónica del arnés']);
   }
-  const modsPiece = !sharedDone && env.TYCON_NO_MODS !== '1' && PD.hasDir(envObj[PD.PLUGIN_DIRS_KEY], PD.ourDir(home), { sep: PD.separator(platform), home });
+  const modsPiece = Boolean(PD) && PD.hasDir(envObj[PD.PLUGIN_DIRS_KEY], PD.ourDir(home), { sep: PD.separator(platform), home });
 
   const where = settingsPath;
   appendLines(env.TYCON_REPORT_PIECES, [
