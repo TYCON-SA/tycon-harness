@@ -597,8 +597,40 @@ fi
   rm -f "${H20}/scripts/lib/gh-pr.js"
   pedir Bash 'gh pr create --base main --title t --body b'
   callado && ok "T20 sin el lector de gh al lado, calla (el hook viaja suelto)" || bad "T20 sin la librería" "rc=$(cat "${T20}/rc") · $(head -c 200 "${T20}/stderr")"
+  # D6 de la 7.25 (decisión del dueño, 2026-10-15: «Avisar y no anotar»): la carpeta es un repo de GitHub y el pedido
+  # es de Azure — de OTRO repo, que no está clonado cerca. No se sabe de qué repo es: se dice y no se anota contra este.
+  # MUTACIÓN que lo pone en rojo: tratar un origin de GitHub como «sin identidad» (lo de antes), que deja caer al repo
+  # de la carpeta y anota un pendiente que ninguna retrospectiva cierra.
   pedir Bash 'az repos pr create --org https://x --project P --repository R --source-branch dev --target-branch main'
-  anotado main && ok "T20 el pedido de Azure se sigue anotando igual" || bad "T20 Azure" "rc=$(cat "${T20}/rc") · $(cat "${LED20}" 2>/dev/null)"
+  dicho && grep -q "no pude saber de qué repo es" "${T20}/stderr" && grep -q "github.com" "${T20}/stderr" \
+    && ok "T20 un pedido de Azure desde un repo de GitHub no se anota y lo dice (D6)" || bad "T20 Azure desde GitHub" "rc=$(cat "${T20}/rc") · $(cat "${LED20}" 2>/dev/null) · $(head -c 300 "${T20}/stderr")"
+  pedir Bash 'az repos pr create --repository "$REPO" --source-branch dev --target-branch main'
+  dicho && grep -q "no pude saber de qué repo es" "${T20}/stderr" \
+    && ok "T20 lo mismo con el --repository en una variable" || bad "T20 Azure desde GitHub, variable" "rc=$(cat "${T20}/rc") · $(cat "${LED20}" 2>/dev/null) · $(head -c 300 "${T20}/stderr")"
+  pedir Bash 'az repos pr create --source-branch dev --target-branch main'
+  dicho && grep -q "no pude saber de qué repo es" "${T20}/stderr" \
+    && ok "T20 lo mismo sin --repository" || bad "T20 Azure desde GitHub, sin --repository" "rc=$(cat "${T20}/rc") · $(cat "${LED20}" 2>/dev/null) · $(head -c 300 "${T20}/stderr")"
+  # con algo que no se pudo mirar en el camino (la carpeta de arriba no se lista), el aviso sigue diciendo lo mismo
+  chmod 300 "${T20}"
+  pedir Bash 'az repos pr create --repository R --source-branch dev --target-branch main'
+  chmod 755 "${T20}"
+  dicho && grep -q "no pude saber de qué repo es" "${T20}/stderr" && grep -q "github.com" "${T20}/stderr" \
+    && ok "T20 con algo que no se pudo mirar, el aviso dice igual que no se sabe de qué repo es" || bad "T20 Azure desde GitHub, con errores" "rc=$(cat "${T20}/rc") · $(cat "${LED20}" 2>/dev/null) · $(head -c 300 "${T20}/stderr")"
+  # git falla al leer el origin (tope de tiempo, un candado) en un repo que SÍ lo tiene: es «no sé», no «sin origin».
+  # MUTACIÓN que lo pone en rojo: creerle al «sin origin» del lector compartido, que deja caer a la carpeta y anota.
+  FAKE20="${T20}/git-que-falla"; mkdir -p "${FAKE20}"
+  printf '#!/bin/sh\ncase " $* " in *" get-url "*) exit 128 ;; esac\nexec "%s" "$@"\n' "$(command -v git)" > "${FAKE20}/git"
+  chmod +x "${FAKE20}/git"
+  PATH="${FAKE20}:${PATH}" pedir Bash 'az repos pr create --source-branch dev --target-branch main'
+  dicho && grep -q "no pude leer el origin" "${T20}/stderr" \
+    && ok "T20 si git no pudo leer el origin, sin --repository: no anota y lo dice" || bad "T20 origin ilegible, sin --repository" "rc=$(cat "${T20}/rc") · $(cat "${LED20}" 2>/dev/null) · $(head -c 300 "${T20}/stderr")"
+  PATH="${FAKE20}:${PATH}" pedir Bash 'az repos pr create --repository R --source-branch dev --target-branch main'
+  dicho && ok "T20 si git no pudo leer el origin, con --repository: no anota y lo dice" || bad "T20 origin ilegible, con --repository" "rc=$(cat "${T20}/rc") · $(cat "${LED20}" 2>/dev/null) · $(head -c 300 "${T20}/stderr")"
+  # sin origin no hay identidad que contradiga al comando: vale la carpeta, como antes (los casos del banco)
+  G20 remote remove origin
+  pedir Bash 'az repos pr create --org https://x --project P --repository R --source-branch dev --target-branch main'
+  anotado main && ok "T20 en un repo sin origin, el pedido de Azure se sigue anotando contra la carpeta" || bad "T20 Azure sin origin" "rc=$(cat "${T20}/rc") · $(cat "${LED20}" 2>/dev/null)"
+  G20 remote add origin https://github.com/acme/producto.git
   rm -f "${LED20}"
 }
 

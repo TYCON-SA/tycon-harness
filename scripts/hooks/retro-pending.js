@@ -580,22 +580,36 @@ function record(event) {
 //   · la carpeta: la de la sesión con los `cd` del comando seguidos; un `cd` que no se puede resolver es «no sé»;
 //   · el repo: si `--repository` es un nombre escrito, el repo cuyo `origin` es ESE repositorio — la carpeta, uno de
 //     sus subdirectorios o uno de sus hermanos (mismo padre); si viene en una variable o no viene, el repo de la carpeta;
+//   · un repo cuyo `origin` es de OTRO host (GitHub, un servidor propio) no es el de un pedido de Azure: «no sé»
+//     (decisión D6 del dueño, 2026-10-15, «Avisar y no anotar»). Caso: la sesión en un repo de GitHub crea el pedido de
+//     Azure de otro repo que no está clonado cerca; antes quedaba anotado contra el de GitHub, un pendiente que ninguna
+//     retrospectiva cerraba. Límite declarado: un Azure DevOps Server propio (no dev.azure.com ni *.visualstudio.com)
+//     cuenta como otro host, igual que un repo espejo (origin en GitHub y un segundo remoto de Azure que `az` detecta
+//     solo) — los dos avisan de más, ninguno anota de menos en silencio;
 //   · sin repo: «no sé» (`resuelto:false`) — quien llama lo dice; nunca se anota contra la carpeta de la sesión, que
 //     sería la atribución falsa que este hook ya cerró para los pushes el 2026-09-15.
 // La punta es la de `--source-branch` si el repo la conoce (local o del remoto), y si no la de HEAD.
 /**
- * La identidad del `origin` de un repo, en tres estados que NO se mezclan (revisores de la 7.25):
- *   `{ estado: 'nombre', nombre }` · `{ estado: 'sin-identidad' }` (no tiene origin, o es uno que no es un remoto) ·
- *   `{ estado: 'error' }` (leerlo falló). Sólo «sin identidad» deja caer al repo de la carpeta; un error es «no sé».
+ * La identidad del `origin` de un repo, en cuatro estados que NO se mezclan (revisores de la 7.25):
+ *   `{ estado: 'nombre', nombre }` (de Azure) · `{ estado: 'otro-host', host }` (un remoto que no es de Azure) ·
+ *   `{ estado: 'sin-identidad' }` (no tiene origin, o es uno que no es un remoto) · `{ estado: 'error' }` (leerlo falló).
+ *   Sólo «sin identidad» deja caer al repo de la carpeta; «otro host» y un error son «no sé».
  */
 function identidadDelOrigin(root) {
   let r;
   try { r = resolverRemoto(root); } catch { return { estado: 'error' }; }
-  // Sólo un origin de AZURE tiene un nombre comparable con el `--repository` de `az repos`: uno de GitHub (u otro host)
-  // no lo contradice ni lo confirma — es «sin identidad» para esta pregunta (lo pide retro-heartbeat.test.sh T20).
+  // Sólo un origin de AZURE tiene un nombre comparable con el `--repository` de `az repos`. Uno de GitHub (u otro host)
+  // dice que el repo NO es de Azure: un pedido de Azure no puede ser suyo (D6 de la 7.25, retro-heartbeat.test.sh T20).
   if (r && r.id && r.id.nombre && r.id.org) return { estado: 'nombre', nombre: String(r.id.nombre).toLowerCase() };
-  if (r && r.id) return { estado: 'sin-identidad' };
-  if (r && (r.por === 'sin-origin' || r.por === 'remoto-ilegible')) return { estado: 'sin-identidad' };
+  if (r && r.id) return { estado: 'otro-host', host: r.id.host || 'otro host' };
+  if (r && r.por === 'sin-origin') {
+    // el lector compartido da «sin origin» también cuando git FALLÓ al leerlo (tope de tiempo, un candado): se confirma
+    // que de verdad no hay origin; si git no contesta o lo lista, es «no sé», no la carpeta (revisores del ajuste D6)
+    const remotos = gitOrNull(r.dir || root, ['remote']);
+    if (remotos === null || remotos.split(/\r?\n/).includes('origin')) return { estado: 'error' };
+    return { estado: 'sin-identidad' };
+  }
+  if (r && r.por === 'remoto-ilegible') return { estado: 'sin-identidad' };
   return { estado: 'error' };   // tope de saltos o una respuesta que no se entiende
 }
 function raizGit(dir) { return dir && fs.existsSync(dir) ? git(dir, ['rev-parse', '--show-toplevel']) : null; }
@@ -673,13 +687,23 @@ function pedidoDeUnaSentencia(s) {
         if (idPropia && idPropia.estado === 'error') busqueda.errores.push(`no pude leer el origin de ${propia}`);
         if (!propia && gitNoContesto(s.dir)) busqueda.errores.push(`git no pudo leer ${s.dir}`);
         const errores = [...new Set(busqueda.errores)];
-        motivo = errores.length
-          ? `--repository ${escrito}: no lo encontré y hubo lo que no pude mirar — ${errores.slice(0, 3).join('; ')}`
-          : `--repository ${escrito}: ningún repo con ese origin en la carpeta, sus hijos ni sus hermanos`;
+        const noMirado = errores.length ? ` (y hubo lo que no pude mirar — ${errores.slice(0, 3).join('; ')})` : '';
+        motivo = idPropia && idPropia.estado === 'otro-host'
+          ? `--repository ${escrito} es un repo de Azure que no encontré en la carpeta, sus hijos ni sus hermanos${noMirado}, y el origin de ${propia} es de ${idPropia.host}: no pude saber de qué repo es`
+          : errores.length
+            ? `--repository ${escrito}: no lo encontré y hubo lo que no pude mirar — ${errores.slice(0, 3).join('; ')}`
+            : `--repository ${escrito}: ningún repo con ese origin en la carpeta, sus hijos ni sus hermanos`;
       }
     } else {
       root = raizGit(s.dir);
-      if (!root) {
+      const idCarpeta = root ? identidadDelOrigin(root) : null;
+      if (idCarpeta && idCarpeta.estado === 'otro-host') {
+        motivo = `el origin de ${root} es de ${idCarpeta.host}, no de Azure, y --repository no nombra un repo: no pude saber de qué repo es`;
+        root = null;
+      } else if (idCarpeta && idCarpeta.estado === 'error') {
+        motivo = `no pude leer el origin de ${root} y --repository no nombra un repo: no pude saber de qué repo es`;
+        root = null;
+      } else if (!root) {
         motivo = gitNoContesto(s.dir)
           ? `git no pudo leer ${s.dir} (¿otro dueño o safe.directory?) y --repository no nombra un repo`
           : 'la carpeta del comando no es un repo y --repository no nombra uno';
