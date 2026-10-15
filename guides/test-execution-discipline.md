@@ -147,6 +147,38 @@ su HOME falsa a mano y a su manera, y alguna termina ensuciando los registros re
 - En `node --test`, lo mismo a mano: HOME temporal ANTES de los `require` (hay rutas que se fijan al cargar
   el módulo) y devuelta en `test.after`, con una afirmación positiva sobre la temporal.
 
+## Una prueba no depende de un sha ni de una hora
+
+Una prueba que sale roja de a ratos casi nunca tiene un error en lo que mide: tiene un dato que cambia en cada
+corrida. Motivo: un rojo de azar traba pedidos que no lo causaron y enseña a reintentar en vez de leer.
+
+- **Commits de laboratorio**: con fecha, autor y committer fijos (`GIT_AUTHOR_DATE`, `GIT_COMMITTER_DATE`), así el
+  sha sale siempre igual. Un sha armado con la hora de la corrida tiene, por ejemplo, un prefijo de ocho caracteres
+  sólo de dígitos más o menos 2 de cada 100 veces.
+- **El mantenimiento automático de git, apagado** en todo laboratorio que hace `commit`, `fetch`, `push` o `merge`
+  (`-c maintenance.auto=false -c gc.auto=0`, o `harness_lab_git` / `harness_lab_no_auto_maintenance` de
+  `scripts/tests/lib/harness-lab.sh`). Desde git 2.55 queda corriendo de fondo después de que el comando volvió y
+  toca el `.git` del laboratorio (`objects/maintenance.lock`, `info/refs`) mientras la prueba saca su huella.
+- **El reloj**: la fecha se inyecta con la variable del programa que se prueba (`TYCON_TODAY`, `TYCON_…_NOW`). Si la
+  prueba lee el reloj para otra cosa (medir cuánto tarda, nombrar un temporal), lo dice en un comentario
+  `stable-data: <motivo>`.
+- **Lo que se busca**, fuera del dato que cambia: un número corto buscado en una salida que trae una hora con
+  milésimas o un sha lo encuentra ahí de a ratos. Se busca el número suelto, en su campo.
+- **Una sola foto**: si la prueba compara una huella y después lista lo que cambió, las dos salen de la misma
+  recorrida; si no, un rojo puede salir sin decir qué cambió.
+
+`scripts/tests/stable-test-data.test.js` frena las pruebas NUEVAS que crean commits sin fechas fijas o sin apagar el
+mantenimiento, o que leen el reloj sin inyectarlo ni declararlo. Las fechas y el mantenimiento se buscan en el código,
+no en los comentarios. La declaración `stable-data: <motivo>` vale sólo escrita en un comentario y exime al archivo de
+las dos reglas: es para el archivo que necesita fechas que cambian a propósito (una prueba del orden por fecha) o que
+nombra las formas en sus textos, como el propio control. Las que ya existían están en
+`scripts/tests/fixtures/stable-test-data-baseline.json`, una lista que sólo puede achicarse. El control mira el texto
+y no ejecuta: no ve un sha o una hora que llegan por otro camino (un archivo que escribió otro guion, el `git log` de
+un repo ajeno), ni el commit de una función que envuelve a git y se llama sin ninguna opción (`g "$R" commit`). Tampoco
+distingue un comentario al final de un renglón o un texto entre comillas que nombran `GIT_AUTHOR_DATE` de la fecha
+fijada de verdad, y toma por comentario un renglón de un texto de varias líneas que empieza con `//` o `*`. Ahí manda
+esta regla.
+
 ## Checklist rápido antes de correr tests
 
 - ¿Estoy iterando? → **solo el archivo tocado**, con filtro.
