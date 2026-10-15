@@ -5,8 +5,9 @@
 // separadas por el separador de listas de la plataforma (`:` en Mac y Linux, `;` en Windows). El dev puede tener las
 // suyas: el arnés SUMA la propia, sin duplicar ni reordenar, y al desinstalar saca sólo la propia.
 //
-// La única entrada ajena que se saca es la del mod que el cartel tenía antes de entrar al arnés
-// (`~/.claude/tycon-mods/tablero-corrida`), y sólo si esa carpeta ya no existe: una carpeta que no existe no carga nada.
+// La única entrada ajena que se saca es la del mod que el cartel tenía antes de entrar al arnés (la carpeta
+// `tycon-mods/tablero-corrida` dentro de la de Claude Code), y sólo si ya no existe: una carpeta que no existe no carga
+// nada.
 //
 // Vive en scripts/setup/harness/ porque la desinstalación corre desde la copia fija del programa, que sólo trae esa
 // carpeta. La usan: scripts/setup/harness/shared.js (escribir y reconocer la pieza), scripts/setup/apply-hooks.js (el
@@ -18,7 +19,9 @@ const path = require('path');
 
 const PLUGIN_DIRS_KEY = 'CLAUDE_CODE_PLUGIN_DIRS';
 const PLUGIN_DIRS_ID = `env.${PLUGIN_DIRS_KEY}`;
-const OLD_MOD = path.join('.claude', 'tycon-mods', 'tablero-corrida');
+// la carpeta del mod viejo, relativa a la carpeta de Claude Code (que da tycon-home.js: el techo de rutas no sube)
+const OLD_MOD = path.join('tycon-mods', 'tablero-corrida');
+const claudeDir = (home) => require('./tycon-home.js').claudeDir(home);
 
 /** La carpeta del plugin de los mods del arnés, por la ruta canónica del arnés instalado (la arma sólo place.js). */
 function ourDir(home) {
@@ -49,7 +52,7 @@ function hasDir(value, dir, { sep = separator(), home }) {
  */
 function addDir(value, dir, { sep = separator(), home, exists = fs.existsSync, inherited = undefined }) {
   const base = typeof value === 'string' && value.trim() !== '' ? value : typeof inherited === 'string' ? inherited : value;
-  const old = norm(path.join(home, OLD_MOD), home);
+  const old = norm(path.join(claudeDir(home), OLD_MOD), home);
   const dropped = [];
   const kept = split(base, sep).filter((e) => {
     if (norm(e, home) === old && !exists(expand(e, home))) { dropped.push(e); return false; }
