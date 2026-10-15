@@ -449,6 +449,108 @@ function isUiStory(content, fm, repoRoot) {
   return require(path.join(__dirname, 'lib', 'ui-signal.js')).touchesUiParts(fm, content, repoRoot);
 }
 
+// Dónde se buscan las pantallas de la story: su repo, el workspace (rutas escritas desde ahí) y los repos acompañantes
+// declarados en `.tycon/advisors.yaml` — el mismo criterio con que la matriz resuelve los archivos y la evidencia.
+// Una config que no se puede leer se DICE (revisores del paso 5): callada, las pantallas de un acompañante se leían
+// como «no están en el disco» sin que nadie supiera por qué.
+function screenRoots(repoRoot, notes) {
+  if (!repoRoot) return [];
+  const { parseEvidenceConfig } = require(path.join(__dirname, 'lib', 'evidence-config.js'));
+  let companions = [];
+  const decir = (m) => { if (notes) notes.push(m); };
+  // `parseEvidenceConfig` trata un yaml ilegible como «sin yaml» (revisores, vuelta 2): acá se mira si existe y no se lee.
+  for (const name of ['advisors.yaml', 'advisors.yml']) {
+    const f = path.join(repoRoot, '.tycon', name);
+    if (fs.existsSync(f)) {
+      try { fs.accessSync(f, fs.constants.R_OK); } catch (e) { decir(`no pude leer ${path.join('.tycon', name)} (${e.code || e.message}): las pantallas se buscan sólo en el repo de la story y en su carpeta`); }
+      break;
+    }
+  }
+  try {
+    const cfg = parseEvidenceConfig(repoRoot);
+    companions = cfg.roots || [];
+    for (const m of cfg.missing || []) decir(`repo acompañante declarado que no está en el disco (sus pantallas no se pueden encontrar): ${m}`);
+    for (const w of cfg.warnings || []) decir(w);
+  } catch (e) {
+    decir(`no pude leer los repos acompañantes de .tycon/advisors.yaml (${e.message}): las pantallas se buscan sólo en el repo de la story y en su carpeta`);
+  }
+  return [repoRoot, path.dirname(repoRoot), ...companions];
+}
+
+// Un campo del archivo de legibilidad de la pantalla: `clave: a, b` en la línea, o `clave:` y debajo `- a` / `- b`.
+function readListField(md, key) {
+  const lines = md.split('\n');
+  const i = lines.findIndex((l) => new RegExp(`^${key}:`).test(l.trim()));
+  if (i === -1) return { present: false, values: [] };
+  const inline = lines[i].trim().slice(key.length + 1).trim();
+  if (inline) return { present: true, values: inline.split(',').map((v) => v.trim().replace(/^`|`$/g, '')).filter(Boolean) };
+  const values = [];
+  for (const l of lines.slice(i + 1)) {
+    const m = l.match(/^\s*-\s*(.+?)\s*$/);
+    if (!m) { if (l.trim()) break; continue; }
+    values.push(m[1].replace(/^`|`$/g, ''));
+  }
+  return { present: true, values };
+}
+
+// ── Capa 4 de la PANTALLA (story 7.24) ─────────────────────────────────────────────────────────────────────────────
+// Caso disparador (2026-10-14, guides/incident-log.md#case-screen-passed-all-controls-unreadable-2026-10-14): una ventana pasó todos los controles y el
+// dueño la vio «inentendible» en staging. La capa 4 leía sólo la guía; las marcas sobre textos de la pantalla se
+// «resolvieron» reescribiendo la guía, y el texto malo siguió en el código. Ahora: (a) la pasada del tester también
+// lee la pantalla y deja `<clave>-legibilidad-ui.md`; (b) una marca citada con «» que sigue en la pantalla frena.
+function uiReadabilityCheck({ content, fm, qaDir, qk, repoRoot }) {
+  const ui = require(path.join(__dirname, 'lib', 'ui-texts.js'));
+  const body = content.replace(/^---\r?\n[\s\S]*?\r?\n---/, '');
+  const problems = []; const notes = [];
+  const { found, missing } = ui.screenFiles(fm, body, screenRoots(repoRoot, notes));
+  // Una pantalla declarada que no está no se puede revisar: frena (revisores del paso 5). Callada, una story cuyas
+  // pantallas no se encontraban pasaba el candado sin que nadie mirara nada.
+  if (missing.length) problems.push(`(7) Pantallas declaradas por la story que no están en el disco (no se pueden revisar): ${missing.join(', ')} — si la story ya no las toca, sacalas de la lista; si viven en otro repo, declaralo en .tycon/advisors.yaml → evidence.companion_repos`);
+  // Una pantalla que está pero no se lee tampoco se puede revisar, haya o no marcas citadas (revisores, vuelta 2).
+  for (const s of found) {
+    try { fs.accessSync(s.abs, fs.constants.R_OK); } catch (e) { problems.push(`(7) No pude leer la pantalla ${s.rel} (${e.code || e.message}): no se puede revisar lo que no se ve.`); }
+  }
+
+  const uiPath = path.join(qaDir, `${qk}-legibilidad-ui.md`);
+  if (!isFile(uiPath)) {
+    problems.push(`(7) Falta la revisión de legibilidad de la PANTALLA (la pasada del "tester no técnico" sobre los textos y las capturas): ${uiPath} con "veredicto: OK", "screens:" y "captures:"`);
+  } else {
+    const md = fs.readFileSync(uiPath, 'utf8');
+    // Tolera el veredicto en negrita (`**veredicto**: OK`, `veredicto: **OK**`), como lo escribe un revisor.
+    if (!/^[\s*_-]*veredicto[*_]*\s*:\s*[*_]*\s*ok\b/im.test(md)) {
+      problems.push(`(7) La revisión de la pantalla no tiene "veredicto: OK" — las marcas se resuelven EN LA PANTALLA (el código), no en la guía; después se re-revisa: ${uiPath}`);
+    }
+    const caps = readListField(md, 'captures');
+    if (!caps.present || !caps.values.length) {
+      problems.push(`(7) La revisión de la pantalla no dice qué capturas miró — agregá "captures:" con las rutas, o "captures: ninguna — <motivo>": ${uiPath}`);
+    } else {
+      for (const c of caps.values.filter((v) => /\.(png|jpe?g|webp)$/i.test(v))) {
+        const cands = path.isAbsolute(c) ? [c] : [path.join(qaDir, c), repoRoot && path.join(repoRoot, c)].filter(Boolean);
+        if (!cands.some(isFile)) problems.push(`(7) "captures:" nombra una captura que no existe: ${c}`);
+      }
+    }
+    const scr = readListField(md, 'screens');
+    const cubre = (rel) => scr.values.some((v) => rel === v || rel.endsWith(`/${v}`) || v.endsWith(`/${rel}`) || v === rel);
+    const sinLeer = found.map((s) => s.rel).filter((rel) => !cubre(rel));
+    if (!scr.present) problems.push(`(7) La revisión de la pantalla no dice qué pantallas leyó — agregá "screens:" con cada una: ${found.map((s) => s.rel).join(', ') || '(la story no declara ninguna en disco)'}`);
+    else if (sinLeer.length) problems.push(`(7) La revisión de la pantalla no leyó estas pantallas de la story: ${sinLeer.join(', ')} — pasale sus textos (qa-guide.js --ui-texts) y re-revisá`);
+  }
+
+  // (8) Una marca resuelta sólo en la guía: el texto citado sigue en una pantalla de la story.
+  for (const file of [`${qk}-legibilidad.md`, `${qk}-legibilidad-ui.md`].map((f) => path.join(qaDir, f)).filter(isFile)) {
+    for (const mk of ui.quotedMarks(fs.readFileSync(file, 'utf8'))) {
+      const hits = ui.whereInScreens(mk.quote, found);
+      for (const h of hits.filter((x) => x.unreadable)) problems.push(`(8) No pude leer ${h.rel} (${h.unreadable}) para ver si la marca «${mk.quote}» sigue en la pantalla: no mirar no es «ya no está».`);
+      const vistos = hits.filter((x) => !x.unreadable);
+      if (!vistos.length) continue;
+      const donde = vistos.map((h) => `${h.rel}:${h.line}`).join(', ');
+      if (mk.keep) notes.push(`marca que se queda a propósito («${mk.quote}» sigue en ${donde}) — keep: ${mk.keep}`);
+      else problems.push(`(8) La marca «${mk.quote}» (${path.basename(file)}:${mk.line}) se resolvió en la guía, pero el texto sigue en la pantalla: ${donde}. Corregí la PANTALLA; si el texto se queda a propósito, escribí en esa línea "keep: <por qué>".`);
+    }
+  }
+  return { problems, notes, screens: found, missing };
+}
+
 function main() {
   const argv = process.argv.slice(2);
   const opt = (n) => { const i = argv.indexOf(n); return i !== -1 ? argv[i + 1] : null; };
@@ -526,6 +628,26 @@ function main() {
     defaultRole = parseDefaultRole(rawMd);
   }
 
+  // ── MODO --ui-texts (story 7.24): los textos que ve el usuario en cada pantalla de la story, sin el código alrededor.
+  // Es el insumo de la pasada del "tester no técnico" sobre la pantalla (paso 7c.7), junto con las capturas del gate.
+  if (argv.includes('--ui-texts')) {
+    const ui = require(path.join(__dirname, 'lib', 'ui-texts.js'));
+    const body = content.replace(/^---\r?\n[\s\S]*?\r?\n---/, '');
+    const avisos = [];
+    const { found, missing } = ui.screenFiles(fm, body, screenRoots(matrix.repoRoot, avisos));
+    for (const a of avisos) console.log(`· ${a}`);
+    if (!found.length) console.log(`qa-guide --ui-texts: la story ${sid} no declara pantallas que estén en el disco (.tsx/.jsx/.vue/.svelte).`);
+    for (const s of found) {
+      console.log(`## ${s.rel}`);
+      const ts = ui.visibleTexts(fs.readFileSync(s.abs, 'utf8'));
+      if (!ts.length) console.log('- (sin textos visibles detectados: mirá las capturas)');
+      for (const t of ts) console.log(`- ${t.text}`);
+      console.log('');
+    }
+    for (const m of missing) console.log(`· declarada y no está en el disco: ${m}`);
+    process.exit(0);
+  }
+
   // ── MODO --check (candado DODRT-C7): para una story de UI, la guía de tester tiene que estar
   // LISTA antes de cerrar. Exige los 4 pasos: (1) archivo de pasos-tester, (2) que cubra cada AC
   // verificado corriendo, (3) sin jerga de software (determinístico), (4) review de legibilidad
@@ -583,13 +705,16 @@ function main() {
       );
     }
     if (sinRol.length) problems.push(`(5) ACs verificados corriendo SIN usuario de prueba declarado — agregá 'Usuario: <rol>' en el bloque del AC de ${pasosEsperado}, o un 'Usuario por defecto: <rol>' al tope del archivo: ${sinRol.map((n) => '#' + n).join(', ')}`);
+    const pantalla = uiReadabilityCheck({ content, fm, qaDir, qk, repoRoot: matrix.repoRoot });
+    problems.push(...pantalla.problems);
+    for (const nota of pantalla.notes) console.log(`   · ${nota}`);
     if (problems.length) {
-      console.error(`🔴 qa-guide --check FALLÓ (story ${sid}) — la guía de tester no está lista:`);
+      console.error(`🔴 qa-guide --check FALLÓ (story ${sid}) — la guía de tester o la revisión de la pantalla no están listas:`);
       for (const p of problems) console.error(`   - ${p}`);
       for (const v of qaViejos) console.error(`   · ${v} no cuenta: el número ${sid} lo comparten varias stories de este repo y ese archivo no dice de cuál es (no se tocó). La guía de esta story va en ${qk}-….`);
       process.exit(2);
     }
-    console.log(`✅ qa-guide --check OK (story ${sid}): pasos-tester presentes, cubren los ${runtimeAcs.length} ACs corridos, sin jerga, legibilidad OK, usuario de prueba declarado, y los ${acs.length} ACs con titular legible.`);
+    console.log(`✅ qa-guide --check OK (story ${sid}): pasos-tester presentes, cubren los ${runtimeAcs.length} ACs corridos, sin jerga, legibilidad OK, usuario de prueba declarado, los ${acs.length} ACs con titular legible, y la pantalla revisada (${pantalla.screens.length} archivo/s).`);
     process.exit(0);
   }
 

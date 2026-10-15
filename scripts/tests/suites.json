@@ -545,6 +545,18 @@
       "requiere": []
     },
     {
+      "__nota": "story 7.24: el gate E2E guarda las capturas de los specs de la story sin tocar la config del repo ni el veredicto.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/e2e-gate-captures.test.sh",
+      "requiere": []
+    },
+    {
+      "__nota": "story 7.24: la pantalla se revisa con ojos de usuario (capa de la pantalla en qa-guide --check, marcas tapadas, VAL-W16).",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/ui-readability.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/step-7c-macro.test.js",
       "requiere": []

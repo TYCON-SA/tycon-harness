@@ -1047,6 +1047,8 @@ function cmdCompleteStep(nRaw, flags) {
         console.error('');
         console.error('marker.js complete-step 8 BLOQUEADO — la guía de prueba manual del tester (DODRT-C7) NO está lista (ver arriba).');
         console.error('  Escribí/corregí los pasos en criollo en specs/qa/<sid>-pasos.md y corré la review de legibilidad.');
+        // Story 7.24: la pantalla también se revisa; sus marcas se arreglan en el código, no reescribiendo la guía.
+        console.error('  Y la de la PANTALLA (specs/qa/<sid>-legibilidad-ui.md, paso 7c.7): sus marcas se resuelven EN LA PANTALLA, no en la guía.');
       }
     }
     if (bloqueoAdversarial) {
