@@ -1714,6 +1714,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.36 (T1-T3): la tanda del aplicador (scripts/setup/applier-batch.js) corre varios pasos de Node en un solo proceso. Cada paso de la lista cerrada (skills-dir, tycon-config, legacy-names, apply-hooks), en una HOME de juguete con cada estado que el aplicador conoce, contesta igual que su llamada suelta: código, salida, salida de error y lo que deja en el disco; también juntos, en el orden del aplicador. Un paso que tira o llama a process.exit cuenta como un Node caído y el resto corre; uno fuera de la lista: sale 2 sin correr nada. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/applier-batch.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.18 (deuda lectores-que-tragan): quien le pregunta a scripts/lib/skills-dir.js dónde están las skills no se traga su error. Con la biblioteca vecina rota, integrations-off.test.sh dice «no pude resolver la carpeta de skills: <causa>» y third-party-origin.test.sh sale 2 antes de preguntarle nada a la red; la carpeta que de verdad no está se sigue diciendo «no está». Y las suites del renombre (c4, d1, d2, f) ubican agent-skills por la regla común. Clones y HOME de juguete, sin red.",
       "raiz": "arnes",
       "ruta": "tests/skills-dir-readers.test.js",

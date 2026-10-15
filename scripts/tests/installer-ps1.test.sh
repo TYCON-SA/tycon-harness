@@ -94,7 +94,15 @@ printf '#!/bin/sh\n# launchctl de mentira: no carga nada en la máquina real\nex
 REAL_NODE="$(command -v node)"
 NODE_CALLS="$T/node-calls.log"; : > "$NODE_CALLS"
 # el intermediario: anota los argumentos y le pasa la posta al node de verdad
-printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> "%s"\nexec "%s" "$@"\n' "$NODE_CALLS" "$REAL_NODE" > "$T/bin/node"; chmod +x "$T/bin/node"
+# (story 8.36) a la tanda del aplicador (`applier-batch.js --plan <archivo>`) le anota además su plan, en una línea: qué
+# pasos le pidió el .ps1 que corriera juntos (las preguntas que antes eran llamadas sueltas)
+cat > "$T/bin/node" <<EOF
+#!/bin/sh
+printf "%s\\n" "\$*" >> "$NODE_CALLS"
+case "\$1 \$2" in *applier-batch.js\ --plan) { tr -d '\\n' < "\$3"; echo; } >> "$NODE_CALLS" 2>/dev/null ;; esac
+exec "$REAL_NODE" "\$@"
+EOF
+chmod +x "$T/bin/node"
 # cómo empieza el comando de un .sh registrado: `bash "<ruta del guion>"`. La W4 (AC 29) lo había pasado a la ruta
 # absoluta del bash de Git entre comillas; la W3W4 lo volvió atrás (medido en el agente Windows, corrida 11979: lanzado
 # por PowerShell era un error de sintaxis, y Claude Code lanza los hooks con el bash de Git, donde `bash` ya es ése).
@@ -483,7 +491,10 @@ mkdir -p "$OLD_V/.git" && cp -R "$CLONE/skills" "$OLD_V/skills" && cp -R "$CLONE
 ln -s "$OLD_V/skills" "$HV/.claude/skills"; ln -s "$OLD_V/agents" "$HV/.claude/agents"; ln -s "$CLONE" "$HV/.claude/tycon-claude-guides"
 : > "$NODE_CALLS"
 installer "$HV" "TYCON_SKILLS_DIR=$CLONE/skills" > "$T/i1.out" 2>&1; RC=$?
-if [ "$RC" -eq 0 ] && grep -qF "scripts/lib/skills-dir.js --skills --installed" "$NODE_CALLS"; then ok "(i) el .ps1 le pregunta a skills-dir.js dónde están las skills, con la variante de quien escribe (--skills --installed)"
+# (story 8.36) la pregunta puede ir suelta o adentro de la tanda del aplicador: su plan pide el paso `skills-dir` con esos
+# argumentos (el intermediario anota el plan)
+if [ "$RC" -eq 0 ] && { grep -qF "scripts/lib/skills-dir.js --skills --installed" "$NODE_CALLS" \
+     || grep -F '"script":"skills-dir"' "$NODE_CALLS" | grep -F '"args":["--skills","--installed"]' >/dev/null; }; then ok "(i) el .ps1 le pregunta a skills-dir.js dónde están las skills, con la variante de quien escribe (--skills --installed)"
 else no "(i) el .ps1 (rc $RC) no llamó a skills-dir.js --skills --installed: «$(grep 'skills-dir' "$NODE_CALLS" | head -2 | tr '\n' ' ' | cut -c1-200)» $(brief "$T/i1.out" 160)"; fi
 N_INSTALLED="$(grep -c "\"node \\\\\"$HV/.claude/agent-skills/skills/" "$HV/.claude/settings.json" 2>/dev/null || true)"
 N_CLONE="$(grep -c "\"node \\\\\"$CLONE/skills/" "$HV/.claude/settings.json" 2>/dev/null || true)"
@@ -2045,6 +2056,127 @@ else
   gh_set "$GH_LAB/otra"; gh_run "PATH=$GH_LAB/no-git" -- -Check
   gh_unread "git no está en el PATH (con -Check)" "no pude lanzar git"
 fi
+
+# ═══ (ab) story 8.36 · la tanda: menos procesos de Node por arranque, y lo mismo hecho (T4, T6, T7, T8) ═══════════════
+# El aplicador corre en cada arranque. Cada proceso de Node cuesta ~50-100 ms en lanzarse desde PowerShell en Windows.
+# Cada Node que arranca se cuenta con `NODE_OPTIONS=--require <contador>`, que ve también los que un guion lanza por su
+# cuenta con su propia ruta de node (el intermediario del PATH no los ve). Lo hecho se compara contra el mismo aplicador
+# SIN la tanda (las llamadas sueltas de antes, que quedan como respaldo): la misma salida en el mismo orden, el mismo
+# settings.json, el mismo reporte de piezas y el mismo CLAUDE.md, byte a byte.
+COUNTER="$T/node-counter.js"; COUNTED="$T/node-counted.txt"
+cat > "$COUNTER" <<EOF
+require('fs').appendFileSync('$COUNTED', (process.argv[1] ? require('path').basename(process.argv[1]) : '-e') + '\n');
+EOF
+count_of() { grep -c -x -F -- "$1" "$COUNTED" 2>/dev/null || true; }   # <guion>: cuántas veces arrancó en la corrida contada
+# los clones de comparación: sin la tanda, y con una tanda que sale 1 sin dejar su resultado
+CLONE_NB="$T/clone-nobatch"; CLONE_BAD="$T/clone-badbatch"; CLONE_CUT="$T/clone-cutbatch"   # (el cortado lo arma T7b)
+cp -R "$CLONE" "$CLONE_NB" && rm -f "$CLONE_NB/scripts/setup/applier-batch.js" \
+  && cp -R "$CLONE" "$CLONE_BAD" && printf 'process.exit(1);\n' > "$CLONE_BAD/scripts/setup/applier-batch.js" \
+  || no "(ab) no pude armar los clones de comparación"
+ab_norm() { # <archivo> <home>: la salida o el archivo, con la HOME y los tres clones escritos igual, y sin sellos de hora
+  sed -e "s#$2#<HOME>#g" -e "s#$CLONE_NB#<CLONE>#g" -e "s#$CLONE_BAD#<CLONE>#g" -e "s#$CLONE_CUT#<CLONE>#g" -e "s#$CLONE#<CLONE>#g" \
+    -e 's#\(\.bak[.-][A-Za-z-]*\)[0-9][0-9TZ:.-]*#\1<SELLO>#g' "$1" 2>/dev/null
+}
+ab_run() { # <clon> <home> <nombre> [VAR=val …]: una corrida como la del arranque (candado tomado, con reporte), contada
+  local clone="$1" h="$2" name="$3"; shift 3
+  : > "$COUNTED"
+  LAB_INSTALLER="$clone/scripts/install-tycon-hooks.ps1" installer "$h" "${HELD[@]}" "NODE_OPTIONS=--require $COUNTER" "$@" \
+    -- --report-json "$h/report.json" > "$T/ab-$name.out" 2>&1
+  AB_RC=$?
+  cp "$COUNTED" "$T/ab-$name.counted" 2>/dev/null
+}
+ab_same() { # <nombre> <home A> <home B> <etiqueta>: lo hecho por la corrida A (con la tanda) igual que por la B
+  local name="$1" ha="$2" hb="$3" what="$4" diffs=""
+  [ "$(ab_norm "$T/ab-$name-a.out" "$ha")" = "$(ab_norm "$T/ab-$name-b.out" "$hb")" ] || diffs="$diffs salida"
+  [ "$(ab_norm "$ha/.claude/settings.json" "$ha")" = "$(ab_norm "$hb/.claude/settings.json" "$hb")" ] || diffs="$diffs settings.json"
+  [ "$(ab_norm "$ha/report.json" "$ha")" = "$(ab_norm "$hb/report.json" "$hb")" ] || diffs="$diffs reporte"
+  cmp -s "$ha/.claude/CLAUDE.md" "$hb/.claude/CLAUDE.md" || diffs="$diffs CLAUDE.md"
+  if [ -z "$diffs" ]; then ok "$what: la misma salida en el mismo orden, el mismo settings.json, el mismo reporte y el mismo CLAUDE.md"
+  else
+    no "$what: distinto en:$diffs"
+    diff <(ab_norm "$T/ab-$name-a.out" "$ha") <(ab_norm "$T/ab-$name-b.out" "$hb") | head -12 | sed 's/^/      /'
+  fi
+}
+ab_pair() { # <nombre> <clon B> <setup> [VAR=val …]: dos HOME iguales armadas por <setup>, una corrida con la tanda y otra con B
+  local name="$1" cloneb="$2" setup="$3"; shift 3
+  AB_A="$(new_home "ab-$name-a")"; AB_B="$(new_home "ab-$name-b")"
+  "$setup" "$AB_A" "$CLONE"; "$setup" "$AB_B" "$cloneb"   # cada HOME, armada por el clon que la va a correr
+  ab_run "$CLONE" "$AB_A" "$name-a" "$@"; AB_RC_A=$AB_RC
+  ab_run "$cloneb" "$AB_B" "$name-b" "$@"; AB_RC_B=$AB_RC
+  [ "$AB_RC_A" = "$AB_RC_B" ] || no "(ab) $name: la corrida con la tanda salió $AB_RC_A y la de comparación $AB_RC_B · $(brief "$T/ab-$name-a.out" 200)"
+}
+# los estados: una máquina ya instalada (lo de cada arranque), una por estrenar con la configuración rota y la línea del
+# índice vieja en CLAUDE.md, y una por estrenar sana con el sync de bloques prendido
+ab_installed() { LAB_INSTALLER="$2/scripts/install-tycon-hooks.ps1" installer "$1" "${HELD[@]}" > /dev/null 2>&1; printf '# mío\n@~/.claude/tycon-harness/INDEX.md\n' > "$1/.claude/CLAUDE.md"; }
+ab_broken_old() { mkdir -p "$1/.claude"; printf '{ roto' > "$1/.claude/tycon.json"; printf '# mío\n@~/.claude/tycon-harness/README.md\n' > "$1/.claude/CLAUDE.md"; }
+ab_fresh() { mkdir -p "$1/.claude"; printf '# mío\n@~/.claude/tycon-harness/README.md\n' > "$1/.claude/CLAUDE.md"; }
+
+# ── T4 · Ps1_NodeProcessesPerRun: una corrida del arranque en una máquina ya instalada lanza como mucho 9 Node ──────
+ab_pair steady "$CLONE_NB" ab_installed
+N_A=$(wc -l < "$T/ab-steady-a.counted" | tr -d ' '); N_B=$(wc -l < "$T/ab-steady-b.counted" | tr -d ' ')
+echo "ℹ installer-ps1: (ab) procesos de Node en una corrida del arranque — con la tanda: $N_A ($(sort "$T/ab-steady-a.counted" | uniq -c | awk '{printf "%s %s · ", $2, $1}')) · sin ella: $N_B"
+if [ "$AB_RC_A" = 0 ] && [ "$N_A" -gt 0 ] && [ "$N_A" -le 9 ]; then ok "T4 una corrida del arranque lanza $N_A procesos de Node (≤ 9; sin la tanda, $N_B)"
+else no "T4 una corrida del arranque lanzó $N_A procesos de Node (tope 9; salió $AB_RC_A) · $(brief "$T/ab-steady-a.out" 200)"; fi
+ab_same steady "$AB_A" "$AB_B" "T6 máquina ya instalada, con la tanda y sin ella"
+
+# ── T6 · Ps1_SameOutputOrderAndClaudeMd: configuración rota, hooks por agregar, la línea del índice vieja ───────────
+ab_pair broken "$CLONE_NB" ab_broken_old TYCON_NO_CLAUDEMD_SYNC=0
+ab_same broken "$AB_A" "$AB_B" "T6 configuración rota y la línea del índice vieja, con la tanda y sin ella"
+ab_pair fresh "$CLONE_NB" ab_fresh TYCON_NO_CLAUDEMD_SYNC=0
+ab_same fresh "$AB_A" "$AB_B" "T6 máquina por estrenar con el sync de bloques, con la tanda y sin ella"
+AB_FRESH_A="$AB_A"
+
+# ── T8 · Sync_UsesGivenConfig_NoNode: el sync llamado por el aplicador no le pregunta a Node; suelto, sí ─────────────
+TC_A=$(grep -c -x -F -- tycon-config.js "$T/ab-fresh-a.counted" 2>/dev/null || true)
+if [ "$TC_A" = 0 ]; then ok "T8 con el sync prendido, ninguna corrida de tycon-config.js en un proceso propio (la configuración se lee una vez, en la tanda)"
+else no "T8 con el sync prendido, tycon-config.js arrancó $TC_A vez/veces en un proceso propio"; fi
+SYNC_H="$(new_home ab-sync)"; ab_fresh "$SYNC_H"
+: > "$COUNTED"
+lab_env "$SYNC_H" TYCON_NO_CLAUDEMD_SYNC=0 "NODE_OPTIONS=--require $COUNTER" -- pwsh -NoProfile -NonInteractive -File "$CLONE/scripts/setup/sync-claude-md-blocks.ps1" > "$T/ab-sync.out" 2>&1
+TC_S=$(count_of tycon-config.js)
+if [ "${TC_S:-0}" -ge 1 ]; then ok "T8 el sync corrido suelto le pregunta a tycon-config.js como antes ($TC_S vez/veces)"
+else no "T8 el sync corrido suelto no le preguntó a tycon-config.js · $(brief "$T/ab-sync.out" 200)"; fi
+# el espejo: después de la corrida del aplicador (su sync usó lo que el aplicador leyó), el sync suelto —que le pregunta
+# a Node él mismo— sobre esa misma HOME no tiene nada que cambiar
+cp "$AB_FRESH_A/.claude/CLAUDE.md" "$T/ab-fresh-claude.md" 2>/dev/null
+lab_env "$AB_FRESH_A" TYCON_NO_CLAUDEMD_SYNC=0 -- pwsh -NoProfile -NonInteractive -File "$CLONE/scripts/setup/sync-claude-md-blocks.ps1" > "$T/ab-sync2.out" 2>&1
+if [ -s "$T/ab-fresh-claude.md" ] && cmp -s "$T/ab-fresh-claude.md" "$AB_FRESH_A/.claude/CLAUDE.md"; then ok "T8 el sync suelto, preguntando él mismo, no cambia nada de lo que dejó el sync del aplicador con lo que el aplicador leyó"
+else no "T8 el sync suelto cambió el CLAUDE.md que dejó el del aplicador · $(diff "$T/ab-fresh-claude.md" "$AB_FRESH_A/.claude/CLAUDE.md" | head -4 | tr '\n' ' ' | cut -c1-200)"; fi
+
+# ── T7 · Ps1_WithoutBatch_SeparateCalls: una tanda que sale 1 sin su resultado deja lo mismo que sin la tanda ──────────
+ab_pair badbatch "$CLONE_BAD" ab_fresh TYCON_NO_CLAUDEMD_SYNC=0
+ab_same badbatch "$AB_A" "$AB_B" "T7 con una tanda que sale 1 sin resultado (las llamadas sueltas de respaldo)"
+
+# ── T7b · una tanda que se corta a mitad: lo anotado se usa, lo que falta corre suelto, y se dice ─────────────────────
+# La tanda de verdad, con la tercera escritura de su resultado rota: en cada tanda corren dos pasos y queda anotado uno.
+# El segundo ya hizo su trabajo y se repite suelto (no lo vuelve a hacer; su aviso puede no salir). Lo que importa: el
+# mismo settings.json, el mismo reporte y el mismo CLAUDE.md que sin la tanda, y una línea que lo dice.
+cp -R "$CLONE" "$CLONE_CUT" && mv "$CLONE_CUT/scripts/setup/applier-batch.js" "$CLONE_CUT/scripts/setup/applier-batch-real.js" \
+  && cat > "$CLONE_CUT/scripts/setup/applier-batch.js" <<'EOF' || no "(ab) no pude armar el clon con la tanda que se corta"
+// laboratorio (installer-ps1, T7b): la tanda de verdad, con la tercera escritura de SU resultado rota (sólo esa: los
+// pasos también escriben con un renombrado, y ésos tienen que andar)
+const fs = require('fs');
+const path = require('path');
+const out = path.resolve(process.argv[process.argv.indexOf('--out') + 1]);
+const rename = fs.renameSync;
+let n = 0;
+fs.renameSync = (a, b) => {
+  if (path.resolve(String(b)) === out && ++n === 3) throw Object.assign(new Error('disco lleno (laboratorio)'), { code: 'EIO' });
+  return rename(a, b);
+};
+process.exitCode = require('./applier-batch-real.js').main(process.argv.slice(2));
+EOF
+AB_A="$(new_home ab-cut-a)"; AB_B="$(new_home ab-cut-b)"; ab_fresh "$AB_A" "$CLONE_CUT"; ab_fresh "$AB_B" "$CLONE_NB"
+ab_run "$CLONE_CUT" "$AB_A" cut-a TYCON_NO_CLAUDEMD_SYNC=0; AB_RC_A=$AB_RC
+ab_run "$CLONE_NB" "$AB_B" cut-b TYCON_NO_CLAUDEMD_SYNC=0; AB_RC_B=$AB_RC
+cut_diffs=""
+[ "$AB_RC_A" = "$AB_RC_B" ] || cut_diffs="$cut_diffs código($AB_RC_A/$AB_RC_B)"
+[ "$(ab_norm "$AB_A/.claude/settings.json" "$AB_A")" = "$(ab_norm "$AB_B/.claude/settings.json" "$AB_B")" ] || cut_diffs="$cut_diffs settings.json"
+[ "$(ab_norm "$AB_A/report.json" "$AB_A")" = "$(ab_norm "$AB_B/report.json" "$AB_B")" ] || cut_diffs="$cut_diffs reporte"
+cmp -s "$AB_A/.claude/CLAUDE.md" "$AB_B/.claude/CLAUDE.md" || cut_diffs="$cut_diffs CLAUDE.md"
+CUT_SAID="$(grep 'la tanda de Node se cortó antes de terminar' "$T/ab-cut-a.out" | grep -c 'applier-batch: no pude escribir el resultado.*(EIO)' || true)"   # con su causa
+if [ -z "$cut_diffs" ] && [ "$CUT_SAID" = 2 ]; then ok "T7b una tanda que se corta a mitad deja el mismo settings.json, reporte y CLAUDE.md que sin ella, y lo dice (una línea por tanda)"
+else no "T7b tanda cortada: distinto en:${cut_diffs:- nada} · avisos: $CUT_SAID (esperaba 2) · $(brief "$T/ab-cut-a.out" 200)"; fi
 
 # ── Esta prueba viaja en la copia pública: no puede traer escrita una ruta con forma de carpeta de usuario ─────────────
 # (story 8.26, tanda H1c: dos rutas de ejemplo de ese tipo hacían que el detector de publicación las leyera como la ruta
