@@ -164,4 +164,5 @@ function main(argv) {
 }
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
-module.exports = { resolveSkillsDirs, resolveInstalledSkillsDirs };
+// `cli` (story 8.36): la línea de comandos como función, para la tanda del aplicador (scripts/setup/applier-batch.js)
+module.exports = { resolveSkillsDirs, resolveInstalledSkillsDirs, cli: main };
