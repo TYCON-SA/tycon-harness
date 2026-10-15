@@ -335,7 +335,9 @@ test('T3c Batch_PlanFileAndOutErrors — plan que no es JSON o que no existe: 2;
   assert.strictEqual(bom.status, 0, `plan con marca de codificación: corre (${bom.stderr})`);
   const res = JSON.parse(fs.readFileSync(path.join(b, 'r3.json'), 'utf8'));
   assert.strictEqual(res.complete, true, 'el resultado de una tanda entera dice complete: true');
-  assert.strictEqual(res.steps.p.rc, 3, 'y trae el paso (sin perfil: sale 3)');
+  // lo que sale el paso suelto en el mismo ambiente: 3 sin perfil; 0 donde el árbol trae un perfil del equipo que lo fija
+  // (la corrida nocturna pone el público encima del privado, y ése trae perfil-equipo.json con install.profile)
+  assert.strictEqual(res.steps.p.rc, separate(step, b).rc, 'y trae el paso, con lo mismo que sale suelto');
   const applyPlan = { steps: [{ id: 'a', script: 'apply-hooks', args: applyStep.args.map((x) => x.split('<HOME>').join(b)), env: {} }] };
   fs.writeFileSync(path.join(b, 'apply.json'), JSON.stringify(applyPlan));
   const noWhere = run(path.join(b, 'apply.json'), path.join(b, 'no-existe', 'r4.json'));
@@ -374,5 +376,5 @@ process.exitCode = require(${JSON.stringify(BATCH)}).main(process.argv.slice(2))
   assert.match(r.stderr, /corrí 1 paso\(s\) y quedan anotados 1/, 'el conteo es el de lo que corrió');
   const res = JSON.parse(fs.readFileSync(out, 'utf8'));
   assert.strictEqual(res.complete, false, 'el resultado que quedó dice que no terminó');
-  assert.strictEqual(res.steps.p.rc, 3, 'y trae el paso que sí corrió');
+  assert.strictEqual(res.steps.p.rc, separate({ script: 'tycon-config', args: ['get', 'install.profile'], env: {} }, b).rc, 'y trae el paso que sí corrió, con lo mismo que sale suelto');
 });

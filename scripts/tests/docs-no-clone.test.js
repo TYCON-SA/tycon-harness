@@ -242,7 +242,9 @@ test('T35e PrivateHome_IsIndexedInItsCover_AndOutOfTheTeamLayer @story-8.26 @ac-
   for (const f of files.filter((x) => x !== cover)) {
     const rel = f.slice(PRIVATE_HOME.length + 1);
     assert.ok(coverText.includes(`(${rel})`), `${f}: la portada no lo enlaza; un anexo que nadie indexa no lo encuentra nadie`);
-    // cada anexo dice de qué guía salió cada pedazo, y esa guía existe: sin eso, el texto mudado queda sin contexto
+    // cada anexo de una guía (los de `guides/`) dice de qué guía salió cada pedazo, y esa guía existe: sin eso, el texto
+    // mudado queda sin contexto. Un documento propio del privado (no salió de ninguna guía) sólo tiene que estar enlazado.
+    if (!rel.startsWith('guides/')) continue;
     const origins = [...read(f).matchAll(/^> Salió de `([^`]+)`, de la sección «[^»]+»/gm)].map((m) => m[1]);
     assert.ok(origins.length >= 1, `${f}: no dice de qué guía salió («> Salió de \`<guía>\`, de la sección «…»»)`);
     for (const guide of origins) assert.ok(everything.has(guide), `${f}: dice que salió de ${guide}, que no está en el repo`);

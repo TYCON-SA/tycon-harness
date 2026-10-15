@@ -250,15 +250,16 @@ test('T46e · BatchD_KeysClassifiedAndRecounted — los frenos sobre un rango de
 
 // ── T48 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-test('T48 · BatchD_BizuitPackage — el paquete Bizuit sale sin nombres en castellano', { skip: SKIP_PUBLIC || (!SKILLS && 'sin agent-skills'), timeout: 240000 }, () => {
-  const out = path.join(tmp('export'), 'copia');
-  const r = spawnSync(process.execPath, [path.join(RAIZ, 'scripts', 'publishing', 'export.js'), '--package', 'bizuit', '--output', out, '--json',
-    '--harness', 'HEAD', '--agent-skills', 'HEAD'],
-  { encoding: 'utf8', env: cleanEnv({ TYCON_SKILLS_DIR: SKILLS, TYCON_GUIDES_DIR: RAIZ }), maxBuffer: 64 * 1024 * 1024 });
-  assert.strictEqual(r.status, 0, `el exportador no armó la copia: ${r.stderr.slice(-2000)}`);
+test('T48 · BatchD_BizuitPackage — el paquete Bizuit sale sin nombres en castellano', { skip: SKIP_PUBLIC || (!SKILLS && 'sin agent-skills'), timeout: 240000 }, (t) => {
+  // Desde la story 8.26 (AC 36) el exportador ya no arma la copia: el repo público es la fuente. El paquete se mide sobre
+  // el árbol con el termómetro de nombres en castellano (`--count`), el mismo que antes devolvía el exportador.
+  const r = spawnSync(process.execPath, [path.join(RAIZ, 'scripts', 'publishing', 'spanish-names.js'), '--count', '--json', '--repo', RAIZ],
+    { encoding: 'utf8', env: cleanEnv({ TYCON_SKILLS_DIR: SKILLS, TYCON_GUIDES_DIR: RAIZ }), maxBuffer: 64 * 1024 * 1024 });
+  assert.strictEqual(r.status, 0, `el termómetro no pudo contar: ${r.stderr.slice(-2000)}`);
   const j = JSON.parse(r.stdout);
-  assert.ok(j.spanishNames, 'la salida no trae spanishNames');
-  assert.strictEqual(j.spanishNames.total, 0, `quedan nombres en castellano en el paquete Bizuit: ${JSON.stringify(j.spanishNames)}`);
+  if (!j.dictionary) { t.skip('NO MEDIDO: la máquina no tiene el diccionario inglés con que el termómetro separa castellano de inglés'); return; }
+  assert.ok(j.packages && j.packages.bizuit, `la salida no trae el paquete bizuit: ${r.stdout.slice(0, 500)}`);
+  assert.strictEqual(j.packages.bizuit.total, 0, `quedan nombres en castellano en el paquete Bizuit: ${JSON.stringify(j.packages.bizuit)}`);
   // la cuenta incluye las claves del manifiesto: si no estuviera en schemaFiles, «0» no diría nada de ellas
   const words = JSON.parse(fs.readFileSync(WORDS, 'utf8'));
   assert.ok(words.schemaFiles.includes(PACK), `${PACK} no está en schemaFiles`);

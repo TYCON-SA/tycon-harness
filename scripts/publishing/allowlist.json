@@ -19,6 +19,7 @@
           "build/**",
           "claude-md-blocks/**",
           "commands/**",
+          "mods/**",
           "pipelines/azure-pipelines-pr.yml",
           "pipelines/templates/correr-suites.yml",
           "pipelines/templates/fetch-snapshot.yml",
