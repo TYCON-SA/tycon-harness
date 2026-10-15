@@ -6,7 +6,7 @@ tuyo, el **repo de operaciones**:
 | Pipeline | Qué hace | Qué deja en el repo de operaciones |
 |---|---|---|
 | `stage-metrics.yml` | Mide el ciclo de las stories de los repos que usan el arnés | `.dashboard/sdlc-stage-<fecha>.json` y `.dashboard/proyectos/` |
-| `dependency-audit.yml` | Busca dependencias con vulnerabilidades conocidas en los repos que declares, y abre un pull request por hallazgo | `.dashboard/dependencias/` e `inbox/dependencies/` |
+| `dependency-audit.yml` | Busca dependencias con vulnerabilidades conocidas en los repos que declares, y abre un pull request por hallazgo. Antes de mirarlas, compara los pipelines de tus productos (la paridad: ¿hacen lo mismo?) | `.dashboard/dependencias/`, `inbox/dependencies/` y `.dashboard/paridad/paridad-<día>.json` |
 | `team-dashboard.yml` | Arma una página con todo lo anterior | `artifacts/tablero-del-arnes.html` |
 
 Si tu organización vive en GitHub, los mismos tres corren como GitHub Actions: [esta otra página](github/README.md).
@@ -39,6 +39,7 @@ lee el arnés (los ejemplos están en `pipelines/operations/examples/` del arné
 | `scripts/nightly/dependencies/repos.json` | Qué repos mira la revisión de dependencias (`ado`: `<proyecto>/<repo>`; `tipo`: `npm` o `nuget`) | Sí, para la revisión de dependencias |
 | `team-repos.json` | Opcional. Dónde vive cada repo del arnés de tu organización (forma: `scripts/lib/team-repos.js`). Si está, tiene que validar: con `operations.platform: github` los avisos de dependencias son issues de GitHub, no pedidos de trabajo; y si tu organización tiene copias del repo del arnés con stories, van en `harness_copies` (las métricas no las miden, salvo la de `maintainers` si está en la lista) | No |
 | `scripts/nightly/dashboard/sources.json` | Qué fuentes espera el tablero. Usá el ejemplo: el del arnés espera fuentes que tu organización no tiene | Sí, para el tablero |
+| `scripts/ci/product-parity.json` | Opcional. Los productos que tienen que hacer lo mismo en su pipeline, qué se compara y las diferencias declaradas (ejemplo: `pipelines/operations/examples/product-parity.json`). Un repo que la revisión de dependencias no clona lleva `ado: "<proyecto>/<repo>"`. Sin el archivo, la paridad sale «sin productos» | No |
 | `pipelines/stage-metrics.yml`, `pipelines/dependency-audit.yml`, `pipelines/team-dashboard.yml` | Copias de los tres modelos de esta carpeta | Sí |
 
 En cada uno de los tres YAML cambiá **una línea**, la marcada con `← CAMBIAR`: el `name:` del recurso `harness`, con

@@ -529,3 +529,55 @@ test('T10 CloneRepos_SeesPrivates: con la App, los repos donde está instalada (
   const paso = steps(read('stage-metrics.yml')).find((x) => /clone-repos\.sh --org/.test(x));
   assert.match(paso, /^ {10}ORG_TOKEN_KIND: \$\{\{ steps\.org-token\.outcome == 'success' && 'app' \|\| 'user' \}\}$/m);
 });
+
+// ── story 2.25: la paridad de los productos en el workflow de dependencias (T13-T14) ────────────────────────────
+test('T13 GitHub_ClonaAntesDeRevocarYComparaAntesDeCorrer @story-2.25 @ac-8: lo que falta para la paridad se clona en otra invocación, antes de revocar; se compara antes de correr código', () => {
+  const all = steps(read('dependency-audit.yml'));
+  const at = (name) => all.findIndex((s) => s.startsWith(`      - name: ${name}`));
+  const clone = at('Clonar los repos declarados');
+  const revoke = at('Revocar la credencial de la App (antes de correr código de los productos)');
+  const tree = at('El árbol sigue siendo el que se armó (antes de medir)');
+  const parity = at('Comparar los pipelines de los productos (paridad)');
+  const run = at('Correr la revisión de dependencias');
+  assert.ok(clone >= 0 && revoke > clone && tree > revoke && parity > tree && run > parity, `orden: clonar ${clone} < revocar ${revoke} < árbol ${tree} < paridad ${parity} < revisión ${run}`);
+  const lines = runLines(all[clone]).map((l) => l.trim()).filter(Boolean);
+  const deps = lines.findIndex((l) => /^node scripts\/nightly\/dependencies\/nightly-dependencies\.js clone-list \|/.test(l));
+  const par = lines.findIndex((l) => /^LISTA="\$\(node scripts\/ci\/check-product-parity\.js clone-list --root "\$\{RUNNER_TEMP\}\/repos" --platform github\)" \\$/.test(l));
+  assert.ok(deps >= 0 && par > deps, `dos invocaciones, la de la paridad después (${deps}, ${par}): ${lines.join(' ⏎ ')}`);
+  assert.ok(!lines.some((l) => /nightly-dependencies\.js clone-list.*check-product-parity|check-product-parity.*nightly-dependencies/.test(l)), 'las dos listas no van en la misma tubería');
+  assert.ok(lines.some((l) => /printf '%s\\n' "\$\{LISTA\}" \| bash pipelines\/operations\/github\/clone-repos\.sh --declared "\$\{RUNNER_TEMP\}\/repos" \|\| echo "::warning::/.test(l)), 'el clon de la paridad no puede cortar el paso');
+  // corrido de verdad, con bash -e y pipefail como GitHub: una lista ilegible avisa y el paso sigue (la noche no se pierde)
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'ops-github-parity-'));
+  dirs.push(base);
+  fs.mkdirSync(path.join(base, 'scripts', 'ci'), { recursive: true });
+  for (const f of ['check-product-parity.js', 'legacy-options.js']) fs.copyFileSync(path.join(ROOT, 'scripts', 'ci', f), path.join(base, 'scripts', 'ci', f));
+  fs.writeFileSync(path.join(base, 'scripts', 'ci', 'product-parity.json'), '{ roto');
+  const desde = runLines(all[clone]).findIndex((l) => /LISTA=/.test(l));
+  const tramo = runLines(all[clone]).slice(desde).join('\n');
+  const r = spawnSync('bash', ['-e', '-o', 'pipefail', '-c', tramo], { cwd: base, encoding: 'utf8', env: cleanEnv({ RUNNER_TEMP: path.join(base, 'tmp') }) });
+  assert.strictEqual(r.status, 0, `${r.stdout}${r.stderr}`);
+  assert.match(`${r.stdout}${r.stderr}`, /::warning::Paridad: /);
+  const p = all[parity];
+  assert.match(p, /check-product-parity\.js --root "\$\{RUNNER_TEMP\}\/repos"/);
+  assert.match(p, /--today "\$\{HOY\}" --out "\$\{OUT\}"/);
+  assert.match(p, /tr '\\r\\n' '  ' \| sed 's\/::\/: :\/g'/, 'el aviso no puede dar órdenes al workflow (ni con \\r)');
+  assert.match(p, /OUT="\.dashboard\/paridad\/paridad-\$\{HOY\}\.json"/);
+  assert.match(p, /HOY="\$\{HOY_NOCTURNO:-\$\(date -u \+%Y-%m-%d\)\}"/);
+  assert.match(p, /annotate\.sh/, 'los avisos van por annotate.sh');
+  assert.match(p, /RC=\$\{PIPESTATUS\[0\]\}/, 'el código del control, no el de la tubería');
+  assert.match(p, /exit 0\s*$/, 'el paso sale siempre 0');
+  const save = all.find((s) => /push-nightly-data\.js save/.test(s));
+  assert.match(save, /-- \.dashboard\/dependencias inbox\/dependencies \.dashboard\/paridad /);
+});
+
+test('T14 GitHub_PrepareTreeTraeLaLista @story-2.25 @ac-9: con lista en operaciones, la de la organización; sin lista, la del arnés', () => {
+  for (const [ops, want] of [[{ 'scripts/ci/product-parity.json': '{"de":"la organización"}\n' }, 'la organización'], [{}, 'del arnés']]) {
+    const w = runner({ 'team-repos.json': teamRepos(), 'operations.json': '{"version":1,"owners":{"default":"lider"}}\n', ...ops });
+    write(w.h, { 'scripts/ci/product-parity.json': '{"sin_productos":"del arnés"}\n' });
+    git(w.h, ['add', '-A']); git(w.h, ['commit', '--quiet', '-m', 'la copia pública']);
+    const r = prepare(w);
+    assert.strictEqual(r.code, 0, r.out);
+    assert.match(fs.readFileSync(path.join(w.h, 'scripts', 'ci', 'product-parity.json'), 'utf8'), new RegExp(want));
+    assert.doesNotMatch(r.out, /no lee[^\n]*product-parity\.json/, 'la lista no se nombra como archivo que no se trae');
+  }
+});

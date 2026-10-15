@@ -12,7 +12,8 @@
 #     organización: con `operations.platform: github` los avisos de dependencias son issues; story 8.31),
 #     `scripts/nightly/dependencies/repos.json`
 #     (qué repos mira la revisión de dependencias) y `summary.json` (el resumen diario), y
-#     `scripts/nightly/dashboard/sources.json` y `declared.json` (qué espera el tablero). Lo que no trae queda como lo
+#     `scripts/nightly/dashboard/sources.json` y `declared.json` (qué espera el tablero), y `scripts/ci/product-parity.json`
+#     (los productos que tienen que hacer lo mismo; story 2.25: sin él, la paridad sale «sin productos»). Lo que no trae queda como lo
 #     trae el arnés (los ejemplos públicos están en pipelines/operations/examples/).
 #   · cualquier otro archivo del repo de operaciones (salvo `pipelines/`, `README.md` y `.gitignore`) NO se trae, y se
 #     avisa nombrándolo: si hace falta, se suma a esta lista con un pedido al arnés.
@@ -36,7 +37,7 @@ steps:
       [ -d "$O/.git" ] || red "no está el checkout del repo de operaciones en $O (falta fetch-harness.yml antes)"
       [ -d "$S/.git" ] || red "no está el árbol del arnés en $S (falta fetch-harness.yml antes)"
       DATA_DIRS=(.dashboard inbox artifacts)
-      CONFIG_FILES=(operations.json team-repos.json scripts/nightly/dependencies/repos.json scripts/nightly/dependencies/summary.json scripts/nightly/dashboard/sources.json scripts/nightly/dashboard/declared.json)
+      CONFIG_FILES=(operations.json team-repos.json scripts/nightly/dependencies/repos.json scripts/nightly/dependencies/summary.json scripts/nightly/dashboard/sources.json scripts/nightly/dashboard/declared.json scripts/ci/product-parity.json)
       ENTRIES=()
       for D in "${DATA_DIRS[@]}"; do
         [ -d "$O/$D" ] || continue

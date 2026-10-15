@@ -9,7 +9,8 @@
 #   2. Trae encima del arnés, en la misma ruta, SÓLO una lista cerrada (el repo de operaciones no puede reemplazar
 #      código del arnés): los datos `.dashboard/`, `inbox/`, `artifacts/` (cada uno queda igual al de operaciones; los
 #      que falten no son error: es la primera noche) y la configuración `operations.json`, `team-repos.json`,
-#      `scripts/nightly/dependencies/{repos,summary}.json` y `scripts/nightly/dashboard/{sources,declared}.json`.
+#      `scripts/nightly/dependencies/{repos,summary}.json`, `scripts/nightly/dashboard/{sources,declared}.json` y
+#      `scripts/ci/product-parity.json` (los productos que comparan su pipeline; story 2.25).
 #      Lo demás del repo de operaciones (salvo `.github/`, `pipelines/`, `README.md` y `.gitignore`) se nombra y no se trae.
 #   3. Lo fija en un commit LOCAL que no se empuja (guardar toma HEAD como base), con la identidad `github-actions[bot]`.
 #   4. `origin` pasa a ser el repo de operaciones; el arnés queda como `harness`. Trae `main` de operaciones con la
@@ -53,7 +54,7 @@ fi
 
 # 2. la lista cerrada
 DATA_DIRS=(.dashboard inbox artifacts)
-CONFIG_FILES=(operations.json team-repos.json scripts/nightly/dependencies/repos.json scripts/nightly/dependencies/summary.json scripts/nightly/dashboard/sources.json scripts/nightly/dashboard/declared.json)
+CONFIG_FILES=(operations.json team-repos.json scripts/nightly/dependencies/repos.json scripts/nightly/dependencies/summary.json scripts/nightly/dashboard/sources.json scripts/nightly/dashboard/declared.json scripts/ci/product-parity.json)
 ENTRIES=()
 for D in "${DATA_DIRS[@]}"; do
   [ -d "${O}/${D}" ] || continue

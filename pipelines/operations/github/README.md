@@ -7,7 +7,7 @@ para una organización que vive en GitHub:
 | Workflow | Qué hace | Qué deja |
 |---|---|---|
 | `stage-metrics.yml` | Mide el ciclo de las stories de los repos que usan el arnés | `.dashboard/sdlc-stage-<fecha>.json` y `.dashboard/proyectos/` en el repo de operaciones |
-| `dependency-audit.yml` | Busca dependencias con vulnerabilidades conocidas en los repos que declares, y abre un **issue** en el repo del producto por cada hallazgo | `.dashboard/dependencias/` e `inbox/dependencies/` en el repo de operaciones; los issues, en cada producto |
+| `dependency-audit.yml` | Busca dependencias con vulnerabilidades conocidas en los repos que declares, y abre un **issue** en el repo del producto por cada hallazgo. Antes de mirarlas, compara los workflows de tus productos (la paridad) | `.dashboard/dependencias/`, `inbox/dependencies/` y `.dashboard/paridad/paridad-<día>.json` en el repo de operaciones; los issues, en cada producto |
 | `team-dashboard.yml` | Arma una página con todo lo anterior | `artifacts/tablero-del-arnes.html` en el repo de operaciones |
 
 Esta página es para quien administra la organización de GitHub. Lleva una hora la primera vez. No hace falta instalar
@@ -75,6 +75,7 @@ los lee el arnés (los ejemplos están en `pipelines/operations/examples/github/
 | `operations.json` | A quién se asignan los issues (`owners.default`, y `owners.by_project` con la clave `<dueño>/<repo>`). Identidades: usuarios de GitHub. Forma: `scripts/lib/operations-config.js` | Sí, para la revisión de dependencias |
 | `scripts/nightly/dependencies/repos.json` | Qué repos mira la revisión de dependencias (`github`: `<dueño>/<repo>`; `tipo`: `npm` o `nuget`) y el bloque `github` (`issues_enabled`, `identity`) | Sí, para la revisión de dependencias |
 | `scripts/nightly/dashboard/sources.json` | Qué fuentes espera el tablero. Usá el de `pipelines/operations/examples/sources.json` | Sí, para el tablero |
+| `scripts/ci/product-parity.json` | Opcional. Los productos que tienen que hacer lo mismo, con `archivo: ".github/workflows/<nombre>.yml"` en cada grupo (ejemplo: `pipelines/operations/examples/product-parity.json`). Un repo que la revisión de dependencias no clona lleva `github: "<dueño>/<repo>"`. Sin el archivo, la paridad sale «sin productos» | No |
 | `.github/workflows/stage-metrics.yml`, `.github/workflows/dependency-audit.yml`, `.github/workflows/team-dashboard.yml` | Copias de los tres workflows de esta carpeta, **sin cambiar nada** | Sí |
 
 `team-repos.json` vive también en el perfil del equipo, si tenés uno: son dos copias, mantenelas iguales. Una

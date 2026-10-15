@@ -51,6 +51,15 @@
       "written_by": "pipeline de operaciones, 08:00 UTC"
     },
     {
+      "id": "paridad",
+      "title": "Paridad de los pipelines de los productos",
+      "pattern": "paridad-*.json",
+      "dir": "paridad",
+      "required": false,
+      "max_age_days": 2,
+      "written_by": "pipeline de operaciones, dentro de la revisión de dependencias (04:00 UTC)"
+    },
+    {
       "id": "capturer",
       "title": "Métricas por merge",
       "pattern": "metrics-*.json",

@@ -53,6 +53,15 @@
       "written_by": "nocturno de Azure DevOps, 08:00 UTC"
     },
     {
+      "id": "paridad",
+      "title": "Paridad de los pipelines de los productos",
+      "pattern": "paridad-*.json",
+      "dir": "paridad",
+      "required": false,
+      "max_age_days": 2,
+      "written_by": "nocturno de Azure DevOps, dentro de la revisión de dependencias (04:00 UTC)"
+    },
+    {
       "id": "capturer",
       "title": "Métricas por merge",
       "pattern": "metrics-*.json",
