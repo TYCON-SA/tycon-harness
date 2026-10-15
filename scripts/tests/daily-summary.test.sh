@@ -782,7 +782,10 @@ igual_a_main() { # <yaml> <display> → true si el paso entero es idéntico al d
   local pub rc
   pub=$(ruta_publicada "$1"); rc=$?
   [ "$rc" = 2 ] && { echo "NO MEDIDO — copia pública sin el mapa"; return; }
-  [ "$rc" = 0 ] || { echo nomain; return; }
+  # Sin el yml en origin/main no hay contra qué comparar: no es «cambió». Pasa en el nocturno, que corre en el repo del
+  # equipo con el público encima (su origin/main no trae los pipelines que se mudaron al público), y con un pipeline
+  # nuevo de la rama. Antes salía rojo «nomain» cada noche (corrida del 2026-10-15).
+  [ "$rc" = 0 ] || { echo "NO MEDIDO — origin/main de este repo no tiene $1: no hay paso de antes contra el cual comparar"; return; }
   git -C "$RAIZ" show "origin/main:$pub" > "$TMP/main.yml" 2>/dev/null || { echo nomain; return; }
   # la condición de `efectos` (story 8.26 B: una corrida de prueba no abre pedidos ni avisa) no es un cambio del paso:
   # se saca de los dos lados, y sólo esa línea (la fija pipelines-moved.test.js, T7)
