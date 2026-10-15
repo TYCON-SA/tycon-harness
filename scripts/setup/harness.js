@@ -3576,6 +3576,8 @@ function cmdDoctor(ctx) {
     doctorConfigItems(ctx, tree, state, prof, add, extra);
     // el freno antes de publicar (story 8.26, tanda H1c · AC 65 d): dato o aviso, nunca rojo
     doctorPublishGuardItems(ctx, tree, prof, add, extra);
+    // los repos que declara la organización, contra este disco (story 2.21): dato o aviso, nunca rojo
+    doctorDeclaredReposItems(ctx, tree, add, extra);
     if (state.notice) add('warn', `aviso pendiente: ${state.notice}`);
     if (state.hold) add('warn', `${holdText(state)}`);
     if (state.failed) {
@@ -3699,6 +3701,8 @@ function cmdDoctor(ctx) {
   doctorConfigItems(ctx, tree, state, prof, add, extra);
   // el freno antes de publicar (story 8.26, tanda H1c · AC 65 d): dato o aviso, nunca rojo
   doctorPublishGuardItems(ctx, tree, prof, add, extra);
+  // los repos que declara la organización, contra este disco (story 2.21): dato o aviso, nunca rojo
+  doctorDeclaredReposItems(ctx, tree, add, extra);
   const controls = M.expectedControls({ platform: ctx.platform, tree, integrations, env, home: ctx.home, profile: prof.ok ? prof.value : null });
   for (const t of controls.problems) add('warn', `controles esperados: ${t}`);
   for (const x of controls.excluded) add('ok', `fuera en Windows: ${x.id} — ${x.reason}`);
@@ -3797,6 +3801,139 @@ function doctorConfigItems(ctx, tree, state, prof, add, extra) {
     extra.brakes = { registered: registered.length, any_repo: anyRepo };
     add('ok', `controles que frenan registrados: ${registered.length}${anyRepo.length ? ` (en cualquier repo: ${anyRepo.join(', ')})` : ''}`);
   } catch (e) { add('warn', `controles que frenan: no pude contarlos (${(e && e.message) || e})`); }
+}
+
+/**
+ * Los repos que la organización declara, contra los que hay en este disco (story 2.21, decisión G7 · AC 16-17). Vivía
+ * como ficha de la página del tablero y comparaba lo que no debía: la lista del árbol instalado (que en una máquina del
+ * equipo no trae ninguna) contra la carpeta padre del arnés (que desde la mudanza a ~/.tycon no tiene repos). Es un dato
+ * de cada máquina, así que lo dice doctor:
+ *   · la lista es la de la ORGANIZACIÓN: `scripts/nightly/dependencies/repos.json` del clon de operaciones que la máquina
+ *     declara (`paths.operations`, la clave que guarda `team-config`). Sin esa clave o sin el archivo, es un dato;
+ *   · los repos del disco son los de la raíz de `repos-root.js`, hasta profundidad 2 (la forma `<producto>/<repo>` de
+ *     `ruta`). Uno cuenta como declarado si su `origin` —leído de .git/config, sin invocar git— apunta al `ado`
+ *     (`<proyecto>/<repo>`) de una entrada, sin distinguir mayúsculas y con los espacios decodificados. La carpeta no
+ *     importa: `ruta` es una etiqueta (scripts/nightly/dependencies/nightly-dependencies.js, `ubicarRepo`). Una entrada
+ *     con `activo: false` cuenta como declarada;
+ *   · «con huella del arnés sin declarar»: los del disco con `.tycon/` que ninguna entrada nombra.
+ * 🔴 NUNCA en rojo (la comprobación de salud corre `doctor --json`), y bajo la salud (TYCON_HARNESS_HEALTH=1) no corre:
+ *    `declared_repos` en null, como `publish_guard`. Fuera de eso, `declared_repos` va siempre en `--json`: con los cuatro
+ *    números, o con ellos en null y su `reason`. Nunca tira.
+ */
+function doctorDeclaredReposItems(ctx, tree, add, extra) {
+  if (ctx.env.TYCON_HARNESS_HEALTH === '1') { extra.declared_repos = null; return; }
+  const sinMedir = (reason) => { extra.declared_repos = { declared: null, on_disk: null, matched: null, undeclared_with_harness: null, reason }; };
+  try {
+    let ops = null;
+    try { ops = mod('team-config').declaredClones({ env: ctx.env }).operations; }
+    catch (e) {
+      // «no pude leer la configuración» no es «la máquina no tiene la lista»: se dice
+      const t = `no pude leer qué clon de operaciones declara esta máquina (${(e && (e.code || e.name)) || 'error'})`;
+      sinMedir(t); add('warn', `repos declarados: ${t}`); return;
+    }
+    const lista = ops ? path.join(ops, 'scripts', 'nightly', 'dependencies', 'repos.json') : null;
+    if (!lista || !fs.existsSync(lista)) {
+      const t = 'esta máquina no tiene la lista de la organización; `harness.js team-config` la pide';
+      sinMedir(t); add('ok', `repos declarados: no medido — ${t}`); return;
+    }
+    let entradas;
+    try {
+      const j = JSON.parse(fs.readFileSync(lista, 'utf8'));
+      entradas = j && Array.isArray(j.repos) ? j.repos : (Array.isArray(j) ? j : null);
+      if (!entradas) throw new Error('no trae la lista «repos»');
+    } catch (e) {
+      const t = `no pude leer la lista de la organización (${lista}: ${e instanceof SyntaxError ? 'no es JSON válido' : e.message})`;
+      sinMedir(t); add('warn', `repos declarados: ${t}`); return;
+    }
+    let raiz = null, porQue = null;
+    try {
+      const RR = require(path.join(tree, 'scripts', 'lib', 'repos-root.js'));
+      const r = RR.resolveReposRoot(undefined, { env: ctx.env, home: ctx.home });
+      raiz = r && r.root ? r.root : null;
+      if (!raiz) porQue = typeof RR.describir === 'function' ? RR.describir(r) : 'sin raíz';
+      else if (!fs.existsSync(raiz)) { porQue = `la raíz de repos ${raiz} no existe`; raiz = null; }
+    } catch (e) { porQue = `no pude saber dónde están los repos (${(e && (e.code || e.message)) || 'error'})`; }
+    if (!raiz) { sinMedir(porQue); add('warn', `repos declarados: ${porQue}`); return; }
+    // La identidad de un repo de Azure sale de la pieza que ya la sabe leer en todas sus formas —HTTPS con proyecto, la
+    // corta `_git/<repo>`, SSH `v3/…`, visualstudio.com— (scripts/lib/harness-repo.js `identidadAzure`): con una sola
+    // forma, los clones por SSH caían en «sin declarar» (pase adversarial de la story 2.21).
+    let identidadAzure = null;
+    try { identidadAzure = require(path.join(tree, 'scripts', 'lib', 'harness-repo.js')).identidadAzure; } catch (_) { identidadAzure = null; }
+    if (typeof identidadAzure !== 'function') { const t = 'el árbol no trae el lector de remotos (scripts/lib/harness-repo.js): no sé comparar los origin'; sinMedir(t); add('warn', `repos declarados: ${t}`); return; }
+    const limpio = (s) => { try { return decodeURIComponent(s).toLowerCase(); } catch (_) { return String(s).toLowerCase(); } };
+    // Las entradas se cuentan por REPO, no por renglón: repos.json declara un mismo repo dos veces cuando lo audita en
+    // dos subcarpetas (`subruta`) o con dos herramientas, y con un mapa de clave a UN índice la segunda pisaba a la
+    // primera — «K de D» no llegaba nunca a D (pase adversarial). Una entrada sin `ado` no se puede reconocer en el
+    // disco: cuenta como un repo declarado, aparte.
+    const declaradas = new Set();
+    let sinAdo = 0;
+    for (const e of entradas) {
+      const p = e && typeof e.ado === 'string' ? e.ado.split('/') : [];
+      if (p.length >= 2) declaradas.add(`${limpio(p[0])}/${limpio(p[p.length - 1])}`);
+      else sinAdo += 1;
+    }
+    const totalDeclarados = declaradas.size + sinAdo;
+    // el repo de una carpeta: su carpeta de git COMÚN (un worktree apunta a la del clon: el mismo repo no se cuenta una
+    // vez por worktree) y su `origin`. Devuelve { comun, url } (url null: sin `origin`) o { ilegible: código } — «no pude
+    // leer» no es «sin origin»
+    const repoDe = (dir) => {
+      try {
+        let gd = path.join(dir, '.git');
+        if (fs.statSync(gd).isFile()) {
+          const m = fs.readFileSync(gd, 'utf8').match(/^gitdir:\s*(.+)$/m);
+          if (!m) return { ilegible: 'gitdir sin forma' };
+          gd = path.resolve(dir, m[1].trim());
+          const comun = path.join(gd, 'commondir');
+          if (fs.existsSync(comun)) gd = path.resolve(gd, fs.readFileSync(comun, 'utf8').trim());
+        }
+        const cfg = fs.readFileSync(path.join(gd, 'config'), 'utf8');
+        const sec = cfg.split(/^\s*\[/m).find((s) => /^remote\s+"origin"\s*\]/.test(s));
+        const u = sec && sec.match(/^\s*url\s*=\s*(.+?)\s*$/m);
+        let comun = gd;
+        try { comun = fs.realpathSync(gd); } catch (_) { /* la ruta tal cual: alcanza para no contarlo dos veces */ }
+        return { comun, url: u ? u[1] : null };
+      } catch (e) { return { ilegible: (e && e.code) || 'error' }; }
+    };
+    const enDisco = [];
+    const ilegibles = [];   // carpetas y configuraciones que no se pudieron leer: faltan, no son «no está»
+    const mirar = (dir, prof) => {
+      let ents; try { ents = fs.readdirSync(dir, { withFileTypes: true }); } catch (e) { ilegibles.push((e && e.code) || 'error'); return; }
+      for (const e of ents) {
+        if (!e.isDirectory() || e.name.startsWith('.') || e.name === 'node_modules') continue;
+        const p = path.join(dir, e.name);
+        if (fs.existsSync(path.join(p, '.git'))) enDisco.push(p);
+        else if (prof < 2) mirar(p, prof + 1);
+      }
+    };
+    mirar(raiz, 1);
+    // por repo (carpeta de git común): las carpetas que lo clonan o son sus worktrees, si alguna tiene la huella
+    const repos = new Map();   // comun → { url, huella }
+    for (const dir of enDisco) {
+      const r = repoDe(dir);
+      if (r.ilegible) { ilegibles.push(r.ilegible); continue; }
+      const ya = repos.get(r.comun) || { url: r.url, huella: false };
+      if (fs.existsSync(path.join(dir, '.tycon'))) ya.huella = true;
+      repos.set(r.comun, ya);
+    }
+    const encontradas = new Set();
+    let sinDeclarar = 0;
+    for (const r of repos.values()) {
+      const id = r.url ? identidadAzure(r.url) : null;
+      const clave = id ? `${id.proyecto}/${id.repo}` : null;
+      if (clave && declaradas.has(clave)) encontradas.add(clave);
+      else if (r.huella) sinDeclarar += 1;
+    }
+    extra.declared_repos = { declared: totalDeclarados, on_disk: repos.size, matched: encontradas.size, undeclared_with_harness: sinDeclarar };
+    const linea = `repos declarados por la organización: ${encontradas.size} de ${totalDeclarados} en este disco (raíz ${raiz}) · con huella del arnés sin declarar: ${sinDeclarar}`;
+    // con algo que no se pudo leer los números quedan cortos: es un aviso (nunca un rojo), con los códigos
+    if (ilegibles.length) {
+      extra.declared_repos.unreadable = ilegibles.length;
+      add('warn', `${linea} · ${ilegibles.length} carpeta(s) o configuración(es) que no se pudieron leer (${[...new Set(ilegibles)].join(', ')}): los números pueden quedar cortos`);
+    } else add('ok', linea);
+  } catch (e) {
+    const t = `no pude compararlos (${(e && (e.code || e.message)) || 'error'})`;
+    sinMedir(t); add('warn', `repos declarados: ${t}`);
+  }
 }
 
 /**

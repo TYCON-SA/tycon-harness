@@ -239,6 +239,17 @@ done
 [ "$FUGA" -eq 0 ] && ok "C-11 ni rutas, ni comandos, ni nombres de persona en la página"
 rm -rf "$T"
 
+# ── C-11b · una fuente declarada SIN carpeta no publica la ruta absoluta del disco @story-2.21 ──
+# Pedido de la coordinadora (2026-10-15, lo cazó la 2.23 al sumar una fuente): el motivo de «no pude leer la carpeta»
+# escribía la ruta absoluta del --dir —el disco de quien generó la página— en la página publicada.
+# 🔴 rojo previo: `no se pudo leer ${dir}: …` con `dir` absoluto.
+T=$(mktemp -d); montar_sano "$T"; rm -rf "$T/vigilante"
+node "$TABLERO" --dir "$T" --output "$T/o.html" >/dev/null 2>&1
+{ ! grep -qF "$T" "$T/o.html" && grep -q 'no se pudo leer la carpeta de la fuente «vigilante» (vigilante): no existe' "$T/o.html"; } \
+  && ok "C-11b la fuente sin carpeta se nombra por su id y su carpeta relativa, sin la ruta absoluta del disco" \
+  || mal "C-11b la página trae la ruta absoluta o no nombra la fuente: $(grep -o 'no se pudo leer[^<]*' "$T/o.html" | head -2)"
+rm -rf "$T"
+
 # ── C-12 · un dato DECLARADO vencido no se dibuja como medido ──
 # 🔴 rojo previo: quitar la comparación con `revisar_antes_de` en extra().
 T=$(mktemp -d); montar_sano "$T"
@@ -1458,23 +1469,406 @@ echo "$F" | grep 'buzón' >/dev/null && ok "C-59b con su motivo" || mal "C-59b s
 echo "$F" | grep '<div class="t-val">0' >/dev/null && mal "C-59b publicó un cero" || ok "C-59b ningún cero publicado"
 rm -rf "$T"
 
-# ── C-60 · una noche de suites INCOMPLETA no se dibuja como un número (2026-10-04) ──
-# Las suites del nocturno corren en trabajos paralelos. Si uno no termina, sus suites quedan en `failures` como no
-# medidas y `corridas` sólo cuenta las que corrieron: «108 de 109 suites», con el denominador encogido. El reporte lo
-# declara (`complete: false`, `unmeasured`), y el tablero trata a esa noche como a una corrida incompleta de
-# dependencias: trama y motivo, nunca un número.
-T=$(mktemp -d); montar_sano "$T"
-python3 - "$T" <<'PY'
+# ── C-60 · Suites_CuentaRojasAunqueFalteUna @story-2.21 @ac-1 ──
+# Decisión G6 del dueño (2026-10-15): la ficha cuenta las rojas aunque falte alguna, y dice cuáles faltan. Antes la
+# noche con una sola suite sin medir salía gris y escondía las 24 rojas que el aviso de arranque sí mostraba.
+# 🔴 rojo previo: `if (d.complete === false) return noMedida(…)` → la ficha sale con trama; o contar las 25 de
+#    `failures` sin restar la que no se midió.
+suites_rep() {  # suites_rep <dir .dashboard> <json con los campos a pisar>
+  python3 - "$1" "$2" <<'PY'
 import json,sys,os,glob
 f=glob.glob(os.path.join(sys.argv[1],'controls-bench','suites-*.json'))[0]
-d=json.load(open(f)); u=['lab-%d.test.sh(no-medida)' % i for i in range(108)]
-d.update(corridas=109, failures=u, unmeasured=u, complete=False); json.dump(d,open(f,'w'))
+d=json.load(open(f)); [d.pop(k, None) for k in ('complete','unmeasured')]; d.update(json.loads(sys.argv[2])); json.dump(d,open(f,'w'))
+PY
+}
+ROJAS24="$(python3 -c "import json; print(json.dumps(['lab-%d.test.sh' % i for i in range(24)] + ['clean-machine.test.sh(no-medida)']))")"
+T=$(mktemp -d); montar_sano "$T"
+suites_rep "$T" "{\"corridas\":359,\"failures\":${ROJAS24},\"unmeasured\":[\"clean-machine.test.sh(no-medida)\"],\"complete\":false}"
+node "$TABLERO" --dir "$T" --output "$T/o.html" >/dev/null 2>&1
+EST="$(ficha_estado "$T/o.html" 'Suites del arnés en rojo')"; F="$(ficha_html "$T/o.html" 'Suites del arnés en rojo')"
+[ "$EST" != "blind" ] && [ "$EST" != "AUSENTE" ] && ok "C-60 con una suite sin medir la ficha sale MEDIDA ($EST)" || mal "C-60 la ficha salió $EST"
+echo "$F" | grep '<div class="t-val">24</div>' >/dev/null && ok "C-60 valor 24: las de failures que no están en unmeasured" || mal "C-60 el valor no es 24: ${F:0:300}"
+echo "$F" | grep 'de 359 suites' >/dev/null && ok "C-60 con el denominador «de 359 suites»" || mal "C-60 sin «de 359 suites»: ${F:0:300}"
+echo "$F" | grep '1 sin medir: clean-machine.test.sh' >/dev/null && ! echo "$F" | grep 'clean-machine.test.sh(no-medida)' >/dev/null \
+  && ok "C-60 el detalle nombra la sin medir, sin la marca" || mal "C-60 detalle: ${F:0:400}"
+rm -rf "$T"
+
+# ── C-60c · Suites_TodasSinMedirOCero_NoMedido @story-2.21 @ac-2 ──
+# 🔴 rojo previo: contar «0 rojas de 0» o «0 de 3» cuando ninguna se midió; o leer un reporte incompleto que no dice
+#    cuáles faltan como si estuviera completo.
+c60c() {  # c60c <json> <motivo esperado> <etiqueta>
+  local T; T=$(mktemp -d); montar_sano "$T"; suites_rep "$T" "$1"
+  node "$TABLERO" --dir "$T" --output "$T/o.html" >/dev/null 2>&1
+  local E F; E="$(ficha_estado "$T/o.html" 'Suites del arnés en rojo')"; F="$(ficha_html "$T/o.html" 'Suites del arnés en rojo')"
+  { [ "$E" = "blind" ] && echo "$F" | grep -F "$2" >/dev/null && ! echo "$F" | grep '<div class="t-val">0' >/dev/null; } \
+    && ok "C-60c $3: «no medido» con su motivo, ningún 0" || mal "C-60c $3: estado=$E · ${F:0:300}"
+  rm -rf "$T"
+}
+c60c '{"corridas":3,"failures":["a.test.sh(no-medida)","b.test.sh(no-medida)","c.test.sh(no-medida)"],"unmeasured":["a.test.sh(no-medida)","b.test.sh(no-medida)","c.test.sh(no-medida)"],"complete":false}' 'ninguna suite se midió esta noche' 'todas sin medir'
+c60c '{"corridas":0,"failures":[],"unmeasured":[],"complete":true}' 'ninguna suite se midió esta noche' 'cero corridas'
+c60c '{"corridas":359,"failures":["a.test.sh"],"complete":false}' 'no dice qué suites faltan' 'incompleto sin la lista'
+
+# ── C-60d · Suites_ReporteViejoSinComplete @story-2.21 @ac-2 ──
+# 🔴 rojo previo: tratar la ausencia de `complete` como «incompleta»; o restar con una regla distinta cuando trae `unmeasured`.
+T=$(mktemp -d); montar_sano "$T"
+suites_rep "$T" "{\"corridas\":359,\"failures\":$(python3 -c "import json; print(json.dumps(['lab-%d.test.sh' % i for i in range(25)]))")}"
+node "$TABLERO" --dir "$T" --output "$T/o.html" >/dev/null 2>&1
+F="$(ficha_html "$T/o.html" 'Suites del arnés en rojo')"
+{ echo "$F" | grep '<div class="t-val">25</div>' >/dev/null && echo "$F" | grep '359 suites' >/dev/null; } \
+  && ok "C-60d un reporte anterior a 2026-10-04 (sin complete ni unmeasured) cuenta como siempre: 25 de 359" || mal "C-60d ${F:0:300}"
+suites_rep "$T" "{\"corridas\":359,\"failures\":${ROJAS24},\"unmeasured\":[\"clean-machine.test.sh(no-medida)\"]}"
+node "$TABLERO" --dir "$T" --output "$T/o.html" >/dev/null 2>&1
+F="$(ficha_html "$T/o.html" 'Suites del arnés en rojo')"
+echo "$F" | grep '<div class="t-val">24</div>' >/dev/null && ok "C-60d sin complete pero con unmeasured resta igual (una sola regla)" || mal "C-60d con unmeasured: ${F:0:300}"
+rm -rf "$T"
+
+# ── C-60e · Suites_TrabajoCaido_NoSeRestaDosVeces @story-2.21 @ac-1 (pase adversarial) ──
+# `corridas` cuenta las suites que ARRANCARON (`ran`): las de un trabajo que murió antes de arrancarlas no están ahí y
+# llegan igual como no medidas. Restarlas de `corridas` las restaba dos veces.
+# 🔴 rojo previo: `corridas - unmeasured` → con 120 suites de trabajos caídos sobre 100 corridas, «ninguna suite se
+#    midió esta noche» y las 5 rojas escondidas.
+T=$(mktemp -d); montar_sano "$T"
+python3 - "$T" <<'PY'
+import json, sys, os, glob
+f = glob.glob(os.path.join(sys.argv[1], 'controls-bench', 'suites-*.json'))[0]
+ran = ['s%d.test.sh' % i for i in range(100)]
+caidas = ['c%d.test.sh(no-medida)' % i for i in range(120)]
+cortada = 's99.test.sh(no-medida)'
+d = json.load(open(f)); d.update(corridas=100, ran=ran, failures=ran[:5] + caidas + [cortada], unmeasured=caidas + [cortada], complete=False)
+json.dump(d, open(f, 'w'))
 PY
 node "$TABLERO" --dir "$T" --output "$T/o.html" >/dev/null 2>&1
-[ "$(ficha_estado "$T/o.html" 'Suites del arnés en rojo')" = "blind" ] && ok "C-60 una noche de suites incompleta sale con trama, no con un número" || mal "C-60 la noche incompleta se dibujó como medida ($(ficha_estado "$T/o.html" 'Suites del arnés en rojo'))"
 F="$(ficha_html "$T/o.html" 'Suites del arnés en rojo')"
-echo "$F" | grep '108 suites sin medir' >/dev/null && ok "C-60 con su motivo y la cuenta" || mal "C-60 sin motivo: ${F:0:300}"
-echo "$F" | grep '<div class="t-val">108' >/dev/null && mal "C-60 publicó 108 como si fueran rojas" || ok "C-60 las no medidas no se publican como rojas"
+{ echo "$F" | grep '<div class="t-val">5</div>' >/dev/null && echo "$F" | grep 'n=99 de 220 suites' >/dev/null; } \
+  && ok "C-60e 5 rojas, 99 medidas de 220: las 120 que nunca arrancaron suman al total y la cortada a mitad de camino se resta una vez" \
+  || mal "C-60e ${F:0:400}"
+rm -rf "$T"
+
+# ── C-61 · Suites_SeMideEnOtroLado_EnLaFicha @story-2.21 @ac-3 @ac-5 ──
+# 🔴 rojo previo: la ficha no lee `measuredElsewhere`; o `suites.json` no declara clean-machine.
+T=$(mktemp -d); montar_sano "$T"
+suites_rep "$T" '{"corridas":359,"failures":["a.test.sh"],"unmeasured":[],"complete":true,"measuredElsewhere":{"clean-machine.test.sh":"la mide la CI del repo público en cada pedido"}}'
+node "$TABLERO" --dir "$T" --output "$T/o.html" >/dev/null 2>&1
+F="$(ficha_html "$T/o.html" 'Suites del arnés en rojo')"
+{ echo "$F" | grep '<div class="t-val">1</div>' >/dev/null && echo "$F" | grep '1 se mide en otro lado: clean-machine.test.sh' >/dev/null \
+  && echo "$F" | grep 'la mide la CI del repo público en cada pedido' >/dev/null; } \
+  && ok "C-61 la ficha dice aparte «1 se mide en otro lado», con su motivo" || mal "C-61 ${F:0:400}"
+suites_rep "$T" '{"corridas":359,"failures":["a.test.sh","clean-machine.test.sh(no-medida)"],"unmeasured":["clean-machine.test.sh(no-medida)"],"complete":false,"measuredElsewhere":{},"measuredElsewhereProblem":"no pude leer el registro de suites"}'
+node "$TABLERO" --dir "$T" --output "$T/o.html" >/dev/null 2>&1
+F="$(ficha_html "$T/o.html" 'Suites del arnés en rojo')"
+echo "$F" | grep 'no pude leer el registro de suites' >/dev/null && ok "C-61 un problema con la declaración se dice en la ficha" || mal "C-61 problema: ${F:0:400}"
+rm -rf "$T"
+python3 - "$RAIZ/scripts/tests/suites.json" <<'PY' && ok "C-61 suites.json declara clean-machine «se mide en otro lado», con el motivo (la CI pública en cada pedido)" || mal "C-61 la entrada de clean-machine no declara measured_elsewhere"
+import json, sys
+d = json.load(open(sys.argv[1]))
+e = [s for l in d.values() if isinstance(l, list) for s in l if isinstance(s, dict) and s.get('ruta') == 'tests/clean-machine.test.sh']
+assert len(e) == 1, e
+m = e[0].get('measured_elsewhere')
+assert isinstance(m, str) and m.strip() and 'public-ci.sh --clean-machine' in m, m
+PY
+
+# ── C-62 · Grafico_MesEnCursoNoEsCerrado @story-2.21 @ac-6 ──
+# 🔴 rojo previo: `const ult = meses[meses.length - 1]` → «Último mes cerrado (2026-10)» con el mes a la mitad.
+con_meses() {  # con_meses <dir .dashboard> <meses separados por coma>
+  python3 - "$1" "$2" <<'PY'
+import json,sys,os,glob
+f=glob.glob(os.path.join(sys.argv[1],'sdlc-stage-*.json'))[0]; d=json.load(open(f))
+d['global']['lead_time_monthly']=[{"month":m,"n":10+i,"mean":5.0+i,"median":1.0+i,"min":0,"max":9} for i,m in enumerate(sys.argv[2].split(','))]
+json.dump(d,open(f,'w'))
+PY
+}
+svg_y_nota() { python3 - "$1" <<'PY'
+import sys
+h = open(sys.argv[1], encoding='utf8').read(); i = h.find('<div class="chart-card">'); j = h.find('</p></div>', i)
+print(h[i:j])
+PY
+}
+T=$(mktemp -d); montar_sano "$T"; con_meses "$T" "2026-08,2026-09,2026-10"
+TYCON_TODAY=2026-10-15 node "$TABLERO" --dir "$T" --output "$T/o.html" >/dev/null 2>&1
+G="$(svg_y_nota "$T/o.html")"
+{ echo "$G" | grep -F 'Último mes cerrado (2026-09)' >/dev/null && ! echo "$G" | grep -F 'cerrado (2026-10)' >/dev/null && echo "$G" | grep -F 'en curso' >/dev/null; } \
+  && ok "C-62 con hoy en octubre la nota habla de septiembre y la barra de octubre dice «en curso»" || mal "C-62 ${G: -500}"
+TYCON_TODAY=2026-11-02 node "$TABLERO" --dir "$T" --output "$T/o.html" >/dev/null 2>&1
+G="$(svg_y_nota "$T/o.html")"
+{ echo "$G" | grep -F 'Último mes cerrado (2026-10)' >/dev/null && ! echo "$G" | grep -F 'en curso' >/dev/null; } \
+  && ok "C-62 el espejo: con hoy en noviembre, octubre ya es el último mes cerrado y nada dice «en curso»" || mal "C-62 espejo ${G: -400}"
+rm -rf "$T"
+
+# ── C-62b · Grafico_SoloMesEnCurso @story-2.21 @ac-6 ──
+T=$(mktemp -d); montar_sano "$T"; con_meses "$T" "2026-10"
+TYCON_TODAY=2026-10-15 node "$TABLERO" --dir "$T" --output "$T/o.html" >/dev/null 2>&1
+G="$(svg_y_nota "$T/o.html")"
+{ echo "$G" | grep -F 'todavía no hay un mes cerrado en la serie' >/dev/null && ! echo "$G" | grep -F 'Último mes cerrado' >/dev/null; } \
+  && ok "C-62b una serie con sólo el mes en curso dice que todavía no hay un mes cerrado" || mal "C-62b ${G: -400}"
+rm -rf "$T"
+
+# ── C-63 · Etapa_SinTerminalesYConPiso @story-2.21 @ac-7 ──
+# Los números de la página del 2026-10-15: `backlog` (n=2) le ganaba por milésimas a `review` (n=344).
+# 🔴 rojo previo: sin piso sale `backlog`; sin excluir los terminales, `done`.
+con_etapas_hoy() {
+  python3 - "$1" <<'PY'
+import json,sys,os,glob
+f=glob.glob(os.path.join(sys.argv[1],'sdlc-stage-*.json'))[0]; d=json.load(open(f))
+d['global']['tiempo_por_etapa']={
+ 'draft':{'n':9,'mean':0.4,'median':0.3}, 'backlog':{'n':2,'mean':0.7,'median':0.611}, 'ready-for-dev':{'n':40,'mean':0.3,'median':0.2},
+ 'in-progress':{'n':300,'mean':0.9,'median':0.5}, 'review':{'n':344,'mean':3.1,'median':0.606}, 'done':{'n':9,'mean':2.0,'median':1.2},
+ 'cancelled':{'n':5,'mean':4.0,'median':3.0}}
+json.dump(d,open(f,'w'))
+PY
+}
+etapa() { python3 - "$1" <<'PY'
+import json, sys
+t = open(sys.argv[1]).read(); i = t.find('\n{')
+d, _ = json.JSONDecoder().raw_decode(t[i+1:] if i >= 0 else t)
+print(json.dumps(d['extra']['tiempo_por_etapa']))
+PY
+}
+T=$(mktemp -d); montar_sano "$T"; con_etapas_hoy "$T"
+node "$TABLERO" --dir "$T" --output "$T/o.html" --json > "$T/j.out" 2>/dev/null
+python3 -c "
+import json,sys
+d=json.loads(sys.argv[1])
+assert d['estado']=='medido' and d['etapa_lenta']=='review', d
+for k in ('draft','backlog','ready-for-dev','in-progress','review','done','cancelled'): assert k in d['detalle'], (k, d['detalle'])
+" "$(etapa "$T/j.out")" 2>/dev/null && ok "C-63 sale review (sin terminales y con el piso); el detalle lista las siete" || mal "C-63 $(etapa "$T/j.out")"
+grep -F 'Donde se queda parado el trabajo: <b>review</b>' "$T/o.html" >/dev/null && ok "C-63 la página dice review" || mal "C-63 la página no dice review"
+rm -rf "$T"
+
+# ── C-63b · Etapa_NingunaLlegaAlPiso_YDiccionarioRoto @story-2.21 @ac-7 ──
+c63b() {  # c63b <etiqueta> <motivo esperado> <qué romper: piso|dicc|floor>
+  local T; T=$(mktemp -d); montar_sano "$T"; con_etapas_hoy "$T"; cp -R "$RAIZ/scripts" "$T/copia-scripts"
+  case "$3" in
+    piso) python3 - "$T" <<'PY'
+import json,sys,os,glob
+f=glob.glob(os.path.join(sys.argv[1],'sdlc-stage-*.json'))[0]; d=json.load(open(f))
+for v in d['global']['tiempo_por_etapa'].values(): v['n']=2
+json.dump(d,open(f,'w'))
+PY
+    ;;
+    dicc) echo '{ roto' > "$T/copia-scripts/metrics/states.json" ;;
+    floor) python3 - "$T/copia-scripts/nightly/dashboard/sources.json" <<'PY'
+import json,sys
+p=sys.argv[1]; d=json.load(open(p)); d['reducer'].pop('floor'); json.dump(d,open(p,'w'),ensure_ascii=False)
+PY
+    ;;
+  esac
+  node "$T/copia-scripts/nightly/dashboard/dashboard.js" --dir "$T" --output "$T/o.html" --json > "$T/j.out" 2>/dev/null
+  python3 -c "
+import json,sys
+d=json.loads(sys.argv[1])
+assert d['estado']!='medido' and sys.argv[2] in d['motivo'] and d.get('etapa_lenta')!='done', d
+" "$(etapa "$T/j.out")" "$2" 2>/dev/null && ok "C-63b $1: «no medido» con su motivo, nunca done" || mal "C-63b $1: $(etapa "$T/j.out")"
+  rm -rf "$T"
+}
+c63b 'ninguna llega al piso' 'piso' piso
+c63b 'diccionario ilegible' 'no pude leer el diccionario de estados' dicc
+c63b 'sin reducer.floor' 'la configuración del reductor no declara el piso' floor
+
+# ── C-64 · Carriles_UnaVezSinBEscapada @story-2.21 @ac-8 ──
+# 🔴 rojo previo: `lineas` con `<b>…</b>` que `ficha()` escapa en el detalle, y el pie que repite el detalle.
+#    (El nombre lleva el `<script>` sin barra: el snapshot nombra el repo por su ruta y la barra la corta.)
+T=$(mktemp -d); montar_sano "$T"
+con_carril "$T" "[{\"repo\":\"Prod__A\",\"x\":$(carril_x 1 6 3 7)},{\"repo\":\"<script>alert(1)<script>\",\"x\":$(carril_x 2 6 2 7)}]"
+node "$TABLERO" --dir "$T" --output "$T/o.html" --json > "$T/j.out" 2>/dev/null
+python3 - "$T/o.html" "$T/j.out" <<'PY' && ok "C-64 el texto por repo sale una vez, sin <b> a la vista, el nombre escapado una sola vez y el --json sin etiquetas" || mal "C-64 $(python3 - "$T/o.html" <<'PY2'
+import sys; h=open(sys.argv[1],encoding='utf8').read(); print(h.count('con corrida volvieron 1 de 6'), h.count('&lt;b&gt;'), h.count('&amp;lt;'))
+PY2
+)"
+import json, sys
+h = open(sys.argv[1], encoding='utf8').read()
+assert h.count('con corrida volvieron 1 de 6') == 1, h.count('con corrida volvieron 1 de 6')
+assert '&lt;b&gt;' not in h, 'hay <b> escapado a la vista'
+# el nombre, una sola vez DENTRO de la ficha de carriles (la de «los que más vuelven» lo nombra aparte, con su escape)
+f = [x for x in h.split('<div class="tile ')[1:] if '¿Vuelve menos lo que pasó por el pipeline?' in x[:600]]
+assert len(f) == 1 and f[0].split('<div class="tile ')[0].count('&lt;script&gt;alert(1)&lt;script&gt;') == 1, f
+assert '&amp;lt;' not in h and '<script>alert' not in h, 'doble escape o sin escapar'
+t = open(sys.argv[2]).read(); i = t.find('\n{'); d, _ = json.JSONDecoder().raw_decode(t[i+1:])
+det = d['extra']['rework_por_carril']['detalle']
+assert '<b>' not in det and '&lt;' not in det, det
+PY
+rm -rf "$T"
+
+# ── C-65 · Cobertura_ObservacionVencidaSeDice @story-2.21 @ac-9 ──
+# 🔴 rojo previo: «en observación hasta el 2026-10-06, no frena» nueve días después, con la fecha escrita a mano.
+OBS="$(node -e 'process.stdout.write(String(require(process.argv[1]).OBS_HASTA || ""))' "$RAIZ/skills/tycon-pipeline/scripts/lib/test-gate-report.js" 2>/dev/null)"
+c65() {  # c65 <hoy> <fecha de los registros> <frase esperada> <etiqueta>
+  local T; T=$(mktemp -d); montar_sano "$T"; mkdir -p "$T/local"
+  reg_gates "$T/local/gates.log" "$2" tests 10 1; reg_cobertura "$T/local/gates.log" "$2" 5 3 2
+  maq_buzon "$T/buzon" maquina-local-l "$2" "$T/local"
+  TYCON_TODAY="$1" TYCON_MACHINE=maquina-local-l node "$TABLERO" --dir "$T" --logs "$T/local" --mailbox "$T/buzon" --output "$T/o.html" --json > "$T/j.out" 2>/dev/null
+  local CT; CT="$(json_local "$T/j.out" cobertura_tocada)"
+  python3 -c "import json,sys; d=json.loads(sys.argv[1]); assert d['estado']=='medido' and sys.argv[2] in d['detalle'], d" "$CT" "$3" 2>/dev/null \
+    && ok "C-65 $4: «$3»" || mal "C-65 $4: $CT"
+  rm -rf "$T"
+}
+if [ -z "$OBS" ]; then mal "C-65 test-gate-report.js no exporta OBS_HASTA"
+else
+  DESPUES="$(python3 -c "import datetime,sys; print(datetime.date.fromisoformat(sys.argv[1]) + datetime.timedelta(days=9))" "$OBS")"
+  ANTES_R="$(python3 -c "import datetime,sys; print(datetime.date.fromisoformat(sys.argv[1]) - datetime.timedelta(days=2))" "$OBS")"
+  ANTES_H="$(python3 -c "import datetime,sys; print(datetime.date.fromisoformat(sys.argv[1]) - datetime.timedelta(days=1))" "$OBS")"
+  DESPUES_R="$(python3 -c "import datetime,sys; print(datetime.date.fromisoformat(sys.argv[1]) + datetime.timedelta(days=8))" "$OBS")"
+  c65 "$DESPUES" "$DESPUES_R" "la observación terminó el $OBS y no se decidió: sigue sin frenar" 'vencida'
+  c65 "$ANTES_H" "$ANTES_R" "en observación hasta el $OBS, no frena" 'vigente'
+fi
+
+# ── C-65b · Cobertura_SinFechaPropia @story-2.21 @ac-9 ──
+# 🔴 rojo previo: `const OBS_COBERTURA_HASTA = '2026-10-06'` en dashboard.js, una segunda definición que envejece sola.
+if grep -En "OBS[A-Z_]*\s*=\s*['\"][0-9]{4}-[0-9]{2}-[0-9]{2}['\"]" "$TABLERO" >/dev/null; then mal "C-65b dashboard.js tiene su propia fecha de observación: $(grep -En "OBS[A-Z_]*\s*=\s*['\"][0-9]{4}" "$TABLERO")"
+else ok "C-65b dashboard.js no define ninguna fecha de observación: la toma de test-gate-report.js"; fi
+# el módulo que no carga no tira la página: el pie lo dice
+T=$(mktemp -d); montar_sano "$T"; mkdir -p "$T/local" "$T/copia"; cp -R "$RAIZ/scripts" "$T/copia/scripts"
+reg_gates "$T/local/gates.log" "$AYER25" tests 10 1; reg_cobertura "$T/local/gates.log" "$AYER25" 5 3 2
+maq_buzon "$T/buzon" maquina-local-l "$AYER25" "$T/local"
+TYCON_MACHINE=maquina-local-l node "$T/copia/scripts/nightly/dashboard/dashboard.js" --dir "$T" --logs "$T/local" --mailbox "$T/buzon" --output "$T/o.html" --json > "$T/j.out" 2>/dev/null; RC=$?
+CT="$(json_local "$T/j.out" cobertura_tocada)"
+python3 -c "import json,sys; d=json.loads(sys.argv[1]); assert d['estado']=='medido' and 'no se pudo leer la fecha de la observación' in d['detalle'], d" "$CT" 2>/dev/null && [ "$RC" -eq 0 ] \
+  && ok "C-65b sin test-gate-report.js (una copia de scripts/ sola) la ficha sigue y dice que no pudo leer la fecha" || mal "C-65b rc=$RC $CT"
+rm -rf "$T"
+
+# ═══════════ story 2.21 · lo que el nocturno mide del buzón ═══════════
+# volcado <buzon> <máquina> <id> <inicio ISO> <fin ISO> <spawns> <iteraciones> — una corrida archivada, con campos que no salen
+volcado() {
+  python3 - "$@" <<'PY'
+import json, os, sys
+b, maq, i, ini, fin, sp, it = sys.argv[1:8]
+d = os.path.join(b, maq); os.makedirs(d, exist_ok=True)
+json.dump({"archivedAt": fin, "marker": {"storyId": "CLIENTE-SECRETO-" + i, "repoPath": "/Users/x/ClienteSecreto", "startedAt": ini, "lastTouch": fin,
+           "stepTimings": {"1": {"startedAt": ini, "completedAt": fin}}},
+           "costo": {"spawns": int(sp), "iteraciones": int(it)}}, open(os.path.join(d, "%s-%s.json" % (i, fin[:10])), "w"))
+PY
+}
+bajada_ok() { echo '{"codigo":0,"estado":"al_dia","sin_tiempo":0,"completo":true,"bajados":0,"al_dia":2,"omitidos":0}' > "$1"; }
+jpanel() {  # jpanel <salida --json> <panel> <clave>
+  python3 - "$1" "$2" "$3" <<'PY'
+import json, sys
+t = open(sys.argv[1]).read(); i = t.find('\n{')
+d, _ = json.JSONDecoder().raw_decode(t[i+1:] if i >= 0 else t)
+print(json.dumps(d[sys.argv[2]].get(sys.argv[3])))
+PY
+}
+
+# ── C-66 · Corrida_DelBuzonEnElNocturno @story-2.21 @ac-11 ──
+# 🔴 rojo previo: en el nocturno las cuatro fichas decían «no aplica» y la nota de la pregunta 4, «el nocturno no los mide».
+T=$(mktemp -d); montar_sano "$T"; bajada_ok "$T/bajada.json"
+volcado "$T/buzon" maq-uno 1 2026-10-01T10:00:00Z 2026-10-01T12:00:00Z 10 2
+volcado "$T/buzon" maq-uno 2 2026-10-02T10:00:00Z 2026-10-02T14:00:00Z 20 3
+volcado "$T/buzon" maq-dos 3 2026-10-03T10:00:00Z 2026-10-03T16:00:00Z 30 4
+node "$TABLERO" --nightly --dir "$T" --mailbox "$T/buzon" --mailbox-state "$T/bajada.json" --output "$T/o.html" --json > "$T/j.out" 2>/dev/null
+python3 - "$(jpanel "$T/j.out" local corridas)" "$(jpanel "$T/j.out" local vueltas)" "$(jpanel "$T/j.out" local agentes)" "$(jpanel "$T/j.out" local trabajo_espera)" <<'PY' && ok "C-66 corrida (4 h), vueltas (3), agentes (20) y trabajo/espera medidos sobre los tres volcados, «de 2 máquinas»" || mal "C-66 $(jpanel "$T/j.out" local corridas) · $(jpanel "$T/j.out" local trabajo_espera)"
+import json, sys
+c, v, a, te = [json.loads(x) for x in sys.argv[1:5]]
+assert c['estado'] == 'medido' and c['valor'] == 4 and c['medidos'] == 3 and c['total'] == 3, c
+assert 'de 2 máquinas' in (c.get('den_etiqueta') or '') + (c.get('detalle') or ''), c
+assert v['estado'] == 'medido' and v['valor'] == 3, v
+assert a['estado'] == 'medido' and a['valor'] == 20, a
+assert te['estado'] == 'medido', te
+PY
+NOTA="$(python3 - "$T/o.html" <<'PY'
+import sys
+h = open(sys.argv[1], encoding='utf8').read(); i = h.find('¿Los controles sirven, o estorban?'); j = h.find('<div class="grid">', i)
+print(h[i:j])
+PY
+)"
+{ ! echo "$NOTA" | grep -F 'el nocturno no los mide' >/dev/null && echo "$NOTA" | grep -F 'del buzón' >/dev/null && echo "$NOTA" | grep -F '2 máquinas' >/dev/null; } \
+  && ok "C-66 la nota de la pregunta 4 dice que salen del buzón, de 2 máquinas" || mal "C-66 nota: ${NOTA: -400}"
+grep -q 'CLIENTE-SECRETO\|ClienteSecreto' "$T/o.html" "$T/j.out" && mal "C-66 la story o la ruta de un volcado llegó a la página" || ok "C-66 nada del volcado sale salvo los números"
+# misma lectura que la página local: los mismos volcados en timing-history dan la misma mediana
+mkdir -p "$HOME/.claude/.tycon-pipeline/timing-history"; cp "$T"/buzon/maq-*/*.json "$HOME/.claude/.tycon-pipeline/timing-history/"
+node "$TABLERO" --dir "$T" --output "$T/l.html" --json > "$T/l.out" 2>/dev/null
+python3 -c "
+import json,sys
+n,l=json.loads(sys.argv[1]),json.loads(sys.argv[2])
+assert n['valor']==l['valor'] and n['medidos']==l['medidos'], (n,l)
+" "$(jpanel "$T/j.out" local corridas)" "$(jpanel "$T/l.out" local corridas)" 2>/dev/null \
+  && ok "C-66 la página local, con los mismos volcados en timing-history, da la misma mediana (una sola lectura)" || mal "C-66 local $(jpanel "$T/l.out" local corridas)"
+rm -rf "$HOME/.claude/.tycon-pipeline/timing-history" "$T"
+
+# ── C-66b · Corrida_BuzonNoLeidoVacioIlegible @story-2.21 @ac-12 ──
+# 🔴 rojo previo: «no aplica» en los tres casos; o un volcado roto que desaparece del denominador.
+T=$(mktemp -d); montar_sano "$T"; volcado "$T/buzon" maq-uno 1 2026-10-01T10:00:00Z 2026-10-01T12:00:00Z 10 2
+node "$TABLERO" --nightly --dir "$T" --mailbox "$T/buzon" --mailbox-state "$T/no-existe.json" --output "$T/o.html" --json > "$T/j.out" 2>/dev/null
+python3 -c "import json,sys; d=json.loads(sys.argv[1]); assert d['estado']!='medido' and d['motivo'].startswith('el nocturno no pudo leer el buzón'), d" "$(jpanel "$T/j.out" local corridas)" 2>/dev/null \
+  && ok "C-66b buzón no leído: «el nocturno no pudo leer el buzón», sin número" || mal "C-66b no leído: $(jpanel "$T/j.out" local corridas)"
+rm -rf "$T"
+T=$(mktemp -d); montar_sano "$T"; mkdir -p "$T/buzon"; bajada_ok "$T/bajada.json"
+node "$TABLERO" --nightly --dir "$T" --mailbox "$T/buzon" --mailbox-state "$T/bajada.json" --output "$T/o.html" --json > "$T/j.out" 2>/dev/null
+python3 -c "import json,sys; d=json.loads(sys.argv[1]); assert d['estado']!='medido' and 'el buzón no tiene corridas' in d['motivo'], d" "$(jpanel "$T/j.out" local corridas)" 2>/dev/null \
+  && ok "C-66b buzón leído y vacío: «el buzón no tiene corridas»" || mal "C-66b vacío: $(jpanel "$T/j.out" local corridas)"
+volcado "$T/buzon" maq-uno 1 2026-10-01T10:00:00Z 2026-10-01T12:00:00Z 10 2
+echo '{ cortado' > "$T/buzon/maq-uno/2-2026-10-02.json"
+node "$TABLERO" --nightly --dir "$T" --mailbox "$T/buzon" --mailbox-state "$T/bajada.json" --output "$T/o.html" --json > "$T/j.out" 2>/dev/null
+python3 -c "
+import json,sys
+d=json.loads(sys.argv[1])
+assert d['estado']=='medido' and d['valor']==2 and d['medidos']==1 and d['total']==2 and 'no se pudieron leer' in d['detalle'], d
+" "$(jpanel "$T/j.out" local corridas)" 2>/dev/null && ok "C-66b un volcado roto cuenta en el denominador (1 de 2), no en la mediana, y el detalle lo dice" || mal "C-66b roto: $(jpanel "$T/j.out" local corridas)"
+rm -rf "$T"
+
+# ── C-67 · SuiteDuracion_SinDeclararOSinMuestras @story-2.21 @ac-13 ──
+# 🔴 rojo previo: en el nocturno la ficha de la duración decía «no aplica»; con la métrica sin declarar, un 0.
+T=$(mktemp -d); montar_sano "$T"; bajada_ok "$T/bajada.json"; mkdir -p "$T/uno" "$T/dos"
+reg_gates "$T/uno/gates.log" "$AYER25" build 5 0; reg_gates "$T/dos/gates.log" "$AYER25" build 5 0
+python3 - "$T/uno/gates.log" "$T/dos/gates.log" "$AYER25" <<'PY'
+import json, sys
+for f, ms in ((sys.argv[1], [60000, 60000]), (sys.argv[2], [120000])):
+    with open(f, 'a') as o:
+        for k, m in enumerate(ms): o.write(json.dumps({"ts": f"{sys.argv[3]}T09:{k:02d}:00Z", "name": "tests", "status": "green", "durationMs": m, "cmd": "npm test"}) + "\n")
+PY
+maq_buzon "$T/buzon" maq-uno "$AYER25" "$T/uno"; maq_buzon "$T/buzon" maq-dos "$AYER25" "$T/dos"
+node "$TABLERO" --nightly --dir "$T" --mailbox "$T/buzon" --mailbox-state "$T/bajada.json" --output "$T/o.html" --json > "$T/j.out" 2>/dev/null
+python3 -c "
+import json,sys
+d=json.loads(sys.argv[1])
+assert d['estado']=='medido' and d['valor']==60 and d['medidos']==3, d
+assert 'de 2 máquinas' in d['detalle'] or 'midieron 2 de 2' in d['detalle'], d
+assert '→' in d['detalle'], d   # la ventana
+" "$(jpanel "$T/j.out" local gates_dur)" 2>/dev/null && ok "C-67 en el nocturno la duración de la suite sale medida: 60 s sobre la unión de 3 muestras de 2 máquinas, con la ventana" || mal "C-67 medida: $(jpanel "$T/j.out" local gates_dur)"
+cp -R "$RAIZ/scripts" "$T/copia-scripts"
+python3 - "$T/copia-scripts/nightly/dashboard/sources.json" <<'PY'
+import json,sys
+p=sys.argv[1]; d=json.load(open(p)); d['reducer']['metrics'].pop('suite_duracion', None); json.dump(d,open(p,'w'),ensure_ascii=False)
+PY
+node "$T/copia-scripts/nightly/dashboard/dashboard.js" --nightly --dir "$T" --mailbox "$T/buzon" --mailbox-state "$T/bajada.json" --output "$T/o.html" --json > "$T/j.out" 2>/dev/null
+python3 -c "import json,sys; d=json.loads(sys.argv[1]); assert d['estado']!='medido' and 'no declara la duración de la suite' in d['motivo'], d" "$(jpanel "$T/j.out" local gates_dur)" 2>/dev/null \
+  && ok "C-67 sin la métrica declarada: «no medido · … no declara la duración de la suite»" || mal "C-67 sin declarar: $(jpanel "$T/j.out" local gates_dur)"
+rm -rf "$T"
+T=$(mktemp -d); montar_sano "$T"; bajada_ok "$T/bajada.json"; mkdir -p "$T/uno"
+reg_gates "$T/uno/gates.log" "$AYER25" build 5 0; maq_buzon "$T/buzon" maq-uno "$AYER25" "$T/uno"
+node "$TABLERO" --nightly --dir "$T" --mailbox "$T/buzon" --mailbox-state "$T/bajada.json" --output "$T/o.html" --json > "$T/j.out" 2>/dev/null
+python3 -c "import json,sys; d=json.loads(sys.argv[1]); assert d['estado']!='medido' and 'ninguna corrida de tests dejó su duración' in d['motivo'], d" "$(jpanel "$T/j.out" local gates_dur)" 2>/dev/null \
+  && ok "C-67 sin líneas tests: «no medido · ninguna corrida de tests dejó su duración»" || mal "C-67 sin muestras: $(jpanel "$T/j.out" local gates_dur)"
+# el piso del reductor, como toda ficha del equipo (pase adversarial): dos corridas de la suite no son una estadística
+python3 - "$T/uno/gates.log" "$AYER25" <<'PY'
+import json, sys
+with open(sys.argv[1], 'a') as o:
+    for k in range(2): o.write(json.dumps({"ts": f"{sys.argv[2]}T09:{k:02d}:00Z", "name": "tests", "status": "green", "durationMs": 95000}) + "\n")
+PY
+maq_buzon "$T/buzon" maq-uno "$AYER25" "$T/uno"
+node "$TABLERO" --nightly --dir "$T" --mailbox "$T/buzon" --mailbox-state "$T/bajada.json" --output "$T/o.html" --json > "$T/j.out" 2>/dev/null
+python3 -c "import json,sys; d=json.loads(sys.argv[1]); assert d['estado']!='medido' and 'por debajo del piso' in d['motivo'], d" "$(jpanel "$T/j.out" local gates_dur)" 2>/dev/null \
+  && ok "C-67 con 2 corridas de la suite (piso 3): «no medido · por debajo del piso», no una mediana" || mal "C-67 piso: $(jpanel "$T/j.out" local gates_dur)"
+rm -rf "$T"
+
+# ── C-68 · Frenos_TituloDeControles_YLasDosFichas @story-2.21 @ac-18 ──
+# 🔴 rojo previo: «Veces que un freno bloqueó de verdad una acción» sobre una cuenta de los controles del pipeline.
+T=$(mktemp -d); montar_sano "$T"; mkdir -p "$T/local"
+reg_gates "$T/local/gates.log" "$AYER25" tests 10 4
+reg_frenos "$T/local/frenos.jsonl" "$AYER25" test-scope-guard suite-completa 12 7 4
+maq_buzon "$T/buzon" maquina-local-l "$AYER25" "$T/local"
+TYCON_MACHINE=maquina-local-l node "$TABLERO" --dir "$T" --logs "$T/local" --mailbox "$T/buzon" --output "$T/o.html" >/dev/null 2>&1
+F1="$(ficha_html "$T/o.html" 'Veces que un control del pipeline bloqueó una acción')"; F2="$(ficha_html "$T/o.html" 'Los frenos previos a la herramienta: cuántas veces frenaron')"
+{ [ -n "$F1" ] && ! grep -F 'Veces que un freno bloqueó de verdad' "$T/o.html" >/dev/null && echo "$F1" | grep -F 'gates.log' >/dev/null \
+  && echo "$F1" | grep -F 'ficha siguiente' >/dev/null && echo "$F1" | grep '<div class="t-val">4</div>' >/dev/null && echo "$F2" | grep '<div class="t-val">7</div>' >/dev/null; } \
+  && ok "C-68 la ficha de los controles se llama por lo que cuenta, su pie la distingue de la siguiente, y las dos siguen con su número" \
+  || mal "C-68 F1=${F1:0:300} · F2=${F2:0:200}"
+rm -rf "$T"
+
+# ── C-69 · ReposDeclarados_FueraDeLaPagina @story-2.21 @ac-15 ──
+# 🔴 rojo previo: la ficha comparaba la lista del árbol (vacía en una máquina del equipo) contra la carpeta padre del arnés.
+T=$(mktemp -d); montar_sano "$T"
+node "$TABLERO" --dir "$T" --output "$T/o.html" --json > "$T/j.out" 2>/dev/null
+{ ! grep -F 'Repos declarados al arnés' "$T/o.html" >/dev/null && [ "$(jpanel "$T/j.out" local repos_declarados)" = "null" ]; } \
+  && ok "C-69 la página local ya no trae la ficha de repos declarados (pasó a harness.js doctor)" || mal "C-69 la ficha sigue en la página"
 rm -rf "$T"
 # el espejo: con `complete: true` (o sin el campo, una foto de antes) la ficha se mide como siempre
 T=$(mktemp -d); montar_sano "$T"
