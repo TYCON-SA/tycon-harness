@@ -14,8 +14,9 @@
  *                  (local, fuera de git; `list` lo resume para que un descarte de más se vea)
  *
  * DÓNDE (story 8.27): las propuestas viven en `inbox/instincts/` del árbol si el árbol trae su buzón (el clon de
- * mantenedor) y, si no, en la casa de la persona. Este guion LEE en todos los lugares que dice instinct-dirs.js
- * (el de escritura, lo que haya quedado en el árbol, la casa, el clon que la máquina mantiene) y no crea ninguna
+ * mantenedor); si no, en el del clon del repo privado de mantenimiento que la máquina declara, si lo trae; si no, en
+ * la casa de la persona. Este guion LEE en todos los lugares que dice instinct-dirs.js (el de escritura, el clon
+ * privado, lo que haya quedado en el árbol, la casa, el clon que la máquina mantiene) y no crea ninguna
  * carpeta por leer. `approve` y `reject` mueven el archivo DENTRO del lugar donde estaba.
  *
  * Comandos:
@@ -288,10 +289,14 @@ function status() {
     if (ilegible) sinLeer = true;
     return ilegible ? '?' : n;
   };
-  // el lugar de escritura es, por construcción, el primero de la lista
-  DIRS.readPlaces().forEach((lugar, i) => {
+  // el lugar de escritura se le pregunta a instinct-dirs.js: si no se sabe (el buzón del clon privado no se deja
+  // mirar), no se marca ninguno y readNotes() dice por qué
+  let escritura = null;
+  try { escritura = DIRS.writePlace(); } catch (e) { if (!e || e.name !== 'InstinctDirsError') throw e; }
+  DIRS.readPlaces().forEach((lugar) => {
     const cuentas = DIRS.SUBDIRS.map((sub) => `${sub} ${cuenta(path.join(lugar, sub), sub === 'drafts' ? '.md' : '.yaml')}`).join(' · ');
-    console.log(`${i === 0 ? '* ' : '  '}${DIRS.shown(lugar)} — ${cuentas}${i === 0 ? '   (acá se escribe)' : ''}`);
+    const aca = lugar === escritura;
+    console.log(`${aca ? '* ' : '  '}${DIRS.shown(lugar)} — ${cuentas}${aca ? '   (acá se escribe)' : ''}`);
   });
   if (sinLeer) console.log('? = esa carpeta existe y no la pude leer (permisos): lo que haya ahí no está contado.');
   // lo que no se pudo sumar a la lista de lugares, y por qué

@@ -18,6 +18,10 @@
  *   T6  pedir los lugares no crea nada; --prepare-log crea sólo su lugar e imprime la ruta, byte a byte
  *   T7  la pieza no ve la configuración de la máquina que corre la prueba
  *   T8  en el repo interno, el README.md del buzón existe (es la señal de la regla)
+ *   T24 el clon del repo PRIVADO que la máquina declara (`paths.maintainers`), si trae su buzón: ahí se escribe (si el
+ *       árbol no trae el suyo) y se lee, después del árbol y antes de la casa
+ *   T25 un clon privado declarado que no sirve (sin buzón, no está, ruta relativa) se dice; sin declararlo, nada
+ *   T26 un clon privado cuyo buzón no se deja mirar: nunca se cae, callado, a la casa
  *   y, de la vuelta de revisores: lo que no se pudo leer se dice (notas, y una carpeta ilegible no es una vacía), y
  *   las pruebas no dependen de la TYCON_HOME de quien las corre (el pase adversarial las puso rojas exportándola)
  * 🔴 Nada toca la carpeta de usuario real: cada caso arma la suya en el temporal y corre la pieza en un proceso hijo.
@@ -65,16 +69,19 @@ function tree(lab, name, { inboxReadme = false, withHome = true, leftover = fals
   return t;
 }
 /** Una carpeta de usuario de laboratorio. `own`: vive en la casa propia del arnés; `stale`: la carpeta de estado, vacía. */
-function home(lab, name, { own = false, stale = false, release = false, maintained = null } = {}) {
+function home(lab, name, { own = false, stale = false, release = false, maintained = null, maintainers = null } = {}) {
   const h = path.join(lab, name);
   fs.mkdirSync(h, { recursive: true });
   const state = own || stale ? TH.ownStateDir(h) : TH.legacyStateDir(h);
   if (own || stale || release) fs.mkdirSync(state, { recursive: true });
   if (own || release) fs.writeFileSync(path.join(state, 'harness-state.json'), JSON.stringify({ sources: release ? [{ kind: 'release' }] : [] }));
-  if (maintained) {
+  if (maintained || maintainers) {
     const cfg = path.join(h, '.tycon', 'config.json');
     fs.mkdirSync(path.dirname(cfg), { recursive: true });
-    fs.writeFileSync(cfg, JSON.stringify({ paths: { maintained } }));
+    const paths = {};
+    if (maintained) paths.maintained = maintained;
+    if (maintainers) paths.maintainers = maintainers;
+    fs.writeFileSync(cfg, JSON.stringify({ paths }));
   }
   return h;
 }
@@ -379,4 +386,116 @@ test('T23 InstinctDirs_TestsIgnoreInheritedTyconHome — las pruebas del grabado
     const primerComando = lines.findIndex((l) => /^TCG=/.test(l));
     assert.ok(i >= 0 && primerComando >= 0 && i < primerComando, `${f} tiene que neutralizar TYCON_HOME antes de su primer comando (línea ${i + 1}, primer comando en ${primerComando + 1})`);
   }
+});
+
+test('T24 InstinctDirs_MaintainersClone_WritesAndReadsThere — el clon privado declarado, si trae su buzón: se escribe y se lee ahí', () => {
+  // EL CASO (2026-10-15): en la máquina del mantenedor el arnés instalado no trae buzón y el clon que declara mantener
+  // (`paths.maintained`, el público) tampoco: las propuestas iban a la casa (~/.tycon/state), fuera de git, aunque el
+  // clon privado (`paths.maintainers`) trae el buzón versionado.
+  const lab = tmp('instinct-dirs-t24-');
+  const privado = tree(lab, 'privado', { inboxReadme: true });
+  const publico = tree(lab, 'publico');   // el clon que se mantiene: no trae buzón
+  const t = tree(lab, 'instalado', { scripts: true });
+  const h = home(lab, 'casa', { own: true, release: true, maintained: publico, maintainers: privado });
+  let r = run(t, h);
+  assert.strictEqual(r.status, 0, r.stderr);
+  assertSame(r.json.write, inbox(privado), 'se escribe en el clon privado');
+  assert.strictEqual(r.json.read.length, 1, `un solo lugar (la casa no existe): ${JSON.stringify(r.json.read)}`);
+  assertSame(r.json.read[0], inbox(privado));
+  assert.deepStrictEqual(r.json.notes, [], 'con el buzón en el privado, que el público no lo traiga no es un aviso');
+  assert.ok(!fs.existsSync(inbox(TH.ownStateDir(h))), 'la casa no se crea');
+  // lo que ya había en la casa se sigue leyendo, después del privado
+  fs.mkdirSync(path.join(inbox(TH.ownStateDir(h)), 'promoted'), { recursive: true });
+  r = run(t, h);
+  assert.strictEqual(r.json.read.length, 2, JSON.stringify(r.json.read));
+  assertSame(r.json.read[0], inbox(privado), 'el privado primero');
+  assertSame(r.json.read[1], inbox(TH.ownStateDir(h)), 'la casa después');
+  // el registro del observador también va al privado
+  r = run(t, h, ['--prepare-log']);
+  assert.strictEqual(r.status, 0, r.stderr);
+  assertSame(r.stdout.trim(), path.join(inbox(privado), 'observer.log'));
+  // status lo muestra, marcado como el de escritura, y no dice «sólo se lee la casa»
+  const st = spawnSync(process.execPath, [path.join(t, 'scripts', 'instincts', 'instinct-promote.js'), 'status'], { encoding: 'utf8', env: labEnv(h) });
+  assert.strictEqual(st.status, 0, st.stderr);
+  const primera = st.stdout.split('\n')[0];
+  assert.ok(primera.startsWith('* ') && primera.includes(path.join('privado', 'inbox', 'instincts')) && primera.includes('(acá se escribe)'), `status: ${st.stdout}`);
+  assert.ok(!/^!/m.test(st.stdout) && !/no declara el clon/.test(st.stdout), `status sin avisos: ${st.stdout}`);
+  // un árbol que trae su buzón sigue escribiendo en el árbol; el privado se lee después
+  const clon = tree(lab, 'clon-con-buzon', { inboxReadme: true });
+  r = run(clon, h);
+  assertSame(r.json.write, inbox(clon));
+  assert.strictEqual(r.json.read.length, 3, JSON.stringify(r.json.read));
+  assertSame(r.json.read[1], inbox(privado), 'el privado, después del árbol y antes de la casa');
+  assertSame(r.json.read[2], inbox(TH.ownStateDir(h)));
+  // corrido desde el propio privado: una sola vez
+  r = run(privado, h);
+  assert.strictEqual(r.json.read.filter((p) => sameDir(p, inbox(privado))).length, 1, `el privado una sola vez: ${JSON.stringify(r.json.read)}`);
+  // sin versión bajada (un clon cualquiera sin buzón), igual: lo que manda es lo que la máquina declara
+  const h2 = home(lab, 'casa-sin-release', { maintainers: privado });
+  r = run(t, h2);
+  assertSame(r.json.write, inbox(privado));
+});
+
+test('T25 InstinctDirs_MaintainersClone_NotesWhenUnusable — un clon privado declarado que no sirve se dice; sin declararlo, nada', () => {
+  const lab = tmp('instinct-dirs-t25-');
+  const t = tree(lab, 'instalado');
+  const caso = (maintainers) => {
+    const h = home(lab, `casa-${Math.random().toString(36).slice(2, 8)}`, { own: true, maintainers });
+    const r = run(t, h);
+    assert.strictEqual(r.status, 0, r.stderr);
+    assertSame(r.json.write, inbox(TH.ownStateDir(h)), `${maintainers}: se escribe en la casa`);
+    assert.strictEqual(r.json.read.length, 1, JSON.stringify(r.json.read));
+    return r.json.notes.join('|');
+  };
+  assert.match(caso(tree(lab, 'privado-sin-buzon', { leftover: true })), /clon del repo de mantenimiento .*no trae su buzón/);
+  assert.match(caso(path.join(lab, 'no-esta')), /paths\.maintainers nombra una carpeta que no está/);
+  assert.match(caso('relativa/al/privado'), /paths\.maintainers no es una ruta absoluta/);
+  const sin = home(lab, 'casa-sin-declarar', { own: true });
+  const r = run(t, sin);
+  assert.deepStrictEqual(r.json.notes, [], 'sin clon privado declarado no hay nada que decir');
+  // con la configuración rota no se sabe si declara el privado: lo nuevo va a la casa, y la nota lo DICE
+  const rota = home(lab, 'casa-config-rota', { own: true, maintainers: tree(lab, 'privado-ok', { inboxReadme: true }) });
+  fs.writeFileSync(path.join(rota, '.tycon', 'config.json'), '{ esto no es JSON');
+  const rr = run(t, rota);
+  assert.strictEqual(rr.status, 0, rr.stderr);
+  assertSame(rr.json.write, inbox(TH.ownStateDir(rota)));
+  assert.match(rr.json.notes.join('|'), /no es JSON válido.*clon del repo de mantenimiento.*lo nuevo se escribe en la casa/);
+  // con un árbol que trae su buzón, lo nuevo no va a la casa: la nota no lo dice
+  const rc = run(tree(lab, 'clon-con-buzon', { inboxReadme: true }), rota);
+  assert.ok(!/lo nuevo se escribe en la casa/.test(rc.json.notes.join('|')), JSON.stringify(rc.json.notes));
+});
+
+test('T26 InstinctDirs_MaintainersClone_UnreadableNeverFallsToHome — un buzón privado que no se deja mirar no cae a la casa', { skip: sinPermisos ? 'NO MEDIDO — en Windows o como root, quitar permisos no impide leer' : false }, () => {
+  const lab = tmp('instinct-dirs-t26-');
+  const privado = tree(lab, 'privado', { inboxReadme: true });
+  const h = home(lab, 'casa', { own: true, maintainers: privado });
+  fs.chmodSync(inbox(privado), 0o000);
+  try {
+    // donde se escribe: frena, con nombre propio (escribir en la casa, callado, es justo el caso)
+    let r = run(tree(lab, 'instalado'), h);
+    assert.strictEqual(r.status, 1, `tenía que salir 1: ${r.stdout}${r.stderr}`);
+    assert.match(r.stderr, /InstinctDirsError/);
+    assert.match(r.stderr, /no pude mirar/);
+    assert.ok(!fs.existsSync(inbox(TH.ownStateDir(h))), 'no cae a la casa');
+    // status y list no frenan: muestran lo que ya está en la casa, no marcan un lugar de escritura y dicen por qué
+    const instalado = tree(lab, 'instalado-con-guiones', { scripts: true });
+    fs.mkdirSync(path.join(inbox(TH.ownStateDir(h)), 'pending'), { recursive: true });
+    fs.writeFileSync(path.join(inbox(TH.ownStateDir(h)), 'pending', 'abc1234567.yaml'), 'hash: abc1234567\ntrigger: algo\naction: otra cosa\n');
+    const prom = (cmd) => spawnSync(process.execPath, [path.join(instalado, 'scripts', 'instincts', 'instinct-promote.js'), cmd], { encoding: 'utf8', env: labEnv(h) });
+    const st = prom('status');
+    assert.strictEqual(st.status, 0, `status no frena: ${st.stdout}${st.stderr}`);
+    assert.ok(st.stdout.includes('pending 1') && !st.stdout.includes('(acá se escribe)'), `status: la casa con su pendiente, sin marcar escritura: ${st.stdout}`);
+    assert.match(st.stdout, /^! .*no pude mirar el buzón del clon del repo de mantenimiento/m);
+    const ls2 = prom('list');
+    assert.strictEqual(ls2.status, 0, `list no frena: ${ls2.stdout}${ls2.stderr}`);
+    assert.ok(ls2.stdout.includes('abc1234567'), `list muestra la pendiente de la casa: ${ls2.stdout}`);
+    assert.match(ls2.stderr, /no pude mirar el buzón del clon del repo de mantenimiento/);
+    // donde sólo se lee (el árbol trae su buzón): no suma y la nota lo dice
+    const clon = tree(lab, 'clon', { inboxReadme: true });
+    r = run(clon, h);
+    assert.strictEqual(r.status, 0, r.stderr);
+    assert.strictEqual(r.json.read.length, 2, `el árbol y la casa (que ya existe), no el privado: ${JSON.stringify(r.json.read)}`);
+    assert.ok(!r.json.read.some((p) => sameDir(p, inbox(privado))), JSON.stringify(r.json.read));
+    assert.match(r.json.notes.join('|'), /no pude mirar el buzón del clon del repo de mantenimiento/);
+  } finally { fs.chmodSync(inbox(privado), 0o755); }
 });
