@@ -50,9 +50,19 @@ j() { python3 -c "import json,sys; d=json.load(open(sys.argv[1], encoding='utf-8
 lab_tree() { # lab_tree <dir> → una copia del árbol bajo prueba, con git propio
   rm -rf "$1"; mkdir -p "$1"
   ( cd "$RAIZ" && tar cf - --exclude=scripts/tests --exclude=node_modules scripts claude-md-blocks commands README.md ) | ( cd "$1" && tar xf - )
+  lab_commit "$1" "arbol de laboratorio"
+}
+# lab_commit <repo> <mensaje> → git init + un commit, con fecha fija y SIN el mantenimiento automático de git.
+# 🔴 Sin `maintenance.auto=false`, el commit deja corriendo de fondo un `git maintenance run --auto --detach` que crea y
+#    borra `.git/objects/maintenance.lock` unos milisegundos después de que el commit volvió. Si en ese momento T15 saca
+#    su huella de la HOME, ve el candado; cuando lista las rutas para decir qué cambió, ya no está: rojo «la HOME cambió»
+#    con la lista vacía (main, 15/10, Node 22 y 24). Medido con git 2.56: 11 de cada 100 commits dejan el candado a la
+#    vista; con git 2.50 (Mac), ninguno. Es la misma clase que harness_lab_git apaga en el laboratorio común (story 8.38).
+lab_commit() {
   env GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_AUTHOR_NAME=Lab GIT_AUTHOR_EMAIL=lab@example.com \
-    GIT_COMMITTER_NAME=Lab GIT_COMMITTER_EMAIL=lab@example.com sh -c \
-    'git -C "$1" init -q -b main && git -C "$1" add -A && git -C "$1" -c core.hooksPath=/dev/null commit -q -m "arbol de laboratorio"' _ "$1"
+    GIT_COMMITTER_NAME=Lab GIT_COMMITTER_EMAIL=lab@example.com \
+    GIT_AUTHOR_DATE=2026-10-15T00:00:00Z GIT_COMMITTER_DATE=2026-10-15T00:00:00Z sh -c \
+    'git -C "$1" init -q -b main && git -C "$1" add -A && git -C "$1" -c core.hooksPath=/dev/null -c maintenance.auto=false -c gc.auto=0 commit -q -m "$2"' _ "$1" "$2"
 }
 new_home() { # new_home <dir> → agent-skills de juguete con un archivo por hook que vive ahí, con git propio
   rm -rf "$1"; mkdir -p "$1/.claude/agent-skills/skills/tycon-pipeline"
@@ -68,9 +78,7 @@ for p in json.load(open(fix, encoding="utf-8"))["pieces"]:
     os.makedirs(os.path.dirname(os.path.join(skills, rel)), exist_ok=True)
     open(os.path.join(skills, rel), "a").close()
 PY
-  env GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_AUTHOR_NAME=Lab GIT_AUTHOR_EMAIL=lab@example.com \
-    GIT_COMMITTER_NAME=Lab GIT_COMMITTER_EMAIL=lab@example.com sh -c \
-    'git -C "$1" init -q -b main && git -C "$1" add -A && git -C "$1" -c core.hooksPath=/dev/null commit -q -m "agent-skills de laboratorio"' _ "$1/.claude/agent-skills"
+  lab_commit "$1/.claude/agent-skills" "agent-skills de laboratorio"
 }
 ENV_UNSET=(-u TYCON_SETTINGS_PATH -u CLAUDE_MD_PATH -u CODEX_AGENTS_MD_PATH -u TYCON_HARNESS_SNAPSHOT_DIR -u TYCON_REPORT_PIECES
      -u TYCON_PLAN_PIECES -u TYCON_HARNESS_LOCK_HELD -u TYCON_HARNESS_SHARED_DONE -u TYCON_NO_AUTOINSTALL -u TYCON_NO_CLAUDEMD_SYNC
@@ -83,7 +91,8 @@ base() { # base <home> → el ambiente aislado (en el arreglo RUN_ENV)
        TYCON_NO_THREAD_RESCUE=1 TYCON_NO_UPLOAD_RUNS=1 TYCON_NO_DOWNLOAD_RUNS=1 TYCON_NO_COLLECT_FINDINGS=1
        TYCON_MAILBOX_URL_BASE=http://127.0.0.1:9 TYCON_NO_AZ_PROJECTS_REFRESH=1 TYCON_NO_ENGRAM_VERSION_CHECK=1
        TYCON_NO_SQLITE_CHECK=1 TYCON_NO_ENGRAM_PROJECT_CHECK=1 TYCON_NO_AGENTSMD_POINTER=1 TYCON_NO_CANONICAL_PATH=1
-       TYCON_THIRD_PARTY=0 TYCON_UPDATE=0 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null TMPDIR="$T/tmp")
+       TYCON_THIRD_PARTY=0 TYCON_UPDATE=0 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null TMPDIR="$T/tmp"
+       GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=maintenance.auto GIT_CONFIG_VALUE_0=false GIT_CONFIG_KEY_1=gc.auto GIT_CONFIG_VALUE_1=0)
   mkdir -p "$T/tmp"
 }
 home_list() { # todo el HOME, una línea por ruta (enlace, archivo con su suma, carpeta)
@@ -126,7 +135,8 @@ if corre T15; then
   A="$T/t15/tree"; H="$T/t15/home"; lab_tree "$A"; new_home "$H"; base "$H"
   INST="$A/scripts/install-tycon-hooks.sh"
   # (a) HOME vacía: todo add, nada escrito
-  ANTES="$(home_hash "$H")"; home_list "$H" > "$T/t15/home-antes.txt"
+  # una sola foto: la huella sale de la misma lista que después se compara (así un rojo siempre dice QUÉ cambió)
+  home_list "$H" > "$T/t15/home-antes.txt"; ANTES="$(shasum -a 256 < "$T/t15/home-antes.txt" | cut -d' ' -f1)"
   RC=0; "${RUN_ENV[@]}" bash "$INST" --check --plan-json "$T/t15/plan-empty.json" > "$T/t15/check-empty.out" 2>&1 || RC=$?
   if [ "$RC" = 0 ] && plan_shape "$T/t15/plan-empty.json" 2>/dev/null && plan_all "$T/t15/plan-empty.json" ' add$'; then
     ok "T15 HOME vacía: el plan trae $(plan_actions "$T/t15/plan-empty.json" | wc -l | tr -d ' ') piezas, todas «add»"
