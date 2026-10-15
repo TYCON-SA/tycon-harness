@@ -999,6 +999,73 @@ PY2
 RC="$(contar "${C}" --json)"
 [ "${RC}" = "2" ] && ok "7.2-T6b «values_only» con forma inválida → se niega (exit 2)" || mal "7.2-T6b rc=${RC}"
 
+# ══════════════════════════════════════════════════════════════════════════════════════════════════
+# Story 2.21 — la duración de la suite, de todas las máquinas, y las máquinas sin declarar
+# ══════════════════════════════════════════════════════════════════════════════════════════════════
+# dur <archivo> <fecha> <control> <durationMs como JSON> — una línea con los campos de texto libre que el reductor NO lee
+dur() { printf '{"ts":"%sT10:00:00Z","name":"%s","status":"green","durationMs":%s,"cmd":"npm test -- /Users/x/Cliente","repoPath":"/Users/x/Cliente"}\n' "$2" "$3" "$4" >> "$1"; }
+con_suite_duracion() {
+  python3 - "$1" <<'PY2'
+import json,sys
+p=sys.argv[1]; d=json.load(open(p))
+d['reducer']['metrics']['suite_duracion']={"source":"gates","dim":"control","type":"muestra_duracion_suite","values":["tests"]}
+json.dump(d,open(p,'w'))
+PY2
+}
+
+# ── 2.21-T18 · SuiteDuracion_UnionDeMaquinas @story-2.21 @ac-13 ──────────────────────────────────────
+# La mediana de la duración se arma con las muestras de TODAS las máquinas, dentro de la ventana, y sólo con líneas
+# `tests` cuyo `durationMs` es un número finito ≥ 0.
+# 🔴 rojo previo: sin el tipo `muestra_duracion_suite` el reductor se niega (exit 2); promediando medianas por máquina
+#    (60 y 120 → 90 en vez de la unión); o tomando `"x"`, un negativo, otro control o una línea vieja como muestra.
+C="$(nuevo_caso t221-18)"; con_suite_duracion "${C}/sources.json"
+dur "${C}/local/gates.log" "${D1}" tests 60000
+dur "${C}/local/gates.log" "${D2}" tests 60000
+dur "${C}/local/gates.log" "${D1}" tests '"x"'
+dur "${C}/local/gates.log" "${D1}" tests -5
+dur "${C}/local/gates.log" "${D1}" build 999000
+dur "${C}/local/gates.log" "${VIEJO}" tests 900000
+mkdir -p "${C}/tmp-b"
+dur "${C}/tmp-b/gates.log" "${D1}" tests 120000
+dur "${C}/tmp-b/gates.log" "${D2}" tests 0
+maquina_bajada "${C}/buzon" "maq-b" "${D1}" medido no_medido; gz "${C}/tmp-b/gates.log" "${C}/buzon/maq-b/registros/gates.log.gz"
+RC="$(contar "${C}" --json)"
+SD="$(j "${C}" "sorted(float(x) for x in d['metricas']['suite_duracion']['muestras'])")"
+AP="$(j "${C}" "(d['metricas']['suite_duracion']['aportaron'], d['metricas']['suite_duracion']['midieron'], d['metricas']['suite_duracion']['maquinas'])")"
+[ "${RC}" = "0" ] && [ "${SD}" = "[0.0, 60.0, 60.0, 120.0]" ] && [ "${AP}" = "(2, 2, 2)" ] \
+  && ok "2.21-T18 cuatro muestras de dos máquinas, en segundos (0, 60, 60, 120); ni «x», ni un negativo, ni otro control, ni fuera de ventana" \
+  || mal "2.21-T18 rc=${RC} muestras=${SD} aportaron/midieron/maquinas=${AP} err=$(head -c 300 "${C}/err")"
+grep -q 'Cliente' "${C}/out" && mal "2.21-T18 la salida del reductor trae texto de la línea (cmd/repoPath)" || ok "2.21-T18 la salida trae sólo números: ni el comando ni la ruta"
+# la lectura de la línea es UNA función, la misma que usa la ficha local (AC 13)
+node -e '
+const r = require(process.argv[1]);
+if (typeof r.duracionSuite !== "function") { console.error("reducer.js no exporta duracionSuite"); process.exit(1); }
+const casos = [[{ name: "tests", durationMs: 1500 }, 1.5], [{ check: "tests", durationMs: 0 }, 0], [{ type: "tests", durationMs: 2000 }, 2],
+  [{ name: "tests", durationMs: "1500" }, null], [{ name: "tests", durationMs: -1 }, null], [{ name: "tests", durationMs: Infinity }, null],
+  [{ name: "build", durationMs: 1500 }, null], [{ name: "tests" }, null]];
+for (const [l, e] of casos) if (r.duracionSuite(l) !== e) { console.error(JSON.stringify(l), "→", r.duracionSuite(l), "esperaba", e); process.exit(1); }
+' "${REDUCTOR}" 2> "${BASE}/t18.err" \
+  && ok "2.21-T18 duracionSuite: control tests (las cuatro formas del nombre), durationMs finito ≥ 0, en segundos; lo demás no es muestra" \
+  || mal "2.21-T18 duracionSuite: $(cat "${BASE}/t18.err")"
+
+# ── 2.21-T15 · Maquinas_SinDeclarar_DiceDondeDeclarar @story-2.21 @ac-10 ───────────────────────────────
+# 🔴 rojo previo: el texto nombraba las máquinas sin declarar y no decía dónde se declara una.
+C="$(nuevo_caso t221-15)"; gates_basicos "${C}/local"
+python3 - "${C}/sources.json" <<'PY2'
+import json,sys
+p=sys.argv[1]; d=json.load(open(p)); d['reducer']['expected_machines']=[{"alias":"maq-aaaaaa","from":"2026-06-10"}]; json.dump(d,open(p,'w'))
+PY2
+mkdir -p "${C}/tmp-b"; gates_basicos "${C}/tmp-b"
+maquina_bajada "${C}/buzon" "maq-b" "${D1}" medido no_medido; gz "${C}/tmp-b/gates.log" "${C}/buzon/maq-b/registros/gates.log.gz"
+maquina_bajada "${C}/buzon" "maq-c" "${D1}" medido no_medido; gz "${C}/tmp-b/gates.log" "${C}/buzon/maq-c/registros/gates.log.gz"
+RC="$(contar "${C}")"
+TXT="$(cat "${C}/out")"
+A_LOCAL="$(TYCON_MACHINE=maquina-local node "${REDUCTOR}" --alias)"; A_B="$(node "${REDUCTOR}" --alias-of maq-b)"; A_C="$(node "${REDUCTOR}" --alias-of maq-c)"
+{ [ "${RC}" = "0" ] && printf '%s' "${TXT}" | grep -q "+3 sin declarar" && printf '%s' "${TXT}" | grep -q "${A_B}" && printf '%s' "${TXT}" | grep -q "${A_C}" \
+  && printf '%s' "${TXT}" | grep -q "${A_LOCAL}" && printf '%s' "${TXT}" | grep -q 'reducer.expected_machines'; } \
+  && ok "2.21-T15 las tres sin declarar, por alias, y el texto dice que se declaran en reducer.expected_machines" \
+  || mal "2.21-T15 rc=${RC} texto=«${TXT}»"
+
 echo
 [ "${FALLOS}" -eq 0 ] && { echo "todo verde"; exit 0; }
 echo "${FALLOS} fallo(s)"; exit 1

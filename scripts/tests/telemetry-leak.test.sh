@@ -390,6 +390,48 @@ else
   fi
 fi
 
+# ── story 2.21 · T20 · Fuga_VolcadosYDuracionDelBuzon @story-2.21 @ac-14 ─────────────────────────────────────────
+# El nocturno ahora lee del buzón los VOLCADOS de las corridas (duración, agentes, vueltas, trabajo y espera) y la
+# duración de la suite de las líneas `tests` de gates.log. Un volcado trae la story, la ruta del repo y comandos; una
+# línea `tests`, el comando y la ruta. Se siembran marcadores ahí y se corre la página en modo nocturno en la máquina B.
+# 🔴 rojo previo: publicar `marker.storyId` o `repoPath` en el detalle; o leer `timing-history/` del disco del agente.
+# 🔴 CONTROL POSITIVO: la mediana de la corrida, los agentes, las vueltas y la duración de la suite llegan con su número.
+python3 - "${BASE}/buzon/${NOMBRE_A}/${M_CLIENTE}-x.json" "${AYER}" <<PY
+import json, sys
+p, ayer = sys.argv[1], sys.argv[2]
+json.dump({"archivedAt": f"{ayer}T12:00:00Z",
+           "marker": {"storyId": "${M_CLIENTE}", "repoPath": "${M_RUTA}", "sessionId": "${M_SESION}", "startedAt": f"{ayer}T10:00:00Z",
+                      "lastTouch": f"{ayer}T12:00:00Z", "planApproval": {"text": "${M_PROMPT}"},
+                      "stepTimings": {"1": {"startedAt": f"{ayer}T10:00:00Z", "completedAt": f"{ayer}T11:00:00Z"}}},
+           "gates": [{"check": "tests", "cmd": "${M_CMD}"}], "costo": {"spawns": 7, "iteraciones": 3}}, open(p, "w"))
+PY
+echo '{"codigo":0,"estado":"al_dia","sin_tiempo":0,"completo":true,"bajados":1,"al_dia":0,"omitidos":0}' > "${BASE}/bajada-ok.json"
+: > "${BASE}/n.espia"
+HOME="${HOME_B}" TYCON_MACHINE="maquina-b-9931" SPY_LOG="${BASE}/n.espia" NODE_OPTIONS="--require ${BASE}/espia.js" \
+  node "${TABLERO}" --nightly --mailbox "${BASE}/buzon" --mailbox-state "${BASE}/bajada-ok.json" --output "${BASE}/pagina-n.html" --json > "${BASE}/tablero-n.out" 2> "${BASE}/tablero-n.err"
+[ -f "${BASE}/pagina-n.html" ] && ok "2.21-T20 el nocturno generó la página con el buzón de las dos máquinas" || mal "2.21-T20 el nocturno no generó la página: $(head -c 300 "${BASE}/tablero-n.err")"
+FUGA=0
+for M in "${M_CORREO}" "${M_RUTA}" "/Users/fulano" "${M_CLIENTE}" "${M_CMD}" "FUGA-CMD-5521" "PROMPT-FUGA-7731" "${M_SESION}" \
+         "${M_PERSONA}" "devbs-macbook-pro" "maquina-b-9931" "${M_TIMING}" "${M_HILO}" "${HOME_A}" "${HOME_B}"; do
+  for f in "${BASE}/pagina-n.html" "${BASE}/tablero-n.out" "${BASE}/tablero-n.err"; do
+    if grep -qiF -- "${M}" "${f}" 2>/dev/null; then mal "2.21-T20 fuga: «${M}» aparece en ${f#${BASE}/}"; FUGA=1; fi
+  done
+done
+[ "${FUGA}" -eq 0 ] && ok "2.21-T20 ni la story, ni la ruta, ni el comando, ni el prompt, ni la sesión de un volcado o de una línea tests salen en la página del nocturno"
+grep -E '/timing-history(/|$)' "${BASE}/n.espia" >/dev/null && mal "2.21-T20 el nocturno leyó timing-history/ del disco: $(grep -E '/timing-history' "${BASE}/n.espia" | head -2 | tr '\n' ' ')" \
+  || ok "2.21-T20 el nocturno no lee timing-history/ del disco: las corridas salen sólo del buzón"
+python3 - "${BASE}/tablero-n.out" <<'PY' && ok "2.21-T20 control positivo: corrida (mediana de 40 min y 2 h), 7 agentes, 3 vueltas y la duración de la suite (1 s, 4 muestras) llegan con su número" || mal "2.21-T20 control positivo: $(python3 -c "import sys;t=open(sys.argv[1]).read();i=t.find(chr(10)+'{');print(t[i:i+600])" "${BASE}/tablero-n.out")"
+import json, sys
+t = open(sys.argv[1]).read(); i = t.find('\n{')
+d, _ = json.JSONDecoder().raw_decode(t[i+1:] if i >= 0 else t)
+L = d['local']
+c, a, v, g = L['corridas'], L['agentes'], L['vueltas'], L['gates_dur']
+assert c['estado'] == 'medido' and abs(c['valor'] - (40 / 60 + 2) / 2) < 1e-6 and c['medidos'] == 2, ('corridas', c)
+assert a['estado'] == 'medido' and a['valor'] == 7, ('agentes', a)
+assert v['estado'] == 'medido' and v['valor'] == 3, ('vueltas', v)
+assert g['estado'] == 'medido' and g['valor'] == 1 and g['medidos'] == 4, ('gates_dur', g)
+PY
+
 echo
 [ "${FALLOS}" -eq 0 ] && { echo "todo verde"; exit 0; }
 echo "${FALLOS} fallo(s)"; exit 1

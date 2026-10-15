@@ -278,6 +278,15 @@
         ],
         "_note": "story 2.8: los puntajes killed/total de cada chequeo de mutación que pudo medir, JUNTADOS de todas las máquinas (una mediana no se suma). Un chequeo sin los dos conteos, con total 0 o con killed > total no es una muestra: no midió. Medido el 2026-09-16: 16 de 110 chequeos de la ventana tienen puntaje, todos de una máquina."
       },
+      "suite_duracion": {
+        "source": "gates",
+        "dim": "control",
+        "type": "muestra_duracion_suite",
+        "values": [
+          "tests"
+        ],
+        "_note": "story 2.21: la duración de cada corrida de la suite (control tests, durationMs número finito ≥ 0, en segundos), JUNTADA de todas las máquinas dentro de la ventana. gates.log ya sube entero al buzón (story 2.5): no hace falta un registro nuevo."
+      },
       "mutacion_chequeos": {
         "source": "gates",
         "dim": "estado",

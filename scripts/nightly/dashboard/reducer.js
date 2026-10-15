@@ -101,6 +101,15 @@ const MAX_REGISTRO_BYTES = 64 * 1024 * 1024;
 const controlDe = (d) => d.name || d.check || d.gate || d.type;
 /** Un entero no negativo de verdad: `null`, `12.5` o `"12"` no son un conteo de mutantes. */
 const enteroNoNegativo = (x) => Number.isInteger(x) && x >= 0;
+/**
+ * La duración de una corrida de la suite, en segundos, o null si la línea no es una (story 2.21, AC 13). Una sola lectura
+ * para la ficha local (el gates.log de esta máquina) y para la cuenta del equipo: control `tests` y `durationMs` número
+ * finito ≥ 0. `"1500"`, un negativo o un infinito no son una duración.
+ */
+function duracionSuite(d) {
+  if (!d || typeof d !== 'object' || controlDe(d) !== 'tests') return null;
+  return typeof d.durationMs === 'number' && Number.isFinite(d.durationMs) && d.durationMs >= 0 ? d.durationMs / 1000 : null;
+}
 
 const FUENTES = {
   gates: {
@@ -128,6 +137,8 @@ const FUENTES = {
       // 🔴 Un puntaje es una MUESTRA sólo con los dos conteos enteros, `total > 0` y `killed ≤ total`. Un
       //    chequeo que no pudo correr (`structural`, `error`, un `pass` sin mutantes) no es un 0 %: no midió.
       muestra_mutacion: (d) => (controlDe(d) === 'mutation' && tienePuntaje(d) ? { muestra: d.killed / d.total } : null),
+      // story 2.21 — la duración de la suite: una muestra por corrida de `tests`, en segundos. Sólo el número sale.
+      muestra_duracion_suite: (d) => { const s = duracionSuite(d); return s === null ? null : { muestra: s }; },
       ratio_mutacion_con_puntaje: (d) => (controlDe(d) === 'mutation' ? { num: tienePuntaje(d) ? 1 : 0, den: 1 } : null),
       conteo_qa_guia: (d) => (controlDe(d) === 'qa-guide' ? { num: 1, den: null, clave: claveDeCierre(d) } : null),
       // 🔴 La proporción sólo con el REGISTRO COMPLETO (`esquema: 2`): hasta la story 2.8 el aviso anotaba sólo
@@ -221,7 +232,7 @@ function tienePuntaje(d) { return enteroNoNegativo(d.killed) && enteroNoNegativo
  * calcularla sobre la unión de sus muestras, nunca promediando las medianas de cada una. Lo que sale son números,
  * sin ninguna etiqueta de la línea de origen.
  */
-const DISTRIBUCIONES = new Set(['muestra_mutacion']);
+const DISTRIBUCIONES = new Set(['muestra_mutacion', 'muestra_duracion_suite']);
 // Lo que se cuenta tiene que ser lo que la subida sube: una sola lista de archivos, y si se separan, se dice.
 for (const f of Object.values(FUENTES)) {
   if (!REGISTROS.includes(f.archivo)) throw new Error(`reductor: ${f.archivo} no está entre los registros que sube upload-runs.js`);
@@ -511,7 +522,9 @@ function textoCobertura(j) {
   const c = j.cobertura;
   const partes = [`reportaron ${c.reportaron} de ${c.esperadas} máquina${c.esperadas === 1 ? '' : 's'} esperada${c.esperadas === 1 ? '' : 's'}`];
   if (c.ausentes.length) partes.push(`no reportó: ${c.ausentes.join(', ')}`);
-  if (c.sin_declarar.length) partes.push(`+${c.sin_declarar.length} sin declarar: ${c.sin_declarar.join(', ')}`);
+  // dónde se declara una máquina (story 2.21, AC 10): la lista existe para ver cuándo una deja de reportar, así que no se
+  // arma sola — la declara una persona en la configuración de su organización
+  if (c.sin_declarar.length) partes.push(`+${c.sin_declarar.length} sin declarar: ${c.sin_declarar.join(', ')} (una máquina se declara en reducer.expected_machines del sources.json de la organización)`);
   if (c.atrasadas.length) partes.push(`atrasada${c.atrasadas.length === 1 ? '' : 's'}: ${c.atrasadas.map((x) => `${x.alias} (hasta ${x.hasta})`).join(', ')}`);
   if (c.carpetas_ilegibles) partes.push(`${c.carpetas_ilegibles} carpeta${c.carpetas_ilegibles === 1 ? '' : 's'} de registros ilegible${c.carpetas_ilegibles === 1 ? '' : 's'}`);
   if (c.lineas_ilegibles) partes.push(`${c.lineas_ilegibles} línea${c.lineas_ilegibles === 1 ? '' : 's'} ilegible${c.lineas_ilegibles === 1 ? '' : 's'} en los registros`);
@@ -519,7 +532,7 @@ function textoCobertura(j) {
   return `${partes.join(' · ')} — ventana ${j.ventana.desde} → ${j.ventana.hasta}`;
 }
 
-module.exports = { juntar, textoCobertura, validarConfig, aliasDe, aliasDeNombre, FUENTES, BALDES_GENERICOS, ESQUEMA };
+module.exports = { juntar, textoCobertura, validarConfig, aliasDe, aliasDeNombre, duracionSuite, FUENTES, BALDES_GENERICOS, ESQUEMA };
 
 if (require.main === module) {
   // --alias-of se llamaba de otra forma hasta la story 8.9 (tanda G): el nombre viejo sigue andando hasta el retiro

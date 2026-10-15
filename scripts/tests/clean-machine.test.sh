@@ -71,8 +71,10 @@
 #   público (TYCON_CLEAN_MACHINE_SOURCE=<raíz del repo público>) — sobre ese repo, que es la unión. T29 sale NO MEDIDO.
 #   En el árbol del repo de MANTENIMIENTO adelgazado (`.tycon/internal-forms.json` con `layout: thin`, story 8.26) el
 #     modo interno ya no corre (AC 36: ese árbol no arma la copia; la copia es el repo público, que mide la máquina
-#     limpia en cada pedido). En el nocturno sale NO MEDIDO con ese motivo; pedida a mano, sale 1 diciendo cómo medir
-#     (con TYCON_CLEAN_MACHINE_SOURCE). Lo prueba, sin docker, «T34 (mantenimiento)».
+#     limpia en cada pedido). En Azure (TF_BUILD) sale NO MEDIDO con ese motivo, con cualquier BUILD_REASON y aunque la
+#     corrida la pida con TYCON_CLEAN_MACHINE=1 (story 2.21, AC 5: el banco a mano la llevaba roja); pedida a mano fuera
+#     de Azure, sale 1 diciendo cómo medir (con TYCON_CLEAN_MACHINE_SOURCE). Lo prueba, sin docker, «T34 (mantenimiento)»
+#     y «T34 Mantenimiento_PedidaAMano_NoMedido». El reporte de suites la cuenta «se mide en otro lado» (suites.json).
 #     La versión esperada es la del `version.json` del árbol; si no lo trae, esa verificación sale NO MEDIDO.
 # TOPES: cada paso corre bajo `clean-machine/run-capped.js` (en macOS no hay `timeout`); al vencer mata el grupo, saca
 #   el contenedor y el paso sale en rojo con su nombre. TYCON_CLEAN_MACHINE_CAP_S pisa el tope de CADA paso;
@@ -772,8 +774,13 @@ t34() {
     ok "T34 sin la variable y fuera del nocturno: NO MEDIDO con su motivo, ningún ✅, salida 0"
   else no "T34 sin la variable y fuera del nocturno: salida ${rc}, $(greens "${out}") ✅ — $(tail -n 2 "${out}" | tr '\n' ' ')"; fi
 
+  # corrida dentro del árbol de MANTENIMIENTO adelgazado (el banco del privado, con el público encima), el motivo es el de
+  # mantenimiento con cualquier BUILD_REASON (story 2.21, AC 5); en cualquier otro árbol, el del control de cada cambio.
+  # (`maintenance_tree` se define más abajo: acá se lee el archivo directo, con la misma regla)
+  why3='BUILD_REASON=PullRequest'
+  if [ -f "${ROOT}/.tycon/internal-forms.json" ] && node -e 'try { process.exit(JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).layout === "thin" ? 0 : 1); } catch (_) { process.exit(1); }' "${ROOT}/.tycon/internal-forms.json"; then why3='AC 36'; fi
   out="${d}/case3.out"; inner "${out}" "${d}/bin" TF_BUILD=True BUILD_REASON=PullRequest; rc=$?
-  if [ "${rc}" -eq 0 ] && grep -q '^⏭ clean-machine: NO MEDIDO — .*BUILD_REASON=PullRequest' "${out}" && [ "$(greens "${out}")" = 0 ]; then
+  if [ "${rc}" -eq 0 ] && grep -q "^⏭ clean-machine: NO MEDIDO — .*${why3}" "${out}" && [ "$(greens "${out}")" = 0 ]; then
     ok "T34 en el control de cada cambio (TF_BUILD y BUILD_REASON=PullRequest): NO MEDIDO con su motivo, ningún ✅, salida 0"
   else no "T34 en el control de cada cambio: salida ${rc}, $(greens "${out}") ✅ — $(tail -n 2 "${out}" | tr '\n' ' ')"; fi
 
@@ -811,6 +818,17 @@ t34() {
   if [ "${rc}" -eq 1 ] && ! grep -q 'AC 36' "${out}" && grep -q 'NO MEDIDO — .*docker' "${out}"; then
     ok "T34 (mantenimiento) el espejo: con TYCON_CLEAN_MACHINE_SOURCE el árbol de mantenimiento sí mide (acá, sin docker, hasta su NO MEDIDO por docker)"
   else no "T34 (mantenimiento) el espejo con TYCON_CLEAN_MACHINE_SOURCE: salida ${rc} — $(tail -n 2 "${out}" | tr '\n' ' ')"; fi
+  # story 2.21 (AC 5, R1 de su revisión): en Azure el árbol de mantenimiento no la mide con NINGÚN motivo de la corrida.
+  # La corrida a mano del banco (BUILD_REASON=Manual) la llevaba roja cuando su parámetro pedía medirla
+  # (TYCON_CLEAN_MACHINE=1), y sin pedirla salía NO MEDIDO con el motivo de otro caso. Las dos, con el de mantenimiento.
+  for asked in "" "TYCON_CLEAN_MACHINE=1"; do
+    out="${d}/case-thin-manual${asked:+-asked}.out"
+    # shellcheck disable=SC2086 # ${asked} vacío no es un argumento
+    thin_inner "${out}" "${d}/thin-bin" TF_BUILD=True BUILD_REASON=Manual ${asked}; rc=$?
+    if [ "${rc}" -eq 0 ] && tail -n 1 "${out}" | grep -q '^⏭ clean-machine: NO MEDIDO — .*AC 36' && [ "$(greens "${out}")" = 0 ]; then
+      ok "T34 Mantenimiento_PedidaAMano_NoMedido @story-2.21 @ac-5 (BUILD_REASON=Manual${asked:+, ${asked}}): NO MEDIDO con el motivo de mantenimiento como última línea, ningún ✅, salida 0"
+    else no "T34 Mantenimiento_PedidaAMano_NoMedido (BUILD_REASON=Manual${asked:+, ${asked}}): salida ${rc}, $(greens "${out}") ✅ — $(tail -n 2 "${out}" | tr '\n' ' ')"; fi
+  done
 
   out="${d}/case4.out"; t="${SECONDS}"
   inner "${out}" "${d}/fake:${d}/bin" TYCON_CLEAN_MACHINE=1 TYCON_CLEAN_MACHINE_CAP_S=2 TYCON_CLEAN_MACHINE_SOURCE="${d}/source"; rc=$?
@@ -882,18 +900,16 @@ maintenance_tree() {
     "$1/.tycon/internal-forms.json"
 }
 measures() {
-  case "${TYCON_CLEAN_MACHINE:-}" in
-    1) return 0 ;;
-    0) POLICY_WHY="TYCON_CLEAN_MACHINE=0: quien corre pidió no medir"; return 1 ;;
-  esac
+  [ "${TYCON_CLEAN_MACHINE:-}" = 0 ] && { POLICY_WHY="TYCON_CLEAN_MACHINE=0: quien corre pidió no medir"; return 1; }
+  # el árbol de mantenimiento corrido en Azure, con CUALQUIER motivo de la corrida (story 2.21, AC 5): sin un público que
+  # medir no le toca — tampoco cuando la corrida a mano del banco la pide (TYCON_CLEAN_MACHINE=1, su parámetro
+  # cleanMachine): ese pedido la llevaba roja (corrida 13553). Pedida a mano fuera de Azure sigue saliendo 1, con cómo medir
+  if [ -n "${TF_BUILD:-}" ] && [ -z "${TYCON_CLEAN_MACHINE_SOURCE:-}" ] && [ -z "${ONLY}" ] && maintenance_tree "${ROOT}"; then
+    POLICY_WHY="${MAINTENANCE_WHY}"; return 1
+  fi
+  [ "${TYCON_CLEAN_MACHINE:-}" = 1 ] && return 0
   if [ -n "${TF_BUILD:-}" ]; then
-    if [ "${BUILD_REASON:-}" = "Schedule" ]; then
-      # el nocturno del repo de mantenimiento: sin un público que medir, no le toca (no es un rojo ni un verde)
-      if [ -z "${TYCON_CLEAN_MACHINE_SOURCE:-}" ] && [ -z "${ONLY}" ] && maintenance_tree "${ROOT}"; then
-        POLICY_WHY="${MAINTENANCE_WHY}"; return 1
-      fi
-      return 0
-    fi
+    [ "${BUILD_REASON:-}" = "Schedule" ] && return 0
     POLICY_WHY="corre en el nocturno, no en el control de cada cambio (BUILD_REASON=${BUILD_REASON:-sin definir}; TYCON_CLEAN_MACHINE=1 la fuerza)"
     return 1
   fi
