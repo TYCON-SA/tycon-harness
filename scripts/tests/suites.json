@@ -514,6 +514,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 7.26: una story de dos repos — el pipeline sigue al repo hermano en los revisores, el contexto, el test-gate, las vueltas y el pase adversarial.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/companion-repos.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/large-output.test.js",
       "requiere": []
@@ -1053,6 +1059,24 @@
       "__nota": "story 8.5 (tanda A): el paso del instalador que restituye las skills de terceros — historia local, origen verificado, sin pisar ni borrar, corte a mitad, cerrojo, tope de red; T7 corre el instalador real en una HOME de laboratorio.",
       "raiz": "arnes",
       "ruta": "tests/install-third-party.test.sh",
+      "requiere": []
+    },
+    {
+      "__nota": "Parte 1 de 3 de tests/maintainers-sync.test.js (ninguna suite pasa de 45 s; el archivo entero no se registra, scripts/tests/lib/suite-parts.js). Story 8.37: el arranque pone al día el clon de mantenimiento (paths.maintainers) sólo si está en main, limpio y atrás; si no, no lo toca y la sesión siguiente lo dice. Clones de laboratorio con el origen en una carpeta local y un ssh de mentira, sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/maintainers-sync.p1.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "Parte 2 de 3 de tests/maintainers-sync.test.js (ninguna suite pasa de 45 s; el archivo entero no se registra, scripts/tests/lib/suite-parts.js). Story 8.37: el arranque pone al día el clon de mantenimiento (paths.maintainers) sólo si está en main, limpio y atrás; si no, no lo toca y la sesión siguiente lo dice. Clones de laboratorio con el origen en una carpeta local y un ssh de mentira, sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/maintainers-sync.p2.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "Parte 3 de 3 de tests/maintainers-sync.test.js (ninguna suite pasa de 45 s; el archivo entero no se registra, scripts/tests/lib/suite-parts.js). Story 8.37: el arranque pone al día el clon de mantenimiento (paths.maintainers) sólo si está en main, limpio y atrás; si no, no lo toca y la sesión siguiente lo dice. Clones de laboratorio con el origen en una carpeta local y un ssh de mentira, sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/maintainers-sync.p3.test.js",
       "requiere": []
     },
     {

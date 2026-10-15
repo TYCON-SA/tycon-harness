@@ -28,7 +28,7 @@ engram, re-corrida de advisors, verificación cross-repo).
 
 1. `pipeline.js mech-check --repo <r> --story <s>` primero (ACCOV-C1/C5, DEFTR-C1/C2, WIRING-C1 sin LLM).
    Descuento MECH-2: sólo en re-loops (iter≥2) sin ambiguos de su familia se descuentan ac-coverage y
-   deferral-tracker; en iter 1 corren siempre. `tycon-feature-wiring-checker` se invoca SIEMPRE.
+   deferral-tracker; en iter 1 corren siempre. `tycon-feature-wiring-checker` nunca se descuenta.
 2. `pipeline.js advisors --repo <r> --story <s> --files <...>` → invocar EXACTAMENTE `all`, con el
    `context_file` que genera. Ventana deslizante de MÁXIMO 4 vivos (≤2 si el 5b está en vuelo; el step
    manda sobre el `batch_rule`). Los triggers evalúan líneas AGREGADAS.

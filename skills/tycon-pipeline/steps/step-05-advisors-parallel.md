@@ -212,7 +212,8 @@ Step 5 advisors:
             tycon-plugin-tests-coverage, tycon-plugin-security-basics.
             (tycon-story-validator post-impl pertenece a COMPLETITUD — el JSON del script manda.)
   Completitud: tycon-spec-first-checker [APLICA — Mary+GOLD];
-               feature-wiring SIEMPRE (mech no cubre C2..C5);
+               feature-wiring cuando el diff trae una pantalla (.tsx/.jsx, salvo app Next)
+               o un endpoint .cs (mech no cubre C2..C5; no depende de detectar React);
                ac-coverage y deferral-tracker [iter 1 sí (si aplican);
                iter≥2 solo si mech-check los escaló] — citar mech_discounted.
   Condicionales: + signalr-hub-reviewer (matchea **/Hubs/*.cs)
@@ -231,7 +232,7 @@ Después de recibir reportes de todos los advisors invocados, **antes de avanzar
 ```
 Step 5 verification:
   Set base esperado: 4. Ejecutados: <count_base>.
-  Set completitud esperado: spec-first + feature-wiring siempre; ac-coverage y
+  Set completitud esperado: spec-first + feature-wiring (pantalla o endpoint en el diff); ac-coverage y
   deferral-tracker según iter (1 sí si aplican / ≥2 solo escalados) — el expected[]
   persistido YA viene descontado (mech_discounted), validar contra ese.
   Condicionales esperados según triggers: <list>. Ejecutados: <list>.
