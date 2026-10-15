@@ -97,10 +97,18 @@ function measure({ lab, platform = process.platform, baseEnv = process.env, rec 
   fs.writeFileSync(guion, [
     "'use strict';",
     `const W = require(${JSON.stringify(LIB)});`,
+    'W.anotarVentana();',
     `require('fs').writeFileSync(${JSON.stringify(salida)}, JSON.stringify(Object.assign({ stdinIsTTY: process.stdin.isTTY === true }, W.consolaNueva())));`,
   ].join('\n'));
-  const sys = path.join(env.SystemRoot || 'C:\\Windows', 'System32');
-  L.run(path.join(sys, 'cmd.exe'), ['/d', '/c', 'start', '"sonda del waiver"', '/wait', process.execPath, guion], { env, timeoutMs: 90000 });
+  // la ventana se abre con la MISMA función que usa el comando de la firma (comillas, marca y archivo del proceso
+  // incluidos): una forma propia de llamar a `start` medía otra cosa
+  const prev = { TYCON_WAIVER_TIMEOUT_S: process.env.TYCON_WAIVER_TIMEOUT_S };
+  process.env.TYCON_WAIVER_TIMEOUT_S = '90';
+  let abierta;
+  try { abierta = W.abrirVentana({ script: guion, titulo: 'sonda del waiver' }); } finally {
+    if (prev.TYCON_WAIVER_TIMEOUT_S === undefined) delete process.env.TYCON_WAIVER_TIMEOUT_S; else process.env.TYCON_WAIVER_TIMEOUT_S = prev.TYCON_WAIVER_TIMEOUT_S;
+  }
+  rec.fact('new_window_open', abierta);
   let pos = null;
   try { pos = JSON.parse(fs.readFileSync(salida, 'utf8')); } catch { /* la ventana no llegó a escribir */ }
   rec.fact('new_window', pos);

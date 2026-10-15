@@ -2534,7 +2534,7 @@ function cmdRuntimeWaiver(storyArg) {
   // 🔴 Windows (decisión del dueño, 2026-10-15): no hay /dev/tty. El comando se vuelve a lanzar en una ventana de consola
   // NUEVA y visible, y sólo ésa firma (lib/runtime-waiver.js, «WINDOWS»). Acá, fuera de la ventana, sólo se abre y se espera.
   if (waiver.esWindows() && process.env[waiver.MARCA_VENTANA] !== '1') {
-    console.error(`🪟 Abro una ventana nueva, «Firma del waiver»: seguí ahí. Tenés ${Math.round(waiver.topeVentanaS() / 60)} minutos.`);
+    console.error(`🪟 Abro una ventana nueva, «Firma del waiver»: seguí ahí. Tenés ${waiver.topeVentanaS() >= 60 ? `${Math.round(waiver.topeVentanaS() / 60)} minutos` : `${waiver.topeVentanaS()} segundos`}.`);
     const v = waiver.abrirVentana({ script: __filename, args: ['runtime-waiver', storyPath] });
     if (v.estado === 'vencida') {
       console.error(`🔒 marker.js runtime-waiver: la ventana venció a los ${v.tope} s sin firmar — no se firmó nada${v.pid ? ` (la ventana arrancó: pid ${v.pid})` : ' (la ventana no llegó a arrancar el comando)'}.`);
