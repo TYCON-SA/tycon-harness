@@ -243,7 +243,8 @@ LIBS="$(node -e '
   const [notice, repo, sha] = process.argv.slice(1);
   const m = require(notice);
   const hay = (p) => spawnSync("git", ["-C", repo, "cat-file", "-e", `${sha}:${p}`]).status === 0;
-  for (const b of m.BIBLIOTECAS_DEL_FRENO) console.log(`${b.repo} ${[b.repo, ...m.rutasViejas(b.repo)].find(hay) || "-"}`);
+  // con la ruta compartida de la que salía antes de la copia propia del freno (2026-10-14): ésa es la que trae el commit viejo
+  for (const b of m.BIBLIOTECAS_DEL_FRENO) console.log(`${b.repo} ${[b.repo, ...m.rutasViejas(b.repo), ...(b.antes ? [b.antes, ...m.rutasViejas(b.antes)] : [])].find(hay) || "-"}`);
 ' "$NOTICE" "$AQUI" "$OLD_SHA" 2>/dev/null)"
 LIBS_OLD="$(printf '%s\n' "$LIBS" | awk '$2 != "-" {print $2}')"
 # shellcheck disable=SC2086

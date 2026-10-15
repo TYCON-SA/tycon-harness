@@ -129,21 +129,26 @@ HOME_LEIDA="${HOME_USUARIO:-${HOME:-}}"; CLAUDE_LEIDA="$HOME_LEIDA/.claude"
 # Con permiso, todo por la API, como antes. TYCON_RELEASE_GIT cambia github.com (sólo pruebas, como TYCON_RELEASE_API).
 # Lo que se copia a /opt (el freno, la puerta y lo que requieren). Escrito ANTES de 0a: con una versión bajada atrasada,
 # 0a exige que estos archivos sean byte a byte los de la punta de main (paso 5 del python).
+# 🔴 LA COPIA PROPIA (2026-10-14, decisión del dueño): las bibliotecas que el freno carga salen de
+# scripts/production/guard-libs/, no de scripts/lib/ ni de scripts/setup/harness/. Las compartidas cambian casi todos los días
+# por motivos que no son del freno, y cada cambio pedía reinstalar con la contraseña del Mac. La copia cambia sólo cuando
+# alguien lo decide (scripts/production/guard-libs-check.js); en /opt quedan donde siempre (lib/, setup/harness/), así el
+# freno instalado las encuentra por las mismas rutas relativas.
 ARCHIVOS=(
   scripts/hooks/prod-access-guard.js
-  scripts/lib/shell-parse.js
-  scripts/lib/repos-root.js
-  scripts/lib/tycon-config.js
-  scripts/lib/skills-dir.js
-  scripts/lib/guard-record.js
-  scripts/lib/legacy-names.js
+  scripts/production/guard-libs/lib/shell-parse.js
+  scripts/production/guard-libs/lib/repos-root.js
+  scripts/production/guard-libs/lib/tycon-config.js
+  scripts/production/guard-libs/lib/skills-dir.js
+  scripts/production/guard-libs/lib/guard-record.js
+  scripts/production/guard-libs/lib/legacy-names.js
   scripts/production/production-index.js
   scripts/production/tycon-prod-sql
   scripts/production/node-shim.sh
   scripts/production/load-key.command.template
   scripts/production/managed-settings.tycon-production.json.template
   scripts/production/node-official.json
-  scripts/setup/harness/tycon-home.js
+  scripts/production/guard-libs/setup/harness/tycon-home.js
 )
 # El mapa de nombres viejos (story 8.9): lo exige el arnés del equipo (el que trae su perfil, team-profile.json o
 # perfil-equipo.json, el nombre de antes) —sin él la copia de
@@ -229,7 +234,16 @@ try:
     with open(token_file, encoding="utf-8") as f: j = json.load(f)
     token = str(((j or {}).get("github") or {}).get("token") or "").strip()
 except Exception: token = ""
+vencido = [False]   # el permiso guardado contestó 401 y el repo se leyó sin él: va en la tercera línea de la salida
+def lee_sin_permiso():
+    # ¿el repo se lee sin permiso? `info/refs` sin credencial contesta 200 (2026-10-14: un permiso vencido contra el repo público)
+    if not gitbase: return False
+    req = urllib.request.Request(gitbase.rstrip("/") + "/" + repo + ".git/info/refs?service=git-upload-pack", headers={"User-Agent": "tycon-install-guard"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r: return r.status == 200
+    except Exception: return False
 def get(route):
+    global token
     req = urllib.request.Request(api.rstrip("/") + route, headers={"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "tycon-install-guard"})
     if token: req.add_header("Authorization", "Bearer " + token)
     try:
@@ -240,6 +254,10 @@ def get(route):
             try: hora = time.strftime("%H:%M", time.localtime(int(e.headers.get("X-RateLimit-Reset"))))
             except Exception: hora = "dentro de una hora"
             muere("GitHub limita las consultas %s hasta las %s: no instalo el freno; volvé a correrlo después de esa hora" % ("de tu permiso" if token else "sin permiso de esta conexión", hora))
+        # un permiso guardado que venció (401) y el repo se lee sin él: se sigue SIN el permiso (el resto, por info/refs) y se dice
+        if e.code == 401 and token and lee_sin_permiso():
+            token = ""; vencido[0] = True
+            return get(route)
         return e.code, None
     except Exception as e: muere("no pude preguntarle a GitHub por el repo %s (%s): sin eso no instalo — el disco lo puede tocar el asistente" % (repo, e))
 def puntas_publicas():
@@ -299,11 +317,14 @@ if commit not in puntas.values():
 # la lista de lo verificado: sólo eso se copia (un archivo que está en el disco y no en el manifiesto no es de la versión)
 with open(lista, "w", encoding="utf-8") as f: f.write("".join(rel + "\n" for _, rel, _ in entradas))
 print(repo)
-if aviso: print(aviso)
+print(aviso or "")
+if vencido[0]: print("el permiso de GitHub guardado venció o se revocó (401), pero no hace falta: el repo del arnés es público y sigo sin él. Para sacarlo: harness.js config unset github.token")
 PY
 )" || muere "$REPO_GITHUB"
-  # la primera línea es el repo; la segunda, si la hay, el aviso de una versión atrasada con el mismo freno que la punta
+  # la primera línea es el repo; la segunda, si la hay, el aviso de una versión atrasada con el mismo freno que la punta; la
+  # tercera, si la hay, que el permiso guardado venció y el repo público se leyó sin él (2026-10-14)
   AVISO_ATRASADA="$(printf '%s\n' "$REPO_GITHUB" | sed -n 2p)"
+  AVISO_VENCIDO="$(printf '%s\n' "$REPO_GITHUB" | sed -n 3p)"
   REPO_GITHUB="$(printf '%s\n' "$REPO_GITHUB" | sed -n 1p)"
   [ -n "$REPO_GITHUB" ] || muere "no pude saber de qué repo de GitHub se bajó la versión"
   URL="https://github.com/$REPO_GITHUB"
@@ -314,6 +335,7 @@ PY
   else
     ok "arnés: la versión bajada en $ARNES, verificada contra su manifiesto, el estado y GitHub (repo $REPO_GITHUB: el árbol del commit, que es la punta publicada)"
   fi
+  [ -n "$AVISO_VENCIDO" ] && echo "   ⚠ $AVISO_VENCIDO"
 fi
 
 DESTINO="$RAIZ/opt/tycon"
@@ -505,23 +527,24 @@ instalar(){ # $1 = relativo en ORIGEN, $2 = destino, $3 = modo
   if [ "$SIN_SUDO" = 0 ]; then chown root:wheel "$2" || muere "no pude dejar $2 como root:wheel"; fi
 }
 instalar scripts/hooks/prod-access-guard.js       "$DESTINO/hooks/prod-access-guard.js" 644
-instalar scripts/lib/shell-parse.js               "$DESTINO/lib/shell-parse.js" 644
-instalar scripts/lib/repos-root.js                "$DESTINO/lib/repos-root.js" 644
+# las bibliotecas, de la copia propia del freno (scripts/production/guard-libs/, ver ARCHIVOS)
+instalar scripts/production/guard-libs/lib/shell-parse.js "$DESTINO/lib/shell-parse.js" 644
+instalar scripts/production/guard-libs/lib/repos-root.js  "$DESTINO/lib/repos-root.js" 644
 # las dos vecinas que repos-root.js requiere desde la story 8.3 (sin ellas el freno instalado no leía el índice)
-instalar scripts/lib/tycon-config.js              "$DESTINO/lib/tycon-config.js" 644
-instalar scripts/lib/skills-dir.js                "$DESTINO/lib/skills-dir.js" 644
+instalar scripts/production/guard-libs/lib/tycon-config.js "$DESTINO/lib/tycon-config.js" 644
+instalar scripts/production/guard-libs/lib/skills-dir.js  "$DESTINO/lib/skills-dir.js" 644
 # la constancia de cada decisión del freno (story 8.9, AC 20): el freno la requería y no se copiaba, así que la copia de
 # /opt nunca anotaba nada y nadie se enteraba (el require está en un try). Lo cuida T25 de legacy-names.test.js.
-instalar scripts/lib/guard-record.js              "$DESTINO/lib/guard-record.js" 644
+instalar scripts/production/guard-libs/lib/guard-record.js "$DESTINO/lib/guard-record.js" 644
 # el freno instalado sigue cargando el nombre viejo (story 8.9, tanda C1): la biblioteca misma, con ese nombre
-instalar scripts/lib/guard-record.js              "$DESTINO/$NOMBRE_VIEJO_CONSTANCIA" 644
+instalar scripts/production/guard-libs/lib/guard-record.js "$DESTINO/$NOMBRE_VIEJO_CONSTANCIA" 644
 # los nombres viejos de las variables (story 8.9, tanda B1): tycon-config.js lee sus variables con la biblioteca, y la
 # biblioteca busca el mapa al lado suyo. Sin ellos la copia de /opt leería sólo los nombres nuevos, callada (el require
 # está en un try).
-instalar scripts/lib/legacy-names.js              "$DESTINO/lib/legacy-names.js" 644
+instalar scripts/production/guard-libs/lib/legacy-names.js "$DESTINO/lib/legacy-names.js" 644
 # dónde vive cada cosa en la máquina (story 8.23, tanda D · AC 30): tycon-config.js y skills-dir.js la cargan por su ruta
 # relativa (../setup/harness/), la misma posición que en el repo; sin ella, leen las rutas de antes de la mudanza
-instalar scripts/setup/harness/tycon-home.js      "$DESTINO/setup/harness/tycon-home.js" 644
+instalar scripts/production/guard-libs/setup/harness/tycon-home.js "$DESTINO/setup/harness/tycon-home.js" 644
 if [ "$CON_MAPA" = 1 ]; then instalar "$MAPA_NOMBRES" "$DESTINO/lib/renames.json" 644; fi
 instalar scripts/production/production-index.js  "$DESTINO/production/production-index.js" 644
 instalar scripts/production/load-key.command.template "$DESTINO/production/load-key.command.template" 644
@@ -681,6 +704,8 @@ fi
 # root, el blob de git de cada archivo del arnés tal como se copió: se calcula de $ORIGEN (la copia propia de este
 # instalador, la misma de la que salió cada `instalar` y la configuración administrada), no del HOME. Tiene la forma del
 # manifiesto de una versión (`files: [{ path, blob }]`) y no lleva fecha: la segunda corrida no cambia nada.
+# Desde la copia propia (2026-10-14) las rutas de las bibliotecas son las de scripts/production/guard-libs/: el aviso de
+# arranque las busca ahí para saber si el freno instalado ya es el de la copia propia (y, si no, explicar la reinstalación).
 # Va AL FINAL y se escribe aparte y se mueve: una instalación que se corta antes deja la constancia de la instalación
 # anterior entera (lo que ya se copió coincide con la versión que corre; lo que no, con esa constancia), nunca una a medias.
 CONSTANCIA_INSTALADO="$DESTINO/production/installed-files.json"

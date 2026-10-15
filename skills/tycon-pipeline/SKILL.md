@@ -173,7 +173,9 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
   genera la guía; `complete-step 8` corre `qa-guide.js --check` y bloquea si falta
   `<carpeta-story>/../qa/<sid>-pasos.md` (`## AC N`, pasos en criollo sin jerga, `Usuario por defecto:` o
   `Usuario:` por AC) o `<sid>-legibilidad.md` con `veredicto: OK` (review de un sub-agente "tester no técnico";
-  anotar `pipeline.js qa-readability --story <s> --repo <r> --marks <n>`) · DODRT-C8 AC de acción ejecutado.
+  anotar `pipeline.js qa-readability --story <s> --repo <r> --marks <n>`), o `<sid>-legibilidad-ui.md` (la misma
+  pasada sobre los textos y capturas de la pantalla, `--ui-texts`; sus marcas se arreglan EN LA PANTALLA; `--scope ui`)
+  · DODRT-C8 AC de acción ejecutado.
   Aprobaciones viejas de la matriz (del home al repo): `scripts/migrate-waivers-to-repo.js --repos <dirs> [--apply]` — `--apply` vuelve a firmar, así que lo corre el DEV en su terminal (pide `/dev/tty` y confirmación); el agente sólo puede el dry-run.
 - **ATDD fuera del pipeline** (I.i.b · I.i.c + I.i.c.1 · I.i.d + I.i.d.1 · I.i.e): `on-pre-commit.js` avisa inversión test/código por eventos del repo
   (`TYCON_ATDD_COMMIT_GATE=block|off`); las stories se descubren por frontmatter (`lib/story-discovery.js`,

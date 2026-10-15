@@ -13,6 +13,8 @@
  *      de los repos (que mantienen el suyo por razones legítimas, p.ej. levantar servers).
  *   2) VERIFICAR — `verify <evidencia.md>`: dice si una evidencia cumple el contrato y qué
  *      le falta. Sirve para chequear a CUALQUIER gate, sea del harness o del repo.
+ *   3) CAPTURAS — `captures <playwright.json> <carpeta>` (story 7.24): copia las imágenes adjuntas de la
+ *      corrida a la evidencia y las lista; el cierre se las muestra al dev antes de pedir el commit.
  *
  * Exit de `verify`: 0 cumple · 1 le falta algo (lista los campos) · 2 error de uso.
  */
@@ -137,7 +139,46 @@ function verify(texto) {
   return { ok: faltantes.length === 0 && !sinTitulos, faltantes, sinTitulos };
 }
 
-module.exports = { passedTitles, totals, veredicto, filtrosNoEncontrados, verify, CONTRATO };
+/**
+ * Las capturas de una corrida (story 7.24): los adjuntos de imagen del reporte JSON de Playwright — la captura que
+ * `screenshot: 'on'` deja al terminar cada test y las que el spec adjunta por su cuenta con `testInfo.attach`.
+ * Devuelve [{ title, name, path }] en el orden del reporte. Un trace, un video o un adjunto sin archivo no cuentan.
+ */
+function imageAttachments(reportJson) {
+  const out = [];
+  const walk = (suites) => (suites || []).forEach((s) => {
+    (s.specs || []).forEach((sp) => (sp.tests || []).forEach((t) => (t.results || []).forEach((r) => {
+      for (const a of r.attachments || []) {
+        if (a && a.path && /^image\//.test(a.contentType || '')) out.push({ title: sp.title || '', name: a.name || '', path: a.path });
+      }
+    })));
+    walk(s.suites);
+  });
+  try { walk(reportJson.suites); } catch { /* json roto → sin capturas */ }
+  return out;
+}
+
+/**
+ * Copia las capturas a `destDir` como `NN-<test>.<ext>`. Devuelve { copied, missing }: una imagen que el reporte
+ * nombra y no está (o que no se pudo copiar) se DEVUELVE con su motivo — callada, salía como «ningún test corrió».
+ */
+function copyCaptures(reportJson, destDir) {
+  const slug = (s) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60) || 'test';
+  const copied = []; const missing = [];
+  for (const a of imageAttachments(reportJson)) {
+    if (!fs.existsSync(a.path)) { missing.push({ path: a.path, motivo: 'no está en el disco' }); continue; }
+    try {
+      fs.mkdirSync(destDir, { recursive: true });
+      const n = String(copied.length + 1).padStart(2, '0');
+      const dest = path.join(destDir, `${n}-${slug(a.title)}${path.extname(a.path) || '.png'}`);
+      fs.copyFileSync(a.path, dest);
+      copied.push(dest);
+    } catch (e) { missing.push({ path: a.path, motivo: `no se pudo copiar: ${e.code || e.message}` }); }
+  }
+  return { copied, missing };
+}
+
+module.exports = { passedTitles, totals, veredicto, filtrosNoEncontrados, verify, imageAttachments, copyCaptures, CONTRATO };
 
 if (require.main === module) {
   const [cmd, file] = process.argv.slice(2);
@@ -145,6 +186,22 @@ if (require.main === module) {
     let j = {};
     try { j = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { /* sin títulos */ }
     console.log(passedTitles(j).map((t) => `- ${t}`).join('\n'));
+    process.exit(0);
+  }
+  if (cmd === 'captures') {
+    // `captures <playwright.json> <carpeta>`: copia las capturas y las imprime, una por línea («- <ruta>»).
+    const dest = process.argv[4];
+    if (!dest) { console.error('uso: e2e-evidence.js captures <playwright.json> <carpeta-destino>'); process.exit(2); }
+    // Lo que no se pudo va a stderr, una línea por imagen: el gate lo escribe en `## Capturas`.
+    let j = {};
+    try { j = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) {
+      console.error(`el reporte de Playwright no se pudo leer (${e.code || e.message}): no hay de dónde sacar capturas`);
+    }
+    // Un JSON que se lee pero no trae `suites` no es «ningún test corrió»: es otra forma de reporte (revisores, vuelta 2).
+    if (j && Object.keys(j).length && !Array.isArray(j.suites)) console.error('el reporte de Playwright no tiene la forma esperada (sin `suites`): no hay de dónde sacar capturas');
+    const { copied, missing } = copyCaptures(j, dest);
+    if (copied.length) console.log(copied.map((c) => `- ${c}`).join('\n'));
+    for (const m of missing) console.error(`no se copió ${m.path}: ${m.motivo}`);
     process.exit(0);
   }
   if (cmd === 'verify') {
@@ -164,6 +221,6 @@ if (require.main === module) {
     console.error('   levantar servicios propios, sacá `e2e.gate` de .tycon/advisors.yaml y usalo.');
     process.exit(1);
   }
-  console.error('uso: e2e-evidence.js titles <playwright.json> | verify <evidencia.md>');
+  console.error('uso: e2e-evidence.js titles <playwright.json> | captures <playwright.json> <carpeta> | verify <evidencia.md>');
   process.exit(2);
 }

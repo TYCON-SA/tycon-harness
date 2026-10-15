@@ -280,6 +280,15 @@ Pendiente tuyo: smoke check de DoD antes de pasarla a `done` (build verde no alc
 Detalle técnico (findings, archivos, mensaje de commit completo) — pedímelo y te lo pego.
 ```
 
+**Story de pantalla: el dev la VE antes de pedir el commit.** 🔴 Por qué (2026-10-14): si el cierre entrega
+sólo el mensaje de commit, una pantalla inentendible pasa todos los controles y se ve recién en staging. Para una story de pantalla (la que pide la guía del tester), antes de pedir el commit:
+listar las capturas de la sección `## Capturas` de la ÚLTIMA evidencia del gate E2E de la story (carpeta de
+evidencia, `<sid>-e2e-gate-<ts>.md`) como enlaces que se abren con un clic —un enlace markdown por captura con la
+ruta ABSOLUTA, `[01-la-lista](/ruta/absoluta/01-la-lista.png)`: el editor lo abre al tocarlo y en la terminal
+queda la ruta para copiar—, y debajo la línea
+**«Así se ve: ¿se entiende?»**. Sin capturas, esa misma línea dice el motivo que trae la evidencia. Va arriba del
+«Está listo para commitear», no en el detalle diferido.
+
 **Reglas del cierre:**
 
 - **Máximo ~10 líneas** salvo que haya CRITICAL sin resolver (ahí manda COMM.i) o algo haya fallado.
