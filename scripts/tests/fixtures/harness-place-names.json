@@ -26,6 +26,9 @@
     { "path": "scripts/production/install-guard.sh", "why": "corre con sudo y busca el clon del arnés antes de tener el árbol" },
     { "path": "scripts/lib/tycon-config.js", "why": "viaja solo a la copia del freno de producción en /opt (install-guard.sh, ARCHIVOS)" },
     { "path": "scripts/lib/legacy-names.js", "why": "viaja solo a la copia del freno de producción en /opt; además genera los envoltorios" },
+    { "path": "scripts/production/guard-libs/lib/tycon-config.js", "why": "la copia propia del freno de producción (2026-10-14): se instala en /opt en lugar de la compartida y cambia sólo cuando quien mantiene lo decide (guard-libs-check.js)" },
+    { "path": "scripts/production/guard-libs/lib/legacy-names.js", "why": "la copia propia del freno de producción (2026-10-14): ídem" },
+    { "path": "scripts/production/guard-libs/setup/harness/tycon-home.js", "why": "la copia propia del freno de producción (2026-10-14) de la constante: el freno instalado en /opt la carga a ella, no al árbol" },
     { "path": "skills/tycon-pipeline/scripts/tests/console-writes.test.js", "why": "una prueba que busca el arnés de la máquina para leer una lista suya: corre desde skills/, que puede vivir en un clon aparte sin scripts/ al lado" },
     { "path": "skills/tycon-pipeline/scripts/tests/legacy-names-options.test.js", "why": "ídem: busca el arnés de la máquina por los dos nombres de su lugar" },
     { "path": "skills/tycon-pipeline/scripts/tests/packs.test.js", "why": "ídem: busca el arnés de la máquina por los dos nombres de su lugar" },
@@ -84,7 +87,8 @@
     { "path": "scripts/lib/canonical-path.js", "member": "selftest", "why": "nombres de carpeta de clones de juguete del --selftest: no son el lugar" },
     { "path": "scripts/setup/get-harness.sh", "member": "la carpeta del clon", "why": "sólo en la copia pública: el instalador de la portada, que el exportador escribe con el nombre del repo público ya puesto (en el interno lleva {{public-repo}}); es la carpeta del clon, no el lugar" },
     { "path": "scripts/setup/get-harness.ps1", "member": "la carpeta del clon", "why": "sólo en la copia pública: el gemelo para PowerShell del anterior" },
-    { "path": "scripts/lib/repos-root.js", "member": "selftest", "why": "el clon de juguete del --selftest como carpeta real dentro de ~/.claude, con el nombre del lugar: no es el lugar de la máquina" }
+    { "path": "scripts/lib/repos-root.js", "member": "selftest", "why": "el clon de juguete del --selftest como carpeta real dentro de ~/.claude, con el nombre del lugar: no es el lugar de la máquina" },
+    { "path": "scripts/production/guard-libs/lib/repos-root.js", "member": "selftest", "why": "la copia propia del freno de producción (2026-10-14): el mismo clon de juguete del --selftest" }
   ],
   "place_text": [
     { "path": "scripts/hooks/branch-guard-notice.js", "why": "el comando que el aviso de arranque le propone a la persona (harness.js doctor / update / rollback): un hook que el banco copia suelto" },

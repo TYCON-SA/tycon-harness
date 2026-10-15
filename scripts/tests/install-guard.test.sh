@@ -142,7 +142,7 @@ if [ -f "$SHIM" ]; then
   ( cd "$REPOS2/backend-acme" && git init -q . ) >/dev/null 2>&1
   printf '{"servers":[{"host":"acme-sql.database.windows.net","environment":"produccion","keychain":"tycon-prod-acme"}]}'     > "$REPOS2/backend-acme/.tycon/production.json"
   cp "$AQUI/scripts/hooks/prod-access-guard.js" "$RAIZ2/opt/tycon/hooks/"
-  cp "$AQUI/scripts/lib/shell-parse.js" "$AQUI/scripts/lib/repos-root.js" "$RAIZ2/opt/tycon/lib/"
+  cp "$AQUI/scripts/production/guard-libs/lib/shell-parse.js" "$AQUI/scripts/production/guard-libs/lib/repos-root.js" "$RAIZ2/opt/tycon/lib/"
   cp "$AQUI/scripts/production/production-index.js" "$RAIZ2/opt/tycon/production/"
   cp "$(command -v node)" "$RAIZ2/opt/tycon/bin/node"
   printf '{"/opt/tycon/bin/node":"%s"}' "$(shasum -a 256 "$RAIZ2/opt/tycon/bin/node" | cut -d' ' -f1)" > "$RAIZ2/opt/tycon/huellas.json"
@@ -437,7 +437,8 @@ fi
 #          si este árbol no lo trae (la copia pública), el laboratorio lleva uno vacío.
 if [ -f "$INSTALADOR" ] && [ -n "${HARNESS_T19:-}" ] && [ "$HARNESS_T19" = "$TMP/harness-t19" ]; then
   MAPA_Q=0
-  [ -f "$HARNESS_T19/scripts/lib/renames.json" ] || { printf '{ "retire_after": "2099-01-01", "entries": [] }\n' > "$HARNESS_T19/scripts/lib/renames.json"; MAPA_Q=1; }
+  # (mkdir: desde la copia propia del freno, ARCHIVOS no trae nada de scripts/lib/ y el laboratorio no tiene esa carpeta)
+  [ -f "$HARNESS_T19/scripts/lib/renames.json" ] || { mkdir -p "$HARNESS_T19/scripts/lib"; printf '{ "retire_after": "2099-01-01", "entries": [] }\n' > "$HARNESS_T19/scripts/lib/renames.json"; MAPA_Q=1; }
   for caso in nuevo viejo ambos; do
     rm -f "$HARNESS_T19/team-profile.json" "$HARNESS_T19/perfil-equipo.json"
     case "$caso" in
@@ -685,11 +686,11 @@ JS
       else no "T31a · control: sin /opt/tycon/${falta} la prueba no falló o no lo nombró (rc=$rc): $(printf '%s' "$salida" | head -c 200)"; fi
     done
     # y el otro lado: con las mismas trazas, un instalador cuyo ARCHIVOS no lleva una biblioteca que el freno requiere
-    grep -v '^  scripts/lib/tycon-config.js$' "$INSTALADOR" > "$TMP/install-guard-sin-31.sh"
+    grep -v '^  scripts/production/guard-libs/lib/tycon-config.js$' "$INSTALADOR" > "$TMP/install-guard-sin-31.sh"
     salida="$(node "$JUEZ31" "$R31/opt/tycon" "$TMP/install-guard-sin-31.sh" "$TMP/req-31d.json" "$TMP"/trazas-31/pasa "$TMP"/trazas-31/entero \
       "$TMP"/trazas-31/base "$TMP"/trazas-31/basesinraiz "$TMP"/trazas-31/llaves 2>&1)"; rc=$?
-    if [ "$rc" -ne 0 ] && printf '%s' "$salida" | grep "scripts/lib/tycon-config.js.*ARCHIVOS" >/dev/null; then
-      ok "T31a · control: con scripts/lib/tycon-config.js fuera de ARCHIVOS, la prueba falla y lo nombra"
+    if [ "$rc" -ne 0 ] && printf '%s' "$salida" | grep "scripts/production/guard-libs/lib/tycon-config.js.*ARCHIVOS" >/dev/null; then
+      ok "T31a · control: con scripts/production/guard-libs/lib/tycon-config.js fuera de ARCHIVOS, la prueba falla y lo nombra"
     else no "T31a · control: sacar tycon-config.js de ARCHIVOS no hizo fallar la prueba (rc=$rc): $(printf '%s' "$salida" | head -c 200)"; fi
 
     # T31c (AC 21) · cada biblioteca que el freno requiere de verdad está entre las piezas que el aviso compara contra lo
@@ -767,7 +768,7 @@ json.dump({"schema": 1, "version": "2026.10.08.1", "ref": "main", "commit": sys.
   else no "T30b · el origen fijado no es el repo de GitHub: $(cat "$FIJ30" 2>/dev/null | tr '\n' ' ')"; fi
   if grep -q "verificada contra su manifiesto" "$TMP/inst-30"; then ok "T30c · …y lo dice (verificada contra el manifiesto y el estado)"
   else no "T30c · no dice que verificó: $(grep -i arnés "$TMP/inst-30" | head -2 | tr '\n' ' ')"; fi
-  if [ -f "$SYS30/opt/tycon/setup/harness/tycon-home.js" ] && cmp -s "$SYS30/opt/tycon/setup/harness/tycon-home.js" "$AQUI/scripts/setup/harness/tycon-home.js"; then ok "T30d · tycon-home.js copiado a /opt/tycon/setup/harness/ (misma posición relativa que en el repo)"
+  if [ -f "$SYS30/opt/tycon/setup/harness/tycon-home.js" ] && cmp -s "$SYS30/opt/tycon/setup/harness/tycon-home.js" "$AQUI/scripts/production/guard-libs/setup/harness/tycon-home.js"; then ok "T30d · tycon-home.js copiado a /opt/tycon/setup/harness/ (la copia propia del freno, en la misma posición relativa)"
   else no "T30d · falta /opt/tycon/setup/harness/tycon-home.js o no es el del repo"; fi
   # la copia de /opt lee las rutas NUEVAS por tycon-home.js: en una HOME mudada (~/.tycon/state existe) la configuración
   # de la máquina es ~/.tycon/config.json, y las skills instaladas ~/.claude/agent-skills (lo que tycon-home.js diga)
@@ -786,7 +787,7 @@ json.dump({"schema": 1, "version": "2026.10.08.1", "ref": "main", "commit": sys.
   # «alguien lo cambió» sin historia de git, la constancia que el instalador deja como root.
   NOTICE32="$AQUI/scripts/hooks/produccion-notice.js"
   CONST32="$SYS30/opt/tycon/production/installed-files.json"
-  LIB32="scripts/lib/repos-root.js"   # una biblioteca del freno SIN huella en huellas.json: sólo la cuida esta comparación
+  LIB32="scripts/production/guard-libs/lib/repos-root.js"   # una biblioteca del freno SIN huella en huellas.json: sólo la cuida esta comparación
   # (a) el instalador deja la constancia: el blob de cada archivo que copió, el mismo que trae el manifiesto verificado
   salida="$(python3 - "$CONST32" "$ARNES30/.tycon-release.json" "$INSTALADOR" <<'PY' 2>&1
 import json, re, sys
@@ -805,12 +806,12 @@ PY
   if [ $? -eq 0 ]; then ok "T32a · el instalador deja la constancia de lo instalado: cada archivo de ARCHIVOS con el blob del manifiesto verificado"
   else no "T32a · la constancia de lo instalado ($CONST32): $(printf '%s' "$salida" | head -c 300)"; fi
   # (b) el juicio, sin raíz de laboratorio (se mide también en una máquina con el freno instalado)
-  juicio32(){ # $1 = archivo instalado, $2 = ruta en el repo, $3 = manifiesto de la versión que corre, $4 = constancia ("" = sin ella)
+  juicio32(){ # $1 = archivo instalado, $2 = ruta en el repo, $3 = manifiesto de la versión que corre, $4 = constancia ("" = sin ella), $5 = la ruta compartida de antes de la copia propia (opcional)
     env -u TF_BUILD node -e '
       const m = require(process.argv[1]);
       const corre = m.blobsDe(process.argv[4]); const dejado = process.argv[5] ? m.blobsDe(process.argv[5]) : null;
-      process.stdout.write(String(m.estadoContraVersionBajada(process.argv[2], process.argv[3], corre, dejado)));
-    ' "$NOTICE32" "$1" "$2" "$3" "$4" 2>"$TMP/juicio-32.err"
+      process.stdout.write(String(m.estadoContraVersionBajada(process.argv[2], process.argv[3], corre, dejado, process.argv[6] || undefined)));
+    ' "$NOTICE32" "$1" "$2" "$3" "$4" "${5:-}" 2>"$TMP/juicio-32.err"
   }
   # la versión SIGUIENTE: el mismo árbol bajado, con otra biblioteca publicada (el blob de LIB32 cambia en el manifiesto)
   NUEVA32="$TMP/arnes-32-nueva"; rm -rf "$NUEVA32"; cp -R "$ARNES30" "$NUEVA32"
@@ -834,6 +835,32 @@ json.dump(m, open(p, "w"), indent=1)' "$NUEVA32/.tycon-release.json" "$LIB32"
   [ "$s" = "vieja" ] && ok "T32f · un freno instalado antes de la constancia, distinto de la versión que corre: «vieja» (reinstalar la deja escrita)" || no "T32f · sin constancia salió «${s}»"
   s="$(juicio32 "$INST32" "scripts/lib/no-publicada.js" "$ARNES30/.tycon-release.json" "$CONST32")"
   [ "$s" = "sin-publicado" ] && ok "T32g · lo que la versión que corre no trae no se pudo comparar («sin-publicado»), no «al día»" || no "T32g · una ruta que la versión no trae salió «${s}»"
+  # (b2) LA TRANSICIÓN A LA COPIA PROPIA (2026-10-14): un freno instalado antes de ella tiene la constancia con las rutas de
+  # las bibliotecas COMPARTIDAS, de donde se copiaban. Con la versión siguiente es «vieja» —por la ruta de antes—, no
+  # «alterada»; sin esa ruta, la misma constancia daba «alterada» (el control); y retocada sigue siendo «alterada».
+  CONST32V="$TMP/constancia-32-antes-de-la-copia.json"
+  python3 - "$CONST32" "$CONST32V" <<'PY'
+import json, sys
+c = json.load(open(sys.argv[1], encoding="utf-8"))
+for f in c["files"]:
+    p = f["path"]
+    if p.startswith("scripts/production/guard-libs/lib/"): f["path"] = "scripts/lib/" + p.rsplit("/", 1)[1]
+    elif p == "scripts/production/guard-libs/setup/harness/tycon-home.js": f["path"] = "scripts/setup/harness/tycon-home.js"
+json.dump(c, open(sys.argv[2], "w", encoding="utf-8"), indent=1)
+PY
+  ANTES32="scripts/lib/repos-root.js"
+  s="$(juicio32 "$INST32" "$LIB32" "$NUEVA32/.tycon-release.json" "$CONST32V" "$ANTES32")"
+  [ "$s" = "vieja" ] && ok "T32p · un freno instalado antes de la copia propia, con una versión nueva: «vieja» (lo reconoce por la ruta de la compartida)" || no "T32p · instalado antes de la copia propia salió «${s}» — $(head -c 200 "$TMP/juicio-32.err")"
+  s="$(juicio32 "$INST32" "$LIB32" "$NUEVA32/.tycon-release.json" "$CONST32V")"
+  [ "$s" = "alterada" ] && ok "T32p · control: sin la ruta de antes, esa constancia daría «alterada» (la transición se apoya en ella)" || no "T32p · control: sin la ruta de antes salió «${s}»"
+  s="$(juicio32 "$TMP/retocada-32.js" "$LIB32" "$NUEVA32/.tycon-release.json" "$CONST32V" "$ANTES32")"
+  [ "$s" = "alterada" ] && ok "T32p · gemelo: retocada, con la constancia de antes de la copia propia, sigue siendo «alterada»" || no "T32p · retocada con la constancia de antes salió «${s}»"
+  salida="$(env -u TF_BUILD node -e '
+    const m = require(process.argv[1]);
+    const r = [m.instaladoConCopiaPropia(m.blobsDe(process.argv[2])), m.instaladoConCopiaPropia(m.blobsDe(process.argv[3])), m.instaladoConCopiaPropia(null)];
+    process.stdout.write(r.join(","));
+  ' "$NOTICE32" "$CONST32" "$CONST32V" 2>&1)"
+  [ "$salida" = "true,false,false" ] && ok "T32q · la constancia dice si el freno instalado ya es el de la copia propia (sí con la nueva; no con la de antes ni sin constancia)" || no "T32q · instaladoConCopiaPropia contestó «${salida}» (esperaba true,false,false)"
   # (c) de punta a punta. El aviso honra la raíz de laboratorio sólo si /opt/tycon no existe de verdad: en una máquina
   # con el freno se saltea DICIÉNDOLO y lo mide la validación, que corre sin freno instalado.
   if [ -d /opt/tycon ]; then
@@ -898,37 +925,62 @@ json.dump(m, open(p, "w"), indent=1)' "$NUEVA32/.tycon-release.json" "$LIB32"
     if printf '%s' "$out" | grep "no pude leer la constancia" >/dev/null && printf '%s' "$out" | grep "repos-root.js" >/dev/null && printf '%s' "$out" | grep "🔴" >/dev/null; then ok "T32o · constancia ilegible y una biblioteca retocada: lo dice, en rojo, y nombra la biblioteca"
     else no "T32o · constancia rota con una biblioteca retocada — $(printf '%s' "$out" | head -c 400)"; fi
     cp "$TMP/guardada-32.js" "$INST32"; mv -f "$TMP/constancia-32.json" "$CONST32"
+    # la transición, de punta a punta: con la constancia de antes de la copia propia, la reinstalación lo explica (es la
+    # última por cambios ajenos al freno) y no grita «alguien lo cambió»; con la nueva, el texto de la transición no sale
+    cp "$CONST32" "$TMP/constancia-32.json"; cp "$CONST32V" "$CONST32"
+    out="$(aviso32 "$NUEVA32")"
+    if printf '%s' "$out" | grep "el freno quedó viejo: reinstalalo" >/dev/null && printf '%s' "$out" | grep "su propia copia de las bibliotecas" >/dev/null && ! printf '%s' "$out" | grep "alguien lo cambió" >/dev/null; then
+      ok "T32r · instalado antes de la copia propia y una versión nueva: «quedó viejo», explica que es por la copia propia, y no «alguien lo cambió»"
+    else no "T32r · instalado antes de la copia propia — $(printf '%s\n' "$out" | grep -E 'quedó viejo|propia copia|alguien lo cambió' | head -6 | cut -c1-300)"; fi
+    mv -f "$TMP/constancia-32.json" "$CONST32"
+    out="$(aviso32 "$NUEVA32")"
+    if printf '%s' "$out" | grep "el freno quedó viejo: reinstalalo" >/dev/null && ! printf '%s' "$out" | grep "su propia copia de las bibliotecas" >/dev/null; then
+      ok "T32s · instalado con la copia propia: si algo del freno cambia pide reinstalar, sin el texto de la transición"
+    else no "T32s · instalado con la copia propia — $(printf '%s\n' "$out" | grep -E 'quedó viejo|propia copia' | head -6 | cut -c1-300)"; fi
+    # EL CASO de la copia propia: una versión nueva que cambia SÓLO las bibliotecas compartidas (las de scripts/lib/ y
+    # scripts/setup/harness/) no le pide reinstalar a nadie
+    COMPARTIDA32="$TMP/arnes-32-compartida"; rm -rf "$COMPARTIDA32"; cp -R "$ARNES30" "$COMPARTIDA32"
+    python3 -c '
+import json, sys
+p = sys.argv[1]; m = json.load(open(p))
+m["files"] = [f for f in m["files"] if f["path"] not in ("scripts/lib/repos-root.js", "scripts/setup/harness/tycon-home.js")]
+m["files"] += [{"mode": "100644", "path": "scripts/lib/repos-root.js", "blob": "d" * 40}, {"mode": "100644", "path": "scripts/setup/harness/tycon-home.js", "blob": "e" * 40}]
+json.dump(m, open(p, "w"), indent=1)' "$COMPARTIDA32/.tycon-release.json"
+    out="$(aviso32 "$COMPARTIDA32")"
+    if printf '%s' "$out" | grep "al día y con sus huellas" >/dev/null && ! printf '%s' "$out" | grep "quedó viejo" >/dev/null; then
+      ok "T32t · una versión que cambia sólo las bibliotecas compartidas no pide reinstalar: el freno sigue «al día»"
+    else no "T32t · con sólo las compartidas cambiadas — $(printf '%s\n' "$out" | grep -E 'quedó viejo|al día|🔴|🟠' | head -6 | cut -c1-300)"; fi
     rm -f "$SYS30/usr/bin/security"
   fi
 
   # (b) un archivo editado en ~/.tycon/harness: no se instala, y se nombra
   rm -rf "$SYS30/opt/tycon"; mkdir -p "$SYS30/opt"
-  printf '\n// editado a mano en la máquina\n' >> "$ARNES30/scripts/lib/skills-dir.js"
+  printf '\n// editado a mano en la máquina\n' >> "$ARNES30/scripts/production/guard-libs/lib/skills-dir.js"
   if ! instala30 && grep -q 'skills-dir.js (editado)' "$TMP/inst-30" && grep -q 'NO es la publicada' "$TMP/inst-30"; then ok "T30g · un archivo editado en la versión bajada frena la instalación y lo nombra"
   else no "T30g · con skills-dir.js editado: rc $? — $(grep '⛔' "$TMP/inst-30" | head -1 | cut -c1-200)"; fi
   [ -d "$SYS30/opt/tycon" ] && no "T30g · …y además dejó algo en /opt/tycon" || ok "T30h · …sin dejar nada en /opt"
-  cp "$AQUI/scripts/lib/skills-dir.js" "$ARNES30/scripts/lib/skills-dir.js"
+  cp "$AQUI/scripts/production/guard-libs/lib/skills-dir.js" "$ARNES30/scripts/production/guard-libs/lib/skills-dir.js"
   # (c) la carpeta no es la que registra el estado (otro árbol): tampoco
   estado30 "$(printf 'b%.0s' $(seq 1 40))"
   if ! instala30 && grep -q 'no es el que registra el estado' "$TMP/inst-30"; then ok "T30i · un árbol distinto del que registra el estado frena y lo dice"
   else no "T30i · con el estado de otro árbol: $(grep '⛔' "$TMP/inst-30" | head -1 | cut -c1-200)"; fi
   estado30 "$ARBOL30"
   # (d) y un archivo que falta
-  mv "$ARNES30/scripts/lib/guard-record.js" "$TMP/guard-record.30"
+  mv "$ARNES30/scripts/production/guard-libs/lib/guard-record.js" "$TMP/guard-record.30"
   if ! instala30 && grep -q 'guard-record.js (falta)' "$TMP/inst-30"; then ok "T30j · un archivo que falta en la versión bajada frena y lo nombra"
   else no "T30j · con guard-record.js faltante: $(grep '⛔' "$TMP/inst-30" | head -1 | cut -c1-200)"; fi
-  mv "$TMP/guard-record.30" "$ARNES30/scripts/lib/guard-record.js"
+  mv "$TMP/guard-record.30" "$ARNES30/scripts/production/guard-libs/lib/guard-record.js"
   # (e) 🔴 el manifiesto y el estado FORJADOS para que cierren con un archivo editado (revisor de seguridad de la D): el
   # blob y el árbol recalculados con git; GitHub dice otro árbol para ese commit → no se instala
-  printf '\n// editado a mano, con el manifiesto y el estado acomodados\n' >> "$ARNES30/scripts/lib/skills-dir.js"
-  cp "$ARNES30/scripts/lib/skills-dir.js" "$SRC30/scripts/lib/skills-dir.js"
+  printf '\n// editado a mano, con el manifiesto y el estado acomodados\n' >> "$ARNES30/scripts/production/guard-libs/lib/skills-dir.js"
+  cp "$ARNES30/scripts/production/guard-libs/lib/skills-dir.js" "$SRC30/scripts/production/guard-libs/lib/skills-dir.js"
   python3 - "$ARNES30" "$SRC30" "$ESTADO30" <<'PY'
 import json, os, subprocess, sys
 arnes, src, estado = sys.argv[1], sys.argv[2], sys.argv[3]
-nb = subprocess.check_output(["git", "-C", src, "hash-object", "scripts/lib/skills-dir.js"]).decode().strip()
+nb = subprocess.check_output(["git", "-C", src, "hash-object", "scripts/production/guard-libs/lib/skills-dir.js"]).decode().strip()
 m = json.load(open(arnes + "/.tycon-release.json"))
 for f in m["files"]:
-    if f["path"] == "scripts/lib/skills-dir.js": f["blob"] = nb
+    if f["path"] == "scripts/production/guard-libs/lib/skills-dir.js": f["blob"] = nb
 env = dict(os.environ, GIT_INDEX_FILE=src + "/.git/forjado.idx")
 subprocess.run(["git", "-C", src, "add", "-A"], env=env, check=True)
 t = subprocess.check_output(["git", "-C", src, "write-tree"], env=env).decode().strip()
@@ -938,7 +990,7 @@ PY
   if ! instala30 && grep -q 'NO es el del commit' "$TMP/inst-30" && grep -q 'GitHub' "$TMP/inst-30"; then ok "T30k · manifiesto y estado forjados con un archivo editado: GitHub dice otro árbol y no se instala"
   else no "T30k · el forjado pasó o frenó por otro motivo: $(grep '⛔' "$TMP/inst-30" | head -1 | cut -c1-240)"; fi
   [ -d "$SYS30/opt/tycon" ] && no "T30k · …y dejó algo en /opt/tycon" || ok "T30l · …sin dejar nada en /opt"
-  G30 checkout -q -- scripts/lib/skills-dir.js; rm -f "$SRC30/.git/forjado.idx"; cp "$AQUI/scripts/lib/skills-dir.js" "$ARNES30/scripts/lib/skills-dir.js"; ARBOL30="$(manifiesto30)"; estado30 "$ARBOL30"
+  G30 checkout -q -- scripts/production/guard-libs/lib/skills-dir.js; rm -f "$SRC30/.git/forjado.idx"; cp "$AQUI/scripts/production/guard-libs/lib/skills-dir.js" "$ARNES30/scripts/production/guard-libs/lib/skills-dir.js"; ARBOL30="$(manifiesto30)"; estado30 "$ARBOL30"
   # (f) la versión instalada ya no es la punta publicada (alguien publicó otra). EL CASO (2026-10-14): un día de más de 30
   # publicaciones, una cada ~10 min, exigir la punta exacta hacía casi imposible instalar el freno. Ahora vale un commit
   # PUBLICADO de main (GitHub: «behind» respecto de la punta) cuyo freno sea byte a byte el de la punta: instala y avisa.
@@ -950,9 +1002,9 @@ PY
   else no "T30m · atrasada con el mismo freno: $(grep '⛔' "$TMP/inst-30" | head -1 | cut -c1-240) — $(grep '⚠' "$TMP/inst-30" | head -1 | cut -c1-240)"; fi
   # (f2) 🔴 atrasada y el freno CAMBIÓ en la punta (un arreglo del freno publicado después): una versión vieja verifica contra
   # GitHub igual, y el asistente la puede bajar — no se instala un freno viejo
-  G30 reset -q --hard "$C2_30"; printf '\n// arreglo del freno publicado después\n' >> "$SRC30/scripts/lib/skills-dir.js"; G30 add -A >/dev/null; G30 commit -q -m "arreglo del freno" >/dev/null; G30 push -q "$BARE30" main >/dev/null 2>&1; G30 reset -q --hard "$C1_30"; ARBOL30="$(manifiesto30)"; estado30 "$ARBOL30"
+  G30 reset -q --hard "$C2_30"; printf '\n// arreglo del freno publicado después\n' >> "$SRC30/scripts/production/guard-libs/lib/skills-dir.js"; G30 add -A >/dev/null; G30 commit -q -m "arreglo del freno" >/dev/null; G30 push -q "$BARE30" main >/dev/null 2>&1; G30 reset -q --hard "$C1_30"; ARBOL30="$(manifiesto30)"; estado30 "$ARBOL30"
   rm -rf "$SYS30/opt/tycon"; mkdir -p "$SYS30/opt"
-  if ! instala30 && grep -q 'es de main pero VIEJA' "$TMP/inst-30" && grep -q 'scripts/lib/skills-dir.js' "$TMP/inst-30" && [ ! -d "$SYS30/opt/tycon" ]; then ok "T30m2 · una versión de main atrasada con el freno cambiado en la punta frena, nombra el archivo y no deja nada en /opt"
+  if ! instala30 && grep -q 'es de main pero VIEJA' "$TMP/inst-30" && grep -q 'scripts/production/guard-libs/lib/skills-dir.js' "$TMP/inst-30" && [ ! -d "$SYS30/opt/tycon" ]; then ok "T30m2 · una versión de main atrasada con el freno cambiado en la punta frena, nombra el archivo y no deja nada en /opt"
   else no "T30m2 · atrasada con otro freno en la punta: $(grep '⛔' "$TMP/inst-30" | head -1 | cut -c1-240)"; fi
   G30 push -q -f "$BARE30" main >/dev/null 2>&1
   # (f3) 🔴 un commit que no está en main (una rama publicada en el repo, o un cambio local): GitHub lo sirve por su sha
@@ -1029,7 +1081,7 @@ PY
     # y un archivo de ARCHIVOS que la versión publicada NO trae (el manifiesto y GitHub cierran sin él) pero está en el disco:
     # el instalador no copia nada que no esté verificado, frena nombrándolo
     rm -rf "$SYS30/opt/tycon"; mkdir -p "$SYS30/opt"
-    G30 rm -q --cached scripts/lib/skills-dir.js >/dev/null 2>&1; G30 commit -q -m "sin skills-dir" >/dev/null; G30 push -q -f "$BARE30" main >/dev/null 2>&1; ARBOL30="$(manifiesto30)"; estado30 "$ARBOL30"
+    G30 rm -q --cached scripts/production/guard-libs/lib/skills-dir.js >/dev/null 2>&1; G30 commit -q -m "sin skills-dir" >/dev/null; G30 push -q -f "$BARE30" main >/dev/null 2>&1; ARBOL30="$(manifiesto30)"; estado30 "$ARBOL30"
     if ! instala30 && grep -q 'skills-dir.js está en' "$TMP/inst-30" && grep -q 'NO en el manifiesto' "$TMP/inst-30"; then ok "T30r · un archivo a copiar que la versión publicada no trae (sólo está en el disco) frena y lo nombra"
     else no "T30r · archivo fuera del manifiesto: $(grep '⛔' "$TMP/inst-30" | head -1 | cut -c1-240)"; fi
     cp "$MAPA_BAK30" "$SRC30/scripts/lib/renames.json"; G30 add -A >/dev/null; G30 commit -q -m "con el mapa y skills-dir" >/dev/null; G30 push -q -f "$BARE30" main >/dev/null 2>&1; ARBOL30="$(manifiesto30)"; estado30 "$ARBOL30"
@@ -1056,6 +1108,92 @@ import json,sys; p=sys.argv[1]; s=json.load(open(p)); s['sources'][0]['url']='ht
   estado30 "$ARBOL30"
   kill "$SRV30_PID" 2>/dev/null; wait "$SRV30_PID" 2>/dev/null
 fi
+
+# ── T34 · la copia propia del freno (2026-10-14) ──────────────────────────────────────────────────────────────────────
+# EL CASO: el aviso de arranque pedía reinstalar el freno —con la contraseña del Mac— casi en cada versión del arnés,
+# porque comparaba las bibliotecas COMPARTIDAS, que cambian todo el tiempo por motivos que no son del freno. Decisión del
+# dueño: el freno lleva su propia copia (scripts/production/guard-libs/), que se actualiza a conciencia.
+#   (a) el instalador no instala ninguna biblioteca compartida, cada copia declarada se instala, y el aviso compara cada
+#       copia (con la compartida de la que salía antes, para la transición) y nada compartido;
+#   (b) el control de quien mantiene (guard-libs-check.js): sobre el repo, en verde; en un laboratorio, una diferencia en lo
+#       que el freno usa frena nombrándola y diciendo las dos salidas, una en lo que no usa se dice y no frena, y las dos
+#       decisiones (dejar la copia, refrescarla) quedan anotadas y lo dejan en verde.
+GL34="scripts/production/guard-libs"
+salida="$(node - "$INSTALADOR" "$AQUI/scripts/hooks/produccion-notice.js" "$AQUI/$GL34/sources.json" <<'JS' 2>&1
+const fs = require('fs');
+const [inst, notice, sources] = process.argv.slice(2);
+const bloque = /^ARCHIVOS=\(\n([\s\S]*?)^\)/m.exec(fs.readFileSync(inst, 'utf8'));
+if (!bloque) { console.log('no encuentro ARCHIVOS en el instalador'); process.exit(1); }
+const archivos = bloque[1].split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('#'));
+const errores = [];
+for (const a of archivos) if (/^scripts\/(lib|setup)\//.test(a)) errores.push(`ARCHIVOS instala ${a}, una biblioteca compartida`);
+const copias = JSON.parse(fs.readFileSync(sources, 'utf8')).files;
+const deDonde = new Map(copias.map((f) => [`scripts/production/guard-libs/${f.copy}`, f.source]));
+for (const c of deDonde.keys()) if (!archivos.includes(c)) errores.push(`la copia ${c} no está en ARCHIVOS: no se instala`);
+const m = require(notice);
+for (const b of m.BIBLIOTECAS_DEL_FRENO) {
+  if (!b.repo.startsWith(m.COPIA_PROPIA)) {
+    if (!b.repo.startsWith('scripts/production/') || b.antes) errores.push(`el aviso compara ${b.repo}, que no es ni de la copia propia ni una pieza del freno`);
+    continue;
+  }
+  if (!deDonde.has(b.repo)) errores.push(`el aviso compara ${b.repo}, que sources.json no declara`);
+  else if (deDonde.get(b.repo) !== b.antes) errores.push(`el aviso dice que ${b.repo} salía de ${b.antes}; sources.json, de ${deDonde.get(b.repo)}`);
+}
+for (const c of deDonde.keys()) if (!m.BIBLIOTECAS_DEL_FRENO.some((b) => b.repo === c)) errores.push(`la copia ${c} se instala y el aviso no la compara`);
+for (const e of errores) console.log(e);
+process.exit(errores.length ? 1 : 0);
+JS
+)"
+if [ $? -eq 0 ]; then ok "T34a · el freno se instala con su copia propia: ninguna biblioteca compartida en ARCHIVOS, y el aviso compara cada copia y nada compartido"
+else no "T34a · $(printf '%s' "$salida" | tr '\n' ' ' | cut -c1-400)"; fi
+
+CHECK34="$AQUI/scripts/production/guard-libs-check.js"
+node "$CHECK34" >"$TMP/chk34-repo" 2>&1; rc=$?
+if [ "$rc" -eq 0 ]; then ok "T34b · la copia propia está al día con lo que decidió quien mantiene (guard-libs-check.js sale 0)"
+else no "T34b · guard-libs-check.js sobre el repo salió $rc: $(tr '\n' ' ' < "$TMP/chk34-repo" | cut -c1-400)"; fi
+
+LAB34="$TMP/lab-34"; rm -rf "$LAB34"
+for f in "$GL34" scripts/production/guard-libs-check.js scripts/hooks/prod-access-guard.js scripts/production/production-index.js scripts/production/tycon-prod-sql $(node -e 'for (const f of require(process.argv[1]).files) console.log(f.source)' "$AQUI/$GL34/sources.json"); do
+  mkdir -p "$LAB34/$(dirname "$f")"; cp -R "$AQUI/$f" "$LAB34/$f"
+done
+chk34(){ node "$LAB34/scripts/production/guard-libs-check.js" --repo "$LAB34" "$@" >"$TMP/chk34" 2>&1; echo $?; }
+COMP34="$LAB34/scripts/lib/repos-root.js"; ORIG34="$TMP/repos-root-34.js"; cp "$COMP34" "$ORIG34"
+COPIA34="$LAB34/$GL34/lib/repos-root.js"
+# lo que el freno usa: el cuerpo de resolveReposRoot (lo llama el índice de producción)
+node -e 'const f=require("fs"),p=process.argv[1];f.writeFileSync(p,f.readFileSync(p,"utf8").replace(/^(function resolveReposRoot\(.*\{)$/m,"$1\n  const cambioDePrueba = 1; void cambioDePrueba;"))' "$COMP34"
+rc="$(chk34)"
+if [ "$rc" = 1 ] && grep -q "lib/repos-root.js" "$TMP/chk34" && grep -q "resolveReposRoot (cambió)" "$TMP/chk34" && grep -q "refresh lib/repos-root.js" "$TMP/chk34" && grep -q "keep lib/repos-root.js" "$TMP/chk34"; then
+  ok "T34c · la compartida cambió en lo que el freno usa: frena, dice qué (resolveReposRoot) y las dos salidas (refresh / keep)"
+else no "T34c · cambio en lo que el freno usa: rc=$rc — $(tr '\n' ' ' < "$TMP/chk34" | cut -c1-400)"; fi
+# lo que el freno no usa: describir (sólo la línea de comandos) y una función nueva
+cp "$ORIG34" "$COMP34"
+node -e 'const f=require("fs"),p=process.argv[1];f.writeFileSync(p,f.readFileSync(p,"utf8").replace(/^(function describir\(.*\{)$/m,"$1\n  const otraCosa = 2; void otraCosa;")+"\nfunction nuevaSinUsoEnElFreno() { return 1; }\n")' "$COMP34"
+rc="$(chk34)"
+if [ "$rc" = 0 ] && grep -q "sólo en lo que el freno no usa" "$TMP/chk34" && grep -q "describir (cambió)" "$TMP/chk34" && grep -q "nuevaSinUsoEnElFreno" "$TMP/chk34"; then
+  ok "T34d · la compartida cambió sólo en lo que el freno no usa: lo dice (describir, la función nueva) y no frena"
+else no "T34d · cambio en lo que el freno no usa: rc=$rc — $(tr '\n' ' ' < "$TMP/chk34" | cut -c1-400)"; fi
+# keep: con el cambio en lo usado, se deja la copia → queda anotado, la copia no cambia y deja de frenar
+cp "$ORIG34" "$COMP34"
+node -e 'const f=require("fs"),p=process.argv[1];f.writeFileSync(p,f.readFileSync(p,"utf8").replace(/^(function resolveReposRoot\(.*\{)$/m,"$1\n  const cambioDePrueba = 1; void cambioDePrueba;"))' "$COMP34"
+cp "$COPIA34" "$TMP/copia-34.js"
+rc_keep="$(chk34 keep lib/repos-root.js)"; rc="$(chk34)"
+if [ "$rc_keep" = 0 ] && [ "$rc" = 0 ] && cmp -s "$COPIA34" "$TMP/copia-34.js" && grep -q "ya se decidió dejar la copia" "$TMP/chk34" && grep -q "\"reviewed\": \"$(git hash-object "$COMP34")\"" "$LAB34/$GL34/sources.json"; then
+  ok "T34e · «keep»: la copia queda como estaba, se anota el blob de la compartida y deja de frenar"
+else no "T34e · keep: rc=$rc_keep, después rc=$rc — $(tr '\n' ' ' < "$TMP/chk34" | cut -c1-300)"; fi
+# …hasta que la compartida vuelve a cambiar en lo que el freno usa
+node -e 'const f=require("fs"),p=process.argv[1];f.writeFileSync(p,f.readFileSync(p,"utf8").replace("const cambioDePrueba = 1;","const cambioDePrueba = 3;"))' "$COMP34"
+rc="$(chk34)"
+[ "$rc" = 1 ] && ok "T34f · lo anotado vale para ESE cambio: si la compartida vuelve a cambiar en lo que el freno usa, vuelve a frenar" || no "T34f · tras otro cambio salió $rc — $(tr '\n' ' ' < "$TMP/chk34" | cut -c1-300)"
+# refresh: la copia pasa a ser la compartida, y queda en verde
+rc_ref="$(chk34 refresh lib/repos-root.js)"; rc="$(chk34)"
+if [ "$rc_ref" = 0 ] && [ "$rc" = 0 ] && cmp -s "$COPIA34" "$COMP34" && grep -q "\"reviewed\": \"$(git hash-object "$COMP34")\"" "$LAB34/$GL34/sources.json"; then
+  ok "T34g · «refresh»: la copia pasa a ser la compartida, se anota, y queda en verde"
+else no "T34g · refresh: rc=$rc_ref, después rc=$rc"; fi
+# un archivo en la carpeta de la copia que sources.json no declara: frena nombrándolo
+printf '// suelto\n' > "$LAB34/$GL34/lib/suelto.js"
+rc="$(chk34)"
+if [ "$rc" = 1 ] && grep -q "lib/suelto.js no está declarado" "$TMP/chk34"; then ok "T34h · un archivo en la copia propia que sources.json no declara frena y lo nombra"
+else no "T34h · archivo sin declarar: rc=$rc — $(tr '\n' ' ' < "$TMP/chk34" | cut -c1-300)"; fi
 
 echo "— instalar-freno: $pasaron ok, $fallos fallos —"
 [ "$fallos" -eq 0 ]

@@ -109,6 +109,26 @@
    "why": "reconocedor: las rutas de los repos del arnés en el tablero, con el nombre interno y el público"
   },
   {
+   "path": "scripts/production/guard-libs/lib/legacy-names.js",
+   "kind": "literal-copy",
+   "why": "la copia propia del freno de producción (2026-10-14) de scripts/lib/legacy-names.js: la constante del nombre viejo del lugar, en la copia que se instala en /opt"
+  },
+  {
+   "path": "scripts/production/guard-libs/lib/repos-root.js",
+   "kind": "test",
+   "why": "la copia propia del freno de producción de scripts/lib/repos-root.js: el mismo --selftest con clones de juguete"
+  },
+  {
+   "path": "scripts/production/guard-libs/lib/tycon-config.js",
+   "kind": "literal-copy",
+   "why": "la copia propia del freno de producción de scripts/lib/tycon-config.js: la constante del nombre viejo del lugar"
+  },
+  {
+   "path": "scripts/production/guard-libs/setup/harness/tycon-home.js",
+   "kind": "literal-copy",
+   "why": "la copia propia del freno de producción de scripts/setup/harness/tycon-home.js: la constante del nombre viejo del lugar (LEGACY_PLACE_NAME)"
+  },
+  {
    "path": "scripts/production/install-guard.sh",
    "kind": "azure",
    "why": "el lector de los dos nombres del lugar y la URL del repo en Azure DevOps contra la que verifica el clon antes de instalar el freno"

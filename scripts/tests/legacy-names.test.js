@@ -713,13 +713,16 @@ test('T25 ProdGuard_ArchivosRequireClosure', () => {
   const m = /\nARCHIVOS=\(\n([\s\S]*?)\n\)/.exec(sh);
   assert.ok(m, 'encuentro la lista ARCHIVOS');
   const files = m[1].split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('#'));
-  const set = new Set(files);
+  // la copia propia del freno (2026-10-14): scripts/production/guard-libs/ ocupa en /opt el lugar de scripts/lib/ y
+  // scripts/setup/ (lib/, setup/harness/), así que los require relativos se resuelven como si estuviera ahí
+  const enOpt = (rel) => rel.replace(/^scripts\/production\/guard-libs\//, 'scripts/');
+  const set = new Set(files.map(enOpt));
   // el nombre de antes de la biblioteca de constancias: el instalador deja en /opt la biblioteca misma con ese nombre
   // (tanda C1: el freno instalado lo carga así), fuera de ARCHIVOS porque en el repo es un reemplazo
   const r = /\nNOMBRE_VIEJO_CONSTANCIA=(\S+)/.exec(sh);
   if (r) {
     set.add(`scripts/${r[1]}`);
-    assert.match(sh, /\ninstalar scripts\/lib\/guard-record\.js\s+"\$DESTINO\/\$NOMBRE_VIEJO_CONSTANCIA"/, 'se instala la biblioteca con el nombre de antes');
+    assert.match(sh, /\ninstalar scripts\/production\/guard-libs\/lib\/guard-record\.js\s+"\$DESTINO\/\$NOMBRE_VIEJO_CONSTANCIA"/, 'se instala la biblioteca con el nombre de antes');
   }
   const missing = [];
   for (const rel of files) {
@@ -727,10 +730,10 @@ test('T25 ProdGuard_ArchivosRequireClosure', () => {
     const text = fs.readFileSync(abs, 'utf8');
     if (!/\.js$/.test(rel) && !/^#!.*\bnode\b/.test(text)) continue;
     const reqs = [];
-    for (const r of text.matchAll(/require\(\s*(['"])(\.{1,2}\/[^'"]+)\1\s*\)/g)) reqs.push(path.join(path.dirname(rel), r[2]));
+    for (const r of text.matchAll(/require\(\s*(['"])(\.{1,2}\/[^'"]+)\1\s*\)/g)) reqs.push(path.join(path.dirname(enOpt(rel)), r[2]));
     for (const r of text.matchAll(/require\(\s*path\.join\(\s*__dirname\s*,([^)]*)\)\s*\)/g)) {
       const parts = [...r[1].matchAll(/(['"])([^'"]+)\1/g)].map((x) => x[2]);
-      if (parts.length === r[1].split(',').filter((x) => x.trim()).length) reqs.push(path.join(path.dirname(rel), ...parts));
+      if (parts.length === r[1].split(',').filter((x) => x.trim()).length) reqs.push(path.join(path.dirname(enOpt(rel)), ...parts));
     }
     for (const q of reqs) {
       const n = path.normalize(q).replace(/\\/g, '/');
