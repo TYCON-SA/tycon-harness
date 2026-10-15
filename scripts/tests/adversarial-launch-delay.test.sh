@@ -73,7 +73,10 @@ B_DEMORA="$(OUTPUT="$OUTPUT" node -e 'const r = JSON.parse(process.env.OUTPUT); 
 [ "$B_DEMORA" = "600000" ] && ok "el primer revisor es el del arnés más temprano, sin el validador ni un agente suelto" || no "B demora = $B_DEMORA"
 
 TEXTO="$(node "$GUION" --history-dir "$HIST" --projects-dir "$PROY" 2>&1)"
-echo "$TEXTO" | grep -q "con el temprano apagado: 2" && echo "$TEXTO" | grep -q "no se sabe: 1" && ok "la salida de texto separa las apagadas y las que no se sabe" || no "texto: $TEXTO"
+case "$TEXTO" in
+  *"con el temprano apagado: 2"*"no se sabe: 1"*) ok "la salida de texto separa las apagadas y las que no se sabe" ;;
+  *) no "texto: $TEXTO" ;;
+esac
 
 echo "— $pasaron ok · $fallos fallos"
 [ "$fallos" -eq 0 ]

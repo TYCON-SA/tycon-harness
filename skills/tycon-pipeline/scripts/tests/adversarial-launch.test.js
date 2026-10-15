@@ -16,6 +16,10 @@
  * Todo corre con los comandos reales, una HOME temporal, `TYCON_PROFILE=0` (salvo el caso del perfil) y el id de
  * sesión fijado en el proceso hijo: una prueba corrida desde una sesión de agente hereda el suyo.
  *
+ * stable-data: lee el reloj a propósito — la regla de un pase de otra sesión compara contra la hora actual (minutos
+ * desde el lanzamiento y desde la última modificación de su conversación), y las pruebas fijan esas edades relativas a
+ * «ahora»; ningún resultado compara una hora absoluta.
+ *
  * Correr: node --test skills/tycon-pipeline/scripts/tests/adversarial-launch.test.js
  * Regenerar la foto de T14 (sólo desde el commit anterior a la 7.19): TYCON_GATE_SNAPSHOT=escribir node <este archivo>
  */
