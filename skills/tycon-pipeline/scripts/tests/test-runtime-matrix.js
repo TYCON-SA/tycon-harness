@@ -581,6 +581,10 @@ withWaiverLog(() => {
   const f = makeWorkspace({ ack: ['dod_runtime_exempt: true'] });
   const r = rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog });
   check('dod_runtime_exempt → verde', r.exempt === true && r.green === true);
+  // story 7.27: la exenta también dice de qué repo es y sus totales. Sin eso, el candado de la guía QA buscaba las
+  // pantallas en ningún lado («no están en el disco») y el generador de la guía se caía leyendo `stats.total`.
+  check('dod_runtime_exempt → trae el repo de la story', Boolean(r.repoRoot) && fs.realpathSync(r.repoRoot) === fs.realpathSync(f.repo), `repoRoot=${r.repoRoot} repo=${f.repo}`);
+  check('dod_runtime_exempt → trae los totales en cero', r.stats && r.stats.total === 0 && r.stats.runtime === 0 && r.stats.waived === 0 && r.stats.notVerifiable === 0, JSON.stringify(r.stats));
 }
 
 // 14. Story sin ACs ni tabla → error estructural (fail-closed).
