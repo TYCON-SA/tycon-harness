@@ -293,7 +293,8 @@ test('T13 WorkItems_PlatformDispatch: sin team-repos o con azure, Azure; con git
   d = mundo({ issues: false });
   snapshot(d);
   r = correr(d);
-  assert.strictEqual(r.code, 0, r.out); assert.match(r.out, /Issues de dependencias/);
+  // texto de la salida, no una ruta: con `includes` el control de nombres viejos no lo lee como la carpeta de antes
+  assert.strictEqual(r.code, 0, r.out); assert.ok(r.out.includes('Issues de dependencias'), r.out);
   // roto
   d = mundo({});
   fs.writeFileSync(path.join(d, 'team-repos.json'), '{"version":1}');
