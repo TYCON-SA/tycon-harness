@@ -66,14 +66,14 @@ T=$(mktemp -d); montar "$T" con-config list-ok
 RC=$(correr "$T" facturas)
 f=""
 [ "$RC" = "0" ] || f="$f exit=$RC"
-evidencia "$T" | grep -q '^verdict=PASS$' || f="$f veredicto-no-PASS"
-evidencia "$T" | grep -q '^## Capturas' || f="$f sin-sección"
+evidencia "$T" | grep '^verdict=PASS$' >/dev/null || f="$f veredicto-no-PASS"
+evidencia "$T" | grep '^## Capturas' >/dev/null || f="$f sin-sección"
 n=0; for p in $(capturas_listadas "$T"); do
   case "$p" in "$T"/ev/9.9-captures-*/*.png) [ -f "$p" ] && n=$((n+1)) ;; *) f="$f ruta-fuera($p)" ;; esac
 done
 [ "$n" -eq 2 ] || f="$f capturas=$n"
-ls "$T"/ev/9.9-captures-*/ 2>/dev/null | grep -q 'trace' && f="$f copió-el-trace"
-grep -- '--config' "$T/args.log" | grep -vq -- '--list' || f="$f la-corrida-no-usó-el-envoltorio"
+ls "$T"/ev/9.9-captures-*/ 2>/dev/null | grep 'trace' >/dev/null && f="$f copió-el-trace"
+grep -- '--config' "$T/args.log" | grep -v -- '--list' >/dev/null || f="$f la-corrida-no-usó-el-envoltorio"
 [ -z "$(cd "$T/repo" && git status --porcelain)" ] || f="$f config-del-repo-tocada($(cd "$T/repo" && git status --porcelain | tr '\n' ' '))"
 if [ -z "$f" ]; then ok "C-01 con filtro: dos capturas en la evidencia, sin el trace, veredicto PASS y el repo intacto"
 else mal "C-01 E2eGate_GuardaCapturasEnEvidencia —$f"; sed 's/^/       /' "$T/out.txt" | head -5; fi
@@ -84,7 +84,7 @@ T=$(mktemp -d); montar "$T" con-config list-ok
 RC=$(correr "$T")
 f=""
 [ "$RC" = "0" ] || f="$f exit=$RC"
-evidencia "$T" | awk '/^## Capturas/{getline; print; exit}' | grep -qi 'sin filtro\|completa' || f="$f no-dice-por-qué"
+evidencia "$T" | awk '/^## Capturas/{getline; print; exit}' | grep -i 'sin filtro\|completa' >/dev/null || f="$f no-dice-por-qué"
 ls -d "$T"/ev/9.9-captures-* >/dev/null 2>&1 && f="$f guardó-capturas"
 grep -q -- '--config' "$T/args.log" && f="$f usó-el-envoltorio"
 if [ -z "$f" ]; then ok "C-02 sin filtro: no guarda capturas y la evidencia dice por qué"
@@ -96,10 +96,10 @@ T=$(mktemp -d); montar "$T" con-config list-falla
 RC=$(correr "$T" facturas)
 f=""
 [ "$RC" = "0" ] || f="$f exit=$RC"
-evidencia "$T" | grep -q '^verdict=PASS$' || f="$f veredicto-cambió"
-evidencia "$T" | awk '/^## Capturas/{getline; print; exit}' | grep -qi 'no se pudo' || f="$f no-dice-el-motivo"
-grep -v -- '--list' "$T/args.log" | grep -q -- '--config' && f="$f la-corrida-usó-el-envoltorio-roto"
-ls "$T/repo/front" | grep -q 'tycon' && f="$f quedó-el-envoltorio"
+evidencia "$T" | grep '^verdict=PASS$' >/dev/null || f="$f veredicto-cambió"
+evidencia "$T" | awk '/^## Capturas/{getline; print; exit}' | grep -i 'no se pudo' >/dev/null || f="$f no-dice-el-motivo"
+grep -v -- '--list' "$T/args.log" | grep -- '--config' >/dev/null && f="$f la-corrida-usó-el-envoltorio-roto"
+ls "$T/repo/front" | grep 'tycon' >/dev/null && f="$f quedó-el-envoltorio"
 if [ -z "$f" ]; then ok "C-03 envoltorio que no carga: misma corrida de siempre, mismo veredicto, y el motivo escrito"
 else mal "C-03 envoltorio roto —$f"; fi
 rm -rf "$T"
@@ -109,7 +109,7 @@ T=$(mktemp -d); montar "$T" sin-config list-ok
 RC=$(correr "$T" facturas)
 f=""
 [ "$RC" = "0" ] || f="$f exit=$RC"
-evidencia "$T" | awk '/^## Capturas/{getline; print; exit}' | grep -qi 'playwright.config' || f="$f no-lo-dice"
+evidencia "$T" | awk '/^## Capturas/{getline; print; exit}' | grep -i 'playwright.config' >/dev/null || f="$f no-lo-dice"
 if [ -z "$f" ]; then ok "C-04 sin playwright.config: la sección lo dice y la corrida sigue"
 else mal "C-04 sin config —$f"; fi
 rm -rf "$T"
@@ -121,7 +121,7 @@ RC=$(correr "$T" facturas)
 f=""
 [ "$RC" = "0" ] || f="$f exit=$RC"
 [ "$(capturas_listadas "$T" | wc -l | tr -d ' ')" = "1" ] || f="$f capturas=$(capturas_listadas "$T" | wc -l | tr -d ' ')"
-evidencia "$T" | awk '/^## Capturas/{en=1;next} en&&/^## /{en=0} en{print}' | grep -q 'b\.png' || f="$f no-nombra-la-que-faltó"
+evidencia "$T" | awk '/^## Capturas/{en=1;next} en&&/^## /{en=0} en{print}' | grep 'b\.png' >/dev/null || f="$f no-nombra-la-que-faltó"
 if [ -z "$f" ]; then ok "C-05 una imagen que no está: copia las que hay y nombra la que faltó"
 else mal "C-05 imagen faltante —$f"; fi
 rm -rf "$T"
@@ -132,8 +132,8 @@ sed -i.bak 's/,"attachments":\[[^]]*\]//g' "$T/bin/npx" && rm -f "$T/bin/npx.bak
 RC=$(correr "$T" facturas)
 f=""
 [ "$RC" = "0" ] || f="$f exit=$RC"
-evidencia "$T" | grep -q '^verdict=PASS$' || f="$f veredicto-cambió"
-evidencia "$T" | awk '/^## Capturas/{getline; print; exit}' | grep -qi 'no dejó imágenes' || f="$f no-lo-dice"
+evidencia "$T" | grep '^verdict=PASS$' >/dev/null || f="$f veredicto-cambió"
+evidencia "$T" | awk '/^## Capturas/{getline; print; exit}' | grep -i 'no dejó imágenes' >/dev/null || f="$f no-lo-dice"
 if [ -z "$f" ]; then ok "C-06 la corrida no dejó imágenes: la sección lo dice y el veredicto no cambia"
 else mal "C-06 sin imágenes —$f"; fi
 rm -rf "$T"
@@ -143,7 +143,7 @@ T=$(mktemp -d); montar "$T" con-config list-ok
 printf '#!/bin/sh\necho "$*" >> "%s/args.log"\ncase " $* " in *" --list "*) exit 0 ;; esac\necho %s\nexit 0\n' "$T" "'{\"otra\":\"forma\"}'" > "$T/bin/npx"; chmod +x "$T/bin/npx"
 correr "$T" facturas > /dev/null
 f=""
-evidencia "$T" | awk '/^## Capturas/{getline; print; exit}' | grep -qi 'forma esperada' || f="$f no-dice-la-forma"
+evidencia "$T" | awk '/^## Capturas/{getline; print; exit}' | grep -i 'forma esperada' >/dev/null || f="$f no-dice-la-forma"
 if [ -z "$f" ]; then ok "C-07 reporte con otra forma: la sección lo dice"
 else mal "C-07 reporte raro —$f"; evidencia "$T" | awk '/^## Capturas/{getline; print; exit}' | sed 's/^/       /'; fi
 rm -rf "$T"
