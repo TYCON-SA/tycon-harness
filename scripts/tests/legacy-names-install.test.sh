@@ -369,6 +369,18 @@ EOF
   else echo "  (sin pwsh en esta máquina: el bloque del .ps1 queda revisado por lectura)"; fi
 fi
 
+# La copia del árbol al laboratorio tiene que quedar ENTERA: el `2>/dev/null` de tar es necesario (avisa por los archivos
+# borrados del árbol y sigue), pero sin este conteo una copia partida corría la prueba sobre otro árbol (2026-10-15). Imprime
+# cuántos archivos que existen en <raíz> faltan en <copia>: 0 es entera.
+faltan_en_copia() { # faltan_en_copia <raíz> <copia>
+  ( cd "$1" && git ls-files -co --exclude-standard -z ) | python3 -c '
+import os, sys
+raiz, copia = sys.argv[1:3]
+nombres = [n for n in sys.stdin.buffer.read().decode("utf-8").split("\0") if n]
+print(sum(1 for n in nombres if os.path.lexists(os.path.join(raiz, n)) and not os.path.lexists(os.path.join(copia, n))))
+' "$1" "$2"
+}
+
 # ═══ T27 · la máquina atrasada, por la línea de arranque, y los dos repos desfasados ══════════════════════════════
 # El caso entero prueba el paso de un nombre viejo a uno nuevo, y lo arma con el mapa de renombres. Sin el mapa (la copia
 # pública, story 8.7) no hay nombres viejos que probar: se dice y no corre, igual que T55. No es un verde.
@@ -378,7 +390,13 @@ elif corre T27; then
   T="$BASE/t27"; mkdir -p "$T"
   # 1 · un arnés de laboratorio con el árbol de trabajo de este (lo nuevo de la tanda incluido), en un remoto propio
   SRC="$T/src"; mkdir -p "$SRC"
-  ( cd "$RAIZ" && git ls-files -co --exclude-standard -z | xargs -0 tar cf - 2>/dev/null ) | ( cd "$SRC" && tar xf - )
+  # 🔴 La lista va a tar por su entrada (`--null -T -`), nunca por `xargs -0 tar cf -` (2026-10-15): en Linux xargs parte una
+  #    lista de ~4000 archivos en varias tandas, cada tanda es un tar aparte, y el `tar xf -` que extrae se detiene al final
+  #    del primero. El laboratorio quedaba con 2700 de 3999 archivos (sin tycon-home.js ni hooks-list.json), el instalador
+  #    fallaba y T27 salía con 7 MAL en el agente de Azure; en la Mac, con un límite más alto, entraba en una sola tanda.
+  #    `--null` va ANTES de `-T -`: en GNU tar (Linux y Git Bash) al revés lee la lista mal; así, un archivo «-x» es un archivo.
+  ( cd "$RAIZ" && git ls-files -co --exclude-standard -z | tar --null -T - -cf - 2>/dev/null ) | ( cd "$SRC" && tar xf - )
+  n_faltan="$(faltan_en_copia "$RAIZ" "$SRC")"; [ "$n_faltan" = 0 ] || mal "T27: la copia del árbol al laboratorio quedó incompleta (faltan ${n_faltan:-?} archivos)"
   G0() { git -C "$1" -c core.hooksPath=/dev/null -c user.email=lab@example.com -c user.name=Lab "${@:2}"; }
   git init -q -b main "$SRC" && G0 "$SRC" add -A && G0 "$SRC" commit -q -m "antes del renombre"
   git clone -q --bare "$SRC" "$T/remote.git"
@@ -664,7 +682,8 @@ if corre T55; then
     # 1 · el arnés (el árbol de trabajo de éste, en un remoto propio) y agent-skills (clon local), donde los tiene una
     #     máquina del equipo: en una carpeta de repos, con los enlaces de ~/.claude
     SRC="$T/src"; mkdir -p "$SRC"
-    ( cd "$RAIZ" && git ls-files -co --exclude-standard -z | xargs -0 tar cf - 2>/dev/null ) | ( cd "$SRC" && tar xf - )
+    ( cd "$RAIZ" && git ls-files -co --exclude-standard -z | tar --null -T - -cf - 2>/dev/null ) | ( cd "$SRC" && tar xf - )
+    n_faltan="$(faltan_en_copia "$RAIZ" "$SRC")"; [ "$n_faltan" = 0 ] || mal "T55: la copia del árbol al laboratorio quedó incompleta (faltan ${n_faltan:-?} archivos)"
     G0() { git -C "$1" -c core.hooksPath=/dev/null -c user.email=lab@example.com -c user.name=Lab "${@:2}"; }
     git init -q -b main "$SRC" && G0 "$SRC" add -A && G0 "$SRC" commit -q -m "el arnés de hoy"
     git clone -q --bare "$SRC" "$T/remote.git"
