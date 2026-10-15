@@ -287,7 +287,9 @@ function openSource(ident, { ctx, deadlineAt = null, publicRepo = null } = {}) {
     const down = { deadlineFor: (pending) => downloadDeadline(ctx.env, pending), itemTimeoutMs: lookBudgetS(ctx.env) * 1000 };
     return { ok: true, host: 'azure', src, credentialSource: cred.source, resolve: (o) => AZ.resolve(c, o), fetch: (r, o) => AZ.fetch(c, r, Object.assign({}, down, o)) };
   }
-  const c = rel().client(ctx, { deadlineAt });
+  // `keepToken`: el repo del equipo puede ser privado y el permiso sí hacer falta; un 401 acá se dice como siempre (explain401),
+  // aunque el permiso ya haya vencido contra el repo público del arnés en este mismo proceso (release.js, 2026-10-14)
+  const c = rel().client(ctx, { deadlineAt, keepToken: true });
   if (c.tokenProblem) return { ok: false, code: 2, host: 'github', src, reason: c.tokenProblem };
   c.repos = publicRepo ? [publicRepo, src.repo] : [src.repo];
   return { ok: true, host: 'github', src, client: c, resolve: (o) => resolveTeam(c, src.repo, o), fetch: (r, o) => fetchTeam(c, r, Object.assign({ deadlineFor: () => downloadDeadline(ctx.env, 0) }, o)) };

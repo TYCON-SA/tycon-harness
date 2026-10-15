@@ -1732,6 +1732,26 @@ PS
   ps_gh "$h" "$gl/bin-full" TYCON_GITHUB_TOKEN="otro-$permit" -- -- --yes > "$gl/bad.out" 2>&1; rc=$?
   if [ "$rc" -eq 1 ] && grep -qiE 'no vale|venci|401' "$gl/bad.out" && ! grep -q '/tarball/' "$gl/requests.log" && [ "$(tmp_left)" = 0 ]; then ok "get-harness.ps1 · un permiso que no vale: sale 1 diciéndolo (venció o se revocó) y no baja nada"
   else no "get-harness.ps1 · permiso que no vale (rc $rc): $(brief "$gl/bad.out")"; fi
+  # un permiso que VENCIÓ con el repo público (2026-10-14): GitHub contesta 401 aunque el repo se lea sin permiso. El guion
+  # sigue sin él (main de info/refs, el comprimido de codeload) y no lo guarda; el de la variable lo dice el guion, el guardado
+  # en ~/.tycon/config.json lo dice install (acá un harness.js de juguete: se mide que se instala sin mandarlo y sin guardarlo)
+  local gitb cl; gitb="$(sed -n 's/^GIT=//p' "$gl/ports.env")"; cl="$(sed -n 's/^CODELOAD=//p' "$gl/ports.env")"
+  printf '{ "auth": "none", "reject_unknown_token": true }\n' > "$gl/control.json"
+  h="$(new_home gh-expired-env)"; : > "$gl/requests.log"; n_calls="$(wc -l < "$calls" | tr -d ' ')"
+  ps_gh "$h" "$gl/bin-full" TYCON_RELEASE_GIT="$gitb" TYCON_RELEASE_ARCHIVE="$cl" TYCON_GITHUB_TOKEN="vencido-$permit" -- -- --yes > "$gl/expired-env.out" 2>&1; rc=$?
+  if [ "$rc" -eq 0 ] && [ "$(tail -1 "$calls")" = "${INSTALL_CALL},\"--yes\"]" ] && ! tail -n +"$((n_calls+1))" "$calls" | grep '"config","set"' >/dev/null \
+     && grep -q 'TYCON_GITHUB_TOKEN venció o se revocó (401), pero no hace falta' "$gl/expired-env.out" && grep -q '"host":"codeload"' "$gl/requests.log" \
+     && ! grep -q '/tarball/' "$gl/requests.log" && ! grep -qF "vencido-$permit" "$gl/expired-env.out"; then
+    ok "get-harness.ps1 · TYCON_GITHUB_TOKEN vencido con el repo público: instala sin él (info/refs y codeload), lo dice y no lo guarda"
+  else no "get-harness.ps1 · TYCON_GITHUB_TOKEN vencido (rc $rc; llamadas: $(tail -2 "$calls" | tr '\n' ' ')): $(brief "$gl/expired-env.out")"; fi
+  h="$(new_home gh-expired-saved)"; : > "$gl/requests.log"; n_calls="$(wc -l < "$calls" | tr -d ' ')"
+  mkdir -p "$h/.tycon" && printf '{ "github": { "token": "vencido-%s" } }\n' "$permit" > "$h/.tycon/config.json"
+  ps_gh "$h" "$gl/bin-full" TYCON_RELEASE_GIT="$gitb" TYCON_RELEASE_ARCHIVE="$cl" -- -- --yes > "$gl/expired-saved.out" 2>&1; rc=$?
+  if [ "$rc" -eq 0 ] && [ "$(tail -1 "$calls")" = "${INSTALL_CALL},\"--yes\"]" ] && ! tail -n +"$((n_calls+1))" "$calls" | grep '"config","set"' >/dev/null \
+     && grep -q '"host":"codeload"' "$gl/requests.log" && ! grep -q '/tarball/' "$gl/requests.log" && ! grep -q 'no vale (401)' "$gl/expired-saved.out"; then
+    ok "get-harness.ps1 · el permiso guardado vencido con el repo público: instala sin él (info/refs y codeload), sin frenar"
+  else no "get-harness.ps1 · permiso guardado vencido (rc $rc): $(brief "$gl/expired-saved.out")"; fi
+  printf '{ "auth": "token:%s" }\n' "$permit" > "$gl/control.json"
   # una redirección a un esquema que no es http(s) (un servidor hostil que manda a file://) no se sigue: sale 1 diciéndolo y
   # sin llamar a install; una TYCON_RELEASE_API que no es http(s) sale 2 antes de tocar la red (vuelta 2 de la E, seguridad)
   local redir_pid; node -e 'const s=require("http").createServer((q,r)=>{r.writeHead(302,{Location:"file:///etc/passwd"});r.end()});s.listen(0,"127.0.0.1",()=>require("fs").writeFileSync(process.argv[1],String(s.address().port)))' "$gl/redir.port" & redir_pid=$!

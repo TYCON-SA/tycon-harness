@@ -46,6 +46,8 @@
 //   git_down    true → «git» acepta la conexión y no contesta nunca · git_garbage true → contesta 200 con algo que no es git
 //   raw_down    true → «raw» contesta 503 · raw_version "<n>" → el version.json del raw dice ese número (no el del commit)
 //   raw_block   <código> → «raw» contesta ese código con una página HTML (la de un proxy que filtra), a todo
+//   reject_unknown_token  true → la API contesta 401 a un permiso que no conoce aunque el repo sea público (así contesta
+//               GitHub a un permiso vencido o revocado; release-expired-token.test.sh)
 // La cuota se cuenta en memoria (`X-RateLimit-Remaining`). Un 304 SIN credencial la gasta y con credencial no, como en
 // GitHub («does not count … if a 304 is returned and the request was made while correctly authorized», story 8.34). Las
 // rutas públicas (git, raw, codeload) no la tocan.
@@ -126,6 +128,7 @@ function api(req, res) {
     if (c.ratelimit) { remaining = 0; return send(res, 403, { message: 'API rate limit exceeded' }); }
     if (u.pathname === '/user') { if (a.given === null || !a.known) return send(res, 401, { message: 'Bad credentials' }); remaining--; return send(res, 200, { login: 'lab-user' }); }
     if (!repo) return notFound(res);
+    if (c.reject_unknown_token && a.given !== null && !a.known) return send(res, 401, { message: 'Bad credentials' });
     const prefix = `/repos/${keyOf(repo)}/`;
     // un repo privado sin permiso válido es 404 (así contesta GitHub); con otro permiso que el servidor no conoce, 401. Un
     // permiso CONOCIDO que no ve ESTE repo: 404 (o 403 si el control pide `blind_status: 403`: GitHub contesta una u otra)
