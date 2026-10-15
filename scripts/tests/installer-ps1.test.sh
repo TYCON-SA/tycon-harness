@@ -2136,8 +2136,16 @@ ab_fresh() { mkdir -p "$1/.claude"; printf '# mío\n@~/.claude/tycon-harness/REA
 ab_pair steady "$CLONE_NB" ab_installed
 N_A=$(wc -l < "$T/ab-steady-a.counted" | tr -d ' '); N_B=$(wc -l < "$T/ab-steady-b.counted" | tr -d ' ')
 echo "ℹ installer-ps1: (ab) procesos de Node en una corrida del arranque — con la tanda: $N_A ($(sort "$T/ab-steady-a.counted" | uniq -c | awk '{printf "%s %s · ", $2, $1}')) · sin ella: $N_B"
-if [ "$AB_RC_A" = 0 ] && [ "$N_A" -gt 0 ] && [ "$N_A" -le 3 ]; then ok "T4 una corrida del arranque lanza $N_A procesos de Node (≤ 3; sin la tanda, $N_B)"
-else no "T4 una corrida del arranque lanzó $N_A procesos de Node (tope 3; salió $AB_RC_A) · $(brief "$T/ab-steady-a.out" 200)"; fi
+# El tope es 3. Con la capa del equipo (el árbol trae scripts/lib/renames.json, como en cada máquina del equipo y en el
+# nocturno, que pone el público encima del privado) es 4: la llamada a legacy-names.js quedó afuera de la tanda de la
+# 8.36, y ése es el cuarto. Aceptado por el dueño el 2026-10-15 (nocturno 13535); meterla en la tanda está anotado como
+# pendiente en tasks/todo.md del repo de mantenimiento. Con capa, el de más tiene que ser ése y no otro.
+AB_CAP=3; AB_WHY="≤ 3"
+if [ -f "$CLONE/scripts/lib/renames.json" ]; then AB_CAP=4; AB_WHY="≤ 4 con la capa del equipo: legacy-names.js va afuera de la tanda"; fi
+if [ "$AB_CAP" = 4 ] && [ "$N_A" = 4 ] && ! grep -qx 'legacy-names.js' "$T/ab-steady-a.counted"; then
+  no "T4 con la capa del equipo el cuarto proceso de Node tenía que ser legacy-names.js: $(sort "$T/ab-steady-a.counted" | tr '\n' ' ')"
+elif [ "$AB_RC_A" = 0 ] && [ "$N_A" -gt 0 ] && [ "$N_A" -le "$AB_CAP" ]; then ok "T4 una corrida del arranque lanza $N_A procesos de Node ($AB_WHY; sin la tanda, $N_B)"
+else no "T4 una corrida del arranque lanzó $N_A procesos de Node (tope $AB_CAP; salió $AB_RC_A) · $(brief "$T/ab-steady-a.out" 200)"; fi
 ab_same steady "$AB_A" "$AB_B" "T6 máquina ya instalada, con la tanda y sin ella"
 
 # ── T6 · Ps1_SameOutputOrderAndClaudeMd: configuración rota, hooks por agregar, la línea del índice vieja ───────────
