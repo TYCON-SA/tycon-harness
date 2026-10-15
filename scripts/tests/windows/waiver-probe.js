@@ -90,6 +90,23 @@ function measure({ lab, platform = process.platform, baseEnv = process.env, rec 
   rec.fact('agent_console', c);
   if (c.nueva) rec.finding('waiver:agent-console-is-new', 'waiver', `la consola del agente pasa por «nueva» (${c.conectados} conectados): el candado no la distingue`);
 
+  // 4 · el caso POSITIVO (revisión adversarial): una ventana nueva de verdad SÍ pasa por «nueva». Sin esto, el paso 3 sale
+  //     bien también cuando la cuenta da 1 en todas partes —y entonces la persona tampoco podría firmar—.
+  const salida = path.join(dir, 'ventana-nueva.json');
+  const guion = path.join(dir, 'ventana-nueva.js');
+  fs.writeFileSync(guion, [
+    "'use strict';",
+    `const W = require(${JSON.stringify(LIB)});`,
+    `require('fs').writeFileSync(${JSON.stringify(salida)}, JSON.stringify(Object.assign({ stdinIsTTY: process.stdin.isTTY === true }, W.consolaNueva())));`,
+  ].join('\n'));
+  const sys = path.join(env.SystemRoot || 'C:\\Windows', 'System32');
+  L.run(path.join(sys, 'cmd.exe'), ['/d', '/c', 'start', '"sonda del waiver"', '/wait', process.execPath, guion], { env, timeoutMs: 90000 });
+  let pos = null;
+  try { pos = JSON.parse(fs.readFileSync(salida, 'utf8')); } catch { /* la ventana no llegó a escribir */ }
+  rec.fact('new_window', pos);
+  if (!pos) rec.finding('waiver:new-window-not-measured', 'waiver', 'la ventana nueva no llegó a contestar: el caso positivo no se midió en este agente');
+  else if (!pos.nueva) rec.finding('waiver:new-window-not-recognized', 'waiver', `una ventana NUEVA no pasa por «nueva» (${pos.conectados} conectados${pos.motivo ? `, ${pos.motivo}` : ''}): la persona tampoco podría firmar`);
+
   return { status: L.STATUS.measured, reason: null };
 }
 

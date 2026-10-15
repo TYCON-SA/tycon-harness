@@ -123,7 +123,18 @@ const PALABRAS = Object.freeze(['arbol', 'barco', 'campo', 'dedo', 'faro', 'gato
   'nieve', 'ola', 'perla', 'rama', 'sal', 'tinta', 'valle', 'yeso', 'cuerda']);
 
 /** ¿Esta corrida es la de Windows? `TYCON_WAIVER_PLATFORM` existe sólo para que las pruebas ejerciten la rama en Mac. */
-function esWindows() { return (process.env.TYCON_WAIVER_PLATFORM || process.platform) === 'win32'; }
+// 🔴 En un Windows de verdad la variable NO vale (revisión adversarial): con `TYCON_WAIVER_PLATFORM=linux` volvía a la rama de
+//    /dev/tty, que Windows lee como el archivo `C:\dev\tty` —el agente lo puede crear y escribirle «si»—, sin la frase.
+function esWindows() {
+  if (process.platform === 'win32') return true;
+  return process.env.TYCON_WAIVER_PLATFORM === 'win32';
+}
+
+/** Un programa del sistema por su ruta entera: sin ruta, Windows lo busca primero en la carpeta actual (el repo, que
+ *  controla el agente) y un `powershell.exe` de mentira que diga «2» saltaría el control de la consola. */
+function delSistema(...partes) {
+  return path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', ...partes);
+}
 
 /**
  * ¿La consola de este proceso es NUEVA, sin otro proceso conectado? Se pregunta a Windows (GetConsoleProcessList) con
@@ -132,10 +143,14 @@ function esWindows() { return (process.env.TYCON_WAIVER_PLATFORM || process.plat
  * preguntar, no: «no pude mirar» no es «está sola». `opts.run` sólo para las pruebas.
  */
 function consolaNueva(opts = {}) {
-  const run = opts.run || ((cmd, args) => require('child_process').spawnSync(cmd, args, { encoding: 'utf8', windowsHide: true, timeout: 30000, stdio: ['ignore', 'pipe', 'pipe'] }));
+  // 🔴 PowerShell tiene que CONECTARSE a esta consola: con `windowsHide` y sin heredar nada, Node le da una consola propia
+  //    oculta y la cuenta da 1 siempre — nadie firmaba, tampoco la persona (revisión adversarial). Hereda la entrada, que
+  //    acá es la consola de la ventana (enVentana ya comprobó que lo es), y no pide ventana oculta.
+  const sp = opts.spawnSync || require('child_process').spawnSync;
+  const run = opts.run || ((cmd, args) => sp(cmd, args, { encoding: 'utf8', windowsHide: false, timeout: 30000, stdio: ['inherit', 'pipe', 'pipe'] }));
   const ps = 'Add-Type -TypeDefinition \'using System.Runtime.InteropServices; public static class C { [DllImport("kernel32.dll")] public static extern uint GetConsoleProcessList(uint[] l, uint n); }\'; '
     + '$l = New-Object uint[] 64; [C]::GetConsoleProcessList($l, 64)';
-  for (const exe of ['powershell.exe', 'pwsh.exe']) {
+  for (const exe of [delSistema('WindowsPowerShell', 'v1.0', 'powershell.exe')]) {
     const r = run(exe, ['-NoProfile', '-NonInteractive', '-Command', ps]);
     if (!r || r.error || r.status !== 0) continue;
     const n = Number(String(r.stdout || '').trim().split(/\r?\n/).pop());
@@ -188,8 +203,13 @@ function confirmarFrase(opts = {}) {
 
 /** En la ventana, antes de cerrarse: que la persona alcance a leer el resultado (el tope del que la abrió igual corre). */
 function pausaFinal() {
-  if (!esWindows() || process.env[MARCA_VENTANA] !== '1') return;
-  try { promptTty('\n(Enter para cerrar esta ventana) '); } catch { /* sin consola: nada que esperar */ }
+  if (!esWindows() || process.env[MARCA_VENTANA] !== '1' || process.stdin.isTTY !== true) return;
+  // aunque la ventana no haya pasado el control: que la persona lea POR QUÉ no se firmó antes de que se cierre
+  try {
+    fs.writeSync(1, '\n(Enter para cerrar esta ventana) ');
+    const one = Buffer.alloc(1);
+    for (;;) { const n = fs.readSync(0, one, 0, 1, null); if (n === 0 || one[0] === 0x0a) break; }
+  } catch { /* sin consola: nada que esperar */ }
 }
 
 /** El tope de la ventana en segundos: 300, o menos si `TYCON_WAIVER_TIMEOUT_S` lo baja (nunca lo sube). */
@@ -212,7 +232,7 @@ function abrirVentana({ script, args = [], titulo = 'Firma del waiver', spawn, k
   const linea = `start "${titulo}" /wait ${todo.map((a) => `"${a}"`).join(' ')}`;
   const tope = topeVentanaS();
   const correr = spawn || ((cmd, a, o) => cp.spawnSync(cmd, a, o));
-  const r = correr('cmd.exe', ['/d', '/s', '/c', `"${linea}"`], {
+  const r = correr(delSistema('cmd.exe'), ['/d', '/s', '/c', `"${linea}"`], {
     windowsVerbatimArguments: true, windowsHide: false, stdio: 'inherit', timeout: tope * 1000,
     env: { ...process.env, [MARCA_VENTANA]: '1', TYCON_WAIVER_WINDOW_PROCESS_FILE: pidFile },
   });
@@ -221,7 +241,7 @@ function abrirVentana({ script, args = [], titulo = 'Firma del waiver', spawn, k
   try { pid = Number(fs.readFileSync(pidFile, 'utf8').trim()) || null; } catch { /* la ventana no llegó a anotarse */ }
   try { fs.unlinkSync(pidFile); } catch { /* ya no estaba */ }
   if (vencida) {
-    if (pid) (kill || ((p) => cp.spawnSync('taskkill', ['/PID', String(p), '/T', '/F'], { windowsHide: true, stdio: 'ignore' })))(pid);
+    if (pid) (kill || ((p) => cp.spawnSync(delSistema('taskkill.exe'), ['/PID', String(p), '/T', '/F'], { windowsHide: true, stdio: 'ignore' })))(pid);
     return { estado: 'vencida', tope, pid };
   }
   if (!r || r.error) return { estado: 'no-abrio', motivo: r && r.error ? r.error.message : 'sin respuesta de la consola' };

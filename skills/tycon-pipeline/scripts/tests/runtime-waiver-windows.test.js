@@ -70,6 +70,18 @@ test('@story-waiver-windows la marca sola no alcanza: entrada redirigida, consol
   });
 });
 
+test('@story-waiver-windows PowerShell se lanza conectado a la consola y por su ruta del sistema (no oculto, no del repo)', () => {
+  // 🔴 rojo previo (revisión adversarial): con windowsHide y sin heredar nada, Node le daba a PowerShell una consola propia
+  //    oculta y la cuenta daba 1 siempre: nadie firmaba, ni la persona. Y sin ruta, Windows lo busca primero en el repo.
+  conAmbiente({ ...WIN, SystemRoot: 'C:\\Windows' }, (W) => {
+    let visto = null;
+    W.consolaNueva({ spawnSync: (cmd, args, o) => { visto = { cmd, o }; return { status: 0, stdout: '2' }; } });
+    assert.match(visto.cmd, /System32[\\/]WindowsPowerShell[\\/]v1\.0[\\/]powershell\.exe$/);
+    assert.equal(visto.o.windowsHide, false);
+    assert.equal(visto.o.stdio[0], 'inherit', 'hereda la consola de la ventana');
+  });
+});
+
 test('@story-waiver-windows la frase: tres palabras distintas de la lista, y sólo la frase exacta firma', () => {
   conAmbiente(WIN, (W) => {
     for (let i = 0; i < 50; i += 1) {
@@ -134,6 +146,7 @@ function laboratorio() {
   const repo = path.join(base, 'repo');
   fs.mkdirSync(home, { recursive: true });
   fs.mkdirSync(path.join(repo, 'specs'), { recursive: true });
+  fs.mkdirSync(path.join(repo, '.git'), { recursive: true });
   const story = path.join(repo, 'specs', 'story-9.9.md');
   fs.writeFileSync(story, ['---', 'story: 9.9', 'status: in-progress', 'runtime_not_verifiable:', '  - ac: 1', '    reason: "x"', '    covered_by: T1', '---', '', '1. algo', ''].join('\n'));
   return { home, repo, story };
@@ -164,11 +177,17 @@ test('@story-waiver-windows sin poder abrir la ventana, no firma y lo dice (acá
 
 test('@story-waiver-windows el migrador tampoco firma desde la consola del agente', () => {
   const { home, repo } = laboratorio();
-  const r = spawnSync(process.execPath, [MIGRATE, '--repos', repo, '--apply'], {
-    encoding: 'utf8', input: 'MIGRAR\n', timeout: 60000,
-    env: { ...process.env, HOME: home, USERPROFILE: home, TYCON_WAIVER_PLATFORM: 'win32', TYCON_WAIVER_IN_WINDOW: '1', TYCON_WAIVER_LOG: path.join(home, 'log.jsonl') },
-  });
-  // sin aprobaciones viejas que migrar puede terminar antes del candado; lo que no puede es firmar
-  assert.notEqual(/MIGRADAS:/.test(r.stdout), true, `${r.stdout}${r.stderr}`);
-  if (/BLOQUEADO/.test(r.stderr)) assert.equal(r.status, 3);
+  // una aprobación vieja en el registro de la HOME, para que el migrador tenga algo que firmar y llegue al candado
+  const homeLog = path.join(home, 'log.jsonl');
+  const lib = require(LIB);
+  lib.appendWaiver({ story: '9.9', acs: [1], matrixHash: 'm', approvedBy: 'dev', nowIso: '2026-10-01T00:00:00.000Z',
+    declHashByAc: { 1: lib.declHashFor('x', 'T1') }, logPath: homeLog });
+  const env = { ...process.env, HOME: home, USERPROFILE: home, TYCON_WAIVER_PLATFORM: 'win32', TYCON_WAIVER_IN_WINDOW: '1', TYCON_WAIVER_LOG: homeLog };
+  const seco = spawnSync(process.execPath, [MIGRATE, '--repos', repo], { encoding: 'utf8', timeout: 60000, env });
+  assert.match(seco.stdout, /A MIGRAR \(dry-run\): [1-9]/, `el laboratorio tiene algo que migrar: ${seco.stdout}${seco.stderr}`);
+  const r = spawnSync(process.execPath, [MIGRATE, '--repos', repo, '--apply'], { encoding: 'utf8', input: 'MIGRAR\n', timeout: 60000, env });
+  assert.equal(r.status, 3, `${r.stdout}${r.stderr}`);
+  assert.match(r.stderr, /BLOQUEADO/);
+  assert.doesNotMatch(r.stdout, /MIGRADAS:/);
+  assert.equal(fs.existsSync(path.join(repo, '.tycon', 'runtime-waivers.jsonl')), false);
 });
