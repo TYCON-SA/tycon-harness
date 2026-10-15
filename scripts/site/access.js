@@ -1,0 +1,183 @@
+'use strict';
+/*
+ * access.js — EL ROL DE QUIEN PIDE Y EL FILTRO POR PERSONA (story 2.23, AC 10 a 12; decisiones 14, 18 y 22).
+ *
+ * Todo dato que el sitio muestra pasa por `filtrar()` antes de llegar a una vista: la pantalla nunca recibe lo que la
+ * persona no puede ver (S6). El rol se decide en CADA pedido con la configuración vigente:
+ *   · mantenedor  el correo está en `site.maintainers` de operations.json; o, SÓLO mientras esa lista no existe o está
+ *                 vacía, es `SITE_FIRST_MAINTAINER` (decisión 14). Con la lista puesta, la variable no cuenta y quien
+ *                 mantiene ve un aviso para sacarla.
+ *   · persona     el correo tiene ALGUNA entrada en `people.machines` (2.28), confirmada o caída.
+ *   · sin rol     lo demás: una página sin datos (decisión 22).
+ *
+ * QUÉ ES DE QUIÉN (AC 12):
+ *   · una corrida es de la persona confirmada para su máquina. La máquina es su carpeta nueva del buzón; una carpeta
+ *     vieja `unida` (`.carpetas-de-maquina.json`, 2.28) sigue la confirmación de su nueva, y una entrada de
+ *     `people.machines` con el nombre viejo no cuenta; una vieja `compartida` o `siguio_recibiendo`, y toda máquina sin
+ *     confirmar o caída, la ven SÓLO quienes mantienen. Una corrida sin máquina, también.
+ *   · un pull request es de su autor y un pedido de su asignado, si la identidad de la plataforma es el correo de la
+ *     persona o una de las suyas en `people.<correo>.identities`, sin distinguir mayúsculas. Si ninguna de sus
+ *     identidades aparece en la fuente y no tiene alias, la fila dice «no medido» con la frase de asociarla.
+ *   · un proyecto es de la persona si «donde trabaja» (2.28) lo nombra; sin esa lista, la frase de que todavía no se sabe.
+ *
+ * LA COSTURA CON LA 2.28: el estado de cada máquina (`confirmada`, `sin_confirmar`, `cambio`) y «donde trabaja» los da
+ * `people.js` cuando exista. Mientras tanto, `crearReglas` los calcula con la misma regla mínima: la huella guardada
+ * (`reported_sha256`) o, sin huella, `person`, contra el correo que la máquina informa (`modelo.informados`).
+ */
+const crypto = require('crypto');
+
+const CORREO = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const norm = (c) => String(c || '').trim().toLowerCase();
+const huella = (c) => crypto.createHash('sha256').update(norm(c)).digest('hex');
+const isObject = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
+
+const FRASE_IDENTIDAD = 'no medido: tu identidad en la plataforma no es tu correo de la organización; pedile a quien mantiene que la asocie';
+const FRASE_PROYECTOS = 'todavía no se sabe en qué proyectos trabajás: lo confirma quien mantiene el arnés';
+
+function maquinasDe(config) {
+  const m = config && isObject(config.people) && isObject(config.people.machines) ? config.people.machines : {};
+  return m;
+}
+
+/** La lista de mantenedores vigente y de dónde sale. */
+function mantenedores(config, firstMaintainer) {
+  const lista = config && isObject(config.site) && Array.isArray(config.site.maintainers) ? config.site.maintainers.map(norm).filter((c) => CORREO.test(c)) : [];
+  if (lista.length) return { lista: new Set(lista), origen: 'lista', variableSobrante: Boolean(firstMaintainer) };
+  if (firstMaintainer) return { lista: new Set([norm(firstMaintainer)]), origen: 'variable', variableSobrante: false };
+  return { lista: new Set(), origen: 'ninguno', variableSobrante: false };
+}
+
+function esPersona(email, config) {
+  const e = norm(email);
+  return Object.values(maquinasDe(config)).some((x) => isObject(x) && norm(x.person) === e);
+}
+
+/** Quién pide: { email, sub, rol, sinMantenedores, variableSobrante }. La sesión no trae rol: se calcula acá. */
+function quienPide(ses, { config, firstMaintainer } = {}) {
+  const email = norm(ses.email);
+  const m = mantenedores(config, firstMaintainer);
+  let rol = 'none';
+  if (m.lista.has(email)) rol = 'maintainer';
+  else if (esPersona(email, config)) rol = 'person';
+  return { email, sub: ses.sub, rol, sinMantenedores: m.origen === 'ninguno', variableSobrante: rol === 'maintainer' && m.variableSobrante };
+}
+
+/** Las reglas de qué es de quién para una configuración y un modelo. */
+function crearReglas({ config, modelo, dondeTrabaja } = {}) {
+  const maquinas = maquinasDe(config);
+  const carpetas = modelo && isObject(modelo.carpetas) && isObject(modelo.carpetas.carpetas) ? modelo.carpetas.carpetas : {};
+  const informados = modelo && isObject(modelo.informados) ? modelo.informados : {};
+  const people = config && isObject(config.people) ? config.people : {};
+
+  function estadoDeCarpetaNueva(carpeta) {
+    const e = maquinas[carpeta];
+    if (!isObject(e) || !CORREO.test(norm(e.person))) return { carpeta, estado: 'sin_confirmar', person: null };
+    const inf = informados[carpeta];
+    if (inf !== undefined && inf !== null) {
+      const igual = e.reported_sha256 ? huella(inf) === String(e.reported_sha256).toLowerCase() : norm(inf) === norm(e.person);
+      if (!igual) return { carpeta, estado: 'cambio', person: null };
+    }
+    return { carpeta, estado: 'confirmada', person: norm(e.person) };
+  }
+
+  /** La máquina de una carpeta del buzón: { carpeta (la nueva, si es una vieja unida), estado, person }. */
+  function maquina(nombre) {
+    if (!nombre) return { carpeta: null, estado: 'sin_maquina', person: null };
+    const v = carpetas[nombre];
+    if (isObject(v)) {
+      if (v.estado === 'unida' && typeof v.nueva === 'string' && v.nueva && v.nueva !== nombre) return estadoDeCarpetaNueva(v.nueva);
+      if (v.estado === 'compartida' || v.estado === 'siguio_recibiendo') return { carpeta: nombre, estado: v.estado, person: null };
+    }
+    return estadoDeCarpetaNueva(nombre);
+  }
+
+  /** Las identidades de la plataforma de una persona: su correo y sus alias confirmados. */
+  function identidades(email) {
+    const e = norm(email);
+    const p = people[e] || Object.entries(people).find(([k]) => norm(k) === e)?.[1];
+    const alias = isObject(p) && Array.isArray(p.identities) ? p.identities.map(norm).filter(Boolean) : [];
+    return { todas: new Set([e, ...alias]), conAlias: alias.length > 0 };
+  }
+
+  return {
+    maquina,
+    identidades,
+    proyectosDe: (email) => (typeof dondeTrabaja === 'function' ? dondeTrabaja(norm(email)) : null),
+    // las máquinas (carpetas) con corridas que alguien tiene que confirmar; una corrida sin máquina no es una máquina
+    // contadas por la máquina RESUELTA: una vieja unida y su nueva son una sola máquina por confirmar
+    sinConfirmar: (lista) => new Set(lista.map((c) => c.maquina).filter((m) => m).map((m) => maquina(m)).filter((x) => x.estado !== 'confirmada').map((x) => x.carpeta)).size,
+  };
+}
+
+const copia = (x) => (x === undefined ? undefined : JSON.parse(JSON.stringify(x)));
+
+/**
+ * El modelo que puede ver quien pide. Quien mantiene recibe todo (que ya viene sin texto libre desde sources.js) más la
+ * cuenta de máquinas sin confirmar; una persona, sólo lo suyo; sin rol, nada.
+ */
+function filtrar(modelo, quien, reglas) {
+  const m = modelo || {};
+  if (quien.rol === 'maintainer') {
+    const out = copia(m);
+    const lista = (m.corridas && Array.isArray(m.corridas.lista)) ? m.corridas.lista : [];
+    out.maquinasSinConfirmar = reglas.sinConfirmar(lista);
+    out.rol = 'maintainer';
+    return out;
+  }
+  if (quien.rol !== 'person') return { rol: 'none' };
+
+  const out = { rol: 'person', fuentes: copia(m.fuentes) || {} };
+  const corridas = m.corridas || {};
+  out.corridas = { estado: corridas.estado || 'no_medido', codigo: corridas.codigo || null, motivo: corridas.motivo || null, fecha: corridas.fecha || null,
+    lista: (Array.isArray(corridas.lista) ? corridas.lista : []).filter((c) => { const mq = reglas.maquina(c.maquina); return mq.estado === 'confirmada' && mq.person === quien.email; }).map(copia) };
+
+  const ids = reglas.identidades(quien.email);
+  const prs = m.prs || {};
+  const pedidos = m.pedidos || {};
+  const listaPrs = Array.isArray(prs.lista) ? prs.lista : [];
+  const listaPedidos = Array.isArray(pedidos.lista) ? pedidos.lista : [];
+  const aparece = listaPrs.some((p) => ids.todas.has(norm(p.autor))) || listaPedidos.some((p) => ids.todas.has(norm(p.asignado)));
+  const propia = (fuente, lista, campo) => {
+    if (fuente.estado !== 'medido') return { estado: 'no_medido', codigo: fuente.codigo || null, motivo: fuente.motivo || null, fecha: fuente.fecha || null, lista: [] };
+    if (!aparece && !ids.conAlias) return { estado: 'no_medido', codigo: 'identidad_sin_asociar', motivo: FRASE_IDENTIDAD, fecha: fuente.fecha || null, lista: [] };
+    return { estado: 'medido', codigo: null, motivo: null, fecha: fuente.fecha || null, lista: lista.filter((x) => ids.todas.has(norm(x[campo]))).map(copia) };
+  };
+  out.prs = propia(prs, listaPrs, 'autor');
+  out.pedidos = propia(pedidos, listaPedidos, 'asignado');
+
+  const suyos = reglas.proyectosDe(quien.email);
+  if (!Array.isArray(suyos)) {
+    out.proyectos = { estado: 'no_medido', codigo: 'sin_donde_trabaja', motivo: FRASE_PROYECTOS, lista: null };
+    out.productos = [];
+  } else {
+    const set = new Set(suyos);
+    out.productos = (Array.isArray(m.productos) ? m.productos : []).filter((p) => set.has(p.producto)).map(copia);
+    out.productosFuente = copia(m.productosFuente);
+    // el cruce es por el nombre del PROYECTO (decodificado en sources.js), como en la pestaña de quien mantiene
+    const proyectosSuyos = new Set(out.productos.flatMap((p) => p.proyectos || []));
+    const pr = m.proyectos || {};
+    out.proyectos = { estado: pr.estado || 'no_medido', codigo: pr.codigo || null, motivo: pr.motivo || null, fecha: pr.fecha || null,
+      lista: (Array.isArray(pr.lista) ? pr.lista : []).filter((x) => proyectosSuyos.has(x.proyecto)).map(copia) };
+    if (m.despliegues) {
+      const d = copia(m.despliegues);
+      d.productos = Object.fromEntries(Object.entries(d.productos || {}).filter(([k]) => set.has(k)));
+      out.despliegues = d;
+    }
+    if (m.dependencias && m.dependencias.vivas_por_proyecto) {
+      out.dependencias = { estado: m.dependencias.estado, codigo: m.dependencias.codigo || null, fecha: m.dependencias.fecha || null,
+        vivas_por_proyecto: Object.fromEntries(Object.entries(m.dependencias.vivas_por_proyecto).filter(([k]) => proyectosSuyos.has(k))) };
+    }
+    if (m.paridad) {
+      const rutas = new Set(out.productos.flatMap((p) => p.rutas || []));
+      out.paridad = { ...copia(m.paridad), por_ruta: Array.isArray(m.paridad.por_ruta) ? m.paridad.por_ruta.filter((x) => rutas.has(x.ruta)).map(copia) : undefined };
+    }
+    // el vigilante nombra los productos a su manera (minúsculas, a veces con espacios): se compara como en la vista
+    const forma = (s) => String(s).toLowerCase().replace(/\s+/g, '');
+    const formas = new Set([...set].map(forma));
+    if (m.vigilante && Array.isArray(m.vigilante.productos)) out.vigilante = { estado: m.vigilante.estado, fecha: m.vigilante.fecha || null, productos: m.vigilante.productos.filter((p) => formas.has(forma(p))) };
+  }
+  out.umbrales = copia(m.umbrales);
+  return out;
+}
+
+module.exports = { quienPide, mantenedores, esPersona, crearReglas, filtrar, huella, FRASE_IDENTIDAD, FRASE_PROYECTOS };

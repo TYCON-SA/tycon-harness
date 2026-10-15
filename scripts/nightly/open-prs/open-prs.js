@@ -28,7 +28,9 @@
  * descartar stderr. Las suites usan `scripts/tests/lib/fake-az.sh`.
  *
  * USO
- *   node scripts/nightly/open-prs/open-prs.js --today <YYYY-MM-DD> [--days 2] [--out <archivo>] [--org <url>]
+ *   node scripts/nightly/open-prs/open-prs.js --today <YYYY-MM-DD> [--days 2] [--out <archivo>] [--json <archivo>] [--org <url>]
+ *   --json (story 2.23): además, el archivo para el sitio de la organización (`.dashboard/open-prs/open-prs-<día>.json`):
+ *   número, proyecto, repo, días, autor (identidad única) y enlace de cada PR abierto; sin título ni nombre para mostrar.
  *   (--org por defecto: `azure.org` de scripts/nightly/dependencies/repos.json)
  *
  * SALIDA: 0 la sección se armó · 1 no se pudo consultar (la sección lo dice) · 2 uso
@@ -44,6 +46,7 @@ const POR_PAGINA = 100;
 const MAX_PAGINAS = 50;
 const MAX_LINEAS = 10;
 const RAMAS_DEL_ARNES = /^refs\/heads\/(vigilante|dependencias)\//;
+const GITHUB = 'los pull requests y los pedidos de GitHub todavía no se leen';
 
 const recortar = (t, n = 200) => String(t || '').replace(/\s+/g, ' ').trim().slice(0, n) || '(sin salida)';
 /**
@@ -110,14 +113,41 @@ function seccion(prs, { hoy, dias }) {
   return [`${titulo}: ${medidos.length}`, ...lineas, ...pie];
 }
 
+/**
+ * story 2.23: lo que deja la noche para el sitio de la organización (`--json <archivo>`). Lista blanca: por PR, número,
+ * proyecto, repo, días abierto, la identidad única del autor (`createdBy.uniqueName`, en minúsculas) y el enlace —NUNCA el
+ * título ni el nombre para mostrar—. Las mismas exclusiones que la sección (borradores y colas del arnés), sin el corte de
+ * antigüedad: el sitio muestra a cada dev todos sus PR abiertos.
+ */
+function paraElSitio(prs, { hoy, org }) {
+  const base = String(org || '').replace(/\/+$/, '');
+  // el paginado sobre una lista viva puede traer el mismo PR en dos páginas: uno por número
+  const vistos = new Set();
+  return prs
+    .filter((p) => p && !p.isDraft && !RAMAS_DEL_ARNES.test(String(p.sourceRefName || '')) && Number.isInteger(Number(p.pullRequestId)))
+    .filter((p) => { const n = Number(p.pullRequestId); if (vistos.has(n)) return false; vistos.add(n); return true; })
+    .map((p) => {
+      const r = p.repository || {};
+      const proyecto = (r.project && typeof r.project.name === 'string') ? r.project.name.slice(0, 120) : null;
+      const repo = typeof r.name === 'string' ? r.name.slice(0, 120) : null;
+      const numero = Number(p.pullRequestId);
+      const unico = p.createdBy && typeof p.createdBy.uniqueName === 'string' ? p.createdBy.uniqueName.trim().toLowerCase().slice(0, 200) : null;
+      return { numero, proyecto, repo, dias: diasAbierto(p, hoy), autor: unico,
+        enlace: base && proyecto && repo ? `${base}/${encodeURIComponent(proyecto)}/_git/${encodeURIComponent(repo)}/pullrequest/${numero}` : null };
+    })
+    .sort((a, b) => a.numero - b.numero);
+}
+
 function parseArgs(argv) {
-  const a = { hoy: null, dias: 2, out: null, org: null, error: null, ayuda: false };
+  const a = { hoy: null, dias: 2, out: null, json: null, provider: null, org: null, error: null, ayuda: false };
   const valor = (i) => (i < argv.length && !String(argv[i]).startsWith('--') ? argv[i] : (a.error = `falta el valor de ${argv[i - 1]}`, null));
   for (let i = 0; i < argv.length; i++) {
     const v = argv[i];
     if (v === '--today') a.hoy = valor(++i);
     else if (v === '--days') a.dias = valor(++i);
     else if (v === '--out') a.out = valor(++i);
+    else if (v === '--json') a.json = valor(++i);
+    else if (v === '--provider') a.provider = valor(++i);
     else if (v === '--org') a.org = valor(++i);
     else if (v === '-h' || v === '--help') a.ayuda = true;
     else a.error = `opción desconocida: ${v}`;
@@ -150,19 +180,42 @@ function main(argv) {
 
   let lineas;
   let codigo = 0;
+  let sitio = null;   // story 2.23: el archivo para el sitio
+  if (a.provider && !['azure', 'github'].includes(a.provider)) { console.error(`--provider tiene que ser azure o github, no «${a.provider}»`); uso(); return 2; }
   try {
     let org = a.org;
-    if (!org) {
+    if (a.provider === 'github') {
+      // story 2.23 (AC 16): en GitHub los pull requests todavía no se leen; se declara, nunca «ninguno»
+      lineas = [`PR abiertos: no medido — ${GITHUB}`];
+      sitio = { estado: 'no_medido', motivo: GITHUB, prs: [] };
+    }
+    if (!lineas && !org) {
       const ado = organizacionConfigurada();
-      if (!ado.prendida) lineas = [`PR abiertos: ${ado.apagada}`];
+      if (!ado.prendida) { lineas = [`PR abiertos: ${ado.apagada}`]; sitio = { estado: 'no_medido', motivo: limpio(ado.apagada, 180), prs: [] }; }
       else org = ado.org;
     }
-    if (!lineas) lineas = seccion(listarActivos({ cmd: process.env.TYCON_ADO_CMD || 'az', org }), { hoy: a.hoy, dias });
+    if (!lineas) {
+      const activos = listarActivos({ cmd: process.env.TYCON_ADO_CMD || 'az', org });
+      lineas = seccion(activos, { hoy: a.hoy, dias });
+      sitio = { estado: 'medido', motivo: null, prs: paraElSitio(activos, { hoy: a.hoy, org }) };
+    }
   } catch (e) {
     if (e && e.name === 'ConfigError') { console.error(e.message); return 2; }
     const motivo = e instanceof NoSePudo ? e.message : `error inesperado: ${recortar(e.message)}`;
     lineas = [`PR abiertos: no se pudo consultar (${limpio(motivo, 180)})`];
+    sitio = { estado: 'no_medido', motivo: limpio(motivo, 180), prs: [] };
     codigo = 1;
+  }
+  if (a.json) {
+    try {
+      fs.mkdirSync(path.dirname(path.resolve(a.json)), { recursive: true });
+      const tmp = `${a.json}.tmp-${process.pid}`;
+      fs.writeFileSync(tmp, `${JSON.stringify({ v: 1, fecha: a.hoy, generado: new Date().toISOString(), ...sitio }, null, 1)}\n`);
+      fs.renameSync(tmp, a.json);
+    } catch (e) {
+      console.error(`🔴 prs-abiertos: no se pudo escribir ${a.json}: ${e.message}`);
+      codigo = 1;
+    }
   }
   const texto = lineas.join('\n');
   console.log(texto);
@@ -181,4 +234,4 @@ if (require.main === module) {
   require('../../lib/legacy-names.js').aliasArgv('scripts/nightly/open-prs/open-prs.js', { exitCode: 2 });
   process.exit(main(process.argv.slice(2)));
 }
-module.exports = { seccion, diasAbierto, parseArgs };
+module.exports = { seccion, diasAbierto, parseArgs, paraElSitio };

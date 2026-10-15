@@ -131,6 +131,13 @@ horario, el `cron` de cada YAML.
   rechazar pide el motivo, y esa decisión la registra la noche siguiente.
 - **La página del tablero**: `artifacts/tablero-del-arnes.html` del repo de operaciones (bajala y abrila en el
   navegador).
+- **Lo que deja la noche para el sitio de la organización** (story 2.23): `team-dashboard` corre además dos productores
+  y los guarda con la página: `.dashboard/open-prs/open-prs-<día>.json` (los pull requests abiertos: número, proyecto,
+  repo, días, la identidad del autor y el enlace) y `.dashboard/assigned/assigned-<día>.json` (los pedidos abiertos con
+  alguien asignado, de los proyectos de `repos.json`: id, tipo, estado, la identidad del asignado, días en el estado,
+  enlace y si es un Bug de dependencias). **Nunca títulos.** El sitio lee sólo el repo de operaciones (y el buzón): no
+  consulta Azure DevOps. Si una consulta falla, el archivo dice `no_medido` y el paso avisa sin frenar la página. La
+  clave `site` de `operations.json` (mantenedores, buzón, refresco) la lee el sitio; ver el ejemplo.
 - **Una corrida en rojo** dice en su primer error por qué. Las causas de siempre: un permiso del punto 3, un JSON que no
   valida, o el repo de operaciones sin rama `main`.
 
