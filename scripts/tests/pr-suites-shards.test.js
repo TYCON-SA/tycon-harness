@@ -986,6 +986,28 @@ test('T48 PrShards_BenchThatHangs_IsCutByItsOwnCapAndTheJobGoesOn — un banco c
   assert.match(odd.out, /##vso\[task\.logissue type=warning\].*BENCH_CAP_SECONDS no es un número de segundos.*uso 600/);
 });
 
+// Los pasos de bash de los pipelines corren también en ESTA prueba, con el bash de la máquina: en la Mac, el 3.2. Ahí `$VAR`
+// pegado a un carácter que no es ASCII parte la variable (el control de scripts/ci/check-bash32-quoting.sh, que el
+// pre-commit pasa sólo sobre los .sh). Caso 2026-10-15: un «($CAP)» con comillas angulares en el paso del banco dejó roja la
+// prueba del banco colgado en toda Mac (`CAP` más un byte: unbound variable), y en Azure, con bash 5, no se veía.
+// ROJO PREVIO: con el «$CAP» de antes en azure-pipelines-pr.yml, este caso sale rojo nombrando la línea 671.
+test('T48 PrShards_PipelineBashSteps_NoVariableGluedToNonAscii — ningún pipeline pega $VAR a un carácter no ASCII', { skip: NO_BASH }, () => {
+  const yamls = fs.readdirSync(path.join(ROOT, 'pipelines'), { recursive: true }).map(String).filter((f) => /\.ya?ml$/.test(f)).map((f) => path.join('pipelines', f));
+  assert.ok(yamls.length > 0, 'no encontré pipelines que mirar: el caso no mide nada');
+  const lint = path.join(ROOT, 'scripts', 'ci', 'check-bash32-quoting.sh');
+  // Control negativo: un paso roto TIENE que salir 1. Si el control no pudo mirar (sin perl, por ejemplo, sale 0 callado),
+  // este caso lo delata en vez de dar el verde de abajo sin haber mirado nada. El ejemplo se arma por partes: así este
+  // archivo no trae la secuencia rota.
+  const roto = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'bash32-yml-')), 'roto.yml');
+  fs.writeFileSync(roto, `steps:\n  - bash: |\n      CAP=1\n      echo "«$${'CAP'}»"\n`);
+  const neg = spawnSync(BASH.path, [lint, roto], { cwd: ROOT, encoding: 'utf8' });
+  assert.ifError(neg.error);   // bash no se pudo lanzar: que el rojo diga por qué, no un mensaje vacío
+  assert.strictEqual(neg.status, 1, `el control no marcó un paso roto: no está mirando (${neg.stdout}${neg.stderr})`);
+  const r = spawnSync(BASH.path, [lint, ...yamls], { cwd: ROOT, encoding: 'utf8' });
+  assert.ifError(r.error);
+  assert.strictEqual(r.status, 0, `${r.stdout}${r.stderr}`);
+});
+
 // story 8.22, cierre (AC 29): el tope de cada trabajo de suites baja de los 45 min de antes a 40. El número lo decidió
 // el dueño del arnés el 2026-10-08 con lo medido a la vista —el trabajo más largo dura 26,0 min con un cambio de un
 // archivo (el del instalador) y 31,4 en una validación que corre casi todo—: una suite colgada cuesta menos carril, y un

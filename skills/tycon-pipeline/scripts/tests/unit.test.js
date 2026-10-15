@@ -6366,11 +6366,12 @@ test('9b: el PR con conflictos tiene su edge case, y se verifica leyendo mergeSt
 
 // El parser que el step manda usar tiene que existir y entender las tres formas de remoto del equipo.
 // Sin esto, el step quedaría escrito contra una función que alguien movió o renombró.
-test('9b: identidadAzure() existe en el arnés y entiende las tres formas de remoto', () => {
-  const arnes = process.env.TYCON_GUIDES_DIR
-    || path.join(os.homedir(), 'SourceCode', 'tycon-claude-guides');
-  const lib = path.join(arnes, 'scripts', 'lib', 'repo-del-arnes.js');
-  if (!fs.existsSync(lib)) return;   // arnés no clonado acá: no se inventa un verde, se saltea
+test('9b: identidadAzure() existe en el arnés y entiende las tres formas de remoto', (t) => {
+  // Por el nombre de HOY del criterio (`harness-repo.js`): con el de antes no lo encontraba en ningún lado y salía verde
+  // sin mirar nada (2026-10-15).
+  const lib = [process.env.TYCON_GUIDES_DIR, process.env.TCG, process.cwd(), path.join(os.homedir(), '.tycon', 'harness')].filter(Boolean)
+    .map((d) => path.join(d, 'scripts', 'lib', 'harness-repo.js')).find((f) => fs.existsSync(f));
+  if (!lib) return t.skip('NO MEDIDO: no encontré scripts/lib/harness-repo.js (TYCON_GUIDES_DIR · TCG · cwd · ~/.tycon/harness)');
   const { identidadAzure } = require(lib);
   assert.deepEqual(identidadAzure('https://org-del-equipo.visualstudio.com/Totora/_git/Backend'),
     { org: 'org-del-equipo', proyecto: 'totora', repo: 'backend', nombre: 'Backend' });
