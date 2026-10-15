@@ -22,6 +22,8 @@
 #     instalación entera gasta UNA consulta (la de install, que verifica); si github.com no contesta, cae a la API; con la
 #     API agotada, el guion baja igual e install dice el tope y su hora —nunca «GitHub contestó 403»—; un 403 del tope en
 #     el guion (por la API) también dice la hora.
+#   · T61 (2026-10-14) — un permiso que venció (401) con el repo público: guardado o en TYCON_GITHUB_TOKEN, el guion se
+#     instala sin él por info/refs y codeload y lo dice en una línea; el de la variable no se guarda.
 #
 # Cómo mide, sin red y sin tocar la máquina: la HOME de juguete de `harness_lab_create`, el «GitHub» de juguete de
 # `harness_lab_release_server` (`TYCON_RELEASE_API`, la misma variable de prueba que usa release.js) con un nombre
@@ -290,6 +292,26 @@ else no "T14 API agotada (rc $RC): $(brief "$BASE/t14m.out" 400)"; fi
 env TYCON_GITHUB_TOKEN="$LAB_PERMIT" TYCON_RELEASE_API="$LAB_RELEASE_API" TYCON_THIRD_PARTY=0 bash "$GH" -- --yes < /dev/null > "$BASE/t14n.out" 2>&1; RC=$?
 if [ "$RC" -eq 1 ] && grep -q "hasta las $HORA" "$BASE/t14n.out" && ! grep -q 'GitHub contestó 403' "$BASE/t14n.out"; then ok "T14 el tope de la API en el guion: sale 1 con la hora ($HORA)"
 else no "T14 tope en el guion (rc $RC): $(brief "$BASE/t14n.out" 300)"; fi
+harness_lab_release_control '{ "auth": "none" }'
+
+# ══ T61 · un permiso que venció, con el repo público: se instala sin él (2026-10-14) ══════════════════════════════
+# GitHub contesta 401 a un permiso vencido aunque el repo sea público: el guion sigue sin él por info/refs y codeload, y
+# no lo guarda. El guardado en ~/.tycon/config.json lo dice install (la misma línea que el arranque); el de la variable, el guion.
+EXPIRED_PERMIT="permiso-vencido-de-laboratorio"   # no es un secreto
+harness_lab_release_control '{ "auth": "none", "reject_unknown_token": true }'
+harness_lab_release_fresh_home; : > "$LAB_RELEASE_LOG"
+printf '%s' "$EXPIRED_PERMIT" | harness config set github.token >/dev/null 2>&1
+run_gh -- --yes > "$BASE/t61a.out" 2>&1; RC=$?
+if [ "$RC" -eq 0 ] && installed_ok && grep -q 'no hace falta: el repo del arnés es público' "$BASE/t61a.out" && grep -q 'config unset github.token' "$BASE/t61a.out" \
+   && [ "$(requests '/tarball/')" = 0 ] && grep -q '"host":"codeload"' "$LAB_RELEASE_LOG" && ! grep -q '(401)\. creá\|no vale (401)' "$BASE/t61a.out"; then
+  ok "T61 con el permiso guardado vencido y el repo público: instala por codeload y dice que no hace falta y cómo sacarlo"
+else no "T61 permiso guardado vencido (rc $RC, tarball $(requests '/tarball/')): $(brief "$BASE/t61a.out" 400)"; fi
+harness_lab_release_fresh_home; : > "$LAB_RELEASE_LOG"
+env TYCON_GITHUB_TOKEN="$EXPIRED_PERMIT" TYCON_RELEASE_API="$LAB_RELEASE_API" TYCON_THIRD_PARTY=0 bash "$GH" -- --yes < /dev/null > "$BASE/t61b.out" 2>&1; RC=$?
+if [ "$RC" -eq 0 ] && installed_ok && grep -q 'TYCON_GITHUB_TOKEN venció o se revocó (401), pero no hace falta' "$BASE/t61b.out" \
+   && ! grep -qF "$EXPIRED_PERMIT" "$(TYCON_DIR)/config.json" 2>/dev/null && ! grep -qF "$EXPIRED_PERMIT" "$BASE/t61b.out"; then
+  ok "T61 con TYCON_GITHUB_TOKEN vencido y el repo público: instala sin él, lo dice y no lo guarda"
+else no "T61 TYCON_GITHUB_TOKEN vencido (rc $RC): $(brief "$BASE/t61b.out" 400)"; fi
 harness_lab_release_control '{ "auth": "none" }'
 
 if [ ! -e "$PKG_CALLS" ]; then ok "T55/T56 en toda la suite nadie llamó a brew, apt, apt-get, sudo ni winget"; else no "alguien llamó a un gestor de paquetes: $(tr '\n' ' ' < "$PKG_CALLS")"; fi
