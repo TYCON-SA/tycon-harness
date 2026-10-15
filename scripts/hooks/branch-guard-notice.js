@@ -421,6 +421,17 @@ try {
   const harnessLines = [];
   try { harnessLines.push(...pwshMissingLines()); } catch (_) { /* fail-open: un aviso que tira no frena el arranque */ }
   try { harnessLines.push(...oldIndexLines()); } catch (_) { /* fail-open: lo repone el próximo arranque */ }
+  // story 8.37: el clon de mantenimiento (`paths.maintainers`). Primero lo pendiente de la corrida anterior (una línea, una
+  // vez), después se lanza la de esta sesión, de fondo y sin esperarla. La pieza se carga SI ESTÁ, por su ruta: el banco
+  // copia este hook suelto. Ver scripts/lib/maintainers-sync.js.
+  try {
+    const lib = path.join(__dirname, '..', 'lib', 'maintainers-sync.js');
+    if (fs.existsSync(lib)) {
+      const MS = require(lib);
+      try { const line = MS.takeNotice({ home: os.homedir() }); if (line) harnessLines.push(line); } catch (_) { /* fail-open */ }
+      MS.launch();
+    }
+  } catch (_) { /* fail-open: una pieza rota no frena el arranque */ }
 
   const hs = harnessState();
   const legacyLine = legacyRetireLine();
