@@ -14,14 +14,14 @@
  * decir lo mismo sale roja, a propósito.
  *
  * LAS REGLAS (un id por regla; una línea por regla rota). Las once primeras dicen POR QUÉ algo está mal:
- *   triggers             corre en `pull_request` y en `push` a `main`, y en nada más
+ *   triggers             corre en `pull_request`, en `merge_group` (la cola de merge) y en `push` a `main`, y en nada más
  *   pull-request-target  `pull_request_target` no aparece en ninguna parte (ni en un comentario)
  *   secrets              no lee ningún secreto: ni el contexto de secretos ni el token por otro camino (ni en un comentario)
  *   uses-by-sha          cada `uses:` va fijado por el sha completo (40 hex) de su commit, con el tag como comentario
  *   permissions          un solo bloque `permissions`, arriba de todo, con `contents: read` y nada más
  *   fetch-depth          el checkout trae la historia completa (`fetch-depth: 0`): la necesita `--range`
  *   node-matrix          la matriz es Node 22 y 24, y es la que se instala
- *   range                en un pull request, `public-ci.sh` corre con `--range origin/<base>...HEAD`
+ *   range                en un pull request y en la cola, `public-ci.sh` corre con `--range origin/<base>...HEAD`
  *   clean-machine        toda llamada a `public-ci.sh` lleva `--clean-machine`
  *   aggregate-job        el job `public-ci` corre siempre, depende de todos los demás y falla si alguno no terminó bien
  *   parts                la matriz parte la corrida en `checks` y `suites-1-of-<n>` … `suites-<n>-of-<n>`, todas, en orden y
@@ -71,6 +71,7 @@ const SHAPE = [
   '  pull_request:',
   '  push:',
   '    branches: [main]',
+  '  merge_group:',
   'concurrency:',
   '  group: public-ci-${{ github.ref }}',
   '  cancel-in-progress: true',
@@ -98,10 +99,10 @@ const SHAPE = [
   '        env:',
   '          TYCON_PUBLIC_CI_OUT: ${{ runner.temp }}/public-ci',
   '          TYCON_PUBLIC_CI_PART: ${{ matrix.part }}',
-  '          BASE_REF: ${{ github.base_ref }}',
+  '          BASE_REF: ${{ github.base_ref || github.event.merge_group.base_ref }}',
   '        run: |',
-  '          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then',
-  '            bash scripts/ci/public-ci.sh --clean-machine --range "origin/${BASE_REF}...HEAD"',
+  '          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ] || [ "${GITHUB_EVENT_NAME}" = "merge_group" ]; then',
+  '            bash scripts/ci/public-ci.sh --clean-machine --range "origin/${BASE_REF#refs/heads/}...HEAD"',
   '          else',
   '            bash scripts/ci/public-ci.sh --clean-machine',
   '          fi',
@@ -222,7 +223,7 @@ const RULES = [
       if (valueOf(lines[i].body)) return `\`on:\` se escribe como bloque, con un disparador por línea (línea ${lines[i].n})`;
       const kids = childrenOf(blockOf(lines, i));
       const names = kids.map((l) => l.body.replace(/\s*:.*$/, '')).sort();
-      if (names.join(',') !== 'pull_request,push') return `los disparadores son pull_request y push, y hay: ${names.join(', ') || 'ninguno'}`;
+      if (names.join(',') !== 'merge_group,pull_request,push') return `los disparadores son pull_request, merge_group y push, y hay: ${names.join(', ') || 'ninguno'}`;
       const push = lines.indexOf(kids.find((l) => l.body.startsWith('push')));
       const inPush = childrenOf(blockOf(lines, push));
       const keys = inPush.map((l) => l.body.replace(/\s*:.*$/, ''));
@@ -313,6 +314,9 @@ const RULES = [
       const onPr = lines.some((l) => l.code && /(GITHUB_EVENT_NAME|github\.event_name)\b.*=.*\bpull_request\b/.test(l.body));
       if (!ranged.length) return 'ninguna llamada a public-ci.sh lleva `--range origin/<base>...HEAD`';
       if (!onPr) return 'no se ve que `--range` se pase cuando el evento es pull_request';
+      // la cola de merge prueba lo mismo que un pedido: sin `--range` ahí, el freno de nombres no corre antes de main
+      const onQueue = lines.some((l) => l.code && /(GITHUB_EVENT_NAME|github\.event_name)\b.*=.*\bmerge_group\b/.test(l.body));
+      if (!onQueue) return 'no se ve que `--range` se pase cuando el evento es merge_group (la cola de merge)';
       return null;
     },
   },
