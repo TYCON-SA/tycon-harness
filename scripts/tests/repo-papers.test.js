@@ -120,13 +120,14 @@ const BMAD_COMPAT = {
 };
 // La parte fija del mensaje de `paquetesActivos()` (packs.js de agent-skills) para un paquete pedido y no instalado.
 const PACK_MISSING_MESSAGE = 'el repo declara el paquete «bizuit» en `packs:` y no está instalado en';
-// La instalación de la portada (story 8.23, tanda E · AC 33): tres líneas por sistema —bajar el guion por la API,
-// leerlo, correrlo—, sin git. La URL es la del repo público declarado. Desde que el repo de la versión publicada es público (story
+// La instalación de la portada (story 8.23, tanda E · AC 33): tres líneas por sistema —bajar el guion, leerlo,
+// correrlo—, sin git. La bajada va por raw.githubusercontent.com, no por la API: sin credencial, la API tiene un tope de 60
+// consultas por hora por conexión y una máquina nueva no llegaba ni a correr el guion (deuda DEF-8.34-portada-por-la-api). La URL es la del repo público declarado. Desde que el repo de la versión publicada es público (story
 // 8.26, AC 66) la primera línea va SIN credencial: ni la cabecera `Authorization` ni la variable del permiso (T80).
-const SCRIPT_URL = (file) => `https://api.github.com/repos/${ORG_REPO}/contents/scripts/setup/${file}`;
+const SCRIPT_URL = (file) => `https://raw.githubusercontent.com/${ORG_REPO}/main/scripts/setup/${file}`;
 const INSTALL_LINES = {
-  bash: [`curl -fsSL -H "Accept: application/vnd.github.raw" -o get-harness.sh ${SCRIPT_URL('get-harness.sh')}`, 'less get-harness.sh', 'bash get-harness.sh'],
-  powershell: [`Invoke-WebRequest -Headers @{ Accept = 'application/vnd.github.raw' } -OutFile get-harness.ps1 ${SCRIPT_URL('get-harness.ps1')}`, 'Get-Content get-harness.ps1', 'pwsh -File get-harness.ps1'],
+  bash: [`curl -fsSL -o get-harness.sh ${SCRIPT_URL('get-harness.sh')}`, 'less get-harness.sh', 'bash get-harness.sh'],
+  powershell: [`Invoke-WebRequest -OutFile get-harness.ps1 ${SCRIPT_URL('get-harness.ps1')}`, 'Get-Content get-harness.ps1', 'pwsh -File get-harness.ps1'],
 };
 /** Las mismas tres líneas, la última con las opciones de install (`install:unattended`). */
 const withOptions = (shell, options) => [INSTALL_LINES[shell][0], INSTALL_LINES[shell][1], `${INSTALL_LINES[shell][2]} -- ${options}`];
@@ -278,7 +279,7 @@ const namedVariables = (text) => [...new Set(text.match(/\bTYCON_[A-Z0-9_]+\b/g)
 
 const README = { en: 'README.md', es: 'README.es.md' };
 // Los pedidos de instalación guiada que un dev de afuera le pega a Claude Code (enlazados desde «Instalación»).
-// los tres (el de Linux desde la story 8.23 E: la portada lo enlaza y se reescribió con la misma bajada por la API)
+// los tres (el de Linux desde la story 8.23 E: la portada lo enlaza y se reescribió con la misma bajada del guion)
 const GUIDED_PAPERS = ['getting-started/windows.md', 'getting-started/mac.md', 'getting-started/linux.md'];
 
 // ── T10 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -447,8 +448,9 @@ test('Papeles_Portadas_MismoContratoEnDosIdiomas', async (t) => {
   // desde public-files/: era la tubería privada de publicación, y acá el papel ya está en su lugar.)
   for (const guided of GUIDED_PAPERS) {
     assert.ok(exists(path.join(RAIZ, guided)), `${guided}: el papel no existe`);
-    // la dirección del repo (hoy, la de la API que baja el guion) es la declarada
-    assert.ok(readPaper(guided).includes(`repos/${ORG_REPO}/contents/scripts/setup/get-harness.`), `${guided}: la bajada del guion va por la API con la dirección de public-remotes.json`);
+    // la dirección del repo (la de raw.githubusercontent.com que baja el guion) es la declarada, y la bajada no va por la API
+    assert.ok(readPaper(guided).includes(`${ORG_REPO}/main/scripts/setup/get-harness.`), `${guided}: la bajada del guion va por raw.githubusercontent.com con la dirección de public-remotes.json`);
+    assert.doesNotMatch(readPaper(guided), /api\.github\.com\/repos\/[^\s]*\/contents\/scripts\/setup\/get-harness/, `${guided}: la bajada del guion no va por la API (su tope sin credencial deja trabada a una máquina nueva)`);
     assert.doesNotMatch(readPaper(guided), /git clone/, `${guided}: el pedido guiado ya no clona (story 8.23 E)`);
   }
 
@@ -992,7 +994,7 @@ test('Papers_FrontPage_GuidedInstall_TandaA', async (t) => {
 });
 
 // ── story 8.23, tanda E · la portada SIN git (AC 33 y 34 · la parte de los papeles de T34 y T35) ─────────────────
-// Desde la tanda E el bloque `install:core` ES el guion de entrada (bajarlo por la API con el permiso de lectura, leerlo,
+// Desde la tanda E el bloque `install:core` ES el guion de entrada (bajarlo sin credencial, leerlo,
 // correrlo: tres líneas por sistema); `get-harness.*` baja la versión publicada como archivos —sin git, sin clon— y sigue
 // con `harness.js install --version latest`. El guion aparte de la 8.16 E (`install:script`, guardado mientras el repo
 // fuera privado) y su fixture se retiraron: ya no hay dos formas de entrar. El clon queda como MODO DESARROLLADOR
@@ -1306,14 +1308,14 @@ test('PublicFrontPage_ClearTop_ChangesBeforeInstall_GuidesKeepThePromises', asyn
 const SHELL_OF = { 'getting-started/windows.md': 'powershell', 'getting-started/mac.md': 'bash', 'getting-started/linux.md': 'bash' };
 // el renglón que baja el guion de entrada, sin credencial: el mismo en la página y en la portada de cada sistema
 const DOWNLOAD_LINE = {
-  bash: `curl -fsSL -H "Accept: application/vnd.github.raw" -o get-harness.sh ${SCRIPT_URL('get-harness.sh')}`,
-  powershell: `Invoke-WebRequest -Headers @{ Accept = 'application/vnd.github.raw' } -OutFile get-harness.ps1 ${SCRIPT_URL('get-harness.ps1')}`,
+  bash: `curl -fsSL -o get-harness.sh ${SCRIPT_URL('get-harness.sh')}`,
+  powershell: `Invoke-WebRequest -OutFile get-harness.ps1 ${SCRIPT_URL('get-harness.ps1')}`,
 };
 // los pasos de la parte 1, en orden, cada uno por lo que TRAE y no por su título (el de Windows dice «ventana» donde los
 // otros dicen «terminal»)
 const GUIDED_STEPS = [
   ['tools', /node --version/],
-  ['download', /contents\/scripts\/setup\/get-harness\./],
+  ['download', /\/main\/scripts\/setup\/get-harness\./],
   ['plan', /--dry-run/],
   ['install', /--packs all --yes/],
   ['git-hooks', /git config --global core\.hooksPath/],
@@ -1528,7 +1530,7 @@ test('T80 TeamOnboardingText_InTeamLayer_GettingStartedWithoutRepoPermission —
   await t.test('el espejo de la revisión: doce maneras de volver a meter el paso, las doce en rojo', () => {
     const must = (text, from, to) => { assert.ok(text.includes(from), `la mutación no encuentra su ancla: «${from.slice(0, 50)}»`); return text.replace(from, () => to); };
     const OLD_BASH_DOWNLOAD = `printf 'Authorization: Bearer %s\\n' "$TYCON_GITHUB_TOKEN" | curl -fsSL -H @- -H "Accept: application/vnd.github.raw" -o get-harness.sh`;
-    const NEW_BASH_DOWNLOAD = 'curl -fsSL -H "Accept: application/vnd.github.raw" -o get-harness.sh';
+    const NEW_BASH_DOWNLOAD = 'curl -fsSL -o get-harness.sh';
     const OLD_STEP = [
       '2. El permiso de lectura de GitHub. Esto lo hago YO, porque es una clave y no pasa por el chat: PARÁ y decime que entre',
       '   a https://github.com/settings/personal-access-tokens/new con la cuenta que recibió la invitación, cree un permiso',

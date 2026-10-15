@@ -9,8 +9,9 @@
 # usan el arnés (los que tienen `.tycon/` o `.advisors/`) y guarda el punto del día en `.dashboard/sdlc-stage-<fecha>.json`
 # del repo de operaciones, más una foto por repo en `.dashboard/proyectos/`. Lo que cambia a propósito:
 #   · los repos se descubren con `clone-repos.sh --org`: los del dueño del repo de operaciones, o los de la variable
-#     METRICS_OWNERS (separados por `;`); la variable METRICS_REPO_PREFIX los acota por prefijo; las copias del arnés
-#     declaradas en `team-repos.json` (`harness_copies`) no se miden;
+#     METRICS_OWNERS (separados por `;`); con la App, los de esos dueños donde la App está instalada (privados
+#     incluidos); la variable METRICS_REPO_PREFIX los acota por prefijo; las copias del arnés declaradas en
+#     `team-repos.json` (`harness_copies`) no se miden; cero repos vistos es un aviso;
 #   · la credencial de la organización llega sólo al paso que descubre y clona. Recomendada: una GitHub App (variable
 #     HARNESS_APP_CLIENT_ID y secreto HARNESS_APP_PRIVATE_KEY), que da un token de una hora, de sólo lectura y sólo de
 #     los repos donde está instalada. Alternativa: un usuario de máquina, con su token en el secreto HARNESS_ORG_TOKEN.
@@ -116,6 +117,8 @@ jobs:
         working-directory: harness
         env:
           ORG_TOKEN: ${{ steps.org-token.outputs.token || secrets.HARNESS_ORG_TOKEN }}
+          # con la App, la lista es la de los repos donde está instalada (privados incluidos); sin ella, la del usuario
+          ORG_TOKEN_KIND: ${{ steps.org-token.outcome == 'success' && 'app' || 'user' }}
           OWNERS: ${{ vars.METRICS_OWNERS }}
           PREFIX: ${{ vars.METRICS_REPO_PREFIX }}
         run: bash pipelines/operations/github/clone-repos.sh --org "${RUNNER_TEMP}/repos" --team-repos team-repos.json

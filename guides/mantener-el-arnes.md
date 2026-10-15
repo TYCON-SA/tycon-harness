@@ -33,3 +33,31 @@ git, pruebas, frenos) siguen en el índice.
 | **Agregar un estado de story al vocabulario**, o entender por qué una story aparece como «desconocida» en el tablero · por qué `cancelled` no cuenta como entregada · qué pasa si el diccionario queda ilegible | `scripts/metrics/states.json` (el diccionario, con el motivo de cada decisión adentro) + `story-format.md` §1 |
 | Apareció "el examen de los revisores NO ESTÁ CORRIENDO" al arrancar · cambiar qué máquina lo corre o cada cuánto · entender por qué el aviso calla unos números que sí existen | `scripts/controls-bench/periodic-exam.js` (arranque: `--dry-run`) |
 | Un control trata a un clon del arnés como si fuera un producto (o al revés) · querés saber si un repo cuenta como «del arnés» y por qué | `node scripts/lib/harness-repo.js <dir>` (decide el remoto `origin`; la carpeta sólo si no hay remoto) |
+
+## Dónde se escribe, dónde se valida y qué queda en Azure DevOps
+
+**Se escribe en el repo público, en GitHub.** Todo lo que el arnés publica (código, guías, skills, revisores) entra por
+un pedido de merge a `main`. La regla de esa rama exige un control: `public-ci`, la CI pública
+(`.github/workflows/ci.yml`). Uno de sus pasos, `version`, sale rojo si el pedido no sube el número de
+`version.json` (`node scripts/tools/merge-pr.js bump-version` lo sube).
+
+**Lo privado de quien mantiene va a su repo de mantenimiento.** Ahí viven lo que no se publica (el registro de
+incidentes con nombres, los datos del equipo, las listas privadas del freno de publicación) y las stories. Ese repo no
+guarda copia de nada que el público trae: lo que repite lo declara su `.tycon/internal-forms.json`. La validación de
+sus pedidos es un pipeline de Azure DevOps: la del público, con lo público puesto encima (el YAML vive en ese mismo
+repo).
+
+**Lo que queda en Azure DevOps**, en una organización que corre ahí:
+
+- **Los procesos de la noche**: el banco de controles y las suites, la revisión de dependencias, el vigilante, las
+  métricas y el tablero, la verificación diaria de lo publicado y, a pedido, la prueba de Windows. Traen el código del arnés
+  desde GitHub en cada corrida; ninguno lo guarda.
+- **Dónde dejan sus datos**: el banco y las suites, en el repo de mantenimiento; la revisión de dependencias, el
+  vigilante, el resumen diario, las métricas y el tablero, en el **repo de operaciones**, que también recibe sus
+  pedidos. Cada máquina que mantiene el arnés declara sus dos clones (`paths.maintainers` y `paths.operations`) y los
+  avisos de arranque leen de ahí (`guides/piezas-del-arnes.md`).
+- **El buzón de corridas**, en el almacenamiento de Azure: cada máquina sube ahí lo que midió.
+- **La capa del equipo** y los repos y pipelines de cada producto, si la organización los tiene ahí.
+
+Una organización que vive en GitHub corre los mismos procesos de la noche como GitHub Actions:
+`pipelines/operations/github/README.md`.

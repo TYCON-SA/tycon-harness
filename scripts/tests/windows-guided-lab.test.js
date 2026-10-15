@@ -167,10 +167,10 @@ test('GuidedInstall_LabRun_ToyPublishedTree_FollowsThePage', { skip: SKIP }, () 
   assert.ok(by('verify').some((c) => /sólo resuelve en Windows/.test(c.not_comparable || '')), 'el diagnóstico por la ruta con barras invertidas: no comparable, con su motivo');
   assert.ok(by('verify').some((c) => (c.expected || []).some((e) => e.comparable === false && /skills de terceros/.test(e.why))), 'la cuenta de skills: no comparable, con su motivo');
   // el único cambio del laboratorio, y el ambiente: nada de lo que una persona no tiene
-  assert.deepStrictEqual(by('download')[0].lab_changed.from, 'https://api.github.com');
+  assert.deepStrictEqual(by('download')[0].lab_changed.from, 'https://raw.githubusercontent.com');
   assert.ok(v.commands.filter((c) => c.lab_changed).length === 1, 'ningún otro comando se toca');
   const changes = s.facts.lab_changes;
-  assert.deepStrictEqual([changes.api_origin.where, changes.execution_policy.launched_with, typeof changes.execution_policy.effective], ['download[0]', 'Bypass', 'string']);
+  assert.deepStrictEqual([changes.download_origin.where, changes.execution_policy.launched_with, typeof changes.execution_policy.effective], ['download[0]', 'Bypass', 'string']);
   for (const k of TL.ENV_NEVER) assert.ok(!(k in changes.env_set) && !(k in changes.env_set_with_team), `${k} no se pone`);
   assert.deepStrictEqual(changes.never_set, TL.ENV_NEVER);
   // la máquina quedó con la versión publicada, en la carpeta de usuario del laboratorio
@@ -197,7 +197,10 @@ test('GuidedInstall_LabRun_ToyPublishedTree_FollowsThePage', { skip: SKIP }, () 
   assert.match(s.facts.toy_servers.github.repo, /^público, sin permiso/);
   assert.match(changes.token, /^TYCON_GITHUB_TOKEN: no se pone en ningún paso/);
   const requests = fs.readFileSync(path.join(onboarding.lab, 'guided', 'onboarding', 'servers', 'github-requests.log'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
-  assert.ok(requests.length >= 5 && requests.some((r) => /\/contents\/scripts\/setup\/get-harness\.ps1/.test(r.path)) && requests.some((r) => /\/tarball\//.test(r.path)), `el GitHub de juguete atendió la bajada del guion y la del comprimido (${requests.length} pedidos)`);
+  // el guion se baja de «raw» (raw.githubusercontent.com) por la rama, no de la API: sin credencial la API tiene un tope de
+  // 60 consultas por hora por conexión, y una máquina nueva no llegaba ni a correr el guion (deuda DEF-8.34-portada-por-la-api)
+  assert.ok(requests.length >= 5 && requests.some((r) => r.host === 'raw' && /\/main\/scripts\/setup\/get-harness\.ps1$/.test(r.path)) && requests.some((r) => /\/tarball\//.test(r.path)), `el GitHub de juguete atendió la bajada del guion y la del comprimido (${requests.length} pedidos)`);
+  assert.deepStrictEqual(requests.filter((r) => /\/contents\/scripts\/setup\/get-harness\./.test(r.path)).map((r) => r.path), [], 'la bajada del guion no pasó por la API');
   assert.deepStrictEqual(requests.filter((r) => r.auth).map((r) => r.path), [], 'ningún pedido llevó credencial');
   const config = readJson(path.join(home, '.tycon', 'config.json'));
   assert.strictEqual(config.github, undefined, 'sin permiso de GitHub guardado: nadie lo pidió');
