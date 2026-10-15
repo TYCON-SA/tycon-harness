@@ -4369,6 +4369,7 @@ function parseArgs(argv) {
     else if (t === '--brief') a.breve = true;                      // start: salida recortada + ruta del JSON entero (story 7.10)
     else if (t === '--run-dir') a.runDir = argv[++i];
     else if (t === '--base') a.base = argv[++i];                  // dod-checker-needed: base explícita del diff (story 7.2)
+    else if (t === '--scope') a.scope = argv[++i] ?? '';          // qa-readability: `ui` = la revisión de la pantalla (story 7.24); sin valor no es «sin --scope»
     else if (t === '--marks') a.marcas = argv[++i];               // qa-readability: marcas resueltas (story 7.2)             // write-findings/findings-status: dir de la corrida (default: auto-resolve)
     // e2e-config: archivos que la entrega tocó (repo-relativos) para elegir qué apps del
     // monorepo ejerce el gate. Admite `--changed a b c` y `--changed a,b,c` (Story QA-1).
@@ -4994,16 +4995,19 @@ function main() {
     process.stdout.write(JSON.stringify(r, null, 2) + '\n');
     process.exit(r.error ? 1 : (r.open ? 3 : 0));
   }
-  // Uso: pipeline.js qa-readability --story <spec> --repo <repo> --marks <n>   deja la marca de la capa 4 de la guía de QA
-  // (la marca se sigue grabando como `qa-legibilidad` en gates.log: la lee qa-guide.js --check; story 8.9, tanda B3b)
+  // Uso: pipeline.js qa-readability --story <spec> --repo <repo> --marks <n> [--scope ui]   deja la marca de la capa 4
+  // de la guía de QA (la marca se sigue grabando como `qa-legibilidad` en gates.log: la lee qa-guide.js --check; story
+  // 8.9, tanda B3b). Con `--scope ui`, la de la revisión de la PANTALLA (`qa-legibilidad-ui`, story 7.24).
   if (cmd === 'qa-readability') {
     const n = /^\d+$/.test(String(args.marcas || '')) ? Number(args.marcas) : NaN;
     if (!Number.isInteger(n)) { process.stderr.write(`--marks tiene que ser un entero ≥ 0 (vino «${args.marcas}»): no se anota nada\n`); process.exit(2); }
+    if (args.scope !== undefined && args.scope !== 'ui') { process.stderr.write(`--scope sólo acepta «ui» (vino «${args.scope}»): no se anota nada\n`); process.exit(2); }
     const leida = leerStoryOError(args.story);
     const storyId = leida.error ? null : deriveStoryId(args.story);
     if (!storyId) { process.stderr.write(`no pude leer la story (${leida.error || args.story}): no se anota nada\n`); process.exit(2); }
-    logGate({ name: 'qa-legibilidad', repoPath: args.repo ? path.resolve(args.repo) : null, storyId, marcas: n });
-    process.stdout.write(JSON.stringify({ anotado: true, storyId, marcas: n }) + '\n');
+    const name = args.scope === 'ui' ? 'qa-legibilidad-ui' : 'qa-legibilidad';
+    logGate({ name, repoPath: args.repo ? path.resolve(args.repo) : null, storyId, marcas: n });
+    process.stdout.write(JSON.stringify({ anotado: true, storyId, marcas: n, ...(args.scope ? { scope: args.scope } : {}) }) + '\n');
     process.exit(0);
   }
   if (cmd === 'followups-status') {
