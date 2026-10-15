@@ -1,0 +1,71 @@
+{
+  "__doc": "La detección de React/Next del cálculo de revisores (pipeline.js advisors), 2026-10-15. Un formulario de Bizuit declara React SÓLO en peerDependencies (lo provee el host), y la detección leía sólo dependencies y devDependencies: hasReact salía false y el revisor de convenciones React quedaba afuera sin aviso (una story de dos repos de un producto del equipo; sumado a mano encontró dos avisos reales). Estos casos corren el cálculo REAL sobre un repo de juguete con un .tsx en el diff y exigen el revisor que corresponde; el tercero exige que un .tsx sin framework detectado lo diga, con el package.json que se leyó.",
+  "hooks": [
+    {
+      "hook": "pipeline.js advisors (detección de stack)",
+      "script": "${FIXTURE}/correr.sh",
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "env": {
+        "PIPELINE_JS": "${SKILLS}/skills/tycon-pipeline/scripts/pipeline.js",
+        "TYCON_PACKS_DIR": "${TCG}/packs",
+        "TYCON_PACKS_DEFAULT": "all",
+        "TYCON_SESSION_ID": "bench-stack"
+      },
+      "cases": [
+        {
+          "id": "react-solo-en-peer-trae-al-revisor-de-react",
+          "type": "must-run",
+          "__doc": "React sólo en peerDependencies (el patrón de los formularios de Bizuit) y un .tsx en el diff: el set trae al revisor de convenciones React.",
+          "files": {
+            "package.json": "{\n  \"name\": \"formulario\",\n  \"peerDependencies\": { \"react\": \"^18.3.1\" },\n  \"dependencies\": { \"dayjs\": \"1.11.0\" }\n}\n",
+            "src/X.tsx": "export const X = () => null;\n",
+            "correr.sh": "node \"$PIPELINE_JS\" advisors --repo \"$FIXTURE\" --files src/X.tsx\n"
+          },
+          "setup": [
+            "git init -q -b main . && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
+          ],
+          "stdin": { "tool_name": "Bash", "tool_input": { "command": "true" }, "session_id": "bench-stack" },
+          "expect": {
+            "stdout_re": ["\"hasReact\": true", "\"all\": \\[[^\\]]*\"tycon-plugin-react-conventions\""]
+          }
+        },
+        {
+          "id": "next-solo-en-peer-trae-al-revisor-de-next",
+          "type": "must-run",
+          "__doc": "Next sólo en peerDependencies: entra el revisor de Next y no el de React (el paquete los excluye entre sí).",
+          "files": {
+            "package.json": "{\n  \"name\": \"portal\",\n  \"peerDependencies\": { \"react\": \"^18.3.1\", \"next\": \"^14.2.0\" }\n}\n",
+            "src/X.tsx": "export const X = () => null;\n",
+            "correr.sh": "node \"$PIPELINE_JS\" advisors --repo \"$FIXTURE\" --files src/X.tsx\n"
+          },
+          "setup": [
+            "git init -q -b main . && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
+          ],
+          "stdin": { "tool_name": "Bash", "tool_input": { "command": "true" }, "session_id": "bench-stack" },
+          "expect": {
+            "stdout_re": ["\"hasNext\": true", "\"all\": \\[[^\\]]*\"tycon-plugin-nextjs-conventions\""],
+            "stdout_not_re": ["\"all\": \\[[^\\]]*\"tycon-plugin-react-conventions\""]
+          }
+        },
+        {
+          "id": "tsx-sin-framework-lo-dice",
+          "type": "must-run",
+          "__doc": "Un .tsx en el diff y ningún React ni Next en el package.json leído: la detección no calla, lo dice nombrando ese package.json.",
+          "files": {
+            "package.json": "{\n  \"name\": \"herramienta\",\n  \"dependencies\": { \"lodash\": \"4.17.21\" }\n}\n",
+            "src/X.tsx": "export const X = () => null;\n",
+            "correr.sh": "node \"$PIPELINE_JS\" advisors --repo \"$FIXTURE\" --files src/X.tsx\n"
+          },
+          "setup": [
+            "git init -q -b main . && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
+          ],
+          "stdin": { "tool_name": "Bash", "tool_input": { "command": "true" }, "session_id": "bench-stack" },
+          "expect": {
+            "stdout_re": ["\"hasReact\": false", "hay \\.tsx/\\.jsx y no detecté React ni Next en [^\"]*package\\.json"]
+          }
+        }
+      ]
+    }
+  ]
+}

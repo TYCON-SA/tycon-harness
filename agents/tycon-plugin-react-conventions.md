@@ -89,7 +89,7 @@ Las reglas viven canónicamente en `guides/bizuit/bizuit-plugin-react.md` del ar
 
 1. **Leer guía runtime**: `~/.claude/tycon-harness/guides/bizuit/bizuit-plugin-react.md`.
 2. **Identificar archivos cambiados**: `.tsx`, `.ts` (incluyendo hooks, services, utils).
-3. **Detectar framework**: verificar `package.json` tiene `react` como dep — si no, skipear (es otro tipo de frontend, ej: Angular Dashboard).
+3. **Detectar framework**: verificar que `package.json` declara `react` en cualquiera de sus secciones de dependencias — también `peerDependencies`, el patrón de los formularios de Bizuit (React lo provee el host) — si no, skipear (es otro tipo de frontend, ej: Angular Dashboard).
 4. **Aplicar reglas del catálogo** via regex + AST básico:
    - REACT-C1: grep de patterns placeholder (`// ...`, `// resto`, `// TODO`, etc.)
    - REACT-C2: grep de `localStorage.setItem`/`sessionStorage.setItem` con variables que matcheen `token|key|secret`
@@ -114,7 +114,7 @@ Las reglas viven canónicamente en `guides/bizuit/bizuit-plugin-react.md` del ar
 
 ## Framework detection
 
-- `package.json` con `"react"` en deps → corre el advisor
+- `package.json` con `"react"` en cualquier sección de dependencias (también `peerDependencies`) → corre el advisor
 - `package.json` sin React o con `"@angular/core"` → skipea
 - Sin `package.json` → skipea
 
