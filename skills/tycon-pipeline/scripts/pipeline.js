@@ -3651,6 +3651,61 @@ function detectarWordSplit(args) {
   return null;
 }
 
+/**
+ * ¿Algún `--files` es un FANTASMA? (story 7.25 del arnés, 2026-10-15)
+ *
+ * Fantasma = no está en el disco Y git no lo conoce en `HEAD` del repo que lo contiene. Un archivo que el cambio BORRÓ
+ * está en `HEAD`: es legítimo y pasa (la cerca de la revisión adversarial 2026-08-26 sigue en pie). Lo que no está en
+ * ningún lado es una lista rota: `--files a.cs,b.cs` en un solo argumento, sin espacios, que `detectarWordSplit` no ve.
+ * Caso de un producto del equipo (2026-10-14): con esa entrada `densidadDelDiff` contó 0 líneas, el gate dio LOW y
+ * `run:false` sobre un cambio de ~955 líneas, y nada lo dijo. Las rutas absolutas de otro repo se juzgan en SU repo.
+ * Override consciente: `--allow-missing-files`.
+ *
+ * @returns {string|null} el mensaje de error, o null si está bien
+ */
+function archivosFantasma(args) {
+  if (!args || args.allowMissingFiles || !Array.isArray(args.files) || !args.files.length) return null;
+  const { execFileSync } = require('child_process');
+  // 'si' = git lo conoce en HEAD (un borrado) · 'no' = git respondió y no lo conoce · 'sin-git' = no hubo a quién
+  // preguntarle (fuera de un repo, sin git, sin HEAD). Los dos últimos frenan, pero el mensaje dice cuál fue.
+  const enHead = (abs) => {
+    // el ancestro más cercano que existe: ahí se le pregunta a git (un archivo borrado puede dejar su carpeta vacía)
+    let dir = path.dirname(abs);
+    while (!exists(dir) && path.dirname(dir) !== dir) dir = path.dirname(dir);
+    let raiz;
+    try {
+      raiz = execFileSync('git', ['-C', dir, 'rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+      execFileSync('git', ['-C', raiz, 'rev-parse', '--verify', '--quiet', 'HEAD'], { stdio: 'ignore' });
+    } catch { return 'sin-git'; }
+    const rel = path.relative(fs.realpathSync(raiz), path.join(fs.realpathSync(dir), path.relative(dir, abs))).split(path.sep).join('/');
+    if (!rel || rel.startsWith('../')) return 'no';
+    try { execFileSync('git', ['-C', raiz, 'cat-file', '-e', `HEAD:${rel}`], { stdio: 'ignore' }); return 'si'; } catch { return 'no'; }
+  };
+  const fantasmas = [];
+  let sinGit = 0;
+  for (const f of args.files) {
+    const abs = path.isAbsolute(f) ? f : path.join(args.repo || '.', f);
+    if (exists(abs)) continue;
+    const v = enHead(path.resolve(abs));
+    if (v === 'si') continue;
+    if (v === 'sin-git') sinGit++;
+    fantasmas.push(f);
+  }
+  if (!fantasmas.length) return null;
+  return (
+    `🛑 ${fantasmas.length}/${args.files.length} de los --files no están en el disco NI en HEAD (no son archivos borrados):\n` +
+    fantasmas.slice(0, 8).map((m) => `  - ${m}`).join('\n') +
+    (fantasmas.length > 8 ? `\n  ... y ${fantasmas.length - 8} más` : '') +
+    '\n\nCausa típica: la lista separada por comas en un solo argumento, o una expansión de shell rota (zsh NO\n' +
+    'word-splitea $VAR sin comillas — usá ${=VAR} o pasá los paths explícitos, separados por espacio).\n' +
+    'Por qué FRENA: un archivo que no existe cuenta 0 líneas, y con 0 líneas el veredicto da LOW — eso apaga el\n' +
+    'checkpoint del plan y el pase adversarial sin dejar rastro de que la entrada estaba rota.\n' +
+    (sinGit ? `Ojo: para ${sinGit} de ellos no pude preguntarle a git (fuera de un repo, sin git o sin commits): si son\n` +
+      'archivos BORRADOS por el cambio, no pude confirmarlo — revisá la lista y, si está bien, --allow-missing-files.\n' : '') +
+    'Si de verdad hay que seguir con archivos que no están: --allow-missing-files.\n'
+  );
+}
+
 function validateFilesExist(args, opts) {
   // `validarStory` (2026-08-26): los gates `risk-class` / `deep-review-gate` reusan esta
   // validación SÓLO por los --files. La rama de --story NO se les aplica: para ellos, una story
@@ -4872,6 +4927,9 @@ function main() {
     // es el que produce un LOW falso y apaga dos frenos.
     const wsErr = detectarWordSplit(args);
     if (wsErr) { process.stderr.write(wsErr); process.exit(2); }
+    // Story 7.25: tampoco un archivo que no está ni en el disco ni en HEAD (la lista con comas). Un borrado pasa.
+    const fantasmaErr = archivosFantasma(args);
+    if (fantasmaErr) { process.stderr.write(fantasmaErr); process.exit(2); }
     const result = computeRiskClass(args);
     process.stdout.write(JSON.stringify(result, null, 2) + '\n');
     process.exit(0);
@@ -4897,8 +4955,10 @@ function main() {
     // un --files mal expandido produce un LOW silencioso y sella el 5b como hecho
     // (`deepReviewDone`). Abortar es correcto AUNQUE el comando sea informativo: un veredicto
     // computado sobre entrada rota es peor que no tener veredicto.
-    const wsErr = detectarWordSplit(args);   // ídem risk-class: sólo la guarda de aridad
+    const wsErr = detectarWordSplit(args);   // ídem risk-class: la guarda de aridad…
     if (wsErr) { process.stderr.write(wsErr); process.exit(2); }
+    const fantasmaErr = archivosFantasma(args);   // …y la de archivos fantasma (story 7.25)
+    if (fantasmaErr) { process.stderr.write(fantasmaErr); process.exit(2); }
     const result = computeDeepReviewGate(args);
     if (result && result.run === null) {
       // 🔴 No se pudo medir: se dice y se CORTA. «Correr por las dudas» tampoco es gratis — una
@@ -5254,6 +5314,7 @@ module.exports = {
   // fixes auditoría 2026-06-11 — exportadas para unit tests (lógica sutil: fail-open
   // por familia, orden mutación-vs-log, precedencia de tiers).
   validateFilesExist,
+  archivosFantasma,
   computeMechDiscount,
   reloopHintsFor,
   computeSmartReloop,

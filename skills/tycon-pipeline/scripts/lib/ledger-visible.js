@@ -55,23 +55,40 @@ function pipelineAbierto(marker) {
  */
 function evaluarVisibilidad({ marker, codeTargets, dentroDelRepo, off }) {
   const nada = { block: false, files: [], reason: '' };
-  if (String(off || '').toLowerCase() === 'off') return { ...nada, reason: 'kill-switch TYCON_LEDGER_VISIBLE=off' };
-  if (!pipelineAbierto(marker)) return { ...nada, reason: 'sin pipeline abierto — el registro no se usa' };
+  const escape = String(off || '').toLowerCase() === 'off';
+  if (!pipelineAbierto(marker)) return { ...nada, reason: escape ? 'kill-switch TYCON_LEDGER_VISIBLE=off' : 'sin pipeline abierto — el registro no se usa' };
   const repo = marker.repoPath;
-  if (!repo) return { ...nada, reason: 'marker sin repoPath' };
+  if (!repo) return { ...nada, reason: escape ? 'kill-switch TYCON_LEDGER_VISIBLE=off' : 'marker sin repoPath' };
 
   const files = (codeTargets || []).filter((f) => dentroDelRepo(f, repo));
-  if (!files.length) return { ...nada, reason: 'ningún target de código dentro del repo de la corrida' };
+  if (!files.length) return { ...nada, reason: escape ? 'kill-switch TYCON_LEDGER_VISIBLE=off' : 'ningún target de código dentro del repo de la corrida' };
+  // El escape deja pasar, pero devuelve QUÉ habría frenado (story 7.25): el llamador lo anota en gates.log. Antes el
+  // mensaje prometía esa constancia y no se escribía nada.
+  if (escape) return { ...nada, escaped: files, reason: 'kill-switch TYCON_LEDGER_VISIBLE=off' };
   return { block: true, files, reason: 'edición de código por Bash con pipeline abierto: el registro no la vería' };
 }
 
-/** El mensaje que ve el agente. Explica la CONSECUENCIA, no sólo la regla. */
-function mensaje(files, storyId) {
+/**
+ * El mensaje que ve el agente. Explica la CONSECUENCIA, no sólo la regla.
+ * `opts.sinResolver`: `[{ file, vars }]` — destinos con variables que ni el comando ni el ambiente definen (story 7.25):
+ * se frenan del lado seguro, pero el mensaje lo dice en vez de presentarlos como código del repo sin más.
+ */
+function mensaje(files, storyId, opts = {}) {
   const lista = files.map((f) => `     · ${f}`).join('\n');
+  const sinResolver = Array.isArray(opts.sinResolver) ? opts.sinResolver : [];
+  const nombres = sinResolver.map((s) => s.vars.map((v) => (v.startsWith('$') ? v : `$${v}`)).join(', ')).join(' · ');
+  const avisoVariables = !sinResolver.length ? [] : [
+    '',
+    `   Ojo: ${nombres} sin resolver — sin ejecutar el comando no sé adónde escribe (la variable no está definida`,
+    '   antes en el mismo comando ni en el ambiente, o se arma con `$(…)` o con `${VAR:-…}`), así que lo trato como si',
+    '   cayera en el repo. Si apunta afuera (el scratchpad), asignale la ruta LITERAL en el mismo comando',
+    '   (`SP=/ruta/al/scratchpad; …`) o escribí la ruta literal en el destino.',
+  ];
   return [
     '🔴 EDICIÓN INVISIBLE — escritura de código por Bash con el pipeline ABIERTO' +
       (storyId ? ` (story ${storyId})` : '') + ':',
     lista,
+    ...avisoVariables,
     '',
     '   El registro de ediciones lo alimenta el hook PostToolUse sobre Edit|Write. Un `sed`, un',
     '   heredoc o un `python3 -c "open(...)"` NO generan ese evento: la edición ocurre y el arnés',
@@ -85,7 +102,12 @@ function mensaje(files, storyId) {
     '   registro los ve. (El resto —`.md`, configuración, scripts del scratchpad— sigue pasando por',
     '   Bash sin fricción: esto es sólo código, y sólo mientras hay una corrida abierta.)',
     '',
-    '   Escape consciente, si de verdad hace falta (queda en gates.log):  TYCON_LEDGER_VISIBLE=off',
+    '   Para reemplazar un tramo GRANDE (un Edit tendría que copiar el bloque viejo entero), la receta',
+    '   registrada pasa por los mismos frenos y el mismo registro que un Edit:',
+    '     node <skill>/scripts/replace-section.js --file <ruta> --from <n> --to <m> --with <archivo>',
+    '',
+    '   Escape del dev (no del agente): TYCON_LEDGER_VISIBLE=off en el ambiente de la sesión. Ponerlo',
+    '   adelante del comando no sirve — el freno corre en otro proceso. Cada paso queda en gates.log.',
   ].join('\n');
 }
 
