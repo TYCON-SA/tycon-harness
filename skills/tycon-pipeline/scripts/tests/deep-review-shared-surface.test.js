@@ -25,8 +25,11 @@ const { spawnSync } = require('child_process');
 const SCRIPTS = path.join(__dirname, '..');
 const PIPELINE = path.join(SCRIPTS, 'pipeline.js');
 
+// 🔴 Cada laboratorio es un repo git (2026-10-15): el portón mide la densidad de cada archivo en SU repo, y un archivo
+//    fuera de todo repo git ya no se cuenta entero en silencio (lo dice y corta). Sin commits, los archivos son nuevos.
 function mkRepo(yaml) {
   const r = fs.mkdtempSync(path.join(os.tmpdir(), 'shared-'));
+  spawnSync('git', ['-C', r, '-c', 'maintenance.auto=false', 'init', '-q'], { env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' } });
   fs.mkdirSync(path.join(r, 'Services', 'Plugins'), { recursive: true });
   fs.mkdirSync(path.join(r, 'src', 'ui'), { recursive: true });
   fs.writeFileSync(path.join(r, 'Services', 'Plugins', 'PluginManager.cs'), '// x\n');
@@ -187,4 +190,16 @@ test('`deep_review: off` con lista declarada lo DICE, no mata en silencio', () =
   assert.equal(out.run, false, 'el off del repo sigue ganando: es la decisión explícita del dueño');
   assert.match(out.reason, /superficie compartida/i,
     'pero tiene que avisar que está apagando una superficie declarada, o la regla queda publicada y muerta');
+});
+
+test('@story-7.26 story de dos repos: un archivo del repo hermano se juzga contra la superficie que declara SU repo', () => {
+  // 🔴 rojo previo (2026-10-15): el archivo del hermano se salteaba («fuera del repo») y un cambio en su superficie
+  //    compartida no pedía el pase adversarial.
+  const a = mkRepo(null);
+  const b = mkRepo(YAML_CON_LISTA);
+  const out = gate(a, path.join(b, 'Services', 'Plugins', 'PluginManager.cs'));
+  assert.equal(out.run, true, JSON.stringify(out));
+  assert.equal(out.risk, 'shared-surface');
+  assert.equal(out.shared_surface.pattern, 'Services/Plugins/**');
+  assert.equal(fs.realpathSync(out.shared_surface.repo), fs.realpathSync(b));
 });

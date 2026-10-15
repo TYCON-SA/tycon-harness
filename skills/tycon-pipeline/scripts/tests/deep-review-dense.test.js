@@ -24,8 +24,22 @@ const PIPELINE = path.join(SCRIPTS, 'pipeline.js');
 // deep-review-shared-surface.test.js — no ensuciar el registro real del dev).
 const HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'dense-home-'));
 
+// git de laboratorio: fechas fijas y sin mantenimiento automático (guía de ejecución de tests: una prueba no depende
+// de un sha ni de una hora), sin la configuración de la máquina.
+const GIT_ENV = { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1',
+  GIT_AUTHOR_NAME: 'lab', GIT_AUTHOR_EMAIL: 'lab@example.com', GIT_COMMITTER_NAME: 'lab', GIT_COMMITTER_EMAIL: 'lab@example.com',
+  GIT_AUTHOR_DATE: '2026-10-15T12:00:00Z', GIT_COMMITTER_DATE: '2026-10-15T12:00:00Z' };
+function git(dir, ...a) {
+  const r = spawnSync('git', ['-C', dir, '-c', 'maintenance.auto=false', '-c', 'gc.auto=0', ...a], { encoding: 'utf8', env: GIT_ENV });
+  assert.equal(r.status, 0, `git ${a.join(' ')}: ${r.stderr}`);
+  return r.stdout;
+}
+
+// 🔴 Cada laboratorio es un repo git (2026-10-15): el conteo mide cada archivo en SU repo, y un archivo fuera de todo
+//    repo ya no se cuenta entero en silencio. Un archivo nuevo sin trackear en su repo sí se cuenta entero: es nuevo.
 function mkRepo(lineasCodigo) {
   const r = fs.mkdtempSync(path.join(os.tmpdir(), 'dense-'));
+  git(r, 'init', '-q', '-b', 'main');
   fs.mkdirSync(path.join(r, 'src'), { recursive: true });
   fs.writeFileSync(path.join(r, 'src', 'vista.js'), Array.from({ length: lineasCodigo }, (_, i) => `const v${i} = ${i};`).join('\n') + '\n');
   fs.writeFileSync(path.join(r, 'src', 'datos.json'), '[' + Array.from({ length: 2000 }, () => '1').join(',') + ']\n');
@@ -141,4 +155,58 @@ test('un override explícito del dev decide SIN necesitar la densidad', () => {
   const off = gateCrudo(repo, { TYCON_NO_DEEP_REVIEW: '1' }, []);
   assert.equal(off.status, 0, `el kill-switch debe decidir solo: ${off.stderr}`);
   assert.equal(JSON.parse(off.stdout).run, false);
+});
+
+// ── Stories de dos repos (2026-10-15, GE-4 de un producto del equipo) ──────────────────────────────────────────────
+//
+// La story vivía en el backend y el código en el frontend, un repo companion. El portón medía cada archivo con
+// `git -C <repo de la story>`: los del frontend daban «no trackeado» y se sumaban enteros (1464 líneas contra 221
+// reales) y corrió el pase por «denso». Ahora cada archivo se mide en el repo de su propia carpeta.
+
+function repoConArchivoTrackeado(lineas) {
+  const b = fs.mkdtempSync(path.join(os.tmpdir(), 'dense-companion-'));
+  git(b, 'init', '-q', '-b', 'main');
+  fs.mkdirSync(path.join(b, 'src'), { recursive: true });
+  const f = path.join(b, 'src', 'pantalla.tsx');
+  fs.writeFileSync(f, Array.from({ length: lineas }, (_, i) => `export const p${i} = ${i};`).join('\n') + '\n');
+  git(b, 'add', '-A');
+  git(b, 'commit', '-q', '-m', 'base');
+  return { b, f };
+}
+
+test('@story-7.26 story en A, código en el repo companion B: mide las líneas agregadas en B, no el archivo entero', () => {
+  // 🔴 rojo previo: 403 (las 400 de HEAD más las 3 nuevas) y run:true por «denso».
+  const a = mkRepoConScope(40);
+  const { f } = repoConArchivoTrackeado(400);
+  fs.appendFileSync(f, 'export const n1 = 1;\nexport const n2 = 2;\nexport const n3 = 3;\n');
+  const v = gate(a, { TYCON_DEEP_REVIEW_DENSE_LINES: '300' }, f);
+  assert.equal(v.lineas_agregadas, 3, `midió ${v.lineas_agregadas}: tiene que contar sólo lo agregado en su repo`);
+  assert.equal(v.run, false);
+  assert.equal(v.risk, 'LOW');
+  assert.equal(v.archivos_no_medidos, undefined);
+});
+
+test('@story-7.26 un archivo fuera de todo repo git no se cuenta entero ni como 0: el portón corta y lo nombra', () => {
+  const a = mkRepoConScope(40);
+  const suelto = fs.mkdtempSync(path.join(os.tmpdir(), 'dense-suelto-'));
+  const f = path.join(suelto, 'huerfano.js');
+  fs.writeFileSync(f, Array.from({ length: 50 }, (_, i) => `const h${i} = ${i};`).join('\n') + '\n');
+  const r = gateCrudo(a, {}, ['--files', f]);
+  assert.equal(r.status, 2, `tiene que cortar: ${r.stdout}${r.stderr}`);
+  assert.match(r.stderr, /no pude medir 1 archivo/);
+  assert.ok(r.stderr.includes(f), 'nombra la ruta que no pudo medir');
+  assert.match(r.stderr, /no está dentro de ningún repo git/);
+  assert.doesNotMatch(r.stderr, /51 líneas agregadas/, 'el archivo entero no se suma en silencio');
+});
+
+test('@story-7.26 lo medido ya pasa el umbral: corre el pase y el veredicto igual nombra lo que no midió', () => {
+  const a = mkRepoConScope(400);
+  const suelto = fs.mkdtempSync(path.join(os.tmpdir(), 'dense-suelto-'));
+  const f = path.join(suelto, 'huerfano.js');
+  fs.writeFileSync(f, 'const h = 1;\n');
+  const v = gate(a, {}, 'src/vista.js', f);
+  assert.equal(v.run, true);
+  assert.equal(v.risk, 'dense');
+  assert.equal(v.lineas_agregadas, 401);
+  assert.deepEqual(v.archivos_no_medidos.map((n) => n.file), [f]);
 });

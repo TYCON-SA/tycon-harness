@@ -813,7 +813,20 @@ function cmdCompleteStep(nRaw, flags) {
   // positivos con un refactor legítimo): `lib/atdd-order.js`.
   if (n === 4) {
     const { computeAtddOrder, atddBlockMessage } = require('./lib/atdd-order.js');
-    const r = computeAtddOrder(marker.fileEvents, marker.repoPath);
+    // 🔴 Stories de dos repos (2026-10-15, GE-4 de un producto del equipo): el código vive en un repo hermano declarado
+    //    (`evidence.companion_repos`). Mirando sólo el repo de la story, toda edición del hermano quedaba afuera y el
+    //    portón decía «ningún fileEvent cae dentro del repo de la story»: no gateaba nada. Cuentan también los hermanos.
+    let raices = marker.repoPath;
+    let hermanosError = null;
+    if (marker.repoPath) {
+      try {
+        const companionLib = require('./lib/companion-repos.js');
+        const storyAbs = marker.storyPath ? path.resolve(marker.repoPath, marker.storyPath) : null;
+        raices = [marker.repoPath, ...companionLib.companionRoots(marker.repoPath, storyAbs)];
+      } catch (e) { hermanosError = e.message; }
+    }
+    const r = computeAtddOrder(marker.fileEvents, raices);
+    if (hermanosError) r.reason = `${r.reason} (no pude leer los repos hermanos declarados: ${hermanosError}; se miró sólo el repo de la story)`;
     // El flag `atddBypass` (el escape que dicta el portón pre-edit) vale también acá: un solo
     // bypass declarado cubre la corrida entera — obligar a declararlo dos veces con dos nombres
     // distintos era dejar al dev contra una segunda pared (hallazgo F3 del review adversarial

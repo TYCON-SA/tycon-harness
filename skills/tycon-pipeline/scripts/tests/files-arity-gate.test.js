@@ -24,8 +24,11 @@ const { spawnSync } = require('child_process');
 
 const PIPELINE = path.join(__dirname, '..', 'pipeline.js');
 
+// 🔴 Un repo git de verdad (2026-10-15): el portón mide cada archivo en SU repo, y fuera de todo repo git ya no cuenta
+//    el archivo entero en silencio. Sin commits, los archivos son nuevos.
 function mkRepo() {
   const r = fs.mkdtempSync(path.join(os.tmpdir(), 'arity-'));
+  spawnSync('git', ['-C', r, '-c', 'maintenance.auto=false', 'init', '-q'], { env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' } });
   fs.mkdirSync(path.join(r, 'src'));
   for (const f of ['a.cs', 'b.cs', 'c.cs']) fs.writeFileSync(path.join(r, 'src', f), '// x\n');
   fs.writeFileSync(path.join(r, 'story.md'), [

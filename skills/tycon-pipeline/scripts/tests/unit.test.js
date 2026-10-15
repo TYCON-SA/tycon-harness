@@ -1038,6 +1038,29 @@ test('computeDepGate: paquete nuevo no declarado → pause; declarado → pass; 
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test('@story-7.26 computeDepGate: en una story de dos repos mira también el repo hermano declarado', () => {
+  // 🔴 rojo previo (2026-10-15): el diff era sólo del repo de la story; un paquete nuevo del frontend hermano no se veía.
+  const raiz = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'tycon-depgate-dos-')));
+  const back = path.join(raiz, 'Back');
+  const front = path.join(raiz, 'Front');
+  for (const d of [back, front]) { fs.mkdirSync(d); execFileSync('git', ['-C', d, 'init', '-q']); execFileSync('git', ['-C', d, 'config', 'user.email', 't@t.co']); execFileSync('git', ['-C', d, 'config', 'user.name', 't']); }
+  fs.mkdirSync(path.join(back, '.tycon'), { recursive: true });
+  fs.writeFileSync(path.join(back, '.tycon', 'advisors.yaml'), 'evidence:\n  companion_repos:\n    - Front\n');
+  fs.mkdirSync(path.join(back, 'specs'), { recursive: true });
+  const story = path.join(back, 'specs', 's.md');
+  fs.writeFileSync(story, '---\nstory: 9.9\n---\nUsamos zod.\n');
+  execFileSync('git', ['-C', back, 'add', '-A']); execFileSync('git', ['-C', back, 'commit', '-qm', 'base']);
+  fs.writeFileSync(path.join(front, 'package.json'), '{\n  "dependencies": {\n    "react": "^18.0.0"\n  }\n}\n');
+  execFileSync('git', ['-C', front, 'add', '-A']); execFileSync('git', ['-C', front, 'commit', '-qm', 'base']);
+  fs.writeFileSync(path.join(front, 'package.json'), '{\n  "dependencies": {\n    "react": "^18.0.0",\n    "zod": "^3.22.0",\n    "axios": "^1.6.0"\n  }\n}\n');
+  const r = computeDepGate({ repo: back, story });
+  assert.equal(r.gate, 'pause', JSON.stringify(r));
+  assert.deepEqual(r.undeclared, ['axios']);
+  assert.deepEqual(r.declared, ['zod']);
+  assert.ok(r.repos.includes(front), 'dice qué repos miró');
+  fs.rmSync(raiz, { recursive: true, force: true });
+});
+
 test('computeDepGate: sin dependencias nuevas → pass; repo sin git → skip', () => {
   const dir = mkTmpRepo();
   fs.writeFileSync(path.join(dir, 'package.json'), '{\n  "dependencies": {\n    "react": "^18.0.0"\n  }\n}\n');
@@ -1824,6 +1847,20 @@ test('atdd: NO bloquea los casos que serían falsos positivos', () => {
   assert.equal(atdd.computeAtddOrder([{ path: 42 }, null, { ts: 'x' }]).verdict, 'warn-unknown');
 });
 
+
+test('@story-7.26 atdd: en una story de dos repos cuenta el repo hermano declarado (antes: «ningún fileEvent cae dentro»)', () => {
+  // 🔴 rojo previo (2026-10-15, GE-4 de un producto del equipo): la story vivía en el backend y el código en el frontend; con una sola
+  //    raíz, toda edición del hermano quedaba afuera y el portón no gateaba nada.
+  const ts = (m) => `2026-10-15T12:${String(m).padStart(2, '0')}:00.000Z`;
+  const raices = ['/back', '/front'];
+  const primeroElCodigo = [{ path: '/front/src/pantalla.tsx', ts: ts(1) }, { path: '/front/src/pantalla.test.tsx', ts: ts(2) }];
+  assert.equal(atdd.computeAtddOrder(primeroElCodigo, '/back').verdict, 'warn-unknown', 'con una sola raíz, el hermano no cuenta');
+  assert.equal(atdd.computeAtddOrder(primeroElCodigo, raices).verdict, 'blocked', 'con el hermano, el código antes que el test frena');
+  const primeroElTest = [{ path: '/front/src/pantalla.test.tsx', ts: ts(1) }, { path: '/front/src/pantalla.tsx', ts: ts(2) }];
+  assert.equal(atdd.computeAtddOrder(primeroElTest, raices).verdict, 'green');
+  const conSonda = [{ path: '/tmp/sonda.mjs', ts: ts(0) }, ...primeroElTest];
+  assert.equal(atdd.computeAtddOrder(conSonda, raices).verdict, 'green', 'lo de fuera de las dos raíces sigue sin contar');
+});
 test('atdd: el gate corre de verdad en `complete-step 4` y el bypass queda logueado', () => {
   const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'atdd-home-'));
   const SID = 'sess-atdd-1';
