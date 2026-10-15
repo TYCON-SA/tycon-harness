@@ -52,6 +52,7 @@ const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 const { writeAtomic, paths: statePaths } = require('./state');
 const M = require('./managed');
+const PD = require('./plugin-dirs.js');   // story 7.27
 const SL = require('./startup-line');
 
 const isObject = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
@@ -321,6 +322,17 @@ function removePieces(pieces, { home = os.homedir(), env = process.env, tree = n
           const d = json(piece); if (!d) break;
           const cur = getPath(d.data, piece.id);
           if (cur === undefined) { out.absent.push(piece); break; }
+          // la carpeta de los mods (story 7.27): se saca sólo esa entrada; si no queda nada, la clave
+          if (piece.id === PD.PLUGIN_DIRS_ID && 'value' in piece) {
+            const r = PD.removeDir(cur, piece.value, { sep: PD.separator(platform), home });
+            if (!r.changed) { out.absent.push(piece); break; }
+            if (r.value === null) {
+              delete d.data.env[PD.PLUGIN_DIRS_KEY];
+              if (!Object.keys(d.data.env).length) delete d.data.env;
+            } else d.data.env[PD.PLUGIN_DIRS_KEY] = r.value;
+            d.dirty = true; out.removed.push(piece);
+            break;
+          }
           if (!('value' in piece)) { keep(piece, `${piece.id} sin el valor que puso el arnés en el registro: no sé si es tuyo, lo dejo`); break; }
           if (JSON.stringify(cur) !== JSON.stringify(piece.value)) { keep(piece, `${piece.id} vale ${JSON.stringify(cur)} y el arnés puso ${JSON.stringify(piece.value)}: lo cambiaste, es tuyo`); break; }
           const parts = piece.id.split('.');

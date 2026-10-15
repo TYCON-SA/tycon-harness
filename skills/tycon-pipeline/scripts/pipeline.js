@@ -5279,6 +5279,9 @@ function main() {
 // las funciones más evadibles/sutiles no tenían tests). require() NO ejecuta main().
 module.exports = {
   matchGlob,
+  // story 7.27 — el cartel de la corrida (mods/harness-mods) copia la lista de pasos; harness-mods.test.js T16 la ata a ésta.
+  STEP_SEQUENCE,
+  SUBSTEP_FLAG,
   // story 8.9 del arnés, tanda C4 — tests/unit.test.js «T43 ThirdPartyManifestPath_*».
   thirdPartyManifestPath,
   // El hook on-advisor-run.js escribe el review-roster en el MISMO run dir que usa el pipeline:

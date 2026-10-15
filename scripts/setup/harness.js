@@ -777,6 +777,12 @@ function sharedPlan(ctx, tree) {
       if (!(k in env)) out.push({ kind: 'setting', where: file, id: `env.${k}`, action: 'add' });
       else if (env[k] === v) out.push({ kind: 'setting', where: file, id: `env.${k}`, action: 'keep' });
     }
+    // la carpeta de los mods del arnés (story 7.27): se suma a las del dev, así que el plan mira la carpeta, no el valor
+    if (withSettings && ctx.env.TYCON_NO_MODS !== '1') {
+      const PD = mod('plugin-dirs');
+      const has = PD.hasDir(env[PD.PLUGIN_DIRS_KEY], PD.ourDir(ctx.home), { sep: PD.separator(ctx.platform), home: ctx.home });
+      out.push({ kind: 'setting', where: file, id: PD.PLUGIN_DIRS_ID, action: has ? 'keep' : 'add' });
+    }
     const src = path.join(tree, 'commands');
     if (ctx.env.TYCON_NO_COMMANDS_SYNC !== '1' && fs.existsSync(src)) {
       for (const name of fs.readdirSync(src).filter((n) => n.endsWith('.md') && !n.startsWith('.')).sort()) {
