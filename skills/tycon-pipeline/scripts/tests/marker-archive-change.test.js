@@ -35,11 +35,14 @@ const MARKER = path.join(__dirname, '..', 'marker.js');
 // atrasado sólo tiene el viejo, y el marker lo usa si falta el nuevo.
 const GUION = 'run-change.js';
 const GUION_VIEJO = `${['cambio', 'de', 'corrida'].join('-')}.js`;
-// El guion real: la variable, el clon canónico, o el checkout del nocturno de Azure (BUILD_SOURCESDIRECTORY es
-// el arnés en el job de suites). El primero que lo tenga.
-const GUIAS_REALES = [process.env.TYCON_GUIDES_DIR, path.join(os.homedir(), 'SourceCode', 'tycon-claude-guides'), process.env.BUILD_SOURCESDIRECTORY]
+// El guion real: la variable, el árbol de esta misma prueba, la carpeta actual, el arnés instalado o el checkout del
+// nocturno de Azure (BUILD_SOURCESDIRECTORY es el arnés en el job de suites). El primero que lo tenga. Antes el segundo
+// candidato era la carpeta vieja del clon (~/SourceCode/tycon-claude-guides): desde el renombre no existe, y en una Mac sin
+// la variable T11 salía rojo con «no está el guion real» (2026-10-15).
+const ARBOL = path.resolve(__dirname, '..', '..', '..', '..');
+const GUIAS_REALES = [process.env.TYCON_GUIDES_DIR, ARBOL, process.cwd(), path.join(os.homedir(), '.tycon', 'harness'), process.env.BUILD_SOURCESDIRECTORY]
   .filter(Boolean).find((d) => fs.existsSync(path.join(d, 'scripts', 'metrics', GUION)))
-  || process.env.TYCON_GUIDES_DIR || path.join(os.homedir(), 'SourceCode', 'tycon-claude-guides');
+  || process.env.TYCON_GUIDES_DIR || ARBOL;
 
 function corral() {
   const raiz = fs.mkdtempSync(path.join(os.tmpdir(), 'cambio-'));
