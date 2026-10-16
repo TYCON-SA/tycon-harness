@@ -94,6 +94,14 @@ for b in az engram codegraph codex claude; do
 done
 PATH="$BIN" command -v node >/dev/null 2>&1 || { echo "❌ suites-portables: no quedó node en el PATH armado"; exit 1; }
 
+# ── las skills de terceros, ANTES de lanzar nada en paralelo ──────────────────────────────────────
+#    Algunas suites (harness-install, install-third-party) las ponen en skills/ del árbol mientras otras corren. Una
+#    suite que compara dos instalaciones (installer-shared-pieces S11) las ve aparecer entre la primera y la segunda, y
+#    da rojo según con quién le toque correr (story 8.40, DEF-8.40-carrera-skills-de-terceros). Con el árbol ya completo,
+#    nadie cambia skills/ a mitad de camino. Con una HOME temporal, el estado del paso no cae en la de quien corre.
+mkdir -p "$T/third-party-home"
+HOME="$T/third-party-home" node "$RAIZ/scripts/publishing/install-third-party.js" --repo "$RAIZ" 2>&1 | sed 's/^/suites-portables: /'
+
 # ── correr las portables, de a 4, con tope ────────────────────────────────────────────────────────
 node - "$RAIZ" "${SK_REPO:-}" "$HAY_SKILLS" "$CASA" "$BIN" "$T" "$SUITES" "${SK_WHY:-}" <<'JS'
 'use strict';

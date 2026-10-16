@@ -275,25 +275,25 @@ const NPX_PAPERS = ['README.md', 'README.es.md', 'getting-started/mac.md', 'gett
 function npxProblems(text, file) {
   const out = [];
   const fences = [...text.matchAll(/```[a-z]*\n([\s\S]*?)```/g)].map((m) => m[1]);
-  if (fences.some((f) => /\bnpx\b[^\n]*@tycon-sa\/harness/.test(f))) out.push(`${file}: la línea npx está en un bloque de código (entrada ejecutable) antes de que exista el paquete`);
+  if (fences.some((f) => /\bnpx\b[^\n]*@tyconsa\/harness/.test(f))) out.push(`${file}: la línea npx está en un bloque de código (entrada ejecutable) antes de que exista el paquete`);
   if (/\bnpx\s+(-y|--yes)\b/.test(text)) out.push(`${file}: escribe npx -y / npx --yes`);
-  for (const line of text.split('\n').filter((l) => /@tycon-sa\/harness/.test(l))) {
-    if (!/@tycon-sa\/harness@latest/.test(line)) out.push(`${file}: la línea npx sin @latest: ${line.trim().slice(0, 120)}`);
-    if (/@tycon-sa\/harness@latest[^\n`]*--yes/.test(line)) out.push(`${file}: la línea npx con --yes: ${line.trim().slice(0, 120)}`);
+  for (const line of text.split('\n').filter((l) => /@tyconsa\/harness/.test(l))) {
+    if (!/@tyconsa\/harness@latest/.test(line)) out.push(`${file}: la línea npx sin @latest: ${line.trim().slice(0, 120)}`);
+    if (/@tyconsa\/harness@latest[^\n`]*--yes/.test(line)) out.push(`${file}: la línea npx con --yes: ${line.trim().slice(0, 120)}`);
     if (!/próximamente|coming soon/i.test(line)) out.push(`${file}: la línea npx fuera de una nota de «próximamente»: ${line.trim().slice(0, 120)}`);
   }
   return out;
 }
 test('T32 Docs_NpxOnlyAsComingSoon_NoYes_CurrentEntryStays', () => {
   for (const f of NPX_PAPERS) assert.deepStrictEqual(npxProblems(read(f), f), [], `${f}: la línea npx`);
-  for (const f of ['README.md', 'README.es.md']) assert.ok(/próximamente[^\n]*`npx @tycon-sa\/harness@latest`|coming soon[^\n]*`npx @tycon-sa\/harness@latest`/i.test(read(f)), `${f}: la nota de «próximamente» con la línea npx`);
+  for (const f of ['README.md', 'README.es.md']) assert.ok(/próximamente[^\n]*`npx @tyconsa\/harness@latest`|coming soon[^\n]*`npx @tyconsa\/harness@latest`/i.test(read(f)), `${f}: la nota de «próximamente» con la línea npx`);
   for (const f of ['getting-started/reference.md', 'getting-started/reference.es.md']) assert.match(read(f), /<!-- install:core -->[\s\S]*get-harness\.sh[\s\S]*<!-- \/install:core -->/, `${f}: la entrada de hoy (install:core con get-harness.sh) sigue`);
   // el espejo: cada forma prohibida se detecta
-  assert.ok(npxProblems('```bash\nnpx @tycon-sa/harness@latest\n```\n', 'x').length >= 1, 'control: la línea en un bloque de código');
-  assert.ok(npxProblems('Próximamente: `npx -y @tycon-sa/harness@latest`\n', 'x').some((m) => m.includes('-y')), 'control: npx -y');
-  assert.ok(npxProblems('Próximamente: `npx @tycon-sa/harness@latest --profile minimal --yes`\n', 'x').some((m) => m.includes('--yes')), 'control: la línea con --yes');
-  assert.ok(npxProblems('Instalá con `npx @tycon-sa/harness@latest`\n', 'x').some((m) => m.includes('próximamente')), 'control: fuera de una nota');
-  assert.ok(npxProblems('Próximamente: `npx @tycon-sa/harness`\n', 'x').some((m) => m.includes('@latest')), 'control: sin @latest');
+  assert.ok(npxProblems('```bash\nnpx @tyconsa/harness@latest\n```\n', 'x').length >= 1, 'control: la línea en un bloque de código');
+  assert.ok(npxProblems('Próximamente: `npx -y @tyconsa/harness@latest`\n', 'x').some((m) => m.includes('-y')), 'control: npx -y');
+  assert.ok(npxProblems('Próximamente: `npx @tyconsa/harness@latest --profile minimal --yes`\n', 'x').some((m) => m.includes('--yes')), 'control: la línea con --yes');
+  assert.ok(npxProblems('Instalá con `npx @tyconsa/harness@latest`\n', 'x').some((m) => m.includes('próximamente')), 'control: fuera de una nota');
+  assert.ok(npxProblems('Próximamente: `npx @tyconsa/harness`\n', 'x').some((m) => m.includes('@latest')), 'control: sin @latest');
 });
 
 // T20 · cada línea npx que escriben las portadas, la referencia y la página del paquete pasa el freno de comandos
@@ -310,11 +310,11 @@ test('T20 NpxInstaller_PortadaLinesPassGuard', (t) => {
   try {
     const lines = new Set();
     for (const f of [...NPX_PAPERS, 'scripts/setup/npm/README.md']) {
-      for (const m of read(f).matchAll(/`(npx [^`\n]*@tycon-sa\/harness[^`\n]*)`/g)) lines.add(m[1]);
+      for (const m of read(f).matchAll(/`(npx [^`\n]*@tyconsa\/harness[^`\n]*)`/g)) lines.add(m[1]);
     }
     assert.ok(lines.size >= 1, 'las portadas y la página del paquete escriben la línea npx');
     // y las variantes que la ayuda del instalador y las guías van a escribir cuando el paquete esté publicado
-    for (const v of ['--profile full --integrations none --packs all', '--profile minimal --yes', '--team acme/harness-team-profile', '--audience org']) lines.add(`npx @tycon-sa/harness@latest ${v}`);
+    for (const v of ['--profile full --integrations none --packs all', '--profile minimal --yes', '--team acme/harness-team-profile', '--audience org']) lines.add(`npx @tyconsa/harness@latest ${v}`);
     for (const line of lines) {
       const r = guard(line);
       assert.strictEqual(r.status, 0, `el freno bloquea «${line}»: ${(r.stderr || '').slice(0, 300)}`);

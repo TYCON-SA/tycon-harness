@@ -3,7 +3,7 @@
 /**
  * npm-package-version.js — la versión del paquete de npm sube cuando cambia lo que el paquete trae (story 8.40, AC 11).
  *
- * El paquete `@tycon-sa/harness` (scripts/setup/npm/) tiene su propia versión semver, que no es el número del arnés: npm
+ * El paquete `@tyconsa/harness` (scripts/setup/npm/) tiene su propia versión semver, que no es el número del arnés: npm
  * rechaza republicar una versión, y el workflow que publica (.github/workflows/npm-publish.yml) sale rojo si encuentra
  * la versión ya publicada con otro contenido. Para que eso no se descubra después del merge, la CI pública lo exige en
  * el pedido: si el rango toca algo bajo scripts/setup/npm/, `version` de su package.json tiene que ser MAYOR que la de

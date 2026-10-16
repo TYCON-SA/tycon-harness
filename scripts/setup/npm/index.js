@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 'use strict';
-// tycon-harness (paquete @tycon-sa/harness) — el instalador que corre `npx @tycon-sa/harness@latest` (story 8.40). El
+// tycon-harness (paquete @tyconsa/harness) — el instalador que corre `npx @tyconsa/harness@latest` (story 8.40). El
 // paquete NO trae el arnés: trae este archivo, que hace lo mismo que scripts/setup/get-harness.sh, en Node y en los tres
 // sistemas, sin dependencias. En orden:
 //   1. Revisa los requisitos (`requisites`): Node NODE_FLOOR o más; fuera de Windows bash, tar y python3 (salvo sólo Codex;
@@ -28,7 +28,7 @@ const http = require('http'); const https = require('https'); const { spawnSync 
 
 const REPO = 'TYCON-SA/tycon-harness';
 const NODE_FLOOR = 22;   // el piso para INSTALAR (el de la documentación); harness.js tolera 20 sólo para actualizar una instalación existente
-const PACKAGE = '@tycon-sa/harness', TOKEN_URL = 'https://github.com/settings/personal-access-tokens/new', AUDIENCES = { 1: 'me', 2: 'team', 3: 'org' };
+const PACKAGE = '@tyconsa/harness', TOKEN_URL = 'https://github.com/settings/personal-access-tokens/new', AUDIENCES = { 1: 'me', 2: 'team', 3: 'org' };
 const GH_REPO = /^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/;
 
 const say = (s) => process.stderr.write(`tycon-harness: ${s}\n`);
