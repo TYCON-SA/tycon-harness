@@ -1,0 +1,747 @@
+'use strict';
+/*
+ * site-config.test.js — la pestaña Configuración del sitio de la organización (story 2.29).
+ *
+ * El núcleo común (scripts/lib/org-config.js) y la pestaña (scripts/site/tabs/config.js). El servidor de prueba es el
+ * de la 2.23 con una sesión inyectada; los repos son repos git locales servidos por HTTP (lib/git-http-repo.js); las
+ * APIs REST de Azure DevOps y de GitHub son servidores falsos en el proceso (lib/fake-ado-api.js, lib/fake-github-api.js).
+ * Correos, repos y organizaciones inventados: nada de acá habla con la red.
+ */
+const test = require('node:test');
+const assert = require('node:assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const crypto = require('crypto');
+
+const ROOT = path.join(__dirname, '..', '..');
+const ORG = require(path.join(ROOT, 'scripts', 'lib', 'org-config.js'));
+const OPS = require(path.join(ROOT, 'scripts', 'lib', 'operations-config.js'));
+const TR = require(path.join(ROOT, 'scripts', 'lib', 'team-repos.js'));
+
+const dirs = [];
+test.after(() => { for (const d of dirs) fs.rmSync(d, { recursive: true, force: true }); });
+const tmp = (p) => { const d = fs.mkdtempSync(path.join(os.tmpdir(), p)); dirs.push(d); return d; };
+const texto = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8');
+
+const ARNES_THRESHOLDS = { corridas_al_final: { direction: 'mayor_es_mejor', ok_min: 0.8, bad_max: 0.5 }, rojos: { direction: 'menor_es_mejor', ok_max: 0, bad_min: 3 } };
+const SOURCES_ORG = { sources: [{ id: 'x', pattern: 'x-*.json', dir: 'x', max_age_days: 2 }], thresholds: { corridas_al_final: { direction: 'mayor_es_mejor', ok_min: 0.7, bad_max: 0.4 }, rojos: { direction: 'menor_es_mejor', ok_max: 0, bad_min: 3 } } };
+
+// ── el núcleo común ──────────────────────────────────────────────────────────────────────────────────────────────
+
+test('T20 NoTocaLaMaquina_NiDevuelveIdentidades @story-2.29 @ac-20 — el código de la pestaña y del núcleo no nombra la configuración de ninguna máquina', () => {
+  for (const f of ['scripts/lib/org-config.js', 'scripts/site/tabs/config.js', 'scripts/lib/repo-proposal.js']) {
+    const t = texto(f);
+    for (const clave of ['github.token', 'azure.token', 'paths.', 'tycon-home']) assert.ok(!t.includes(clave), `${f} no nombra «${clave}»`);
+    // `config.json` suelto (el de la máquina); `applied-config.json`, la marca del nocturno, es otra cosa
+    assert.doesNotMatch(t, /(?<![-\w])config\.json/, `${f} no nombra config.json`);
+  }
+});
+
+test('T23 Codigo_SinValoresDeUnaOrganizacion @story-2.29 @ac-22 — ni organización, proyecto, repo, correo ni inquilino de TYCON', () => {
+  const marcas = [/tycon/i, /bizuit/i, /dev\.azure\.com\/[a-z]/i, /@[a-z0-9-]+\.com\.ar/i, /harness-team-(profile|operations)\b/, /TYCON-SA/];
+  for (const f of ['scripts/lib/org-config.js', 'scripts/site/tabs/config.js', 'scripts/lib/repo-proposal.js']) {
+    const t = texto(f);
+    for (const rx of marcas) assert.ok(!rx.test(t), `${f} no trae ${rx}`);
+  }
+});
+
+test('T6 Revisar_MismoLector_ProblemasConRuta @story-2.29 @ac-6 — el lector del arnés, espiado; cada problema con su ruta; uno sin campo arriba', () => {
+  const llamadas = [];
+  const espia = { ...OPS, parse: (t) => { llamadas.push(t); return OPS.parse(t); } };
+  const seccion = ORG.SECCIONES.find((s) => s.id === 'responsables');
+  assert.ok(seccion, 'hay una sección de responsables (owners y reviewers)');
+  const archivo = `${JSON.stringify({ version: 1, owners: { default: 'lead@acme.example' }, site: { maintainers: ['lead@acme.example'] } }, null, 2)}\n`;
+  const r = ORG.revisar({ seccion, texto: archivo, borrador: { owners: { default: '' }, foo: 1 }, lectores: { 'operations-config.js': espia } });
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(llamadas.length, 1, 'se validó con el lector del arnés, una vez');
+  const rutas = r.problems.map((p) => p.path);
+  assert.ok(rutas.includes('owners.default'), `owners.default con su ruta: ${rutas}`);
+  assert.ok(rutas.includes('foo'), `foo con su ruta: ${rutas}`);
+  assert.ok(r.problems.find((p) => p.path === 'foo').sinCampo, 'el problema sin campo en la pantalla se marca para ir arriba');
+  // sin problemas: el texto resultante conserva lo que la sección no edita, byte a byte
+  const ok = ORG.revisar({ seccion, texto: archivo, borrador: { owners: { default: 'otro@acme.example' } }, lectores: { 'operations-config.js': OPS } });
+  assert.strictEqual(ok.ok, true, JSON.stringify(ok.problems));
+  assert.strictEqual(ok.texto, `${JSON.stringify({ version: 1, owners: { default: 'otro@acme.example' }, site: { maintainers: ['lead@acme.example'] } }, null, 2)}\n`);
+});
+
+test('T17 Perfil_SinVersionMinima_NoPropone @story-2.29 @ac-17 — la parte común del texto, sin la cola del clon', () => {
+  const bajo = ORG.profileGateProblem(JSON.stringify({ requires: { harness: '>= 2026.10.01.1' } }));
+  assert.match(bajo, /todavía no se puede proponer/);
+  assert.match(bajo, new RegExp(ORG.TEAM_REPOS_SINCE.replace(/\./g, '\\.')));
+  assert.doesNotMatch(bajo, /quedó guardado en tu clon/);
+  assert.strictEqual(ORG.profileGateProblem(JSON.stringify({ requires: { harness: `>= ${ORG.TEAM_REPOS_SINCE}` } })), null);
+  assert.match(ORG.profileGateProblem('no es json'), /no pude leer team-layer\.json/);
+  assert.ok(ORG.versionAtLeast('2026.10.13.11', ORG.TEAM_REPOS_SINCE));
+});
+
+test('T12 Umbrales_SoloFilasConocidas_ElRestoIgual @story-2.29 @ac-11 — thresholdsParse: sólo thresholds, problemas con ruta, el resto byte por byte', () => {
+  const seccion = ORG.SECCIONES.find((s) => s.id === 'umbrales');
+  const archivo = ORG.formatJson(SOURCES_ORG);
+  const borrador = { corridas_al_final: { direction: 'mayor_es_mejor', ok_min: 0.9, bad_max: 0.4 }, rojos: SOURCES_ORG.thresholds.rojos };
+  const r = ORG.revisar({ seccion, texto: archivo, borrador, lectores: {}, arnes: { thresholds: ARNES_THRESHOLDS } });
+  assert.strictEqual(r.ok, true, JSON.stringify(r.problems));
+  const esperado = JSON.parse(archivo); esperado.thresholds.corridas_al_final.ok_min = 0.9;
+  assert.strictEqual(r.texto, ORG.formatJson(esperado), 'cambia sólo esa fila');
+  const mal = ORG.revisar({ seccion, texto: archivo, borrador: { ...borrador, inventada: { direction: 'mayor_es_mejor', ok_min: 1 }, rojos: { ok_max: 0 } }, lectores: {}, arnes: { thresholds: ARNES_THRESHOLDS } });
+  assert.strictEqual(mal.ok, false);
+  assert.deepStrictEqual(mal.problems.map((p) => p.path).sort(), ['thresholds.inventada', 'thresholds.rojos']);
+  // el lector de umbrales es un envoltorio sobre umbralValido: no hay un validador propio
+  const tp = ORG.thresholdsParse(archivo, { arnes: { thresholds: ARNES_THRESHOLDS } });
+  assert.strictEqual(tp.ok, true);
+  assert.deepStrictEqual(Object.keys(tp.data), ['corridas_al_final', 'rojos']);
+});
+
+test('T28 Umbrales_FormatoAjenoYClaveRetirada @story-2.29 @ac-11 — tabs: sólo lectura con el motivo; clave que el arnés ya no trae: aviso sin bloquear', () => {
+  const conTabs = `${JSON.stringify(SOURCES_ORG, null, '\t')}\n`;
+  const r = ORG.thresholdsParse(conTabs, { arnes: { thresholds: ARNES_THRESHOLDS } });
+  assert.strictEqual(r.ok, false);
+  assert.match(r.problems[0].message, /no está en el formato que escribe el arnés/);
+  assert.strictEqual(r.soloLectura, true);
+  const vieja = ORG.formatJson({ ...SOURCES_ORG, thresholds: { ...SOURCES_ORG.thresholds, vieja: { direction: 'menor_es_mejor', ok_max: 1, bad_min: 2 } } });
+  const v = ORG.thresholdsParse(vieja, { arnes: { thresholds: ARNES_THRESHOLDS } });
+  assert.strictEqual(v.ok, true, JSON.stringify(v.problems));
+  assert.deepStrictEqual(v.avisos.map((a) => a.path), ['thresholds.vieja']);
+  assert.match(v.avisos[0].message, /el arnés ya no usa esta clave/);
+});
+
+test('T14 Versiones_AlDiaAtrasadaSinNoticiasNoMedido @story-2.29 @ac-13 — contra la versión de la imagen, sin red; el día de la carpeta con fecha', () => {
+  const espejo = tmp('site-config-espejo-');
+  const pon = (maq, carpeta, doc) => { const d = path.join(espejo, maq, 'registros', carpeta || ''); fs.mkdirSync(d, { recursive: true }); fs.writeFileSync(path.join(d, 'place.json'), JSON.stringify(doc)); };
+  pon('maq-a', 'v20261015T100000000Z', { install: { version: '2026.10.15.48' } });
+  pon('maq-b', 'v20261014T100000000Z', { install: { version: '2026.10.10.1' } });
+  pon('maq-c', 'v20260930T100000000Z', { install: { version: '2026.10.15.48' } });
+  pon('maq-d', 'v20261015T100000000Z', { install: {} });
+  pon('maq-e', '', { install: { version: '2026.10.16.1' } });
+  const ahora = Date.parse('2026-10-16T12:00:00Z');
+  const filas = ORG.versionesDeMaquinas({ espejo, versionImagen: '2026.10.15.48', ahora });
+  const por = Object.fromEntries(filas.map((f) => [f.maquina, f]));
+  assert.strictEqual(por['maq-a'].estado, 'al_dia');
+  assert.strictEqual(por['maq-a'].dia, '2026-10-15');
+  assert.strictEqual(por['maq-b'].estado, 'atrasada');
+  assert.match(por['maq-b'].texto, /la imagen puede estar atrasada/);
+  assert.strictEqual(por['maq-c'].estado, 'sin_noticias');
+  assert.match(por['maq-c'].texto, /sin noticias desde 2026-09-30/);
+  assert.strictEqual(por['maq-d'].estado, 'no_medido');
+  assert.match(por['maq-d'].texto, /no declara/);
+  assert.strictEqual(por['maq-e'].estado, 'al_dia', 'sin carpeta con fecha, se juzga sólo por la versión');
+  assert.strictEqual(por['maq-e'].dia, null);
+  assert.strictEqual(por['maq-e'].diaTexto, 'sin fecha');
+  // la imagen sin versión: todas «no medido»
+  const sin = ORG.versionesDeMaquinas({ espejo, versionImagen: null, ahora });
+  assert.ok(sin.every((f) => f.estado === 'no_medido' && /la imagen no declara su versión/.test(f.texto)));
+});
+
+test('T31 Paridad_PorProducto_FaltaTieneDeclaradoVencido @story-2.29 @ac-25 — por producto, lo que le falta, lo declarado y lo vencido', () => {
+  const lista = { grupos: { web: { repos: [{ ruta: 'a/front', producto: 'A' }, { ruta: 'b/front', producto: 'B' }] }, api: { repos: [{ ruta: 'a/back', producto: 'A' }] } }, rasgos: [{ id: 'escaneo' }], diferencias_declaradas: [{ grupo: 'web', rasgo: 'firma', motivo: 'no aplica a B', fecha: '2026-10-01', revision: '2027-01-01' }, { grupo: 'web', rasgo: 'cache', motivo: 'viejo', fecha: '2026-01-01', revision: '2026-02-01' }] };
+  const resultado = { estado: 'medido', fecha: '2026-10-16', divergencias: [{ grupo: 'web', rasgo: 'escaneo', que: 'el paso de escaneo', tienen: ['a/front'], no_tienen: ['b/front'] }], declaradas: [{ grupo: 'web', rasgo: 'firma', revision: '2027-01-01' }], vencidas: [{ grupo: 'web', rasgo: 'cache', revision: '2026-02-01' }], por_ruta: [] };
+  const v = ORG.paridadPorProducto({ lista, resultado, hoy: '2026-10-16' });
+  assert.strictEqual(v.estado, 'medido');
+  const b = v.productos.find((p) => p.producto === 'B');
+  assert.deepStrictEqual(b.grupos, ['web']);
+  assert.deepStrictEqual(b.faltan.map((x) => x.que), ['el paso de escaneo']);
+  const a = v.productos.find((p) => p.producto === 'A');
+  assert.deepStrictEqual(a.grupos.sort(), ['api', 'web']);
+  assert.deepStrictEqual(a.tiene.map((x) => x.rasgo), ['escaneo'], 'A tiene lo que a la mayoría le falta');
+  assert.deepStrictEqual(a.declaradas.map((x) => `${x.rasgo}:${x.revision}`), ['firma:2027-01-01']);
+  assert.deepStrictEqual(a.vencidas.map((x) => x.rasgo), ['cache']);
+  assert.ok(v.definicion.rasgos.length === 1 && Object.keys(v.definicion.grupos).length === 2, 'la definición se muestra, no se edita');
+});
+
+test('T33 Paridad_Renovar_SoloEsaEntrada_ConReglas @story-2.29 @ac-26 — revision, motivo y fecha de hoy; el resto byte a byte; las tres reglas', () => {
+  const lista = { grupos: {}, rasgos: [], diferencias_declaradas: [{ grupo: 'web', rasgo: 'firma', motivo: 'no aplica', fecha: '2026-10-01', revision: '2026-12-01' }, { grupo: 'web', rasgo: 'cache', motivo: 'viejo', fecha: '2026-01-01', revision: '2026-02-01' }] };
+  const archivo = ORG.formatJson(lista);
+  const { leerDeclaradas } = require(path.join(ROOT, 'scripts', 'ci', 'check-product-parity.js'));
+  const seccion = ORG.SECCIONES.find((s) => s.id === 'paridad');
+  const ok = ORG.revisar({ seccion, texto: archivo, borrador: { accion: 'renew', grupo: 'web', rasgo: 'firma', revision: '2027-04-16', motivo: 'sigue sin aplicar' }, lectores: { 'check-product-parity.js': { leerDeclaradas } }, hoy: '2026-10-16' });
+  assert.strictEqual(ok.ok, true, JSON.stringify(ok.problems));
+  const esperado = JSON.parse(archivo); esperado.diferencias_declaradas[0] = { grupo: 'web', rasgo: 'firma', motivo: 'sigue sin aplicar', fecha: '2026-10-16', revision: '2027-04-16' };
+  assert.strictEqual(ok.texto, ORG.formatJson(esperado));
+  for (const [borrador, rx] of [[{ revision: '2026-10-15', motivo: 'x' }, /posterior a hoy/], [{ revision: '2028-10-17', motivo: 'x' }, /como mucho a un año/], [{ revision: '2027-01-01', motivo: '  ' }, /motivo/]]) {
+    const r = ORG.revisar({ seccion, texto: archivo, borrador: { accion: 'renew', grupo: 'web', rasgo: 'firma', ...borrador }, lectores: { 'check-product-parity.js': { leerDeclaradas } }, hoy: '2026-10-16' });
+    assert.strictEqual(r.ok, false);
+    assert.ok(r.problems.some((p) => rx.test(p.message)), `${rx}: ${JSON.stringify(r.problems)}`);
+  }
+  // la validación es la del control: una entrada sin un campo la rechaza la lectura exportada
+  const rota = ORG.formatJson({ ...lista, diferencias_declaradas: [lista.diferencias_declaradas[0], { grupo: 'web', rasgo: 'cache', motivo: 'x', revision: '2027-01-01' }] });
+  const r2 = ORG.revisar({ seccion, texto: rota, borrador: { accion: 'renew', grupo: 'web', rasgo: 'firma', revision: '2027-01-01', motivo: 'x' }, lectores: { 'check-product-parity.js': { leerDeclaradas } }, hoy: '2026-10-16' });
+  assert.strictEqual(r2.ok, false);
+  assert.ok(r2.problems.some((p) => /fecha/.test(p.message)), JSON.stringify(r2.problems));
+});
+
+test('T34 Paridad_Cerrar_QuitaSoloEsaEntrada_YAvisa @story-2.29 @ac-26', () => {
+  const lista = { grupos: {}, rasgos: [], diferencias_declaradas: [{ grupo: 'web', rasgo: 'firma', motivo: 'a', fecha: '2026-10-01', revision: '2026-12-01' }, { grupo: 'web', rasgo: 'cache', motivo: 'b', fecha: '2026-10-01', revision: '2026-12-01' }] };
+  const archivo = ORG.formatJson(lista);
+  const { leerDeclaradas } = require(path.join(ROOT, 'scripts', 'ci', 'check-product-parity.js'));
+  const seccion = ORG.SECCIONES.find((s) => s.id === 'paridad');
+  const r = ORG.revisar({ seccion, texto: archivo, borrador: { accion: 'close', grupo: 'web', rasgo: 'firma' }, lectores: { 'check-product-parity.js': { leerDeclaradas } }, hoy: '2026-10-16' });
+  assert.strictEqual(r.ok, true, JSON.stringify(r.problems));
+  assert.strictEqual(r.texto, ORG.formatJson({ ...lista, diferencias_declaradas: [lista.diferencias_declaradas[1]] }));
+  assert.match(r.aviso, /vuelve (a aparecer )?como divergencia la noche siguiente/);
+});
+
+test('T22 Propuesta_ConservaLoQueNoSeEdito @story-2.29 @ac-23 — se cambia sólo owners.default; el archivo propuesto difiere sólo en esa línea', () => {
+  const doc = { __doc: 'un comentario', version: 1, owners: { default: 'lead@acme.example', by_project: { P: 'p@acme.example' } }, reviewers: { watcher: ['w@acme.example'] }, site: { maintainers: ['lead@acme.example'], refresh_minutes: 20 }, people: { machines: { 'maq-a': { person: 'a@acme.example', reported_sha256: null, confirmed_by: 'lead@acme.example', confirmed_on: '2026-10-01' } } } };
+  const archivo = ORG.formatJson(doc);
+  const seccion = ORG.SECCIONES.find((s) => s.id === 'responsables');
+  const r = ORG.revisar({ seccion, texto: archivo, borrador: { owners: { ...doc.owners, default: 'otro@acme.example' }, reviewers: doc.reviewers }, lectores: { 'operations-config.js': OPS } });
+  assert.strictEqual(r.ok, true, JSON.stringify(r.problems));
+  const a = archivo.split('\n'); const b = r.texto.split('\n');
+  assert.strictEqual(a.length, b.length);
+  const distintas = a.map((l, i) => (l === b[i] ? null : i)).filter((i) => i !== null);
+  assert.strictEqual(distintas.length, 1, `una sola línea distinta: ${distintas}`);
+  assert.match(b[distintas[0]], /otro@acme\.example/);
+});
+
+// el código de pantalla: un solo archivo, sin nada de afuera ni de la máquina
+test('T4a Pantalla_EsUnArchivo_SinFetchAfuera @story-2.29 @ac-4', () => {
+  const js = ORG.pantalla();
+  assert.ok(js.length > 2000);
+  assert.ok(!/https?:\/\//.test(js), 'nada de afuera');
+  assert.ok(/X-Site-Token/i.test(js), 'manda el token de doble envío');
+  assert.ok(!/innerHTML/.test(js), 'los textos van con textContent');
+});
+
+module.exports = { ARNES_THRESHOLDS, SOURCES_ORG, tmp };
+
+// ── la pestaña en el sitio de la 2.23 ────────────────────────────────────────────────────────────────────────────
+const { spawnSync } = require('child_process');
+const H = require('./lib/site-harness.js');
+const { arrancarEmisor } = require('./lib/fake-oidc.js');
+const { validarConfiguracion } = require(path.join(H.SITE, 'server.js'));
+const TAB = () => require(path.join(H.SITE, 'tabs', 'config.js'));
+const LEAD = 'lead@acme.example';
+const DEV = 'dev.a@acme.example';
+const sha = (c) => crypto.createHash('sha256').update(c.trim().toLowerCase()).digest('hex');
+const HOY = '2026-10-16';
+const AHORA = Date.parse(`${HOY}T12:00:00Z`);
+
+function g(dir, ...a) {
+  const r = spawnSync('git', ['-c', 'maintenance.auto=false', '-c', 'gc.auto=0', ...a], { cwd: dir, encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_NAME: 'p', GIT_AUTHOR_EMAIL: 'p@acme.example', GIT_COMMITTER_NAME: 'p', GIT_COMMITTER_EMAIL: 'p@acme.example', GIT_AUTHOR_DATE: '2026-10-16T12:00:00Z', GIT_COMMITTER_DATE: '2026-10-16T12:00:00Z' } });
+  if (r.status !== 0) throw new Error(`git ${a.join(' ')}: ${r.stderr}`);
+  return r.stdout.trim();
+}
+/** Un clon de juguete con estos archivos (objetos → JSON del arnés; texto tal cual; null no se escribe). */
+function clon(archivos) {
+  const d = tmp('site-config-clon-');
+  g(d, 'init', '-q', '-b', 'main');
+  for (const [rel, c] of Object.entries(archivos)) {
+    if (c === null) continue;
+    fs.mkdirSync(path.dirname(path.join(d, rel)), { recursive: true });
+    fs.writeFileSync(path.join(d, rel), typeof c === 'string' ? c : ORG.formatJson(c));
+  }
+  g(d, 'add', '-A'); g(d, 'commit', '-q', '--allow-empty', '-m', 'base');
+  return d;
+}
+const opsBase = (extra = {}) => ({ version: 1, owners: { default: LEAD }, site: { maintainers: [LEAD] }, ...extra });
+
+/** Las fuentes de la 2.23 de mentira, con los clones y el espejo que la pestaña lee. */
+function fuentesCon({ ops, perfil = null, config, informados = null, repos = null, espejo = null, estado = {} }) {
+  const f = H.fuentesFijas({ config: config || opsBase(), personas: { informados, repos } });
+  const base = f.estado;
+  f.estado = () => ({ ...base(), ...estado });
+  f.clones = () => ({ operaciones: ops ? { dir: ops } : null, perfil: perfil ? { dir: perfil } : null });
+  f.dirBuzon = espejo || tmp('site-config-buzon-');
+  f.exclusivo = (fn) => fn();
+  return f;
+}
+
+/** El sitio con la pestaña; `entrar(correo)` da la cookie de una sesión real del emisor local. */
+async function conPestana({ fuentes, env = {}, opciones = {} }, fn) {
+  const emisor = await arrancarEmisor();
+  const envSitio = H.envBase({ SITE_OIDC_ISSUER: emisor.issuer, ...env });
+  const cfg = validarConfiguracion(envSitio).cfg;
+  const rutasExtra = TAB().crearRutas({ cfg, fuentes, versionImagen: '2026.10.15.48', ahora: () => AHORA, ...opciones });
+  let h = null;
+  try {
+    h = await H.arrancarSitio({ env: envSitio, fuentes, rutasExtra });
+    const entrar = async (email) => (await H.ingresar(h, emisor, { sub: `s-${email}`, email, email_verified: true })).sesion;
+    const token = async (cookie) => { const p = await h.pedir('/configuracion', { cookie }); const m = /<meta name="site-token" content="([^"]+)">/.exec(p.texto); return m ? m[1] : null; };
+    const escribir = (ruta, cookie, tok, cuerpo, headers = {}) => h.pedir(ruta, { method: 'POST', cookie, body: typeof cuerpo === 'string' ? cuerpo : JSON.stringify(cuerpo), headers: { origin: 'http://127.0.0.1', 'content-type': 'application/json', 'x-site-token': tok, ...headers } });
+    await fn({ h, entrar, token, escribir, cfg });
+  } finally { if (h) await h.cerrar(); await emisor.cerrar(); }
+}
+const RUTAS = [['GET', '/configuracion'], ['GET', '/static/config.js'], ['GET', '/api/config'], ['POST', '/api/config/revisar'], ['POST', '/api/config/stages'], ['POST', '/api/config/proponer']];
+
+test('T1 Dev_403EnTodasLasRutas_SinDatos @story-2.29 @ac-1', async () => {
+  const ops = clon({ 'operations.json': opsBase({ owners: { default: 'marcador-owner@acme.example' } }) });
+  const fuentes = fuentesCon({ ops, config: opsBase({ people: { machines: { 'maq-a': { person: DEV, reported_sha256: null, confirmed_by: LEAD, confirmed_on: '2026-10-01' } } } }) });
+  await conPestana({ fuentes }, async ({ h, entrar }) => {
+    const dev = await entrar(DEV);
+    for (const [method, ruta] of RUTAS) {
+      const r = await h.pedir(ruta, { method, cookie: dev, body: method === 'POST' ? '{}' : undefined, headers: method === 'POST' ? { 'content-type': 'application/json', origin: 'http://127.0.0.1' } : {} });
+      assert.strictEqual(r.status, 403, `${method} ${ruta}`);
+      assert.ok(!r.texto.includes('marcador-owner'), `${ruta} sin un dato de la configuración`);
+    }
+    assert.strictEqual((await h.pedir('/api/config/descargar', { cookie: dev })).status, 404, 'no hay ruta de descarga');
+    // la pestaña no aparece en el menú del dev, y sí en el del mantenedor
+    assert.doesNotMatch((await h.pedir('/', { cookie: dev })).texto, /href="\/configuracion"/);
+    assert.match((await h.pedir('/', { cookie: await entrar(LEAD) })).texto, /href="\/configuracion"/);
+  });
+});
+
+test('T2 SinSesion_ComoLa2_23 @story-2.29 @ac-2', async () => {
+  const fuentes = fuentesCon({ ops: clon({ 'operations.json': opsBase() }) });
+  await conPestana({ fuentes }, async ({ h }) => {
+    for (const [method, ruta] of RUTAS) {
+      const r = await h.pedir(ruta, { method, body: method === 'POST' ? '{}' : undefined, headers: method === 'POST' ? { 'content-type': 'application/json' } : {} });
+      if (ruta.startsWith('/api/')) assert.strictEqual(r.status, 401, `${ruta}: 401 sin cuerpo`);
+      else assert.strictEqual(r.status, 302, `${ruta}: al inicio de sesión`);
+      assert.ok(!r.texto.includes(LEAD));
+    }
+  });
+});
+
+test('T3 Escritura_SinOrigenSinTokenNoJsonGrande_NadaCreado @story-2.29 @ac-3', async () => {
+  const fuentes = fuentesCon({ ops: clon({ 'operations.json': opsBase() }) });
+  const llamadas = [];
+  const fetchEspia = async (...a) => { llamadas.push(a); throw new Error('no debería salir a la red'); };
+  await conPestana({ fuentes, opciones: { fetch: fetchEspia } }, async ({ h, entrar, token }) => {
+    const lead = await entrar(LEAD);
+    const tok = await token(lead);
+    assert.match(tok || '', /^[A-Za-z0-9_-]{40,}$/, 'el token de la sesión llega en la página');
+    const otro = await token(await entrar(LEAD));
+    assert.notStrictEqual(tok, otro, 'cada sesión, su token');
+    const cuerpo = JSON.stringify({ seccion: 'responsables', borrador: { owners: { default: LEAD } } });
+    const casos = [
+      [{ 'content-type': 'application/json', 'x-site-token': tok }, cuerpo, 403, /falta el origen del pedido/],
+      [{ origin: 'https://otro.example', 'content-type': 'application/json', 'x-site-token': tok }, cuerpo, 403, /el pedido viene de otro origen/],
+      [{ origin: 'http://127.0.0.1', 'content-type': 'application/json' }, cuerpo, 403, /falta el token del sitio/],
+      [{ origin: 'http://127.0.0.1', 'content-type': 'application/json', 'x-site-token': otro }, cuerpo, 403, /el token no es el de tu sesión/],
+      [{ origin: 'http://127.0.0.1', 'content-type': 'text/plain', 'x-site-token': tok }, cuerpo, 415, null],
+      [{ origin: 'http://127.0.0.1', 'content-type': 'application/json', 'x-site-token': tok }, JSON.stringify({ x: 'a'.repeat(257 * 1024) }), 400, null],
+    ];
+    for (const ruta of ['/api/config/revisar', '/api/config/proponer']) {
+      for (const [headers, body, status, rx] of casos) {
+        const r = await h.pedir(ruta, { method: 'POST', cookie: lead, headers, body });
+        assert.strictEqual(r.status, status, `${ruta} ${JSON.stringify(headers)}`);
+        if (rx) assert.match(r.texto, rx);
+      }
+    }
+    assert.strictEqual(llamadas.length, 0, 'cero llamadas a una API en los seis casos');
+    const pasa = await h.pedir('/api/config/revisar', { method: 'POST', cookie: lead, headers: { 'sec-fetch-site': 'same-origin', 'content-type': 'application/json', 'x-site-token': tok }, body: cuerpo });
+    assert.strictEqual(pasa.status, 200, pasa.texto);
+    assert.strictEqual(pasa.json.ok, true);
+  });
+});
+
+/** Un lector de operations.json que conoce las claves de la 2.22 y la 2.30 (las pruebas lo inyectan: esas stories traen el suyo). */
+const OPS_FUTURO = { ...OPS, KEYS: [...OPS.KEYS, 'deployments', 'notify'], parse: (t) => { const d = JSON.parse(t); const { deployments, notify, ...resto } = d; const r = OPS.parse(JSON.stringify(resto)); return r.ok ? { ...r, data: d } : r; } };
+
+test('T4 Secciones_OchoEditablesYDosDeLectura_CanalSinSecretos_SinScriptEnLinea @story-2.29 @ac-4 @ac-12', async () => {
+  const ops = clon({ 'operations.json': opsBase(), 'scripts/nightly/dashboard/sources.json': SOURCES_ORG, '.dashboard/applied-config.json': { files: { 'scripts/nightly/dashboard/sources.json': 'x' } }, 'scripts/ci/product-parity.json': { grupos: {}, rasgos: [], diferencias_declaradas: [] } });
+  const perfil = clon({ 'team-repos.json': { version: 1 }, 'team-layer.json': { requires: { harness: `>= ${ORG.TEAM_REPOS_SINCE}` } } });
+  const fuentes = fuentesCon({ ops, perfil });
+  for (const [lectores, canalEdita] of [[{}, false], [{ 'operations-config.js': OPS_FUTURO }, true]]) {
+    await conPestana({ fuentes, env: { SITE_PROFILE_REPO: 'https://git.acme.example/perfil.git', SITE_PROFILE_TOKEN: 't' }, opciones: { lectores } }, async ({ h, entrar }) => {
+      const lead = await entrar(LEAD);
+      const r = (await h.pedir('/api/config', { cookie: lead })).json;
+      assert.strictEqual(r.ok, true);
+      assert.deepStrictEqual(r.secciones.map((s) => s.id), ORG.SECCIONES.map((s) => s.id), 'las ocho secciones');
+      const canal = r.secciones.find((s) => s.id === 'canal');
+      if (canalEdita) assert.notStrictEqual(canal.estado, 'no_reader');
+      else { assert.strictEqual(canal.estado, 'no_reader'); assert.match(canal.motivo, /todavía no sabe leer/); }
+      assert.ok(Array.isArray(r.productos) && Array.isArray(r.versiones), 'Productos y Versiones, de sólo lectura');
+      const texto = JSON.stringify(r);
+      for (const x of ['SITE_OPERATIONS_TOKEN', 'tok-de-prueba', 'webhook', 'chat_id']) assert.ok(!texto.includes(x), `sin ${x}`);
+      const pagina = await h.pedir('/configuracion', { cookie: lead });
+      assert.strictEqual(pagina.status, 200);
+      assert.doesNotMatch(pagina.texto, /<script(?![^>]*\bsrc=)[^>]*>/, 'ningún <script> en línea');
+      assert.match(pagina.texto, /<script src="\/static\/config\.js" defer><\/script>/);
+      const js = await h.pedir('/static/config.js', { cookie: lead });
+      assert.strictEqual(js.status, 200);
+      assert.match(js.headers['content-type'], /javascript/);
+      assert.match(js.headers['content-security-policy'], /script-src 'self'/);
+      assert.strictEqual(js.headers['x-content-type-options'], 'nosniff');
+      assert.strictEqual(js.texto, ORG.pantalla());
+    });
+  }
+});
+
+test('T5 Lectura_DelClonDelSitio_PerfilSinConfigurar_ArchivoAusenteOIlegible @story-2.29 @ac-5', async () => {
+  const ops = clon({ 'scripts/nightly/dashboard/sources.json': SOURCES_ORG });
+  await conPestana({ fuentes: fuentesCon({ ops, perfil: null }) }, async ({ h, entrar, cfg }) => {
+    const r = (await h.pedir('/api/config', { cookie: await entrar(LEAD) })).json;
+    const por = Object.fromEntries(r.secciones.map((s) => [s.id, s]));
+    assert.strictEqual(por.responsables.estado, 'nuevo', 'operations.json ausente: se crea con el pedido');
+    assert.strictEqual(por.repos.estado, 'no_configurado');
+    assert.match(por.repos.motivo, /no configurado/);
+    assert.ok(!cfg.profileRepo);
+  });
+  // un archivo que está y no se puede leer (una carpeta con su nombre): el motivo, sin edición
+  const ops2 = clon({ 'operations.json/x': 'y' });
+  await conPestana({ fuentes: fuentesCon({ ops: ops2 }) }, async ({ h, entrar }) => {
+    const r = (await h.pedir('/api/config', { cookie: await entrar(LEAD) })).json;
+    const s = r.secciones.find((x) => x.id === 'responsables');
+    assert.strictEqual(s.estado, 'ilegible');
+    assert.match(s.motivo, /no se pudo leer/);
+  });
+  // todas las rutas de la pestaña registradas como sólo-mantenedor
+  const rutas = TAB().crearRutas({ cfg: validarConfiguracion(H.envBase()).cfg, fuentes: fuentesCon({ ops }) });
+  assert.ok(rutas.length >= 6 && rutas.every((x) => x.needs.length === 1 && x.needs[0] === 'maintainer'));
+});
+
+test('T7 Productos_DeDependenciasSoloLectura_DeDeploymentsEditables @story-2.29 @ac-7', async () => {
+  const ops = clon({ 'operations.json': opsBase({ deployments: { provider: 'azure', products: { 'Prod A': { staging: [{ pipeline: 'Proy/Front', stages: ['Deploy'] }] }, 'Prod B': { production: [{ pipeline: 'Proy/Back', stages: ['DeployProd'] }] } } } }), 'scripts/nightly/dependencies/repos.json': { repos: [{ producto: 'Prod A', ado: 'Proy/RepoA', activo: true }, { producto: 'Prod C', ado: 'Proy/RepoC', activo: false, motivo: 'archivado' }] } });
+  await conPestana({ fuentes: fuentesCon({ ops }), opciones: { lectores: { 'operations-config.js': OPS_FUTURO } } }, async ({ h, entrar }) => {
+    const r = (await h.pedir('/api/config', { cookie: await entrar(LEAD) })).json;
+    const nombres = r.productos.map((p) => `${p.producto}:${p.origen}`).sort();
+    assert.deepStrictEqual(nombres, ['Prod A:dependencias', 'Prod A:deployments', 'Prod B:deployments', 'Prod C:dependencias']);
+    const c = r.productos.find((p) => p.producto === 'Prod C');
+    assert.strictEqual(c.activo, false); assert.strictEqual(c.motivo, 'archivado');
+    assert.ok(r.productos.filter((p) => p.origen === 'deployments').length === 2, 'sólo los de deployments se editan (en Despliegues)');
+  });
+});
+
+test('T9 Personas_ConfirmarEscribeQuienYCuando_YQuitar @story-2.29 @ac-9', async () => {
+  const ops = clon({ 'operations.json': opsBase() });
+  const inf = H.informados({ 'maq-c': ' Dev.C@Ejemplo.test ', 'maq-d': null });
+  await conPestana({ fuentes: fuentesCon({ ops, informados: inf }), opciones: { hoy: () => HOY } }, async ({ h, entrar, token, escribir }) => {
+    const lead = await entrar('LEAD@acme.example');
+    const tok = await token(lead);
+    const vista = (await h.pedir('/api/config', { cookie: lead })).json.secciones.find((s) => s.id === 'personas');
+    assert.deepStrictEqual(vista.extras.porConfirmar.map((m) => m.maquina).sort(), ['maq-c', 'maq-d']);
+    const c = (await escribir('/api/config/revisar', lead, tok, { seccion: 'personas', borrador: { accion: 'confirm', maquina: 'maq-c', person: ' C@Acme.Example ', people: {} } })).json;
+    assert.strictEqual(c.ok, true, JSON.stringify(c.problems));
+    const doc = JSON.parse(c.texto);
+    assert.deepStrictEqual(doc.people.machines['maq-c'], { person: 'c@acme.example', reported_sha256: sha('dev.c@ejemplo.test'), confirmed_by: 'lead@acme.example', confirmed_on: HOY });
+    assert.ok(!c.texto.toLowerCase().includes('dev.c@ejemplo.test'), 'el correo informado no se escribe en claro');
+    const d = (await escribir('/api/config/revisar', lead, tok, { seccion: 'personas', borrador: { accion: 'confirm', maquina: 'maq-d', person: 'd@acme.example', people: c.borrador.people } })).json;
+    assert.strictEqual(d.ok, true, JSON.stringify(d.problems));
+    assert.strictEqual(JSON.parse(d.texto).people.machines['maq-d'].reported_sha256, null);
+    // una entrada mal formada no pasa: la valida el lector
+    const mal = (await escribir('/api/config/revisar', lead, tok, { seccion: 'personas', borrador: { people: { machines: { 'maq-c': { person: 'c@acme.example', reported_sha256: null, confirmed_by: LEAD, confirmed_on: '2026-13-40' } } } } })).json;
+    assert.strictEqual(mal.ok, false);
+    assert.ok(mal.problems.some((p) => p.path === 'people.machines.maq-c.confirmed_on'));
+    // «Quitar»: el borrador sin la entrada
+    const sin = (await escribir('/api/config/revisar', lead, tok, { seccion: 'personas', borrador: { people: {} } })).json;
+    assert.strictEqual(sin.ok, true);
+    assert.ok(!JSON.parse(sin.texto).people || !JSON.parse(sin.texto).people.machines);
+  });
+});
+
+test('T10 Personas_CorreccionDeDondeTrabaja @story-2.29 @ac-9', async () => {
+  const machines = { 'maq-a': { person: DEV, reported_sha256: null, confirmed_by: LEAD, confirmed_on: '2026-10-01' }, 'maq-x': { person: 'caido@acme.example', reported_sha256: sha('otro@acme.example'), confirmed_by: LEAD, confirmed_on: '2026-10-01' } };
+  const config = opsBase({ people: { machines } });
+  const ops = clon({ 'operations.json': config });
+  const inf = H.informados({ 'maq-a': null, 'maq-x': 'nuevo@acme.example' });
+  await conPestana({ fuentes: fuentesCon({ ops, config, informados: inf }) }, async ({ h, entrar, token, escribir }) => {
+    const lead = await entrar(LEAD);
+    const tok = await token(lead);
+    const p = (await h.pedir('/api/config', { cookie: lead })).json.secciones.find((s) => s.id === 'personas');
+    const personas = p.extras.personas.map((x) => x.correo).sort();
+    assert.deepStrictEqual(personas, ['caido@acme.example', DEV], 'la persona con todo caído también');
+    assert.strictEqual(p.extras.personas.find((x) => x.correo === 'caido@acme.example').caida, true);
+    const r = (await escribir('/api/config/revisar', lead, tok, { seccion: 'personas', borrador: { people: { machines, projects: { [DEV]: { add: ['Gama'], remove: ['Alfa'] } } } } })).json;
+    assert.strictEqual(r.ok, true, JSON.stringify(r.problems));
+    assert.deepStrictEqual(JSON.parse(r.texto).people.projects[DEV], { add: ['Gama'], remove: ['Alfa'] });
+  });
+  // operations.json que no valida: el último bueno con el motivo y desde cuándo; vencido, no propone
+  const rota = clon({ 'operations.json': '{ roto' });
+  for (const [estado, rx, editable] of [[{ bandaConfig: { desde: AHORA - 2 * 3600000, motivo: 'problemas en owners' } }, /último bueno/, true], [{ frenado: { desde: AHORA - 3600000, fallaDesde: AHORA - 25 * 3600000 } }, /venció/, false]]) {
+    await conPestana({ fuentes: fuentesCon({ ops: rota, config, estado }) }, async ({ h, entrar }) => {
+      const r = await h.pedir('/api/config', { cookie: await entrar(LEAD) });
+      // con el sitio frenado la 2.23 contesta 503 a todos: la sección no se ve; con la banda, se ve el último bueno
+      if (estado.frenado) { assert.strictEqual(r.status, 503); return; }
+      const p = r.json.secciones.find((s) => s.id === 'personas');
+      assert.match(p.extras.ultimoBueno, rx);
+      assert.strictEqual(!p.soloLectura, editable);
+    });
+  }
+});
+
+test('T11 Sitio_MantenedoresVaciaNoSePropone_CorreoMalFormado @story-2.29 @ac-10', async () => {
+  const ops = clon({ 'operations.json': opsBase() });
+  await conPestana({ fuentes: fuentesCon({ ops }) }, async ({ entrar, token, escribir }) => {
+    const lead = await entrar(LEAD);
+    const tok = await token(lead);
+    const rev = async (site) => (await escribir('/api/config/revisar', lead, tok, { seccion: 'sitio', borrador: { site } })).json;
+    const vacia = await rev({ maintainers: [] });
+    assert.strictEqual(vacia.ok, false);
+    assert.ok(vacia.problems.some((p) => /quedaría sin nadie que pueda entrar a esta pestaña/.test(p.message)));
+    const mal = await rev({ maintainers: ['sin-arroba'], mailbox: { provider: 'azure-blob', account: 'acmeruns', container: 'runs', sas: 'x' } });
+    assert.strictEqual(mal.ok, false);
+    assert.deepStrictEqual(mal.problems.map((p) => p.path).sort(), ['site.mailbox.sas', 'site.maintainers.0']);
+    const sinMi = await rev({ maintainers: ['otra@acme.example'] });
+    assert.strictEqual(sinMi.ok, true);
+    assert.match(sinMi.advertencia, /no estás en la lista que proponés: al mergear perdés el acceso/);
+  });
+});
+
+test('T13 Umbrales_SinArchivoDeLaOrganizacion_SoloLectura @story-2.29 @ac-11', async () => {
+  await conPestana({ fuentes: fuentesCon({ ops: clon({ 'operations.json': opsBase() }) }) }, async ({ h, entrar }) => {
+    const u = (await h.pedir('/api/config', { cookie: await entrar(LEAD) })).json.secciones.find((s) => s.id === 'umbrales');
+    assert.strictEqual(u.soloLectura, true);
+    assert.match(u.motivo, /no tiene su sources\.json/);
+    assert.ok(u.borrador && Object.keys(u.borrador).length > 0, 'se muestran los del arnés');
+  });
+});
+
+test('T30 Umbrales_SinMarcaDelNocturno_SoloLectura @story-2.29 @ac-11', async () => {
+  for (const [marca, soloLectura] of [[null, true], [{ files: { 'scripts/nightly/dashboard/sources.json': 'abc' } }, false]]) {
+    const ops = clon({ 'operations.json': opsBase(), 'scripts/nightly/dashboard/sources.json': SOURCES_ORG, '.dashboard/applied-config.json': marca });
+    await conPestana({ fuentes: fuentesCon({ ops }) }, async ({ h, entrar }) => {
+      const u = (await h.pedir('/api/config', { cookie: await entrar(LEAD) })).json.secciones.find((s) => s.id === 'umbrales');
+      assert.strictEqual(Boolean(u.soloLectura), soloLectura, JSON.stringify(u));
+      if (soloLectura) assert.match(u.motivo, /tu nocturno todavía no lee este archivo/);
+    });
+  }
+});
+
+test('T8 Stages_PropuestosConLaCredencialDePipelines_NadaSinConfirmar @story-2.29 @ac-8', async () => {
+  const { arrancarAdoFalso } = require('./lib/fake-ado-api.js');
+  const { arrancarGithubFalso } = require('./lib/fake-github-api.js');
+  const ado = await arrancarAdoFalso({ org: 'acme', project: 'Proy', repo: 'ops' });
+  const gh = await arrancarGithubFalso({ owner: 'acme', repo: 'producto' });
+  ado.st.timeline = [{ type: 'Stage', identifier: 'Deploy', name: 'Desplegar a staging' }, { type: 'Stage', identifier: 'DeployProd', name: 'Producción' }, { type: 'Job', identifier: 'j', name: 'x' }];
+  gh.st.environments = [{ name: 'staging' }, { name: 'production' }];
+  ado.st.builds = { 42: [{ id: 7 }], 43: [{ id: 8 }] };
+  const ops = clon({ 'operations.json': opsBase() });
+  const remotos = { operaciones: { platform: 'azure', org: 'acme', project: 'Proy', repo: 'ops', web: 'https://dev.azure.example/acme/Proy/_git/ops' } };
+  try {
+    await conPestana({ fuentes: fuentesCon({ ops }), env: { SITE_PIPELINES_TOKEN: 'pip' }, opciones: { remotos, urlBase: { azure: ado.base, github: gh.base } } }, async ({ entrar, token, escribir }) => {
+      const lead = await entrar(LEAD); const tok = await token(lead);
+      const r = (await escribir('/api/config/stages', lead, tok, { pipeline: '42' })).json;
+      assert.strictEqual(r.ok, true, JSON.stringify(r));
+      assert.deepStrictEqual(r.propuestos, [{ identificador: 'Deploy', nombre: 'Desplegar a staging', estado: 'propuesto' }, { identificador: 'DeployProd', nombre: 'Producción', estado: 'propuesto' }]);
+      assert.ok(!ado.llamadas.some((c) => c.method !== 'GET'), 'nada se escribe: la propuesta sólo lee');
+      ado.st.pipelines403 = true;
+      const sin = (await escribir('/api/config/stages', lead, tok, { pipeline: '43' })).json;
+      assert.strictEqual(sin.ok, false); assert.match(sin.message, /escribí el stage a mano/); assert.match(sin.message, /403/);
+      const g1 = (await escribir('/api/config/stages', lead, tok, { pipeline: 'acme/producto' })).json;
+      assert.deepStrictEqual(g1.propuestos.map((x) => x.identificador), ['staging', 'production']);
+    });
+    await conPestana({ fuentes: fuentesCon({ ops }), opciones: { remotos, urlBase: { azure: ado.base, github: gh.base } } }, async ({ entrar, token, escribir }) => {
+      const lead = await entrar(LEAD); const tok = await token(lead);
+      assert.match((await escribir('/api/config/stages', lead, tok, { pipeline: '42' })).json.message, /no configurado: escribí el stage a mano/);
+      assert.match((await escribir('/api/config/stages', lead, tok, { pipeline: 'acme/producto' })).json.message, /no configurado: escribí el environment a mano/);
+    });
+  } finally { await ado.cerrar(); await gh.cerrar(); }
+});
+
+test('T14b Versiones_EnLaPestana_ConLaPersonaConfirmada @story-2.29 @ac-13', async () => {
+  const espejo = tmp('site-config-espejo-');
+  const d = path.join(espejo, 'maq-a', 'registros', 'v20261015T100000000Z'); fs.mkdirSync(d, { recursive: true });
+  fs.writeFileSync(path.join(d, 'place.json'), JSON.stringify({ install: { version: '2026.10.15.48' } }));
+  const config = opsBase({ people: { machines: { 'maq-a': { person: DEV, reported_sha256: null, confirmed_by: LEAD, confirmed_on: '2026-10-01' } } } });
+  await conPestana({ fuentes: fuentesCon({ ops: clon({ 'operations.json': config }), config, espejo }) }, async ({ h, entrar }) => {
+    const v = (await h.pedir('/api/config', { cookie: await entrar(LEAD) })).json.versiones;
+    assert.deepStrictEqual(v.map((x) => [x.maquina, x.persona, x.estado]), [['maq-a', DEV, 'al_dia']]);
+  });
+});
+
+test('T19 SinIdentidadDeEscritura_SoloLecturaYDescarga @story-2.29 @ac-19', async () => {
+  const ops = clon({ 'operations.json': opsBase() });
+  for (const env of [{}, { SITE_OPERATIONS_WRITE_TOKEN: 'w' }]) {
+    await conPestana({ fuentes: fuentesCon({ ops }), env }, async ({ h, entrar, token, escribir }) => {
+      const lead = await entrar(LEAD); const tok = await token(lead);
+      const r = (await h.pedir('/api/config', { cookie: lead })).json;
+      assert.strictEqual(r.proponer.operaciones.habilitado, false);
+      assert.match(r.proponer.operaciones.motivo, env.SITE_OPERATIONS_WRITE_TOKEN ? /no reconozco la plataforma/ : /sin identidad de escritura/);
+      const rev = (await escribir('/api/config/revisar', lead, tok, { seccion: 'responsables', borrador: { owners: { default: 'otro@acme.example' } } })).json;
+      assert.strictEqual(rev.texto, ORG.formatJson({ ...opsBase(), owners: { default: 'otro@acme.example' } }), 'el JSON validado, para descargar');
+      const p = (await escribir('/api/config/proponer', lead, tok, { seccion: 'responsables', texto: rev.texto })).json;
+      assert.strictEqual(p.ok, false);
+    });
+  }
+});
+
+test('T25 Mantenedores_CambianSoloAlMergearYReleer @story-2.29 @ac-10', async () => {
+  const M2 = 'm2@acme.example';
+  const fuentes = fuentesCon({ ops: clon({ 'operations.json': opsBase({ site: { maintainers: [LEAD, M2] } }) }), config: opsBase({ site: { maintainers: [LEAD, M2] } }) });
+  await conPestana({ fuentes }, async ({ h, entrar, token, escribir }) => {
+    const m2 = await entrar(M2); const lead = await entrar(LEAD); const tok = await token(lead);
+    const rev = (await escribir('/api/config/revisar', lead, tok, { seccion: 'sitio', borrador: { site: { maintainers: [LEAD] } } })).json;
+    assert.strictEqual(rev.ok, true);
+    assert.strictEqual((await h.pedir('/api/config', { cookie: m2 })).status, 200, 'mientras el pedido está abierto, m2 sigue entrando');
+    fuentes.st.config = opsBase({ site: { maintainers: [LEAD] } });   // el merge y el refresco de la 2.23
+    assert.strictEqual((await h.pedir('/api/config', { cookie: m2 })).status, 403, 'después del refresco, 403 sin cerrar su sesión');
+  });
+});
+
+test('T32 Paridad_SinArchivoDeHoy_SinListaOListaIlegible @story-2.29 @ac-25 @ac-27', async () => {
+  const lista = { grupos: { web: { repos: [{ ruta: 'a/f', producto: 'A' }] } }, rasgos: [], diferencias_declaradas: [] };
+  const casos = [
+    [{ 'scripts/ci/product-parity.json': lista }, /no medido: la noche no dejó la paridad/],
+    [{}, /la lista de paridad no está en el repo de operaciones/],
+    [{ 'scripts/ci/product-parity.json': { sin_productos: 'copia pública', grupos: {}, rasgos: [], diferencias_declaradas: [] } }, /sin productos/],
+    [{ 'scripts/ci/product-parity.json': '{ rota' }, /no se pudo leer|no es JSON/],
+  ];
+  for (const [archivos, rx] of casos) {
+    await conPestana({ fuentes: fuentesCon({ ops: clon({ 'operations.json': opsBase(), ...archivos }) }) }, async ({ h, entrar }) => {
+      const p = (await h.pedir('/api/config', { cookie: await entrar(LEAD) })).json.secciones.find((s) => s.id === 'paridad');
+      assert.match(`${p.motivo || ''} ${p.vista ? p.vista.texto : ''}`, rx, JSON.stringify(p));
+    });
+  }
+});
+
+test('T36 Proyectos_SinDetalleDeParidad @story-2.29 @ac-28', async () => {
+  const modelo = { productos: [{ producto: 'A', proyectos: ['P'], rutas: ['a/f'] }], productosFuente: { estado: 'medido' }, proyectos: { estado: 'medido', lista: [] }, paridad: { estado: 'medido', fecha: HOY, por_ruta: [{ ruta: 'a/f', estado: 'medido', divergencias: 1, vencidas: 0 }], divergencias: [{ que: 'marcador-que', tienen: ['x'], no_tienen: ['a/f'] }] } };
+  const fuentes = fuentesCon({ ops: clon({ 'operations.json': opsBase() }) });
+  fuentes.st.modelo = modelo;
+  await conPestana({ fuentes }, async ({ h, entrar }) => {
+    const r = await h.pedir('/proyectos', { cookie: await entrar(LEAD) });
+    assert.strictEqual(r.status, 200);
+    assert.match(r.texto, /1 divergencia/);
+    for (const x of ['marcador-que', 'no_tienen', 'tienen']) assert.ok(!r.texto.includes(x), `sin ${x}`);
+  });
+});
+
+// ── proponer desde la pestaña: el repo de operaciones por HTTP y las APIs falsas ─────────────────────────────────
+const { crearRepoHttp, hayHttpBackend } = require('./lib/git-http-repo.js');
+const SIN_BACKEND = !hayHttpBackend() && !process.env.CI && 'git http-backend no está en esta máquina: el repo por HTTP no se puede armar';
+const ESCRITURA = `w-${crypto.randomBytes(6).toString('hex')}`;
+const CAB = `Basic ${Buffer.from(`x-access-token:${ESCRITURA}`).toString('base64')}`;
+
+/** El repo de operaciones servido por HTTP y el clon del sitio sobre él (como lo baja sources.js). */
+async function opsPorHttp(archivos) {
+  const raiz = tmp('site-config-http-');
+  const r = await crearRepoHttp({ raiz, nombre: 'ops.git', archivos, cabecera: CAB });
+  const dir = path.join(raiz, 'clon-del-sitio');
+  // 🔴 asíncrono: el repo HTTP vive en este mismo proceso, y un git sincrónico lo dejaría sin bucle para contestar
+  await require('util').promisify(require('child_process').execFile)('git', ['-c', `http.extraheader=Authorization: ${CAB}`, 'clone', '-q', '--depth', '1', '--branch', 'main', r.url, dir]);
+  return { r, dir };
+}
+
+test('T16 Proponer_ArchivoCambio_NoCreaNada @story-2.29 @ac-16', { skip: SIN_BACKEND }, async () => {
+  const { arrancarGithubFalso } = require('./lib/fake-github-api.js');
+  const gh = await arrancarGithubFalso({ owner: 'acme', repo: 'ops' });
+  gh.st.proteccion = { required_pull_request_reviews: { required_approving_review_count: 1 } };
+  const { r, dir } = await opsPorHttp({ 'operations.json': opsBase() });
+  const remotos = { operaciones: { platform: 'github', org: 'acme', repo: 'ops', web: 'https://github.example/acme/ops' } };
+  try {
+    await conPestana({ fuentes: fuentesCon({ ops: dir }), env: { SITE_OPERATIONS_WRITE_TOKEN: ESCRITURA }, opciones: { remotos, urlBase: { github: gh.base } } }, async ({ h, entrar, token, escribir }) => {
+      const lead = await entrar(LEAD); const tok = await token(lead);
+      const abierta = (await h.pedir('/api/config', { cookie: lead })).json;
+      assert.strictEqual(abierta.proponer.operaciones.habilitado, true, JSON.stringify(abierta.proponer));
+      const s = abierta.secciones.find((x) => x.id === 'responsables');
+      const rev = (await escribir('/api/config/revisar', lead, tok, { seccion: 'responsables', borrador: { owners: { default: 'otro@acme.example' } } })).json;
+      // otro commit cambia operations.json en main después de abrir la sección
+      r.cambiar({ 'operations.json': ORG.formatJson(opsBase({ owners: { default: 'alguien@acme.example' } })) });
+      const p = (await escribir('/api/config/proponer', lead, tok, { seccion: 'responsables', texto: rev.texto, oid: s.oid })).json;
+      assert.strictEqual(p.ok, false);
+      assert.match(p.message, /el archivo cambió desde que lo abriste: recargá/);
+      assert.deepStrictEqual(r.empujes, [], 'cero ramas');
+      assert.strictEqual(g(dir, 'status', '--porcelain'), '', 'el clon limpio');
+      assert.strictEqual(g(dir, 'symbolic-ref', 'HEAD'), 'refs/heads/main');
+    });
+  } finally { await r.cerrar(); await gh.cerrar(); }
+});
+
+test('T24 Github_MismaPestana_SegundoProveedor @story-2.29 @ac-22', { skip: SIN_BACKEND }, async () => {
+  const { arrancarGithubFalso } = require('./lib/fake-github-api.js');
+  const gh = await arrancarGithubFalso({ owner: 'acme', repo: 'ops' });
+  gh.st.reglas = [{ type: 'pull_request', parameters: { required_approving_review_count: 1 } }];
+  const { r, dir } = await opsPorHttp({ 'operations.json': opsBase(), 'scripts/nightly/dashboard/sources.json': SOURCES_ORG, '.dashboard/applied-config.json': { files: { 'scripts/nightly/dashboard/sources.json': 'x' } }, 'scripts/ci/product-parity.json': { grupos: {}, rasgos: [], diferencias_declaradas: [] } });
+  const perfil = clon({ 'team-repos.json': { version: 1 }, 'team-layer.json': { requires: { harness: `>= ${ORG.TEAM_REPOS_SINCE}` } } });
+  const remotos = { operaciones: { platform: 'github', org: 'acme', repo: 'ops', web: 'https://github.example/acme/ops' }, perfil: { platform: 'github', org: 'acme', repo: 'perfil', web: 'https://github.example/acme/perfil' } };
+  try {
+    await conPestana({ fuentes: fuentesCon({ ops: dir, perfil }), env: { SITE_OPERATIONS_WRITE_TOKEN: ESCRITURA, SITE_PROFILE_REPO: 'https://git.acme.example/perfil.git', SITE_PROFILE_TOKEN: 't' }, opciones: { remotos, urlBase: { github: gh.base } } }, async ({ h, entrar, token, escribir }) => {
+      const lead = await entrar(LEAD); const tok = await token(lead);
+      const r0 = (await h.pedir('/api/config', { cookie: lead })).json;
+      assert.deepStrictEqual(r0.secciones.map((s) => s.id), ORG.SECCIONES.map((s) => s.id), 'las ocho secciones leen');
+      assert.ok(r0.secciones.filter((s) => !['despliegues', 'canal'].includes(s.id)).every((s) => !['no_reader', 'ilegible'].includes(s.estado)), JSON.stringify(r0.secciones.map((s) => [s.id, s.estado])));
+      assert.strictEqual(r0.proponer.operaciones.habilitado, true);
+      const s = r0.secciones.find((x) => x.id === 'responsables');
+      const rev = (await escribir('/api/config/revisar', lead, tok, { seccion: 'responsables', borrador: { owners: { default: 'otro@acme.example' } } })).json;
+      const p = (await escribir('/api/config/proponer', lead, tok, { seccion: 'responsables', texto: rev.texto, oid: s.oid })).json;
+      assert.strictEqual(p.ok, true, p.message);
+      assert.match(p.enlace, /^https:\/\/github\.example\/acme\/ops\/pull\/\d+$/);
+      assert.strictEqual(r.empujes.length, 1);
+      assert.match(r.empujes[0].ref, /^refs\/heads\/team-config\/operations-\d{8}-\d{6}$/);
+      assert.strictEqual(r.empujes[0].forzado, false);
+      const pedido = gh.llamadas.find((c) => c.method === 'POST' && /\/pulls$/.test(c.ruta));
+      assert.match(JSON.stringify(pedido.cuerpo), /Pedido por lead@acme\.example desde el sitio/);
+      assert.deepStrictEqual(gh.prohibidas(), [], 'nunca merge ni auto-merge');
+      assert.strictEqual(g(dir, 'status', '--porcelain'), '');
+    });
+  } finally { await r.cerrar(); await gh.cerrar(); }
+});
+
+// ── vuelta 2 (revisores y pase adversarial de la 2.29) ───────────────────────────────────────────────────────────
+test('T31b Paridad_DivergenciasPorNombreDeProducto @story-2.29 @ac-25 — el control nombra cada repo por su producto (o «producto (ruta)»), no por la ruta', () => {
+  const lista = { grupos: { backend: [{ ruta: 'Acme/Back', producto: 'Acme' }, { ruta: 'Beta/Back', producto: 'Beta' }, { ruta: 'Gama/Back', producto: 'Gama' }, { ruta: 'Gama/Back2', producto: 'Gama' }] }, rasgos: [], diferencias_declaradas: [] };
+  const resultado = { fecha: HOY, estado: 'medido', divergencias: [{ grupo: 'backend', rasgo: 'r1', que: 'el rasgo uno', tienen: ['Acme', 'Beta'], no_tienen: ['Gama (Gama/Back)'] }] };
+  const v = ORG.paridadPorProducto({ lista, resultado, hoy: HOY });
+  assert.deepStrictEqual(v.productos.find((p) => p.producto === 'Gama').faltan.map((x) => x.que), ['el rasgo uno']);
+  assert.deepStrictEqual(v.productos.find((p) => p.producto === 'Acme').faltan, []);
+});
+
+test('T8b Stages_DeOtroProyecto_ProyectoBarraNumero @story-2.29 @ac-8 — la definición se busca en el proyecto que se nombra', async () => {
+  const RP = require(path.join(ROOT, 'scripts', 'lib', 'repo-proposal.js'));
+  const urls = [];
+  const f = async (url) => { urls.push(String(url)); return new Response(JSON.stringify({ value: [] }), { status: 200 }); };
+  const remote = { platform: 'azure', org: 'acme', project: 'ops-proj', repo: 'ops', web: 'x' };
+  await RP.stagesPropuestos({ pipeline: 'producto-x/42', remote, token: 't', urlBase: { azure: 'http://127.0.0.1:9' }, fetch: f });
+  assert.match(urls[0], /\/acme\/producto-x\/_apis\/build\/builds\?definitions=42&/);
+  urls.length = 0;
+  await RP.stagesPropuestos({ pipeline: '42', remote, token: 't', urlBase: { azure: 'http://127.0.0.1:9' }, fetch: f });
+  assert.match(urls[0], /\/acme\/ops-proj\/_apis\//, 'sólo el número: el proyecto del repo de operaciones');
+});
+
+test('T22b Proponer_ExigeLaVersionYSoloLaSeccion @story-2.29 @ac-16 @ac-23 — sin oid no propone; un cambio fuera de la sección tampoco', async () => {
+  const ops = clon({ 'operations.json': opsBase({ reviewers: { watcher: ['w@acme.example'] } }) });
+  await conPestana({ fuentes: fuentesCon({ ops }), env: { SITE_OPERATIONS_WRITE_TOKEN: 'w' }, opciones: { remotos: { operaciones: { platform: 'github', org: 'acme', repo: 'ops', web: 'https://github.example/acme/ops' } }, fetch: async () => { throw new Error('no debería salir a la red'); } } }, async ({ h, entrar, token, escribir }) => {
+    const lead = await entrar(LEAD); const tok = await token(lead);
+    const s = (await h.pedir('/api/config', { cookie: lead })).json.secciones.find((x) => x.id === 'responsables');
+    const rev = (await escribir('/api/config/revisar', lead, tok, { seccion: 'responsables', borrador: { owners: { default: 'otro@acme.example' }, reviewers: { watcher: ['w@acme.example'] } } })).json;
+    const sinOid = (await escribir('/api/config/proponer', lead, tok, { seccion: 'responsables', texto: rev.texto })).json;
+    assert.strictEqual(sinOid.ok, false); assert.match(sinOid.message, /falta la versión del archivo que abriste: recargá/);
+    const otro = JSON.parse(rev.texto); otro.site.maintainers.push('intruso@acme.example');
+    const fuera = (await escribir('/api/config/proponer', lead, tok, { seccion: 'responsables', texto: ORG.formatJson(otro), oid: s.oid })).json;
+    assert.strictEqual(fuera.ok, false); assert.match(fuera.message, /cambia site, que no es de esta sección/);
+  });
+});
+
+test('T5b Lecturas_IlegiblesDicenElMotivo @story-2.29 @ac-5 @ac-7 @ac-11 @ac-25 — «no se pudo leer» nunca se muestra como vacío o «todavía no»', async (t) => {
+  const ops = clon({ 'operations.json': opsBase(), 'scripts/nightly/dependencies/repos.json': '{ roto', 'scripts/nightly/dashboard/sources.json': SOURCES_ORG, '.dashboard/applied-config.json': '{ roto', 'scripts/ci/product-parity.json': { grupos: {}, rasgos: [], diferencias_declaradas: [] }, [`.dashboard/paridad/paridad-${HOY}.json`]: '{ roto' });
+  await conPestana({ fuentes: fuentesCon({ ops }), opciones: { hoy: () => HOY } }, async ({ h, entrar }) => {
+    const r = (await h.pedir('/api/config', { cookie: await entrar(LEAD) })).json;
+    assert.match(r.productosMotivo || '', /repos\.json\) no se pudo leer/);
+    const u = r.secciones.find((s) => s.id === 'umbrales');
+    assert.match(u.motivo, /la marca .*applied-config\.json.* no se pudo leer/);
+    const p = r.secciones.find((s) => s.id === 'paridad');
+    assert.match(p.vista.texto, /no se pudo leer el resultado de hoy/);
+  });
+  // el espejo del buzón con una carpeta de registros que no se puede leer: la máquina sale «no medido», no desaparece.
+  // Como administrador los permisos no frenan la lectura: ese caso no se puede armar y se dice, no pasa en silencio
+  if (process.getuid && process.getuid() === 0) { t.diagnostic('NO MEDIDO: corriendo como root, una carpeta sin permisos se lee igual'); return; }
+  const espejo = tmp('site-config-espejo-');
+  fs.mkdirSync(path.join(espejo, 'maq-z', 'registros'), { recursive: true });
+  fs.chmodSync(path.join(espejo, 'maq-z', 'registros'), 0o000);
+  try {
+    const filas = ORG.versionesDeMaquinas({ espejo, versionImagen: '2026.10.15.48', ahora: AHORA });
+    assert.deepStrictEqual(filas.map((x) => [x.maquina, x.estado]), [['maq-z', 'no_medido']]);
+  } finally { fs.chmodSync(path.join(espejo, 'maq-z', 'registros'), 0o755); }
+});
+
+/** Corre el código de pantalla con un documento mínimo y el `fetch` dado; devuelve el texto que quedó en la pestaña. */
+async function correrPantalla(fetchFalso) {
+  const nodo = () => { const n = { hijos: [], textContent: '', attrs: {}, setAttribute(k, v) { n.attrs[k] = v; }, appendChild(c) { n.hijos.push(c); return c; }, addEventListener() {}, replaceChildren(...cs) { n.hijos = cs; } }; return n; };
+  const app = nodo();
+  const document = { querySelector: () => null, getElementById: (id) => (id === 'config-app' ? app : null), createElement: () => nodo() };
+  new Function('document', 'fetch', ORG.pantalla())(document, fetchFalso);
+  for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
+  const textos = (n) => [n.textContent, ...(n.hijos || []).flatMap(textos)].filter(Boolean);
+  return textos(app).join(' | ');
+}
+
+test('T4b Pantalla_UnPedidoCortadoNoQuedaColgado @story-2.29 @ac-18 — la llamada de la pantalla siempre termina con un mensaje', async () => {
+  const cortado = await correrPantalla(() => Promise.reject(new Error('se cortó la red')));
+  assert.match(cortado, /no pude hablar con el sitio \(se cortó la red\)/);
+  const noJson = await correrPantalla(() => Promise.resolve({ status: 502, json: () => Promise.reject(new Error('no es JSON')) }));
+  assert.match(noJson, /respuesta 502/);
+});
+
+test('T8c Stages_NombresDePuntos_Rechazados @story-2.29 @ac-8 — un proyecto, dueño o repo «.» o «..» no arma una ruta que sube de nivel', async () => {
+  const RP = require(path.join(ROOT, 'scripts', 'lib', 'repo-proposal.js'));
+  const urls = [];
+  const f = async (url) => { urls.push(String(url)); return new Response('{}', { status: 200 }); };
+  const remote = { platform: 'azure', org: 'acme', project: 'ops-proj', repo: 'ops', web: 'x' };
+  for (const p of ['../1', './1', '../repo', 'acme/..', '../..']) {
+    const r = await RP.stagesPropuestos({ pipeline: p, remote, token: 't', urlBase: { azure: 'http://127.0.0.1:9', github: 'http://127.0.0.1:9' }, fetch: f });
+    assert.strictEqual(r.ok, false, p);
+    assert.match(r.message, /no reconozco el pipeline/, p);
+  }
+  assert.deepStrictEqual(urls, [], 'ninguna llamada');
+});

@@ -189,12 +189,53 @@ test('T4 OpsData_CopiesAndRetargets: trae los datos y la configuración de la li
   assert.strictEqual(guard.status, 0, guard.stderr);
 });
 
+// story 2.29 (AC 24, decisión 12): el sitio de la organización sabe qué configuración aplicó la noche por la marca
+// `.dashboard/applied-config.json` — una entrada por archivo de configuración copiado, con el identificador del objeto
+// en el repo de operaciones. Viaja en el commit local; a operaciones la sube el paso de guardar, sólo si la noche salió bien.
+const APPLIED = '.dashboard/applied-config.json';
+function appliedMark(w) {
+  const text = fs.readFileSync(path.join(w.s, APPLIED), 'utf8');
+  const mark = JSON.parse(text);
+  assert.strictEqual(text, `${JSON.stringify(mark, null, 2)}\n`, 'la marca va con dos espacios y salto final');
+  assert.ok(mark.files && typeof mark.files === 'object' && !Array.isArray(mark.files), 'la marca trae files');
+  assert.match(mark.ops_commit, /^[0-9a-f]{7,40}$/, 'la marca trae el commit de operaciones');
+  assert.match(mark.generated_at, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/, 'la marca trae la hora en UTC');
+  return mark;
+}
+
+test('T4b OpsData_DejaLaMarcaDeLoAplicado @story-2.29 @ac-24: la marca nombra cada archivo de configuración copiado con su identificador de objeto, y va en el commit local', () => {
+  const w = agent({
+    'operations.json': '{"version":1,"owners":{"default":"lider@acme.example"}}\n',
+    'scripts/nightly/dashboard/sources.json': '{"de":"operaciones"}\n',
+    '.dashboard/sdlc-stage-2026-01-01.json': '{}\n',
+  });
+  const r = runOpsData(w);
+  assert.strictEqual(r.code, 0, r.out);
+  const mark = appliedMark(w);
+  const ops = path.join(w.build, 'ops');
+  assert.deepStrictEqual(mark.files, {
+    'operations.json': git(ops, ['rev-parse', 'HEAD:operations.json']),
+    'scripts/nightly/dashboard/sources.json': git(ops, ['rev-parse', 'HEAD:scripts/nightly/dashboard/sources.json']),
+  }, 'sólo lo copiado, con el identificador del objeto en operaciones');
+  assert.strictEqual(mark.ops_commit, git(ops, ['rev-parse', '--short', 'HEAD']));
+  assert.match(git(w.s, ['show', '--name-only', '--format=', 'HEAD']), /^\.dashboard\/applied-config\.json$/m, 'la marca está en el commit local');
+  assert.strictEqual(git(w.s, ['status', '--porcelain']), '', 'nada suelto fuera del commit');
+  assert.match(read('templates/ops-data.yml'), /applied-config\.json/, 'la cabecera o el guion nombran la marca');
+});
+
 test('T5 OpsData_FreshOrg_NotRed: un repo de operaciones recién creado (sin datos) no sale rojo', () => {
   const w = agent({ 'operations.json': '{"version":1,"owners":{"default":"lider@acme.example"}}\n', 'pipelines/stage-metrics.yml': 'trigger: none\n' });
   const r = runOpsData(w);
   assert.strictEqual(r.code, 0, r.out);
   assert.match(r.out, /HARNESS_TREE\]/);
-  assert.ok(!fs.existsSync(path.join(w.s, '.dashboard')), 'no inventa carpetas de datos');
+  // story 2.29 (AC 24): la marca se deja igual; sin otra configuración que la que copió, sólo con ésa. Sin datos, nada más.
+  assert.deepStrictEqual(fs.readdirSync(path.join(w.s, '.dashboard')), ['applied-config.json'], 'no inventa carpetas de datos: sólo la marca');
+  assert.deepStrictEqual(appliedMark(w).files, { 'operations.json': git(path.join(w.build, 'ops'), ['rev-parse', 'HEAD:operations.json']) });
+  // sin ningún archivo de configuración, files queda vacío
+  const w2 = agent({ 'README.md': '# operaciones\n' });
+  const r2 = runOpsData(w2);
+  assert.strictEqual(r2.code, 0, r2.out);
+  assert.deepStrictEqual(appliedMark(w2).files, {}, 'sin configuración copiada, files es {}');
 });
 
 // ── las copias del arnés en las métricas: de team-repos.json, no de una variable (DEF-8.30-copias-del-arnes-en-team-repos)

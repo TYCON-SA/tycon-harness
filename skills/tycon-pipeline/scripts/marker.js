@@ -1577,6 +1577,51 @@ function cmdSetFlag(flag, valRaw) {
   process.stdout.write(`${flag}: ${marker[flag]}\n`);
 }
 
+// story 7.29 — el pedido del dev para esta corrida: `set-models <trabajo>=<modelo> … | --clear`. `<trabajo>` es
+// reviewers, reviewers_reloop, adversarial, helpers o el nombre de un revisor; `<modelo>`, uno del vocabulario de
+// lib/models.js. Con techo obligatorio, pipeline.js lo recorta y lo dice. Se valida todo antes de escribir nada.
+function cmdSetModels(args) {
+  const M = require('./lib/models.js');
+  const clear = args.includes('--clear');
+  const pares = args.filter((a) => a !== '--clear');
+  if (!clear && !pares.length) {
+    console.error('uso: marker.js set-models <trabajo>=<modelo> … | --clear   (trabajos: reviewers, reviewers_reloop, adversarial, helpers o un revisor; modelos: ' + M.MODELS.join(', ') + ')');
+    process.exit(2);
+  }
+  const values = {};
+  for (const p of pares) {
+    const [job, model, ...resto] = String(p).split('=');
+    if (resto.length || !M.isJobName(job) || !M.isModel(model)) {
+      console.error(`marker.js set-models: «${p}» no es <trabajo>=<modelo> (trabajos: ${M.JOBS.join(', ')} o un revisor en minúsculas, números y guiones; modelos: ${M.MODELS.join(', ')}) — no escribí nada`);
+      process.exit(2);
+    }
+    values[job] = model;
+  }
+  const marker = readMarker();
+  if (!marker) {
+    console.error('marker.js set-models: no hay marker activo para esta sesión (sin corrida, el pedido son sólo las banderas de cada comando)');
+    process.exit(1);
+  }
+  if (clear) delete marker.modelRequests;
+  else marker.modelRequests = { values: { ...((marker.modelRequests && marker.modelRequests.values) || {}), ...values }, at: nowIso(), sessionId: marker.sessionId || null };
+  marker.lastTouch = nowIso();
+  writeMarker(marker);
+  appendLog('gates.log', { name: 'set-models', storyId: marker.storyId || null, ...(clear ? { clear: true } : { values }) });
+  process.stdout.write(clear ? 'modelRequests: borrado\n' : `modelRequests: ${JSON.stringify(marker.modelRequests.values)}\n`);
+}
+
+// story 7.29 — `mark-models-warned <clave> …`: lo ya avisado del techo en esta corrida (pipeline.js lo anota solo al
+// emitir `models_warnings`; el subcomando queda para el orquestador y las pruebas).
+function cmdMarkModelsWarned(keys) {
+  if (!keys.length) { console.error('uso: marker.js mark-models-warned <clave> …'); process.exit(2); }
+  const marker = readMarker();
+  if (!marker) { console.error('marker.js mark-models-warned: no hay marker activo para esta sesión'); process.exit(1); }
+  marker.modelsWarned = [...new Set([...(Array.isArray(marker.modelsWarned) ? marker.modelsWarned : []), ...keys])];
+  marker.lastTouch = nowIso();
+  writeMarker(marker);
+  process.stdout.write(`modelsWarned: ${marker.modelsWarned.join(', ')}\n`);
+}
+
 // Fase B paralelización (2026-07-30) — estado estructurado del pase adversarial 5b
 // cuando se lanza TEMPRANO (al cierre del Step 4, en paralelo con el Step 5).
 //
@@ -2958,6 +3003,12 @@ switch (cmd) {
     break;
   case 'set-flag':
     cmdSetFlag(arg1, arg2);
+    break;
+  case 'set-models':
+    cmdSetModels(process.argv.slice(3));
+    break;
+  case 'mark-models-warned':
+    cmdMarkModelsWarned(process.argv.slice(3));
     break;
   case 'snapshot-iter':
     cmdSnapshotIter(arg1, process.argv.slice(4));

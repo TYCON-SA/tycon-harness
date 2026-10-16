@@ -33,7 +33,17 @@
  * repos.json. Los usa la regla de quién es quién (access.js → people.js), pero el modelo va entero a quien mantiene: con
  * los correos adentro, una pantalla podría mostrarlos. Viajan aparte, en `personas()`.
  *
- * Contrato con server.js: crearFuentes(…) → { arrancar, refrescar, estado, config, modelo, personas, detener }.
+ * EL PERFIL DEL EQUIPO (story 2.29, decisión 11): con `SITE_PROFILE_REPO` y `SITE_PROFILE_TOKEN`, un clon igual en
+ * `<SITE_DATA_DIR>/perfil`, por el mismo camino, para que la pestaña Configuración lea `team-repos.json` y `team-layer.json`.
+ * Sin esas variables, no hay clon y la sección dice «no configurado». Un perfil que no se baja no frena nada: lo dice el
+ * registro y su estado.
+ *
+ * EL CANDADO (story 2.29, AC 14): `exclusivo(fn)` corre `fn` sin otro trabajo de git sobre los clones en el medio. El
+ * refresco pasa por ahí, y la propuesta de la pestaña también: así un refresco no hace `reset --hard` mientras se arma un
+ * commit, y un commit no ve un clon a medio bajar.
+ *
+ * Contrato con server.js: crearFuentes(…) → { arrancar, refrescar, estado, config, modelo, personas, detener, clones,
+ * exclusivo, dirBuzon }.
  */
 const fs = require('fs');
 const os = require('os');
@@ -448,10 +458,14 @@ function crearFuentes({ cfg, dataDir, log: logCrudo = () => {}, ahora = Date.now
   if (!dataDir) throw new Error('crearFuentes necesita SITE_DATA_DIR o una carpeta temporal');
   const clon = path.join(dataDir, 'operaciones');
   const dirBuzon = path.join(dataDir, 'buzon');
+  const dirPerfil = path.join(dataDir, 'perfil');
+  // el candado de los clones (AC 14 de la 2.29): una cola de promesas; un trabajo que falla no traba a los siguientes
+  let cola = Promise.resolve();
+  const exclusivo = (fn) => { const p = cola.then(() => fn()); cola = p.catch(() => {}); return p; };
   const rutaEstado = path.join(dataDir, ARCHIVO_ESTADO);
   // `personas`: lo que la regla de quién es quién necesita y el modelo NO lleva (2.28) — lo informado por cada máquina
   // (de la última bajada entera del buzón) y la lista de repos.json
-  const st = { cargado: false, ultimoBueno: null, fallaDesde: null, fallaMotivo: null, fallaRutas: null, frenado: null, bandaConfig: null, modelo: null, personas: { informados: null, repos: null }, fallas: { repo: null, buzon: null } };
+  const st = { perfil: { estado: 'sin_configurar', motivo: 'todavía no se leyó' }, cargado: false, ultimoBueno: null, fallaDesde: null, fallaMotivo: null, fallaRutas: null, frenado: null, bandaConfig: null, modelo: null, personas: { informados: null, repos: null }, fallas: { repo: null, buzon: null } };
   let temporizador = null;
   let enCurso = null;
   const lasNubes = () => (Array.isArray(nubesDadas) ? nubesDadas : nubes(log));
@@ -484,37 +498,52 @@ function crearFuentes({ cfg, dataDir, log: logCrudo = () => {}, ahora = Date.now
 
   // 🔴 Asíncrono: un clon puede tardar minutos, y una llamada bloqueante frenaría todos los pedidos del sitio mientras.
   // `core.symlinks=false`: un enlace simbólico del repo se baja como un archivo con la ruta adentro, nunca como enlace.
-  function correrGit(args, cab, cwd) {
+  function correrGit(args, cab, cwd, url = cfg.operationsRepo) {
     let origen = null;
-    try { origen = new URL(cfg.operationsRepo).origin; } catch { /* una ruta local (las pruebas): sin cabecera */ }
+    try { origen = new URL(url).origin; } catch { /* una ruta local (las pruebas): sin cabecera */ }
     const conf = [['core.symlinks', 'false'], ['credential.helper', '']];
     if (origen && cab) conf.push([`http.${origen}/.extraheader`, `Authorization: ${cab}`]);
-    const env = { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: '', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_COUNT: String(conf.length) };
+    // las variables del sitio (sus credenciales) no viajan al proceso git: no las necesita (revisión de seguridad de la 2.29)
+    const env = { ...Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^SITE_/.test(k))), GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: '', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_COUNT: String(conf.length) };
     conf.forEach(([k, v], i) => { env[`GIT_CONFIG_KEY_${i}`] = k; env[`GIT_CONFIG_VALUE_${i}`] = v; });
     return spawn(git, args, { cwd, env, timeout: 180000 });
+  }
+
+  /** Baja o pone al día un clon superficial de `main` (`url` en `dir`), con la cabecera `cab`. `nombre`: para el registro. */
+  async function actualizarClon({ url, dir, cab, nombre }) {
+    let hayClon = fs.existsSync(path.join(dir, '.git'));
+    if (hayClon) {
+      // 🔴 el clon de un disco persistente puede ser de OTRO repo (cambió la variable): se vuelve a clonar
+      const r = await correrGit(['-C', dir, 'config', '--get', 'remote.origin.url'], null, undefined, url);
+      if (r.status !== 0 || String(r.stdout || '').trim() !== url) { log(`el clon guardado es de otro ${nombre}: se vuelve a clonar`); hayClon = false; }
+    }
+    const pasos = hayClon
+      ? [['-C', dir, 'fetch', '--depth', '1', '--no-tags', 'origin', 'main'], ['-C', dir, 'reset', '--hard', '-q', 'FETCH_HEAD']]
+      : [['clone', '-q', '--depth', '1', '--branch', 'main', '--single-branch', '--no-tags', url, dir]];
+    if (!hayClon) fs.rmSync(dir, { recursive: true, force: true });
+    for (const args of pasos) {
+      const r = await correrGit(args, cab, undefined, url);
+      if (r.error || r.status !== 0) {
+        const err = String((r.stderr || '') + (r.error ? ` ${r.error.code || r.error.message}` : '')).split(cab).join('[credencial]').split('\n').map((l) => l.trim()).filter(Boolean).slice(-2).join(' · ');
+        return { estado: estadoDeGit(err), motivo: `git ${args.find((a) => a === 'fetch' || a === 'clone' || a === 'reset')} del ${nombre} falló: ${err.slice(0, 300)}` };
+      }
+    }
+    return { ok: true };
   }
 
   async function actualizarRepo() {
     const cab = await cabecera();
     if (!cab.valor) return { estado: cab.estado || 'sin_configurar', motivo: cab.motivo };
-    let hayClon = fs.existsSync(path.join(clon, '.git'));
-    if (hayClon) {
-      // 🔴 el clon de un disco persistente puede ser de OTRO repo (cambió SITE_OPERATIONS_REPO): se vuelve a clonar
-      const r = await correrGit(['-C', clon, 'config', '--get', 'remote.origin.url'], null);
-      if (r.status !== 0 || String(r.stdout || '').trim() !== cfg.operationsRepo) { log('el clon guardado es de otro repo de operaciones: se vuelve a clonar'); hayClon = false; }
-    }
-    const pasos = hayClon
-      ? [['-C', clon, 'fetch', '--depth', '1', '--no-tags', 'origin', 'main'], ['-C', clon, 'reset', '--hard', '-q', 'FETCH_HEAD']]
-      : [['clone', '-q', '--depth', '1', '--branch', 'main', '--single-branch', '--no-tags', cfg.operationsRepo, clon]];
-    if (!hayClon) fs.rmSync(clon, { recursive: true, force: true });
-    for (const args of pasos) {
-      const r = await correrGit(args, cab.valor);
-      if (r.error || r.status !== 0) {
-        const err = String((r.stderr || '') + (r.error ? ` ${r.error.code || r.error.message}` : '')).split(cab.valor).join('[credencial]').split('\n').map((l) => l.trim()).filter(Boolean).slice(-2).join(' · ');
-        return { estado: estadoDeGit(err), motivo: `git ${args.find((a) => a === 'fetch' || a === 'clone' || a === 'reset')} del repo de operaciones falló: ${err.slice(0, 300)}` };
-      }
-    }
-    return { ok: true };
+    return actualizarClon({ url: cfg.operationsRepo, dir: clon, cab: cab.valor, nombre: 'repo de operaciones' });
+  }
+
+  // el perfil del equipo (story 2.29): sólo con SITE_PROFILE_REPO y su credencial; nunca frena el refresco
+  async function actualizarPerfil() {
+    if (!cfg.profileRepo || !cfg.profileCredencial || !cfg.profileCredencial.token) { st.perfil = { estado: 'sin_configurar', motivo: 'no configurado: faltan SITE_PROFILE_REPO y SITE_PROFILE_TOKEN' }; return; }
+    const cab = `Basic ${Buffer.from(`x-access-token:${cfg.profileCredencial.token}`).toString('base64')}`;
+    const r = await actualizarClon({ url: cfg.profileRepo, dir: dirPerfil, cab, nombre: 'perfil del equipo' });
+    if (r.ok) st.perfil = { estado: 'medido', motivo: null };
+    else { log(r.motivo); st.perfil = { estado: r.estado, motivo: `el perfil del equipo no se pudo leer (${r.estado})` }; }
   }
 
   // ── operations.json ────────────────────────────────────────────────────────────────────────────────────────────
@@ -626,12 +655,13 @@ function crearFuentes({ cfg, dataDir, log: logCrudo = () => {}, ahora = Date.now
     const repos = leerRepos(clon);
     if (repos.repos) st.personas.repos = repos.repos;
     else log(`dónde trabaja cada uno: ${repos.motivo}${st.personas.repos ? '; queda la última lista buena' : ''}`);
+    await actualizarPerfil();
     st.cargado = true;
   }
 
   function refrescar() {
     if (enCurso) return enCurso;
-    enCurso = refrescarUnaVez().catch((e) => {
+    enCurso = exclusivo(refrescarUnaVez).catch((e) => {
       // un refresco que se cae por algo inesperado deja el último modelo bueno, pero con banda (nunca en silencio)
       log(`el refresco falló de forma inesperada: ${e && e.stack ? e.stack : e}`);
       st.fallas.repo = st.fallas.repo || { desde: ahora(), estado: 'falla_interna' };
@@ -669,6 +699,13 @@ function crearFuentes({ cfg, dataDir, log: logCrudo = () => {}, ahora = Date.now
     /** Lo que la regla de quién es quién necesita y el modelo no lleva: `{ informados, repos }` (nunca a una vista). */
     personas: () => st.personas,
     detener() { if (temporizador) clearTimeout(temporizador); temporizador = null; },
+    /** Los clones que lee la pestaña Configuración (2.29): `{ operaciones: { dir } | null, perfil: { dir, estado, motivo } | null }`. */
+    clones: () => ({
+      operaciones: fs.existsSync(path.join(clon, '.git')) ? { dir: clon } : null,
+      perfil: cfg.profileRepo ? { dir: fs.existsSync(path.join(dirPerfil, '.git')) ? dirPerfil : null, estado: st.perfil.estado, motivo: st.perfil.motivo } : null,
+    }),
+    exclusivo,
+    dirBuzon,
   };
 }
 

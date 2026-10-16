@@ -31,6 +31,11 @@
  *   opcionales    SITE_OIDC_EMAIL_CLAIM · PORT (8080) · SITE_MAILBOX_SAS o SITE_MAILBOX_IDENTITY=managed ·
  *                 SITE_FIRST_MAINTAINER (un correo) · SITE_AUTH_ALLOWED_DOMAINS (donde el proveedor no la exige) ·
  *                 SITE_DATA_DIR (un disco persistente; sin ella, una carpeta temporal, y se dice)
+ *   de la pestaña Configuración (story 2.29, decisión 11; todas apagadas por defecto: sin una, su sección queda en sólo
+ *   lectura o «no configurado», y el sitio arranca igual)
+ *                 SITE_OPERATIONS_WRITE_TOKEN (proponer cambios al repo de operaciones: rama y pedido, nunca main) ·
+ *                 SITE_PROFILE_REPO (https) y SITE_PROFILE_TOKEN (leer el perfil del equipo) · SITE_PROFILE_WRITE_TOKEN
+ *                 (proponer al perfil) · SITE_PIPELINES_TOKEN (sólo lectura de definiciones y corridas: la propuesta de stages)
  *
  * Uso: node scripts/site/server.js        (la imagen: scripts/site/Dockerfile)
  */
@@ -54,7 +59,8 @@ const PROVEEDORES = (() => {
 })();
 const VARIABLES = ['SITE_PUBLIC_URL', 'SITE_SESSION_KEY', 'SITE_AUTH_PROVIDER', 'SITE_OIDC_CLIENT_ID', 'SITE_OIDC_CLIENT_SECRET', 'SITE_OIDC_ISSUER',
   'SITE_OIDC_EMAIL_CLAIM', 'SITE_AUTH_ALLOWED_DOMAINS', 'SITE_AUTH_GITHUB_ORG', 'SITE_OPERATIONS_REPO', 'SITE_OPERATIONS_TOKEN', 'SITE_OPERATIONS_IDENTITY',
-  'SITE_MAILBOX_SAS', 'SITE_MAILBOX_IDENTITY', 'SITE_FIRST_MAINTAINER', 'SITE_DATA_DIR', 'PORT'];
+  'SITE_MAILBOX_SAS', 'SITE_MAILBOX_IDENTITY', 'SITE_FIRST_MAINTAINER', 'SITE_DATA_DIR', 'PORT',
+  'SITE_OPERATIONS_WRITE_TOKEN', 'SITE_PROFILE_REPO', 'SITE_PROFILE_TOKEN', 'SITE_PROFILE_WRITE_TOKEN', 'SITE_PIPELINES_TOKEN'];
 const CORREO = /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/;
 const DOMINIO = /^[a-z0-9-]+(\.[a-z0-9-]+)+$/;
 const NEEDS = new Set(['maintainer', 'person']);
@@ -131,6 +137,18 @@ function validarConfiguracion(env) {
     if (!CORREO.test(fm)) falta('SITE_FIRST_MAINTAINER', 'tiene que ser UN correo, sin espacios ni separadores');
     else cfg.firstMaintainer = fm.toLowerCase();
   }
+
+  // la pestaña Configuración (story 2.29, decisión 11): todas opcionales
+  if (env.SITE_PROFILE_REPO) {
+    let perfil = null;
+    try { perfil = new URL(env.SITE_PROFILE_REPO); } catch { /* abajo */ }
+    if (!perfil || !(perfil.protocol === 'https:' || esLoopback(perfil)) || perfil.username || perfil.password) falta('SITE_PROFILE_REPO', 'tiene que ser una dirección https://, sin usuario ni credencial adentro');
+    else if (!env.SITE_PROFILE_TOKEN) falta('SITE_PROFILE_TOKEN', 'falta: la credencial de lectura del perfil del equipo (SITE_PROFILE_REPO está puesta)');
+    cfg.profileRepo = env.SITE_PROFILE_REPO;
+    cfg.profileCredencial = env.SITE_PROFILE_TOKEN ? { token: env.SITE_PROFILE_TOKEN } : null;
+  } else cfg.profileRepo = null;
+  cfg.escritura = { operaciones: env.SITE_OPERATIONS_WRITE_TOKEN || null, perfil: env.SITE_PROFILE_WRITE_TOKEN || null };
+  cfg.pipelinesToken = env.SITE_PIPELINES_TOKEN || null;
 
   if (env.PORT !== undefined && env.PORT !== '') {
     const p = Number(env.PORT);
@@ -305,6 +323,7 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
     const personas = typeof fuentes.personas === 'function' ? fuentes.personas() : null;
     const modelo = access.filtrar(fuentes.modelo(), quien, access.crearReglas({ config, modelo: fuentes.modelo(), personas }));
     const ctx = {
+      req, sesion: ses,
       modelo, quien, pestanas: pestanasPara(quien.rol), activa: r.pestana ? r.pestana.id : null,
       bandaRefresco: st.bandaRefresco || null,
       bandaConfig: quien.rol === 'maintainer' ? (st.bandaConfig || null) : null,
@@ -312,7 +331,8 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
       enlaceOperaciones: quien.rol === 'maintainer' ? enlaceOperaciones : null,
       version: VERSION, ahora: ahora(),
     };
-    const salida = r.handler(ctx);
+    // una ruta puede ser asíncrona y leer el pedido (las escrituras de la pestaña Configuración, story 2.29)
+    const salida = await r.handler(ctx);
     return enviar(res, salida);
   }
 
@@ -369,7 +389,8 @@ async function main() {
   let sitio;
   try {
     const fuentes = crearFuentes({ cfg: v.cfg, dataDir, log });
-    sitio = crearSitio({ env, fuentes, log });
+    const rutasExtra = require('./tabs/config.js').crearRutas({ cfg: v.cfg, fuentes, versionImagen: VERSION, log });
+    sitio = crearSitio({ env, fuentes, log, rutasExtra });
     await sitio.iniciar();
     fuentes.arrancar();
   } catch (e) {
@@ -382,6 +403,6 @@ async function main() {
   process.on('SIGINT', salir);
 }
 
-module.exports = { crearSitio, validarConfiguracion, validarRutas, lineasDeArranque, RUTAS, CSP, VARIABLES };
+module.exports = { crearSitio, validarConfiguracion, validarRutas, lineasDeArranque, RUTAS, CSP, VARIABLES, VERSION };
 
 if (require.main === module) main();

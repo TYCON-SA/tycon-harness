@@ -284,6 +284,17 @@ Cambiá con `/model <recomendado>` y seguimos (la sesión y el marker se conserv
 
 **Por qué acá**: H.i obliga a sesión fresca por pipeline → el preflight es el momento exacto para elegir modelo, antes de gastar un token de contexto caro. El mismo `model_hint.heavy` alimenta la escalación de modelo del Step 5b (`deep-review-gate`).
 
+**El modelo de la sesión y la organización**: pasá `--session-model <el modelo de tu sesión>` a `start`
+(y a `model-hint`): el de Claude (familia o id completo, con o sin `[1m]`) o el de Codex. Con eso `model_hint` trae
+`session_check` (`{ model, ceiling, above }`; sin reconocerlo, `{ model: null, reason }`). Si la organización declaró
+`team-repos.json → models`:
+- `models.session` reemplaza la sugerencia de esta tabla (la nota lo dice y `also_ok` queda vacío);
+- con techo obligatorio (`mandatory_ceiling: true`), la sugerencia se recorta al techo, y si `session_check.above` es
+  `true` decí la línea que trae (`session_warning`): «la sesión corre en <x>, por encima del techo de la organización
+  (<techo>): cambiá con /model o seguí; el arnés no la cambia». El arnés no fija el modelo de la sesión: sólo avisa;
+- `start` trae además `models.helpers`: el modelo de los ayudantes sueltos de búsqueda (SPAWN-1 punto 3);
+- `models_problem` = la configuración no se pudo leer y se usan los valores de hoy: decilo en 1 línea.
+
 ### Effort hint — segunda dimensión del MISMO anuncio
 
 El modelo no es el único knob de sesión: el **reasoning effort** (low/medium/high/xhigh/max) también

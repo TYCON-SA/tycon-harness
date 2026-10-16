@@ -231,7 +231,9 @@ H_SIN="$(huella)"; nodo_de_juguete "$CASA39"; H_CON="$(huella)"
 printf '#!/bin/sh\nexit 1\n' > "$CASA39/.tycon/node/versions/$NODE_V/bin/node"; H_ROTO="$(huella)"
 if [ -n "$H_SIN" ] && [ "$H_SIN" != "$H_CON" ] && [ "$H_CON" != "$H_ROTO" ] && [ "$(printf '%s' "$H_CON" | tr '|' '\n' | wc -l | tr -d ' ')" = 4 ]; then ok "T20 la huella cambia al aparecer current y al romperse, y sigue con cinco partes"
 else mal "T20 huellas: sin «${H_SIN}» · con «${H_CON}» · roto «${H_ROTO}»"; fi
-node "$RAIZ/build/deploy-codex-all.js" --selftest > "$T/self39" 2>&1 && grep -q '5 insumos' "$T/self39" && ok "T20 la autoprueba de deploy-codex-all.js sigue verde con sus 5 insumos" || mal "T20 la autoprueba de deploy-codex-all.js: $(tail -1 "$T/self39")"
+# T20b @story-8.39 @ac-7 · CodexHooks_InterpreteNode_HuellaSinN: con `node` la huella es la de antes (sin campo `n`)
+case "$H_SIN" in *'"n":'*) mal "T20b con node la huella trae «n»: ${H_SIN}" ;; *) ok "T20b con node la huella no trae el campo del intérprete" ;; esac
+node "$RAIZ/build/deploy-codex-all.js" --selftest > "$T/self39" 2>&1 && grep -q '5 insumos' "$T/self39" && ok "T20 la autoprueba de deploy-codex-all.js sigue verde con sus 5 insumos" || mal "T20 la autoprueba de deploy-codex-all.js: $(grep ❌ "$T/self39" | head -3)"
 
 # T21 @story-8.39 @ac-7 · Paridad_NodeDelArnes_SinFaltantes: con Codex desplegado con el Node del arnés, la paridad
 # (corrida sin TYCON_NODE_BIN, como corre a mano o de fondo) no marca faltantes

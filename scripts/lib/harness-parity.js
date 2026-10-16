@@ -136,13 +136,17 @@ function sAdvisors(ctx) {
     return { name: 'advisors', ok: false, detail: 'MANIFEST.json vacío o ilegible — nada que comparar no es un verde' };
   }
   let stale = 0, missing = 0;
+  // lo desplegado lleva el modelo resuelto de la organización (story 7.29): se compara con la misma resolución que el
+  // despliegue (orgCodexModel + deployedContent); un generador anterior no la tiene y se compara como siempre
+  const conOrg = typeof ctx.pol.gen.orgCodexModel === 'function' && typeof ctx.pol.gen.deployedContent === 'function';
+  const esperado = (n, buf) => (conOrg ? Buffer.from(ctx.pol.gen.deployedContent(buf.toString('utf8'), ctx.pol.gen.orgCodexModel(TCG, n))) : buf);
   for (const n of ctx.manifest) {
     for (const par of ctx.pol.gen.deployPairs(n, CODEX())) {
       const a = rd(par.outPath);
       const b = rd(par.deployTo);
       if (!a) continue;                    // adapter ausente lo caza build/check.js
       if (!b) { missing++; continue; }
-      if (Buffer.compare(a, b) !== 0) stale++;
+      if (Buffer.compare(esperado(n, a), b) !== 0) stale++;
     }
   }
   // Los revisores de la capa del equipo (story 8.25, A2b · AC 30 d): no hay adapters/ con qué compararlos —la máquina los
@@ -168,7 +172,7 @@ function sAdvisors(ctx) {
     for (const n of teamNames) {
       let g;
       try { g = ctx.pol.gen.generateOne(TCG, n); } catch (e) { missing += 2; teamDetail.push(`${n} no se puede generar (${String(e.message).slice(0, 120)}): lo arregla el repo del equipo o la versión`); continue; }
-      for (const [rel, content] of [[`${n}.config.toml`, g.toml], [`agents/${n}.toml`, g.nativeToml]]) {
+      for (const [rel, content] of [[`${n}.config.toml`, esperado(n, Buffer.from(g.toml))], [`agents/${n}.toml`, esperado(n, Buffer.from(g.nativeToml))]]) {
         const have = rd(path.join(CODEX(), ...rel.split('/')));
         if (!have) { missing++; teamDetail.push(`${rel} falta: lo arregla el repo del equipo o la versión (o deploy-codex-all.js --force)`); continue; }
         if (Buffer.compare(have, Buffer.from(content)) === 0) continue;

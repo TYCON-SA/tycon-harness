@@ -942,5 +942,28 @@ p4=$(en_maquina "$TMP/a8/m4" config-path 2>&1); r4=$?
 { [ "$r4" -eq 0 ] && [ "$p4" = "$AQUI/scripts/ci/product-parity.json" ]; } && ok "A8 MaquinaSinDeclarar_UsaLaDeAlLado: la de un dev o la CI, como siempre" \
   || no "🔴 A8c rc=$r4 [$p4]"
 
+# story 2.29 (T35, decisión P7): la pestaña Configuración valida las diferencias declaradas con la MISMA lectura que el
+# control usa en main, exportada. Las declaraciones que main rechaza (un campo que falta, una revisión sin forma de día)
+# son problemas de la lectura exportada, y main sigue rechazándolas igual.
+t35=$(node -e '
+const { leerDeclaradas } = require(process.argv[1]);
+const bad = [];
+if (typeof leerDeclaradas !== "function") { console.log("no exporta leerDeclaradas"); process.exit(0); }
+const caso = (decls) => leerDeclaradas({ grupos: {}, rasgos: [], diferencias_declaradas: decls }, "2026-10-16");
+const sinFecha = caso([{ grupo: "g", rasgo: "r", motivo: "m", revision: "2027-01-01" }]);
+if (!sinFecha.problemas.length || !/fecha/.test(sinFecha.problemas[0].message)) bad.push("sin fecha: " + JSON.stringify(sinFecha.problemas));
+const sinForma = caso([{ grupo: "g", rasgo: "r", motivo: "m", fecha: "2026-10-01", revision: "permanente" }]);
+if (!sinForma.problemas.length || !/AAAA-MM-DD/.test(sinForma.problemas[0].message)) bad.push("revision sin forma: " + JSON.stringify(sinForma.problemas));
+const bien = caso([{ grupo: "g", rasgo: "r", motivo: "m", fecha: "2026-10-01", revision: "2027-01-01" }, { grupo: "g", rasgo: "v", motivo: "m", fecha: "2026-01-01", revision: "2026-02-01" }]);
+if (bien.problemas.length || bien.declaradas.length !== 1 || bien.vencidas.length !== 1) bad.push("bien: " + JSON.stringify(bien));
+console.log(bad.join(" | "));
+' "$CHK" 2>&1)
+mundo "$TMP/t35" 'x' 'x' 2>/dev/null || mkdir -p "$TMP/t35"
+printf '%s\n' '{"grupos":{},"rasgos":[],"raiz_por_defecto":"'"$TMP/t35"'","diferencias_declaradas":[{"grupo":"g","rasgo":"r","motivo":"m","revision":"2027-01-01"}]}' > "$TMP/t35.json"
+node "$CHK" --config "$TMP/t35.json" --root "$TMP/t35" >"$TMP/o35" 2>&1; rc35=$?
+{ [ -z "$t35" ] && [ "$rc35" -eq 1 ] && grep -q 'no dice "fecha"' "$TMP/o35"; } \
+  && ok "T35 Declaradas_LecturaExportada_MismaReglaQueElControl @story-2.29 @ac-26: la lectura exportada rechaza lo mismo que main, y main sigue igual" \
+  || no "🔴 T35 [$t35] rc=$rc35 $(head -1 "$TMP/o35")"
+
 echo "─────────────"
 if [ "$fallos" -eq 0 ]; then echo "✅ paridad-entre-productos: todo verde"; exit 0; else echo "❌ paridad-entre-productos: $fallos falla(s)"; exit 1; fi

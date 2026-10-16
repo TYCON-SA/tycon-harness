@@ -24,6 +24,13 @@
 //   `full_tests_pipeline` es «el pipeline de pruebas completas» del repo: en Azure, por nombre o por id; en GitHub, el
 //   nombre del control obligatorio. Lo usa el skill de merge (scripts/tools/merge-pr.js); sin la clave, el skill lee
 //   `merge.mode` del repo como antes. La clave es opcional: no sube la versión del archivo.
+//     "models": {                       opcional (story 7.29) — el modelo de cada trabajo del pipeline
+//       "mandatory_ceiling"?: <bool>, "ceiling"?: <modelo>,   techo obligatorio (paga la organización): van juntos
+//       "reviewers"?: <modelo>, "reviewer"?: { "<revisor>": <modelo> }, "reviewers_reloop"?: <modelo>,
+//       "adversarial"?: { "model"?, "heavy"?: <modelo>, "fable_question"?: «ask» | «never» }, "helpers"?: <modelo>,
+//       "session"?: { "low"?, "normal"?, "heavy"?: <modelo> } }
+//   <modelo> = «haiku» | «sonnet» | «opus» | «fable» (MODEL_NAMES, copia de models.js del skill). Quien la resuelve
+//   es skills/tycon-pipeline/scripts/lib/models.js (`readOrgModels`, el único que la lee).
 //   <repo> = { "platform": "azure", "org", "project", "repo" } o { "platform": "github", "org", "repo" }.
 //   Las claves que empiezan con `__` son comentarios. Cualquier otra clave es un problema, en su propia ruta: así un
 //   nombre mal escrito no queda ignorado en silencio.
@@ -32,7 +39,9 @@
 //
 // EL CONTRATO: `parse(text)` → `{ ok, data, problems }`. Cada problema es `{ path, message }`, con la ruta de la clave
 // en puntos e índices (`operations.project`, `harness_copies.1.repo`; `''` para el archivo entero). Con un problema,
-// `data` es `null`: nunca hay datos a medias. `load(file)` suma `couldNotRead: true` cuando el archivo no se pudo leer:
+// `data` es `null`: nunca hay datos a medias. Excepción (story 7.29, decisión 13): un problema DENTRO de `models` no
+// anula el archivo —un modelo mal escrito dejaría a todas las máquinas sin la capa—; sale aparte, en
+// `sectionProblems.models`, `ok` no cambia por eso y `data` viene sin `models` (se usan los valores de hoy). `load(file)` suma `couldNotRead: true` cuando el archivo no se pudo leer:
 // «no pude leer» nunca es «no hay repo».
 //
 // LAS COPIAS DEL ARNÉS, PARA LAS MÉTRICAS (DEF-8.30-copias-del-arnes-en-team-repos · 2026-10-14, decisión del dueño):
@@ -52,7 +61,14 @@ const VERSION = 1;
 const PLATFORMS = ['azure', 'github'];
 const REPO_KEYS = { azure: ['org', 'project', 'repo'], github: ['org', 'repo'] };
 const REQUIRED = ['public', 'profile', 'operations'];
-const OPTIONAL = ['maintainers', 'harness_copies', 'merge_suites'];
+const OPTIONAL = ['maintainers', 'harness_copies', 'merge_suites', 'models'];
+// Copia de `MODELS` de skills/tycon-pipeline/scripts/lib/models.js, en su orden (story 7.29, decisión 12): este lector
+// no puede cargar el skill —lo valida el instalador con el lector del árbol que va a quedar— y T21 compara las dos.
+const MODEL_NAMES = ['haiku', 'sonnet', 'opus', 'fable'];
+const MODELS_KEYS = ['mandatory_ceiling', 'ceiling', 'reviewers', 'reviewer', 'reviewers_reloop', 'adversarial', 'helpers', 'session'];
+const MODELS_SUBKEYS = { adversarial: ['model', 'heavy', 'fable_question'], session: ['low', 'normal', 'heavy'] };
+const FABLE_QUESTION = ['ask', 'never'];
+const REVIEWER_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const MERGE_RULES = ['automatico', 'siempre-en-la-maquina', 'confiar-en-el-servidor'];
 const MERGE_ENTRY_KEYS = ['repo', 'rule', 'full_tests_pipeline'];
 const KEYS = ['version', ...REQUIRED, ...OPTIONAL];
@@ -153,6 +169,43 @@ function mergeSuitesFor(data, identity) {
   return { declared: true, rule: 'automatico', ruleFrom: 'default', pipeline };
 }
 
+const modelProblem = (v, at) => (MODEL_NAMES.includes(v) ? [] : [{ path: at, message: `tiene que ser ${MODEL_NAMES.map((m) => `«${m}»`).join(', ')} (es ${JSON.stringify(v)})` }]);
+
+/** Los problemas de `models` (story 7.29); `[]` si está bien. Cada uno con la ruta de su clave. */
+function modelsProblems(value) {
+  if (!isObject(value)) return [{ path: 'models', message: 'tiene que ser un objeto (los modelos de cada trabajo del pipeline)' }];
+  const out = [];
+  for (const k of Object.keys(value)) {
+    if (comment(k)) continue;
+    if (!MODELS_KEYS.includes(k)) { out.push({ path: `models.${k}`, message: 'clave desconocida' }); continue; }
+    const v = value[k];
+    const at = `models.${k}`;
+    if (k === 'mandatory_ceiling') {
+      if (typeof v !== 'boolean') out.push({ path: at, message: `tiene que ser true o false (es ${JSON.stringify(v)})` });
+    } else if (k === 'reviewer') {
+      if (!isObject(v)) { out.push({ path: at, message: 'tiene que ser un objeto { "<revisor>": <modelo> }' }); continue; }
+      for (const [r, m] of Object.entries(v)) {
+        if (comment(r)) continue;
+        if (!REVIEWER_NAME.test(r)) out.push({ path: `${at}.${r}`, message: 'el nombre de un revisor va en minúsculas, números y guiones' });
+        else out.push(...modelProblem(m, `${at}.${r}`));
+      }
+    } else if (MODELS_SUBKEYS[k]) {
+      if (!isObject(v)) { out.push({ path: at, message: `tiene que ser un objeto con ${MODELS_SUBKEYS[k].join(', ')}` }); continue; }
+      for (const [s, m] of Object.entries(v)) {
+        if (comment(s)) continue;
+        if (!MODELS_SUBKEYS[k].includes(s)) out.push({ path: `${at}.${s}`, message: 'clave desconocida' });
+        else if (s === 'fable_question') {
+          if (!FABLE_QUESTION.includes(m)) out.push({ path: `${at}.${s}`, message: `tiene que ser «ask» o «never» (es ${JSON.stringify(m)})` });
+        } else out.push(...modelProblem(m, `${at}.${s}`));
+      }
+    } else out.push(...modelProblem(v, at));
+  }
+  // el techo es un solo modelo y vale sólo con mandatory_ceiling: true (decisión 15): uno sin el otro es un problema
+  if (value.ceiling !== undefined && value.mandatory_ceiling !== true) out.push({ path: 'models.ceiling', message: 'un techo sin «mandatory_ceiling: true» no limita nada' });
+  if (value.mandatory_ceiling === true && value.ceiling === undefined) out.push({ path: 'models.mandatory_ceiling', message: 'con techo obligatorio falta «ceiling»' });
+  return out;
+}
+
 /** Valida un objeto ya leído. */
 function validate(doc) {
   if (!isObject(doc)) return [{ path: '', message: 'el archivo tiene que ser un objeto JSON' }];
@@ -182,7 +235,11 @@ function parse(text) {
     return { ok: false, data: null, problems: [{ path: '', message: `no es JSON válido: ${String((e && e.message) || e).split('\n')[0]}` }] };
   }
   const problems = validate(doc);
-  return { ok: problems.length === 0, data: problems.length ? null : doc, problems };
+  // un problema dentro de `models` no invalida el archivo (story 7.29, decisión 13): va aparte y `data` sale sin `models`
+  const sectionModels = isObject(doc) && doc.models !== undefined ? modelsProblems(doc.models) : [];
+  let data = problems.length ? null : doc;
+  if (data && sectionModels.length) { data = { ...doc }; delete data.models; }
+  return { ok: problems.length === 0, data, problems, ...(sectionModels.length ? { sectionProblems: { models: sectionModels } } : {}) };
 }
 
 /** Lo mismo desde un archivo; si no se pudo leer, `couldNotRead: true` con el motivo. */
@@ -228,7 +285,7 @@ function privateRepoRef(data) {
   return `${m.project}/_git/${m.repo}`;
 }
 
-module.exports = { VERSION, PLATFORMS, REPO_KEYS, KEYS, MERGE_RULES, parse, load, url, privateRepoRef, repoProblems, harnessCopies, mergeSuitesFor };
+module.exports = { VERSION, PLATFORMS, REPO_KEYS, KEYS, MERGE_RULES, MODEL_NAMES, modelsProblems, parse, load, url, privateRepoRef, repoProblems, harnessCopies, mergeSuitesFor };
 
 if (require.main === module) {
   const args = process.argv.slice(2);

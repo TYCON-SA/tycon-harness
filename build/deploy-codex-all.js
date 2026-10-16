@@ -141,8 +141,13 @@ function fingerprint(env = process.env) {
     // el intérprete de los hooks (story 8.39, AC 7): cuando aparece el Node del arnés, se rompe o se apaga, Codex se
     // vuelve a desplegar en ese mismo arranque aunque ningún repo haya cambiado. Va DENTRO de esta parte (siguen cinco),
     // y sólo con el Node del arnés: con `node` la cadena es la de antes y una máquina sin él no redespliega por nada
-    const interp = dh.harnessInterpreter ? dh.harnessInterpreter(env) : { prefix: 'node' };
-    const own = interp.prefix && interp.prefix !== 'node' ? { n: interp.prefix } : {};
+    // en su propio try: si el intérprete no se pudo decidir, el motivo entra como `n` y el resto de la parte sigue
+    // moviendo la huella (antes el error tapaba integraciones, descartes y aviso mientras siguiera roto)
+    let own = {};
+    try {
+      const interp = dh.harnessInterpreter ? dh.harnessInterpreter(env) : { prefix: 'node' };
+      if (interp.prefix && interp.prefix !== 'node') own = { n: interp.prefix };
+    } catch (e) { own = { n: `error:${(e && e.message) || e}` }; }
     integ = JSON.stringify({ i: act.integrations || null, d: act.dropped.map((x) => `${x.event}:${x.spec}`), a: act.aviso || null, ...own });
   } catch (e) { integ = `error:${(e && e.message) || e}`; }
   return [

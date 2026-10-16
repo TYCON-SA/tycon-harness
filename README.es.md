@@ -104,7 +104,10 @@ Un ejemplo: en ACME, Pedro administra y Juan programa.
    puede partir de [un perfil de ejemplo](https://github.com/TYCON-SA/harness-team-profile-example), listo para copiar.
 2. Pedro corre `node ~/.claude/tycon-harness/scripts/setup/harness.js team-config`. Se abre una página en su máquina,
    sin nada en internet, donde declara dónde vive cada repo y a quién se le asignan los avisos. La página revisa lo que
-   escribe, lo guarda en el repo que corresponde y le ofrece el pull request.
+   escribe, lo guarda en el repo que corresponde y le ofrece el pull request. Cuando ACME tiene su sitio de la
+   organización desplegado, lo mismo se hace desde su pestaña **Configuración** (sólo para los que mantienen): valida
+   con los mismos lectores y propone cada cambio con un pull request, nunca escribe `main`. Mientras tanto, la página
+   local sigue sirviendo.
 3. Juan instala con `--team` y el perfil: `harness.js install --version latest --team acme/harness-team-profile` si está
    en GitHub, o con la dirección del repo si está en Azure DevOps. Desde ahí, cada actualización le trae también lo del
    equipo.

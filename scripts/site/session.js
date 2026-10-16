@@ -6,8 +6,11 @@
  * sigue adentro. Las dos cookies van firmadas con HMAC-SHA256 y `SITE_SESSION_KEY`:
  *
  *   __Host-site   la sesión, 8 horas FIJAS desde que se entró (no se renueva). Lleva el correo (en minúsculas), la
- *                 identidad estable del proveedor (`sub`: oid+tid, sub, o el id de GitHub), el proveedor y el emisor, y el
- *                 vencimiento. NO lleva el rol: el rol se recalcula en cada pedido con la configuración vigente.
+ *                 identidad estable del proveedor (`sub`: oid+tid, sub, o el id de GitHub), el proveedor y el emisor, el
+ *                 vencimiento y el token de doble envío (`tok`, story 2.29, AC 3): 32 bytes al azar que nacen con la
+ *                 sesión; la pestaña Configuración lo pone en la página y exige que cada escritura lo traiga en
+ *                 `X-Site-Token` (la cookie es HttpOnly: el script de otro sitio no lo puede leer). NO lleva el rol: el rol
+ *                 se recalcula en cada pedido con la configuración vigente.
  *   __Host-login  el intento de inicio, 10 minutos: state, nonce y el verificador PKCE. Se borra en la vuelta.
  *
  * Una cookie alterada, sin firma, firmada con otra llave, vencida, o de otro proveedor o emisor, es «sin sesión».
@@ -61,7 +64,7 @@ const borrar = (nombre) => `${nombre}=; Max-Age=0; Path=/; HttpOnly; Secure; Sam
 
 /** La cookie de una sesión nueva. `ident` = { email, sub, prov, iss }. */
 function nuevaSesion(ident, llave, ahora) {
-  const carga = { email: String(ident.email).trim().toLowerCase(), sub: String(ident.sub), prov: ident.prov, iss: ident.iss, exp: ahora + DURACION_SESION_MS };
+  const carga = { email: String(ident.email).trim().toLowerCase(), sub: String(ident.sub), prov: ident.prov, iss: ident.iss, exp: ahora + DURACION_SESION_MS, tok: b64u(crypto.randomBytes(32)) };
   return cookie(SESION, firmar(carga, llave), DURACION_SESION_MS / 1000);
 }
 

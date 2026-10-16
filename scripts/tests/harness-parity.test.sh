@@ -194,6 +194,36 @@ case "$OUT" in *"live-fire-codex.json: hook de PostToolUse NO SE DISPARÓ"*) ok 
 # calla «falta la pieza» queda sin un error forzable sin simular el sistema de archivos, que esta story prohíbe)
 rm -rf "$LAB"
 
+# ── 4c. T26 (story 7.29 · AC 16): lo desplegado con el modelo de la organización está al día ────────────────────────
+# Con `team-repos.json → models`, lo desplegado a Codex lleva el modelo resuelto de la organización (no el de adapters/):
+# la paridad lo compara con la misma resolución y da ✅; con el archivo ilegible se despliega lo de hoy y también da ✅;
+# un .toml editado a mano sigue siendo rojo. Sobre una copia del árbol (sin .git), nunca el real.
+# 🔴 rojo previo: con `models` declarado la paridad comparaba contra adapters/ y daba 🔴 advisors.
+LAB=$(mktemp -d); LAB="$(cd "$LAB" && pwd -P)"
+mkdir -p "$LAB/.codex" "$LAB/.tycon/state" "$LAB/tree"
+rsync -a --exclude .git --exclude node_modules --exclude '.advisors' "$TCG/" "$LAB/tree/"
+equipo() { printf '{"version":1,"public":{"platform":"github","org":"acme","repo":"h"},"profile":{"platform":"github","org":"acme","repo":"p"},"operations":{"platform":"github","org":"acme","repo":"o"}%s}\n' "$1" > "$LAB/tree/team-repos.json"; }
+lab7() { HOME="$LAB" USERPROFILE="$LAB" CODEX_HOME="$LAB/.codex" TYCON_PROFILE=0 TYCON_SKILLS_DIR="$LAB/tree" "$@"; }
+printf '{ "tools": ["codex"], "tree": "%s" }\n' "$LAB/tree" > "$LAB/.tycon/state/harness-state.json"
+equipo ',"models":{"reviewers":"haiku","reviewer":{"tycon-spec-first-checker":"opus"},"mandatory_ceiling":true,"ceiling":"sonnet"}'
+lab7 node "$LAB/tree/build/deploy-codex-all.js" --force >/dev/null 2>&1
+grep -q '^model = "gpt-5.4-mini"$' "$LAB/.codex/agents/tycon-plugin-security-basics.toml" && grep -q '^model = "gpt-5.6-luna"$' "$LAB/.codex/agents/tycon-spec-first-checker.toml" \
+  && ok "T26 lo desplegado lleva el modelo de la organización (haiku → gpt-5.4-mini; spec-first, por el techo, gpt-5.6-luna)" \
+  || bad "T26 modelo de la organización en lo desplegado" "$(grep -h '^model' "$LAB/.codex/agents/tycon-plugin-security-basics.toml" "$LAB/.codex/agents/tycon-spec-first-checker.toml" 2>&1 | head -2)"
+OUT=$(lab7 node "$LAB/tree/scripts/lib/harness-parity.js" 2>&1)
+case "$OUT" in *"✅ advisors"*) ok "T26 con models → ✅ advisors";; *) bad "T26 con models → ✅ advisors" "$(echo "$OUT" | grep advisors | head -1)";; esac
+printf '# editado a mano\n' >> "$LAB/.codex/agents/tycon-plugin-security-basics.toml"
+OUT=$(lab7 node "$LAB/tree/scripts/lib/harness-parity.js" 2>&1)
+case "$OUT" in *"🔴 advisors"*) ok "T26 uno editado a mano → 🔴 advisors, como hoy";; *) bad "T26 editado a mano → 🔴" "$(echo "$OUT" | grep advisors | head -1)";; esac
+printf '{ roto' > "$LAB/tree/team-repos.json"
+OUT=$(lab7 node "$LAB/tree/build/deploy-codex-all.js" --force 2>&1)
+case "$OUT" in *"no pude leer la configuración de la organización"*) ok "T26 con team-repos.json ilegible el despliegue lo dice";; *) bad "T26 ilegible → lo dice" "$(echo "$OUT" | tail -2)";; esac
+cmp -s "$LAB/.codex/agents/tycon-plugin-security-basics.toml" "$LAB/tree/adapters/codex/agents-native/tycon-plugin-security-basics.toml" \
+  && ok "T26 …y despliega lo de hoy, byte a byte" || bad "T26 ilegible → lo de hoy" "difiere de adapters/"
+OUT=$(lab7 node "$LAB/tree/scripts/lib/harness-parity.js" 2>&1)
+case "$OUT" in *"✅ advisors"*) ok "T26 con el archivo ilegible → ✅ advisors";; *) bad "T26 ilegible → ✅ advisors" "$(echo "$OUT" | grep advisors | head -1)";; esac
+rm -rf "$LAB"
+
 # ── 5. Los selftests de las piezas que esta red integra ──────────────────────────────────────
 node "$PARITY" --selftest >/dev/null 2>&1 && ok "selftest de paridad verde" || bad "selftest de paridad" "rojo"
 node "$TCG/build/deploy-codex-mcp.js" --selftest >/dev/null 2>&1 && ok "selftest del deployer MCP verde" || bad "selftest deployer MCP" "rojo"

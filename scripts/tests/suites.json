@@ -359,6 +359,11 @@
       "requiere": []
     },
     {
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/models.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "arnes",
       "ruta": "tests/backfill-discovery.test.js",
       "requiere": []
@@ -1420,6 +1425,18 @@
       "__nota": "la página local de configuración de la organización (`harness.js team-config`): sólo contesta con su llave y por su propia dirección (otro Host, otro Origin, sin llave, no JSON o un cuerpo de más: rechazados); nada se carga de afuera; valida con los lectores del árbol (team-repos.js y operations-config.js) y no escribe lo que rechazan; la carpeta de cada clon la valida y la guarda quien la lanzó; el pedido no lleva otros cambios del clon, sube la rama de verdad a un remoto de juguete, y un rechazo por permisos o una herramienta que falta se dicen en llano con el enlace para abrirlo a mano; cómo se abre el navegador en Mac, Windows y Linux.",
       "raiz": "arnes",
       "ruta": "tests/team-config.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 2.29: la pestaña Configuración del sitio de la organización, sólo para los que mantienen — un dev recibe 403 en cada ruta y sin sesión contesta como la 2.23; cada escritura exige el Origin del sitio (o Sec-Fetch-Site), el X-Site-Token de la sesión, JSON y un cuerpo de hasta 256 KB, y ninguna falta crea nada; las ocho secciones editables más Productos y Versiones de sólo lectura; «Revisar» valida con el parse del mismo lector del arnés y conserva byte por byte lo que no se editó; la propuesta de stages sólo lee; Personas guarda la huella del correo, nunca el correo; Umbrales edita sólo claves conocidas y queda en sólo lectura sin la marca del nocturno; la paridad por producto con renovar y cerrar; sin identidad de escritura, sólo lectura y descarga; el código no nombra la configuración de ninguna máquina ni un valor de una organización. Levanta el servidor del sitio con una sesión inyectada, repos git locales por HTTP y una API falsa de Azure DevOps y de GitHub en el proceso; sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/site-config.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 2.29: la propuesta por rama y pedido desde el clon del sitio — una rama team-config/<id>-<sello> desde la punta de main, un commit con un solo archivo armado con los comandos de bajo nivel de git (el árbol de trabajo y el índice del clon quedan intactos: git status limpio y HEAD en main), la credencial sólo en una cabecera, el pedido por la API REST de Azure DevOps o de GitHub con «pedido por …»; nunca un empuje a main, un merge ni auto-completar; sin política de revisión en main, «Proponer» apagado; con un pedido abierto sobre el archivo, el enlace y nada nuevo; y una falla a mitad dicha en llano. Repo git local por HTTP y APIs falsas en el proceso; sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/repo-proposal.test.js",
       "requiere": []
     },
     {
