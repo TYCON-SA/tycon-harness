@@ -184,6 +184,9 @@ const views = require(path.join(H.SITE, 'views.js'));
 const sources = require(path.join(H.SITE, 'sources.js'));
 const C = 'dev.c@acme.example';
 const D = 'dev.d@acme.example';
+// stable-data: el emisor de mentira firma con la hora real y el sitio de estas pruebas corre con su reloj de verdad; lo
+// que se compara son plazos relativos a ahora (una corrida de hace una hora, una falla de hace 2 o 25 horas), nunca una
+// fecha fija.
 const haceHoras = (n, t = Date.now()) => t - n * 3600000;
 
 test('T26 2.28-Rol_PersonaSaleDePeople', async () => {
