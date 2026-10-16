@@ -1,0 +1,65 @@
+{
+  "__doc": "Carpetas de trabajo ya mergeadas (2026-10-16, pedido del dueño: «borrá solas las carpetas ya mergeadas»; ese día había 30 worktrees y 28 ya estaban mergeados). Al arrancar, una vez por día, worktree-sweep.js borra los worktrees limpios con HEAD en origin/main y nombra los que tienen trabajo sin tocarlos. Con git de verdad: un remoto desnudo, su clon en repos/ y dos worktrees mergeados, uno de ellos con un archivo sin seguimiento.",
+  "hooks": [
+    {
+      "hook": "worktree-sweep.js (carpetas de trabajo ya mergeadas se borran solas)",
+      "script": "${FIXTURE}/tcg/scripts/hooks/worktree-sweep.js",
+      "event": "SessionStart",
+      "matcher": "*",
+      "cases": [
+        {
+          "id": "borra-la-mergeada-y-nombra-la-que-tiene-cambios",
+          "type": "must-emit",
+          "__doc": "Una carpeta limpia y mergeada se borra con su rama; la mergeada con un archivo sin seguimiento se nombra y queda. ROJO PREVIO: borrar una carpeta con cambios (se pierde trabajo), o no borrar nada (se juntan 30 carpetas).",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/setup/harness && cp $TCG/scripts/hooks/worktree-sweep.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/",
+            "git init -q --bare -b main remoto.git && git clone -q remoto.git repos/producto 2>/dev/null && git -c user.email=b@b.test -c user.name=b -C repos/producto commit -q --allow-empty -m uno && git -C repos/producto push -q origin HEAD:main",
+            "git -C repos/producto worktree add -q -b feat/hecha ../producto-wt-hecha HEAD && git -c user.email=b@b.test -c user.name=b -C repos/producto-wt-hecha commit -q --allow-empty -m trabajo && git -c user.email=b@b.test -c user.name=b -C repos/producto merge -q --no-ff -m merge feat/hecha && git -C repos/producto push -q origin HEAD:main && git -C repos/producto fetch -q origin",
+            "git -C repos/producto worktree add -q -b feat/sucia ../producto-wt-sucia origin/main && git -c user.email=b@b.test -c user.name=b -C repos/producto-wt-sucia commit -q --allow-empty -m trabajo && git -c user.email=b@b.test -c user.name=b -C repos/producto merge -q --no-ff -m merge2 feat/sucia && git -C repos/producto push -q origin HEAD:main && git -C repos/producto fetch -q origin && echo cambio > repos/producto-wt-sucia/nuevo.txt"
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "env": {
+            "TYCON_REPOS_ROOT": "${FIXTURE}/repos",
+            "TYCON_WORKTREE_SWEEP_IDLE_HOURS": "0"
+          },
+          "expect": {
+            "stdout_re": [
+              "borré 1 ya mergeada\\(s\\) \\(producto-wt-hecha\\)",
+              "no toqué 1 con trabajo: producto-wt-sucia \\(tiene cambios\\)"
+            ],
+            "file_contains": [
+              {
+                "path": "${FIXTURE}/repos/producto-wt-sucia/nuevo.txt",
+                "re": "cambio"
+              }
+            ]
+          }
+        },
+        {
+          "id": "apagado-por-variable-calla",
+          "type": "must-stay-quiet",
+          "__doc": "TYCON_WORKTREE_SWEEP=0: no mira ni borra nada. ROJO PREVIO: un interruptor que no apaga.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/setup/harness && cp $TCG/scripts/hooks/worktree-sweep.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/",
+            "git init -q --bare -b main remoto.git && git clone -q remoto.git repos/producto 2>/dev/null && git -c user.email=b@b.test -c user.name=b -C repos/producto commit -q --allow-empty -m uno && git -C repos/producto push -q origin HEAD:main",
+            "git -C repos/producto worktree add -q -b feat/hecha ../producto-wt-hecha HEAD && git -c user.email=b@b.test -c user.name=b -C repos/producto-wt-hecha commit -q --allow-empty -m trabajo && git -c user.email=b@b.test -c user.name=b -C repos/producto merge -q --no-ff -m merge feat/hecha && git -C repos/producto push -q origin HEAD:main && git -C repos/producto fetch -q origin",
+            "git -C repos/producto worktree add -q -b feat/sucia ../producto-wt-sucia origin/main && git -c user.email=b@b.test -c user.name=b -C repos/producto-wt-sucia commit -q --allow-empty -m trabajo && git -c user.email=b@b.test -c user.name=b -C repos/producto merge -q --no-ff -m merge2 feat/sucia && git -C repos/producto push -q origin HEAD:main && git -C repos/producto fetch -q origin && echo cambio > repos/producto-wt-sucia/nuevo.txt"
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "env": {
+            "TYCON_REPOS_ROOT": "${FIXTURE}/repos",
+            "TYCON_WORKTREE_SWEEP_IDLE_HOURS": "0",
+            "TYCON_WORKTREE_SWEEP": "0"
+          },
+          "expect": {
+            "exit": 0
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -144,6 +144,20 @@ scripts/tools/tycon-worktree.sh rm <slug>    # se niega si el worktree tiene cam
 `git branch -d` cuando ya mergeó). Un worktree olvidado no rompe nada, pero ocupa disco y
 ensucia `git worktree list` — limpiar al cerrar la story.
 
+**Se limpian solos** (2026-10-16, pedido del dueño: ese día había 30 worktrees y 28 ya estaban mergeados).
+`scripts/hooks/worktree-sweep.js` hace dos cosas con el mismo criterio —borra sólo lo que está **limpio** y con su
+HEAD **ya en origin/main**, con `git worktree remove` sin `--force` y `git branch -d`—:
+
+- **Al cerrar la story** (`/tycon-pipeline close`, paso 9): `node <arnés>/scripts/hooks/worktree-sweep.js --story <N.M>`
+  trae origin y borra los worktrees cuya rama nombra la story. Los que tienen cambios o commits sin mergear los nombra
+  y no los toca.
+- **Al arrancar sesión**, una vez por día, en todos los repos conocidos: lo mismo, más dos resguardos para no pisar a
+  otra sesión viva — no toca un worktree usado en las últimas 4 horas (`TYCON_WORKTREE_SWEEP_IDLE_HOURS`) ni uno recién
+  creado sin trabajo propio. Lo que deja con trabajo lo nombra en una línea.
+
+Nunca toca el checkout principal, uno bloqueado (`git worktree lock`) ni el de la sesión. Apagar:
+`TYCON_WORKTREE_SWEEP=0`. Ver qué haría: `--force --dry-run`.
+
 ---
 
 **Por qué**: el pipeline ya es parcialmente worktree-safe (story-discovery

@@ -2175,6 +2175,12 @@
       "requiere": []
     },
     {
+      "__nota": "2026-10-16, pedido del dueño («borrá solas las carpetas ya mergeadas»): scripts/hooks/worktree-sweep.js. Con git de verdad (remoto desnudo, clon y worktrees en una carpeta temporal) y un HOME de prueba por caso: al arrancar borra el worktree limpio y mergeado con su rama y nunca el checkout principal; nombra y no toca los que tienen archivos modificados o sin seguimiento y los que tienen commits sin mergear; calla ante uno usado hace poco, y deja el recién creado, el bloqueado y el de la sesión; sella el día y calla en el segundo arranque; apagado por variable y en seco no toca nada. Con --story borra sólo los de esa story, trae origin antes de juzgar y deja el que tiene cambios. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/worktree-sweep.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 2.28 (T4, T7-T19, T22, T41): quién es quién (scripts/lib/people.js). Los correos que informan las máquinas del espejo (sin escribir ni tirar, con el JSON roto), los cuatro estados de una máquina y la carpeta vieja compartida, quién ve qué máquina (el mantenedor todo, la persona lo suyo, la corrida suelta sólo el mantenedor), la comparación sin mayúsculas, el plazo de 24 horas de la configuración rota y el freno, las máquinas por confirmar, dónde trabaja cada persona en productos de repos.json (sin adivinar), la vista de una persona sin nada de otra, y que el código no trae valores de ninguna organización. Sin red.",
       "raiz": "arnes",
       "ruta": "tests/people.test.js",
