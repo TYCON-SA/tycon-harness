@@ -12,6 +12,10 @@
 # scripts/nightly/dashboard, scripts/setup/harness) y los títulos de los pasos del pipeline (los lee la vista de corridas,
 # 2.27). Ningún secreto en la imagen: llegan como variables de entorno desde el almacén de cada plataforma (2.30).
 # La misma orden arranca el sitio con Node solo, sin Docker: node scripts/site/server.js
+#
+# 🔴 Poné SITE_DATA_DIR en un VOLUMEN (por ejemplo `-v sitio-datos:/datos -e SITE_DATA_DIR=/datos`): ahí quedan el espejo
+# del buzón, el clon de operaciones y el último bueno de la configuración. Sin volumen, cada reinicio vuelve a bajar
+# el buzón entero, y la pestaña Corridas dice «no medido» hasta que termina.
 FROM node:24.11.0-alpine3.22
 
 RUN apk add --no-cache git

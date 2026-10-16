@@ -40,7 +40,7 @@ const tmp = (p) => fs.mkdtempSync(path.join(os.tmpdir(), p));
 const entrar = async (h, emisor, email, t) => (await H.ingresar(h, emisor, { sub: `s-${email}`, email, email_verified: true, iat: Math.floor(t / 1000), exp: Math.floor(t / 1000) + 3600 })).sesion;
 
 /** Repo + buzón + fuentes, todo local. */
-async function montar({ archivos = {}, config, blobs = {}, mailbox = true, sasExtra = {}, credBuzon, ahora = () => T0, dataDir, firstMaintainer, envExtra = {} } = {}) {
+async function montar({ archivos = {}, config, blobs = {}, mailbox = true, sasExtra = {}, credBuzon, ahora = () => T0, dataDir, firstMaintainer, envExtra = {}, fuentesExtra = {} } = {}) {
   const raiz = tmp('site-src-');
   const cfgOps = config || { version: 1, owners: { default: 'lead@acme.example' }, site: { maintainers: ['lead@acme.example'], ...(mailbox ? { mailbox: { provider: 'azure-blob', account: 'acmeruns', container: 'runs' } } : {}) } };
   const repo = repoConArchivos(raiz, 'ops.git', H.archivosDeOperaciones({ config: cfgOps, extra: archivos }), path.join(raiz, 'trabajo'));
@@ -53,7 +53,7 @@ async function montar({ archivos = {}, config, blobs = {}, mailbox = true, sasEx
   const spawn = (cmd, args, opts) => { llamadas.push({ cmd, args, env: opts && opts.env }); return correr(cmd, args, opts); };
   const registro = [];
   const dir = dataDir || tmp('site-data-');
-  const fuentes = crearFuentes({ cfg: v.cfg, dataDir: dir, log: (l) => registro.push(l), ahora, spawn, urlBuzon: buzon.base });
+  const fuentes = crearFuentes({ cfg: v.cfg, dataDir: dir, log: (l) => registro.push(l), ahora, spawn, urlBuzon: buzon.base, ...fuentesExtra });
   return {
     raiz, repo, git, buzon, env, cfg: v.cfg, fuentes, llamadas, registro, dataDir: dir,
     cerrar: async () => { fuentes.detener(); await git.cerrar(); await buzon.cerrar(); fs.rmSync(raiz, { recursive: true, force: true }); },
@@ -565,4 +565,41 @@ test('T26 Espejo_BajaHilosYCambios_SoloConThreads @story-2.27 @ac-18', { skip: S
     await m.fuentes.refrescar();
     assert.strictEqual(m.buzon.pedidos.length, 0);
   } finally { await m.cerrar(); fs.rmSync(disco, { recursive: true, force: true }); }
+});
+
+// El hotfix de la bajada parcial (2026-10-16): en el sitio real, la primera pasada de un espejo vacío cortaba por el tope
+// de 120 s (bajaba de a un archivo) y la siguiente llegaba recién al refresco de los 15 minutos: la pestaña Corridas
+// quedaba «no medido (parcial)» todo ese tiempo.
+// 🔴 rojo previo: un blob por vez (maxEnVuelo 1), y después de un corte el próximo refresco a los minutos de siempre
+test('T26b BajadaEnParalelo_YSiCortaLaSiguienteEnseguida @story-2.27 @ac-18', { skip: SIN_BACKEND }, async () => {
+  const blobs = {};
+  for (let i = 0; i < 24; i++) blobs[`maq-a-11111111/s${i}.json`] = H.volcado(`s${i}`, `${HOY}T08:${String(i).padStart(2, '0')}:00Z`);
+  // en paralelo: 24 blobs de 150 ms bajan a la vez (no más de 8), muy por debajo de 24 × 150 ms
+  let m = await montar({ blobs });
+  try {
+    m.buzon.st.demora = 150;
+    await m.fuentes.refrescar();
+    assert.strictEqual(m.fuentes.buzonEstado().completo, true);
+    assert.ok(m.buzon.st.maxEnVuelo >= 2 && m.buzon.st.maxEnVuelo <= 8, `en paralelo, con tope: ${m.buzon.st.maxEnVuelo} a la vez`);
+    assert.strictEqual(m.fuentes.modelo().corridas.lista.length, 24);
+    assert.ok(m.fuentes.proximoRefrescoMs() >= 5 * 60000, 'entera: el refresco de siempre');
+  } finally { await m.cerrar(); }
+  // si igual corta (un tope chico), la pasada siguiente se programa enseguida y retoma donde quedó, hasta completar
+  m = await montar({ blobs, fuentesExtra: { presupuestoBuzonMs: 200 } });
+  try {
+    m.buzon.st.demora = 150;
+    await m.fuentes.refrescar();
+    assert.strictEqual(m.fuentes.buzonEstado().completo, false, 'cortó por tiempo');
+    assert.ok(m.fuentes.proximoRefrescoMs() <= 10000, `la siguiente, enseguida: ${m.fuentes.proximoRefrescoMs()} ms`);
+    for (let i = 0; i < 10 && !m.fuentes.buzonEstado().completo; i++) await m.fuentes.refrescar();
+    assert.strictEqual(m.fuentes.buzonEstado().completo, true, 'retomando, terminó entera');
+    assert.ok(m.fuentes.proximoRefrescoMs() >= 5 * 60000, 'entera: vuelve al refresco de siempre');
+  } finally { await m.cerrar(); }
+  // un corte SIN avance (el tope se agotó antes de bajar uno) no se repite enseguida: no es un lazo
+  m = await montar({ blobs, fuentesExtra: { presupuestoBuzonMs: -1 } });
+  try {
+    await m.fuentes.refrescar();
+    assert.strictEqual(m.fuentes.buzonEstado().completo, false);
+    assert.ok(m.fuentes.proximoRefrescoMs() >= 5 * 60000, 'sin avance: el refresco de siempre');
+  } finally { await m.cerrar(); }
 });
