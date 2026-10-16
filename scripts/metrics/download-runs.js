@@ -39,6 +39,8 @@
  *   --harness-node-report (story 8.39): sólo LISTA el contenedor, como --overwrites-report, y dice por máquina si su
  *   place.json es de una versión que trae el Node propio del arnés; `todas: true` decide cuándo sacar Node 22 de la CI.
  *
+ *   (los archivos se bajan de a 8 a la vez, por fases: registros, coberturas y corridas; `bajar({ concurrencia })` lo
+ *   cambia — hotfix del 2026-10-16: de a uno, la primera pasada de un espejo vacío no entraba en el tope del sitio)
  *   --no-threads (story 2.12): baja los registros y los volcados, NUNCA los hilos ni los cambios de git
  *   (`*.hilo.jsonl.gz`, `*.cambio.json.gz` — story 2.19: traen código de todos los repos); los cuenta en
  *   `omitidos`. Lo usa el nocturno del tablero: la página no usa las conversaciones —prompts, rutas, código de
@@ -712,22 +714,24 @@ async function bajar(opts = {}) {
   const esFallaDeRegistro = (x) => REGISTROS.some((r) => tramos(x)[1] === 'registros' && tramos(x)[tramos(x).length - 1] === `${r}.gz`);
   const maquinasConRegistroFallido = new Set(noLeidos.filter(esFallaDeRegistro).map((x) => x.split('/')[0]));
   const falloRegistro = (p) => { if (p.archivo.startsWith('registros/') && p.archivo !== 'registros/cobertura.json') maquinasConRegistroFallido.add(p.maquina); };
-  for (let i = 0; i < pendientes.length; i++) {
-    if (Date.now() - inicio > tope) { res.sin_tiempo = pendientes.length - i; break; }
-    const p = pendientes[i];
+  // Un archivo: lo baja, lo compara y lo escribe. Una falla que corta la pasada entera (sin red, sin permiso a mitad)
+  // queda en `fatal` y los demás trabajadores no toman uno más.
+  let fatal = null;
+  async function bajarUno(p) {
     if (p.archivo === 'registros/cobertura.json' && maquinasConRegistroFallido.has(p.maquina)) {
       malos.push(`${p.nombre} (retenida: un registro de esa máquina no bajó)`);
-      continue;
+      return;
     }
     // story 2.24: el blob se pide por su nombre en el buzón (con su versión, si la tiene); se escribe en la ruta de siempre
     const r = coberturasLeidas.get(p.nombre) || await pedir(urlDe(p.nombre), tk.token, Math.max(60000, Math.min(300000, p.largo / 20)));
-    if (r.error) return fin(1, 'sin_red', `sin red a mitad de la bajada (${r.error.code || r.error.message}) en ${p.nombre}${res.bajados ? ` — ${res.bajados} sí bajaron` : ''}`);
-    if (r.status === 401 || r.status === 403) return fin(1, 'sin_permiso_a_mitad', `el buzón dejó listar pero no leer ${p.nombre} (${r.status})${res.bajados ? ` — ${res.bajados} sí bajaron` : ''}`);
-    if (r.status !== 200) { malos.push(`${p.nombre} (${r.status})`); falloRegistro(p); continue; }
+    if (fatal) return;
+    if (r.error) { fatal = [1, 'sin_red', `sin red a mitad de la bajada (${r.error.code || r.error.message}) en ${p.nombre}${res.bajados ? ` — ${res.bajados} sí bajaron` : ''}`]; return; }
+    if (r.status === 401 || r.status === 403) { fatal = [1, 'sin_permiso_a_mitad', `el buzón dejó listar pero no leer ${p.nombre} (${r.status})${res.bajados ? ` — ${res.bajados} sí bajaron` : ''}`]; return; }
+    if (r.status !== 200) { malos.push(`${p.nombre} (${r.status})`); falloRegistro(p); return; }
     const md5 = crypto.createHash('md5').update(r.cuerpo).digest('base64');
     const esperado = p.md5 || r.cabeceras['content-md5'] || null;
-    if (r.cuerpo.length !== p.largo || (esperado && esperado !== md5)) { malos.push(`${p.nombre} (llegó distinto: ${r.cuerpo.length} bytes)`); falloRegistro(p); continue; }
-    const tmp = `${p.local}.tmp-${process.pid}`;
+    if (r.cuerpo.length !== p.largo || (esperado && esperado !== md5)) { malos.push(`${p.nombre} (llegó distinto: ${r.cuerpo.length} bytes)`); falloRegistro(p); return; }
+    const tmp = `${p.local}.tmp-${process.pid}-${crypto.randomBytes(4).toString('hex')}`;
     let st;
     try {
       fs.mkdirSync(path.dirname(p.local), { recursive: true });
@@ -738,13 +742,34 @@ async function bajar(opts = {}) {
       try { fs.rmSync(tmp, { force: true }); } catch (_) { /* nada */ }
       malos.push(`${p.nombre} (no se pudo escribir: ${e.code || e.message})`);
       falloRegistro(p);
-      continue;
+      return;
     }
     indice.blobs[p.nombre] = { etag: p.etag, size: st.size, md5, mtimeMs: st.mtimeMs };
     try { guardarIndice(); } catch (_) { /* el índice sólo ahorra; lo bajado ya está */ }
     res.bajados += 1;
     res.bytes += r.cuerpo.length;
     res.bajado = true;
+  }
+  // 🔴 EN PARALELO, con tope (hotfix 2026-10-16): de a uno, la primera pasada de un espejo vacío no entraba en los 120 s del
+  // sitio (unos 5 archivos por segundo). El orden de siempre se respeta POR FASES: todos los registros, después las
+  // coberturas (que miran si un registro de su máquina falló) y recién ahí las corridas. Dentro de una fase, hasta
+  // `concurrencia` a la vez (8 si no se dice). El corte por tiempo se mira antes de tomar cada archivo, como antes.
+  const conc = Number.isInteger(opts.concurrencia) && opts.concurrencia >= 1 ? Math.min(opts.concurrencia, 32) : 8;
+  let tomados = 0;
+  let corto = false;
+  for (const fase of [0, 1, 2]) {
+    const cola = pendientes.filter((p) => rango(p) === fase);
+    let k = 0;
+    const trabajador = async () => {
+      while (k < cola.length && !fatal && !corto) {
+        if (Date.now() - inicio > tope) { corto = true; return; }
+        const p = cola[k++]; tomados += 1;
+        await bajarUno(p);
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(conc, cola.length) }, trabajador));
+    if (fatal) return fin(...fatal);
+    if (corto) { res.sin_tiempo = pendientes.length - tomados; break; }
   }
 
   if (noLeidos.length || malos.length) {

@@ -77,7 +77,9 @@ test('T2 Arranque_RegistroSinSecretos', async () => {
     const s = p.salida();
     for (const v of ['SITE_SESSION_KEY', 'SITE_OIDC_CLIENT_SECRET', 'SITE_OPERATIONS_TOKEN', 'SITE_MAILBOX_SAS']) assert.match(s, new RegExp(`${v}: presente`), v);
     for (const v of [env.SITE_SESSION_KEY, env.SITE_OIDC_CLIENT_SECRET, env.SITE_OPERATIONS_TOKEN, env.SITE_MAILBOX_SAS, new URLSearchParams(env.SITE_MAILBOX_SAS).get('sig')]) assert.ok(!s.includes(v), 'ningún secreto en el registro');
-  } finally { await p.cerrar(); fs.rmSync(env.SITE_DATA_DIR, { recursive: true, force: true }); }
+    // el `git clone` que el sitio lanzó puede seguir escribiendo un instante después de cerrarlo: el borrado reintenta
+    // (cola de merge del 2026-10-16: ENOTEMPTY en operaciones/.git, al azar)
+  } finally { await p.cerrar(); fs.rmSync(env.SITE_DATA_DIR, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); }
 });
 
 test('T6 Imagen_DockerfileSinPrivilegiosNiPruebas', () => {
@@ -194,7 +196,7 @@ test('T39 Nucleo_SinNube', { skip: !hayHttpBackend() && !process.env.CI && 'git 
     assert.ok(git.pedidos.some((x) => x.conCabecera), 'leyó el repo de operaciones con su credencial');
     assert.strictEqual((await H.pedirA(p.base, '/healthz')).status, 200);
     assert.strictEqual((await H.pedirA(p.base, '/')).status, 302, 'sin sesión, al emisor');
-  } finally { if (p) await p.cerrar(); await git.cerrar(); await emisor.cerrar(); fs.rmSync(raiz, { recursive: true, force: true }); }
+  } finally { if (p) await p.cerrar(); await git.cerrar(); await emisor.cerrar(); fs.rmSync(raiz, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); }
 });
 
 test('T42 Vida_NoDependeDelFreno', async () => {

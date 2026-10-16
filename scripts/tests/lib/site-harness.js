@@ -158,8 +158,10 @@ async function arrancarBuzon({ blobs = {}, contenedor = 'runs' } = {}) {
     if (st.fallar.has(nombre)) { res.writeHead(500); res.end('<Error/>'); return; }
     if (!(nombre in st.blobs)) { res.writeHead(404); res.end(); return; }
     const b = Buffer.from(st.blobs[nombre]);
-    res.writeHead(200, { 'content-md5': md5(b) });
-    res.end(b);
+    // `st.demora` (ms) estira cada GET de un blob; `st.maxEnVuelo` cuenta cuántos se pidieron a la vez (la bajada en paralelo)
+    st.enVuelo = (st.enVuelo || 0) + 1;
+    st.maxEnVuelo = Math.max(st.maxEnVuelo || 0, st.enVuelo);
+    setTimeout(() => { st.enVuelo -= 1; res.writeHead(200, { 'content-md5': md5(b) }); res.end(b); }, st.demora || 0);
   });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   return {
