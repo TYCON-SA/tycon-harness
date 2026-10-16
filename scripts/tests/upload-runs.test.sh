@@ -1099,8 +1099,9 @@ for SP in c ninguno; do
 done
 
 # ── 2.24 T12 · SinBuzon_NoSubeNada (AC 22) ── 🔴 rojo previo: sin llave ni integración, intentar subir.
+# Sin perfil (TYCON_PROFILE=0): en el árbol del equipo el perfil prende el buzón, y eso ya no es «sin integración».
 T="${BASE}/t224-12"; buzon "${T}/b"; corrida "${T}/h" "4.1-2026-10-04T1000"; mkdir -p "${T}/casa"
-HOME="${T}/casa" TYCON_MAILBOX_JSON="${T}/no-existe.json" TYCON_MAILBOX_URL_BASE="${URL_BUZON}" TYCON_TIMING_HISTORY="${T}/h" \
+HOME="${T}/casa" TYCON_PROFILE=0 TYCON_MAILBOX_JSON="${T}/no-existe.json" TYCON_MAILBOX_URL_BASE="${URL_BUZON}" TYCON_TIMING_HISTORY="${T}/h" \
   TYCON_UPLOADS_LOG="${T}/estado/mailbox-uploads.json" TYCON_MACHINE=maq-a env -u TYCON_MAILBOX node "${SUBIR}" --json > "${T}/out.json" 2> "${T}/err.txt"
 RC=$?
 [ "${RC}" -eq 0 ] && [ "$(campo "${T}" estado)" = "apagado" ] && [ "$(pedidos "${T}/b")" = "0" ] \

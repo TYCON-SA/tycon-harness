@@ -338,8 +338,13 @@ t('T23 R3_Lib_MovedRequires — desde scripts/lib/, --validate sobre un director
     const out = execFileSync(process.execPath, [SERIES, '--validate', '--dir', juguete], { encoding: 'utf8' });
     assert.ok(/1 archivo\(s\) en formato 2\.0 válidos/.test(out), out);
   } finally { fs.rmSync(juguete, { recursive: true, force: true }); }
-  const j = JSON.parse(execFileSync(process.execPath, [SERIES, '--json'], { encoding: 'utf8', cwd: os.tmpdir() }));
-  assert.strictEqual(path.resolve(j.dir), path.join(RAIZ, '.dashboard'), 'sin --dir lee el .dashboard/ del clon');
+  // con una casa vacía: en una máquina con el arnés instalado como versión bajada, el de omisión es el clon de
+  // mantenimiento que esa máquina declara (night-data.js), no el de esta copia; la prueba no depende de quién la corre
+  const casa = fs.mkdtempSync(path.join(os.tmpdir(), 'r3-casa-'));
+  try {
+    const j = JSON.parse(execFileSync(process.execPath, [SERIES, '--json'], { encoding: 'utf8', cwd: os.tmpdir(), env: { ...process.env, HOME: casa, USERPROFILE: casa } }));
+    assert.strictEqual(path.resolve(j.dir), path.join(RAIZ, '.dashboard'), 'sin --dir lee el .dashboard/ del clon');
+  } finally { fs.rmSync(casa, { recursive: true, force: true }); }
 });
 
 if (fs.existsSync(MAP_PATH)) {
