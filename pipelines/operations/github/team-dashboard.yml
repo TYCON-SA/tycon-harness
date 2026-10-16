@@ -10,7 +10,8 @@
 # genera la página, verifica su sello (de hoy, de esta corrida y del snapshot de métricas más nuevo), la guarda en main
 # y verifica lo PUBLICADO. Corre después de las métricas: sin el punto del día, el sello no pasa. Lo que cambia a
 # propósito: no hay buzón de corridas (es un almacenamiento de Azure: las fichas del equipo salen «no leído»), y lo
-# «naranja» de Azure es un aviso (::warning::) con la corrida en verde. No necesita la credencial de la organización.
+# «naranja» de Azure es un aviso (::warning::) con la corrida en verde. Para la foto de despliegues (story 2.22) acuña un
+# token de la GitHub App de operaciones, de sólo lectura (Deployments y Actions); sin la App, esa foto sale «no medido».
 # Efectos: una corrida programada SIEMPRE guarda (en ella `inputs` está vacío); una a mano, según `effects`.
 # ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════
 name: team-dashboard
@@ -125,6 +126,33 @@ jobs:
           node scripts/nightly/open-prs/open-prs.js --today "${DAY}" --provider github --json ".dashboard/open-prs/open-prs-${DAY}.json" 2>&1 | bash pipelines/operations/github/annotate.sh
           node scripts/nightly/assigned/assigned-items.js --today "${DAY}" --provider github --out .dashboard/assigned 2>&1 | bash pipelines/operations/github/annotate.sh
 
+      # La foto de despliegues (story 2.22): lee los deployments y environments de los repos de producto declarados en
+      # `operations.json → deployments`, con un token de la GitHub App de operaciones (sólo lectura: Deployments y
+      # Actions; el token propio del workflow no lee otros repos). Sin la App, la foto sale «no medido» con
+      # `sin_credencial`, no roja.
+      # Tolerante: si falla, el tablero se genera igual con la ficha «no medido».
+      - name: La credencial para leer los despliegues (GitHub App, si está configurada)
+        id: deploy-token
+        if: vars.HARNESS_APP_CLIENT_ID != ''
+        continue-on-error: true
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.HARNESS_APP_CLIENT_ID }}
+          private-key: ${{ secrets.HARNESS_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          permission-deployments: read
+          permission-actions: read
+
+      - name: La foto de despliegues de cada producto
+        working-directory: harness
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ steps.deploy-token.outputs.token }}
+          TYCON_DEPLOYMENTS_REQUIRE_GH_TOKEN: '1'
+        run: |
+          set -uo pipefail
+          node scripts/nightly/deployments/deployments.js --today "$(date -u +%Y-%m-%d)" --out .dashboard/deployments 2>&1 | bash pipelines/operations/github/annotate.sh
+
       - name: Generar la página del tablero (modo nocturno)
         working-directory: harness
         run: |
@@ -157,7 +185,7 @@ jobs:
             --require artifacts/tablero-del-arnes.html \
             --verify "node scripts/nightly/dashboard/seal.js --verify \"\$PUSH_DIR/artifacts/tablero-del-arnes.html\" --today \"${DAY}\" --run \"${BUILD_BUILDID}\" --dashboard \"\$PUSH_DIR/.dashboard\"" \
             --verify-export .dashboard \
-            -- artifacts/tablero-del-arnes.html .dashboard/open-prs .dashboard/assigned 2>&1 | bash pipelines/operations/github/annotate.sh
+            -- artifacts/tablero-del-arnes.html .dashboard/open-prs .dashboard/assigned .dashboard/deployments 2>&1 | bash pipelines/operations/github/annotate.sh
 
       # Lo publicado, no el disco: la página que abre la organización es la de main del repo de operaciones.
       - name: Verificar la página publicada

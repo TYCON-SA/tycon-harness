@@ -112,7 +112,14 @@ SH_PREFIX='bash '
 SAFE=(TYCON_PROFILE=0 TYCON_NO_GIT_HOOKS=1 TYCON_CODEX=0 TYCON_THIRD_PARTY=0 TYCON_NO_NIGHTLY_EXAM=1 TYCON_NO_GUI_ENV=1 "LAUNCHCTL_BIN=$T/bin/launchctl"
   TYCON_NO_AZ_PROJECTS_REFRESH=1 TYCON_NO_AGENTSMD_POINTER=1 TYCON_NO_ENGRAM_VERSION_CHECK=1 TYCON_NO_SQLITE_CHECK=1
   TYCON_NO_CLAUDEMD_SYNC=1 TYCON_MAILBOX_URL_BASE=http://127.0.0.1:9 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null
-  GIT_TERMINAL_PROMPT=0 POWERSHELL_TELEMETRY_OPTOUT=1 POWERSHELL_UPDATECHECK=Off)
+  GIT_TERMINAL_PROMPT=0 POWERSHELL_TELEMETRY_OPTOUT=1 POWERSHELL_UPDATECHECK=Off
+  # el buzón, apagado salvo que el caso lo prenda: en el árbol del equipo (el privado con el público debajo) su llave lo
+  # prende sola y en la copia pública no está, y desde que hay un hook que depende de él (owner-email-notice.js) la misma
+  # prueba contaba distinto en los dos árboles. Un caso que lo quiere prendido lo pide (TEAM, T4b).
+  TYCON_MAILBOX=0
+  # y la subida de corridas, apagada: con el buzón prendido sale DE FONDO y escribe su registro después de que el
+  # instalador terminó, así que una foto de la HOME tomada enseguida cambiaba sola ((v) T26). T4b la prende y la mide.
+  TYCON_NO_UPLOAD_RUNS=1)
 lab_env() { # <home> [VAR=val ...] -- <comando…>: el comando, con la HOME de laboratorio y sin el ambiente de quien corre
   local h="$1"; shift
   local extra=(); while [ $# -gt 0 ] && [ "$1" != "--" ]; do extra+=("$1"); shift; done; [ $# -gt 0 ] && shift
@@ -682,11 +689,28 @@ OFF_BY_DEFAULT=("PreToolUse|Bash|PowerShell|session-collision-guard.js" "Session
 # lanzado por un harness.js de esta tanda en adelante: el candado tomado Y el aviso de que la salud que lo va a juzgar
 # sabe revisar un .sh con el bash de Git (sin el aviso, el .ps1 deja los .sh para la corrida siguiente: sección u)
 HELD=(TYCON_HARNESS_LOCK_HELD=1 TYCON_HARNESS_GIT_BASH_HEALTH=1)
-# lo de fábrica de una máquina del equipo: las tres integraciones que su perfil prende, acá por variable (el perfil no
-# viaja al clon de laboratorio)
-TEAM=(TYCON_CLOCKIFY=1 TYCON_ENGRAM=1 TYCON_NIGHTLY=1)
+# lo de fábrica de una máquina del equipo: las tres integraciones que su perfil prende, y el buzón, que prende la llave
+# que trae el arnés del equipo; acá por variable (ni el perfil ni la llave viajan al clon de laboratorio)
+TEAM=(TYCON_CLOCKIFY=1 TYCON_ENGRAM=1 TYCON_NIGHTLY=1 TYCON_MAILBOX=1)
 lab_env "$GUARD" "${TEAM[@]}" -- node "$CLONE/scripts/lib/tycon-config.js" integrations --json > "$T/integrations-team.json" 2> "$T/integrations-team.err"
 [ $? -eq 0 ] || { echo "❌ installer-ps1: el lector de configuración no contestó con las integraciones del equipo: $(brief "$T/integrations-team.err")"; exit 1; }
+# cuántos hooks registra el .ps1 en una máquina del equipo, contado de la lista declarada (scripts/setup/hooks-list.json)
+# y de lo que contestó el lector: los de Windows que corren siempre, los de cada integración prendida y los opt-in que
+# nacen prendidos. No es una cuenta escrita a mano: un hook nuevo en la lista la mueve sola (antes estaba fija en 40 y el
+# primer hook del buzón la dejó roja sin que nada estuviera mal).
+ON_BY_DEFAULT=(TYCON_SAFETY_GUARD TYCON_TEST_SCOPE_GUARD)
+# Tres números: el total, los guiones del clon (`@tcg:…`) y los de las skills (su ruta pasa por ~/.claude).
+read -r TEAM_HOOKS CLONE_HOOKS SKILL_HOOKS <<< "$(node -e '
+const [lista, integ, ...prendidos] = process.argv.slice(1);
+const hooks = require(lista).hooks;
+const on = require(integ);
+const vale = (w) => w === "always" || (w.startsWith("integration:") && (on[w.slice(12)] === true || on[w.slice(12)] === "detect"))
+  || (w.startsWith("optin:") && prendidos.includes(w.slice(6)));
+const suyos = hooks.filter((h) => !(h.platforms && h.platforms.windows === false) && vale(h.when));
+const delClon = suyos.filter((h) => String(h.spec).startsWith("@tcg:")).length;
+process.stdout.write(`${suyos.length} ${delClon} ${suyos.length - delClon}`);
+' "$CLONE/scripts/setup/hooks-list.json" "$T/integrations-team.json" "${ON_BY_DEFAULT[@]}")"
+case "$TEAM_HOOKS$CLONE_HOOKS$SKILL_HOOKS" in ''|*[!0-9]*) echo "❌ installer-ps1: no pude contar los hooks del equipo de la lista declarada: «${TEAM_HOOKS} ${CLONE_HOOKS} ${SKILL_HOOKS}»"; exit 1 ;; esac
 
 if suite_part 1; then   # ── parte 1 de 2: de (n) a (r) ──
 
@@ -697,8 +721,8 @@ BAD="$(wrong_counts "$ST" 1 "${MISSING_CONTROLS[@]}")"
 if [ "$RC" -eq 0 ] && [ -z "$BAD" ]; then ok "(n) T90 con lo de fábrica de una máquina del equipo, los doce controles que faltaban quedan registrados: cada uno una vez, en su evento y con su matcher"
 else no "(n) T90 controles que faltaban (rc $RC), no están una vez:${BAD:- —} · $(brief "$T/t.out" 200)"; fi
 R="$(INTEG_FILE="$T/integrations-team.json" check settings "$ST" "$T/b.left.json")"; CK=$?
-if [ "$CK" -eq 0 ] && [ "${R% }" = "40 hooks" ]; then ok "(n) T90 la lista entera: 40 controles, cada uno una vez (los 43 del .sh en una máquina del equipo, menos los tres que Windows deja afuera)"
-else no "(n) T90 la lista entera con lo de fábrica del equipo (esperaba «40 hooks»): ${R}"; fi
+if [ "$CK" -eq 0 ] && [ "${R% }" = "$TEAM_HOOKS hooks" ]; then ok "(n) T90 la lista entera: $TEAM_HOOKS controles, cada uno una vez (los de la lista declarada para una máquina del equipo, sin los que Windows deja afuera)"
+else no "(n) T90 la lista entera con lo de fábrica del equipo (esperaba «$TEAM_HOOKS hooks»): ${R}"; fi
 BAD="$(wrong_counts "$ST" 0 "${DUPLICATES[@]}" "${EXCLUDED_ON_WINDOWS[@]}" "${OFF_BY_DEFAULT[@]}")"
 if [ -z "$BAD" ]; then ok "(n) T90 no registra los dos reemplazados, ni lo que Windows deja afuera, ni el opt-in que nace apagado"
 else no "(n) T90 registró lo que no va:$BAD"; fi
@@ -726,12 +750,12 @@ JS
 HDC="$(new_home doctor-count)"
 installer "$HDC" "${HELD[@]}" "${TEAM[@]}" > "$T/dc.out" 2>&1; RC=$?
 DC="$(lab_env "$HDC" -- node "$T/doctor-count.js" "$ROOT" "$HDC" "$T/integrations-team.json" 2>&1)"
-if [ "$RC" -eq 0 ] && [ "$DC" = "40 0 " ]; then ok "(n) la cuenta de doctor sobre lo que dejó el instalador es la suya: 40 controles esperados, ninguno falta"
-else no "(n) la cuenta de doctor no es la del instalador (rc $RC): «${DC}» (esperaba «40 0 »)"; fi
+if [ "$RC" -eq 0 ] && [ "$DC" = "$TEAM_HOOKS 0 " ]; then ok "(n) la cuenta de doctor sobre lo que dejó el instalador es la suya: $TEAM_HOOKS controles esperados, ninguno falta"
+else no "(n) la cuenta de doctor no es la del instalador (rc $RC): «${DC}» (esperaba «$TEAM_HOOKS 0 »)"; fi
 DC="$(lab_env "$HDC" -- node "$T/doctor-count.js" "$ROOT" "$HDC" "$T/integrations-team.json" drop-bash-rebuild 2>&1)"
 CK="$(installer "$HDC" "${HELD[@]}" "${TEAM[@]}" -- -Check 2>&1 | grep -c "+ PostToolUse (matcher='Bash|PowerShell') → @tcg:rebuild-before-verify.js")"   # (W4: el .ps1 imprime el spec de la lista)
-case "$DC" in "40 1 PostToolUse [Bash|PowerShell] @tcg:rebuild-before-verify.js") ok "(n) sin la fila PostToolUse/Bash de rebuild-before-verify.js, doctor dice que falta ESA (con su matcher), como -Check" ;;
-  *) no "(n) sin la fila Bash de rebuild-before-verify.js doctor dice «${DC}» (esperaba «40 1 PostToolUse [Bash|PowerShell] @tcg:rebuild-before-verify.js»); -Check la nombra $CK vez/veces" ;; esac
+case "$DC" in "$TEAM_HOOKS 1 PostToolUse [Bash|PowerShell] @tcg:rebuild-before-verify.js") ok "(n) sin la fila PostToolUse/Bash de rebuild-before-verify.js, doctor dice que falta ESA (con su matcher), como -Check" ;;
+  *) no "(n) sin la fila Bash de rebuild-before-verify.js doctor dice «${DC}» (esperaba «$TEAM_HOOKS 1 PostToolUse [Bash|PowerShell] @tcg:rebuild-before-verify.js»); -Check la nombra $CK vez/veces" ;; esac
 [ "$CK" = 1 ] || no "(n) -Check no nombra la fila Bash de rebuild-before-verify.js que falta ($CK)"
 # una máquina que YA trae los dos reemplazados (los registraba este mismo instalador): se sacan, y lo ajeno de ese bloque queda
 HU="$(new_home had-duplicates)"; mkdir -p "$HU/.claude"; ln -s "$CLONE" "$HU/.claude/agent-skills"
@@ -763,8 +787,8 @@ SPACED="$T/lab space"; mkdir -p "$SPACED" && cp -R "$CLONE" "$SPACED/clone"
 HS="$(mktemp -d "$SPACED/home.XXXXXX")"
 LAB_INSTALLER="$SPACED/clone/scripts/install-tycon-hooks.ps1" installer "$HS" "${HELD[@]}" "${TEAM[@]}" > "$T/s.out" 2>&1; RC=$?
 R="$(node "$T/shape.js" "$HS/.claude/settings.json" "lab space" 2>&1)"; CK=$?
-if [ "$RC" -eq 0 ] && [ "$CK" -eq 0 ] && [ "$R" = "40 3" ]; then ok "(o) T91 con un espacio en la carpeta: los 40 comandos (3 con bash) son <intérprete> \"<ruta>\", sin \$, sin acento grave y sin comillas adentro"
-else no "(o) T91 con un espacio en la carpeta (rc $RC, esperaba «40 3»): $R · $(brief "$T/s.out" 200)"; fi
+if [ "$RC" -eq 0 ] && [ "$CK" -eq 0 ] && [ "$R" = "$TEAM_HOOKS 3" ]; then ok "(o) T91 con un espacio en la carpeta: los $TEAM_HOOKS comandos (3 con bash) son <intérprete> \"<ruta>\", sin \$, sin acento grave y sin comillas adentro"
+else no "(o) T91 con un espacio en la carpeta (rc $RC, esperaba «$TEAM_HOOKS 3»): $R · $(brief "$T/s.out" 200)"; fi
 cp "$HS/.claude/settings.json" "$T/s.settings.json"
 LAB_INSTALLER="$SPACED/clone/scripts/install-tycon-hooks.ps1" installer "$HS" "${HELD[@]}" "${TEAM[@]}" > "$T/s2.out" 2>&1; RC=$?
 if [ "$RC" -eq 0 ] && cmp -s "$HS/.claude/settings.json" "$T/s.settings.json"; then ok "(o) T91 con un espacio en la carpeta, la segunda corrida deja settings.json byte a byte igual"
@@ -991,9 +1015,9 @@ DOLLAR_DIR="$T/lab\$usr"; mkdir -p "$DOLLAR_DIR"
 # (1) la carpeta de usuario trae `$`: los diez guiones de las skills (su ruta pasa por ~/.claude) no se registran; los del clon, sí
 HP="$(mktemp -d "$DOLLAR_DIR/home.XXXXXX")"; SP="$HP/.claude/settings.json"
 installer "$HP" "${HELD[@]}" "${TEAM[@]}" > "$T/p.out" 2>&1; RC=$?
-if [ "$RC" -eq 0 ] && [ "$(unsafe_cmds "$SP")" = "0 de 30" ] && [ "$(hook_n "$SP" PreToolUse '*' tycon-pipeline/scripts/on-bash-write-gate.js)$(hook_n "$SP" UserPromptSubmit '*' clocki/scripts/on-prompt.js)" = 00 ]; then
-  ok "(t) con \$ en la carpeta de usuario: los guiones cuya ruta lo trae NO se registran (ningún comando con \$ en settings.json; quedan los 29 del clon)"
-else no "(t) con \$ en la carpeta de usuario (rc $RC): comandos inseguros «$(unsafe_cmds "$SP")» (esperaba «0 de 30»), on-bash-write-gate $(hook_n "$SP" PreToolUse '*' tycon-pipeline/scripts/on-bash-write-gate.js) · $(brief "$T/p.out" 200)"; fi
+if [ "$RC" -eq 0 ] && [ "$(unsafe_cmds "$SP")" = "0 de $CLONE_HOOKS" ] && [ "$(hook_n "$SP" PreToolUse '*' tycon-pipeline/scripts/on-bash-write-gate.js)$(hook_n "$SP" UserPromptSubmit '*' clocki/scripts/on-prompt.js)" = 00 ]; then
+  ok "(t) con \$ en la carpeta de usuario: los guiones cuya ruta lo trae NO se registran (ningún comando con \$ en settings.json; quedan los $CLONE_HOOKS del clon)"
+else no "(t) con \$ en la carpeta de usuario (rc $RC): comandos inseguros «$(unsafe_cmds "$SP")» (esperaba «0 de ${CLONE_HOOKS}»), on-bash-write-gate $(hook_n "$SP" PreToolUse '*' tycon-pipeline/scripts/on-bash-write-gate.js) · $(brief "$T/p.out" 200)"; fi
 if [ "$(unsafe_notice "$T/p.out" '«\$»')" = 10 ] && [ "$(unsafe_notice "$T/p.out" 'tycon-pipeline/scripts/on-bash-write-gate\.js (PreToolUse)')" = 1 ] && [ "$(unsafe_notice "$T/p.out" 'clocki/scripts/on-prompt\.js (UserPromptSubmit)')" = 1 ]; then
   ok "(t) …y una línea por cada uno lo dice: el guion y el carácter (\$)"
 else no "(t) con \$ en la carpeta de usuario: $(unsafe_notice "$T/p.out" '«\$»') línea(s) que nombran el carácter (esperaba 10) · $(grep 'su ruta trae' "$T/p.out" | head -1 | cut -c1-240)"; fi
@@ -1010,10 +1034,10 @@ else no "(t) la segunda corrida o -Check con \$ en la carpeta de usuario (rc $RC
 cp -R "$CLONE" "$DOLLAR_DIR/clone"
 HPC="$(new_home dollar-clone)"; SPC="$HPC/.claude/settings.json"
 LAB_INSTALLER="$DOLLAR_DIR/clone/scripts/install-tycon-hooks.ps1" installer "$HPC" "${HELD[@]}" "${TEAM[@]}" > "$T/pc.out" 2>&1; RC=$?
-if [ "$RC" -eq 0 ] && [ "$(unsafe_cmds "$SPC")" = "0 de 10" ] && [ "$(hook_n "$SPC" PreToolUse '*' safety-guard-pre.sh)$(hook_n "$SPC" PreToolUse '*' test-scope-guard-pre.sh)$(hook_n "$SPC" PreToolUse '*' engram-pre-commit.sh)" = 000 ] \
-   && [ "$(unsafe_notice "$T/pc.out" '«\$»')" = 30 ] && [ "$(unsafe_notice "$T/pc.out" 'safety-guard-pre\.sh (PreToolUse)')" = 1 ] && [ "$(hook_n "$SPC" PreToolUse 'Bash|PowerShell' tycon-pipeline/scripts/on-bash-write-gate.js)" = 1 ]; then
-  ok "(t) con \$ en la ruta del clon: sus 29 guiones —los tres .sh entre ellos— no se registran y cada uno se nombra; los 10 de las skills (ruta sin \$) quedan"
-else no "(t) con \$ en la ruta del clon (rc $RC): comandos inseguros «$(unsafe_cmds "$SPC")» (esperaba «0 de 10»), $(unsafe_notice "$T/pc.out" '«\$»') línea(s) (esperaba 30), safety-guard $(hook_n "$SPC" PreToolUse '*' safety-guard-pre.sh) · $(brief "$T/pc.out" 200)"; fi
+if [ "$RC" -eq 0 ] && [ "$(unsafe_cmds "$SPC")" = "0 de $SKILL_HOOKS" ] && [ "$(hook_n "$SPC" PreToolUse '*' safety-guard-pre.sh)$(hook_n "$SPC" PreToolUse '*' test-scope-guard-pre.sh)$(hook_n "$SPC" PreToolUse '*' engram-pre-commit.sh)" = 000 ] \
+   && [ "$(unsafe_notice "$T/pc.out" '«\$»')" = "$CLONE_HOOKS" ] && [ "$(unsafe_notice "$T/pc.out" 'safety-guard-pre\.sh (PreToolUse)')" = 1 ] && [ "$(hook_n "$SPC" PreToolUse 'Bash|PowerShell' tycon-pipeline/scripts/on-bash-write-gate.js)" = 1 ]; then
+  ok "(t) con \$ en la ruta del clon: sus $CLONE_HOOKS guiones —los tres .sh entre ellos— no se registran y cada uno se nombra; los $SKILL_HOOKS de las skills (ruta sin \$) quedan"
+else no "(t) con \$ en la ruta del clon (rc $RC): comandos inseguros «$(unsafe_cmds "$SPC")» (esperaba «0 de ${SKILL_HOOKS}»), $(unsafe_notice "$T/pc.out" '«\$»') línea(s) (esperaba $CLONE_HOOKS), safety-guard $(hook_n "$SPC" PreToolUse '*' safety-guard-pre.sh) · $(brief "$T/pc.out" 200)"; fi
 
 # ── (r) Ps1_LegacyEngramHookRemoved_OwnLookalikeKept · las formas viejas de engram-pre-commit.sh ────────────────
 # El .sh las saca desde julio (LEGACY_FRAGMENTS): la copia suelta en ~/.claude/hooks/ y la variante escrita a mano con
@@ -1092,26 +1116,27 @@ OLD_HARNESS=TYCON_HARNESS_LOCK_HELD=1
 SH_HOOKS=(safety-guard-pre.sh test-scope-guard-pre.sh engram-pre-commit.sh)
 sh_state() { local s="$1" r out=""; for r in "${SH_HOOKS[@]}"; do out="$out$(hook_n "$s" PreToolUse 'Bash|PowerShell' "$r")"; done; printf '%s' "$out"; }   # <settings> → «111» = los tres una vez
 # (el reporte nombra un hook por evento y guion: las dos filas PostToolUse de rebuild-before-verify.js son UN id, así que
-# los 39 registrados son 38 ids)
+# los registrados son un id menos; sin los .sh, otros tres menos — los dos números, de la lista declarada)
+REPORT_IDS=$((TEAM_HOOKS - 1)); NO_SH_IDS=$((REPORT_IDS - ${#SH_HOOKS[@]}))
 report_sh() { node -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(r.filter((p)=>p.kind==="hook"&&/\.sh$/.test(p.id)).length+" de "+r.filter((p)=>p.kind==="hook").length)}catch(e){console.log("ilegible: "+e.message)}' "$1"; }   # <reporte> → «<hooks .sh> de <hooks>»
 deferred_notice() { grep 'se registran en la corrida siguiente' "$1" | grep -c 'harness.js de una versión anterior'; }   # <salida>
 HM="$(new_home old-harness)"; SM="$HM/.claude/settings.json"
 installer "$HM" "$OLD_HARNESS" "${TEAM[@]}" -- -ReportJson "$T/m1.report.json" > "$T/m1.out" 2>&1; RC=$?
-if [ "$RC" -eq 0 ] && [ "$(sh_state "$SM")" = 000 ] && [ "$(report_sh "$T/m1.report.json")" = "0 de 36" ] && [ "$(deferred_notice "$T/m1.out")" = 1 ] \
+if [ "$RC" -eq 0 ] && [ "$(sh_state "$SM")" = 000 ] && [ "$(report_sh "$T/m1.report.json")" = "0 de $NO_SH_IDS" ] && [ "$(deferred_notice "$T/m1.out")" = 1 ] \
    && grep 'se registran en la corrida siguiente' "$T/m1.out" | grep 'safety-guard-pre\.sh' >/dev/null; then
-  ok "(u) lanzado por un harness.js de antes (sin TYCON_HARNESS_GIT_BASH_HEALTH): ningún .sh en settings.json ni en el reporte (sus 35 ids de hook son .js), y UNA línea dice que se registran en la corrida siguiente"
-else no "(u) lanzado por un harness.js de antes (rc $RC): .sh registrados «$(sh_state "$SM")» (esperaba 000), reporte «$(report_sh "$T/m1.report.json")» (esperaba «0 de 36»), $(deferred_notice "$T/m1.out") línea(s) · $(brief "$T/m1.out" 200)"; fi
+  ok "(u) lanzado por un harness.js de antes (sin TYCON_HARNESS_GIT_BASH_HEALTH): ningún .sh en settings.json ni en el reporte (sus $NO_SH_IDS ids de hook son .js), y UNA línea dice que se registran en la corrida siguiente"
+else no "(u) lanzado por un harness.js de antes (rc $RC): .sh registrados «$(sh_state "$SM")» (esperaba 000), reporte «$(report_sh "$T/m1.report.json")» (esperaba «0 de ${NO_SH_IDS}»), $(deferred_notice "$T/m1.out") línea(s) · $(brief "$T/m1.out" 200)"; fi
 if [ "$(hook_n "$SM" Stop '*' large-read-meter.js)$(hook_n "$SM" PreToolUse 'Bash|PowerShell' push-phantom-ref-notice.js)$(hook_n "$SM" UserPromptSubmit '*' rebuild-before-verify.js)" = 111 ]; then ok "(u) …en esa misma corrida los .js se registran como siempre"
 else no "(u) lanzado por un harness.js de antes, los .js no quedaron: large-read-meter $(hook_n "$SM" Stop '*' large-read-meter.js), push-phantom $(hook_n "$SM" PreToolUse 'Bash|PowerShell' push-phantom-ref-notice.js)"; fi
 # la corrida siguiente, ya con un harness.js de esta tanda: quedan los tres, una vez cada uno, en el reporte y sin la línea
 installer "$HM" "${HELD[@]}" "${TEAM[@]}" -- -ReportJson "$T/m2.report.json" > "$T/m2.out" 2>&1; RC=$?
-if [ "$RC" -eq 0 ] && [ "$(sh_state "$SM")" = 111 ] && [ "$(report_sh "$T/m2.report.json")" = "3 de 39" ] && [ "$(deferred_notice "$T/m2.out")" = 0 ]; then
+if [ "$RC" -eq 0 ] && [ "$(sh_state "$SM")" = 111 ] && [ "$(report_sh "$T/m2.report.json")" = "${#SH_HOOKS[@]} de $REPORT_IDS" ] && [ "$(deferred_notice "$T/m2.out")" = 0 ]; then
   ok "(u) el espejo: la corrida siguiente con TYCON_HARNESS_GIT_BASH_HEALTH=1 registra los tres .sh una vez cada uno, los reporta y no dice nada"
-else no "(u) la corrida siguiente con la variable (rc $RC): .sh «$(sh_state "$SM")» (esperaba 111), reporte «$(report_sh "$T/m2.report.json")» (esperaba «3 de 39»), $(deferred_notice "$T/m2.out") línea(s) · $(brief "$T/m2.out" 200)"; fi
+else no "(u) la corrida siguiente con la variable (rc $RC): .sh «$(sh_state "$SM")» (esperaba 111), reporte «$(report_sh "$T/m2.report.json")» (esperaba «${#SH_HOOKS[@]} de ${REPORT_IDS}»), $(deferred_notice "$T/m2.out") línea(s) · $(brief "$T/m2.out" 200)"; fi
 # otra vez un harness.js de antes, con los .sh ya registrados: no los saca (settings.json byte a byte igual) y no los reporta
 cp "$SM" "$T/m.settings.json"
 installer "$HM" "$OLD_HARNESS" "${TEAM[@]}" -- -ReportJson "$T/m3.report.json" > "$T/m3.out" 2>&1; RC=$?
-if [ "$RC" -eq 0 ] && cmp -s "$SM" "$T/m.settings.json" && [ "$(report_sh "$T/m3.report.json")" = "0 de 36" ] && [ "$(deferred_notice "$T/m3.out")" = 0 ]; then
+if [ "$RC" -eq 0 ] && cmp -s "$SM" "$T/m.settings.json" && [ "$(report_sh "$T/m3.report.json")" = "0 de $NO_SH_IDS" ] && [ "$(deferred_notice "$T/m3.out")" = 0 ]; then
   ok "(u) un harness.js de antes sobre una máquina con los .sh ya registrados: no los saca (settings.json byte a byte igual), no los reporta y no dice que faltan"
 else no "(u) un harness.js de antes con los .sh ya registrados (rc $RC): settings.json $(cmp -s "$SM" "$T/m.settings.json" && echo igual || echo CAMBIÓ), reporte «$(report_sh "$T/m3.report.json")», $(deferred_notice "$T/m3.out") línea(s)"; fi
 # suelto (a mano, sin harness.js): registra todo, sin la línea
@@ -1551,7 +1576,8 @@ w4_defects_section() {
   # 🔴 rojo previo: el .ps1 no nombraba upload-runs.js, y no quedaba ningún registro.
   h="$(new_home 'w4 buzón espacio')"; mkdir -p "$h/.claude"; ln -s "$CLONE" "$h/.claude/tycon-claude-guides"
   printf '{ "integrations": { "mailbox": true } }\n' > "$h/.claude/tycon.json"
-  PS1_ENTRY="$h/.claude/tycon-claude-guides/scripts/install-tycon-hooks.ps1" installer "$h" TYCON_MAILBOX_JSON="$W/no-esta.json" -- > "$W/x4b.out" 2>&1; rc=$?
+  # (el laboratorio apaga el buzón y la subida para el resto de la suite: acá se prenden, que es lo que se mide)
+  PS1_ENTRY="$h/.claude/tycon-claude-guides/scripts/install-tycon-hooks.ps1" installer "$h" TYCON_MAILBOX=1 TYCON_NO_UPLOAD_RUNS=0 TYCON_MAILBOX_JSON="$W/no-esta.json" -- > "$W/x4b.out" 2>&1; rc=$?
   local up="$h/.claude/.tycon-pipeline/upload-runs.log"; i=0
   while ! grep -q 'sin_config' "$up" 2>/dev/null && [ "$i" -lt 40 ]; do sleep 0.5; i=$((i+1)); done
   if [ "$rc" -eq 0 ] && grep -q 'sin_config' "$up" 2>/dev/null && grep -qF "upload-runs.js --budget-ms 90000 --log $up" "$NODE_CALLS"; then
@@ -1563,11 +1589,12 @@ w4_defects_section() {
     h="$(new_home "w4-buzon-$variante")"; mkdir -p "$h/.claude"; ln -s "$CLONE" "$h/.claude/tycon-claude-guides"
     [ "$variante" = sin-buzon ] && printf '{ "integrations": { "mailbox": false } }\n' > "$h/.claude/tycon.json" || printf '{ "integrations": { "mailbox": true } }\n' > "$h/.claude/tycon.json"
     : > "$NODE_CALLS"
+    # cada variante con la subida prendida salvo por SU motivo: si no, el «no se lanza» no probaría nada
     case "$variante" in
-      apagada) installer "$h" TYCON_MAILBOX_JSON="$W/no-esta.json" TYCON_NO_UPLOAD_RUNS=1 -- > /dev/null 2>&1 ;;
-      check) installer "$h" TYCON_MAILBOX_JSON="$W/no-esta.json" -- -Check > /dev/null 2>&1 ;;
-      ci) installer "$h" TYCON_MAILBOX_JSON="$W/no-esta.json" TF_BUILD=True -- > /dev/null 2>&1 ;;
-      sin-buzon) installer "$h" TYCON_MAILBOX_JSON="$W/no-esta.json" -- > /dev/null 2>&1 ;;
+      apagada) installer "$h" TYCON_MAILBOX=1 TYCON_MAILBOX_JSON="$W/no-esta.json" TYCON_NO_UPLOAD_RUNS=1 -- > /dev/null 2>&1 ;;
+      check) installer "$h" TYCON_MAILBOX=1 TYCON_NO_UPLOAD_RUNS=0 TYCON_MAILBOX_JSON="$W/no-esta.json" -- -Check > /dev/null 2>&1 ;;
+      ci) installer "$h" TYCON_MAILBOX=1 TYCON_NO_UPLOAD_RUNS=0 TYCON_MAILBOX_JSON="$W/no-esta.json" TF_BUILD=True -- > /dev/null 2>&1 ;;
+      sin-buzon) installer "$h" TYCON_MAILBOX=0 TYCON_NO_UPLOAD_RUNS=0 TYCON_MAILBOX_JSON="$W/no-esta.json" -- > /dev/null 2>&1 ;;
     esac
     sleep 1
     if grep -qF 'upload-runs.js' "$NODE_CALLS" || [ -e "$h/.claude/.tycon-pipeline/upload-runs.log" ]; then lanzadas="$lanzadas $variante"; fi
@@ -2179,6 +2206,36 @@ if [ "$AB_CAP" = 4 ] && [ "$N_A" = 4 ] && ! grep -qx 'legacy-names.js' "$T/ab-st
 elif [ "$AB_RC_A" = 0 ] && [ "$N_A" -gt 0 ] && [ "$N_A" -le "$AB_CAP" ]; then ok "T4 una corrida del arranque lanza $N_A procesos de Node ($AB_WHY; sin la tanda, $N_B)"
 else no "T4 una corrida del arranque lanzó $N_A procesos de Node (tope $AB_CAP; salió $AB_RC_A) · $(brief "$T/ab-steady-a.out" 200)"; fi
 ab_same steady "$AB_A" "$AB_B" "T6 máquina ya instalada, con la tanda y sin ella"
+
+# ── T4b · Ps1_UploadRunsDetached_NotCountedOnlyWhileItDoesNotBlock ───────────────────────────────────────────────────
+# Con el buzón prendido (una máquina del equipo), el arranque lanza además la subida de corridas al buzón: un proceso de
+# Node DE FONDO, que no cuenta para el tope de T4 (decisión de la coordinadora por delegación del dueño, 2026-10-16) sólo
+# mientras sea de fondo de verdad. La prueba lo exige en vez de creerlo: la subida de este clon tarda 20 s a propósito y
+# el arranque tiene que terminar antes, la lanza una sola vez, el resto sigue dentro del tope, y en Windows sale con la
+# ventana oculta por Start-Process (no `& node`, que la esperaría). Si un día se vuelve bloqueante, T4b se pone rojo.
+CLONE_UP="$T/clone-upload"
+cp -R "$CLONE" "$CLONE_UP" && cat > "$CLONE_UP/scripts/metrics/upload-runs.js" <<EOF
+require('fs').writeFileSync('$T/upload-started', String(process.pid));
+setTimeout(() => require('fs').writeFileSync('$T/upload-done', 'listo'), 20000);
+EOF
+rm -f "$T/upload-started" "$T/upload-done"
+HUP="$(new_home ab-upload)"; ab_installed "$HUP" "$CLONE_UP"
+ab_run "$CLONE_UP" "$HUP" upload TYCON_MAILBOX=1 TYCON_NO_UPLOAD_RUNS=0
+N_UP="$(count_of upload-runs.js)"
+N_REST="$(grep -c -v -x -F -- 'upload-runs.js' "$T/ab-upload.counted" 2>/dev/null || true)"
+# la subida se lanza: hasta 5 s para que el proceso de fondo llegue a escribir que arrancó
+for _ in 1 2 3 4 5 6 7 8 9 10; do [ -f "$T/upload-started" ] && break; sleep 0.5; done
+if [ "$AB_RC" = 0 ] && [ "$N_UP" = 1 ] && [ -f "$T/upload-started" ] && [ ! -f "$T/upload-done" ] && [ "${N_REST:-99}" -le "$AB_CAP" ]; then
+  ok "T4b con el buzón prendido, la subida sale de fondo (el arranque terminó antes que ella), una sola vez, y lo demás queda en $N_REST procesos (tope $AB_CAP)"
+else no "T4b la subida de corridas (rc $AB_RC): lanzada $N_UP vez/veces, $( [ -f "$T/upload-started" ] && echo arrancó || echo 'no arrancó'), $( [ -f "$T/upload-done" ] && echo 'el arranque la ESPERÓ' || echo 'no la esperó'), el resto $N_REST procesos (tope $AB_CAP) · $(brief "$T/ab-upload.out" 200)"; fi
+[ -f "$T/upload-started" ] && kill "$(cat "$T/upload-started")" 2>/dev/null
+# en Windows, oculta y desprendida: el bloque de la subida la lanza con Start-Process y WindowStyle Hidden (fuera de
+# Windows no hay ventana que ocultar; se lee el guion, como el resto de las pruebas por lectura de esta suite)
+UPBLOCK="$(awk '/upload-runs\.js.$/{f=1} f{print} /Start-Process @upStart/{exit}' "$CLONE/scripts/install-tycon-hooks.ps1")"
+if printf '%s' "$UPBLOCK" | grep -F "\$upStart.WindowStyle = 'Hidden'" >/dev/null && printf '%s' "$UPBLOCK" | grep -F 'Start-Process @upStart' >/dev/null \
+   && ! printf '%s' "$UPBLOCK" | grep -E "^[[:space:]]*& .*(NodeProgram|node)" >/dev/null; then
+  ok "T4b en Windows la subida sale con Start-Process y la ventana oculta, nunca con & node (que el arranque esperaría)"
+else no "T4b el bloque de la subida no la lanza oculta y desprendida: $(printf '%s' "$UPBLOCK" | head -3 | tr '\n' ' ' | cut -c1-200)"; fi
 
 # ── T6 · Ps1_SameOutputOrderAndClaudeMd: configuración rota, hooks por agregar, la línea del índice vieja ───────────
 ab_pair broken "$CLONE_NB" ab_broken_old TYCON_NO_CLAUDEMD_SYNC=0

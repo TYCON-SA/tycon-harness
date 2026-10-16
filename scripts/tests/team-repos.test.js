@@ -489,3 +489,44 @@ test('T21 TeamRepos_NombresDeModelos_IgualesAModelsJs @story-7.29 @ac-3', () => 
   const MODELS = require(path.join(resolveSkillsDirs().skills, 'tycon-pipeline', 'scripts', 'lib', 'models.js')).MODELS;
   assert.deepStrictEqual(TEAM.MODEL_NAMES, MODELS);
 });
+
+// ── story 2.22: `deployments` (de qué sistema se leen los despliegues de cada producto) ─────────────────────────────
+const opsWithDeployments = (deployments) => ({ version: 1, owners: { default: 'lead@acme.example' }, deployments });
+
+test('T1 OperationsConfig_DeploymentsFormaValida (2.22, AC 1)', () => {
+  const azureDoc = opsWithDeployments({ provider: 'azure', products: {
+    Acme: { staging: [{ pipeline: 'Proyecto A/Acme CI', stages: ['EtapaX', 'EtapaZ'] }], production: [{ pipeline: 'Proyecto A/Acme Prod', stages: ['EtapaY'] }] },
+    Beta: { production: [{ pipeline: 'B/Beta Prod', stages: ['EtapaY'] }] },
+  } });
+  const r = OPS.parse(JSON.stringify(azureDoc));
+  assert.deepStrictEqual(r.problems, []);
+  assert.ok(r.ok);
+  const githubDoc = opsWithDeployments({ provider: 'github', products: {
+    Acme: { staging: [{ repo: 'acme/app', environment: 'stg', workflow: 'ci.yml' }], production: [{ repo: 'acme/app', environment: 'prd' }] },
+  } });
+  assert.deepStrictEqual(OPS.parse(JSON.stringify(githubDoc)).problems, []);
+  assert.ok(OPS.KEYS.includes('deployments'));
+});
+
+test('T2 OperationsConfig_DeploymentsProblemasEnSuRuta (2.22, AC 1)', () => {
+  const r1 = OPS.parse(JSON.stringify(opsWithDeployments({ provider: 'gitlab', products: {} })));
+  assert.deepStrictEqual(paths(r1), ['deployments.provider']);
+  const r2 = OPS.parse(JSON.stringify(opsWithDeployments({ provider: 'azure', products: {
+    Acme: { production: [{ pipeline: 'P/x', stages: [] }, { stages: ['EtapaY'] }], staging: [] },
+  } })));
+  assert.deepStrictEqual(paths(r2), ['deployments.products.Acme.production.0.stages', 'deployments.products.Acme.production.1.pipeline', 'deployments.products.Acme.staging']);
+  assert.strictEqual(r2.data, null);
+  const r3 = OPS.parse(JSON.stringify(opsWithDeployments({ provider: 'github', products: {
+    Acme: { production: [{ repo: 'acme/app', environment: 'prd', workflow: 'ci.yml' }], otra: [] },
+  } })));
+  assert.deepStrictEqual(paths(r3), ['deployments.products.Acme.otra', 'deployments.products.Acme.production.0.workflow']);
+  const r4 = OPS.parse(JSON.stringify(opsWithDeployments({ provider: 'azure', products: { Acme: { production: [{ pipeline: 'sinproyecto', stages: ['EtapaY'] }] } } })));
+  assert.deepStrictEqual(paths(r4), ['deployments.products.Acme.production.0.pipeline']);
+});
+
+test('T2b OperationsConfig_DeploymentsRepoConPuntosYProductoVacio (2.22, revisores)', () => {
+  const r = OPS.parse(JSON.stringify(opsWithDeployments({ provider: 'github', products: {
+    Acme: { production: [{ repo: '../..', environment: 'prd' }, { repo: 'acme/..', environment: 'prd' }, { repo: 'acme/.app', environment: 'prd' }] }, Vacio: {},
+  } })));
+  assert.deepStrictEqual(paths(r), ['deployments.products.Acme.production.0.repo', 'deployments.products.Acme.production.1.repo', 'deployments.products.Vacio']);
+});

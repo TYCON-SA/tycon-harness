@@ -31,8 +31,8 @@ const TARDE_MS = 2 * 60 * 1000;
 const VALIDADOR = 'tycon-story-validator';
 const RAIZ = path.join(__dirname, '..', '..');
 
-// story 8.23 (A2): la carpeta del estado la sabe scripts/setup/harness/tycon-home.js, si está.
-const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
+// story 8.23 (A2): la carpeta del estado la sabe scripts/setup/harness/tycon-home.js, que viaja con este guion.
+const { stateDir: stateDirOf } = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'));
 
 const aMs = (iso) => { const t = typeof iso === 'string' ? Date.parse(iso) : NaN; return Number.isFinite(t) ? t : null; };
 

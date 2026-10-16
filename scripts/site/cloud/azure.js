@@ -44,10 +44,13 @@ async function tokenDeIdentidad(recurso, env = process.env) {
 /** Los proveedores de buzón (`site.mailbox.provider`) que esta nube sabe leer. */
 const PROVEEDORES_DE_BUZON = ['azure-blob'];
 
-/** Baja el buzón con `bajar()` de download-runs.js: { codigo, res }. */
-function bajarBuzon({ cuenta, contenedor, credencial, dir, urlBase, log }) {
+/**
+ * Baja el buzón con `bajar()` de download-runs.js: { codigo, res }. Sin `sinHilos: false` explícito, no baja las
+ * conversaciones ni los cambios de git (lo seguro); la pestaña Corridas los pide con `site.mailbox.threads` (story 2.27).
+ */
+function bajarBuzon({ cuenta, contenedor, credencial, dir, urlBase, log, sinHilos = true }) {
   const { bajar } = require('../../metrics/download-runs.js');
-  return bajar({ cuenta, contenedor, credencial, dir, sinHilos: true, urlBase, budgetMs: 120000, log });
+  return bajar({ cuenta, contenedor, credencial, dir, sinHilos: sinHilos !== false, urlBase, budgetMs: 120000, log });
 }
 
 /** El token de la identidad administrada para leer el repo de operaciones en Azure DevOps. */

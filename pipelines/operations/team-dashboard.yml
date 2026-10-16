@@ -115,6 +115,19 @@ jobs:
         env:
           AZURE_DEVOPS_EXT_PAT: $(System.AccessToken)
 
+      # La foto de despliegues (story 2.22): qué llegó a staging y a producción en cada producto, leído del stage de cada
+      # corrida, con la aprobación pendiente o vencida y main roto o no. Lo que se lee lo declara `operations.json →
+      # deployments`; sin declarar, cada producto sale «no medido». Va ANTES de la página (la ficha de despliegues la lee)
+      # y es tolerante: si falla, la corrida queda naranja y el tablero se genera igual. La identidad de esta corrida
+      # necesita «View builds» y «View build pipeline» en cada proyecto de producto (README).
+      - script: |
+          set -u
+          node scripts/nightly/deployments/deployments.js --today "$(date -u +%Y-%m-%d)" --org "$(System.CollectionUri)" --out .dashboard/deployments
+        displayName: 'La foto de despliegues de cada producto'
+        continueOnError: true
+        env:
+          AZURE_DEVOPS_EXT_PAT: $(System.AccessToken)
+
       - script: |
           set -u
           BUZON="$(Agent.TempDirectory)/buzon/corridas-buzon"
@@ -152,7 +165,7 @@ jobs:
             --require artifacts/tablero-del-arnes.html \
             --verify "node scripts/nightly/dashboard/seal.js --verify \"\$PUSH_DIR/artifacts/tablero-del-arnes.html\" --today \"$DAY\" --run \"$(Build.BuildId)\" --dashboard \"\$PUSH_DIR/.dashboard\"" \
             --verify-export .dashboard \
-            -- artifacts/tablero-del-arnes.html .dashboard/open-prs .dashboard/assigned
+            -- artifacts/tablero-del-arnes.html .dashboard/open-prs .dashboard/assigned .dashboard/deployments
         displayName: 'Guardar la página del día y lo del sitio en el repo de operaciones'
         condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'), eq('${{ parameters.efectos }}', 'true'))
 

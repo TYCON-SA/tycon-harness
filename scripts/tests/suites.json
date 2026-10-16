@@ -1149,6 +1149,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 2.22: la foto de despliegues de cada noche (scripts/nightly/deployments/) — qué llegó a staging y a producción en cada producto, leído del stage EXACTO declarado de cada corrida (succeeded sí; skipped, ausente o un pedazo de texto como «Prod», no), la aprobación pendiente, vencida o no aprobada, main roto o no, el segundo proveedor GitHub, «no medido» con motivo de lista cerrada que nunca es «sin despliegue», el detalle saneado, la lista blanca del archivo y la ficha del tablero. Con fake-az.sh y fake-gh.js: sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/nightly-deployments.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 2.23: el sitio de la organización — el arranque (sin secretos en el registro), la tabla de rutas (una ruta sin `needs` no arranca), el primer mantenedor, la vida que no depende del freno, la imagen (el texto del Dockerfile) y el núcleo sin nube. Sin red: el emisor OIDC, el repo y el buzón son locales.",
       "raiz": "arnes",
       "ruta": "tests/site-server.test.js",
@@ -1431,6 +1437,12 @@
       "__nota": "story 2.29: la pestaña Configuración del sitio de la organización, sólo para los que mantienen — un dev recibe 403 en cada ruta y sin sesión contesta como la 2.23; cada escritura exige el Origin del sitio (o Sec-Fetch-Site), el X-Site-Token de la sesión, JSON y un cuerpo de hasta 256 KB, y ninguna falta crea nada; las ocho secciones editables más Productos y Versiones de sólo lectura; «Revisar» valida con el parse del mismo lector del arnés y conserva byte por byte lo que no se editó; la propuesta de stages sólo lee; Personas guarda la huella del correo, nunca el correo; Umbrales edita sólo claves conocidas y queda en sólo lectura sin la marca del nocturno; la paridad por producto con renovar y cerrar; sin identidad de escritura, sólo lectura y descarga; el código no nombra la configuración de ninguna máquina ni un valor de una organización. Levanta el servidor del sitio con una sesión inyectada, repos git locales por HTTP y una API falsa de Azure DevOps y de GitHub en el proceso; sin red.",
       "raiz": "arnes",
       "ruta": "tests/site-config.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 2.27: la pestaña Corridas del sitio de la organización — todo lo de la vista de corridas (cabecera, diez fichas, gráficos, tabla de trece columnas, detalle con parches y mensaje rescatado, enlaces por id estable), filtrado por persona en el servidor: el dev ve sólo sus máquinas confirmadas, sin conteos globales; ajena, suelta e inexistente contestan el mismo 404; la prueba de fuga recorre todas las respuestas con marcadores sembrados en lo ajeno; la lista es lista blanca; el armado corre en un worker y sirve el anterior entero mientras rearma o si falla; sin disco, lo del hilo sale «no medido»; la página no trae nada en línea. Levanta el servidor del sitio con sesiones reales del emisor local y un espejo fabricado; sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/site-runs.test.js",
       "requiere": []
     },
     {

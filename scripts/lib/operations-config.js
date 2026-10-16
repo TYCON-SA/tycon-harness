@@ -17,7 +17,9 @@
 //                    "watcher": [<identidad>, …] },         opcional — y los del vigilante
 //     "site": { "maintainers": [<correo>, …],                opcional — quiénes mantienen el sitio de la organización
 //               "mailbox": { "provider": "azure-blob",        opcional — el buzón de corridas que lee el sitio
-//                            "account": <texto>, "container": <texto>, "threads": <bool> },
+//                            "account": <texto>, "container": <texto>, "threads": <bool> },  threads: true baja también
+//                                                            las conversaciones y los cambios de git para el detalle de
+//                                                            la pestaña Corridas, si el sitio tiene disco (story 2.27)
 //               "refresh_minutes": <5 a 120> } },             opcional — cada cuánto se releen las fuentes (story 2.23)
 //     "people": {                                            opcional — quién es quién (story 2.28)
 //       "machines": { "<máquina>": {                         opcional — cada máquina confirmada por un mantenedor
@@ -37,6 +39,13 @@
 //   `reported_sha256` es el sha256 del correo informado, en minúsculas y sin espacios alrededor; NUNCA el correo en
 //   claro: el archivo queda en la historia de git del repo de operaciones para siempre. `null` si la máquina no
 //   informaba correo al confirmarla.
+//     "deployments": {                                       opcional — de qué sistema se leen los despliegues (story 2.22)
+//       "provider": "azure" | "github",
+//       "products": { "<producto>": { "staging": [<entrada>…], "production": [<entrada>…] } } }   listas no vacías
+//   Una entrada de Azure: { "pipeline": "<proyecto>/<nombre exacto de la definición>", "stages": ["<identificador>", …] }
+//   (el identificador del YAML, exacto: nunca el nombre visible ni un pedazo de texto). Una de GitHub: { "repo":
+//   "<dueño>/<repo>", "environment": "<nombre>", "workflow": "<archivo>" } (`workflow` opcional, sólo en staging). Un
+//   proveedor desconocido es un problema, no se ignora.
 //   Las claves que empiezan con `__` son comentarios; cualquier otra desconocida es un problema en su ruta.
 //
 // EL CONTRATO: el mismo de scripts/lib/team-repos.js — `parse(text)` → `{ ok, data, problems: [{ path, message }] }`,
@@ -47,7 +56,15 @@
 const fs = require('fs');
 
 const VERSION = 1;
-const KEYS = ['version', 'owners', 'reviewers', 'site', 'people'];
+const KEYS = ['version', 'owners', 'reviewers', 'site', 'people', 'deployments'];
+// story 2.22: de qué sistema se leen los despliegues de cada producto. Sin nombres por defecto: todo lo declara la
+// organización (el identificador EXACTO de cada stage, o el environment de GitHub).
+const DEPLOYMENT_PROVIDERS = ['azure', 'github'];
+const DEPLOYMENT_SIDES = ['staging', 'production'];
+const AZURE_ENTRY_KEYS = ['pipeline', 'stages'];
+const GITHUB_ENTRY_KEYS = ['repo', 'environment', 'workflow'];
+// sin segmentos hechos sólo de puntos: «../..» desviaría la ruta de la API adonde va el token
+const GITHUB_REPO = /^(?!\.+\/)[A-Za-z0-9_.-]+\/(?!\.+$)[A-Za-z0-9_.-]+$/;
 const OWNER_KEYS = ['default', 'by_project'];
 const REVIEWER_KEYS = ['dependencies', 'watcher'];
 // story 2.23: el sitio de la organización. Todas opcionales; la 2.29 la edita desde el sitio, la 2.30 suma `url`.
@@ -198,6 +215,50 @@ function peopleProblems(people) {
   return problems;
 }
 
+const texto = (v) => typeof v === 'string' && v.trim() !== '';
+
+// story 2.22: { provider, products: { "<producto>": { staging: [entrada…], production: [entrada…] } } }
+function deploymentsProblems(dep) {
+  if (!isObject(dep)) return [{ path: 'deployments', message: 'tiene que ser un objeto { "provider": …, "products": … }' }];
+  const problems = [...unknownKeys(dep, ['provider', 'products'], 'deployments')];
+  const prov = dep.provider;
+  if (!DEPLOYMENT_PROVIDERS.includes(prov)) problems.push({ path: 'deployments.provider', message: `tiene que ser uno de: ${DEPLOYMENT_PROVIDERS.join(', ')}` });
+  if (!isObject(dep.products)) { problems.push({ path: 'deployments.products', message: 'tiene que ser un objeto { "<producto>": { "staging": […], "production": […] } }' }); return problems; }
+  for (const [prod, sides] of Object.entries(dep.products)) {
+    if (comment(prod)) continue;
+    const at = `deployments.products.${prod}`;
+    if (!prod.trim()) { problems.push({ path: at, message: 'un producto sin nombre' }); continue; }
+    if (!isObject(sides)) { problems.push({ path: at, message: 'tiene que ser un objeto { "staging": […], "production": […] }' }); continue; }
+    problems.push(...unknownKeys(sides, DEPLOYMENT_SIDES, at));
+    if (sides.staging === undefined && sides.production === undefined) problems.push({ path: at, message: 'tiene que declarar staging, production o los dos' });
+    for (const side of DEPLOYMENT_SIDES) {
+      const list = sides[side];
+      if (list === undefined) continue;
+      if (!Array.isArray(list) || list.length === 0) { problems.push({ path: `${at}.${side}`, message: 'tiene que ser una lista no vacía de entradas' }); continue; }
+      list.forEach((e, i) => {
+        const ea = `${at}.${side}.${i}`;
+        if (!isObject(e)) { problems.push({ path: ea, message: 'tiene que ser un objeto' }); return; }
+        if (prov === 'azure') {
+          problems.push(...unknownKeys(e, AZURE_ENTRY_KEYS, ea));
+          const p = e.pipeline;
+          if (!texto(p) || p.indexOf('/') <= 0 || p.indexOf('/') === p.length - 1) problems.push({ path: `${ea}.pipeline`, message: 'tiene que ser "<proyecto>/<nombre exacto de la definición>"' });
+          if (!Array.isArray(e.stages) || e.stages.length === 0) problems.push({ path: `${ea}.stages`, message: 'tiene que ser una lista no vacía de identificadores de stage (el nombre del YAML, exacto)' });
+          else e.stages.forEach((s, j) => { if (!texto(s)) problems.push({ path: `${ea}.stages.${j}`, message: 'tiene que ser un identificador de stage (un texto no vacío)' }); });
+        } else if (prov === 'github') {
+          problems.push(...unknownKeys(e, GITHUB_ENTRY_KEYS, ea));
+          if (!texto(e.repo) || !GITHUB_REPO.test(e.repo)) problems.push({ path: `${ea}.repo`, message: 'tiene que ser "<dueño>/<repo>"' });
+          if (!texto(e.environment)) problems.push({ path: `${ea}.environment`, message: 'tiene que ser el nombre del environment (un texto no vacío)' });
+          if (e.workflow !== undefined) {
+            if (side !== 'staging') problems.push({ path: `${ea}.workflow`, message: 'sólo va en staging: de ahí sale «main roto»' });
+            else if (!texto(e.workflow)) problems.push({ path: `${ea}.workflow`, message: 'tiene que ser el archivo del workflow (un texto no vacío)' });
+          }
+        }
+      });
+    }
+  }
+  return problems;
+}
+
 function validate(doc) {
   if (!isObject(doc)) return [{ path: '', message: 'el archivo tiene que ser un objeto JSON' }];
   const problems = [...unknownKeys(doc, KEYS, '')];
@@ -235,6 +296,7 @@ function validate(doc) {
   }
   if (doc.site !== undefined) problems.push(...siteProblems(doc.site));
   if (doc.people !== undefined) problems.push(...peopleProblems(doc.people));
+  if (doc.deployments !== undefined) problems.push(...deploymentsProblems(doc.deployments));
   return problems;
 }
 
@@ -264,7 +326,7 @@ function ownerFor(data, project) {
   return Object.prototype.hasOwnProperty.call(bp, project) ? bp[project] : data.owners.default;
 }
 
-module.exports = { VERSION, KEYS, OWNER_KEYS, REVIEWER_KEYS, SITE_KEYS, MAILBOX_PROVIDERS, REFRESH_MIN, REFRESH_MAX, EMAIL, ACCOUNT, CONTAINER, PEOPLE_KEYS, MACHINE_KEYS, PROJECT_KEYS, FORMA_MAQUINA, parse, load, ownerFor };
+module.exports = { VERSION, KEYS, OWNER_KEYS, REVIEWER_KEYS, SITE_KEYS, MAILBOX_PROVIDERS, REFRESH_MIN, REFRESH_MAX, EMAIL, ACCOUNT, CONTAINER, PEOPLE_KEYS, MACHINE_KEYS, PROJECT_KEYS, FORMA_MAQUINA, DEPLOYMENT_PROVIDERS, DEPLOYMENT_SIDES, GITHUB_REPO, parse, load, ownerFor };
 
 if (require.main === module) {
   const args = process.argv.slice(2);

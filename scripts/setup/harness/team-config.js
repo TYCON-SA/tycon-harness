@@ -9,8 +9,10 @@
 // commit y el pedido en el repo de cada archivo.
 //
 // Es una página LOCAL: un servidor en 127.0.0.1, en un puerto al azar, que sólo contesta a quien trae la llave de un solo
-// uso de la dirección que abre el navegador. No carga nada de afuera, no guarda credenciales y no sale a la red salvo
-// cuando la persona confirma el pedido (git y, si están, gh o az, con las credenciales que ya tiene la máquina).
+// uso de la dirección que abre el navegador. No carga nada de afuera, no guarda credenciales y sale a la red sólo en dos
+// momentos: cuando la persona confirma el pedido (git y, si están, gh o az, con las credenciales que ya tiene la máquina),
+// y cuando pide la propuesta de stages de un pipeline (story 2.22: sólo lecturas, con la sesión `az` o `gh` de la máquina).
+// La propuesta no se guarda: sólo entra a `deployments` lo que la persona confirma, stage por stage.
 // Defensas: el encabezado Host tiene que ser el de la página (un sitio de afuera no puede hablarle por un nombre que
 // resuelva a 127.0.0.1), la llave va en un encabezado propio en cada llamada (otra pestaña no la conoce), un POST con un
 // Origin que no es el de la página se rechaza, y el cuerpo tiene tope.
@@ -115,6 +117,80 @@ function remoteOf(url) {
     || /([^./]+)\.visualstudio\.com\/(?:DefaultCollection\/)?([^/]+)\/_git\/([^/]+?)\/?$/.exec(u);
   if (m) return { platform: 'azure', org: m[1], project: decodeURIComponent(m[2]), repo: decodeURIComponent(m[3]), web: `https://dev.azure.com/${m[1]}/${m[2]}/_git/${m[3]}` };
   return { platform: null, web: null };
+}
+
+// ── la ayuda de los stages (story 2.22, AC 18) ────────────────────────────────────────────────────────────────────
+/**
+ * Lee un pipeline con la sesión de la máquina y PROPONE los identificadores de stage que encuentra: los registros
+ * `type: Stage` del timeline de la última corrida TERMINADA de main (la definición sola no trae los stages). En GitHub,
+ * los environments del repo. No escribe nada; nunca propone un nombre que no leyó. Devuelve `{ ok, proposals, message }`.
+ */
+const AZURE_ORG = /^https:\/\/dev\.azure\.com\/[A-Za-z0-9_.-]+\/?$/;
+function proposeStages({ provider, pipeline, repo, org, env = process.env } = {}) {
+  const run = (cmd, args) => {
+    const [bin, pre] = /\.js$/.test(cmd) ? [process.execPath, [cmd]] : [cmd, []];
+    const r = spawnSync(bin, [...pre, ...args], { encoding: 'utf8', env, timeout: GIT_TIMEOUT_MS, maxBuffer: 64 * 1024 * 1024, windowsHide: true });
+    if (r.error) throw new Error(`${cmd} no está o no arrancó (${r.error.code || r.error.message})`);
+    if (r.status !== 0) throw new Error(String(r.stderr || r.stdout || '').replace(/'[^']*'/g, '<…>').replace(/\s+/g, ' ').trim().slice(0, 160) || `salió ${r.status}`);
+    try { return JSON.parse(r.stdout); } catch { throw new Error('la respuesta no es JSON'); }
+  };
+  const noPude = (why) => ({ ok: false, proposals: [], message: `no pude leer el pipeline (${why}). Podés escribir el identificador a mano: el nombre del stage en el YAML, exacto.` });
+  try {
+    if (provider === 'github') {
+      if (!/^(?!\.+\/)[A-Za-z0-9_.-]+\/(?!\.+$)[A-Za-z0-9_.-]+$/.test(String(repo || ''))) return noPude('el repo tiene que ser «dueño/repo»');
+      const r = run(env.TYCON_GH_CMD || 'gh', ['api', `repos/${repo}/environments`]);
+      const envs = (r && Array.isArray(r.environments) ? r.environments : []).map((e) => e && e.name).filter(Boolean);
+      if (!envs.length) return { ok: false, proposals: [], message: 'el repo no tiene environments: no hay nada que proponer' };
+      return { ok: true, proposals: envs.map((name) => ({ id: name, name, state: 'propuesto' })), message: '' };
+    }
+    const s = String(pipeline || '');
+    const i = s.indexOf('/');
+    if (i <= 0 || i === s.length - 1) return noPude('el pipeline tiene que ser «proyecto/nombre exacto»');
+    if (!org) return noPude('falta la organización de Azure DevOps');
+    // 🔴 sólo una organización de Azure DevOps: otra dirección haría que az le mande la sesión de la máquina a ese host
+    if (!AZURE_ORG.test(String(org))) return noPude('la organización tiene que ser https://dev.azure.com/<organización>');
+    const proyecto = s.slice(0, i), nombre = s.slice(i + 1);
+    const azc = env.TYCON_ADO_CMD || 'az';
+    const tail = ['--org', org, '-o', 'json'];
+    const defs = run(azc, ['pipelines', 'list', '--name', nombre, '--project', proyecto, ...tail]);
+    const iguales = (Array.isArray(defs) ? defs : []).filter((d) => d && String(d.name).toLowerCase() === nombre.toLowerCase());
+    if (iguales.length !== 1) return noPude(iguales.length ? 'hay más de una definición con ese nombre' : 'ninguna definición se llama exactamente así');
+    const runs = run(azc, ['pipelines', 'runs', 'list', '--pipeline-ids', String(iguales[0].id), '--project', proyecto, '--branch', 'refs/heads/main', '--top', '10', ...tail]);
+    const ultima = (Array.isArray(runs) ? runs : []).filter((x) => x && x.status === 'completed' && x.sourceBranch === 'refs/heads/main')
+      .sort((a, b) => (Date.parse(b.queueTime) || 0) - (Date.parse(a.queueTime) || 0) || Number(b.id) - Number(a.id))[0];
+    if (!ultima) return { ok: false, proposals: [], message: 'el pipeline no tiene corridas terminadas de main: no hay de dónde leer los stages. Podés escribir el identificador a mano.' };
+    const tl = run(azc, ['devops', 'invoke', '--area', 'build', '--resource', 'timeline', '--route-parameters', `project=${proyecto}`, `buildId=${ultima.id}`, '--api-version', '7.1', ...tail]);
+    const vistos = new Set();
+    const proposals = (tl && Array.isArray(tl.records) ? tl.records : []).filter((r) => r && r.type === 'Stage' && r.identifier && !vistos.has(r.identifier) && vistos.add(r.identifier))
+      .map((r) => ({ id: String(r.identifier), name: String(r.name || ''), state: 'propuesto' }));
+    if (!proposals.length) return { ok: false, proposals: [], message: 'la última corrida de main no trae stages en su timeline. Podés escribir el identificador a mano.' };
+    return { ok: true, proposals, message: '' };
+  } catch (e) { return noPude(e.message); }
+}
+
+/**
+ * Confirmar un stage (o un environment de GitHub) en `staging` o `production`: lo suma a la entrada de ese pipeline o la
+ * crea. Pura y autocontenida: la página la lleva tal cual a su script (`confirmStage.toString()`), así hay una sola.
+ */
+function confirmStage(dep, c) {
+  const d = JSON.parse(JSON.stringify(dep || {}));
+  d.provider = d.provider || c.provider;
+  d.products = d.products || {};
+  const prod = d.products[c.product] = d.products[c.product] || {};
+  const list = prod[c.side] = prod[c.side] || [];
+  if (c.provider === 'github') {
+    if (!list.some((e) => e.repo === c.repo && e.environment === c.stage)) list.push({ repo: c.repo, environment: c.stage });
+    return d;
+  }
+  let e = list.find((x) => x.pipeline === c.pipeline);
+  if (!e) { e = { pipeline: c.pipeline, stages: [] }; list.push(e); }
+  if (!e.stages.includes(c.stage)) e.stages.push(c.stage);
+  return d;
+}
+
+/** La organización de Azure del árbol (repos.json → azure.org), para la ayuda; null si no está. */
+function treeOrg(tree) {
+  try { return JSON.parse(fs.readFileSync(path.join(tree, 'scripts', 'nightly', 'dependencies', 'repos.json'), 'utf8')).azure.org || null; } catch { return null; }
 }
 
 const stamp = (d) => d.toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15);
@@ -294,6 +370,10 @@ function start(opts = {}) {
       const r = reader.parse(formatJson(body.data));
       return send(res, 200, { ok: !!r.ok, problems: r.problems || [] });
     }
+    if (u.pathname === '/api/propose-stages') {
+      if (target.id !== 'operations') return send(res, 400, { ok: false, message: 'la ayuda de stages es de operations.json' });
+      return send(res, 200, proposeStages({ provider: body.provider, pipeline: body.pipeline, repo: body.repo, org: body.org || treeOrg(tree), env: opts.env || process.env }));
+    }
     if (u.pathname === '/api/save') return send(res, 200, saveTarget(target, clone, reader, body.data));
     if (u.pathname === '/api/plan') return send(res, 200, proposalPlan(target, clone, { env: opts.env }));
     if (u.pathname === '/api/propose') return send(res, 200, runProposal(target, clone, { env: opts.env, run: opts.run }));
@@ -379,6 +459,53 @@ function listField(label, list, set, p, problems) {
   return box;
 }
 
+// story 2.22: los despliegues por producto. La ayuda PROPONE stages leídos del pipeline; sólo se guarda lo confirmado.
+${confirmStage.toString()}
+function deploymentsEditor(d, pr) {
+  const box = el('div', {}, el('h3', { text: 'Despliegues por producto' }), el('p', { class: 'muted', text: 'De qué pipelines (Azure DevOps) o environments (GitHub) sale la foto de despliegues de cada noche. Cada stage se declara por su identificador exacto, el nombre en el YAML: nunca el nombre visible. La ayuda propone los que lee de la última corrida terminada de main; sólo se guarda lo que confirmás. Un producto sin declarar sale «no medido».' }));
+  const prov = el('select', {}, el('option', { value: 'azure', text: 'Azure DevOps' }), el('option', { value: 'github', text: 'GitHub' }));
+  prov.value = (d.deployments && d.deployments.provider) || S.depProvider || 'azure';
+  prov.onchange = () => { S.depProvider = prov.value; if (d.deployments) d.deployments.provider = prov.value; render(); };
+  box.append(el('div', { class: 'bar' }, el('label', { text: 'De dónde se leen' }), prov));
+  for (const x of problemsAt(pr, 'deployments')) box.append(el('div', { class: 'err', text: x.path + ': ' + x.message }));
+  const products = (d.deployments && d.deployments.products) || {};
+  for (const name of Object.keys(products)) {
+    for (const side of ['staging', 'production']) {
+      (products[name][side] || []).forEach((e, i) => {
+        const what = e.pipeline ? e.pipeline + ' → ' + (e.stages || []).join(', ') : e.repo + ' → ' + e.environment + (e.workflow ? ' (main: ' + e.workflow + ')' : '');
+        box.append(el('div', { class: 'row' }, el('div', { class: 'k', text: name + ' · ' + side }), el('div', { text: what }),
+          el('button', { class: 'sec', text: 'Quitar', onclick: () => { products[name][side].splice(i, 1); if (!products[name][side].length) delete products[name][side]; if (!Object.keys(products[name]).length) delete products[name]; if (!Object.keys(products).length) delete d.deployments; render(); } })));
+      });
+    }
+  }
+  const gh = prov.value === 'github';
+  const product = el('input', { placeholder: 'producto (como en repos.json)' });
+  const source = el('input', { placeholder: gh ? 'dueño/repo' : 'proyecto/nombre exacto del pipeline' });
+  const manual = el('input', { placeholder: gh ? 'environment (a mano)' : 'identificador del stage (a mano)' });
+  // la organización de Azure la escribe la persona (el árbol instalado no siempre trae repos.json); el servidor la valida
+  const org = el('input', { placeholder: 'organización de Azure DevOps (la dirección dev.azure.com/<organización>, con https)' });
+  product.value = S.depProduct || ''; source.value = S.depSource || ''; org.value = S.depOrg || '';
+  product.oninput = () => { S.depProduct = product.value; }; source.oninput = () => { S.depSource = source.value; }; org.oninput = () => { S.depOrg = org.value; };
+  const confirm = (stage, side) => {
+    if (!product.value.trim() || !source.value.trim() || !stage) return;
+    const c = { provider: prov.value, product: product.value.trim(), side, stage };
+    if (gh) c.repo = source.value.trim(); else c.pipeline = source.value.trim();
+    d.deployments = confirmStage(d.deployments, c);
+    S.depProposals = (S.depProposals || []).filter((p) => p.id !== stage);
+    render();
+  };
+  const sides = (stage) => ['staging', 'production'].map((side) => el('button', { class: 'sec', text: 'Confirmar en ' + side, onclick: () => confirm(stage, side) }));
+  box.append(el('div', { class: 'bar' }, product, source, ...(gh ? [] : [org]),
+    el('button', { class: 'sec', text: gh ? 'Proponer environments' : 'Proponer stages', onclick: async () => {
+      const r = await api('propose-stages', { target: 'operations', provider: prov.value, pipeline: gh ? undefined : source.value.trim(), repo: gh ? source.value.trim() : undefined, org: gh ? undefined : (org.value.trim() || undefined) });
+      S.depProposals = r.proposals || []; S.depMessage = r.ok ? '' : r.message; render();
+    } })));
+  if (S.depMessage) box.append(el('div', { class: 'err', text: S.depMessage }));
+  for (const p of S.depProposals || []) box.append(el('div', { class: 'row' }, el('div', { class: 'k', text: p.id }), el('div', { class: 'muted', text: 'propuesto' + (p.name && p.name !== p.id ? ' · se ve como «' + p.name + '»' : '') }), ...sides(p.id)));
+  box.append(el('div', { class: 'bar' }, manual, ...sides('').map((b, i) => { b.onclick = () => confirm(manual.value.trim(), i ? 'production' : 'staging'); return b; })));
+  return box;
+}
+
 const S = { targets: [], drafts: {}, problems: {}, notes: {}, mailbox: null };
 // story 2.24: el buzón de corridas, sólo lectura — la página nunca recibe la firma
 function mailboxSection(m) {
@@ -420,6 +547,7 @@ function editor(t) {
   box.append(el('h3', { text: 'Quiénes revisan los pedidos de la noche' }));
   box.append(listField('Dependencias', d.reviewers.dependencies = d.reviewers.dependencies || [], (l) => { d.reviewers.dependencies = l; }, 'reviewers.dependencies', pr));
   box.append(listField('Vigilante de producción', d.reviewers.watcher = d.reviewers.watcher || [], (l) => { d.reviewers.watcher = l; }, 'reviewers.watcher', pr));
+  box.append(deploymentsEditor(d, pr));
   return box;
 }
 function tidy(t) {
@@ -502,4 +630,4 @@ function declaredClones({ env = process.env } = {}) {
   return { repos: pick(p.team), operations: pick(p.operations) };
 }
 
-module.exports = { TARGETS, start, declaredClones, mailboxSummary, readTarget, saveTarget, proposalPlan, runProposal, remoteOf, browserCommand, cloneProblem, formatJson, loadReader, NO_PERMISSION, TEAM_REPOS_SINCE, profileGateProblem };
+module.exports = { TARGETS, start, declaredClones, mailboxSummary, readTarget, saveTarget, proposalPlan, runProposal, remoteOf, browserCommand, cloneProblem, formatJson, loadReader, NO_PERMISSION, TEAM_REPOS_SINCE, profileGateProblem, proposeStages, confirmStage };
