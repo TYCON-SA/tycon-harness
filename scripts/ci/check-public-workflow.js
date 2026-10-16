@@ -20,13 +20,15 @@
  *   uses-by-sha          cada `uses:` va fijado por el sha completo (40 hex) de su commit, con el tag como comentario
  *   permissions          un solo bloque `permissions`, arriba de todo, con `contents: read` y nada más
  *   fetch-depth          el checkout trae la historia completa (`fetch-depth: 0`): la necesita `--range`
- *   node-matrix          la matriz es Node 22 y 24, y es la que se instala
+ *   node-matrix          la matriz es Node 24 y es la que se instala; aparte, el job `installer-floor` instala Node 22 (el
+ *                        piso del instalador, 2026-10-16) y es el único que no instala el de la matriz
  *   range                en un pull request y en la cola, `public-ci.sh` corre con `--range origin/<base>...HEAD`
  *   clean-machine        toda llamada a `public-ci.sh` lleva `--clean-machine`
  *   aggregate-job        el job `public-ci` corre siempre, depende de todos los demás y falla si alguno no terminó bien
  *   parts                la matriz parte la corrida en `checks` y `suites-1-of-<n>` … `suites-<n>-of-<n>`, todas, en orden y
  *                        una vez, y la parte llega a public-ci.sh desde la matriz (`TYCON_PUBLIC_CI_PART: ${{ matrix.part }}`):
- *                        una parte que falta deja suites sin correr y el veredicto igual verde (2026-10-14)
+ *                        una parte que falta deja suites sin correr y el veredicto igual verde (2026-10-14). La única
+ *                        otra parte es la fija `installer-floor`, del job del mismo nombre
  *   after-queue          cada job se saltea en el push a main que hace la cola de merge, y SÓLO en ése: la cola ya probó
  *                        ese commit (2026-10-15). La condición es exacta: una que saltea más (todo push, o un pedido) deja
  *                        sin correr un merge directo de un administrador —la salida de urgencia—; el job `public-ci` la
@@ -101,7 +103,7 @@ const SHAPE = [
   '    strategy:',
   '      fail-fast: false',
   '      matrix:',
-  '        node: [22, 24]',
+  '        node: [24]',
   '        part: [checks, suites-1-of-3, suites-2-of-3, suites-3-of-3]',
   '    steps:',
   pinned('      - uses: ', 'actions/checkout'),
@@ -133,9 +135,38 @@ const SHAPE = [
   '            cat "${f}"',
   '            echo "::endgroup::"',
   '          done',
+  '  installer-floor:',
+  '    name: Node 22 · installer-floor',
+  `    if: ${AFTER_QUEUE}`,
+  '    runs-on: ubuntu-latest',
+  '    timeout-minutes: 60',
+  '    steps:',
+  pinned('      - uses: ', 'actions/checkout'),
+  '        with:',
+  '          fetch-depth: 0',
+  '          persist-credentials: false',
+  pinned('      - uses: ', 'actions/setup-node'),
+  '        with:',
+  '          node-version: 22',
+  '      - name: Las suites de la instalación y la actualización, con el Node más viejo que acepta el instalador',
+  '        env:',
+  '          TYCON_PUBLIC_CI_OUT: ${{ runner.temp }}/public-ci',
+  '          TYCON_PUBLIC_CI_PART: installer-floor',
+  '        run: bash scripts/ci/public-ci.sh --clean-machine',
+  '      - name: La salida completa de cada paso (sólo si algo quedó en rojo)',
+  '        if: failure()',
+  '        env:',
+  '          TYCON_PUBLIC_CI_OUT: ${{ runner.temp }}/public-ci',
+  '        run: |',
+  '          for f in "${TYCON_PUBLIC_CI_OUT}"/*.log; do',
+  '            [ -f "${f}" ] || continue',
+  '            echo "::group::${f##*/}"',
+  '            cat "${f}"',
+  '            echo "::endgroup::"',
+  '          done',
   '  public-ci:',
   `    if: always() && (${AFTER_QUEUE})`,
-  '    needs: [checks]',
+  '    needs: [checks, installer-floor]',
   '    runs-on: ubuntu-latest',
   '    timeout-minutes: 5',
   '    steps:',
@@ -270,6 +301,14 @@ function listAt(lines, i) {
 }
 const at = (ls) => ls.map((l) => l.n).join(', ');
 
+/** Las líneas del job `id` (vacío si no está). */
+function jobBlock(lines, id) {
+  const i = topLevel(lines, 'jobs');
+  if (i < 0) return [];
+  const job = childrenOf(blockOf(lines, i)).find((l) => unquote(l.body.replace(/\s*:.*$/, '')) === id);
+  return job ? blockOf(lines, lines.indexOf(job)) : [];
+}
+
 const RULES = [
   {
     id: 'triggers',
@@ -349,16 +388,20 @@ const RULES = [
     check(lines) {
       const matrix = lines.filter((l) => l.code && /^node:\s*\[.*\]/.test(l.body));
       const versions = matrix.length === 1 ? listAt(lines, lines.indexOf(matrix[0])).sort() : [];
-      if (versions.join(',') !== '22,24') return `la matriz es \`node: [22, 24]\`${matrix.length ? ` (línea ${at(matrix)})` : ''}`;
+      if (versions.join(',') !== '24') return `la matriz es \`node: [24]\`${matrix.length ? ` (línea ${at(matrix)})` : ''}`;
       // la lista tiene que colgar de `strategy: matrix:`; en cualquier otra clave es una lista suelta y el job corre una sola vez
       const parents = [parentOf(lines, lines.indexOf(matrix[0]))];
       parents.push(parents[0] ? parentOf(lines, lines.indexOf(parents[0])) : null);
       if (!parents[0] || !/^matrix\s*:$/.test(parents[0].body.replace(/\s+#.*$/, '')) || !parents[1] || !/^strategy\s*:$/.test(parents[1].body.replace(/\s+#.*$/, ''))) {
-        return `\`node: [22, 24]\` no cuelga de \`strategy: matrix:\` (línea ${at(matrix)}): así no es una matriz`;
+        return `\`node: [24]\` no cuelga de \`strategy: matrix:\` (línea ${at(matrix)}): así no es una matriz`;
       }
+      // el piso del instalador (2026-10-16): un solo `node-version: 22`, y sólo dentro del job `installer-floor`
+      const floorJob = jobBlock(lines, 'installer-floor');
       const installed = lines.filter((l) => l.code && /^node-version\s*:/.test(l.body));
-      const bad = installed.filter((l) => !/^\$\{\{\s*matrix\.node\s*\}\}$/.test(valueOf(l.body)));
-      if (!installed.length || bad.length) return `el Node que se instala es el de la matriz: \`node-version: \${{ matrix.node }}\`${bad.length ? ` (línea ${at(bad)})` : ''}`;
+      const floor = installed.filter((l) => valueOf(l.body) === '22');
+      if (floor.length !== 1 || !floorJob.includes(floor[0])) return `el job \`installer-floor\` instala Node 22 (el piso del instalador), una vez y sólo ahí${floor.length ? ` (línea ${at(floor)})` : ''}`;
+      const bad = installed.filter((l) => l !== floor[0] && !/^\$\{\{\s*matrix\.node\s*\}\}$/.test(valueOf(l.body)));
+      if (installed.length < 2 || bad.length) return `el Node que se instala es el de la matriz: \`node-version: \${{ matrix.node }}\`${bad.length ? ` (línea ${at(bad)})` : ''}`;
       return null;
     },
   },
@@ -426,7 +469,11 @@ const RULES = [
       if (!n || parts.join(',') !== want.join(',')) {
         return `la matriz parte la corrida en \`checks\` y \`suites-1-of-<n>\` … \`suites-<n>-of-<n>\`, todas, en orden y una vez (una que falta deja suites sin correr), y dice: ${parts.join(', ') || 'nada'} (línea ${decl[0].n})`;
       }
-      const env = lines.filter((l) => l.code && /^TYCON_PUBLIC_CI_PART\s*:/.test(l.body));
+      const all = lines.filter((l) => l.code && /^TYCON_PUBLIC_CI_PART\s*:/.test(l.body));
+      // la única parte fija es la del piso del instalador, dentro de su job (2026-10-16)
+      const floorJob = jobBlock(lines, 'installer-floor');
+      const fixed = all.filter((l) => valueOf(l.body) === 'installer-floor' && floorJob.includes(l));
+      const env = all.filter((l) => !fixed.includes(l));
       if (env.length !== 1 || !/^\$\{\{\s*matrix\.part\s*\}\}$/.test(valueOf(env[0].body))) {
         return `la parte que corre cada trabajo sale de la matriz: \`TYCON_PUBLIC_CI_PART: \${{ matrix.part }}\`${env.length ? ` (línea ${at(env)})` : ''}`;
       }

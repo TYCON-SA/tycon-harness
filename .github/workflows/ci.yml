@@ -15,7 +15,11 @@
 #   · cada acción de terceros va fijada por el sha completo de su commit, con el tag al lado como comentario: un tag se
 #     puede mover; un sha, no;
 #   · el checkout trae la historia completa (fetch-depth: 0): el freno de nombres compara contra la rama de destino;
-#   · Node 22 y 24;
+#   · la corrida entera con Node 24, el que el arnés se instala, y un trabajo chico aparte (`installer-floor`) con Node
+#     22, el más viejo que acepta el instalador (2026-10-16, decisión del dueño). Lo que corre con el Node del SISTEMA,
+#     antes de que el arnés tenga el suyo —el arranque, la actualización, el Node propio, la versión bajada y su número—
+#     se prueba con ese piso; el resto corre siempre con Node 24 y no necesita la matriz de dos. Cuando el piso del
+#     instalador suba a 24, este trabajo se saca (y su regla en el control);
 #   · la corrida va PARTIDA en trabajos que corren a la vez (2026-10-14: una sola corrida por Node tardaba ~30 min, y con
 #     el merge automático ese es el tiempo que tarda en entrar cada cambio): la matriz es Node × parte. La parte `checks`
 #     corre todos los pasos menos las portables; cada `suites-<i>-of-<n>` corre la parte <i> de las portables, repartidas
@@ -55,7 +59,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: [22, 24]
+        node: [24]
         part: [checks, suites-1-of-3, suites-2-of-3, suites-3-of-3]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -89,6 +93,38 @@ jobs:
             echo "::endgroup::"
           done
 
+  # El piso del instalador: sólo las suites de lo que corre con el Node del sistema, con Node 22 (ver la cabecera).
+  # Obligatorio: el chequeo `public-ci` lo espera como a los demás.
+  installer-floor:
+    name: Node 22 · installer-floor
+    if: github.event_name != 'push' || github.actor != 'github-merge-queue[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+      - name: Las suites de la instalación y la actualización, con el Node más viejo que acepta el instalador
+        env:
+          TYCON_PUBLIC_CI_OUT: ${{ runner.temp }}/public-ci
+          TYCON_PUBLIC_CI_PART: installer-floor
+        run: bash scripts/ci/public-ci.sh --clean-machine
+      - name: La salida completa de cada paso (sólo si algo quedó en rojo)
+        if: failure()
+        env:
+          TYCON_PUBLIC_CI_OUT: ${{ runner.temp }}/public-ci
+        run: |
+          for f in "${TYCON_PUBLIC_CI_OUT}"/*.log; do
+            [ -f "${f}" ] || continue
+            echo "::group::${f##*/}"
+            cat "${f}"
+            echo "::endgroup::"
+          done
+
   # El chequeo con nombre estable. Corre SIEMPRE (un job que depende de otro que falló se saltea, y un chequeo salteado
   # cuenta como aprobado): mira el resultado de cada job del que depende y falla si alguno no terminó bien. El resultado
   # de un job con matriz es uno solo para todas sus combinaciones: `success` sólo si TODAS (cada Node, cada parte)
@@ -96,7 +132,7 @@ jobs:
   # el push a main que hace la cola al entrar un pedido: ahí se saltea con los demás (la cola ya probó ese commit).
   public-ci:
     if: always() && (github.event_name != 'push' || github.actor != 'github-merge-queue[bot]')
-    needs: [checks]
+    needs: [checks, installer-floor]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

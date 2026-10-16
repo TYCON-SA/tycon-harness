@@ -65,6 +65,9 @@
 #                                     suites-<i>-of-<n> sólo el paso 5, con la parte <i> de <n> de las portables: las
 #                                                       reparte scripts/ci/suites-shard.js por peso (juego `pr`, ver
 #                                                       portable-suites.test.sh, TYCON_PORTABLE_SHARD)
+#                                     installer-floor   sólo el paso 5, con las suites de FLOOR_SUITES (abajo): lo que corre
+#                                                       con el Node del sistema. La CI la corre con el Node más viejo que
+#                                                       acepta el instalador; no es parte de la corrida entera
 #                                   Las n+1 partes juntas son la corrida entera: `checks` más `suites-1-of-<n>` …
 #                                   `suites-<n>-of-<n>`. Una parte sola NO es el veredicto: el resumen la nombra, y en la CI
 #                                   lo da el job `public-ci`, que junta todas. Un valor que no sea uno de ésos: 2, con el uso.
@@ -119,26 +122,31 @@ else
 fi
 
 # ── qué parte de los pasos (TYCON_PUBLIC_CI_PART, ver arriba) ───────────────────────────────────────
-PART="${TYCON_PUBLIC_CI_PART:-}"; PORTABLE_SHARD=""
+PART="${TYCON_PUBLIC_CI_PART:-}"; PORTABLE_SHARD=""; PORTABLE_ONLY=""
+# Las suites de lo que corre con el Node DEL SISTEMA, antes de que el arnés tenga el suyo (el arranque, la actualización,
+# el Node propio, la versión bajada y su número). La parte installer-floor las corre con el Node más viejo que acepta el
+# instalador: el resto de la CI corre sólo con Node 24, que es el que el arnés se instala.
+FLOOR_SUITES="tests/harness-bootstrap.test.sh,tests/harness-update.test.sh,tests/harness-node.test.sh,tests/harness-release.test.sh,tests/harness-release-links.test.sh,tests/version-by-merge.test.js"
 case "${PART}" in
   ""|checks) ;;
+  installer-floor) PORTABLE_ONLY="${FLOOR_SUITES}" ;;
   suites-*-of-*)
     # sólo dígitos, i entre 1 y n: «suites-0-of-3», «suites-4-of-3», «suites-1-of-3x» o «suites-1-of-2-of-3» no son una parte
     PART_RE='^suites-([1-9][0-9]*)-of-([1-9][0-9]*)$'
     if [[ "${PART}" =~ ${PART_RE} ]] && [ "${BASH_REMATCH[1]}" -le "${BASH_REMATCH[2]}" ]; then
       SHARD_I="${BASH_REMATCH[1]}"; SHARD_N="${BASH_REMATCH[2]}"
     else
-      echo "public-ci: TYCON_PUBLIC_CI_PART=${PART} no es una parte: checks o suites-<i>-of-<n>, con i entre 1 y n" >&2; usage 2
+      echo "public-ci: TYCON_PUBLIC_CI_PART=${PART} no es una parte: checks, installer-floor o suites-<i>-of-<n>, con i entre 1 y n" >&2; usage 2
     fi
     PORTABLE_SHARD="${SHARD_I}/${SHARD_N}" ;;
-  *) echo "public-ci: TYCON_PUBLIC_CI_PART=${PART} no es una parte: checks o suites-<i>-of-<n>, con i entre 1 y n" >&2; usage 2 ;;
+  *) echo "public-ci: TYCON_PUBLIC_CI_PART=${PART} no es una parte: checks, installer-floor o suites-<i>-of-<n>, con i entre 1 y n" >&2; usage 2 ;;
 esac
 # wants <paso> → 0 si el paso le toca a esta parte
 wants() {
   case "${PART}" in
     "") return 0 ;;
     checks) [ "$1" != portable-suites ] ;;
-    *) [ "$1" = portable-suites ] ;;
+    *) [ "$1" = portable-suites ] ;;   # suites-<i>-of-<n> e installer-floor: sólo las portables
   esac
 }
 
@@ -473,6 +481,7 @@ version_bumped() {
 case "${PART}" in
   "") ;;
   checks) echo "public-ci: parte checks — todos los pasos menos portable-suites (las portables van en las partes suites-<i>-of-<n>)" ;;
+  installer-floor) echo "public-ci: parte installer-floor — sólo las portables de la instalación y la actualización, con el Node de esta máquina ($(node --version 2>/dev/null || echo 'sin node'))" ;;
   *) echo "public-ci: parte ${PART} — sólo portable-suites, con la parte ${SHARD_I} de ${SHARD_N} de las portables (los demás pasos van en la parte checks)" ;;
 esac
 wants node-check && run_step node-check own "" "git node" node_check
@@ -482,7 +491,7 @@ wants suites-coverage && run_step suites-coverage file scripts/tests/suites-cove
 # TYCON_PORTABLE_SHARD siempre se pasa: vacía (la corrida entera, o la parte checks) corre todas las portables, aunque
 # quien llama la tenga puesta
 wants portable-suites && run_step portable-suites file scripts/tests/portable-suites.test.sh "bash node" \
-  env TYCON_PORTABLE_SHARD="${PORTABLE_SHARD}" bash scripts/tests/portable-suites.test.sh
+  env TYCON_PORTABLE_SHARD="${PORTABLE_SHARD}" TYCON_PORTABLE_ONLY="${PORTABLE_ONLY}" bash scripts/tests/portable-suites.test.sh
 wants agent-skills-suites && run_step agent-skills-suites own scripts/tests/suites.json "bash node" agent_skills_suites
 wants controls-bench && run_step controls-bench file scripts/controls-bench/runner.js "node" node scripts/controls-bench/runner.js --tool both --baseline check --json "${OUT}/bench.json"
 [ "${WITH_RANGE}" -eq 0 ] || ! wants spanish-names || run_step spanish-names own scripts/publishing/spanish-names.js "git node" spanish_names
