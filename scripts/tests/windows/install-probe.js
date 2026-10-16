@@ -142,8 +142,25 @@ function measureLinks({ home, clone, platform, pwsh, env }) {
     if (types[name]) Object.assign(out, types[name]);
     try { out.readlink = fs.readlinkSync(p); } catch (_) { /* no es un enlace */ }
     try { out.resolves_to = fs.realpathSync(p); out.to_clone = L.samePath(out.resolves_to, want, platform); } catch (e) { out.resolves_to = null; out.to_clone = false; out.problem = e.code || e.message; }
+    // story 8.35: `skills` y `agents` son carpetas REALES del dev con un enlace por entrada del arnés, no un enlace a la
+    // carpeta entera. Lo que se pide: carpeta real y al menos una entrada que resuelva adentro del clon.
+    if (sub && out.kind === 'folder') {
+      out.harness_entries = harnessEntries(p, want, platform);
+      out.to_clone = out.harness_entries > 0;
+      if (!out.to_clone) out.problem = 'carpeta real sin ninguna entrada que lleve al arnés';
+    }
     return out;
   }).filter(Boolean);
+}
+
+/** Cuántas entradas de una carpeta real resuelven adentro de `want` (los enlaces por entrada de la story 8.35). */
+function harnessEntries(dir, want, platform) {
+  const base = L.comparable(want, platform);
+  let n = 0;
+  for (const e of (() => { try { return fs.readdirSync(dir); } catch (_) { return []; } })()) {
+    try { const r = L.comparable(fs.realpathSync(path.join(dir, e)), platform); if (r === base || r.startsWith(`${base}/`)) n++; } catch (_) { /* colgado */ }
+  }
+  return n;
 }
 
 /** `harness.js doctor --json`: los `fail` y los `warn`, o por qué no se pudo leer. */
@@ -272,7 +289,7 @@ function measureResult({ v, home, clone, env, platform, pwsh, out, finding, reda
   facts.links = measureLinks({ home, clone, platform, pwsh, env });
   for (const l of facts.links) {
     if (!l.present) finding(`links:${v.id}:${l.name}`, 'link', `no quedó ~/.claude/${l.name}`, 'W4');
-    else if (!l.to_clone) finding(`links:${v.id}:${l.name}`, 'link', `~/.claude/${l.name} quedó como ${l.kind}${l.link_type ? ` (${l.link_type})` : ''} y no resuelve al clon: ${l.resolves_to || l.problem}`, 'W4');
+    else if (!l.to_clone) finding(`links:${v.id}:${l.name}`, 'link', `~/.claude/${l.name} quedó como ${l.kind}${l.link_type ? ` (${l.link_type})` : ''} y no resuelve al clon: ${(l.kind === 'folder' && l.problem) || l.resolves_to || l.problem}`, 'W4');
   }
   const gh = L.run('git', ['config', '--global', '--get', 'core.hooksPath'], { env, timeoutMs: 30000, cap: 600 });
   facts.git_global_hooks_path = gh.exit === 0 ? L.firstLine(gh.stdout) : null;
@@ -415,7 +432,15 @@ function measureMailboxUpload({ home, clone, env, pwsh, scratch, waitMs = 90000 
 function measureUninstall({ v, home, clone, env, finding }) {
   const harness = path.join(clone, 'scripts', 'setup', 'harness.js');
   const r = L.run(process.execPath, [harness, 'uninstall', '--yes'], { env, cwd: clone, timeoutMs: 300000 });
-  const left = LINKS.map(([n]) => n).filter((n) => { try { fs.lstatSync(path.join(home, '.claude', n)); return true; } catch (_) { return false; } });
+  // story 8.35: la carpeta real de `skills` o `agents` es del dev y se queda; lo que no puede quedar es un enlace al arnés
+  // (la carpeta entera enlazada, o una entrada suya que todavía lleve al clon)
+  const realClone = L.realOrSelf(clone);
+  const left = LINKS.map(([n, sub]) => [n, sub]).filter(([n, sub]) => {
+    const p = path.join(home, '.claude', n);
+    let st; try { st = fs.lstatSync(p); } catch (_) { return false; }
+    if (sub && st.isDirectory() && !st.isSymbolicLink()) return harnessEntries(p, path.join(realClone, sub)) > 0;
+    return true;
+  }).map(([n]) => n);
   const out = { exit: r.exit, error: r.error, output: L.clip(`${r.stdout}\n${r.stderr}`.trim(), 1500), links_left: left, state_left: fs.existsSync(path.join(home, '.claude', '.tycon-pipeline', 'harness-state.json')), clone_still_there: fs.existsSync(path.join(clone, '.git')) };
   if (r.error || r.exit !== 0) finding(`uninstall:${v.id}:failed`, 'uninstall', `harness.js uninstall --yes salió ${r.error || r.exit}: ${lastLines(r.stderr || r.stdout)}`, 'W4');
   else if (left.length || out.state_left) finding(`uninstall:${v.id}:left-pieces`, 'uninstall', `tras uninstall quedan: ${[...left, out.state_left ? 'el estado' : ''].filter(Boolean).join(', ')}`, 'W4');
