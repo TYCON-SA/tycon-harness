@@ -65,6 +65,10 @@ const SIN_EFECTOS = {
   TYCON_NO_CLAUDEMD_SYNC: '1', TYCON_NO_COMMANDS_SYNC: '1', TYCON_NO_ENGRAM_VERSION_CHECK: '1', TYCON_NO_SQLITE_CHECK: '1',
   TYCON_NO_ENGRAM_PROJECT_CHECK: '1', TYCON_NO_GIT_HOOKS: '1', TYCON_NO_GUI_ENV: '1', TYCON_NO_AGENTSMD_POINTER: '1',
   TYCON_NO_CANONICAL_PATH: '0', TYCON_PROFILE: '0', TYCON_STAGE_METRICS: '0',
+  // sin terceros: el instalador las bajaría al skills/ del clon que enlaza la HOME, el árbol compartido con las demás suites
+  TYCON_THIRD_PARTY: '0',
+  // el chequeo de paridad que el instalador lanza de fondo deja su reporte en scripts/controls-bench/.bench/ del clon
+  TYCON_PARITY_BENCH_DIR: path.join(os.tmpdir(), `no-hardcoded-paths-parity-${process.pid}`),
 };
 function instalar(home, args = []) {
   const r = spawnSync('bash', [INSTALADOR, ...args], {

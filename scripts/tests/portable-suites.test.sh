@@ -102,6 +102,15 @@ PATH="$BIN" command -v node >/dev/null 2>&1 || { echo "❌ suites-portables: no 
 mkdir -p "$T/third-party-home"
 HOME="$T/third-party-home" node "$RAIZ/scripts/publishing/install-third-party.js" --repo "$RAIZ" 2>&1 | sed 's/^/suites-portables: /'
 
+# ── ninguna suite escribe en el árbol: skills/ ni el .bench/ del banco ──────────────────────────────────────────
+#    La foto se toma DESPUÉS de las de terceros y se compara al final: una suite que deja (o borra) algo ahí le cambia
+#    el árbol a las que corren a la vez. Pasó con integrations-off y no-hardcoded-paths, que corrían el instalador con
+#    el paso de terceros prendido sobre el agent-skills de su HOME, que es este clon (DEF-8.40-carrera-skills-de-terceros);
+#    y con harness-uninstall y no-hardcoded-paths, cuyo instalador dejaba el reporte de paridad en .bench/. Con las de
+#    terceros ya puestas, las dos primeras no habrían dejado nada nuevo: la foto caza lo que cualquier otra deje.
+skills_foto() { local d; for d in "$RAIZ/skills" ${SK_REPO:+"$SK_REPO/skills"} "$RAIZ/scripts/controls-bench/.bench"; do [ -d "$d" ] && (cd "$d" && find . \( -type f -o -type l \) | sed "s|^\.|$d|"); done | LC_ALL=C sort -u; }
+skills_foto > "$T/skills-antes.txt"
+
 # ── correr las portables, de a 4, con tope ────────────────────────────────────────────────────────
 node - "$RAIZ" "${SK_REPO:-}" "$HAY_SKILLS" "$CASA" "$BIN" "$T" "$SUITES" "${SK_WHY:-}" <<'JS'
 'use strict';
@@ -234,3 +243,11 @@ function fin() {
 }
 siguiente();
 JS
+RC=$?
+skills_foto > "$T/skills-despues.txt"
+if ! cmp -s "$T/skills-antes.txt" "$T/skills-despues.txt"; then
+  echo "❌ suites-portables: una suite cambió skills/ o scripts/controls-bench/.bench/ del árbol (lo que corre a la vez lo ve cambiar a mitad de camino). Tiene que trabajar en su propia carpeta, o correr el instalador con TYCON_THIRD_PARTY=0 y TYCON_PARITY_BENCH_DIR=<su carpeta>. Para saber cuál: TYCON_PORTABLE_ONLY=<ruta>, de a una."
+  diff "$T/skills-antes.txt" "$T/skills-despues.txt" | grep '^[<>]' | sed -e 's/^</   · se borró:/' -e 's/^>/   · apareció:/' | head -10
+  exit 1
+fi
+exit "$RC"
