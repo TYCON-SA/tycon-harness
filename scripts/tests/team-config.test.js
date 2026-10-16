@@ -397,3 +397,132 @@ test('2.23-T5 TeamConfig_ConservaSite', async () => {
     assert.deepStrictEqual(saved.site, site, 'site sigue igual en el archivo guardado');
   });
 });
+
+// ── story 2.22: la sección de despliegues y la ayuda que propone los stages (AC 1 y 18) ─────────────────────────────
+const AZ_FAKE = path.join(__dirname, 'lib', 'fake-az.sh');
+function fakeAz() {
+  const d = tmp('az');
+  const fix = path.join(d, 'fix'); fs.mkdirSync(fix);
+  const az = path.join(d, 'az'); fs.copyFileSync(AZ_FAKE, az); fs.chmodSync(az, 0o755);
+  const w = (n, v) => fs.writeFileSync(path.join(fix, n), JSON.stringify(v));
+  return { fix, az, w };
+}
+const DEPLOY = { provider: 'azure', products: { Acme: { production: [{ pipeline: 'Proy/Acme Prod', stages: ['DeployProd'] }] } } };
+
+test('2.22-T3 TeamConfig_SeccionDespliegues', async () => {
+  const tree = path.join(__dirname, '..', '..');
+  const ops = cloneWithRemote().dir;
+  const file = path.join(ops, 'operations.json');
+  fs.writeFileSync(file, TC.formatJson({ version: 1, owners: { default: 'lead@acme.example' }, deployments: DEPLOY }));
+  await withPage({ tree, clones: { operations: ops } }, async (p) => {
+    const t = (await api(p, 'state')).json.targets.find((x) => x.id === 'operations');
+    assert.deepStrictEqual([t.state, t.problems], ['loaded', []], 'el lector real acepta deployments');
+    assert.deepStrictEqual(t.data.deployments, DEPLOY);
+    // un problema se marca en su campo, con la ruta del lector real (sin validador propio)
+    const bad = (await api(p, 'check', { target: 'operations', data: { ...t.data, deployments: { provider: 'azure', products: { Acme: { production: [{ pipeline: 'Proy/Acme Prod', stages: [] }] } } } } })).json;
+    assert.deepStrictEqual(bad.problems.map((x) => x.path), ['deployments.products.Acme.production.0.stages']);
+    const draft = JSON.parse(JSON.stringify(t.data)); draft.owners.default = 'otro@acme.example';
+    assert.strictEqual((await api(p, 'save', { target: 'operations', data: draft })).json.ok, true);
+    const page = (await request(p.port, { pathname: `/?k=${p.token}` })).text;
+    assert.match(page, /Despliegues por producto/);
+  });
+  assert.deepStrictEqual(JSON.parse(fs.readFileSync(file, 'utf8')).deployments, DEPLOY, 'guardar no pierde deployments');
+});
+
+test('2.22-T23 TeamConfig_ProponeStagesDelPipeline', async () => {
+  const tree = path.join(__dirname, '..', '..');
+  const ops = cloneWithRemote().dir;
+  const file = path.join(ops, 'operations.json');
+  fs.writeFileSync(file, TC.formatJson({ version: 1, owners: { default: 'lead@acme.example' } }));
+  const antes = fs.readFileSync(file);
+  const { fix, az, w } = fakeAz();
+  w('definiciones-Proy.json', [{ id: 9, name: 'Acme Prod' }, { id: 8, name: 'Acme Prod Viejo' }, { id: 7, name: 'Sin Corridas' }]);
+  w('builds-9.json', [
+    { id: 51, status: 'inProgress', result: null, sourceBranch: 'refs/heads/main', queueTime: '2026-10-15T00:00:00Z' },
+    { id: 50, status: 'completed', result: 'succeeded', sourceBranch: 'refs/heads/main', queueTime: '2026-10-14T00:00:00Z' },
+  ]);
+  w('timeline-50.json', { records: [
+    { type: 'Stage', identifier: 'DeployNonProd', name: 'Staging visible', state: 'completed', result: 'succeeded' },
+    { type: 'Stage', identifier: 'DeployProd', name: 'Producción visible', state: 'completed', result: 'skipped' },
+    { type: 'Job', identifier: 'UnJob', name: 'job' },
+  ] });
+  const env = { ...ENV, FIXAZ: fix, TYCON_ADO_CMD: az };
+  await withPage({ tree, clones: { operations: ops }, env }, async (p) => {
+    const r = (await api(p, 'propose-stages', { target: 'operations', provider: 'azure', pipeline: 'Proy/Acme Prod', org: 'https://dev.azure.com/prueba' })).json;
+    assert.strictEqual(r.ok, true, r.message);
+    assert.deepStrictEqual(r.proposals, [{ id: 'DeployNonProd', name: 'Staging visible', state: 'propuesto' }, { id: 'DeployProd', name: 'Producción visible', state: 'propuesto' }]);
+    const sin = (await api(p, 'propose-stages', { target: 'operations', provider: 'azure', pipeline: 'Proy/Sin Corridas', org: 'https://dev.azure.com/prueba' })).json;
+    assert.strictEqual(sin.ok, false);
+    assert.deepStrictEqual(sin.proposals, []);
+    assert.match(sin.message, /main/);
+  });
+  assert.ok(fs.readFileSync(file).equals(antes), 'la propuesta no se guarda: operations.json byte a byte igual');
+  const pasos = fs.readFileSync(path.join(fix, 'llamadas.log'), 'utf8');
+  assert.match(pasos, /timeline/, 'los stages salen del timeline de la última corrida terminada de main');
+  assert.doesNotMatch(pasos, /buildId=51/, 'nunca de una corrida sin terminar');
+});
+
+test('2.22-T24 TeamConfig_SoloLoConfirmadoSeGuarda', async () => {
+  const tree = path.join(__dirname, '..', '..');
+  const ops = cloneWithRemote().dir;
+  const file = path.join(ops, 'operations.json');
+  fs.writeFileSync(file, TC.formatJson({ version: 1, owners: { default: 'lead@acme.example' } }));
+  await withPage({ tree, clones: { operations: ops } }, async (p) => {
+    // la persona confirma DeployProd en production; DeployNonProd quedó propuesto y sin confirmar
+    const draft = { version: 1, owners: { default: 'lead@acme.example' }, deployments: TC.confirmStage({}, { provider: 'azure', product: 'Acme', side: 'production', pipeline: 'Proy/Acme Prod', stage: 'DeployProd' }) };
+    assert.strictEqual((await api(p, 'save', { target: 'operations', data: draft })).json.ok, true);
+  });
+  const saved = JSON.parse(fs.readFileSync(file, 'utf8')).deployments;
+  assert.deepStrictEqual(saved, DEPLOY, 'sólo lo confirmado');
+  // y la foto: sin staging confirmado, staging sale no medido
+  const out = tmp('foto');
+  const reposFile = path.join(out, 'repos.json');
+  fs.writeFileSync(reposFile, JSON.stringify({ azure: { org: 'https://dev.azure.com/prueba' }, repos: [{ producto: 'Acme', ado: 'Proy/a' }] }));
+  const { fix, az, w } = fakeAz();
+  w('definiciones-Proy.json', [{ id: 9, name: 'Acme Prod' }]);
+  execFileSync(process.execPath, [path.join(tree, 'scripts', 'nightly', 'deployments', 'deployments.js'), '--today', '2026-10-15', '--out', out, '--repos', reposFile, '--operations', file],
+    { env: { ...ENV, FIXAZ: fix, TYCON_ADO_CMD: az, TF_BUILD: '' } });
+  const foto = JSON.parse(fs.readFileSync(path.join(out, 'deployments-2026-10-15.json'), 'utf8'));
+  assert.strictEqual(foto.productos.Acme.staging.estado, 'no_medido');
+  assert.strictEqual(foto.productos.Acme.staging.motivo, 'sin_declarar');
+});
+
+test('2.22-T25 TeamConfig_AyudaSinAcceso_DiceElMotivo', async () => {
+  const { fix, az, w } = fakeAz();
+  w('definiciones-Proy.json', [{ id: 9, name: 'Acme Prod' }]);
+  w('builds-9.json', [{ id: 50, status: 'completed', result: 'succeeded', sourceBranch: 'refs/heads/main', queueTime: '2026-10-14T00:00:00Z' }]);
+  const falla = TC.proposeStages({ provider: 'azure', pipeline: 'Proy/Acme Prod', org: 'https://dev.azure.com/prueba', env: { ...ENV, FIXAZ: fix, TYCON_ADO_CMD: az, TYCON_AZ_FAIL: 'timeline' } });
+  assert.strictEqual(falla.ok, false);
+  assert.deepStrictEqual(falla.proposals, []);
+  assert.match(falla.message, /no pude leer el pipeline/);
+  assert.match(falla.message, /a mano/);
+  const sinAz = TC.proposeStages({ provider: 'azure', pipeline: 'Proy/Acme Prod', org: 'https://dev.azure.com/prueba', env: { ...ENV, TYCON_ADO_CMD: path.join(tmp('nada'), 'az-que-no-existe') } });
+  assert.strictEqual(sinAz.ok, false);
+  assert.deepStrictEqual(sinAz.proposals, []);
+  assert.match(sinAz.message, /no pude leer el pipeline/);
+  // la cabecera dice que también sale a la red al pedir la propuesta
+  const src = fs.readFileSync(path.join(__dirname, '..', 'setup', 'harness', 'team-config.js'), 'utf8').split('\n').slice(0, 30).join('\n');
+  assert.match(src, /propuesta/);
+});
+
+test('2.22-T25b TeamConfig_OrgYRepoValidados (revisores)', () => {
+  const { fix, az } = fakeAz();
+  const env = { ...ENV, FIXAZ: fix, TYCON_ADO_CMD: az };
+  const org = TC.proposeStages({ provider: 'azure', pipeline: 'Proy/Acme Prod', org: 'https://host-ajeno.example/x', env });
+  assert.strictEqual(org.ok, false);
+  assert.match(org.message, /dev\.azure\.com/);
+  assert.ok(!fs.existsSync(path.join(fix, 'llamadas.log')), 'az no se llamó con una organización ajena');
+  const repo = TC.proposeStages({ provider: 'github', repo: '../..', env });
+  assert.strictEqual(repo.ok, false);
+  assert.match(repo.message, /dueño\/repo/);
+});
+
+// Chequeo textual a propósito: la página no se ejecuta en un navegador en esta suite. El servidor, en cambio, se prueba
+// de verdad en T23/T25b: con la organización del pedido propone, con una ajena no llama a az.
+test('2.22-A11 TeamConfig_LaPaginaMandaLaOrganizacion (pase adversarial)', async () => {
+  await withPage({ tree: path.join(__dirname, '..', '..') }, async (p) => {
+    const page = (await request(p.port, { pathname: `/?k=${p.token}` })).text;
+    assert.match(page, /dev\.azure\.com\/<organización>/, 'la página pide la organización');
+    assert.match(page, /org: gh \? undefined : \(org\.value\.trim\(\) \|\| undefined\)/, 'y la manda en el pedido');
+  });
+});

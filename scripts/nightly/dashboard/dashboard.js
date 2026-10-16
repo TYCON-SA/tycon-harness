@@ -877,8 +877,34 @@ function contexto() {
   return { repos, productos, debt, declarados: (declarados && declarados.declared) || [] };
 }
 
+/**
+ * story 2.22 (G7): la ficha de despliegues lee la foto de la noche (scripts/nightly/deployments/deployments.js).
+ * «Productos con producción al día» sobre los productos MEDIDOS (los «no medido» no cuentan como atrasados). Sin foto,
+ * con una de más de dos días o sin ningún producto medido: «no medido» con el motivo, nunca 0. Pura: la usa la prueba.
+ */
+function fichaDespliegues(doc, hoy) {
+  if (!doc || typeof doc !== 'object') return noMedida('no hay foto de despliegues de la noche');
+  const edad = edadDias(doc.generado, Date.parse(`${String(hoy).slice(0, 10)}T23:59:59Z`));
+  if (edad === null || edad > 2) return noMedida(`la foto de despliegues es de ${String(doc.generado || 'sin fecha').slice(0, 10)}: más de dos días`);
+  const todos = Object.entries(doc.productos || {}).filter(([, p]) => p);
+  const medidos = todos.filter(([, p]) => p.estado !== 'no_medido' && typeof p.produccion_atrasada === 'boolean');
+  if (medidos.length === 0) return noMedida('ningún producto con staging y producción medidos en la foto de la noche');
+  // los que no se pudieron comparar se DICEN: sin esto «N de M al día» sube sin que se vea quién quedó afuera
+  const sinComparar = todos.length - medidos.length;
+  const atrasados = medidos.filter(([, p]) => p.produccion_atrasada).map(([n]) => n);
+  // las vencidas se cuentan sobre TODOS los productos con la aprobación medida (el caso típico es el que nunca llegó a
+  // producción: sin despliegue en la ventana, su comparación es null) y se suman sus `cuantas`, no se cuentan productos
+  const vencidas = todos.filter(([, p]) => p.aprobacion && p.aprobacion.estado === 'vencida')
+    .reduce((n, [, p]) => n + (Number.isInteger(p.aprobacion.cuantas) && p.aprobacion.cuantas > 0 ? p.aprobacion.cuantas : 1), 0);
+  const detalle = [atrasados.length ? `producción atrasada: ${atrasados.join(', ')}` : 'ninguno con producción atrasada',
+    `${vencidas} ${vencidas === 1 ? 'aprobación vencida' : 'aprobaciones vencidas'}`,
+    sinComparar ? `${sinComparar} producto${sinComparar === 1 ? '' : 's'} sin comparar (no medido, sin despliegue o sin commit confiable)` : null].filter(Boolean).join(' · ');
+  return medida(medidos.length - atrasados.length, medidos.length, medidos.length, { unidad: 'conteo', den_etiqueta: 'productos medidos', detalle });
+}
+
 function extra(por, ctx, cfg) {
   const m = {};
+  m.despliegues = desde(por.deployments, (d) => fichaDespliegues(d, new Date().toISOString()));
   const sdlc = por['sdlc-stage'];
 
   m.por_repo = desde(sdlc, (d) => ({
@@ -1468,7 +1494,7 @@ footer{margin-top:40px;padding-top:16px;border-top:1px solid var(--line);font-si
     ${F('', 'Una corrida del pipeline, de punta a punta (mediana, horas)', L.corridas, num1, {}, [L.vueltas && L.vueltas.estado === 'medido' ? `<b>${L.vueltas.valor} vueltas de revisión de mediana</b>${L.agentes && L.agentes.estado === 'medido' ? ` y ${L.agentes.valor} agentes por corrida` : ''}: si los revisores piden en la vuelta 2 y 3 algo que se sabía antes, eso se mueve a la spec.` : null, pieTiempos].filter(Boolean).join(' ') || null)}
     ${F('', 'Pasos de una corrida del pipeline (mediana): la variable que explica lo que consume', L.pasos, redondo, {}, 'Una corrida consume según cuántos pasos da, porque en cada paso el modelo relee todo lo anterior: <b>los tokens son la consecuencia, esto es la palanca</b>. Sale de las corridas de todas las máquinas que las suben. <b>No tiene tope ni color a propósito</b>: primero la serie, y recién si alguna palanca la mueve se discute un umbral.')}
     ${F('', 'Commits por carril: pipeline, atajo declarado o ninguno', L.carriles, entero, {}, 'Sale del hook que ya registra cada commit de una sesión. <b>Los commits hechos fuera de una sesión no se ven</b> (desde la terminal o el editor), ni los que toman el mensaje de un archivo o de una variable: no están en este número, y eso es «no medido», no cero. Un commit hasta 3 h después de cerrar una corrida cuenta como de esa corrida; un atajo vencido no es un carril.')}
-    ${F('', 'Compilaciones y despliegues: duración, éxito, tiempo en cola', noMedida('el arnés no consulta la API de compilaciones de Azure DevOps'), entero, {}, 'DORA: 0 de 4 métricas. <b>No se sabe cuántas corridas terminan a medias</b> — y ésas aprueban la política igual que un verde.')}
+    ${F('', 'Despliegues: productos con producción al día', E.despliegues, entero, {}, 'Sale de la foto de despliegues de cada noche, leída del <b>stage</b> de cada corrida: una corrida «succeeded» con la aprobación vencida no cuenta como desplegada. Sobre los productos medidos; el detalle dice cuáles tienen producción atrasada y cuántas aprobaciones vencieron. Duración, cola y frecuencia de despliegues: story 2.11.')}
   </div>
   ${tablaPoda(P)}
   <details><summary>Detalle: las 6 métricas de revisores del capturador, con su cobertura</summary>
@@ -1575,4 +1601,4 @@ function main() {
 }
 
 if (require.main === module) main();
-module.exports = { colectar, render, equipo, pasosPorCorrida, ratio, medida, noMedida, edadDias, estadoDelBuzon, selloDe, MOTIVOS_BUZON };
+module.exports = { colectar, render, equipo, pasosPorCorrida, ratio, medida, noMedida, edadDias, estadoDelBuzon, selloDe, MOTIVOS_BUZON, fichaDespliegues };

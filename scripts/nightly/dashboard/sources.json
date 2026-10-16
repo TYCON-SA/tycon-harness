@@ -53,6 +53,15 @@
       "written_by": "nocturno de Azure DevOps, 08:00 UTC"
     },
     {
+      "id": "deployments",
+      "title": "Foto de despliegues (staging y producción por producto)",
+      "pattern": "deployments-*.json",
+      "dir": "deployments",
+      "required": false,
+      "max_age_days": 2,
+      "written_by": "nocturno del tablero (deployments.js), 08:30 UTC"
+    },
+    {
       "id": "paridad",
       "title": "Paridad de los pipelines de los productos",
       "pattern": "paridad-*.json",
@@ -358,7 +367,7 @@
     },
     {
       "what": "Despliegues a producción (DORA)",
-      "reason": "ningún archivo del arnés cuenta un despliegue; los productos sin pipeline de producción salen en la pregunta 5, contados desde la deuda declarada"
+      "reason": "la foto de cada noche (story 2.22) dice qué llegó a staging y a producción en cada producto; la frecuencia de despliegues y el tiempo de código a producción son de la story 2.11"
     },
     {
       "what": "Efecto posterior al merge de un hallazgo",

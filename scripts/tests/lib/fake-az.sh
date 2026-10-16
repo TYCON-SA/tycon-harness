@@ -42,6 +42,15 @@
 # ── LO QUE SUMÓ LA 4.6 (los PR abiertos de la organización) ──────────────────────────────────────
 # · `prs`: `devops invoke --area git --resource pullRequests --query-parameters … $skip=N` → `prs-N.json`
 #   (sin fixture: una página vacía, `{count:0,value:[]}` — como Azure pasada la última página).
+#
+# ── LO QUE SUMÓ LA 2.22 (la foto de despliegues) ─────────────────────────────────────────────────
+# · `definiciones`: `pipelines list --name N --project P` → `definiciones-P.json` filtrada por PREFIJO de nombre, sin
+#   distinguir mayúsculas (como Azure: «Acme Backend» también trae «Acme Backend Prod»).
+# · `builds`: `pipelines runs list --pipeline-ids ID --project P [--top N]` → `builds-ID.json`, cortada en N. El orden
+#   del fixture es el que llega: el guion no puede confiar en él.
+# · `corrida`: `pipelines runs show --id N --project P` → `corrida-N.json` (sin fixture sale 1).
+# · `timeline`: `devops invoke --area build --resource timeline --route-parameters project=P buildId=N`
+#   → `timeline-N.json` (sin fixture: `{records:[]}`, como una corrida que no llegó a correr nada).
 exec node - "$@" <<'JS'
 'use strict';
 const fs = require('fs');
@@ -88,6 +97,10 @@ else if (tiene('devops', 'invoke') && String(arg('--area')).toLowerCase() === 'w
 else if (tiene('devops', 'invoke') && String(arg('--area')).toLowerCase() === 'wit' && String(arg('--resource')).toLowerCase() === 'workitemtypestates') paso = 'estados';
 else if (tiene('devops', 'invoke') && String(arg('--area')).toLowerCase() === 'git' && String(arg('--resource')).toLowerCase() === 'pullrequests') paso = 'prs';
 else if (tiene('devops', 'invoke') && String(arg('--area')).toLowerCase() === 'wit' && String(arg('--resource')).toLowerCase() === 'workitemsbatch') paso = 'lote';
+else if (tiene('devops', 'invoke') && String(arg('--area')).toLowerCase() === 'build' && String(arg('--resource')).toLowerCase() === 'timeline') paso = 'timeline';
+else if (tiene('pipelines', 'runs', 'list')) paso = 'builds';
+else if (tiene('pipelines', 'runs', 'show')) paso = 'corrida';
+else if (tiene('pipelines', 'list')) paso = 'definiciones';
 else if (tiene('devops', 'security', 'group', 'membership', 'list')) paso = 'miembros';
 else if (tiene('devops', 'security', 'group', 'list')) paso = 'grupo';
 else if (tiene('devops', 'project', 'show')) paso = 'equipo';
@@ -188,6 +201,28 @@ switch (paso) {
     try { cuerpo = JSON.parse(archivos[arg('--in-file')] || ''); } catch { falla('--in-file no es JSON'); }
     if (!Array.isArray(cuerpo.ids) || cuerpo.ids.length > 200) falla('workitemsbatch: ids tiene que ser una lista de hasta 200');
     out({ count: cuerpo.ids.length, value: cuerpo.ids.map((id) => fixJson(`wi-${id}.json`, null)).filter(Boolean) });
+    break;
+  }
+  case 'definiciones': {
+    const n = String(arg('--name') || '').toLowerCase();
+    out(fixJson(`definiciones-${arg('--project')}.json`, []).filter((d) => String(d.name).toLowerCase().startsWith(n)));
+    break;
+  }
+  case 'builds': {
+    const top = Number(arg('--top') || 100);
+    out(fixJson(`builds-${arg('--pipeline-ids')}.json`, []).slice(0, top));
+    break;
+  }
+  case 'corrida': {
+    const f = fixJson(`corrida-${arg('--id')}.json`, null);
+    if (f) out(f);
+    falla(`la corrida ${arg('--id')} no existe`);
+    break;
+  }
+  case 'timeline': {
+    // un fixture vacío contesta vacío con salida 0: como Azure con una corrida cancelada antes de correr (2026-10-16)
+    if (leerFix(`timeline-${kv('--route-parameters').buildId}.json`) === '') process.exit(0);
+    out(fixJson(`timeline-${kv('--route-parameters').buildId}.json`, { records: [] }));
     break;
   }
   case 'grupo': {
