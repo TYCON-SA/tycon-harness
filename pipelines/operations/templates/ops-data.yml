@@ -17,6 +17,13 @@
 #     trae el arnés (los ejemplos públicos están en pipelines/operations/examples/).
 #   · cualquier otro archivo del repo de operaciones (salvo `pipelines/`, `README.md` y `.gitignore`) NO se trae, y se
 #     avisa nombrándolo: si hace falta, se suma a esta lista con un pedido al arnés.
+#   · la marca `.dashboard/applied-config.json` (story 2.29, decisión 12): qué archivos de configuración se aplicaron
+#     esta noche, con su identificador de objeto en el repo de operaciones —
+#     `{ "files": { "<ruta tal como la lee el arnés>": "<oid>" }, "ops_commit": "<sha corto>", "generated_at": "<UTC>" }`—.
+#     Sin configuración copiada, `files` queda `{}`. Así el sitio de la organización sabe qué configuración lee de
+#     verdad el nocturno (la sección Umbrales se edita sólo cuando la marca nombra su archivo). La marca entra en el
+#     commit local; a operaciones la sube el paso de guardar, que empuja `.dashboard` entero sólo al final de una noche
+#     verde: una noche rota no cambia lo que el sitio cree aplicado.
 #
 # Después:
 #   1. Lo traído queda en un commit LOCAL encima del arnés, que no se empuja. Guardar (push-nightly-data.js) toma HEAD
@@ -45,12 +52,25 @@ steps:
         rsync -a --delete "$O/$D/" "$S/$D/"
         ENTRIES+=("$D")
       done
+      APPLIED=()
       for F in "${CONFIG_FILES[@]}"; do
         [ -f "$O/$F" ] || continue
         mkdir -p "$(dirname "$S/$F")"
         cp -p "$O/$F" "$S/$F"
         ENTRIES+=("$F")
+        OID=$(git -C "$O" rev-parse "HEAD:$F") || red "no pude leer el identificador de $F en el repo de operaciones"
+        APPLIED+=("$F" "$OID")
       done
+      # la marca: qué configuración aplicó esta noche, con el identificador de cada archivo en operaciones (story 2.29,
+      # decisión 12). Sin configuración copiada, files queda {}. Viaja en el commit local; a operaciones la sube guardar.
+      mkdir -p "$S/.dashboard"
+      node -e '
+        const [commit, ...pairs] = process.argv.slice(1);
+        const files = {};
+        for (let i = 0; i < pairs.length; i += 2) files[pairs[i]] = pairs[i + 1];
+        process.stdout.write(JSON.stringify({ files, ops_commit: commit, generated_at: new Date().toISOString() }, null, 2) + "\n");
+      ' "$(git -C "$O" rev-parse --short HEAD)" ${APPLIED[@]+"${APPLIED[@]}"} > "$S/.dashboard/applied-config.json" || red "no pude dejar la marca de la configuración aplicada"
+      ENTRIES+=(.dashboard/applied-config.json)
       # lo demás no se trae: se nombra, para que nadie crea que se está leyendo
       IGNORED=$(cd "$O" && git ls-files | grep -Ev '^(\.dashboard/|inbox/|artifacts/|pipelines/|README\.md$|\.gitignore$)' | grep -vxF -f <(printf '%s\n' "${CONFIG_FILES[@]}") | head -n 20 || true)
       [ -z "$IGNORED" ] || echo "##vso[task.logissue type=warning]El repo de operaciones trae archivos que esta plantilla no lee (no se ponen encima del arnés): $(printf '%s' "$IGNORED" | tr '\n' ' ' | sed 's/##vso/## vso/g')"

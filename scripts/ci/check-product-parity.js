@@ -320,6 +320,35 @@ function sinProductosAProposito(cfg) {
   return { rc: 0, msg: `ℹ️ no hay productos declarados (${cfg.sin_productos.trim()}): no se comparó nada` };
 }
 
+/**
+ * La lectura de `diferencias_declaradas` (story 2.29, decisión P7): la que juzga cada noche y la que usa la pestaña
+ * Configuración del sitio para «Revisar» un cambio. Cada entrada exige `grupo`, `rasgo`, `motivo`, `fecha` y `revision`;
+ * una `revision` que no es AAAA-MM-DD no vence nunca (es un permiso) y se rechaza; `revision < hoy` va a `vencidas`
+ * (no ampara, y la comparación sigue), si no a `declaradas`. Devuelve `{ problemas: [{ path, message, consola }],
+ * declaradas: [entrada], vencidas: [{ grupo, rasgo, revision }] }`; con un problema, las listas quedan vacías.
+ */
+function leerDeclaradas(cfg, hoy) {
+  const out = { problemas: [], declaradas: [], vencidas: [] };
+  const lista = cfg && Array.isArray(cfg.diferencias_declaradas) ? cfg.diferencias_declaradas : [];
+  for (const [i, d] of lista.entries()) {
+    for (const campo of ['grupo', 'rasgo', 'motivo', 'fecha', 'revision']) {
+      if (!d || !d[campo]) {
+        const message = `una diferencia declarada no dice "${campo}"`;
+        return { problemas: [{ path: `diferencias_declaradas.${i}.${campo}`, message, consola: `${message} — sin motivo ni fecha no es una decisión, es un permiso` }], declaradas: [], vencidas: [] };
+      }
+    }
+    // 🔴 la revisión se compara como texto: una que no es AAAA-MM-DD («2026/09/01», «permanente») no vencía NUNCA y
+    // amparaba para siempre (revisión adversarial de la 2.25). Se trata como una declaración incompleta.
+    if (typeof d.revision !== 'string' || !DIA.test(d.revision)) {
+      const message = `la diferencia declarada ${d.grupo}/${d.rasgo} tiene una "revision" que no es AAAA-MM-DD`;
+      return { problemas: [{ path: `diferencias_declaradas.${i}.revision`, message, consola: `${message} (${JSON.stringify(d.revision)}) — así no vence nunca: es un permiso` }], declaradas: [], vencidas: [] };
+    }
+    if (d.revision < hoy) out.vencidas.push({ grupo: d.grupo, rasgo: d.rasgo, revision: d.revision });
+    else out.declaradas.push(d);
+  }
+  return out;
+}
+
 function main(argv0) {
   let argv;
   // Antes de leer las opciones el resultado no sabe adónde va: se busca `--out` a mano para poder dejarlo igual.
@@ -382,31 +411,19 @@ function main(argv0) {
       return terminar(o, R, 2, 'no_medido', `el grupo "${grupo}" tiene una entrada sin "ruta"`);
     }
   }
-  const declaradas = new Map();
-  for (const d of cfg.diferencias_declaradas || []) {
-    for (const campo of ['grupo', 'rasgo', 'motivo', 'fecha', 'revision']) {
-      if (!d[campo]) {
-        console.log(`🔴 una diferencia declarada no dice "${campo}" — sin motivo ni fecha no es una decisión, es un permiso`);
-        R.marcarTodas('no_medido', 'declaracion_incompleta');
-        return terminar(o, R, 1, 'no_medido', `una diferencia declarada no dice "${campo}"`);
-      }
-    }
-    // 🔴 la revisión se compara como texto: una que no es AAAA-MM-DD («2026/09/01», «permanente») no vencía NUNCA y
-    // amparaba para siempre (revisión adversarial de la 2.25). Se trata como una declaración incompleta.
-    if (typeof d.revision !== 'string' || !DIA.test(d.revision)) {
-      console.log(`🔴 la diferencia declarada ${d.grupo}/${d.rasgo} tiene una "revision" que no es AAAA-MM-DD (${JSON.stringify(d.revision)}) — así no vence nunca: es un permiso`);
-      R.marcarTodas('no_medido', 'declaracion_incompleta');
-      return terminar(o, R, 1, 'no_medido', `la diferencia declarada ${d.grupo}/${d.rasgo} tiene una "revision" que no es AAAA-MM-DD`);
-    }
-    // 🔴 vencida: no ampara, y la comparación SIGUE (story 2.25) — antes cortaba acá y no se comparaba nada más
-    if (d.revision < hoy) {
-      console.log(`🔴 la diferencia declarada ${d.grupo}/${d.rasgo} venció el ${d.revision} — o se cierra, o se re-declara con fecha nueva`);
-      R.res.vencidas.push({ grupo: d.grupo, rasgo: d.rasgo, revision: d.revision });
-      continue;
-    }
-    declaradas.set(`${d.grupo}/${d.rasgo}`, d);
-    R.res.declaradas.push({ grupo: d.grupo, rasgo: d.rasgo, revision: d.revision });
+  // la lectura de las diferencias declaradas es la de `leerDeclaradas`, la misma que usa la pestaña Configuración del
+  // sitio (story 2.29, decisión P7): dos validadores se separan solos
+  const ld = leerDeclaradas(cfg, hoy);
+  if (ld.problemas.length) {
+    const p = ld.problemas[0];
+    console.log(`🔴 ${p.consola}`);
+    R.marcarTodas('no_medido', 'declaracion_incompleta');
+    return terminar(o, R, 1, 'no_medido', p.message);
   }
+  for (const v of ld.vencidas) console.log(`🔴 la diferencia declarada ${v.grupo}/${v.rasgo} venció el ${v.revision} — o se cierra, o se re-declara con fecha nueva`);
+  R.res.vencidas.push(...ld.vencidas);
+  R.res.declaradas.push(...ld.declaradas.map((d) => ({ grupo: d.grupo, rasgo: d.rasgo, revision: d.revision })));
+  const declaradas = new Map(ld.declaradas.map((d) => [`${d.grupo}/${d.rasgo}`, d]));
   // cada declaración vencida cuenta en los repos de su grupo
   for (const v of R.res.vencidas) {
     const g = normalizarGrupo((cfg.grupos || {})[v.grupo]);
@@ -581,4 +598,4 @@ function main(argv0) {
 }
 
 if (require.main === module) process.exit(main(process.argv.slice(2)));
-module.exports = { main, bloqueRaiz, normalizarGrupo, configPorDefecto };
+module.exports = { main, bloqueRaiz, normalizarGrupo, configPorDefecto, leerDeclaradas };
