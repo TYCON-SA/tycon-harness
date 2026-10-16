@@ -108,7 +108,7 @@ const SHAPE = [
   '      fail-fast: false',
   '      matrix:',
   '        node: [24]',
-  '        part: [checks, suites-1-of-3, suites-2-of-3, suites-3-of-3]',
+  '        part: [checks, suites-1-of-5, suites-2-of-5, suites-3-of-5, suites-4-of-5, suites-5-of-5]',
   '    steps:',
   pinned('      - uses: ', 'actions/checkout'),
   '        with:',

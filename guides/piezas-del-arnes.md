@@ -332,7 +332,7 @@ pasó. No corre el detector (necesita la lista privada) ni lee secretos. Sirve e
 del equipo (dos): por eso la prueba nocturna de la copia corre el mismo guion en los dos lados y compara los veredictos.
 El workflow (`.github/workflows/ci.yml` en la copia) sólo lo llama, con
 Node 24 y partido en trabajos que corren a la vez (2026-10-14: entero tardaba ~30 min por Node; la parte `checks`
-y tres partes de las portables, `TYCON_PUBLIC_CI_PART`). **Un trabajo chico aparte, `installer-floor`, corre con Node
+y cinco partes de las portables, repartidas con los pesos medidos en GitHub (juego `github` de suites-weights.json), `TYCON_PUBLIC_CI_PART`). **Un trabajo chico aparte, `installer-floor`, corre con Node
 22**, el más viejo que acepta el instalador, sólo las suites de lo que corre con el Node del sistema antes de que el
 arnés tenga el suyo: el arranque, la actualización, el Node propio, la versión bajada y su número (2026-10-16). Por qué: desde que el arnés corre con su propio Node 24, todo lo demás corre siempre con 24 y la matriz de
 dos versiones costaba el doble sin medir nada; lo único que de verdad ve otro Node es lo que corre antes. Es
