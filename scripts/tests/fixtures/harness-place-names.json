@@ -88,7 +88,9 @@
     { "path": "scripts/setup/get-harness.sh", "member": "la carpeta del clon", "why": "sólo en la copia pública: el instalador de la portada, que el exportador escribe con el nombre del repo público ya puesto (en el interno lleva {{public-repo}}); es la carpeta del clon, no el lugar" },
     { "path": "scripts/setup/get-harness.ps1", "member": "la carpeta del clon", "why": "sólo en la copia pública: el gemelo para PowerShell del anterior" },
     { "path": "scripts/lib/repos-root.js", "member": "selftest", "why": "el clon de juguete del --selftest como carpeta real dentro de ~/.claude, con el nombre del lugar: no es el lugar de la máquina" },
-    { "path": "scripts/production/guard-libs/lib/repos-root.js", "member": "selftest", "why": "la copia propia del freno de producción (2026-10-14): el mismo clon de juguete del --selftest" }
+    { "path": "scripts/production/guard-libs/lib/repos-root.js", "member": "selftest", "why": "la copia propia del freno de producción (2026-10-14): el mismo clon de juguete del --selftest" },
+    { "path": "scripts/setup/npm/index.js", "member": "REPO", "why": "el instalador de npx (story 8.40): el repo de fábrica de donde se baja el arnés (org/nombre en GitHub). Es el nombre del repo, no el lugar del arnés en la máquina" },
+    { "path": "scripts/ci/check-public-workflow.js", "member": "--publisher", "why": "el aviso de npm-publish.yml nombra el publicador de confianza (org / repo / workflow): es el nombre del repo en GitHub, no el lugar" }
   ],
   "place_text": [
     { "path": "scripts/hooks/branch-guard-notice.js", "why": "el comando que el aviso de arranque le propone a la persona (harness.js doctor / update / rollback): un hook que el banco copia suelto" },
