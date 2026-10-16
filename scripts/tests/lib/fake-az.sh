@@ -27,7 +27,11 @@
 #   TYCON_AZ_FAIL=<paso>[:<patrón>][,…]   ese paso sale 1 (con el patrón: sólo si aparece en los
 #                                          argumentos o en los archivos leídos)
 #   TYCON_AZ_GARBAGE=<paso>[:<patrón>][,…]  ese paso sale 0 con texto que no es JSON
-# Pasos: version identidad wiql wi revisiones estados grupo miembros equipo iteracion crear comentario actualizar prs
+# Pasos: version identidad wiql wi revisiones estados grupo miembros equipo iteracion crear comentario actualizar prs lote
+#
+# ── LO QUE SUMÓ LA 2.23 (los pedidos asignados, para el sitio de la organización) ───────────────────────────────
+# · `lote`: `devops invoke --area wit --resource workitemsbatch --in-file <{ids, fields}>` → `{ count, value }` con el
+#   `wi-<id>.json` de cada id que tenga fixture (los que no, no vuelven: como Azure con un id borrado).
 #
 # ── LO QUE SUMÓ LA 4.5 (el estado de cada pedido) ────────────────────────────────────────────────
 # · `revisiones`: `devops invoke --area wit --resource revisions --route-parameters id=N` → `revisiones-N.json`
@@ -83,6 +87,7 @@ else if (tiene('devops', 'invoke') && String(arg('--area')).toLowerCase() === 'w
 else if (tiene('devops', 'invoke') && String(arg('--area')).toLowerCase() === 'wit' && String(arg('--resource')).toLowerCase() === 'revisions') paso = 'revisiones';
 else if (tiene('devops', 'invoke') && String(arg('--area')).toLowerCase() === 'wit' && String(arg('--resource')).toLowerCase() === 'workitemtypestates') paso = 'estados';
 else if (tiene('devops', 'invoke') && String(arg('--area')).toLowerCase() === 'git' && String(arg('--resource')).toLowerCase() === 'pullrequests') paso = 'prs';
+else if (tiene('devops', 'invoke') && String(arg('--area')).toLowerCase() === 'wit' && String(arg('--resource')).toLowerCase() === 'workitemsbatch') paso = 'lote';
 else if (tiene('devops', 'security', 'group', 'membership', 'list')) paso = 'miembros';
 else if (tiene('devops', 'security', 'group', 'list')) paso = 'grupo';
 else if (tiene('devops', 'project', 'show')) paso = 'equipo';
@@ -175,6 +180,14 @@ switch (paso) {
   case 'prs': {
     const skip = Number(kv('--query-parameters').$skip || 0);
     out(fixJson(`prs-${skip}.json`, { count: 0, value: [] }));
+    break;
+  }
+  case 'lote': {
+    // story 2.23: los campos de varios work items en un pedido (POST wit/workitemsbatch, como Azure: hasta 200 ids)
+    let cuerpo;
+    try { cuerpo = JSON.parse(archivos[arg('--in-file')] || ''); } catch { falla('--in-file no es JSON'); }
+    if (!Array.isArray(cuerpo.ids) || cuerpo.ids.length > 200) falla('workitemsbatch: ids tiene que ser una lista de hasta 200');
+    out({ count: cuerpo.ids.length, value: cuerpo.ids.map((id) => fixJson(`wi-${id}.json`, null)).filter(Boolean) });
     break;
   }
   case 'grupo': {

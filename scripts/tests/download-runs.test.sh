@@ -51,7 +51,12 @@ http.createServer((req, res) => {
   const modoLista = leer('modo-lista', ''), modoGet = leer('modo-get', '');
   if (listar && modoLista) { res.writeHead(Number(modoLista)); return res.end('<Error><Code>X</Code></Error>'); }
   if (!listar && modoGet) { res.writeHead(Number(modoGet)); return res.end('<Error><Code>AuthorizationPermissionMismatch</Code></Error>'); }
-  if (leer('modo', 'ok') === '403' || req.headers.authorization !== `Bearer ${leer('token', '')}`) {
+  // story 2.23: con `sas-sig`, el buzón acepta también la firma en la consulta (la SAS de lectura del sitio), sin cabecera
+  // story 2.23: `lista-html` = el listado contesta 200 con algo que no es un listado (la página de un proxy)
+  if (u.searchParams.get('comp') === 'list' && leer('lista-html', '')) { res.writeHead(200, { 'content-type': 'text/html' }); return res.end('<html><body>proxy</body></html>'); }
+  const sasSig = leer('sas-sig', '');
+  const conSas = sasSig && u.searchParams.get('sig') === sasSig && !req.headers.authorization;
+  if (leer('modo', 'ok') === '403' || (req.headers.authorization !== `Bearer ${leer('token', '')}` && !conSas)) {
     res.writeHead(403); return res.end('<?xml version="1.0"?><Error><Code>AuthorizationPermissionMismatch</Code></Error>');
   }
   const partes = decodeURIComponent(u.pathname).split('/').filter(Boolean);
@@ -942,6 +947,63 @@ for por in volcado place; do
   echo "$(uniones "${T}")" | python3 -c "import json,sys; d=json.load(sys.stdin)['carpetas']; assert d['macbook-pro']['estado']=='siguio_recibiendo' and d['macbook-pro']['nueva'] is None, d; assert 'maq-suelta' not in d and 'macbook-pro-1a2b3c4d' not in d, d" 2>/dev/null \
     && ok "2.28-T37 la vieja recibió un ${por} después de la mudanza: siguio_recibiendo, sin unir; la que nadie declara no aparece" || mal "2.28-T37 ${por}: rc=${RC} $(uniones "${T}")"
 done
+
+# ── T23 (story 2.23) · Bajar_ConOtraCredencial_SinHilos ─────────────────────────────────────────
+# El sitio de la organización llama a bajar() con sus opciones: la cuenta, el contenedor, la SAS de LECTURA y la carpeta.
+# No lee corridas-buzon.json (no hay), no mira las integraciones (apagadas), no llama a az (no hay), y baja sólo los
+# volcados y los registros, nunca hilos ni cambios. La firma va en la consulta, sin cabecera Authorization.
+# 🔴 rojo previo: bajar() leía corridas-buzon.json y la sesión de az; sin ellos no bajaba nada (y con ellos bajaba hilos).
+T="${BASE}/t23"; buzon "${T}/b"; SIG="firma-$$"; echo "${SIG}" > "${T}/b/sas-sig"
+blob "${T}/b" "maq-a-11111111/2.1-2026-10-15T1000.json" 700
+blob "${T}/b" "maq-a-11111111/2.1-2026-10-15T1000.hilo.jsonl.gz" 3000
+blob "${T}/b" "maq-a-11111111/2.1-2026-10-15T1000.cambio.json.gz" 2000
+blob "${T}/b" "maq-a-11111111/registros/gates.log.gz" 300
+blob "${T}/b" "maq-a-11111111/v20261021T100000000Z/2.1-2026-10-15T1000.json" 720   # la 2.24: una versión más nueva
+SITIO="${T}/sitio/buzon"
+TYCON_MAILBOX=0 TYCON_AZ_BIN=/nonexistent/az node -e '
+const { bajar } = require(process.argv[1]);
+const sas = `sv=2023-11-03&sr=c&sp=rl&si=lectura&se=2099-01-01T00:00:00Z&sig=${process.argv[4]}`;
+bajar({ cuenta: "acmeruns", contenedor: "corridas", credencial: { sas }, dir: process.argv[3], sinHilos: true, urlBase: process.argv[2] })
+  .then(({ codigo, res }) => { console.log(JSON.stringify({ codigo, estado: res.estado, bajados: res.bajados, omitidos: res.omitidos })); process.exit(codigo); });
+' "${BAJAR}" "${URL_BUZON}" "${SITIO}" "${SIG}" > "${T}/out.txt" 2> "${T}/err.txt" < /dev/null
+RC=$?
+if [ "${RC}" -eq 0 ] && [ -f "${SITIO}/maq-a-11111111/2.1-2026-10-15T1000.json" ] && [ -f "${SITIO}/maq-a-11111111/registros/gates.log.gz" ] \
+  && [ ! -e "${SITIO}/maq-a-11111111/2.1-2026-10-15T1000.hilo.jsonl.gz" ] && [ ! -e "${SITIO}/maq-a-11111111/2.1-2026-10-15T1000.cambio.json.gz" ]; then
+  ok "T23 con la SAS de lectura: bajó el volcado y el registro, ni el hilo ni el cambio"
+else mal "T23 rc=${RC} · $(cat "${T}/out.txt") · $(head -3 "${T}/err.txt")"; fi
+cmp -s "${T}/b/blobs/corridas/maq-a-11111111/v20261021T100000000Z/2.1-2026-10-15T1000.json" "${SITIO}/maq-a-11111111/2.1-2026-10-15T1000.json" \
+  && ok "T23 con dos versiones (2.24), el sitio baja la más nueva a la ruta de siempre" || mal "T23 la versión bajada no es la más nueva"
+if grep -q '"auth":"Bearer' "${T}/b/pedidos.jsonl" || ! grep -q "sig=${SIG}" "${T}/b/pedidos.jsonl"; then
+  mal "T23 la firma tiene que ir en la consulta y sin cabecera Authorization: $(head -2 "${T}/b/pedidos.jsonl")"
+else ok "T23 la firma va en la consulta, sin cabecera Authorization"; fi
+[ ! -e "${HOME}/.claude" ] && ok "T23 no tocó la casa de esta máquina (ni índice ni sello fuera de la carpeta del sitio)" || mal "T23 escribió en la HOME de juguete"
+# una SAS que escribe: no se usa, y no sale un solo pedido al buzón
+T="${BASE}/t23b"; buzon "${T}/b"; echo "x" > "${T}/b/sas-sig"
+TYCON_MAILBOX=0 node -e '
+const { bajar } = require(process.argv[1]);
+bajar({ cuenta: "acmeruns", contenedor: "corridas", credencial: { sas: "sv=1&sr=c&sp=rlw&si=p&se=2099-01-01T00:00:00Z&sig=x" }, dir: process.argv[3], urlBase: process.argv[2] })
+  .then(({ codigo, res }) => { console.log(res.estado); process.exit(codigo); });
+' "${BAJAR}" "${URL_BUZON}" "${T}/sitio/buzon" > "${T}/out.txt" 2>&1 < /dev/null
+RC=$?
+[ "${RC}" -eq 2 ] && grep -q llave_con_escritura "${T}/out.txt" && [ ! -s "${T}/b/pedidos.jsonl" ] \
+  && ok "T23 una SAS que escribe no se usa: llave_con_escritura y ningún pedido al buzón" || mal "T23b rc=${RC} · $(cat "${T}/out.txt")"
+# una cuenta que no tiene la forma de Azure Storage armaría otro host con la credencial adentro: no se manda nada
+# (revisión de seguridad de la 2.23; rojo previo: `https://${cuenta}.blob.core.windows.net` con «host.malo/x?»)
+T="${BASE}/t23c"; mkdir -p "${T}"
+TYCON_MAILBOX=0 node -e '
+const { bajar } = require(process.argv[1]);
+bajar({ cuenta: "host.malo/x?", contenedor: "corridas", credencial: { sas: "sv=1&sr=c&sp=rl&si=p&se=2099-01-01T00:00:00Z&sig=x" }, dir: process.argv[2] })
+  .then(({ codigo, res }) => { console.log(res.estado); process.exit(codigo); });
+' "${BAJAR}" "${T}/sitio/buzon" > "${T}/out.txt" 2>&1 < /dev/null
+RC=$?
+[ "${RC}" -eq 2 ] && grep -q config_rota "${T}/out.txt" && [ ! -e "${T}/sitio" ] \
+  && ok "T23 una cuenta sin la forma de Azure Storage: config_rota, sin pedir nada ni crear la carpeta" || mal "T23c rc=${RC} · $(cat "${T}/out.txt")"
+# un 200 al listar que no es un listado (la página de un proxy) no es «el buzón está vacío y al día» (cazador de fallos
+# silenciosos de la 2.23; rojo previo: 0 blobs, al_dia, completo true)
+T="${BASE}/t23d"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token; echo 1 > "${T}/b/lista-html"
+bajar "${T}" "${T}/bin/az"
+[ "${RC}" -eq 1 ] && [ "$(campo "${T}" estado)" = "servicio_fallo" ] && [ "$(campo "${T}" completo)" = "false" ] \
+  && ok "T23 un listado que no es un listado: servicio_fallo, exit 1, completo false" || mal "T23d rc=${RC} estado=$(campo "${T}" estado) completo=$(campo "${T}" completo)"
 
 echo
 [ "${FALLOS}" -eq 0 ] && { echo "bajar-corridas: todo verde"; exit 0; } || { echo "${FALLOS} fallo(s)"; exit 1; }

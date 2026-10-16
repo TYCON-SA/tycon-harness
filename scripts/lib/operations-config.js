@@ -14,7 +14,11 @@
 //     "owners": { "default": <identidad>,                    obligatorio — a quién, cuando no se deduce un dueño
 //                 "by_project": { "<proyecto>": <identidad> } },  opcional — el responsable de cada proyecto
 //     "reviewers": { "dependencies": [<identidad>, …],      opcional — quiénes revisan los pedidos de dependencias
-//                    "watcher": [<identidad>, …] },          opcional — y los del vigilante
+//                    "watcher": [<identidad>, …] },         opcional — y los del vigilante
+//     "site": { "maintainers": [<correo>, …],                opcional — quiénes mantienen el sitio de la organización
+//               "mailbox": { "provider": "azure-blob",        opcional — el buzón de corridas que lee el sitio
+//                            "account": <texto>, "container": <texto>, "threads": <bool> },
+//               "refresh_minutes": <5 a 120> } },             opcional — cada cuánto se releen las fuentes (story 2.23)
 //     "people": {                                            opcional — quién es quién (story 2.28)
 //       "machines": { "<máquina>": {                         opcional — cada máquina confirmada por un mantenedor
 //           "person": <correo>,                              la persona dueña de las corridas de esa máquina
@@ -23,7 +27,9 @@
 //           "confirmed_on": "AAAA-MM-DD" } },                y qué día
 //       "projects": { "<correo>": {                          opcional — corrige «dónde trabaja» cada persona
 //           "add": [<producto>, …],                          productos que se suman a los deducidos
-//           "remove": [<producto>, …] } } } }                y los que se sacan (un producto no va en las dos)
+//           "remove": [<producto>, …] } } } }              y los que se sacan (un producto no va en las dos)
+//   En `site`, una clave con forma de secreto (token, secret, sas, password, key…) es un problema en cualquier nivel: los
+//   secretos del sitio van en las variables de su plataforma.
 //   <identidad> = el nombre único de la plataforma: el principalName de Azure (el que viaja en System.AssignedTo) o
 //   el usuario de GitHub. Nunca un chat de Telegram ni un token: esos siguen en el grupo de variables secreto.
 //   <máquina> = la carpeta de la máquina en el buzón de corridas, con la forma FORMA_MAQUINA (minúsculas, sin espacios).
@@ -41,18 +47,30 @@
 const fs = require('fs');
 
 const VERSION = 1;
-const KEYS = ['version', 'owners', 'reviewers', 'people'];
+const KEYS = ['version', 'owners', 'reviewers', 'site', 'people'];
 const OWNER_KEYS = ['default', 'by_project'];
 const REVIEWER_KEYS = ['dependencies', 'watcher'];
+// story 2.23: el sitio de la organización. Todas opcionales; la 2.29 la edita desde el sitio, la 2.30 suma `url`.
+const SITE_KEYS = ['maintainers', 'mailbox', 'refresh_minutes'];
+const MAILBOX_KEYS = ['provider', 'account', 'container', 'threads'];
+const MAILBOX_PROVIDERS = ['azure-blob'];
+const REFRESH_MIN = 5;
+const REFRESH_MAX = 120;
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const ACCOUNT = /^[a-z0-9]{3,24}$/;
+const CONTAINER = /^[a-z0-9](?:[a-z0-9-]{1,61})[a-z0-9]$/;
+// Una clave con forma de secreto, en cualquier nivel de `site`: los secretos van a las variables de la plataforma, nunca a
+// un archivo que cambia por pedido y que leen los nocturnos.
+const SECRET_KEY = /token|secret|sas|password|passwd|pwd|key|credential/i;
+// Una identidad: sin espacios ni controles; un principalName de Azure (usuario@dominio) o un usuario de GitHub.
+const IDENTITY = /^[^\s@]+(@[^\s@]+)?$/;
+// story 2.28: quién es quién
 const PEOPLE_KEYS = ['machines', 'projects'];
 const MACHINE_KEYS = ['person', 'reported_sha256', 'confirmed_by', 'confirmed_on'];
 const PROJECT_KEYS = ['add', 'remove'];
-// Una identidad: sin espacios ni controles; un principalName de Azure (usuario@dominio) o un usuario de GitHub.
-const IDENTITY = /^[^\s@]+(@[^\s@]+)?$/;
 // El nombre de la carpeta de una máquina en el buzón. COPIADA de scripts/metrics/upload-runs.js (no se importa: este
 // lector viaja solo y no carga nada fuera de fs). T23 de scripts/tests/team-repos.test.js exige que las dos sean iguales.
 const FORMA_MAQUINA = /^[a-z0-9][a-z0-9._-]*$/;
-const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const SHA256 = /^[0-9a-f]{64}$/;
 const DAY = /^(\d{4})-(\d{2})-(\d{2})$/;
 
@@ -67,6 +85,49 @@ function identityProblems(v, at) {
 
 function unknownKeys(obj, allowed, at) {
   return Object.keys(obj).filter((k) => !comment(k) && !allowed.includes(k)).map((k) => ({ path: at ? `${at}.${k}` : k, message: 'clave desconocida' }));
+}
+
+/** Las claves de `obj` (y de sus objetos, en cualquier nivel) que no van: con forma de secreto o desconocidas. */
+function siteKeyProblems(obj, allowed, at) {
+  const problems = [];
+  for (const k of Object.keys(obj)) {
+    if (comment(k)) continue;
+    const here = `${at}.${k}`;
+    if (SECRET_KEY.test(k)) { problems.push({ path: here, message: 'clave con forma de secreto: los secretos van en las variables de la plataforma del sitio, nunca en operations.json' }); continue; }
+    if (allowed && allowed.includes(k)) continue;
+    problems.push({ path: here, message: 'clave desconocida' });
+    if (isObject(obj[k])) problems.push(...siteKeyProblems(obj[k], null, here));
+  }
+  return problems;
+}
+
+function siteProblems(site) {
+  if (!isObject(site)) return [{ path: 'site', message: 'tiene que ser un objeto' }];
+  const problems = siteKeyProblems(site, SITE_KEYS, 'site');
+  if (site.maintainers !== undefined) {
+    if (!Array.isArray(site.maintainers)) problems.push({ path: 'site.maintainers', message: 'tiene que ser una lista de correos' });
+    else site.maintainers.forEach((m, i) => {
+      if (typeof m !== 'string' || !EMAIL.test(m)) problems.push({ path: `site.maintainers.${i}`, message: `«${typeof m === 'string' ? m : JSON.stringify(m)}» no es un correo` });
+    });
+  }
+  const mb = site.mailbox;
+  if (mb !== undefined) {
+    if (!isObject(mb)) problems.push({ path: 'site.mailbox', message: 'tiene que ser un objeto { provider, account, container }' });
+    else {
+      problems.push(...siteKeyProblems(mb, MAILBOX_KEYS, 'site.mailbox'));
+      if (!MAILBOX_PROVIDERS.includes(mb.provider)) problems.push({ path: 'site.mailbox.provider', message: `tiene que ser uno de: ${MAILBOX_PROVIDERS.join(', ')}` });
+      // 🔴 la cuenta y el contenedor arman el host y la ruta adonde va la credencial del buzón: sólo la forma de Azure
+      //    Storage (la misma que exige upload-runs.js). Un «host.malo/x?» mandaría la SAS o el token a otro servidor.
+      if (typeof mb.account !== 'string' || !ACCOUNT.test(mb.account)) problems.push({ path: 'site.mailbox.account', message: 'tiene que tener la forma de una cuenta de almacenamiento (3 a 24 minúsculas o números)' });
+      if (typeof mb.container !== 'string' || !CONTAINER.test(mb.container)) problems.push({ path: 'site.mailbox.container', message: 'tiene que tener la forma de un contenedor (3 a 63 minúsculas, números o guiones)' });
+      if (mb.threads !== undefined && typeof mb.threads !== 'boolean') problems.push({ path: 'site.mailbox.threads', message: 'tiene que ser true o false' });
+    }
+  }
+  const rm = site.refresh_minutes;
+  if (rm !== undefined && (!Number.isInteger(rm) || rm < REFRESH_MIN || rm > REFRESH_MAX)) {
+    problems.push({ path: 'site.refresh_minutes', message: `tiene que ser un entero de ${REFRESH_MIN} a ${REFRESH_MAX} (es ${JSON.stringify(rm)})` });
+  }
+  return problems;
 }
 
 function emailProblems(v, at) {
@@ -172,7 +233,7 @@ function validate(doc) {
       }
     }
   }
-
+  if (doc.site !== undefined) problems.push(...siteProblems(doc.site));
   if (doc.people !== undefined) problems.push(...peopleProblems(doc.people));
   return problems;
 }
@@ -203,7 +264,7 @@ function ownerFor(data, project) {
   return Object.prototype.hasOwnProperty.call(bp, project) ? bp[project] : data.owners.default;
 }
 
-module.exports = { VERSION, KEYS, OWNER_KEYS, REVIEWER_KEYS, PEOPLE_KEYS, MACHINE_KEYS, PROJECT_KEYS, FORMA_MAQUINA, parse, load, ownerFor };
+module.exports = { VERSION, KEYS, OWNER_KEYS, REVIEWER_KEYS, SITE_KEYS, MAILBOX_PROVIDERS, REFRESH_MIN, REFRESH_MAX, EMAIL, ACCOUNT, CONTAINER, PEOPLE_KEYS, MACHINE_KEYS, PROJECT_KEYS, FORMA_MAQUINA, parse, load, ownerFor };
 
 if (require.main === module) {
   const args = process.argv.slice(2);

@@ -53,6 +53,11 @@
  * carpeta vieja de una máquina es la historia de qué carpeta nueva `<nombre>-<código>` (ver `carpetasDeMaquina`). Sin
  * correos: el reductor, la poda y la vista leen ese archivo y no abren `place.json`.
  *
+ * Desde el sitio de la organización (story 2.23): `bajar({ cuenta, contenedor, credencial: { sas } | { managed: true },
+ * dir, sinHilos, urlBase })` baja a `dir` con esa credencial y NO lee corridas-buzon.json, ni las integraciones de la
+ * máquina, ni usa az. La SAS tiene que ser sólo de lectura (`negativaDeLectura`): cualquier otra no se usa y sale
+ * `llave_con_escritura` sin un solo pedido al buzón. Con la SAS, la firma va en la consulta y sin cabecera Authorization.
+ *
  * Contrato de salida:
  *   0 → bajó, estaba al día, o esta máquina no puede leer el buzón (sin az / sin sesión / sin rol)
  *   1 → pudo pedir permiso pero no pudo bajar (sin red, el servicio falló, contenedor inexistente, algo
@@ -147,14 +152,19 @@ function formaDelNombre(nombre) {
   return { maquina, archivo, version: null };
 }
 
-/** Un GET con token. Resuelve { status, cuerpo, cabeceras } o { error } — nunca rechaza. */
-function pedir(url, token, timeoutMs) {
+/**
+ * Un GET con la credencial. Resuelve { status, cuerpo, cabeceras } o { error } — nunca rechaza. `cred` es el token (texto,
+ * va como Bearer) o `{ sas }` (story 2.23: la firma va en la consulta y NO hay cabecera Authorization).
+ */
+function pedir(url, cred, timeoutMs) {
   return new Promise((resolve) => {
-    const u = new URL(url);
+    const sas = cred && typeof cred === 'object' && cred.sas;
+    const u = new URL(sas ? `${url}${url.includes('?') ? '&' : '?'}${cred.sas}` : url);
     const mod = u.protocol === 'http:' ? http : https;
     let hecho = false;
     const fin = (r) => { if (!hecho) { hecho = true; resolve(r); } };
-    const req = mod.request(u, { method: 'GET', headers: { Authorization: `Bearer ${token}`, 'x-ms-version': X_MS_VERSION }, timeout: timeoutMs }, (res) => {
+    const headers = sas ? { 'x-ms-version': X_MS_VERSION } : { Authorization: `Bearer ${cred}`, 'x-ms-version': X_MS_VERSION };
+    const req = mod.request(u, { method: 'GET', headers, timeout: timeoutMs }, (res) => {
       const trozos = [];
       res.on('data', (c) => trozos.push(c));
       res.on('end', () => fin({ status: res.statusCode, cuerpo: Buffer.concat(trozos), cabeceras: res.headers }));
@@ -196,12 +206,17 @@ async function listarTodo(base, token, cfg) {
     if (r.status === 401 || r.status === 403) return { permiso: true, motivo: `esta cuenta de az no tiene el rol de lectura sobre el buzón (${r.status}): sólo lo lee quien fue autorizado` };
     if (r.status === 404) return { estado: 'sin_contenedor', motivo: `el contenedor ${cfg.contenedor} no existe en ${cfg.cuenta} (404)` };
     if (r.status !== 200) return { estado: 'servicio_fallo', motivo: `el buzón contestó ${r.status} al listar: no se bajó nada` };
-    const pagina = leerListado(r.cuerpo.toString('utf8'));
+    const cuerpo = r.cuerpo.toString('utf8');
+    // un 200 que no es un listado (la página de un proxy, una respuesta cortada) no es «el buzón está vacío»
+    if (!/<EnumerationResults[\s>]/.test(cuerpo)) return { estado: 'servicio_fallo', motivo: 'el buzón contestó 200 al listar con algo que no es un listado: no se bajó nada' };
+    const pagina = leerListado(cuerpo);
     blobs.push(...pagina.blobs);
-    if (!pagina.siguiente) break;
+    if (!pagina.siguiente) return { blobs };
     marcador = pagina.siguiente;
   }
-  return { blobs };
+  // 🔴 mil páginas y todavía hay más: el listado no está entero, y un listado a medias no se baja como si lo fuera
+  //    (cazador de fallos silenciosos de la 2.23)
+  return { estado: 'servicio_fallo', motivo: 'el listado del buzón pasó las 1000 páginas sin terminar: no se bajó nada' };
 }
 
 // story 2.24: la versión del arnés que trae «nombre nuevo por subida». Una máquina que declara en su place.json una
@@ -422,6 +437,28 @@ function escribirCarpetasDeMaquina(espejoDir) {
   catch (e) { return `no se pudo escribir .carpetas-de-maquina.json (${e.code || 'error'})`; }
 }
 
+/**
+ * story 2.23: ¿esta SAS es SÓLO de lectura? null si sí; si no, el motivo. Es el chequeo de `negativaDeLaLlave` de la
+ * subida, al revés: se acepta sólo una SAS de CONTENEDOR (`sr=c`, sin `ss`/`srt`), con permisos dentro de leer y listar
+ * y con listar (`sp` ⊆ {r, l}, con `l`), atada a una política guardada (`si`) y no vencida (`se`). Lista blanca: una
+ * letra nueva de permiso que no conocemos tampoco pasa.
+ */
+function negativaDeLectura(sas, ahora = Date.now()) {
+  const p = new URLSearchParams(String(sas || '').replace(/^\?/, ''));
+  // un parámetro repetido no se puede juzgar: este chequeo lee el primero y el servicio podría leer otro
+  const claves = [...p.keys()];
+  if (claves.length !== new Set(claves).size) return 'la SAS del buzón repite un parámetro: no se puede saber qué permite';
+  if (!p.get('sig')) return 'la SAS del buzón no trae firma (sig): no es una llave';
+  if (p.has('ss') || p.has('srt')) return 'la SAS del buzón es de CUENTA (ss/srt): sólo se acepta una SAS de contenedor';
+  if (p.get('sr') !== 'c') return 'la SAS del buzón no es de contenedor (sr=c)';
+  const sp = p.get('sp') || '';
+  if (!sp || /[^rl]/.test(sp) || !sp.includes('l')) return `la SAS del buzón permite más que leer y listar, o no lista («${sp}»): no se usa`;
+  if (!p.get('si')) return 'la SAS del buzón no está atada a una política guardada (si): no se puede revocar sin rotar la cuenta';
+  const se = Date.parse(p.get('se') || '');
+  if (!Number.isFinite(se) || se <= ahora) return 'la SAS del buzón venció (se)';
+  return null;
+}
+
 async function bajar(opts = {}) {
   const res = { bajado: false, estado: null, motivo: null, codigo: null, completo: false, blobs: 0, bajados: 0, bytes: 0, al_dia: 0, ignorados: 0, ignorados_nombres: [], omitidos: 0, versiones_viejas: 0, versiones_incompletas: 0, sin_tiempo: 0, aviso: null };
   const log = (m) => { if (opts.log) opts.log(m); };
@@ -439,21 +476,35 @@ async function bajar(opts = {}) {
   const sinHilos = opts.sinHilos === true;
 
   const where = DONDE;
-  const dirBuzon = path.resolve(readEnv('TYCON_MAILBOX_DIR', { where }) || path.join(CASA_PIPELINE, 'corridas-buzon'));
+  // story 2.23: con `cuenta` en las opciones, la bajada es la del sitio de la organización — la cuenta, el contenedor, la
+  // credencial y la carpeta vienen de quien llama; NO se lee corridas-buzon.json, ni las integraciones de la máquina,
+  // ni se usa az (la imagen del sitio no lo trae).
+  const delSitio = typeof opts.cuenta === 'string' && opts.cuenta !== '';
+  const dirBuzon = path.resolve(delSitio ? opts.dir : (readEnv('TYCON_MAILBOX_DIR', { where }) || path.join(CASA_PIPELINE, 'corridas-buzon')));
   const casa = path.dirname(dirBuzon);
-  const rutaIndice = path.resolve(readEnv('TYCON_DOWNLOADS_LOG', { where }) || path.join(casa, 'mailbox-downloads.json'));
+  const rutaIndice = path.resolve(delSitio ? path.join(casa, 'mailbox-downloads.json') : (readEnv('TYCON_DOWNLOADS_LOG', { where }) || path.join(casa, 'mailbox-downloads.json')));
 
-  // 0 · las integraciones (story 8.3, AC 9/10): el buzón apagado → exit 0 y una línea; y bajar necesita la sesión de az,
-  //     así que Azure DevOps apagada → exit 0 y una línea. Configuración rota → exit 2 con archivo, clave y motivo.
-  for (const llave of ['mailbox', 'ado']) {
-    const integ = integracionBuzon(llave);
-    if (integ.error) { log(integ.error); return fin(2, 'config_rota', integ.error); }
-    if (!integ.prendida) { log(integ.apagada); return fin(0, 'apagado', integ.apagada); }
+  let cfg;
+  if (delSitio) {
+    if (!opts.dir || typeof opts.contenedor !== 'string' || !opts.contenedor) return fin(2, 'config_rota', 'la bajada del sitio necesita cuenta, contenedor y carpeta');
+    // 🔴 la cuenta y el contenedor arman el host adonde va la credencial: sólo la forma de Azure Storage (la misma que
+    //    leerConfig exige en el camino de las máquinas). Antes de pedir nada y antes de crear la carpeta.
+    if (!/^[a-z0-9]{3,24}$/.test(opts.cuenta) || !/^[a-z0-9](?:[a-z0-9-]{1,61})[a-z0-9]$/.test(opts.contenedor)) {
+      return fin(2, 'config_rota', 'la cuenta o el contenedor del buzón no tienen la forma de Azure Storage: no se manda la credencial');
+    }
+    cfg = { cuenta: opts.cuenta, contenedor: opts.contenedor, tenant: '' };
+  } else {
+    // 0 · las integraciones (story 8.3, AC 9/10): el buzón apagado → exit 0 y una línea; y bajar necesita la sesión de az,
+    //     así que Azure DevOps apagada → exit 0 y una línea. Configuración rota → exit 2 con archivo, clave y motivo.
+    for (const llave of ['mailbox', 'ado']) {
+      const integ = integracionBuzon(llave);
+      if (integ.error) { log(integ.error); return fin(2, 'config_rota', integ.error); }
+      if (!integ.prendida) { log(integ.apagada); return fin(0, 'apagado', integ.apagada); }
+    }
+    const lc = leerConfig(['cuenta', 'contenedor', 'tenant']);
+    if (!lc.cfg) return fin(1, lc.estado, lc.motivo);
+    cfg = lc.cfg;
   }
-
-  const lc = leerConfig(['cuenta', 'contenedor', 'tenant']);
-  if (!lc.cfg) return fin(1, lc.estado, lc.motivo);
-  const { cfg } = lc;
 
   // Sin permiso para leer: exit 0, sin carpeta, una vez por día.
   const sinPermiso = (estado, motivo) => {
@@ -462,10 +513,21 @@ async function bajar(opts = {}) {
     return fin(0, estado, motivo);
   };
 
-  const tk = tokenDeAz(cfg.tenant.trim());
-  if (!tk.token) return sinPermiso(tk.estado, tk.motivo);
+  // La credencial: la sesión de az (la máquina de quien tiene el rol) o, para el sitio, la que pasa quien llama —una SAS
+  // de sólo lectura, o la identidad administrada de la plataforma (scripts/site/cloud/azure.js)—.
+  let tk;
+  const cred = opts.credencial || {};
+  if (!delSitio) tk = tokenDeAz(cfg.tenant.trim());
+  else if (typeof cred.sas === 'string') {
+    const negativa = negativaDeLectura(cred.sas);
+    if (negativa) { log(negativa); return fin(2, 'llave_con_escritura', negativa); }
+    tk = { token: { sas: cred.sas.replace(/^\?/, '') } };
+  } else if (cred.managed === true) {
+    tk = await require(path.join(__dirname, '..', 'site', 'cloud', 'azure.js')).tokenDeIdentidad('https://storage.azure.com/');
+  } else return fin(2, 'config_rota', 'la bajada del sitio necesita una credencial: { sas } o { managed: true }');
+  if (!tk.token) return delSitio ? fin(1, tk.estado || 'sin_permiso', tk.motivo) : sinPermiso(tk.estado, tk.motivo);
 
-  const base = `${urlBase(cfg)}/${encodeURIComponent(cfg.contenedor)}`;
+  const base = `${String(delSitio && opts.urlBase ? opts.urlBase : urlBase(cfg)).replace(/\/+$/, '')}/${encodeURIComponent(cfg.contenedor)}`;
   const inicio = Date.now();
   const tope = Number.isFinite(opts.budgetMs) ? opts.budgetMs : 120000;
 
@@ -656,7 +718,7 @@ async function bajar(opts = {}) {
   return fin(0, res.bajados ? 'bajado' : (res.sin_tiempo ? 'sin_tiempo' : 'al_dia'));
 }
 
-module.exports = { bajar, informeDeReescrituras, leerListado, formaDelNombre, nombreMostrable, compararVersiones, VERSION_SOLO_CREAR, carpetasDeMaquina };
+module.exports = { bajar, informeDeReescrituras, leerListado, formaDelNombre, nombreMostrable, compararVersiones, VERSION_SOLO_CREAR, negativaDeLectura, carpetasDeMaquina };
 
 if (require.main === module) {
   require('../lib/legacy-names.js').aliasArgv('scripts/metrics/download-runs.js');
