@@ -94,22 +94,14 @@ for b in az engram codegraph codex claude; do
 done
 PATH="$BIN" command -v node >/dev/null 2>&1 || { echo "❌ suites-portables: no quedó node en el PATH armado"; exit 1; }
 
-# ── las skills de terceros, ANTES de lanzar nada en paralelo ──────────────────────────────────────
-#    Algunas suites (harness-install, install-third-party) las ponen en skills/ del árbol mientras otras corren. Una
-#    suite que compara dos instalaciones (installer-shared-pieces S11) las ve aparecer entre la primera y la segunda, y
-#    da rojo según con quién le toque correr (story 8.40, DEF-8.40-carrera-skills-de-terceros). Con el árbol ya completo,
-#    nadie cambia skills/ a mitad de camino. Con una HOME temporal, el estado del paso no cae en la de quien corre.
-mkdir -p "$T/third-party-home"
-HOME="$T/third-party-home" node "$RAIZ/scripts/publishing/install-third-party.js" --repo "$RAIZ" 2>&1 | sed 's/^/suites-portables: /'
-
 # ── ninguna suite escribe en el árbol: skills/ ni el .bench/ del banco ──────────────────────────────────────────
-#    La foto se toma DESPUÉS de las de terceros y se compara al final: una suite que deja (o borra) algo ahí le cambia
-#    el árbol a las que corren a la vez. Pasó con integrations-off y no-hardcoded-paths, que corrían el instalador con
+#    La foto se toma antes de lanzar nada y se compara al final: una suite que deja (o borra) algo ahí le cambia el
+#    árbol a las que corren a la vez. Pasó con integrations-off y no-hardcoded-paths, que corrían el instalador con
 #    el paso de terceros prendido sobre el agent-skills de su HOME, que es este clon (DEF-8.40-carrera-skills-de-terceros);
 #    y con harness-uninstall, harness-snapshot, installer-shared-pieces, install-third-party, no-hardcoded-paths,
 #    integrations-off y engram-autoheal, que dejaban el reporte de paridad en .bench/, y bench-git-deterministic, el
-#    registro del corredor del banco. Con las de terceros ya puestas, las dos primeras no habrían dejado nada nuevo: la
-#    foto caza lo que cualquier otra deje.
+#    registro del corredor del banco. Por eso las skills de terceros NO se instalan antes de lanzar (el #144 lo hacía):
+#    con el árbol ya completo, una suite que las vuelva a bajar no deja nada nuevo y la foto no la ve.
 skills_foto() { local d; for d in "$RAIZ/skills" ${SK_REPO:+"$SK_REPO/skills"} "$RAIZ/scripts/controls-bench/.bench"; do [ -d "$d" ] && (cd "$d" && find . \( -type f -o -type l \) | sed "s|^\.|$d|"); done | LC_ALL=C sort -u; }
 skills_foto > "$T/skills-antes.txt"
 
