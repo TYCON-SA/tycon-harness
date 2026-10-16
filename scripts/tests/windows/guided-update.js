@@ -356,7 +356,8 @@ function runVariant({ ctx, v, facts, save, lab, out, platform, allowTemp, baseEn
     const keyOf = (l) => { const m = /(?:se sacaron|sacaría) \d+ pieza\(s\) de paquete\(s\) que la organización no activa \([^)]*\)/.exec(l); return m ? m[0] : null; };
     const found = sessions.flatMap((x) => [...linesOf(x), ...(x.log_lines || [])]).flatMap((l) => l.split(' · ')).filter((l) => PACK_LINE.test(l));
     const said = [...new Set(found.map(keyOf).filter(Boolean))];
-    const full = found.map((l) => l.replace(/^.*?(se sacaron|sacaría)/, '$1').trim()).sort((a, b) => b.length - a.length);
+    // el texto que se muestra es la copia ENTERA (la que llega hasta dónde se activa), no una recortada por el registro
+    const full = found.map((l) => l.replace(/^[\s\S]*?(se sacaron|sacaría)/, '$1').trim()).filter((l) => !/[\r\n]/.test(l)).sort((a, b) => Number(/activalo/.test(b)) - Number(/activalo/.test(a)) || b.length - a.length);
     facts.pack_line = { count: said.length, text: full[0] ? L.clip(full[0], 600) : null };
     facts.pieces = judgePieces({ before: facts.before.pieces, after: facts.after.pieces, renames: PZ.renamesOf(tree), packActive: v.team === true, packLine: facts.pack_line });
     for (const f of facts.pieces.findings) add(f);
