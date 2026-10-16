@@ -235,8 +235,8 @@ El script escribe `<story-id>-e2e-gate-<ts>.md` con `## Playwright Run`; exit 0 
 solos — no son verdes), 3 = el stack no levantó. Resolver:
 `pipeline.js e2e-config --repo <r> [--changed <archivos>]`.
 
-`packs: [bizuit]` en el mismo archivo achica, para el repo, la lista que activa la organización
-(`packs.default`); uno que la organización no activó frena. `pipeline.js lint-config` avisa
+`packs: [bizuit]` en el mismo archivo achica la lista que activa la organización
+(`packs.default`); uno no activado frena. `pipeline.js lint-config` avisa
 si nombra uno que no está instalado.
 
 ## Flujo

@@ -158,7 +158,10 @@ test('8.16 D · askIntegrations y las opciones: sólo lo ofrecido, nada marcado'
   assert.deepStrictEqual(Q.checkIntegrationsOption('none', ['clockify', 'engram']), { names: [] });
   assert.match(Q.checkIntegrationsOption('foo', ['clockify', 'engram']).error, /válidas: clockify, engram, o none/);
   assert.deepStrictEqual(Q.checkPacksOption('all'), { value: 'all' });
-  assert.match(Q.checkPacksOption('medio').error, /all o none/);
+  // (story 8.41) una lista de paquetes vale; contra los que trae la versión, uno que no está es un error que nombra las válidas
+  assert.deepStrictEqual(Q.checkPacksOption('bizuit', ['bizuit']), { value: ['bizuit'] });
+  assert.match(Q.checkPacksOption('medio', ['bizuit']).error, /«medio».*all, none o una lista/);
+  assert.match(Q.checkPacksOption('Medio!').error, /no es un nombre de paquete/);
   assert.strictEqual(Q.checkPacksOption(undefined), null);
 });
 

@@ -34,10 +34,12 @@ else
   fakes_check "T28"; scenario_end union; exit 0
 fi
 git -C "${R}" checkout -q -b story/1.1 && mkdir -p "${R}/specs" && cp "${LAB_DIR}/plugin-story-1.1.md.tpl" "${STORY}"
-# el bloque install:bizuit de la portada, tal cual, desde la raíz del repo de producto
+# el bloque install:bizuit de la portada, tal cual: activa el paquete en la máquina (lo activa la organización o la
+# máquina; un repo sólo puede achicar la lista)
 run_block bizuit "${OUT_DIR}/install-bizuit.out" "${R}"; RC=$?
-if [ "${RC}" -eq 0 ] && grep -q -x 'packs: \[bizuit\]' "${R}/.tycon/advisors.yaml" 2>/dev/null; then ok "T28 el bloque install:bizuit de la portada deja packs: [bizuit] en .tycon/advisors.yaml del plugin"
-else no "T28 el bloque install:bizuit salió ${RC} o no dejó packs: [bizuit] en .tycon/advisors.yaml: $(tail -n 2 "${OUT_DIR}/install-bizuit.out" | tr '\n' ' ')"; fi
+PD="$(node "${HARNESS_LINK}/scripts/lib/tycon-config.js" get packs.default 2>/dev/null)"
+if [ "${RC}" -eq 0 ] && [ "${PD}" = "bizuit" ]; then ok "T28 el bloque install:bizuit de la portada deja packs.default en bizuit en la máquina"
+else no "T28 el bloque install:bizuit salió ${RC} o packs.default no quedó en bizuit («${PD}»): $(tail -n 2 "${OUT_DIR}/install-bizuit.out" | tr '\n' ' ')"; fi
 git -C "${R}" add -A && git -C "${R}" -c user.name=lab -c user.email=lab@example.com commit -q -m 'la story de ejemplo y el paquete pedido'
 
 # ── T28 · el esqueleto del pipeline, con el paquete ──────────────────────────────────────────────────────────

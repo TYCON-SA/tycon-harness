@@ -261,18 +261,18 @@ da de alta un producto nuevo (los repos de backend, formularios e historias, con
 despliegan a staging y, con aprobación, a producción) desde las plantillas de `packs/bizuit/new-product-templates/`.
 **Qué pide además**: el SDK de .NET de tu plugin.
 
-**Viene apagado.** El repo lo trae, pero un repo de producto sólo lo usa si lo pide en su `.tycon/advisors.yaml` con
-`packs: [bizuit]`, o si tu máquina lo prende para todos los repos (`TYCON_PACKS_DEFAULT=all`, o `packs.default` en
-`~/.claude/tycon.json`). Si no lo usás, ignoralo. Para pedirlo desde un repo de producto, corré esto desde la raíz de
-ese repo (si el archivo ya tiene una clave `packs:`, editá esa línea):
+**Viene apagado.** El repo lo trae, pero lo activa tu organización: `packs.default` en el perfil del equipo (o en la
+pestaña Configuración del sitio, sección Paquetes), o tu máquina (`TYCON_PACKS_DEFAULT`, o `packs.default` en
+`~/.claude/tycon.json`). Vale `all`, `none` o una lista (`bizuit`). Un repo de producto puede achicar esa lista con
+`packs:` en su `.tycon/advisors.yaml`, no sumar. Si no lo usás, ignoralo. Para activarlo en tu máquina:
 
 <!-- install:bizuit -->
 ```bash
-mkdir -p .tycon && printf 'packs: [bizuit]\n' >> .tycon/advisors.yaml
+node ~/.claude/tycon-harness/scripts/lib/tycon-config.js set packs.default bizuit
 ```
 
 ```powershell
-New-Item -ItemType Directory -Force .tycon | Out-Null; Add-Content .tycon/advisors.yaml 'packs: [bizuit]'
+node "$HOME/.claude/tycon-harness/scripts/lib/tycon-config.js" set packs.default bizuit
 ```
 <!-- /install:bizuit -->
 

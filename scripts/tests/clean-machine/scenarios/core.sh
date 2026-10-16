@@ -106,7 +106,8 @@ fi
 # ── T29 · el núcleo solo frente a un repo que pide el paquete ────────────────────────────────────────────────
 if [ "${MODE}" = internal ]; then
   A="${WORK_DIR}/asks-pack"; FIXED='el repo declara el paquete «bizuit» en `packs:` y no está instalado en '
-  if make_example_repo "${A}" && run_block bizuit "${OUT_DIR}/install-bizuit.out" "${A}"; then
+  # el repo declara el paquete en su `packs:` (el bloque de la portada lo activa en la máquina; acá se mide el freno del repo)
+  if make_example_repo "${A}" && mkdir -p "${A}/.tycon" && printf 'packs: [bizuit]\n' >> "${A}/.tycon/advisors.yaml"; then
     ( cd "${A}" && TYCON_SESSION_ID="clean-machine-core-pack" node "${PIPE_DIR}/pipeline.js" advisors --repo "${A}" --story "${A}/specs/story-1.1-greeting.md" --files src/greeting.js ) > "${OUT_DIR}/t29.out" 2> "${OUT_DIR}/t29.err"; RC=$?
     if [ "${RC}" -eq 2 ] && grep -q -F "${FIXED}" "${OUT_DIR}/t29.err" && grep -q -F "${FIXED}" "${CLONE}/getting-started/reference.md"; then
       ok "T29 el núcleo solo, frente a un repo con packs: [bizuit], sale 2 con el mensaje que la referencia muestra"

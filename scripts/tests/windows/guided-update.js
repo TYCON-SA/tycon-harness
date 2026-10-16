@@ -351,8 +351,13 @@ function runVariant({ ctx, v, facts, save, lab, out, platform, allowTemp, baseEn
     // la lista de piezas, antes y después, y lo que dice la máquina cuando saca las de un paquete
     // (la misma línea puede aparecer en el registro y en el aviso de la sesión siguiente: se cuentan las distintas, cada
     // una sin lo que la rodea en su renglón)
-    const said = [...new Set(sessions.flatMap((x) => [...linesOf(x), ...(x.log_lines || [])]).flatMap((l) => l.split(' · ')).filter((l) => PACK_LINE.test(l)).map((l) => l.replace(/^.*?(se sacaron|sacaría)/, '$1').trim()))];
-    facts.pack_line = { count: said.length, text: said[0] ? L.clip(said[0], 600) : null };
+    // (el registro recorta los renglones largos: la misma línea, cortada, no es otra — se identifica por su comienzo, con
+    // qué paquetes y qué piezas)
+    const keyOf = (l) => { const m = /(?:se sacaron|sacaría) \d+ pieza\(s\) de paquete\(s\) que la organización no activa \([^)]*\)/.exec(l); return m ? m[0] : null; };
+    const found = sessions.flatMap((x) => [...linesOf(x), ...(x.log_lines || [])]).flatMap((l) => l.split(' · ')).filter((l) => PACK_LINE.test(l));
+    const said = [...new Set(found.map(keyOf).filter(Boolean))];
+    const full = found.map((l) => l.replace(/^.*?(se sacaron|sacaría)/, '$1').trim()).sort((a, b) => b.length - a.length);
+    facts.pack_line = { count: said.length, text: full[0] ? L.clip(full[0], 600) : null };
     facts.pieces = judgePieces({ before: facts.before.pieces, after: facts.after.pieces, renames: PZ.renamesOf(tree), packActive: v.team === true, packLine: facts.pack_line });
     for (const f of facts.pieces.findings) add(f);
     delete facts.pieces.findings;
