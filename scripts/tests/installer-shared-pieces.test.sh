@@ -486,6 +486,19 @@ if corre S11 && suite_part 2; then
   #    reportaba las tres piezas (4 chequeos en MAL: «bajo la variable», y los dos «el reporte del .sh no las trae»).
   DONE="$(m 'S.DONE_ENV')"
   HH="$T/s11-home"; SNAP="$T/s11-snap"; mkdir -p "$SNAP"
+  # Su propia copia del árbol, congelada al empezar (DEF-8.40-carrera-skills-de-terceros). El instalador enlaza
+  # ~/.claude/skills desde el skills/ de SU árbol, y en una máquina limpia otras suites que corren a la vez bajan ahí las
+  # skills de terceros. Si aparecen entre la referencia y la comparación, la unión «sobra» esos enlaces. La copia lleva
+  # los archivos del repo (los versionados y los nuevos sin commitear) y deja afuera lo ignorado: las de terceros.
+  TREE11="$T/s11-tree"; mkdir -p "$TREE11"
+  if git -C "$RAIZ" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    (cd "$RAIZ" && git ls-files -z --cached --others --exclude-standard | while IFS= read -r -d '' f; do [ -e "$f" ] && printf '%s\0' "$f"; done \
+      | tar --null -T - -cf -) | tar -xf - -C "$TREE11"
+  else
+    (cd "$RAIZ" && tar --exclude=./.git -cf - .) | tar -xf - -C "$TREE11"
+  fi
+  [ -f "$TREE11/scripts/install-tycon-hooks.sh" ] && [ -d "$TREE11/skills/tycon-pipeline" ] || mal "S11 no pude copiar el árbol a $TREE11"
+  INST_ALL="$INST"; INST="$TREE11/scripts/install-tycon-hooks.sh"
   # la entrada del dev: su formato, una variable y un permiso suyos, y la línea de arranque vieja con los pull sin proteger
   cat > "$T/s11-in.json" <<'JSON'
 {
@@ -503,11 +516,11 @@ JSON
     mkdir -p "$HH/.claude/commands"; printf '# mío\n' > "$HH/.claude/commands/mine.md"
   }
   module11() { # module11 <salida.json> — el módulo como lo llama harness.js: con la copia del mecanismo ya tomada
-    LAB_TREE="$RAIZ" call "$HH" "$1" TYCON_HARNESS_SNAPSHOT_DIR="$SNAP"
+    LAB_TREE="$TREE11" LAB_MOD="$TREE11/scripts/setup/harness/shared.js" call "$HH" "$1" TYCON_HARNESS_SNAPSHOT_DIR="$SNAP"
   }
   # look11 <home> <reporte> skip|do → «ok», o lo que no está como se espera
   look11() {
-    python3 - "$1/.claude/settings.json" "$2" "$VAR_ENV" "$1" "$RAIZ" "$3" <<'PY' 2>&1
+    python3 - "$1/.claude/settings.json" "$2" "$VAR_ENV" "$1" "$TREE11" "$3" <<'PY' 2>&1
 import glob, json, os, sys
 s = json.load(open(sys.argv[1], encoding="utf-8")); rep = json.load(open(sys.argv[2], encoding="utf-8"))
 var, home, tree, mode = sys.argv[3:7]
@@ -583,7 +596,7 @@ PY
       if (applier.some((p) => S.isShared(p))) bad.push("el reporte del .sh trae piezas compartidas");
       const u = S.union(applier, shared).map(line).sort(), want = J(ref).map(line).sort();
       if (JSON.stringify(u) !== JSON.stringify(want)) bad.push("la unión no es el reporte del suelto: sobra " + JSON.stringify(u.filter((x) => !want.includes(x))) + " falta " + JSON.stringify(want.filter((x) => !u.includes(x))));
-      process.stdout.write(bad.length ? bad.join("; ") : "ok");' "$T/s11-ref-report.json" "$2" "$3" "$RAIZ/scripts/setup/harness" 2>&1)"
+      process.stdout.write(bad.length ? bad.join("; ") : "ok");' "$T/s11-ref-report.json" "$2" "$3" "$TREE11/scripts/setup/harness" 2>&1)"
     [ "$got" = "ok" ] && ok "S11 $1: el reporte del .sh no trae las compartidas, y sumadas a las del módulo dan las piezas del suelto" || mal "S11 $1: ${got}"
   }
   seed11; module11 "$T/s11-d.json"
@@ -614,7 +627,7 @@ PY
   grep -q '"\$schema"' "$HH/.claude/settings.json" \
     && mal "S11 sin settings.json, el módulo primero ya conserva el \"\$schema\": el desvío de harness.js (módulo después) sobra y hay que quitarlo" \
     || ok "S11 (por qué) sin settings.json, el módulo ANTES del .sh pierde el \"\$schema\" del esqueleto: ese orden no iguala al suelto"
-  rm -rf "$HH"
+  rm -rf "$HH" "$TREE11"; INST="$INST_ALL"
 fi
 
 if corre S12 && suite_part 1; then
