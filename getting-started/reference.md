@@ -361,6 +361,9 @@ terminal (`node ~/.claude/tycon-harness/scripts/setup/harness.js update --yes`).
   startup line in `~/.claude/settings.json`, and a backup copy before each change in
   `~/.claude/.tycon-pipeline/harness/backups/`: the five newest stay, plus the one from before installing (it never
   rotates) and the one from before the current version. `harness.js rollback --list` shows them.
+- **The harness's own Node 24** in `~/.tycon/node/` (about 50 MB, downloaded from nodejs.org and checked against the
+  fingerprints that travel in the harness): its hooks run with it, your projects keep your Node and the PATH is not
+  touched. `TYCON_HARNESS_NODE=0` turns it off; `uninstall` leaves the folder and says how to delete it.
 - **What the hooks keep**, all on your machine: the last 8 requests of each session and the pipeline state in
   `~/.claude/.tycon-pipeline/`, the answers that went over the length cap in `~/.claude/response-style/`, what the
   other two meters note in `~/.claude/blocking-meter/` and `~/.claude/lectura-grande/` (the working folder of each turn

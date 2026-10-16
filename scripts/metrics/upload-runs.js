@@ -761,7 +761,20 @@ function installFacts(state) {
       commit: typeof t.commit === 'string' && /^[0-9a-f]{40}$/.test(t.commit) ? t.commit : null,
     };
   }
-  return { mode, version, team };
+  return { mode, version, team, harness_node: harnessNodeFacts() };
+}
+/**
+ * El Node del arnés de esta máquina para el buzón (story 8.39, AC 24): `{ own, major }`, sin rutas ni nombres. `own` es
+ * si los hooks corren con el Node propio del arnés (null si no se pudo mirar); `major`, la versión mayor del Node con que
+ * corren. Sólo informativo: el informe de --harness-node-report no cambia su criterio por esto.
+ */
+function harnessNodeFacts() {
+  try {
+    const i = require(path.join(__dirname, '..', 'setup', 'harness', 'harness-node.js')).interpreter({});
+    const v = i.own ? i.version : process.version;
+    const m = /^v(\d+)\./.exec(String(v || ''));
+    return { own: Boolean(i.own), major: m ? Number(m[1]) : null };
+  } catch (_) { return { own: null, major: null }; }
 }
 /**
  * El commit de HEAD de un clon, LEYENDO .git (sin invocar git: este guion no usa git para nada, T18). Sigue `gitdir:` de

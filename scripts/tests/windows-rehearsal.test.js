@@ -36,6 +36,8 @@
  * Para leer el reporte que deja el recorrido de juguete: TYCON_WINDOWS_REHEARSAL_KEEP=<carpeta> node --test …
  */
 
+// story 8.39 (decisión 20): los laboratorios que lanzan harness.js no bajan el Node del arnés de nodejs.org (lo heredan)
+process.env.TYCON_HARNESS_NODE = '0';
 const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');

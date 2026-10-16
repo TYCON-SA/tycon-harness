@@ -187,6 +187,13 @@ function measure({ lab, out, platform = process.platform, baseEnv = process.env,
     try { if (facts.after.settings.exists && !facts.after.settings.problem) L.writeJsonAtomic(path.join(out, `settings-update-${v.id}-today.json`), T.redactor(doc, baseEnv)(T.readJsonLoose(settings).value)); } catch (_) { /* la copia es de cortesía */ }
     facts.differences = T.comparePhotos(facts.before, facts.after, { sessions, smokeBefore: facts.before_smoke, smokeAfter: facts.after_smoke, target });
     for (const d of facts.differences) add(v, d);
+    // el Node propio del arnés (story 8.39, AC 27): después de las sesiones de hoy, los hooks tienen que correr con él,
+    // salvo que esté apagado o que la carpeta no entre en la forma de Windows (decisión 22, con su motivo en doctor)
+    const hn = facts.after.doctor && facts.after.doctor.harness_node;
+    facts.harness_node = hn || null;
+    if (hn && hn.own !== true && hn.switch !== 'off' && !/no se puede escribir en un comando/.test(String(hn.reason || ''))) {
+      add(v, { id: 'harness-node-not-own', severity: T.SEVERITY.loses, kind: 'harness-node', detail: `después de las sesiones de hoy el arnés no corre con su Node propio (${hn.reason || 'sin motivo'}): los hooks siguen con el Node del PATH` });
+    }
     facts.answers = T.answers(facts.before, facts.after, facts.differences, { sessions, target });
     rec.fact('variants', variants);
     const a = facts.answers;

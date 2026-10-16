@@ -778,6 +778,48 @@ for CODIGO in 404 500; do
     && ok "2.24-T19b listado ${CODIGO} → ${ESPERA}, exit 1, sin carpeta" || mal "2.24-T19b listado ${CODIGO}: rc=${RC} estado=$(campo "${T}" estado)"
 done
 
+# ── 8.39 T31 · InformeNodePropio_PorVersion_AusentesAparte (story 8.39, AC 23 y 24) ────────────────────────────────
+# @story-8.39 @ac-23 @ac-24  Por máquina, con su alias: «sí» si su place.json es de una versión con el Node propio (trae
+# install.harness_node), «no» si es de una anterior, «no medido» sin place.json; las que no suben hace 14 días, aparte;
+# `todas` sólo si ninguna presente dice «no» ni «no medido». Sólo lista. 🔴 rojo previo: la opción no existe.
+T="${BASE}/t839-31"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
+for m in mac-a mac-b mac-c mac-d; do blob "${T}/b" "${m}/1.1-2026-10-14T1000.json" 300; done
+HACE20="$(python3 -c "import datetime; print((datetime.datetime.utcnow()-datetime.timedelta(days=20)).strftime('%Y-%m-%dT%H:%M:%SZ'))")"
+AYER="$(python3 -c "import datetime; print((datetime.datetime.utcnow()-datetime.timedelta(days=1)).strftime('%Y-%m-%dT%H:%M:%SZ'))")"
+printf '{"mac-a/1.1-2026-10-14T1000.json": ["%s", "%s"], "mac-b/1.1-2026-10-14T1000.json": ["%s", "%s"], "mac-c/1.1-2026-10-14T1000.json": ["%s", "%s"], "mac-d/1.1-2026-10-14T1000.json": ["%s", "%s"]}\n' \
+  "${AYER}" "${AYER}" "${AYER}" "${AYER}" "${AYER}" "${AYER}" "${HACE20}" "${HACE20}" > "${T}/b/fechas"
+ESP="${T}/estado/corridas-buzon"
+mkdir -p "${ESP}/mac-a/registros" "${ESP}/mac-b/registros" "${ESP}/mac-d/registros"
+printf '{"schema":1,"day":"2026-10-16","install":{"mode":"managed","version":"2026.10.16.1","team":null,"harness_node":{"own":false,"major":20}}}\n' > "${ESP}/mac-a/registros/place.json"
+printf '{"schema":1,"day":"2026-10-15","install":{"mode":"managed","version":"2026.10.15.40","team":null}}\n' > "${ESP}/mac-b/registros/place.json"
+printf '{"schema":1,"day":"2026-09-20","install":{"mode":"managed","version":"2026.09.20.1","team":null}}\n' > "${ESP}/mac-d/registros/place.json"
+espejo_sha() { find "${ESP}" -type f -exec shasum {} + 2>/dev/null | sort | shasum; }
+ANTES_ESP="$(espejo_sha)"
+bajar "${T}" "${T}/bin/az" --harness-node-report
+A="$(node "${RAIZ}/scripts/nightly/dashboard/reducer.js" --alias-of mac-a)"; B="$(node "${RAIZ}/scripts/nightly/dashboard/reducer.js" --alias-of mac-b)"
+C="$(node "${RAIZ}/scripts/nightly/dashboard/reducer.js" --alias-of mac-c)"; D="$(node "${RAIZ}/scripts/nightly/dashboard/reducer.js" --alias-of mac-d)"
+if [ "${RC}" -eq 0 ] && python3 - "${T}/out.json" "$A" "$B" "$C" "$D" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1])); a, b, c, dd = sys.argv[2:6]
+assert d['estado'] == 'medido', d
+m = {x['alias']: x for x in d['maquinas']}
+assert set(m) == {a, b, c}, m
+assert m[a]['lista'] == 'sí' and m[a]['con_el_del_path'] is True and m[a]['node_mayor'] == 20, m[a]
+assert m[b]['lista'] == 'no', m[b]
+assert m[c]['lista'] == 'no medido', m[c]
+assert d['ausentes'] == [dd], d['ausentes']
+assert d['todas'] is False and d['con_el_del_path'] == 1, d
+PY
+then ok "8.39-T31 sí / no / no medido por alias, la ausente aparte, todas: false y los que corren con el del PATH"
+else mal "8.39-T31 rc=${RC} · $(head -c 600 "${T}/out.json") · $(head -2 "${T}/err.txt")"; fi
+[ "$(gets "${T}/b")" = "0" ] && [ "$(espejo_sha)" = "${ANTES_ESP}" ] && ok "8.39-T31 sólo lista: ningún GET de blob y el espejo igual" || mal "8.39-T31 bajó o escribió"
+grep -q 'mac-a\|mac-b\|mac-c\|mac-d' "${T}/out.json" && mal "8.39-T31 el informe nombra una máquina" || ok "8.39-T31 el informe no nombra máquinas (sólo alias)"
+# con las presentes en «sí»: todas
+printf '{"schema":1,"day":"2026-10-16","install":{"mode":"managed","version":"2026.10.16.2","team":null,"harness_node":{"own":true,"major":24}}}\n' > "${ESP}/mac-b/registros/place.json"
+mkdir -p "${ESP}/mac-c/registros"; cp "${ESP}/mac-b/registros/place.json" "${ESP}/mac-c/registros/place.json"
+bajar "${T}" "${T}/bin/az" --harness-node-report
+[ "${RC}" -eq 0 ] && [ "$(campo "${T}" todas)" = "true" ] && ok "8.39-T31 con las tres presentes en «sí»: todas: true (la ausente no cuenta)" || mal "8.39-T31 todas=$(campo "${T}" todas) · $(head -c 400 "${T}/out.json")"
+
 
 # ════ story 2.28 · la unión de carpetas: una carpeta vieja es historia de UNA nueva, o no se une (AC 25-28) ══════
 # place228 <buzon> <carpeta> <previous_folder> <moved_on> [code_regenerated reason] — el place.json de una carpeta nueva

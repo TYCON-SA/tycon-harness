@@ -61,9 +61,12 @@ log "invoked | stdin-len=${#INPUT}"
 # `node`: las dos ramas de `read_json` hacen lo mismo (casos `sin-jq-…` del banco).
 # Si `jq` está pero no pudo, se prueba con `node` antes de rendirse: hay JSON válido que `jq`
 # rechaza (un `\ud800` suelto). Con `-s`, `jq` no imprime nada si falla: no se duplica la salida.
+# El Node del arnés (story 8.39): el propio si está y es ejecutable; si no, el del PATH. No cambia el PATH.
+. "$SCRIPT_DIR/../lib/harness-node.sh" 2>/dev/null || harness_node_bin() { echo node; }
+HNODE="$(harness_node_bin)"
 HAS_JQ=0; HAS_NODE=0
 if command -v jq >/dev/null 2>&1; then HAS_JQ=1; fi
-if command -v node >/dev/null 2>&1; then HAS_NODE=1; fi
+if command -v "$HNODE" >/dev/null 2>&1; then HAS_NODE=1; fi
 
 # read_json <modo> [<ruta.con.puntos> [<defecto>]] — lee UN documento JSON de stdin.
 #   text  <ruta> <defecto>  el valor tal cual; <defecto> si falta, es null o es false
@@ -90,7 +93,7 @@ read_json_jq() {
   esac
 }
 read_json_node() {
-  node -e '
+  "$HNODE" -e '
     const [mode, route, fallback] = process.argv.slice(1);
     let v;
     try { v = JSON.parse(require("fs").readFileSync(0, "utf8").replace(/^\uFEFF/, "")); } catch (e) { process.exit(1); }
@@ -254,7 +257,7 @@ commit_dirs() {
     fi
     return 0
   fi
-  printf '%s' "$CMD" | node -e '
+  printf '%s' "$CMD" | "$HNODE" -e '
     const [target, shell, base] = process.argv.slice(1);
     let cmd = "";
     process.stdin.on("data", (d) => { cmd += d; }).on("end", () => {
@@ -342,10 +345,10 @@ log "project=$PROJECT"
 # se dice en CADA corrida —sin sello, sin silencio— y esta invocación no sincroniza. Nunca sale ≠ 0
 # por esto: un PreToolUse que sale con 2 deja la sesión sin Bash. El lector vive al lado de este hook.
 CONFIG_JS="$SCRIPT_DIR/../lib/tycon-config.js"
-if [ -f "$CONFIG_JS" ] && command -v node >/dev/null 2>&1; then
+if [ -f "$CONFIG_JS" ] && command -v "$HNODE" >/dev/null 2>&1; then
   # Se decide por el VEREDICTO del lector (la primera línea de su aviso), no por «hay algo en stderr»: un warning
   # ajeno del runtime (ExperimentalWarning, nvm, NODE_OPTIONS) NO apaga el sync (pase adversarial, vuelta 1).
-  CONFIG_AVISO="$(node "$CONFIG_JS" validate --hook 2>&1 >/dev/null)" || true
+  CONFIG_AVISO="$("$HNODE" "$CONFIG_JS" validate --hook 2>&1 >/dev/null)" || true
   if printf '%s' "$CONFIG_AVISO" | grep -q 'tycon: la configuración del arnés está ROTA'; then
     printf '%s\n' "$CONFIG_AVISO" >&2
     log "configuración del arnés rota: no se sincroniza, exit 0"
@@ -355,7 +358,7 @@ if [ -f "$CONFIG_JS" ] && command -v node >/dev/null 2>&1; then
   # Del lado Claude Code, con engram apagada este hook no se registra; pero quedaba registrado en Codex, o en un
   # settings.json de antes, y sincronizaba igual. Con engram apagada no hace nada. Manda el mismo interruptor que usa
   # el aplicador (`override` de scripts/setup/hooks-list.json): TYCON_ENGRAM_HOOK=1 lo prende y =0 lo apaga.
-  ENGRAM_STATE="$(node "$CONFIG_JS" key engram --hook --switch TYCON_ENGRAM_HOOK 2>/dev/null)" || ENGRAM_STATE=""
+  ENGRAM_STATE="$("$HNODE" "$CONFIG_JS" key engram --hook --switch TYCON_ENGRAM_HOOK 2>/dev/null)" || ENGRAM_STATE=""
   if [ "$ENGRAM_STATE" = "apagada" ]; then
     log "integración engram apagada (TYCON_ENGRAM_HOOK=1 la fuerza): no se sincroniza, exit 0"
     exit 0
@@ -442,14 +445,14 @@ stagear_lo_nuevo() {
 # y ese camino no lo probaba nadie. Sin ninguno de los dos, se asume válido: el cruce, que exige
 # node, va a decir «no pude medir».
 json_valido() {
-  if command -v node >/dev/null 2>&1; then node -e 'JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"))' "$1" 2>/dev/null; return $?; fi
+  if command -v "$HNODE" >/dev/null 2>&1; then "$HNODE" -e 'JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"))' "$1" 2>/dev/null; return $?; fi
   if command -v python3 >/dev/null 2>&1; then python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$1" 2>/dev/null; return $?; fi
   return 0
 }
 
 constancia() { # $1 regla · $2 veredicto — es AYUDA, no evidencia: nunca cambia el veredicto.
-  [ -f "$LIB_CONSTANCIA" ] && command -v node >/dev/null 2>&1 || return 0
-  printf '%s' "$CMD" | node "$LIB_CONSTANCIA" --guard engram-manifest --rule "$1" --verdict "$2" --cmd-stdin >/dev/null 2>&1 || true
+  [ -f "$LIB_CONSTANCIA" ] && command -v "$HNODE" >/dev/null 2>&1 || return 0
+  printf '%s' "$CMD" | "$HNODE" "$LIB_CONSTANCIA" --guard engram-manifest --rule "$1" --verdict "$2" --cmd-stdin >/dev/null 2>&1 || true
 }
 
 # $1 = motivo de por qué no se pudo medir. Nunca dice «sano»: no medir y estar bien son distintos.
@@ -460,7 +463,7 @@ no_pude_medir() {
 }
 
 cruzar_indice() {
-  if ! command -v node >/dev/null 2>&1; then no_pude_medir "node no está en el PATH"; return 0; fi
+  if ! command -v "$HNODE" >/dev/null 2>&1; then no_pude_medir "node no está en el PATH"; return 0; fi
   if [ ! -f "$LIB_MANIFEST" ]; then no_pude_medir "falta el criterio ($LIB_MANIFEST)"; return 0; fi
 
   # 🔴 Se cruza LO QUE GIT VA A COMMITEAR (2026-09-17, pase adversarial), no el disco: el índice de
@@ -472,9 +475,9 @@ cruzar_indice() {
   # que lo que va a viajar es el DISCO — y se mira el disco.
   if printf '%s' "$CMD_SIN_STRINGS" | grep -qE "${_GIT}commit([[:space:]]+[^[:space:]]+)*[[:space:]]+(-a|--all|-[a-zA-Z]*a[a-zA-Z]*)([[:space:]]|\$)"; then
     log "commit -a: se cruza el árbol de trabajo (es lo que -a va a stagear)"
-    CRUCE=$(node "$LIB_MANIFEST" cross --repo "$REPO" --json 2>/dev/null)
+    CRUCE=$("$HNODE" "$LIB_MANIFEST" cross --repo "$REPO" --json 2>/dev/null)
   else
-    CRUCE=$(node "$LIB_MANIFEST" cross --repo "$REPO" --staged --json 2>/dev/null)
+    CRUCE=$("$HNODE" "$LIB_MANIFEST" cross --repo "$REPO" --staged --json 2>/dev/null)
   fi
   if [ -z "$CRUCE" ]; then no_pude_medir "el criterio no devolvió nada"; return 0; fi
   # 🔴 Que la salida PAREZCA algo no alcanza: tiene que parsear (2026-09-17, hallazgo del cazador de

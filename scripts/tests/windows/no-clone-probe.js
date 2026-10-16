@@ -124,6 +124,9 @@ function measure({ lab, out, platform = process.platform, baseEnv = process.env,
   rec.fact('lab_mode', !isWin);
   // 0. el sondeo de la story 8.33 (T1): ¿se cambia una unión con la versión vieja tomada? Va primero y no depende de nada
   require('./links-spike.js').measureLinks({ base, env: env0, rec });
+  // 0b. la medición de la story 8.39 (E1): ¿un hook .js con la ruta del Node del arnés SIN comillas corre por los cinco
+  // lanzadores? Tampoco depende de nada
+  require('./node-form-spike.js').measureNodeForm({ base, env: env0, rec });
 
   // el remoto en el commit de hoy, la copia «autor» y la copia del programa (lo que una persona tendría bajado)
   const point = T.pointRemotes(state, 'target', env0);
@@ -288,8 +291,13 @@ function measure({ lab, out, platform = process.platform, baseEnv = process.env,
     }
     const doc = run(tree, ['doctor', '--json'], 'doctor', 400000);
     let fails = null;
-    try { fails = JSON.parse(doc.stdout).fail; } catch (_) { fails = null; }
+    let hn = null;
+    try { const dj = JSON.parse(doc.stdout); fails = dj.fail; hn = dj.harness_node || null; } catch (_) { fails = null; }
     rec.fact('doctor_fail', fails);
+    // el Node propio del arnés (story 8.39, AC 27): con la versión bajada instalada, los hooks corren con él, salvo que
+    // esté apagado o que la carpeta no entre en la forma de Windows (decisión 22, con su motivo en doctor)
+    rec.fact('harness_node', hn);
+    if (hn && hn.own !== true && hn.switch !== 'off' && !/no se puede escribir en un comando/.test(String(hn.reason || ''))) rec.finding('no-clone:harness-node-not-own', 'harness-node', `el arnés instalado no corre con su Node propio (${hn.reason || 'sin motivo'}): los hooks siguen con el Node del PATH`, 'W8', { severity: 'loses-control' });
     if (doc.exit !== 0 || !Array.isArray(fails) || fails.length) rec.finding('no-clone:doctor-red', 'doctor', `doctor --json salió ${doc.exit}: ${JSON.stringify(fails).slice(0, 400)}`, 'W8', { severity: 'loses-control' });
     const un = run(tree, ['uninstall', '--yes'], 'uninstall');
     rec.fact('after_uninstall', { harness_dir: fs.existsSync(path.join(own, 'harness')), place_link: linkKind(placeLink), config_kept: fs.existsSync(path.join(own, 'config.json')) });

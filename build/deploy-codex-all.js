@@ -138,7 +138,12 @@ function fingerprint(env = process.env) {
   try {
     const dh = require(path.join(BUILD, 'deploy-codex-hooks.js'));
     const act = dh.activeFragment(JSON.parse(fs.readFileSync(dh.FRAGMENT, 'utf8')), { env });
-    integ = JSON.stringify({ i: act.integrations || null, d: act.dropped.map((x) => `${x.event}:${x.spec}`), a: act.aviso || null });
+    // el intérprete de los hooks (story 8.39, AC 7): cuando aparece el Node del arnés, se rompe o se apaga, Codex se
+    // vuelve a desplegar en ese mismo arranque aunque ningún repo haya cambiado. Va DENTRO de esta parte (siguen cinco),
+    // y sólo con el Node del arnés: con `node` la cadena es la de antes y una máquina sin él no redespliega por nada
+    const interp = dh.harnessInterpreter ? dh.harnessInterpreter(env) : { prefix: 'node' };
+    const own = interp.prefix && interp.prefix !== 'node' ? { n: interp.prefix } : {};
+    integ = JSON.stringify({ i: act.integrations || null, d: act.dropped.map((x) => `${x.event}:${x.spec}`), a: act.aviso || null, ...own });
   } catch (e) { integ = `error:${(e && e.message) || e}`; }
   return [
     treeId(TCG),

@@ -47,6 +47,8 @@ To remove the harness, `harness.js uninstall --dry-run` shows what it would remo
 - Windows 11 with PowerShell 7, or Mac. On Linux or WSL, install by hand (it is in the "Reference").
 - Node 22 or later and `tar`. On Mac, also Python 3 and Homebrew. Git is **not** needed to use the harness: it is
   downloaded as files, not cloned. A GitHub account is not needed either: this repository is public.
+- Your Node is needed to install. After that the harness downloads its own Node 24 (about 50 MB, from nodejs.org) and
+  its hooks run with it; your projects keep your Node, which is not touched. Turn it off with `TYCON_HARNESS_NODE=0`.
 - To build BIZUIT extensions, your plugin's .NET SDK. Without it, the implementation stops at the build.
 
 If something is missing, Claude tells you what to install and how.

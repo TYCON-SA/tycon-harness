@@ -112,6 +112,9 @@ function variantEnv(home, { base = process.env, platform = process.platform, api
     // contraseña): una sesión del laboratorio no abre nada fuera del laboratorio
     TYCON_PRODUCTION_AUTOINSTALL: '0',
     TYCON_TOOLS_DETECT_PATH: String(detectPath || ''),
+    // el Node propio del arnés: en el ensayo de Windows se baja de verdad (es lo que se mide); una prueba local que lo
+    // apagó (TYCON_HARNESS_NODE=0) lo sigue teniendo apagado aunque el ambiente se arme de cero
+    ...(String(base.TYCON_HARNESS_NODE || '') === '0' ? { TYCON_HARNESS_NODE: '0' } : {}),
   }, T.REHEARSAL_ENV);
   const env = L.labEnv(home, { base: cleaned.env, extra: set, platform });
   // «lo borrado» es lo que de verdad dejó de estar: lo que se vuelve a poner acá mismo (con su valor del laboratorio) no cuenta

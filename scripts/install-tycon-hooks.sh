@@ -237,6 +237,15 @@ SETTINGS="${TYCON_SETTINGS_PATH:-$HOME/.claude/settings.json}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TCG_HOOKS_DIR="$SCRIPT_DIR/hooks"
 
+# ── Con qué Node corren las llamadas de este instalador (story 8.39, AC 8) ──────────────────────────────────────────
+# El arnés baja su propio Node a <casa>/node/current (harness-node.js). Si está y es ejecutable, las llamadas a `node` de
+# ESTE guion van con él; si no, con el del PATH, como siempre. `node` es una función de este guion, no exportada: no
+# cambia el PATH ni llega a lo que el guion lance (install-codegraph.sh sigue con el `npm` del dev). `nohup` y un
+# `bash -c` nuevo no ven funciones: lo que se lanza así nombra "$HNODE" (o lo recibe como argumento).
+. "$SCRIPT_DIR/lib/harness-node.sh" 2>/dev/null || harness_node_bin() { echo node; }
+HNODE="$(harness_node_bin)"
+if [[ "$HNODE" != "node" ]]; then node() { "$HNODE" "$@"; }; fi
+
 # ── Dónde están las skills: lo contesta la regla, no una ruta escrita (story 8.18, AC 12 · 2026-10-04) ──────────
 # Este archivo traía `AGENT_SKILLS="$HOME/.claude/agent-skills/skills"` y de ahí salía todo: los hooks que registra y las
 # seis suites rápidas que corre en cada arranque. Con los dos repos internos unidos, un clon de trabajo trae sus propias
@@ -648,6 +657,14 @@ if [[ -s "$TMP_REPORT" ]]; then
       echo "✓ tycon: la línea de arranque ahora protege cambios locales al actualizar el arnés (git pull --ff-only --autostash en los dos repos): un archivo modificado ya no frena la actualización en silencio."
       [[ -n "$BACKUP_LINE" && -z "$ADDED_LINE" && -z "$REMOVED_LINE" ]] && echo "✓ tycon: backup en ${BACKUP_LINE#BACKUP:}"
     fi
+  fi
+
+  # El cambio de forma de los hooks .js (story 8.39, AC 6): del `node` del PATH al Node propio del arnés, o de vuelta
+  REFORMED_LINE=$(grep '^REFORMED:' "$TMP_REPORT" || true)
+  if [[ -n "$REFORMED_LINE" ]]; then
+    if [[ "$CHECK_ONLY" == "1" ]]; then echo "⚠ tycon: ${REFORMED_LINE#REFORMED:} hook(s) .js con otro intérprete que el que corresponde (el Node del arnés o el del PATH) — corré install-tycon-hooks.sh"
+    else echo "✓ tycon: ${REFORMED_LINE#REFORMED:} hook(s) .js cambiaron de intérprete, en su lugar (el Node del arnés o el del PATH: harness.js doctor lo dice)"; fi
+    grep '^  ~ ' "$TMP_REPORT" || true
   fi
 
   if [[ -n "$ADDED_LINE" || -n "$REMOVED_LINE" ]]; then
@@ -1110,7 +1127,7 @@ if [[ "${TYCON_BENCH_DAILY:-1}" != "0" ]] && command -v node >/dev/null 2>&1 && 
       LIVE_FIRE_STAMP="$HOME/.claude/.tycon-pipeline/live-fire-codex-last-try"
       if [[ "$(cat "$LIVE_FIRE_STAMP" 2>/dev/null || true)" != "$TODAY_CB" ]]; then
         echo "$TODAY_CB" > "$LIVE_FIRE_STAMP" 2>/dev/null || true
-        nohup node "$TCG_HOOKS_DIR/../controls-bench/live-fire.js" --tool codex >/dev/null 2>&1 &
+        nohup "$HNODE" "$TCG_HOOKS_DIR/../controls-bench/live-fire.js" --tool codex >/dev/null 2>&1 &
       fi
     fi
   fi
@@ -1229,7 +1246,7 @@ fi
 # Codex desplegado; el rojo lo cobra bench-notice en el próximo arranque. Respeta --check.
 # ============================================================
 if [[ "$CHECK_ONLY" != "1" && "$PROFILE_FULL" == "1" ]] && command -v node >/dev/null 2>&1 && [[ -f "$SCRIPT_DIR/lib/harness-parity.js" ]]; then
-  nohup node "$SCRIPT_DIR/lib/harness-parity.js" >/dev/null 2>&1 &
+  nohup "$HNODE" "$SCRIPT_DIR/lib/harness-parity.js" >/dev/null 2>&1 &
 fi
 
 ENGRAM_VER_CHECK="$SCRIPT_DIR/setup/check-engram-version.sh"
@@ -1343,7 +1360,7 @@ if [[ "$CHECK_ONLY" != "1" && "${TYCON_STAGE_METRICS:-1}" == "1" && "$PROFILE_FU
     # (un job de minutos reintentado en loop es peor que un snapshot faltante — el hueco se ve
     # solo, como serie con un día menos).
     echo "$TODAY_SM" > "$STAGE_STAMP" 2>/dev/null || true
-    nohup node "$STAGE_METRICS_JS" --scan "$STAGE_ROOT" --snapshot --json >/dev/null 2>&1 &
+    nohup "$HNODE" "$STAGE_METRICS_JS" --scan "$STAGE_ROOT" --snapshot --json >/dev/null 2>&1 &
   fi
 fi
 
@@ -1425,20 +1442,22 @@ if [[ "$_RESCATAR" == "1" || "$_SUBIR" == "1" || "$_BAJAR" == "1" || "$_RECOLECT
   # 🔴 La subida y la bajada AGREGAN a su registro (con tope: pasado ~512 KB el viejo se mueve a .1). Con `>` la
   #    segunda sesión del día borraba el aviso de vencimiento de la llave, que sale una sola vez por día (pase
   #    adversarial). El barrido sigue con `>`: su registro es el estado de este arranque, no un historial.
+  # (este bash nuevo no ve la función `node` del instalador: el Node del arnés le llega como argumento, `${11}` — story 8.39)
   nohup bash -c '
+    N="${11:-node}"
     rotar() { [ -f "$1" ] && [ "$(wc -c < "$1" | tr -d " ")" -gt 524288 ] && mv -f "$1" "$1.1"; return 0; }
     # los registros con nombre viejo (story 8.9, D2): copiados antes de abrirlos. Si alguno no se puede llevar, los otros se
     # llevan igual y la falla queda en hook-errors.log (el registro nuevo de ése nace sin la historia del viejo, que sigue ahí)
     if [ -f "${10}" ]; then
-      _err=$(node "${10}" --prepare-state "$4/thread-rescue.log" "$4/collect-findings.log" "$4/upload-runs.log" "$4/download-runs.log" --where scripts/install-tycon-hooks.sh 2>&1 > /dev/null < /dev/null) \
+      _err=$("$N" "${10}" --prepare-state "$4/thread-rescue.log" "$4/collect-findings.log" "$4/upload-runs.log" "$4/download-runs.log" --where scripts/install-tycon-hooks.sh 2>&1 > /dev/null < /dev/null) \
         || printf "[%s] install-tycon-hooks --prepare-state: %s\n\n" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${_err:-salió con error y sin mensaje}" >> "$4/hook-errors.log"
     fi
-    if [ "$1" = 1 ]; then node "$2" --pending --budget-ms 45000 > "$4/thread-rescue.log" 2>&1; fi
-    if [ "$8" = 1 ]; then rotar "$4/collect-findings.log"; node "$9" --budget-ms 60000 >> "$4/collect-findings.log" 2>&1 < /dev/null; fi
-    if [ "$5" = 1 ]; then rotar "$4/upload-runs.log"; node "$3" --budget-ms 90000 >> "$4/upload-runs.log" 2>&1; fi
-    if [ "$6" = 1 ]; then rotar "$4/download-runs.log"; node "$7" --budget-ms 120000 >> "$4/download-runs.log" 2>&1 < /dev/null; fi
+    if [ "$1" = 1 ]; then "$N" "$2" --pending --budget-ms 45000 > "$4/thread-rescue.log" 2>&1; fi
+    if [ "$8" = 1 ]; then rotar "$4/collect-findings.log"; "$N" "$9" --budget-ms 60000 >> "$4/collect-findings.log" 2>&1 < /dev/null; fi
+    if [ "$5" = 1 ]; then rotar "$4/upload-runs.log"; "$N" "$3" --budget-ms 90000 >> "$4/upload-runs.log" 2>&1; fi
+    if [ "$6" = 1 ]; then rotar "$4/download-runs.log"; "$N" "$7" --budget-ms 120000 >> "$4/download-runs.log" 2>&1 < /dev/null; fi
   ' _ "$_RESCATAR" "$TOKENS_DIGEST_JS" "$SUBIR_CORRIDAS_JS" "$HOME/.claude/.tycon-pipeline" "$_SUBIR" "$_BAJAR" "$BAJAR_CORRIDAS_JS" \
-    "$_RECOLECTAR" "$RECOLECTAR_JS" "$LEGACY_NAMES_JS" \
+    "$_RECOLECTAR" "$RECOLECTAR_JS" "$LEGACY_NAMES_JS" "$HNODE" \
     >/dev/null 2>&1 &
 fi
 

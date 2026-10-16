@@ -2,6 +2,8 @@
 /**
  * apply-hooks.test.js — la lista única de hooks y el aplicador que la lee (story 8.17, tanda W3 · AC 23, 24, 25, 28;
  * T33 a T37; y de la tanda W4 lo que el aplicador hace en Windows · AC 29).
+ * stable-data: no crea commits ni lee el reloj; «commit» sale de `cat-file -e <ref>^{commit}` (sólo mira si el
+ *   commit fijo de la versión anterior está en el clon).
  *
  * EL CASO. Hasta la W3 cada instalador llevaba su lista de hooks (`HOOKS_CANONICAL` y `OPTIN_HOOKS` en el `.sh`,
  * `$HooksCanonical` en el `.ps1`) y su propio código para escribir `settings.json` (un bloque de Python en el `.sh`, uno
@@ -441,4 +443,168 @@ test('decide: el perfil minimal, el perfil sin saber, los frenos y engram (la l�
   // configuración rota y sin la variable: engram queda como estaba
   d = mod.decide(list, { env: {}, integ: { state: 'rota', values: {} }, profile: { state: 'ok' }, minimalIds, platform: 'posix', has: () => true });
   assert.ok(!d.known.includes('@tcg:engram.sh'));
+});
+
+// ── story 8.39: el Node propio del arnés en el comando de cada hook .js ───────────────────────────────────────────
+const HN = require(path.join(ROOT, 'scripts', 'setup', 'harness', 'harness-node.js'));
+const NODE_VERSION = HN.readList(ROOT).list.version;
+/**
+ * El Node del arnés de juguete en `<casa>/node/`: una versión con un `bin/node` (o `node.exe`) que es un GUION que dice
+ * la versión de la lista y si no llama al node real por su ruta absoluta —nunca un enlace a un binario real— y el enlace
+ * `current`. Devuelve la ruta del binario por `current`.
+ */
+function fakeHarnessNode(casa, { windows = false, version = NODE_VERSION } = {}) {
+  const v = path.join(casa, 'node', 'versions', version);
+  const bin = windows ? path.join(v, 'node.exe') : path.join(v, 'bin', 'node');
+  fs.mkdirSync(path.dirname(bin), { recursive: true });
+  fs.writeFileSync(bin, `#!/bin/sh\nif [ "$1" = "--version" ]; then echo "${version}"; exit 0; fi\nexec "${process.execPath}" "$@"\n`);
+  fs.chmodSync(bin, 0o755);
+  try { fs.unlinkSync(path.join(casa, 'node', 'current')); } catch (_) { /* no había */ }
+  fs.symlinkSync(v, path.join(casa, 'node', 'current'), 'dir');
+  return windows ? path.join(casa, 'node', 'current', 'node.exe') : path.join(casa, 'node', 'current', 'bin', 'node');
+}
+
+test('T16 ApplyHooks_NodeDelArnes_FormaDelComando @story-8.39 @ac-5', (t) => {
+  const list = LIST_OF([H('Stop', '', '@tcg:s.js'), H('PreToolUse', 'Bash', '@tcg:b.sh')]);
+  const cases = [
+    { name: 'casa simple', dir: 'casa', want: (bin) => `${bin} ` },
+    { name: 'casa con espacios', dir: 'mi casa', want: (bin) => `"${bin}" ` },
+    { name: 'casa con $', dir: 'ca$a', want: () => 'node ' },
+  ];
+  for (const c of cases) {
+    const L = lab(t, { list, files: ['@tcg:s.js', '@tcg:b.sh'], settings: { hooks: {} } });
+    const casa = path.join(L.base, c.dir, '.tycon');
+    const bin = fakeHarnessNode(casa);
+    const env = { TYCON_HOME: casa, TYCON_HARNESS_SHARED_DONE: '1' };
+    const r = run(L, [], env);
+    assert.strictEqual(r.status, 0, r.stderr);
+    const stop = commandsOf(settingsOf(L), 'Stop');
+    assert.deepStrictEqual(stop, [`${c.want(bin)}"${L.abs('@tcg:s.js')}"`], `${c.name}: la forma del .js`);
+    assert.deepStrictEqual(commandsOf(settingsOf(L), 'PreToolUse'), [`bash "${L.abs('@tcg:b.sh')}"`], `${c.name}: el .sh no cambia`);
+    // el instalador corrido suelto otra vez (sin harness.js ni TYCON_NODE_BIN): la misma forma, nada que cambiar
+    const h = sha(L.settingsPath);
+    assert.strictEqual(run(L, [], env).status, 0);
+    assert.strictEqual(sha(L.settingsPath), h, `${c.name}: una corrida suelta no cambia la forma`);
+  }
+  // sin Node del arnés, o con otra versión, o apagado: `node`, como siempre
+  for (const [name, prep, extra] of [['sin current', () => null, {}], ['otra versión', (casa) => fakeHarnessNode(casa, { version: 'v1.0.0' }), {}], ['apagado', (casa) => fakeHarnessNode(casa), { TYCON_HARNESS_NODE: '0' }]]) {
+    const L = lab(t, { list, files: ['@tcg:s.js', '@tcg:b.sh'], settings: { hooks: {} } });
+    const casa = path.join(L.base, 'casa', '.tycon');
+    prep(casa);
+    assert.strictEqual(run(L, [], { TYCON_HOME: casa, TYCON_HARNESS_SHARED_DONE: '1', ...extra }).status, 0);
+    assert.deepStrictEqual(commandsOf(settingsOf(L), 'Stop'), [`node "${L.abs('@tcg:s.js')}"`], `${name}: node`);
+  }
+  // Windows: la forma sin comillas sólo con la medición en verde (decisión 22) y una ruta C:/ sin espacios
+  const winBare = 'C:/Users/dev/.tycon/node/current/node.exe';
+  assert.strictEqual(HN.formFor(winBare, 'win32').prefix, HN.WINDOWS_FORM.measured ? winBare : 'node');
+  assert.strictEqual(HN.formFor('C:/Users/Nombre Apellido/.tycon/node/current/node.exe', 'win32').prefix, 'node', 'una carpeta con espacio: node (decisión 22)');
+  const L = lab(t, { list, files: ['@tcg:s.js'], settings: { hooks: {} } });
+  const casa = path.join(L.base, 'casa', '.tycon');
+  fakeHarnessNode(casa, { windows: true });
+  const rw = run(L, ['--platform', 'windows'], { TYCON_HOME: casa });
+  assert.strictEqual(rw.status, 0, rw.stderr);
+  assert.match(commandsOf(settingsOf(L), 'Stop')[0], /^node "/, 'una carpeta sin letra de unidad no entra en la forma de Windows: node, y el hook se registra igual');
+});
+
+test('T17 ApplyHooks_CambioDeForma_EnElLugarSinDuplicar @story-8.39 @ac-6', (t) => {
+  const list = LIST_OF([H('PostToolUse', 'Edit|Write', '@tcg:p.js', { async: true })]);
+  const L = lab(t, { list, files: ['@tcg:p.js', 'tycon-pipeline/scripts/on-edit.js'] });
+  const casa = path.join(L.base, 'casa', '.tycon');
+  const bin = fakeHarnessNode(casa);
+  const before = { type: 'command', command: 'node "/ajeno/antes.js"' };
+  const after = { type: 'command', command: 'bash "/ajeno/despues.sh"' };
+  const write = (cmd) => fs.writeFileSync(L.settingsPath, JSON.stringify({ hooks: { PostToolUse: [{ matcher: 'Edit|Write', hooks: [before, { type: 'command', command: cmd, async: true }, after, { type: 'command', command: `${bin} "${L.abs('tycon-pipeline/scripts/on-edit.js')}"` }] }] } }, null, 2) + '\n');
+  // de `node` al Node del arnés
+  write(`node "${L.abs('@tcg:p.js')}"`);
+  let r = run(L, [], { TYCON_HOME: casa, TYCON_HARNESS_SHARED_DONE: '1' });
+  assert.strictEqual(r.status, 0, r.stderr);
+  let hooks = settingsOf(L).hooks.PostToolUse;
+  assert.strictEqual(hooks.length, 1, 'un solo grupo');
+  assert.deepStrictEqual(hooks[0].hooks.map((h) => h.command), [before.command, `${bin} "${L.abs('@tcg:p.js')}"`, after.command], 'misma posición, sin duplicar; el reemplazado (en la forma nueva) se fue');
+  assert.strictEqual(hooks[0].hooks[1].async, true, 'el async queda');
+  assert.match(r.report, /^REFORMED:1$/m, 'se informa como cambio de forma');
+  assert.match(r.report, /superseded by H10 dispatcher/, 'el reemplazado se reconoce en la forma nueva');
+  // y de vuelta: sin current, al `node`
+  fs.unlinkSync(path.join(casa, 'node', 'current'));
+  r = run(L, [], { TYCON_HOME: casa, TYCON_HARNESS_SHARED_DONE: '1' });
+  hooks = settingsOf(L).hooks.PostToolUse;
+  assert.deepStrictEqual(hooks[0].hooks.map((h) => h.command), [before.command, `node "${L.abs('@tcg:p.js')}"`, after.command], 'de vuelta a node, en su lugar');
+  assert.strictEqual(hooks[0].hooks[1].async, true);
+  // la forma con comillas (una casa con espacios) también se reconoce
+  const casa2 = path.join(L.base, 'mi casa', '.tycon');
+  const bin2 = fakeHarnessNode(casa2);
+  write(`"${bin2}" "${L.abs('@tcg:p.js')}"`);
+  r = run(L, [], { TYCON_HOME: casa, TYCON_HARNESS_SHARED_DONE: '1' });
+  assert.deepStrictEqual(settingsOf(L).hooks.PostToolUse[0].hooks.map((h) => h.command), [before.command, `node "${L.abs('@tcg:p.js')}"`, after.command], 'la forma con comillas pasa a node en su lugar');
+  // otro comando que empieza distinto (no un Node) no se toca
+  assert.strictEqual(after.command, 'bash "/ajeno/despues.sh"');
+});
+
+// PRE_8_39_REF: el commit de `main` del público del que sale la rama de la story 8.39 (fijo: después del merge, «la base de
+// la rama» ya traería esta story y la prueba compararía lo nuevo contra lo nuevo)
+const PRE_8_39_REF = '105fa90';
+/** El árbol de PRE_8_39_REF en una carpeta temporal (`git archive`: apply-hooks.js carga ./harness/ y no corre suelto), o
+ *  null con la prueba SALTEADA y el motivo («no medido», nunca un verde) si el commit no está en este clon. */
+function oldTree(t) {
+  const has = spawnSync('git', ['-C', ROOT, 'cat-file', '-e', `${PRE_8_39_REF}^{commit}`], { encoding: 'utf8' });
+  if (has.status !== 0) { t.skip(`NO MEDIDO: el commit ${PRE_8_39_REF} no está en la historia de este clon`); return null; }
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'apply-hooks-old-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const tar = spawnSync('bash', ['-c', `git -C "${ROOT}" archive ${PRE_8_39_REF} | tar -x -C "${dir}"`], { encoding: 'utf8' });
+  assert.strictEqual(tar.status, 0, tar.stderr);
+  return dir;
+}
+
+// T30: actualizar desde la versión anterior, con las piezas reales. El arnés viejo instaló los hooks con `node`; la
+// actualización la corre el programa VIEJO con el aplicador NUEVO, sin Node del arnés todavía (AC 17): quedan con `node`
+// y sin duplicar; en el arranque siguiente el programa nuevo baja el Node (acá, el Node de juguete aparece) y el aplicador
+// nuevo los pasa a la forma nueva, en su lugar.
+test('T30 DesdeLaVersionAnterior_ElSegundoArranqueCambia @story-8.39 @ac-17', (t) => {
+  const old = oldTree(t);
+  if (!old) return;
+  const list = LIST_OF([H('Stop', '', '@tcg:s.js'), H('PreToolUse', 'Bash', '@tcg:p.js')]);
+  const L = lab(t, { list, files: ['@tcg:s.js', '@tcg:p.js'], settings: { hooks: {} } });
+  const casa = path.join(L.base, 'casa', '.tycon');
+  const env = { TYCON_HOME: casa, TYCON_HARNESS_SHARED_DONE: '1' };
+  const runOld = () => spawnSync(process.execPath, [path.join(old, 'scripts', 'setup', 'apply-hooks.js'), '--settings', L.settingsPath, '--hooks-dir', L.hooksDir, '--skills', L.skills,
+    '--list', L.listPath, '--effects', EFFECTS], { encoding: 'utf8', env: Object.assign({ PATH: process.env.PATH, HOME: L.home, USERPROFILE: L.home, TYCON_PROFILE: '0' }, env) });
+  assert.strictEqual(runOld().status, 0, 'el arnés viejo instala');
+  const all = () => ['Stop', 'PreToolUse'].flatMap((ev) => commandsOf(settingsOf(L), ev));
+  assert.ok(all().every((c) => c.startsWith('node "')), 'el viejo: todos con node');
+  // la actualización: el aplicador nuevo, sin Node del arnés todavía
+  assert.strictEqual(run(L, [], env).status, 0);
+  assert.deepStrictEqual(all().map((c) => c.split(' ')[0]), ['node', 'node'], 'tras la actualización, con node y sin duplicar');
+  // el arranque siguiente: el Node del arnés está
+  const bin = fakeHarnessNode(casa);
+  const r = run(L, [], env);
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.deepStrictEqual(all(), [`${bin} "${L.abs('@tcg:s.js')}"`, `${bin} "${L.abs('@tcg:p.js')}"`], 'tras el arranque siguiente, en la forma nueva, uno por guion');
+  assert.match(r.report, /^REFORMED:2$/m);
+});
+
+test('T18 ApplyHooks_FormaNueva_ElAplicadorViejoNoDuplica @story-8.39 @ac-18', (t) => {
+  const old = oldTree(t);
+  if (!old) return;
+  const OLD_APPLY = path.join(old, 'scripts', 'setup', 'apply-hooks.js');
+  const list = LIST_OF([H('Stop', '', '@tcg:s.js')]);
+  const runOld = (L, args = []) => spawnSync(process.execPath, [OLD_APPLY, '--settings', L.settingsPath, '--hooks-dir', L.hooksDir, '--skills', L.skills,
+    '--list', L.listPath, '--effects', EFFECTS, ...args], { encoding: 'utf8', env: { PATH: process.env.PATH, HOME: L.home, USERPROFILE: L.home, TYCON_PROFILE: '0', TYCON_HARNESS_SHARED_DONE: '1' } });
+  // posix, sin comillas: el aplicador viejo lo reconoce (contiene `node "` y nombra el mismo archivo)
+  let L = lab(t, { list, files: ['@tcg:s.js'] });
+  const bin = fakeHarnessNode(path.join(L.base, 'casa', '.tycon'));
+  fs.writeFileSync(L.settingsPath, JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: 'command', command: `${bin} "${L.abs('@tcg:s.js')}"` }] }] } }, null, 2) + '\n');
+  assert.strictEqual(runOld(L).status, 0);
+  assert.strictEqual(commandsOf(settingsOf(L), 'Stop').length, 1, 'posix sin comillas: cero duplicados con el aplicador viejo');
+  // posix, con comillas: el duplicado declarado (riesgo 3 de la story)
+  L = lab(t, { list, files: ['@tcg:s.js'] });
+  const bin2 = fakeHarnessNode(path.join(L.base, 'mi casa', '.tycon'));
+  fs.writeFileSync(L.settingsPath, JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: 'command', command: `"${bin2}" "${L.abs('@tcg:s.js')}"` }] }] } }, null, 2) + '\n');
+  assert.strictEqual(runOld(L).status, 0);
+  assert.strictEqual(commandsOf(settingsOf(L), 'Stop').length, 2, 'posix con comillas: el aplicador viejo lo duplica (declarado en la story, riesgo 3)');
+  // windows: invokesRepoPath de antes acepta cualquier intérprete
+  L = lab(t, { list, files: ['@tcg:s.js'] });
+  const fwd = (p) => p.replace(/\\/g, '/');
+  fs.writeFileSync(L.settingsPath, JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: 'command', command: `C:/Users/dev/.tycon/node/current/node.exe "${fwd(L.abs('@tcg:s.js'))}"` }] }] } }, null, 2) + '\n');
+  assert.strictEqual(runOld(L, ['--platform', 'windows']).status, 0);
+  assert.strictEqual(commandsOf(settingsOf(L), 'Stop').length, 1, 'windows: cero duplicados con el aplicador viejo');
 });

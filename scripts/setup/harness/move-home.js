@@ -63,7 +63,8 @@ const claudeSide = (home, side) => path.join(path.dirname(TH.installedSkillsDir(
 // lo que puede haber en `~/.tycon` y es nuestro: cualquier otra cosa frena (AC 27)
 // (`versions` y `link-swap.json`: la forma con enlaces de Windows, story 8.33; la mudanza nace en esa forma porque
 // instala con `release.swap`, que en Windows cambia enlaces)
-const OWN_ENTRIES = Object.freeze(['harness', 'previous', 'incoming', 'trash', 'third-party', 'team', 'state', 'backups', 'config.json', 'swap.json', 'versions', 'link-swap.json', JOURNAL_NAME]);
+// `node`: el Node propio del arnés (story 8.39, AC 19) — la mudanza no se niega por él, no lo mueve ni lo borra
+const OWN_ENTRIES = Object.freeze(['harness', 'previous', 'incoming', 'trash', 'third-party', 'team', 'state', 'backups', 'config.json', 'swap.json', 'versions', 'link-swap.json', 'node', JOURNAL_NAME]);
 const DIE_VAR = 'TYCON_MIGRATE_DIE_AT';
 const HEAD = 'harness.js migrate';
 

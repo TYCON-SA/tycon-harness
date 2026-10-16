@@ -313,6 +313,14 @@ function runnerFor(spec) {
   if (spec.endsWith('.py')) return 'python3';
   return 'node';
 }
+// Un hook `.js` en cualquiera de sus dos formas (story 8.39, AC 6): `node "<guion>"` o la ruta del Node del arnés,
+// sin comillas (`…/node/current/bin/node "<guion>"`, `C:/…/node.exe "<guion>"`) o con comillas (`"…/node" "<guion>"`).
+const JS_RUNNER = /(?:^|[\s/"])node(?:\.exe)?"?\s+"/i;
+/** El intérprete escrito al principio de un comando: lo que va antes de ` "<guion>"` (con sus comillas si las trae). */
+function leadingInterpreter(cmd) {
+  const m = /^\s*("[^"]+"|[^\s"]+)\s+"/.exec(String(cmd || ''));
+  return m ? m[1] : null;
+}
 const fwd = (p) => String(p).replace(/\\/g, '/');
 const nameOf = (spec) => spec.replace(/^@tcg:/, '');
 
@@ -385,7 +393,10 @@ function applyToSettings(settings, o) {
   const repoOf = (spec) => (spec.startsWith('@tcg:') ? path.dirname(path.dirname(o.hooksDir)) : path.dirname(o.skills));
   if (!settings.hooks || typeof settings.hooks !== 'object' || Array.isArray(settings.hooks)) settings.hooks = settings.hooks && typeof settings.hooks === 'object' && !Array.isArray(settings.hooks) ? settings.hooks : {};
   const hooks = settings.hooks;
-  const r = { added: [], existed: [], removed: [], missing: [], notInstalled: [], deferred: [], normalized: [], present: [], topAdded: [], envAdded: [] };
+  const r = { added: [], existed: [], removed: [], missing: [], notInstalled: [], deferred: [], normalized: [], reformed: [], present: [], topAdded: [], envAdded: [] };
+  // con qué se escribe un hook `.js` (story 8.39, AC 5): lo decide harness-node.js#interpreter mirando el disco; quien no
+  // lo pasa (una prueba, un llamador viejo) queda con `node`, como antes
+  const jsPrefix = (o.interp && o.interp.prefix) || 'node';
   const active = o.decision.active;
   const activeSpecs = new Set(active.map((h) => h.spec));
   const inactive = o.decision.known.filter((s) => !activeSpecs.has(s));
@@ -402,7 +413,7 @@ function applyToSettings(settings, o) {
         const cmd = cmdOf(hk);
         const cmdFwd = fwd(cmd);
         let why = null; let what = null;
-        const sup = o.list.superseded.find((s) => (windows ? invokesRepoPath(cmd, s) : cmd.includes(s) && cmd.includes('node "')));
+        const sup = o.list.superseded.find((s) => (windows ? invokesRepoPath(cmd, s) : cmd.includes(s) && JS_RUNNER.test(cmd)));
         if (sup) { what = sup; why = 'superseded by H10 dispatcher'; }
         if (!what) {
           const off = inactive.find((s) => (windows ? invokesRepoPath(cmd, repoPathOf(s)) : namesFile(cmd, resolve(s))));
@@ -447,7 +458,17 @@ function applyToSettings(settings, o) {
     wanted.get(k).add(normMatcher(h.matcher));
   }
   const isStrictSubset = (a, b) => { const A = a.split('|').filter(Boolean); const B = new Set(b.split('|').filter(Boolean)); return A.length > 0 && A.length < B.size && A.every((x) => B.has(x)); };
-  const sameHook = (cmd, h, abs, runner) => (windows ? invokesRepoPath(cmd, repoPathOf(h.spec)) : namesFile(cmd, abs) && cmd.includes(`${runner} "`));
+  // un `.js` es el mismo hook en las dos formas del intérprete (story 8.39, AC 6): se reconoce y se reescribe en su lugar
+  const sameHook = (cmd, h, abs, runner) => (windows ? invokesRepoPath(cmd, repoPathOf(h.spec)) : namesFile(cmd, abs) && (runner === 'node' ? JS_RUNNER.test(cmd) : cmd.includes(`${runner} "`)));
+  // el comando con el intérprete que corresponde, si el de hoy es otro: sólo se cambia el intérprete (el guion queda escrito
+  // como estaba); null si ya está bien o no es un `.js`
+  const reform = (cmd, runner) => {
+    if (runner !== 'node') return null;
+    const now = leadingInterpreter(cmd);
+    // sólo un intérprete que es un Node (`node`, o una ruta que termina en node/node.exe): otro comando no se toca
+    if (!now || now === jsPrefix || !/(?:^|[/"])node(?:\.exe)?"?$/i.test(now)) return null;
+    return `${jsPrefix}${String(cmd).replace(/^\s*/, '').slice(now.length)}`;
+  };
   const takeNarrower = (bucket, h, abs, runner) => {
     const taken = [];
     const target = normMatcher(h.matcher);
@@ -485,7 +506,9 @@ function applyToSettings(settings, o) {
     // ruta absoluta del bash de Git entre comillas, el comando lanzado por PowerShell es un error de sintaxis y sale 1
     // aun con una entrada legítima (pipeline 182 #11979, paso fire-registered); y Claude Code en Windows lanza cada hook con
     // el bash de Git (sesión real del 2026-10-04), donde `bash` es ese mismo bash: la ruta absoluta no sumaba nada.
-    const command = `${runner} "${absCmd}"`;
+    // un `.js` con el Node del arnés si está (story 8.39, AC 5: sin comillas, o con comillas en Mac y Linux si la ruta trae
+    // espacios); si no, `node`. La ruta del intérprete nunca deja un hook sin registrar: lo decide sólo la del guion
+    const command = `${runner === 'node' ? jsPrefix : runner} "${absCmd}"`;
     const eol = windows && isSh ? crlfOnDisk(abs) : null;
     const crlf = !!(eol && eol.ok && eol.crlf);
     const unverified = !!(eol && !eol.ok);
@@ -512,6 +535,10 @@ function applyToSettings(settings, o) {
       if (unverified) r.notInstalled.push({ kind: 'unverified-registered', event: h.event, relpath: nameOf(h.spec), repo, path: fwd(abs), reason: eol.reason });
     };
     if (found) {
+      // el mismo hook en la otra forma del intérprete: se reescribe ESE comando, en su lugar (misma posición, matcher y
+      // `async`), y se informa como cambio de forma (story 8.39, AC 6)
+      const next = reform(cmdOf(found), runner);
+      if (next) { r.reformed.push({ event: h.event, relpath: h.spec, from: leadingInterpreter(cmdOf(found)), to: jsPrefix }); found.command = next; }
       r.existed.push({ event: h.event, relpath: h.spec });
       r.present.push(id);
       warnRegistered();
@@ -528,7 +555,11 @@ function applyToSettings(settings, o) {
       if (ch) { r.notInstalled.push({ kind: 'unsafe-path', event: h.event, relpath: nameOf(h.spec), repo, path: absCmd, char: ch }); return; }
     }
     let hookObj; let label = h.label;
-    if (carried) { hookObj = carried.hook; label = `${h.label} — matcher ampliado de «${carried.matcher}» a «${h.matcher}»`; }
+    if (carried) {
+      hookObj = carried.hook; label = `${h.label} — matcher ampliado de «${carried.matcher}» a «${h.matcher}»`;
+      const next = reform(cmdOf(hookObj), runner);
+      if (next) { r.reformed.push({ event: h.event, relpath: h.spec, from: leadingInterpreter(cmdOf(hookObj)), to: jsPrefix }); hookObj.command = next; }
+    }
     else { hookObj = { type: 'command', command }; if (h.async) hookObj.async = true; }
     let appended = false;
     for (const entry of bucket) {
@@ -628,7 +659,9 @@ function main(argv = process.argv.slice(2), env = process.env, { runConfig = nul
   const minimalIds = loadMinimalIds(a.effects || path.join(SETUP_DIR, 'install-effects.json'));
   const has = (need) => need === 'telegram-plugin' && fs.existsSync(path.join(home, '.claude', 'plugins', 'cache', 'claude-plugins-official', 'telegram'));
   const decision = decide(list, { env, integ, profile, minimalIds, platform, has });
-  const r = applyToSettings(settings, { list, decision, platform, hooksDir, skills, check: a.check, env, settingsPath });
+  // el intérprete de los hooks `.js` (story 8.39): mirando el disco, también si este instalador corre suelto
+  const interp = require('./harness/harness-node.js').interpreter({ env, platform: windows ? 'win32' : (process.platform === 'win32' ? 'linux' : process.platform) });
+  const r = applyToSettings(settings, { list, decision, platform, hooksDir, skills, check: a.check, env, settingsPath, interp });
 
   // las dos claves del arnés (posix): como el .sh, salvo que las haya hecho harness.js o el perfil no sea full
   // fuera de full (minimal, o el perfil sin saber: story 8.16) las dos claves tampoco se escriben ni se anotan; en
@@ -642,6 +675,7 @@ function main(argv = process.argv.slice(2), env = process.env, { runConfig = nul
   const removed = r.removed.map((x) => [x.event, x.relpath, x.why]);
   const lines = [];
   if (r.normalized.length) lines.push(`NORMALIZED:${r.normalized.length}`);
+  if (r.reformed.length) { lines.push(`REFORMED:${r.reformed.length}`); for (const x of r.reformed) lines.push(`  ~ ${x.event} → ${x.relpath}  [${x.from} → ${x.to}]`); }
   if (added.length) { lines.push(`ADDED:${added.length}`); for (const [e, m, p, l] of added) lines.push(`  + ${e} (matcher='${m || '*'}') → ${p}  [${l}]`); }
   if (r.existed.length) lines.push(`EXISTED:${r.existed.length}`);
   if (removed.length) { lines.push(`REMOVED:${removed.length}`); for (const [e, p, w] of removed) lines.push(`  - ${e} → ${p}  [${w}]`); }
@@ -673,7 +707,7 @@ function main(argv = process.argv.slice(2), env = process.env, { runConfig = nul
   ]);
   if (a.check) {
     const fresh = new Set(r.added.filter((x) => !x.rewritten).map((x) => `${x.event}:${x.relpath}`));
-    const rewritten = new Set(r.added.filter((x) => x.rewritten).map((x) => `${x.event}:${x.relpath}`));
+    const rewritten = new Set([...r.added.filter((x) => x.rewritten), ...r.reformed].map((x) => `${x.event}:${x.relpath}`));
     // un plan al que le falta algo no se muestra: si no se pudo anotar, sale distinto de 0 y el instalador no arma el plan
     // (la regla del plan de la 8.16 B; pase adversarial de la W3W4, clase 16)
     const planOk = appendLines(env.TYCON_PLAN_PIECES, [
@@ -690,7 +724,7 @@ function main(argv = process.argv.slice(2), env = process.env, { runConfig = nul
     if (!planOk) throw new ApplyError(`no pude anotar los hooks en el plan (${env.TYCON_PLAN_PIECES}): el plan quedaría incompleto y no se escribe`);
   }
 
-  const changed = added.length > 0 || removed.length > 0 || r.normalized.length > 0;
+  const changed = added.length > 0 || removed.length > 0 || r.normalized.length > 0 || r.reformed.length > 0;
   let backup = null;
   if (!a.check && changed) {
     if (existed && !env.TYCON_HARNESS_SNAPSHOT_DIR) {
@@ -721,7 +755,7 @@ function main(argv = process.argv.slice(2), env = process.env, { runConfig = nul
     fs.writeFileSync(a.jsonOut, `${JSON.stringify({
       platform, settings: settingsPath, check: a.check, changed, backup,
       added: r.added, existed: r.existed.length, removed: r.removed, missing: r.missing, notInstalled: r.notInstalled,
-      deferred: r.deferred, normalized: r.normalized.length, topAdded: r.topAdded, envAdded: r.envAdded,
+      deferred: r.deferred, normalized: r.normalized.length, reformed: r.reformed, topAdded: r.topAdded, envAdded: r.envAdded,
       profileLeave: [...decision.leave], profileOff: [...decision.profileOff],
     }, null, 2)}\n`);
   }

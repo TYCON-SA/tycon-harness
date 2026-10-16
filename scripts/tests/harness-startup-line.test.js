@@ -98,8 +98,9 @@ test('T28 · newLine en Windows: barras normales, comillas como el .ps1 (:421), 
   assert.ok(/-Command "[^"]*"$/.test(r.command), 'la -Command va entre comillas dobles y adentro sólo simples');
   // en Windows los hooks se escriben con `/` y comillas dobles: desde la story 8.17 (W3) los escribe el aplicador,
   // scripts/setup/apply-hooks.js con --platform windows (antes, install-tycon-hooks.ps1). La línea nueva sigue esa regla.
+  // Desde que el arnés tiene su propio Node, un `.js` arranca con el intérprete que elige el aplicador (`jsPrefix`).
   const applier = fs.readFileSync(path.join(RAIZ, 'scripts', 'setup', 'apply-hooks.js'), 'utf8');
-  assert.ok(applier.includes('const absCmd = windows ? fwd(abs) : abs;') && applier.includes('command = `${runner} "${absCmd}"`'),
+  assert.ok(applier.includes('const absCmd = windows ? fwd(abs) : abs;') && applier.includes('command = `${runner === \'node\' ? jsPrefix : runner} "${absCmd}"`'),
     'el aplicador ya no escribe los hooks de Windows con / y comillas como antes: revisar la línea nueva');
 });
 

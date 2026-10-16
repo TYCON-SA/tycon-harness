@@ -52,7 +52,24 @@ const path = require('path');
 // scripts/tests/tycon-home.test.js). Si está y no carga, tira.
 const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
 const { spawn, spawnSync, execFileSync } = require('child_process');
-const { rutaDeHerramienta, seAlcanza, asegurarPathDeHerramientas } = require('./tools-path.js');
+const { rutaDeHerramienta, seAlcanza, asegurarPathDeHerramientas, anotarCarpetas } = require('./tools-path.js');
+
+/**
+ * El node que nombra el disparador (story 8.39, decisión 23): el propio del arnés por su enlace `current`
+ * (`<casa>/node/current/bin/node`, la casa es TYCON_HOME o ~/.tycon), nunca la carpeta numerada ni `process.execPath`
+ * —que por el enlace da la carpeta numerada, y ésa se borra al cambiar de versión—. Sin él (o apagado), el de siempre.
+ * La regla de la ruta es la de scripts/setup/harness/tycon-home.js#harnessNode; si ese archivo no está (los laboratorios
+ * copian carpetas sueltas), va ESCRITA acá (copia declarada en scripts/tests/fixtures/harness-node-copies.json).
+ */
+function nodeDelDisparador(env = process.env) {
+  if (env.TYCON_HARNESS_NODE === '0') return process.execPath;
+  let bin;
+  const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js');
+  try { bin = require(lib).harnessNode({ env, platform: 'darwin' }).bin; } catch (_) {
+    bin = path.join(env.TYCON_HOME && path.isAbsolute(env.TYCON_HOME) ? env.TYCON_HOME : path.join(os.homedir(), '.tycon'), 'node', 'current', 'bin', 'node');
+  }
+  try { fs.accessSync(bin, fs.constants.X_OK); return bin; } catch (_) { return process.execPath; }
+}
 // Las variables renombradas a inglés (story 8.9): el nombre viejo sigue valiendo hasta el retiro — un interruptor de
 // apagado viejo en el .zshrc sigue apagando. Sin la biblioteca al lado (el banco copia este archivo a un arnés de
 // mentira sin scripts/lib): paso directo con el nombre nuevo.
@@ -684,7 +701,8 @@ function instalarTarea({ soloChequear } = {}) {
   // texto sin el `\n` que sí se escribía hacía que nunca coincidiera: el plist se reescribía en
   // CADA arranque de sesión y con él venían un `bootout` y un `bootstrap`, o sea reiniciar el
   // trabajo programado varias veces por día para dejarlo idéntico.
-  const contenido = `${plistDeseado({ label, nodeBin: process.execPath, script: __filename, ...cfg })}\n`;
+  const nodeBin = nodeDelDisparador();
+  const contenido = `${plistDeseado({ label, nodeBin, script: __filename, ...cfg })}\n`;
   let actual = null;
   try { actual = fs.readFileSync(destino, 'utf8'); } catch (_) { /* no está */ }
   if (actual === contenido) return { cambio: false, designada: true };
@@ -706,14 +724,18 @@ function instalarTarea({ soloChequear } = {}) {
   //
   // Va DESPUÉS del corto de idempotencia a propósito: en régimen el plist no cambia, así que este
   // freno no cuesta nada; sólo corre cuando efectivamente se va a escribir.
+  // dónde tiene a `claude` y `codex` el PATH de quien instala (story 8.39): bajo launchd, con el Node del arnés en el
+  // disparador, se buscan ahí (tools-path.js). Se anota ANTES de verificar, y se verifica como las va a buscar el disparador
+  let anotadas = null;
+  try { anotadas = anotarCarpetas(); } catch (e) { console.log(`examen: no pude anotar dónde están claude y codex (${e.message}): se buscan al lado de node y en el PATH`); }
   const inalcanzables = ['claude', 'codex']
-    .map((bin) => Object.assign({ bin }, seAlcanza(bin)))
+    .map((bin) => Object.assign({ bin }, seAlcanza(bin, Object.assign({ nodeBin }, anotadas ? { anotadas } : {}))))
     .filter((h) => !h.ok);
   if (inalcanzables.length) {
     console.log([
       '⛔ NO instalo el disparador del examen: desde acá no se alcanzan las herramientas que necesita.',
       ...inalcanzables.map((h) => `   · ${h.bin} → ${h.ruta} — ${h.motivo}`),
-      `   Busqué al lado de node (${path.dirname(process.execPath)}) y después en el PATH.`,
+      `   Busqué al lado de node (${path.dirname(nodeBin)}), en la carpeta que el PATH de esta instalación tiene para cada una y después en el PATH.`,
       '   Un disparador que no puede trabajar corre puntual, muere en 4 segundos y no lo nota nadie',
       '   hasta la denuncia de los 8 días (incidente 2026-09-04). Instalá las dos y volvé a correr:',
       '     node scripts/controls-bench/periodic-exam.js --install-task',

@@ -2116,6 +2116,8 @@ function startup(ctx, state, H, { log, snapshot = null }) {
   if (typeof H.hooksPathUnattended === 'function') {
     if (a.ok) notice = H.hooksPathUnattended(ctx, state, applierTree, policy, { mode: 'startup', log: (l) => log(`startup: ${l}`), notice }).notice;
   }
+  // el Node del arnés (story 8.39, AC 11): mientras no lo pudo bajar, se dice en cada arranque, sin pisar otro aviso
+  if (typeof H.harnessNodeNotice === 'function') notice = H.harnessNodeNotice(notice, a);
   if (notice) R.setNotice(state, notice); else R.clearNotice(state);
   S.write(ctx.home, state);
   R.clearUpdateFailure(ctx.home, { kind: 'busy' });

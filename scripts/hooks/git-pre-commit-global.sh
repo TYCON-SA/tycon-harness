@@ -73,6 +73,10 @@ harness_dir() {
   printf '%s' "${HOME:-}/.claude/tycon-harness"
 }
 _TCG_DIR="$(harness_dir)"
+# el Node del arnés (story 8.39): el propio si está y es ejecutable; si no, el del PATH. No cambia el PATH ni exporta
+# nada: el .githooks/pre-commit del repo del dev sigue corriendo con su Node
+. "$_TCG_DIR/scripts/lib/harness-node.sh" 2>/dev/null || harness_node_bin() { echo node; }
+HNODE="$(harness_node_bin)"
 _LEGACY_SH="$_TCG_DIR/scripts/lib/legacy-names.sh"
 if [ -f "$_LEGACY_SH" ] && . "$_LEGACY_SH" 2>/dev/null && command -v legacy_env >/dev/null 2>&1; then
   LEGACY_NAMES_WHERE="scripts/hooks/git-pre-commit-global.sh"
@@ -80,8 +84,8 @@ if [ -f "$_LEGACY_SH" ] && . "$_LEGACY_SH" 2>/dev/null && command -v legacy_env 
   legacy_env TYCON_REVIEWER_RULES
 fi
 SQL_COMPILA="$_TCG_DIR/scripts/ci/sql-compile.js"
-if [ "${TYCON_SQL_COMPILE:-1}" != "0" ] && [ -f "$SQL_COMPILA" ] && command -v node >/dev/null 2>&1; then
-  node "$SQL_COMPILA" --staged --repo "$REPO_ROOT" || true
+if [ "${TYCON_SQL_COMPILE:-1}" != "0" ] && [ -f "$SQL_COMPILA" ] && command -v "$HNODE" >/dev/null 2>&1; then
+  "$HNODE" "$SQL_COMPILA" --staged --repo "$REPO_ROOT" || true
 fi
 # ── 1b'. Reglas del CLAUDE.md fuera de «Reglas para revisores»: AVISAR (2026-09-19, story 7.5) ──
 # Los revisores del pipeline ya no cargan el CLAUDE.md: las reglas propias del repo les llegan sólo
@@ -89,8 +93,8 @@ fi
 # lo dice al commitear. Con TYPESAFE_API_KEY filtra por probabilidad (tachando antes de mandar);
 # sin llave avisa toda línea nueva fuera de la sección. Nunca rechaza. Off: TYCON_REVIEWER_RULES=0.
 REGLAS_REV="$_TCG_DIR/scripts/ci/reviewer-rules.js"
-if [ "${TYCON_REVIEWER_RULES:-1}" != "0" ] && [ -f "$REGLAS_REV" ] && command -v node >/dev/null 2>&1; then
-  node "$REGLAS_REV" --staged --repo "$REPO_ROOT" || true
+if [ "${TYCON_REVIEWER_RULES:-1}" != "0" ] && [ -f "$REGLAS_REV" ] && command -v "$HNODE" >/dev/null 2>&1; then
+  "$HNODE" "$REGLAS_REV" --staged --repo "$REPO_ROOT" || true
 fi
 # ── 1c. El catálogo de producción: forma verificada, y RECHAZA (2026-09-15, story 6.1) ───────
 # `.tycon/production.json` declara qué servidores de base son de producción; el freno
@@ -101,8 +105,8 @@ fi
 # retiro (story 8.9, tanda P).
 LINT_PROD="$_TCG_DIR/scripts/production/lint-production-json.js"
 if [ "${TYCON_PROD_LINT:-1}" != "0" ]; then
-  if [ -f "$LINT_PROD" ] && command -v node >/dev/null 2>&1; then
-    if ! node "$LINT_PROD" --staged --repo "$REPO_ROOT"; then
+  if [ -f "$LINT_PROD" ] && command -v "$HNODE" >/dev/null 2>&1; then
+    if ! "$HNODE" "$LINT_PROD" --staged --repo "$REPO_ROOT"; then
       echo "⛔ el catálogo de producción rechazó el commit (.tycon/production.json)" >&2
       exit 1
     fi
@@ -121,11 +125,11 @@ fi
 # hace y se dice en UNA línea; con la configuración rota, el aviso y sin sync (AC 2); sin lector, como hoy. Este archivo se
 # instala COPIADO a ~/.git-hooks/, así que el lector se busca en el arnés, no al lado. Nunca se rechaza un commit por esto.
 _CFG_JS="$_TCG_DIR/scripts/lib/tycon-config.js"
-if [ -f "$_CFG_JS" ] && command -v node >/dev/null 2>&1; then
+if [ -f "$_CFG_JS" ] && command -v "$HNODE" >/dev/null 2>&1; then
   _AV="$(mktemp)"
   # --switch: TYCON_ENGRAM_HOOK puesto manda por encima de la llave, en los dos sentidos (=1 sincroniza aunque la llave
   # esté apagada; =0 ya salió arriba)
-  _ESTADO="$(node "$_CFG_JS" key engram --hook --switch TYCON_ENGRAM_HOOK 2>"$_AV")" || _ESTADO="prendida"
+  _ESTADO="$("$HNODE" "$_CFG_JS" key engram --hook --switch TYCON_ENGRAM_HOOK 2>"$_AV")" || _ESTADO="prendida"
   case "$_ESTADO" in
     apagada) rm -f "$_AV"; echo "engram apagado en esta máquina: este repo pide sincronizar su memoria (.engram-project) y no se hace (prender: integrations.engram=true en ~/.claude/tycon.json o TYCON_ENGRAM=1)"; exit 0 ;;
     rota) cat "$_AV" >&2; rm -f "$_AV"; exit 0 ;;

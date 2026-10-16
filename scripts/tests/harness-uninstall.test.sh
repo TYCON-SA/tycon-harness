@@ -1496,6 +1496,37 @@ if corre S16; then
   case "$SALIDA" in *"$LAB_HOME/.claude/response-style"*"$LAB_HOME/.claude/safety-guard.log"*|*"$LAB_HOME/.claude/safety-guard.log"*"$LAB_HOME/.claude/response-style"*) ok "S16-T6 …y el cierre de uninstall las nombra" ;; *) mal "S16-T6 el cierre de uninstall no las nombra: $SALIDA" ;; esac
 fi
 
+# ── T29 de la story 8.39 · Uninstall_DosFormas_DejaLaCarpetaNombrada ─────────────────────────────────────────────────
+# @story-8.39 @ac-22  uninstall reconoce el hook del arnés escrito con la ruta del Node propio (sin comillas, con
+# comillas, y la forma de Windows en texto) y deja ~/.tycon/node, nombrado en «deja» con el comando para borrarlo
+echo "T29 · uninstall y el Node del arnés"
+T29_RES="$(node -e '
+const { isHarnessCommand } = require(process.argv[1]);
+const roots = ["/h/.claude/tycon-harness", "C:/Users/dev/.claude/tycon-harness"];
+const rel = "@tcg:x.js";
+const cases = [
+  ["/h/.tycon/node/current/bin/node \"/h/.claude/tycon-harness/scripts/hooks/x.js\"", true],
+  ["\"/h/mi casa/.tycon/node/current/bin/node\" \"/h/.claude/tycon-harness/scripts/hooks/x.js\"", true],
+  ["C:/Users/dev/.tycon/node/current/node.exe \"C:/Users/dev/.claude/tycon-harness/scripts/hooks/x.js\"", true],
+  ["node \"/h/.claude/tycon-harness/scripts/hooks/x.js\"", true],
+  ["/usr/bin/otro \"/h/.claude/tycon-harness/scripts/hooks/x.js\"", false],
+];
+const bad = cases.filter(([c, want]) => isHarnessCommand(c, rel, roots) !== want).map(([c]) => c);
+process.stdout.write(bad.join(" | "));' "$RAIZ/scripts/setup/harness/remove.js" 2>&1)"
+[ -z "$T29_RES" ] && ok "T29 remove.js reconoce las formas con el Node del arnés (y no otro programa)" || mal "T29 remove.js no reconoce: $T29_RES"
+# shellcheck disable=SC1091
+source "$RAIZ/scripts/tests/lib/harness-lab.sh"
+harness_lab_create "$T/t29" >/dev/null
+harness install --yes >/dev/null 2>&1 || mal "T29 install previo falló"
+mkdir -p "$LAB_HOME/.tycon/node/versions/v24.21.0/bin"
+B29="$LAB_HOME/.tycon/node/current/bin/node"
+node -e 'const f=process.argv[1],b=process.argv[2];const s=JSON.parse(require("fs").readFileSync(f,"utf8"));for(const g of Object.values(s.hooks||{}))for(const e of g)for(const h of e.hooks||[])if(/^node "/.test(h.command)&&/lab-hook\.js"$/.test(h.command))h.command=h.command.replace(/^node /,b+" ");require("fs").writeFileSync(f,JSON.stringify(s,null,2))' "$LAB_HOME/.claude/settings.json" "$B29"
+grep -q "$B29 " "$LAB_HOME/.claude/settings.json" || mal "T29 no pude pasar el hook de juguete a la forma nueva"
+SALIDA="$(harness uninstall --yes < /dev/null 2>&1)"; RC=$?
+[ "$RC" = 0 ] && ! grep -q 'lab-hook.js' "$LAB_HOME/.claude/settings.json" 2>/dev/null && ok "T29 uninstall saca el hook en la forma nueva" || mal "T29 uninstall (rc $RC) dejó el hook: $(grep -c lab-hook.js "$LAB_HOME/.claude/settings.json" 2>/dev/null)"
+[ -d "$LAB_HOME/.tycon/node" ] && case "$SALIDA" in *"el Node propio del arnés $LAB_HOME/.tycon/node/ — para borrarlo: rm -rf"*) true ;; *) false ;; esac \
+  && ok "T29 ~/.tycon/node queda, nombrado en «deja» con el comando para borrarlo" || mal "T29 la carpeta del Node: $( [ -d "$LAB_HOME/.tycon/node" ] && echo queda || echo borrada ) · salida: $(printf '%s' "$SALIDA" | grep -i 'node' | head -3)"
+
 echo
 if [ "$FALLOS" -gt 0 ]; then echo "❌ harness-uninstall: FALLARON $FALLOS chequeo(s)"; exit 1; fi
 echo "✅ harness-uninstall: todo verde"; exit 0

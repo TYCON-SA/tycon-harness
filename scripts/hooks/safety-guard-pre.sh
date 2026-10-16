@@ -96,9 +96,12 @@ INPUT="$(cat 2>/dev/null)" || INPUT=""
 
 # Con qué se lee: `jq` si está (es más rápido y este hook corre en cada comando) y `node`, que es
 # requisito del arnés, si `jq` no está O no pudo. Ninguno de los dos → `cannot_read`.
+# El Node del arnés (story 8.39): el propio si está y es ejecutable; si no, el del PATH. No cambia el PATH.
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/harness-node.sh" 2>/dev/null || harness_node_bin() { echo node; }
+HNODE="$(harness_node_bin)"
 HAS_JQ=0; HAS_NODE=0
 if command -v jq >/dev/null 2>&1; then HAS_JQ=1; fi
-if command -v node >/dev/null 2>&1; then HAS_NODE=1; fi
+if command -v "$HNODE" >/dev/null 2>&1; then HAS_NODE=1; fi
 
 # read_field <ruta.con.puntos> — imprime ese campo de $INPUT: el texto tal cual; nada si falta, es
 # null o es false. Sale ≠ 0 si NO PUDO LEER: no hay lector, o la entrada no es UN documento JSON
@@ -115,7 +118,7 @@ read_field() {
     then return 0; fi
   fi
   if [[ "$HAS_NODE" == "1" ]]; then
-    printf '%s' "$INPUT" | node -e '
+    printf '%s' "$INPUT" | "$HNODE" -e '
       let v;
       try { v = JSON.parse(require("fs").readFileSync(0, "utf8").replace(/^\uFEFF/, "")); } catch (e) { process.exit(1); }
       for (const k of process.argv[1].split(".")) {
@@ -217,8 +220,8 @@ mkdir -p "$(dirname "$LOGFILE")" 2>/dev/null || true
 constancia() { # $1 = regla (id del catálogo)  $2 = veredicto
   local lib="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/guard-record.js"
   [[ -f "$lib" ]] || return 0
-  command -v node >/dev/null 2>&1 || return 0
-  printf '%s' "$CMD_SHOWN" | node "$lib" --guard safety-guard --rule "$1" --verdict "$2" --cmd-stdin >/dev/null 2>&1 || true
+  command -v "$HNODE" >/dev/null 2>&1 || return 0
+  printf '%s' "$CMD_SHOWN" | "$HNODE" "$lib" --guard safety-guard --rule "$1" --verdict "$2" --cmd-stdin >/dev/null 2>&1 || true
   return 0
 }
 

@@ -233,7 +233,8 @@ function dispatch(mode) {
         if (!h.spawnIf || h.spawnIf(spawnEvent)) {
           if (fs.existsSync(h.path)) {
             const { execFileSync } = require('child_process');
-            const out = execFileSync('node', [h.path], {
+            // el mismo Node que corre este despachador (el del arnés, si lo lanzó así: story 8.39), no el del PATH
+            const out = execFileSync(process.execPath, [h.path], {
               input: JSON.stringify(spawnEvent || {}),
               encoding: 'utf8',
               timeout: 15000,

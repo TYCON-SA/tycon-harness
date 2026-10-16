@@ -208,3 +208,26 @@ test('T10 · sin carpeta raíz común no se puede quitar la raíz, y se dice', (
   assert.strictEqual(r.ok, false);
   assert.match(r.reason, /ra[ií]z/, r.reason);
 });
+
+// story 8.39 (T3, caracterización): del comprimido oficial de Node la bajada saca SÓLO bin/node; los tres enlaces que
+// trae bin/ (npm, npx, corepack) quedan afuera sin rechazar el comprimido, y el binario conserva su modo ejecutable
+test('T3 TarReader_SoloUnArchivo_IgnoraEnlacesDeAlLado @story-8.39 @ac-2', () => {
+  const R = require(READER);
+  const root = 'node-v24.21.0-darwin-arm64';
+  const t = tar([
+    entry({ name: `${root}/`, type: '5', mode: 0o755 }),
+    entry({ name: `${root}/bin/`, type: '5', mode: 0o755 }),
+    entry({ name: `${root}/bin/node`, mode: 0o755 }, '#!/bin/sh\necho v24.21.0\n'),
+    entry({ name: `${root}/bin/npm`, type: '2', linkname: '../lib/node_modules/npm/bin/npm-cli.js' }),
+    entry({ name: `${root}/bin/npx`, type: '2', linkname: '../lib/node_modules/npm/bin/npx-cli.js' }),
+    entry({ name: `${root}/bin/corepack`, type: '2', linkname: '../lib/node_modules/corepack/dist/corepack.js' }),
+    entry({ name: `${root}/lib/node_modules/npm/bin/npm-cli.js` }, '// npm\n'),
+  ]);
+  const dir = tmp('tar-only-node-');
+  const r = R.extractTarGz(gz(t), dir, { stripRoot: true, only: 'bin/node' });
+  assert.strictEqual(r.ok, true, r.reason);
+  assert.deepStrictEqual(r.manifest.map((m) => `${m.path} ${m.mode}`), ['bin/node 100755']);
+  const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(d, e.name)).map((x) => `${e.name}/${x}`) : [e.name]));
+  assert.deepStrictEqual(walk(dir), ['bin/node'], 'sólo bin/node en el disco');
+  if (process.platform !== 'win32') assert.ok(fs.statSync(path.join(dir, 'bin', 'node')).mode & 0o100, 'con su modo ejecutable');
+});

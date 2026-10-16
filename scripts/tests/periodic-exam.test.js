@@ -1892,3 +1892,65 @@ test('T77 fake_node_never_touches_the_real_one: armar el node falso dos veces no
   assert.throws(() => binDeNode(otra, { real: deMentira }), /es el node real/, 'con el real en el destino, frena antes de escribir');
   assert.strictEqual(fs.readFileSync(deMentira, 'utf8'), 'no soy node\n', 'y no lo tocó');
 });
+
+// ── story 8.39, T24: el disparador del examen con el Node propio del arnés ──────────────────────────────────────────
+test('T24 Examen_NodeDelArnes_PlistConCurrentYHerramientas @story-8.39 @ac-9', () => {
+  const b = banco();
+  // las herramientas del dev, en OTRA carpeta del PATH de quien instala, con su node al lado (codex es
+  // `#!/usr/bin/env node`): copias, nunca un enlace al node real
+  const delDev = path.join(b.raiz, 'npm-global', 'bin');
+  fs.mkdirSync(delDev, { recursive: true });
+  fs.copyFileSync(process.execPath, path.join(delDev, 'node'), fs.constants.COPYFILE_FICLONE); fs.chmodSync(path.join(delDev, 'node'), 0o755);
+  fs.writeFileSync(path.join(delDev, 'claude'), '#!/bin/sh\necho ok\nexit 0\n'); fs.chmodSync(path.join(delDev, 'claude'), 0o755);
+  fs.writeFileSync(path.join(delDev, 'codex'), '#!/usr/bin/env node\nconsole.log("ok");\n'); fs.chmodSync(path.join(delDev, 'codex'), 0o755);
+  // el Node del arnés: una COPIA del node real en versions/<v>/bin/node y el enlace current
+  const nodo = (v) => {
+    const d = path.join(b.casa, '.tycon', 'node', 'versions', v, 'bin');
+    fs.mkdirSync(d, { recursive: true });
+    if (!fs.existsSync(path.join(d, 'node'))) { fs.copyFileSync(process.execPath, path.join(d, 'node'), fs.constants.COPYFILE_FICLONE); fs.chmodSync(path.join(d, 'node'), 0o755); }
+    const cur = path.join(b.casa, '.tycon', 'node', 'current');
+    try { fs.unlinkSync(cur); } catch (_) { /* no había */ }
+    fs.symlinkSync(path.join('versions', v), cur, 'dir');
+    return path.join(cur, 'bin', 'node');
+  };
+  const current = nodo('v24.21.0');
+  const agentes = path.join(b.raiz, 'LaunchAgents');
+  const instalar = (bin, extra = []) => spawnSync(bin, [EXAMEN, '--install-task', ...extra], { encoding: 'utf8', env: {
+    PATH: `${delDev}:${PATH_DE_LAUNCHD}`, HOME: b.casa, TYCON_EXAM_CONFIG: b.rutaCfg, TYCON_EXAM_RUNNER: b.rutaRunner, TYCON_EXAM_REPO: b.repo,
+    TYCON_EXAM_MACHINE: 'Devas-Mac-mini', TYCON_EXAM_LAUNCHAGENTS: agentes, TYCON_EXAM_REAL_HOME: b.casa, LAUNCHCTL_BIN: '/usr/bin/true',
+  } });
+  const plistFile = path.join(agentes, 'ar.com.tycon.examen-periodico.plist');
+  const r = instalar(current);
+  assert.strictEqual(r.status, 0, `${r.stdout}\n${r.stderr}`);
+  const plist = fs.readFileSync(plistFile, 'utf8');
+  assert.ok(plist.includes(`<string>${current}</string>`), `el plist nombra current, no la carpeta numerada — ${plist}`);
+  assert.ok(!plist.includes('versions/v24.21.0'), 'nunca la carpeta numerada');
+  const anotado = JSON.parse(fs.readFileSync(path.join(b.casa, '.claude', '.tycon-pipeline', 'exam-tools.json'), 'utf8'));
+  assert.strictEqual(anotado.claude, delDev, 'exam-tools.json anota la carpeta de claude');
+  assert.strictEqual(anotado.codex, delDev, 'y la de codex');
+  // bajo el PATH mínimo de launchd, con el Node del arnés: encuentra las dos por la carpeta anotada y codex corre con su node
+  const probe = spawnSync(current, ['-e', `
+    const R = require(${JSON.stringify(path.join(TCG, 'scripts', 'controls-bench', 'tools-path.js'))});
+    R.asegurarPathDeHerramientas();
+    const c = R.rutaDeHerramienta('codex'), cl = R.rutaDeHerramienta('claude');
+    const run = require('child_process').spawnSync(c, ['--version'], { encoding: 'utf8' });
+    process.stdout.write(JSON.stringify({ c, cl, status: run.status, out: (run.stdout || '').trim() }));`], { encoding: 'utf8', env: { PATH: PATH_DE_LAUNCHD, HOME: b.casa } });
+  const pj = JSON.parse(probe.stdout || '{}');
+  assert.strictEqual(pj.c, path.join(delDev, 'codex'), `codex por la carpeta anotada — ${probe.stdout}${probe.stderr}`);
+  assert.strictEqual(pj.cl, path.join(delDev, 'claude'));
+  assert.deepStrictEqual([pj.status, pj.out], [0, 'ok'], 'codex corre bajo el PATH de launchd (encuentra el node de su carpeta)');
+  // cambiar current de versión no cambia el plist
+  const antes = fs.readFileSync(plistFile, 'utf8');
+  nodo('v24.22.0');
+  const chk = instalar(current, ['--check']);
+  assert.strictEqual(chk.status, 0);
+  assert.doesNotMatch(chk.stdout, /falta \(o cambió\)/, 'cambiar de versión no pide reinstalar el disparador');
+  assert.strictEqual(fs.readFileSync(plistFile, 'utf8'), antes);
+  // sin current: process.execPath, como hoy
+  fs.unlinkSync(path.join(b.casa, '.tycon', 'node', 'current'));
+  const viejo = path.join(delDev, 'node');
+  const r2 = instalar(viejo);
+  assert.strictEqual(r2.status, 0, `${r2.stdout}\n${r2.stderr}`);
+  const p2 = fs.readFileSync(plistFile, 'utf8');
+  assert.ok([viejo, fs.realpathSync(viejo)].some((x) => p2.includes(`<string>${x}</string>`)), `sin el Node del arnés, el node que corre — ${p2}`);
+});

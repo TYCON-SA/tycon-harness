@@ -852,6 +852,24 @@ Bloques team-wide de `~/.claude/CLAUDE.md`, versionados acá y sincronizados a c
 
 Cada herramienta, sus enchufes (2026-10-06). Por qué: quien sólo usa Codex **no podía instalar el arnés** — el instalador escribía en la carpeta de Claude Code aunque no estuviera, la actualización la disparaba sólo el arranque de Claude Code, y el lado Codex se armaba leyendo archivos de Claude (`AGENTS.md` era una copia entera del `CLAUDE.md`; los servidores MCP salían de `~/.claude.json`, y si faltaba, silencio). Ahora `install` **detecta** qué herramientas hay (el ejecutable en el `PATH` o la configuración propia de la herramienta — lo que el arnés despliega no cuenta: «ya desplegado» no es «instalada»), las nombra en el plan, y `--tool claude|codex` las fija; lo que enchufa queda **escrito en el estado**, porque el `PATH` de un arranque no es el de la persona. El enchufe de Codex corre en Node, el mismo camino en Mac, Linux y Windows: `agents-md-blocks.js` deja los bloques de `claude-md-blocks/` en `AGENTS.md` **entre sus marcas** (lo de la persona fuera de las marcas no se toca, y no viaja ningún `@import`), y `harness-startup.js` es el hook de arranque de Codex que corre la copia fija y **actualiza** el arnés, como la línea de arranque de Claude Code. Una máquina sin Claude Code vive entera en `~/.tycon` (su estado en `~/.tycon/state`) y nada se escribe en `~/.claude`. `tool-change.js` suma una herramienta después (`install --tool`) o saca una sola (`uninstall --tool`) sin tocar la otra. La comprobación de salud, que lanza hooks de verdad, los lanza con una carpeta de usuario temporal: si no, deja una carpeta del reloj en `~/.claude` durante la instalación. Pruebas: `scripts/tests/harness-tools.test.sh`, `agents-md-blocks.test.js`, los casos del banco de `harness-startup.js`, y en Windows el escenario `codex-only`. Detalle: `guides/mecanismo-de-instalacion.md` §«Cada herramienta, sus enchufes».
 
+## scripts/setup/harness/harness-node.js — el Node propio del arnés
+
+*(scripts/setup/harness/harness-node.js + `scripts/lib/harness-node.sh` + `scripts/production/node-official.json`)*
+
+El arnés corre con su propio Node 24 (2026-10-16). Por qué: cada hook se registraba como `node "<guion>"` y
+arrancaba con el primer `node` del PATH de la herramienta, el que tuviera la máquina; una del equipo corría con Node 20,
+que la CI pública no prueba, y nadie lo sabía hasta que algo fallaba. Ahora `runApplierOnly` (el punto por el que pasan
+`install`, `update`, `apply` y el arranque) baja el Node oficial de la lista —seis plataformas, una sola versión, la
+misma lista del freno de producción—, verifica el comprimido y el binario contra las huellas que viajan en el árbol, lo
+arma aparte y cambia el enlace `~/.tycon/node/current`. Los hooks `.js` se escriben con la ruta de `current` sin
+comillas (con comillas en Mac y Linux si la carpeta trae espacios), lo que corre igual en bash, sh, cmd y PowerShell
+(medido en Windows, por los cinco lanzadores con que se dispara un hook); qué intérprete se escribe lo decide `interpreter` mirando el disco, para Claude Code,
+Codex y la paridad. Los guiones de shell lo toman de `harness-node.sh` sin tocar el PATH: los proyectos del dev siguen
+con su Node. Si no lo puede bajar, el arnés sigue con el del PATH y lo dice (`doctor`, el aviso del arranque); nunca un
+rojo. `download-runs.js --harness-node-report` dice cuándo todas las máquinas lo tienen, que es cuándo sacar Node 22 de
+la CI. Pruebas: `harness-node.test.sh` (con un servidor local que hace de nodejs.org), `apply-hooks.test.js` (T16 a
+T18) y, en Windows, `node-form-spike.js` dentro del escenario `no-clone`.
+
 ## scripts/setup/harness/release.js — el cambio de versión con enlaces (Windows)
 
 *(scripts/setup/harness/release.js + `tycon-home.js` + `bootstrap.js` + `bootstrap-fallback.ps1`)*

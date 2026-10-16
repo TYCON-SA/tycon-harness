@@ -590,6 +590,8 @@ function doctorFacts(harness, env, cwd) {
   try {
     const d = JSON.parse(r.stdout);
     out.mode = d.mode || null;
+    // el Node propio del arnés (story 8.39): con qué corre el arnés y cuántos hooks con él
+    out.harness_node = d.harness_node || null;
     for (const level of ['fail', 'warn', 'ok']) out[level] = Array.isArray(d[level]) ? d[level].map((x) => L.clip(typeof x === 'string' ? x : JSON.stringify(x), 400)) : [];
     out.readable = Array.isArray(d.fail);
   } catch (e) {

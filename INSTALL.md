@@ -89,6 +89,17 @@ ya instalada pasa a esta forma sola: lo intenta en silencio en cada arranque. Si
 diez arranques), el arranque te avisa una vez qué cerrar y qué comando correr (`harness.js update --yes`, en una
 terminal suelta); mientras tanto `doctor` lo muestra como pendiente. En Mac y Linux no hay `versions/`: nada cambia.
 
+**El Node propio del arnés, `~/.tycon/node`.** Tu Node hace falta para instalar; después `install`, `update`, `apply` y
+el arranque bajan el Node 24 oficial de nodejs.org (unos 50 MB, la versión de `scripts/production/node-official.json`),
+lo verifican contra la huella que viaja en el arnés —nunca contra la que sirve el servidor— y lo dejan en
+`~/.tycon/node/versions/<versión>/`, con el enlace `~/.tycon/node/current` a la que se usa. Los hooks del arnés, sus
+guiones y sus instaladores corren con él; tus proyectos, tu terminal y lo que corre `npm install -g` siguen con tu Node:
+el arnés no toca el PATH. Si no lo puede bajar (sin red, una huella que no coincide, una plataforma sin entrada en la
+lista), sigue con tu Node y lo dice en el arranque y en `doctor`. En el arranque la bajada corre aparte del hook, con un
+tope de 180 s, y tras una falla de red espera 6 horas; a mano se intenta siempre. Respeta `HTTPS_PROXY`. Se apaga con
+`TYCON_HARNESS_NODE=0`. `uninstall` lo deja y te dice cómo borrarlo. `doctor` dice qué Node usa el arnés y cuántos hooks
+corren con él.
+
 ### 5. Si trabajás con BIZUIT Extensions desde otra organización
 
 El arnés anda sin Azure DevOps, sin Clockify y sin engram: todo eso nace apagado y nada lo pide. Tres pasos te dejan
