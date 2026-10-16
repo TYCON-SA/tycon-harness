@@ -47,8 +47,9 @@ ver ese step.
 `scripts/tools/merge-pr.js plan` del arnés), no una suposición. Lo que cambia allá: el servidor no
 siempre mergea solo, así que el skill **espera el control que el repo declara** en
 `.tycon/advisors.yaml → merge.check` y recién entonces mergea, con un commit de merge titulado
-«asunto (#N)»; antes pone la rama al día con el target; y si el repo numera versiones
-(`version.json` en la raíz), deja en la rama un commit que sube el número. Sin `merge.check`
+«asunto (#N)»; antes pone la rama al día con el target; y si el repo numera versiones por pedido
+(`version.json` en la raíz, sin `"numbering": "merge-tag"`), deja en la rama un commit que sube el número. Con esa
+marca el número lo pone el merge (una etiqueta) y el pedido no toca `version.json`. Sin `merge.check`
 declarado, crea el pedido y no lo mergea.
 
 🔴 **Step 7 en modo `pr`: las SUITES COMPLETAS locales SE SALTEAN** (la validación del PR corre

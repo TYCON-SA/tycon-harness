@@ -149,6 +149,10 @@ JSON
   printf '%s\n' 'echo "repo-lint head=$(git log -1 --format=%s HEAD) staged=$(git diff --cached --name-only | tr "\n" " ")" >> "$(cd "$(git rev-parse --git-common-dir)/.." && pwd)/.calls"' \
     '[ ! -f lint-rojo ] || { echo "el pre-commit frena"; exit 1; }' > "${r}/.githooks/pre-commit-harness"
   printf '{ "version": "2026.01.01.1" }\n' > "${r}/version.json"
+  # el paso `version` lee la regla del repo (scripts/ci/version-tag.js check-pr): va la de verdad, no una de mentira
+  mkdir -p "${r}/scripts/ci" "${r}/scripts/setup/harness"
+  cp "${ROOT}/scripts/ci/version-tag.js" "${r}/scripts/ci/version-tag.js"
+  cp "${ROOT}/scripts/setup/harness/version-order.js" "${r}/scripts/setup/harness/version-order.js"
   ( cd "${r}" && lab_git init -q . && lab_git add -A && lab_git commit -qm base \
       && echo "// segundo commit" >> build/check.js && printf '{ "version": "2026.01.01.2" }\n' > version.json \
       && lab_git commit -qam historia ) > /dev/null 2>&1 \
@@ -189,7 +193,7 @@ else no "T21 (d) las llamadas no son las esperadas: $(calls_of "${R}" | tr '\n' 
 lacks "T21 (d) no corre el detector" "${R}/.calls" "detector"
 lacks "T21 (d) sin --range no corre el freno de nombres" "${R}/.calls" "spanish-names"
 lacks "T21 (d) sin --clean-machine no corre la máquina limpia" "${R}/.calls" "clean-machine"
-has "T21 (d) node --check mira sólo lo versionado (el .js roto sin versionar no cuenta)" "${R}.ci/1-node-check.log" "node-check: 9 .js versionados · 0 no compilan"
+has "T21 (d) node --check mira sólo lo versionado (el .js roto sin versionar no cuenta)" "${R}.ci/1-node-check.log" "node-check: 11 .js versionados · 0 no compilan"
 # las suites que piden agent-skills: las tres, entre las portables y el banco, cada una en su HOME vacía
 is "T21 (d) corren las tres suites que piden exactamente agent-skills (diarias y semanales), y ninguna otra" \
   "suite-alpha suite-beta suite-weekly" "$(grep '^suite-' "${R}/.calls" | cut -d' ' -f1 | sort | tr '\n' ' ' | sed 's/ $//')"

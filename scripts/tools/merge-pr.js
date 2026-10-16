@@ -7,7 +7,9 @@
  * sus controles dan verde. En GitHub eso no está siempre (un repo privado sin plan pago no lo permite), un pedido trae
  * VARIOS controles (el de la corrida de la validación, uno por cada trabajo y los de otras herramientas) y el número de
  * `version.json` —lo que una máquina instalada compara para saber si hay algo nuevo— ya no lo pone una sincronización:
- * sube con cada pedido. Este guion junta las partes mecánicas de ese camino, para que el skill no las haga a ojo:
+ * subía con cada pedido. Desde que `version.json` trae `numbering: "merge-tag"`, el número lo pone el merge (una etiqueta
+ * `v<número>`, scripts/ci/version-tag.js) y el pedido no lo toca: `bump-version` no hace nada y `check-version` pide que
+ * el archivo quede igual. Este guion junta las partes mecánicas de ese camino, para que el skill no las haga a ojo:
  *
  *   plan            de qué servidor es `origin`, qué modo y qué control declara el repo, y qué paso del skill sigue.
  *                   Dice de dónde leyó el modo y el control (`configFrom`): `repo` o `maintainers` (ver abajo)
@@ -471,6 +473,8 @@ function bumpVersion({ repo: given, source, target, write = false }, deps = {}) 
   const published = versionAt(repo, targetRef, deps);
   if (published.problem) return stop(published.problem);
   if (!published.present) return { code: 0, action: 'none', written: false, reason: `este repo no numera versiones: origin/${target} no trae ${VERSION_FILE}` };
+  // el número lo pone el merge (una etiqueta sobre cada merge a la rama destino): el pedido no toca version.json
+  if (VO.numberedByTag(published.data)) return { code: 0, action: 'none', written: false, target: published.version, reason: `el número lo pone el merge (la etiqueta ${VO.TAG_PREFIX}<número>): el pedido no toca ${VERSION_FILE}` };
   const mine = versionAt(repo, sourceRef, deps);
   if (mine.problem) return stop(mine.problem);
   if (!mine.present) return stop(`la rama ${source} no trae ${VERSION_FILE} y origin/${target} sí: traé la rama destino antes de numerar`);
@@ -526,6 +530,11 @@ function checkVersion({ repo: given, base, head }, deps = {}) {
   const h = versionAt(repo, head, deps);
   if (h.problem) return stop(h.problem);
   if (!h.present) return { code: 1, base: b.version, head: null, reason: `${head} no trae ${VERSION_FILE} y ${base} sí (${b.version})` };
+  // con el número del merge, el pedido deja version.json como está (el piso y la marca): la etiqueta la pone el merge
+  if (VO.numberedByTag(b.data)) {
+    if (VO.numberedByTag(h.data) && h.version === b.version) return { code: 0, base: b.version, head: h.version, reason: `el número lo pone el merge (la etiqueta ${VO.TAG_PREFIX}<número>); ${VERSION_FILE} sigue en ${b.version}` };
+    return { code: 1, base: b.version, head: h.version, reason: `${head} cambia ${VERSION_FILE} (${h.version}${VO.numberedByTag(h.data) ? '' : ', sin la marca del número por etiqueta'}) y en ${base} el número lo pone el merge: el pedido no lo toca` };
+  }
   if (VO.compare(h.version, b.version) > 0) return { code: 0, base: b.version, head: h.version, reason: `la versión sube de ${b.version} a ${h.version}` };
   return { code: 1, base: b.version, head: h.version, reason: `la versión de ${head} (${h.version}) no es mayor que la de ${base} (${b.version}): un cambio que no sube el número no llega a las máquinas instaladas` };
 }

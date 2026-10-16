@@ -1,0 +1,43 @@
+# version-tag.yml — el número de versión lo pone el merge: cada merge que entra a main recibe una etiqueta v<número>
+# (scripts/ci/version-tag.js). Una máquina instalada compara ese número para saber si hay algo nuevo.
+#
+# No empuja a main ni a ninguna rama: lo que entra a main entra por la cola de merge, y esto sólo etiqueta lo que ya
+# entró. Por eso es el ÚNICO workflow con permiso de escritura, y el permiso es sólo del job que etiqueta.
+#
+# Lo que este archivo tiene que cumplir lo verifica scripts/ci/check-public-workflow.js --tagger (lo corre
+# scripts/tests/version-by-merge.test.js), con su forma EXACTA línea por línea: cambiar este archivo es cambiar los dos
+# en el mismo commit.
+#   · corre en un push a main, o a mano (workflow_dispatch: si la corrida de la punta no existió), y en nada más —nunca
+#     con el código de un pedido; a mano sobre otra rama no hace nada, porque sólo numera la punta de main—;
+#   · las corridas no se pisan: corre una por vez y GitHub deja UNA sola esperando (la nueva reemplaza a la que esperaba;
+#     como cada corrida numera la punta de main, no se pierde nada). Dos merges nunca toman el mismo número;
+#   · el checkout trae la historia y las etiquetas; cada acción va fijada por el sha completo de su commit.
+name: version-tag
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: version-tag
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      - name: La etiqueta con el número de este merge
+        run: node scripts/ci/version-tag.js tag --sha "${GITHUB_SHA}"

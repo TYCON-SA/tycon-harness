@@ -2073,6 +2073,12 @@
       "requiere": []
     },
     {
+      "__nota": "el número de versión lo pone el merge: la etiqueta v<número> sobre cada merge a main (scripts/ci/version-tag.js y .github/workflows/version-tag.yml). Dos merges no toman el mismo número y el número no baja; las máquinas con y sin clon leen la etiqueta, una punta sin etiqueta espera en silencio (y lo dice pasadas unas horas) y no queda recordada con el piso; el paso version de la CI pública; y los únicos dos workflows del repo público, con su forma exacta. Repos de juguete con git de verdad y clientes de mentira: sin red, unos segundos.",
+      "raiz": "arnes",
+      "ruta": "tests/version-by-merge.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.26, tanda F1 (T55): el freno antes de publicar disparado por un `git push` DE VERDAD, con la carpeta global de hooks puesta como git la pone (scripts/hooks/git-pre-push-global.sh). Mira el efecto: la ref remota no cambia. Desde un clon recién hecho; con un pre-push propio que acepta y que rechaza; un repo que no es del arnés (misma salida que sin hook); sin el guion y sin node; una rama que trae su propio freno saboteado. Unos 10 segundos.",
       "raiz": "arnes",
       "ruta": "tests/githook-pre-push.test.sh",
