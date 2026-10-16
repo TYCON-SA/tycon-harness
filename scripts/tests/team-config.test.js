@@ -344,3 +344,25 @@ test('T22 2.24-TeamConfig_SinBuzon_DiceQueNoSeSube', async () => {
     assert.match((await request(p.port, { pathname: `/?k=${p.token}` })).text, /sin buzón: esta organización no sube corridas/);
   });
 });
+
+// story 2.23: la página no dibuja `site`, pero el borrador es una copia del archivo que el lector aceptó: guardar
+// `owners` lo conserva igual. Rojo previo: el lector rechazaba `site`, el estado venía sin datos y el borrador nacía vacío.
+test('2.23-T5 TeamConfig_ConservaSite', async () => {
+  const tree = path.join(__dirname, '..', '..');
+  const ops = cloneWithRemote().dir;
+  const site = { maintainers: ['lead@acme.example'], mailbox: { provider: 'azure-blob', account: 'acmeruns', container: 'runs' }, refresh_minutes: 20 };
+  const file = path.join(ops, 'operations.json');
+  fs.writeFileSync(file, `${JSON.stringify({ version: 1, owners: { default: 'lead@acme.example' }, site }, null, 2)}\n`);
+  await withPage({ tree, clones: { operations: ops } }, async (p) => {
+    const t = (await api(p, 'state')).json.targets.find((x) => x.id === 'operations');
+    assert.strictEqual(t.state, 'loaded');
+    assert.deepStrictEqual(t.problems, []);
+    assert.deepStrictEqual(t.data.site, site, 'el borrador de la página trae site');
+    const draft = JSON.parse(JSON.stringify(t.data));
+    draft.owners.default = 'other@acme.example';
+    assert.strictEqual((await api(p, 'save', { target: 'operations', data: draft })).json.ok, true);
+    const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
+    assert.strictEqual(saved.owners.default, 'other@acme.example');
+    assert.deepStrictEqual(saved.site, site, 'site sigue igual en el archivo guardado');
+  });
+});

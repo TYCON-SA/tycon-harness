@@ -172,3 +172,56 @@ test('OperationsConfig_Problems_CarryTheKeyPath', () => {
   assert.deepStrictEqual(paths(OPS.parse('{')), ['']);
   assert.strictEqual(OPS.load(path.join(os.tmpdir(), 'no-such-operations.json')).couldNotRead, true);
 });
+
+// story 2.23: la clave `site` (mantenedores, buzón y refresco del sitio de la organización)
+const goodSite = () => ({
+  maintainers: ['lead@acme.example', 'Second@Acme.Example'],
+  mailbox: { provider: 'azure-blob', account: 'acmeruns', container: 'runs', threads: false },
+  refresh_minutes: 15,
+});
+const opsWith = (site) => ({ version: 1, owners: { default: 'lead@acme.example' }, ...(site === undefined ? {} : { site }) });
+
+test('2.23-T3 OperationsConfig_SiteValido', () => {
+  for (const site of [goodSite(), {}, undefined]) {
+    const r = OPS.parse(JSON.stringify(opsWith(site)));
+    assert.deepStrictEqual(r.problems, [], JSON.stringify(site));
+    assert.strictEqual(r.ok, true);
+  }
+  assert.deepStrictEqual(OPS.parse(JSON.stringify(opsWith(goodSite()))).data.site, goodSite(), 'los datos salen tal cual');
+  assert.ok(OPS.KEYS.includes('site'));
+});
+
+test('2.23-T4 OperationsConfig_SiteConSecretoEsProblema', () => {
+  const casos = [
+    [{ mailbox: { ...goodSite().mailbox, sas: 'sv=x' } }, ['site.mailbox.sas']],
+    [{ token: 'x' }, ['site.token']],
+    [{ oidc: { secret: 'x' } }, ['site.oidc', 'site.oidc.secret']],
+    [{ maintainers: ['sin-arroba'] }, ['site.maintainers.0']],
+    [{ maintainers: ['a@acme.example', 'con espacio@acme.example'] }, ['site.maintainers.1']],
+    [{ maintainers: 'a@acme.example' }, ['site.maintainers']],
+    [{ refresh_minutes: 1 }, ['site.refresh_minutes']],
+    [{ refresh_minutes: 500 }, ['site.refresh_minutes']],
+    [{ refresh_minutes: 7.5 }, ['site.refresh_minutes']],
+    // la cuenta y el contenedor arman el host al que va la credencial: sólo la forma de Azure Storage (revisión de seguridad)
+    [{ mailbox: { provider: 'azure-blob', account: 'host.malo/x?', container: 'runs' } }, ['site.mailbox.account']],
+    [{ mailbox: { provider: 'azure-blob', account: 'acmeruns', container: '../x' } }, ['site.mailbox.container']],
+    [{ mailbox: { provider: 'azure-blob', account: 'AB', container: 'r' } }, ['site.mailbox.account', 'site.mailbox.container']],
+    [{ mailbox: { provider: 's3', account: 'acmeruns', container: 'runs' } }, ['site.mailbox.provider']],
+    [{ mailbox: { provider: 'azure-blob' } }, ['site.mailbox.account', 'site.mailbox.container']],
+    [{ mailbox: { ...goodSite().mailbox, threads: 'si' } }, ['site.mailbox.threads']],
+    [{ mailbox: { ...goodSite().mailbox, password: 'x', SharedKey: 'y' } }, ['site.mailbox.SharedKey', 'site.mailbox.password']],
+    [{ url: 'https://x.example' }, ['site.url']],
+    ['no', ['site']],
+  ];
+  for (const [site, esperado] of casos) {
+    const r = OPS.parse(JSON.stringify(opsWith(site)));
+    assert.strictEqual(r.ok, false, JSON.stringify(site));
+    assert.strictEqual(r.data, null);
+    assert.deepStrictEqual(paths(r), esperado, JSON.stringify(site));
+  }
+  // la clave con forma de secreto se nombra como secreto, no sólo como desconocida
+  const sas = OPS.parse(JSON.stringify(opsWith({ mailbox: { ...goodSite().mailbox, sas: 'x' } })));
+  assert.match(sas.problems[0].message, /secreto/);
+  // un comentario `__` con la palabra no es una clave de secreto
+  assert.strictEqual(OPS.parse(JSON.stringify(opsWith({ __token_doc: 'se explica acá', ...goodSite() }))).ok, true);
+});
