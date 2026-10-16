@@ -424,3 +424,68 @@ test('T18 TeamRepos_MergeSuitesFor_DeclaredEntryDefaultAndMatch @story-7.28 @ac-
   assert.deepStrictEqual(TEAM.mergeSuitesFor(withSuites({}), azureId), { declared: true, rule: 'automatico', ruleFrom: 'default', pipeline: null });
   assert.deepStrictEqual(TEAM.mergeSuitesFor(goodTeam(), azureId), { declared: false, rule: null, ruleFrom: null, pipeline: null });
 });
+
+// ── story 7.29: la clave `models` (los modelos de cada trabajo del pipeline) ───────────────────────────────────────
+const withModels = (models, base = goodTeam()) => Object.assign(base, { models });
+const githubTeam = () => ({ version: 1, public: github('harness'), profile: github('harness-profile'), operations: github('harness-ops') });
+
+test('T20 TeamRepos_Models_ValidoAusenteYProblemasDeSeccion @story-7.29 @ac-3', () => {
+  const full = {
+    mandatory_ceiling: true, ceiling: 'opus', reviewers: 'sonnet', reviewer: { 'mi-revisor-2': 'haiku', __nota: 'x' },
+    reviewers_reloop: 'sonnet', adversarial: { model: 'sonnet', heavy: 'opus', fable_question: 'never' },
+    helpers: 'haiku', session: { low: 'haiku', normal: 'sonnet', heavy: 'opus' }, __doc: 'comentario',
+  };
+  // válido con el perfil en Azure y en GitHub: los datos traen `models`
+  for (const base of [goodTeam(), githubTeam()]) {
+    const r = TEAM.parse(JSON.stringify(withModels(full, base)));
+    assert.equal(r.ok, true, JSON.stringify(r.problems));
+    assert.deepStrictEqual(r.data.models, full);
+    assert.equal(r.sectionProblems, undefined, 'sin problemas de sección no hay sectionProblems');
+  }
+  // sin `models`: igual que hoy, y la versión no cambia
+  const sin = TEAM.parse(JSON.stringify(goodTeam()));
+  assert.equal(sin.ok, true);
+  assert.equal('models' in sin.data, false);
+  assert.equal(TEAM.VERSION, 1);
+  // cada problema del AC 3, con su ruta, aparte: ok y data como sin models, y data sin models
+  const casos = [
+    [[], 'models'],
+    [{ ceiling: 'sonnet' }, 'models.ceiling'],
+    [{ mandatory_ceiling: true }, 'models.mandatory_ceiling'],
+    [{ mandatory_ceiling: 'si', ceiling: 'sonnet' }, 'models.mandatory_ceiling'],
+    [{ reviewers: 'Opus' }, 'models.reviewers'],
+    [{ reviewers: 'claude-opus-5' }, 'models.reviewers'],
+    [{ reviewer: { 'mi-revisor': 'gpt' } }, 'models.reviewer.mi-revisor'],
+    [{ reviewer: { 'Mi Revisor': 'opus' } }, 'models.reviewer.Mi Revisor'],
+    [{ reviewer: [] }, 'models.reviewer'],
+    [{ session: { heavy: 'xl' } }, 'models.session.heavy'],
+    [{ session: { enorme: 'opus' } }, 'models.session.enorme'],
+    [{ adversarial: { fable_question: 'quizas' } }, 'models.adversarial.fable_question'],
+    [{ adversarial: { otro: 'opus' } }, 'models.adversarial.otro'],
+    [{ budget: 3 }, 'models.budget'],
+  ];
+  for (const [models, ruta] of casos) {
+    const r = TEAM.parse(JSON.stringify(withModels(models)));
+    assert.equal(r.ok, true, `${ruta}: un problema de models no invalida el archivo`);
+    assert.ok(r.data && !('models' in r.data), `${ruta}: data sin models`);
+    assert.deepStrictEqual(r.problems, []);
+    assert.ok(r.sectionProblems && r.sectionProblems.models.some((p) => p.path === ruta), `${ruta}: ${JSON.stringify(r.sectionProblems)}`);
+  }
+  // un problema fuera de models sigue dejando data: null, y el de models igual sale aparte
+  const doble = withModels({ reviewers: 'xl' });
+  delete doble.operations.project;
+  const rd = TEAM.parse(JSON.stringify(doble));
+  assert.equal(rd.ok, false);
+  assert.equal(rd.data, null);
+  assert.deepStrictEqual(paths(rd), ['operations.project']);
+  assert.ok(rd.sectionProblems.models.some((p) => p.path === 'models.reviewers'));
+  // la capa se apila: validateTeamRepos con un problema sólo en models da ok
+  const { validateTeamRepos } = require(path.join(ROOT, 'scripts', 'setup', 'harness', 'team.js'));
+  assert.deepStrictEqual(validateTeamRepos(JSON.stringify(withModels({ reviewers: 'Opus' })), { readerTree: ROOT }), { ok: true });
+});
+
+test('T21 TeamRepos_NombresDeModelos_IgualesAModelsJs @story-7.29 @ac-3', () => {
+  const { resolveSkillsDirs } = require(path.join(ROOT, 'scripts', 'lib', 'skills-dir.js'));
+  const MODELS = require(path.join(resolveSkillsDirs().skills, 'tycon-pipeline', 'scripts', 'lib', 'models.js')).MODELS;
+  assert.deepStrictEqual(TEAM.MODEL_NAMES, MODELS);
+});

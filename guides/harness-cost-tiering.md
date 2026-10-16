@@ -149,6 +149,46 @@ extensión en SKILL.md H.iii. Sin código que revertir.
 
 ---
 
+## De dónde sale cada modelo, y cómo lo cambia una organización
+
+**Los valores de hoy viven en un solo lugar**: `skills/tycon-pipeline/scripts/lib/models.js` (`DEFAULTS` y `TIERS`).
+El `model:` de cada `agents/*.md`, el `MODEL` de `adversarial-verify.workflow.js` y el valor por defecto de
+`build/generate.js` son copias que verifica una prueba (`models.test.js`, T1). Sin configuración, nadie nota nada.
+
+| Trabajo | Valor de hoy | Clave en `team-repos.json → models` |
+|---|---|---|
+| Revisores (todos / uno por uno) | `sonnet` (y `tycon-spec-first-checker` en `opus`; un revisor de la capa, el `model:` de su `.md`) | `reviewers` / `reviewer: { "<revisor>": … }` |
+| Vueltas siguientes de revisores (un tope) | `sonnet` | `reviewers_reloop` |
+| Pase adversarial (común / story pesada) | `sonnet` / `opus` | `adversarial.model` / `adversarial.heavy` |
+| Preguntar por Fable en el pase | `ask` | `adversarial.fable_question` (`ask` \| `never`) |
+| Ayudantes sueltos de búsqueda (SPAWN-1) | `haiku` | `helpers` |
+| Sugerencia de la sesión (liviana / común / pesada) | `sonnet` / `opus` / `fable` | `session.low` / `session.normal` / `session.heavy` |
+
+**Quién paga decide quién manda**: con `mandatory_ceiling: true` y un `ceiling` (paga la organización), nada pasa el
+techo —un pedido del dev, un valor de la organización o uno de hoy se baja al techo y se avisa una vez por corrida,
+sin frenar—; el dev puede bajar. Sin techo (paga cada dev), los valores son sugerencias: el dev los cambia para arriba
+o para abajo en su corrida con `marker.js set-models <trabajo>=<modelo>` (o las banderas de siempre: `--cost-tier`,
+`--deep-review-opus`, `--deep-review-fable`). El modelo de la sesión nunca se fija: `start --session-model` sólo avisa
+si pasa el techo.
+
+**Dónde se ve**: `advisors`/`smart-reloop` dan `reviewer_models` (un modelo por revisor, con su origen y, en las
+vueltas siguientes, `first_round`) en lugar de `model_hints`/`reloop_model_hints`; `deep-review-gate` da el `model`
+con su `model_reason`; `start` da `models.helpers` y `model_hint.session_check`. Un `team-repos.json` que no se puede
+leer, o un error dentro de `models`, deja los valores de hoy y lo dice (`models_problem`): nunca es «sin techo» callado
+y nunca frena.
+
+**En Codex**: el modelo de un revisor vive en su `.toml`; el despliegue escribe ahí el modelo resuelto de la
+organización (primera vuelta, con techo) y la paridad lo compara con la misma resolución. El pedido por corrida y las
+vueltas siguientes no aplican a los revisores de Codex (`codex_note`). Un modelo sin equivalente en
+`build/equivalences.json` usa el modelo por defecto de Codex (sin `-m`, sin línea `model =`) y se dice.
+
+**Cambiar `models` sólo por la sección validada de la configuración de la organización** (cuando exista: llega con
+la pestaña Configuración del sitio, `org-config.js`). Un archivo editado a mano se salta la validación; aun así, un error dentro de `models` sólo apaga `models`
+(no deja a las máquinas sin la capa del equipo). Antes de declararla, la organización sube `requires.harness` del
+perfil a la versión que trae este lector: una máquina con el lector anterior rechaza el archivo entero.
+
+---
+
 ## Roadmap de adopción (sin compromiso de fechas)
 
 | Fase | Qué se hace | Cuándo |

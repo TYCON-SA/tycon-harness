@@ -1162,7 +1162,9 @@ const ADVISOR_COST_TIER = {
   'tycon-spec-first-checker': 'deep',
 };
 
-const TIER_TO_MODEL = { lean: 'haiku', standard: 'sonnet', deep: 'opus' };
+// Los valores de hoy viven en lib/models.js (story 7.29): un solo lugar para el modelo de cada trabajo.
+const MODELOS = require('./lib/models.js');
+const TIER_TO_MODEL = MODELOS.TIERS;
 
 // ── Paquetes de revisores (story 8.2 del arnés, 2026-09-26) ─────────────────────────────────────
 //
@@ -1476,9 +1478,101 @@ function reloopHintsFor(list, iter, costTier) {
   if (costTier === 'deep') return null;
   const hints = {};
   for (const adv of list) {
-    if (tierDe(adv) === 'deep') hints[adv] = 'sonnet';
+    if (tierDe(adv) === 'deep') hints[adv] = MODELOS.DEFAULTS.reviewers_reloop;
   }
   return Object.keys(hints).length ? hints : null;
+}
+
+// ── Los modelos de la organización (story 7.29) ─────────────────────────────────────────────────────────────────
+// Con `team-repos.json → models` declarado (o un pedido del dev en el marcador), `advisors` y `smart-reloop` dan
+// `reviewer_models` —un modelo por revisor, con su origen y, en las vueltas siguientes, `first_round`— y dejan de dar
+// `model_hints`/`reloop_model_hints`: un solo campo con modelos por revisor. Sin nada de eso, lo de hoy (decisión 18).
+// Las funciones que deciden reciben la configuración por argumento (`args.orgModels`, `args.modelRequests`); sólo las
+// ramas de línea de comandos la leen (`orgModels`, `pedidosDeModelos`), así las pruebas nunca ven la de la máquina.
+const CODEX_NOTE = 'en Codex los revisores usan el modelo con que se desplegaron; el pedido de esta corrida y las vueltas siguientes no aplican ahí';
+const SIN_ORG = { declared: false, data: null, problem: null };
+
+/**
+ * La configuración `models` de la organización, del arnés que ve esta corrida (el camino de `harnessIntegrations`):
+ * `{ declared, data, problem }`. Nunca tira. opts: env · home · tree (el árbol, para las pruebas).
+ */
+function orgModels(opts = {}) {
+  const env = opts.env || process.env;
+  try {
+    const dir = opts.tree || require('./lib/harness-path.js').rutaArnesHook({ env, home: opts.home }).dir;
+    if (!dir) return SIN_ORG;
+    const lector = path.join(dir, 'scripts', 'lib', 'team-repos.js');
+    if (!fs.existsSync(lector)) {
+      // un árbol sin lector con un team-repos.json: no se puede validar, y se dice (no es «sin configuración»)
+      return fs.existsSync(path.join(dir, 'team-repos.json'))
+        ? { ...SIN_ORG, problem: `no pude leer la configuración de la organización (${path.join(dir, 'team-repos.json')}: el arnés no trae su lector, ${lector}): uso los valores de hoy` }
+        : SIN_ORG;
+    }
+    return MODELOS.readOrgModels({ dir, teamRepos: require(lector) });
+  } catch (e) {
+    return { ...SIN_ORG, problem: `no pude leer la configuración de la organización (${String((e && e.message) || e).split('\n')[0]}): uso los valores de hoy` };
+  }
+}
+
+/** El pedido del dev para esta corrida (`marker.js set-models`), o null. */
+function pedidosDeModelos(marker) {
+  const v = marker && marker.modelRequests && marker.modelRequests.values;
+  return v && typeof v === 'object' && Object.keys(v).length ? v : null;
+}
+
+/**
+ * Suma `reviewer_models` (y `codex_note`) a la salida de `advisors`/`smart-reloop` para la lista de revisores, cuando
+ * hay configuración o pedido; saca los campos de hoy. Devuelve los avisos (`{ key, message }`).
+ */
+function aplicarModelosDeRevisores(out, list, args, fullSet = list) {
+  const org = args.orgModels && args.orgModels.declared ? args.orgModels.data : null;
+  const requests = args.modelRequests || null;
+  if (!org && !requests) return [];
+  const warnings = [];
+  out.reviewer_models = MODELOS.resolveReviewers({
+    org, requests, costTier: args.costTier, tierOf: tierDe, set: list, fullSet, iter: args.iter, agentsDir: args.agentsDir, warnings,
+  });
+  delete out.model_hints;
+  delete out.reloop_model_hints;
+  delete out.reloop_model_hints_note;
+  delete out.cost_tier;
+  if (requests || (args.iter && args.iter > 1)) out.codex_note = CODEX_NOTE;
+  return warnings;
+}
+
+/**
+ * Lo que la línea de comandos dice de los modelos: `models_problem` (la configuración no se pudo leer) y
+ * `models_warnings` (lo que se bajó al techo, un pedido que no aplica…), cada aviso una sola vez por corrida: con
+ * marcador, lo ya avisado queda en `modelsWarned` (la misma lógica que `marker.js mark-models-warned`); sin marcador,
+ * en cada salida. Nunca cambia el código de salida.
+ */
+function decirModelos(out, org, warnings) {
+  if (org && org.problem) out.models_problem = org.problem;
+  if (!warnings || !warnings.length) return;
+  const marker = readSessionMarker();
+  const ya = new Set((marker && Array.isArray(marker.modelsWarned)) ? marker.modelsWarned : []);
+  const vistos = new Set();
+  const nuevos = warnings.filter((w) => !ya.has(w.key) && !vistos.has(w.key) && vistos.add(w.key));
+  if (!nuevos.length) return;
+  out.models_warnings = nuevos.map((w) => w.message);
+  if (marker) anotarModelosAvisados(nuevos.map((w) => w.key));
+}
+
+/** Anota en el marcador de esta sesión las claves ya avisadas (`modelsWarned`). Nunca tira. */
+function anotarModelosAvisados(keys) {
+  try {
+    const markerPath = path.join(stateDirOf(os.homedir()), 'active', `${sessionIdFileKey()}.json`);
+    const m = JSON.parse(fs.readFileSync(markerPath, 'utf8'));
+    m.modelsWarned = [...new Set([...(Array.isArray(m.modelsWarned) ? m.modelsWarned : []), ...keys])];
+    const tmp = `${markerPath}.tmp-${process.pid}`;
+    fs.writeFileSync(tmp, JSON.stringify(m, null, 2));
+    fs.renameSync(tmp, markerPath);
+  } catch (_) { /* sin marcador o ilegible: se vuelve a avisar, que es lo de menos */ }
+}
+
+/** Lo que la línea de comandos le pasa a las funciones que deciden: la configuración y el pedido de la corrida. */
+function conModelosDeLaCorrida(args) {
+  return { ...args, orgModels: orgModels(), modelRequests: pedidosDeModelos(readSessionMarker()) };
 }
 
 function modelHintsForSet({ all, tier }) {
@@ -1626,7 +1720,19 @@ function logGate(obj) {
   } catch { /* el log nunca rompe el gate */ }
 }
 
-function computeSmartReloop({ repo, story, files, iter, forceFullReloop, costTier }) {
+/**
+ * El re-loop reducido, con los modelos de la organización (story 7.29): en sus tres caminos, `reviewer_models` para
+ * los revisores que se vuelven a correr cuando hay configuración o pedido (`args.orgModels`, `args.modelRequests`);
+ * sin eso, `reloop_model_hints` como hoy. Los avisos quedan en `_avisos` (los dice la línea de comandos).
+ */
+function computeSmartReloop(args) {
+  const out = computeSmartReloopBase(args);
+  const avisos = aplicarModelosDeRevisores(out, out.rerun || out.all || [], args, out.all || out.rerun || []);
+  if (avisos.length) Object.defineProperty(out, '_avisos', { value: avisos, enumerable: false });
+  return out;
+}
+
+function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, costTier }) {
   const fullSet = computeAdvisorSet({ repo, story, files });
 
   if (forceFullReloop || iter <= 1) {
@@ -2944,7 +3050,11 @@ function computeStart(args) {
     story_id: storyId,
     branch,
     risk: computeRiskClass({ story: storyPath, files: [] }),
-    model_hint: computeModelHint({ story: storyPath, files: [] }),
+    model_hint: computeModelHint({ story: storyPath, files: [], orgModels: args.orgModels, sessionModel: args.sessionModel }),
+    // story 7.29: el modelo de los ayudantes sueltos (SPAWN-1), con configuración de la organización o pedido
+    ...((args.orgModels && args.orgModels.declared) || args.modelRequests
+      ? { models: { helpers: MODELOS.resolveHelpers({ org: args.orgModels && args.orgModels.declared ? args.orgModels.data : null, requests: args.modelRequests }) } }
+      : {}),
     tooling: computeToolingExpected(repo),
     actions_done: actions,
     e2e_gap: e2eCfg.gap ? e2eCfg.warning : null,
@@ -2994,9 +3104,14 @@ function recortarStart(result) {
       breve.riesgo_por = (result.risk.criteria || []).filter((c) => !c.pass).map((c) => c.name);
     }
   }
+  if (result.models) breve.models = result.models;
+  if (result.models_problem) breve.models_problem = result.models_problem;
+  if (result.models_warnings) breve.models_warnings = result.models_warnings;
   if (result.model_hint) {
     breve.modelo = result.model_hint.recommended_session_model;
     breve.effort = result.model_hint.effort || null;
+    if (result.model_hint.session_check) breve.session_check = result.model_hint.session_check;
+    if (result.model_hint.session_warning) breve.session_warning = result.model_hint.session_warning;
   }
   if (result.tooling && Array.isArray(result.tooling.expected)) {
     // Sólo los NOMBRES: el orquestador es el único que puede saber cuáles tiene en su sesión, y el
@@ -3336,9 +3451,29 @@ function computeModelHint(args) {
 
   const heavyCount = signals.filter((s) => s.hit).length;
   const heavy = rc.risk === 'NORMAL' && heavyCount >= 2;
-  const recommended = rc.risk === 'LOW' ? 'sonnet' : (heavy ? 'fable' : 'opus');
-  const alsoOk = rc.risk === 'LOW' ? ['opus'] : (heavy ? ['opus'] : []);
-  return {
+  // los valores de hoy salen de lib/models.js (story 7.29); con `models.session` de la organización, ésos (y also_ok
+  // vacío); con techo obligatorio, recortados. La configuración llega por argumento: esta función no lee la máquina.
+  const band = rc.risk === 'LOW' ? 'low' : (heavy ? 'heavy' : 'normal');
+  const S = MODELOS.DEFAULTS.session;
+  const hoy = { recommended: S[band], also_ok: band === 'normal' ? [] : [S.normal] };
+  const org = args.orgModels && args.orgModels.declared ? args.orgModels.data : null;
+  const avisos = [];
+  const ses = org ? MODELOS.resolveSession({ org, band, today: hoy, warnings: avisos }) : { ...hoy, origin: 'default' };
+  const recommended = ses.recommended;
+  const alsoOk = ses.also_ok;
+  const extra = {};
+  if (org || args.sessionModel !== undefined) {
+    const fam = MODELOS.normalizeSessionModel(args.sessionModel, equivalenciasDeModelos());
+    const ceiling = MODELOS.ceilingOf(org);
+    extra.session_check = fam
+      ? { model: fam, ceiling, above: !!ceiling && MODELOS.rank(fam) > MODELOS.rank(ceiling) }
+      : { model: null, reason: 'no se sabe el modelo de la sesión' };
+    if (extra.session_check.above) {
+      extra.session_warning = `la sesión corre en ${fam}, por encima del techo de la organización (${ceiling}): cambiá con /model o seguí; el arnés no la cambia`;
+    }
+  }
+  const deLaOrg = ses.origin === 'organization' || recommended !== hoy.recommended;
+  const out = {
     recommended_session_model: recommended,
     also_ok: alsoOk,
     risk: rc.risk,
@@ -3350,8 +3485,18 @@ function computeModelHint(args) {
       : heavy
         ? `NORMAL + ${heavyCount} señales pesadas (${signals.filter((s) => s.hit).map((s) => s.name).join(', ')}) → fable paga si evita re-loops`
         : 'NORMAL común → opus (fable no paga; sonnet se queda corto en el plan)',
-    note: 'ADVISORY para el MODELO DE SESIÓN (steps 2-4 corren inline). Orquestador: compará con tu modelo real (system prompt); si NO está en recommended+also_ok → sugerí `/model <recomendado>` en 1 línea (el switch conserva sesión y marker) y seguí con lo que el user decida. NUNCA bloquea.',
+    note: (deLaOrg ? `la sugerencia sale de la configuración de la organización (session.${band}${MODELOS.ceilingOf(org) ? `, techo ${MODELOS.ceilingOf(org)}` : ''}): ${recommended}. ` : '') +
+      'ADVISORY para el MODELO DE SESIÓN (steps 2-4 corren inline). Orquestador: compará con tu modelo real (system prompt); si NO está en recommended+also_ok → sugerí `/model <recomendado>` en 1 línea (el switch conserva sesión y marker) y seguí con lo que el user decida. NUNCA bloquea.',
+    ...extra,
   };
+  if (avisos.length) Object.defineProperty(out, '_avisos', { value: avisos, enumerable: false });
+  return out;
+}
+
+/** Las equivalencias Claude ↔ Codex del árbol de este skill (para reconocer el modelo de la sesión), o `{}`. */
+function equivalenciasDeModelos() {
+  try { return JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', '..', '..', 'build', 'equivalences.json'), 'utf8')).models || {}; }
+  catch (_) { return {}; }
 }
 
 // ── pipeline.js deep-review-gate — Step 5b adversarial (decisión DevA 2026-07-03) ──
@@ -3501,7 +3646,9 @@ function salidaGrande(texto, code) {
   process.exitCode = code;
 }
 
+let avisosDelPorton = [];
 function computeDeepReviewGate(args) {
+  avisosDelPorton = [];
   // 1) Kill-switch — gana sobre todo (flag ya volcado desde env en parseArgs).
   if (args.noDeepReview) {
     return { run: false, model: null, reason: 'forzado OFF (--no-deep-review / TYCON_NO_DEEP_REVIEW=1)' };
@@ -3512,28 +3659,36 @@ function computeDeepReviewGate(args) {
   // autorización EXPLÍCITA del user; sin el flag, el gate emite `fable_upsell` y el
   // orquestador PREGUNTA en 1 línea (el user decide). Precedencia:
   // fable(flag) > opus(flag) > opus(ultracode) > opus(story pesada) > sonnet.
-  const hint = computeModelHint(args);
-  let model, modelReason;
-  if (args.deepReviewFable) { model = 'fable'; modelReason = '--deep-review-fable (autorización explícita del user)'; }
-  else if (args.deepReviewOpus) { model = 'opus'; modelReason = '--deep-review-opus'; }
-  else if (args.ultracode) { model = 'opus'; modelReason = 'ultracode ON → hunters en Opus'; }
-  else if (hint.heavy) { model = 'opus'; modelReason = `story pesada (${hint.heavy_signal_count} señales model-hint) → hunters escalan a Opus (anunciar)`; }
-  else { model = 'sonnet'; modelReason = 'default (recorta $ ~5x vs Opus)'; }
-  // story 7.19 (AC 10): con `adversarial.model_question: never` no se ofrece el modelo mayor ni se manda a preguntar;
-  // corre el que eligió el portón. Se dice en la salida (`model_question`, sólo con un valor que no es el de por
-  // defecto) y en gates.log. Lo que esto cambia es una elección del dueño (eligió el mayor 21 de 78 veces): consta.
-  const pregunta = preguntaDelModelo();
-  if (pregunta.aviso) process.stderr.write(`deep-review-gate: ${pregunta.aviso}\n`);
-  const sinPregunta = pregunta.value === 'never';
-  if (sinPregunta) {
-    logGate({ repoPath: args.repo, name: 'deep-review-gate', check: 'model-question', value: pregunta.value, origin: pregunta.origin, heavy: !!hint.heavy });
-  }
-  const fableUpsell = (!args.deepReviewFable && hint.heavy && !sinPregunta)
+  const hint = computeModelHint({ ...args, orgModels: null });
+  // story 7.29: el modelo y la pregunta salen de lib/models.js con la configuración de la organización y el pedido de
+  // la corrida, que llegan por argumento (`args.orgModels`, `args.modelRequests`); la clave de la 7.19 llega en
+  // `args.modelQuestion` (la lee la rama de línea de comandos con `preguntaDelModelo`). Esta función no lee la máquina.
+  // Precedencia de hoy: fable(flag) > opus(flag) > opus(ultracode) > pedido > organización > opus(pesada) > sonnet.
+  const org = args.orgModels && args.orgModels.declared ? args.orgModels.data : null;
+  const avisos = [];
+  const adv = MODELOS.resolveAdversarial({
+    org, requests: args.modelRequests || null, heavy: hint.heavy, warnings: avisos,
+    flags: { fable: !!args.deepReviewFable, opus: !!args.deepReviewOpus, ultracode: !!args.ultracode },
+    modelQuestion: args.modelQuestion || { value: MODELOS.DEFAULTS.adversarial.fable_question, origin: 'default' },
+  });
+  const model = adv.model;
+  let modelReason;
+  if (adv.capped || (adv.origin !== 'default' && !adv.fromFlag)) modelReason = adv.reason;
+  else if (args.deepReviewFable) modelReason = '--deep-review-fable (autorización explícita del user)';
+  else if (args.deepReviewOpus) modelReason = '--deep-review-opus';
+  else if (args.ultracode) modelReason = 'ultracode ON → hunters en Opus';
+  else if (hint.heavy) modelReason = `story pesada (${hint.heavy_signal_count} señales model-hint) → hunters escalan a Opus (anunciar)`;
+  else modelReason = 'default (recorta $ ~5x vs Opus)';
+  // story 7.19 (AC 10): con la pregunta en `never` no se ofrece el modelo mayor ni se manda a preguntar; corre el que
+  // eligió el portón. Se dice en la salida (`model_question`, sólo con un valor que no es el de por defecto); la línea
+  // de gates.log la escribe la rama de línea de comandos. Con un techo debajo de fable, nunca (story 7.29, AC 14).
+  const pregunta = adv.question;
+  const fableUpsell = adv.upsell
     ? {
-        model: 'fable',
+        model: MODELOS.MODELS[3],
         requires_user_approval: true,
         reason: `story pesada (${hint.signals.filter((s) => s.hit).map((s) => s.name).join(', ')}) — Fable caza más en el pase adversarial, a ~2x el costo de Opus`,
-        how: 'preguntar al user en 1 línea (COMM.i); si aprueba → pasar model:"fable" al Workflow. Sin respuesta afirmativa → usar `model` de este output.',
+        how: `preguntar al user en 1 línea (COMM.i); si aprueba → pasar model:"${MODELOS.MODELS[3]}" al Workflow. Sin respuesta afirmativa → usar \`model\` de este output.`,
       }
     : null;
   // Fase B (2026-07-30): lanzamiento temprano del 5b al cierre del Step 4 — DEFAULT ON con
@@ -3547,7 +3702,10 @@ function computeDeepReviewGate(args) {
     early_launch: process.env.TYCON_5B_EARLY !== '0',
     ...(fableUpsell ? { fable_upsell: fableUpsell } : {}),
     ...(pregunta.value !== 'ask' ? { model_question: { value: pregunta.value, origin: pregunta.origin } } : {}),
+    ...(adv.otherQuestion ? { model_question_note: `adversarial.model_question (${adv.otherQuestion.origin}: ${adv.otherQuestion.value}) no se usa: decide la configuración de la organización (models.adversarial.fable_question: ${pregunta.value})` } : {}),
   };
+  // los avisos del techo los dice la línea de comandos (una vez por corrida): se dejan a mano, sin tocar la salida
+  avisosDelPorton = avisos;
   // 2) Config por repo.
   const cfg = deepReviewConfig(args.repo);
   if (cfg === 'off') {
@@ -4741,6 +4899,7 @@ function parseArgs(argv) {
     else if (t === '--deep-review-fable') a.deepReviewFable = true; // hunters en Fable — SOLO con autorización explícita del user (2026-07-06)
     else if (t === '--ultracode') a.ultracode = true;             // el orquestador lo pasa si ultracode está ON
     else if (t === '--brief') a.breve = true;                      // start: salida recortada + ruta del JSON entero (story 7.10)
+    else if (t === '--session-model') a.sessionModel = argv[++i] ?? '';   // start / model-hint: el modelo de la sesión (story 7.29)
     else if (t === '--run-dir') a.runDir = argv[++i];
     else if (t === '--base') a.base = argv[++i];                  // dod-checker-needed: base explícita del diff (story 7.2)
     else if (t === '--scope') a.scope = argv[++i] ?? '';          // qa-readability: `ui` = la revisión de la pantalla (story 7.24); sin valor no es «sin --scope»
@@ -4807,6 +4966,10 @@ function main() {
       set.reloop_model_hints = rHints;
       set.reloop_model_hints_note = 'tier deep (Opus) → sonnet en re-loop: el juicio de scope grande ya corrió en iter 1; ignorá el hint SOLO si el delta toca specs.';
     }
+    // story 7.29: con la configuración de la organización o un pedido de la corrida, un modelo por revisor
+    // (`reviewer_models`) en lugar de los campos de hoy. La decisión del validador de abajo puede sumar uno: se completa.
+    const conModelos = conModelosDeLaCorrida(args);
+    const avisosModelos = aplicarModelosDeRevisores(set, set.all, conModelos);
     // Contexto compartido (auditoría 2026-06-09): UN artefacto por iteración con
     // digest de story + file list + hunks. Los advisors lo reciben como input
     // primario en vez de re-leer story completa + re-correr git diff cada uno.
@@ -4824,6 +4987,16 @@ function main() {
     set.batch_rule = 'Ventana deslizante: MÁXIMO 4 subagentes VIVOS a la vez (máquina 8c/16GB). Al llegar la notificación de que uno terminó, lanzar el siguiente del set en ese turno — no esperar a que termine el grupo entero. NUNCA lanzar el set completo en un solo mensaje paralelo si supera 4. ⚠️ Si el pase adversarial 5b fue lanzado en el Step 4 y sigue en vuelo, el cap baja a 2 — este string no conoce ese estado: el step-05 §Cap reducido manda. Avisos al dev agrupados por hito (mitad del set y set completo), no por advisor.';
     // story 7.3 — el validador de stories en los re-loops: se decide ANTES de persistir el expected.
     aplicarDecisionValidador(set, 'all', args);
+    if (set.reviewer_models) {
+      const faltan = set.all.filter((r) => !set.reviewer_models[r]);
+      if (faltan.length) {
+        const extra = {};
+        avisosModelos.push(...aplicarModelosDeRevisores(extra, faltan, conModelos, set.all));
+        Object.assign(set.reviewer_models, extra.reviewer_models || {});
+      }
+      for (const r of Object.keys(set.reviewer_models)) if (!set.all.includes(r)) delete set.reviewer_models[r];
+    }
+    decirModelos(set, conModelos.orgModels, avisosModelos);
     logStep5Start(set.all, { mode: 'advisors', iter: args.iter }); // CF-2 + expected persistido (post-descuento)
     salidaGrande(JSON.stringify(set, null, 2) + '\n', 0);
     return;
@@ -4864,10 +5037,13 @@ function main() {
     // corrompían el recompute de force-full-reloop (devolvió 3 en vez de 13 en 9.4).
     const filesErr = validateFilesExist(args);
     if (filesErr) { process.stderr.write(filesErr); process.exit(2); }
-    const result = computeSmartReloop(args);
+    const conModelos = conModelosDeLaCorrida(args);
+    const result = computeSmartReloop(conModelos);
+    const avisosModelos = result._avisos || [];
     // MECH-2: el descuento aplica también al subset rerun del re-loop.
     const disc = computeMechDiscount(result.rerun, args);
     if (disc && disc.discounted.length) {
+      if (result.reviewer_models) for (const d of disc.discounted) delete result.reviewer_models[d.name];
       result.rerun = disc.kept;
       result.rerun_count = disc.kept.length;
       result.mech_discounted = disc.discounted;
@@ -4889,6 +5065,17 @@ function main() {
     // contra esto, no contra el set completo (fix incoherencia smart-reloop↔check-count).
     // story 7.3 — el validador de stories en los re-loops: se decide ANTES de persistir el expected.
     aplicarDecisionValidador(result, 'rerun', args);
+    if (result.reviewer_models) {
+      // el validador de stories puede entrar o salir en la decisión de arriba: el modelo va para cada uno del rerun
+      const faltan = (result.rerun || []).filter((r) => !result.reviewer_models[r]);
+      if (faltan.length) {
+        const extra = {};
+        avisosModelos.push(...aplicarModelosDeRevisores(extra, faltan, conModelos, result.all || result.rerun));
+        Object.assign(result.reviewer_models, extra.reviewer_models || {});
+      }
+      for (const r of Object.keys(result.reviewer_models)) if (!(result.rerun || []).includes(r)) delete result.reviewer_models[r];
+    }
+    decirModelos(result, conModelos.orgModels, avisosModelos);
     logStep5Start(result.rerun, { mode: result.mode, iter: args.iter });
     salidaGrande(JSON.stringify(result, null, 2) + '\n', 0);
     return;
@@ -5137,7 +5324,10 @@ function main() {
     process.exit(result.error ? 1 : 0);
   }
   if (cmd === 'start') {
-    const result = computeStart(args);
+    const conModelos = conModelosDeLaCorrida(args);
+    const result = computeStart(conModelos);
+    if (result.model_hint && result.model_hint.session_warning) process.stderr.write(`start: ${result.model_hint.session_warning}\n`);
+    decirModelos(result, conModelos.orgModels, (result.model_hint && result.model_hint._avisos) || []);
     const salida = args.breve ? recortarStart(result) : result;
     process.stdout.write(JSON.stringify(salida, null, 2) + '\n');
     // exitCode y no exit() (story 8.9 del arnés, tanda B3b): con la salida en un pipe, exit() corta lo que todavía no se
@@ -5175,7 +5365,10 @@ function main() {
   if (cmd === 'model-hint') {
     // Sugerencia de modelo de SESIÓN por complejidad (2026-07-06). Advisory puro:
     // exit 0 siempre; el orquestador compara con su propio modelo y sugiere /model.
-    const result = computeModelHint(args);
+    const conModelos = conModelosDeLaCorrida(args);
+    const result = computeModelHint(conModelos);
+    if (result.session_warning) process.stderr.write(`model-hint: ${result.session_warning}\n`);
+    decirModelos(result, conModelos.orgModels, result._avisos || []);
     process.stdout.write(JSON.stringify(result, null, 2) + '\n');
     process.exit(0);
   }
@@ -5190,7 +5383,17 @@ function main() {
     if (wsErr) { process.stderr.write(wsErr); process.exit(2); }
     const fantasmaErr = archivosFantasma(args);   // …y la de archivos fantasma (story 7.25)
     if (fantasmaErr) { process.stderr.write(fantasmaErr); process.exit(2); }
-    const result = computeDeepReviewGate(args);
+    // story 7.29 (decisión 24): sólo esta rama lee la máquina —la configuración de la organización, el pedido de la
+    // corrida y la clave de la 7.19— y se los pasa al portón; la línea de gates.log y el aviso también salen de acá.
+    const conModelos = conModelosDeLaCorrida(args);
+    const pregunta = preguntaDelModelo();
+    if (pregunta.aviso) process.stderr.write(`deep-review-gate: ${pregunta.aviso}\n`);
+    conModelos.modelQuestion = pregunta;
+    const result = computeDeepReviewGate(conModelos);
+    if (result && result.model_question && result.model_question.value === 'never') {
+      logGate({ repoPath: args.repo, name: 'deep-review-gate', check: 'model-question', value: 'never', origin: result.model_question.origin, heavy: !!computeModelHint(args).heavy });
+    }
+    if (result) decirModelos(result, conModelos.orgModels, avisosDelPorton);
     if (result && result.run === null) {
       // 🔴 No se pudo medir: se dice y se CORTA. «Correr por las dudas» tampoco es gratis — una
       // corrida del pase adversarial midió 6,5 M de tokens y 30 minutos, así que el lado barato no
@@ -5531,6 +5734,9 @@ function main() {
 // las funciones más evadibles/sutiles no tenían tests). require() NO ejecuta main().
 module.exports = {
   matchGlob,
+  // story 7.29 — la configuración `models` de la organización (la usa también on-advisor-run.js)
+  orgModels,
+  aplicarModelosDeRevisores,
   // story 7.27 — el cartel de la corrida (mods/harness-mods) copia la lista de pasos; harness-mods.test.js T16 la ata a ésta.
   STEP_SEQUENCE,
   SUBSTEP_FLAG,

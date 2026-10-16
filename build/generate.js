@@ -129,7 +129,79 @@ function parseAdvisor(mdPath) {
     if (!mcpServers.includes(mm[1])) { mcpServers.push(mm[1]); mcpToolsByServer[mm[1]] = []; }
     if (!mcpToolsByServer[mm[1]].includes(mm[2])) mcpToolsByServer[mm[1]].push(mm[2]);
   }
-  return { name: fm.name, description: fm.description || '', model: fm.model || 'sonnet', tools, mcpServers, mcpToolsByServer, body: body.trim(), raw };
+  return { name: fm.name, description: fm.description || '', model: fm.model || defaultReviewerModel(), tools, mcpServers, mcpToolsByServer, body: body.trim(), raw };
+}
+
+// ---------- el modelo de la organización (story 7.29) ----------
+// Los valores de hoy y la configuración de la organización viven en lib/models.js del skill: un árbol parcial (las pruebas
+// del exportador copian sólo build/) no lo trae, y ahí vale lo de siempre.
+const MODELS_JS = (root) => path.join(root, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'models.js');
+function modelsLib(root = ROOT) {
+  try { return require(MODELS_JS(root)); } catch (e) {
+    if (e && e.code === 'MODULE_NOT_FOUND') return null;
+    throw e;
+  }
+}
+function defaultReviewerModel() {
+  const M = modelsLib();
+  return M ? M.DEFAULTS.reviewers : 'sonnet';
+}
+
+/**
+ * La línea `model = …` de una traducción (antes de la primera tabla): reemplazada por `slug`, o sacada con `slug: null`
+ * (el modelo por defecto de Codex, decisión 23). Las claves sueltas siguen antes de las tablas.
+ */
+function withCodexModel(toml, slug) {
+  const lines = String(toml).split('\n');
+  const firstTable = lines.findIndex((l) => /^\s*\[/.test(l));
+  const end = firstTable < 0 ? lines.length : firstTable;
+  for (let i = 0; i < end; i++) {
+    if (/^model\s*=/.test(lines[i])) {
+      if (slug === null) lines.splice(i, 1);
+      else lines[i] = `model = ${tomlString(slug)}`;
+      return lines.join('\n');
+    }
+  }
+  return toml;
+}
+
+/**
+ * El slug de Codex del modelo resuelto de la organización para un revisor (primera vuelta, con techo):
+ * `{ declared, slug, lines }`. `declared: false` = no hay `models` (o no se pudo leer): lo desplegado queda como hoy.
+ * `slug: null` = el modelo no tiene equivalente: sin línea `model =`. `lines`: lo que hay que decir. Nunca tira.
+ */
+const orgCache = new Map();
+function orgCodexModel(root, name, { agentsDir = null } = {}) {
+  const out = { declared: false, slug: undefined, lines: [] };
+  try {
+    const M = modelsLib(root) || modelsLib();
+    if (!M) return out;
+    if (!orgCache.has(root)) {
+      let teamRepos = null;
+      let sinLector = null;
+      try { teamRepos = require(path.join(root, 'scripts', 'lib', 'team-repos.js')); } catch (e) { sinLector = (e && e.code) || (e && e.message) || String(e); }
+      const archivo = path.join(root, 'team-repos.json');
+      // sin lector y con un team-repos.json: no se puede validar, y se dice (un `models` o un techo no se pierden callados)
+      orgCache.set(root, teamRepos ? M.readOrgModels({ dir: root, teamRepos })
+        : { declared: false, data: null, problem: fs.existsSync(archivo) ? `no pude leer la configuración de la organización (${archivo}: el árbol no trae su lector, ${sinLector}): uso los valores de hoy` : null });
+    }
+    const org = orgCache.get(root);
+    if (org.problem) { out.lines.push(`⚠ tycon/codex: ${org.problem}`); return out; }
+    if (!org.declared) return out;
+    const models = M.resolveReviewers({ org: org.data, set: [name], iter: 1, agentsDir: agentsDir || path.join(root, 'agents') });
+    const model = models[name].model;
+    const eq = loadEq(root);
+    const slug = eq.models && Object.prototype.hasOwnProperty.call(eq.models, model) ? eq.models[model] : null;
+    if (slug === null) out.lines.push(`⚠ tycon/codex: el modelo ${model} de ${name} no tiene equivalente en Codex: se despliega sin «model =» (el modelo por defecto de Codex)`);
+    return Object.assign(out, { declared: true, slug });
+  } catch (e) {
+    out.lines.push(`⚠ tycon/codex: no pude resolver el modelo de la organización para ${name} (${e.message}): queda el de hoy`);
+    return out;
+  }
+}
+/** Lo que se despliega de una traducción: con el modelo de la organización si está declarado; si no, tal cual. */
+function deployedContent(content, org) {
+  return org && org.declared ? withCodexModel(content, org.slug) : content;
 }
 
 // ---------- traducción ----------
@@ -429,7 +501,9 @@ function deployTeam({ root = ROOT, codexHome = CODEX_HOME, recordFile = null } =
         say(`⚠ tycon/codex: revisor de la capa ${name} no desplegado: ${e.message}`);
         continue;
       }
-      for (const [rel, content] of [[`${name}.config.toml`, g.toml], [`agents/${name}.toml`, g.nativeToml]]) {
+      const org = orgCodexModel(root, name);
+      for (const l of org.lines) say(l);
+      for (const [rel, content] of [[`${name}.config.toml`, deployedContent(g.toml, org)], [`agents/${name}.toml`, deployedContent(g.nativeToml, org)]]) {
         const dst = path.join(codexHome, ...rel.split('/'));
         const want = Buffer.from(content);
         let have = null;
@@ -514,6 +588,9 @@ function main() {
   fs.mkdirSync(NATIVE_DIR, { recursive: true });
   for (const name of manifest.advisors) {
     const { toml, nativeToml } = generateOne(ROOT, name, { agentsDir: AGENTS_DIR });
+    // lo desplegado lleva el modelo de la organización (story 7.29); lo generado en adapters/, el de hoy
+    const org = DEPLOY ? orgCodexModel(ROOT, name, { agentsDir: AGENTS_DIR }) : null;
+    if (org) for (const l of org.lines) console.log(l);
     // las DOS salidas del mismo canónico se tratan igual: check, write, deploy
     const outputs = [
       { outPath: path.join(OUT_DIR, `${name}.toml`), content: toml, deployTo: path.join(CODEX_HOME, `${name}.config.toml`) },
@@ -537,9 +614,10 @@ function main() {
         // Copiar sólo si los bytes difieren: esto corre en cada deploy y 56 copias
         // incondicionales churneaban mtimes en ~/.codex sin cambiar nada (revisión 2026-08-23).
         const desplegado = fs.existsSync(o.deployTo) ? fs.readFileSync(o.deployTo, 'utf8') : null;
-        if (desplegado !== o.content) {
+        const quiero = deployedContent(o.content, org);
+        if (desplegado !== quiero) {
           fs.mkdirSync(path.dirname(o.deployTo), { recursive: true });
-          fs.copyFileSync(o.outPath, o.deployTo);
+          fs.writeFileSync(o.deployTo, quiero);
           copiados++;
         }
       }
@@ -564,13 +642,15 @@ function deployOnly(manifest) {
   let missing = 0;
   for (const name of manifest.advisors) {
     let copied = 0;
+    const org = orgCodexModel(ROOT, name);
+    for (const l of org.lines) console.log(l);
     for (const o of deployPairs(name, CODEX_HOME)) {
       if (!fs.existsSync(o.outPath)) { missing++; console.error(`❌ generate.js --deploy-only: falta ${path.relative(ROOT, o.outPath)} (esta versión no lo trae generado)`); continue; }
-      const want = fs.readFileSync(o.outPath);
+      const want = Buffer.from(deployedContent(fs.readFileSync(o.outPath, 'utf8'), org));
       const have = fs.existsSync(o.deployTo) ? fs.readFileSync(o.deployTo) : null;
       if (have && Buffer.compare(want, have) === 0) continue;
       fs.mkdirSync(path.dirname(o.deployTo), { recursive: true });
-      fs.copyFileSync(o.outPath, o.deployTo);
+      fs.writeFileSync(o.deployTo, want);
       copied++;
     }
     if (copied) console.log(`🚀 desplegado: ${name} (perfil + agent nativo)`);
@@ -599,7 +679,7 @@ function deployPairs(name, codexHome) {
   ];
 }
 
-module.exports = { deployPairs, MANIFEST, generateOne, advisorsToDeploy, deployTeam, loadEq };
+module.exports = { deployPairs, MANIFEST, generateOne, advisorsToDeploy, deployTeam, loadEq, parseAdvisor, withCodexModel, orgCodexModel, deployedContent };
 if (require.main === module) {
   try { process.exit(main()); } catch (e) { console.error(`generate.js: ${e.message}`); process.exit(1); }
 }
