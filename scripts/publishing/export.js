@@ -168,8 +168,15 @@ const VALIDACION_PUBLICA = Object.freeze([
   'pipelines/templates/fetch-snapshot.yml',
   'pipelines/templates/traer-repos.yml',
 ]);
-/** ¿La exclusión fija cubre ese archivo? Su glob, menos los archivos nombrados uno por uno en su `salvo`. */
-const cubreFija = (x, ruta) => coincide(x.glob, ruta) && !(x.salvo || []).includes(ruta);
+// Los modelos de los pipelines de operaciones que el arnés le da a cada organización: la carpeta existe SÓLO en el repo
+// público (el privado no tiene pipelines/operations/; los pipelines vivos del equipo están en su repo de operaciones),
+// así que todo lo que hay ahí ya es público por construcción. Es la única carpeta del `salvo`: sin ella, una guía pública
+// que cita un modelo cuenta como ruta del equipo (medido el 2026-10-15: el rojo de historia interna de la paridad).
+const MODELOS_DE_OPERACIONES = 'pipelines/operations/**';
+/** ¿El `salvo` de una exclusión fija nombra esa ruta? Un archivo por su nombre; la carpeta de los modelos, por su glob. */
+const enSalvo = (x, ruta) => (x.salvo || []).some((s) => (s === MODELOS_DE_OPERACIONES ? coincide(s, ruta) : s === ruta));
+/** ¿La exclusión fija cubre ese archivo? Su glob, menos lo que nombra su `salvo`. */
+const cubreFija = (x, ruta) => coincide(x.glob, ruta) && !enSalvo(x, ruta);
 /** Las carpetas viejas (del mapa) de una carpeta del arnés; sin mapa (la copia pública), ninguna. */
 function carpetasViejasDe(carpeta) {
   try {
@@ -218,7 +225,7 @@ const EXCLUIDOS_SIEMPRE = Object.freeze([
   // story 8.26 (tanda C, AC 48): `salvo` la validación y sus plantillas, que después del corte viven en el repo público
   // (Azure sólo valida un pedido de GitHub si el YAML está en ese repo) y desde ya viajan, así el detector y el freno de
   // nombres de cada publicación las miran. La lista es cerrada y con nombre: un pipeline nuevo queda afuera solo.
-  { fuente: 'arnes', glob: 'pipelines/**', motivo: 'los pipelines del equipo en Azure DevOps y la plantilla que trae sus repos', salvo: VALIDACION_PUBLICA, motivoSalvo: 'la validación de cada pedido y sus plantillas: después del corte viven en el repo público (story 8.26, tanda C)' },
+  { fuente: 'arnes', glob: 'pipelines/**', motivo: 'los pipelines del equipo en Azure DevOps y la plantilla que trae sus repos', salvo: [...VALIDACION_PUBLICA, MODELOS_DE_OPERACIONES], motivoSalvo: 'la validación de cada pedido y sus plantillas, que después del corte viven en el repo público (story 8.26, tanda C), y los modelos de los pipelines de operaciones, que sólo existen ahí' },
   // story 8.9: la tanda C1 mudó acá el ejecutable y la F, sus dos .json; la exclusión sigue al archivo. La carpeta vieja
   // (hoy, sólo reemplazos) queda excluida como clase, al final de esta lista: `carpetasFijasConNombreViejo`
   // 2026-10-14 (decisión 1 del dueño, story 8.30): el código de los dos nocturnos —dependencias y vigilante— es público.
@@ -991,6 +998,7 @@ function bajoFija(patron, fuente) {
   const p = patron.replace(/^\//, '').replace(/^(\*\*\/)+/, '');
   return EXCLUIDOS_SIEMPRE.some((x) => {
     if (x.fuente !== fuente) return false;
+    if (enSalvo(x, p)) return false;   // lo que el `salvo` deja salir no es un dato del equipo
     const g = normalizar(x.glob);
     if (g.endsWith('/**')) {
       const base = g.slice(0, -3);
@@ -2382,6 +2390,7 @@ module.exports = {
   // (el freno de nombres, el comparador de copias, el control de lo publicable): con `coincide(x.glob)` a secas, las
   // rutas del `salvo` se leían como privadas y el freno de nombres no las miraba (pase adversarial de la tanda C).
   cubreFija,
+  enSalvo,
   // story 8.10: la clasificación y lo que la rodea, para el freno de nombres nuevos (new-names.js) y sus pruebas
   FUENTES, PAQUETES_PRIVADOS, CODEX_TOML, NoPudo, git, salidaGit, leerObjetos, listarArbol, coincide,
   validarLista, validarTabla, cargarDenegados, prepararFuentes, primerNivel, filterPackage, transformar, whatShips,

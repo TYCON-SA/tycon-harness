@@ -78,7 +78,7 @@ function publishedPredicate() {
   // con el `salvo` de cada exclusión fija (story 8.26, tanda C): lo que sale igual no es privado. Una exclusión de una
   // lista de juguete (un texto) no tiene `salvo`.
   const excluded = (f, ruta) => exporter.EXCLUIDOS_SIEMPRE.some((x) => x.fuente === f && matches(x, ruta)
-    && !(x && Array.isArray(x.salvo) && x.salvo.includes(ruta)));
+    && !(x && Array.isArray(x.salvo) && (typeof exporter.enSalvo === 'function' ? exporter.enSalvo(x, ruta) : x.salvo.includes(ruta))));
   const publishes = (ruta) => defs.some((d) => d.in.some((g) => matches(g, ruta)) && !d.out.some((x) => matches(x, ruta)) && !excluded(d.f, ruta));
   return { publishes };
 }
