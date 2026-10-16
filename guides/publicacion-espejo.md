@@ -65,7 +65,7 @@ queda afuera dentro de ella:
 | Repo | Entrada | Decisión |
 |---|---|---|
 | arnes | `.advisors/` `.dashboard/` `.engram/` `_bmad/` `inbox/` _(del repo del equipo; no está en esta copia)_ `qa/` `specs/` `tasks/` | fija (ver abajo) |
-| arnes | `pipelines/` | entra (núcleo): `pipelines/azure-pipelines-pr.yml` `pipelines/templates/correr-suites.yml` `pipelines/templates/fetch-snapshot.yml` `pipelines/templates/traer-repos.yml` (la validación de cada pedido y sus plantillas: después del corte viven en el repo público); el resto de la carpeta, fija (ver abajo) |
+| arnes | `pipelines/` | entra (núcleo): `pipelines/azure-pipelines-pr.yml` `pipelines/templates/correr-suites.yml` `pipelines/templates/fetch-snapshot.yml` `pipelines/templates/traer-repos.yml` (la validación de cada pedido y sus plantillas: después del corte viven en el repo público); `pipelines/operations/**` (los pipelines que corre el repo de operaciones de cada organización); el resto de la carpeta, fija (ver abajo) |
 | arnes | `perfil-equipo.json` _(del repo del equipo; no está en esta copia)_ | fija (ver abajo) |
 | arnes | `README.md` `README.es.md` `INDEX.md` `INSTALL.md` `story-format.md` `engram-version` `.gitignore` `.gitattributes` `.githooks/` `adapters/` `build/` `claude-md-blocks/` `commands/` `mods/` | entra (núcleo) |
 | arnes | `getting-started/` | entra (núcleo): `getting-started/reference.md` `getting-started/reference.es.md` (la referencia de la instalación, en los dos idiomas); las guías de cada sistema llegan como papeles |

@@ -74,6 +74,7 @@
         "scripts/install-tycon-hooks.*",
         "scripts/tests/lib/**",
         "scripts/tests/fixtures/harness-managed-pieces.json",
+        "scripts/tests/fixtures/harness-node-copies.json",
         "scripts/tests/fixtures/layer-public-wins.json",
         "scripts/tests/fixtures/layer-public-only.json",
         "scripts/tests/fixtures/harness-tree-writers.json",
