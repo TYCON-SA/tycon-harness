@@ -106,7 +106,7 @@ caminos: la página local `harness.js team-config` (en la máquina de quien mant
 la organización desplegado, su pestaña **Configuración**, sólo para los que mantienen: valida con los mismos lectores
 (`operations-config.js`, `team-repos.js`) y abre el pull request desde el sitio con un token de grano fino sobre este
 repo (`SITE_OPERATIONS_WRITE_TOKEN`: `contents: write`, `pull_requests: write`). La pestaña no habilita «Proponer» si
-`main` no tiene una protección o una regla que pida revisión. Los umbrales del tablero
+`main` no tiene una protección o una regla que pida revisión (punto 3, «Proteger `main` del repo de operaciones»). Los umbrales del tablero
 (`scripts/nightly/dashboard/sources.json`) se editan en el sitio recién cuando la noche dejó la marca
 `.dashboard/applied-config.json` con ese archivo adentro (qué configuración aplicó de verdad, con su identificador de
 objeto; sólo al final de una noche verde). Hoy esa marca la deja la plantilla de Azure DevOps; `prepare-tree.sh` de
@@ -155,10 +155,56 @@ En el repo de operaciones, *Settings → Secrets and variables → Actions*:
 | Variable y secreto | `TYCON_TELEGRAM_CHAT_ID` y `TELEGRAM_BOT_TOKEN` | El resumen diario de dependencias por Telegram. Sin el chat, no se manda |
 
 Y en *Settings → Actions → General*: *Workflow permissions* puede quedar en «Read repository contents»; cada workflow
-pide para sí `contents: write` (para guardar en este repo) y nada más. Si `main` del repo de operaciones tiene reglas de
-protección, el token del workflow tiene que poder empujar ahí (o los guardados salen en rojo). Si la organización
+pide para sí `contents: write` (para guardar en este repo) y nada más. `main` del repo de operaciones va protegida
+(abajo), con el permiso de saltear la regla sólo para GitHub Actions: sin eso, los guardados salen en rojo. Si la organización
 restringe qué acciones se pueden usar, permití `actions/checkout`, `actions/setup-node`, `actions/setup-dotnet` y
 `actions/create-github-app-token` (van fijadas por el commit).
+
+### Proteger `main` del repo de operaciones
+
+Nadie escribe `main` del repo de operaciones a mano: las personas y el sitio de la organización entran por pull request
+revisado, y sólo los workflows de la noche empujan directo (con el token propio del workflow, cuya identidad es GitHub
+Actions). Sin esta protección, la pestaña **Configuración** del sitio no habilita «Proponer». Va con un **ruleset**, no
+con la protección clásica de la rama: la protección clásica no deja que el token de un workflow la saltee.
+
+En *Settings → Rules → Rulesets → New branch ruleset*: destino la rama por defecto, *Require a pull request before
+merging* con 1 aprobación, *Dismiss stale pull request approvals when new commits are pushed* y *Require approval of the
+most recent reviewable push* (quien empujó lo último no aprueba lo suyo), y en *Bypass list* sólo **GitHub Actions**
+(«Always allow»). Con la línea de comandos (los ejemplos usan el dueño `acme` y el repo `harness-ops`):
+
+```bash
+gh api -X POST repos/acme/harness-ops/rulesets --input - <<'JSON'
+{
+  "name": "main: revisión obligatoria",
+  "target": "branch",
+  "enforcement": "active",
+  "conditions": { "ref_name": { "include": ["~DEFAULT_BRANCH"], "exclude": [] } },
+  "rules": [
+    { "type": "pull_request", "parameters": {
+        "required_approving_review_count": 1, "dismiss_stale_reviews_on_push": true,
+        "require_last_push_approval": true, "require_code_owner_review": false,
+        "required_review_thread_resolution": false } },
+    { "type": "deletion" },
+    { "type": "non_fast_forward" }
+  ],
+  "bypass_actors": [ { "actor_id": 15368, "actor_type": "Integration", "bypass_mode": "always" } ]
+}
+JSON
+```
+
+`15368` es el identificador de la aplicación GitHub Actions en github.com. Nadie más va en la lista: ni una persona, ni
+un equipo, ni la GitHub App del punto 1.1, ni el token del sitio (`SITE_OPERATIONS_WRITE_TOKEN`), que propone por pull
+request como todos.
+
+**Cómo verificarlo.**
+
+- La regla está activa: `gh api repos/acme/harness-ops/rules/branches/main --jq '.[].type'` lista `pull_request`, y
+  `gh api repos/acme/harness-ops/rulesets --jq '.[] | {name, enforcement}'` la muestra `active`.
+- Una persona no puede empujar `main` directo: desde un clon, un commit cualquiera y `git push origin HEAD:main` rebota
+  con `GH013: Repository rule violations found` y «Changes must be made through a pull request».
+- La noche sigue guardando: la próxima corrida de cada workflow (o una a mano, con efectos) termina en verde y su commit
+  aparece en `main`. Si sale en rojo con `GH013`, a la lista de excepciones le falta GitHub Actions.
+- En el sitio, *Configuración* habilita «Proponer» y ya no dice «el repo no tiene una política que pida revisión».
 
 ## 4. La primera corrida: sin efectos
 

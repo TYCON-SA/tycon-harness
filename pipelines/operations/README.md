@@ -61,7 +61,7 @@ caminos: la página local `harness.js team-config` (en la máquina de quien mant
 la organización desplegado, su pestaña **Configuración**, sólo para los que mantienen: valida con los mismos lectores
 (`operations-config.js`, `team-repos.js`) y abre el pedido desde el sitio con la identidad de escritura
 (`SITE_OPERATIONS_WRITE_TOKEN`). La pestaña no habilita «Proponer» si `main` no tiene una política que pida al menos un
-revisor (punto 3). Los umbrales del tablero (`scripts/nightly/dashboard/sources.json`) se editan en el sitio recién
+revisor (punto 3, «Proteger `main` del repo de operaciones»). Los umbrales del tablero (`scripts/nightly/dashboard/sources.json`) se editan en el sitio recién
 cuando la plantilla `ops-data.yml` dejó la marca `.dashboard/applied-config.json` con ese archivo adentro: la marca dice
 qué archivos de configuración aplicó la noche de verdad, con su identificador de objeto, y se guarda sólo al final de
 una noche verde. Hasta entonces la sección dice «tu nocturno todavía no lee este archivo».
@@ -121,6 +121,42 @@ Qué declarar: el proveedor y, por producto, los pipelines de `staging` y de `pr
 exacto** de cada stage que despliega (el nombre del stage en el YAML, no el que se ve en la pantalla). La página
 `harness.js team-config` los propone leyendo la última corrida terminada de main, y guarda sólo lo que confirmás. El
 ejemplo `examples/operations.json` trae la forma. Un producto sin declarar sale «no medido».
+
+### Proteger `main` del repo de operaciones
+
+Nadie escribe `main` del repo de operaciones a mano: las personas y el sitio de la organización entran por pedido
+revisado, y sólo los pipelines de la noche empujan directo. Sin esta protección, la pestaña **Configuración** del sitio
+no habilita «Proponer»: la identidad del sitio podría escribir `main` sin que nadie mire.
+
+1. **Una política de revisión en `main`.** En *Project settings → Repositories → (el repo de operaciones) → Policies →
+   Branch policies → main*: *Require a minimum number of reviewers* en 1, sin que cuente el voto de quien crea el pedido
+   y con los votos reiniciados en cada push. Con la línea de comandos (los ejemplos usan la organización `acme`, el
+   proyecto `ops-proj` y el repo `harness-ops`):
+
+   ```bash
+   az devops configure --defaults organization=https://dev.azure.com/acme project=ops-proj
+   REPO_ID="$(az repos show --repository harness-ops --query id -o tsv)"
+   az repos policy approver-count create --repository-id "${REPO_ID}" --branch main \
+     --minimum-approver-count 1 --creator-vote-counts false --reset-on-source-push true \
+     --allow-downvotes false --blocking true --enabled true
+   ```
+
+2. **El permiso de saltear la política, sólo para la identidad que empuja de noche.** En *Project settings →
+   Repositories → (el repo de operaciones) → Security*, elegir esa identidad y poner **Bypass policies when pushing** en
+   «Allow». Es la misma de los permisos de arriba: con *Limit job authorization scope* apagada, `Project Collection
+   Build Service (acme)`; prendida, `ops-proj Build Service (acme)`. A nadie más: ni a una persona, ni a un grupo, ni
+   a la identidad de escritura del sitio (`SITE_OPERATIONS_WRITE_TOKEN`), que propone por pedido como todos. Tampoco
+   hace falta *Bypass policies when completing pull requests*.
+
+**Cómo verificarlo.**
+
+- La política está y es bloqueante: `az repos policy list --repository-id "${REPO_ID}" --branch main -o table` muestra
+  *Minimum number of reviewers* con *Is Blocking* y *Is Enabled* en `True`.
+- Una persona no puede empujar `main` directo: desde un clon, un commit cualquiera y `git push origin HEAD:main` rebota
+  con `TF402455: Pushes to this branch are not permitted; you must use a pull request to update this branch.`
+- La noche sigue guardando: la próxima corrida de cada pipeline (o una a mano, con efectos) termina en verde y su commit
+  aparece en `main`. Si sale en rojo con `TF402455`, el permiso del paso 2 quedó en otra identidad.
+- En el sitio, *Configuración* habilita «Proponer» y ya no dice «el repo no tiene una política que pida revisión».
 
 ## 4. Dar de alta los tres pipelines
 
