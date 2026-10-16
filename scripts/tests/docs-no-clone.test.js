@@ -264,3 +264,65 @@ test('T35e PrivateHome_IsIndexedInItsCover_AndOutOfTheTeamLayer @story-8.26 @ac-
   assert.deepStrictEqual([destinationsOf(toy, 'y/a.md'), destinationsOf(toy, 'y/ab.md'), destinationsOf(toy, 'y/a/b.md')], [['team'], [], []], 'control: `?` es un solo carácter y no cruza carpetas');
   assert.deepStrictEqual([destinationsOf(toy, 'z/w.md'), destinationsOf(toy, 'z/a/b/w.md')], [['maintainers'], ['maintainers']], 'control: `**/` vale por ninguna carpeta o por varias');
 });
+
+// ── story 8.40, tanda A (T32, con el cambio de la coordinadora del 2026-10-16) ──────────────────────────────────────
+// Hasta la primera publicación en npm, las portadas y las guías NO prometen npx: a lo sumo una nota «próximamente» en la
+// prosa, sin reemplazar la entrada de hoy (las tres líneas de bajar, leer y correr del bloque `install:core`). Lo que se
+// mide: ningún bloque de código ejecutable trae la línea npx; donde la línea aparece, lleva `@latest` y está en una nota
+// de «próximamente»; y nunca `npx -y`/`npx --yes` ni la línea npx con `--yes` (el «sí» es el del plan, decisión 6).
+const NPX_PAPERS = ['README.md', 'README.es.md', 'getting-started/mac.md', 'getting-started/windows.md', 'getting-started/linux.md', 'getting-started/reference.md', 'getting-started/reference.es.md'];
+/** Los problemas de un papel con la línea npx (vacío = ninguno). */
+function npxProblems(text, file) {
+  const out = [];
+  const fences = [...text.matchAll(/```[a-z]*\n([\s\S]*?)```/g)].map((m) => m[1]);
+  if (fences.some((f) => /\bnpx\b[^\n]*@tyconsa\/harness/.test(f))) out.push(`${file}: la línea npx está en un bloque de código (entrada ejecutable) antes de que exista el paquete`);
+  if (/\bnpx\s+(-y|--yes)\b/.test(text)) out.push(`${file}: escribe npx -y / npx --yes`);
+  for (const line of text.split('\n').filter((l) => /@tyconsa\/harness/.test(l))) {
+    if (!/@tyconsa\/harness@latest/.test(line)) out.push(`${file}: la línea npx sin @latest: ${line.trim().slice(0, 120)}`);
+    if (/@tyconsa\/harness@latest[^\n`]*--yes/.test(line)) out.push(`${file}: la línea npx con --yes: ${line.trim().slice(0, 120)}`);
+    if (!/próximamente|coming soon/i.test(line)) out.push(`${file}: la línea npx fuera de una nota de «próximamente»: ${line.trim().slice(0, 120)}`);
+  }
+  return out;
+}
+test('T32 Docs_NpxOnlyAsComingSoon_NoYes_CurrentEntryStays', () => {
+  for (const f of NPX_PAPERS) assert.deepStrictEqual(npxProblems(read(f), f), [], `${f}: la línea npx`);
+  for (const f of ['README.md', 'README.es.md']) assert.ok(/próximamente[^\n]*`npx @tyconsa\/harness@latest`|coming soon[^\n]*`npx @tyconsa\/harness@latest`/i.test(read(f)), `${f}: la nota de «próximamente» con la línea npx`);
+  for (const f of ['getting-started/reference.md', 'getting-started/reference.es.md']) assert.match(read(f), /<!-- install:core -->[\s\S]*get-harness\.sh[\s\S]*<!-- \/install:core -->/, `${f}: la entrada de hoy (install:core con get-harness.sh) sigue`);
+  // el espejo: cada forma prohibida se detecta
+  assert.ok(npxProblems('```bash\nnpx @tyconsa/harness@latest\n```\n', 'x').length >= 1, 'control: la línea en un bloque de código');
+  assert.ok(npxProblems('Próximamente: `npx -y @tyconsa/harness@latest`\n', 'x').some((m) => m.includes('-y')), 'control: npx -y');
+  assert.ok(npxProblems('Próximamente: `npx @tyconsa/harness@latest --profile minimal --yes`\n', 'x').some((m) => m.includes('--yes')), 'control: la línea con --yes');
+  assert.ok(npxProblems('Instalá con `npx @tyconsa/harness@latest`\n', 'x').some((m) => m.includes('próximamente')), 'control: fuera de una nota');
+  assert.ok(npxProblems('Próximamente: `npx @tyconsa/harness`\n', 'x').some((m) => m.includes('@latest')), 'control: sin @latest');
+});
+
+// T20 · cada línea npx que escriben las portadas, la referencia y la página del paquete pasa el freno de comandos
+// (`scripts/hooks/safety-guard-pre.sh`), una por una; la tubería `curl … | bash` sigue saliendo bloqueada con SUP-C1. La
+// story no agrega un freno a `npx -y` (frenaría a los devs en sus proyectos): lo que protege es que la portada no lo
+// escriba (T32). Corre el freno de verdad, con una HOME de juguete y sin TYCON_SAFETY_OFF.
+test('T20 NpxInstaller_PortadaLinesPassGuard', (t) => {
+  if (process.platform === 'win32') { t.skip('NO MEDIDO en Windows: el freno es un guion de bash (lo mide el ensayo de Windows)'); return; }
+  const { spawnSync } = require('child_process');
+  const os = require('os');
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'npx-guard-'));
+  const env = Object.assign({}, process.env, { HOME: home }); delete env.TYCON_SAFETY_OFF;
+  const guard = (command) => spawnSync('bash', [path.join(ROOT, 'scripts', 'hooks', 'safety-guard-pre.sh')], { input: JSON.stringify({ tool_input: { command }, cwd: home }), encoding: 'utf8', env });
+  try {
+    const lines = new Set();
+    for (const f of [...NPX_PAPERS, 'scripts/setup/npm/README.md']) {
+      for (const m of read(f).matchAll(/`(npx [^`\n]*@tyconsa\/harness[^`\n]*)`/g)) lines.add(m[1]);
+    }
+    assert.ok(lines.size >= 1, 'las portadas y la página del paquete escriben la línea npx');
+    // y las variantes que la ayuda del instalador y las guías van a escribir cuando el paquete esté publicado
+    for (const v of ['--profile full --integrations none --packs all', '--profile minimal --yes', '--team acme/harness-team-profile', '--audience org']) lines.add(`npx @tyconsa/harness@latest ${v}`);
+    for (const line of lines) {
+      const r = guard(line);
+      assert.strictEqual(r.status, 0, `el freno bloquea «${line}»: ${(r.stderr || '').slice(0, 300)}`);
+    }
+    const curl = /curl -fsSL -o get-harness\.sh (https:\/\/\S+)/.exec(read('getting-started/reference.md'));
+    assert.ok(curl, 'la referencia trae la línea de curl del guion de entrada');
+    const piped = guard(`curl -fsSL ${curl[1]} | bash`);
+    assert.strictEqual(piped.status, 2, `la tubería hacia bash sale bloqueada: ${piped.stderr}`);
+    assert.match(piped.stderr, /SUP-C1/);
+  } finally { fs.rmSync(home, { recursive: true, force: true }); }
+});

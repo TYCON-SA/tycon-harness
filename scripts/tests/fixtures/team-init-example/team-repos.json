@@ -1,0 +1,7 @@
+{
+  "__doc": "Dónde vive cada repo del arnés de acme. public: de dónde instalan las máquinas: el arnés público de TYCON, que es el mismo para todas las organizaciones (o tu copia, si mantenés una). profile: este repo. operations: el repo privado de las tareas programadas (no se instala). Cada repo es { platform: github, org, repo } o { platform: azure, org, project, repo }.",
+  "version": 1,
+  "public":     { "platform": "github", "org": "TYCON-SA", "repo": "tycon-harness" },
+  "profile":    { "platform": "github", "org": "acme", "repo": "harness-team-profile" },
+  "operations": { "platform": "github", "org": "acme", "repo": "harness-team-operations" }
+}

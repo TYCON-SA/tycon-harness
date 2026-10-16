@@ -37,6 +37,10 @@
 # pesadas (con 4 a la vez, una larga que arranca última estira la parte entera). Un valor que no sea <i>/<n> con i
 # entre 1 y n, o un reparto que no se puede hacer (falta suites-shard.js, los pesos no se dejan leer), es ROJO: correr
 # todas, o ninguna, en silencio daría otro veredicto que el pedido. Una parte sin ninguna suite es rojo (cero no es verde).
+#
+# SÓLO ALGUNAS (TYCON_PORTABLE_ONLY=<ruta>,<ruta>…, 2026-10-16): corre sólo esas portables, con la misma HOME vacía. Lo
+# usa la parte installer-floor de la CI pública (el Node más viejo que acepta el instalador). Una ruta que no es una
+# portable declarada es rojo.
 
 set -uo pipefail
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -90,6 +94,14 @@ for b in az engram codegraph codex claude; do
 done
 PATH="$BIN" command -v node >/dev/null 2>&1 || { echo "❌ suites-portables: no quedó node en el PATH armado"; exit 1; }
 
+# ── las skills de terceros, ANTES de lanzar nada en paralelo ──────────────────────────────────────
+#    Algunas suites (harness-install, install-third-party) las ponen en skills/ del árbol mientras otras corren. Una
+#    suite que compara dos instalaciones (installer-shared-pieces S11) las ve aparecer entre la primera y la segunda, y
+#    da rojo según con quién le toque correr (story 8.40, DEF-8.40-carrera-skills-de-terceros). Con el árbol ya completo,
+#    nadie cambia skills/ a mitad de camino. Con una HOME temporal, el estado del paso no cae en la de quien corre.
+mkdir -p "$T/third-party-home"
+HOME="$T/third-party-home" node "$RAIZ/scripts/publishing/install-third-party.js" --repo "$RAIZ" 2>&1 | sed 's/^/suites-portables: /'
+
 # ── correr las portables, de a 4, con tope ────────────────────────────────────────────────────────
 node - "$RAIZ" "${SK_REPO:-}" "$HAY_SKILLS" "$CASA" "$BIN" "$T" "$SUITES" "${SK_WHY:-}" <<'JS'
 'use strict';
@@ -116,7 +128,7 @@ if (SHARD) {
   let shard; let weights;
   try {
     shard = require(path.join(RAIZ, 'scripts', 'ci', 'suites-shard.js'));
-    weights = shard.readWeights(path.join(RAIZ, 'scripts', 'ci', 'suites-weights.json'), 'pr');
+    weights = shard.readWeights(path.join(RAIZ, 'scripts', 'ci', 'suites-weights.json'), 'github');
   } catch (e) {
     console.log(`❌ suites-portables: no pude repartir las portables para la parte ${i} de ${n}: ${String((e && e.message) || e).split('\n')[0]}`); process.exit(1);
   }
@@ -124,10 +136,20 @@ if (SHARD) {
   // assign() devuelve, por parte, los mismos objetos que recibe: cada uno lleva su entrada de suites.json
   const parts = shard.assign(portables.map((e) => ({ name: path.posix.basename(e.ruta), entry: e })), weights, n);
   const mine = parts[i - 1].suites.map((s) => s.entry);
-  console.log(`suites-portables: parte ${i} de ${n} (repartidas por peso con scripts/ci/suites-shard.js, juego pr): ${mine.length} de ${portables.length} portables · ~${Math.round(parts[i - 1].load)} s de peso`);
+  console.log(`suites-portables: parte ${i} de ${n} (repartidas por peso con scripts/ci/suites-shard.js, juego github): ${mine.length} de ${portables.length} portables · ~${Math.round(parts[i - 1].load)} s de peso`);
   if (!mine.length) { console.log(`❌ suites-portables: a la parte ${i} de ${n} no le tocó ninguna portable: cero no es verde (¿más partes que portables?)`); process.exit(1); }
   // primero las más pesadas (a igual peso, en el orden de suites.json)
   portables = mine.map((e, at) => ({ e, at, w: weightOf(e) })).sort((a, b) => (b.w - a.w) || (a.at - b.at)).map((x) => x.e);
+}
+// sólo algunas portables, por su ruta (TYCON_PORTABLE_ONLY=<ruta>,<ruta>…; 2026-10-16): el trabajo del piso del
+// instalador de la CI pública corre así las suites de lo que corre con el Node del sistema. Una ruta que no es una
+// portable declarada es rojo, nunca un salto: un nombre mal escrito dejaría la parte corriendo de menos y en verde.
+const ONLY = (process.env.TYCON_PORTABLE_ONLY || '').split(',').map((s) => s.trim()).filter(Boolean);
+if (ONLY.length) {
+  const faltan = ONLY.filter((r) => !portables.some((e) => e.ruta === r));
+  if (faltan.length) { console.log(`❌ suites-portables: TYCON_PORTABLE_ONLY nombra lo que no es una portable declarada: ${faltan.join(', ')}`); process.exit(1); }
+  portables = portables.filter((e) => ONLY.includes(e.ruta));
+  console.log(`suites-portables: sólo ${portables.length} (TYCON_PORTABLE_ONLY): ${ONLY.join(', ')}`);
 }
 
 /** La HOME vacía de UNA suite: sólo los dos enlaces de instalación. Una por suite, así no se pisan entre sí. */

@@ -9,9 +9,13 @@
 #
 # Node LTS sobre Alpine con la versión FIJADA, `git` adentro (el sitio clona el repo de operaciones), un usuario sin
 # privilegios, y sólo lo que el sitio ejecuta: scripts/site, los lectores que usa (scripts/lib, scripts/metrics,
-# scripts/nightly/dashboard, scripts/setup/harness) y los títulos de los pasos del pipeline (los lee la vista de corridas,
+# scripts/nightly/dashboard, scripts/setup/harness, y de scripts/ci el lector de la paridad) y los títulos de los pasos del pipeline (los lee la vista de corridas,
 # 2.27). Ningún secreto en la imagen: llegan como variables de entorno desde el almacén de cada plataforma (2.30).
 # La misma orden arranca el sitio con Node solo, sin Docker: node scripts/site/server.js
+#
+# 🔴 Poné SITE_DATA_DIR en un VOLUMEN: `docker run -v sitio-datos:/data -e SITE_DATA_DIR=/data …`. Ahí quedan el espejo
+# del buzón, el clon de operaciones y el último bueno de la configuración. Sin volumen, cada reinicio vuelve a bajar
+# el buzón entero, y la pestaña Corridas dice «no medido» hasta que termina.
 FROM node:24.11.0-alpine3.22
 
 RUN apk add --no-cache git
@@ -23,10 +27,16 @@ COPY scripts/lib/ scripts/lib/
 COPY scripts/metrics/ scripts/metrics/
 COPY scripts/nightly/dashboard/ scripts/nightly/dashboard/
 COPY scripts/setup/harness/ scripts/setup/harness/
+COPY scripts/ci/check-product-parity.js scripts/ci/legacy-options.js scripts/ci/
 COPY skills/tycon-pipeline/scripts/lib/ skills/tycon-pipeline/scripts/lib/
 COPY skills/tycon-pipeline/steps/step-0*.md skills/tycon-pipeline/steps/
 
 ENV NODE_ENV=production PORT=8080 TYCON_SKILLS_DIR=/app/skills
+
+# /data es del usuario del sitio y es un VOLUME: un volumen con nombre nuevo montado ahí copia este dueño. Sin esto nacía
+# de root, y el sitio (que corre como node) no podía clonar ni guardar su estado: se frenaba.
+RUN mkdir -p /data && chown node:node /data
+VOLUME /data
 
 USER node
 EXPOSE 8080

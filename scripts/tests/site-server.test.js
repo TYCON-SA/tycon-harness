@@ -8,6 +8,8 @@
  * T7  Codigo_SinValoresDeUnaOrganizacion           T42 Vida_NoDependeDelFreno
  *
  * Y de la story 2.28: T29 2.28-Healthz_FrenadoSinUltimoBueno.
+ * T6b Imagen_TodoLoQueCargaElSitioEstaAdentro: lo que el sitio carga (sus módulos y los lectores de Configuración) está
+ *     en lo que copia la imagen (caso 2026-10-16: el lector de la paridad quedó afuera y la sección decía «no sabe leer»).
  */
 const test = require('node:test');
 const assert = require('node:assert');
@@ -77,7 +79,9 @@ test('T2 Arranque_RegistroSinSecretos', async () => {
     const s = p.salida();
     for (const v of ['SITE_SESSION_KEY', 'SITE_OIDC_CLIENT_SECRET', 'SITE_OPERATIONS_TOKEN', 'SITE_MAILBOX_SAS']) assert.match(s, new RegExp(`${v}: presente`), v);
     for (const v of [env.SITE_SESSION_KEY, env.SITE_OIDC_CLIENT_SECRET, env.SITE_OPERATIONS_TOKEN, env.SITE_MAILBOX_SAS, new URLSearchParams(env.SITE_MAILBOX_SAS).get('sig')]) assert.ok(!s.includes(v), 'ningún secreto en el registro');
-  } finally { await p.cerrar(); fs.rmSync(env.SITE_DATA_DIR, { recursive: true, force: true }); }
+    // el `git clone` que el sitio lanzó puede seguir escribiendo un instante después de cerrarlo: el borrado reintenta
+    // (cola de merge del 2026-10-16: ENOTEMPTY en operaciones/.git, al azar)
+  } finally { await p.cerrar(); fs.rmSync(env.SITE_DATA_DIR, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); }
 });
 
 test('T6 Imagen_DockerfileSinPrivilegiosNiPruebas', () => {
@@ -98,6 +102,64 @@ test('T6 Imagen_DockerfileSinPrivilegiosNiPruebas', () => {
   assert.match(df, /CMD\s+\["node",\s*"scripts\/site\/server\.js"\]/, 'la misma orden que con Node solo');
   for (const p of ['scripts/tests', '.git', '**/*.pem', '**/*.key', '**/.env']) assert.ok(ign.split('\n').map((l) => l.trim()).includes(p), `${p} fuera de la imagen`);
   assert.doesNotMatch(df, /ARG\s+\S*(TOKEN|SECRET|KEY|SAS)|ENV\s+\S*(TOKEN|SECRET|SAS)/i, 'ningún secreto en la imagen');
+  // /data nace del usuario del sitio ANTES de pasar a él, y es un VOLUME: un volumen con nombre nuevo hereda ese dueño
+  // (2026-10-16: con `-v sitio-datos:/data` el volumen nacía de root y el sitio no podía clonar ni guardar: se frenaba)
+  const iUser = df.search(/^USER\s+node\b/m);
+  const iData = df.search(/^RUN\s+mkdir -p \/data && chown node:node \/data\b/m);
+  assert.ok(iData >= 0 && iData < iUser, '/data con dueño node, antes del USER');
+  assert.match(df, /^VOLUME\s+\/data\b/m, 'VOLUME /data');
+  assert.match(df, /-v sitio-datos:\/data -e SITE_DATA_DIR=\/data/, 'la cabecera dice cómo montarlo');
+});
+
+/**
+ * Todo lo que el sitio puede cargar, recorrido desde sus módulos y los lectores de Configuración: cada `require('./…')`
+ * y cada `path.join(__dirname, '…')` que nombra un .js (también los que se cargan tarde, adentro de una función).
+ */
+function cargaDelSitio() {
+  const ORG = require(path.join(ROOT, 'scripts', 'lib', 'org-config.js'));
+  const raices = [];
+  const recorrerDir = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, e.name); if (e.isDirectory()) recorrerDir(p); else if (e.name.endsWith('.js')) raices.push(p); } };
+  recorrerDir(SITE);
+  // los lectores los busca loadReader por nombre: se piden de verdad y se toma el archivo que cargó
+  for (const nombre of [...new Set([...ORG.SECCIONES.map((s) => s.lector), 'check-product-parity.js'])]) {
+    const mod = ORG.loadReader(ROOT, nombre, {});
+    if (nombre === 'thresholds') continue;
+    assert.ok(mod, `el lector ${nombre} se encuentra en este árbol`);
+    const f = Object.keys(require.cache).find((k) => require.cache[k].exports === mod);
+    assert.ok(f, `el archivo del lector ${nombre}`);
+    raices.push(f);
+  }
+  const vistos = new Set();
+  const pila = [...raices];
+  while (pila.length) {
+    const f = pila.pop();
+    if (vistos.has(f)) continue;
+    vistos.add(f);
+    const t = fs.readFileSync(f, 'utf8');
+    const dir = path.dirname(f);
+    const destinos = [];
+    for (const m of t.matchAll(/require\(\s*'(\.{1,2}\/[^']+)'\s*\)/g)) destinos.push(path.resolve(dir, m[1]));
+    for (const m of t.matchAll(/path\.join\(\s*__dirname\s*((?:,\s*'[^']*'\s*)+)\)/g)) destinos.push(path.resolve(dir, ...[...m[1].matchAll(/'([^']*)'/g)].map((x) => x[1])));
+    for (const d of destinos) {
+      const js = fs.existsSync(d) && fs.statSync(d).isFile() ? d : (fs.existsSync(`${d}.js`) ? `${d}.js` : null);
+      if (js && js.endsWith('.js') && js.startsWith(ROOT + path.sep) && !js.includes(`${path.sep}tests${path.sep}`)) pila.push(js);
+    }
+  }
+  return [...vistos].map((f) => path.relative(ROOT, f).split(path.sep).join('/')).sort();
+}
+
+test('T6b Imagen_TodoLoQueCargaElSitioEstaAdentro — cada archivo que el sitio carga lo copia el Dockerfile y lo deja pasar su lista', () => {
+  const df = fs.readFileSync(path.join(SITE, 'Dockerfile'), 'utf8');
+  const ign = fs.readFileSync(path.join(SITE, 'Dockerfile.dockerignore'), 'utf8');
+  const aRegex = (pat) => new RegExp(`^${pat.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*\*/g, '\u0000').replace(/\*/g, '[^/]*').replace(/\u0000/g, '.*')}${pat.endsWith('/') ? '' : '$'}`);
+  const copias = df.split('\n').filter((l) => /^COPY\s/.test(l)).flatMap((l) => l.trim().split(/\s+/).slice(1, -1)).filter((x) => !x.startsWith('--')).map(aRegex);
+  const pasan = ign.split('\n').map((l) => l.trim()).filter((l) => l.startsWith('!')).map((l) => aRegex(l.slice(1)));
+  const archivos = cargaDelSitio();
+  assert.ok(archivos.includes('scripts/site/server.js') && archivos.includes('scripts/ci/check-product-parity.js'), `el recorrido encuentra el servidor y el lector de la paridad: ${archivos.join(', ')}`);
+  const sinCopiar = archivos.filter((f) => !copias.some((r) => r.test(f)));
+  const sinPasar = archivos.filter((f) => !pasan.some((r) => r.test(f)));
+  assert.deepStrictEqual(sinCopiar, [], 'el sitio carga estos archivos y el Dockerfile no los copia');
+  assert.deepStrictEqual(sinPasar, [], 'el sitio carga estos archivos y Dockerfile.dockerignore no los deja entrar');
 });
 
 test('T7 Codigo_SinValoresDeUnaOrganizacion', () => {
@@ -194,7 +256,7 @@ test('T39 Nucleo_SinNube', { skip: !hayHttpBackend() && !process.env.CI && 'git 
     assert.ok(git.pedidos.some((x) => x.conCabecera), 'leyó el repo de operaciones con su credencial');
     assert.strictEqual((await H.pedirA(p.base, '/healthz')).status, 200);
     assert.strictEqual((await H.pedirA(p.base, '/')).status, 302, 'sin sesión, al emisor');
-  } finally { if (p) await p.cerrar(); await git.cerrar(); await emisor.cerrar(); fs.rmSync(raiz, { recursive: true, force: true }); }
+  } finally { if (p) await p.cerrar(); await git.cerrar(); await emisor.cerrar(); fs.rmSync(raiz, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); }
 });
 
 test('T42 Vida_NoDependeDelFreno', async () => {

@@ -8,6 +8,8 @@
 !scripts/metrics/
 !scripts/nightly/dashboard/
 !scripts/setup/harness/
+!scripts/ci/check-product-parity.js
+!scripts/ci/legacy-options.js
 !skills/tycon-pipeline/scripts/lib/
 !skills/tycon-pipeline/steps/
 scripts/tests

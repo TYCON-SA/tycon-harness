@@ -248,10 +248,11 @@ echo "equipo-deva/2.2-2026-09-02T1000.json" > "${T}/b/corromper"; bajar "${T}" "
 [ ! -e "${T}/estado/corridas-buzon/equipo-deva/2.2-2026-09-02T1000.json" ] && [ -z "$(find "${T}/estado" -name '*.tmp-*' 2>/dev/null)" ] && ok "T10b el que llegó distinto no se escribió ni dejó temporal" || mal "T10b el corrupto quedó en disco"
 rm -f "${T}/b/corromper"
 T="${BASE}/t10c"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token; echo 60 > "${T}/b/demora"
-i=0; while [ "${i}" -lt 20 ]; do blob "${T}/b" "maq-z/7.$(printf %02d ${i})-2026-09-07T0500.json" 200; i=$((i+1)); done
+# 80 blobs (no 20): desde el hotfix del 2026-10-16 se bajan 8 a la vez, y 20 de 60 ms entraban enteros en el tope
+i=0; while [ "${i}" -lt 80 ]; do blob "${T}/b" "maq-z/7.$(printf %02d ${i})-2026-09-07T0500.json" 200; i=$((i+1)); done
 bajar "${T}" "${T}/bin/az" --budget-ms 200
 BJ=$(campo "${T}" bajados); ST=$(campo "${T}" sin_tiempo)
-[ "${RC}" -eq 0 ] && [ "${ST}" -gt 0 ] 2>/dev/null && [ "$((BJ + ST))" = "20" ] && ok "T10c tope chico: bajados ${BJ} + sin_tiempo ${ST} = 20" || mal "T10c rc=${RC} bajados=${BJ} sin_tiempo=${ST}"
+[ "${RC}" -eq 0 ] && [ "${ST}" -gt 0 ] 2>/dev/null && [ "$((BJ + ST))" = "80" ] && ok "T10c tope chico: bajados ${BJ} + sin_tiempo ${ST} = 80" || mal "T10c rc=${RC} bajados=${BJ} sin_tiempo=${ST}"
 T="${BASE}/t10d"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
 for p in ${PIDS}; do :; done; kill "${p}" 2>/dev/null; sleep 0.2
 bajar "${T}" "${T}/bin/az"

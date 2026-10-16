@@ -461,6 +461,24 @@ test('InternalHistoryGuard_Team_TeamPath_WhatTheExporterWouldMark — una ruta d
   assert.ok(!/guides\/a\.md:4/.test(r.out), r.out);
 });
 
+// Lo que la publicación misma escribe en la copia (la lista blanca, `generated`: version.json) está en ella: una guía que
+// lo nombra no nombra un archivo del equipo. 🔴 rojo previo: banco 13618, grupo C — las guías y el skill de merge que
+// hablan de version.json salían como `team-path` (la copia se armaba sin lo generado).
+test('InternalHistoryGuard_Team_TeamPath_GeneratedTargetIsInTheCopy — version.json, escrito al publicar, no es del equipo', () => {
+  const l = teamLab();
+  const guia = ['# Guía', '', 'La versión de la copia vive en `version.json`.', ''].join('\n');
+  const conGenerado = JSON.parse(JSON.stringify(TEAM_LIST));
+  conGenerado.generated = [{ target: 'version.json', reason: 'prueba: lo escribe la publicación' }];
+  stage(l.repo, { 'version.json': { version: '2030.01.01.1' }, 'scripts/publishing/allowlist.json': conGenerado, 'guides/a.md': guia });
+  const r = guard(l, { args: ['--config', configWith({ 'team-path': 'block' })] });
+  assert.strictEqual(r.code, 0, `lo generado está en la copia\n${r.out}`);
+  // el mismo archivo sin la declaración sí es del equipo: la excepción la da `generated`, no el nombre
+  stage(l.repo, { 'scripts/publishing/allowlist.json': TEAM_LIST });
+  const sin = guard(l, { args: ['--config', configWith({ 'team-path': 'block' })] });
+  assert.strictEqual(sin.code, 1, sin.out);
+  assert.match(sin.out, /guides\/a\.md:3\b[^\n]*team-path/);
+});
+
 // ══ T28 · los modos, la constancia y la cuenta ═══════════════════════════════════════════════════════════════════
 
 test('InternalHistoryGuard_ModeTable_Unit — el modo efectivo: lo escrito, la variable, y lo que no se entiende', () => {

@@ -3,7 +3,7 @@
 # (story 8.23, tanda E · AC 33 · la parte local de T34; reescribe T54, T55 y T57 de la 8.16 y suma T56).
 #
 # Lo que no se puede perder:
-#   · T54 — el guion tiene 120 líneas como mucho, `bash -n` limpio, el piso de Node de `harness.js` (`NODE_FLOOR`), la
+#   · T54 — el guion tiene 120 líneas como mucho, `bash -n` limpio, el piso de Node para instalar (22; `harness.js`, 20), la
 #     dirección de fábrica de la portada (`REPO="<org>/<nombre>"`), y NO invoca git ni lo pide (ni `--depth`: ya no hay
 #     clon). `--help` sale 0 sin tocar la red ni la HOME.
 #   · T55 — un requisito que falta (`node`, `tar`, `python3`, o un `node` viejo) sale 1 con una línea por cada uno y un
@@ -97,9 +97,21 @@ FLOOR_HARNESS="$(sed -n 's/^const NODE_FLOOR = \([0-9][0-9]*\);.*/\1/p' "$RAIZ/s
 LINES="$(wc -l < "$SRC" | tr -d ' ')"
 if [ "$LINES" -le 120 ]; then ok "T54 el guion tiene ${LINES} líneas (tope 120: se lee entero)"; else no "T54 el guion tiene ${LINES} líneas (tope 120)"; fi
 if bash -n "$SRC" 2> "$BASE/syntax.err"; then ok "T54 bash -n limpio"; else no "T54 bash -n: $(brief "$BASE/syntax.err")"; fi
+# story 8.40 (T24, decisión del dueño 2026-10-16): los de instalación y las portadas dicen 22; harness.js dice 20 (lo
+# tolera sólo para actualizar una instalación existente: después de instalar, el arnés corre con su propio Node 24)
 FLOOR_SCRIPT="$(sed -n 's/^NODE_FLOOR=\([0-9][0-9]*\).*/\1/p' "$SRC")"
-if [ -n "$FLOOR_HARNESS" ] && [ "$FLOOR_SCRIPT" = "$FLOOR_HARNESS" ]; then ok "T54 el piso de Node del guion (${FLOOR_SCRIPT}) es el de harness.js (NODE_FLOOR)"
-else no "T54 el piso de Node del guion es «${FLOOR_SCRIPT}» y el de harness.js «${FLOOR_HARNESS}»"; fi
+FLOOR_PS1="$(sed -n 's/^\$NodeFloor = \([0-9][0-9]*\).*/\1/p' "$RAIZ/scripts/setup/get-harness.ps1")"
+FLOOR_NPM="$(sed -n 's/^const NODE_FLOOR = \([0-9][0-9]*\);.*/\1/p' "$RAIZ/scripts/setup/npm/index.js")"
+FLOOR_ENGINES="$(node -e 'console.log(require(process.argv[1]).engines.node)' "$RAIZ/scripts/setup/npm/package.json" 2>/dev/null)"
+if [ "$FLOOR_SCRIPT" = 22 ] && [ "$FLOOR_PS1" = 22 ] && [ "$FLOOR_NPM" = 22 ] && [ "$FLOOR_ENGINES" = '>=22' ] && [ "$FLOOR_HARNESS" = 20 ]; then
+  ok "T54/T24 el piso para instalar es 22 (.sh, .ps1, index.js y engines) y el de harness.js 20"
+else no "T54/T24 los pisos: .sh «${FLOOR_SCRIPT}», .ps1 «${FLOOR_PS1}», index.js «${FLOOR_NPM}», engines «${FLOOR_ENGINES}» (piden 22) y harness.js «${FLOOR_HARNESS}» (pide 20)"; fi
+FLOOR_COVERS=''
+for f in README.md README.es.md getting-started/reference.md getting-started/reference.es.md; do
+  grep -qE 'Node 22 (or later|o posterior)' "$RAIZ/$f" || FLOOR_COVERS="$FLOOR_COVERS $f(sin «Node 22»)"
+  ! grep -qE 'Node 20 (or later|o posterior)|node >= 20' "$RAIZ/$f" || FLOOR_COVERS="$FLOOR_COVERS $f(dice 20)"
+done
+if [ -z "$FLOOR_COVERS" ]; then ok "T24 las portadas y las referencias dicen Node 22 o posterior, ninguna 20"; else no "T24 el piso en la documentación:${FLOOR_COVERS}"; fi
 # (la ruta `/git/ref/heads/<rama>` de la API de GitHub no es una invocación de git: se descuenta antes de mirar)
 # (y los nombres de las rutas públicas de la story 8.34 —`<repo>.git/info/refs`, `git-upload-pack`— tampoco)
 if ! grep -vE '^\s*#' "$SRC" | sed -e 's#/git/##g' -e 's#\.git/info/refs##g' -e 's#git-upload-pack##g' | grep -wE 'git|--depth' >/dev/null; then ok "T54 el guion no invoca git ni lo pide (sin clon: la versión se baja como archivos)"
@@ -153,9 +165,9 @@ env -u TYCON_GITHUB_TOKEN PATH="$LAB/path-nonode-nopy" TYCON_RELEASE_API="$LAB_R
 if [ "$RC" -eq 1 ] && [ "$(grep -c 'falta node' "$BASE/t55-two.out")" = 1 ] && [ "$(grep -c 'falta python3' "$BASE/t55-two.out")" = 1 ]; then ok "T55 sin node ni python3: una línea por cada uno"
 else no "T55 sin node ni python3 (rc $RC): $(brief "$BASE/t55-two.out" 400)"; fi
 if ! grep -q 'falta git' "$BASE/t55-two.out" "$BASE/t55-nonode.out"; then ok "T55 git no está entre los requisitos"; else no "T55 el guion pide git"; fi
-harness_lab_fake_node 18.0.0
+harness_lab_fake_node 20.19.0   # 20 ya no alcanza para instalar (el piso es 22)
 make_path "$LAB/path-oldnode" tar python3 "${BASICS[@]}"; ln -sf "$LAB_BIN/node" "$LAB/path-oldnode/node"
-t55 oldnode "$LAB/path-oldnode" "18\.0\.0.*${FLOOR_HARNESS}" "con node 18 (nombra la que hay y la que pide)"
+t55 oldnode "$LAB/path-oldnode" "20\.19\.0.*${FLOOR_SCRIPT}" "con node 20 (nombra la que hay y la que pide)"
 rm -f "$LAB_BIN/node" "$LAB_BIN/node-version.js"   # el node de mentira no queda en el PATH del laboratorio para lo que sigue
 # la sugerencia sale del sistema: un uname que dice Darwin, uno que dice otra cosa
 mkdir -p "$LAB/uname-darwin" "$LAB/uname-other"

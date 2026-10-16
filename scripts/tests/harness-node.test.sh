@@ -17,7 +17,7 @@
 # un enlace (`ln`) a un binario real. Nada toca `~/.claude`, `~/.tycon` ni el checkout real (HOME de juguete).
 set -u
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-BASE="$(mktemp -d "${TMPDIR:-/tmp}/tycon-harness-node.XXXXXX")"
+BASE="$(mktemp -d "${TMPDIR:-/tmp}/lab-harness-node.XXXXXX")"   # sin el nombre del repo público (mirror-pipeline T36)
 node "$RAIZ/scripts/tests/lib/lab-guard.js" "$BASE" harness-node || exit 1
 SERVER_PID=""
 trap '[ -n "$SERVER_PID" ] && kill "$SERVER_PID" 2>/dev/null; rm -rf "$BASE"' EXIT

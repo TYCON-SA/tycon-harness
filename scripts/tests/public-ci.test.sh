@@ -254,6 +254,15 @@ run_ci --range 'HEAD~1...HEAD'
 is "T21 (e) una versión que no sube sale 1" 1 "${RC}"
 has "T21 (e) …con version en rojo" "${R}.out" "❌ public-ci: version — rojo (exit 1)"
 has "T21 (e) …diciendo qué hacer" "${R}.out" "cada pedido sube la versión"
+# el paquete de npm sin su regla (story 8.40): un repo que trae scripts/setup/npm/package.json pero no
+# scripts/ci/npm-package-version.js no es «sin nada que exigir»: es «no pude correr», rojo
+variant npmnorule
+( cd "${R}" && mkdir -p scripts/setup/npm && printf '{ "name": "@acme/paquete", "version": "1.0.0" }\n' > scripts/setup/npm/package.json \
+    && printf '{ "version": "2026.01.01.3" }\n' > version.json && lab_git add -A -- . ':!scratch' && lab_git commit -qm "paquete sin regla" ) > /dev/null 2>&1
+run_ci --range 'HEAD~1...HEAD'
+is "T21 (e) el paquete de npm sin npm-package-version.js sale 1" 1 "${RC}"
+has "T21 (e) …con version «no pude correr» nombrando la regla que falta" "${R}.out" "❌ public-ci: version — no pude correr: "
+has "T21 (e) …y el archivo" "${R}.out" "scripts/ci/npm-package-version.js"
 
 # el control del «sólo lo versionado»: el mismo .js roto, versionado, sí es rojo
 variant tracked; ( cd "${R}" && lab_git add scratch/broken.js && lab_git commit -qm roto ) > /dev/null 2>&1; run_ci
@@ -441,7 +450,7 @@ done
 PS="${T}/portables"; mkdir -p "${PS}/scripts/tests" "${PS}/scripts/ci"
 cp "${ROOT}/scripts/tests/portable-suites.test.sh" "${PS}/scripts/tests/portable-suites.test.sh"
 cp "${ROOT}/scripts/ci/suites-shard.js" "${PS}/scripts/ci/suites-shard.js"
-printf '%s\n' '{ "default": 1, "weights": {}, "pr": { "default": 1, "weights": { "heavy.test.sh": 50, "mid.test.sh": 20 } } }' > "${PS}/scripts/ci/suites-weights.json"
+printf '%s\n' '{ "default": 1, "weights": {}, "github": { "default": 1, "weights": { "heavy.test.sh": 50, "mid.test.sh": 20 } } }' > "${PS}/scripts/ci/suites-weights.json"
 for s in a b c heavy d mid e other; do printf '%s\n' "echo ${s} >> \"\${PWD}/.ran\"" > "${PS}/scripts/tests/${s}.test.sh"; done
 node -e 'const names = ["a", "b", "c", "heavy", "d", "mid", "e"];
   const diarias = names.map((n) => ({ raiz: "arnes", ruta: `tests/${n}.test.sh`, requiere: [] }));
@@ -466,7 +475,7 @@ is "T24 (b) las tres partes salen 0" "000" "${PART_RC}"
 is "T24 (b) ninguna parte queda sin suites" "" "${EMPTY_PART}"
 is "T24 (b) las tres partes juntas son las siete portables, cada una una sola vez, y nunca la que pide engram" \
   "a b c d e heavy mid" "$(printf '%s' "${ALL_RAN}" | grep -v '^$' | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//')"
-has "T24 (b) cada parte dice cuál es y cuántas le tocaron" "${PS}.out" "suites-portables: parte 3 de 3 (repartidas por peso con scripts/ci/suites-shard.js, juego pr): "
+has "T24 (b) cada parte dice cuál es y cuántas le tocaron" "${PS}.out" "suites-portables: parte 3 de 3 (repartidas por peso con scripts/ci/suites-shard.js, juego github): "
 run_ps ""
 is "T24 (b) sin parte corren las siete" "a b c d e heavy mid" "$(LC_ALL=C sort "${PS}.ran" | tr '\n' ' ' | sed 's/ $//')"
 for bad in 4/3 0/3 x 1/3x; do
@@ -548,7 +557,12 @@ else
   altered "con permisos de escritura" "permissions" 'return t.replace(/^  contents: read$/m, "  contents: write");'
   altered "con permisos propios en un job" "permissions" 'return t.replace(/^(    runs-on: .*)$/m, "$1\n    permissions:\n      contents: write");'
   altered "con fetch-depth 1" "fetch-depth" 'return t.replace(/^(\s*)fetch-depth: 0$/m, "$1fetch-depth: 1");'
-  altered "sin Node 24 en la matriz" "node-matrix" 'return t.replace(/node: \[22, 24\]/, "node: [22]");'
+  altered "sin Node 24 en la matriz" "node-matrix" 'return t.replace(/node: \[24\]/, "node: [22]");'
+  # el piso del instalador (2026-10-16): el job installer-floor instala Node 22, una vez y sólo ahí
+  altered "el piso del instalador con otro Node" "node-matrix" 'return t.replace(/node-version: 22$/m, "node-version: 20");'
+  altered "el piso del instalador fuera de su job" "node-matrix" 'return t.replace(/node-version: \$\{\{ matrix\.node \}\}/, "node-version: 22");'
+  altered "el chequeo final no espera al piso del instalador" "aggregate-job" 'return t.replace("needs: [checks, installer-floor]", "needs: [checks]");'
+  altered "una parte fija fuera del piso del instalador" "parts" 'return t.replace(/TYCON_PUBLIC_CI_PART: \$\{\{ matrix\.part \}\}/, "TYCON_PUBLIC_CI_PART: installer-floor");'
   altered "con un Node fijo" "node-matrix" 'return t.replace(/node-version: .*$/m, "node-version: 22");'
   altered "sin --range en el pull request" "range" 'return t.replace(/ --range "[^"]*"/, "");'
   altered "sin --range en la cola de merge" "range" 'return t.replace(/ \|\| \[ "\$\{GITHUB_EVENT_NAME\}" = "merge_group" \]/, "");'
@@ -566,7 +580,7 @@ else
   altered "sin el bloque de la matriz" "node-matrix parts" 'return t.replace(/^    strategy:\n(?:      .*\n)+/m, "");'
   altered "con la lista de Node fuera de matrix" "node-matrix" 'return t.replace(/^      matrix:$/m, "      versions:");'
   altered "con matrix fuera de strategy" "node-matrix" 'return t.replace(/^    strategy:$/m, "    defaults:");'
-  altered "sin ningún checkout" "fetch-depth" 'return t.replace(/^      - uses: actions\/checkout@.*\n(?:        .*\n)+/m, "");'
+  altered "sin ningún checkout" "fetch-depth" 'return t.replace(/^      - uses: actions\/checkout@.*\n(?:        .*\n)+/gm, "");'
 
   # ── `shape`, la forma exacta: las líneas de código del archivo son las que el control lleva adentro, en ese orden ──
   altered "con una línea de más al final" "" 'return t + "          echo fin\n";'
@@ -588,9 +602,9 @@ else
   altered "clase 2: el contexto github volcado entero" "secrets" 'return t.replace(/^(\s*)TYCON_PUBLIC_CI_OUT:.*$/m, (l, s) => l + "\n" + s + "CTX: ${{ toJSON(github) }}");'
   altered "clase 2: un secreto escondido con un escape de YAML" "" 'return t.replace(/^(\s*)TYCON_PUBLIC_CI_OUT:.*$/m, (l, s) => l + "\n" + s + "TOKEN: \"${{ secr\\x65ts.GITHUB_TOKEN }}\"");'
   altered "clase 3: un job salteado cuenta como aprobado" "" 'return t.replace("[ \"${r}\" = \"success\" ] || exit 1", "[ \"${r}\" = \"success\" ] || [ \"${r}\" = \"skipped\" ] || exit 1");'
-  altered "clase 4: un exclude en la matriz" "" 'return t.replace(/^(        node: \[22, 24\])$/m, "$1\n        exclude:\n          - node: 24");'
+  altered "clase 4: un exclude en la matriz" "" 'return t.replace(/^(        node: \[24\])$/m, "$1\n        exclude:\n          - node: 24");'
   altered "clase 5: un filtro bajo pull_request" "" 'return t.replace(/^  pull_request:$/m, "  pull_request:\n    types: [closed]");'
-  altered "clase 8: un job en estilo flujo con permisos de escritura" "after-queue" 'return t.replace(/^  public-ci:\n/m, "  extra: { runs-on: ubuntu-latest, permissions: write-all, steps: [ { run: \"echo hola\" } ] }\n  public-ci:\n").replace("needs: [checks]", "needs: [checks, extra]");'
+  altered "clase 8: un job en estilo flujo con permisos de escritura" "after-queue" 'return t.replace(/^  public-ci:\n/m, "  extra: { runs-on: ubuntu-latest, permissions: write-all, steps: [ { run: \"echo hola\" } ] }\n  public-ci:\n").replace("needs: [checks, installer-floor]", "needs: [checks, installer-floor, extra]");'
   altered "clase 9: un if propio en el paso del job public-ci" "" 'return t.replace(/^(      - name: Todos los jobs terminaron bien)$/m, "$1\n        if: github.event_name == \x27push\x27");'
   altered "clase 10: la llamada escrita de otra forma" "" 'return t.replace(/bash scripts\/ci\/public-ci\.sh --clean-machine$/m, "bash ./scripts/ci/public-ci.sh");'
   altered "clase 11: el rojo de la llamada se pierde con || true" "" 'return t.replace(/(public-ci\.sh --clean-machine)$/m, "$1 || true");'
@@ -605,22 +619,22 @@ else
   altered "clase 17: fetch-depth 0 fuera de with" "" 'return t.replace("        with:\n          fetch-depth: 0\n          persist-credentials: false\n", "        env:\n          fetch-depth: 0\n");'
   altered "clase 20: exit 1 sólo dentro de un echo" "" 'return t.replace("[ \"${r}\" = \"success\" ] || exit 1", "[ \"${r}\" = \"success\" ] || echo \"exit 1\"");'
   # lo que el pase dejó «a verificar aparte» (otra regla u otro mecanismo que el de su clase)
-  altered "aparte: un uses por rama dentro de una lista en estilo flujo" "uses-by-sha after-queue" 'return t.replace(/^  public-ci:\n/m, "  extra: { runs-on: ubuntu-latest, steps: [uses: evil/action@main] }\n  public-ci:\n").replace("needs: [checks]", "needs: [checks, extra]");'
+  altered "aparte: un uses por rama dentro de una lista en estilo flujo" "uses-by-sha after-queue" 'return t.replace(/^  public-ci:\n/m, "  extra: { runs-on: ubuntu-latest, steps: [uses: evil/action@main] }\n  public-ci:\n").replace("needs: [checks, installer-floor]", "needs: [checks, installer-floor, extra]");'
   altered "aparte: la condición del pull request invertida" "" 'return t.replace("= \"pull_request\" ]", "!= \"pull_request\" ]");'
   altered "aparte: un if en el paso que corre el guion" "" 'return t.replace(/^(      - name: Los pasos de la CI pública que le tocan a esta parte)$/m, "$1\n        if: ${{ false }}");'
   altered "aparte: sin persist-credentials false en el checkout" "" 'return t.replace(/^          persist-credentials: false\n/m, "");'
   # la corrida partida (T24): la lista de partes trae checks y TODAS las de las suites, en orden, y la parte sale de la matriz
-  altered "sin una parte de las suites" "parts" 'return t.replace(", suites-3-of-3]", "]");'
+  altered "sin una parte de las suites" "parts" 'return t.replace(", suites-5-of-5]", "]");'
   altered "sin la parte checks" "parts" 'return t.replace("part: [checks, ", "part: [");'
-  altered "con una parte repetida" "parts" 'return t.replace("suites-3-of-3]", "suites-2-of-3]");'
-  altered "con las partes desordenadas" "parts" 'return t.replace("suites-1-of-3, suites-2-of-3", "suites-2-of-3, suites-1-of-3");'
-  altered "con una parte que dice otra cuenta" "parts" 'return t.replace("suites-3-of-3]", "suites-3-of-4]");'
+  altered "con una parte repetida" "parts" 'return t.replace("suites-5-of-5]", "suites-4-of-5]");'
+  altered "con las partes desordenadas" "parts" 'return t.replace("suites-1-of-5, suites-2-of-5", "suites-2-of-5, suites-1-of-5");'
+  altered "con una parte que dice otra cuenta" "parts" 'return t.replace("suites-5-of-5]", "suites-5-of-6]");'
   altered "con la lista de partes dos veces" "parts" 'return t.replace(/^(        part: .*)$/m, "$1\n$1");'
   altered "sin la lista de partes" "parts" 'return t.replace(/^        part: .*\n/m, "");'
   altered "con la parte fija en vez de la de la matriz" "parts" 'return t.replace("TYCON_PUBLIC_CI_PART: ${{ matrix.part }}", "TYCON_PUBLIC_CI_PART: checks");'
   altered "sin pasarle la parte al guion" "parts" 'return t.replace(/^          TYCON_PUBLIC_CI_PART: .*\n/m, "");'
   # otra cuenta de partes, completa, cumple la regla con nombre: la frena sólo la forma exacta (cambiarla es cambiar SHAPE)
-  altered "con cuatro partes de las suites, todas" "=shape" 'return t.replace("part: [checks, suites-1-of-3, suites-2-of-3, suites-3-of-3]", "part: [checks, suites-1-of-4, suites-2-of-4, suites-3-of-4, suites-4-of-4]");'
+  altered "con cuatro partes de las suites, todas" "=shape" 'return t.replace("part: [checks, suites-1-of-5, suites-2-of-5, suites-3-of-5, suites-4-of-5, suites-5-of-5]", "part: [checks, suites-1-of-4, suites-2-of-4, suites-3-of-4, suites-4-of-4]");'
   # el push a main que hace la cola al entrar un pedido no corre nada (2026-10-15: la cola ya probó ese commit), y sólo
   # ése: cualquier otro push a main —el merge directo de un administrador— corre entero, y un pedido o la cola, igual
   altered "sin la condición de la cola en el job de la matriz" "after-queue" 'return t.replace(/^    if: github\.event_name .*\n/m, "");'

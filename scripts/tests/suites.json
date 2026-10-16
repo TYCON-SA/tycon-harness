@@ -1458,6 +1458,14 @@
       "requiere": []
     },
     {
+      "__nota": "la imagen del sitio, armada de verdad: con un volumen con nombre NUEVO montado en /data (el comando de la guía), el usuario del sitio (node) crea la carpeta del clon y escribe su estado. Rojo previo (2026-10-16): el volumen nacía de root y el sitio se frenaba con Permission denied. Sin Docker se saltea y lo dice. Arma una imagen (~1-2 min).",
+      "raiz": "arnes",
+      "ruta": "tests/site-image.test.js",
+      "requiere": [
+        "docker"
+      ]
+    },
+    {
       "__nota": "story 2.29: la propuesta por rama y pedido desde el clon del sitio — una rama team-config/<id>-<sello> desde la punta de main, un commit con un solo archivo armado con los comandos de bajo nivel de git (el árbol de trabajo y el índice del clon quedan intactos: git status limpio y HEAD en main), la credencial sólo en una cabecera, el pedido por la API REST de Azure DevOps o de GitHub con «pedido por …»; nunca un empuje a main, un merge ni auto-completar; sin política de revisión en main, «Proponer» apagado; con un pedido abierto sobre el archivo, el enlace y nada nuevo; y una falla a mitad dicha en llano. Repo git local por HTTP y APIs falsas en el proceso; sin red.",
       "raiz": "arnes",
       "ruta": "tests/repo-proposal.test.js",
@@ -2014,6 +2022,30 @@
       "__nota": "story 8.16, tanda E (T54, T55, T57): el guion de entrada de la portada (get-harness.sh, en public-files/scripts/setup/), por ejecución en una HOME de juguete con un remoto bare y la red cerrada (GIT_ALLOW_PROTOCOL=file): sin opciones clona en ~/<repo> y la pregunta de la instalación llega a la terminal de juguete; con --dir y -- <opciones>, las opciones llegan tal cual; un requisito que falta o un node viejo sale 1 con un comando sugerido que nadie corre; una carpeta ajena no se toca, el clon propio no se actualiza, un clon que falla no deja la carpeta; las tres líneas de la portada pasan el freno de comandos y la variante con tubería sale con SUP-C1. ~5 s.",
       "raiz": "arnes",
       "ruta": "tests/get-harness.test.sh",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.40, tanda A (T1, T2, T4, T6 a T9, T17, T18, T35): el instalador del paquete de npm (scripts/setup/npm/index.js), por EJECUCIÓN: armado con npm pack y corrido con npx --package contra el GitHub de juguete en una HOME de juguete. Baja por info/refs y codeload, la pregunta «¿Instalo?» llega a la terminal, el hijo corre con process.execPath, el repo privado pide el permiso sin eco (y el del equipo antes de bajar), una máquina instalada no baja nada, sin red/500/cortado/tope salen 1 sin dejar nada, el «no» no deja nada, la pregunta «¿para quién?» sin valor por defecto, el proxy (HTTP_PROXY, npm_config_proxy, NO_PROXY) y el error de TLS que nombra NODE_EXTRA_CA_CERTS. Sin red; ~3 min.",
+      "raiz": "arnes",
+      "ruta": "tests/npx-installer.test.sh",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.40, tanda A (T3, T5, T10 a T12): la forma del paquete de npm (scripts/setup/npm/): npm pack --dry-run lista exactamente cuatro archivos, sin dependencias, shebang, ≤ 400 líneas, el repo de fábrica una vez, el piso de Node igual al de harness.js, ningún hijo lanzado como `node`; requisites() por plataforma; package.json semver con bin, files, licencia, repo y acceso público; scripts/ci/npm-package-version.js exige subir la versión cuando la carpeta cambia (repos de juguete con git de verdad); el README dice lo que el paquete no es. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/npm-package.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.40, tanda A (T13 a T16): .github/workflows/npm-publish.yml leído por texto con check-public-workflow.js --publisher (disparador, permisos, acciones por sha, npm exacto ≥ 11.15.0, npm stage publish desde la carpeta del paquete, la integridad antes de publicar) y sus pasos de shell corridos con un npm de mentira: ya publicada con el mismo contenido sale 0, con otro rojo, npm viejo rojo, el paquete inexistente o sin publicador de confianza salteado en verde con aviso. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/npm-publish-workflow.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.40, tanda B (T25 a T31): el alta guiada de la organización (harness.js team-init, scripts/setup/harness/team-init.js) por EJECUCIÓN, en una HOME de juguete instalada desde el GitHub de juguete con tres repos (el arnés, el ejemplo de juguete de fixtures/team-init-example/ y el perfil acme). Escribe sólo los tres archivos obligatorios con lo contestado, GitHub y Azure DevOps, valida con los lectores instalados (una clave desconocida, un nombre con espacios, una dirección o carpeta que no sirve: nada escrito), --dry-run, sin arnés sale 2, git sí/no/push que falla, push a un bare de juguete e install --team; con red compara el ejemplo de juguete con el publicado. ~20 s.",
+      "raiz": "arnes",
+      "ruta": "tests/harness-team-init.test.sh",
       "requiere": []
     },
     {

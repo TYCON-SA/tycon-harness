@@ -102,8 +102,9 @@ function filasInicioMantenedor(m, { ahora = Date.now(), enlaceOperaciones = null
   else if (!Number.isFinite(m.maquinasSinConfirmar)) filas.push(filaNoMedida('maquinas_sin_confirmar', 'Máquinas sin confirmar con corridas', 'no medido: lo que informan las máquinas no se pudo leer del buzón'));
   else filas.push(filaMedida('maquinas_sin_confirmar', 'Máquinas sin confirmar con corridas', m.maquinasSinConfirmar, { fecha: m.corridas.fecha }));
   filas.push(filaNoMedida('retrospectivas', 'Retrospectivas pendientes', 'no medido: sólo existen en la máquina de quien mergeó'));
-  // dónde se decide cada cosa (AC 17): lo de las colas y lo declarado, en el repo de operaciones; lo del arnés, en Arnés
-  const DONDE = { dependencias_nuevas: 'ops', dependencias_aceptadas_sin_resolver: 'ops', dependencias_rechazadas_sin_deuda: 'ops', vigilante_pendientes: 'ops', vigilante_aceptadas_sin_story: 'ops', pedidos_cerrados_con_vivas: 'ops', declarados_por_vencer: 'ops', suites_rojas_nuevas: '/arnes', banco_rojos_nuevos: '/arnes' };
+  // dónde se decide cada cosa (AC 17): lo de las colas y lo declarado, en el repo de operaciones; lo del arnés, en Arnés;
+  // los PR, en su lista de abajo, cada uno con su enlace (pueden estar en varios repos y proyectos)
+  const DONDE = { dependencias_nuevas: 'ops', dependencias_aceptadas_sin_resolver: 'ops', dependencias_rechazadas_sin_deuda: 'ops', vigilante_pendientes: 'ops', vigilante_aceptadas_sin_story: 'ops', prs_trabados: '#prs-trabados', pedidos_cerrados_con_vivas: 'ops', declarados_por_vencer: 'ops', suites_rojas_nuevas: '/arnes', banco_rojos_nuevos: '/arnes' };
   for (const f of filas) {
     const d = DONDE[f.clave];
     f.enlace = d === 'ops' ? enlaceOperaciones || null : (d || null);
@@ -224,26 +225,39 @@ function tile(f) {
 
 function banda(texto) { return `<div class="banda">${esc(texto)}</div>`; }
 
-function layout(ctx, titulo, cuerpo) {
+/** El selector de tema: lo atiende site.js (sin él, la página queda con el tema del sistema). */
+const TEMA = '<div class="theme" role="group" aria-label="Tema"><button type="button" data-tema="auto" aria-pressed="true">Auto</button><button type="button" data-tema="light" aria-pressed="false">Claro</button><button type="button" data-tema="dark" aria-pressed="false">Oscuro</button></div>';
+
+/** El armazón de toda página: el menú al costado (arriba en teléfono) y el encabezado con su bajada (`lede`, opcional). */
+function layout(ctx, titulo, cuerpo, lede = null) {
   const quien = ctx && ctx.quien;
   const pest = (ctx && ctx.pestanas) || [];
-  const nav = pest.length ? `<nav class="tabs">${pest.map((p) => `<a href="${esc(p.path)}"${ctx.activa === p.id ? ' class="activa" aria-current="page"' : ''}>${esc(p.titulo)}</a>`).join('')}</nav>` : '';
-  const sesion = quien && quien.email ? `<form class="salir" method="post" action="/auth/logout"><span>Entraste como ${esc(quien.email)}</span> <button type="submit">Salir</button></form>` : '';
+  const nav = pest.length ? `<nav class="tabs" aria-label="Pestañas">${pest.map((p, i) => `<a href="${esc(p.path)}"${ctx.activa === p.id ? ' class="activa" aria-current="page"' : ''}><span class="ix">${String(i + 1).padStart(2, '0')}</span>${esc(p.titulo)}</a>`).join('')}</nav>` : '';
+  const sesion = quien && quien.email ? `<form class="salir" method="post" action="/auth/logout"><span>Entraste como <b>${esc(quien.email)}</b></span> <button type="submit">Salir</button></form>` : '';
   const bandas = [
     ctx && ctx.bandaConfig ? banda(`la configuración de la organización no se pudo releer desde ${hora(ctx.bandaConfig.desde)}: ${ctx.bandaConfig.motivo}`) : '',
     ctx && ctx.bandaRefresco ? banda(`no se pudo actualizar desde ${hora(ctx.bandaRefresco.desde)}: ${FRASES[ctx.bandaRefresco.estado] || ctx.bandaRefresco.estado}`) : '',
     ctx && ctx.avisoVariable ? banda('la variable de arranque sigue puesta: sacala de la configuración de la instalación (SITE_FIRST_MAINTAINER)') : '',
   ].join('');
-  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(titulo)} · Sitio de la organización</title><link rel="stylesheet" href="/static/site.css"><script src="/static/site.js" defer></script></head><body><div class="wrap"><header class="head"><div class="eyebrow">Sitio de la organización</div><h1>${esc(titulo)}</h1>${sesion}${nav}${bandas}</header><main>${cuerpo}</main></div></body></html>`;
+  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(titulo)} · Sitio de la organización</title><link rel="stylesheet" href="/static/site.css"><script src="/static/site.js"></script></head><body><div class="shell"><aside class="side"><div class="brand"><div class="kicker">Arnés</div><div class="name">Sitio de la organización</div></div>${nav}<div class="side-foot"><span class="lab-tema">Tema</span>${TEMA}${sesion}</div></aside><main><header class="s-head"><div><h1>${esc(titulo)}</h1>${lede ? `<p>${esc(lede)}</p>` : ''}</div></header>${bandas}${cuerpo}</main></div></body></html>`;
 }
 
-function seccion(titulo, html) { return `<section class="q"><div class="q-head"><h2>${esc(titulo)}</h2></div>${html}</section>`; }
+function seccion(titulo, html, aparte = null, id = null) { return `<section class="q"${id ? ` id="${esc(id)}"` : ''}><div class="q-head"><h2>${esc(titulo)}</h2>${aparte ? `<span class="aside">${esc(aparte)}</span>` : ''}</div>${html}</section>`; }
+
+/** La lista de los PR abiertos hace más de 2 días (y los sin fecha), a donde lleva su ficha del Inicio de quien mantiene. */
+function prsTrabados(prs) {
+  const titulo = 'Pull requests abiertos hace más de 2 días';
+  if (!medida(prs)) return seccion(titulo, `<p class="q-note">${esc(conFecha(prs))}</p>`, null, 'prs-trabados');
+  const lista = (prs.lista || []).filter((p) => !Number.isFinite(p.dias) || p.dias > 2).sort((a, b) => (Number.isFinite(b.dias) ? b.dias : -1) - (Number.isFinite(a.dias) ? a.dias : -1));
+  const fila = (p) => `<li>${enlace(p.enlace) ? `<a href="${esc(p.enlace)}">#${esc(p.numero)}</a>` : `#${esc(p.numero)}`} · ${esc(p.proyecto)} / ${esc(p.repo)} · ${Number.isFinite(p.dias) ? `${esc(p.dias)} días` : 'sin fecha'}</li>`;
+  return seccion(titulo, lista.length ? `<ul class="lista">${lista.map(fila).join('')}</ul>` : '<p class="q-note">Ninguno.</p>', `fuente del ${prs.fecha}`, 'prs-trabados');
+}
 
 function paginaInicio(ctx) {
   const m = ctx.modelo || {};
   if (ctx.quien.rol === 'maintainer') {
     const filas = filasInicioMantenedor(m, { ahora: ctx.ahora, enlaceOperaciones: ctx.enlaceOperaciones });
-    return layout(ctx, 'Inicio', seccion('Qué decidir hoy', `<div class="grid">${filas.map(tile).join('')}</div>`));
+    return layout(ctx, 'Inicio', seccion('Qué decidir hoy', `<div class="grid">${filas.map(tile).join('')}</div>`, 'cada ficha dice dónde se decide') + prsTrabados(m.prs), 'Lo que espera una decisión tuya. Lo gris es lo que hoy no se pudo medir, con el motivo.');
   }
   const d = inicioDev(m, { ahora: ctx.ahora });
   const corridasPestana = (ctx.pestanas || []).some((p) => p.id === 'corridas');
@@ -265,7 +279,7 @@ function paginaInicio(ctx) {
     seccion('Tus pull requests abiertos', prs),
     seccion('Lo que tenés asignado', `${ped}<p class="q-note">Lo asignado se ve con hasta un día de atraso: sale de la foto de cada noche.</p>`),
     seccion('Tus proyectos', proy),
-  ].join(''));
+  ].join(''), 'Lo tuyo: tus corridas, tus pedidos de cambio abiertos y lo que tenés asignado.');
 }
 
 function paginaProyectos(ctx) {
@@ -284,15 +298,15 @@ function paginaProyectos(ctx) {
   const filasHtml = filas.map((f) => `<tr><th scope="row">${esc(f.producto)}${f.compartido ? ` <span class="nota">compartido con ${esc(f.compartido)}</span>` : ''}</th>${f.medido
     ? `<td>${f.en_curso} (${f.en_revision} en revisión)</td><td>${f.paradas} paradas · ${f.sin_medir} sin medir</td><td>${f.bloqueadas}</td>`
     : `<td class="nm" colspan="3">no medido: ${esc(f.motivo)}</td>`}${celdaDep(f.despliegues)}<td>${f.vigilado === null ? 'no medido' : (f.vigilado ? 'sí' : 'no')}</td><td>${f.vivas === null ? 'no medido' : esc(f.vivas)}</td><td${f.paridad.estado === 'no_medido' ? ' class="nm"' : ''}>${esc(f.paridad.texto)}</td></tr>`).join('');
-  const tabla = `<label class="filtro">Filtrar <input type="search" data-filtro="proyectos"></label><table class="tabla" id="proyectos"><thead><tr><th>Producto</th><th>En curso</th><th>Paradas (más de ${PARADA_DIAS} días)</th><th>Bloqueadas</th><th>Staging</th><th>Producción</th><th>Aprobación</th><th>Vigilado</th><th>Vulnerabilidades vivas</th><th>Paridad</th></tr></thead><tbody>${filasHtml}</tbody></table>`;
+  const tabla = `<label class="filtro">Filtrar <input type="search" data-filtro="proyectos"></label><div class="card tbl-wrap"><table class="tabla" id="proyectos"><thead><tr><th>Producto</th><th>En curso</th><th>Paradas (más de ${PARADA_DIAS} días)</th><th>Bloqueadas</th><th>En prueba</th><th>En producción</th><th>Aprobación</th><th>Vigilado</th><th>Vulnerabilidades vivas</th><th>Paridad</th></tr></thead><tbody>${filasHtml}</tbody></table></div>`;
   const pie = `<p class="q-note">En total, sin contar dos veces lo compartido: ${totales.en_curso_total} en curso, ${totales.paradas_total} paradas, ${totales.sin_medir_total} sin medir.</p>`;
-  return layout(ctx, 'Proyectos', seccion('Cómo va cada producto', filas.length ? tabla + pie : '<p class="q-note">Ningún producto declarado.</p>'));
+  return layout(ctx, 'Proyectos', seccion('Cómo va cada producto', filas.length ? tabla + pie : '<p class="q-note">Ningún producto declarado.</p>'), 'Por producto: lo que está en curso, lo trabado, qué versión está en prueba y en producción, y si algo lo vigila.');
 }
 
 function paginaArnes(ctx) {
   const lineas = filasArnes(ctx.modelo || {}, { ahora: ctx.ahora, version: ctx.version });
-  const li = lineas.map((l) => `<li class="${l.estado === 'medido' ? '' : 'nm'}"><b>${esc(l.titulo)}</b>: ${esc(l.texto)}</li>`).join('');
-  return layout(ctx, 'Arnés', seccion('Cómo está el arnés', `<ul class="lista">${li}</ul><p><a href="/arnes/tablero">La página de las seis preguntas</a></p>`));
+  const li = lineas.map((l) => `<li class="${l.estado === 'medido' ? '' : 'nm'}"><span class="pieza">${esc(l.titulo)}</span><span class="estado">${esc(l.texto)}</span><span class="marca">${l.estado === 'medido' ? '<span class="pill">medido</span>' : '<span class="pill nm">no medido</span>'}</span></li>`).join('');
+  return layout(ctx, 'Arnés', seccion('Cómo está el arnés', `<ul class="lista">${li}</ul><a class="enlace-fuerte" href="/arnes/tablero">La página de las seis preguntas →</a>`), 'Si los controles andan: lo que midió la noche y la versión que corre este sitio.');
 }
 
 /** La página de las seis preguntas, tal cual pero sin nada de afuera ni scripts en línea (AC 20, 23). */

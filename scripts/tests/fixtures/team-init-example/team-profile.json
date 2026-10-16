@@ -1,0 +1,28 @@
+{
+  "__doc": "La configuración que comparte todo el equipo de acme (organización inventada). Sólo valores del equipo: nada personal (correos, chats, permisos, rutas). Las claves son un vocabulario cerrado: una que el arnés no conoce invalida el perfil.",
+  "ado": {
+    "__doc": "Opcional: sólo si tus stories crean pedidos en Azure DevOps. Si no lo usás, borrá el bloque.",
+    "org": "https://dev.azure.com/acme"
+  },
+  "integrations": {
+    "__doc": "true prende, false apaga, para todas las máquinas. codex: true, false o detect (prendido si está instalado).",
+    "clockify": false,
+    "engram": true,
+    "mailbox": false,
+    "codex": "detect",
+    "nightly": false
+  },
+  "update": {
+    "__doc": "channel: latest o stable. apply: auto (se actualiza sola) o ask (cada persona confirma).",
+    "channel": "stable",
+    "apply": "ask"
+  },
+  "packs": {
+    "__doc": "Qué paquetes de revisores corren en un repo que no los declara: all (todos los instalados, también el de acme) o none.",
+    "default": "all"
+  },
+  "install": {
+    "__doc": "minimal: guías, skills, revisores y pipeline. full: además los frenos, los hooks de git y las tareas de fondo.",
+    "profile": "minimal"
+  }
+}

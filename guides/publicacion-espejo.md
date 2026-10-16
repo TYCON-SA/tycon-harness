@@ -703,7 +703,7 @@ modo público (`TYCON_CLEAN_MACHINE=1` y `TYCON_CLEAN_MACHINE_SOURCE=<raíz>`: p
   trabajos que corren a la vez. `checks` es todo menos las portables; `suites-<i>-of-<n>` es sólo la parte `<i>` de las
   portables, repartidas por peso con `scripts/ci/suites-shard.js` (juego `pr`). `checks` y las `<n>` partes de las
   suites juntas son la corrida entera; una parte sola no es el veredicto, y el resumen lo dice. La CI de GitHub corre
-  así: una matriz Node × parte, con tres partes de las suites, y el job `public-ci` junta todas.
+  así: una matriz Node × parte, con cinco partes de las suites, y el job `public-ci` junta todas.
 - El sexto paso no corre `export-real.test.sh`: es la suite que corre este guion, y adentro de él sería infinita.
 - **El repo lo decide `--root`, no el entorno de quien llama.** El guion saca al arrancar las variables que git le pasa a
   lo que lanza un hook (`GIT_DIR`, `GIT_INDEX_FILE`, `GIT_WORK_TREE`, `GIT_COMMON_DIR`…): con ellas puestas listaría los
@@ -723,7 +723,7 @@ por un sintético, como los demás). Lo que tiene que cumplir lo verifica **por 
 | `uses-by-sha` | Cada `uses:` va fijado por el sha completo de su commit, con el tag como comentario. |
 | `permissions` | Un solo bloque `permissions`, arriba de todo, con `contents: read`. |
 | `fetch-depth` | El checkout trae la historia completa (`fetch-depth: 0`): la necesita `--range`. |
-| `node-matrix` | La matriz (`strategy: matrix:`) es Node 22 y 24, y es la que se instala. |
+| `node-matrix` | La matriz (`strategy: matrix:`) es Node 24 y es la que se instala; aparte, el job `installer-floor` instala Node 22 (el piso del instalador), una vez y sólo ahí. |
 | `range` | En un pull request y en la cola de merge, `public-ci.sh` corre con `--range origin/<base>...HEAD`. |
 | `clean-machine` | Toda llamada a `public-ci.sh` lleva `--clean-machine`. |
 | `aggregate-job` | El job `public-ci` corre siempre (`if: always()`), depende de todos los demás y falla si alguno no dio `success`. |

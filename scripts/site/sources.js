@@ -453,7 +453,7 @@ function estadoDeGit(stderr) {
 }
 
 /** Saca los caracteres de control de una línea que va al registro (saltos, escape de la consola). */
-function crearFuentes({ cfg, dataDir, log: logCrudo = () => {}, ahora = Date.now, spawn = correr, urlBuzon, git = 'git', nubes: nubesDadas }) {
+function crearFuentes({ cfg, dataDir, log: logCrudo = () => {}, ahora = Date.now, spawn = correr, urlBuzon, git = 'git', nubes: nubesDadas, presupuestoBuzonMs = 120000 }) {
   // 🔴 todo lo que este módulo registra puede traer texto del repo de operaciones o del buzón (valores de operations.json,
   //    stderr de git, nombres de archivo): sale sin caracteres de control (revisión de seguridad de la 2.23, vuelta 2)
   const log = (l) => logCrudo(limpiarLinea(l));
@@ -467,7 +467,7 @@ function crearFuentes({ cfg, dataDir, log: logCrudo = () => {}, ahora = Date.now
   const rutaEstado = path.join(dataDir, ARCHIVO_ESTADO);
   // `personas`: lo que la regla de quién es quién necesita y el modelo NO lleva (2.28) — lo informado por cada máquina
   // (de la última bajada entera del buzón) y la lista de repos.json
-  const st = { perfil: { estado: 'sin_configurar', motivo: 'todavía no se leyó' }, cargado: false, ultimoBueno: null, fallaDesde: null, fallaMotivo: null, fallaRutas: null, frenado: null, bandaConfig: null, modelo: null, personas: { informados: null, repos: null }, fallas: { repo: null, buzon: null }, hilos: false, buzon: { completo: false, generacion: 0 } };
+  const st = { perfil: { estado: 'sin_configurar', motivo: 'todavía no se leyó' }, cargado: false, ultimoBueno: null, fallaDesde: null, fallaMotivo: null, fallaRutas: null, frenado: null, bandaConfig: null, modelo: null, personas: { informados: null, repos: null }, fallas: { repo: null, buzon: null }, hilos: false, buzon: { completo: false, generacion: 0, seguir: false } };
   // story 2.27: quien quiere saber que el refresco terminó (la pestaña Corridas rearma su vista si el espejo cambió)
   const oyentes = [];
   let temporizador = null;
@@ -608,13 +608,17 @@ function crearFuentes({ cfg, dataDir, log: logCrudo = () => {}, ahora = Date.now
     if (mb.threads === true && !cfg.dataDir) log('site.mailbox.threads está en true pero SITE_DATA_DIR no está puesta: no se bajan las conversaciones (sin un disco del sitio se bajarían enteras en cada despertar)');
     let r;
     try {
-      r = await nube.bajarBuzon({ cuenta: mb.account, contenedor: mb.container, credencial: cfg.mailboxCredencial, dir: dirBuzon, urlBase: urlBuzon, sinHilos: !conHilos, log: (l) => log(`buzón: ${l}`) });
+      r = await nube.bajarBuzon({ cuenta: mb.account, contenedor: mb.container, credencial: cfg.mailboxCredencial, dir: dirBuzon, urlBase: urlBuzon, sinHilos: !conHilos, budgetMs: presupuestoBuzonMs, log: (l) => log(`buzón: ${l}`) });
     } catch (e) { r = { codigo: 1, res: { estado: 'sin_red', motivo: `error inesperado al bajar: ${e.message}` } }; }
     const est = r.res.estado;
     // 🔴 «leído entero» lo dice `completo` (download-runs.js), no el estado: 'bajado' también sale con el presupuesto agotado
     // story 2.27 (pase adversarial): la pestaña Corridas arma SÓLO con una bajada entera, la misma que fija lo informado
     // por las máquinas; con una a medias, la foto del espejo y la de quién es quién no serían la misma
     st.buzon.completo = r.codigo === 0 && r.res.completo === true;
+    // la pasada cortó por TIEMPO pero avanzó (hotfix 2026-10-16): la siguiente va enseguida y retoma donde quedó, en vez de
+    // esperar el refresco de los minutos de siempre. Sin avance, no: sería un lazo.
+    st.buzon.seguir = r.codigo === 0 && !st.buzon.completo && r.res.sin_tiempo > 0 && r.res.bajados > 0;
+    if (st.buzon.seguir) log(`buzón: la pasada cortó por tiempo con ${r.res.sin_tiempo} archivo(s) pendientes; la siguiente sigue enseguida`);
     if (r.codigo === 0 && r.res.completo === true) {
       st.buzon.generacion += 1;
       st.fallas.buzon = null;
@@ -691,8 +695,12 @@ function crearFuentes({ cfg, dataDir, log: logCrudo = () => {}, ahora = Date.now
     return Number.isInteger(v) && v >= OPS.REFRESH_MIN && v <= OPS.REFRESH_MAX ? v : REFRESCO_POR_DEFECTO;
   }
 
+  // cuándo va el próximo refresco: los minutos de siempre, o enseguida si la bajada cortó por tiempo y avanzó
+  const SEGUIR_MS = 10000;
+  const proximoRefrescoMs = () => (st.buzon.seguir ? SEGUIR_MS : minutos() * 60000);
+
   function programar() {
-    temporizador = setTimeout(async () => { await refrescar(); programar(); }, minutos() * 60000);
+    temporizador = setTimeout(async () => { await refrescar(); programar(); }, proximoRefrescoMs());
     if (temporizador.unref) temporizador.unref();
   }
 
@@ -724,6 +732,8 @@ function crearFuentes({ cfg, dataDir, log: logCrudo = () => {}, ahora = Date.now
     hilos: () => st.hilos,
     /** Story 2.27: ¿la ÚLTIMA bajada del buzón terminó entera?, y cuántas enteras hubo (la pestaña arma con una entera). */
     buzonEstado: () => ({ completo: st.buzon.completo, generacion: st.buzon.generacion }),
+    /** En cuántos ms va el próximo refresco (las pruebas lo miran). */
+    proximoRefrescoMs,
     /** Story 2.27: `fn` corre al terminar cada refresco (la pestaña Corridas mira si el espejo cambió). */
     alRefrescar(fn) { oyentes.push(fn); },
   };
