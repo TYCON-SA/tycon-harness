@@ -2597,7 +2597,12 @@ test('Waiver_LegacyLinearLog_SameEntries — un registro lineal se lee igual que
     const lineas = fs.readFileSync(lp, 'utf8').split('\n').filter(Boolean);
     const antes = verificadorDeAntes(lineas);
     assert.ok(antes.length > 0, `el registro de referencia tiene firmas: ${lp}`);
-    assert.deepStrictEqual(waiverLib.verifyChain(lp).entries, antes, `mismas entradas y mismo orden: ${lp}`);
+    const ahora = waiverLib.verifyChain(lp).entries;
+    // el armado es lineal entero: se lee igual. El del repo sigue recibiendo firmas, y las nuevas pueden ser hermanas
+    // (dos ramas que firmaron sobre la misma punta) que el verificador lineal de antes no sabía leer: lo que él leía
+    // tiene que leerse igual y en el mismo orden, y lo nuevo va después (medido el 2026-10-15: tres firmas del día).
+    if (lp === logPath) assert.deepStrictEqual(ahora, antes, `mismas entradas y mismo orden: ${lp}`);
+    else assert.deepStrictEqual(ahora.slice(0, antes.length), antes, `lo que leía el verificador de antes, igual y en el mismo orden: ${lp}`);
   }
 });
 
