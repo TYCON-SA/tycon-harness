@@ -17,7 +17,9 @@
 //                    "watcher": [<identidad>, …] },         opcional — y los del vigilante
 //     "site": { "maintainers": [<correo>, …],                opcional — quiénes mantienen el sitio de la organización
 //               "mailbox": { "provider": "azure-blob",        opcional — el buzón de corridas que lee el sitio
-//                            "account": <texto>, "container": <texto>, "threads": <bool> },
+//                            "account": <texto>, "container": <texto>, "threads": <bool> },  threads: true baja también
+//                                                            las conversaciones y los cambios de git para el detalle de
+//                                                            la pestaña Corridas, si el sitio tiene disco (story 2.27)
 //               "refresh_minutes": <5 a 120> } },             opcional — cada cuánto se releen las fuentes (story 2.23)
 //     "people": {                                            opcional — quién es quién (story 2.28)
 //       "machines": { "<máquina>": {                         opcional — cada máquina confirmada por un mantenedor

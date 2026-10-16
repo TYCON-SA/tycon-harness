@@ -1434,6 +1434,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 2.27: la pestaña Corridas del sitio de la organización — todo lo de la vista de corridas (cabecera, diez fichas, gráficos, tabla de trece columnas, detalle con parches y mensaje rescatado, enlaces por id estable), filtrado por persona en el servidor: el dev ve sólo sus máquinas confirmadas, sin conteos globales; ajena, suelta e inexistente contestan el mismo 404; la prueba de fuga recorre todas las respuestas con marcadores sembrados en lo ajeno; la lista es lista blanca; el armado corre en un worker y sirve el anterior entero mientras rearma o si falla; sin disco, lo del hilo sale «no medido»; la página no trae nada en línea. Levanta el servidor del sitio con sesiones reales del emisor local y un espejo fabricado; sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/site-runs.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 2.29: la propuesta por rama y pedido desde el clon del sitio — una rama team-config/<id>-<sello> desde la punta de main, un commit con un solo archivo armado con los comandos de bajo nivel de git (el árbol de trabajo y el índice del clon quedan intactos: git status limpio y HEAD en main), la credencial sólo en una cabecera, el pedido por la API REST de Azure DevOps o de GitHub con «pedido por …»; nunca un empuje a main, un merge ni auto-completar; sin política de revisión en main, «Proponer» apagado; con un pedido abierto sobre el archivo, el enlace y nada nuevo; y una falla a mitad dicha en llano. Repo git local por HTTP y APIs falsas en el proceso; sin red.",
       "raiz": "arnes",
       "ruta": "tests/repo-proposal.test.js",

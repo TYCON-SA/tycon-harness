@@ -538,7 +538,8 @@ Node solo, que no depende de Claude ni de Codex. Lo que lo sostiene:
 - **Las pestañas** (`views.js`) son Inicio (qué decidir hoy, o lo del dev), Proyectos y Arnés. Las arma el servidor, sin
   JavaScript de afuera y sin `<script>` en línea. «No medido» nunca es 0.
 
-Lo que NO hace: no escribe en ningún repo, no acciona nada y no baja conversaciones. Red: las suites `site-server`,
+Lo que NO hace: no escribe en ningún repo, no acciona nada y no baja conversaciones salvo para la pestaña Corridas, con
+`site.mailbox.threads` y un disco del sitio (abajo). Red: las suites `site-server`,
 `site-oidc`, `site-access`, `site-sources`, `site-views` y `site-leak` (la **prueba de fuga**, que recorre la tabla de
 rutas con marcadores de otra persona y texto libre sembrado). Todo corre sin red: el emisor OIDC
 (`tests/lib/fake-oidc.js`), GitHub (`fake-github-oauth.js`), el repo (`git-http-server.js`) y el buzón son locales. La
@@ -598,6 +599,41 @@ HTTP y una API falsa de Azure DevOps y de GitHub en el proceso: `tests/lib/git-h
 `fake-github-api.js`), `scripts/tests/repo-proposal.test.js` (cada empuje y cada llamada a las APIs falsas se revisan:
 ninguno a `main`, ninguno que mergee o complete), T35 de `product-parity.test.sh` (la lectura exportada juzga igual que
 el control) y, en el repo del equipo, `ops-data-template.test.js` (las dos plantillas corridas de verdad dejan la marca).
+
+**La pestaña Corridas: la vista de corridas en el sitio, cada uno lo suyo** (2026-10-16). Trae todo lo de la
+vista de corridas de cada máquina (`dashboard.js --view runs`): la cabecera con su sello y sus bandas, las diez fichas,
+los cuatro gráficos, la tabla y el detalle de cada corrida con sus cambios, sus parches de git y el mensaje rescatado
+de cada error. Quien mantiene ve todas; un dev, sólo las de sus máquinas confirmadas (la regla de quién es quién de
+`scripts/lib/people.js`); una corrida sin máquina o de una máquina sin confirmar, sólo quien mantiene. Por qué: la vista se armaba en la
+máquina de quien la pedía, pesaba casi 80 MB con el trabajo de todo el equipo y era un archivo fácil de compartir por
+error; y un dev no tenía cómo ver sus corridas sin ver las de los demás. Lo que la sostiene:
+
+- **Un solo código** (`scripts/site/tabs/runs.js` sobre `scripts/nightly/dashboard/runs.js`): el modelo es `modelo()` de
+  la vista, la página son sus `cabecera`, `ejecutiva`, `tabla` y `pie`, y el cliente es el mismo, servido como archivo.
+  El cliente lee sus datos de una **fuente**: embebida en la página local (como siempre, sin red) o por la red en el
+  sitio. La vista local sale idéntica (comparada byte a byte salvo el id nuevo).
+- **El filtro lo hace el servidor, antes de cada respuesta** (`filtrarCorridas` de `scripts/site/access.js`): la lista,
+  el detalle y los textos salen ya filtrados; los conteos globales (archivos, duplicados, carpetas ilegibles, corridas
+  sin máquina) sólo los ve quien mantiene; los productos se unifican sobre lo de cada persona. Una corrida ajena, una
+  sin máquina y un id que no existe contestan igual: 404 sin cuerpo. (Sin buzón configurado, el 404 dice «sin buzón
+  configurado: no medido»: no hay corridas de nadie que esconder.)
+- **Lo que viaja, por partes**: la lista (lista blanca: lo que usan las fichas, los gráficos y el filtro), el detalle al
+  abrir una corrida y los textos al abrir un cambio. Cada corrida tiene un **id estable** (16 hexadecimales del sha256
+  de máquina y sesión): los enlaces `?abrir=`, `?solo=` usan ese id, nunca el índice, que cambia con el filtro de cada
+  persona.
+- **El armado en un hilo aparte** (`worker_threads`, con techo de memoria): medido con el buzón real (551 corridas), 34
+  segundos y unos 690 MB de pico; el contenedor tiene 1 GB. Se rearma cuando el refresco deja el espejo distinto;
+  mientras rearma, o si el rearmado falla (también por memoria), sirve el anterior entero con su hora, y lo dice. Los
+  textos quedan en el disco del sitio, uno por corrida.
+- **Las conversaciones, sólo con disco**: el espejo baja también hilos y cambios de git con `site.mailbox.threads: true`
+  y `SITE_DATA_DIR` (incremental: lo bajado no se vuelve a bajar). Sin eso, lo que sale del hilo dice «no medido: este
+  sitio no baja las conversaciones», nunca cero.
+- **Los umbrales de la organización** (el `sources.json` de su repo de operaciones) si los trae; si no, los del arnés.
+
+Red: `scripts/tests/site-runs.test.js` (el servidor del sitio con sesiones reales del emisor local y un espejo
+fabricado con tres máquinas y una corrida suelta; incluye la prueba de fuga con marcadores sembrados en lo ajeno y la
+equivalencia de texto entre la vista local y la pestaña), T26 de `site-sources.test.js` (la bajada con y sin
+conversaciones) y 2.27-T23 de `dashboard-runs.test.sh` (la página local sigue sin pedir nada por la red).
 
 ## guides/ado-cola-y-listados.md
 

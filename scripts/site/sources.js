@@ -7,8 +7,10 @@
  *     refresco. La credencial va en una cabecera pasada por variables de git (`GIT_CONFIG_*`, el patrón de `gitAuth` del
  *     exportador): nunca en la dirección, en un argumento ni en el disco.
  *   · el BUZÓN de corridas, con `bajar()` de scripts/metrics/download-runs.js y la credencial que da la plataforma —una SAS
- *     de sólo lectura, o la identidad administrada (cloud/)—. Se bajan sólo los volcados y los registros, nunca hilos ni
- *     cambios (G3).
+ *     de sólo lectura, o la identidad administrada (cloud/)—. Se bajan los volcados y los registros; las conversaciones
+ *     y los cambios de git, SÓLO con `site.mailbox.threads: true` y un disco del sitio (`SITE_DATA_DIR`), para el detalle
+ *     de la pestaña Corridas (story 2.27, decisión 11). La bajada es incremental: lo que ya está en el disco no se vuelve a
+ *     bajar. Esos textos sólo salen por `modelo()` de runs.js, saneados y filtrados por persona (G3).
  *
  * EL MODELO se arma en el servidor con LISTA BLANCA campo por campo (decisión 19): de cada foto se copian cantidades,
  * fechas, días, nombres de producto, proyecto y repo, números con su enlace, y estados. Nada de texto libre: los títulos,
@@ -465,7 +467,9 @@ function crearFuentes({ cfg, dataDir, log: logCrudo = () => {}, ahora = Date.now
   const rutaEstado = path.join(dataDir, ARCHIVO_ESTADO);
   // `personas`: lo que la regla de quién es quién necesita y el modelo NO lleva (2.28) — lo informado por cada máquina
   // (de la última bajada entera del buzón) y la lista de repos.json
-  const st = { perfil: { estado: 'sin_configurar', motivo: 'todavía no se leyó' }, cargado: false, ultimoBueno: null, fallaDesde: null, fallaMotivo: null, fallaRutas: null, frenado: null, bandaConfig: null, modelo: null, personas: { informados: null, repos: null }, fallas: { repo: null, buzon: null } };
+  const st = { perfil: { estado: 'sin_configurar', motivo: 'todavía no se leyó' }, cargado: false, ultimoBueno: null, fallaDesde: null, fallaMotivo: null, fallaRutas: null, frenado: null, bandaConfig: null, modelo: null, personas: { informados: null, repos: null }, fallas: { repo: null, buzon: null }, hilos: false, buzon: { completo: false, generacion: 0 } };
+  // story 2.27: quien quiere saber que el refresco terminó (la pestaña Corridas rearma su vista si el espejo cambió)
+  const oyentes = [];
   let temporizador = null;
   let enCurso = null;
   const lasNubes = () => (Array.isArray(nubesDadas) ? nubesDadas : nubes(log));
@@ -598,14 +602,23 @@ function crearFuentes({ cfg, dataDir, log: logCrudo = () => {}, ahora = Date.now
       st.fallas.buzon = st.fallas.buzon || { desde: t, estado: 'sin_configurar' };
       return previo && previo.estado === 'medido' ? previo : noMedida('sin_configurar');
     }
+    // story 2.27 (decisión 11): las conversaciones y los cambios de git se bajan SÓLO con `site.mailbox.threads: true` y
+    // un disco del sitio (SITE_DATA_DIR): pesan casi un giga, y sin disco se volverían a bajar enteros en cada despertar
+    const conHilos = mb.threads === true && Boolean(cfg.dataDir);
+    if (mb.threads === true && !cfg.dataDir) log('site.mailbox.threads está en true pero SITE_DATA_DIR no está puesta: no se bajan las conversaciones (sin un disco del sitio se bajarían enteras en cada despertar)');
     let r;
     try {
-      r = await nube.bajarBuzon({ cuenta: mb.account, contenedor: mb.container, credencial: cfg.mailboxCredencial, dir: dirBuzon, urlBase: urlBuzon, log: (l) => log(`buzón: ${l}`) });
+      r = await nube.bajarBuzon({ cuenta: mb.account, contenedor: mb.container, credencial: cfg.mailboxCredencial, dir: dirBuzon, urlBase: urlBuzon, sinHilos: !conHilos, log: (l) => log(`buzón: ${l}`) });
     } catch (e) { r = { codigo: 1, res: { estado: 'sin_red', motivo: `error inesperado al bajar: ${e.message}` } }; }
     const est = r.res.estado;
     // 🔴 «leído entero» lo dice `completo` (download-runs.js), no el estado: 'bajado' también sale con el presupuesto agotado
+    // story 2.27 (pase adversarial): la pestaña Corridas arma SÓLO con una bajada entera, la misma que fija lo informado
+    // por las máquinas; con una a medias, la foto del espejo y la de quién es quién no serían la misma
+    st.buzon.completo = r.codigo === 0 && r.res.completo === true;
     if (r.codigo === 0 && r.res.completo === true) {
+      st.buzon.generacion += 1;
       st.fallas.buzon = null;
+      st.hilos = conHilos;
       const c = leerCorridas(dirBuzon);
       // lo informado se lee del mismo espejo, entero: con una bajada a medias queda el de la última entera
       st.personas.informados = people.leerCorreosInformados(dirBuzon);
@@ -657,6 +670,7 @@ function crearFuentes({ cfg, dataDir, log: logCrudo = () => {}, ahora = Date.now
     else log(`dónde trabaja cada uno: ${repos.motivo}${st.personas.repos ? '; queda la última lista buena' : ''}`);
     await actualizarPerfil();
     st.cargado = true;
+    for (const fn of oyentes) { try { fn(); } catch (e) { log(`un aviso de refresco falló: ${e && e.message ? e.message : e}`); } }
   }
 
   function refrescar() {
@@ -706,6 +720,12 @@ function crearFuentes({ cfg, dataDir, log: logCrudo = () => {}, ahora = Date.now
     }),
     exclusivo,
     dirBuzon,
+    /** Story 2.27: ¿la última bajada entera del espejo trajo las conversaciones y los cambios de git? */
+    hilos: () => st.hilos,
+    /** Story 2.27: ¿la ÚLTIMA bajada del buzón terminó entera?, y cuántas enteras hubo (la pestaña arma con una entera). */
+    buzonEstado: () => ({ completo: st.buzon.completo, generacion: st.buzon.generacion }),
+    /** Story 2.27: `fn` corre al terminar cada refresco (la pestaña Corridas mira si el espejo cambió). */
+    alRefrescar(fn) { oyentes.push(fn); },
   };
 }
 

@@ -1678,6 +1678,28 @@ assert sorted((c['story'], c['maquina'], c.get('maquina_nota')) for c in cs)==[(
   || mal "2.28-T38 vieja compartida: $(python3 -c "import json,sys; print([(c['story'],c.get('maquina'),c.get('maquina_nota')) for c in json.loads(sys.argv[1])['corridas']])" "${J38}" 2>&1 | head -c 400)"
 rm -rf "${T}"
 
+# ── 2.27-T23 · VistaLocal_FuenteEmbebida_SinCambios (story 2.27, AC 23) ──────────────────────────
+# El cliente de la vista lee sus datos de una FUENTE: embebida en la página local, por la red en el sitio. La página
+# local sigue trayendo el modelo y los textos adentro y no pide nada por la red: abrir el detalle y su cambio no llama a
+# `fetch`. 🔴 rojo previo: un cliente que sólo sabe pedir por la red (la página local quedaría vacía sin el sitio).
+T=$(mktemp -d)
+volcado "${T}/r" "${S1}" "2026-08-15T05:53:47Z" '{}' uno.json
+generar "${T}/r" "${T}/o.html" "${T}/log"
+R="$(node -e '
+const fs=require("fs");const html=fs.readFileSync(process.argv[1],"utf8");
+const modelo=(html.match(/<script id="modelo" type="application\/json">([\s\S]*?)<\/script>/)||[])[1];
+const cliente=[...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].pop()[1];
+const nodos={};const el=()=>({innerHTML:"",textContent:"",value:"",checked:false,hidden:false,rows:[],addEventListener(){},set onclick(f){},querySelectorAll:()=>[],querySelector:()=>el(),classList:{add(){},remove(){},contains:()=>false}});
+let pedidos=0;global.fetch=()=>{pedidos+=1;return Promise.reject(new Error("sin red"));};
+global.window=global;global.location={search:"",hash:""};
+global.document={addEventListener(){},querySelectorAll:()=>[],createElement:()=>el(),getElementById:(id)=>id==="modelo"?{textContent:modelo}:(nodos[id]=nodos[id]||el())};
+eval(cliente);
+const M=JSON.parse(modelo);const d=window.__detalle(M.corridas[0]);
+console.log([/class="tile/.test(nodos.fichas.innerHTML)?"fichas":"sin-fichas",d.length>100?"detalle":"sin-detalle",typeof window.__fuente==="object"&&window.__fuente.forma,"pedidos="+pedidos,/id="cz-0"|id="cg-0"|<script id="modelo"/.test(html)?"embebida":"sin-embebida"].join(" "));
+' "${T}/o.html" 2>&1)"
+[ "${R}" = "fichas detalle embebida pedidos=0 embebida" ] && ok "2.27-T23 la página local trae su fuente embebida y no pide nada por la red" || mal "2.27-T23 fuente embebida: ${R}"
+rm -rf "${T}"
+
 # ── T15 · esta suite NO toca los entregables commiteados (gemelo del C-27) ─────────────────────
 # 🔴 rojo previo: un caso generando sobre artifacts/ en vez de sobre un temporal.
 [ "$(huella "${ENTREGABLE_CORRIDAS}")" = "${HUELLA_CORRIDAS_ANTES}" ] && ok "T15 la suite no escribió artifacts/runs-dashboard.html (no se commitea)" || mal "T15 la suite ESCRIBIÓ artifacts/runs-dashboard.html"
