@@ -453,43 +453,74 @@ const grupos = AGRUPAR
 log(`adversarial-verify: ${todos.length} hallazgos → ${grupos.clases.length} clases` +
   (AGRUPAR ? ` (se ahorran ${grupos.resumen.agentes_ahorrados} verificadores; ${grupos.dudas.length} pares quedaron separados por las dudas)` : ' (agrupamiento APAGADO)'))
 
-// ─────────────────────────────────────────────────────────────────────────────────────────────
-// Fase 2 — UN escéptico por CLASE. Tandas de 3: el cap de concurrencia de 2026-07-30 (RIESGO-4)
-// sigue valiendo — cada verificador abre Bash en la máquina del dev.
-const veredictos = new Array(grupos.clases.length).fill(null)
-for (let i = 0; i < grupos.clases.length; i += 3) {
-  const tanda = await parallel(
-    grupos.clases.slice(i, i + 3).map((c, j) => () => {
-      const rep = todos[c.representante]
-      const otros = c.miembros.filter((m) => m !== c.representante).map((m) => todos[m])
-      const mismaClase = otros.length
-        ? `\n\nOTRAS ${otros.length} LENTE(S) REPORTARON LO QUE PARECE EL MISMO PROBLEMA (agrupados por: ${c.motivo}).` +
-          ` Si al reproducirlo ves que alguno NO es el mismo defecto, devolvé todos_el_mismo_defecto = false y decí cuál en reasoning:` +
-          ` ese hallazgo NO se da por verificado y se verifica aparte. Si los reprodujiste a todos como el mismo, devolvé true.\n` +
-          otros.map((o) => `- [${o.lens}] ${o.summary}`).join('\n')
-        : ''
-      // Sin otros miembros, el campo igual se pide (el esquema lo exige): con una clase de uno, la
-      // respuesta honesta es `true`.
-      return agent(
-        `${COMMON}\n\nUn hunter (lente ${rep.lens}) reportó este posible bug. Tu trabajo es REFUTARLO adversarialmente:` +
-          ` intentá REPRODUCIRLO con un probe real (bundleá/compilá + ejecutá). Si NO podés reproducir el comportamiento` +
-          ` incorrecto, o si es una de las decisiones de diseño aprobadas, o si el hunter erró la semántica → REFUTED.` +
-          ` Solo CONFIRMED si reprodujiste el bug con inputs concretos observados. Ante la duda: REFUTED.\n\nFINDING:\n` +
-          `severity=${rep.severity}\nfile=${rep.file}${rep.line ? ':' + rep.line : ''}\nsummary=${rep.summary}\nrepro=${rep.repro}\nconfidence=${rep.confidence}` +
-          mismaClase +
-          guardarPrueba(`${PROBES_DIR}/${rep.lens}-${rep.idxEnLente}`),
-        {
-          label: `verify:${rep.lens}`,
-          phase: 'Verify',
-          schema: VERDICT_SCHEMA,
-          agentType: 'general-purpose',
-          model: MODEL,
-        }
-      ).then((v) => ({ k: i + j, verdict: v }))
-    })
-  )
-  for (const x of tanda.filter(Boolean)) veredictos[x.k] = x.verdict
+// ===== NUCLEO-VENTANA: INICIO =====
+// La ventana: como mucho `size` tareas vivas a la vez; apenas termina una, entra la siguiente. Cada carril está
+// aislado: una tarea que tira deja `null` en su lugar y las demás se intentan igual; el motivo va a `onError(k, e)`
+// (sin él, la causa se perdía). El resultado sale en el orden de las tareas, no en el de llegada.
+async function runWindow(tareas, opts) {
+  const size = Math.max(1, Math.floor((opts && opts.size) || 3))
+  const onError = opts && typeof opts.onError === 'function' ? opts.onError : null
+  const lista = Array.isArray(tareas) ? tareas : []
+  const resultados = new Array(lista.length).fill(null)
+  let siguiente = 0
+  const carril = async () => {
+    while (siguiente < lista.length) {
+      const k = siguiente
+      siguiente += 1
+      try {
+        resultados[k] = await lista[k]()
+      } catch (e) {
+        resultados[k] = null
+        if (onError) { try { onError(k, e) } catch (_e) { /* el aviso nunca corta la ventana */ } }
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(size, lista.length) }, () => carril()))
+  return resultados
 }
+// ===== NUCLEO-VENTANA: FIN =====
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// Fase 2 — UN escéptico por CLASE, en una ventana de 3 (story 7.19): el cap de concurrencia de
+// 2026-07-30 (RIESGO-4) sigue valiendo —cada verificador abre Bash en la máquina del dev—, pero
+// apenas termina uno entra el siguiente; con tandas fijas cada tanda esperaba a su más lento. La
+// ventana se arma acá, sobre promesas sueltas de `agent()`, y NO con el `parallel` del corredor:
+// con él el tope pasaba a ser el suyo (4 en workflow-lite, más en la herramienta de flujos).
+const veredictos = await runWindow(
+  grupos.clases.map((c) => () => {
+    const rep = todos[c.representante]
+    const otros = c.miembros.filter((m) => m !== c.representante).map((m) => todos[m])
+    const mismaClase = otros.length
+      ? `\n\nOTRAS ${otros.length} LENTE(S) REPORTARON LO QUE PARECE EL MISMO PROBLEMA (agrupados por: ${c.motivo}).` +
+        ` Si al reproducirlo ves que alguno NO es el mismo defecto, devolvé todos_el_mismo_defecto = false y decí cuál en reasoning:` +
+        ` ese hallazgo NO se da por verificado y se verifica aparte. Si los reprodujiste a todos como el mismo, devolvé true.\n` +
+        otros.map((o) => `- [${o.lens}] ${o.summary}`).join('\n')
+      : ''
+    // Sin otros miembros, el campo igual se pide (el esquema lo exige): con una clase de uno, la
+    // respuesta honesta es `true`.
+    return agent(
+      `${COMMON}\n\nUn hunter (lente ${rep.lens}) reportó este posible bug. Tu trabajo es REFUTARLO adversarialmente:` +
+        ` intentá REPRODUCIRLO con un probe real (bundleá/compilá + ejecutá). Si NO podés reproducir el comportamiento` +
+        ` incorrecto, o si es una de las decisiones de diseño aprobadas, o si el hunter erró la semántica → REFUTED.` +
+        ` Solo CONFIRMED si reprodujiste el bug con inputs concretos observados. Ante la duda: REFUTED.\n\nFINDING:\n` +
+        `severity=${rep.severity}\nfile=${rep.file}${rep.line ? ':' + rep.line : ''}\nsummary=${rep.summary}\nrepro=${rep.repro}\nconfidence=${rep.confidence}` +
+        mismaClase +
+        guardarPrueba(`${PROBES_DIR}/${rep.lens}-${rep.idxEnLente}`),
+      {
+        label: `verify:${rep.lens}`,
+        phase: 'Verify',
+        schema: VERDICT_SCHEMA,
+        agentType: 'general-purpose',
+        model: MODEL,
+      }
+    )
+  }),
+  {
+    size: 3,
+    // el verificador que tira queda «sin veredicto» (abajo se cuenta); acá se dice por qué, que si no se perdía
+    onError: (k, e) => log(`adversarial-verify: el verificador de la clase ${k + 1} tiró: ${(e && e.message) || e}`),
+  }
+)
 
 // 🔴 UN VERIFICADOR MUERTO NO ES UN «REFUTED» (2026-09-20, cazador de fallos silenciosos). `agent()`
 // devuelve null cuando el agente muere o no contesta JSON válido, y eso se trataba igual que un

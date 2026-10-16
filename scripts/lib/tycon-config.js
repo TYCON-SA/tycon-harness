@@ -183,6 +183,13 @@ const VOCABULARIO = Object.freeze({
   // de hoy: el clon en la carpeta de Claude Code; `tycon` hace que el arranque de cada máquina la mude sola a `~/.tycon`,
   // una vez. La prende el dueño en el perfil del equipo DESPUÉS de migrar su máquina a mano; hasta entonces no está.
   install: Object.freeze({ profile: 'opcion:minimal|full', home: 'opcion:claude|tycon' }),
+  // La pregunta del modelo mayor en el pase adversarial (story 7.19, AC 10): `ask` (por defecto) = el portón la ofrece
+  // en una story pesada y el orquestador le pregunta a la persona; `never` = no se ofrece, corre el modelo que eligió el
+  // portón. Cerrada y no un sí/no, para sumar un tercer valor sin romper archivos si el dueño lo pide; hoy no hay
+  // `always` («Fable NUNCA automático» es una decisión de costo). Gana el perfil del equipo (PROFILE_WINS).
+  // 🔴 El lector del freno de producción (/opt) no la conoce hasta reinstalarlo: escrita en el archivo de una máquina
+  // antes, esa copia lee la configuración como ROTA (el caso de la 8.26, tanda F1). En el perfil no choca: no lo lee.
+  adversarial: Object.freeze({ model_question: 'opcion:ask|never' }),
 });
 // Las claves que SIEMPRE tienen un valor: sin nadie que diga nada, éste, con origen `default` (la política no se apaga:
 // una máquina de afuera, sin perfil, queda en «estable» y «preguntar»; el perfil del equipo trae `latest` + `auto`).
@@ -192,6 +199,7 @@ const VOCABULARIO = Object.freeze({
 const DEFAULTS = Object.freeze({
   'update.channel': 'stable', 'update.apply': 'ask', 'update.skills_source': 'separate', 'packs.default': 'none',
   'update.source': 'public', 'rutas.tree': '~/.claude/.tycon-pipeline/harness/tree',
+  'adversarial.model_question': 'ask',
 });
 // Las claves en las que el PERFIL DEL EQUIPO le gana al archivo de la máquina (story 8.29, decisión del dueño del
 // 2026-10-11). Para todo lo demás el orden es el de siempre: variable › máquina › perfil. Para éstas: variable › perfil ›
@@ -202,7 +210,9 @@ const DEFAULTS = Object.freeze({
 // máquina NO se toca: lo que tiene escrito queda ahí, sin efecto mientras el perfil declare la clave, y `explain` lo dice.
 // Una integración apagada en la máquina, en cambio, sigue apagada aunque el perfil la prenda: eso no cambió.
 // Quien quiera otros paquetes en UNA máquina del equipo usa la variable (`TYCON_PACKS_DEFAULT`), o `packs:` en el repo.
-const PROFILE_WINS = Object.freeze(['packs.default']);
+// La segunda (story 7.19, decisión del dueño del 2026-10-15): la pregunta del modelo mayor en el pase adversarial.
+// Apagarla es una decisión de costo del equipo, no de una máquina.
+const PROFILE_WINS = Object.freeze(['packs.default', 'adversarial.model_question']);
 /** Las opciones de un tipo `opcion:a|b`, o null si no es de ese tipo. */
 function optionsOf(tipo) { return typeof tipo === 'string' && tipo.startsWith('opcion:') ? tipo.slice('opcion:'.length).split('|') : null; }
 // Las secciones se ESCRIBEN en inglés en los archivos (story 8.9, tanda P · 2026-09-30): `paths` e `integrations`. El
@@ -989,6 +999,8 @@ function explicar(opts = {}) {
   L.push(`  install.profile = ${v.install.profile ? `${v.install.profile} (${o['install.profile']})` : 'sin elegir'}`);
   // dónde vive el arnés (story 8.23, tanda D): sin valor es `claude` (el clon de hoy); `tycon` muda cada máquina sola
   L.push(`  install.home = ${v.install.home ? `${v.install.home} (${o['install.home']})` : 'claude (sin valor: el clon en la carpeta de Claude Code; con tycon, cada máquina se muda sola a ~/.tycon en el arranque)'}`);
+  // la pregunta del modelo mayor en el pase adversarial (story 7.19): siempre con valor, siempre con origen
+  L.push(`  adversarial.model_question = ${fmt(v.adversarial.model_question)} (${o['adversarial.model_question']}${unused('adversarial.model_question')})`);
   const extras = [];
   if (c.entorno.TYCON_SKILLS_DIR) extras.push(`TYCON_SKILLS_DIR=${c.entorno.TYCON_SKILLS_DIR} (lib/skills-dir.js, no es de este lector)`);
   if (c.entorno.TYCON_PROFILE !== null) extras.push(`TYCON_PROFILE=${c.entorno.TYCON_PROFILE}`);

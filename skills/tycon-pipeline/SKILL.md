@@ -78,7 +78,7 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
   EJECUTA el código. Gate `pipeline.js deep-review-gate`: NORMAL → corre; LOW → skip. Overrides:
   `--no-deep-review`/`TYCON_NO_DEEP_REVIEW=1`, `.tycon/advisors.yaml deep_review: always|off|auto`,
   `--deep-review`/`--ultracode`. Modelo `sonnet`; story pesada → `opus` (anunciado); **`fable` NUNCA
-  automático** (sólo con autorización explícita: `fable_upsell` → preguntar en 1 línea). UNA vez por
+  automático** (`fable_upsell` → preguntar en 1 línea; `adversarial.model_question: never` no pregunta). UNA vez por
   corrida. Se lanza temprano al cerrar la implementación (`early_launch`; kill-switch `TYCON_5B_EARLY=0`)
   y su paso es el JOIN. Los CONFIRMED se foldean a «Hallazgos» y disparan D.i. La prueba que confirmó cada hallazgo
   se promueve a la suite: `marker.js promote-probe`; `mark-adversarial-result` exige `--tests k`
