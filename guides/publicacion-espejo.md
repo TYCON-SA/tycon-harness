@@ -723,7 +723,7 @@ por un sintético, como los demás). Lo que tiene que cumplir lo verifica **por 
 | `uses-by-sha` | Cada `uses:` va fijado por el sha completo de su commit, con el tag como comentario. |
 | `permissions` | Un solo bloque `permissions`, arriba de todo, con `contents: read`. |
 | `fetch-depth` | El checkout trae la historia completa (`fetch-depth: 0`): la necesita `--range`. |
-| `node-matrix` | La matriz (`strategy: matrix:`) es Node 22 y 24, y es la que se instala. |
+| `node-matrix` | La matriz (`strategy: matrix:`) es Node 24 y es la que se instala; aparte, el job `installer-floor` instala Node 22 (el piso del instalador), una vez y sólo ahí. |
 | `range` | En un pull request y en la cola de merge, `public-ci.sh` corre con `--range origin/<base>...HEAD`. |
 | `clean-machine` | Toda llamada a `public-ci.sh` lleva `--clean-machine`. |
 | `aggregate-job` | El job `public-ci` corre siempre (`if: always()`), depende de todos los demás y falla si alguno no dio `success`. |
