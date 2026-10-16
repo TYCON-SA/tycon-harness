@@ -231,7 +231,8 @@ function homeDeMentira() {
 const envCon = (home) => {
   const e = {};
   for (const [k, v] of Object.entries(process.env)) if (!k.startsWith('TYCON_') && k !== 'TF_BUILD') e[k] = v;
-  return { ...e, HOME: home, TYCON_NO_NIGHTLY_EXAM: '1', TYCON_REPOS_ROOT: path.join(home, 'repos') };
+  // TYCON_PARITY_BENCH_DIR: `--parity` deja su reporte en scripts/controls-bench/.bench/ del clon, que comparten las demás suites
+  return { ...e, HOME: home, TYCON_NO_NIGHTLY_EXAM: '1', TYCON_REPOS_ROOT: path.join(home, 'repos'), TYCON_PARITY_BENCH_DIR: path.join(home, 'parity-bench') };
 };
 
 test('T23 R3_Lib_MovedRequires — autoarreglo y auditoría compilan desde scripts/lib/ y cada ruta relativa existe', () => {
