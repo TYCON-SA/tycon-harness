@@ -106,9 +106,10 @@ HOME="$T/third-party-home" node "$RAIZ/scripts/publishing/install-third-party.js
 #    La foto se toma DESPUÉS de las de terceros y se compara al final: una suite que deja (o borra) algo ahí le cambia
 #    el árbol a las que corren a la vez. Pasó con integrations-off y no-hardcoded-paths, que corrían el instalador con
 #    el paso de terceros prendido sobre el agent-skills de su HOME, que es este clon (DEF-8.40-carrera-skills-de-terceros);
-#    y con harness-uninstall, harness-snapshot, no-hardcoded-paths, integrations-off y engram-autoheal, que dejaban el
-#    reporte de paridad en .bench/, y bench-git-deterministic, el registro del corredor del banco. Con las de
-#    terceros ya puestas, las dos primeras no habrían dejado nada nuevo: la foto caza lo que cualquier otra deje.
+#    y con harness-uninstall, harness-snapshot, installer-shared-pieces, no-hardcoded-paths, integrations-off y
+#    engram-autoheal, que dejaban el reporte de paridad en .bench/, y bench-git-deterministic, el registro del corredor
+#    del banco. Con las de terceros ya puestas, las dos primeras no habrían dejado nada nuevo: la foto caza lo que
+#    cualquier otra deje.
 skills_foto() { local d; for d in "$RAIZ/skills" ${SK_REPO:+"$SK_REPO/skills"} "$RAIZ/scripts/controls-bench/.bench"; do [ -d "$d" ] && (cd "$d" && find . \( -type f -o -type l \) | sed "s|^\.|$d|"); done | LC_ALL=C sort -u; }
 skills_foto > "$T/skills-antes.txt"
 
