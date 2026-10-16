@@ -308,7 +308,7 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
   // ── la página ──
   function pagina(ctx) {
     const tok = ctx.sesion && typeof ctx.sesion.tok === 'string' ? ctx.sesion.tok : '';
-    const html = views.layout(ctx, 'Configuración', '<p class="q-note">La configuración de la organización: cada cambio se revisa con los lectores del arnés y se propone con un pedido al repo que corresponde. Nada de la configuración de cada máquina.</p><div id="config-app"><p class="q-note">Cargando…</p></div>');
+    const html = views.layout(ctx, 'Configuración', '<div id="config-app"><p class="q-note">Cargando…</p></div>', 'Lo que vale para toda la organización. Cada cambio se revisa antes de proponerlo, y entra cuando alguien lo aprueba. Lo de cada máquina no se toca desde acá.');
     // el token de doble envío y el código de la pestaña, sin nada en línea (la CSP de la 2.23 no lo admite)
     return html.replace('</head>', `<meta name="site-token" content="${tok.replace(/[^A-Za-z0-9_-]/g, '')}"><script src="/static/config.js" defer></script></head>`);
   }
