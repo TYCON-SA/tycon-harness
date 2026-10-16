@@ -295,9 +295,9 @@ test('T70 SmokeRun_WorksWithoutPython3 — smoke-run.sh contra un servidor de ju
   const env = { ...process.env, PATH, HOME: home };
   const pedir = (url) => [process.execPath, '-e', 'fetch(process.argv[1],{headers:{authorization:"Bearer acmeSecreto123456789"}}).then(r=>process.exit(r.ok?0:1),()=>process.exit(2))', url];
   try {
-    const ok = await correrAsync('bash', [SMOKE, ev, '9.10', '--acs', '3,4', '--', ...pedir(`${base}/api/acme/pedidos`)], { env, cwd: repo });
+    const ok = await correrAsync('bash', [SMOKE, ev, '9.10', '--acs', '3,4', '--pass-if', 'responde 200 con los pedidos', '--', ...pedir(`${base}/api/acme/pedidos`)], { env, cwd: repo });
     assert.strictEqual(ok.status, 0, `smoke verde salió ${ok.status}\n${ok.stderr}`);
-    const mal = await correrAsync('bash', [SMOKE, ev, '9.10', '--acs', '5', '--mutates', '--', ...pedir(`${base}/api/acme/roto`)], { env, cwd: repo });
+    const mal = await correrAsync('bash', [SMOKE, ev, '9.10', '--acs', '5', '--mutates', '--pass-if', 'responde 200', '--', ...pedir(`${base}/api/acme/roto`)], { env, cwd: repo });
     assert.strictEqual(mal.status, 1, 'el smoke rojo devuelve el exit real del comando');
   } finally {
     servidor.close();

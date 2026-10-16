@@ -84,11 +84,11 @@ function addSiblingRepo(ws, name) {
 }
 
 // Smoke ledger espejado (la vía legítima completa: entry en el ledger + espejo en gates.log).
+// Armada por el ayudante compartido (story 1.19): una línea vieja, sin `v`, como la escribía el envoltorio.
+// Los casos de forja de abajo escriben sus líneas a mano a propósito: lo que prueban es una línea que el envoltorio
+// nunca escribiría (registro y espejo que no coinciden).
 function writeMirroredSmoke(dodDir, gatesLog, sid, acs, cmd = 'curl -s http://app/x') {
-  const ts = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
-  fs.appendFileSync(path.join(dodDir, `${sid}-smoke-ledger.jsonl`),
-    JSON.stringify({ ts, story: sid, acs, cmd, exit: 0, via: 'smoke-run.sh' }) + '\n');
-  fs.appendFileSync(gatesLog, JSON.stringify({ type: 'smoke-run', ts, story: sid, acs, exit: 0 }) + '\n');
+  require(path.join(__dirname, 'lib', 'smoke-ledger-line.js')).append({ dodDir, gatesLog, story: sid, acs, cmd });
 }
 
 // Escribe el gate .md Y (por default) el ESPEJO run-check en gates.log — como lo hace
@@ -1356,6 +1356,172 @@ withWaiverLog(() => {
     check('el motivo de una marca inválida no convierte en acción a un AC de lectura',
       r.perAc[3].verdict === 'RUNTIME', r.perAc[3].verdict);
     check('…y la marca inválida igual avisa', r.warnings.some((w) => /#3/.test(w) && /SIN motivo/.test(w)));
+  }
+}
+
+// ---------------------------------------------------------------- story 1.19
+// La prueba dice qué esperaba y qué salió. Un humo nuevo (`"v":2`) trae su expectativa (`pass_if`) y la salida
+// guardada con su sha256 en el espejo del home. La matriz no lo cuenta si la salida falta o cambió después de correr,
+// y muestra la expectativa y la ruta. Las líneas viejas (sin `v`) cuentan como hasta hoy.
+{
+  const L = require(path.join(__dirname, 'lib', 'smoke-ledger-line.js'));
+  // Generado el 2026-10-15 con runtime-matrix.js de main (0000732), ANTES de tocarlo: la salida normalizada del caso T13.
+  // Si un cambio a la matriz lo rompe a propósito, se regenera con el código viejo, nunca con el nuevo.
+  const DORADO_LINEAS_VIEJAS = "{\"perAc\":{\"1\":{\"verdict\":\"RUNTIME\",\"runtime\":[\"E1 (9.9-e2e-gate-<TSC>.md)\"],\"code\":[],\"text\":\"Given algo, When pasa, Then resultado.\",\"mutacion\":null,\"exentoC8\":null,\"fuentes\":{\"e2e\":[\"9.9-e2e-gate-<TSC>.md\"],\"smoke\":[]}},\"2\":{\"verdict\":\"RUNTIME\",\"runtime\":[\"smoke <TS>\"],\"code\":[],\"text\":\"ERROR_CASE: input inválido → 422.\",\"mutacion\":null,\"exentoC8\":null,\"fuentes\":{\"e2e\":[],\"smoke\":[\"<TS>\"]}},\"3\":{\"verdict\":\"RUNTIME\",\"runtime\":[\"E1 (9.9-e2e-gate-<TSC>.md)\",\"smoke <TS>\"],\"code\":[],\"text\":\"Given otra cosa, Then otro resultado.\",\"mutacion\":null,\"exentoC8\":null,\"fuentes\":{\"e2e\":[\"9.9-e2e-gate-<TSC>.md\"],\"smoke\":[\"<TS>\"]}}},\"green\":true,\"pendientes\":[],\"warnings\":[],\"md\":\"# Matriz de verificación runtime — Story 9.9 (DODRT-C6)\\n\\n**Generado**: <TS> · **matrix_hash**: `<HASH>` · **veredicto**: 🟢 VERDE\\n**Cobertura**: 3/3 ACs corridos en runtime · 0 sin correr (bloquean) · 0 imposibles-declarados (esperan waiver)\\n\\n| AC | Veredicto | Evidencia runtime | Evidencia código | Razón (si imposible) |\\n|---|---|---|---|---|\\n| #1 | 🟢 RUNTIME | E1 (9.9-e2e-gate-<TSC>.md) | — | — |\\n| #2 | 🟢 RUNTIME | smoke <TS> | — | — |\\n| #3 | 🟢 RUNTIME | E1 (9.9-e2e-gate-<TSC>.md); smoke <TS> | — | — |\\n\\n\"}";
+
+  // Lo que la matriz devuelve, sin lo que cambia de una corrida a otra (carpeta temporal, sellos, hash).
+  function normalizado(r, f) {
+    const s = JSON.stringify({ perAc: r.perAc, green: r.green, pendientes: r.pendientes, warnings: r.warnings,
+      md: rm.renderMd(r) });
+    return [fs.realpathSync(f.ws), f.ws].reduce((acc, p) => acc.split(p).join('<WS>'), s)
+      .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z/g, '<TS>')
+      .replace(/\d{8}T\d{6}Z/g, '<TSC>')
+      .replace(/\d{4}-\d{2}-\d{2}/g, '<FECHA>')
+      .replace(/\b[0-9a-f]{12}\b/g, '<HASH>');
+  }
+
+  // T13 — Matrix_OldLines_CountAsToday (AC 20, 21, 24): un registro sin `v`, con y sin `--mutates`, y un AC con E2E,
+  // dan EXACTAMENTE lo mismo que con el código anterior a la 1.19. El dorado se generó con ese código (Task 2).
+  {
+    const f = makeWorkspace();
+    writeGate(f.dodDir, '9.9', recentCompact(20), 'PASS', 'story-9-9.spec.ts', f.gatesLog, true,
+      ['flujo: abre la vista @ac-1']);
+    L.append({ dodDir: f.dodDir, gatesLog: f.gatesLog, story: '9.9', acs: [2], cmd: 'curl -s http://app/x' });
+    L.append({ dodDir: f.dodDir, gatesLog: f.gatesLog, story: '9.9', acs: [3], cmd: 'node .advisors/smoke-e2e.mjs', mutates: true });
+    const r = rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog });
+    const got = normalizado(r, f);
+    check('T13 líneas viejas: la matriz da lo mismo que antes de la 1.19', got === DORADO_LINEAS_VIEJAS,
+      `\n    esperado: ${DORADO_LINEAS_VIEJAS}\n    salió:    ${got}`);
+  }
+
+  // T11 — Matrix_V2_MissingOrChangedOutput_NotCounted (AC 7).
+  {
+    const f = makeWorkspace();
+    const w = L.append({ dodDir: f.dodDir, gatesLog: f.gatesLog, story: '9.9', acs: [2],
+      v2: { pasaSi: 'responde 422 con el campo inválido nombrado', outputText: 'HTTP/1.1 422\n{"campo":"x"}\n' } });
+    fs.rmSync(path.join(f.dodDir, w.output));
+    const r = rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog });
+    check('T11 v2 con la salida borrada no cuenta', r.perAc[2].verdict !== 'RUNTIME', r.perAc[2].verdict);
+    check('T11 …y la nombra «salida ausente»', r.warnings.some((w2) => /salida ausente/.test(w2)), JSON.stringify(r.warnings));
+  }
+  {
+    const f = makeWorkspace();
+    const w = L.append({ dodDir: f.dodDir, gatesLog: f.gatesLog, story: '9.9', acs: [2],
+      v2: { pasaSi: 'responde 422 con el campo inválido nombrado', outputText: 'HTTP/1.1 500\n' } });
+    fs.writeFileSync(path.join(f.dodDir, w.output), 'HTTP/1.1 422\n{"campo":"x"}\n');
+    const r = rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog });
+    check('T11 v2 con la salida editada no cuenta', r.perAc[2].verdict !== 'RUNTIME', r.perAc[2].verdict);
+    check('T11 …y la nombra «salida cambiada después de correr»',
+      r.warnings.some((w2) => /salida cambiada después de correr/.test(w2)), JSON.stringify(r.warnings));
+  }
+  {
+    // La marca de versión se borró del registro, pero el espejo la trae: sigue siendo `v:2` y sin salida no cuenta.
+    const f = makeWorkspace();
+    const w = L.append({ dodDir: f.dodDir, gatesLog: f.gatesLog, story: '9.9', acs: [2],
+      v2: { pasaSi: 'responde 422', outputText: 'HTTP/1.1 422\n' } });
+    const reg = path.join(f.dodDir, '9.9-smoke-ledger.jsonl');
+    const e = JSON.parse(fs.readFileSync(reg, 'utf8'));
+    delete e.v; delete e.output; delete e.output_sha; delete e.pass_if;
+    fs.writeFileSync(reg, JSON.stringify(e) + '\n');
+    fs.rmSync(path.join(f.dodDir, w.output));
+    const r = rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog });
+    check('T11 borrar el `v` del registro no la vuelve vieja (lo dice el espejo)', r.perAc[2].verdict !== 'RUNTIME', r.perAc[2].verdict);
+  }
+  {
+    // La expectativa editada después de correr tampoco cuenta: su sha está en el espejo.
+    const f = makeWorkspace();
+    L.append({ dodDir: f.dodDir, gatesLog: f.gatesLog, story: '9.9', acs: [2],
+      v2: { pasaSi: 'responde 500', outputText: 'HTTP/1.1 500\n' } });
+    const reg = path.join(f.dodDir, '9.9-smoke-ledger.jsonl');
+    fs.writeFileSync(reg, fs.readFileSync(reg, 'utf8').replace('responde 500', 'responde 422'));
+    const r = rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog });
+    check('T11 v2 con la expectativa editada no cuenta', r.perAc[2].verdict !== 'RUNTIME', r.perAc[2].verdict);
+    check('T11 …y la nombra «expectativa cambiada después de correr»',
+      r.warnings.some((w2) => /expectativa cambiada después de correr/.test(w2)), JSON.stringify(r.warnings));
+  }
+
+  // T12 — Matrix_ShowsPasaSiAndOutput (AC 4).
+  {
+    const f = makeWorkspace();
+    const w = L.append({ dodDir: f.dodDir, gatesLog: f.gatesLog, story: '9.9', acs: [2],
+      v2: { pasaSi: 'responde 422 con el campo inválido nombrado', outputText: 'HTTP/1.1 422\n{"campo":"x"}\n' } });
+    const r = rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog });
+    check('T12 v2 con su salida intacta cuenta', r.perAc[2].verdict === 'RUNTIME', r.perAc[2].verdict);
+    const md = rm.renderMd(r);
+    check('T12 el .md muestra el pass_if del AC', md.includes('responde 422 con el campo inválido nombrado'), md);
+    check('T12 el .md muestra la ruta de la salida', md.includes(w.output), md);
+  }
+
+  // T9 (la parte de la matriz) — dos humos v2 de la misma story en el mismo segundo: cuentan los dos.
+  {
+    const f = makeWorkspace();
+    const ts = L.nowTs();
+    L.append({ dodDir: f.dodDir, gatesLog: f.gatesLog, story: '9.9', acs: [2], ts, v2: { pasaSi: 'uno', outputText: 'uno\n' } });
+    L.append({ dodDir: f.dodDir, gatesLog: f.gatesLog, story: '9.9', acs: [2], ts, v2: { pasaSi: 'dos', outputText: 'dos\n' } });
+    const r = rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog });
+    check('T9 dos humos v2 del mismo segundo cuentan los dos', r.perAc[2].fuentes.smoke.length === 2,
+      JSON.stringify(r.perAc[2].fuentes));
+    check('T9 …y ninguno da «salida cambiada»', !r.warnings.some((w2) => /cambiada/.test(w2)), JSON.stringify(r.warnings));
+  }
+
+  // T18 — Matrix_AckInFrontmatter_StillNotVerified (AC 25): el ack viejo, escrito en el frontmatter, no abre nada.
+  {
+    const f0 = makeWorkspace();
+    const hash = rm.compute({ storyPath: f0.storyPath, gatesLogPath: f0.gatesLog }).hash;
+    const f = makeWorkspace({ ack: ['runtime_verification_ack:', `  matrix_hash: ${hash}`, '  manual_acs: [1, 2, 3]',
+      '  approved_by: "DevA"', '  date: 2026-07-10'] });
+    fs.writeFileSync(path.join(f.dodDir, '9.9-manual-test-plan.md'), '# Plan\n- AC 1\n- AC 2\n- AC 3\n');
+    const r = rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog });
+    check('T18 runtime_verification_ack en el frontmatter no deja verde a la matriz',
+      r.green === false && [1, 2, 3].every((n) => (r.pendientes || []).includes(n)),
+      `green=${r.green} pendientes=${JSON.stringify(r.pendientes)}`);
+  }
+
+  // ── Lo que encontró la revisión de la 1.19 (pase adversarial y revisor de cobertura, 2026-10-15) ──
+  // Git reescribe los finales de línea de la salida al hacer checkout (autocrlf en Windows, `eol=lf` en el arnés): un
+  // humo legítimo no puede pasar por evidencia editada.
+  {
+    const f = makeWorkspace();
+    const w = L.append({ dodDir: f.dodDir, gatesLog: f.gatesLog, story: '9.9', acs: [2],
+      v2: { pasaSi: 'responde 422', outputText: 'HTTP/1.1 422\n{"campo":"x"}\n' } });
+    fs.writeFileSync(path.join(f.dodDir, w.output), 'HTTP/1.1 422\r\n{"campo":"x"}\r\n');
+    const r = rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog });
+    check('una salida con sus finales de línea reescritos por git sigue contando', r.perAc[2].verdict === 'RUNTIME',
+      `${r.perAc[2].verdict} ${JSON.stringify(r.warnings)}`);
+  }
+  // Una ruta de salida absoluta o con `..` no se sigue: no cuenta, aunque el archivo exista y su sha coincida.
+  for (const ruta of ['ABS', '../afuera.txt']) {
+    const f = makeWorkspace();
+    const texto = 'HTTP/1.1 422\n';
+    const afuera = path.join(f.ws, 'afuera.txt');
+    fs.writeFileSync(afuera, texto);
+    L.append({ dodDir: f.dodDir, gatesLog: f.gatesLog, story: '9.9', acs: [2],
+      v2: { pasaSi: 'responde 422', output: ruta === 'ABS' ? afuera : ruta, outputSha: L.sha256(texto) } });
+    const r = rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog });
+    check(`una salida con ruta ${ruta === 'ABS' ? 'absoluta' : 'con ..'} no cuenta`,
+      r.perAc[2].verdict !== 'RUNTIME' && r.warnings.some((x) => /salida ausente/.test(x)), r.perAc[2].verdict);
+  }
+  // `--fail-if` editado después de correr: mismo sello que la expectativa.
+  {
+    const f = makeWorkspace();
+    L.append({ dodDir: f.dodDir, gatesLog: f.gatesLog, story: '9.9', acs: [2],
+      v2: { pasaSi: 'responde 422', fallaSi: 'cualquier 5xx', outputText: 'HTTP/1.1 422\n' } });
+    const reg = path.join(f.dodDir, '9.9-smoke-ledger.jsonl');
+    fs.writeFileSync(reg, fs.readFileSync(reg, 'utf8').replace('cualquier 5xx', 'nada'));
+    const r = rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog });
+    check('fail_if editado después de correr no cuenta',
+      r.perAc[2].verdict !== 'RUNTIME' && r.warnings.some((x) => /expectativa cambiada después de correr/.test(x)),
+      r.perAc[2].verdict);
+  }
+  // La CLI del ayudante de pruebas sale con 2 ante un pedido mal armado, sin escribir nada.
+  {
+    const { spawnSync } = require('child_process');
+    const cli = path.join(__dirname, 'lib', 'smoke-ledger-line.js');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rmx-cli-'));
+    const casos = [['--story', '9.9'], ['--dod', dir, '--story', '9.9', '--bogus'], ['--dod', dir, '--story']];
+    const rcs = casos.map((a) => spawnSync(process.execPath, [cli, ...a], { encoding: 'utf8' }).status);
+    check('la CLI del ayudante sale 2 sin --dod, con una opción desconocida o sin valor',
+      rcs.every((x) => x === 2) && fs.readdirSync(dir).length === 0, JSON.stringify(rcs));
   }
 }
 
