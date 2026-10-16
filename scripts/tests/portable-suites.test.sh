@@ -120,7 +120,7 @@ if (SHARD) {
   let shard; let weights;
   try {
     shard = require(path.join(RAIZ, 'scripts', 'ci', 'suites-shard.js'));
-    weights = shard.readWeights(path.join(RAIZ, 'scripts', 'ci', 'suites-weights.json'), 'pr');
+    weights = shard.readWeights(path.join(RAIZ, 'scripts', 'ci', 'suites-weights.json'), 'github');
   } catch (e) {
     console.log(`❌ suites-portables: no pude repartir las portables para la parte ${i} de ${n}: ${String((e && e.message) || e).split('\n')[0]}`); process.exit(1);
   }
@@ -128,7 +128,7 @@ if (SHARD) {
   // assign() devuelve, por parte, los mismos objetos que recibe: cada uno lleva su entrada de suites.json
   const parts = shard.assign(portables.map((e) => ({ name: path.posix.basename(e.ruta), entry: e })), weights, n);
   const mine = parts[i - 1].suites.map((s) => s.entry);
-  console.log(`suites-portables: parte ${i} de ${n} (repartidas por peso con scripts/ci/suites-shard.js, juego pr): ${mine.length} de ${portables.length} portables · ~${Math.round(parts[i - 1].load)} s de peso`);
+  console.log(`suites-portables: parte ${i} de ${n} (repartidas por peso con scripts/ci/suites-shard.js, juego github): ${mine.length} de ${portables.length} portables · ~${Math.round(parts[i - 1].load)} s de peso`);
   if (!mine.length) { console.log(`❌ suites-portables: a la parte ${i} de ${n} no le tocó ninguna portable: cero no es verde (¿más partes que portables?)`); process.exit(1); }
   // primero las más pesadas (a igual peso, en el orden de suites.json)
   portables = mine.map((e, at) => ({ e, at, w: weightOf(e) })).sort((a, b) => (b.w - a.w) || (a.at - b.at)).map((x) => x.e);

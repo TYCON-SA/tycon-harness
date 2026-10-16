@@ -703,7 +703,7 @@ modo público (`TYCON_CLEAN_MACHINE=1` y `TYCON_CLEAN_MACHINE_SOURCE=<raíz>`: p
   trabajos que corren a la vez. `checks` es todo menos las portables; `suites-<i>-of-<n>` es sólo la parte `<i>` de las
   portables, repartidas por peso con `scripts/ci/suites-shard.js` (juego `pr`). `checks` y las `<n>` partes de las
   suites juntas son la corrida entera; una parte sola no es el veredicto, y el resumen lo dice. La CI de GitHub corre
-  así: una matriz Node × parte, con tres partes de las suites, y el job `public-ci` junta todas.
+  así: una matriz Node × parte, con cinco partes de las suites, y el job `public-ci` junta todas.
 - El sexto paso no corre `export-real.test.sh`: es la suite que corre este guion, y adentro de él sería infinita.
 - **El repo lo decide `--root`, no el entorno de quien llama.** El guion saca al arrancar las variables que git le pasa a
   lo que lanza un hook (`GIT_DIR`, `GIT_INDEX_FILE`, `GIT_WORK_TREE`, `GIT_COMMON_DIR`…): con ellas puestas listaría los
