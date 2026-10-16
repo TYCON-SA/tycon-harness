@@ -286,18 +286,18 @@ skill, which sets up a new product (backend, forms and stories repos, with pipel
 staging and, with approval, to production) from the templates in `packs/bizuit/new-product-templates/`. **What else it needs**: the
 .NET SDK your plugin targets.
 
-**It comes turned off.** The repo carries it, but a product repo only uses it if it asks for it in its
-`.tycon/advisors.yaml` with `packs: [bizuit]`, or if your machine turns it on for every repo (`TYCON_PACKS_DEFAULT=all`,
-or `packs.default` in `~/.claude/tycon.json`). If you don't use it, ignore it. To ask for it from a product repo, run
-this from the root of that repo (if the file already has a `packs:` key, edit that line instead):
+**It comes turned off.** The repo carries it, but your organization turns it on: `packs.default` in the team profile
+(or in the site's Configuration tab, Packs section), or your machine (`TYCON_PACKS_DEFAULT`, or `packs.default` in
+`~/.claude/tycon.json`). It takes `all`, `none` or a list (`bizuit`). A product repo can narrow that list with `packs:`
+in its `.tycon/advisors.yaml`, not add to it. If you don't use it, ignore it. To turn it on on your machine:
 
 <!-- install:bizuit -->
 ```bash
-mkdir -p .tycon && printf 'packs: [bizuit]\n' >> .tycon/advisors.yaml
+node ~/.claude/tycon-harness/scripts/lib/tycon-config.js set packs.default bizuit
 ```
 
 ```powershell
-New-Item -ItemType Directory -Force .tycon | Out-Null; Add-Content .tycon/advisors.yaml 'packs: [bizuit]'
+node "$HOME/.claude/tycon-harness/scripts/lib/tycon-config.js" set packs.default bizuit
 ```
 <!-- /install:bizuit -->
 

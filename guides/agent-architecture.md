@@ -214,6 +214,12 @@ hallazgos. El paquete hace explícito quién decide que corran, y el pipeline lo
   de sus reglas en el catálogo. **`needsStory`**: recibe la story completa además del contexto.
 - **`siblings`** (opcional, `[{ path, name }]`): los plugins hermanos que el banco de revisores fabrica en
   su corral para el revisor de hermanos.
+- **`skills`** y **`agents`** (opcionales): carpetas DEL PAQUETE (relativas a su carpeta, sin salir de ella) con sus
+  skills y sus agentes. Una carpeta declarada que no existe es un paquete roto. Un revisor se busca primero en `agents`
+  del paquete y después en `agents/` de la raíz; el mismo nombre en los dos lugares es un paquete roto. Las skills y los
+  agentes de un paquete se enlazan en la máquina (`~/.claude/skills`, `~/.claude/agents`, `~/.codex/skills`) sólo si la
+  organización lo activa, uno por entrada, con las reglas de siempre (lo propio gana y se nombra); si deja de activarlo,
+  el aplicador saca sus enlaces y lo dice en una línea. Lector: `scripts/lib/pack-pieces.js`.
 - El `name` tiene que coincidir con la carpeta. Un mismo agente puede estar en dos grupos del mismo
   paquete (hermanos: `condicional` y `validacion`), nunca en dos paquetes ni repetido con el núcleo.
 - **Las claves estaban antes en castellano.** Un paquete de afuera
@@ -231,21 +237,27 @@ hallazgos. El paquete hace explícito quién decide que corran, y el pipeline lo
   máquina sin agent-skills) y se ve en la salida. En cambio, una `TYCON_PACKS_DIR` **definida** que
   apunta a una carpeta inexistente FRENA: es configuración rota, no «sin paquetes». El lector del
   arnés (`installed-packs.js`) sigue el mismo criterio.
-- Un repo puede fijar la lista **exacta** de paquetes activos con `packs: [bizuit]` en
-  `.tycon/advisors.yaml`; sin la clave, los activa la configuración del arnés: `packs.default` de
-  `scripts/lib/tycon-config.js` (`all`, todos los instalados; `none`, ninguno — variable `TYCON_PACKS_DEFAULT`
-  › el perfil del equipo › el archivo de la máquina › `none`). En esta clave el perfil del equipo gana sobre lo
-  que la máquina eligió al instalar: quien quiera otra cosa en una máquina del equipo usa la variable, o `packs:`
-  en el repo. El perfil del equipo dice `all`: en el equipo no
-  cambia nada; afuera, sin perfil, el paquete del stack viene apagado y vale lo que diga el archivo de la máquina. Una configuración rota o
-  un arnés que no se encuentra FRENAN como un paquete roto; un arnés que todavía no trae `packs.default` da «todos», como antes.
-  `pipeline.js lint-config` avisa si nombra uno que no está.
+- **Qué paquetes están activos lo decide la organización**: `packs.default` de `scripts/lib/tycon-config.js`
+  (`all`, todos los instalados; `none`, ninguno; o una lista, `["bizuit", "clients"]`, exactamente ésos — variable
+  `TYCON_PACKS_DEFAULT` (la lista, separada por comas) › el perfil del equipo › el archivo de la máquina › `none`). Se
+  edita en la pestaña Configuración del sitio, sección «Paquetes», o en el perfil del equipo. En esta clave el perfil
+  del equipo gana sobre lo que la máquina eligió al instalar: quien quiera otra cosa en una máquina del equipo usa la
+  variable. El perfil del equipo dice `all`: en el equipo no cambia nada; afuera, sin perfil, ningún paquete viene
+  activo. Uno de la lista que no está instalado frena nombrando la carpeta donde se buscó. Una configuración rota o un
+  arnés que no se encuentra FRENAN como un paquete roto; un arnés que todavía no trae `packs.default` da «todos», como
+  antes.
+- Un repo puede **achicar** esa lista con `packs: [bizuit]` en `.tycon/advisors.yaml` (`packs: []`: ninguno, a
+  propósito), nunca sumar. **Cambio de comportamiento**: con `packs.default none`, un repo que declara un paquete
+  instalado ya no lo activa; frena con «activalo en Configuración del sitio, sección Paquetes, o en el perfil del
+  equipo». Qué paquetes usa una organización lo decide su configuración, no cada repo. `pipeline.js lint-config` avisa si nombra uno que no está instalado.
 
 ### Lo que FRENA (exit 2, nombrando archivo · revisor · motivo)
 
 Manifiesto ilegible · clave fuera del vocabulario · bandera que `detectStack` no produce · agente sin
 `.md` en la carpeta de agentes · revisor ya declarado por el núcleo o por otro paquete · paquete que el
-repo nombra y no está instalado (dice dónde lo buscó) · `TYCON_PACKS_DIR` definida hacia una carpeta
+repo nombra y no está instalado (dice dónde lo buscó) · paquete que el repo nombra y la organización no
+activó (dice dónde se activa) · carpeta `skills`/`agents` declarada que no existe · agente repetido en el paquete y en
+la raíz · `TYCON_PACKS_DIR` definida hacia una carpeta
 que no existe. Frenan `advisors`, `smart-reloop`, `check-count`
 y `validadores`. **Nunca se degrada a «sin ese paquete»**: eso es exactamente la falla que los paquetes
 existen para impedir. Cargador: `skills/tycon-pipeline/scripts/lib/packs.js`.

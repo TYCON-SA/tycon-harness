@@ -104,7 +104,7 @@ const APPLIER_TIMEOUT_MS = 15 * 60 * 1000;
 
 // La tabla cerrada: subcomando → opciones (flag | value) y, si acepta, los valores sueltos (positional).
 const COMMANDS = {
-  install:   { opts: { '--channel': 'value', '--local': 'value', '--from-existing': 'flag', '--source': 'value', '--dry-run': 'flag', '--yes': 'flag', '--profile': 'value', '--integrations': 'value', '--packs': 'value', '--harness-clone': 'value', '--version': 'value', '--repo': 'value', '--tool': 'list', '--team': 'value' }, help: 'primera instalación desde un clon: pregunta lo que no puede decidir solo (con terminal), muestra el plan y pide conformidad (--dry-run sólo lo muestra; --yes lo acepta sin terminal pero no elige; --profile minimal|full elige cuánto se instala; --integrations <lista|none> y --packs all|none contestan las otras dos preguntas; --harness-clone <clon> dice de qué clon interno se lee la capa privada); después enlace, estado, copia fija de arranque, línea de arranque, @import, aplicador. --version <número|latest> (story 8.23, tanda B): en una máquina SIN arnés, baja esa versión publicada de GitHub como archivos verificados a ~/.tycon/harness, sin git (--repo <org/nombre> si el árbol no declara el repo). --tool claude|codex (repetible; story 8.23, tanda C): qué herramientas enchufar; sin la opción, las que detecta en la máquina (el plan las nombra). --team <org>/<repo> (story 8.25): baja también la capa del equipo —el perfil y la llave del buzón— de ese repo privado, con el mismo permiso, y la apila sobre la versión bajada; el estado la recuerda y update la lleva a cada versión nueva' },
+  install:   { opts: { '--channel': 'value', '--local': 'value', '--from-existing': 'flag', '--source': 'value', '--dry-run': 'flag', '--yes': 'flag', '--profile': 'value', '--integrations': 'value', '--packs': 'value', '--harness-clone': 'value', '--version': 'value', '--repo': 'value', '--tool': 'list', '--team': 'value' }, help: 'primera instalación desde un clon: pregunta lo que no puede decidir solo (con terminal), muestra el plan y pide conformidad (--dry-run sólo lo muestra; --yes lo acepta sin terminal pero no elige; --profile minimal|full elige cuánto se instala; --integrations <lista|none> y --packs all|none|<a,b> contestan las otras dos preguntas; --harness-clone <clon> dice de qué clon interno se lee la capa privada); después enlace, estado, copia fija de arranque, línea de arranque, @import, aplicador. --version <número|latest> (story 8.23, tanda B): en una máquina SIN arnés, baja esa versión publicada de GitHub como archivos verificados a ~/.tycon/harness, sin git (--repo <org/nombre> si el árbol no declara el repo). --tool claude|codex (repetible; story 8.23, tanda C): qué herramientas enchufar; sin la opción, las que detecta en la máquina (el plan las nombra). --team <org>/<repo> (story 8.25): baja también la capa del equipo —el perfil y la llave del buzón— de ese repo privado, con el mismo permiso, y la apila sobre la versión bajada; el estado la recuerda y update la lleva a cada versión nueva' },
   // `freeAfter: 2` (story 8.23, tanda G · AC 43): después del verbo y la clave, un valor suelto (`config set paths.maintained <ruta>`);
   // el secreto no va por ahí (cmdConfig lo rechaza con el motivo)
   // las claves de la tabla salen de github-auth.js (KEYS): una clave que cmdConfig acepta y la tabla no, se rechaza antes de llegar
@@ -462,6 +462,18 @@ function ensureHarnessNode(ctx, tree, log) {
     const notice = `el arnés corre con el Node del PATH (${process.version}): no pude bajar su Node propio (no se pudo mirar: ${e.message}) — harness.js doctor lo detalla`;
     return { result: { status: 'failed', reason: e.message, notice }, env: ctx.env };
   }
+}
+
+/**
+ * La línea con que el aplicador dice que sacó las skills y agentes de un paquete que la organización no activa, sin su
+ * marca, o null. La salida del aplicador no llega a la persona: esta línea sí (en la salida de `update` y en el aviso del
+ * arranque), porque una pieza que desaparece sin que nadie lo diga es exactamente lo que no puede pasar.
+ */
+// la frase la arma y la reconoce scripts/lib/pack-pieces.js (una sola fuente); sin esa biblioteca, la misma frase
+const PACK_RETIRED_RX = (() => { try { return require(path.join(__dirname, '..', 'lib', 'pack-pieces.js')).RETIRED_RX; } catch (_) { return /pieza\(s\) de paquete\(s\) que la organización no activa/; } })();
+function packRetiredLine(a) {
+  const l = String((a && a.out) || '').split('\n').find((x) => PACK_RETIRED_RX.test(x));
+  return l ? l.replace(/^(?:\(--check\) )?✓ tycon: /, '').trim() : null;
 }
 
 /** `notice` con el aviso del Node del arnés de ESTE arranque al final (el de uno anterior no se arrastra). */
@@ -911,7 +923,7 @@ function installPlan(ctx, { pinned = null } = {}) {
  * Las preguntas de la instalación y las opciones que las contestan (story 8.16, tanda D · AC 30 a 33), ANTES del plan y
  * sin escribir nada: lo que se contesta se escribe recién después de la conformidad (`writeAnswers`).
  *
- *   · `--integrations <lista|none>` y `--packs <all|none>` se validan primero (un valor inválido, o uno que contradice a
+ *   · `--integrations <lista|none>` y `--packs <all|none|a,b>` se validan primero (un valor inválido, o uno que contradice a
  *     su variable de entorno, sale 2 sin preguntar nada);
  *   · el perfil se pregunta en una PRIMERA instalación cuando nadie lo dijo (ni `--profile`, ni variable, ni archivo, ni
  *     perfil del equipo): con terminal, sin valor por defecto; sin terminal sale 2 con las dos opciones, también con
@@ -946,7 +958,8 @@ function installQuestions(ctx, tree, existing) {
   // (1) las opciones, antes de preguntar nada
   const wantI = Q.checkIntegrationsOption(ctx.opts.integrations, keys);
   if (wantI && wantI.error) return fail(wantI.error);
-  const wantP = Q.checkPacksOption(ctx.opts.packs);
+  const installedPacks = (() => { try { const PP = require(path.join(tree, 'scripts', 'lib', 'pack-pieces.js')); return PP.listPacks(PP.packsDirOf(tree)).packs.map((x) => x.name); } catch (_) { return null; } })();
+  const wantP = Q.checkPacksOption(ctx.opts.packs, installedPacks);
   if (wantP && wantP.error) return fail(wantP.error);
   const desiredI = {};   // integración → true/false (lo pedido)
   if (wantI) for (const k of keys) desiredI[k] = wantI.names.includes(k);
@@ -957,8 +970,8 @@ function installQuestions(ctx, tree, existing) {
       return fail(`--integrations ${ctx.opts.integrations} y la variable ${vars[ruta]}=${ctx.env[vars[ruta]]} dicen cosas distintas de ${k}: la variable le ganaría a lo que escriba (sacala, o cambiá --integrations)`);
     }
   }
-  if (wantP && o['packs.default'] === 'env' && v.packs.default !== wantP.value) {
-    return fail(`--packs ${wantP.value} y la variable ${vars['packs.default']}=${v.packs.default} dicen cosas distintas: la variable le ganaría a lo que escriba (sacala, o pedí --packs ${v.packs.default})`);
+  if (wantP && o['packs.default'] === 'env' && !Q.samePacks(v.packs.default, wantP.value)) {
+    return fail(`--packs ${Q.packsText(wantP.value)} y la variable ${vars['packs.default']}=${Q.packsText(v.packs.default)} dicen cosas distintas: la variable le ganaría a lo que escriba (sacala, o pedí --packs ${Q.packsText(v.packs.default)})`);
   }
 
   // (2) el perfil
@@ -1025,11 +1038,11 @@ function installQuestions(ctx, tree, existing) {
   let packsNote = null;
   // (sólo puede venir de `--packs`: la pregunta de los paquetes no se hace cuando el perfil los fija, porque se pregunta
   // nada más que con el origen `default`)
-  if (wantP && v.packs.default !== packsWant && packsByProfile) {
-    packsNote = `paquete del stack: el perfil del equipo lo fija en ${v.packs.default} — --packs ${packsWant} no se escribe (para cambiarlo en esta máquina: la variable ${VAR('packs.default')})`;
-  } else if (packsWant && v.packs.default !== packsWant && o['packs.default'] !== 'env') {
+  if (wantP && !Q.samePacks(v.packs.default, packsWant) && packsByProfile) {
+    packsNote = `paquete del stack: el perfil del equipo lo fija en ${Q.packsText(v.packs.default)} — --packs ${Q.packsText(packsWant)} no se escribe (para cambiarlo en esta máquina: la variable ${VAR('packs.default')})`;
+  } else if (packsWant && !Q.samePacks(v.packs.default, packsWant) && o['packs.default'] !== 'env') {
     const via = wantP ? '--packs' : 'respuesta';
-    out.writes.push({ key: 'packs.default', ruta: 'packs.default', value: packsWant, via, had: o['packs.default'] === 'maquina', envVar: VAR('packs.default'), envValue: packsWant });
+    out.writes.push({ key: 'packs.default', ruta: 'packs.default', value: packsWant, via, had: o['packs.default'] === 'maquina', envVar: VAR('packs.default'), envValue: Q.packsText(packsWant) });
     out.over['packs.default'] = { value: packsWant, via };
   }
   out.head = Q.configLines(config, out.over, out.order);
@@ -1631,7 +1644,7 @@ function releaseHelpers(ctx) {
     takeSnapshot, finishSnapshot, runApplier, noteHooksPath, hooksPathUnattended, runHealth, recordPieces, ensureLink, linkResolvesTo, ensureImport, copyBootstrap,
     settingsPath, policyOf, applyPolicy, installQuestions, writeAnswers, profileOf, machineProfile, holdText, availableText,
     applyHint, REEVALUATED_NOTICE, engramOn, missingRequirement, profileSwitch, dropForProfile, profileSwitchNotes, toolChoice, withAnswers, toolNotice,
-    harnessNodeNotice,
+    harnessNodeNotice, packRetiredLine,
     engramSync: (c) => {
       if (!findInPath('engram', c.env)) return;
       const e = spawnSync('engram', ['sync', '--import'], { windowsHide: true, encoding: 'utf8', env: c.env, timeout: 60000, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -2767,6 +2780,7 @@ function doUpdate(ctx, state, { mode = 'apply', log = null, snapshot = null, per
   try { S.write(ctx.home, state); } catch (e) { if (log) log(`update: no pude grabar el estado antes de la salud (${e.message})`); }
   const done = finishHealth(ctx, state, { snap, ownSnap, rec, before, after, tips, report: applier.report, applierOut: applier.out, log, moved });
   if (done.status === 'applied' && layerMoves.length) done.lines = [done.lines[0], ...layerLines, ...layerNotes, ...done.lines.slice(1)];
+  if (done.status === 'applied') { const pl = packRetiredLine(applier); if (pl) { done.lines.push(pl); if (log) log(`update: ${pl}`); } }
   return done;
 }
 
@@ -2964,7 +2978,12 @@ function cmdStartup(ctx) {
           // aplicarla y dónde ver los cambios (también es la única línea de este arranque, como desde la tanda A)
           const text = availableText(state, policy, u);
           notice = notice || text; log(`startup: ${text}`); line = text;
-        } else if (u.status === 'applied') { line = u.lines[0]; log(`startup: ${u.lines.join(' · ')}`); }
+        } else if (u.status === 'applied') {
+          line = u.lines[0]; log(`startup: ${u.lines.join(' · ')}`);
+          // las piezas de un paquete que salieron: se le dicen a la persona en la sesión siguiente
+          const pl = u.lines.find((l) => PACK_RETIRED_RX.test(l));
+          if (pl) notice = notice ? `${notice} · ${pl}` : pl;
+        }
         else if (u.status === 'up_to_date') { if (u.older) log(`startup: ${u.lines.join(' · ')}`);   /* si no, nada que decir */ }
         else if (u.status === 'failed') { notice = notice || state.notice; line = u.lines[0]; log(`startup: ${u.lines.join(' · ')}`); }
         else if (u.status === 'held' || u.status === 'skipped') log(`startup: ${u.lines.join(' · ')}`);   // el aviso sale del estado, abajo
@@ -2996,6 +3015,7 @@ function cmdStartup(ctx) {
       const dropped = sw.switching ? dropForProfile(ctx, state, tree, a, (l) => log(`startup: ${l}`), sw.profile.value) : true;
       if (sw.switching) profileSwitchNotes(dropped).forEach((n) => log(`startup: ${n}`));
       recordPieces(ctx, state, a.report, a.shared);
+      { const pl = packRetiredLine(a); if (pl) { log(`startup: ${pl}`); notice = notice ? `${notice} · ${pl}` : pl; } }
       // el `@import` del índice: si falta (una vuelta atrás de otra versión lo quitó, 2026-10-07), se repone acá, en cada
       // arranque, como la pieza propia que es; nadie más lo reponía y la máquina quedaba sin las guías cargadas. Con una
       // forma vieja (el README.md que era el índice), la pasa a la de hoy
@@ -3831,6 +3851,29 @@ function doctorConfigItems(ctx, tree, state, prof, add, extra) {
       if (config.valores.packs) extra.packs = { value: config.valores.packs.default, origin: config.origenes['packs.default'] };
     }
   } catch (e) { add('warn', `integraciones y paquete: no pude leer la configuración (${(e && e.message) || e})`); }
+  // los paquetes del árbol: cuáles activa la organización y cuántas de sus skills y agentes están enlazados (story 8.41)
+  const ppLib = path.join(tree, 'scripts', 'lib', 'pack-pieces.js');
+  if (fs.existsSync(ppLib)) {
+    try {
+      const PP = require(ppLib);
+      const { packs, errores } = PP.listPacks(PP.packsDirOf(tree));
+      for (const e of errores) add('warn', `paquete roto: ${e.archivo} (${e.motivo}) — sus skills y agentes no se enlazan`);
+      if (packs.length) {
+        const org = PP.orgActive({ tree, home: ctx.home, env: ctx.env });
+        if (org.error) add('warn', `paquetes: ${org.error}`);
+        else {
+          // la misma lista que enlaza el aplicador (sin los nombres repetidos, que se dicen aparte); un enlace duro cuenta
+          const pz = PP.piecesOf({ packsDir: PP.packsDirOf(tree), agentsDir: path.join(tree, 'agents'), coreSkillsDir: path.join(tree, 'skills'), names: org.names });
+          for (const e of pz.errores) if (!errores.some((x) => x.archivo === e.archivo && x.motivo === e.motivo)) add('warn', `paquetes: ${e.motivo}`);
+          const linked = (side, list) => list.filter((x) => PP.linkedTo(path.join(ctx.home, '.claude', side, x.name), x.src)).length;
+          const s = linked('skills', pz.skills); const a = linked('agents', pz.agents);
+          const faltan = (pz.skills.length - s) + (pz.agents.length - a);
+          extra.pack_pieces = { active: org.names, skills: pz.skills.length, agents: pz.agents.length, missing: faltan };
+          add(faltan ? 'warn' : 'ok', `paquetes activos: ${org.names.join(', ') || 'ninguno'} (packs.default ${PP.valueText(org.value)}, ${org.origin}) · enlazadas ${s} de ${pz.skills.length} skills y ${a} de ${pz.agents.length} agentes${faltan ? ` — faltan ${faltan}: harness.js apply los enlaza` : ''}`);
+        }
+      }
+    } catch (e) { add('warn', `paquetes: no pude mirarlos (${(e && e.message) || e})`); }
+  }
   try {
     const M = mod('managed'), SL = mod('startup-line');
     const eff = M.readEffects(tree);

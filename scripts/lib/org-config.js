@@ -45,6 +45,9 @@ const SECCIONES = Object.freeze([
   Object.freeze({ id: 'sitio', titulo: 'El sitio: los que mantienen, el buzón, el refresco, la dirección', archivo: 'operations.json', repo: 'operaciones', lector: 'operations-config.js', claves: ['site'], idCorto: 'operations', necesita: ['site'] }),
   Object.freeze({ id: 'umbrales', titulo: 'Umbrales', archivo: 'scripts/nightly/dashboard/sources.json', repo: 'operaciones', lector: 'thresholds', claves: ['thresholds'], idCorto: 'thresholds', necesita: [] }),
   Object.freeze({ id: 'paridad', titulo: 'Paridad: las diferencias declaradas', archivo: 'scripts/ci/product-parity.json', repo: 'operaciones', lector: 'check-product-parity.js', claves: ['diferencias_declaradas'], idCorto: 'parity', necesita: [] }),
+  // qué paquetes activa la organización (`packs.default`: all, none o una lista). El perfil se llama team-profile.json; un
+  // repo del perfil que todavía usa el nombre de antes se lee y se propone con ése (`archivoViejo`)
+  Object.freeze({ id: 'paquetes', titulo: 'Paquetes', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['packs'], idCorto: 'packs', necesita: ['packs'] }),
 ]);
 const seccionPorId = (id) => SECCIONES.find((s) => s.id === id) || null;
 
@@ -52,6 +55,13 @@ const seccionPorId = (id) => SECCIONES.find((s) => s.id === id) || null;
 function loadReader(tree, nombre, lectores) {
   if (lectores && Object.prototype.hasOwnProperty.call(lectores, nombre)) return lectores[nombre];
   if (nombre === 'thresholds') return { parse: (t, o) => thresholdsParse(t, o) };
+  // el lector de la configuración del arnés (el perfil del equipo): lo ubica pack-pieces.js, que lo carga a su lado
+  if (nombre === 'harness-config') {
+    const f = path.join(tree, 'scripts', 'lib', 'pack-pieces.js');
+    if (!fs.existsSync(f)) return null;
+    const r = require(f).configReader();
+    return r && typeof r.parse === 'function' ? r : null;
+  }
   const carpeta = nombre === 'check-product-parity.js' ? 'ci' : 'lib';
   const f = path.join(tree, 'scripts', carpeta, nombre);
   if (!fs.existsSync(f)) return null;
@@ -108,6 +118,25 @@ function profileGateProblem(layerText) {
   const m = /^>=\s*(\S+)$/.exec(req.trim());
   if (m && versionAtLeast(m[1], TEAM_REPOS_SINCE)) return null;
   return `todavía no se puede proponer: el perfil pide «${req || 'nada'}» en team-layer.json, y una máquina con una versión anterior a la ${TEAM_REPOS_SINCE} rechazaría la capa entera si trae team-repos.json. Primero se sube requires.harness a «>= ${TEAM_REPOS_SINCE}» (o más)`;
+}
+
+/**
+ * `null` si el valor de `packs.default` que se propone lo leen todas las máquinas del perfil; si no, el motivo. `all` y
+ * `none` los lee cualquier versión. Una LISTA la lee sólo un arnés que la conoce: el perfil tiene que pedir
+ * (`requires.harness` de team-layer.json) al menos la versión del sitio, que sí la conoce. Sin la versión del sitio no se
+ * puede saber: no se propone.
+ */
+function packsListGateProblem({ layerText, versionImagen, valor }) {
+  if (!Array.isArray(valor)) return null;
+  if (!versionImagen) return 'no sé la versión de este sitio, y una lista de paquetes sólo la lee un arnés que la conoce: se propone a mano';
+  let decl;
+  try { decl = JSON.parse(String(layerText)); } catch (e) {
+    return `no pude leer team-layer.json del perfil (${(e && e.message) || e}), y sin él no sé qué versión del arnés piden las máquinas`;
+  }
+  const req = String(((decl || {}).requires || {}).harness || '');
+  const m = /^>=\s*(\S+)$/.exec(req.trim());
+  if (m && versionAtLeast(m[1], versionImagen)) return null;
+  return `una lista de paquetes sólo la lee un arnés que la conoce: el perfil pide «${req || 'nada'}» en team-layer.json; primero se sube requires.harness a «>= ${versionImagen}» (o más), o se propone all o none`;
 }
 
 // ── los umbrales ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -243,7 +272,8 @@ function revisar({ seccion, texto, borrador, lectores = {}, arnes = null, hoy = 
   const lector = lectores[s.lector] || loadReader(tree || '', s.lector, lectores);
   if (!lectorSabe(lector, s)) return { ok: false, problems: [{ path: '', message: `esta versión del arnés todavía no sabe leer ${s.archivo}${s.claves ? ` → ${s.claves.join(', ')}` : ''}`, sinCampo: true }], texto: null };
   const ajenas = clavesAjenas(s, borrador);
-  const base = actual || (s.archivo === 'operations.json' ? { version: 1, owners: { default: '' } } : { version: 1 });
+  // un archivo que todavía no existe nace con lo mínimo que su lector pide (el perfil del equipo, vacío)
+  const base = actual || (s.archivo === 'operations.json' ? { version: 1, owners: { default: '' } } : s.id === 'paquetes' ? {} : { version: 1 });
   let doc = aplicarSeccion(base, s, borrador);
   // lo que el borrador trae fuera de la sección se pone igual: el lector lo rechaza con su ruta, y eso va arriba
   for (const k of ajenas) doc[k] = clone(borrador[k]);
@@ -649,7 +679,21 @@ function pantalla() {
     if (v.definicion) box.appendChild(el('details', { class: 'mas-info' }, el('summary', { text: 'Qué se compara (se cambia en el repo, no acá)' }), el('pre', { text: JSON.stringify(v.definicion, null, 2) })));
     return box;
   }
-  var EDITORES = { repos: editorRepos, responsables: editorResponsables, despliegues: editorDespliegues, canal: function (s, d, pr) { return editorGenerico(s, d, pr, 'notify', 'El canal, como texto'); }, personas: editorPersonas, sitio: editorSitio, umbrales: editorUmbrales, paridad: editorParidad };
+  function editorPaquetes(s, d, pr) {
+    var box = el('div', {});
+    var ex = s.extras || {};   // los paquetes de la versión del sitio y los que activa el valor de hoy
+    box.appendChild(el('p', { class: 'muted', text: 'Instalados en esta versión: ' + ((ex.instalados || []).join(', ') || 'ninguno') + ' · activos para la organización: ' + ((ex.activos || []).join(', ') || 'ninguno') }));
+    d.packs = d.packs || {};
+    var actual = Array.isArray(d.packs.default) ? d.packs.default.join(', ') : (d.packs.default || '');
+    box.appendChild(el('div', { class: 'fila' }, el('span', { class: 'k', text: 'packs.default' }),
+      campo('valor (all, none o la lista separada por comas)', actual, function (v) {
+        var t = String(v).trim();
+        if (t === '') delete d.packs.default;
+        else d.packs.default = (t === 'all' || t === 'none') ? t : t.split(',').map(function (x) { return x.trim(); });
+      }, 'packs.default', pr)));
+    return box;
+  }
+  var EDITORES = { paquetes: editorPaquetes, repos: editorRepos, responsables: editorResponsables, despliegues: editorDespliegues, canal: function (s, d, pr) { return editorGenerico(s, d, pr, 'notify', 'El canal, como texto'); }, personas: editorPersonas, sitio: editorSitio, umbrales: editorUmbrales, paridad: editorParidad };
 
   function revisarSeccion(s, borrador) {
     return api('/revisar', { seccion: s.id, borrador: borrador === undefined ? S.borradores[s.id] : borrador }).then(function (r) {
@@ -783,7 +827,7 @@ function pantalla() {
 }
 
 module.exports = {
-  SECCIONES, seccionPorId, loadReader, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, versionAtLeast, profileGateProblem,
+  SECCIONES, seccionPorId, loadReader, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, versionAtLeast, profileGateProblem, packsListGateProblem,
   thresholdsParse, aplicarSeccion, revisar, versionesDeMaquinas, paridadPorProducto, ramaDePropuesta, tituloDePropuesta, cuerpoDePropuesta, pantalla,
   SIN_NOTICIAS_DIAS,
 };

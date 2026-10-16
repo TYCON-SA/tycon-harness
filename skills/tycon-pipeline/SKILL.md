@@ -41,8 +41,8 @@ Matriz de triggers: `computeAdvisorSet()` de `pipeline.js` (única fuente). Deta
   `packs: []` se dice explícito) y el total N. Sin anuncio → bug. Ningún advisor se omite
   "porque no parece necesario" (E.i).
 - **Paquetes de revisores**: los revisores de un producto o de un cliente no viven en el
-  código del pipeline sino en `packs/<nombre>/pack.json` (agent-skills, o `TYCON_PACKS_DIR`); el repo
-  puede fijar la lista exacta con `packs:` en `.tycon/advisors.yaml`. Un manifiesto roto, un agente
+  código del pipeline sino en `packs/<nombre>/pack.json` (agent-skills, o `TYCON_PACKS_DIR`); los activa
+  la organización (`packs.default`) y el repo puede achicar la lista con `packs:`. Un manifiesto roto, un agente
   inexistente o un paquete nombrado y no instalado FRENAN `advisors`/`smart-reloop`/`validators`
   (exit 2 con archivo · revisor · motivo): nunca se sigue «sin ese paquete». Los revisores de
   validación de «Validar la story» salen de `pipeline.js validators`. Formato y detalle:
@@ -235,8 +235,8 @@ El script escribe `<story-id>-e2e-gate-<ts>.md` con `## Playwright Run`; exit 0 
 solos — no son verdes), 3 = el stack no levantó. Resolver:
 `pipeline.js e2e-config --repo <r> [--changed <archivos>]`.
 
-`packs: [bizuit]` en el mismo archivo fija la lista EXACTA de paquetes de revisores
-activos en el repo; sin la clave, están activos todos los instalados. `pipeline.js lint-config` avisa
+`packs: [bizuit]` en el mismo archivo achica la lista que activa la organización
+(`packs.default`); uno no activado frena. `pipeline.js lint-config` avisa
 si nombra uno que no está instalado.
 
 ## Flujo

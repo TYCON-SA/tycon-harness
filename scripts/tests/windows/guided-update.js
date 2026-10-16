@@ -33,6 +33,7 @@ const T = require('./team-lab.js');
 const TL = require('./toy-lab.js');
 const RP = require('./release-photo.js');
 const GI = require('./guided-install.js');
+const PZ = require('./pieces.js');
 
 const NAME = 'update';
 const VARIANTS = Object.freeze([
@@ -41,7 +42,29 @@ const VARIANTS = Object.freeze([
   { id: 'ask', home: ['users', 'update-ask'], team: false, pwsh_after: true, what: 'sin la capa del equipo: avisa y pregunta' },
   // (la carpeta no se llama como la variante a propósito: su ruta aparece en lo que imprimen los hooks, y ahí se busca «pwsh»)
   { id: 'pwsh-missing', home: ['users', 'update-without-ps7'], team: true, pwsh_after: false, what: 'instalada con PowerShell 7 y con la capa; después pwsh no está en el PATH' },
+  // sin la capa y sin ningún paquete activo, con la política de aplicar sola elegida en la máquina
+  { id: 'no-pack', home: ['users', 'update-no-pack'], team: false, pwsh_after: true, apply_alone: true, what: 'sin la capa ni paquetes activos, con «aplicar sola» elegido en la máquina' },
 ]);
+/**
+ * La mudanza de juguete que trae la versión nueva: la de antes tiene una skill y un agente en el núcleo; la
+ * nueva los tiene dentro de un paquete. Con un paquete activo la máquina no pierde nada; sin ninguno, salen ellos dos (y
+ * sólo ellos), y se dice en una línea. Nombres inventados.
+ */
+const MOVED = Object.freeze({ skill: 'lab-mudada', agent: 'rev-lab-mudado', pack: 'lab-mudanza' });
+const movedSkill = `---\nname: ${MOVED.skill}\ndescription: skill de juguete que se muda a un paquete (ensayo)\n---\nUsala para probar.\n`;
+const movedAgent = `---\nname: ${MOVED.agent}\ndescription: revisor de juguete que se muda a un paquete (ensayo)\nmodel: sonnet\ntools: Read\n---\n\nRevisa cosas de juguete.\n`;
+/** Los cambios de la versión de antes (`before`) o de la nueva (`after`), para `toy-lab.publish`. */
+function moveChanges(stage) {
+  const P = `packs/${MOVED.pack}`;
+  if (stage === 'before') return [{ rel: `skills/${MOVED.skill}/SKILL.md`, text: movedSkill }, { rel: `agents/${MOVED.agent}.md`, text: movedAgent }, { rel: P, remove: true }];
+  return [
+    { rel: `skills/${MOVED.skill}`, remove: true }, { rel: `agents/${MOVED.agent}.md`, remove: true },
+    { rel: `${P}/pack.json`, text: `${JSON.stringify({ name: MOVED.pack, description: 'paquete de juguete de la mudanza (ensayo)', skills: 'skills', agents: 'agents', reviewers: [{ agent: MOVED.agent, group: 'condicional', when: { files: '^lab-nunca/' }, surface: { paths: ['lab-nunca/**'] }, depth: 'standard', prefixes: ['LABM'] }] }, null, 2)}\n` },
+    { rel: `${P}/skills/${MOVED.skill}/SKILL.md`, text: movedSkill }, { rel: `${P}/agents/${MOVED.agent}.md`, text: movedAgent },
+  ];
+}
+/** La línea con que el aplicador dice que sacó las piezas de un paquete que la organización no activa. */
+const PACK_LINE = /pieza\(s\) de paquete\(s\) que la organización no activa/;
 // con qué pasos de la página se instala la versión de antes (lo demás del alta lo mide el paso del alta)
 const INSTALL_STEPS = Object.freeze(['download', 'install', 'git-hooks']);
 // en qué orden se abren las sesiones de la variante que aplica sola: [nombre, forma de lanzar]. La cuarta está para
@@ -164,6 +187,28 @@ function judgeReached(read, when, { expected, sessions = 0 } = {}) {
   return { number, reached, by_hand: reached === false, findings };
 }
 
+/**
+ * La lista de piezas antes y después: `{ before, after, before_text, after_text, diff, findings }`.
+ * Con un paquete activo (`packActive`) la máquina no pierde ninguna pieza; sin ninguno, salen exactamente la skill y el
+ * agente de la mudanza de juguete (`MOVED`), y la máquina lo dice en UNA línea (`packLine`). Cualquier otra pieza que
+ * salga, una que tendría que haber salido y quedó, o la línea que falta o se repite, es un hallazgo.
+ */
+function judgePieces({ before, after, renames = {}, packActive, packLine }) {
+  const findings = [];
+  if (!before || !after) return { before: before || null, after: after || null, diff: null, findings: [{ id: 'pieces:not-measured', severity: T.SEVERITY.loses, kind: 'pieces', detail: 'no se pudo tomar la lista de piezas de antes o de después' }] };
+  const diff = PZ.compare(before, after, { renames });
+  const moved = [`skills/${MOVED.skill}`, `agents/${MOVED.agent}.md`];
+  const key = (x) => `${x.kind}/${x.name}`;
+  const expectedLost = packActive ? [] : moved;
+  const lostBeyond = diff.lost.filter((x) => !expectedLost.includes(key(x)));
+  if (lostBeyond.length) findings.push({ id: 'pieces:lost', severity: T.SEVERITY.loses, kind: 'pieces', detail: `después de actualizar la máquina no tiene ${lostBeyond.map(key).join(', ')}` });
+  const kept = expectedLost.filter((k) => !diff.lost.some((x) => key(x) === k));
+  if (kept.length) findings.push({ id: 'pieces:pack-kept', severity: T.SEVERITY.noise, kind: 'pieces', detail: `sin ningún paquete activo siguen enlazadas ${kept.join(', ')}, que la versión nueva trae dentro de un paquete` });
+  if (diff.gained.length) findings.push({ id: 'pieces:gained', severity: T.SEVERITY.noise, kind: 'pieces', detail: `después de actualizar aparecen ${diff.gained.map(key).join(', ')}` });
+  if (!packActive && diff.lost.length && packLine.count !== 1) findings.push({ id: 'pieces:pack-line', severity: T.SEVERITY.loses, kind: 'pieces', detail: `salieron piezas de un paquete y la máquina lo dijo ${packLine.count} vez/veces (tiene que ser una línea, con el motivo y dónde se activa)` });
+  return { before, after, before_text: PZ.text(before), after_text: PZ.text(after), diff, findings };
+}
+
 /** La carpeta global de hooks de git de una carpeta de usuario de laboratorio: el valor, si es la del arnés y si su pre-push está. */
 function hooksPathFacts(home, env) {
   const r = L.run('git', ['config', '--global', '--get', 'core.hooksPath'], { env, timeoutMs: 60000 });
@@ -194,7 +239,7 @@ function runVariant({ ctx, v, facts, save, lab, out, platform, allowTemp, baseEn
   const seen = (raw, where) => { const safe = TL.checked(raw, ctx.tokens, where); for (const f of safe.findings) add(f); return safe.clean; };
 
   // 1 · la versión de antes, instalada con los comandos de la página (cada comando queda en el parcial apenas termina)
-  const first = publishNext();
+  const first = publishNext('before');
   say(`update: ${v.id} — instalo la versión ${first} con la página (${v.what}) en ${home}`);
   facts.install = { steps: INSTALL_STEPS, commands: [] };
   GI.followPage({ ctx, home, env, ps, scratch, cwd: window, id: `${NAME}-${v.id}`, only: INSTALL_STEPS, platform, say, commands: facts.install.commands, each: (found) => { for (const f of found) add(f, 'install:'); save(); } });
@@ -219,6 +264,18 @@ function runVariant({ ctx, v, facts, save, lab, out, platform, allowTemp, baseEn
     sessionEnv = team.env;
     save();
   }
+  // sin la capa, lo que una persona elige en su máquina: que se actualice sola (la política de fábrica es preguntar) y
+  // ningún paquete (la página instala con `--packs all`)
+  if (v.apply_alone) {
+    facts.apply_set = [];
+    for (const [k, val] of [['update.apply', 'auto'], ['packs.default', 'none']]) {
+      const set = L.run(process.execPath, [path.join(tree, 'scripts', 'lib', 'tycon-config.js'), 'set', k, val], { env: sessionEnv, cwd: home, timeoutMs: 60000 });
+      const said = L.clip(L.firstLine(set.stdout) || L.firstLine(set.stderr), 300);
+      facts.apply_set.push({ key: k, value: val, exit: set.exit, error: set.error || null, said });
+      if (set.error || set.exit !== 0) throw new Error(`no pude elegir ${k} ${val} en la máquina (tycon-config.js set salió ${set.error || set.exit}: ${said})`);
+    }
+  }
+  const scratchPieces = path.join(scratch, 'pieces');
   // el número de versión del árbol instalado, EN ESTE MOMENTO. Sin número —el archivo ya no está, o no se deja leer— no
   // hay de qué decir «cambió» ni «no cambió»: queda `version:unreadable` (rompe) y quien llama no juzga por la versión
   const versionNow = (when) => {
@@ -255,8 +312,9 @@ function runVariant({ ctx, v, facts, save, lab, out, platform, allowTemp, baseEn
   // una sesión con la versión de antes: la máquina queda asentada (el arranque mira, y no hay nada nuevo)
   facts.settled = open(forms, 'default-shell', 'antes', sessionEnv);
   judgeSessions([facts.settled], 'before:');
-  if (v.id === 'auto') {
-    facts.before = RP.photo({ home, tree, env: sessionEnv, paths, platform });
+  const alone = v.id === 'auto' || v.apply_alone === true;
+  if (alone) {
+    facts.before = RP.photo({ home, tree, env: sessionEnv, paths, platform, scratch: scratchPieces });
     // la máquina de antes, ya con la capa, se juzga por sí sola: después sólo es la base de la comparación
     for (const d of RP.judgePhoto(facts.before)) add(d, 'before:');
     facts.before_smoke = T.smoke({ settingsFile: settings, forms: smokeForms, home, scratch, env: sessionEnv, platform });
@@ -265,14 +323,14 @@ function runVariant({ ctx, v, facts, save, lab, out, platform, allowTemp, baseEn
   save();
 
   // 2 · se publica la versión nueva y el arranque sale de su ventana de red
-  const next = publishNext();
+  const next = publishNext('after');
   facts.version_published = next;
   facts.out_of_window = TL.outOfWindow(paths);
   // sin sacarla de su ventana, la máquina no mira la red: un «no se actualizó» o un «no avisó» no dirían nada. Eso no
   // es un hallazgo de la máquina: es no poder ensayar
   if (!facts.out_of_window.done) throw new Error(`no pude sacar al arranque de su ventana de red: ${facts.out_of_window.why}`);
 
-  if (v.id === 'auto') {
+  if (alone) {
     const sessions = SESSIONS.filter(([, formId]) => forms[formId]).map(([label, formId]) => open(forms, formId, label, sessionEnv));
     facts.sessions = sessions;
     missingForms(forms, ['bash-c', 'default-shell']);
@@ -289,7 +347,21 @@ function runVariant({ ctx, v, facts, save, lab, out, platform, allowTemp, baseEn
       facts.by_hand = { exit: hand.exit, error: hand.error, version: TL.installedVersion(tree), said: L.clip(TL.lastLines(`${hand.stdout}\n${hand.stderr}`, 3), 400) };
       if (forms['default-shell']) sessions.push(Object.assign(open(forms, 'default-shell', 'después-a-mano', sessionEnv), { by_hand: true }));
     }
-    facts.after = RP.photo({ home, tree, env: sessionEnv, paths, platform });
+    facts.after = RP.photo({ home, tree, env: sessionEnv, paths, platform, scratch: scratchPieces });
+    // la lista de piezas, antes y después, y lo que dice la máquina cuando saca las de un paquete
+    // (la misma línea puede aparecer en el registro y en el aviso de la sesión siguiente: se cuentan las distintas, cada
+    // una sin lo que la rodea en su renglón)
+    // (el registro recorta los renglones largos: la misma línea, cortada, no es otra — se identifica por su comienzo, con
+    // qué paquetes y qué piezas)
+    const keyOf = (l) => { const m = /(?:se sacaron|sacaría) \d+ pieza\(s\) de paquete\(s\) que la organización no activa \([^)]*\)/.exec(l); return m ? m[0] : null; };
+    const found = sessions.flatMap((x) => [...linesOf(x), ...(x.log_lines || [])]).flatMap((l) => l.split(' · ')).filter((l) => PACK_LINE.test(l));
+    const said = [...new Set(found.map(keyOf).filter(Boolean))];
+    // el texto que se muestra es la copia ENTERA (la que llega hasta dónde se activa), no una recortada por el registro
+    const full = found.map((l) => l.replace(/^[\s\S]*?(se sacaron|sacaría)/, '$1').trim()).filter((l) => !/[\r\n]/.test(l)).sort((a, b) => Number(/activalo/.test(b)) - Number(/activalo/.test(a)) || b.length - a.length);
+    facts.pack_line = { count: said.length, text: full[0] ? L.clip(full[0], 600) : null };
+    facts.pieces = judgePieces({ before: facts.before.pieces, after: facts.after.pieces, renames: PZ.renamesOf(tree), packActive: v.team === true, packLine: facts.pack_line });
+    for (const f of facts.pieces.findings) add(f);
+    delete facts.pieces.findings;
     facts.after_smoke = T.smoke({ settingsFile: settings, forms: smokeForms, home, scratch, env: sessionEnv, platform });
     try { if (facts.after.settings.exists && !facts.after.settings.problem) L.writeJsonAtomic(path.join(out, `settings-update-${v.id}-after.json`), ctx.redact(T.readJsonLoose(settings).value)); } catch (_) { /* la copia es de cortesía */ }
     // la máquina que no tenía la carpeta global de hooks la tiene, con el pre-push del arnés adentro, sin que nadie corra nada
@@ -378,9 +450,10 @@ function measure({ lab, out, state, platform = process.platform, baseEnv = proce
       if (cloned.error || cloned.exit !== 0) return GI.notReady(ctx.discard(`no pude clonar el remoto del laboratorio para publicar las versiones de juguete (git clone salió ${cloned.error || cloned.exit}: ${L.firstLine(cloned.stderr)})`));
       const rehearsed = rec.step.facts.rehearsed_version || null;
       let published = 0;
-      const publishNext = () => {
+      // `stage`: la versión de antes de la mudanza de juguete o la de después
+      const publishNext = (stage) => {
         const number = TL.nextVersion(rehearsed, ++published);
-        const p = TL.publish({ author, number, env: ctx.genv });
+        const p = TL.publish({ author, number, env: ctx.genv, extra: moveChanges(stage) });
         if (!p.ok) throw new Error(`no pude publicar la versión de juguete ${number}: ${p.reason}`);
         return number;
       };
@@ -395,4 +468,4 @@ function measure({ lab, out, state, platform = process.platform, baseEnv = proce
   });
 }
 
-module.exports = { NAME, VARIANTS, SESSIONS, INSTALL_STEPS, SAME_MACHINE_NOTE, judgeAsk, judgeByHand, judgePwshMissing, judgeInstalled, judgeVersionRead, judgeReached, measure };
+module.exports = { NAME, VARIANTS, SESSIONS, INSTALL_STEPS, SAME_MACHINE_NOTE, MOVED, PACK_LINE, moveChanges, judgePieces, judgeAsk, judgeByHand, judgePwshMissing, judgeInstalled, judgeVersionRead, judgeReached, measure };

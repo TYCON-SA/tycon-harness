@@ -303,12 +303,128 @@ function informe() {
   process.exit(rojoCasos + rojoCommits + errores === 0 ? 0 : 1);
 }
 
+// ── por repo: ningún repo pierde un revisor (story 8.41, AC 9) ──────────────────────────────────────────────────
+/** Un árbol del arnés de `sha` (el pipeline, los paquetes y los agentes), sacado del git de este clon. */
+function arbolViejo(sha) {
+  const shaCompleto = git(RAIZ, ['rev-parse', `${sha}^{commit}`]).trim();
+  const dir = tmp('equiv-arbol-');
+  const tar = path.join(dir, 'arbol.tar');
+  const rutas = ['skills/tycon-pipeline/scripts', 'packs', 'agents'].filter((r) => git(RAIZ, ['ls-tree', '--name-only', shaCompleto, r]).trim());
+  const r = spawnSync('git', ['-C', RAIZ, 'archive', '-o', tar, shaCompleto, ...rutas], { encoding: 'utf8' });
+  if (r.error || r.status !== 0) throw new Error(`git archive ${sha}: ${(r.error && r.error.message) || r.stderr}`);
+  const t = spawnSync('tar', ['-xf', tar, '-C', dir], { encoding: 'utf8' });
+  if (t.error || t.status !== 0) throw new Error(`tar: ${(t.error && t.error.message) || t.stderr}`);
+  return { dir, sha: shaCompleto };
+}
+
+/** El ambiente con que corre el pipeline de un árbol: sus paquetes, sus agentes, la configuración de este clon y el perfil. */
+function ambienteDeArbol(arbol, perfil) {
+  return {
+    HOME: tmp('equiv-home-'), TYCON_PACKS_DIR: path.join(arbol, 'packs'), TYCON_AGENTS_DIR: path.join(arbol, 'agents'),
+    TYCON_GUIDES_DIR: RAIZ, ...(perfil ? { TYCON_PROFILE: perfil } : {}),
+  };
+}
+const todos = (m) => [...new Set([...m.base, ...m.completitud, ...m.conditional])].sort();
+const NO_ACTIVO = /la organización no lo activó/;
+
+/** Los commits de los últimos `dias` días de un repo, medidos con los dos árboles: `{ repo, medidos, pierden: [{commit, revisores}], noActivos: [motivo], errores: [..] }`. */
+function medirRepo({ repo, dias, viejo, nuevo }) {
+  const fila = { repo, medidos: 0, sinArchivos: 0, pierden: [], ganan: 0, noActivos: [], errores: [] };
+  let commits = [];
+  try { commits = git(repo, ['log', `--since=${dias}.days`, '--format=%H', 'HEAD']).trim().split('\n').filter(Boolean); }
+  catch (e) { if (!/unknown revision|does not have any commits/.test(e.message)) fila.errores.push(`git log: ${e.message.slice(0, 200)}`); return fila; }
+  if (!commits.length) return fila;
+  const clon = tmp('equiv-clon-');
+  try { git(os.tmpdir(), ['clone', '--shared', '--no-checkout', '-q', repo, clon]); } catch (e) { fila.errores.push(`git clone: ${e.message.slice(0, 200)}`); return fila; }
+  for (const c of commits) {
+    let padre;
+    try { padre = git(clon, ['rev-parse', '--verify', '-q', `${c}^`]).trim(); } catch (_e) { padre = null; }
+    if (!padre) { fila.sinArchivos++; continue; }
+    let files;
+    try {
+      git(clon, ['checkout', '-qf', c]); git(clon, ['clean', '-qfdx']); git(clon, ['reset', '-q', '--mixed', padre]);
+      files = git(clon, ['diff', '--name-only', '--diff-filter=d', padre, c]).trim().split('\n').filter(Boolean).filter((f) => fs.existsSync(path.join(clon, f)));
+    } catch (e) { fila.errores.push(`${c.slice(0, 7)} git: ${e.message.slice(0, 200)}`); continue; }
+    if (!files.length) { fila.sinArchivos++; continue; }
+    // un repo que declara un paquete que la organización no activó frena el pipeline (AC 6): es un hallazgo, no un error
+    const correr = (lado, cual) => {
+      try { return medir({ pipeline: lado.pipeline, repo: clon, files, story: null, env: lado.env }); } catch (e) {
+        if (NO_ACTIVO.test(e.message)) { const m = (e.message.match(/[^\n]*la organización no lo activó[^\n]*/) || [e.message])[0].trim(); if (!fila.noActivos.includes(m)) fila.noActivos.push(m); return null; }
+        fila.errores.push(`${c.slice(0, 7)} ${cual}: ${e.message.split('\n').slice(0, 3).join(' ').slice(0, 300)}`); return null;
+      }
+    };
+    const v = correr(viejo, 'árbol de antes');
+    const nn = v && correr(nuevo, 'árbol nuevo');
+    if (!v || !nn) continue;
+    fila.medidos++;
+    const antes = todos(v); const despues = todos(nn);
+    const perdidos = antes.filter((a) => !despues.includes(a));
+    if (perdidos.length) fila.pierden.push({ commit: c.slice(0, 7), revisores: perdidos });
+    if (despues.some((a) => !antes.includes(a))) fila.ganan++;
+  }
+  log(`  ${path.basename(repo)}: ${fila.medidos} medidos · ${fila.pierden.length} pierden · ${fila.noActivos.length ? 'declara un paquete no activo · ' : ''}${fila.errores.length} errores`);
+  return fila;
+}
+
+function porRepo() {
+  const dias = parseInt(arg('--since', '30'), 10);
+  const out = arg('--out', null);
+  let perfil = arg('--profile', null);
+  if (perfil) perfil = path.resolve(perfil);
+  else if (!['team-profile.json', 'perfil-equipo.json'].some((n) => fs.existsSync(path.join(RAIZ, n)))) {
+    log('per-repo: sin perfil del equipo en este clon — pasá --profile <team-profile.json> (sin él, ningún paquete está activo y la medición no dice nada)');
+    process.exit(2);
+  }
+  let viejoDir; let viejoSha = null;
+  if (arg('--old-tree')) viejoDir = path.resolve(arg('--old-tree'));
+  else { const a = arbolViejo(arg('--base', 'origin/main')); viejoDir = a.dir; viejoSha = a.sha; }
+  const nuevoDir = path.resolve(arg('--new-tree', RAIZ));
+  const lado = (d) => ({ pipeline: path.join(d, 'skills', 'tycon-pipeline', 'scripts', 'pipeline.js'), env: ambienteDeArbol(d, perfil) });
+  const explicitos = arg('--repos', null);
+  const root = explicitos ? null : (arg('--repos-root', null) || process.env.TYCON_REPOS_ROOT || raizDeRepos());
+  const repos = explicitos ? explicitos.split(',').map((s) => path.resolve(s.trim())) : descubrirRepos(root, (arg('--exclude', '') || '').split(',').map((s) => s.trim()).filter(Boolean));
+  log(`per-repo: ${repos.length} repos, commits de los últimos ${dias} días`);
+  const filas = repos.map((repo) => medirRepo({ repo, dias, viejo: lado(viejoDir), nuevo: lado(nuevoDir) }));
+  const pierden = filas.filter((f) => f.pierden.length);
+  const noActivos = filas.filter((f) => f.noActivos.length);
+  const errores = filas.reduce((a, f) => a + f.errores.length, 0);
+  // sin un solo commit medido (ningún repo, o ninguno con commits en la ventana) no hay veredicto: «no medido», nunca verde
+  const medidos = filas.reduce((a, f) => a + f.medidos, 0);
+  const sinMedir = medidos === 0 && !noActivos.length;
+  const L = [];
+  L.push('# Medición 8.41 — paquetes por repo: ningún repo pierde un revisor');
+  L.push('');
+  L.push(`Generado por \`skills/tycon-pipeline/scripts/package-equivalence.js per-repo\` el ${new Date().toISOString()}.`);
+  L.push('');
+  L.push(`- **Árbol de antes**: ${viejoSha ? `\`${viejoSha}\` (git archive)` : viejoDir}. **Árbol del cambio**: ${nuevoDir === RAIZ ? `este clon (\`${git(RAIZ, ['rev-parse', 'HEAD']).trim()}\`${git(RAIZ, ['status', '--porcelain', '--', 'skills/tycon-pipeline', 'packs', 'agents']).trim() ? ' + cambios sin commitear' : ''})` : nuevoDir}.`);
+  L.push(`- **Perfil**: ${perfil || 'el de este clon'}. **Repos**: ${explicitos ? 'los pedidos' : `los de \`${root}\``} (${repos.length}), commits de los últimos ${dias} días.`);
+  L.push('- **Rojo** si un repo pierde un revisor (el set completo: base, completitud y condicionales) o declara en `packs:` un paquete que la organización no activó.');
+  L.push('');
+  L.push(`## Veredicto: ${sinMedir ? `⚠️ NO MEDIDO — ${repos.length} repo(s) y ningún commit medido en los últimos ${dias} días: no hay con qué decir que nadie pierde un revisor` : pierden.length || noActivos.length || errores ?`❌ ${pierden.length} repos pierden un revisor · ${noActivos.length} declaran un paquete que la organización no activó${errores ? ` · ${errores} error(es) de medición` : ''}` : `✅ 0 repos pierden un revisor · 0 declaran un paquete no activo`}`);
+  L.push('');
+  L.push('| Repo | Medidos | Sin archivos | Pierden | Ganan | Paquete no activo | Errores |');
+  L.push('|---|---|---|---|---|---|---|');
+  for (const f of filas) L.push(`| ${root ? path.relative(root, f.repo) : path.basename(f.repo)} | ${f.medidos} | ${f.sinArchivos} | ${f.pierden.length ? `❌ ${f.pierden.length}` : '0'} | ${f.ganan} | ${f.noActivos.length ? '❌' : '—'} | ${f.errores.length} |`);
+  for (const f of filas.filter((x) => x.pierden.length || x.noActivos.length || x.errores.length)) {
+    L.push('');
+    L.push(`### ${path.basename(f.repo)}`);
+    for (const p of f.pierden) L.push(`- ${p.commit} pierde: ${p.revisores.join(', ')}`);
+    for (const m of f.noActivos) L.push(`- declara un paquete que la organización no activó: ${m}`);
+    for (const e of f.errores) L.push(`- error: ${e}`);
+  }
+  L.push('');
+  const texto = L.join('\n') + '\n';
+  if (out) { fs.mkdirSync(path.dirname(out), { recursive: true }); fs.writeFileSync(out, texto); log(`📄 medición → ${out}`); } else process.stdout.write(texto);
+  process.exit(sinMedir ? 2 : (pierden.length || noActivos.length || errores ? 1 : 0));
+}
+
 // story 8.9 (tanda B3b): los subcomandos y la opción viejos siguen andando hasta el retiro
 require('./lib/legacy-names.js').aliasArgv('skills/tycon-pipeline/scripts/package-equivalence.js');
 const cmd = process.argv[2];
 if (cmd === 'snapshot') foto();
 else if (cmd === 'report') informe();
+else if (cmd === 'per-repo') porRepo();
 else {
-  log('uso: package-equivalence.js snapshot --base <sha> [--out <json>]\n     package-equivalence.js report --base <sha> [--commits N] [--repos-root <dir> | --repos a,b] [--exclude a,b] [--cases-only] [--out <md>]');
+  log('uso: package-equivalence.js snapshot --base <sha> [--out <json>]\n     package-equivalence.js report --base <sha> [--commits N] [--repos-root <dir> | --repos a,b] [--exclude a,b] [--cases-only] [--out <md>]\n     package-equivalence.js per-repo [--base <sha> | --old-tree <dir>] [--new-tree <dir>] [--since <días>] [--profile <perfil>] [--repos-root <dir> | --repos a,b] [--exclude a,b] [--out <md>]');
   process.exit(cmd ? 1 : 0);
 }

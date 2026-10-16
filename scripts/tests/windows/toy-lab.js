@@ -156,8 +156,14 @@ function publish({ author, number, env, extra = null }) {
   try { const was = readJson(file); if (was && typeof was === 'object' && !Array.isArray(was)) version = was; } catch (_) { version = {}; }
   version.version = number;
   fs.writeFileSync(file, `${JSON.stringify(version, null, 2)}\n`);
-  if (extra) { fs.mkdirSync(path.dirname(path.join(author, extra.rel)), { recursive: true }); fs.writeFileSync(path.join(author, extra.rel), extra.text); }
-  else fs.appendFileSync(path.join(author, 'CHANGES'), `${number}\n`);
+  // `extra`: un archivo `{ rel, text }`, o una lista de cambios (`{ rel, text }` escribe; `{ rel, remove: true }` borra)
+  const changes = Array.isArray(extra) ? extra : (extra ? [extra] : []);
+  for (const c of changes) {
+    const f = path.join(author, c.rel);
+    if (c.remove) fs.rmSync(f, { recursive: true, force: true });
+    else { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, c.text); }
+  }
+  if (!changes.length || Array.isArray(extra)) fs.appendFileSync(path.join(author, 'CHANGES'), `${number}\n`);
   // con `numbering: "merge-tag"` el número lo pone la etiqueta del merge: se publica con su etiqueta, como lo hace el
   // workflow del repo público (sin ella la máquina espera el número y no actualiza)
   const tagged = version.numbering === 'merge-tag'

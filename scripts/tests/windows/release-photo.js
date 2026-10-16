@@ -94,7 +94,7 @@ function linkFacts(home, tree, { platform = process.platform } = {}) {
 }
 
 /** La foto de una carpeta de usuario con una versión bajada. `paths`: las rutas del estado, como las resuelve el arnés. */
-function photo({ home, tree, env, paths, platform = process.platform }) {
+function photo({ home, tree, env, paths, platform = process.platform, scratch = null }) {
   const dot = path.join(home, '.claude');
   const settingsFile = path.join(dot, 'settings.json');
   const p = { at: L.nowIso() };
@@ -125,6 +125,8 @@ function photo({ home, tree, env, paths, platform = process.platform }) {
   })();
   p.startup_log_tail = (() => { try { return fs.readFileSync(paths.log, 'utf8').split('\n').filter(Boolean).slice(-12).map((l) => L.clip(l, 400)); } catch (_) { return []; } })();
   p.expected = p.settings.exists && !p.settings.problem ? expectedFacts({ home, tree, settingsFile, env, platform }) : { problem: 'sin settings.json legible' };
+  // la lista de piezas que usa la máquina: con `scratch`, donde se arman los dos repos de juguete
+  if (scratch) { try { p.pieces = require('./pieces.js').list({ home, tree, env, scratch }); } catch (e) { p.pieces = null; p.pieces_problem = e.message; } }
   return p;
 }
 

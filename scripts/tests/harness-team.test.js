@@ -889,6 +889,62 @@ test('T18 Team_Names_FrontmatterMatchesFileAndFolder_NoCollisionWithVersionToSta
   assert.equal(r2.ok, true, JSON.stringify(r2.problems));
 });
 
+// ── story 8.41 · AC 46 (T41): la capa trae un paquete ENTERO en texto — su manifiesto y los .md de sus skills/, agents/ y
+//    guides/ — y vale igual que uno de la versión; lo que no es texto, o está fuera de esas carpetas, rechaza la capa ──────
+test('T41 TeamLayer_WholePack_StackedAndLinked', () => {
+  const whole = [
+    blob('packs/eq/pack.json', 300), blob('packs/eq/skills/s-eq/SKILL.md', 100), blob('packs/eq/skills/s-eq/references/a.md', 50),
+    blob('packs/eq/agents/rev-eq.md', 100), blob('packs/eq/guides/guia.md', 100), blob('packs/eq/guides/sub/otra.md', 100),
+  ];
+  const ok = TEAM.planTeam([...SANE, ...whole], { publicPaths: ['skills/tycon-pipeline/SKILL.md'] });
+  assert.equal(ok.ok, true, JSON.stringify(ok.problems));
+  for (const [p, why] of [
+    ['packs/eq/skills/s-eq/run.sh', /lista cerrada/], ['packs/eq/templates/pipeline.yml', /lista cerrada/],
+    ['packs/eq/agents/rev.json', /lista cerrada/], ['packs/eq/guides/x.js', /lista cerrada/],
+    ['packs/eq/skills/huerfana/notas.md', /SKILL\.md/], ['packs/eq/agents/sub/rev.md', /lista cerrada/],
+  ]) {
+    const r = TEAM.planTeam([...SANE, ...whole, blob(p, 10)], {});
+    assert.equal(r.ok, false, `tendría que rechazar ${p}`);
+    const hit = r.problems.find((x) => x.path === p);
+    assert.ok(hit && why.test(hit.reason), `${p}: ${JSON.stringify(r.problems)}`);
+  }
+  // los nombres de adentro del paquete se juzgan como los de agents/ y skills/ de la raíz
+  const lab = casa('t41');
+  const bad = toyLayer(lab, [['packs/eq/agents/rev-eq.md', agentMd('otro')], ['packs/eq/skills/s-eq/SKILL.md', `---\nname: s-eq\ndescription: x\nhooks:\n  Stop: []\n---\n`]]);
+  const cp = TEAM.contentProblems(bad.dir, bad.files);
+  assert.ok(cp.some((x) => x.path === 'packs/eq/agents/rev-eq.md' && /name/.test(x.reason)), JSON.stringify(cp));
+  assert.ok(cp.some((x) => x.path === 'packs/eq/skills/s-eq/SKILL.md' && /hooks/.test(x.reason)), JSON.stringify(cp));
+  // contra la versión: el paquete con sus agentes adentro lo valida el cargador de ESA versión; un nombre que choca, no pasa
+  fs.rmSync(path.join(lab, 'layer'), { recursive: true, force: true });
+  const v = toyVersion(lab, { agents: ['tycon-core', 'pub-rev'], skills: ['publica'], packs: { publico: ['pub-rev'] } });
+  // un paquete de la versión con algo más que su manifiesto (plantillas, un README): eso no se lee como manifiesto
+  // (el ensayo de actualización lo destapó: la capa entera se rechazaba)
+  const rm = JSON.parse(fs.readFileSync(path.join(v, '.tycon-release.json'), 'utf8'));
+  fs.mkdirSync(path.join(v, 'packs', 'publico', 'templates'), { recursive: true });
+  fs.writeFileSync(path.join(v, 'packs', 'publico', 'templates', 'README.md'), '# plantillas\n');
+  rm.files.push({ path: 'packs/publico/templates/README.md', blob: TEAM.blobOf(Buffer.from('# plantillas\n')) });
+  fs.writeFileSync(path.join(v, '.tycon-release.json'), JSON.stringify(rm));
+  const pack = JSON.stringify({ name: 'eq', description: 'paquete entero de juguete', skills: 'skills', agents: 'agents', reviewers: [reviewerOf('rev-eq', 'base')] });
+  const sane = toyLayer(lab, [['packs/eq/pack.json', pack], ['packs/eq/agents/rev-eq.md', agentMd('rev-eq')], ['packs/eq/skills/s-eq/SKILL.md', skillMd('s-eq')], ['packs/eq/guides/guia.md', '# guía\n']]);
+  const r = TEAM.checkAgainstVersion(sane.dir, sane.files, v, { env: {} });
+  assert.equal(r.ok, true, JSON.stringify(r.problems));
+  assert.deepEqual(TEAM.contentProblems(sane.dir, sane.files), []);
+  fs.rmSync(path.join(lab, 'layer'), { recursive: true, force: true });
+  const clash = toyLayer(lab, [['packs/eq/pack.json', pack.replace('rev-eq', 'tycon-core')], ['packs/eq/agents/tycon-core.md', agentMd('tycon-core')], ['packs/eq/skills/publica/SKILL.md', skillMd('publica')]]);
+  const rc = TEAM.checkAgainstVersion(clash.dir, clash.files, v, { env: {} });
+  assert.equal(rc.ok, false);
+  assert.ok(rc.problems.some((x) => x.path === 'packs/eq/agents/tycon-core.md'), JSON.stringify(rc.problems));
+  assert.ok(rc.problems.some((x) => x.path === 'packs/eq/skills/publica/SKILL.md'), JSON.stringify(rc.problems));
+  // dentro de la misma capa, un agente o una skill con el mismo nombre en dos lugares (la raíz y un paquete, o dos
+  // paquetes) se enlazarían en el mismo lugar de ~/.claude: la capa no pasa (pase adversarial, clase 6)
+  fs.rmSync(path.join(lab, 'layer'), { recursive: true, force: true });
+  const twice = toyLayer(lab, [['packs/eq/pack.json', pack], ['packs/eq/agents/rev-eq.md', agentMd('rev-eq')], ['agents/rev-eq.md', agentMd('rev-eq')], ['packs/eq/skills/s-eq/SKILL.md', skillMd('s-eq')], ['skills/s-eq/SKILL.md', skillMd('s-eq')]]);
+  const rt = TEAM.checkAgainstVersion(twice.dir, twice.files, v, { env: {} });
+  assert.equal(rt.ok, false);
+  assert.ok(rt.problems.some((x) => /rev-eq/.test(`${x.path} ${x.reason}`) && /dos lugares|otra ruta de la capa/.test(x.reason)), JSON.stringify(rt.problems));
+  assert.ok(rt.problems.some((x) => /s-eq/.test(`${x.path} ${x.reason}`) && /dos lugares|otra ruta de la capa/.test(x.reason)), JSON.stringify(rt.problems));
+});
+
 test('A2a validateTree_AndCheckAgainstVersion_PackLoaderOfVersion_EnvIgnored_NoValidateTreeSaid', () => {
   // packs.js: el contrato chico que el instalador carga de la versión que va a quedar
   assert.equal(typeof PACKS.validateTree, 'function');

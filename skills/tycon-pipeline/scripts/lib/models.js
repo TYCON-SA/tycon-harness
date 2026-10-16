@@ -75,11 +75,43 @@ function agentsDirDefault() {
   }
 }
 
+/**
+ * El `.md` de un revisor: en la carpeta de agentes de la raíz o, si no está ahí, en la de un paquete del mismo árbol
+ * (`packs/<p>/agents/`, story 8.41: un paquete puede traer sus agentes). null si no está en ninguna.
+ */
+const LOOKUP_PROBLEMS = new Set();
+function agentFile(name, agentsDir) {
+  if (!REVIEWER_NAME.test(String(name || ''))) return null;
+  const root = agentsDir || agentsDirDefault();
+  const own = path.join(root, `${name}.md`);
+  if (fs.existsSync(own)) return own;
+  // los paquetes donde los busca el cargador (`TYCON_PACKS_DIR`, o `packs/` del mismo árbol), cada uno con su carpeta de
+  // agentes declarada en su manifiesto (`agents`, por defecto `agents`)
+  const packsDir = process.env.TYCON_PACKS_DIR || path.join(path.dirname(root), 'packs');
+  let packs = [];
+  // lo que no se pudo leer queda anotado (`lookupProblems`): «no pude mirar» no es «no existe», y la resolución lo avisa
+  try { packs = fs.readdirSync(packsDir).sort(); } catch (e) { packs = []; if (!e || e.code !== 'ENOENT' || process.env.TYCON_PACKS_DIR) LOOKUP_PROBLEMS.add(`no se pudo leer la carpeta de paquetes ${packsDir} (${(e && e.code) || e}): los revisores de un paquete no se encuentran`); }
+  for (const p of packs) {
+    let sub = 'agents';
+    // (una carpeta que sale del paquete —absoluta, con «..» o tramos vacíos— no se sigue: el cargador la da por rota)
+    const mf = path.join(packsDir, p, 'pack.json');
+    if (fs.existsSync(mf)) {
+      try { const j = JSON.parse(fs.readFileSync(mf, 'utf8')); if (j && typeof j.agents === 'string' && j.agents && !path.isAbsolute(j.agents) && !j.agents.includes('\\') && !j.agents.split('/').some((t) => t === '..' || t === '')) sub = j.agents; }
+      catch (e) { LOOKUP_PROBLEMS.add(`no se pudo leer ${mf} (${(e && e.message) || e}): sus revisores se buscan en su carpeta agents/`); }
+    }
+    const f = path.join(packsDir, p, sub, `${name}.md`);
+    if (fs.existsSync(f)) return f;
+  }
+  return null;
+}
+
 /** El `model:` del frontmatter del `.md` de un revisor, o null. */
 function frontmatterModel(name, { agentsDir } = {}) {
   if (!REVIEWER_NAME.test(String(name || ''))) return null;
   try {
-    const src = fs.readFileSync(path.join(agentsDir || agentsDirDefault(), `${name}.md`), 'utf8');
+    const file = agentFile(name, agentsDir);
+    if (!file) return null;
+    const src = fs.readFileSync(file, 'utf8');
     const fm = (src.match(/^---\r?\n([\s\S]*?)\r?\n---/) || [])[1] || '';
     const m = (fm.match(/^model:\s*["']?([\w.-]+)/m) || [])[1];
     return isModel(m) ? m : null;
@@ -94,7 +126,7 @@ function defaultFor(name, opts = {}) {
 /** Si el revisor existe en este arnés (tiene su `.md` o está en las tablas de hoy). */
 function reviewerExists(name, opts = {}) {
   if (DEFAULTS.reviewer[name]) return true;
-  try { return fs.existsSync(path.join(opts.agentsDir || agentsDirDefault(), `${name}.md`)); } catch (_) { return false; }
+  try { return agentFile(name, opts.agentsDir) !== null; } catch (_) { return false; }
 }
 
 /**
@@ -238,7 +270,12 @@ function resolveSession({ org, band, today, warnings = [] }) {
 function resolveModels({ org, requests, costTier, tierOf, set, iter, agentsDir, flags, heavy, modelQuestion, band, today } = {}) {
   const warnings = [];
   const out = {
-    reviewers: resolveReviewers({ org, requests, costTier, tierOf, set, iter, agentsDir, warnings }),
+    reviewers: (() => {
+      LOOKUP_PROBLEMS.clear();
+      const r = resolveReviewers({ org, requests, costTier, tierOf, set, iter, agentsDir, warnings });
+      for (const m of LOOKUP_PROBLEMS) warnings.push({ key: 'agents-lookup', message: m });
+      return r;
+    })(),
     adversarial: resolveAdversarial({ org, requests, flags, heavy, modelQuestion, warnings }),
     helpers: resolveHelpers({ org, requests, warnings }),
     ceiling: ceilingOf(org),

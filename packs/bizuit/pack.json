@@ -1,6 +1,6 @@
 {
   "name": "bizuit",
-  "description": "El paquete del stack de TYCON: .NET + React/Next.js sobre Bizuit. Las convenciones con que TYCON desarrolla plugins sobre Bizuit; no es un producto de Bizuit. Opcional y apagado por defecto: un repo de producto lo pide con `packs: [bizuit]` en su `.tycon/advisors.yaml`.",
+  "description": "El paquete del stack de TYCON: .NET + React/Next.js sobre Bizuit. Las convenciones con que TYCON desarrolla plugins sobre Bizuit; no es un producto de Bizuit. Opcional y apagado por defecto: lo activa la organización (packs.default, en la configuración del equipo); un repo puede restringirse con `packs:` en su `.tycon/advisors.yaml`.",
   "guides": [
     "guides/bizuit/bizuit-plugin-dotnet.md",
     "guides/bizuit/bizuit-plugin-react.md",

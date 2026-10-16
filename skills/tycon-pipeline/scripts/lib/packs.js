@@ -31,9 +31,12 @@
  *   agentes:  `TYCON_AGENTS_DIR`, o `agents/` de agent-skills (`~/.claude/agents` es un enlace ahí).
  *
  * ── EL MANIFIESTO (vocabulario cerrado — VOCABULARIO, abajo) ─────────────────────────────────────
- *   { "name", "description", "guides": [...], "reviewers": [ { "agent", "group", "when",
+ *   { "name", "description", "guides": [...], "skills"?: "<carpeta>", "agents"?: "<carpeta>", "reviewers": [ { "agent", "group", "when",
  *     "surface", "depth", "prefixes", "needsStory"?, "prompt"?, "model"?, "note"? } ],
  *     "siblings"?: [ { "path", "name" } ] }   ← los plugins hermanos del corral del banco (story 8.10)
+ *   `skills` y `agents` (story 8.41): carpetas DEL PAQUETE (rutas relativas a su carpeta, sin salir de ella) con sus skills
+ *   y sus agentes. Un revisor se busca primero en `agents` del paquete y después en la carpeta de agentes de la raíz; el
+ *   mismo nombre en los dos lugares es un paquete roto (no se sabe cuál corre).
  *   group: base | condicional | validacion. Los dos primeros entran al set del paso 5; `validacion`
  *   entra al paso 1 (`pipeline.js validators`) con su `prompt` ({story_path}, {repo_path}).
  *   when: { all: [..] } | { any: [..] } | { no: .. } | { detection: "<bandera>" } |
@@ -61,7 +64,7 @@ const path = require('path');
 const RAIZ_AGENT_SKILLS = path.resolve(__dirname, '..', '..', '..', '..');
 
 const VOCABULARIO = Object.freeze({
-  manifiesto: Object.freeze(['name', 'description', 'guides', 'reviewers', 'siblings']),
+  manifiesto: Object.freeze(['name', 'description', 'guides', 'skills', 'agents', 'reviewers', 'siblings']),
   hermano: Object.freeze(['path', 'name']),
   revisor: Object.freeze(['agent', 'group', 'when', 'surface', 'depth', 'prefixes', 'needsStory', 'prompt', 'model', 'note']),
   condicion: Object.freeze(['all', 'any', 'no', 'detection', 'files', 'added']),
@@ -124,6 +127,14 @@ function nombresInstalados({ packsDir, explicito } = {}) {
 }
 
 // ── validación (vocabulario cerrado) ───────────────────────────────────────────────────────────
+/** null si `rel` es una carpeta que existe adentro de la del paquete; si no, el motivo. */
+function motivoCarpetaPropia(rel, dirPaquete) {
+  if (typeof rel !== 'string' || !rel.trim()) return 'tiene que ser la ruta de una carpeta del paquete (texto)';
+  if (path.isAbsolute(rel) || rel.includes('\\') || rel.split('/').some((t) => t === '..' || t === '')) return `«${rel}» tiene que ser relativa a la carpeta del paquete, sin «..» ni tramos vacíos`;
+  let esDir = false;
+  try { esDir = fs.statSync(path.join(dirPaquete, rel)).isDirectory(); } catch (_e) { esDir = false; }
+  return esDir ? null : `la carpeta ${path.join(dirPaquete, rel)} no existe`;
+}
 function esObjeto(x) { return x !== null && typeof x === 'object' && !Array.isArray(x); }
 function clavesFuera(obj, permitidas) { return Object.keys(obj).filter((k) => !permitidas.includes(k)); }
 function regexValida(s) { try { new RegExp(s); return true; } catch (_e) { return false; } }
@@ -204,6 +215,13 @@ function validarManifiesto(json, { archivo, agentsDir, nucleo = [], banderas = [
   if (json.guides != null && (!Array.isArray(json.guides) || !json.guides.every((g) => typeof g === 'string'))) {
     err(null, '«guides» tiene que ser una lista de rutas');
   }
+  const carpetaPropia = {};
+  for (const clave of ['skills', 'agents']) {
+    if (json[clave] == null) continue;
+    const m = motivoCarpetaPropia(json[clave], path.dirname(archivo));
+    if (m) err(null, `«${clave}»: ${m}`);
+    else carpetaPropia[clave] = path.join(path.dirname(archivo), json[clave]);
+  }
   // `siblings` (story 8.10 del arnés, AC 24): los plugins hermanos que el banco de revisores fabrica en su corral para
   // el revisor de hermanos del paquete. Son datos de un cliente: viven en el paquete que los usa (no se publica) y no
   // en el código del núcleo. Una lista de { path, name }: la ruta, relativa a la raíz del corral; el nombre, el del
@@ -265,9 +283,11 @@ function validarManifiesto(json, { archivo, agentsDir, nucleo = [], banderas = [
     vistos.add(clave);
     if (!gruposDe.has(agente)) gruposDe.set(agente, new Set());
     gruposDe.get(agente).add(r.group);
-    // el agente existe
+    // el agente existe: primero en la carpeta del paquete, después en la de la raíz; en las dos, roto
     const md = path.join(agentsDir, `${agente}.md`);
-    if (!fs.existsSync(md)) e(`no existe el agente ${md}`);
+    const propio = carpetaPropia.agents ? path.join(carpetaPropia.agents, `${agente}.md`) : null;
+    if (propio && fs.existsSync(propio) && fs.existsSync(md)) e(`el agente ${agente} está en dos lugares (${propio} y en la raíz, ${md}): va en uno solo`);
+    else if (!(propio && fs.existsSync(propio)) && !fs.existsSync(md)) e(`no existe el agente ${propio ? `${propio} ni ${md}` : md}`);
   });
   // Un revisor del paso 5 tiene UNA superficie y UNA profundidad: en `base` o en `condicional`, no en
   // los dos (con los dos, `superficieDe`/`tierDe` tomarían la primera entrada y la otra se ignoraría
@@ -342,6 +362,8 @@ function cargarPaquetes({ packsDir, agentsDir, nucleo = [], banderas = [] } = {}
     paquetes.push({
       nombre: json.name, dir: p.dir, archivo: p.archivo,
       descripcion: json.description, guias: json.guides || [],
+      skills: json.skills ? path.join(p.dir, json.skills) : null,
+      agentes: json.agents ? path.join(p.dir, json.agents) : null,
       revisores: json.reviewers.map(normalizarRevisor),
       hermanos: (json.siblings || []).map((h) => ({ ruta: h.path, nombre: h.name })),
     });
@@ -481,6 +503,21 @@ function yamlDelRepo(repo) {
 // ── el default sin `packs:` (story 8.7 del arnés, AC 8) ─────────────────────────────────────────
 const PACKS_DEFAULT_KEY = 'packs.default';
 const PACKS_DEFAULT_VALUES = Object.freeze(['all', 'none']);
+// Una lista de nombres (story 8.41): la misma regla que el lector del arnés (`motivoPaquetes` de tycon-config.js), que
+// esta biblioteca no puede cargar cuando la variable ya responde sin buscar el arnés.
+const NOMBRE_DE_PAQUETE = /^[a-z0-9][a-z0-9-]*$/;
+const PACKS_DEFAULT_TEXT = 'all, none o una lista de nombres de paquete';
+/** null si el valor es `all`, `none` o una lista no vacía de nombres distintos; si no, el motivo. */
+function motivoDeDefault(v) {
+  if (typeof v === 'string') return PACKS_DEFAULT_VALUES.includes(v) ? null : `vale ${JSON.stringify(v)}; tiene que ser ${PACKS_DEFAULT_TEXT}`;
+  if (!Array.isArray(v) || !v.length) return `vale ${JSON.stringify(v)}; tiene que ser ${PACKS_DEFAULT_TEXT} (no vacía: para ninguno, none)`;
+  const malo = v.find((n) => typeof n !== 'string' || !NOMBRE_DE_PAQUETE.test(n));
+  if (malo !== undefined) return `${JSON.stringify(malo)} no es un nombre de paquete (minúsculas, dígitos y guiones)`;
+  if (new Set(v).size !== v.length) return `la lista repite un paquete: ${JSON.stringify(v)}`;
+  return null;
+}
+/** Cómo se dice el valor en una línea: `all`, `none` o `[a, b]`. */
+const textoDeDefault = (v) => (Array.isArray(v) ? `[${v.join(', ')}]` : String(v));
 
 /**
  * Qué paquetes activa un repo que NO declara `packs:`: lo dice la clave `packs.default` del lector de configuración del
@@ -492,7 +529,9 @@ const PACKS_DEFAULT_VALUES = Object.freeze(['all', 'none']);
  *     configuración rota nunca se lee como «ninguno» (el principio de la 8.3);
  *   · un arnés anterior a la 8.7 (su lector no conoce la clave, o no tiene lector) → `all`, como antes: así el orden en que
  *     se mergean los dos repos no le quita los revisores del paquete al equipo ni un minuto.
- * @returns {{ value: 'all'|'none', origin: string, harness: string }}
+ * Desde la story 8.41 el valor puede ser también una lista: la organización activa exactamente esos paquetes. Por la
+ * variable, separada por comas (`bizuit,clients`).
+ * @returns {{ value: 'all'|'none'|string[], origin: string, harness: string }}
  */
 function packsDefault({ env = process.env } = {}) {
   // La variable manda sobre todo (la precedencia de tycon-config): puesta, el default se sabe sin buscar el arnés. Un
@@ -500,11 +539,13 @@ function packsDefault({ env = process.env } = {}) {
   // recortada, y sólo espacios = sin poner: como la lee tycon-config.js (los dos lectores no pueden dar distinto)
   const variable = typeof env.TYCON_PACKS_DEFAULT === 'string' ? env.TYCON_PACKS_DEFAULT.trim() : '';
   if (variable !== '') {
-    if (!PACKS_DEFAULT_VALUES.includes(variable)) {
+    const value = PACKS_DEFAULT_VALUES.includes(variable) ? variable : variable.split(',').map((x) => x.trim());
+    const m = motivoDeDefault(value);
+    if (m) {
       throw new PackError([{ archivo: 'variable de entorno TYCON_PACKS_DEFAULT', revisor: null, clave: PACKS_DEFAULT_KEY,
-        motivo: `vale ${JSON.stringify(variable)}; tiene que ser ${PACKS_DEFAULT_VALUES.join(' o ')}` }]);
+        motivo: m.startsWith('vale ') ? `vale ${JSON.stringify(variable)}; tiene que ser ${PACKS_DEFAULT_TEXT}` : m }]);
     }
-    return { value: variable, origin: 'TYCON_PACKS_DEFAULT', harness: null };
+    return { value, origin: 'TYCON_PACKS_DEFAULT', harness: null };
   }
   let harness;
   try {
@@ -529,9 +570,9 @@ function packsDefault({ env = process.env } = {}) {
     throw new PackError(errores);
   }
   const value = cfg.valor(config, PACKS_DEFAULT_KEY);
-  if (!PACKS_DEFAULT_VALUES.includes(value)) {
+  if (motivoDeDefault(value)) {
     throw new PackError([{ archivo: reader, revisor: null, clave: PACKS_DEFAULT_KEY,
-      motivo: `el lector devolvió ${JSON.stringify(value)}; tiene que ser ${PACKS_DEFAULT_VALUES.join(' o ')}` }]);
+      motivo: `el lector devolvió ${JSON.stringify(value)}; tiene que ser ${PACKS_DEFAULT_TEXT}` }]);
   }
   return { value, origin: (config.origenes && config.origenes[PACKS_DEFAULT_KEY]) || 'default', harness };
 }
@@ -543,20 +584,52 @@ function packsDefault({ env = process.env } = {}) {
  */
 function paquetesActivos({ repo, instalados, packsDir } = {}) {
   const { archivo, declarados } = declaracionDelRepo(repo);
-  if (declarados === null) {
-    if (!instalados.length) return instalados;
-    return packsDefault().value === 'all' ? instalados : [];
+  if (declarados === null && !instalados.length) {
+    // sin paquetes instalados no hay nada que activar… salvo que la organización pida paquetes por nombre: eso es una
+    // máquina sin los paquetes de su organización, y se dice. Sin arnés ni variable que responder, como siempre: ninguno
+    let def = null;
+    // sólo «no encuentro el arnés» se lee como antes (ninguno); una configuración rota frena como en cualquier otro caso
+    try { def = packsDefault(); } catch (e) { if (!(e instanceof PackError && e.errores.length > 0 && e.errores.every((x) => x.archivo === 'el arnés'))) throw e; }
+    if (def && Array.isArray(def.value)) activosDeLaOrganizacion({ instalados, dir: packsDir || dirPaquetes() });
+    return instalados;
   }
+  if (declarados !== null && !declarados.length) return [];   // `packs: []`: ninguno, a propósito
   const dir = packsDir || dirPaquetes();
-  const faltan = declarados.filter((n) => !instalados.some((p) => p.nombre === n));
+  const nombres = instalados.map((p) => p.nombre).join(', ') || 'ninguno';
+  const faltan = (declarados || []).filter((n) => !instalados.some((p) => p.nombre === n));
   if (faltan.length) {
     throw new PackError(faltan.map((n) => ({
       archivo, revisor: null,
-      motivo: `el repo declara el paquete «${n}» en \`packs:\` y no está instalado en ${dir} ` +
-              `(instalados: ${instalados.map((p) => p.nombre).join(', ') || 'ninguno'})`,
+      motivo: `el repo declara el paquete «${n}» en \`packs:\` y no está instalado en ${dir} (instalados: ${nombres})`,
+    })));
+  }
+  const org = activosDeLaOrganizacion({ instalados, dir });
+  if (declarados === null) return org;
+  // el repo achica lo que activa la organización y nunca suma (story 8.41, AC 6)
+  const fuera = declarados.filter((n) => !org.some((p) => p.nombre === n));
+  if (fuera.length) {
+    throw new PackError(fuera.map((n) => ({
+      archivo, revisor: null,
+      motivo: `el repo declara el paquete «${n}» en \`packs:\` y la organización no lo activó — activalo en Configuración del sitio, sección Paquetes, o en el perfil del equipo (packs.default; en esta máquina, TYCON_PACKS_DEFAULT)`,
     })));
   }
   return instalados.filter((p) => declarados.includes(p.nombre));
+}
+
+/** Los paquetes instalados que activa la organización (`packs.default`). Uno de una lista que no está instalado frena
+ *  nombrando la carpeta donde se buscó: la organización pide algo que esta máquina no tiene. */
+function activosDeLaOrganizacion({ instalados, dir }) {
+  const { value, origin } = packsDefault();
+  if (value === 'all') return instalados;
+  if (value === 'none') return [];
+  const faltan = value.filter((n) => !instalados.some((p) => p.nombre === n));
+  if (faltan.length) {
+    throw new PackError(faltan.map((n) => ({
+      archivo: `packs.default (${origin})`, revisor: null, clave: PACKS_DEFAULT_KEY,
+      motivo: `la organización activa el paquete «${n}» y no está instalado en ${dir} (instalados: ${instalados.map((p) => p.nombre).join(', ') || 'ninguno'})`,
+    })));
+  }
+  return instalados.filter((p) => value.includes(p.nombre));
 }
 
 // ── evaluación ─────────────────────────────────────────────────────────────────────────────────
@@ -607,8 +680,10 @@ function notaDePaquetes({ repo, instalados, activos, packsDir } = {}) {
   const def = packsDefault();
   // con el perfil del equipo PRESENTE y diciendo `none`, «el perfil está ausente» sería falso (story 8.29: en esta clave
   // el perfil gana, así que un `none` con origen en el perfil es una decisión del equipo, no un perfil que no viajó)
-  if (def.origin === 'perfil') return `${cabeza}packs.default es ${def.value} (${def.origin}) y el repo no declara packs: — lo fija el perfil del equipo; para este repo, declarar packs: en .tycon/advisors.yaml`;
-  return `${cabeza}packs.default es ${def.value} (${def.origin}) y el repo no declara packs: — en una máquina del equipo eso es el perfil del equipo ausente: packs.default all lo prende`;
+  // qué paquetes activa la organización lo dice su configuración, no el repo (story 8.41, AC 6): un repo sólo achica la lista
+  const v = textoDeDefault(def.value);
+  if (def.origin === 'perfil') return `${cabeza}packs.default es ${v} (${def.origin}) y el repo no declara packs: — lo fija el perfil del equipo; qué paquetes activa tu organización se cambia en Configuración del sitio, sección Paquetes, o en el perfil del equipo`;
+  return `${cabeza}packs.default es ${v} (${def.origin}) y el repo no declara packs: — en una máquina del equipo eso es el perfil del equipo ausente: packs.default all lo prende (qué paquetes activa tu organización: Configuración del sitio, sección Paquetes, o el perfil del equipo)`;
 }
 
 module.exports = {
@@ -616,6 +691,6 @@ module.exports = {
   raizAgentSkills, dirPaquetes, dirAgentes,
   descubrir, nombresInstalados, cargarPaquetes, resetCache, BANDERAS, validateTree,
   validarManifiesto, validarCondicion, validarSuperficie,
-  paquetesDeclarados, declaracionDelRepo, paquetesActivos, nombreActual, packsDefault, notaDePaquetes,
+  paquetesDeclarados, declaracionDelRepo, paquetesActivos, activosDeLaOrganizacion, nombreActual, packsDefault, notaDePaquetes, textoDeDefault,
   evaluarCondicion, rendirPrompt,
 };

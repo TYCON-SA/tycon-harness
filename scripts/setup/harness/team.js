@@ -102,7 +102,16 @@ const LAYER_PATTERNS = Object.freeze([
   new RegExp(`^agents/${SEG}\\.md$`),
   new RegExp(`^skills/(?:${SEG}/){1,5}${SEG}\\.md$`),
   new RegExp(`^onboarding/(?!(?:${LOADED_ALONE.map(anyCase).join('|')})(?:\\.[A-Za-z0-9_-]+)*\\.md$)${SEG}\\.md$`),
+  // un paquete ENTERO, en texto (story 8.41, AC 46): los agentes de su carpeta, los .md de sus skills y sus guías
+  new RegExp(`^packs/${SEG}/agents/${SEG}\\.md$`),
+  new RegExp(`^packs/${SEG}/skills/(?:${SEG}/){1,5}${SEG}\\.md$`),
+  new RegExp(`^packs/${SEG}/guides/(?:${SEG}/){0,5}${SEG}\\.md$`),
 ]);
+/** Un agente de la capa: en agents/ de la raíz o en la carpeta de un paquete. */
+const AGENT_RE = /^(?:packs\/[^/]+\/)?agents\/[^/]+\.md$/;
+/** Dónde empiezan las skills de una ruta: `skills` (la raíz) o `packs/<p>/skills` (las de un paquete); null si no es de skills. */
+const skillBaseOf = (p) => { const s = String(p); if (s.startsWith('skills/')) return 'skills'; const m = /^(packs\/[^/]+\/skills)\//.exec(s); return m ? m[1] : null; };
+const isSkillMd = (p) => skillBaseOf(p) !== null && path.posix.basename(p) === 'SKILL.md';
 /** Las carpetas de primer nivel que existen SÓLO por la capa (la versión no las trae): vacías, se van ellas también (`pruneEmptyDirs`). */
 const TEAM_ONLY_TOPS = Object.freeze(['onboarding']);
 const MANIFEST_NAME = '.tycon-team.json';
@@ -223,7 +232,7 @@ function layerPathProblem(p) {
   // dentro de una skill de la lista fija, manda SU lista blanca (tanda A2c · AC 31)
   const ex = s.startsWith('skills/') ? extrasEntryFor(s) : null;
   if (ex) { const why = extrasPathProblem(s, ex); if (why) return why; }
-  else if (!CLOSED_PATHS.includes(s) && !LAYER_PATTERNS.some((re) => re.test(s))) return `fuera de la lista cerrada de la capa (${CLOSED_PATHS.join(', ')}; packs/<paquete>/pack.json, agents/<nombre>.md, onboarding/<nombre>.md y los .md de una skill bajo skills/)`;
+  else if (!CLOSED_PATHS.includes(s) && !LAYER_PATTERNS.some((re) => re.test(s))) return `fuera de la lista cerrada de la capa (${CLOSED_PATHS.join(', ')}; packs/<paquete>/pack.json con los .md de sus agents/, skills/ y guides/, agents/<nombre>.md, onboarding/<nombre>.md y los .md de una skill bajo skills/)`;
   // en Windows `x.` es la carpeta `x` y `con.md` es un dispositivo: una ruta así pisaría otra sin que nada lo vea (revisor de seguridad, A2a)
   const bad = s.split('/').find((seg) => seg.endsWith('.') || WINDOWS_RESERVED.test(seg));
   if (bad) return `el tramo «${bad}» termina en punto o es un nombre reservado de Windows: en ese disco sería otro archivo`;
@@ -410,7 +419,8 @@ function setProblems(paths, { publicPaths = [], thirdPartyRoots = [] } = {}) {
   const byFold = new Map();
   for (const p of paths) { const k = foldPath(p); byFold.set(k, [...(byFold.get(k) || []), p]); }
   for (const same of byFold.values()) if (same.length > 1) for (const p of same) problems.push({ path: p, reason: `otra ruta de la capa difiere sólo en la caja (${same.filter((x) => x !== p).join(', ')}): en Mac y Windows son el mismo archivo` });
-  const roots = new Set(paths.filter((p) => p.startsWith('skills/') && path.posix.basename(p) === 'SKILL.md').map((p) => path.posix.dirname(p)));
+  // las skills de la raíz y las de cada paquete (`packs/<p>/skills/…`, story 8.41) con la misma regla, cada una contra su base
+  const roots = new Set(paths.filter(isSkillMd).map((p) => path.posix.dirname(p)));
   const publicDirs = new Set();
   const publicSkills = new Set();
   for (const p of publicPaths) {
@@ -419,21 +429,22 @@ function setProblems(paths, { publicPaths = [], thirdPartyRoots = [] } = {}) {
     if (path.posix.basename(f) === 'skill.md') publicSkills.add(path.posix.dirname(f));
   }
   const thirdParty = thirdPartyRoots.map(foldPath);
-  const ancestors = (d) => { const out = []; for (let a = path.posix.dirname(d); a !== 'skills' && a !== '.' && a !== ''; a = path.posix.dirname(a)) out.push(a); return out; };
+  const ancestors = (d, base = 'skills') => { const out = []; const b = foldPath(base); for (let a = path.posix.dirname(d); a !== base && a !== b && a !== '.' && a !== ''; a = path.posix.dirname(a)) out.push(a); return out; };
   for (const p of paths) {
-    if (!p.startsWith('skills/')) continue;
+    const base = skillBaseOf(p);
+    if (!base) continue;
     let root = null;
-    for (let d = path.posix.dirname(p); d !== 'skills' && d !== '.'; d = path.posix.dirname(d)) if (roots.has(d)) { root = d; break; }
-    if (!root) { problems.push({ path: p, reason: 'no pertenece a ninguna skill de la capa: ninguna carpeta de arriba (hasta skills/) trae un SKILL.md' }); continue; }
+    for (let d = path.posix.dirname(p); d !== base && d !== '.'; d = path.posix.dirname(d)) if (roots.has(d)) { root = d; break; }
+    if (!root) { problems.push({ path: p, reason: `no pertenece a ninguna skill de la capa: ninguna carpeta de arriba (hasta ${base}/) trae un SKILL.md` }); continue; }
     if (path.posix.basename(p) !== 'SKILL.md') continue;
     // de acá en adelante, una vez por skill (su SKILL.md)
-    const depth = root.split('/').length - 1;
+    const depth = root.split('/').length - base.split('/').length;
     if (depth > MAX_SKILL_DEPTH) problems.push({ path: p, reason: `la skill ${root} está a ${depth} carpetas de skills/ (hasta ${MAX_SKILL_DEPTH}: skills/<s>, skills/<grupo>/<s>, skills/projects/<cliente>/<s>)` });
-    const above = ancestors(root).find((a) => roots.has(a));
+    const above = ancestors(root, base).find((a) => roots.has(a));
     if (above) problems.push({ path: p, reason: `la skill ${root} está dentro de otra skill de la capa (${above}/SKILL.md más arriba)` });
     const r = foldPath(root);
     if (publicDirs.has(r)) problems.push({ path: p, reason: `la carpeta ${root} ya existe en la versión pública que va a quedar: la capa no mete archivos en ella` });
-    const inPublic = ancestors(r).find((a) => publicSkills.has(a));
+    const inPublic = ancestors(r, base).find((a) => publicSkills.has(a));
     if (inPublic) problems.push({ path: p, reason: `la skill ${root} quedaría dentro de una skill de la versión pública (${inPublic})` });
     const tp = thirdParty.find((t) => r === t || r.startsWith(`${t}/`) || t.startsWith(`${r}/`));
     if (tp) problems.push({ path: p, reason: `la skill ${root} se pisa con una skill de terceros de la versión (${tp})` });
@@ -515,8 +526,8 @@ function contentProblems(dir, files) {
   const read = (p) => { try { return fs.readFileSync(path.join(dir, ...p.split('/')), 'utf8'); } catch (_) { return null; } };
   for (const f of files) {
     const p = f.path;
-    const isAgent = /^agents\/[^/]+\.md$/.test(p);
-    const isSkill = p.startsWith('skills/') && path.posix.basename(p) === 'SKILL.md';
+    const isAgent = AGENT_RE.test(p);
+    const isSkill = isSkillMd(p);
     const isPack = /^packs\/[^/]+\/pack\.json$/.test(p);
     if (!isAgent && !isSkill && !isPack) continue;
     const text = read(p);
@@ -566,8 +577,9 @@ function versionIndex(versionDir) {
     // sin el archivo, la versión no trae skills de terceros; uno ilegible es «no sé dónde caen», que se dice (fallos silenciosos, A2a)
     if (!e || e.code !== 'ENOENT') thirdPartyError = `scripts/publishing/third-party-skills.json de la versión no se puede leer (${(e && (e.code || e.message)) || e}): no sé dónde caen sus skills de terceros`;
   }
-  const agents = paths.filter((p) => /^agents\/[^/]+\.md$/.test(p)).map((p) => path.posix.basename(p, '.md'));
-  const skills = [...paths.filter((p) => p.startsWith('skills/') && path.posix.basename(p) === 'SKILL.md').map((p) => path.posix.basename(path.posix.dirname(p))), ...thirdPartyRoots.map((t) => path.posix.basename(t))];
+  // los de la raíz y los de las carpetas de sus paquetes (story 8.41): todos se enlazan con su nombre en la misma carpeta
+  const agents = paths.filter((p) => AGENT_RE.test(p)).map((p) => path.posix.basename(p, '.md'));
+  const skills = [...paths.filter(isSkillMd).map((p) => path.posix.basename(path.posix.dirname(p))), ...thirdPartyRoots.map((t) => path.posix.basename(t))];
   const packs = paths.filter((p) => /^packs\/[^/]+\/pack\.json$/.test(p)).map((p) => p.split('/')[1]);
   return { version: relm.version || null, paths, thirdPartyRoots, thirdPartyError, agents, skills, packs };
 }
@@ -590,15 +602,22 @@ function checkAgainstVersion(layerDir, files, versionDir, { env = process.env } 
   const vAgent = clash(idx.agents, 'un agente'); const vSkill = clash(idx.skills, 'una skill'); const vPack = clash(idx.packs, 'un paquete');
   for (const p of paths) {
     let why = null;
-    if (/^agents\/[^/]+\.md$/.test(p)) why = vAgent(path.posix.basename(p, '.md'));
-    else if (p.startsWith('skills/') && path.posix.basename(p) === 'SKILL.md') why = vSkill(path.posix.basename(path.posix.dirname(p)));
+    if (AGENT_RE.test(p)) why = vAgent(path.posix.basename(p, '.md'));
+    else if (isSkillMd(p)) why = vSkill(path.posix.basename(path.posix.dirname(p)));
     else if (/^packs\/[^/]+\/pack\.json$/.test(p)) why = vPack(p.split('/')[1]);
     if (why) problems.push({ path: p, reason: why });
+  }
+  // dentro de la capa: un agente o una skill con el mismo nombre en la raíz y en un paquete, o en dos paquetes, se
+  // enlazarían en el mismo lugar de ~/.claude (sin caja ni acentos, como contra la versión)
+  for (const [kind, isIt, nameOf] of [['el agente', (p) => AGENT_RE.test(p), (p) => path.posix.basename(p, '.md')], ['la skill', isSkillMd, (p) => path.posix.basename(path.posix.dirname(p))]]) {
+    const by = new Map();
+    for (const p of paths.filter(isIt)) { const k = foldName(nameOf(p)); by.set(k, [...(by.get(k) || []), p]); }
+    for (const same of by.values()) if (same.length > 1) for (const p of same) problems.push({ path: p, reason: `${kind} ${nameOf(p)} está en dos lugares de la capa (${same.filter((x) => x !== p).join(', ')}): se enlazarían en el mismo lugar` });
   }
   const layerPacks = paths.filter((p) => /^packs\/[^/]+\/pack\.json$/.test(p));
   // el revisor que nombra un paquete de la capa y su agente, con la MISMA caja: en Mac y Windows el cargador lo encuentra igual
   // (el disco no distingue) y en Linux no; y en ejecución el pipeline lo pide por su nombre exacto (pase adversarial, clase 7)
-  const exactAgents = new Set([...idx.agents, ...paths.filter((p) => /^agents\/[^/]+\.md$/.test(p)).map((p) => path.posix.basename(p, '.md'))]);
+  const exactAgents = new Set([...idx.agents, ...paths.filter((p) => AGENT_RE.test(p)).map((p) => path.posix.basename(p, '.md'))]);
   for (const pp of layerPacks) {
     let j = null;
     try { j = JSON.parse(fs.readFileSync(path.join(layerDir, ...pp.split('/')), 'utf8')); } catch (_) { j = null; }   // ilegible: lo dice contentProblems
@@ -718,7 +737,8 @@ function packProblems(layerDir, layerPaths, versionDir, idx) {
   try { tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tycon-team-packs-')); } catch (e) { return [{ path: '(paquetes)', reason: `no pude armar el árbol temporal para validar los paquetes (${e.code || e.message})` }]; }
   try {
     const copy = (fromRoot, rel) => { const to = path.join(tmp, ...rel.split('/')); fs.mkdirSync(path.dirname(to), { recursive: true }); fs.copyFileSync(path.join(fromRoot, ...rel.split('/')), to); };
-    const isPackOrAgent = (p) => /^packs\/[^/]+\/pack\.json$/.test(p) || /^agents\/[^/]+\.md$/.test(p);
+    // un paquete entero (su manifiesto y sus carpetas: el cargador mira que existan) y los agentes de la raíz
+    const isPackOrAgent = (p) => /^packs\/[^/]+\//.test(p) || /^agents\/[^/]+\.md$/.test(p);
     const fromVersion = idx.paths.filter(isPackOrAgent);
     for (const p of fromVersion) {
       // un archivo de la lista que no está: el cargador lo dice como agente inexistente; cualquier otro error se dice tal cual
@@ -730,7 +750,7 @@ function packProblems(layerDir, layerPaths, versionDir, idx) {
     try { fs.mkdirSync(path.join(tmp, 'packs'), { recursive: true }); fs.mkdirSync(path.join(tmp, 'agents'), { recursive: true }); } catch (e) { return [{ path: '(paquetes)', reason: `no pude armar el árbol temporal para validar los paquetes (${e.code || e.message})` }]; }
     // el núcleo de esa versión: sus agentes que ningún paquete PÚBLICO declara
     const declared = new Set();
-    for (const p of fromVersion.filter((x) => x.startsWith('packs/'))) {
+    for (const p of fromVersion.filter((x) => /^packs\/[^/]+\/pack\.json$/.test(x))) {
       // con sus claves viejas también (`revisores`/`agente`), como las lee el cargador: si no, ese agente caería en el núcleo
       let j = null;
       try { j = JSON.parse(fs.readFileSync(path.join(versionDir, ...p.split('/')), 'utf8')); } catch (e) { if (!e || e.code !== 'ENOENT') return [{ path: p, reason: `el manifiesto de un paquete de la versión no se puede leer (${(e && (e.code || e.message)) || e}): no sé qué agentes son de paquetes` }]; }
@@ -843,8 +863,8 @@ function contentsAt(c, repo, file, sha) {
 }
 
 /** Los archivos que se juzgan por su CONTENIDO antes de escribir nada (momento 1 del AC 26): el perfil, los agentes, los SKILL.md y los manifiestos de paquete. */
-const isContentChecked = (p) => isProfilePath(p) || p === TEAM_REPOS_PATH || /^agents\/[^/]+\.md$/.test(p)
-  || (p.startsWith('skills/') && path.posix.basename(p) === 'SKILL.md') || /^packs\/[^/]+\/pack\.json$/.test(p);
+const isContentChecked = (p) => isProfilePath(p) || p === TEAM_REPOS_PATH || AGENT_RE.test(p)
+  || isSkillMd(p) || /^packs\/[^/]+\/pack\.json$/.test(p);
 const rmQuiet = (d) => { try { fs.rmSync(d, { recursive: true, force: true }); } catch (_) { /* queda en la temporal del sistema */ } };
 // las temporales de lo leído que todavía no se movieron a la caché: se borran al salir pase lo que pase (`--dry-run`, un aborto)
 const STAGED = new Set();

@@ -42,6 +42,7 @@ const esTest = (f) => /\.test\.[cm]?js$/.test(f) || /\.test\.sh$/.test(f);
 // Suites que existen y NO están en suites.json A PROPÓSITO — cada una con su motivo, como las excepciones de T8.
 // Una excepción sin motivo, o de un archivo que no existe, o de una suite que SÍ está registrada, es un agujero.
 const A_MANO = Object.freeze({
+  'packs-update-keeps-pieces.test.sh': 'story 8.41: es la entrada a mano de la prueba de actualización de los paquetes; la prueba misma vive en windows-guided-lab.test.js (PacksUpdate_*), que ya está registrada y corre sola: registrar este envoltorio la correría dos veces.',
   'portable-suites.test.sh': 'story 8.3, decisión del dev (2026-09-26): corre TODAS las portables otra vez (~100 suites, 5-6 min) y para el equipo no puede haber más espera en el portón ni en el nocturno. Se corre a mano (bash scripts/tests/portable-suites.test.sh) y en el gate del commit de toda story que toque suites.json o el instalador.',
 });
 

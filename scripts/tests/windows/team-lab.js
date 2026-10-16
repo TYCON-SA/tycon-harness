@@ -917,7 +917,8 @@ function answers(before, after, differences, { sessions = [], target = null } = 
  * referencia). Nombres inventados. `second: false` es el commit siguiente: sin el revisor condicional (ni en el paquete) y sin
  * la skill de una carpeta. Escribe en `dir` (lo que había de la capa lo reemplaza) y devuelve las rutas, ordenadas.
  */
-const LAYER_A2 = Object.freeze({ pack: 'equipo-lab-a2', base: 'rev-lab-base', cond: 'rev-lab-cond', single: 'sola-lab', nested: 'projects/cliente-lab/arq-lab' });
+// `whole*`: un paquete ENTERO que llega por la capa, con su skill, su agente y su guía en su carpeta
+const LAYER_A2 = Object.freeze({ pack: 'equipo-lab-a2', base: 'rev-lab-base', cond: 'rev-lab-cond', single: 'sola-lab', nested: 'projects/cliente-lab/arq-lab', whole: 'equipo-lab-entero', wholeSkill: 's-lab-entera', wholeAgent: 'rev-lab-entero' });
 function writeTeamLayerA2(dir, { second = true } = {}) {
   const put = (rel, text) => { fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true }); fs.writeFileSync(path.join(dir, rel), text); return rel; };
   for (const sub of ['agents', 'packs', 'skills']) fs.rmSync(path.join(dir, sub), { recursive: true, force: true });
@@ -935,6 +936,14 @@ function writeTeamLayerA2(dir, { second = true } = {}) {
     put(`skills/${LAYER_A2.nested}/references/a.md`, '# referencia de juguete\n'),
   ];
   if (second) out.push(put(`agents/${LAYER_A2.cond}.md`, agent(LAYER_A2.cond)), put(`skills/${LAYER_A2.single}/SKILL.md`, skill(LAYER_A2.single)));
+  // el paquete entero: su revisor sólo entra con un archivo que ningún repo de juguete trae (no cambia ningún set)
+  const W = LAYER_A2.whole;
+  out.push(
+    put(`packs/${W}/pack.json`, `${JSON.stringify({ name: W, description: 'paquete entero del equipo de juguete (ensayo)', skills: 'skills', agents: 'agents', guides: [`packs/${W}/guides/guia-lab.md`], reviewers: [{ agent: LAYER_A2.wholeAgent, group: 'condicional', when: { files: '^lab-nunca/' }, surface: { paths: ['lab-nunca/**'] }, depth: 'standard', prefixes: ['LABE'] }] }, null, 2)}\n`),
+    put(`packs/${W}/agents/${LAYER_A2.wholeAgent}.md`, agent(LAYER_A2.wholeAgent)),
+    put(`packs/${W}/skills/${LAYER_A2.wholeSkill}/SKILL.md`, skill(LAYER_A2.wholeSkill)),
+    put(`packs/${W}/guides/guia-lab.md`, '# guía del paquete de juguete\n'),
+  );
   return out.sort();
 }
 
