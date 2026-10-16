@@ -48,7 +48,28 @@ function gitEnv(date) {
 const DAY = '2030.01.15';
 const AT = (day, hour = 12) => `${day.replace(/\./g, '-')}T${String(hour).padStart(2, '0')}:00:00Z`;
 const git = (dir, args, date = AT(DAY)) => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8', env: gitEnv(date), stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-const deps = (extra = {}) => Object.assign({ env: gitEnv(AT(DAY)) }, extra);
+
+// ── story 7.28: ninguna prueba le pregunta al `az` ni al `gh` de la máquina (AC 15) ──────────────────────────────────
+// Lo que el proceso de pruebas tiene como `az` y `gh` «de verdad» es un guion que anota si lo llamaron: la última prueba
+// del archivo (T22) mira que el registro siga vacío. Las pruebas usan los dobles de `deps()` y, por la línea de comandos,
+// los de `cli()`.
+const REAL_CALLS = path.join(SCRATCH, 'llamadas-al-az-y-al-gh-de-la-maquina.log');
+const REAL_STAND_IN = path.join(SCRATCH, 'az-y-gh-de-la-maquina.js');
+fs.writeFileSync(REAL_STAND_IN, `require('fs').appendFileSync(${JSON.stringify(REAL_CALLS)}, JSON.stringify(process.argv.slice(2)) + '\\n');\nprocess.stderr.write('no se le pregunta a la máquina');\nprocess.exit(1);\n`);
+process.env.TYCON_GH = REAL_STAND_IN;
+process.env.TYCON_ADO_CMD = REAL_STAND_IN;
+const CLI_CALLS = path.join(SCRATCH, 'llamadas-de-la-linea-de-comandos.log');
+const CLI_STAND_IN = path.join(SCRATCH, 'az-y-gh-de-mentira.js');
+fs.writeFileSync(CLI_STAND_IN, `require('fs').appendFileSync(${JSON.stringify(CLI_CALLS)}, JSON.stringify(process.argv.slice(2)) + '\\n');\nprocess.stderr.write('de mentira: no contesto');\nprocess.exit(1);\n`);
+/** Un `az` o un `gh` de mentira que no contesta y anota cada llamada (`.calls`). */
+function silent() {
+  const calls = [];
+  const fn = (args) => { calls.push(args); return { status: 1, stdout: '', stderr: 'de mentira: no contesto' }; };
+  fn.calls = calls;
+  return fn;
+}
+// por defecto: el árbol no trae team-repos.json, y el az y el gh no contestan
+const deps = (extra = {}) => Object.assign({ env: gitEnv(AT(DAY)), az: silent(), gh: silent(), teamRepos: () => ({ absent: true }) }, extra);
 
 let serial = 0;
 const versionText = (version, eol = '\n') => ['{', `  "version": "${version}",`, '  "source": {', '    "harness": "0123456789abcdef0123456789abcdef01234567"', '  },',
@@ -667,7 +688,7 @@ test('T61 — en verde, pero la versión quedó atrás de la destino: 7 (se comp
 
 // ── la línea de comandos ─────────────────────────────────────────────────────────────────────────────────────────────
 function cli(args, env = {}) {
-  const r = spawnSync(process.execPath, [TOOL, ...args], { encoding: 'utf8', env: Object.assign(gitEnv(AT(DAY)), env), windowsHide: true });
+  const r = spawnSync(process.execPath, [TOOL, ...args], { encoding: 'utf8', env: Object.assign(gitEnv(AT(DAY)), { TYCON_GH: CLI_STAND_IN, TYCON_ADO_CMD: CLI_STAND_IN }, env), windowsHide: true });
   let json = null;
   try { json = JSON.parse(r.stdout); } catch (_) { /* no siempre imprime JSON */ }
   return { status: r.status, json, stdout: r.stdout, stderr: r.stderr };
@@ -1464,4 +1485,513 @@ test(`${T79} — la transición: con la destino SIN la marca, el pedido que la t
   const after = JSON.parse(fs.readFileSync(path.join(work, 'version.json'), 'utf8'));
   assert.deepStrictEqual([after.version, after.numbering], [`${DAY}.2`, 'merge-tag'], 'sube el número y la marca queda');
   assert.strictEqual(M.checkVersion({ repo: work, base: 'origin/main', head: 'feat/marca' }, deps()).code, 0);
+});
+
+// ══ story 7.28: el merge deja las suites completas al servidor cuando la rama lo exige ═══════════════════════════════
+// La regla sale de `team-repos.json → merge_suites` (o de la forma vieja, `merge.mode: pr`) y de lo que contesta la
+// plataforma: las políticas de la rama en Azure DevOps, las reglas de la rama en GitHub. «No pude preguntar» nunca es
+// «las corre el servidor» con la regla automático. Todo con dobles: ninguna prueba sale a la red.
+const TR = require(path.join(ROOT, 'scripts', 'lib', 'team-repos.js'));
+const BUILD = 'id-del-tipo-build';   // el código reconoce el tipo por su nombre («Build»), no por este id
+const AZ_URL = 'https://dev.azure.com/acme/Ventas/_git/Backend';
+const AZ_REPO = { platform: 'azure', org: 'acme', project: 'Ventas', repo: 'Backend' };
+const GH_URL = 'https://github.com/acme/widgets.git';
+const GH_REPO = { platform: 'github', org: 'acme', repo: 'widgets' };
+const MACHINE = /^las suites corren en esta máquina: /;
+const SERVER = /^las suites las corre el servidor/;
+
+/** El `team-repos.json` que leería el plan, por el lector de verdad: con `merge_suites` = `ms` (o sin la clave). */
+const team = (ms) => () => TR.parse(JSON.stringify(Object.assign({ version: 1, public: GH_REPO, profile: AZ_REPO, operations: AZ_REPO },
+  ms === undefined ? {} : { merge_suites: ms })));
+const entry = (repo, extra) => ({ repos: [Object.assign({ repo }, extra)] });
+
+/** Una política de build de Azure; `over` cambia lo de arriba, `settings` lo de adentro. */
+const policy = (over = {}, settings = {}) => Object.assign({ type: { id: BUILD, displayName: 'Build' }, isEnabled: true, isBlocking: true, isDeleted: false,
+  settings: Object.assign({ buildDefinitionId: 94, displayName: 'Build + tests', manualQueueOnly: false, queueOnSourceUpdateOnly: false, validDuration: 0,
+    scope: [{ refName: 'refs/heads/main', matchKind: 'Exact', repositoryId: 'r-1' }] }, settings) }, over);
+const AZ_OK = (policies = [policy()]) => ({
+  'repos show': { id: 'r-1', defaultBranch: 'refs/heads/main' },
+  'repos policy': policies,
+  'pipelines list': [{ id: 94, name: 'Ventas Backend', path: '\\' }],
+  'pipelines show': { id: 94, name: 'Ventas Backend' },
+});
+/** Una respuesta de un CLI de mentira: un valor (JSON), `{ fail }`, `{ raw }`, `{ enoent }` o `{ timeout }`. */
+function answerOf(a) {
+  if (a && a.fail) return { status: 1, stdout: '', stderr: a.fail };
+  if (a && a.raw !== undefined) return { status: 0, stdout: a.raw, stderr: '' };
+  if (a && a.enoent) return { status: -1, stdout: '', stderr: 'spawnSync az ENOENT', notFound: true };
+  if (a && a.timeout) return { status: -1, stdout: '', stderr: 'spawnSync az ETIMEDOUT', timedOut: true };
+  return { status: 0, stdout: JSON.stringify(a), stderr: '' };
+}
+/** Un `az` de mentira: contesta por las dos primeras palabras de la orden (`repos show`, `pipelines list`…). */
+function fakeAz(routes) {
+  const fn = (args) => {
+    fn.calls.push(args);
+    const key = `${args[0]} ${args[1]}`;
+    return key in routes ? answerOf(routes[key]) : { status: 1, stdout: '', stderr: `ERROR: no conozco «${args.join(' ')}»` };
+  };
+  fn.calls = [];
+  return fn;
+}
+/** Un `gh` de mentira para las dos lecturas de la rama: `rules` (rules/branches) y `branch` (branches/<rama>). */
+function fakeGhApi(routes) {
+  const fn = (args) => {
+    fn.calls.push(args);
+    const key = /\/rules\/branches\//.test(String(args[1])) ? 'rules' : 'branch';
+    return key in routes ? answerOf(routes[key]) : { status: 1, stdout: '', stderr: 'gh: Not Found (HTTP 404)' };
+  };
+  fn.calls = [];
+  return fn;
+}
+const RULESET = (contexts, queue = true) => [...(queue ? [{ type: 'merge_queue' }] : []), ...(contexts ? [{ type: 'required_status_checks', parameters: { required_status_checks: contexts.map((context) => ({ context })) } }] : [])];
+const CLASSIC = (contexts, level = 'non_admins') => ({ protected: true, protection: { required_status_checks: { enforcement_level: level, contexts } } });
+const UNPROTECTED = { protected: false };
+const planAt = (url, config, extra = {}, opts = {}) => M.plan(Object.assign({ repo: withRemote(url, config), source: 'feat/x', target: 'main' }, opts), deps(extra));
+const PR_ONLY = 'merge:\n  mode: pr\n';
+
+test('T1 Plan_Azure_RequiredDeclaredPipeline_ServerByIdNameAndDigits @story-7.28 @ac-1', () => {
+  for (const declared of [94, '94', 'Ventas Backend']) {
+    const az = fakeAz(AZ_OK());
+    const p = planAt(AZ_URL, undefined, { az, teamRepos: team(entry(AZ_REPO, { full_tests_pipeline: declared })) });
+    assert.deepStrictEqual([p.code, p.suites, p.mode, p.step, p.suitesRule, p.suitesRuleFrom], [0, 'server', 'pr', '9b', 'automatico', 'default'], JSON.stringify(declared));
+    assert.deepStrictEqual(p.suitesPipeline, { declared, id: 94, name: 'Ventas Backend' });
+    assert.deepStrictEqual([p.platform.asked, p.platform.answer], [true, 'requires-declared']);
+    assert.match(p.suitesReason, SERVER);
+    assert.match(p.suitesReason, /Ventas Backend/);
+    assert.match(p.suitesReason, /merge_suites/, 'dice de dónde salió la regla');
+    // siempre contra la organización y el proyecto del remoto, en JSON; cada valor pegado a su opción
+    for (const call of az.calls) {
+      assert.ok(call.includes('--org=https://dev.azure.com/acme') && call.includes('--project=ventas'), call.join(' '));
+      assert.ok(call.includes('-o') && call[call.indexOf('-o') + 1] === 'json', call.join(' '));
+    }
+    const byName = az.calls.find((c) => c[0] === 'pipelines' && c[1] === 'list');
+    if (declared === 'Ventas Backend') assert.ok(byName.includes('--name=Ventas Backend'), byName.join(' '));
+    else assert.ok(!byName, 'un id no se busca por nombre');
+    const policyCall = az.calls.find((c) => c[1] === 'policy');
+    assert.ok(policyCall.includes('--repository-id=r-1') && policyCall.includes('--branch=refs/heads/main'), policyCall.join(' '));
+    assert.ok(az.calls[0].includes('--repository=Backend'), az.calls[0].join(' '));
+  }
+  // con un id, si la lectura del nombre falla: el nombre queda null y la decisión no cambia
+  const failing = fakeAz(Object.assign(AZ_OK(), { 'pipelines show': { fail: 'ERROR: TF401019' } }));
+  const p = planAt(AZ_URL, undefined, { az: failing, teamRepos: team(entry(AZ_REPO, { full_tests_pipeline: 94 })) });
+  assert.deepStrictEqual([p.suites, p.suitesPipeline.id, p.suitesPipeline.name], ['server', 94, null]);
+});
+
+test('T2 Plan_GitHub_RequiredCheck_RulesetClassicQueueAndEnforcement @story-7.28 @ac-2', () => {
+  const declared = team(entry(GH_REPO, { full_tests_pipeline: 'ci-completo' }));
+  const at = (routes, config) => planAt(GH_URL, config, { gh: fakeGhApi(routes), teamRepos: declared });
+  const a = at({ rules: RULESET(['ci-completo']), branch: CLASSIC(['ci-completo']) });
+  assert.deepStrictEqual([a.suites, a.mode, a.step, a.check, a.canMerge, a.platform.mergeQueue], ['server', 'pr', '9c', 'ci-completo', true, true]);
+  const b = at({ rules: [], branch: CLASSIC(['ci-completo']) });
+  assert.deepStrictEqual([b.suites, b.step, b.check, b.canMerge, b.platform.mergeQueue], ['server', '9c', 'ci-completo', true, false]);
+  const c = at({ rules: RULESET(null), branch: UNPROTECTED });
+  assert.deepStrictEqual([c.suites, c.platform.mergeQueue], ['machine', true]);
+  assert.match(c.suitesReason, /la rama main no exige «ci-completo»/);
+  assert.match(c.suitesReason, /cola/, 'la cola sola no alcanza, y se dice');
+  const d = at({ rules: [], branch: CLASSIC(['ci-completo'], 'off') });
+  assert.strictEqual(d.suites, 'machine');
+  // el control que se espera es el declarado, aunque el repo declare otro merge.check
+  const e = at({ rules: RULESET(['ci-completo']), branch: CLASSIC(['ci-completo']) }, 'merge:\n  mode: pr\n  check: otro\n');
+  assert.deepStrictEqual([e.suites, e.step, e.check, e.canMerge], ['server', '9c', 'ci-completo', true]);
+  // y las dos lecturas, nombrando el repo y la rama
+  const gh = fakeGhApi({ rules: RULESET(['ci-completo']), branch: CLASSIC(['ci-completo']) });
+  planAt(GH_URL, undefined, { gh, teamRepos: declared });
+  assert.deepStrictEqual(gh.calls.map((c) => c.slice(0, 2)), [['api', 'repos/acme/widgets/rules/branches/main?per_page=100&page=1'], ['api', 'repos/acme/widgets/branches/main']]);
+});
+
+test('T3 Plan_Automatico_MachineReasons_NoPipelineOtherNoneNotEffective @story-7.28 @ac-3', () => {
+  // sin pipeline declarado: máquina, sin ninguna llamada
+  const az0 = fakeAz(AZ_OK());
+  const none = planAt(AZ_URL, undefined, { az: az0, teamRepos: team({ default: 'automatico' }) });
+  assert.deepStrictEqual([none.suites, none.platform.asked, none.platform.answer, az0.calls.length], ['machine', false, 'not-asked', 0]);
+  assert.match(none.suitesReason, MACHINE);
+  assert.match(none.suitesReason, /no hay pipeline de pruebas completas declarado/);
+  const declared = team(entry(AZ_REPO, { full_tests_pipeline: 94 }));
+  const with_ = (policies) => planAt(AZ_URL, undefined, { az: fakeAz(AZ_OK(policies)), teamRepos: declared });
+  const other = with_([policy({}, { buildDefinitionId: 12 })]);
+  assert.deepStrictEqual([other.suites, other.platform.answer], ['machine', 'requires-other']);
+  assert.match(other.suitesReason, /otro pipeline.*12/);
+  const empty = with_([]);
+  assert.deepStrictEqual([empty.suites, empty.platform.answer], ['machine', 'requires-none']);
+  // una política de otro tipo (revisores) no es build validation, aunque traiga un número parecido
+  const reviewers = with_([policy({ type: { id: 'id-de-revisores', displayName: 'Minimum number of reviewers' }, settings: { minimumApproverCount: 1 } })]);
+  assert.deepStrictEqual([reviewers.suites, reviewers.platform.answer], ['machine', 'requires-none']);
+  // y una que nombra un pipeline sin decir que es de build (sin nombre de tipo, o traducido) no se descarta: no se sabe
+  for (const type of [{ id: 'x' }, { id: 'x', displayName: 'Compilación' }]) {
+    const unknown = with_([policy({ type })]);
+    assert.deepStrictEqual([unknown.suites, unknown.platform.answer], ['machine', 'could-not-ask'], JSON.stringify(type));
+  }
+  assert.match(empty.suitesReason, /no exige ningún pipeline/);
+  const notEffective = [
+    [policy({ isEnabled: false }), /apagada/],
+    [policy({ isBlocking: false }), /opcional/],
+    [policy({ isDeleted: true }), /borrada/],
+    [policy({}, { filenamePatterns: ['src/*'] }), /filtros de archivos/],
+    [policy({}, { scope: [{ refName: 'refs/heads/otra', matchKind: 'Exact', repositoryId: 'r-1' }] }), /alcance/],
+    [policy({}, { scope: [{ refName: 'refs/heads/main', matchKind: 'Exact', repositoryId: 'r-9' }] }), /alcance/],
+  ];
+  for (const [p, why] of notEffective) {
+    const r = with_([p]);
+    assert.deepStrictEqual([r.suites, r.platform.answer], ['machine', 'not-effective'], JSON.stringify(p));
+    assert.match(r.suitesReason, MACHINE);
+    assert.match(r.suitesReason, why);
+  }
+  // y las que SÍ cuentan: todos los repos del proyecto, una lista de filtros vacía, un prefijo, la rama por defecto
+  for (const scope of [
+    [{ refName: 'refs/heads/main', matchKind: 'Exact', repositoryId: null }],
+    [{ refName: 'refs/heads/main', matchKind: 'Exact' }],
+    [{ refName: 'refs/heads/', matchKind: 'Prefix', repositoryId: 'r-1' }],
+    [{ matchKind: 'DefaultBranch', repositoryId: 'r-1' }],
+  ]) assert.strictEqual(with_([policy({}, { scope })]).suites, 'server', JSON.stringify(scope));
+  assert.strictEqual(with_([policy({}, { filenamePatterns: [] })]).suites, 'server');
+  // `manualQueueOnly` igual cuenta (frena el pedido), y se dice
+  const manual = with_([policy({}, { manualQueueOnly: true })]);
+  assert.strictEqual(manual.suites, 'server');
+  assert.match(manual.platform.detail, /a mano/);
+});
+
+test('T4 Plan_Automatico_PipelineNameNotFoundOrAmbiguous_Machine @story-7.28 @ac-3', () => {
+  const declared = team(entry(AZ_REPO, { full_tests_pipeline: 'Ventas Backend' }));
+  const listing = (list) => planAt(AZ_URL, undefined, { az: fakeAz(Object.assign(AZ_OK(), { 'pipelines list': list })), teamRepos: declared });
+  const missing = listing([]);
+  assert.strictEqual(missing.suites, 'machine');
+  assert.match(missing.suitesReason, /no existe/);
+  const two = listing([{ id: 94, name: 'Ventas Backend', path: '\\' }, { id: 95, name: 'Ventas Backend', path: '\\viejos' }]);
+  assert.strictEqual(two.suites, 'machine');
+  assert.match(two.suitesReason, /hay 2 pipelines/);
+  // `--name` de az puede traer parecidos: sólo cuenta el igual, sin distinguir mayúsculas
+  const oneCase = listing([{ id: 94, name: 'VENTAS BACKEND', path: '\\' }, { id: 96, name: 'Ventas Backend viejo', path: '\\' }]);
+  assert.deepStrictEqual([oneCase.suites, oneCase.suitesPipeline.id], ['server', 94]);
+});
+
+test('T5 Plan_CouldNotAsk_NeverServer_CutsAtFirstFailure @story-7.28 @ac-3', () => {
+  const declaredAz = team(entry(AZ_REPO, { full_tests_pipeline: 94 }));
+  for (const [answer, why] of [[{ enoent: true }, /no está/], [{ fail: 'ERROR: Please run «az login» to setup account.' }, /az login/], [{ raw: 'esto no es JSON' }, /JSON/], [{ timeout: true }, /tope/]]) {
+    const az = fakeAz(Object.assign(AZ_OK(), { 'repos show': answer }));
+    const p = planAt(AZ_URL, undefined, { az, teamRepos: declaredAz });
+    assert.deepStrictEqual([p.code, p.suites, p.platform.answer], [0, 'machine', 'could-not-ask'], JSON.stringify(answer));
+    assert.match(p.suitesReason, /^las suites corren en esta máquina: no pude preguntarle a Azure DevOps \(/);
+    assert.match(p.suitesReason, why);
+    assert.strictEqual(az.calls.length, 1, 'después de la primera falla no hay más llamadas');
+  }
+  // 🔴 una lista vacía de un az que falló no es «sin políticas»
+  const policyFails = fakeAz(Object.assign(AZ_OK(), { 'repos policy': { fail: 'ERROR: TF400813' } }));
+  const pf = planAt(AZ_URL, undefined, { az: policyFails, teamRepos: declaredAz });
+  assert.deepStrictEqual([pf.suites, pf.platform.answer, policyFails.calls.length], ['machine', 'could-not-ask', 2]);
+  // el tope total del plan: con el reloj pasado (la primera llamada se lleva 100 s de los 90), no se llama más
+  let clock = 0;
+  const slow = fakeAz(AZ_OK());
+  const slowAz = (args) => { clock += 100000; return slow(args); };
+  const late = planAt(AZ_URL, undefined, { az: slowAz, now: () => clock, teamRepos: declaredAz });
+  assert.deepStrictEqual([late.suites, late.platform.answer], ['machine', 'could-not-ask']);
+  assert.match(late.suitesReason, /tope/);
+  assert.ok(slow.calls.length < 4, `cortó al pasar el tope total (${slow.calls.length} llamadas)`);
+  // 🔴 los nombres del remoto son texto de afuera: uno que empieza con «-» va pegado a su opción, nunca suelto
+  const dash = fakeAz(AZ_OK());
+  M.suitesDecision({ host: 'azure', org: 'acme', project: 'ventas', name: '-o' }, { mode: 'push', check: null, declaredIn: 'x' }, 'main',
+    deps({ az: dash, teamRepos: team(entry({ platform: 'azure', org: 'acme', project: 'ventas', repo: '-o' }, { full_tests_pipeline: 94 })) }));
+  assert.strictEqual(dash.calls[0][2], '--repository=-o', dash.calls[0].join(' '));
+  assert.strictEqual(dash.calls[0].filter((a) => a === '-o').length, 1, 'el único «-o» suelto es el del formato');
+  // 🔴 una respuesta con otra forma no es «no exige nada»: GitHub con objetos donde van listas, y Azure sin el pipeline
+  for (const routes of [
+    { rules: [{ type: 'required_status_checks', parameters: { required_status_checks: { context: 'ci-completo' } } }], branch: UNPROTECTED },
+    { rules: [], branch: { protected: true, protection: { required_status_checks: { enforcement_level: 'non_admins', contexts: 'ci-completo' } } } },
+    { rules: [], branch: 'texto' },
+  ]) {
+    const p = planAt(GH_URL, undefined, { gh: fakeGhApi(routes), teamRepos: team(entry(GH_REPO, { full_tests_pipeline: 'ci-completo' })) });
+    assert.deepStrictEqual([p.code, p.suites, p.platform.answer], [0, 'machine', 'could-not-ask'], JSON.stringify(routes));
+  }
+  for (const bad of [undefined, true, [94], 0, '0', 'x94']) {
+    const noId = planAt(AZ_URL, undefined, { az: fakeAz(AZ_OK([policy({}, { buildDefinitionId: bad })])), teamRepos: declaredAz });
+    assert.deepStrictEqual([noId.suites, noId.platform.answer], ['machine', 'could-not-ask'], JSON.stringify(bad));
+  }
+  assert.strictEqual(planAt(AZ_URL, undefined, { az: fakeAz(AZ_OK([policy({}, { buildDefinitionId: '94' })])), teamRepos: declaredAz }).suites, 'server', 'un id como texto de dígitos vale');
+  // una lectura de team-repos.json que no devuelve nada no es «no está» (con merge.mode: pr sería «confiar»)
+  const nothing = planAt(AZ_URL, PR_ONLY, { teamRepos: () => undefined });
+  assert.deepStrictEqual([nothing.suites, nothing.suitesRule], ['machine', null]);
+  assert.match(nothing.suitesReason, /no pude leer la configuración de la organización/);
+  // y un dueño o repo de GitHub que no es un nombre de GitHub no llega a la ruta de la API
+  const odd = fakeGhApi({ rules: RULESET(['ci-completo']), branch: CLASSIC(['ci-completo']) });
+  const weird = M.suitesDecision({ host: 'github', ghRepo: 'acme/a?b' }, { mode: 'push', check: null, declaredIn: 'x' }, 'main',
+    deps({ gh: odd, teamRepos: team(entry({ platform: 'github', org: 'acme', repo: 'widgets' }, { full_tests_pipeline: 'ci-completo' })) }));
+  assert.strictEqual(odd.calls.length, 0);
+  assert.notStrictEqual(weird.suites, 'server');
+  // GitHub
+  const declaredGh = team(entry(GH_REPO, { full_tests_pipeline: 'ci-completo' }));
+  for (const routes of [{ rules: { fail: 'gh: HTTP 500' } }, {}]) {
+    const gh = fakeGhApi(routes);
+    const p = planAt(GH_URL, undefined, { gh, teamRepos: declaredGh });
+    assert.deepStrictEqual([p.suites, p.platform.answer, gh.calls.length], ['machine', 'could-not-ask', 1]);
+    assert.match(p.suitesReason, /^las suites corren en esta máquina: no pude preguntarle a GitHub \(/);
+  }
+});
+
+test('T6 Plan_DirectPush_AlwaysMachine @story-7.28 @ac-4', () => {
+  const real = withRemote(GH_URL, PR_ONLY);
+  for (const url of [real, null, 'https://gitlab.example/acme/widgets.git']) {
+    for (const rule of TR.MERGE_RULES) {
+      const az = fakeAz(AZ_OK());
+      const gh = fakeGhApi({ rules: RULESET(['ci-completo']), branch: CLASSIC(['ci-completo']) });
+      const p = planAt(url, PR_ONLY, { az, gh, teamRepos: team({ default: rule }) });
+      assert.deepStrictEqual([p.suites, p.step, az.calls.length + gh.calls.length], ['machine', '9', 0], `${url} · ${rule}`);
+      assert.match(p.suitesReason, MACHINE);
+      if (rule === 'confiar-en-el-servidor') assert.match(p.suitesReason, /sin pedido/);
+    }
+  }
+  const pushed = planAt(AZ_URL, 'merge:\n  mode: push\n', { az: fakeAz(AZ_OK()), teamRepos: team(entry(AZ_REPO, { rule: 'siempre-en-la-maquina', full_tests_pipeline: 94 })) });
+  assert.deepStrictEqual([pushed.suites, pushed.mode, pushed.step], ['machine', 'push', '9']);
+});
+
+test('T7 Plan_SiempreEnLaMaquina_NoPlatformCall @story-7.28 @ac-5', () => {
+  for (const [config, mode, step] of [[PR_ONLY, 'pr', '9b'], [undefined, 'push', '9']]) {
+    const az = fakeAz(AZ_OK());
+    const p = planAt(AZ_URL, config, { az, teamRepos: team(entry(AZ_REPO, { rule: 'siempre-en-la-maquina', full_tests_pipeline: 94 })) });
+    assert.deepStrictEqual([p.suites, p.mode, p.step, az.calls.length, p.platform.answer], ['machine', mode, step, 0, 'not-asked']);
+    assert.match(p.suitesReason, /siempre-en-la-maquina/);
+  }
+});
+
+test('T8 Plan_Confiar_PrAlways_MachineOnlyIfNoControl @story-7.28 @ac-5', () => {
+  const trust = team({ default: 'confiar-en-el-servidor' });
+  const az = (routes) => planAt(AZ_URL, undefined, { az: fakeAz(routes), teamRepos: trust });
+  const required = az(AZ_OK());
+  assert.deepStrictEqual([required.mode, required.step, required.suites, required.suitesRule], ['pr', '9b', 'server', 'confiar-en-el-servidor']);
+  const none = az(AZ_OK([]));
+  assert.deepStrictEqual([none.mode, none.suites], ['pr', 'machine']);
+  assert.match(none.suitesReason, /la regla confiar-en-el-servidor no se pudo cumplir: la rama no exige ningún control/);
+  const mute = planAt(AZ_URL, undefined, { teamRepos: trust });
+  assert.deepStrictEqual([mute.mode, mute.step, mute.suites, mute.platform.answer], ['pr', '9b', 'server', 'could-not-ask']);
+  assert.match(mute.suitesReason, /no pude confirmar que la rama exija un control: si no exige ninguno, el pedido se completa sin pruebas/);
+  const gh = planAt(GH_URL, undefined, { gh: fakeGhApi({ rules: [], branch: UNPROTECTED }), teamRepos: trust });
+  assert.deepStrictEqual([gh.mode, gh.step, gh.suites], ['pr', '9c', 'machine']);
+});
+
+test('T9 Plan_Precedence_EntryDefaultBuiltinLegacyAndNote @story-7.28 @ac-6', () => {
+  const az = () => fakeAz(AZ_OK());
+  const entryWins = planAt(AZ_URL, undefined, { az: az(), teamRepos: team(Object.assign({ default: 'confiar-en-el-servidor' }, entry(AZ_REPO, { rule: 'siempre-en-la-maquina' }))) });
+  assert.deepStrictEqual([entryWins.suitesRule, entryWins.suitesRuleFrom], ['siempre-en-la-maquina', 'repo']);
+  const orgDefault = planAt(AZ_URL, undefined, { az: az(), teamRepos: team(Object.assign({ default: 'siempre-en-la-maquina' }, entry(AZ_REPO, { full_tests_pipeline: 94 }))) });
+  assert.deepStrictEqual([orgDefault.suitesRule, orgDefault.suitesRuleFrom, orgDefault.suites], ['siempre-en-la-maquina', 'organization', 'machine']);
+  const builtin = planAt(AZ_URL, undefined, { az: az(), teamRepos: team({}) });
+  assert.deepStrictEqual([builtin.suitesRule, builtin.suitesRuleFrom], ['automatico', 'default']);
+  const legacy = planAt(AZ_URL, PR_ONLY, { az: az() });
+  assert.deepStrictEqual([legacy.suitesRule, legacy.suitesRuleFrom, legacy.mode, legacy.suites], ['confiar-en-el-servidor', 'legacy', 'pr', 'server']);
+  assert.match(legacy.legacyNote, /team-repos\.json → merge_suites/);
+  assert.match(legacy.legacyNote, /merge\.mode/);
+  // con merge_suites presente, la forma vieja no decide las suites (y no hay nota)
+  const both = planAt(AZ_URL, PR_ONLY, { az: az(), teamRepos: team({}) });
+  assert.deepStrictEqual([both.suitesRule, both.suitesRuleFrom, both.suites, both.legacyNote], ['automatico', 'default', 'machine', null]);
+  for (const p of [entryWins, orgDefault, builtin]) assert.strictEqual(p.legacyNote, null);
+});
+
+test('T10 Plan_RepoMatch_CaseInsensitiveDecoded_UnlistedUsesDefault @story-7.28 @ac-6', () => {
+  const ms = Object.assign({ default: 'confiar-en-el-servidor' }, entry({ platform: 'azure', org: 'acme', project: 'Ventas Norte', repo: 'Backend' }, { rule: 'siempre-en-la-maquina' }));
+  const listed = planAt('https://dev.azure.com/ACME/Ventas%20Norte/_git/backend', undefined, { teamRepos: team(ms) });
+  assert.deepStrictEqual([listed.suitesRule, listed.suitesRuleFrom], ['siempre-en-la-maquina', 'repo']);
+  const unlisted = planAt('https://dev.azure.com/acme/Ventas%20Norte/_git/Otro', undefined, { teamRepos: team(ms) });
+  assert.deepStrictEqual([unlisted.suitesRule, unlisted.suitesRuleFrom], ['confiar-en-el-servidor', 'organization']);
+});
+
+test('T11 Plan_OrgConfigUnreadable_MachineAndCodeZero @story-7.28 @ac-7', () => {
+  for (const reading of [() => TR.parse('{ no es json'), team({ default: 'auto' })]) {
+    const az = fakeAz(AZ_OK());
+    const p = planAt(AZ_URL, PR_ONLY, { az, teamRepos: reading });
+    assert.deepStrictEqual([p.code, p.suites, p.mode, p.step, az.calls.length], [0, 'machine', 'pr', '9b', 0]);
+    assert.match(p.suitesReason, /^las suites corren en esta máquina: no pude leer la configuración de la organización \(team-repos\.json: /);
+  }
+  const absent = planAt(AZ_URL, PR_ONLY, { teamRepos: () => ({ absent: true }) });
+  assert.deepStrictEqual([absent.suitesRuleFrom, absent.suitesRule], ['legacy', 'confiar-en-el-servidor']);
+});
+
+test('T12 Plan_OutputContract_NewFieldsOldFieldsKept_NoCredentials @story-7.28 @ac-8', () => {
+  const OLD = ['code', 'host', 'mode', 'check', 'configFrom', 'step', 'canMerge', 'notes', 'bodyFile', 'mergeBodyFile', 'version'];
+  const NEW = ['suites', 'suitesRule', 'suitesRuleFrom', 'suitesPipeline', 'platform', 'suitesReason', 'legacyNote'];
+  const azure = planAt(AZ_URL, PR_ONLY);
+  const github = planAt(GH_URL, PR_MODE);
+  for (const p of [azure, github]) {
+    for (const k of [...OLD, ...NEW]) assert.ok(k in p, `falta ${k}`);
+    assert.ok(['server', 'machine'].includes(p.suites));
+    assert.ok(['repo', 'organization', 'legacy', 'default'].includes(p.suitesRuleFrom));
+    assert.ok(['requires-declared', 'requires-other', 'requires-none', 'not-effective', 'could-not-ask', 'not-asked'].includes(p.platform.answer));
+    assert.deepStrictEqual(Object.keys(p.platform).sort(), ['answer', 'asked', 'detail', 'mergeQueue']);
+    assert.ok(!/\n/.test(p.suitesReason), 'una sola línea');
+  }
+  // la forma vieja: el modo, el paso y el control de hoy
+  assert.deepStrictEqual([azure.host, azure.mode, azure.step, azure.org, azure.project, azure.name], ['azure', 'pr', '9b', 'acme', 'ventas', 'Backend']);
+  assert.deepStrictEqual([github.host, github.mode, github.step, github.check, github.canMerge, github.ghRepo, github.name], ['github', 'pr', '9c', CHECK, true, 'acme/widgets', 'widgets']);
+  // 🔴 la dirección con usuario y clave no va a ningún texto
+  const secret = planAt('https://usuario:clave@git.example/acme/x.git', PR_ONLY);
+  assert.strictEqual(secret.step, '9');
+  assert.ok(!/usuario:clave@/.test(JSON.stringify(secret.notes)), secret.notes.join(' | '));
+  assert.ok(!/usuario:clave@/.test(secret.suitesReason), secret.suitesReason);
+  // una clave con un «@» escrito tampoco deja su cola
+  const at = planAt('https://usuario:p@ss@git.example/acme/x.git', PR_ONLY);
+  assert.ok(!/p@ss|ss@/.test(JSON.stringify(at.notes) + at.suitesReason), at.notes.join(' | '));
+});
+
+test('T13 WaitChecks_NoCheckFlag_SameCheckAsPlan @story-7.28 @ac-9', () => {
+  const go = (ms, answers) => {
+    const t = ready();
+    fs.mkdirSync(path.join(t.work, '.tycon'), { recursive: true });
+    fs.writeFileSync(path.join(t.work, '.tycon', 'advisors.yaml'), 'merge:\n  mode: pr\n  check: otro\n');
+    const fake = fakeGh(answers(t));
+    const r = M.waitChecks({ repo: t.work, pr: 7, head: t.head, target: 'main' },
+      deps({ gh: fake.gh, hostOf: () => ({ host: 'github', ghRepo: 'acme/widgets', owner: 'acme', name: 'widgets' }), sleep: () => {}, now: () => 0, teamRepos: team(ms) }));
+    return { r, calls: fake.calls };
+  };
+  const declared = go(entry(GH_REPO, { full_tests_pipeline: 'ci-completo' }), (t) => [RULESET(['ci-completo']), CLASSIC(['ci-completo']), view(t.head, {}, [run('ci-completo', 'SUCCESS'), run('otro', 'FAILURE')])]);
+  assert.deepStrictEqual([declared.r.code, declared.r.check], [0, 'ci-completo']);
+  const always = go(entry(GH_REPO, { rule: 'siempre-en-la-maquina', full_tests_pipeline: 'ci-completo' }), (t) => [view(t.head, {}, [run('otro', 'SUCCESS')])]);
+  assert.deepStrictEqual([always.r.code, always.r.check, always.calls.length], [0, 'otro', 1]);
+});
+
+test('T14 Plan_KeepMode_LaterPlanOnlyLowersSuites @story-7.28 @ac-10', () => {
+  const declared = team(entry(AZ_REPO, { full_tests_pipeline: 94 }));
+  const kept = planAt(AZ_URL, undefined, { teamRepos: declared }, { keepMode: 'pr' });
+  assert.deepStrictEqual([kept.mode, kept.step, kept.suites], ['pr', '9b', 'machine'], 'nunca el paso 9: el merge aprobado no ocurriría');
+  const az = fakeAz(AZ_OK());
+  const push = planAt(AZ_URL, undefined, { az, teamRepos: declared }, { keepMode: 'push' });
+  assert.deepStrictEqual([push.mode, push.step, push.suites, az.calls.length], ['push', '9', 'machine', 0]);
+  const sameAsBefore = planAt(AZ_URL, undefined, { az: fakeAz(AZ_OK()), teamRepos: declared }, { keepMode: 'pr' });
+  assert.deepStrictEqual([sameAsBefore.mode, sameAsBefore.suites], ['pr', 'server']);
+  const dir = withRemote(AZ_URL);
+  const bad = cli(['plan', '--repo', dir, '--source', 'feat/x', '--target', 'main', '--keep-mode', 'PR']);
+  assert.strictEqual(bad.status, 2);
+  assert.match(bad.stderr, /uso:/);
+  assert.strictEqual(cli(['plan', '--repo', dir, '--source', 'feat/x', '--target', 'main', '--keep-mode', 'pr']).json.mode, 'pr');
+});
+
+test('T15 Plan_Cli_LabTreeWithFakeAzAndGh @story-7.28 @ac-1 @ac-2 @ac-14', () => {
+  // un árbol de laboratorio: el guion, sus librerías y un team-repos.json de prueba en su raíz
+  const lab = path.join(SCRATCH, `arbol-${serial += 1}`);
+  for (const dir of [['scripts', 'tools'], ['scripts', 'lib'], ['scripts', 'setup'], ['skills', 'tycon-pipeline', 'scripts', 'lib']]) {
+    fs.cpSync(path.join(ROOT, ...dir), path.join(lab, ...dir), { recursive: true });
+  }
+  fs.writeFileSync(path.join(lab, 'team-repos.json'), JSON.stringify({ version: 1, public: GH_REPO, profile: AZ_REPO, operations: AZ_REPO,
+    merge_suites: { repos: [{ repo: AZ_REPO, full_tests_pipeline: 'Ventas Backend' }, { repo: GH_REPO, full_tests_pipeline: 'ci-completo' }] } }));
+  // un az y un gh de mentira: contestan por la orden, desde un JSON
+  const answers = path.join(lab, 'respuestas.json');
+  fs.writeFileSync(answers, JSON.stringify({ az: AZ_OK(), gh: { rules: RULESET(['ci-completo']), branch: CLASSIC(['ci-completo']) } }));
+  const fakeCli = (kind) => {
+    const file = path.join(SCRATCH, `${kind}-de-mentira-${serial += 1}.js`);
+    fs.writeFileSync(file, `const a = process.argv.slice(2); const r = JSON.parse(require('fs').readFileSync(${JSON.stringify(answers)}, 'utf8')).${kind};
+const key = ${kind === 'az' ? "a[0] + ' ' + a[1]" : "/\\/rules\\/branches\\//.test(a[1]) ? 'rules' : 'branch'"};
+if (!(key in r)) { process.stderr.write('no conozco ' + a.join(' ')); process.exit(1); }
+process.stdout.write(JSON.stringify(r[key]));\n`);
+    return file;
+  };
+  const env = { TYCON_ADO_CMD: fakeCli('az'), TYCON_GH: fakeCli('gh') };
+  const labCli = (dir) => {
+    const r = spawnSync(process.execPath, [path.join(lab, 'scripts', 'tools', 'merge-pr.js'), 'plan', '--repo', dir, '--source', 'feat/x', '--target', 'main'],
+      { encoding: 'utf8', env: Object.assign(gitEnv(AT(DAY)), env), windowsHide: true });
+    return { status: r.status, json: JSON.parse(r.stdout), stderr: r.stderr };
+  };
+  const azure = labCli(withRemote(AZ_URL));
+  assert.deepStrictEqual([azure.status, azure.json.suites, azure.json.mode, azure.json.step, azure.json.suitesPipeline], [0, 'server', 'pr', '9b', { declared: 'Ventas Backend', id: 94, name: 'Ventas Backend' }], azure.stderr);
+  const github = labCli(withRemote(GH_URL));
+  assert.deepStrictEqual([github.status, github.json.suites, github.json.step, github.json.check, github.json.platform.mergeQueue], [0, 'server', '9c', 'ci-completo', true], github.stderr);
+});
+
+test('T16 Az_Windows_ThroughPortableTools @story-7.28 @ac-14', () => {
+  const env = { PATH: 'C:\\herramientas\\az\\bin;C:\\Windows', PATHEXT: '.COM;.EXE;.BAT;.CMD' };
+  const present = new Set(['C:\\herramientas\\az\\bin\\az.cmd', 'C:\\herramientas\\az\\bin\\az']);
+  const exists = (p) => present.has(p);
+  const bash = () => ({ path: 'C:\\Program Files\\Git\\bin\\bash.exe', reason: null });
+  const win = M.azLaunch(['repos', 'show'], { platform: 'win32', env, exists, findGitBash: bash });
+  assert.deepStrictEqual(win, { file: 'C:\\Program Files\\Git\\bin\\bash.exe', args: ['-c', 'exec "$0" "$@"', 'C:/herramientas/az/bin/az', 'repos', 'show'], error: null });
+  const noBash = M.azLaunch(['repos', 'show'], { platform: 'win32', env, exists, findGitBash: () => ({ path: null, reason: 'falta Git for Windows' }) });
+  assert.strictEqual(noBash.file, null);
+  assert.match(noBash.error, /bash de Git/);
+  // y el plan lo dice como «no pude preguntar», sin lanzar nada
+  const az = (args) => M.realAz(args, { env, platform: 'win32', exists, findGitBash: () => ({ path: null, reason: 'falta Git for Windows' }) });
+  const p = planAt(AZ_URL, undefined, { az, teamRepos: team(entry(AZ_REPO, { full_tests_pipeline: 94 })) });
+  assert.deepStrictEqual([p.suites, p.platform.answer], ['machine', 'could-not-ask']);
+  assert.match(p.suitesReason, /bash de Git/);
+  // en Mac, az a secas; TYCON_ADO_CMD lo reemplaza (un .js corre con Node)
+  assert.deepStrictEqual(M.azLaunch(['repos', 'show'], { platform: 'darwin', env: {} }), { file: 'az', args: ['repos', 'show'], error: null });
+  assert.deepStrictEqual(M.azLaunch(['x'], { platform: 'win32', env: { TYCON_ADO_CMD: 'C:\\pruebas\\az.js' } }), { file: process.execPath, args: ['C:\\pruebas\\az.js', 'x'], error: null });
+});
+
+test('T21 Skill_Texts_SuitesDecisionInSteps @story-7.28 @ac-13', () => {
+  const read = (...parts) => fs.readFileSync(path.join(SKILL, ...parts), 'utf8');
+  const step = (n) => read('steps', fs.readdirSync(path.join(SKILL, 'steps')).find((f) => f.startsWith(`step-${n}-`)));
+  const s0 = step('00');
+  assert.match(s0, /0\.7/);
+  assert.match(s0, /merge-pr\.js" plan/);
+  for (const k of ['mode', 'step', 'suites', 'suitesReason', 'legacyNote']) assert.match(s0, new RegExp(`\\b${k}\\b`), `el paso 0 guarda ${k}`);
+  for (const n of ['03', '10']) assert.match(step(n), /suitesReason/, `el paso ${n} muestra la regla`);
+  // el paso 7, por sección: el 7.0 reparte entre server y machine; el comando de --amend vive sólo en el camino push
+  const s7 = step('07');
+  const section = (text, from, to) => { const a = text.indexOf(from); assert.ok(a >= 0, `falta «${from}»`); const b = to ? text.indexOf(to, a + from.length) : -1; return text.slice(a, b < 0 ? undefined : b); };
+  const s70 = section(s7, '### 7.0', '### 7.1');
+  assert.match(s70, /\*\*`suites: "server"`\*\*[\s\S]*el 7\.2 NO/, 'con server el 7.2 no corre');
+  assert.match(s70, /\*\*`suites: "machine"`\*\*[\s\S]*worktree add --detach[\s\S]*worktree remove/, 'con machine en modo pr, el merge de prueba en un worktree descartable que se borra');
+  const s73 = section(s7, '### 7.3', '### 7.4');
+  assert.match(s73, /modo `pr` (nunca|no) hay `--amend`/i, 'en modo pr no hay --amend');
+  const amendAt = s73.indexOf('git commit --amend');
+  const pushAt = s73.search(/En modo `push`, para amendar/);
+  assert.ok(pushAt >= 0, 'el 7.3 dice que el --amend es sólo del modo push');
+  assert.ok(amendAt > pushAt && s73.indexOf('git commit --amend', amendAt + 1) < 0, 'el único `git commit --amend` está bajo «En modo push»');
+  for (const n of ['08', '09b', '09c']) {
+    const text = step(n);
+    assert.match(text, /merge-pr\.js" plan [^\n]*--keep-mode <mode del Step 0\.7>/, `el paso ${n} pide el plan con --keep-mode en el comando`);
+    assert.match(text, /bajó[\s\S]{0,120}volver al 7\.2/i, `el paso ${n} vuelve al 7.2 si las suites bajaron a la máquina`);
+  }
+  assert.match(step('09c'), /wait-checks [^\n]*--check '<check del plan del 9c\.1>'/, 'el 9c espera el control del plan');
+  // SKILL.md: los Inputs, «Los dos modos» y la nota del Step 7
+  const skill = read('SKILL.md');
+  assert.match(section(skill, '## Inputs', '## Los dos modos'), /\| `suites` \|[\s\S]*merge_suites/);
+  const modes = section(skill, '## Los dos modos', '## Filosofía');
+  assert.match(modes, /se saltean los Steps 5 y 6/, 'en modo pr los pasos 5 y 6 se saltean');
+  assert.match(modes, /El modo y dónde corren las suites salen del plan/);
+  assert.match(modes, /Step 7 con `suites: "server"`/);
+  for (const [name, text] of [['SKILL.md', skill], ['el paso 9', step('09')], ['el paso 9b', step('09b')]]) assert.match(text, /merge_suites/, `${name} nombra merge_suites`);
+  const product = fs.readFileSync(path.join(ROOT, 'skills', 'bizuit-new-product', 'SKILL.md'), 'utf8');
+  assert.match(product, /merge_suites/, 'el alta de un producto trae la tarea humana de inscribir el repo');
+});
+
+// ── lo que confirmó el pase adversarial (story 7.28, vuelta 1) ───────────────────────────────────────────────────────
+test('T5b Plan_GitHub_RulesPaginated_RequiredCheckOnPage2 @story-7.28 @ac-2 @ac-3', () => {
+  // 🔴 GitHub pagina las reglas de la rama: un control obligatorio en la página 2 no se veía y daba «no exige»
+  const filler = Array.from({ length: 100 }, (_, i) => ({ type: i % 2 ? 'deletion' : 'pull_request' }));
+  const pages = { 1: filler, 2: RULESET(['ci-completo'], false) };
+  const calls = [];
+  const gh = (args) => {
+    calls.push(args);
+    const m = /\/rules\/branches\/main\?per_page=100&page=(\d+)$/.exec(String(args[1]));
+    if (m) return answerOf(pages[m[1]] || []);
+    if (/\/branches\/main$/.test(String(args[1]))) return answerOf(UNPROTECTED);
+    return answerOf({ fail: `no conozco ${args.join(' ')}` });
+  };
+  const p = planAt(GH_URL, undefined, { gh, teamRepos: team(entry(GH_REPO, { full_tests_pipeline: 'ci-completo' })) });
+  assert.deepStrictEqual([p.suites, p.platform.answer, p.check], ['server', 'requires-declared', 'ci-completo'], JSON.stringify(calls));
+  const trust = planAt(GH_URL, undefined, { gh, teamRepos: team({ default: 'confiar-en-el-servidor' }) });
+  assert.strictEqual(trust.suites, 'server');
+  // una página que no es una lista corta como «no pude preguntar», sin seguir pidiendo
+  const broken = (args) => (/page=2$/.test(String(args[1])) ? answerOf({ raw: 'no es JSON' }) : gh(args));
+  const b = planAt(GH_URL, undefined, { gh: broken, teamRepos: team(entry(GH_REPO, { full_tests_pipeline: 'ci-completo' })) });
+  assert.deepStrictEqual([b.suites, b.platform.answer], ['machine', 'could-not-ask']);
+});
+
+test('T14b Plan_KeepMode_HonoredOnHostsWithoutPullRequests @story-7.28 @ac-10', () => {
+  // el modo que fijó el paso 0 se informa igual en un servidor donde no se crean pedidos (el paso sigue siendo 9)
+  // una carpeta (el clon de un clon), sin origin, y un servidor desconocido: en ninguno se crean pedidos
+  for (const url of [withRemote(GH_URL, PR_ONLY), null, 'https://gitlab.example/acme/widgets.git']) {
+    const p = planAt(url, PR_ONLY, {}, { keepMode: 'push' });
+    assert.deepStrictEqual([p.mode, p.step, p.suites], ['push', '9', 'machine'], String(url));
+    const q = planAt(url, undefined, {}, { keepMode: 'pr' });
+    assert.deepStrictEqual([q.mode, q.step, q.suites], ['pr', '9', 'machine'], `${url} con --keep-mode pr`);
+  }
+});
+
+// ── T22 va ÚLTIMA: mira que en todo el archivo nadie le preguntó al az ni al gh de la máquina ───────────────────────
+test('T22 Plan_NoRegression_NothingDeclared_PublicClone_NoRealCalls @story-7.28 @ac-15', () => {
+  const az = fakeAz(AZ_OK());
+  const gh = fakeGhApi({ rules: RULESET(['ci-completo']), branch: CLASSIC(['ci-completo']) });
+  const p = planAt(GH_URL, undefined, { az, gh });
+  assert.deepStrictEqual([p.mode, p.step, p.suites, az.calls.length + gh.calls.length], ['push', '9', 'machine', 0]);
+  const azure = planAt(AZ_URL, undefined, { az, gh });
+  assert.deepStrictEqual([azure.mode, azure.step, azure.suites, az.calls.length + gh.calls.length], ['push', '9', 'machine', 0]);
+  // ninguna prueba del archivo lanzó el az ni el gh «de la máquina»
+  assert.ok(!fs.existsSync(REAL_CALLS), fs.existsSync(REAL_CALLS) ? fs.readFileSync(REAL_CALLS, 'utf8') : '');
 });

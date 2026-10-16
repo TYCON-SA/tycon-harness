@@ -55,12 +55,17 @@ Output al usuario:
 <lista de commits, mismo formato del Step 8>
 
 ✅ Build: OK
-✅ Tests: <N>/<N> PASS, 0 regresiones
+✅ Tests: <N>/<N> PASS, 0 regresiones   (o, con suites: "server": «suites completas: las corre el servidor»)
+🧪 Suites completas: <suitesReason>
 
 📁 Archivos cambiados: <N>
 
 Volviste a `<current_branch_at_start>`.
 ```
+
+La línea de las suites completas repite el `suitesReason` del último plan (el del Step 0.7, o el de
+8/9b/9c si bajó a `machine`): sin ella nadie sabe si las suites se corrieron, ni dónde.
+Si el plan trajo `legacyNote`, va como una línea de aviso al final.
 
 Si hubo race retry en Step 9, agregar nota:
 ```

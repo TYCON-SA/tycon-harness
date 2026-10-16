@@ -34,8 +34,14 @@ En modo `pr` no hay merge local, así que el resumen de arriba habla de la rama 
 remoto es de GitHub, además se muestra **el número de versión que el pedido va a llevar**, antes de pedir el sí:
 
 ```bash
-node "${TYCON_GUIDES_DIR:-$HOME/.claude/tycon-harness}/scripts/tools/merge-pr.js" plan --repo <repo> --source <source> --target <target>
+node "${TYCON_GUIDES_DIR:-$HOME/.claude/tycon-harness}/scripts/tools/merge-pr.js" plan --repo <repo> --source <source> --target <target> --keep-mode <mode del Step 0.7>
 ```
+
+🔴 **Siempre con `--keep-mode`**: el modo y el paso quedaron fijos en el Step 0.7 y este
+plan no los cambia; sólo recalcula `suites`, que puede bajar de `server` a `machine` (por ejemplo,
+la política de la rama se apagó, o `az` dejó de contestar). Si bajó: **volver al 7.2** y correr las
+suites completas en esta máquina (en modo `pr`, sobre el merge de prueba del 7.0) antes de pedir el
+sí; la línea `Tests:` lleva el `suitesReason` nuevo. El resumen de 8.1 repite `suitesReason`.
 
 Del JSON: con `step: "9c"` y `version.action: "bump"`, agregar al resumen una línea «la versión sube de
 `<version.from>` a `<version.to>`» y decir que el paso siguiente deja ese cambio en un commit de la rama (sólo
