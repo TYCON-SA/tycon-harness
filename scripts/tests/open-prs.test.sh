@@ -158,6 +158,42 @@ if [ "$RC" = 0 ] && grep -qi 'Azure DevOps apagad' "$D/seccion.txt" && ! grep -q
   ok "T10 sin organización configurada: «Azure DevOps apagado», exit 0, y no se consulta Azure"
 else no "T10 rc=$RC · sección: $(tr '\n' '|' < "$D/seccion.txt" 2>/dev/null) · llamadas: $(wc -l < "$D/fixaz/llamadas.log" 2>/dev/null)"; fi
 
+# T26 (story 2.23, AC 16) OpenPrs_JsonConAutorSinTitulo — `--json <archivo>` deja, por PR, número, proyecto, repo, días, la
+#    identidad única del autor y el enlace: NUNCA el título ni el nombre para mostrar (los lee el sitio de la organización).
+#    Con az fallando, el archivo dice `no_medido` con su motivo y el guion sale 1.
+#    🔴 rojo previo: sin --json no había archivo; volcar el PR entero traería el título.
+D="$TMP/t26"; mundo "$D"
+node -e '
+const hoy = Date.parse(process.argv[2] + "T10:00:00Z");
+const pr = (id, dias, unico, extra = {}) => ({ pullRequestId: id, creationDate: new Date(hoy - dias * 864e5).toISOString(), isDraft: false, sourceRefName: "refs/heads/f",
+  title: "TITULO-SECRETO-" + id, createdBy: { displayName: "NOMBRE-VISIBLE-" + id, uniqueName: unico }, repository: { name: "Repo X", project: { name: "Proyecto X" } }, ...extra });
+// el 262 viene dos veces: el paginado sobre una lista viva puede repetir un PR entre dos páginas (pase adversarial 2.23)
+const value = [pr(261, 1, "Dev.A@Acme.Example"), pr(262, 5, "dev.b@acme.example"), pr(263, 9, "dev.a@acme.example"), pr(264, 3, "x@acme.example", { isDraft: true }), pr(262, 5, "dev.b@acme.example")];
+require("fs").writeFileSync(process.argv[1], JSON.stringify({ count: value.length, value }));' "$D/fixaz/prs-0.json" "$HOY"
+RC=$(correr "$D" --json "$D/prs.json")
+if [ "$RC" = 0 ] && node -e '
+const d = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+const txt = JSON.stringify(d);
+const ok = d.estado === "medido" && d.fecha === process.argv[2] && Array.isArray(d.prs) && d.prs.length === 3
+  && d.prs.every((p) => Object.keys(p).sort().join() === "autor,dias,enlace,numero,proyecto,repo")
+  && d.prs.find((p) => p.numero === 261).autor === "dev.a@acme.example" && d.prs.find((p) => p.numero === 262).dias === 5
+  && /^https:\/\/dev\.azure\.com\/prueba\/Proyecto%20X\/_git\/Repo%20X\/pullrequest\/263$/.test(d.prs.find((p) => p.numero === 263).enlace)
+  && !/TITULO-SECRETO|NOMBRE-VISIBLE/.test(txt);
+process.exit(ok ? 0 : 1);' "$D/prs.json" "$HOY"; then
+  ok "T26 --json: número, proyecto, repo, días, autor (identidad única, en minúsculas) y enlace; sin título ni nombre; sin borradores"
+else no "T26 rc=$RC · $(head -c 400 "$D/prs.json" 2>/dev/null) · $(head -c 300 "$D/out.txt")"; fi
+D="$TMP/t26b"; mundo "$D"
+RC=$(FIXAZ="$D/fixaz" TYCON_AZ_FAIL=prs TYCON_ADO_CMD="$DOBLE" node "$GUION" --today "$HOY" --org https://dev.azure.com/prueba --json "$D/prs.json" > "$D/out.txt" 2>&1; echo $?)
+if [ "$RC" = 1 ] && node -e 'const d = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); process.exit(d.estado === "no_medido" && d.motivo && Array.isArray(d.prs) && d.prs.length === 0 ? 0 : 1);' "$D/prs.json"; then
+  ok "T26 con az fallando: el archivo dice no_medido con su motivo y el guion sale 1"
+else no "T26b rc=$RC · $(head -c 300 "$D/prs.json" 2>/dev/null)"; fi
+
+D="$TMP/t26c"; mundo "$D"
+RC=$(FIXAZ="$D/fixaz" TYCON_ADO_CMD="$DOBLE" node "$GUION" --today "$HOY" --provider github --json "$D/prs.json" > "$D/out.txt" 2>&1; echo $?)
+if [ "$RC" = 0 ] && [ ! -s "$D/fixaz/llamadas.log" ] && node -e 'const d = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); process.exit(d.estado === "no_medido" && /los pull requests y los pedidos de GitHub todavía no se leen/.test(d.motivo) ? 0 : 1);' "$D/prs.json"; then
+  ok "T26 en GitHub: no_medido con su frase, sale 0 y no consulta Azure"
+else no "T26c rc=$RC · $(head -c 300 "$D/prs.json" 2>/dev/null) · $(head -c 200 "$D/out.txt")"; fi
+
 # Uso: sin --today sale 2 y no consulta nada
 D="$TMP/uso"; mundo "$D"
 FIXAZ="$D/fixaz" TYCON_ADO_CMD="$DOBLE" node "$GUION" --org https://x > "$D/out.txt" 2>&1; RC=$?
