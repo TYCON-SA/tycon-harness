@@ -28,69 +28,24 @@ const assert = require('node:assert');
 const fs = require('fs');
 const path = require('path');
 
+// La regla vive en scripts/lib/stable-test-data.js: la usa también el freno de antes del commit, sobre las pruebas que el
+// commit trae.
+const regla = require('../lib/stable-test-data.js');
+const { faltas } = regla;
+
 const RAIZ = path.resolve(__dirname, '..', '..');
-const CARPETAS = ['scripts', 'skills'];
-// Dos listas: la del repo público y, si existe, la del repo del equipo (`….team.json`), que tiene pruebas propias y
-// corre este control con el público encima. El público no la trae: sólo existe donde existen esas pruebas.
-const LISTAS = ['stable-test-data-baseline.json', 'stable-test-data-baseline.team.json'].map((f) => path.join(__dirname, 'fixtures', f));
+const FECHAS = regla.DATES;
+const LISTAS = regla.BASELINES.map((f) => path.join(RAIZ, f));
 
 /** Las pruebas: los .js y .sh que viven bajo una carpeta `tests`, en `scripts/` y `skills/`. */
-function pruebas(dir, dentroDeTests = false, out = []) {
+function pruebas(dir, out = []) {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
     if (e.name === 'node_modules' || e.name.startsWith('.')) continue;
     const p = path.join(dir, e.name);
-    if (e.isDirectory()) pruebas(p, dentroDeTests || e.name === 'tests', out);
-    else if (dentroDeTests && /\.(js|sh)$/.test(e.name)) out.push(p);
+    if (e.isDirectory()) pruebas(p, out);
+    else if (regla.isTestFile(relativa(p))) out.push(p);
   }
   return out;
-}
-
-/** ¿Es un renglón de comentario? (`#` en shell; `//` y los renglones de un bloque `/* … *\/` en JS). */
-function esComentario(l, esShell) {
-  const t = l.trim();
-  if (esShell) return t.startsWith('#');
-  return t.startsWith('//') || t.startsWith('*') || t.startsWith('/*');
-}
-/** Los renglones de código, sin los de comentario. En shell, un renglón partido con `\` al final se junta con el siguiente:
- * `git -C "$R" \` y `  commit -q` son un solo comando. */
-function codigo(texto, esShell) {
-  const t = esShell ? texto.replace(/\\\r?\n/g, ' ') : texto;
-  return t.split('\n').filter((l) => !esComentario(l, esShell));
-}
-/** Los renglones de comentario: la declaración vale sólo ahí, no dentro de un texto del código. */
-function comentarios(texto, esShell) { return texto.split('\n').filter((l) => esComentario(l, esShell)); }
-
-// Un commit: `git … commit`; `'commit'` como argumento (un arreglo de spawn); `commit-tree`; o `commit` suelto seguido de
-// una opción, para el commit hecho por un envoltorio de git (`g -C "$R" commit -q`, `harness_lab_git "$R" commit -q`).
-// No ve un envoltorio que commitea sin ninguna opción (`g "$R" commit`): queda escrito en la guía como límite.
-const CREA_COMMIT = /\bgit\b[^\n]*\bcommit(?:-tree)?\b|['"]commit(?:-tree)?['"]|(?<![\w-])commit-tree\b|(?<![\w-])commit\s+-{1,2}[A-Za-z]/;
-const LEE_RELOJ_JS = /\bDate\.now\(\)|\bnew Date\(\s*\)/;
-const LEE_RELOJ_SH = /\$\(\s*date\b|`\s*date\b/;
-const FECHAS = ['GIT_AUTHOR_DATE', 'GIT_COMMITTER_DATE'];
-const SIN_MANTENIMIENTO = /maintenance\.auto|\bharness_lab_git\b|\bharness_lab_no_auto_maintenance\b/;
-const FECHA_INYECTADA = /\bTYCON_[A-Z_]*(?:TODAY|NOW)\b/;
-const DECLARADA = /stable-data:[ \t]*\S/;
-
-/**
- * Lo que le falta a una prueba, por regla: { commits: [qué falta] | null, reloj: true | false }.
- * `commits` es null si la prueba no crea commits o si cumple; `reloj` es true si lee el reloj sin inyectarlo ni declararlo.
- * Las fechas, el mantenimiento apagado y la fecha inyectada se buscan en el CÓDIGO: un comentario que los nombre no
- * cumple la regla. La declaración `stable-data: <motivo>`, al revés, vale sólo en un comentario, y exime al archivo de
- * las dos reglas (un archivo que habla de las formas a propósito, como éste, la necesita para las dos).
- */
-function faltas(texto, ruta) {
-  const esShell = ruta.endsWith('.sh');
-  if (comentarios(texto, esShell).some((l) => DECLARADA.test(l))) return { commits: null, reloj: false };
-  const lineas = codigo(texto, esShell);
-  const enCodigo = lineas.join('\n');
-  let commits = null;
-  if (lineas.some((l) => CREA_COMMIT.test(l))) {
-    const falta = FECHAS.filter((v) => !enCodigo.includes(v));
-    if (!SIN_MANTENIMIENTO.test(enCodigo)) falta.push('el mantenimiento automático de git apagado');
-    if (falta.length) commits = falta;
-  }
-  const leeReloj = lineas.some((l) => (esShell ? LEE_RELOJ_SH : LEE_RELOJ_JS).test(l));
-  return { commits, reloj: leeReloj && !FECHA_INYECTADA.test(enCodigo) };
 }
 
 function relativa(f) { return path.relative(RAIZ, f).split(path.sep).join('/'); }
@@ -150,10 +105,7 @@ test('StableData_NewClockRead_Red — el reloj de verdad, salvo inyectado o decl
 /** Cada lista que existe, con sus dos reglas. La del público es obligatoria: sin ella no hay trinquete. */
 function leerListas() {
   assert.ok(fs.existsSync(LISTAS[0]), `falta ${relativa(LISTAS[0])}`);
-  return LISTAS.filter((f) => fs.existsSync(f)).map((f) => {
-    const l = JSON.parse(fs.readFileSync(f, 'utf8'));
-    return { archivo: f, commits: l.commits || [], reloj: l.reloj || [] };
-  });
+  return regla.readBaselinesFromDisk(RAIZ).map((l) => ({ ...l, archivo: path.join(RAIZ, l.file) }));
 }
 
 test('StableData_Baseline_OnlyShrinks — la lista de las que ya existían sólo puede achicarse', () => {
@@ -173,7 +125,7 @@ test('StableData_Baseline_OnlyShrinks — la lista de las que ya existían sólo
 });
 
 test('StableData_RealRepo_Clean — ninguna prueba nueva depende de un sha ni de una hora que cambian', () => {
-  const todas = CARPETAS.filter((c) => fs.existsSync(path.join(RAIZ, c))).flatMap((c) => pruebas(path.join(RAIZ, c)));
+  const todas = regla.FOLDERS.filter((c) => fs.existsSync(path.join(RAIZ, c))).flatMap((c) => pruebas(path.join(RAIZ, c)));
   assert.ok(todas.length > 100, `pocas pruebas (${todas.length}): no miré lo que debía`);
   const listas = leerListas();
   const enLista = { commits: new Set(listas.flatMap((l) => l.commits)), reloj: new Set(listas.flatMap((l) => l.reloj)) };

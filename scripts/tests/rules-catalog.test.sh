@@ -402,80 +402,16 @@ if [ -f "${CATALOGO_REAL}" ] && [ -z "${AGENTES:-}" ]; then
 fi
 
 # ── C5 · el catálogo REAL: los números que publica la story ──────────────────────────────────────
-# Los tres números exactos son los del NÚCLEO y se miden en los dos lados: en el repo del equipo se leen sin las
-# secciones de los revisores que declara su paquete de clientes (packs/clients/pack.json), que el público no cuenta.
-# Antes la copia no los medía y el repo del equipo tenía escritos los suyos (364/363/361): el público contaba a mano lo
-# que el equipo tiene, y sacar un revisor de ese paquete ponía rojo este caso.
-DE_CLIENTES=""
-if [ -f "${RAIZ}/packs/clients/pack.json" ]; then
-  DE_CLIENTES="$(python3 -c "
-import json,sys
-print(' '.join(sorted(set(r['agent'] for r in json.load(open(sys.argv[1])).get('reviewers', [])))))" "${RAIZ}/packs/clients/pack.json")"; RC=$?
-  [ "${RC}" -eq 0 ] || mal "C5 · no pude leer el manifiesto del paquete de clientes (rc ${RC}) — sin él, los números del núcleo no se pueden separar"
-fi
-# El catálogo del núcleo: el real sin las secciones (de un «## … — `dueño`» al siguiente «## ») de esos revisores.
-NUCLEO="${BASE}/catalogo-nucleo.md"
-if [ -f "${CATALOGO_REAL}" ]; then
-  python3 - "${CATALOGO_REAL}" "${NUCLEO}" ${DE_CLIENTES} <<'PY'
-import re, sys
-origen, destino, fuera = sys.argv[1], sys.argv[2], set(sys.argv[3:])
-salida, saltear = [], False
-for linea in open(origen, encoding='utf-8').read().split('\n'):
-    if linea.startswith('## '):
-        m = re.search(r'`([^`]+)`\s*$', linea)
-        saltear = bool(m and m.group(1) in fuera)
-    if not saltear:
-        salida.append(linea)
-open(destino, 'w', encoding='utf-8').write('\n'.join(salida))
-PY
-fi
-if [ -f "${CATALOGO_REAL}" ] && [ -d "${RAIZ}/adapters/codex/agents" ]; then
-  leer "${NUCLEO}" "${RAIZ}/adapters/codex/agents" --json; RC=$?
-  if [ "${RC}" -ne 0 ]; then
-    mal "C5 · el lector salió ${RC} sobre el catálogo del núcleo"
-  else
-    FIL="$(jq_py "d['filas']")"; REG="$(jq_py "d['reglas']")"; IDE="$(jq_py "d['identificadores']")"
-    # story 7.2 (2026-09-16): ACCOV-C9 retirada → su fila deja de ser una definición: uno menos en los tres.
-    # story 7.3 (2026-09-17): VAL-W15 («la story no dice lo que se implementó») → uno más en los tres.
-    # 2026-09-18 (BANCO-C5, «el caso se derrama sobre el entorno real»): uno más en los tres, y una
-    # «sin verificación» más — la familia BANCO la verifica el rojo previo, no un guion.
-    # 2026-10-02 (REACT-C6, «el backend llamado desde la raíz del servidor»): uno más en los tres.
-    # 2026-10-14 (story 7.24, VAL-W16 «el AC le muestra al usuario identificadores internos»): uno más en los tres
-    # (y la misma fila en la copia del catálogo del repo del equipo).
-    # 2026-10-14: los números pasan a ser los del núcleo, sin las secciones del paquete de clientes (en el repo del
-    # equipo eran 364/363/361 con las dos secciones de ese paquete: 15 filas, 15 reglas, 15 identificadores).
-    [ -z "${DE_CLIENTES}" ] || echo "  ·    — C5 · sin las secciones del paquete de clientes: ${DE_CLIENTES}"
-    [ "${FIL}" = "352" ] && ok "C5 · 352 filas en el catálogo del núcleo" \
-      || mal "C5 · filas=${FIL}, esperaba 352— si el catálogo creció, actualizá este número Y el de la story en el mismo commit; en el repo del equipo, mirá también que su copia del catálogo no haya quedado atrás de la del público"
-    [ "${REG}" = "351" ] && ok "C5 · 351 reglas = pares (dueño, regla), que es la unidad de la tabla" \
-      || mal "C5 · reglas=${REG}, esperaba 351— rojo previo (números de 2026-09-16): contar identificadores fusiona SEC-C1/SEC-C2; contar filas duplica PIPE-C5"
-    [ "${IDE}" = "349" ] && ok "C5 · 349 identificadores distintos (con ACCOV-C1-EXT)" \
-      || mal "C5 · identificadores=${IDE}, esperaba 349— rojo previo: con el regex viejo daba 7 menos (las 7 de I18N invisibles)"
-  fi
-  # el resto se mide sobre el catálogo real entero
-  leer "${CATALOGO_REAL}" "${RAIZ}/adapters/codex/agents" --json; RC=$?
-  if [ "${RC}" -ne 0 ]; then
-    mal "C5 · el lector salió ${RC} sobre el catálogo real"
-  else
-    I18N="$(jq_py "sum(1 for r in d['lista'] if r['regla'].startswith('I18N-'))")"
-    [ "${I18N}" = "7" ] && ok "C5 · las 7 reglas del área con dígito están" \
-      || mal "C5 · I18N tiene ${I18N} reglas, esperaba 7 — rojo previo: el defecto que esta story existe para cerrar"
-    SVR="$(jq_py "sum(1 for r in d['lista'] if r.get('sin_verificacion'))")"
-    [ "${SVR}" = "8" ] && ok "C5 · 8 reglas del banco llevan «sin verificación», como dice el catálogo" \
-      || mal "C5 · sin_verificacion=${SVR}, esperaba 8 — la prosa del catálogo dice que sólo BANCO-W3 la verifica un guion"
-    REUR="$(jq_py "d['reutilizadas']")"
-    [ "${REUR}" = "[]" ] && ok "C5 · ningún identificador reutilizado en el catálogo real (SEC-W4 es viva; su «retirada» era un ejemplo)" \
-      || mal "C5 · reutilizadas=${REUR}, esperaba [] — rojo previo: el ejemplo de la guía se leía como retirada"
-    RETR="$(jq_py "[r['regla'] for r in d['retiradas']]")"
-    [ "${RETR}" = "['ACCOV-C9', 'REAL-C5', 'REAL-W5', 'SPEC-W8']" ] && ok "C5 · retirados: ACCOV-C9 (story 7.2), los dos reservados de la prosa y SPEC-W8" \
-      || mal "C5 · retiradas=${RETR}, esperaba ['ACCOV-C9', 'REAL-C5', 'REAL-W5', 'SPEC-W8']"
-    SINREV="$(jq_py "sum(1 for r in d['lista'] if not r['esRevisor'])")"
-    [ "${SINREV}" -gt 0 ] 2>/dev/null && ok "C5 · hay ${SINREV} regla(s) sin revisor, y se dicen" \
-      || mal "C5 · 0 reglas sin revisor — rojo previo: el catálogo tiene dueños que no son revisores (freno de mano, pipeline, banco); darlos por cubiertos es verde falso"
-  fi
-else
-  ok "C5 · saltado: no están el catálogo real o el padrón de revisores (constancia, no verde)"
-fi
+# Los controles y los números viven en scripts/lib/rules-catalog-count.js (EXPECTED, con su historia): los usa también el
+# freno de antes del commit cuando un commit toca agents/ o el catálogo, y dos copias de los números se separan solas.
+# Los tres exactos son los del NÚCLEO: en el repo del equipo se leen sin las secciones de su paquete de clientes.
+C5_OUT="${BASE}/c5.out"
+node "${RAIZ}/scripts/lib/rules-catalog-count.js" --root "${RAIZ}" --catalog "${CATALOGO_REAL}" > "${C5_OUT}" 2>&1; RC=$?
+cat "${C5_OUT}"
+C5_MAL="$(grep -c '^  MAL ' "${C5_OUT}")"
+FALLOS=$((FALLOS + C5_MAL))
+if [ "${RC}" -ne 0 ] && [ "${C5_MAL}" -eq 0 ]; then mal "C5 · el conteo salió ${RC} sin decir qué control falló"; fi
+if [ "${RC}" -eq 0 ] && [ "${C5_MAL}" -ne 0 ]; then mal "C5 · el conteo salió 0 con controles en MAL"; fi
 
 echo
 echo "${FALLOS} fallo(s)"

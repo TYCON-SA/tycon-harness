@@ -20,28 +20,24 @@ const assert = require('node:assert');
 const fs = require('fs');
 const path = require('path');
 
+// La regla vive en scripts/lib/grep-q-pipefail.js: la usa también el freno de antes del commit, sobre lo que el commit trae.
+const regla = require('../lib/grep-q-pipefail.js');
+
 const RAIZ = path.resolve(__dirname, '..', '..');
-const CARPETAS = ['scripts', 'skills'];
-const PIPE_A_GREP_Q = /(^|[^|])\|(?!\|)\s*grep\s+-[A-Za-z]*q/;
 
 function guiones(dir, out = []) {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (e.name === 'node_modules' || e.name.startsWith('.')) continue;
     const p = path.join(dir, e.name);
-    if (e.isDirectory()) guiones(p, out);
-    else if (e.name.endsWith('.sh')) out.push(p);
+    const rel = path.relative(RAIZ, p).split(path.sep).join('/');
+    if (e.isDirectory()) { if (e.name !== 'node_modules' && !e.name.startsWith('.')) guiones(p, out); }
+    else if (regla.inScope(rel)) out.push(p);
   }
   return out;
 }
 
 /** Los renglones de código (no comentarios) con una tubería a `grep -q`, como «ruta:línea: texto». */
 function hallazgos(texto, ruta) {
-  const out = [];
-  texto.split('\n').forEach((linea, i) => {
-    if (/^\s*#/.test(linea)) return;
-    if (PIPE_A_GREP_Q.test(linea)) out.push(`${ruta}:${i + 1}: ${linea.trim().slice(0, 160)}`);
-  });
-  return out;
+  return regla.findings(texto).map((h) => `${ruta}:${h.line}: ${h.text}`);
 }
 
 test('GrepQPipefail_Detector_SeesEachFormAndNotTheOthers', () => {
@@ -54,10 +50,10 @@ test('GrepQPipefail_Detector_SeesEachFormAndNotTheOthers', () => {
 });
 
 test('GrepQPipefail_NoPipeIntoGrepQ — ningún guion con pipefail pasa una tubería a grep -q', () => {
-  const conPipefail = CARPETAS.filter((c) => fs.existsSync(path.join(RAIZ, c)))
+  const conPipefail = regla.FOLDERS.filter((c) => fs.existsSync(path.join(RAIZ, c)))
     .flatMap((c) => guiones(path.join(RAIZ, c)))
-    .filter((f) => /pipefail/.test(fs.readFileSync(f, 'utf8')));
+    .filter((f) => regla.hasPipefail(fs.readFileSync(f, 'utf8')));
   assert.ok(conPipefail.length > 20, `pocos guiones con pipefail (${conPipefail.length}): no miré lo que debía`);
   const malos = conPipefail.flatMap((f) => hallazgos(fs.readFileSync(f, 'utf8'), path.relative(RAIZ, f)));
-  assert.deepStrictEqual(malos, [], 'tubería a `grep -q` con pipefail: cambiala a `| grep … >/dev/null` (sin -q, grep lee todo y no corta la tubería)');
+  assert.deepStrictEqual(malos, [], `tubería a \`grep -q\` con pipefail: ${regla.FIX}`);
 });

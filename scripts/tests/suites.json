@@ -2033,6 +2033,12 @@
       "requiere": []
     },
     {
+      "__nota": "El freno de antes del commit que mira las tres reglas que antes sólo veía la CI pública (2026-10-15): `| grep -q` con pipefail en un .sh, una prueba que depende de un sha o de una hora, y el conteo del catálogo de reglas si el commit toca agents/ o el catálogo. Mira el índice, con repos de juguete; la lógica es la de los módulos que usan grep-q-pipefail, stable-test-data y rules-catalog. Viaja.",
+      "raiz": "arnes",
+      "ruta": "tests/check-staged-ci-rules.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "Parte 1 de 2 de tests/internal-history-guard.test.js (ninguna suite pasa de 45 s; el archivo entero no se registra, scripts/tests/lib/suite-parts.js). story 8.26, tanda G1 (T27-T28): el control de historia interna en la prosa que se publica (scripts/publishing/internal-history.js) — las formas con su rojo y su verde, lo neto por archivo y por padre con commits de verdad en repos de juguete (con la forma del repo público y con la del repo del equipo, con lista y tabla sintéticas), los modos, la constancia y la cuenta de todo. Viaja: en la copia corre en modo público.",
       "raiz": "arnes",
       "ruta": "tests/internal-history-guard.p1.test.js",
