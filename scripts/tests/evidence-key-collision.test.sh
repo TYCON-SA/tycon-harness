@@ -84,7 +84,7 @@ EOF
 }
 repo(){ rm -rf "$1"; mkdir -p "$1/.git" "$1/.advisors/dod-runtime"; }
 clave(){ node "$SK/pipeline.js" evidence-key --story "$1" 2>/dev/null; }
-humo(){ bash "$SK/smoke-run.sh" "$1" "$2" --acs 1 -- curl -s http://app/x >/dev/null 2>&1; }
+humo(){ bash "$SK/smoke-run.sh" "$1" "$2" --acs 1 --pass-if 'responde 200' -- curl -s http://app/x >/dev/null 2>&1; }
 matriz_json(){ node "$SK/runtime-matrix.js" --story "$1" --json --no-write 2>/dev/null; }
 veredicto_ac1(){ node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const r=JSON.parse(s);console.log((r.perAc&&r.perAc[1]&&r.perAc[1].verdict)||"?")}catch{console.log("?")}})'; }
 
@@ -180,9 +180,8 @@ M6="$TMP/m6"; repo "$M6"
 story "$M6/.specs/cobranza-deudor/stories/1-1-x.md" 1.1
 story "$M6/.specs/pagos/stories/1-1-y.md" 1.1
 E6="$M6/.advisors/dod-runtime"; S6="$M6/.specs/cobranza-deudor/stories/1-1-x.md"
-ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-printf '{"ts":"%s","story":"1.1","acs":[1],"cmd":"curl -s http://app/x","exit":0,"via":"smoke-run.sh"}\n' "$ts" > "$E6/1.1-smoke-ledger.jsonl"
-printf '{"type":"smoke-run","ts":"%s","repoPath":"%s","story":"1.1","acs":[1],"exit":0}\n' "$ts" "$M6" >> "$GATES"
+# Una línea vieja (sin `v`), armada por el ayudante compartido de las pruebas (story 1.19).
+node "$SK/tests/lib/smoke-ledger-line.js" --dod "$E6" --gates "$GATES" --story 1.1 --acs 1 --repo "$M6"
 printf '# matriz vieja\n' > "$E6/1.1-runtime-matrix.md"
 printf '# parcheada a mano\n' > "$E6/1.1-cobranza-runtime-matrix.md"
 antes="$(cd "$E6" && cksum 1.1-smoke-ledger.jsonl 1.1-runtime-matrix.md 1.1-cobranza-runtime-matrix.md)"
@@ -345,9 +344,9 @@ f22=""
 # espera <etiqueta> <exit esperado> <texto esperado en stderr> -- <comando...>
 espera(){ local et="$1" ex="$2" txt="$3"; shift 4; local err rc; err="$("$@" 2>&1 >/dev/null)"; rc=$?
   if [ "$rc" -ne "$ex" ] || ! printf '%s' "$err" | grep -- "$txt" >/dev/null; then f22="$f22 $et(salió $rc: $(printf '%s' "$err" | head -1 | cut -c1-80))"; fi; }
-espera humo-ruta-inexistente 2 'no encontré la story' -- bash "$SK/smoke-run.sh" "$E22" "$W22/no-existe.md" --acs 1 -- true
-espera humo-id-con-barras 2 'no sirve para nombrar evidencia' -- bash "$SK/smoke-run.sh" "$E22" "../afuera/x" --acs 1 -- true
-espera humo-id-con-comillas 2 'no sirve para nombrar evidencia' -- bash "$SK/smoke-run.sh" "$E22" '1.1"x' --acs 1 -- true
+espera humo-ruta-inexistente 2 'no encontré la story' -- bash "$SK/smoke-run.sh" "$E22" "$W22/no-existe.md" --acs 1 --pass-if 'responde 200' -- true
+espera humo-id-con-barras 2 'no sirve para nombrar evidencia' -- bash "$SK/smoke-run.sh" "$E22" "../afuera/x" --acs 1 --pass-if 'responde 200' -- true
+espera humo-id-con-comillas 2 'no sirve para nombrar evidencia' -- bash "$SK/smoke-run.sh" "$E22" '1.1"x' --acs 1 --pass-if 'responde 200' -- true
 espera gate-ruta-inexistente 1 'no encontré la story' -- bash "$SK/e2e-gate.sh" "$TMP/no-hay-front" "$W22/no-existe.md" "$E22" algo.spec.ts
 espera gate-id-con-barras 1 'no sirve para nombrar evidencia' -- bash "$SK/e2e-gate.sh" "$TMP/no-hay-front" "../afuera/x" "$E22" algo.spec.ts
 espera macro-ruta-inexistente 2 'no encontré la story' -- node "$SK/step-7c-macro.js" --story "$W22/no-existe.md" --scenario "$TMP/escenario.json" --evidence-dir "$E22" --dry-run
@@ -369,7 +368,7 @@ else no "T22 un escritor aceptó un valor que no puede nombrar evidencia, o no l
 W23="$TMP/solo23/w23"; mkdir -p "$TMP/solo23"; repo "$W23"; E23="$W23/.advisors/dod-runtime"
 story "$W23/.specs/a/stories/1-1-x.md" 1.1; story "$W23/.specs/b/stories/1-1-y.md" 1.1
 for s23 in "$W23/.specs/a/stories/1-1-x.md" "$W23/.specs/b/stories/1-1-y.md"; do printf '\nVerificación: smoke runtime con tests_done_smoke.\n' >> "$s23"; done
-bash "$SK/smoke-run.sh" "$E23" "$W23/.specs/b/stories/1-1-y.md" --acs 1 -- curl -s http://app/solo-de-b >/dev/null 2>&1
+bash "$SK/smoke-run.sh" "$E23" "$W23/.specs/b/stories/1-1-y.md" --acs 1 --pass-if 'responde 200' -- curl -s http://app/solo-de-b >/dev/null 2>&1
 printf '# DoD Runtime Evidence — Story 1.1\nverdict=PASS\n' > "$E23/b__1.1-202610051200Z.md"
 node "$SK/qa-guide.js" --story "$W23/.specs/a/stories/1-1-x.md" --out "$TMP/qa-a.html" >/dev/null 2>&1
 node "$SK/qa-guide.js" --story "$W23/.specs/b/stories/1-1-y.md" --out "$TMP/qa-b.html" >/dev/null 2>&1

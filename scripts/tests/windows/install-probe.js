@@ -142,8 +142,25 @@ function measureLinks({ home, clone, platform, pwsh, env }) {
     if (types[name]) Object.assign(out, types[name]);
     try { out.readlink = fs.readlinkSync(p); } catch (_) { /* no es un enlace */ }
     try { out.resolves_to = fs.realpathSync(p); out.to_clone = L.samePath(out.resolves_to, want, platform); } catch (e) { out.resolves_to = null; out.to_clone = false; out.problem = e.code || e.message; }
+    // story 8.35: `skills` y `agents` son carpetas REALES del dev con un enlace por entrada del arnés, no un enlace a la
+    // carpeta entera. Lo que se pide: carpeta real y al menos una entrada que resuelva adentro del clon.
+    if (sub && out.kind === 'folder') {
+      out.harness_entries = harnessEntries(p, want, platform);
+      out.to_clone = out.harness_entries > 0;
+      if (!out.to_clone) out.problem = 'carpeta real sin ninguna entrada que lleve al arnés';
+    }
     return out;
   }).filter(Boolean);
+}
+
+/** Cuántas entradas de una carpeta real resuelven adentro de `want` (los enlaces por entrada de la story 8.35). */
+function harnessEntries(dir, want, platform) {
+  const base = L.comparable(want, platform);
+  let n = 0;
+  for (const e of (() => { try { return fs.readdirSync(dir); } catch (_) { return []; } })()) {
+    try { const r = L.comparable(fs.realpathSync(path.join(dir, e)), platform); if (r === base || r.startsWith(`${base}/`)) n++; } catch (_) { /* colgado */ }
+  }
+  return n;
 }
 
 /** `harness.js doctor --json`: los `fail` y los `warn`, o por qué no se pudo leer. */
@@ -272,7 +289,7 @@ function measureResult({ v, home, clone, env, platform, pwsh, out, finding, reda
   facts.links = measureLinks({ home, clone, platform, pwsh, env });
   for (const l of facts.links) {
     if (!l.present) finding(`links:${v.id}:${l.name}`, 'link', `no quedó ~/.claude/${l.name}`, 'W4');
-    else if (!l.to_clone) finding(`links:${v.id}:${l.name}`, 'link', `~/.claude/${l.name} quedó como ${l.kind}${l.link_type ? ` (${l.link_type})` : ''} y no resuelve al clon: ${l.resolves_to || l.problem}`, 'W4');
+    else if (!l.to_clone) finding(`links:${v.id}:${l.name}`, 'link', `~/.claude/${l.name} quedó como ${l.kind}${l.link_type ? ` (${l.link_type})` : ''} y no resuelve al clon: ${(l.kind === 'folder' && l.problem) || l.resolves_to || l.problem}`, 'W4');
   }
   const gh = L.run('git', ['config', '--global', '--get', 'core.hooksPath'], { env, timeoutMs: 30000, cap: 600 });
   facts.git_global_hooks_path = gh.exit === 0 ? L.firstLine(gh.stdout) : null;
@@ -328,11 +345,104 @@ function measureStartupTiming({ home, clone, env, pwsh, scratch, runs = 5, start
   return facts;
 }
 
+/**
+ * La subida de corridas al buzón, como la lanza el arranque de Windows (2026-10-15: hasta ese día el aplicador no la
+ * lanzaba, y las corridas de una máquina Windows nunca llegaban al buzón). El aplicador corre con el buzón prendido
+ * contra un buzón de MENTIRA en esta máquina (un proceso aparte que contesta 201 y anota cada pedido), con una llave de
+ * mentira y una corrida de muestra (un volcado y su hilo comprimido). Mide lo que en Windows nunca se había corrido: que
+ * el arranque la lanza de fondo, las rutas de Windows, el comprimido y el HTTP. Nunca toca el buzón real.
+ * Sin TF_BUILD a propósito: dentro de un agente de CI la subida no se lanza (story 2.12), y acá se mide una máquina.
+ * stable-data: el reloj sólo mide la espera (cuánto tardó en llegar la subida, hasta un tope); ningún dato que se compara
+ * sale de la hora, y los nombres de la corrida de muestra son fijos.
+ */
+function measureMailboxUpload({ home, clone, env, pwsh, scratch, waitMs = 90000 }) {
+  const facts = { launched: false, arrived: false, log_lines: 0, puts: 0, blobs: [], gz_intact: null, waited_s: null, problems: [] };
+  const applier = path.join(clone, 'scripts', 'install-tycon-hooks.ps1');
+  if (!pwsh || !fs.existsSync(applier)) { facts.problems.push(!pwsh ? 'sin pwsh en el PATH' : `sin ${applier}`); return facts; }
+  fs.mkdirSync(scratch, { recursive: true });
+  const zlib = require('zlib');
+  const cp = require('child_process');
+  const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+  // el buzón de mentira
+  const server = path.join(scratch, 'buzon-de-mentira.js');
+  const portFile = path.join(scratch, 'puerto.txt');
+  const reqFile = path.join(scratch, 'pedidos.jsonl');
+  const bodies = path.join(scratch, 'cuerpos');
+  const log = path.join(home, '.claude', '.tycon-pipeline', 'upload-runs.log');
+  // de cero: un registro, un puerto o pedidos de una medición anterior en la misma carpeta darían un verde sin medir
+  for (const f of [portFile, reqFile, bodies, log]) fs.rmSync(f, { recursive: true, force: true });
+  fs.mkdirSync(bodies, { recursive: true });
+  fs.writeFileSync(server, [
+    "const http = require('http'), fs = require('fs'), path = require('path');",
+    'const [portFile, reqFile, bodies] = process.argv.slice(2); let n = 0;',
+    "http.createServer((req, res) => { const parts = []; req.on('data', (c) => parts.push(c)); req.on('end', () => {",
+    "  const body = Buffer.concat(parts); const file = path.join(bodies, String(++n)); fs.writeFileSync(file, body);",
+    "  fs.appendFileSync(reqFile, JSON.stringify({ method: req.method, url: req.url.split('?')[0], bytes: body.length, file }) + '\\n');",
+    "  res.writeHead(201); res.end(); }); }).listen(0, '127.0.0.1', function () { fs.writeFileSync(portFile, String(this.address().port)); });",
+    'setTimeout(() => process.exit(0), 300000);',
+  ].join('\n'));
+  const srv = cp.spawn(process.execPath, [server, portFile, reqFile, bodies], { stdio: 'ignore', windowsHide: true });
+  let spawnError = null;
+  srv.on('error', (e) => { spawnError = e; });
+  try {
+    let port = null;
+    for (let i = 0; i < 50 && !port; i++) { try { port = fs.readFileSync(portFile, 'utf8').trim() || null; } catch (_) { sleep(100); } }
+    if (!port) { facts.problems.push(`el buzón de mentira no arrancó${spawnError ? `: ${spawnError.message}` : ''}`); return facts; }
+    // la corrida de muestra y la llave de mentira (sólo crear, como la de verdad; la firma armada por partes)
+    const hist = path.join(scratch, 'timing-history');
+    fs.mkdirSync(hist, { recursive: true });
+    const hilo = Buffer.from('{"tipo":"muestra","texto":"una corrida de ensayo con acentos: corrida, buzón"}\n');
+    fs.writeFileSync(path.join(hist, '9.9-20261015T000000Z.json'), JSON.stringify({ story: '9.9', muestra: true }));
+    fs.writeFileSync(path.join(hist, '9.9-20261015T000000Z.hilo.jsonl.gz'), zlib.gzipSync(hilo));
+    const cfg = path.join(scratch, 'llave-de-mentira.json');
+    const sig = ['FIRMA', '%2B', 'deprueba', '%3D'].join('');
+    fs.writeFileSync(cfg, JSON.stringify({ cuenta: 'cuentadeprueba', contenedor: 'corridas', tenant: '00000000-0000-0000-0000-000000000000', politica: 'subida-prueba', vence: '2099-01-01', sas: `sv=2022-11-02&si=subida-prueba&sr=c&spr=https&sig=${sig}` }));
+    const applierEnv = Object.assign({}, env, {
+      TYCON_HARNESS_LOCK_HELD: '1', TYCON_HARNESS_GIT_BASH_HEALTH: '1', TYCON_MAILBOX: '1', TYCON_MAILBOX_JSON: cfg,
+      TYCON_MAILBOX_URL_BASE: `http://127.0.0.1:${port}`, TYCON_TIMING_HISTORY: hist, TYCON_MACHINE: 'ensayo-windows',
+      TYCON_UPLOADS_LOG: path.join(scratch, 'estado', 'mailbox-uploads.json'),
+    });
+    for (const k of Object.keys(applierEnv)) if (/^(TF_BUILD|TYCON_NO_UPLOAD_RUNS)$/i.test(k)) delete applierEnv[k];
+    const r = L.run(pwsh, ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', applier], { cwd: home, env: applierEnv, timeoutMs: BLOCK_TIMEOUT_MS });
+    if (r.error || r.exit !== 0) facts.problems.push(`el aplicador salió ${r.error || r.exit}: ${lastLines(r.stderr) || lastLines(r.stdout)}`);
+    // la subida corre de fondo: se espera a que lleguen los dos archivos de la corrida, o al tope
+    const t0 = Date.now();
+    const pedidos = () => { try { return fs.readFileSync(reqFile, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)); } catch (_) { return []; } };
+    const llegaron = (all) => ['.json', '.hilo.jsonl.gz'].every((ext) => all.some((p) => p.method === 'PUT' && p.url.endsWith(`9.9-20261015T000000Z${ext}`)));
+    while (Date.now() - t0 < waitMs && !llegaron(pedidos())) sleep(500);
+    facts.waited_s = Math.round((Date.now() - t0) / 100) / 10;
+    let texto = '';
+    try { texto = fs.readFileSync(log, 'utf8'); } catch (_) { /* sin registro */ }
+    // la constancia que deja el .ps1 al lanzarla (el registro se borró antes de medir: es de esta corrida)
+    facts.launched = /el arranque lanza la subida de corridas/.test(texto);
+    facts.log_lines = texto.split('\n').filter(Boolean).length;
+    const all = pedidos();
+    facts.puts = all.filter((p) => p.method === 'PUT').length;
+    facts.blobs = all.map((p) => `${p.method} ${p.url}`).slice(0, 20);
+    facts.arrived = llegaron(all);
+    const gz = all.find((p) => p.url.endsWith('9.9-20261015T000000Z.hilo.jsonl.gz'));
+    if (gz) { try { facts.gz_intact = zlib.gunzipSync(fs.readFileSync(gz.file)).equals(hilo); } catch (e) { facts.gz_intact = false; facts.problems.push(`el hilo que llegó no se descomprime: ${e.message}`); } }
+    if (!facts.launched) facts.problems.push(`el arranque no lanzó la subida: ${texto ? `el registro no trae la constancia (${lastLines(texto)})` : 'no quedó upload-runs.log'}`);
+    else if (!facts.arrived) facts.problems.push(`la subida corrió pero no llegó la corrida de muestra entera (${facts.puts} PUT): ${lastLines(texto)}`);
+    return facts;
+  } finally {
+    try { srv.kill(); } catch (_) { /* ya terminó */ }
+  }
+}
+
 /** `harness.js uninstall --yes`, y qué quedó. */
 function measureUninstall({ v, home, clone, env, finding }) {
   const harness = path.join(clone, 'scripts', 'setup', 'harness.js');
   const r = L.run(process.execPath, [harness, 'uninstall', '--yes'], { env, cwd: clone, timeoutMs: 300000 });
-  const left = LINKS.map(([n]) => n).filter((n) => { try { fs.lstatSync(path.join(home, '.claude', n)); return true; } catch (_) { return false; } });
+  // story 8.35: la carpeta real de `skills` o `agents` es del dev y se queda; lo que no puede quedar es un enlace al arnés
+  // (la carpeta entera enlazada, o una entrada suya que todavía lleve al clon)
+  const realClone = L.realOrSelf(clone);
+  const left = LINKS.map(([n, sub]) => [n, sub]).filter(([n, sub]) => {
+    const p = path.join(home, '.claude', n);
+    let st; try { st = fs.lstatSync(p); } catch (_) { return false; }
+    if (sub && st.isDirectory() && !st.isSymbolicLink()) return harnessEntries(p, path.join(realClone, sub)) > 0;
+    return true;
+  }).map(([n]) => n);
   const out = { exit: r.exit, error: r.error, output: L.clip(`${r.stdout}\n${r.stderr}`.trim(), 1500), links_left: left, state_left: fs.existsSync(path.join(home, '.claude', '.tycon-pipeline', 'harness-state.json')), clone_still_there: fs.existsSync(path.join(clone, '.git')) };
   if (r.error || r.exit !== 0) finding(`uninstall:${v.id}:failed`, 'uninstall', `harness.js uninstall --yes salió ${r.error || r.exit}: ${lastLines(r.stderr || r.stdout)}`, 'W4');
   else if (left.length || out.state_left) finding(`uninstall:${v.id}:left-pieces`, 'uninstall', `tras uninstall quedan: ${[...left, out.state_left ? 'el estado' : ''].filter(Boolean).join(', ')}`, 'W4');
@@ -475,6 +585,14 @@ function measure({ lab, out, fence, platform = process.platform, disposable = fa
       process.stdout.write(`install: ${chosen.id} — mido el arranque (aplicador y startup)\n`);
       rec.fact('startup_timing', Object.assign({ variant: chosen.id }, measureStartupTiming({ home: chosen.home, clone: chosen.clone, env, pwsh, scratch: path.join(scratch, 'startup-timing') })));
     } catch (e) { rec.fact('startup_timing', { variant: chosen.id, problems: [`la medición tiró: ${e.message}`] }); }
+    // la subida de corridas al buzón que lanza el arranque (2026-10-15), contra un buzón de mentira
+    try {
+      const env = L.labEnv(chosen.home, { base: baseEnv, extra: chosen.env, platform });
+      if (chosen.path_first) { const k = L.pathKey(env); env[k] = `${chosen.path_first}${path.delimiter}${env[k] || ''}`; }
+      process.stdout.write(`install: ${chosen.id} — mido la subida de corridas al buzón (contra un buzón de mentira)\n`);
+      const up = rec.fact('mailbox_upload', Object.assign({ variant: chosen.id }, measureMailboxUpload({ home: chosen.home, clone: chosen.clone, env, pwsh, scratch: path.join(scratch, 'mailbox-upload') })));
+      if (!up.launched || !up.arrived || up.gz_intact !== true) finding(`install:${chosen.id}:mailbox-upload`, 'install', up.problems.join(' · ') || 'la corrida de muestra no llegó entera al buzón de mentira', 'W4');
+    } catch (e) { rec.fact('mailbox_upload', { variant: chosen.id, problems: [`la medición tiró: ${e.message}`] }); }
   }
   L.writeJsonAtomic(path.join(lab, 'lab-state.json'), { schema: L.SCHEMA, source, allow_temp: allowTemp, measured_variant: chosen });
   if (!ran) return { status: L.STATUS.error, reason: `no pude medir: ninguna variante pudo correr (${Object.entries(variants).map(([k, x]) => `${k}: ${x.not_run}`).join(' · ')})` };
@@ -503,4 +621,4 @@ function main(argv) {
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
 
-module.exports = { NAME, VARIANTS, LINKS, measure, measureStartupTiming, findClone, runBlock, seenHomes, shellFilesWithCr, measureLinks, photoDiff };
+module.exports = { NAME, VARIANTS, LINKS, measure, measureStartupTiming, measureMailboxUpload, findClone, runBlock, seenHomes, shellFilesWithCr, measureLinks, photoDiff };

@@ -4817,7 +4817,7 @@ test('gates.log namespace: smoke-run.sh espeja repoPath (el repo dueño del evid
   fs.mkdirSync(repo, { recursive: true });
   execFileSync('git', ['init', '-q'], { cwd: repo });
   const evidence = path.join(repo, '.advisors', 'dod-runtime');
-  const res = spawnSync('bash', [path.join(SCRIPTS, 'smoke-run.sh'), evidence, '9.9', '--acs', '1', '--', 'true'], {
+  const res = spawnSync('bash', [path.join(SCRIPTS, 'smoke-run.sh'), evidence, '9.9', '--acs', '1', '--pass-if', 'el comando termina bien', '--', 'true'], {
     env: { ...process.env, HOME: fakeHome }, cwd: os.tmpdir(), encoding: 'utf8',
   });
   assert.equal(res.status, 0, res.stderr);
@@ -4846,7 +4846,7 @@ test('smoke-run.sh: tapa la clave de API del cmd y deja el endpoint legible', ()
   // Inventada y armada por partes: el valor que estuvo acá hasta el 2026-10-03 era una clave de verdad (la del incidente
   // que esta prueba cuenta) y no puede viajar en la copia pública. Lo que se prueba es el tapado, no el valor.
   const CLAVE = ['lab', 'NoEsUnaClaveReal', 'SoloParaEstaPrueba', '0123456789'].join('_');
-  const res = spawnSync('bash', [path.join(SCRIPTS, 'smoke-run.sh'), evidence, '9.8', '--acs', '1', '--',
+  const res = spawnSync('bash', [path.join(SCRIPTS, 'smoke-run.sh'), evidence, '9.8', '--acs', '1', '--pass-if', 'el comando termina bien', '--',
     'curl', '-sf', '-H', `X-Api-Key: ${CLAVE}`, 'http://localhost:5002/api/messaging/contact-window-status'], {
     env: { ...process.env, HOME: fakeHome }, cwd: os.tmpdir(), encoding: 'utf8',
   });
@@ -4869,7 +4869,7 @@ test('smoke-run.sh: tapa el JWT del header Authorization', () => {
   // Por partes (story 8.8 del arnés, AC 3): escrito entero tiene la forma de un token de sesión, y el escaneo de secretos
   // de GitHub —que no lee las excepciones del equipo— lo marcaría en la copia pública. En ejecución es el de siempre.
   const JWT = ['eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9', 'eyJzdWIiOiIxMjM0NTY3ODkwIn0', 'abc123def456ghi'].join('.');
-  spawnSync('bash', [path.join(SCRIPTS, 'smoke-run.sh'), evidence, '9.7', '--acs', '2', '--',
+  spawnSync('bash', [path.join(SCRIPTS, 'smoke-run.sh'), evidence, '9.7', '--acs', '2', '--pass-if', 'el comando termina bien', '--',
     'curl', '-s', '-H', `Authorization: Bearer ${JWT}`, 'http://localhost:5000/api/x'], {
     env: { ...process.env, HOME: fakeHome }, cwd: os.tmpdir(), encoding: 'utf8',
   });
@@ -4890,7 +4890,7 @@ test('smoke-run.sh: un cmd sin credencial queda intacto y no avisa', () => {
   fs.mkdirSync(repo, { recursive: true });
   execFileSync('git', ['init', '-q'], { cwd: repo });
   const evidence = path.join(repo, '.advisors', 'dod-runtime');
-  const res = spawnSync('bash', [path.join(SCRIPTS, 'smoke-run.sh'), evidence, '9.6', '--acs', '3', '--',
+  const res = spawnSync('bash', [path.join(SCRIPTS, 'smoke-run.sh'), evidence, '9.6', '--acs', '3', '--pass-if', 'el comando termina bien', '--',
     'curl', '-sf', 'http://localhost:5001/api/acciones/pendientes?page=1&pageSize=3'], {
     env: { ...process.env, HOME: fakeHome }, cwd: os.tmpdir(), encoding: 'utf8',
   });
@@ -4911,7 +4911,7 @@ test('smoke-run.sh: tapar el cmd no toca los campos con los que se cruza el espe
   fs.mkdirSync(repo, { recursive: true });
   execFileSync('git', ['init', '-q'], { cwd: repo });
   const evidence = path.join(repo, '.advisors', 'dod-runtime');
-  spawnSync('bash', [path.join(SCRIPTS, 'smoke-run.sh'), evidence, '9.5', '--acs', '4,5', '--',
+  spawnSync('bash', [path.join(SCRIPTS, 'smoke-run.sh'), evidence, '9.5', '--acs', '4,5', '--pass-if', 'el comando termina bien', '--',
     'bash', '-c', 'curl -H "X-Api-Key: omni_AbCdEfGh_1234567890123456789012345" http://x; true'], {
     env: { ...process.env, HOME: fakeHome }, cwd: os.tmpdir(), encoding: 'utf8',
   });
@@ -4949,7 +4949,7 @@ for (const [fragmento, queEs] of FORMAS_QUE_DEBEN_TAPARSE) {
     fs.mkdirSync(repo, { recursive: true });
     execFileSync('git', ['init', '-q'], { cwd: repo });
     const evidence = path.join(repo, '.advisors', 'dod-runtime');
-    spawnSync('bash', [path.join(SCRIPTS, 'smoke-run.sh'), evidence, '9.4', '--acs', '1', '--',
+    spawnSync('bash', [path.join(SCRIPTS, 'smoke-run.sh'), evidence, '9.4', '--acs', '1', '--pass-if', 'el comando termina bien', '--',
       'echo', fragmento], { env: { ...process.env, HOME: fakeHome }, cwd: os.tmpdir(), encoding: 'utf8' });
     const entry = fs.readFileSync(path.join(evidence, '9.4-smoke-ledger.jsonl'), 'utf8')
       .split('\n').filter(Boolean).map((l) => JSON.parse(l))[0];
@@ -4966,7 +4966,7 @@ test('smoke-run.sh: tapa el par usuario:clave de curl -u', () => {
   fs.mkdirSync(repo, { recursive: true });
   execFileSync('git', ['init', '-q'], { cwd: repo });
   const evidence = path.join(repo, '.advisors', 'dod-runtime');
-  spawnSync('bash', [path.join(SCRIPTS, 'smoke-run.sh'), evidence, '9.3', '--acs', '1', '--',
+  spawnSync('bash', [path.join(SCRIPTS, 'smoke-run.sh'), evidence, '9.3', '--acs', '1', '--pass-if', 'el comando termina bien', '--',
     'curl', '-u', 'admin:claveSecreta123', 'http://localhost:1/x'], {
     env: { ...process.env, HOME: fakeHome }, cwd: os.tmpdir(), encoding: 'utf8' });
   const entry = fs.readFileSync(path.join(evidence, '9.3-smoke-ledger.jsonl'), 'utf8')

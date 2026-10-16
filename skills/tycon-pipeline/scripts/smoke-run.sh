@@ -11,11 +11,21 @@
 # runtime-matrix.js solo cuenta entries que existen EN AMBOS (anti escritura a
 # mano del ledger) y con exit 0.
 #
+# Story 1.19 (2026-10-15) — la prueba dice qué esperaba y qué salió:
+#   · un humo que nombra criterios (`--acs`) escribe ANTES de correr qué tiene que pasar (`--pass-if`, y
+#     opcional `--fail-if`). Sin `--pass-if` no corre. Un humo sin `--acs` (sembrar las precondiciones de
+#     un AC) no lo necesita, y conviene correrlo igual por acá para que quede rastro;
+#   · la salida del comando (con la de error mezclada) se ve en la terminal y además se guarda recortada
+#     (≤ 8 KB) y tapada en <evidence-dir>/<story>-smoke-outputs/, con su sha256 en el registro Y el espejo;
+#   · la línea lleva `"v":2`: la matriz exige la salida intacta para contarla.
+#
 # Uso:
-#   smoke-run.sh <evidence-dir> <ruta-de-la-story.md | story-id> --acs 8,9 -- <comando...>
+#   smoke-run.sh <evidence-dir> <ruta-de-la-story.md | story-id> --acs 8,9 \
+#     --pass-if '<qué tiene que pasar>' [--fail-if '<qué lo da por malo>'] -- <comando...>
 #   (con la ruta, la clave del registro la calcula lib/evidence-key.js — story 1.17)
 # Ejemplo:
-#   smoke-run.sh .../.advisors/dod-runtime 10.4 --acs 9 -- \
+#   smoke-run.sh .../.advisors/dod-runtime 10.4 --acs 9 \
+#     --pass-if 'responde 201 y el artículo aparece en el pedido 42' -- \
 #     curl -sf -X POST http://localhost:5001/api/pedidos/42/articulos ...
 #
 # Exit: el exit code REAL del comando (0 se registra como evidencia válida;
@@ -56,6 +66,8 @@ fi
 
 ACS=""
 MUTATES=0
+PASA_SI=""; PASA_SI_SET=0
+FALLA_SI=""; FALLA_SI_SET=0
 # Flags opcionales en cualquier orden antes del `--`.
 # --mutates (DODRT-C8, 2026-08-13 — caso Story 4.34 de un repo del equipo): declara que este smoke
 # EJECUTA una mutación de estado. Es la vía para productos sin superficie HTTP ni navegador
@@ -74,6 +86,16 @@ while true; do
       fi
       ACS="$2"; shift 2 ;;
     --mutates) MUTATES=1; shift ;;
+    # Story 1.19: la expectativa, escrita antes de correr. Texto libre: no la evalúa este envoltorio (para eso
+    # están `curl -f` / `jq -e` dentro del comando); la lee el revisor de cierre contra la salida guardada
+    # (DODRT-W4). Vacía, sólo blancos, o con `--` como «valor» → exit 2 sin correr nada.
+    --pass-if|--fail-if)
+      if [ $# -lt 2 ] || [ "$2" = "--" ] || [ -z "$(printf '%s' "$2" | tr -d '[:space:]')" ]; then
+        echo "smoke-run.sh: $1 necesita un texto: qué tiene que pasar para dar el humo por bueno (ej: $1 'responde 201 con el id del pedido')" >&2
+        exit 2
+      fi
+      if [ "$1" = "--pass-if" ]; then PASA_SI="$2"; PASA_SI_SET=1; else FALLA_SI="$2"; FALLA_SI_SET=1; fi
+      shift 2 ;;
     *) break ;;
   esac
 done
@@ -82,11 +104,63 @@ if [ "${1:-}" != "--" ]; then
   exit 2
 fi
 shift
+# Decisión del dueño (2026-10-15, duda 2): obligatorio desde la publicación para todo humo con criterios. Un humo
+# que dice cubrir un AC sin decir qué esperaba es el que convierte «verificado corriendo» en «terminó con 0».
+if [ -n "$ACS" ] && [ "$PASA_SI_SET" != 1 ]; then
+  echo "smoke-run.sh: un humo con --acs tiene que decir antes de correr qué tiene que pasar — no se corre." >&2
+  echo "  forma: smoke-run.sh <evidence-dir> <story> --acs $ACS --pass-if '<qué tiene que pasar>' [--fail-if '<…>'] -- <comando…>" >&2
+  echo "  (sembrar las precondiciones de un AC va sin --acs)" >&2
+  exit 2
+fi
 
 TS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-"$@"
-EXIT=$?
+# ── La salida, guardada sin perder el código de salida (story 1.19) ──
+# Va a un temporal FUERA del repo (`mktemp` en $TMPDIR) y se borra siempre, también si el humo muere a mitad: la
+# salida sin tapar no puede quedar en `.advisors/`, que viaja por git. Un TERM/INT/HUP sale por `exit`, y eso dispara
+# el trap de EXIT.
+# La copia la hace un `tee` en una sustitución de proceso (`> >(…)`), no en una tubería. Lo encontró el pase
+# adversarial de la 1.19 (2026-10-15): con `"$@" | tee`, bash espera a que se cierre la salida y no al comando, y un humo
+# que deja un proceso de fondo con la salida abierta (arrancar la app para sembrar el «Given») colgaba el envoltorio;
+# con un servidor, para siempre.
+# 🔴 El código de salida es el del COMANDO (`$?`, sin tubería de por medio). Con `| tee` y sin `pipefail` sería el de
+# `tee`, y un humo rojo quedaría registrado con exit 0: el mismo bug que test-gate.sh ya evita con su `tee`.
+# Cómo terminó la copia lo deja `tee` en `<temporal>.rc`, y se lo espera hasta 5 s después del comando. Si no terminó,
+# un proceso de fondo tiene la salida abierta: se guarda lo que salió hasta ahí, con aviso. Si terminó mal (disco lleno,
+# o `smoke-run.sh … | head` que corta la tubería), la copia está incompleta: queda output: null y la matriz no lo cuenta.
+# El precio: la salida de error va mezclada con la normal y el comando deja de ver una terminal (sin colores ni
+# barras de progreso).
+SALIDA_TMP="$(mktemp "${TMPDIR:-/tmp}/smoke-run.XXXXXX" 2>/dev/null)" || SALIDA_TMP=""
+GUARDAR_SALIDA=0
+trap '[ -n "$SALIDA_TMP" ] && rm -f "$SALIDA_TMP" "$SALIDA_TMP.rc"' EXIT
+trap 'exit 143' TERM
+trap 'exit 130' INT
+trap 'exit 129' HUP
+if [ -n "$SALIDA_TMP" ]; then
+  # La salida de error del propio `tee` va a /dev/null: si no, mientras un proceso de fondo lo mantiene vivo, también
+  # mantiene abierta la salida de error de quien llamó a smoke-run.sh (su error queda igual en `.rc`).
+  # El `.rc` se escribe sólo si el temporal sigue ahí: con un proceso de fondo, `tee` termina después de que el trap
+  # ya borró los dos, y escribirlo igual dejaba un archivo suelto en $TMPDIR.
+  "$@" > >(exec sh -c 'tee "$1"; rc=$?; [ -e "$1" ] && echo "$rc" > "$2"' smoke-run-tee "$SALIDA_TMP" "$SALIDA_TMP.rc" 2>/dev/null) 2>&1
+  EXIT=$?
+  ESPERA=0
+  while [ ! -s "$SALIDA_TMP.rc" ] && [ "$ESPERA" -lt 50 ]; do sleep 0.1; ESPERA=$((ESPERA + 1)); done
+  if [ ! -s "$SALIDA_TMP.rc" ]; then
+    echo "[smoke-run] ⚠️ un proceso de fondo del comando sigue con la salida abierta: se guarda lo que salió hasta ahora. Redirigí su salida (… > app.log 2>&1 &) para guardarla entera." >&2
+    # La marca va DENTRO de la salida guardada, y por eso dentro de su sello: quien la lea (el revisor de cierre)
+    # sabe que no está entera. Un aviso sólo por stderr no quedaba en ningún lado.
+    printf '\n[… la salida siguió después de guardarla: un proceso de fondo la mantenía abierta …]\n' >> "$SALIDA_TMP"
+    GUARDAR_SALIDA=1
+  elif [ "$(cat "$SALIDA_TMP.rc")" = 0 ]; then
+    GUARDAR_SALIDA=1
+  else
+    echo "[smoke-run] ⚠️ la copia de la salida se cortó (tee salió con $(cat "$SALIDA_TMP.rc")): el humo queda con output: null y la matriz no lo cuenta." >&2
+  fi
+else
+  echo "[smoke-run] ⚠️ no pude crear un temporal para la salida: el humo corre igual y queda con output: null (la matriz no lo cuenta)." >&2
+  "$@"
+  EXIT=$?
+fi
 
 ACS_JSON="[$(echo "$ACS" | tr ',' '\n' | grep -E '^[0-9]+$' | paste -sd, -)]"
 MUT_FIELD=""
@@ -118,10 +192,33 @@ if [ $? -ne 0 ] || [ -z "$CMD_JSON" ]; then
   echo "[smoke-run] ⚠️ no se pudo correr el tapado de secretos ($SECRETS_JS): el comando NO se escribe en la evidencia." >&2
 fi
 
-ENTRY=$(printf '{"ts":"%s","story":"%s","acs":%s,"cmd":%s,"exit":%d,"via":"smoke-run.sh"%s}' \
-  "$TS" "$STORY_ID" "$ACS_JSON" "$CMD_JSON" "$EXIT" "$MUT_FIELD")
-
 mkdir -p "$EVIDENCE_DIR"
+
+# ── La expectativa y la salida (story 1.19), por el MISMO tapado que el comando ──
+# `ledger-extras` tapa `--pass-if`/`--fail-if`, recorta (≤ 8 KB) y tapa la salida, la escribe en
+# <story>-smoke-outputs/ y devuelve dos fragmentos: el de la línea del registro y el del espejo (los sha256).
+# Si el tapado no puede correr, no se escribe NINGUNO de los tres: queda un aviso, como con `cmd`, y la línea
+# sale con output: null — desde la 1.19, una línea `"v":2` sin salida no cuenta (cambio declarado de la story).
+EXTRA_ARGS=()
+[ "$PASA_SI_SET" = 1 ] && EXTRA_ARGS+=(--pass-if "$PASA_SI")
+[ "$FALLA_SI_SET" = 1 ] && EXTRA_ARGS+=(--fail-if "$FALLA_SI")
+[ -n "$SALIDA_TMP" ] && [ "$GUARDAR_SALIDA" = 1 ] && EXTRA_ARGS+=(--output-tmp "$SALIDA_TMP" --evidence-dir "$EVIDENCE_DIR" --key "$STORY_ID" --ts "$TS")
+# `${arr[@]+…}`: bash 3.2 (el de macOS) da «unbound variable» con un arreglo vacío bajo `set -u`.
+if EXTRAS="$(node "$SECRETS_JS" ledger-extras ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"})" && [ -n "$EXTRAS" ]; then
+  LEDGER_EXTRA="$(printf '%s\n' "$EXTRAS" | sed -n 1p)"
+  MIRROR_EXTRA="$(printf '%s\n' "$EXTRAS" | sed -n 2p)"
+else
+  LEDGER_EXTRA=''
+  [ "$PASA_SI_SET" = 1 ] && LEDGER_EXTRA="$LEDGER_EXTRA"',"pass_if":"[expectativa no registrada: no se pudo tapar]"'
+  [ "$FALLA_SI_SET" = 1 ] && LEDGER_EXTRA="$LEDGER_EXTRA"',"fail_if":"[expectativa no registrada: no se pudo tapar]"'
+  LEDGER_EXTRA="$LEDGER_EXTRA"',"output":null,"output_sha":null'
+  MIRROR_EXTRA=''
+  echo "[smoke-run] ⚠️ no se pudo correr el tapado de secretos ($SECRETS_JS): ni la expectativa ni la salida se escriben en la evidencia." >&2
+fi
+
+ENTRY=$(printf '{"ts":"%s","story":"%s","acs":%s,"cmd":%s,"exit":%d,"via":"smoke-run.sh"%s,"v":2%s}' \
+  "$TS" "$STORY_ID" "$ACS_JSON" "$CMD_JSON" "$EXIT" "$MUT_FIELD" "$LEDGER_EXTRA")
+
 printf '%s\n' "$ENTRY" >> "$EVIDENCE_DIR/$STORY_ID-smoke-ledger.jsonl"
 
 MIRROR_DIR="$HOME/.claude/.tycon-pipeline"
@@ -131,8 +228,8 @@ mkdir -p "$MIRROR_DIR"
 # si no es un repo git, cae al cwd. Misma key que marker.js para que el capturer agrupe igual.
 REPO_PATH="$(git -C "$EVIDENCE_DIR" rev-parse --show-toplevel 2>/dev/null || git rev-parse --show-toplevel 2>/dev/null || pwd)"
 REPO_JSON="$(node -e 'process.stdout.write(JSON.stringify(process.argv[1]))' "$REPO_PATH")"
-printf '{"type":"smoke-run","ts":"%s","repoPath":%s,"story":"%s","acs":%s,"exit":%d%s}\n' \
-  "$TS" "$REPO_JSON" "$STORY_ID" "$ACS_JSON" "$EXIT" "$MUT_FIELD" >> "$MIRROR_DIR/gates.log"
+printf '{"type":"smoke-run","ts":"%s","repoPath":%s,"story":"%s","acs":%s,"exit":%d%s,"v":2%s}\n' \
+  "$TS" "$REPO_JSON" "$STORY_ID" "$ACS_JSON" "$EXIT" "$MUT_FIELD" "$MIRROR_EXTRA" >> "$MIRROR_DIR/gates.log"
 
 echo "[smoke-run] story=$STORY_ID acs=$ACS exit=$EXIT mutates=$MUTATES → ledger + gates.log" >&2
 exit $EXIT

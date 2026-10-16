@@ -320,20 +320,208 @@ function joinArgs(args) {
   }).join(' ');
 }
 
-module.exports = { MASK, FORMS, redact, truncate, ledgerCmd, ledgerCmdFromArgs, joinArgs, findLeaks, findLeaksInContent, isEvidencePath, isSafeValue };
+// ── Story 1.19 — la expectativa y la salida de un humo ──────────────────────────────────────────────────────────
+// Un humo con criterios escribe antes de correr qué tiene que pasar (`--pass-if`, y opcional `--fail-if`), y su
+// salida se guarda en `<evidence-dir>/<clave>-smoke-outputs/`. Las dos cosas viajan por git como el `cmd`: pasan por
+// el MISMO tapado (no hay un segundo tapado aparte que se desfase de éste).
 
-// CLI: `node smoke-secrets.js ledger-cmd -- <comando…>` — escribe en stdout el `cmd` del registro como texto JSON.
-// Lo usa smoke-run.sh; el aviso de «se taparon N valores» sale por stderr.
-if (require.main === module) {
-  const [sub, sep, ...args] = process.argv.slice(2);
-  if (sub !== 'ledger-cmd' || sep !== '--') {
-    process.stderr.write('uso: smoke-secrets.js ledger-cmd -- <comando…>\n');
-    process.exit(2);
+/** Tope de la salida guardada, en bytes. Decisión del dueño (2026-10-15, duda 3): 8 KB por humo. */
+const SALIDA_MAX_BYTES = 8192;
+/** Tope de un texto de expectativa: es una frase, no un documento. */
+const EXPECTATIVA_MAX = 1000;
+
+/** Los primeros `max` bytes de `s` en UTF-8, sin dejar un carácter partido (el resto del byte se descarta). */
+function cutBytes(s, max) {
+  const b = Buffer.from(String(s), 'utf8');
+  if (b.length <= max) return String(s);
+  return b.subarray(0, max).toString('utf8').replace(/�+$/, '');
+}
+
+/** Corta a `max` bytes sin dejar un `***` partido (un `**` suelto el freno lo leería como un valor), igual que `truncate`. */
+function cortaSinPartirMascara(s, max) {
+  const c = cutBytes(s, max);
+  return c.length < s.length && s[c.length] === '*' ? c.replace(/\*+$/, '') : c;
+}
+
+/** Cuántas veces lo que se guarda de cada punta se tapa antes de cortar (ver `recortarSalida`). */
+const VENTANA = 3;
+
+/**
+ * Recorta la salida a `max` bytes: las primeras y las últimas líneas, con `[… N líneas omitidas …]` en el medio. Una
+ * línea más larga que media salida se corta sola.
+ *
+ * `tapar` (opcional) tapa ANTES de cortar, pero no la salida entera: el tapado general crece con el cuadrado del largo
+ * (50 KB tardaban 7 s). Tapa una VENTANA de cada punta —tres veces lo que se guarda de ese lado— y recién después
+ * corta. Así una credencial que el corte partiría ya está tapada cuando se corta: una línea de sqlcmd terminada en `\`
+ * con su `-P` en la siguiente, o un token en el borde de una línea larga. Lo encontró el pase adversarial de la 1.19
+ * (2026-10-15): cortar primero dejaba la línea del `-P` sin su sqlcmd, o un pedazo de token más corto que lo que el
+ * tapado reconoce, y los dos quedaban enteros en la evidencia que viaja por git.
+ */
+function recortarSalida(text, max = SALIDA_MAX_BYTES, tapar = (t) => t) {
+  const s = String(text);
+  if (Buffer.byteLength(s, 'utf8') <= max) return tapar(s);
+  const lines = s.split('\n');
+  const mitad = Math.floor((max - 120) / 2);
+  const ventana = mitad * VENTANA;
+  const bytes = (l) => Buffer.byteLength(l, 'utf8') + 1;
+  const deVentana = (l) => (bytes(l) > ventana ? cutBytes(l, ventana) : l);
+  // Las dos ventanas, sin pisarse: la de la cola arranca, como mucho, donde terminó la de la cabeza.
+  const vHead = [];
+  let vb = 0;
+  let i = 0;
+  for (; i < lines.length && vb < ventana; i += 1) { const l = deVentana(lines[i]); vHead.push(l); vb += bytes(l); }
+  const vTail = [];
+  let tb = 0;
+  for (let j = lines.length - 1; j >= i && tb < ventana; j -= 1) { const l = deVentana(lines[j]); vTail.unshift(l); tb += bytes(l); }
+  // Ninguna forma del tapado se lleva un salto de línea: las ventanas tapadas tienen las mismas líneas.
+  const hLines = tapar(vHead.join('\n')).split('\n');
+  const tLines = vTail.length ? tapar(vTail.join('\n')).split('\n') : [];
+  const corta = (l) => (bytes(l) > mitad - 40 ? `${cortaSinPartirMascara(l, mitad - 64)} [… línea recortada …]` : l);
+  const head = [];
+  let hb = 0;
+  for (const raw of hLines) {
+    const l = corta(raw);
+    if (hb + bytes(l) > mitad) break;
+    head.push(l); hb += bytes(l);
   }
-  const r = ledgerCmdFromArgs(args, { legacy: process.env.TYCON_SMOKE_REDACT !== '0' });
-  if (r.count > 0) {
-    process.stderr.write(`[smoke-run] 🔒 se taparon ${r.count} valor(es) con forma de credencial antes de escribir la evidencia.\n`);
+  const tail = [];
+  let kb = 0;
+  for (let j = tLines.length - 1; j >= 0 && lines.length - tail.length > head.length; j -= 1) {
+    const l = corta(tLines[j]);
+    if (kb + bytes(l) > mitad) break;
+    tail.unshift(l); kb += bytes(l);
+  }
+  const omitidas = lines.length - head.length - tail.length;
+  return [...head, `[… ${omitidas} líneas omitidas …]`, ...tail].join('\n');
+}
+
+/** Lo que va en lugar de una línea que el freno del commit todavía leería como un secreto. */
+const LINEA_TAPADA = '[línea tapada: el freno del commit la lee como un secreto]';
+
+/**
+ * La salida tal como se guarda: texto (bytes inválidos → reemplazo, `\r\n` → `\n`), recortada, tapada y dentro del tope.
+ *
+ * Tres cosas que encontró el pase adversarial de la 1.19 (2026-10-15):
+ *   · los finales de línea van como `\n`: la salida viaja por git y un checkout los reescribe (autocrlf en Windows,
+ *     `eol=lf` en los repos del arnés); con los bytes crudos, la matriz la daba por editada;
+ *   · se tapa en modo literal, como los argumentos de `cmd`: la salida es texto ya resuelto, no un guion, y en modo guion
+ *     un valor que empieza con `$` pasaba por una variable;
+ *   · una red final con el mismo lector del freno del commit (`findLeaksInContent`, que decodifica las líneas JSON):
+ *     lo que todavía vería como secreto no se guarda. Si no, una línea JSON con `\n` delante de la forma pasaba el
+ *     tapado (en crudo hay una `n` delante) y frenaba el commit.
+ */
+function salidaParaGuardar(buf, opts = {}) {
+  const texto = (Buffer.isBuffer(buf) ? buf.toString('utf8') : String(buf)).replace(/\r\n/g, '\n');
+  let count = 0;
+  const tapar = (t) => { const r = redact(t, { ...opts, literal: true }); count += r.count; return r.text; };
+  let out = recortarSalida(texto, SALIDA_MAX_BYTES, tapar);
+  const vistas = new Set(findLeaksInContent(out).map((l) => l.line));
+  if (vistas.size) {
+    out = out.split('\n').map((l, i) => (vistas.has(i + 1) ? LINEA_TAPADA : l)).join('\n');
+    count += vistas.size;
+  }
+  // El tapado general puede alargar un valor corto (`a:bcde` → `$USUARIO:$VAL`): el tope se vuelve a cumplir al final.
+  if (Buffer.byteLength(out, 'utf8') > SALIDA_MAX_BYTES) out = cortaSinPartirMascara(out, SALIDA_MAX_BYTES);
+  return { text: out, count };
+}
+
+/** Una expectativa tal como se escribe en el registro: tapada (en modo literal: es un argumento ya resuelto) y cortada. */
+function expectativaParaGuardar(text, opts = {}) {
+  const r = redact(String(text).slice(0, 4000), { ...opts, literal: true });
+  return { text: truncate(r.text, EXPECTATIVA_MAX), count: r.count };
+}
+
+function sha256(text) { return require('crypto').createHash('sha256').update(text).digest('hex'); }
+
+/**
+ * Lo que smoke-run.sh agrega a la línea del registro y a la del espejo para un humo `"v":2` (el `"v":2` lo pone el
+ * envoltorio). Escribe la salida en `<evidenceDir>/<key>-smoke-outputs/<sello>-<6 hex>.txt` con apertura exclusiva:
+ * dos humos del mismo segundo no se pisan (AC 18). Si la carpeta o el archivo no se pueden crear, `output: null`
+ * (AC 17): el humo queda registrado y la matriz no lo cuenta.
+ */
+function ledgerExtras(o, opts = {}) {
+  const fs = require('fs');
+  const path = require('path');
+  const crypto = require('crypto');
+  const ledger = {};
+  const mirror = {};
+  let count = 0;
+  for (const [campo, valor] of [['pass_if', o.pasaSi], ['fail_if', o.fallaSi]]) {
+    if (valor === undefined) continue;
+    const r = expectativaParaGuardar(valor, opts);
+    count += r.count;
+    ledger[campo] = r.text;
+    mirror[`${campo}_sha`] = sha256(r.text);
+  }
+  ledger.output = null;
+  ledger.output_sha = null;
+  if (o.salidaTmp && o.evidenceDir && o.key) {
+    const s = salidaParaGuardar(fs.readFileSync(o.salidaTmp), opts);
+    count += s.count;
+    const sello = String(o.ts || new Date().toISOString().replace(/\.\d+Z$/, 'Z')).replace(/[-:]/g, '');
+    const dirRel = `${o.key}-smoke-outputs`;
+    try {
+      fs.mkdirSync(path.join(o.evidenceDir, dirRel), { recursive: true });
+      for (let intento = 0; intento < 5 && ledger.output === null; intento += 1) {
+        const rel = `${dirRel}/${sello}-${crypto.randomBytes(3).toString('hex')}.txt`;
+        try {
+          fs.writeFileSync(path.join(o.evidenceDir, rel), s.text, { flag: 'wx' });
+          ledger.output = rel;
+        } catch (e) { if (e.code !== 'EEXIST') throw e; }
+      }
+    } catch (e) {
+      process.stderr.write(`[smoke-run] ⚠️ no se pudo guardar la salida en ${path.join(o.evidenceDir, dirRel)} (${e.code || e.message}): el humo queda registrado con salida: null y la matriz no lo cuenta.\n`);
+    }
+    if (ledger.output !== null) {
+      ledger.output_sha = sha256(s.text);
+      mirror.output_sha = ledger.output_sha;
+    }
+  }
+  return { ledger, mirror, count };
+}
+
+/** Los campos como fragmento de JSON, para pegarlos detrás de los de la línea (`,"a":1,"b":2`; vacío si no hay). */
+function fragmento(obj) {
+  return Object.entries(obj).map(([k, v]) => `,${JSON.stringify(k)}:${JSON.stringify(v)}`).join('');
+}
+
+module.exports = { MASK, FORMS, redact, truncate, ledgerCmd, ledgerCmdFromArgs, joinArgs, findLeaks, findLeaksInContent, isEvidencePath, isSafeValue,
+  SALIDA_MAX_BYTES, recortarSalida, salidaParaGuardar, expectativaParaGuardar, ledgerExtras, fragmento, cortaSinPartirMascara };
+
+function avisoTapado(count) {
+  if (count > 0) {
+    process.stderr.write(`[smoke-run] 🔒 se taparon ${count} valor(es) con forma de credencial antes de escribir la evidencia.\n`);
     process.stderr.write('[smoke-run]    El registro VIAJA por git. Pasá la credencial por variable (SQLCMDPASSWORD="$DB_PASS", -H "X-Api-Key: $API_KEY") y no habrá nada que tapar.\n');
   }
-  process.stdout.write(JSON.stringify(r.text));
+}
+
+// CLI, lo usa smoke-run.sh (los avisos salen por stderr):
+//   `node smoke-secrets.js ledger-cmd -- <comando…>` — escribe en stdout el `cmd` del registro como texto JSON.
+//   `node smoke-secrets.js ledger-extras [--pass-if <t>] [--fail-if <t>] [--output-tmp <archivo> --evidence-dir <dir>
+//        --key <clave> --ts <sello>]` — escribe dos líneas: el fragmento de la línea del registro y el del espejo.
+if (require.main === module) {
+  const [sub, ...rest] = process.argv.slice(2);
+  const legacy = process.env.TYCON_SMOKE_REDACT !== '0';
+  if (sub === 'ledger-cmd' && rest[0] === '--') {
+    const r = ledgerCmdFromArgs(rest.slice(1), { legacy });
+    avisoTapado(r.count);
+    process.stdout.write(JSON.stringify(r.text));
+  } else if (sub === 'ledger-extras') {
+    const flags = { '--pass-if': 'pasaSi', '--fail-if': 'fallaSi', '--output-tmp': 'salidaTmp',
+      '--evidence-dir': 'evidenceDir', '--key': 'key', '--ts': 'ts' };
+    const o = {};
+    for (let i = 0; i < rest.length; i += 2) {
+      if (!flags[rest[i]] || i + 1 >= rest.length) {
+        process.stderr.write(`smoke-secrets.js ledger-extras: no entiendo «${rest[i]}»\n`);
+        process.exit(2);
+      }
+      o[flags[rest[i]]] = rest[i + 1];
+    }
+    const r = ledgerExtras(o, { legacy });
+    avisoTapado(r.count);
+    process.stdout.write(`${fragmento(r.ledger)}\n${fragmento(r.mirror)}\n`);
+  } else {
+    process.stderr.write('uso: smoke-secrets.js ledger-cmd -- <comando…> | ledger-extras [--pass-if <texto>] …\n');
+    process.exit(2);
+  }
 }
