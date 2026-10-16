@@ -510,6 +510,25 @@ cero**: si una consulta falla, el archivo dice `no_medido` con el motivo y el gu
 requests y los pedidos de GitHub todavía no se leen». Red: `scripts/tests/assigned-items.test.js` (con `fake-az.sh`, que
 suma el lote de work items).
 
+## scripts/nightly/deployments/deployments.js
+
+**Qué llegó a staging y qué a producción, en cada producto.** Una corrida `succeeded` no prueba nada sobre producción:
+producción va detrás de una aprobación manual y, si nadie aprueba, vence, el stage queda `skipped` y la corrida igual dice
+`succeeded` (medido en el pipeline de producción de un producto del equipo: tres corridas así en una semana). Este guion,
+en el nocturno del tablero, deja `.dashboard/deployments/deployments-<día>.json` con el último despliegue a cada entorno
+(fecha, corrida, commit), si producción quedó atrás de staging, la aprobación (pendiente, vencida, no aprobada o ninguna)
+y si main está roto. 🔴 **El criterio es el stage**: cuenta una corrida si su timeline tiene el stage con el identificador
+**exacto** que declaró la organización y terminó `succeeded` (o `succeededWithIssues`, marcado); nunca por el nombre
+visible ni por un pedazo de texto como «Prod», que encuentra NONPROD y PREPROD y pierde Production. 🔴 **Ningún valor de
+una organización en el código**: proveedor, pipelines y stages se declaran en `operations.json → deployments` (la página
+`harness.js team-config` los propone leyendo la última corrida de main, y sólo se guarda lo que una persona confirma). El
+segundo proveedor es GitHub (`github.js`: deployments y environments; «vencida» no se distingue y sale no medida).
+🔴 **No medido no es «sin despliegue»**: sin permiso, `az` caído o una respuesta ilegible dan «no medido» con un motivo de
+lista cerrada y el texto de la falla saneado (sin la identidad de un `TF400813`, direcciones ni correos). Lista blanca: del
+timeline sólo identificador, resultado, estado y fechas; nunca quién aprobó. La leen la ficha de despliegues del tablero
+y la pestaña Proyectos del sitio de la organización; el lector de Azure (`azure.js`) queda para la serie histórica de
+compilaciones. Red: `scripts/tests/nightly-deployments.test.js` (con `fake-az.sh` y `fake-gh.js`).
+
 ## scripts/site/ — el sitio de la organización
 
 **Un solo sitio para toda la organización, donde cada uno ve lo suyo y quienes mantienen ven todo.**

@@ -69,6 +69,39 @@ if (method === 'GET' && base === 'installation/repositories') {
   out({ total_count: l.length, repositories: pag(l) });
 }
 if (method === 'GET' && base === 'user/repos') out(pag(porNombre(st.visible)));
+// story 2.22 (la foto de despliegues): environments, deployments con sus statuses, corridas de Actions y sus despliegues
+// pendientes. Estado: "environments": { "<o>/<r>": [nombres] }, "default_branch": { "<o>/<r>": "main" },
+//   "deployments": { "<o>/<r>": [ { id, sha, environment, created_at, statuses: [ { id, state, created_at } ] } ] },
+//   "runs": { "<o>/<r>": [ { id, run_number, status, conclusion, created_at, head_branch, workflow, pending: [env] } ] }.
+// Las listas salen en el orden del estado: la API no documenta su orden y el guion no puede confiar en él.
+if (method === 'GET' && (m = base.match(/^repos\/([^/]+\/[^/]+)\/environments\/([^/]+)$/))) {
+  if (((st.environments || {})[m[1]] || []).includes(m[2])) out({ name: m[2] });
+  err(404, 'Not Found');
+}
+if (method === 'GET' && (m = base.match(/^repos\/([^/]+\/[^/]+)\/deployments$/))) {
+  out(pag(((st.deployments || {})[m[1]] || []).filter((d) => !q.environment || d.environment === q.environment).map(({ statuses, ...d }) => d)));
+}
+if (method === 'GET' && (m = base.match(/^repos\/([^/]+\/[^/]+)\/deployments\/(\d+)\/statuses$/))) {
+  const d = ((st.deployments || {})[m[1]] || []).find((x) => String(x.id) === m[2]);
+  if (!d) err(404, 'Not Found');
+  out(pag(d.statuses || []));
+}
+if (method === 'GET' && (m = base.match(/^repos\/([^/]+\/[^/]+)\/actions\/runs\/(\d+)\/pending_deployments$/))) {
+  const r = ((st.runs || {})[m[1]] || []).find((x) => String(x.id) === m[2]);
+  out((r && r.pending ? r.pending : []).map((name) => ({ environment: { name } })));
+}
+if (method === 'GET' && (m = base.match(/^repos\/([^/]+\/[^/]+)\/actions\/workflows\/([^/]+)\/runs$/))) {
+  const l = ((st.runs || {})[m[1]] || []).filter((r) => r.workflow === m[2] && (!q.branch || r.head_branch === q.branch));
+  out({ total_count: l.length, workflow_runs: pag(l) });
+}
+if (method === 'GET' && (m = base.match(/^repos\/([^/]+\/[^/]+)\/actions\/runs$/))) {
+  const l = ((st.runs || {})[m[1]] || []).filter((r) => !q.status || r.status === q.status);
+  out({ total_count: l.length, workflow_runs: pag(l) });
+}
+if (method === 'GET' && (m = base.match(/^repos\/([^/]+\/[^/]+)$/))) {
+  const db = (st.default_branch || {})[m[1]];
+  if (db) out({ full_name: m[1], default_branch: db });
+}
 if ((m = base.match(/^repos\/([^/]+\/[^/]+)\/issues$/))) {
   const repo = m[1];
   st.issues = st.issues || {}; st.issues[repo] = st.issues[repo] || [];

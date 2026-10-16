@@ -34,9 +34,14 @@ nada en una máquina: todo pasa en GitHub.
 1. **Crearla.** En la organización: *Settings → Developer settings → GitHub Apps → New GitHub App*. Un nombre (por
    ejemplo `<tu-org>-noche`); en *Homepage URL*, la dirección del repo de operaciones. En *Webhook*, destildá
    *Active*: la App no recibe eventos. En *Where can this GitHub App be installed?*, **Only on this account**.
-2. **Permisos mínimos.** En *Repository permissions*, sólo estos tres: *Contents: Read-only*, *Issues: Read and write*
-   y *Metadata: Read-only* (GitHub lo pone solo). Ningún permiso de organización ni de cuenta. Los workflows además
-   piden cada token con menos: el que clona sólo lee, y el que escribe issues sólo escribe issues.
+2. **Permisos mínimos.** En *Repository permissions*, sólo estos cinco: *Contents: Read-only*, *Issues: Read and
+   write*, *Metadata: Read-only* (GitHub lo pone solo), y para la foto de despliegues del tablero (story 2.22)
+   *Deployments: Read-only* y *Actions: Read-only*. Ningún permiso de organización ni de cuenta. Los workflows además
+   piden cada token con menos: el que clona sólo lee, el que escribe issues sólo escribe issues, y el del tablero sólo
+   lee deployments y actions. **La foto de despliegues lee los repos de producto**: la App tiene que estar instalada
+   en ellos (punto 4). Qué leer se declara en `operations.json → deployments` (el ejemplo trae la forma): por
+   producto, el `environment` de staging y el de producción y, si querés saber si main está roto, el `workflow` de
+   staging. Sin la App, o sin declarar, cada producto sale «no medido», sin error.
 3. **Los datos que van a los secretos.** En la página de la App, anotá el **Client ID**. Abajo, en *Private keys*,
    *Generate a private key*: se baja un archivo `.pem`. Esa llave es la credencial: va al secreto del punto 3 y **no
    se guarda en ninguna otra parte** (borrá el archivo cuando la cargues).

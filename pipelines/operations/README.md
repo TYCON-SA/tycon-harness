@@ -110,6 +110,18 @@ Y en *Project settings → Pipelines → Settings* del proyecto donde corren los
   for non-release pipelines***. Prendido, los repos de otros proyectos no se pueden leer: el pipeline lo dice como
   «NO MEDIDO» o «Repos NO medidos».
 
+**La foto de despliegues** (el tablero, story 2.22) lee las corridas y el timeline de los pipelines de producto que
+declarás en `operations.json → deployments` (abajo). Qué identidad lee depende de la opción anterior: con *Limit job
+authorization scope* apagada es la de la **colección**, `Project Collection Build Service (<organización>)`; prendida, la
+del proyecto. Esa identidad necesita, en *Pipelines → Security* de **cada proyecto de producto**, **View builds** y
+**View build pipeline**. Sin esos permisos el tablero se genera igual y cada pipeline sale «no medido» con
+`sin_permiso`, nunca «sin despliegue».
+
+Qué declarar: el proveedor y, por producto, los pipelines de `staging` y de `production` con el **identificador
+exacto** de cada stage que despliega (el nombre del stage en el YAML, no el que se ve en la pantalla). La página
+`harness.js team-config` los propone leyendo la última corrida terminada de main, y guarda sólo lo que confirmás. El
+ejemplo `examples/operations.json` trae la forma. Un producto sin declarar sale «no medido».
+
 ## 4. Dar de alta los tres pipelines
 
 Por cada YAML: *Pipelines → New pipeline → Azure Repos Git → operations → Existing Azure Pipelines YAML file*, elegí la

@@ -73,7 +73,8 @@ function brokenRules(text) {
   // el paso que pide el token de la App: sólo si está configurada, con la llave de los secretos, de la organización del
   // repo de operaciones, con permisos pedidos por nombre (contenido de lectura; issues) y ninguna otra entrada
   const WITH = { 'client-id': /^\$\{\{ vars\.HARNESS_APP_CLIENT_ID \}\}$/, 'private-key': /^\$\{\{ secrets\.HARNESS_APP_PRIVATE_KEY \}\}$/,
-    owner: /^\$\{\{ github\.repository_owner \}\}$/, 'permission-contents': /^read$/, 'permission-issues': /^(read|write)$/, 'skip-token-revoke': /^true$/ };
+    owner: /^\$\{\{ github\.repository_owner \}\}$/, 'permission-contents': /^read$/, 'permission-issues': /^(read|write)$/,
+    'permission-deployments': /^read$/, 'permission-actions': /^read$/, 'skip-token-revoke': /^true$/ };   // story 2.22: la foto de despliegues lee deployments y actions
   for (const st of appSteps) {
     const cond = (st.match(/^ {8}if: (.*)$/m) || [])[1] || '';
     const w = {};
@@ -393,8 +394,14 @@ test('T9 GhModels_AppToken: la App es el camino recomendado y el usuario de máq
   assert.match(mApp[0], SHA);
   assert.deepStrictEqual([...mApp[0].matchAll(/^ {10}(permission-[a-z-]+): (.*)$/gm)].map((x) => `${x[1]}=${x[2]}`), ['permission-contents=read']);
   assert.match(m.find((x) => /clone-repos\.sh --org/.test(x)), /^ {10}ORG_TOKEN: \$\{\{ steps\.org-token\.outputs\.token \|\| secrets\.HARNESS_ORG_TOKEN \}\}$/m);
-  // el tablero no habla con los repos de la organización: ninguna credencial de la organización
-  assert.doesNotMatch(read('team-dashboard.yml'), /create-github-app-token|HARNESS_ORG_TOKEN|HARNESS_APP_/);
+  // el tablero no lee código de los repos de la organización; desde la story 2.22 sí lee sus despliegues: UN token de la
+  // App, sólo de lectura de deployments y actions (nunca contents ni issues), y nunca el usuario de máquina
+  const tb = read('team-dashboard.yml');
+  assert.doesNotMatch(tb, /HARNESS_ORG_TOKEN/);
+  const tApp = steps(tb).filter((x) => /create-github-app-token@/.test(x));
+  assert.strictEqual(tApp.length, 1, 'el tablero pide un solo token de la App');
+  assert.match(tApp[0], SHA);
+  assert.deepStrictEqual([...tApp[0].matchAll(/^ {10}(permission-[a-z-]+): (.*)$/gm)].map((x) => `${x[1]}=${x[2]}`), ['permission-deployments=read', 'permission-actions=read']);
   // la revisión de dependencias: el orden es la regla
   const d = steps(read('dependency-audit.yml'));
   const at = (re) => { const i = d.findIndex((x) => re.test(x)); assert.ok(i >= 0, `falta el paso ${re}`); return i; };
@@ -592,5 +599,26 @@ test('T32 TeamDashboard_ProductoresDelSitio', () => {
   assert.ok(traer >= 0 && prod > traer && generar > prod, 'traer → productores → generar');
   assert.match(y, /open-prs\.js --today "\$\{DAY\}" --provider github --json "\.dashboard\/open-prs\/open-prs-\$\{DAY\}\.json"/);
   assert.match(y, /assigned-items\.js --today "\$\{DAY\}" --provider github --out \.dashboard\/assigned/);
-  assert.match(y, /-- artifacts\/tablero-del-arnes\.html \.dashboard\/open-prs \.dashboard\/assigned 2>&1/, 'se guardan con la página');
+  assert.match(y, /-- artifacts\/tablero-del-arnes\.html \.dashboard\/open-prs \.dashboard\/assigned \.dashboard\/deployments 2>&1/, 'se guardan con la página');
+});
+
+// story 2.22 (AC 13 y 15): la foto de despliegues corre ANTES de la página, tolerante; un paso propio acuña el token de la
+// GitHub App (con la llave sólo en su `private-key`) y la foto lo recibe como GH_TOKEN; la carpeta se guarda con la página.
+test('T21 TeamDashboard_PasoDeDesplieguesAntesDelTablero (2.22)', () => {
+  const y = read('team-dashboard.yml');
+  const token = y.search(/- name: La credencial para leer los despliegues/);
+  const foto = y.search(/- name: La foto de despliegues de cada producto/);
+  const generar = y.search(/- name: Generar la página del tablero/);
+  assert.ok(token >= 0 && foto > token && generar > foto, 'token → foto → página');
+  const pasoFoto = steps(y).find((s) => /La foto de despliegues de cada producto/.test(s));
+  assert.match(pasoFoto, /continue-on-error: true/);
+  assert.match(pasoFoto, /GH_TOKEN: \$\{\{ steps\.deploy-token\.outputs\.token \}\}/);
+  assert.doesNotMatch(pasoFoto, /github\.token|secrets\./, 'nunca github.token ni un secreto en el paso de la foto');
+  assert.match(pasoFoto, /deployments\.js --today .* --out \.dashboard\/deployments/);
+  const pasoToken = steps(y).find((s) => /La credencial para leer los despliegues/.test(s));
+  assert.match(pasoToken, /continue-on-error: true/);
+  assert.match(pasoToken, /permission-deployments: read/);
+  assert.match(pasoToken, /permission-actions: read/);
+  assert.deepStrictEqual(brokenRules(y), []);
+  assert.doesNotMatch(y.split('\n').slice(0, 16).join('\n'), /No necesita la credencial de la organización/);
 });

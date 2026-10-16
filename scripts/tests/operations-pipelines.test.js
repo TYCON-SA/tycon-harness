@@ -491,6 +491,19 @@ test('T32 TeamDashboard_ProductoresDelSitio', () => {
   assert.ok(traer >= 0 && prod > traer && generar > prod, 'traer → productores → generar');
   assert.match(y, /open-prs\.js --today "\$DAY" --org "\$\(System\.CollectionUri\)" --json "\.dashboard\/open-prs\/open-prs-\$DAY\.json"/);
   assert.match(y, /assigned-items\.js --today "\$DAY" --org "\$\(System\.CollectionUri\)" --out \.dashboard\/assigned/);
-  assert.match(y, /-- artifacts\/tablero-del-arnes\.html \.dashboard\/open-prs \.dashboard\/assigned\n/, 'se guardan con la página');
+  assert.match(y, /-- artifacts\/tablero-del-arnes\.html \.dashboard\/open-prs \.dashboard\/assigned \.dashboard\/deployments\n/, 'se guardan con la página');
   assert.match(y, /push-nightly-data\.js sync -- \.dashboard /, 'el sync trae .dashboard: guardar sus carpetas no sale 2');
+});
+
+// story 2.22 (AC 13): la foto de despliegues corre ANTES de la página, tolerante (naranja, nunca roja), con el permiso de la
+// corrida, y la carpeta se guarda con la página.
+test('T21 TeamDashboard_PasoDeDesplieguesAntesDelTablero (2.22)', () => {
+  const y = read('team-dashboard.yml');
+  const foto = y.search(/displayName: 'La foto de despliegues de cada producto'/);
+  const generar = y.search(/displayName: 'Generar la página del tablero \(modo nocturno\)'/);
+  assert.ok(foto >= 0 && generar > foto, 'foto → página');
+  const paso = y.slice(y.lastIndexOf('- script:', foto), generar);
+  assert.match(paso, /deployments\.js --today "\$\(date -u \+%Y-%m-%d\)" --org "\$\(System\.CollectionUri\)" --out \.dashboard\/deployments/);
+  assert.match(paso, /continueOnError: true/);
+  assert.match(paso, /AZURE_DEVOPS_EXT_PAT: \$\(System\.AccessToken\)/);
 });
