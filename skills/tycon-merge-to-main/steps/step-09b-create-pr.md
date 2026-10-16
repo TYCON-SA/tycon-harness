@@ -20,7 +20,11 @@ detección posterior. Tampoco queda rastro de aprobación fuera de la terminal d
 🔴 **El mensaje rico que armó el Step 2 NO se pierde**: pasa a ser la descripción del PR, y el
 merge commit que ADO crea al completarlo lo conserva. Es el mismo valor central del skill.
 
-## Precondición: el modo se DECLARA, no se adivina
+## Precondición: el modo sale del plan del paso 0, no se adivina
+
+El modo lo fijó el Step 0.7 con `merge-pr.js plan` y no cambia acá. Sale de dos cosas:
+la regla de la organización en `team-repos.json → merge_suites` (si las suites las corre el
+servidor, el modo es `pr`) y lo que el repo declara (la forma vieja, que sigue valiendo):
 
 ```bash
 # En el repo: .tycon/advisors.yaml
@@ -30,15 +34,19 @@ merge:
 
 El modo no se lee a mano del archivo: se le pregunta al plan del arnés, que sabe de dónde sale. Casi
 siempre del repo; en un clon del repo público del arnés, que no trae ese archivo, del clon de
-mantenimiento que declara la máquina (`paths.maintainers`). Se le pregunta así (sin dependencias):
+mantenimiento que declara la máquina (`paths.maintainers`). Acá se le vuelve a preguntar con el modo
+del paso 0 fijo (sin dependencias):
 
 ```bash
-node "${TYCON_GUIDES_DIR:-$HOME/.claude/tycon-harness}/scripts/tools/merge-pr.js" plan --repo <repo> --source '<source>' --target '<target>'
+node "${TYCON_GUIDES_DIR:-$HOME/.claude/tycon-harness}/scripts/tools/merge-pr.js" plan --repo <repo> --source '<source>' --target '<target>' --keep-mode <mode del Step 0.7>
 ```
 
-Del JSON: `mode` y `configFrom` (de dónde se leyó: `repo` o `maintainers`). Sin la clave → `mode: "push"`
-→ **este step no corre** y el flujo sigue por el Step 9 de siempre. Si sale 2, no pudo leer la
-configuración (o es el clon del público y no la encontró): decir el motivo y parar — no es `push`.
+Del JSON: `mode`, `configFrom` (de dónde se leyó: `repo` o `maintainers`) y `suites`. Con
+`mode: "push"` **este step no corre** y el flujo sigue por el Step 9 de siempre. 🔴 Si `suites` bajó
+a `"machine"` (el paso 0 había dicho `server`): **volver al 7.2** y correr las suites completas en
+esta máquina, sobre el merge de prueba del 7.0, antes de crear el pedido; con verde, seguir acá con
+la línea `Tests:` nueva en la descripción. Si sale 2, no pudo leer la configuración (o es el clon
+del público y no la encontró): decir el motivo y parar — no es `push`.
 
 **Red por si alguien prende la policy sin declarar el modo**: si el Step 9 falla por branch
 protection, NO abortar como antes — ofrecer este step al dev ("este repo ya exige PR; ¿lo creo

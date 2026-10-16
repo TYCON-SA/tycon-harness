@@ -36,11 +36,17 @@ asunto como «arregla `$(…)` en el lector» correría esa orden.
 ### 9c.1 — El plan
 
 ```bash
-node "${TYCON_GUIDES_DIR:-$HOME/.claude/tycon-harness}/scripts/tools/merge-pr.js" plan --repo <repo> --source '<source>' --target '<target>'
+node "${TYCON_GUIDES_DIR:-$HOME/.claude/tycon-harness}/scripts/tools/merge-pr.js" plan --repo <repo> --source '<source>' --target '<target>' --keep-mode <mode del Step 0.7>
 ```
 
+🔴 **Siempre con `--keep-mode`**: el modo quedó fijo en el Step 0.7. Si `suites` bajó a
+`"machine"` (el paso 0 había dicho `server`): **volver al 7.2** y correr las suites completas en esta
+máquina, sobre el merge de prueba del 7.0, antes de crear el pedido; con verde, seguir acá con la
+línea `Tests:` nueva en el `bodyFile`.
+
 Del JSON salen: `step` (tiene que decir `9c`; si dice `9b` o `9`, seguí ese paso y contá por qué: `notes`), `ghRepo`
-(`<dueño/repo>`), `check` (el control declarado), `canMerge`, `bodyFile` y `mergeBodyFile` (dónde escribir el cuerpo
+(`<dueño/repo>`), `check` (el control a esperar: con `suites: "server"` y un pipeline de pruebas completas declarado en
+`team-repos.json → merge_suites`, el declarado; si no, `merge.check` del repo), `canMerge`, `bodyFile` y `mergeBodyFile` (dónde escribir el cuerpo
 del pedido y el del merge: en la carpeta temporal de la máquina, la misma para la terminal y para el freno, también en
 Windows) y `version` (qué número subiría).
 
@@ -138,8 +144,11 @@ arnés, un pedido reusado que no nació en esta sesión— no hay deuda: decilo 
 Sin `merge.check` (9c.1) no se espera nada: el paso termina acá, con el pedido creado y sin mergear.
 
 ```bash
-node "${TYCON_GUIDES_DIR:-$HOME/.claude/tycon-harness}/scripts/tools/merge-pr.js" wait-checks --repo <repo> --pr <n> --head <la punta empujada> --target '<target>'
+node "${TYCON_GUIDES_DIR:-$HOME/.claude/tycon-harness}/scripts/tools/merge-pr.js" wait-checks --repo <repo> --pr <n> --head <la punta empujada> --target '<target>' --check '<check del plan del 9c.1>'
 ```
+
+Con `--check` y el `check` del plan del 9c.1, tal cual: el control que se espera es el mismo que el plan dijo (el de
+pruebas completas, si las suites las corre el servidor). Sin `--check`, el guion lo vuelve a calcular igual.
 
 🔴 **En segundo plano**, con el mecanismo de la herramienta (regla anti-espera del 7b): una validación tarda decenas
 de minutos. Avisá que el pedido queda esperando su control y cuánto suele tardar. `<la punta empujada>` es el commit

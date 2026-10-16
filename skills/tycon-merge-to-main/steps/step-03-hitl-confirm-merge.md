@@ -13,8 +13,16 @@ Output al usuario:
 información para la decisión del dev, no un abort — pero la pregunta de abajo se hace CON esto
 a la vista: sin esto se aprueba promover el front sin saber que el backend está solo en la máquina.
 
+**Dónde corren las suites**: el preview dice, en una línea, el modo y la regla que
+guardó el Step 0.7 (`suitesReason`, tal cual), y la `legacyNote` si no es `null`. El sí del dev
+aprueba también eso: con `suites: "machine"` el Step 7 va a correr las suites completas en esta
+máquina.
+
 ```
 🔍 Preview del merge: <source> → <target>
+
+Modo: <mode> · Suites completas: <suitesReason>
+⚠️ <legacyNote> (si no es null)
 
 ⚠️ Trabajo sin subir en el grupo (si aplica):
   🔴 <repo> → <rama>: <N> commit(s) solo locales

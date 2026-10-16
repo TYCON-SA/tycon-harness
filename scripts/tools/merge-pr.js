@@ -40,10 +40,24 @@
  * dirección que no se reconoce como la suya, o una declaración del público que no se deja leer, salen 2 (la tabla
  * entera está en `mergeConfigFor`).
  *
+ * DÓNDE CORREN LAS SUITES COMPLETAS (story 7.28). `plan` dice también si las suites completas del merge las corre el
+ * servidor (`suites: "server"`) o esta máquina (`"machine"`), con qué regla y por qué (`suitesReason`, una línea). La
+ * regla sale de `team-repos.json → merge_suites` de la raíz de este árbol (la configuración de la organización:
+ * `automatico`, `siempre-en-la-maquina` o `confiar-en-el-servidor`, por repo o para toda la organización); sin esa
+ * clave, `merge.mode: pr` del repo vale como `confiar-en-el-servidor` (la forma vieja, con `legacyNote`). Con
+ * `automatico`, el plan le PREGUNTA a la plataforma —las políticas de la rama en Azure DevOps, las reglas de la rama en
+ * GitHub— si la rama exige el pipeline de pruebas completas que la organización declaró para el repo. «No pude
+ * preguntar» (sin `az`/`gh`, sin sesión, otra salida, algo que no es JSON, el tope de 30 s por llamada o de 90 s por
+ * plan) nunca es «las corre el servidor»: es `machine`, y lo dice. Un `team-repos.json` ilegible tampoco frena el merge:
+ * `machine` con el motivo. Dejarle las suites al servidor exige pedido: un empuje directo es siempre `machine`.
+ * `--keep-mode <push|pr>` es para los planes posteriores al paso 0 del skill: el modo no cambia, y `suites` sólo puede
+ * bajar de `server` a `machine` (si cambiara el modo a mitad de camino, el merge aprobado no ocurriría).
+ *
  * Cada orden imprime un JSON en la salida y sale con su `code`. Uso: node scripts/tools/merge-pr.js --help
  *
  * Sin dependencias, en Windows y en Mac. `gh` se llama por su nombre; `TYCON_GH` lo reemplaza y es SÓLO de las pruebas
- * (un guion de Node, que corre igual en las dos plataformas).
+ * (un guion de Node, que corre igual en las dos plataformas). `az` igual, con `TYCON_ADO_CMD`; en Windows, `az` es un
+ * `.cmd` que Node no lanza sin shell: va por el bash de Git (`runCheckLaunch` de portable-tools.js), nunca por `cmd /c`.
  */
 
 const fs = require('fs');
@@ -62,8 +76,15 @@ const CONFIG_IN_GIT = '.tycon/advisors.yaml';
 // GitHub atiende ssh también en `ssh.github.com` (el del puerto 443, para redes que cierran el 22)
 const GITHUB_HOSTS = new Set(['github.com', 'ssh.github.com']);
 
+const TREE = path.join(__dirname, '..', '..');
+const TEAM_REPOS_FILE = 'team-repos.json';
+// la política de «build validation» se reconoce por el nombre de su tipo, que la API devuelve igual en toda organización
+const isBuildPolicy = (p) => Boolean(p && p.type && String(p.type.displayName || '').toLowerCase() === 'build');
+const CALL_MS = 30000;
+const PLAN_MS = 90000;
+
 const USAGE = `uso: merge-pr.js <orden> [opciones]   (cada orden imprime un JSON y sale con su «code»)
-  plan           --repo <dir> --source <rama> --target <rama>
+  plan           --repo <dir> --source <rama> --target <rama> [--keep-mode <push|pr>]
   update-branch  --repo <dir> --source <rama> --target <rama>
   bump-version   --repo <dir> --source <rama> --target <rama> [--write]
   wait-checks    --repo <dir> --pr <n> --head <sha> --target <rama> [--check <nombre>] [--timeout-min 90] [--interval-s 30]
@@ -72,6 +93,9 @@ const USAGE = `uso: merge-pr.js <orden> [opciones]   (cada orden imprime un JSON
 plan dice de dónde leyó merge.mode y merge.check («configFrom»): «repo» (el .tycon/advisors.yaml del repo) o «maintainers»
 (un clon del repo público del arnés, que no trae ese archivo: lo commiteado en la rama principal remota del clon de
 mantenimiento que declara la máquina, paths.maintainers). wait-checks, sin --check, lee el control por el mismo camino.
+plan dice además dónde corren las suites completas («suites»: server o machine), con qué regla («suitesRule», de
+team-repos.json → merge_suites o de la forma vieja) y por qué («suitesReason»). --keep-mode fija el modo que decidió el
+paso 0 del skill: el plan sólo recalcula «suites», que puede bajar de server a machine y nunca cambia el paso.
 `;
 
 // ── git y gh ─────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -109,12 +133,51 @@ function rootOf(repo, deps = {}) {
   return { root: top.out.trim() };
 }
 
-/** Corre `gh`. Por defecto el de la máquina; `TYCON_GH` (sólo pruebas) lo reemplaza, y si es un `.js` corre con Node. */
-function realGh(args, { cwd, env } = {}) {
+/** Lo que devuelve `spawnSync`, con la forma de las demás llamadas: `timedOut` y `notFound` dicen cómo falló. */
+function spawned(r) {
+  const code = r.error && r.error.code;
+  return { status: r.error ? -1 : r.status, stdout: r.stdout || '', stderr: String((r.error && r.error.message) || r.stderr || '').trim(),
+    timedOut: code === 'ETIMEDOUT', notFound: code === 'ENOENT' };
+}
+
+/**
+ * Corre `gh`. Por defecto el de la máquina; `TYCON_GH` (sólo pruebas) lo reemplaza, y si es un `.js` corre con Node.
+ * Con `timeoutMs` (las consultas del plan), además con la entrada cerrada: un `gh` que pide algo falla en vez de esperar.
+ */
+function realGh(args, { cwd, env, timeoutMs } = {}) {
   const bin = (env || process.env).TYCON_GH || 'gh';
   const viaNode = /\.[cm]?js$/i.test(bin);
-  const r = spawnSync(viaNode ? process.execPath : bin, viaNode ? [bin, ...args] : args, { encoding: 'utf8', cwd, env: env || process.env, windowsHide: true, maxBuffer: 64 * 1024 * 1024 });
-  return { status: r.error ? -1 : r.status, stdout: r.stdout || '', stderr: String((r.error && r.error.message) || r.stderr || '').trim() };
+  const opts = { encoding: 'utf8', cwd, env: env || process.env, windowsHide: true, maxBuffer: 64 * 1024 * 1024 };
+  if (timeoutMs) Object.assign(opts, { timeout: timeoutMs, stdio: ['ignore', 'pipe', 'pipe'] });
+  return spawned(spawnSync(viaNode ? process.execPath : bin, viaNode ? [bin, ...args] : args, opts));
+}
+
+/**
+ * Con qué se lanza `az`: `TYCON_ADO_CMD` (sólo pruebas; un `.js` corre con Node) o `az`. En Windows `az` es un `.cmd`, que
+ * Node no lanza sin shell: va por el bash de Git con `runCheckLaunch` (portable-tools.js explica por qué no `cmd /c`).
+ * `{ file: null, error }` = no se lanza. `ctx` (`platform`, `env`, `exists`, `findGitBash`) es para las pruebas.
+ */
+function azLaunch(args, ctx = {}) {
+  const env = ctx.env || process.env;
+  const bin = env.TYCON_ADO_CMD || 'az';
+  if (/\.[cm]?js$/i.test(bin)) return { file: process.execPath, args: [bin, ...args], error: null };
+  const platform = ctx.platform || process.platform;
+  if (platform !== 'win32') return { file: bin, args, error: null };
+  let tools;
+  try { tools = require(path.join(TREE, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'portable-tools.js')); } catch (e) {
+    return { file: null, args, error: `no encuentro cómo lanzar az en Windows (skills/tycon-pipeline/scripts/lib/portable-tools.js: ${(e && e.code) || firstLine(e && e.message)})` };
+  }
+  const launch = tools.runCheckLaunch([bin, ...args], { platform, env, harnessDir: TREE, exists: ctx.exists, findGitBash: ctx.findGitBash });
+  // «no lo encontré» en el PATH: que lo diga el error de spawn (ENOENT), como en Mac
+  return launch;
+}
+
+/** Corre `az` sin esperar nada de nadie: la entrada cerrada, sin colores, sin instalar extensiones, con un tope. */
+function realAz(args, ctx = {}) {
+  const launch = azLaunch(args, ctx);
+  if (!launch.file) return { status: -1, stdout: '', stderr: launch.error, notLaunched: true };
+  const env = Object.assign({}, ctx.env || process.env, { AZURE_CORE_NO_COLOR: '1', AZURE_CORE_ONLY_SHOW_ERRORS: '1', AZURE_EXTENSION_USE_DYNAMIC_INSTALL: 'no' });
+  return spawned(spawnSync(launch.file, launch.args, { encoding: 'utf8', env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], timeout: ctx.timeoutMs || CALL_MS, maxBuffer: 64 * 1024 * 1024 }));
 }
 
 /** El servidor que dice la salida de `ssh -G <alias>` (su renglón `hostname …`), en minúsculas; `null` si no lo trae. */
@@ -282,7 +345,8 @@ function ownerRepoOf(url) {
 }
 
 /** Una dirección sin el usuario ni la clave que traiga escritos (`https://usuario:clave@servidor/…`): para un mensaje. */
-const withoutCredentials = (url) => String(url || '').replace(/^([a-z][a-z0-9+.-]*:\/\/)[^@/]+@/i, '$1');
+// hasta el ÚLTIMO `@` antes de la primera `/` del servidor: una clave puede traer un `@` escrito (`usuario:p@ss@servidor`)
+const withoutCredentials = (url) => String(url || '').replace(/^([a-z][a-z0-9+.-]*:\/\/)[^/]*@/i, '$1');
 
 /**
  * La configuración del merge del clon del PÚBLICO: el bloque `merge:` de lo commiteado en la rama principal remota del
@@ -368,11 +432,276 @@ function bodyFiles(repo, source) {
   return { bodyFile: at(''), mergeBodyFile: at('-merge') };
 }
 
+// ── dónde corren las suites completas (story 7.28) ───────────────────────────────────────────────────────────────────
+
+/** `team-repos.json` de la raíz de este árbol: `{ absent: true }` si no está; si no, lo que da su lector (`load`). */
+function readTeamRepos() {
+  const file = path.join(TREE, TEAM_REPOS_FILE);
+  // sólo «no existe» es ausente: un archivo que está y no se deja mirar (permisos) es «no pude leer»
+  try { fs.statSync(file); } catch (e) {
+    if (e && e.code === 'ENOENT') return { absent: true };
+    return { ok: false, problems: [{ path: '', message: `no pude mirarlo: ${(e && e.code) || firstLine(e && e.message)}` }] };
+  }
+  return require(path.join(TREE, 'scripts', 'lib', 'team-repos.js')).load(file);
+}
+
+/**
+ * Un preguntador a un CLI que devuelve JSON, con los dos topes (por llamada y por plan) y la regla de la primera falla:
+ * después de una, no pregunta más. `ask(args)` → `{ ok: true, data }` o `{ ok: false, why }`.
+ */
+function asker(run, name, budget, now) {
+  return (args) => {
+    if (budget.failed) return { ok: false, why: budget.failed };
+    const left = budget.end - now();
+    const fail = (why) => { budget.failed = why; return { ok: false, why }; };
+    if (left <= 0) return fail(`pasó el tope de ${PLAN_MS / 1000} s del plan`);
+    const r = run(args, Math.min(CALL_MS, left)) || {};
+    if (r.timedOut) return fail(`pasó el tope de ${CALL_MS / 1000} s por llamada`);
+    if (r.notFound) return fail(`${name} no está instalado o no está en el PATH`);
+    if (r.status !== 0) return fail(firstLine(r.stderr) || `${name} salió ${r.status}`);
+    try { return { ok: true, data: JSON.parse(r.stdout) }; } catch (_) { return fail(`${name} contestó algo que no es JSON`); }
+  };
+}
+
+/** ¿Esta política de build de Azure frena la rama `target` de este repo? `[]` si cuenta; si no, por qué no (decisión 13). */
+function policyFaults(p, repoId, target, defaultBranch) {
+  const s = (p && p.settings) || {};
+  const out = [];
+  if (p.isEnabled !== true) out.push('apagada');
+  if (p.isBlocking !== true) out.push('opcional');
+  if (p.isDeleted === true) out.push('borrada');
+  if (Array.isArray(s.filenamePatterns) ? s.filenamePatterns.length : s.filenamePatterns !== undefined && s.filenamePatterns !== null) {
+    out.push(`con filtros de archivos (${[].concat(s.filenamePatterns).join(', ')}): no corre para todo cambio`);
+  }
+  const ref = `refs/heads/${target}`;
+  const covers = (Array.isArray(s.scope) ? s.scope : []).some((sc) => {
+    if (!sc || (sc.repositoryId !== undefined && sc.repositoryId !== null && sc.repositoryId !== repoId)) return false;
+    const kind = String(sc.matchKind || '').toLowerCase();
+    if (kind === 'exact') return String(sc.refName || '') === ref;
+    if (kind === 'prefix') return Boolean(sc.refName) && ref.startsWith(String(sc.refName));
+    if (kind === 'defaultbranch') return Boolean(defaultBranch) && ref === defaultBranch;
+    return false;
+  });
+  if (!covers) out.push(`su alcance no cubre este repo y la rama ${target}`);
+  return out;
+}
+
+/**
+ * Lo que contesta Azure DevOps sobre la rama destino: `{ answer, detail, pipeline }`. `pipeline` es lo declarado (texto o
+ * número; `null` con `confiar`, que sólo pregunta si la rama exige algún control). Corta en la primera falla.
+ */
+function azureBranchAnswer(where, target, declared, ask) {
+  const couldNot = (why) => ({ answer: 'could-not-ask', detail: `no pude preguntarle a Azure DevOps (${why})`, pipeline: null });
+  // Los nombres salen del remoto (texto de afuera): la organización va escapada en la dirección, y cada valor se pasa
+  // pegado a su opción (`--opción=valor`), así uno que empieza con `-` no se lee como otra opción
+  const odd = [where.org, where.project, where.name, target].find((v) => !v || /[\u0000-\u001f]/.test(String(v)));
+  if (odd !== undefined) return couldNot('el remoto o la rama traen un nombre vacío o con caracteres de control');
+  const common = [`--org=https://dev.azure.com/${encodeURIComponent(where.org)}`, `--project=${where.project}`, '-o', 'json'];
+  const repo = ask(['repos', 'show', `--repository=${where.name}`, ...common]);
+  if (!repo.ok) return couldNot(repo.why);
+  if (!repo.data || typeof repo.data.id !== 'string') return couldNot('no dijo el id del repo');
+  const list = ask(['repos', 'policy', 'list', `--repository-id=${repo.data.id}`, `--branch=refs/heads/${target}`, ...common]);
+  if (!list.ok) return couldNot(list.why);
+  if (!Array.isArray(list.data)) return couldNot('la lista de políticas no es una lista');
+  // una política que nombra un pipeline y no dice que es de build (sin nombre de tipo, o traducido) no se descarta en
+  // silencio: no se sabe qué es, así que no se puede juzgar la rama
+  if (list.data.some((p) => p && !isBuildPolicy(p) && p.settings && p.settings.buildDefinitionId !== undefined)) {
+    return couldNot('una política de la rama nombra un pipeline y no dice que sea de build');
+  }
+  const builds = list.data.filter(isBuildPolicy);
+  // una política de build que no dice qué pipeline exige no se puede juzgar: no se adivina
+  // sólo un entero mayor que cero, o un texto de dígitos: `true` o `[7]` también pasarían por Number()
+  const idOf = (v) => (Number.isInteger(v) && v > 0 ? v : typeof v === 'string' && /^\d+$/.test(v) && Number(v) > 0 ? Number(v) : null);
+  if (builds.some((p) => idOf(p.settings && p.settings.buildDefinitionId) === null)) {
+    return couldNot('una política de build de la rama no dice qué pipeline exige');
+  }
+  const judged = builds.map((p) => ({ p, id: idOf(p.settings.buildDefinitionId), faults: policyFaults(p, repo.data.id, target, repo.data.defaultBranch) }));
+  const counting = judged.filter((j) => !j.faults.length);
+  if (declared === null) {
+    // `confiar`: ¿la rama exige algún control?
+    if (counting.length) return { answer: 'requires-other', detail: `la rama ${target} exige ${counting.length === 1 ? 'el pipeline' : 'los pipelines'} ${counting.map((j) => j.id).join(', ')}`, pipeline: null };
+    return { answer: 'requires-none', detail: `la rama ${target} no exige ningún control`, pipeline: null };
+  }
+  // el pipeline declarado: un id (número, o texto sólo de dígitos) o un nombre exacto
+  let pipeline;
+  if (Number.isInteger(declared) || /^\d+$/.test(String(declared))) {
+    pipeline = { declared, id: Number(declared), name: null };
+  } else {
+    const found = ask(['pipelines', 'list', `--name=${declared}`, ...common]);
+    if (!found.ok) return couldNot(found.why);
+    if (!Array.isArray(found.data)) return couldNot('la lista de pipelines no es una lista');
+    const same = found.data.filter((d) => d && typeof d.name === 'string' && d.name.toLowerCase() === String(declared).toLowerCase());
+    if (!same.length) return { answer: 'not-effective', detail: `el pipeline «${declared}» no existe en el proyecto ${where.project}`, pipeline: { declared, id: null, name: null } };
+    if (same.length > 1) return { answer: 'not-effective', detail: `hay ${same.length} pipelines que se llaman «${declared}» en el proyecto ${where.project} (${same.map((d) => d.id).join(', ')}): declaralo por id`, pipeline: { declared, id: null, name: null } };
+    pipeline = { declared, id: Number(same[0].id), name: same[0].name };
+  }
+  const label = () => `«${pipeline.name || pipeline.declared}»${pipeline.name && String(pipeline.declared) !== String(pipeline.id) ? ` (id ${pipeline.id})` : ''}`;
+  const mine = judged.filter((j) => j.id === pipeline.id);
+  const required = mine.find((j) => !j.faults.length);
+  if (required) {
+    if (pipeline.name === null) {
+      // el nombre sólo para decirlo: si no se lee, la decisión no cambia
+      const shown = ask(['pipelines', 'show', `--id=${pipeline.id}`, ...common]);
+      if (shown.ok && shown.data && typeof shown.data.name === 'string') pipeline.name = shown.data.name;
+    }
+    const manual = required.p.settings && required.p.settings.manualQueueOnly ? ' (la política la encola a mano: el pedido espera a que alguien la corra)' : '';
+    return { answer: 'requires-declared', detail: `la rama ${target} exige el pipeline de pruebas completas ${label()}${manual}`, pipeline };
+  }
+  if (mine.length) return { answer: 'not-effective', detail: `la política de la rama ${target} que nombra el pipeline ${label()} no cuenta: ${mine[0].faults.join(', ')}`, pipeline };
+  if (counting.length) return { answer: 'requires-other', detail: `la rama ${target} exige otro pipeline (${counting.map((j) => j.id).join(', ')}), no el de pruebas completas ${label()}`, pipeline };
+  return { answer: 'requires-none', detail: `la rama ${target} no exige ningún pipeline`, pipeline };
+}
+
+/** Lo que contesta GitHub sobre la rama destino: los controles obligatorios (reglas activas + protección clásica) y la cola. */
+function githubBranchAnswer(where, target, declared, ask) {
+  const [owner, name] = String(where.ghRepo).split('/');
+  const couldNot = (why) => ({ answer: 'could-not-ask', detail: `no pude preguntarle a GitHub (${why})`, pipeline: null, mergeQueue: null });
+  // el dueño y el repo salen del remoto: sólo los nombres que GitHub acepta, y escapados en la ruta de la API
+  const ghName = /^[A-Za-z0-9._-]+$/;
+  if (!ghName.test(owner || '') || !ghName.test(name || '') || owner === '..' || name === '..' || !target) return couldNot(`el repo del remoto («${where.ghRepo}») no tiene la forma dueño/repo de GitHub`);
+  const branch = encodeURIComponent(target);
+  // GitHub pagina las reglas de la rama (30 por defecto): se piden de a 100 hasta una página incompleta. Un control
+  // obligatorio en la página 2 que no se leyera sería un «no exige» falso. `--paginate` no sirve: pega las listas.
+  const all = [];
+  for (let page = 1; ; page += 1) {
+    const got = ask(['api', `repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/rules/branches/${branch}?per_page=100&page=${page}`]);
+    if (!got.ok) return couldNot(got.why);
+    if (!Array.isArray(got.data)) return couldNot('las reglas de la rama no son una lista');
+    all.push(...got.data);
+    if (got.data.length < 100) break;
+    if (page >= 20) return couldNot('la rama trae más de 2000 reglas: no las leo todas');
+  }
+  const rules = { data: all };
+  const info = ask(['api', `repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/branches/${branch}`]);
+  if (!info.ok) return couldNot(info.why);
+  // una respuesta con otra forma no es «no exige nada»: es «no entendí lo que contestó»
+  const odd = (what) => couldNot(`contestó ${what} con una forma que no conozco`);
+  const isObj = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
+  const listOr = (x) => (x === undefined || x === null ? [] : Array.isArray(x) ? x : null);
+  if (!isObj(info.data)) return odd('la rama');
+  const required = new Set();
+  for (const r of rules.data) {
+    if (!r || r.type !== 'required_status_checks') continue;
+    const checks = listOr(isObj(r.parameters) ? r.parameters.required_status_checks : undefined);
+    if (checks === null) return odd('las reglas de la rama');
+    for (const c of checks) if (c && c.context) required.add(c.context);
+  }
+  if (info.data.protection !== undefined && info.data.protection !== null && !isObj(info.data.protection)) return odd('la protección de la rama');
+  const classic = info.data.protection ? info.data.protection.required_status_checks : undefined;
+  if (classic !== undefined && classic !== null && !isObj(classic)) return odd('la protección de la rama');
+  if (classic && classic.enforcement_level !== 'off') {
+    const contexts = listOr(classic.contexts);
+    const checks = listOr(classic.checks);
+    if (contexts === null || checks === null) return odd('la protección de la rama');
+    for (const c of contexts) required.add(c);
+    for (const c of checks) if (c && c.context) required.add(c.context);
+  }
+  const mergeQueue = rules.data.some((r) => r && r.type === 'merge_queue');
+  const pipeline = declared === null ? null : { declared, id: null, name: String(declared) };
+  const queue = mergeQueue ? ' (la cola de merge sola no alcanza: mergea sin correr nada si ningún control es obligatorio)' : '';
+  if (declared === null) {
+    if (required.size) return { answer: 'requires-other', detail: `la rama ${target} exige ${[...required].map((c) => `«${c}»`).join(', ')}`, pipeline, mergeQueue };
+    return { answer: 'requires-none', detail: `la rama ${target} no exige ningún control${queue}`, pipeline, mergeQueue };
+  }
+  if (required.has(String(declared))) return { answer: 'requires-declared', detail: `la rama ${target} exige el control de pruebas completas «${declared}»${mergeQueue ? ' (con cola de merge)' : ''}`, pipeline, mergeQueue };
+  if (required.size) return { answer: 'requires-other', detail: `la rama ${target} no exige «${declared}»: exige ${[...required].map((c) => `«${c}»`).join(', ')}`, pipeline, mergeQueue };
+  return { answer: 'requires-none', detail: `la rama ${target} no exige «${declared}»${queue}`, pipeline, mergeQueue };
+}
+
+const RULE_FROM = {
+  repo: 'declarada para este repo en team-repos.json → merge_suites',
+  organization: 'la de la organización en team-repos.json → merge_suites.default',
+  default: 'la regla por defecto: team-repos.json → merge_suites no declara otra para este repo',
+};
+
+/**
+ * Qué declara la organización para el repo: `{ declared, rule, ruleFrom, pipeline, unreadable }`. Sin `merge_suites`,
+ * `merge.mode: pr` del repo vale como `confiar-en-el-servidor` (`legacy`); sin nada, `automatico` sin pipeline.
+ */
+function suitesRuleFor(where, config, deps) {
+  let read;
+  try { read = (deps.teamRepos || readTeamRepos)(); } catch (e) { read = { ok: false, problems: [{ path: '', message: firstLine(e && e.message) }] }; }
+  // una lectura sin respuesta no es «no está»: sólo `{ absent: true }` lo es
+  if (!read || typeof read !== 'object') read = { ok: false, problems: [{ path: '', message: 'la lectura no devolvió nada' }] };
+  if (read.absent === true) read = null;
+  if (read && !read.ok) {
+    const p = (read.problems || [])[0] || {};
+    return { unreadable: `${TEAM_REPOS_FILE}: ${p.path ? `${p.path}: ` : ''}${p.message || 'no se pudo leer'}` };
+  }
+  let identity = null;
+  if (where.host === 'azure') identity = { platform: 'azure', org: where.org, project: where.project, repo: where.name };
+  else if (where.host === 'github' && where.ghRepo) { const [org, repo] = String(where.ghRepo).split('/'); identity = { platform: 'github', org, repo }; }
+  let found = { declared: false };
+  if (read) {
+    // el lector del árbol que no carga tampoco frena el merge: es «no pude leer»
+    try { found = require(path.join(TREE, 'scripts', 'lib', 'team-repos.js')).mergeSuitesFor(read.data, identity); } catch (e) {
+      return { unreadable: `${TEAM_REPOS_FILE}: no pude cargar su lector (${(e && e.code) || firstLine(e && e.message)})` };
+    }
+  }
+  if (found.declared) return found;
+  if (config.mode === 'pr') return { declared: false, rule: 'confiar-en-el-servidor', ruleFrom: 'legacy', pipeline: null };
+  return { declared: false, rule: 'automatico', ruleFrom: 'default', pipeline: null };
+}
+
+/**
+ * Dónde corren las suites: `{ mode, suites, rule, ruleFrom, pipeline, platform, reason, legacyNote }`. `keepMode` fija
+ * el modo (los planes posteriores al paso 0). El orden de las comprobaciones va de lo que no necesita preguntar a lo
+ * que sí: configuración ilegible, empuje directo, `siempre`, `automatico` sin pipeline; recién después, la plataforma.
+ */
+function suitesDecision(where, config, target, deps = {}, keepMode = null) {
+  const machine = (why) => `las suites corren en esta máquina: ${why}`;
+  const notAsked = { asked: false, answer: 'not-asked', detail: null, mergeQueue: null };
+  const canPr = where.host === 'azure' || where.host === 'github';
+  const r = suitesRuleFor(where, config, deps);
+  if (r.unreadable) {
+    return { mode: keepMode || config.mode, suites: 'machine', rule: null, ruleFrom: null, pipeline: null, platform: notAsked, legacyNote: null,
+      reason: machine(`no pude leer la configuración de la organización (${r.unreadable})`) };
+  }
+  const from = r.ruleFrom === 'legacy' ? `merge.mode: pr de ${config.declaredIn}, la forma vieja` : RULE_FROM[r.ruleFrom];
+  const legacyNote = r.ruleFrom === 'legacy'
+    ? `la parte de las suites se declara ahora en ${TEAM_REPOS_FILE} → merge_suites (la configuración de la organización); merge.mode y merge.check del repo siguen valiendo para el modo y el control`
+    : null;
+  const pipelineOf = (declared) => (declared === null || declared === undefined ? null : { declared, id: Number.isInteger(declared) || /^\d+$/.test(String(declared)) ? Number(declared) : null, name: where.host === 'github' ? String(declared) : null });
+  const out = (mode, suites, reason, extra = {}) => Object.assign({ mode, suites, rule: r.rule, ruleFrom: r.ruleFrom, pipeline: pipelineOf(r.pipeline), platform: notAsked, legacyNote, reason }, extra);
+  const tag = `regla ${r.rule}, ${from}`;
+  // el modo antes de preguntar: lo fijado, o lo que pide la regla; con `automatico` puede subir a pr después
+  let mode = keepMode || (r.rule === 'confiar-en-el-servidor' && canPr ? 'pr' : config.mode);
+  if (!canPr || mode !== 'pr' && (keepMode || r.rule !== 'automatico')) {
+    const why = !canPr ? (where.host === 'local' ? 'origin es una carpeta' : where.host === 'none' ? 'el repo no tiene origin' : 'en el servidor de origin no sé crear pedidos') : 'el modo es push';
+    const cant = r.rule === 'confiar-en-el-servidor' ? `; la regla confiar-en-el-servidor no se puede cumplir sin pedido` : '';
+    // el modo que fijó el paso 0 se respeta también donde no se crean pedidos (el paso es 9 igual)
+    return out(keepMode || (canPr ? mode : config.mode), 'machine', machine(`el merge se empuja directo (${why}): sin pedido, nadie más las corre${cant} (${tag})`));
+  }
+  if (r.rule === 'siempre-en-la-maquina') return out(mode, 'machine', machine(`la regla es siempre-en-la-maquina (${from})`));
+  if (r.rule === 'automatico' && (r.pipeline === null || r.pipeline === undefined)) {
+    return out(mode, 'machine', machine(`no hay pipeline de pruebas completas declarado para este repo en ${TEAM_REPOS_FILE} → merge_suites (${tag})`));
+  }
+  // preguntarle a la plataforma
+  const now = deps.now || Date.now;
+  const budget = { end: now() + PLAN_MS, failed: null };
+  const declared = r.rule === 'automatico' ? r.pipeline : null;
+  const answer = where.host === 'azure'
+    ? azureBranchAnswer(where, target, declared, asker(deps.az || ((args, t) => realAz(args, { env: deps.env, timeoutMs: t })), 'az', budget, now))
+    : githubBranchAnswer(where, target, declared, asker(deps.gh || ((args, t) => realGh(args, { env: deps.env, timeoutMs: t })), 'gh', budget, now));
+  const platform = { asked: true, answer: answer.answer, detail: answer.detail, mergeQueue: answer.mergeQueue === undefined ? null : answer.mergeQueue };
+  const pipeline = answer.pipeline || pipelineOf(r.pipeline);
+  if (r.rule === 'confiar-en-el-servidor') {
+    if (answer.answer === 'requires-none') return out('pr', 'machine', machine(`la regla confiar-en-el-servidor no se pudo cumplir: la rama no exige ningún control (${from})`), { platform, pipeline });
+    if (answer.answer === 'could-not-ask') {
+      return out('pr', 'server', `las suites las corre el servidor (${tag}): no pude confirmar que la rama exija un control: si no exige ninguno, el pedido se completa sin pruebas (${answer.detail})`, { platform, pipeline });
+    }
+    return out('pr', 'server', `las suites las corre el servidor: ${answer.detail} (${tag})`, { platform, pipeline });
+  }
+  if (answer.answer === 'requires-declared') return out('pr', 'server', `las suites las corre el servidor: ${answer.detail} (${tag})`, { platform, pipeline });
+  return out(mode, 'machine', machine(`${answer.detail} (${tag})`), { platform, pipeline });
+}
+
 /**
  * Qué paso del skill sigue, y con qué: el servidor lo decide el remoto; el modo y el control los declara el repo — o,
  * para el clon del público del arnés, el clon de mantenimiento (`mergeConfigFor`). `configFrom` dice de dónde salieron.
+ * Dónde corren las suites lo decide `suitesDecision` (story 7.28); `keepMode` fija el modo del paso 0.
  */
-function plan({ repo: given, source, target }, deps = {}) {
+function plan({ repo: given, source, target, keepMode = null }, deps = {}) {
   const at = rootOf(given, deps);
   if (at.problem) return stop(at.problem);
   const repo = at.root;
@@ -380,34 +709,49 @@ function plan({ repo: given, source, target }, deps = {}) {
   if (where.problem) return stop(where.problem);
   const config = mergeConfigFor(repo, () => where, deps);
   if (config.problem) return stop(config.problem);
+  const decided = suitesDecision(where, config, target, deps, keepMode);
+  const mode = decided.mode;
+  const check = checkOf(decided, where, config);
   const notes = config.note ? [config.note] : [];
   let step = '9';
   let canMerge = false;
-  if (config.mode !== 'pr') {
-    notes.push(config.configFrom === 'maintainers'
-      ? `${config.declaredIn} declara merge.mode: ${config.mode}, no pr: el merge se empuja (paso 9)`
-      : `el repo no declara merge.mode: pr en ${CONFIG_FILE}: el merge se empuja (paso 9)`);
+  if (mode !== 'pr') {
+    notes.push(keepMode ? `el modo lo fijó el paso 0 del skill (--keep-mode ${keepMode}): el merge se empuja (paso 9)`
+      : config.configFrom === 'maintainers'
+        ? `${config.declaredIn} declara merge.mode: ${config.mode}, no pr: el merge se empuja (paso 9)`
+        : `el repo no declara merge.mode: pr en ${CONFIG_FILE}: el merge se empuja (paso 9)`);
   } else if (where.host === 'azure') {
     step = '9b';
   } else if (where.host === 'github') {
     step = '9c';
-    canMerge = Boolean(config.check);
+    canMerge = Boolean(check);
     if (!canMerge) notes.push(`falta declarar merge.check en ${config.declaredIn} (el nombre exacto del control de la validación): el pedido se crea y NO se mergea — un pedido trae varios controles y no se elige uno por cuenta propia`);
   } else if (where.host === 'local') {
     notes.push('origin es una carpeta de esta máquina: el empuje va a esa carpeta, no a un servidor (paso 9)');
   } else if (where.host === 'none') {
     notes.push('el repo no tiene origin: no hay a dónde crear un pedido (paso 9)');
   } else {
-    notes.push(`en el servidor de origin (${where.url}) no sé crear pedidos: paso 9. Si es un alias de ssh de GitHub que ssh no resuelve, revisá «ssh -G» de ese alias`);
+    notes.push(`en el servidor de origin (${withoutCredentials(where.url)}) no sé crear pedidos: paso 9. Si es un alias de ssh de GitHub que ssh no resuelve, revisá «ssh -G» de ese alias`);
   }
   const version = step === '9c' ? bumpVersion({ repo, source, target }, deps) : null;
   // un número que no se pudo calcular se DICE: `version: null` solo se leería como «este repo no numera versiones»
   if (version && version.code !== 0) notes.push(`no pude calcular la versión que subiría: ${version.reason}`);
-  return Object.assign({ code: 0, host: where.host, mode: config.mode, check: config.check, configFrom: config.configFrom, step, canMerge, notes },
+  return Object.assign({ code: 0, host: where.host, mode, check, configFrom: config.configFrom, step, canMerge, notes },
     where.host === 'azure' ? { org: where.org, project: where.project, name: where.name } : {},
     where.host === 'github' ? { ghRepo: where.ghRepo, name: where.name } : {},
     bodyFiles(repo, source),
-    { version: version && version.code === 0 ? { action: version.action, from: version.from || null, to: version.to || null, reason: version.reason || null } : null });
+    { version: version && version.code === 0 ? { action: version.action, from: version.from || null, to: version.to || null, reason: version.reason || null } : null },
+    { suites: decided.suites, suitesRule: decided.rule, suitesRuleFrom: decided.ruleFrom, suitesPipeline: decided.pipeline, platform: decided.platform,
+      suitesReason: decided.reason.replace(/\s*\r?\n\s*/g, ' '), legacyNote: decided.legacyNote });
+}
+
+/**
+ * El control a esperar (decisión 12): con las suites en el servidor y un pipeline declarado en un repo de GitHub, el
+ * declarado —esperar otro no prueba que se corrieron—; si no, `merge.check` del repo, como siempre.
+ */
+function checkOf(decided, where, config) {
+  if (decided.suites === 'server' && where.host === 'github' && decided.pipeline && decided.pipeline.declared !== null && decided.pipeline.declared !== undefined) return String(decided.pipeline.declared);
+  return config.check;
 }
 
 // ── la versión ───────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -648,6 +992,15 @@ function waitChecks({ repo: given, pr, head, target, check, timeoutMin = 90, int
     if (config.problem) return stop(config.problem, { outcome: 'cannot-ask' });
     name = config.check;
     from = config;
+    // story 7.28: el mismo control que daría el plan. Sólo hace falta preguntarle a la rama si la organización declara
+    // un pipeline para este repo con una regla que lo usa; si no, es `merge.check`, sin consultar nada
+    const where = whereOf();
+    if (!where.problem && where.host === 'github') {
+      const r = suitesRuleFor(where, config, deps);
+      if (!r.unreadable && r.pipeline !== null && r.pipeline !== undefined && r.rule !== 'siempre-en-la-maquina') {
+        name = checkOf(suitesDecision(where, config, target, deps, 'pr'), where, config);
+      }
+    }
   }
   if (!name) {
     return stop(from && from.configFrom === 'maintainers'
@@ -775,7 +1128,7 @@ const ORDERS = {
   'check-version': { needs: ['repo', 'base', 'head'], run: (o) => checkVersion(o) },
 };
 const VALUE_OPTIONS = { '--repo': 'repo', '--source': 'source', '--target': 'target', '--pr': 'pr', '--head': 'head', '--base': 'base',
-  '--check': 'check', '--from': 'from', '--to': 'to', '--timeout-min': 'timeoutMin', '--interval-s': 'intervalS' };
+  '--check': 'check', '--from': 'from', '--to': 'to', '--timeout-min': 'timeoutMin', '--interval-s': 'intervalS', '--keep-mode': 'keepMode' };
 
 function main(argv = process.argv.slice(2)) {
   if (argv.includes('--help') || argv.includes('-h')) { process.stdout.write(USAGE); return 0; }
@@ -799,6 +1152,9 @@ function main(argv = process.argv.slice(2)) {
     if (!Number.isFinite(n) || n <= 0) return usage(`el valor de ${Object.keys(VALUE_OPTIONS).find((o) => VALUE_OPTIONS[o] === k)} no es un número mayor que cero`);
     opts[k] = n;
   }
+  if (opts.keepMode !== undefined && (argv[0] !== 'plan' || !['push', 'pr'].includes(opts.keepMode))) {
+    return usage(argv[0] !== 'plan' ? '--keep-mode es sólo de plan' : `--keep-mode es push o pr (es «${opts.keepMode}»)`);
+  }
   if (opts.repo) opts.repo = path.resolve(opts.repo);
   const result = order.run(opts);
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
@@ -809,4 +1165,4 @@ function main(argv = process.argv.slice(2)) {
 if (require.main === module) process.exitCode = main();
 
 module.exports = { main, plan, hostOf, rootOf, readMergeConfig, parseMergeConfig, mergeConfigFor, bodyFiles, parseSshHostname, updateBranch, bumpVersion, checkVersion, versionAt,
-  waitChecks, judgeCheck, message, withoutCiSkip, cleanTopic, USAGE };
+  waitChecks, judgeCheck, message, withoutCiSkip, cleanTopic, azLaunch, realAz, suitesDecision, USAGE };

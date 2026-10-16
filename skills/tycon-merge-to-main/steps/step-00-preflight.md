@@ -110,6 +110,29 @@ Interpretación del JSON:
 - **El script no existe** (clon de guides ausente) → 1 línea de warning y seguir (fail-open
   ruidoso, nunca silencioso).
 
+### 0.7 — El plan: el modo y dónde corren las suites (una sola vez)
+
+**Por qué existe**: el modo (`push`/`pr`) y si las suites completas las corre el
+servidor o esta máquina salen de un solo lugar, y se fijan ACÁ. Si cambiaran a mitad de camino (un
+`az` que deja de contestar entre este paso y el 8), el skill podría llegar al Step 9 sin merge local
+y el merge aprobado no ocurriría.
+
+```bash
+node "${TYCON_GUIDES_DIR:-$HOME/.claude/tycon-harness}/scripts/tools/merge-pr.js" plan --repo <repo> --source '<source>' --target '<target>'
+```
+
+Sale 0 con un JSON (sale 2 sólo si no pudo leer el repo o su configuración del merge: mostrar el
+`reason` y parar). Guardar en el output del step, tal cual:
+
+- `mode` (`push`|`pr`) y `step` (`9`|`9b`|`9c`): no se recalculan después.
+- `suites` (`server`|`machine`) y `suitesReason` (una línea: qué regla aplicó y por qué). La regla
+  sale de `team-repos.json → merge_suites` (la configuración de la organización) y, si la regla es
+  `automatico`, de lo que contesta la plataforma sobre la rama destino.
+- `legacyNote`: si no es `null`, el repo deja las suites al servidor por `merge.mode: pr` (la forma
+  vieja). Se muestra en el HITL #1 como aviso de una línea.
+
+`check` y `canMerge` son del Step 9c: los vuelve a dar su propio plan.
+
 ## Output del step
 
 ```json
@@ -120,7 +143,12 @@ Interpretación del JSON:
   "had_stash": false,
   "merge_worktree": false,
   "current_branch_at_start": "dev",
-  "unpushed_findings": []
+  "unpushed_findings": [],
+  "mode": "pr",
+  "step": "9b",
+  "suites": "server",
+  "suitesReason": "las suites las corre el servidor: la rama main exige el pipeline de pruebas completas «Ventas Backend» (id 94) (regla automatico, …)",
+  "legacyNote": null
 }
 ```
 

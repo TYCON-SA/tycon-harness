@@ -4,7 +4,8 @@
  * team-repos.test.js — los dos lectores de la configuración de una organización (story 8.26, tanda J):
  * scripts/lib/team-repos.js (`team-repos.json`, en el perfil del equipo: dónde vive cada repo del arnés) y
  * scripts/lib/operations-config.js (`operations.json`, en el repo de operaciones: responsables, revisores y, desde la
- * story 2.28, quién es quién — `people`, con la huella del correo informado y nunca el correo en claro).
+ * story 2.28, quién es quién — `people`, con la huella del correo informado y nunca el correo en claro). Desde la story
+ * 7.28, `team-repos.json` trae además `merge_suites`: dónde corren las suites completas al mergear cada repo.
  *
  * Lo que no se puede perder: un archivo válido da sus datos; uno con problemas no da datos a medias y cada problema
  * trae la ruta de su clave (la página de configuración marca cada campo con ella); «no pude leer» no es «no hay repo»;
@@ -351,4 +352,75 @@ test('2.23-T4 OperationsConfig_SiteConSecretoEsProblema', () => {
   assert.match(sas.problems[0].message, /secreto/);
   // un comentario `__` con la palabra no es una clave de secreto
   assert.strictEqual(OPS.parse(JSON.stringify(opsWithSite({ __token_doc: 'se explica acá', ...goodSite() }))).ok, true);
+});
+
+// ── story 7.28: dónde corren las suites completas al mergear (`merge_suites`) ─────────────────────────────────────────
+const withSuites = (merge_suites) => Object.assign(goodTeam(), { merge_suites });
+
+test('T17 TeamRepos_MergeSuites_ValidAbsentAndProblemsWithPath @story-7.28 @ac-11', () => {
+  const full = {
+    __doc: 'un comentario',
+    default: 'automatico',
+    repos: [
+      { repo: azure('Backend', 'Ventas'), rule: 'confiar-en-el-servidor', full_tests_pipeline: 94 },
+      { repo: azure('Front', 'Ventas'), full_tests_pipeline: 'Ventas Front' },
+      { repo: github('widgets'), rule: 'siempre-en-la-maquina' },
+      { repo: github('harness'), full_tests_pipeline: 'ci-completo' },
+    ],
+  };
+  const ok = TEAM.parse(JSON.stringify(withSuites(full)));
+  assert.deepStrictEqual(ok.problems, []);
+  assert.strictEqual(ok.data.merge_suites.repos[0].full_tests_pipeline, 94);
+  assert.deepStrictEqual(TEAM.MERGE_RULES, ['automatico', 'siempre-en-la-maquina', 'confiar-en-el-servidor']);
+  // vacío y sin la clave: válidos, igual que hoy
+  assert.strictEqual(TEAM.parse(JSON.stringify(withSuites({}))).ok, true);
+  assert.strictEqual(TEAM.parse(JSON.stringify(goodTeam())).ok, true);
+
+  const casos = [
+    ['no', ['merge_suites']],
+    [{ default: 'auto' }, ['merge_suites.default']],
+    [{ repos: 'x' }, ['merge_suites.repos']],
+    [{ otra: 1 }, ['merge_suites.otra']],
+    [{ repos: ['x'] }, ['merge_suites.repos.0']],
+    [{ repos: [{ repo: github('a'), rule: 'automatico', extra: 1 }] }, ['merge_suites.repos.0.extra']],
+    [{ repos: [{ repo: github('a') }] }, ['merge_suites.repos.0']],
+    [{ repos: [{ repo: { platform: 'github', org: 'acme' }, rule: 'automatico' }] }, ['merge_suites.repos.0.repo.repo']],
+    [{ repos: [{ repo: github('a'), rule: 'nunca' }] }, ['merge_suites.repos.0.rule']],
+    [{ repos: [{ repo: github('a'), full_tests_pipeline: '' }] }, ['merge_suites.repos.0.full_tests_pipeline']],
+    [{ repos: [{ repo: github('a'), full_tests_pipeline: true }] }, ['merge_suites.repos.0.full_tests_pipeline']],
+    [{ repos: [{ repo: github('a'), full_tests_pipeline: 7 }] }, ['merge_suites.repos.0.full_tests_pipeline']],
+    [{ repos: [{ repo: azure('a'), full_tests_pipeline: 0 }] }, ['merge_suites.repos.0.full_tests_pipeline']],
+    [{ repos: [{ repo: azure('a'), full_tests_pipeline: 1.5 }] }, ['merge_suites.repos.0.full_tests_pipeline']],
+    // 🔴 pase adversarial: en Azure un texto de dígitos es un id, y «0» (o «00») no es ninguno
+    [{ repos: [{ repo: azure('a'), full_tests_pipeline: '0' }] }, ['merge_suites.repos.0.full_tests_pipeline']],
+    [{ repos: [{ repo: azure('a'), full_tests_pipeline: '00' }] }, ['merge_suites.repos.0.full_tests_pipeline']],
+    [{ repos: [{ repo: github('Widgets'), rule: 'automatico' }, { repo: github('widgets'), full_tests_pipeline: 'x' }] }, ['merge_suites.repos.1.repo']],
+  ];
+  for (const [value, esperado] of casos) {
+    const r = TEAM.parse(JSON.stringify(withSuites(value)));
+    assert.strictEqual(r.ok, false, JSON.stringify(value));
+    assert.strictEqual(r.data, null, 'con un problema no hay datos a medias');
+    assert.deepStrictEqual(paths(r), esperado, JSON.stringify(value));
+  }
+});
+
+test('T18 TeamRepos_MergeSuitesFor_DeclaredEntryDefaultAndMatch @story-7.28 @ac-6 @ac-11', () => {
+  const data = withSuites({
+    default: 'confiar-en-el-servidor',
+    repos: [
+      { repo: azure('Backend', 'Ventas Norte'), rule: 'siempre-en-la-maquina', full_tests_pipeline: '94' },
+      { repo: github('widgets'), full_tests_pipeline: 'ci-completo' },
+    ],
+  });
+  const azureId = { platform: 'azure', org: 'ACME', project: 'ventas%20norte', repo: 'backend' };
+  assert.deepStrictEqual(TEAM.mergeSuitesFor(data, azureId), { declared: true, rule: 'siempre-en-la-maquina', ruleFrom: 'repo', pipeline: '94' });
+  assert.deepStrictEqual(TEAM.mergeSuitesFor(data, { platform: 'github', org: 'Acme', repo: 'WIDGETS' }),
+    { declared: true, rule: 'confiar-en-el-servidor', ruleFrom: 'organization', pipeline: 'ci-completo' });
+  // un repo sin entrada usa el default; la misma ruta en otra plataforma no es la entrada
+  assert.deepStrictEqual(TEAM.mergeSuitesFor(data, { platform: 'github', org: 'acme', repo: 'otro' }),
+    { declared: true, rule: 'confiar-en-el-servidor', ruleFrom: 'organization', pipeline: null });
+  assert.deepStrictEqual(TEAM.mergeSuitesFor(data, { platform: 'azure', org: 'acme', project: 'x', repo: 'widgets' }).pipeline, null);
+  // `{}` declara (sin regla: automático); sin la clave, no declara
+  assert.deepStrictEqual(TEAM.mergeSuitesFor(withSuites({}), azureId), { declared: true, rule: 'automatico', ruleFrom: 'default', pipeline: null });
+  assert.deepStrictEqual(TEAM.mergeSuitesFor(goodTeam(), azureId), { declared: false, rule: null, ruleFrom: null, pipeline: null });
 });

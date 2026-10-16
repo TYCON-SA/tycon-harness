@@ -27,7 +27,8 @@ Invocar este skill cuando el usuario dice (es/en):
 | `source` | `dev` | branch de origen |
 | `target` | `main` | branch destino |
 | `repo_path` | `cwd` | path al repo (debe ser git) |
-| `mode` | `push` | `push` = merge local + push al target (histórico) · `pr` = crear Pull Request (en Azure DevOps, con auto-complete; en GitHub, el skill espera el control declarado en `merge.check` y mergea). **Se DECLARA**, no se adivina: `.tycon/advisors.yaml → merge.mode: pr`, en el repo. Única excepción: un clon del repo público del arnés, que no trae ese archivo — ahí vale el del clon de mantenimiento que declara la máquina (`paths.maintainers`). De dónde salió lo dice `merge-pr.js plan` (`configFrom`) |
+| `mode` | `push` | `push` = merge local + push al target (histórico) · `pr` = crear Pull Request (en Azure DevOps, con auto-complete; en GitHub, el skill espera el control del plan y mergea). **Sale del plan del paso 0** (`merge-pr.js plan`, 0.7), una sola vez, y no cambia después. El plan lo arma con dos cosas: la regla de la organización en `team-repos.json → merge_suites` (si las suites las corre el servidor, el modo es `pr`) y lo que el repo declara en `.tycon/advisors.yaml → merge.mode: pr`. Única excepción a lo del repo: un clon del repo público del arnés, que no trae ese archivo — ahí vale el del clon de mantenimiento que declara la máquina (`paths.maintainers`). De dónde salió lo dice el plan (`configFrom`, `suitesRuleFrom`) |
+| `suites` | del plan | `server` = las suites completas las corre el servidor (la rama exige el pipeline de pruebas completas, o la regla es `confiar-en-el-servidor`) · `machine` = corren en esta máquina, en el Step 7. Lo decide `merge-pr.js plan` con la regla de `team-repos.json → merge_suites` (`automatico` · `siempre-en-la-maquina` · `confiar-en-el-servidor`) y lo dice en una línea (`suitesReason`) |
 
 Si el usuario no especifica, asumir defaults `dev → main` en `cwd`.
 
@@ -42,6 +43,18 @@ target) y el Step 9 se reemplaza por **step-09b-create-pr.md**, que pushea la so
 con auto-complete, usando el mensaje del Step 2 como descripción. Detección del modo y edge cases:
 ver ese step.
 
+**El modo y dónde corren las suites salen del plan**. El paso 0 corre
+`merge-pr.js plan` una sola vez (0.7) y guarda `mode`, `step`, `suites`, `suitesReason` y
+`legacyNote`. La regla la fija el admin de la organización en `team-repos.json → merge_suites`, para
+toda la organización o por repo: `automatico` (por defecto: el plan le pregunta a la plataforma si
+la rama exige el pipeline de pruebas completas que declaró la organización, y sólo si lo exige las
+corre el servidor), `siempre-en-la-maquina` o `confiar-en-el-servidor` (igual exige pedido). Sin
+`merge_suites`, `merge.mode: pr` del repo vale como `confiar-en-el-servidor` y el plan avisa que
+esa forma es vieja (`legacyNote`). «No pude preguntar» nunca deja las suites al servidor con
+`automatico`. Los planes de los pasos 8, 9b y 9c se piden con `--keep-mode <modo del paso 0>`: el
+modo no cambia, y si `suites` bajó a `machine` el skill vuelve al 7.2 antes de empujar o crear el
+pedido.
+
 **`pr` con el repo en GitHub** — el mismo modo, otro servidor: el Step 9 se reemplaza por
 **step-09c-create-pr-github.md**. Cuál de los dos corre lo decide el remoto `origin` (lo dice
 `scripts/tools/merge-pr.js plan` del arnés), no una suposición. Lo que cambia allá: el servidor no
@@ -52,14 +65,15 @@ siempre mergea solo, así que el skill **espera el control que el repo declara**
 marca el número lo pone el merge (una etiqueta) y el pedido no toca `version.json`. Sin `merge.check`
 declarado, crea el pedido y no lo mergea.
 
-🔴 **Step 7 en modo `pr`: las SUITES COMPLETAS locales SE SALTEAN** (la validación del PR corre
-esas mismas suites —jest de forms en FrontEnd, unit +
-integración con cobertura en Backend— sobre el merge previo con el target, que es más autoritativo
-que la source local; y con la expiración inmediata de la policy, un verde viejo no puede colarse).
-Lo que el Step 7 CONSERVA en modo `pr`: el **build rápido local** de la source (para no quemar un
-ciclo de CI con algo que ni compila) y el gate E2E crítico del 7b-1 cuando aplica — el pipeline
-del PR no corre Playwright. Ése es el trato: la full suite vive en el servidor, tu máquina no se
-funde más por un merge.
+🔴 **Step 7 con `suites: "server"`: las SUITES COMPLETAS locales SE SALTEAN** (la validación del PR
+corre esas mismas suites —jest de forms en FrontEnd, unit + integración con cobertura en Backend—
+sobre el merge previo con el target, que es más autoritativo que la source local; y con la
+expiración inmediata de la policy, un verde viejo no puede colarse). Lo que el Step 7 CONSERVA: el
+**build rápido local** de la source (para no quemar un ciclo de CI con algo que ni compila) y el
+gate E2E crítico del 7b-1 cuando aplica — el pipeline del PR no corre Playwright. Ése es el trato:
+la full suite vive en el servidor, tu máquina no se funde más por un merge. Con `suites: "machine"`
+corren en la máquina, también en modo `pr` (sobre un merge de prueba de la source con el target, en
+un worktree descartable), y la línea `Tests:` dice por qué (`suitesReason`).
 
 ## Filosofía del mensaje de commit
 

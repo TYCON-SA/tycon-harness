@@ -44,6 +44,29 @@ Opciones:
 
 ## Acciones (con stack detectado)
 
+### 7.0 — Qué corre en esta máquina: lo dice `suites` del Step 0.7
+
+- **`suites: "server"`**: el servidor corre las suites completas antes de mergear el pedido (la rama
+  exige el pipeline de pruebas completas, o la regla es `confiar-en-el-servidor`). Acá corren **sólo**
+  el build rápido (7.1) y el gate E2E crítico del 7b-1 cuando aplica; el 7.2 NO. En modo `pr`
+  (no hay merge local) el 7.1 corre sobre la source, en el árbol de trabajo parado en ella, como
+  hasta ahora; en modo `push`, sobre el merge del Step 6. La línea `Tests:` queda «suites completas:
+  las corre el servidor — <suitesReason>».
+- **`suites: "machine"`**: corren el 7.1 y el 7.2 completos, y la línea `Tests:` de siempre lleva al
+  final «(<suitesReason>)».
+  - En modo **`push`**, sobre el merge local del Step 6, como siempre.
+  - En modo **`pr`** no hay merge local (los Steps 5 y 6 se saltearon): el 7.1 y el 7.2 corren sobre
+    un **merge de prueba** de la source con `origin/<target>`, en un worktree descartable que se borra
+    al terminar. Así se prueba lo mismo que prueba el modo `push`, no la source sola:
+
+    ```bash
+    WT="$(mktemp -d)/merge-de-prueba"
+    git -C <repo> worktree add --detach "$WT" "origin/<target>"
+    git -C "$WT" merge --no-ff --no-edit "origin/<source>"   # un conflicto: parar y decirlo (el pedido chocaría igual)
+    # … el 7.1 y el 7.2 con cwd = "$WT" (instalar dependencias ahí: npm install / dotnet restore) …
+    git -C <repo> worktree remove --force "$WT"              # siempre, también si algo falló
+    ```
+
 ### 7.1 — Build
 
 ```bash
@@ -67,10 +90,16 @@ Capturar exit code y últimas ~20 líneas + el conteo total/pasados/fallados (pa
 Actualizar el `full_message` del merge commit con los resultados reales — reemplazar el placeholder `Tests: [pendiente...]` por:
 
 ```
-Tests: <N>/<N> PASS, 0 regresiones.
+Tests: <N>/<N> PASS, 0 regresiones. (<suitesReason>)
 ```
 
-Para amendar el merge commit:
+o, con `suites: "server"`, por `Tests: build OK; suites completas: las corre el servidor — <suitesReason>`.
+
+🔴 **En modo `pr` nunca hay `--amend`**: no existe un merge commit local, y enmendar el HEAD sería
+enmendar la punta de la source, que ya está empujada. La línea `Tests:` va sólo al mensaje aprobado
+(la descripción del pedido del 9b, o el `bodyFile` del 9c).
+
+En modo `push`, para amendar el merge commit:
 
 ```bash
 git commit --amend -m "$(cat <<'EOF'

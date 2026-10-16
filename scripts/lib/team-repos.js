@@ -16,6 +16,14 @@
 //     "maintainers": <repo>,            opcional — el de mantenimiento, sólo para quien mantiene el arnés
 //     "harness_copies": [<repo>, …] }   opcional — los repos de la organización que son copias del arnés: las métricas
 //                                       de la noche no los miden, salvo el de `maintainers` si está en la lista
+//     "merge_suites": {                 opcional (story 7.28) — dónde corren las suites completas al mergear cada repo
+//       "default"?: <regla>,            la de la organización; sin ella, «automatico»
+//       "repos"?: [ { "repo": <repo>, "rule"?: <regla>, "full_tests_pipeline"?: <texto> | <entero ≥ 1, sólo Azure> } ] }
+//                                       cada entrada trae al menos `rule` o `full_tests_pipeline`; un repo, una vez
+//   <regla> = «automatico» | «siempre-en-la-maquina» | «confiar-en-el-servidor» (MERGE_RULES; las decidió el dueño así).
+//   `full_tests_pipeline` es «el pipeline de pruebas completas» del repo: en Azure, por nombre o por id; en GitHub, el
+//   nombre del control obligatorio. Lo usa el skill de merge (scripts/tools/merge-pr.js); sin la clave, el skill lee
+//   `merge.mode` del repo como antes. La clave es opcional: no sube la versión del archivo.
 //   <repo> = { "platform": "azure", "org", "project", "repo" } o { "platform": "github", "org", "repo" }.
 //   Las claves que empiezan con `__` son comentarios. Cualquier otra clave es un problema, en su propia ruta: así un
 //   nombre mal escrito no queda ignorado en silencio.
@@ -44,7 +52,9 @@ const VERSION = 1;
 const PLATFORMS = ['azure', 'github'];
 const REPO_KEYS = { azure: ['org', 'project', 'repo'], github: ['org', 'repo'] };
 const REQUIRED = ['public', 'profile', 'operations'];
-const OPTIONAL = ['maintainers', 'harness_copies'];
+const OPTIONAL = ['maintainers', 'harness_copies', 'merge_suites'];
+const MERGE_RULES = ['automatico', 'siempre-en-la-maquina', 'confiar-en-el-servidor'];
+const MERGE_ENTRY_KEYS = ['repo', 'rule', 'full_tests_pipeline'];
 const KEYS = ['version', ...REQUIRED, ...OPTIONAL];
 // Los nombres: letras, números, punto, guion, guion bajo, y espacios adentro. Azure acepta letras de cualquier idioma
 // (un proyecto «Arnés del equipo» es válido); GitHub, sólo ASCII.
@@ -78,6 +88,71 @@ function repoProblems(value, at) {
   return out;
 }
 
+const ruleProblem = (rule, at) => (MERGE_RULES.includes(rule) ? [] : [{ path: at, message: `tiene que ser ${MERGE_RULES.map((r) => `«${r}»`).join(', ')} (es ${JSON.stringify(rule)})` }]);
+
+/** La identidad de un repo para compararlo: plataforma y nombres, sin mayúsculas y con los espacios decodificados. */
+function identityKey(r) {
+  if (!isObject(r) || !PLATFORMS.includes(r.platform)) return null;
+  const plain = (v) => { const s = String(v == null ? '' : v); try { return decodeURIComponent(s).toLowerCase(); } catch (_) { return s.toLowerCase(); } };
+  return [r.platform, ...REPO_KEYS[r.platform].map((k) => plain(r[k]))].join('/');
+}
+
+/** Los problemas de `merge_suites`; `[]` si está bien. */
+function mergeSuitesProblems(value) {
+  if (!isObject(value)) return [{ path: 'merge_suites', message: 'tiene que ser un objeto con default y repos' }];
+  const out = [];
+  for (const k of Object.keys(value)) {
+    if (!comment(k) && k !== 'default' && k !== 'repos') out.push({ path: `merge_suites.${k}`, message: 'clave desconocida' });
+  }
+  if (value.default !== undefined) out.push(...ruleProblem(value.default, 'merge_suites.default'));
+  if (value.repos === undefined) return out;
+  if (!Array.isArray(value.repos)) return [...out, { path: 'merge_suites.repos', message: 'tiene que ser una lista de entradas { repo, rule, full_tests_pipeline }' }];
+  const seen = new Set();
+  value.repos.forEach((e, i) => {
+    const at = `merge_suites.repos.${i}`;
+    if (!isObject(e)) { out.push({ path: at, message: 'tiene que ser un objeto { repo, rule, full_tests_pipeline }' }); return; }
+    for (const k of Object.keys(e)) if (!comment(k) && !MERGE_ENTRY_KEYS.includes(k)) out.push({ path: `${at}.${k}`, message: 'clave desconocida' });
+    if (e.rule === undefined && e.full_tests_pipeline === undefined) out.push({ path: at, message: 'tiene que traer rule o full_tests_pipeline (sin ninguno, la entrada no dice nada)' });
+    if (e.rule !== undefined) out.push(...ruleProblem(e.rule, `${at}.rule`));
+    const repoErrs = e.repo === undefined ? [{ path: `${at}.repo`, message: 'falta' }] : repoProblems(e.repo, `${at}.repo`);
+    out.push(...repoErrs);
+    const p = e.full_tests_pipeline;
+    if (p !== undefined) {
+      const azure = isObject(e.repo) && e.repo.platform === 'azure';
+      // en Azure un texto sólo de dígitos es un id (merge-pr.js): tiene que ser uno de verdad, mayor que cero
+      const okText = typeof p === 'string' && p.trim() !== '' && !(azure && /^\d+$/.test(p) && Number(p) < 1);
+      const okId = azure && Number.isInteger(p) && p >= 1;
+      if (!okText && !okId) {
+        out.push({ path: `${at}.full_tests_pipeline`, message: typeof p === 'number' && !azure
+          ? 'en un repo de GitHub es el nombre del control obligatorio (un texto), no un número'
+          : 'tiene que ser un texto no vacío (el nombre) o, en Azure, un entero mayor que cero (el id)' });
+      }
+    }
+    if (!repoErrs.length) {
+      const key = identityKey(e.repo);
+      if (seen.has(key)) out.push({ path: `${at}.repo`, message: 'este repo ya tiene una entrada en merge_suites.repos' });
+      seen.add(key);
+    }
+  });
+  return out;
+}
+
+/**
+ * Qué declara `merge_suites` para un repo: `{ declared, rule, ruleFrom, pipeline }`. `declared` = el archivo trae la clave
+ * (también `{}`); sin ella, todo `null`. La regla: la de la entrada del repo (`repo`), si no el `default`
+ * (`organization`), si no «automatico» (`default`). `identity` = `{ platform, org, project?, repo }`, como un <repo>.
+ */
+function mergeSuitesFor(data, identity) {
+  if (!isObject(data) || data.merge_suites === undefined) return { declared: false, rule: null, ruleFrom: null, pipeline: null };
+  const ms = isObject(data.merge_suites) ? data.merge_suites : {};
+  const want = identityKey(identity);
+  const entry = (Array.isArray(ms.repos) ? ms.repos : []).find((e) => isObject(e) && want !== null && identityKey(e.repo) === want) || null;
+  const pipeline = entry && entry.full_tests_pipeline !== undefined ? entry.full_tests_pipeline : null;
+  if (entry && entry.rule !== undefined) return { declared: true, rule: entry.rule, ruleFrom: 'repo', pipeline };
+  if (ms.default !== undefined) return { declared: true, rule: ms.default, ruleFrom: 'organization', pipeline };
+  return { declared: true, rule: 'automatico', ruleFrom: 'default', pipeline };
+}
+
 /** Valida un objeto ya leído. */
 function validate(doc) {
   if (!isObject(doc)) return [{ path: '', message: 'el archivo tiene que ser un objeto JSON' }];
@@ -96,6 +171,7 @@ function validate(doc) {
     if (!Array.isArray(doc.harness_copies)) problems.push({ path: 'harness_copies', message: 'tiene que ser una lista de repos' });
     else doc.harness_copies.forEach((r, i) => problems.push(...repoProblems(r, `harness_copies.${i}`)));
   }
+  if (doc.merge_suites !== undefined) problems.push(...mergeSuitesProblems(doc.merge_suites));
   return problems;
 }
 
@@ -152,7 +228,7 @@ function privateRepoRef(data) {
   return `${m.project}/_git/${m.repo}`;
 }
 
-module.exports = { VERSION, PLATFORMS, REPO_KEYS, KEYS, parse, load, url, privateRepoRef, repoProblems, harnessCopies };
+module.exports = { VERSION, PLATFORMS, REPO_KEYS, KEYS, MERGE_RULES, parse, load, url, privateRepoRef, repoProblems, harnessCopies, mergeSuitesFor };
 
 if (require.main === module) {
   const args = process.argv.slice(2);

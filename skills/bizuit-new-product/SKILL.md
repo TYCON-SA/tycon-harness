@@ -295,6 +295,11 @@ Emitirlas como lista, al final, separadas de lo hecho:
 - **Las variables** de despliegue en cada pipeline (la tabla está en el README de las plantillas),
   las contraseñas como secretas.
 - **El llavero** del servidor de producción, si el equipo va a consultar la base.
+- **Inscribir cada repo nuevo en `merge_suites`** con el pipeline de pruebas completas que crea esta
+  skill: en `team-repos.json` del perfil del equipo (`merge_suites.repos`, con `full_tests_pipeline`
+  = el nombre o el id del pipeline de integración del repo). Sin esa entrada, el merge de `dev` a
+  `main` corre las suites completas en la máquina del dev aunque la rama exija el pipeline: el
+  arnés no adivina cuál es el de pruebas completas. Lo hace el admin del equipo.
 
 ### Paso 11 — Verificar que anda
 

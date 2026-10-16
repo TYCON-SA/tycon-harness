@@ -1138,7 +1138,7 @@
       "requiere": []
     },
     {
-      "__nota": "story 8.26, tanda J: los lectores de la configuración de una organización — team-repos.json (en el perfil del equipo: dónde vive cada repo del arnés) y operations.json (en el repo de operaciones: responsables y revisores). Válido da sus datos; con problemas, ninguno a medias y cada problema con la ruta de su clave; «no pude leer» no es «no hay repo»; la lista de responsables no entra en el archivo que llega a todas las máquinas. Sólo textos, sin red.",
+      "__nota": "story 8.26, tanda J: los lectores de la configuración de una organización — team-repos.json (en el perfil del equipo: dónde vive cada repo del arnés) y operations.json (en el repo de operaciones: responsables y revisores). Válido da sus datos; con problemas, ninguno a medias y cada problema con la ruta de su clave; «no pude leer» no es «no hay repo»; la lista de responsables no entra en el archivo que llega a todas las máquinas. Desde la story 7.28, también `merge_suites` (dónde corren las suites completas al mergear cada repo): su forma, cada problema con su ruta y `mergeSuitesFor`. Sólo textos, sin red.",
       "raiz": "arnes",
       "ruta": "tests/team-repos.test.js",
       "requiere": []
@@ -2067,7 +2067,7 @@
       "requiere": []
     },
     {
-      "__nota": "story 8.26, tanda E (T18, T44, T61, T62): el merge por pedido del lado de GitHub (scripts/tools/merge-pr.js) y el contrato del skill de merge. De qué servidor es el repo y qué paso sigue; poner la rama al día (el único choque que se resuelve solo es version.json); el número que sigue (nunca baja, y dos pedidos no lo repiten); la espera del control declarado, con un código por desenlace («no pude preguntar» no es verde); el título «asunto (#N)» sin marcas que salteen la CI; y que el paso de Azure del skill conserva sus comandos. Repos de juguete con git de verdad y un gh de mentira: sin red.",
+      "__nota": "story 8.26, tanda E (T18, T44, T61, T62): el merge por pedido del lado de GitHub (scripts/tools/merge-pr.js) y el contrato del skill de merge. De qué servidor es el repo y qué paso sigue; poner la rama al día (el único choque que se resuelve solo es version.json); el número que sigue (nunca baja, y dos pedidos no lo repiten); la espera del control declarado, con un código por desenlace («no pude preguntar» no es verde); el título «asunto (#N)» sin marcas que salteen la CI; y que el paso de Azure del skill conserva sus comandos. Desde la story 7.28 (T1-T16, T21, T22): dónde corren las suites completas — la regla de team-repos.json → merge_suites, la consulta a las políticas de Azure y a las reglas de GitHub («no pude preguntar» nunca es «las corre el servidor»), --keep-mode, el control de wait-checks y az en Windows por el bash de Git. Repos de juguete con git de verdad y un az, un gh y un team-repos.json de mentira: sin red (T22 mira que nadie llamó al az ni al gh de la máquina).",
       "raiz": "arnes",
       "ruta": "tests/merge-pr.test.js",
       "requiere": []
