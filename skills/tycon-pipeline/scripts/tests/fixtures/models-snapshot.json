@@ -1,0 +1,365 @@
+{
+  "base_sha": "7ed76aeaae7ebdda9c5848d4d15f1a8b6d63a8db",
+  "tomada_en": "2026-10-16",
+  "casos": {
+    "advisors-i1": {},
+    "advisors-i2": {
+      "reloop_model_hints": {
+        "tycon-spec-first-checker": "sonnet"
+      },
+      "reloop_model_hints_note": "tier deep (Opus) → sonnet en re-loop: el juicio de scope grande ya corrió en iter 1; ignorá el hint SOLO si el delta toca specs."
+    },
+    "advisors-lean": {
+      "model_hints": {
+        "tycon-ac-coverage-checker": "haiku"
+      },
+      "cost_tier": "lean"
+    },
+    "advisors-deep": {
+      "model_hints": {
+        "tycon-plugin-tests-coverage": "opus",
+        "tycon-plugin-security-basics": "opus",
+        "tycon-story-validator": "opus",
+        "tycon-spec-first-checker": "opus",
+        "tycon-ac-coverage-checker": "opus"
+      },
+      "cost_tier": "deep"
+    },
+    "advisors-i2-deep": {
+      "model_hints": {
+        "tycon-plugin-tests-coverage": "opus",
+        "tycon-plugin-security-basics": "opus",
+        "tycon-story-validator": "opus",
+        "tycon-spec-first-checker": "opus"
+      },
+      "cost_tier": "deep"
+    },
+    "advisors-i2-lean": {
+      "reloop_model_hints": {
+        "tycon-spec-first-checker": "sonnet"
+      },
+      "reloop_model_hints_note": "tier deep (Opus) → sonnet en re-loop: el juicio de scope grande ya corrió en iter 1; ignorá el hint SOLO si el delta toca specs."
+    },
+    "smart-reloop-i2": {
+      "reloop_model_hints": {
+        "tycon-spec-first-checker": "sonnet"
+      },
+      "reloop_model_hints_note": "tier deep (Opus) → sonnet en re-loop: el juicio de scope grande ya corrió en iter 1; ignorá el hint SOLO si el delta toca specs."
+    },
+    "smart-reloop-force": {
+      "reloop_model_hints": {
+        "tycon-spec-first-checker": "sonnet"
+      },
+      "reloop_model_hints_note": "tier deep (Opus) → sonnet en re-loop: el juicio de scope grande ya corrió en iter 1; ignorá el hint SOLO si el delta toca specs."
+    },
+    "gate-low": {
+      "model": null
+    },
+    "gate-normal": {
+      "model": "sonnet",
+      "model_reason": "default (recorta $ ~5x vs Opus)"
+    },
+    "gate-heavy": {
+      "model": "opus",
+      "model_reason": "story pesada (2 señales model-hint) → hunters escalan a Opus (anunciar)",
+      "fable_upsell": {
+        "model": "fable",
+        "requires_user_approval": true,
+        "reason": "story pesada (superficie-grande, muchos-acs) — Fable caza más en el pase adversarial, a ~2x el costo de Opus",
+        "how": "preguntar al user en 1 línea (COMM.i); si aprueba → pasar model:\"fable\" al Workflow. Sin respuesta afirmativa → usar `model` de este output."
+      }
+    },
+    "gate-normal-opus": {
+      "model": "opus",
+      "model_reason": "--deep-review-opus"
+    },
+    "gate-heavy-opus": {
+      "model": "opus",
+      "model_reason": "--deep-review-opus",
+      "fable_upsell": {
+        "model": "fable",
+        "requires_user_approval": true,
+        "reason": "story pesada (superficie-grande, muchos-acs) — Fable caza más en el pase adversarial, a ~2x el costo de Opus",
+        "how": "preguntar al user en 1 línea (COMM.i); si aprueba → pasar model:\"fable\" al Workflow. Sin respuesta afirmativa → usar `model` de este output."
+      }
+    },
+    "gate-heavy-ultracode": {
+      "model": "opus",
+      "model_reason": "ultracode ON → hunters en Opus",
+      "fable_upsell": {
+        "model": "fable",
+        "requires_user_approval": true,
+        "reason": "story pesada (superficie-grande, muchos-acs) — Fable caza más en el pase adversarial, a ~2x el costo de Opus",
+        "how": "preguntar al user en 1 línea (COMM.i); si aprueba → pasar model:\"fable\" al Workflow. Sin respuesta afirmativa → usar `model` de este output."
+      }
+    },
+    "gate-heavy-fable": {
+      "model": "fable",
+      "model_reason": "--deep-review-fable (autorización explícita del user)"
+    },
+    "gate-low-forced": {
+      "model": "sonnet",
+      "model_reason": "default (recorta $ ~5x vs Opus)"
+    },
+    "start-low": {
+      "model_hint": {
+        "recommended_session_model": "sonnet",
+        "also_ok": [
+          "opus"
+        ],
+        "risk": "LOW",
+        "heavy": false,
+        "heavy_signal_count": 0,
+        "signals": [
+          {
+            "name": "superficie-grande",
+            "hit": false,
+            "detail": "2 archivos en scope (umbral >12)"
+          },
+          {
+            "name": "muchos-acs",
+            "hit": false,
+            "detail": "2 ACs (umbral ≥10)"
+          },
+          {
+            "name": "codigo-nuevo-amplio",
+            "hit": false,
+            "detail": "approach=[MODIFY] + 0 files_to_create (umbral: CREATE y ≥5)"
+          },
+          {
+            "name": "multi-tanda",
+            "hit": false,
+            "detail": "bloque pipelines: — entregas en tandas con interdependencias"
+          },
+          {
+            "name": "migraciones-mas-codigo",
+            "hit": false,
+            "detail": "migración SQL + código en el mismo scope"
+          },
+          {
+            "name": "scope-firmado",
+            "hit": false,
+            "detail": "scope firmado con cliente — costo de error alto"
+          }
+        ],
+        "reason": "risk LOW (superficie chica, sin firmas/SQL/paths sensibles) → sonnet alcanza; un modelo más caro acá es plata de más",
+        "note": "ADVISORY para el MODELO DE SESIÓN (steps 2-4 corren inline). Orquestador: compará con tu modelo real (system prompt); si NO está en recommended+also_ok → sugerí `/model <recomendado>` en 1 línea (el switch conserva sesión y marker) y seguí con lo que el user decida. NUNCA bloquea."
+      }
+    },
+    "start-normal": {
+      "model_hint": {
+        "recommended_session_model": "opus",
+        "also_ok": [],
+        "risk": "NORMAL",
+        "heavy": false,
+        "heavy_signal_count": 0,
+        "signals": [
+          {
+            "name": "superficie-grande",
+            "hit": false,
+            "detail": "8 archivos en scope (umbral >12)"
+          },
+          {
+            "name": "muchos-acs",
+            "hit": false,
+            "detail": "3 ACs (umbral ≥10)"
+          },
+          {
+            "name": "codigo-nuevo-amplio",
+            "hit": false,
+            "detail": "approach=[MODIFY] + 0 files_to_create (umbral: CREATE y ≥5)"
+          },
+          {
+            "name": "multi-tanda",
+            "hit": false,
+            "detail": "bloque pipelines: — entregas en tandas con interdependencias"
+          },
+          {
+            "name": "migraciones-mas-codigo",
+            "hit": false,
+            "detail": "migración SQL + código en el mismo scope"
+          },
+          {
+            "name": "scope-firmado",
+            "hit": false,
+            "detail": "scope firmado con cliente — costo de error alto"
+          }
+        ],
+        "reason": "NORMAL común → opus (fable no paga; sonnet se queda corto en el plan)",
+        "note": "ADVISORY para el MODELO DE SESIÓN (steps 2-4 corren inline). Orquestador: compará con tu modelo real (system prompt); si NO está en recommended+also_ok → sugerí `/model <recomendado>` en 1 línea (el switch conserva sesión y marker) y seguí con lo que el user decida. NUNCA bloquea."
+      }
+    },
+    "start-heavy": {
+      "model_hint": {
+        "recommended_session_model": "fable",
+        "also_ok": [
+          "opus"
+        ],
+        "risk": "NORMAL",
+        "heavy": true,
+        "heavy_signal_count": 2,
+        "signals": [
+          {
+            "name": "superficie-grande",
+            "hit": true,
+            "detail": "13 archivos en scope (umbral >12)"
+          },
+          {
+            "name": "muchos-acs",
+            "hit": true,
+            "detail": "10 ACs (umbral ≥10)"
+          },
+          {
+            "name": "codigo-nuevo-amplio",
+            "hit": false,
+            "detail": "approach=[MODIFY] + 0 files_to_create (umbral: CREATE y ≥5)"
+          },
+          {
+            "name": "multi-tanda",
+            "hit": false,
+            "detail": "bloque pipelines: — entregas en tandas con interdependencias"
+          },
+          {
+            "name": "migraciones-mas-codigo",
+            "hit": false,
+            "detail": "migración SQL + código en el mismo scope"
+          },
+          {
+            "name": "scope-firmado",
+            "hit": false,
+            "detail": "scope firmado con cliente — costo de error alto"
+          }
+        ],
+        "reason": "NORMAL + 2 señales pesadas (superficie-grande, muchos-acs) → fable paga si evita re-loops",
+        "note": "ADVISORY para el MODELO DE SESIÓN (steps 2-4 corren inline). Orquestador: compará con tu modelo real (system prompt); si NO está en recommended+also_ok → sugerí `/model <recomendado>` en 1 línea (el switch conserva sesión y marker) y seguí con lo que el user decida. NUNCA bloquea."
+      }
+    },
+    "hint-low": {
+      "recommended_session_model": "sonnet",
+      "also_ok": [
+        "opus"
+      ],
+      "risk": "LOW",
+      "heavy": false,
+      "heavy_signal_count": 0,
+      "signals": [
+        {
+          "name": "superficie-grande",
+          "hit": false,
+          "detail": "2 archivos en scope (umbral >12)"
+        },
+        {
+          "name": "muchos-acs",
+          "hit": false,
+          "detail": "2 ACs (umbral ≥10)"
+        },
+        {
+          "name": "codigo-nuevo-amplio",
+          "hit": false,
+          "detail": "approach=[MODIFY] + 0 files_to_create (umbral: CREATE y ≥5)"
+        },
+        {
+          "name": "multi-tanda",
+          "hit": false,
+          "detail": "bloque pipelines: — entregas en tandas con interdependencias"
+        },
+        {
+          "name": "migraciones-mas-codigo",
+          "hit": false,
+          "detail": "migración SQL + código en el mismo scope"
+        },
+        {
+          "name": "scope-firmado",
+          "hit": false,
+          "detail": "scope firmado con cliente — costo de error alto"
+        }
+      ],
+      "reason": "risk LOW (superficie chica, sin firmas/SQL/paths sensibles) → sonnet alcanza; un modelo más caro acá es plata de más",
+      "note": "ADVISORY para el MODELO DE SESIÓN (steps 2-4 corren inline). Orquestador: compará con tu modelo real (system prompt); si NO está en recommended+also_ok → sugerí `/model <recomendado>` en 1 línea (el switch conserva sesión y marker) y seguí con lo que el user decida. NUNCA bloquea."
+    },
+    "hint-normal": {
+      "recommended_session_model": "opus",
+      "also_ok": [],
+      "risk": "NORMAL",
+      "heavy": false,
+      "heavy_signal_count": 0,
+      "signals": [
+        {
+          "name": "superficie-grande",
+          "hit": false,
+          "detail": "8 archivos en scope (umbral >12)"
+        },
+        {
+          "name": "muchos-acs",
+          "hit": false,
+          "detail": "3 ACs (umbral ≥10)"
+        },
+        {
+          "name": "codigo-nuevo-amplio",
+          "hit": false,
+          "detail": "approach=[MODIFY] + 0 files_to_create (umbral: CREATE y ≥5)"
+        },
+        {
+          "name": "multi-tanda",
+          "hit": false,
+          "detail": "bloque pipelines: — entregas en tandas con interdependencias"
+        },
+        {
+          "name": "migraciones-mas-codigo",
+          "hit": false,
+          "detail": "migración SQL + código en el mismo scope"
+        },
+        {
+          "name": "scope-firmado",
+          "hit": false,
+          "detail": "scope firmado con cliente — costo de error alto"
+        }
+      ],
+      "reason": "NORMAL común → opus (fable no paga; sonnet se queda corto en el plan)",
+      "note": "ADVISORY para el MODELO DE SESIÓN (steps 2-4 corren inline). Orquestador: compará con tu modelo real (system prompt); si NO está en recommended+also_ok → sugerí `/model <recomendado>` en 1 línea (el switch conserva sesión y marker) y seguí con lo que el user decida. NUNCA bloquea."
+    },
+    "hint-heavy": {
+      "recommended_session_model": "fable",
+      "also_ok": [
+        "opus"
+      ],
+      "risk": "NORMAL",
+      "heavy": true,
+      "heavy_signal_count": 2,
+      "signals": [
+        {
+          "name": "superficie-grande",
+          "hit": true,
+          "detail": "13 archivos en scope (umbral >12)"
+        },
+        {
+          "name": "muchos-acs",
+          "hit": true,
+          "detail": "10 ACs (umbral ≥10)"
+        },
+        {
+          "name": "codigo-nuevo-amplio",
+          "hit": false,
+          "detail": "approach=[MODIFY] + 0 files_to_create (umbral: CREATE y ≥5)"
+        },
+        {
+          "name": "multi-tanda",
+          "hit": false,
+          "detail": "bloque pipelines: — entregas en tandas con interdependencias"
+        },
+        {
+          "name": "migraciones-mas-codigo",
+          "hit": false,
+          "detail": "migración SQL + código en el mismo scope"
+        },
+        {
+          "name": "scope-firmado",
+          "hit": false,
+          "detail": "scope firmado con cliente — costo de error alto"
+        }
+      ],
+      "reason": "NORMAL + 2 señales pesadas (superficie-grande, muchos-acs) → fable paga si evita re-loops",
+      "note": "ADVISORY para el MODELO DE SESIÓN (steps 2-4 corren inline). Orquestador: compará con tu modelo real (system prompt); si NO está en recommended+also_ok → sugerí `/model <recomendado>` en 1 línea (el switch conserva sesión y marker) y seguí con lo que el user decida. NUNCA bloquea."
+    }
+  }
+}

@@ -344,3 +344,85 @@ test('T30u codexPieces suma los dos archivos de cada revisor que el despliegue d
   for (const id of ['rev-capa-uno.config.toml', 'agents/rev-capa-uno.toml', 'rev-capa-dos.config.toml', 'agents/rev-capa-dos.toml']) assert.ok(ids.includes(id), `${id} en ${ids.join(', ')}`);
   for (const p of TOOLS.codexPieces({ tree: root, home, env })) assert.equal(p.kind, 'codex');
 });
+
+// ── story 7.29: el modelo de la organización en lo que se despliega a Codex ─────────────────────────────────────────
+const equipoModels = (models) => JSON.stringify({
+  version: 1, public: { platform: 'github', org: 'acme', repo: 'h' }, profile: { platform: 'github', org: 'acme', repo: 'p' },
+  operations: { platform: 'github', org: 'acme', repo: 'o' }, ...(models ? { models } : {}),
+});
+/** Un árbol de juguete con las equivalencias reales, el lector de team-repos y un revisor del núcleo en `opus`. */
+function treeConModelos(name, teamRepos, eqModels) {
+  const root = toyTree(casa(name), { team: ['rev-capa-uno'], manifest: ['rev-version', 'tycon-spec-first-checker'] });
+  const eq = JSON.parse(fs.readFileSync(path.join(ROOT, 'build', 'equivalences.json'), 'utf8'));
+  if (eqModels) eq.models = eqModels;
+  write(path.join(root, 'build', 'equivalences.json'), JSON.stringify(eq, null, 2));
+  write(path.join(root, 'agents', 'tycon-spec-first-checker.md'), agentMd('tycon-spec-first-checker', { model: 'opus' }));
+  write(path.join(root, 'scripts', 'lib', 'team-repos.js'), fs.readFileSync(path.join(ROOT, 'scripts', 'lib', 'team-repos.js'), 'utf8'));
+  if (teamRepos !== undefined) write(path.join(root, 'team-repos.json'), teamRepos);
+  return root;
+}
+const modelLine = (toml) => (toml.match(/^model = (.*)$/m) || [])[1] || null;
+
+test('T24 Codex_DespliegueConModeloDeLaOrganizacion @story-7.29 @ac-16', () => {
+  const models = { reviewers: 'haiku', reviewer: { 'tycon-spec-first-checker': 'opus' }, mandatory_ceiling: true, ceiling: 'sonnet' };
+  const root = treeConModelos('org', equipoModels(models));
+  // el núcleo: lo que se despliega es la traducción con el modelo resuelto (la misma función que --deploy y --deploy-only)
+  for (const [n, slug] of [['rev-version', '"gpt-5.4-mini"'], ['tycon-spec-first-checker', '"gpt-5.6-luna"']]) {
+    const g = GEN.generateOne(root, n);
+    const org = GEN.orgCodexModel(root, n);
+    assert.equal(org.declared, true);
+    assert.equal(modelLine(GEN.deployedContent(g.toml, org)), slug, `${n} (perfil)`);
+    assert.equal(modelLine(GEN.deployedContent(g.nativeToml, org)), slug, `${n} (nativo)`);
+  }
+  // la capa del equipo: deployTeam escribe con el modelo resuelto
+  const home = casa('home-org');
+  const codex = path.join(home, '.codex');
+  GEN.deployTeam({ root, codexHome: codex, recordFile: TOOLS.codexTeamRecordPath({ home }) });
+  assert.equal(modelLine(fs.readFileSync(path.join(codex, 'agents', 'rev-capa-uno.toml'), 'utf8')), '"gpt-5.4-mini"');
+  assert.equal(modelLine(fs.readFileSync(path.join(codex, 'rev-capa-uno.config.toml'), 'utf8')), '"gpt-5.4-mini"');
+  // sin models, y con el archivo ilegible: byte a byte lo de hoy (el ilegible, con la línea)
+  for (const [nombre, texto] of [['sin', equipoModels(null)], ['ilegible', '{ roto']]) {
+    const r = treeConModelos(nombre, texto);
+    const g = GEN.generateOne(r, 'rev-version');
+    const org = GEN.orgCodexModel(r, 'rev-version');
+    assert.equal(org.declared, false, nombre);
+    assert.equal(GEN.deployedContent(g.toml, org), g.toml, nombre);
+    if (nombre === 'ilegible') assert.ok(org.lines.some((l) => /no pude leer la configuración de la organización/.test(l)), org.lines.join('\n'));
+    const h = casa(`home-${nombre}`);
+    GEN.deployTeam({ root: r, codexHome: path.join(h, '.codex'), recordFile: TOOLS.codexTeamRecordPath({ home: h }) });
+    assert.equal(fs.readFileSync(path.join(h, '.codex', 'agents', 'rev-capa-uno.toml'), 'utf8'), GEN.generateOne(r, 'rev-capa-uno').nativeToml, nombre);
+  }
+});
+
+test('T25 Codex_SinEquivalente_SinLineaDeModelo @story-7.29 @ac-17', () => {
+  const sinHaiku = { opus: 'gpt-5.6-terra', sonnet: 'gpt-5.6-luna', fable: 'gpt-5.6-sol' };
+  const root = treeConModelos('sin-haiku', equipoModels({ reviewers: 'haiku' }), sinHaiku);
+  const org = GEN.orgCodexModel(root, 'rev-version');
+  assert.equal(org.declared, true);
+  assert.equal(org.slug, null);
+  assert.ok(org.lines.some((l) => /el modelo haiku de rev-version no tiene equivalente en Codex/.test(l)), org.lines.join('\n'));
+  const g = GEN.generateOne(root, 'rev-version');
+  for (const toml of [GEN.deployedContent(g.toml, org), GEN.deployedContent(g.nativeToml, org)]) {
+    assert.equal(modelLine(toml), null, 'sin la línea model =');
+    const lines = toml.split('\n');
+    const primeraTabla = lines.findIndex((l) => /^\s*\[/.test(l));
+    const sueltas = lines.map((l, i) => [l, i]).filter(([l]) => /^[A-Za-z_][\w.-]*\s*=/.test(l)).map(([, i]) => i);
+    assert.ok(primeraTabla < 0 || sueltas.filter((i) => i < primeraTabla).length > 0, 'las claves sueltas siguen antes de las tablas');
+  }
+  // withCodexModel directo: reemplaza la línea, la saca con null, y no toca una `model =` de una tabla
+  const conTabla = 'model = "viejo"\nsandbox_mode = "read-only"\n\n[mcp_servers.x]\nmodel = "de-la-tabla"\n';
+  assert.equal(GEN.withCodexModel(conTabla, 'nuevo'), 'model = "nuevo"\nsandbox_mode = "read-only"\n\n[mcp_servers.x]\nmodel = "de-la-tabla"\n');
+  assert.equal(GEN.withCodexModel(conTabla, null), 'sandbox_mode = "read-only"\n\n[mcp_servers.x]\nmodel = "de-la-tabla"\n');
+  assert.equal(GEN.withCodexModel('sandbox_mode = "x"\n', 'nuevo'), 'sandbox_mode = "x"\n', 'sin línea de modelo no inventa una');
+  // un árbol sin el lector de team-repos y con el archivo: lo dice
+  const sinLector = treeConModelos('sin-lector', equipoModels({ reviewers: 'haiku' }));
+  fs.rmSync(path.join(sinLector, 'scripts', 'lib', 'team-repos.js'));
+  const o = GEN.orgCodexModel(sinLector, 'rev-version');
+  assert.equal(o.declared, false);
+  assert.ok(o.lines.some((l) => /no pude leer la configuración de la organización.*no trae su lector/.test(l)), o.lines.join('\n'));
+  // el despliegue de la capa lo dice
+  const home = casa('home-sin-haiku');
+  const r = GEN.deployTeam({ root, codexHome: path.join(home, '.codex'), recordFile: TOOLS.codexTeamRecordPath({ home }) });
+  assert.ok(r.lines.some((l) => /no tiene equivalente en Codex/.test(l)), r.lines.join('\n'));
+  assert.equal(modelLine(fs.readFileSync(path.join(home, '.codex', 'agents', 'rev-capa-uno.toml'), 'utf8')), null);
+});

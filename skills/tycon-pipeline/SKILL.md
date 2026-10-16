@@ -56,7 +56,7 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
 1. **Índice antes que agente**: con `.codegraph/`, *dónde está X / quién llama a Y / qué rompe Z* se
    contesta con `codegraph_*`. No se spawnea un agente de búsqueda en un repo indexado.
 2. **Ningún agente arranca en cero**: recibe el material masticado (digest de la story, archivos, convenciones).
-3. **Modelo por tarea**: buscar/listar/explorar → `model: 'haiku'`; juzgar/diseñar → el de la sesión.
+3. **Modelo por tarea**: buscar → `models.helpers` de `start` (o `haiku`); juzgar → el de la sesión.
 4. **Tope por fase**: >5 agentes ad-hoc en una fase → parar y justificar (`on-advisor-run.js` avisa;
    `TYCON_ADHOC_SPAWN_WARN`, apagable con `TYCON_SPAWN_GOVERNANCE=0`).
 
@@ -99,8 +99,8 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
     repetirla después de arreglar (`snapshot-iter` se niega o conserva). Sólo sin aviso, a mano ANTES de
     tocar código: `marker.js snapshot-iter <N>` (o `--date-at-last-reviewer`). Un `delta_files: []`
     en un re-loop = foto mal fechada; con `suspect_late_snapshot: true` el delta ya se recalculó.
-  - **Model hints en re-loops (mandatory)**: pasar `model: <hint>` de `reloop_model_hints` a cada
-    `Agent()`, salvo que el delta toque specs (Opus justificado, anunciarlo) o `--cost-tier deep`.
+  - **Model hints en re-loops (mandatory)**: pasar `model:` de `reviewer_models` (o `reloop_model_hints`) a
+    cada `Agent()`, salvo que el delta toque specs (`first_round`, anunciarlo) o `--cost-tier deep`.
   - **D.i.2 — cerrá la CLASE**: un finding de clase (mismo hazard en varios sitios) se cierra en TODOS los
     sitios en un batch antes del re-loop; si el reporte trae un solo sitio, pedir el barrido.
   - **D.i.3 — gating**: re-loop por CRITICAL o WARNING dentro del diff de la story; un WARNING de
@@ -143,10 +143,10 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
 - **TOOL.i**: tooling esperado y ausente se AVISA en 1 línea: binario presente → su CLI vía Bash para este
   run + cómo levantar el MCP; sin binario → acción de instalación y recién ahí degradar. Sin la tool
   `Workflow` → preguntar "¿sigo sin el pase adversarial?". Lista: `pipeline.js tooling-expected`.
-- **H.iii — model/effort hint**: `pipeline.js start` trae `model_hint` (LOW → sonnet · NORMAL → opus ·
-  NORMAL + ≥2 señales pesadas → fable) y el effort (LOW → medium · NORMAL → high · pesada → xhigh; `max`
-  nunca automático). Si el modelo real no matchea, sugerir `/model` en 1 línea, en ambas direcciones.
-  Advisory; nunca bloquea.
+- **H.iii — model/effort hint**: `pipeline.js start --session-model <el de la sesión>` trae `model_hint`
+  (LOW → sonnet · NORMAL → opus · pesada → fable, o la de la org.) y el effort (tabla en PIPE-C8;
+  `max` nunca automático). Si no matchea, sugerir `/model` en 1 línea;
+  `session_check` avisa del techo. Advisory; nunca bloquea.
 - **I.i — ATDD con gate mecánico**: los tests se escriben ANTES del código. `on-atdd-preedit.js` deniega
   el primer Edit/Write de código si no se tocó ningún test (story con tabla `### Tests`, marker activo,
   implementación abierta); `complete-step 4` bloquea si el primer test es posterior al primer código (evidencia:

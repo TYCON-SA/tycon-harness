@@ -275,9 +275,38 @@ function main() {
   }
 
   if (process.env.TYCON_SPAWN_GOVERNANCE === '0') return;
-  if (!ADHOC.has(advisor)) return;
+
+  // ── El techo de la organización (story 7.29, decisión 20) ─────────────────
+  // En Claude el techo lo cumple el modelo que da el pipeline; si un lanzamiento lo pasa (con `model:` o, sin él, el
+  // `model:` de su `.md` instalado), se AVISA: no se frena ni se cambia el pedido. Vale para cualquier agente (revisor
+  // o ad hoc), por eso va antes del corte por tipo. En Codex no: el modelo ya se recortó al desplegar, y
+  // `tool_input.model` no viene (leer el `.md` daría un aviso falso). La configuración, por el mismo lector que el
+  // pipeline (orgModels → readOrgModels), nunca por cuenta propia.
+  let org = null;
+  let notaTecho = null;
+  if (event.tool_name !== 'collaborationspawn_agent') {
+    try {
+      org = require('./pipeline.js').orgModels();
+      // la configuración no se pudo leer: el techo no se controla en este lanzamiento, y se dice (no es «sin techo»)
+      if (org && org.problem) notaTecho = `${org.problem}; el techo de la organización no se controla en este lanzamiento`;
+      if (org && org.declared) {
+        const M = require('./lib/models.js');
+        const techo = M.ceilingOf(org.data);
+        const usa = model || M.frontmatterModel(advisor);
+        if (techo && M.isModel(usa) && M.rank(usa) > M.rank(techo)) notaTecho = `este lanzamiento usa ${usa}, por encima del techo de la organización (${techo})`;
+      }
+    } catch { org = null; }
+  }
+
+  if (!ADHOC.has(advisor)) {
+    if (notaTecho) {
+      try { process.stdout.write(JSON.stringify({ systemMessage: `[tycon-pipeline] lanzamiento \`${advisor}\`: ${notaTecho}` })); } catch { /* nunca romper el spawn */ }
+    }
+    return;
+  }
 
   const notes = [];
+  if (notaTecho) notes.push(notaTecho);
 
   // ── Aviso (a) — hay índice de código local ────────────────────────────────
   let hasCodegraph = false;
@@ -318,7 +347,15 @@ function main() {
     );
   }
   if (!model && (hasCodegraph || pasoUmbral)) {
-    notes.push('este spawn no declara `model:` — para buscar/explorar alcanza uno barato');
+    // con la configuración de la organización, el modelo de los ayudantes (story 7.29, AC 9)
+    let barato = 'uno barato';
+    if (org && org.declared) {
+      try {
+        const h = require('./lib/models.js').resolveHelpers({ org: org.data });
+        barato = `\`${h.model}\` (${h.origin === 'default' ? 'valor de hoy' : 'configuración de la organización'})`;
+      } catch { /* queda el texto de hoy */ }
+    }
+    notes.push(`este spawn no declara \`model:\` — para buscar/explorar alcanza ${barato}`);
   }
 
   if (!notes.length) return;

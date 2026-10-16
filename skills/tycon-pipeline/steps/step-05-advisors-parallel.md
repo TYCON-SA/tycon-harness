@@ -181,6 +181,13 @@ cierra la máquina de estados del pipeline.
 > fallback) emite **`reloop_model_hints`**: advisors tier deep (Opus) → **pasar
 > `model: sonnet` al Agent() es MANDATORY** — única excepción: el delta toca specs
 > (anunciarlo). Persiste `expected=rerun` en el log (coherente con `check-count`).
+> **Con `reviewer_models` en la salida** (la organización declaró `team-repos.json → models`, o el dev
+> pidió un modelo para la corrida con `marker.js set-models`) ése es el ÚNICO campo de modelos de revisores: pasar
+> `model: reviewer_models[<revisor>].model` a CADA `Agent()`, en la primera vuelta y en las siguientes (no salen
+> `model_hints` ni `reloop_model_hints`). En las vueltas siguientes cada entrada trae `first_round` (el modelo de la
+> primera vuelta, ya recortado al techo): la excepción «el delta toca specs» usa `first_round`, nunca el frontmatter.
+> `models_warnings` (algo se bajó al techo de la organización, un pedido que no aplica) se anuncia en 1 línea;
+> `codex_note` aclara que en Codex los revisores usan el modelo con que se desplegaron.
 > Requiere la FOTO de la iteración N-1, que el arnés toma SOLA al lanzar el último revisor de
 > esa vuelta (aviso `📸`) — no hay que llamarla. Si el JSON trae `suspect_late_snapshot: true`
 > (y su aviso por stderr), esa foto se fechó después del último revisor y tapó código: el delta ya

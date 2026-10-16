@@ -16,7 +16,9 @@ si se aplicaron fixes de código tras Step 7:
    los --files se VALIDAN: paths fantasma → abort exit 2, corregir el quoting.
    --force-full-reloop si se sospecha regresión silenciosa.
    🔴 APLICAR `reloop_model_hints` del output: pasar `model: <hint>` a cada
-   Agent() — única excepción: el delta toca specs. Ver SKILL.md "Model hints".)
+   Agent() — única excepción: el delta toca specs. Ver SKILL.md "Model hints".
+   Con `reviewer_models` en el output (la organización), pasar su `model` a cada
+   Agent(); si el delta toca specs, su `first_round` (ya recortado al techo).)
 si NO hubo cambios de código:
   → continuar a Step 7c.
 ```

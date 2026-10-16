@@ -39,10 +39,9 @@ function modelMap() {
   try {
     const TCG = require('./lib/harness-path.js').rutaArnes();
     const eq = JSON.parse(fs.readFileSync(path.join(TCG, 'build', 'equivalences.json'), 'utf8'));
-    const m = Object.assign({}, eq.models);
-    // 'fable' no tiene equivalencia (asimetría declarada, diseño G Parte 5): cae al tope del mapeo
-    if (!m.fable) m.fable = m.opus || Object.values(m)[0];
-    return m;
+    // Sin reservas (story 7.29, decisión 23): un modelo que no está en equivalences.json no tiene equivalente y lo
+    // dice `slugFor`; antes `fable` caía al de `opus` y escondía la falta.
+    return Object.assign({}, eq.models);
   } catch (e) {
     // Un comando sin el arnés lo DICE (story 8.3, AC 5): el mapeo de modelos queda vacío y se sigue, pero no en silencio.
     if (e && e.name === 'RutaArnesError') process.stderr.write(`${e.message} — sin equivalences.json: el mapeo de modelos queda vacío\n`);
@@ -127,6 +126,21 @@ function spawnAgent(cmdline, prompt, cwd, timeoutMs) {
   });
 }
 
+/**
+ * El slug de Codex de un modelo (story 7.29, AC 17): un modelo de Claude se traduce con equivalences.json; uno ya
+ * traducido (un valor del mapa) pasa tal cual; sin modelo, el del pase de hoy (`DEFAULTS.adversarial.model` de
+ * lib/models.js) traducido. Sin equivalente → null: `codex exec` corre sin `-m` (el modelo por defecto de Codex) y se
+ * dice por `decir` (la salida de error).
+ */
+function slugFor(model, models, decir = (t) => process.stderr.write(`${t}\n`)) {
+  const map = models || {};
+  const pedido = model || require('./lib/models.js').DEFAULTS.adversarial.model;
+  if (map[pedido]) return map[pedido];
+  if (Object.values(map).includes(pedido)) return pedido;
+  decir(`el modelo ${pedido} no tiene equivalente en Codex: uso el modelo por defecto de Codex`);
+  return null;
+}
+
 function makeAgent(opts) {
   const models = modelMap();
   const seq = { n: 0 };
@@ -136,7 +150,7 @@ function makeAgent(opts) {
     const id = ++seq.n;
     const label = aopts.label || `agent-${id}`;
     const stub = process.env.TYCON_WFLITE_AGENT_CMD;
-    const slug = models[aopts.model] || aopts.model || models.sonnet || 'gpt-5.6-luna';
+    const slug = slugFor(aopts.model, models);
     // 🔴 Salida estructurada NATIVA de codex (medido G-3, 2026-08-22): la v1 exigía el JSON por
     // prompt y lo pescaba de stdout con un escáner de llaves balanceadas — que se rompe cuando el
     // JSON trae llaves DESBALANCEADAS dentro de strings (los `repro` con snippets de código). Los
@@ -153,7 +167,7 @@ function makeAgent(opts) {
         const res = await spawnAgent(stub.split(' '), prompt, opts.cwd, opts.timeoutMs);
         raw = res.out;
       } else {
-        const cmd = ['codex', 'exec', '--sandbox', 'workspace-write', '--skip-git-repo-check', '-m', slug, '-o', outFile];
+        const cmd = ['codex', 'exec', '--sandbox', 'workspace-write', '--skip-git-repo-check', ...(slug ? ['-m', slug] : []), '-o', outFile];
         if (schemaFile) cmd.push('--output-schema', schemaFile);
         cmd.push(prompt);
         try { fs.rmSync(outFile, { force: true }); } catch (_) {}
@@ -258,4 +272,8 @@ async function main() {
   return 0;
 }
 
-main().then((c) => process.exit(c)).catch((e) => { console.error(`workflow-lite: ${e.message}`); process.exit(1); });
+module.exports = { slugFor };
+
+if (require.main === module) {
+  main().then((c) => process.exit(c)).catch((e) => { console.error(`workflow-lite: ${e.message}`); process.exit(1); });
+}

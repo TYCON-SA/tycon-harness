@@ -439,6 +439,21 @@ contra un host de verdad en 127.0.0.1.
 
 ¿Un merge de **sólo documentación** construye, despliega y pide producción? Por qué: un pull request sin una línea de código —una story, su evidencia y la guía del tester— que entra a `main` hace que el CI compile, despliegue a staging, **suba la versión** y encole el pedido de aprobación de **producción** sin que nadie lo pida. Parchar a mano un pipeline es el arreglo en un repo con el problema en todos. 🔴 Dos causas, ninguna de un repo: `.tycon/**` en `paths.include` —por paridad y no por necesidad: ningún paso del build lee `.tycon/`, y el pipeline TYCON escribe `.tycon/runtime-waivers.jsonl` en casi toda story— y los sitios **sin filtro de rutas**, que construyen con cualquier commit (para Azure, sin filtro la raíz está incluida). El control toma el `trigger:` de push de cada pipeline **publicado** (`origin/main`, como el de paridad) y le enfrenta el juego de archivos de un merge de sólo documentación —la lista **real** de un pull request así, más lo que toca un commit de documentación en un sitio— aplicando las reglas de Azure citadas en su cabecera (raíz incluida por defecto, gana el patrón más específico, `*` no cruza carpetas); si algún archivo queda incluido, dice **por cuál y por qué patrón**, y qué cambiar. 🔴 Después la **contra-prueba**: el mismo pipeline tiene que disparar con código; un filtro que apaga todo también está roto, y sin esa mitad un `include` vacío saldría verde. `trigger: none` (producción) no se mide: lo encola el CI, así que hereda su veredicto. Un repo ausente se **dice**, no se cuenta como «no construye». Los repos salen de `product-parity.json` (los sitios entran como grupo `sitio`). Casos en `scripts/tests/trigger-without-docs.test.sh` (suite diaria). El arreglo en los repos va en un pull request por repo: sacar `.tycon/**` del include, o agregar el `paths.exclude` canónico donde no hay filtro.
 
+## skills/tycon-pipeline/scripts/lib/models.js — el modelo de cada trabajo del pipeline
+
+Los valores de hoy del modelo de cada trabajo (revisores, vueltas siguientes, pase adversarial, ayudantes sueltos y
+la sugerencia de la sesión) en un solo lugar, y su resolución con la configuración de la organización
+(`team-repos.json → models`, que valida `scripts/lib/team-repos.js`). Por qué: estaban escritos en seis lugares y
+ninguna organización podía decir «paga cada dev» o «paga la organización». 🔴 Con `mandatory_ceiling: true` nada pasa
+el `ceiling`: se baja y se avisa una vez por corrida, nunca frena. 🔴 `readOrgModels` es el **único** lector de
+`models` (pipeline, control de lanzamientos, despliegue de Codex y paridad): un archivo ilegible o un error dentro de
+`models` dan los valores de hoy **y lo dicen**; un error ahí no anula el resto de `team-repos.json` (`sectionProblems`).
+Las funciones que deciden reciben la configuración por argumento: las pruebas nunca leen la de la máquina. La sección
+de pantalla y su portón de versión llegan con la pestaña Configuración del sitio (`org-config.js`). Detalle y tabla de claves:
+`guides/harness-cost-tiering.md` §«De dónde sale cada modelo». Red: `skills/tycon-pipeline/scripts/tests/models.test.js`
+(la foto de las salidas sin configuración, T2), `team-repos.test.js` T20-T21, `harness-team-codex.test.js` T24-T25 y
+`harness-parity.test.sh` T26.
+
 ## skills/tycon-pipeline/scripts/lib/runtime-waiver.js — el registro de firmas de la matriz
 
 La única puerta para perdonar un criterio que no se puede verificar corriendo (DODRT-C6): lo aprueba el dev
