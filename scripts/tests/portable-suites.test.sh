@@ -176,6 +176,9 @@ function casaVacia() {
     // la máquina vacía tampoco tiene navegador: Chrome sin sesión se queda colgado para siempre en una HOME sin perfil
     // (medido con dashboard-runs.test.sh); el caso que lo necesita sale NO MEDIDO, no se cuelga
     TYCON_CHROME: '0',
+    // el instalador lanza de FONDO el chequeo de paridad, que en un clon deja su reporte en scripts/controls-bench/.bench/
+    // del árbol, a veces cuando la suite ya terminó: cada suite lo manda a su carpeta temporal (la foto del final lo controla)
+    TYCON_PARITY_BENCH_DIR: path.join(tmp, 'parity-bench'),
   } };
 }
 const POOL = Math.max(1, Number(process.env.TYCON_PORTABLE_PARALLEL || 4));
