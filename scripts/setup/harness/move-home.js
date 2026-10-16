@@ -377,7 +377,7 @@ function profileItem(m) {
   if (m.section === 'integrations') return m.value === 'detect' ? `${m.key} detect` : (m.value === true ? m.key : `${m.key} apagada`);
   if (k === 'update.channel') return `canal ${m.value}`;
   if (k === 'update.apply') return `aplicación ${m.value}`;
-  if (k === 'packs.default') return `paquete del stack ${m.value}`;
+  if (k === 'packs.default') return `paquete del stack ${Array.isArray(m.value) ? m.value.join(',') : m.value}`;
   if (k === 'install.profile') return `perfil ${m.value}`;
   return k;
 }

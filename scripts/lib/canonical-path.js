@@ -660,11 +660,13 @@ function linkOne(target, where, links) {
 }
 
 /** Un enlace por entrada de `src` dentro de la carpeta real `dir`. Nunca pisa lo que no es suyo. */
-function linkEntries({ dir, src, written, id, check, links, home }) {
+function linkEntries({ dir, src, written, id, check, links, home, extra = [], retire = [], retireNames = [], protect = [] }) {
   // `toAdd`/`toRemove`: los nombres que agregaría o sacaría (el plan del instalador, story 8.16 · AC 11)
   // `hard`: los que quedaron como enlace duro · `unlinked`: archivos que no se pudieron enlazar de ninguna forma
   // `registry`: por qué no se pudo leer el registro de enlaces duros (null si se leyó)
-  const out = { added: 0, removed: 0, clashes: [], failed: [], inPlace: [], toAdd: [], toRemove: [], hard: [], unlinked: [], registry: null };
+  // `extra`: las entradas de los paquetes activos ({ name, src }); `retire`: las carpetas de los paquetes que la organización
+  // no activa — un enlace suyo que apunta ahí se saca (`retired`: los nombres que salieron por eso)
+  const out = { added: 0, removed: 0, clashes: [], failed: [], inPlace: [], toAdd: [], toRemove: [], hard: [], unlinked: [], registry: null, retired: [] };
   // los enlaces duros que creó el arnés (ver «LOS ENLACES DUROS QUE CREÓ EL ARNÉS»)
   const reg = readHardLinks(home); let dirty = false;
   out.registry = reg.broken;
@@ -678,8 +680,21 @@ function linkEntries({ dir, src, written, id, check, links, home }) {
   };
   let names = [];
   try { names = fs.readdirSync(src).filter((n) => !n.startsWith('.')).sort(); } catch (_) { names = []; }
-  for (const name of names) {
-    const where = path.join(dir, name); const target = path.join(src, name);
+  // primero lo del núcleo y después lo de cada paquete activo; un nombre de paquete que el núcleo ya trae no se enlaza y se nombra
+  const targets = new Map(names.map((n) => [n, path.join(src, n)]));
+  for (const x of extra) {
+    // (los choques con el núcleo o entre paquetes ya los separa y los dice pack-pieces.js: acá no llegan)
+    if (targets.has(x.name)) { out.clashes.push(`${id}/${x.name} (del paquete ${x.pack}: ya hay una entrada con ese nombre)`); continue; }
+    targets.set(x.name, x.src);
+  }
+  const underRetire = (abs) => retire.some((r) => abs === r || abs.startsWith(r + path.sep));
+  // una entrada que el árbol ya no trae en su lugar de antes y sí dentro de un paquete inactivo (se mudó a un paquete que la
+  // organización no activa): su enlace viejo sale por colgado, y cuenta como pieza de ese paquete
+  const movedToInactive = (name) => retireNames.includes(name) && !targets.has(name);
+  // lo que apunta a una carpeta protegida (la de paquetes, con la configuración ilegible) no se saca en esta corrida
+  const isProtected = (abs) => !!abs && protect.some((r) => abs === r || abs.startsWith(r + path.sep));
+  for (const [name, target] of targets) {
+    const where = path.join(dir, name);
     // una entrada del clon que es ella misma un enlace colgado no se enlaza: el enlace nacería colgado, el barrido de
     // abajo lo sacaría en esta misma corrida y la línea «1 agregado y 1 sacado» saldría en todas
     if (!fs.existsSync(target)) continue;
@@ -710,12 +725,14 @@ function linkEntries({ dir, src, written, id, check, links, home }) {
   for (const rec of reg.links.slice()) {
     if (path.dirname(rec.where) !== path.dirname(dirKey)) continue;
     const name = path.basename(rec.where);
-    if (fs.existsSync(path.join(src, name))) continue;   // sigue en el clon: lo vio el bucle de arriba
+    if (targets.has(name) && fs.existsSync(targets.get(name))) continue;   // sigue en el clon: lo vio el bucle de arriba
     if (!under(rec.target, written.map((w) => real(w) || path.resolve(w)))) continue;   // de otro clon
+    if (isProtected(rec.target)) continue;
     const where = path.join(dir, name);
     if (!sameId(rec.id, fileId(where))) { if (!check) drop(where); continue; }
-    if (check) { out.removed++; out.toRemove.push(name); continue; }
-    try { fs.unlinkSync(where); drop(where); out.removed++; } catch (err) { out.failed.push({ name: `${id}/${name}`, why: (err && (err.code || err.message)) || 'error' }); }
+    const isPack = underRetire(rec.target) || movedToInactive(name);
+    if (check) { out.removed++; out.toRemove.push(name); if (isPack) out.retired.push(name); continue; }
+    try { fs.unlinkSync(where); drop(where); out.removed++; if (isPack) out.retired.push(name); } catch (err) { out.failed.push({ name: `${id}/${name}`, why: (err && (err.code || err.message)) || 'error' }); }
   }
   if (dirty && !check && !reg.broken) {
     try { writeHardLinks(home, reg.links); }
@@ -727,11 +744,18 @@ function linkEntries({ dir, src, written, id, check, links, home }) {
   for (const name of mine) {
     const where = path.join(dir, name);
     const e = estadoEnlace({ enlace: where });
+    // un enlace suyo a un paquete que la organización ya no activa: se saca el NOMBRE (el paquete sigue en el árbol)
+    if (e.estado === 'enlace' && e.destino && !targets.has(name) && (underRetire(path.resolve(dir, e.destino)) || (e.destinoReal && underRetire(e.destinoReal)))) {
+      if (check) { out.removed++; out.toRemove.push(name); out.retired.push(name); continue; }
+      try { borrarEnlace(where); out.removed++; out.retired.push(name); } catch (err) { out.failed.push({ name: `${id}/${name}`, why: (err && (err.code || err.message)) || 'error' }); }
+      continue;
+    }
     if (e.estado !== 'colgado' || !e.destino) continue;
     const abs = path.resolve(dir, e.destino);
     if (!written.some((w) => abs.startsWith(w + path.sep))) continue;
-    if (check) { out.removed++; out.toRemove.push(name); continue; }
-    try { borrarEnlace(where); out.removed++; } catch (err) { out.failed.push({ name: `${id}/${name}`, why: (err && (err.code || err.message)) || 'error' }); }
+    if (isProtected(abs)) continue;
+    if (check) { out.removed++; out.toRemove.push(name); if (movedToInactive(name)) out.retired.push(name); continue; }
+    try { borrarEnlace(where); out.removed++; if (movedToInactive(name)) out.retired.push(name); } catch (err) { out.failed.push({ name: `${id}/${name}`, why: (err && (err.code || err.message)) || 'error' }); }
   }
   return out;
 }
@@ -984,6 +1008,9 @@ function ensureRepoLinks({ clone, home, check = false, only = null, links = null
   const pref = check ? '(--check) ' : '';
   const say = (l) => out.lines.push(`${pref}${l}`);
   const clashes = [];
+  const packs = packEntries({ tree: c, given, home });
+  for (const l of packs.lines) say(l);
+  const retired = [];
   for (const L of REPO_LINKS) {
     if (only === 'agent-skills' && L.id !== 'agent-skills') continue;
     if (only === 'entries' && !L.entries) continue;
@@ -1018,7 +1045,8 @@ function ensureRepoLinks({ clone, home, check = false, only = null, links = null
         && isDir(before.destinoReal) && !L.valid(before.destinoReal);
       // (con --check y la carpeta ausente o colgada, el plan es el de la carpeta real que se crearía: un enlace por entrada)
       if ((before.estado === 'carpeta' || own || (check && born)) && L.entries) {
-        const r = linkEntries({ dir: where, src: dest, written: [dest, path.join(given, L.sub)], id: L.id, check, links, home });
+        const r = linkEntries({ dir: where, src: dest, written: [dest, path.join(given, L.sub), ...packs.written[L.sub]], id: L.id, check, links, home, extra: packs.extra[L.sub], retire: packs.retire[L.sub], retireNames: packs.retireNames[L.sub], protect: [...packs.protect, ...packs.protect.map((d) => real(d)).filter(Boolean)] });
+        for (const n of r.retired) retired.push(`${L.id}/${n}`);
         if (r.added || r.removed) {
           const what = born ? `creada como carpeta tuya${dangling ? ` en lugar del enlace colgado (→ ${dangling})` : ''} (lo que pongas ahí no se pierde con una actualización)` : own ? `es un enlace a una carpeta propia (${before.destinoReal}), no lo muevo` : 'es una carpeta real, no la piso';
           const hard = r.hard.length ? `; ${r.hard.length} como enlace(s) duro(s) (${r.hard.join(', ')}): Windows no dejó crear el enlace de archivo, que pide el modo desarrollador` : '';
@@ -1051,6 +1079,52 @@ function ensureRepoLinks({ clone, home, check = false, only = null, links = null
     }
   }
   if (clashes.length) say(`⚠️ tycon: ya existen en ~/.claude y no son de este clon, no las piso: ${clashes.join(', ')} (las del clon con ese nombre no se ven)`);
+  if (retired.length) {
+    const PP = require('./pack-pieces.js');
+    const from = [...new Set(retired.map((r) => packs.owner[r]).filter(Boolean))];
+    say(`✓ tycon: ${PP.retiredLine({ check, count: retired.length, packs: from.length ? from : packs.inactive, pieces: retired, value: packs.value, origin: packs.origin })}`);
+  }
+  return out;
+}
+
+/**
+ * Las entradas de los paquetes del árbol para los enlaces por entrada (story 8.41): `extra[skills|agents]` (las de los
+ * paquetes que activa la organización), `retire[...]` (las carpetas de los que no activa: un enlace del arnés que apunta
+ * ahí se saca), `written[...]` (las carpetas de todos: un enlace suyo colgado ahí se limpia) y las líneas para decir. Si
+ * no se puede saber qué activa la organización, no se agrega ni se saca nada de ningún paquete (y se dice).
+ */
+function packEntries({ tree, given, home }) {
+  const PP = require('./pack-pieces.js');
+  // `owner`: de qué paquete inactivo es cada entrada (`skills/<n>` → paquete), para nombrar en la línea sólo los que perdieron algo
+  // `protect`: carpetas en las que esta corrida no saca nada (la configuración no se pudo leer)
+  const out = { extra: { skills: [], agents: [] }, retire: { skills: [], agents: [] }, retireNames: { skills: [], agents: [] }, owner: {}, written: { skills: [], agents: [] }, protect: [], inactive: [], lines: [], value: null, origin: null };
+  // la carpeta de paquetes entera es del arnés: un enlace suyo que quedó colgando ahí (un paquete que se borró del árbol,
+  // o todos) se limpia como uno del núcleo
+  const roots = [PP.packsDirOf(tree), PP.packsDirOf(given)].filter((d, i, a) => a.indexOf(d) === i);
+  out.written.skills.push(...roots); out.written.agents.push(...roots);
+  const { packs, errores } = PP.listPacks(PP.packsDirOf(tree));
+  if (!packs.length && !errores.length) return out;
+  const dirs = (p, campo) => [p[campo], p[campo] && path.join(given, path.relative(tree, p[campo]))].filter(Boolean);
+  for (const e of errores) out.lines.push(`⚠️ tycon: el paquete ${e.archivo} está roto (${e.motivo}): sus skills y agentes no se enlazan`);
+  const org = PP.orgActive({ tree, home: home || os.homedir() });
+  if (org.error) {
+    out.lines.push(`⚠️ tycon: ${org.error} — no agrego ni saco skills ni agentes de ningún paquete hasta que se arregle`);
+    out.protect.push(...roots);
+    return out;
+  }
+  out.value = org.value; out.origin = org.origin;
+  const pieces = PP.piecesOf({ packsDir: PP.packsDirOf(tree), agentsDir: path.join(tree, 'agents'), coreSkillsDir: path.join(tree, 'skills'), names: org.names });
+  for (const e of pieces.errores) if (!errores.some((x) => x.archivo === e.archivo && x.motivo === e.motivo)) out.lines.push(`⚠️ tycon: ${e.archivo}: ${e.motivo}`);
+  out.extra.skills = pieces.skills; out.extra.agents = pieces.agents;
+  for (const p of packs.filter((x) => !org.names.includes(x.name))) {
+    out.inactive.push(p.name);
+    out.retire.skills.push(...dirs(p, 'skillsDir')); out.retire.agents.push(...dirs(p, 'agentsDir'));
+    const names = (d) => { try { return fs.readdirSync(d).filter((n) => !n.startsWith('.')); } catch (_) { return []; } };
+    for (const [side, d] of [['skills', p.skillsDir], ['agents', p.agentsDir]]) {
+      if (!d) continue;
+      for (const n of names(d)) { out.retireNames[side].push(n); out.owner[`${side}/${n}`] = p.name; }
+    }
+  }
   return out;
 }
 

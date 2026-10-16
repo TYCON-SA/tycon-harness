@@ -127,8 +127,8 @@ function askIntegrations({ offered, read, write }) {
   return { names: null };
 }
 
-/** La pregunta del paquete del stack (un sí o no), con la alternativa por repo dicha en la pregunta. */
-const PACKS_QUESTION = '¿Usás el paquete del stack en todos tus repos? Si no, cada repo lo pide con `packs: [bizuit]` en su .tycon/advisors.yaml. [s/N] ';
+/** La pregunta de los paquetes (un sí o no): qué activa la organización. Un repo sólo puede achicar esa lista, no sumar. */
+const PACKS_QUESTION = '¿Usás el paquete del stack en todos tus repos (sus skills y sus revisores)? Lo que actives acá vale para todos; un repo puede achicar la lista con `packs: [bizuit]` en su .tycon/advisors.yaml, no sumar. Para elegir algunos paquetes: --packs <a,b>. [s/N] ';
 
 /** `--integrations <lista|none>`: `{ names }` o `{ error }` nombrando las válidas. */
 function checkIntegrationsOption(value, keys) {
@@ -139,17 +139,26 @@ function checkIntegrationsOption(value, keys) {
   return { names: p.names };
 }
 
-/** `--packs <all|none>`: `{ value }` o `{ error }`. */
-function checkPacksOption(value) {
+/** `--packs <all|none|a,b>`: `{ value }` (`all`, `none` o la lista) o `{ error }`. La regla es la del lector. */
+function checkPacksOption(value, installed = null) {
   if (value === undefined || value === null) return null;
-  const v = String(value).trim();
-  if (!['all', 'none'].includes(v)) return { error: `--packs «${v}»: tiene que ser all o none` };
-  return { value: v };
+  const p = require('../../lib/tycon-config.js').paquetesDeTexto(value);
+  if (p.motivo) return { error: `--packs ${p.motivo}` };
+  // una lista nombra paquetes de la versión que se instala (`installed`): uno que no trae es un error de tipeo, no un pedido
+  const missing = Array.isArray(p.valor) && Array.isArray(installed) ? p.valor.filter((n) => !installed.includes(n)) : [];
+  if (missing.length) return { error: `--packs ${String(value).trim()}: ${missing.map((n) => `«${n}»`).join(', ')} no es un paquete de esta versión (trae: ${installed.join(', ') || 'ninguno'}); tiene que ser all, none o una lista de ellos` };
+  return { value: p.valor };
 }
+/** El valor de `packs.default` en una línea (`all`, `none` o `a,b`), como se escribe en `--packs`. */
+const packsText = (v) => (Array.isArray(v) ? v.join(',') : String(v));
+/** ¿Dos valores de `packs.default` dicen lo mismo? Una lista es un conjunto: el orden no cambia qué se activa. */
+const samePacks = (a, b) => (Array.isArray(a) && Array.isArray(b)
+  ? a.length === b.length && a.every((n) => b.includes(n))
+  : packsText(a) === packsText(b));
 
 /** La línea que `install` deja cuando no preguntó las integraciones (decisión del dueño, 2026-10-05): cómo cambiar el perfil
  *  y las integraciones después. Una sola línea. */
-const CHANGE_HINT = `para cambiar el perfil o las integraciones: node ~/.claude/${PLACE.PLACE_NAME}/scripts/setup/harness.js install --profile minimal|full --integrations <lista|none> --packs all|none (o tycon-config.js set <clave> <valor>)`;
+const CHANGE_HINT = `para cambiar el perfil o las integraciones: node ~/.claude/${PLACE.PLACE_NAME}/scripts/setup/harness.js install --profile minimal|full --integrations <lista|none> --packs all|none|<a,b> (o tycon-config.js set <clave> <valor>)`;
 
 /** Cómo se dice el origen de un valor de la configuración, para una persona. */
 /**
@@ -194,12 +203,12 @@ function configLines(config, over = {}, order = []) {
   const packs = over['packs.default'] ? over['packs.default'] : { value: (v.packs || {}).default || 'none', via: originLabel(o['packs.default'], vars['packs.default'], machineFile) };
   return [
     `integraciones: ${on.length ? on.join(', ') : 'ninguna prendida'}${off.length ? ` · apagadas: ${off.join(', ')}` : ''}`,
-    `paquete del stack por defecto: ${packs.value} (${packs.via})`,
+    `paquete del stack por defecto: ${packsText(packs.value)} (${packs.via})`,
   ];
 }
 
 module.exports = {
   PROFILES, ASK_PROFILE, ASK_INTEGRATIONS, PACKS_QUESTION, MAX_TRIES, CHANGE_HINT,
   profileCounts, profileLines, parseProfile, askProfile, offeredIntegrations, parseIntegrations, askIntegrations,
-  checkIntegrationsOption, checkPacksOption, originLabel, configLines,
+  checkIntegrationsOption, checkPacksOption, packsText, samePacks, originLabel, configLines,
 };

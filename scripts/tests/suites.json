@@ -307,6 +307,18 @@
       ]
     },
     {
+      "__nota": "story 8.41 (T1-T10, T33): el paquete se activa por organización — packs.default con lista en los dos lectores, las carpetas propias del paquete, los enlaces de la máquina que siguen a lo activo, el freno del repo que nombra un paquete no activado y la sección «Paquetes» de la configuración.",
+      "raiz": "arnes",
+      "ruta": "tests/pack-pieces.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.41 (T34): ningún repo pierde un revisor cuando los revisores cambian de lugar — package-equivalence.js per-repo sobre repos de juguete (la medición sobre los repos reales corre a pedido con PACKS_PER_REPO_REAL=1).",
+      "raiz": "arnes",
+      "ruta": "tests/packs-per-repo.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.5.1 (pase adversarial): la sanadora del clon del arnés (lib/guides-heal.js) destraba un DU + UU de autostash y su consejo a mano se CORRE y funciona; hasta entonces no tenía pruebas propias.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/guides-heal.test.js",

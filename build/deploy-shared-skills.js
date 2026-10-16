@@ -22,25 +22,39 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-function deploySkills(srcDir, dstDir) {
-  const actions = { linked: [], kept: 0, cleaned: [], skipped: [] };
+/**
+ * `packs` (story 8.41): `{ root, extra: [{ name, src }], retire: [carpetas] }` — las skills de los paquetes que activa la
+ * organización se enlazan igual que las del núcleo; un enlace nuestro a un paquete que dejó de estar activo se saca.
+ * `root` es la carpeta de paquetes del clon: un enlace que apunta ahí también es nuestro.
+ */
+function deploySkills(srcDir, dstDir, packs = null) {
+  // `clashes`: skills de un paquete que no se enlazan porque el núcleo trae una con el mismo nombre
+  const actions = { linked: [], kept: 0, cleaned: [], skipped: [], clashes: [] };
   if (!fs.existsSync(srcDir)) return { actions, error: `no existe ${srcDir}` };
   fs.mkdirSync(dstDir, { recursive: true });
+  const under = (t, d) => t === d || t.startsWith(d + path.sep);
   const ours = (p) => {
-    try { return fs.readlinkSync(p).startsWith(srcDir + path.sep) || fs.readlinkSync(p) === srcDir; }
+    try { const t = fs.readlinkSync(p); return under(t, srcDir) || (!!packs && !!packs.root && under(t, packs.root)); }
     catch (_) { return false; } // no es symlink → del dev, intocable
   };
-  // limpiar symlinks propios muertos o renombrados
+  // lo que se enlaza: las del núcleo y, sin pisarlas, las de los paquetes activos
+  const sources = new Map();
+  for (const name of fs.readdirSync(srcDir)) sources.set(name, path.join(srcDir, name));
+  for (const x of (packs && packs.extra) || []) {
+    if (sources.has(x.name)) { actions.clashes.push(`${x.name} (del paquete ${x.pack})`); continue; }
+    sources.set(x.name, x.src);
+  }
+  // limpiar symlinks propios muertos, renombrados o de un paquete que la organización ya no activa
   for (const name of fs.readdirSync(dstDir)) {
     const p = path.join(dstDir, name);
     let st; try { st = fs.lstatSync(p); } catch (_) { continue; }
     if (!st.isSymbolicLink() || !ours(p)) continue;
-    const target = path.join(srcDir, name);
-    if (!fs.existsSync(target)) { fs.unlinkSync(p); actions.cleaned.push(name); }
+    const target = sources.get(name);
+    const retired = !!packs && (packs.retire || []).some((d) => under(fs.readlinkSync(p), d));
+    if (!target || !fs.existsSync(target) || retired) { fs.unlinkSync(p); actions.cleaned.push(name); }
   }
   // crear/actualizar un symlink por skill del clon
-  for (const name of fs.readdirSync(srcDir)) {
-    const src = path.join(srcDir, name);
+  for (const [name, src] of sources) {
     // stat (no lstat): seguir symlinks válidos del clon; los ROTOS (target muerto) se saltean
     // — el clon real los tiene (p.ej. accessibility, 2026-08-22) y statSync tira ENOENT.
     let stSrc = null; try { stSrc = fs.statSync(src); } catch (_) { continue; }
@@ -120,7 +134,7 @@ function main() {
   const src = require(path.join(__dirname, '..', 'scripts', 'lib', 'skills-dir.js')).resolveInstalledSkillsDirs().skills;
   const dst = path.join(process.env.CODEX_HOME || path.join(os.homedir(), '.codex'), 'skills');
   if (process.argv.includes('--dry-run')) { console.log(`deploy-shared-skills: ${src} → ${dst} (dry-run)`); return 0; }
-  const { actions, error } = deploySkills(src, dst);
+  const { actions, error } = deploySkills(src, dst, packSkills(path.dirname(src)));
   if (error) {
     // A stderr y exit 1: "no encontré el clon de agent-skills" es un despliegue FALLIDO, no un
     // "nada que hacer" — con exit 0 el instalador no puede enterarse, y una máquina Codex sin
@@ -129,8 +143,30 @@ function main() {
     return 1;
   }
   console.log(`deploy-shared-skills: +${actions.linked.length} nuevas · ${actions.kept} al día · ${actions.cleaned.length} limpiadas · ${actions.skipped.length} del dev respetadas → ${dst}`);
+  if (actions.clashes.length) console.log(`deploy-shared-skills: no enlazo ${actions.clashes.join(', ')}: el núcleo trae una skill con ese nombre`);
   return 0;
 }
 
-module.exports = { deploySkills, linkState };
+/** Las skills de los paquetes del clon `tree` para `deploySkills` (null si el clon no trae paquetes o no se sabe qué activa
+ *  la organización: entonces no se agrega ni se saca nada de ningún paquete). */
+function packSkills(tree) {
+  const lib = path.join(tree, 'scripts', 'lib', 'pack-pieces.js');
+  if (!fs.existsSync(lib)) return null;
+  const PP = require(lib);
+  const root = PP.packsDirOf(tree);
+  const { packs, errores } = PP.listPacks(root);
+  // un paquete roto se dice: sus skills no se enlazan, y eso no es «sin paquetes»
+  for (const e of errores) console.error(`deploy-shared-skills: el paquete ${e.archivo} está roto (${e.motivo}): sus skills no se enlazan`);
+  if (!packs.length) return null;
+  const org = PP.orgActive({ tree });
+  if (org.error) { console.error(`deploy-shared-skills: ${org.error} — no agrego ni saco skills de ningún paquete`); return null; }
+  const pz = PP.piecesOf({ packsDir: root, names: org.names });
+  // un nombre repetido (entre dos paquetes o con el núcleo) no se enlaza dos veces: se dice cuál quedó afuera
+  for (const e of pz.errores) if (!errores.some((x) => x.archivo === e.archivo && x.motivo === e.motivo)) console.error(`deploy-shared-skills: ${e.archivo}: ${e.motivo}`);
+  const { skills } = pz;
+  const retire = packs.filter((p) => !org.names.includes(p.name) && p.skillsDir).map((p) => p.skillsDir);
+  return { root, extra: skills, retire };
+}
+
+module.exports = { deploySkills, linkState, packSkills };
 if (require.main === module) process.exit(main());

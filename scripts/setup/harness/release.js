@@ -1862,8 +1862,12 @@ function update(ctx, state, H, { mode = 'apply', log = null, snapshot = null, ye
   for (const l of moved.lines) if (log) log(`update: ${l}`);
   // lo que la mudanza y kept- tienen que decir viaja también como aviso: el arranque con aplicación automática muestra sólo la
   // primera línea y manda el resto al registro, y la mudanza no se repite (pase adversarial de la A2c, clase 15)
-  const dataNotice = [...(sw.kept || []), ...moved.lines].join(' · ') || null;
-  return { status: 'applied', code: 0, lines: [`arnés ${before} → ${t.version}`, ...tp.notes, ...teamLines, ...(sw.kept || []), ...moved.lines], from: before, to: t.version, backup: snap && snap.dir ? snap.dir : null, dataNotice };
+  // las skills y agentes de un paquete que la organización no activa y el aplicador sacó: se dicen, en una línea
+  const packLine = typeof H.packRetiredLine === 'function' ? H.packRetiredLine(a) : null;
+  const packLines = packLine ? [packLine] : [];
+  if (packLine && log) log(`update: ${packLine}`);
+  const dataNotice = [...(sw.kept || []), ...moved.lines, ...packLines].join(' · ') || null;
+  return { status: 'applied', code: 0, lines: [`arnés ${before} → ${t.version}`, ...tp.notes, ...teamLines, ...(sw.kept || []), ...moved.lines, ...packLines], from: before, to: t.version, backup: snap && snap.dir ? snap.dir : null, dataNotice };
 }
 
 /** `rollback` en release (AC 15): el cambio al revés, los enchufes, la salud; sin previous/, dice `install --version`. */
@@ -2089,6 +2093,7 @@ function startup(ctx, state, H, { log, snapshot = null }) {
     const dropped = sw.switching ? H.dropForProfile(ctx, state, applierTree, a, (l) => log(`startup: ${l}`), sw.profile.value) : true;
     if (sw.switching) H.profileSwitchNotes(dropped).forEach((n) => log(`startup: ${n}`));
     H.recordPieces(ctx, state, a.report, a.shared);
+    { const pl = typeof H.packRetiredLine === 'function' ? H.packRetiredLine(a) : null; if (pl) { log(`startup: ${pl}`); notice = notice ? `${notice} · ${pl}` : pl; } }
     if (sw.profile && sw.profile.ok && dropped !== null) state.profile = { value: sw.profile.value, origin: sw.profile.origin };
     // `--force` repite la salud entera aunque nada cambió (8.13 AC 21)
     if (ctx.opts && ctx.opts.force) {

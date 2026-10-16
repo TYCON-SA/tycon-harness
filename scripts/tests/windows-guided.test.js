@@ -1048,7 +1048,8 @@ test('GuidedUpdate_PwshMissing_ReportsNotUpdatedAndSilence', () => {
   // cada hook de arranque, con lo que devolvió
   assert.deepStrictEqual(silent.startup_hooks.map((h) => [h.form, h.exit]), [['bash-c', 127]]);
   // «sólo PowerShell 5.1» no es una variante de la actualización: es esta misma máquina, y el reporte lo dice en una línea
-  assert.deepStrictEqual(GU.VARIANTS.map((v) => v.id), ['auto', 'ask', 'pwsh-missing']);
+  // (`no-pack` es la máquina sin la capa ni paquetes activos de la prueba de actualización de los paquetes)
+  assert.deepStrictEqual(GU.VARIANTS.map((v) => v.id), ['auto', 'ask', 'pwsh-missing', 'no-pack']);
   assert.match(GU.SAME_MACHINE_NOTE, /5\.1/);
   assert.match(GU.SAME_MACHINE_NOTE, /pwsh-missing/);
   const md = rehearse.renderMarkdown({ run: { scenario: 'update', expected_steps: ['inventory', 'update'] }, steps: [{ name: 'update', status: 'measured', findings: [], facts: { guided: true, same_machine_note: GU.SAME_MACHINE_NOTE, variants: {} } }], verdict: { color: 'green', errors: [], missing_steps: [], not_measured: [], by_severity: { breaks: 0, 'loses-control': 0, noise: 0, unrated: 0 } } });

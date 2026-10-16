@@ -818,7 +818,9 @@ test('T37 Packs_ApagadoPorDefectoSinPerfil (lector) — sin nada: none (default)
     assert.match(e.errores[0].motivo, /all/); assert.match(e.errores[0].motivo, /none/); assert.match(e.errores[0].motivo, /"todos"/);
     return true;
   });
-  assert.throws(() => lib().leer({ env: { TYCON_PACKS_DEFAULT: 'algunos' }, home: casa(), arnes: arnesCon(null) }), (e) => {
+  // (story 8.41: un nombre solo es una lista de un paquete —el que no está instalado frena en el pipeline—; inválido es
+  // lo que no puede ser un nombre de paquete)
+  assert.throws(() => lib().leer({ env: { TYCON_PACKS_DEFAULT: 'Algunos!' }, home: casa(), arnes: arnesCon(null) }), (e) => {
     assert.equal(e.errores[0].archivo, 'entorno');
     assert.equal(e.errores[0].clave, 'TYCON_PACKS_DEFAULT');
     return true;

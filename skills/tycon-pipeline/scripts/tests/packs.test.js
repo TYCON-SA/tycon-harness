@@ -818,10 +818,14 @@ test('Packs_ApagadoPorDefectoSinPerfil', (t) => {
   assert.equal(blanca.status, 2, 'sólo espacios es «sin poner»: busca el arnés y no lo encuentra');
   assert.match(blanca.stderr, /el arnés/);
 
-  // un repo que declara `packs:` manda sobre el default y no le pregunta al arnés (ni lo necesita)
-  const declarado = correr(conRepo('packs: [prueba]\n'), { TYCON_GUIDES_DIR: path.join(tmp('packs-nada-'), 'no-existe') });
+  // un repo que declara `packs:` achica lo que activa la organización (story 8.41, AC 6): con la variable en all, ése; sin
+  // arnés ni variable no se sabe qué activó la organización, y frena nombrando el arnés
+  const declarado = correr(conRepo('packs: [prueba]\n'), { TYCON_GUIDES_DIR: path.join(tmp('packs-nada-'), 'no-existe'), TYCON_PACKS_DEFAULT: 'all' });
   assert.equal(declarado.status, 0, declarado.stderr);
   assert.deepEqual(nombres(declarado), ['prueba']);
+  const declaradoSinArnes = correr(conRepo('packs: [prueba]\n'), { TYCON_GUIDES_DIR: path.join(tmp('packs-nada-'), 'no-existe') });
+  assert.equal(declaradoSinArnes.status, 2, declaradoSinArnes.stderr);
+  assert.match(declaradoSinArnes.stderr, /el arnés/);
 
   if (!LECTOR_CONOCE_LA_CLAVE) {
     // TODO(Story-8.7-deferral: AC#8 | T37 | blocker: el arnés de esta máquina todavía no conoce packs.default) — guardia de
@@ -847,9 +851,11 @@ test('Packs_ApagadoPorDefectoSinPerfil', (t) => {
   const r3 = correr(sinPacks, { TYCON_GUIDES_DIR: conTodos, TYCON_PACKS_DEFAULT: 'none' });
   assert.equal(r3.status, 0, r3.stderr);
   assert.deepEqual(nombres(r3), []);
-  // un repo con `packs: [prueba]` sin configuración: ése
+  // un repo con `packs: [prueba]` sin configuración (la organización no activó ninguno): frena diciendo dónde se activa
+  // (story 8.41, AC 6: el repo achica lo que activa la organización, nunca suma)
   const r4 = correr(conRepo('packs: [prueba]\n'), { TYCON_GUIDES_DIR: sinConfig });
-  assert.deepEqual(nombres(r4), ['prueba']);
+  assert.equal(r4.status, 2, r4.stderr);
+  assert.match(r4.stderr, /activalo en Configuración del sitio, sección Paquetes, o en el perfil del equipo/);
   // un repo con `packs: []` y el perfil en "all": ninguno
   const r5 = correr(conRepo('packs: []\n'), { TYCON_GUIDES_DIR: conTodos });
   assert.equal(r5.status, 0, r5.stderr);

@@ -40,6 +40,7 @@ const L = require(path.join(DIR, 'lab.js'));
 const T = require(path.join(DIR, 'team-lab.js'));
 const TL = require(path.join(DIR, 'toy-lab.js'));
 const GI = require(path.join(DIR, 'guided-install.js'));
+const GU = require(path.join(DIR, 'guided-update.js'));
 const G = require(path.join(DIR, 'guided-page.js'));
 
 const has = (bin) => L.scanPath(bin).length > 0;
@@ -57,7 +58,7 @@ const TOY = Object.freeze({ org: 'acme-lab', repo: 'arnes-lab', version: '2030.0
 // en la carpeta de quien prueba entra al árbol de juguete
 const NEW_FILES = Object.freeze([
   'scripts/tests/windows/guided-steps.json', 'scripts/tests/windows/guided-page.js', 'scripts/tests/windows/toy-lab.js', 'scripts/tests/windows/release-photo.js',
-  'scripts/tests/windows/guided-install.js', 'scripts/tests/windows/guided-update.js',
+  'scripts/tests/windows/guided-install.js', 'scripts/tests/windows/guided-update.js', 'scripts/tests/windows/pieces.js', 'scripts/lib/pack-pieces.js',
 ]);
 // la capa del equipo no viaja en una copia publicada: con ellos adentro, la capa choca
 const NOT_PUBLISHED = Object.freeze(['perfil-equipo.json', 'scripts/metrics/corridas-buzon.json']);
@@ -298,6 +299,48 @@ test('GuidedTeam_LabRun_ToyAzure_StacksTheLayer', { skip: SKIP }, () => {
 });
 
 // ═══ T16 · la máquina con una versión anterior llega sola a la nueva ═══════════════════════════════════════════
+
+// ═══ story 8.41 · la prueba de actualización de los paquetes (T11-T16, T42) ═════════════════════════════════════
+// La versión de antes trae una skill y un agente de juguete en el núcleo; la nueva los trae dentro de un paquete. Con la
+// capa del equipo (perfil en `all`, y un paquete entero que llega por la capa) la lista de piezas de después es la de
+// antes; sin capa (`none`) salen sólo las del paquete, y se dice en una línea. Corre también en el 182 (`update`).
+test('PacksUpdate_LabRun_KeepsEveryPiece_NoPackRemovesOnlyPackPieces', { skip: SKIP }, () => {
+  const l = labOn(base, toy, 'packs-update', 'update');
+  const s = step(l, 'update', ['--only', 'auto,no-pack']);
+  assert.strictEqual(s.status, 'measured', s.reason);
+  const auto = s.facts.variants.auto;
+  assert.ok(auto && !auto.not_run && !auto.threw, `la variante auto corrió (${auto && (auto.not_run || auto.threw)})`);
+  assert.strictEqual(auto.updated_by_itself, true);
+  const P = auto.pieces;
+  assert.ok(P && P.before && P.after, 'la lista de piezas, antes y después');
+  // T12 · las dos listas impresas
+  assert.ok(Array.isArray(P.before_text) && P.before_text.length === 7 && Array.isArray(P.after_text) && P.after_text.length === 7, 'las dos listas, en renglones');
+  // T11 · T15 · con la capa, pieza por pieza igual (la skill y el agente que se mudaron al paquete siguen con su nombre)
+  assert.deepStrictEqual([P.diff.lost, P.diff.gained], [[], []], JSON.stringify(P.diff));
+  for (const k of ['skills', 'agents', 'hooks', 'guides']) assert.ok(P.before[k] && P.before[k].length > 0, `antes hay ${k}`);
+  assert.ok(P.before.skills.includes(GU.MOVED.skill) && P.after.skills.includes(GU.MOVED.skill), 'la skill que se mudó al paquete sigue');
+  assert.ok(P.before.agents.includes(`${GU.MOVED.agent}.md`) && P.after.agents.includes(`${GU.MOVED.agent}.md`), 'el agente que se mudó al paquete sigue');
+  // T42 · el paquete entero que llega por la capa: sus piezas, antes y después
+  assert.ok(P.before.skills.includes(T.LAYER_A2.wholeSkill) && P.after.skills.includes(T.LAYER_A2.wholeSkill), JSON.stringify(P.after.skills));
+  assert.ok(P.before.agents.includes(`${T.LAYER_A2.wholeAgent}.md`) && P.after.agents.includes(`${T.LAYER_A2.wholeAgent}.md`));
+  // T16 · el set de revisores de los dos repos de juguete, igual y medido
+  for (const r of ['dotnet-react', 'next-postgres']) {
+    assert.ok(Array.isArray(P.before.reviewers[r]) && P.before.reviewers[r].length > 0, `${r}: ${JSON.stringify(P.before.reviewers[r])}`);
+    assert.deepStrictEqual(P.after.reviewers[r], P.before.reviewers[r], r);
+  }
+  assert.ok(!s.findings.some((f) => /^update:auto:pieces:/.test(f.id)), s.findings.map((f) => f.id).join(', '));
+  // T13 · T14 · sin capa (ningún paquete activo): salen sólo las del paquete, y se dice en UNA línea con motivo y dónde se activa
+  const none = s.facts.variants['no-pack'];
+  assert.ok(none && !none.not_run && !none.threw, `la variante no-pack corrió (${none && (none.not_run || none.threw)})`);
+  assert.strictEqual(none.updated_by_itself, true, `quedó en ${none.version_after}`);
+  const lost = none.pieces.diff.lost.map((x) => `${x.kind}/${x.name}`).sort();
+  assert.deepStrictEqual(lost, [`agents/${GU.MOVED.agent}.md`, `skills/${GU.MOVED.skill}`], JSON.stringify(none.pieces.diff));
+  assert.deepStrictEqual(none.pieces.diff.gained, []);
+  assert.strictEqual(none.pack_line.count, 1, JSON.stringify(none.pack_line));
+  assert.match(none.pack_line.text, /no activa/);
+  assert.match(none.pack_line.text, /Configuración del sitio|perfil del equipo/);
+  assert.ok(!s.findings.some((f) => /^update:no-pack:pieces:/.test(f.id)), s.findings.map((f) => f.id).join(', '));
+});
 
 test('GuidedUpdate_LabRun_Auto_ReachesTheNewVersionByItself', { skip: SKIP }, () => {
   const update = labOn(base, toy, 'update', 'update');

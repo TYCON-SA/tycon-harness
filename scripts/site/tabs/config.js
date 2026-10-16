@@ -59,6 +59,15 @@ function leer(dir, rel) {
   return { estado: 'leido', texto, oid: r.stdout.trim() };
 }
 const docDe = (t) => { try { const v = JSON.parse(t); return isObject(v) ? v : null; } catch { return null; } };
+/** El archivo de una sección en un clon: el de hoy, o el de antes (`archivoViejo`) si el repo todavía sólo trae ése. */
+const archivoDe = (s, dir) => (s.archivoViejo && dir && !fs.existsSync(path.join(dir, s.archivo)) && fs.existsSync(path.join(dir, s.archivoViejo)) ? s.archivoViejo : s.archivo);
+/** Los paquetes que trae esta versión del sitio, y los que activa un valor de `packs.default`. */
+function paquetesDe(valor) {
+  let instalados = [];
+  try { instalados = require('../../lib/pack-pieces.js').listPacks(path.join(TREE, 'packs')).packs.map((p) => p.name); } catch { instalados = []; }
+  const activos = valor === 'all' ? instalados : Array.isArray(valor) ? instalados.filter((n) => valor.includes(n)) : [];
+  return { instalados, activos };
+}
 
 /**
  * Las rutas de la pestaña, para `rutasExtra` de crearSitio. `cfg` es la del servidor; `fuentes`, las de la 2.23.
@@ -111,14 +120,15 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     const cl = clones();
     let dir = null;
     if (s.repo === 'perfil') {
-      if (!cfg.profileRepo || !cl.perfil) return { ...base, estado: 'no_configurado', motivo: 'no configurado: el sitio no tiene SITE_PROFILE_REPO y SITE_PROFILE_TOKEN; team-repos.json se edita con un pedido al perfil' };
+      if (!cfg.profileRepo || !cl.perfil) return { ...base, estado: 'no_configurado', motivo: `no configurado: el sitio no tiene SITE_PROFILE_REPO y SITE_PROFILE_TOKEN; ${s.archivo} se edita con un pedido al perfil` };
       if (!cl.perfil.dir) return { ...base, estado: 'no_configurado', motivo: cl.perfil.motivo || 'el perfil del equipo todavía no se bajó' };
       dir = cl.perfil.dir;
     } else {
       if (!cl.operaciones) return { ...base, estado: 'ilegible', motivo: 'el repo de operaciones todavía no se bajó' };
       dir = cl.operaciones.dir;
     }
-    const a = leer(dir, s.archivo);
+    base.archivo = archivoDe(s, dir);
+    const a = leer(dir, base.archivo);
     if (a.estado === 'ilegible') return { ...base, estado: 'ilegible', motivo: `${a.motivo}: se corrige a mano` };
     const doc = a.estado === 'leido' ? docDe(a.texto) : null;
     const v = { ...base, texto: a.texto || null, oid: a.estado === 'leido' ? a.oid : null };
@@ -158,6 +168,7 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     v.problems = (parsed.problems || []).filter((p) => !s.claves || s.claves.some((k) => p.path === k || String(p.path).startsWith(`${k}.`)));
     v.borrador = s.claves === null ? clone(doc || { version: 1 }) : Object.fromEntries(s.claves.filter((k) => doc && doc[k] !== undefined).map((k) => [k, clone(doc[k])]));
     if (s.id === 'sitio') v.campos = { url: Array.isArray(lec.SITE_KEYS) && lec.SITE_KEYS.includes('url') };
+    if (s.id === 'paquetes') v.extras = paquetesDe(doc && isObject(doc.packs) ? doc.packs.default : undefined);
     if (s.id === 'personas') {
       // operations.json que no valida: el último bueno (24 h, la regla de la 2.28); el sitio frenado ya contesta 503
       let base2 = parsed.ok ? doc : null;
@@ -275,7 +286,11 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     if (s.archivo === 'operations.json' && isObject(doc.site) && Array.isArray(doc.site.maintainers) && !doc.site.maintainers.length) return 'la lista de los que mantienen no puede quedar vacía: quedaría sin nadie que pueda entrar a esta pestaña';
     if (s.repo === 'perfil') {
       const capa = leer(clones().perfil.dir, 'team-layer.json');
-      const gate = ORG.profileGateProblem(capa.estado === 'leido' ? capa.texto : '');
+      const layerText = capa.estado === 'leido' ? capa.texto : '';
+      // la sección Paquetes vive en un archivo que cualquier versión lee; sólo una LISTA pide una versión que la conozca
+      const gate = s.id === 'paquetes'
+        ? ORG.packsListGateProblem({ layerText, versionImagen, valor: isObject(doc.packs) ? doc.packs.default : undefined })
+        : ORG.profileGateProblem(layerText);
       if (gate) return gate;
     }
     return null;
@@ -296,7 +311,7 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     if (!remote.platform) return { ok: false, message: 'no reconozco la plataforma del repo: descargá el archivo y abrí el pedido a mano' };
     const dir = s.repo === 'perfil' ? clones().perfil.dir : clones().operaciones.dir;
     return RP.proponer({
-      clon: dir, archivo: s.archivo, contenido: texto, oidEsperado: body.oid, idCorto: s.idCorto,
+      clon: dir, archivo: v.archivo, contenido: texto, oidEsperado: body.oid, idCorto: s.idCorto,
       secciones: [s.titulo], quien: norm(ctx.sesion.email), credencial: cred, remote, urlBase, exclusivo: fuentes.exclusivo || ((fn) => fn()),
       now: new Date(ahora()), fetch, log,
     });

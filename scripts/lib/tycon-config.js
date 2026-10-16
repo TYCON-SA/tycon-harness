@@ -173,7 +173,8 @@ const VOCABULARIO = Object.freeze({
   // Los paquetes de revisores que se activan en un repo que no declara `packs:` (story 8.7, AC 8): `all` = todos los
   // instalados, `none` = ninguno. Lo pregunta `lib/packs.js` de agent-skills. Un paquete «opcional» es uno que quien no
   // lo usa no tiene que apagar: afuera, sin perfil, `none`; el perfil del equipo dice `all` (en el equipo nada cambia).
-  packs: Object.freeze({ default: 'opcion:all|none' }),
+  // Una lista (`["bizuit", "clients"]`) activa exactamente ésos (story 8.41); por variable, separada por comas.
+  packs: Object.freeze({ default: 'paquetes' }),
   // Cuánto instala el arnés (story 8.16, tanda C · AC 21): `minimal` (lo que hace falta para las guías, las skills, los
   // revisores y el pipeline como skill) o `full` (también los frenos, los bloques que cambian cómo contesta el asistente,
   // los hooks de git y las tareas de fondo). NO tiene valor por defecto: si nadie lo dice queda nulo («sin elegir») y el
@@ -213,6 +214,26 @@ const DEFAULTS = Object.freeze({
 // La segunda (story 7.19, decisión del dueño del 2026-10-15): la pregunta del modelo mayor en el pase adversarial.
 // Apagarla es una decisión de costo del equipo, no de una máquina.
 const PROFILE_WINS = Object.freeze(['packs.default', 'adversarial.model_question']);
+/** Los paquetes que activa la organización (tipo `paquetes`): `all`, `none` o una lista de nombres de paquete. */
+const NOMBRE_DE_PAQUETE = /^[a-z0-9][a-z0-9-]*$/;
+/** null si el valor es `all`, `none` o una lista no vacía de nombres distintos; si no, el motivo. */
+function motivoPaquetes(valor) {
+  if (typeof valor === 'string') return ['all', 'none'].includes(valor.trim()) ? null : `tiene que ser all, none o una lista de nombres de paquete, no ${JSON.stringify(valor)}`;
+  if (!Array.isArray(valor) || !valor.length) return `tiene que ser all, none o una lista no vacía de nombres de paquete (para ninguno, none), no ${JSON.stringify(valor)}`;
+  const malo = valor.find((n) => typeof n !== 'string' || !NOMBRE_DE_PAQUETE.test(n));
+  if (malo !== undefined) return `${JSON.stringify(malo)} no es un nombre de paquete (minúsculas, dígitos y guiones)`;
+  if (new Set(valor).size !== valor.length) return `la lista repite un paquete: ${JSON.stringify(valor)}`;
+  return null;
+}
+/** El valor de `packs.default` escrito como texto (variable o `set`): `all`, `none` o `a,b`. `{ valor }` o `{ motivo }`. */
+function paquetesDeTexto(texto) {
+  const t = String(texto).trim();
+  if (t === 'all' || t === 'none') return { valor: t };
+  const lista = t.split(',').map((x) => x.trim());
+  const m = motivoPaquetes(lista);
+  return m ? { motivo: `«${t}»: ${m.replace(/^tiene que ser /, 'tiene que ser ')}` } : { valor: lista };
+}
+
 /** Las opciones de un tipo `opcion:a|b`, o null si no es de ese tipo. */
 function optionsOf(tipo) { return typeof tipo === 'string' && tipo.startsWith('opcion:') ? tipo.slice('opcion:'.length).split('|') : null; }
 // Las secciones se ESCRIBEN en inglés en los archivos (story 8.9, tanda P · 2026-09-30): `paths` e `integrations`. El
@@ -373,6 +394,8 @@ function normalizarValor(tipo, valor, home, clave) {
   if (tipo === 'ruta-absoluta') return path.normalize(expandirHome(String(valor).trim(), home));
   if (clave === 'ado.org') return normalizarOrg(valor);
   if (tipo === 'llave-o-detectar' && esDetect(valor)) return DETECT;   // el valor viejo se lee como el nuevo
+  if (tipo === 'paquetes' && typeof valor === 'string') return valor.trim();
+  if (Array.isArray(valor)) return valor.slice();
   return typeof valor === 'string' ? valor.trim() : valor;   // un booleano sigue siendo booleano
 }
 /** Un dato de una persona escondido en un comentario (`__doc`, `__nota`) del perfil versionado. El mensaje muestra SÓLO los
@@ -654,6 +677,8 @@ function validarTipo(tipo, valor) {
     case 'secreto':
       // el motivo nunca repite el valor (ni un pedazo): llega a la salida de comandos y a registros
       return (typeof valor === 'string' && valor.trim() && !/\s/.test(valor.trim())) ? null : 'tiene que ser un texto sin espacios (el valor no se muestra)';
+    case 'paquetes':
+      return motivoPaquetes(valor);
     case 'ruta-absoluta':
       if (!(typeof valor === 'string' && valor.trim())) return `tiene que ser un texto no vacío, no ${JSON.stringify(valor)}`;
       return esRutaAbsoluta(valor) ? null : `tiene que ser una ruta absoluta (o con ~), no ${JSON.stringify(valor)}: una relativa no se resuelve contra nada`;
@@ -679,6 +704,10 @@ function valorDeEntorno(env, clave, tipo, home) {
         return { valor: DETECT, variable };
       }
       return { error: { archivo: 'entorno', clave: variable, motivo: `vale «${v}»; tiene que ser 0 o 1${tipo === 'llave-o-detectar' ? ` (o ${DETECT})` : ''}` } };
+    }
+    if (tipo === 'paquetes') {
+      const p = paquetesDeTexto(v);
+      return p.motivo ? { error: { archivo: 'entorno', clave: variable, motivo: `vale ${p.motivo}` } } : { valor: p.valor, variable };
     }
     const opciones = optionsOf(tipo);
     if (opciones) {
@@ -940,7 +969,7 @@ function explicar(opts = {}) {
   const c = cargar(opts);
   const v = c.valores;
   const o = c.origenes;
-  const fmt = (x) => (x === null || x === undefined ? '' : String(x));
+  const fmt = (x) => (x === null || x === undefined ? '' : Array.isArray(x) ? x.join(', ') : String(x));
   const integracionesTexto = {};
   const estado = (llave) => {
     const val = v.integraciones[llave];
@@ -1154,7 +1183,24 @@ function setKey(home = os.homedir(), clave, valorNuevo, { env = process.env, gua
   return { ok: true, file, before, after: valorEscrito, warning: avisos.length ? avisos.join(' · ') : null };
 }
 
+/**
+ * El lector de un perfil del equipo como TEXTO, para la configuración de la organización (scripts/lib/org-config.js,
+ * sección «Paquetes»): las mismas reglas con que se lee el perfil (vocabulario cerrado, nada personal). `{ ok, data,
+ * problems: [{ path, message }] }`. No lee nada de la máquina ni anota usos de nombres viejos.
+ */
+function parse(texto) {
+  let datos;
+  try { datos = JSON.parse(String(texto)); } catch (e) { return { ok: false, data: null, problems: [{ path: '', message: `no es JSON válido: ${String((e && e.message) || e).split('\n')[0]}` }] }; }
+  if (!esObjeto(datos)) return { ok: false, data: null, problems: [{ path: '', message: 'el perfil tiene que ser un objeto JSON' }] };
+  const { errores } = sinAnotar(() => validarArchivo(datos, { archivo: NOMBRE_PERFIL, esPerfil: true, home: os.homedir() }));
+  const problems = errores.map((e) => ({ path: e.clave || '', message: e.motivo }));
+  return { ok: problems.length === 0, data: problems.length ? null : datos, problems };
+}
+/** Las secciones del perfil que este lector conoce, con su nombre en el archivo (lo mira `lectorSabe` de org-config.js). */
+const KEYS = Object.freeze(Object.keys(VOCABULARIO).map((s) => enArchivo(s)));
+
 module.exports = {
+  parse, KEYS, motivoPaquetes, paquetesDeTexto,
   VOCABULARIO, DEFAULTS, PROFILE_WINS, INTEGRACIONES, LAS_OCHO, TOOLS, toolKeys, COMO_SE_PRENDE, VARIABLES, INTERRUPTORES_POR_HOOK, RAIZ_ARNES, NOMBRE_PERFIL, NOMBRE_PERFIL_VIEJO, perfilDelArbol, avisoNombrePerfil, NOMBRE_ENLACE, PLACE_NAME, LEGACY_PLACE_NAME, DONDE_CLAVES, ConfigError,
   rutaMaquina, nombreArchivoMaquina, comoSePrende, rutaPerfil, leerPerfil, rutaLlaveBuzon, cargar, leer, leerParaHook, avisoParaHook, valor, explicar, estadoEnlace, formaPersonal,
   normalizarOrg, nombreDeOrganizacion, resolverRutaDeArchivo, personalEnComentario,
@@ -1188,9 +1234,14 @@ function cli(argv) {
       else if (tipo === 'llave-o-detectar' && esDetect(String(crudo).trim())) valorNuevo = DETECT;
       else { process.stderr.write(`${clave}: vale «${crudo}»; tiene que ser true, false, 1 o 0${tipo === 'llave-o-detectar' ? ` (o ${DETECT})` : ''}\n`); process.exit(2); }
     }
+    if (tipo === 'paquetes') {
+      const p = paquetesDeTexto(crudo);
+      if (p.motivo) { process.stderr.write(`${clave}: vale ${p.motivo}\n`); process.exit(2); }
+      valorNuevo = p.valor;
+    }
     const r = setKey(os.homedir(), clave, valorNuevo);
     if (!r.ok) { process.stderr.write(`tycon-config.js set: ${r.reason}\n`); process.exit(2); }
-    const fmt = (x) => (x === null || x === undefined ? '(sin valor)' : String(x));
+    const fmt = (x) => (x === null || x === undefined ? '(sin valor)' : Array.isArray(x) ? x.join(',') : String(x));
     process.stdout.write(`${clave}: ${fmt(r.before)} → ${fmt(r.after)} en ${r.file}\n`);
     process.stdout.write('se aplica en el próximo arranque, o ya con `harness.js apply`; para ver antes qué cambia, `harness.js apply --dry-run`\n');
     if (r.warning) process.stdout.write(`${r.warning}\n`);
