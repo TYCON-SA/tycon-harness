@@ -919,6 +919,25 @@ HOME="$TMP/a8/m2/home" TYCON_HOME="$TMP/a8/m2/home/.tycon" node "$AQUI/scripts/c
 { [ "$rt" -eq 2 ] && grep -q 'paths.operations' "$TMP/o8t"; } || t8="$t8 [trigger: rc=$rt $(head -1 "$TMP/o8t")]"
 [ -z "$t8" ] && ok "A8 SinListaEnOperaciones_NoMedidoConMotivo: clon declarado sin la lista, o máquina que mantiene sin declararlo → 2, no «sin productos»" \
   || no "🔴 A8b$t8"
+# lo que la revisión del 2026-10-16 encontró sin caso: un clon mantenido declarado que ya no está (antes: la máquina de un
+# dev, «sin productos» en 0), sólo el clon de mantenimiento declarado, y la configuración ilegible. Los tres: 2, con --today.
+maquina "$TMP/a8/m5" "{\"paths\":{\"maintained\":\"$TMP/a8/no-esta\"}}"
+maquina "$TMP/a8/m6" "{\"paths\":{\"maintainers\":\"$TMP/a8/mantenido\"}}"
+maquina "$TMP/a8/m7" '{ rota'
+t8=""
+for m in m5 m6 m7; do
+  en_maquina "$TMP/a8/$m" --root "$TMP/w" --today 2026-01-02 --out "$TMP/ra8$m.json" >"$TMP/o8$m" 2>&1; rc=$?
+  res=$(chk "$TMP/ra8$m.json" "if (r.estado!=='no_medido'||!r.motivo||r.fecha!=='2026-01-02') bad.push(r.estado+'/'+r.fecha+': '+r.motivo);")
+  { [ "$rc" -eq 2 ] && [ -z "$res" ]; } || t8="$t8 [$m: rc=$rc $res $(head -1 "$TMP/o8$m")]"
+done
+[ -z "$t8" ] && ok "A8 MantieneSinClonDeOperaciones_NoMedido: clon mantenido que ya no está, sólo el de mantenimiento, o configuración ilegible → 2 con motivo" \
+  || no "🔴 A8d$t8"
+# --config gana sobre lo que declara la máquina (un clon sin la lista), y el control de disparos usa la lista de operaciones
+en_maquina "$TMP/a8/m2" --config "$TMP/a8/ops/scripts/ci/product-parity.json" --root "$TMP/w" >/dev/null 2>&1; rc=$?
+HOME="$TMP/a8/m1/home" TYCON_HOME="$TMP/a8/m1/home/.tycon" node "$AQUI/scripts/ci/check-trigger-without-docs.js" --root "$TMP/w" >"$TMP/o8t1" 2>&1
+{ [ "$rc" -eq 0 ] && ! grep -qE 'sin la lista de productos|no hay productos declarados' "$TMP/o8t1"; } \
+  && ok "A8 ConfigDadaGana_YDisparosLeeOperaciones: --config manda; check-trigger-without-docs compara la lista de operaciones" \
+  || no "🔴 A8e rc=$rc $(head -2 "$TMP/o8t1" | tr '\n' ' ')"
 p4=$(en_maquina "$TMP/a8/m4" config-path 2>&1); r4=$?
 { [ "$r4" -eq 0 ] && [ "$p4" = "$AQUI/scripts/ci/product-parity.json" ]; } && ok "A8 MaquinaSinDeclarar_UsaLaDeAlLado: la de un dev o la CI, como siempre" \
   || no "🔴 A8c rc=$r4 [$p4]"

@@ -131,10 +131,21 @@ function configPorDefecto() {
       return fs.existsSync(ruta) ? { ruta, de: 'operaciones', problema: null } : sin('el clon del repo de operaciones (paths.operations) no trae scripts/ci/product-parity.json');
     }
     if (o.problem) return sin(o.problem);
+    // «mantiene» = DECLARA alguno de los dos clones, exista o no la carpeta (maintainedPath() exige que exista: un clon
+    // movido dejaba la máquina como la de un dev, y caía en «sin productos» en 0 — revisión del 2026-10-16)
     const m = typeof TH.maintainersClone === 'function' ? TH.maintainersClone() : { declared: false };
-    const mantiene = Boolean(m.declared) || Boolean(typeof TH.maintainedPath === 'function' && TH.maintainedPath());
+    if (m.problem) return sin(m.problem);
+    const mantiene = Boolean(m.declared) || declaraMantenido(TH);
     return mantiene ? sin('esta máquina mantiene el arnés y no declara el clon del repo de operaciones (paths.operations)') : { ruta: propia, de: 'arnes', problema: null };
   } catch (e) { return sin(`no pude saber si esta máquina declara el clon del repo de operaciones (${e.message})`); }
+}
+
+/** ¿La configuración de la máquina declara `paths.maintained` (con cualquier valor)? Tira si no se deja leer. */
+function declaraMantenido(TH) {
+  let j;
+  try { j = JSON.parse(fs.readFileSync(TH.ownPaths().config, 'utf8')); } catch (e) { if (e && e.code === 'ENOENT') return false; throw new Error('la configuración de la máquina (config.json del arnés) no se puede leer'); }
+  const v = j && typeof j === 'object' && j.paths && typeof j.paths === 'object' ? j.paths.maintained : undefined;
+  return typeof v === 'string' && v.trim() !== '';
 }
 
 /** `o.config` resuelto: el dado, o el de `configPorDefecto()`. → `null` si no hay (el motivo, en `o.sinConfig`). */
@@ -328,7 +339,7 @@ function main(argv0) {
   }
   if (!resolverConfig(o)) {
     console.log(`🔴 sin la lista de productos: ${o.sinConfig} — no se midió nada, y eso no es «todo bien»`);
-    return terminar(o, nuevoResultado(null), 2, 'no_medido', `sin la lista de productos: ${o.sinConfig}`);
+    return terminar(o, nuevoResultado(null, o.today && DIA.test(o.today) ? o.today : new Date().toISOString().slice(0, 10)), 2, 'no_medido', `sin la lista de productos: ${o.sinConfig}`);
   }
   let cfg;
   try { cfg = JSON.parse(fs.readFileSync(o.config, 'utf8')); }
