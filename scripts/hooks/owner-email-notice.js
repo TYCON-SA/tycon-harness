@@ -36,10 +36,9 @@ const DONDE = 'scripts/hooks/owner-email-notice.js';
 const NO_IMPRIMIBLES = new RegExp('[' + String.fromCharCode(0) + '-' + String.fromCharCode(0x1f) + String.fromCharCode(0x7f) + '-'
   + String.fromCharCode(0x9f) + String.fromCharCode(0x2028) + String.fromCharCode(0x2029) + ']', 'g');
 
-/** La carpeta de estado, por su ruta (como upload-runs.js): si la biblioteca no está, la de siempre. */
+/** La carpeta de estado: la pide a la biblioteca de la casa del arnés, que viaja con este hook (nunca una ruta escrita). */
 function carpetaDeEstado(home) {
-  const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js');
-  return fs.existsSync(lib) ? require(lib).stateDir(home) : path.join(home, '.claude', '.tycon-pipeline');
+  return require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')).stateDir(home);
 }
 
 /** La huella del correo normalizado: la misma cuenta que `huellaDeCorreo` de people.js. */
@@ -76,8 +75,8 @@ function sellar(dir, huella, ahora) {
 
 function main({ env = process.env, home = os.homedir(), escribir = (t) => console.log(t) } = {}) {
   if (env.TYCON_OWNER_EMAIL_NOTICE === '0' || env.TYCON_EVAL_SANDBOX === '1') return 0;
-  if (env.TYCON_NO_UPLOAD_RUNS === '1') return 0;
   const { readEnv } = require('../lib/legacy-names.js');
+  if (readEnv('TYCON_NO_UPLOAD_RUNS', { where: DONDE, env }) === '1') return 0;
   if (/^true$/i.test(String(env.TF_BUILD || '').trim()) && !readEnv('TYCON_MAILBOX_URL_BASE', { where: DONDE, env })) return 0;
 
   const subida = require('../metrics/upload-runs.js');

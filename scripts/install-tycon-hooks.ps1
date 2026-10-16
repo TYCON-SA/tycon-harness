@@ -1271,9 +1271,9 @@ if ((Integ-Prendida 'ado') -and $env:TYCON_NO_AZ_PROJECTS_REFRESH -ne '1' -and -
 # del equipo. En cada arranque, de fondo y con la ventana oculta: no frena el arranque. Sólo con la integración del buzón
 # prendida, fuera de -Check y fuera de un agente de CI (un agente no es una máquina del equipo, story 2.12). Apagar:
 # TYCON_NO_UPLOAD_RUNS=1. Un proceso de fondo de PowerShell no puede AGREGAR a un archivo: la subida agrega ella misma a su
-# registro (`--log`, con la rotación del .sh pasado ~512 KB). Registro: ~/.claude/.tycon-pipeline/upload-runs.log
+# registro (`--log`, con la rotación del .sh pasado ~512 KB). Registro: upload-runs.log en la carpeta de estado.
 $upJs = Join-Path (Join-Path $PSScriptRoot 'metrics') 'upload-runs.js'
-if ((Integ-Prendida 'mailbox') -and $env:TYCON_NO_UPLOAD_RUNS -ne '1' -and -not $Check -and "$env:TF_BUILD" -notmatch '^(?i)true$' -and (Test-Path $upJs)) {
+if ((Integ-Prendida 'mailbox') -and (Get-LegacyEnv 'TYCON_NO_UPLOAD_RUNS' -Where 'scripts/install-tycon-hooks.ps1') -ne '1' -and -not $Check -and "$env:TF_BUILD" -notmatch '^(?i)true$' -and (Test-Path $upJs)) {
     $upDir = Join-Path $ClaudeDir '.tycon-pipeline'
     $upLog = Join-Path $upDir 'upload-runs.log'
     try {

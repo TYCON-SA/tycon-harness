@@ -267,8 +267,9 @@ PY
     # UNA vez (una declaración que ya no hace falta, sale; registrado dos veces, o en otro evento más, también es rojo).
     # Sin esto, el primer hook nuevo ponía roja la prueba para siempre.
     #   scripts/hooks/public-push-guard.js — el freno antes de publicar (story 8.26, tanda F1)
+    #   scripts/hooks/owner-email-notice.js — tu correo de git, dicho una vez, con el buzón prendido (story 2.28, AC 30)
     rm -f "$T/t40/added.out"
-    python3 - "$T/t40/new-norm.json" "$T/t40/added.out" scripts/hooks/public-push-guard.js <<'PY'
+    python3 - "$T/t40/new-norm.json" "$T/t40/added.out" scripts/hooks/public-push-guard.js scripts/hooks/owner-email-notice.js <<'PY'
 import json, sys
 path, out, added = sys.argv[1], sys.argv[2], sys.argv[3:]
 data = json.load(open(path, encoding="utf-8"))
