@@ -230,6 +230,7 @@
       "legacy-names-production.test.sh": 10,
       "deploy-plugin.test.sh": 10,
       "clean-machine.test.sh": 3,
+      "harness-node.test.sh": 30,
       "suites-for-change.test.js": 64,
       "harness-release.test.sh": 132,
       "release-api-count.p1.test.sh": 27,
