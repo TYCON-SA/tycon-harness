@@ -53,6 +53,19 @@ To remove the harness, `harness.js uninstall --dry-run` shows what it would remo
 
 If something is missing, Claude tells you what to install and how.
 
+## Install in one line
+
+This line checks the requirements, downloads the published version of the harness and installs it; it is the same on
+Windows, Mac and Linux. Before it writes anything it shows you the plan of what will change on your machine and asks
+whether to go on: with a "no", nothing is left behind.
+
+```bash
+npx @tyconsa/harness@latest
+```
+
+By hand, without npm: the three lines that download the install script, show it and run it are in the
+[Reference](getting-started/reference.md), under "Download and install".
+
 ## Install with Claude Code
 
 It is the recommended path and takes about 10 minutes. Claude runs most of the commands; the download and the install
@@ -67,8 +80,6 @@ run in your own terminal.
 
 If you install a tool along the way, Claude asks you to close and reopen the terminal and Claude Code. If the summary
 says "NO OK", keep it: it is what to show when you ask for help.
-
-Coming soon: a single terminal line, the same on Windows and Mac, with the same plan and the same "yes": `npx @tyconsa/harness@latest`. It is not published yet: for now, follow the steps above.
 
 The harness lives in `~/.tycon/harness`, as downloaded files (no git). `~/.claude/tycon-harness` is a shortcut to that
 same folder, and the commands on this page use it. Don't delete or move that folder: Claude Code

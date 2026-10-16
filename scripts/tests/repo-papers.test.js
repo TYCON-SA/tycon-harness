@@ -89,6 +89,8 @@ const MIT_PERMISSION = 'Permission is hereby granted, free of charge, to any per
 const SECTIONS = [
   ['Before you install: what changes on your machine', 'Antes de instalar: qué cambia en tu máquina'],
   ['What you need', 'Qué necesitás'],
+  // story 8.40 (AC 15): con el paquete publicado, la entrada principal es la línea npx, antes del camino con Claude
+  ['Install in one line', 'Instalar en una línea'],
   ['Install with Claude Code', 'Instalar con Claude Code'],
   ['Start working', 'Empezar a trabajar'],
   // 2026-10-13 (pedido del dueño): la sección para quien arma el arnés en una organización, y una tabla de a dónde seguir

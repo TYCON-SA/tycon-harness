@@ -82,7 +82,15 @@ brew install node python
 
 ### 2. Download and install
 
-Open a terminal in any folder and paste the lines for your system, one by one: the `bash` ones on Mac, Linux and WSL;
+The main entry is a single line, the same on native Windows, Mac, Linux and WSL. It checks the requirements, downloads the
+published version of the harness to a temporary folder and runs its `harness.js install`, which shows you the plan and
+asks whether to go on. Options for `install` go after the name: `npx @tyconsa/harness@latest <options>`.
+
+```bash
+npx @tyconsa/harness@latest
+```
+
+**By hand, without npm.** Open a terminal in any folder and paste the lines for your system, one by one: the `bash` ones on Mac, Linux and WSL;
 the `powershell` ones on native Windows. The first downloads the install script from GitHub's public file address
 (`raw.githubusercontent.com`), with no credential and without going through the API; the second shows it, so you
 read what you are about to run; the third runs it. The script checks the requirements, downloads the published
@@ -166,6 +174,16 @@ warn, with the command to point it. What that key changes is under "What it writ
 ### Other ways to install (optional)
 
 **With nobody at the keyboard** (a container, a scheduled job): the same line, with the profile and `--yes`.
+
+```bash
+npx @tyconsa/harness@latest --profile minimal --yes
+```
+
+Mind where `--yes` goes. Written before the package name it belongs to npm: it accepts downloading the package without
+asking, and does not touch the plan. Written after the name, as above, it is ours: it accepts the install plan without
+anyone seeing it. Without a terminal npm downloads the package anyway, so npm's one is not needed.
+
+By hand, without npm:
 
 <!-- install:unattended -->
 ```bash

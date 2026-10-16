@@ -51,6 +51,19 @@ Para sacar el arnés, `harness.js uninstall --dry-run` muestra qué quitaría, y
 
 Si te falta algo, Claude te dice qué instalar y cómo.
 
+## Instalar en una línea
+
+Esta línea revisa los requisitos, baja la versión publicada del arnés y lo instala; es la misma en Windows, en Mac y en
+Linux. Antes de escribir nada te muestra el plan de lo que va a cambiar en tu máquina y te pregunta si sigue: con un
+«no», no queda nada.
+
+```bash
+npx @tyconsa/harness@latest
+```
+
+A mano, sin npm: las tres líneas que bajan el guion de instalación, lo muestran y lo corren están en la
+[Referencia](getting-started/reference.es.md), en «Bajar e instalar».
+
 ## Instalar con Claude Code
 
 Es el camino recomendado y lleva unos 10 minutos. Claude corre casi todos los comandos; la bajada y la instalación
@@ -65,8 +78,6 @@ corren en tu propia terminal.
 
 Si en el camino instalás una herramienta, Claude te pide cerrar y abrir la terminal y Claude Code. Si el resumen dice
 «NO OK», guardalo: es lo que hay que mostrar al pedir ayuda.
-
-Próximamente: una sola línea de terminal, igual en Windows y en Mac, con el mismo plan y el mismo «sí»: `npx @tyconsa/harness@latest`. Todavía no está publicada: por ahora, los pasos de arriba.
 
 El arnés queda en `~/.tycon/harness`, como archivos bajados (sin git). `~/.claude/tycon-harness` es un acceso directo a
 esa misma carpeta, y es el que usan los comandos de esta página. No borres ni muevas esa carpeta: Claude Code lo
