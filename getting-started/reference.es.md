@@ -28,9 +28,10 @@ castellano; esta página y los archivos de la comunidad tienen versión en ingl�
 
 - **Sin cuenta de GitHub**: este repo es público, y el arnés se baja de acá sin credencial.
 - **Claude Code** instalado y con tu sesión iniciada (o Codex, para el lado Codex).
-- **En Windows, nativo**: Node 20 o posterior, PowerShell 7 y `tar` (viene con Windows 10 y posteriores). Git y Python
+- **En Windows, nativo**: Node 22 o posterior, PowerShell 7 y `tar` (viene con Windows 10 y posteriores). Git y Python
   no hacen falta. Por WSL, lo mismo que en Mac y Linux, dentro de WSL.
-- **En Mac y Linux**: Bash, Python 3, `tar`, `curl` y Node 20 o posterior (probado en 20, 22 y 24). Git no hace falta.
+- **En Mac y Linux**: Bash, Python 3, `tar`, `curl` y Node 22 o posterior (probado en 22 y 24). Git no hace falta.
+- **Node 20**: 20 se tolera sólo para actualizar una instalación existente; no se prueba.
 - **El paquete del stack de TYCON** pide además el SDK de .NET de tu plugin.
 
 La lista exacta para Mac y Linux (`dotnet`, sólo con el paquete del stack):
@@ -41,7 +42,7 @@ bash
 python3
 tar
 curl
-node >= 20
+node >= 22
 dotnet (bizuit)
 ```
 <!-- /requirements -->
@@ -67,7 +68,7 @@ winget install Microsoft.PowerShell
 ```
 
 Cerrá la terminal y abrí **PowerShell 7** (en el menú Inicio se llama así): todos los comandos de esta página se corren
-ahí, no en la 5.1 que viene con el sistema. Comprobá que `node --version` diga Node 20 o más y que `tar --version` conteste
+ahí, no en la 5.1 que viene con el sistema. Comprobá que `node --version` diga Node 22 o más y que `tar --version` conteste
 (el sistema lo trae desde 2018). No hay nada más con que iniciar sesión: el arnés nunca abre un navegador.
 
 **En Mac**, instalá lo que te falte con Homebrew (https://brew.sh):
@@ -76,7 +77,7 @@ ahí, no en la 5.1 que viene con el sistema. Comprobá que `node --version` diga
 brew install node python
 ```
 
-**En Linux**, lo mismo con el gestor de paquetes de tu distribución. Comprobá que `node --version` diga Node 20 o más.
+**En Linux**, lo mismo con el gestor de paquetes de tu distribución. Comprobá que `node --version` diga Node 22 o más.
 
 ### 2. Bajar e instalar
 

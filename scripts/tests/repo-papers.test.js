@@ -568,8 +568,13 @@ const updateBullets = (text, lang) => IN_UPDATES(text, lang).split('\n').map((l)
 /** Un punto por palabras clave: `both` vale para los dos idiomas; `en` / `es`, para el suyo. */
 const keywordPoint = (what, where, { both = [], en = [], es = [] }) => ({ what, where, keywords: { en: [...both, ...en], es: [...both, ...es] } });
 const FRONT_PAGE_KEYWORDS = [
-  // story 8.40 (AC 31): el piso de la portada baja a Node 20, el de harness.js y los dos guiones (la 8.39 no lo subió)
-  keywordPoint('requisitos: Node 20', IN_REQUIREMENTS, { both: ['Node 20', 'node >= 20'] }),
+  // story 8.40 (AC 31, decisión del dueño 2026-10-16): el piso para instalar es Node 22, el de los dos guiones y el
+  // paquete de npm; 20 se tolera sólo para actualizar una instalación existente (harness.js) y no se prueba
+  keywordPoint('requisitos: Node 22', IN_REQUIREMENTS, {
+    both: ['Node 22', 'node >= 22'],
+    en: ['20 is tolerated only to update an existing installation; it is not tested'],
+    es: ['20 se tolera sólo para actualizar una instalación existente; no se prueba'],
+  }),
   keywordPoint('empezar a trabajar: el permiso de lectura que Claude Code pide la primera vez (D5)', sectionOf(at('Start working')), {
     en: ['permission to read the folder', 'You accept it once'],
     es: ['permiso para leer la carpeta', 'Se acepta una vez'],
@@ -1246,7 +1251,7 @@ const BEFORE_KEYWORDS = {
   en: ['in all your projects', 'in Spanish', 'for a year'],
   es: ['en todos tus proyectos', 'en castellano', 'un año'],
 };
-const GUIDE_KEYWORDS = ['node v20 o más', 'quiero el perfil mínimo', '--profile minimal', '.git/hooks/', 'si configura la carpeta global de hooks de git) y preguntame si sigo'];
+const GUIDE_KEYWORDS = ['node v22 o más', 'quiero el perfil mínimo', '--profile minimal', '.git/hooks/', 'si configura la carpeta global de hooks de git) y preguntame si sigo'];
 function clearTopProblems(text, lang) {
   const out = [];
   const where = IN_BEFORE(text, lang);
@@ -1254,10 +1259,10 @@ function clearTopProblems(text, lang) {
   const guided = sectionOf(at('Install with Claude Code'))(text, lang);
   // desde la story 8.23 (tanda E) el arnés vive en ~/.tycon/harness como archivos bajados, no en un clon
   for (const k of ['`minimal`', '`core.hooksPath`', '`~/.tycon/harness`']) if (!says(guided, k)) out.push(`instalar con Claude Code — falta «${k}»`);
-  // story 8.40 (AC 31): el piso es Node 20 (el de harness.js), en la portada y en las páginas guiadas («node v20 o más»)
-  if (says(sectionOf(at('What you need'))(text, lang), 'Node 20') === false) out.push('qué necesitás — falta «Node 20»');
-  if (/\bv20\b/.test(text)) out.push('dice «v20»: la portada dice «Node 20» en «Requisitos» (la forma «v20» es la de las páginas guiadas)');
-  if (/Node 22 (o posterior|or later)/.test(text)) out.push('dice «Node 22 o posterior»: el piso es Node 20, como harness.js');
+  // story 8.40 (AC 31): el piso para instalar es Node 22, en la portada y en las páginas guiadas («node v22 o más»)
+  if (says(sectionOf(at('What you need'))(text, lang), 'Node 22') === false) out.push('qué necesitás — falta «Node 22»');
+  if (/\bv2[02]\b/.test(text)) out.push('dice «v20»/«v22»: la portada dice «Node 22» en «Requisitos» (la forma «v22» es la de las páginas guiadas)');
+  if (/Node 20 (o posterior|or later)/.test(text)) out.push('dice «Node 20 o posterior»: el piso para instalar es Node 22');
   // lo que la revisión marcó como falso: la configuración de la primera story no queda guardada sola
   if (/writes both files|escribe los dos archivos/.test(text)) out.push('promete que la primera story guarda `_bmad/` sola');
   return out;
@@ -1276,13 +1281,13 @@ test('PublicFrontPage_ClearTop_ChangesBeforeInstall_GuidesKeepThePromises', asyn
     }
     assert.ok(clearTopProblems(`${text.es}\nescribe los dos archivos\n`, 'es').some((m) => m.includes('_bmad')), 'con la promesa de _bmad/ tenía que fallar');
   });
-  await t.test('las instrucciones para Claude: Node 20, el perfil mínimo y el aviso de core.hooksPath', () => {
+  await t.test('las instrucciones para Claude: Node 22, el perfil mínimo y el aviso de core.hooksPath', () => {
     for (const guided of GUIDED_PAPERS) {
       const paper = readPaper(guided);
       const missing = GUIDE_KEYWORDS.filter((k) => !paper.includes(k));
       assert.deepStrictEqual(missing, [], `${guided}: lo que la portada promete de estas instrucciones`);
-      // story 8.40 (AC 31): las páginas guiadas piden el piso del programa, Node 20; v22 sería pedir de más
-      assert.doesNotMatch(paper, /\bv22\b|node 22\+/, `${guided}: dice «v22»; el piso del programa (y de las páginas guiadas) es Node 20`);
+      // story 8.40 (AC 31): las páginas guiadas piden el piso para instalar, Node 22; v20 sería pedir de menos
+      assert.doesNotMatch(paper, /\bv20\b|node 20\+/, `${guided}: dice «v20»; el piso para instalar (y de las páginas guiadas) es Node 22`);
       // el aviso va ANTES del comando que configura core.hooksPath
       assert.ok(paper.indexOf('.git/hooks/') < paper.indexOf('git config --global core.hooksPath'), `${guided}: el aviso de .git/hooks/ va antes de configurar core.hooksPath`);
     }

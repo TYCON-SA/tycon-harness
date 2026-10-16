@@ -28,7 +28,7 @@ Bajar el propio guion va siempre sin credencial y no pasa por la API: no gasta d
 
 1. Herramientas:
    node --version; python3 --version; tar --version
-   Esperado: node v20 o más, python3 3.algo, y tar. Lo que falte, decime que lo instale yo con Homebrew
+   Esperado: node v22 o más, python3 3.algo, y tar. Lo que falte, decime que lo instale yo con Homebrew
    (https://brew.sh si no lo tengo), de a uno:  brew install node · brew install python
    (git NO hace falta: el arnés se baja como archivos, no se clona.)
 

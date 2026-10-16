@@ -19,7 +19,7 @@
   },
   "homepage": "https://github.com/TYCON-SA/tycon-harness#readme",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "publishConfig": {
     "access": "public"

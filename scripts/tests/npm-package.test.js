@@ -7,7 +7,7 @@
  * versión publicada de GitHub y corre `harness.js install`. Lo que no se puede perder:
  *   · T3  — `npm pack --dry-run` lista exactamente package.json, index.js, README.md y LICENSE (la copia el workflow);
  *           sin `dependencies`; el shebang en la línea 1; 400 líneas como mucho; el repo de fábrica escrito UNA vez; el
- *           piso de Node igual al de harness.js; ningún hijo lanzado como `node` por nombre (siempre process.execPath);
+ *           piso de Node para instalar en 22 (harness.js sigue en 20, sólo para actualizar); ningún hijo lanzado como `node` por nombre (siempre process.execPath);
  *           `--help` sale 0 sin red ni HOME y nombra el archivo que corre y dónde se ve la procedencia.
  *   · T5  — `requisites()` exportada: Windows pide pwsh 7 (con `winget install Microsoft.PowerShell`) y tar; fuera de
  *           Windows, bash, tar y python3 (éste salvo que se pida SÓLO Codex); ninguna variable de entorno cambia la
@@ -61,10 +61,12 @@ test('T3 NpmPackage_OneFile_NoDeps_Help', (t) => {
   assert.strictEqual(src.split('\n')[0], '#!/usr/bin/env node', 'el shebang en la línea 1');
   assert.ok(src.split('\n').length <= 400, `index.js tiene ${src.split('\n').length} líneas (tope 400)`);
   assert.strictEqual((src.match(/^const REPO = '[^']+';/gm) || []).length, 1, 'el repo de fábrica, una sola vez');
+  // el piso para INSTALAR es 22 (decisión del dueño, 2026-10-16); harness.js sigue en 20: lo tolera sólo para actualizar
   const floorHarness = /^const NODE_FLOOR = (\d+);/m.exec(read(path.join(ROOT, 'scripts', 'setup', 'harness.js')))[1];
   const floorPkg = /^const NODE_FLOOR = (\d+);/m.exec(src);
   assert.ok(floorPkg, 'index.js declara NODE_FLOOR');
-  assert.strictEqual(floorPkg[1], floorHarness, 'el piso del instalador es el de harness.js');
+  assert.strictEqual(floorPkg[1], '22', 'el piso del instalador es 22');
+  assert.strictEqual(floorHarness, '20', 'harness.js sigue en 20 (actualizar una instalación existente)');
   assert.ok(!/spawnSync\(\s*['"]node['"]/.test(src) && !/spawn\(\s*['"]node['"]/.test(src) && !/execFileSync\(\s*['"]node['"]/.test(src), 'ningún hijo se lanza como `node` por nombre');
   assert.ok(/process\.execPath/.test(src), 'el hijo corre con process.execPath');
   assert.ok(!/require\(\s*['"](?!(fs|os|path|http|https|net|tls|tty|child_process|crypto|url)['"])/.test(src), 'sólo módulos del núcleo de Node');
@@ -112,9 +114,10 @@ test('T5 NpxInstaller_Requisites_PerPlatform', () => {
   assert.strictEqual(both.length, 1); assert.match(both[0], /python3/);
   // sin opciones (Claude Code por defecto): python3 es requisito
   assert.strictEqual(I.requisites({ platform: 'linux', tools: have('tar', 'bash'), nodeVersion: NEW, args: [] }).length, 1);
-  // un Node viejo se nombra con la versión que hay y el piso
-  const old = I.requisites({ platform: 'darwin', tools: have('tar', 'bash', 'python3'), nodeVersion: '18.0.0', args: [] });
-  assert.strictEqual(old.length, 1); assert.match(old[0], /18\.0\.0/); assert.match(old[0], new RegExp(String(I.NODE_FLOOR)));
+  // un Node viejo se nombra con la versión que hay y el piso (20 ya no alcanza para instalar)
+  const old = I.requisites({ platform: 'darwin', tools: have('tar', 'bash', 'python3'), nodeVersion: '20.19.0', args: [] });
+  assert.strictEqual(old.length, 1); assert.match(old[0], /20\.19\.0/); assert.match(old[0], new RegExp(String(I.NODE_FLOOR)));
+  assert.deepStrictEqual(I.requisites({ platform: 'darwin', tools: have('tar', 'bash', 'python3'), nodeVersion: '22.0.0', args: [] }), [], 'Node 22 alcanza');
   // dos faltas: una línea por cada una
   assert.strictEqual(I.requisites({ platform: 'darwin', tools: have(), nodeVersion: NEW, args: [] }).length, 3);
   // Windows: tar por ruta absoluta (el de System32), nunca el primero que aparezca (CreateProcess mira antes la carpeta
@@ -150,7 +153,7 @@ test('T10 NpmPackage_VersionIsSemverAndStartsAt1', () => {
   const repoUrl = typeof pkg.repository === 'string' ? pkg.repository : pkg.repository.url;
   assert.ok(repoUrl.replace(/^git\+/, '').replace(/\.git$/, '') === remote, `repository nombra el repo público (${remote}): ${repoUrl}`);
   assert.deepStrictEqual(pkg.publishConfig, { access: 'public' });
-  const floor = /^const NODE_FLOOR = (\d+);/m.exec(read(path.join(ROOT, 'scripts', 'setup', 'harness.js')))[1];
+  const floor = /^const NODE_FLOOR = (\d+);/m.exec(read(INDEX))[1];   // el piso para instalar, el del propio instalador
   assert.strictEqual(pkg.engines.node, `>=${floor}`);
   // el repo de fábrica de index.js es el de public-remotes.json
   assert.ok(read(INDEX).includes(`const REPO = '${remote.replace(/^https:\/\/github\.com\//, '')}';`));

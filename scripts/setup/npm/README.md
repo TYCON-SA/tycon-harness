@@ -15,7 +15,7 @@ npx @tycon-sa/harness@latest
   Ojo: **npx no comprueba la firma al instalar**; se mira en la página o con `npm view`.
 - **Sin npm, a mano**: `scripts/setup/get-harness.sh` (o `get-harness.ps1` en Windows) del repo público: bajarlo,
   leerlo y correrlo.
-- **Node**: hace falta Node 20 o posterior sólo para instalar; después el arnés usa su propio Node 24.
+- **Node**: hace falta Node 22 o posterior sólo para instalar; después el arnés usa su propio Node 24.
 - **Si npm falla antes de este instalador**: una caché de npm sin permiso (`EACCES`) se arregla con
   `npm config get cache` y devolviéndote esa carpeta; sin red, con el paquete fuera de la caché, npx no puede bajarlo. Un
   `.npmrc` con `registry=` apunta a otro registro: el paquete tiene que salir de registry.npmjs.org.

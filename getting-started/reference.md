@@ -28,9 +28,10 @@ your assistant are in Spanish only today.
 
 - **No GitHub account**: this repository is public, and the harness is downloaded from it without a credential.
 - **Claude Code** installed and signed in (or Codex, for the Codex side).
-- **On Windows, native**: Node 20 or later, PowerShell 7 and `tar` (Windows 10 and later bring it). Git and Python
+- **On Windows, native**: Node 22 or later, PowerShell 7 and `tar` (Windows 10 and later bring it). Git and Python
   are not needed. Through WSL, the same as on Mac and Linux, inside WSL.
-- **On Mac and Linux**: Bash, Python 3, `tar`, `curl` and Node 20 or later (tested on 20, 22 and 24). Git is not needed.
+- **On Mac and Linux**: Bash, Python 3, `tar`, `curl` and Node 22 or later (tested on 22 and 24). Git is not needed.
+- **Node 20**: 20 is tolerated only to update an existing installation; it is not tested.
 - **The TYCON stack pack** also needs the .NET SDK your plugin targets.
 
 The exact list for Mac and Linux (`dotnet`, only with the stack pack):
@@ -41,7 +42,7 @@ bash
 python3
 tar
 curl
-node >= 20
+node >= 22
 dotnet (bizuit)
 ```
 <!-- /requirements -->
@@ -68,7 +69,7 @@ winget install Microsoft.PowerShell
 ```
 
 Close the terminal and open **PowerShell 7** (that is its name in the Start menu): every command on this page runs
-there, not in the 5.1 version that ships with the system. Check that `node --version` shows Node 20 or later and that `tar
+there, not in the 5.1 version that ships with the system. Check that `node --version` shows Node 22 or later and that `tar
 --version` answers (the system has brought it since 2018). Nothing else to sign in with: the harness never opens a browser.
 
 **On Mac**, install what you are missing with Homebrew (https://brew.sh):
@@ -77,7 +78,7 @@ there, not in the 5.1 version that ships with the system. Check that `node --ver
 brew install node python
 ```
 
-**On Linux**, do the same with your distribution's package manager. Check that `node --version` shows Node 20 or later.
+**On Linux**, do the same with your distribution's package manager. Check that `node --version` shows Node 22 or later.
 
 ### 2. Download and install
 

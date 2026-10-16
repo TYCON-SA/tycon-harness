@@ -29,7 +29,7 @@ $Api = if ($env:TYCON_RELEASE_API) { $env:TYCON_RELEASE_API } else { 'https://ap
 $GitBase = if ($env:TYCON_RELEASE_GIT) { $env:TYCON_RELEASE_GIT } else { 'https://github.com' }
 $Codeload = if ($env:TYCON_RELEASE_ARCHIVE) { $env:TYCON_RELEASE_ARCHIVE } else { 'https://codeload.github.com' }
 $Public = -not ($env:TYCON_RELEASE_API -and -not $env:TYCON_RELEASE_GIT)
-$NodeFloor = 20   # el mismo piso que scripts/setup/harness.js
+$NodeFloor = 22   # el piso para INSTALAR (el de la documentación); harness.js tolera 20 sólo para actualizar
 $TokenUrl = 'https://github.com/settings/personal-access-tokens/new'
 
 function Say([string]$Text) { [Console]::Error.WriteLine("get-harness: $Text") }

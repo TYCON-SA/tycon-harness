@@ -43,7 +43,7 @@ Para sacar el arnés, `harness.js uninstall --dry-run` muestra qué quitaría, y
 
 - Claude Code, instalado y con tu sesión iniciada.
 - Windows 11 con PowerShell 7, o Mac. En Linux o en WSL, se instala a mano (está en la «Referencia»).
-- Node 20 o posterior y `tar`. En Mac, además, Python 3 y Homebrew. Git **no** hace falta para usar el arnés: se baja
+- Node 22 o posterior y `tar`. En Mac, además, Python 3 y Homebrew. Git **no** hace falta para usar el arnés: se baja
   como archivos, no se clona. Tampoco hace falta una cuenta de GitHub: este repo es público.
 - Tu Node hace falta para instalar. Después el arnés baja su propio Node 24 (unos 50 MB, de nodejs.org) y sus hooks
   corren con él; tus proyectos siguen con tu Node, que no se toca. Se apaga con `TYCON_HARNESS_NODE=0`.

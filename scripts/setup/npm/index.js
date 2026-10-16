@@ -27,7 +27,7 @@ const fs = require('fs'); const os = require('os'); const path = require('path')
 const http = require('http'); const https = require('https'); const { spawnSync } = require('child_process');
 
 const REPO = 'TYCON-SA/tycon-harness';
-const NODE_FLOOR = 20;   // el mismo piso que scripts/setup/harness.js
+const NODE_FLOOR = 22;   // el piso para INSTALAR (el de la documentación); harness.js tolera 20 sólo para actualizar una instalación existente
 const PACKAGE = '@tycon-sa/harness', TOKEN_URL = 'https://github.com/settings/personal-access-tokens/new', AUDIENCES = { 1: 'me', 2: 'team', 3: 'org' };
 const GH_REPO = /^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/;
 

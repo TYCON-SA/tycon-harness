@@ -1669,9 +1669,10 @@ PS
   # nada exclusivo de PowerShell 7 fuera de los comentarios (?? ?. && ||; el ternario no se busca: su forma choca con texto común): así 5.1 lo lee y dice qué falta
   if grep -v '^[[:space:]]*#' "$src" | grep -nE '\?\?|\?\.|&&|\|\||-Parallel' > "$gl/ps7.out"; then no "get-harness.ps1 · sintaxis de PowerShell 7 que 5.1 no lee: $(head -3 "$gl/ps7.out" | tr '\n' ' ')"
   else ok "get-harness.ps1 · sin ?? ?. && || ni -Parallel: Windows PowerShell 5.1 lo lee hasta el chequeo de versión"; fi
-  floor="$(sed -n 's/^const NODE_FLOOR = \([0-9][0-9]*\);.*/\1/p' "$ROOT/scripts/setup/harness.js")"
-  if grep -qE "^\\\$NodeFloor = ${floor}( |\$)" "$src"; then ok "get-harness.ps1 · el piso de Node es el de harness.js (${floor})"
-  else no "get-harness.ps1 · el piso de Node no es el de harness.js (${floor}): $(grep -n 'NodeFloor =' "$src" | head -1)"; fi
+  # el piso para INSTALAR es el del instalador de npm (22); harness.js sigue en 20, sólo para actualizar (story 8.40)
+  floor="$(sed -n 's/^const NODE_FLOOR = \([0-9][0-9]*\);.*/\1/p' "$ROOT/scripts/setup/npm/index.js")"
+  if [ -n "$floor" ] && grep -qE "^\\\$NodeFloor = ${floor}( |\$)" "$src"; then ok "get-harness.ps1 · el piso de Node es el de instalar (${floor}, el de index.js)"
+  else no "get-harness.ps1 · el piso de Node no es el de instalar (${floor}): $(grep -n 'NodeFloor =' "$src" | head -1)"; fi
 
   # el remoto: un arnés de juguete cuyo harness.js anota sus argumentos, publicado en `main` de un bare que sirve el
   # «GitHub» de juguete (scripts/tests/fixtures/toy-release-server.js: la ref, el comprimido por codeload, el permiso)
@@ -1696,7 +1697,7 @@ PS
   for t in tar python3; do real="$(command -v "$t")" && ln -sf "$real" "$gl/bin-oldnode/$t" && ln -sf "$real" "$gl/bin-full/$t"; done
   real="$(command -v gzip)" && ln -sf "$real" "$gl/bin-full/gzip"   # el tar de GNU (Linux) descomprime llamando a gzip por el PATH; el de Mac y Windows lo trae adentro
   real="$(command -v python3)" && ln -sf "$real" "$gl/bin-notar/python3"
-  printf '#!/usr/bin/env bash\nif [ "${1:-}" = --version ]; then echo v18.0.0; exit 0; fi\nexec "%s" "$@"\n' "$REAL_NODE" > "$gl/bin-oldnode/node"; chmod +x "$gl/bin-oldnode/node"
+  printf '#!/usr/bin/env bash\nif [ "${1:-}" = --version ]; then echo v20.19.0; exit 0; fi\nexec "%s" "$@"\n' "$REAL_NODE" > "$gl/bin-oldnode/node"; chmod +x "$gl/bin-oldnode/node"
   # ps_gh <home> <bin> [VAR=valor …] -- <args…> — el guion con un PATH de mentira (sólo esa carpeta), la HOME de laboratorio
   # y el GitHub de juguete como API (TYCON_RELEASE_API: la variable de prueba que entiende el guion, como release.js)
   ps_gh() { local hh="$1" bin="$2"; shift 2
@@ -1733,9 +1734,9 @@ PS
   else no "get-harness.ps1 · sin tar (rc $rc): $(brief "$gl/notar.out")"; fi
   h="$(new_home gh-oldnode)"
   ps_gh "$h" "$gl/bin-oldnode" -- > "$gl/oldnode.out" 2>&1; rc=$?
-  if [ "$rc" -eq 1 ] && grep -q "18\.0\.0.*${floor}" "$gl/oldnode.out" && [ -z "$(find "$h" -mindepth 1 | head -1)" ]; then
-    ok "get-harness.ps1 · con node 18: sale 1 nombrando la versión que hay y la que pide (${floor}), sin bajar nada"
-  else no "get-harness.ps1 · con node 18 (rc $rc): $(brief "$gl/oldnode.out")"; fi
+  if [ "$rc" -eq 1 ] && grep -q "20\.19\.0.*${floor}" "$gl/oldnode.out" && [ -z "$(find "$h" -mindepth 1 | head -1)" ]; then
+    ok "get-harness.ps1 · con node 20: sale 1 nombrando la versión que hay y la que pide (${floor}), sin bajar nada"
+  else no "get-harness.ps1 · con node 20 (rc $rc): $(brief "$gl/oldnode.out")"; fi
   # repo público, con todo en su lugar: baja por la API (la redirección a codeload sin credencial), corre install y borra la temporal
   h="$(new_home gh-full)"; : > "$gl/requests.log"
   ps_gh "$h" "$gl/bin-full" -- -- --profile minimal --yes > "$gl/full.out" 2>&1; rc=$?

@@ -21,7 +21,7 @@ REPO="TYCON-SA/tycon-harness"
 API="${TYCON_RELEASE_API:-https://api.github.com}"   # TYCON_RELEASE_API: sólo pruebas (el GitHub de juguete)
 GITBASE="${TYCON_RELEASE_GIT:-https://github.com}"; CODELOAD="${TYCON_RELEASE_ARCHIVE:-https://codeload.github.com}"; PUB=1   # ídem
 [ -n "${TYCON_RELEASE_API:-}" ] && [ -z "${TYCON_RELEASE_GIT:-}" ] && PUB=0   # la API de juguete con el github.com real: nunca
-NODE_FLOOR=20   # el mismo piso que scripts/setup/harness.js
+NODE_FLOOR=22   # el piso para INSTALAR (el de la documentación); harness.js tolera 20 sólo para actualizar
 TOKEN_URL="https://github.com/settings/personal-access-tokens/new"
 
 say() { printf 'get-harness: %s\n' "$*" >&2; }
