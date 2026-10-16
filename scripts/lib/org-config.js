@@ -370,10 +370,14 @@ function pantalla() {
   var TOKEN = meta ? meta.getAttribute('content') : '';
   var app = document.getElementById('config-app');
   if (!app) return;
+  var SOLO_LECTURA = false;
+  var CONTROLES = { input: true, select: true, textarea: true, button: true };
   function el(tag, attrs) {
     var e = document.createElement(tag); attrs = attrs || {};
     // un atributo sin valor no se pone: setAttribute('disabled', undefined) igual deshabilita
     Object.keys(attrs).forEach(function (k) { var v = attrs[k]; if (v === undefined || v === null) return; if (k === 'text') e.textContent = v; else if (k.indexOf('on') === 0) e.addEventListener(k.slice(2), v); else e.setAttribute(k, v); });
+    // dentro del editor de una sección de sólo lectura, nada se puede tocar: campos, selectores y botones nacen apagados
+    if (SOLO_LECTURA && CONTROLES[tag]) e.setAttribute('disabled', 'disabled');
     for (var i = 2; i < arguments.length; i++) if (arguments[i]) e.appendChild(arguments[i]);
     return e;
   }
@@ -682,7 +686,7 @@ function pantalla() {
     var arriba = pr.filter(function (x) { return x.sinCampo; });
     if (arriba.length) { var ul = el('ul', { class: 'renglones' }); arriba.forEach(function (x) { ul.appendChild(el('li', { class: 'err', text: (x.path ? x.path + ': ' : '') + x.message })); }); sec.appendChild(ul); }
     var editor = EDITORES[s.id];
-    if (editor) sec.appendChild(editor(s, S.borradores[s.id], pr));
+    if (editor) { SOLO_LECTURA = !!s.soloLectura; try { sec.appendChild(editor(s, S.borradores[s.id], pr)); } finally { SOLO_LECTURA = false; } }
     var n = S.notas[s.id];
     var prop = S.extras.proponer && S.extras.proponer[s.repo];
     var habilitado = prop && prop.habilitado;

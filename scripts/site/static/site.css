@@ -114,7 +114,7 @@ a.kpi:hover{background:var(--wash)}
 .campo{display:grid;gap:4px;font-size:12px;color:var(--muted);min-width:0}
 .campo label{font-size:12px;color:var(--muted)}
 .campo input,.campo select,.fila input,.fila select,.form-block textarea,.thr input,.thr select{width:100%;min-width:0;padding:7px 10px;border-radius:8px;border:1px solid var(--line-strong);background:var(--surface-2);font-size:14px;color:var(--ink)}
-.campo input:disabled{opacity:.5}
+.campo input:disabled,.form-block input:disabled,.form-block select:disabled,.form-block textarea:disabled{opacity:.5;cursor:not-allowed;background:transparent}
 input.bad{border-color:var(--bad)}
 .form-block textarea{font:12.5px/1.5 var(--mono)}
 .fila{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px 10px;align-items:end}

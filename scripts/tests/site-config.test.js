@@ -764,3 +764,28 @@ test('T8c Stages_NombresDePuntos_Rechazados @story-2.29 @ac-8 — un proyecto, d
   }
   assert.deepStrictEqual(urls, [], 'ninguna llamada');
 });
+
+test('T28c Umbrales_SoloLectura_ControlesApagados — una sección «sólo para mirar» no ofrece nada que parezca editable', async () => {
+  const creados = [];
+  const nodo = (tag) => { const n = { tag, hijos: [], textContent: '', attrs: {}, setAttribute(k, v) { n.attrs[k] = v; }, appendChild(c) { n.hijos.push(c); return c; }, addEventListener() {}, replaceChildren(...cs) { n.hijos = cs; } }; creados.push(n); return n; };
+  const app = nodo('div');
+  const document = { querySelector: () => null, getElementById: (id) => (id === 'config-app' ? app : null), createElement: (t) => nodo(t) };
+  const umbrales = (soloLectura) => ({ id: 'umbrales', titulo: 'Umbrales', repo: 'operaciones', estado: 'cargado', soloLectura, motivo: soloLectura ? 'tu nocturno todavía no lee este archivo' : null, borrador: { thresholds: { suites_rojas: { direction: 'menor_es_mejor', ok_max: 0, bad_min: 3 } } }, problems: [], avisos: [] });
+  const correr = async (soloLectura) => {
+    creados.length = 0;
+    const respuesta = { ok: true, secciones: [umbrales(soloLectura), { id: 'canal', titulo: 'Canal', repo: 'operaciones', estado: 'cargado', soloLectura: false, borrador: { notify: 'x' }, problems: [], avisos: [] }], proponer: {}, versiones: [], productos: [] };
+    new Function('document', 'fetch', ORG.pantalla())(document, () => Promise.resolve({ status: 200, json: () => Promise.resolve(respuesta) }));
+    for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
+    const dentro = (n, id) => { const out = []; const walk = (x) => { out.push(x); (x.hijos || []).forEach(walk); }; walk(n); return out; };
+    const sec = (id) => creados.find((n) => n.attrs.id === `seccion-${id}`);
+    const controles = (id) => dentro(sec(id)).filter((n) => ['input', 'select', 'textarea', 'button'].includes(n.tag));
+    return { umb: controles('umbrales'), canal: controles('canal') };
+  };
+  const solo = await correr(true);
+  assert.ok(solo.umb.some((n) => n.tag === 'select') && solo.umb.some((n) => n.tag === 'input'), 'el editor de umbrales se dibuja');
+  for (const n of solo.umb) assert.strictEqual(n.attrs.disabled, 'disabled', `${n.tag} ${n.attrs['data-path'] || n.textContent} apagado`);
+  assert.ok(solo.canal.some((n) => n.tag === 'textarea' && !n.attrs.disabled), 'la sección vecina, editable, no se contagia');
+  const editable = await correr(false);
+  assert.ok(editable.umb.filter((n) => n.tag !== 'button').every((n) => !n.attrs.disabled), 'sin sólo lectura, los campos se editan');
+  assert.match(fs.readFileSync(path.join(ROOT, 'scripts', 'site', 'static', 'site.css'), 'utf8'), /\.form-block select:disabled[^{]*\{[^}]*opacity/, 'y se ven apagados');
+});
