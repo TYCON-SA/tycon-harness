@@ -557,8 +557,9 @@ Node solo, que no depende de Claude ni de Codex. Lo que lo sostiene:
   modelo. En pantalla se ve un estado de lista cerrada, y el motivo crudo va sólo al registro.
 - **El refresco** es cada 15 minutos y conserva el último bueno. Si `operations.json` deja de validar, vale el último
   bueno 24 horas, con una banda para quienes mantienen; después **el sitio se frena para todos**. El plazo se guarda en
-  `SITE_DATA_DIR`, así un reinicio no lo vuelve a empezar. **Ponelo en un volumen** (`-v sitio-datos:/datos -e
-  SITE_DATA_DIR=/datos`): ahí vive también el espejo del buzón, y sin volumen cada reinicio lo vuelve a bajar entero. La
+  `SITE_DATA_DIR`, así un reinicio no lo vuelve a empezar. **Ponelo en un volumen** (`docker run -v sitio-datos:/data -e
+  SITE_DATA_DIR=/data …`): ahí vive también el espejo del buzón, y sin volumen cada reinicio lo vuelve a bajar entero. La
+  imagen deja `/data` del usuario del sitio y la declara volumen, así un volumen nuevo nace escribible. La
   bajada va de a varios archivos a la vez dentro de su tope de 2 minutos; si igual corta, la pasada siguiente sale a los
   10 segundos y retoma donde quedó, en vez de esperar el refresco. Hay tres sondas: `/livez` dice si el proceso vive, `/healthz`
   si el sitio está sano (con el freno da 503) y `/readyz` si ya cargó las fuentes.
