@@ -6,7 +6,7 @@
 :root[data-theme="dark"]{color-scheme:dark;--page:#0d0d0c;--surface:#1a1a19;--surface-2:#151514;--ink:#f0efec;--ink-2:#c3c2b7;--ink-3:#8f8d86;--muted:#8f8d86;--grid:#2c2c2a;--line:rgba(255,255,255,.09);--line-strong:rgba(255,255,255,.2);--accent:#f0efec;--good-ink:#2fc42f;--warn-ink:#fab219;--bad-ink:#f06a6a;--crit:#f06a6a;--nm-ink:#a9a79f;--hatch:rgba(255,255,255,.14);--wash:rgba(57,135,229,.12);--shadow:0 1px 0 rgba(0,0,0,.4),0 10px 30px -18px rgba(0,0,0,.8)}
 :root[data-theme="light"]{color-scheme:light}
 body{background:var(--page);color:var(--ink);font:15px/1.5 var(--sans);overflow-x:hidden}
-a{color:inherit}button,input,select,textarea{font:inherit;color:inherit}
+a,a:visited{color:inherit;text-decoration-color:var(--line-strong);text-underline-offset:2px}a:hover{text-decoration-color:currentColor}button,input,select,textarea{font:inherit;color:inherit}
 .num{font-variant-numeric:tabular-nums}
 
 /* ── armazón: menú al costado; en teléfono, arriba ── */
