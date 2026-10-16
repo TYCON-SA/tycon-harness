@@ -96,6 +96,25 @@ jobs:
 
       - template: pipelines/operations/templates/check-tree.yml@harness
 
+      # Lo que deja la noche para el sitio de la organización (story 2.23, AC 16): los pull requests abiertos con su autor y
+      # los pedidos abiertos con su asignado, SIN títulos. El sitio no consulta la plataforma: lee estos dos archivos del
+      # repo de operaciones (lo asignado se ve con hasta un día de atraso, y la pantalla lo dice). Si una consulta falla, el
+      # archivo se escribe igual con `estado: no_medido` y el paso avisa; la página del tablero no depende de ellos.
+      - script: |
+          set -u
+          DAY=$(date -u +%Y-%m-%d)
+          mkdir -p .dashboard/open-prs .dashboard/assigned
+          if ! node scripts/nightly/open-prs/open-prs.js --today "$DAY" --org "$(System.CollectionUri)" --json ".dashboard/open-prs/open-prs-$DAY.json" > /dev/null; then
+            echo "##vso[task.logissue type=warning]Los pull requests para el sitio salieron «no medido» (el archivo lo dice)"
+          fi
+          if ! node scripts/nightly/assigned/assigned-items.js --today "$DAY" --org "$(System.CollectionUri)" --out .dashboard/assigned; then
+            echo "##vso[task.logissue type=warning]Los pedidos asignados para el sitio salieron «no medido» (el archivo lo dice)"
+          fi
+          exit 0
+        displayName: 'Lo que deja la noche para el sitio: pull requests y pedidos asignados'
+        env:
+          AZURE_DEVOPS_EXT_PAT: $(System.AccessToken)
+
       - script: |
           set -u
           BUZON="$(Agent.TempDirectory)/buzon/corridas-buzon"
@@ -125,7 +144,7 @@ jobs:
       - script: |
           set -eu
           cd "$(Build.SourcesDirectory)"
-          # A main llega SÓLO la página, sobre la punta recién traída y con reintento. El sello se verifica ANTES de cada
+          # A main llegan SÓLO la página y los dos archivos del sitio (story 2.23), sobre la punta recién traída y con reintento. El sello se verifica ANTES de cada
           # empuje sobre lo que se va a publicar (la página y el .dashboard de la punta, extraídos a $PUSH_DIR).
           DAY=$(date -u +%Y-%m-%d)
           node scripts/ci/push-nightly-data.js save \
@@ -133,8 +152,8 @@ jobs:
             --require artifacts/tablero-del-arnes.html \
             --verify "node scripts/nightly/dashboard/seal.js --verify \"\$PUSH_DIR/artifacts/tablero-del-arnes.html\" --today \"$DAY\" --run \"$(Build.BuildId)\" --dashboard \"\$PUSH_DIR/.dashboard\"" \
             --verify-export .dashboard \
-            -- artifacts/tablero-del-arnes.html
-        displayName: 'Guardar la página del día en el repo de operaciones'
+            -- artifacts/tablero-del-arnes.html .dashboard/open-prs .dashboard/assigned
+        displayName: 'Guardar la página del día y lo del sitio en el repo de operaciones'
         condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'), eq('${{ parameters.efectos }}', 'true'))
 
       # Lo publicado, no el disco: la página que abre la organización es la de main del repo de operaciones.

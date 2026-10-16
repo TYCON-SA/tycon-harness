@@ -1,9 +1,14 @@
 {
-  "__doc": "EJEMPLO. Va en la raíz de tu repo de operaciones. Lector y forma: scripts/lib/operations-config.js. owners.default es el responsable de respaldo: se le asigna un pedido de trabajo cuando no se deduce un dueño, y se lo menciona en cada pedido. owners.by_project asigna directo los pedidos de un proyecto. reviewers.dependencies: quiénes revisan los pull requests de la revisión de dependencias. Identidades: el principalName de Azure DevOps.",
+  "__doc": "EJEMPLO. Va en la raíz de tu repo de operaciones. Lector y forma: scripts/lib/operations-config.js. owners.default es el responsable de respaldo: se le asigna un pedido de trabajo cuando no se deduce un dueño, y se lo menciona en cada pedido. owners.by_project asigna directo los pedidos de un proyecto. reviewers.dependencies: quiénes revisan los pull requests de la revisión de dependencias. Identidades: el principalName de Azure DevOps. site (story 2.23): el sitio de la organización — site.maintainers son los correos de quienes mantienen el arnés y ven todo; site.mailbox, el buzón de corridas que lee el sitio (la credencial NO va acá: va en las variables de la plataforma del sitio); site.refresh_minutes, cada cuánto relee las fuentes (5 a 120, 15 si no está).",
   "version": 1,
   "owners": {
     "default": "lider@acme.example",
     "by_project": { "Acme Web": "responsable-web@acme.example" }
   },
-  "reviewers": { "dependencies": ["lider@acme.example"] }
+  "reviewers": { "dependencies": ["lider@acme.example"] },
+  "site": {
+    "maintainers": ["lider@acme.example"],
+    "mailbox": { "provider": "azure-blob", "account": "acmeruns", "container": "runs" },
+    "refresh_minutes": 15
+  }
 }

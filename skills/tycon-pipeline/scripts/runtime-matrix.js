@@ -18,24 +18,22 @@
  *                ejercitó corriendo de verdad.
  *   - SIN-EVIDENCIA — ningún artefacto de ejecución lo respalda.
  *
- * **La regla**: la matriz está VERDE solo si cada AC es RUNTIME, o si el resto está
- * explícitamente diferido a prueba manual con el ACK DEL USUARIO en el frontmatter:
+ * **La regla**: la matriz está VERDE solo si cada AC es RUNTIME, o si el resto está declarado
+ * materialmente imposible de verificar corriendo la app Y el USUARIO lo aprobó desde su terminal:
  *
- *   runtime_verification_ack:
- *     matrix_hash: <12-hex — el hash que imprime esta corrida>
- *     manual_acs: [6, 21]
- *     approved_by: "DevA"
- *     date: 2026-07-10
+ *   runtime_not_verifiable:          # en el frontmatter de la story, lo escribe quien la escribe
+ *     - ac: 6
+ *       reason: "<por qué no se puede ejercer corriendo>"
+ *       covered_by: T6              # el test que lo cubre igual
  *
- * El hash pinnea el ESTADO de la matriz: si el código o la evidencia cambian, el hash
- * cambia y el ack viejo deja de valer (anti-drift — no se puede ackear una foto y
- * shippear otra). El ack exige además que exista `<sid>-manual-test-plan.md` en el
- * evidence dir mencionando CADA AC diferido (la guía de prueba manual deja de ser un
- * favor a pedido y pasa a ser artefacto obligatorio del pipeline).
+ *   + `marker.js runtime-waiver <story>` — la firma del dev, por TTY, en `<repo>/.tycon/runtime-waivers.jsonl`
+ *     (lib/runtime-waiver.js; veredicto WAIVED-USER). El agente no tiene TTY: no puede firmar.
  *
- * **El agente NUNCA escribe el ack** — el bloque lo aprueba el humano en el checkpoint
- * del Step 7 (misma jerarquía que aprobar el plan). Escribirlo sin OK explícito del
- * usuario es la violación exacta que esta capa existe para impedir.
+ * La firma engancha por la declaración (razón + test que lo cubre) y por el hash de la matriz: si cambian, la
+ * firma deja de aplicar sola. Un AC sin evidencia y NO declarado (NOT-RUN) no se puede firmar: hay que correrlo.
+ *
+ * El viejo `runtime_verification_ack:` del frontmatter (lo podía escribir el agente) se ELIMINÓ el 2026-07-10: si
+ * aparece en una story, no abre nada (story 1.19, T18).
  *
  * Staleness (por clase de artefacto — calibrado con la regla de tests del equipo):
  *   - e2e gate / smoke ledger MÁS VIEJOS que el último edit de código → NO cuentan
@@ -619,10 +617,36 @@ function readSmokeLedger(evidenceDirs, sid, gatesLogPath) {
       // confirmada del espejo trae el flag. Es la vía de mutación para productos sin superficie
       // HTTP ni navegador.
       const mutatesOk = e.mutates === true && confirmadas.some((l) => l.includes('"mutates":true'));
-      entries.push({ ...e, path: f, tsMs: Date.parse(e.ts), mirrored, mutatesOk, evidenceKind: classifyCmd(e.cmd) });
+      // (story 1.19) Una línea `"v":2` trae su expectativa y su salida guardada, selladas en el espejo. Es `v:2` si lo
+      // dice el registro O el espejo: borrar la marca del registro (que viaja con el código y se edita) no la vuelve
+      // una línea vieja. Las líneas sin `v` en los dos lados cuentan como siempre (AC 20).
+      const v2 = e.v === 2 || confirmadas.some((l) => l.includes('"v":2'));
+      const salidaProblema = v2 && mirrored ? problemaDeSalida(e, dir, confirmadas) : null;
+      entries.push({ ...e, path: f, tsMs: Date.parse(e.ts), mirrored, mutatesOk, evidenceKind: classifyCmd(e.cmd),
+        v2, salidaProblema });
     }
   }
   return entries;
+}
+
+// (story 1.19) Por qué una línea `v:2` no cuenta, o null si cuenta. La salida se busca relativa a la carpeta del
+// registro y su sha256 tiene que estar en una línea CONFIRMADA del espejo (fuera del repo); lo mismo la expectativa.
+// Con dos corridas en el mismo segundo hay dos líneas confirmadas: alcanza con que UNA calce con las dos cosas.
+function problemaDeSalida(e, dir, confirmadas) {
+  const sha = (x) => crypto.createHash('sha256').update(x).digest('hex');
+  const espejo = confirmadas.map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+  const rel = typeof e.output === 'string' ? e.output : '';
+  if (!rel || path.isAbsolute(rel) || rel.split(/[\\/]/).includes('..')) return 'salida ausente';
+  const abs = path.join(dir, rel);
+  if (!isFile(abs)) return 'salida ausente';
+  // Sin los `\r` de los finales de línea: la salida viaja por git y un checkout los reescribe (autocrlf en Windows,
+  // `eol=lf` en el arnés). smoke-run.sh la guarda y la sella con `\n`; sin esto, un humo legítimo pasaba por editado
+  // (pase adversarial de la 1.19, 2026-10-15).
+  const deLaSalida = espejo.filter((m) => m.output_sha === sha(fs.readFileSync(abs, 'utf8').replace(/\r\n/g, '\n')));
+  if (!deLaSalida.length) return 'salida cambiada después de correr';
+  const shaDe = (v) => (typeof v === 'string' ? sha(v) : undefined);
+  const calza = deLaSalida.some((m) => m.pass_if_sha === shaDe(e.pass_if) && m.fail_if_sha === shaDe(e.fail_if));
+  return calza ? null : 'expectativa cambiada después de correr';
 }
 
 function compactTsToMs(compact) {
@@ -809,9 +833,16 @@ function compute(opts) {
   // La evidencia VIEJA de un número repetido (`<id>-*`): no cuenta para ninguna story —pertenecer es ahora
   // explícito y esos archivos no dicen a cuál— y no se toca. Se NOMBRA, con su ruta (story 1.17, AC 5-7).
   const orphans = evidenceKeyLib.legacyFiles(evidenceDirs, keyInfo);
-  const freshSmokes = ledger.filter((e) => e.mirrored && e.tsMs >= maxCodeMtime);
+  const freshSmokes = ledger.filter((e) => e.mirrored && !e.salidaProblema && e.tsMs >= maxCodeMtime);
   for (const e of ledger.filter((x) => !x.mirrored)) {
     warnings.push(`Smoke ledger entry ${e.ts} SIN espejo en gates.log → no cuenta (¿se escribió a mano en vez de vía smoke-run.sh?).`);
+  }
+  // (story 1.19) Un humo `v:2` sin su salida intacta no cuenta: «verificado corriendo» tiene que poder mostrarse.
+  for (const e of ledger.filter((x) => x.mirrored && x.salidaProblema)) {
+    warnings.push(`Smoke ${e.ts} (AC ${e.acs.join(',')}): ${e.salidaProblema} → no cuenta. ` +
+      (e.salidaProblema === 'salida ausente'
+        ? 'El humo no dejó su salida guardada (o se borró): re-correlo vía smoke-run.sh.'
+        : 'Lo que quedó en el repo no es lo que selló el espejo al correr: re-correlo vía smoke-run.sh, no edites la evidencia.'));
   }
   for (const e of ledger.filter((x) => x.mirrored && x.tsMs < maxCodeMtime)) {
     warnings.push(`Smoke ${e.ts} anterior al último edit de código → no cuenta. Re-correlo vía smoke-run.sh.`);
@@ -922,6 +953,11 @@ function compute(opts) {
     }
     perAc[n] = { verdict, runtime, code, text: acTexts[n] || null, mutacion,
       exentoC8: ex.valida ? ex.motivo : null, fuentes };
+    // (story 1.19) Qué esperaba cada humo `v:2` del AC y dónde está lo que salió. Va aparte y NO entra al hash: las
+    // líneas viejas dan exactamente la misma matriz que antes (AC 20).
+    const expectativas = freshSmokes.filter((e) => e.v2 && e.acs.includes(n))
+      .map((e) => ({ ts: e.ts, pasaSi: e.pass_if, fallaSi: e.fail_if, output: e.output }));
+    if (expectativas.length) perAc[n].expectativas = expectativas;
   }
 
   // --- hash anti-drift: pinnea (ACs + veredictos + refs de evidencia). El ack guarda
@@ -1127,7 +1163,12 @@ function renderMd(r) {
       a.verdict === 'NOT-VERIFIABLE' ? '🟪' : a.verdict === 'RUNTIME-PARCIAL' ? '🟠' : '🔴'; // NOT-RUN = 🔴
     // La columna de evidencia dice CÓMO se ejerció la acción cuando el AC es de acción — así el
     // lector distingue "la corrida observó" de "la corrida ejecutó" sin abrir el artefacto.
-    const ev = [a.runtime.join('; ') || '—', a.mutacion ? `✋ ${a.mutacion}` : null,
+    // (story 1.19) Junto a la evidencia, qué esperaba el humo y dónde está lo que salió. El texto viene del registro
+    // (ya tapado al escribirlo); un `|` o un salto de línea romperían la fila de la tabla.
+    const celda = (t) => String(t).replace(/\s+/g, ' ').replace(/\|/g, '\\|');
+    const esperado = (a.expectativas || []).map((x) =>
+      `🎯 smoke ${x.ts} pasa si: «${celda(x.pasaSi || '—')}»${x.fallaSi ? ` · falla si: «${celda(x.fallaSi)}»` : ''} · salida: \`${celda(x.output)}\``);
+    const ev = [a.runtime.join('; ') || '—', ...esperado, a.mutacion ? `✋ ${a.mutacion}` : null,
       a.exentoC8 ? `⚖️ verbo exento: ${a.exentoC8}` : null].filter(Boolean).join(' · ');
     L.push(`| #${n} | ${icon} ${a.verdict} | ${ev} | ${a.code.join('; ') || '—'} | ${a.declReason || '—'} |`);
   }
@@ -1139,7 +1180,7 @@ function renderMd(r) {
     L.push('');
     L.push('Estos NO están declarados como imposibles de verificar. El agente DEBE correrlos:');
     L.push('- E2E Playwright que asserte el AC contra la app real, corrido vía el gate (`run-check dod`).');
-    L.push('- Smoke de backend vía `smoke-run.sh <evidence-dir> <ruta-de-la-story.md> --acs N,M -- <curl...>` (exit code real; la clave del registro sale de la ruta).');
+    L.push('- Smoke de backend vía `smoke-run.sh <evidence-dir> <ruta-de-la-story.md> --acs N,M --pass-if \'<qué tiene que pasar>\' -- <curl...>` (exit code real y salida guardada; la clave del registro sale de la ruta).');
     L.push('');
     L.push('Si de verdad es materialmente imposible verificarlo corriendo la app, declararlo en el');
     L.push('frontmatter `runtime_not_verifiable:` (con `reason:` y `covered_by:` un test que lo cubra) —');
