@@ -1587,6 +1587,97 @@ grep -q 'MOTIVO_SIN_LINEA_BASE' <<< "${G}" && ok "7.12-T4e la serie también lo 
 grep -q 'stroke-dasharray' <<< "${G}" && mal "7.12-T4e dibujó una línea base que no tiene" || ok "7.12-T4e y no dibuja ninguna línea inventada"
 rm -rf "${T}"
 
+# ── 2.28-T38 · 2.28-Vista_CarpetaVieja_UnaVezYAntes (AC 26, 27, 28) ──────────────────────────────
+# Cada máquina sube ahora a `<nombre>-<código>`; el bajador deja `.carpetas-de-maquina.json` (acá, fabricado a mano).
+# S1 está en las dos carpetas de la misma máquina (la vieja con la copia archivada MÁS TARDE, para que «gana la más nueva»
+# y «gana la nueva» difieran); S2 sólo en la vieja; S3 en una vieja compartida; S4 en una que siguió recibiendo.
+# 🔴 rojo previo: la sesión atribuida a la vieja por orden de nombre («macbook-pro» < «macbook-pro-1a2b3c4d»), su copia
+#    vieja ganando por fecha, y la compartida sin marca.
+T=$(mktemp -d); mkdir -p "${T}/local"
+volcado "${T}/buzon/macbook-pro" "${S1}" "2026-09-01T10:00:00Z" '{"archivedAt":"2026-09-03T12:00:00.000Z","marker":{"storyId":"COPIA-VIEJA"}}' s1.json
+volcado "${T}/buzon/macbook-pro-1a2b3c4d" "${S1}" "2026-09-01T10:00:00Z" '{"archivedAt":"2026-09-02T12:00:00.000Z","marker":{"storyId":"COPIA-NUEVA"}}' s1.json
+volcado "${T}/buzon/macbook-pro" "${S2}" "2026-08-20T10:00:00Z" '{"marker":{"storyId":"SOLO-VIEJA"}}'
+volcado "${T}/buzon/mac-mini" "${S3}" "2026-08-21T10:00:00Z" '{"marker":{"storyId":"COMPARTIDA"}}'
+volcado "${T}/buzon/imac" "${S4}" "2026-08-22T10:00:00Z" '{"marker":{"storyId":"SIGUIO"}}'
+cat > "${T}/buzon/.carpetas-de-maquina.json" <<'JSON'
+{ "schema": 1,
+  "carpetas": {
+    "macbook-pro": { "estado": "unida", "nueva": "macbook-pro-1a2b3c4d", "declarantes": 1, "desde": "2026-09-01" },
+    "mac-mini": { "estado": "compartida", "nueva": null, "declarantes": 2, "desde": "2026-09-01" },
+    "imac": { "estado": "siguio_recibiendo", "nueva": null, "declarantes": 1, "desde": "2026-09-01" } },
+  "regeneradas": {} }
+JSON
+vista_t38() { TYCON_MACHINE=maq-z node "${TABLERO}" --view runs --runs-dir "${T}/local" --mailbox "${T}/buzon" "$@"; }
+J38="$(vista_t38 --json --dry-run 2>/dev/null | python3 -c "
+import json,sys
+raw=sys.stdin.read(); i=raw.find('{'); print(json.dumps(json.loads(raw[i:])))")"
+python3 -c "
+import json,sys; m=json.loads(sys.argv[1]); cs=m['corridas']
+uno=[c for c in cs if c['story'] in ('COPIA-VIEJA','COPIA-NUEVA')]
+assert len(uno)==1, [c['story'] for c in uno]
+c=uno[0]
+assert c['story']=='COPIA-NUEVA', ('ganó la copia', c['story'])
+assert c['maquina']=='macbook-pro-1a2b3c4d', ('máquina', c['maquina'])
+assert c.get('maquina_nota')=='antes, macbook-pro', ('nota', c.get('maquina_nota'))
+" "${J38}" && ok "2.28-T38 la sesión en las dos carpetas sale una vez, de la carpeta nueva, con «antes, macbook-pro»" \
+  || mal "2.28-T38 la sesión de las dos carpetas: $(python3 -c "import json,sys; print([(c['story'],c.get('maquina'),c.get('maquina_nota')) for c in json.loads(sys.argv[1])['corridas']])" "${J38}" 2>&1 | head -c 400)"
+python3 -c "
+import json,sys; m=json.loads(sys.argv[1]); c={x['story']: x for x in m['corridas']}
+assert (c['SOLO-VIEJA']['maquina'], c['SOLO-VIEJA'].get('maquina_nota'))==('macbook-pro-1a2b3c4d','antes, macbook-pro'), c['SOLO-VIEJA'].get('maquina')
+assert (c['COMPARTIDA']['maquina'], c['COMPARTIDA'].get('maquina_nota'))==('mac-mini','compartida por 2 máquinas: no se une'), c['COMPARTIDA'].get('maquina_nota')
+assert (c['SIGUIO']['maquina'], c['SIGUIO'].get('maquina_nota'))==('imac','siguió recibiendo después de la mudanza'), c['SIGUIO'].get('maquina_nota')
+assert sorted((x['nombre'], x['corridas']) for x in m['maquinas']['lista'])==[('imac',1),('mac-mini',1),('macbook-pro-1a2b3c4d',2)], m['maquinas']['lista']
+assert m['buzon']['uniones']['estado']=='medidas', m['buzon'].get('uniones')
+" "${J38}" && ok "2.28-T38 la corrida de la vieja es de la nueva; la compartida y la que siguió recibiendo, marcadas y sin unir" \
+  || mal "2.28-T38 atribución: $(python3 -c "import json,sys; m=json.loads(sys.argv[1]); print([(c['story'],c.get('maquina'),c.get('maquina_nota')) for c in m['corridas']], m['maquinas']['lista'], m['buzon'].get('uniones'))" "${J38}" 2>&1 | head -c 500)"
+vista_t38 --output "${T}/o.html" > "${T}/log" 2>&1; RC=$?
+[ "${RC}" -eq 0 ] && grep -q 'antes, macbook-pro' "${T}/o.html" && grep -q 'compartida por 2 máquinas: no se une' "${T}/o.html" \
+  && ! grep -q 'uniones de carpetas no medidas' "${T}/o.html" \
+  && ok "2.28-T38 la página muestra «antes, macbook-pro» y la marca de la compartida" || mal "2.28-T38 la página (rc=${RC}) no muestra las marcas: $(grep -o 'class="maq">[^<]*<[^<]*' "${T}/o.html" | head -4)"
+DET="$(cliente "${T}/o.html" all)"
+grep -q 'antes, macbook-pro' <<< "${DET}" && ok "2.28-T38 el detalle de la corrida también lo dice" || mal "2.28-T38 el detalle no dice «antes, macbook-pro»"
+# Sin el archivo del bajador: cada carpeta como hoy, y la página lo dice.
+# 🔴 rojo previo: unir sin el archivo (inventar la regla en la vista), o no decir nada.
+rm -f "${T}/buzon/.carpetas-de-maquina.json"
+J38="$(vista_t38 --json --dry-run 2>/dev/null | python3 -c "
+import json,sys
+raw=sys.stdin.read(); i=raw.find('{'); print(json.dumps(json.loads(raw[i:])))")"
+python3 -c "
+import json,sys; m=json.loads(sys.argv[1]); c={x['story']: x for x in m['corridas']}
+assert c['SOLO-VIEJA']['maquina']=='macbook-pro' and not c['SOLO-VIEJA'].get('maquina_nota'), c['SOLO-VIEJA']
+assert not c['COMPARTIDA'].get('maquina_nota'), c['COMPARTIDA']
+assert m['buzon']['uniones']['estado']=='no_medidas', m['buzon'].get('uniones')
+" "${J38}" && ok "2.28-T38 sin .carpetas-de-maquina.json cada carpeta es su máquina, como hoy" || mal "2.28-T38 sin archivo: $(python3 -c "import json,sys; m=json.loads(sys.argv[1]); print([(c['story'],c.get('maquina'),c.get('maquina_nota')) for c in m['corridas']], m['buzon'])" "${J38}" 2>&1 | head -c 400)"
+vista_t38 --output "${T}/o.html" > "${T}/log" 2>&1; RC=$?
+[ "${RC}" -eq 0 ] && grep -q 'uniones de carpetas no medidas' "${T}/o.html" && grep -q 'uniones de carpetas no medidas' "${T}/log" \
+  && ok "2.28-T38 y lo dice: «uniones de carpetas no medidas» en la página y en el resumen" || mal "2.28-T38 sin archivo (rc=${RC}) no lo dice: $(tail -3 "${T}/log")"
+rm -rf "${T}"
+# Una sesión que está en una vieja COMPARTIDA (o que siguió recibiendo) y en la carpeta nueva que la re-subió es de la
+# nueva, aunque las dos copias tengan la misma fecha de archivo (decisión 12, AC 27).
+# 🔴 rojo previo (pase adversarial, clase 1): la preferencia por la nueva valía sólo con una vieja `unida`; con el empate de
+#    fechas ganaba la vieja por orden de nombre, y las carpetas nuevas quedaban sin su historia.
+T=$(mktemp -d); mkdir -p "${T}/local"
+volcado "${T}/buzon/mac-mini" "sid-c1" "2026-08-21T10:00:00Z" '{"archivedAt":"2026-08-21T12:00:00.000Z","marker":{"storyId":"C1-VIEJA"}}' c1.json
+volcado "${T}/buzon/mac-mini-aaaaaaaa" "sid-c1" "2026-08-21T10:00:00Z" '{"archivedAt":"2026-08-21T12:00:00.000Z","marker":{"storyId":"C1-NUEVA"}}' c1.json
+volcado "${T}/buzon/imac" "sid-c2" "2026-08-22T10:00:00Z" '{"archivedAt":"2026-08-22T12:00:00.000Z","marker":{"storyId":"C2-VIEJA"}}' c2.json
+volcado "${T}/buzon/imac-bbbbbbbb" "sid-c2" "2026-08-22T10:00:00Z" '{"archivedAt":"2026-08-22T12:00:00.000Z","marker":{"storyId":"C2-NUEVA"}}' c2.json
+cat > "${T}/buzon/.carpetas-de-maquina.json" <<'JSON'
+{ "schema": 1,
+  "carpetas": {
+    "mac-mini": { "estado": "compartida", "nueva": null, "declarantes": 2, "desde": "2026-09-01" },
+    "imac": { "estado": "siguio_recibiendo", "nueva": null, "declarantes": 1, "desde": "2026-09-01" } },
+  "regeneradas": {} }
+JSON
+J38="$(vista_t38 --json --dry-run 2>/dev/null | python3 -c "
+import json,sys
+raw=sys.stdin.read(); i=raw.find('{'); print(json.dumps(json.loads(raw[i:])))")"
+python3 -c "
+import json,sys; m=json.loads(sys.argv[1]); cs=m['corridas']
+assert sorted((c['story'], c['maquina'], c.get('maquina_nota')) for c in cs)==[('C1-NUEVA','mac-mini-aaaaaaaa',None),('C2-NUEVA','imac-bbbbbbbb',None)], [(c['story'],c['maquina'],c.get('maquina_nota')) for c in cs]
+" "${J38}" && ok "2.28-T38 con una vieja compartida o que siguió recibiendo, la sesión re-subida es de su carpeta nueva" \
+  || mal "2.28-T38 vieja compartida: $(python3 -c "import json,sys; print([(c['story'],c.get('maquina'),c.get('maquina_nota')) for c in json.loads(sys.argv[1])['corridas']])" "${J38}" 2>&1 | head -c 400)"
+rm -rf "${T}"
+
 # ── T15 · esta suite NO toca los entregables commiteados (gemelo del C-27) ─────────────────────
 # 🔴 rojo previo: un caso generando sobre artifacts/ en vez de sobre un temporal.
 [ "$(huella "${ENTREGABLE_CORRIDAS}")" = "${HUELLA_CORRIDAS_ANTES}" ] && ok "T15 la suite no escribió artifacts/runs-dashboard.html (no se commitea)" || mal "T15 la suite ESCRIBIÓ artifacts/runs-dashboard.html"

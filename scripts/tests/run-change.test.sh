@@ -404,6 +404,31 @@ rm -f "${BASE}/estado/file-events/"*.jsonl; correr "${V}"
 G="$(leer "${BASE}/t27v.cambio.json.gz" 'const r=c.repos[0]; [r.otras_sesiones, r.commits.length, r.commits.some(k=>"atribucion" in k), "commits_de_otras_sesiones" in r].join("|")')"
 [ "${G}" = "0|3|false|false" ] && ok "T27c en una copia de una sola sesión no se atribuye nada" || mal "T27c salió: ${G}"
 
+# ── 2.28-Cambio_GuardaProyectoDeAzure (story 2.28, T25, AC 13 paso 1) ──────────────────────────────────
+# Cada repo del cambio guarda también el PROYECTO de Azure de su remoto, para ubicar la corrida en un producto
+# de repos.json por `<proyecto>/<repo>`. Forma elegida: como `nombre`, DECODIFICADO y con la caja que escribe el
+# remoto (`Beta%20Dos` → «Beta Dos»; `identidadAzure` decodifica igual, pero baja a minúsculas: comparar sin
+# distinguir mayúsculas es de quien lee). Un remoto que no es de Azure, o ningún remoto: `proyecto: null`, presente.
+# 🔴 rojo previo: sin el campo, `"proyecto" in r` es false en los cuatro. Mutaciones: tomar la ORG en vez del
+# proyecto (sale «acme»), no decodificar (sale «Beta%20Dos»), o devolver la forma en minúsculas (sale «beta»).
+for par in "t228az|https://dev.azure.com/acme/Beta/_git/Project" "t228esp|https://dev.azure.com/acme/Beta%20Dos/_git/Back" \
+           "t228gh|https://github.com/acme/Front.git" "t228sin|"; do
+  D="${par%%|*}"; U="${par#*|}"; R="${BASE}/${D}"; repo "${R}"
+  [ -n "${U}" ] && git -C "${R}" remote add origin "${U}"
+  printf 'uno\ncambio\n' > "${R}/a.js"
+  volcado "${BASE}/${D}.json" "${R}"
+  correr "${BASE}/${D}.json"; rc=$?
+  [ "${rc}" = 0 ] || mal "2.28-Cambio_GuardaProyectoDeAzure ${D}: run-change salió ${rc}: $(head -c 300 "${BASE}/err")"
+done
+G="$(leer "${BASE}/t228az.cambio.json.gz" 'const r=c.repos[0]; [c.estado, "proyecto" in r, JSON.stringify(r.proyecto), r.nombre].join("|")')"
+[ "${G}" = 'medido|true|"Beta"|Project' ] && ok "2.28-Cambio_GuardaProyectoDeAzure el remoto de Azure guarda proyecto «Beta» y nombre «Project»" || mal "2.28-Cambio_GuardaProyectoDeAzure Azure salió: ${G}"
+G="$(leer "${BASE}/t228esp.cambio.json.gz" 'const r=c.repos[0]; ["proyecto" in r, JSON.stringify(r.proyecto), r.nombre].join("|")')"
+[ "${G}" = 'true|"Beta Dos"|Back' ] && ok "2.28-Cambio_GuardaProyectoDeAzure el proyecto con espacio codificado se guarda decodificado («Beta Dos»)" || mal "2.28-Cambio_GuardaProyectoDeAzure espacio salió: ${G}"
+G="$(leer "${BASE}/t228gh.cambio.json.gz" 'const r=c.repos[0]; ["proyecto" in r, JSON.stringify(r.proyecto), r.nombre].join("|")')"
+[ "${G}" = 'true|null|Front' ] && ok "2.28-Cambio_GuardaProyectoDeAzure el remoto de GitHub guarda proyecto null y el nombre de hoy" || mal "2.28-Cambio_GuardaProyectoDeAzure GitHub salió: ${G}"
+G="$(leer "${BASE}/t228sin.cambio.json.gz" 'const r=c.repos[0]; ["proyecto" in r, JSON.stringify(r.proyecto), r.nombre].join("|")')"
+[ "${G}" = 'true|null|t228sin' ] && ok "2.28-Cambio_GuardaProyectoDeAzure sin remoto, proyecto null y el nombre de la carpeta" || mal "2.28-Cambio_GuardaProyectoDeAzure sin remoto salió: ${G}"
+
 # ── argumentos inválidos (AC 9) ────────────────────────────────────────────────────────────────────
 "${NODE}" "${GUION}" > "${BASE}/out" 2> "${BASE}/err"; rc=$?
 [ "${rc}" != 0 ] && ok "T10 sin --dump sale ≠ 0" || mal "T10 sin argumentos salió 0"

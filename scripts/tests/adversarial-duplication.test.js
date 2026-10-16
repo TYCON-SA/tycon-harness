@@ -121,6 +121,44 @@ t('T1 Ratio_CruzaLasDosFuentes — da hallazgos y causas por pase, con mediana y
   assert.ok(r.estadisticas.ahorro_pct > 0, 'el ahorro sale de los hallazgos que sobran sobre el total medido');
 });
 
+t('story 2.28: la misma corrida en la carpeta vieja y en la nueva cuenta UNA vez, y no se abre registros/', () => {
+  // 🔴 rojo previo (pase adversarial, clase 2): cada máquina vuelve a subir lo de su disco a `<nombre>-<código>`; el
+  //    recorrido contaba cada pase dos veces y abría `registros/place.json`, que trae el correo de git de la persona.
+  const { buzon, repo } = escenario();
+  const nueva = path.join(buzon, 'maquina-1-1a2b3c4d');
+  fs.mkdirSync(path.join(nueva, 'registros'), { recursive: true });
+  for (const f of fs.readdirSync(path.join(buzon, 'maquina-1'))) fs.copyFileSync(path.join(buzon, 'maquina-1', f), path.join(nueva, f));
+  fs.writeFileSync(path.join(nueva, 'registros', 'place.json'), JSON.stringify({ schema: 1, owner: { email: 'zqx@ejemplo.test' } }));
+  const { medir } = require(MOD);
+  const abiertos = [];
+  const orig = fs.readFileSync;
+  fs.readFileSync = function (p, ...r) { abiertos.push(String(p)); return orig.call(this, p, ...r); };
+  let r;
+  try { r = medir({ buzon, repos: [repo] }); } finally { fs.readFileSync = orig; }
+  assert.strictEqual(r.filas.filter((f) => f.story === '1.1').length, 1, `la corrida 1.1 una vez (fueron ${r.filas.filter((f) => f.story === '1.1').length})`);
+  assert.ok(!abiertos.some((p) => p.endsWith('place.json')), 'no abre place.json');
+  // una copia SIN pases de la misma corrida, recorrida antes, no tapa a la copia que sí los tiene
+  // 🔴 rojo previo (tercera vuelta de fallos silenciosos): la clave se marcaba vista antes de mirar si traía pases
+  const b4 = escenario();
+  const viejaA = path.join(b4.buzon, 'aaa-vieja');
+  fs.mkdirSync(viejaA, { recursive: true });
+  for (const f of fs.readdirSync(path.join(b4.buzon, 'maquina-1'))) {
+    const d = JSON.parse(fs.readFileSync(path.join(b4.buzon, 'maquina-1', f), 'utf8'));
+    if (d.marker) d.marker.adversarialPasses = [];
+    fs.writeFileSync(path.join(viejaA, f), JSON.stringify(d));
+  }
+  const r4 = medir({ buzon: b4.buzon, repos: [b4.repo] });
+  assert.strictEqual(r4.filas.filter((f) => f.story === '1.1').length, 1, 'la corrida 1.1 sigue con su pase');
+  // una carpeta de máquina que no se deja listar se dice, no desaparece
+  // 🔴 rojo previo (segunda vuelta de fallos silenciosos): el recorrido tragaba el error y sus pases faltaban sin rastro
+  fs.chmodSync(nueva, 0o000);
+  try {
+    if (fs.accessSync && (() => { try { fs.readdirSync(nueva); return true; } catch (_) { return false; } })()) return;   // root: no se puede probar
+    const r3 = medir({ buzon, repos: [repo] });
+    assert.ok(JSON.stringify(r3).includes('no se pudo listar'), 'la carpeta ilegible queda dicha en el resultado');
+  } finally { fs.chmodSync(nueva, 0o755); }
+});
+
 // ---------------------------------------------------------------------- T2
 
 t('T2 Ratio_DiceLoQueNoPudoMedir — dice sobre cuántos midió y cuántos quedaron afuera', () => {

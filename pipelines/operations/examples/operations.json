@@ -1,5 +1,5 @@
 {
-  "__doc": "EJEMPLO. Va en la raíz de tu repo de operaciones. Lector y forma: scripts/lib/operations-config.js. owners.default es el responsable de respaldo: se le asigna un pedido de trabajo cuando no se deduce un dueño, y se lo menciona en cada pedido. owners.by_project asigna directo los pedidos de un proyecto. reviewers.dependencies: quiénes revisan los pull requests de la revisión de dependencias. Identidades: el principalName de Azure DevOps. site (story 2.23): el sitio de la organización — site.maintainers son los correos de quienes mantienen el arnés y ven todo; site.mailbox, el buzón de corridas que lee el sitio (la credencial NO va acá: va en las variables de la plataforma del sitio); site.refresh_minutes, cada cuánto relee las fuentes (5 a 120, 15 si no está).",
+  "__doc": "EJEMPLO. Va en la raíz de tu repo de operaciones. Lector y forma: scripts/lib/operations-config.js. owners.default es el responsable de respaldo: se le asigna un pedido de trabajo cuando no se deduce un dueño, y se lo menciona en cada pedido. owners.by_project asigna directo los pedidos de un proyecto. reviewers.dependencies: quiénes revisan los pull requests de la revisión de dependencias. Identidades: el principalName de Azure DevOps. site (story 2.23): el sitio de la organización — site.maintainers son los correos de quienes mantienen el arnés y ven todo; site.mailbox, el buzón de corridas que lee el sitio (la credencial NO va acá: va en las variables de la plataforma del sitio); site.refresh_minutes, cada cuánto relee las fuentes (5 a 120, 15 si no está). people (opcional): quién es quién en el sitio de la organización; lo escribe un mantenedor, ver el README.",
   "version": 1,
   "owners": {
     "default": "lider@acme.example",
@@ -10,5 +10,24 @@
     "maintainers": ["lider@acme.example"],
     "mailbox": { "provider": "azure-blob", "account": "acmeruns", "container": "runs" },
     "refresh_minutes": 15
+  },
+  "people": {
+    "machines": {
+      "maq-uno-1a2b3c4d": {
+        "person": "dev.uno@acme.example",
+        "reported_sha256": "f55f6ca28369fdecdca8e76904d8d95db291271b2cc4ae7a617ac7c00ecca544",
+        "confirmed_by": "lider@acme.example",
+        "confirmed_on": "2026-10-15"
+      },
+      "maq-dos-5e6f7a8b": {
+        "person": "dev.dos@acme.example",
+        "reported_sha256": null,
+        "confirmed_by": "lider@acme.example",
+        "confirmed_on": "2026-10-15"
+      }
+    },
+    "projects": {
+      "dev.dos@acme.example": { "add": ["Acme Web"], "remove": ["Acme Mobile"] }
+    }
   }
 }
