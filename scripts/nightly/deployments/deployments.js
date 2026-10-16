@@ -235,4 +235,6 @@ function main() {
 
 module.exports = { MOTIVOS, AVISOS, sanear, armarProducto };
 
-if (require.main === module) process.exit(main());
+// exitCode y no exit(): con la salida a una tubería, process.exit() corta lo que todavía no se escribió (main es
+// sincrónica y no deja nada abierto, así que el proceso termina solo)
+if (require.main === module) process.exitCode = main();
