@@ -440,19 +440,52 @@ function hooksPathUnattended(ctx, state, tree, policy, { mode, log, notice = nul
   return out;
 }
 
+/**
+ * El Node propio del arnés (story 8.39), ANTES de los dos aplicadores: `install`, `update`, `apply` y el arranque pasan
+ * todos por acá. El arranque aparte del hook (`detach.js`) baja con sus ventanas (`startup`); el arranque que corre en el
+ * lugar no baja nada (`none`, AC 4); lo demás, a mano, intenta siempre (`manual`). Devuelve el resultado de
+ * harness-node.js#ensure (con su `notice`) y el ambiente de los aplicadores con `TYCON_NODE_BIN` como atajo cuando el
+ * Node del arnés quedó sano. Nunca tira: un problema acá nunca deja la máquina sin aplicador.
+ */
+function ensureHarnessNode(ctx, tree, log) {
+  try {
+    const HN = mod('harness-node');
+    const r = HN.ensure({ tree, env: ctx.env, mode: ctx.harnessNodeMode || 'manual', log: (l) => { if (log) log(l); } });
+    const interp = HN.interpreter({ tree, env: ctx.env });
+    const env = Object.assign({}, ctx.env);
+    if (interp.present) env.TYCON_NODE_BIN = interp.bin; else delete env.TYCON_NODE_BIN;
+    return { result: r, env };
+  } catch (e) {
+    if (log) log(`node del arnés: no se pudo mirar (${e.message}): los aplicadores siguen con el Node del PATH`);
+    // el aviso también sale (no sólo el registro): el arranque lo dice como cualquier otra falla del Node del arnés
+    const notice = `el arnés corre con el Node del PATH (${process.version}): no pude bajar su Node propio (no se pudo mirar: ${e.message}) — harness.js doctor lo detalla`;
+    return { result: { status: 'failed', reason: e.message, notice }, env: ctx.env };
+  }
+}
+
+/** `notice` con el aviso del Node del arnés de ESTE arranque al final (el de uno anterior no se arrastra). */
+const HARNESS_NODE_NOTICE_RX = /(?:^| · )el arnés corre con el Node del PATH \([^)]*\): no pude bajar su Node propio[\s\S]*?— harness\.js doctor lo detalla/g;
+function harnessNodeNotice(notice, a) {
+  const clean = notice ? notice.replace(HARNESS_NODE_NOTICE_RX, '').replace(/^ · /, '') || null : null;
+  const add = a && a.harnessNode && a.harnessNode.notice;
+  return add ? (clean ? `${clean} · ${add}` : add) : clean;
+}
+
 function runApplierOnly(ctx, tree, { log, snapshotDir = null, tools = undefined, force = false } = {}) {
   const T = mod('tools');
   if (tools === undefined) {
     const st = loadState(ctx);
     tools = st.state && T.recorded(st.state) ? T.plugged(st.state, { home: ctx.home, env: ctx.env }) : null;
   }
+  const hn = ensureHarnessNode(ctx, tree, log);
   const withClaude = !tools || tools.includes('claude');
   const withCodex = Boolean(tools && tools.includes('codex'));
   const a = withClaude
-    ? runClaudeApplier(ctx, tree, { log, snapshotDir, codex: tools ? (withCodex ? 'done' : 'off') : null })
+    ? runClaudeApplier(ctx, tree, { log, snapshotDir, codex: tools ? (withCodex ? 'done' : 'off') : null, env: hn.env })
     : { ok: true, status: 0, out: '', report: [], shared: [], warnings: [], reason: null };
+  a.harnessNode = hn.result;
   if (!a.ok || !withCodex) return a;
-  const c = T.plugCodex({ tree, home: ctx.home, env: ctx.env, log, snapshotDir, force });
+  const c = T.plugCodex({ tree, home: ctx.home, env: hn.env, log, snapshotDir, force });
   // sin reporte del aplicador (uno viejo, o que no lo dejó) el registro queda como estaba: no se arma uno a medias
   if (Array.isArray(a.report)) a.report = [...a.report, ...c.pieces];
   a.out = [a.out, c.out].filter(Boolean).join('\n');
@@ -461,7 +494,7 @@ function runApplierOnly(ctx, tree, { log, snapshotDir = null, tools = undefined,
   return a;
 }
 
-function runClaudeApplier(ctx, tree, { log, snapshotDir = null, codex = null }) {
+function runClaudeApplier(ctx, tree, { log, snapshotDir = null, codex = null, env: baseEnv = ctx.env }) {
   const script = applierPath(ctx, tree);
   if (!fs.existsSync(script)) return { ok: false, status: null, out: '', report: null, shared: [], reason: `sin aplicador en ${script}` };
   // story 8.17 (AC 71): un clon de Windows anterior a `.gitattributes` conserva `\r\n` en lo que el pull no toca, y un
@@ -480,7 +513,8 @@ function runClaudeApplier(ctx, tree, { log, snapshotDir = null, codex = null }) 
   // para la corrida siguiente: su salud los revisaba con el primer `bash` del PATH (pase adversarial de la W3a, B1)
   // (en la forma con enlaces —story 8.33, Windows— los Node que lance el aplicador conservan `~/.tycon/harness` en
   // `__dirname`: lo que escriban nombra el enlace, no la carpeta numerada)
-  const env = Object.assign({}, mod('tycon-home').keepLinkPathsEnv(ctx.env), { TYCON_HARNESS_LOCK_HELD: '1', TYCON_HARNESS_GIT_BASH_HEALTH: '1' });
+  // (`baseEnv` trae `TYCON_NODE_BIN` cuando el Node del arnés quedó sano: un atajo para el aplicador, story 8.39)
+  const env = Object.assign({}, mod('tycon-home').keepLinkPathsEnv(baseEnv), { TYCON_HARNESS_LOCK_HELD: '1', TYCON_HARNESS_GIT_BASH_HEALTH: '1' });
   if (snapshotDir) env.TYCON_HARNESS_SNAPSHOT_DIR = snapshotDir; else delete env.TYCON_HARNESS_SNAPSHOT_DIR;
   delete env[SHARED_DONE_ENV];
   // lo de Codex (story 8.23, tanda C): `done` = lo enchufa este programa, salteá tu bloque; `off` = esta máquina no lo
@@ -1456,7 +1490,7 @@ function applyPolicy(ctx, state, policy) {
 // el intento fallido, el respaldo en shell). Los demás salen de MIRAR la red (versión nueva, fuente bloqueada o divergida,
 // origin cambiado) y se conservan mientras no se vuelva a mirar — salvo que cambie el canal, o que otra mirada diga otra cosa.
 // (los de la llave de la 8.18 también: `repoint.run` los vuelve a decir en cada arranque mientras valgan)
-const REEVALUATED_NOTICE = /^(el aplicador falló|la instalación quedó a medias|la actualización .* no quedó sana|la actualización quedó a medias|la versión .* no quedó sana|retención:|la comprobación de salud no pasó|la política de actualización está mal escrita|respaldo en shell|skills re-apuntadas|skills de vuelta en el repo viejo|la llave pide el repo unificado|la llave volvió a «separate»|la llave update\.skills_source|una mudanza del clon de skills|el perfil de instalación no se pudo leer)/;
+const REEVALUATED_NOTICE = /^(el aplicador falló|la instalación quedó a medias|la actualización .* no quedó sana|la actualización quedó a medias|la versión .* no quedó sana|retención:|la comprobación de salud no pasó|la política de actualización está mal escrita|respaldo en shell|skills re-apuntadas|skills de vuelta en el repo viejo|la llave pide el repo unificado|la llave volvió a «separate»|la llave update\.skills_source|una mudanza del clon de skills|el perfil de instalación no se pudo leer|el arnés corre con el Node del PATH)/;
 
 /** El aviso de una versión nueva que no se aplica sola (AC 26): qué versión, cómo aplicarla y dónde ver los cambios. Lo
  *  deja `startup` y también un `update` sin `--yes` en `ask` (el hook síncrono lo imprime en la sesión siguiente). */
@@ -1596,6 +1630,7 @@ function releaseHelpers(ctx) {
     takeSnapshot, finishSnapshot, runApplier, noteHooksPath, hooksPathUnattended, runHealth, recordPieces, ensureLink, linkResolvesTo, ensureImport, copyBootstrap,
     settingsPath, policyOf, applyPolicy, installQuestions, writeAnswers, profileOf, machineProfile, holdText, availableText,
     applyHint, REEVALUATED_NOTICE, engramOn, missingRequirement, profileSwitch, dropForProfile, profileSwitchNotes, toolChoice, withAnswers, toolNotice,
+    harnessNodeNotice,
     engramSync: (c) => {
       if (!findInPath('engram', c.env)) return;
       const e = spawnSync('engram', ['sync', '--import'], { windowsHide: true, encoding: 'utf8', env: c.env, timeout: 60000, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -2787,6 +2822,9 @@ function cmdStartup(ctx) {
     }
     log('startup: no pude lanzar la actualización aparte: corre acá, dentro del tope del hook');
   }
+  // el Node del arnés (story 8.39, AC 4): sólo la parte que va aparte del hook baja (con su tope de 180 s y sus
+  // ventanas); el arranque que corre en el lugar, dentro de los 20 s del hook, no baja nada y lo deja para el siguiente
+  ctx.harnessNodeMode = D.isDetachedRun() ? 'startup' : 'none';
   ctx.eolQuiet = true;   // el aviso de finales de línea va a `notice`, no a stderr (B2: ver runApplier)
   // el de un arranque anterior se recalcula en éste: va siempre al final de `notice` y no se arrastra
   const EOL_NOTICE_TAIL = /(?:^| · )finales de línea: [\s\S]*$/;
@@ -2986,6 +3024,8 @@ function cmdStartup(ctx) {
     { const tn = toolNotice(ctx, tree, state); if (tn) notice = notice ? `${notice} · ${tn}` : tn; }
     // el aviso de finales de línea de este arranque (árbol sucio, o el paso falló), al final y sin pisar otro (B2)
     if (ctx.eolNotice) notice = notice ? `${notice} · finales de línea: ${ctx.eolNotice}` : `finales de línea: ${ctx.eolNotice}`;
+    // el Node del arnés (story 8.39, AC 11): mientras no lo pudo bajar, se dice en cada arranque, sin pisar otro aviso
+    notice = harnessNodeNotice(notice, a);
     // la carpeta global de hooks de git (2026-10-14): con `auto` la pone este arranque y lo dice una vez; con `ask`, el
     // aviso la pide. Sólo con el aplicador sano (el pre-push tiene que estar en su lugar)
     if (a.ok) notice = hooksPathUnattended(ctx, state, tree, policy, { mode: 'startup', log: (l) => log(`startup: ${l}`), notice }).notice;
@@ -3578,6 +3618,8 @@ function cmdDoctor(ctx) {
     doctorPublishGuardItems(ctx, tree, prof, add, extra);
     // los repos que declara la organización, contra este disco (story 2.21): dato o aviso, nunca rojo
     doctorDeclaredReposItems(ctx, tree, add, extra);
+    // el Node propio del arnés (story 8.39): dato o aviso, nunca rojo
+    doctorHarnessNodeItems(ctx, tree, add, extra);
     if (state.notice) add('warn', `aviso pendiente: ${state.notice}`);
     if (state.hold) add('warn', `${holdText(state)}`);
     if (state.failed) {
@@ -3703,6 +3745,8 @@ function cmdDoctor(ctx) {
   doctorPublishGuardItems(ctx, tree, prof, add, extra);
   // los repos que declara la organización, contra este disco (story 2.21): dato o aviso, nunca rojo
   doctorDeclaredReposItems(ctx, tree, add, extra);
+  // el Node propio del arnés (story 8.39): dato o aviso, nunca rojo
+  doctorHarnessNodeItems(ctx, tree, add, extra);
   const controls = M.expectedControls({ platform: ctx.platform, tree, integrations, env, home: ctx.home, profile: prof.ok ? prof.value : null });
   for (const t of controls.problems) add('warn', `controles esperados: ${t}`);
   for (const x of controls.excluded) add('ok', `fuera en Windows: ${x.id} — ${x.reason}`);
@@ -3958,6 +4002,24 @@ function doctorDeclaredReposItems(ctx, tree, add, extra) {
  * El freno se carga del ÁRBOL instalado (su lista y su perfil del equipo se buscan desde ahí). Un árbol que no lo trae
  * —una versión anterior— no dice nada ni suma la clave `publish_guard` a `--json`. Nunca tira.
  */
+/**
+ * El Node propio del arnés en `doctor` (story 8.39, AC 20 y 21): qué versión usa el arnés, si es la propia, si su huella
+ * es la de la lista y cuántos hooks `.js` corren con él. 🔴 NUNCA en rojo (la comprobación de salud de cada
+ * actualización corre `doctor --json`: un rojo acá haría volver atrás una versión sana por una red caída). Bajo la salud
+ * no recalcula la huella del binario (`verified: null`). La clave `harness_node` va a `--json`. La línea de siempre
+ * «Node <x> (piso 20)» se queda: dice con qué corre doctor.
+ */
+function doctorHarnessNodeItems(ctx, tree, add, extra) {
+  let f;
+  try { f = mod('harness-node').doctorFacts({ tree, env: ctx.env, platform: ctx.platform, health: ctx.env.TYCON_HARNESS_HEALTH === '1', settingsFile: settingsPath(ctx) }); } catch (e) {
+    extra.harness_node = { own: null, reason: `no se pudo mirar (${e.message})` };
+    add('warn', `Node del arnés: no se pudo mirar (${e.message})`);
+    return;
+  }
+  extra.harness_node = f.json;
+  add(f.level === 'warn' ? 'warn' : 'ok', f.line);
+}
+
 function doctorPublishGuardItems(ctx, tree, prof, add, extra) {
   const file = path.join(tree, 'scripts', 'hooks', 'public-push-guard.js');
   if (!fs.existsSync(file)) return;

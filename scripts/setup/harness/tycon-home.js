@@ -234,6 +234,27 @@ function ownPaths({ env = process.env } = {}) {
   };
 }
 
+/**
+ * El Node propio del arnés (story 8.39): `<casa>/node/` con cada versión en `versions/<v>/` y el enlace `current` a la
+ * que está en uso (simbólico en Mac y Linux, unión en Windows). Lo que dura escrito —el comando de un hook, el plist del
+ * examen— nombra `current`, nunca la carpeta numerada: cambiar de versión de Node no cambia ningún comando. `bin` es el
+ * binario por `current` (`bin/node`, o `node.exe` en Windows, que se baja suelto). Esta regla está escrita también en
+ * bootstrap.js, scripts/lib/harness-node.sh, install-tycon-hooks.ps1 y periodic-exam.js (copias declaradas en
+ * scripts/tests/fixtures/harness-node-copies.json, que tycon-home.test.js compara).
+ */
+function harnessNode({ env = process.env, platform = process.platform } = {}) {
+  const dir = path.join(home({ env }), 'node');
+  const current = path.join(dir, 'current');
+  return {
+    dir,
+    versions: path.join(dir, 'versions'),
+    trash: path.join(dir, 'trash'),
+    current,
+    bin: platform === 'win32' ? path.join(current, 'node.exe') : path.join(current, 'bin', 'node'),
+    binIn: (versionDir) => (platform === 'win32' ? path.join(versionDir, 'node.exe') : path.join(versionDir, 'bin', 'node')),
+  };
+}
+
 // ── LA FORMA CON ENLACES (story 8.33, 2026-10-14) ─────────────────────────────────────────────────────────────────
 // En Windows renombrar una carpeta con un archivo abierto, con un proceso parado adentro o con un vigilante falla: con
 // otra sesión o un VS Code abiertos, el cambio de versión por `rename` esperaba para siempre. En Windows `harness` y
@@ -317,6 +338,7 @@ module.exports = {
   PLACE_NAME, LEGACY_PLACE_NAME, OWN_DIR_NAME, TyconHomeError,
   placePath, legacyPlacePath, isHarnessClone, resolvePlace, claudeDir,
   harnessDir, stateDir, configFile, backupsDir, installedSkillsDir, maintainedDir, dashboardDir, home, ownPaths, isReleaseMachine, maintainedPath,
+  harnessNode,
   maintainersClone,
   linksMode, isLink, linkTarget, makeLink, removeLink, pointLink, strayTempLinks, keepLinkPathsEnv,
   ownStateDir, legacyStateDir, legacyConfigFile, livesInOwnHome, ownHomeStale, dropStaleOwnHome, adoptOwnHome, stateDirs,

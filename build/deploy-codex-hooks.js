@@ -41,7 +41,12 @@ const SKILLS = require(path.join(__dirname, '..', 'scripts', 'lib', 'skills-dir.
  * entero en cualquier Windows. Nadie lo había medido porque nadie corría Codex ahí. Reemplazando en cada texto, la ruta
  * entra tal cual y quien serializa después la escapa.
  */
-function substitute(fragment, tcg, skills) {
+function substitute(fragment, tcg, skills, { interp = harnessInterpreter() } = {}) {
+  // story 8.39 (AC 7): un comando del arnés que arranca con `node ` sale con el intérprete que decide
+  // harness-node.js#interpreter MIRANDO EL DISCO (el Node propio del arnés, o `node`): la misma regla que el aplicador de
+  // Claude Code, así quien despliega y quien audita (harness-parity.js, que llama a esta función) no se contradicen
+  const prefix = (interp && interp.prefix) || 'node';
+  const withInterp = (orig, str) => (prefix !== 'node' && /^node \$\{(?:TCG|SKILLS)\}/.test(orig) ? `${prefix}${str.slice('node'.length)}` : str);
   // una ruta con espacio («C:\\Users\\Nombre Apellido»): el trozo del comando que la lleva va entre comillas dobles, si no el
   // hook queda escrito y no corre nunca (pase adversarial de la C, clase 18)
   const quoted = (str, name, value) => {
@@ -49,12 +54,20 @@ function substitute(fragment, tcg, skills) {
     return str.replace(new RegExp(`(\\S*)${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\S*)`, 'g'), (m0, pre, post) => (pre.startsWith('"') ? m0.split(name).join(value) : `"${pre}${value}${post}"`));
   };
   const walk = (x) => {
-    if (typeof x === 'string') return quoted(quoted(x, '${TCG}', tcg), '${SKILLS}', skills);
+    if (typeof x === 'string') return withInterp(x, quoted(quoted(x, '${TCG}', tcg), '${SKILLS}', skills));
     if (Array.isArray(x)) return x.map(walk);
     if (x && typeof x === 'object') return Object.fromEntries(Object.entries(x).map(([k, v]) => [k, walk(v)]));
     return x;
   };
   return walk(fragment);
+}
+
+/** El intérprete de los hooks `.js` de esta máquina (story 8.39), o `node` si el módulo no está (un árbol viejo). */
+function harnessInterpreter(env = process.env) {
+  try { return require(path.join(TCG, 'scripts', 'setup', 'harness', 'harness-node.js')).interpreter({ tree: TCG, env }); } catch (e) {
+    if (e && e.code === 'MODULE_NOT_FOUND') return { prefix: 'node', own: false };
+    throw e;
+  }
 }
 
 // ── Qué hooks del fragmento registra ESTA máquina (DEF-8.23-C-hooks-codex-sin-integracion, 2026-10-09) ────────────────
@@ -153,7 +166,10 @@ function plantillas(fragmentoCrudo) {
     if (Array.isArray(x)) return x.forEach(recorrer);
     if (!x || typeof x !== 'object') return;
     if (typeof x.command === 'string' && /\$\{(TCG|SKILLS)\}/.test(x.command)) {
-      out.push(new RegExp('^' + x.command.split(/\$\{(?:TCG|SKILLS)\}/).map(escapar).join('\\S+') + '$'));
+      // story 8.39 (AC 7): el `node` del principio puede estar escrito como la ruta del Node del arnés, con o sin comillas
+      const head = /^node /.test(x.command) ? '(?:node|[^\\s"]*/node(?:\\.exe)?|"[^"]*/node(?:\\.exe)?") ' : '';
+      const body = head ? x.command.slice('node '.length) : x.command;
+      out.push(new RegExp('^' + head + body.split(/\$\{(?:TCG|SKILLS)\}/).map(escapar).join('\\S+') + '$'));
     }
     Object.values(x).forEach(recorrer);
   };
@@ -240,7 +256,7 @@ function selftest() {
     ['sustitución con una ruta de Windows (barras invertidas): no tira y la ruta queda entera', (() => {
       const win = 'C:\\Users\\dev\\.tycon\\harness';
       let out;
-      try { out = substitute({ hooks: { X: [{ hooks: [{ command: 'node ${TCG}/scripts/hooks/a.js' }] }] } }, win, win); } catch (_) { return false; }
+      try { out = substitute({ hooks: { X: [{ hooks: [{ command: 'node ${TCG}/scripts/hooks/a.js' }] }] } }, win, win, { interp: { prefix: 'node' } }); } catch (_) { return false; }
       const cmd = JSON.parse(JSON.stringify(out, null, 1)).hooks.X[0].hooks[0].command;
       return cmd === `node ${win}/scripts/hooks/a.js`;
     })()],
@@ -249,6 +265,20 @@ function selftest() {
       const f = substitute({ hooks: { X: [{ hooks: [{ type: 'command', command: 'node ${TCG}/scripts/hooks/a.js' }] }] } }, win, win);
       const once = merge(null, f, win, win);
       return JSON.stringify(merge(once, f, win, win)) === JSON.stringify(once) && once.hooks.X.length === 1;
+    })()],
+    // story 8.39 (AC 7): con el Node del arnés, el `node` del principio sale con su ruta; lo demás del comando igual
+    ['con el Node del arnés, node ${TCG}/… sale con su ruta y bash ${TCG}/… no cambia', (() => {
+      const own = { prefix: '/h/.tycon/node/current/bin/node' };
+      const out = substitute({ hooks: { X: [{ hooks: [{ command: 'node ${TCG}/scripts/hooks/a.js' }, { command: 'bash ${TCG}/scripts/hooks/b.sh' }] }] } }, tcg, skills, { interp: own });
+      const cmds = out.hooks.X[0].hooks.map((h) => h.command);
+      return cmds[0] === `${own.prefix} ${tcg}/scripts/hooks/a.js` && cmds[1] === `bash ${tcg}/scripts/hooks/b.sh`;
+    })()],
+    ['un hook del arnés en cualquiera de las dos formas, desde otra copia, se reconoce por la forma (no se duplica)', (() => {
+      const crudo = { hooks: { X: [{ hooks: [{ type: 'command', command: 'node ${TCG}/scripts/hooks/a.js' }] }] } };
+      const formas = plantillas(crudo);
+      return formas.some((re) => re.test('/h/.tycon/node/current/bin/node /otra/copia/scripts/hooks/a.js'))
+        && formas.some((re) => re.test('"/mi casa/.tycon/node/current/bin/node" /otra/copia/scripts/hooks/a.js'))
+        && formas.some((re) => re.test('node /otra/copia/scripts/hooks/a.js'));
     })()],
   ];
   let bad = 0;
@@ -296,5 +326,5 @@ function main() {
   return 0;
 }
 
-module.exports = { substitute, plantillas, merge, enCarpetaTemporal, activeFragment, specOf, NOT_IN_HOOKS_LIST, SKILLS, TCG, FRAGMENT: path.join(TCG, 'adapters', 'codex', 'hooks.json') };
+module.exports = { substitute, plantillas, merge, enCarpetaTemporal, activeFragment, specOf, harnessInterpreter, NOT_IN_HOOKS_LIST, SKILLS, TCG, FRAGMENT: path.join(TCG, 'adapters', 'codex', 'hooks.json') };
 if (require.main === module) process.exit(main());

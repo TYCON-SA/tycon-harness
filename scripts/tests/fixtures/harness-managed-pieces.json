@@ -98,6 +98,7 @@
     { "kind": "import", "id_pattern": ".+", "where_pattern": "CLAUDE\\.md$", "when": "harness.js", "windows": true, "source": "setup/harness.js install" },
     { "kind": "file", "id": "bootstrap.js", "where_pattern": "/\\.claude/\\.tycon-pipeline/harness/bootstrap\\.js$", "when": "harness.js", "windows": true, "source": "setup/harness.js install (la copia fija de arranque)" },
     { "kind": "file", "id": "bootstrap-fallback.sh", "where_pattern": "/\\.claude/\\.tycon-pipeline/harness/bootstrap-fallback\\.sh$", "when": "harness.js", "windows": true, "source": "ídem" },
+    { "kind": "file", "id": "harness-node", "where_pattern": "/\\.tycon/node/?$", "when": "harness.js", "windows": true, "source": "setup/harness/harness-node.js (story 8.39): el Node propio del arnés; lo baja harness.js antes de los aplicadores, nunca el aplicador, y uninstall lo deja y lo nombra" },
     { "kind": "file", "id": "bootstrap-fallback.ps1", "where_pattern": "/\\.claude/\\.tycon-pipeline/harness/bootstrap-fallback\\.ps1$", "when": "harness.js", "windows": true, "source": "ídem" },
     { "kind": "file", "id_pattern": "^program/(harness\\.js|harness/[A-Za-z0-9_-]+\\.js)$", "where_pattern": "/\\.claude/\\.tycon-pipeline/harness/program/(harness\\.js|harness/[A-Za-z0-9_-]+\\.js)$", "when": "harness.js", "windows": true, "source": "tanda C, decisión 7 del dueño: la copia fija suma el programa (harness.js y scripts/setup/harness/*.js) para que rollback y uninstall corran con el árbol roto o sin árbol" }
   ],

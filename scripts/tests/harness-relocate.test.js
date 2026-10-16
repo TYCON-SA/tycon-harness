@@ -18,6 +18,8 @@
  *       permiso sigue; y `rollback` a la copia de antes: los archivos vuelven a nombrar el viejo, el viejo resuelve y
  *       doctor lo vuelve a contar.
  */
+// story 8.39 (decisión 20): las suites que lanzan harness.js no bajan el Node del arnés de nodejs.org
+process.env.TYCON_HARNESS_NODE = '0';
 const LABLIB = require('./lib/relocate-lab.js');
 
 const LAB = LABLIB.createLab('harness-relocate');

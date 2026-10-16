@@ -64,7 +64,9 @@ const norm = (p) => slash(p).replace(/\/+$/, '').replace(/^\/private(?=\/(?:var|
 // el intérprete: una palabra (`node`, `bash`, `sh`, `python3`) o, desde la story 8.17 (W4 · AC 29), la ruta del bash de
 // Git entre comillas, como registra un `.sh` el aplicador en Windows (`"C:/…/bash.exe" "<ruta>"`). Otro programa entre
 // comillas no cuenta (pase adversarial de la W3W4, clase 11).
-const RUNNER = '(?:node|bash|sh|python3?|"[^"]*/bash(?:\\.exe)?")';
+// Desde la story 8.39 (AC 22), también la ruta del Node propio del arnés, con o sin comillas (`…/node/current/bin/node`,
+// `C:/…/node.exe`), como la escribe el aplicador cuando ese Node está.
+const RUNNER = '(?:node|bash|sh|python3?|"[^"]*/bash(?:\\.exe)?"|[^\\s"]*/node(?:\\.exe)?|"[^"]*/node(?:\\.exe)?")';
 const RUNNER_RE = new RegExp(`^\\s*${RUNNER}\\s+"([^"]+)"\\s*$`, 'i');
 const BOM = /^﻿/;
 

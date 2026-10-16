@@ -845,6 +845,8 @@ assert b["same"] is True and len(b["fixed_sha256"]) == 64 and b["fixed_sha256"] 
 s = d["skills"]
 assert s["separate"] is False and s["commit"] == {"status": "no_medido", "reason": s["commit"]["reason"]} and s["commit"]["reason"], s
 assert json.load(open(out))["place"]["place"]["name"] == pn, "upload-runs --json no trae place"
+hn = d["install"].pop("harness_node", "falta")
+assert hn == {"own": False, "major": hn.get("major")} and isinstance(hn["major"], int), hn   # story 8.39: sin Node del arnés, el del PATH
 assert d["install"] == {"mode": "managed", "version": None, "team": None}, d["install"]
 PY
 HOME="${T}/casa" USERPROFILE="${T}/casa" subir_reg "${T}" "${T}/h" "${T}/reg" 2026-10-05 "maq-a"
@@ -877,6 +879,7 @@ import json, sys
 texto = open(sys.argv[1], encoding="utf-8").read()
 assert "capa-secreta" not in texto and "servidor.example" not in texto, texto
 i = json.loads(texto)["install"]
+i.pop("harness_node", None)
 assert i == {"mode": "managed", "version": "2026.10.14.51", "team": {"name": "equipo", "files": 84, "commit": "556dd0f400cb9eedcfed29a4de6313dda547158c"}}, i
 PY
 T="${BASE}/t40b"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"; casa29 "${T}/casa" "${T}/clon"
@@ -887,6 +890,7 @@ import json, sys
 texto = open(sys.argv[1], encoding="utf-8").read()
 assert "barras" not in texto and "último" not in texto and "Managed Mode" not in texto, texto
 i = json.loads(texto)["install"]
+i.pop("harness_node", None)
 assert i == {"mode": None, "version": None, "team": {"name": None, "files": None, "commit": None}}, i
 PY
 T="${BASE}/t40c"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"; casa29 "${T}/casa" "${T}/clon"
@@ -896,6 +900,29 @@ python3 - "${T}/estado/registros-buzon/place.json" <<'PY' && ok "8.26 T40 el est
 import json, sys
 i = json.load(open(sys.argv[1]))["install"]
 assert i.get("status") == "no_medido" and i.get("reason"), i
+PY
+# ── 8.39 T32 · PlaceJson_NodeDelArnes_SinRutas (story 8.39, AC 24) ──────────────────────────────────────────────────
+# @story-8.39 @ac-24  `install.harness_node` dice `{ own, major }`: con el Node propio del arnés, sin él, y nunca una ruta
+# (ni la casa, ni `.tycon/node`). El Node de juguete es un GUION que dice la versión de la lista y si no llama al node
+# real por su ruta: nunca un enlace a un binario real. 🔴 rojo previo: el dato no viajaba.
+T="${BASE}/t839-32"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"; casa29 "${T}/casa" "${T}/clon"
+NV32="$(node -e 'process.stdout.write(require(process.argv[1]).version)' "${RAIZ}/scripts/production/node-official.json")"
+mkdir -p "${T}/casa/.tycon/node/versions/${NV32}/bin"
+printf '#!/bin/sh\nif [ "$1" = "--version" ]; then echo "%s"; exit 0; fi\nexec "%s" "$@"\n' "${NV32}" "$(command -v node)" > "${T}/casa/.tycon/node/versions/${NV32}/bin/node"
+chmod +x "${T}/casa/.tycon/node/versions/${NV32}/bin/node"; ln -s "versions/${NV32}" "${T}/casa/.tycon/node/current"
+HOME="${T}/casa" USERPROFILE="${T}/casa" TYCON_HARNESS_NODE=1 subir_reg "${T}" "${T}/h" "${T}/reg" 2026-10-05 "maq-a" --dry-run
+python3 - "${T}/estado/registros-buzon/place.json" "${T}" <<'PY' && ok "8.39-T32 con el Node del arnés: install.harness_node {own: true, major: 24} y ninguna ruta" || mal "8.39-T32 propio: $(cat "${T}/estado/registros-buzon/place.json" 2>&1 | head -c 500)"
+import json, sys
+texto = open(sys.argv[1], encoding="utf-8").read()
+assert sys.argv[2] not in texto and ".tycon/node" not in texto and "current" not in texto, texto
+assert json.loads(texto)["install"]["harness_node"] == {"own": True, "major": 24}, texto
+PY
+T="${BASE}/t839-32b"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"; casa29 "${T}/casa" "${T}/clon"
+HOME="${T}/casa" USERPROFILE="${T}/casa" TYCON_HARNESS_NODE=0 subir_reg "${T}" "${T}/h" "${T}/reg" 2026-10-05 "maq-a" --dry-run
+python3 - "${T}/estado/registros-buzon/place.json" <<'PY' && ok "8.39-T32 apagado: own false con la versión mayor del Node que corre" || mal "8.39-T32 apagado: $(cat "${T}/estado/registros-buzon/place.json" 2>&1 | head -c 400)"
+import json, sys
+hn = json.load(open(sys.argv[1]))["install"]["harness_node"]
+assert hn["own"] is False and isinstance(hn["major"], int), hn
 PY
 # una máquina sin el mecanismo instalado no sube place.json (no participa: no es «no medido»)
 T="${BASE}/t29c"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"; mkdir -p "${T}/casa"

@@ -116,7 +116,8 @@ SAFE=(TYCON_PROFILE=0 TYCON_NO_GIT_HOOKS=1 TYCON_CODEX=0 TYCON_THIRD_PARTY=0 TYC
 lab_env() { # <home> [VAR=val ...] -- <comando…>: el comando, con la HOME de laboratorio y sin el ambiente de quien corre
   local h="$1"; shift
   local extra=(); while [ $# -gt 0 ] && [ "$1" != "--" ]; do extra+=("$1"); shift; done; [ $# -gt 0 ] && shift
-  ( cd "$h" && env -i HOME="$h" USERPROFILE="$h" PATH="$T/bin:$PATH" TMPDIR="$T/tmp" LANG="${LANG:-en_US.UTF-8}" \
+  # TYCON_HARNESS_NODE=0 (story 8.39, decisión 20): el laboratorio no baja el Node del arnés de nodejs.org
+  ( cd "$h" && env -i HOME="$h" USERPROFILE="$h" PATH="$T/bin:$PATH" TMPDIR="$T/tmp" LANG="${LANG:-en_US.UTF-8}" TYCON_HARNESS_NODE=0 \
       XDG_CACHE_HOME="$T/xdg/cache" XDG_DATA_HOME="$T/xdg/data" XDG_CONFIG_HOME="$T/xdg/config" \
       "${SAFE[@]}" ${extra[@]+"${extra[@]}"} "$@" )
 }

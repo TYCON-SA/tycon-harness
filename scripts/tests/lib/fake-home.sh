@@ -80,6 +80,8 @@ fake_home_create() {
     export LAUNCHCTL_BIN="$abs/.fake-bin/launchctl" TYCON_NO_NIGHTLY_EXAM=1 TYCON_NO_GUI_ENV=1
   fi
   export REAL_HOME="$real" FAKE_HOME="$abs" HOME="$abs"
+  # story 8.39 (decisión 20): con la HOME de prueba, el instalador no baja el Node del arnés de nodejs.org
+  export TYCON_HARNESS_NODE=0
   return 0
 }
 

@@ -72,8 +72,11 @@ echo "$NOW" > "$LAST_FILE"
 # escribir»— se perdía con el registro). Sólo si tampoco ése se puede abrir, el registro se descarta.
 RESERVA_LOG="${LAST_FILE%.last}.fallback.log"
 LOG_FILE=""
+# el Node del arnés si está (story 8.39); si no, el del PATH. No cambia el PATH.
+. "$TYCON_GUIDES/scripts/lib/harness-node.sh" 2>/dev/null || harness_node_bin() { echo node; }
+HNODE="$(harness_node_bin)"
 if [[ -f "$DIRS_SCRIPT" ]]; then
-  DIRS_OUT="$(node "$DIRS_SCRIPT" --prepare-log 2>&1)" && LOG_FILE="${DIRS_OUT##*$'\n'}"
+  DIRS_OUT="$("$HNODE" "$DIRS_SCRIPT" --prepare-log 2>&1)" && LOG_FILE="${DIRS_OUT##*$'\n'}"
 else
   DIRS_OUT="falta $DIRS_SCRIPT (la pieza que dice dónde se escribe)"
 fi
@@ -88,7 +91,7 @@ if [[ -z "$LOG_FILE" ]] || ! : >> "$LOG_FILE" 2>/dev/null; then
 fi
 
 # nohup + & + redirect = totally detached
-nohup node "$OBSERVER_SCRIPT" --notify >> "$LOG_FILE" 2>&1 &
+nohup "$HNODE" "$OBSERVER_SCRIPT" --notify >> "$LOG_FILE" 2>&1 &
 disown 2>/dev/null || true
 
 exit 0

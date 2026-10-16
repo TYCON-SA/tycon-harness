@@ -25,6 +25,8 @@
  * Para leer el reporte que deja: TYCON_WINDOWS_GUIDED_KEEP=<carpeta> env -u NODE_TEST_CONTEXT node --test …
  */
 
+// story 8.39 (decisión 20): esta suite lanza harness.js install: no baja el Node del arnés de nodejs.org (lo heredan)
+process.env.TYCON_HARNESS_NODE = '0';
 const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');

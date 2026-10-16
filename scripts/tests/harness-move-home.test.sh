@@ -216,6 +216,21 @@ if runs T28; then
   grep -q '"stage": "start"' "$(LOG)" 2>/dev/null || grep -q "mudanza: diario" "$(LOG)" && ok "el registro anota el diario antes del primer cambio" || bad "el registro no anota el diario: $(grep mudanza "$(LOG)" | head -3)"
   kill "$LAB_RELEASE_PROCESS" 2>/dev/null
 
+  # ── (2b) story 8.39, T26 · Mudanza_ConNodeDelArnes_NoSeNiega @story-8.39 @ac-19: una máquina de clon que ya bajó el
+  # Node propio del arnés (`~/.tycon/node/current`) se muda igual; `node/` no se mueve ni se borra y `current` sigue
+  # andando. El Node de juguete es un GUION que llama al node real por su ruta: nunca un enlace a un binario real.
+  clone_machine "$BASE/lab28n"
+  mkdir -p "$LAB_HOME/.tycon/node/versions/v24.21.0/bin"
+  printf '#!/bin/sh\nif [ "$1" = "--version" ]; then echo v24.21.0; exit 0; fi\nexec "%s" "$@"\n' "$(command -v node)" > "$LAB_HOME/.tycon/node/versions/v24.21.0/bin/node"
+  chmod +x "$LAB_HOME/.tycon/node/versions/v24.21.0/bin/node"; ln -s versions/v24.21.0 "$LAB_HOME/.tycon/node/current"
+  N0="$(cd "$LAB_HOME/.tycon/node" && find . | sort | shasum)"
+  OUT="$(harness migrate --to-home 2>&1)"; RC=$?
+  [ "$RC" = 0 ] && ok "T26 con ~/.tycon/node la mudanza pasa (node es nuestra)" || bad "T26 la mudanza con ~/.tycon/node: rc $RC: $OUT"
+  case "$OUT" in *"no es nuestra"*) bad "T26 la mudanza dijo «no es nuestra»: $OUT" ;; *) ok "T26 …sin «no es nuestra: trae node»" ;; esac
+  [ "$(cd "$LAB_HOME/.tycon/node" && find . | sort | shasum)" = "$N0" ] && ok "T26 node/ intacta" || bad "T26 la mudanza tocó node/"
+  [ "$("$LAB_HOME/.tycon/node/current/bin/node" --version 2>&1)" = v24.21.0 ] && ok "T26 current sigue andando después" || bad "T26 current no anda después de la mudanza"
+  kill "$LAB_RELEASE_PROCESS" 2>/dev/null
+
   # ── (3) cortada ANTES de instalar la versión: el arranque deshace ──
   clone_machine "$BASE/lab28c"
   OUT="$(TYCON_MIGRATE_DIE_AT=start harness migrate --to-home 2>&1)"; RC=$?

@@ -40,7 +40,38 @@
  * vive afuera.
  */
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
+
+/*
+ * ── EL NODE DEL ARNÉS (story 8.39, decisión 23) ──────────────────────────────────────────────────
+ * Desde la 8.39 el disparador corre con el Node propio del arnés (`<casa>/node/current`), que NO es
+ * el paquete de npm global donde viven `claude` y `codex`: al lado de ese node no están. Por eso,
+ * al instalar el disparador, `periodic-exam.js` anota en `<estado>/exam-tools.json` la carpeta donde
+ * el PATH de quien instala tiene a cada una, y acá se busca: primero al lado del node, después en
+ * esa carpeta, y por último el nombre pelado (el plan B de siempre). La carpeta va en un archivo
+ * aparte y no en el plist, por la misma razón de arriba: el plist se compara byte a byte.
+ */
+const EXAM_TOOLS = 'exam-tools.json';
+// la carpeta del estado la sabe tycon-home.js; sin ese archivo (un laboratorio que copia carpetas sueltas) no hay anotación
+function archivoDeHerramientas(home = os.homedir()) {
+  try { return path.join(require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')).stateDir(home), EXAM_TOOLS); } catch (_) { return null; }
+}
+/** Las carpetas anotadas al instalar: `{ claude, codex }` (cada una, una carpeta o null). Sin archivo, vacías. */
+function carpetasAnotadas(file = archivoDeHerramientas()) {
+  if (!file) return { claude: null, codex: null };
+  try { const j = JSON.parse(fs.readFileSync(file, 'utf8')); return { claude: typeof j.claude === 'string' ? j.claude : null, codex: typeof j.codex === 'string' ? j.codex : null }; } catch (_) { return { claude: null, codex: null }; }
+}
+/** Anota dónde están `claude` y `codex` según ESTE PATH (el de quien instala). Devuelve lo anotado. */
+function anotarCarpetas({ env = process.env, file = archivoDeHerramientas(), ejecutable = ejecutablePorDefecto } = {}) {
+  const dirs = String(env.PATH || '').split(path.delimiter).filter(Boolean);
+  const where = (bin) => dirs.find((d) => ejecutable(path.join(d, bin))) || null;
+  const out = { claude: where('claude'), codex: where('codex'), at: new Date().toISOString() };
+  if (!file) return out;
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, `${JSON.stringify(out, null, 2)}\n`);
+  return out;
+}
 
 /** Un archivo que existe y se puede ejecutar. Un directorio con ese nombre NO cuenta. */
 function ejecutablePorDefecto(p) {
@@ -66,9 +97,12 @@ function rutaDeHerramienta(bin, opts = {}) {
   const nodeBin = opts.nodeBin || process.execPath;
   const ejecutable = opts.ejecutable || ejecutablePorDefecto;
   if (!bin || path.isAbsolute(bin)) return bin;          // ya viene resuelto: no se toca
-  if (!nodeBin) return bin;
-  const candidata = path.join(path.dirname(nodeBin), bin);
-  return ejecutable(candidata) ? candidata : bin;
+  const candidatas = [];
+  if (nodeBin) candidatas.push(path.join(path.dirname(nodeBin), bin));
+  // la carpeta anotada al instalar el disparador (story 8.39): ahí quedó la herramienta en el PATH de quien instaló
+  const anotada = (opts.anotadas || carpetasAnotadas())[bin];
+  if (anotada) candidatas.push(path.join(anotada, bin));
+  return candidatas.find((c) => ejecutable(c)) || bin;
 }
 
 /** ¿Se puede LANZAR? Responde el ENOENT del incidente — NO si la sesión puede trabajar (eso es la sonda). */
@@ -91,11 +125,14 @@ function seAlcanza(bin, opts = {}) {
  * en el PROCESO, no en el plist: el plist se compara byte a byte para no reinstalarse en cada
  * arranque, y un PATH escrito ahí volvería a depender de quién invocó al instalador.
  */
-function asegurarPathDeHerramientas(env = process.env, nodeBin = process.execPath) {
-  const dir = path.dirname(nodeBin);
-  const partes = String(env.PATH || '').split(path.delimiter).filter(Boolean);
-  if (!partes.includes(dir)) env.PATH = [dir].concat(partes).join(path.delimiter);
+function asegurarPathDeHerramientas(env = process.env, nodeBin = process.execPath, anotadas = carpetasAnotadas()) {
+  // primero las carpetas anotadas (story 8.39): con el Node del arnés en el disparador, `codex` (`#!/usr/bin/env node`)
+  // tiene que encontrar el `node` de SU carpeta, el del dev; después la del node que corre, como siempre
+  const dirs = [...new Set([anotadas.codex, anotadas.claude, path.dirname(nodeBin)].filter(Boolean))];
+  let partes = String(env.PATH || '').split(path.delimiter).filter(Boolean);
+  for (const dir of dirs.reverse()) if (!partes.includes(dir)) partes = [dir].concat(partes);
+  env.PATH = partes.join(path.delimiter);
   return env.PATH;
 }
 
-module.exports = { rutaDeHerramienta, seAlcanza, ejecutablePorDefecto, asegurarPathDeHerramientas };
+module.exports = { rutaDeHerramienta, seAlcanza, ejecutablePorDefecto, asegurarPathDeHerramientas, carpetasAnotadas, anotarCarpetas, archivoDeHerramientas, EXAM_TOOLS };

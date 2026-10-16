@@ -250,10 +250,12 @@ function expectedFromList(clone, { integrations = {}, env = {}, home = '', exist
  * y desde la W4 un `.sh` en Windows con la ruta del bash de Git entre comillas (`"C:/…/bash.exe" "<ruta>"`): el intérprete
  * es el nombre de ese archivo, sin `.exe` (pase adversarial de la W3W4, clases 1 y 12).
  */
+// Desde la story 8.39 el intérprete de un `.js` puede ser la ruta del Node propio del arnés SIN comillas
+// (`C:/…/node/current/node.exe "<ruta>"`): el intérprete es también el nombre de ese archivo, sin `.exe`.
 function commandFile(command) {
-  const m = /^\s*(?:"([^"]+)"|([A-Za-z0-9_.-]+))\s+"([^"]+)"\s*$/.exec(String(command || ''));
+  const m = /^\s*(?:"([^"]+)"|([^\s"]+))\s+"([^"]+)"\s*$/.exec(String(command || ''));
   if (!m) return { runner: null, file: null };
-  const runner = m[1] ? m[1].replace(/\\/g, '/').split('/').pop().replace(/\.exe$/i, '') : m[2];
+  const runner = (m[1] || m[2]).replace(/\\/g, '/').split('/').pop().replace(/\.exe$/i, '');
   return { runner, file: m[3] };
 }
 

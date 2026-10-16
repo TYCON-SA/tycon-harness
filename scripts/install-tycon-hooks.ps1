@@ -138,6 +138,29 @@ if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
 }
 
 # ============================================================
+# Con qué Node corren las llamadas de este instalador (story 8.39, AC 8; espejo del .sh)
+# ============================================================
+# El arnés baja su propio Node a <casa>/node/current (scripts/setup/harness/harness-node.js; la casa es TYCON_HOME o
+# ~/.tycon — copia de la regla de tycon-home.js#harnessNode, declarada en scripts/tests/fixtures/harness-node-copies.json).
+# Si está, las llamadas `& node` de ESTE guion van con él: `node` pasa a ser una función de este guion (en PowerShell una
+# función le gana a un programa del PATH). No cambia el PATH ni llega a lo que el guion lance. Sin él, el `node` del PATH.
+function Get-HarnessNode {
+    if ($env:TYCON_HARNESS_NODE -eq '0') { return $null }
+    $casa = if ($env:TYCON_HOME) { $env:TYCON_HOME } else { Join-Path (Get-TyconHome) '.tycon' }
+    # una TYCON_HOME relativa se resolvería contra la carpeta actual (un binario puesto en el repo): el Node del PATH
+    if (-not [System.IO.Path]::IsPathRooted($casa)) { return $null }
+    $cur = Join-Path (Join-Path $casa 'node') 'current'
+    foreach ($bin in @((Join-Path $cur 'node.exe'), (Join-Path (Join-Path $cur 'bin') 'node'))) {
+        if (Test-Path -LiteralPath $bin -PathType Leaf) { return $bin }
+    }
+    return $null
+}
+$script:HarnessNode = Get-HarnessNode
+if ($script:HarnessNode) { function node { & $script:HarnessNode @args } }
+# `Start-Process` busca el programa en el PATH y no ve la función: lo que se lanza de fondo nombra el binario
+$script:NodeProgram = if ($script:HarnessNode) { $script:HarnessNode } else { 'node' }
+
+# ============================================================
 # El candado (story 8.17, W4 · AC 34) — el MISMO que toma harness.js
 # ============================================================
 # Corrido suelto (sin TYCON_HARNESS_LOCK_HELD=1), este instalador toma el candado del mecanismo de instalación
@@ -972,6 +995,13 @@ if (@($Apply.deferred).Count -gt 0) {
 }
 $Added = @($Apply.added | Where-Object { $_ })
 $Removed = @($Apply.removed | Where-Object { $_ })
+# el cambio de forma de los hooks .js (story 8.39, AC 6): del node del PATH al Node propio del arnés, o de vuelta
+$Reformed = @($Apply.reformed | Where-Object { $_ })
+if ($Reformed.Count -gt 0) {
+    if ($Check) { Write-Host "⚠ tycon: $($Reformed.Count) hook(s) .js con otro intérprete que el que corresponde (el Node del arnés o el del PATH) — corré install-tycon-hooks.ps1" }
+    else { Write-Host "✓ tycon: $($Reformed.Count) hook(s) .js cambiaron de intérprete, en su lugar (el Node del arnés o el del PATH: harness.js doctor lo dice)" }
+    foreach ($x in $Reformed) { Write-Host "  ~ $($x.event) → $($x.relpath)  [$($x.from) → $($x.to)]" }
+}
 if ($Check) {
     if ($Added.Count -gt 0) {
         Write-Host "⚠ tycon: $($Added.Count) hooks faltan en ~/.claude/settings.json — corré install-tycon-hooks.ps1"
@@ -1229,7 +1259,7 @@ if ((Integ-Prendida 'ado') -and $env:TYCON_NO_AZ_PROJECTS_REFRESH -ne '1' -and -
     if (Test-Path $hookAz) {
         # las reglas de Windows para leer una línea de comando: las barras antes de una comilla (o del cierre) se duplican
         $azLine = ($argsAz | ForEach-Object { '"' + (("$_" -replace '(\\*)"', '$1$1\"') -replace '(\\+)$', '$1$1') + '"' }) -join ' '
-        $azStart = @{ FilePath = 'node'; ArgumentList = $azLine }
+        $azStart = @{ FilePath = $script:NodeProgram; ArgumentList = $azLine }
         if ($IsWindows) { $azStart.WindowStyle = 'Hidden' } else { $azStart.RedirectStandardOutput = '/dev/null' }
         try { Start-Process @azStart -ErrorAction Stop } catch { Write-Host "!! tycon: no pude lanzar el refresco de la lista de proyectos de Azure DevOps ($($_.Exception.Message))" }
     }
@@ -1250,7 +1280,7 @@ if ((Integ-Prendida 'mailbox') -and $env:TYCON_NO_UPLOAD_RUNS -ne '1' -and -not 
         New-Item -ItemType Directory -Force -Path $upDir -ErrorAction Stop | Out-Null
         # una sola línea con cada argumento entre comillas (las reglas de Windows: las barras antes de una comilla se duplican)
         $upLine = (@($upJs, '--budget-ms', '90000', '--log', $upLog) | ForEach-Object { '"' + (("$_" -replace '(\\*)"', '$1$1\"') -replace '(\\+)$', '$1$1') + '"' }) -join ' '
-        $upStart = @{ FilePath = 'node'; ArgumentList = $upLine }
+        $upStart = @{ FilePath = $script:NodeProgram; ArgumentList = $upLine }
         if ($IsWindows) { $upStart.WindowStyle = 'Hidden' } else { $upStart.RedirectStandardOutput = '/dev/null' }
         # la constancia de que se lanzó, antes de lanzar: si node muere sin escribir nada, el registro igual lo dice
         Add-Content -LiteralPath $upLog -Value ("[{0}] tycon: el arranque lanza la subida de corridas" -f (Get-Date).ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss')) -Encoding utf8 -ErrorAction SilentlyContinue

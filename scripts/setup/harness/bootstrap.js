@@ -201,6 +201,23 @@ function repairRelease() {
   } catch (e) { log(`la reparación del cambio de versión falló: ${e.message}`); }
 }
 
+/**
+ * El Node con que se lanza harness.js (story 8.39, decisión 24): el propio del arnés, `<casa>/node/current`, sólo si
+ * `--version` contesta `v<n>` con n ≥ 20 en menos de 5 s; si no (no está, no arranca, se cuelga), el que corre esta copia,
+ * como siempre. Un `current` roto nunca hace caer la línea al respaldo, que volvería atrás una versión sana. La ruta es la
+ * regla de scripts/setup/harness/tycon-home.js#harnessNode ESCRITA acá (esta copia no carga nada del árbol; copia
+ * declarada en scripts/tests/fixtures/harness-node-copies.json). TYCON_HARNESS_NODE=0 lo apaga.
+ */
+function harnessNodeOr(fallback) {
+  if (process.env.TYCON_HARNESS_NODE === '0') return fallback;
+  const bin = process.platform === 'win32' ? path.join(OWN_HOME, 'node', 'current', 'node.exe') : path.join(OWN_HOME, 'node', 'current', 'bin', 'node');
+  if (!fs.existsSync(bin)) return fallback;
+  const r = spawnSync(bin, ['--version'], { encoding: 'utf8', timeout: 5000, windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] });
+  const m = /^v(\d+)\./.exec(String(r.stdout || '').trim());
+  if (r.error || r.status !== 0 || !m || Number(m[1]) < NODE_FLOOR) { log(`el Node del arnés (${bin}) no contesta bien: lanzo harness.js con ${fallback}`); return fallback; }
+  return bin;
+}
+
 function main(argv) {
   repairRelease();
   const fixed = runFixedProgram(argv);
@@ -232,7 +249,7 @@ function main(argv) {
   const harness = path.join(tree, 'scripts', 'setup', 'harness.js');
   if (!fs.existsSync(harness)) return fail(1, `no existe ${harness}: corre el respaldo en shell`);
   const args = argv.length ? argv : ['startup'];
-  const r = spawnSync(process.execPath, [harness, ...args], { windowsHide: true, stdio: 'inherit', env: process.env });
+  const r = spawnSync(harnessNodeOr(process.execPath), [harness, ...args], { windowsHide: true, stdio: 'inherit', env: process.env });
   if (r.error) return fail(1, `no pude lanzar ${harness}: ${r.error.message}`);
   if (r.status === null) return fail(1, `${harness} murió por señal ${r.signal}`);
   if (r.status !== 0) log(`harness.js ${args.join(' ')} salió ${r.status}${args[0] === 'startup' ? ': corre el respaldo en shell' : ''}`);

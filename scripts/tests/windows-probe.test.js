@@ -29,6 +29,8 @@
  * Correr: node --test scripts/tests/windows-probe.test.js
  */
 
+// story 8.39 (decisión 20): los laboratorios que lanzan harness.js no bajan el Node del arnés de nodejs.org (lo heredan)
+process.env.TYCON_HARNESS_NODE = '0';
 const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');

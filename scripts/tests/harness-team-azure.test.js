@@ -1,4 +1,6 @@
 'use strict';
+// story 8.39 (decisión 20): las suites que lanzan harness.js no bajan el Node del arnés de nodejs.org
+process.env.TYCON_HARNESS_NODE = '0';
 // harness-team-azure.test.js — la capa del equipo desde AZURE DEVOPS (story 8.25, la fuente de TYCON), contra el Azure de
 // juguete (scripts/tests/fixtures/toy-azure-server.js) sobre un repo bare real. Sin red, sin tocar ~/.tycon ni ~/.claude.
 //

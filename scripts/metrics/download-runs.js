@@ -34,6 +34,10 @@
  * Uso:
  *   node scripts/metrics/download-runs.js [--json] [--budget-ms N] [--no-threads]
  *   node scripts/metrics/download-runs.js --overwrites-report [--json]
+ *   node scripts/metrics/download-runs.js --harness-node-report [--json]
+ *
+ *   --harness-node-report (story 8.39): sólo LISTA el contenedor, como --overwrites-report, y dice por máquina si su
+ *   place.json es de una versión que trae el Node propio del arnés; `todas: true` decide cuándo sacar Node 22 de la CI.
  *
  *   --no-threads (story 2.12): baja los registros y los volcados, NUNCA los hilos ni los cambios de git
  *   (`*.hilo.jsonl.gz`, `*.cambio.json.gz` — story 2.19: traen código de todos los repos); los cuenta en
@@ -302,15 +306,21 @@ async function informeDeReescrituras(opts = {}) {
     const alias = aliasDeNombre(nombre);
     let version = null;
     let versionDia = null;
+    let harnessNode;   // undefined: el place.json no trae la clave (una versión anterior a la story 8.39)
     try {
       const place = JSON.parse(fs.readFileSync(path.join(dirBuzon, nombre, 'registros', 'place.json'), 'utf8'));
       const v = place && place.install && place.install.version;
       version = typeof v === 'string' && /^\d{4}\.\d{2}\.\d{2}\.\d{1,4}$/.test(v) ? v : null;
       versionDia = place && typeof place.day === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(place.day) ? place.day : null;
+      const hn = place && place.install && place.install.harness_node;
+      if (hn && typeof hn === 'object') harnessNode = { own: typeof hn.own === 'boolean' ? hn.own : null, major: Number.isInteger(hn.major) ? hn.major : null };
     } catch (_) { /* sin place.json en el espejo: no medido */ }
     const lista = version === null ? 'no medido' : (compararVersiones(version, VERSION_SOLO_CREAR) >= 0 ? 'sí' : 'no');
     const ultima = m.ultima === null ? null : new Date(m.ultima).toISOString().slice(0, 10);
-    maquinas.push({ alias, blobs: m.blobs, reescritos: m.reescritos, sin_fecha_de_creacion: m.sin_fecha_de_creacion, sin_fecha_de_modificacion: m.sin_fecha_de_modificacion, ultima_subida: ultima, version, version_dia: versionDia, lista });
+    const fila = { alias, blobs: m.blobs, reescritos: m.reescritos, sin_fecha_de_creacion: m.sin_fecha_de_creacion, sin_fecha_de_modificacion: m.sin_fecha_de_modificacion, ultima_subida: ultima, version, version_dia: versionDia, lista };
+    // sólo para --harness-node-report (no sale en este informe): si el place.json declara el Node del arnés
+    Object.defineProperty(fila, 'harnessNode', { value: harnessNode, enumerable: false });
+    maquinas.push(fila);
     if (m.ultima === null || ahora - m.ultima > DIAS_AUSENTE * 86400000) ausentes.push(alias);
   }
   maquinas.sort((a, b) => (a.alias < b.alias ? -1 : 1));
@@ -321,6 +331,37 @@ async function informeDeReescrituras(opts = {}) {
   });
   if (opts.log) opts.log(`informe de re-subidas: ${total.blobs} blob(s), ${total.reescritos} re-escrito(s), ${total.sin_fecha_de_creacion + total.sin_fecha_de_modificacion} sin fecha de creación o de modificación (no medido) · ${maquinas.length} máquina(s), ${maquinas.filter((x) => x.lista === 'sí').length} lista(s) para «sólo crear», ${ausentes.length} ausente(s) hace más de ${DIAS_AUSENTE} días`);
   return fin(0, 'medido');
+}
+
+/**
+ * --harness-node-report (story 8.39, decisiones 7 y 17 · AC 23): ¿todas las máquinas ya corren una versión del arnés con
+ * su Node propio? Es la medición que decide cuándo sacar Node 22 de la CI pública. Por máquina, con su alias: «sí» si su
+ * place.json más nuevo es de una versión que trae la story 8.39, «no» si es de una anterior, «no medido» sin place.json.
+ * La versión que trae la story se reconoce por lo que su place.json declara: desde esa versión, `install` trae la clave
+ * `harness_node` (el número de versión lo pone el merge, y no se sabe al escribir esto). Aparte, informativo y sin cambiar
+ * el criterio, cuántas declaran que corren con el Node del PATH. Las que no subieron nada en 14 días van aparte, como
+ * ausentes; `todas` es true sólo si ninguna presente dice «no» ni «no medido». Sólo LISTA el buzón, como
+ * --overwrites-report (sin az, sin sesión o sin rol: salida 0 y «no medido»).
+ */
+async function informeNodePropio(opts = {}) {
+  const base = await informeDeReescrituras(opts.log ? Object.assign({}, opts, { log: null }) : opts);
+  const r = base.res;
+  if (r.estado !== 'medido') return base;
+  const ausentes = new Set(r.ausentes);
+  const maquinas = r.maquinas.map((x) => {
+    const lista = x.version === null ? 'no medido' : (x.harnessNode !== undefined ? 'sí' : 'no');
+    return { alias: x.alias, version: x.version, version_dia: x.version_dia, ultima_subida: x.ultima_subida, lista, con_el_del_path: x.harnessNode ? x.harnessNode.own === false : null, node_mayor: x.harnessNode ? x.harnessNode.major : null };
+  });
+  const presentes = maquinas.filter((x) => !ausentes.has(x.alias));
+  const res = {
+    estado: 'medido', motivo: null, codigo: 0,
+    maquinas: presentes, ausentes: [...ausentes],
+    con_el_del_path: presentes.filter((x) => x.con_el_del_path === true).length,
+    todas: presentes.length > 0 && presentes.every((x) => x.lista === 'sí'),
+    dias_ausente: DIAS_AUSENTE,
+  };
+  if (opts.log) opts.log(`informe del Node del arnés: ${presentes.length} máquina(s) presente(s), ${presentes.filter((x) => x.lista === 'sí').length} con la versión que trae el Node propio, ${presentes.filter((x) => x.lista === 'no').length} sin ella, ${presentes.filter((x) => x.lista === 'no medido').length} sin medir · con el del PATH: ${res.con_el_del_path} · ${res.ausentes.length} ausente(s) · todas: ${res.todas ? 'sí' : 'no'}`);
+  return { codigo: 0, res };
 }
 
 /**
@@ -718,7 +759,7 @@ async function bajar(opts = {}) {
   return fin(0, res.bajados ? 'bajado' : (res.sin_tiempo ? 'sin_tiempo' : 'al_dia'));
 }
 
-module.exports = { bajar, informeDeReescrituras, leerListado, formaDelNombre, nombreMostrable, compararVersiones, VERSION_SOLO_CREAR, negativaDeLectura, carpetasDeMaquina };
+module.exports = { bajar, informeDeReescrituras, informeNodePropio, leerListado, formaDelNombre, nombreMostrable, compararVersiones, VERSION_SOLO_CREAR, negativaDeLectura, carpetasDeMaquina };
 
 if (require.main === module) {
   require('../lib/legacy-names.js').aliasArgv('scripts/metrics/download-runs.js');
@@ -727,7 +768,7 @@ if (require.main === module) {
   const json = args.includes('--json');
   const budget = valor('--budget-ms');
   const stamp = () => new Date().toISOString().slice(0, 19).replace('T', ' ');
-  const accion = args.includes('--overwrites-report') ? informeDeReescrituras : bajar;
+  const accion = args.includes('--harness-node-report') ? informeNodePropio : args.includes('--overwrites-report') ? informeDeReescrituras : bajar;
   accion({
     budgetMs: budget !== undefined ? Number(budget) : undefined,
     sinHilos: args.includes('--no-threads'),

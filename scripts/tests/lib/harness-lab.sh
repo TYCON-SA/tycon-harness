@@ -389,6 +389,9 @@ _harness_lab_machine() {
   # que corre con TYCON_PROFILE=0. Un `~/.claude/tycon.json` con `install.profile` le gana, como en cualquier máquina.
   printf '{ "install": { "profile": "full" } }\n' > "$LAB/lab-profile.json"
   export TYCON_PROFILE="$LAB/lab-profile.json" TYCON_UPDATE_NETWORK_BUDGET_S="${TYCON_UPDATE_NETWORK_BUDGET_S:-5}"
+  # story 8.39 (decisión 20): el laboratorio no baja el Node del arnés; una suite que lo prueba pone TYCON_HARNESS_NODE=1
+  # después de armar el laboratorio, y una lista de laboratorio con un servidor local, nunca nodejs.org
+  export TYCON_HARNESS_NODE=0
   export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_TERMINAL_PROMPT=0
   export GIT_AUTHOR_NAME=Lab GIT_AUTHOR_EMAIL=lab@example.com GIT_COMMITTER_NAME=Lab GIT_COMMITTER_EMAIL=lab@example.com
   unset GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE GIT_COMMON_DIR TYCON_GUIDES_DIR TYCON_SKILLS_DIR TYCON_HARNESS_LOCK_HELD TYCON_HARNESS_SNAPSHOT_DIR

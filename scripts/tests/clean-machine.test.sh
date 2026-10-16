@@ -394,11 +394,12 @@ run_scenario() {
   container="tycon-clean-machine-${RUN_ID}-${name#run-}"
   if [ "${net}" = yes ]; then
     # con red: el tope del paso de terceros sube, para no depender de la red del momento (AC 23)
+    # TYCON_HARNESS_NODE=0 (story 8.39, decisión 20): la máquina limpia no baja el Node del arnés de nodejs.org
     step "${name}" "${cap}" --container "${container}" -- docker run --rm --name "${container}" --label "${LABEL}" \
-      -e TYCON_THIRD_PARTY_NETWORK_BUDGET_S=120 "${image}" bash "/opt/lab/scenarios/${script}.sh" "$@"; rc=$?
+      -e TYCON_THIRD_PARTY_NETWORK_BUDGET_S=120 -e TYCON_HARNESS_NODE=0 "${image}" bash "/opt/lab/scenarios/${script}.sh" "$@"; rc=$?
   else
     step "${name}" "${cap}" --container "${container}" -- docker run --rm --name "${container}" --label "${LABEL}" \
-      --network none "${image}" bash "/opt/lab/scenarios/${script}.sh" "$@"; rc=$?
+      --network none -e TYCON_HARNESS_NODE=0 "${image}" bash "/opt/lab/scenarios/${script}.sh" "$@"; rc=$?
   fi
   tally "${name}" "${rc}" "${closes}"
 }
@@ -626,7 +627,7 @@ keep_container() {
   step keep-remove 60 -- docker rm -f "${KEEP_NAME}" || true       # el de una corrida anterior, si quedó
   docker_step keep-tag 60 docker tag "${IMG_CORE}" "${KEEP_IMAGE}" || return 1
   docker_step keep-start 60 docker run -d --name "${KEEP_NAME}" "${KEEP_IMAGE}" sleep infinity || return 1
-  step keep-install 600 --container "${KEEP_NAME}" -- docker exec -e TYCON_THIRD_PARTY_NETWORK_BUDGET_S=120 "${KEEP_NAME}" \
+  step keep-install 600 --container "${KEEP_NAME}" -- docker exec -e TYCON_THIRD_PARTY_NETWORK_BUDGET_S=120 -e TYCON_HARNESS_NODE=0 "${KEEP_NAME}" \
     bash -c '. /opt/lab/lib.sh && scenario_begin keep && serve_copy && run_block unattended "${OUT_DIR}/install.out" < /dev/null && make_example_repo "${WORK_DIR}/example-repo"'; rc=$?
   if [ "${rc}" -ne 0 ]; then
     step_red keep-install "${rc}"

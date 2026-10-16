@@ -54,6 +54,28 @@ function fakeClone(dir) {
   return fs.realpathSync(dir);
 }
 
+// ── T33 de la story 8.39 ────────────────────────────────────────────────────────────────────────────────────────────
+it('T33 NodeDelArnes_Rutas_YCopiasDeclaradas @story-8.39 @ac-2 @ac-26', () => {
+  const home = fs.realpathSync(tmp('tycon-home-t33-'));
+  const abs = path.join(home, 'otra-casa');
+  const got = inChild(`const H = require(${JSON.stringify(HOME_JS)});
+    const p = (o) => { const x = H.harnessNode(o); return { dir: x.dir, current: x.current, bin: x.bin, versions: x.versions, v: x.binIn(require('path').join(x.versions, 'v1')) }; };
+    console.log(JSON.stringify({ posix: p({ platform: 'darwin' }), win: p({ platform: 'win32' }), own: p({ platform: 'linux', env: { TYCON_HOME: ${JSON.stringify(abs)} } }) }))`, { home });
+  assert.strictEqual(got.posix.dir, path.join(home, '.tycon', 'node'));
+  assert.strictEqual(got.posix.current, path.join(home, '.tycon', 'node', 'current'));
+  assert.strictEqual(got.posix.bin, path.join(home, '.tycon', 'node', 'current', 'bin', 'node'), 'posix: bin/node por current');
+  assert.strictEqual(got.win.bin, path.join(home, '.tycon', 'node', 'current', 'node.exe'), 'Windows: node.exe suelto por current');
+  assert.strictEqual(got.posix.v, path.join(home, '.tycon', 'node', 'versions', 'v1', 'bin', 'node'));
+  assert.strictEqual(got.own.dir, path.join(abs, 'node'), 'TYCON_HOME manda');
+  // cada copia escrita de la regla dice lo mismo (fixtures/harness-node-copies.json)
+  const copies = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'tests', 'fixtures', 'harness-node-copies.json'), 'utf8')).copies;
+  assert.ok(copies.length >= 4, 'las cuatro copias declaradas');
+  for (const c of copies) {
+    const text = fs.readFileSync(path.join(ROOT, ...c.file.split('/')), 'utf8');
+    for (const n of c.needles) assert.ok(text.includes(n), `${c.file}: no trae «${n}» (la regla de la ruta del Node del arnés)`);
+  }
+});
+
 // ── T1 ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
 it('T1 TyconHome_PerFunctionTodayValues_HomeFromOsHomedir_RelativeRefused_NoDeps', () => {
   const home = fs.realpathSync(tmp('tycon-home-t1-'));

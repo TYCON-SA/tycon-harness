@@ -354,6 +354,9 @@ vez cada 6 horas. Si la hay, avisa y espera: no la aplica sin que se lo pidas de
   `~/.claude/.tycon-pipeline/`, la línea de arranque en `~/.claude/settings.json`, y una copia de respaldo antes de cada
   cambio en `~/.claude/.tycon-pipeline/harness/backups/`: quedan las cinco más nuevas, la de antes de instalar —que no
   rota— y la anterior a la versión actual. `harness.js rollback --list` las muestra.
+- **El Node 24 propio del arnés** en `~/.tycon/node/` (unos 50 MB, bajado de nodejs.org y verificado contra las
+  huellas que viajan en el arnés): sus hooks corren con él, tus proyectos siguen con tu Node y el PATH no se toca.
+  `TYCON_HARNESS_NODE=0` lo apaga; `uninstall` deja la carpeta y dice cómo borrarla.
 - **Lo que guardan los hooks**, todo en tu máquina: los últimos 8 pedidos de cada sesión y el estado del pipeline en
   `~/.claude/.tycon-pipeline/`, las respuestas que pasaron el tope de largo en `~/.claude/response-style/`, lo que
   anotan los otros dos medidores en `~/.claude/blocking-meter/` y `~/.claude/lectura-grande/` (la carpeta de trabajo de

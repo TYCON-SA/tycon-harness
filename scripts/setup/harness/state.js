@@ -12,6 +12,12 @@
 // Y desde 2026-10-14, `token_expired_notice` (cuándo se avisó que el permiso de GitHub guardado venció y el repo público se
 // leyó sin él: el aviso sale una vez mientras siga ese permiso; release.js la borra cuando el permiso sirve o ya no está).
 //
+// El Node propio del arnés (story 8.39) tiene su registro APARTE, en `harness/harness-node.json` (`harnessNodeFile`):
+// el último intento (`last_try`), la última falla (`last_failure: { at, reason }`), la versión que no arranca en la máquina
+// (`incompatible`) y la anterior que se guarda (`previous`). Lo escribe harness-node.js desde `runApplierOnly`, que corre
+// dentro de comandos que ya tienen este estado en memoria y lo escriben después: en este archivo se perdería (mismo
+// motivo que update-failures.json).
+//
 // Lo que suma la story 8.13.1 (AC 2), sin subir el `schema`: campos ADITIVOS. `source` (`internal` | `public`: de dónde
 // instala la máquina), `sources[].kind` (`tree` | `layer`: el árbol o la capa que se apila encima) y `sources[].reference`
 // (sólo en una capa: el clon interno de la persona, si existe; el clon de lectura del mecanismo va en su `dir`). Las
@@ -62,6 +68,8 @@ function paths(home = os.homedir()) {
     // story 8.23 (tanda L, AC 39): desde cuándo y por qué el arranque no pudo actualizar; lo escribe el que NO pudo
     // (también el que encontró el candado tomado, sin tomarlo) y lo borra una actualización sana
     failuresFile: path.join(harnessDir, 'update-failures.json'),
+    // story 8.39: el registro del Node propio del arnés (lo escribe harness-node.js)
+    harnessNodeFile: path.join(harnessDir, 'harness-node.json'),
     log: path.join(harnessDir, 'startup.log'),
     bootstrapDir: harnessDir,
     // story 8.13.1 (AC 7): los clones de lectura del mecanismo, uno por fuente `layer` (`sources/<nombre>`, --bare), y

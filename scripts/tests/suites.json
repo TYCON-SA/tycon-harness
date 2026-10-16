@@ -1548,6 +1548,11 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/harness-node.test.sh",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/harness-doctor.test.sh",
       "requiere": []
     },

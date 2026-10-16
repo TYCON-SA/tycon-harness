@@ -99,7 +99,9 @@ const NOT_A_TASK = [
   { pattern: '--prepare-state', why: 'copia los registros con nombre viejo antes de abrirlos (story 8.9): no hace nada por su cuenta' },
 ];
 /** Los renglones de una tanda de varios renglones que invocan un programa (los pasos que la tanda corre). */
-const stepsOf = (launch) => launch.text.split('\n').slice(1).filter((l) => !/^\s*#/.test(l) && /\bnode\s+["$]/.test(l));
+// un paso de la tanda llama a `node`, o al Node del arnés que la tanda recibe como argumento (`"$N"`, story 8.39)
+const NODE_CALL = /(?:\bnode|"\$N")\s+["$]/;
+const stepsOf = (launch) => launch.text.split('\n').slice(1).filter((l) => !/^\s*#/.test(l) && NODE_CALL.test(l));
 
 /**
  * Los hooks que registra el aplicador de Windows: `<EVENTO>:<spec>`. Desde la story 8.17 (tanda W3) los dos aplicadores
@@ -343,7 +345,7 @@ test('Effects_Check_CatchesMissingStaleAndUndeclaredLaunch', () => {
     assert.ok(found[0].includes(`${INSTALLER}:${lineNo}`) && found[0].includes('undeclared-sweep.js'), `${what}: el rojo nombra la línea y lo que lanza: ${found[0]}`);
   }
   // un paso nuevo DENTRO de la tanda de varios renglones (donde se suman las tareas de fondo) también da rojo
-  const stepAnchor = real.split('\n').find((l) => l.includes('collect-findings.log') && /\bnode\s+"/.test(l));
+  const stepAnchor = real.split('\n').find((l) => l.includes('collect-findings.log') && NODE_CALL.test(l));
   assert.ok(stepAnchor, 'no encontré el paso de los hallazgos dentro de la tanda de fondo');
   const inBatch = undeclaredIn(real.replace(stepAnchor, `${stepAnchor}\n    node "$SCRIPT_DIR/lib/undeclared-step.js" --budget-ms 1000 >/dev/null 2>&1`));
   assert.ok(inBatch.some((m) => m.includes('un paso de la tanda') && m.includes('undeclared-step.js')), `un paso de más en la tanda tenía que dar rojo: ${inBatch.join(' · ') || '(ninguno)'}`);

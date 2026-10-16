@@ -26,6 +26,8 @@
  *    nombres, lanzados sin HOME de juguete, anotaban en el registro real de la máquina).
  */
 const GUARD = require('./lib/real-home-guard.js');   // primera línea que hace algo
+// story 8.39 (decisión 20): las suites que lanzan harness.js no bajan el Node del arnés de nodejs.org
+process.env.TYCON_HARNESS_NODE = '0';
 const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');

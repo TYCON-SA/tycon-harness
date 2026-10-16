@@ -2884,7 +2884,8 @@ function computeStart(args) {
   // PIPE-C4: marker set (vía marker.js — único owner de writes del marker).
   const markerJs = path.join(os.homedir(), '.claude', 'agent-skills', 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
   try {
-    execFileSync('node', [markerJs, 'set', JSON.stringify({
+    // marker.js con el mismo Node que corre este programa, no el del PATH (story 8.39)
+    execFileSync(process.execPath, [markerJs, 'set', JSON.stringify({
       // storyPath ABSOLUTO (2026-09-05): `start` lo validaba contra el cwd y el marker lo guardaba
       // crudo, pero on-advisor-run.js y marker.js lo resuelven contra repoPath — coincidían sólo si
       // cwd == --repo. Con `--repo backend --story project/specs/x.md` desde el padre, la proyección
@@ -2904,7 +2905,7 @@ function computeStart(args) {
       })(),
       stepsPending: [0, 1, 2, 3, 4, 5, 6, 7, 8],
     })], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-    execFileSync('node', [markerJs, 'complete-step', '0'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    execFileSync(process.execPath, [markerJs, 'complete-step', '0'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
     actions.push('PIPE-C4: marker seteado (step 0 completado)');
   } catch (e) {
     return { ready: false, story_id: storyId, pauses: [{ id: 'marker-set-failed', detail: String(e.message || e) }], actions_done: actions };
@@ -2912,7 +2913,7 @@ function computeStart(args) {
 
   // PIPE-C5 (escritura): status → in-progress.
   try {
-    execFileSync('node', [markerJs, 'update-story-status', storyPath, 'in-progress'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    execFileSync(process.execPath, [markerJs, 'update-story-status', storyPath, 'in-progress'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
     actions.push('PIPE-C5: frontmatter status → in-progress');
   } catch (e) {
     actions.push(`PIPE-C5 FALLÓ (no bloqueante): ${String(e.message || e)}`);
@@ -2920,7 +2921,7 @@ function computeStart(args) {
 
   if (args.autonomous) {
     try {
-      execFileSync('node', [markerJs, 'set-autonomous', 'true'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+      execFileSync(process.execPath, [markerJs, 'set-autonomous', 'true'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
       actions.push('PIPE-C6: modo autónomo Nivel 1 ACTIVO (default ON · Stop-gate DoD). Pánico: touch ~/.claude/.tycon-pipeline/STOP_AUTONOMY');
     } catch { /* ignore */ }
   } else {

@@ -187,5 +187,63 @@ case "$PAR" in
   *) mal "C-13 la paridad de hooks dice: $PAR" ;;
 esac
 
+# ── story 8.39: los hooks de Codex con el Node propio del arnés ─────────────────────────────────────────────────────
+# Un Node del arnés de juguete en la HOME de prueba: un GUION que dice la versión de la lista y si no llama al node real
+# por su ruta absoluta (nunca un enlace a un binario real), con el enlace `current`.
+CASA39="$T/casa39"; NODE_V="$(node -e 'process.stdout.write(require(process.argv[1]).version)' "$RAIZ/scripts/production/node-official.json")"
+nodo_de_juguete() { # <casa> [versión]
+  local v="${2:-$NODE_V}"
+  mkdir -p "$1/.tycon/node/versions/$v/bin"
+  printf '#!/bin/sh\nif [ "$1" = "--version" ]; then echo "%s"; exit 0; fi\nexec "%s" "$@"\n' "$v" "$(command -v node)" > "$1/.tycon/node/versions/$v/bin/node"
+  chmod +x "$1/.tycon/node/versions/$v/bin/node"
+  rm -f "$1/.tycon/node/current"; ln -s "versions/$v" "$1/.tycon/node/current"
+}
+desplegar39() { env -u TYCON_ENGRAM_HOOK -u TYCON_HOME -u TYCON_NODE_BIN HOME="$CASA39" USERPROFILE="$CASA39" CODEX_HOME="$1" node "$RAIZ/build/deploy-codex-hooks.js" > "$T/out39" 2>&1; }
+mkdir -p "$CASA39"; nodo_de_juguete "$CASA39"
+BIN39="$CASA39/.tycon/node/current/bin/node"
+
+# T19 @story-8.39 @ac-7 · CodexHooks_NodeDelArnes_SeReemplazaSinDuplicar: un hooks.json con hooks del arnés en las dos
+# formas y uno del dev → sólo la forma que decide el intérprete, una vez; el del dev intacto; el aviso de /hooks una vez
+mkdir -p "$T/h39"
+desplegar39 "$T/h39"
+node -e '
+const f = process.argv[1], bin = process.argv[2];
+const j = JSON.parse(require("fs").readFileSync(f, "utf8"));
+const g = j.hooks.SessionStart || (j.hooks.SessionStart = [{ hooks: [] }]);
+const own = g.flatMap((x) => x.hooks).find((h) => h.command.startsWith(bin + " "));
+if (!own) { console.error("sin hook propio"); process.exit(1); }
+g.push({ hooks: [{ type: "command", command: own.command.replace(bin + " ", "node ") }, { type: "command", command: "node /home/dev/mio.js" }] });
+require("fs").writeFileSync(f, JSON.stringify(j, null, 1) + "\n");' "$T/h39/hooks.json" "$BIN39" || mal "T19 no pude armar el hooks.json de partida"
+ANTES39="$(grep -c "\"$BIN39 " "$T/h39/hooks.json")"
+desplegar39 "$T/h39"
+PROPIOS="$(grep -c "\"$BIN39 " "$T/h39/hooks.json")"; NODE_FORMA="$(grep -c '"node [^"]*/scripts/hooks/' "$T/h39/hooks.json")"
+if [ "$PROPIOS" = "$ANTES39" ] && [ "$NODE_FORMA" = 0 ] && grep -q '"node /home/dev/mio.js"' "$T/h39/hooks.json"; then ok "T19 los hooks del arnés quedan una vez, con el Node del arnés ($PROPIOS); la forma node se reemplazó; el del dev quedó"
+else mal "T19 propios $PROPIOS (antes $ANTES39), con node $NODE_FORMA, dev: $(grep -c mio.js "$T/h39/hooks.json")"; fi
+[ "$(grep -c 'TRUST: Codex aprueba hooks POR HASH' "$T/out39")" = 1 ] && ok "T19 el aviso de aprobar con /hooks sale como mucho una vez" || mal "T19 el aviso de /hooks salió más de una vez"
+# y de vuelta: sin current, todo a node, sin duplicar
+rm -f "$CASA39/.tycon/node/current"; desplegar39 "$T/h39"
+if [ "$(grep -c "\"$BIN39 " "$T/h39/hooks.json")" = 0 ] && [ "$(grep -c '"node [^"]*/scripts/hooks/' "$T/h39/hooks.json")" -gt 0 ]; then ok "T19 sin el Node del arnés, de vuelta a node, sin duplicar"; else mal "T19 la vuelta a node dejó $(grep -c "\"$BIN39 " "$T/h39/hooks.json") con la ruta"; fi
+
+# T20 @story-8.39 @ac-7 @ac-16 · CodexHooks_SelloAlDia_CambiaElInterprete_Redespliega: la huella de deploy-codex-all.js
+# cambia cuando aparece current y cuando se rompe, sin tocar ningún repo; la autoprueba sigue con sus cinco insumos
+huella() { env -u TYCON_HOME -u TYCON_NODE_BIN HOME="$CASA39" USERPROFILE="$CASA39" node -e 'process.stdout.write(require(process.argv[1]).fingerprint())' "$RAIZ/build/deploy-codex-all.js" 2>/dev/null; }
+H_SIN="$(huella)"; nodo_de_juguete "$CASA39"; H_CON="$(huella)"
+printf '#!/bin/sh\nexit 1\n' > "$CASA39/.tycon/node/versions/$NODE_V/bin/node"; H_ROTO="$(huella)"
+if [ -n "$H_SIN" ] && [ "$H_SIN" != "$H_CON" ] && [ "$H_CON" != "$H_ROTO" ] && [ "$(printf '%s' "$H_CON" | tr '|' '\n' | wc -l | tr -d ' ')" = 4 ]; then ok "T20 la huella cambia al aparecer current y al romperse, y sigue con cinco partes"
+else mal "T20 huellas: sin «${H_SIN}» · con «${H_CON}» · roto «${H_ROTO}»"; fi
+node "$RAIZ/build/deploy-codex-all.js" --selftest > "$T/self39" 2>&1 && grep -q '5 insumos' "$T/self39" && ok "T20 la autoprueba de deploy-codex-all.js sigue verde con sus 5 insumos" || mal "T20 la autoprueba de deploy-codex-all.js: $(tail -1 "$T/self39")"
+
+# T21 @story-8.39 @ac-7 · Paridad_NodeDelArnes_SinFaltantes: con Codex desplegado con el Node del arnés, la paridad
+# (corrida sin TYCON_NODE_BIN, como corre a mano o de fondo) no marca faltantes
+nodo_de_juguete "$CASA39"; mkdir -p "$T/h39b"; desplegar39 "$T/h39b"
+PAR39="$(env -u TYCON_ENGRAM_HOOK -u TYCON_HOME -u TYCON_NODE_BIN HOME="$CASA39" USERPROFILE="$CASA39" CODEX_HOME="$T/h39b" node -e '
+  const p = require(process.argv[1]);
+  const s = p.collect(p.buildCtx({ tools: ["claude", "codex"], recorded: true })).find((x) => x.name === "hooks");
+  console.log(`${s.ok}|${s.detail}`);' "$RAIZ/scripts/lib/harness-parity.js" 2>&1)"
+case "$PAR39" in
+  "true|"*) ok "T21 la paridad de hooks en verde con el Node del arnés, sin la variable ($PAR39)" ;;
+  *) mal "T21 la paridad de hooks dice: $PAR39" ;;
+esac
+
 echo "  $BIEN bien · $MAL mal"
 [ "$MAL" = 0 ]

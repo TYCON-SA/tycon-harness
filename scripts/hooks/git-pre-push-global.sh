@@ -76,13 +76,16 @@ if [ ! -f "$GUARD" ]; then
     GUARD="$OWN_TREE/scripts/hooks/public-push-guard.js"; WHY=""
   fi
 fi
-if [ -z "$WHY" ] && ! command -v node >/dev/null 2>&1; then WHY="falta node en el PATH con que corre git"; fi
+# el Node del arnés (story 8.39): el propio si está y es ejecutable; si no, el del PATH. No cambia el PATH.
+. "$(harness_dir)/scripts/lib/harness-node.sh" 2>/dev/null || harness_node_bin() { echo node; }
+HNODE="$(harness_node_bin)"
+if [ -z "$WHY" ] && ! command -v "$HNODE" >/dev/null 2>&1; then WHY="falta node en el PATH con que corre git"; fi
 if [ -z "$WHY" ]; then
   if [ "$INPUT_OK" -eq 1 ]; then
-    feed | node "$GUARD" pre-push "$REMOTE_NAME" "$REMOTE_URL"
+    feed | "$HNODE" "$GUARD" pre-push "$REMOTE_NAME" "$REMOTE_URL"
   else
     # se le DICE (con cerrarle la entrada no alcanza: Node la reabre sobre nada y lee vacío, que es «nada que empujar»)
-    node "$GUARD" pre-push "$REMOTE_NAME" "$REMOTE_URL" --input-unreadable </dev/null
+    "$HNODE" "$GUARD" pre-push "$REMOTE_NAME" "$REMOTE_URL" --input-unreadable </dev/null
   fi
   exit $?
 fi

@@ -1,0 +1,16 @@
+{
+  "__nota": [
+    "Dónde está ESCRITA la regla de la ruta del Node propio del arnés fuera de su definición (story 8.39, AC 2 y 26).",
+    "La definición es scripts/setup/harness/tycon-home.js#harnessNode: `<casa>/node/current`, con el binario en `bin/node`",
+    "(o `node.exe` en Windows), y la casa es TYCON_HOME o ~/.tycon. Estos archivos la llevan escrita porque no pueden",
+    "cargar tycon-home.js (la copia fija de arranque, los guiones de shell, el instalador de PowerShell) o porque corren",
+    "también donde no está (el examen, en un laboratorio que copia carpetas sueltas). La lee scripts/tests/tycon-home.test.js",
+    "(T33): cada archivo tiene que traer cada uno de sus `needles`, que son la regla tal como la escribe ese lenguaje."
+  ],
+  "copies": [
+    { "file": "scripts/setup/harness/bootstrap.js", "why": "la copia fija de arranque no carga nada del árbol", "needles": ["'node', 'current', 'node.exe'", "'node', 'current', 'bin', 'node'", "process.env.TYCON_HOME"] },
+    { "file": "scripts/lib/harness-node.sh", "why": "los guiones de shell no cargan JavaScript para saber una ruta", "needles": ["${TYCON_HOME:-${HOME:-}/.tycon}", "/node/current/bin/node", "/node/current/node.exe"] },
+    { "file": "scripts/install-tycon-hooks.ps1", "why": "el instalador de Windows es PowerShell", "needles": ["$env:TYCON_HOME", "'.tycon'", "'node'", "'current'", "'node.exe'"] },
+    { "file": "scripts/controls-bench/periodic-exam.js", "why": "el examen corre también donde no está scripts/setup/ (laboratorios); con tycon-home.js presente, usa harnessNode", "needles": ["harnessNode(", "'.tycon'), 'node', 'current', 'bin', 'node'", "env.TYCON_HOME"] }
+  ]
+}

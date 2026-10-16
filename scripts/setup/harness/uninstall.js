@@ -154,6 +154,11 @@ function plan(ctx, state) {
   }
   for (const k of dry.kept) if (!k.error) keep.push(k.why);
   keep.push('engram, sqlite3 y node: herramientas del sistema, cada una con su instalador');
+  // el Node propio del arnés (story 8.39, decisión 18): se deja, como node, engram y sqlite3, con el comando para borrarlo
+  try {
+    const hn = require('./tycon-home.js').harnessNode({ env });
+    if (lexists(hn.dir)) keep.push(`el Node propio del arnés ${hn.dir}/ — para borrarlo: rm -rf "${hn.dir}"`);
+  } catch (_) { /* sin la casa propia no hay Node del arnés que nombrar */ }
   keep.push('el core.hooksPath local que el aplicador haya borrado por vestigial no vuelve: era una configuración rota y no quedó copia');
   for (const g of productionGuard(env)) keep.push(`el freno de producción (${g}): se quita con su propio instalador, con sudo`);
   // sólo los que el registro no trae: en el repo único de la 8.7 el aplicador los crea y los registra (tanda C)

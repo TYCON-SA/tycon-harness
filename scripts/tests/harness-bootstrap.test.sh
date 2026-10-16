@@ -443,6 +443,37 @@ ln -s "$LAB_TREE" "$P_LINK"; ln -s "$P_LINK" "$V_LINK"; cp "$OLD_COPY" "$HDIR/bo
 node "$HDIR/bootstrap.js" startup >/dev/null 2>&1; rc=$?
 [ "$rc" -eq 0 ] && grep -q '^argv=startup ' "$FAKE_LOG" && ok "T10 · (error) salud roja y el código anterior: encuentra el viejo y arranca" || bad "T10 · el código anterior no arrancó (rc $rc)"
 
+# ─── T23 de la story 8.39 · Bootstrap_CurrentSanoOQueNoContesta ────────────────────────────────────────────────────────
+# @story-8.39 @ac-8 @ac-16  bootstrap.js lanza harness.js con el Node del arnés (`<casa>/node/current`) sólo si su
+# `--version` contesta en 5 s con n ≥ 20; si sale 1 o se cuelga, con el node que corre la copia fija, y el respaldo NO
+# corre (un current roto no puede hacer volver atrás una versión sana). El Node de juguete es un GUION que anota su uso y
+# llama al node real por su ruta absoluta: nunca un enlace a un binario real.
+publish_harness 0 "t23: harness.js falso que sale 0"; pull_tree
+install_fixed_copy; write_state managed "$LAB_TREE" null
+N23="$LAB_HOME/.tycon/node"; mkdir -p "$N23/versions/v24.21.0/bin"; ln -s versions/v24.21.0 "$N23/current"
+USO23="$BASE/uso-node-arnes.log"
+nodo23() { # nodo23 healthy|fails|timeout  (sano · sale 1 · se cuelga)
+  case "$1" in
+    healthy) printf '#!/bin/sh\nif [ "$1" = "--version" ]; then echo v24.21.0; exit 0; fi\necho usado >> "%s"\nexec "%s" "$@"\n' "$USO23" "$(command -v node)" ;;
+    fails) printf '#!/bin/sh\necho roto >&2\nexit 1\n' ;;
+    timeout) printf '#!/bin/sh\nsleep 30\n' ;;
+  esac > "$N23/versions/v24.21.0/bin/node"
+  chmod +x "$N23/versions/v24.21.0/bin/node"
+}
+nodo23 healthy; : > "$USO23"; : > "$FAKE_LOG"
+TYCON_HARNESS_NODE=1 node "$HDIR/bootstrap.js" startup >/dev/null 2>&1; rc=$?
+[ "$rc" -eq 0 ] && [ -s "$USO23" ] && grep -q '^argv=startup ' "$FAKE_LOG" && ok "T23 · current sano: harness.js corre con el Node del arnés" || bad "T23 · current sano: rc $rc, uso $(wc -l < "$USO23" | tr -d ' ')"
+for caso in fails timeout; do
+  nodo23 "$caso"; : > "$FAKE_LOG"; t0=$SECONDS
+  TYCON_HARNESS_NODE=1 node "$HDIR/bootstrap.js" startup >/dev/null 2>&1; rc=$?; dt=$(( SECONDS - t0 ))
+  if [ "$rc" -eq 0 ] && grep -q '^argv=startup ' "$FAKE_LOG" && [ "$dt" -lt 7 ] && ! grep -q 'respaldo en shell' "$FAKE_LOG"; then ok "T23 · current que $caso: harness.js con el node de la copia fija, en ${dt} s, sin el respaldo"
+  else bad "T23 · current que $caso: rc $rc en ${dt} s"; fi
+done
+grep -q 'el Node del arnés .* no contesta bien' "$HDIR/startup.log" && ok "T23 · el registro dice que el Node del arnés no contestó" || bad "T23 · el registro no lo dice"
+nodo23 healthy; : > "$USO23"; TYCON_HARNESS_NODE=0 node "$HDIR/bootstrap.js" startup >/dev/null 2>&1
+[ ! -s "$USO23" ] && ok "T23 · apagado: no usa el Node del arnés" || bad "T23 · apagado: lo usó"
+rm -rf "$N23"
+
 # ─── cierre ───────────────────────────────────────────────────────────────────────────────────────────────────────────
 if [ "$FALLAS" -eq 0 ]; then echo "harness-bootstrap: todo verde"; exit 0; fi
 echo "harness-bootstrap: $FALLAS fallas"; exit 1

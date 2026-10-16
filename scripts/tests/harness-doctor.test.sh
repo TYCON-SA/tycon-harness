@@ -650,8 +650,8 @@ JSON="$(harness doctor --json 2>/dev/null)"
 [ "$(harness_lab_home_hash)" = "$ANTES" ] && ok "T49 doctor no escribe nada" || mal "T49 doctor escribió algo"
 # (cruce con la tanda B de la 8.19, AC 19: `place` va siempre, y `legacy` y `registered_by_legacy` si el viejo existe o
 # algo lo nombra; fuera de esas tres, las claves son exactamente las de siempre más las cuatro de la tanda D)
-[ "$(printf '%s' "$JSON" | jtxt "(sorted(k for k in d.keys() if k not in ('place', 'legacy', 'registered_by_legacy')), 'place' in d)")" = "(['brakes', 'declared_repos', 'fail', 'integrations', 'mode', 'ok', 'packs', 'profile', 'warn'], True)" ] \
-  && ok "T49 --json: las cuatro claves nuevas y las de siempre (más las del lugar y, desde la story 2.21, declared_repos)" || mal "T49 claves de --json: $(printf '%s' "$JSON" | jtxt "sorted(d.keys())")"
+[ "$(printf '%s' "$JSON" | jtxt "(sorted(k for k in d.keys() if k not in ('place', 'legacy', 'registered_by_legacy')), 'place' in d)")" = "(['brakes', 'declared_repos', 'fail', 'harness_node', 'integrations', 'mode', 'ok', 'packs', 'profile', 'warn'], True)" ] \
+  && ok "T49 --json: las cuatro claves nuevas y las de siempre (más las del lugar, desde la story 2.21 declared_repos y desde la 8.39 harness_node)" || mal "T49 claves de --json: $(printf '%s' "$JSON" | jtxt "sorted(d.keys())")"
 [ "$(printf '%s' "$JSON" | jtxt "(d['profile']['value'], d['profile']['origin'])")" = "('minimal', 'maquina')" ] && ok "T49 profile: minimal desde ~/.claude/tycon.json" || mal "T49 profile: $(printf '%s' "$JSON" | jtxt "d['profile']")"
 [ "$(printf '%s' "$JSON" | jtxt "(d['brakes']['registered'], d['brakes']['any_repo'])")" = "(1, ['lab-hook.js'])" ] && ok "T49 brakes: uno registrado, nombrado entre los que frenan en cualquier repo" || mal "T49 brakes: $(printf '%s' "$JSON" | jtxt "d['brakes']")"
 [ "$(printf '%s' "$JSON" | jtxt "d['packs']['value']")" = none ] && ok "T49 packs: none" || mal "T49 packs: $(printf '%s' "$JSON" | jtxt "d['packs']")"
@@ -1310,6 +1310,60 @@ JSON="$(TYCON_HARNESS_HEALTH=1 TYCON_REPOS_ROOT="$T221_ROOT" harness doctor --js
 { [ -z "$(t221_lines "$JSON" ok)$(t221_lines "$JSON" warn)$(t221_lines "$JSON" fail)" ] && [ "$(printf '%s' "$JSON" | jtxt "('declared_repos' in d, d.get('declared_repos'))")" = "(True, None)" ]; } \
   && ok "$T221 T22 bajo la comprobación de salud el bloque no corre: ninguna línea y declared_repos en null" || mal "$T221 T22 bajo la salud: ok=«$(t221_lines "$JSON" ok)» declared_repos=$(printf '%s' "$JSON" | jtxt "d.get('declared_repos', 'sin la clave')")"
 rm -f "$LAB_HOME/.tycon/config.json"
+
+# ── T27 y T28 de la story 8.39: el Node propio del arnés en doctor (dato o aviso, nunca rojo) ─────────────────────────
+# @story-8.39 @ac-20 Doctor_NodeDelArnes_LineaYClave · @ac-21 Doctor_NodeDelArnes_NuncaRojo
+echo "T27/T28 · doctor y el Node del arnés"
+harness_lab_create "$BASE/t839" >/dev/null
+harness install --yes >/dev/null 2>&1 || mal "T27 install previo falló"
+export TYCON_HARNESS_NODE=1
+mkdir -p "$LAB_TREE/scripts/production"
+NV="v24.21.0"; NDIR839="$LAB_HOME/.tycon/node"
+# un Node de juguete (un GUION que dice la versión y si no llama al node real por su ruta: nunca un enlace a un binario
+# real) y la lista de laboratorio con la huella de ESE binario para la plataforma de esta máquina
+mkdir -p "$NDIR839/versions/$NV/bin"
+printf '#!/bin/sh\nif [ "$1" = "--version" ]; then echo "%s"; exit 0; fi\nexec "%s" "$@"\n' "$NV" "$(command -v node)" > "$NDIR839/versions/$NV/bin/node"
+chmod +x "$NDIR839/versions/$NV/bin/node"; ln -s "versions/$NV" "$NDIR839/current"
+lista839() { # lista839 <versión> <huella del binario>
+  node -e '
+const [file, v, sha, hn] = process.argv.slice(1);
+const key = require(hn).platformKey({}).key;
+const files = {}; files[key] = { tar: `node-${v}-${key}.tar.gz`, sha256: "0".repeat(64), node_sha256: sha };
+require("fs").writeFileSync(file, JSON.stringify({ version: v, base_url: "http://127.0.0.1:9/", files }, null, 2) + "\n");' "$LAB_TREE/scripts/production/node-official.json" "$1" "$2" "$LAB_TREE/scripts/setup/harness/harness-node.js"
+}
+SHA839="$(node -e 'process.stdout.write(require("crypto").createHash("sha256").update(require("fs").readFileSync(process.argv[1])).digest("hex"))' "$NDIR839/versions/$NV/bin/node")"
+lista839 "$NV" "$SHA839"
+# el aplicador de juguete del laboratorio escribe `node "<guion>"` a mano: el hook queda como lo deja el aplicador real
+# (scripts/setup/apply-hooks.js, probado en apply-hooks.test.js T16) con el Node del arnés
+node -e 'const f=process.argv[1],b=process.argv[2];const s=JSON.parse(require("fs").readFileSync(f,"utf8"));for(const g of Object.values(s.hooks||{}))for(const e of g)for(const h of e.hooks||[])if(/^node "/.test(h.command)&&/lab-hook\.js"$/.test(h.command))h.command=h.command.replace(/^node /,b+" ");require("fs").writeFileSync(f,JSON.stringify(s,null,2))' "$LAB_HOME/.claude/settings.json" "$NDIR839/current/bin/node"
+JSON="$(harness doctor --json 2>/dev/null)"
+[ "$(printf '%s' "$JSON" | jtxt "(d['harness_node']['own'], d['harness_node']['version'], d['harness_node']['verified'], any(o.startswith('Node del arnés: $NV, el propio') and 'huella del binario igual a la de la lista' in o for o in d['ok']))")" = "(True, '$NV', True, True)" ] \
+  && ok "T27 propio y al día: la línea en ok y harness_node con own, version y verified" || mal "T27 propio: $(printf '%s' "$JSON" | jtxt "(d.get('harness_node'), [o for o in d['ok'] if 'Node del' in o], [w for w in d['warn'] if 'Node del' in w])")"
+printf '%s' "$JSON" | jtxt "sorted(d['harness_node'].keys())" | grep "'expected', 'form', 'hooks', 'own', 'path', 'reason', 'switch', 'verified', 'version'" >/dev/null && ok "T27 --json trae las claves de harness_node" || mal "T27 claves: $(printf '%s' "$JSON" | jtxt "sorted(d['harness_node'].keys())")"
+# otra versión en la lista; la huella del binario distinta de la lista
+lista839 "v24.99.0" "$SHA839"; JSON="$(harness doctor --json 2>/dev/null)"
+[ "$(printf '%s' "$JSON" | jtxt "any(w.startswith('Node del arnés: no está') for w in d['warn']) and d['harness_node']['own'] is False")" = True ] && ok "T27 versión vieja: warn" || mal "T27 versión vieja: $(printf '%s' "$JSON" | jtxt "[w for w in d['warn'] if 'Node del' in w]")"
+lista839 "$NV" "$(printf 'a%.0s' $(seq 1 64))"; JSON="$(harness doctor --json 2>/dev/null)"
+[ "$(printf '%s' "$JSON" | jtxt "any('NO es la de la lista' in w for w in d['warn']) and d['harness_node']['verified'] is False")" = True ] && ok "T27 huella distinta de node_sha256: warn" || mal "T27 huella: $(printf '%s' "$JSON" | jtxt "[w for w in d['warn'] if 'Node del' in w]")"
+# hooks a medias: el hook del arnés (uno de la lista) otra vez con node "
+lista839 "$NV" "$SHA839"
+node -e 'const f=process.argv[1],b=process.argv[2];const s=JSON.parse(require("fs").readFileSync(f,"utf8"));for(const g of Object.values(s.hooks||{}))for(const e of g)for(const h of e.hooks||[])if(h.command.startsWith(b+" "))h.command=h.command.replace(b+" ","node ");require("fs").writeFileSync(f,JSON.stringify(s,null,2))' "$LAB_HOME/.claude/settings.json" "$NDIR839/current/bin/node"
+JSON="$(harness doctor --json 2>/dev/null)"
+[ "$(printf '%s' "$JSON" | jtxt "any('el próximo arranque los pasa' in w for w in d['warn']) and d['harness_node']['hooks']['path_node'] >= 1")" = True ] && ok "T27 hooks a medias: «el próximo arranque los pasa», como warn" || mal "T27 hooks a medias: $(printf '%s' "$JSON" | jtxt "([w for w in d['warn'] if 'Node del' in w], d['harness_node'])")"
+# T28: ningún estado pone un fail; bajo la salud, verified en null
+for estado in apagado roto sinlista; do
+  case "$estado" in
+    apagado) J="$(TYCON_HARNESS_NODE=0 harness doctor --json 2>/dev/null)" ;;
+    roto) printf '#!/bin/sh\nexit 1\n' > "$NDIR839/versions/$NV/bin/node"; J="$(harness doctor --json 2>/dev/null)" ;;
+    sinlista) rm -f "$LAB_TREE/scripts/production/node-official.json"; J="$(harness doctor --json 2>/dev/null)" ;;
+  esac
+  [ "$(printf '%s' "$J" | jtxt "any('Node del arnés' in f for f in d['fail'])")" = False ] && ok "T28 $estado: ningún fail por el Node del arnés" || mal "T28 $estado: fail=$(printf '%s' "$J" | jtxt "d['fail']")"
+done
+printf '#!/bin/sh\nif [ "$1" = "--version" ]; then echo "%s"; exit 0; fi\nexec "%s" "$@"\n' "$NV" "$(command -v node)" > "$NDIR839/versions/$NV/bin/node"
+lista839 "$NV" "$SHA839"
+J="$(TYCON_HARNESS_HEALTH=1 harness doctor --json 2>/dev/null)"
+[ "$(printf '%s' "$J" | jtxt "d['harness_node']['verified'] is None and d['harness_node']['own'] is True")" = True ] && ok "T28 bajo la comprobación de salud: verified en null, sin recalcular la huella" || mal "T28 salud: $(printf '%s' "$J" | jtxt "d.get('harness_node')")"
+export TYCON_HARNESS_NODE=0
 
 if [ "$FALLOS" = 0 ]; then echo "✅ harness-doctor: todo verde"; exit 0; fi
 echo "❌ harness-doctor: $FALLOS fallo(s)"; exit 1
