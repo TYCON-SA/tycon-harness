@@ -58,7 +58,15 @@ const VARIABLES = ['SITE_PUBLIC_URL', 'SITE_SESSION_KEY', 'SITE_AUTH_PROVIDER', 
 const CORREO = /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/;
 const DOMINIO = /^[a-z0-9-]+(\.[a-z0-9-]+)+$/;
 const NEEDS = new Set(['maintainer', 'person']);
-const VERSION = (() => { try { return JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'version.json'), 'utf8')).version || null; } catch { return null; } })();
+// la versión: la del manifiesto de una versión bajada (trae el número de la etiqueta que puso el merge); si no hay, la de
+// version.json (desde que el número lo pone el merge, ese archivo dice el piso)
+const VERSION = (() => {
+  const raiz = path.join(__dirname, '..', '..');
+  for (const f of ['.tycon-release.json', 'version.json']) {
+    try { const v = JSON.parse(fs.readFileSync(path.join(raiz, f), 'utf8')).version; if (v) return v; } catch { /* el siguiente */ }
+  }
+  return null;
+})();
 
 const esLoopback = (u) => u.protocol === 'http:' && u.hostname === '127.0.0.1';
 

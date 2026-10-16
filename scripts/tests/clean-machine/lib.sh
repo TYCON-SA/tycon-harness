@@ -54,12 +54,17 @@ major_of() {
 # El número que la publicación deja en `version.json`: AAAA.MM.DD.N (mes 01-12, día 01-31, N desde 1 sin ceros adelante).
 CM_VERSION_RE='^[0-9]{4}\.(0[1-9]|1[0-2])\.(0[1-9]|[12][0-9]|3[01])\.[1-9][0-9]*$'
 # stamped_version_of <árbol> → el número de su version.json. 1 si el árbol no trae el archivo (una copia de antes de la
-# primera sincronización numerada); 2 si no se puede leer o su número tiene otra forma. Usa `json` (más abajo): node.
+# primera sincronización numerada); 2 si no se puede leer o su número tiene otra forma. Usa `json` (más abajo) y git.
+# Si el árbol es un clon y HEAD tiene la etiqueta liviana v<número> que pone el merge, ése es el número (el archivo, con
+# `numbering: "merge-tag"`, dice el piso): lo mismo que muestra `harness.js version`.
 stamped_version_of() {
-  local v
+  local v t
   [ -f "$1/version.json" ] || return 1
   v="$(json "$1/version.json" 'd.version')" || return 2
   [[ "${v}" =~ ${CM_VERSION_RE} ]] || return 2
+  t="$(git -C "$1" for-each-ref --points-at HEAD --format='%(objecttype) %(refname:strip=2)' 'refs/tags/v*' 2>/dev/null \
+    | sed -n 's/^commit v//p' | sort -t. -k1,1n -k2,2n -k3,3n -k4,4n | tail -1)"
+  [ -n "${t}" ] && [[ "${t}" =~ ${CM_VERSION_RE} ]] && v="${t}"
   echo "${v}"
 }
 # next_version <AAAA.MM.DD.N> → el número siguiente del mismo día (N + 1)
@@ -404,7 +409,11 @@ serve_new_version() {
   printf '\n<!-- clean-machine: una versión nueva, de laboratorio -->\n' >> "${COPY_DIR}/README.md" \
     && git -C "${COPY_DIR}" add -- README.md \
     && git -C "${COPY_DIR}" -c user.name=lab -c user.email=lab@example.com -c commit.gpgsign=false -c core.hooksPath=/dev/null \
-         commit -q -m "clean-machine: una versión nueva de laboratorio${NEW_VERSION:+ (${NEW_VERSION})}"
+         commit -q -m "clean-machine: una versión nueva de laboratorio${NEW_VERSION:+ (${NEW_VERSION})}" || return 1
+  # con el número por etiqueta, la versión nueva lleva su etiqueta, como la pone el merge en el repo público
+  if [ -n "${NEW_VERSION}" ] && [ "$(json "${COPY_DIR}/version.json" 'd.numbering || ""')" = "merge-tag" ]; then
+    git -C "${COPY_DIR}" tag -f "v${NEW_VERSION}" HEAD > /dev/null || return 1
+  fi
 }
 # forget_last_fetch — suelta el sello de la última mirada a la red (lo que las suites de laboratorio hacen con
 # `estado_set "d['last_fetch']=None"`): con él puesto, `startup` no vuelve a mirar el remoto hasta pasadas 6 horas

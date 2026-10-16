@@ -16,8 +16,10 @@ desde el 9b (su derivación del remoto dice que no es de Azure DevOps) o directo
 - **Lo que se publica pasa por el freno antes de publicar**, que lee el `gh` que escribís en la terminal. Lee esta
   forma y ninguna otra: el `gh` **solo en su llamada**, el título **literal** y el cuerpo en un archivo **escrito
   antes, en otra llamada**, pasado con `--body-file`. Un título o un cuerpo armados por la terminal no salen.
-- **El número de versión sube con cada pedido** si el repo numera versiones (`version.json` en la raíz de la rama
-  destino): es lo que una máquina instalada compara para saber si hay algo nuevo.
+- **El número de versión** —lo que una máquina instalada compara para saber si hay algo nuevo— existe si el repo numera
+  versiones (`version.json` en la raíz de la rama destino). Si ese archivo trae `"numbering": "merge-tag"`, **el
+  número lo pone el merge** (una etiqueta `v<número>` que GitHub le pone a cada merge) y el pedido no toca
+  `version.json`. Sin esa marca, el número sube con cada pedido.
 - **El commit de merge se titula «asunto (#N)»**: el asunto primero y el número del pedido al final.
 
 Las partes mecánicas las hace un guion del arnés, `scripts/tools/merge-pr.js`. Cada orden imprime un JSON y sale con
@@ -52,9 +54,9 @@ validación. El pedido **no se mergea**.
 node "${TYCON_GUIDES_DIR:-$HOME/.claude/tycon-harness}/scripts/tools/merge-pr.js" update-branch --repo <repo> --source '<source>' --target '<target>'
 ```
 
-Trae `origin/<target>` y la mergea en la rama. Si ya estaba al día, no hace nada. Hace falta siempre: todo pedido
-cambia el mismo renglón de `version.json`, así que una rama que no nació de la punta de la destino choca; y una regla
-de rama puede exigir, además, que el pedido esté al día.
+Trae `origin/<target>` y la mergea en la rama. Si ya estaba al día, no hace nada. Hace falta siempre: en un repo que
+numera por pedido, todo pedido cambia el mismo renglón de `version.json`, así que una rama que no nació de la punta de
+la destino choca; y una regla de rama puede exigir, además, que el pedido esté al día.
 
 - **Sale 5 = hay conflictos en otros archivos.** El merge quedó deshecho y el JSON los nombra (`conflicts`). Resolver
   conflictos no es automático: se lo decís al dev y parás.
@@ -67,7 +69,8 @@ de rama puede exigir, además, que el pedido esté al día.
 node "${TYCON_GUIDES_DIR:-$HOME/.claude/tycon-harness}/scripts/tools/merge-pr.js" bump-version --repo <repo> --source '<source>' --target '<target>' --write
 ```
 
-- `action: "none"` → no hay nada que commitear (el repo no numera versiones, o el número de la rama ya es mayor).
+- `action: "none"` → no hay nada que commitear (el repo no numera versiones, el número lo pone el merge, o el número
+  de la rama ya es mayor). `reason` dice cuál.
 - `action: "bump"` → cambió **sólo** el valor de `version` en `version.json`. Commitealo nombrando la ruta, para no
   arrastrar nada que ya estuviera preparado:
 
@@ -203,7 +206,8 @@ git -C <repo> fetch origin '<target>'
 node "${TYCON_GUIDES_DIR:-$HOME/.claude/tycon-harness}/scripts/tools/merge-pr.js" check-version --repo <repo> --base 'origin/<target>^1' --head 'origin/<target>'
 ```
 
-- Sale 0 → la versión subió (o el repo no numera versiones).
+- Sale 0 → la versión subió, el repo no numera versiones, o el número lo pone el merge: en ese caso la etiqueta
+  `v<número>` aparece sola en un minuto (`git ls-remote --tags origin 'v*'`) y no hay nada más que hacer.
 - **Sale 1 → el número quedó igual al de antes**: entre el verde y el merge entró otro pedido con el mismo número. Las
   máquinas instaladas no van a ver este cambio hasta el próximo merge que suba el número. **Avisarlo**, no taparlo.
 

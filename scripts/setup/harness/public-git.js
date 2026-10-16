@@ -64,12 +64,21 @@ function parseInfoRefs(buf) {
   if (lines[0] !== '# service=git-upload-pack') return { ok: false, reason: 'no es una respuesta de git (falta «# service=git-upload-pack»)' };
   if (lines[lines.length - 1] !== null) return { ok: false, reason: 'respuesta de git cortada (sin el corte final)' };
   const heads = {};
+  // las etiquetas LIVIANAS: nombre → commit (las que pone el merge con el número). Una anotada se anuncia dos veces —el
+  // objeto etiqueta y, con `^{}`, el commit—: no cuenta, igual que en la API y en un clon (el número no depende de por
+  // dónde se mire)
+  const tags = {};
+  const annotated = new Set();
   for (const l of lines.slice(1)) {
     if (l === null) continue;
     const m = /^([0-9a-f]{40}) (refs\/heads\/[^\0]+)/.exec(l);
     if (m) heads[m[2].slice('refs/heads/'.length)] = m[1];
+    const t = /^([0-9a-f]{40}) refs\/tags\/([^\0^]+)(\^\{\})?/.exec(l);
+    if (t && t[3]) annotated.add(t[2]);
+    else if (t) tags[t[2]] = t[1];
   }
-  return { ok: true, heads };
+  for (const name of annotated) delete tags[name];
+  return { ok: true, heads, tags };
 }
 
 module.exports = { bases, refsUrl, rawUrl, tarUrl, parseInfoRefs, DEFAULTS };

@@ -99,13 +99,19 @@ red». Se niega si el `origin` de una fuente no es el que `install` fijó (`sour
 - **Cómo se reconoce un clon del público**: por su remoto, comparado contra la lista que el exportador deja en la copia
   (`scripts/setup/public-remotes.json`; en los repos internos ese archivo no existe). Con cualquier otro remoto, los dos canales
   son `main` sin reescritura: es un clon interno, y `doctor` lo dice.
-- **El número**: `YYYY.MM.DD.N`, estampado en `version.json` por **la sincronización** y sólo cuando el árbol publicable
-  cambió. La fecha es la del commit (la mayor fecha de committer de los dos internos, en UTC), nunca el reloj de la corrida; `N`
-  es el orden en el día, contado sobre la punta de `main` y la de `mirror/sync`. El merge del pull request no cambia el número:
-  la versión estable **es** la que había en la rama.
+- **El número**: `YYYY.MM.DD.N`, y lo pone **el merge**: cuando un merge entra a `main`, un workflow del repo público
+  (`.github/workflows/version-tag.yml`, con `scripts/ci/version-tag.js`) le pone la etiqueta `v<número>`. Corre una
+  corrida por vez y cada una numera la punta: dos merges nunca toman el mismo número, y el número nunca baja. `version.json` trae `"numbering": "merge-tag"` y
+  su `version` queda fijo: es el **piso**, el número que ve una máquina con el código de antes (sólo mira ese archivo). El
+  número de un commit es el de su etiqueta; un commit sin etiqueta y sin la marca, el de su archivo (los de antes). Una
+  punta con la marca y todavía sin etiqueta (el merge recién entró) **espera**: es «al día» hasta que la etiqueta llega, y
+  si pasan horas sin que llegue se dice, porque ninguna máquina se actualiza. El clon trae las etiquetas en el mismo
+  `fetch`; la máquina sin clon, en el mismo `info/refs` (con permiso guardado, una consulta a la API más, sólo si la punta
+  trae la marca).
 - **No bajar**: se decide por número (partes numéricas: `2026.09.30.10` es mayor que `2026.09.30.9`), no por ancestría. Pasar a
   `stable` con una versión instalada más nueva no baja: «instalada X, estable Y: no se baja; para volver, `rollback`», y aplica
-  la próxima estable mayor o igual. Número igual con sha distinto se aplica (es el commit de merge).
+  la próxima estable mayor o igual. Número igual con sha distinto se aplica en un clon (con número por etiqueta no pasa:
+  cada merge tiene el suyo).
 - **Lo que la persona creó dentro del clon** (una skill propia en `skills/`, por ejemplo) no traba el movimiento. Lo traba
   sólo un archivo sin seguir cuya ruta choca con una que la versión nueva trae: ahí no se toca nada y se nombra la ruta.
   Choca también lo que en disco es el mismo archivo aunque difiera en mayúsculas o en la forma de un acento (Mac y

@@ -165,3 +165,37 @@ test('T20 · sobre el repo del arnés, con su propia lista blanca y su exportado
   const out = run(['--repo', ROOT]);
   assert.strictEqual(out.status, 0, out.stdout + out.stderr);
 });
+
+// La exclusión fija de pipelines/ deja salir los modelos de operaciones (la carpeta sólo existe en el repo público) y nada
+// más que la validación nombrada: un pipeline del equipo sigue afuera solo, y una carpeta que sólo empieza igual también.
+// 🔴 rojo previo: sin la carpeta en el `salvo`, una guía pública que cita un modelo cuenta como ruta del equipo.
+test('PipelinesSalvo_OperationsModelsShip_TeamPipelinesStayOut', () => {
+  const exporter = require(path.join(ROOT, 'scripts', 'publishing', 'export.js'));
+  const x = exporter.EXCLUIDOS_SIEMPRE.find((r) => r.glob === 'pipelines/**');
+  assert.ok(x, 'la exclusión fija de pipelines/ existe');
+  const sale = (p) => !exporter.cubreFija(x, p);
+  assert.ok(sale('pipelines/operations/team-dashboard.yml') && sale('pipelines/operations/examples/product-parity.json'), 'los modelos de operaciones salen');
+  assert.ok(sale('pipelines/azure-pipelines-pr.yml'), 'la validación nombrada sale');
+  assert.ok(!sale('pipelines/azure-pipelines-banco.yml'), 'un pipeline del equipo sigue afuera');
+  assert.ok(!sale('pipelines/operationsX/a.yml') && !sale('pipelines/operations'), 'una carpeta que sólo empieza igual, o la ruta suelta, no');
+});
+
+// El control de lo publicable lee la misma excepción: un enlace en un modelo de operaciones frena (se publica); el mismo
+// enlace en un pipeline del equipo, no (la exclusión fija lo deja afuera aunque la lista diga pipelines/**).
+// 🔴 rojo previo: con el `salvo` de archivos exactos, el modelo de operaciones contaba como privado y su enlace pasaba.
+test('PipelinesSalvo_PublishableTree_SeesOperationsModelsAsPublished', () => {
+  const r = toyRepo();
+  fs.writeFileSync(r.allowlist, JSON.stringify({ packages: { core: { arnes: { in: ['README.md', '.gitattributes', 'scripts/**', 'pipelines/**'], out: [] } } } }));
+  fs.mkdirSync(path.join(r.dir, 'pipelines', 'operations'), { recursive: true });
+  fs.mkdirSync(path.join(r.dir, 'pipelines', 'equipo'), { recursive: true });
+  fs.writeFileSync(path.join(r.dir, 'pipelines', 'operations', 'modelo.yml'), 'steps: []\n');
+  fs.symlinkSync('modelo.yml', path.join(r.dir, 'pipelines', 'operations', 'enlace.yml'));
+  fs.writeFileSync(path.join(r.dir, 'pipelines', 'equipo', 'nocturno.yml'), 'steps: []\n');
+  fs.symlinkSync('nocturno.yml', path.join(r.dir, 'pipelines', 'equipo', 'enlace.yml'));
+  git(r.dir, ['add', '-A']);
+  const out = run(base(r));
+  const text = out.stdout + out.stderr;
+  assert.strictEqual(out.status, 1, text);
+  assert.match(text, /pipelines\/operations\/enlace\.yml/, 'el enlace del modelo de operaciones, que se publica');
+  assert.doesNotMatch(text, /pipelines\/equipo\/enlace\.yml/, 'el del pipeline del equipo no: sigue afuera');
+});
