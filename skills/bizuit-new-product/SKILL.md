@@ -255,8 +255,11 @@ producción referencia al de integración **por nombre exacto** (`source:` de su
 
 **Este es el paso que se olvida y el que más vale.** El control
 (`<arnés>/scripts/ci/check-product-parity.js`) lee el `product-parity.json` de la organización:
-la lista de productos y los rasgos que tienen que coincidir. El arnés lo trae vacío a propósito;
-cada organización tiene el suyo, con `--config`.
+la lista de productos y los rasgos que tienen que coincidir. Vive en `scripts/ci/product-parity.json`
+del **repo de operaciones** de la organización, donde está el resto de su configuración, y el
+cambio va por pull request a ese repo. El arnés trae uno vacío a propósito. Sin `--config`, el
+control la busca en el clon de operaciones que la máquina declara (`paths.operations`); si no la
+encuentra, sale «no medido» diciendo por qué. Sin clon declarado, pasarla con `--config`.
 
 1. Agregar el producto a los grupos que le correspondan (backend, formularios, producción).
 2. Correr el control. Si marca divergencias:
@@ -267,8 +270,9 @@ cada organización tiene el suyo, con `--config`.
    legítima.
 5. Correr el control de nuevo y confirmar que vuelve a verde.
 
-Si la organización todavía no tiene `product-parity.json` (éste es su primer producto), dejarlo
-dicho en las tareas humanas: el control necesita dos productos para comparar.
+Si la organización todavía no tiene `product-parity.json` en su repo de operaciones (éste es su
+primer producto), dejarlo dicho en las tareas humanas: el control necesita dos productos para
+comparar (el ejemplo está en `pipelines/operations/examples/product-parity.json` del arnés).
 
 ### Paso 9 bis — Inscribir en la revisión nocturna de dependencias
 

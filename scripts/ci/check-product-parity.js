@@ -67,8 +67,19 @@
  * repos.json: `Acme%20Uno/Back`) o `github: "<dueño>/<repo>"`. Lo usa `clone-list`, para que la noche clone lo que
  * la revisión de dependencias no trae; el resto del control (y check-trigger-without-docs.js) ignora esas claves.
  *
+ * 🔴 LA LISTA ES DE LA ORGANIZACIÓN Y VIVE EN SU REPO DE OPERACIONES (2026-10-16). Hasta ese día la de un equipo vivía
+ * en el repo donde mantiene el arnés; se mudó a `scripts/ci/product-parity.json` de su repo de operaciones, donde está
+ * el resto de su configuración (y donde el sitio de la organización la puede editar). La noche la lee de ahí con
+ * `--config`. Sin `--config`, `configPorDefecto()` decide: si la máquina declara el clon de operaciones
+ * (`paths.operations`), la de ese clon; si lo declara y no sirve o no la trae, o si la máquina mantiene el arnés
+ * (`paths.maintained` o `paths.maintainers`) y no lo declara, NO se mide nada y se dice por qué (sale 2): la copia que
+ * trae el arnés es la marca «sin productos», y caer en ella daría 0 sin haber comparado los productos de nadie. En
+ * cualquier otro caso (la máquina de un dev, la CI, este archivo copiado solo en el artefacto arnes-ci), la de al lado.
+ * `config-path` imprime la que se usaría, o el motivo por stderr y sale 2 (lo usan las pruebas).
+ *
  * Uso:  node check-product-parity.js [--root <dir>] [--config <archivo>] [--out <archivo.json>] [--today <AAAA-MM-DD>]
  *       node check-product-parity.js clone-list --root <dir> [--config <archivo>] [--platform azure|github]
+ *       node check-product-parity.js config-path
  *       (--root se llamaba en castellano hasta la story 8.9, tanda B3a; el nombre viejo sigue andando hasta el retiro)
  * Sale 0 si todos coinciden (o la diferencia está declarada) · 1 si hay divergencia o una declaración vencida o
  * incompleta · 2 si no pudo medir lo suficiente para opinar (o llegó una opción con su nombre viejo y el nuevo a la vez).
@@ -86,17 +97,64 @@ const { aliasLegacyOptions, LegacyOptionsError } = (() => {
 })();
 
 function args(argv) {
-  const o = { raiz: null, config: path.join(__dirname, 'product-parity.json'), out: null, platform: null, cmd: null, today: null };
+  const o = { raiz: null, config: null, out: null, platform: null, cmd: null, today: null };
   let i = 0;
-  if (argv[0] === 'clone-list') { o.cmd = 'clone-list'; i = 1; }
+  if (argv[0] === 'clone-list' || argv[0] === 'config-path') { o.cmd = argv[0]; i = 1; }
   for (; i < argv.length; i++) {
     if (argv[i] === '--root') o.raiz = argv[++i];
-    else if (argv[i] === '--config') o.config = argv[++i];
+    else if (argv[i] === '--config') { o.configDada = true; o.config = argv[++i]; }
     else if (argv[i] === '--out') o.out = argv[++i];
     else if (argv[i] === '--platform') o.platform = argv[++i];
     else if (argv[i] === '--today') o.today = argv[++i];
   }
   return o;
+}
+
+/**
+ * La lista que se lee sin `--config` (ver «LA LISTA ES DE LA ORGANIZACIÓN» en la cabecera). → `{ ruta, de, problema }`:
+ * `de` es `operaciones` o `arnes`; con `problema`, `ruta` es `null` y no se mide. Nunca tira.
+ */
+function configPorDefecto() {
+  const propia = path.join(__dirname, 'product-parity.json');
+  const libs = [path.join(__dirname, '..', 'lib', 'night-data.js'), path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')];
+  if (!libs.every((l) => fs.existsSync(l))) return { ruta: propia, de: 'arnes', problema: null };   // viaja solo (arnes-ci)
+  const sin = (por) => ({ ruta: null, de: 'operaciones', problema: `${por} — ahí vive la lista de productos de la organización` });
+  try {
+    const [ND, TH] = libs.map((l) => require(l));
+    // 🔴 sin mirar si los nocturnos están prendidos (resolveOperations sí): la lista no depende de que esta máquina
+    // espere la noche, y caer en la copia del arnés con ellos apagados era «sin productos» en 0.
+    const o = ND.operationsClone(TH);
+    if (o.declared) {
+      const por = o.problem || ND.unfit(o.path, typeof TH.maintainedPath === 'function' ? TH.maintainedPath() : null, 'paths.operations');
+      if (por) return sin(por);
+      const ruta = path.join(o.path, 'scripts', 'ci', 'product-parity.json');
+      return fs.existsSync(ruta) ? { ruta, de: 'operaciones', problema: null } : sin('el clon del repo de operaciones (paths.operations) no trae scripts/ci/product-parity.json');
+    }
+    if (o.problem) return sin(o.problem);
+    // «mantiene» = DECLARA alguno de los dos clones, exista o no la carpeta (maintainedPath() exige que exista: un clon
+    // movido dejaba la máquina como la de un dev, y caía en «sin productos» en 0 — revisión del 2026-10-16)
+    const m = typeof TH.maintainersClone === 'function' ? TH.maintainersClone() : { declared: false };
+    if (m.problem) return sin(m.problem);
+    const mantiene = Boolean(m.declared) || declaraMantenido(TH);
+    return mantiene ? sin('esta máquina mantiene el arnés y no declara el clon del repo de operaciones (paths.operations)') : { ruta: propia, de: 'arnes', problema: null };
+  } catch (e) { return sin(`no pude saber si esta máquina declara el clon del repo de operaciones (${e.message})`); }
+}
+
+/** ¿La configuración de la máquina declara `paths.maintained` (con cualquier valor)? Tira si no se deja leer. */
+function declaraMantenido(TH) {
+  let j;
+  try { j = JSON.parse(fs.readFileSync(TH.ownPaths().config, 'utf8')); } catch (e) { if (e && e.code === 'ENOENT') return false; throw new Error('la configuración de la máquina (config.json del arnés) no se puede leer'); }
+  const v = j && typeof j === 'object' && j.paths && typeof j.paths === 'object' ? j.paths.maintained : undefined;
+  return typeof v === 'string' && v.trim() !== '';
+}
+
+/** `o.config` resuelto: el dado, o el de `configPorDefecto()`. → `null` si no hay (el motivo, en `o.sinConfig`). */
+function resolverConfig(o) {
+  if (o.configDada) return o.config || ((o.sinConfig = 'falta el valor de --config'), null);   // dada y vacía: no se adivina
+  const d = configPorDefecto();
+  if (d.problema) { o.sinConfig = d.problema; return null; }
+  o.config = d.ruta;
+  return o.config;
 }
 
 /** ¿Le aplica este rasgo a este grupo? Con `grupos` explícito, sólo a ésos; sin `grupos`, a todos salvo los que pidieron
@@ -176,6 +234,7 @@ function terminar(o, R, rc, estado, motivo) {
 
 /** Lo que la noche tiene que clonar para comparar: `ruta<TAB>dirección`, cada ruta una vez (story 2.25). */
 function cloneList(o) {
+  if (!resolverConfig(o)) { process.stderr.write(`🔴 sin la lista de productos: ${o.sinConfig} — no se clona nada\n`); return 2; }
   let cfg;
   try { cfg = JSON.parse(fs.readFileSync(o.config, 'utf8')); }
   catch (e) { process.stderr.write(`🔴 no pude leer la configuración (${o.config}): ${e.message}\n`); return 2; }
@@ -273,6 +332,15 @@ function main(argv0) {
   }
   const o = args(argv);
   if (o.cmd === 'clone-list') return cloneList(o);
+  if (o.cmd === 'config-path') {
+    if (!resolverConfig(o)) { process.stderr.write(`🔴 ${o.sinConfig}\n`); return 2; }
+    console.log(o.config);
+    return 0;
+  }
+  if (!resolverConfig(o)) {
+    console.log(`🔴 sin la lista de productos: ${o.sinConfig} — no se midió nada, y eso no es «todo bien»`);
+    return terminar(o, nuevoResultado(null, o.today && DIA.test(o.today) ? o.today : new Date().toISOString().slice(0, 10)), 2, 'no_medido', `sin la lista de productos: ${o.sinConfig}`);
+  }
   let cfg;
   try { cfg = JSON.parse(fs.readFileSync(o.config, 'utf8')); }
   catch (e) {
@@ -513,4 +581,4 @@ function main(argv0) {
 }
 
 if (require.main === module) process.exit(main(process.argv.slice(2)));
-module.exports = { main, bloqueRaiz, normalizarGrupo };
+module.exports = { main, bloqueRaiz, normalizarGrupo, configPorDefecto };

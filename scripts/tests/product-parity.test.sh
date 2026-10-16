@@ -20,13 +20,19 @@ no(){ echo "❌ paridad: $1"; fallos=$((fallos+1)); }
 # Tres estados (pase de fallos silenciosos de la tanda A): `real` mide; `copia` (el sintético con «sin_productos») dice NO
 # MEDIDO; y un archivo que no está o no se puede leer es ROJO con su motivo — nunca «NO MEDIDO (copia pública)», que en el
 # repo del equipo taparía un product-parity.json roto.
-ESTADO_LISTA="$(node -e 'try { const c=require(process.argv[1]); if (c && typeof c.sin_productos === "string" && c.sin_productos.trim()) console.log("copia"); else if (c && c.grupos && Object.keys(c.grupos).length) console.log("real"); else console.log("roto:sin grupos y sin «sin_productos»"); } catch (e) { console.log("roto:" + e.message.split("\n")[0]); }' "$AQUI/scripts/ci/product-parity.json")"
+# 2026-10-16: la lista real es de la organización y vive en su repo de operaciones. Se busca como la busca el control sin
+# --config (`config-path`): en la máquina de quien mantiene el arnés, la del clon de operaciones que declara; en la CI y
+# en la máquina de un dev, la copia del arnés (la marca «sin productos»). Si el control no puede decir cuál, el motivo
+# es ROJO: no hay lista que medir y eso no es la copia pública.
+LISTA_ORG="$(node "$CHK" config-path 2>"$TMP/lista-org.err")" || LISTA_ORG=""
+if [ -z "$LISTA_ORG" ]; then ESTADO_LISTA="roto:$(head -1 "$TMP/lista-org.err" | sed 's/^🔴 //')"; else
+ESTADO_LISTA="$(node -e 'try { const c=require(process.argv[1]); if (c && typeof c.sin_productos === "string" && c.sin_productos.trim()) console.log("copia"); else if (c && c.grupos && Object.keys(c.grupos).length) console.log("real"); else console.log("roto:sin grupos y sin «sin_productos»"); } catch (e) { console.log("roto:" + e.message.split("\n")[0]); }' "$LISTA_ORG")"; fi
 lista_real_de_productos(){ [ "$ESTADO_LISTA" = real ]; }
 # lo que dice un caso que lee la lista real cuando no la hay: NO MEDIDO en la copia, rojo si no se pudo leer
 sin_lista_real(){ # <caso>
   case "$ESTADO_LISTA" in
     copia) ok "NO MEDIDO: sin la lista real de productos (copia pública) — el caso $1 lee los patrones del JSON de verdad" ;;
-    *) no "🔴 el caso $1 no pudo leer scripts/ci/product-parity.json (${ESTADO_LISTA#roto:}) — no medido NO es «copia pública»" ;;
+    *) no "🔴 el caso $1 no pudo leer la lista de productos de la organización (${ESTADO_LISTA#roto:}) — no medido NO es «copia pública»" ;;
   esac
 }
 
@@ -263,7 +269,7 @@ rc=$(corre "$TMP/c16b.json")
 # línea: `node "$GUION" --repo . --type nuget … --block`. Con un patrón que exigía nombre e
 # invocación en la MISMA línea, los tres rasgos daban a FRESNO por "no lo tiene" el mismo día que lo
 # estrenó — y tres declaraciones viejas lo tapaban. Este caso lee los patrones del JSON de verdad.
-JSON17="$(cd "$(dirname "${BASH_SOURCE[0]}")/../ci" && pwd)/product-parity.json"
+JSON17="$LISTA_ORG"
 # Entre la ruta y la invocación va lo que FRESNO tiene de verdad: ~1000 caracteres de comentarios.
 RELLENO17="$(head -c 1000 /dev/zero | tr '\0' 'x' | fold -w 90 | sed 's/^/              # /')"
 FIX17="$(printf 'GUION="$(Build.SourcesDirectory)/tycon-claude-guides/scripts/ci/audit-dependencies.js"\nif [ ! -f "$GUION" ]; then exit 1; fi\n%s\nnode "$GUION" --repo . --type nuget --project src/X.csproj --declared vulnerabilidades-pendientes.json --block\nrc=$?\n' "$RELLENO17")"
@@ -346,7 +352,7 @@ fi
 # NO puede darse por cumplido sin `--block`, y `deps-por-formulario` —que antes se reconocía por el
 # NOMBRE del guion— ya no puede: la raíz también lo llama ahora, así que ese patrón probaría el bucle
 # por formulario con sólo tener el de la raíz. Este caso lee los patrones del JSON de verdad.
-JSON20="$(cd "$(dirname "${BASH_SOURCE[0]}")/../ci" && pwd)/product-parity.json"
+JSON20="$LISTA_ORG"
 RAIZ20="$(printf 'AUD="$(Agent.TempDirectory)/arnes-ci/audit-dependencies.js"\n[ -f "$AUD" ] || exit 1\nnode "$AUD" --repo . --type npm --declared vulnerabilidades-pendientes.json --block\nRC=$?\n')"
 RAIZ20_SIN_FRENO="${RAIZ20/ --block/}"
 FORM20="$(printf 'for f in $FORMS; do\n  node "$AUD" --repo "$f" --type npm --declared ../vulnerabilidades-formularios-pendientes.json --block || FALLAS=1\ndone\n')"
@@ -378,7 +384,7 @@ fi
 # miraba cómo despliega cada uno. Lo encontró una pregunta del dev, no el control. Estos dos rasgos
 # cierran ese hueco: desplegar por el guion compartido, y pasarle al humo el identificador de
 # compilación (que la versión sola no distingue dos builds del mismo número).
-JSON20="$(cd "$(dirname "${BASH_SOURCE[0]}")/../ci" && pwd)/product-parity.json"
+JSON20="$LISTA_ORG"
 BUENO20="$(printf -- 'bash "$DESPLEGAR" \\\n  --url "$(URL)" --zip "$ZIP" --environment staging\nbash "$HUMO" "$(URL)" u p "$NOMBRE" "$VERSION" "$HASH"\n')"
 VIEJO20="$(printf -- 'curl -F "file=@$ZIP" -F "setAsDefault=true"\nbash "$HUMO" "$(URL)" u p "$NOMBRE" "$VERSION"\n')"
 if lista_real_de_productos; then
@@ -406,6 +412,8 @@ fi
 MAPA21="$AQUI/scripts/lib/renames.json"
 if [ ! -f "$MAPA21" ]; then
   ok "NO MEDIDO: sin el mapa de renombres (copia pública) — el caso 21 no aplica"
+elif ! lista_real_de_productos; then
+  sin_lista_real "21 (guiones renombrados)"
 else
   res21=$(node -e '
 const c=require(process.argv[1]); const m=require(process.argv[2]); const path=require("path"); const bad=[]; let vistos=0;
@@ -424,7 +432,7 @@ for (const r of c.rasgos) {
   }
 }
 if (!vistos) bad.push("ningún rasgo nombra un guion renombrado de scripts/ci: el caso no mide nada");
-console.log(bad.join(" · "));' "$AQUI/scripts/ci/product-parity.json" "$MAPA21")
+console.log(bad.join(" · "));' "$LISTA_ORG" "$MAPA21")
   [ -z "$res21" ] && ok "🔴 cada rasgo que nombra un guion renombrado acepta el nombre viejo (productos de hoy) y el nuevo (producto nuevo)" \
     || no "🔴 rasgos con un solo nombre: $res21"
 fi
@@ -522,7 +530,7 @@ for (const [g,def] of Object.entries(cfg.grupos||{})) {
   }
 }
 if (!vistos) bad.push("no se comparó ningún rasgo: el caso no mide nada");
-console.log(bad.join(" · "));' "$AQUI/scripts/ci/product-parity.json" "$TPL/pipelines" "$CHK")
+console.log(bad.join(" · "));' "$LISTA_ORG" "$TPL/pipelines" "$CHK")
   [ -z "$res" ] && ok "plantillas del alta: cumplen cada rasgo de la lista real de productos" \
     || no "🔴 plantillas del alta: rasgos que no cumplen: $res"
 else
@@ -876,6 +884,63 @@ CFG
 out7=$(node "$CHK" clone-list --root "$TMP/vacio7" --config "$TMP/a7.json" 2>"$TMP/err7"); rc=$?
 { [ "$rc" -eq 0 ] && [ "$out7" = "$(printf 'Acme/C\tAcme/C')" ] && grep -q '\.\./A' "$TMP/err7"; } && ok "A7 DireccionConPuntos_NoSeClona: se avisa y no se clona" \
   || no "🔴 A7 rc=$rc [$(printf '%s' "$out7" | tr '\t\n' '→|')] $(head -2 "$TMP/err7")"
+
+# ---------------------------------------------------------------- A8 · sin --config, la lista de la organización (2026-10-16)
+# La lista se mudó al repo de operaciones de cada organización. Sin --config, el control la busca en el clon que la
+# máquina declara (paths.operations); si lo declara y no la trae, o si la máquina mantiene el arnés y no lo declara,
+# NO mide y lo dice (2) — caer en la copia del arnés sería «sin productos» en 0. Una máquina que no declara nada usa
+# la de al lado. Cada caso en una máquina de mentira (su propia TYCON_HOME), nunca la de quien corre la prueba.
+maquina(){ # <dir> <config.json> → deja la casa de la máquina
+  mkdir -p "$1/home/.tycon"; printf '%s\n' "$2" > "$1/home/.tycon/config.json"; }
+en_maquina(){ # <dir> <args…>
+  local d="$1"; shift; HOME="$d/home" TYCON_HOME="$d/home/.tycon" node "$CHK" "$@"; }
+mkdir -p "$TMP/a8/ops/scripts/ci" "$TMP/a8/vacio" "$TMP/a8/mantenido"
+git -C "$TMP/a8/ops" init -q . && git -C "$TMP/a8/vacio" init -q .
+config "$TMP/a8/ops/scripts/ci/product-parity.json"
+maquina "$TMP/a8/m1" "{\"paths\":{\"operations\":\"$TMP/a8/ops\"}}"
+maquina "$TMP/a8/m2" "{\"paths\":{\"operations\":\"$TMP/a8/vacio\"}}"
+maquina "$TMP/a8/m3" "{\"paths\":{\"maintained\":\"$TMP/a8/mantenido\"}}"
+maquina "$TMP/a8/m4" '{}'
+p1=$(en_maquina "$TMP/a8/m1" config-path 2>&1); r1=$?
+rm -rf "$TMP/w"; mundo "$TMP/w" 'grep Too Many Requests' 'grep Too Many Requests'
+en_maquina "$TMP/a8/m1" --root "$TMP/w" --out "$TMP/ra8a.json" >/dev/null 2>&1; ra=$?
+{ [ "$r1" -eq 0 ] && [ "$p1" = "$TMP/a8/ops/scripts/ci/product-parity.json" ] && [ "$ra" -eq 0 ] \
+  && [ -z "$(chk "$TMP/ra8a.json" "if (!['medido','parcial'].includes(r.estado)||!r.comparaciones) bad.push(r.estado+'/'+r.comparaciones);")" ]; } \
+  && ok "A8 SinConfig_UsaLaListaDeOperaciones: config-path la nombra y el control compara con ella" \
+  || no "🔴 A8a rc=$r1/$ra [$p1] $(cat "$TMP/ra8a.json" 2>/dev/null | head -c 200)"
+t8=""
+for m in m2 m3; do
+  en_maquina "$TMP/a8/$m" --root "$TMP/w" --out "$TMP/ra8$m.json" >"$TMP/o8$m" 2>&1; rc=$?
+  res=$(chk "$TMP/ra8$m.json" "if (r.estado!=='no_medido'||!/paths\\.operations/.test(r.motivo||'')||r.comparaciones) bad.push(r.estado+': '+r.motivo);")
+  en_maquina "$TMP/a8/$m" clone-list --root "$TMP/w" >/dev/null 2>"$TMP/e8$m"; rc2=$?
+  { [ "$rc" -eq 2 ] && [ -z "$res" ] && [ "$rc2" -eq 2 ] && grep -q 'paths.operations' "$TMP/e8$m"; } || t8="$t8 [$m: rc=$rc/$rc2 $res $(head -1 "$TMP/o8$m")]"
+done
+HOME="$TMP/a8/m2/home" TYCON_HOME="$TMP/a8/m2/home/.tycon" node "$AQUI/scripts/ci/check-trigger-without-docs.js" --root "$TMP/w" >"$TMP/o8t" 2>&1; rt=$?
+{ [ "$rt" -eq 2 ] && grep -q 'paths.operations' "$TMP/o8t"; } || t8="$t8 [trigger: rc=$rt $(head -1 "$TMP/o8t")]"
+[ -z "$t8" ] && ok "A8 SinListaEnOperaciones_NoMedidoConMotivo: clon declarado sin la lista, o máquina que mantiene sin declararlo → 2, no «sin productos»" \
+  || no "🔴 A8b$t8"
+# lo que la revisión del 2026-10-16 encontró sin caso: un clon mantenido declarado que ya no está (antes: la máquina de un
+# dev, «sin productos» en 0), sólo el clon de mantenimiento declarado, y la configuración ilegible. Los tres: 2, con --today.
+maquina "$TMP/a8/m5" "{\"paths\":{\"maintained\":\"$TMP/a8/no-esta\"}}"
+maquina "$TMP/a8/m6" "{\"paths\":{\"maintainers\":\"$TMP/a8/mantenido\"}}"
+maquina "$TMP/a8/m7" '{ rota'
+t8=""
+for m in m5 m6 m7; do
+  en_maquina "$TMP/a8/$m" --root "$TMP/w" --today 2026-01-02 --out "$TMP/ra8$m.json" >"$TMP/o8$m" 2>&1; rc=$?
+  res=$(chk "$TMP/ra8$m.json" "if (r.estado!=='no_medido'||!r.motivo||r.fecha!=='2026-01-02') bad.push(r.estado+'/'+r.fecha+': '+r.motivo);")
+  { [ "$rc" -eq 2 ] && [ -z "$res" ]; } || t8="$t8 [$m: rc=$rc $res $(head -1 "$TMP/o8$m")]"
+done
+[ -z "$t8" ] && ok "A8 MantieneSinClonDeOperaciones_NoMedido: clon mantenido que ya no está, sólo el de mantenimiento, o configuración ilegible → 2 con motivo" \
+  || no "🔴 A8d$t8"
+# --config gana sobre lo que declara la máquina (un clon sin la lista), y el control de disparos usa la lista de operaciones
+en_maquina "$TMP/a8/m2" --config "$TMP/a8/ops/scripts/ci/product-parity.json" --root "$TMP/w" >/dev/null 2>&1; rc=$?
+HOME="$TMP/a8/m1/home" TYCON_HOME="$TMP/a8/m1/home/.tycon" node "$AQUI/scripts/ci/check-trigger-without-docs.js" --root "$TMP/w" >"$TMP/o8t1" 2>&1
+{ [ "$rc" -eq 0 ] && ! grep -qE 'sin la lista de productos|no hay productos declarados' "$TMP/o8t1"; } \
+  && ok "A8 ConfigDadaGana_YDisparosLeeOperaciones: --config manda; check-trigger-without-docs compara la lista de operaciones" \
+  || no "🔴 A8e rc=$rc $(head -2 "$TMP/o8t1" | tr '\n' ' ')"
+p4=$(en_maquina "$TMP/a8/m4" config-path 2>&1); r4=$?
+{ [ "$r4" -eq 0 ] && [ "$p4" = "$AQUI/scripts/ci/product-parity.json" ]; } && ok "A8 MaquinaSinDeclarar_UsaLaDeAlLado: la de un dev o la CI, como siempre" \
+  || no "🔴 A8c rc=$r4 [$p4]"
 
 echo "─────────────"
 if [ "$fallos" -eq 0 ]; then echo "✅ paridad-entre-productos: todo verde"; exit 0; else echo "❌ paridad-entre-productos: $fallos falla(s)"; exit 1; fi
