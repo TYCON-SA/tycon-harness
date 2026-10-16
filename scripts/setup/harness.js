@@ -122,6 +122,7 @@ const COMMANDS = {
   migrate:   { opts: { '--to-home': 'flag', '--dry-run': 'flag', '--repo': 'value', '--team': 'value' }, help: `muda esta máquina del clon a ~/.tycon: la versión bajada en ~/.tycon/harness, el estado y la configuración en ~/.tycon, los enchufes al árbol nuevo, el clon intacto (story 8.23, tanda D); --dry-run dice el plan sin escribir; --team <org>/<repo> (story 8.25) apila la capa del equipo sobre la versión bajada (sin la opción, la clave team de public-repos.json del clon; con capa, el perfil del clon no se funde en la configuración)` },
   relocate:  { opts: { '--check': 'flag' }, help: `muda a mano lo registrado por el nombre viejo ~/.claude/${PLACE.LEGACY_PLACE_NAME} al lugar ~/.claude/${PLACE.PLACE_NAME} (--check dice qué cambiaría, sin escribir)` },
   'team-config': { opts: { '--no-open': 'flag', '--team-clone': 'value', '--operations-clone': 'value' }, help: 'abre en el navegador la página local para configurar la organización: dónde vive cada repo (team-repos.json, en el clon del perfil del equipo) y a quién se asignan los avisos (operations.json, en el clon de operaciones); valida, guarda y ofrece el pedido. Las carpetas de los clones se guardan como paths.team y paths.operations; --team-clone y --operations-clone las usan sólo esta vez, sin guardarlas. --no-open imprime la dirección sin abrir el navegador' },
+  'team-init': { opts: { '--dir': 'value', '--name': 'value', '--platform': 'value', '--profile-repo': 'value', '--dry-run': 'flag' }, help: 'da de alta tu organización (story 8.40): pregunta el nombre, la plataforma (github|azure), la dirección del repo del perfil y la carpeta (lo que no vino por opción), baja el ejemplo publicado y deja en la carpeta los tres archivos obligatorios del perfil del equipo, validados con los lectores de la versión instalada; después dice cómo crear el repo vacío, ofrece subirlo con git y ofrece instalar esta máquina con --team. No crea repos ni pide credenciales. --dry-run muestra los archivos sin escribir. Sin arnés instalado sale 2' },
   layer:     { opts: { '--check': 'flag', '--list': 'flag', '--json': 'flag', '--public': 'value', '--harness-clone': 'value' }, help: 'la capa privada, sólo leyendo: qué agregó, qué pisó, qué está editado a mano (--check sale 0 si está entera, 1 si falta o sobra algo, 3 si no hay capa; --list nombra cada archivo; --public <copia> y --harness-clone <clon> calculan contra esa copia y ese clon sin tocar el estado)' },
 };
 
@@ -4702,6 +4703,18 @@ function cmdTeamConfig(ctx) {
   return { code: 0, lines: [] };
 }
 
+/** `team-init` (story 8.40, tanda B): el alta guiada, con los lectores del árbol INSTALADO (scripts/setup/harness/team-init.js). */
+function cmdTeamInit(ctx) {
+  const need = needState(ctx);
+  if (need.fail) return { code: 2, lines: [`harness.js team-init: instalá primero el arnés (el alta valida con los lectores de la versión instalada): ${need.fail.line}`] };
+  // la versión INSTALADA: en una máquina por versión publicada, la del estado (la que install guardó); el número derivado
+  // del árbol daría el piso de version.json con `numbering: merge-tag`, y `install --version <piso>` bajaría a un commit
+  // viejo (pase adversarial de la 8.40, clase 11). Desde un clon, el derivado (la etiqueta de HEAD, o el piso)
+  const S = mod('state');
+  const version = (S.isRelease(need.state) && need.state.version && need.state.version.number) || versionNumber(ctx, need.state);
+  return mod('team-init').run({ ...ctx, tree: need.state.tree || ctx.tree, state: need.state, version });
+}
+
 const HANDLERS = {
   install: cmdInstall,
   startup: cmdStartup,
@@ -4718,6 +4731,7 @@ const HANDLERS = {
   layer: cmdLayer,
   migrate: cmdMigrate,
   'team-config': cmdTeamConfig,
+  'team-init': cmdTeamInit,
 };
 
 function main(argv) {

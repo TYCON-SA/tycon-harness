@@ -1,5 +1,5 @@
 ﻿# get-harness.ps1 — baja la versión publicada del arnés (sin git) y la instala (el gemelo de get-harness.sh). Leelo entero antes de correrlo.
-#
+# Es la entrada «a mano». Próximamente la otra, en una línea y en Node: `npx @tycon-sa/harness@latest` (scripts/setup/npm/).
 # Uso: pwsh -File get-harness.ps1 [--repo <org/nombre>] [-- <opciones de harness.js install>]
 #      ./get-harness.ps1 [--repo …] [<opciones de install>]   (desde una sesión de PowerShell, que se come el `--`: por
 #      eso todo lo que no es --repo ni --help también va a install, con o sin `--`)
@@ -29,7 +29,7 @@ $Api = if ($env:TYCON_RELEASE_API) { $env:TYCON_RELEASE_API } else { 'https://ap
 $GitBase = if ($env:TYCON_RELEASE_GIT) { $env:TYCON_RELEASE_GIT } else { 'https://github.com' }
 $Codeload = if ($env:TYCON_RELEASE_ARCHIVE) { $env:TYCON_RELEASE_ARCHIVE } else { 'https://codeload.github.com' }
 $Public = -not ($env:TYCON_RELEASE_API -and -not $env:TYCON_RELEASE_GIT)
-$NodeFloor = 20   # el mismo piso que scripts/setup/harness.js
+$NodeFloor = 22   # el piso para INSTALAR (el de la documentación); harness.js tolera 20 sólo para actualizar
 $TokenUrl = 'https://github.com/settings/personal-access-tokens/new'
 
 function Say([string]$Text) { [Console]::Error.WriteLine("get-harness: $Text") }

@@ -30,7 +30,10 @@
 #                          callan: eso lo mira el freno de quien empuja y la verificación diaria de lo publicado
 #  10 version              sólo con --range: node scripts/ci/version-tag.js check-pr. Con `numbering: "merge-tag"` en el
 #                          version.json de la base, el pedido no toca el número (lo pone la etiqueta del merge); sin la
-#                          marca, el de la punta tiene que ser MAYOR que el de la base (lo que una máquina compara)
+#                          marca, el de la punta tiene que ser MAYOR que el de la base (lo que una máquina compara).
+#                          Además, si el rango toca scripts/setup/npm/ (el paquete de npm, story 8.40), su `version`
+#                          semver sube: node scripts/ci/npm-package-version.js. Esa carpeta no es un proyecto de npm
+#                          para esta CI: nada acá corre npm test ni npm install en ella
 #  11 clean-machine        sólo con --clean-machine: bash scripts/tests/clean-machine.test.sh en su modo público, o sea con
 #                          TYCON_CLEAN_MACHINE=1 (pedida de forma explícita) y TYCON_CLEAN_MACHINE_SOURCE=<root> (sobre
 #                          este repo, que es la copia; sin esa variable la prueba exporta la copia desde el repo del equipo)
@@ -474,7 +477,16 @@ version_bumped() {
     || { echo "no pude correr: no hay ancestro común entre ${RANGE_BASE} y ${RANGE_TIP}"; return "${BLOCKED_EXIT}"; }
   [ -f "${ROOT}/scripts/ci/version-tag.js" ] \
     || { echo "no pude correr: el repo no trae scripts/ci/version-tag.js (la regla del número)"; return "${BLOCKED_EXIT}"; }
-  node "${ROOT}/scripts/ci/version-tag.js" check-pr --root "${ROOT}" --base "${RANGE_BASE}" --tip "${RANGE_TIP}"
+  node "${ROOT}/scripts/ci/version-tag.js" check-pr --root "${ROOT}" --base "${RANGE_BASE}" --tip "${RANGE_TIP}" || return $?
+  # la versión del paquete de npm (story 8.40, AC 11): si el pedido toca scripts/setup/npm/, su `version` sube. Un repo sin
+  # el paquete (los de juguete de public-ci.test.sh) no tiene nada que exigir; un repo CON el paquete y sin su regla no es
+  # «nada que exigir»: es «no pude correr», rojo (un salto se vería igual que un verde)
+  if [ ! -f "${ROOT}/scripts/ci/npm-package-version.js" ]; then
+    [ ! -f "${ROOT}/scripts/setup/npm/package.json" ] && return 0
+    echo "no pude correr: el repo trae scripts/setup/npm/package.json y no trae scripts/ci/npm-package-version.js (la regla de su versión)"
+    return "${BLOCKED_EXIT}"
+  fi
+  node "${ROOT}/scripts/ci/npm-package-version.js" --root "${ROOT}" --range "${RANGE_BASE}...${RANGE_TIP}"
 }
 
 # ── la corrida ─────────────────────────────────────────────────────────────────────────────────────

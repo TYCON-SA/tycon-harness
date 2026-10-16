@@ -52,10 +52,14 @@
  *
  * EL OTRO WORKFLOW (`--tagger`): `version-tag.yml`, el que le pone a cada merge a main la etiqueta con su número. Es el
  * único con permiso de escritura (sólo para empujar esa etiqueta): se controla con su propia forma exacta
- * (`TAGGER_SHAPE`) y con las reglas que valen para cualquier workflow de un repo público. `WORKFLOWS` son los únicos dos
- * archivos que puede haber en `.github/workflows/`.
+ * (`TAGGER_SHAPE`) y con las reglas que valen para cualquier workflow de un repo público.
  *
- * USO:  node scripts/ci/check-public-workflow.js [--tagger] <archivo>
+ * EL TERCERO (`--publisher`, story 8.40): `npm-publish.yml`, el que publica el instalador de npm con trusted publishing.
+ * Es el único que pide la identidad de la corrida (`id-token: write`): su forma exacta (`PUBLISHER_SHAPE`), las reglas de
+ * cualquier workflow público y cinco propias (`publisher-trigger`, `publisher-enabled`, `publisher-permissions`,
+ * `publisher-npm`, `publisher-stage`). `WORKFLOWS` son los únicos tres archivos que puede haber en `.github/workflows/`.
+ *
+ * USO:  node scripts/ci/check-public-workflow.js [--tagger|--publisher] <archivo>
  *   0 = cumple todo · 1 = alguna regla rota (una línea `❌ check-public-workflow: <regla> — <qué>` por regla) ·
  *   2 = no pude leer el archivo (no es un verde)
  * Lo corre scripts/tests/public-ci.test.sh sobre el `ci.yml` real y sobre copias alteradas: una por regla y una por cada
@@ -217,9 +221,128 @@ const TAGGER_SHAPE = [
   '        run: node scripts/ci/version-tag.js tag --sha "${GITHUB_SHA}"',
 ];
 
-/** Los únicos workflows del repo público: la CI y el que etiqueta. Otro archivo en `.github/workflows/` es rojo (lo
- *  mira scripts/tests/version-by-merge.test.js). */
-const WORKFLOWS = ['ci.yml', 'version-tag.yml'];
+/**
+ * LA FORMA de `npm-publish.yml` (`--publisher`, story 8.40): el workflow que publica el instalador de npm
+ * (scripts/setup/npm/) con trusted publishing. Es el ÚNICO que pide la identidad de la corrida (`id-token: write`), y sólo
+ * en su job: corre en un push a `main` que toca la carpeta del paquete o a mano sobre `main`, nunca en un pedido; se
+ * habilita con la variable de repositorio `NPM_PUBLISH_ENABLED=true` (sin ella, salteado en verde con un aviso; con ella,
+ * cualquier error es rojo); no lee ningún secreto; instala npm en una versión EXACTA; mira lo ya publicado antes de
+ * publicar y publica EN ETAPAS (`npm stage publish`: la aprueba una persona con 2FA). Sus pasos de shell los corre
+ * npm-publish-workflow.test.js con un npm de mentira. Cambiarlo es cambiar esto en el mismo commit.
+ */
+const NPM_PINNED = '11.19.1';   // ≥ 11.15.0 (lo pide `npm stage publish`); nunca @latest: es la cadena de suministro
+const PUBLISHER_SHAPE = [
+  'name: npm-publish',
+  'on:',
+  '  push:',
+  '    branches: [main]',
+  '    paths:',
+  "      - 'scripts/setup/npm/**'",
+  '  workflow_dispatch:',
+  'concurrency:',
+  '  group: npm-publish',
+  '  cancel-in-progress: false',
+  'permissions:',
+  '  contents: read',
+  'jobs:',
+  // la habilitación: una VARIABLE de repositorio (no un secreto), leída en un job sin la identidad de la corrida; sin ella
+  // el que publica sale salteado, en verde, con el aviso de qué falta configurar
+  '  enabled:',
+  "    if: github.ref == 'refs/heads/main'",
+  '    runs-on: ubuntu-latest',
+  '    timeout-minutes: 5',
+  '    outputs:',
+  '      enabled: ${{ steps.flag.outputs.enabled }}',
+  '    steps:',
+  '      - name: La publicación está habilitada',
+  '        id: flag',
+  '        env:',
+  '          ENABLED: ${{ vars.NPM_PUBLISH_ENABLED }}',
+  '        run: |',
+  '          set -euo pipefail',
+  '          if [ "${ENABLED:-}" = "true" ]; then',
+  '            echo "enabled=yes" >> "${GITHUB_OUTPUT}"',
+  '            exit 0',
+  '          fi',
+  '          echo "::warning::falta configurar npm: la organización tycon-sa, el publicador de confianza (TYCON-SA / tycon-harness / npm-publish.yml, sólo en etapas) y la variable de repositorio NPM_PUBLISH_ENABLED=true. No se publica nada (tareas del dueño, story 8.40)"',
+  '          echo "enabled=no" >> "${GITHUB_OUTPUT}"',
+  '  publish:',
+  '    needs: enabled',
+  "    if: needs.enabled.outputs.enabled == 'yes'",
+  '    runs-on: ubuntu-latest',
+  '    timeout-minutes: 15',
+  '    permissions:',
+  '      contents: read',
+  '      id-token: write',
+  '    steps:',
+  // con la identidad de la corrida, las acciones van con el sha EXACTO, como en el que etiqueta
+  '      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1',
+  '        with:',
+  '          persist-credentials: false',
+  '      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0',
+  '        with:',
+  '          node-version: 24',
+  '      - name: npm en una versión exacta',
+  '        run: |',
+  '          set -euo pipefail',
+  `          npm install -g npm@${NPM_PINNED}`,
+  '          have="$(npm --version)"',
+  `          if [ "\${have}" != "${NPM_PINNED}" ]; then`,
+  `            echo "::error::npm viejo o distinto: hay \${have} y la publicación en etapas pide npm ${NPM_PINNED} (11.15.0 o más)"`,
+  '            exit 1',
+  '          fi',
+  '          echo "npm ${have}"',
+  '      - name: El paquete, la versión y lo que ya está publicado',
+  '        id: preflight',
+  '        run: |',
+  '          set -euo pipefail',
+  '          cp LICENSE scripts/setup/npm/LICENSE',
+  '          cd scripts/setup/npm',
+  "          name=\"$(node -p \"require('./package.json').name\")\"",
+  "          version=\"$(node -p \"require('./package.json').version\")\"",
+  // ¿la versión ya está? La lista de versiones del paquete: E404 es «el paquete no existe» (la primera publicación, que
+  // también va en etapas); otro error, o una respuesta que no se entiende, es rojo; listada, se compara la integridad
+  '          if ! npm view "${name}" versions --json > "${RUNNER_TEMP}/npm-versions.json" 2> "${RUNNER_TEMP}/npm-view.err"; then',
+  "            if grep -q 'E404' \"${RUNNER_TEMP}/npm-versions.json\" \"${RUNNER_TEMP}/npm-view.err\"; then",
+  '              echo "${name} todavía no existe en npm: es la primera publicación, en etapas"',
+  '              echo "publish=yes" >> "${GITHUB_OUTPUT}"',
+  '              exit 0',
+  '            fi',
+  '            echo "::error::no pude preguntarle al registro por ${name}: $(head -c 400 "${RUNNER_TEMP}/npm-view.err")"',
+  '            exit 1',
+  '          fi',
+  '          listed=0',
+  `          node -e 'const v=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.exit([].concat(v).includes(process.argv[2])?0:3)' "\${RUNNER_TEMP}/npm-versions.json" "\${version}" || listed=$?`,
+  '          if [ "${listed}" = 3 ]; then',
+  '            echo "${name}@${version} es nueva: se publica en etapas"',
+  '            echo "publish=yes" >> "${GITHUB_OUTPUT}"',
+  '            exit 0',
+  '          fi',
+  '          if [ "${listed}" != 0 ]; then',
+  '            echo "::error::no entiendo la lista de versiones de ${name} que contestó el registro: $(head -c 400 "${RUNNER_TEMP}/npm-versions.json")"',
+  '            exit 1',
+  '          fi',
+  '          seen="$(npm view "${name}@${version}" dist.integrity)"',
+  "          mine=\"$(npm pack --dry-run --json | node -e 'let s=\"\";process.stdin.on(\"data\",(d)=>{s+=d}).on(\"end\",()=>{process.stdout.write(JSON.parse(s)[0].integrity)})')\"",
+  '          if [ -n "${seen}" ] && [ "${mine}" = "${seen}" ]; then',
+  '            echo "${name}@${version} ya publicada con este mismo contenido: no hay nada que publicar"',
+  '            echo "publish=no" >> "${GITHUB_OUTPUT}"',
+  '            exit 0',
+  '          fi',
+  '          echo "::error::${name}@${version} ya está publicada con otro contenido: subí version en scripts/setup/npm/package.json"',
+  '          exit 1',
+  '      - name: Publicar en etapas (la aprueba una persona con 2FA)',
+  "        if: steps.preflight.outputs.publish == 'yes'",
+  '        working-directory: scripts/setup/npm',
+  // con la publicación habilitada, CUALQUIER error es rojo (también la identidad que npm no acepta: E401/E403/OIDC)
+  '        run: |',
+  '          set -euo pipefail',
+  '          npm stage publish',
+];
+
+/** Los únicos workflows del repo público: la CI, el que etiqueta y el que publica el instalador de npm. Otro archivo en
+ *  `.github/workflows/` es rojo (lo mira scripts/tests/version-by-merge.test.js). */
+const WORKFLOWS = ['ci.yml', 'version-tag.yml', 'npm-publish.yml'];
 
 /**
  * Un `\r` que no va seguido de `\n`, un tabulador o un carácter de control: los de C0 menos `\n` y `\r`, DEL, y los tres
@@ -521,14 +644,86 @@ const TAGGER_RULES = [
   },
 ];
 
-/** Lo que hay en `.github/workflows/` y no es uno de los dos workflows conocidos (`WORKFLOWS`). */
+/**
+ * Las reglas del workflow que publica en npm: las de cualquier workflow público, cuatro que dicen POR QUÉ algo está mal
+ * (cuándo corre, qué permisos pide, qué npm instala, cómo publica) y su forma exacta.
+ */
+const PUBLISHER_RULES = [
+  ...RULES.filter((r) => ['pull-request-target', 'secrets', 'uses-by-sha'].includes(r.id)),
+  {
+    id: 'publisher-trigger',
+    check(lines, text) {
+      if (/\bpull_request\b/.test(text)) return 'corre en un pedido (`pull_request`): publicar es sólo desde main';
+      if (!/^ {2}push:\n {4}branches: \[main\]\n {4}paths:\n {6}- 'scripts\/setup\/npm\/\*\*'\n {2}workflow_dispatch:$/m.test(text.replace(/\r\n/g, '\n'))) {
+        return 'corre en un push a main que toca `scripts/setup/npm/**` y a mano (`workflow_dispatch`), y en nada más';
+      }
+      if (!lines.some((l) => l.code && l.raw === "    if: github.ref == 'refs/heads/main'")) return "el job lleva `if: github.ref == 'refs/heads/main'`: a mano, sólo sobre main";
+      return null;
+    },
+  },
+  {
+    id: 'publisher-enabled',
+    check(lines) {
+      // la publicación se habilita con una VARIABLE de repositorio, leída en un job aparte; el que publica depende de él
+      const has = (raw) => lines.some((l) => l.code && l.raw === raw);
+      if (!has('          ENABLED: ${{ vars.NPM_PUBLISH_ENABLED }}')) return 'la habilitación se lee de la variable de repositorio `NPM_PUBLISH_ENABLED` (`vars.`, no un secreto)';
+      if (!/^ {4}needs: enabled\n {4}if: needs\.enabled\.outputs\.enabled == 'yes'$/m.test(lines.map((l) => l.raw).join('\n'))) {
+        return "el job que publica lleva `needs: enabled` e `if: needs.enabled.outputs.enabled == 'yes'`: sin la variable sale salteado";
+      }
+      return null;
+    },
+  },
+  {
+    id: 'publisher-permissions',
+    check(_lines, text) {
+      const t = text.replace(/\r\n/g, '\n');
+      const all = t.split('\n').filter((l) => /^\s*permissions\s*:/.test(l));
+      if (all.length !== 2 || !/^permissions:\n {2}contents: read\njobs:/m.test(t) || !/^ {4}permissions:\n {6}contents: read\n {6}id-token: write\n {4}steps:/m.test(t)) {
+        return '`permissions: contents: read` arriba y, en el job, `contents: read` e `id-token: write` y nada más';
+      }
+      return null;
+    },
+  },
+  {
+    id: 'publisher-npm',
+    check(lines) {
+      const inst = lines.filter((l) => l.code && /\bnpm (install|i)\b.*\bnpm@/.test(l.body));
+      const m = inst.length === 1 && /^npm install -g npm@(\d+)\.(\d+)\.(\d+)$/.exec(inst[0].body);
+      if (!m) return `npm se instala UNA vez y en una versión exacta (\`npm install -g npm@x.y.z\`), nunca @latest ni un rango${inst.length ? ` (línea ${at(inst)})` : ''}`;
+      const [maj, min] = [Number(m[1]), Number(m[2])];
+      if (maj < 11 || (maj === 11 && min < 15)) return `npm ${m.slice(1).join('.')} es viejo: \`npm stage publish\` pide 11.15.0 o más (línea ${inst[0].n})`;
+      return null;
+    },
+  },
+  {
+    id: 'publisher-stage',
+    check(lines, text) {
+      if (/\bnpm (publish|pub)\b/.test(text.replace(/npm stage publish/g, ''))) return 'publica con `npm publish` directo: va en etapas (`npm stage publish`), la aprueba una persona con 2FA';
+      if (!/npm stage publish/.test(text)) return 'falta `npm stage publish`';
+      if (!lines.some((l) => l.raw === '        working-directory: scripts/setup/npm')) return 'publica desde la carpeta del paquete (`working-directory: scripts/setup/npm`)';
+      if (!/cp LICENSE scripts\/setup\/npm\/LICENSE/.test(text)) return 'copia LICENSE a la carpeta del paquete antes de empaquetar (npm no empaqueta rutas de afuera)';
+      const code = lines.filter((l) => l.code).map((l) => l.raw).join('\n');   // el orden de los PASOS, no el de la cabecera
+      if (!(code.indexOf('dist.integrity') >= 0 && code.indexOf('dist.integrity') < code.indexOf('npm stage publish'))) return 'mira lo ya publicado (`dist.integrity`) antes de publicar';
+      return null;
+    },
+  },
+  {
+    id: 'shape',
+    check(_lines, text) {
+      const problem = shapeProblem(text, PUBLISHER_SHAPE);
+      return problem ? `${problem}. El archivo no tiene la forma exacta que este control lleva adentro: si el cambio es a propósito, cambiá \`PUBLISHER_SHAPE\` en scripts/ci/check-public-workflow.js en el mismo commit` : null;
+    },
+  },
+];
+
+/** Lo que hay en `.github/workflows/` y no es uno de los workflows conocidos (`WORKFLOWS`). */
 function strayWorkflows(names) { return (names || []).filter((n) => !WORKFLOWS.includes(n)).sort(); }
 
-/** @returns {{rule: string, detail: string}[]} las reglas rotas, en el orden de RULES (o de TAGGER_RULES con `tagger`) */
-function check(text, { tagger = false } = {}) {
+/** @returns {{rule: string, detail: string}[]} las reglas rotas, en el orden de RULES (o de TAGGER_RULES / PUBLISHER_RULES) */
+function check(text, { tagger = false, publisher = false } = {}) {
   const lines = read(text);
   const broken = [];
-  for (const rule of tagger ? TAGGER_RULES : RULES) {
+  for (const rule of publisher ? PUBLISHER_RULES : tagger ? TAGGER_RULES : RULES) {
     let detail = null;
     try { detail = rule.check(lines, text); } catch (e) { detail = `no pude evaluarla (${e.message})`; }
     if (detail) broken.push({ rule: rule.id, detail });
@@ -538,10 +733,11 @@ function check(text, { tagger = false } = {}) {
 
 function main(argv) {
   const tagger = argv[0] === '--tagger';
-  const args = tagger ? argv.slice(1) : argv;
+  const publisher = argv[0] === '--publisher';
+  const args = tagger || publisher ? argv.slice(1) : argv;
   const file = args[0];
   if (!file || args.length !== 1) {
-    process.stderr.write('uso: node scripts/ci/check-public-workflow.js [--tagger] <archivo>\n');
+    process.stderr.write('uso: node scripts/ci/check-public-workflow.js [--tagger|--publisher] <archivo>\n');
     return 2;
   }
   let text = '';
@@ -553,8 +749,8 @@ function main(argv) {
     process.stderr.write(`⛔ check-public-workflow: ${file} está vacío\n`);
     return 2;
   }
-  const broken = check(text, { tagger });
-  const total = (tagger ? TAGGER_RULES : RULES).length;
+  const broken = check(text, { tagger, publisher });
+  const total = (publisher ? PUBLISHER_RULES : tagger ? TAGGER_RULES : RULES).length;
   for (const b of broken) console.log(`❌ check-public-workflow: ${b.rule} — ${b.detail}`);
   if (broken.length) {
     console.log(`❌ check-public-workflow: ${file}: ${broken.length} de ${total} reglas rotas`);
@@ -566,4 +762,4 @@ function main(argv) {
 
 if (require.main === module) process.exit(main(process.argv.slice(2)));
 
-module.exports = { check, RULES, SHAPE, TAGGER_RULES, TAGGER_SHAPE, WORKFLOWS, strayWorkflows };
+module.exports = { check, RULES, SHAPE, TAGGER_RULES, TAGGER_SHAPE, PUBLISHER_RULES, PUBLISHER_SHAPE, NPM_PINNED, WORKFLOWS, strayWorkflows };

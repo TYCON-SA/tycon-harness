@@ -11,12 +11,15 @@
  *   · GET con cabeceras, estado y cuerpo; la respuesta dice en qué URL terminó;
  *   · una redirección al MISMO origen conserva `Authorization`; a OTRO origen la saca; más de 5 es un error `redirect`;
  *   · `HTTP_PROXY` manda un destino http por el proxy (forma absoluta); `NO_PROXY` lo saca del proxy; las credenciales
- *     del proxy viajan como `Proxy-Authorization`; un destino https pasa por un túnel CONNECT;
+ *     del proxy viajan como `Proxy-Authorization`; un destino https pasa por un túnel CONNECT; un proxy `https://` se
+ *     habla por TLS, para los dos destinos (pase adversarial de la 8.40, clase 9: antes iba en claro y al puerto 80);
  *   · un proxy que acepta y no contesta es `proxy-timeout` dentro del tope; un servidor mudo directo es `timeout`;
  *   · conexión rechazada o nombre que no resuelve son `network`, con el código; un cuerpo más grande que el tope es
  *     `too-big`;
  *   · `getSync` corre el pedido en un proceso hijo (harness.js es síncrono) y le pasa el pedido por stdin: ninguna
- *     cabecera —la credencial— va en la línea de comandos.
+ *     cabecera —la credencial— va en la línea de comandos; un hijo cortado por una señal se dice con la señal (story
+ *     8.40, segunda vuelta de revisores: antes salía «no devolvió nada legible»). El proxy por TLS y la señal son la fila
+ *     T39 `HttpGet_HttpsProxyTls_And_SyncSignal` de la story 8.40.
  * 🔴 Todo en localhost y en el temporal; el certificado de prueba se genera con openssl al correr (sin él, la prueba del
  * túnel FALLA diciendo que no midió: no medido no es verde).
  */
@@ -59,9 +62,9 @@ async function echoServer({ muteOn = null } = {}) {
   return { port, seen, base: `http://127.0.0.1:${port}` };
 }
 /** Un proxy de juguete: forma absoluta para http, CONNECT para https; anota qué le pidieron. Con `mute`, acepta y calla. */
-async function toyProxy({ mute = false } = {}) {
+async function toyProxy({ mute = false, tlsPem = null } = {}) {
   const seen = [];
-  const srv = net.createServer((sock) => {
+  const srv = (tlsPem ? (h) => require('tls').createServer(tlsPem, h) : (h) => net.createServer(h))((sock) => {
     if (mute) { sock.on('error', () => {}); return; }
     let buf = Buffer.alloc(0);
     sock.on('error', () => {});
@@ -90,7 +93,7 @@ async function toyProxy({ mute = false } = {}) {
   });
   servers.push(srv);
   const port = await listen(srv);
-  return { port, seen, url: `http://127.0.0.1:${port}` };
+  return { port, seen, url: `${tlsPem ? 'https' : 'http'}://127.0.0.1:${port}` };
 }
 /** Un certificado autofirmado para 127.0.0.1, generado con openssl en el temporal. */
 function selfSigned(dir) {
@@ -165,6 +168,23 @@ test('un destino https pasa por un túnel CONNECT del proxy', async () => {
   assert.strictEqual(d.body.toString(), 'seguro /directo');
 });
 
+test('un proxy https:// se habla por TLS: el túnel CONNECT para un destino https y la forma absoluta para uno http', async () => {
+  const { httpGet } = require(CLIENT);
+  const pem = selfSigned(tmp('http-tlsproxy-'));
+  const srv = https.createServer({ key: pem.key, cert: pem.cert }, (req, res) => { res.writeHead(200); res.end(`seguro ${req.url}`); });
+  servers.push(srv);
+  const port = await listen(srv);
+  const s = await echoServer();
+  const p = await toyProxy({ tlsPem: { key: pem.key, cert: pem.cert } });
+  const env = Object.assign({}, env0, { HTTPS_PROXY: p.url, HTTP_PROXY: p.url });
+  const r = await httpGet(`https://127.0.0.1:${port}/tunel`, { env, timeoutMs: 4000, tls: { ca: pem.cert } });
+  assert.strictEqual(r.body.toString(), 'seguro /tunel');
+  assert.strictEqual(p.seen[0].line, `CONNECT 127.0.0.1:${port} HTTP/1.1`);
+  const h = await httpGet(`${s.base}/plano`, { env, timeoutMs: 4000, tls: { ca: pem.cert } });
+  assert.strictEqual(h.status, 200);
+  assert.strictEqual(p.seen[1].line, `GET ${s.base}/plano HTTP/1.1`);
+});
+
 test('un proxy mudo es «proxy sin respuesta» dentro del tope; un servidor mudo directo es «sin respuesta»', async () => {
   const { httpGet } = require(CLIENT);
   const s = await echoServer();
@@ -211,4 +231,23 @@ test('getSync corre el pedido en un proceso hijo y le pasa el pedido por stdin, 
   const bad = getSync('http://127.0.0.1:9/', { env: env0, timeoutMs: 2000 });
   assert.strictEqual(bad.ok, false);
   assert.strictEqual(bad.kind, 'network');
+});
+
+test('getSync: un hijo cortado por una señal se dice con la señal, no como «no devolvió nada legible»', (t) => {
+  if (process.platform === 'win32') { t.diagnostic('NO MEDIDO: Windows no corta procesos con señales POSIX'); return; }
+  const { getSync } = require(CLIENT);
+  const dir = tmp('http-get-signal-');
+  const before = process.env.NODE_OPTIONS;
+  try {
+    const killer = path.join(dir, 'corta.js');
+    fs.writeFileSync(killer, "process.kill(process.pid, 'SIGKILL');\n");   // el hijo de getSync se corta solo al arrancar
+    process.env.NODE_OPTIONS = `--require ${killer}`;
+    const r = getSync('http://127.0.0.1:9/', { env: env0, timeoutMs: 2000 });
+    assert.strictEqual(r.ok, false);
+    assert.match(r.message, /SIGKILL/, JSON.stringify(r));
+    assert.doesNotMatch(r.message, /nada legible/, JSON.stringify(r));
+  } finally {
+    if (before === undefined) delete process.env.NODE_OPTIONS; else process.env.NODE_OPTIONS = before;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

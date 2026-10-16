@@ -2005,6 +2005,30 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.40, tanda A (T1, T2, T4, T6 a T9, T17, T18, T35): el instalador del paquete de npm (scripts/setup/npm/index.js), por EJECUCIÓN: armado con npm pack y corrido con npx --package contra el GitHub de juguete en una HOME de juguete. Baja por info/refs y codeload, la pregunta «¿Instalo?» llega a la terminal, el hijo corre con process.execPath, el repo privado pide el permiso sin eco (y el del equipo antes de bajar), una máquina instalada no baja nada, sin red/500/cortado/tope salen 1 sin dejar nada, el «no» no deja nada, la pregunta «¿para quién?» sin valor por defecto, el proxy (HTTP_PROXY, npm_config_proxy, NO_PROXY) y el error de TLS que nombra NODE_EXTRA_CA_CERTS. Sin red; ~3 min.",
+      "raiz": "arnes",
+      "ruta": "tests/npx-installer.test.sh",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.40, tanda A (T3, T5, T10 a T12): la forma del paquete de npm (scripts/setup/npm/): npm pack --dry-run lista exactamente cuatro archivos, sin dependencias, shebang, ≤ 400 líneas, el repo de fábrica una vez, el piso de Node igual al de harness.js, ningún hijo lanzado como `node`; requisites() por plataforma; package.json semver con bin, files, licencia, repo y acceso público; scripts/ci/npm-package-version.js exige subir la versión cuando la carpeta cambia (repos de juguete con git de verdad); el README dice lo que el paquete no es. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/npm-package.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.40, tanda A (T13 a T16): .github/workflows/npm-publish.yml leído por texto con check-public-workflow.js --publisher (disparador, permisos, acciones por sha, npm exacto ≥ 11.15.0, npm stage publish desde la carpeta del paquete, la integridad antes de publicar) y sus pasos de shell corridos con un npm de mentira: ya publicada con el mismo contenido sale 0, con otro rojo, npm viejo rojo, el paquete inexistente o sin publicador de confianza salteado en verde con aviso. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/npm-publish-workflow.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.40, tanda B (T25 a T31): el alta guiada de la organización (harness.js team-init, scripts/setup/harness/team-init.js) por EJECUCIÓN, en una HOME de juguete instalada desde el GitHub de juguete con tres repos (el arnés, el ejemplo de juguete de fixtures/team-init-example/ y el perfil acme). Escribe sólo los tres archivos obligatorios con lo contestado, GitHub y Azure DevOps, valida con los lectores instalados (una clave desconocida, un nombre con espacios, una dirección o carpeta que no sirve: nada escrito), --dry-run, sin arnés sale 2, git sí/no/push que falla, push a un bare de juguete e install --team; con red compara el ejemplo de juguete con el publicado. ~20 s.",
+      "raiz": "arnes",
+      "ruta": "tests/harness-team-init.test.sh",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.16, tanda B (T13): la única pregunta del programa de instalación (scripts/setup/harness/prompt.js) — «hay terminal» es isTTY y nada más; sí es s/si/sí/y/yes y todo lo demás es no (vacío, fin de entrada, una terminal cerrada); una terminal sin nada escrito todavía (EAGAIN) se espera; sin terminal no se imprime ninguna pregunta. Lectura inyectada: no toca una terminal de verdad.",
       "raiz": "arnes",
       "ruta": "tests/harness-prompt.test.js",

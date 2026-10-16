@@ -35,6 +35,13 @@
       "retire_with": "8.24 (la línea de arranque pasa a nombrar ~/.tycon/harness)",
       "retire_after": "2026-11-07",
       "retired_by": "8.24"
+    },
+    {
+      "path": "scripts/setup/npm/index.js",
+      "why": "el instalador de npx (story 8.40) corre ANTES de que haya arnés y no puede importar tycon-home.js. Arma él mismo dónde está el estado, el de hoy y el viejo bajo ~/.claude, sólo para leerlo y decir «ya está instalado». Nunca lo escribe",
+      "retire_with": "8.24 (deja de mirar el estado viejo bajo ~/.claude)",
+      "retire_after": "2026-11-07",
+      "retired_by": "8.24"
     }
   ],
   "until_d": [
