@@ -66,7 +66,7 @@ corren en tu propia terminal.
 Si en el camino instalás una herramienta, Claude te pide cerrar y abrir la terminal y Claude Code. Si el resumen dice
 «NO OK», guardalo: es lo que hay que mostrar al pedir ayuda.
 
-Próximamente: una sola línea de terminal, igual en Windows y en Mac, con el mismo plan y el mismo «sí»: `npx @tycon-sa/harness@latest`. Todavía no está publicada: por ahora, los pasos de arriba.
+Próximamente: una sola línea de terminal, igual en Windows y en Mac, con el mismo plan y el mismo «sí»: `npx @tyconsa/harness@latest`. Todavía no está publicada: por ahora, los pasos de arriba.
 
 El arnés queda en `~/.tycon/harness`, como archivos bajados (sin git). `~/.claude/tycon-harness` es un acceso directo a
 esa misma carpeta, y es el que usan los comandos de esta página. No borres ni muevas esa carpeta: Claude Code lo

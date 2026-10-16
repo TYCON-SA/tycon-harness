@@ -138,14 +138,14 @@ case "$1" in
   view)
     if [ "$3" = versions ]; then
       case "\${NPM_FAKE_VERSIONS}" in
-        E404) printf '{"error":{"code":"E404","summary":"Not Found - GET https://registry.npmjs.org/@tycon-sa%%2fharness"}}\\n'; echo "npm error code E404" >&2; exit 1 ;;
+        E404) printf '{"error":{"code":"E404","summary":"Not Found - GET https://registry.npmjs.org/@tyconsa%%2fharness"}}\\n'; echo "npm error code E404" >&2; exit 1 ;;
         E500) echo "npm error code E500" >&2; echo "npm error 500 Internal Server Error" >&2; exit 1 ;;
       esac
       printf '%s\\n' "\${NPM_FAKE_VERSIONS}"; exit 0
     fi
     printf '%s\\n' "\${NPM_FAKE_SEEN}" ;;
   pack) printf '[{"integrity":"%s","files":[]}]\\n' "\${NPM_FAKE_MINE}" ;;
-  stage) printf '%s\\n' "\${NPM_FAKE_PUBLISH_OUT:-+ @tycon-sa/harness}"; exit "\${NPM_FAKE_PUBLISH_RC:-0}" ;;
+  stage) printf '%s\\n' "\${NPM_FAKE_PUBLISH_OUT:-+ @tyconsa/harness}"; exit "\${NPM_FAKE_PUBLISH_RC:-0}" ;;
   *) echo "npm de mentira: no sé hacer $*" >&2; exit 9 ;;
 esac
 `, { mode: 0o755 });

@@ -68,7 +68,7 @@ run in your own terminal.
 If you install a tool along the way, Claude asks you to close and reopen the terminal and Claude Code. If the summary
 says "NO OK", keep it: it is what to show when you ask for help.
 
-Coming soon: a single terminal line, the same on Windows and Mac, with the same plan and the same "yes": `npx @tycon-sa/harness@latest`. It is not published yet: for now, follow the steps above.
+Coming soon: a single terminal line, the same on Windows and Mac, with the same plan and the same "yes": `npx @tyconsa/harness@latest`. It is not published yet: for now, follow the steps above.
 
 The harness lives in `~/.tycon/harness`, as downloaded files (no git). `~/.claude/tycon-harness` is a shortcut to that
 same folder, and the commands on this page use it. Don't delete or move that folder: Claude Code

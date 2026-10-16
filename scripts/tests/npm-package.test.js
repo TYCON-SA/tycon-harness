@@ -76,7 +76,7 @@ test('T3 NpmPackage_OneFile_NoDeps_Help', (t) => {
   const out = h.stdout + h.stderr;
   assert.ok(out.includes(fs.realpathSync(INDEX)) || out.includes(INDEX), 'nombra el archivo que corre');
   assert.match(out, /Provenance/);
-  assert.match(out, /npm view @tycon-sa\/harness dist\.attestations/);
+  assert.match(out, /npm view @tyconsa\/harness dist\.attestations/);
   assert.ok(!fs.existsSync(path.join(os.tmpdir(), 'no-existe-npm-help')), '--help no creó la HOME');
   // npm pack --dry-run: exactamente los cuatro (LICENSE lo copia el workflow antes de empaquetar)
   const npm = spawnSync(npmBin, ['--version'], { encoding: 'utf8', shell: process.platform === 'win32' });
@@ -143,7 +143,7 @@ test('T5 NpxInstaller_Requisites_PerPlatform', () => {
 test('T10 NpmPackage_VersionIsSemverAndStartsAt1', () => {
   const pkg = JSON.parse(read(path.join(PKG_DIR, 'package.json')));
   const VT = require(VERSION_TOOL);
-  assert.strictEqual(pkg.name, '@tycon-sa/harness');
+  assert.strictEqual(pkg.name, '@tyconsa/harness');
   assert.ok(VT.parseSemver(pkg.version), `version semver: ${pkg.version}`);
   assert.ok(VT.compareSemver(pkg.version, '1.0.0') >= 0, 'desde 1.0.0');
   assert.deepStrictEqual(pkg.bin, { 'tycon-harness': 'index.js' });
@@ -181,7 +181,7 @@ function toyRepo(change) {
   const g = (...a) => execFileSync('git', ['-C', dir, '-c', 'user.name=lab', '-c', 'user.email=lab@example.org', '-c', 'commit.gpgsign=false', '-c', 'maintenance.auto=false', ...a], { encoding: 'utf8', env: Object.assign({}, process.env, { GIT_AUTHOR_DATE: '2026-01-01T00:00:00Z', GIT_COMMITTER_DATE: '2026-01-01T00:00:00Z' }) });
   g('init', '-q', '-b', 'main');
   fs.mkdirSync(path.join(dir, 'scripts', 'setup', 'npm'), { recursive: true });
-  fs.writeFileSync(path.join(dir, 'scripts', 'setup', 'npm', 'package.json'), JSON.stringify({ name: '@tycon-sa/harness', version: '1.0.0' }, null, 2) + '\n');
+  fs.writeFileSync(path.join(dir, 'scripts', 'setup', 'npm', 'package.json'), JSON.stringify({ name: '@tyconsa/harness', version: '1.0.0' }, null, 2) + '\n');
   fs.writeFileSync(path.join(dir, 'scripts', 'setup', 'npm', 'index.js'), '// uno\n');
   fs.writeFileSync(path.join(dir, 'README.md'), 'raíz\n');
   g('add', '-A'); g('commit', '-q', '-m', 'base');
@@ -201,14 +201,14 @@ test('T11 NpmPackageVersion_ChangeWithoutBump_Red', () => {
     assert.match(r.stdout + r.stderr, /el paquete cambia: subí version en scripts\/setup\/npm\/package\.json/);
     const bump = toyRepo((d) => {
       fs.appendFileSync(path.join(d, 'scripts', 'setup', 'npm', 'index.js'), '// dos\n');
-      fs.writeFileSync(path.join(d, 'scripts', 'setup', 'npm', 'package.json'), JSON.stringify({ name: '@tycon-sa/harness', version: '1.0.1' }, null, 2) + '\n');
+      fs.writeFileSync(path.join(d, 'scripts', 'setup', 'npm', 'package.json'), JSON.stringify({ name: '@tyconsa/harness', version: '1.0.1' }, null, 2) + '\n');
     }); dirs.push(bump);
     r = runVersion(bump);
     assert.strictEqual(r.status, 0, r.stdout + r.stderr);
-    const down = toyRepo((d) => fs.writeFileSync(path.join(d, 'scripts', 'setup', 'npm', 'package.json'), JSON.stringify({ name: '@tycon-sa/harness', version: '0.9.0' }, null, 2) + '\n')); dirs.push(down);
+    const down = toyRepo((d) => fs.writeFileSync(path.join(d, 'scripts', 'setup', 'npm', 'package.json'), JSON.stringify({ name: '@tyconsa/harness', version: '0.9.0' }, null, 2) + '\n')); dirs.push(down);
     r = runVersion(down);
     assert.strictEqual(r.status, 1, 'una versión que baja es rojo');
-    const bad = toyRepo((d) => fs.writeFileSync(path.join(d, 'scripts', 'setup', 'npm', 'package.json'), JSON.stringify({ name: '@tycon-sa/harness', version: '1.0' }, null, 2) + '\n')); dirs.push(bad);
+    const bad = toyRepo((d) => fs.writeFileSync(path.join(d, 'scripts', 'setup', 'npm', 'package.json'), JSON.stringify({ name: '@tyconsa/harness', version: '1.0' }, null, 2) + '\n')); dirs.push(bad);
     r = runVersion(bad);
     assert.strictEqual(r.status, 1, 'una versión que no es semver es rojo');
     const other = toyRepo((d) => fs.appendFileSync(path.join(d, 'README.md'), 'otra línea\n')); dirs.push(other);
@@ -228,11 +228,11 @@ test('T11 NpmPackageVersion_ChangeWithoutBump_Red', () => {
 test('T12 NpmPackage_ReadmeSaysWhatItIsNot', () => {
   const text = read(path.join(PKG_DIR, 'README.md'));
   for (const want of ['no viene en el paquete', 'GitHub', 'plan', 'Provenance', 'get-harness.sh', 'get-harness.ps1',
-    'npm view @tycon-sa/harness dist.attestations', 'npx no comprueba la firma', '.npmrc', 'EACCES', 'Node 24']) {
+    'npm view @tyconsa/harness dist.attestations', 'npx no comprueba la firma', '.npmrc', 'EACCES', 'Node 24']) {
     assert.ok(text.includes(want), `el README del paquete nombra «${want}»`);
   }
   assert.ok(!/npx (-y|--yes)\b/.test(text), 'el README no escribe npx -y / --yes');
-  assert.ok(/npx @tycon-sa\/harness@latest/.test(text), 'la línea lleva @latest');
+  assert.ok(/npx @tyconsa\/harness@latest/.test(text), 'la línea lleva @latest');
 });
 
 // ── pase adversarial de la 8.40 (las clases confirmadas, como regresión) ─────────────────────────────────────────────

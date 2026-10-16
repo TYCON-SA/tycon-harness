@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # get-harness.sh — baja la versión publicada del arnés (sin git) y la instala. Leelo entero antes de correrlo: para eso es corto.
-# Es la entrada «a mano». Próximamente la otra, en una línea y en Node: `npx @tycon-sa/harness@latest` (scripts/setup/npm/).
+# Es la entrada «a mano». Próximamente la otra, en una línea y en Node: `npx @tyconsa/harness@latest` (scripts/setup/npm/).
 # Uso: bash get-harness.sh [--repo <org/nombre>] [-- <opciones de harness.js install>]
 #
 # Qué hace, en orden:

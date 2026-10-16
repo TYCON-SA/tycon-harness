@@ -1,9 +1,9 @@
-# @tycon-sa/harness
+# @tyconsa/harness
 
 El instalador del arnés TYCON, en una línea, igual en Windows, Mac y Linux:
 
 ```bash
-npx @tycon-sa/harness@latest
+npx @tyconsa/harness@latest
 ```
 
 - **Qué hace**: revisa los requisitos, baja de GitHub la versión publicada del arnés a una carpeta temporal y corre su
@@ -11,7 +11,7 @@ npx @tycon-sa/harness@latest
 - **Pregunta antes de escribir**: muestra el plan de lo que va a cambiar en tu máquina y espera tu `¿Instalo? [s/N]`.
   Con un «no», no queda nada.
 - **La procedencia**: este paquete lo publica la CI pública del repo, con constancia de procedencia. Se ve en la pestaña
-  «Provenance» de su página en npmjs.com, o con `npm view @tycon-sa/harness dist.attestations`.
+  «Provenance» de su página en npmjs.com, o con `npm view @tyconsa/harness dist.attestations`.
   Ojo: **npx no comprueba la firma al instalar**; se mira en la página o con `npm view`.
 - **Sin npm, a mano**: `scripts/setup/get-harness.sh` (o `get-harness.ps1` en Windows) del repo público: bajarlo,
   leerlo y correrlo.

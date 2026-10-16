@@ -264,7 +264,7 @@ const PUBLISHER_SHAPE = [
   '            echo "enabled=yes" >> "${GITHUB_OUTPUT}"',
   '            exit 0',
   '          fi',
-  '          echo "::warning::falta configurar npm: la organización tycon-sa, el publicador de confianza (TYCON-SA / tycon-harness / npm-publish.yml, sólo en etapas) y la variable de repositorio NPM_PUBLISH_ENABLED=true. No se publica nada (tareas del dueño, story 8.40)"',
+  '          echo "::warning::falta configurar npm: la organización tyconsa, el publicador de confianza (TYCON-SA / tycon-harness / npm-publish.yml, sólo en etapas) y la variable de repositorio NPM_PUBLISH_ENABLED=true. No se publica nada (tareas del dueño, story 8.40)"',
   '          echo "enabled=no" >> "${GITHUB_OUTPUT}"',
   '  publish:',
   '    needs: enabled',
