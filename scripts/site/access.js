@@ -102,6 +102,14 @@ function crearReglas({ config, modelo, personas } = {}) {
     maquina,
     identidades,
     proyectosDe,
+    /** ¿Se sabe de quién es cada máquina? Sin lo informado (o sin las uniones), nadie que no mantenga ve corridas (story 2.27). */
+    quienEsQuienMedido: informadosOk,
+    /** Las máquinas confirmadas de una persona (la ficha gris de quien todavía no tiene corridas, story 2.27 AC 11). */
+    maquinasDe: (email) => {
+      const e = norm(email);
+      if (!informadosOk) return [];
+      return Object.keys(c.machines).filter((k) => { const x = people.estadoDeMaquina(k, c); return x.estado === 'confirmada' && x.person === e; }).sort();
+    },
     /** ¿Ve `email` esta corrida? La regla de people.js sobre la carpeta real de la corrida. */
     puedeVer: (email, corrida) => informadosOk && people.puedeVer(email, carpetaDe(corrida), c),
     // las máquinas sin confirmar CON CORRIDAS (la fila del Inicio de quien mantiene, sólo la cuenta): las de
@@ -193,4 +201,48 @@ function filtrar(modelo, quien, reglas) {
   return out;
 }
 
-module.exports = { quienPide, mantenedores, crearReglas, filtrar, FRASE_IDENTIDAD, FRASE_PROYECTOS };
+/**
+ * LAS CORRIDAS DE LA PESTAÑA (story 2.27, AC 8 a 12; decisiones 6, 7 y 13). `M` es el modelo de runs.js armado desde el
+ * espejo; sale el modelo que puede ver quien pide, ANTES de armar cualquier respuesta (la lista, el detalle o los textos):
+ *   · quien mantiene: todas, también las sin máquina y las de máquinas sin confirmar, con los conteos globales;
+ *   · una persona: sólo las de sus máquinas confirmadas (la regla de people.js, la misma de `puedeVer`), sin los conteos
+ *     globales, con las máquinas y el buzón recalculados sobre lo suyo (`{ estado, parcial }`, sin el número de carpetas);
+ *   · sin rol: null.
+ * Los productos se unifican sobre lo filtrado, nunca sobre todo (decisión 13): el nombre de un dev no hereda la carpeta
+ * de la máquina de otro. Todo sale copiado: el modelo de la pestaña no se toca.
+ */
+function filtrarCorridas(M, quien, reglas) {
+  if (quien.rol !== 'maintainer' && quien.rol !== 'person') return null;
+  const { unificarProductos } = require('../nightly/dashboard/runs.js');
+  const m = M || {};
+  const lista = Array.isArray(m.corridas) ? m.corridas : [];
+  const mantiene = quien.rol === 'maintainer';
+  const ve = mantiene ? () => true : (c) => Boolean(c.maquina) && reglas.puedeVer(quien.email, { maquina: c.maquina, carpeta: c.maquina_origen || c.maquina });
+  const corridas = lista.filter(ve).map(copia);
+  unificarProductos(corridas);
+  const { corridas: _todas, archivos, duplicados, ilegibles, maquinas, buzon, ...resto } = m;
+  const out = { ...copia(resto), corridas };
+  if (mantiene) {
+    Object.assign(out, { archivos, duplicados, ilegibles, buzon: copia(buzon), maquinas: maquinas ? { ...copia(maquinas), local: null, solo_esta: false } : maquinas, varias_maquinas: true });
+    return out;
+  }
+  const cuenta = {};
+  for (const c of corridas) cuenta[c.maquina] = (cuenta[c.maquina] || 0) + 1;
+  out.maquinas = { local: null, solo_esta: false, lista: Object.keys(cuenta).sort((a, b) => cuenta[b] - cuenta[a] || a.localeCompare(b)).map((n) => ({ nombre: n, corridas: cuenta[n] })) };
+  out.varias_maquinas = out.maquinas.lista.length > 1;
+  out.buzon = buzon ? { estado: buzon.estado, parcial: buzon.estado !== 'leido' || Boolean(buzon.carpetas_ilegibles) } : null;
+  // sin saber de quién es cada máquina, el filtro cierra (no se ve nada), pero eso NO es «no hay corridas»: es «no
+  // medido» (pase adversarial). Pasa hasta la primera bajada entera del buzón, o si lo informado no se pudo leer.
+  if (reglas.quienEsQuienMedido === false) {
+    out.buzon = { estado: buzon ? buzon.estado : 'no_medido', parcial: true };
+    out.vacio_motivo = 'no medido: todavía no se pudo saber de quién es cada máquina (lo que informan las máquinas se lee con la primera bajada entera del buzón); tus corridas faltan, no son cero';
+    return out;
+  }
+  if (!corridas.length) {
+    const suyas = reglas.maquinasDe ? reglas.maquinasDe(quien.email) : [];
+    out.vacio_motivo = `todavía no hay corridas de tus máquinas en el buzón (${suyas.join(', ') || 'ninguna confirmada'}): la primera llega sola al terminar un pipeline`;
+  }
+  return out;
+}
+
+module.exports = { quienPide, mantenedores, crearReglas, filtrar, filtrarCorridas, FRASE_IDENTIDAD, FRASE_PROYECTOS };

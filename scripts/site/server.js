@@ -9,7 +9,8 @@
  *
  * LA TABLA DE RUTAS es el único camino de los datos (AC 11). Cada ruta declara quién puede verla (`needs`:
  * 'maintainer', 'person') y recibe el modelo YA FILTRADO por access.js para quien pide. Una ruta sin esa declaración
- * hace que el sitio NO ARRANQUE. Las únicas rutas sin sesión son la vida (`/livez`), la salud (`/healthz`), la carga
+ * hace que el sitio NO ARRANQUE. Una ruta puede tener parámetros (`/api/corridas/:id`, story 2.27): llegan en
+ * `ctx.params`, y la ruta sigue declarando quién la ve. Las únicas rutas sin sesión son la vida (`/livez`), la salud (`/healthz`), la carga
  * (`/readyz`), el inicio de sesión (`/auth/*`) y los dos archivos estáticos.
  *
  *   /livez    200 {"ok":true} mientras el proceso escucha; nada más (la sonda de vida y el HEALTHCHECK de la imagen).
@@ -176,12 +177,29 @@ const RUTAS = [
   { method: 'GET', path: '/api/inicio', needs: ['maintainer', 'person'], handler: (ctx) => ({ status: 200, tipo: 'application/json; charset=utf-8', cuerpo: JSON.stringify(views.inicioJson(ctx)) }) },
 ];
 
+/**
+ * Una ruta con parámetros (story 2.27): un tramo `:nombre` vale un tramo cualquiera, sin `/`. Devuelve la función que
+ * compara una ruta pedida y da `{ nombre: valor }` (o null). Sin parámetros, la comparación es exacta, como siempre.
+ */
+function patronDe(p) {
+  const tramos = p.split('/');
+  const nombres = tramos.filter((t) => t.startsWith(':')).map((t) => t.slice(1));
+  if (!nombres.length) return (ruta) => (ruta === p ? {} : null);
+  const rx = new RegExp(`^${tramos.map((t) => (t.startsWith(':') ? '([^/]+)' : t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))).join('/')}$`);
+  return (ruta) => {
+    const m = rx.exec(ruta);
+    if (!m) return null;
+    try { return Object.fromEntries(nombres.map((n, i) => [n, decodeURIComponent(m[i + 1])])); } catch { return null; }
+  };
+}
+
 /** Valida una tabla de rutas: cada una con método, ruta, `needs` del vocabulario y su función. Tira nombrando la ruta. */
 function validarRutas(rutas) {
   const vistas = new Set();
   for (const r of rutas) {
     const nombre = `${r && r.method} ${r && r.path}`;
     if (!r || typeof r.path !== 'string' || !r.path.startsWith('/') || typeof r.method !== 'string') throw new Error(`ruta mal formada: ${nombre}`);
+    if (r.path.split('/').some((t) => t.startsWith(':') && !/^:[a-z][a-zA-Z0-9]*$/.test(t))) throw new Error(`ruta mal formada: ${nombre} (un parámetro es «:nombre»)`);
     if (!Array.isArray(r.needs) || r.needs.length === 0 || r.needs.some((n) => !NEEDS.has(n))) throw new Error(`la ruta ${nombre} no declara quién puede verla (needs: maintainer, person): el sitio no arranca con una ruta abierta`);
     if (typeof r.handler !== 'function') throw new Error(`la ruta ${nombre} no tiene función`);
     if (vistas.has(nombre)) throw new Error(`la ruta ${nombre} está dos veces`);
@@ -211,7 +229,7 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
   const v = validarConfiguracion(env);
   if (!v.ok) throw Object.assign(new Error(v.problemas.map((p) => `${p.variable}: ${p.motivo}`).join('\n')), { problemas: v.problemas });
   const cfg = v.cfg;
-  const rutas = validarRutas([...RUTAS, ...rutasExtra]);
+  const rutas = validarRutas([...RUTAS, ...rutasExtra]).map((r) => ({ ...r, coincide: patronDe(r.path) }));
   if (!fuentes) throw new Error('crearSitio necesita las fuentes (scripts/site/sources.js)');
   const proveedor = PROVEEDORES[cfg.provider].crear(cfg, { ahora });
   const estatico = leerEstatico();
@@ -314,7 +332,8 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
       if (esApi) return enviar(res, { status: 403, tipo: 'text/plain; charset=utf-8', cuerpo: '' });
       return enviar(res, { status: 200, cuerpo: quien.sinMantenedores ? views.paginaSinMantenedores({ quien }) : views.paginaSinRol({ quien }) });
     }
-    const r = rutas.find((x) => x.method === req.method && x.path === ruta);
+    let params = null;
+    const r = rutas.find((x) => x.method === req.method && (params = x.coincide(ruta)) !== null);
     if (!r) return esApi ? enviar(res, { status: 404, tipo: 'text/plain; charset=utf-8', cuerpo: '' }) : enviar(res, { status: 404, cuerpo: views.paginaSimple('No existe', 'Esa página no existe.', { quien, pestanas: pestanasPara(quien.rol) }) });
     if (!r.needs.includes(quien.rol)) return esApi ? enviar(res, { status: 403, tipo: 'text/plain; charset=utf-8', cuerpo: '' }) : enviar(res, { status: 403, cuerpo: views.paginaSimple('Sin permiso', 'Esta página es para quienes mantienen el arnés.', { quien, pestanas: pestanasPara(quien.rol) }) });
 
@@ -323,7 +342,7 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
     const personas = typeof fuentes.personas === 'function' ? fuentes.personas() : null;
     const modelo = access.filtrar(fuentes.modelo(), quien, access.crearReglas({ config, modelo: fuentes.modelo(), personas }));
     const ctx = {
-      req, sesion: ses,
+      req, sesion: ses, params: params || {}, url: u,
       modelo, quien, pestanas: pestanasPara(quien.rol), activa: r.pestana ? r.pestana.id : null,
       bandaRefresco: st.bandaRefresco || null,
       bandaConfig: quien.rol === 'maintainer' ? (st.bandaConfig || null) : null,
@@ -389,7 +408,11 @@ async function main() {
   let sitio;
   try {
     const fuentes = crearFuentes({ cfg: v.cfg, dataDir, log });
-    const rutasExtra = require('./tabs/config.js').crearRutas({ cfg: v.cfg, fuentes, versionImagen: VERSION, log });
+    const rutasExtra = [
+      ...require('./tabs/config.js').crearRutas({ cfg: v.cfg, fuentes, versionImagen: VERSION, log }),
+      // la pestaña Corridas (story 2.27): arma su vista en un hilo aparte con el espejo del buzón
+      ...require('./tabs/runs.js').crearRutas({ cfg: v.cfg, fuentes, version: VERSION, skillsDir: env.TYCON_SKILLS_DIR || null, log }),
+    ];
     sitio = crearSitio({ env, fuentes, log, rutasExtra });
     await sitio.iniciar();
     fuentes.arrancar();

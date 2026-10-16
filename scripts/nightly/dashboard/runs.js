@@ -58,6 +58,15 @@
  * filtro mostraría otra cosa que el encabezado. La suite la ejercita corriendo el cliente real
  * sobre un DOM mínimo en Node (sin navegador). Sin red: ni tipografías ni bibliotecas externas.
  *
+ * EN EL SITIO DE LA ORGANIZACIÓN (story 2.27): la pestaña Corridas (scripts/site/tabs/runs.js) usa ESTE modelo y ESTE
+ * cliente, no una copia. Cada corrida lleva un id estable (`idEstable`: máquina + sesión, sin publicar la sesión), y el
+ * modelo se parte en lo que viaja por separado: `paraLista` (lista blanca: la cabecera, las fichas, los gráficos y el
+ * filtro), `paraDetalle` (al abrir una corrida) y `textosDe` (al abrir un cambio). La página se arma con `cabecera`,
+ * `ejecutiva`, `tabla` y `pie`, que `render` compone igual que antes; el sitio las usa con `opts.sitio` y lo ya filtrado
+ * para quien pide. El cliente lee sus datos de una FUENTE: embebida en la página local (como siempre) o por la red
+ * en el sitio (`#fuente-corridas`). `modelo()` acepta `soloBuzon`, `sinUnificar`, `sinHilos`, `umbralesArchivo` y
+ * `skillsDir` para el sitio; sin ellas, la vista local es la de siempre.
+ *
  * Contrato de salida (`main` devuelve el código; dashboard.js hace el exit):
  *   0 → midió (aunque haya rojos; registro ausente también es 0: la fuente no es obligatoria)
  *   2 → se negó a escribir una página con corridas del buzón dentro del repo del equipo, o se pidió
@@ -72,6 +81,7 @@ const path = require('path');
 // scripts/tests/tycon-home.test.js). Si está y no carga, tira.
 const stateDirOf = (() => { const lib = path.join(__dirname, '..', '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
 const os = require('os');
+const crypto = require('crypto');
 const { execSync } = require('child_process');
 const { mediana, num1, esc, CSS_BASE, CSS_CHIPS } = require('./common');
 const { readEnv, prepareStateWrite } = require('../../lib/legacy-names.js');
@@ -723,7 +733,9 @@ function leerRegistro(dir, nombresPasos, opts = {}) {
   const maquinaLocal = multi ? (opts.maquina || null) : null;
   const motivoLocal = multi && !maquinaLocal ? (motivoSinSubida || 'no se pudo saber el nombre de esta máquina') : null;
   const copias = [];   // { ruta, maquina, motivo }
-  try {
+  // story 2.27: el sitio lee SÓLO el espejo del buzón; no tener registro propio no es un faltante (AC 18)
+  if (opts.soloBuzon) out.registro = { estado: 'no_aplica', motivo: null, dir: null };
+  else try {
     for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.json')).sort()) copias.push({ ruta: path.join(dir, f), origen: maquinaLocal, maquina: maquinaLocal, motivo: motivoLocal });
   } catch (e) {
     out.registro = { estado: 'no_medido', motivo: `esta página se generó donde no está el registro de corridas (${e.code || 'ilegible'}): vive en ~/.claude/.tycon-pipeline/timing-history, en el disco de cada máquina, fuera de todo repo`, dir: null };
@@ -791,10 +803,12 @@ function leerRegistro(dir, nombresPasos, opts = {}) {
     if (!prev.maquina && cp.maquina) { prev.maquina = cp.maquina; prev.origen = cp.origen || null; prev.motivo = null; prev.nota = cp.nota || null; }
     else if (misma && cp.deVieja && !prev.nota) prev.nota = cp.nota;   // la sesión también estaba en la vieja: «antes, …»
   }
-  for (const { d, maquina, origen, motivo, rutas, nota } of porSesion.values()) {
+  for (const [sid, { d, maquina, origen, motivo, rutas, nota }] of porSesion) {
     const c = modeloDeCorrida(d, nombresPasos);
+    c.id = idEstable(multi ? maquina : null, sid);
     if (multi) { c.maquina = maquina; c.maquina_origen = maquina ? (origen || maquina) : null; c.maquina_motivo = maquina ? null : motivo; c.maquina_nota = maquina ? nota : null; }
-    c.cambios = leerCambios(rutas, d.marker, nombresPasos, d.cambio);
+    c.cambios = opts.sinHilos ? { estado: 'no_medido', motivo: SIN_HILOS } : leerCambios(rutas, d.marker, nombresPasos, d.cambio);
+    if (opts.sinHilos && c.tiempos) c.tiempos.espera_del_hilo_ms = null;
     aplicarEsperasDelHilo(c, d.marker);
     c.descripcion = descripcionDe(d.marker, c.cambios);
     out.corridas.push(c);
@@ -803,7 +817,7 @@ function leerRegistro(dir, nombresPasos, opts = {}) {
   return out;
 }
 
-function umbrales() {
+function umbrales(archivo = path.join(__dirname, 'sources.json')) {
   // El JUICIO vive en sources.json → thresholds (misma regla que la página de seis preguntas): sin fila,
   // la ficha sale neutra. Antes el 80 % estaba escrito en el cliente (spec-first, SPEC-W7).
   // 🔴 Un sources.json roto NO es «no hay umbral»: sin motivo, las fichas perdían el color en silencio
@@ -811,7 +825,7 @@ function umbrales() {
   // El modelo (y su `--json`) conserva el nombre de antes, `sentido` (story 8.9, pregunta decidida 2): la
   // configuración se lee en inglés y la salida no cambia.
   try {
-    const cfg = JSON.parse(fs.readFileSync(path.join(__dirname, 'sources.json'), 'utf8'));
+    const cfg = JSON.parse(fs.readFileSync(archivo, 'utf8'));
     if (!cfg || typeof cfg.thresholds !== 'object' || cfg.thresholds === null) return { valores: {}, motivo: 'sources.json no declara `thresholds`: las fichas salen sin juicio de color' };
     const valores = {};
     for (const [k, u] of Object.entries(cfg.thresholds)) {
@@ -840,9 +854,10 @@ function lineaBasePasos(ruta = '../../metrics/steps-per-run.js') {
 }
 
 function modelo(runsDir, opts = {}) {
-  const pasos = nombresDePasos();
+  const pasos = opts.skillsDir ? pasosDeLaImagen(opts.skillsDir) : nombresDePasos();
   const reg = leerRegistro(runsDir, pasos.nombres, opts);
-  unificarProductos(reg.corridas);
+  // story 2.27 (decisión 13): el sitio unifica los productos sobre lo que cada persona ve, nunca sobre todo
+  if (!opts.sinUnificar) unificarProductos(reg.corridas);
   // Qué máquinas cubre lo que se leyó, y cuántas corridas de cada una: el sello sale de ACÁ, no de una
   // bandera. Una sola máquina y es ésta → «esta máquina», como siempre.
   let maquinas = null;
@@ -854,13 +869,16 @@ function modelo(runsDir, opts = {}) {
     maquinas = { local: opts.maquina || null, lista, sin_declarar: sinDeclarar,
       solo_esta: sinDeclarar === 0 && !(reg.buzon && (reg.buzon.estado !== 'leido' || reg.buzon.carpetas_ilegibles)) && lista.length <= 1 && (!lista.length || lista[0].nombre === opts.maquina) };
   }
+  const u = umbrales(opts.umbralesArchivo || undefined);
   return {
     multi: Boolean(opts.buzon),
+    varias_maquinas: Boolean(opts.buzon),
     maquinas,
     buzon: reg.buzon,
     generado: new Date().toISOString(),
-    umbrales: umbrales().valores,
-    umbrales_motivo: umbrales().motivo,
+    umbrales: u.valores,
+    umbrales_motivo: u.motivo,
+    sin_hilos: opts.sinHilos ? SIN_HILOS : null,
     linea_base_pasos: lineaBasePasos(),
     registro: reg.registro,
     archivos: reg.archivos, duplicados: reg.duplicados, ilegibles: reg.ilegibles,
@@ -870,6 +888,58 @@ function modelo(runsDir, opts = {}) {
     sin_tiempos: motivoSinTiempos,
     corridas: reg.corridas,
   };
+}
+
+
+// ───────────────────────────── lo que viaja al sitio (story 2.27) ─────────────────────────────
+
+// Lo que sale del hilo en un sitio que no baja las conversaciones (sin disco o con `site.mailbox.threads` apagado).
+const SIN_HILOS = 'no medido: este sitio no baja las conversaciones';
+
+/**
+ * El id estable de una corrida (decisión 3): 16 hexadecimales del sha256 de «máquina \n sesión». Ni el índice de la lista
+ * (cambia con el filtro de cada persona) ni el id de sesión crudo (no se publica). Sin máquina, la máquina es ''.
+ */
+function idEstable(maquina, sid) {
+  return crypto.createHash('sha256').update(`${maquina == null ? '' : maquina}\n${sid}`).digest('hex').slice(0, 16);
+}
+
+/** Los nombres de los pasos desde la carpeta de skills de la imagen (`TYCON_SKILLS_DIR`): `fuente: 'skill'` si cargan. */
+function pasosDeLaImagen(skillsDir) {
+  const p = nombresDePasos(path.join(skillsDir, 'tycon-pipeline', 'scripts', 'lib', 'steps.js'));
+  return p.fuente === 'tabla' ? { ...p, fuente: 'skill' } : p;
+}
+
+const copiar = (x) => (x === undefined ? undefined : JSON.parse(JSON.stringify(x)));
+// las claves de la lista blanca, siempre todas (lo que falta va null: la forma no depende de qué midió la corrida)
+const elegir = (o, claves) => (o && typeof o === 'object' ? Object.fromEntries(claves.map((k) => [k, k in o ? copiar(o[k]) : null])) : o === undefined ? null : o);
+
+/**
+ * La corrida para la LISTA (AC 15): lista BLANCA, campo por campo — lo que usan la cabecera, las fichas, los gráficos y
+ * el filtro. La tabla, que usa más, se arma en el servidor. Nada del detalle ni de los textos.
+ */
+function paraLista(c) {
+  return {
+    id: c.id, story: c.story, producto: c.producto, maquina: c.maquina === undefined ? null : c.maquina, maquina_motivo: c.maquina_motivo === undefined ? null : c.maquina_motivo,
+    inicio: c.inicio, semana: c.semana, dur_ms: c.dur_ms, llego_al_final: c.llego_al_final, ultimo_paso: c.ultimo_paso,
+    tramos: copiar(c.tramos), sin_marca: copiar(c.sin_marca),
+    tiempos: elegir(c.tiempos, ['trabajo_ms', 'trabajo_medido', 'espera_humana_ms', 'espera_del_hilo_ms']),
+    controles: elegir(c.controles, ['total', 'error', 'freno', 'por_control']),
+    costo: elegir(c.costo, ['agentes', 'vueltas']),
+    validador: elegir(c.validador, ['estado', 'por_fase', 're_loops_decididos', 're_loops_sin_relanzar']),
+    consumo: elegir(c.consumo, ['estado', 'respuestas', 'tokens', 'por_paso', 'fuera_de_ventana']),
+  };
+}
+
+/** La corrida para su DETALLE: el modelo de la corrida tal cual (ya es lista blanca), sin los textos. */
+function paraDetalle(c) {
+  return JSON.parse(JSON.stringify(c, (k, v) => (k === '_texto' || k === '_textoGit' ? undefined : v)));
+}
+
+/** Los TEXTOS de una corrida (los cambios y los parches), con la forma de hoy: gzip en base64, ya saneados. */
+function textosDe(c) {
+  const x = c && c.cambios;
+  return { texto: (x && x._texto) || null, textoGit: (x && x._textoGit) || null };
 }
 
 // ───────────────────────────── la página ─────────────────────────────
@@ -937,22 +1007,98 @@ function filaControles(c) {
   }).join('');
 }
 
-function render(M) {
+/**
+ * La cabecera de la vista (story 2.27, decisión 12): el título, el sello y las bandas. `opts.sitio` = { rol, version }
+ * pone los textos fijos del modo sitio (decisión 14): la versión del sitio en lugar del commit y el eyebrow que enlaza el
+ * tablero sólo para quien mantiene. Sin conteos globales en el modelo (el de un dev), el sello no los nombra (AC 8).
+ */
+function cabecera(M, opts = {}) {
+  const sitio = opts.sitio || null;
   const C = M.corridas;
   const N = C.length;
-  const commit = (() => { try { return execSync('git rev-parse --short HEAD', { cwd: RAIZ, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim(); } catch (e) { return 'desconocido'; } })();
-  const escala = Math.max(1, ...C.map((c) => c.tramos.reduce((a, t) => a + t.ms, 0))) * 0.55;
   const conConsumo = C.filter((c) => c.consumo.estado === 'medido').length;
   const conControles = C.filter((c) => c.controles).length;
   const alFinal = C.filter((c) => c.llego_al_final).length;
+  const origen = sitio ? 'versión del sitio' : `commit ${esc((() => { try { return execSync('git rev-parse --short HEAD', { cwd: RAIZ, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim(); } catch (e) { return 'desconocido'; } })())}`;
+  const selloCorridas = Number.isFinite(M.archivos) ? `${N} de ${M.archivos} archivos · ${M.duplicados} duplicado${M.duplicados === 1 ? '' : 's'} · ${M.ilegibles} no se pudieron leer` : String(N);
+  const eyebrow = !sitio ? 'Tablero del arnés · vista de corridas · el arnés en seis preguntas: <span class="mono">artifacts/tablero-del-arnes.html</span>, en el repo del arnés'
+    : sitio.rol === 'maintainer' ? 'Sitio de la organización · vista de corridas · el arnés en seis preguntas: <a href="/arnes/tablero">el tablero del arnés</a>'
+      : 'Sitio de la organización · tus corridas';
+  const alcance = !M.multi || (M.maquinas && M.maquinas.solo_esta)
+    ? 'esta máquina'
+    : [...M.maquinas.lista.map((x) => `${x.nombre} ${x.corridas}`), ...(M.maquinas.sin_declarar ? [`sin declarar ${M.maquinas.sin_declarar}`] : [])].join(' · ') || (sitio ? 'ninguna máquina' : '');   // la vista local, igual que antes
+  const bandaBuzon = !M.multi || !M.buzon ? ''
+    // al dev del sitio le llega sólo si se leyó entero, sin el número de carpetas (decisión 6, AC 19)
+    : M.buzon.parcial !== undefined && !M.buzon.incompleto ? (M.buzon.estado !== 'leido' || M.buzon.parcial ? '<div class="banda gris"><b>Ojo:</b> puede faltar alguna corrida tuya: el buzón no se leyó entero. Lo que falta no es cero.</div>' : '')
+    // quien mantiene, en el sitio, cuando la última bajada no terminó entera: se sirve el último armado entero
+    : M.buzon.incompleto && M.buzon.estado === 'leido' && !M.buzon.carpetas_ilegibles ? '<div class="banda gris"><b>La última bajada del buzón no terminó entera.</b> Se muestra la última entera: pueden faltar las corridas más nuevas, y eso no es cero.</div>'
+    : M.buzon.estado !== 'leido' ? `<div class="banda gris"><b>No se leyó la carpeta bajada del buzón.</b> ${esc(M.buzon.motivo)} — las corridas de otras máquinas faltan, no son cero.</div>`
+    : M.buzon.carpetas_ilegibles ? `<div class="banda gris"><b>${M.buzon.carpetas_ilegibles} carpeta${M.buzon.carpetas_ilegibles === 1 ? '' : 's'} de máquina del buzón no se pudo leer.</b> Sus corridas no están en esta página ni en ningún número: faltan, no son cero.</div>`
+    : '';
+  // story 2.28: sin el archivo de uniones del bajador, la carpeta vieja de una máquina que se mudó sale como otra máquina
+  const bandaUniones = M.multi && M.buzon && M.buzon.uniones && M.buzon.uniones.estado === 'no_medidas'
+    ? `<div class="banda gris"><b>Carpetas de máquina:</b> uniones de carpetas no medidas (${esc(M.buzon.uniones.motivo)}). Cada carpeta del buzón sale como una máquina aparte, también la vieja de una máquina que se mudó a su carpeta con código.</div>`
+    : '';
+  // Con corridas del buzón, que esta máquina no tenga registro propio no deja las fichas sin medir: salen sólo
+  // con lo bajado. Decir «salen con trama» ahí era una alarma falsa al lado de números (pase adversarial de la 2.16).
+  const bandaRegistro = M.registro.estado === 'medido' || M.registro.estado === 'no_aplica' ? ''
+    : M.multi && M.corridas.length
+      ? `<div class="banda gris"><b>Sin registro de corridas propio en esta máquina.</b> ${esc(M.registro.motivo)} La página sale sólo con lo bajado del buzón: las corridas de esta máquina, si las hay, faltan.</div>`
+      : `<div class="banda gris"><b>Sin registro de corridas en esta máquina.</b> ${esc(M.registro.motivo)} Las fichas salen con trama, y eso no es cero.</div>`;
+  // 'skill': la tabla de pasos que trae la imagen del sitio (story 2.27) — con nombre, como 'tabla'
+  const bandaPasos = (M.pasos.fuente !== 'tabla' && M.pasos.fuente !== 'skill') || M.pasos.motivo ? `<div class="banda gris">${esc(M.pasos.motivo)}</div>` : '';
+  const bandaRescate = M.sin_rescate ? `<div class="banda gris">${esc(M.sin_rescate)}</div>` : '';
+  const bandaTiempos = M.sin_tiempos ? `<div class="banda gris">${esc(M.sin_tiempos)}</div>` : '';
+  const bandaUmbrales = M.umbrales_motivo ? `<div class="banda gris">${esc(M.umbrales_motivo)}</div>` : '';
+  return `<header class="head">
+  <div class="eyebrow">${eyebrow}</div>
+  <h1>Las corridas del pipeline</h1>
+  <p class="lede">Una fila por corrida: <b>en qué paso se fue el tiempo</b>, qué control encontró un error o frenó, cuántas vueltas dio y cuánto consumió. Los números salen del resumen que el archivador deja por corrida, y lo que no está registrado se dice, no se rellena. <b>De la conversación sólo se toman los archivos que tocó y sus cambios</b>, en el detalle de cada corrida.</p>
+  <div class="stamp"><span><b>Corridas:</b> ${selloCorridas}</span><span><b>Con consumo medido:</b> ${conConsumo} de ${N}</span><span><b>Con controles:</b> ${conControles} de ${N}</span><span><b>Llegaron al paso 8:</b> ${alFinal} de ${N}</span><span><b>Generado:</b> ${esc(M.generado.slice(0, 16).replace('T', ' '))} UTC · ${origen}</span><span><b>Alcance:</b> ${esc(alcance)}</span></div>
+  ${bandaBuzon}${bandaUniones}${bandaRegistro}${bandaPasos}${bandaRescate}${bandaTiempos}${bandaUmbrales}
+</header>
+`;
+}
 
+/** La capa ejecutiva: el glosario, el filtro y los contenedores que dibuja el cliente (las fichas y los gráficos). */
+function ejecutiva(M) {
+  return `<section id="ejecutiva">
+  <div class="q-head"><span class="q-n">01</span><h2>Lo que se mira primero</h2></div>
+  <div class="claves">
+    <div><b>Encontró un error</b><span>una prueba o la compilación no pasaron, y se arreglaron ahí mismo. <b>Es el control haciendo su trabajo.</b></span></div>
+    <div><b>Frenó</b><span>el control vio algo y no dejó pasar. También es el control funcionando.</span></div>
+    <div><b>Trama</b><span>«no medido»: esa corrida no registró ese dato. <b>No es cero ni es verde.</b></span></div>
+    <div><b>n=</b><span>al lado de cada mediana: de cuántas corridas sale el número, sobre cuántas hay.</span></div>
+  </div>
+  <div class="filtrera"><span class="fl">Filtro</span>
+    <label>desde <input type="date" id="f-desde"></label><label>hasta <input type="date" id="f-hasta"></label>
+    <label>producto <select id="f-repo"></select></label>${M.varias_maquinas ? `
+    <label>máquina <select id="f-maquina"></select></label>` : ''}
+    <label><input type="checkbox" id="fc"> sólo con consumo medido</label>
+    <label><input type="checkbox" id="ff"> sólo las que llegaron al paso 8</label>
+    <button id="f-limpiar">limpiar</button><span class="fcount" id="cuenta"></span></div>
+  <div class="grid" id="fichas"></div>
+  <div class="dos">
+    <div class="card"><h3>Corridas por semana</h3><div id="gsem"></div><p>Semana ISO. Una semana sin corridas se dibuja en cero: una barra ausente y una barra en cero no son lo mismo.</p></div>
+    <div class="card"><h3>Pasos por corrida, mes a mes (mediana)</h3><div id="gpasos"></div><p>Cuántas respuestas dio el modelo en cada corrida: <b>es lo que explica su consumo</b>, porque en cada paso relee todo lo anterior. Un punto por mes, con su <span class="mono">n</span>; un mes sin corridas medidas se deja en blanco y se dice — no es cero. La línea punteada es la línea base contra la que se compara. No tiene tope: primero la serie.</p></div>
+    <div class="card"><h3>Dónde se va el TIEMPO, por paso (mediana)</h3><div id="ppt"></div><p>Del arranque al fin de cada paso cuando la corrida lo anotó; en las corridas anteriores a esa marca, estimado del fin del paso anterior al fin de éste. El tiempo entre pasos no entra en ningún paso. Los pasos con marcas invertidas o empatadas salen fusionados y no entran en la mediana de ninguno de los dos (se dicen aparte).</p></div>
+    <div class="card"><h3>Dónde se van los TOKENS, por paso (mediana)</h3><div id="ppk"></div><p id="nota-tokens"></p></div>
+  </div>
+</section>
+`;
+}
+
+/** La tabla, armada en el servidor (decisión 12): usa campos que la lista no lleva (los archivos tocados). */
+function tabla(M) {
+  const C = M.corridas;
+  const escala = Math.max(1, ...C.map((c) => c.tramos.reduce((a, t) => a + t.ms, 0))) * 0.55;
   const filas = C.map((c, idx) => {
     const tk = c.consumo.estado === 'medido'
       ? miles(c.consumo.tokens.out + c.consumo.tokens.in + c.consumo.tokens.cache_new)
       : `<span class="nd" title="${esc(c.consumo.motivo)}">${esc(c.consumo.estado === 'borrada' ? 'borrada' : 'no medido')}</span>`;
-    return `<tr data-i="${idx}" id="c-${idx}">
+    return `<tr data-i="${idx}" data-id="${esc(c.id || '')}" id="c-${idx}">
       <td class="fecha">${esc((c.inicio || '').slice(0, 10) || 'sin fecha')}<small>${esc(c.semana || '')}</small></td>
-      <td class="story"><b>${esc(c.story || '—')}</b>${c.descripcion ? `<span class="desc" title="${esc(c.descripcion.texto)}">${esc(c.descripcion.texto)}</span>` : ''}<small>${esc(c.producto || 'producto sin registrar')}</small></td>${M.multi ? `
+      <td class="story"><b>${esc(c.story || '—')}</b>${c.descripcion ? `<span class="desc" title="${esc(c.descripcion.texto)}">${esc(c.descripcion.texto)}</span>` : ''}<small>${esc(c.producto || 'producto sin registrar')}</small></td>${M.varias_maquinas ? `
       <td class="maq-td">${c.maquina ? `<span class="maq">${esc(c.maquina)}</span>${c.maquina_nota ? `<small>${esc(c.maquina_nota)}</small>` : ''}` : `<span class="nd" title="${esc(c.maquina_motivo || '')}">sin declarar</span>`}</td>` : ''}
       <td class="barra">${barraTramos(c, escala)}</td>
       <td class="dur">${dur(c.dur_ms)}</td>
@@ -968,32 +1114,37 @@ function render(M) {
   }).join('\n');
 
   const leyenda = M.pasos.nombres.map((p, i) => `<span class="lg"><i style="background:${RAMPA[i]}"></i>${i} ${esc(p)}</span>`).join('');
-  const alcance = !M.multi || M.maquinas.solo_esta
-    ? 'esta máquina'
-    : [...M.maquinas.lista.map((x) => `${x.nombre} ${x.corridas}`), ...(M.maquinas.sin_declarar ? [`sin declarar ${M.maquinas.sin_declarar}`] : [])].join(' · ');
-  const bandaBuzon = !M.multi || !M.buzon ? ''
-    : M.buzon.estado !== 'leido' ? `<div class="banda gris"><b>No se leyó la carpeta bajada del buzón.</b> ${esc(M.buzon.motivo)} — las corridas de otras máquinas faltan, no son cero.</div>`
-    : M.buzon.carpetas_ilegibles ? `<div class="banda gris"><b>${M.buzon.carpetas_ilegibles} carpeta${M.buzon.carpetas_ilegibles === 1 ? '' : 's'} de máquina del buzón no se pudo leer.</b> Sus corridas no están en esta página ni en ningún número: faltan, no son cero.</div>`
-    : '';
-  // story 2.28: sin el archivo de uniones del bajador, la carpeta vieja de una máquina que se mudó sale como otra máquina
-  const bandaUniones = M.multi && M.buzon && M.buzon.uniones && M.buzon.uniones.estado === 'no_medidas'
-    ? `<div class="banda gris"><b>Carpetas de máquina:</b> uniones de carpetas no medidas (${esc(M.buzon.uniones.motivo)}). Cada carpeta del buzón sale como una máquina aparte, también la vieja de una máquina que se mudó a su carpeta con código.</div>`
-    : '';
-  // Con corridas del buzón, que esta máquina no tenga registro propio no deja las fichas sin medir: salen sólo
-  // con lo bajado. Decir «salen con trama» ahí era una alarma falsa al lado de números (pase adversarial de la 2.16).
-  const bandaRegistro = M.registro.estado === 'medido' ? ''
-    : M.multi && M.corridas.length
-      ? `<div class="banda gris"><b>Sin registro de corridas propio en esta máquina.</b> ${esc(M.registro.motivo)} La página sale sólo con lo bajado del buzón: las corridas de esta máquina, si las hay, faltan.</div>`
-      : `<div class="banda gris"><b>Sin registro de corridas en esta máquina.</b> ${esc(M.registro.motivo)} Las fichas salen con trama, y eso no es cero.</div>`;
-  const bandaPasos = M.pasos.fuente !== 'tabla' || M.pasos.motivo ? `<div class="banda gris">${esc(M.pasos.motivo)}</div>` : '';
-  const bandaRescate = M.sin_rescate ? `<div class="banda gris">${esc(M.sin_rescate)}</div>` : '';
-  const bandaTiempos = M.sin_tiempos ? `<div class="banda gris">${esc(M.sin_tiempos)}</div>` : '';
-  const bandaUmbrales = M.umbrales_motivo ? `<div class="banda gris">${esc(M.umbrales_motivo)}</div>` : '';
+  return `<section>
+  <div class="q-head"><span class="q-n">02</span><h2>Corrida por corrida</h2></div>
+  <p class="note">Ordenadas de la más nueva a la más vieja. La barra reparte el tiempo por paso con la rampa de abajo. <b>Clic en una fila</b> abre el detalle: la línea de tiempo con cada control en su carril, la tabla de controles y el consumo por paso.</p>
+  <div class="leyenda">${leyenda}<span class="lg"><i class="falta"></i>sin marca</span></div>
+  <div class="tabla"><table>
+    <thead><tr><th>fecha<small>semana ISO</small></th><th>story<small>producto</small></th>${M.varias_maquinas ? '<th>máquina<small>su carpeta</small></th>' : ''}<th>tiempo por paso</th><th>duró</th><th>trabajo<small>pasos con trabajo</small></th><th>espera<small>por una persona</small></th><th>pasos</th><th>agentes</th><th>vueltas</th><th>tokens</th><th>archivos<small>tocados</small></th><th>controles<small>los 3 que más pesan</small></th></tr></thead>
+    <tbody id="cuerpo">${filas}</tbody></table></div>
+</section>
+`;
+}
+
+/** El pie: las notas de la vista. En el sitio, «De dónde sale» dice el espejo del buzón (decisión 14). */
+function pie(M, opts = {}) {
+  const deDondeSale = opts.sitio
+    ? 'del espejo del buzón de corridas que el sitio baja con su identidad de sólo lectura; la máquina de cada corrida es su carpeta. Una corrida por sesión: si la misma corrida se subió dos veces, vale la más nueva.'
+    : `del registro global del archivador del pipeline (<span class="mono">~/.claude/.tycon-pipeline/timing-history</span>), una corrida por sesión: si la misma corrida se archivó dos veces, vale la más nueva. Lo ilegible se cuenta arriba.${M.multi ? ' <b>Y de la carpeta bajada del buzón de corridas</b> (story 2.16): la máquina de cada corrida es la carpeta que la contiene; lo que no está bajo una carpeta de máquina sale «sin declarar».' : ''}`;
+  return `<footer><div class="pie">
+  <div><b>De dónde sale</b><span>${deDondeSale}</span></div>
+  <div><b>Lo que se publica de git</b><span>los commits que la corrida creó y lo que dejó sin commitear, en cada repo donde escribió, con su parche: es el cambio real, venga de una edición, de la consola o de un subagente. Credenciales, correos, rutas absolutas y UUID salen tapados; tope de largo por archivo y por corrida, dicho donde corta. Las corridas anteriores a la story 2.19 no lo tienen y muestran sólo la conversación.</span></div>
+  <div><b>Lo que se publica del hilo</b><span>sólo los archivos que tocó cada corrida, su cambio y sus commits: rutas relativas al repo, credenciales y rutas absolutas tapadas, con tope de largo. Los prompts, las respuestas, los comandos y los identificadores de sesión no. Esta página no se commitea, pero se comparte. El mensaje de cada error llega del rescate de la story 2.13, saneado dos veces.</span></div>
+  <div><b>Tokens, no plata</b><span>el registro trae tokens; una tabla de precios adentro del arnés envejece sin que nadie lo note.</span></div>
+  <div><b>Lo que se mide de un revisor</b><span>cuánto tardó, cuánto devolvió y —si su notificación lo trajo— cuánto consumió; no lo que leyó. Lo que no se pudo medir se estima aparte y lleva la palabra «estimado», con la fecha de su supuesto: nunca se suma a lo medido.</span></div>
+  <div><b>Trabajo, espera y tiempo entre pasos</b><span>cada paso anota cuándo arranca y cuándo termina. <b>Espera</b> es lo que duraron los dos pasos que aguardan a una persona (aprobar el plan y aprobar los hallazgos); <b>trabajo</b>, todos los demás; lo que pasa entre el fin de un paso y el arranque del siguiente es un tramo aparte, rayado, que no se le cobra a ninguno. Las corridas anteriores a esa marca salen <b>estimadas por diferencia</b> y lo dicen; un paso de menos de un minuto se dibuja como una raya: se marcó junto con el anterior.</span></div>
+</div></footer>`;
+}
+
+function render(M) {
   // El texto de los cambios va FUERA del modelo, comprimido, un bloque por corrida: se descomprime al abrirlo.
   const textos = M.corridas.map((c, i) => (c.cambios && c.cambios._texto ? `<script type="text/plain" id="cz-${i}">${c.cambios._texto}</script>` : '')
     + (c.cambios && c.cambios._textoGit ? `<script type="text/plain" id="cg-${i}">${c.cambios._textoGit}</script>` : '')).join('');
   const modeloJson = JSON.stringify(M, (k, v) => (k === '_texto' || k === '_textoGit' ? undefined : v)).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
-
   return `<!doctype html>
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Las corridas del pipeline</title>
@@ -1002,55 +1153,10 @@ ${CSS_BASE}
 ${CSS_PROPIO}
 ${CSS_CHIPS}
 </style></head><body><div class="wrap">
-<header class="head">
-  <div class="eyebrow">Tablero del arnés · vista de corridas · el arnés en seis preguntas: <span class="mono">artifacts/tablero-del-arnes.html</span>, en el repo del arnés</div>
-  <h1>Las corridas del pipeline</h1>
-  <p class="lede">Una fila por corrida: <b>en qué paso se fue el tiempo</b>, qué control encontró un error o frenó, cuántas vueltas dio y cuánto consumió. Los números salen del resumen que el archivador deja por corrida, y lo que no está registrado se dice, no se rellena. <b>De la conversación sólo se toman los archivos que tocó y sus cambios</b>, en el detalle de cada corrida.</p>
-  <div class="stamp"><span><b>Corridas:</b> ${N} de ${M.archivos} archivos · ${M.duplicados} duplicado${M.duplicados === 1 ? '' : 's'} · ${M.ilegibles} no se pudieron leer</span><span><b>Con consumo medido:</b> ${conConsumo} de ${N}</span><span><b>Con controles:</b> ${conControles} de ${N}</span><span><b>Llegaron al paso 8:</b> ${alFinal} de ${N}</span><span><b>Generado:</b> ${esc(M.generado.slice(0, 16).replace('T', ' '))} UTC · commit ${esc(commit)}</span><span><b>Alcance:</b> ${esc(alcance)}</span></div>
-  ${bandaBuzon}${bandaUniones}${bandaRegistro}${bandaPasos}${bandaRescate}${bandaTiempos}${bandaUmbrales}
-</header>
-
-<section id="ejecutiva">
-  <div class="q-head"><span class="q-n">01</span><h2>Lo que se mira primero</h2></div>
-  <div class="claves">
-    <div><b>Encontró un error</b><span>una prueba o la compilación no pasaron, y se arreglaron ahí mismo. <b>Es el control haciendo su trabajo.</b></span></div>
-    <div><b>Frenó</b><span>el control vio algo y no dejó pasar. También es el control funcionando.</span></div>
-    <div><b>Trama</b><span>«no medido»: esa corrida no registró ese dato. <b>No es cero ni es verde.</b></span></div>
-    <div><b>n=</b><span>al lado de cada mediana: de cuántas corridas sale el número, sobre cuántas hay.</span></div>
-  </div>
-  <div class="filtrera"><span class="fl">Filtro</span>
-    <label>desde <input type="date" id="f-desde"></label><label>hasta <input type="date" id="f-hasta"></label>
-    <label>producto <select id="f-repo"></select></label>${M.multi ? `
-    <label>máquina <select id="f-maquina"></select></label>` : ''}
-    <label><input type="checkbox" id="fc"> sólo con consumo medido</label>
-    <label><input type="checkbox" id="ff"> sólo las que llegaron al paso 8</label>
-    <button id="f-limpiar">limpiar</button><span class="fcount" id="cuenta"></span></div>
-  <div class="grid" id="fichas"></div>
-  <div class="dos">
-    <div class="card"><h3>Corridas por semana</h3><div id="gsem"></div><p>Semana ISO. Una semana sin corridas se dibuja en cero: una barra ausente y una barra en cero no son lo mismo.</p></div>
-    <div class="card"><h3>Pasos por corrida, mes a mes (mediana)</h3><div id="gpasos"></div><p>Cuántas respuestas dio el modelo en cada corrida: <b>es lo que explica su consumo</b>, porque en cada paso relee todo lo anterior. Un punto por mes, con su <span class="mono">n</span>; un mes sin corridas medidas se deja en blanco y se dice — no es cero. La línea punteada es la línea base contra la que se compara. No tiene tope: primero la serie.</p></div>
-    <div class="card"><h3>Dónde se va el TIEMPO, por paso (mediana)</h3><div id="ppt"></div><p>Del arranque al fin de cada paso cuando la corrida lo anotó; en las corridas anteriores a esa marca, estimado del fin del paso anterior al fin de éste. El tiempo entre pasos no entra en ningún paso. Los pasos con marcas invertidas o empatadas salen fusionados y no entran en la mediana de ninguno de los dos (se dicen aparte).</p></div>
-    <div class="card"><h3>Dónde se van los TOKENS, por paso (mediana)</h3><div id="ppk"></div><p id="nota-tokens"></p></div>
-  </div>
-</section>
-
-<section>
-  <div class="q-head"><span class="q-n">02</span><h2>Corrida por corrida</h2></div>
-  <p class="note">Ordenadas de la más nueva a la más vieja. La barra reparte el tiempo por paso con la rampa de abajo. <b>Clic en una fila</b> abre el detalle: la línea de tiempo con cada control en su carril, la tabla de controles y el consumo por paso.</p>
-  <div class="leyenda">${leyenda}<span class="lg"><i class="falta"></i>sin marca</span></div>
-  <div class="tabla"><table>
-    <thead><tr><th>fecha<small>semana ISO</small></th><th>story<small>producto</small></th>${M.multi ? '<th>máquina<small>su carpeta</small></th>' : ''}<th>tiempo por paso</th><th>duró</th><th>trabajo<small>pasos con trabajo</small></th><th>espera<small>por una persona</small></th><th>pasos</th><th>agentes</th><th>vueltas</th><th>tokens</th><th>archivos<small>tocados</small></th><th>controles<small>los 3 que más pesan</small></th></tr></thead>
-    <tbody id="cuerpo">${filas}</tbody></table></div>
-</section>
-
-<footer><div class="pie">
-  <div><b>De dónde sale</b><span>del registro global del archivador del pipeline (<span class="mono">~/.claude/.tycon-pipeline/timing-history</span>), una corrida por sesión: si la misma corrida se archivó dos veces, vale la más nueva. Lo ilegible se cuenta arriba.${M.multi ? ' <b>Y de la carpeta bajada del buzón de corridas</b> (story 2.16): la máquina de cada corrida es la carpeta que la contiene; lo que no está bajo una carpeta de máquina sale «sin declarar».' : ''}</span></div>
-  <div><b>Lo que se publica de git</b><span>los commits que la corrida creó y lo que dejó sin commitear, en cada repo donde escribió, con su parche: es el cambio real, venga de una edición, de la consola o de un subagente. Credenciales, correos, rutas absolutas y UUID salen tapados; tope de largo por archivo y por corrida, dicho donde corta. Las corridas anteriores a la story 2.19 no lo tienen y muestran sólo la conversación.</span></div>
-  <div><b>Lo que se publica del hilo</b><span>sólo los archivos que tocó cada corrida, su cambio y sus commits: rutas relativas al repo, credenciales y rutas absolutas tapadas, con tope de largo. Los prompts, las respuestas, los comandos y los identificadores de sesión no. Esta página no se commitea, pero se comparte. El mensaje de cada error llega del rescate de la story 2.13, saneado dos veces.</span></div>
-  <div><b>Tokens, no plata</b><span>el registro trae tokens; una tabla de precios adentro del arnés envejece sin que nadie lo note.</span></div>
-  <div><b>Lo que se mide de un revisor</b><span>cuánto tardó, cuánto devolvió y —si su notificación lo trajo— cuánto consumió; no lo que leyó. Lo que no se pudo medir se estima aparte y lleva la palabra «estimado», con la fecha de su supuesto: nunca se suma a lo medido.</span></div>
-  <div><b>Trabajo, espera y tiempo entre pasos</b><span>cada paso anota cuándo arranca y cuándo termina. <b>Espera</b> es lo que duraron los dos pasos que aguardan a una persona (aprobar el plan y aprobar los hallazgos); <b>trabajo</b>, todos los demás; lo que pasa entre el fin de un paso y el arranque del siguiente es un tramo aparte, rayado, que no se le cobra a ninguno. Las corridas anteriores a esa marca salen <b>estimadas por diferencia</b> y lo dicen; un paso de menos de un minuto se dibuja como una raya: se marcó junto con el anterior.</span></div>
-</div></footer>
+${cabecera(M)}
+${ejecutiva(M)}
+${tabla(M)}
+${pie(M)}
 </div>
 <script id="modelo" type="application/json">${modeloJson}</script>
 ${textos}
@@ -1183,8 +1289,56 @@ ul.commits{margin:0;padding-left:16px;font-size:12px;color:var(--ink-2)}
 // todos salen del modelo embebido. Sin comillas invertidas ni `$` seguido de llave adentro: va
 // interpolado en un template del generador.
 const CLIENTE = String.raw`(function () {
-  var M = JSON.parse(document.getElementById('modelo').textContent);
+  // story 2.27: la FUENTE de los datos. Embebida en la página local (el modelo en #modelo y los textos en cz-N/cg-N,
+  // sin red); por la red en la pestaña del sitio (#fuente-corridas: la lista, el detalle al abrir una corrida y los
+  // textos al abrir un cambio, ya filtrados por el servidor). El resto del cliente es el mismo.
+  var FE = typeof document !== 'undefined' && document.getElementById('fuente-corridas');
+  var API = FE && FE.dataset && FE.dataset.api;
+  if (API) {
+    fetch(API, { credentials: 'same-origin' }).then(function (r) { if (!r.ok) throw new Error('el sitio contestó ' + r.status); return r.json(); }).then(function (M) {
+      // la tabla vino con la página: si el sitio rearmó entre la página y la lista, se recarga (nunca una mezcla)
+      if (FE.dataset.generado && M.generado !== FE.dataset.generado) { location.reload(); return; }
+      vista(M, fuenteRed(M));
+    }).catch(function (err) { var f = document.getElementById('fichas'); if (f) f.textContent = 'no se pudo traer la lista de corridas: ' + err.message; });
+  } else {
+    var M0 = JSON.parse(document.getElementById('modelo').textContent);
+    vista(M0, fuenteEmbebida(M0));
+  }
+  function fuenteEmbebida(M) {
+    return { forma: 'embebida',
+      detalle: function (i, fn) { fn(M.corridas[i]); },
+      texto: function (tipo, i) { var el = document.getElementById(tipo + '-' + i); return Promise.resolve(el ? el.textContent : null); } };
+  }
+  function fuenteRed(M) {
+    var det = {}, tx = {};
+    var pedir = function (ruta) { return fetch(ruta, { credentials: 'same-origin' }).then(function (r) { if (!r.ok) throw new Error('el sitio contestó ' + r.status); return r.json(); }); };
+    return { forma: 'red',
+      detalle: function (i, fn, falla) {
+        if (det[i]) { fn(det[i]); return; }
+        // la falla de la RED va a «falla»; una falla al dibujar el detalle no se disfraza de «no se pudo traer»
+        pedir(API + '/' + encodeURIComponent(M.corridas[i].id)).then(function (d) { det[i] = d; fn(d); }, function (err) { if (falla) falla(err); })
+          // una falla al DIBUJAR el detalle tampoco queda muda: la fila lo dice, y la consola lleva el error
+          .catch(function (err) { if (typeof console !== 'undefined') console.error(err); if (falla) { var e = new Error('no se pudo dibujar el detalle: ' + (err && err.message ? err.message : String(err))); e.alDibujar = true; falla(e); } });
+      },
+      texto: function (tipo, i) {
+        tx[i] = tx[i] || pedir(API + '/' + encodeURIComponent(M.corridas[i].id) + '/textos');
+        tx[i].catch(function () { delete tx[i]; });
+        return tx[i].then(function (t) { return tipo === 'cz' ? t.texto : t.textoGit; });
+      },
+      cargado: function (i) { return det[i]; } };
+  }
+
+  function vista(M, FUENTE) {
+  if (typeof window !== 'undefined') window.__fuente = { forma: FUENTE.forma };
   var C = M.corridas, PASOS = M.pasos.nombres, CTL = M.controles_nombres || {};
+  // la corrida entera de la fila i: la embebida, o el detalle que ya trajo la fuente
+  var DET = function (i) { return FUENTE.cargado ? FUENTE.cargado(i) : C[i]; };
+  // la corrida de una fila de la tabla, por su id (pase adversarial): en el sitio la tabla vino con la página y la lista
+  // en otro pedido, y entre los dos el filtro de la persona pudo cambiar. Por posición, la fila abriría OTRA corrida; por
+  // id, una fila que la lista ya no trae queda escondida y sin abrir. Sin id (una página vieja), la posición de siempre.
+  var POR_ID = {};
+  C.forEach(function (c, k) { if (c.id) POR_ID[c.id] = k; });
+  var enC = function (tr) { var id = tr.dataset && tr.dataset.id; if (id) return Object.prototype.hasOwnProperty.call(POR_ID, id) ? POR_ID[id] : null; return +tr.dataset.i; };
   var RAMPA = ['#BEE0DE','#9CD0CE','#79BFBE','#57ADAE','#3D9799','#2C8084','#1E6A70','#14555C','#0D4148'];
   var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]; }); };
   var n1 = function (x) { return (Math.round(x * 10) / 10).toString().replace('.', ','); };
@@ -1549,13 +1703,19 @@ const CLIENTE = String.raw`(function () {
   }
   // Los parches de git (story 2.19): mismo mecanismo que los cambios del hilo, en su propio bloque «cg-N».
   var cgCache = {};
+  // story 2.27: el bloque comprimido sale de la FUENTE (embebido en la página local, pedido al sitio en la pestaña)
+  function abrirGzip(b64) {
+    var bin = atob(String(b64).trim()); var bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).text().then(JSON.parse);
+  }
   function textosGit(idx) {
     if (cgCache[idx]) return cgCache[idx];
-    var el = document.getElementById('cg-' + idx);
-    if (!el) return Promise.reject(new Error('el cambio de git de esta corrida no está en la página'));
-    var bin = atob(el.textContent.trim()); var bytes = new Uint8Array(bin.length);
-    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    cgCache[idx] = new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).text().then(JSON.parse);
+    cgCache[idx] = FUENTE.texto('cg', idx).then(function (b64) {
+      if (!b64) throw new Error(FUENTE.forma === 'red' ? 'el cambio de git de esta corrida no está' : 'el cambio de git de esta corrida no está en la página');
+      return abrirGzip(b64);
+    });
+    cgCache[idx].catch(function () { delete cgCache[idx]; });
     return cgCache[idx];
   }
   function diffHtml(t) {
@@ -1566,7 +1726,7 @@ const CLIENTE = String.raw`(function () {
   }
   function pintarGit(det) {
     var caja = det.querySelector('.cg-txt'); if (det.dataset.listo) return;
-    var g = C[+det.dataset.cg].cambios.git, ai = +det.dataset.a, a = g.archivos[ai];
+    var g = DET(+det.dataset.cg).cambios.git, ai = +det.dataset.a, a = g.archivos[ai];
     var NOMBRE = { A: 'nuevo', M: 'modificado', D: 'borrado', R: 'renombrado' };
     textosGit(+det.dataset.cg).then(function (todos) {
       var tx = todos[ai] || [];
@@ -1600,11 +1760,11 @@ const CLIENTE = String.raw`(function () {
   var czCache = {};
   function textosDe(idx) {
     if (czCache[idx]) return czCache[idx];
-    var el = document.getElementById('cz-' + idx);
-    if (!el) return Promise.reject(new Error('el texto de esta corrida no está en la página'));
-    var bin = atob(el.textContent.trim()); var bytes = new Uint8Array(bin.length);
-    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    czCache[idx] = new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).text().then(JSON.parse);
+    czCache[idx] = FUENTE.texto('cz', idx).then(function (b64) {
+      if (!b64) throw new Error(FUENTE.forma === 'red' ? 'el texto de esta corrida no está' : 'el texto de esta corrida no está en la página');
+      return abrirGzip(b64);
+    });
+    czCache[idx].catch(function () { delete czCache[idx]; });
     return czCache[idx];
   }
   // Clic en una barra de consumo: en qué se fue esa ventana (herramientas y agentes, sólo nombres).
@@ -1640,7 +1800,7 @@ const CLIENTE = String.raw`(function () {
   }
   function pintarCambio(det) {
     var caja = det.querySelector('.cz-txt'); if (det.dataset.listo) return;
-    var e = C[+det.dataset.cz].cambios.lista[+det.dataset.k];
+    var e = DET(+det.dataset.cz).cambios.lista[+det.dataset.k];
     textosDe(+det.dataset.cz).then(function (todos) {
       var par = todos[e.r !== undefined ? e.r : +det.dataset.k] || ['', ''];
       var bloque = function (txt, clase, rot) { return txt ? '<div class="cz-lbl">' + rot + '</div><pre class="' + clase + '">' + esc(txt) + '</pre>' : ''; };
@@ -1649,7 +1809,10 @@ const CLIENTE = String.raw`(function () {
     }).catch(function (err) { caja.innerHTML = '<span class="nd">no se pudo abrir el cambio: ' + esc(err.message) + '</span>'; });
   }
 
-  function detalle(c) {
+  // story 2.27: 'idx' es la fila de la corrida en C. En el sitio, 'c' es el detalle que trajo la red (otro objeto que
+  // C[idx]): buscarlo con indexOf daba -1 y ningún cambio ni parche se podía abrir (pase adversarial)
+  function detalle(c, idx) {
+    if (idx === undefined) idx = C.indexOf(c);
     var chips = '<span class="chip ' + (c.llego_al_final ? 'ok' : 'warn') + '"><span class="g">' + (c.llego_al_final ? '●' : '◆') + '</span>' + (c.llego_al_final ? 'llegó al paso 8' : 'quedó en el paso ' + (c.ultimo_paso === null ? '?' : c.ultimo_paso)) + '</span>'
       + (c.controles && c.controles.error ? '<span class="chip bad"><span class="g">▲</span>' + c.controles.error + ' con error</span>' : '')
       + (c.controles && c.controles.freno ? '<span class="chip warn"><span class="g">◆</span>frenó ' + c.controles.freno + '</span>' : '')
@@ -1678,7 +1841,7 @@ const CLIENTE = String.raw`(function () {
       + notaTiempos(c)
       + (c.motivo_tramos ? ' <b>' + esc(c.motivo_tramos) + '.</b>' : '') + '</p>'
       + '<div class="minis">' + tarjetaLoQueEncontraron(c) + tarjetaControles(c) + tarjetaAgentes(c) + tarjetaConsumo(c) + '</div>'
-      + tarjetaCambios(c, C.indexOf(c)) + '</div>';
+      + tarjetaCambios(c, idx) + '</div>';
   }
   if (typeof window !== 'undefined') { window.__detalle = detalle; }
 
@@ -1764,7 +1927,9 @@ const CLIENTE = String.raw`(function () {
 
   function resumen(F) {
     var N = F.length;
-    if (!N) return ficha('El filtro no deja ninguna corrida', gris(M.registro.estado !== 'medido' ? M.registro.motivo : 'sin corridas en el filtro: ampliá el rango o cambiá de producto'));
+    // story 2.27 (AC 11): quien todavía no tiene corridas en el buzón no ve «0 corridas» como una medida
+    if (!C.length && M.vacio_motivo) return ficha('Todavía no hay corridas', gris(M.vacio_motivo));
+    if (!N) return ficha('El filtro no deja ninguna corrida', gris(M.registro.estado !== 'medido' && M.registro.motivo ? M.registro.motivo : 'sin corridas en el filtro: ampliá el rango o cambiá de producto'));
     var dur = F.filter(function (c) { return c.dur_ms; });
     var fin = F.filter(function (c) { return c.llego_al_final; });
     var gz = F.filter(function (c) { return c.controles; });
@@ -1787,6 +1952,9 @@ const CLIENTE = String.raw`(function () {
     // línea aparte, nunca adentro de la mediana (lo medido y lo estimado no se suman en el mismo número).
     var ePiso = F.filter(function (c) { return c.tiempos && c.tiempos.espera_humana_ms === null && c.tiempos.espera_del_hilo_ms; });
     var pisoEspera = ePiso.length ? '. <b>Aparte</b>, en otras ' + ePiso.length + ' corridas sin la espera de los pasos medida, la conversación muestra <b>al menos ' + dt(mediana(ePiso.map(function (c) { return c.tiempos.espera_del_hilo_ms; })) / 60000) + '</b> de espera (mediana): es un piso y no entra en el número de arriba' : '';
+    // story 2.27: sin las conversaciones (un sitio sin disco), la espera leída del hilo no se midió: se dice, no es cero
+    var sinHilo = M.sin_hilos ? '. La espera leída de la conversación: <b>' + esc(M.sin_hilos) + '</b>' : '';
+    pisoEspera += sinHilo;
     var sinArranque = 'ninguna corrida del filtro anotó el arranque de sus pasos (las anteriores a la story 2.7 no lo tienen): se estimaría por diferencia, y eso no se publica como medida';
     // story 7.3: el validador de stories por fase. Denominador = los lanzamientos que DEJARON veredicto
     // (limpio, con hallazgos o inconsistente); los sin veredicto y los que no volvieron (no_medido) se
@@ -1824,7 +1992,7 @@ const CLIENTE = String.raw`(function () {
       ficha('Agentes lanzados por corrida (mediana)', ag.length ? med(String(mediana(ag)), 'n=' + ag.length + ' de ' + N + ' corridas', { detalle: 'máximo ' + Math.max.apply(null, ag) + ' · ' + (N - ag.length) + ' no lo registran (anteriores al conteo mecánico)' }) : gris('ninguna corrida del filtro registró cuántos agentes lanzó')),
       ficha('Vueltas de revisión por corrida (mediana)', vu.length ? med(String(mediana(vu)), 'n=' + vu.length + ' de ' + N + ' corridas', { detalle: 'máximo ' + Math.max.apply(null, vu) + ' · la última vuelta de los revisores medidos (o de las fotos de iteración): la misma cuenta que el latido de la retrospectiva' }) : gris('ninguna corrida del filtro registró sus vueltas')),
       ficha('El validador de stories, por fase', fichaValidador),
-      ficha('Trabajo por corrida (mediana)', tMed.length ? med(dt(mediana(tMed.map(function (c) { return c.tiempos.trabajo_ms; })) / 60000), 'n=' + tMed.length + ' de ' + N + ' corridas', { detalle: 'los pasos con trabajo, del arranque al fin; sin la espera ni el tiempo entre pasos' }) : gris(sinArranque)),
+      ficha('Trabajo por corrida (mediana)', tMed.length ? med(dt(mediana(tMed.map(function (c) { return c.tiempos.trabajo_ms; })) / 60000), 'n=' + tMed.length + ' de ' + N + ' corridas', { detalle: 'los pasos con trabajo, del arranque al fin; sin la espera ni el tiempo entre pasos' + (M.sin_hilos ? ' (incluye las esperas que sólo se ven en la conversación: ' + esc(M.sin_hilos) + ')' : '') }) : gris(sinArranque + sinHilo)),
       ficha('Espera humana por corrida (mediana)', eMed.length ? med(dt(mediana(eMed.map(function (c) { return c.tiempos.espera_humana_ms; })) / 60000), 'n=' + eMed.length + ' de ' + N + ' corridas', { detalle: 'aprobar el plan y los hallazgos, más las preguntas y los turnos que esperaron una respuesta del dev (leídos de la conversación)' + pisoEspera }) : gris(sinArranque + pisoEspera)),
       ficha('Pasos de una corrida (mediana)', pa.length ? med(String(Math.round(mediana(pa))), 'n=' + pa.length + ' de ' + N + ' corridas', { detalle: (N - pa.length ? '<b>' + (N - pa.length) + '</b> no tienen sus pasos medidos (sin consumo medido): no entran en la mediana ni se estiman. ' : '') + 'Los tokens de al lado son su consecuencia: en cada paso el modelo relee todo lo anterior.' + (LB ? ' Línea base del ' + esc(LB.fecha) + ': <b>' + LB.mediana + '</b>' + (LB.corridas ? ' (n=' + LB.corridas + ')' : '') + '.' : ' <b>' + sinLB + '</b>.') }) : gris('ninguna corrida del filtro tiene sus pasos medidos: salen del consumo medido, y sin él no se estiman')),
       ficha('Tokens de una corrida (mediana)', tk.length ? med(miles(Math.round(mediana(tk))), 'n=' + tk.length + ' de ' + N + ' corridas', { detalle: 'de otras <b>' + (N - tk.length) + '</b> no hay consumo medido (conversación borrada antes del rescate, o corrida anterior a él)' }) : gris('ninguna corrida del filtro tiene su consumo medido'))
@@ -1879,7 +2047,7 @@ const CLIENTE = String.raw`(function () {
 
   // ─── el filtro ───
   var $ = function (id) { return document.getElementById(id); };
-  var elMaq = M.multi ? $('f-maquina') : null;
+  var elMaq = (M.varias_maquinas !== undefined ? M.varias_maquinas : M.multi) ? $('f-maquina') : null;
   var maqDe = function (c) { return c.maquina || '(sin declarar)'; };
   var elDesde = $('f-desde'), elHasta = $('f-hasta'), elRepo = $('f-repo'), elFc = $('fc'), elFf = $('ff'), elCuenta = $('cuenta'), elLimpiar = $('f-limpiar'), cuerpo = $('cuerpo');
   var fechas = C.map(function (c) { return (c.inicio || '').slice(0, 10); }).filter(Boolean).sort();
@@ -1900,12 +2068,22 @@ const CLIENTE = String.raw`(function () {
   // sola corrida no dice nada), y el detalle queda abierto arriba. Sirve de permalink y es lo que
   // permite fotografiar un detalle en Chrome headless, donde desplazar la página deja la captura en blanco.
   var qs = (typeof location !== 'undefined' && location.search) || '';
-  var mSolo = qs.match(/[?&]solo=(\d+)/);
-  var SOLO = mSolo ? Number(mSolo[1]) : null;
+  // story 2.27: el enlace nombra la corrida por su id estable (16 hexadecimales); en la página local vale también el
+  // índice de siempre. En el sitio, no: con el filtro de cada persona, el índice es otra corrida.
+  var filaDe = function (v) {
+    if (v == null) return null;
+    if (/^[0-9a-f]{16}$/.test(v)) { for (var k = 0; k < C.length; k++) if (C[k].id === v) return k; return null; }
+    return FUENTE.forma === 'embebida' && /^\d+$/.test(v) && Number(v) < C.length ? Number(v) : null;
+  };
+  var leer = function (nombre) { var m = qs.match(new RegExp('[?&]' + nombre + '=([^&]+)')); return m ? m[1] : null; };
+  var numero = function (nombre) { var v = leer(nombre); return v !== null && /^\d+$/.test(v) ? Number(v) : null; };
+  var SOLO = filaDe(leer('solo'));
+  var ENLACE = { abrir: SOLO !== null ? SOLO : filaDe(leer('abrir')), ver: numero('ver'), git: numero('git'), solo: SOLO, maquina: null };
   // '?maquina=<nombre>' deja el filtro por máquina puesto al cargar (story 2.16): el mismo permalink
   // que '?solo=N', y lo que permite fotografiar el filtro aplicado sin un clic.
   var mMaq = qs.match(/[?&]maquina=([^&]+)/);
-  if (elMaq && mMaq) { try { elMaq.value = decodeURIComponent(mMaq[1]); } catch (e) { /* un nombre mal escrito deja el filtro en «todas» */ } }
+  if (elMaq && mMaq) { try { elMaq.value = ENLACE.maquina = decodeURIComponent(mMaq[1]); } catch (e) { /* un nombre mal escrito deja el filtro en «todas» */ } }
+  if (typeof window !== 'undefined') window.__enlace = function () { return ENLACE; };
   if (SOLO !== null && typeof document !== 'undefined' && document.body && document.body.classList) document.body.classList.add('solo');
   function pasa(c) {
     if (SOLO !== null && C.indexOf(c) !== SOLO) return false;
@@ -1940,7 +2118,7 @@ const CLIENTE = String.raw`(function () {
     for (var i = 0; i < cuerpo.rows.length; i++) {
       var tr = cuerpo.rows[i];
       if (tr.classList.contains('fila-det')) { tr.hidden = tr.previousElementSibling.hidden; continue; }
-      var ok = pasa(C[+tr.dataset.i]); tr.hidden = !ok; if (ok) n++;
+      var k = enC(tr), ok = k !== null && pasa(C[k]); tr.hidden = !ok; if (ok) n++;
     }
     elCuenta.textContent = n + ' de ' + C.length + ' corridas a la vista';
   }
@@ -1950,33 +2128,53 @@ const CLIENTE = String.raw`(function () {
   aplicar();
 
   // ─── abrir / cerrar el detalle ───
-  function abrir(tr) {
+  // story 2.27: el detalle llega de la FUENTE (enseguida si está embebido; del sitio, al pedirlo). El turno hace que,
+  // con dos clics seguidos, sólo se abra el último: nunca dos detalles abiertos.
+  var turno = 0;
+  function cerrarAbierta() { var abierta = cuerpo.querySelector('.fila-det'); if (abierta) { abierta.previousElementSibling.classList.remove('abierta'); abierta.remove(); } }
+  function abrir(tr, alAbrir) {
     var sig = tr.nextElementSibling;
-    if (sig && sig.classList.contains('fila-det')) { sig.remove(); tr.classList.remove('abierta'); return; }
-    var abierta = cuerpo.querySelector('.fila-det'); if (abierta) { abierta.previousElementSibling.classList.remove('abierta'); abierta.remove(); }
-    var fila = document.createElement('tr'); fila.className = 'fila-det';
-    fila.innerHTML = '<td colspan="' + tr.children.length + '">' + detalle(C[+tr.dataset.i]) + '</td>';
-    tr.after(fila); tr.classList.add('abierta');
-    fila.querySelector('.cerrar').onclick = function () { fila.remove(); tr.classList.remove('abierta'); };
-    fila.querySelectorAll('details[data-cz]').forEach(function (d) { d.addEventListener('toggle', function () { if (d.open) pintarCambio(d); }); });
-    fila.querySelectorAll('details[data-cg]').forEach(function (d) { d.addEventListener('toggle', function () { if (d.open) pintarGit(d); }); });
-    fila.querySelectorAll('.cg-f').forEach(function (b) { b.addEventListener('click', function () { filtrarPorArchivo(fila, C[+tr.dataset.i], +b.dataset.g); }); });
-    fila.querySelectorAll('.tokbar').forEach(function (g) { g.addEventListener('click', function () { enQueSeFue(fila, C[+tr.dataset.i], +g.dataset.desde, +g.dataset.hasta); }); });
-    fila.querySelectorAll('.balde').forEach(function (g) { g.addEventListener('click', function () { filtrarCambios(fila, +g.dataset.desde, +g.dataset.hasta); }); });
-    return fila;
+    if (sig && sig.classList.contains('fila-det')) { sig.remove(); tr.classList.remove('abierta'); turno += 1; return; }
+    var i = enC(tr); if (i === null) return;
+    var mio = ++turno;
+    FUENTE.detalle(i, function (c) {
+      if (mio !== turno) return;
+      cerrarAbierta();
+      var fila = document.createElement('tr'); fila.className = 'fila-det';
+      fila.innerHTML = '<td colspan="' + tr.children.length + '">' + detalle(c, i) + '</td>';
+      tr.after(fila); tr.classList.add('abierta');
+      fila.querySelector('.cerrar').onclick = function () { fila.remove(); tr.classList.remove('abierta'); };
+      fila.querySelectorAll('details[data-cz]').forEach(function (d) { d.addEventListener('toggle', function () { if (d.open) pintarCambio(d); }); });
+      fila.querySelectorAll('details[data-cg]').forEach(function (d) { d.addEventListener('toggle', function () { if (d.open) pintarGit(d); }); });
+      fila.querySelectorAll('.cg-f').forEach(function (b) { b.addEventListener('click', function () { filtrarPorArchivo(fila, c, +b.dataset.g); }); });
+      fila.querySelectorAll('.tokbar').forEach(function (g) { g.addEventListener('click', function () { enQueSeFue(fila, c, +g.dataset.desde, +g.dataset.hasta); }); });
+      fila.querySelectorAll('.balde').forEach(function (g) { g.addEventListener('click', function () { filtrarCambios(fila, +g.dataset.desde, +g.dataset.hasta); }); });
+      if (alAbrir) alAbrir(fila);
+    }, function (err) {
+      if (mio !== turno) return;
+      cerrarAbierta();
+      var fila = document.createElement('tr'); fila.className = 'fila-det';
+      fila.innerHTML = '<td colspan="' + tr.children.length + '"><span class="nd">' + (err.alDibujar ? '' : 'no se pudo traer el detalle: ') + esc(err.message) + '</span></td>';
+      tr.after(fila); tr.classList.add('abierta');
+    });
   }
+  if (typeof window !== 'undefined') window.__abrirFila = function (tr) { abrir(tr); };
   cuerpo.addEventListener('click', function (ev) {
     var tr = ev.target.closest('tr'); if (!tr || !tr.dataset.i) return;
-    var fila = abrir(tr); if (fila) fila.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    abrir(tr, function (fila) { fila.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); });
   });
-  // '?abrir=N' abre el detalle de la fila N al cargar: es lo que permite fotografiarlo sin un clic.
-  // '?abrir=N' abre el detalle de la fila N al cargar (con '?solo=N' queda arriba de todo).
-  var q = qs.match(/[?&](?:abrir|solo)=(\d+)/);
-  if (q && cuerpo.rows && cuerpo.rows.length) { var fila0 = cuerpo.querySelector('tr[data-i="' + q[1] + '"]'); var fd = fila0 && abrir(fila0);
-    // '&ver=K' abre además el cambio K de esa corrida (para fotografiarlo).
-    var qv = qs.match(/[?&]ver=(\d+)/); if (fd && qv) { var dk = fd.querySelector('details[data-k="' + qv[1] + '"]'); if (dk) { dk.open = true; pintarCambio(dk); } }
-    // '&git=A' abre el archivo A de git (story 2.19, para fotografiarlo).
-    var qg = qs.match(/[?&]git=(\d+)/); if (fd && qg) { var dg = fd.querySelector('details[data-a="' + qg[1] + '"]'); if (dg) { dg.open = true; pintarGit(dg); } } }
+  // '?abrir=<id>' abre el detalle de esa corrida al cargar: es lo que permite fotografiarlo sin un clic (con '?solo=<id>'
+  // queda arriba de todo). En la página local vale también el índice de la fila.
+  if (ENLACE.abrir !== null && cuerpo.rows && cuerpo.rows.length) {
+    var fila0 = C[ENLACE.abrir].id ? cuerpo.querySelector('tr[data-id="' + C[ENLACE.abrir].id + '"]') : cuerpo.querySelector('tr[data-i="' + ENLACE.abrir + '"]');
+    if (fila0) abrir(fila0, function (fd) {
+      // '&ver=K' abre además el cambio K de esa corrida (para fotografiarlo).
+      if (ENLACE.ver !== null) { var dk = fd.querySelector('details[data-k="' + ENLACE.ver + '"]'); if (dk) { dk.open = true; pintarCambio(dk); } }
+      // '&git=A' abre el archivo A de git (story 2.19, para fotografiarlo).
+      if (ENLACE.git !== null) { var dg = fd.querySelector('details[data-a="' + ENLACE.git + '"]'); if (dg) { dg.open = true; pintarGit(dg); } }
+    });
+  }
+  }
 })();`;
 
 // ───────────────────────────── main ─────────────────────────────
@@ -2110,7 +2308,9 @@ function main(opts = {}) {
 }
 
 // `dentroDelRepoDelEquipo` también la usa dashboard.js (story 2.12): la página de seis preguntas tiene un solo escritor en el repo.
-module.exports = { main, modelo, leerRegistro, modeloDeCorrida, clasificar, agruparEventos, producto, unificarProductos, nombresDePasos, lineaBasePasos, render, CONTROLES, dentroDelRepoDelEquipo };
+module.exports = { main, modelo, leerRegistro, modeloDeCorrida, clasificar, agruparEventos, producto, unificarProductos, nombresDePasos, lineaBasePasos, render, CONTROLES, dentroDelRepoDelEquipo,
+  // story 2.27: lo que usa la pestaña Corridas del sitio
+  idEstable, paraLista, paraDetalle, textosDe, cabecera, ejecutiva, tabla, pie, CLIENTE, CSS_PROPIO, SIN_HILOS };
 
 if (require.main === module) {
   require('../../lib/legacy-names.js').aliasArgv('scripts/nightly/dashboard/runs.js');

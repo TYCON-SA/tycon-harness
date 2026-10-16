@@ -6,6 +6,7 @@
  * T22 Buzon_SoloConCredencialDeLectura              T40 Configuracion_UltimoBuenoBandaYFreno
  * T24 Despertar_CargandoYDespues                    T41 Configuracion_PlazoNoSeReiniciaAlDespertar
  * T45 2.28-Fuentes_InformadosFueraDelModelo_YCorridasConRepos (story 2.28: lo informado aparte del modelo)
+ * T26 2.27-Espejo_BajaHilosYCambios_SoloConThreads (story 2.27: hilos y cambios sólo con `site.mailbox.threads` y disco)
  *
  * Sin red: el repo de operaciones es un repo git por HTTP local que exige la cabecera (lib/git-http-server.js), el buzón
  * un servidor local con la forma de Azure Blob, y la identidad administrada un servidor local que hace de la plataforma.
@@ -39,13 +40,13 @@ const tmp = (p) => fs.mkdtempSync(path.join(os.tmpdir(), p));
 const entrar = async (h, emisor, email, t) => (await H.ingresar(h, emisor, { sub: `s-${email}`, email, email_verified: true, iat: Math.floor(t / 1000), exp: Math.floor(t / 1000) + 3600 })).sesion;
 
 /** Repo + buzón + fuentes, todo local. */
-async function montar({ archivos = {}, config, blobs = {}, mailbox = true, sasExtra = {}, credBuzon, ahora = () => T0, dataDir, firstMaintainer } = {}) {
+async function montar({ archivos = {}, config, blobs = {}, mailbox = true, sasExtra = {}, credBuzon, ahora = () => T0, dataDir, firstMaintainer, envExtra = {} } = {}) {
   const raiz = tmp('site-src-');
   const cfgOps = config || { version: 1, owners: { default: 'lead@acme.example' }, site: { maintainers: ['lead@acme.example'], ...(mailbox ? { mailbox: { provider: 'azure-blob', account: 'acmeruns', container: 'runs' } } : {}) } };
   const repo = repoConArchivos(raiz, 'ops.git', H.archivosDeOperaciones({ config: cfgOps, extra: archivos }), path.join(raiz, 'trabajo'));
   const git = await arrancarRepoHttp({ raiz, cabecera: CABECERA });
   const buzon = await H.arrancarBuzon({ blobs });
-  const env = H.envBase({ SITE_OPERATIONS_REPO: git.url('ops.git'), SITE_OPERATIONS_TOKEN: TOKEN, ...(credBuzon === undefined ? { SITE_MAILBOX_SAS: H.sas(sasExtra) } : credBuzon), ...(firstMaintainer ? { SITE_FIRST_MAINTAINER: firstMaintainer } : {}) });
+  const env = H.envBase({ SITE_OPERATIONS_REPO: git.url('ops.git'), SITE_OPERATIONS_TOKEN: TOKEN, ...(credBuzon === undefined ? { SITE_MAILBOX_SAS: H.sas(sasExtra) } : credBuzon), ...(firstMaintainer ? { SITE_FIRST_MAINTAINER: firstMaintainer } : {}), ...envExtra });
   const v = validarConfiguracion(env);
   assert.ok(v.ok, JSON.stringify(v.problemas));
   const llamadas = [];
@@ -511,4 +512,57 @@ test('T45 2.28-Fuentes_InformadosFueraDelModelo_YCorridasConRepos', { skip: SIN_
     await m.fuentes.refrescar();
     assert.deepStrictEqual(m.fuentes.estado().frenado, { desde: T0 + 24 * HORA, fallaDesde: T0 });
   } finally { await m.cerrar(); }
+});
+
+// 🔴 rojo previo: el espejo bajado como `--no-threads` siempre deja el detalle sin cambios ni antes y después
+test('T26 Espejo_BajaHilosYCambios_SoloConThreads @story-2.27 @ac-18', { skip: SIN_BACKEND }, async () => {
+  const zlib = require('zlib');
+  const blobs = {
+    'maq-a-11111111/s1.json': H.volcado('s1', `${HOY}T08:00:00Z`),
+    'maq-a-11111111/s1.hilo.jsonl.gz': zlib.gzipSync('{"type":"user"}\n'),
+    'maq-a-11111111/s1.cambio.json.gz': zlib.gzipSync('{"version":1,"estado":"medido","repos":[]}'),
+    'maq-a-11111111/registros/place.json': JSON.stringify({ install: { version: '2026.10.15.1' } }),
+  };
+  const mb = (threads) => ({ provider: 'azure-blob', account: 'acmeruns', container: 'runs', ...(threads === undefined ? {} : { threads }) });
+  const cfgOps = (threads) => ({ version: 1, owners: { default: 'lead@acme.example' }, site: { maintainers: ['lead@acme.example'], mailbox: mb(threads) } });
+  const enEspejo = (m) => { const d = path.join(m.dataDir, 'buzon', 'maq-a-11111111'); return fs.existsSync(d) ? fs.readdirSync(d).sort() : []; };
+  const gets = (m, f) => m.buzon.pedidos.filter((p) => p.ruta.endsWith(f) && !/comp=list/.test(p.query)).length;
+
+  // con `threads: true` y un disco del sitio (SITE_DATA_DIR): los cuatro, y la segunda bajada no vuelve a bajar nada
+  const disco = tmp('site-disco-');
+  let m = await montar({ blobs, config: cfgOps(true), dataDir: disco, envExtra: { SITE_DATA_DIR: disco } });
+  try {
+    await m.fuentes.refrescar();
+    assert.deepStrictEqual(enEspejo(m), ['registros', 's1.cambio.json.gz', 's1.hilo.jsonl.gz', 's1.json']);
+    assert.strictEqual(m.fuentes.hilos(), true, 'la pestaña sabe que el espejo trae las conversaciones');
+    const antes = gets(m, 's1.hilo.jsonl.gz');
+    assert.strictEqual(antes, 1);
+    await m.fuentes.refrescar();
+    assert.strictEqual(gets(m, 's1.hilo.jsonl.gz'), antes, 'lo que ya está no se vuelve a bajar');
+    assert.strictEqual(gets(m, 's1.cambio.json.gz'), 1);
+  } finally { await m.cerrar(); }
+
+  // sin la clave (como la 2.23): sólo volcados y registros
+  m = await montar({ blobs, config: cfgOps(undefined) });
+  try {
+    await m.fuentes.refrescar();
+    assert.deepStrictEqual(enEspejo(m), ['registros', 's1.json']);
+    assert.strictEqual(m.fuentes.hilos(), false);
+  } finally { await m.cerrar(); }
+
+  // `threads: true` sin SITE_DATA_DIR (un disco que se pierde al dormir): tampoco
+  m = await montar({ blobs, config: cfgOps(true) });
+  try {
+    await m.fuentes.refrescar();
+    assert.deepStrictEqual(enEspejo(m), ['registros', 's1.json']);
+    assert.strictEqual(m.fuentes.hilos(), false);
+    assert.match(m.registro.join('\n'), /SITE_DATA_DIR/, 'el registro dice por qué no baja las conversaciones');
+  } finally { await m.cerrar(); }
+
+  // con una SAS que escribe, nada
+  m = await montar({ blobs, config: cfgOps(true), sasExtra: { sp: 'rlw' }, dataDir: disco, envExtra: { SITE_DATA_DIR: disco } });
+  try {
+    await m.fuentes.refrescar();
+    assert.strictEqual(m.buzon.pedidos.length, 0);
+  } finally { await m.cerrar(); fs.rmSync(disco, { recursive: true, force: true }); }
 });
