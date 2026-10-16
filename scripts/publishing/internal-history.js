@@ -496,6 +496,9 @@ function publishedTeam(repo, tree, name, { strict }) {
       if (sh.ofFile(source, e.ruta).some((piece) => piece.kind !== 'translation')) files.set(e.ruta, { real: e.ruta, text: textOf(source, e.ruta, e.ruta) });
     }
   }
+  // lo que la publicación misma escribe en la copia (la lista blanca, `generated`: hoy version.json) también está en
+  // ella: nombrarlo no es nombrar un archivo del equipo (banco 13618, grupo C — las guías que hablan de version.json)
+  for (const g of (ctx.lista && ctx.lista.generated) || []) if (g && typeof g.target === 'string') copyPaths.push(g.target);
   const team = withFolders(blobOf.keys());
   const copy = withFolders(copyPaths);
   const pathsEnv = { has: (p) => copy.has(p), team: (p) => team.has(p), conventions: ((ctx.lista && ctx.lista.readerConventions) || []).map((c) => c.path), installPrefixes: installPrefixes() };

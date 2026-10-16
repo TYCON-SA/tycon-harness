@@ -309,8 +309,12 @@ it('T5 StateWriters_AskStateDir_SamePaths_FrenoLeftForD', () => {
 
 it('T6 TreeReaders_AskMaintainedDir_SameToday_NightlyWritersUntouched', () => {
   const H = require(HOME_JS);
-  // hoy, el árbol de quien pregunta (desde la B: el clon que se mantiene, o nada)
-  assert.strictEqual(H.maintainedDir(os.homedir(), ROOT), ROOT);
+  // hoy, el árbol de quien pregunta (desde la B: el clon que se mantiene, o nada). Con una HOME de laboratorio: con la
+  // de la máquina la respuesta dependía de cómo está instalado el arnés ahí (en una máquina con la versión bajada, el
+  // clon declarado en su configuración), no del árbol (banco 13618, grupo C)
+  const casa = fs.realpathSync(tmp('tycon-home-t6-'));
+  assert.strictEqual(H.maintainedDir(casa, ROOT), ROOT);
+  fs.rmSync(casa, { recursive: true, force: true });
   for (const f of ['scripts/hooks/retro-pending.js', 'scripts/hooks/retro-staleness-notice.js', 'scripts/hooks/dependencies-notice.js']) {
     assert.ok(/maintainedDir\(/.test(fs.readFileSync(path.join(ROOT, f), 'utf8')), `${f}: no le pide el árbol que se mantiene a tycon-home.js`);
   }
