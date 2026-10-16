@@ -24,6 +24,7 @@
           "pipelines/templates/correr-suites.yml",
           "pipelines/templates/fetch-snapshot.yml",
           "pipelines/templates/traer-repos.yml",
+          "pipelines/operations/**",
           "guides/**",
           "scripts/**"
         ],

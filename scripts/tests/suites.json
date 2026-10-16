@@ -354,6 +354,11 @@
       "requiere": []
     },
     {
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/adversarial-launch.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "arnes",
       "ruta": "tests/backfill-discovery.test.js",
       "requiere": []
@@ -806,6 +811,11 @@
     {
       "raiz": "arnes",
       "ruta": "tests/step-times.test.sh",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/adversarial-launch-delay.test.sh",
       "requiere": []
     },
     {
