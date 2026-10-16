@@ -18,6 +18,14 @@ FALLOS=0
 ok()  { echo "  ok   — $1"; }
 mal() { echo "  MAL  — $1"; FALLOS=$((FALLOS+1)); }
 
+# 🔴 Esta suite NO toca el tablero del repo (gemelo de dashboard.test.sh C-27 y dashboard-runs.test.sh T15). El
+#    2026-10-16: 2.24-T20 corría la página del equipo con --nightly y sin --output, que la escribe en
+#    artifacts/tablero-del-arnes.html del repo; en la misma tanda que dashboard-runs, ésa la veía cambiar y se ponía
+#    roja de a ratos (tres veces el 15/10). Cada página que genera esta suite va a su temporal; T24, al final, lo cuida.
+huella() { python3 -c "import hashlib,sys;print(hashlib.sha256(open(sys.argv[1],'rb').read()).hexdigest())" "$1" 2>/dev/null || echo AUSENTE; }
+ENTREGABLE_SEIS="${RAIZ}/artifacts/tablero-del-arnes.html"
+HUELLA_SEIS_ANTES="$(huella "${ENTREGABLE_SEIS}")"
+
 echo "== download-runs.test.sh =="
 [ -f "${BAJAR}" ] || { mal "no existe ${BAJAR} (rojo previo: el script todavía no está)"; echo; echo "${FALLOS} fallo(s)"; exit 1; }
 
@@ -686,7 +694,7 @@ t = sys.stdin.read()
 i = 0 if t.startswith('{') else t.find('\n{') + 1
 print(json.dumps(f(json.JSONDecoder().raw_decode(t[i:])[0]), sort_keys=True, indent=1))" 2>/dev/null; }
   TYCON_MACHINE=maq-otra node "${TABLERO}" --view runs --runs-dir "${T}/vacio" --mailbox "${E}" --json --dry-run 2>/dev/null | sed "s#${E}#ESPEJO#g" | sin_hora > "${T}/${B}-runs.json"
-  TYCON_MACHINE=maq-otra node "${TABLERO}" --nightly --mailbox "${E}" --mailbox-state "${T}/${B}-estado.json" --json > "${T}/${B}-noche.crudo" 2>/dev/null
+  TYCON_MACHINE=maq-otra node "${TABLERO}" --nightly --mailbox "${E}" --mailbox-state "${T}/${B}-estado.json" --output "${T}/${B}-noche.html" --json > "${T}/${B}-noche.crudo" 2>/dev/null
   # el nocturno imprime su resumen de fuentes y después el modelo en JSON: se toma el JSON
   sed "s#${E}#ESPEJO#g; s#${T}/${B}#CASO#g" "${T}/${B}-noche.crudo" | sin_hora > "${T}/${B}-noche.json"
 done
@@ -1046,6 +1054,10 @@ T="${BASE}/t23d"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token;
 bajar "${T}" "${T}/bin/az"
 [ "${RC}" -eq 1 ] && [ "$(campo "${T}" estado)" = "servicio_fallo" ] && [ "$(campo "${T}" completo)" = "false" ] \
   && ok "T23 un listado que no es un listado: servicio_fallo, exit 1, completo false" || mal "T23d rc=${RC} estado=$(campo "${T}" estado) completo=$(campo "${T}" completo)"
+
+# ── T24 · esta suite NO toca el tablero del repo (ver la cabecera) ───────────────────────────────────────────────
+[ "$(huella "${ENTREGABLE_SEIS}")" = "${HUELLA_SEIS_ANTES}" ] && ok "T24 la suite no tocó artifacts/tablero-del-arnes.html" \
+  || mal "T24 la suite ESCRIBIÓ artifacts/tablero-del-arnes.html — algún caso genera la página del equipo sin --output a un temporal"
 
 echo
 [ "${FALLOS}" -eq 0 ] && { echo "bajar-corridas: todo verde"; exit 0; } || { echo "${FALLOS} fallo(s)"; exit 1; }
