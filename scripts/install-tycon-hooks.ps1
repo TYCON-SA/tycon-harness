@@ -1252,6 +1252,8 @@ if ((Integ-Prendida 'mailbox') -and $env:TYCON_NO_UPLOAD_RUNS -ne '1' -and -not 
         $upLine = (@($upJs, '--budget-ms', '90000', '--log', $upLog) | ForEach-Object { '"' + (("$_" -replace '(\\*)"', '$1$1\"') -replace '(\\+)$', '$1$1') + '"' }) -join ' '
         $upStart = @{ FilePath = 'node'; ArgumentList = $upLine }
         if ($IsWindows) { $upStart.WindowStyle = 'Hidden' } else { $upStart.RedirectStandardOutput = '/dev/null' }
+        # la constancia de que se lanzó, antes de lanzar: si node muere sin escribir nada, el registro igual lo dice
+        Add-Content -LiteralPath $upLog -Value ("[{0}] tycon: el arranque lanza la subida de corridas" -f (Get-Date).ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss')) -Encoding utf8 -ErrorAction SilentlyContinue
         Start-Process @upStart -ErrorAction Stop
     } catch { Write-Host "!! tycon: no pude lanzar la subida de corridas al buzón ($($_.Exception.Message))" }
 }

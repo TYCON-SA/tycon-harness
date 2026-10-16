@@ -337,7 +337,7 @@ function measureStartupTiming({ home, clone, env, pwsh, scratch, runs = 5, start
  * Sin TF_BUILD a propósito: dentro de un agente de CI la subida no se lanza (story 2.12), y acá se mide una máquina.
  */
 function measureMailboxUpload({ home, clone, env, pwsh, scratch, waitMs = 90000 }) {
-  const facts = { launched: false, log_lines: 0, puts: 0, blobs: [], gz_intact: null, waited_s: null, problems: [] };
+  const facts = { launched: false, arrived: false, log_lines: 0, puts: 0, blobs: [], gz_intact: null, waited_s: null, problems: [] };
   const applier = path.join(clone, 'scripts', 'install-tycon-hooks.ps1');
   if (!pwsh || !fs.existsSync(applier)) { facts.problems.push(!pwsh ? 'sin pwsh en el PATH' : `sin ${applier}`); return facts; }
   fs.mkdirSync(scratch, { recursive: true });
@@ -349,6 +349,9 @@ function measureMailboxUpload({ home, clone, env, pwsh, scratch, waitMs = 90000 
   const portFile = path.join(scratch, 'puerto.txt');
   const reqFile = path.join(scratch, 'pedidos.jsonl');
   const bodies = path.join(scratch, 'cuerpos');
+  const log = path.join(home, '.claude', '.tycon-pipeline', 'upload-runs.log');
+  // de cero: un registro, un puerto o pedidos de una medición anterior en la misma carpeta darían un verde sin medir
+  for (const f of [portFile, reqFile, bodies, log]) fs.rmSync(f, { recursive: true, force: true });
   fs.mkdirSync(bodies, { recursive: true });
   fs.writeFileSync(server, [
     "const http = require('http'), fs = require('fs'), path = require('path');",
@@ -360,10 +363,12 @@ function measureMailboxUpload({ home, clone, env, pwsh, scratch, waitMs = 90000 
     'setTimeout(() => process.exit(0), 300000);',
   ].join('\n'));
   const srv = cp.spawn(process.execPath, [server, portFile, reqFile, bodies], { stdio: 'ignore', windowsHide: true });
+  let spawnError = null;
+  srv.on('error', (e) => { spawnError = e; });
   try {
     let port = null;
     for (let i = 0; i < 50 && !port; i++) { try { port = fs.readFileSync(portFile, 'utf8').trim() || null; } catch (_) { sleep(100); } }
-    if (!port) { facts.problems.push('el buzón de mentira no arrancó'); return facts; }
+    if (!port) { facts.problems.push(`el buzón de mentira no arrancó${spawnError ? `: ${spawnError.message}` : ''}`); return facts; }
     // la corrida de muestra y la llave de mentira (sólo crear, como la de verdad; la firma armada por partes)
     const hist = path.join(scratch, 'timing-history');
     fs.mkdirSync(hist, { recursive: true });
@@ -382,20 +387,24 @@ function measureMailboxUpload({ home, clone, env, pwsh, scratch, waitMs = 90000 
     const r = L.run(pwsh, ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', applier], { cwd: home, env: applierEnv, timeoutMs: BLOCK_TIMEOUT_MS });
     if (r.error || r.exit !== 0) facts.problems.push(`el aplicador salió ${r.error || r.exit}: ${lastLines(r.stderr) || lastLines(r.stdout)}`);
     // la subida corre de fondo: se espera a que lleguen los dos archivos de la corrida, o al tope
-    const log = path.join(home, '.claude', '.tycon-pipeline', 'upload-runs.log');
     const t0 = Date.now();
     const pedidos = () => { try { return fs.readFileSync(reqFile, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)); } catch (_) { return []; } };
-    while (Date.now() - t0 < waitMs && pedidos().filter((p) => /9\.9-20261015T000000Z/.test(p.url)).length < 2) sleep(500);
+    const llegaron = (all) => ['.json', '.hilo.jsonl.gz'].every((ext) => all.some((p) => p.method === 'PUT' && p.url.endsWith(`9.9-20261015T000000Z${ext}`)));
+    while (Date.now() - t0 < waitMs && !llegaron(pedidos())) sleep(500);
     facts.waited_s = Math.round((Date.now() - t0) / 100) / 10;
-    facts.launched = fs.existsSync(log);
-    try { facts.log_lines = fs.readFileSync(log, 'utf8').split('\n').filter(Boolean).length; } catch (_) { /* sin registro */ }
+    let texto = '';
+    try { texto = fs.readFileSync(log, 'utf8'); } catch (_) { /* sin registro */ }
+    // la constancia que deja el .ps1 al lanzarla (el registro se borró antes de medir: es de esta corrida)
+    facts.launched = /el arranque lanza la subida de corridas/.test(texto);
+    facts.log_lines = texto.split('\n').filter(Boolean).length;
     const all = pedidos();
     facts.puts = all.filter((p) => p.method === 'PUT').length;
     facts.blobs = all.map((p) => `${p.method} ${p.url}`).slice(0, 20);
-    const gz = all.find((p) => /\.hilo\.jsonl\.gz$/.test(p.url));
+    facts.arrived = llegaron(all);
+    const gz = all.find((p) => p.url.endsWith('9.9-20261015T000000Z.hilo.jsonl.gz'));
     if (gz) { try { facts.gz_intact = zlib.gunzipSync(fs.readFileSync(gz.file)).equals(hilo); } catch (e) { facts.gz_intact = false; facts.problems.push(`el hilo que llegó no se descomprime: ${e.message}`); } }
-    if (!facts.launched) facts.problems.push('el arranque no lanzó la subida: no quedó upload-runs.log');
-    else if (!gz) facts.problems.push(`la subida corrió pero no llegó la corrida de muestra (${facts.puts} PUT): ${lastLines(fs.readFileSync(log, 'utf8'))}`);
+    if (!facts.launched) facts.problems.push(`el arranque no lanzó la subida: ${texto ? `el registro no trae la constancia (${lastLines(texto)})` : 'no quedó upload-runs.log'}`);
+    else if (!facts.arrived) facts.problems.push(`la subida corrió pero no llegó la corrida de muestra entera (${facts.puts} PUT): ${lastLines(texto)}`);
     return facts;
   } finally {
     try { srv.kill(); } catch (_) { /* ya terminó */ }
@@ -555,7 +564,7 @@ function measure({ lab, out, fence, platform = process.platform, disposable = fa
       if (chosen.path_first) { const k = L.pathKey(env); env[k] = `${chosen.path_first}${path.delimiter}${env[k] || ''}`; }
       process.stdout.write(`install: ${chosen.id} — mido la subida de corridas al buzón (contra un buzón de mentira)\n`);
       const up = rec.fact('mailbox_upload', Object.assign({ variant: chosen.id }, measureMailboxUpload({ home: chosen.home, clone: chosen.clone, env, pwsh, scratch: path.join(scratch, 'mailbox-upload') })));
-      if (!up.launched || up.gz_intact !== true) finding(`install:${chosen.id}:mailbox-upload`, 'install', up.problems.join(' · ') || 'la corrida de muestra no llegó entera al buzón de mentira', 'W4');
+      if (!up.launched || !up.arrived || up.gz_intact !== true) finding(`install:${chosen.id}:mailbox-upload`, 'install', up.problems.join(' · ') || 'la corrida de muestra no llegó entera al buzón de mentira', 'W4');
     } catch (e) { rec.fact('mailbox_upload', { variant: chosen.id, problems: [`la medición tiró: ${e.message}`] }); }
   }
   L.writeJsonAtomic(path.join(lab, 'lab-state.json'), { schema: L.SCHEMA, source, allow_temp: allowTemp, measured_variant: chosen });

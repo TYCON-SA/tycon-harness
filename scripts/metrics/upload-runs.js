@@ -889,12 +889,18 @@ function salidaAlRegistro(archivo) {
     try { if (fs.statSync(archivo).size > 524288) fs.renameSync(archivo, `${archivo}.1`); } catch (_) { /* no había registro */ }
     const fd = fs.openSync(archivo, 'a');
     const escribir = (trozo, enc, cb) => {
-      try { fs.writeSync(fd, typeof trozo === 'string' ? trozo : Buffer.from(trozo)); } catch (_) { /* el registro es lo de menos */ }
+      // si el registro no se puede escribir (disco lleno, bloqueado), el trozo va a la salida de error de siempre
+      try { fs.writeSync(fd, typeof trozo === 'string' ? trozo : Buffer.from(trozo)); } catch (_) { try { fs.writeSync(2, trozo); } catch (__) { /* sin salida */ } }
       if (typeof enc === 'function') enc(); else if (typeof cb === 'function') cb();
       return true;
     };
     process.stdout.write = escribir;
     process.stderr.write = escribir;
+    // lo que Node imprimiría por su cuenta (una excepción o un rechazo sin atrapar) iría directo a la salida de error, que
+    // en el arranque de Windows es una ventana oculta: va al registro, y la corrida sale 1
+    const caida = (e) => { escribir(`[${new Date().toISOString().slice(0, 19).replace('T', ' ')}] error inesperado: ${e && e.stack ? e.stack : e}\n`); process.exit(1); };
+    process.on('uncaughtException', caida);
+    process.on('unhandledRejection', caida);
     return true;
   } catch (e) {
     console.error(`no pude abrir el registro ${archivo}: ${e.message} — la salida sigue por la terminal`);
@@ -920,6 +926,10 @@ if (require.main === module) {
     process.exitCode = codigo;
   }, (e) => {
     console.error(`[${stamp()}] error inesperado: ${e && e.stack ? e.stack : e}`);
+    process.exitCode = 1;
+  }).catch((e) => {
+    // un error al informar el resultado (después de subir) también se dice
+    console.error(`[${stamp()}] error inesperado al informar: ${e && e.stack ? e.stack : e}`);
     process.exitCode = 1;
   });
 }
