@@ -51,6 +51,8 @@ const SYNC_REF = 'mirror/sync';       // el canal `latest` del repo público: la
 const DEFAULT_BUDGET_S = 15;
 const PUBLIC_REMOTES_FILE = path.join('scripts', 'setup', 'public-remotes.json');
 const VERSION_FILE = 'version.json';
+/** Cuánto puede esperar una punta su etiqueta antes de que se diga (la pone un proceso de GitHub en un minuto). */
+const PENDING_TAG_SAY_MS = 6 * 60 * 60 * 1000;
 const THIRD_PARTY_STATE = 'third-party-state.json';   // en la carpeta del estado (tycon-home.js stateDir())
 const GIT_MAX_BUFFER = 256 * 1024 * 1024;
 
@@ -390,6 +392,11 @@ function versionAt(dir, rev, { env } = {}) {
     const short = String(rev).slice(0, 12);
     return problem(commit.timedOut || commit.err ? `no pude mirar el commit ${short} (${why(commit)})` : `el commit ${short} no está en el clon`);
   }
+  // el número de la etiqueta que puso el merge, si el commit la tiene (las trae el fetch: `fetchRef`)
+  // sólo las LIVIANAS (`objecttype` commit), como en `info/refs` y en la API: una anotada puesta a mano no numera
+  const tagged = git(dir, ['for-each-ref', '--points-at', commit.out, '--format=%(objecttype) %(refname)', `refs/tags/${versionOrder.TAG_PREFIX}*`], { env, timeout: 10000 });
+  const byTag = tagged.ok ? versionOrder.bestTag(lines(tagged.out).filter((l) => l.startsWith('commit ')).map((l) => l.slice('commit '.length))) : null;
+  if (byTag) return { status: 'ok', version: byTag, reason: null, tagged: true };
   const listed = git(dir, ['ls-tree', '--name-only', commit.out, '--', VERSION_FILE], { env, timeout: 10000 });
   if (!listed.ok) return problem(`no pude listar el commit ${commit.out.slice(0, 7)} (${why(listed)})`);
   if (!lines(listed.out).includes(VERSION_FILE)) return { status: 'absent', version: null, reason: null };
@@ -399,7 +406,8 @@ function versionAt(dir, rev, { env } = {}) {
   try { j = JSON.parse(shown.out); } catch (e) { return problem(`JSON ilegible (${e.message})`); }
   const v = j && j.version;
   if (!versionOrder.isOrdered(v)) return problem(`«version» no tiene la forma de un número publicado (${JSON.stringify(v === undefined ? null : v)})`);
-  return { status: 'ok', version: v, reason: null };
+  // sin etiqueta y con la marca: el merge recién entró y su número (la etiqueta) todavía no llegó; `version` es el piso
+  return versionOrder.numberedByTag(j) ? { status: 'ok', version: v, reason: null, pending: true } : { status: 'ok', version: v, reason: null };
 }
 /** El motivo, para la persona, de un `version.json` que no se pudo leer: nombra la ref y el archivo. */
 function unreadableVersion(label, rev, v) {
@@ -433,6 +441,8 @@ function assess(src, from, to, { env = process.env, channel = 'stable', labels =
   }
   numbers.from = vFrom.version;
   numbers.to = vTo.version;
+  // lo traído espera su etiqueta (el merge recién entró): todavía no tiene número; se aplica cuando lo tenga
+  if (vTo.pending) return { status: 'up_to_date', numbers, reason: null, pending: true };
   const order = versionOrder.compare(numbers.to, numbers.from);
   if (order !== null) return { status: order < 0 ? 'older' : 'new', numbers, reason: null };
   if (channel !== 'latest') {
@@ -514,7 +524,8 @@ function fetchRef(src, ref, { budgetS, env = process.env } = {}) {
   // un clon de lectura `--bare` (la capa de la story 8.13.1) también se trae: no tiene árbol, pero sí sus refs
   if (!isRepo(src.dir, { env }) && !isBare(src.dir, { env })) return no(`${src.name}: ${src.dir} no es un clon de git`);
   const budget = budgetOf(budgetS, env);
-  const r = git(src.dir, ['fetch', '-q', 'origin', `+refs/heads/${ref}:refs/remotes/origin/${ref}`], { env, timeout: Math.round(budget * 1000) });
+  // con las etiquetas de número: el número de un commit que numeró el merge es su etiqueta (`versionAt`)
+  const r = git(src.dir, ['fetch', '-q', 'origin', `+refs/heads/${ref}:refs/remotes/origin/${ref}`, `+refs/tags/${versionOrder.TAG_PREFIX}*:refs/tags/${versionOrder.TAG_PREFIX}*`], { env, timeout: Math.round(budget * 1000) });
   if (r.timedOut) {
     // el fetch matado es el propio: si dejó su lock, se limpia (sólo ése)
     const g = gitDir(src.dir, { env });
@@ -577,6 +588,16 @@ function check(src, { budgetS, env = process.env, channel } = {}) {
   src.ref = ref;
   const a = assess(src, from, to, { env, channel, labels: { to: `origin/${ref}` } });
   if (a.status === 'unknown') return out({ reason: `no pude mirar ${src.name}: ${a.reason}`, to, ref, mainTip: m.to });
+  if (a.pending) {
+    // la punta espera su etiqueta: recién entró, o el proceso que etiqueta no corrió. Se mide por la hora del commit (el
+    // merge): pasadas unas horas ninguna máquina se actualiza, y eso se dice como algo que no se pudo mirar
+    const ct = git(src.dir, ['log', '-1', '--format=%ct', to], { env, timeout: 10000 });
+    const ageMs = ct.ok ? Date.now() - Number(ct.out) * 1000 : 0;
+    if (ageMs >= PENDING_TAG_SAY_MS) {
+      return out({ reason: `no pude mirar ${src.name}: la punta de origin/${ref} (${to.slice(0, 7)}) lleva ${Math.floor(ageMs / 3600000)} h sin su número (la etiqueta v<número> que pone el merge): el proceso que la pone no corrió y ninguna máquina se actualiza — avisá a quien mantiene el arnés`, to, ref, mainTip: m.to });
+    }
+    return out({ status: 'up_to_date', to, ref, mainTip: m.to, numbers: a.numbers, note: `la punta de origin/${ref} (${to.slice(0, 7)}) recién entró y todavía no tiene su número: se aplica cuando lo tenga` });
+  }
   return out({ status: a.status, to, ref, mainTip: m.to, numbers: a.numbers, note });
 }
 

@@ -116,9 +116,20 @@ function fingerprint(env = process.env) {
     try { const j = JSON.parse(raw); if (j && /^[0-9a-f]{40}$/.test(String(j.commit))) return `:t:${j.commit}${pending}`; } catch { /* abajo: el contenido */ }
     return `:t:${sha(raw)}${pending}`;
   };
+  // …y, si su `version.json` dice que el número lo pone la etiqueta del merge (`numbering: "merge-tag"`), el commit del
+  // manifiesto de la bajada (`.tycon-release.json`): ese archivo queda igual entre versiones (dice el piso) y sólo con él
+  // la huella no cambiaría nunca. Sin la marca, la misma cadena de antes
+  const releaseCommit = (dir) => {
+    try {
+      const v = JSON.parse(fs.readFileSync(path.join(dir, 'version.json'), 'utf8'));
+      if (!v || v.numbering !== 'merge-tag') return '';
+      const m = JSON.parse(fs.readFileSync(path.join(dir, '.tycon-release.json'), 'utf8'));
+      return m && /^[0-9a-f]{40}$/.test(String(m.commit)) ? `:c:${m.commit}` : '';
+    } catch { return ''; }
+  };
   const treeId = (dir) => {
     if (isRepo(dir)) return git(dir, 'rev-parse', 'HEAD') || 'sin-git';
-    try { return `v:${sha(fs.readFileSync(path.join(dir, 'version.json')))}${teamId(dir)}`; } catch { return 'sin-version'; }
+    try { return `v:${sha(fs.readFileSync(path.join(dir, 'version.json')))}${releaseCommit(dir)}${teamId(dir)}`; } catch { return 'sin-version'; }
   };
   const dirty = isRepo(TCG) ? (git(TCG, 'diff', '--stat', 'HEAD', '--', 'adapters', 'build') || 'limpio') : 'limpio';
   // la decisión, leída con la misma función que despliega; si no se pudo tomar, el motivo entra a la huella (cambia si

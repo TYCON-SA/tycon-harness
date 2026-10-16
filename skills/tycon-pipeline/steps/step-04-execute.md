@@ -337,10 +337,17 @@ si no agregó nada, el propio comando devuelve `pass` con `new_deps: []`.
 ## 🔀 Lanzamiento TEMPRANO del pase adversarial 5b (Fase B paralelización, 2026-07-30 — DEFAULT ON)
 
 **Prendido por defecto**, con las mitigaciones ya
-cableadas (cap 2 de ventana en Step 5, skeptics en chunks de 3, candado anti-full-suite en los
+cableadas (cap 2 de ventana en Step 5, verificadores en ventana de 3, candado anti-full-suite en los
 hunters). Kill-switch: `export TYCON_5B_EARLY=0` → lanzamiento clásico en step-05b. El switch es
 MECÁNICO: `deep-review-gate` lee la env y devuelve **`early_launch: true|false`** en su JSON.
-**`early_launch: false` → saltear esta sección entera.** 🔴 **La primera corrida NORMAL con esto
+**`early_launch: false` → saltear esta sección entera.**
+
+> 🔴 **`pipeline.js next` es el que lo recuerda.** Con el paso 4 cerrado, `next` trae
+> `pending_action`: `consultar-porton` (falta el veredicto: correr el portón, punto 1 de abajo) o `lanzar-pase`
+> (el portón dijo «corre»: lanzar, puntos 3 y 4), ANTES del primer revisor. El portón deja su veredicto anotado
+> en la corrida (`adversarialGate`), y el apagado visto una vez vale para toda la corrida (un `TYCON_5B_EARLY=0`
+> en un comando suelto alcanza; `=1` explícito lo vuelve a prender). Medido antes: 52 de 208 corridas con pase
+> lo lanzaron más de 2 min después del primer revisor. Lo que sigue es el detalle de qué hacer en cada caso. 🔴 **La primera corrida NORMAL con esto
 activo ES la corrida de medición**: contar procesos pesados simultáneos (no solo cronometrar) y
 con eso ajustar el cap 2 del Step 5 — si la máquina sufre, `TYCON_5B_EARLY=0` y se recalibra.
 
@@ -382,7 +389,7 @@ acá, `next` sigue coherente). **Solo con los CUATRO resueltos, lanzar.**
    cancelación normal (no es bloqueante).
 
 **Consecuencia para el Step 5** (ver step-05 §Cap reducido): mientras el workflow esté en vuelo,
-la ventana de advisors baja a ≤2 (el workflow son 6 hunters + skeptics en chunks de 3, no 1
+la ventana de advisors baja a ≤2 (el workflow son 6 hunters + verificadores en ventana de 3, no 1
 proceso).
 
 **Riesgo asumido — multi-sesión**: PIPE-C0 detecta conflicto de STORY, no de recursos; no hay

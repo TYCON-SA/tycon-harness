@@ -1,0 +1,122 @@
+{
+  "tomada_de": "el commit anterior a la story 7.19 (103b45d)",
+  "casos": [
+    {
+      "nombre": "liviana-sin-config",
+      "status": 0,
+      "salida": {
+        "run": false,
+        "risk": "LOW",
+        "model": null,
+        "lineas_agregadas": 2,
+        "umbral_lineas": 300,
+        "shared_surface_declared": false,
+        "shared_surface_note": "este repo NO declaró `deep_review_always_paths` en .tycon/advisors.yaml, así que el skip se decidió SÓLO por tamaño de diff: si el cambio toca código que corre en nombre de todos los plugins/clientes, este gate no lo puede saber. Declararlo es de una vez por repo.",
+        "reason": "risk-class LOW → skip (superficie chica ≤6 files y 2 líneas agregadas < 300; override: --deep-review)"
+      }
+    },
+    {
+      "nombre": "liviana-always",
+      "status": 0,
+      "salida": {
+        "run": true,
+        "model": "sonnet",
+        "model_reason": "default (recorta $ ~5x vs Opus)",
+        "early_launch": true,
+        "reason": ".tycon/advisors.yaml deep_review: always"
+      }
+    },
+    {
+      "nombre": "liviana-off",
+      "status": 0,
+      "salida": {
+        "run": false,
+        "model": null,
+        "reason": ".tycon/advisors.yaml deep_review: off"
+      }
+    },
+    {
+      "nombre": "normal-forzada",
+      "status": 0,
+      "salida": {
+        "run": true,
+        "model": "sonnet",
+        "model_reason": "default (recorta $ ~5x vs Opus)",
+        "early_launch": true,
+        "reason": "forzado ON (--deep-review)"
+      }
+    },
+    {
+      "nombre": "pesada-always",
+      "status": 0,
+      "salida": {
+        "run": true,
+        "model": "opus",
+        "model_reason": "story pesada (2 señales model-hint) → hunters escalan a Opus (anunciar)",
+        "early_launch": true,
+        "fable_upsell": {
+          "model": "fable",
+          "requires_user_approval": true,
+          "reason": "story pesada (superficie-grande, muchos-acs) — Fable caza más en el pase adversarial, a ~2x el costo de Opus",
+          "how": "preguntar al user en 1 línea (COMM.i); si aprueba → pasar model:\"fable\" al Workflow. Sin respuesta afirmativa → usar `model` de este output."
+        },
+        "reason": ".tycon/advisors.yaml deep_review: always"
+      }
+    },
+    {
+      "nombre": "pesada-sin-config",
+      "status": 0,
+      "salida": {
+        "run": true,
+        "risk": "NORMAL",
+        "model": "opus",
+        "model_reason": "story pesada (2 señales model-hint) → hunters escalan a Opus (anunciar)",
+        "early_launch": true,
+        "fable_upsell": {
+          "model": "fable",
+          "requires_user_approval": true,
+          "reason": "story pesada (superficie-grande, muchos-acs) — Fable caza más en el pase adversarial, a ~2x el costo de Opus",
+          "how": "preguntar al user en 1 línea (COMM.i); si aprueba → pasar model:\"fable\" al Workflow. Sin respuesta afirmativa → usar `model` de este output."
+        },
+        "reason": "risk-class NORMAL → deep-review corre (criterios NORMAL: superficie-chica)"
+      }
+    },
+    {
+      "nombre": "pesada-temprano-apagado",
+      "status": 0,
+      "salida": {
+        "run": true,
+        "model": "opus",
+        "model_reason": "story pesada (2 señales model-hint) → hunters escalan a Opus (anunciar)",
+        "early_launch": false,
+        "fable_upsell": {
+          "model": "fable",
+          "requires_user_approval": true,
+          "reason": "story pesada (superficie-grande, muchos-acs) — Fable caza más en el pase adversarial, a ~2x el costo de Opus",
+          "how": "preguntar al user en 1 línea (COMM.i); si aprueba → pasar model:\"fable\" al Workflow. Sin respuesta afirmativa → usar `model` de este output."
+        },
+        "reason": ".tycon/advisors.yaml deep_review: always"
+      }
+    },
+    {
+      "nombre": "pesada-fable-autorizado",
+      "status": 0,
+      "salida": {
+        "run": true,
+        "model": "fable",
+        "model_reason": "--deep-review-fable (autorización explícita del user)",
+        "early_launch": true,
+        "reason": ".tycon/advisors.yaml deep_review: always"
+      }
+    },
+    {
+      "nombre": "pesada-interruptor",
+      "status": 0,
+      "salida": {
+        "run": false,
+        "model": null,
+        "reason": "forzado OFF (--no-deep-review / TYCON_NO_DEEP_REVIEW=1)"
+      }
+    }
+  ]
+}

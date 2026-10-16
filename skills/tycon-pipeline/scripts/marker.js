@@ -105,6 +105,8 @@
  *                                                  (deep-review-gate como proceso; con el pase
  *                                                  lanzado sólo con el interruptor = abandono).
  *   `complete-step 8` bloquea sin una de las dos constancias (freno adversarial-result-gate).
+ *   marker.js mark-adversarial-gate '<json>'      → el veredicto del portón en `adversarialGate` (story 7.19).
+ *                                                  Lo llaman deep-review-gate y next; no es una constancia.
  *
  * Timing (Fase 0 instrumentación — `pipeline.js timing-report` lo consume):
  *   `complete-step N` guarda marker.stepTimings[N].completedAt automáticamente.
@@ -330,6 +332,9 @@ function cmdSet(payloadJson) {
       // promovidas de A en `--tests`, y con el freno del paso 8 heredaría el salteo de A y cerraría su
       // paso 8 sin su propio 5b.
       adversarialPasses, adversarialRegressions, adversarialSkip,
+      // story 7.19: el veredicto del portón (y el temprano apagado) son de la corrida — heredado, `next` le pedía a
+      // la story nueva lanzar el pase con los archivos de la vieja, o le dejaba apagado el temprano.
+      adversarialGate,
       ...carryOver
     } = existing;
     console.error(
@@ -637,44 +642,9 @@ function cmdTouch() {
   writeMarker(marker);
 }
 
-/**
- * ¿El 5b quedó atendido? (story 1.8, 2026-09-18). Pura: lee el marker y devuelve
- * `{ veredicto: 'paso'|'bloqueo', motivo, runId, launchedAt }`.
- *
- * Lanzado → pasa con un resultado `tipo: '5b'` anotado en o después del ÚLTIMO lanzamiento (`resultado`), o con
- * el abandono de ESE lanzamiento (`abandonado`); si los resultados que hay son de un lanzamiento anterior —el
- * pase se relanzó, como en la 2.12— bloquea (`resultado-de-otro-lanzamiento`); sin nada, `sin-resultado`.
- * No lanzado → pasa con el salteo que decidió el portón (`salteado` / `salteado-forzado`), o con un resultado 5b
- * anotado aunque nadie haya registrado el lanzamiento (`resultado-sin-lanzamiento`), y si no, `no-atendido`:
- * la bandera `deepReviewDone` de una corrida vieja NO cuenta, porque es justo lo que cualquiera escribía a mano.
- * «No lo pude leer» no es «está»: un registro que no es lista o un lanzamiento sin fecha bloquean con su nombre.
- */
-function veredictoPaseAdversarial(marker) {
-  const m = marker || {};
-  const adv = m.adversarial || null;
-  const runId = adv && typeof adv === 'object' ? (adv.runId || null) : null;
-  const launchedAt = adv && typeof adv === 'object' ? (adv.launchedAt ?? null) : null;
-  const res = (veredicto, motivo, extra) => ({ veredicto, motivo, runId, launchedAt, ...(extra || {}) });
-  if (m.adversarialPasses !== undefined && m.adversarialPasses !== null && !Array.isArray(m.adversarialPasses)) {
-    return res('bloqueo', 'registro-ilegible', { campo: 'adversarialPasses' });
-  }
-  const pases = Array.isArray(m.adversarialPasses) ? m.adversarialPasses : [];
-  const skip = m.adversarialSkip && typeof m.adversarialSkip === 'object' ? m.adversarialSkip : null;
-  if (adv) {
-    const desde = Date.parse(launchedAt);
-    if (!Number.isFinite(desde)) return res('bloqueo', 'lanzamiento-sin-fecha', { campo: 'adversarial.launchedAt' });
-    const del5b = pases.filter((p) => p && p.tipo === '5b');
-    if (del5b.some((p) => Date.parse(p.ts) >= desde)) return res('paso', 'resultado');
-    if (skip && skip.abandonado === true && skip.runId === runId) return res('paso', 'abandonado');
-    if (del5b.length) return res('bloqueo', 'resultado-de-otro-lanzamiento');
-    return res('bloqueo', 'sin-resultado');
-  }
-  if (skip) return res('paso', skip.forzado === true || skip.abandonado === true ? 'salteado-forzado' : 'salteado');
-  // Resultado 5b anotado sin lanzamiento registrado (decisión D6 del dev, hallazgo del pase adversarial de la 1.8):
-  // el resultado ES la constancia que el paso pide; queda con su propio motivo, visible en el registro.
-  if (pases.some((p) => p && p.tipo === '5b')) return res('paso', 'resultado-sin-lanzamiento');
-  return res('bloqueo', 'no-atendido');
-}
+// ¿El 5b quedó atendido? (story 1.8). Vive en lib/adversarial-verdict.js desde la story 7.19: `next` lo usa también,
+// y una segunda copia del criterio se separa sola.
+const { veredictoPaseAdversarial, paseAtendido } = require('./lib/adversarial-verdict.js');
 
 function mensajeDelPaseAdversarial(v) {
   const cmdResultado = `node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js mark-adversarial-result <N confirmados> --type 5b --run ${v.runId || '<runId>'} --model <modelo> --tests <k promovidas> [--own <p> --in "<rutas de prueba>"] [--deferred <d> --reason "<por qué>"]`;
@@ -1731,7 +1701,7 @@ function cmdMarkAdversarialSkipped(argsGate) {
     console.error(`marker.js mark-adversarial-skipped: el portón dice que el pase CORRE — ${gate.reason || '(sin reason)'}`);
     console.error('  No se saltea: se lanza (step-04 §Lanzamiento temprano, o step-05b §Acción) y se registra con');
     console.error('    marker.js mark-adversarial-launched <runId> 4');
-    console.error('  No se anotó nada.');
+    console.error('  No se anotó el salteo (el veredicto del portón sí queda en la corrida: `next` pide el lanzamiento).');
     process.exit(2);
   }
   // Se cuentan como los cuenta `parseArgs` de pipeline.js (clase H): todos los `--files`, cortando en un argumento
@@ -1745,11 +1715,14 @@ function cmdMarkAdversarialSkipped(argsGate) {
   const runId = abandonado ? (lanzado.runId || null) : null;
   const at = nowIso();
   const salteo = { motivo: gate.reason || null, archivos, forzado, abandonado, runId, at };
+  // Se relee (story 7.19): el portón que se acaba de lanzar anota su veredicto en el marker (`adversarialGate`), y
+  // escribir la copia leída antes lo pisaba.
+  const fresco = readMarker() || marker;
   // UNA escritura: el salteo y el cierre del 5b nacen juntos — no hay un instante con uno y sin el otro.
-  marker.adversarialSkip = salteo;
-  marker.deepReviewDone = true;
-  marker.lastTouch = at;
-  writeMarker(marker);
+  fresco.adversarialSkip = salteo;
+  fresco.deepReviewDone = true;
+  fresco.lastTouch = at;
+  writeMarker(fresco);
   appendLog('gates.log', {
     name: 'adversarial-skip', status: 'ok', storyId: marker.storyId, motivo: salteo.motivo,
     archivos, forzado, abandonado, runId,
@@ -1762,6 +1735,55 @@ function cmdMarkAdversarialSkipped(argsGate) {
     console.error('⚠️  salteo del pase adversarial FORZADO con el interruptor — queda en bypass.log.');
   }
   process.stdout.write(JSON.stringify(salteo, null, 2) + '\n');
+}
+
+// marker.js mark-adversarial-gate '<json>'   ({ run?: bool, files?: [..], early_env?: '0'|'1'|null })
+//
+// El veredicto del portón del pase, anotado en la corrida (story 7.19, AC 1 y 7). Lo llaman `pipeline.js
+// deep-review-gate` (con `run` y `files`, después del paso 4) y `pipeline.js next` (sólo `early_env`, cuando ve la
+// variable): `next` no tiene los archivos del cambio y no recalcula el portón, lee esto.
+//
+// 🔴 Va en un campo PROPIO, `adversarialGate`, nunca dentro de `marker.adversarial`: para el salteo, el freno del
+// paso 8, `next` y el paso 5, `adversarial` significa «lanzado» (con él, `mark-adversarial-skipped` se niega).
+//
+// El temprano apagado (`TYCON_5B_EARLY=0`) se lee del entorno de UN comando, y en una sesión de agente el entorno no
+// pasa de un comando al siguiente (132 de 157 `next` medidos en corridas con el temprano apagado no la llevaban).
+// Visto una vez, vale para la corrida; `TYCON_5B_EARLY=1` explícito lo vuelve a prender. Las dos cosas quedan
+// anotadas con su origen. Con el pase ya atendido no se reemplaza el veredicto: la consulta es de otro momento.
+// Sale con el `adversarialGate` vigente en stdout (el portón imprime el temprano que vale para la corrida).
+function cmdMarkAdversarialGate(raw) {
+  const marker = readMarker();
+  if (!marker) process.exit(0);   // sin corrida no se anota ni se avisa: el portón se consulta también a mano
+  let d;
+  try { d = JSON.parse(String(raw || '')); } catch (_e) { d = null; }
+  if (!d || typeof d !== 'object' || Array.isArray(d)) {
+    console.error('marker.js mark-adversarial-gate: hace falta un JSON con { run?, files?, early_env? }');
+    process.exit(2);
+  }
+  const prev = marker.adversarialGate && typeof marker.adversarialGate === 'object' ? marker.adversarialGate : null;
+  const traeVeredicto = typeof d.run === 'boolean';
+  if (traeVeredicto && paseAtendido(veredictoPaseAdversarial(marker))) {
+    process.stdout.write(JSON.stringify(prev || {}, null, 2) + '\n');
+    return;
+  }
+  let early = true;
+  let origen = null;
+  if (d.early_env === '0') { early = false; origen = 'TYCON_5B_EARLY=0'; }
+  else if (d.early_env === '1') { early = true; origen = 'TYCON_5B_EARLY=1'; }
+  else if (prev && prev.early_launch === false) { early = false; origen = prev.early_origin || null; }
+  else if (prev && prev.early_origin) { origen = prev.early_origin; }
+  const gate = {
+    ...(prev || {}),
+    ...(traeVeredicto ? { run: d.run, files: Array.isArray(d.files) ? d.files.map(String) : [] } : {}),
+    early_launch: early,
+    at: nowIso(),
+    sessionId: SID,
+  };
+  if (origen) gate.early_origin = origen; else delete gate.early_origin;
+  marker.adversarialGate = gate;
+  marker.lastTouch = gate.at;
+  writeMarker(marker);
+  process.stdout.write(JSON.stringify(gate, null, 2) + '\n');
 }
 
 // Resultado de un pase adversarial (2026-09-14, propuesta STEP8-HEURISTICA-CIEGA-A-ADVERSARIAL-
@@ -2952,6 +2974,9 @@ switch (cmd) {
   case 'mark-adversarial-skipped':
     cmdMarkAdversarialSkipped(process.argv.slice(3));
     break;
+  case 'mark-adversarial-gate':
+    cmdMarkAdversarialGate(arg1);
+    break;
   case 'promote-probe':
     cmdPromoteProbe(arg1);
     break;
@@ -2967,7 +2992,7 @@ switch (cmd) {
       'Usage: marker.js <set|get|touch|complete-step|append-file|clear|is-active|' +
         'list-all|find-by-story|clear-session|adopt-session|update-story-status|' +
         'mark-dod-runtime-checked|set-autonomous|set-check|run-check|set-flag|snapshot-iter|' +
-        'mark-adversarial-launched|mark-adversarial-result|mark-adversarial-skipped|promote-probe|adhoc|story-skill-bypass> [arg] [arg2]',
+        'mark-adversarial-launched|mark-adversarial-result|mark-adversarial-skipped|mark-adversarial-gate|promote-probe|adhoc|story-skill-bypass> [arg] [arg2]',
     );
     process.exit(2);
 }

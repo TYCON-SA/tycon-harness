@@ -1426,3 +1426,42 @@ test(`${T78} — los textos del skill dicen dónde se declara el modo, y el paso
   }
   assert.match(read('steps', 'step-09c-create-pr-github.md'), /configFrom/);
 });
+
+// ── T79: el número lo pone el merge ──────────────────────────────────────────────────────────────────────────────────
+// Con `numbering: "merge-tag"` en el version.json de la destino, el número lo pone una etiqueta v<número> sobre cada merge
+// (scripts/ci/version-tag.js): el pedido no toca el archivo. Sin la marca, todo sigue como antes (T44).
+const T79 = 'T79 VersionByMerge_MarkInTarget_PrDoesNotTouchVersion';
+const markedText = (version) => versionText(version).replace(`"version": "${version}",`, `"version": "${version}",\n  "numbering": "merge-tag",`);
+
+test(`${T79} — bump-version no hace nada y check-version pide el archivo igual`, () => {
+  const { work } = toy({ text: markedText(`${DAY}.1`) });
+  branch(work, 'feat/a');
+  const b = bump(work, 'feat/a', { write: true });
+  assert.deepStrictEqual([b.code, b.action, b.written], [0, 'none', false]);
+  assert.match(b.reason, /lo pone el merge/);
+  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(work, 'version.json'), 'utf8')).version, `${DAY}.1`, 'no escribió nada');
+  const same = M.checkVersion({ repo: work, base: 'origin/main', head: 'feat/a' }, deps());
+  assert.deepStrictEqual([same.code, same.base, same.head], [0, `${DAY}.1`, `${DAY}.1`]);
+  // el pedido que igual sube el número, o que saca la marca: rojo
+  fs.writeFileSync(path.join(work, 'version.json'), markedText(`${DAY}.2`));
+  commitVersion(work);
+  assert.strictEqual(M.checkVersion({ repo: work, base: 'origin/main', head: 'feat/a' }, deps()).code, 1);
+  fs.writeFileSync(path.join(work, 'version.json'), versionText(`${DAY}.1`));
+  commitVersion(work);
+  const unmarked = M.checkVersion({ repo: work, base: 'origin/main', head: 'feat/a' }, deps());
+  assert.strictEqual(unmarked.code, 1);
+  assert.match(unmarked.reason, /sin la marca/);
+});
+
+test(`${T79} — la transición: con la destino SIN la marca, el pedido que la trae sube el número una última vez`, () => {
+  const { work } = toy();
+  branch(work, 'feat/marca');
+  fs.writeFileSync(path.join(work, 'version.json'), markedText(`${DAY}.1`));
+  commitVersion(work);
+  const b = bump(work, 'feat/marca', { write: true });
+  assert.deepStrictEqual([b.action, b.from, b.to, b.written], ['bump', `${DAY}.1`, `${DAY}.2`, true]);
+  commitVersion(work);
+  const after = JSON.parse(fs.readFileSync(path.join(work, 'version.json'), 'utf8'));
+  assert.deepStrictEqual([after.version, after.numbering], [`${DAY}.2`, 'merge-tag'], 'sube el número y la marca queda');
+  assert.strictEqual(M.checkVersion({ repo: work, base: 'origin/main', head: 'feat/marca' }, deps()).code, 0);
+});

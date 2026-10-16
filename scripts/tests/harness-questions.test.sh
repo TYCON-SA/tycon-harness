@@ -329,7 +329,8 @@ if corre PACKS; then
   # se escribe como siempre y no se avisa nada — el instalador no promete un orden que ese lector no cumple
   qlab packs-old || true; export TYCON_PROFILE="$T/profile-none.json"
   LECTOR="$LAB_TREE/scripts/lib/tycon-config.js"
-  sed -e "s/^const PROFILE_WINS = Object.freeze(\['packs.default'\]);\$/const PROFILE_WINS = Object.freeze([]);/" "$LECTOR" > "$LECTOR.old" \
+  # la lista vacía, traiga lo que traiga hoy (la story 7.19 le sumó `adversarial.model_question`)
+  sed -e "s/^const PROFILE_WINS = Object.freeze(\[.*\]);\$/const PROFILE_WINS = Object.freeze([]);/" "$LECTOR" > "$LECTOR.old" \
     && printf '\ndelete module.exports.PROFILE_WINS;\n' >> "$LECTOR.old" && mv "$LECTOR.old" "$LECTOR"
   if [ "$(node -p "typeof require(process.argv[1]).PROFILE_WINS" "$LECTOR" 2>/dev/null)" != undefined ] || ! grep -q '^const PROFILE_WINS = Object.freeze(\[\]);$' "$LECTOR"; then
     mal "T7 árbol anterior: no pude dejar el lector del laboratorio como uno de antes de la regla"

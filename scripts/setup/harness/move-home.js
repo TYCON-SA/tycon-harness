@@ -1088,9 +1088,10 @@ function migrate(ctx, H, { log = null, auto = false, state: given = null } = {})
     if (dryRun) return { code: 0, lines: planLines(ctx, pre) };
     const { p, repo, target, tools } = pre;
     const realLog = (l) => R.log(ctx.home, l);
-    // la bajada y la verificación en incoming/ (se limpia sola si falla): todavía sin diario ni registro
+    // la bajada y la verificación en incoming/ (se limpia sola si falla): todavía sin diario ni registro. Con el número de
+    // una etiqueta, el árbol trae el piso (`tagged`)
     const cDown = REL.client(ctx, { deadlineAt: Date.now() + Math.max(60, Number(ctx.env.TYCON_RELEASE_DOWNLOAD_BUDGET_S) > 0 ? Number(ctx.env.TYCON_RELEASE_DOWNLOAD_BUDGET_S) : 120) * 1000 });
-    const d = REL.download(ctx, cDown, repo.repo, { commit: target.commit, version: target.version, ref: target.ref, log: null });
+    const d = REL.download(ctx, cDown, repo.repo, { commit: target.commit, version: target.version, ref: target.ref, tagged: Boolean(target.tagged), log: null });
     if (!d.ok) return { code: 1, lines: [`${HEAD}: ${d.reason}`], precondition: true };
     if (tools.includes('claude') && !fs.existsSync(path.join(d.dir, 'scripts', 'install-tycon-hooks.sh'))) {
       rmrf(d.dir);

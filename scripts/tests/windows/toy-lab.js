@@ -155,7 +155,11 @@ function publish({ author, number, env, extra = null }) {
   fs.writeFileSync(file, `${JSON.stringify(version, null, 2)}\n`);
   if (extra) { fs.mkdirSync(path.dirname(path.join(author, extra.rel)), { recursive: true }); fs.writeFileSync(path.join(author, extra.rel), extra.text); }
   else fs.appendFileSync(path.join(author, 'CHANGES'), `${number}\n`);
-  for (const args of [['add', '-A'], ['commit', '-q', '-m', `version ${number}`], ['push', '-q', 'origin', 'HEAD:main']]) {
+  // con `numbering: "merge-tag"` el número lo pone la etiqueta del merge: se publica con su etiqueta, como lo hace el
+  // workflow del repo público (sin ella la máquina espera el número y no actualiza)
+  const tagged = version.numbering === 'merge-tag'
+    ? [['tag', '-f', `v${number}`, 'HEAD'], ['push', '-q', '-f', 'origin', `refs/tags/v${number}`]] : [];
+  for (const args of [['add', '-A'], ['commit', '-q', '-m', `version ${number}`], ['push', '-q', 'origin', 'HEAD:main'], ...tagged]) {
     const r = git(author, args, env);
     if (r.error || r.exit !== 0) return { ok: false, reason: `git ${args[0]} salió ${r.error || r.exit}: ${L.firstLine(r.stderr) || L.firstLine(r.stdout)}` };
   }

@@ -23,14 +23,19 @@ Step 6 en la máquina de estados, decide qué hacer según `marker.adversarial` 
     llega solo, ~N min restantes"* y **CERRAR el turno** — no encadenar más tool calls, no avanzar
     al Step 6, no anotar nada del 5b, no `Monitor`, no polling. La notificación reactiva la
     sesión sola; ahí se retoma en §Decisiones post-output.
-- **`marker.adversarial` existe pero `adversarial_is_ours: false`** → el workflow quedó
-  **HUÉRFANO** de una sesión muerta (el resume de un Workflow no cruza sesiones — no hay forma de
-  joinearlo). ANUNCIAR en 1 línea: *"el pase adversarial quedó huérfano de la sesión anterior — lo
-  relanzo (~20-40 min, costo asumido)"* y, como en un retome NO están en contexto ni el gate ni las
-  decisiones: **(a)** re-evaluar el gate (§Cuándo corre) para obtener `model` + `fable_upsell`
-  frescos, **(b)** recuperar `decisions` del Change Log / Completion Notes de la story y de
-  `<RUN_DIR>/step-03-*.md`, **(c)** recién ahí relanzar con §Acción y registrar
-  `mark-adversarial-launched <runId nuevo> 5b` (el overwrite cross-session está permitido).
+- **`marker.adversarial` existe pero `adversarial_is_ours: false`** → lo lanzó OTRA sesión (el resume
+  de un Workflow no cruza sesiones — no hay forma de joinearlo). **No se pregunta: decide la regla** que
+  trae `pipeline.js next` en `pending_action` (preguntar sería sumar una espera por una persona): si el
+  lanzamiento tiene menos de 45 min y esa sesión sigue viva (su conversación cambió hace menos de 10
+  min), **ESPERAR** su resultado (`esperar-pase-ajeno`: lo anota esa sesión; acá se cierra el turno
+  como en el join pasivo); si no, **RELANZAR** (`relanzar-pase-ajeno`). Si ya tiene resultado, está
+  atendido y no se relanza (relanzar un pase cerrado bloquea el paso 8). Para relanzar, ANUNCIAR en 1
+  línea *"el pase adversarial de la sesión <id> quedó sin resultado — lo relanzo (~20-40 min): <why>"*
+  y, como en un retome NO están en contexto ni el gate ni las decisiones: **(a)** re-evaluar el gate
+  (§Cuándo corre) para obtener `model` + `fable_upsell` frescos, **(b)** recuperar `decisions` del
+  Change Log / Completion Notes de la story y de `<RUN_DIR>/step-03-*.md`, **(c)** recién ahí relanzar
+  con §Acción y registrar `mark-adversarial-launched <runId nuevo> 5b` (el overwrite cross-session está
+  permitido).
 - **`marker.adversarial` NO existe** (kill-switch `TYCON_5B_EARLY=0`, o pipeline pre-fase-B) →
   comportamiento clásico: evaluar el gate y lanzar ACÁ (§Cuándo corre + §Acción), registrando
   igual `mark-adversarial-launched <runId> 5b`.
@@ -72,7 +77,9 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js deep-revie
   (fuerza `run` + sube el modelo a Opus).
 - **Modelo de los hunters (escalación por complejidad — 2026-07-06)**: el gate lo resuelve solo y lo devuelve
   en `model` + `model_reason`: `sonnet` default · story pesada (model-hint ≥2 señales) o ultracode → `opus`
-  automático (anunciarlo en 1 línea) · **`fable` NUNCA automático**. Si el gate devuelve `fable_upsell`
+  automático (anunciarlo en 1 línea) · **`fable` NUNCA automático**. Con `adversarial.model_question: never`
+  en la configuración (gana el perfil del equipo) el gate no ofrece el modelo mayor: trae
+  `model_question` en vez de `fable_upsell` y no se pregunta nada. Si el gate devuelve `fable_upsell`
   (story pesada sin `--deep-review-fable`), **PREGUNTAR al user en 1 línea** (COMM.i):
   *"Story pesada — ¿corro los hunters adversariales en Fable? (~2x el costo de Opus, caza más). Si no, van en Opus."*
   Solo con respuesta afirmativa pasar `model: "fable"` al Workflow; cualquier otra respuesta → usar el `model`
@@ -295,7 +302,8 @@ algo que otro ya reprodujo**.
 
 **Cómo corre el guion**: hay **barrera** (no `pipeline(LENSES, cazar, verificar)`, donde cada lente verifica lo
 suyo apenas termina de cazar): cazan las 6 lentes, se juntan todos los hallazgos, se agrupan por causa
-(`lib/group-findings.js`) y se abre **un escéptico por clase**, en tandas de 3 como siempre. El veredicto de la
+(`lib/group-findings.js`) y se abre **un escéptico por clase**, en una ventana de 3 (como mucho tres
+vivos y, apenas termina uno, entra el siguiente — `lib/sliding-window.js`, copiada en el guion). El veredicto de la
 clase baja a CADA hallazgo, con `clase`, `verificado_via` (cuál se reprodujo) y `agrupado_por` (por qué se juntaron).
 Lo que se paga: la cola del cazador más lento, porque se pierde el solapamiento entre cazar y verificar.
 

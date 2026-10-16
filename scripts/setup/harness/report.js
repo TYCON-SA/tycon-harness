@@ -5,7 +5,7 @@
 // La versión, mientras el equipo instala desde los repos internos: `YYYY.MM.DD+<sha7>` —la fecha UTC del commit de HEAD
 // del arnés, nunca la del reloj—, con el sha de agent-skills al lado (sin número, no se ordena). Con `version.json` en la
 // raíz del árbol (la copia pública, tanda D: `{ version, source: { <fuente>: <sha>, … } }`) se imprime la estampada y sus
-// shas fuente. El archivo NO trae canal —el mismo llega a `main` (estable) con el merge—: el canal que se muestra es el de
+// shas fuente; si HEAD tiene la etiqueta `v<número>` que pone el merge, ése es el número (el archivo dice el piso). El archivo NO trae canal —el mismo llega a `main` (estable) con el merge—: el canal que se muestra es el de
 // la política. `source` es un mapa nombre → sha con las claves que traiga (hoy `harness` y `agent_skills`; con los repos
 // internos unificados será una): no se exige ninguna. En `developer` se avisa que la versión es la del clon.
 //
@@ -73,8 +73,10 @@ function derive(state, { env = process.env, trees = {} } = {}) {
   const skillsCommit = (skillsDir && sources.head(skillsDir, { env })) || (as && as.commit) || null;
   const stamped = harnessDir ? stampedVersion(harnessDir) : null;
   if (stamped) {
+    // en un clon, el número de la etiqueta que puso el merge, si HEAD la tiene; el version.json dice el piso
+    const v = harnessDir ? sources.versionAt(harnessDir, 'HEAD', { env }) : null;
     return {
-      number: stamped.version, stamped: true,
+      number: v && v.tagged ? v.version : stamped.version, stamped: true,
       source: isObject(stamped.source) ? stamped.source : {},
       harness: { commit: harnessCommit }, agent_skills: { commit: skillsCommit },
     };

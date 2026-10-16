@@ -354,6 +354,11 @@
       "requiere": []
     },
     {
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/adversarial-launch.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "arnes",
       "ruta": "tests/backfill-discovery.test.js",
       "requiere": []
@@ -806,6 +811,11 @@
     {
       "raiz": "arnes",
       "ruta": "tests/step-times.test.sh",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/adversarial-launch-delay.test.sh",
       "requiere": []
     },
     {
@@ -2066,6 +2076,12 @@
       "__nota": "story 8.26, tanda E (T18, T44, T61, T62): el merge por pedido del lado de GitHub (scripts/tools/merge-pr.js) y el contrato del skill de merge. De qué servidor es el repo y qué paso sigue; poner la rama al día (el único choque que se resuelve solo es version.json); el número que sigue (nunca baja, y dos pedidos no lo repiten); la espera del control declarado, con un código por desenlace («no pude preguntar» no es verde); el título «asunto (#N)» sin marcas que salteen la CI; y que el paso de Azure del skill conserva sus comandos. Repos de juguete con git de verdad y un gh de mentira: sin red.",
       "raiz": "arnes",
       "ruta": "tests/merge-pr.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "el número de versión lo pone el merge: la etiqueta v<número> sobre cada merge a main (scripts/ci/version-tag.js y .github/workflows/version-tag.yml). Dos merges no toman el mismo número y el número no baja; las máquinas con y sin clon leen la etiqueta, una punta sin etiqueta espera en silencio (y lo dice pasadas unas horas) y no queda recordada con el piso; el paso version de la CI pública; y los únicos dos workflows del repo público, con su forma exacta. Repos de juguete con git de verdad y clientes de mentira: sin red, unos segundos.",
+      "raiz": "arnes",
+      "ruta": "tests/version-by-merge.test.js",
       "requiere": []
     },
     {

@@ -48,7 +48,12 @@
  *    haya que arreglar relajando la regla: es el punto. Quien cambia lo que corre la CI pública lo dice dos veces, y la
  *    segunda es en un archivo que tiene sus pruebas.
  *
- * USO:  node scripts/ci/check-public-workflow.js <archivo>
+ * EL OTRO WORKFLOW (`--tagger`): `version-tag.yml`, el que le pone a cada merge a main la etiqueta con su número. Es el
+ * único con permiso de escritura (sólo para empujar esa etiqueta): se controla con su propia forma exacta
+ * (`TAGGER_SHAPE`) y con las reglas que valen para cualquier workflow de un repo público. `WORKFLOWS` son los únicos dos
+ * archivos que puede haber en `.github/workflows/`.
+ *
+ * USO:  node scripts/ci/check-public-workflow.js [--tagger] <archivo>
  *   0 = cumple todo · 1 = alguna regla rota (una línea `❌ check-public-workflow: <regla> — <qué>` por regla) ·
  *   2 = no pude leer el archivo (no es un verde)
  * Lo corre scripts/tests/public-ci.test.sh sobre el `ci.yml` real y sobre copias alteradas: una por regla y una por cada
@@ -146,6 +151,46 @@ const SHAPE = [
 ];
 
 /**
+ * LA FORMA de `version-tag.yml` (`--tagger`): el workflow que le pone a cada merge a `main` la etiqueta con su número
+ * (scripts/ci/version-tag.js). Es el ÚNICO con permiso de escritura, y sólo en su job: corre en un push a `main` o a
+ * mano (nunca con el código de un pedido), una corrida por vez, y no lee ningún secreto (empuja la etiqueta con la credencial que
+ * deja el checkout). Cambiarlo es cambiar esto en el mismo commit, como el `ci.yml`.
+ */
+const TAGGER_SHAPE = [
+  'name: version-tag',
+  'on:',
+  '  push:',
+  '    branches: [main]',
+  '  workflow_dispatch:',
+  'concurrency:',
+  '  group: version-tag',
+  '  cancel-in-progress: false',
+  'permissions:',
+  '  contents: read',
+  'jobs:',
+  '  tag:',
+  '    runs-on: ubuntu-latest',
+  '    timeout-minutes: 10',
+  '    permissions:',
+  '      contents: write',
+  '    steps:',
+  // con permiso de escritura, las acciones van con el sha EXACTO (no un patrón: uno de un fork también tiene 40 hex):
+  // cambiar de versión es cambiar esto
+  '      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1',
+  '        with:',
+  '          fetch-depth: 0',
+  '      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0',
+  '        with:',
+  '          node-version: 24',
+  '      - name: La etiqueta con el número de este merge',
+  '        run: node scripts/ci/version-tag.js tag --sha "${GITHUB_SHA}"',
+];
+
+/** Los únicos workflows del repo público: la CI y el que etiqueta. Otro archivo en `.github/workflows/` es rojo (lo
+ *  mira scripts/tests/version-by-merge.test.js). */
+const WORKFLOWS = ['ci.yml', 'version-tag.yml'];
+
+/**
  * Un `\r` que no va seguido de `\n`, un tabulador o un carácter de control: los de C0 menos `\n` y `\r`, DEL, y los tres
  * saltos de línea de Unicode (NEL, separador de línea y separador de párrafo: 0x85, 0x2028 y 0x2029). Los dos últimos se
  * arman por código para que este archivo no los lleve escritos.
@@ -153,7 +198,7 @@ const SHAPE = [
 const ODD_CHARACTER = new RegExp(`\\r(?!\\n)|[\\x00-\\x09\\x0B\\x0C\\x0E-\\x1F\\x7F\\x85${String.fromCharCode(0x2028, 0x2029)}]`);
 
 /** Lo primero que el archivo tiene distinto de la forma, dicho para una persona; null si coincide. */
-function shapeProblem(text) {
+function shapeProblem(text, shape = SHAPE) {
   // Antes de partir en líneas: lo que YAML lee distinto que un lector por texto. Para YAML un `\r` suelto (y U+0085,
   // U+2028, U+2029 en algunos lectores) es un salto de línea: detrás de un comentario esconde una línea entera.
   const odd = ODD_CHARACTER.exec(text);
@@ -167,9 +212,9 @@ function shapeProblem(text) {
   const code = [];
   text.split(/\r?\n/).forEach((raw, i) => { if (!/^ *(#|$)/.test(raw)) code.push({ n: i + 1, raw }); });
   const shown = (w) => (typeof w === 'string' ? w : w.shown);
-  for (let k = 0; k < Math.max(code.length, SHAPE.length); k++) {
+  for (let k = 0; k < Math.max(code.length, shape.length); k++) {
     const have = code[k];
-    const want = SHAPE[k];
+    const want = shape[k];
     if (!want) return `línea ${have.n}: sobra «${have.raw}» (la forma termina en la línea anterior)`;
     if (!have) return `falta «${shown(want)}» después de la línea ${code.length ? code[code.length - 1].n : 0} (el archivo termina antes que la forma)`;
     if (!(typeof want === 'string' ? have.raw === want : want.re.test(have.raw))) return `línea ${have.n}: hay «${have.raw}» y la forma espera «${shown(want)}»`;
@@ -414,11 +459,29 @@ const RULES = [
   },
 ];
 
-/** @returns {{rule: string, detail: string}[]} las reglas rotas, en el orden de RULES */
-function check(text) {
+/**
+ * Las reglas del workflow que etiqueta: las que valen para cualquier workflow de un repo público (sin el disparador
+ * peligroso, sin secretos, acciones por sha) y su forma exacta.
+ */
+const TAGGER_RULES = [
+  ...RULES.filter((r) => ['pull-request-target', 'secrets', 'uses-by-sha'].includes(r.id)),
+  {
+    id: 'shape',
+    check(_lines, text) {
+      const problem = shapeProblem(text, TAGGER_SHAPE);
+      return problem ? `${problem}. El archivo no tiene la forma exacta que este control lleva adentro: si el cambio es a propósito, cambiá \`TAGGER_SHAPE\` en scripts/ci/check-public-workflow.js en el mismo commit` : null;
+    },
+  },
+];
+
+/** Lo que hay en `.github/workflows/` y no es uno de los dos workflows conocidos (`WORKFLOWS`). */
+function strayWorkflows(names) { return (names || []).filter((n) => !WORKFLOWS.includes(n)).sort(); }
+
+/** @returns {{rule: string, detail: string}[]} las reglas rotas, en el orden de RULES (o de TAGGER_RULES con `tagger`) */
+function check(text, { tagger = false } = {}) {
   const lines = read(text);
   const broken = [];
-  for (const rule of RULES) {
+  for (const rule of tagger ? TAGGER_RULES : RULES) {
     let detail = null;
     try { detail = rule.check(lines, text); } catch (e) { detail = `no pude evaluarla (${e.message})`; }
     if (detail) broken.push({ rule: rule.id, detail });
@@ -427,9 +490,11 @@ function check(text) {
 }
 
 function main(argv) {
-  const file = argv[0];
-  if (!file || argv.length !== 1) {
-    process.stderr.write('uso: node scripts/ci/check-public-workflow.js <archivo>\n');
+  const tagger = argv[0] === '--tagger';
+  const args = tagger ? argv.slice(1) : argv;
+  const file = args[0];
+  if (!file || args.length !== 1) {
+    process.stderr.write('uso: node scripts/ci/check-public-workflow.js [--tagger] <archivo>\n');
     return 2;
   }
   let text = '';
@@ -441,16 +506,17 @@ function main(argv) {
     process.stderr.write(`⛔ check-public-workflow: ${file} está vacío\n`);
     return 2;
   }
-  const broken = check(text);
+  const broken = check(text, { tagger });
+  const total = (tagger ? TAGGER_RULES : RULES).length;
   for (const b of broken) console.log(`❌ check-public-workflow: ${b.rule} — ${b.detail}`);
   if (broken.length) {
-    console.log(`❌ check-public-workflow: ${file}: ${broken.length} de ${RULES.length} reglas rotas`);
+    console.log(`❌ check-public-workflow: ${file}: ${broken.length} de ${total} reglas rotas`);
     return 1;
   }
-  console.log(`✅ check-public-workflow: ${file} cumple las ${RULES.length} reglas`);
+  console.log(`✅ check-public-workflow: ${file} cumple las ${total} reglas`);
   return 0;
 }
 
 if (require.main === module) process.exit(main(process.argv.slice(2)));
 
-module.exports = { check, RULES, SHAPE };
+module.exports = { check, RULES, SHAPE, TAGGER_RULES, TAGGER_SHAPE, WORKFLOWS, strayWorkflows };

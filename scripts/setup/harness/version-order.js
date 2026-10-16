@@ -1,7 +1,8 @@
 'use strict';
 // version-order.js — el orden de dos números de versión publicados (story 8.13, tanda D · AC 25).
 //
-// Un número publicado es `YYYY.MM.DD.N` (lo estampa la sincronización del repo público en `version.json`). «No bajar» se
+// Un número publicado es `YYYY.MM.DD.N` (hoy lo pone la etiqueta `v<número>` de cada merge a `main`; antes, `version.json`:
+// ver «el número por etiqueta», abajo). «No bajar» se
 // decide comparando esos números POR PARTES NUMÉRICAS —`2026.09.30.10` es más nuevo que `2026.09.30.9`; como texto sería
 // al revés—, nunca por ancestría: el commit de una rama que se reescribe deja de ser ancestro de todo.
 //
@@ -86,4 +87,38 @@ function next(date, published) {
   return `${date}.${highest + 1}`;
 }
 
-module.exports = { PUBLISHED, parse, isOrdered, compare, day, parts, next };
+// ── el número por etiqueta ───────────────────────────────────────────────────────────────────────────────────────────
+// Desde que el número lo pone el merge (y no cada pedido), cada merge a `main` del repo público recibe una etiqueta
+// `v<número>` (la pone .github/workflows/version-tag.yml con scripts/ci/version-tag.js) y `version.json` queda fijo con
+// `numbering: "merge-tag"`: su número es el PISO, el que ve una máquina con el código de antes. El número de un commit es
+// el de su etiqueta si la tiene; si no, el de su `version.json` (los commits de antes, las copias de laboratorio).
+
+const TAG_PREFIX = 'v';
+/** La marca de `version.json` que dice «el número lo pone la etiqueta del merge»; el `version` del archivo es el piso. */
+const NUMBERING_BY_TAG = 'merge-tag';
+
+/** `'v2026.10.16.3'` (o `'refs/tags/v2026.10.16.3'`) → `'2026.10.16.3'`; otra cosa → `null`. */
+function fromTag(name) {
+  const short = String(name || '').replace(/^refs\/tags\//, '');
+  if (!short.startsWith(TAG_PREFIX)) return null;
+  const v = short.slice(TAG_PREFIX.length);
+  return isOrdered(v) ? v : null;
+}
+
+/** El nombre de la etiqueta de un número. */
+function tagName(version) { return `${TAG_PREFIX}${version}`; }
+
+/** El mayor número entre etiquetas (nombres); las que no son de número no cuentan. `null` si ninguna lo es. */
+function bestTag(names) {
+  let best = null;
+  for (const n of names || []) {
+    const v = fromTag(n);
+    if (v && (best === null || compare(v, best) > 0)) best = v;
+  }
+  return best;
+}
+
+/** ¿El `version.json` (ya leído) dice que el número lo pone la etiqueta del merge? */
+function numberedByTag(json) { return Boolean(json && typeof json === 'object' && json.numbering === NUMBERING_BY_TAG); }
+
+module.exports = { PUBLISHED, parse, isOrdered, compare, day, parts, next, TAG_PREFIX, NUMBERING_BY_TAG, fromTag, tagName, bestTag, numberedByTag };
