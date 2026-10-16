@@ -1,0 +1,630 @@
+'use strict';
+/*
+ * sources.js — LAS FUENTES DEL SITIO DE LA ORGANIZACIÓN Y SU REFRESCO (story 2.23, AC 13 a 16; decisiones 16, 17, 20, 21).
+ *
+ * El sitio lee directo de DOS fuentes (S7), con credenciales de sólo lectura:
+ *   · el REPO DE OPERACIONES, de `main`: un clon superficial en `<SITE_DATA_DIR>/operaciones` y `git fetch` en cada
+ *     refresco. La credencial va en una cabecera pasada por variables de git (`GIT_CONFIG_*`, el patrón de `gitAuth` del
+ *     exportador): nunca en la dirección, en un argumento ni en el disco.
+ *   · el BUZÓN de corridas, con `bajar()` de scripts/metrics/download-runs.js y la credencial que da la plataforma —una SAS
+ *     de sólo lectura, o la identidad administrada (cloud/)—. Se bajan sólo los volcados y los registros, nunca hilos ni
+ *     cambios (G3).
+ *
+ * EL MODELO se arma en el servidor con LISTA BLANCA campo por campo (decisión 19): de cada foto se copian cantidades,
+ * fechas, días, nombres de producto, proyecto y repo, números con su enlace, y estados. Nada de texto libre: los títulos,
+ * los diagnósticos y los mensajes no llegan al modelo, así que tampoco a una vista. Cada fuente lleva
+ * `{ estado: 'medido' | 'no_medido', codigo, fecha }`; `codigo` es de una lista cerrada (`sin_red`, `sin_permiso`,
+ * `credencial_rechazada`, `parcial`, `fuente_vieja`, `sin_configurar`, y los propios de una foto: `sin_foto`, `ilegible`,
+ * `sin_buzon`, `no_corre_banco`, `no_medido_noche`). El motivo crudo —que nombra rutas, blobs y máquinas— va SÓLO al
+ * registro del servidor.
+ *
+ * EL REFRESCO: cada `site.refresh_minutes` (15 si no está) y al despertar. El modelo nuevo reemplaza al viejo entero o no
+ * lo reemplaza. Una fuente que falla deja su último bueno y una banda «no se pudo actualizar desde <hora>: <estado>»; una
+ * foto más vieja que su `max_age_days` (sources.json del repo de operaciones, o el del arnés) sale `fuente_vieja`.
+ *
+ * operations.json TIENE SU PROPIA REGLA (decisión 17; 2.28 decisión 6): si un refresco no lo puede leer o no valida, vale
+ * el último bueno 24 horas desde el PRIMER refresco fallido, con una banda sólo para quienes mantienen; pasado el plazo,
+ * el sitio se FRENA para todos. Sin último bueno, el freno es inmediato. El último bueno y la hora de la primera falla se
+ * guardan en `SITE_DATA_DIR` (escritura atómica), así despertar o reiniciar no vuelve a empezar el plazo. La cuenta la
+ * hace `estadoDeLaConfiguracion` (la 2.28 la mueve a people.js con la misma firma).
+ *
+ * Contrato con server.js: crearFuentes(…) → { arrancar, refrescar, estado, config, modelo, detener }.
+ */
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const childProcess = require('child_process');
+const OPS = require('../lib/operations-config.js');
+
+/** Un proceso sin bloquear: { status, stdout, stderr, error }. Nunca rechaza; con `timeout`, lo corta. */
+function correr(cmd, args, { cwd, env, timeout = 180000 } = {}) {
+  return new Promise((resolve) => {
+    let p;
+    try { p = childProcess.spawn(cmd, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] }); } catch (error) { resolve({ status: null, stdout: '', stderr: '', error }); return; }
+    let stdout = ''; let stderr = ''; let error = null;
+    const corte = setTimeout(() => { error = Object.assign(new Error('timeout'), { code: 'ETIMEDOUT' }); p.kill('SIGKILL'); }, timeout);
+    p.stdout.on('data', (c) => { stdout += c; });
+    p.stderr.on('data', (c) => { stderr += c; });
+    p.on('error', (e) => { error = e; });
+    p.on('close', (status) => { clearTimeout(corte); resolve({ status, stdout, stderr, error }); });
+  });
+}
+
+const DIA = 86400000;
+const PLAZO_CONFIG_MS = 24 * 3600000;
+const REFRESCO_POR_DEFECTO = 15;
+const EDAD_MAXIMA_SIN_DECLARAR = 2;
+const ARCHIVO_ESTADO = 'configuracion-estado.json';
+const SOURCES_DEL_ARNES = path.join(__dirname, '..', 'nightly', 'dashboard', 'sources.json');
+
+/** La regla de operations.json: { estado: 'vigente' | 'ultimo_bueno' | 'frenado', desde }. */
+function estadoDeLaConfiguracion({ hayUltimoBueno, fallaDesde, ahora }) {
+  if (fallaDesde === null || fallaDesde === undefined) return hayUltimoBueno ? { estado: 'vigente', desde: null } : { estado: 'frenado', desde: ahora };
+  if (!hayUltimoBueno) return { estado: 'frenado', desde: fallaDesde };
+  if (ahora - fallaDesde >= PLAZO_CONFIG_MS) return { estado: 'frenado', desde: fallaDesde + PLAZO_CONFIG_MS };
+  return { estado: 'ultimo_bueno', desde: fallaDesde };
+}
+
+const isObject = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
+const num = (x) => (Number.isFinite(x) ? x : null);
+const texto = (x, max = 120) => (typeof x === 'string' && x.trim() ? x.trim().slice(0, max) : null);
+const codigoDe = (x) => (typeof x === 'string' && /^[a-z][a-z0-9_]{0,39}$/.test(x) ? x : null);   // un código, nunca una frase
+const enlace = (x) => (typeof x === 'string' && /^https?:\/\/[^\s"'<>]+$/.test(x) ? x.slice(0, 400) : null);
+const fechaDe = (nombre) => { const m = String(nombre).match(/(\d{4}-\d{2}-\d{2})/); return m ? m[1] : null; };
+const diaUtc = (ms) => new Date(ms).toISOString().slice(0, 10);
+const fuente = (estado, codigo, fecha, extra = {}) => ({ estado, codigo: codigo || null, motivo: null, fecha: fecha || null, ...extra });
+const noMedida = (codigo, fecha = null) => fuente('no_medido', codigo, fecha);
+const decodificar = (s) => { try { return decodeURIComponent(s); } catch { return s; } };
+// controles C0 y C1 y los separadores de línea U+2028/U+2029 (armados por código: escritos tal cual cortan la expresión)
+const CONTROLES = new RegExp(`[\\u0000-\\u001f\\u007f-\\u009f${String.fromCharCode(0x2028)}${String.fromCharCode(0x2029)}]+`, 'g');
+/** Saca los caracteres de control de una línea que va al registro (saltos, escape de la consola). */
+const limpiarLinea = (s) => String(s).replace(CONTROLES, ' ');
+
+/** Un JSON: { doc } o { codigo: 'sin_foto' | 'ilegible' } — «no está» y «está roto» no son lo mismo. */
+function leerJsonDe(ruta) {
+  let crudo;
+  try { crudo = fs.readFileSync(ruta, 'utf8'); } catch (e) { return { codigo: e.code === 'ENOENT' ? 'sin_foto' : 'ilegible' }; }
+  try { return { doc: JSON.parse(crudo) }; } catch { return { codigo: 'ilegible' }; }
+}
+const leerJson = (ruta) => leerJsonDe(ruta).doc || null;
+
+/**
+ * 🔴 Lo que se lee del clon tiene que estar ADENTRO del clon (revisión de seguridad de la 2.23): quien escribe el repo de
+ * operaciones podría dejar un enlace simbólico a un archivo del servidor —las variables del proceso, con los secretos— o
+ * un `dir` con `..` en sources.json. El clon se baja con `core.symlinks=false` y, además, cada lectura resuelve la ruta
+ * real y exige que quede bajo la raíz real del clon.
+ */
+function dentroDe(raiz, ruta) {
+  try {
+    const r = fs.realpathSync(raiz);
+    const p = fs.realpathSync(ruta);
+    return p === r || p.startsWith(r + path.sep);
+  } catch { return false; }
+}
+
+/** Los módulos de cloud/ (lo de cada nube): el núcleo les pide el buzón o un token sin nombrar a ninguna. */
+function nubes(log = () => {}) {
+  const dir = path.join(__dirname, 'cloud');
+  let archivos = [];
+  try { archivos = fs.readdirSync(dir).filter((f) => /^[a-z][a-z0-9-]*\.js$/.test(f)).sort(); } catch (e) { log(`no se pudo leer cloud/ (${e.code || e.message})`); return []; }
+  const out = [];
+  for (const f of archivos) {
+    try { out.push(require(path.join(dir, f))); } catch (e) { log(`el módulo cloud/${f} no carga (${(e && e.name) || 'error'}): lo de esa nube no está disponible`); }
+  }
+  return out;
+}
+
+function escribirAtomico(archivo, contenido) {
+  fs.mkdirSync(path.dirname(archivo), { recursive: true });
+  const tmp = `${archivo}.tmp-${process.pid}`;
+  fs.writeFileSync(tmp, contenido);
+  fs.renameSync(tmp, archivo);
+}
+
+/** La foto más nueva de una carpeta con un patrón: { fecha, doc, archivos } o { codigo }. `raiz`: lo leído queda adentro. */
+function ultimaFoto(dir, patron, raiz = dir) {
+  let nombres;
+  try {
+    const rx = new RegExp(`^${patron.replace(/[.]/g, '\\.').replace(/\*/g, '.*')}$`);
+    nombres = fs.readdirSync(dir).filter((n) => rx.test(n) && fechaDe(n)).sort();
+  } catch (e) { return { codigo: e.code === 'ENOENT' ? 'sin_foto' : 'ilegible' }; }
+  if (!nombres.length) return { codigo: 'sin_foto' };
+  const ultimo = nombres[nombres.length - 1];
+  const ruta = path.join(dir, ultimo);
+  if (!dentroDe(raiz, ruta)) return { codigo: 'ilegible', fecha: fechaDe(ultimo) };
+  const r = leerJsonDe(ruta);
+  if (!r.doc) return { codigo: 'ilegible', fecha: fechaDe(ultimo) };
+  return { fecha: fechaDe(ultimo), doc: r.doc, nombres };
+}
+
+/** La foto de un día dado (para «rojo de esta noche»). */
+function fotoDelDia(dir, patron, dia, raiz = dir, log = () => {}) {
+  const ruta = path.join(dir, patron.replace('*', dia));
+  if (!fs.existsSync(ruta)) return null;
+  const r = dentroDe(raiz, ruta) ? leerJsonDe(ruta) : { codigo: 'ilegible' };
+  if (!r.doc) log(`la foto de ayer (${patron.replace('*', dia)}) existe y no se pudo leer: sin ayer`);
+  return r.doc || null;
+}
+
+/** Las corridas del espejo del buzón, contadas con `leerRegistro` de runs.js (las copias de una sesión, una vez). */
+function leerCorridas(dirBuzon) {
+  const runs = require('../nightly/dashboard/runs.js');
+  const nombres = runs.nombresDePasos().nombres;
+  const sinLocal = path.join(os.tmpdir(), `site-sin-registro-local-${process.pid}`);
+  const r = runs.leerRegistro(sinLocal, nombres, { buzon: dirBuzon, maquina: null });
+  // el motivo (que nombra la carpeta) viaja sólo para el registro: quien llama lo saca antes del modelo
+  if (!r.buzon || r.buzon.estado !== 'leido') return { ...noMedida('ilegible'), _motivo: r.buzon ? String(r.buzon.motivo || r.buzon.estado) : 'sin lectura del buzón' };
+  return fuente('medido', null, null, { lista: r.corridas.map((c) => ({ maquina: texto(c.maquina, 80), inicio: texto(c.inicio, 40) })) });
+}
+
+const FORMA_CARPETA = /^[a-z0-9][a-z0-9._-]{0,80}$/;
+const ESTADOS_CARPETA = new Set(['unida', 'compartida', 'siguio_recibiendo']);
+/** `.carpetas-de-maquina.json` (2.28), con lista blanca: nombres con forma de carpeta, estados conocidos, números, fechas. */
+function carpetasProyectadas(doc) {
+  if (!isObject(doc) || !isObject(doc.carpetas)) return null;
+  const carpetas = {};
+  for (const [k, v] of Object.entries(doc.carpetas)) {
+    if (!FORMA_CARPETA.test(k) || !isObject(v) || !ESTADOS_CARPETA.has(v.estado)) continue;
+    carpetas[k] = { estado: v.estado, nueva: typeof v.nueva === 'string' && FORMA_CARPETA.test(v.nueva) ? v.nueva : null, declarantes: num(v.declarantes), desde: texto(v.desde, 10) };
+  }
+  return { schema: 1, carpetas };
+}
+
+/** Los umbrales de sources.json, con lista blanca: el sentido y los cuatro números. Nada de texto. */
+function umbralesProyectados(th) {
+  const out = {};
+  for (const [k, u] of Object.entries(isObject(th) ? th : {})) {
+    if (!/^[a-z0-9_]{1,60}$/.test(k) || !isObject(u)) continue;
+    const v = {};
+    if (u.direction === 'mayor_es_mejor' || u.direction === 'menor_es_mejor') v.direction = u.direction;
+    for (const n of ['ok_min', 'bad_max', 'ok_max', 'bad_min']) if (Number.isFinite(u[n])) v[n] = u[n];
+    out[k] = v;
+  }
+  return out;
+}
+
+const DIR_SEGURO = /^(\.|[A-Za-z0-9_-][A-Za-z0-9._-]*(\/[A-Za-z0-9_-][A-Za-z0-9._-]*)*)$/;
+// como mucho dos `*`: muchos comodines encadenados dan una expresión con retroceso catastrófico sobre los nombres
+const PATRON_SEGURO = /^(?!(?:[^*]*\*){3})[A-Za-z0-9._*-]{1,80}$/;
+
+// ── El modelo (lista blanca), desde un clon del repo de operaciones ───────────────────────────────────────────────
+function construirDesdeClon(clon, { ahora = Date.now(), corridas = noMedida('sin_buzon'), carpetas = null, log: logCrudo = () => {} } = {}) {
+  const log = (l) => logCrudo(limpiarLinea(l));   // los nombres de archivo del repo pueden traer saltos de línea
+  const t = ahora;
+  const hoy = diaUtc(t);
+  const dash = path.join(clon, '.dashboard');
+  const delClon = (...partes) => { const r = path.join(clon, ...partes); return dentroDe(clon, r) ? r : null; };
+  const jsonDelClon = (...partes) => { const r = delClon(...partes); return r ? leerJsonDe(r) : { codigo: fs.existsSync(path.join(clon, ...partes)) ? 'ilegible' : 'sin_foto' }; };
+
+  let sourcesCfg = null;
+  const sc = jsonDelClon('scripts', 'nightly', 'dashboard', 'sources.json');
+  if (sc.doc) sourcesCfg = sc.doc;
+  else {
+    if (sc.codigo === 'ilegible') log('el sources.json del repo de operaciones no se pudo leer: se usa el del arnés');
+    sourcesCfg = leerJson(SOURCES_DEL_ARNES);
+    if (!sourcesCfg) { log('tampoco se pudo leer el sources.json del arnés: sin antigüedades declaradas'); sourcesCfg = { sources: [], thresholds: {} }; }
+  }
+  // un `dir` o un patrón que no tienen forma de carpeta y nombre de archivo del tablero no se leen (nunca salen del clon)
+  const lista = (Array.isArray(sourcesCfg.sources) ? sourcesCfg.sources : []).filter((s) => isObject(s) && !s.local && typeof s.dir === 'string' && typeof s.pattern === 'string' && DIR_SEGURO.test(s.dir) && PATRON_SEGURO.test(s.pattern) && !s.dir.split('/').includes('..'));
+  const edadMax = (dir, patron) => { const s = lista.find((x) => x.dir === dir && x.pattern === patron); return s && Number.isFinite(s.max_age_days) ? s.max_age_days : EDAD_MAXIMA_SIN_DECLARAR; };
+  const edad = (fecha) => Math.floor((Date.parse(`${hoy}T00:00:00Z`) - Date.parse(`${fecha}T00:00:00Z`)) / DIA);
+
+  /** Una foto con su frescura: { ok, doc, fecha } o la fuente «no medido». */
+  function foto(dir, patron, { sinCarpeta } = {}) {
+    const abs = path.join(dash, dir === '.' ? '' : dir);
+    if (!DIR_SEGURO.test(dir) || dir.split('/').includes('..')) { log(`la carpeta de fotos «${dir}» no tiene forma de carpeta del tablero: no se lee`); return { fuente: noMedida('ilegible') }; }
+    if (sinCarpeta && !fs.existsSync(abs)) return { fuente: noMedida(sinCarpeta) };
+    if (fs.existsSync(abs) && !dentroDe(clon, abs)) { log(`la carpeta de fotos «${dir}» queda fuera del clon (un enlace): no se lee`); return { fuente: noMedida('ilegible') }; }
+    const f = ultimaFoto(abs, patron, clon);
+    if (!f.doc) {
+      // una foto que está y no se puede leer se nombra en el registro, en un solo lugar para todas las fuentes
+      if (f.codigo === 'ilegible') log(`la foto ${dir}/${patron}${f.fecha ? ` del ${f.fecha}` : ''} no se pudo leer`);
+      return { fuente: noMedida(f.codigo, f.fecha) };
+    }
+    if (edad(f.fecha) > edadMax(dir, patron)) return { fuente: noMedida('fuente_vieja', f.fecha), vieja: true };
+    return { ok: true, doc: f.doc, fecha: f.fecha, abs };
+  }
+  const largo = (r) => (isObject(r) && r.motivo == null && Array.isArray(r.valor) ? r.valor.length : (isObject(r) && r.motivo == null && Number.isFinite(r.valor) ? r.valor : null));
+  const ayerDe = (fecha) => diaUtc(Date.parse(`${fecha}T00:00:00Z`) - DIA);
+
+  const m = { generado: t };
+
+  // dependencias. 🔴 Un rubro sin medir (valor null con motivo, o ausente) es null, nunca un objeto vacío: «0 vivas» no.
+  const dep = foto('dependencias', 'dependencias-*.json');
+  if (dep.ok) {
+    const rub = isObject(dep.doc.resumen) && isObject(dep.doc.resumen.rubros) ? dep.doc.resumen.rubros : {};
+    let vivas = null;
+    const vp = rub.vivas_por_proyecto;
+    if (isObject(vp) && vp.motivo == null && Array.isArray(vp.valor)) {
+      vivas = {};
+      for (const x of vp.valor) if (isObject(x) && texto(x.proyecto)) vivas[decodificar(texto(x.proyecto))] = Array.isArray(x.ids) ? x.ids.length : 0;
+    }
+    m.dependencias = fuente('medido', null, dep.fecha, {
+      rubros: { nuevos: largo(rub.nuevos), aceptadas_sin_resolver: largo(rub.aceptadas_sin_resolver), rechazadas_sin_deuda: largo(rub.rechazadas_sin_deuda), pedidos_cerrados_con_vivas: largo(rub.pedidos_cerrados_con_vivas) },
+      vivas_por_proyecto: vivas,
+    });
+  } else m.dependencias = dep.fuente;
+
+  // vigilante
+  const vig = foto('vigilante', 'vigilante-*.json');
+  if (vig.ok) {
+    const rub = isObject(vig.doc.resumen) && isObject(vig.doc.resumen.rubros) ? vig.doc.resumen.rubros : {};
+    m.vigilante = fuente('medido', null, vig.fecha, { pendientes: largo(rub.pendientes), aceptadas_sin_story: largo(rub.aceptadas_sin_story), productos: isObject(vig.doc.productos) ? Object.keys(vig.doc.productos).map((k) => texto(k, 60)).filter(Boolean) : [] });
+  } else m.vigilante = vig.fuente;
+
+  // banco, suites y examen (el nocturno del tablero de una organización que corre el banco los guarda acá)
+  const rojosDelBanco = (doc) => (isObject(doc) && isObject(doc.results) ? Object.entries(doc.results).filter(([, r]) => isObject(r) && isObject(r.tools) && Object.values(r.tools).some((x) => isObject(x) && x.pass === false)).map(([id]) => texto(id, 160)).filter(Boolean) : null);
+  const banco = foto('controls-bench', 'banco-*.json', { sinCarpeta: 'no_corre_banco' });
+  if (banco.ok) {
+    const ayer = fotoDelDia(banco.abs, 'banco-*.json', ayerDe(banco.fecha), clon, log);
+    const rojos = rojosDelBanco(banco.doc);
+    // 🔴 una foto sin `results` no es «0 rojos»: es una foto que no se pudo leer
+    if (rojos === null) { m.banco = noMedida('ilegible', banco.fecha); log(`la foto del banco del ${banco.fecha} no trae results`); }
+    else m.banco = fuente('medido', null, banco.fecha, { rojos, total: num(banco.doc.ran), ayer: ayer && rojosDelBanco(ayer) ? { fecha: ayerDe(banco.fecha), rojos: rojosDelBanco(ayer) } : null });
+  } else m.banco = banco.fuente;
+  const suites = foto('controls-bench', 'suites-*.json', { sinCarpeta: 'no_corre_banco' });
+  // 🔴 suites-report.js deja en `failures` también las suites NO medidas, con la marca «(no-medida)»: no son rojas
+  const NO_MEDIDA = /\(no-medida\)$/;
+  const nombresSuites = (doc) => (Array.isArray(doc && doc.failures) ? doc.failures.map((x) => texto(x, 160)).filter((x) => x && !NO_MEDIDA.test(x)) : null);
+  if (suites.ok && nombresSuites(suites.doc) === null) { m.suites = noMedida('ilegible', suites.fecha); log(`la foto de las suites del ${suites.fecha} no trae failures`); }
+  else if (suites.ok) {
+    const ayer = fotoDelDia(suites.abs, 'suites-*.json', ayerDe(suites.fecha), clon, log);
+    m.suites = fuente('medido', null, suites.fecha, {
+      rojas: nombresSuites(suites.doc) || [], sin_medir: Array.isArray(suites.doc.unmeasured) ? suites.doc.unmeasured.length : 0,
+      total: num(suites.doc.corridas) ?? (Array.isArray(suites.doc.ran) ? suites.doc.ran.length : null),
+      ayer: ayer && nombresSuites(ayer) ? { fecha: ayerDe(suites.fecha), rojas: nombresSuites(ayer) } : null,
+    });
+  } else m.suites = suites.fuente;
+  const examen = foto('controls-bench', 'examen-*.json', { sinCarpeta: 'no_corre_banco' });
+  m.examen = examen.ok ? fuente('medido', null, examen.fecha, { fallos: num(examen.doc.failed), completo: examen.doc.estado === 'completo' }) : examen.fuente;
+
+  // datos declarados
+  const decl = jsonDelClon('scripts', 'nightly', 'dashboard', 'declared.json');
+  if (decl.doc && Array.isArray(decl.doc.declared)) m.declarados = fuente('medido', null, hoy, { lista: decl.doc.declared.filter(isObject).map((d) => ({ id: texto(d.id, 80), review_before: texto(d.review_before, 10) })) });
+  else { m.declarados = noMedida(decl.doc ? 'ilegible' : decl.codigo); if (m.declarados.codigo === 'ilegible') log('declared.json del repo de operaciones no se pudo leer'); }
+
+  // productos (repos.json). 🔴 El cruce es por el NOMBRE DEL PROYECTO, decodificado: repos.json lista los repos de código con
+  // el proyecto codificado («Proyecto%20Uno/Front»), las fotos por proyecto son de los repos de stories, y las
+  // vulnerabilidades vienen por proyecto decodificado. Una entrada de GitHub (`github: <dueño>/<repo>`) es su propio proyecto.
+  const repos = jsonDelClon('scripts', 'nightly', 'dependencies', 'repos.json');
+  const porProducto = new Map();
+  for (const r of (repos.doc && Array.isArray(repos.doc.repos) ? repos.doc.repos : [])) {
+    if (!isObject(r) || r.activo === false || !texto(r.producto)) continue;
+    let proyecto = null;
+    if (texto(r.ado) && texto(r.ado).includes('/')) proyecto = decodificar(texto(r.ado, 200).split('/')[0]);
+    else if (texto(r.github)) proyecto = texto(r.github, 200);
+    if (!proyecto) continue;
+    if (!porProducto.has(texto(r.producto))) porProducto.set(texto(r.producto), { proyectos: new Set(), rutas: new Set() });
+    porProducto.get(texto(r.producto)).proyectos.add(proyecto);
+    if (texto(r.ruta)) porProducto.get(texto(r.producto)).rutas.add(texto(r.ruta, 200));
+  }
+  m.productos = [...porProducto].map(([producto, s]) => ({ producto, proyectos: [...s.proyectos], rutas: [...s.rutas] }));
+  if (repos.doc && Array.isArray(repos.doc.repos)) m.productosFuente = fuente('medido', null, hoy);
+  else { m.productosFuente = noMedida(repos.doc ? 'ilegible' : repos.codigo); log(`repos.json del repo de operaciones: ${m.productosFuente.codigo}`); }
+
+  // fotos por proyecto (2.20): cada una con su antigüedad (2 días); una vieja no cuenta como al día, una ilegible se nombra
+  const dirProy = path.join(dash, 'proyectos');
+  const proyectos = [];
+  let fechaProy = null;
+  let ilegibles = 0;
+  try {
+    for (const n of fs.readdirSync(dirProy).filter((x) => x.endsWith('.json')).sort()) {
+      const ruta = path.join(dirProy, n);
+      const r = dentroDe(clon, ruta) ? leerJsonDe(ruta) : { codigo: 'ilegible' };
+      const d = r.doc;
+      if (!isObject(d) || !texto(d.proyecto) || !texto(d.repo)) { ilegibles += 1; log(`la foto por proyecto ${n} no se pudo leer o no tiene proyecto y repo`); continue; }
+      const fecha = texto(d.generated_at, 10);
+      const vieja = !fecha || edad(fecha) > EDAD_MAXIMA_SIN_DECLARAR;
+      if (fecha && !vieja && (!fechaProy || fecha > fechaProy)) fechaProy = fecha;
+      proyectos.push({ proyecto: decodificar(texto(d.proyecto)), repo: texto(d.repo), fecha, vieja, stories: (Array.isArray(d.stories) ? d.stories : []).filter(isObject).map((s) => ({ grupo: texto(s.grupo, 30), canonico: texto(s.canonico, 30), dias_en_estado: num(s.dias_en_estado) })) });
+    }
+    if (!proyectos.length) m.proyectos = noMedida(ilegibles ? 'ilegible' : 'sin_foto');
+    else m.proyectos = fuente('medido', ilegibles ? 'parcial' : null, fechaProy, { lista: proyectos, ilegibles });
+  } catch (e) {
+    m.proyectos = noMedida(e.code === 'ENOENT' ? 'sin_foto' : 'ilegible');
+    if (e.code !== 'ENOENT') log(`la carpeta de fotos por proyecto no se pudo leer (${e.code || e.message})`);
+  }
+
+  // despliegues (2.22): de cada producto, estados y fechas; el motivo sólo si es un código (nunca una frase)
+  const desp = foto('deployments', 'deployments-*.json');
+  if (desp.ok) {
+    const productos = {};
+    for (const [k, p] of Object.entries(isObject(desp.doc.productos) ? desp.doc.productos : {})) {
+      if (!isObject(p)) continue;
+      const lado = (x) => (isObject(x) ? { fecha: texto(x.fecha, 30) } : null);
+      const apr = p.aprobacion;
+      productos[texto(k, 120)] = {
+        estado: ['medido', 'parcial', 'no_medido'].includes(p.estado) ? p.estado : 'no_medido', motivo: codigoDe(p.motivo),
+        staging: lado(p.staging), produccion: lado(p.produccion), produccion_atrasada: typeof p.produccion_atrasada === 'boolean' ? p.produccion_atrasada : null,
+        aprobacion: typeof apr === 'string' ? { estado: codigoDe(apr) } : (isObject(apr) ? { estado: codigoDe(apr.estado) } : null),
+        main: codigoDe(p.main),
+      };
+    }
+    m.despliegues = fuente('medido', null, desp.fecha, { productos });
+  } else m.despliegues = desp.fuente;
+
+  // lo que deja la noche para el sitio: pull requests y pedidos asignados (decisión 20)
+  const prs = foto('open-prs', 'open-prs-*.json');
+  if (prs.ok && prs.doc.estado === 'medido' && Array.isArray(prs.doc.prs)) {
+    m.prs = fuente('medido', null, prs.fecha, { lista: prs.doc.prs.filter(isObject).map((p) => ({ numero: num(p.numero), proyecto: texto(p.proyecto), repo: texto(p.repo), dias: num(p.dias), autor: texto(p.autor, 200), enlace: enlace(p.enlace) })) });
+  } else if (prs.ok && prs.doc.estado === 'medido') { m.prs = noMedida('ilegible', prs.fecha); log(`la foto de PR del ${prs.fecha} dice medido y no trae la lista`); }
+  else m.prs = prs.ok ? noMedida('no_medido_noche', prs.fecha) : prs.fuente;
+  const asig = foto('assigned', 'assigned-*.json');
+  if (asig.ok && asig.doc.estado === 'medido' && Array.isArray(asig.doc.pedidos)) {
+    m.pedidos = fuente('medido', null, asig.fecha, { lista: asig.doc.pedidos.filter(isObject).map((p) => ({ id: num(p.id), proyecto: texto(p.proyecto), tipo: texto(p.tipo, 40), estado: texto(p.estado, 40), asignado: texto(p.asignado, 200), dias: num(p.dias_en_estado), enlace: enlace(p.enlace), dependencias: p.dependencias === true })) });
+  } else if (asig.ok && asig.doc.estado === 'medido') { m.pedidos = noMedida('ilegible', asig.fecha); log(`la foto de pedidos asignados del ${asig.fecha} dice medido y no trae la lista`); }
+  else m.pedidos = asig.ok ? noMedida('no_medido_noche', asig.fecha) : asig.fuente;
+
+  // la paridad de los productos (2.25, su AC 12): el archivo de HOY, y de él sólo las cantidades por repo de `por_ruta`.
+  // `divergencias[]` —el texto del rasgo y qué productos lo tienen— no entra al modelo.
+  const MOTIVOS_PARIDAD = new Set(['sin_clon', 'ilegible', 'grupo_sin_comparar', 'declaracion_incompleta']);
+  const par = fs.existsSync(path.join(dash, 'paridad')) && !dentroDe(clon, path.join(dash, 'paridad')) ? { codigo: 'ilegible' } : ultimaFoto(path.join(dash, 'paridad'), 'paridad-*.json', clon);
+  if (!par.doc && par.codigo === 'ilegible') { m.paridad = noMedida('ilegible', par.fecha || null); log('la foto de la paridad no se pudo leer'); }
+  else if (!par.doc || par.fecha !== hoy) m.paridad = noMedida('sin_paridad', par.fecha || null);
+  else if (par.doc.estado === 'sin_productos') m.paridad = noMedida('sin_productos', par.fecha);
+  else if (!['medido', 'parcial'].includes(par.doc.estado)) m.paridad = noMedida('paridad_no_medida', par.fecha);
+  else {
+    m.paridad = fuente('medido', null, par.fecha, { por_ruta: (Array.isArray(par.doc.por_ruta) ? par.doc.por_ruta : []).filter(isObject).map((x) => ({
+      ruta: texto(x.ruta, 200), estado: ['medido', 'desde_disco', 'no_medido'].includes(x.estado) ? x.estado : 'no_medido',
+      motivo: MOTIVOS_PARIDAD.has(x.motivo) ? x.motivo : null, divergencias: num(x.divergencias), vencidas: num(x.vencidas),
+    })).filter((x) => x.ruta) });
+  }
+
+  // la página de las seis preguntas y su sello
+  let html = null;
+  const rutaTablero = delClon('artifacts', 'tablero-del-arnes.html');
+  if (rutaTablero) { try { if (fs.lstatSync(rutaTablero).isFile()) html = fs.readFileSync(rutaTablero, 'utf8'); } catch (e) { if (e.code !== 'ENOENT') log(`la página de las seis preguntas no se pudo leer (${e.code || e.message})`); } }
+  if (html === null) m.tablero = noMedida(fs.existsSync(path.join(clon, 'artifacts', 'tablero-del-arnes.html')) ? 'ilegible' : 'sin_foto');
+  else {
+    const s = require('../nightly/dashboard/seal.js').leer(html);
+    m.tablero = fuente('medido', null, s.sello ? texto(s.sello.generado, 10) : null, { html, sello: s.sello ? { generado: texto(s.sello.generado, 30), completo: s.sello.completo === true } : null });
+  }
+
+  // cada fuente de sources.json, al día o no (la misma lectura de antigüedad que el tablero)
+  m.sources = { lista: lista.filter((s) => !s.dir.startsWith('~')).map((s) => {
+    const f = foto(s.dir, s.pattern);
+    return f.ok ? { id: texto(s.id, 60), estado: 'medido', codigo: null, fecha: f.fecha } : { id: texto(s.id, 60), ...f.fuente };
+  }) };
+  m.umbrales = umbralesProyectados(sourcesCfg.thresholds);
+  m.corridas = corridas;
+  m.carpetas = carpetasProyectadas(carpetas);
+  m.informados = {};
+  return m;
+}
+
+/**
+ * El estado de una salida de git, de la lista cerrada: la credencial rechazada, sin permiso sobre el repo (o el repo no
+ * existe: los dos se ven igual desde afuera), o sin red.
+ */
+function estadoDeGit(stderr) {
+  const s = String(stderr || '');
+  if (/\b(401)\b|Authentication failed|could not read Username|terminal prompts disabled|invalid credentials/i.test(s)) return 'credencial_rechazada';
+  if (/\b(403)\b|TF401019|repository .* not found|Repository not found|does not exist or you do not have permissions|Access denied|Permission denied/i.test(s)) return 'sin_permiso';
+  if (/Remote branch main not found|couldn't find remote ref main|Could not find remote branch main/i.test(s)) return 'sin_rama';
+  // «unable to access» solo no alcanza: git lo dice también ante un 404, un 429 o un certificado
+  if (/Could not resolve host|Connection refused|Connection timed out|timed out|Failed to connect|Network is unreachable|\b50[0-9]\b|ETIMEDOUT|ECONNRESET/i.test(s)) return 'sin_red';
+  // lo que no se reconoce (git ausente, disco lleno…) no se disfraza de «sin red»: el motivo crudo queda en el registro
+  return 'falla_git';
+}
+
+/** Saca los caracteres de control de una línea que va al registro (saltos, escape de la consola). */
+function crearFuentes({ cfg, dataDir, log: logCrudo = () => {}, ahora = Date.now, spawn = correr, urlBuzon, git = 'git', nubes: nubesDadas }) {
+  // 🔴 todo lo que este módulo registra puede traer texto del repo de operaciones o del buzón (valores de operations.json,
+  //    stderr de git, nombres de archivo): sale sin caracteres de control (revisión de seguridad de la 2.23, vuelta 2)
+  const log = (l) => logCrudo(limpiarLinea(l));
+  if (!dataDir) throw new Error('crearFuentes necesita SITE_DATA_DIR o una carpeta temporal');
+  const clon = path.join(dataDir, 'operaciones');
+  const dirBuzon = path.join(dataDir, 'buzon');
+  const rutaEstado = path.join(dataDir, ARCHIVO_ESTADO);
+  const st = { cargado: false, ultimoBueno: null, fallaDesde: null, fallaMotivo: null, fallaRutas: null, frenado: null, bandaConfig: null, modelo: null, fallas: { repo: null, buzon: null } };
+  let temporizador = null;
+  let enCurso = null;
+  const lasNubes = () => (Array.isArray(nubesDadas) ? nubesDadas : nubes(log));
+
+  const guardado = leerJsonDe(rutaEstado);
+  if (guardado.doc && isObject(guardado.doc)) {
+    const g = guardado.doc;
+    const r = g.ultimoBueno ? OPS.parse(JSON.stringify(g.ultimoBueno)) : null;
+    if (r && r.ok) st.ultimoBueno = r.data;
+    else if (g.ultimoBueno) log('el último bueno guardado en SITE_DATA_DIR ya no valida: se descarta');
+    if (Number.isFinite(g.fallaDesde)) { st.fallaDesde = g.fallaDesde; st.fallaMotivo = texto(g.fallaMotivo, 2000); st.fallaRutas = texto(g.fallaRutas, 500); }
+  } else if (guardado.codigo !== 'sin_foto') log('el estado de la configuración guardado en SITE_DATA_DIR no se pudo leer: se arranca sin último bueno');
+
+  function guardarEstado() {
+    try { escribirAtomico(rutaEstado, `${JSON.stringify({ ultimoBueno: st.ultimoBueno, fallaDesde: st.fallaDesde, fallaMotivo: st.fallaMotivo, fallaRutas: st.fallaRutas })}\n`); }
+    catch (e) { log(`no se pudo guardar el estado de la configuración en SITE_DATA_DIR (${e.code || e.message})`); }
+  }
+
+  // ── El repo de operaciones ─────────────────────────────────────────────────────────────────────────────────────
+  async function cabecera() {
+    if (cfg.operationsCredencial && cfg.operationsCredencial.token) return { valor: `Basic ${Buffer.from(`x-access-token:${cfg.operationsCredencial.token}`).toString('base64')}` };
+    if (cfg.operationsCredencial && cfg.operationsCredencial.managed) {
+      const nube = lasNubes().find((n) => typeof n.tokenParaRepo === 'function');
+      if (!nube) return { estado: 'sin_configurar', motivo: 'ninguna nube de cloud/ da una identidad administrada para el repo de operaciones' };
+      const t = await nube.tokenParaRepo();
+      return t.token ? { valor: `Bearer ${t.token}` } : { estado: t.estado, motivo: t.motivo };
+    }
+    return { estado: 'sin_configurar', motivo: 'sin credencial del repo de operaciones' };
+  }
+
+  // 🔴 Asíncrono: un clon puede tardar minutos, y una llamada bloqueante frenaría todos los pedidos del sitio mientras.
+  // `core.symlinks=false`: un enlace simbólico del repo se baja como un archivo con la ruta adentro, nunca como enlace.
+  function correrGit(args, cab, cwd) {
+    let origen = null;
+    try { origen = new URL(cfg.operationsRepo).origin; } catch { /* una ruta local (las pruebas): sin cabecera */ }
+    const conf = [['core.symlinks', 'false'], ['credential.helper', '']];
+    if (origen && cab) conf.push([`http.${origen}/.extraheader`, `Authorization: ${cab}`]);
+    const env = { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: '', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_COUNT: String(conf.length) };
+    conf.forEach(([k, v], i) => { env[`GIT_CONFIG_KEY_${i}`] = k; env[`GIT_CONFIG_VALUE_${i}`] = v; });
+    return spawn(git, args, { cwd, env, timeout: 180000 });
+  }
+
+  async function actualizarRepo() {
+    const cab = await cabecera();
+    if (!cab.valor) return { estado: cab.estado || 'sin_configurar', motivo: cab.motivo };
+    let hayClon = fs.existsSync(path.join(clon, '.git'));
+    if (hayClon) {
+      // 🔴 el clon de un disco persistente puede ser de OTRO repo (cambió SITE_OPERATIONS_REPO): se vuelve a clonar
+      const r = await correrGit(['-C', clon, 'config', '--get', 'remote.origin.url'], null);
+      if (r.status !== 0 || String(r.stdout || '').trim() !== cfg.operationsRepo) { log('el clon guardado es de otro repo de operaciones: se vuelve a clonar'); hayClon = false; }
+    }
+    const pasos = hayClon
+      ? [['-C', clon, 'fetch', '--depth', '1', '--no-tags', 'origin', 'main'], ['-C', clon, 'reset', '--hard', '-q', 'FETCH_HEAD']]
+      : [['clone', '-q', '--depth', '1', '--branch', 'main', '--single-branch', '--no-tags', cfg.operationsRepo, clon]];
+    if (!hayClon) fs.rmSync(clon, { recursive: true, force: true });
+    for (const args of pasos) {
+      const r = await correrGit(args, cab.valor);
+      if (r.error || r.status !== 0) {
+        const err = String((r.stderr || '') + (r.error ? ` ${r.error.code || r.error.message}` : '')).split(cab.valor).join('[credencial]').split('\n').map((l) => l.trim()).filter(Boolean).slice(-2).join(' · ');
+        return { estado: estadoDeGit(err), motivo: `git ${args.find((a) => a === 'fetch' || a === 'clone' || a === 'reset')} del repo de operaciones falló: ${err.slice(0, 300)}` };
+      }
+    }
+    return { ok: true };
+  }
+
+  // ── operations.json ────────────────────────────────────────────────────────────────────────────────────────────
+  // La banda de quienes mantienen trae las RUTAS de los problemas (AC 15); el texto entero —que puede repetir un valor del
+  // archivo, como un correo— va sólo al registro (revisión de seguridad de la 2.23).
+  function aplicarConfig(r, t) {
+    if (r.ok) {
+      if (st.fallaDesde !== null) log('operations.json vuelve a validar: se saca la banda y el freno');
+      st.ultimoBueno = r.data; st.fallaDesde = null; st.fallaMotivo = null; st.fallaRutas = null;
+    } else {
+      if (st.fallaDesde === null) st.fallaDesde = t;
+      st.fallaMotivo = r.motivo;
+      st.fallaRutas = r.rutas || r.motivo;
+      log(`operations.json no se pudo releer o no valida (desde ${new Date(st.fallaDesde).toISOString()}): ${r.motivo}`);
+    }
+    guardarEstado();
+    const e = estadoDeLaConfiguracion({ hayUltimoBueno: Boolean(st.ultimoBueno), fallaDesde: st.fallaDesde, ahora: t });
+    st.frenado = e.estado === 'frenado' ? { desde: e.desde } : null;
+    st.bandaConfig = e.estado === 'ultimo_bueno' ? { desde: st.fallaDesde, motivo: st.fallaRutas } : null;
+    if (st.frenado) log(`el sitio está FRENADO desde ${new Date(st.frenado.desde).toISOString()}: ${st.fallaMotivo || 'sin último bueno'}`);
+  }
+
+  function leerOperaciones() {
+    const archivo = path.join(clon, 'operations.json');
+    if (!fs.existsSync(archivo)) return { ok: false, motivo: 'el repo de operaciones no trae operations.json', rutas: 'falta operations.json' };
+    if (!dentroDe(clon, archivo)) return { ok: false, motivo: 'operations.json no es un archivo del repo de operaciones', rutas: 'operations.json ilegible' };
+    const r = OPS.load(archivo);
+    if (r.couldNotRead) return { ok: false, motivo: 'operations.json no se pudo leer', rutas: 'operations.json ilegible' };
+    if (!r.ok) {
+      return {
+        ok: false,
+        motivo: r.problems.map((p) => `${p.path || '(el archivo)'}: ${p.message}`).join(' · ').slice(0, 2000),
+        rutas: `problemas en ${[...new Set(r.problems.map((p) => p.path || '(el archivo)'))].join(', ')}`.slice(0, 500),
+      };
+    }
+    return { ok: true, data: r.data };
+  }
+
+  // ── El buzón ───────────────────────────────────────────────────────────────────────────────────────────────────
+  const ESTADO_BUZON = { llave_con_escritura: 'credencial_rechazada', sin_permiso: 'credencial_rechazada', sin_permiso_a_mitad: 'credencial_rechazada', credencial_rechazada: 'credencial_rechazada', sin_red: 'sin_red', servicio_fallo: 'sin_red', parcial: 'parcial', sin_tiempo: 'parcial', bajado: 'parcial', al_dia: 'parcial', sin_contenedor: 'sin_configurar', config_rota: 'sin_configurar', sin_configurar: 'sin_configurar' };
+
+  async function leerBuzon(conf, previo, t) {
+    const mb = conf && isObject(conf.site) && isObject(conf.site.mailbox) ? conf.site.mailbox : null;
+    const nube = mb ? lasNubes().find((n) => Array.isArray(n.PROVEEDORES_DE_BUZON) && n.PROVEEDORES_DE_BUZON.includes(mb.provider)) : null;
+    if (!mb) { st.fallas.buzon = null; return noMedida('sin_buzon'); }
+    if (!nube) {
+      // hay buzón declarado y ninguna nube de cloud/ lo sabe leer (un módulo que no carga): no es «sin buzón», y se avisa
+      log(`ninguna nube de cloud/ sabe leer el buzón «${String(mb.provider).slice(0, 40)}»`);
+      st.fallas.buzon = st.fallas.buzon || { desde: t, estado: 'sin_configurar' };
+      return previo && previo.estado === 'medido' ? previo : noMedida('sin_configurar');
+    }
+    if (!cfg.mailboxCredencial) {
+      log('operations.json declara un buzón y el sitio no tiene su credencial (SITE_MAILBOX_SAS o SITE_MAILBOX_IDENTITY)');
+      st.fallas.buzon = st.fallas.buzon || { desde: t, estado: 'sin_configurar' };
+      return previo && previo.estado === 'medido' ? previo : noMedida('sin_configurar');
+    }
+    let r;
+    try {
+      r = await nube.bajarBuzon({ cuenta: mb.account, contenedor: mb.container, credencial: cfg.mailboxCredencial, dir: dirBuzon, urlBase: urlBuzon, log: (l) => log(`buzón: ${l}`) });
+    } catch (e) { r = { codigo: 1, res: { estado: 'sin_red', motivo: `error inesperado al bajar: ${e.message}` } }; }
+    const est = r.res.estado;
+    // 🔴 «leído entero» lo dice `completo` (download-runs.js), no el estado: 'bajado' también sale con el presupuesto agotado
+    if (r.codigo === 0 && r.res.completo === true) {
+      st.fallas.buzon = null;
+      const c = leerCorridas(dirBuzon);
+      if (c.estado !== 'medido') log(`el espejo del buzón se bajó entero pero no se pudo leer${c._motivo ? `: ${c._motivo}` : ''}`);
+      delete c._motivo;
+      return { ...c, fecha: diaUtc(t) };
+    }
+    const codigo = ESTADO_BUZON[est] || 'sin_red';
+    log(`el buzón no se leyó entero (${est}${r.res.sin_tiempo ? `, ${r.res.sin_tiempo} sin tiempo` : ''}): ${r.res.motivo || 'sin motivo'}`);
+    st.fallas.buzon = st.fallas.buzon || { desde: t, estado: codigo };
+    if (previo && previo.estado === 'medido') return previo;
+    return noMedida(codigo);
+  }
+
+  function leerCarpetas() {
+    const r = leerJsonDe(path.join(dirBuzon, '.carpetas-de-maquina.json'));
+    if (r.codigo === 'ilegible') log('.carpetas-de-maquina.json del espejo del buzón no se pudo leer: sin la unión de carpetas');
+    if (r.doc && !carpetasProyectadas(r.doc)) log('.carpetas-de-maquina.json no tiene la forma esperada: sin la unión de carpetas');
+    return r.doc && isObject(r.doc) ? r.doc : null;
+  }
+
+  const construir = ({ corridas, carpetas, t }) => construirDesdeClon(clon, { ahora: t, corridas, carpetas, log });
+
+  /** Lo que se puede armar sin el repo (la primera lectura sin clon): todo «no medido» con el estado. */
+  function modeloVacio(codigo, t, corridas) {
+    const n = noMedida(codigo);
+    return { generado: t, dependencias: n, vigilante: n, banco: n, suites: n, examen: n, declarados: n, productos: [], productosFuente: n, proyectos: n, despliegues: n, paridad: n, prs: n, pedidos: n, tablero: n, sources: { lista: [] }, umbrales: {}, corridas: corridas || n, carpetas: null, informados: {} };
+  }
+
+  async function refrescarUnaVez() {
+    const t = ahora();
+    const repo = await actualizarRepo();
+    if (!repo.ok) {
+      log(repo.motivo || 'el repo de operaciones no se pudo leer');
+      st.fallas.repo = st.fallas.repo || { desde: t, estado: repo.estado };
+      aplicarConfig({ ok: false, motivo: 'el repo de operaciones no se pudo leer', rutas: 'el repo de operaciones no se pudo leer' }, t);
+      if (!st.modelo) st.modelo = fs.existsSync(path.join(clon, '.git')) ? construir({ corridas: noMedida(repo.estado), carpetas: null, t }) : modeloVacio(repo.estado, t);
+      st.cargado = true;
+      return;
+    }
+    st.fallas.repo = null;
+    aplicarConfig(leerOperaciones(), t);
+    const corridas = await leerBuzon(st.ultimoBueno, st.modelo && st.modelo.corridas, t);
+    st.modelo = construir({ corridas, carpetas: leerCarpetas(), t });
+    st.cargado = true;
+  }
+
+  function refrescar() {
+    if (enCurso) return enCurso;
+    enCurso = refrescarUnaVez().catch((e) => {
+      // un refresco que se cae por algo inesperado deja el último modelo bueno, pero con banda (nunca en silencio)
+      log(`el refresco falló de forma inesperada: ${e && e.stack ? e.stack : e}`);
+      st.fallas.repo = st.fallas.repo || { desde: ahora(), estado: 'falla_interna' };
+      if (!st.modelo) st.modelo = modeloVacio('falla_interna', ahora());
+      st.cargado = true;
+    }).finally(() => { enCurso = null; });
+    return enCurso;
+  }
+
+  function minutos() {
+    const c = st.ultimoBueno;
+    const v = c && isObject(c.site) ? c.site.refresh_minutes : null;
+    return Number.isInteger(v) && v >= OPS.REFRESH_MIN && v <= OPS.REFRESH_MAX ? v : REFRESCO_POR_DEFECTO;
+  }
+
+  function programar() {
+    temporizador = setTimeout(async () => { await refrescar(); programar(); }, minutos() * 60000);
+    if (temporizador.unref) temporizador.unref();
+  }
+
+  return {
+    /** Lee al despertar y después cada `site.refresh_minutes`. */
+    arrancar() { refrescar().then(programar); },
+    refrescar,
+    estado() {
+      const fallas = [st.fallas.repo, st.fallas.buzon].filter(Boolean);
+      const banda = fallas.length ? { desde: Math.min(...fallas.map((f) => f.desde)), estado: fallas[0].estado } : null;
+      return { cargado: st.cargado, frenado: st.frenado, bandaConfig: st.bandaConfig, bandaRefresco: banda };
+    },
+    config: () => st.ultimoBueno,
+    modelo: () => st.modelo,
+    detener() { if (temporizador) clearTimeout(temporizador); temporizador = null; },
+  };
+}
+
+module.exports = { crearFuentes, construirDesdeClon, estadoDeLaConfiguracion, estadoDeGit, limpiarLinea, leerCorridas, ultimaFoto, correr, dentroDe, PLAZO_CONFIG_MS };

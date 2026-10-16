@@ -919,7 +919,8 @@
         "docker",
         "red"
       ],
-      "exclusive": true
+      "exclusive": true,
+      "measured_elsewhere": "la mide la CI del repo público en cada pedido (public-ci.sh --clean-machine); el árbol del repo de mantenimiento ya no arma la copia pública. Revisar si una rotura de afuera (una versión de Node, un paquete) rompe la instalación y nadie se entera por días: entonces se mide de noche (story 2.21, decisión 2)"
     },
     {
       "__nota": "Parte 1 de 2 de tests/installer-ps1.test.sh (2026-10-14: entera tardaba ~440 s en el agente de GitHub y en uno lento pasó el tope de 900 s de public-ci; el archivo entero no se registra, scripts/tests/lib/suite-parts.sh). story 8.7 (tanda C, pase adversarial): el gemelo de Windows del instalador y del sync de bloques, corrido con pwsh — -Check sobre una HOME vacía (salía 1 con un error de PowerShell), el settings.json que deja una instalación limpia, uno vacío, el marcador requires-integration mal escrito comparado byte a byte con el .sh. Sin pwsh en la máquina: NO MEDIDO, exit 0. ~12 s.",
@@ -1124,6 +1125,48 @@
       "__nota": "story 8.26, tanda J: los lectores de la configuración de una organización — team-repos.json (en el perfil del equipo: dónde vive cada repo del arnés) y operations.json (en el repo de operaciones: responsables y revisores). Válido da sus datos; con problemas, ninguno a medias y cada problema con la ruta de su clave; «no pude leer» no es «no hay repo»; la lista de responsables no entra en el archivo que llega a todas las máquinas. Sólo textos, sin red.",
       "raiz": "arnes",
       "ruta": "tests/team-repos.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 2.23: el sitio de la organización — el arranque (sin secretos en el registro), la tabla de rutas (una ruta sin `needs` no arranca), el primer mantenedor, la vida que no depende del freno, la imagen (el texto del Dockerfile) y el núcleo sin nube. Sin red: el emisor OIDC, el repo y el buzón son locales.",
+      "raiz": "arnes",
+      "ruta": "tests/site-server.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 2.23: el inicio de sesión del sitio — PKCE, state y nonce; cada chequeo del id_token con un token armado mal; la cookie firmada; y cada proveedor (oidc genérico, Entra ID, Google, GitHub) limitado a la organización. Contra un emisor y un GitHub locales.",
+      "raiz": "arnes",
+      "ruta": "tests/site-oidc.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 2.23: el rol de quien pide (en cada pedido, nunca de una cabecera) y qué es de quién: corridas por máquina confirmada, PR y pedidos por identidad, las carpetas viejas del buzón.",
+      "raiz": "arnes",
+      "ruta": "tests/site-access.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 2.23: las fuentes del sitio — el repo de operaciones por HTTP con la credencial en una cabecera (nunca en el disco), el buzón sólo con una SAS de lectura o la identidad administrada, el refresco que conserva el último bueno, y la regla de las 24 horas de operations.json guardada en SITE_DATA_DIR. Repo git local con git http-backend (si falta, se saltea con constancia).",
+      "raiz": "arnes",
+      "ruta": "tests/site-sources.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 2.23: las pestañas Inicio (las dos), Proyectos (con la paridad de la 2.25) y Arnés: leen, no miden; «no medido» nunca es 0; las cabeceras y ningún script en línea.",
+      "raiz": "arnes",
+      "ruta": "tests/site-views.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 2.23: la prueba de fuga del sitio — marcadores de otra persona, de una máquina sin confirmar y texto libre en las fuentes; ninguna ruta de la tabla los trae a quien no corresponde, y los motivos crudos (blobs, rutas) no llegan a ninguna pantalla.",
+      "raiz": "arnes",
+      "ruta": "tests/site-leak.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 2.23: los pedidos abiertos asignados a cada persona, de cada noche, con lista blanca (sin títulos) y «no medido» si la consulta falla. Azure es fake-az.sh.",
+      "raiz": "arnes",
+      "ruta": "tests/assigned-items.test.js",
       "requiere": []
     },
     {

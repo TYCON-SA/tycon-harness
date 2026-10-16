@@ -650,8 +650,8 @@ JSON="$(harness doctor --json 2>/dev/null)"
 [ "$(harness_lab_home_hash)" = "$ANTES" ] && ok "T49 doctor no escribe nada" || mal "T49 doctor escribió algo"
 # (cruce con la tanda B de la 8.19, AC 19: `place` va siempre, y `legacy` y `registered_by_legacy` si el viejo existe o
 # algo lo nombra; fuera de esas tres, las claves son exactamente las de siempre más las cuatro de la tanda D)
-[ "$(printf '%s' "$JSON" | jtxt "(sorted(k for k in d.keys() if k not in ('place', 'legacy', 'registered_by_legacy')), 'place' in d)")" = "(['brakes', 'fail', 'integrations', 'mode', 'ok', 'packs', 'profile', 'warn'], True)" ] \
-  && ok "T49 --json: las cuatro claves nuevas y las de siempre (más las del lugar)" || mal "T49 claves de --json: $(printf '%s' "$JSON" | jtxt "sorted(d.keys())")"
+[ "$(printf '%s' "$JSON" | jtxt "(sorted(k for k in d.keys() if k not in ('place', 'legacy', 'registered_by_legacy')), 'place' in d)")" = "(['brakes', 'declared_repos', 'fail', 'integrations', 'mode', 'ok', 'packs', 'profile', 'warn'], True)" ] \
+  && ok "T49 --json: las cuatro claves nuevas y las de siempre (más las del lugar y, desde la story 2.21, declared_repos)" || mal "T49 claves de --json: $(printf '%s' "$JSON" | jtxt "sorted(d.keys())")"
 [ "$(printf '%s' "$JSON" | jtxt "(d['profile']['value'], d['profile']['origin'])")" = "('minimal', 'maquina')" ] && ok "T49 profile: minimal desde ~/.claude/tycon.json" || mal "T49 profile: $(printf '%s' "$JSON" | jtxt "d['profile']")"
 [ "$(printf '%s' "$JSON" | jtxt "(d['brakes']['registered'], d['brakes']['any_repo'])")" = "(1, ['lab-hook.js'])" ] && ok "T49 brakes: uno registrado, nombrado entre los que frenan en cualquier repo" || mal "T49 brakes: $(printf '%s' "$JSON" | jtxt "d['brakes']")"
 [ "$(printf '%s' "$JSON" | jtxt "d['packs']['value']")" = none ] && ok "T49 packs: none" || mal "T49 packs: $(printf '%s' "$JSON" | jtxt "d['packs']")"
@@ -1236,6 +1236,80 @@ kill "$LAB_RELEASE_PROCESS" 2>/dev/null
 # la ayuda de `doctor --fetch` dice las dos cosas que hace: la traída de siempre, y la pregunta al remoto del clon de la lista
 SALIDA="$(harness --help 2>&1)"
 case "$SALIDA" in *"--fetch"*"FETCH_HEAD"*"remoto del clon de la lista"*) ok "$T79 la ayuda de doctor --fetch dice que además le pregunta al remoto del clon de la lista" ;; *) mal "$T79 la ayuda de doctor --fetch no nombra la pregunta al remoto del clon de la lista" ;; esac
+
+# ── T21 Doctor_ReposDeclarados_ConListaDeLaOrganizacion (story 2.21 · AC 15, 16) @story-2.21 @ac-16 ─────────────────
+# La ficha «repos declarados contra el disco» salió de la página del tablero y vive acá: la lista de la ORGANIZACIÓN
+# (`scripts/nightly/dependencies/repos.json` del clon de operaciones, `paths.operations`) contra los repos bajo la raíz
+# de repos-root.js, a profundidad 2. Un repo cuenta como declarado si su `origin` (leído de .git/config, sin git) apunta
+# al `ado` de una entrada, sin distinguir mayúsculas y con los espacios decodificados.
+# 🔴 rojo previo: doctor no dice nada de los repos; o compara por el nombre de la carpeta (la etiqueta `ruta`).
+T221="story 2.21 ·"
+harness_lab_create "$BASE/t221" >/dev/null
+harness install --yes >/dev/null 2>&1 || mal "$T221 install previo falló"
+T221_OPS="$BASE/t221/ops"; T221_ROOT="$BASE/t221/repos"
+mkdir -p "$T221_OPS/scripts/nightly/dependencies"
+cat > "$T221_OPS/scripts/nightly/dependencies/repos.json" <<'JSON'
+{ "repos": [
+  { "producto": "Acme", "ruta": "Acme/BackEnd", "ado": "Acme Proj/BackEnd" },
+  { "producto": "Acme", "ruta": "Acme/BackEnd", "subruta": "tools/gateway", "ado": "Acme Proj/BackEnd" },
+  { "producto": "Acme", "ruta": "Acme/FrontEnd", "ado": "Acme Proj/Front End", "activo": false },
+  { "producto": "Acme", "ruta": "Acme/Mobile", "ado": "Acme Proj/Mobile" }
+] }
+JSON
+t221_repo() {  # t221_repo <carpeta relativa a la raíz> <url del origin> [huella]
+  mkdir -p "$T221_ROOT/$1/.git"
+  printf '[core]\n\tbare = false\n[remote "origin"]\n\turl = %s\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n' "$2" > "$T221_ROOT/$1/.git/config"
+  [ -z "${3:-}" ] || mkdir -p "$T221_ROOT/$1/.tycon"
+}
+t221_repo Acme/AcmeBackEnd 'https://dev.azure.com/lab/Acme%20Proj/_git/BackEnd'
+t221_repo Acme/FE 'https://dev.azure.com/lab/acme proj/_git/front%20end'
+t221_repo Otro/Suelto 'https://dev.azure.com/lab/Otro/_git/Suelto' huella
+# (pase adversarial de la 2.21) un clon por SSH es el mismo repo que su `ado`; un worktree es el repo del que sale, no otro
+t221_repo Acme/Mob 'git@ssh.dev.azure.com:v3/lab/Acme%20Proj/Mobile'
+mkdir -p "$T221_ROOT/Otro/Suelto/.git/worktrees/wt" "$T221_ROOT/Otro/Suelto-wt/.tycon"
+printf 'gitdir: %s\n' "$T221_ROOT/Otro/Suelto/.git/worktrees/wt" > "$T221_ROOT/Otro/Suelto-wt/.git"
+printf '../..\n' > "$T221_ROOT/Otro/Suelto/.git/worktrees/wt/commondir"
+t221_lines() { printf '%s' "$1" | jtxt "' | '.join(t for t in d['$2'] if 'repos declarados' in t)"; }
+mkdir -p "$LAB_HOME/.tycon"; printf '{ "paths": { "operations": "%s" } }\n' "$T221_OPS" > "$LAB_HOME/.tycon/config.json"
+JSON="$(TYCON_REPOS_ROOT="$T221_ROOT" harness doctor --json 2>/dev/null)"; RC=$?
+L="$(t221_lines "$JSON" ok)"
+case "$L" in *"repos declarados por la organización: 3 de 3 en este disco (raíz $T221_ROOT)"*"con huella del arnés sin declarar: 1"*) ok "$T221 T21 con la lista de la organización: «3 de 3 en este disco» (por el origin, también SSH; el repo declarado dos veces cuenta una) y «con huella del arnés sin declarar: 1» (el worktree es el mismo repo)" ;; *) mal "$T221 T21 línea: «${L}» warn=«$(t221_lines "$JSON" warn)» rc=$RC" ;; esac
+[ "$(printf '%s' "$JSON" | jtxt "d['declared_repos']")" = "{'declared': 3, 'on_disk': 4, 'matched': 3, 'undeclared_with_harness': 1}" ] \
+  && ok "$T221 T21 --json trae declared_repos { declared, on_disk, matched, undeclared_with_harness }" || mal "$T221 T21 declared_repos: $(printf '%s' "$JSON" | jtxt "d.get('declared_repos', 'sin la clave')")"
+
+# ── T22 Doctor_ReposDeclarados_SinListaNuncaFalla (story 2.21 · AC 17) @story-2.21 @ac-17 ───────────────────────────
+# 🔴 rojo previo: un `fail` acá tira la comprobación de salud de cada actualización (corre `doctor --json`).
+T221_FAIL0="$(printf '%s' "$JSON" | jtxt "len(d['fail'])")"
+rm -f "$LAB_HOME/.tycon/config.json"
+JSON="$(TYCON_REPOS_ROOT="$T221_ROOT" harness doctor --json 2>/dev/null)"
+case "$(t221_lines "$JSON" ok)" in *"repos declarados: no medido — esta máquina no tiene la lista de la organización"*"harness.js team-config"*) ok "$T221 T22 sin paths.operations: un dato, con cómo pedir la lista" ;; *) mal "$T221 T22 sin paths.operations: ok=«$(t221_lines "$JSON" ok)» warn=«$(t221_lines "$JSON" warn)»" ;; esac
+mkdir -p "$BASE/t221/ops-vacio"; printf '{ "paths": { "operations": "%s" } }\n' "$BASE/t221/ops-vacio" > "$LAB_HOME/.tycon/config.json"
+JSON="$(TYCON_REPOS_ROOT="$T221_ROOT" harness doctor --json 2>/dev/null)"
+case "$(t221_lines "$JSON" ok)" in *"no medido — esta máquina no tiene la lista de la organización"*) ok "$T221 T22 un clon de operaciones sin repos.json: el mismo dato" ;; *) mal "$T221 T22 clon sin repos.json: ok=«$(t221_lines "$JSON" ok)» warn=«$(t221_lines "$JSON" warn)»" ;; esac
+printf '{ "paths": { "operations": "%s" } }\n' "$T221_OPS" > "$LAB_HOME/.tycon/config.json"
+cp "$T221_OPS/scripts/nightly/dependencies/repos.json" "$BASE/t221/repos.json.bak"; printf '{ roto' > "$T221_OPS/scripts/nightly/dependencies/repos.json"
+JSON="$(TYCON_REPOS_ROOT="$T221_ROOT" harness doctor --json 2>/dev/null)"
+{ [ -n "$(t221_lines "$JSON" warn)" ] && [ -z "$(t221_lines "$JSON" fail)" ] && [ "$(printf '%s' "$JSON" | jtxt "len(d['fail'])")" = "$T221_FAIL0" ]; } \
+  && ok "$T221 T22 repos.json ilegible: un aviso con el motivo, nunca un rojo" || mal "$T221 T22 repos.json roto: warn=«$(t221_lines "$JSON" warn)» fail=$(printf '%s' "$JSON" | jtxt "d['fail']")"
+cp "$BASE/t221/repos.json.bak" "$T221_OPS/scripts/nightly/dependencies/repos.json"
+JSON="$(TYCON_REPOS_ROOT="$BASE/t221/no-existe" harness doctor --json 2>/dev/null)"
+{ [ -n "$(t221_lines "$JSON" warn)" ] && [ -z "$(t221_lines "$JSON" fail)" ]; } \
+  && ok "$T221 T22 sin raíz de repos: un aviso con el motivo, nunca un rojo" || mal "$T221 T22 sin raíz: warn=«$(t221_lines "$JSON" warn)» ok=«$(t221_lines "$JSON" ok)» fail=«$(t221_lines "$JSON" fail)»"
+# un repo cuya configuración no se puede leer no se cuenta como «no declarado» en silencio: aviso con el código
+# (revisión de la story 2.21: «no pude leer» no es «no está»). Sin efecto si corre como root (chmod no le quita nada).
+chmod 000 "$T221_ROOT/Acme/FE/.git/config"
+JSON="$(TYCON_REPOS_ROOT="$T221_ROOT" harness doctor --json 2>/dev/null)"
+chmod 644 "$T221_ROOT/Acme/FE/.git/config"
+if [ "$(id -u)" = 0 ]; then echo "  ⏭ $T221 T22 configuración ilegible: NO MEDIDO como root"
+else
+  case "$(t221_lines "$JSON" warn)" in *"2 de 3 en este disco"*"no se pudieron leer (EACCES)"*) ok "$T221 T22 una configuración que no se puede leer: aviso con el código y los números «pueden quedar cortos», nunca un rojo" ;; *) mal "$T221 T22 configuración ilegible: warn=«$(t221_lines "$JSON" warn)» ok=«$(t221_lines "$JSON" ok)»" ;; esac
+  [ "$(printf '%s' "$JSON" | jtxt "(d['declared_repos'].get('unreadable'), len([t for t in d['fail'] if 'repos declarados' in t]))")" = "(1, 0)" ] \
+    && ok "$T221 T22 --json la cuenta en declared_repos.unreadable" || mal "$T221 T22 declared_repos: $(printf '%s' "$JSON" | jtxt "d.get('declared_repos')")"
+fi
+JSON="$(TYCON_HARNESS_HEALTH=1 TYCON_REPOS_ROOT="$T221_ROOT" harness doctor --json 2>/dev/null)"
+{ [ -z "$(t221_lines "$JSON" ok)$(t221_lines "$JSON" warn)$(t221_lines "$JSON" fail)" ] && [ "$(printf '%s' "$JSON" | jtxt "('declared_repos' in d, d.get('declared_repos'))")" = "(True, None)" ]; } \
+  && ok "$T221 T22 bajo la comprobación de salud el bloque no corre: ninguna línea y declared_repos en null" || mal "$T221 T22 bajo la salud: ok=«$(t221_lines "$JSON" ok)» declared_repos=$(printf '%s' "$JSON" | jtxt "d.get('declared_repos', 'sin la clave')")"
+rm -f "$LAB_HOME/.tycon/config.json"
 
 if [ "$FALLOS" = 0 ]; then echo "✅ harness-doctor: todo verde"; exit 0; fi
 echo "❌ harness-doctor: $FALLOS fallo(s)"; exit 1
