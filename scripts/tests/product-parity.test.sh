@@ -412,6 +412,8 @@ fi
 MAPA21="$AQUI/scripts/lib/renames.json"
 if [ ! -f "$MAPA21" ]; then
   ok "NO MEDIDO: sin el mapa de renombres (copia pública) — el caso 21 no aplica"
+elif ! lista_real_de_productos; then
+  sin_lista_real "21 (guiones renombrados)"
 else
   res21=$(node -e '
 const c=require(process.argv[1]); const m=require(process.argv[2]); const path=require("path"); const bad=[]; let vistos=0;
