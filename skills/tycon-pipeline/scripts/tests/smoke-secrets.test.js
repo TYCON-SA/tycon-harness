@@ -152,7 +152,7 @@ function correrSmoke(script, args, env = {}) {
   fs.mkdirSync(repo, { recursive: true });
   execFileSync('git', ['init', '-q'], { cwd: repo });
   const evidence = path.join(repo, '.advisors', 'dod-runtime');
-  const res = spawnSync('bash', [script, evidence, '9.9', '--acs', '1', '--', ...args], {
+  const res = spawnSync('bash', [script, evidence, '9.9', '--acs', '1', '--pass-if', 'el comando termina bien', '--', ...args], {
     env: { ...process.env, HOME: home, ...env }, cwd: os.tmpdir(), encoding: 'utf8',
   });
   const entry = JSON.parse(fs.readFileSync(path.join(evidence, '9.9-smoke-ledger.jsonl'), 'utf8').split('\n')[0]);
@@ -267,4 +267,140 @@ test('el -P de sqlcmd no se cuelga con muchos tramos entre comillas', () => {
 test('el guion de bash -lc va tal cual, y se tapa como texto', () => {
   const out = s.ledgerCmdFromArgs(['bash', '-lc', 'X=1 sqlcmd -S srv -P Secr3tX9 -Q "select 1"']).text;
   assert.ok(out.includes('X=1 sqlcmd -S srv -P *** -Q'), out);
+});
+
+// ── Story 1.19 — la expectativa y la salida de un humo pasan por el MISMO tapado ─────────────────────────────────
+
+// Mutación: guardar la salida entera, o recortar sólo por el principio → el archivo pasa de 8 KB o pierde el final.
+test('la salida se recorta a 8 KB con las primeras y las últimas líneas y la marca en el medio', () => {
+  const texto = Array.from({ length: 5000 }, (_, i) => `linea ${i}`).join('\n');
+  const out = s.recortarSalida(texto);
+  assert.ok(Buffer.byteLength(out) <= s.SALIDA_MAX_BYTES, `${Buffer.byteLength(out)} bytes`);
+  assert.match(out, /^linea 0\n/);
+  assert.match(out, /\nlinea 4999$/);
+  assert.match(out, /\[… \d+ líneas omitidas …\]/);
+  assert.equal(s.recortarSalida('corta\n'), 'corta\n', 'una salida dentro del tope queda igual');
+});
+
+// Mutación: cortar la línea larga sin tope → una sola línea de 1 MB entra entera.
+test('una sola línea enorme también queda dentro del tope', () => {
+  const out = s.salidaParaGuardar(Buffer.from('x'.repeat(1024 * 1024))).text;
+  assert.ok(Buffer.byteLength(out) <= s.SALIDA_MAX_BYTES, `${Buffer.byteLength(out)} bytes`);
+});
+
+// Mutación: guardar la salida sin pasar por `redact` → la contraseña queda en el archivo que viaja por git.
+test('la salida guardada se tapa con las formas de la lista', () => {
+  const out = s.salidaParaGuardar(Buffer.from(`Server=acme;${PASSWORD}=${PW};\nlisto\n`)).text;
+  assert.ok(!out.includes(PW), out);
+  assert.ok(out.includes(`${PASSWORD}=***`), out);
+});
+
+// Mutación: decodificar con `latin1` o tirar los bytes inválidos → el sha deja de ser el del texto guardado.
+test('bytes que no son texto se guardan como texto con reemplazo', () => {
+  const out = s.salidaParaGuardar(Buffer.from([0xff, 0xfe, 0x41, 0x0a])).text;
+  assert.equal(out, '��A\n');
+});
+
+// Mutación: no tapar `--pass-if` → la credencial que alguien escribió en la expectativa llega al registro.
+test('la expectativa se tapa y se corta', () => {
+  assert.equal(s.expectativaParaGuardar(`conecta con ${PASSWORD}=${PW}`).text, `conecta con ${PASSWORD}=***`);
+  assert.ok(s.expectativaParaGuardar('x'.repeat(5000)).text.length <= 1000);
+});
+
+// Mutación: escribir la salida aunque la carpeta no se pueda crear (o dejar el sha) → la matriz contaría un archivo que
+// no existe; o no escribirla con apertura exclusiva → dos humos del mismo segundo se pisan.
+test('ledgerExtras: escribe la salida con su sha, y con la carpeta bloqueada deja output: null', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'smoke-extras-'));
+  const tmp = path.join(dir, 'salida.tmp');
+  fs.writeFileSync(tmp, 'HTTP 200\n');
+  const a = s.ledgerExtras({ pasaSi: 'responde 200', salidaTmp: tmp, evidenceDir: dir, key: '9.9', ts: '2026-10-15T21:45:00Z' });
+  const b = s.ledgerExtras({ pasaSi: 'responde 200', salidaTmp: tmp, evidenceDir: dir, key: '9.9', ts: '2026-10-15T21:45:00Z' });
+  assert.match(a.ledger.output, /^9\.9-smoke-outputs\/20261015T214500Z-[0-9a-f]{6}\.txt$/);
+  assert.notEqual(a.ledger.output, b.ledger.output, 'el mismo segundo no pisa');
+  assert.equal(a.mirror.output_sha, a.ledger.output_sha);
+  assert.equal(a.mirror.pass_if_sha, require('crypto').createHash('sha256').update('responde 200').digest('hex'));
+  fs.writeFileSync(path.join(dir, '9.8-smoke-outputs'), '');
+  const c = s.ledgerExtras({ pasaSi: 'x', salidaTmp: tmp, evidenceDir: dir, key: '9.8', ts: '2026-10-15T21:45:00Z' });
+  assert.equal(c.ledger.output, null);
+  assert.equal(c.mirror.output_sha, undefined);
+  assert.equal(s.fragmento({ a: 1, b: 'x' }), ',"a":1,"b":"x"');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// ── Lo que encontró el pase adversarial de la 1.19 (2026-10-15) ───────────────────────────────────────────────────
+
+// Mutación: tapar la expectativa o la salida en modo guion (sin `literal`) → un valor que empieza con `$` se toma por
+// una variable y la contraseña queda tal cual. Son textos ya resueltos, como los argumentos de `cmd`.
+test('una contraseña que empieza con $ se tapa en la expectativa y en la salida', () => {
+  const pw = '$' + 'ecret9X';
+  assert.ok(!s.expectativaParaGuardar(`conecta con ${PASSWORD}=${pw}`).text.includes(pw));
+  const out = s.salidaParaGuardar(Buffer.from(`${PASSWORD}=${pw}\nDB_PASSWORD=${pw}\n`)).text;
+  assert.ok(!out.includes(pw), out);
+});
+
+// Mutación: sacar la red final por línea → una línea JSON con `\n` justo antes de la forma pasa el tapado (en crudo ve
+// una `n` delante) y el freno del commit, que decodifica el JSON, la frena.
+test('la salida guardada no deja nada que el freno del commit vea como secreto', () => {
+  const linea = JSON.stringify({ log: `inicio\n${PASSWORD}=${PW};\nfin` });
+  const out = s.salidaParaGuardar(Buffer.from(`${linea}\nlisto\n`)).text;
+  assert.deepEqual(s.findLeaksInContent(out), [], out);
+  assert.ok(!out.includes(PW), out);
+});
+
+// Mutación: guardar los `\r\n` tal cual → git los reescribe al hacer checkout y la matriz da la salida por editada.
+test('la salida se guarda con finales de línea \\n', () => {
+  assert.equal(s.salidaParaGuardar(Buffer.from('HTTP/1.1 200 OK\r\nx: 1\r\n')).text, 'HTTP/1.1 200 OK\nx: 1\n');
+});
+
+// Mutación: recortar ANTES de tapar → si el corte cae entre `sqlcmd … \` y su `-P '<clave>'`, la cola guarda la línea
+// del -P sin su sqlcmd y nadie la reconoce. Se prueba en todos los puntos de corte de la zona.
+test('recortar no parte una credencial de dos líneas', () => {
+  const relleno = (n) => Array.from({ length: n }, (_, i) => `relleno ${String(i).padStart(4, '0')} ${'x'.repeat(24)}`);
+  for (let i = 80; i <= 330; i += 3) {
+    const lineas = relleno(400);
+    lineas.splice(i, 0, 'sqlcmd -S acme -U sa \\', `  -P '${PW}' -Q "select 1"`);
+    const out = s.salidaParaGuardar(Buffer.from(lineas.join('\n'))).text;
+    assert.ok(!out.includes(PW), `con el par en la línea ${i} la contraseña quedó: ${out.slice(0, 200)}`);
+  }
+});
+
+// Mutación: ventanas que se pisan con 400 líneas esconden el caso en que son disjuntas → con 5.000 líneas, el par en
+// las dos puntas del corte.
+test('recortar no parte una credencial de dos líneas en una salida larga', () => {
+  const relleno = Array.from({ length: 5000 }, (_, i) => `relleno ${String(i).padStart(4, '0')} ${'x'.repeat(24)}`);
+  for (const i of [...Array.from({ length: 25 }, (_, k) => 85 + k), ...Array.from({ length: 25 }, (_, k) => 4880 + k)]) {
+    const lineas = relleno.slice();
+    lineas.splice(i, 0, 'sqlcmd -S acme -U sa \\', `  -P '${PW}' -Q "select 1"`);
+    const out = s.salidaParaGuardar(Buffer.from(lineas.join('\n'))).text;
+    assert.ok(!out.includes(PW), `con el par en la línea ${i} la contraseña quedó`);
+  }
+});
+
+// Mutación: cortar sin mirar si parte un `***` → queda un `**` suelto que el freno del commit lee como un valor.
+test('cortar no deja un *** partido', () => {
+  assert.equal(s.cortaSinPartirMascara('aaa***bbb', 4), 'aaa');
+  assert.equal(s.cortaSinPartirMascara('aaa***bbb', 6), 'aaa***');
+  assert.equal(s.cortaSinPartirMascara('corto', 100), 'corto');
+});
+
+// Mutación: sacar el tope final → el tapado general alarga los valores cortos (`a:bcde` → `$USUARIO:$VAL`) y una salida
+// que entraba justa queda pasada de 8 KB.
+test('el tapado que alarga los valores no deja la salida pasada del tope', () => {
+  const linea = 'curl -u a:bcde http://x';
+  const n = Math.floor((s.SALIDA_MAX_BYTES - 10) / (linea.length + 1));
+  const texto = Array.from({ length: n }, () => linea).join('\n');
+  assert.ok(Buffer.byteLength(texto) <= s.SALIDA_MAX_BYTES, 'la entrada entra justa');
+  const out = s.salidaParaGuardar(Buffer.from(texto)).text;
+  assert.ok(Buffer.byteLength(out) <= s.SALIDA_MAX_BYTES, `${Buffer.byteLength(out)} bytes`);
+  assert.ok(!out.includes('a:bcde'));
+});
+
+// Mutación: cortar una línea larga antes de taparla → un token partido queda más corto que lo que reconoce el tapado.
+test('una línea larga no deja un pedazo de token sin tapar', () => {
+  for (let pos = 3880; pos <= 4060; pos += 11) {
+    const json = `{"datos":"${'d'.repeat(pos)}","token":"Zq9Xw7${'k'.repeat(30)}","mas":"${'m'.repeat(20000)}"}`;
+    const out = s.salidaParaGuardar(Buffer.from(json + '\nfin\n')).text;
+    assert.ok(!out.includes('Zq9'), `con el token en ${pos} quedó un pedazo`);
+    assert.ok(Buffer.byteLength(out) <= s.SALIDA_MAX_BYTES);
+  }
 });

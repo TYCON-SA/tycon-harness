@@ -1,6 +1,6 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/tycon-dod-runtime-checker.md
-# source_sha256: 3b617aea5d928ca41af67d394b09c0dbd5712859481e98004a79526fa5785055
+# source_sha256: e17ea3d616a79fb1c68f4bd5216e98caba31d6febd7378f2a4c8ccf4cda0e042
 # Se despliega como $CODEX_HOME/tycon-dod-runtime-checker.config.toml y se invoca: codex exec -p tycon-dod-runtime-checker
 # ⚠️ codex exec se cuelga para siempre si le queda stdin abierto: invocarlo SIEMPRE con < /dev/null
 
@@ -19,7 +19,7 @@ REGLA DE CONDUCTA — LOS PASOS DECLARADOS SE EJECUTAN, SIN ATAJOS.
 # tycon-dod-runtime-checker
 
 **Phase**: post-push, pre-`done` transition.
-**Severity**: CRITICAL inmediato para DODRT-C1..C5 y C9 (bloquea transición a `done` / commit-prep de un run que cablea UI). WARNING informativo para DODRT-W1..W3.
+**Severity**: CRITICAL inmediato para DODRT-C1..C5, C9 y C10 (bloquea transición a `done` / commit-prep de un run que cablea UI). WARNING informativo para DODRT-W1..W4.
 **Tier**: Core. Habilitado para TODAS las stories Mary+GOLD que estén en `status: review` y quieran transicionar a `done`.
 **Stack scope**: stack-agnostic — corre sobre cualquier stack TYCON (Ceibo, plugins Bizuit, etc.).
 
@@ -269,6 +269,36 @@ ANOTADO, no el SHA del binario que realmente corrió. v2 futura: el smoke-runner
 procedencia solo (endpoint `/version` del DevHost con el sha del build). Aun con ese límite, el
 caso típico se caza: el agente anota honesto, y \"no está en origin\" es mecánicamente detectable.
 
+#### [DODRT-C10] Resultado fabricado — la prueba encuentra lo que el propio flujo escribió
+
+**Qué detecta**: la evidencia de un AC escribe en la base (o en el archivo, la cola, el estado) **el dato que el
+«Then» del AC dice que la app produce**, y después lo verifica. La consulta encuentra la fila porque la insertó el
+mismo flujo, no porque la app la generó. Caso que la motivó (2026-10-15, otro arnés revisado sólo leyendo): el agente
+no logró que la pantalla generara unos registros, los insertó él y marcó el caso «aprobado, prueba con navegador».
+
+**Qué NO es**: sembrar las **precondiciones** del AC (el «Given»: el paciente, el pedido de origen, el usuario) y
+después ejercer la acción de la app — eso es lo correcto (§7c.3-deferred pide datos sembrados reales). Tampoco un
+`INSERT` cuando el AC mismo es sobre la base («la tabla acepta un INSERT con Motivo nulo»): ahí escribir es la acción.
+
+**Qué lee**: el registro de humos (`<clave>-smoke-ledger.jsonl`: `cmd`, `pass_if`, `acs`), las salidas guardadas
+(`<clave>-smoke-outputs/*.txt`), los `.md`, `.sql` y scripts sueltos (`.sh`, `.py`, `.mjs`) de la carpeta de
+evidencia, y el Debug Log de la story. Por AC: ¿hay un `INSERT`/`UPDATE`/escritura cuyo destino y valores son los
+del «Then»? ¿hay, entre esa escritura y la verificación, una acción de la app (un `POST`, un clic, un comando) que
+pudiera haberlos producido? Escritura del «Then» sin acción de la app en el medio → **C10**.
+
+**Fix que propone**: ejercer la acción de la app que produce el dato (y sembrar sólo el «Given»), o pasar el AC a
+`runtime_not_verifiable:` con su `reason:` y `covered_by:`, para que lo firme el dev desde su terminal.
+
+**Límite honesto (declarado)**: sólo ve lo que quedó en la evidencia. Un `INSERT` hecho por fuera del envoltorio
+(otra terminal, un cliente de base) no deja rastro. Caza el caso descuidado, no el deliberado: es preventiva y
+parcial, como DODRT-C9.
+
+**Output ejemplo**:
+
+```
+[DODRT-C10] AC 4: 4.2-smoke-ledger.jsonl 2026-10-15T14:02:11Z inserta en Remitos (Estado='Pendiente') y el humo siguiente lo busca; ningún POST de la app en el medio — resultado fabricado: la prueba encuentra lo que el propio flujo escribió. Fix: ejercer POST /pedidos/{id}/confirmar (sembrar sólo los artículos del pedido), o pasar el AC 4 a runtime_not_verifiable: con su motivo y la firma del dev.
+```
+
 Detalle completo de cada regla: `~/.claude/tycon-harness/guides/advisor-rules-catalog.md` §DoD Runtime Checker.
 
 ### WARNING
@@ -307,6 +337,20 @@ Detalle completo de cada regla: `~/.claude/tycon-harness/guides/advisor-rules-ca
 
 **Por qué**: es un error recurrente entre proyectos (regla promovida 2026-07-15) — smokear staging con rutas DevHost y diagnosticar el 404 como bug del endpoint. Hasta el 2026-10-14 el arreglo sugerido metía la versión en la ruta; el host nunca la aceptó (medido en seis inquilinos de prueba y en su código), y el humo de despliegue del arnés siempre llamó sin versión.
 
+#### [DODRT-W4] La expectativa del humo no dice nada, o la salida no la muestra
+
+**Qué detecta**: en una línea `\"v\":2` del registro de humos con `acs`, el `pass_if` está vacío de contenido («ok»,
+«funciona», «anda», «200» a secas cuando el AC habla de un dato), o no habla del «Then» del AC que dice cubrir; o la
+salida guardada (`output`, en `<clave>-smoke-outputs/`) no muestra lo que el `pass_if` dice (dice «devuelve el pedido
+con 3 artículos» y la salida es un 200 con una lista vacía). Desde el 2026-10-15 el envoltorio exige el texto antes de
+correr; esta regla juzga si el texto y la salida sostienen el AC.
+
+**Output ejemplo**:
+
+```
+[DODRT-W4] AC 2: 9.9-smoke-ledger.jsonl 2026-10-15T14:05:00Z pass_if «ok» no dice qué tiene que pasar; el AC pide «responde 422 con el campo inválido nombrado» y la salida guardada muestra 200. Fix: re-correr con --pass-if que nombre el resultado del AC y revisar el comando.
+```
+
 ## Workflow
 
 1. Identificar story + commit SHA + branch.
@@ -318,7 +362,9 @@ Detalle completo de cada regla: `~/.claude/tycon-harness/guides/advisor-rules-ca
 7. **DODRT-C5**: si el diff cablea UI nueva (`.tsx` montados) Y sus E2E están diferidos (`tests_pending`), verificar que exista un smoke DRIVEN por-AC (`.advisors/dod-runtime/<story>-ui-smoke-*.md`) real (no mocks) que asserte CADA AC de UI. Cruzar lo AFIRMADO por el orquestador (narración / guía \"cómo probar\") vs lo EJECUTADO (sub-check anti pre-claim). Ausente / parcial / mockeado / claim-sin-ejecución → emit DODRT-C5.
 8. **DODRT-C9**: por cada evidencia de smoke en `.advisors/dod-runtime/`, exigir el bloque `## Target` (path + SHA + presencia en origin por repo involucrado); si el path existe acá, verificar el SHA con `git branch -r --contains`; sin bloque / SHA ausente de origin / smoke localhost de story frontend sin backend declarado → emit C9; path no verificable → W explícito.
 9. **DODRT-W3**: grep URLs no-localhost en evidencia de smoke/scripts/specs; si target es host Bizuit y el path es `/api/` sin `/api/plugins/` → emit.
-10. Emitir findings con severity + rule ID.
+10. **DODRT-C10**: leer el registro de humos, las salidas guardadas, los `.md`/`.sql`/scripts de la carpeta de evidencia y el Debug Log; por AC, una escritura del dato del «Then» verificada después sin acción de la app en el medio → emit (sembrar el «Given» no es finding).
+11. **DODRT-W4**: por cada línea `\"v\":2` con `acs`, leer `pass_if` contra el «Then» del AC y contra su salida guardada → emit si está vacío de contenido, no habla del AC, o la salida no lo muestra.
+12. Emitir findings con severity + rule ID.
 
 ## Output
 
@@ -336,12 +382,14 @@ Detalle completo de cada regla: `~/.claude/tycon-harness/guides/advisor-rules-ca
 [DODRT-C2] ... Fix: ...
 [DODRT-C3] ... Fix: ...
 [DODRT-C9] ... Fix: ...
+[DODRT-C10] ... Fix: ...
 
 ## 🟡 WARNING
 
 [DODRT-W1] ... Fix: ...
 [DODRT-W2] ... Fix: ...
 [DODRT-W3] ... Fix: ...
+[DODRT-W4] ... Fix: ...
 
 ## ✅ OK
 

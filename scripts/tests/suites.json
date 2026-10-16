@@ -793,6 +793,12 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/smoke-expectation.test.sh",
+      "requiere": [],
+      "__nota": "story 1.19 (2026-10-15): un humo por terminal dejaba sólo el código de salida, y en otro arnés el agente insertó a mano el resultado que la prueba debía encontrar. Mide que smoke-run.sh pide --pass-if a todo humo con --acs (y no a la siembra sin --acs), que la expectativa y la salida se guardan tapadas con su sha256 en el espejo, el tope de 8 KB, que el código de salida sobrevive al tee, los bytes que no son texto, el tapado caído, la carpeta de salidas bloqueada, dos humos del mismo segundo y un humo cortado a mitad sin dejar el temporal; y que el paso 7c dice la regla de sembrar el «Given»."
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/run-dir-key.test.sh",
       "requiere": [],
       "__nota": "story 1.17.1 (2026-10-06): la 1.17 separó por tema la evidencia de cierre, pero la carpeta de los revisores, la guía del tester, las aprobaciones de la matriz y el aviso de sesiones cruzadas seguían por el número solo: una story podía pasar a done con la carpeta de revisores de otra del mismo número. Mide que las cuatro usan la clave de la 1.17, que lo viejo bajo un número compartido no se toca, no cuenta y se nombra, y que con número único los nombres son los de siempre."

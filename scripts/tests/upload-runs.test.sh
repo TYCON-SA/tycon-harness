@@ -1356,5 +1356,38 @@ cor = [i for i, r in enumerate(ps) if "/registros/" not in r]
 assert reg and cor and max(reg) < min(cor), ps
 PY
 
+# ── Windows · Log_AgregaYRota ── el arranque de Windows lanza la subida de fondo con `--log <archivo>` (2026-10-15): un
+# proceso de fondo de PowerShell no puede AGREGAR a un archivo, y sobrescribirlo borraría el aviso de vencimiento de la
+# llave, que sale una vez por día (la razón del `>>` del .sh). Con --log la subida agrega ella misma y rota pasado ~512 KB.
+# 🔴 rojo previo: sin la opción, la salida va a la terminal y el registro no existe.
+T="${BASE}/tlog"; mkdir -p "${T}"
+LOG="${T}/sub carpeta/upload-runs.log"
+for i in 1 2; do TYCON_MAILBOX_JSON="${T}/no-esta.json" node "${SUBIR}" --budget-ms 1000 --log "${LOG}" > "${T}/salida-${i}.txt" 2>&1 < /dev/null; done
+RC=$?
+N=$(grep -c 'sin_config' "${LOG}" 2>/dev/null || echo 0)
+if [ "${RC}" -eq 1 ] && [ "${N}" = "2" ] && [ ! -s "${T}/salida-1.txt" ] && [ ! -s "${T}/salida-2.txt" ]; then
+  ok "Windows · --log: la salida va al registro, se AGREGA (dos corridas, dos líneas sin_config) y el código de salida es el de siempre"
+else
+  mal "Windows · --log: rc=${RC}, líneas sin_config en el registro=${N}, en la terminal: $(head -c 160 "${T}/salida-1.txt")"
+fi
+head -c 600000 /dev/zero | tr '\0' 'x' > "${LOG}"
+TYCON_MAILBOX_JSON="${T}/no-esta.json" node "${SUBIR}" --budget-ms 1000 --log "${LOG}" > /dev/null 2>&1 < /dev/null
+if [ -f "${LOG}.1" ] && [ "$(wc -c < "${LOG}.1" | tr -d ' ')" -ge 600000 ] && [ "$(wc -c < "${LOG}" | tr -d ' ')" -lt 4096 ] && grep -q 'sin_config' "${LOG}"; then
+  ok "Windows · --log: pasado ~512 KB el registro viejo va a .1 y el nuevo arranca de cero"
+else
+  mal "Windows · --log: no rotó (registro $(wc -c < "${LOG}" 2>/dev/null) bytes, .1 $(wc -c < "${LOG}.1" 2>/dev/null) bytes)"
+fi
+
+# …y una caída que Node imprimiría por su cuenta (en el arranque de Windows, a una ventana oculta) también va al registro
+printf 'setImmediate(() => { throw new Error("caida de prueba del registro"); });\n' > "${T}/caida.js"
+rm -f "${LOG}" "${LOG}.1"
+TYCON_MAILBOX_JSON="${T}/no-esta.json" NODE_OPTIONS="--require ${T}/caida.js" node "${SUBIR}" --budget-ms 1000 --log "${LOG}" > "${T}/salida-caida.txt" 2>&1 < /dev/null
+RC=$?
+if [ "${RC}" -eq 1 ] && grep -q 'error inesperado' "${LOG}" && grep -q 'caida de prueba del registro' "${LOG}" && ! grep -q 'caida de prueba' "${T}/salida-caida.txt"; then
+  ok "Windows · --log: una excepción sin atrapar queda en el registro (no en una terminal que nadie ve) y sale 1"
+else
+  mal "Windows · --log: la caída no quedó en el registro (rc=${RC}; registro: $(tail -c 160 "${LOG}" 2>/dev/null); terminal: $(head -c 160 "${T}/salida-caida.txt"))"
+fi
+
 echo
 [ "${FALLOS}" -eq 0 ] && { echo "subir-corridas: todo verde"; exit 0; } || { echo "${FALLOS} fallo(s)"; exit 1; }
