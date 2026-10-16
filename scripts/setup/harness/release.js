@@ -188,7 +188,9 @@ function client(ctx, { deadlineAt = null, waitUntil = null, keepToken = false } 
     }
     return READS_WITHOUT_TOKEN.get(m[1]);
   };
-  const c = { get, getPublic, public: pub, token, tokenProblem: problem, base, setDeadline: (at) => { clock.deadline = at; clock.since = Date.now(); clock.answered = 0; } };
+  // `bases`: las rutas públicas aunque haya permiso (las etiquetas de número de un repo público salen de su `info/refs`,
+  // sin gastar la API); null en un laboratorio sin «git» de juguete
+  const c = { get, getPublic, public: pub, bases: PG.bases(env), token, tokenProblem: problem, base, setDeadline: (at) => { clock.deadline = at; clock.since = Date.now(); clock.answered = 0; } };
   Object.defineProperty(c, 'expiredToken', { enumerable: true, get: () => expired });
   Object.defineProperty(c, 'deadline', { enumerable: true, get: () => clock.deadline });
   Object.defineProperty(c, 'limitedUntil', { enumerable: true, get: () => limit.until });
@@ -274,7 +276,56 @@ function versionAt(c, repo, sha, { etag = null } = {}) {
   let v;
   try { v = JSON.parse(text.replace(/^﻿/, '')); } catch (e) { return { ok: false, status: 'blocked', reason: `el version.json de ${sha7(sha)} es ilegible (${e.message})` }; }
   if (!isObject(v) || typeof v.version !== 'string') return { ok: false, status: 'blocked', reason: `el version.json de ${sha7(sha)} no trae «version»` };
-  return { ok: true, version: v.version, etag: r.headers.etag || null };
+  return { ok: true, version: v.version, byTag: VO.numberedByTag(v), etag: r.headers.etag || null };
+}
+
+/**
+ * El número que le da su etiqueta a un commit (`tags`: nombre → commit, de `info/refs` o de la API), o null. Con varias,
+ * la mayor.
+ */
+function tagNumberOf(tags, sha) {
+  if (!isObject(tags) || !sha) return null;
+  return VO.bestTag(Object.keys(tags).filter((name) => tags[name] === sha));
+}
+
+/**
+ * Las etiquetas de número de un repo: de su `info/refs` público (no gasta la API); si no se lee así (un repo privado, un
+ * laboratorio sin «git») y `api` lo permite, por la API. `{ ok, tags }` o el motivo.
+ */
+function tagsFor(c, repo, { api = true } = {}) {
+  const bases = c.public || c.bases;
+  if (bases) {
+    const r = c.getPublic(PG.refsUrl(bases, repo), { timeoutMs: Math.max(1000, Math.floor((c.deadline - Date.now()) / 2)) });
+    if (r.ok && r.status === 200) {
+      const refs = PG.parseInfoRefs(r.body);
+      if (refs.ok) return { ok: true, tags: refs.tags };
+    }
+  }
+  return api ? tagsByApi(c, repo) : { ok: false, status: 'unknown', reason: 'no pude leer las etiquetas sin la API' };
+}
+
+/**
+ * Las etiquetas de número por la API (el camino con permiso): `{ ok, tags }` con nombre → commit. Sólo las livianas
+ * (`object.type === 'commit'`): son las que pone el merge; una anotada no se sigue.
+ */
+function tagsByApi(c, repo) {
+  const r = c.get(`/repos/${repo}/git/matching-refs/tags/${VO.TAG_PREFIX}`);
+  if (!r.ok || r.status !== 200 || !Array.isArray(r.json)) return Object.assign({ ok: false }, explainFailure(c, r, { what: 'las etiquetas de versión' }));
+  const tags = {};
+  for (const e of r.json) {
+    if (e && typeof e.ref === 'string' && e.object && e.object.type === 'commit' && typeof e.object.sha === 'string') tags[e.ref.replace(/^refs\/tags\//, '')] = e.object.sha;
+  }
+  return { ok: true, tags };
+}
+
+/**
+ * Le pone a lo que apunta el canal el número de su etiqueta, si la tiene (`tagged`); si el commit dice que su número lo
+ * pone la etiqueta y todavía no la tiene, queda `pending` (el merge recién entró: la etiqueta llega en un minuto).
+ */
+function withTag(target, tags) {
+  const tagged = tagNumberOf(tags, target.commit);
+  if (tagged) return Object.assign(target, { version: tagged, tagged: true, pending: false });
+  return Object.assign(target, { tagged: false, pending: Boolean(target.byTag) });
 }
 
 /**
@@ -295,7 +346,13 @@ function resolveChannel(c, repo, channel, { installed = null, tips = null, log =
   if (!main.ok) return main.missing ? Object.assign({ status: 'blocked' }, { reason: explainFailure(c, main.raw, { what: 'el repo', repo }).reason }) : main;
   const mainVersion = versionAt(c, repo, main.sha);
   if (!mainVersion.ok) return mainVersion;
-  const atMain = { status: 'ok', ref: MAIN_REF, commit: main.sha, etag: main.etag, version: mainVersion.absent ? null : mainVersion.version, note: null };
+  const atMain = { status: 'ok', ref: MAIN_REF, commit: main.sha, etag: main.etag, version: mainVersion.absent ? null : mainVersion.version, byTag: Boolean(mainVersion.byTag), note: null };
+  // el número de la etiqueta: con permiso cuesta una consulta, así que se pide sólo si el commit dice que lo usa
+  if (atMain.byTag) {
+    const t = tagsFor(c, repo);
+    if (!t.ok) return t;
+    withTag(atMain, t.tags);
+  }
   if (channel !== 'latest') return atMain;
   const sync = refCommit(c, repo, SYNC_REF);
   if (!sync.ok) {
@@ -325,13 +382,13 @@ function resolvePublic(c, repo, channel, { tips = null } = {}) {
   if (!refs.ok) return { fallback: `info/refs ilegible (${refs.reason})` };
   const mainSha = refs.heads[MAIN_REF];
   if (!mainSha) return { status: 'blocked', reason: GA.explain404({ token: null, userStatus: null, repo: c.repos ? repo : null, repos: c.repos || null }) };
-  const mainV = numberAt(c, repo, mainSha, tips);
+  const mainV = numberAt(c, repo, mainSha, tips, refs.tags);
   if (!mainV.ok) return mainV;
-  const atMain = { status: 'ok', ref: MAIN_REF, commit: mainSha, etag: null, version: mainV.version, note: null };
+  const atMain = { status: 'ok', ref: MAIN_REF, commit: mainSha, etag: null, version: mainV.version, tagged: Boolean(mainV.tagged), pending: Boolean(mainV.pending), note: null };
   if (channel !== 'latest') return atMain;
   const syncSha = refs.heads[SYNC_REF];
   if (!syncSha) return Object.assign(atMain, { note: `latest lee ${MAIN_REF}: el remoto no tiene ${SYNC_REF}` });
-  const syncV = numberAt(c, repo, syncSha, tips);
+  const syncV = numberAt(c, repo, syncSha, tips, refs.tags);
   if (!syncV.ok) return syncV;
   const cmp = VO.compare(syncV.version, atMain.version);
   if (cmp === null || cmp < 0) return Object.assign(atMain, { note: `latest lee ${MAIN_REF}: ${SYNC_REF} no trae nada más nuevo que ${MAIN_REF}` });
@@ -346,19 +403,27 @@ function resolvePublic(c, repo, channel, { tips = null } = {}) {
  * tiene a lo sumo la mitad del reloj, para que al respaldo le quede la otra (pase adversarial de la story 8.34).
  * `{ ok, version }` (`version: null` si el commit no lo trae) o el motivo; lo que lee lo suma a `tips`.
  */
-function numberAt(c, repo, sha, tips) {
+function numberAt(c, repo, sha, tips, tags = null) {
+  // la etiqueta primero (viene en el mismo `info/refs`, no cuesta nada): una punta que se mir\u00F3 antes de que le pusieran la
+  // etiqueta qued\u00F3 en `tips` con el piso de su version.json, y eso no tiene que tapar su n\u00FAmero de verdad
+  const tagged = tagNumberOf(tags, sha);
+  if (tagged) {
+    if (tips) tips[sha] = tagged;
+    return { ok: true, version: tagged, tagged: true, pending: false };
+  }
   if (tips && Object.prototype.hasOwnProperty.call(tips, sha)) return { ok: true, version: tips[sha] };
   const r = c.getPublic(PG.rawUrl(c.public, repo, sha, 'version.json'), { timeoutMs: Math.max(1000, Math.floor((c.deadline - Date.now()) / 2)) });
   let v = null;
   if (r.ok && r.status === 200) { try { v = JSON.parse(r.body.toString('utf8').replace(/^\uFEFF/, '')); } catch (_) { v = null; } }
   let out;
-  if (isObject(v) && typeof v.version === 'string') out = { ok: true, version: v.version };
+  if (isObject(v) && typeof v.version === 'string') out = { ok: true, version: v.version, pending: VO.numberedByTag(v) };
   else {
     const a = versionAt(c, repo, sha);
     if (!a.ok) return a;
-    out = { ok: true, version: a.absent ? null : a.version };
+    out = { ok: true, version: a.absent ? null : a.version, pending: Boolean(a.byTag) };
   }
-  if (tips && out.version) tips[sha] = out.version;
+  // una punta que espera su etiqueta no se guarda: su n\u00FAmero de verdad todav\u00EDa no existe
+  if (tips && out.version && !out.pending) tips[sha] = out.version;
   return out;
 }
 
@@ -383,9 +448,9 @@ function check(ctx, state, { channel, log = null, deadlineAt = null, waitUntil =
   const cached = etags[`ref:${want}`];
   let t = null;
   // (sin permiso no hay ETag: un 304 sin credencial gasta igual —story 8.34—; se mira por info/refs)
-  if (!c.public && ch !== 'latest' && isObject(cached) && cached.etag && cached.sha) {
+  if (!c.public && ch !== 'latest' && trustedCache(cached)) {
     const same = refCommit(c, repo(src), want, { etag: cached.etag, retry: false });
-    if (same.ok && same.unchanged) t = { status: 'ok', ref: want, commit: cached.sha, version: cached.version || null, note: null };
+    if (same.ok && same.unchanged) t = fromCache(cached, want);
     // (el permiso venció y el repo se lee sin él: abajo se mira por las rutas públicas)
     else if (!same.ok && !same.missing && !c.expiredToken) return { status: same.status || 'unknown', code: 2, lines: [`harness.js update: ${same.reason}`], limitedUntil: same.limitedUntil || null };
   }
@@ -395,12 +460,19 @@ function check(ctx, state, { channel, log = null, deadlineAt = null, waitUntil =
     if (src.commit && src.version) tips[src.commit] = src.version;
     t = resolveChannel(c, repo(src), ch, { installed: src.version, tips, log });
     if (t.status !== 'ok') return { status: t.status, code: 2, lines: [`harness.js update: ${t.reason}`], limitedUntil: t.limitedUntil || null };
-    if (t.etag) src.etags = Object.assign({}, etags, { [`ref:${t.ref}`]: { etag: t.etag, sha: t.commit, version: t.version } });
+    // una punta que espera su etiqueta no se recuerda con su ETag: el próximo 304 la daría sin número para siempre
+    if (t.etag && !t.pending) src.etags = Object.assign({}, etags, { [`ref:${t.ref}`]: { etag: t.etag, sha: t.commit, version: t.version, tagged: Boolean(t.tagged) } });
     if (c.public) src.etags = Object.assign({}, src.etags || etags, { tips: keepTips(tips) });
   }
   if (log && t.note) log(`update: ${t.note}`);
   const notes = t.note ? [t.note] : [];
-  if (t.commit === src.commit) return { status: 'up_to_date', code: 0, lines: ['arnés al día', ...notes] };
+  if (t.commit === src.commit) {
+    if (isObject(src.etags)) delete src.etags.pending;
+    if (adoptTag(src, state, t)) return { status: 'up_to_date', code: 0, lines: [`arnés al día (la versión instalada recibió su número: ${t.version})`, ...notes] };
+    return { status: 'up_to_date', code: 0, lines: ['arnés al día', ...notes] };
+  }
+  if (t.pending) return pendingTag(src, t, notes);
+  if (isObject(src.etags)) delete src.etags.pending;
   const cmp = VO.compare(t.version, src.version);
   if (cmp === null) {
     if (!t.version) return { status: 'blocked', code: 2, lines: [`harness.js update: la punta de ${t.ref} (${sha7(t.commit)}) no trae version.json: no sé si es más nueva que ${src.version}`, ...notes] };
@@ -413,10 +485,57 @@ function check(ctx, state, { channel, log = null, deadlineAt = null, waitUntil =
 const repo = (src) => src.repo || (githubRepoOf(src.url) ? `${githubRepoOf(src.url).org}/${githubRepoOf(src.url).name}` : null);
 
 /**
+ * ¿Se puede usar la punta recordada con su ETag? Sólo una entrada que dice si su número es de etiqueta (`tagged`): una
+ * sin esa clave la dejó un código que no conocía las etiquetas y su número puede ser el piso.
+ */
+function trustedCache(cached) {
+  return isObject(cached) && Boolean(cached.etag) && Boolean(cached.sha) && Object.prototype.hasOwnProperty.call(cached, 'tagged');
+}
+/** Lo que apunta el canal, desde la entrada recordada (un 304: la MISMA punta), con su marca de etiqueta. */
+function fromCache(cached, ref) {
+  return { status: 'ok', ref, commit: cached.sha, version: cached.version || null, tagged: Boolean(cached.tagged), note: null };
+}
+/**
+ * Se instaló la punta antes de que tuviera su etiqueta (quedó con el piso): cuando la tiene, ése es su número. Cambia
+ * `src.version` y `state.version.number`; true si cambió.
+ */
+function adoptTag(src, state, t) {
+  if (!t.tagged || !t.version || t.version === src.version || !(VO.compare(t.version, src.version) > 0)) return false;
+  src.version = t.version;
+  if (state && isObject(state.version)) state.version.number = t.version;
+  return true;
+}
+
+/** Cuánto puede esperar una punta su etiqueta antes de que se diga: la pone un proceso de GitHub en un minuto. */
+const PENDING_TAG_SAY_MS = 6 * 60 * 60 * 1000;
+
+/**
+ * La punta entró a `main` y todavía no tiene su etiqueta: no se baja (su número todavía no existe) y es «al día», en
+ * silencio. Se anota desde cuándo (`src.etags.pending`): pasadas unas horas ya no es «recién entró» sino que el proceso
+ * que etiqueta no corrió, y eso deja a TODAS las máquinas sin actualizarse: se dice, como algo que no se pudo mirar.
+ */
+function pendingTag(src, t, notes) {
+  const etags = isObject(src.etags) ? src.etags : (src.etags = {});
+  // la espera se cuenta desde la PRIMERA punta sin etiqueta de una racha: si el proceso que etiqueta dejó de correr y
+  // los merges siguen entrando, cada punta nueva no reinicia la cuenta (el aviso saldría nunca)
+  const was = isObject(etags.pending) && etags.pending.since ? { sha: t.commit, since: etags.pending.since } : { sha: t.commit, since: nowIso() };
+  etags.pending = was;
+  const waited = Date.now() - (Date.parse(was.since) || Date.now());
+  if (waited >= PENDING_TAG_SAY_MS) {
+    const hours = Math.floor(waited / 3600000);
+    return { status: 'blocked', code: 2, lines: [`harness.js update: la punta de ${t.ref} (${sha7(t.commit)}) lleva ${hours} h sin su número (la etiqueta v<número> que pone el merge): el proceso que la pone no corrió y ninguna máquina se actualiza — avisá a quien mantiene el arnés`, ...notes] };
+  }
+  return { status: 'up_to_date', code: 0, lines: [`arnés al día (${src.version}; la punta de ${t.ref}, ${sha7(t.commit)}, recién entró y todavía no tiene su número: se baja cuando lo tenga)`, ...notes] };
+}
+
+/**
  * Ubica el commit de un número pedido a mano (`install --version <n>`): los commits recientes de la ref que tocaron
  * version.json (un pedido), leyendo el version.json de cada uno del más nuevo al más viejo hasta el que coincide.
  */
 function locateVersion(c, repoName, ref, number) {
+  // el número de una etiqueta (las versiones que numera el merge): la etiqueta dice el commit, sin recorrer nada
+  const byTag = tagCommit(c, repoName, number);
+  if (byTag.ok && byTag.commit) return { ok: true, commit: byTag.commit, version: number, tagged: true };
   const r = c.get(`/repos/${repoName}/commits?sha=${encodeURIComponent(ref)}&path=version.json&per_page=${LOCATE_PAGE}`);
   if (!r.ok || r.status !== 200 || !Array.isArray(r.json)) return Object.assign({ ok: false }, explainFailure(c, r, { what: 'la lista de commits' }));
   const seen = [];
@@ -432,13 +551,35 @@ function locateVersion(c, repoName, ref, number) {
   return { ok: false, status: 'blocked', reason: `la versión ${number} no está en ${ref}: busqué ${range}` };
 }
 
+/**
+ * El commit de la etiqueta `v<number>`: `{ ok: true, commit }` (null si no está), de `info/refs`. Si no se pudo mirar,
+ * `{ ok: false }` y quien llama sigue por el camino de los version.json.
+ */
+function tagCommit(c, repoName, number) {
+  // sólo por `info/refs`: ubicar un número no gasta la API por una etiqueta que en un repo sin ellas no existe
+  const t = tagsFor(c, repoName, { api: false });
+  return t.ok ? { ok: true, commit: t.tags[VO.tagName(number)] || null } : { ok: false };
+}
+
 // ── bajar y verificar ─────────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * ¿El número con que se va a nombrar una versión cierra con el `version.json` de su árbol verificado? Sin la marca, tiene
+ * que ser el mismo. Con la marca (el número lo pone la etiqueta del merge), «es de etiqueta» se lee del árbol y no de una
+ * bandera que viaja por cachés: el número tiene que ser el piso o uno mayor.
+ */
+function treeNumberOk(json, version) {
+  const inTree = (json && json.version) || null;
+  if (!VO.numberedByTag(json)) return inTree === version;
+  const cmp = VO.compare(inTree, version);
+  return cmp !== null && cmp <= 0;
+}
 
 /**
  * Baja el comprimido DEL COMMIT, lo recorre con el lector propio, verifica el árbol y deja la versión armada en
  * `incoming/<versión>/` con su manifiesto. `{ ok, dir, manifest }` o `{ ok: false, status, reason }` sin dejar nada.
  */
-function download(ctx, c, repoName, { commit, version, ref, log = null }) {
+function download(ctx, c, repoName, { commit, version, ref, tagged = false, log = null }) {
   const own = TH.ownPaths({ env: ctx.env });
   // el nombre de la carpeta sale del número publicado, que tiene forma fija: otra cosa no se usa como ruta
   if (version && !VO.isOrdered(version)) return { ok: false, status: 'blocked', reason: `la versión «${version}» no tiene la forma YYYY.MM.DD.N: no se instala una versión sin número` };
@@ -462,13 +603,20 @@ function download(ctx, c, repoName, { commit, version, ref, log = null }) {
     return { ok: false, status: 'blocked', reason: `lo bajado no coincide con el commit ${sha7(commit)}: el árbol calculado es ${sha7(got)} y el del commit ${sha7(expectedTree)} — no instalo nada` };
   }
   // el número con el que se nombra la versión sale de algo verificado (story 8.34, decisión 5): el version.json del árbol
-  // verificado tiene que decir el número que se dio (el del raw, o el de la API)
+  // verificado tiene que decir el número que se dio (el del raw, o el de la API). Con el número de una etiqueta, el árbol
+  // dice el PISO: tiene que traer la marca y un piso que no pase a la etiqueta
   if (version) {
-    let inTree = null;
-    try { inTree = JSON.parse(fs.readFileSync(path.join(dir, 'version.json'), 'utf8').replace(/^\uFEFF/, '')).version || null; } catch (_) { inTree = null; }
-    if (inTree !== version) {
+    let json = null;
+    try { json = JSON.parse(fs.readFileSync(path.join(dir, 'version.json'), 'utf8').replace(/^\uFEFF/, '')); } catch (_) { json = null; }
+    const inTree = (json && json.version) || null;
+    const byTag = VO.numberedByTag(json);
+    if (!treeNumberOk(json, version)) {
       fs.rmSync(dir, { recursive: true, force: true });
-      return { ok: false, status: 'blocked', reason: `el número publicado (${version}) no coincide con el del árbol verificado de ${sha7(commit)} (${inTree || 'sin version.json'}) — no instalo nada` };
+      return { ok: false, status: 'blocked', reason: byTag
+        ? `el número publicado (${version}) es menor que el piso del árbol verificado de ${sha7(commit)} (${inTree || 'sin número'}) — no instalo nada`
+        : tagged
+        ? `la etiqueta dice ${version} y el árbol verificado de ${sha7(commit)} no dice que su número lo pone la etiqueta (${inTree || 'sin version.json'}) — no instalo nada`
+        : `el número publicado (${version}) no coincide con el del árbol verificado de ${sha7(commit)} (${inTree || 'sin version.json'}) — no instalo nada` };
     }
   }
   const manifest = { schema: 1, repo: repoName, ref, commit, tree: expectedTree, version, downloaded_at: nowIso(), files: x.manifest };
@@ -1247,7 +1395,7 @@ function cmdInstall(ctx, H) {
     let loc = locateVersion(cLoc, repoInfo.repo, ref, wanted);
     if (!loc.ok && ref === SYNC_REF && loc.status !== 'unknown') { ref = MAIN_REF; loc = locateVersion(cLoc, repoInfo.repo, MAIN_REF, wanted); }
     if (!loc.ok) return { code: loc.status === 'blocked' && /404|permiso|venció/.test(loc.reason) ? 1 : 2, lines: [`harness.js install: ${loc.reason}`] };
-    target = { ref, commit: loc.commit, version: loc.version, note: null };
+    target = { ref, commit: loc.commit, version: loc.version, tagged: Boolean(loc.tagged), note: null };
   }
   // 1 bis. la capa del equipo se RESUELVE y valida acá —ref, commit, lista del árbol (lista cerrada), declaración, perfil—
   // sin escribir ni registrar: sin acceso al repo del equipo, 1 con la HOME idéntica (AC 8). Se baja y apila después del
@@ -1285,7 +1433,7 @@ function cmdInstall(ctx, H) {
   }
   // 3. bajar y verificar en incoming/<v>, con el tope de la bajada (más largo que el de mirar)
   const cDown = client(ctx, { deadlineAt: Date.now() + Math.max(budgetS(ctx.env), Number(ctx.env.TYCON_RELEASE_DOWNLOAD_BUDGET_S) > 0 ? Number(ctx.env.TYCON_RELEASE_DOWNLOAD_BUDGET_S) : TARBALL_BUDGET_S_DEFAULT) * 1000 });
-  const d = download(ctx, cDown, repoInfo.repo, { commit: target.commit, version: target.version, ref: target.ref, log });
+  const d = download(ctx, cDown, repoInfo.repo, { commit: target.commit, version: target.version, ref: target.ref, tagged: Boolean(target.tagged), log });
   if (!d.ok) { undoOwnHome(); return { code: d.status === 'unknown' ? 2 : 1, lines: [`harness.js install: ${d.reason}`] }; }
   const tp = restoreThirdParty(ctx, cDown, d.dir, { log });
   // 3 bis. la capa del equipo, apilada sobre la versión bajada ANTES de las preguntas (que leen la configuración del árbol
@@ -1592,7 +1740,7 @@ function update(ctx, state, H, { mode = 'apply', log = null, snapshot = null, ye
   }
 
   const c = client(ctx, { deadlineAt: Date.now() + Math.max(budgetS(ctx.env), TARBALL_BUDGET_S_DEFAULT) * 1000, waitUntil });
-  const d = download(ctx, c, repo(src), { commit: t.commit, version: t.version, ref: t.ref, log });
+  const d = download(ctx, c, repo(src), { commit: t.commit, version: t.version, ref: t.ref, tagged: Boolean(t.tagged), log });
   // al tope: la versión nueva espera a la hora que dijo GitHub; no es un fallo (story 8.34, decisiones 6 y 7)
   if (!d.ok && d.limitedUntil) {
     state.last_fetch_failed = nowIso();
@@ -2194,6 +2342,7 @@ module.exports = {
   startup, cmdUpdate, doctorItems, versionLine, versionJson, FETCH_WINDOW_MS,
   MANIFEST_NAME, MAIN_REF, SYNC_REF, API_DEFAULT,
   githubRepoOf, repoOf, apiBase, client, explainFailure, tokenExpired, EXPIRED_TOKEN_TEXT, refCommit, versionAt, resolveChannel, check, locateVersion,
+  resolvePublic, numberAt, tagNumberOf, tagsByApi, tagsFor, tagCommit, pendingTag, PENDING_TAG_SAY_MS, trustedCache, fromCache, adoptTag, treeNumberOk,
   download, readManifest, restoreThirdParty, swap, swapBack, repair, cleanupDeferred, isNamed, makeSource,
   convertLayout, swapLinks, swapBackLinks, repairLinks,
   cmdInstall, update, rollback, auditTree,

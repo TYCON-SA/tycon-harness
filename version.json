@@ -1,5 +1,6 @@
 {
-  "version": "2026.10.15.41",
+  "version": "2026.10.15.47",
+  "numbering": "merge-tag",
   "source": {
     "harness": "b29224c51d24a8d9a8e9034c1c94cbcd167651a3",
     "agent_skills": "b29224c51d24a8d9a8e9034c1c94cbcd167651a3"

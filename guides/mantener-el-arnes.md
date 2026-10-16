@@ -38,8 +38,9 @@ git, pruebas, frenos) siguen en el índice.
 
 **Se escribe en el repo público, en GitHub.** Todo lo que el arnés publica (código, guías, skills, revisores) entra por
 un pedido de merge a `main`. La regla de esa rama exige un control: `public-ci`, la CI pública
-(`.github/workflows/ci.yml`). Uno de sus pasos, `version`, sale rojo si el pedido no sube el número de
-`version.json` (`node scripts/tools/merge-pr.js bump-version` lo sube).
+(`.github/workflows/ci.yml`). El número de versión lo pone el merge: al entrar a `main`, otro workflow
+(`.github/workflows/version-tag.yml`) le pone la etiqueta `v<número>`. Por eso el paso `version` de la CI sale rojo si el
+pedido **toca** el número o la marca `"numbering": "merge-tag"` de `version.json`.
 
 **Lo privado de quien mantiene va a su repo de mantenimiento.** Ahí viven lo que no se publica (el registro de
 incidentes con nombres, los datos del equipo, las listas privadas del freno de publicación) y las stories. Ese repo no

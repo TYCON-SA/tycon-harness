@@ -28,8 +28,9 @@
 #                          punta y HEAD en la base (`git reset --soft`). Cada control decide si le toca, igual que al
 #                          commitear; los que necesitan lo privado (la lista de nombres del equipo) no lo tienen acá y
 #                          callan: eso lo mira el freno de quien empuja y la verificación diaria de lo publicado
-#  10 version              sólo con --range: version.json de la punta tiene que ser MAYOR que el de la base (cada pedido
-#                          lo sube: es lo que una máquina instalada compara para saber si hay algo nuevo)
+#  10 version              sólo con --range: node scripts/ci/version-tag.js check-pr. Con `numbering: "merge-tag"` en el
+#                          version.json de la base, el pedido no toca el número (lo pone la etiqueta del merge); sin la
+#                          marca, el de la punta tiene que ser MAYOR que el de la base (lo que una máquina compara)
 #  11 clean-machine        sólo con --clean-machine: bash scripts/tests/clean-machine.test.sh en su modo público, o sea con
 #                          TYCON_CLEAN_MACHINE=1 (pedida de forma explícita) y TYCON_CLEAN_MACHINE_SOURCE=<root> (sobre
 #                          este repo, que es la copia; sin esa variable la prueba exporta la copia desde el repo del equipo)
@@ -455,36 +456,17 @@ repo_lint() {
   return "${rc}"
 }
 
-# ── paso 10 · la versión sube ─────────────────────────────────────────────────────────────────────
+# ── paso 10 · la versión ──────────────────────────────────────────────────────────────────────────
+# Con la marca `numbering: "merge-tag"` en el version.json de la base, el número lo pone la etiqueta del merge y el pedido
+# no lo toca; sin la marca (antes de la transición), el número de la punta tiene que ser mayor. La regla vive en
+# scripts/ci/version-tag.js (check-pr), con sus pruebas en scripts/tests/version-by-merge.test.js.
 version_bumped() {
-  local mb
   range_ends || return $?
-  mb="$(git -C "${ROOT}" merge-base "${RANGE_BASE}" "${RANGE_TIP}")" \
+  git -C "${ROOT}" merge-base "${RANGE_BASE}" "${RANGE_TIP}" >/dev/null \
     || { echo "no pude correr: no hay ancestro común entre ${RANGE_BASE} y ${RANGE_TIP}"; return "${BLOCKED_EXIT}"; }
-  node - "${ROOT}" "${RANGE_BASE}" "${RANGE_TIP}" <<'JS'
-'use strict';
-const { execFileSync } = require('child_process');
-const [root, base, tip] = process.argv.slice(2);
-const blocked = (m) => { console.log(`no pude correr: ${m}`); process.exit(9); };
-const read = (ref) => {
-  let text;
-  try { text = execFileSync('git', ['-C', root, 'show', `${ref}:version.json`], { stdio: ['ignore', 'pipe', 'pipe'] }).toString('utf8'); } catch (_) { return null; }
-  try { return String(JSON.parse(text).version || ''); } catch (e) { blocked(`version.json de ${ref} no es JSON: ${e.message}`); }
-};
-const parts = (v) => { const m = /^(\d{4})\.(\d{1,2})\.(\d{1,2})\.(\d+)$/.exec(v || ''); return m ? m.slice(1).map(Number) : null; };
-const was = read(base);
-const now = read(tip);
-if (now === null) blocked(`la punta ${tip} no trae version.json`);
-if (was === null) { console.log(`version: la base no trae version.json; la punta dice ${now}`); process.exit(0); }
-const a = parts(was); const b = parts(now);
-if (!b) { console.log(`version: «${now}» no tiene la forma AAAA.MM.DD.N`); process.exit(1); }
-if (!a) blocked(`la versión de la base, «${was}», no tiene la forma AAAA.MM.DD.N`);
-let cmp = 0;
-for (let i = 0; i < 4 && !cmp; i += 1) cmp = Math.sign(b[i] - a[i]);
-if (cmp > 0) { console.log(`version: ${was} → ${now}`); process.exit(0); }
-console.log(`version: la punta dice ${now} y la base ${was}: cada pedido sube la versión (merge-pr.js bump-version, lo hace la skill de merge)`);
-process.exit(1);
-JS
+  [ -f "${ROOT}/scripts/ci/version-tag.js" ] \
+    || { echo "no pude correr: el repo no trae scripts/ci/version-tag.js (la regla del número)"; return "${BLOCKED_EXIT}"; }
+  node "${ROOT}/scripts/ci/version-tag.js" check-pr --root "${ROOT}" --base "${RANGE_BASE}" --tip "${RANGE_TIP}"
 }
 
 # ── la corrida ─────────────────────────────────────────────────────────────────────────────────────
