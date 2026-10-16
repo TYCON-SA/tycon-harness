@@ -150,6 +150,13 @@
         "why": "Suite del laboratorio del instalador (el guion de entrada de la portada SIN git, story 8.23 tanda E). Entra por la decisión del dueño para la clase entera («Regla para todas», 2026-10-08): toda suite del laboratorio que pase de 45 s corre en la validación de la rama sólo cuando el cambio toca el instalador (el grupo `installer` de scripts/ci/heavy-suites.json, con su costo aceptado) y lleva esta excepción. Cuando corre pasa de 45 s: unos 120 s medidos en la Mac (seis instalaciones completas contra el GitHub de juguete: público, privado sin permiso, con la variable, por terminal, con el permiso guardado, con uno que no vale), antes 8 s cuando clonaba. Son 31 verificaciones; armar el laboratorio no es lo caro."
       }
     },
+    "npx-installer.test.sh": {
+      "exception": {
+        "signed_by": "el dueño del arnés",
+        "date": "2026-10-08",
+        "why": "Suite del laboratorio del instalador (el instalador del paquete de npm, story 8.40 tanda A). Entra por la decisión del dueño para la clase entera («Regla para todas», 2026-10-08): toda suite del laboratorio que pase de 45 s corre en la validación de la rama sólo cuando el cambio toca el instalador (el grupo `installer` de scripts/ci/heavy-suites.json, con su costo aceptado) y lleva esta excepción. Cuando corre pasa de 45 s: unos 180 s medidos en la Mac (el paquete armado con npm pack y unas siete instalaciones contra el GitHub de juguete, más las fallas de red y el proxy). Armar el laboratorio no es lo caro."
+      }
+    },
     "release-api-count.p1.test.sh": {
       "exception": {
         "signed_by": "el dueño del arnés",

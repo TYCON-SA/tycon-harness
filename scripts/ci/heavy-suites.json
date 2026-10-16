@@ -259,6 +259,14 @@
         "scripts/publishing/public-files/scripts/setup/get-harness.sh"
       ]
     },
+    "npx-installer.test.sh": {
+      "why": "Suite del laboratorio del instalador: el instalador del paquete de npm (story 8.40, tanda A) armado con npm pack y corrido con npx contra el «GitHub» de juguete; instala unas siete veces (terminal, permiso por variable y por terminal, el repo del equipo, máquina ya instalada) y prueba las fallas de red y el proxy: unos 180 s en la Mac. Corre en la rama sólo cuando el cambio toca el instalador (grupo `installer`, por la decisión del dueño para la clase entera, 2026-10-08); el banco nocturno la corre siempre.",
+      "group": "installer",
+      "patterns": [
+        "scripts/tests/npx-installer.test.sh",
+        "scripts/setup/npm/**"
+      ]
+    },
     "harness-move-home.test.sh": {
       "why": "Suite del laboratorio del instalador: corre en la rama sólo cuando el cambio toca el instalador (grupo `installer`, arriba, con su costo aceptado y la decisión del dueño para la clase entera, 2026-10-08). Entró a main ese día con la story 8.23 (la mudanza de una máquina a ~/.tycon) sin peso medido: la frenó la guardia de T32 al traer main. Hasta entonces se elegía por su `gate_only_when_touching` de suites.json, que incluía scripts/lib/**; ése sigue siendo el del portón de cada story.",
       "group": "installer",

@@ -45,7 +45,7 @@ To remove the harness, `harness.js uninstall --dry-run` shows what it would remo
 
 - Claude Code, installed and signed in.
 - Windows 11 with PowerShell 7, or Mac. On Linux or WSL, install by hand (it is in the "Reference").
-- Node 22 or later and `tar`. On Mac, also Python 3 and Homebrew. Git is **not** needed to use the harness: it is
+- Node 20 or later and `tar`. On Mac, also Python 3 and Homebrew. Git is **not** needed to use the harness: it is
   downloaded as files, not cloned. A GitHub account is not needed either: this repository is public.
 - Your Node is needed to install. After that the harness downloads its own Node 24 (about 50 MB, from nodejs.org) and
   its hooks run with it; your projects keep your Node, which is not touched. Turn it off with `TYCON_HARNESS_NODE=0`.
@@ -67,6 +67,8 @@ run in your own terminal.
 
 If you install a tool along the way, Claude asks you to close and reopen the terminal and Claude Code. If the summary
 says "NO OK", keep it: it is what to show when you ask for help.
+
+Coming soon: a single terminal line, the same on Windows and Mac, with the same plan and the same "yes": `npx @tycon-sa/harness@latest`. It is not published yet: for now, follow the steps above.
 
 The harness lives in `~/.tycon/harness`, as downloaded files (no git). `~/.claude/tycon-harness` is a shortcut to that
 same folder, and the commands on this page use it. Don't delete or move that folder: Claude Code

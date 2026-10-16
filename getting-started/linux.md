@@ -31,11 +31,11 @@ Bajar el propio guion va siempre sin credencial y no pasa por la API: no gasta d
 
 1. Herramientas:
    node --version; python3 --version; tar --version
-   Esperado: node v22 o más, python3 3.algo, y tar. Lo que falte lo instalo YO (pide mi contraseña de sudo): decime
+   Esperado: node v20 o más, python3 3.algo, y tar. Lo que falte lo instalo YO (pide mi contraseña de sudo): decime
    cuál falta y el comando, de a uno:
      python3:  sudo apt install -y python3
      tar:      sudo apt install -y tar
-     node 22+: los repos de la distribución suelen traer una versión vieja. Decime que lo instale con nvm
+     node 20+: los repos de la distribución suelen traer una versión vieja. Decime que lo instale con nvm
                (https://github.com/nvm-sh/nvm, «Installing and Updating») y después «nvm install 22». Vos no corras
                ese instalador.
    Después volvé a correr los tres --version. (git NO hace falta: el arnés se baja como archivos, no se clona.)

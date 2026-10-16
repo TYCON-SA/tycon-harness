@@ -26,6 +26,7 @@ la fila aplica.
 | Entender el arnés entero, explicárselo a alguien, o dar la charla | `guides/que-hace-el-arnes.md` |
 | Entender en detalle UNA pieza — su porqué, su medición, su red de pruebas | `guides/piezas-del-arnes.md` (este archivo es el índice; el detalle está ahí) |
 | Ver qué versión del arnés tenés, si está bien instalado y si hay una nueva | el comando `/tycon-harness` (sólo mira, no cambia nada) |
+| Dar de alta una organización nueva: el repo del perfil del equipo con sus tres archivos | `harness.js team-init` (`getting-started/reference.es.md` §Dar de alta tu organización) |
 | Configurar el arnés para una organización: dónde vive cada repo y a quién se asignan los avisos de la noche | `harness.js team-config` (la página local; la portada, §Para una organización) |
 | Crear, validar o implementar stories | `story-format.md` |
 | Linkear una story nueva a la que viene a fixear/recalibrar (back-links `followup_of:` / `followed_up_by:`) | `story-format.md` §1.2 |

@@ -29,7 +29,7 @@ Bajar el propio guion va siempre sin credencial y no pasa por la API: no gasta d
 
 1. Herramientas:
    $PSVersionTable.PSVersion.ToString(); node --version; tar --version
-   Esperado: PowerShell 7.algo, node v22 o más y tar (viene con Windows 10 y posteriores). Lo que falte, decime que lo
+   Esperado: PowerShell 7.algo, node v20 o más y tar (viene con Windows 10 y posteriores). Lo que falte, decime que lo
    instale yo, de a uno:  winget install Microsoft.PowerShell · winget install OpenJS.NodeJS.LTS
    Después de instalar algo, tengo que cerrar y volver a abrir la terminal y Claude Code: avisame y esperá.
    (git NO hace falta: el arnés se baja como archivos, no se clona.)

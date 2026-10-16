@@ -43,7 +43,7 @@ Para sacar el arnés, `harness.js uninstall --dry-run` muestra qué quitaría, y
 
 - Claude Code, instalado y con tu sesión iniciada.
 - Windows 11 con PowerShell 7, o Mac. En Linux o en WSL, se instala a mano (está en la «Referencia»).
-- Node 22 o posterior y `tar`. En Mac, además, Python 3 y Homebrew. Git **no** hace falta para usar el arnés: se baja
+- Node 20 o posterior y `tar`. En Mac, además, Python 3 y Homebrew. Git **no** hace falta para usar el arnés: se baja
   como archivos, no se clona. Tampoco hace falta una cuenta de GitHub: este repo es público.
 - Tu Node hace falta para instalar. Después el arnés baja su propio Node 24 (unos 50 MB, de nodejs.org) y sus hooks
   corren con él; tus proyectos siguen con tu Node, que no se toca. Se apaga con `TYCON_HARNESS_NODE=0`.
@@ -65,6 +65,8 @@ corren en tu propia terminal.
 
 Si en el camino instalás una herramienta, Claude te pide cerrar y abrir la terminal y Claude Code. Si el resumen dice
 «NO OK», guardalo: es lo que hay que mostrar al pedir ayuda.
+
+Próximamente: una sola línea de terminal, igual en Windows y en Mac, con el mismo plan y el mismo «sí»: `npx @tycon-sa/harness@latest`. Todavía no está publicada: por ahora, los pasos de arriba.
 
 El arnés queda en `~/.tycon/harness`, como archivos bajados (sin git). `~/.claude/tycon-harness` es un acceso directo a
 esa misma carpeta, y es el que usan los comandos de esta página. No borres ni muevas esa carpeta: Claude Code lo

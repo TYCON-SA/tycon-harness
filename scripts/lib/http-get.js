@@ -67,13 +67,20 @@ function proxyFor(env, target) {
 const proxyAuth = (p) => (p.username ? { 'Proxy-Authorization': `Basic ${Buffer.from(`${decodeURIComponent(p.username)}:${decodeURIComponent(p.password || '')}`).toString('base64')}` } : {});
 const classifyNet = (e) => (e && NETWORK_CODES.has(e.code) ? 'network' : (e && /CERT|TLS|SSL|certificate/i.test(e.code || e.message) ? 'tls' : 'network'));
 
+// un proxy declarado `https://` se habla por TLS y, sin puerto, en el 443 (como curl); `http://` (o sin esquema), en claro
+// y en el 80 (pase adversarial de la 8.40, clase 9)
+const proxyIsTls = (p) => p.protocol === 'https:';
+const proxyPort = (p) => p.port || (proxyIsTls(p) ? 443 : 80);
+/** Las opciones de la conexión AL proxy: con TLS, su nombre (SNI salvo una IP) y las opciones TLS de quien llama. */
+const toProxy = (p, tlsOpts) => Object.assign({ host: p.hostname, port: proxyPort(p) }, proxyIsTls(p) ? Object.assign(net.isIP(p.hostname) ? {} : { servername: p.hostname }, tlsOpts || {}) : {});
+
 /** Un túnel CONNECT abierto en el proxy hacia `host:port`; devuelve el socket. */
-function connectTunnel(proxy, target, { timeoutMs }) {
+function connectTunnel(proxy, target, { timeoutMs, tlsOpts }) {
   return new Promise((resolve, reject) => {
-    const req = http.request({
-      host: proxy.hostname, port: proxy.port || 80, method: 'CONNECT', path: `${target.hostname}:${target.port || 443}`,
+    const req = (proxyIsTls(proxy) ? https : http).request(Object.assign(toProxy(proxy, tlsOpts), {
+      agent: false, method: 'CONNECT', path: `${target.hostname}:${target.port || 443}`,
       headers: Object.assign({ Host: `${target.hostname}:${target.port || 443}` }, proxyAuth(proxy)), timeout: timeoutMs,
-    });
+    }));
     req.on('connect', (res, socket) => {
       if (res.statusCode !== 200) { socket.destroy(); return reject(new HttpError('proxy', `el proxy ${proxy.host} contestó ${res.statusCode} al túnel hacia ${target.host}`)); }
       resolve(socket);
@@ -120,9 +127,10 @@ function once(target, { headers, timeoutMs, maxBytes, env, tlsOpts }) {
     const base = { method: 'GET', headers: Object.assign({ Host: target.host, 'User-Agent': 'tycon-installer', Accept: '*/*' }, headers), timeout: timeoutMs };
     if (proxy && !isHttps) {
       // forma absoluta al proxy, http
-      go(Object.assign({}, base, { agent: new http.Agent({ keepAlive: false }), host: proxy.url.hostname, port: proxy.url.port || 80, path: target.href, headers: Object.assign({}, base.headers, proxyAuth(proxy.url)) }), http);
+      const viaTls = proxyIsTls(proxy.url);
+      go(Object.assign({}, base, toProxy(proxy.url, tlsOpts), { agent: viaTls ? new https.Agent(Object.assign({ keepAlive: false }, tlsOpts || {})) : new http.Agent({ keepAlive: false }), path: target.href, headers: Object.assign({}, base.headers, proxyAuth(proxy.url)) }), viaTls ? https : http);
     } else if (proxy && isHttps) {
-      connectTunnel(proxy.url, target, { timeoutMs }).then((socket) => {
+      connectTunnel(proxy.url, target, { timeoutMs, tlsOpts }).then((socket) => {
         // `host` para que TLS verifique la identidad del certificado; `servername` (SNI) sólo con un nombre, nunca con una IP
         const tlsSocket = tls.connect(Object.assign({ socket, host: target.hostname }, net.isIP(target.hostname) ? {} : { servername: target.hostname }, tlsOpts || {}));
         tlsSocket.on('error', fail);
@@ -169,6 +177,8 @@ function getSync(url, opts = {}) {
   const total = (opts.timeoutMs || DEFAULT_TIMEOUT_MS) * ((opts.maxRedirects === undefined ? DEFAULT_MAX_REDIRECTS : opts.maxRedirects) + 1) + 5000;
   const r = spawnSync(process.execPath, [__filename, '--json'], { input: JSON.stringify(req), encoding: 'utf8', maxBuffer: (opts.maxBytes || DEFAULT_MAX_BYTES) * 2 + 1024 * 1024, timeout: opts.deadlineAt ? Math.max(1000, opts.deadlineAt - Date.now() + 2000) : total, env: process.env });
   if (r.error) return { ok: false, kind: r.error.code === 'ETIMEDOUT' ? 'timeout' : 'network', code: r.error.code, message: `no pude correr el pedido: ${r.error.message}` };
+  // cortado por una señal (sin el tope: ése es r.error): la causa es la señal, no una respuesta ilegible
+  if (r.signal) return { ok: false, kind: 'network', code: r.signal, message: `el pedido se cortó con la señal ${r.signal}` };
   let out;
   try { out = JSON.parse(r.stdout); } catch (_) { return { ok: false, kind: 'network', message: `el pedido no devolvió nada legible (salió ${r.status}): ${(r.stderr || '').trim().split('\n')[0] || 'sin detalle'}` }; }
   if (out.ok) out.body = Buffer.from(out.body, 'base64');

@@ -1,5 +1,5 @@
 ﻿# get-harness.ps1 — baja la versión publicada del arnés (sin git) y la instala (el gemelo de get-harness.sh). Leelo entero antes de correrlo.
-#
+# Es la entrada «a mano». Próximamente la otra, en una línea y en Node: `npx @tycon-sa/harness@latest` (scripts/setup/npm/).
 # Uso: pwsh -File get-harness.ps1 [--repo <org/nombre>] [-- <opciones de harness.js install>]
 #      ./get-harness.ps1 [--repo …] [<opciones de install>]   (desde una sesión de PowerShell, que se come el `--`: por
 #      eso todo lo que no es --repo ni --help también va a install, con o sin `--`)

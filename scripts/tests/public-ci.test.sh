@@ -254,6 +254,15 @@ run_ci --range 'HEAD~1...HEAD'
 is "T21 (e) una versión que no sube sale 1" 1 "${RC}"
 has "T21 (e) …con version en rojo" "${R}.out" "❌ public-ci: version — rojo (exit 1)"
 has "T21 (e) …diciendo qué hacer" "${R}.out" "cada pedido sube la versión"
+# el paquete de npm sin su regla (story 8.40): un repo que trae scripts/setup/npm/package.json pero no
+# scripts/ci/npm-package-version.js no es «sin nada que exigir»: es «no pude correr», rojo
+variant npmnorule
+( cd "${R}" && mkdir -p scripts/setup/npm && printf '{ "name": "@acme/paquete", "version": "1.0.0" }\n' > scripts/setup/npm/package.json \
+    && printf '{ "version": "2026.01.01.3" }\n' > version.json && lab_git add -A -- . ':!scratch' && lab_git commit -qm "paquete sin regla" ) > /dev/null 2>&1
+run_ci --range 'HEAD~1...HEAD'
+is "T21 (e) el paquete de npm sin npm-package-version.js sale 1" 1 "${RC}"
+has "T21 (e) …con version «no pude correr» nombrando la regla que falta" "${R}.out" "❌ public-ci: version — no pude correr: "
+has "T21 (e) …y el archivo" "${R}.out" "scripts/ci/npm-package-version.js"
 
 # el control del «sólo lo versionado»: el mismo .js roto, versionado, sí es rojo
 variant tracked; ( cd "${R}" && lab_git add scratch/broken.js && lab_git commit -qm roto ) > /dev/null 2>&1; run_ci

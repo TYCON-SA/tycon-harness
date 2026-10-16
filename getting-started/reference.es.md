@@ -28,9 +28,9 @@ castellano; esta página y los archivos de la comunidad tienen versión en ingl�
 
 - **Sin cuenta de GitHub**: este repo es público, y el arnés se baja de acá sin credencial.
 - **Claude Code** instalado y con tu sesión iniciada (o Codex, para el lado Codex).
-- **En Windows, nativo**: Node 22 o posterior, PowerShell 7 y `tar` (viene con Windows 10 y posteriores). Git y Python
+- **En Windows, nativo**: Node 20 o posterior, PowerShell 7 y `tar` (viene con Windows 10 y posteriores). Git y Python
   no hacen falta. Por WSL, lo mismo que en Mac y Linux, dentro de WSL.
-- **En Mac y Linux**: Bash, Python 3, `tar`, `curl` y Node 22 o posterior (probado en 22 y 24). Git no hace falta.
+- **En Mac y Linux**: Bash, Python 3, `tar`, `curl` y Node 20 o posterior (probado en 20, 22 y 24). Git no hace falta.
 - **El paquete del stack de TYCON** pide además el SDK de .NET de tu plugin.
 
 La lista exacta para Mac y Linux (`dotnet`, sólo con el paquete del stack):
@@ -41,7 +41,7 @@ bash
 python3
 tar
 curl
-node >= 22
+node >= 20
 dotnet (bizuit)
 ```
 <!-- /requirements -->
@@ -67,7 +67,7 @@ winget install Microsoft.PowerShell
 ```
 
 Cerrá la terminal y abrí **PowerShell 7** (en el menú Inicio se llama así): todos los comandos de esta página se corren
-ahí, no en la 5.1 que viene con el sistema. Comprobá que `node --version` diga v22 o más y que `tar --version` conteste
+ahí, no en la 5.1 que viene con el sistema. Comprobá que `node --version` diga Node 20 o más y que `tar --version` conteste
 (el sistema lo trae desde 2018). No hay nada más con que iniciar sesión: el arnés nunca abre un navegador.
 
 **En Mac**, instalá lo que te falte con Homebrew (https://brew.sh):
@@ -76,7 +76,7 @@ ahí, no en la 5.1 que viene con el sistema. Comprobá que `node --version` diga
 brew install node python
 ```
 
-**En Linux**, lo mismo con el gestor de paquetes de tu distribución. Comprobá que `node --version` diga v22 o más.
+**En Linux**, lo mismo con el gestor de paquetes de tu distribución. Comprobá que `node --version` diga Node 20 o más.
 
 ### 2. Bajar e instalar
 
@@ -205,6 +205,33 @@ git clone https://github.com/TYCON-SA/tycon-harness tycon-harness && node tycon-
 git clone https://github.com/TYCON-SA/tycon-harness tycon-harness; node tycon-harness/scripts/setup/harness.js install --profile minimal --yes
 ```
 <!-- /install:clone-unattended -->
+
+## Dar de alta tu organización
+
+Para que todo tu equipo instale con la misma configuración, la organización necesita su **repo del perfil del equipo**:
+un repo propio, que sólo lee tu equipo, con tres archivos. `harness.js team-init` los arma por vos. Corre en una máquina con el arnés ya
+instalado (sin arnés sale 2: «instalá primero»), porque valida con los lectores de la versión instalada.
+
+```bash
+node $HOME/.tycon/harness/scripts/setup/harness.js team-init
+```
+
+Te pregunta lo que no le pasaste por opción: el nombre de la organización (`--name`, letras sin tilde, números, punto
+y guion), dónde vive el repo del perfil (`--platform github|azure` y `--profile-repo`, `org/repo` de GitHub o
+`https://dev.azure.com/<org>/<proyecto>/_git/<repo>`) y la carpeta donde dejar los archivos (`--dir`; por defecto
+`~/<repo>`; una carpeta con algo adentro no se toca). Baja el ejemplo publicado (`harness-team-profile-example`) y
+escribe sólo los tres archivos obligatorios:
+
+- `team-layer.json` — el nombre y la versión mínima del arnés (la que tenés instalada).
+- `team-profile.json` — la configuración del equipo, con el perfil `minimal` y las actualizaciones que cada persona
+  confirma; el bloque `ado` sólo si el repo vive en Azure DevOps.
+- `team-repos.json` — dónde vive cada repo: el arnés público, el perfil y el de las operaciones de la noche.
+
+Si algo no valida, lo dice con el archivo y el campo y no escribe nada. `--dry-run` muestra los tres archivos sin
+escribir. Después te dice qué sigue: crear el repo **vacío**, que sólo lea tu equipo (el alta no crea repos ni pide permisos de
+escritura), subir los archivos (si tenés git te ofrece hacerlo; si no, te da los dos comandos), instalar esta máquina
+con el perfil (`harness.js install --team <repo>`) y la línea para el resto del equipo. Los procesos de la noche y la
+página `harness.js team-config` son el paso siguiente, aparte.
 
 ## Perfiles
 
