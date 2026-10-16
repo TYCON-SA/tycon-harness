@@ -562,7 +562,9 @@ Node solo, que no depende de Claude ni de Codex. Lo que lo sostiene:
   imagen deja `/data` del usuario del sitio y la declara volumen, así un volumen nuevo nace escribible. La
   bajada va de a varios archivos a la vez dentro de su tope de 2 minutos; si igual corta, la pasada siguiente sale a los
   10 segundos y retoma donde quedó, en vez de esperar el refresco. Hay tres sondas: `/livez` dice si el proceso vive, `/healthz`
-  si el sitio está sano (con el freno da 503) y `/readyz` si ya cargó las fuentes.
+  si el sitio está sano (con el freno da 503) y `/readyz` si ya cargó las fuentes. La navegación no espera todo: con el
+  repo de operaciones leído, las pestañas se ven, y sólo Corridas espera el buzón («cargando las corridas»). Toda página
+  de carga se recarga sola cada 5 segundos.
 - **Las pestañas** (`views.js`) son Inicio (qué decidir hoy, o lo del dev), Proyectos y Arnés. Las arma el servidor, sin
   JavaScript de afuera y sin `<script>` en línea. «No medido» nunca es 0.
 

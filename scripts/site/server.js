@@ -324,7 +324,9 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
     if (!ses) return esApi ? enviar(res, { status: 401, tipo: 'text/plain; charset=utf-8', cuerpo: '' }) : irAlEmisor(res);
 
     if (st.frenado) return esApi ? enviar(res, { status: 503, tipo: 'text/plain; charset=utf-8', cuerpo: '' }) : enviar(res, { status: 503, cuerpo: views.paginaFrenado({ desde: st.frenado.desde }), extra: { 'Retry-After': '60' } });
-    if (!st.cargado) return esApi ? enviar(res, { status: 503, tipo: 'text/plain; charset=utf-8', cuerpo: '', extra: { 'Retry-After': '5' } }) : enviar(res, { status: 503, cuerpo: views.paginaCargando(), extra: { 'Retry-After': '5' } });
+    // la espera es POR FUENTE: con el repo de operaciones leído (`navegable`) el sitio se navega aunque el buzón siga
+    // bajando; cada pestaña dice lo suyo (Corridas, «cargando las corridas»). /readyz, arriba, sigue esperando todo
+    if (!st.cargado && !st.navegable) return esApi ? enviar(res, { status: 503, tipo: 'text/plain; charset=utf-8', cuerpo: '', extra: { 'Retry-After': '5' } }) : enviar(res, { status: 503, cuerpo: views.paginaCargando(), extra: { 'Retry-After': '5' } });
 
     const config = fuentes.config();
     const quien = access.quienPide(ses, { config, firstMaintainer: cfg.firstMaintainer });

@@ -230,6 +230,12 @@ function crearRutas({ cfg, fuentes, version = null, skillsDir = null, armar, dem
       // nunca hubo una bajada entera y la fuente dice por qué (credencial rechazada, sin red…): «no medido», no «cargando»
       // (y lo mismo sin armado y con la última bajada a medias: no se va a armar hasta una entera, así que no es «cargando»)
       const c = fuentes.modelo() && fuentes.modelo().corridas;
+      // todavía cargando (la primera lectura del buzón no terminó, o una pasada que cortó ya sigue, o se está armando): la
+      // pestaña lo dice y se recarga sola; las demás pestañas del sitio ya se ven (la espera es por fuente)
+      if ((c && c.codigo === 'cargando') || vista.bajada().siguiendo || vista.armando()) {
+        const t = 'cargando las corridas: esta página se recarga sola en unos segundos';
+        return { falla: esApi ? texto(503, t, { 'Retry-After': '5' }) : { status: 503, tipo: 'text/html; charset=utf-8', cuerpo: views.layout({ ...ctx, recargar: 5 }, 'Corridas', `<p class="lede">${runsEsc(t)}.</p>`), extra: { 'Retry-After': '5' } } };
+      }
       const sinArmar = !vista.armando() && !vista.bajada().completo;
       if ((vista.bajada().generacion === 0 && c && c.estado === 'no_medido' && c.codigo) || sinArmar) {
         const t = `no medido: el buzón todavía no se pudo bajar entero${c && c.codigo ? ` (${c.codigo})` : ''}`;

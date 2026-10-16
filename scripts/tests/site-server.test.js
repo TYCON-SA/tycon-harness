@@ -275,6 +275,40 @@ test('T42 Vida_NoDependeDelFreno', async () => {
   }
 });
 
+// La espera POR FUENTE (2026-10-16, pedido del dueño): con el repo de operaciones leído y el buzón todavía bajando, las
+// pestañas que no lo necesitan se ven (Inicio, Proyectos, Arnés, Configuración); /readyz sigue esperando todo. Y la página
+// de carga se recarga sola (meta refresh: la política del sitio no deja scripts en línea).
+// 🔴 rojo previo: «Cargando» en todas las pestañas hasta tener todas las fuentes, y sin recargarse
+test('T43 Carga_PorFuente_YLaPaginaDeCargaSeRecarga', async () => {
+  const emisor = await arrancarEmisor();
+  const lead = 'lead@acme.example';
+  const config = { version: 1, owners: { default: lead }, site: { maintainers: [lead] } };
+  try {
+    // nada leído todavía: la página de carga, que se recarga sola
+    const nada = H.fuentesFijas({ config, cargado: false, navegable: false });
+    let h = await H.arrancarSitio({ env: H.envBase({ SITE_OIDC_ISSUER: emisor.issuer }), fuentes: nada });
+    try {
+      nada.st.cargado = true;
+      const s = (await H.ingresar(h, emisor, { sub: 's-lead', email: lead, email_verified: true })).sesion;
+      nada.st.cargado = false;
+      const p = await h.pedir('/', { cookie: s });
+      assert.strictEqual(p.status, 503);
+      assert.match(p.texto, /<meta http-equiv="refresh" content="5">/, 'se recarga sola');
+      assert.doesNotMatch(p.texto, /<script(?![^>]*\bsrc=)[^>]*>/, 'sin script en línea');
+    } finally { await h.cerrar(); }
+    // el repo leído y el buzón todavía no: Inicio se ve; /readyz espera
+    const repo = H.fuentesFijas({ config, cargado: false, navegable: true, modelo: { corridas: { estado: 'no_medido', codigo: 'cargando', motivo: null, lista: [] } } });
+    h = await H.arrancarSitio({ env: H.envBase({ SITE_OIDC_ISSUER: emisor.issuer }), fuentes: repo });
+    try {
+      const s = (await H.ingresar(h, emisor, { sub: 's-lead', email: lead, email_verified: true })).sesion;
+      const p = await h.pedir('/', { cookie: s });
+      assert.strictEqual(p.status, 200, 'Inicio, sin esperar el buzón');
+      assert.match(p.texto, /cargando las corridas/, 'lo de las corridas dice que está cargando, no «0»');
+      assert.strictEqual((await h.pedir('/readyz')).status, 503, '/readyz sigue esperando todo');
+    } finally { await h.cerrar(); }
+  } finally { await emisor.cerrar(); }
+});
+
 // story 2.28 (AC 10): el sitio que arranca con operations.json roto y sin último bueno se frena enseguida, para todos
 test('T29 2.28-Healthz_FrenadoSinUltimoBueno', { skip: !hayHttpBackend() && !process.env.CI && 'git http-backend no está en esta máquina (en CI no se saltea)' }, async () => {
   const sources = require(path.join(SITE, 'sources.js'));
