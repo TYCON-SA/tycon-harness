@@ -413,3 +413,39 @@ test('T21 Sources_AnnotatedTag_DoesNotNumber', () => {
   const v = SRC.versionAt(work, 'HEAD', { env: ENV });
   assert.deepStrictEqual([v.version, Boolean(v.tagged), Boolean(v.pending)], [FLOOR, false, true], 'una anotada no numera: igual que por info/refs y la API');
 });
+
+test('T22 Release_TagLookupFails_DoesNotBlock_InstallWithFloor_UpdateWaitsAndSays', () => {
+  const sha = 'a'.repeat(40);
+  const content = Buffer.from(marked(FLOOR)).toString('base64');
+  for (const failure of ['sin red', 404, 500, 'tope']) {
+    const c = {
+      public: null, bases: null, token: 'x', deadline: Date.now() + 60000, limitedUntil: null, expiredToken: false,
+      get(route) {
+        if (/\/git\/ref\/heads\/main$/.test(route)) return { ok: true, status: 200, headers: {}, json: { object: { sha } } };
+        if (/\/contents\/version\.json/.test(route)) return { ok: true, status: 200, headers: {}, json: { content } };
+        if (/matching-refs/.test(route)) {
+          if (failure === 'sin red') return { ok: false, kind: 'network', message: 'sin red' };
+          if (failure === 'tope') return { ok: true, status: 403, headers: { 'x-ratelimit-remaining': '0' }, json: null };
+          return { ok: true, status: failure, headers: {}, json: null };
+        }
+        return { ok: true, status: 401, headers: {}, json: null };
+      },
+      getPublic() { return { ok: false, kind: 'network', message: 'sin red' }; },
+    };
+    const t = RL.resolveChannel(c, 'o/n', 'stable');
+    assert.strictEqual(t.status, 'ok', `${failure}: no se frena (${t.reason || ''})`);
+    assert.deepStrictEqual([t.version, Boolean(t.tagged), Boolean(t.pending)], [FLOOR, false, true], `${failure}: sigue con el piso, esperando el número`);
+    assert.match(t.note, /no pude leer las etiquetas/, `${failure}: y lo dice`);
+  }
+});
+
+test('T23 InternalClone_AzureOrNoTags_UpdatesByAncestry', () => {
+  // una organización con el arnés en su propio servidor (Azure DevOps, sin el workflow que etiqueta): su clon no se
+  // reescribe y decide por ancestría, así que la marca sin etiquetas no la deja quieta
+  const { work } = toy();
+  const installed = git(work, ['rev-parse', 'HEAD']);
+  const tip = merge(work, 'b');
+  const a = SRC.assess({ name: 'harness', dir: work, rewrites: false }, installed, tip, { env: ENV });
+  assert.strictEqual(a.status, 'new');
+  assert.strictEqual(SRC.assess({ name: 'harness', dir: work, rewrites: false }, tip, installed, { env: ENV }).status, 'up_to_date');
+});

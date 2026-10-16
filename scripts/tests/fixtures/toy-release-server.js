@@ -14,6 +14,7 @@
 //
 // Lo que atiende:
 //   GET /repos/o/n/git/ref/heads/<ref…>            { ref, object: { sha, type } }           404 si la ref no existe
+//   GET /repos/o/n/git/matching-refs/<prefijo>     [{ ref, object: { type, sha } }]          [] si no hay ninguna
 //   GET /repos/o/n/git/commits/<sha>               { sha, tree: { sha }, message }
 //   GET /repos/o/n/compare/<base>...<head>         { status, ahead_by, behind_by, base_commit, merge_base_commit }
 //   GET /repos/o/n/commits?sha=<ref>&path=<p>&per_page=N   [{ sha, commit: { message } }]  (los que tocaron <p>)
@@ -150,6 +151,15 @@ function api(req, res) {
       if (req.headers['if-none-match'] === etag) { if (a.given === null) remaining--; return send(res, 304, null, { ETag: etag }); }
       remaining--;
       return send(res, 200, { ref: `refs/heads/${ref}`, object: { type: 'commit', sha } }, { ETag: etag });
+    }
+    // como GitHub: las refs que empiezan con <prefijo> (las etiquetas de número: `tags/v`); sin ninguna, 200 con []
+    if ((m = /^git\/matching-refs\/(.+)$/.exec(rest))) {
+      const prefix = `refs/${decodeURIComponent(m[1])}`;
+      const r = git(['for-each-ref', '--format=%(refname) %(objecttype) %(objectname)', prefix.replace(/\/[^/]*$/, '/')]);
+      const list = String(r.stdout || '').split('\n').filter(Boolean).map((l) => l.split(' ')).filter(([ref]) => ref.startsWith(prefix))
+        .map(([ref, type, sha]) => ({ ref, object: { type, sha } }));
+      remaining--;
+      return send(res, 200, list);
     }
     if ((m = /^git\/commits\/([0-9a-f]{7,40})$/.exec(rest))) {
       const t = git(['rev-parse', '--verify', '-q', `${m[1]}^{tree}`]);

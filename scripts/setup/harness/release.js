@@ -349,9 +349,11 @@ function resolveChannel(c, repo, channel, { installed = null, tips = null, log =
   const atMain = { status: 'ok', ref: MAIN_REF, commit: main.sha, etag: main.etag, version: mainVersion.absent ? null : mainVersion.version, byTag: Boolean(mainVersion.byTag), note: null };
   // el número de la etiqueta: con permiso cuesta una consulta, así que se pide sólo si el commit dice que lo usa
   if (atMain.byTag) {
+    // sin poder leer las etiquetas (sin red, el tope de la API, un 404 o un 500) no se frena nada: la punta queda como
+    // «sin número todavía» —una instalación nueva sigue con el piso; una instalada no baja y, si dura, lo dice— y se anota
     const t = tagsFor(c, repo);
-    if (!t.ok) return t;
-    withTag(atMain, t.tags);
+    withTag(atMain, t.ok ? t.tags : {});
+    if (!t.ok) atMain.note = `no pude leer las etiquetas de versión (${t.reason || 'sin motivo'}): sigo con el número de version.json`;
   }
   if (channel !== 'latest') return atMain;
   const sync = refCommit(c, repo, SYNC_REF);
