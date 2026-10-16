@@ -169,6 +169,25 @@ test('T33 Paridad_Renovar_SoloEsaEntrada_ConReglas @story-2.29 @ac-26 — revisi
   assert.ok(r2.problems.some((p) => /fecha/.test(p.message)), JSON.stringify(r2.problems));
 });
 
+test('T34b Paridad_VariosGrupos_DeUnaVez — la misma diferencia en dos grupos se renueva y se cierra junta; un grupo que no la tiene frena', () => {
+  const mismo = (grupo) => ({ grupo, rasgo: 'etiqueta', motivo: 'falta el pedido', fecha: '2026-09-15', revision: '2026-12-15' });
+  const lista = { grupos: {}, rasgos: [], diferencias_declaradas: [mismo('backend'), { grupo: 'web', rasgo: 'cache', motivo: 'b', fecha: '2026-10-01', revision: '2026-12-01' }, mismo('frontend')] };
+  const archivo = ORG.formatJson(lista);
+  const { leerDeclaradas } = require(path.join(ROOT, 'scripts', 'ci', 'check-product-parity.js'));
+  const seccion = ORG.SECCIONES.find((s) => s.id === 'paridad');
+  const lectores = { 'check-product-parity.js': { leerDeclaradas } };
+  const ren = ORG.revisar({ seccion, texto: archivo, borrador: { accion: 'renew', grupos: ['backend', 'frontend'], rasgo: 'etiqueta', revision: '2027-03-01', motivo: 'sigue faltando' }, lectores, hoy: '2026-10-16' });
+  assert.strictEqual(ren.ok, true, JSON.stringify(ren.problems));
+  const nuevo = (grupo) => ({ ...mismo(grupo), motivo: 'sigue faltando', fecha: '2026-10-16', revision: '2027-03-01' });
+  assert.strictEqual(ren.texto, ORG.formatJson({ ...lista, diferencias_declaradas: [nuevo('backend'), lista.diferencias_declaradas[1], nuevo('frontend')] }));
+  const cer = ORG.revisar({ seccion, texto: archivo, borrador: { accion: 'close', grupos: ['backend', 'frontend'], rasgo: 'etiqueta' }, lectores, hoy: '2026-10-16' });
+  assert.strictEqual(cer.ok, true, JSON.stringify(cer.problems));
+  assert.strictEqual(cer.texto, ORG.formatJson({ ...lista, diferencias_declaradas: [lista.diferencias_declaradas[1]] }));
+  const falta = ORG.revisar({ seccion, texto: archivo, borrador: { accion: 'close', grupos: ['backend', 'web'], rasgo: 'etiqueta' }, lectores, hoy: '2026-10-16' });
+  assert.strictEqual(falta.ok, false);
+  assert.match(falta.problems[0].message, /no hay una diferencia declarada web\/etiqueta/);
+});
+
 test('T34 Paridad_Cerrar_QuitaSoloEsaEntrada_YAvisa @story-2.29 @ac-26', () => {
   const lista = { grupos: {}, rasgos: [], diferencias_declaradas: [{ grupo: 'web', rasgo: 'firma', motivo: 'a', fecha: '2026-10-01', revision: '2026-12-01' }, { grupo: 'web', rasgo: 'cache', motivo: 'b', fecha: '2026-10-01', revision: '2026-12-01' }] };
   const archivo = ORG.formatJson(lista);
