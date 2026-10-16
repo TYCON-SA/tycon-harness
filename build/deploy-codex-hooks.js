@@ -65,7 +65,8 @@ function substitute(fragment, tcg, skills, { interp = harnessInterpreter() } = {
 /** El intérprete de los hooks `.js` de esta máquina (story 8.39), o `node` si el módulo no está (un árbol viejo). */
 function harnessInterpreter(env = process.env) {
   try { return require(path.join(TCG, 'scripts', 'setup', 'harness', 'harness-node.js')).interpreter({ tree: TCG, env }); } catch (e) {
-    if (e && e.code === 'MODULE_NOT_FOUND') return { prefix: 'node', own: false };
+    // sólo si lo que falta es el propio harness-node.js (árbol viejo); si falta algo que él pide, se dice
+    if (e && e.code === 'MODULE_NOT_FOUND' && /harness-node\.js/.test(String(e.message).split('\n')[0])) return { prefix: 'node', own: false };
     throw e;
   }
 }
