@@ -86,7 +86,7 @@ test('GuidedPage_RealPage_BlockIsReadByItsMark', { skip: !fs.existsSync(PAGE) &&
   assert.strictEqual(block, /```text\n([\s\S]*?)\n```/.exec(text.replace(/\r\n/g, '\n'))[1]);
   assert.strictEqual(G.readBlock(text, m).block, block);
   // AC 34: lo que public-papers le exige a la página sigue en su lugar, incluido el que depende de dónde corta un renglón
-  for (const literal of ['node v20 o más', 'quiero el perfil mínimo', '--profile minimal', '.git/hooks/', 'si configura la carpeta global de hooks de git) y preguntame si sigo']) assert.ok(text.includes(literal), `la página sigue diciendo «${literal}»`);
+  for (const literal of ['node v22 o más', 'quiero el perfil mínimo', '--profile minimal', '.git/hooks/', 'si configura la carpeta global de hooks de git) y preguntame si sigo']) assert.ok(text.includes(literal), `la página sigue diciendo «${literal}»`);
   // una marca repetida, o metida adentro del bloque, no se lee a medias
   assert.match(G.readBlock(text.replace('<!-- /guided:base -->', '<!-- /guided:base -->\n\n<!-- guided:base -->'), m).problem, /guided:base.*más de una vez|una sola vez/);
   assert.match(G.readBlock(text.replace('<!-- guided:base -->\n', ''), m).problem, /guided:base/);
