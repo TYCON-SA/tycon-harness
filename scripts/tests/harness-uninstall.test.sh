@@ -110,8 +110,10 @@ base() { # base <home> → el ambiente aislado común (en el arreglo RUN_ENV)
        TYCON_NO_SQLITE_CHECK=1 TYCON_NO_ENGRAM_PROJECT_CHECK=1 TYCON_NO_AGENTSMD_POINTER=1 TYCON_NO_CANONICAL_PATH=1
        TYCON_THIRD_PARTY_NETWORK_BUDGET_S=1 GIT_CONFIG_NOSYSTEM=1)
 }
-# todo apagado: ninguna integración (sin perfil) y los opt-in que nacen prendidos, apagados
-all_off() { base "$1"; RUN_ENV+=(TYCON_SAFETY_GUARD=0 TYCON_TEST_SCOPE_GUARD=0 TYCON_SESSION_GUARD=0); }
+# todo apagado: ninguna integración (sin perfil) y los opt-in que nacen prendidos, apagados. El buzón se apaga explícito:
+# en el árbol del equipo (el privado con el público debajo) su llave lo prende sola, y desde que hay un hook que depende de
+# él (owner-email-notice.js) «sin perfil» ya no alcanza para que quede apagado.
+all_off() { base "$1"; RUN_ENV+=(TYCON_MAILBOX=0 TYCON_SAFETY_GUARD=0 TYCON_TEST_SCOPE_GUARD=0 TYCON_SESSION_GUARD=0); }
 # todo prendido: clockify, engram y nocturnos por variable; los seis opt-in (el de Telegram por su plugin en el disco); el
 # espejo de Codex por el disco (un AGENTS.md con bloques del arnés: el despliegue de Codex no corre en una prueba) y una
 # skill de terceros ya restituida en el estado. Azure DevOps también (story 8.7, AC 25): el bloque de CLAUDE.md que la
