@@ -548,7 +548,12 @@ else
   altered "con permisos de escritura" "permissions" 'return t.replace(/^  contents: read$/m, "  contents: write");'
   altered "con permisos propios en un job" "permissions" 'return t.replace(/^(    runs-on: .*)$/m, "$1\n    permissions:\n      contents: write");'
   altered "con fetch-depth 1" "fetch-depth" 'return t.replace(/^(\s*)fetch-depth: 0$/m, "$1fetch-depth: 1");'
-  altered "sin Node 24 en la matriz" "node-matrix" 'return t.replace(/node: \[22, 24\]/, "node: [22]");'
+  altered "sin Node 24 en la matriz" "node-matrix" 'return t.replace(/node: \[24\]/, "node: [22]");'
+  # el piso del instalador (2026-10-16): el job installer-floor instala Node 22, una vez y sólo ahí
+  altered "el piso del instalador con otro Node" "node-matrix" 'return t.replace(/node-version: 22$/m, "node-version: 20");'
+  altered "el piso del instalador fuera de su job" "node-matrix" 'return t.replace(/node-version: \$\{\{ matrix\.node \}\}/, "node-version: 22");'
+  altered "el chequeo final no espera al piso del instalador" "aggregate-job" 'return t.replace("needs: [checks, installer-floor]", "needs: [checks]");'
+  altered "una parte fija fuera del piso del instalador" "parts" 'return t.replace(/TYCON_PUBLIC_CI_PART: \$\{\{ matrix\.part \}\}/, "TYCON_PUBLIC_CI_PART: installer-floor");'
   altered "con un Node fijo" "node-matrix" 'return t.replace(/node-version: .*$/m, "node-version: 22");'
   altered "sin --range en el pull request" "range" 'return t.replace(/ --range "[^"]*"/, "");'
   altered "sin --range en la cola de merge" "range" 'return t.replace(/ \|\| \[ "\$\{GITHUB_EVENT_NAME\}" = "merge_group" \]/, "");'
@@ -566,7 +571,7 @@ else
   altered "sin el bloque de la matriz" "node-matrix parts" 'return t.replace(/^    strategy:\n(?:      .*\n)+/m, "");'
   altered "con la lista de Node fuera de matrix" "node-matrix" 'return t.replace(/^      matrix:$/m, "      versions:");'
   altered "con matrix fuera de strategy" "node-matrix" 'return t.replace(/^    strategy:$/m, "    defaults:");'
-  altered "sin ningún checkout" "fetch-depth" 'return t.replace(/^      - uses: actions\/checkout@.*\n(?:        .*\n)+/m, "");'
+  altered "sin ningún checkout" "fetch-depth" 'return t.replace(/^      - uses: actions\/checkout@.*\n(?:        .*\n)+/gm, "");'
 
   # ── `shape`, la forma exacta: las líneas de código del archivo son las que el control lleva adentro, en ese orden ──
   altered "con una línea de más al final" "" 'return t + "          echo fin\n";'
@@ -588,9 +593,9 @@ else
   altered "clase 2: el contexto github volcado entero" "secrets" 'return t.replace(/^(\s*)TYCON_PUBLIC_CI_OUT:.*$/m, (l, s) => l + "\n" + s + "CTX: ${{ toJSON(github) }}");'
   altered "clase 2: un secreto escondido con un escape de YAML" "" 'return t.replace(/^(\s*)TYCON_PUBLIC_CI_OUT:.*$/m, (l, s) => l + "\n" + s + "TOKEN: \"${{ secr\\x65ts.GITHUB_TOKEN }}\"");'
   altered "clase 3: un job salteado cuenta como aprobado" "" 'return t.replace("[ \"${r}\" = \"success\" ] || exit 1", "[ \"${r}\" = \"success\" ] || [ \"${r}\" = \"skipped\" ] || exit 1");'
-  altered "clase 4: un exclude en la matriz" "" 'return t.replace(/^(        node: \[22, 24\])$/m, "$1\n        exclude:\n          - node: 24");'
+  altered "clase 4: un exclude en la matriz" "" 'return t.replace(/^(        node: \[24\])$/m, "$1\n        exclude:\n          - node: 24");'
   altered "clase 5: un filtro bajo pull_request" "" 'return t.replace(/^  pull_request:$/m, "  pull_request:\n    types: [closed]");'
-  altered "clase 8: un job en estilo flujo con permisos de escritura" "after-queue" 'return t.replace(/^  public-ci:\n/m, "  extra: { runs-on: ubuntu-latest, permissions: write-all, steps: [ { run: \"echo hola\" } ] }\n  public-ci:\n").replace("needs: [checks]", "needs: [checks, extra]");'
+  altered "clase 8: un job en estilo flujo con permisos de escritura" "after-queue" 'return t.replace(/^  public-ci:\n/m, "  extra: { runs-on: ubuntu-latest, permissions: write-all, steps: [ { run: \"echo hola\" } ] }\n  public-ci:\n").replace("needs: [checks, installer-floor]", "needs: [checks, installer-floor, extra]");'
   altered "clase 9: un if propio en el paso del job public-ci" "" 'return t.replace(/^(      - name: Todos los jobs terminaron bien)$/m, "$1\n        if: github.event_name == \x27push\x27");'
   altered "clase 10: la llamada escrita de otra forma" "" 'return t.replace(/bash scripts\/ci\/public-ci\.sh --clean-machine$/m, "bash ./scripts/ci/public-ci.sh");'
   altered "clase 11: el rojo de la llamada se pierde con || true" "" 'return t.replace(/(public-ci\.sh --clean-machine)$/m, "$1 || true");'
@@ -605,7 +610,7 @@ else
   altered "clase 17: fetch-depth 0 fuera de with" "" 'return t.replace("        with:\n          fetch-depth: 0\n          persist-credentials: false\n", "        env:\n          fetch-depth: 0\n");'
   altered "clase 20: exit 1 sólo dentro de un echo" "" 'return t.replace("[ \"${r}\" = \"success\" ] || exit 1", "[ \"${r}\" = \"success\" ] || echo \"exit 1\"");'
   # lo que el pase dejó «a verificar aparte» (otra regla u otro mecanismo que el de su clase)
-  altered "aparte: un uses por rama dentro de una lista en estilo flujo" "uses-by-sha after-queue" 'return t.replace(/^  public-ci:\n/m, "  extra: { runs-on: ubuntu-latest, steps: [uses: evil/action@main] }\n  public-ci:\n").replace("needs: [checks]", "needs: [checks, extra]");'
+  altered "aparte: un uses por rama dentro de una lista en estilo flujo" "uses-by-sha after-queue" 'return t.replace(/^  public-ci:\n/m, "  extra: { runs-on: ubuntu-latest, steps: [uses: evil/action@main] }\n  public-ci:\n").replace("needs: [checks, installer-floor]", "needs: [checks, installer-floor, extra]");'
   altered "aparte: la condición del pull request invertida" "" 'return t.replace("= \"pull_request\" ]", "!= \"pull_request\" ]");'
   altered "aparte: un if en el paso que corre el guion" "" 'return t.replace(/^(      - name: Los pasos de la CI pública que le tocan a esta parte)$/m, "$1\n        if: ${{ false }}");'
   altered "aparte: sin persist-credentials false en el checkout" "" 'return t.replace(/^          persist-credentials: false\n/m, "");'

@@ -37,6 +37,10 @@
 # pesadas (con 4 a la vez, una larga que arranca última estira la parte entera). Un valor que no sea <i>/<n> con i
 # entre 1 y n, o un reparto que no se puede hacer (falta suites-shard.js, los pesos no se dejan leer), es ROJO: correr
 # todas, o ninguna, en silencio daría otro veredicto que el pedido. Una parte sin ninguna suite es rojo (cero no es verde).
+#
+# SÓLO ALGUNAS (TYCON_PORTABLE_ONLY=<ruta>,<ruta>…, 2026-10-16): corre sólo esas portables, con la misma HOME vacía. Lo
+# usa la parte installer-floor de la CI pública (el Node más viejo que acepta el instalador). Una ruta que no es una
+# portable declarada es rojo.
 
 set -uo pipefail
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -128,6 +132,16 @@ if (SHARD) {
   if (!mine.length) { console.log(`❌ suites-portables: a la parte ${i} de ${n} no le tocó ninguna portable: cero no es verde (¿más partes que portables?)`); process.exit(1); }
   // primero las más pesadas (a igual peso, en el orden de suites.json)
   portables = mine.map((e, at) => ({ e, at, w: weightOf(e) })).sort((a, b) => (b.w - a.w) || (a.at - b.at)).map((x) => x.e);
+}
+// sólo algunas portables, por su ruta (TYCON_PORTABLE_ONLY=<ruta>,<ruta>…; 2026-10-16): el trabajo del piso del
+// instalador de la CI pública corre así las suites de lo que corre con el Node del sistema. Una ruta que no es una
+// portable declarada es rojo, nunca un salto: un nombre mal escrito dejaría la parte corriendo de menos y en verde.
+const ONLY = (process.env.TYCON_PORTABLE_ONLY || '').split(',').map((s) => s.trim()).filter(Boolean);
+if (ONLY.length) {
+  const faltan = ONLY.filter((r) => !portables.some((e) => e.ruta === r));
+  if (faltan.length) { console.log(`❌ suites-portables: TYCON_PORTABLE_ONLY nombra lo que no es una portable declarada: ${faltan.join(', ')}`); process.exit(1); }
+  portables = portables.filter((e) => ONLY.includes(e.ruta));
+  console.log(`suites-portables: sólo ${portables.length} (TYCON_PORTABLE_ONLY): ${ONLY.join(', ')}`);
 }
 
 /** La HOME vacía de UNA suite: sólo los dos enlaces de instalación. Una por suite, así no se pisan entre sí. */

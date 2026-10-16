@@ -330,13 +330,18 @@ nombres en castellano sobre el rango y la máquina limpia. 🔴 **No corta en el
 y **un paso que no pudo correr es rojo con «no pude correr», nunca un salto**: un paso salteado se ve igual que uno que
 pasó. No corre el detector (necesita la lista privada) ni lee secretos. Sirve en la copia (un solo repo) y en el repo
 del equipo (dos): por eso la prueba nocturna de la copia corre el mismo guion en los dos lados y compara los veredictos.
-El workflow (`.github/workflows/ci.yml` en la copia) sólo lo llama, en
-Node 22 y 24 y partido en trabajos que corren a la vez (2026-10-14: entero tardaba ~30 min por Node; la parte `checks`
-y tres partes de las portables, `TYCON_PUBLIC_CI_PART`), y termina en **un job llamado `public-ci`**: es el chequeo con nombre estable que las reglas de la rama
+El workflow (`.github/workflows/ci.yml` en la copia) sólo lo llama, con
+Node 24 y partido en trabajos que corren a la vez (2026-10-14: entero tardaba ~30 min por Node; la parte `checks`
+y tres partes de las portables, `TYCON_PUBLIC_CI_PART`). **Un trabajo chico aparte, `installer-floor`, corre con Node
+22**, el más viejo que acepta el instalador, sólo las suites de lo que corre con el Node del sistema antes de que el
+arnés tenga el suyo: el arranque, la actualización, el Node propio, la versión bajada y su número (2026-10-16). Por qué: desde que el arnés corre con su propio Node 24, todo lo demás corre siempre con 24 y la matriz de
+dos versiones costaba el doble sin medir nada; lo único que de verdad ve otro Node es lo que corre antes. Es
+obligatorio como los demás. **Cuándo se saca**: cuando el piso del instalador suba a 24 (o cuando suba, se cambia la
+versión del trabajo), junto con su regla en el control. La corrida termina en **un job llamado `public-ci`**: es el chequeo con nombre estable que las reglas de la rama
 exigen, y renombrarlo deja los merges esperando un chequeo que no llega. `check-public-workflow.js` lee ese YAML **por
-texto** y verifica doce reglas: once que dicen por qué algo está mal (los disparadores, ningún secreto, cada acción fijada
+texto** y verifica trece reglas: doce que dicen por qué algo está mal (los disparadores, ningún secreto, cada acción fijada
 por el sha de su commit, permiso de sólo lectura, la historia completa, la matriz, `--range` en un pull request,
-`--clean-machine` siempre, el job agregador que falla si alguno falló y las partes, todas) y una, `shape`, que es la red: el control lleva
+`--clean-machine` siempre, el job agregador que falla si alguno falló, las partes, todas, y el salteo tras la cola) y una, `shape`, que es la red: el control lleva
 adentro **la forma exacta** del `ci.yml` —sus líneas de código, una por una y en orden— y cualquier línea de más, de
 menos o distinta es rojo. 🔴 Por qué la forma exacta: una regla por texto no ve
 otra forma de escribir lo prohibido (una opción dentro de un comentario, un
