@@ -211,12 +211,19 @@ function revisar({ seccion, texto, borrador, lectores = {}, arnes = null, hoy = 
     const dia = hoy || new Date().toISOString().slice(0, 10);
     const b = isObject(borrador) ? borrador : {};
     const lista = Array.isArray(actual.diferencias_declaradas) ? actual.diferencias_declaradas : [];
-    const i = lista.findIndex((d) => isObject(d) && d.grupo === b.grupo && d.rasgo === b.rasgo);
-    if (i < 0) return { ok: false, problems: [{ path: 'diferencias_declaradas', message: `no hay una diferencia declarada ${b.grupo}/${b.rasgo}`, sinCampo: true }], texto: null };
+    // la misma diferencia declarada en varios grupos se renueva o se cierra de una vez (`grupos`); `grupo` es uno solo
+    const grupos = Array.isArray(b.grupos) && b.grupos.length ? [...new Set(b.grupos)] : [b.grupo];
+    const indices = [];
+    for (const g of grupos) {
+      const j = lista.findIndex((d) => isObject(d) && d.grupo === g && d.rasgo === b.rasgo);
+      if (j < 0) return { ok: false, problems: [{ path: 'diferencias_declaradas', message: `no hay una diferencia declarada ${g}/${b.rasgo}`, sinCampo: true }], texto: null };
+      indices.push(j);
+    }
+    const i = indices[0];
     const nueva = clone(actual);
     let aviso = null;
     if (b.accion === 'close') {
-      nueva.diferencias_declaradas.splice(i, 1);
+      for (const j of [...indices].sort((x, y) => y - x)) nueva.diferencias_declaradas.splice(j, 1);
       aviso = 'si la diferencia sigue en los pipelines, vuelve a aparecer como divergencia la noche siguiente a la del merge';
     } else if (b.accion === 'renew') {
       const problems = [];
@@ -225,8 +232,7 @@ function revisar({ seccion, texto, borrador, lectores = {}, arnes = null, hoy = 
       else if (b.revision > unAnioDespues(dia)) problems.push({ path: `diferencias_declaradas.${i}.revision`, message: `la fecha de revisión es como mucho a un año (${unAnioDespues(dia)})` });
       if (typeof b.motivo !== 'string' || !b.motivo.trim()) problems.push({ path: `diferencias_declaradas.${i}.motivo`, message: 'el motivo es obligatorio: por qué sigue valiendo la diferencia' });
       if (problems.length) return { ok: false, problems, texto: null };
-      const d = nueva.diferencias_declaradas[i];
-      nueva.diferencias_declaradas[i] = { ...d, motivo: b.motivo.trim(), fecha: dia, revision: b.revision };
+      for (const j of indices) nueva.diferencias_declaradas[j] = { ...nueva.diferencias_declaradas[j], motivo: b.motivo.trim(), fecha: dia, revision: b.revision };
     } else return { ok: false, problems: [{ path: '', message: 'la acción tiene que ser renew (renovar) o close (cerrar)', sinCampo: true }], texto: null };
     // la validación es la del control (P7): la misma lectura que juzga de noche
     const r = lector.leerDeclaradas(nueva, dia);
@@ -607,21 +613,35 @@ function pantalla() {
   function editorParidad(s, d, pr) {
     var box = el('div', { class: 'pila' });
     var v = s.vista || {};
+    // cada rasgo con su descripción de la lista («que»); sin ella, la clave con espacios
+    var QUE = {}; ((v.definicion && v.definicion.rasgos) || []).forEach(function (r) { if (r && r.id) QUE[r.id] = r.que || r.id; });
+    function queDe(rasgo) { return QUE[rasgo] || String(rasgo || '').replace(/-/g, ' '); }
+    function lista(xs, fmt, nada) { var vistos = {}; var out = []; (xs || []).forEach(function (x) { var t = fmt(x); if (!vistos[t]) { vistos[t] = true; out.push(t); } }); return out.join('; ') || nada; }
     box.appendChild(el('p', { class: 'muted', text: 'Comparación de hoy: ' + (v.texto || 'no medida') + (v.fecha ? ' (' + v.fecha + ')' : '') }));
+    // sólo los productos con algo para mirar; los que coinciden (salvo lo aceptado) van en una línea
+    var conAlgo = (v.productos || []).filter(function (p) { return (p.faltan || []).length || (p.tiene || []).length || (p.vencidas || []).length; });
+    var enOrden = (v.productos || []).length - conAlgo.length;
+    if ((v.productos || []).length) box.appendChild(el('div', { class: 'msg ' + (conAlgo.length ? 'warn' : 'ok') }, el('b', { text: conAlgo.length ? conAlgo.length + ' producto' + (conAlgo.length === 1 ? '' : 's') + ' con algo para mirar' + (enOrden ? '; los otros ' + enOrden + ' coinciden con los demás' : '') + '.' : 'Los ' + enOrden + ' productos coinciden con los demás, salvo las diferencias aceptadas de abajo.' })));
     var prods = el('ul', { class: 'renglones' });
-    (v.productos || []).forEach(function (p) {
+    conAlgo.forEach(function (p) {
       prods.appendChild(el('li', {}, el('span', { class: 'quien', text: p.producto + ' · ' + p.grupos.join(', ') }),
-        el('span', { class: 'dato', text: 'le falta: ' + (p.faltan.map(function (x) { return x.que; }).join('; ') || 'nada') + ' · hace algo que los demás no: ' + (p.tiene.map(function (x) { return x.que; }).join('; ') || 'nada') + ' · aceptadas: ' + (p.declaradas.map(function (x) { return x.rasgo + ' hasta ' + x.revision; }).join('; ') || 'ninguna') + ' · vencidas: ' + (p.vencidas.map(function (x) { return x.rasgo + ' (' + x.revision + ')'; }).join('; ') || 'ninguna') })));
+        el('span', { class: 'dato', text: 'le falta: ' + lista(p.faltan, function (x) { return QUE[x.rasgo] || x.que || queDe(x.rasgo); }, 'nada') + ' · hace algo que los demás no: ' + lista(p.tiene, function (x) { return QUE[x.rasgo] || x.que || queDe(x.rasgo); }, 'nada') + ' · aceptadas: ' + lista(p.declaradas, function (x) { return queDe(x.rasgo) + ' (hasta ' + x.revision + ')'; }, 'ninguna') + ' · vencidas: ' + lista(p.vencidas, function (x) { return queDe(x.rasgo) + ' (' + x.revision + ')'; }, 'ninguna') })));
     });
-    if ((v.productos || []).length) box.appendChild(prods);
+    if (conAlgo.length) box.appendChild(prods);
+    // la misma diferencia declarada en varios grupos va en un solo renglón; Renovar y Cerrar actúan sobre todos sus grupos
+    var porRasgo = {}; var orden = [];
+    (v.declaradas || []).forEach(function (x) { if (!x || !x.rasgo) return; if (!porRasgo[x.rasgo]) { porRasgo[x.rasgo] = []; orden.push(x.rasgo); } porRasgo[x.rasgo].push(x); });
     var dcl = el('ul', { class: 'renglones' });
-    (v.declaradas || []).forEach(function (x) {
-      var fecha = el('input', { placeholder: 'AAAA-MM-DD', 'aria-label': 'Volver a mirar el' }); var motivo = el('input', { placeholder: 'por qué', 'aria-label': 'Por qué' });
-      dcl.appendChild(el('li', {}, el('span', { class: 'quien', text: x.grupo + ' · ' + x.rasgo }), el('span', { class: 'dato', text: (x.motivo || 'sin motivo') + ' · volver a mirar el ' + (x.revision || 'sin fecha') }), el('span', { class: 'acc' }, fecha, motivo,
-        el('button', { class: 'sec', type: 'button', text: 'Renovar', onclick: function () { revisarSeccion(s, { accion: 'renew', grupo: x.grupo, rasgo: x.rasgo, revision: fecha.value, motivo: motivo.value }); } }),
-        el('button', { class: 'sec', type: 'button', text: 'Cerrar', onclick: function () { revisarSeccion(s, { accion: 'close', grupo: x.grupo, rasgo: x.rasgo }); } }))));
+    orden.forEach(function (rasgo) {
+      var xs = porRasgo[rasgo]; var grupos = xs.map(function (x) { return x.grupo; });
+      var fechas = lista(xs, function (x) { return x.revision || 'sin fecha'; }, 'sin fecha');
+      var motivos = lista(xs, function (x) { return x.motivo || 'sin motivo'; }, 'sin motivo');
+      var fecha = el('input', { placeholder: 'AAAA-MM-DD', 'aria-label': 'Volver a mirar el' }); var motivo = el('input', { placeholder: 'por qué sigue valiendo', 'aria-label': 'Por qué' });
+      dcl.appendChild(el('li', {}, el('span', { class: 'quien', text: queDe(rasgo) }), el('span', { class: 'dato' }, el('span', { text: 'en ' + grupos.join(' y ') + ' · volver a mirar el ' + fechas }), el('details', { class: 'mas-info' }, el('summary', { text: 'Por qué' }), el('span', { text: motivos }))), el('span', { class: 'acc' }, fecha, motivo,
+        el('button', { class: 'sec', type: 'button', text: 'Renovar', onclick: function () { revisarSeccion(s, { accion: 'renew', grupos: grupos, grupo: grupos[0], rasgo: rasgo, revision: fecha.value, motivo: motivo.value }); } }),
+        el('button', { class: 'sec', type: 'button', text: 'Cerrar', onclick: function () { revisarSeccion(s, { accion: 'close', grupos: grupos, grupo: grupos[0], rasgo: rasgo }); } }))));
     });
-    box.appendChild(el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: 'Las diferencias aceptadas' }), (v.declaradas || []).length ? dcl : el('p', { class: 'muted', text: 'Ninguna.' })));
+    box.appendChild(el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: 'Las diferencias aceptadas' }), orden.length ? dcl : el('p', { class: 'muted', text: 'Ninguna.' })));
     if (v.definicion) box.appendChild(el('details', { class: 'mas-info' }, el('summary', { text: 'Qué se compara (se cambia en el repo, no acá)' }), el('pre', { text: JSON.stringify(v.definicion, null, 2) })));
     return box;
   }

@@ -9,7 +9,7 @@
 #
 # Node LTS sobre Alpine con la versión FIJADA, `git` adentro (el sitio clona el repo de operaciones), un usuario sin
 # privilegios, y sólo lo que el sitio ejecuta: scripts/site, los lectores que usa (scripts/lib, scripts/metrics,
-# scripts/nightly/dashboard, scripts/setup/harness) y los títulos de los pasos del pipeline (los lee la vista de corridas,
+# scripts/nightly/dashboard, scripts/setup/harness, y de scripts/ci el lector de la paridad) y los títulos de los pasos del pipeline (los lee la vista de corridas,
 # 2.27). Ningún secreto en la imagen: llegan como variables de entorno desde el almacén de cada plataforma (2.30).
 # La misma orden arranca el sitio con Node solo, sin Docker: node scripts/site/server.js
 FROM node:24.11.0-alpine3.22
@@ -23,6 +23,7 @@ COPY scripts/lib/ scripts/lib/
 COPY scripts/metrics/ scripts/metrics/
 COPY scripts/nightly/dashboard/ scripts/nightly/dashboard/
 COPY scripts/setup/harness/ scripts/setup/harness/
+COPY scripts/ci/check-product-parity.js scripts/ci/legacy-options.js scripts/ci/
 COPY skills/tycon-pipeline/scripts/lib/ skills/tycon-pipeline/scripts/lib/
 COPY skills/tycon-pipeline/steps/step-0*.md skills/tycon-pipeline/steps/
 
