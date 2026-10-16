@@ -1236,6 +1236,28 @@ if ((Integ-Prendida 'ado') -and $env:TYCON_NO_AZ_PROJECTS_REFRESH -ne '1' -and -
   }
 }
 
+# -- las corridas del pipeline al buzón del equipo (espejo de la subida del .sh, story 2.16; Windows desde 2026-10-15) --
+# Hasta 2026-10-15 este aplicador no la lanzaba: las corridas de una máquina Windows nunca llegaban al buzón ni al tablero
+# del equipo. En cada arranque, de fondo y con la ventana oculta: no frena el arranque. Sólo con la integración del buzón
+# prendida, fuera de -Check y fuera de un agente de CI (un agente no es una máquina del equipo, story 2.12). Apagar:
+# TYCON_NO_UPLOAD_RUNS=1. Un proceso de fondo de PowerShell no puede AGREGAR a un archivo: la subida agrega ella misma a su
+# registro (`--log`, con la rotación del .sh pasado ~512 KB). Registro: ~/.claude/.tycon-pipeline/upload-runs.log
+$upJs = Join-Path (Join-Path $PSScriptRoot 'metrics') 'upload-runs.js'
+if ((Integ-Prendida 'mailbox') -and $env:TYCON_NO_UPLOAD_RUNS -ne '1' -and -not $Check -and "$env:TF_BUILD" -notmatch '^(?i)true$' -and (Test-Path $upJs)) {
+    $upDir = Join-Path $ClaudeDir '.tycon-pipeline'
+    $upLog = Join-Path $upDir 'upload-runs.log'
+    try {
+        New-Item -ItemType Directory -Force -Path $upDir -ErrorAction Stop | Out-Null
+        # una sola línea con cada argumento entre comillas (las reglas de Windows: las barras antes de una comilla se duplican)
+        $upLine = (@($upJs, '--budget-ms', '90000', '--log', $upLog) | ForEach-Object { '"' + (("$_" -replace '(\\*)"', '$1$1\"') -replace '(\\+)$', '$1$1') + '"' }) -join ' '
+        $upStart = @{ FilePath = 'node'; ArgumentList = $upLine }
+        if ($IsWindows) { $upStart.WindowStyle = 'Hidden' } else { $upStart.RedirectStandardOutput = '/dev/null' }
+        # la constancia de que se lanzó, antes de lanzar: si node muere sin escribir nada, el registro igual lo dice
+        Add-Content -LiteralPath $upLog -Value ("[{0}] tycon: el arranque lanza la subida de corridas" -f (Get-Date).ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss')) -Encoding utf8 -ErrorAction SilentlyContinue
+        Start-Process @upStart -ErrorAction Stop
+    } catch { Write-Host "!! tycon: no pude lanzar la subida de corridas al buzón ($($_.Exception.Message))" }
+}
+
 # una linea con el estado de las ocho integraciones (story 8.3)
 if ($IntegEstado -eq 'ok') {
     $prend = @(); $apag = @()

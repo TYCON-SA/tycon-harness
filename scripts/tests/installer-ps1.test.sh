@@ -1543,6 +1543,36 @@ w4_defects_section() {
   while [ ! -s "$cache" ] && [ "$i" -lt 30 ]; do sleep 0.5; i=$((i+1)); done
   if [ "$rc" -eq 0 ] && grep -q '"Lab"' "$cache" 2>/dev/null; then ok "(x) AC 36 · una carpeta de usuario con espacio y acento: el refresco de fondo recibe la ruta entera y deja la lista de proyectos"
   else no "(x) AC 36 · refresco de fondo con espacio y acento (rc $rc): $([ -s "$cache" ] && echo 'la lista salió sin el proyecto' || echo 'no dejó la lista') · $(grep -F 'failed-query-notice' "$NODE_CALLS" | tail -1 | cut -c1-200) · $(brief "$W/x4.out" 200)"; fi
+  # (x4b) la subida de corridas al buzón (2026-10-15): el arranque de Windows nunca la lanzaba, y las corridas de una
+  # máquina Windows no llegaban al buzón ni al tablero. Ahora, como en Mac: de fondo (no frena el arranque), con la
+  # ventana oculta y su registro agregado (`--log`). Con la carpeta de usuario con espacio y acento, la ruta llega
+  # entera. Sin la llave del buzón la subida dice `sin_config` en su registro: ésa es la prueba de que se lanzó.
+  # 🔴 rojo previo: el .ps1 no nombraba upload-runs.js, y no quedaba ningún registro.
+  h="$(new_home 'w4 buzón espacio')"; mkdir -p "$h/.claude"; ln -s "$CLONE" "$h/.claude/tycon-claude-guides"
+  printf '{ "integrations": { "mailbox": true } }\n' > "$h/.claude/tycon.json"
+  PS1_ENTRY="$h/.claude/tycon-claude-guides/scripts/install-tycon-hooks.ps1" installer "$h" TYCON_MAILBOX_JSON="$W/no-esta.json" -- > "$W/x4b.out" 2>&1; rc=$?
+  local up="$h/.claude/.tycon-pipeline/upload-runs.log"; i=0
+  while ! grep -q 'sin_config' "$up" 2>/dev/null && [ "$i" -lt 40 ]; do sleep 0.5; i=$((i+1)); done
+  if [ "$rc" -eq 0 ] && grep -q 'sin_config' "$up" 2>/dev/null && grep -qF "upload-runs.js --budget-ms 90000 --log $up" "$NODE_CALLS"; then
+    ok "(x) la subida de corridas al buzón: el arranque de Windows la lanza de fondo, con la ruta entera, y deja su registro"
+  else no "(x) la subida de corridas al buzón (rc $rc): $([ -f "$up" ] && echo "registro: $(head -c 160 "$up")" || echo 'no quedó registro') · $(grep -F 'upload-runs' "$NODE_CALLS" | tail -1 | cut -c1-200) · $(brief "$W/x4b.out" 200)"; fi
+  # …y no se lanza con la llave de apagado, con -Check, dentro de un agente de CI ni con el buzón apagado
+  local variante lanzadas=""
+  for variante in apagada check ci sin-buzon; do
+    h="$(new_home "w4-buzon-$variante")"; mkdir -p "$h/.claude"; ln -s "$CLONE" "$h/.claude/tycon-claude-guides"
+    [ "$variante" = sin-buzon ] && printf '{ "integrations": { "mailbox": false } }\n' > "$h/.claude/tycon.json" || printf '{ "integrations": { "mailbox": true } }\n' > "$h/.claude/tycon.json"
+    : > "$NODE_CALLS"
+    case "$variante" in
+      apagada) installer "$h" TYCON_MAILBOX_JSON="$W/no-esta.json" TYCON_NO_UPLOAD_RUNS=1 -- > /dev/null 2>&1 ;;
+      check) installer "$h" TYCON_MAILBOX_JSON="$W/no-esta.json" -- -Check > /dev/null 2>&1 ;;
+      ci) installer "$h" TYCON_MAILBOX_JSON="$W/no-esta.json" TF_BUILD=True -- > /dev/null 2>&1 ;;
+      sin-buzon) installer "$h" TYCON_MAILBOX_JSON="$W/no-esta.json" -- > /dev/null 2>&1 ;;
+    esac
+    sleep 1
+    if grep -qF 'upload-runs.js' "$NODE_CALLS" || [ -e "$h/.claude/.tycon-pipeline/upload-runs.log" ]; then lanzadas="$lanzadas $variante"; fi
+  done
+  [ -z "$lanzadas" ] && ok "(x) la subida de corridas al buzón NO se lanza con TYCON_NO_UPLOAD_RUNS=1, con -Check, dentro de un agente de CI ni con el buzón apagado" \
+    || no "(x) la subida de corridas se lanzó donde no debía:$lanzadas"
   # (x5) AC 36 · un error de requisitos sale como UNA línea limpia, no como un error de PowerShell (con su «Line |» y sus
   # colores). 🔴 rojo previo: Write-Error con $ErrorActionPreference='Stop' imprimía siete renglones de PowerShell.
   local bare="$W/clone-bare"; mkdir -p "$bare"; cp -R "$CLONE/scripts" "$bare/scripts"; cp -R "$CLONE/claude-md-blocks" "$bare/claude-md-blocks"
