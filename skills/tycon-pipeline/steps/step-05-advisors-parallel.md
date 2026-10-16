@@ -67,7 +67,7 @@ El script además:
   existe (visible en el output de `pipeline.js next`, o con `marker.js get`) y **todavía
   no llegó la notificación de término del workflow en esta sesión**, el pase adversarial
   lanzado en el Step 4 sigue corriendo — y ese workflow NO es 1 proceso: son 6 hunters
-  concurrentes + skeptics en chunks de 3. Mientras esté vivo, la ventana baja a **MÁXIMO
+  concurrentes + verificadores en ventana de 3. Mientras esté vivo, la ventana baja a **MÁXIMO
   2 vivos** (valor conservador A MEDIR — la primera corrida real cuenta procesos pesados
   simultáneos, no solo cronometra, y con esa medición se fija el cap definitivo).
 

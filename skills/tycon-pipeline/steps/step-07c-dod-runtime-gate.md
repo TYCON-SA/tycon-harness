@@ -626,8 +626,9 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js run-check ac
   - La guía de prueba manual del tester (`<sid>-manual-test-plan.md`, DODRT-C7 vía
     `qa-guide.js`) es un artefacto de las stories de UI — **no es condición del waiver**.
 - Los smokes por curl SOLO cuentan si corrieron vía
-  `scripts/smoke-run.sh <evidence-dir> <ruta-de-la-story.md> --acs N,M -- <cmd>` (ledger + espejo
-  gates.log). Un curl narrado en el Debug Log es prosa, no evidencia.
+  `scripts/smoke-run.sh <evidence-dir> <ruta-de-la-story.md> --acs N,M --pass-if '<qué tiene que pasar>' -- <cmd>`
+  (ledger + salida guardada + espejo gates.log). Un curl narrado en el Debug Log es prosa, no evidencia. Sin
+  `--pass-if` no corre, y un humo cuya salida guardada falta o se editó no cuenta (ver 7c.6.1).
 - 🔴 **A `smoke-run.sh`, a `e2e-gate.sh` y a `step-7c-macro.js --story` se les pasa la RUTA de la
   story, no el número**. Con la ruta calculan solos la clave de la evidencia: el número
   si es único en su repo, `<tema>__<número>` si se repite (`pipeline.js evidence-key --story <ruta>`
@@ -644,6 +645,17 @@ en el frontmatter `runtime_not_verifiable:` con `reason:`+`covered_by:` → impo
 corriendo la app → waiveable por el usuario). El agente presenta CADA `NOT-VERIFIABLE` en la
 conversación (razón + test que lo cubre) y el usuario decide AC por AC; el waiver TTY
 (`marker.js runtime-waiver`) pide confirmación por-AC (no un rubber-stamp). Ver SKILL.md F.ii.
+
+#### 7c.6.1 — Sembrar el «Given», no escribir el «Then» (DODRT-C10, 2026-10-15)
+
+Sembrar las precondiciones de un AC (el «Given»: el paciente, el pedido de origen) es correcto, y se hace por
+`smoke-run.sh` sin `--acs` para que quede rastro de qué se insertó. Escribir en la base el dato que el «Then» dice
+que la app produce y después verificarlo no prueba nada: la prueba encuentra lo que el propio flujo escribió, y el
+revisor de cierre lo marca como resultado fabricado (DODRT-C10, crítico). Si la acción de la app no se puede ejercer,
+el AC no se «arregla» con un `INSERT`: va a `runtime_not_verifiable:` con su `reason:` y su `covered_by:`, y lo
+firma el dev desde su terminal. Cada humo con `--acs` escribe antes de correr qué tiene que pasar (`--pass-if`, que
+hable del «Then» del AC, no «ok» ni «funciona»); su salida queda guardada y sellada, y el revisor la lee contra esa
+frase (DODRT-W4).
 
 ### 🟢 7c.7 — Guía QA para tester (HTML, DODRT-C7, 2026-07-10)
 

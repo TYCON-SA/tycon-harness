@@ -19,6 +19,11 @@
  *    MODIFICADO DURANTE la corrida (fecha del archivo): una copia sucia de antes no es de la corrida. Medido: una
  *    corrida real de un repo del equipo cargaba 241 archivos sin commitear de corridas anteriores. Lo excluido se cuenta.
  *
+ * Cada repo se nombra con `nombre` (el repo según su remoto; sin remoto, la carpeta) y `proyecto` (story 2.28: el
+ * proyecto de Azure DevOps del remoto, decodificado y con su caja; `null` si el remoto no es de Azure o no hay). Con
+ * los dos, la vista ubica la corrida en un producto de repos.json por `<proyecto>/<repo>`. Un cambio de antes de la
+ * 2.28 no trae `proyecto`: quien lee compara sólo el nombre.
+ *
  * Qué repos: el de la story, más la carpeta git de cada archivo que la corrida escribió dentro de su
  * ventana — con las herramientas (`marker.filesTouched`, `file-events/<sesión>.jsonl`, subagentes
  * incluidos) o por consola (`console-writes/<sesión>.jsonl`, lo anota la puerta de la consola).
@@ -87,7 +92,8 @@ try {
   motivoSinSaneado = `no se pudo cargar scripts/metrics/tokens-digest.js (${e.code || e.message}): sin el saneado, los cambios no se publican`;
 }
 let nombreDeRepoAzure = null;
-try { ({ nombreDeRepo: nombreDeRepoAzure } = require('../lib/harness-repo.js')); } catch { nombreDeRepoAzure = null; }
+let resolverRemoto = null;
+try { ({ nombreDeRepo: nombreDeRepoAzure, resolverRemoto } = require('../lib/harness-repo.js')); } catch { nombreDeRepoAzure = null; resolverRemoto = null; }
 
 function git(dir, args, ok) {
   // `--literal-pathspecs`: una ruta con `[`, `*` o `?` (las rutas dinámicas de Next.js, por ejemplo) es un
@@ -131,6 +137,26 @@ function nombreDe(top) {
     if (b) return b;
   }
   return path.basename(top).replace(/--(?:wt-[^/]+|merge)$/, '');
+}
+
+/**
+ * El proyecto de Azure DevOps del remoto del repo (story 2.28, AC 13), o null si el remoto no es de Azure, no hay
+ * remoto o no se puede leer. Sigue un `origin` local como `nombreDe`. Sale como `nombre`: decodificado
+ * (`Beta%20Dos` → «Beta Dos») y con la caja que escribe el remoto — `identidadRemoto` lo da en minúsculas, así que
+ * se toma de la URL el segmento que lo nombra. En la forma corta (`<org>/_git/<repo>`) el proyecto es el repo.
+ */
+function proyectoDe(top) {
+  let r = null;
+  try { r = resolverRemoto && resolverRemoto(top); } catch { return null; }
+  if (!r || !r.id || !r.id.org || !r.id.proyecto) return null;
+  const crudo = (s) => { try { return decodeURIComponent(s); } catch { return String(s); } };
+  const segs = String(r.url || '').trim().replace(/\/+$/, '').replace(/\.git$/i, '').split(/[/:]/).map(crudo);
+  const i = segs.lastIndexOf('_git');
+  const v3 = segs.findIndex((s) => s.toLowerCase() === 'v3');
+  const cand = i > 0 ? segs[i - 1] : (v3 >= 0 ? segs[v3 + 2] : null);
+  if (cand && cand.toLowerCase() === r.id.proyecto) return cand;
+  if (r.id.nombre && r.id.nombre.toLowerCase() === r.id.proyecto) return r.id.nombre; // forma corta
+  return r.id.proyecto;
 }
 
 function leerJsonl(f) {
@@ -501,7 +527,7 @@ function armar({ volcado, estado }) {
   const orden = [...repos.entries()].sort((a, b) => (b[1].principal - a[1].principal));
   for (const [top, info] of orden) {
     const por = ['story', 'herramientas', 'consola'].filter((x) => info.por.has(x));
-    const base = { nombre: nombreDe(top), principal: info.principal, por,
+    const base = { nombre: nombreDe(top), proyecto: proyectoDe(top), principal: info.principal, por,
       otras_sesiones: otrasMotivo ? null : (otras.get(top) || new Set()).size, ...(otrasMotivo ? { otras_sesiones_motivo: otrasMotivo } : {}) };
     const c = commitsDeLaCorrida(top, v);
     const commits = [];

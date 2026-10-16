@@ -100,9 +100,9 @@ function armar(t, opts = {}) {
   // 1. pruebas de humo: AC 1 (salida 0, o la que diga el caso), con su copia en gates.log como la escribe smoke-run.sh.
   const ts = SIN_MS(ahora);
   const exit = opts.smokeExit === undefined ? 0 : opts.smokeExit;
-  fs.writeFileSync(path.join(dod, '9.9-smoke-ledger.jsonl'),
-    JSON.stringify({ ts, story: '9.9', acs: [1], cmd: 'curl -s http://app/catalogos # AC #1', exit, via: 'smoke-run.sh' }) + '\n');
-  fs.appendFileSync(gatesLog, JSON.stringify({ type: 'smoke-run', ts, story: '9.9', acs: [1], exit }) + '\n');
+  // Armada por el ayudante compartido (story 1.19): una línea vieja, sin `v`.
+  require('./lib/smoke-ledger-line.js').append({ dodDir: dod, gatesLog, story: '9.9', acs: [1], ts, exit,
+    cmd: 'curl -s http://app/catalogos # AC #1' });
   // 2. gate E2E PASS con su copia run-check: cubre la fila E1 → AC 2. El texto del gate no nombra criterios.
   fs.writeFileSync(path.join(dod, `9.9-e2e-gate-${COMPACTO(ahora)}.md`), [
     '# DoD Runtime Evidence — Story 9.9 — Playwright Gate (scoped)',

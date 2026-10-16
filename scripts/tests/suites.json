@@ -354,6 +354,11 @@
       "requiere": []
     },
     {
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/adversarial-launch.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "arnes",
       "ruta": "tests/backfill-discovery.test.js",
       "requiere": []
@@ -793,6 +798,12 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/smoke-expectation.test.sh",
+      "requiere": [],
+      "__nota": "story 1.19 (2026-10-15): un humo por terminal dejaba sólo el código de salida, y en otro arnés el agente insertó a mano el resultado que la prueba debía encontrar. Mide que smoke-run.sh pide --pass-if a todo humo con --acs (y no a la siembra sin --acs), que la expectativa y la salida se guardan tapadas con su sha256 en el espejo, el tope de 8 KB, que el código de salida sobrevive al tee, los bytes que no son texto, el tapado caído, la carpeta de salidas bloqueada, dos humos del mismo segundo y un humo cortado a mitad sin dejar el temporal; y que el paso 7c dice la regla de sembrar el «Given»."
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/run-dir-key.test.sh",
       "requiere": [],
       "__nota": "story 1.17.1 (2026-10-06): la 1.17 separó por tema la evidencia de cierre, pero la carpeta de los revisores, la guía del tester, las aprobaciones de la matriz y el aviso de sesiones cruzadas seguían por el número solo: una story podía pasar a done con la carpeta de revisores de otra del mismo número. Mide que las cuatro usan la clave de la 1.17, que lo viejo bajo un número compartido no se toca, no cuenta y se nombra, y que con número único los nombres son los de siempre."
@@ -800,6 +811,11 @@
     {
       "raiz": "arnes",
       "ruta": "tests/step-times.test.sh",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/adversarial-launch-delay.test.sh",
       "requiere": []
     },
     {
@@ -2072,6 +2088,18 @@
       "__nota": "story 8.26, tanda F2 (T66): el texto del aviso de la verificación de lo publicado (scripts/ci/verify-notice.js), armado del informe que deja `mirror.js verify --report`. Calla en verde; con hallazgos dice cada lugar y qué hacer, con el secreto primero; con «no pude mirar» lo dice, y también si la verificación falló y su informe no está o no se deja leer; lo que escribió un tercero no rompe el mensaje, que entra en uno solo. Sin red y sin git: lee un archivo y escribe por su salida.",
       "raiz": "arnes",
       "ruta": "tests/verify-notice.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 2.28 (AC 30 · T42-T43): el aviso de arranque «tu máquina le informa al equipo tu correo de git» (scripts/hooks/owner-email-notice.js). Con un HOME de prueba por caso y el buzón prendido por variable: lo dice una vez con el correo y los dos comandos, calla en los arranques siguientes, lo vuelve a decir si el correo cambia, y el sello guarda la huella, nunca el correo. Calla y no sella sin user.email, con el buzón apagado, con la subida apagada, en un agente de compilación o apagado por variable; con la carpeta de estado sin permiso calla y sale 0; un git falso al frente del PATH nunca se llama. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/owner-email-notice.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 2.28 (T4, T7-T19, T22, T41): quién es quién (scripts/lib/people.js). Los correos que informan las máquinas del espejo (sin escribir ni tirar, con el JSON roto), los cuatro estados de una máquina y la carpeta vieja compartida, quién ve qué máquina (el mantenedor todo, la persona lo suyo, la corrida suelta sólo el mantenedor), la comparación sin mayúsculas, el plazo de 24 horas de la configuración rota y el freno, las máquinas por confirmar, dónde trabaja cada persona en productos de repos.json (sin adivinar), la vista de una persona sin nada de otra, y que el código no trae valores de ninguna organización. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/people.test.js",
       "requiere": []
     },
     {

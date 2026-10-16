@@ -194,7 +194,12 @@ test('T5 Skipped_PortonNormal_SeNiega @story-1.8 @ac-5', () => {
   assert.equal(r.status, 2);
   assert.match(r.stderr, /NORMAL/, 'stderr trae el reason del portón');
   assert.match(r.stderr, /Lanzamiento temprano|lanz/i, 'y la instrucción: el pase se lanza');
-  assert.equal(crudoMarker(home, SID), antes);
+  // Desde la story 7.19 el portón que el salteo consulta deja su veredicto en la corrida (`adversarialGate`, AC 1):
+  // `next` lo usa para pedir el lanzamiento. Lo que no se anota es el salteo ni el cierre del 5b.
+  const despues = leerMarker(home, SID);
+  assert.strictEqual(despues.adversarialGate && despues.adversarialGate.run, true, 'el veredicto «corre» queda anotado');
+  const sinVeredicto = (m) => { const x = { ...m }; delete x.adversarialGate; delete x.lastTouch; return x; };
+  assert.deepStrictEqual(sinVeredicto(despues), sinVeredicto(JSON.parse(antes)), 'nada más cambia: ni salteo ni cierre del 5b');
   assert.equal(crudoLog(home, 'gates.log'), '', 'gates.log sin cambios');
 });
 

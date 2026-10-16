@@ -728,13 +728,14 @@ por un sintético, como los demás). Lo que tiene que cumplir lo verifica **por 
 | `clean-machine` | Toda llamada a `public-ci.sh` lleva `--clean-machine`. |
 | `aggregate-job` | El job `public-ci` corre siempre (`if: always()`), depende de todos los demás y falla si alguno no dio `success`. |
 | `parts` | La matriz parte la corrida en `checks` y `suites-1-of-<n>` … `suites-<n>-of-<n>`, todas, en orden y una vez, y la parte llega al guion desde la matriz: una que falta deja suites sin correr y el veredicto igual verde. |
+| `after-queue` | Cada job se saltea en el push a `main` que hace la cola de merge al entrar un pedido (quien empuja es `github-merge-queue[bot]`), y sólo en ése: la cola ya probó exactamente ese commit. Cualquier otro push a `main` corre entero, como el merge directo de un administrador que salteó la cola (la salida de urgencia); en un pedido y en la cola no cambia nada. El job `public-ci` suma la condición detrás de `always()`. |
 | `shape` | Las líneas de código del archivo son EXACTAMENTE las que el control lleva adentro (`SHAPE`), en ese orden. |
 
 🔴 **El job `public-ci` es el chequeo con nombre estable** que las reglas de la rama exigen: renombrarlo
 deja los merges esperando un chequeo que no llega. Corre siempre porque un job que depende de otro que falló se saltea,
 y un chequeo salteado cuenta como aprobado.
 
-🔴 **`shape` es la red, y es a propósito.** Las diez primeras reglas dicen por qué algo está mal; pero una regla que busca
+🔴 **`shape` es la red, y es a propósito.** Las doce primeras reglas dicen por qué algo está mal; pero una regla que busca
 «lo prohibido» por texto siempre deja pasar otra forma de escribirlo —la opción dentro de un comentario de shell, la
 llamada con otra ruta, un `|| true` que se traga el rojo, un `exclude` en la matriz, un `if:` en un paso, un job en estilo
 flujo (`{ … }`), el token por índice, un escape `\x65`, un retorno de carro suelto que para YAML es un salto de línea—.

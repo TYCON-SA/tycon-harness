@@ -778,6 +778,176 @@ for CODIGO in 404 500; do
     && ok "2.24-T19b listado ${CODIGO} → ${ESPERA}, exit 1, sin carpeta" || mal "2.24-T19b listado ${CODIGO}: rc=${RC} estado=$(campo "${T}" estado)"
 done
 
+
+# ════ story 2.28 · la unión de carpetas: una carpeta vieja es historia de UNA nueva, o no se une (AC 25-28) ══════
+# place228 <buzon> <carpeta> <previous_folder> <moved_on> [code_regenerated reason] — el place.json de una carpeta nueva
+# huella_de <carpeta> — la huella de las corridas de una carpeta (sus volcados .json de primer nivel), como la declara la
+# máquina que subió ahí (story 2.28, segunda vuelta de seguridad): la misma función que usan la subida y la bajada.
+huella_de() { node -e 'const fs=require("fs"); const [,u,d]=process.argv; let n=[]; try { n=fs.readdirSync(d).filter((x)=>x.endsWith(".json")); } catch (_) {} console.log(require(u).huellaDeCorridas(n))' "${RAIZ}/scripts/metrics/upload-runs.js" "$1"; }
+place228() {
+  local code="${2##*-}" extra=""
+  [ -n "${5:-}" ] && extra=",\"code_regenerated\":{\"on\":\"$4\",\"reason\":\"$5\"}"
+  mkdir -p "$1/blobs/corridas/$2/registros"
+  printf '{"schema":1,"day":"%s","owner":{"email":"zqx-fuga-correo@ejemplo.test","source":"git-global"},"folder":{"name":"%s","code":"%s","previous_folder":"%s","moved_on":"%s","previous_runs_sha256":"%s"%s}}\n' "$4" "$2" "${code}" "$3" "$4" "$(huella_de "$1/blobs/corridas/$3")" "${extra}" > "$1/blobs/corridas/$2/registros/place.json"
+}
+volcado228() { mkdir -p "$1/blobs/corridas/$2"; printf '{"archivedAt":"%sT10:00:00.000Z","marker":{"sessionId":"sid-%s"}}\n' "$4" "$3" > "$1/blobs/corridas/$2/$3.json"; }
+uniones() { python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(json.dumps(d, sort_keys=True))" "$1/estado/corridas-buzon/.carpetas-de-maquina.json" 2>&1; }
+
+# ── 2.28 T35 · Carpetas_UnaDeclaracion_SeUne (AC 26) ── 🔴 rojo previo: sin archivo; el correo adentro.
+T="${BASE}/t228-35"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
+volcado228 "${T}/b" macbook-pro "9.1-2026-10-14T0900" 2026-10-14
+place228 "${T}/b" macbook-pro-1a2b3c4d macbook-pro 2026-10-15
+volcado228 "${T}/b" macbook-pro-1a2b3c4d "9.1-2026-10-14T0900" 2026-10-14
+bajar "${T}" "${T}/bin/az"
+U="$(uniones "${T}")"
+[ "${RC}" -eq 0 ] && [ "${U}" = '{"carpetas": {"macbook-pro": {"declarantes": 1, "desde": "2026-10-15", "estado": "unida", "nueva": "macbook-pro-1a2b3c4d"}}, "no_leidas": [], "regeneradas": {}, "schema": 1}' ] \
+  && ok "2.28-T35 una declaración y nada nuevo en la vieja: unida a la nueva desde el día de la mudanza" || mal "2.28-T35 rc=${RC} uniones=${U}"
+case "$(cat "${T}/estado/corridas-buzon/.carpetas-de-maquina.json" 2>/dev/null)" in *zqx-fuga*|*ejemplo.test*|*"${BASE}"*) mal "2.28-T35 el archivo trae un correo o una ruta" ;; '') mal "2.28-T35 no hay archivo" ;; *) ok "2.28-T35 sin correos ni rutas" ;; esac
+node -e 'const { carpetasDeMaquina } = require(process.argv[1]); const r = carpetasDeMaquina(process.argv[2]); process.exit(r.carpetas["macbook-pro"].estado === "unida" ? 0 : 1)' "${BAJAR}" "${T}/estado/corridas-buzon" \
+  && ok "2.28-T35 carpetasDeMaquina(espejo) da lo mismo (una sola definición)" || mal "2.28-T35 carpetasDeMaquina no exportada o distinta"
+# Contrato: el archivo que escribe la bajada lo acepta el lector del reductor (que también usan la poda y la vista).
+# 🔴 rojo previo (revisor de cobertura, segunda vuelta): los lectores se probaban con el archivo fabricado a mano.
+node -e 'const r = require(process.argv[1]).leerUnionesDeCarpetas(process.argv[2]); process.exit(r.estado === "medidas" && r.carpetas.get("macbook-pro").nueva === "macbook-pro-1a2b3c4d" ? 0 : 1)' "${RAIZ}/scripts/nightly/dashboard/reducer.js" "${T}/estado/corridas-buzon" \
+  && ok "2.28-T35 contrato: el lector del reductor acepta lo que escribe la bajada" || mal "2.28-T35 contrato: el reductor no acepta el archivo de la bajada"
+# también con la bajada parcial
+T="${BASE}/t228-35b"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
+volcado228 "${T}/b" macbook-pro "9.1-2026-10-14T0900" 2026-10-14
+place228 "${T}/b" macbook-pro-1a2b3c4d macbook-pro 2026-10-15
+volcado228 "${T}/b" macbook-pro-1a2b3c4d "9.2-2026-10-15T0900" 2026-10-15
+echo "macbook-pro-1a2b3c4d/9.2-2026-10-15T0900.json" > "${T}/b/corromper"
+bajar "${T}" "${T}/bin/az"
+[ "${RC}" -eq 1 ] && [ "$(campo "${T}" estado)" = "parcial" ] && echo "$(uniones "${T}")" | grep '"estado": "unida"' > /dev/null \
+  && ok "2.28-T35 la bajada parcial también deja el archivo" || mal "2.28-T35 parcial: rc=${RC} estado=$(campo "${T}" estado) uniones=$(uniones "${T}")"
+
+# «no pude mirar» no es «no recibió nada»: una carpeta vieja que no se deja listar no se une y queda nombrada
+# 🔴 rojo previo (pase de fallos silenciosos): el listado fallido daba «último día vacío» y la vieja quedaba unida.
+T="${BASE}/t228-35c"; mkdir -p "${T}/esp/macbook-pro" "${T}/esp/macbook-pro-1a2b3c4d/registros"
+printf '{"schema":1,"day":"2026-10-15","folder":{"name":"macbook-pro-1a2b3c4d","code":"1a2b3c4d","previous_folder":"macbook-pro","moved_on":"2026-10-15"}}\n' > "${T}/esp/macbook-pro-1a2b3c4d/registros/place.json"
+chmod 000 "${T}/esp/macbook-pro"
+if [ -r "${T}/esp/macbook-pro" ]; then echo "  SALTEADO — 2.28-T35 carpeta ilegible: esta cuenta lee igual una carpeta sin permisos (¿root?)"
+else
+  node -e 'const r = require(process.argv[1]).carpetasDeMaquina(process.argv[2]); process.exit(!r.carpetas["macbook-pro"] && r.no_leidas.some((x) => x.carpeta === "macbook-pro") ? 0 : 1)' "${BAJAR}" "${T}/esp" \
+    && ok "2.28-T35 una carpeta vieja que no se puede listar no se une y queda en no_leidas" || mal "2.28-T35 la carpeta ilegible se unió o no quedó nombrada"
+fi
+chmod 755 "${T}/esp/macbook-pro"
+
+# ── pase adversarial (2026-10-15): una declaración sin forma no une nada ─────────────────────────────────────────────
+# El buzón lo escribe cualquiera con la llave: una declaración vale sólo si la carpeta que declara es EXACTAMENTE
+# `<vieja>-<8 hexadecimales>`, la vieja no es a su vez una carpeta nueva, y la mudanza es una fecha real, no posterior al
+# día de su place.json. 🔴 rojos previos (clases 3, 7, 14, 18 y el «aparte»): dos carpetas que se declaran una a la otra
+# (ciclo); una máquina que declara como vieja la carpeta con código de otra (se queda con sus corridas); una mudanza en
+# 2099; una fecha imposible que apagaba todas las uniones en los lectores.
+pl228() {  # <espejo> <carpeta> <code> <previous> <moved_on> <day> [extra json dentro de folder]
+  mkdir -p "$1/$2/registros"
+  printf '{"schema":1,"day":"%s","folder":{"name":"%s","code":"%s","previous_folder":"%s","moved_on":"%s","previous_runs_sha256":"%s"%s}}\n' "$6" "$2" "$3" "$4" "$5" "$(huella_de "$1/$4")" "${7:-}" > "$1/$2/registros/place.json"
+}
+uniones_de() { node -e 'const r = require(process.argv[1]).carpetasDeMaquina(process.argv[2]); console.log(JSON.stringify(r.carpetas))' "${BAJAR}" "$1"; }
+E="${BASE}/t228-adv/ciclo"; pl228 "${E}" maq-x z maq-y 2026-09-01 2026-09-01; pl228 "${E}" maq-y z maq-x 2026-09-01 2026-09-01
+[ "$(uniones_de "${E}")" = '{}' ] && ok "2.28-adv ciclo: dos carpetas que se declaran una a la otra no se unen" || mal "2.28-adv ciclo: $(uniones_de "${E}")"
+E="${BASE}/t228-adv/ajena"; pl228 "${E}" maq-a-1234abcd 1234abcd maq-a 2026-10-01 2026-10-15; pl228 "${E}" maq-b-9f8e7d6c 9f8e7d6c maq-a-1234abcd 2026-10-15 2026-10-15
+mkdir -p "${E}/maq-a"
+U="$(uniones_de "${E}")"
+echo "${U}" | python3 -c "import json,sys; d=json.load(sys.stdin); assert 'maq-a-1234abcd' not in d and d['maq-a']['nueva']=='maq-a-1234abcd', d" 2>/dev/null \
+  && ok "2.28-adv una máquina no puede declarar como vieja la carpeta con código de otra" || mal "2.28-adv ajena: ${U}"
+E="${BASE}/t228-adv/anidada"; pl228 "${E}" victima-1a2b3c4d 1a2b3c4d victima 2026-10-01 2026-10-15; pl228 "${E}" victima-1a2b3c4d-9f8e7d6c 9f8e7d6c victima-1a2b3c4d 2026-10-15 2026-10-15; mkdir -p "${E}/victima"
+U="$(uniones_de "${E}")"
+echo "${U}" | python3 -c "import json,sys; d=json.load(sys.stdin); assert 'victima-1a2b3c4d' not in d, d" 2>/dev/null \
+  && ok "2.28-adv una carpeta que declara su propia vieja no es una vieja de nadie" || mal "2.28-adv anidada: ${U}"
+E="${BASE}/t228-adv/futuro"; pl228 "${E}" maq-c-1234abcd 1234abcd maq-c 2099-12-31 2026-10-15; mkdir -p "${E}/maq-c"
+[ "$(uniones_de "${E}")" = '{}' ] && ok "2.28-adv una mudanza posterior al día de su place.json no declara nada" || mal "2.28-adv futuro: $(uniones_de "${E}")"
+E="${BASE}/t228-adv/imposible"; pl228 "${E}" pc-22222222 22222222 pc 2026-02-31 2026-10-15; pl228 "${E}" mac-1a2b3c4d 1a2b3c4d mac 2026-10-15 2026-10-15; mkdir -p "${E}/pc" "${E}/mac"
+U="$(uniones_de "${E}")"
+echo "${U}" | python3 -c "import json,sys; d=json.load(sys.stdin); assert 'pc' not in d and d['mac']['estado']=='unida', d" 2>/dev/null \
+  && ok "2.28-adv una fecha imposible no declara nada y la otra unión sigue" || mal "2.28-adv imposible: ${U}"
+# un código regenerado declara también la carpeta con código que reemplaza (sale del registro de subidas de la máquina):
+# esa carpeta se une a la regenerada si nada llegó ahí después; si no, queda como estaba.
+# 🔴 rojo previo (clase 4): la carpeta del código anterior no la declaraba nadie y el tablero contaba dos veces lo re-subido.
+E="${BASE}/t228-adv/regenerada"; mkdir -p "${E}/macbook-pro" "${E}/macbook-pro-1111aaaa"
+pl228 "${E}" macbook-pro-1111aaaa 1111aaaa macbook-pro 2026-09-14 2026-09-16
+pl228 "${E}" macbook-pro-2222bbbb 2222bbbb macbook-pro 2026-09-17 2026-09-17 ",\"code_regenerated\":{\"on\":\"2026-09-17\",\"reason\":\"no estaba\"},\"superseded_folders\":[\"macbook-pro-1111aaaa\"],\"superseded_runs_sha256\":{\"macbook-pro-1111aaaa\":\"$(huella_de "${E}/macbook-pro-1111aaaa")\"}"
+U="$(uniones_de "${E}")"
+echo "${U}" | python3 -c "import json,sys; d=json.load(sys.stdin); assert d['macbook-pro-1111aaaa']=={'estado':'unida','nueva':'macbook-pro-2222bbbb','declarantes':1,'desde':'2026-09-17'}, d; assert d['macbook-pro']['estado']=='compartida', d" 2>/dev/null \
+  && ok "2.28-adv la carpeta del código anterior se une a la regenerada" || mal "2.28-adv regenerada: ${U}"
+printf '{}\n' > "${E}/macbook-pro-1111aaaa/9.9-2026-09-18T0900.json"
+echo "$(uniones_de "${E}")" | python3 -c "import json,sys; d=json.load(sys.stdin); assert d['macbook-pro-1111aaaa']['estado']=='siguio_recibiendo', d" 2>/dev/null \
+  && ok "2.28-adv y si la del código anterior siguió recibiendo, no se une" || mal "2.28-adv regenerada que siguió: $(uniones_de "${E}")"
+
+# Tercera vuelta de seguridad (decisión del dueño, 2026-10-15): la unión pide la HUELLA de las corridas que la máquina
+# subió a la carpeta vieja (de su registro de subidas; la llave no deja listar el buzón, así que nadie más la sabe). Una
+# máquina con el mismo nombre que declara la carpeta vieja de otra no la sabe: no se une.
+# 🔴 rojo previo: con un `moved_on` de hoy y la carpeta ajena sin nada después, la carpeta de otra persona quedaba unida.
+E="${BASE}/t228-adv/huella"; mkdir -p "${E}/macbook-pro"; printf '{}\n' > "${E}/macbook-pro/9.1-2026-10-14T0900.json"
+pl228 "${E}" macbook-pro-aaaaaaaa aaaaaaaa macbook-pro 2026-10-15 2026-10-15
+node -e 'const fs=require("fs"); const f=process.argv[1]; const p=JSON.parse(fs.readFileSync(f)); p.folder.previous_runs_sha256=require("crypto").createHash("sha256").update("adivinada").digest("hex"); fs.writeFileSync(f, JSON.stringify(p))' "${E}/macbook-pro-aaaaaaaa/registros/place.json"
+U="$(uniones_de "${E}")"
+echo "${U}" | python3 -c "import json,sys; d=json.load(sys.stdin); assert d['macbook-pro']['estado']=='siguio_recibiendo' and d['macbook-pro']['nueva'] is None, d" 2>/dev/null \
+  && ok "2.28-adv sin la huella de las corridas de la carpeta vieja, la carpeta no se une" || mal "2.28-adv huella: ${U}"
+pl228 "${E}" macbook-pro-aaaaaaaa aaaaaaaa macbook-pro 2026-10-15 2026-10-15
+echo "$(uniones_de "${E}")" | python3 -c "import json,sys; d=json.load(sys.stdin); assert d['macbook-pro']['estado']=='unida', d" 2>/dev/null \
+  && ok "2.28-adv con la huella correcta, se une" || mal "2.28-adv huella correcta: $(uniones_de "${E}")"
+# sin huella (una subida que no la declara, o un registro que no se pudo leer y la dejó en null): no se une
+node -e 'const fs=require("fs"); const f=process.argv[1]; const p=JSON.parse(fs.readFileSync(f)); delete p.folder.previous_runs_sha256; fs.writeFileSync(f, JSON.stringify(p))' "${E}/macbook-pro-aaaaaaaa/registros/place.json"
+echo "$(uniones_de "${E}")" | python3 -c "import json,sys; d=json.load(sys.stdin); assert d['macbook-pro']['estado']=='siguio_recibiendo', d" 2>/dev/null \
+  && ok "2.28-adv sin huella declarada, no se une" || mal "2.28-adv sin huella: $(uniones_de "${E}")"
+# la carpeta que reemplaza un código regenerado, con una huella que no coincide: no se une
+E="${BASE}/t228-adv/regenerada-mal"; mkdir -p "${E}/macbook-pro" "${E}/macbook-pro-1111aaaa"; printf '{}\n' > "${E}/macbook-pro-1111aaaa/9.1-2026-09-14T0900.json"
+pl228 "${E}" macbook-pro-1111aaaa 1111aaaa macbook-pro 2026-09-14 2026-09-16
+pl228 "${E}" macbook-pro-2222bbbb 2222bbbb macbook-pro 2026-09-17 2026-09-17 ',"code_regenerated":{"on":"2026-09-17","reason":"no estaba"},"superseded_folders":["macbook-pro-1111aaaa"],"superseded_runs_sha256":{"macbook-pro-1111aaaa":"0000000000000000000000000000000000000000000000000000000000000000"}'
+U="$(uniones_de "${E}")"
+echo "${U}" | python3 -c "import json,sys; d=json.load(sys.stdin); assert d['macbook-pro-1111aaaa']['estado']=='siguio_recibiendo', d" 2>/dev/null \
+  && ok "2.28-adv una carpeta reemplazada con otra huella no se une a la regenerada" || mal "2.28-adv reemplazada con otra huella: ${U}"
+# Segunda vuelta de seguridad: la lista de reemplazadas vale sólo con un código regenerado ese día, y ningún día de un
+# place.json puede ser posterior a hoy. 🔴 rojo previo: una carpeta nueva sin regenerar listaba la carpeta con código de
+# otra máquina; con un `day` y un `moved_on` a futuro, la otra «nunca siguió recibiendo» y quedaba unida a la atacante.
+E="${BASE}/t228-adv/sin-regenerar"; mkdir -p "${E}/beta" "${E}/beta-bbbbbbbb"
+pl228 "${E}" beta-bbbbbbbb bbbbbbbb beta 2026-09-14 2026-09-16
+pl228 "${E}" beta-aaaaaaaa aaaaaaaa beta 2026-09-17 2026-09-17 ',"superseded_folders":["beta-bbbbbbbb"]'
+U="$(uniones_de "${E}")"
+echo "${U}" | python3 -c "import json,sys; d=json.load(sys.stdin); assert 'beta-bbbbbbbb' not in d, d" 2>/dev/null \
+  && ok "2.28-adv sin código regenerado, la lista de reemplazadas no une nada" || mal "2.28-adv sin regenerar: ${U}"
+E="${BASE}/t228-adv/futuro-dia"; mkdir -p "${E}/gama" "${E}/gama-cccccccc"
+pl228 "${E}" gama-cccccccc cccccccc gama 2026-09-14 2026-09-16
+pl228 "${E}" gama-dddddddd dddddddd gama 2099-01-01 2099-01-01 ',"code_regenerated":{"on":"2099-01-01","reason":"no estaba"},"superseded_folders":["gama-cccccccc"]'
+U="$(uniones_de "${E}")"
+echo "${U}" | python3 -c "import json,sys; d=json.load(sys.stdin); assert 'gama-cccccccc' not in d and d['gama']['estado']=='unida' and d['gama']['nueva']=='gama-cccccccc', d" 2>/dev/null \
+  && ok "2.28-adv un día de place.json posterior a hoy no declara nada" || mal "2.28-adv día futuro: ${U}"
+
+# ── 2.28 T36 · Carpetas_DosDeclaraciones_NoSeUne (AC 25, 27) ── 🔴 rojo previo: unirla a la más nueva.
+T="${BASE}/t228-36"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
+volcado228 "${T}/b" macbook-pro "9.1-2026-10-14T0900" 2026-10-14
+place228 "${T}/b" macbook-pro-1a2b3c4d macbook-pro 2026-10-15
+place228 "${T}/b" macbook-pro-9f8e7d6c macbook-pro 2026-10-16
+bajar "${T}" "${T}/bin/az"
+echo "$(uniones "${T}")" | python3 -c "import json,sys; d=json.load(sys.stdin)['carpetas']['macbook-pro']; assert d=={'estado':'compartida','nueva':None,'declarantes':2,'desde':'2026-10-15'}, d" 2>/dev/null \
+  && ok "2.28-T36 dos carpetas que la declaran: compartida, declarantes 2, sin nueva" || mal "2.28-T36 rc=${RC} uniones=$(uniones "${T}")"
+# un código regenerado: dos carpetas de la MISMA máquina la declaran → compartida igual, y la segunda en `regeneradas`
+T="${BASE}/t228-36b"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
+volcado228 "${T}/b" macbook-pro "9.1-2026-10-14T0900" 2026-10-14
+place228 "${T}/b" macbook-pro-1a2b3c4d macbook-pro 2026-10-15
+place228 "${T}/b" macbook-pro-55aa66bb macbook-pro 2026-10-15 "no estaba"
+bajar "${T}" "${T}/bin/az"
+echo "$(uniones "${T}")" | python3 -c "import json,sys; d=json.load(sys.stdin); c=d['carpetas']['macbook-pro']; assert c['estado']=='compartida' and c['declarantes']==2, c; assert d['regeneradas']=={'macbook-pro-55aa66bb':{'on':'2026-10-15','reason':'no estaba'}}, d['regeneradas']" 2>/dev/null \
+  && ok "2.28-T36 código regenerado: compartida, y la carpeta nueva en regeneradas con día y motivo" || mal "2.28-T36 regenerado: $(uniones "${T}")"
+# el motivo viene de OTRA máquina: sin controles ni separadores de línea, y acotado a 120 caracteres
+# 🔴 rojo previo (revisor de cobertura, tercera vuelta): el saneado del motivo no tenía caso.
+E="${BASE}/t228-36c"; mkdir -p "${E}/maq-s"
+node -e 'const fs=require("fs"); const [,d]=process.argv; fs.mkdirSync(`${d}/maq-s-1a2b3c4d/registros`,{recursive:true}); fs.writeFileSync(`${d}/maq-s-1a2b3c4d/registros/place.json`, JSON.stringify({schema:1,day:"2026-10-15",folder:{name:"maq-s-1a2b3c4d",code:"1a2b3c4d",previous_folder:"maq-s",moved_on:"2026-10-15",code_regenerated:{on:"2026-10-15",reason:`x${String.fromCharCode(0x2028)}y${String.fromCharCode(7)}`+"z".repeat(300)}}}))' "${E}"
+node -e 'const r=require(process.argv[1]).carpetasDeMaquina(process.argv[2]); const m=r.regeneradas["maq-s-1a2b3c4d"].reason; process.exit(m.length<=120 && !/[\u0000-\u001f]/.test(m) && !m.includes(String.fromCharCode(0x2028)) ? 0 : 1)' "${BAJAR}" "${E}" \
+  && ok "2.28-T36 el motivo de una regeneración ajena sale sin controles y acotado" || mal "2.28-T36 el motivo ajeno no se sanea"
+
+# ── 2.28 T37 · Carpetas_SiguioRecibiendo_NoSeUne (AC 28) ── 🔴 rojo previo: unirla con una declaración.
+for por in volcado place; do
+  T="${BASE}/t228-37-${por}"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
+  volcado228 "${T}/b" macbook-pro "9.1-2026-10-14T0900" 2026-10-14
+  place228 "${T}/b" macbook-pro-1a2b3c4d macbook-pro 2026-10-15
+  if [ "${por}" = volcado ]; then volcado228 "${T}/b" macbook-pro "9.3-2026-10-16T0900" 2026-10-16
+  else mkdir -p "${T}/b/blobs/corridas/macbook-pro/registros"; printf '{"schema":1,"day":"2026-10-16","install":null}\n' > "${T}/b/blobs/corridas/macbook-pro/registros/place.json"; fi
+  volcado228 "${T}/b" maq-suelta "9.4-2026-10-16T0900" 2026-10-16
+  bajar "${T}" "${T}/bin/az"
+  echo "$(uniones "${T}")" | python3 -c "import json,sys; d=json.load(sys.stdin)['carpetas']; assert d['macbook-pro']['estado']=='siguio_recibiendo' and d['macbook-pro']['nueva'] is None, d; assert 'maq-suelta' not in d and 'macbook-pro-1a2b3c4d' not in d, d" 2>/dev/null \
+    && ok "2.28-T37 la vieja recibió un ${por} después de la mudanza: siguio_recibiendo, sin unir; la que nadie declara no aparece" || mal "2.28-T37 ${por}: rc=${RC} $(uniones "${T}")"
+done
+
 # ── T23 (story 2.23) · Bajar_ConOtraCredencial_SinHilos ─────────────────────────────────────────
 # El sitio de la organización llama a bajar() con sus opciones: la cuenta, el contenedor, la SAS de LECTURA y la carpeta.
 # No lee corridas-buzon.json (no hay), no mira las integraciones (apagadas), no llama a az (no hay), y baja sólo los

@@ -90,12 +90,16 @@ function etiqueta(p) {
   return path.join(path.basename(path.dirname(abs)), path.basename(abs));
 }
 
-function caminar(dir, out) {
+function caminar(dir, out, diag, raiz = true) {
   let e = [];
-  try { e = fs.readdirSync(dir, { withFileTypes: true }); } catch (_e) { return out; }
+  // una carpeta de máquina que no se deja listar se DICE (sus pases faltan, no son cero); la raíz que no existe es
+  // «buzón vacío», como antes (segunda vuelta de fallos silenciosos)
+  try { e = fs.readdirSync(dir, { withFileTypes: true }); }
+  catch (err) { if (diag && !(raiz && err && err.code === 'ENOENT')) diag.ilegible(dir, `la carpeta no se pudo listar (${(err && err.code) || 'error'})`); return out; }
   for (const it of e) {
     const p = path.join(dir, it.name);
-    if (it.isDirectory()) caminar(p, out);
+    // story 2.28: `<maquina>/registros/` nunca trae volcados, y su place.json trae el correo de git de la persona
+    if (it.isDirectory()) { if (it.name !== 'registros') caminar(p, out, diag, false); }
     else if (it.name.endsWith('.json')) out.push(p);
   }
   return out;
@@ -104,13 +108,20 @@ function caminar(dir, out) {
 /** Los pases adversariales anotados en el buzón: uno por corrida que haya dejado `confirmados`. */
 function leerPases(buzon, diag) {
   const pases = [];
-  for (const f of caminar(buzon, [])) {
+  // story 2.28 (decisión 12): la misma corrida puede estar en la carpeta vieja de una máquina y en la nueva
+  // `<nombre>-<código>`, donde la volvió a subir: cuenta UNA vez (la sesión; sin sesión, el archivo y su fecha).
+  const vistas = new Set();
+  for (const f of caminar(buzon, [], diag)) {
     const d = leerJson(f, diag);
     if (!d || typeof d !== 'object' || !d.marker) continue;
+    const clave = typeof d.marker.sessionId === 'string' && d.marker.sessionId ? `s:${d.marker.sessionId}` : `a:${path.basename(f)}|${d.archivedAt || ''}`;
+    if (vistas.has(clave)) continue;
     const m = d.marker;
     const lista = Array.isArray(m.adversarialPasses) ? m.adversarialPasses : [];
     const conCuenta = lista.filter((p) => typeof p.confirmados === 'number');
     if (!conCuenta.length) continue;
+    // vista recién cuando aporta un pase: una copia sin pases de la misma corrida no tapa a la que los tiene
+    vistas.add(clave);
     // Una corrida puede anotar el mismo pase varias veces (re-anotación). Vale la anotación con más
     // confirmados: es el pase completo. 🔴 Y el par (hallazgos, causas) sale de ESA MISMA anotación —
     // tomar cada máximo por separado cruzaba los 20 hallazgos de un lanzamiento con las 2 causas de

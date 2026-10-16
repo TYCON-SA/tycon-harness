@@ -2568,6 +2568,67 @@ const NOTA_CIERRE_7C = 'marker.js mark-dod-runtime-checked \'{"verdict":"PASS","
 const NOTA_7C_EXENTA = 'La story está exenta de la verificación en vivo (dod_runtime_exempt: true): no hay nada que correr, pero el cierre '
   + 'de «Preparar el commit» pide su constancia. Dejala con: marker.js mark-dod-runtime-checked \'{"verdict":"PASS","evidencePath":"exenta: <la razón del frontmatter>"}\'.';
 
+/**
+ * Qué le falta al pase adversarial, para `next` (story 7.19, AC 2 a 6, 12 y 13). Sólo con el paso 4 cerrado.
+ *
+ * El lanzamiento temprano era un párrafo del paso 4 que nadie le recordaba al agente: 52 de 208 corridas con pase
+ * lo lanzaron más de 2 minutos después del primer revisor. Ahora `next` lo pide, ANTES del primer revisor, con el
+ * veredicto que el portón dejó anotado (`adversarialGate`): no lo recalcula, porque no tiene los archivos del cambio.
+ * Sin veredicto, lo que pide es consultar el portón —la falta de veredicto no es «no corre»—.
+ *
+ * Nunca pide relanzar un pase atendido (relanzar uno cerrado bloquea el paso 8), y ante un lanzamiento de otra sesión
+ * sin resultado aplica la regla de `lib/adversarial-verdict.js` sin preguntarle a nadie.
+ * → `{ pending_action?: { kind, message, command?, rule?, why? }, adversarial_note?: string }`
+ */
+function accionDelPase(marker, story, { sidNow, nextStep } = {}) {
+  const { veredictoPaseAdversarial, paseAtendido, reglaPaseAjeno } = require('./lib/adversarial-verdict.js');
+  const v = veredictoPaseAdversarial(marker);
+  if (paseAtendido(v)) {
+    const skip = marker.adversarialSkip || {};
+    if (v.motivo === 'abandonado' || skip.abandonado === true) {
+      return { adversarial_note: `pase adversarial ABANDONADO con el interruptor (runId ${skip.runId || v.runId || '?'}), queda en bypass.log — no se pide lanzarlo` };
+    }
+    if (v.motivo === 'salteado-forzado') return { adversarial_note: 'salteo FORZADO, queda en bypass.log — no se pide lanzar el pase' };
+    return {};
+  }
+  const adv = marker.adversarial && typeof marker.adversarial === 'object' ? marker.adversarial : null;
+  if (adv && adv.sessionId !== sidNow) return { pending_action: reglaPaseAjeno(adv) };
+  if (adv) return {};   // lanzado por esta sesión y en vuelo: el join es el paso del pase (5b)
+
+  if (!marker.storyPath) {
+    return { adversarial_note: 'no pude leer la story: el marcador está sin ruta de story — no se pide lanzar el pase (el portón la necesita)' };
+  }
+  if (!story) {
+    return { adversarial_note: `no pude leer la story (${marker.storyPath}) — no se pide lanzar el pase (el portón la necesita)` };
+  }
+
+  const gate = marker.adversarialGate && typeof marker.adversarialGate === 'object' ? marker.adversarialGate : null;
+  if (gate && gate.early_launch === false) {
+    return { adversarial_note: `lanzamiento temprano APAGADO para esta corrida (${gate.early_origin || 'TYCON_5B_EARLY=0'}): el pase se lanza en su paso (5b)` };
+  }
+  const yo = path.join(__dirname, 'pipeline.js');
+  if (!gate || typeof gate.run !== 'boolean') {
+    const command = `node ${yo} deep-review-gate --repo ${marker.repoPath || '<repo>'} --story ${marker.storyPath} --files <archivos de código del diff>`;
+    return {
+      pending_action: {
+        kind: 'consultar-porton',
+        message: `falta el veredicto del portón del pase adversarial — consultalo con los MISMOS archivos que vas a pasar a los revisores: ${command}`,
+        command,
+      },
+    };
+  }
+  if (gate.run !== true) return {};
+  const archivos = Array.isArray(gate.files) ? gate.files : [];
+  const cuando = String(nextStep) === '5' ? 'AHORA, antes del primer revisor' : 'AHORA';
+  return {
+    pending_action: {
+      kind: 'lanzar-pase',
+      message: `el portón dice que el pase CORRE (${archivos.length} archivo(s)): lanzalo ${cuando} — tool Workflow con los args de step-05b-adversarial-verify.md §Acción y esos archivos — y en el mismo turno: node ${path.join(__dirname, 'marker.js')} mark-adversarial-launched <runId> 4`,
+      files: archivos,
+    },
+  };
+}
+
 function computeNext() {
   const marker = readSessionMarker();
   if (!marker || !marker.storyId) {
@@ -2635,6 +2696,8 @@ function computeNext() {
   const adv = marker.adversarial || null;
   const sidNow = resolveSessionId();
   const advIsOurs = adv ? adv.sessionId === sidNow : null;
+  const pase = completedNums.has('4') ? accionDelPase(marker, story, { sidNow, nextStep: nextStep ? nextStep.step : null }) : {};
+  const pending = pase.pending_action || null;
 
   return {
     story_id: marker.storyId,
@@ -2650,10 +2713,12 @@ function computeNext() {
     next_step_file: nextStep ? nextStep.file : null,
     preconditions,
     steps: stepState,
+    ...(pending ? { pending_action: pending } : {}),
+    ...(pase.adversarial_note ? { adversarial_note: pase.adversarial_note } : {}),
     note: exempt7c
       ? `Sigue «${nextStep.name}». ${NOTA_7C_EXENTA}`
       : nextStep
-      ? `Sigue «${nextStep.name}». Leé SOLO ${path.basename(nextStep.file)} y ejecutalo. Los skips listados son mecánicos (verificables) — no infieras otros (regla E.i). Al completar: ${nextStep.step === '5b' ? NOTA_CIERRE_5B : nextStep.step === '7c' ? NOTA_CIERRE_7C : SUBSTEP_FLAG[nextStep.step] ? `marker.js set-flag ${SUBSTEP_FLAG[nextStep.step]} true` : nextStep.step === '3' ? 'marker.js complete-step 3 --approved "<cita textual de la aprobación del user>" (Nivel 2 LOW-risk: --auto-approved "<criterios>"). Hasta entonces el portón de carril DENIEGA cualquier Edit/Write de código' : nextStep.step === '5' ? 'marker.js run-check advisors -- pipeline.js check-count … y recién después marker.js complete-step 5 (bloquea sin el verde real)' : `marker.js complete-step ${nextStep.step}`}.${adv && advIsOurs === false ? ' ⚠️ marker.adversarial es de OTRA sesión (huérfano) → en el pase adversarial se relanza, ver §JOIN de step-05b-adversarial-verify.md.' : ''}`
+      ? `${pending && ['consultar-porton', 'lanzar-pase'].includes(pending.kind) ? `ANTES, pase adversarial: ${pending.message} ` : ''}Sigue «${nextStep.name}». Leé SOLO ${path.basename(nextStep.file)} y ejecutalo. Los skips listados son mecánicos (verificables) — no infieras otros (regla E.i). Al completar: ${nextStep.step === '5b' ? NOTA_CIERRE_5B : nextStep.step === '7c' ? NOTA_CIERRE_7C : SUBSTEP_FLAG[nextStep.step] ? `marker.js set-flag ${SUBSTEP_FLAG[nextStep.step]} true` : nextStep.step === '3' ? 'marker.js complete-step 3 --approved "<cita textual de la aprobación del user>" (Nivel 2 LOW-risk: --auto-approved "<criterios>"). Hasta entonces el portón de carril DENIEGA cualquier Edit/Write de código' : nextStep.step === '5' ? 'marker.js run-check advisors -- pipeline.js check-count … y recién después marker.js complete-step 5 (bloquea sin el verde real)' : `marker.js complete-step ${nextStep.step}`}.${pending && pending.kind.endsWith('-pase-ajeno') ? ` ⚠️ ${pending.message} Regla: ${pending.rule} (${pending.why}).` : ''}`
       : 'No quedan pasos pendientes — cerrá con marker.js clear (o step-09-ado-story-closure.md si vas a cerrar la story en ADO: «Cerrar en ADO»).',
   };
 }
@@ -3078,6 +3143,40 @@ function harnessIntegrations(opts = {}) {
 }
 
 /**
+ * La pregunta del modelo mayor en el pase adversarial (story 7.19, AC 10 y 11): `adversarial.model_question`, `ask`
+ * (por defecto) o `never`. Mismo camino que `harnessIntegrations`, pero con `cargar()` y no `leer()`: trae el origen
+ * del valor y los errores sin tirar. Con la configuración rota o un valor fuera del vocabulario se comporta como sin
+ * la clave (pregunta) y lo dice en `aviso`: no se apaga una pregunta por una configuración que no se pudo leer.
+ * Gana el perfil del equipo (`PROFILE_WINS`; decisión del dueño, 2026-10-15). → `{ value, origin, aviso? }`
+ */
+function preguntaDelModelo(opts = {}) {
+  const env = opts.env || process.env;
+  const porDefecto = { value: 'ask', origin: 'default' };
+  // Sin arnés o sin lector no hay dónde estar escrita la clave: es «sin clave», no una configuración que no se leyó (el
+  // mismo criterio que `harnessIntegrations`). Un lector presente que no sabe cargar sí se dice: ahí pudo estar escrita.
+  const dir = require('./lib/harness-path.js').rutaArnesHook({ env, home: opts.home }).dir;
+  if (!dir) return porDefecto;
+  const lector = path.join(dir, 'scripts', 'lib', 'tycon-config.js');
+  if (!fs.existsSync(lector)) return porDefecto;
+  try {
+    const cfg = require(lector);
+    if (typeof cfg.cargar !== 'function') {
+      return { ...porDefecto, aviso: `adversarial.model_question: el lector de configuración de ${dir} no sabe cargar (es de antes) — se pregunta como sin la clave` };
+    }
+    const r = cfg.cargar({ env, home: opts.home });
+    if (r.errores && r.errores.length) {
+      const e = r.errores[0];
+      return { ...porDefecto, aviso: `adversarial.model_question: la configuración no se pudo leer (${e.archivo || '?'}${e.clave ? ` · ${e.clave}` : ''}: ${e.motivo}) — se pregunta como sin la clave` };
+    }
+    const sec = (r.valores && r.valores.adversarial) || {};
+    if (!Object.prototype.hasOwnProperty.call(sec, 'model_question')) return porDefecto;   // un lector viejo, sin la sección
+    return { value: sec.model_question || 'ask', origin: (r.origenes && r.origenes['adversarial.model_question']) || 'default' };
+  } catch (e) {
+    return { ...porDefecto, aviso: `adversarial.model_question: el lector de configuración falló (${e.message}) — se pregunta como sin la clave` };
+  }
+}
+
+/**
  * @param {string} repo
  * @param {object} [opts] skillsDir · manifestPath (las skills de terceros) · integrations: objeto del lector o `null`
  *   («no se sabe»), para las pruebas; sin la clave se le pregunta al arnés (`env` y `home` van a esa pregunta).
@@ -3419,7 +3518,16 @@ function computeDeepReviewGate(args) {
   else if (args.ultracode) { model = 'opus'; modelReason = 'ultracode ON → hunters en Opus'; }
   else if (hint.heavy) { model = 'opus'; modelReason = `story pesada (${hint.heavy_signal_count} señales model-hint) → hunters escalan a Opus (anunciar)`; }
   else { model = 'sonnet'; modelReason = 'default (recorta $ ~5x vs Opus)'; }
-  const fableUpsell = (!args.deepReviewFable && hint.heavy)
+  // story 7.19 (AC 10): con `adversarial.model_question: never` no se ofrece el modelo mayor ni se manda a preguntar;
+  // corre el que eligió el portón. Se dice en la salida (`model_question`, sólo con un valor que no es el de por
+  // defecto) y en gates.log. Lo que esto cambia es una elección del dueño (eligió el mayor 21 de 78 veces): consta.
+  const pregunta = preguntaDelModelo();
+  if (pregunta.aviso) process.stderr.write(`deep-review-gate: ${pregunta.aviso}\n`);
+  const sinPregunta = pregunta.value === 'never';
+  if (sinPregunta) {
+    logGate({ repoPath: args.repo, name: 'deep-review-gate', check: 'model-question', value: pregunta.value, origin: pregunta.origin, heavy: !!hint.heavy });
+  }
+  const fableUpsell = (!args.deepReviewFable && hint.heavy && !sinPregunta)
     ? {
         model: 'fable',
         requires_user_approval: true,
@@ -3429,7 +3537,7 @@ function computeDeepReviewGate(args) {
     : null;
   // Fase B (2026-07-30): lanzamiento temprano del 5b al cierre del Step 4 — DEFAULT ON con
   // kill-switch (decisión DevA 2026-07-30: "me voy a olvidar de ponerla en 1"; las mitigaciones
-  // del review Opus ya están cableadas — cap 2 de ventana, skeptics en chunks de 3, candado
+  // del review Opus ya están cableadas — cap 2 de ventana, verificadores en ventana de 3, candado
   // anti-full-suite — y la primera corrida NORMAL ES la medición del cap). El switch queda
   // MECÁNICO acá (mismo patrón que TYCON_NO_DEEP_REVIEW), no en prosa que nadie lee (review G2):
   // export TYCON_5B_EARLY=0 → lanzamiento clásico en 5b; sin la env → temprano en el Step 4.
@@ -3437,6 +3545,7 @@ function computeDeepReviewGate(args) {
     model_reason: modelReason,
     early_launch: process.env.TYCON_5B_EARLY !== '0',
     ...(fableUpsell ? { fable_upsell: fableUpsell } : {}),
+    ...(pregunta.value !== 'ask' ? { model_question: { value: pregunta.value, origin: pregunta.origin } } : {}),
   };
   // 2) Config por repo.
   const cfg = deepReviewConfig(args.repo);
@@ -5000,6 +5109,18 @@ function main() {
 
   // ── H17 §5 incremental + Nivel 2 + Fase 0 (auditoría 2026-06-09) ─────────────
   if (cmd === 'next') {
+    // story 7.19 (AC 7): si este comando trae el interruptor del temprano explícito, queda para la corrida —en una
+    // sesión de agente el entorno no pasa de un comando al siguiente—. Lo anota marker.js; sin corrida, nada.
+    if (process.env.TYCON_5B_EARLY === '0' || process.env.TYCON_5B_EARLY === '1') {
+      try {
+        require('child_process').execFileSync(process.execPath, [path.join(__dirname, 'marker.js'), 'mark-adversarial-gate',
+          JSON.stringify({ early_env: process.env.TYCON_5B_EARLY })], { stdio: ['ignore', 'ignore', 'pipe'], timeout: 10000 });
+      } catch (e) {
+        // se dice: sin la anotación, el próximo `next` sin la variable vuelve a pedir el temprano que se apagó
+        const detalle = String((e && e.stderr) || (e && e.message) || '').trim().split('\n')[0];
+        process.stderr.write(`next: no pude anotar TYCON_5B_EARLY=${process.env.TYCON_5B_EARLY} en la corrida (${detalle}) — vale sólo para este comando\n`);
+      }
+    }
     const result = computeNext();
     // story 2.7: consultar `next` es el momento en que el orquestador ARRANCA ese paso — se anota la
     // hora. Lo escribe marker.js (un solo escritor del marker); él decide no mover un arranque ya
@@ -5075,6 +5196,27 @@ function main() {
       // es revisar de más: es arreglar la llamada, que es donde está el error.
       process.stderr.write(`deep-review-gate: ${result.reason}\n`);
       process.exit(2);
+    }
+    // story 7.19 (AC 1 y 7): con una corrida activa de ESTA story y el paso 4 cerrado, el veredicto queda anotado
+    // (`adversarialGate`) para que `next` pida el lanzamiento sin recalcular el portón. Lo escribe marker.js (un
+    // solo escritor del marker); `computeDeepReviewGate` sigue sin tocarlo. Sin corrida no se anota ni se avisa. El
+    // temprano que se imprime es el que vale para la corrida: visto apagado una vez, sigue apagado.
+    const corrida = readSessionMarker();
+    const mismaStory = !args.story || !corrida || !corrida.storyPath || path.resolve(args.story) === path.resolve(corrida.storyPath);
+    if (corrida && corrida.storyId && mismaStory && (corrida.stepsCompleted || []).map(String).includes('4')
+        && Array.isArray(args.files) && args.files.length && typeof result.run === 'boolean') {
+      try {
+        const out = require('child_process').execFileSync(process.execPath, [path.join(__dirname, 'marker.js'), 'mark-adversarial-gate',
+          JSON.stringify({ run: result.run, files: args.files, early_env: process.env.TYCON_5B_EARLY ?? null })],
+        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 10000 });
+        const anotado = JSON.parse(out || '{}');
+        if ('early_launch' in result && typeof anotado.early_launch === 'boolean' && anotado.early_launch !== result.early_launch) {
+          result.early_launch = anotado.early_launch;
+          result.early_launch_origin = anotado.early_origin || 'la corrida';
+        }
+      } catch (e) {
+        process.stderr.write(`deep-review-gate: no pude anotar el veredicto en la corrida (${e.message.split('\n')[0]}) — \`next\` va a pedir consultar el portón otra vez\n`);
+      }
     }
     process.stdout.write(JSON.stringify(result, null, 2) + '\n');
     process.exit(0);

@@ -102,6 +102,7 @@
   "scripts/hooks/prod-access-guard.js",
   "scripts/hooks/session-collision-guard.js",
   "scripts/hooks/dashboard-notice.js",
+  "scripts/hooks/owner-email-notice.js",
   "scripts/hooks/unpushed-work-notice.js",
   "scripts/install-tycon-hooks.ps1",
   "scripts/install-tycon-hooks.sh",
