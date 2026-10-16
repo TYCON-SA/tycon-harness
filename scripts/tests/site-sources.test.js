@@ -5,6 +5,7 @@
  * T21 RepoDeOperaciones_CredencialNuncaEnElDisco    T25 Refresco_FallaYConservaElUltimoBueno
  * T22 Buzon_SoloConCredencialDeLectura              T40 Configuracion_UltimoBuenoBandaYFreno
  * T24 Despertar_CargandoYDespues                    T41 Configuracion_PlazoNoSeReiniciaAlDespertar
+ * T45 2.28-Fuentes_InformadosFueraDelModelo_YCorridasConRepos (story 2.28: lo informado aparte del modelo)
  *
  * Sin red: el repo de operaciones es un repo git por HTTP local que exige la cabecera (lib/git-http-server.js), el buzón
  * un servidor local con la forma de Azure Blob, y la identidad administrada un servidor local que hace de la plataforma.
@@ -439,4 +440,75 @@ test('2.23-R5 Fotos_IlegiblesYAusentesNoSonCero', () => {
     assert.strictEqual(m2.vigilante.codigo, 'ilegible');
     assert.ok(r2.some((l) => /vigilante/.test(l)), 'el vigilante ilegible queda en el registro');
   } finally { fs.rmSync(raiz, { recursive: true, force: true }); }
+});
+
+// ── story 2.28: lo que el sitio necesita para la regla de quién es quién ──────────────────────────────────────────
+// Revisores de la vuelta 2: repos.json que falta, está roto o fuera del clon no es «no hay repos»; el freno con un reloj
+// que no se puede leer, o con la primera falla en el futuro, frena
+test('2.28-R5 Repos_Y_Reloj_FallanHaciaDecirlo', () => {
+  const people = require(path.join(H.SITE, '..', 'lib', 'people.js'));
+  const clon = tmp('site-r5-');
+  try {
+    const ruta = path.join(clon, 'scripts', 'nightly', 'dependencies', 'repos.json');
+    assert.deepStrictEqual(sources.leerRepos(clon), { repos: null, motivo: 'el repo de operaciones no trae repos.json' });
+    fs.mkdirSync(path.dirname(ruta), { recursive: true });
+    fs.writeFileSync(ruta, '{ roto');
+    assert.deepStrictEqual(sources.leerRepos(clon), { repos: null, motivo: 'repos.json no se pudo leer o no es JSON' });
+    fs.writeFileSync(ruta, JSON.stringify({ repos: [{ producto: 'Alfa', ruta: 'Alfa/Web', ado: 'Alfa/Web' }, { producto: 'Viejo', ruta: 'V/x', activo: false }, { producto: '', ruta: 'S/x' }, 'no-es-objeto'] }));
+    assert.deepStrictEqual(sources.leerRepos(clon), { repos: [{ producto: 'Alfa', ruta: 'Alfa/Web', ado: 'Alfa/Web' }], motivo: null }, 'sólo las entradas activas con producto');
+    fs.rmSync(ruta);
+    const afuera = path.join(tmp('site-r5-afuera-'), 'repos.json');
+    fs.writeFileSync(afuera, JSON.stringify({ repos: [{ producto: 'Ajeno' }] }));
+    fs.symlinkSync(afuera, ruta);
+    assert.deepStrictEqual(sources.leerRepos(clon), { repos: null, motivo: 'repos.json no es un archivo del repo de operaciones' });
+  } finally { fs.rmSync(clon, { recursive: true, force: true }); }
+  const e = (o) => people.estadoDeLaConfiguracion({ hayUltimoBueno: true, ...o }).estado;
+  assert.strictEqual(e({ fallaDesde: T0, ahora: 'no es una hora' }), 'frenado', 'un reloj que no se puede leer frena');
+  assert.strictEqual(e({ fallaDesde: T0 + 2 * HORA, ahora: T0 }), 'frenado', 'una primera falla en el futuro no estira el plazo');
+  assert.strictEqual(e({ fallaDesde: T0, ahora: T0 + 2 * HORA }), 'ultimo_bueno');
+});
+
+test('T45 2.28-Fuentes_InformadosFueraDelModelo_YCorridasConRepos', { skip: SIN_BACKEND }, async () => {
+  const people = require(path.join(H.SITE, '..', 'lib', 'people.js'));
+  const MAQ = 'maq-a-11111111';
+  // el marcador, armado por partes: un correo entero escrito en el fuente lo toma el freno del empuje
+  const MARCA = ['zqx-fuente-correo', 'ejemplo.test'].join('@');
+  const HUELLA = people.huellaDeCorreo(MARCA);
+  const config = { version: 1, owners: { default: 'lead@acme.example' },
+    site: { maintainers: ['lead@acme.example'], mailbox: { provider: 'azure-blob', account: 'acmeruns', container: 'runs' } },
+    people: { machines: { [MAQ]: { person: 'dev.a@acme.example', reported_sha256: HUELLA, confirmed_by: 'lead@acme.example', confirmed_on: HOY } } } };
+  const blobs = {
+    [`${MAQ}/sa.json`]: H.volcado('sa', `${HOY}T08:00:00Z`, { repoPath: '/Users/u/SourceCode/Alfa/Web' }),
+    [`${MAQ}/registros/place.json`]: JSON.stringify({ day: HOY, owner: { email: MARCA }, folder: MAQ }),
+  };
+  let t = T0;
+  const m = await montar({ config, blobs, ahora: () => t });
+  try {
+    // una sola cuenta del freno: la de people.js
+    assert.strictEqual(estadoDeLaConfiguracion, people.estadoDeLaConfiguracion);
+    assert.strictEqual(people.estadoDeLaConfiguracion({ hayUltimoBueno: false, fallaDesde: null, ahora: T0 }).estado, 'frenado', 'nunca leyó bien: frena');
+    await m.fuentes.refrescar();
+    const modelo = m.fuentes.modelo();
+    const texto = JSON.stringify(modelo);
+    assert.ok(!texto.includes(MARCA) && !texto.includes(HUELLA), 'ni el correo informado ni su huella entran al modelo');
+    assert.strictEqual(modelo.informados, undefined, 'el modelo ya no tiene lugar para lo informado');
+    const personas = m.fuentes.personas();
+    assert.strictEqual(personas.informados.maquinas[MAQ].correo, MARCA, 'lo informado queda aparte, para la regla');
+    assert.deepStrictEqual(personas.repos.map((r) => r.producto), ['Producto X'], 'la lista de repos.json, para dondeTrabaja');
+    assert.strictEqual(modelo.corridas.estado, 'medido');
+    assert.strictEqual(modelo.corridas.lista[0].producto, 'Alfa/Web', 'la corrida con su producto (la carpeta del volcado)');
+    assert.strictEqual(modelo.corridas.lista[0].cambio, undefined, 'sin el cambio de git: el sitio no lo baja');
+    // operations.json deja de validar: a las 2 horas, la banda; a las 25, el freno desde el primer fallo + 24 horas
+    m.repo.cambiar({ 'operations.json': { ...config, clave_nueva: 1 } });
+    await m.fuentes.refrescar();
+    t = T0 + 2 * HORA;
+    await m.fuentes.refrescar();
+    assert.deepStrictEqual([m.fuentes.estado().frenado, m.fuentes.estado().bandaConfig.desde], [null, T0]);
+    assert.strictEqual(m.fuentes.personas().informados.maquinas[MAQ].correo, MARCA, 'durante el plazo, la regla sigue con lo informado');
+    t = T0 + 25 * HORA;
+    // sin ningún refresco más (el repo podría no bajarse): el freno se cuenta con la hora de cada pedido
+    assert.deepStrictEqual(m.fuentes.estado().frenado, { desde: T0 + 24 * HORA, fallaDesde: T0 }, 'frena a las 24 horas aunque no haya refresco');
+    await m.fuentes.refrescar();
+    assert.deepStrictEqual(m.fuentes.estado().frenado, { desde: T0 + 24 * HORA, fallaDesde: T0 });
+  } finally { await m.cerrar(); }
 });

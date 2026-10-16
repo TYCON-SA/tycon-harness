@@ -98,7 +98,9 @@ function filasInicioMantenedor(m, { ahora = Date.now(), enlaceOperaciones = null
   if (!medida(dec)) filas.push(filaNoMedida('declarados_por_vencer', 'Datos declarados que vencen en 7 días', conFecha(dec)));
   else filas.push(filaMedida('declarados_por_vencer', 'Datos declarados que vencen en 7 días', (dec.lista || []).filter((d) => { const t = Date.parse(`${d.review_before}T00:00:00Z`); return Number.isFinite(t) && t - ahora <= 7 * DIA; }).length, { fecha: dec.fecha }));
   if (!medida(m.corridas)) filas.push(filaNoMedida('maquinas_sin_confirmar', 'Máquinas sin confirmar con corridas', conFecha(m.corridas)));
-  else filas.push(filaMedida('maquinas_sin_confirmar', 'Máquinas sin confirmar con corridas', Number.isFinite(m.maquinasSinConfirmar) ? m.maquinasSinConfirmar : 0, { fecha: m.corridas.fecha }));
+  // sin lo que informa cada máquina la cuenta no se sabe (2.28): «no medido», nunca 0
+  else if (!Number.isFinite(m.maquinasSinConfirmar)) filas.push(filaNoMedida('maquinas_sin_confirmar', 'Máquinas sin confirmar con corridas', 'no medido: lo que informan las máquinas no se pudo leer del buzón'));
+  else filas.push(filaMedida('maquinas_sin_confirmar', 'Máquinas sin confirmar con corridas', m.maquinasSinConfirmar, { fecha: m.corridas.fecha }));
   filas.push(filaNoMedida('retrospectivas', 'Retrospectivas pendientes', 'no medido: sólo existen en la máquina de quien mergeó'));
   // dónde se decide cada cosa (AC 17): lo de las colas y lo declarado, en el repo de operaciones; lo del arnés, en Arnés
   const DONDE = { dependencias_nuevas: 'ops', dependencias_aceptadas_sin_resolver: 'ops', dependencias_rechazadas_sin_deuda: 'ops', vigilante_pendientes: 'ops', vigilante_aceptadas_sin_story: 'ops', pedidos_cerrados_con_vivas: 'ops', declarados_por_vencer: 'ops', suites_rojas_nuevas: '/arnes', banco_rojos_nuevos: '/arnes' };

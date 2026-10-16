@@ -14,7 +14,8 @@
  *
  *   /livez    200 {"ok":true} mientras el proceso escucha; nada más (la sonda de vida y el HEALTHCHECK de la imagen).
  *   /healthz  200 {"ok":true}, también mientras carga; 503 {"ok":false,"motivo":…} sólo con el sitio FRENADO por la
- *             configuración de la organización (AC 15). El motivo nunca nombra direcciones, hosts, rutas ni cuentas.
+ *             configuración de la organización (AC 15). El motivo nunca nombra direcciones, hosts, rutas ni cuentas; dice
+ *             desde cuándo no valida (el primer refresco fallido), y la página del freno, desde cuándo está frenado.
  *   /readyz   503 con Retry-After hasta la primera lectura de las fuentes; después 200 (también frenado).
  *
  * LA IDENTIDAD sale sólo del inicio de sesión del propio sitio (decisión 9): ninguna cabecera de un proxy o de la
@@ -188,7 +189,7 @@ function leerEstatico() {
  * El sitio, sin escuchar todavía. `fuentes` cumple el contrato de sources.js (estado, config, modelo, refrescar,
  * detener); `ahora` (ms) y `log` se inyectan en las pruebas; `rutasExtra` es como las stories 2.27 y 2.29 suman las suyas.
  */
-function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) => process.stdout.write(`${l}\n`), rutasExtra = [], dondeTrabaja } = {}) {
+function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) => process.stdout.write(`${l}\n`), rutasExtra = [] } = {}) {
   const v = validarConfiguracion(env);
   if (!v.ok) throw Object.assign(new Error(v.problemas.map((p) => `${p.variable}: ${p.motivo}`).join('\n')), { problemas: v.problemas });
   const cfg = v.cfg;
@@ -270,7 +271,7 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
     const st = fuentes.estado();
 
     if (ruta === '/livez') return json(res, 200, { ok: true });
-    if (ruta === '/healthz') return st.frenado ? json(res, 503, { ok: false, motivo: `la configuración de la organización no valida desde ${views.hora(st.frenado.desde)}` }) : json(res, 200, { ok: true });
+    if (ruta === '/healthz') return st.frenado ? json(res, 503, { ok: false, motivo: `la configuración de la organización no valida desde ${views.hora(Number.isFinite(st.frenado.fallaDesde) ? st.frenado.fallaDesde : st.frenado.desde)}` }) : json(res, 200, { ok: true });
     if (ruta === '/readyz') return st.cargado ? json(res, 200, { ok: true }) : json(res, 503, { ok: false, motivo: 'cargando' }, { 'Retry-After': '5' });
     if (estatico[ruta] && req.method === 'GET') return enviar(res, { status: 200, ...estatico[ruta] });
 
@@ -299,8 +300,10 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
     if (!r) return esApi ? enviar(res, { status: 404, tipo: 'text/plain; charset=utf-8', cuerpo: '' }) : enviar(res, { status: 404, cuerpo: views.paginaSimple('No existe', 'Esa página no existe.', { quien, pestanas: pestanasPara(quien.rol) }) });
     if (!r.needs.includes(quien.rol)) return esApi ? enviar(res, { status: 403, tipo: 'text/plain; charset=utf-8', cuerpo: '' }) : enviar(res, { status: 403, cuerpo: views.paginaSimple('Sin permiso', 'Esta página es para quienes mantienen el arnés.', { quien, pestanas: pestanasPara(quien.rol) }) });
 
-    // `dondeTrabaja` (correo → productos) es la costura de la 2.28 (people.js); sin ella, «todavía no se sabe»
-    const modelo = access.filtrar(fuentes.modelo(), quien, access.crearReglas({ config, modelo: fuentes.modelo(), dondeTrabaja }));
+    // la regla de quién es quién (people.js) en cada pedido, con la configuración vigente y lo informado por las
+    // máquinas, que viaja aparte del modelo: ningún correo informado llega a una vista
+    const personas = typeof fuentes.personas === 'function' ? fuentes.personas() : null;
+    const modelo = access.filtrar(fuentes.modelo(), quien, access.crearReglas({ config, modelo: fuentes.modelo(), personas }));
     const ctx = {
       modelo, quien, pestanas: pestanasPara(quien.rol), activa: r.pestana ? r.pestana.id : null,
       bandaRefresco: st.bandaRefresco || null,

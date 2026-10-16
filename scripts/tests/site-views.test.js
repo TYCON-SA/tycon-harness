@@ -48,7 +48,8 @@ function modeloCompleto(extra = {}) {
     ...extra,
   };
 }
-const filasDe = (modelo) => views.filasInicioMantenedor(access.filtrar(modelo, { rol: 'maintainer', email: LEAD }, access.crearReglas({ config: {}, modelo })), { ahora: AHORA });
+// lo informado por la máquina del modelo (2.28): no informa correo y nadie la confirmó, así que es una por confirmar
+const filasDe = (modelo) => views.filasInicioMantenedor(access.filtrar(modelo, { rol: 'maintainer', email: LEAD }, access.crearReglas({ config: {}, modelo, personas: { informados: H.informados({ 'maq-x-12345678': null }), repos: null } })), { ahora: AHORA });
 const fila = (filas, clave) => filas.find((f) => f.clave === clave);
 
 test('T28 Inicio_Mantenedor_LeeNoMide', () => {
@@ -196,7 +197,9 @@ test('T34 Inicio_Dev_SoloLoSuyo_ConCantidades', async () => {
       pedidos: leida({ lista: [{ id: 501, proyecto: 'Proyecto X', tipo: 'Bug', estado: 'Active', asignado: A, dias: 3, enlace: 'https://dev.example/wi/501', dependencias: true }] }),
     });
     const quien = access.quienPide({ email: A, sub: 'x' }, { config: CONFIG });
-    const m = access.filtrar(modelo, quien, access.crearReglas({ config: CONFIG, modelo }));
+    // lo informado, leído del mismo espejo con el lector real (2.28)
+    const personas = { informados: require(path.join(H.SITE, '..', 'lib', 'people.js')).leerCorreosInformados(espejo), repos: null };
+    const m = access.filtrar(modelo, quien, access.crearReglas({ config: CONFIG, modelo, personas }));
     const ini = views.inicioDev(m, { ahora: AHORA });
     assert.strictEqual(ini.corridas.en7dias, 3, '3 corridas en 7 días (la copia cuenta una vez)');
     assert.strictEqual(ini.corridas.ultima, '2026-10-15');
@@ -242,8 +245,9 @@ test('2.23-R6 Proyectos_CruceConDatosReales', () => {
   assert.strictEqual(viejo.medido, false, 'una foto por proyecto de hace dos semanas no cuenta como al día');
   assert.match(viejo.motivo, /vieja|2026-10-01/);
   // la vista de una persona cruza igual
-  const cfg = { version: 1, owners: { default: LEAD }, site: { maintainers: [LEAD] }, people: { machines: { 'maq-a-11111111': { person: A } } } };
-  const persona = access.filtrar(m, access.quienPide({ email: A, sub: 's' }, { config: cfg }), access.crearReglas({ config: cfg, modelo: m, dondeTrabaja: () => ['Producto Uno'] }));
+  // dónde trabaja A lo da people.js (2.28): acá, el producto agregado en la configuración
+  const cfg = { version: 1, owners: { default: LEAD }, site: { maintainers: [LEAD] }, people: { machines: { 'maq-a-11111111': { person: A } }, projects: { [A]: { add: ['Producto Uno'] } } } };
+  const persona = access.filtrar(m, access.quienPide({ email: A, sub: 's' }, { config: cfg }), access.crearReglas({ config: cfg, modelo: m, personas: { informados: null, repos: [] } }));
   assert.deepStrictEqual(persona.dependencias.vivas_por_proyecto, { 'Proyecto Uno': 3 });
   assert.strictEqual(persona.proyectos.lista.length, 1);
   // vivas sin medir en la foto: «no medido», nunca 0
@@ -263,12 +267,12 @@ test('2.23-R7 Inicio_SuitesNoMedidas_PrSinFecha_MaquinaUnida', () => {
   assert.match(fila(filas, 'prs_trabados').detalle || '', /1 sin fecha/, 'el PR sin fecha se cuenta aparte');
   assert.strictEqual(views.filasArnes(access.filtrar(m, { rol: 'maintainer' }, access.crearReglas({})), {}).find((l) => l.clave === 'suites').texto, '1 rojas · 1 sin medir, de 10');
   // el vigilante, para una persona, con el nombre del producto en otra forma (minúsculas, espacios)
-  const cfg = { version: 1, owners: { default: LEAD }, site: { maintainers: [LEAD] }, people: { machines: { 'maq-a-11111111': { person: A } } } };
+  const cfg = { version: 1, owners: { default: LEAD }, site: { maintainers: [LEAD] }, people: { machines: { 'maq-a-11111111': { person: A } }, projects: { [A]: { add: ['Producto X'] } } } };
   const conVig = { ...m, productos: [{ producto: 'Producto X', proyectos: [], rutas: [] }] };
-  const p = access.filtrar(conVig, access.quienPide({ email: A, sub: 's' }, { config: cfg }), access.crearReglas({ config: cfg, modelo: conVig, dondeTrabaja: () => ['Producto X'] }));
+  const p = access.filtrar(conVig, access.quienPide({ email: A, sub: 's' }, { config: cfg }), access.crearReglas({ config: cfg, modelo: conVig, personas: { informados: null, repos: [] } }));
   assert.deepStrictEqual(p.vigilante.productos, ['producto x'], 'el filtro del vigilante compara como la vista');
   // una carpeta vieja unida y su nueva, las dos sin confirmar: una sola máquina por confirmar
-  const r = access.crearReglas({ config: {}, modelo: { carpetas: { carpetas: { maq: { estado: 'unida', nueva: 'maq-1a2b3c4d' } } } } });
+  const r = access.crearReglas({ config: {}, modelo: {}, personas: { informados: H.informados({ 'maq-1a2b3c4d': null }, { maq: { estado: 'unida', nueva: 'maq-1a2b3c4d' } }), repos: null } });
   assert.strictEqual(r.sinConfirmar([{ maquina: 'maq' }, { maquina: 'maq-1a2b3c4d' }]), 1);
 });
 

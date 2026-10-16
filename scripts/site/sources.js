@@ -26,15 +26,21 @@
  * el último bueno 24 horas desde el PRIMER refresco fallido, con una banda sólo para quienes mantienen; pasado el plazo,
  * el sitio se FRENA para todos. Sin último bueno, el freno es inmediato. El último bueno y la hora de la primera falla se
  * guardan en `SITE_DATA_DIR` (escritura atómica), así despertar o reiniciar no vuelve a empezar el plazo. La cuenta la
- * hace `estadoDeLaConfiguracion` (la 2.28 la mueve a people.js con la misma firma).
+ * hace `estadoDeLaConfiguracion` de scripts/lib/people.js: el sitio no tiene otra (`estadoDelSitio` la traduce a la
+ * banda y al freno).
  *
- * Contrato con server.js: crearFuentes(…) → { arrancar, refrescar, estado, config, modelo, detener }.
+ * LO QUE QUEDA FUERA DEL MODELO (2.28): lo que cada máquina informa en su place.json (el correo de su dev) y la lista de
+ * repos.json. Los usa la regla de quién es quién (access.js → people.js), pero el modelo va entero a quien mantiene: con
+ * los correos adentro, una pantalla podría mostrarlos. Viajan aparte, en `personas()`.
+ *
+ * Contrato con server.js: crearFuentes(…) → { arrancar, refrescar, estado, config, modelo, personas, detener }.
  */
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const childProcess = require('child_process');
 const OPS = require('../lib/operations-config.js');
+const people = require('../lib/people.js');
 
 /** Un proceso sin bloquear: { status, stdout, stderr, error }. Nunca rechaza; con `timeout`, lo corta. */
 function correr(cmd, args, { cwd, env, timeout = 180000 } = {}) {
@@ -51,18 +57,25 @@ function correr(cmd, args, { cwd, env, timeout = 180000 } = {}) {
 }
 
 const DIA = 86400000;
-const PLAZO_CONFIG_MS = 24 * 3600000;
+const PLAZO_CONFIG_MS = people.PLAZO_MS;
 const REFRESCO_POR_DEFECTO = 15;
 const EDAD_MAXIMA_SIN_DECLARAR = 2;
 const ARCHIVO_ESTADO = 'configuracion-estado.json';
 const SOURCES_DEL_ARNES = path.join(__dirname, '..', 'nightly', 'dashboard', 'sources.json');
 
-/** La regla de operations.json: { estado: 'vigente' | 'ultimo_bueno' | 'frenado', desde }. */
-function estadoDeLaConfiguracion({ hayUltimoBueno, fallaDesde, ahora }) {
-  if (fallaDesde === null || fallaDesde === undefined) return hayUltimoBueno ? { estado: 'vigente', desde: null } : { estado: 'frenado', desde: ahora };
-  if (!hayUltimoBueno) return { estado: 'frenado', desde: fallaDesde };
-  if (ahora - fallaDesde >= PLAZO_CONFIG_MS) return { estado: 'frenado', desde: fallaDesde + PLAZO_CONFIG_MS };
-  return { estado: 'ultimo_bueno', desde: fallaDesde };
+/** La regla de operations.json: la de people.js, la única (AC 10 de la 2.28). */
+const { estadoDeLaConfiguracion } = people;
+
+/**
+ * La banda y el freno del sitio para una configuración: `{ frenado: { desde, fallaDesde } | null, bandaConfig: { desde,
+ * motivo } | null }`, en milisegundos. `frenado.desde` es desde cuándo está frenado (lo dice la página);
+ * `frenado.fallaDesde`, el primer refresco fallido (lo dice /healthz). La banda lleva las rutas de los problemas.
+ */
+function estadoDelSitio({ hayUltimoBueno, fallaDesde, fallaRutas = null, ahora }) {
+  const e = estadoDeLaConfiguracion({ hayUltimoBueno, fallaDesde, ahora });
+  if (e.estado === 'frenado') return { frenado: { desde: Date.parse(e.frenado_desde), fallaDesde: Date.parse(e.desde) }, bandaConfig: null };
+  if (e.estado === 'ultimo_bueno') return { frenado: null, bandaConfig: { desde: Date.parse(e.desde), motivo: fallaRutas } };
+  return { frenado: null, bandaConfig: null };
 }
 
 const isObject = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
@@ -154,7 +167,28 @@ function leerCorridas(dirBuzon) {
   const r = runs.leerRegistro(sinLocal, nombres, { buzon: dirBuzon, maquina: null });
   // el motivo (que nombra la carpeta) viaja sólo para el registro: quien llama lo saca antes del modelo
   if (!r.buzon || r.buzon.estado !== 'leido') return { ...noMedida('ilegible'), _motivo: r.buzon ? String(r.buzon.motivo || r.buzon.estado) : 'sin lectura del buzón' };
-  return fuente('medido', null, null, { lista: r.corridas.map((c) => ({ maquina: texto(c.maquina, 80), inicio: texto(c.inicio, 40) })) });
+  // `producto` (la carpeta del volcado, `<padre>/<repo>`) es lo que usa «dónde trabaja» (2.28) para ubicar la corrida: el
+  // sitio no baja los cambios de git (G3), así que no hay repo de la plataforma del cambio. `carpeta` es la carpeta real
+  // del volcado: `maquina` ya viene unida a la nueva, y people.js vuelve a juzgar la unión desde la vieja (pase adversarial)
+  return fuente('medido', null, null, { lista: r.corridas.map((c) => ({ maquina: texto(c.maquina, 80), carpeta: texto(c.maquina_origen, 80), inicio: texto(c.inicio, 40), producto: texto(c.producto, 200) })) });
+}
+
+/**
+ * La lista de repos.json para «dónde trabaja» (2.28): sólo producto, ruta y repo de la plataforma, de las entradas
+ * activas (como los productos del modelo). `{ repos, motivo }`: sin lista, el motivo dice por qué — no es «no hay repos».
+ */
+function leerRepos(clon) {
+  const ruta = path.join(clon, 'scripts', 'nightly', 'dependencies', 'repos.json');
+  if (!fs.existsSync(ruta)) {
+    let enlace = false;
+    try { enlace = fs.lstatSync(ruta).isSymbolicLink(); } catch { /* no está */ }
+    if (!enlace) return { repos: null, motivo: 'el repo de operaciones no trae repos.json' };
+  }
+  if (!dentroDe(clon, ruta)) return { repos: null, motivo: 'repos.json no es un archivo del repo de operaciones' };
+  const doc = leerJson(ruta);
+  if (!isObject(doc) || !Array.isArray(doc.repos)) return { repos: null, motivo: 'repos.json no se pudo leer o no es JSON' };
+  return { repos: doc.repos.filter((r) => isObject(r) && r.activo !== false && texto(r.producto))
+    .map((r) => ({ producto: texto(r.producto), ruta: texto(r.ruta, 200) || '', ado: texto(r.ado, 200) || '' })), motivo: null };
 }
 
 const FORMA_CARPETA = /^[a-z0-9][a-z0-9._-]{0,80}$/;
@@ -388,7 +422,6 @@ function construirDesdeClon(clon, { ahora = Date.now(), corridas = noMedida('sin
   m.umbrales = umbralesProyectados(sourcesCfg.thresholds);
   m.corridas = corridas;
   m.carpetas = carpetasProyectadas(carpetas);
-  m.informados = {};
   return m;
 }
 
@@ -416,7 +449,9 @@ function crearFuentes({ cfg, dataDir, log: logCrudo = () => {}, ahora = Date.now
   const clon = path.join(dataDir, 'operaciones');
   const dirBuzon = path.join(dataDir, 'buzon');
   const rutaEstado = path.join(dataDir, ARCHIVO_ESTADO);
-  const st = { cargado: false, ultimoBueno: null, fallaDesde: null, fallaMotivo: null, fallaRutas: null, frenado: null, bandaConfig: null, modelo: null, fallas: { repo: null, buzon: null } };
+  // `personas`: lo que la regla de quién es quién necesita y el modelo NO lleva (2.28) — lo informado por cada máquina
+  // (de la última bajada entera del buzón) y la lista de repos.json
+  const st = { cargado: false, ultimoBueno: null, fallaDesde: null, fallaMotivo: null, fallaRutas: null, frenado: null, bandaConfig: null, modelo: null, personas: { informados: null, repos: null }, fallas: { repo: null, buzon: null } };
   let temporizador = null;
   let enCurso = null;
   const lasNubes = () => (Array.isArray(nubesDadas) ? nubesDadas : nubes(log));
@@ -496,9 +531,7 @@ function crearFuentes({ cfg, dataDir, log: logCrudo = () => {}, ahora = Date.now
       log(`operations.json no se pudo releer o no valida (desde ${new Date(st.fallaDesde).toISOString()}): ${r.motivo}`);
     }
     guardarEstado();
-    const e = estadoDeLaConfiguracion({ hayUltimoBueno: Boolean(st.ultimoBueno), fallaDesde: st.fallaDesde, ahora: t });
-    st.frenado = e.estado === 'frenado' ? { desde: e.desde } : null;
-    st.bandaConfig = e.estado === 'ultimo_bueno' ? { desde: st.fallaDesde, motivo: st.fallaRutas } : null;
+    Object.assign(st, estadoDelSitio({ hayUltimoBueno: Boolean(st.ultimoBueno), fallaDesde: st.fallaDesde, fallaRutas: st.fallaRutas, ahora: t }));
     if (st.frenado) log(`el sitio está FRENADO desde ${new Date(st.frenado.desde).toISOString()}: ${st.fallaMotivo || 'sin último bueno'}`);
   }
 
@@ -524,7 +557,7 @@ function crearFuentes({ cfg, dataDir, log: logCrudo = () => {}, ahora = Date.now
   async function leerBuzon(conf, previo, t) {
     const mb = conf && isObject(conf.site) && isObject(conf.site.mailbox) ? conf.site.mailbox : null;
     const nube = mb ? lasNubes().find((n) => Array.isArray(n.PROVEEDORES_DE_BUZON) && n.PROVEEDORES_DE_BUZON.includes(mb.provider)) : null;
-    if (!mb) { st.fallas.buzon = null; return noMedida('sin_buzon'); }
+    if (!mb) { st.fallas.buzon = null; st.personas.informados = null; return noMedida('sin_buzon'); }
     if (!nube) {
       // hay buzón declarado y ninguna nube de cloud/ lo sabe leer (un módulo que no carga): no es «sin buzón», y se avisa
       log(`ninguna nube de cloud/ sabe leer el buzón «${String(mb.provider).slice(0, 40)}»`);
@@ -545,6 +578,9 @@ function crearFuentes({ cfg, dataDir, log: logCrudo = () => {}, ahora = Date.now
     if (r.codigo === 0 && r.res.completo === true) {
       st.fallas.buzon = null;
       const c = leerCorridas(dirBuzon);
+      // lo informado se lee del mismo espejo, entero: con una bajada a medias queda el de la última entera
+      st.personas.informados = people.leerCorreosInformados(dirBuzon);
+      if (st.personas.informados.no_medido) log(`lo informado por las máquinas no se pudo leer: ${st.personas.informados.no_medido}`);
       if (c.estado !== 'medido') log(`el espejo del buzón se bajó entero pero no se pudo leer${c._motivo ? `: ${c._motivo}` : ''}`);
       delete c._motivo;
       return { ...c, fecha: diaUtc(t) };
@@ -568,7 +604,7 @@ function crearFuentes({ cfg, dataDir, log: logCrudo = () => {}, ahora = Date.now
   /** Lo que se puede armar sin el repo (la primera lectura sin clon): todo «no medido» con el estado. */
   function modeloVacio(codigo, t, corridas) {
     const n = noMedida(codigo);
-    return { generado: t, dependencias: n, vigilante: n, banco: n, suites: n, examen: n, declarados: n, productos: [], productosFuente: n, proyectos: n, despliegues: n, paridad: n, prs: n, pedidos: n, tablero: n, sources: { lista: [] }, umbrales: {}, corridas: corridas || n, carpetas: null, informados: {} };
+    return { generado: t, dependencias: n, vigilante: n, banco: n, suites: n, examen: n, declarados: n, productos: [], productosFuente: n, proyectos: n, despliegues: n, paridad: n, prs: n, pedidos: n, tablero: n, sources: { lista: [] }, umbrales: {}, corridas: corridas || n, carpetas: null };
   }
 
   async function refrescarUnaVez() {
@@ -586,6 +622,10 @@ function crearFuentes({ cfg, dataDir, log: logCrudo = () => {}, ahora = Date.now
     aplicarConfig(leerOperaciones(), t);
     const corridas = await leerBuzon(st.ultimoBueno, st.modelo && st.modelo.corridas, t);
     st.modelo = construir({ corridas, carpetas: leerCarpetas(), t });
+    // repos.json que no se lee deja la última lista buena (como el resto de las fuentes), y lo dice el registro
+    const repos = leerRepos(clon);
+    if (repos.repos) st.personas.repos = repos.repos;
+    else log(`dónde trabaja cada uno: ${repos.motivo}${st.personas.repos ? '; queda la última lista buena' : ''}`);
     st.cargado = true;
   }
 
@@ -619,12 +659,17 @@ function crearFuentes({ cfg, dataDir, log: logCrudo = () => {}, ahora = Date.now
     estado() {
       const fallas = [st.fallas.repo, st.fallas.buzon].filter(Boolean);
       const banda = fallas.length ? { desde: Math.min(...fallas.map((f) => f.desde)), estado: fallas[0].estado } : null;
+      // el freno se cuenta con la hora de CADA pedido, no sólo al refrescar: si el repo deja de bajarse después del
+      // primer fallo, el sitio igual se frena a las 24 horas (revisores de la 2.28)
+      if (st.cargado && st.fallaDesde !== null) Object.assign(st, estadoDelSitio({ hayUltimoBueno: Boolean(st.ultimoBueno), fallaDesde: st.fallaDesde, fallaRutas: st.fallaRutas, ahora: ahora() }));
       return { cargado: st.cargado, frenado: st.frenado, bandaConfig: st.bandaConfig, bandaRefresco: banda };
     },
     config: () => st.ultimoBueno,
     modelo: () => st.modelo,
+    /** Lo que la regla de quién es quién necesita y el modelo no lleva: `{ informados, repos }` (nunca a una vista). */
+    personas: () => st.personas,
     detener() { if (temporizador) clearTimeout(temporizador); temporizador = null; },
   };
 }
 
-module.exports = { crearFuentes, construirDesdeClon, estadoDeLaConfiguracion, estadoDeGit, limpiarLinea, leerCorridas, ultimaFoto, correr, dentroDe, PLAZO_CONFIG_MS };
+module.exports = { crearFuentes, construirDesdeClon, estadoDeLaConfiguracion, estadoDelSitio, leerRepos, estadoDeGit, limpiarLinea, leerCorridas, ultimaFoto, correr, dentroDe, PLAZO_CONFIG_MS };

@@ -20,24 +20,23 @@
  *     identidades aparece en la fuente y no tiene alias, la fila dice «no medido» con la frase de asociarla.
  *   · un proyecto es de la persona si «donde trabaja» (2.28) lo nombra; sin esa lista, la frase de que todavía no se sabe.
  *
- * LA COSTURA CON LA 2.28: el estado de cada máquina (`confirmada`, `sin_confirmar`, `cambio`) y «donde trabaja» los da
- * `people.js` cuando exista. Mientras tanto, `crearReglas` los calcula con la misma regla mínima: la huella guardada
- * (`reported_sha256`) o, sin huella, `person`, contra el correo que la máquina informa (`modelo.informados`).
+ * LA REGLA ES LA DE scripts/lib/people.js (2.28), y no se copia acá: quién es persona (`esPersona`), el estado de cada
+ * máquina (`estadoDeMaquina`, con la unión de carpetas), quién ve una corrida (`puedeVer`), las máquinas por confirmar
+ * (`maquinasPorConfirmar`) y dónde trabaja cada uno (`dondeTrabaja`). Lo que la máquina informa (su correo) llega en
+ * `personas.informados`, FUERA del modelo: el modelo va entero a quien mantiene, y ningún correo informado puede llegar a
+ * una pantalla. Lo único propio del sitio es la lista de mantenedores (con `SITE_FIRST_MAINTAINER`).
  */
-const crypto = require('crypto');
+const people = require('../lib/people.js');
 
 const CORREO = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const norm = (c) => String(c || '').trim().toLowerCase();
-const huella = (c) => crypto.createHash('sha256').update(norm(c)).digest('hex');
 const isObject = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
 
 const FRASE_IDENTIDAD = 'no medido: tu identidad en la plataforma no es tu correo de la organización; pedile a quien mantiene que la asocie';
 const FRASE_PROYECTOS = 'todavía no se sabe en qué proyectos trabajás: lo confirma quien mantiene el arnés';
 
-function maquinasDe(config) {
-  const m = config && isObject(config.people) && isObject(config.people.machines) ? config.people.machines : {};
-  return m;
-}
+/** El contexto de la regla: la configuración vigente (o el último bueno) y lo informado por las máquinas. */
+const contextoDe = (config, personas) => people.contexto({ operations: isObject(config) ? config : {}, informados: personas && isObject(personas.informados) ? personas.informados : null });
 
 /** La lista de mantenedores vigente y de dónde sale. */
 function mantenedores(config, firstMaintainer) {
@@ -47,65 +46,79 @@ function mantenedores(config, firstMaintainer) {
   return { lista: new Set(), origen: 'ninguno', variableSobrante: false };
 }
 
-function esPersona(email, config) {
-  const e = norm(email);
-  return Object.values(maquinasDe(config)).some((x) => isObject(x) && norm(x.person) === e);
-}
-
 /** Quién pide: { email, sub, rol, sinMantenedores, variableSobrante }. La sesión no trae rol: se calcula acá. */
 function quienPide(ses, { config, firstMaintainer } = {}) {
   const email = norm(ses.email);
   const m = mantenedores(config, firstMaintainer);
   let rol = 'none';
   if (m.lista.has(email)) rol = 'maintainer';
-  else if (esPersona(email, config)) rol = 'person';
+  else if (people.esPersona(email, contextoDe(config, null))) rol = 'person';
   return { email, sub: ses.sub, rol, sinMantenedores: m.origen === 'ninguno', variableSobrante: rol === 'maintainer' && m.variableSobrante };
 }
 
-/** Las reglas de qué es de quién para una configuración y un modelo. */
-function crearReglas({ config, modelo, dondeTrabaja } = {}) {
-  const maquinas = maquinasDe(config);
-  const carpetas = modelo && isObject(modelo.carpetas) && isObject(modelo.carpetas.carpetas) ? modelo.carpetas.carpetas : {};
-  const informados = modelo && isObject(modelo.informados) ? modelo.informados : {};
-  const people = config && isObject(config.people) ? config.people : {};
+/** Las reglas de qué es de quién para una configuración, un modelo y lo informado (`personas`, de sources.js). */
+function crearReglas({ config, modelo, personas } = {}) {
+  const c = contextoDe(config, personas);
+  const m = isObject(modelo) ? modelo : {};
+  const peopleCfg = config && isObject(config.people) ? config.people : {};
+  // lo informado que no se pudo leer NO es «ninguna máquina informa nada»: sin eso, una máquina que hoy informa otro
+  // correo pasaría por confirmada. Falla hacia cerrar: la persona no ve corridas y la cuenta de quien mantiene no se sabe
+  const inf = personas && isObject(personas.informados) ? personas.informados : null;
+  // las uniones de carpetas sin calcular, tampoco: una carpeta vieja compartida pasaría por carpeta propia (revisores)
+  const informadosOk = Boolean(inf) && !inf.no_medido && !(isObject(inf.uniones) && inf.uniones.no_medido);
+  // la carpeta real de la corrida: `maquina` ya viene unida a la nueva (runs.js), y people.js juzga la unión desde la vieja
+  const carpetaDe = (x) => (isObject(x) ? x.carpeta || x.maquina || null : null);
 
-  function estadoDeCarpetaNueva(carpeta) {
-    const e = maquinas[carpeta];
-    if (!isObject(e) || !CORREO.test(norm(e.person))) return { carpeta, estado: 'sin_confirmar', person: null };
-    const inf = informados[carpeta];
-    if (inf !== undefined && inf !== null) {
-      const igual = e.reported_sha256 ? huella(inf) === String(e.reported_sha256).toLowerCase() : norm(inf) === norm(e.person);
-      if (!igual) return { carpeta, estado: 'cambio', person: null };
-    }
-    return { carpeta, estado: 'confirmada', person: norm(e.person) };
-  }
-
-  /** La máquina de una carpeta del buzón: { carpeta (la nueva, si es una vieja unida), estado, person }. */
+  /** La máquina de una carpeta del buzón: { carpeta (la nueva, si es una vieja unida), estado, motivo, person }. */
   function maquina(nombre) {
-    if (!nombre) return { carpeta: null, estado: 'sin_maquina', person: null };
-    const v = carpetas[nombre];
-    if (isObject(v)) {
-      if (v.estado === 'unida' && typeof v.nueva === 'string' && v.nueva && v.nueva !== nombre) return estadoDeCarpetaNueva(v.nueva);
-      if (v.estado === 'compartida' || v.estado === 'siguio_recibiendo') return { carpeta: nombre, estado: v.estado, person: null };
-    }
-    return estadoDeCarpetaNueva(nombre);
+    if (!nombre) return { carpeta: null, estado: 'sin_maquina', motivo: 'una corrida sin máquina', person: null };
+    const e = people.estadoDeMaquina(nombre, c);
+    return { carpeta: e.antes_de || nombre, estado: e.estado, motivo: e.motivo || null, person: e.person || null };
   }
 
   /** Las identidades de la plataforma de una persona: su correo y sus alias confirmados. */
   function identidades(email) {
     const e = norm(email);
-    const p = people[e] || Object.entries(people).find(([k]) => norm(k) === e)?.[1];
+    const p = peopleCfg[e] || Object.entries(peopleCfg).find(([k]) => norm(k) === e)?.[1];
     const alias = isObject(p) && Array.isArray(p.identities) ? p.identities.map(norm).filter(Boolean) : [];
     return { todas: new Set([e, ...alias]), conAlias: alias.length > 0 };
+  }
+
+  /** Los productos de una persona según `dondeTrabaja`; null (la frase) si no se sabe o no hay ninguno. */
+  function proyectosDe(email) {
+    const lista = (f) => (isObject(f) && Array.isArray(f.lista) ? f.lista : []);
+    const d = people.dondeTrabaja(email, c, {
+      repos: personas && Array.isArray(personas.repos) ? personas.repos : null,
+      fotos: lista(m.proyectos).filter(isObject).map((x) => ({ proyecto: x.proyecto, repo: x.repo })),
+      // sin lo informado no se sabe de quién es cada corrida: no ubican productos (los pedidos y lo agregado, sí)
+      corridas: informadosOk ? lista(m.corridas).filter(isObject).map((x) => ({ maquina: carpetaDe(x), producto: x.producto || null, cambio: null })) : [],
+      pedidos: lista(m.pedidos).filter(isObject).map((x) => ({ proyecto: x.proyecto, asignado: x.asignado })),
+    });
+    const productos = d.productos.map((p) => p.producto);
+    return d.estado === 'medido' && productos.length ? productos : null;
   }
 
   return {
     maquina,
     identidades,
-    proyectosDe: (email) => (typeof dondeTrabaja === 'function' ? dondeTrabaja(norm(email)) : null),
-    // las máquinas (carpetas) con corridas que alguien tiene que confirmar; una corrida sin máquina no es una máquina
-    // contadas por la máquina RESUELTA: una vieja unida y su nueva son una sola máquina por confirmar
-    sinConfirmar: (lista) => new Set(lista.map((c) => c.maquina).filter((m) => m).map((m) => maquina(m)).filter((x) => x.estado !== 'confirmada').map((x) => x.carpeta)).size,
+    proyectosDe,
+    /** ¿Ve `email` esta corrida? La regla de people.js sobre la carpeta real de la corrida. */
+    puedeVer: (email, corrida) => informadosOk && people.puedeVer(email, carpetaDe(corrida), c),
+    // las máquinas sin confirmar CON CORRIDAS (la fila del Inicio de quien mantiene, sólo la cuenta): las de
+    // `people.maquinasPorConfirmar` que tienen alguna corrida, por su carpeta real o la nueva a la que se une; una
+    // corrida sin máquina no es una máquina. Sin lo informado, null: la cuenta no se sabe.
+    sinConfirmar: (lista) => {
+      if (!informadosOk) return null;
+      const conCorridas = new Set();
+      for (const x of lista) {
+        const k = carpetaDe(x);
+        if (!k) continue;
+        conCorridas.add(k);
+        const e = people.estadoDeMaquina(k, c);
+        if (e.antes_de) conCorridas.add(e.antes_de);
+      }
+      return people.maquinasPorConfirmar(c).filter((x) => conCorridas.has(x.maquina)).length;
+    },
   };
 }
 
@@ -129,7 +142,7 @@ function filtrar(modelo, quien, reglas) {
   const out = { rol: 'person', fuentes: copia(m.fuentes) || {} };
   const corridas = m.corridas || {};
   out.corridas = { estado: corridas.estado || 'no_medido', codigo: corridas.codigo || null, motivo: corridas.motivo || null, fecha: corridas.fecha || null,
-    lista: (Array.isArray(corridas.lista) ? corridas.lista : []).filter((c) => { const mq = reglas.maquina(c.maquina); return mq.estado === 'confirmada' && mq.person === quien.email; }).map(copia) };
+    lista: (Array.isArray(corridas.lista) ? corridas.lista : []).filter((c) => reglas.puedeVer(quien.email, c)).map(copia) };
 
   const ids = reglas.identidades(quien.email);
   const prs = m.prs || {};
@@ -180,4 +193,4 @@ function filtrar(modelo, quien, reglas) {
   return out;
 }
 
-module.exports = { quienPide, mantenedores, esPersona, crearReglas, filtrar, huella, FRASE_IDENTIDAD, FRASE_PROYECTOS };
+module.exports = { quienPide, mantenedores, crearReglas, filtrar, FRASE_IDENTIDAD, FRASE_PROYECTOS };

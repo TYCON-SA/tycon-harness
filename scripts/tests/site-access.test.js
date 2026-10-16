@@ -5,6 +5,10 @@
  * T14 Identidad_NoSaleDeCabeceras      T18 Rol_SinRol_PaginaSinDatos     T43 Corridas_CarpetaNuevaYViejas
  * T17 Rol_SeRecalculaEnCadaPedido      T20 Filtro_QueEsDeQuien
  *
+ * Y las de la regla de quién es quién (story 2.28, AC 8, 10 y 22), que el sitio toma de scripts/lib/people.js:
+ * T26 2.28-Rol_PersonaSaleDePeople     T27 2.28-Modelo_ProyectosEInicioDesdeDondeTrabaja
+ * T44 2.28-Config_BandaSoloMantenedores_YFrenoA24h
+ *
  * Las de reglas puras van contra access.js; las de rol, contra el servidor real con el emisor local.
  */
 const test = require('node:test');
@@ -58,11 +62,12 @@ test('T18 Rol_SinRol_PaginaSinDatos', async () => {
   const config = opsBase({ people: { machines: { 'maq-a-1a2b3c4d': { person: B, reported_sha256: sha(B), confirmed_by: LEAD, confirmed_on: '2026-10-15' } } } });
   const modelo = {
     corridas: { estado: 'medido', fecha: '2026-10-15', lista: [{ maquina: 'maq-a-1a2b3c4d', inicio: '2026-10-15T10:00:00Z', marca: 'CORRIDA-DE-B' }] },
-    informados: { 'maq-a-1a2b3c4d': 'otra.persona@acme.example' },   // la máquina informa otro correo: caída («cambio»)
     proyectos: { estado: 'medido', fecha: '2026-10-15', lista: [{ proyecto: 'Proyecto X', repo: 'Repo X', stories: [] }] },
     productos: [{ producto: 'Producto X', proyectos: ['Proyecto X'] }],
   };
-  await conSitio(H.fuentesFijas({ config, modelo }), async ({ h, entrar }) => {
+  // la máquina informa otro correo: caída («cambio»). Lo informado llega aparte del modelo (2.28)
+  const personas = { informados: H.informados({ 'maq-a-1a2b3c4d': 'otra.persona@acme.example' }), repos: null };
+  await conSitio(H.fuentesFijas({ config, modelo, personas }), async ({ h, entrar }) => {
     const sinRol = await h.pedir('/', { cookie: await entrar(A) });
     assert.strictEqual(sinRol.status, 200);
     assert.match(sinRol.texto, /tu cuenta todavía no está confirmada; pedíselo a quien mantiene el arnés/);
@@ -75,7 +80,7 @@ test('T18 Rol_SinRol_PaginaSinDatos', async () => {
     assert.doesNotMatch(iniB.texto, /href="\/arnes"/);
     assert.ok(!iniB.texto.includes('CORRIDA-DE-B'));
     assert.strictEqual(access.quienPide(persona(B), { config }).rol, 'person');
-    assert.strictEqual(access.crearReglas({ config, modelo }).maquina('maq-a-1a2b3c4d').estado, 'cambio');
+    assert.strictEqual(access.crearReglas({ config, modelo, personas }).maquina('maq-a-1a2b3c4d').estado, 'cambio');
   });
 });
 
@@ -95,7 +100,6 @@ test('T20 Filtro_QueEsDeQuien', () => {
       { maquina: 'maq-nueva-33333333', inicio: '2026-10-15T12:00:00Z' },
       { maquina: null, inicio: '2026-10-15T13:00:00Z' },
     ] },
-    informados: { 'maq-a-11111111': 'DEV.A@acme.example', 'maq-b-22222222': B },
     prs: { estado: 'medido', fecha: '2026-10-15', lista: [
       { numero: 1, proyecto: 'P', repo: 'R', dias: 3, autor: 'Dev.A@ACME.example', enlace: 'https://x.example/pr/1' },
       { numero: 2, proyecto: 'P', repo: 'R', dias: 4, autor: B, enlace: 'https://x.example/pr/2' },
@@ -104,9 +108,10 @@ test('T20 Filtro_QueEsDeQuien', () => {
       { id: 10, proyecto: 'P', tipo: 'Bug', estado: 'Active', asignado: 'DEV.B@acme.example', dias: 2, enlace: 'https://x.example/wi/10', dependencias: true },
     ] },
   };
+  const personas = { informados: H.informados({ 'maq-a-11111111': 'DEV.A@acme.example', 'maq-b-22222222': B, 'maq-nueva-33333333': null }), repos: null };
   const ve = (email, cfg = config) => {
     const quien = access.quienPide(persona(email), { config: cfg });
-    return access.filtrar(modelo, quien, access.crearReglas({ config: cfg, modelo }));
+    return access.filtrar(modelo, quien, access.crearReglas({ config: cfg, modelo, personas }));
   };
   const mA = ve(A); const mB = ve(B); const mL = ve(LEAD);
   assert.deepStrictEqual(mA.corridas.lista.map((c) => c.maquina), ['maq-a-11111111'], 'A ve la suya (el correo informado en mayúsculas no la tira)');
@@ -117,12 +122,12 @@ test('T20 Filtro_QueEsDeQuien', () => {
   assert.deepStrictEqual(mA.pedidos.lista, []);
   // un pedido asignado a una identidad que no es el correo de A: sin alias, «no medido» con la frase; con alias, es de A
   const conPersonal = { ...modelo, prs: { ...modelo.prs, lista: [] }, pedidos: { ...modelo.pedidos, lista: [{ ...modelo.pedidos.lista[0], id: 11, asignado: 'a.personal@mail.example' }] } };
-  const sinAlias = access.filtrar(conPersonal, access.quienPide(persona(A), { config }), access.crearReglas({ config, modelo: conPersonal }));
+  const sinAlias = access.filtrar(conPersonal, access.quienPide(persona(A), { config }), access.crearReglas({ config, modelo: conPersonal, personas }));
   assert.strictEqual(sinAlias.pedidos.estado, 'no_medido');
   assert.match(sinAlias.pedidos.motivo, /tu identidad en la plataforma no es tu correo de la organización; pedile a quien mantiene que la asocie/);
   assert.strictEqual(sinAlias.pedidos.lista.length, 0);
   const cfgAlias = { ...config, people: { ...config.people, [A]: { identities: ['A.Personal@mail.example'] } } };
-  const conAlias = access.filtrar(conPersonal, access.quienPide(persona(A), { config: cfgAlias }), access.crearReglas({ config: cfgAlias, modelo: conPersonal }));
+  const conAlias = access.filtrar(conPersonal, access.quienPide(persona(A), { config: cfgAlias }), access.crearReglas({ config: cfgAlias, modelo: conPersonal, personas }));
   assert.strictEqual(conAlias.pedidos.estado, 'medido');
   assert.deepStrictEqual(conAlias.pedidos.lista.map((p) => p.id), [11]);
   // A sin lista de proyectos: la frase
@@ -151,20 +156,262 @@ test('T43 Corridas_CarpetaNuevaYViejas', () => {
       { maquina: 'otra', inicio: '2026-10-02T10:00:00Z' },
       { maquina: 'vieja', inicio: '2026-10-03T10:00:00Z' },
     ] },
-    carpetas: { schema: 1, carpetas: {
-      maq: { estado: 'unida', nueva: 'maq-1a2b3c4d', declarantes: 1, desde: '2026-10-10' },
-      otra: { estado: 'compartida', nueva: null, declarantes: 2, desde: null },
-      vieja: { estado: 'siguio_recibiendo', nueva: null, declarantes: 1, desde: '2026-10-05' },
-    } },
   };
-  const filtra = (email, cfg) => access.filtrar(modelo, access.quienPide(persona(email), { config: cfg }), access.crearReglas({ config: cfg, modelo }));
+  // la unión de carpetas llega con lo informado (people.js la calcula del espejo con carpetasDeMaquina), no del modelo
+  const personas = { informados: H.informados({}, {
+    maq: { estado: 'unida', nueva: 'maq-1a2b3c4d', declarantes: 1, desde: '2026-10-10' },
+    otra: { estado: 'compartida', nueva: null, declarantes: 2, desde: null },
+    vieja: { estado: 'siguio_recibiendo', nueva: null, declarantes: 1, desde: '2026-10-05' },
+  }), repos: null };
+  const filtra = (email, cfg) => access.filtrar(modelo, access.quienPide(persona(email), { config: cfg }), access.crearReglas({ config: cfg, modelo, personas }));
   assert.deepStrictEqual(filtra(A, config).corridas.lista.map((c) => c.maquina).sort(), ['maq', 'maq-1a2b3c4d'], 'la nueva y su vieja unida');
   assert.strictEqual(filtra(LEAD, config).corridas.lista.length, 4);
   // la entrada con el nombre de la vieja unida no cuenta: sin la de la nueva, A no ve nada
   const soloVieja = opsBase({ people: { machines: { maq: config.people.machines.maq, otra: config.people.machines.otra } } });
   assert.deepStrictEqual(filtra(A, soloVieja).corridas.lista, []);
-  const reglas = access.crearReglas({ config, modelo });
+  const reglas = access.crearReglas({ config, modelo, personas });
   assert.strictEqual(reglas.maquina('otra').estado, 'compartida');
-  assert.strictEqual(reglas.maquina('vieja').estado, 'siguio_recibiendo');
+  assert.match(reglas.maquina('otra').motivo, /compartida por 2 máquinas/);
+  // people.js da a las dos viejas que no se unen el estado `compartida`; el motivo dice cuál de las dos es
+  assert.strictEqual(reglas.maquina('vieja').estado, 'compartida');
+  assert.match(reglas.maquina('vieja').motivo, /siguió recibiendo después de la mudanza/);
   assert.strictEqual(reglas.maquina('maq').carpeta, 'maq-1a2b3c4d');
+});
+
+// ── story 2.28: la regla de quién es quién viene de people.js ─────────────────────────────────────────────────────
+const people = require(path.join(H.SITE, '..', 'lib', 'people.js'));
+const views = require(path.join(H.SITE, 'views.js'));
+const sources = require(path.join(H.SITE, 'sources.js'));
+const C = 'dev.c@acme.example';
+const D = 'dev.d@acme.example';
+// stable-data: el emisor de mentira firma con la hora real y el sitio de estas pruebas corre con su reloj de verdad; lo
+// que se compara son plazos relativos a ahora (una corrida de hace una hora, una falla de hace 2 o 25 horas), nunca una
+// fecha fija.
+const haceHoras = (n, t = Date.now()) => t - n * 3600000;
+
+test('T26 2.28-Rol_PersonaSaleDePeople', async () => {
+  const config = opsBase({ people: { machines: {
+    'maq-a-11111111': { person: A, reported_sha256: sha(A), confirmed_by: LEAD, confirmed_on: '2026-10-15' },
+    'maq-c-33333333': { person: C, reported_sha256: sha(C), confirmed_by: LEAD, confirmed_on: '2026-10-15' },
+  } } });
+  // la máquina de C informa hoy OTRO correo: su única máquina queda en `cambio`
+  const personas = { informados: H.informados({ 'maq-a-11111111': A, 'maq-c-33333333': 'otra.persona@acme.example' }), repos: null };
+  const modelo = { corridas: { estado: 'medido', fecha: '2026-10-15', lista: [
+    { maquina: 'maq-a-11111111', inicio: new Date(haceHoras(1)).toISOString() },
+    { maquina: 'maq-c-33333333', inicio: new Date(haceHoras(2)).toISOString() },
+  ] } };
+  // la regla es la de people.js: el sitio no tiene una propia
+  assert.strictEqual(access.esPersona, undefined, 'access.js ya no exporta su propio esPersona');
+  assert.match(require('fs').readFileSync(path.join(H.SITE, 'access.js'), 'utf8'), /require\('\.\.\/lib\/people\.js'\)/);
+  assert.deepStrictEqual([A, C, D].map((e) => access.quienPide(persona(e), { config }).rol), ['person', 'person', 'none'], 'persona = alguna entrada, confirmada o caída');
+  assert.deepStrictEqual([A, C, D].map((e) => people.esPersona(e, people.contexto({ operations: config }))), [true, true, false]);
+
+  const fuentes = H.fuentesFijas({ config, modelo, personas });
+  await conSitio(fuentes, async ({ h, entrar }) => {
+    const sA = await entrar(A); const sC = await entrar(C); const sD = await entrar(D);
+    const iniA = await h.pedir('/', { cookie: sA });
+    assert.match(iniA.texto, /1 corridas en 7 días/, 'A ve la corrida de su máquina confirmada');
+    const iniC = await h.pedir('/', { cookie: sC });
+    assert.match(iniC.texto, /href="\/proyectos"/, 'C es persona aunque su única máquina esté caída');
+    assert.match(iniC.texto, /0 corridas en 7 días/, 'de una máquina caída no ve nada');
+    assert.match((await h.pedir('/', { cookie: sD })).texto, /tu cuenta todavía no está confirmada/, 'sin entrada: sin rol');
+    // el primer refresco fallido fue hace 25 horas: freno para todos, la persona incluida
+    const falla = haceHoras(25);
+    Object.assign(fuentes.st, sources.estadoDelSitio({ hayUltimoBueno: true, fallaDesde: falla, fallaRutas: 'problemas en people.machines', ahora: Date.now() }));
+    const frenada = await h.pedir('/', { cookie: sA });
+    assert.strictEqual(frenada.status, 503);
+    assert.ok(frenada.texto.includes(`el sitio está frenado desde ${views.hora(falla + 24 * 3600000)}: la configuración de la organización no valida; se destraba cuando un refresco la lee bien`), 'desde cuándo está frenado y el motivo');
+    assert.doesNotMatch(frenada.texto, /corridas en 7 días|people\.machines/, 'sin datos ni rutas del archivo');
+  });
+});
+
+test('T27 2.28-Modelo_ProyectosEInicioDesdeDondeTrabaja', () => {
+  const X = 'dev.x@acme.example';
+  const OTRO = ['sin', 'confirmar@acme.example'].join('.');
+  const config = opsBase({ people: {
+    machines: {
+      'maq-a-11111111': { person: A, reported_sha256: sha(A), confirmed_by: LEAD, confirmed_on: '2026-10-15' },
+      'maq-x-22222222': { person: X, reported_sha256: sha(X), confirmed_by: LEAD, confirmed_on: '2026-10-15' },
+    },
+    projects: { [A]: { add: ['Gama'] } },
+  } });
+  const personas = {
+    informados: H.informados({ 'maq-a-11111111': A, 'maq-x-22222222': X, 'maq-s1-33333333': OTRO, 'maq-s2-44444444': null }),
+    repos: [
+      { producto: 'Alfa', ruta: 'Alfa/Web', ado: 'Alfa/Web' },
+      { producto: 'Beta', ruta: 'Beta/Front', ado: 'Beta/Front' },
+      { producto: 'Gama', ruta: 'Gama/Front', ado: 'Gama/Front' },
+    ],
+  };
+  const inicio = new Date(haceHoras(1)).toISOString();
+  const modelo = {
+    corridas: { estado: 'medido', fecha: '2026-10-15', lista: [
+      // el sitio no baja los cambios de git: la corrida se ubica por la carpeta del volcado (paso 2 del AC 13)
+      { maquina: 'maq-a-11111111', inicio, producto: 'Alfa/Web', cambio: null },
+      { maquina: 'maq-x-22222222', inicio, producto: 'Zeta/Nada', cambio: null },
+      { maquina: 'maq-s1-33333333', inicio, producto: 'Beta/Front', cambio: null },
+      { maquina: 'maq-s2-44444444', inicio, producto: 'Beta/Front', cambio: null },
+    ] },
+    productos: [
+      { producto: 'Alfa', proyectos: ['Alfa'], rutas: ['Alfa/Web'] },
+      { producto: 'Beta', proyectos: ['Beta'], rutas: ['Beta/Front'] },
+      { producto: 'Gama', proyectos: ['Gama'], rutas: ['Gama/Front'] },
+    ],
+    productosFuente: { estado: 'medido', codigo: null, motivo: null, fecha: '2026-10-15' },
+    proyectos: { estado: 'medido', fecha: '2026-10-15', lista: [{ proyecto: 'Alfa', repo: 'Web' }, { proyecto: 'Beta', repo: 'Front' }, { proyecto: 'Gama', repo: 'Front' }] },
+  };
+  const ve = (email) => access.filtrar(modelo, access.quienPide(persona(email), { config }), access.crearReglas({ config, modelo, personas }));
+  const mA = ve(A);
+  assert.deepStrictEqual(mA.productos.map((p) => p.producto), ['Alfa', 'Gama'], 'Alfa por sus corridas, Gama agregado; Beta no');
+  assert.deepStrictEqual(views.inicioDev(mA).proyectos, { estado: 'medido', lista: ['Alfa', 'Gama'] }, 'la línea de proyectos del Inicio');
+  assert.deepStrictEqual(views.filasProyectos(mA).filas.map((f) => f.producto), ['Alfa', 'Gama'], 'la pestaña Proyectos');
+  // X tiene corridas, pero ninguna se ubica en un producto: la frase de la 2.23, nunca todos los productos
+  const mX = ve(X);
+  assert.strictEqual(mX.proyectos.lista, null);
+  assert.deepStrictEqual(mX.productos, []);
+  assert.match(views.inicioDev(mX).proyectos.motivo, /todavía no se sabe en qué proyectos trabajás/);
+  // quien mantiene: la cuenta de máquinas sin confirmar con corridas (la de OTRO y la que no informa), sin correos
+  const mL = ve(LEAD);
+  assert.strictEqual(mL.maquinasSinConfirmar, 2);
+  assert.match(views.paginaInicio({ modelo: mL, quien: { rol: 'maintainer', email: LEAD }, pestanas: [], ahora: Date.now() }), /Máquinas sin confirmar con corridas[\s\S]*?t-val">2</);
+  assert.ok(!JSON.stringify(mL).includes(OTRO) && !JSON.stringify(mA).includes(OTRO), 'ningún correo informado en el modelo');
+});
+
+// Pase adversarial de la vuelta 2: runs.js pasa la corrida de una carpeta vieja `unida` a su nueva; el sitio tiene que
+// darle a people.js la carpeta DE ORIGEN, para que sus guardas (la vieja informa otro correo, o está confirmada para otra
+// persona) se apliquen. Espejo real, uniones del bajador real, corridas con el lector del sitio.
+test('2.28-R1 Union_QuePeopleRechaza_NoPasaLaCorridaALaNueva', () => {
+  const fs = require('fs'); const os = require('os');
+  const { huellaDeCorridas } = require(path.join(H.SITE, '..', 'metrics', 'upload-runs.js'));
+  const { carpetasDeMaquina } = require(path.join(H.SITE, '..', 'metrics', 'download-runs.js'));
+  const NUEVA = 'maq-a-1234abcd';
+  function armar(ownerVieja) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'site-r1-'));
+    const run = '9.1-2026-10-01T0900.json';
+    const escribir = (rel, obj) => { fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true }); fs.writeFileSync(path.join(dir, rel), JSON.stringify(obj)); };
+    escribir(`maq-a/${run}`, { archivedAt: '2026-10-01T09:00:00Z', marker: { sessionId: 'sess-vieja', startedAt: '2026-10-01T09:00:00Z', repoPath: '/Users/u/SourceCode/Alfa/Web' } });
+    escribir('maq-a/registros/place.json', { schema: 1, day: '2026-10-01', owner: { email: ownerVieja } });
+    escribir(`${NUEVA}/9.2-2026-10-03T0900.json`, { archivedAt: '2026-10-03T09:00:00Z', marker: { sessionId: 'sess-nueva', startedAt: '2026-10-03T09:00:00Z', repoPath: '/Users/u/SourceCode/Beta/Front' } });
+    escribir(`${NUEVA}/registros/place.json`, { schema: 1, day: '2026-10-02', owner: { email: B },
+      folder: { name: NUEVA, code: '1234abcd', previous_folder: 'maq-a', moved_on: '2026-10-02', previous_runs_sha256: huellaDeCorridas([run]) } });
+    const u = carpetasDeMaquina(dir, { hoy: '2026-10-16' });
+    assert.ok(!u.no_medido, 'las uniones se calcularon');
+    fs.writeFileSync(path.join(dir, '.carpetas-de-maquina.json'), JSON.stringify(u));
+    return dir;
+  }
+  const casos = [
+    ['la vieja confirmada para otra persona', A, { [NUEVA]: { person: B, reported_sha256: sha(B) }, 'maq-a': { person: A, reported_sha256: sha(A) } }, false],
+    ['la vieja informa otro correo', A, { [NUEVA]: { person: B, reported_sha256: sha(B) } }, false],
+    ['control: la vieja informa el mismo correo', B, { [NUEVA]: { person: B, reported_sha256: sha(B) } }, true],
+  ];
+  for (const [nombre, ownerVieja, machines, unida] of casos) {
+    const dir = armar(ownerVieja);
+    try {
+      const config = opsBase({ people: { machines } });
+      const modelo = { corridas: { ...sources.leerCorridas(dir), fecha: '2026-10-16' } };
+      const personas = { informados: people.leerCorreosInformados(dir), repos: [{ producto: 'Alfa', ruta: 'Alfa/Web', ado: '' }, { producto: 'Beta', ruta: 'Beta/Front', ado: '' }] };
+      const reglas = access.crearReglas({ config, modelo, personas });
+      const deB = access.filtrar(modelo, access.quienPide(persona(B), { config }), reglas);
+      assert.deepStrictEqual(deB.corridas.lista.map((c) => c.inicio.slice(0, 10)).sort(), unida ? ['2026-10-01', '2026-10-03'] : ['2026-10-03'], `${nombre}: las corridas que ve B`);
+      assert.deepStrictEqual(reglas.proyectosDe(B), unida ? ['Alfa', 'Beta'] : ['Beta'], `${nombre}: los productos de B`);
+      const lead = access.filtrar(modelo, access.quienPide(persona(LEAD), { config }), reglas);
+      assert.strictEqual(lead.corridas.lista.length, 2, `${nombre}: quien mantiene ve las dos`);
+      assert.strictEqual(lead.maquinasSinConfirmar, unida ? 0 : 1, `${nombre}: la vieja que no se une es una máquina por confirmar`);
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  }
+});
+
+// Revisores de la vuelta 2: lo informado que no se pudo leer NO es «ninguna máquina informa nada» (falla hacia cerrar)
+test('2.28-R2 Informados_SinLeer_FallaHaciaCerrar', () => {
+  const config = opsBase({ people: { machines: { 'maq-a-11111111': { person: A, reported_sha256: sha(A) } }, projects: { [A]: { add: ['Gama'] } } } });
+  const modelo = { corridas: { estado: 'medido', fecha: '2026-10-15', lista: [{ maquina: 'maq-a-11111111', inicio: new Date(haceHoras(1)).toISOString(), producto: 'Alfa/Web' }] },
+    productos: [{ producto: 'Alfa', proyectos: ['Alfa'], rutas: ['Alfa/Web'] }, { producto: 'Gama', proyectos: ['Gama'], rutas: ['Gama/Front'] }] };
+  const repos = [{ producto: 'Alfa', ruta: 'Alfa/Web', ado: '' }, { producto: 'Gama', ruta: 'Gama/Front', ado: '' }];
+  const sinListar = { maquinas: {}, uniones: { schema: 1, carpetas: {}, regeneradas: {} }, no_medido: 'el espejo del buzón no se pudo listar (EACCES)' };
+  // las máquinas leídas pero las uniones de carpetas sin calcular: una vieja compartida pasaría por carpeta propia
+  const sinUniones = { maquinas: H.informados({ 'maq-a-11111111': A }).maquinas, uniones: { schema: 1, carpetas: {}, regeneradas: {}, no_medido: 'las uniones de carpetas no se pudieron calcular (EACCES)' } };
+  for (const [nombre, informados] of [['sin leer (null)', null], ['el espejo no se pudo listar', sinListar], ['las uniones sin calcular', sinUniones]]) {
+    const personas = { informados, repos };
+    const reglas = access.crearReglas({ config, modelo, personas });
+    const mA = access.filtrar(modelo, access.quienPide(persona(A), { config }), reglas);
+    assert.deepStrictEqual(mA.corridas.lista, [], `${nombre}: la persona no ve corridas que no se pueden verificar`);
+    assert.deepStrictEqual(mA.productos.map((p) => p.producto), ['Gama'], `${nombre}: sus corridas no ubican productos; lo agregado a mano sí cuenta`);
+    const mL = access.filtrar(modelo, access.quienPide(persona(LEAD), { config }), reglas);
+    assert.strictEqual(mL.corridas.lista.length, 1, `${nombre}: quien mantiene ve todo`);
+    assert.strictEqual(mL.maquinasSinConfirmar, null, `${nombre}: la cuenta no se sabe`);
+    const fila = views.filasInicioMantenedor(mL, { ahora: Date.now() }).find((f) => f.clave === 'maquinas_sin_confirmar');
+    assert.deepStrictEqual([fila.estado, fila.valor], ['no_medido', null], `${nombre}: la fila dice «no medido», nunca 0`);
+    assert.match(fila.motivo, /lo que informan las máquinas no se pudo leer/);
+  }
+});
+
+// Revisores de la vuelta 2: la deducción por pedidos asignados también llega por el sitio (el modelo trae `asignado` y `proyecto`)
+test('2.28-R3 DondeTrabaja_PorPedidosAsignados', () => {
+  const config = opsBase({ people: { machines: { 'maq-a-11111111': { person: A, reported_sha256: sha(A) } } } });
+  const modelo = {
+    corridas: { estado: 'medido', fecha: '2026-10-15', lista: [] },
+    pedidos: { estado: 'medido', fecha: '2026-10-15', lista: [{ id: 1, proyecto: 'Gama', tipo: 'Bug', estado: 'Active', asignado: A.toUpperCase(), dias: 1 }, { id: 2, proyecto: 'Beta', tipo: 'Bug', estado: 'Active', asignado: B, dias: 1 }] },
+    productos: [{ producto: 'Beta', proyectos: ['Beta'], rutas: [] }, { producto: 'Gama', proyectos: ['Gama'], rutas: [] }],
+  };
+  const personas = { informados: H.informados({ 'maq-a-11111111': A }), repos: [{ producto: 'Beta', ruta: 'Beta/Front', ado: 'Beta/Front' }, { producto: 'Gama', ruta: 'Gama/Front', ado: 'Gama/Front' }] };
+  const reglas = access.crearReglas({ config, modelo, personas });
+  assert.deepStrictEqual(reglas.proyectosDe(A), ['Gama'], 'el pedido asignado a A (en mayúsculas) ubica Gama; el de B no cuenta');
+});
+
+// Revisores de la vuelta 2: el ayudante de las pruebas tiene la misma forma que el lector real
+test('2.28-R4 Ayudante_InformadosConLaFormaDelLector', () => {
+  const fs = require('fs'); const os = require('os');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'site-r4-'));
+  try {
+    fs.mkdirSync(path.join(dir, 'maq-a-11111111', 'registros'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'maq-a-11111111', 'x.json'), '{}');
+    fs.writeFileSync(path.join(dir, 'maq-a-11111111', 'registros', 'place.json'), JSON.stringify({ day: '2026-10-15', owner: { email: A } }));
+    fs.mkdirSync(path.join(dir, 'maq-b-22222222', 'registros'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'maq-b-22222222', 'x.json'), '{}');
+    fs.writeFileSync(path.join(dir, 'maq-b-22222222', 'registros', 'place.json'), JSON.stringify({ day: '2026-10-15', owner: { reason: 'no informa correo' } }));
+    const real = people.leerCorreosInformados(dir);
+    const ayudante = H.informados({ 'maq-a-11111111': A, 'maq-b-22222222': null });
+    assert.deepStrictEqual(Object.keys(ayudante).sort(), Object.keys(real).filter((k) => k !== 'no_medido').sort());
+    assert.deepStrictEqual(ayudante.maquinas['maq-a-11111111'], real.maquinas['maq-a-11111111']);
+    assert.deepStrictEqual(ayudante.maquinas['maq-b-22222222'], real.maquinas['maq-b-22222222']);
+    assert.deepStrictEqual(Object.keys(ayudante.uniones).sort(), Object.keys(real.uniones).sort());
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('T44 2.28-Config_BandaSoloMantenedores_YFrenoA24h', async () => {
+  const config = opsBase({ people: { machines: { 'maq-a-11111111': { person: A, reported_sha256: sha(A), confirmed_by: LEAD, confirmed_on: '2026-10-15' } } } });
+  const personas = { informados: H.informados({ 'maq-a-11111111': A }), repos: null };
+  const modelo = { corridas: { estado: 'medido', fecha: '2026-10-15', lista: [{ maquina: 'maq-a-11111111', inicio: new Date(haceHoras(1)).toISOString() }] } };
+  const fuentes = H.fuentesFijas({ config, modelo, personas });
+  const falla = haceHoras(2);
+  const rutasDelProblema = 'problemas en people.machines.maq-a-11111111';
+  const fijar = (ahora, fallaDesde = falla) => Object.assign(fuentes.st, sources.estadoDelSitio({ hayUltimoBueno: true, fallaDesde, fallaRutas: rutasDelProblema, ahora }));
+  await conSitio(fuentes, async ({ h, entrar }) => {
+    const sL = await entrar(LEAD); const sA = await entrar(A);
+    // a las 2 horas: vale el último bueno; la banda, sólo para quien mantiene, con la hora y las rutas
+    fijar(Date.now());
+    const iniL = await h.pedir('/', { cookie: sL });
+    assert.ok(iniL.texto.includes(`la configuración de la organización no se pudo releer desde ${views.hora(falla)}: ${rutasDelProblema}`), 'la banda de quien mantiene');
+    const iniA = await h.pedir('/', { cookie: sA });
+    assert.doesNotMatch(iniA.texto, /no se pudo releer|people\.machines/, 'la persona no ve la banda');
+    assert.match(iniA.texto, /1 corridas en 7 días/, 'y sigue viendo lo suyo');
+    assert.strictEqual((await h.pedir('/healthz')).status, 200);
+    // a las 25 horas: nadie recibe datos, quien mantiene incluido; /healthz en falso con la hora del primer fallo
+    fijar(falla + 25 * 3600000);
+    for (const s of [sL, sA]) {
+      const r = await h.pedir('/', { cookie: s });
+      assert.strictEqual(r.status, 503);
+      assert.ok(r.texto.includes(`el sitio está frenado desde ${views.hora(falla + 24 * 3600000)}`));
+      assert.doesNotMatch(r.texto, /corridas en 7 días|people\.machines|Máquinas sin confirmar/);
+    }
+    const hz = await h.pedir('/healthz');
+    assert.deepStrictEqual([hz.status, hz.json], [503, { ok: false, motivo: `la configuración de la organización no valida desde ${views.hora(falla)}` }]);
+    // un refresco bueno: todo de vuelta, sin banda
+    fijar(Date.now(), null);
+    const otraVez = await h.pedir('/', { cookie: sL });
+    assert.strictEqual(otraVez.status, 200);
+    assert.doesNotMatch(otraVez.texto, /no se pudo releer/);
+    assert.match((await h.pedir('/', { cookie: sA })).texto, /1 corridas en 7 días/);
+    assert.strictEqual((await h.pedir('/healthz')).status, 200);
+  });
 });

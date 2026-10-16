@@ -6,6 +6,8 @@
  * T2  Arranque_RegistroSinSecretos                 T33 PrimerMantenedor_SoloSinLista
  * T6  Imagen_DockerfileSinPrivilegiosNiPruebas     T39 Nucleo_SinNube
  * T7  Codigo_SinValoresDeUnaOrganizacion           T42 Vida_NoDependeDelFreno
+ *
+ * Y de la story 2.28: T29 2.28-Healthz_FrenadoSinUltimoBueno.
  */
 const test = require('node:test');
 const assert = require('node:assert');
@@ -208,5 +210,42 @@ test('T42 Vida_NoDependeDelFreno', async () => {
       if (caso === 'frenado') assert.match(hz.json.motivo, /^la configuración de la organización no valida desde /);
       assert.strictEqual((await h.pedir('/readyz')).status, esperado.readyz, `${caso}: /readyz`);
     } finally { await h.cerrar(); }
+  }
+});
+
+// story 2.28 (AC 10): el sitio que arranca con operations.json roto y sin último bueno se frena enseguida, para todos
+test('T29 2.28-Healthz_FrenadoSinUltimoBueno', { skip: !hayHttpBackend() && !process.env.CI && 'git http-backend no está en esta máquina (en CI no se saltea)' }, async () => {
+  const sources = require(path.join(SITE, 'sources.js'));
+  const LEAD = 'lead@acme.example';
+  // roto en `people`: una máquina sin forma de carpeta y sin `person`
+  const roto = { version: 1, owners: { default: LEAD }, site: { maintainers: [LEAD] }, people: { machines: { 'MAQ ROTA': { confirmed_by: LEAD } } } };
+  for (const primero of [null, 'first@acme.example']) {
+    const raiz = fs.mkdtempSync(path.join(os.tmpdir(), 'site-t29-'));
+    const token = `tok-${require('crypto').randomBytes(6).toString('hex')}`;
+    repoConArchivos(raiz, 'ops.git', H.archivosDeOperaciones({ config: roto }), path.join(raiz, 'trabajo'));
+    const git = await arrancarRepoHttp({ raiz, cabecera: `Basic ${Buffer.from(`x-access-token:${token}`).toString('base64')}` });
+    const emisor = await arrancarEmisor();
+    const env = H.envBase({ SITE_OIDC_ISSUER: emisor.issuer, SITE_OPERATIONS_REPO: git.url('ops.git'), SITE_OPERATIONS_TOKEN: token, ...(primero ? { SITE_FIRST_MAINTAINER: primero } : {}) });
+    const registro = [];
+    const fuentes = sources.crearFuentes({ cfg: validarConfiguracion(env).cfg, dataDir: path.join(raiz, 'data'), log: (l) => registro.push(l) });
+    let h = null;
+    try {
+      await fuentes.refrescar();
+      const e = fuentes.estado();
+      assert.ok(e.frenado, `sin último bueno: freno inmediato (${primero || 'sin primer mantenedor'})`);
+      h = await H.arrancarSitio({ env, fuentes });
+      const hz = await h.pedir('/healthz');
+      assert.strictEqual(hz.status, 503);
+      assert.match(hz.json.motivo, /^la configuración de la organización no valida desde \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC$/, 'sólo desde cuándo: sin rutas ni nombres del archivo');
+      // la sesión de quien mantendría (el primer mantenedor, o el de la lista rota): ninguna ruta trae datos
+      const s = (await H.ingresar(h, emisor, { sub: 's', email: primero || LEAD, email_verified: true })).sesion;
+      for (const r of h.sitio.rutas) {
+        const res = await h.pedir(r.path, { cookie: s, method: r.method });
+        assert.strictEqual(res.status, 503, `${r.path} frenada`);
+        assert.doesNotMatch(res.texto, /MAQ ROTA|people\.machines|operations\.json|Producto X/, `${r.path}: sin datos, rutas ni nombres del archivo`);
+      }
+      assert.match((await h.pedir('/', { cookie: s })).texto, /el sitio está frenado desde .*: la configuración de la organización no valida; se destraba cuando un refresco la lee bien/);
+      assert.match(registro.join('\n'), /people\.machines/, 'el registro del servidor trae la ruta de cada problema');
+    } finally { if (h) await h.cerrar(); fuentes.detener(); await git.cerrar(); await emisor.cerrar(); fs.rmSync(raiz, { recursive: true, force: true }); }
   }
 });
