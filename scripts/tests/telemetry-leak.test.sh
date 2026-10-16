@@ -237,6 +237,11 @@ RC_P=$?
 if grep -E '/lane(/|$)|/timing-history(/|$)|safety-guard\.log|/response-style(/|$)' "${BASE}/prep.espia" >/dev/null 2>&1; then
   mal "la preparación de la subida abrió algo más que los dos registros: $(grep -E '/lane|/timing-history|safety-guard|/response-style' "${BASE}/prep.espia" | head -2 | tr '\n' ' ')"
 else ok "la preparación de la subida sólo lee los cuatro registros (ni lane/, ni timing-history/, ni safety-guard.log)"; fi
+# story 2.28 (T20): el place.json de la máquina A en el espejo trae el correo de git de su dev (un marcador). Lo leen
+# sólo quienes mantienen; la página del equipo no. Y una carpeta vieja unida, para que el reductor y la poda lean la unión.
+M_OWNER="ZQX-FUGA-CORREO@ejemplo.test"
+printf '{"schema":1,"day":"2026-10-15","owner":{"email":"%s","source":"git-global"},"folder":{"name":"%s","source":"TYCON_MACHINE"}}\n' "${M_OWNER}" "${NOMBRE_A}" > "${BASE}/buzon/${NOMBRE_A}/registros/place.json"
+printf '{"schema":1,"carpetas":{},"regeneradas":{}}\n' > "${BASE}/buzon/.carpetas-de-maquina.json"
 
 # ── máquina B: el reductor cuenta sus registros locales y los bajados ──────────────────────────────
 HOME="${HOME_B}" TYCON_MACHINE="maquina-b-9931" TYCON_MAILBOX_DIR="${BASE}/buzon" SPY_LOG="${BASE}/b.espia" NODE_OPTIONS="--require ${BASE}/espia.js" \
@@ -390,6 +395,19 @@ else
   fi
 fi
 
+# ── story 2.28 · T20 · ElCorreoDePlaceNoLlegaALaPaginaDelEquipo (AC 18) ── 🔴 rojo previo: un reductor que lo lee.
+FUGA=0
+for f in ${SALIDAS}; do
+  if grep -qiF -- "${M_OWNER}" "${f}" 2>/dev/null; then mal "2.28-T20 el correo de place.json aparece en ${f#${BASE}/}"; FUGA=1; fi
+done
+[ "${FUGA}" -eq 0 ] && ok "2.28-T20 el correo de git de place.json no llega a la página del equipo ni a la salida del reductor"
+if grep -F 'place.json' "${BASE}/b.espia" "${BASE}/t.espia" > /dev/null 2>&1; then
+  mal "2.28-T20 el reductor o la poda abrieron place.json: $(grep -hF 'place.json' "${BASE}/b.espia" "${BASE}/t.espia" | head -2 | tr '\n' ' ')"
+else ok "2.28-T20 ni el reductor ni la poda (ni el tablero) abren place.json"; fi
+# control positivo: el marcador está en el espejo, y quien lo lee a propósito (people.js) lo ve — la prueba no es vacía
+node -e 'const r = require(process.argv[1]).leerCorreosInformados(process.argv[2]); process.exit(Object.values(r.maquinas).some((m) => m.correo === process.argv[3].toLowerCase()) ? 0 : 1)' \
+  "${RAIZ}/scripts/lib/people.js" "${BASE}/buzon" "${M_OWNER}" \
+  && ok "2.28-T20 control positivo: el correo está en el espejo y people.js lo lee" || mal "2.28-T20 el marcador no llegó al espejo: la prueba sería vacía"
 # ── story 2.21 · T20 · Fuga_VolcadosYDuracionDelBuzon @story-2.21 @ac-14 ─────────────────────────────────────────
 # El nocturno ahora lee del buzón los VOLCADOS de las corridas (duración, agentes, vueltas, trabajo y espera) y la
 # duración de la suite de las líneas `tests` de gates.log. Un volcado trae la story, la ruta del repo y comandos; una

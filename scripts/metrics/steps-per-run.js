@@ -86,7 +86,8 @@ function caminar(dir, out, malas, vistas = new Set()) {
       try { const st = fs.statSync(p); esCarpeta = st.isDirectory(); esArchivo = st.isFile(); }
       catch (err) { malas.push({ dir: p, codigo: String((err && err.code) || 'ilegible') }); continue; }
     }
-    if (esCarpeta) caminar(p, out, malas, vistas);
+    // story 2.28: `<maquina>/registros/` nunca trae volcados, y su place.json trae el correo de git de la persona: no se abre
+    if (esCarpeta) { if (it.name !== 'registros') caminar(p, out, malas, vistas); }
     else if (esArchivo && it.name.endsWith('.json')) out.push(p);
   }
   return out;
@@ -116,16 +117,24 @@ function medir(opts) {
   const malas = [];
   let sinMedir = 0;
   let ilegibles = 0;
+  // story 2.28 (decisión 12): una máquina vuelve a subir lo de su disco a su carpeta nueva `<nombre>-<código>`, así que la
+  // misma corrida puede estar en la carpeta vieja y en la nueva: cuenta UNA vez (la sesión; sin sesión, el archivo y su fecha).
+  // Entre una copia sin medir y una medida de la misma corrida, vale la medida (segunda vuelta de fallos silenciosos).
+  const vistas = new Map();   // clave → 'medida' | 'sin'
   for (const f of caminar(buzon, [], malas)) {
     let d = null;
     try { d = JSON.parse(fs.readFileSync(f, 'utf8')); } catch (_e) { ilegibles++; continue; }
     if (!d || typeof d !== 'object' || !d.marker) continue;
+    const clave = typeof d.marker.sessionId === 'string' && d.marker.sessionId ? `s:${d.marker.sessionId}` : `a:${path.basename(f)}|${d.archivedAt || ''}`;
+    if (vistas.get(clave) === 'medida') continue;
     const m = d.marker, c = d.consumo || {};
     // «Medida» es un ENTERO POSITIVO, el mismo criterio que el cliente de runs.js (`pasosMedidos`). Hasta la
     // 7.12 era `if (!pasos)`, que deja pasar un negativo (en JS es «verdadero»), un texto o un decimal: un volcado
     // con un valor absurdo entraba a la mediana y a la línea base como si fuera un dato (pase adversarial).
     const pasos = c.estado === 'medido' && Number.isInteger(c.respuestas) && c.respuestas > 0 ? c.respuestas : null;
-    if (pasos === null) { sinMedir++; continue; }
+    if (pasos === null) { if (!vistas.has(clave)) { vistas.set(clave, 'sin'); sinMedir++; } continue; }
+    if (vistas.get(clave) === 'sin') sinMedir--;
+    vistas.set(clave, 'medida');
     const t = c.tokens || {};
     const tokens = (t.in || 0) + (t.out || 0) + (t.cache_new || 0) + (t.cache_read || 0);
     filas.push({

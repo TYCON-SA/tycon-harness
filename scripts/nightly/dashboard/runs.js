@@ -117,6 +117,22 @@ catch (e) { motivoSinSubida = `scripts/metrics/upload-runs.js no se pudo cargar 
 // definición que usa la subida (si el módulo no está, la copia de respaldo es idéntica).
 const FORMA_MAQUINA = (subida && subida.FORMA_MAQUINA) || /^[a-z0-9][a-z0-9._-]*$/;
 
+// Las uniones de carpetas (story 2.28): cada máquina sube a `<nombre>-<código>`, y el bajador declara qué carpeta vieja
+// es la historia de cuál nueva en `.carpetas-de-maquina.json`. Lo lee UNA función, la del reductor (la misma que usan
+// el reductor y la poda). Si no carga (este archivo viaja suelto), no se une nada y se dice, como sin el archivo.
+function leerUniones(buzon) {
+  let leer;
+  try { leer = require('./reducer.js').leerUnionesDeCarpetas; }
+  catch (e) { return { estado: 'no_medidas', motivo: `el lector de uniones no se pudo cargar (${e.code || 'error'})` }; }
+  return leer(buzon);
+}
+/** La marca visible de una carpeta vieja: la que se une a su nueva y las que no se unen. */
+function notaDeCarpeta(vieja, u) {
+  if (u.estado === 'unida') return `antes, ${vieja}`;
+  if (u.estado === 'compartida') return `compartida por ${u.declarantes} máquinas: no se une`;
+  return 'siguió recibiendo después de la mudanza';
+}
+
 // El nombre técnico de cada control no le dice nada a quien no lo escribió. Vive UNA vez, acá, y
 // viaja en el modelo: si estuviera en el generador y en el cliente se separarían solos. Un control
 // que no está en la lista sale con su nombre técnico — nunca se descarta.
@@ -697,6 +713,9 @@ function leerCambios(rutas, marker, nombresPasos, cambioDelVolcado) {
  * `maquina: null` y su motivo. 🔴 Cuando la misma sesión está en varias copias, gana la de
  * `archivedAt` mayor, pero la máquina es la de la primera copia que SÍ la declara: una copia suelta
  * más nueva no puede dejar «sin declarar» a una corrida atribuible (AC12).
+ * Story 2.28: la corrida de una carpeta vieja que `.carpetas-de-maquina.json` declara `unida` es de su carpeta nueva
+ * (`maquina_nota: «antes, <vieja>»`), y entre las dos copias de una sesión gana la de la nueva; una `compartida` o
+ * `siguio_recibiendo` queda en su carpeta, con su marca. Sin el archivo, nada se une y `buzon.uniones` lo dice.
  */
 function leerRegistro(dir, nombresPasos, opts = {}) {
   const out = { registro: { estado: 'medido', motivo: null, dir: null }, corridas: [], archivos: 0, duplicados: 0, ilegibles: 0, buzon: null };
@@ -716,6 +735,11 @@ function leerRegistro(dir, nombresPasos, opts = {}) {
     // 🔴 Ordenado: «la primera copia que declara la máquina» no puede depender del orden del disco.
     try { entradas = fs.readdirSync(opts.buzon, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)); }
     catch (e) { out.buzon = { estado: 'no_medido', motivo: `la carpeta bajada del buzón de corridas no se pudo leer (${e.code || 'ilegible'})`, carpetas_ilegibles: 0 }; }
+    // story 2.28: la corrida de una carpeta vieja `unida` es de su nueva («antes, <vieja>»); una `compartida` o
+    // `siguio_recibiendo` queda en su carpeta, marcada. Sin el archivo del bajador no se une nada, y se dice.
+    const uniones = out.buzon.estado === 'leido' ? leerUniones(opts.buzon) : null;
+    if (uniones) out.buzon.uniones = uniones.estado === 'medidas' ? { estado: 'medidas', motivo: null } : { estado: 'no_medidas', motivo: uniones.motivo };
+    const unionDe = (nombre) => (uniones && uniones.estado === 'medidas' ? uniones.carpetas.get(nombre) || null : null);
     for (const en of entradas) {
       if (en.name.startsWith('.')) continue;
       const ruta = path.join(opts.buzon, en.name);
@@ -733,9 +757,11 @@ function leerRegistro(dir, nombresPasos, opts = {}) {
         let archivos;
         try { archivos = fs.readdirSync(ruta).filter((x) => x.endsWith('.json')).sort(); }
         catch (e) { out.buzon.carpetas_ilegibles += 1; continue; }
+        const u = declarada ? unionDe(en.name) : null;
         for (const f of archivos) {
-          copias.push({ ruta: path.join(ruta, f), maquina: declarada ? en.name : null,
-            motivo: declarada ? null : `la carpeta «${en.name}» del buzón no tiene la forma de un nombre de máquina (minúsculas, sin espacios ni .local)` });
+          copias.push({ ruta: path.join(ruta, f), maquina: !declarada ? null : u && u.estado === 'unida' ? u.nueva : en.name,
+            motivo: declarada ? null : `la carpeta «${en.name}» del buzón no tiene la forma de un nombre de máquina (minúsculas, sin espacios ni .local)`,
+            deVieja: Boolean(u), nota: u ? notaDeCarpeta(en.name, u) : null });
         }
       }
     }
@@ -748,14 +774,23 @@ function leerRegistro(dir, nombresPasos, opts = {}) {
     const sid = d && d.marker && d.marker.sessionId;
     if (!sid || typeof sid !== 'string') { out.ilegibles += 1; continue; }
     const prev = porSesion.get(sid);
-    if (!prev) { porSesion.set(sid, { d, maquina: cp.maquina, motivo: cp.motivo, rutas: [cp.ruta] }); continue; }
+    if (!prev) { porSesion.set(sid, { d, maquina: cp.maquina, motivo: cp.motivo, rutas: [cp.ruta], deVieja: Boolean(cp.deVieja), nota: cp.nota || null }); continue; }
     out.duplicados += 1;
-    if (String(d.archivedAt || '') > String(prev.d.archivedAt || '')) { prev.d = d; prev.rutas.unshift(cp.ruta); } else prev.rutas.push(cp.ruta);
-    if (!prev.maquina && cp.maquina) { prev.maquina = cp.maquina; prev.motivo = null; }
+    // story 2.28 (decisión 12): entre la copia de una carpeta vieja —unida, compartida o que siguió recibiendo— y la de
+    // una carpeta nueva (o la local), gana la nueva, sea cual sea su fecha de archivo: la máquina volvió a subir ahí lo de
+    // su disco. Con una vieja compartida la sesión es de la carpeta nueva que la re-subió, no de la vieja (pase adversarial).
+    const misma = cp.maquina && cp.maquina === prev.maquina;
+    if (prev.deVieja && !cp.deVieja) {
+      prev.d = d; prev.rutas.unshift(cp.ruta); prev.deVieja = false;
+      if (!misma) { prev.maquina = cp.maquina; prev.motivo = cp.motivo; prev.nota = cp.nota || null; }
+    } else if (!prev.deVieja && cp.deVieja) prev.rutas.push(cp.ruta);
+    else if (String(d.archivedAt || '') > String(prev.d.archivedAt || '')) { prev.d = d; prev.rutas.unshift(cp.ruta); } else prev.rutas.push(cp.ruta);
+    if (!prev.maquina && cp.maquina) { prev.maquina = cp.maquina; prev.motivo = null; prev.nota = cp.nota || null; }
+    else if (misma && cp.deVieja && !prev.nota) prev.nota = cp.nota;   // la sesión también estaba en la vieja: «antes, …»
   }
-  for (const { d, maquina, motivo, rutas } of porSesion.values()) {
+  for (const { d, maquina, motivo, rutas, nota } of porSesion.values()) {
     const c = modeloDeCorrida(d, nombresPasos);
-    if (multi) { c.maquina = maquina; c.maquina_motivo = maquina ? null : motivo; }
+    if (multi) { c.maquina = maquina; c.maquina_motivo = maquina ? null : motivo; c.maquina_nota = maquina ? nota : null; }
     c.cambios = leerCambios(rutas, d.marker, nombresPasos, d.cambio);
     aplicarEsperasDelHilo(c, d.marker);
     c.descripcion = descripcionDe(d.marker, c.cambios);
@@ -915,7 +950,7 @@ function render(M) {
     return `<tr data-i="${idx}" id="c-${idx}">
       <td class="fecha">${esc((c.inicio || '').slice(0, 10) || 'sin fecha')}<small>${esc(c.semana || '')}</small></td>
       <td class="story"><b>${esc(c.story || '—')}</b>${c.descripcion ? `<span class="desc" title="${esc(c.descripcion.texto)}">${esc(c.descripcion.texto)}</span>` : ''}<small>${esc(c.producto || 'producto sin registrar')}</small></td>${M.multi ? `
-      <td class="maq-td">${c.maquina ? `<span class="maq">${esc(c.maquina)}</span>` : `<span class="nd" title="${esc(c.maquina_motivo || '')}">sin declarar</span>`}</td>` : ''}
+      <td class="maq-td">${c.maquina ? `<span class="maq">${esc(c.maquina)}</span>${c.maquina_nota ? `<small>${esc(c.maquina_nota)}</small>` : ''}` : `<span class="nd" title="${esc(c.maquina_motivo || '')}">sin declarar</span>`}</td>` : ''}
       <td class="barra">${barraTramos(c, escala)}</td>
       <td class="dur">${dur(c.dur_ms)}</td>
       <td class="dur tr">${colTrabajo(c)}</td>
@@ -936,6 +971,10 @@ function render(M) {
   const bandaBuzon = !M.multi || !M.buzon ? ''
     : M.buzon.estado !== 'leido' ? `<div class="banda gris"><b>No se leyó la carpeta bajada del buzón.</b> ${esc(M.buzon.motivo)} — las corridas de otras máquinas faltan, no son cero.</div>`
     : M.buzon.carpetas_ilegibles ? `<div class="banda gris"><b>${M.buzon.carpetas_ilegibles} carpeta${M.buzon.carpetas_ilegibles === 1 ? '' : 's'} de máquina del buzón no se pudo leer.</b> Sus corridas no están en esta página ni en ningún número: faltan, no son cero.</div>`
+    : '';
+  // story 2.28: sin el archivo de uniones del bajador, la carpeta vieja de una máquina que se mudó sale como otra máquina
+  const bandaUniones = M.multi && M.buzon && M.buzon.uniones && M.buzon.uniones.estado === 'no_medidas'
+    ? `<div class="banda gris"><b>Carpetas de máquina:</b> uniones de carpetas no medidas (${esc(M.buzon.uniones.motivo)}). Cada carpeta del buzón sale como una máquina aparte, también la vieja de una máquina que se mudó a su carpeta con código.</div>`
     : '';
   // Con corridas del buzón, que esta máquina no tenga registro propio no deja las fichas sin medir: salen sólo
   // con lo bajado. Decir «salen con trama» ahí era una alarma falsa al lado de números (pase adversarial de la 2.16).
@@ -965,7 +1004,7 @@ ${CSS_CHIPS}
   <h1>Las corridas del pipeline</h1>
   <p class="lede">Una fila por corrida: <b>en qué paso se fue el tiempo</b>, qué control encontró un error o frenó, cuántas vueltas dio y cuánto consumió. Los números salen del resumen que el archivador deja por corrida, y lo que no está registrado se dice, no se rellena. <b>De la conversación sólo se toman los archivos que tocó y sus cambios</b>, en el detalle de cada corrida.</p>
   <div class="stamp"><span><b>Corridas:</b> ${N} de ${M.archivos} archivos · ${M.duplicados} duplicado${M.duplicados === 1 ? '' : 's'} · ${M.ilegibles} no se pudieron leer</span><span><b>Con consumo medido:</b> ${conConsumo} de ${N}</span><span><b>Con controles:</b> ${conControles} de ${N}</span><span><b>Llegaron al paso 8:</b> ${alFinal} de ${N}</span><span><b>Generado:</b> ${esc(M.generado.slice(0, 16).replace('T', ' '))} UTC · commit ${esc(commit)}</span><span><b>Alcance:</b> ${esc(alcance)}</span></div>
-  ${bandaBuzon}${bandaRegistro}${bandaPasos}${bandaRescate}${bandaTiempos}${bandaUmbrales}
+  ${bandaBuzon}${bandaUniones}${bandaRegistro}${bandaPasos}${bandaRescate}${bandaTiempos}${bandaUmbrales}
 </header>
 
 <section id="ejecutiva">
@@ -1616,7 +1655,7 @@ const CLIENTE = String.raw`(function () {
     var tl = timeline(c);
     return '<div class="det">'
       + '<div class="det-head"><div><b>Story ' + esc(c.story || '—') + '</b> <span class="mono">' + esc(c.producto || 'producto sin registrar') + '</span>'
-      + (M.multi ? ' <span class="mono">· ' + (c.maquina ? esc(c.maquina) : 'máquina sin declarar: ' + esc(c.maquina_motivo || '')) + '</span>' : '')
+      + (M.multi ? ' <span class="mono">· ' + (c.maquina ? esc(c.maquina) + (c.maquina_nota ? ' (' + esc(c.maquina_nota) + ')' : '') : 'máquina sin declarar: ' + esc(c.maquina_motivo || '')) + '</span>' : '')
       + (c.descripcion ? '<div class="det-desc">' + esc(c.descripcion.texto) + ' <span class="nd">— ' + esc(c.descripcion.fuente) + '</span></div>' : '<div class="det-desc nd">sin descripción: la corrida no guardó su conversación ni el archivo de su story</div>')
       + '<div class="mono sub">' + esc((c.inicio || '').slice(0, 16).replace('T', ' ')) + ' UTC · ' + (c.dur_ms ? dt(c.dur_ms / 60000) : 'sin duración registrada') + '</div></div>'
       + '<div class="det-chips">' + chips + '<button class="cerrar">cerrar ✕</button></div></div>'
@@ -2040,6 +2079,7 @@ function main(opts = {}) {
     log(`  máquinas: ${M.maquinas.lista.map((x) => `${x.nombre} ${x.corridas}`).join(' · ') || 'ninguna'}${M.maquinas.sin_declarar ? ` · sin declarar ${M.maquinas.sin_declarar}` : ''} (esta máquina: ${maquina || 'sin nombre'})`);
     if (M.buzon && M.buzon.estado !== 'leido') log(`  buzón NO LEÍDO: ${M.buzon.motivo}`);
     if (M.buzon && M.buzon.carpetas_ilegibles) log(`  ${M.buzon.carpetas_ilegibles} carpeta(s) del buzón no se pudieron leer`);
+    if (M.buzon && M.buzon.uniones && M.buzon.uniones.estado === 'no_medidas') log(`  uniones de carpetas no medidas: ${M.buzon.uniones.motivo}`);
   }
   if (opts.json) console.log(JSON.stringify(M, (k, v) => (k === '_texto' || k === '_textoGit' ? undefined : v), 2));
   if (opts.dryRun) { log('\n--dry-run: no se escribió nada.'); return 0; }
