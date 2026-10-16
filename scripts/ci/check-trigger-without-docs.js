@@ -58,7 +58,8 @@
  *     (`trigger: none`). No está en product-parity.json; con --file da 2 (no tiene qué medir), y
  *     trigger-without-docs.test.sh lo deja fijado.
  *
- * Los repos salen de `product-parity.json` (la única lista de qué pipelines son "los productos");
+ * Los repos salen de `product-parity.json` (la única lista de qué pipelines son "los productos"; sin --config, la de la
+ * organización en su repo de operaciones, como en check-product-parity.js);
  * un grupo cuyo archivo lleva `trigger: none` (producción) cuenta como "no aplica", no como medido.
  *
  * Uso:  node check-trigger-without-docs.js [--root <dir>] [--config <product-parity.json>] [--json]
@@ -71,7 +72,7 @@ const fs = require('fs');
 const path = require('path');
 const cp = require('child_process');
 const os = require('os');
-const { bloqueRaiz, normalizarGrupo } = require('./check-product-parity.js');
+const { bloqueRaiz, normalizarGrupo, configPorDefecto } = require('./check-product-parity.js');
 // Las opciones renombradas a inglés (story 8.9, tanda B3a): el nombre viejo sigue andando hasta el retiro. El traductor
 // vive al lado y viaja con este archivo en el artefacto arnes-ci.
 const { aliasLegacyOptions, LegacyOptionsError } = (() => {
@@ -129,10 +130,10 @@ const EXCLUDE_SUGERIDO = ['README.md', 'CLAUDE.md', 'AGENTS.md', '.engram-projec
   'tasks', '.advisors', '.engram', '.tycon', '.claude', '.vscode'];
 
 function args(argv) {
-  const o = { raiz: null, config: path.join(__dirname, 'product-parity.json'), archivos: [], json: false };
+  const o = { raiz: null, config: null, configDada: false, archivos: [], json: false };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--root') o.raiz = argv[++i];
-    else if (argv[i] === '--config') o.config = argv[++i];
+    else if (argv[i] === '--config') { o.configDada = true; o.config = argv[++i]; }
     else if (argv[i] === '--file') o.archivos.push(argv[++i]);
     else if (argv[i] === '--json') o.json = true;
   }
@@ -358,6 +359,12 @@ function main(argv0) {
     }
   } else {
     let cfg;
+    // sin --config, la lista de la organización (check-product-parity.js, configPorDefecto: su repo de operaciones)
+    if (!o.configDada) {
+      const d = configPorDefecto();
+      if (d.problema) { console.log(`🔴 sin la lista de productos: ${d.problema} — no se midió nada`); return 2; }
+      o.config = d.ruta;
+    }
     try { cfg = JSON.parse(fs.readFileSync(o.config, 'utf8')); }
     catch (e) { console.log(`🔴 no pude leer la configuración (${o.config}): ${e.message}`); return 2; }
     const sinProductos = sinProductosAProposito(cfg);

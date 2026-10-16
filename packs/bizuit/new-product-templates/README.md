@@ -146,8 +146,8 @@ plantillas; se cuentan sin sus nombres.
 `scripts/ci/check-product-parity.js` del arnés compara los pipelines de todos los productos de una
 organización y avisa cuando uno hace algo que los demás no hacen (o deja de hacer algo que los
 demás sí). La lista de productos y los rasgos que se comparan son datos de cada organización: van
-en su `product-parity.json`, que el arnés trae vacío a propósito (la forma está en la cabecera del
-control). Un producto dado de alta con estas plantillas coincide con los demás que salieron de
+en `scripts/ci/product-parity.json` de su repo de operaciones; el arnés trae uno vacío a propósito
+(la forma está en la cabecera del control). Un producto dado de alta con estas plantillas coincide con los demás que salieron de
 ellas; inscribirlo es el paso del alta que más se olvida y el que más vale.
 
 ## Antes de pegarlas, leerlas
