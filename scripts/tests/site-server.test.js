@@ -102,6 +102,13 @@ test('T6 Imagen_DockerfileSinPrivilegiosNiPruebas', () => {
   assert.match(df, /CMD\s+\["node",\s*"scripts\/site\/server\.js"\]/, 'la misma orden que con Node solo');
   for (const p of ['scripts/tests', '.git', '**/*.pem', '**/*.key', '**/.env']) assert.ok(ign.split('\n').map((l) => l.trim()).includes(p), `${p} fuera de la imagen`);
   assert.doesNotMatch(df, /ARG\s+\S*(TOKEN|SECRET|KEY|SAS)|ENV\s+\S*(TOKEN|SECRET|SAS)/i, 'ningún secreto en la imagen');
+  // /data nace del usuario del sitio ANTES de pasar a él, y es un VOLUME: un volumen con nombre nuevo hereda ese dueño
+  // (2026-10-16: con `-v sitio-datos:/data` el volumen nacía de root y el sitio no podía clonar ni guardar: se frenaba)
+  const iUser = df.search(/^USER\s+node\b/m);
+  const iData = df.search(/^RUN\s+mkdir -p \/data && chown node:node \/data\b/m);
+  assert.ok(iData >= 0 && iData < iUser, '/data con dueño node, antes del USER');
+  assert.match(df, /^VOLUME\s+\/data\b/m, 'VOLUME /data');
+  assert.match(df, /-v sitio-datos:\/data -e SITE_DATA_DIR=\/data/, 'la cabecera dice cómo montarlo');
 });
 
 /**

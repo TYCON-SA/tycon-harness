@@ -13,7 +13,7 @@
 # 2.27). Ningún secreto en la imagen: llegan como variables de entorno desde el almacén de cada plataforma (2.30).
 # La misma orden arranca el sitio con Node solo, sin Docker: node scripts/site/server.js
 #
-# 🔴 Poné SITE_DATA_DIR en un VOLUMEN (por ejemplo `-v sitio-datos:/datos -e SITE_DATA_DIR=/datos`): ahí quedan el espejo
+# 🔴 Poné SITE_DATA_DIR en un VOLUMEN: `docker run -v sitio-datos:/data -e SITE_DATA_DIR=/data …`. Ahí quedan el espejo
 # del buzón, el clon de operaciones y el último bueno de la configuración. Sin volumen, cada reinicio vuelve a bajar
 # el buzón entero, y la pestaña Corridas dice «no medido» hasta que termina.
 FROM node:24.11.0-alpine3.22
@@ -32,6 +32,11 @@ COPY skills/tycon-pipeline/scripts/lib/ skills/tycon-pipeline/scripts/lib/
 COPY skills/tycon-pipeline/steps/step-0*.md skills/tycon-pipeline/steps/
 
 ENV NODE_ENV=production PORT=8080 TYCON_SKILLS_DIR=/app/skills
+
+# /data es del usuario del sitio y es un VOLUME: un volumen con nombre nuevo montado ahí copia este dueño. Sin esto nacía
+# de root, y el sitio (que corre como node) no podía clonar ni guardar su estado: se frenaba.
+RUN mkdir -p /data && chown node:node /data
+VOLUME /data
 
 USER node
 EXPOSE 8080

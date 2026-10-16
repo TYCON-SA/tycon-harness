@@ -1446,6 +1446,14 @@
       "requiere": []
     },
     {
+      "__nota": "la imagen del sitio, armada de verdad: con un volumen con nombre NUEVO montado en /data (el comando de la guía), el usuario del sitio (node) crea la carpeta del clon y escribe su estado. Rojo previo (2026-10-16): el volumen nacía de root y el sitio se frenaba con Permission denied. Sin Docker se saltea y lo dice. Arma una imagen (~1-2 min).",
+      "raiz": "arnes",
+      "ruta": "tests/site-image.test.js",
+      "requiere": [
+        "docker"
+      ]
+    },
+    {
       "__nota": "story 2.29: la propuesta por rama y pedido desde el clon del sitio — una rama team-config/<id>-<sello> desde la punta de main, un commit con un solo archivo armado con los comandos de bajo nivel de git (el árbol de trabajo y el índice del clon quedan intactos: git status limpio y HEAD en main), la credencial sólo en una cabecera, el pedido por la API REST de Azure DevOps o de GitHub con «pedido por …»; nunca un empuje a main, un merge ni auto-completar; sin política de revisión en main, «Proponer» apagado; con un pedido abierto sobre el archivo, el enlace y nada nuevo; y una falla a mitad dicha en llano. Repo git local por HTTP y APIs falsas en el proceso; sin red.",
       "raiz": "arnes",
       "ruta": "tests/repo-proposal.test.js",
