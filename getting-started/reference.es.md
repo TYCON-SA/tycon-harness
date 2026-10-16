@@ -81,7 +81,15 @@ brew install node python
 
 ### 2. Bajar e instalar
 
-Abrí una terminal en cualquier carpeta y pegá las líneas de tu sistema, una por una: las de `bash` en Mac, Linux y WSL;
+La entrada principal es una sola línea, igual en Windows nativo, Mac, Linux y WSL. Revisa los requisitos, baja la versión publicada
+del arnés a una carpeta temporal y corre su `harness.js install`, que te muestra el plan y te pregunta si sigue. Las
+opciones de `install` van después del nombre: `npx @tyconsa/harness@latest <opciones>`.
+
+```bash
+npx @tyconsa/harness@latest
+```
+
+**A mano, sin npm.** Abrí una terminal en cualquier carpeta y pegá las líneas de tu sistema, una por una: las de `bash` en Mac, Linux y WSL;
 las de `powershell` en Windows nativo. La primera baja el guion de instalación de la dirección pública de archivos de
 GitHub (`raw.githubusercontent.com`), sin credencial y sin pasar por la API; la segunda lo muestra, para que leas lo
 que vas a correr; la tercera lo corre. El guion revisa los requisitos, baja la versión publicada como archivos (sin
@@ -161,6 +169,16 @@ para apuntarla. Qué cambia con esa clave está en «Qué escribe en tu máquina
 ### Otras formas de instalar (opcionales)
 
 **Sin nadie delante** (un contenedor, una tarea programada): la misma línea, con el perfil y `--yes`.
+
+```bash
+npx @tyconsa/harness@latest --profile minimal --yes
+```
+
+Ojo con dónde va el `--yes`. Escrito antes del nombre del paquete es de npm: acepta bajar el paquete sin preguntar, y
+no toca el plan. Escrito después del nombre, como arriba, es nuestro: acepta el plan de instalación sin que nadie lo
+vea. Sin terminal npm baja el paquete igual, así que el de npm no hace falta.
+
+A mano, sin npm:
 
 <!-- install:unattended -->
 ```bash

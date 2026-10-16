@@ -265,35 +265,57 @@ test('T35e PrivateHome_IsIndexedInItsCover_AndOutOfTheTeamLayer @story-8.26 @ac-
   assert.deepStrictEqual([destinationsOf(toy, 'z/w.md'), destinationsOf(toy, 'z/a/b/w.md')], [['maintainers'], ['maintainers']], 'control: `**/` vale por ninguna carpeta o por varias');
 });
 
-// ── story 8.40, tanda A (T32, con el cambio de la coordinadora del 2026-10-16) ──────────────────────────────────────
-// Hasta la primera publicación en npm, las portadas y las guías NO prometen npx: a lo sumo una nota «próximamente» en la
-// prosa, sin reemplazar la entrada de hoy (las tres líneas de bajar, leer y correr del bloque `install:core`). Lo que se
-// mide: ningún bloque de código ejecutable trae la línea npx; donde la línea aparece, lleva `@latest` y está en una nota
-// de «próximamente»; y nunca `npx -y`/`npx --yes` ni la línea npx con `--yes` (el «sí» es el del plan, decisión 6).
+// ── story 8.40 (T32, el pedido del AC 15: el paquete ya está publicado) ─────────────────────────────────────────────
+// Las portadas abren con la línea npx como entrada principal (en un bloque de código, con `@latest`), y las tres líneas
+// de bajar, leer y correr el guion siguen como la entrada «a mano» (el bloque `install:core` de la referencia). El «sí»
+// es el del plan (decisión 6): `-y`/`--yes` —el de npm antes del nombre, o el nuestro después— sólo aparece bajo «Sin
+// nadie delante» / «With nobody at the keyboard»; en el resto de cada papel, nunca.
 const NPX_PAPERS = ['README.md', 'README.es.md', 'getting-started/mac.md', 'getting-started/windows.md', 'getting-started/linux.md', 'getting-started/reference.md', 'getting-started/reference.es.md'];
+const NPX_MAIN = 'npx @tyconsa/harness@latest';
+/** El papel sin la sección «Sin nadie delante» (desde su título en negrita hasta el siguiente renglón que abre en negrita). */
+function outsideUnattended(text) {
+  return text.replace(/^\*\*(Sin nadie delante|With nobody at the keyboard)\*\*[\s\S]*?(?=^\*\*|(?![\s\S]))/m, '');
+}
 /** Los problemas de un papel con la línea npx (vacío = ninguno). */
 function npxProblems(text, file) {
   const out = [];
-  const fences = [...text.matchAll(/```[a-z]*\n([\s\S]*?)```/g)].map((m) => m[1]);
-  if (fences.some((f) => /\bnpx\b[^\n]*@tyconsa\/harness/.test(f))) out.push(`${file}: la línea npx está en un bloque de código (entrada ejecutable) antes de que exista el paquete`);
-  if (/\bnpx\s+(-y|--yes)\b/.test(text)) out.push(`${file}: escribe npx -y / npx --yes`);
+  const rest = outsideUnattended(text);
+  if (/\bnpx\s+(-y|--yes)\b/.test(rest)) out.push(`${file}: escribe npx -y / npx --yes fuera de «Sin nadie delante»`);
+  for (const line of rest.split('\n').filter((l) => /@tyconsa\/harness/.test(l))) {
+    if (/@tyconsa\/harness@latest[^\n`]*(\s-y\b|--yes)/.test(line)) out.push(`${file}: la línea npx con --yes fuera de «Sin nadie delante»: ${line.trim().slice(0, 120)}`);
+  }
   for (const line of text.split('\n').filter((l) => /@tyconsa\/harness/.test(l))) {
     if (!/@tyconsa\/harness@latest/.test(line)) out.push(`${file}: la línea npx sin @latest: ${line.trim().slice(0, 120)}`);
-    if (/@tyconsa\/harness@latest[^\n`]*--yes/.test(line)) out.push(`${file}: la línea npx con --yes: ${line.trim().slice(0, 120)}`);
-    if (!/próximamente|coming soon/i.test(line)) out.push(`${file}: la línea npx fuera de una nota de «próximamente»: ${line.trim().slice(0, 120)}`);
+    if (/próximamente|coming soon/i.test(line)) out.push(`${file}: la línea npx sigue como «próximamente»: ${line.trim().slice(0, 120)}`);
   }
   return out;
 }
-test('T32 Docs_NpxOnlyAsComingSoon_NoYes_CurrentEntryStays', () => {
+const fencesOf = (text) => [...text.matchAll(/```[a-z]*\n([\s\S]*?)```/g)].map((m) => ({ at: m.index, body: m[1].trim() }));
+test('T32 Docs_NpxIsMainEntry_YesOnlyUnattended_ScriptEntryStays', () => {
   for (const f of NPX_PAPERS) assert.deepStrictEqual(npxProblems(read(f), f), [], `${f}: la línea npx`);
-  for (const f of ['README.md', 'README.es.md']) assert.ok(/próximamente[^\n]*`npx @tyconsa\/harness@latest`|coming soon[^\n]*`npx @tyconsa\/harness@latest`/i.test(read(f)), `${f}: la nota de «próximamente» con la línea npx`);
-  for (const f of ['getting-started/reference.md', 'getting-started/reference.es.md']) assert.match(read(f), /<!-- install:core -->[\s\S]*get-harness\.sh[\s\S]*<!-- \/install:core -->/, `${f}: la entrada de hoy (install:core con get-harness.sh) sigue`);
+  // las portadas: la línea sola, en un bloque, antes de «Instalar con Claude Code»
+  for (const [f, guided] of [['README.md', '## Install with Claude Code'], ['README.es.md', '## Instalar con Claude Code']]) {
+    const text = read(f);
+    const main = fencesOf(text).find((x) => x.body === NPX_MAIN);
+    assert.ok(main, `${f}: la entrada principal es la línea npx, sola, en un bloque de código`);
+    assert.ok(text.indexOf(guided) > main.at, `${f}: la línea npx va antes del camino con Claude`);
+  }
+  // la referencia: npx primero; las tres líneas del guion siguen como «a mano»; «Sin nadie delante» suma la línea con --yes
+  for (const f of ['getting-started/reference.md', 'getting-started/reference.es.md']) {
+    const text = read(f);
+    assert.match(text, /<!-- install:core -->[\s\S]*get-harness\.sh[\s\S]*<!-- \/install:core -->/, `${f}: la entrada a mano (install:core con get-harness.sh) sigue`);
+    assert.match(text, /<!-- install:unattended -->[\s\S]*get-harness\.sh -- --profile minimal --yes[\s\S]*<!-- \/install:unattended -->/, `${f}: la entrada a mano sin nadie delante sigue`);
+    const main = fencesOf(text).find((x) => x.body === NPX_MAIN);
+    assert.ok(main && main.at < text.indexOf('<!-- install:core -->'), `${f}: la línea npx va antes de la entrada a mano`);
+    assert.ok(fencesOf(text).some((x) => x.body === `${NPX_MAIN} --profile minimal --yes`), `${f}: «Sin nadie delante» trae la línea npx con el perfil y --yes`);
+  }
   // el espejo: cada forma prohibida se detecta
-  assert.ok(npxProblems('```bash\nnpx @tyconsa/harness@latest\n```\n', 'x').length >= 1, 'control: la línea en un bloque de código');
-  assert.ok(npxProblems('Próximamente: `npx -y @tyconsa/harness@latest`\n', 'x').some((m) => m.includes('-y')), 'control: npx -y');
-  assert.ok(npxProblems('Próximamente: `npx @tyconsa/harness@latest --profile minimal --yes`\n', 'x').some((m) => m.includes('--yes')), 'control: la línea con --yes');
-  assert.ok(npxProblems('Instalá con `npx @tyconsa/harness@latest`\n', 'x').some((m) => m.includes('próximamente')), 'control: fuera de una nota');
-  assert.ok(npxProblems('Próximamente: `npx @tyconsa/harness`\n', 'x').some((m) => m.includes('@latest')), 'control: sin @latest');
+  const unattended = '**Sin nadie delante** x\n\n```bash\nnpx @tyconsa/harness@latest --profile minimal --yes\n```\n\n**Otra** y\n';
+  assert.deepStrictEqual(npxProblems(unattended, 'x'), [], 'control: con --yes bajo «Sin nadie delante» vale');
+  assert.ok(npxProblems(`${unattended}\`npx -y @tyconsa/harness@latest\`\n`, 'x').some((m) => m.includes('-y')), 'control: npx -y fuera de la sección');
+  assert.ok(npxProblems('```bash\nnpx @tyconsa/harness@latest --profile minimal --yes\n```\n', 'x').some((m) => m.includes('--yes')), 'control: la línea con --yes fuera de la sección');
+  assert.ok(npxProblems('Próximamente: `npx @tyconsa/harness@latest`\n', 'x').some((m) => m.includes('próximamente')), 'control: la nota vieja de «próximamente»');
+  assert.ok(npxProblems('`npx @tyconsa/harness`\n', 'x').some((m) => m.includes('@latest')), 'control: sin @latest');
 });
 
 // T20 · cada línea npx que escriben las portadas, la referencia y la página del paquete pasa el freno de comandos
