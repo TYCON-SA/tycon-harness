@@ -58,7 +58,17 @@ cat > "$TMP/casos/99-git-determinista.json" <<JSON
 JSON
 
 salida="$TMP/salida.txt"
-TYCON_BENCH_CASES_DIR="$TMP/casos" node "$TCG/scripts/controls-bench/runner.js" --tool claude --only "mudo.sh" > "$salida" 2>&1
+# El corredor escribe su registro (last-run-*.json) en el .bench/ de SU árbol, sin variable que lo mueva: corre desde
+# una copia del árbol (los archivos del repo, sin lo ignorado), así esta prueba no deja nada en el clon que comparten
+# las demás suites (portable-suites.test.sh lo controla).
+ARBOL="$TMP/arbol"; mkdir -p "$ARBOL"
+if git -C "$TCG" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  (cd "$TCG" && git ls-files -z --cached --others --exclude-standard | while IFS= read -r -d '' f; do [ -e "$f" ] && printf '%s\0' "$f"; done \
+    | tar --null -T - -cf -) | tar -xf - -C "$ARBOL"
+else
+  (cd "$TCG" && tar --exclude=./.git -cf - .) | tar -xf - -C "$ARBOL"
+fi
+TYCON_BENCH_CASES_DIR="$TMP/casos" node "$ARBOL/scripts/controls-bench/runner.js" --tool claude --only "mudo.sh" > "$salida" 2>&1
 rc=$?
 if [ "$rc" -eq 0 ]; then ok "C-1 el sandbox arma sus repos en 'main' aunque la máquina no lo declare"
 else mal "C-1 el caso salió rojo (rc=$rc) — el sandbox está heredando el git de la máquina"; sed -n '1,12p' "$salida"; fi

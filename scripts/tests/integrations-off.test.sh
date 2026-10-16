@@ -64,10 +64,12 @@ casa() { # <nombre> → crea una HOME temporal NUEVA con agent-skills enlazado e
   local c; c="$(mktemp -d "$T/$1.XXXXXX")" && mkdir -p "$c/.claude" && ln -sn "$SK_REPO" "$c/.claude/agent-skills" && echo "$c"
 }
 afuera() { # <casa> [VAR=val ...] -- <cmd...>   (exit code REAL, sin pipes sobre el comando medido)
+  # TYCON_THIRD_PARTY=0: la HOME enlaza agent-skills al clon, y el instalador bajaría ahí las skills de terceros
+  # TYCON_PARITY_BENCH_DIR: el chequeo de paridad que lanza de fondo dejaría su reporte en .bench/ del clon
   local c="$1"; shift
   local extra=(); while [ $# -gt 0 ] && [ "$1" != "--" ]; do extra+=("$1"); shift; done; shift
   env -i HOME="$c" PATH="$FAKEBIN:$PATH" TMPDIR="$T" LLAMADAS="$LLAMADAS" LANG="${LANG:-en_US.UTF-8}" \
-    TYCON_PROFILE=0 TYCON_MAILBOX_JSON="$T/no-hay-llave.json" "${LOCAL_OFF[@]}" ${extra[@]+"${extra[@]}"} "$@"
+    TYCON_PROFILE=0 TYCON_THIRD_PARTY=0 TYCON_PARITY_BENCH_DIR="$T/parity-bench" TYCON_MAILBOX_JSON="$T/no-hay-llave.json" "${LOCAL_OFF[@]}" ${extra[@]+"${extra[@]}"} "$@"
 }
 registrado() { grep -q "$2" "$1/.claude/settings.json" 2>/dev/null; }
 esperar_llamada() { # <patrón> <segundos>: espera a que aparezca en el registro (las tandas son de fondo)
