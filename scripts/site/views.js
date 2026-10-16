@@ -102,8 +102,9 @@ function filasInicioMantenedor(m, { ahora = Date.now(), enlaceOperaciones = null
   else if (!Number.isFinite(m.maquinasSinConfirmar)) filas.push(filaNoMedida('maquinas_sin_confirmar', 'Máquinas sin confirmar con corridas', 'no medido: lo que informan las máquinas no se pudo leer del buzón'));
   else filas.push(filaMedida('maquinas_sin_confirmar', 'Máquinas sin confirmar con corridas', m.maquinasSinConfirmar, { fecha: m.corridas.fecha }));
   filas.push(filaNoMedida('retrospectivas', 'Retrospectivas pendientes', 'no medido: sólo existen en la máquina de quien mergeó'));
-  // dónde se decide cada cosa (AC 17): lo de las colas y lo declarado, en el repo de operaciones; lo del arnés, en Arnés
-  const DONDE = { dependencias_nuevas: 'ops', dependencias_aceptadas_sin_resolver: 'ops', dependencias_rechazadas_sin_deuda: 'ops', vigilante_pendientes: 'ops', vigilante_aceptadas_sin_story: 'ops', pedidos_cerrados_con_vivas: 'ops', declarados_por_vencer: 'ops', suites_rojas_nuevas: '/arnes', banco_rojos_nuevos: '/arnes' };
+  // dónde se decide cada cosa (AC 17): lo de las colas y lo declarado, en el repo de operaciones; lo del arnés, en Arnés;
+  // los PR, en su lista de abajo, cada uno con su enlace (pueden estar en varios repos y proyectos)
+  const DONDE = { dependencias_nuevas: 'ops', dependencias_aceptadas_sin_resolver: 'ops', dependencias_rechazadas_sin_deuda: 'ops', vigilante_pendientes: 'ops', vigilante_aceptadas_sin_story: 'ops', prs_trabados: '#prs-trabados', pedidos_cerrados_con_vivas: 'ops', declarados_por_vencer: 'ops', suites_rojas_nuevas: '/arnes', banco_rojos_nuevos: '/arnes' };
   for (const f of filas) {
     const d = DONDE[f.clave];
     f.enlace = d === 'ops' ? enlaceOperaciones || null : (d || null);
@@ -241,13 +242,22 @@ function layout(ctx, titulo, cuerpo, lede = null) {
   return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(titulo)} · Sitio de la organización</title><link rel="stylesheet" href="/static/site.css"><script src="/static/site.js"></script></head><body><div class="shell"><aside class="side"><div class="brand"><div class="kicker">Arnés</div><div class="name">Sitio de la organización</div></div>${nav}<div class="side-foot"><span class="lab-tema">Tema</span>${TEMA}${sesion}</div></aside><main><header class="s-head"><div><h1>${esc(titulo)}</h1>${lede ? `<p>${esc(lede)}</p>` : ''}</div></header>${bandas}${cuerpo}</main></div></body></html>`;
 }
 
-function seccion(titulo, html, aparte = null) { return `<section class="q"><div class="q-head"><h2>${esc(titulo)}</h2>${aparte ? `<span class="aside">${esc(aparte)}</span>` : ''}</div>${html}</section>`; }
+function seccion(titulo, html, aparte = null, id = null) { return `<section class="q"${id ? ` id="${esc(id)}"` : ''}><div class="q-head"><h2>${esc(titulo)}</h2>${aparte ? `<span class="aside">${esc(aparte)}</span>` : ''}</div>${html}</section>`; }
+
+/** La lista de los PR abiertos hace más de 2 días (y los sin fecha), a donde lleva su ficha del Inicio de quien mantiene. */
+function prsTrabados(prs) {
+  const titulo = 'Pull requests abiertos hace más de 2 días';
+  if (!medida(prs)) return seccion(titulo, `<p class="q-note">${esc(conFecha(prs))}</p>`, null, 'prs-trabados');
+  const lista = (prs.lista || []).filter((p) => !Number.isFinite(p.dias) || p.dias > 2).sort((a, b) => (Number.isFinite(b.dias) ? b.dias : -1) - (Number.isFinite(a.dias) ? a.dias : -1));
+  const fila = (p) => `<li>${enlace(p.enlace) ? `<a href="${esc(p.enlace)}">#${esc(p.numero)}</a>` : `#${esc(p.numero)}`} · ${esc(p.proyecto)} / ${esc(p.repo)} · ${Number.isFinite(p.dias) ? `${esc(p.dias)} días` : 'sin fecha'}</li>`;
+  return seccion(titulo, lista.length ? `<ul class="lista">${lista.map(fila).join('')}</ul>` : '<p class="q-note">Ninguno.</p>', `fuente del ${prs.fecha}`, 'prs-trabados');
+}
 
 function paginaInicio(ctx) {
   const m = ctx.modelo || {};
   if (ctx.quien.rol === 'maintainer') {
     const filas = filasInicioMantenedor(m, { ahora: ctx.ahora, enlaceOperaciones: ctx.enlaceOperaciones });
-    return layout(ctx, 'Inicio', seccion('Qué decidir hoy', `<div class="grid">${filas.map(tile).join('')}</div>`, 'cada ficha dice dónde se decide'), 'Lo que espera una decisión tuya. Lo gris es lo que hoy no se pudo medir, con el motivo.');
+    return layout(ctx, 'Inicio', seccion('Qué decidir hoy', `<div class="grid">${filas.map(tile).join('')}</div>`, 'cada ficha dice dónde se decide') + prsTrabados(m.prs), 'Lo que espera una decisión tuya. Lo gris es lo que hoy no se pudo medir, con el motivo.');
   }
   const d = inicioDev(m, { ahora: ctx.ahora });
   const corridasPestana = (ctx.pestanas || []).some((p) => p.id === 'corridas');

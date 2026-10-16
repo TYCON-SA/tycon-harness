@@ -335,3 +335,23 @@ test('T45 Proyectos_ParidadSoloCantidades', () => {
     assert.strictEqual(sinArchivo[0].paridad.texto, 'no medido: la noche no dejó la paridad');
   } finally { fs.rmSync(raiz, { recursive: true, force: true }); }
 });
+
+test('T28b Inicio_Mantenedor_PrsTrabados_LlevaASuLista — la ficha dice dónde se mira, como las demás', () => {
+  const filas = filasDe(modeloCompleto());
+  assert.strictEqual(fila(filas, 'prs_trabados').enlace, '#prs-trabados');
+  const m = modeloCompleto({ prs: leida({ lista: [
+    { numero: 7, proyecto: 'Proyecto X', repo: 'Repo X', dias: 5, autor: A, enlace: 'https://dev.example/pr/7' },
+    { numero: 8, proyecto: 'Proyecto X', repo: 'Repo X', dias: 1, autor: B, enlace: 'https://dev.example/pr/8' },
+    { numero: 9, proyecto: 'Proyecto Y', repo: 'Repo Y', dias: null, autor: B, enlace: 'javascript:alert(1)' },
+  ] }) });
+  const html = views.paginaInicio({ modelo: access.filtrar(m, { rol: 'maintainer' }, access.crearReglas({})), quien: { rol: 'maintainer', email: LEAD }, pestanas: [], ahora: AHORA });
+  assert.match(html, /<a href="#prs-trabados">dónde se decide<\/a>/);
+  assert.match(html, /<section class="q" id="prs-trabados">/);
+  assert.match(html, /<a href="https:\/\/dev\.example\/pr\/7">#7<\/a> · Proyecto X \/ Repo X · 5 días/);
+  assert.doesNotMatch(html, /pr\/8/, 'el de un día no está trabado');
+  assert.match(html, /#9 · Proyecto Y \/ Repo Y · sin fecha/, 'el sin fecha se lista, sin enlace que no sea http');
+  assert.doesNotMatch(html, /javascript:/);
+  // sin la foto de la noche, la lista dice por qué
+  const sin = views.paginaInicio({ modelo: access.filtrar(modeloCompleto({ prs: noMedida('sin_foto') }), { rol: 'maintainer' }, access.crearReglas({})), quien: { rol: 'maintainer', email: LEAD }, pestanas: [], ahora: AHORA });
+  assert.match(sin, /id="prs-trabados"><div class="q-head"><h2>Pull requests abiertos hace más de 2 días<\/h2><\/div><p class="q-note">[^<]+<\/p>/);
+});
