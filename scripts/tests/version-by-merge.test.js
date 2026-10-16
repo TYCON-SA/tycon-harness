@@ -16,6 +16,9 @@
  *
  * Todo corre sobre repos de juguete (git de verdad) y clientes de mentira: no sale a la red.
  *
+ * stable-data: T13 y T20 miden la espera de la etiqueta contra el reloj de verdad a propósito (es lo que hace la máquina:
+ * «hace cuántas horas»), con márgenes de horas; los commits igual llevan fecha fija y el mantenimiento de git apagado.
+ *
  * Correr: node --test scripts/tests/version-by-merge.test.js
  */
 
@@ -42,10 +45,14 @@ test.after(() => { fs.rmSync(SCRATCH, { recursive: true, force: true }); });
 // un git sin la configuración de la máquina (sus hooks globales, su firma) ni la del proceso que corre la prueba
 const EMPTY_CONFIG = path.join(SCRATCH, 'gitconfig-vacio');
 fs.writeFileSync(EMPTY_CONFIG, '');
+// commits con fecha fija (el sha sale siempre igual) y sin el mantenimiento automático de git, que queda corriendo
+// desprendido y toca el `.git` del laboratorio
 const ENV = (() => {
   const env = {};
   for (const [k, v] of Object.entries(process.env)) if (!/^GIT_/.test(k)) env[k] = v;
   return Object.assign(env, { GIT_CONFIG_GLOBAL: EMPTY_CONFIG, GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0',
+    GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'maintenance.auto', GIT_CONFIG_VALUE_0: 'false',
+    GIT_AUTHOR_DATE: '2030-01-15T12:00:00Z', GIT_COMMITTER_DATE: '2030-01-15T12:00:00Z',
     GIT_AUTHOR_NAME: 'Prueba', GIT_AUTHOR_EMAIL: 'prueba@example.invalid', GIT_COMMITTER_NAME: 'Prueba', GIT_COMMITTER_EMAIL: 'prueba@example.invalid' });
 })();
 const git = (dir, args) => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8', env: ENV, stdio: ['ignore', 'pipe', 'pipe'] }).trim();
