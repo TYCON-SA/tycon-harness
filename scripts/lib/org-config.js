@@ -357,6 +357,8 @@ const cuerpoDePropuesta = (secciones, quien) => `Secciones cambiadas: ${(seccion
 function pantalla() {
   return String.raw`'use strict';
 // config.js — la pestaña Configuración del sitio de la organización (story 2.29). Lo sirve scripts/lib/org-config.js.
+// Sólo usa setAttribute, appendChild, addEventListener, textContent y replaceChildren: las pruebas lo corren sobre un
+// documento mínimo con eso nada más.
 (function () {
   var meta = document.querySelector('meta[name="site-token"]');
   var TOKEN = meta ? meta.getAttribute('content') : '';
@@ -364,7 +366,8 @@ function pantalla() {
   if (!app) return;
   function el(tag, attrs) {
     var e = document.createElement(tag); attrs = attrs || {};
-    Object.keys(attrs).forEach(function (k) { var v = attrs[k]; if (k === 'text') e.textContent = v; else if (k.indexOf('on') === 0) e.addEventListener(k.slice(2), v); else e.setAttribute(k, v); });
+    // un atributo sin valor no se pone: setAttribute('disabled', undefined) igual deshabilita
+    Object.keys(attrs).forEach(function (k) { var v = attrs[k]; if (v === undefined || v === null) return; if (k === 'text') e.textContent = v; else if (k.indexOf('on') === 0) e.addEventListener(k.slice(2), v); else e.setAttribute(k, v); });
     for (var i = 2; i < arguments.length; i++) if (arguments[i]) e.appendChild(arguments[i]);
     return e;
   }
@@ -378,89 +381,149 @@ function pantalla() {
   var copia = function (v) { return JSON.parse(JSON.stringify(v)); };
   var S = { secciones: [], borradores: {}, problemas: {}, avisos: {}, notas: {}, textos: {}, extras: null };
 
+  // ── lo que ve la persona de cada sección: el nombre llano, para qué sirve, y en qué bloque va ──
+  var PLANO = {
+    sitio: { t: 'Quién mantiene el sitio', d: 'Sólo estas personas ven esta pestaña y pueden proponer cambios. Si te sacás de la lista, perdés el acceso cuando se apruebe.', corto: 'Quién mantiene el sitio' },
+    personas: { t: 'Personas y máquinas', d: 'Cada máquina que manda corridas tiene que estar a nombre de alguien. Así cada persona ve lo suyo en el sitio.', corto: 'Personas y máquinas' },
+    responsables: { t: 'A quién le llegan los avisos y los pedidos', d: 'Cuando algo de la noche necesita a una persona (una dependencia vieja, un hallazgo del vigilante) se le asigna a quien figure acá.', corto: 'Responsables' },
+    repos: { t: 'Dónde vive cada repo', d: 'Llega a todas las máquinas del equipo: con esto cada una sabe de dónde se instala el arnés y dónde queda lo de la noche.', corto: 'Repos' },
+    despliegues: { t: 'Despliegues de cada producto', d: 'Con esto el sitio sabe qué paso de cada pipeline es la prueba y cuál es producción, para decir qué versión está afuera.', corto: 'Despliegues' },
+    canal: { t: 'Dónde llega el resumen de cada mañana', d: 'El canal donde la noche deja su resumen.', corto: 'Aviso diario' },
+    umbrales: { t: 'Umbrales: cuándo algo se pinta verde o rojo', d: 'El tablero colorea cada número según estos límites. Entre los dos, se pinta amarillo.', corto: 'Umbrales' },
+    paridad: { t: 'Diferencias aceptadas entre productos', d: 'Cada noche se comparan los productos entre sí. Lo que uno hace distinto a propósito se anota acá, con una fecha para volver a mirarlo.', corto: 'Diferencias entre productos' },
+  };
+  var BLOQUES = [['Personas y equipo', ['sitio', 'personas', 'responsables']], ['Dónde vive todo', ['repos', 'despliegues', 'canal']], ['Reglas de la noche', ['umbrales', 'paridad']]];
+  var REPO_DE = { operaciones: 'el repo de operaciones', perfil: 'el repo del equipo' };
+  function plano(s) { return PLANO[s.id] || { t: s.titulo, d: '', corto: s.titulo }; }
+  function bloqueada(s) { return s.estado === 'no_reader' || s.estado === 'ilegible' || s.estado === 'no_configurado'; }
+  /** El estado de una sección en una palabra: [clase, texto]. */
+  function estadoDe(s) {
+    if (s.estado === 'ilegible') return ['bad', 'hay que arreglarla a mano'];
+    if (s.estado === 'no_reader') return ['nm', 'todavía no disponible'];
+    if (s.estado === 'no_configurado') return ['nm', 'sin configurar'];
+    if (s.soloLectura) return ['nm', 'sólo para mirar'];
+    var n = (S.problemas[s.id] || []).length;
+    if (n) return ['warn', n + ' para corregir'];
+    if (S.textos[s.id]) return ['ok', 'revisada'];
+    if (s.estado === 'nuevo') return ['nm', 'se crea al proponer'];
+    if (s.id === 'personas' && s.extras && (s.extras.porConfirmar || []).length) return ['warn', s.extras.porConfirmar.length + ' por confirmar'];
+    return ['ok', 'al día'];
+  }
+  /** Un aviso con una frase llana arriba y el motivo exacto del arnés, plegado, abajo. */
+  function aviso(clase, titulo, detalle) {
+    var box = el('div', { class: 'msg ' + clase }, el('b', { text: titulo }));
+    if (detalle) box.appendChild(el('details', { class: 'mas-info' }, el('summary', { text: 'Detalle' }), el('span', { text: detalle })));
+    return box;
+  }
+
   function problemasEn(lista, p) { return (lista || []).filter(function (x) { return x.path === p; }); }
   function campo(label, valor, onInput, p, problemas, attrs) {
     var mios = problemasEn(problemas, p);
-    var input = el('input', Object.assign({ value: valor == null ? '' : String(valor), oninput: function (e) { onInput(e.target.value); }, 'data-path': p }, attrs || {}));
-    if (mios.length) input.className = 'bad';
-    var box = el('div', { class: 'campo' }, el('label', { text: label }), input);
+    var input = el('input', Object.assign({ value: valor == null ? '' : String(valor), oninput: function (e) { onInput(e.target.value); }, 'data-path': p, 'aria-label': label }, attrs || {}));
+    if (mios.length) input.setAttribute('class', 'bad');
+    var box = el('div', { class: 'campo' }, label ? el('label', { text: label }) : null, input);
     mios.forEach(function (x) { box.appendChild(el('div', { class: 'err', text: x.message })); });
     return box;
   }
-  function listaDeTextos(label, lista, set, p, problemas, nombre) {
-    var box = el('div', {}, el('label', { text: label }));
+  function quitar(onclick) { return el('button', { class: 'sec', type: 'button', text: '✕', title: 'Quitar', 'aria-label': 'Quitar', onclick: onclick }); }
+  function listaDeTextos(titulo, ayuda, lista, set, p, problemas, nombre, agregar) {
+    var box = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: titulo }), ayuda ? el('p', { class: 'sub-d', text: ayuda }) : null);
+    if (!(lista || []).length) box.appendChild(el('p', { class: 'muted', text: 'Nadie todavía.' }));
     (lista || []).forEach(function (v, i) {
-      box.appendChild(el('div', { class: 'fila' }, campo(nombre, v, function (nv) { lista[i] = nv; set(lista); }, p + '.' + i, problemas), el('button', { class: 'sec', type: 'button', text: 'Quitar', onclick: function () { lista.splice(i, 1); set(lista); render(); } })));
+      box.appendChild(el('div', { class: 'fila quitar' }, campo('', v, function (nv) { lista[i] = nv; set(lista); }, p + '.' + i, problemas, { placeholder: nombre }), quitar(function () { lista.splice(i, 1); set(lista); render(); })));
     });
-    box.appendChild(el('button', { class: 'sec', type: 'button', text: 'Agregar', onclick: function () { lista.push(''); set(lista); render(); } }));
+    box.appendChild(el('button', { class: 'mas', type: 'button', text: '+ ' + (agregar || 'Agregar'), onclick: function () { lista.push(''); set(lista); render(); } }));
     problemasEn(problemas, p).forEach(function (x) { box.appendChild(el('div', { class: 'err', text: x.message })); });
     return box;
   }
-  function repoFila(titulo, repo, set, p, problemas) {
+  function repoFila(titulo, ayuda, repo, set, p, problemas) {
     var r = repo || { platform: 'azure', org: '', project: '', repo: '' };
-    var plat = el('select', { 'data-path': p + '.platform', onchange: function (e) { var v = e.target.value; var nr = { platform: v, org: r.org || '', repo: r.repo || '' }; if (v === 'azure') nr.project = r.project || ''; set(nr); render(); } },
+    var plat = el('select', { 'data-path': p + '.platform', 'aria-label': 'Dónde', onchange: function (e) { var v = e.target.value; var nr = { platform: v, org: r.org || '', repo: r.repo || '' }; if (v === 'azure') nr.project = r.project || ''; set(nr); render(); } },
       el('option', { value: 'azure', text: 'Azure DevOps' }), el('option', { value: 'github', text: 'GitHub' }));
     plat.value = r.platform === 'github' ? 'github' : 'azure';
     var upd = function (k) { return function (v) { r[k] = v; set(r); }; };
-    return el('div', { class: 'fila' }, el('div', { class: 'k', text: titulo }), el('div', {}, el('label', { text: 'plataforma' }), plat),
-      campo('organización', r.org, upd('org'), p + '.org', problemas), r.platform === 'github' ? el('div', {}) : campo('proyecto', r.project, upd('project'), p + '.project', problemas), campo('repo', r.repo, upd('repo'), p + '.repo', problemas));
+    return el('div', { class: 'fila repo' }, el('div', { class: 'k', text: titulo }, el('small', { text: ayuda })), el('div', { class: 'campo' }, el('label', { text: 'Dónde' }), plat),
+      campo('Organización', r.org, upd('org'), p + '.org', problemas), r.platform === 'github' ? campo('Proyecto', '', function () {}, p + '.project', problemas, { disabled: 'disabled', placeholder: 'no aplica en GitHub' }) : campo('Proyecto', r.project, upd('project'), p + '.project', problemas), campo('Repo', r.repo, upd('repo'), p + '.repo', problemas));
   }
 
   // ── los editores por sección ──
-  var REPO_SLOTS = [['public', 'El arnés público'], ['profile', 'El perfil del equipo'], ['operations', 'Las operaciones'], ['maintainers', 'El mantenimiento (opcional)']];
+  var REPO_SLOTS = [['public', 'El arnés', 'el que se instala'], ['profile', 'El del equipo', 'llega a cada máquina'], ['operations', 'Operaciones', 'lo de la noche; no se instala'], ['maintainers', 'Mantenimiento', 'opcional']];
   function editorRepos(s, d, pr) {
     var box = el('div', {});
-    REPO_SLOTS.forEach(function (par) { var k = par[0]; if (k === 'maintainers' && !d[k]) { box.appendChild(el('button', { class: 'sec', type: 'button', text: 'Agregar: el mantenimiento', onclick: function () { d[k] = { platform: 'azure', org: '', project: '', repo: '' }; render(); } })); return; } box.appendChild(repoFila(par[1], d[k], function (v) { d[k] = v; }, k, pr)); });
+    REPO_SLOTS.forEach(function (par) { var k = par[0]; if (k === 'maintainers' && !d[k]) { box.appendChild(el('button', { class: 'mas', type: 'button', text: '+ Agregar el repo de mantenimiento (opcional)', onclick: function () { d[k] = { platform: 'azure', org: '', project: '', repo: '' }; render(); } })); return; } box.appendChild(repoFila(par[1], par[2], d[k], function (v) { d[k] = v; }, k, pr)); });
     return box;
   }
   function editorResponsables(s, d, pr) {
     d.owners = d.owners || { default: '' }; d.reviewers = d.reviewers || {};
-    var box = el('div', {}, campo('Responsable por defecto (la identidad en la plataforma)', d.owners.default, function (v) { d.owners.default = v; }, 'owners.default', pr));
+    var box = el('div', { class: 'pila' }, campo('Responsable por defecto (su usuario en la plataforma)', d.owners.default, function (v) { d.owners.default = v; }, 'owners.default', pr));
     var byp = d.owners.by_project || {};
-    Object.keys(byp).forEach(function (name) { box.appendChild(el('div', { class: 'fila' }, campo('proyecto', name, function () {}, 'owners.by_project', pr, { disabled: 'disabled' }), campo('responsable', byp[name], function (v) { byp[name] = v; }, 'owners.by_project.' + name, pr), el('button', { class: 'sec', type: 'button', text: 'Quitar', onclick: function () { delete byp[name]; if (!Object.keys(byp).length) delete d.owners.by_project; render(); } }))); });
-    var np = el('input', { placeholder: 'nombre del proyecto' });
-    box.appendChild(el('div', { class: 'fila' }, np, el('button', { class: 'sec', type: 'button', text: 'Agregar proyecto', onclick: function () { var v = np.value.trim(); if (!v) return; d.owners.by_project = d.owners.by_project || {}; d.owners.by_project[v] = ''; render(); } })));
-    box.appendChild(listaDeTextos('Revisan los pedidos de dependencias', d.reviewers.dependencies = d.reviewers.dependencies || [], function (l) { d.reviewers.dependencies = l; }, 'reviewers.dependencies', pr, 'identidad'));
-    box.appendChild(listaDeTextos('Revisan los del vigilante', d.reviewers.watcher = d.reviewers.watcher || [], function (l) { d.reviewers.watcher = l; }, 'reviewers.watcher', pr, 'identidad'));
+    var sub = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: 'Responsable por proyecto' }), el('p', { class: 'sub-d', text: 'Opcional. Un proyecto que no está acá va al responsable por defecto.' }));
+    Object.keys(byp).forEach(function (name) { sub.appendChild(el('div', { class: 'fila quitar3' }, campo('', name, function () {}, 'owners.by_project', pr, { disabled: 'disabled' }), campo('', byp[name], function (v) { byp[name] = v; }, 'owners.by_project.' + name, pr, { placeholder: 'usuario' }), quitar(function () { delete byp[name]; if (!Object.keys(byp).length) delete d.owners.by_project; render(); }))); });
+    var np = el('input', { placeholder: 'nombre del proyecto', 'aria-label': 'Proyecto nuevo' });
+    sub.appendChild(el('div', { class: 'fila quitar' }, np, el('button', { class: 'sec', type: 'button', text: '+ Agregar proyecto', onclick: function () { var v = np.value.trim(); if (!v) return; d.owners.by_project = d.owners.by_project || {}; d.owners.by_project[v] = ''; render(); } })));
+    box.appendChild(sub);
+    box.appendChild(listaDeTextos('Revisan los pedidos de dependencias', null, d.reviewers.dependencies = d.reviewers.dependencies || [], function (l) { d.reviewers.dependencies = l; }, 'reviewers.dependencies', pr, 'usuario', 'Agregar persona'));
+    box.appendChild(listaDeTextos('Revisan los hallazgos del vigilante', null, d.reviewers.watcher = d.reviewers.watcher || [], function (l) { d.reviewers.watcher = l; }, 'reviewers.watcher', pr, 'usuario', 'Agregar persona'));
     return box;
   }
   function editorSitio(s, d, pr) {
     d.site = d.site || {};
     var site = d.site;
-    var box = el('div', {}, listaDeTextos('Los que mantienen (correos)', site.maintainers = site.maintainers || [], function (l) { site.maintainers = l; }, 'site.maintainers', pr, 'correo'));
-    box.appendChild(campo('Refresco (minutos, 5 a 120)', site.refresh_minutes, function (v) { site.refresh_minutes = v === '' ? undefined : Number(v); }, 'site.refresh_minutes', pr));
-    if (s.campos && s.campos.url) box.appendChild(campo('La dirección del sitio', site.url, function (v) { site.url = v || undefined; }, 'site.url', pr));
+    var lista = el('div', { class: 'pila' });
+    var mant = listaDeTextos('Las personas', null, site.maintainers = site.maintainers || [], function (l) { site.maintainers = l; }, 'site.maintainers', pr, 'correo', 'Agregar persona');
+    mant.setAttribute('class', 'pila');
+    lista.appendChild(mant);
+    var refresco = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: 'Cada cuánto se actualiza el sitio' }), campo('Minutos, entre 5 y 120', site.refresh_minutes, function (v) { site.refresh_minutes = v === '' ? undefined : Number(v); }, 'site.refresh_minutes', pr, { inputmode: 'numeric' }));
+    lista.appendChild(refresco);
+    if (s.campos && s.campos.url) lista.appendChild(el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: 'La dirección del sitio' }), campo('', site.url, function (v) { site.url = v || undefined; }, 'site.url', pr)));
     var mb = site.mailbox || {};
-    box.appendChild(el('h4', { text: 'El buzón de corridas (sin credenciales: esas viven en la plataforma)' }));
-    ['provider', 'account', 'container'].forEach(function (k) { box.appendChild(campo(k, mb[k], function (v) { site.mailbox = site.mailbox || {}; site.mailbox[k] = v; }, 'site.mailbox.' + k, pr)); });
-    if (s.avisoLista) box.appendChild(el('div', { class: 'aviso', text: s.avisoLista }));
-    return box;
+    var buzon = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: 'Dónde dejan sus corridas las máquinas' }), el('p', { class: 'sub-d', text: 'Las contraseñas no van acá: se cargan en la nube.' }));
+    var f = el('div', { class: 'fila' });
+    [['provider', 'Servicio'], ['account', 'Cuenta'], ['container', 'Carpeta']].forEach(function (par) { var k = par[0]; f.appendChild(campo(par[1], mb[k], function (v) { site.mailbox = site.mailbox || {}; site.mailbox[k] = v; }, 'site.mailbox.' + k, pr)); });
+    buzon.appendChild(f);
+    lista.appendChild(buzon);
+    if (s.avisoLista) lista.appendChild(el('div', { class: 'aviso', text: s.avisoLista }));
+    return lista;
   }
-  function editorGenerico(s, d, pr, clave) {
-    // una sección cuyo lector llega con otra story (despliegues, canal): se edita como JSON de esa clave
-    var ta = el('textarea', { rows: '8', 'data-path': clave, oninput: function (e) { try { d[clave] = JSON.parse(e.target.value); S.notas[s.id] = null; } catch (err) { S.notas[s.id] = { ok: false, text: clave + ': ' + err.message }; } } });
+  function editorGenerico(s, d, pr, clave, titulo) {
+    // una sección sin formulario propio: se edita como texto de esa parte
+    var ta = el('textarea', { rows: '8', spellcheck: 'false', 'aria-label': titulo, 'data-path': clave, oninput: function (e) { try { d[clave] = JSON.parse(e.target.value); S.notas[s.id] = null; } catch (err) { S.notas[s.id] = { ok: false, text: 'El texto no está bien escrito: ' + err.message }; } } });
     ta.value = JSON.stringify(d[clave] === undefined ? {} : d[clave], null, 2);
-    var box = el('div', {}, el('label', { text: clave + ' (JSON)' }), ta);
+    var box = el('div', { class: 'pila' }, ta);
     problemasEn(pr, clave).forEach(function (x) { box.appendChild(el('div', { class: 'err', text: x.message })); });
     return box;
   }
+  function textoDeEntradas(lista) {
+    return (lista || []).map(function (e) { if (!e || typeof e !== 'object') return String(e); if (e.environment) return e.environment + (e.repo ? ' (' + e.repo + ')' : ''); return (e.stages || []).join(', ') + (e.pipeline ? ' (' + e.pipeline + ')' : ''); }).join(' · ') || '—';
+  }
   function editorDespliegues(s, d, pr) {
-    var box = editorGenerico(s, d, pr, 'deployments');
-    var producto = el('input', { placeholder: 'producto' });
-    var sel = el('input', { placeholder: 'pipeline (número de la definición, o dueño/repo del producto)' });
-    var nombrePipeline = el('input', { placeholder: 'proyecto/nombre exacto del pipeline (Azure)' });
-    box.appendChild(el('div', { class: 'fila' }, producto, nombrePipeline));
+    var box = el('div', { class: 'pila' });
+    var prods = d.deployments && d.deployments.products && typeof d.deployments.products === 'object' ? d.deployments.products : {};
+    var nombres = Object.keys(prods).filter(function (k) { return k.indexOf('__') !== 0; });
+    if (!nombres.length) box.appendChild(el('p', { class: 'muted', text: 'Ningún producto todavía.' }));
+    nombres.forEach(function (n) {
+      var p = prods[n] || {};
+      box.appendChild(el('div', { class: 'despliegue' }, el('div', {}, el('div', { class: 'lab', text: 'Producto' }), el('div', { class: 'prod', text: n })),
+        el('div', {}, el('div', { class: 'lab', text: 'Prueba' }), el('div', { text: textoDeEntradas(p.staging) })),
+        el('div', {}, el('div', { class: 'lab', text: 'Producción' }), el('div', { text: textoDeEntradas(p.production) }))));
+    });
+    var producto = el('input', { placeholder: 'nombre del producto', 'aria-label': 'Producto' });
+    var sel = el('input', { placeholder: 'número del pipeline, o dueño/repo en GitHub', 'aria-label': 'Pipeline' });
+    var nombrePipeline = el('input', { placeholder: 'proyecto/nombre del pipeline (Azure)', 'aria-label': 'Nombre del pipeline' });
     var nota = el('div', {});
-    box.appendChild(el('div', { class: 'fila' }, sel, el('button', { class: 'sec', type: 'button', text: 'Proponer los stages de este pipeline', onclick: function () {
-      api('/stages', { pipeline: sel.value }).then(function (r) {
-        nota.replaceChildren();
-        if (!r.ok) { nota.appendChild(el('div', { class: 'err', text: r.message })); return; }
-        var ul = el('ul', {});
-        (r.propuestos || []).forEach(function (st) { ul.appendChild(el('li', {}, el('span', { text: st.identificador + ' (propuesto' + (st.nombre ? ', se ve como «' + st.nombre + '»' : '') + ') ' }), el('button', { class: 'sec', type: 'button', text: 'staging', onclick: function () { confirmarStage(d, producto.value, sel.value, nombrePipeline.value, 'staging', st.identificador); } }), el('button', { class: 'sec', type: 'button', text: 'production', onclick: function () { confirmarStage(d, producto.value, sel.value, nombrePipeline.value, 'production', st.identificador); } }))); });
-        nota.appendChild(el('div', { class: 'muted', text: 'nada se guarda hasta confirmar cada stage; después, Revisar y Proponer' }));
-        nota.appendChild(ul);
-      });
-    } })), nota);
+    var agregar = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: 'Agregar un producto' }), el('p', { class: 'sub-d', text: 'Elegís el pipeline y el sitio te muestra sus pasos para que marques cuál es la prueba y cuál producción.' }),
+      el('div', { class: 'fila' }, producto, sel, nombrePipeline, el('button', { class: 'sec', type: 'button', text: 'Ver sus pasos', onclick: function () {
+        api('/stages', { pipeline: sel.value }).then(function (r) {
+          nota.replaceChildren();
+          if (!r.ok) { nota.appendChild(el('div', { class: 'err', text: r.message })); return; }
+          var ul = el('ul', { class: 'renglones' });
+          (r.propuestos || []).forEach(function (st) { ul.appendChild(el('li', {}, el('span', { class: 'quien', text: st.nombre || st.identificador }), el('span', { class: 'dato', text: st.nombre ? st.identificador : '' }), el('span', { class: 'acc' }, el('button', { class: 'sec', type: 'button', text: 'Es la prueba', onclick: function () { confirmarStage(d, producto.value, sel.value, nombrePipeline.value, 'staging', st.identificador); } }), el('button', { class: 'sec', type: 'button', text: 'Es producción', onclick: function () { confirmarStage(d, producto.value, sel.value, nombrePipeline.value, 'production', st.identificador); } })))); });
+          nota.appendChild(el('p', { class: 'muted', text: 'Nada se guarda hasta que marques cada paso; después, revisá y proponé.' }));
+          nota.appendChild(ul);
+        });
+      } })), nota);
+    box.appendChild(agregar);
+    box.appendChild(el('details', { class: 'mas-info' }, el('summary', { text: 'Editar como texto' }), editorGenerico(s, d, pr, 'deployments', 'Despliegues, como texto')));
     return box;
   }
   // confirmar un stage arma la entrada en la forma del lector de la 2.22: Azure { pipeline, stages: [id] }; GitHub { repo, environment }
@@ -475,67 +538,101 @@ function pantalla() {
   }
   function editorPersonas(s, d, pr) {
     d.people = d.people || {};
-    var box = el('div', {});
+    var box = el('div', { class: 'pila' });
     var ex = (s.extras || {});
-    box.appendChild(el('h4', { text: 'Máquinas por confirmar' }));
-    if (ex.vencido) box.appendChild(el('div', { class: 'err', text: ex.vencido }));
-    if (ex.ultimoBueno) box.appendChild(el('div', { class: 'aviso', text: ex.ultimoBueno }));
+    if (ex.vencido) box.appendChild(aviso('bad', 'La lista de personas está rota hace más de un día y hay que arreglarla a mano.', ex.vencido));
+    if (ex.ultimoBueno) box.appendChild(aviso('warn', 'Se muestra la última versión buena: la actual tiene un error.', ex.ultimoBueno));
+    var pc = el('ul', { class: 'renglones' });
     (ex.porConfirmar || []).forEach(function (m) {
-      var persona = el('input', { value: m.correo || '', placeholder: 'correo de la persona' });
-      box.appendChild(el('div', { class: 'fila' }, el('span', { class: 'k', text: m.maquina }), el('span', { text: (m.correo ? 'informa ' + m.correo : 'no informa correo') + ' · ' + (m.dia || 'sin día') + ' · ' + (m.corridas == null ? '?' : m.corridas) + ' corridas' }), persona,
-        el('button', { type: 'button', text: 'Confirmar', onclick: function () { revisarSeccion(s, { accion: 'confirm', maquina: m.maquina, person: persona.value, people: d.people }); } })));
+      var persona = el('input', { value: m.correo || '', placeholder: 'correo de la persona', 'aria-label': 'Correo de la persona' });
+      pc.appendChild(el('li', {}, el('span', { class: 'quien', text: m.maquina }), el('span', { class: 'dato', text: (m.correo ? 'dice ser de ' + m.correo : 'no dice de quién es') + ' · última noticia ' + (m.dia || 'sin fecha') + ' · ' + (m.corridas == null ? 'corridas sin contar' : m.corridas + ' corridas') }),
+        el('span', { class: 'acc' }, persona, el('button', { type: 'button', text: 'Confirmar', onclick: function () { revisarSeccion(s, { accion: 'confirm', maquina: m.maquina, person: persona.value, people: d.people }); } }))));
     });
-    box.appendChild(el('h4', { text: 'Confirmadas' }));
+    box.appendChild(el('div', {}, el('p', { class: 'sub-t', text: 'Por confirmar' }), (ex.porConfirmar || []).length ? pc : el('p', { class: 'muted', text: 'Ninguna.' })));
     var machines = d.people.machines || {};
-    Object.keys(machines).forEach(function (m) { var e = machines[m]; box.appendChild(el('div', { class: 'fila' }, el('span', { class: 'k', text: m }), el('span', { text: (e.person || '') + ' · confirmada por ' + (e.confirmed_by || '') + ' el ' + (e.confirmed_on || '') }), el('button', { class: 'sec', type: 'button', text: 'Quitar', onclick: function () { delete machines[m]; if (!Object.keys(machines).length) delete d.people.machines; render(); } }))); problemasEn(pr, 'people.machines.' + m).concat(problemasEn(pr, 'people.machines.' + m + '.confirmed_on')).forEach(function (x) { box.appendChild(el('div', { class: 'err', text: x.message })); }); });
-    box.appendChild(el('h4', { text: 'Dónde trabaja cada persona' }));
+    var conf = el('ul', { class: 'renglones' });
+    Object.keys(machines).forEach(function (m) {
+      var e = machines[m] || {};
+      var li = el('li', {}, el('span', { class: 'quien', text: m }), el('span', { class: 'dato', text: 'de ' + (e.person || 'sin persona') + ' · confirmada por ' + (e.confirmed_by || 'sin dato') + ' el ' + (e.confirmed_on || 'sin fecha') }), el('span', { class: 'acc' }, quitar(function () { delete machines[m]; if (!Object.keys(machines).length) delete d.people.machines; render(); })));
+      problemasEn(pr, 'people.machines.' + m).concat(problemasEn(pr, 'people.machines.' + m + '.confirmed_on')).forEach(function (x) { li.appendChild(el('span', { class: 'err', text: x.message })); });
+      conf.appendChild(li);
+    });
+    box.appendChild(el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: 'Confirmadas' }), Object.keys(machines).length ? conf : el('p', { class: 'muted', text: 'Ninguna.' })));
+    var donde = el('ul', { class: 'renglones' });
     (ex.personas || []).forEach(function (p) {
       var fix = (d.people.projects || {})[p.correo] || {};
-      var agregar = el('input', { placeholder: 'producto' });
-      box.appendChild(el('div', { class: 'fila' }, el('span', { class: 'k', text: p.correo }), el('span', { text: 'deducido: ' + ((p.deducidos || []).join(', ') || 'nada') + (p.caida ? ' · todas sus máquinas caídas' : '') + ' · agrega: ' + ((fix.add || []).join(', ') || '—') + ' · quita: ' + ((fix.remove || []).join(', ') || '—') }), agregar,
-        el('button', { class: 'sec', type: 'button', text: 'Agregar', onclick: function () { var v = agregar.value.trim(); if (!v) return; d.people.projects = d.people.projects || {}; var f = d.people.projects[p.correo] = d.people.projects[p.correo] || {}; f.add = f.add || []; f.add.push(v); render(); } }),
-        el('button', { class: 'sec', type: 'button', text: 'Quitar', onclick: function () { var v = agregar.value.trim(); if (!v) return; d.people.projects = d.people.projects || {}; var f = d.people.projects[p.correo] = d.people.projects[p.correo] || {}; f.remove = f.remove || []; f.remove.push(v); render(); } })));
+      var agregar = el('input', { placeholder: 'producto', 'aria-label': 'Producto' });
+      donde.appendChild(el('li', {}, el('span', { class: 'quien', text: p.correo }), el('span', { class: 'dato', text: 'deducido: ' + ((p.deducidos || []).join(', ') || 'nada') + ' · se agrega: ' + ((fix.add || []).join(', ') || 'nada') + ' · se quita: ' + ((fix.remove || []).join(', ') || 'nada') + (p.caida ? ' · sus máquinas no mandan noticias' : '') }),
+        el('span', { class: 'acc' }, agregar,
+          el('button', { class: 'sec', type: 'button', text: 'Agregar', onclick: function () { var v = agregar.value.trim(); if (!v) return; d.people.projects = d.people.projects || {}; var f = d.people.projects[p.correo] = d.people.projects[p.correo] || {}; f.add = f.add || []; f.add.push(v); render(); } }),
+          el('button', { class: 'sec', type: 'button', text: 'Quitar', onclick: function () { var v = agregar.value.trim(); if (!v) return; d.people.projects = d.people.projects || {}; var f = d.people.projects[p.correo] = d.people.projects[p.correo] || {}; f.remove = f.remove || []; f.remove.push(v); render(); } }))));
     });
+    box.appendChild(el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: 'En qué proyectos trabaja cada uno' }), el('p', { class: 'sub-d', text: 'El sitio lo deduce de lo que cada uno hizo. Acá corregís lo que deduce mal.' }), (ex.personas || []).length ? donde : el('p', { class: 'muted', text: 'Nadie todavía.' })));
     return box;
   }
+  // los nombres de los umbrales, como los titula el tablero; uno que no está acá se muestra con su clave
+  var UMBRAL = {
+    dod: 'Cierres que dejaron prueba de que anda', rework: 'Stories que vuelven con un seguimiento', mutacion: 'Puntaje de mutación de las pruebas',
+    cobertura_tocada_evaluo: 'Corridas que midieron la cobertura de lo tocado', qa_guia: 'Cierres con la guía para probar a mano', estilo: 'Respuestas dentro del largo pedido',
+    bloqueo: 'Turnos sin pasos largos que traben la conversación', vigilados: 'Productos con su producción vigilada', bus_factor_productos_en_riesgo: 'Productos que hizo casi una sola persona',
+    escapes_regla_dominante: 'Escapes concentrados en una sola regla', banco_rojos: 'Casos rojos del banco de controles', suites_rojas: 'Suites del arnés en rojo',
+    deps_hallazgos: 'Hallazgos de dependencias', contrato_v2: 'Registros por merge con el formato completo', corridas_al_final: 'Corridas que llegan al último paso', corridas_con_error: 'Corridas donde un control encontró un error',
+  };
+  var CANTIDADES = { bus_factor_productos_en_riesgo: 1, banco_rojos: 1, suites_rojas: 1, deps_hallazgos: 1 };
   function editorUmbrales(s, d, pr) {
-    var box = el('div', {});
+    var box = el('div', {}, el('div', { class: 'thr h' }, el('span', { text: 'Número' }), el('span', { text: 'Mejor si es' }), el('span', { text: 'Verde' }), el('span', { text: 'Rojo' })));
     Object.keys(d).forEach(function (k) {
-      var u = d[k] || {};
-      var fila = el('div', { class: 'fila' }, el('span', { class: 'k', text: k }));
-      ['direction', 'ok_min', 'bad_max', 'ok_max', 'bad_min'].forEach(function (c) { fila.appendChild(campo(c, u[c], function (v) { d[k] = d[k] || {}; if (v === '') delete d[k][c]; else d[k][c] = c === 'direction' ? v : Number(v); }, 'thresholds.' + k + '.' + c, pr)); });
-      problemasEn(pr, 'thresholds.' + k).forEach(function (x) { fila.appendChild(el('div', { class: 'err', text: x.message })); });
+      if (k.charAt(0) === '_' || !d[k] || typeof d[k] !== 'object') return;
+      var u = d[k];
+      var mayor = u.direction !== 'menor_es_mejor';
+      var verde = mayor ? 'ok_min' : 'ok_max'; var rojo = mayor ? 'bad_max' : 'bad_min';
+      var dir = el('select', { 'aria-label': 'Mejor si es', 'data-path': 'thresholds.' + k + '.direction', onchange: function (e) {
+        // cambiar el sentido mueve los dos números a sus claves del otro sentido
+        var nuevo = e.target.value; if (nuevo === u.direction) return;
+        var a = u[verde], b = u[rojo]; delete u[verde]; delete u[rojo]; u.direction = nuevo;
+        if (nuevo === 'menor_es_mejor') { if (a !== undefined) u.ok_max = a; if (b !== undefined) u.bad_min = b; } else { if (a !== undefined) u.ok_min = a; if (b !== undefined) u.bad_max = b; }
+        render();
+      } }, el('option', { value: 'mayor_es_mejor', text: 'más alto' }), el('option', { value: 'menor_es_mejor', text: 'más bajo' }));
+      dir.value = mayor ? 'mayor_es_mejor' : 'menor_es_mejor';
+      var num = function (c, etiqueta) { var mios = problemasEn(pr, 'thresholds.' + k + '.' + c); var i = el('input', { value: u[c] == null ? '' : String(u[c]), inputmode: 'decimal', 'aria-label': etiqueta, 'data-path': 'thresholds.' + k + '.' + c, oninput: function (e) { var v = e.target.value; if (v === '') delete u[c]; else u[c] = Number(v); } }); if (mios.length) i.setAttribute('class', 'bad'); return i; };
+      var fila = el('div', { class: 'thr' }, el('span', { text: UMBRAL[k] || k.replace(/_/g, ' ') }, el('span', { class: 'hint', text: CANTIDADES[k] ? 'una cantidad' : 'una proporción: 0.5 es la mitad' })), dir,
+        num(verde, mayor ? 'Verde desde' : 'Verde hasta'), num(rojo, mayor ? 'Rojo hasta' : 'Rojo desde'));
+      pr.filter(function (x) { return x.path === 'thresholds.' + k || String(x.path).indexOf('thresholds.' + k + '.') === 0; }).forEach(function (x) { fila.appendChild(el('div', { class: 'err', text: x.message })); });
       (S.avisos[s.id] || []).filter(function (a) { return a.path === 'thresholds.' + k; }).forEach(function (a) { fila.appendChild(el('div', { class: 'aviso', text: a.message })); });
       box.appendChild(fila);
     });
+    box.appendChild(el('p', { class: 'muted', text: 'Si es mejor más alto: verde desde el primer número, rojo hasta el segundo. Si es mejor más bajo, al revés.' }));
     return box;
   }
   function editorParidad(s, d, pr) {
-    var box = el('div', {});
+    var box = el('div', { class: 'pila' });
     var v = s.vista || {};
-    box.appendChild(el('p', { class: 'muted', text: 'Estado del archivo de hoy: ' + (v.texto || 'no medido') + (v.fecha ? ' (' + v.fecha + ')' : '') }));
+    box.appendChild(el('p', { class: 'muted', text: 'Comparación de hoy: ' + (v.texto || 'no medida') + (v.fecha ? ' (' + v.fecha + ')' : '') }));
+    var prods = el('ul', { class: 'renglones' });
     (v.productos || []).forEach(function (p) {
-      box.appendChild(el('div', { class: 'fila' }, el('span', { class: 'k', text: p.producto + ' (' + p.grupos.join(', ') + ')' }),
-        el('span', { text: 'le falta: ' + (p.faltan.map(function (x) { return x.que; }).join('; ') || '—') + ' · tiene y la mayoría no: ' + (p.tiene.map(function (x) { return x.que; }).join('; ') || '—') + ' · declaradas: ' + (p.declaradas.map(function (x) { return x.rasgo + ' hasta ' + x.revision; }).join('; ') || '—') + ' · vencidas: ' + (p.vencidas.map(function (x) { return x.rasgo + ' (' + x.revision + ')'; }).join('; ') || '—') })));
+      prods.appendChild(el('li', {}, el('span', { class: 'quien', text: p.producto + ' · ' + p.grupos.join(', ') }),
+        el('span', { class: 'dato', text: 'le falta: ' + (p.faltan.map(function (x) { return x.que; }).join('; ') || 'nada') + ' · hace algo que los demás no: ' + (p.tiene.map(function (x) { return x.que; }).join('; ') || 'nada') + ' · aceptadas: ' + (p.declaradas.map(function (x) { return x.rasgo + ' hasta ' + x.revision; }).join('; ') || 'ninguna') + ' · vencidas: ' + (p.vencidas.map(function (x) { return x.rasgo + ' (' + x.revision + ')'; }).join('; ') || 'ninguna') })));
     });
-    box.appendChild(el('h4', { text: 'Las diferencias declaradas' }));
-    (v.declaradas || []).forEach(function (dcl) {
-      var fecha = el('input', { placeholder: 'AAAA-MM-DD' }); var motivo = el('input', { placeholder: 'motivo' });
-      box.appendChild(el('div', { class: 'fila' }, el('span', { class: 'k', text: dcl.grupo + '/' + dcl.rasgo }), el('span', { text: (dcl.motivo || '') + ' · hasta ' + (dcl.revision || '') }), fecha, motivo,
-        el('button', { class: 'sec', type: 'button', text: 'Renovar', onclick: function () { revisarSeccion(s, { accion: 'renew', grupo: dcl.grupo, rasgo: dcl.rasgo, revision: fecha.value, motivo: motivo.value }); } }),
-        el('button', { class: 'sec', type: 'button', text: 'Cerrar', onclick: function () { revisarSeccion(s, { accion: 'close', grupo: dcl.grupo, rasgo: dcl.rasgo }); } })));
+    if ((v.productos || []).length) box.appendChild(prods);
+    var dcl = el('ul', { class: 'renglones' });
+    (v.declaradas || []).forEach(function (x) {
+      var fecha = el('input', { placeholder: 'AAAA-MM-DD', 'aria-label': 'Volver a mirar el' }); var motivo = el('input', { placeholder: 'por qué', 'aria-label': 'Por qué' });
+      dcl.appendChild(el('li', {}, el('span', { class: 'quien', text: x.grupo + ' · ' + x.rasgo }), el('span', { class: 'dato', text: (x.motivo || 'sin motivo') + ' · volver a mirar el ' + (x.revision || 'sin fecha') }), el('span', { class: 'acc' }, fecha, motivo,
+        el('button', { class: 'sec', type: 'button', text: 'Renovar', onclick: function () { revisarSeccion(s, { accion: 'renew', grupo: x.grupo, rasgo: x.rasgo, revision: fecha.value, motivo: motivo.value }); } }),
+        el('button', { class: 'sec', type: 'button', text: 'Cerrar', onclick: function () { revisarSeccion(s, { accion: 'close', grupo: x.grupo, rasgo: x.rasgo }); } }))));
     });
-    if (v.definicion) box.appendChild(el('details', {}, el('summary', { text: 'Grupos y rasgos (se editan en el archivo, no acá)' }), el('pre', { text: JSON.stringify(v.definicion, null, 2) })));
+    box.appendChild(el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: 'Las diferencias aceptadas' }), (v.declaradas || []).length ? dcl : el('p', { class: 'muted', text: 'Ninguna.' })));
+    if (v.definicion) box.appendChild(el('details', { class: 'mas-info' }, el('summary', { text: 'Qué se compara (se cambia en el repo, no acá)' }), el('pre', { text: JSON.stringify(v.definicion, null, 2) })));
     return box;
   }
-  var EDITORES = { repos: editorRepos, responsables: editorResponsables, despliegues: editorDespliegues, canal: function (s, d, pr) { return editorGenerico(s, d, pr, 'notify'); }, personas: editorPersonas, sitio: editorSitio, umbrales: editorUmbrales, paridad: editorParidad };
+  var EDITORES = { repos: editorRepos, responsables: editorResponsables, despliegues: editorDespliegues, canal: function (s, d, pr) { return editorGenerico(s, d, pr, 'notify', 'El canal, como texto'); }, personas: editorPersonas, sitio: editorSitio, umbrales: editorUmbrales, paridad: editorParidad };
 
   function revisarSeccion(s, borrador) {
     return api('/revisar', { seccion: s.id, borrador: borrador === undefined ? S.borradores[s.id] : borrador }).then(function (r) {
       S.problemas[s.id] = r.problems || []; S.avisos[s.id] = r.avisos || [];
       if (r.borrador) S.borradores[s.id] = r.borrador;
       S.textos[s.id] = r.ok ? r.texto : null;
-      S.notas[s.id] = r.ok ? { ok: true, text: 'Está bien escrito.' + (r.aviso ? ' ' + r.aviso : '') + (r.advertencia ? ' ' + r.advertencia : '') } : { ok: false, text: r.message || 'Hay que corregir lo marcado.' };
+      S.notas[s.id] = r.ok ? { ok: true, text: 'Revisado: está bien escrito.' + (r.aviso ? ' ' + r.aviso : '') + (r.advertencia ? ' ' + r.advertencia : '') } : { ok: false, text: r.message || 'Hay que corregir lo marcado.' };
       render();
       return r;
     });
@@ -546,69 +643,117 @@ function pantalla() {
     a.href = URL.createObjectURL(new Blob([texto], { type: 'application/json' })); a.download = s.archivo.split('/').pop(); a.click();
     setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
   }
+  /** Por qué no se puede proponer, en llano; el motivo exacto del sitio queda en el detalle. */
+  function motivoProponer(m) {
+    if (!m || /identidad de escritura/.test(m)) return 'Para proponer desde acá, el sitio necesita permiso para escribir en el repo. Mientras tanto: revisá, descargá y subilo a mano.';
+    if (/plataforma/.test(m)) return 'El sitio no reconoce dónde vive el repo. Revisá, descargá y subilo a mano.';
+    return 'Proponer desde acá no está disponible: ' + m;
+  }
   function seccion(s) {
-    var sec = el('section', { class: 'q', id: 'seccion-' + s.id }, el('div', { class: 'q-head' }, el('h2', { text: s.titulo })), el('p', { class: 'muted', text: 'Archivo: ' + s.archivo + ', en el repo de ' + s.repo + '. Lector: ' + s.lector + '.' }));
-    if (s.estado === 'no_reader' || s.estado === 'ilegible' || s.estado === 'no_configurado') { sec.appendChild(el('p', { class: s.estado === 'ilegible' ? 'err' : 'muted', text: s.motivo })); if (s.id !== 'paridad') return sec; }
-    if (s.estado === 'nuevo') sec.appendChild(el('p', { class: 'muted', text: 'el archivo todavía no existe: se crea con el pedido' }));
-    if (s.soloLectura) sec.appendChild(el('p', { class: 'aviso', text: 'sólo lectura: ' + s.motivo }));
+    var p = plano(s);
+    var est = estadoDe(s);
+    var sec = el('section', { class: 'card form-block', id: 'seccion-' + s.id }, el('div', { class: 'fb-head' }, el('div', {}, el('h4', { text: p.t }), el('p', { class: 'reach', text: p.d })), el('span', { class: 'pill ' + est[0], text: est[1] })));
+    if (s.estado === 'no_reader') { sec.appendChild(aviso('nm', 'Esta versión del arnés todavía no sabe leer esta parte. Se habilita sola cuando el sitio se actualice.', s.motivo)); if (s.id !== 'paridad') return sec; }
+    if (s.estado === 'ilegible') { sec.appendChild(aviso('bad', 'Lo guardado en esta parte no se puede leer: hay que arreglarlo a mano en el repo.', s.motivo)); if (s.id !== 'paridad') return sec; }
+    if (s.estado === 'no_configurado') { sec.appendChild(aviso('nm', 'Esta parte todavía no está configurada.', s.motivo)); if (s.id !== 'paridad') return sec; }
+    if (s.estado === 'nuevo') sec.appendChild(el('p', { class: 'muted', text: 'Todavía no hay nada guardado: se crea con el primer cambio que propongas.' }));
+    if (s.soloLectura) sec.appendChild(aviso('nm', 'Por ahora se puede mirar, pero no cambiar.', s.motivo));
     var pr = S.problemas[s.id] || [];
     var arriba = pr.filter(function (x) { return x.sinCampo; });
-    if (arriba.length) { var ul = el('ul', {}); arriba.forEach(function (x) { ul.appendChild(el('li', { class: 'err', text: (x.path ? x.path + ': ' : '') + x.message })); }); sec.appendChild(ul); }
+    if (arriba.length) { var ul = el('ul', { class: 'renglones' }); arriba.forEach(function (x) { ul.appendChild(el('li', { class: 'err', text: (x.path ? x.path + ': ' : '') + x.message })); }); sec.appendChild(ul); }
     var editor = EDITORES[s.id];
     if (editor) sec.appendChild(editor(s, S.borradores[s.id], pr));
-    if (!s.soloLectura && s.estado !== 'no_reader' && s.estado !== 'ilegible' && s.estado !== 'no_configurado' && s.id !== 'paridad') {
-      var bar = el('div', { class: 'bar' }, el('button', { class: 'sec', type: 'button', text: 'Revisar', onclick: function () { revisarSeccion(s); } }));
-      bar.appendChild(el('button', { class: 'sec', type: 'button', text: 'Descargar el archivo', disabled: S.textos[s.id] ? undefined : 'disabled', onclick: function () { descargar(s); } }));
-      if (S.extras.proponer && S.extras.proponer[s.repo] && S.extras.proponer[s.repo].habilitado) bar.appendChild(el('button', { type: 'button', text: 'Proponer', disabled: S.textos[s.id] ? undefined : 'disabled', onclick: function () { S.notas[s.id] = { confirmar: true }; render(); } }));
-      else bar.appendChild(el('span', { class: 'muted', text: 'Proponer apagado: ' + ((S.extras.proponer && S.extras.proponer[s.repo] && S.extras.proponer[s.repo].motivo) || 'sin identidad de escritura') }));
-      sec.appendChild(bar);
-    }
-    if (s.id === 'paridad' && S.textos[s.id] && S.extras.proponer && S.extras.proponer[s.repo] && S.extras.proponer[s.repo].habilitado) sec.appendChild(el('div', { class: 'bar' }, el('button', { type: 'button', text: 'Proponer', onclick: function () { S.notas[s.id] = { confirmar: true }; render(); } })));
     var n = S.notas[s.id];
-    if (n && n.confirmar) {
-      sec.appendChild(el('h4', { text: 'Antes' })); sec.appendChild(el('pre', { text: s.texto || '(el archivo no existe todavía)' }));
-      sec.appendChild(el('h4', { text: 'Después' })); sec.appendChild(el('pre', { text: S.textos[s.id] }));
+    var prop = S.extras.proponer && S.extras.proponer[s.repo];
+    var habilitado = prop && prop.habilitado;
+    var confirmando = n && n.confirmar;
+    if (!confirmando && n && n.text) {
+      var nota = el('div', { class: 'msg ' + (n.ok ? 'ok' : 'bad') }, el('b', { text: n.text }));
+      if (n.enlace) nota.appendChild(el('a', { href: n.enlace, text: 'Ver el pedido de cambio' }));
+      sec.appendChild(nota);
+    }
+    if (!s.soloLectura && !bloqueada(s) && s.id !== 'paridad') {
+      var bar = el('div', { class: 'bar' }, el('button', { class: 'sec', type: 'button', text: 'Revisar cambios', onclick: function () { revisarSeccion(s); } }));
+      bar.appendChild(el('button', { class: 'sec', type: 'button', text: 'Descargar', disabled: S.textos[s.id] ? undefined : 'disabled', onclick: function () { descargar(s); } }));
+      if (habilitado) bar.appendChild(el('button', { type: 'button', text: 'Proponer el cambio', disabled: S.textos[s.id] ? undefined : 'disabled', onclick: function () { S.notas[s.id] = { confirmar: true }; render(); } }));
+      bar.appendChild(el('span', { class: 'por-que', text: !habilitado ? motivoProponer(prop && prop.motivo) : (S.textos[s.id] ? 'Se abre un pedido de cambio en ' + (REPO_DE[s.repo] || 'su repo') + '. Entra cuando alguien lo aprueba.' : 'Primero revisá: así sabés si está bien antes de proponerlo.') }));
+      if (!confirmando) sec.appendChild(bar);
+    }
+    if (s.id === 'paridad' && S.textos[s.id] && habilitado && !confirmando) sec.appendChild(el('div', { class: 'bar' }, el('button', { type: 'button', text: 'Proponer el cambio', onclick: function () { S.notas[s.id] = { confirmar: true }; render(); } })));
+    if (confirmando) {
+      sec.appendChild(el('div', { class: 'antes-despues' },
+        el('div', {}, el('div', { class: 'lab', text: 'Hoy' }), el('pre', { text: s.texto || '(todavía no hay nada guardado)' })),
+        el('div', {}, el('div', { class: 'lab', text: 'Después del cambio' }), el('pre', { text: S.textos[s.id] }))));
       sec.appendChild(el('div', { class: 'bar' }, el('button', { type: 'button', text: 'Confirmar y proponer', onclick: function () {
         S.notas[s.id] = { ok: true, text: 'proponiendo…' }; render();
         api('/proponer', { seccion: s.id, texto: S.textos[s.id], oid: s.oid }).then(function (r) { S.notas[s.id] = { ok: r.ok, text: r.message, enlace: r.enlace || null }; render(); if (r.ok) cargar(); });
-      } }), el('button', { class: 'sec', type: 'button', text: 'Cancelar', onclick: function () { S.notas[s.id] = null; render(); } })));
-    } else if (n && n.text) {
-      var nota = el('div', { class: n.ok ? 'okmsg' : 'err', text: n.text });
-      if (n.enlace) nota.appendChild(el('a', { href: n.enlace, text: ' ' + n.enlace }));
-      sec.appendChild(nota);
+      } }), el('button', { class: 'sec', type: 'button', text: 'Cancelar', onclick: function () { S.notas[s.id] = null; render(); } }), el('span', { class: 'por-que', text: 'Mirá la diferencia antes de confirmar.' })));
     }
     return sec;
   }
-  function soloLectura(titulo, filas, columnas) {
-    var sec = el('section', { class: 'q' }, el('div', { class: 'q-head' }, el('h2', { text: titulo })));
-    if (!filas || !filas.length) { sec.appendChild(el('p', { class: 'muted', text: 'nada que mostrar' })); return sec; }
+  function tablaDeMirar(titulo, ayuda, filas, columnas, id) {
+    var sec = el('section', { class: 'card form-block', id: id }, el('div', { class: 'fb-head' }, el('div', {}, el('h4', { text: titulo }), el('p', { class: 'reach', text: ayuda }))));
+    if (!filas || !filas.length) { sec.appendChild(el('p', { class: 'muted', text: 'Nada que mostrar.' })); return sec; }
     var tabla = el('table', { class: 'tabla' }); var thead = el('thead', {}); var tr = el('tr', {});
     columnas.forEach(function (c) { tr.appendChild(el('th', { text: c[1] })); }); thead.appendChild(tr); tabla.appendChild(thead);
     var tbody = el('tbody', {});
     filas.forEach(function (f) { var r = el('tr', {}); columnas.forEach(function (c) { var v = f[c[0]]; r.appendChild(el('td', { text: v == null ? '—' : String(v) })); }); tbody.appendChild(r); });
-    tabla.appendChild(tbody); sec.appendChild(tabla);
+    tabla.appendChild(tbody); sec.appendChild(el('div', { class: 'tbl-wrap' }, tabla));
     return sec;
   }
+  function kpi(clase, href, lab, val, den) {
+    var a = el(href ? 'a' : 'div', { class: 'card kpi ' + clase, href: href || undefined }, el('span', { class: 'lab', text: lab }), el('span', { class: 'val', text: String(val) }), el('span', { class: 'den', text: den }));
+    return a;
+  }
   function render() {
-    var partes = S.secciones.map(seccion);
     var ex = S.extras || {};
-    var prod = soloLectura('Productos', (ex.productos || []).map(function (p) { return { producto: p.producto, origen: p.origen, repo: p.repo || p.ruta, estado: p.activo === false ? 'apagado' + (p.motivo ? ' (' + p.motivo + ')' : '') : 'activo', edita: p.origen === 'deployments' ? 'sí (Despliegues)' : 'no' }; }), [['producto', 'Producto'], ['origen', 'Origen'], ['repo', 'Repo'], ['estado', 'Estado'], ['edita', 'Se edita acá']]);
-    if (ex.productosMotivo) prod.appendChild(el('p', { class: 'err', text: ex.productosMotivo }));
-    if (ex.productosEnlace) prod.appendChild(el('p', {}, el('a', { href: ex.productosEnlace, text: 'la lista de la revisión de dependencias (repos.json)' })));
-    partes.push(prod);
-    if (ex.versionesMotivo) partes.push(el('p', { class: 'err', text: ex.versionesMotivo }));
-    partes.push(soloLectura('Versiones de cada máquina', ex.versiones || [], [['maquina', 'Máquina'], ['persona', 'Persona'], ['version', 'Versión del arnés'], ['diaTexto', 'Día'], ['texto', 'Estado']]));
+    var porId = {}; S.secciones.forEach(function (s) { porId[s.id] = s; });
+    var partes = [];
+    // el resumen: lo que pide atención, primero
+    var personas = porId.personas;
+    var porConfirmar = personas && personas.extras ? (personas.extras.porConfirmar || []).length : 0;
+    var aCorregir = S.secciones.filter(function (s) { var e = estadoDe(s)[0]; return e === 'warn' || e === 'bad'; }).filter(function (s) { return s.id !== 'personas' || (S.problemas[s.id] || []).length; });
+    var alDia = S.secciones.filter(function (s) { return estadoDe(s)[0] === 'ok'; }).length;
+    var viejas = (ex.versiones || []).filter(function (v) { return v.estado === 'atrasada' || v.estado === 'sin_noticias'; }).length;
+    partes.push(el('div', { class: 'grid' },
+      kpi(porConfirmar ? 'st-warn' : 'st-good', '#seccion-personas', 'Máquinas por confirmar', porConfirmar, porConfirmar ? 'piden que digas de quién son' : 'todas a nombre de alguien'),
+      kpi(aCorregir.length ? 'st-warn' : 'st-good', aCorregir.length ? '#seccion-' + aCorregir[0].id : null, 'Secciones con algo para arreglar', aCorregir.length, aCorregir.length ? aCorregir.map(function (s) { return plano(s).corto; }).join(', ') : 'ninguna'),
+      kpi('st-good', null, 'Secciones al día', alDia + ' de ' + S.secciones.length, 'sin nada pendiente'),
+      kpi(viejas ? 'st-warn' : '', '#versiones', 'Máquinas con una versión vieja o sin noticias', viejas, 'de ' + (ex.versiones || []).length + ' que informan')));
+    var toc = el('nav', { class: 'toc', 'aria-label': 'Secciones' });
+    BLOQUES.forEach(function (b) { b[1].forEach(function (id) { var s = porId[id]; if (!s) return; var e = estadoDe(s)[0]; toc.appendChild(el('a', { href: '#seccion-' + id }, el('span', { class: 'dot ' + (e === 'ok' ? '' : e) }), el('span', { text: plano(s).corto }))); }); });
+    partes.push(toc);
+    var vistas = {};
+    BLOQUES.forEach(function (b) {
+      var pila = el('div', { class: 'pila' });
+      b[1].forEach(function (id) { if (porId[id]) { pila.appendChild(seccion(porId[id])); vistas[id] = true; } });
+      partes.push(el('h3', { class: 'block', text: b[0] }));
+      partes.push(pila);
+    });
+    // una sección que el arnés sume y esta pantalla no conozca todavía, igual se muestra
+    var otras = S.secciones.filter(function (s) { return !vistas[s.id]; });
+    if (otras.length) { var po = el('div', { class: 'pila' }); otras.forEach(function (s) { po.appendChild(seccion(s)); }); partes.push(el('h3', { class: 'block', text: 'Otras' })); partes.push(po); }
+    partes.push(el('h3', { class: 'block' }, el('span', { text: 'Para mirar' }), el('span', { class: 'aside', text: 'no se cambia desde acá' })));
+    var mirar = el('div', { class: 'pila' });
+    var prod = tablaDeMirar('Productos', 'Los que revisa la noche. Se agregan en la lista de la revisión de dependencias.', (ex.productos || []).map(function (p) { return { producto: p.producto, origen: p.origen === 'deployments' ? 'Despliegues' : 'revisión de dependencias', repo: p.repo || p.ruta, estado: p.activo === false ? 'apagado' + (p.motivo ? ' (' + p.motivo + ')' : '') : 'activo', edita: p.origen === 'deployments' ? 'sí, en Despliegues' : 'no' }; }), [['producto', 'Producto'], ['origen', 'De dónde sale'], ['repo', 'Repo'], ['estado', 'Estado'], ['edita', 'Se cambia acá']], 'productos');
+    if (ex.productosMotivo) prod.appendChild(aviso('bad', 'La lista de productos no se pudo leer: los de la revisión de dependencias no se muestran.', ex.productosMotivo));
+    if (ex.productosEnlace) prod.appendChild(el('p', {}, el('a', { class: 'enlace-fuerte', href: ex.productosEnlace, text: 'Abrir la lista de la revisión de dependencias →' })));
+    mirar.appendChild(prod);
+    var ver = tablaDeMirar('Qué versión del arnés tiene cada máquina', 'La que informó cada una con su última corrida. Se actualizan solas al arrancar.', (ex.versiones || []).map(function (v) { return { maquina: v.maquina, persona: v.persona || 'sin confirmar', version: v.version, dia: v.diaTexto, texto: v.texto }; }), [['maquina', 'Máquina'], ['persona', 'Persona'], ['version', 'Versión'], ['dia', 'Última noticia'], ['texto', 'Estado']], 'versiones');
+    if (ex.versionesMotivo) ver.appendChild(aviso('bad', 'No se pudo leer lo que informan las máquinas: la versión de cada una no se sabe.', ex.versionesMotivo));
+    mirar.appendChild(ver);
+    partes.push(mirar);
     app.replaceChildren.apply(app, partes);
   }
   function cargar() {
     return api('').then(function (r) {
-      if (!r.ok) { app.replaceChildren(el('p', { class: 'err', text: r.message || 'no se pudo leer la configuración' })); return; }
+      if (!r.ok) { app.replaceChildren(el('div', { class: 'msg bad' }, el('b', { text: 'No se pudo leer la configuración.' }), el('span', { text: r.message || '' }))); return; }
       S.secciones = r.secciones; S.extras = r;
       r.secciones.forEach(function (s) { S.borradores[s.id] = copia(s.borrador === undefined ? {} : s.borrador); S.problemas[s.id] = s.problems || []; S.textos[s.id] = null; S.avisos[s.id] = s.avisos || []; });
       render();
     });
   }
-  cargar().catch(function (e) { app.replaceChildren(el('p', { class: 'err', text: 'No pude cargar la pestaña: ' + e.message })); });
+  cargar().catch(function (e) { app.replaceChildren(el('div', { class: 'msg bad' }, el('b', { text: 'No pude cargar la pestaña.' }), el('span', { text: e.message }))); });
 })();
 `;
 }
