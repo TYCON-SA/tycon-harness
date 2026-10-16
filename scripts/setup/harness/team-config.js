@@ -38,7 +38,7 @@ const TARGETS = Object.freeze([
   Object.freeze({
     id: 'operations', configKey: 'paths.operations', file: 'operations.json', reader: 'operations-config.js',
     title: 'A quién se asignan los avisos y los Bugs', repoName: 'harness-team-operations (las operaciones del equipo)',
-    reach: 'Este archivo no se instala en las máquinas: lo leen sólo los procesos de la noche.',
+    reach: 'Este archivo no se instala en las máquinas: lo leen los procesos de la noche y el sitio de la organización.',
   }),
 ]);
 const BODY_LIMIT = 256 * 1024;

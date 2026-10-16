@@ -1000,6 +1000,102 @@ RC="$(contar "${C}" --json)"
 [ "${RC}" = "2" ] && ok "7.2-T6b «values_only» con forma inválida → se niega (exit 2)" || mal "7.2-T6b rc=${RC}"
 
 # ══════════════════════════════════════════════════════════════════════════════════════════════════
+# Story 2.28 — la carpeta de cada máquina (`<nombre>-<código>`) y las carpetas viejas
+# ══════════════════════════════════════════════════════════════════════════════════════════════════
+
+# ── 2.28-T39 · 2.28-Reductor_AliasNuevo_AntesYEsperadas (AC 26, 27, 28, 29) ─────────────────────────
+# El bajador deja `<espejo>/.carpetas-de-maquina.json` (acá se fabrica a mano). La vieja `unida` no se cuenta aparte:
+# sus registros ya están en la nueva (suben enteros cada día). Tampoco una `compartida` (duplica a una declarante). Una
+# `siguio_recibiendo` SÍ: lo que recibió después de la mudanza es de otra máquina que no actualizó.
+# 🔴 rojo previo: sin leer el archivo, la carpeta vieja se cuenta aparte (21 evaluaciones en vez de 15, «midieron 7 de 7»),
+#    la vieja sale «atrasada» y la nueva «sin declarar»; con la vieja salteada sin mirar su nueva, la esperada vieja sale
+#    «no reportó»; y saltear también la `siguio_recibiendo` (12 de 4) pierde a la máquina que no actualizó.
+alias_py() { python3 -c "import hashlib,sys; print('maq-'+hashlib.sha256(('tycon-maquina:'+sys.argv[1]).encode()).hexdigest()[:6])" "$1"; }
+AV="$(alias_py macbook-pro)"; AN="$(alias_py macbook-pro-1a2b3c4d)"
+AM="$(alias_py mac-mini)"; AM1="$(alias_py mac-mini-aaaa1111)"; AM2="$(alias_py mac-mini-bbbb2222)"
+AI="$(alias_py imac)"; AI1="$(alias_py imac-cccc3333)"
+# carpetas_t39 <caso> — cada carpeta con las MISMAS 3 evaluaciones (los registros suben enteros); las viejas unida y
+# compartida, del día antes de la mudanza (2026-09-09), así hoy salen «atrasadas»; la que siguió recibiendo, de ayer.
+carpetas_t39() {
+  local C="$1" N F
+  printf '%s\n' "{\"ts\":\"${D1}T10:00:00Z\",\"check\":\"tests\",\"status\":\"green\"}" \
+    "{\"ts\":\"${D1}T11:00:00Z\",\"check\":\"tests\",\"status\":\"red\"}" \
+    "{\"ts\":\"${D2}T09:00:00Z\",\"name\":\"build\",\"status\":\"blocked\"}" > "${C}/gates-t39.log"
+  for N in macbook-pro macbook-pro-1a2b3c4d mac-mini mac-mini-aaaa1111 mac-mini-bbbb2222 imac imac-cccc3333; do
+    F="${D1}"; case "${N}" in macbook-pro|mac-mini) F="2026-09-09" ;; esac
+    maquina_bajada "${C}/buzon" "${N}" "${F}" medido no_medido
+    gz "${C}/gates-t39.log" "${C}/buzon/${N}/registros/gates.log.gz"
+  done
+  cat > "${C}/buzon/.carpetas-de-maquina.json" <<'JSON'
+{ "schema": 1,
+  "carpetas": {
+    "macbook-pro": { "estado": "unida", "nueva": "macbook-pro-1a2b3c4d", "declarantes": 1, "desde": "2026-09-10" },
+    "mac-mini": { "estado": "compartida", "nueva": null, "declarantes": 2, "desde": "2026-09-10" },
+    "imac": { "estado": "siguio_recibiendo", "nueva": null, "declarantes": 1, "desde": "2026-09-10" } },
+  "regeneradas": {} }
+JSON
+  rm -rf "${C}/local"   # ninguna máquina local: sólo el buzón
+  python3 - "${C}/sources.json" "$2" <<'PY'
+import json, sys
+p, esperadas = sys.argv[1], sys.argv[2].split()
+d = json.load(open(p)); d['reducer']['expected_machines'] = [{'alias': a, 'from': '2026-09-01'} for a in esperadas]
+json.dump(d, open(p, 'w'))
+PY
+}
+C="$(nuevo_caso t39)"; carpetas_t39 "${C}" "${AV} ${AM1} ${AM2} ${AI} ${AI1}"
+RC="$(contar "${C}" --json)"
+BL="$(j "${C}" "(d['metricas']['bloqueos']['den'], d['metricas']['bloqueos']['maquinas'])")"
+CB="$(j "${C}" "(d['cobertura']['esperadas'], d['cobertura']['reportaron'], d['cobertura']['ausentes'], d['cobertura']['sin_declarar'], d['cobertura']['atrasadas'])")"
+[ "${RC}" = "0" ] && [ "${BL}" = "(15, 5)" ] \
+  && ok "2.28-T39 la vieja unida y la compartida no se cuentan aparte; la que siguió recibiendo sí, como máquina propia: 15 evaluaciones de 5 máquinas" \
+  || mal "2.28-T39 rc=${RC} (den, máquinas)=${BL}, esperaba (15, 5) — 21 es la vieja contada dos veces; 12, la que siguió recibiendo perdida · $(head -c 200 "${C}/err")"
+[ "${CB}" = "(5, 5, [], [], [])" ] \
+  && ok "2.28-T39 la esperada vieja cuenta como reportada por su nueva: 5 de 5, nadie ausente, la nueva no sale «sin declarar» y la vieja no sale «atrasada»" \
+  || mal "2.28-T39 (esperadas, reportaron, ausentes, sin_declarar, atrasadas)=${CB}, esperaba (5, 5, [], [], [])"
+RC="$(contar "${C}")"
+grep -qF "${AN} (antes, ${AV}): declararla en reducer.expected_machines en lugar de la vieja" "${C}/out" \
+  && ok "2.28-T39 la cobertura dice «${AN} (antes, ${AV})» y pide declararla en lugar de la vieja" \
+  || mal "2.28-T39 el texto de cobertura no muestra la unión: $(head -c 500 "${C}/out")"
+grep -qF "${AM}: compartida por 2 máquinas, no se une ni se cuenta aparte" "${C}/out" \
+  && ! grep -qF "${AI}:" "${C}/out" \
+  && ok "2.28-T39 la compartida se dice por su alias; la que siguió recibiendo es una máquina más, sin marca" \
+  || mal "2.28-T39 la compartida no se dice, o la que siguió recibiendo sale marcada como no contada: $(head -c 500 "${C}/out")"
+if grep -qE 'macbook|mac-mini|imac|1a2b3c4d' "${C}/out" "${C}/err"; then mal "2.28-T39 🔴 un nombre de carpeta llegó a la salida: $(grep -ohE '[a-z-]*(macbook|mac-mini|imac)[a-z0-9-]*' "${C}/out" "${C}/err" | head -3)"
+else ok "2.28-T39 sólo alias y fechas: ningún nombre de carpeta en la salida"; fi
+# Con la nueva YA declarada, la unión se muestra sin el pedido de declararla.
+# 🔴 rojo previo: pedir que se declare una máquina que ya está declarada.
+C="$(nuevo_caso t39-declarada)"; carpetas_t39 "${C}" "${AV} ${AN} ${AM1} ${AM2} ${AI} ${AI1}"
+RC="$(contar "${C}")"
+[ "${RC}" = "0" ] && grep -qF "${AN} (antes, ${AV})" "${C}/out" && ! grep -q 'declararla' "${C}/out" \
+  && ok "2.28-T39 con la nueva declarada: «${AN} (antes, ${AV})», sin pedir que se declare" \
+  || mal "2.28-T39 nueva declarada rc=${RC}: $(head -c 400 "${C}/out")"
+# Sin el archivo del bajador: no une nada, cuenta cada carpeta como hoy, y lo dice.
+# 🔴 rojo previo: contar cada carpeta aparte EN SILENCIO — la vieja se ve como otra máquina y nadie sabe por qué.
+C="$(nuevo_caso t39-sin-archivo)"; carpetas_t39 "${C}" "${AV} ${AM1} ${AM2} ${AI} ${AI1}"; rm -f "${C}/buzon/.carpetas-de-maquina.json"
+RC="$(contar "${C}" --json)"
+BL="$(j "${C}" "(d['metricas']['bloqueos']['den'], d['metricas']['bloqueos']['maquinas'])")"
+RC2="$(contar "${C}")"
+[ "${RC}" = "0" ] && [ "${RC2}" = "0" ] && [ "${BL}" = "(21, 7)" ] && grep -q 'uniones de carpetas no medidas' "${C}/out" \
+  && ok "2.28-T39 sin .carpetas-de-maquina.json: cada carpeta como hoy (21 de 7) y «uniones de carpetas no medidas»" \
+  || mal "2.28-T39 sin archivo rc=${RC}/${RC2} (den, máquinas)=${BL}, esperaba (21, 7): $(head -c 400 "${C}/out")"
+echo '{ roto' > "${C}/buzon/.carpetas-de-maquina.json"
+RC="$(contar "${C}")"
+[ "${RC}" = "0" ] && grep -q 'uniones de carpetas no medidas' "${C}/out" \
+  && ok "2.28-T39 con el archivo ilegible, lo mismo: no une nada y lo dice" || mal "2.28-T39 archivo ilegible rc=${RC}: $(head -c 300 "${C}/out")"
+# --alias con la carpeta nueva (machine-code.json, sin TYCON_MACHINE) y --alias-of con la carpeta entera y con el nombre viejo.
+# 🔴 rojo previo: un --alias que imprime el alias del nombre sin código (el de la carpeta vieja).
+C="$(nuevo_caso t39-alias)"; mkdir -p "${C}/casa/.claude/.tycon-pipeline"
+printf '{"schema":1,"code":"1a2b3c4d","folder":"macbook-pro-1a2b3c4d","created_on":"2026-09-10","previous_folder":"macbook-pro"}\n' \
+  > "${C}/casa/.claude/.tycon-pipeline/machine-code.json"
+OUT="$(env -u TYCON_MACHINE HOME="${C}/casa" TYCON_MACHINE_BASE=MacBook-Pro node "${REDUCTOR}" --alias 2>"${C}/err")"; RCA=$?
+[ "${RCA}" = "0" ] && [ "${OUT}" = "${AN}" ] && ok "2.28-T39 --alias da el alias de la carpeta nueva (${AN})" \
+  || mal "2.28-T39 --alias rc=${RCA} dio «${OUT}», esperaba ${AN} (el de la carpeta nueva) · $(head -c 200 "${C}/err")"
+OUT="$(node "${REDUCTOR}" --alias-of macbook-pro-1a2b3c4d 2>/dev/null)"; RCA=$?
+[ "${RCA}" = "0" ] && [ "${OUT}" = "${AN}" ] && ok "2.28-T39 --alias-of con la carpeta entera da el alias nuevo" \
+  || mal "2.28-T39 --alias-of macbook-pro-1a2b3c4d rc=${RCA} dio «${OUT}», esperaba ${AN}"
+OUT="$(node "${REDUCTOR}" --alias-of MacBook-Pro.local 2>/dev/null)"; RCA=$?
+[ "${RCA}" = "0" ] && [ "${OUT}" = "${AV}" ] && ok "2.28-T39 --alias-of con el nombre viejo sigue dando el alias viejo (el que está en expected_machines)" \
+  || mal "2.28-T39 --alias-of MacBook-Pro.local rc=${RCA} dio «${OUT}», esperaba ${AV}"
 # Story 2.21 — la duración de la suite, de todas las máquinas, y las máquinas sin declarar
 # ══════════════════════════════════════════════════════════════════════════════════════════════════
 # dur <archivo> <fecha> <control> <durationMs como JSON> — una línea con los campos de texto libre que el reductor NO lee

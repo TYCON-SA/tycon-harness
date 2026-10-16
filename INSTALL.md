@@ -216,6 +216,7 @@ apaga sólo con su variable en `0`—, y de los dos que nacen prendidos y son de
 | `bench-notice.js` | SessionStart | Avisa si la última corrida del banco de controles dejó rojos | No | full | `TYCON_BENCH_NOTICE=0` |
 | `dependencies-notice.js` | SessionStart | Dice si corrió la revisión nocturna de dependencias y qué encontró | No | minimal y full | `TYCON_DEPS_NOTICE=0`; integración de los nocturnos (`TYCON_NIGHTLY=0`) |
 | `dashboard-notice.js` | SessionStart | Dice de cuándo es el tablero del arnés publicado y si está completo | No | minimal y full | `TYCON_DASHBOARD_NOTICE=0`; integración de los nocturnos (`TYCON_NIGHTLY=0`) |
+| `owner-email-notice.js` | SessionStart | Dice una vez que la máquina informa al equipo el correo global de git, y cómo verlo o cambiarlo; otra vez sólo si cambia | No | minimal y full | `TYCON_OWNER_EMAIL_NOTICE=0`; integración del buzón (`TYCON_MAILBOX=0`) |
 | `produccion-notice.js` | SessionStart | Regenera el índice de servidores de producción declarados y, en las máquinas autorizadas, avisa si el freno de producción falta | No | full | `TYCON_PRODUCTION_NOTICE=0` |
 | `lane-llm-notice.js` | SessionStart | Avisa si el desempate por modelo del portón de carril abrió permisos | No | full | `TYCON_LANE_LLM_NOTICE=0` |
 | `engram-drift-notice.js` | SessionStart | Revisa la memoria de engram una vez por día: proyectos sin nombre fijo, memoria repartida, observaciones sin exportar | No | minimal y full | `TYCON_ENGRAM_DRIFT=0`; integración engram (`TYCON_ENGRAM=0`) |

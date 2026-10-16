@@ -45,11 +45,23 @@
  * 🔴 Y DÓNDE VIVE EL ARNÉS (story 8.19, tanda B · AC 21): el mismo día, con los registros, prepara `place.json` —en qué
  *    nombre vive el arnés, si el nombre viejo existe, cuánto queda registrado por él (por archivo, con la misma expresión
  *    que `harness.js doctor`), el sha256 de la copia fija de arranque contra el del árbol, y si las skills salen de un
- *    clon aparte y de qué commit—. Es la evidencia con la que la story 8.15 retira el nombre viejo. Sólo números, hashes
- *    y nombres de archivo; un dato que no se pudo leer va `no_medido`. Una máquina sin el mecanismo no lo sube.
+ *    clon aparte y de qué commit—. Es la evidencia con la que la story 8.15 retira el nombre viejo. Números, hashes y
+ *    nombres de archivo, y un dato de la persona (story 2.28): `owner`, el correo de git de quien usa la máquina. Un dato
+ *    que no se pudo leer va `no_medido`. Una máquina sin el mecanismo no lo sube.
  *    Desde la story 8.26 (AC 40) trae también `install`: el modo (`managed` es la versión bajada), el número de versión
  *    y la capa del equipo (nombre, archivos y commit), lo mismo que `doctor --json`, para saber cómo está cada máquina
  *    sin pedirle a nadie que corra nada.
+ *
+ * 🔴 Y QUIÉN ES QUIÉN (story 2.28). `place.json` trae `owner`: el correo de git de la persona (`user.email` de su
+ *    configuración GLOBAL de git, leída como archivo y en el orden de git, sin seguir los `include`, sin invocar git), o
+ *    `no_medido` con el motivo. Es un dato de la persona: lo leen sólo quienes mantienen (el espejo del buzón y el sitio
+ *    de la organización, que lo usa para que un mantenedor confirme de quién es cada máquina); la página del equipo no
+ *    lo abre. `--json` imprime `place` entero, con el correo: sale en la propia máquina de la persona, no es una fuga, y
+ *    el instalador no usa `--json`. Y cada máquina sube a SU carpeta: `<nombre>-<código>`, con un código de 8
+ *    hexadecimales al azar que se genera una vez y se guarda en `machine-code.json` de la carpeta de estado (nunca un
+ *    dato de hardware): dos máquinas con el mismo nombre ya no escriben en la misma carpeta. `place.json` trae `folder`
+ *    (la carpeta, el código y la carpeta vieja que reemplaza) y los lectores unen la vieja a la nueva con
+ *    `carpetasDeMaquina` de `download-runs.js`. Con `TYCON_MACHINE` (las pruebas) la carpeta es ese nombre, sin código.
  *
  * Nada de esto pregunta ni abre un login: no usa git, ni `az`, ni credenciales de la persona.
  *
@@ -70,8 +82,8 @@
  *   2 → se negó (la llave permite leer, listar, borrar o escribir, o es de cuenta)
  *
  * Variables (para el banco de pruebas): TYCON_MAILBOX_JSON, TYCON_MAILBOX_URL_BASE, TYCON_TIMING_HISTORY,
- * TYCON_UPLOADS_LOG, TYCON_MACHINE, TYCON_LOGS_SOURCE, TYCON_LOGS_DIR, TYCON_TODAY, TYCON_NOW (el inicio de la pasada,
- * ISO: fija la versión).
+ * TYCON_UPLOADS_LOG, TYCON_MACHINE, TYCON_MACHINE_BASE (story 2.28: fija sólo el nombre; el código se arma igual),
+ * TYCON_LOGS_SOURCE, TYCON_LOGS_DIR, TYCON_TODAY, TYCON_NOW (el inicio de la pasada, ISO: fija la versión).
  * Apagado desde el instalador: TYCON_NO_UPLOAD_RUNS=1.
  */
 
@@ -141,11 +153,229 @@ function normalizarNombreDeMaquina(n) {
   return String(n || '').trim().toLowerCase().replace(/\.local$/, '').replace(/[^a-z0-9._-]+/g, '-').replace(/^[-._]+|[-._]+$/g, '');
 }
 
-function nombreDeMaquina() {
-  let n = variable('TYCON_MACHINE');
+/** El nombre de esta máquina, sin código (story 2.28): `TYCON_MACHINE`, o `TYCON_MACHINE_BASE` (pruebas), o el de la red. */
+function nombreBaseDeMaquina() {
+  let n = variable('TYCON_MACHINE') || process.env.TYCON_MACHINE_BASE;
   if (!n && process.platform === 'darwin') n = nombreEstableDeMac();
   if (!n) { try { n = os.hostname(); } catch (_) { n = ''; } }
   return normalizarNombreDeMaquina(n);
+}
+
+const FORMA_CODIGO = /^[0-9a-f]{8}$/;
+const rutaCodigoDeMaquina = (home = os.homedir()) => path.join(stateDirOf(home), 'machine-code.json');
+
+/**
+ * `machine-code.json` como está (story 2.28): `{ datos }` si tiene forma, o `{ motivo }` («no estaba», «ilegible» o
+ * «sin forma»). Sólo lee.
+ */
+function leerCodigoDeMaquina(archivo = rutaCodigoDeMaquina()) {
+  let texto;
+  // 🔴 «No se pudo leer» (permisos, un antivirus que lo tiene tomado, demasiados archivos abiertos) NO es «está roto»:
+  //    sale `error` y nadie lo pisa — regenerar por un error pasajero mudaba la máquina para siempre (pase adversarial).
+  try { texto = fs.readFileSync(archivo, 'utf8'); }
+  catch (e) { return e.code === 'ENOENT' ? { motivo: 'no estaba' } : { error: e.code || 'error' }; }
+  let d;
+  try { d = JSON.parse(texto); } catch (_) { return { motivo: 'ilegible' }; }
+  const fechaReal = (f) => /^\d{4}-\d{2}-\d{2}$/.test(String(f)) && new Date(`${f}T00:00:00Z`).toISOString().slice(0, 10) === f;
+  if (!d || typeof d !== 'object' || !FORMA_CODIGO.test(String(d.code)) || typeof d.folder !== 'string'
+    || !FORMA_MAQUINA.test(d.folder) || !d.folder.endsWith(`-${d.code}`) || !fechaReal(d.created_on)) return { motivo: 'sin forma' };
+  return { datos: d };
+}
+
+/**
+ * La huella de las corridas de una carpeta (story 2.28, tercera vuelta de seguridad, decisión del dueño del 2026-10-15):
+ * sha256 de los nombres de sus volcados `.json` de primer nivel, ordenados y unidos por saltos de línea. La máquina la
+ * declara para su carpeta vieja con lo que dice su registro de subidas; la bajada la calcula con lo que hay en el espejo;
+ * la unión pide que coincidan. La llave no deja listar el buzón: otra máquina no puede saberla. UNA definición: la usa
+ * también `download-runs.js`.
+ */
+function huellaDeCorridas(nombres) {
+  const lista = [...new Set((nombres || []).filter((n) => typeof n === 'string' && n.endsWith('.json') && FORMA_ARCHIVO.test(n)))].sort();
+  return crypto.createHash('sha256').update(lista.join('\n')).digest('hex');
+}
+
+/**
+ * La huella de lo que esta máquina subió a `carpeta`, según su registro de subidas (claves `<carpeta>/<volcado>.json`;
+ * los registros y las versiones no cuentan: el espejo los guarda con el nombre de siempre). null si el registro existe y
+ * no se pudo leer: sin huella no hay unión (falla hacia no mostrar).
+ */
+function huellaDeLoSubido(rutaRegistro, carpeta) {
+  let r;
+  try { r = JSON.parse(fs.readFileSync(rutaRegistro, 'utf8')); }
+  catch (e) { return e && e.code === 'ENOENT' ? huellaDeCorridas([]) : null; }
+  const nombres = Object.keys((r && r.archivos) || {}).map((k) => k.split('/')).filter((p) => p.length === 2 && p[0] === carpeta).map((p) => p[1]);
+  return huellaDeCorridas(nombres);
+}
+
+/**
+ * Las carpetas con código anteriores de esta máquina, según su registro de subidas: `<base>-<8 hexadecimales>` exacto
+ * (un nombre que ya termina en 8 hexadecimales no cuenta como «con código»). Distingue «borrado» de «primera vez», y la
+ * carpeta regenerada las declara (`superseded_folders`) para que la bajada las una a ella. `leido: false` si el registro
+ * existe y no se pudo leer: no prueba nada, y se declara regenerado (falla hacia decirlo).
+ */
+function carpetasConCodigoAnteriores(rutaRegistro, base) {
+  const mismaBase = new RegExp(`^${base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}-[0-9a-f]{8}$`);
+  try {
+    const r = JSON.parse(fs.readFileSync(rutaRegistro, 'utf8'));
+    return { leido: true, carpetas: [...new Set(Object.keys((r && r.archivos) || {}).map((k) => k.split('/')[0]).filter((c) => mismaBase.test(c)))].sort() };
+  } catch (e) { return { leido: Boolean(e && e.code === 'ENOENT'), carpetas: [] }; }
+}
+
+/**
+ * La carpeta de esta máquina en el buzón (story 2.28, decisión 9). Con `TYCON_MACHINE`, ese nombre (como siempre, sin
+ * código). Si no, la de `machine-code.json`: la carpeta se LEE del archivo, no se vuelve a armar (renombrar el equipo no
+ * la mueve). Sin archivo con forma: quien sólo lee (`crear` falso: la vista, el reductor, la poda) recibe el nombre sin
+ * código, que es donde subía antes; la subida (`crear`) genera un código al azar —nunca un dato de hardware—, escribe el
+ * archivo (en exclusiva si no estaba: dos pasadas a la vez no generan dos códigos) y devuelve el motivo si regeneró.
+ * Devuelve `{ nombre, folder, regenerado }`; `nombre` vacío si no hay forma de nombrar la máquina.
+ */
+function carpetaDeMaquina(opts = {}) {
+  const fijo = variable('TYCON_MACHINE');
+  if (fijo) { const n = normalizarNombreDeMaquina(fijo); return { nombre: n, folder: { name: n, source: 'TYCON_MACHINE' }, regenerado: null }; }
+  const archivo = opts.archivo || rutaCodigoDeMaquina();
+  const deDatos = (d) => {
+    const folder = { name: d.folder, code: d.code, previous_folder: d.previous_folder || null, moved_on: d.created_on || null };
+    if (d.code_regenerated && typeof d.code_regenerated === 'object') folder.code_regenerated = { on: d.code_regenerated.on, reason: d.code_regenerated.reason };
+    if (Array.isArray(d.superseded_folders) && d.superseded_folders.length) folder.superseded_folders = d.superseded_folders.slice();
+    // null = el registro no se pudo leer: se dice (sin huella la bajada no une), no se calla
+    if ('previous_runs_sha256' in d) folder.previous_runs_sha256 = typeof d.previous_runs_sha256 === 'string' ? d.previous_runs_sha256 : null;
+    if (d.superseded_runs_sha256 && typeof d.superseded_runs_sha256 === 'object') folder.superseded_runs_sha256 = { ...d.superseded_runs_sha256 };
+    return { nombre: d.folder, folder, regenerado: null };
+  };
+  const leido = leerCodigoDeMaquina(archivo);
+  if (leido.datos) return deDatos(leido.datos);
+  const base = nombreBaseDeMaquina();
+  // un archivo que existe y no se pudo leer: quien sólo lee usa el nombre sin código; la subida NO lo pisa — falla y
+  // reintenta en el próximo arranque
+  if (leido.error && opts.crear) throw Object.assign(new Error(`machine-code.json no se pudo leer (${leido.error})`), { code: leido.error });
+  if (!opts.crear || !base) return { nombre: base, folder: null, regenerado: null };
+  const dia = opts.hoy || hoy();
+  const code = crypto.randomBytes(4).toString('hex');
+  const datos = { schema: 1, code, folder: `${base}-${code}`, created_on: dia, previous_folder: base };
+  // «no estaba» la primera vez es la carpeta de siempre de la máquina, no una regenerada: se regenera si la máquina ya
+  // había subido a una carpeta con código de su mismo nombre (el archivo se borró), o si el archivo estaba roto. Las
+  // carpetas con código anteriores se declaran, para que la bajada las una a ésta (pase adversarial).
+  const anteriores = opts.registro ? carpetasConCodigoAnteriores(opts.registro, base) : { leido: true, carpetas: [] };
+  const regenera = leido.motivo !== 'no estaba' || anteriores.carpetas.length > 0 || !anteriores.leido;
+  if (regenera) datos.code_regenerated = { on: dia, reason: leido.motivo };
+  const reemplaza = anteriores.carpetas.filter((c) => c !== datos.folder);
+  if (reemplaza.length) datos.superseded_folders = reemplaza;
+  // la huella de lo que subió a la carpeta vieja y a cada carpeta que reemplaza: la prueba que pide la bajada para unirlas
+  if (opts.registro) {
+    datos.previous_runs_sha256 = huellaDeLoSubido(opts.registro, base);
+    if (reemplaza.length) datos.superseded_runs_sha256 = Object.fromEntries(reemplaza.map((c) => [c, huellaDeLoSubido(opts.registro, c)]));
+  }
+  const texto = `${JSON.stringify(datos, null, 1)}\n`;
+  fs.mkdirSync(path.dirname(archivo), { recursive: true });
+  if (leido.motivo === 'no estaba') {
+    // 🔴 Se crea ENTERO o no se crea: el texto va a un temporal y se engancha con un enlace duro, que falla si el archivo
+    //    ya existe. Con `wx` sobre el archivo final, la otra pasada podía leerlo a medio escribir, darlo por roto y
+    //    pisarlo con su código (dos pasadas a la vez, dos códigos: lo cazó T31).
+    const tmp = `${archivo}.tmp-${process.pid}-${crypto.randomBytes(3).toString('hex')}`;
+    fs.writeFileSync(tmp, texto);
+    try { fs.linkSync(tmp, archivo); }
+    catch (e) {
+      if (e.code !== 'EEXIST') { try { fs.writeFileSync(archivo, texto, { flag: 'wx' }); } catch (e2) { if (e2.code !== 'EEXIST') { fs.rmSync(tmp, { force: true }); throw e2; } } }
+    } finally { fs.rmSync(tmp, { force: true }); }
+    // gane quien gane, vale lo que quedó en el archivo
+    const quedo = leerCodigoDeMaquina(archivo);
+    if (quedo.datos && quedo.datos.code !== code) return deDatos(quedo.datos);
+    if (!quedo.datos) escribirAtomico(archivo, texto);
+  } else escribirAtomico(archivo, texto);
+  return { ...deDatos(datos), regenerado: regenera ? leido.motivo : null };
+}
+
+/** La carpeta de esta máquina en el buzón, para quien sólo lee (la vista, el reductor, la poda): ver carpetaDeMaquina. */
+function nombreDeMaquina() {
+  return carpetaDeMaquina({ crear: false }).nombre;
+}
+
+const FORMA_CORREO = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/**
+ * `user.email` de la configuración GLOBAL de git (story 2.28, AC 1-2), leída como archivo: si `GIT_CONFIG_GLOBAL` está
+ * puesta, sólo ése; si no, los que existan en el orden de git (`$XDG_CONFIG_HOME/git/config` o `~/.config/git/config`, y
+ * después `~/.gitconfig`), y vale el ÚLTIMO `user.email`. Los `include`/`includeIf` NO se siguen (su `path` puede ser
+ * cualquier archivo de la máquina). Devuelve `{ email, source: 'git-global' }` en minúsculas y sin espacios, o
+ * `{ status: 'no_medido', reason }` con un motivo por caso, nunca una ruta. No invoca git (T18).
+ */
+/**
+ * El valor de una clave de la configuración de git, como lo lee git (pase adversarial): las comillas se pueden abrir y
+ * cerrar en cualquier parte, `\` escapa (`\\`, `\"`, `\n`, `\t`, `\b`), un `#` o `;` fuera de comillas empieza un
+ * comentario, y los espacios de los bordes fuera de comillas no cuentan.
+ */
+function valorDeGit(crudo) {
+  const ESCAPES = { n: '\n', t: '\t', b: '\b', '"': '"', '\\': '\\' };
+  let out = '';
+  let espacios = '';
+  let comillas = false;
+  for (let i = 0; i < crudo.length; i++) {
+    const ch = crudo[i];
+    if (ch === '\\' && i + 1 < crudo.length) { out += espacios + (ESCAPES[crudo[i + 1]] || crudo[i + 1]); espacios = ''; i += 1; continue; }
+    if (ch === '"') { out += espacios; espacios = ''; comillas = !comillas; continue; }
+    if (!comillas && (ch === '#' || ch === ';')) break;
+    if (!comillas && /\s/.test(ch)) { if (out) espacios += ch; continue; }
+    out += espacios + ch;
+    espacios = '';
+  }
+  return out;
+}
+
+function correoDeGitGlobal(opts = {}) {
+  const env = opts.env || process.env;
+  const home = opts.home || os.homedir();
+  const noMedido = (reason) => ({ status: 'no_medido', reason });
+  const archivos = env.GIT_CONFIG_GLOBAL
+    ? [env.GIT_CONFIG_GLOBAL]
+    : [env.XDG_CONFIG_HOME ? path.join(env.XDG_CONFIG_HOME, 'git', 'config') : path.join(home, '.config', 'git', 'config'), path.join(home, '.gitconfig')];
+  let alguno = false;
+  let email = null;
+  let conInclude = false;
+  for (const f of archivos) {
+    let texto;
+    try { texto = fs.readFileSync(f, 'utf8'); }
+    catch (e) {
+      if (e.code === 'ENOENT') continue;
+      return noMedido(`la configuración global de git no se pudo leer (${e.code || 'error'})`);
+    }
+    alguno = true;
+    let seccion = null;
+    // las líneas lógicas: una línea que termina en una barra invertida sin pareja sigue en la siguiente (como git)
+    const logicas = [];
+    let acumulada = null;
+    for (const cruda of texto.split(/\r?\n/)) {
+      const junta = acumulada === null ? cruda : acumulada + cruda;
+      const barras = (/\\+$/.exec(junta) || [''])[0].length;
+      if (barras % 2 === 1) { acumulada = junta.slice(0, -1); continue; }
+      logicas.push(junta);
+      acumulada = null;
+    }
+    if (acumulada !== null) logicas.push(acumulada);
+    for (const logica of logicas) {
+      let linea = logica.trim();
+      const cab = /^\[\s*([A-Za-z0-9.-]+)(?:\s+"[^"]*")?\s*\](.*)$/.exec(linea);
+      if (cab) {
+        const nombre = cab[1].toLowerCase();
+        const sub = /^\[\s*[A-Za-z0-9.-]+\s+"/.test(linea);
+        seccion = sub ? `${nombre}:sub` : nombre;
+        if (nombre === 'include' || nombre === 'includeif') conInclude = true;
+        linea = cab[2].trim();   // git deja una clave en la misma línea de la cabecera
+      }
+      if (seccion !== 'user' || !linea || /^[#;]/.test(linea)) continue;
+      const kv = /^([A-Za-z][A-Za-z0-9-]*)\s*(?:=(.*))?$/.exec(linea);
+      if (!kv || kv[1].toLowerCase() !== 'email') continue;
+      email = valorDeGit(kv[2] === undefined ? '' : kv[2]);
+    }
+  }
+  if (!alguno) return noMedido('esta máquina no tiene configuración global de git');
+  if (email === null || email === '') {
+    return noMedido(conInclude
+      ? 'user.email no está en la configuración global de git; el correo puede estar en un archivo incluido, que no se sigue'
+      : 'la configuración global de git no tiene user.email');
+  }
+  const limpio = email.trim().toLowerCase();
+  if (!FORMA_CORREO.test(limpio)) return noMedido('user.email de la configuración global de git no tiene forma de correo');
+  return { email: limpio, source: 'git-global' };
 }
 
 function rutaConfig() {
@@ -358,7 +588,9 @@ function prepararRegistros(opts = {}) {
   let anterior = null;
   try {
     const c = JSON.parse(fs.readFileSync(coberturaArchivo, 'utf8'));
-    if (c && c.esquema === 1 && c.fecha === dia && msDeVersion(c.preparado) !== null) return { estado: 'ya_preparado_hoy', version: c.preparado };
+    // story 2.28: la preparación de hoy vale si su place.json es de la carpeta de ahora; si la carpeta cambió (la primera
+    // pasada con código, o un código regenerado), se re-prepara: el juego nuevo tiene que declarar la carpeta nueva.
+    if (c && c.esquema === 1 && c.fecha === dia && msDeVersion(c.preparado) !== null && carpetaPreparada(destino, opts.folder)) return { estado: 'ya_preparado_hoy', version: c.preparado };
     if (c) anterior = [c.preparado, c.invalidado].map(msDeVersion).filter((x) => x !== null).sort((a, b) => b - a)[0];
   } catch (_) { /* primera vez, o ilegible: se prepara */ }
   const preparado = versionMonotona(ahoraMs(), anterior === undefined ? null : anterior);
@@ -412,7 +644,7 @@ function prepararRegistros(opts = {}) {
   // story 8.19 (AC 21): dónde vive el arnés, antes de la cobertura (que es la marca de que lo de arriba está completo)
   const lugar = path.join(destino, 'place.json');
   let facts = null;
-  try { facts = placeFactsForMailbox(dia); } catch (e) { facts = { schema: 1, day: dia, place: { status: 'no_medido', reason: `no se pudo mirar (${(e && e.code) || 'error'})` } }; }
+  try { facts = placeFactsForMailbox(dia, opts.folder); } catch (e) { facts = { schema: 1, day: dia, place: { status: 'no_medido', reason: `no se pudo mirar (${(e && e.code) || 'error'})` } }; }
   if (facts) escribirAtomico(lugar, `${JSON.stringify(facts, null, 1)}\n`);
   else { try { fs.unlinkSync(lugar); } catch (_) { /* no estaba */ } }
   escribirAtomico(coberturaArchivo, `${JSON.stringify({ esquema: 1, fecha: dia, preparado, fuentes }, null, 1)}\n`);
@@ -433,11 +665,25 @@ function invalidarPreparacion(dirRegistros, version) {
 }
 
 /**
- * Dónde vive el arnés en esta máquina (story 8.19, tanda B · AC 21), como viaja al buzón: SÓLO números, hashes y nombres
- * de archivo (nunca una ruta con la carpeta de la persona; los motivos, códigos de error). Un dato que no se pudo leer va
- * `{ status: 'no_medido', reason }`. null si la máquina no tiene el mecanismo instalado (no participa).
+ * ¿La preparación que está en `destino` es de la carpeta `folder`? (story 2.28). Sin carpeta que comparar, sí; sin
+ * place.json (una máquina sin el mecanismo), sí: no hay qué re-preparar.
  */
-function placeFactsForMailbox(day) {
+function carpetaPreparada(destino, folder) {
+  if (!folder) return true;
+  let p;
+  try { p = JSON.parse(fs.readFileSync(path.join(destino, 'place.json'), 'utf8')); }
+  catch (e) { return e.code === 'ENOENT'; }
+  return Boolean(p && p.folder && p.folder.name === folder.name);
+}
+
+/**
+ * Dónde vive el arnés en esta máquina (story 8.19, tanda B · AC 21), como viaja al buzón: números, hashes y nombres de
+ * archivo (nunca una ruta con la carpeta de la persona; los motivos, códigos de error), y desde la story 2.28 un dato de
+ * la persona, `owner` (su correo de git, ver correoDeGitGlobal), y `folder` (la carpeta de la máquina en el buzón). Un
+ * dato que no se pudo leer va `{ status: 'no_medido', reason }`. null si la máquina no tiene el mecanismo instalado (no
+ * participa).
+ */
+function placeFactsForMailbox(day, folder = null) {
   const home = os.homedir();
   const pipeline = path.join(stateDirOf(home));
   const notMeasured = (reason) => ({ status: 'no_medido', reason });
@@ -447,7 +693,8 @@ function placeFactsForMailbox(day) {
     if (e.code === 'ENOENT') return null;
     state = null;
   }
-  const out = { schema: 1, day };
+  const out = { schema: 1, day, owner: correoDeGitGlobal({ home }) };
+  if (folder) out.folder = folder;
   let P;
   try { P = require('../setup/harness/place.js'); } catch (e) {
     return Object.assign(out, { place: notMeasured(`place.js no se pudo cargar (${code(e)})`) });
@@ -495,7 +742,8 @@ function placeFactsForMailbox(day) {
 /**
  * Cómo está instalado el arnés en esta máquina, como lo dice `harness.js doctor --json` (story 8.26, AC 40: versión
  * bajada y capa del equipo en todas las máquinas, sin pedirle nada a nadie). Sale del mismo estado que lee `doctor`
- * (`harness-state.json`), y viaja sólo lo que no identifica a nadie: el modo, el número de versión y, de la capa del
+ * (`harness-state.json`), y de acá viaja lo que no identifica a nadie (el dato de la persona, `owner`, lo arma
+ * placeFactsForMailbox, no esta función): el modo, el número de versión y, de la capa del
  * equipo, su nombre corto, cuántos archivos trajo y su commit. Nunca la dirección del repo de la capa. Un estado
  * ilegible es `no_medido`; un campo que no tiene la forma esperada va `null` (no se adivina).
  */
@@ -626,9 +874,15 @@ async function subir(opts = {}) {
     if (res.aviso_vence === 'emitido') log(texto);
   }
 
-  const maquina = nombreDeMaquina();
+  // story 2.28: la carpeta de esta máquina (`<nombre>-<código>`). La primera pasada con la carpeta nueva vuelve a subir
+  // ahí lo que hay en el disco: la clave del registro de subidas empieza con la carpeta (decisión 12).
+  let carpeta;
+  try { carpeta = carpetaDeMaquina({ crear: true, hoy: diaDeRegistros(), registro: rutaRegistro }); }
+  catch (e) { return fin(1, 'sin_maquina', `no se pudo guardar el código de esta máquina (machine-code.json: ${e.code || 'error'})`); }
+  const maquina = carpeta.nombre;
   res.maquina = maquina || null;
   if (!maquina || !FORMA_MAQUINA.test(maquina)) return fin(1, 'sin_maquina', 'no se pudo saber el nombre de esta máquina (hostname vacío o sin forma de nombre)');
+  if (carpeta.regenerado) log(`el código de esta máquina se regeneró (${carpeta.regenerado}): sube a la carpeta nueva ${maquina}; un mantenedor la tiene que confirmar`);
 
   // 2 · lo que hay y lo que ya subió. 🔴 Los REGISTROS de frenos y escapes van PRIMERO en la cola (story 2.5):
   //    con un atraso de hilos y el presupuesto chico, al final de la cola no entrarían nunca. Los .gz antes y la
@@ -636,7 +890,7 @@ async function subir(opts = {}) {
   const entradas = [];
   const noLeidos = [];
   let prep = { estado: 'sin_carpeta' };
-  try { prep = prepararRegistros(); }
+  try { prep = prepararRegistros({ folder: carpeta.folder }); }
   catch (e) { noLeidos.push(`registros de frenos y escapes (${e.code || 'error'})`); }
   res.registros = prep.estado;
   // story 8.19 (AC 21): lo que va en place.json, también en la salida (--json)
@@ -875,7 +1129,7 @@ async function chequearSoloCrear(opts = {}) {
   return fin(1, 'no_medido', `no medido: ningún blob confirmado de esta máquina tiene todavía su archivo local con el mismo sha256 (${candidatos.length} anotado(s)): no se manda nada distinto de lo confirmado`);
 }
 
-module.exports = { placeFactsForMailbox, subir, chequearSoloCrear, respuestaDelBuzon, versionDe, msDeVersion, FORMA_VERSION, nombreDeMaquina, normalizarNombreDeMaquina, leerConfig, integracionBuzon, negativaDeLaLlave, rutaConfig, urlBase, FORMA_MAQUINA, FORMA_ARCHIVO, FORMA_REGISTRO, REGISTROS, prepararRegistros, usosParaElBuzon, X_MS_VERSION };
+module.exports = { placeFactsForMailbox, subir, chequearSoloCrear, respuestaDelBuzon, versionDe, msDeVersion, FORMA_VERSION, nombreDeMaquina, nombreBaseDeMaquina, carpetaDeMaquina, leerCodigoDeMaquina, rutaCodigoDeMaquina, correoDeGitGlobal, huellaDeCorridas, FORMA_CODIGO, normalizarNombreDeMaquina, leerConfig, integracionBuzon, negativaDeLaLlave, rutaConfig, urlBase, FORMA_MAQUINA, FORMA_ARCHIVO, FORMA_REGISTRO, REGISTROS, prepararRegistros, usosParaElBuzon, X_MS_VERSION };
 
 /**
  * `--log <archivo>`: la salida (la estándar y la de error) se AGREGA a ese archivo, que pasado ~512 KB se mueve a `.1`.

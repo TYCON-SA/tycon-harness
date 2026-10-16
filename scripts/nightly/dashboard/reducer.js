@@ -38,8 +38,14 @@
  *
  * Uso:
  *   node scripts/nightly/dashboard/reducer.js [--json]            # la cuenta, sólo números, alias y fechas
- *   node scripts/nightly/dashboard/reducer.js --alias             # el alias de esta máquina (para declararla)
- *   node scripts/nightly/dashboard/reducer.js --alias-of <nombre> # el alias de otra máquina, por su nombre
+ *   node scripts/nightly/dashboard/reducer.js --alias             # el alias de esta máquina (para declararla): el de
+ *                                                                 # su carpeta del buzón, `<nombre>-<código>` (story 2.28)
+ *   node scripts/nightly/dashboard/reducer.js --alias-of <nombre> # el alias de otra máquina, por su carpeta entera
+ *                                                                 # (`macbook-pro-1a2b3c4d`) o por su nombre viejo
+ *
+ * Carpetas viejas (story 2.28): una carpeta `unida` a su nueva (`.carpetas-de-maquina.json` del bajador) no se cuenta
+ * aparte, y la cobertura muestra «maq-<nuevo> (antes, maq-<viejo>)»; una `compartida` tampoco. Una `siguio_recibiendo`
+ * se cuenta como una máquina propia (lo que recibió después de la mudanza es de otra máquina que no actualizó).
  *
  * Contrato de salida:
  *   0 → contó (aunque alguna máquina o fuente no se haya podido medir: eso va en la cobertura)
@@ -266,6 +272,34 @@ function aliasDeNombre(n) {
 /** El alias de un nombre tal como lo escribe una persona (`--alias-of`): se normaliza UNA vez, como la subida. */
 function aliasDe(nombre) { return aliasDeNombre(normalizarNombreDeMaquina(nombre)); }
 
+/**
+ * Las uniones de carpetas del buzón (story 2.28, decisiones 11-13). Cada máquina sube ahora a `<nombre>-<código>`; la
+ * carpeta vieja (`<nombre>`) queda como estaba. La unión la calcula UNA función del bajador (`carpetasDeMaquina` de
+ * `download-runs.js`), que la deja en `<espejo>/.carpetas-de-maquina.json`; el reductor, la poda y la vista de corridas
+ * leen ese archivo y nunca `place.json` (que trae el correo). Devuelve `{ estado: 'medidas', carpetas: Map(vieja →
+ * { estado, nueva, declarantes, desde }) }`, o `{ estado: 'no_medidas', motivo }` si no está o no tiene forma: entonces
+ * no se une nada, cada carpeta cuenta como hoy, y quien lee lo dice («uniones de carpetas no medidas»).
+ * 🔴 Una entrada sin forma invalida el archivo entero: unir a medias falla hacia mostrar de más.
+ */
+const ARCHIVO_UNIONES = '.carpetas-de-maquina.json';
+const ESTADOS_UNION = new Set(['unida', 'compartida', 'siguio_recibiendo']);
+function leerUnionesDeCarpetas(buzon) {
+  const no = (motivo) => ({ estado: 'no_medidas', motivo });
+  let d;
+  try { d = JSON.parse(fs.readFileSync(path.join(buzon, ARCHIVO_UNIONES), 'utf8')); }
+  catch (e) { return no(e instanceof SyntaxError ? 'el archivo de uniones del bajador no es JSON' : e.code === 'ENOENT' ? 'el bajador no dejó el archivo de uniones' : `el archivo de uniones no se pudo leer (${e.code || 'error'})`); }
+  if (!d || typeof d !== 'object' || d.schema !== 1 || !d.carpetas || typeof d.carpetas !== 'object' || Array.isArray(d.carpetas)) return no('el archivo de uniones no tiene la forma esperada');
+  const carpetas = new Map();
+  for (const [vieja, u] of Object.entries(d.carpetas)) {
+    const forma = FORMA_MAQUINA.test(vieja) && u && typeof u === 'object' && ESTADOS_UNION.has(u.estado)
+      && Number.isInteger(u.declarantes) && u.declarantes >= 1 && (u.desde === null || u.desde === undefined || fechaValida(u.desde))
+      && (u.estado === 'unida' ? typeof u.nueva === 'string' && FORMA_MAQUINA.test(u.nueva) && u.nueva !== vieja : (u.nueva === null || u.nueva === undefined));
+    if (!forma) return no('una entrada del archivo de uniones no tiene forma');
+    carpetas.set(vieja, { estado: u.estado, nueva: u.estado === 'unida' ? u.nueva : null, declarantes: u.declarantes, desde: u.desde || null });
+  }
+  return { estado: 'medidas', carpetas };
+}
+
 /** Los baldes que juntan muchos valores («otro» y los «sin-…»): nunca son «una regla». */
 const BALDES_GENERICOS = new Set(['otro', ...Object.values(FUENTES).flatMap((f) => Object.values(f.dims).map((d) => d.sinValor))]);
 
@@ -376,16 +410,28 @@ function juntar({ registros, buzon, cfg, hoy, maquina } = {}) {
       maquinas.set(aliasLocal, { fecha: dia, fuentes, leer: (id) => textos[id] });
     }
   }
+  // story 2.28: las carpetas viejas del buzón. Una `unida` no se cuenta aparte (sus registros están enteros en la nueva);
+  // una `compartida` tampoco (duplica a alguna de sus declarantes, que vuelven a subir lo suyo a su carpeta nueva). Una
+  // `siguio_recibiendo` SÍ se cuenta, como una máquina propia: lo que llegó después de la mudanza es de OTRA máquina que
+  // todavía no actualizó, y el juego de registros más nuevo que eligió el bajador es el suyo, no un duplicado.
+  let uniones = null;
+  const unidas = [];      // { vieja, nueva }
+  const apartadas = [];   // { alias, estado, declarantes }
   if (buzon) {
     let entradas = [];
-    try { entradas = fs.readdirSync(buzon, { withFileTypes: true }); }
+    let leido = false;
+    try { entradas = fs.readdirSync(buzon, { withFileTypes: true }); leido = true; }
     catch (e) {
       entradas = [];
       if (e.code !== 'ENOENT') noLeidos.push(`no se pudo leer la carpeta bajada del buzón (${e.code || 'error'}): las otras máquinas faltan, no son cero`);
     }
+    if (leido) uniones = leerUnionesDeCarpetas(buzon);
     const aliasEsperados = new Set(r.expected_machines.map((m) => m.alias));
     for (const en of entradas.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
       if (!FORMA_MAQUINA.test(en.name)) continue;
+      const u = uniones && uniones.estado === 'medidas' ? uniones.carpetas.get(en.name) : null;
+      if (u && u.estado === 'unida') { unidas.push({ vieja: en.name, nueva: u.nueva }); continue; }
+      if (u && u.estado === 'compartida') { apartadas.push({ alias: aliasDeNombre(en.name), estado: u.estado, declarantes: u.declarantes }); continue; }
       // Un ARCHIVO suelto en la carpeta bajada (la página de la vista de corridas vive ahí) no es una máquina. Un enlace
       // se decide por lo que apunta, y uno roto sí se cuenta: no se puede afirmar qué es. Pero si el archivo lleva el
       // nombre de una máquina ESPERADA, es esa máquina rota: ilegible, no «no reportó».
@@ -503,11 +549,25 @@ function juntar({ registros, buzon, cfg, hoy, maquina } = {}) {
   const esperadas = r.expected_machines.filter((m) => m.from <= ventana.hasta).map((m) => m.alias);
   const vistos = [...maquinas.keys()].sort();
   const limiteAtraso = restarDias(dia, DIAS_ATRASO);
+  // story 2.28 (AC 29): la esperada vieja cuenta como reportada si reportó su nueva —nunca «ausente»—, y la nueva no es
+  // una máquina «sin declarar» más: es la misma, y la cobertura pide declararla en lugar de la vieja.
+  const antesDe = new Map();   // alias nuevo → alias viejo, sólo si la nueva reportó
+  for (const { vieja, nueva } of unidas) {
+    const an = aliasDeNombre(nueva), av = aliasDeNombre(vieja);
+    if (an && av && maquinas.has(an)) antesDe.set(an, av);
+  }
+  const cubiertas = new Set(antesDe.values());
+  const aliasApartados = new Set(apartadas.map((x) => x.alias));
+  // una carpeta apartada mandó sus registros: no está ausente, sólo no se cuenta aparte (y se dice por qué)
+  const reporto = (a) => maquinas.has(a) || cubiertas.has(a) || aliasApartados.has(a);
   const cobertura = {
     esperadas: esperadas.length,
-    reportaron: esperadas.filter((a) => maquinas.has(a)).length,
-    ausentes: esperadas.filter((a) => !maquinas.has(a)).sort(),
-    sin_declarar: vistos.filter((a) => !esperadas.includes(a)),
+    reportaron: esperadas.filter(reporto).length,
+    ausentes: esperadas.filter((a) => !reporto(a)).sort(),
+    sin_declarar: vistos.filter((a) => !esperadas.includes(a) && !(antesDe.has(a) && esperadas.includes(antesDe.get(a)))),
+    uniones: [...antesDe].sort().map(([alias, antes]) => ({ alias, antes, declarar: !esperadas.includes(alias) && esperadas.includes(antes) })),
+    apartadas: apartadas.filter((x) => x.alias).sort((a, b) => a.alias.localeCompare(b.alias)),
+    uniones_de_carpetas: uniones ? (uniones.estado === 'medidas' ? { estado: 'medidas' } : { estado: 'no_medidas', motivo: uniones.motivo }) : null,
     atrasadas: vistos.filter((a) => maquinas.get(a).fecha < limiteAtraso).map((a) => ({ alias: a, hasta: maquinas.get(a).fecha })),
     carpetas_ilegibles: carpetasIlegibles,
     no_leidos: noLeidos,
@@ -528,11 +588,15 @@ function textoCobertura(j) {
   if (c.atrasadas.length) partes.push(`atrasada${c.atrasadas.length === 1 ? '' : 's'}: ${c.atrasadas.map((x) => `${x.alias} (hasta ${x.hasta})`).join(', ')}`);
   if (c.carpetas_ilegibles) partes.push(`${c.carpetas_ilegibles} carpeta${c.carpetas_ilegibles === 1 ? '' : 's'} de registros ilegible${c.carpetas_ilegibles === 1 ? '' : 's'}`);
   if (c.lineas_ilegibles) partes.push(`${c.lineas_ilegibles} línea${c.lineas_ilegibles === 1 ? '' : 's'} ilegible${c.lineas_ilegibles === 1 ? '' : 's'} en los registros`);
+  // story 2.28: sólo alias (validados por su forma) y texto nuestro, nunca el nombre de una carpeta
+  for (const u of c.uniones || []) partes.push(`${u.alias} (antes, ${u.antes})${u.declarar ? ': declararla en reducer.expected_machines en lugar de la vieja' : ''}`);
+  for (const x of c.apartadas || []) partes.push(`${x.alias}: compartida por ${x.declarantes} máquinas, no se une ni se cuenta aparte`);
+  if (c.uniones_de_carpetas && c.uniones_de_carpetas.estado === 'no_medidas') partes.push(`uniones de carpetas no medidas (${c.uniones_de_carpetas.motivo}): cada carpeta cuenta como una máquina`);
   for (const n of c.no_leidos || []) partes.push(n);
   return `${partes.join(' · ')} — ventana ${j.ventana.desde} → ${j.ventana.hasta}`;
 }
 
-module.exports = { juntar, textoCobertura, validarConfig, aliasDe, aliasDeNombre, duracionSuite, FUENTES, BALDES_GENERICOS, ESQUEMA };
+module.exports = { juntar, textoCobertura, validarConfig, aliasDe, aliasDeNombre, leerUnionesDeCarpetas, duracionSuite, FUENTES, BALDES_GENERICOS, ESQUEMA };
 
 if (require.main === module) {
   // --alias-of se llamaba de otra forma hasta la story 8.9 (tanda G): el nombre viejo sigue andando hasta el retiro

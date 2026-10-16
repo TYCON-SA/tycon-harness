@@ -1127,6 +1127,235 @@ grep -Eq "method: *'(GET|DELETE|HEAD)'|comp=list" "${SUBIR}" && mal "2.24-T25 la
 NO_PUT=$(cat "${BASE}"/t224-*/b/pedidos.jsonl 2>/dev/null | grep -vc '"metodo":"PUT"' || true)
 [ "${NO_PUT}" = "0" ] && ok "2.24-T25 en los casos 2.24, todos los pedidos fueron PUT" || mal "2.24-T25 ${NO_PUT} pedido(s) que no son PUT"
 
+# ════ story 2.28 · quién es quién: el correo de git en place.json y la carpeta propia de cada máquina (AC 1-3, 23-25) ═
+# Cada caso con su propia casa (HOME): el correo sale de la configuración global de git de ESA casa, y el código de la
+# máquina vive en su carpeta de estado. Correos y máquinas inventados.
+casa228() {  # <casa> <clon> [contenido de ~/.gitconfig] — una máquina con el mecanismo (place.json sale) y su git global
+  casa29 "$1" "$2"
+  [ -n "${3:-}" ] && printf '%b' "$3" > "$1/.gitconfig"
+  return 0
+}
+owner_de() { python3 -c "import json,sys; print(json.dumps(json.load(open(sys.argv[1])).get('owner'), sort_keys=True))" "$1/estado/registros-buzon/place.json" 2>&1; }
+place_dryrun() {  # <caso> — prepara los registros (con place.json) sin mandar nada, con la casa del caso
+  HOME="$1/casa" USERPROFILE="$1/casa" subir_reg "$1" "$1/h" "$1/reg" 2026-10-15 "maq-a" --dry-run
+}
+
+# ── 2.28 T1 · Place_OwnerDeGitGlobal_EnMinusculas (AC 1) ── 🔴 rojo previo: sin el campo; el de XDG cuando están los dos.
+T="${BASE}/t228-1"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"; casa228 "${T}/casa" "${T}/clon" '[user]\n\tname = Dev Uno\n\temail = Dev.Uno@Ejemplo.test\n'
+place_dryrun "${T}"
+[ "${RC}" -eq 0 ] && [ "$(owner_de "${T}")" = '{"email": "dev.uno@ejemplo.test", "source": "git-global"}' ] \
+  && ok "2.28-T1 owner sale del ~/.gitconfig, en minúsculas, con source git-global" || mal "2.28-T1 rc=${RC} owner=$(owner_de "${T}")"
+T="${BASE}/t228-1b"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"; casa228 "${T}/casa" "${T}/clon" '[user]\n\temail = dev.dos@ejemplo.test\n'
+mkdir -p "${T}/casa/.config/git"; printf '[user]\n\temail = xdg.uno@ejemplo.test\n' > "${T}/casa/.config/git/config"
+place_dryrun "${T}"
+[ "$(owner_de "${T}")" = '{"email": "dev.dos@ejemplo.test", "source": "git-global"}' ] \
+  && ok "2.28-T1 con XDG y ~/.gitconfig, gana ~/.gitconfig (git lo lee después)" || mal "2.28-T1 dos archivos: $(owner_de "${T}")"
+T="${BASE}/t228-1c"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"; casa228 "${T}/casa" "${T}/clon" '[user]\n\temail = dev.dos@ejemplo.test\n'
+printf '[User]\n\tEmail = "Tercero@Ejemplo.test" ; un comentario\n' > "${T}/tercero.gitconfig"
+GIT_CONFIG_GLOBAL="${T}/tercero.gitconfig" place_dryrun "${T}"
+[ "$(owner_de "${T}")" = '{"email": "tercero@ejemplo.test", "source": "git-global"}' ] \
+  && ok "2.28-T1 con GIT_CONFIG_GLOBAL, sólo ese archivo (sección y clave sin distinguir mayúsculas, valor entre comillas)" || mal "2.28-T1 GIT_CONFIG_GLOBAL: $(owner_de "${T}")"
+T="${BASE}/t228-1d"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"
+casa228 "${T}/casa" "${T}/clon" '[user]\n\temail = personal@ejemplo.test\n[includeIf "gitdir:~/trabajo/"]\n\tpath = ~/.gitconfig-trabajo\n'
+printf '[user]\n\temail = trabajo@ejemplo.test\n' > "${T}/casa/.gitconfig-trabajo"
+place_dryrun "${T}"
+[ "$(owner_de "${T}")" = '{"email": "personal@ejemplo.test", "source": "git-global"}' ] \
+  && ok "2.28-T1 el includeIf no se sigue: informa el personal" || mal "2.28-T1 includeIf: $(owner_de "${T}")"
+
+# ── 2.28 T2 · Place_OwnerNoMedido_CuatroMotivos (AC 2) ── 🔴 rojo previo: un correo vacío en vez de no_medido; seguir el include.
+MOTIVOS=""
+for caso in sin-email sin-forma solo-include ilegible; do
+  T="${BASE}/t228-2-${caso}"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"; casa228 "${T}/casa" "${T}/clon"
+  case "${caso}" in
+    sin-email)    printf '[user]\n\tname = Dev Uno\n' > "${T}/casa/.gitconfig" ;;
+    sin-forma)    printf '[user]\n\temail = no-es-correo\n' > "${T}/casa/.gitconfig" ;;
+    solo-include) printf '[includeIf "gitdir:~/trabajo/"]\n\tpath = ~/.gitconfig-trabajo\n' > "${T}/casa/.gitconfig"; printf '[user]\n\temail = trabajo@ejemplo.test\n' > "${T}/casa/.gitconfig-trabajo" ;;
+    ilegible)     mkdir -p "${T}/casa/.gitconfig" ;;
+  esac
+  place_dryrun "${T}"
+  M="$(python3 -c "import json,sys; o=json.load(open(sys.argv[1]))['owner']; assert o.get('status')=='no_medido' and o.get('reason') and 'email' not in o, o; print(o['reason'])" "${T}/estado/registros-buzon/place.json" 2>&1)"; RCM=$?
+  [ "${RCM}" -eq 0 ] && ok "2.28-T2 ${caso}: no_medido con motivo («${M}»)" || mal "2.28-T2 ${caso}: ${M}"
+  MOTIVOS="${MOTIVOS}${M}
+"
+done
+[ "$(printf '%s' "${MOTIVOS}" | sort -u | grep -c .)" = "4" ] && ok "2.28-T2 los cuatro motivos son distintos" || mal "2.28-T2 motivos repetidos: ${MOTIVOS}"
+printf '%s' "${MOTIVOS}" | grep 'archivo incluido, que no se sigue' > /dev/null && ok "2.28-T2 el del include dice «archivo incluido, que no se sigue»" || mal "2.28-T2 el motivo del include no lo dice"
+
+# ── 2.28 T3 · Place_SinRutasYSinInvocarGit (AC 3, 21) ── 🔴 rojo previo: spawnSync('git', ['config', …]).
+T="${BASE}/t228-3"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"; casa228 "${T}/casa" "${T}/clon" '[user]\n\temail = dev.uno@ejemplo.test\n'
+mkdir -p "${T}/bin"; printf '#!/bin/sh\necho "$@" >> "%s/git.log"\nexit 0\n' "${T}" > "${T}/bin/git"; chmod +x "${T}/bin/git"
+PATH="${T}/bin:${PATH}" place_dryrun "${T}"
+O="$(owner_de "${T}")"
+[ "${RC}" -eq 0 ] && [ ! -s "${T}/git.log" ] && ok "2.28-T3 leer el correo no invoca git" || mal "2.28-T3 rc=${RC} git invocado: $(head -3 "${T}/git.log" 2>/dev/null)"
+case "${O}" in *"${T}"*|*/Users/*|*/home/*|*casa*) mal "2.28-T3 owner trae una ruta: ${O}" ;; *) ok "2.28-T3 owner sin rutas de la máquina" ;; esac
+for caso in sin-email sin-forma solo-include ilegible; do
+  case "$(owner_de "${BASE}/t228-2-${caso}")" in *"${BASE}"*|*/Users/*|*/home/*|*gitconfig-trabajo*) mal "2.28-T3 el motivo ${caso} trae una ruta" ;; *) ok "2.28-T3 el motivo ${caso} sin rutas" ;; esac
+done
+CAB="$(sed -n '1,80p' "${SUBIR}")"
+echo "${CAB}" | grep 'correo de git' > /dev/null && echo "${CAB}" | grep -- '--json' > /dev/null && ! echo "${CAB}" | grep 'Sólo números, hashes' > /dev/null \
+  && ok "2.28-T3 la cabecera dice que place.json trae el correo de git y que --json lo imprime" || mal "2.28-T3 la cabecera no nombra el correo de git o --json, o sigue diciendo «Sólo números, hashes»"
+grep -n "SÓLO números, hashes y nombres\|viaja sólo lo que no identifica a nadie" "${SUBIR}" > /dev/null && mal "2.28-T3 los comentarios siguen diciendo «sólo»" || ok "2.28-T3 los comentarios de placeFactsForMailbox e installFacts ya no dicen «sólo»"
+
+# ── la carpeta de cada máquina (AC 23-25): sin TYCON_MACHINE, con TYCON_MACHINE_BASE ──────────────────────────────
+# subir_base <caso> <nombre base> [args...] — como subir, SIN TYCON_MACHINE: la carpeta la arma upload-runs.js
+subir_base() {
+  local c="$1" base="$2"; shift 2
+  HOME="${c}/casa" USERPROFILE="${c}/casa" TYCON_MAILBOX_JSON="${c}/cfg.json" TYCON_MAILBOX_URL_BASE="${URL_BUZON}" TYCON_TIMING_HISTORY="${c}/h" \
+    TYCON_UPLOADS_LOG="${c}/estado/mailbox-uploads.json" TYCON_LOGS_SOURCE="${c}/reg" TYCON_LOGS_DIR="${c}/estado/registros-buzon" \
+    TYCON_TODAY="${DIA:-2026-10-15}" TYCON_MACHINE_BASE="${base}" env -u TYCON_MACHINE node "${SUBIR}" --json "$@" > "${c}/out.json" 2> "${c}/err.txt"
+  RC=$?
+}
+codigo_de() { python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(d.get('folder',''))" "$1/casa/.claude/.tycon-pipeline/machine-code.json" 2>/dev/null; }
+folder_de() { python3 -c "import json,sys; print(json.dumps(json.load(open(sys.argv[1])).get('folder'), sort_keys=True))" "$1/estado/registros-buzon/place.json" 2>&1; }
+
+# ── 2.28 T30 · Carpeta_NombreMasCodigo_SinHardware (AC 23) ── 🔴 rojo previo: la carpeta sin código; un código sacado de la MAC.
+T="${BASE}/t228-30"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"; corrida "${T}/h" "9.1-2026-10-15T0900"; casa228 "${T}/casa" "${T}/clon" '[user]\n\temail = Dev.Uno@Ejemplo.test\n'
+mkdir -p "${T}/bin"; for x in ioreg system_profiler wmic; do printf '#!/bin/sh\necho "%s $@" >> "%s/espia.log"\nexit 0\n' "${x}" "${T}" > "${T}/bin/${x}"; chmod +x "${T}/bin/${x}"; done
+printf 'const os=require("os"),fs=require("fs");const o=os.networkInterfaces;os.networkInterfaces=function(){fs.appendFileSync(%s,"networkInterfaces\\n");return o.apply(this,arguments)};\n' "'${T}/espia.log'" > "${T}/espia.js"
+PATH="${T}/bin:${PATH}" NODE_OPTIONS="--require ${T}/espia.js" subir_base "${T}" "MacBook-Pro"
+CARPETA="$(codigo_de "${T}")"
+[ "${RC}" -eq 0 ] && echo "${CARPETA}" | grep -E '^macbook-pro-[0-9a-f]{8}$' > /dev/null && [ "$(campo "${T}" maquina)" = "${CARPETA}" ] \
+  && ok "2.28-T30 la carpeta es macbook-pro-<8 hex> (${CARPETA}) y la subida la usa" || mal "2.28-T30 rc=${RC} carpeta=«${CARPETA}» maquina=$(campo "${T}" maquina): $(head -3 "${T}/err.txt")"
+python3 - "${T}/casa/.claude/.tycon-pipeline/machine-code.json" <<'PY' && ok "2.28-T30 machine-code.json con schema, code, folder, created_on y previous_folder" || mal "2.28-T30 machine-code.json: $(cat "${T}/casa/.claude/.tycon-pipeline/machine-code.json" 2>&1 | head -c 300)"
+import json, re, sys
+d = json.load(open(sys.argv[1]))
+assert d["schema"] == 1 and re.fullmatch(r"[0-9a-f]{8}", d["code"]), d
+assert d["folder"] == f"macbook-pro-{d['code']}" and d["previous_folder"] == "macbook-pro" and d["created_on"] == "2026-10-15", d
+PY
+[ -n "${CARPETA}" ] && [ -f "${T}/b/blobs/corridas/${CARPETA}/9.1-2026-10-15T0900.json" ] && [ ! -d "${T}/b/blobs/corridas/macbook-pro" ] \
+  && ok "2.28-T30 los blobs van bajo la carpeta nueva y nada bajo macbook-pro/" || mal "2.28-T30 blobs: $(ls "${T}/b/blobs/corridas" 2>&1 | tr '\n' ' ')"
+[ "$(folder_de "${T}")" = "{\"code\": \"${CARPETA#macbook-pro-}\", \"moved_on\": \"2026-10-15\", \"name\": \"${CARPETA}\", \"previous_folder\": \"macbook-pro\", \"previous_runs_sha256\": \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\"}" ] \
+  && ok "2.28-T30 place.json trae folder con name, code, previous_folder y moved_on" || mal "2.28-T30 folder=$(folder_de "${T}")"
+[ ! -s "${T}/espia.log" ] && ok "2.28-T30 ningún dato de hardware: ni networkInterfaces, ni ioreg, system_profiler o wmic" || mal "2.28-T30 espías llamados: $(cat "${T}/espia.log")"
+# Contrato: el place.json REAL que deja la subida, puesto en un espejo junto a la carpeta vieja, lo entienden la bajada
+# (la une) y people.js (lee el correo). 🔴 rojo previo (revisor de cobertura, segunda vuelta): las pruebas de los lectores
+# fabricaban el place.json a mano, y un cambio de campos en el escritor no las ponía rojas.
+mkdir -p "${T}/espejo/macbook-pro" "${T}/espejo/${CARPETA}/registros"
+cp "${T}/estado/registros-buzon/place.json" "${T}/espejo/${CARPETA}/registros/place.json"
+node -e '
+const [, raiz, espejo, carpeta] = process.argv;
+const u = require(`${raiz}/scripts/metrics/download-runs.js`).carpetasDeMaquina(espejo, { hoy: "2026-10-15" });
+const p = require(`${raiz}/scripts/lib/people.js`).leerCorreosInformados(espejo);
+const ok = u.carpetas["macbook-pro"] && u.carpetas["macbook-pro"].estado === "unida" && u.carpetas["macbook-pro"].nueva === carpeta && p.maquinas[carpeta].correo === "dev.uno@ejemplo.test";
+if (!ok) { console.error(JSON.stringify({ u, p })); process.exit(1); }' "${RAIZ}" "${T}/espejo" "${CARPETA}" 2> "${T}/contrato.err" \
+  && ok "2.28-T30 contrato: el place.json real de la subida lo unen la bajada y lo lee people.js" || mal "2.28-T30 contrato: $(head -c 400 "${T}/contrato.err")"
+grep -nE "networkInterfaces|ioreg|system_profiler|wmic|IOPlatform" "${SUBIR}" > /dev/null && mal "2.28-T30 el guion nombra una fuente de hardware" || ok "2.28-T30 el guion no nombra ninguna fuente de hardware"
+
+# ── 2.28 T31 · Carpeta_EstableEntreCorridas (AC 24) ── 🔴 rojo previo: carpeta nueva al cambiar el nombre; dos códigos.
+corrida "${T}/h" "9.2-2026-10-16T0900"
+DIA=2026-10-16 subir_base "${T}" "Otro-Nombre"
+[ "${RC}" -eq 0 ] && [ "$(campo "${T}" maquina)" = "${CARPETA}" ] && [ "$(codigo_de "${T}")" = "${CARPETA}" ] && [ -f "${T}/b/blobs/corridas/${CARPETA}/9.2-2026-10-16T0900.json" ] \
+  && ok "2.28-T31 otro día y otro nombre de red: la misma carpeta (se lee del archivo)" || mal "2.28-T31 rc=${RC} maquina=$(campo "${T}" maquina) esperaba ${CARPETA}"
+T="${BASE}/t228-31b"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"; corrida "${T}/h" "9.1-2026-10-15T0900"; casa228 "${T}/casa" "${T}/clon"
+mkdir -p "${T}/u1" "${T}/u2"
+( HOME="${T}/casa" USERPROFILE="${T}/casa" TYCON_MAILBOX_JSON="${T}/cfg.json" TYCON_MAILBOX_URL_BASE="${URL_BUZON}" TYCON_TIMING_HISTORY="${T}/h" TYCON_UPLOADS_LOG="${T}/u1/up.json" TYCON_LOGS_SOURCE="${T}/reg" TYCON_LOGS_DIR="${T}/u1/reg" TYCON_TODAY=2026-10-15 TYCON_MACHINE_BASE=maq-par env -u TYCON_MACHINE node "${SUBIR}" --json --dry-run > "${T}/u1/out.json" 2> "${T}/u1/err.txt" < /dev/null ) &
+P1=$!
+( HOME="${T}/casa" USERPROFILE="${T}/casa" TYCON_MAILBOX_JSON="${T}/cfg.json" TYCON_MAILBOX_URL_BASE="${URL_BUZON}" TYCON_TIMING_HISTORY="${T}/h" TYCON_UPLOADS_LOG="${T}/u2/up.json" TYCON_LOGS_SOURCE="${T}/reg" TYCON_LOGS_DIR="${T}/u2/reg" TYCON_TODAY=2026-10-15 TYCON_MACHINE_BASE=maq-par env -u TYCON_MACHINE node "${SUBIR}" --json --dry-run > "${T}/u2/out.json" 2> "${T}/u2/err.txt" < /dev/null ) &
+P2=$!
+wait "${P1}"; wait "${P2}"
+M1="$(campo "${T}/u1" maquina)"; M2="$(campo "${T}/u2" maquina)"
+[ -n "${M1}" ] && [ "${M1}" = "${M2}" ] && [ "${M1}" = "$(codigo_de "${T}")" ] && ok "2.28-T31 dos pasadas a la vez: un solo código (${M1})" || mal "2.28-T31 a la vez: «${M1}» y «${M2}», archivo «$(codigo_de "${T}")»"
+
+# ── 2.28 T32 · Carpeta_CodigoIlegibleOBorrado_OtroYLoDice (AC 25) ── 🔴 rojo previo: reusar un código sin forma; regenerar en silencio.
+MOTIVOS=""
+for caso in borrado roto sin-forma; do
+  T="${BASE}/t228-32-${caso}"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"; corrida "${T}/h" "9.1-2026-10-15T0900"; casa228 "${T}/casa" "${T}/clon"
+  subir_base "${T}" "MacBook-Pro"; ANTES="$(codigo_de "${T}")"
+  MC="${T}/casa/.claude/.tycon-pipeline/machine-code.json"
+  case "${caso}" in
+    borrado)   rm -f "${MC}" ;;
+    roto)      echo '{ esto no es json' > "${MC}" ;;
+    sin-forma) printf '{"schema":1,"code":"xyz","folder":"macbook-pro-xyz","created_on":"2026-10-15","previous_folder":"macbook-pro"}\n' > "${MC}" ;;
+  esac
+  corrida "${T}/h" "9.2-2026-10-16T0900"
+  DIA=2026-10-16 subir_base "${T}" "MacBook-Pro"
+  DESPUES="$(codigo_de "${T}")"
+  echo "${DESPUES}" | grep -E '^macbook-pro-[0-9a-f]{8}$' > /dev/null && [ "${DESPUES}" != "${ANTES}" ] && [ "$(campo "${T}" maquina)" = "${DESPUES}" ] \
+    && ok "2.28-T32 ${caso}: otro código y otra carpeta (${DESPUES})" || mal "2.28-T32 ${caso}: antes «${ANTES}» después «${DESPUES}» maquina=$(campo "${T}" maquina) rc=${RC}"
+  M="$(python3 -c "import json,sys; f=json.load(open(sys.argv[1]))['folder']; r=f['code_regenerated']; assert r['on']=='2026-10-16' and r['reason'], f; assert f['previous_folder']=='macbook-pro', f; print(r['reason'])" "${T}/estado/registros-buzon/place.json" 2>&1)"; RCM=$?
+  [ "${RCM}" -eq 0 ] && ok "2.28-T32 ${caso}: place.json lo dice (folder.code_regenerated «${M}», previous_folder el nombre de hoy)" || mal "2.28-T32 ${caso}: ${M}"
+  grep "${M}" "${T}/err.txt" > /dev/null && ok "2.28-T32 ${caso}: el renglón del registro de la subida lo dice" || mal "2.28-T32 ${caso}: sin renglón con el motivo: $(head -3 "${T}/err.txt")"
+  case "${M}$(grep "${M}" "${T}/err.txt" 2>/dev/null)" in *"${BASE}"*|*/Users/*|*/home/*) mal "2.28-T32 ${caso}: el motivo trae una ruta" ;; *) ok "2.28-T32 ${caso}: sin rutas" ;; esac
+  MOTIVOS="${MOTIVOS}${M}
+"
+done
+[ "$(printf '%s' "${MOTIVOS}" | sort -u | grep -c .)" = "3" ] && ok "2.28-T32 tres motivos distintos" || mal "2.28-T32 motivos: ${MOTIVOS}"
+T="${BASE}/t228-30"
+python3 -c "import json,sys; assert 'code_regenerated' not in json.load(open(sys.argv[1]))['folder']" "${T}/estado/registros-buzon/place.json" 2>/dev/null \
+  && ok "2.28-T32 la primera carpeta de una máquina no es «regenerada»" || mal "2.28-T32 la primera carpeta sale como regenerada"
+
+# ── pase adversarial (2026-10-15) sobre la carpeta y el correo ─────────────────────────────────────────────────────
+# El código regenerado declara las carpetas con código anteriores de la máquina (de su registro de subidas), para que la
+# bajada las una a la nueva. 🔴 rojo previo (clase 4): la carpeta del código anterior quedaba como otra máquina.
+T="${BASE}/t228-32-borrado"
+python3 -c "import json,sys; f=json.load(open(sys.argv[1]))['folder']; s=f.get('superseded_folders'); assert isinstance(s,list) and len(s)==1 and s[0].startswith('macbook-pro-') and s[0]!=f['name'], f; h=f.get('superseded_runs_sha256') or {}; assert len(h.get(s[0],''))==64, f" "${T}/estado/registros-buzon/place.json" 2>/dev/null \
+  && ok "2.28-adv el código regenerado declara la carpeta con código que reemplaza" || mal "2.28-adv sin superseded_folders: $(folder_de "${T}")"
+# Un nombre de máquina que ya termina en 8 hexadecimales no se toma por «ya tuvo código». 🔴 rojo previo (clases 11 y 20).
+T="${BASE}/t228-adv-hex"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"; corrida "${T}/h" "9.1-2026-10-14T0900"; casa228 "${T}/casa" "${T}/clon"
+HOME="${T}/casa" USERPROFILE="${T}/casa" subir_reg "${T}" "${T}/h" "${T}/reg" 2026-10-14 "lap-00012345"
+DIA=2026-10-15 subir_base "${T}" "lap-00012345"
+python3 -c "import json,sys; f=json.load(open(sys.argv[1]))['folder']; assert f['name'].startswith('lap-00012345-') and 'code_regenerated' not in f, f" "${T}/estado/registros-buzon/place.json" 2>/dev/null \
+  && ok "2.28-adv un nombre que ya termina en 8 hexadecimales: su primera carpeta con código no es «regenerada»" || mal "2.28-adv nombre hex: $(folder_de "${T}")"
+# Un registro de subidas que existe y no se puede leer: la huella queda null (sin huella no hay unión) y la carpeta se
+# declara regenerada (falla hacia decirlo). 🔴 rojo previo (cobertura, cuarta vuelta): la rama null no tenía caso.
+T="${BASE}/t228-adv-reg"; mkdir -p "${T}/casa/.claude/.tycon-pipeline" "${T}/registro-es-carpeta"
+HOME="${T}/casa" USERPROFILE="${T}/casa" TYCON_MACHINE_BASE=maq-r env -u TYCON_MACHINE node -e '
+const r = require(process.argv[1]).carpetaDeMaquina({ crear: true, hoy: "2026-10-15", registro: process.argv[2] });
+process.exit(r.folder.previous_runs_sha256 === null && r.folder.code_regenerated ? 0 : 1)' "${SUBIR}" "${T}/registro-es-carpeta" < /dev/null \
+  && ok "2.28-adv registro de subidas ilegible: huella null y carpeta declarada regenerada" || mal "2.28-adv registro ilegible: la huella no quedó null o no se declaró"
+# Un machine-code.json que no se puede LEER (permisos, un antivirus) no se pisa: la pasada falla y la carpeta sigue.
+# 🔴 rojo previo (clase 19): cualquier error de lectura regeneraba el código y mudaba la máquina para siempre.
+T="${BASE}/t228-adv-ilegible"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"; corrida "${T}/h" "9.1-2026-10-15T0900"; casa228 "${T}/casa" "${T}/clon"
+subir_base "${T}" "MacBook-Pro"; ANTES="$(codigo_de "${T}")"
+chmod 000 "${T}/casa/.claude/.tycon-pipeline/machine-code.json"
+if [ -r "${T}/casa/.claude/.tycon-pipeline/machine-code.json" ]; then echo "  SALTEADO — 2.28-adv machine-code.json ilegible: esta cuenta lee igual un archivo sin permisos (¿root?)"
+else
+  corrida "${T}/h" "9.2-2026-10-16T0900"; DIA=2026-10-16 subir_base "${T}" "MacBook-Pro"
+  chmod 644 "${T}/casa/.claude/.tycon-pipeline/machine-code.json"
+  [ "${RC}" -ne 0 ] && [ "$(codigo_de "${T}")" = "${ANTES}" ] && [ ! -f "${T}/b/blobs/corridas/${ANTES}/9.2-2026-10-16T0900.json" ] \
+    && ok "2.28-adv un machine-code.json que no se deja leer no se pisa: la pasada falla (rc=${RC}) y la carpeta sigue" || mal "2.28-adv ilegible: rc=${RC} antes ${ANTES} después $(codigo_de "${T}")"
+fi
+# El correo se lee como lo lee git: un comentario pegado al valor, comillas en el medio y una línea continuada.
+# 🔴 rojo previo (clase 9): se informaban «dev@x.test#c», «dev@"x.test"» y «dev@x.\», tres correos que no existen.
+for caso in 'email=dev@x.test#c' 'email=dev@x.test;c' 'email = dev@"x.test"' 'email = dev@x.\\\ntest' 'email = "Dev@X.test" # comentario'; do
+  T="${BASE}/t228-adv-git-$(printf '%s' "${caso}" | cksum | cut -d' ' -f1)"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"; casa228 "${T}/casa" "${T}/clon" "[user]\n\t${caso}\n"
+  place_dryrun "${T}"
+  [ "$(owner_de "${T}")" = '{"email": "dev@x.test", "source": "git-global"}' ] && ok "2.28-adv git: «${caso}» se lee dev@x.test" || mal "2.28-adv git: «${caso}» → $(owner_de "${T}")"
+done
+
+# ── 2.28 T33 · Carpeta_TYCON_MACHINE_SigueValiendo (AC 23) ── 🔴 rojo previo: maq-a-<código>.
+T="${BASE}/t228-33"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"; corrida "${T}/h" "9.1-2026-10-15T0900"; casa228 "${T}/casa" "${T}/clon"
+HOME="${T}/casa" USERPROFILE="${T}/casa" subir_reg "${T}" "${T}/h" "${T}/reg" 2026-10-15 "maq-a"
+[ "${RC}" -eq 0 ] && [ "$(campo "${T}" maquina)" = "maq-a" ] && [ ! -e "${T}/casa/.claude/.tycon-pipeline/machine-code.json" ] && [ -f "${T}/b/blobs/corridas/maq-a/9.1-2026-10-15T0900.json" ] \
+  && ok "2.28-T33 con TYCON_MACHINE: carpeta maq-a, sin código y sin machine-code.json" || mal "2.28-T33 rc=${RC} maquina=$(campo "${T}" maquina) $(ls "${T}/casa/.claude/.tycon-pipeline" 2>&1 | tr '\n' ' ')"
+[ "$(folder_de "${T}")" = '{"name": "maq-a", "source": "TYCON_MACHINE"}' ] && ok "2.28-T33 folder dice source TYCON_MACHINE" || mal "2.28-T33 folder=$(folder_de "${T}")"
+
+# ── 2.28 T34 · Carpeta_ResubeLoLocalALaNueva (AC 23, decisión 12) ── 🔴 rojo previo: registro que da todo por subido.
+T="${BASE}/t228-34"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"; casa228 "${T}/casa" "${T}/clon"
+corrida "${T}/h" "9.1-2026-10-14T0900"; corrida "${T}/h" "9.2-2026-10-14T1000"
+HOME="${T}/casa" USERPROFILE="${T}/casa" subir_reg "${T}" "${T}/h" "${T}/reg" 2026-10-14 "macbook-pro"
+VIEJOS=$(puts_a "${T}/b" "/corridas/macbook-pro/")
+DIA=2026-10-15 subir_base "${T}" "MacBook-Pro"
+N="$(codigo_de "${T}")"
+[ "${RC}" -eq 0 ] && [ -n "${N}" ] && [ "$(puts_a "${T}/b" "/corridas/macbook-pro/")" = "${VIEJOS}" ] \
+  && ok "2.28-T34 a la carpeta vieja no sube nada más" || mal "2.28-T34 rc=${RC} PUT a la vieja: antes ${VIEJOS}, después $(puts_a "${T}/b" "/corridas/macbook-pro/")"
+for f in 9.1-2026-10-14T0900.json 9.1-2026-10-14T0900.hilo.jsonl.gz 9.2-2026-10-14T1000.json; do
+  cmp -s "${T}/h/${f}" "${T}/b/blobs/corridas/${N}/${f}" && ok "2.28-T34 ${f} se volvió a subir a la carpeta nueva" || mal "2.28-T34 ${f} no está en ${N}/"
+done
+# la carpeta nueva declara la HUELLA de las corridas que la máquina subió a la vieja (de su registro de subidas): es lo
+# que la bajada pide para unirlas (tercera vuelta de seguridad). 🔴 rojo previo: sin huella, cualquiera con la llave podía
+# declarar como suya la carpeta vieja de otra máquina con el mismo nombre.
+ESPERADA="$(node -e 'console.log(require(process.argv[1]).huellaDeCorridas(["9.1-2026-10-14T0900.json","9.2-2026-10-14T1000.json"]))' "${SUBIR}" 2>&1)"
+[ "$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['folder'].get('previous_runs_sha256'))" "${T}/estado/registros-buzon/place.json" 2>&1)" = "${ESPERADA}" ] \
+  && ok "2.28-T34 la carpeta nueva declara la huella de las corridas que subió a la vieja" || mal "2.28-T34 huella: $(folder_de "${T}")"
+python3 - "${T}/b/pedidos.jsonl" "${N}" <<'PY' && ok "2.28-T34 en la carpeta nueva, los registros primero" || mal "2.28-T34 orden de la re-subida"
+import json, sys
+ps = [json.loads(l)["ruta"] for l in open(sys.argv[1]) if f"/corridas/{sys.argv[2]}/" in l]
+reg = [i for i, r in enumerate(ps) if "/registros/" in r]
+cor = [i for i, r in enumerate(ps) if "/registros/" not in r]
+assert reg and cor and max(reg) < min(cor), ps
+PY
+
 # ── Windows · Log_AgregaYRota ── el arranque de Windows lanza la subida de fondo con `--log <archivo>` (2026-10-15): un
 # proceso de fondo de PowerShell no puede AGREGAR a un archivo, y sobrescribirlo borraría el aviso de vencimiento de la
 # llave, que sale una vez por día (la razón del `>>` del .sh). Con --log la subida agrega ella misma y rota pasado ~512 KB.
