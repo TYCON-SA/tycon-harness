@@ -104,6 +104,7 @@
   "scripts/hooks/dashboard-notice.js",
   "scripts/hooks/owner-email-notice.js",
   "scripts/hooks/unpushed-work-notice.js",
+  "scripts/hooks/worktree-sweep.js",
   "scripts/install-tycon-hooks.ps1",
   "scripts/install-tycon-hooks.sh",
   "scripts/lib/rules-catalog.js",

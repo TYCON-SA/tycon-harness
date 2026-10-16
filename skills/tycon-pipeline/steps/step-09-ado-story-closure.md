@@ -341,6 +341,22 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js clear
 
 (Si Step 8 ya lo había cleaneado y Step 9 viene independiente, el clear acá es no-op silencioso.)
 
+## Acción — borrar las carpetas de trabajo de la story (2026-10-16)
+
+Último paso del cierre: las carpetas de trabajo (worktrees) de la story que ya están mergeadas se borran, con su rama
+local. Pedido del dueño: ese día había 30 carpetas `<repo>-wt-*` en una máquina y 28 ya estaban mergeadas.
+
+```bash
+node "${TYCON_GUIDES_DIR:-$HOME/.claude/tycon-harness}/scripts/hooks/worktree-sweep.js" --story <N.M>
+```
+
+Trae origin en cada repo conocido y mira las carpetas cuya rama nombra la story (`feat/<N.M>-a-…`, `story/<N>-<M>`). Borra
+(`git worktree remove` sin `--force` + `git branch -d`) sólo las **limpias y con su HEAD ya en origin/main**. Las que
+tienen cambios, commits sin mergear, están bloqueadas o son el cwd de esta sesión las **nombra y no las toca**: esas
+líneas van tal cual al mensaje final, para que el dev decida. Nunca toca el checkout principal. Con
+`TYCON_WORKTREE_SWEEP=0` no hace nada. Para lo que no pasa por el pipeline, el mismo guion corre al arrancar sesión una
+vez por día (`guides/git-worktrees.md` §7).
+
 ## Output
 
 Mensaje al dev al final:
@@ -353,6 +369,7 @@ Mensaje al dev al final:
 - Timer Clockify cerrado: duración total <Xh YYm>   (omitir línea si no había timer activo)
 - Frontmatter `.md` → status: done (source of truth durable).
 - Marker pipeline → cleared.
+- Carpetas de trabajo: <lo que dijo worktree-sweep.js — borradas, o las que quedaron y por qué>
 
 Listo.
 ```
