@@ -753,6 +753,65 @@ else
   mal "2.12-T16b medida-sin-leerla-primero: rc=${RC} R-C2 oportunidades=${V2} (esperaba 0 y 5) · $(head -c 200 "${ERR}")"
 fi
 
+# ── 2.28-T40 · 2.28-Poda_CarpetaViejaNoSeCuentaAparte (AC 26, 27) ──────────────────────────────────
+# Esta máquina sube ahora a `macbook-pro-1a2b3c4d` (su machine-code.json; sin TYCON_MACHINE ni --machine). En el buzón:
+# su copia, su carpeta vieja `macbook-pro` (unida) y una vieja `mac-mini` compartida por dos máquinas, las tres con los
+# MISMOS hallazgos y volcados (los registros suben enteros). Y una vieja `imac` que siguió recibiendo después de la mudanza:
+# es OTRA máquina que no actualizó, con un hallazgo propio, y cuenta como una máquina más. El bajador deja
+# `.carpetas-de-maquina.json` (fabricado acá).
+# 🔴 rojo previo: la vieja y la compartida entran como dos máquinas más (sus 9 hallazgos contados como duplicados); con la
+#    carpeta local tomada del nombre sin código, la copia de la nueva en el buzón también; y saltear la que siguió
+#    recibiendo pierde su hallazgo (R-C3 con 1 en vez de 2, «1 máquina medida»).
+t40() {                    # $1 = caso
+  local C="$1" N
+  printf '%s\n%s\n' "${LINEA_B}" "${LEIDO_F1}" >> "${C}/hallazgos.jsonl"; sello "${C}/hallazgos.jsonl" "2026-09-16"
+  volcado "${C}/historia" "f-1" "2026-09-05T10:00:00Z" '{"adv-a":5}'
+  for N in macbook-pro macbook-pro-1a2b3c4d mac-mini; do
+    maquina_buzon "${C}" "${N}" "2026-09-15" "medido" "$(cat "${C}/hallazgos.jsonl")"
+    mkdir -p "${C}/buzon/${N}"; cp "${C}"/historia/*.json "${C}/buzon/${N}/"
+  done
+  maquina_buzon "${C}" "imac" "2026-09-15" "medido" \
+    '{"ts":"2026-08-25T10:00:00Z","corrida":"c-0000000000f1","regla":"R-C3","dueno":"adv-a","severidad":"WARNING","disposicion":"fixed"}'
+  cat > "${C}/buzon/.carpetas-de-maquina.json" <<'JSON'
+{ "schema": 1,
+  "carpetas": {
+    "macbook-pro": { "estado": "unida", "nueva": "macbook-pro-1a2b3c4d", "declarantes": 1, "desde": "2026-09-10" },
+    "mac-mini": { "estado": "compartida", "nueva": null, "declarantes": 2, "desde": "2026-09-10" },
+    "imac": { "estado": "siguio_recibiendo", "nueva": null, "declarantes": 1, "desde": "2026-09-10" } },
+  "regeneradas": {} }
+JSON
+  mkdir -p "${C}/casa/.claude/.tycon-pipeline"
+  printf '{"schema":1,"code":"1a2b3c4d","folder":"macbook-pro-1a2b3c4d","created_on":"2026-09-10","previous_folder":"macbook-pro"}\n' \
+    > "${C}/casa/.claude/.tycon-pipeline/machine-code.json"
+}
+podar_t40() {              # como podar, pero el nombre de esta máquina sale de su machine-code.json; $2 = --json o nada
+  local C="$1"; OUT="${C}/out"; ERR="${C}/err"
+  env -u TYCON_MACHINE HOME="${C}/casa" TYCON_MACHINE_BASE=MacBook-Pro node "${PODA}" --catalog "${C}/catalogo.md" \
+    --reviewers "${C}/revisores" --sources "${C}/sources.json" --cases "${C}/casos" --exam "${C}/examen.json" \
+    --history "${C}/historia" --findings "${C}/hallazgos.jsonl" --mailbox "${C}/buzon" --today "${HOY}" ${2:-} > "${OUT}" 2> "${ERR}"
+}
+C="$(escenario t40)"; t40 "${C}"
+podar_t40 "${C}" --json; RC=$?
+CU="$(q "(d['cobertura']['hallazgos']['maquinas'], d['cobertura']['hallazgos']['duplicados'], d['cobertura']['hallazgos']['contados'], len(d['cobertura']['hallazgos']['maquinas_sin_medir']))")"
+HO="$(q "(next(f['hallazgos'] for f in d['filas'] if f['regla']=='R-C1'), next(f['hallazgos'] for f in d['filas'] if f['regla']=='R-C3'), next(f['oportunidades'] for f in d['filas'] if f['regla']=='R-C2'))")"
+UN="$(q "d['cobertura']['hallazgos']['uniones_de_carpetas']['estado']")"
+if [ "${RC}" = "0" ] && [ "${CU}" = "(2, 0, 10, 0)" ] && [ "${HO}" = "(2, 2, 35)" ] && [ "${UN}" = "medidas" ]; then
+  ok "2.28-T40 la vieja unida y la compartida no se cuentan aparte; la que siguió recibiendo sí: 2 máquinas, 10 hallazgos una vez, ningún duplicado, 35 oportunidades"
+else
+  mal "2.28-T40 rc=${RC} (máquinas, duplicados, contados, sin medir)=${CU} esperaba (2, 0, 10, 0); (R-C1, R-C3, oportunidades R-C2)=${HO} esperaba (2, 2, 35); uniones=${UN} · $(head -c 200 "${ERR}")"
+fi
+if grep -qE 'macbook|mac-mini|imac|1a2b3c4d' "${OUT}" "${ERR}"; then mal "2.28-T40 🔴 un nombre de carpeta llegó a la salida"
+else ok "2.28-T40 ningún nombre de carpeta en la salida"; fi
+# Sin el archivo del bajador: cada carpeta como hoy, y lo dice.
+# 🔴 rojo previo: contar las carpetas viejas como máquinas sin decir por qué.
+rm -f "${C}/buzon/.carpetas-de-maquina.json"
+podar_t40 "${C}" --json; RC=$?
+CU="$(q "(d['cobertura']['hallazgos']['maquinas'], d['cobertura']['hallazgos']['contados'], d['cobertura']['hallazgos']['uniones_de_carpetas']['estado'])")"
+podar_t40 "${C}"; RC2=$?
+[ "${RC}" = "0" ] && [ "${RC2}" = "0" ] && [ "${CU}" = "(4, 10, 'no_medidas')" ] && grep -q 'uniones de carpetas no medidas' "${OUT}" \
+  && ok "2.28-T40 sin .carpetas-de-maquina.json: cada carpeta es una máquina (4), cada hallazgo sigue contando una vez, y lo dice" \
+  || mal "2.28-T40 sin archivo rc=${RC}/${RC2} (máquinas, contados, uniones)=${CU}, esperaba (4, 10, 'no_medidas') · $(head -c 300 "${OUT}")"
+
 # ── la suma que no cierra → se niega ─────────────────────────────────────────────────────────────
 # (se prueba por construcción adentro del cruce: si la suma de los estados no es el total, exit 2.
 #  Acá se verifica el contrato visible: el total que publica es el de pares del catálogo.)

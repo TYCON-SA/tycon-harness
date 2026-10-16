@@ -3,7 +3,8 @@
 /**
  * team-repos.test.js — los dos lectores de la configuración de una organización (story 8.26, tanda J):
  * scripts/lib/team-repos.js (`team-repos.json`, en el perfil del equipo: dónde vive cada repo del arnés) y
- * scripts/lib/operations-config.js (`operations.json`, en el repo de operaciones: responsables y revisores).
+ * scripts/lib/operations-config.js (`operations.json`, en el repo de operaciones: responsables, revisores y, desde la
+ * story 2.28, quién es quién — `people`, con la huella del correo informado y nunca el correo en claro).
  *
  * Lo que no se puede perder: un archivo válido da sus datos; uno con problemas no da datos a medias y cada problema
  * trae la ruta de su clave (la página de configuración marca cada campo con ella); «no pude leer» no es «no hay repo»;
@@ -173,21 +174,147 @@ test('OperationsConfig_Problems_CarryTheKeyPath', () => {
   assert.strictEqual(OPS.load(path.join(os.tmpdir(), 'no-such-operations.json')).couldNotRead, true);
 });
 
+// ── story 2.28: quién es quién. `people` ata cada máquina a una persona (la confirma un mantenedor) y corrige dónde
+// trabaja cada una. Guarda la huella del correo que informa la máquina, nunca el correo en claro.
+const HUELLA = (correo) => require('crypto').createHash('sha256').update(String(correo).trim().toLowerCase()).digest('hex');
+const opsWith = (people) => ({ version: 1, owners: { default: 'lead@acme.example' }, ...(people === undefined ? {} : { people }) });
+// la ruta de un problema bajo people.projects lleva el correo adentro; se arma pegando el correo de ejemplo, así el texto
+// de la prueba no trae «<correo>.remove», que el freno del remoto público lee como un dominio real
+const enProyectos = (correo, resto) => ['people', 'projects', correo, resto].join('.');
+const goodPeople = () => ({
+  __doc: 'un comentario',
+  machines: {
+    'maq-uno-1a2b3c4d': { person: 'dev.uno@acme.example', reported_sha256: HUELLA('Dev.Uno@Acme.example'), confirmed_by: 'lead@acme.example', confirmed_on: '2026-10-15' },
+    'maq-dos.local_2': { person: 'dev.dos@acme.example', reported_sha256: null, confirmed_by: 'lead@acme.example', confirmed_on: '2026-02-28' },
+  },
+  projects: {
+    'dev.uno@acme.example': { add: ['Gama'], remove: ['Beta'] },
+    'dev.dos@acme.example': { add: [] },
+  },
+});
+
+test('T5 OperationsConfig_People_FormaAceptada (2.28, AC 5 y 21)', () => {
+  const full = OPS.parse(JSON.stringify(opsWith(goodPeople())));
+  assert.deepStrictEqual(full.problems, [], 'people completo: con huella de 64 hexadecimales y con huella null');
+  assert.strictEqual(full.ok, true);
+  assert.strictEqual(full.data.people.machines['maq-dos.local_2'].reported_sha256, null);
+  for (const people of [{}, { machines: {} }, { projects: {} }]) {
+    assert.deepStrictEqual(OPS.parse(JSON.stringify(opsWith(people))).problems, [], `people ${JSON.stringify(people)}: las dos partes son opcionales`);
+  }
+  assert.strictEqual(OPS.parse(JSON.stringify(opsWith(undefined))).ok, true, 'un operations.json sin people sigue validando');
+  assert.ok(OPS.KEYS.includes('people'), 'people es una clave conocida de la raíz');
+});
+
+test('T6 OperationsConfig_People_ProblemasConRuta (2.28, AC 6)', () => {
+  const p = goodPeople();
+  const m = p.machines['maq-uno-1a2b3c4d'];
+  p.machines['maq-a'] = { ...m, person: 'sin-arroba' };                         // un correo sin forma de correo
+  p.machines['Maq A'] = { ...m };                                                // una máquina con mayúsculas y espacios
+  p.machines['maq-b'] = { ...m, confirmed_on: '15/10/2026' };                    // una fecha que no es AAAA-MM-DD
+  p.machines['maq-c'] = { ...m, foo: 1 };                                        // una clave desconocida
+  p.projects['dev.uno@acme.example'] = { add: ['Gama', 'Beta'], remove: ['Beta'] }; // el mismo producto en add y remove
+  p.machines['maq-d'] = { ...m, reported_sha256: 'dev.uno@acme.example' };      // el correo en claro en vez de la huella
+  const r = OPS.parse(JSON.stringify(opsWith(p)));
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.data, null, 'con un problema no hay datos a medias');
+  assert.deepStrictEqual(paths(r), [
+    'people.machines.Maq A',
+    'people.machines.maq-a.person',
+    'people.machines.maq-b.confirmed_on',
+    'people.machines.maq-c.foo',
+    'people.machines.maq-d.reported_sha256',
+    enProyectos('dev.uno@acme.example', 'remove.0'),
+  ].sort(), 'seis problemas, cada uno con su ruta');
+  const sha = r.problems.find((x) => x.path === 'people.machines.maq-d.reported_sha256');
+  assert.ok(!sha.message.includes('dev.uno@acme.example'), 'el mensaje no repite el correo en claro');
+
+  // y los demás bordes: una fecha con forma pero que no existe, una huella en mayúsculas, lo que falta, lo que no es objeto
+  const q = goodPeople();
+  q.extra = true;
+  q.machines['maq-e'] = { ...m, confirmed_on: '2026-02-30', reported_sha256: m.reported_sha256.toUpperCase() };
+  q.machines['maq-f'] = { person: 'dev.uno@acme.example' };
+  q.machines['maq-g'] = 'dev.uno@acme.example';
+  q.projects['no-es-correo'] = { add: ['Gama'] };
+  q.projects['dev.dos@acme.example'] = { add: 'Gama', remove: [''], otra: [] };
+  assert.deepStrictEqual(paths(OPS.parse(JSON.stringify(opsWith(q)))), [
+    'people.extra',
+    'people.machines.maq-e.confirmed_on',
+    'people.machines.maq-e.reported_sha256',
+    'people.machines.maq-f.confirmed_by',
+    'people.machines.maq-f.confirmed_on',
+    'people.machines.maq-f.reported_sha256',
+    'people.machines.maq-g',
+    enProyectos('dev.dos@acme.example', 'add'),
+    enProyectos('dev.dos@acme.example', 'otra'),
+    enProyectos('dev.dos@acme.example', 'remove.0'),
+    'people.projects.no-es-correo',
+  ].sort());
+  // dos claves de projects que son el mismo correo con otras mayúsculas o espacios: una se perdería en silencio
+  // 🔴 rojo previo (pase adversarial, clase 8): validaba, y `dondeTrabaja` aplicaba una sola de las dos correcciones.
+  const r2 = goodPeople();
+  r2.projects['Dev.Uno@Acme.Example'] = { remove: ['Beta'] };
+  assert.deepStrictEqual(paths(OPS.parse(JSON.stringify(opsWith(r2)))), ['people.projects.Dev.Uno@Acme.Example']);
+  assert.deepStrictEqual(paths(OPS.parse(JSON.stringify(opsWith([])))), ['people']);
+  assert.deepStrictEqual(paths(OPS.parse(JSON.stringify(opsWith({ machines: [], projects: 'x' })))), ['people.machines', 'people.projects']);
+});
+
+test('T21 EjemplosPublicos_TraenPeopleInventado_YValidan (2.28, AC 20)', () => {
+  const dir = path.join(ROOT, 'pipelines', 'operations');
+  for (const rel of ['examples/operations.json', 'examples/github/operations.json']) {
+    const r = OPS.load(path.join(dir, rel));
+    assert.deepStrictEqual(r.problems, [], `${rel} valida`);
+    const people = r.data.people;
+    assert.ok(people && Object.keys(people.machines || {}).length, `${rel} trae people.machines`);
+    assert.ok(people.projects && Object.keys(people.projects).length, `${rel} trae people.projects`);
+    const text = JSON.stringify(people);
+    const correos = text.match(/[^\s"@]+@[^\s"@]+/g) || [];
+    assert.ok(correos.length, `${rel}: hay correos de ejemplo`);
+    for (const c of correos) assert.match(c, /@acme\.example$/, `${rel}: «${c}» es inventado (acme.example)`);
+    const huellas = Object.values(people.machines).map((e) => e.reported_sha256).filter((h) => h !== null);
+    assert.ok(huellas.length, `${rel}: trae una huella de ejemplo`);
+    for (const h of huellas) {
+      assert.match(h, /^[0-9a-f]{64}$/);
+      assert.ok(correos.some((c) => HUELLA(c) === h), `${rel}: la huella es la de un correo inventado del ejemplo, normalizado`);
+    }
+  }
+  for (const rel of ['README.md', 'github/README.md']) {
+    const text = fs.readFileSync(path.join(dir, rel), 'utf8');
+    assert.match(text, /`people`/, `${rel} describe la clave people`);
+    assert.match(text, /reported_sha256/, `${rel} dice que se guarda la huella`);
+    assert.match(text, /createHash\('sha256'\)/, `${rel} da el comando de la huella`);
+  }
+});
+
+test('T23 OperationsConfig_FormaMaquina_IgualQueUploadRuns (2.28, AC 5)', () => {
+  const forma = (rel) => {
+    const m = /^const FORMA_MAQUINA = (\/.+\/[a-z]*);/m.exec(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
+    assert.ok(m, `${rel} declara FORMA_MAQUINA`);
+    return m[1];
+  };
+  assert.strictEqual(forma('scripts/lib/operations-config.js'), forma('scripts/metrics/upload-runs.js'), 'la copia del lector es igual a la de la subida');
+  assert.strictEqual(String(OPS.FORMA_MAQUINA), forma('scripts/lib/operations-config.js'), 'y es la que exporta el lector');
+  // el lector viaja solo: no carga nada fuera de fs (tampoco people.js ni upload-runs.js)
+  const src = fs.readFileSync(path.join(ROOT, 'scripts', 'lib', 'operations-config.js'), 'utf8');
+  const requires = [...src.matchAll(/require\(\s*['"`]([^'"`]+)['"`]\s*\)/g)].map((x) => x[1]);
+  assert.deepStrictEqual(requires, ['fs']);
+  assert.doesNotMatch(src, /require\(\s*[^'"`\s]/, 'ningún require con una ruta armada');
+});
+
 // story 2.23: la clave `site` (mantenedores, buzón y refresco del sitio de la organización)
 const goodSite = () => ({
   maintainers: ['lead@acme.example', 'Second@Acme.Example'],
   mailbox: { provider: 'azure-blob', account: 'acmeruns', container: 'runs', threads: false },
   refresh_minutes: 15,
 });
-const opsWith = (site) => ({ version: 1, owners: { default: 'lead@acme.example' }, ...(site === undefined ? {} : { site }) });
+const opsWithSite = (site) => ({ version: 1, owners: { default: 'lead@acme.example' }, ...(site === undefined ? {} : { site }) });
 
 test('2.23-T3 OperationsConfig_SiteValido', () => {
   for (const site of [goodSite(), {}, undefined]) {
-    const r = OPS.parse(JSON.stringify(opsWith(site)));
+    const r = OPS.parse(JSON.stringify(opsWithSite(site)));
     assert.deepStrictEqual(r.problems, [], JSON.stringify(site));
     assert.strictEqual(r.ok, true);
   }
-  assert.deepStrictEqual(OPS.parse(JSON.stringify(opsWith(goodSite()))).data.site, goodSite(), 'los datos salen tal cual');
+  assert.deepStrictEqual(OPS.parse(JSON.stringify(opsWithSite(goodSite()))).data.site, goodSite(), 'los datos salen tal cual');
   assert.ok(OPS.KEYS.includes('site'));
 });
 
@@ -214,14 +341,14 @@ test('2.23-T4 OperationsConfig_SiteConSecretoEsProblema', () => {
     ['no', ['site']],
   ];
   for (const [site, esperado] of casos) {
-    const r = OPS.parse(JSON.stringify(opsWith(site)));
+    const r = OPS.parse(JSON.stringify(opsWithSite(site)));
     assert.strictEqual(r.ok, false, JSON.stringify(site));
     assert.strictEqual(r.data, null);
     assert.deepStrictEqual(paths(r), esperado, JSON.stringify(site));
   }
   // la clave con forma de secreto se nombra como secreto, no sólo como desconocida
-  const sas = OPS.parse(JSON.stringify(opsWith({ mailbox: { ...goodSite().mailbox, sas: 'x' } })));
+  const sas = OPS.parse(JSON.stringify(opsWithSite({ mailbox: { ...goodSite().mailbox, sas: 'x' } })));
   assert.match(sas.problems[0].message, /secreto/);
   // un comentario `__` con la palabra no es una clave de secreto
-  assert.strictEqual(OPS.parse(JSON.stringify(opsWith({ __token_doc: 'se explica acá', ...goodSite() }))).ok, true);
+  assert.strictEqual(OPS.parse(JSON.stringify(opsWithSite({ __token_doc: 'se explica acá', ...goodSite() }))).ok, true);
 });

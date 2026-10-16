@@ -121,10 +121,11 @@ done
 # ENTERO (necesita el aplicador, la lista y el lector de la configuración al lado), con una HOME y un Codex de prueba;
 # cada integración la fija su variable, que gana sobre el perfil del equipo. Visto en el nocturno 12518: con Codex
 # enchufado y engram apagada, doctor corrió engram-pre-commit.sh.
-DE_INTEGRACION="engram-pre-commit.sh engram-drift-notice.js clocki/scripts/on-prompt.js clocki/scripts/touch-activity.js clocki/scripts/sweep.js dependencies-notice.js dashboard-notice.js retro-staleness-notice.js"
+# story 2.28: el aviso del correo (owner-email-notice.js) es de la integración del buzón, y entra en la cuenta.
+DE_INTEGRACION="engram-pre-commit.sh engram-drift-notice.js clocki/scripts/on-prompt.js clocki/scripts/touch-activity.js clocki/scripts/sweep.js dependencies-notice.js dashboard-notice.js retro-staleness-notice.js owner-email-notice.js"
 CASA9="$T/casa9"; mkdir -p "$CASA9"
-APAGADAS="TYCON_ENGRAM=0 TYCON_CLOCKIFY=0 TYCON_NIGHTLY=0 TYCON_CODEGRAPH=0"
-PRENDIDAS="TYCON_ENGRAM=1 TYCON_CLOCKIFY=1 TYCON_NIGHTLY=1 TYCON_CODEGRAPH=1"
+APAGADAS="TYCON_ENGRAM=0 TYCON_CLOCKIFY=0 TYCON_NIGHTLY=0 TYCON_CODEGRAPH=0 TYCON_MAILBOX=0"
+PRENDIDAS="TYCON_ENGRAM=1 TYCON_CLOCKIFY=1 TYCON_NIGHTLY=1 TYCON_CODEGRAPH=1 TYCON_MAILBOX=1"
 desplegar_arbol() { # <codex home> <VAR=valor…>: el despliegue del árbol de verdad
   local destino="$1"; shift
   env -u TYCON_ENGRAM_HOOK HOME="$CASA9" USERPROFILE="$CASA9" CODEX_HOME="$destino" "$@" node "$RAIZ/build/deploy-codex-hooks.js" > "$T/out9" 2>&1
@@ -140,7 +141,7 @@ SOBRAN=""; for h in $DE_INTEGRACION; do [ "$(cuantos "$h" "$T/h9/hooks.json")" =
 if [ "$RC" = 0 ] && [ -z "$SOBRAN" ] && [ "$(cuantos safety-guard-pre.sh "$T/h9/hooks.json")" = 1 ] \
    && [ "$(cuantos codegraph-session-hook.sh "$T/h9/hooks.json")" = 1 ] \
    && grep -q "sin registrar porque su integración está apagada:.*engram-pre-commit.sh (engram)" "$T/out9"; then
-  ok "C-09 con engram, Clockify y nocturnos apagados, Codex no registra sus 8 hooks, registra el resto (también el de CodeGraph) y lo dice"
+  ok "C-09 con engram, Clockify, nocturnos y buzón apagados, Codex no registra sus 9 hooks, registra el resto (también el de CodeGraph) y lo dice"
 else
   mal "C-09 salida $RC; quedaron registrados:${SOBRAN:- (ninguno)}; safety-guard $(cuantos safety-guard-pre.sh "$T/h9/hooks.json") y codegraph $(cuantos codegraph-session-hook.sh "$T/h9/hooks.json") vez/veces"; tail -3 "$T/out9"
 fi
@@ -182,7 +183,7 @@ PAR="$(env -u TYCON_ENGRAM_HOOK HOME="$CASA9" USERPROFILE="$CASA9" CODEX_HOME="$
   const s = p.collect(p.buildCtx({ tools: ["claude", "codex"], recorded: true })).find((x) => x.name === "hooks");
   console.log(`${s.ok}|${s.detail}`);' "$RAIZ/scripts/lib/harness-parity.js" 2>&1)"
 case "$PAR" in
-  "true|"*"8 sin registrar por su integración apagada"*) ok "C-13 la paridad da verde la superficie de hooks y cuenta los 8 que no van ($PAR)" ;;
+  "true|"*"9 sin registrar por su integración apagada"*) ok "C-13 la paridad da verde la superficie de hooks y cuenta los 9 que no van ($PAR)" ;;
   *) mal "C-13 la paridad de hooks dice: $PAR" ;;
 esac
 

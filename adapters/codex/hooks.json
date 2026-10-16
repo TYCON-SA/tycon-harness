@@ -38,6 +38,10 @@
           },
           {
             "type": "command",
+            "command": "node ${TCG}/scripts/hooks/owner-email-notice.js"
+          },
+          {
+            "type": "command",
             "command": "node ${TCG}/scripts/hooks/lane-llm-notice.js"
           },
           {
