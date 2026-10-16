@@ -209,11 +209,10 @@ function crearRutas({ cfg, fuentes, version = null, skillsDir = null, armar, dem
   const runs = require(RUNS);
   const access = require('../access.js');
   const views = require('../views.js');
-  const { CSS_BASE, CSS_CHIPS } = require('../../nightly/dashboard/common.js');
   const vista = crearVista({ cfg, fuentes, armar, skillsDir, demora, log, ahora });
   const json = (status, obj, extra) => ({ status, tipo: 'application/json; charset=utf-8', cuerpo: JSON.stringify(obj), ...(extra ? { extra } : {}) });
   const texto = (status, t, extra) => ({ status, tipo: 'text/plain; charset=utf-8', cuerpo: t, ...(extra ? { extra } : {}) });
-  const pagina = (ctx, cuerpo, status = 200, extra) => ({ status, tipo: 'text/html; charset=utf-8', cuerpo: views.layout(ctx, 'Corridas', cuerpo), ...(extra ? { extra } : {}) });
+  const pagina = (ctx, cuerpo, status = 200, extra) => ({ status, tipo: 'text/html; charset=utf-8', cuerpo: views.layout(ctx, 'Corridas', cuerpo, 'Cada corrida del pipeline: cuánto tardó, dónde esperó a una persona y qué encontraron los controles.'), ...(extra ? { extra } : {}) });
   const gris = (t) => `<div class="tile blind"><div class="t-label">Corridas</div><div class="t-val">falta</div><div class="t-den">${runsEsc(t)}</div></div>`;
   const runsEsc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 
@@ -293,7 +292,9 @@ function crearRutas({ cfg, fuentes, version = null, skillsDir = null, armar, dem
       },
     },
     { method: 'GET', path: '/corridas/cliente.js', needs: ['maintainer', 'person'], handler: () => ({ status: 200, tipo: 'text/javascript; charset=utf-8', cuerpo: runs.CLIENTE }) },
-    { method: 'GET', path: '/corridas/vista.css', needs: ['maintainer', 'person'], handler: () => ({ status: 200, tipo: 'text/css; charset=utf-8', cuerpo: `${CSS_BASE}\n${runs.CSS_PROPIO}\n${CSS_CHIPS}` }) },
+    // sólo lo propio de la vista: el tema, la grilla y las fichas ya vienen en /static/site.css con la paleta del sitio;
+    // repetirlos acá (esta hoja carga después) volvía a poner la paleta de la página de la noche en toda la pestaña
+    { method: 'GET', path: '/corridas/vista.css', needs: ['maintainer', 'person'], handler: () => ({ status: 200, tipo: 'text/css; charset=utf-8', cuerpo: runs.CSS_PROPIO }) },
   ];
   rutas.vista = vista;
   return rutas;

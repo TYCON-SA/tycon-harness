@@ -185,3 +185,10 @@ pre{margin:0;padding:12px 14px;border-radius:10px;background:var(--surface-2);bo
 @media (max-width:420px){.grid{grid-template-columns:minmax(0,1fr)}}
 .tabla#proyectos{min-width:940px}.tabla#proyectos td:last-child{min-width:150px}
 .tabla#proyectos thead th{white-space:normal}
+
+/* ── Corridas: la vista de la noche adentro del sitio ── su hoja carga después; esto va con más peso para que la letra
+   sea la del sitio (la de la noche pide una tipografía que el sitio no trae) y los gráficos no pasen del ancho */
+.shell .corridas *:not(code):not(pre):not(.mono):not(svg *){font-family:var(--sans)}
+.shell .corridas svg{min-width:0 !important;max-width:100%;height:auto}
+.shell .corridas .card{min-width:0;max-width:100%}
+@media (max-width:640px){.shell .corridas .dos{grid-template-columns:minmax(0,1fr)}.shell .corridas .pfila{grid-template-columns:minmax(0,1fr) 60px 70px}.shell .corridas .pfila .pb{grid-column:1/-1;order:9}}
