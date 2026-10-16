@@ -19,8 +19,12 @@
  *     la cuenta la hace `estadoDeLaConfiguracion`; guardar el último bueno y la hora del primer refresco fallido es del
  *     sitio.
  *
- * TODO(Story-2.28-deferral): el sitio todavía no llama a esta regla (Task 7: `scripts/site/access.js`, `views.js` y
- * `server.js`, pruebas T26-T29 y T44); espera a que la 2.23 esté en main.
+ * El sitio la llama desde `scripts/site/access.js` (rol, filtro, cuenta de máquinas por confirmar y dónde trabaja) y
+ * `scripts/site/sources.js` (la cuenta del freno, y lo informado, que queda FUERA del modelo de las pantallas).
+ *
+ * TODO(Story-2.28-deferral): todavía no hay ninguna máquina confirmada en la configuración de la organización (Task 8:
+ * las primeras confirmaciones, en el repo de operaciones, después de una noche verde con las carpetas nuevas y con la
+ * decisión de quién lee ese repo). Hasta entonces la regla corre, pero cada corrida la ven sólo quienes mantienen.
  *
  * Los correos se comparan sin mayúsculas y sin espacios alrededor (decisión 7). El único disco que toca es el espejo
  * del buzón (`leerCorreosInformados`): sólo lee, nunca escribe, nunca tira. Lo demás lo recibe ya leído. Sin red. Sin
@@ -167,14 +171,24 @@ function esPersona(sesion, c) {
 /**
  * La configuración de la organización (AC 10): `vigente` si el último refresco la leyó bien; `ultimo_bueno` (con `desde`
  * y el motivo) durante las 24 horas desde el primer refresco fallido; `frenado` pasado el plazo, o enseguida si no hay
- * último bueno.
+ * último bueno. Es la ÚNICA cuenta: el sitio la usa tal cual. Las horas pueden venir en milisegundos o en ISO; `desde`
+ * (el primer refresco fallido) y `frenado_desde` (desde cuándo está frenado) salen en ISO. Sin último bueno y sin
+ * ningún refresco fallido —nunca leyó bien— también frena, desde `ahora`: falla hacia frenar.
  */
 function estadoDeLaConfiguracion({ hayUltimoBueno, fallaDesde, ahora = Date.now(), motivo = null }) {
-  if (!fallaDesde) return { estado: 'vigente' };
-  const desde = typeof fallaDesde === 'string' ? fallaDesde : new Date(fallaDesde).toISOString();
-  const ms = Date.parse(desde);
   const t = typeof ahora === 'number' ? ahora : Date.parse(ahora);
-  if (!hayUltimoBueno || !Number.isFinite(ms) || t - ms >= PLAZO_MS) return { estado: 'frenado', desde, motivo };
+  const iso = (ms) => (Number.isFinite(ms) ? new Date(ms).toISOString() : null);
+  if (fallaDesde === null || fallaDesde === undefined || fallaDesde === '') {
+    if (hayUltimoBueno) return { estado: 'vigente' };
+    return { estado: 'frenado', desde: iso(t), frenado_desde: iso(t), motivo };
+  }
+  const ms = typeof fallaDesde === 'number' ? fallaDesde : Date.parse(fallaDesde);
+  if (!Number.isFinite(ms)) return { estado: 'frenado', desde: iso(t), frenado_desde: iso(t), motivo };
+  const desde = iso(ms);
+  if (!hayUltimoBueno) return { estado: 'frenado', desde, frenado_desde: desde, motivo };
+  // un reloj que no se puede leer, o una primera falla en el futuro (el reloj cambió), no estiran el plazo: frena
+  if (!Number.isFinite(t) || ms > t) return { estado: 'frenado', desde, frenado_desde: desde, motivo };
+  if (t - ms >= PLAZO_MS) return { estado: 'frenado', desde, frenado_desde: iso(ms + PLAZO_MS), motivo };
   return { estado: 'ultimo_bueno', desde, motivo };
 }
 

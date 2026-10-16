@@ -724,7 +724,7 @@ function leerRegistro(dir, nombresPasos, opts = {}) {
   const motivoLocal = multi && !maquinaLocal ? (motivoSinSubida || 'no se pudo saber el nombre de esta máquina') : null;
   const copias = [];   // { ruta, maquina, motivo }
   try {
-    for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.json')).sort()) copias.push({ ruta: path.join(dir, f), maquina: maquinaLocal, motivo: motivoLocal });
+    for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.json')).sort()) copias.push({ ruta: path.join(dir, f), origen: maquinaLocal, maquina: maquinaLocal, motivo: motivoLocal });
   } catch (e) {
     out.registro = { estado: 'no_medido', motivo: `esta página se generó donde no está el registro de corridas (${e.code || 'ilegible'}): vive en ~/.claude/.tycon-pipeline/timing-history, en el disco de cada máquina, fuera de todo repo`, dir: null };
     if (!multi) return out;
@@ -759,7 +759,9 @@ function leerRegistro(dir, nombresPasos, opts = {}) {
         catch (e) { out.buzon.carpetas_ilegibles += 1; continue; }
         const u = declarada ? unionDe(en.name) : null;
         for (const f of archivos) {
-          copias.push({ ruta: path.join(ruta, f), maquina: !declarada ? null : u && u.estado === 'unida' ? u.nueva : en.name,
+          // `origen`: la carpeta real del volcado. El sitio se la da a people.js, que vuelve a juzgar la unión (la vieja
+          // que informa otro correo, o está confirmada para otra persona, no se une): `maquina` ya viene resuelta
+          copias.push({ ruta: path.join(ruta, f), origen: declarada ? en.name : null, maquina: !declarada ? null : u && u.estado === 'unida' ? u.nueva : en.name,
             motivo: declarada ? null : `la carpeta «${en.name}» del buzón no tiene la forma de un nombre de máquina (minúsculas, sin espacios ni .local)`,
             deVieja: Boolean(u), nota: u ? notaDeCarpeta(en.name, u) : null });
         }
@@ -774,23 +776,24 @@ function leerRegistro(dir, nombresPasos, opts = {}) {
     const sid = d && d.marker && d.marker.sessionId;
     if (!sid || typeof sid !== 'string') { out.ilegibles += 1; continue; }
     const prev = porSesion.get(sid);
-    if (!prev) { porSesion.set(sid, { d, maquina: cp.maquina, motivo: cp.motivo, rutas: [cp.ruta], deVieja: Boolean(cp.deVieja), nota: cp.nota || null }); continue; }
+    if (!prev) { porSesion.set(sid, { d, maquina: cp.maquina, origen: cp.origen || null, motivo: cp.motivo, rutas: [cp.ruta], deVieja: Boolean(cp.deVieja), nota: cp.nota || null }); continue; }
     out.duplicados += 1;
     // story 2.28 (decisión 12): entre la copia de una carpeta vieja —unida, compartida o que siguió recibiendo— y la de
     // una carpeta nueva (o la local), gana la nueva, sea cual sea su fecha de archivo: la máquina volvió a subir ahí lo de
     // su disco. Con una vieja compartida la sesión es de la carpeta nueva que la re-subió, no de la vieja (pase adversarial).
     const misma = cp.maquina && cp.maquina === prev.maquina;
     if (prev.deVieja && !cp.deVieja) {
-      prev.d = d; prev.rutas.unshift(cp.ruta); prev.deVieja = false;
+      // la sesión está también en la carpeta nueva: el origen es la nueva
+      prev.d = d; prev.rutas.unshift(cp.ruta); prev.deVieja = false; prev.origen = cp.origen || null;
       if (!misma) { prev.maquina = cp.maquina; prev.motivo = cp.motivo; prev.nota = cp.nota || null; }
     } else if (!prev.deVieja && cp.deVieja) prev.rutas.push(cp.ruta);
     else if (String(d.archivedAt || '') > String(prev.d.archivedAt || '')) { prev.d = d; prev.rutas.unshift(cp.ruta); } else prev.rutas.push(cp.ruta);
-    if (!prev.maquina && cp.maquina) { prev.maquina = cp.maquina; prev.motivo = null; prev.nota = cp.nota || null; }
+    if (!prev.maquina && cp.maquina) { prev.maquina = cp.maquina; prev.origen = cp.origen || null; prev.motivo = null; prev.nota = cp.nota || null; }
     else if (misma && cp.deVieja && !prev.nota) prev.nota = cp.nota;   // la sesión también estaba en la vieja: «antes, …»
   }
-  for (const { d, maquina, motivo, rutas, nota } of porSesion.values()) {
+  for (const { d, maquina, origen, motivo, rutas, nota } of porSesion.values()) {
     const c = modeloDeCorrida(d, nombresPasos);
-    if (multi) { c.maquina = maquina; c.maquina_motivo = maquina ? null : motivo; c.maquina_nota = maquina ? nota : null; }
+    if (multi) { c.maquina = maquina; c.maquina_origen = maquina ? (origen || maquina) : null; c.maquina_motivo = maquina ? null : motivo; c.maquina_nota = maquina ? nota : null; }
     c.cambios = leerCambios(rutas, d.marker, nombresPasos, d.cambio);
     aplicarEsperasDelHilo(c, d.marker);
     c.descripcion = descripcionDe(d.marker, c.cambios);

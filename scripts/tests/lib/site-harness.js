@@ -4,7 +4,10 @@
  *
  *   · `envBase(extra)`        las variables mínimas de un arranque válido (dirección de prueba http://127.0.0.1).
  *   · `fuentesFijas(…)`       unas fuentes de mentira con el contrato de scripts/site/sources.js (estado, config, modelo,
- *                             refrescar), para probar el servidor sin repo ni buzón.
+ *                             personas, refrescar), para probar el servidor sin repo ni buzón. `personas` es lo que
+ *                             queda FUERA del modelo: lo informado por cada máquina (la forma de leerCorreosInformados
+ *                             de people.js) y la lista de repos.json.
+ *   · `informados(…)`         esa forma armada a mano: `{ carpeta: correo | null }` y las uniones de carpetas.
  *   · `arrancarSitio(…)`      el sitio en el proceso de la prueba, en un puerto libre; devuelve `pedir(ruta, opts)`.
  *   · `ingresar(…)`           el viaje entero del inicio de sesión contra el emisor local: pide `/`, sigue el 302 hasta
  *                             el emisor (sin navegador: lee state, nonce y challenge de la dirección), emite el código y
@@ -36,13 +39,14 @@ function envBase(extra = {}) {
 }
 
 /** Fuentes de mentira: lo que el servidor pide a scripts/site/sources.js, con setters para la prueba. */
-function fuentesFijas({ config = { version: 1, owners: { default: 'lead@acme.example' } }, modelo = {}, cargado = true, frenado = null, bandaConfig = null, bandaRefresco = null } = {}) {
-  const st = { config, modelo, cargado, frenado, bandaConfig, bandaRefresco, refrescos: 0 };
+function fuentesFijas({ config = { version: 1, owners: { default: 'lead@acme.example' } }, modelo = {}, personas = { informados: null, repos: null }, cargado = true, frenado = null, bandaConfig = null, bandaRefresco = null } = {}) {
+  const st = { config, modelo, personas, cargado, frenado, bandaConfig, bandaRefresco, refrescos: 0 };
   return {
     st,
     estado: () => ({ cargado: st.cargado, frenado: st.frenado, bandaConfig: st.bandaConfig, bandaRefresco: st.bandaRefresco }),
     config: () => st.config,
     modelo: () => st.modelo,
+    personas: () => st.personas,
     refrescar: async () => { st.refrescos += 1; },
     detener: () => {},
   };
@@ -202,4 +206,18 @@ function archivosDeOperaciones({ hoy = '2026-10-15', ayer = '2026-10-14', config
   };
 }
 
-module.exports = { SITE, envBase, fuentesFijas, arrancarSitio, pedirA, ingresar, ingresarGithub, intentoDe, leerCookies, llave, arrancarBuzon, sas, volcado, archivosDeOperaciones };
+/**
+ * Lo informado por las máquinas, con la forma de `leerCorreosInformados`: `porCarpeta` es `{ carpeta: correo | null }`
+ * (null = no informa) o `{ carpeta: { correo, corridas } }`; `uniones`, las carpetas viejas como en
+ * `.carpetas-de-maquina.json`.
+ */
+function informados(porCarpeta = {}, uniones = {}) {
+  const maquinas = {};
+  for (const [k, v] of Object.entries(porCarpeta)) {
+    const { correo, corridas = 1 } = v && typeof v === 'object' ? v : { correo: v };
+    maquinas[k] = correo ? { estado: 'informa', correo: String(correo).trim().toLowerCase(), dia: '2026-10-15', corridas } : { estado: 'no_informa', motivo: 'no informa correo', dia: '2026-10-15', corridas };
+  }
+  return { maquinas, uniones: { schema: 1, carpetas: uniones, regeneradas: {}, no_leidas: [] } };
+}
+
+module.exports = { SITE, envBase, fuentesFijas, informados, arrancarSitio, pedirA, ingresar, ingresarGithub, intentoDe, leerCookies, llave, arrancarBuzon, sas, volcado, archivosDeOperaciones };

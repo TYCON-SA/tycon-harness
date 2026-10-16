@@ -15,6 +15,8 @@
  * la ruta de una foto ilegible no llegan a ninguna pantalla: sólo el estado de lista cerrada.
  *
  * El modelo de la tanda: scripts/tests/telemetry-leak.test.sh (marcadores, control positivo, la cadena real).
+ *
+ * T28 (story 2.28): el correo que informa la máquina de B en su place.json, y su huella, no salen en ninguna ruta.
  */
 const test = require('node:test');
 const assert = require('node:assert');
@@ -81,7 +83,7 @@ function fuentesConMarcadores() {
     [`${MAQ_SC}/sc.json`]: H.volcado('sc', `${HOY}T10:00:00Z`),
   });
   const modelo = sources.construirDesdeClon(clon, { ahora: Date.parse(`${HOY}T12:00:00Z`), corridas: { ...sources.leerCorridas(espejo), fecha: HOY } });
-  return { raiz, modelo };
+  return { raiz, modelo, espejo, repos: extra['scripts/nightly/dependencies/repos.json'].repos };
 }
 
 const CONFIG = {
@@ -91,15 +93,18 @@ const CONFIG = {
     [MAQ_B]: { person: B, reported_sha256: null, confirmed_by: LEAD, confirmed_on: HOY },
   } },
 };
-const DONDE = { [A]: ['Producto A'], [B]: ['Producto A', 'Producto Solo B'] };
+// dónde trabaja cada una lo deduce people.js (2.28); acá, por los productos agregados en la configuración
+CONFIG.people.projects = { [A]: { add: ['Producto A'] }, [B]: { add: ['Producto A', 'Producto Solo B'] } };
 
 test('T32 Fuga_PersonaA_NoVeNadaDeB', async () => {
-  const { raiz, modelo } = fuentesConMarcadores();
+  const { raiz, modelo, espejo, repos } = fuentesConMarcadores();
   const emisor = await arrancarEmisor();
   let h = null;
   try {
     assert.ok(!LIBRE.some((m) => JSON.stringify(modelo).includes(m)), 'el texto libre no entra ni al modelo');
-    h = await H.arrancarSitio({ env: H.envBase({ SITE_OIDC_ISSUER: emisor.issuer }), fuentes: H.fuentesFijas({ config: CONFIG, modelo }), ahora: () => Date.parse(`${HOY}T12:00:00Z`), dondeTrabaja: (c) => DONDE[c] || null });
+    // lo informado, leído del mismo espejo con el lector real (2.28): sin eso, ninguna corrida es de nadie
+    const informados = require(path.join(H.SITE, '..', 'lib', 'people.js')).leerCorreosInformados(espejo);
+    h = await H.arrancarSitio({ env: H.envBase({ SITE_OIDC_ISSUER: emisor.issuer }), fuentes: H.fuentesFijas({ config: CONFIG, modelo, personas: { informados, repos } }), ahora: () => Date.parse(`${HOY}T12:00:00Z`) });
     const ahoraSeg = Math.floor(Date.parse(`${HOY}T12:00:00Z`) / 1000);
     const entrar = async (email) => (await H.ingresar(h, emisor, { sub: `s-${email}`, email, email_verified: true, iat: ahoraSeg, exp: ahoraSeg + 3600 })).sesion;
     const rutas = h.sitio.rutas;
@@ -165,4 +170,37 @@ test('T32b Fuga_MotivosCrudosNoLleganALaPantalla', { skip: !hayHttpBackend() && 
     assert.strictEqual(fuentes.modelo().vigilante.codigo, 'ilegible');
     assert.ok(registro.join('\n').includes('sesion-secreta-de-b'), 'el motivo crudo va al registro del servidor');
   } finally { if (h) await h.cerrar(); fuentes.detener(); await git.cerrar(); await buzon.cerrar(); await emisor.cerrar(); fs.rmSync(raiz, { recursive: true, force: true }); }
+});
+
+// story 2.28 (AC 22): hasta que exista la pantalla de confirmación, ninguna ruta muestra un correo informado; tampoco su
+// huella. Lo informado viaja aparte del modelo (`fuentes.personas()`), porque el modelo va entero a quien mantiene.
+test('T28 2.28-Fuga_CorreoInformadoDeOtraMaquina', async () => {
+  const people = require(path.join(H.SITE, '..', 'lib', 'people.js'));
+  const { raiz, modelo, espejo, repos } = fuentesConMarcadores();
+  // el marcador, armado por partes: un correo entero escrito en el fuente lo toma el freno del empuje
+  const MARCA = ['zqx-fuga-correo', 'ejemplo.test'].join('@');
+  const HUELLA = people.huellaDeCorreo(MARCA);
+  escribirArbol(espejo, { [`${MAQ_B}/registros/place.json`]: { day: HOY, owner: { email: MARCA.toUpperCase() }, folder: MAQ_B } });
+  const informados = people.leerCorreosInformados(espejo);
+  // control positivo: la lectura sí lo trae, así que la prueba no es vacía
+  assert.strictEqual(informados.maquinas[MAQ_B].correo, MARCA);
+  const config = JSON.parse(JSON.stringify(CONFIG));
+  config.people.machines[MAQ_B].reported_sha256 = HUELLA;
+  const emisor = await arrancarEmisor();
+  let h = null;
+  try {
+    h = await H.arrancarSitio({ env: H.envBase({ SITE_OIDC_ISSUER: emisor.issuer }), fuentes: H.fuentesFijas({ config, modelo, personas: { informados, repos } }), ahora: () => Date.parse(`${HOY}T12:00:00Z`) });
+    const ahoraSeg = Math.floor(Date.parse(`${HOY}T12:00:00Z`) / 1000);
+    const entrar = async (email) => (await H.ingresar(h, emisor, { sub: `s-${email}`, email, email_verified: true, iat: ahoraSeg, exp: ahoraSeg + 3600 })).sesion;
+    const marcas = [MARCA, MARCA.toUpperCase(), HUELLA];
+    for (const quien of [A, B, LEAD]) {
+      const s = await entrar(quien);
+      for (const r of h.sitio.rutas) {
+        const t = (await h.pedir(r.path, { cookie: s, method: r.method })).texto;
+        assert.deepStrictEqual(marcas.filter((m) => t.includes(m)), [], `${quien} en ${r.path}: ni el correo informado ni su huella`);
+      }
+    }
+    // y B, confirmada por esa huella, sí ve su corrida: la lectura llegó a la regla
+    assert.match((await h.pedir('/', { cookie: await entrar(B) })).texto, /1 corridas en 7 días/);
+  } finally { if (h) await h.cerrar(); await emisor.cerrar(); fs.rmSync(raiz, { recursive: true, force: true }); }
 });
