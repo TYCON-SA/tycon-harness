@@ -17,7 +17,7 @@
  * los diagnósticos y los mensajes no llegan al modelo, así que tampoco a una vista. Cada fuente lleva
  * `{ estado: 'medido' | 'no_medido', codigo, fecha }`; `codigo` es de una lista cerrada (`sin_red`, `sin_permiso`,
  * `credencial_rechazada`, `parcial`, `fuente_vieja`, `sin_configurar`, y los propios de una foto: `sin_foto`, `ilegible`,
- * `sin_buzon`, `no_corre_banco`, `no_medido_noche`). El motivo crudo —que nombra rutas, blobs y máquinas— va SÓLO al
+ * `sin_buzon`, `no_corre_banco`, `no_medido_noche`, y `cargando` para las corridas hasta la primera lectura del buzón). El motivo crudo —que nombra rutas, blobs y máquinas— va SÓLO al
  * registro del servidor.
  *
  * EL REFRESCO: cada `site.refresh_minutes` (15 si no está) y al despertar. El modelo nuevo reemplaza al viejo entero o no
@@ -666,12 +666,16 @@ function crearFuentes({ cfg, dataDir, log: logCrudo = () => {}, ahora = Date.now
     }
     st.fallas.repo = null;
     aplicarConfig(leerOperaciones(), t);
-    const corridas = await leerBuzon(st.ultimoBueno, st.modelo && st.modelo.corridas, t);
-    st.modelo = construir({ corridas, carpetas: leerCarpetas(), t });
     // repos.json que no se lee deja la última lista buena (como el resto de las fuentes), y lo dice el registro
     const repos = leerRepos(clon);
     if (repos.repos) st.personas.repos = repos.repos;
     else log(`dónde trabaja cada uno: ${repos.motivo}${st.personas.repos ? '; queda la última lista buena' : ''}`);
+    // la espera es POR FUENTE (2026-10-16): con el repo leído, el sitio ya se navega; lo lento es el buzón. Hasta la primera
+    // lectura del buzón, las corridas dicen «cargando» (nunca cero), y sólo la pestaña Corridas espera
+    if (!st.modelo) st.modelo = construir({ corridas: noMedida('cargando'), carpetas: null, t });
+    st.navegable = true;
+    const corridas = await leerBuzon(st.ultimoBueno, st.modelo && st.modelo.corridas && st.modelo.corridas.codigo !== 'cargando' ? st.modelo.corridas : null, t);
+    st.modelo = construir({ corridas, carpetas: leerCarpetas(), t });
     await actualizarPerfil();
     st.cargado = true;
     for (const fn of oyentes) { try { fn(); } catch (e) { log(`un aviso de refresco falló: ${e && e.message ? e.message : e}`); } }
@@ -714,7 +718,8 @@ function crearFuentes({ cfg, dataDir, log: logCrudo = () => {}, ahora = Date.now
       // el freno se cuenta con la hora de CADA pedido, no sólo al refrescar: si el repo deja de bajarse después del
       // primer fallo, el sitio igual se frena a las 24 horas (revisores de la 2.28)
       if (st.cargado && st.fallaDesde !== null) Object.assign(st, estadoDelSitio({ hayUltimoBueno: Boolean(st.ultimoBueno), fallaDesde: st.fallaDesde, fallaRutas: st.fallaRutas, ahora: ahora() }));
-      return { cargado: st.cargado, frenado: st.frenado, bandaConfig: st.bandaConfig, bandaRefresco: banda };
+      // `navegable`: ya se leyó el repo de operaciones (el sitio se navega); `cargado`: además, el buzón (lo que espera /readyz)
+      return { cargado: st.cargado, navegable: Boolean(st.navegable) || st.cargado, frenado: st.frenado, bandaConfig: st.bandaConfig, bandaRefresco: banda };
     },
     config: () => st.ultimoBueno,
     modelo: () => st.modelo,
@@ -731,7 +736,8 @@ function crearFuentes({ cfg, dataDir, log: logCrudo = () => {}, ahora = Date.now
     /** Story 2.27: ¿la última bajada entera del espejo trajo las conversaciones y los cambios de git? */
     hilos: () => st.hilos,
     /** Story 2.27: ¿la ÚLTIMA bajada del buzón terminó entera?, y cuántas enteras hubo (la pestaña arma con una entera). */
-    buzonEstado: () => ({ completo: st.buzon.completo, generacion: st.buzon.generacion }),
+    // `siguiendo`: la última pasada cortó por tiempo y la siguiente ya está en camino (la pestaña dice «cargando»)
+    buzonEstado: () => ({ completo: st.buzon.completo, generacion: st.buzon.generacion, siguiendo: st.buzon.seguir }),
     /** En cuántos ms va el próximo refresco (las pruebas lo miran). */
     proximoRefrescoMs,
     /** Story 2.27: `fn` corre al terminar cada refresco (la pestaña Corridas mira si el espejo cambió). */

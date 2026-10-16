@@ -39,11 +39,12 @@ function envBase(extra = {}) {
 }
 
 /** Fuentes de mentira: lo que el servidor pide a scripts/site/sources.js, con setters para la prueba. */
-function fuentesFijas({ config = { version: 1, owners: { default: 'lead@acme.example' } }, modelo = {}, personas = { informados: null, repos: null }, cargado = true, frenado = null, bandaConfig = null, bandaRefresco = null } = {}) {
-  const st = { config, modelo, personas, cargado, frenado, bandaConfig, bandaRefresco, refrescos: 0 };
+function fuentesFijas({ config = { version: 1, owners: { default: 'lead@acme.example' } }, modelo = {}, personas = { informados: null, repos: null }, cargado = true, navegable, frenado = null, bandaConfig = null, bandaRefresco = null } = {}) {
+  // `navegable`: ya se leyó el repo de operaciones (las pestañas que no esperan el buzón se ven); por defecto, como `cargado`
+  const st = { config, modelo, personas, cargado, navegable: navegable === undefined ? cargado : navegable, frenado, bandaConfig, bandaRefresco, refrescos: 0 };
   return {
     st,
-    estado: () => ({ cargado: st.cargado, frenado: st.frenado, bandaConfig: st.bandaConfig, bandaRefresco: st.bandaRefresco }),
+    estado: () => ({ cargado: st.cargado, navegable: st.navegable || st.cargado, frenado: st.frenado, bandaConfig: st.bandaConfig, bandaRefresco: st.bandaRefresco }),
     config: () => st.config,
     modelo: () => st.modelo,
     personas: () => st.personas,

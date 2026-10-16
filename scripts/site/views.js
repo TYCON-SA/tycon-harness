@@ -30,6 +30,7 @@ const FRASES = {
   sin_permiso: 'no se pudo leer la fuente: sin permiso',
   credencial_rechazada: 'la credencial fue rechazada (¿venció?)',
   parcial: 'la fuente se leyó a medias',
+  cargando: 'cargando las corridas del buzón: aparecen solas en unos segundos',
   fuente_vieja: 'la fuente es más vieja que su antigüedad máxima',
   sin_configurar: 'esta organización no configuró esta fuente',
   sin_foto: 'no hay foto de esta fuente',
@@ -231,6 +232,9 @@ const TEMA = '<div class="theme" role="group" aria-label="Tema"><button type="bu
 /** El armazón de toda página: el menú al costado (arriba en teléfono) y el encabezado con su bajada (`lede`, opcional). */
 function layout(ctx, titulo, cuerpo, lede = null) {
   const quien = ctx && ctx.quien;
+  // `ctx.recargar` (segundos): la página se recarga sola (una de carga). Es una etiqueta meta, no un script: la política del
+  // sitio no deja scripts en línea
+  const recargar = ctx && Number.isInteger(ctx.recargar) && ctx.recargar > 0 ? `<meta http-equiv="refresh" content="${ctx.recargar}">` : '';
   const pest = (ctx && ctx.pestanas) || [];
   const nav = pest.length ? `<nav class="tabs" aria-label="Pestañas">${pest.map((p, i) => `<a href="${esc(p.path)}"${ctx.activa === p.id ? ' class="activa" aria-current="page"' : ''}><span class="ix">${String(i + 1).padStart(2, '0')}</span>${esc(p.titulo)}</a>`).join('')}</nav>` : '';
   const sesion = quien && quien.email ? `<form class="salir" method="post" action="/auth/logout"><span>Entraste como <b>${esc(quien.email)}</b></span> <button type="submit">Salir</button></form>` : '';
@@ -239,7 +243,7 @@ function layout(ctx, titulo, cuerpo, lede = null) {
     ctx && ctx.bandaRefresco ? banda(`no se pudo actualizar desde ${hora(ctx.bandaRefresco.desde)}: ${FRASES[ctx.bandaRefresco.estado] || ctx.bandaRefresco.estado}`) : '',
     ctx && ctx.avisoVariable ? banda('la variable de arranque sigue puesta: sacala de la configuración de la instalación (SITE_FIRST_MAINTAINER)') : '',
   ].join('');
-  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(titulo)} · Sitio de la organización</title><link rel="stylesheet" href="/static/site.css"><script src="/static/site.js"></script></head><body><div class="shell"><aside class="side"><div class="brand"><div class="kicker">Arnés</div><div class="name">Sitio de la organización</div></div>${nav}<div class="side-foot"><span class="lab-tema">Tema</span>${TEMA}${sesion}</div></aside><main><header class="s-head"><div><h1>${esc(titulo)}</h1>${lede ? `<p>${esc(lede)}</p>` : ''}</div></header>${bandas}${cuerpo}</main></div></body></html>`;
+  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${recargar}<title>${esc(titulo)} · Sitio de la organización</title><link rel="stylesheet" href="/static/site.css"><script src="/static/site.js"></script></head><body><div class="shell"><aside class="side"><div class="brand"><div class="kicker">Arnés</div><div class="name">Sitio de la organización</div></div>${nav}<div class="side-foot"><span class="lab-tema">Tema</span>${TEMA}${sesion}</div></aside><main><header class="s-head"><div><h1>${esc(titulo)}</h1>${lede ? `<p>${esc(lede)}</p>` : ''}</div></header>${bandas}${cuerpo}</main></div></body></html>`;
 }
 
 function seccion(titulo, html, aparte = null, id = null) { return `<section class="q"${id ? ` id="${esc(id)}"` : ''}><div class="q-head"><h2>${esc(titulo)}</h2>${aparte ? `<span class="aside">${esc(aparte)}</span>` : ''}</div>${html}</section>`; }
@@ -337,7 +341,8 @@ function paginaSimple(titulo, texto, ctx = {}) { return layout(ctx, titulo, `<p 
 const paginaSinRol = (ctx) => layout({ quien: ctx.quien }, 'Bienvenida', '<p class="lede">tu cuenta todavía no está confirmada; pedíselo a quien mantiene el arnés.</p>');
 const paginaSinMantenedores = (ctx) => layout({ quien: ctx.quien }, 'Bienvenida', '<p class="lede">este sitio todavía no tiene mantenedores: quien lo instaló tiene que poner SITE_FIRST_MAINTAINER.</p>');
 const paginaFrenado = ({ desde }) => layout({}, 'Sitio frenado', `<p class="lede">el sitio está frenado desde ${esc(hora(desde))}: la configuración de la organización no valida; se destraba cuando un refresco la lee bien.</p>`);
-const paginaCargando = () => layout({}, 'Cargando', '<p class="lede">cargando las fuentes: probá de nuevo en unos segundos.</p>');
+// se recarga sola cada 5 segundos hasta que el sitio tenga lo que necesita
+const paginaCargando = (ctx = {}) => layout({ ...ctx, recargar: 5 }, 'Cargando', '<p class="lede">cargando las fuentes: esta página se recarga sola en unos segundos.</p>');
 
 module.exports = {
   hora, FRASES, filasInicioMantenedor, inicioDev, filasProyectos, filasArnes,

@@ -693,6 +693,31 @@ test('T25 Pagina_SinScriptNiStyleEnLinea_PasaLaPoliticaDelSitio @story-2.27 @ac-
   });
 });
 
+// La espera por fuente (2026-10-16): el sitio ya se navega con el repo leído; sólo Corridas espera el buzón, lo dice y
+// se recarga sola. 🔴 rojo previo: «no medido: el buzón todavía no se pudo bajar entero» mientras la primera bajada corría
+test('T27b CorridasCargando_LoDiceYSeRecarga @story-2.27 @ac-20', async () => {
+  const fuentes = fuentesCon({ espejo: mundo({ marcadores: false }) });
+  fuentes.bajada = { completo: false, generacion: 0 };
+  fuentes.st.modelo = { corridas: { estado: 'no_medido', codigo: 'cargando', motivo: null, lista: [] } };
+  await conPestana({ fuentes, opciones: { noEsperar: true } }, async ({ h, entrar }) => {
+    const lead = await entrar(LEAD);
+    const p = await h.pedir('/corridas', { cookie: lead });
+    assert.strictEqual(p.status, 503);
+    assert.match(p.texto, /cargando las corridas/);
+    assert.match(p.texto, /<meta http-equiv="refresh" content="5">/, 'se recarga sola');
+    assert.doesNotMatch(p.texto, /no medido/, 'mientras carga, no es «no medido»');
+    assert.doesNotMatch(p.texto, /<script(?![^>]*\bsrc=)[^>]*>/, 'sin script en línea');
+    const api = await h.pedir('/api/corridas', { cookie: lead });
+    assert.strictEqual(api.status, 503);
+    assert.match(api.texto, /cargando las corridas/);
+    // una pasada que cortó y ya sigue: también «cargando»
+    fuentes.st.modelo = { corridas: { estado: 'no_medido', codigo: 'parcial', motivo: null, lista: [] } };
+    fuentes.bajada = { completo: false, generacion: 0, siguiendo: true };
+    assert.match((await h.pedir('/corridas', { cookie: lead })).texto, /cargando las corridas/);
+    assert.strictEqual((await h.pedir('/', { cookie: lead })).status, 200, 'Inicio no espera las corridas');
+  });
+});
+
 test('T27 Armado_EnWorker_HealthzContesta @story-2.27 @ac-8 @ac-20', async () => {
   // el armado de verdad (en su hilo) con un espejo que tarda: mientras arma, /healthz e Inicio contestan rápido
   const espejo = mundo({ marcadores: false });
