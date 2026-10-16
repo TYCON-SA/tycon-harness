@@ -56,6 +56,16 @@ node -e "JSON.parse(require('fs').readFileSync('scripts/nightly/dependencies/rep
 Lo demás (`.dashboard/`, `inbox/`, `artifacts/`) lo crean los pipelines. Un repo de operaciones recién creado no los
 trae, y está bien.
 
+**Cómo se edita `operations.json` después del alta.** Siempre por pedido revisado, nunca escribiendo `main`. Dos
+caminos: la página local `harness.js team-config` (en la máquina de quien mantiene, con los clones) o, con el sitio de
+la organización desplegado, su pestaña **Configuración**, sólo para los que mantienen: valida con los mismos lectores
+(`operations-config.js`, `team-repos.js`) y abre el pedido desde el sitio con la identidad de escritura
+(`SITE_OPERATIONS_WRITE_TOKEN`). La pestaña no habilita «Proponer» si `main` no tiene una política que pida al menos un
+revisor (punto 3). Los umbrales del tablero (`scripts/nightly/dashboard/sources.json`) se editan en el sitio recién
+cuando la plantilla `ops-data.yml` dejó la marca `.dashboard/applied-config.json` con ese archivo adentro: la marca dice
+qué archivos de configuración aplicó la noche de verdad, con su identificador de objeto, y se guarda sólo al final de
+una noche verde. Hasta entonces la sección dice «tu nocturno todavía no lee este archivo».
+
 ### Quién es quién: la clave `people` (opcional)
 
 `people` dice de quién es cada máquina del equipo, para que en el sitio de la organización cada persona vea sólo sus

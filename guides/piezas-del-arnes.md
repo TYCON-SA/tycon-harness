@@ -526,8 +526,63 @@ Node solo, que no depende de Claude ni de Codex. Lo que lo sostiene:
 Lo que NO hace: no escribe en ningún repo, no acciona nada y no baja conversaciones. Red: las suites `site-server`,
 `site-oidc`, `site-access`, `site-sources`, `site-views` y `site-leak` (la **prueba de fuga**, que recorre la tabla de
 rutas con marcadores de otra persona y texto libre sembrado). Todo corre sin red: el emisor OIDC
-(`tests/lib/fake-oidc.js`), GitHub (`fake-github-oauth.js`), el repo (`git-http-server.js`) y el buzón son locales. Las
-pestañas Corridas y Configuración, el quién es quién y el despliegue llegan aparte.
+(`tests/lib/fake-oidc.js`), GitHub (`fake-github-oauth.js`), el repo (`git-http-server.js`) y el buzón son locales. La
+pestaña Corridas, el quién es quién y el despliegue llegan aparte.
+
+**La pestaña Configuración: lo de la organización se edita en el sitio** (2026-10-16). Sólo para quienes
+mantienen (`scripts/site/tabs/config.js`, con todas sus rutas registradas como `maintainer`: un dev recibe 403 sin un
+dato). Es la configuración DE LA ORGANIZACIÓN, no la de ninguna máquina: dónde vive cada repo (`team-repos.json` del
+perfil del equipo), a quién se asignan avisos y pedidos, los despliegues por producto, el canal del aviso, personas y
+máquinas (la confirmación de quién es cada máquina, con la huella del correo y nunca el correo), el sitio mismo
+(mantenedores, buzón, refresco, dirección), los umbrales del tablero y las diferencias declaradas de la paridad; más
+dos secciones de sólo lectura: los productos y la versión del arnés de cada máquina, comparada contra la de la imagen
+del sitio, sin red. Por qué: hasta ese día la única forma era la página local `harness.js team-config`, que pedía
+clonar dos repos en la propia máquina y abría el pedido con `gh` o `az`; y lo que las otras stories fueron sumando
+(despliegues, personas, el sitio, los umbrales, la paridad) no tenía dónde editarse más que a mano en el JSON. Lo que lo
+sostiene:
+
+- **Un núcleo común** (`scripts/lib/org-config.js`): las secciones (qué parte de qué archivo, de qué repo, con qué
+  lector), «Revisar», que aplica el borrador sobre el archivo tal como está y lo valida entero con el `parse` del
+  **mismo lector que usa el arnés** (`team-repos.js`, `operations-config.js`, la lectura de las declaradas que exporta
+  `check-product-parity.js`); el resto del archivo queda byte por byte. 🔴 **No hay un validador propio**: `thresholdsParse`
+  sólo recorre `thresholds` y llama a `umbralValido` de `common.js`. Dos validadores se separan solos, y el nocturno
+  juzga con el suyo. La página local usa el mismo núcleo (hoy sigue guardando; pasa a sólo lectura cuando el sitio esté
+  desplegado).
+- **Se guarda con una rama y un pedido, nunca en la rama principal** (`scripts/lib/repo-proposal.js`): desde el clon
+  temporal que el sitio ya tiene para leer, **sin tocar su árbol de trabajo ni su índice** (comandos de bajo nivel de
+  git sobre un índice temporal: después de proponer, `git status` está limpio y `HEAD` sigue en `main`), bajo el mismo
+  candado que el refresco. El pedido se abre por la API REST de Azure DevOps o de GitHub (la imagen no trae `gh` ni
+  `az`) y dice «pedido por <correo> desde el sitio». Un pedido por archivo. 🔴 **Sin una política que pida revisión en
+  `main`, «Proponer» queda apagado**: en Azure DevOps el token no se acota a «crear ramas y abrir pedidos», así que la
+  seguridad la pone la política de la rama; y en un repo sin políticas un pedido se mergea en segundos (ya pasó). Si el
+  archivo cambió desde que se abrió la sección, o ya hay un pedido abierto sobre él, no se crea nada: «recargá» o el
+  enlace al abierto.
+- **Cada escritura se defiende dos veces**: el `Origin` del sitio (o `Sec-Fetch-Site: same-origin`) y un token de
+  doble envío (`X-Site-Token`, nace con la sesión en la cookie firmada y la página lo recibe al armarse); después JSON y
+  un cuerpo de hasta 256 KB. Ninguna falta crea nada en ningún repo.
+- **Las credenciales son del almacén de secretos de la plataforma, y al nacer hay una sola de escritura**:
+  `SITE_OPERATIONS_WRITE_TOKEN`. Las demás son opcionales y **apagadas por defecto**: `SITE_PROFILE_REPO` y
+  `SITE_PROFILE_TOKEN` (leer el perfil), `SITE_PROFILE_WRITE_TOKEN` (proponer al perfil) y `SITE_PIPELINES_TOKEN` (sólo
+  lectura de definiciones y corridas, para proponer los stages de un pipeline; nunca propone un nombre que no leyó).
+  Sin una de ellas, su sección queda en sólo lectura o «no configurado», con el motivo, y el sitio arranca igual. Sin
+  identidad de escritura, la pestaña valida y el navegador arma la descarga del archivo validado para abrir el pedido
+  a mano.
+- **Umbrales sólo cuando el nocturno los lee de verdad**: la sección edita el `sources.json` del repo de operaciones
+  recién cuando la plantilla de los nocturnos dejó la marca `.dashboard/applied-config.json` con ese archivo adentro
+  (se guarda sólo al final de una noche verde). Antes, «tu nocturno todavía no lee este archivo». Nunca crea el
+  archivo de la organización: la plantilla lo pone ENTERO encima del arnés, y copiarlo taparía las fuentes que el arnés
+  sume después.
+- **Sin un valor de ninguna organización** en el código, ni una clave de la configuración de una máquina (una prueba
+  lo busca en el texto). Funciona igual con los repos en Azure DevOps o en GitHub; lo que no reconoce queda en sólo
+  lectura.
+
+Quién la usa: quien mantiene el arnés en una organización, desde el sitio, cuando cambia un repo, un responsable, un
+umbral, o para confirmar de quién es una máquina. Hasta que el sitio esté desplegado, la página local sigue sirviendo
+para lo mismo. Red: `scripts/tests/site-config.test.js` (el servidor del sitio con una sesión inyectada, repos git por
+HTTP y una API falsa de Azure DevOps y de GitHub en el proceso: `tests/lib/git-http-repo.js`, `fake-ado-api.js`,
+`fake-github-api.js`), `scripts/tests/repo-proposal.test.js` (cada empuje y cada llamada a las APIs falsas se revisan:
+ninguno a `main`, ninguno que mergee o complete), T35 de `product-parity.test.sh` (la lectura exportada juzga igual que
+el control) y, en el repo del equipo, `ops-data-template.test.js` (las dos plantillas corridas de verdad dejan la marca).
 
 ## guides/ado-cola-y-listados.md
 

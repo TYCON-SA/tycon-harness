@@ -1,0 +1,386 @@
+'use strict';
+/*
+ * repo-proposal.js — LA PROPUESTA POR RAMA Y PEDIDO DESDE EL CLON DEL SITIO (story 2.29, AC 14 a 16 y 18; decisiones
+ * 1, 3, 10 y 11).
+ *
+ * Qué resuelve: la pestaña Configuración del sitio guarda un cambio a un archivo del repo de operaciones como lo hace
+ * hoy la página local (`team-config.js`: una rama `team-config/<id>-<sello>` y un pedido hacia la rama principal), pero
+ * desde el clon temporal que el sitio ya tiene para leer (2.23) y SIN TOCAR su árbol de trabajo ni su índice: ese clon
+ * lo relee `sources.js` en cada refresco, y un cambio a medias ahí se vería como configuración. Por eso el commit se arma
+ * con los comandos de bajo nivel de git (`hash-object -w`, `read-tree` / `update-index --cacheinfo` / `write-tree` sobre
+ * un índice temporal en `GIT_INDEX_FILE`, `commit-tree -p <punta de main>`) y se empuja por su sha a la rama nueva, sin
+ * crear una ref local: después de proponer, `git status` del clon sigue limpio, `HEAD` en main y `git branch` igual.
+ *
+ * Las decisiones que este módulo cumple:
+ *   1  — rama y pedido, nunca la rama principal: el empuje va SIN `--force` y SÓLO a `refs/heads/team-config/...`; el
+ *        pedido se abre por la API REST del proveedor (la imagen del sitio no trae `gh` ni `az`) sin auto-completar ni
+ *        merge; y antes de crear nada se lee la POLÍTICA de la rama principal (al menos un revisor): sin ella, la
+ *        identidad de escritura del sitio podría escribir main, y la propuesta se apaga con el motivo.
+ *   3  — si el archivo cambió desde que se abrió la sección (`oidEsperado` distinto del de main recién traída), no se
+ *        propone: «recargá»; y si ya hay un pedido abierto de la pestaña sobre ese archivo, se muestra su enlace.
+ *   10 — un pedido por archivo, con todas las secciones cambiadas en el cuerpo.
+ *   11 — una sola credencial de escritura (`SITE_OPERATIONS_WRITE_TOKEN`): va a git SÓLO en una cabecera por variables
+ *        `GIT_CONFIG_*` (`http.<origen>/.extraheader`, el patrón de sources.js) y a la API en `Authorization`; nunca en
+ *        la dirección, en un argumento, en el disco, en el registro ni en un mensaje (se reemplaza por `[credencial]`).
+ *
+ * Sin dependencias fuera de Node: child_process, fs, path, os, crypto y el `fetch` global (Node 20+). Todo lo que habla
+ * con afuera (git, fetch, el reloj, el candado) se inyecta para las pruebas (scripts/tests/repo-proposal.test.js).
+ */
+const childProcess = require('child_process');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const crypto = require('crypto');
+
+const PLAZO_API_MS = 20000;
+const PLAZO_GIT_MS = 180000;
+const RAMA_PRINCIPAL = 'main';
+const AUTOR = { GIT_AUTHOR_NAME: 'Sitio de la organización', GIT_AUTHOR_EMAIL: 'sitio@localhost', GIT_COMMITTER_NAME: 'Sitio de la organización', GIT_COMMITTER_EMAIL: 'sitio@localhost' };
+/**
+ * La política de Azure DevOps que pide revisores se reconoce por el nombre de su tipo (`type.displayName`, fijo y sin
+ * traducir en la API). Su identificador (un GUID documentado) no va escrito acá: el freno de publicación lo toma por un
+ * identificador interno, y el nombre alcanza.
+ */
+const TIPO_REVISORES_AZURE = 'Minimum number of reviewers';
+const URL_BASE = { azure: 'https://dev.azure.com', github: 'https://api.github.com' };
+const API_AZURE = 'api-version=7.1';
+
+/** ¿El rechazo es por permisos? La misma lista que team-config.js (los textos de git, de GitHub y de Azure DevOps). */
+const NO_PERMISSION = /\b403\b|permission|denied|not authorized|unauthori[sz]ed|insufficient|TF401027|TF401019|forbidden|Write access/i;
+
+/** La plataforma y la dirección del repo (la misma lectura que team-config.js). */
+function remoteOf(url) {
+  const u = String(url || '').trim();
+  let m = /github\.com[/:]([^/]+)\/([^/]+?)(?:\.git)?\/?$/.exec(u);
+  if (m) return { platform: 'github', org: m[1], repo: m[2], web: `https://github.com/${m[1]}/${m[2]}` };
+  m = /dev\.azure\.com\/([^/]+)\/([^/]+)\/_git\/([^/]+?)\/?$/.exec(u.replace(/\/\/[^@/]+@/, '//'))
+    || /([^./@]+)\.visualstudio\.com\/(?:DefaultCollection\/)?([^/]+)\/_git\/([^/]+?)\/?$/.exec(u.replace(/\/\/[^@/]+@/, '//'));
+  if (m) return { platform: 'azure', org: m[1], project: decodeURIComponent(m[2]), repo: decodeURIComponent(m[3]), web: `https://dev.azure.com/${m[1]}/${m[2]}/_git/${m[3]}` };
+  return { platform: null, web: null };
+}
+
+/** El sello de la rama: AAAAMMDD-HHMMSS, el mismo de team-config.js. */
+const stamp = (d) => d.toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15);
+const fechaDe = (now) => { const v = typeof now === 'function' ? now() : now; return v instanceof Date ? v : new Date(v == null ? Date.now() : v); };
+
+/** La credencial: un string (la misma para git y la API) o { git, api }. */
+function credenciales(credencial) {
+  if (typeof credencial === 'string') return { git: credencial, api: credencial };
+  if (credencial && typeof credencial === 'object') return { git: credencial.git || credencial.api || '', api: credencial.api || credencial.git || '' };
+  return { git: '', api: '' };
+}
+
+/** Lo que nunca puede salir en un texto: la credencial cruda y sus formas codificadas (las cabeceras de git y de la API). */
+function secretosDe(cred) {
+  const s = [cred.git, cred.api];
+  if (cred.git) s.push(Buffer.from(`x-access-token:${cred.git}`).toString('base64'));
+  if (cred.api) s.push(Buffer.from(`:${cred.api}`).toString('base64'));
+  return s.filter(Boolean);
+}
+
+/** Saca la credencial (y sus formas codificadas) de cualquier texto que salga de acá: mensajes, registro, stderr. */
+function tapar(texto, secretos) {
+  let s = String(texto || '');
+  for (const sec of secretos) if (sec) s = s.split(sec).join('[credencial]');
+  return s.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, '');
+}
+
+/** Un proceso git sin bloquear, con entrada opcional: { status, stdout, stderr, error }. Nunca rechaza. */
+function correrGit(args, { cwd, env, input, timeout = PLAZO_GIT_MS, git = 'git' } = {}) {
+  return new Promise((resolve) => {
+    let p;
+    try { p = childProcess.spawn(git, args, { cwd, env, stdio: [input == null ? 'ignore' : 'pipe', 'pipe', 'pipe'], windowsHide: true }); } catch (error) { resolve({ status: null, stdout: '', stderr: '', error }); return; }
+    let stdout = ''; let stderr = ''; let error = null;
+    const corte = setTimeout(() => { error = Object.assign(new Error('timeout'), { code: 'ETIMEDOUT' }); p.kill('SIGKILL'); }, timeout);
+    p.stdout.on('data', (c) => { stdout += c; });
+    p.stderr.on('data', (c) => { stderr += c; });
+    p.on('error', (e) => { error = e; });
+    p.on('close', (status) => { clearTimeout(corte); resolve({ status, stdout, stderr, error }); });
+    if (input != null) { p.stdin.on('error', () => {}); p.stdin.end(input); }
+  });
+}
+
+// ── La API del proveedor ───────────────────────────────────────────────────────────────────────────────────────────
+function cabecerasApi(remote, cred) {
+  if (remote.platform === 'azure') return { Authorization: `Basic ${Buffer.from(`:${cred.api}`).toString('base64')}`, 'Content-Type': 'application/json', Accept: 'application/json' };
+  return { Authorization: `Bearer ${cred.api}`, 'Content-Type': 'application/json', Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' };
+}
+const baseDe = (remote, urlBase) => {
+  const b = (urlBase && urlBase[remote.platform]) || URL_BASE[remote.platform];
+  if (remote.platform === 'azure') return `${b}/${remote.org}/${encodeURIComponent(remote.project)}/_apis`;
+  return `${b}/repos/${remote.org}/${remote.repo}`;
+};
+
+/** Una llamada a la API: { status, doc, motivo }. Nunca rechaza; el motivo ya viene sin la credencial. */
+async function llamar({ method = 'GET', url, remote, cred, cuerpo, fetch: f, secretos }) {
+  const hacer = f || globalThis.fetch;
+  try {
+    const r = await hacer(url, { method, headers: cabecerasApi(remote, cred), body: cuerpo === undefined ? undefined : JSON.stringify(cuerpo), signal: AbortSignal.timeout(PLAZO_API_MS) });
+    let doc = null;
+    try { doc = await r.json(); } catch { doc = null; }
+    const motivo = r.ok ? null : `HTTP ${r.status}${doc && doc.message ? `: ${tapar(doc.message, secretos).slice(0, 200)}` : ''}`;
+    return { status: r.status, doc, motivo };
+  } catch (e) {
+    return { status: 0, doc: null, motivo: tapar((e && (e.code || e.name === 'TimeoutError' ? 'no contestó a tiempo' : e.message)) || 'sin motivo', secretos).slice(0, 200) };
+  }
+}
+
+const motivoCorto = (r) => (r.status === 401 ? 'la credencial fue rechazada' : r.status === 403 ? 'la identidad no tiene permiso para leerla' : r.status === 404 ? 'no existe o no se ve' : r.motivo || `HTTP ${r.status}`);
+
+/**
+ * ¿La rama principal pide revisión? Azure DevOps: una configuración de política habilitada y bloqueante del tipo «Minimum
+ * number of reviewers» (por el nombre del tipo) con al menos 1 sobre refs/heads/main del repo. GitHub: la protección de la rama
+ * (`required_pull_request_reviews.required_approving_review_count >= 1`) o una regla `pull_request` que la pida.
+ */
+async function politicaDeRevision({ remote, credencial, urlBase, fetch: f }) {
+  if (!remote || (remote.platform !== 'azure' && remote.platform !== 'github')) return { ok: false, codigo: 'plataforma_desconocida', message: 'no reconozco la plataforma del remoto: abrí el pedido a mano' };
+  const cred = credenciales(credencial);
+  const secretos = secretosDe(cred);
+  const base = baseDe(remote, urlBase);
+  const noLeida = (r) => ({ ok: false, codigo: 'no_se_pudo_leer', message: `no pude leer la política de la rama ${RAMA_PRINCIPAL} (${motivoCorto(r)})` });
+  const sinPolitica = { ok: false, codigo: 'sin_politica', message: `el repo no tiene una política que pida revisión en ${RAMA_PRINCIPAL}: sin ella, la identidad del sitio podría escribir ${RAMA_PRINCIPAL}` };
+  if (remote.platform === 'azure') {
+    const repo = await llamar({ url: `${base}/git/repositories/${encodeURIComponent(remote.repo)}?${API_AZURE}`, remote, cred, fetch: f, secretos });
+    if (repo.status !== 200 || !repo.doc || !repo.doc.id) return noLeida(repo);
+    const pol = await llamar({ url: `${base}/policy/configurations?repositoryId=${encodeURIComponent(repo.doc.id)}&refName=${encodeURIComponent(`refs/heads/${RAMA_PRINCIPAL}`)}&${API_AZURE}`, remote, cred, fetch: f, secretos });
+    if (pol.status !== 200 || !pol.doc || !Array.isArray(pol.doc.value)) return noLeida(pol);
+    const minimos = pol.doc.value
+      .filter((p) => p && p.isEnabled && p.isBlocking && p.type && p.type.displayName === TIPO_REVISORES_AZURE && p.settings && Number(p.settings.minimumApproverCount) >= 1)
+      .filter((p) => Array.isArray(p.settings.scope) && p.settings.scope.some((s) => s && s.refName === `refs/heads/${RAMA_PRINCIPAL}` && (!s.repositoryId || s.repositoryId === repo.doc.id)))
+      .map((p) => Number(p.settings.minimumApproverCount));
+    if (!minimos.length) return sinPolitica;
+    const n = Math.max(...minimos);
+    return { ok: true, detalle: `al menos ${n} revisor${n === 1 ? '' : 'es'}` };
+  }
+  const prot = await llamar({ url: `${base}/branches/${RAMA_PRINCIPAL}/protection`, remote, cred, fetch: f, secretos });
+  if (prot.status === 200) {
+    const n = Number((((prot.doc || {}).required_pull_request_reviews || {}).required_approving_review_count) || 0);
+    if (n >= 1) return { ok: true, detalle: `al menos ${n} revisor${n === 1 ? '' : 'es'}` };
+  } else if (prot.status !== 404) return noLeida(prot);
+  const reglas = await llamar({ url: `${base}/rules/branches/${RAMA_PRINCIPAL}`, remote, cred, fetch: f, secretos });
+  if (reglas.status !== 200 || !Array.isArray(reglas.doc)) return noLeida(reglas);
+  const n = Math.max(0, ...reglas.doc.filter((r) => r && r.type === 'pull_request' && r.parameters).map((r) => Number(r.parameters.required_approving_review_count) || 0));
+  if (n >= 1) return { ok: true, detalle: `al menos ${n} revisor${n === 1 ? '' : 'es'}` };
+  return sinPolitica;
+}
+
+/**
+ * El pedido activo hacia main desde una rama `team-config/<idCorto>-*`: `{ enlace, rama }`, o null si no hay. Si la API
+ * no contesta bien devuelve `{ error }`: «no pude mirar» no es «no hay» (revisión de fallos silenciosos de la 2.29).
+ */
+async function pedidoAbierto({ remote, credencial, idCorto, urlBase, fetch: f }) {
+  if (!remote || (remote.platform !== 'azure' && remote.platform !== 'github')) return null;
+  const cred = credenciales(credencial);
+  const secretos = secretosDe(cred);
+  const base = baseDe(remote, urlBase);
+  const prefijo = `team-config/${idCorto}-`;
+  if (remote.platform === 'azure') {
+    const r = await llamar({ url: `${base}/git/repositories/${encodeURIComponent(remote.repo)}/pullrequests?searchCriteria.status=active&searchCriteria.targetRefName=${encodeURIComponent(`refs/heads/${RAMA_PRINCIPAL}`)}&${API_AZURE}`, remote, cred, fetch: f, secretos });
+    if (r.status !== 200 || !r.doc || !Array.isArray(r.doc.value)) return { error: motivoCorto(r) };
+    const p = r.doc.value.find((x) => x && String(x.sourceRefName || '').startsWith(`refs/heads/${prefijo}`));
+    return p ? { enlace: `${remote.web}/pullrequest/${p.pullRequestId}`, rama: String(p.sourceRefName).replace(/^refs\/heads\//, '') } : null;
+  }
+  const r = await llamar({ url: `${base}/pulls?state=open&base=${RAMA_PRINCIPAL}&per_page=100`, remote, cred, fetch: f, secretos });
+  if (r.status !== 200 || !Array.isArray(r.doc)) return { error: motivoCorto(r) };
+  const p = r.doc.find((x) => x && x.head && String(x.head.ref || '').startsWith(prefijo));
+  return p ? { enlace: p.html_url, rama: p.head.ref } : null;
+}
+
+/** Abre el pedido por REST: { ok, enlace } | { ok: false, motivo }. Nunca auto-completar ni merge (decisión 1). */
+async function abrirPedido({ remote, cred, urlBase, rama, titulo, cuerpo, fetch: f, secretos }) {
+  const base = baseDe(remote, urlBase);
+  if (remote.platform === 'azure') {
+    const r = await llamar({ method: 'POST', url: `${base}/git/repositories/${encodeURIComponent(remote.repo)}/pullrequests?${API_AZURE}`, remote, cred, fetch: f, secretos, cuerpo: { sourceRefName: `refs/heads/${rama}`, targetRefName: `refs/heads/${RAMA_PRINCIPAL}`, title: titulo, description: cuerpo } });
+    if (r.status === 201 && r.doc && r.doc.pullRequestId != null) return { ok: true, enlace: `${remote.web}/pullrequest/${r.doc.pullRequestId}` };
+    return { ok: false, motivo: motivoDePedido(r) };
+  }
+  const r = await llamar({ method: 'POST', url: `${base}/pulls`, remote, cred, fetch: f, secretos, cuerpo: { title: titulo, head: rama, base: RAMA_PRINCIPAL, body: cuerpo } });
+  if (r.status === 201 && r.doc && r.doc.html_url) return { ok: true, enlace: r.doc.html_url };
+  return { ok: false, motivo: motivoDePedido(r) };
+}
+const motivoDePedido = (r) => (r.status === 403 || r.status === 401 ? 'la identidad de escritura del sitio no tiene permiso para abrir pedidos en ese repo' : r.motivo || `HTTP ${r.status}`);
+
+/** El enlace para abrir el pedido a mano (el mismo que `proposalPlan` de team-config.js). */
+function enlaceManual(remote, rama) {
+  if (remote.platform === 'github') return `${remote.web}/compare/${RAMA_PRINCIPAL}...${rama}?expand=1`;
+  if (remote.platform === 'azure') return `${remote.web}/pullrequestcreate?sourceRef=${encodeURIComponent(rama)}&targetRef=${encodeURIComponent(RAMA_PRINCIPAL)}`;
+  return null;
+}
+
+// ── La propuesta ───────────────────────────────────────────────────────────────────────────────────────────────────
+/**
+ * Propone `contenido` como el nuevo `archivo` del repo de operaciones: rama + commit + empuje + pedido, dentro de
+ * `exclusivo` (el candado compartido con el refresco de sources.js). Devuelve { ok: true, rama, enlace, message } o
+ * { ok: false, codigo, message, rama?, manual?, enlace? }. Códigos: plataforma_desconocida · sin_credencial · cambio ·
+ * pedido_abierto · sin_politica · no_se_pudo_leer · sin_permiso · git · pedido_no_abierto.
+ */
+async function proponer({ clon, archivo, contenido, oidEsperado, idCorto, secciones = [], quien, credencial, remote, urlBase, exclusivo = (fn) => fn(), now, git = 'git', fetch: f, log = () => {} }) {
+  if (!remote || (remote.platform !== 'azure' && remote.platform !== 'github')) return { ok: false, codigo: 'plataforma_desconocida', message: 'no reconozco la plataforma del remoto: abrí el pedido a mano' };
+  const cred = credenciales(credencial);
+  if (!cred.git || !cred.api) return { ok: false, codigo: 'sin_credencial', message: 'el sitio no tiene identidad de escritura: descargá el archivo y abrí el pedido a mano' };
+  // sin la versión del archivo que se abrió no se puede saber si otro lo cambió (AC 16): null = «no existía»
+  if (oidEsperado === undefined) return { ok: false, codigo: 'sin_version', message: 'falta la versión del archivo que abriste: recargá' };
+  if (!clon || !archivo || typeof contenido !== 'string' || !idCorto) return { ok: false, codigo: 'git', message: 'faltan datos de la propuesta (clon, archivo, contenido o id corto)' };
+  const cabecera = `Basic ${Buffer.from(`x-access-token:${cred.git}`).toString('base64')}`;
+  const secretos = secretosDe(cred);
+  const registrar = (l) => log(tapar(l, secretos));
+  const correr = typeof git === 'function' ? git : (args, opts) => correrGit(args, { ...opts, git });
+
+  return exclusivo(async () => {
+    // el origen del clon, para la cabecera (nunca en la dirección ni en el disco)
+    const origenR = await correr(['config', '--get', 'remote.origin.url'], { cwd: clon, env: envDeGit(null, null) });
+    if (origenR.status !== 0) return { ok: false, codigo: 'git', message: 'el clon del sitio no tiene un remoto «origin»: no hay adónde mandar la propuesta' };
+    let origen = null;
+    try { origen = new URL(String(origenR.stdout).trim()).origin; } catch { /* una ruta local: sin cabecera */ }
+    const env = envDeGit(origen, cabecera);
+    const fallaGit = (r, que) => {
+      const err = tapar(`${r.stderr || ''}${r.error ? ` ${r.error.code || r.error.message}` : ''}`, secretos).split('\n').map((l) => l.trim()).filter(Boolean).slice(-2).join(' · ').slice(0, 300);
+      registrar(`propuesta de ${archivo}: ${que} falló: ${err}`);
+      return err;
+    };
+
+    // 1. la punta de main, recién traída
+    const fetchR = await correr(['fetch', '--depth', '1', '--no-tags', 'origin', RAMA_PRINCIPAL], { cwd: clon, env });
+    if (fetchR.status !== 0) {
+      const err = fallaGit(fetchR, 'git fetch');
+      return NO_PERMISSION.test(err) ? { ok: false, codigo: 'sin_permiso', message: `la identidad de escritura del sitio no tiene permiso en ${remote.repo}` } : { ok: false, codigo: 'git', message: `no pude traer la rama ${RAMA_PRINCIPAL} del repo de operaciones (${err})` };
+    }
+    const puntaR = await correr(['rev-parse', '--verify', '--quiet', 'FETCH_HEAD^{commit}'], { cwd: clon, env });
+    if (puntaR.status !== 0) return { ok: false, codigo: 'git', message: `no encontré la punta de ${RAMA_PRINCIPAL} después de traerla (${fallaGit(puntaR, 'git rev-parse')})` };
+    const punta = String(puntaR.stdout).trim();
+
+    // 2. ¿cambió el archivo desde que se abrió la sección? (decisión 3)
+    const oidR = await correr(['rev-parse', '--verify', '--quiet', `${punta}:${archivo}`], { cwd: clon, env });
+    const oidActual = oidR.status === 0 ? String(oidR.stdout).trim() : null;
+    if ((oidEsperado || null) !== oidActual) return { ok: false, codigo: 'cambio', message: 'el archivo cambió desde que lo abriste: recargá' };
+
+    // 3. ¿ya hay un pedido abierto sobre este archivo? (decisión 3)
+    const abierto = await pedidoAbierto({ remote, credencial: cred, idCorto, urlBase, fetch: f });
+    if (abierto && abierto.error) return { ok: false, codigo: 'no_se_pudo_leer', message: `no pude verificar si ya hay un pedido abierto sobre este archivo (${abierto.error}): no propongo nada; probá de nuevo` };
+    if (abierto) return { ok: false, codigo: 'pedido_abierto', enlace: abierto.enlace, rama: abierto.rama, message: `ya hay un pedido abierto sobre este archivo: ${abierto.enlace}; esperá a que se mergee o cerralo` };
+
+    // 4. la política de la rama principal (decisión 1)
+    const politica = await politicaDeRevision({ remote, credencial: cred, urlBase, fetch: f });
+    if (!politica.ok) return { ok: false, codigo: politica.codigo, message: politica.message };
+
+    // 5. el commit, sin tocar el árbol ni el índice del clon
+    const rama = `team-config/${idCorto}-${stamp(fechaDe(now))}`;
+    const titulo = `Configuración de la organización: ${archivo}`;
+    const indice = path.join(os.tmpdir(), `repo-proposal-${process.pid}-${crypto.randomBytes(6).toString('hex')}.index`);
+    const envIndice = { ...env, GIT_INDEX_FILE: indice };
+    const fecha = fechaDe(now).toISOString();
+    const envCommit = { ...envIndice, ...AUTOR, GIT_AUTHOR_DATE: fecha, GIT_COMMITTER_DATE: fecha };
+    let sha;
+    try {
+      const blob = await correr(['hash-object', '-w', '--stdin'], { cwd: clon, env, input: contenido });
+      if (blob.status !== 0) return { ok: false, codigo: 'git', message: `no pude guardar el contenido en el clon (${fallaGit(blob, 'git hash-object')})` };
+      const pasos = [
+        ['read-tree', punta],
+        ['update-index', '--add', '--cacheinfo', `100644,${String(blob.stdout).trim()},${archivo}`],
+      ];
+      for (const args of pasos) {
+        const r = await correr(args, { cwd: clon, env: envIndice });
+        if (r.status !== 0) return { ok: false, codigo: 'git', message: `no pude armar el commit (${fallaGit(r, `git ${args[0]}`)})` };
+      }
+      const tree = await correr(['write-tree'], { cwd: clon, env: envIndice });
+      if (tree.status !== 0) return { ok: false, codigo: 'git', message: `no pude armar el commit (${fallaGit(tree, 'git write-tree')})` };
+      const commit = await correr(['commit-tree', String(tree.stdout).trim(), '-p', punta, '-m', titulo], { cwd: clon, env: envCommit });
+      if (commit.status !== 0) return { ok: false, codigo: 'git', message: `no pude armar el commit (${fallaGit(commit, 'git commit-tree')})` };
+      sha = String(commit.stdout).trim();
+    } finally {
+      fs.rmSync(indice, { force: true });
+    }
+    // 🔴 sin --force y nunca a la rama principal: el sha va directo a la rama nueva, sin ref local en el clon
+    const push = await correr(['push', 'origin', `${sha}:refs/heads/${rama}`], { cwd: clon, env });
+    if (push.status !== 0) {
+      const err = fallaGit(push, 'git push');
+      if (NO_PERMISSION.test(err)) return { ok: false, codigo: 'sin_permiso', message: `la identidad de escritura del sitio no tiene permiso en ${remote.repo}` };
+      return { ok: false, codigo: 'git', message: `no pude subir la rama ${rama} (${err})` };
+    }
+    registrar(`propuesta de ${archivo}: rama ${rama} empujada`);
+
+    // 6. el pedido (decisión 10: uno por archivo, con las secciones)
+    const cuerpo = `Secciones cambiadas: ${secciones.length ? secciones.join(', ') : 'sin detallar'}. Pedido por ${quien || 'alguien'} desde el sitio.`;
+    const pedido = await abrirPedido({ remote, cred, urlBase, rama, titulo, cuerpo, fetch: f, secretos });
+    if (!pedido.ok) {
+      const manual = enlaceManual(remote, rama);
+      registrar(`propuesta de ${archivo}: el pedido no se abrió (${pedido.motivo})`);
+      return { ok: false, codigo: 'pedido_no_abierto', rama, manual, message: `El cambio subió a la rama ${rama}, pero no pude abrir el pedido (${tapar(pedido.motivo, secretos)}). Abrilo desde: ${manual}` };
+    }
+    registrar(`propuesta de ${archivo}: pedido abierto ${pedido.enlace}`);
+    return { ok: true, rama, enlace: pedido.enlace, message: `Pedido abierto: ${pedido.enlace}` };
+  });
+}
+
+/** Un ambiente sin las variables `SITE_*` del sitio (ahí viven sus credenciales). */
+const sinVariablesDelSitio = (env) => Object.fromEntries(Object.entries(env || {}).filter(([k]) => !/^SITE_/.test(k)));
+
+/** Las variables de git: la cabecera por GIT_CONFIG_* (el patrón de sources.js), sin ayudantes de credenciales ni prompts. */
+function envDeGit(origen, cabecera) {
+  const conf = [['core.symlinks', 'false'], ['credential.helper', '']];
+  if (origen && cabecera) conf.push([`http.${origen}/.extraheader`, `Authorization: ${cabecera}`]);
+  // las variables del sitio (sus credenciales) no viajan al proceso git: no las necesita
+  const env = { ...sinVariablesDelSitio(process.env), GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: '', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_COUNT: String(conf.length) };
+  delete env.GIT_INDEX_FILE; delete env.GIT_DIR; delete env.GIT_WORK_TREE;
+  conf.forEach(([k, v], i) => { env[`GIT_CONFIG_KEY_${i}`] = k; env[`GIT_CONFIG_VALUE_${i}`] = v; });
+  return env;
+}
+
+// ── lo que la pestaña Configuración lee de cada plataforma, sin escribir nada (story 2.29, AC 7 y 8) ─────────────────
+/** El enlace web a un archivo de la rama principal de un repo, o null si la plataforma no se reconoce. */
+function enlaceArchivo(remote, rel) {
+  if (!remote || !remote.web) return null;
+  if (remote.platform === 'github') return `${remote.web}/blob/main/${rel}`;
+  if (remote.platform === 'azure') return `${remote.web}?path=/${rel}`;
+  return null;
+}
+
+/**
+ * La propuesta de stages de un pipeline (AC 8): sólo lee, con la credencial de sólo lectura de pipelines. En Azure
+ * DevOps, `pipeline` es el número de la definición: se leen la última corrida terminada de la rama principal y su
+ * timeline, y se proponen los identificadores de stage (el nombre visible va al lado, sólo como ayuda). En GitHub,
+ * `pipeline` es `dueño/repo` del producto: se proponen sus environments. `{ ok, propuestos: [{ identificador, nombre,
+ * estado: 'propuesto' }] }` o `{ ok: false, message }` — nunca un nombre que no se leyó.
+ */
+async function stagesPropuestos({ pipeline, remote, token, urlBase = {}, fetch = globalThis.fetch }) {
+  const p = String(pipeline || '').trim();
+  const isObject = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
+  const pedir = async (url, headers) => {
+    const r = await fetch(url, { headers, signal: AbortSignal.timeout(20000) });
+    if (!r.ok) throw Object.assign(new Error(`respuesta ${r.status}`), { status: r.status });
+    return r.json();
+  };
+  // Azure: «<número>» (en el proyecto del repo de operaciones) o «<proyecto>/<número>» (los ids de definición son por
+  // proyecto: un producto que vive en otro proyecto se nombra con el suyo; pase adversarial de la 2.29)
+  // un segmento hecho sólo de puntos («.», «..») subiría de nivel en la ruta de la API: no es un nombre (revisión de
+  // seguridad de la 2.29); los demás van codificados
+  const sinPuntos = (s) => !/^\.+$/.test(s);
+  const az = /^(?:([^/]+)\/)?(\d+)$/.exec(p);
+  if (az && az[1] !== undefined && !sinPuntos(az[1])) return { ok: false, message: 'no reconozco el pipeline: el número de la definición en Azure DevOps (o proyecto/número si es de otro proyecto), o dueño/repo en GitHub' };
+  if (az) {
+    if (!token) return { ok: false, message: 'no configurado: escribí el stage a mano (el sitio no tiene SITE_PIPELINES_TOKEN)' };
+    if (!remote || remote.platform !== 'azure') return { ok: false, message: 'el repo de operaciones no es de Azure DevOps: escribí el stage a mano' };
+    const proyecto = az[1] || remote.project;
+    const definicion = az[2];
+    const base = `${(urlBase.azure || 'https://dev.azure.com').replace(/\/$/, '')}/${encodeURIComponent(remote.org)}/${encodeURIComponent(proyecto)}/_apis`;
+    const headers = { Authorization: `Basic ${Buffer.from(`:${token}`).toString('base64')}`, Accept: 'application/json' };
+    try {
+      const b = await pedir(`${base}/build/builds?definitions=${definicion}&branchName=refs/heads/main&$top=1&statusFilter=completed&api-version=7.1`, headers);
+      const id = b && Array.isArray(b.value) && b.value[0] ? b.value[0].id : null;
+      if (!id) return { ok: false, message: `el pipeline ${p} no tiene una corrida terminada de la rama principal: escribí el stage a mano` };
+      const tl = await pedir(`${base}/build/builds/${id}/timeline?api-version=7.1`, headers);
+      return { ok: true, propuestos: (Array.isArray(tl.records) ? tl.records : []).filter((x) => isObject(x) && x.type === 'Stage' && typeof x.identifier === 'string').map((x) => ({ identificador: x.identifier, nombre: typeof x.name === 'string' ? x.name : null, estado: 'propuesto' })) };
+    } catch (e) { return { ok: false, message: `no pude leer el pipeline ${p} (${e.status ? e.status : 'sin respuesta'}): escribí el stage a mano` }; }
+  }
+  if (/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(p) && p.split('/').every(sinPuntos)) {
+    if (!token) return { ok: false, message: 'no configurado: escribí el environment a mano (el sitio no tiene SITE_PIPELINES_TOKEN)' };
+    const base = (urlBase.github || 'https://api.github.com').replace(/\/$/, '');
+    try {
+      const e = await pedir(`${base}/repos/${p}/environments`, { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' });
+      return { ok: true, propuestos: (Array.isArray(e.environments) ? e.environments : []).filter((x) => isObject(x) && typeof x.name === 'string').map((x) => ({ identificador: x.name, nombre: null, estado: 'propuesto' })) };
+    } catch (err) { return { ok: false, message: `no pude leer los environments de ${p} (${err.status ? err.status : 'sin respuesta'}): escribí el environment a mano` }; }
+  }
+  return { ok: false, message: 'no reconozco el pipeline: el número de la definición en Azure DevOps (o proyecto/número si es de otro proyecto), o dueño/repo en GitHub' };
+}
+
+module.exports = { remoteOf, stagesPropuestos, enlaceArchivo, politicaDeRevision, pedidoAbierto, proponer, correrGit, enlaceManual, stamp, NO_PERMISSION, TIPO_REVISORES_AZURE };
