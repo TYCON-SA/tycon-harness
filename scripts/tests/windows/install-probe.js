@@ -352,6 +352,8 @@ function measureStartupTiming({ home, clone, env, pwsh, scratch, runs = 5, start
  * mentira y una corrida de muestra (un volcado y su hilo comprimido). Mide lo que en Windows nunca se había corrido: que
  * el arranque la lanza de fondo, las rutas de Windows, el comprimido y el HTTP. Nunca toca el buzón real.
  * Sin TF_BUILD a propósito: dentro de un agente de CI la subida no se lanza (story 2.12), y acá se mide una máquina.
+ * stable-data: el reloj sólo mide la espera (cuánto tardó en llegar la subida, hasta un tope); ningún dato que se compara
+ * sale de la hora, y los nombres de la corrida de muestra son fijos.
  */
 function measureMailboxUpload({ home, clone, env, pwsh, scratch, waitMs = 90000 }) {
   const facts = { launched: false, arrived: false, log_lines: 0, puts: 0, blobs: [], gz_intact: null, waited_s: null, problems: [] };
