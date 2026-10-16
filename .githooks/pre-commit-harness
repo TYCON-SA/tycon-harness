@@ -260,6 +260,33 @@ else
   fi
 fi
 
+# ── Tres reglas que antes sólo veía la CI pública (2026-10-15) ───────────────────────────────────────────────────
+# `| grep -q` con pipefail en un .sh, una prueba que depende de un sha o de una hora que cambian, y el conteo del catálogo
+# de reglas cuando el commit toca agents/ o el catálogo. Las tres salieron rojas en la CI después de pasar por la máquina;
+# acá miran sólo lo que el commit trae, con la misma lógica que sus pruebas (los módulos de scripts/lib/). Va antes del
+# filtro RELEVANTES: las pruebas y los guiones casi nunca están en esa lista. Si el commit no trae nada de eso, sale en
+# milisegundos. Sin el guion: en el arnés (trae la lista blanca de publicación, la misma señal que el control de la
+# versión bajada) frena, porque no medido no es verde; en un repo de juguete de las suites del hook, lo dice y sigue.
+# Casos: scripts/tests/check-staged-ci-rules.test.js
+CI_RULES="$REPO_ROOT/scripts/ci/check-staged-ci-rules.js"
+CI_RULES_RC=0
+if [ ! -f "$CI_RULES" ]; then
+  if [ -f "$REPO_ROOT/scripts/publishing/allowlist.json" ]; then
+    echo "⛔ COMMIT RECHAZADO — no encontré $CI_RULES, así que NO pude mirar las reglas que frena la CI pública. No medido no es verde. Si el checkout está incompleto: git checkout scripts/ci/check-staged-ci-rules.js" >&2
+    exit 1
+  fi
+  echo "▸ pre-commit: sin el guion de las reglas de la CI ni lista blanca de publicación: no es el arnés; se saltea" >&2
+else
+  node "$CI_RULES" --repo "$REPO_ROOT"; CI_RULES_RC=$?
+fi
+if [ "$CI_RULES_RC" = 1 ]; then
+  echo "⛔ COMMIT RECHAZADO — arriba dice archivo, línea y cómo arreglarlo." >&2
+  exit 1
+elif [ "$CI_RULES_RC" != 0 ]; then
+  echo "⛔ COMMIT RECHAZADO — no pude mirar las reglas que frena la CI pública (arriba dice por qué): no medido no es verde." >&2
+  exit 1
+fi
+
 if grep -qE '^(claude-md-blocks/|README\.md$|guides/piezas-del-arnes\.md$)' <<<"$STAGED_ALL"; then
   CMB="$REPO_ROOT/scripts/ci/check-claude-md-blocks.js"
   if [ ! -f "$CMB" ]; then
