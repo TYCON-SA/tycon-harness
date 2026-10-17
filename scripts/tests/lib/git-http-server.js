@@ -28,7 +28,7 @@ async function arrancarRepoHttp({ raiz, cabecera }) {
     if (!conCabecera) { res.writeHead(401, { 'WWW-Authenticate': 'Basic realm="ops"' }); res.end('sin credencial'); return; }
     // el cuerpo entero primero, para decirle a http-backend cuánto mide (CONTENT_LENGTH, como manda la CGI): sin ese
     // dato, git en Mac y Linux lee hasta el final, pero el de Windows lo toma como vacío, no contesta ninguna rama y el
-    // clon falla con «Remote branch main not found» (corrida 13730 de la 182)
+    // clon falla con «Remote branch main not found»
     const partes = [];
     req.on('data', (c) => partes.push(c));
     req.on('end', () => {

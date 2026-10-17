@@ -104,9 +104,9 @@ fi
 
 # ── T60 · el texto nunca va en la línea de comandos de curl ───────────────────────────────────────────────────────
 # En Windows el curl de Git lee sus argumentos en la página de códigos del sistema: un texto con «¿», «·» o un emoji
-# llegaba a Telegram con «�» y «?» (aviso de espera, corrida 13729 de la 182). Un curl de mentira anota sus argumentos y
-# su entrada: los argumentos no traen el texto ni ningún byte fuera de ASCII, y la entrada trae el texto entero, igual
-# venga como argumento o por --stdin. Sin red.
+# pasado como argumento llega a Telegram con «�» y «?». Un curl de mentira anota sus argumentos y su entrada: los
+# argumentos no traen el texto ni ningún byte fuera de ASCII, y la entrada trae el texto entero, venga como argumento o
+# por --stdin. Sin red.
 T60_BIN="$(mktemp -d)"
 T60_LOG="$(mktemp -d)"
 cat > "$T60_BIN/curl" <<'CURL'
@@ -141,8 +141,8 @@ out="$(TYCON_TELEGRAM_DIR="$FAKE" bash "$SCRIPT" --stdin "y además argumento" <
 check "T60 --stdin con un texto de argumento es un uso inválido (2)" 2 "$rc"
 out="$(TYCON_TELEGRAM_DIR="$FAKE" bash "$SCRIPT" --stdin < /dev/null 2>&1)"; rc=$?
 check "T60 --stdin sin texto es un uso inválido (2)" 2 "$rc"
-# T62 · el destinatario y el message_id se leen con bash, sin python3 (en Windows, la ruta de bash adentro del código de
-# python no la encontraba y el aviso no salía): un access.json en varias líneas, y una respuesta con más campos
+# T62 · el destinatario y el message_id se leen con bash, sin python3 (en Windows, una ruta de bash escrita adentro del
+# código de python no la encuentra un programa nativo): un access.json en varias líneas, y una respuesta con más campos
 T62_DIR="$(mktemp -d)"
 printf '{\n  "dmPolicy": "allowlist",\n  "allowFrom": [\n    "8234000001",\n    "77"\n  ]\n}\n' > "$T62_DIR/access.json"
 out="$(TYCON_TELEGRAM_DIR="$T62_DIR" TELEGRAM_BOT_TOKEN=x bash "$SCRIPT" --dry-run "hola" 2>&1)"

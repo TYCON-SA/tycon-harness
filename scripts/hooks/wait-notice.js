@@ -345,7 +345,7 @@ function openWait(sid, tp, kind, waiting) {
 }
 
 // el texto va por la entrada estándar, nunca en la línea de comandos: en Windows, lo que cruza una línea de comandos
-// hacia un programa nativo pasa por la página de códigos del sistema y los acentos llegaban rotos (tycon-telegram-notify.sh)
+// hacia un programa nativo pasa por la página de códigos del sistema y los acentos llegan rotos (tycon-telegram-notify.sh)
 function runTelegram(args, text) {
   return spawnSync('bash', [TELEGRAM_SCRIPT, ...args, '--stdin'], { input: Buffer.from(text, 'utf8'), encoding: 'utf8', timeout: 30000, env: process.env, windowsHide: true });
 }

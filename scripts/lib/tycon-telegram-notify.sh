@@ -30,9 +30,9 @@
 #   printf '%s' "texto" | tycon-telegram-notify.sh --stdin     # el texto por la entrada estándar
 #
 # EL TEXTO NUNCA VA EN LA LÍNEA DE COMANDOS DE CURL. En Windows, el curl de Git es un programa nativo
-# que lee sus argumentos en la página de códigos del sistema: los acentos y los signos llegaban como
-# un byte suelto que Telegram mostraba «�», y un emoji como «?». Por eso el texto le llega a curl
-# por la entrada estándar (`--data-urlencode text@-`), byte a byte. Quien llama desde Node usa
+# que lee sus argumentos en la página de códigos del sistema: un acento o un signo pasado como
+# argumento llega como un byte suelto que Telegram muestra «�», y un emoji como «?». Por eso el texto
+# le llega a curl por la entrada estándar (`--data-urlencode text@-`), byte a byte. Quien llama desde Node usa
 # `--stdin` por la misma razón: el texto no cruza ninguna línea de comandos.
 #
 # EL TOKEN TAMPOCO. La dirección lleva el token del bot (`…/bot<token>/<método>`), y un argumento se ve en la lista de
@@ -97,8 +97,8 @@ if [ -z "$TOKEN" ]; then
 fi
 
 # ── Destinatario ─────────────────────────────────────────────────────────────────────────────
-# El primer id de `allowFrom`, leído por bash: un python3 con la ruta adentro del código no la encontraba en Windows (la
-# ruta de bash, /c/Users/… o /tmp/…, no la entiende un programa nativo) y el aviso no salía.
+# El primer id de `allowFrom`, leído por bash y no por un programa aparte: en Windows una ruta de bash (/c/Users/… o
+# /tmp/…) escrita adentro del código de otro programa no la entiende un programa nativo.
 if [ -z "$CHAT_ID" ] && [ -r "$CHANNEL_DIR/access.json" ]; then
   CHAT_ID="$(tr -d '\r\n' < "$CHANNEL_DIR/access.json" | grep -o '"allowFrom"[[:space:]]*:[[:space:]]*\[[^]]*\]' | grep -o -- '-\{0,1\}[0-9]\{1,\}' | head -1)"
 fi
