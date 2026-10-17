@@ -503,7 +503,10 @@ fi
 # 🔴 rojo previo: el plan del .sh comparaba la marca entera y decía «add» para los bloques que la persona ya tiene.
 if corre REG; then
   H4="$T/reg5"; rm -rf "$H4"; mkdir -p "$H4/.claude"
-  for f in "$RAIZ"/claude-md-blocks/*.md; do n="$(basename "$f" .md)"
+  # los bloques del núcleo y los de los paquetes que el árbol activa (con la capa del equipo encima, el de cada paquete)
+  REG819_PACKS="$(env -i HOME="$H4" PATH="$PATH" node "$RAIZ/scripts/lib/pack-pieces.js" blocks --json --tree "$RAIZ" 2>/dev/null \
+    | node -e 'let s="";process.stdin.on("data",(c)=>s+=c).on("end",()=>{try{for(const b of JSON.parse(s).blocks)console.log(b.name)}catch(_){}})')"
+  for n in $(for f in "$RAIZ"/claude-md-blocks/*.md; do basename "$f" .md; done) $REG819_PACKS; do
     printf '<!-- TYCON_BLOCK:%s START — generado por una marca de antes · NO EDITAR A MANO -->\nviejo\n<!-- TYCON_BLOCK:%s END -->\n\n' "$n" "$n" >> "$H4/.claude/CLAUDE.md"
   done
   : > "$H4/plan.tsv"
