@@ -611,6 +611,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 7.30: la maqueta de la pantalla antes de construirla (mockup.js: render, check, texts, status; la huella; los argumentos del paso 8).",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/mockup.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/step-7c-macro.test.js",
       "requiere": []

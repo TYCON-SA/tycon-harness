@@ -449,6 +449,19 @@ function isUiStory(content, fm, repoRoot) {
   return require(path.join(__dirname, 'lib', 'ui-signal.js')).touchesUiParts(fm, content, repoRoot);
 }
 
+// Dónde viven la guía del tester, las revisiones de legibilidad y la maqueta de una story, y con qué clave (story 7.30:
+// la maqueta la ubica con esta MISMA función, para que su nombre y el que busca la revisión no puedan discrepar).
+// La guía se nombra con la CLAVE de la story (story 1.17.1): con un número que se repite en el repo, dos stories que
+// comparten la carpeta qa/ escribían y leían el mismo `<id>-pasos.md`, y el chequeo de una daba por buena la guía de la
+// otra. Con número único la clave es el número: el nombre de siempre. Si la matriz no computa, tira: no hay clave.
+function qaLocation(storyPath) {
+  const abs = path.resolve(storyPath);
+  const matrix = require(path.join(__dirname, 'runtime-matrix.js')).compute({ storyPath: abs });
+  if (matrix.structuralError) throw new Error(`la matriz no computa (${matrix.structuralError})`);
+  const sid = matrix.sid;
+  return { qaDir: path.join(path.dirname(path.dirname(abs)), 'qa'), qk: matrix.key || sid, sid, repoRoot: matrix.repoRoot, matrix };
+}
+
 // Dónde se buscan las pantallas de la story: su repo, el workspace (rutas escritas desde ahí) y los repos acompañantes
 // declarados en `.tycon/advisors.yaml` — el mismo criterio con que la matriz resuelve los archivos y la evidencia.
 // Una config que no se puede leer se DICE (revisores del paso 5): callada, las pantallas de un acompañante se leían
@@ -538,7 +551,10 @@ function uiReadabilityCheck({ content, fm, qaDir, qk, repoRoot }) {
 
   // (8) Una marca resuelta sólo en la guía: el texto citado sigue en una pantalla de la story.
   for (const file of [`${qk}-legibilidad.md`, `${qk}-legibilidad-ui.md`].map((f) => path.join(qaDir, f)).filter(isFile)) {
-    for (const mk of ui.quotedMarks(fs.readFileSync(file, 'utf8'))) {
+    // Story 7.30: una línea `differs:` declara una diferencia con la maqueta, no es una marca de la revisión (como
+    // `keep:`). Se vacía conservando la numeración: una `differs:` vieja cuyo texto sigue en la pantalla no frena acá.
+    const sinDiffers = fs.readFileSync(file, 'utf8').split('\n').map((l) => (/\bdiffers:/.test(l) ? '' : l)).join('\n');
+    for (const mk of ui.quotedMarks(sinDiffers)) {
       const hits = ui.whereInScreens(mk.quote, found);
       for (const h of hits.filter((x) => x.unreadable)) problems.push(`(8) No pude leer ${h.rel} (${h.unreadable}) para ver si la marca «${mk.quote}» sigue en la pantalla: no mirar no es «ya no está».`);
       const vistos = hits.filter((x) => !x.unreadable);
@@ -549,6 +565,80 @@ function uiReadabilityCheck({ content, fm, qaDir, qk, repoRoot }) {
     }
   }
   return { problems, notes, screens: found, missing };
+}
+
+// ── Capas 9 y 10 de la PANTALLA (story 7.30) ─────────────────────────────────────────────────────────────────────────
+// Hoy la pantalla se ve recién construida. Con la 7.30 el dueño aprueba una maqueta con el plan (mockup.js) y queda su
+// huella; acá se exige que (9) la maqueta aprobada esté intacta, y (10) lo construido tenga sus textos. Sin aprobación
+// anotada (stories aprobadas antes de la 7.30, o el chequeo corrido fuera del pipeline) no se compara y se dice; con
+// `--mockup-sha` (lo pasa el paso 8 desde el marcador) borrar el archivo de aprobación no saltea la comparación.
+function mockupLayers({ qaDir, qk, mockupSha, screens }) {
+  const mk = require(path.join(__dirname, 'mockup.js'));
+  const problems = []; const notes = [];
+  const mockupPath = path.join(qaDir, `${qk}-mockup.html`);
+  const approvalPath = path.join(qaDir, `${qk}-mockup-approval.json`);
+  const uiPath = path.join(qaDir, `${qk}-legibilidad-ui.md`);
+  const h12 = (s) => String(s || '').slice(0, 12);
+  const ap = mk.readApproval(approvalPath);
+  if (ap.state === 'absent' && !mockupSha) {
+    notes.push('sin maqueta aprobada: no se compara (story aprobada antes de la 7.30, o fuera del pipeline)');
+    return { problems, notes };
+  }
+  // (9) la maqueta aprobada, intacta
+  if (ap.state === 'absent') {
+    problems.push(`(9) el pipeline aprobó una maqueta (${h12(mockupSha)}) y su aprobación no está en el repo: ${approvalPath} — va en el commit junto con la maqueta`);
+    return { problems, notes };
+  }
+  if (ap.state === 'bad') {
+    problems.push(`(9) no pude leer la aprobación de la maqueta (${approvalPath}): ${ap.error}`);
+    return { problems, notes };
+  }
+  if (mockupSha && ap.data.sha256 !== mockupSha) {
+    problems.push(`(9) el pipeline aprobó una maqueta (${h12(mockupSha)}) y la del repo es otra (${h12(ap.data.sha256)}): ${approvalPath}`);
+    return { problems, notes };
+  }
+  let html;
+  try { html = fs.readFileSync(mockupPath, 'utf8'); } catch (e) {
+    problems.push(`(9) la maqueta aprobada no está (o no se puede leer: ${e.code || e.message}): ${mockupPath}`);
+    return { problems, notes };
+  }
+  const hoy = mk.mockupHash(html);
+  if (hoy !== ap.data.sha256) {
+    problems.push(`(9) la maqueta cambió después de aprobada (aprobada ${h12(ap.data.sha256)}, hoy ${h12(hoy)}): mostrásela al dueño y aprobala de nuevo: marker.js approve-mockup --approved "<cita>"`);
+    return { problems, notes };
+  }
+  const v = mk.validateMockupHtml(html);
+  if (!v.ok) {
+    problems.push(`(9) la maqueta no pasa mockup.js check: ${v.findings.map((x) => (x.line ? `línea ${x.line}: ` : '') + x.what).join('; ')}`);
+    return { problems, notes };
+  }
+  // (10) lo construido tiene los textos de la maqueta
+  if (!isFile(uiPath)) return { problems, notes };   // la capa (7) ya pide el archivo
+  const md = fs.readFileSync(uiPath, 'utf8');
+  const nombre = path.basename(mockupPath);
+  const campo = readListField(md, 'mockup');
+  if (!campo.present || !campo.values.some((x) => x === nombre || x.endsWith(`/${nombre}`))) {
+    problems.push(`(10) la revisión de la pantalla no nombra la maqueta aprobada: agregá "mockup: ${nombre}" en ${uiPath} (la pasada del tester compara la pantalla contra ella)`);
+  }
+  // El motivo va en la MISMA línea: con `\s*` un `mockup-compare: no —` vacío tomaba la línea de abajo (pase adversarial).
+  const imposible = md.match(/^[ \t]*[-*]?[ \t]*mockup-compare:[ \t]*no[ \t]*[—–-]+[ \t]*(\S.*?)[ \t]*$/im);
+  if (imposible) {
+    notes.push(`comparación con la maqueta declarada imposible: ${imposible[1]}`);
+    return { problems, notes };
+  }
+  if (!screens.length) {
+    problems.push(`(10) no se puede comparar contra la maqueta: no encontré pantallas de la story en el disco (busco .tsx, .jsx, .vue, .svelte en files_to_create, files_to_modify y la File List). Si las pantallas son de otro tipo, escribí \`mockup-compare: no — <motivo>\` en ${uiPath}`);
+    return { problems, notes };
+  }
+  // la capa (9) ya exigió `check` en 0 (con la meta generator), así que mockupTexts no da null acá
+  const cmp = mk.compareWithScreens({ texts: mk.mockupTexts(html), screens, md });
+  for (const u of cmp.unreadable) problems.push(`(10) no pude leer la pantalla ${u.rel} (${u.error}) para compararla con la maqueta: no mirar no es «está» ni «falta».`);
+  for (const t of cmp.missing) {
+    problems.push(`(10) la maqueta muestra el ${t.kind} «${t.text}» (pantalla «${t.screenName || t.screen + 1}») y no está en ninguna pantalla de la story: corregí la pantalla, o actualizá la maqueta y aprobala de nuevo; si el texto está y el chequeo no lo ve (textos de traducción), escribí \`- «${t.text}» — differs: <por qué>\` en ${uiPath}`);
+  }
+  for (const d of cmp.declared) notes.push(`diferencia declarada con la maqueta: «${d.text}» — differs: ${d.motivo}`);
+  for (const x of cmp.extras) notes.push(`en la pantalla y no en la maqueta: «${x.text}» (${x.rel}:${x.line})`);
+  return { problems, notes };
 }
 
 function main() {
@@ -562,17 +652,12 @@ function main() {
   const abs = path.resolve(storyPath);
   const { content, fm } = readStory(abs);
 
-  const rm = require(path.join(__dirname, 'runtime-matrix.js'));
-  const matrix = rm.compute({ storyPath: abs });
-  if (matrix.structuralError) {
-    console.error(`qa-guide.js: la matriz no computa (${matrix.structuralError}).`);
+  let loc;
+  try { loc = qaLocation(abs); } catch (e) {
+    console.error(`qa-guide.js: ${e.message}.`);
     process.exit(2);
   }
-  const sid = matrix.sid;
-  // La guía del tester se nombra con la CLAVE de la story (story 1.17.1): con un número que se repite en el repo, dos
-  // stories que comparten la carpeta qa/ escribían y leían el mismo `<id>-pasos.md`, y el chequeo de una daba por
-  // buena la guía de la otra. Con número único la clave es el número: el nombre de siempre.
-  const qk = matrix.key || sid;
+  const { matrix, sid, qk } = loc;
   const titleM = content.match(/^#\s+(.+)$/m);
   const title = titleM ? titleM[1].replace(/[#*`]/g, '').trim() : sid;
 
@@ -645,6 +730,29 @@ function main() {
       console.log('');
     }
     for (const m of missing) console.log(`· declarada y no está en el disco: ${m}`);
+    // Story 7.30: con una maqueta aprobada, lo que la pantalla tiene distinto de ella es insumo de la pasada del tester.
+    const mk = require(path.join(__dirname, 'mockup.js'));
+    const qaDirU = path.join(path.dirname(path.dirname(abs)), 'qa');
+    const mockupPath = path.join(qaDirU, `${qk}-mockup.html`);
+    const ap = mk.readApproval(path.join(qaDirU, `${qk}-mockup-approval.json`));
+    if (ap.state === 'bad') console.log(`· no pude leer la aprobación de la maqueta: ${ap.error}`);
+    if (ap.state === 'ok' && !isFile(mockupPath)) console.log(`· la maqueta aprobada no está: ${mockupPath}`);
+    const textosMaqueta = ap.state === 'ok' && isFile(mockupPath) ? mk.mockupTexts(fs.readFileSync(mockupPath, 'utf8')) : null;
+    if (ap.state === 'ok' && isFile(mockupPath) && !textosMaqueta) console.log(`· la maqueta aprobada no es una maqueta de mockup.js (sin la meta generator): ${mockupPath}`);
+    if (textosMaqueta) {
+      const uiPath = path.join(qaDirU, `${qk}-legibilidad-ui.md`);
+      const cmp = mk.compareWithScreens({ texts: textosMaqueta, screens: found,
+        md: isFile(uiPath) ? fs.readFileSync(uiPath, 'utf8') : '' });
+      const lista = (xs, f) => (xs.length ? xs.forEach((x) => console.log(f(x))) : console.log('- (ninguno)'));
+      console.log(`## Maqueta aprobada (${path.basename(mockupPath)})`);
+      console.log('### En la maqueta y no en la pantalla');
+      lista(cmp.missing, (t) => `- «${t.text}» (${t.kind}, pantalla «${t.screenName || t.screen + 1}»)`);
+      console.log('### En la pantalla y no en la maqueta');
+      lista(cmp.extras, (x) => `- «${x.text}» (${x.rel}:${x.line})`);
+      console.log('### Diferencias declaradas');
+      lista(cmp.declared, (d) => `- «${d.text}» — differs: ${d.motivo}`);
+      for (const u of cmp.unreadable) console.log(`· no pude leer ${u.rel} (${u.error}) para compararla con la maqueta`);
+    }
     process.exit(0);
   }
 
@@ -708,6 +816,9 @@ function main() {
     const pantalla = uiReadabilityCheck({ content, fm, qaDir, qk, repoRoot: matrix.repoRoot });
     problems.push(...pantalla.problems);
     for (const nota of pantalla.notes) console.log(`   · ${nota}`);
+    const maqueta = mockupLayers({ qaDir, qk, mockupSha: opt('--mockup-sha'), screens: pantalla.screens });
+    problems.push(...maqueta.problems);
+    for (const nota of maqueta.notes) console.log(`   · ${nota}`);
     if (problems.length) {
       console.error(`🔴 qa-guide --check FALLÓ (story ${sid}) — la guía de tester o la revisión de la pantalla no están listas:`);
       for (const p of problems) console.error(`   - ${p}`);
@@ -825,7 +936,7 @@ function main() {
   process.exit(0);
 }
 
-module.exports = { parseAcsWithText, parseTestsFull, parsePasos, parseDefaultRole, resolveRoles, parsePasosSequence, detectJargon, isUiStory, renderHtml };
+module.exports = { parseAcsWithText, parseTestsFull, parsePasos, parseDefaultRole, resolveRoles, parsePasosSequence, detectJargon, isUiStory, renderHtml, qaLocation };
 if (require.main === module) {
   // story 8.9 (tanda B3b): la opción vieja sigue andando hasta el retiro
   require('./lib/legacy-names.js').aliasArgv('skills/tycon-pipeline/scripts/qa-guide.js');

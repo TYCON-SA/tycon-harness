@@ -391,8 +391,8 @@ const DEMO = {
  * paso 3 le pedía al asistente un `open <archivo>`, que sólo existe en Mac. Best-effort, como `qa-guide.js --open`:
  * si no puede abrirlo lo dice con la ruta, y el plan ya quedó escrito.
  */
-function openInBrowser(file) {
-  const fallback = (why) => console.error(`⚠ No pude abrir el plan en el navegador (${why}) — abrilo a mano: ${file}`);
+function openInBrowser(file, what = 'el plan') {
+  const fallback = (why) => console.error(`⚠ No pude abrir ${what} en el navegador (${why}) — abrilo a mano: ${file}`);
   try {
     const { spawn } = require('child_process');
     const win = process.platform === 'win32';
@@ -448,4 +448,6 @@ function main() {
   console.error('comandos: render | demo | schema');
   process.exit(2);
 }
-main();
+// Story 7.30: la maqueta (mockup.js) reusa `esc` y `openInBrowser`; un `require` ya no corre `main()`.
+module.exports = { renderHtml, esc, openInBrowser };
+if (require.main === module) main();

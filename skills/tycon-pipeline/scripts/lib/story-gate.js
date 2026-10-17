@@ -218,6 +218,17 @@ function computeStoryGate({
  * @param {object} r            veredicto de computeStoryGate
  * @param {object} ctx          { filePath, repoRoot, marker, adhoc, otherMarkers: [{sessionId, storyId, repoPath}], via }
  */
+// Story 7.30: ¿la story del marcador lleva maqueta? (mockup.screenStory, perezoso). Ante un error, el mensaje de hoy.
+function storyNeedsMockup(marker) {
+  try {
+    const sp = marker && marker.storyPath;
+    if (!sp) return false;
+    // una ruta relativa se resuelve contra el repo del marcador, como hace marker.js (pase adversarial)
+    const abs = path.isAbsolute(sp) ? sp : path.join(marker.repoPath || process.cwd(), sp);
+    return require('../mockup.js').screenStory(abs).screen === true;
+  } catch { return false; }
+}
+
 function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via } = {}) {
   const f = norm(filePath);
   const viaLine = via ? `  (detectado en ${via})\n` : '';
@@ -245,6 +256,7 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via } 
       '      presentáselo al user. NO codees "mientras tanto".',
       '   2. Si el user YA aprobó el plan (palabras claras de proceder, sin condiciones) →',
       `        node ${MARKER_JS} complete-step 3 --approved "<cita textual de la aprobación>"`,
+      ...(storyNeedsMockup(marker) ? ['        --mockup-approved "<cita: quién aprobó la maqueta y por qué vía>"   (story con pantalla: la maqueta la ve una persona, también con LOW)'] : []),
       '      (auto-aprobación Nivel 2, SOLO story LOW-risk — se verifica: `--auto-approved "<criterios>"`).',
       '   3. Si estás retomando un pipeline (sesión nueva / compactación) → `pipeline.js next` +',
       '      `marker.js get` y cerrá los pasos que efectivamente ya pasaron, con su evidencia.',

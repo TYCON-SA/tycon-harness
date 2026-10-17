@@ -740,6 +740,15 @@ si falla, sin bypass por env var — igual que la matriz):
      citadas con «» como en la capa 4; un texto que se queda a propósito lleva `keep: <por qué>` en su línea.
    - Marca medible: `node <skill>/scripts/pipeline.js qa-readability --story <abs spec.md> --repo <repo> --marks <n> --scope ui`
      (`qa-legibilidad-ui` en `gates.log`).
+   - **La maqueta aprobada**: si la story tiene una (`mockup.js status --story <spec>`), `--ui-texts`
+     suma la sección `## Maqueta aprobada (<archivo>)` con lo que está en la maqueta y no en la pantalla, lo que sobra y
+     las diferencias declaradas: es insumo de la pasada, y lo que el candado mira en sus capas (9) y (10). El archivo
+     lleva `mockup: <clave>-mockup.html`. Un texto de la
+     maqueta que la pantalla ya no tiene se corrige en la pantalla, o se actualiza la maqueta y se aprueba de nuevo
+     (`marker.js approve-mockup --approved "<cita>"`, con el dueño o quien tenga su delegación). Si el texto está y el
+     chequeo no lo ve (textos de traducción), se declara `- «<texto>» — differs: <por qué>`. Si las pantallas no son
+     `.tsx/.jsx/.vue/.svelte` y no hay contra qué comparar, `mockup-compare: no — <motivo>`. Las diferencias
+     declaradas se listan en el mensaje de cierre al dueño.
 5. **Usuario de prueba declarado** (determinístico, DODRT-C7 2026-07-13): cada AC `RUNTIME` resuelve
    un usuario — `Usuario:` propio, `Usuario por defecto:` del archivo, o `Usuario: —` (sin login).
    Frena si alguno queda sin declarar (así ninguna guía se cierra sin decir con qué rol probar cada
@@ -751,7 +760,17 @@ si falla, sin bypass por env var — igual que la matriz):
    lista, o se declara el repo donde vive.
 8. **Ninguna marca tapada** (determinístico): una cita «…» de tres palabras o más, en cualquiera de los
    dos archivos de legibilidad, que sigue en una pantalla de la story —literal o como mensaje armado— frena,
-   salvo que su línea traiga `keep: <por qué>` (no frena y el candado la imprime siempre).
+   salvo que su línea traiga `keep: <por qué>` (no frena y el candado la imprime siempre). Las líneas `differs:` no
+   son marcas: declaran una diferencia con la maqueta (capa 10).
+9. **La maqueta aprobada, intacta**: con `<clave>-mockup-approval.json` (o con la huella que le pasa el
+   paso 8 desde el marcador, `--mockup-sha`), la maqueta está en el disco, su huella es la aprobada y pasa
+   `mockup.js check`. Si cambió, se le muestra de nuevo a quien la aprueba y `approve-mockup`. Sin aprobación ni
+   `--mockup-sha` (story aprobada antes de que existiera la maqueta, o el chequeo corrido fuera del pipeline) no se compara y se dice.
+10. **Lo construido tiene los textos de la maqueta**: el archivo de la pantalla nombra la maqueta (`mockup:`) y cada
+   texto de la maqueta está en alguna pantalla de la story (los de 3 palabras o más, como la capa 8; los más cortos,
+   como palabra entera entre los textos visibles). Lo que falta frena, salvo `differs: <por qué>` en su línea (se
+   imprime siempre); lo que sobra en la pantalla se nombra sin frenar. Sin pantallas comparables en el disco, frena
+   hasta `mockup-compare: no — <motivo>` (se imprime siempre).
 
 ## Output del step
 

@@ -1523,6 +1523,10 @@
       "reason": "npx: herramienta de npm que corre un paquete, mismo grupo que npm; nombra el instalador de la story 8.40 (scripts/tests/npx-installer.test.sh, scripts/tests/windows/npx-probe.js); decisión del dueño 2026-10-16"
     },
     {
+      "words": ["mockup"],
+      "reason": "inglés técnico: maqueta de pantalla; nombra el guion de la story 7.30 (skills/tycon-pipeline/scripts/mockup.js), sus opciones --mockup-approved y --mockup-sha y el subcomando approve-mockup; decisión del dueño 2026-10-17"
+    },
+    {
       "path": "scripts/publishing/names-ceiling.json",
       "reason": "el techo de la story 8.10 conserva su clave «nucleo» a propósito: el freno de nombres reales frena perder una clave (story 8.9, AC 29); quien lo lee traduce core → nucleo"
     },

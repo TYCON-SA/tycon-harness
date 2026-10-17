@@ -583,3 +583,302 @@ test('harness: con el criterio REAL del arnés — clon por su remoto, producto 
     assert.equal(porton(tcg, path.join(producto2, 'src', 'a.js'), IDENTIDADES_ARNES).kind, 'no-lane');
   });
 });
+
+// ── story 7.30: la maqueta de la pantalla en «Aprobar el plan», approve-mockup, set y el paso 8 ─────────────────────
+// La story va en <repo>/specs/stories/ (la carpeta qa queda en <repo>/specs/qa, propia de cada prueba). Ejemplos inventados.
+const MOCKUP_JS = path.join(SCRIPTS, 'mockup.js');
+const MODELO_730 = (boton = 'Pagar seleccionadas') => JSON.stringify({ title: 'La lista de facturas', screens: [{ name: 'Lista de facturas',
+  state: 'con facturas', elements: [{ kind: 'heading', text: 'Facturas pendientes' }, { kind: 'button', text: boton }] }] });
+// Un repo git en su carpeta padre propia: la matriz de la story mira los repos vecinos, y suelto en la carpeta temporal
+// del sistema recorre todo lo que hay ahí (cada `render` tardaba minutos).
+function mundo730() {
+  const repo = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'mundo730-')), 'repo');
+  fs.mkdirSync(repo);
+  spawnSync('git', ['init', '-q', repo], { stdio: 'ignore' });
+  return repo;
+}
+function story730(repo, archivos, { extra = [], title = 'La lista de facturas' } = {}) {
+  const p = path.join(repo, 'specs', 'stories', 'story-1.1-x.md');
+  fs.mkdirSync(path.dirname(p), { recursive: true });
+  fs.writeFileSync(p, ['---', 'story: "1.1"', `title: "${title}"`, 'status: in-progress', ...extra, 'files_to_modify:',
+    ...archivos.map((a) => `  - ${a}`), '---', '# S', '', '## Acceptance Criteria', '',
+    '1. **Given** un cliente con facturas **When** abre la lista **Then** ve cuántas le faltan pagar.', '',
+    '### Tests', '', '| # | Test | AC | Nivel | Escenario | Resultado esperado |', '|---|---|---|---|---|---|',
+    '| T1 | `ListaDeFacturas_MuestraPendientes` | 1 | e2e | x | y |', ''].join('\n'));
+  return p;
+}
+const PANTALLA_NORMAL = (repo) => story730(repo, ['src/components/Facturas.tsx'], { extra: ['signed_for_sprint: 3'] });
+function maqueta730(storyPath, boton) {
+  const r = spawnSync('node', [MOCKUP_JS, 'render', '--data', '-', '--story', storyPath], { encoding: 'utf8', input: MODELO_730(boton) });
+  assert.equal(r.status, 0, r.stderr);
+  return JSON.parse(r.stdout);
+}
+function marker730(home, sid, storyPath, repo, { done = [0, 1, 2], pending } = {}) {
+  const all = [0, 1, 2, 3, 4, 5, 6, 7, 8];
+  const r = markerCli(home, sid, ['set', JSON.stringify({ storyId: '1.1', storyPath, repoPath: repo, stepsCompleted: done,
+    stepsPending: pending || all.filter((n) => !done.includes(n)) })]);
+  assert.equal(r.status, 0, r.stderr);
+}
+const markerFile730 = (home, sid) => path.join(home, '.claude', '.tycon-pipeline', 'active', `${sid}.json`);
+const leerMarker730 = (home, sid) => JSON.parse(fs.readFileSync(markerFile730(home, sid), 'utf8'));
+const gates730 = (home) => { try { return fs.readFileSync(path.join(home, '.claude', '.tycon-pipeline', 'gates.log'), 'utf8').trim().split('\n').map((l) => JSON.parse(l)); } catch { return []; } };
+const aprobacion730 = (repo) => path.join(repo, 'specs', 'qa', '1.1-mockup-approval.json');
+
+test('7.30-T11 CompleteStep3_ConPantalla_SinMaqueta_Bloquea @story-7.30 @ac-9', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
+  const repo = mundo730();
+  const s = PANTALLA_NORMAL(repo);
+  marker730(home, 's11', s, repo);
+  let r = markerCli(home, 's11', ['complete-step', '3', '--approved', 'dale']);
+  assert.equal(r.status, 1, r.stderr);
+  assert.ok(r.stderr.includes(path.join('specs', 'qa', '1.1-mockup.html')), r.stderr);
+  assert.match(r.stderr, /mockup\.js render/);
+  const m = leerMarker730(home, 's11');
+  assert.equal(m.planApproval, undefined);
+  assert.ok(m.stepsPending.includes(3));
+  // la story borrada del disco: no pude saber si tiene pantalla (nunca «sin pantalla»)
+  fs.unlinkSync(s);
+  r = markerCli(home, 's11', ['complete-step', '3', '--approved', 'dale']);
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stderr, /no pude saber si tiene pantalla/);
+  // el marcador sin storyPath
+  markerCli(home, 's11b', ['set', JSON.stringify({ storyId: '1.1', repoPath: repo, stepsCompleted: [0, 1, 2], stepsPending: [3, 4, 5, 6, 7, 8] })]);
+  r = markerCli(home, 's11b', ['complete-step', '3', '--approved', 'dale']);
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stderr, /el marcador no tiene la ruta de la story: `marker\.js set` con `storyPath`/);
+});
+
+test('7.30-T12 CompleteStep3_ConPantalla_PideAprobarLaMaqueta @story-7.30 @ac-10', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
+  const repo = mundo730();
+  const s = PANTALLA_NORMAL(repo);
+  const mq = maqueta730(s);
+  marker730(home, 's12', s, repo);
+  let r = markerCli(home, 's12', ['complete-step', '3', '--approved', 'dale']);
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stderr, /story con pantalla: mostrale la maqueta \(.*1\.1-mockup\.html\) y pasá su aprobación con --mockup-approved/);
+  const cita = 'la maqueta va, aprobada por el dueño en el chat';
+  r = markerCli(home, 's12', ['complete-step', '3', '--approved', 'dale', '--mockup-approved', cita]);
+  assert.equal(r.status, 0, r.stderr);
+  const m = leerMarker730(home, 's12');
+  assert.equal(m.planApproval.mode, 'user');
+  assert.equal(m.mockupApproval.sha256, mq.sha256);
+  assert.equal(m.mockupApproval.mode, 'user');
+  assert.equal(m.mockupApproval.text, cita);
+  assert.equal(m.mockupApproval.file, mq.out);
+  assert.equal(m.mockupDecision.screen, true);
+  const ap = JSON.parse(fs.readFileSync(aprobacion730(repo), 'utf8'));
+  assert.deepEqual(Object.keys(ap).sort(), ['approvedAt', 'file', 'schema', 'sha256', 'story']);
+  assert.equal(ap.file, '1.1-mockup.html'); assert.equal(ap.sha256, mq.sha256); assert.equal(ap.story, '1.1');
+  assert.ok(!fs.readFileSync(aprobacion730(repo), 'utf8').includes(cita));
+  const linea = gates730(home).find((l) => l.name === 'mockup-approval' && l.status === 'ok');
+  assert.ok(linea);
+  assert.equal(linea.sha256, mq.sha256.slice(0, 12));
+  assert.ok(!JSON.stringify(linea).includes(cita));
+});
+
+test('7.30-T13 CompleteStep3_RiesgoBajoConPantalla_IgualPideLaMaqueta @story-7.30 @ac-11', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
+  const repo = mundo730();
+  const s = story730(repo, ['src/components/Facturas.tsx', 'src/components/Detalle.tsx']);
+  maqueta730(s);
+  marker730(home, 's13', s, repo);
+  let r = markerCli(home, 's13', ['complete-step', '3', '--auto-approved', 'LOW: 2 archivos']);
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stderr, /el plan se aprueba solo; la maqueta no: una pantalla la ve una persona antes/);
+  r = markerCli(home, 's13', ['complete-step', '3', '--auto-approved', 'LOW: 2 archivos', '--mockup-approved', 'la vio el dueño']);
+  assert.equal(r.status, 0, r.stderr);
+  const m = leerMarker730(home, 's13');
+  assert.equal(m.planApproval.mode, 'auto-low-risk');
+  assert.equal(m.mockupApproval.mode, 'user');
+});
+
+test('7.30-T14 CompleteStep3_MaquetaConRed_Bloquea @story-7.30 @ac-12', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
+  const repo = mundo730();
+  const s = PANTALLA_NORMAL(repo);
+  const mq = maqueta730(s);
+  fs.writeFileSync(mq.out, fs.readFileSync(mq.out, 'utf8').replace('</head>', '<link href="https://x/y.css"></head>'));
+  marker730(home, 's14', s, repo);
+  let r = markerCli(home, 's14', ['complete-step', '3', '--approved', 'dale', '--mockup-approved', 'va']);
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stderr, /<link/);
+  fs.writeFileSync(mq.out, '<html><body><p>Facturas pendientes</p></body></html>');
+  r = markerCli(home, 's14', ['complete-step', '3', '--approved', 'dale', '--mockup-approved', 'va']);
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stderr, /generator/);
+  const m = leerMarker730(home, 's14');
+  assert.equal(m.mockupApproval, undefined);
+  assert.equal(m.planApproval, undefined);
+  assert.ok(!fs.existsSync(aprobacion730(repo)));
+});
+
+test('7.30-T15 CompleteStep3_SinPantalla_ComoHoy @story-7.30 @ac-13', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
+  const repo = mundo730();
+  const s = story730(repo, ['src/Servicio.cs'], { extra: ['signed_for_sprint: 3'] });
+  marker730(home, 's15', s, repo);
+  let r = markerCli(home, 's15', ['complete-step', '3', '--approved', 'dale']);
+  assert.equal(r.status, 0, r.stderr);
+  let m = leerMarker730(home, 's15');
+  assert.equal(m.mockupApproval, undefined);
+  assert.equal(m.mockupDecision.screen, false);
+  assert.ok(!fs.existsSync(path.join(repo, 'specs', 'qa')));
+  marker730(home, 's15b', s, repo);
+  r = markerCli(home, 's15b', ['complete-step', '3', '--approved', 'dale', '--mockup-approved', 'va']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stderr, /la story no tiene pantalla: no hay maqueta que aprobar/);
+  m = leerMarker730(home, 's15b');
+  assert.equal(m.mockupApproval, undefined);
+  assert.equal(m.mockupDecision.screen, false);
+  // la palabra del frente sólo en la prosa (baja de la 7.18): la línea sale una vez
+  const repo2 = mundo730();
+  const s2 = story730(repo2, ['src/Servicio.cs'], { extra: ['signed_for_sprint: 3'], title: 'El servicio que usa el frontend' });
+  marker730(home, 's15c', s2, repo2);
+  r = markerCli(home, 's15c', ['complete-step', '3', '--approved', 'dale']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal((r.stderr.match(/se trata como SIN pantalla/g) || []).length, 1, r.stderr);
+  assert.equal(leerMarker730(home, 's15c').mockupDecision.screen, false);
+});
+
+test('7.30-T16 ApproveMockup_ReapruebaConOtraHuella @story-7.30 @ac-14', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
+  const repo = mundo730();
+  const s = PANTALLA_NORMAL(repo);
+  const mq = maqueta730(s);
+  marker730(home, 's16', s, repo);
+  let r = markerCli(home, 's16', ['approve-mockup', '--approved', 'va']);
+  assert.equal(r.status, 2, r.stderr);
+  assert.match(r.stderr, /la maqueta se aprueba con el plan: complete-step 3/);
+  r = markerCli(home, 's16', ['complete-step', '3', '--approved', 'dale', '--mockup-approved', 'va']);
+  assert.equal(r.status, 0, r.stderr);
+  const mq2 = maqueta730(s, 'Pagar las seleccionadas');
+  assert.notEqual(mq2.sha256, mq.sha256);
+  r = markerCli(home, 's16', ['approve-mockup']);
+  assert.equal(r.status, 1, r.stderr);
+  assert.equal(leerMarker730(home, 's16').mockupApproval.sha256, mq.sha256);
+  r = markerCli(home, 's16', ['approve-mockup', '--approved', 'la nueva va, aprobada por el dueño']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(leerMarker730(home, 's16').mockupApproval.sha256, mq2.sha256);
+  assert.equal(JSON.parse(fs.readFileSync(aprobacion730(repo), 'utf8')).sha256, mq2.sha256);
+  const re = gates730(home).filter((l) => l.name === 'mockup-approval' && l.reapproval === true);
+  assert.equal(re.length, 1);
+  assert.equal(re[0].previous, mq.sha256.slice(0, 12));
+  // la maqueta que no pasa check: no se escribe nada
+  fs.writeFileSync(mq2.out, fs.readFileSync(mq2.out, 'utf8').replace('</head>', '<link href="https://x/y.css"></head>'));
+  r = markerCli(home, 's16', ['approve-mockup', '--approved', 'va']);
+  assert.equal(r.status, 1, r.stderr);
+  assert.equal(leerMarker730(home, 's16').mockupApproval.sha256, mq2.sha256);
+  // una story sin pantalla
+  const repo2 = mundo730();
+  const s2 = story730(repo2, ['src/Servicio.cs'], { extra: ['signed_for_sprint: 3'] });
+  marker730(home, 's16b', s2, repo2, { done: [0, 1, 2, 3] });
+  r = markerCli(home, 's16b', ['approve-mockup', '--approved', 'va']);
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stderr, /la story no tiene pantalla/);
+  assert.equal(leerMarker730(home, 's16b').mockupApproval, undefined);
+});
+
+test('7.30-T17 MarkerSet_NoHeredaNiAceptaLaMaqueta @story-7.30 @ac-15', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
+  const repo = mundo730();
+  const s = PANTALLA_NORMAL(repo);
+  const mq = maqueta730(s);
+  marker730(home, 's17', s, repo);
+  assert.equal(markerCli(home, 's17', ['complete-step', '3', '--approved', 'dale', '--mockup-approved', 'va']).status, 0);
+  // la misma story con una aprobación falsa en el payload: se descarta y lo dice
+  let r = markerCli(home, 's17', ['set', JSON.stringify({ storyId: '1.1', mockupApproval: { sha256: 'f'.repeat(64) }, mockupDecision: { screen: false } })]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stderr, /mockupApproval/);
+  assert.match(r.stderr, /mockupDecision/);
+  let m = leerMarker730(home, 's17');
+  assert.equal(m.mockupApproval.sha256, mq.sha256);
+  assert.equal(m.mockupDecision.screen, true);
+  // otra story: no se heredan
+  r = markerCli(home, 's17', ['set', JSON.stringify({ storyId: '2.2', storyPath: s, repoPath: repo, stepsPending: [0, 1, 2, 3, 4, 5, 6, 7, 8] })]);
+  assert.equal(r.status, 0, r.stderr);
+  m = leerMarker730(home, 's17');
+  assert.equal(m.mockupApproval, undefined);
+  assert.equal(m.mockupDecision, undefined);
+});
+
+test('7.30-T27 CompleteStep8_PantallaNuevaDespuesDelPlan_PideLaMaqueta @story-7.30 @ac-30', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
+  const repo = mundo730();
+  const s = story730(repo, ['src/Servicio.cs'], { extra: ['signed_for_sprint: 3'] });
+  marker730(home, 's27', s, repo);
+  assert.equal(markerCli(home, 's27', ['complete-step', '3', '--approved', 'dale']).status, 0);
+  // la story gana una pantalla después de aprobar el plan
+  story730(repo, ['src/Servicio.cs', 'src/components/Facturas.tsx'], { extra: ['signed_for_sprint: 3'] });
+  const m0 = leerMarker730(home, 's27');
+  m0.stepsCompleted = [0, 1, 2, 3, 4, 5, 6, 7]; m0.stepsPending = [8];
+  fs.writeFileSync(markerFile730(home, 's27'), JSON.stringify(m0));
+  for (const extra of [{}, { DOD_BYPASS: '1' }]) {
+    const r = markerCli(home, 's27', ['complete-step', '8'], extra);
+    assert.equal(r.status, 2, r.stderr);
+    assert.match(r.stderr, /la story ganó una pantalla después de aprobar el plan/);
+    assert.match(r.stderr, /approve-mockup --approved/);
+  }
+  maqueta730(s);
+  let r = markerCli(home, 's27', ['approve-mockup', '--approved', 'va, aprobada por el dueño']);
+  assert.equal(r.status, 0, r.stderr);
+  const m = leerMarker730(home, 's27');
+  assert.equal(m.mockupDecision.screen, true);
+  assert.ok(m.mockupApproval);
+  assert.ok(gates730(home).some((l) => l.name === 'mockup-approval' && l.reapproval === false));
+  r = markerCli(home, 's27', ['complete-step', '8']);
+  assert.doesNotMatch(r.stderr, /ganó una pantalla/);
+  const { mockupStep8 } = require(MOCKUP_JS);
+  assert.equal(mockupStep8(m, s).compare, true);
+  // un marcador sin la decisión del paso 3 (cerrado antes de la 7.30): no frena por la maqueta
+  marker730(home, 's27b', s, repo, { done: [0, 1, 2, 3, 4, 5, 6, 7] });
+  r = markerCli(home, 's27b', ['complete-step', '8']);
+  assert.doesNotMatch(r.stderr, /ganó una pantalla/);
+  // revisores, vuelta 2: con la maqueta aprobada y la story que ya no está, frena y lo dice (también con DOD_BYPASS)
+  const m2 = leerMarker730(home, 's27');
+  m2.storyPath = path.join(repo, 'specs', 'stories', 'no-esta.md');
+  fs.writeFileSync(markerFile730(home, 's27'), JSON.stringify(m2));
+  r = markerCli(home, 's27', ['complete-step', '8'], { DOD_BYPASS: '1' });
+  assert.equal(r.status, 2, r.stderr);
+  assert.match(r.stderr, /la story tenía maqueta aprobada y no la encuentro/);
+});
+
+test('7.30-T28 PipelineNextRiskClassYPortonDePlan_NombranLaMaqueta @story-7.30 @ac-29', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
+  const repo = mundo730();
+  const conPantalla = story730(repo, ['src/components/Facturas.tsx', 'src/components/Detalle.tsx']);
+  const repo2 = mundo730();
+  const sinPantalla = story730(repo2, ['src/Servicio.cs', 'src/Otro.cs']);
+  const pipe = (sid, args) => spawnSync('node', [path.join(SCRIPTS, 'pipeline.js'), ...args], { encoding: 'utf8',
+    env: { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: sid, TYCON_LANE_LLM: '0' } });
+  for (const [sid, s, r0, conMaqueta] of [['s28a', conPantalla, repo, true], ['s28b', sinPantalla, repo2, false]]) {
+    marker730(home, sid, s, r0);
+    // los sub-pasos del arranque (reloj, pedido en ADO) no son lo que se prueba
+    markerCli(home, sid, ['set-flag', 'clockiStarted', 'true']); markerCli(home, sid, ['set-flag', 'adoMarkedActive', 'true']);
+    const n = pipe(sid, ['next']);
+    assert.equal(n.status, 0, n.stderr);
+    assert.match(n.stdout, /complete-step 3/);
+    if (conMaqueta) assert.match(n.stdout, /--mockup-approved/); else assert.doesNotMatch(n.stdout, /--mockup-approved/);
+    const rc = JSON.parse(pipe(sid, ['risk-class', '--story', s]).stdout);
+    assert.equal(rc.auto_approve_plan, true);
+    if (conMaqueta) {
+      assert.equal(rc.mockup_required, true);
+      assert.match(rc.note, /el plan se aprueba solo; la maqueta no/);
+    } else {
+      assert.equal(rc.mockup_required, undefined);
+      assert.doesNotMatch(rc.note, /maqueta/);
+    }
+    const msg = gate.blockMessage({ kind: 'plan' }, { filePath: path.join(r0, 'src', 'a.ts'), marker: { storyId: '1.1', storyPath: s } });
+    if (conMaqueta) assert.match(msg, /--mockup-approved/); else assert.doesNotMatch(msg, /--mockup-approved/);
+  }
+  // pase adversarial: la ruta relativa se resuelve contra repoPath (como marker.js); una story que no está, el mensaje de hoy
+  const rel = path.relative(repo, conPantalla);
+  assert.match(gate.blockMessage({ kind: 'plan' }, { filePath: path.join(repo, 'src', 'a.ts'), marker: { storyId: '1.1', storyPath: rel, repoPath: repo } }), /--mockup-approved/);
+  const roto = gate.blockMessage({ kind: 'plan' }, { filePath: path.join(repo, 'src', 'a.ts'), marker: { storyId: '1.1', storyPath: path.join(repo, 'no-existe.md') } });
+  assert.doesNotMatch(roto, /--mockup-approved/);
+  assert.match(roto, /complete-step 3 --approved/);
+  markerCli(home, 's28c', ['set', JSON.stringify({ storyId: '1.1', storyPath: rel, repoPath: repo, stepsCompleted: [0, 1, 2], stepsPending: [3, 4, 5, 6, 7, 8] })]);
+  markerCli(home, 's28c', ['set-flag', 'clockiStarted', 'true']); markerCli(home, 's28c', ['set-flag', 'adoMarkedActive', 'true']);
+  const n = pipe('s28c', ['next']);
+  assert.match(n.stdout, /--mockup-approved/);
+});

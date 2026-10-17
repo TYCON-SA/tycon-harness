@@ -2580,6 +2580,20 @@ const SUBSTEP_FLAG = { '0b': 'clockiStarted', '0c': 'adoMarkedActive', '5b': 'de
 // que dejan constancia. `SUBSTEP_FLAG` sigue diciendo QUÉ bandera mira `next` para darlo por hecho (eso no cambia);
 // lo que cambia es el texto que le dice al orquestador cómo cerrarlo — sin esto, `next` mandaba a correr un
 // comando que sale 2.
+// Story 7.30: ¿la story lleva maqueta? Con la detección de la revisión de la pantalla (mockup.screenStory, perezoso).
+// Ante un error, como hoy: el que frena «no pude leer la story» es `complete-step 3`, no este texto.
+function storyNeedsMockup(storyPath) {
+  try { return !!storyPath && require('./mockup.js').screenStory(storyPath).screen === true; } catch { return false; }
+}
+function notaCierre3(marker) {
+  // una ruta relativa se resuelve contra el repo del marcador, como hace marker.js (pase adversarial)
+  const sp = marker && marker.storyPath;
+  const abs = sp && !path.isAbsolute(sp) ? path.join(marker.repoPath || process.cwd(), sp) : sp;
+  const maqueta = storyNeedsMockup(abs)
+    ? ' + --mockup-approved "<cita: quién aprobó la maqueta y por qué vía>" (story con pantalla: la maqueta la ve una persona, también con LOW — steps/step-03-hitl-plan.md §La maqueta)'
+    : '';
+  return `marker.js complete-step 3 --approved "<cita textual de la aprobación del user>" (Nivel 2 LOW-risk: --auto-approved "<criterios>")${maqueta}. Hasta entonces el portón de carril DENIEGA cualquier Edit/Write de código`;
+}
 const NOTA_CIERRE_5B = 'si el pase corrió, marker.js mark-adversarial-result <N confirmados> --type 5b --run <runId> --model <modelo> '
   + '--tests <k> [--own <p> --in "<rutas>"] [--deferred <d> --reason "…"]; si no corre, marker.js mark-adversarial-skipped '
   + '--files <archivos de código del diff> (lo decide el portón). Los dos cierran el pase adversarial (la bandera ya no se escribe a mano)';
@@ -2741,7 +2755,7 @@ function computeNext() {
     note: exempt7c
       ? `Sigue «${nextStep.name}». ${NOTA_7C_EXENTA}`
       : nextStep
-      ? `${pending && ['consultar-porton', 'lanzar-pase'].includes(pending.kind) ? `ANTES, pase adversarial: ${pending.message} ` : ''}Sigue «${nextStep.name}». Leé SOLO ${path.basename(nextStep.file)} y ejecutalo. Los skips listados son mecánicos (verificables) — no infieras otros (regla E.i). Al completar: ${nextStep.step === '5b' ? NOTA_CIERRE_5B : nextStep.step === '7c' ? NOTA_CIERRE_7C : SUBSTEP_FLAG[nextStep.step] ? `marker.js set-flag ${SUBSTEP_FLAG[nextStep.step]} true` : nextStep.step === '3' ? 'marker.js complete-step 3 --approved "<cita textual de la aprobación del user>" (Nivel 2 LOW-risk: --auto-approved "<criterios>"). Hasta entonces el portón de carril DENIEGA cualquier Edit/Write de código' : nextStep.step === '5' ? 'marker.js run-check advisors -- pipeline.js check-count … y recién después marker.js complete-step 5 (bloquea sin el verde real)' : `marker.js complete-step ${nextStep.step}`}.${pending && pending.kind.endsWith('-pase-ajeno') ? ` ⚠️ ${pending.message} Regla: ${pending.rule} (${pending.why}).` : ''}`
+      ? `${pending && ['consultar-porton', 'lanzar-pase'].includes(pending.kind) ? `ANTES, pase adversarial: ${pending.message} ` : ''}Sigue «${nextStep.name}». Leé SOLO ${path.basename(nextStep.file)} y ejecutalo. Los skips listados son mecánicos (verificables) — no infieras otros (regla E.i). Al completar: ${nextStep.step === '5b' ? NOTA_CIERRE_5B : nextStep.step === '7c' ? NOTA_CIERRE_7C : SUBSTEP_FLAG[nextStep.step] ? `marker.js set-flag ${SUBSTEP_FLAG[nextStep.step]} true` : nextStep.step === '3' ? notaCierre3(marker) : nextStep.step === '5' ? 'marker.js run-check advisors -- pipeline.js check-count … y recién después marker.js complete-step 5 (bloquea sin el verde real)' : `marker.js complete-step ${nextStep.step}`}.${pending && pending.kind.endsWith('-pase-ajeno') ? ` ⚠️ ${pending.message} Regla: ${pending.rule} (${pending.why}).` : ''}`
       : 'No quedan pasos pendientes — cerrá con marker.js clear (o step-09-ado-story-closure.md si vas a cerrar la story en ADO: «Cerrar en ADO»).',
   };
 }
@@ -5269,6 +5283,12 @@ function main() {
     const fantasmaErr = archivosFantasma(args);
     if (fantasmaErr) { process.stderr.write(fantasmaErr); process.exit(2); }
     const result = computeRiskClass(args);
+    // Story 7.30 (decisión 8 del dueño): una story con pantalla pide aprobar la maqueta aunque el plan se apruebe
+    // solo. `computeRiskClass` es pura (no sabe la raíz del repo): la maqueta se suma acá, sin tocar el riesgo.
+    if (storyNeedsMockup(args.story)) {
+      result.mockup_required = true;
+      if (result.risk === 'LOW') result.note = `${result.note} Story con pantalla: el plan se aprueba solo; la maqueta no (--mockup-approved, steps/step-03-hitl-plan.md §La maqueta).`;
+    }
     process.stdout.write(JSON.stringify(result, null, 2) + '\n');
     process.exit(0);
   }
