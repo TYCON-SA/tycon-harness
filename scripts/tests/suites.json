@@ -430,6 +430,18 @@
       "requiere": []
     },
     {
+      "__nota": "story 2.26: la edad en el estado, sumada de las fotos por proyecto (scripts/nightly/projects/state-age.js).",
+      "raiz": "arnes",
+      "ruta": "tests/state-age.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 2.26: la concentración por persona, por producto y sin nombres (scripts/metrics/author-concentration.js), sobre repos git de juguete.",
+      "raiz": "arnes",
+      "ruta": "tests/author-concentration.test.sh",
+      "requiere": []
+    },
+    {
       "raiz": "arnes",
       "__nota": "story 7.15: exclusiva — sus casos de candado esperan 2-2,5 s a que otro proceso arranque; con el gate en paralelo y la máquina cargada, T41 dio rojo (sola: 72/72, dos veces).",
       "ruta": "tests/periodic-exam.test.js",
