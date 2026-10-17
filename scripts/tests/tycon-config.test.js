@@ -1251,7 +1251,7 @@ test('8.13.1 · T2 State_AdditiveFields_OldStateReadsAsInternalNoLayer_ConfigKey
   assert.deepEqual([gt.status, gt.stdout.trim()], [0, path.join(h, '.claude', '.tycon-pipeline', 'harness', 'tree')], gt.stderr);
 });
 
-test('8.13.1 · T2 Config_TeamProfile_UpdateSourceInternal — el perfil del equipo que viaja en el arnés trae update.source: internal y no paths.tree (NO MEDIDO sin él)', (t) => {
+test('8.13.1 · T2 Config_TeamProfile_UpdateSourceNotInternal — el perfil del equipo que viaja en el arnés no fija la fuente interna de las actualizaciones ni paths.tree (NO MEDIDO sin él)', (t) => {
   const rutaReal = lib().perfilDelArbol(path.join(SCRIPTS, '..')).ruta;   // el nombre de hoy, o el de antes
   if (!fs.existsSync(rutaReal)) {
     console.log(`  ℹ NO MEDIDO — el perfil del equipo no está (${rutaReal}): la copia pública no lo trae.`);
@@ -1260,7 +1260,8 @@ test('8.13.1 · T2 Config_TeamProfile_UpdateSourceInternal — el perfil del equ
   }
   const real = lib().leer({ env: {}, home: casa() });
   assert.equal(real.archivos.perfil.estado, 'leido');
-  assert.deepEqual([real.valores.update.source, real.origenes['update.source']], ['internal', 'perfil'], 'en la tanda A nada se mueve');
+  // las máquinas se actualizan del repo público: un perfil que fijara la fuente interna las dejaría atadas a un repo cerrado
+  assert.notEqual(real.valores.update.source, 'internal', 'el perfil del equipo no fija la fuente interna');
   assert.equal(real.origenes['rutas.tree'], 'default', 'el perfil no trae la carpeta del árbol');
 });
 

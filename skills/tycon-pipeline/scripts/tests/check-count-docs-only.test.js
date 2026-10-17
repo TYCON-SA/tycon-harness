@@ -48,7 +48,9 @@ function mkRepo() {
 function correr(home, repo, args) {
   return spawnSync(process.execPath, [PIPELINE, ...args, '--repo', repo, '--story', 'specs/story-1.1.md', '--files', 'README.md', 'docs/guia.md'], {
     cwd: repo, encoding: 'utf8', timeout: 60000,
-    env: { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: SID, TYCON_SESSION_ID: SID },
+    // ningún paquete: la casa de juguete no tiene arnés que diga cuáles activa la organización, y la prueba mide el set
+    // de revisores de un diff de documentación, no los paquetes
+    env: { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: SID, TYCON_SESSION_ID: SID, TYCON_PACKS_DEFAULT: 'none' },
   });
 }
 

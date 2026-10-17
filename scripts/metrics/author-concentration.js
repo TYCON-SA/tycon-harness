@@ -30,13 +30,14 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
+const { readEnv } = require(path.join(__dirname, '..', 'lib', 'legacy-names.js'));
 const { spawnSync } = require('child_process');
 
 const UMBRAL = 0.75;
 const MIN_COMMITS = 20;
 
 const isoDia = (d) => d.toISOString().slice(0, 10);
-function hoy(today) { return today || process.env.TYCON_TODAY || isoDia(new Date()); }
+function hoy(today) { return today || readEnv('TYCON_TODAY', { where: 'scripts/metrics/author-concentration.js' }) || isoDia(new Date()); }
 function ventana(today) {
   const hasta = hoy(today);
   const d = new Date(`${hasta}T00:00:00Z`);
