@@ -33,6 +33,11 @@
  *     esta mirada calla). Un GUID se acepta (az lo admite), una variable no se juzga. El aviso
  *     sugiere hasta 3 parecidos y NO vuelca la lista: los nombres de clientes no van al contexto.
  *
+ * En PowerShell (2026-10-16, al pagar la deuda): `Invoke-RestMethod`/`irm`/`Invoke-WebRequest`/`iwr` sin método
+ * de escritura son consultas; tapan el fallo un `-ErrorAction SilentlyContinue` (o `-EA 0`, `Ignore`), un
+ * `try { … } catch { }` y una tubería a un cmdlet (`Select-String`, `Where-Object`, `ForEach-Object`…). El consejo
+ * del aviso nombra `$LASTEXITCODE` en vez de `rc=$?`. `2>$null` solo no cuenta, por lo mismo que `2>/dev/null`.
+ *
  * Lo que NO hace, a propósito: no mira la salida de escrituras (`az … create`, `curl -X POST`,
  * `gh pr create`), descargas (`curl -o`, `wget`) ni salidas redirigidas a archivo — ahí el vacío es
  * lo esperado; no habla en comandos de segundo plano (su stdout llega vacío por diseño); y no
@@ -72,14 +77,27 @@ const AZ_LEE = new Set(['list', 'show', 'ls', 'get', 'query', 'search', 'check',
 const AZ_ESCRIBE = new Set(['login', 'logout', 'configure', 'create', 'delete', 'update', 'set', 'add', 'remove', 'import', 'upload', 'push', 'publish', 'queue', 'cancel', 'approve', 'vote', 'complete', 'merge', 'install', 'run', 'rerun', 'reject', 'abandon', 'reactivate', 'download']);
 const GH_LEE = new Set(['list', 'view', 'status', 'checks', 'diff', 'watch', 'search']);
 const FILTROS = /^(?:sed|grep|egrep|fgrep|head|tail|jq|python3?|awk|cut|tr|sort|uniq|wc|xargs|column|tee|less|cat|yq|fold|nl|paste)\b/;
+// Los filtros de PowerShell (2026-10-16): en la herramienta PowerShell de Windows la tubería típica no pasa por sed
+// sino por un cmdlet. No hay pipefail que valga ahí: lo que se ve al final es lo del último de la cadena.
+const FILTROS_PS = /^(?:Select-String|sls|Select-Object|select|Where-Object|where|\?|ForEach-Object|foreach|%|Sort-Object|Format-Table|ft|Format-List|fl|Out-String|ConvertFrom-Json|ConvertTo-Json|Measure-Object|measure|Group-Object|findstr)(?=\s|$)/i;
+// La consulta de PowerShell que no escribe: Invoke-RestMethod / Invoke-WebRequest y sus alias
+const PS_WEB = new Set(['invoke-restmethod', 'irm', 'invoke-webrequest', 'iwr']);
+const PS_WEB_ESCRIBE = /(?:^|\s)-Method\s+['"]?(?:POST|PUT|PATCH|DELETE)\b|(?:^|\s)-(?:Body|InFile|OutFile|Form)\b/i;
+// `-ErrorAction SilentlyContinue` (o `-EA 0`, `Ignore`): el error no se muestra y la herramienta no lo cuenta como fallo
+const PS_CALLA_ERROR = /(?:^|\s)-(?:ErrorAction|EA)\s*:?\s*['"]?(?:SilentlyContinue|Ignore|0)\b/i;
+// `try { <consulta> } catch { … }`: el catch se come el error. El cortador no parte llaves; se mira acá.
+const PS_TRY = /^\s*try\s*\{([\s\S]*?)\}\s*catch\b/i;
 
 /** clasifica un segmento: {clase:'consulta'|'echo'|'otro', cmd, argv} */
 function clasificar(texto) {
   const limpio = texto.replace(PREFIJOS, '');
   const argv = tokens(limpio);
   if (!argv.length) return { clase: 'otro', cmd: '', argv };
-  const cmd = path.basename(argv[0]);
+  // en Windows llega `az.cmd` o `C:\\…\\az.exe`, y PowerShell no distingue mayúsculas
+  const cmd = path.basename(argv[0].replace(/\\/g, '/')).replace(/\.(?:exe|cmd|bat)$/i, '');
+  const cmdL = cmd.toLowerCase();
   if (cmd === 'echo' || cmd === 'printf') return { clase: 'echo', cmd, argv };
+  if (cmdL === 'write-host' || cmdL === 'write-output') return { clase: 'echo', cmd: 'echo', argv };
   // la salida va a un archivo (o a la nada): el vacío en pantalla es lo esperado
   // sólo la salida ESTÁNDAR: `2>/dev/null` es stderr y no cambia lo que se ve en pantalla
   if (/(?:^|[^\d&>])(?:1?>>?|&>)\s*(?!&)\S/.test(limpio)) return { clase: 'otro', cmd, argv };
@@ -98,6 +116,7 @@ function clasificar(texto) {
     const escribe = /(?:^|\s)(?:-X|--request)\s+(?:POST|PUT|PATCH|DELETE)\b|(?:^|\s)(?:-d|--data(?:-\w+)?|-F|--form|-T|--upload-file)\b|(?:^|\s)-O\b|(?:^|\s)(?:-o|--output)\s+(?!-\s|-$)\S/.test(limpio);
     return { clase: escribe ? 'otro' : 'consulta', cmd, argv };
   }
+  if (PS_WEB.has(cmdL)) return { clase: PS_WEB_ESCRIBE.test(limpio) ? 'otro' : 'consulta', cmd, argv };
   if (cmd === 'wget') return { clase: /(?:^|\s)(?:-qO-|-O\s*-|--output-document=-)/.test(limpio) ? 'consulta' : 'otro', cmd, argv };
   if (cmd === 'npm' && ['view', 'info', 'search', 'outdated', 'ls', 'list', 'audit'].includes(pos[0])) return { clase: 'consulta', cmd, argv };
   if (cmd === 'git' && pos[0] === 'ls-remote') return { clase: 'consulta', cmd, argv };
@@ -115,6 +134,11 @@ function consultasEnmascaradas(cmd) {
   const pipefail = PIPEFAIL.test(cmd);
   const out = [];
   segs.forEach((seg, i) => {
+    const enTry = PS_TRY.exec(seg.texto);
+    if (enTry) {
+      if (segmentos(enTry[1]).some((s) => clasificar(s.texto).clase === 'consulta')) out.push({ texto: enTry[1].trim(), como: 'el try/catch se come el error' });
+      return;
+    }
     const c = clasificar(seg.texto);
     if (c.clase !== 'consulta') return;
     // `… | head -3 &`: la cadena entera va al fondo; su salida no está en este resultado
@@ -123,7 +147,9 @@ function consultasEnmascaradas(cmd) {
     const sig = segs[i + 1];
     const anterior = segs[i - 1];
     let como = null;
-    if (seg.sep === '|' && sig && FILTROS.test(sig.texto.replace(PREFIJOS, '')) && !pipefail) como = 'filtrado sin pipefail';
+    if (PS_CALLA_ERROR.test(seg.texto)) como = '-ErrorAction le saca el error de la vista';
+    else if (seg.sep === '|' && sig && FILTROS_PS.test(sig.texto.trim())) como = `filtrado por ${sig.texto.trim().split(/\s+/)[0]}: lo que se ve es lo del último de la tubería`;
+    else if (seg.sep === '|' && sig && FILTROS.test(sig.texto.replace(PREFIJOS, '')) && !pipefail) como = 'filtrado sin pipefail';
     else if (seg.sep === '||') como = `«|| ${(sig && sig.texto.split(/\s+/)[0]) || '…'}» se traga el fallo`;
     else if (anterior && anterior.sep === '$(') como = 'dentro de un $(…)';
     else if (seg.sep === ';' && sig) como = 'hay otro comando después: el código de salida que se ve es el del último';
@@ -218,16 +244,19 @@ function parecidos(nombre, lista) {
 }
 
 // ── los avisos ────────────────────────────────────────────────────────────────────────────────
-function avisos(cmd, stdout, stderr) {
+function avisos(cmd, stdout, stderr, opciones = {}) {
   const out = [];
   const enm = consultasEnmascaradas(cmd);
   if (enm.length && stdout != null && !String(stderr == null ? '' : stderr).trim() && salidaAtribuida(cmd, stdout).trim() === '') {
     const c = enm[0];
+    const comoMirar = opciones.tool === 'PowerShell'
+      ? '   código de salida (`$LASTEXITCODE` o `$?` justo después de la consulta, sin -ErrorAction ni try/catch) o repetila sin filtrar.\n'
+      : '   código de salida (`rc=$?` antes de cualquier pipe, o `set -o pipefail`) o repetila sin filtrar.\n';
     out.push(
       `⚠️  Esa consulta devolvió VACÍO y el código de salida no se podía ver (${c.como}):\n` +
       `   «${c.texto.replace(/\s+/g, ' ').slice(0, 100)}»\n` +
       '   no sé si «no hay nada» o si el comando FALLÓ — y se ven igual. Antes de concluir, mirá el\n' +
-      '   código de salida (`rc=$?` antes de cualquier pipe, o `set -o pipefail`) o repetila sin filtrar.\n' +
+      comoMirar +
       '   Caso: dos veces «no hay PR abierto» con un az que había fallado\n' +
       '   (incident-log#comando-fallado-leido-como-vacio-2026-09-04; pipeline-debt SALIDA-VACIA-DE-COMANDO-FALLADO).\n',
     );
@@ -263,7 +292,7 @@ function medir(archivos) {
       const c = d && d.message && d.message.content;
       if (Array.isArray(c)) {
         for (const it of c) {
-          if (it.type === 'tool_use' && it.name === 'Bash' && it.input && it.input.command) usos.set(it.id, it.input);
+          if (it.type === 'tool_use' && (it.name === 'Bash' || it.name === 'PowerShell') && it.input && it.input.command) usos.set(it.id, { ...it.input, tool: it.name });
         }
       }
       const r = d && d.toolUseResult;
@@ -276,7 +305,7 @@ function medir(archivos) {
       if (typeof r === 'string') { fallidos++; continue; }            // «Error: Exit code N»: el modelo lo vio
       const cmd = input.command;
       if (consultasEnmascaradas(cmd).length || proyectosAz(cmd).length) consultas++;
-      const av = avisos(cmd, r.stdout == null ? '' : r.stdout, r.stderr);
+      const av = avisos(cmd, r.stdout == null ? '' : r.stdout, r.stderr, { tool: input.tool });
       if (av.length) { hablaria++; if (ej.length < 8) ej.push(cmd.replace(/\s+/g, ' ').slice(0, 110)); }
     }
   }
@@ -327,7 +356,7 @@ if (require.main === module) {
     const stdout = r == null ? null : (typeof r === 'string' ? r : (r.stdout != null ? r.stdout : (r.output != null ? r.output : null)));
     if (stdout != null && /^\s*Error: Exit code \d+/.test(String(stdout))) process.exit(0);
     const stderr = r && typeof r === 'object' && typeof r.stderr === 'string' ? r.stderr : '';
-    const out = avisos(cmd, stdout, stderr);
+    const out = avisos(cmd, stdout, stderr, { tool: d.tool_name });
     if (out.length) { process.stderr.write(out.join('')); process.exit(2); }
   } catch { /* fail-open */ }
   process.exit(0);
