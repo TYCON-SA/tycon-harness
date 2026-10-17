@@ -35,6 +35,8 @@ COPY scripts/lib/ scripts/lib/
 COPY scripts/metrics/ scripts/metrics/
 COPY scripts/nightly/dashboard/ scripts/nightly/dashboard/
 COPY scripts/setup/harness/ scripts/setup/harness/
+# qué trae cada perfil de instalación: lo muestra la pestaña Configuración
+COPY scripts/setup/install-effects.json scripts/setup/
 COPY scripts/ci/check-product-parity.js scripts/ci/legacy-options.js scripts/ci/
 COPY skills/tycon-pipeline/scripts/lib/ skills/tycon-pipeline/scripts/lib/
 COPY skills/tycon-pipeline/steps/step-0*.md skills/tycon-pipeline/steps/

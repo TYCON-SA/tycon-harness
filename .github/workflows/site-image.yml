@@ -24,6 +24,7 @@ on:
       - 'scripts/metrics/**'
       - 'scripts/nightly/**'
       - 'scripts/setup/harness/**'
+      - 'scripts/setup/install-effects.json'
       - 'scripts/ci/check-product-parity.js'
       - 'scripts/ci/legacy-options.js'
       - 'skills/tycon-pipeline/scripts/lib/**'
