@@ -668,6 +668,103 @@ function modeloGit(rutas, marker, cambioDelVolcado) {
   };
 }
 
+/**
+ * EL RESUMEN DE UNA CORRIDA (el sitio de la organización con las conversaciones prendidas): lo que la tabla y el
+ * detalle sacan de la conversación y del cambio de git —la descripción, el reparto del tiempo, la lista de cambios—,
+ * guardado al lado del volcado (`<volcado>.resumen.json.gz`) con la huella de los dos archivos de los que salió. Una
+ * conversación pesa megas y crece sin parar; su resumen, unos kilos. Los textos (los parches) no van: se bajan a
+ * demanda cuando alguien abre los cambios de la corrida.
+ */
+const RESUMEN = Object.freeze({
+  sufijo: '.resumen.json.gz',
+  // el nombre, uno solo para la vista y para la bajada (changes.js): el que no se carga no deja resumir nada
+  nombre: (volcado) => (cambios ? cambios.rutaDeResumen(volcado) : String(volcado).replace(/\.json$/, '') + '.resumen.json.gz'),
+});
+
+/** El resumen guardado de una corrida, o null (no está, o no se puede leer: entonces la corrida se lee como hoy). */
+function leerResumen(volcado) {
+  try {
+    const r = JSON.parse(require('zlib').gunzipSync(fs.readFileSync(RESUMEN.nombre(volcado))).toString('utf8'));
+    return r && r.v === 1 && r.cambios && typeof r.cambios === 'object' ? r : null;
+  } catch (e) {
+    if (e.code !== 'ENOENT') process.stderr.write(`corridas: el resumen de ${path.basename(volcado)} no se pudo leer (${e.code || e.message})\n`);
+    return null;
+  }
+}
+
+/** Los cambios de una corrida: de su conversación si está en el disco; si no, de su resumen; si no, como hoy. */
+function cambiosDeLaCorrida(rutas, marker, nombresPasos, cambioDelVolcado) {
+  const hayCrudo = cambios && rutas.some((r) => fs.existsSync(cambios.rutaDeHilo(r)) || fs.existsSync(cambios.rutaDeCambio(r)));
+  if (!hayCrudo) {
+    for (const r of rutas) {
+      const s = leerResumen(r);
+      // las esperas viajan en el resumen con su nombre de siempre: aplicarEsperasDelHilo las consume igual
+      if (s) return { ...s.cambios, ...(Array.isArray(s.cambios._esperas) ? { _esperas: s.cambios._esperas } : {}) };
+    }
+  }
+  return leerCambios(rutas, marker, nombresPasos, cambioDelVolcado);
+}
+
+/**
+ * Resume las corridas del espejo que tienen su conversación o su cambio en el disco, y los borra: { resumidas,
+ * fallidas, motivos }. Una corrida que no se pudo resumir (un volcado ilegible, un disco que no deja escribir) deja sus
+ * archivos como estaban y se cuenta. Corre después de cada pasada de la bajada, así el disco nunca guarda más que una
+ * tanda de conversaciones.
+ */
+function resumirEspejo(espejo, { skillsDir = null } = {}) {
+  const out = { resumidas: 0, fallidas: 0, motivos: [] };
+  if (!cambios) return out;
+  const pasos = skillsDir ? pasosDeLaImagen(skillsDir) : nombresDePasos();
+  const huella = (f) => (fs.existsSync(f) ? crypto.createHash('md5').update(fs.readFileSync(f)).digest('base64') : null);
+  let carpetas = [];
+  try { carpetas = fs.readdirSync(espejo, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => path.join(espejo, e.name)); }
+  catch (e) { out.motivos.push(`no se pudo leer el espejo (${e.code || e.message})`); out.fallidas += 1; return out; }
+  for (const dir of carpetas) {
+    let archivos = [];
+    try { archivos = fs.readdirSync(dir); } catch (e) { out.motivos.push(`${path.basename(dir)} (${e.code || e.message})`); out.fallidas += 1; continue; }
+    for (const f of archivos.filter((x) => /\.json$/.test(x))) {
+      const volcado = path.join(dir, f);
+      const hilo = cambios.rutaDeHilo(volcado);
+      const cambio = cambios.rutaDeCambio(volcado);
+      if (!fs.existsSync(hilo) && !fs.existsSync(cambio)) continue;
+      try {
+        const d = JSON.parse(fs.readFileSync(volcado, 'utf8'));
+        const x = leerCambios([volcado], d.marker, pasos.nombres, d.cambio);
+        const pasajero = (e) => e === 'ilegible' || e === 'no_publicado';
+        if ((x.estado !== 'leido' && x.estado !== 'sin_hilo') || pasajero(x.git && x.git.estado)) {
+          out.fallidas += 1;
+          if (out.motivos.length < 5) out.motivos.push(`${path.basename(dir)}/${f} (sin resumir: ${x.motivo || (x.git && x.git.motivo) || x.estado})`);
+          continue;
+        }
+        const { _texto, _textoGit, ...resto } = x;
+        const doc = { v: 1, hilo_md5: huella(hilo), cambio_md5: huella(cambio), cambios: resto };
+        const destino = RESUMEN.nombre(volcado);
+        const tmp = `${destino}.tmp-${process.pid}`;
+        fs.writeFileSync(tmp, require('zlib').gzipSync(JSON.stringify(doc)));
+        fs.renameSync(tmp, destino);
+        fs.rmSync(hilo, { force: true });
+        fs.rmSync(cambio, { force: true });
+        out.resumidas += 1;
+      } catch (e) {
+        out.fallidas += 1;
+        if (out.motivos.length < 5) out.motivos.push(`${path.basename(dir)}/${f} (${e.code || e.message})`);
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Los textos de UNA corrida (los cambios y los parches), para el detalle a demanda: `volcado` es la ruta de su volcado,
+ * con su conversación y su cambio de git bajados al lado. `{ texto, textoGit }`, con la forma de textosDe().
+ */
+function textosDeUnaCorrida(volcado, { skillsDir = null } = {}) {
+  const pasos = skillsDir ? pasosDeLaImagen(skillsDir) : nombresDePasos();
+  const d = JSON.parse(fs.readFileSync(volcado, 'utf8'));
+  const x = leerCambios([volcado], d.marker, pasos.nombres, d.cambio);
+  return { texto: x._texto || null, textoGit: x._textoGit || null };
+}
+
 function leerCambios(rutas, marker, nombresPasos, cambioDelVolcado) {
   if (!cambios) return { estado: 'no_publicado', motivo: motivoSinCambios };
   const git = modeloGit(rutas, marker, cambioDelVolcado);
@@ -807,7 +904,9 @@ function leerRegistro(dir, nombresPasos, opts = {}) {
     const c = modeloDeCorrida(d, nombresPasos);
     c.id = idEstable(multi ? maquina : null, sid);
     if (multi) { c.maquina = maquina; c.maquina_origen = maquina ? (origen || maquina) : null; c.maquina_motivo = maquina ? null : motivo; c.maquina_nota = maquina ? nota : null; }
-    c.cambios = opts.sinHilos ? { estado: 'no_medido', motivo: SIN_HILOS } : leerCambios(rutas, d.marker, nombresPasos, d.cambio);
+    c.cambios = opts.sinHilos ? { estado: 'no_medido', motivo: SIN_HILOS } : cambiosDeLaCorrida(rutas, d.marker, nombresPasos, d.cambio);
+    // de qué volcado salió (para bajar su detalle a demanda): sólo del lado del servidor, nunca en lo que se sirve
+    Object.defineProperty(c, '_volcado', { value: rutas[0], enumerable: false });
     if (opts.sinHilos && c.tiempos) c.tiempos.espera_del_hilo_ms = null;
     aplicarEsperasDelHilo(c, d.marker);
     c.descripcion = descripcionDe(d.marker, c.cambios);
@@ -2310,7 +2409,9 @@ function main(opts = {}) {
 // `dentroDelRepoDelEquipo` también la usa dashboard.js (story 2.12): la página de seis preguntas tiene un solo escritor en el repo.
 module.exports = { main, modelo, leerRegistro, modeloDeCorrida, clasificar, agruparEventos, producto, unificarProductos, nombresDePasos, lineaBasePasos, render, CONTROLES, dentroDelRepoDelEquipo,
   // story 2.27: lo que usa la pestaña Corridas del sitio
-  idEstable, paraLista, paraDetalle, textosDe, cabecera, ejecutiva, tabla, pie, CLIENTE, CSS_PROPIO, SIN_HILOS };
+  idEstable, paraLista, paraDetalle, textosDe, cabecera, ejecutiva, tabla, pie, CLIENTE, CSS_PROPIO, SIN_HILOS,
+  // el sitio con las conversaciones prendidas: el resumen de cada corrida y los textos de una, a demanda
+  RESUMEN, resumirEspejo, textosDeUnaCorrida };
 
 if (require.main === module) {
   require('../../lib/legacy-names.js').aliasArgv('scripts/nightly/dashboard/runs.js');

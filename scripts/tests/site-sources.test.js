@@ -550,12 +550,13 @@ test('T26 Espejo_BajaHilosYCambios_SoloConThreads @story-2.27 @ac-18', { skip: S
   const enEspejo = (m) => { const d = path.join(m.dataDir, 'buzon', 'maq-a-11111111'); return fs.existsSync(d) ? fs.readdirSync(d).sort() : []; };
   const gets = (m, f) => m.buzon.pedidos.filter((p) => p.ruta.endsWith(f) && !/comp=list/.test(p.query)).length;
 
-  // con `threads: true` y un disco del sitio (SITE_DATA_DIR): los cuatro, y la segunda bajada no vuelve a bajar nada
+  // con `threads: true` y un disco del sitio (SITE_DATA_DIR): la conversación y el cambio se bajan, se resumen y se borran
+  // (en el disco queda su resumen), y la segunda bajada no vuelve a bajar nada
   const disco = tmp('site-disco-');
   let m = await montar({ blobs, config: cfgOps(true), dataDir: disco, envExtra: { SITE_DATA_DIR: disco } });
   try {
     await m.fuentes.refrescar();
-    assert.deepStrictEqual(enEspejo(m), ['registros', 's1.cambio.json.gz', 's1.hilo.jsonl.gz', 's1.json']);
+    assert.deepStrictEqual(enEspejo(m), ['registros', 's1.json', 's1.resumen.json.gz']);
     assert.strictEqual(m.fuentes.hilos(), true, 'la pestaña sabe que el espejo trae las conversaciones');
     const antes = gets(m, 's1.hilo.jsonl.gz');
     assert.strictEqual(antes, 1);

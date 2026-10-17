@@ -34,6 +34,8 @@ const { Worker, isMainThread, parentPort, workerData } = require('worker_threads
 
 const RUNS = path.join(__dirname, '..', '..', 'nightly', 'dashboard', 'runs.js');
 const FRASE_FALLA = 'no se pudo armar la vista de corridas';
+// el caché de los textos bajados a demanda (los cambios de una corrida resumida): al pasarlo, se borran los más viejos
+const TOPE_CACHE_BYTES = 200 * 1024 * 1024;
 const FRASE_SIN_BUZON = 'sin buzón configurado: no medido';
 const NO_EXISTE = { status: 404, tipo: 'text/plain; charset=utf-8', cuerpo: '' };
 const isObject = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
@@ -78,15 +80,19 @@ async function armarEnElHilo({ buzon, skillsDir = null, sinHilos = false, umbral
   try { M = runs.modelo(vacia, { buzon, soloBuzon: true, sinUnificar: true, sinHilos, umbralesArchivo, skillsDir }); }
   finally { fs.rmSync(vacia, { recursive: true, force: true }); }
   fs.mkdirSync(textosDir, { recursive: true });
+  // las corridas cuyos cambios salieron de su resumen (la conversación ya no está en el disco): sus textos se bajan
+  // a demanda, cuando alguien abre los cambios. Del volcado de cada una, sólo la ruta, y sólo del lado del servidor
+  const aDemanda = {};
   for (const c of M.corridas) {
     const t = runs.textosDe(c);
     if (t.texto || t.textoGit) fs.writeFileSync(path.join(textosDir, `${c.id}.json`), JSON.stringify(t));
+    else if (c.cambios && c.cambios.estado === 'leido' && c._volcado) aDemanda[c.id] = c._volcado;
   }
   M.corridas = M.corridas.map(runs.paraDetalle);
   const uso = typeof process.resourceUsage === 'function' ? process.resourceUsage() : null;
   // maxRSS viene en kilobytes: es el pico del PROCESO (el armado es lo que más pesa)
   const pico = uso && Number.isFinite(uso.maxRSS) ? Math.round(uso.maxRSS / 1024) : Math.round(process.memoryUsage().rss / 1048576);
-  return { M, pico_mb: pico };
+  return { M, pico_mb: pico, aDemanda };
 }
 
 /**
@@ -114,9 +120,18 @@ if (!isMainThread && workerData && workerData.__armarCorridas) {
  * La vista de la pestaña: el modelo armado y su estado. `armar` se inyecta en las pruebas; `demora` (ms) estira el
  * armado para probar que el sitio contesta mientras tanto.
  */
-function crearVista({ cfg, fuentes, armar = armarEnWorker, skillsDir = null, demora = 0, log = () => {}, ahora = Date.now }) {
-  const base = path.join(cfg.dataDir || path.join(os.tmpdir(), `site-corridas-${process.pid}`), 'corridas-textos');
-  const st = { M: null, textosDir: null, huella: null, armando: null, error: null, pico_mb: null, sinBuzon: false };
+function crearVista({ cfg, fuentes, armar = armarEnWorker, skillsDir = null, demora = 0, log = () => {}, ahora = Date.now,
+  topeCacheBytes = TOPE_CACHE_BYTES, textosDeUna = (o) => require('../summaries.js').textosEnWorker({ ...o, skillsDir }) }) {
+  // los textos (los parches de cada corrida) van al disco del contenedor, nunca a SITE_DATA_DIR: son una copia que se
+  // rearma, y el disco montado es chico. Los de antes (en el disco montado) se borran al arrancar
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'site-corridas-textos-'));
+  if (cfg.dataDir) {
+    try { fs.rmSync(path.join(cfg.dataDir, 'corridas-textos'), { recursive: true, force: true }); }
+    catch (e) { log(`corridas: no se pudieron borrar los textos viejos del disco del sitio (${codigoDe(e)})`); }
+  }
+  // los textos bajados a demanda, con su tope: al pasarlo se borran los que se abrieron hace más tiempo
+  const dirCache = path.join(base, 'a-demanda');
+  const st = { M: null, textosDir: null, huella: null, armando: null, error: null, pico_mb: null, sinBuzon: false, aDemanda: {}, enCurso: new Map() };
 
   const conBuzon = () => { const c = fuentes.config(); return Boolean(c && isObject(c.site) && isObject(c.site.mailbox)); };
   const umbralesDeLaOrganizacion = () => {
@@ -130,6 +145,64 @@ function crearVista({ cfg, fuentes, armar = armarEnWorker, skillsDir = null, dem
   // borrarían los textos entre sí (revisor de seguridad, vuelta 5: disponibilidad, no fuga)
   //    (antes del primer armado, y sin esperar a nadie: si no, la limpieza podría borrar la carpeta del armado nuevo)
   try { for (const n of fs.readdirSync(base)) fs.rmSync(path.join(base, n), { recursive: true, force: true }); } catch (e) { if (!e || e.code !== 'ENOENT') log(`corridas: no se pudieron borrar los textos de un arranque anterior (${codigoDe(e)})`); }
+
+  /** El caché de textos a demanda dentro de su tope: se borran los abiertos hace más tiempo, nunca `salvo`. */
+  function podarCache(salvo) {
+    let lista = [];
+    try { lista = fs.readdirSync(dirCache).map((f) => { const p = path.join(dirCache, f); const s = fs.statSync(p); return { p, t: s.mtimeMs, n: s.size }; }); }
+    catch (e) { log(`corridas: no se pudo mirar el caché de textos (${codigoDe(e)})`); return; }
+    let total = lista.reduce((a, x) => a + x.n, 0);
+    for (const x of lista.sort((a, b) => a.t - b.t)) {
+      if (total <= topeCacheBytes) break;
+      if (x.p === salvo) continue;
+      try { fs.rmSync(x.p, { force: true }); total -= x.n; } catch (e) { log(`corridas: no se pudo borrar un texto del caché (${codigoDe(e)})`); }
+    }
+  }
+
+  /**
+   * Los textos de una corrida resumida, a demanda: del caché si están; si no, baja su conversación y su cambio del
+   * buzón a una carpeta temporal, los arma en un hilo aparte, los guarda en el caché y borra lo bajado. Dos pedidos de
+   * la misma corrida a la vez comparten la bajada. null = no se pudieron bajar o armar (el registro dice por qué).
+   */
+  function aDemanda(id, volcado) {
+    if (st.enCurso.has(id)) return st.enCurso.get(id);
+    const p = (async () => {
+      const cache = path.join(dirCache, `${id}.json`);
+      try {
+        const t = JSON.parse(fs.readFileSync(cache, 'utf8'));
+        const ya = new Date(); fs.utimesSync(cache, ya, ya);   // abierto recién: es lo último que se poda
+        return { texto: t.texto || null, textoGit: t.textoGit || null };
+      } catch (e) { if (!e || e.code !== 'ENOENT') log(`corridas: un texto del caché no se pudo leer (${codigoDe(e)}): se baja de nuevo`); }
+      if (typeof fuentes.bajarCorrida !== 'function') { log('corridas: las fuentes no saben bajar una corrida del buzón'); return null; }
+      const maquina = path.basename(path.dirname(volcado));
+      const nombre = path.basename(volcado).replace(/\.json$/, '');
+      const tmp = fs.mkdtempSync(path.join(base, 'bajando-'));
+      try {
+        fs.mkdirSync(path.join(tmp, maquina), { recursive: true });
+        const copia = path.join(tmp, maquina, `${nombre}.json`);
+        fs.copyFileSync(volcado, copia);
+        const r = await fuentes.bajarCorrida({ maquina, base: nombre, dir: tmp });
+        if (r.codigo !== 0) {
+          if (r.res && r.res.estado === 'sin_partes') return { texto: null, textoGit: null };
+          log(`corridas: los cambios de una corrida no se pudieron bajar del buzón (${(r.res && r.res.estado) || 'sin estado'}${r.res && r.res.motivo ? `: ${r.res.motivo}` : ''})`);
+          return null;
+        }
+        const t = await textosDeUna({ volcado: copia });
+        fs.mkdirSync(dirCache, { recursive: true });
+        fs.writeFileSync(cache, JSON.stringify(t));
+        podarCache(cache);
+        return { texto: t.texto || null, textoGit: t.textoGit || null };
+      } catch (e) {
+        log(`corridas: los cambios de una corrida no se pudieron armar (${codigoDe(e)})`);
+        return null;
+      } finally {
+        fs.rm(tmp, { recursive: true, force: true }, (e) => { if (e) log(`corridas: no se pudo borrar lo bajado para un detalle (${codigoDe(e)})`); });
+        st.enCurso.delete(id);
+      }
+    })();
+    st.enCurso.set(id, p);
+    return p;
+  }
 
   /** El estado de la última bajada del buzón: `{ completo, generacion }` (unas fuentes sin la función: entera). */
   const bajada = () => (typeof fuentes.buzonEstado === 'function' ? fuentes.buzonEstado() : { completo: true, generacion: 1 });
@@ -159,6 +232,7 @@ function crearVista({ cfg, fuentes, armar = armarEnWorker, skillsDir = null, dem
     })().then((r) => {
       const viejo = st.textosDir;
       st.M = r.M; st.textosDir = textosDir; st.huella = huella; st.error = null; st.huellaFallida = null;
+      st.aDemanda = r.aDemanda && typeof r.aDemanda === 'object' ? r.aDemanda : {};
       st.pico_mb = Number.isFinite(r.pico_mb) ? r.pico_mb : null;
       // lo de abajo ya no puede marcar el armado como fallado: el modelo nuevo está puesto
       try {
@@ -187,12 +261,14 @@ function crearVista({ cfg, fuentes, armar = armarEnWorker, skillsDir = null, dem
     bajada,
     /** La carpeta de los textos del modelo que se sirve (las pruebas la miran). */
     textosDir: () => st.textosDir,
+    /** La carpeta de los textos bajados a demanda (las pruebas la miran). */
+    dirCache: () => dirCache,
     /** Los textos de una corrida: `{ texto, textoGit }` (null = la corrida no los tiene), o null si no se pudieron leer. */
-    textos(id) {
+    async textos(id) {
       if (!st.textosDir || !/^[0-9a-f]{16}$/.test(id)) return { texto: null, textoGit: null };
       let crudo;
       try { crudo = fs.readFileSync(path.join(st.textosDir, `${id}.json`), 'utf8'); } catch (e) {
-        if (e && e.code === 'ENOENT') return { texto: null, textoGit: null };   // sin texto: el armado no escribió archivo
+        if (e && e.code === 'ENOENT') return st.aDemanda[id] ? aDemanda(id, st.aDemanda[id]) : { texto: null, textoGit: null };   // sin texto: el armado no escribió archivo
         log(`corridas: los textos de una corrida no se pudieron leer del disco del sitio (${codigoDe(e)})`);
         return null;
       }
@@ -205,11 +281,11 @@ function crearVista({ cfg, fuentes, armar = armarEnWorker, skillsDir = null, dem
 }
 
 /** Las rutas de la pestaña, para `rutasExtra` de crearSitio. */
-function crearRutas({ cfg, fuentes, version = null, skillsDir = null, armar, demora = 0, log = () => {}, ahora = Date.now } = {}) {
+function crearRutas({ cfg, fuentes, version = null, skillsDir = null, armar, demora = 0, log = () => {}, ahora = Date.now, topeCacheBytes = null } = {}) {
   const runs = require(RUNS);
   const access = require('../access.js');
   const views = require('../views.js');
-  const vista = crearVista({ cfg, fuentes, armar, skillsDir, demora, log, ahora });
+  const vista = crearVista({ cfg, fuentes, armar, skillsDir, demora, log, ahora, ...(topeCacheBytes ? { topeCacheBytes } : {}) });
   const json = (status, obj, extra) => ({ status, tipo: 'application/json; charset=utf-8', cuerpo: JSON.stringify(obj), ...(extra ? { extra } : {}) });
   const texto = (status, t, extra) => ({ status, tipo: 'text/plain; charset=utf-8', cuerpo: t, ...(extra ? { extra } : {}) });
   const pagina = (ctx, cuerpo, status = 200, extra) => ({ status, tipo: 'text/html; charset=utf-8', cuerpo: views.layout(ctx, 'Corridas', cuerpo, 'Cada corrida del pipeline: cuánto tardó, dónde esperó a una persona y qué encontraron los controles.'), ...(extra ? { extra } : {}) });
@@ -286,13 +362,13 @@ function crearRutas({ cfg, fuentes, version = null, skillsDir = null, armar, dem
       },
     },
     {
-      method: 'GET', path: '/api/corridas/:id/textos', needs: ['maintainer', 'person'], handler: (ctx) => {
+      method: 'GET', path: '/api/corridas/:id/textos', needs: ['maintainer', 'person'], handler: async (ctx) => {
         const r = loSuyo(ctx, true);
         if (r.sinBuzon) return SIN_BUZON;
         if (r.falla) return r.falla;
         const c = corrida(r.vis, ctx.params.id);
         if (!c) return NO_EXISTE;
-        const t = vista.textos(c.id);
+        const t = await vista.textos(c.id);
         // ilegibles no es «no hay»: el navegador dice «no se pudo abrir el cambio», nunca «no está»
         return t ? json(200, t) : texto(500, 'los textos de esta corrida no se pudieron leer del disco del sitio');
       },

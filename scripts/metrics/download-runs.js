@@ -202,11 +202,11 @@ function tokenDeAz(tenant) {
  * El listado entero del contenedor, paginado. { blobs } o { estado, motivo } (con `permiso: true` si es falta del rol).
  * Lo usan la bajada y el informe de re-subidas: los dos leen el buzón de la misma forma.
  */
-async function listarTodo(base, token, cfg) {
+async function listarTodo(base, token, cfg, prefijo = '') {
   const blobs = [];
   let marcador = '';
   for (let vuelta = 0; vuelta < 1000; vuelta++) {
-    const url = `${base}?restype=container&comp=list&maxresults=5000${marcador ? `&marker=${encodeURIComponent(marcador)}` : ''}`;
+    const url = `${base}?restype=container&comp=list&maxresults=5000${prefijo ? `&prefix=${encodeURIComponent(prefijo)}` : ''}${marcador ? `&marker=${encodeURIComponent(marcador)}` : ''}`;
     const r = await pedir(url, token, 60000);
     if (r.error) return { estado: 'sin_red', motivo: `sin red o sin respuesta del buzón al listar (${r.error.code || r.error.message}): no se bajó nada` };
     if (r.status === 401 || r.status === 403) return { permiso: true, motivo: `esta cuenta de az no tiene el rol de lectura sobre el buzón (${r.status}): sólo lo lee quien fue autorizado` };
@@ -502,8 +502,120 @@ function negativaDeLectura(sas, ahora = Date.now()) {
   return null;
 }
 
+// ── el sitio con las conversaciones prendidas: los resúmenes y la poda del espejo ───────────────────────────────
+// las dos partes de una corrida que pesan (su conversación y su cambio de git), por el nombre del archivo en el espejo
+const PARTE_DE_CORRIDA = /^(.+)\.(hilo\.jsonl|cambio\.json)\.gz$/;
+/** El resumen que el sitio guardó de una corrida (dashboard/runs.js → resumirEspejo), o null. `volcado`: su ruta local. */
+function leerResumenDe(volcado) {
+  try {
+    const r = JSON.parse(require('zlib').gunzipSync(fs.readFileSync(require('../nightly/dashboard/changes.js').rutaDeResumen(volcado))).toString('utf8'));
+    return r && r.v === 1 ? r : null;
+  } catch (e) {
+    if (e.code !== 'ENOENT') process.stderr.write(`bajar-corridas: el resumen de ${path.basename(volcado)} no se pudo leer (${e.code || e.message}): se vuelve a bajar\n`);
+    return null;
+  }
+}
+
+/**
+ * Borra del espejo las corridas que ya no están en el buzón: su volcado, su conversación, su cambio y su resumen (éste
+ * queda mientras el volcado de su corrida esté en el buzón). Sólo en las carpetas con forma de máquina, sólo esos
+ * archivos: los registros de una máquina y lo demás del espejo no se tocan. Devuelve cuántos borró.
+ */
+function podarEspejo(dirBuzon, listado, log) {
+  const CORRIDA = /^(.+)\.(json|hilo\.jsonl\.gz|cambio\.json\.gz|resumen\.json\.gz)$/;
+  const listados = new Set();
+  const volcados = new Set();
+  for (const b of listado) {
+    const f = formaDelNombre(b.nombre);
+    if (!f || f.archivo.startsWith('registros/')) continue;
+    listados.add(`${f.maquina}/${f.archivo}`);
+    const m = CORRIDA.exec(f.archivo);
+    if (m && m[2] === 'json') volcados.add(`${f.maquina}/${m[1]}`);
+  }
+  let n = 0;
+  let carpetas = [];
+  try { carpetas = fs.readdirSync(dirBuzon, { withFileTypes: true }).filter((e) => e.isDirectory() && FORMA_MAQUINA.test(e.name)).map((e) => e.name); }
+  catch (e) { if (e.code !== 'ENOENT') log(`no se pudo podar el espejo (${e.code || e.message})`); return 0; }
+  for (const maquina of carpetas) {
+    let archivos = [];
+    try { archivos = fs.readdirSync(path.join(dirBuzon, maquina), { withFileTypes: true }).filter((e) => e.isFile()).map((e) => e.name); }
+    catch (e) { log(`no se pudo podar ${maquina} (${e.code || e.message})`); continue; }
+    for (const f of archivos) {
+      const m = CORRIDA.exec(f);
+      if (!m) continue;
+      const queda = m[2] === 'resumen.json.gz' ? volcados.has(`${maquina}/${m[1]}`) : listados.has(`${maquina}/${f}`);
+      if (queda) continue;
+      try { fs.rmSync(path.join(dirBuzon, maquina, f), { force: true }); n += 1; }
+      catch (e) { log(`no se pudo podar ${maquina}/${f} (${e.code || e.message})`); }
+    }
+  }
+  if (n) log(`el espejo borró ${n} archivo(s) de corridas que ya no están en el buzón`);
+  return n;
+}
+
+/**
+ * La cuenta, el contenedor y la credencial del SITIO (`opts.cuenta`, `opts.contenedor`, `opts.credencial`: una SAS de
+ * sólo lectura o la identidad administrada): `{ cfg, tk }`, o `{ falla: [codigo, estado, motivo] }`. La cuenta y el
+ * contenedor arman el host adonde va la credencial: sólo la forma de Azure Storage, antes de pedir nada.
+ */
+async function credencialDelSitio(opts) {
+  if (typeof opts.contenedor !== 'string' || !opts.contenedor) return { falla: [2, 'config_rota', 'la bajada del sitio necesita cuenta, contenedor y carpeta'] };
+  if (!/^[a-z0-9]{3,24}$/.test(opts.cuenta) || !/^[a-z0-9](?:[a-z0-9-]{1,61})[a-z0-9]$/.test(opts.contenedor)) {
+    return { falla: [2, 'config_rota', 'la cuenta o el contenedor del buzón no tienen la forma de Azure Storage: no se manda la credencial'] };
+  }
+  const cfg = { cuenta: opts.cuenta, contenedor: opts.contenedor, tenant: '' };
+  const cred = opts.credencial || {};
+  let tk;
+  if (typeof cred.sas === 'string') {
+    const negativa = negativaDeLectura(cred.sas);
+    if (negativa) return { falla: [2, 'llave_con_escritura', negativa], aviso: negativa };
+    tk = { token: { sas: cred.sas.replace(/^\?/, '') } };
+  } else if (cred.managed === true) {
+    tk = await require(path.join(__dirname, '..', 'site', 'cloud', 'azure.js')).tokenDeIdentidad('https://storage.azure.com/');
+  } else return { falla: [2, 'config_rota', 'la bajada del sitio necesita una credencial: { sas } o { managed: true }'] };
+  if (!tk.token) return { falla: [1, tk.estado || 'sin_permiso', tk.motivo] };
+  return { cfg, tk };
+}
+
+/**
+ * La conversación y el cambio de git de UNA corrida, para el detalle a demanda del sitio: `maquina` y `base` (el nombre
+ * del volcado sin `.json`), bajados a `<dir>/<maquina>/`. De cada parte, la versión más nueva que haya en el buzón.
+ * `{ codigo, res: { estado, motivo, bajados } }`; sin ninguna de las dos en el buzón, `estado: 'sin_partes'`.
+ */
+async function bajarUnaCorrida(opts = {}) {
+  const res = { estado: null, motivo: null, bajados: 0 };
+  const fin = (codigo, estado, motivo) => { res.estado = estado; res.motivo = motivo || null; return { codigo, res }; };
+  if (!opts.dir || !FORMA_MAQUINA.test(String(opts.maquina || '')) || !/^[^/\\]+$/.test(String(opts.base || ''))) return fin(2, 'config_rota', 'falta la carpeta, la máquina o la corrida');
+  const c = await credencialDelSitio(opts);
+  if (c.falla) return fin(...c.falla);
+  const base = `${String(opts.urlBase || urlBase(c.cfg)).replace(/\/+$/, '')}/${encodeURIComponent(c.cfg.contenedor)}`;
+  const ls = await listarTodo(base, c.tk.token, c.cfg, `${opts.maquina}/`);
+  if (ls.permiso) return fin(1, 'sin_permiso', ls.motivo);
+  if (ls.estado) return fin(1, ls.estado, ls.motivo);
+  const urlDe = (nombre) => `${base}/${nombre.split('/').map(encodeURIComponent).join('/')}`;
+  let alguna = false;
+  for (const parte of [`${opts.base}.hilo.jsonl.gz`, `${opts.base}.cambio.json.gz`]) {
+    const versiones = ls.blobs.map((b) => ({ b, f: formaDelNombre(b.nombre) })).filter(({ f }) => f && f.maquina === opts.maquina && f.archivo === parte);
+    if (!versiones.length) continue;
+    // la más nueva: el nombre sin versión es la más vieja
+    versiones.sort((x, y) => ((x.f.version || '') < (y.f.version || '') ? -1 : 1));
+    const { b } = versiones[versiones.length - 1];
+    alguna = true;
+    const r = await pedir(urlDe(b.nombre), c.tk.token, Math.max(60000, Math.min(300000, b.largo / 20)));
+    if (r.error) return fin(1, 'sin_red', `sin red al bajar ${b.nombre} (${r.error.code || r.error.message})`);
+    if (r.status !== 200) return fin(1, 'servicio_fallo', `el buzón contestó ${r.status} al bajar ${b.nombre}`);
+    const md5 = crypto.createHash('md5').update(r.cuerpo).digest('base64');
+    if (r.cuerpo.length !== b.largo || (b.md5 && b.md5 !== md5)) return fin(1, 'servicio_fallo', `${b.nombre} llegó distinto (${r.cuerpo.length} bytes)`);
+    const destino = path.join(opts.dir, opts.maquina, parte);
+    fs.mkdirSync(path.dirname(destino), { recursive: true });
+    fs.writeFileSync(destino, r.cuerpo);
+    res.bajados += 1;
+  }
+  return alguna ? fin(0, 'bajado') : fin(1, 'sin_partes', 'la corrida no tiene su conversación ni su cambio en el buzón');
+}
+
 async function bajar(opts = {}) {
-  const res = { bajado: false, estado: null, motivo: null, codigo: null, completo: false, blobs: 0, bajados: 0, bytes: 0, al_dia: 0, ignorados: 0, ignorados_nombres: [], omitidos: 0, versiones_viejas: 0, versiones_incompletas: 0, sin_tiempo: 0, aviso: null };
+  const res = { bajado: false, estado: null, motivo: null, codigo: null, completo: false, blobs: 0, bajados: 0, bytes: 0, al_dia: 0, ignorados: 0, ignorados_nombres: [], omitidos: 0, versiones_viejas: 0, versiones_incompletas: 0, sin_tiempo: 0, aviso: null, resumidos: 0, por_tope: 0, podados: 0 };
   const log = (m) => { if (opts.log) opts.log(m); };
   // story 2.28: desde que el listado se leyó, toda pasada —también la parcial— deja la unión de carpetas en el espejo
   let espejoParaUniones = null;
@@ -517,6 +629,11 @@ async function bajar(opts = {}) {
     return { codigo, res };
   };
   const sinHilos = opts.sinHilos === true;
+  // el sitio con las conversaciones prendidas sobre un disco chico (`resumenes`): una corrida ya resumida
+  // (dashboard/runs.js → resumirEspejo) no vuelve a bajar su conversación ni su cambio, y una pasada no baja más de
+  // `topeBytesHilos` de esas dos partes: el sitio resume la tanda, la borra del disco, y la pasada siguiente sigue
+  const conResumenes = opts.resumenes === true && !sinHilos;
+  const topeHilos = conResumenes && Number.isFinite(opts.topeBytesHilos) && opts.topeBytesHilos > 0 ? opts.topeBytesHilos : null;
 
   const where = DONDE;
   // story 2.23: con `cuenta` en las opciones, la bajada es la del sitio de la organización — la cuenta, el contenedor, la
@@ -528,14 +645,15 @@ async function bajar(opts = {}) {
   const rutaIndice = path.resolve(delSitio ? path.join(casa, 'mailbox-downloads.json') : (readEnv('TYCON_DOWNLOADS_LOG', { where }) || path.join(casa, 'mailbox-downloads.json')));
 
   let cfg;
+  let tkDelSitio = null;
   if (delSitio) {
-    if (!opts.dir || typeof opts.contenedor !== 'string' || !opts.contenedor) return fin(2, 'config_rota', 'la bajada del sitio necesita cuenta, contenedor y carpeta');
+    if (!opts.dir) return fin(2, 'config_rota', 'la bajada del sitio necesita cuenta, contenedor y carpeta');
     // 🔴 la cuenta y el contenedor arman el host adonde va la credencial: sólo la forma de Azure Storage (la misma que
     //    leerConfig exige en el camino de las máquinas). Antes de pedir nada y antes de crear la carpeta.
-    if (!/^[a-z0-9]{3,24}$/.test(opts.cuenta) || !/^[a-z0-9](?:[a-z0-9-]{1,61})[a-z0-9]$/.test(opts.contenedor)) {
-      return fin(2, 'config_rota', 'la cuenta o el contenedor del buzón no tienen la forma de Azure Storage: no se manda la credencial');
-    }
-    cfg = { cuenta: opts.cuenta, contenedor: opts.contenedor, tenant: '' };
+    const c = await credencialDelSitio(opts);
+    if (c.falla) { if (c.aviso) log(c.aviso); return fin(...c.falla); }
+    cfg = c.cfg;
+    tkDelSitio = c.tk;
   } else {
     // 0 · las integraciones (story 8.3, AC 9/10): el buzón apagado → exit 0 y una línea; y bajar necesita la sesión de az,
     //     así que Azure DevOps apagada → exit 0 y una línea. Configuración rota → exit 2 con archivo, clave y motivo.
@@ -558,17 +676,8 @@ async function bajar(opts = {}) {
 
   // La credencial: la sesión de az (la máquina de quien tiene el rol) o, para el sitio, la que pasa quien llama —una SAS
   // de sólo lectura, o la identidad administrada de la plataforma (scripts/site/cloud/azure.js)—.
-  let tk;
-  const cred = opts.credencial || {};
-  if (!delSitio) tk = tokenDeAz(cfg.tenant.trim());
-  else if (typeof cred.sas === 'string') {
-    const negativa = negativaDeLectura(cred.sas);
-    if (negativa) { log(negativa); return fin(2, 'llave_con_escritura', negativa); }
-    tk = { token: { sas: cred.sas.replace(/^\?/, '') } };
-  } else if (cred.managed === true) {
-    tk = await require(path.join(__dirname, '..', 'site', 'cloud', 'azure.js')).tokenDeIdentidad('https://storage.azure.com/');
-  } else return fin(2, 'config_rota', 'la bajada del sitio necesita una credencial: { sas } o { managed: true }');
-  if (!tk.token) return delSitio ? fin(1, tk.estado || 'sin_permiso', tk.motivo) : sinPermiso(tk.estado, tk.motivo);
+  const tk = delSitio ? tkDelSitio : tokenDeAz(cfg.tenant.trim());
+  if (!tk.token) return sinPermiso(tk.estado, tk.motivo);
 
   const base = `${String(delSitio && opts.urlBase ? opts.urlBase : urlBase(cfg)).replace(/\/+$/, '')}/${encodeURIComponent(cfg.contenedor)}`;
   const inicio = Date.now();
@@ -581,6 +690,9 @@ async function bajar(opts = {}) {
   const listado = ls.blobs;
   res.blobs = listado.length;
   espejoParaUniones = dirBuzon;
+  // con el listado entero en la mano, el espejo borra las corridas que ya no están en el buzón (antes de bajar: el lugar
+  // que libera es el que usa la pasada)
+  if (opts.podar === true) res.podados = podarEspejo(dirBuzon, listado, log);
 
   let indice = { version: 1, destino: `${cfg.cuenta}/${cfg.contenedor}`, blobs: {} };
   try {
@@ -677,8 +789,34 @@ async function bajar(opts = {}) {
     for (const v of vs.keys()) if (v !== elegido && (v === '' || v < elegido)) res.versiones_viejas += 1;
     elegidos.push(...vs.get(elegido).values());
   }
+  // con resúmenes: las dos partes de cada corrida (conversación y cambio) se deciden JUNTAS. Una corrida está resumida si
+  // su resumen tiene la huella de cada parte que hay en el buzón; si una cambió, se bajan las dos (el resumen se rehace
+  // con las dos, y rehacerlo con una sola perdería lo que traía la otra)
+  const partesDe = new Map();
+  if (conResumenes) {
+    for (const e of elegidos) {
+      const m = PARTE_DE_CORRIDA.exec(e.forma.archivo);
+      if (!m) continue;
+      const k = `${e.forma.maquina}/${m[1]}`;
+      if (!partesDe.has(k)) partesDe.set(k, []);
+      partesDe.get(k).push(e);
+    }
+  }
+  const resumidas = new Map();
+  const estaResumida = (k) => {
+    if (!resumidas.has(k)) {
+      const doc = leerResumenDe(path.join(dirBuzon, ...k.split('/')) + '.json');
+      resumidas.set(k, Boolean(doc) && partesDe.get(k).every(({ b, forma }) => (b.md5
+        ? doc[/\.hilo\.jsonl\.gz$/.test(forma.archivo) ? 'hilo_md5' : 'cambio_md5'] === b.md5
+        : Boolean(b.etag && indice.blobs[b.nombre] && indice.blobs[b.nombre].etag === b.etag))));
+    }
+    return resumidas.get(k);
+  };
   for (const { b, forma } of elegidos) {
     const local = path.join(dirBuzon, forma.maquina, forma.archivo);
+    const parte = conResumenes ? PARTE_DE_CORRIDA.exec(forma.archivo) : null;
+    const base = parte ? `${forma.maquina}/${parte[1]}` : null;
+    if (base && estaResumida(base)) { res.resumidos += 1; continue; }
     const previo = indice.blobs[b.nombre];
     let st = null;
     try { st = fs.statSync(local); } catch (e) { if (e.code !== 'ENOENT') { noLeidos.push(`${b.nombre} (${e.code})`); continue; } }
@@ -688,7 +826,7 @@ async function bajar(opts = {}) {
       catch (e) { noLeidos.push(`${b.nombre} (${e.code || e.message})`); continue; }
       if (igual) { res.al_dia += 1; continue; }
     }
-    pendientes.push({ ...b, ...forma, local });
+    pendientes.push({ ...b, ...forma, local, ...(base ? { base } : {}) });
   }
 
   // 🔴 Los REGISTROS primero (story 2.5): los .gz de cada máquina, después su cobertura, y recién ahí las corridas.
@@ -757,6 +895,22 @@ async function bajar(opts = {}) {
   const conc = Number.isInteger(opts.concurrencia) && opts.concurrencia >= 1 ? Math.min(opts.concurrencia, 32) : 8;
   let tomados = 0;
   let corto = false;
+  // el tope de conversaciones por pasada, POR CORRIDA (sus dos partes entran o quedan juntas). La primera entra siempre,
+  // aunque sola pase el tope: si no, una conversación más grande que el tope no se bajaría nunca
+  const bytesDeBase = new Map();
+  for (const p of pendientes) if (p.base) bytesDeBase.set(p.base, (bytesDeBase.get(p.base) || 0) + p.largo);
+  const decididas = new Map();
+  let bytesTomados = 0;
+  const entra = (p) => {
+    if (!topeHilos || !p.base) return true;
+    if (!decididas.has(p.base)) {
+      const t = bytesDeBase.get(p.base);
+      const si = bytesTomados === 0 || bytesTomados + t <= topeHilos;
+      if (si) bytesTomados += t;
+      decididas.set(p.base, si);
+    }
+    return decididas.get(p.base);
+  };
   for (const fase of [0, 1, 2]) {
     const cola = pendientes.filter((p) => rango(p) === fase);
     let k = 0;
@@ -764,6 +918,7 @@ async function bajar(opts = {}) {
       while (k < cola.length && !fatal && !corto) {
         if (Date.now() - inicio > tope) { corto = true; return; }
         const p = cola[k++]; tomados += 1;
+        if (!entra(p)) { res.por_tope += 1; continue; }
         await bajarUno(p);
       }
     };
@@ -771,6 +926,9 @@ async function bajar(opts = {}) {
     if (fatal) return fin(...fatal);
     if (corto) { res.sin_tiempo = pendientes.length - tomados; break; }
   }
+  // lo que quedó por el tope es trabajo pendiente, como lo que quedó sin tiempo: la pasada no está entera, y la
+  // siguiente sigue (sources.js → buzon.seguir)
+  res.sin_tiempo += res.por_tope;
 
   if (noLeidos.length || malos.length) {
     if (noLeidos.length) res.no_leidos = noLeidos;
@@ -784,7 +942,7 @@ async function bajar(opts = {}) {
   return fin(0, res.bajados ? 'bajado' : (res.sin_tiempo ? 'sin_tiempo' : 'al_dia'));
 }
 
-module.exports = { bajar, informeDeReescrituras, informeNodePropio, leerListado, formaDelNombre, nombreMostrable, compararVersiones, VERSION_SOLO_CREAR, negativaDeLectura, carpetasDeMaquina };
+module.exports = { bajar, bajarUnaCorrida, informeDeReescrituras, informeNodePropio, leerListado, formaDelNombre, nombreMostrable, compararVersiones, VERSION_SOLO_CREAR, negativaDeLectura, carpetasDeMaquina };
 
 if (require.main === module) {
   require('../lib/legacy-names.js').aliasArgv('scripts/metrics/download-runs.js');

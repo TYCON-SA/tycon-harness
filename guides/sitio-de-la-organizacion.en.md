@@ -89,9 +89,13 @@ Whoever installs it provides the TLS: the platform, a proxy or a tunnel. The con
 
 ### The disk
 
-A persistent volume mounted as a folder at `SITE_DATA_DIR`. It holds the mirror of the mailbox with its conversations
-(about 1 GB), the clone of the operations repo and the last good configuration. **Without a volume the site still
-works**: it uses a temporary folder and says so. But what comes from the conversations in the Runs tab stays "not
+A persistent volume mounted as a folder at `SITE_DATA_DIR`. It holds the mirror of the mailbox (the runs' dumps and,
+with `site.mailbox.threads: true`, a small summary of each conversation) and the last good configuration. Conversations
+are not kept: each one is downloaded once, summarized and deleted, and a pass downloads at most 300 MB of conversations
+at a time. The repos' clones and the change texts go to the container's disk, never to the volume (a network disk
+mounted over SMB does not allow the `chmod` git does when cloning). Measured with a 6.9 GB mailbox: without
+the conversations it takes 163 MB, plus the summaries (a few kilobytes per run) and, while a pass lasts, up to 300 MB of
+conversations waiting to be summarized. **2 GB is enough**, with room to grow. **Without a volume the site still works**: it uses a temporary folder and says so. But what comes from the conversations in the Runs tab stays "not
 measured", every restart downloads everything again, and a restart resets the 24-hour window a broken configuration has
 before the site stops (and lifts the stop until it expires again).
 
@@ -126,7 +130,8 @@ Each installation says where each one is stored and how its value gets in. **No 
 | `SITE_MAILBOX_SAS` (or `SITE_MAILBOX_IDENTITY=managed`) | reading the runs in the mailbox | a read-and-list SAS (`rl`) tied to a stored access policy of the container, 6 months at most; or the platform identity with a read role on the container |
 | the notice channel | sending the morning notice | it does not reach the site: the night process uses it. Telegram: the token is for the whole bot, use a dedicated one. Slack or Teams: the webhook address IS the credential |
 | `SITE_OPERATIONS_WRITE_TOKEN` | proposing configuration changes from the site | on GitHub, fine-grained on the operations repo with `contents: write` and `pull_requests: write`; on Azure DevOps, a dedicated account with *Contribute*, *Create branch* and *Contribute to pull requests* on that repo only, *Force push* denied and no permission to bypass policies |
-| `SITE_PROFILE_REPO`, `SITE_PROFILE_TOKEN`, `SITE_PROFILE_WRITE_TOKEN`, `SITE_PIPELINES_TOKEN` | the optional parts of the Configuration tab | off by default: empty or commented out, never with a value; one dedicated identity and one repo per credential |
+| `SITE_PROFILE_REPO` and `SITE_PROFILE_TOKEN` | reading the team profile (where each repo lives, the packs) | part of the normal installation: without them the Configuration tab says "falta el repo del perfil" (the profile repo is missing). The address of the profile repo and a read-only code token on that repo (it can be the same permission as the operations repo's, if both live in the same organization) |
+| `SITE_PROFILE_WRITE_TOKEN`, `SITE_PIPELINES_TOKEN` | the optional parts of the Configuration tab | off by default: empty or commented out, never with a value; one dedicated identity and one repo per credential |
 
 `SITE_FIRST_MAINTAINER` is not a secret: it is the email of whoever signs in first as maintainer, while the list of
 maintainers (`site.maintainers` in `operations.json`) does not exist. Remove it afterwards.
@@ -191,7 +196,9 @@ the environment, and prints the address the site will have and the two callbacks
 opens external ingress at the end. If a step fails, ingress stays internal, and running it again continues where it
 stopped. It runs with your `az` session (it does not open a login). The configuration file holds subscription, group,
 region, names, tenant, the image by its digest and the client identifier, and no secret; the script header lists each
-key.
+key. The profile repo is part of the normal installation: its address goes in `profileRepo` in the file, and its token in
+`SITE_PROFILE_TOKEN`, in the environment of whoever runs the setup, like the other secrets. Without both, the
+Configuration tab says "falta el repo del perfil" (the profile repo is missing).
 
 - **Sign-in:** two locks. In front, the platform's built-in sign-in with the same Entra ID registration, single tenant
   and with "assignment required" (people are assigned one by one; assigning a group needs an Entra ID P1/P2 license).
@@ -335,7 +342,11 @@ code for the local view and the site's).
 - **Built in a separate thread**, with a memory ceiling: measured with 551 runs, 34 seconds and about 690 MB at peak.
   While it rebuilds, or if it fails, it serves the previous one whole with its time.
 - **Conversations, only with a disk** (`site.mailbox.threads: true` and `SITE_DATA_DIR`). Without that, what comes from
-  the thread says "not measured".
+  the thread says "not measured". With it, each conversation is downloaded once, in batches of up to 300 MB, and
+  summarized: the run's description, the time split and the list of changes. Then it is deleted from the disk. The table
+  and the detail come from the summary. The change texts (the patches) are downloaded when someone opens a run's
+  changes, and kept in a 200 MB cache on the container's disk; when it fills up, the ones opened longest ago are deleted.
+  The mirror deletes what is no longer in the mailbox.
 
 ### The morning notice and the check without a session
 
