@@ -951,6 +951,282 @@
             ]
           },
           "nota": "El mismo caso real, por la herramienta PowerShell: el guion descartaba todo lo que no fuera tool_name «Bash»."
+        },
+        {
+          "id": "ps-irm-con-erroraction-silentlycontinue-avisa",
+          "type": "must-block",
+          "_por_que": "Deuda SALIDA-VACIA-DE-COMANDO-FALLADO pagada el 2026-10-16: en Windows la consulta y la forma de tapar el error son las de PowerShell. -ErrorAction SilentlyContinue saca el error de la vista: vacío no es «no hay».",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+          ],
+          "stdin": {
+            "tool_name": "PowerShell",
+            "tool_input": {
+              "command": "Invoke-RestMethod -Uri $u -Headers $h -ErrorAction SilentlyContinue"
+            },
+            "tool_response": {
+              "stdout": "",
+              "stderr": ""
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "VACÍO",
+              "LASTEXITCODE"
+            ]
+          }
+        },
+        {
+          "id": "ps-irm-con-ea-0-avisa",
+          "type": "must-block",
+          "_por_que": "Deuda SALIDA-VACIA-DE-COMANDO-FALLADO pagada el 2026-10-16: en Windows la consulta y la forma de tapar el error son las de PowerShell. -EA 0 es la forma corta de lo mismo.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+          ],
+          "stdin": {
+            "tool_name": "PowerShell",
+            "tool_input": {
+              "command": "irm $u -EA 0"
+            },
+            "tool_response": {
+              "stdout": "",
+              "stderr": ""
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "VACÍO",
+              "LASTEXITCODE"
+            ]
+          }
+        },
+        {
+          "id": "ps-try-catch-vacio-avisa",
+          "type": "must-block",
+          "_por_que": "Deuda SALIDA-VACIA-DE-COMANDO-FALLADO pagada el 2026-10-16: en Windows la consulta y la forma de tapar el error son las de PowerShell. El catch vacío se come el error.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+          ],
+          "stdin": {
+            "tool_name": "PowerShell",
+            "tool_input": {
+              "command": "try { irm $u } catch { }"
+            },
+            "tool_response": {
+              "stdout": "",
+              "stderr": ""
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "VACÍO",
+              "LASTEXITCODE"
+            ]
+          }
+        },
+        {
+          "id": "ps-az-filtrado-por-where-object-avisa",
+          "type": "must-block",
+          "_por_que": "Deuda SALIDA-VACIA-DE-COMANDO-FALLADO pagada el 2026-10-16: en Windows la consulta y la forma de tapar el error son las de PowerShell. La tubería a un cmdlet: lo que se ve es lo del último.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+          ],
+          "stdin": {
+            "tool_name": "PowerShell",
+            "tool_input": {
+              "command": "az repos pr list --org https://dev.azure.com/org-del-equipo --status active | Where-Object { $_.title -like '*x*' }"
+            },
+            "tool_response": {
+              "stdout": "",
+              "stderr": ""
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "VACÍO",
+              "LASTEXITCODE"
+            ]
+          }
+        },
+        {
+          "id": "ps-az-cmd-con-findstr-avisa",
+          "type": "must-block",
+          "_por_que": "Deuda SALIDA-VACIA-DE-COMANDO-FALLADO pagada el 2026-10-16: en Windows la consulta y la forma de tapar el error son las de PowerShell. En Windows llega az.cmd; findstr es el grep de cmd.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+          ],
+          "stdin": {
+            "tool_name": "PowerShell",
+            "tool_input": {
+              "command": "az.cmd repos pr list --status active -o tsv | findstr Acme"
+            },
+            "tool_response": {
+              "stdout": "",
+              "stderr": ""
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "VACÍO",
+              "LASTEXITCODE"
+            ]
+          }
+        },
+        {
+          "id": "ps-write-host-de-cabecera-se-descuenta",
+          "type": "must-block",
+          "_por_que": "Deuda SALIDA-VACIA-DE-COMANDO-FALLADO pagada el 2026-10-16: en Windows la consulta y la forma de tapar el error son las de PowerShell. El encabezado de Write-Host no es salida de la consulta.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+          ],
+          "stdin": {
+            "tool_name": "PowerShell",
+            "tool_input": {
+              "command": "Write-Host '== PR =='; az repos pr list --status active | Select-String Acme"
+            },
+            "tool_response": {
+              "stdout": "== PR ==\n",
+              "stderr": ""
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "VACÍO",
+              "LASTEXITCODE"
+            ]
+          }
+        },
+        {
+          "id": "ps-irm-post-no-es-consulta",
+          "type": "must-stay-quiet",
+          "_por_que": "Deuda SALIDA-VACIA-DE-COMANDO-FALLADO pagada el 2026-10-16: en Windows la consulta y la forma de tapar el error son las de PowerShell. Una escritura: el vacío es lo esperado.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+          ],
+          "stdin": {
+            "tool_name": "PowerShell",
+            "tool_input": {
+              "command": "irm $u -Method Post -Body $b -ErrorAction SilentlyContinue"
+            },
+            "tool_response": {
+              "stdout": "",
+              "stderr": ""
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "ps-iwr-a-archivo-no-es-consulta",
+          "type": "must-stay-quiet",
+          "_por_que": "Deuda SALIDA-VACIA-DE-COMANDO-FALLADO pagada el 2026-10-16: en Windows la consulta y la forma de tapar el error son las de PowerShell. Descarga a archivo: no hay nada que ver en pantalla.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+          ],
+          "stdin": {
+            "tool_name": "PowerShell",
+            "tool_input": {
+              "command": "Invoke-WebRequest -Uri $u -OutFile salida.json -ErrorAction SilentlyContinue"
+            },
+            "tool_response": {
+              "stdout": "",
+              "stderr": ""
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "ps-irm-sin-tapar-no-avisa",
+          "type": "must-stay-quiet",
+          "_por_que": "Deuda SALIDA-VACIA-DE-COMANDO-FALLADO pagada el 2026-10-16: en Windows la consulta y la forma de tapar el error son las de PowerShell. Sin nada que tape el error, un fallo se ve: vacío es una respuesta.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+          ],
+          "stdin": {
+            "tool_name": "PowerShell",
+            "tool_input": {
+              "command": "irm $u"
+            },
+            "tool_response": {
+              "stdout": "",
+              "stderr": ""
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "ps-out-null-no-avisa",
+          "type": "must-stay-quiet",
+          "_por_que": "Deuda SALIDA-VACIA-DE-COMANDO-FALLADO pagada el 2026-10-16: en Windows la consulta y la forma de tapar el error son las de PowerShell. La salida se tira a propósito.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+          ],
+          "stdin": {
+            "tool_name": "PowerShell",
+            "tool_input": {
+              "command": "az repos pr list --status active | Out-Null"
+            },
+            "tool_response": {
+              "stdout": "",
+              "stderr": ""
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "ps-con-salida-no-avisa",
+          "type": "must-stay-quiet",
+          "_por_que": "Deuda SALIDA-VACIA-DE-COMANDO-FALLADO pagada el 2026-10-16: en Windows la consulta y la forma de tapar el error son las de PowerShell. Con algo en pantalla, la consulta contestó.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+          ],
+          "stdin": {
+            "tool_name": "PowerShell",
+            "tool_input": {
+              "command": "irm $u -ErrorAction SilentlyContinue | Select-Object -ExpandProperty value"
+            },
+            "tool_response": {
+              "stdout": "12\n",
+              "stderr": ""
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "ps-con-error-a-la-vista-no-avisa",
+          "type": "must-stay-quiet",
+          "_por_que": "Deuda SALIDA-VACIA-DE-COMANDO-FALLADO pagada el 2026-10-16: en Windows la consulta y la forma de tapar el error son las de PowerShell. Si el error igual salió por stderr, el modelo lo está viendo.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+          ],
+          "stdin": {
+            "tool_name": "PowerShell",
+            "tool_input": {
+              "command": "irm $u -ErrorAction SilentlyContinue | Select-Object name"
+            },
+            "tool_response": {
+              "stdout": "",
+              "stderr": "Invoke-RestMethod : (404) Not Found."
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
         }
       ]
     }
