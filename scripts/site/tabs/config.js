@@ -37,6 +37,8 @@ const { dentroDe } = require('../sources.js');
 const TREE = path.join(__dirname, '..', '..', '..');
 const CUERPO_MAX = 256 * 1024;
 const isObject = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
+// lo armado de la pestaña vale, a lo sumo, lo que el refresco de fondo de los datos
+const VIGENCIA_MS = 15 * 60 * 1000;
 const norm = (c) => String(c || '').trim().toLowerCase();
 const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
 const json = (status, obj) => ({ status, tipo: 'application/json; charset=utf-8', cuerpo: JSON.stringify(obj) });
@@ -430,11 +432,25 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     return html.replace('</head>', `<meta name="site-token" content="${tok.replace(/[^A-Za-z0-9_-]/g, '')}"><script src="/static/config.js" defer></script></head>`);
   }
 
+  // lo que cuesta armar —cada sección leída de su clon y validada con su lector, y el permiso de proponer, que pregunta
+  // a la plataforma de cada repo— se arma una vez y se sirve igual hasta que los datos de fondo se refrescan (el modelo
+  // y la configuración se reemplazan en cada pasada), hasta que pasa VIGENCIA_MS o hasta que alguien propone un cambio.
+  // Dos pedidos a la vez comparten el mismo armado
+  let guardado = null;
+  function leerTodoGuardado() {
+    const marca = [fuentes.modelo(), fuentes.config()];
+    if (guardado && guardado.marca.every((m, i) => m === marca[i]) && ahora() - guardado.t < VIGENCIA_MS) return guardado.promesa;
+    const promesa = leerTodo();
+    guardado = { marca, t: ahora(), promesa };
+    promesa.catch(() => { if (guardado && guardado.promesa === promesa) guardado = null; });
+    return promesa;
+  }
+
   const solo = ['maintainer'];
   return [
     { method: 'GET', path: '/configuracion', needs: solo, pestana: { id: 'configuracion', titulo: 'Configuración', orden: 90 }, handler: (ctx) => ({ status: 200, tipo: 'text/html; charset=utf-8', cuerpo: pagina(ctx) }) },
     { method: 'GET', path: '/static/config.js', needs: solo, handler: () => ({ status: 200, tipo: 'text/javascript; charset=utf-8', cuerpo: ORG.pantalla() }) },
-    { method: 'GET', path: '/api/config', needs: solo, handler: async () => json(200, await leerTodo()) },
+    { method: 'GET', path: '/api/config', needs: solo, handler: async () => json(200, await leerTodoGuardado()) },
     {
       method: 'POST', path: '/api/config/revisar', needs: solo, handler: async (ctx) => {
         const e = await escritura(ctx); if (e.error) return e.error;
@@ -454,7 +470,9 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
         const e = await escritura(ctx); if (e.error) return e.error;
         const s = ORG.seccionPorId(e.body && e.body.seccion);
         if (!s) return rechazo(400, 'sección desconocida');
-        return json(200, await proponer(s, e.body, ctx));
+        const r = await proponer(s, e.body, ctx);
+        guardado = null;
+        return json(200, r);
       },
     },
   ];

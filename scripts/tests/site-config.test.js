@@ -1335,3 +1335,32 @@ test('2.31-T13b ContentList_Screen_NoButtons — la tabla de lo que trae la orga
   assert.ok(todo.some((n) => n.tag === 'a' && n.attrs.href === respuesta.contenido[0].enlace), 'el enlace al archivo');
   assert.ok(!todo.some((n) => n.tag === 'button' || n.tag === 'input' || n.tag === 'select' || n.tag === 'textarea'), 'sin nada para editar');
 });
+
+// Navegar no vuelve a armar nada: abrir Configuración otra vez no lee cada sección ni
+// le pregunta de nuevo a la plataforma si se puede proponer; eso se rearma cuando se refrescan los datos de fondo, cuando
+// pasan 15 minutos o cuando alguien propone un cambio.
+// Sin esto, cada apertura hace 2 consultas por archivo a la plataforma (12 en total, de 2 a 7 s).
+test('Navegar_LoArmadoSeGuarda_HastaElRefrescoDeFondo', async () => {
+  let consultas = 0;
+  const fetch = async () => { consultas += 1; return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } }); };
+  let reloj = AHORA;
+  const remotos = { operaciones: { platform: 'github', org: 'acme', repo: 'ops', web: 'https://github.example/acme/ops' } };
+  const fuentes = fuentesCon({ ops: clon({ 'operations.json': opsBase() }) });
+  await conPestana({ fuentes, env: { SITE_OPERATIONS_WRITE_TOKEN: ESCRITURA }, opciones: { fetch, remotos, urlBase: { github: 'http://127.0.0.1:9' }, ahora: () => reloj } }, async ({ h, entrar }) => {
+    const lead = await entrar(LEAD);
+    const a = await h.pedir('/api/config', { cookie: lead });
+    assert.strictEqual(a.status, 200);
+    const primeras = consultas;
+    assert.ok(primeras > 0, 'la primera apertura pregunta a la plataforma');
+    const b = await h.pedir('/api/config', { cookie: lead });
+    assert.strictEqual(consultas, primeras, 'abrirla otra vez no pregunta de nuevo');
+    assert.strictEqual(b.texto, a.texto);
+    // los datos de fondo se refrescan: el modelo llega como un objeto nuevo
+    fuentes.st.modelo = { ...fuentes.st.modelo };
+    await h.pedir('/api/config', { cookie: lead });
+    assert.strictEqual(consultas, primeras * 2, 'datos de fondo nuevos: se arma de nuevo');
+    reloj += 15 * 60 * 1000;
+    await h.pedir('/api/config', { cookie: lead });
+    assert.strictEqual(consultas, primeras * 3, 'pasados 15 minutos, también');
+  });
+});
