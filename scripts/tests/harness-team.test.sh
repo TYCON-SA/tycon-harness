@@ -40,7 +40,7 @@
 # checkout real. 🔴 Sin pipes sobre el comando medido. El perfil del laboratorio (TYCON_PROFILE) se VACÍA: la variable le
 # ganaría al árbol y el perfil que se mide es el de la capa.
 #
-# Uso: bash scripts/tests/harness-team.test.sh [--only T3|T6|T7|T8|T9|T10|T11|T12|T33|TPN]
+# Uso: bash scripts/tests/harness-team.test.sh [--only T3|T6|T7|T8|T9|T9N|T10|T11|T12|T33|TPN]
 set -uo pipefail
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "$RAIZ/scripts/tests/lib/harness-lab.sh"
@@ -353,6 +353,49 @@ PY
   case "$OUT" in *"no se instala hasta que"*) ok "(e) …y dice que la versión nueva no se instala hasta que haya capa" ;; *) mal "(e) no lo dice: $OUT" ;; esac
   [ "$(estado "d['version']['number']")" = 2026.10.08.5 ] && ok "(e) la máquina quedó en 2026.10.08.5" || mal "(e) versión: $(estado "d['version']['number']")"
   harness_lab_release_control '{ "auth": "none" }'
+  kill "$LAB_RELEASE_PROCESS" 2>/dev/null
+fi
+
+# ───────────────────────────────────────────── T9N ────────────────────────────────────────────────────────────────────
+# Una versión nueva que acepta en la capa una ruta que la instalada no conoce: quien valida la punta del equipo al instalar
+# es el código que corre (el de la versión instalada), que la rechaza y arrastra la capa vieja. Sin más, la versión nueva
+# queda con una capa vieja hasta otro arranque, y si la versión nueva sacó piezas que ahora trae la capa, la máquina se
+# queda sin ellas. Después del cambio, la capa se vuelve a intentar con el código de la versión nueva, en la misma corrida.
+if corre T9N; then
+  echo "T9N · update: la punta que sólo acepta la versión nueva se apila en la misma corrida, con el código de esa versión"
+  lab_team "$BASE/lab9n"
+  instala_team
+  [ "$INSTALL_RC" = 0 ] && ok "instalada con la capa" || mal "install: rc $INSTALL_RC: $INSTALL_OUT"
+  C0="$(team_head)"
+  # la versión nueva: su lista cerrada de la capa acepta notes/<nombre>.md; la instalada no
+  TEAM_NEW="$(python3 - "$LAB_AUTHOR_TREE/scripts/setup/harness/team.js" <<'PY'
+import sys
+t = open(sys.argv[1], encoding='utf-8').read()
+a = 'const LAYER_PATTERNS = Object.freeze([\n'
+assert t.count(a) == 1, 'LAYER_PATTERNS no está una sola vez'
+sys.stdout.write(t.replace(a, a + '  new RegExp(`^notes/${SEG}\\\\.md$`),\n'))
+PY
+)"
+  [ -n "$TEAM_NEW" ] && ok "la versión nueva acepta notes/<nombre>.md" || mal "no pude armar el team.js de la versión nueva"
+  harness_lab_publish_stable 2026.10.08.2 scripts/setup/harness/team.js "$TEAM_NEW"
+  mkdir -p "$LAB_AUTHOR_TEAM/notes" && printf '# una nota del equipo\n' > "$LAB_AUTHOR_TEAM/notes/extra.md"
+  harness_lab_team_publish "una ruta que sólo la versión nueva acepta"
+  C1="$(team_head)"
+  OUT="$(harness_release update --yes 2>&1)"; RC=$?
+  [ "$RC" = 0 ] && ok "update sale 0" || mal "update rc $RC: $OUT"
+  [ "$(estado "d['version']['number']")" = 2026.10.08.2 ] && ok "la versión nueva quedó instalada" || mal "versión: $(estado "d['version']['number']")"
+  [ "$(estado "d['team']['commit']")" = "$C1" ] && [ -f "$(NEW)/notes/extra.md" ] && [ "$(j "$(NEW)/.tycon-team.json" "d['commit']")" = "$C1" ] \
+    && ok "la capa nueva ($(printf '%s' "$C1" | cut -c1-7)) quedó apilada en la misma corrida" \
+    || mal "la capa quedó en $(estado "d.get('team',{}).get('commit','—')[:7]") (la vieja era $(printf '%s' "$C0" | cut -c1-7)); notes/extra.md: $([ -f "$(NEW)/notes/extra.md" ] && echo está || echo falta) · $OUT"
+  case "$OUT" in *"con el código de la versión nueva"*) ok "…y lo dice" ;; *) mal "no dice que la capa se apiló con el código de la versión nueva: $OUT" ;; esac
+  # una punta que tampoco acepta la versión nueva: la capa sigue arrastrada, la versión se instala y se dice por qué
+  mkdir -p "$LAB_AUTHOR_TEAM/nadie" && printf 'x\n' > "$LAB_AUTHOR_TEAM/nadie/acepta.md"
+  harness_lab_team_publish "una ruta que ninguna versión acepta"
+  harness_lab_publish_stable 2026.10.08.3
+  OUT="$(harness_release update --yes 2>&1)"; RC=$?
+  [ "$RC" = 0 ] && [ "$(estado "d['version']['number']")" = 2026.10.08.3 ] && ok "una punta que nadie acepta: la versión nueva igual se instala (rc 0)" || mal "punta inválida: rc $RC $(estado "d['version']['number']"): $OUT"
+  [ "$(estado "d['team']['commit']")" = "$C1" ] && [ -f "$(NEW)/notes/extra.md" ] && ok "…la capa sigue en $(printf '%s' "$C1" | cut -c1-7)" || mal "…la capa cambió: $(estado "d.get('team')")"
+  case "$OUT" in *"nadie/acepta.md"*) ok "…y dice la ruta que la versión nueva tampoco acepta" ;; *) mal "no dice la ruta rechazada: $OUT" ;; esac
   kill "$LAB_RELEASE_PROCESS" 2>/dev/null
 fi
 
