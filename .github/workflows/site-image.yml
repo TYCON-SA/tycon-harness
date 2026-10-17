@@ -54,7 +54,7 @@ jobs:
           VERSION=""
           for _ in $(seq 1 40); do
             VERSION=$(git ls-remote --tags "https://github.com/${GITHUB_REPOSITORY}.git" 'refs/tags/v*' \
-              | awk -v s="$GITHUB_SHA" '$1 == s { sub("^refs/tags/v", "", $2); sub("\\^\\{\\}$", "", $2); print $2; exit }')
+              | awk -v s="$GITHUB_SHA" '$1 == s && !visto { sub("^refs/tags/v", "", $2); sub("\\^\\{\\}$", "", $2); print $2; visto = 1 }')
             [ -n "$VERSION" ] && break
             sleep 15
           done

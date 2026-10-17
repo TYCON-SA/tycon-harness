@@ -92,6 +92,9 @@ test('T3b Imagen_VersionDelMergeYFirmaConLaSesionAbierta @story-2.30 @ac-1', () 
   assert.doesNotMatch(t, /require\('\.\/version\.json'\)/, 'la versión no sale de version.json');
   assert.match(t, /git ls-remote --tags "https:\/\/github\.com\/\$\{GITHUB_REPOSITORY\}\.git" 'refs\/tags\/v\*'/, 'se busca la etiqueta del merge');
   assert.match(t, /awk -v s="\$GITHUB_SHA" '\$1 == s/, 'la etiqueta de este commit, no otra');
+  // con `set -o pipefail`, un awk que sale antes de leer todo corta la tubería (código 141) y tumba el paso: lee hasta el final
+  const programa = (t.match(/awk -v s="\$GITHUB_SHA" '([^']*)'/) || [])[1] || '';
+  assert.ok(programa && !/\bexit\b/.test(programa), `el awk no sale antes de tiempo: ${programa}`);
   assert.match(t, /printf '\{ "version": "%s" \}\\n' "\$VERSION" > \.tycon-release\.json/, 'la versión viaja adentro de la imagen');
   // sin etiqueta no se publica una imagen con otro número: se dice y no se firma
   assert.match(t, /::warning::este commit no recibió la etiqueta del merge/);
