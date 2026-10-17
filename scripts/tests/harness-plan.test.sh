@@ -503,8 +503,7 @@ fi
 # 🔴 rojo previo: el plan del .sh comparaba la marca entera y decía «add» para los bloques que la persona ya tiene.
 if corre REG; then
   H4="$T/reg5"; rm -rf "$H4"; mkdir -p "$H4/.claude"
-  # los bloques de un archivo y los de una carpeta de variantes (`response-style/`; `names/` son las de Codex)
-  for n in $(cd "$RAIZ/claude-md-blocks" && for f in *.md; do echo "${f%.md}"; done; for d in */; do d="${d%/}"; [ "$d" = names ] || echo "$d"; done); do
+  for f in "$RAIZ"/claude-md-blocks/*.md; do n="$(basename "$f" .md)"
     printf '<!-- TYCON_BLOCK:%s START — generado por una marca de antes · NO EDITAR A MANO -->\nviejo\n<!-- TYCON_BLOCK:%s END -->\n\n' "$n" "$n" >> "$H4/.claude/CLAUDE.md"
   done
   : > "$H4/plan.tsv"

@@ -28,9 +28,8 @@ TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 ok(){ echo "✅ sync-codex: $1"; }
 no(){ echo "❌ sync-codex: $1"; fallos=$((fallos+1)); }
 fallos=0
-# el bloque de referencia es el de estilo; desde la story 2.31 es una carpeta de variantes (`response-style/`)
-BLK="$AQUI/claude-md-blocks/response-style"
-[ -d "$BLK" ] || { echo "⚠️ sin bloque de referencia — salteado"; exit 0; }
+BLK="$AQUI/claude-md-blocks/response-style.md"
+[ -f "$BLK" ] || { echo "⚠️ sin bloque de referencia — salteado"; exit 0; }
 marca(){ grep -c 'TYCON_BLOCK:response-style START' "$1" 2>/dev/null || echo 0; }
 
 corre(){ CLAUDE_MD_PATH="$TMP/CLAUDE.md" CODEX_AGENTS_MD_PATH="$TMP/AGENTS.md" \

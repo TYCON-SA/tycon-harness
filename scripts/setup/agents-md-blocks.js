@@ -40,6 +40,7 @@ const TOOL = 'codex';
 const PROFILES = ['minimal', 'full'];
 const REQUIRES_RE = /^<!--\s*requires-integration:\s*([a-z]+)\s*-->\s*$/;
 const PROFILE_RE = /^<!--\s*requires-profile:\s*([a-z]+(?:\s*,\s*[a-z]+)*)\s*-->\s*$/;
+const VARIANTS_RE = /^<!--\s*variants:\s*(response)\s*-->\s*$/;
 const LOOKS_LIKE_REQUIRES_RE = /^\s*<!--\s*requires-integration\b/i;
 const LOOKS_LIKE_PROFILE_RE = /^\s*<!--\s*requires-profile\b/i;
 
@@ -82,7 +83,14 @@ function readBlock(file) {
       break;   // la primera línea con texto es otra cosa: el cuerpo
     }
   }
-  return { body: trimNewlines(rest.join('\n')), requires, profiles, bad };
+  // `<!-- variants: response -->` entre los marcadores de arriba (story 2.31): el texto sale de la carpeta del bloque
+  let variants = null;
+  for (const line of lines) {
+    const v = VARIANTS_RE.exec(line);
+    if (v) { variants = v[1]; break; }
+    if (!REQUIRES_RE.test(line) && !PROFILE_RE.test(line)) break;
+  }
+  return { body: trimNewlines(rest.join('\n')), requires, profiles, bad, variants };
 }
 
 /** Los bloques a escribir, en orden de nombre: cada uno con el cuerpo que le toca a Codex (la variante, si existe). */
@@ -97,30 +105,16 @@ function loadBlocks(blocksDir) {
     const b = readBlock(full);
     const variant = path.join(blocksDir, 'names', `${name}.${TOOL}.md`);
     if (fs.existsSync(variant)) b.body = trimNewlines(fs.readFileSync(variant, 'utf8').replace(/^﻿/, ''));
+    // un bloque que declara `<!-- variants: response -->` (story 2.31) toma su texto de la carpeta del mismo nombre
+    if (b.variants) b.variantDir = path.join(blocksDir, name);
     out.push(Object.assign({ name }, b));
-  }
-  // los bloques con variantes (story 2.31): una carpeta `<bloque>/` con `<estilo>.<idioma>.md`; `names/` es otra cosa
-  for (const d of fs.readdirSync(blocksDir).sort()) {
-    const full = path.join(blocksDir, d);
-    // sólo cuenta una carpeta con algún `<estilo>.<idioma>.md`: otro .md anidado no es un bloque. Una carpeta que no se
-    // deja leer cuenta como bloque sin texto elegible: queda como estaba y se avisa (no desaparece callada)
-    let ilegible = false;
-    // un enlace roto (o lo que no es carpeta) no es un bloque, como en el .sh y el .ps1
-    let esCarpeta = false;
-    try { esCarpeta = fs.statSync(full).isDirectory(); } catch (_) { esCarpeta = false; }
-    if (d === 'names' || !esCarpeta) continue;
-    try {
-      if (!fs.readdirSync(full).some((f) => /^[a-z]+\.[a-z]{2}\.md$/.test(f))) continue;
-    } catch (_) { ilegible = true; }
-    // un archivo y una carpeta con el mismo nombre: gana el archivo (en las tres implementaciones)
-    if (out.some((b) => b.name === d)) continue;
-    out.push({ name: d, variantDir: full, unreadable: ilegible, body: null, requires: null, profiles: null, bad: null });
   }
   return out.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 }
 
 /** `{ file }` con la variante que eligió la configuración (`<estilo>.<idioma>.md`), o `{ why }` si no se pudo elegir. */
 function pickVariant(dir, { response, responseWhy }) {
+  try { fs.readdirSync(dir); } catch (_) { return { why: 'no pude leer su carpeta de variantes' }; }
   if (!response) return { why: responseWhy || 'no pude leer la configuración' };
   const file = path.join(dir, `${response.style}.${response.language}.md`);
   return fs.existsSync(file) ? { file } : { why: `no hay texto para el estilo «${response.style}» en «${response.language}»` };
@@ -178,8 +172,10 @@ function applyBlocks(original, blocks, facts) {
     const j0 = i0 === -1 ? -1 : content.indexOf(end, i0);
     const existingBody = j0 === -1 ? '' : content.slice(content.indexOf('\n', i0) + 1, j0);
     let b = b0;
-    if (b0.variantDir) {
-      const v = b0.unreadable ? { why: 'no pude leer su carpeta de variantes' } : pickVariant(b0.variantDir, facts);
+    // un bloque con variantes mira primero sus propias condiciones (perfil, integración), como cualquier otro; recién
+    // prendido elige el texto. Apagado o sin saber, sigue por el camino común (y sin saber no se toca, abajo)
+    if (b0.variantDir && blockState(b0, facts).state === 'on') {
+      const v = pickVariant(b0.variantDir, facts);
       if (v.why) {
         // no se pudo elegir el texto: no se inventa uno; lo que había queda tal cual, sin actualizar (story 2.31, AC 6)
         notes.push(`⚠ tycon: bloque AGENTS.md '${b0.name}': no pude saber cómo tiene que contestar el asistente (${v.why}): ${i0 === -1 ? 'no se agrega' : 'queda como estaba'}`);
@@ -199,6 +195,11 @@ function applyBlocks(original, blocks, facts) {
       if (b.bad) notes.push(`⚠ tycon: bloque AGENTS.md '${b.name}': su marcador ${b.bad[0] === 'integration' ? 'requires-integration' : 'requires-profile'} está mal escrito o repetido (${b.bad[1]}): ${outcome}`);
       else if (why[0] === 'profile') notes.push(`⚠ tycon: bloque AGENTS.md '${b.name}' requiere el perfil «${b.profiles.join(', ')}» y no pude saber cuál tiene esta máquina (${why[1]}): ${outcome}`);
       else notes.push(`⚠ tycon: bloque AGENTS.md '${b.name}' requiere la integración «${b.requires}» y no pude saber si está prendida (${why[1]}): ${outcome}`);
+      if (b0.variantDir) {
+        // sin saber sus condiciones no se elige texto: lo que había queda tal cual (su archivo sólo trae la marca)
+        if (j0 !== -1) finals[b0.name] = content.slice(i0, j0 + end.length); else delete finals[b0.name];
+        continue;
+      }
     }
     if (i === -1) {
       if (state !== 'on') continue;

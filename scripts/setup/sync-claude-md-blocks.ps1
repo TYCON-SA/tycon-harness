@@ -22,8 +22,8 @@
 #   .\sync-claude-md-blocks.ps1 -Check   # reporta qué está desactualizado, no modifica
 #
 # -Given (story 8.36; lo pasa install-tycon-hooks.ps1): lo que el lector de configuración ya le contestó al aplicador en
-# esta misma corrida —@{ ProfileRc; ProfileOut; IntegRc; IntegOut }, el código y la salida de `get install.profile` y de
-# `integrations --json`—. Con eso no vuelve a lanzar Node para preguntarlo; lo interpreta igual. Sin -Given (corrido
+# esta misma corrida —@{ ProfileRc; ProfileOut; IntegRc; IntegOut; RespRc; RespOut }, el código y la salida de
+# `get install.profile`, de `integrations --json` y de `response --json` (story 2.31)—. Con eso no vuelve a lanzar Node para preguntarlo; lo interpreta igual. Sin -Given (corrido
 # suelto), pregunta como siempre.
 
 param([switch]$Check, [hashtable]$Given)
@@ -168,18 +168,47 @@ function Get-SyncIntegrationState([string]$Name, [string]$Reader) {
     return @{ State = 'on'; Why = $null }
 }
 
+# Story 2.31: on · off · unknown según los marcadores de un bloque (los mismos criterios que el bucle de abajo), para
+# que un bloque con variantes mire sus condiciones antes de elegir el texto.
+function Get-SyncStubState([hashtable]$Block, [string]$Reader) {
+    if ($Block.BadMarker) { return 'unknown' }
+    $states = @()
+    if ($Block.Requires) { $states += (Get-SyncIntegrationState $Block.Requires $Reader).State }
+    if ($Block.Profiles) {
+        $pr = Get-SyncProfile $Reader
+        $states += $(if ($null -eq $pr.Value) { 'unknown' } elseif ($Block.Profiles -contains $pr.Value) { 'on' } else { 'off' })
+    }
+    if ($states -contains 'off') { return 'off' }
+    if ($states -contains 'unknown') { return 'unknown' }
+    return 'on'
+}
+
+# Story 2.31, como el .sh: ¿el bloque declara `<!-- variants: response -->` entre sus marcadores de arriba?
+function Test-SyncVariants([string]$Path) {
+    try { $lines = (ConvertTo-SyncLf ([IO.File]::ReadAllText($Path))).Split([char]10) } catch { return $false }
+    foreach ($l in $lines) {
+        if ($l -cmatch '^<!--\s*variants:\s*response\s*-->\s*$') { return $true }
+        if (-not ($l -match '^<!--\s*requires-integration:\s*[a-z]+\s*-->\s*$' -or $l -match '^<!--\s*requires-profile:\s*[a-z]+(\s*,\s*[a-z]+)*\s*-->\s*$')) { return $false }
+    }
+    return $false
+}
+
 # Story 2.31, como el .sh: cómo contesta el asistente (idioma, estilo y tope, ya resueltos por el lector), una sola vez:
 # @{ Data; Why }. Un bloque con variantes es una carpeta `claude-md-blocks/<bloque>/` con `<estilo>.<idioma>.md`.
 $script:SyncResponse = $null
 function Get-SyncResponse([string]$Reader) {
     if ($null -eq $script:SyncResponse) {
         $data = $null; $why = $null
-        if (-not (Test-Path $Reader)) { $why = 'no encontré el lector de configuración (scripts/lib/tycon-config.js)' }
-        elseif (-not (Get-Command node -ErrorAction SilentlyContinue)) { $why = 'falta node en el PATH' }
+        $known = $Given -and $Given.ContainsKey('RespRc')   # ya lo leyó el aplicador (ver -Given, arriba)
+        if (-not $known -and -not (Test-Path $Reader)) { $why = 'no encontré el lector de configuración (scripts/lib/tycon-config.js)' }
+        elseif (-not $known -and -not (Get-Command node -ErrorAction SilentlyContinue)) { $why = 'falta node en el PATH' }
         else {
             try {
-                $out = & node $Reader response --json 2>$null
-                $rc = $LASTEXITCODE
+                if ($known) { $out = $Given.RespOut; $rc = $Given.RespRc }
+                else {
+                    $out = & node $Reader response --json 2>$null
+                    $rc = $LASTEXITCODE
+                }
                 if ($rc -eq 2) { $why = 'configuración rota: `node scripts/lib/tycon-config.js validate` dice qué' }
                 elseif ($rc -ne 0) { $why = "el lector de configuración falló (exit $rc)" }
                 else {
@@ -220,22 +249,11 @@ try {
     if (-not (Test-Path $blocksDir)) { exit 0 }
 
     $files = @(Get-ChildItem -Path $blocksDir -Filter '*.md' -File | Sort-Object Name)
-    # los bloques con variantes (story 2.31): una carpeta con `<estilo>.<idioma>.md`; `names` son las variantes de Codex
-    # (sólo cuenta una carpeta con algún `<estilo>.<idioma>.md`: otro .md anidado no es un bloque)
-    # (una carpeta que no se deja leer cuenta como bloque sin texto elegible: queda como estaba y se avisa)
-    $unreadable = @{}
-    $variantDirs = @(Get-ChildItem -Path $blocksDir -Directory | Where-Object {
-        $dir = $_
-        if ($dir.Name -ceq 'names') { return $false }
-        try { return [bool]@([IO.Directory]::GetFiles($dir.FullName) | Where-Object { [IO.Path]::GetFileName($_) -cmatch '^[a-z]+\.[a-z]{2}\.md$' }).Count }
-        catch { $unreadable[$dir.FullName] = $true; return $true }
-    })
-    # un archivo y una carpeta con el mismo nombre: gana el archivo (como el .sh y agents-md-blocks.js); el orden, por
-    # código de carácter, igual que ellos (Sort-Object compara con reglas de idioma y ordenaba distinto)
-    $fileNames = @{}; foreach ($f in $files) { $fileNames[[IO.Path]::GetFileNameWithoutExtension($f.Name)] = $true }
+    # Cada bloque es un `.md` de la raíz; uno que declara `<!-- variants: response -->` (story 2.31) toma su texto de la
+    # carpeta del mismo nombre (como el .sh y agents-md-blocks.js). El orden, por código de carácter, igual que ellos
+    # (Sort-Object compara con reglas de idioma y ordenaba distinto)
     $list = New-Object System.Collections.Generic.List[object]
-    foreach ($f in $files) { $list.Add([pscustomobject]@{ Name = [IO.Path]::GetFileNameWithoutExtension($f.Name); Path = $f.FullName; Variant = $false }) }
-    foreach ($d in $variantDirs) { if (-not $fileNames.ContainsKey($d.Name)) { $list.Add([pscustomobject]@{ Name = $d.Name; Path = $d.FullName; Variant = $true }) } }
+    foreach ($f in $files) { $list.Add([pscustomobject]@{ Name = [IO.Path]::GetFileNameWithoutExtension($f.Name); Path = $f.FullName; Variant = (Test-SyncVariants $f.FullName) }) }
     $list.Sort([Comparison[object]] { param($a, $b) [string]::CompareOrdinal($a.Name, $b.Name) })
     $entries = $list.ToArray()   # (@($list) sobre una List genérica falla en pwsh: «Argument types do not match»)
     if ($entries.Count -eq 0) { exit 0 }
@@ -262,11 +280,17 @@ try {
         $j0 = if ($i0 -ge 0) { $content.IndexOf($end, $i0) } else { -1 }
         $existingBody = ''
         if ($j0 -ge 0) { $nl = $content.IndexOf("`n", $i0) + 1; if ($nl -gt 0 -and $nl -le $j0) { $existingBody = $content.Substring($nl, $j0 - $nl) } }
-        if ($e.Variant) {
-            $resp = if ($unreadable.ContainsKey($e.Path)) { @{ Data = $null; Why = 'no pude leer su carpeta de variantes' } } else { Get-SyncResponse $configReader }
+        # un bloque con variantes mira primero sus propias condiciones (perfil, integración), como cualquier otro; recién
+        # prendido elige el texto. Apagado o sin saber, sigue por el camino común (y sin saber no se toca, abajo)
+        $chosen = $false
+        if ($e.Variant -and (Get-SyncStubState (Read-SyncBlock $e.Path) $configReader) -eq 'on') {
+            $chosen = $true
+            $variantDir = Join-Path $blocksDir $name
+            $legible = $true; try { [void][IO.Directory]::GetFiles($variantDir) } catch { $legible = $false }
+            $resp = if (-not $legible) { @{ Data = $null; Why = 'no pude leer su carpeta de variantes' } } else { Get-SyncResponse $configReader }
             $vwhy = $resp.Why
             if ($resp.Data) {
-                $blockPath = Join-Path $e.Path "$($resp.Data.style).$($resp.Data.language).md"
+                $blockPath = Join-Path $variantDir "$($resp.Data.style).$($resp.Data.language).md"
                 if (-not (Test-Path $blockPath)) { $vwhy = "no hay texto para el estilo «$($resp.Data.style)» en «$($resp.Data.language)»" }
             }
             if ($vwhy) {
@@ -278,7 +302,7 @@ try {
         }
         $block = Read-SyncBlock $blockPath
         $body = $block.Body
-        if ($e.Variant) {
+        if ($chosen) {
             $n = [long]$resp.Data.max_chars
             $body = $body.Replace('{{max_chars}}', "$n").Replace('{{max_lines}}', "$([long][Math]::Floor(($n + 50) / 100))")
         }
@@ -322,6 +346,11 @@ try {
                 $unknown += "⚠ tycon: bloque CLAUDE.md '$name' requiere el perfil «$($profiles -join ', ')» y no pude saber cuál tiene esta máquina (${why}): $fate"
             } else {
                 $unknown += "⚠ tycon: bloque CLAUDE.md '$name' requiere la integración «$requires» y no pude saber si está prendida (${why}): $fate"
+            }
+            if ($e.Variant) {
+                # sin saber sus condiciones no se elige texto: lo que había queda tal cual (su archivo sólo trae la marca)
+                if ($j0 -ge 0) { $final[$name] = $content.Substring($i0, $j0 + $end.Length - $i0) } else { $final.Remove($name) }
+                continue
             }
         }
         if ($i -lt 0) {

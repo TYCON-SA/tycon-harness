@@ -219,9 +219,31 @@ def ask_response():
     _response.append((data, why))
     return _response[0]
 
+VARIANTS_RE = re.compile(r"^<!--\s*variants:\s*(response)\s*-->\s*$")
+
+def variants_of(path):
+    """La configuración que elige el texto del bloque (`response`) si sus primeras líneas lo declaran
+    (`<!-- variants: response -->`, junto a los otros marcadores), o None: un bloque común."""
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            lines = fh.read().lstrip("﻿").split("\n")
+    except OSError:
+        return None
+    for line in lines:
+        v = VARIANTS_RE.match(line)
+        if v:
+            return v.group(1)
+        if not (REQUIRES_RE.match(line) or PROFILE_RE.match(line)):
+            return None
+    return None
+
 def variant_file(directory):
-    """(archivo de la variante elegida, None) o (None, por qué no se pudo elegir). Un bloque con variantes es una carpeta
-    `claude-md-blocks/<bloque>/` con `<estilo>.<idioma>.md` (story 2.31: hoy, response-style)."""
+    """(archivo de la variante elegida, None) o (None, por qué no se pudo elegir). Las variantes de un bloque viven en la
+    carpeta del mismo nombre, `claude-md-blocks/<bloque>/<estilo>.<idioma>.md` (story 2.31: hoy, response-style)."""
+    try:
+        os.listdir(directory)
+    except OSError:
+        return None, "no pude leer su carpeta de variantes"
     data, why = ask_response()
     if data is None:
         return None, why
@@ -371,23 +393,10 @@ def atomic_write(path, content, original, label):
 
 try:
     files = sorted(glob.glob(os.path.join(blocks_dir, "*.md")))
-    # los bloques con variantes (story 2.31): una carpeta con `<estilo>.<idioma>.md`; `names/` son las variantes de Codex
-    # (sólo cuenta una carpeta con algún `<estilo>.<idioma>.md`: otro .md anidado no es un bloque; una que no se deja
-    # leer cuenta como bloque sin texto elegible: queda como estaba y se avisa, no desaparece callada)
-    unreadable = set()
-    def is_variant_dir(d):
-        if not os.path.isdir(d) or os.path.basename(d) == "names":
-            return False
-        try:
-            return any(re.match(r"^[a-z]+\.[a-z]{2}\.md$", f) for f in os.listdir(d))
-        except OSError:
-            unreadable.add(d)
-            return True
-    variant_dirs = sorted(d for d in glob.glob(os.path.join(blocks_dir, "*")) if is_variant_dir(d))
-    # un archivo y una carpeta con el mismo nombre: gana el archivo (en las tres implementaciones); orden por nombre
-    file_names = set(os.path.splitext(os.path.basename(p))[0] for p in files)
-    entries = sorted([(os.path.splitext(os.path.basename(p))[0], p, False) for p in files]
-                     + [(os.path.basename(d), d, True) for d in variant_dirs if os.path.basename(d) not in file_names],
+    # Cada bloque es un `.md` de la raíz (el contrato que leen el instalador, la desinstalación y sus pruebas). Uno que
+    # declara `<!-- variants: response -->` (story 2.31) toma su texto de la carpeta del mismo nombre; una carpeta sola,
+    # sin su archivo, no es un bloque. Orden por nombre, por código de carácter, en las tres implementaciones.
+    entries = sorted([(os.path.splitext(os.path.basename(p))[0], p, variants_of(p) is not None) for p in files],
                      key=lambda e: e[0])
     if not entries:
         sys.exit(0)
@@ -416,8 +425,10 @@ try:
         j0 = content.find(end, i) if i != -1 else -1
         existing_body = content[content.find("\n", i) + 1:j0] if j0 != -1 else ""
 
-        if is_variant:
-            vpath, vwhy = (None, "no pude leer su carpeta de variantes") if path in unreadable else variant_file(path)
+        # un bloque con variantes mira primero sus propias condiciones (perfil, integración), como cualquier otro; recién
+        # prendido elige el texto. Apagado o sin saber, sigue por el camino común (y sin saber no se toca, abajo)
+        if is_variant and block_state(*read_block(path)[1:])[0] == "on":
+            vpath, vwhy = variant_file(os.path.join(blocks_dir, name))
             if vpath is None:
                 # no se pudo elegir el texto (configuración rota, un estilo sin texto): no se inventa uno; lo que
                 # había queda tal cual, sin actualizar (story 2.31, AC 6)
@@ -429,7 +440,7 @@ try:
             path = vpath
 
         body, requires, profiles, bad_marker = read_block(path)
-        if is_variant:
+        if is_variant and path.endswith(".md") and os.path.dirname(path) != blocks_dir:
             body = fill_variant(body)
         body = filter_rows(body, existing_body)
         state, why = block_state(requires, profiles, bad_marker)
@@ -452,6 +463,11 @@ try:
             else:
                 unknown.append("⚠ tycon: bloque CLAUDE.md '%s' requiere la integración «%s» y no pude saber si está "
                                "prendida (%s): %s" % (name, requires, why[1], outcome))
+            if is_variant:
+                # sin saber sus condiciones no se elige texto: lo que había queda tal cual (su archivo sólo trae la marca)
+                if j0 != -1:
+                    final[name] = content[i:j0 + len(end)]
+                continue
         if i == -1:
             if state != "on":
                 continue

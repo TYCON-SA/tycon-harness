@@ -244,6 +244,8 @@ function medir({ repo, staged }) {
     // en una carpeta, sólo `<estilo>.<idioma>.md` es una variante (lo mismo que mira el sincronizador); otro .md
     // anidado no viaja a ninguna máquina y no se mide (ni se le mira el título)
     if (enCarpeta && !VARIANTE_DE_ESTILO.test(path.basename(rel))) continue;
+    // y sólo si su bloque existe (`<carpeta>.md` en la raíz, que declara sus variantes): una carpeta suelta no viaja
+    if (enCarpeta && leer(`${DIR}/${path.basename(path.dirname(rel))}.md`) === null) continue;
     if (rel.startsWith(`${DIR}/names/`) && !rel.endsWith('.codex.md')) continue;
     for (const t of titulosConHistoria(c0)) titulos.push({ ruta: rel, titulo: t });
     // una variante de estilo se mide con el tope más largo que acepta el lector: es lo que puede viajar
@@ -275,7 +277,12 @@ function medir({ repo, staged }) {
     const base = path.basename(rel).replace(/\.codex\.md$/, '').replace(/\.md$/, '');
     if (codex.has(base)) codex.set(base, Buffer.byteLength(leer(rel) || '', 'utf8'));
   }
-  for (const [base, bytes] of estilos) { sumaClaude += bytes; if (!codex.has(base)) codex.set(base, bytes); }
+  // un bloque con variantes pesa lo que su variante más pesada (su archivo sólo declara la marca), en los dos lados,
+  // salvo que tenga su propia variante de Codex en names/
+  for (const [base, bytes] of estilos) {
+    sumaClaude += bytes;
+    if (!rutas.includes(`${DIR}/names/${base}.codex.md`)) codex.set(base, bytes);
+  }
   for (const v of codex.values()) sumaCodex += v;
   // ── los archivos importados enteros en cada sesión (7.4) ──
   const importados = [];

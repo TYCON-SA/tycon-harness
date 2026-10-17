@@ -215,7 +215,10 @@ test('T14 Budget_EveryStyleVariantFitsCeiling @story-2.31 @ac-20 —las seis var
       assert.ok(bytes <= ceiling, `${s}.${lang}: ${bytes} > ${ceiling}`);
     }
   }
-  assert.ok(!fs.existsSync(path.join(BLOCKS, 'response-style.md')), 'el bloque único se reemplazó por sus variantes');
+  // el contrato que leen el instalador, la desinstalación y sus pruebas: cada bloque es un `.md` en la raíz de la carpeta;
+  // el de estilo declara que su texto sale de la carpeta de variantes del mismo nombre
+  const stub = read(path.join(BLOCKS, 'response-style.md'));
+  assert.match(stub, /^<!-- requires-profile: full -->\n<!-- variants: response -->\n/, 'response-style.md declara sus variantes');
 });
 
 // ── pase adversarial: las tres implementaciones dan lo mismo en los bordes ───────────────────────────────────────
@@ -225,6 +228,9 @@ function arbol(bloques) {
   fs.mkdirSync(path.join(t, 'scripts', 'setup'), { recursive: true });
   fs.cpSync(path.join(ROOT, 'scripts', 'lib'), path.join(t, 'scripts', 'lib'), { recursive: true });
   for (const f of ['sync-claude-md-blocks.sh', 'sync-claude-md-blocks.ps1', 'agents-md-blocks.js']) fs.copyFileSync(path.join(ROOT, 'scripts', 'setup', f), path.join(t, 'scripts', 'setup', f));
+  // el lector del perfil de instalación que usa el escritor de Codex (sin él, todo cuenta como «completo»)
+  fs.mkdirSync(path.join(t, 'scripts', 'setup', 'harness'), { recursive: true });
+  for (const f of ['profile.js', 'plan.js']) fs.copyFileSync(path.join(ROOT, 'scripts', 'setup', 'harness', f), path.join(t, 'scripts', 'setup', 'harness', f));
   for (const [rel, txt] of Object.entries(bloques)) { const f = path.join(t, 'claude-md-blocks', rel); fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, txt); }
   return t;
 }
@@ -235,16 +241,17 @@ const enArbol = (t) => [
 ];
 const nombresEnOrden = (texto) => [...texto.matchAll(/<!-- TYCON_BLOCK:([^\s]+) START/g)].map((m) => m[1]);
 
-test('A1 Sync_SameOrderAndTieRule_ThreeImplementations @story-2.31 @ac-3 (pase adversarial) — mismo orden por código de carácter; un archivo y una carpeta del mismo nombre: gana el archivo', () => {
-  const t = arbol({ 'Zeta.md': '# Z\nz\n', 'alfa.md': '# A\na\n', 'beta-x.md': '# B1\nb1\n', 'beta_x.md': '# B2\nb2\n', 'dup.md': '# DUP ARCHIVO\narchivo\n', 'dup/neutral.es.md': '# DUP CARPETA\ncarpeta\n' });
+test('A1 Sync_SameOrderAndTieRule_ThreeImplementations @story-2.31 @ac-3 (pase adversarial) — mismo orden por código de carácter; una carpeta sin la marca en su archivo no es un bloque', () => {
+  const t = arbol({ 'Zeta.md': '# Z\nz\n', 'alfa.md': '# A\na\n', 'beta-x.md': '# B1\nb1\n', 'beta_x.md': '# B2\nb2\n', 'dup.md': '# DUP ARCHIVO\narchivo\n', 'dup/neutral.es.md': '# DUP CARPETA\ncarpeta\n', 'suelta/neutral.es.md': '# SUELTA\nno es un bloque\n' });
   const vistos = [];
   for (const [name, run, target] of enArbol(t)) {
     const l = lab({ profile: {} });
     assert.strictEqual(run(l).status, 0, name);
     const txt = read(target(l));
     vistos.push([name, nombresEnOrden(txt).join(',')]);
-    assert.match(between(txt, 'dup'), /DUP ARCHIVO/, `${name}: gana el archivo`);
+    assert.match(between(txt, 'dup'), /DUP ARCHIVO/, `${name}: sin la marca, el archivo es el texto`);
     assert.strictEqual(txt.split('TYCON_BLOCK:dup START').length - 1, 1, `${name}: un solo bloque dup`);
+    assert.doesNotMatch(txt, /TYCON_BLOCK:suelta/, `${name}: una carpeta sin su archivo no es un bloque`);
   }
   assert.deepStrictEqual(vistos.map((v) => v[1]), vistos.map(() => 'Zeta,alfa,beta-x,beta_x,dup'), JSON.stringify(vistos));
 });
@@ -300,7 +307,7 @@ test('A5 Meter_BrokenConfig_WarnsAndUses1300 @story-2.31 @ac-4 @ac-6 (vuelta 2) 
 });
 
 test('A6 Sync_UnreadableVariantsFolder_KeepsBlockAndSays @story-2.31 @ac-6 (vuelta 2) — una carpeta de variantes ilegible: el bloque queda y se avisa, en las tres', { skip: process.platform === 'win32' || process.getuid?.() === 0 ? 'chmod no quita la lectura acá' : false }, () => {
-  const t = arbol({ 'otro.md': '# O\no\n', 'estilo/neutral.es.md': '# E\ne\n' });
+  const t = arbol({ 'otro.md': '# O\no\n', 'estilo.md': '<!-- variants: response -->\n', 'estilo/neutral.es.md': '# E\ne\n' });
   const carpeta = path.join(t, 'claude-md-blocks', 'estilo');
   try {
     for (const [name, run, target] of enArbol(t)) {
@@ -315,6 +322,46 @@ test('A6 Sync_UnreadableVariantsFolder_KeepsBlockAndSays @story-2.31 @ac-6 (vuel
       assert.match(`${r.stdout}${r.stderr}`, /'estilo'.*no pude leer su carpeta de variantes.*queda como estaba/, `${name}: lo dice`);
     }
   } finally { fs.chmodSync(carpeta, 0o755); }
+});
+
+test('A7 VariantsBlock_ConditionsFirst_OffRemoves_UnknownKeeps @story-2.31 @ac-3 @ac-6 (vuelta 5) — el bloque con variantes mira su perfil antes de elegir texto, en las tres', () => {
+  const t = arbol({ 'estilo.md': '<!-- requires-profile: full -->\n<!-- variants: response -->\n', 'estilo/neutral.es.md': '<!-- requires-profile: full -->\n# E\ntexto {{max_chars}}\n' });
+  for (const [name, run, target] of enArbol(t)) {
+    // perfil full: se escribe la variante
+    const l = lab({ profile: { install: { profile: 'full' } } });
+    assert.strictEqual(run(l).status, 0, name);
+    assert.strictEqual(between(read(target(l)), 'estilo'), '# E\ntexto 2000', `${name}: con full, la variante`);
+    // sin poder saber el perfil: queda como estaba, con el aviso de siempre (el del perfil), y nunca el texto de la marca
+    fs.writeFileSync(target(l), read(target(l)).replace('texto 2000', 'EL QUE HABÍA'));
+    l.env.TYCON_PROFILE = path.join(l.home, 'no-existe.json');
+    const r = run(l);
+    assert.strictEqual(between(read(target(l)), 'estilo'), '# E\nEL QUE HABÍA', `${name}: sin saber, queda como estaba`);
+    // el motivo depende de qué no se pudo saber (el escritor de Codex lee el perfil por su propio camino): siempre se dice
+    assert.match(`${r.stdout}${r.stderr}`, /'estilo'(?: requiere el perfil «full» y no pude saber|: no pude saber cómo tiene que contestar)/, `${name}: lo dice`);
+    assert.doesNotMatch(read(target(l)), /variants: response/, `${name}: la marca no se copia`);
+    // perfil minimal: el bloque se va
+    fs.writeFileSync(l.profileFile, JSON.stringify({ install: { profile: 'minimal' } }));
+    l.env.TYCON_PROFILE = l.profileFile;
+    assert.strictEqual(run(l).status, 0, name);
+    assert.strictEqual(between(read(target(l)), 'estilo'), null, `${name}: con minimal, el bloque se va`);
+  }
+});
+
+test('A8 Check_VariantsWeightBothSides_LooseFolderIgnored @story-2.31 @ac-20 (vuelta 5) — el control pesa la variante más pesada en los dos lados y no mide una carpeta suelta', () => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'cmb-peso-'));
+  fs.mkdirSync(path.join(repo, 'claude-md-blocks', 'estilo'), { recursive: true });
+  fs.mkdirSync(path.join(repo, 'claude-md-blocks', 'suelta'), { recursive: true });
+  fs.mkdirSync(path.join(repo, 'scripts', 'ci'), { recursive: true });
+  fs.copyFileSync(CHECK, path.join(repo, 'scripts', 'ci', 'check-claude-md-blocks.js'));
+  fs.writeFileSync(path.join(repo, 'claude-md-blocks', 'budget.json'), JSON.stringify({ default: 3000, total: 9000, total_codex: 9000, blocks: {} }));
+  fs.writeFileSync(path.join(repo, 'claude-md-blocks', 'estilo.md'), '<!-- variants: response -->\n');
+  fs.writeFileSync(path.join(repo, 'claude-md-blocks', 'estilo', 'neutral.es.md'), 'x'.repeat(1000));
+  fs.writeFileSync(path.join(repo, 'claude-md-blocks', 'suelta', 'neutral.es.md'), 'y'.repeat(5000));   // pasaría el techo
+  const r = spawnSync(process.execPath, [path.join(repo, 'scripts', 'ci', 'check-claude-md-blocks.js'), '--repo', repo, '--json'], { encoding: 'utf8' });
+  assert.strictEqual(r.status, 0, `la carpeta suelta no se mide: ${r.stdout}${r.stderr}`);
+  const j = JSON.parse(r.stdout);
+  assert.ok(!j.filas.some((f) => /suelta/.test(f.ruta)), 'sin filas de la carpeta suelta');
+  assert.ok(j.sumaCodex >= 1000 && j.suma >= 1000, `la variante pesa en los dos lados: ${j.suma} / ${j.sumaCodex}`);
 });
 
 test('A4 Meter_OptOut_DoesNotReadConfig_NoticeFollowsTheStyle @story-2.31 @ac-4 (pase adversarial) — apagado no lee nada; el aviso no da por hecho el estilo de TYCON', () => {
