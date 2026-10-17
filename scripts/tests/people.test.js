@@ -152,6 +152,22 @@ test('2.28 T12 OperationsIlegible_UltimoBueno24HorasYFreno', () => {
   assert.equal(P.puedeVer('jefa@acme.example', 'maq-a', sinPeople), false, 'sin site.maintainers nadie mantiene');
 });
 
+// ── MaquinasSinActividad_NoSeOfrecenParaConfirmar ── una carpeta del buzón sin place.json, sin fecha y sin corridas no
+//    se ofrece para confirmar: sin esto, cada carpeta que deja un laboratorio sale «por confirmar», con el botón.
+test('MaquinasSinActividad_NoSeOfrecenParaConfirmar', () => {
+  const c = ctx({
+    maquinas: { 'lab-1': null, 'lab-2': null, 'nueva': null, 'sin-git': noMedido('esta máquina no tiene configuración global de git'), 'maq-a': informa('dev-a@ejemplo.test') },
+    corridas: { 'nueva': 2 },
+  });
+  const por = P.maquinasPorConfirmar(c).map((x) => x.maquina).sort();
+  assert.deepEqual(por, ['maq-a', 'nueva', 'sin-git'], 'sin place.json pero con corridas, o con fecha, sigue por confirmar');
+  assert.deepEqual(P.maquinasSinActividad(c), [{ maquina: 'lab-1' }, { maquina: 'lab-2' }]);
+  // «no pude contar» (corridas null) no es «ninguna corrida»: sigue por confirmar
+  c.informados.maquinas['lab-1'].corridas = null;
+  assert.ok(P.maquinasPorConfirmar(c).some((x) => x.maquina === 'lab-1'));
+  assert.deepEqual(P.maquinasSinActividad(c), [{ maquina: 'lab-2' }]);
+});
+
 // ── T13 · MaquinasPorConfirmar_EstadoCorreoDiaCorridasYOtras (AC 11) ── 🔴 rojo previo: dejar afuera la `sin_correo`.
 test('2.28 T13 MaquinasPorConfirmar_EstadoCorreoDiaCorridasYOtras', () => {
   const c = ctx({

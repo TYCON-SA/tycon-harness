@@ -180,19 +180,33 @@ test('T46 Bajada_PodaLoQueYaNoEstaEnElBuzon @story-2.30 @ac-25', async () => {
     fs.mkdirSync(path.join(vieja, 'registros'), { recursive: true });
     for (const f of ['r9.json', 'r9.hilo.jsonl.gz', 'r9.cambio.json.gz', runs.RESUMEN.nombre('r9.json')]) fs.writeFileSync(path.join(vieja, f), 'viejo');
     fs.writeFileSync(path.join(vieja, 'registros', 'gates.jsonl.gz'), 'registro');
-    fs.mkdirSync(path.join(dir, 'maq-z'), { recursive: true });
+    fs.mkdirSync(path.join(dir, 'maq-z', 'registros', 'v1'), { recursive: true });
     fs.writeFileSync(path.join(dir, 'maq-z', 'z1.json'), 'de una máquina que ya no está');
+    fs.writeFileSync(path.join(dir, 'maq-z', 'registros', 'v1', 'cobertura.json'), '{}');
     const r = await bajada(buzon, dir, { sinHilos: false, resumenes: true, topeBytesHilos: 1 << 30, podar: true });
     assert.strictEqual(r.codigo, 0, JSON.stringify(r.res));
     for (const f of ['r9.json', 'r9.hilo.jsonl.gz', 'r9.cambio.json.gz', runs.RESUMEN.nombre('r9.json')]) assert.ok(!fs.existsSync(path.join(vieja, f)), `se podó ${f}`);
-    assert.ok(!fs.existsSync(path.join(dir, 'maq-z', 'z1.json')), 'la corrida de una máquina que no está en el buzón');
+    assert.ok(!fs.existsSync(path.join(dir, 'maq-z')), 'la carpeta de una máquina sin nada en el buzón se va entera, registros incluidos');
     assert.ok(fs.existsSync(path.join(vieja, 'registros', 'gates.jsonl.gz')), 'los registros no se podan acá');
     assert.ok(fs.existsSync(path.join(vieja, 'r1.json')) && fs.existsSync(path.join(vieja, 'r2.json')), 'lo que está en el buzón queda');
-    assert.strictEqual(r.res.podados, 5);
+    assert.strictEqual(r.res.podados, 6, 'cinco archivos de corridas y una carpeta de máquina');
     // sin `podar`, nada se borra
     fs.writeFileSync(path.join(vieja, 'r8.json'), 'viejo');
     await bajada(buzon, dir, { sinHilos: false, resumenes: true, topeBytesHilos: 1 << 30 });
     assert.ok(fs.existsSync(path.join(vieja, 'r8.json')));
+  } finally { await buzon.cerrar(); }
+});
+
+test('Bajada_ListadoVacio_NoBorraCarpetasDeMaquina', async () => {
+  // un buzón que de golpe lista vacío es más probable que sea un error que una limpieza total: ninguna carpeta se va
+  const buzon = await H.arrancarBuzon({ blobs: [] });
+  try {
+    const dir = path.join(tmp('mbx-vacio-'), 'buzon');
+    fs.mkdirSync(path.join(dir, 'maq-a', 'registros'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'maq-a', 'registros', 'gates.jsonl.gz'), 'registro');
+    const r = await bajada(buzon, dir, { sinHilos: false, resumenes: true, topeBytesHilos: 1 << 30, podar: true });
+    assert.strictEqual(r.codigo, 0, JSON.stringify(r.res));
+    assert.ok(fs.existsSync(path.join(dir, 'maq-a', 'registros', 'gates.jsonl.gz')));
   } finally { await buzon.cerrar(); }
 });
 

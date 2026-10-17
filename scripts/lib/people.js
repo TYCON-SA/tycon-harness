@@ -197,7 +197,23 @@ function estadoDeLaConfiguracion({ hayUltimoBueno, fallaDesde, ahora = Date.now(
  * su place.json, cuántas corridas, y las otras máquinas ya confirmadas para ese mismo correo (por `person` o por la
  * huella). Trae las carpetas viejas que no se unen y las regeneradas; una vieja unida no aparece (no es una máquina).
  */
+/**
+ * ¿La máquina nunca dio señales? Sin place.json, sin fecha y sin ninguna corrida: así llega una carpeta que dejó un
+ * laboratorio o una prueba en el buzón. No se ofrece para confirmar (no hay nada que confirmar), pero no se esconde:
+ * `maquinasSinActividad` la lista aparte.
+ */
+const sinActividad = (inf) => Boolean(inf) && inf.estado === 'no_informa' && !inf.dia && inf.corridas === 0;
+
 function maquinasPorConfirmar(c) {
+  return candidatasAConfirmar(c).filter((x) => !x.sinActividad);
+}
+
+/** Las máquinas sin ninguna señal (ver `sinActividad`), con su nombre: para mostrarlas aparte, sin «Confirmar». */
+function maquinasSinActividad(c) {
+  return candidatasAConfirmar(c).filter((x) => x.sinActividad).map((x) => ({ maquina: x.maquina }));
+}
+
+function candidatasAConfirmar(c) {
   const u = uniones(c);
   const regeneradas = (c.informados.uniones && c.informados.uniones.regeneradas) || {};
   // una vieja `unida` cuya unión vale no es una máquina (sus corridas son de la nueva); una cuya unión se descartó
@@ -214,7 +230,7 @@ function maquinasPorConfirmar(c) {
       const ent = c.machines[o];
       return ent && (normalizarCorreo(ent.person) === correo || ent.reported_sha256 === huellaDeCorreo(correo));
     })()) : [];
-    out.push({ maquina: m, estado: e.estado, motivo: e.estado === 'sin_correo' || e.estado === 'compartida' ? e.motivo : (inf.motivo || e.motivo), correo, dia: inf.dia || null, corridas: Number.isInteger(inf.corridas) ? inf.corridas : null, otras, ...(regeneradas[m] ? { regenerado: regeneradas[m] } : {}) });
+    out.push({ maquina: m, estado: e.estado, motivo: e.estado === 'sin_correo' || e.estado === 'compartida' ? e.motivo : (inf.motivo || e.motivo), correo, dia: inf.dia || null, corridas: Number.isInteger(inf.corridas) ? inf.corridas : null, otras, sinActividad: sinActividad(inf), ...(regeneradas[m] ? { regenerado: regeneradas[m] } : {}) });
   }
   return out;
 }
@@ -362,5 +378,5 @@ function vistaDePersona(sesion, c, datos = {}) {
 
 module.exports = {
   normalizarCorreo, huellaDeCorreo, leerCorreosInformados, contexto, estadoDeMaquina, puedeVer, esPersona,
-  estadoDeLaConfiguracion, maquinasPorConfirmar, dondeTrabaja, vistaDePersona, PLAZO_MS,
+  estadoDeLaConfiguracion, maquinasPorConfirmar, maquinasSinActividad, dondeTrabaja, vistaDePersona, PLAZO_MS,
 };

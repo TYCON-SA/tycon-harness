@@ -839,6 +839,54 @@ function ponerBlob(url, cuerpo, md5, timeoutMs, opciones = {}) {
   });
 }
 
+/**
+ * Las marcas de un agente de CI que sobreviven cuando una prueba saca `TF_BUILD` para probar el caso de una máquina:
+ * las de Azure DevOps tienen un valor cualquiera; las de GitHub Actions y la genérica, `true` o `1`.
+ */
+const MARCAS_DE_CI = Object.freeze(['AGENT_ID', 'BUILD_BUILDID', 'SYSTEM_TEAMFOUNDATIONCOLLECTIONURI', 'GITHUB_ACTIONS', 'CI']);
+const marcaConValor = (k) => k === 'GITHUB_ACTIONS' || k === 'CI';
+
+/**
+ * Una ruta comparable: la real (resuelta hasta donde existe: en la Mac `/var` es `/private/var`), sin la barra final, y
+ * en minúsculas donde el disco no distingue.
+ */
+function rutaComparable(p) {
+  if (!p) return null;
+  let r = path.resolve(String(p));
+  const resto = [];
+  for (let d = r; ; d = path.dirname(d)) {
+    try { r = path.join(fs.realpathSync.native(d), ...resto); break; } catch (_) { /* no existe: se sube un nivel */ }
+    if (path.dirname(d) === d) break;
+    resto.unshift(path.basename(d));
+  }
+  r = r.replace(/[\\/]+$/, '') || r;
+  return process.platform === 'win32' || process.platform === 'darwin' ? r.toLowerCase() : r;
+}
+
+/**
+ * ¿Este proceso es un laboratorio y no una máquina del equipo? El motivo, o null. Un laboratorio (una prueba, un
+ * ensayo de instalación, el banco) arma una HOME propia y deja la llave del buzón del árbol a mano: sin esta guarda,
+ * cada uno inventa un código de máquina y aparece en el buzón como una máquina nueva, sin corridas, que el sitio
+ * ofrece confirmar. Se reconoce por la HOME: distinta de la del usuario del sistema, o dentro de una carpeta temporal.
+ * Y por las marcas de un agente de CI que quedan cuando la prueba sólo sacó `TF_BUILD`.
+ */
+function motivoDeLaboratorio({ env = process.env, home = os.homedir(), real } = {}) {
+  const marca = MARCAS_DE_CI.find((k) => {
+    const v = String(env[k] || '').trim();
+    return marcaConValor(k) ? /^(true|1)$/i.test(v) : v !== '';
+  });
+  if (marca) return `esto corre en un agente de CI (${marca}): un agente no es una máquina del equipo y no sube al buzón`;
+  let delSistema = real;
+  if (delSistema === undefined) { try { delSistema = os.userInfo().homedir; } catch (_) { delSistema = null; } }
+  const h = rutaComparable(home);
+  const r = rutaComparable(delSistema);
+  if (h && r && h !== r) return 'la HOME de este proceso no es la del usuario del sistema: es un laboratorio, y un laboratorio no sube al buzón';
+  const temporales = [os.tmpdir(), '/tmp', '/private/tmp', '/var/folders', '/private/var/folders', env.TEMP, env.TMP, env.RUNNER_TEMP, env.AGENT_TEMPDIRECTORY]
+    .map(rutaComparable).filter(Boolean);
+  if (h && temporales.some((t) => h === t || h.startsWith(t + path.sep) || h.startsWith(`${t}/`))) return 'la HOME de este proceso vive en una carpeta temporal: es un laboratorio, y un laboratorio no sube al buzón';
+  return null;
+}
+
 async function subir(opts = {}) {
   const res = {
     subido: false, estado: null, motivo: null, maquina: null,
@@ -886,6 +934,11 @@ async function subir(opts = {}) {
     res.aviso_vence = selloDiario(path.join(path.dirname(rutaRegistro), 'upload-runs-expiry.seal'), texto);
     if (res.aviso_vence === 'emitido') log(texto);
   }
+
+  // lo mismo para cualquier laboratorio, con o sin TF_BUILD: con la llave en la mano, antes de inventar un código de
+  // máquina y de preparar nada, no se sube al buzón real
+  const laboratorio = variable('TYCON_MAILBOX_URL_BASE') ? null : motivoDeLaboratorio();
+  if (laboratorio) { log(laboratorio); return fin(0, 'laboratorio', laboratorio); }
 
   // story 2.28: la carpeta de esta máquina (`<nombre>-<código>`). La primera pasada con la carpeta nueva vuelve a subir
   // ahí lo que hay en el disco: la clave del registro de subidas empieza con la carpeta (decisión 12).
@@ -1100,6 +1153,8 @@ async function chequearSoloCrear(opts = {}) {
   const { cfg } = lc;
   const negativa = negativaDeLaLlave(cfg.sas);
   if (negativa) return fin(2, negativa.estado, negativa.motivo);
+  const laboratorio = variable('TYCON_MAILBOX_URL_BASE') ? null : motivoDeLaboratorio();
+  if (laboratorio) return fin(0, 'laboratorio', laboratorio);
   const maquina = nombreDeMaquina();
   res.maquina = maquina || null;
   if (!maquina || !FORMA_MAQUINA.test(maquina)) return fin(1, 'sin_maquina', 'no se pudo saber el nombre de esta máquina (hostname vacío o sin forma de nombre)');
@@ -1142,7 +1197,7 @@ async function chequearSoloCrear(opts = {}) {
   return fin(1, 'no_medido', `no medido: ningún blob confirmado de esta máquina tiene todavía su archivo local con el mismo sha256 (${candidatos.length} anotado(s)): no se manda nada distinto de lo confirmado`);
 }
 
-module.exports = { placeFactsForMailbox, subir, chequearSoloCrear, respuestaDelBuzon, versionDe, msDeVersion, FORMA_VERSION, nombreDeMaquina, nombreBaseDeMaquina, carpetaDeMaquina, leerCodigoDeMaquina, rutaCodigoDeMaquina, correoDeGitGlobal, huellaDeCorridas, FORMA_CODIGO, normalizarNombreDeMaquina, leerConfig, integracionBuzon, negativaDeLaLlave, rutaConfig, urlBase, FORMA_MAQUINA, FORMA_ARCHIVO, FORMA_REGISTRO, REGISTROS, prepararRegistros, usosParaElBuzon, X_MS_VERSION };
+module.exports = { placeFactsForMailbox, subir, chequearSoloCrear, motivoDeLaboratorio, MARCAS_DE_CI, respuestaDelBuzon, versionDe, msDeVersion, FORMA_VERSION, nombreDeMaquina, nombreBaseDeMaquina, carpetaDeMaquina, leerCodigoDeMaquina, rutaCodigoDeMaquina, correoDeGitGlobal, huellaDeCorridas, FORMA_CODIGO, normalizarNombreDeMaquina, leerConfig, integracionBuzon, negativaDeLaLlave, rutaConfig, urlBase, FORMA_MAQUINA, FORMA_ARCHIVO, FORMA_REGISTRO, REGISTROS, prepararRegistros, usosParaElBuzon, X_MS_VERSION };
 
 /**
  * `--log <archivo>`: la salida (la estándar y la de error) se AGREGA a ese archivo, que pasado ~512 KB se mueve a `.1`.

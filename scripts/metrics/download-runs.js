@@ -550,6 +550,20 @@ function podarEspejo(dirBuzon, listado, log) {
     }
   }
   if (n) log(`el espejo borró ${n} archivo(s) de corridas que ya no están en el buzón`);
+  // una carpeta de máquina que ya no tiene NINGÚN archivo en el buzón (la borró quien mantiene: un laboratorio que
+  // escribió ahí) se va entera, registros incluidos; si no, el sitio la seguiría mostrando. Con un listado vacío no se
+  // borra ninguna: un buzón vacío de golpe es más probable que sea un error que una limpieza total.
+  const conAlgo = new Set(listado.map((b) => formaDelNombre(b.nombre)).filter(Boolean).map((f) => f.maquina));
+  if (conAlgo.size) {
+    let carpetasIdas = 0;
+    for (const maquina of carpetas) {
+      if (conAlgo.has(maquina)) continue;
+      try { fs.rmSync(path.join(dirBuzon, maquina), { recursive: true, force: true }); carpetasIdas += 1; }
+      catch (e) { log(`no se pudo podar la carpeta ${maquina} (${e.code || e.message})`); }
+    }
+    if (carpetasIdas) log(`el espejo borró ${carpetasIdas} carpeta(s) de máquina que ya no están en el buzón`);
+    n += carpetasIdas;
+  }
   return n;
 }
 
