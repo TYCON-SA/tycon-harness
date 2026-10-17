@@ -50,8 +50,8 @@ test('T1 Imagen_SoloEnPushAMainConSusRutas @story-2.30 @ac-1 @ac-2', () => {
   // cada COPY del Dockerfile tiene su ruta en el disparador
   const docker = fs.readFileSync(path.join(ROOT, 'scripts', 'site', 'Dockerfile'), 'utf8');
   for (const [, origen] of docker.matchAll(/^COPY (.+) \S+$/gm)) {
-    // version.json (con o sin el comodín que lo vuelve opcional) no dispara: cambia en cada merge
-    for (const o of origen.split(/\s+/).filter((x) => !/^version\.json\*?$/.test(x))) {
+    // version.json no dispara (cambia en cada merge) y .tycon-release.json no está en el repo: lo escribe el workflow
+    for (const o of origen.split(/\s+/).filter((x) => !/^(version|\.tycon-release)\.json\*?$/.test(x))) {
       const cubierta = RUTAS.some((r) => { const x = r.slice(1, -1); return x.endsWith('/**') ? o.startsWith(x.slice(0, -2)) : o === x; });
       assert.ok(cubierta, `el disparador no cubre ${o}, que la imagen copia`);
     }
@@ -78,11 +78,32 @@ test('T3 Imagen_EtiquetasSinLatestYNombreDelContexto @story-2.30 @ac-1', () => {
   assert.doesNotMatch(codigo(t).filter((l) => !/runs-on:/.test(l)).join('\n'), /latest/, 'nunca latest');
   assert.doesNotMatch(t, /ghcr\.io\/[a-z0-9-]+\//i, 'ningún ghcr.io/<org>/ escrito');
   assert.match(t, /IMAGEN="ghcr\.io\/\$\{GITHUB_REPOSITORY,,\}"/, 'el nombre sale del contexto, en minúsculas');
-  assert.match(t, /VERSION=\$\(node -p "require\('\.\/version\.json'\)\.version"\)/, 'la versión sale de version.json');
   assert.match(t, /-t "\$\{IMAGEN\}:\$\{VERSION\}"/);
   assert.match(t, /-t "\$\{IMAGEN\}:sha-\$\{GITHUB_SHA\}"/);
   assert.match(t, /-f scripts\/site\/Dockerfile/);
   assert.match(t, /uses: actions\/attest-build-provenance@[0-9a-f]{40} # v\d+\.\d+\.\d+/, 'la constancia de origen');
   assert.match(t, /subject-digest: \$\{\{ steps\.imagen\.outputs\.huella \}\}/);
   assert.match(t, /push-to-registry: true/);
+});
+
+test('T3b Imagen_VersionDelMergeYFirmaConLaSesionAbierta @story-2.30 @ac-1', () => {
+  const t = read();
+  // la versión es la etiqueta v<número> que el merge le puso a ESTE commit, nunca el piso de version.json
+  assert.doesNotMatch(t, /require\('\.\/version\.json'\)/, 'la versión no sale de version.json');
+  assert.match(t, /git ls-remote --tags "https:\/\/github\.com\/\$\{GITHUB_REPOSITORY\}\.git" 'refs\/tags\/v\*'/, 'se busca la etiqueta del merge');
+  assert.match(t, /awk -v s="\$GITHUB_SHA" '\$1 == s/, 'la etiqueta de este commit, no otra');
+  assert.match(t, /printf '\{ "version": "%s" \}\\n' "\$VERSION" > \.tycon-release\.json/, 'la versión viaja adentro de la imagen');
+  // sin etiqueta no se publica una imagen con otro número: se dice y no se firma
+  assert.match(t, /::warning::este commit no recibió la etiqueta del merge/);
+  assert.match(t, /echo "publicar=no" >> "\$GITHUB_OUTPUT"\n {12}exit 0/);
+  assert.match(t, /attest-build-provenance@[0-9a-f]{40} # v[\d.]+\n {8}if: steps\.imagen\.outputs\.publicar == 'si'/);
+  // la firma se sube con la sesión del registro abierta: el cierre va después, en su propio paso, pase lo que pase
+  const firma = t.indexOf('actions/attest-build-provenance@');
+  const cierre = t.indexOf('docker logout ghcr.io');
+  assert.ok(firma > 0 && cierre > firma, 'docker logout después de la firma');
+  assert.strictEqual(t.split('docker logout').length - 1, 1, 'una sola vez');
+  assert.match(t, /- name: Cerrar la sesión del registro\n {8}if: always\(\)\n {8}run: docker logout ghcr\.io/);
+  // y la imagen trae ese archivo: el Dockerfile lo copia y el contexto lo deja pasar
+  assert.match(fs.readFileSync(path.join(ROOT, 'scripts', 'site', 'Dockerfile'), 'utf8'), /^COPY version\.json\* \.tycon-release\.json\* \.\/$/m);
+  assert.match(fs.readFileSync(path.join(ROOT, 'scripts', 'site', 'Dockerfile.dockerignore'), 'utf8'), /^!\.tycon-release\.json$/m);
 });

@@ -2,9 +2,12 @@
 # repo. Corre sólo en un push a main que toca lo que la imagen trae: las carpetas que copia scripts/site/Dockerfile
 # (no version.json solo: cambia en cada merge).
 #
-# El nombre de la imagen sale del contexto (ghcr.io/<este repo, en minúsculas>), nunca escrito. Etiquetas: la versión del
-# arnés (version.json) y sha-<commit>; nunca latest: cada instalación fija la imagen por su huella (@sha256:…) y la
-# actualiza una persona. Con constancia de origen (attest-build-provenance), guardada al lado de la imagen.
+# El nombre de la imagen sale del contexto (ghcr.io/<este repo, en minúsculas>), nunca escrito. Etiquetas: la versión que
+# el merge le puso a este commit (la etiqueta v<número> de version-tag.yml) y sha-<commit>; nunca latest: cada instalación
+# fija la imagen por su huella (@sha256:…) y la actualiza una persona. La versión viaja adentro, en .tycon-release.json,
+# para que el sitio diga la misma. Un commit que el merge no numeró (lo numeró el siguiente) no publica imagen y lo dice.
+# Con constancia de origen (attest-build-provenance), guardada al lado de la imagen: se sube con la sesión del registro
+# todavía abierta, y la sesión se cierra al final, pase lo que pase.
 #
 # La visibilidad del paquete no la fija este workflow: tras la primera publicación, una persona confirma en
 # GitHub → Packages que es público (hacerlo público no tiene vuelta atrás).
@@ -47,7 +50,21 @@ jobs:
         run: |
           set -euo pipefail
           IMAGEN="ghcr.io/${GITHUB_REPOSITORY,,}"
-          VERSION=$(node -p "require('./version.json').version")
+          # la versión es la etiqueta que el merge le pone a este commit; la pone version-tag.yml en paralelo: se espera
+          VERSION=""
+          for _ in $(seq 1 40); do
+            VERSION=$(git ls-remote --tags "https://github.com/${GITHUB_REPOSITORY}.git" 'refs/tags/v*' \
+              | awk -v s="$GITHUB_SHA" '$1 == s { sub("^refs/tags/v", "", $2); sub("\\^\\{\\}$", "", $2); print $2; exit }')
+            [ -n "$VERSION" ] && break
+            sleep 15
+          done
+          if [ -z "$VERSION" ]; then
+            echo "::warning::este commit no recibió la etiqueta del merge en 10 minutos (lo numeró un merge siguiente): no se publica imagen"
+            echo "publicar=no" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          printf '{ "version": "%s" }\n' "$VERSION" > .tycon-release.json
+          echo "publicar=si" >> "$GITHUB_OUTPUT"
           printf '%s' "$REGISTRO_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           docker build -f scripts/site/Dockerfile -t "${IMAGEN}:${VERSION}" -t "${IMAGEN}:sha-${GITHUB_SHA}" .
           docker push "${IMAGEN}:${VERSION}"
@@ -56,9 +73,12 @@ jobs:
           echo "imagen=${IMAGEN}" >> "$GITHUB_OUTPUT"
           echo "huella=${HUELLA}" >> "$GITHUB_OUTPUT"
           echo "Publicada: ${IMAGEN}@${HUELLA} (etiquetas ${VERSION} y sha-${GITHUB_SHA})"
-          docker logout ghcr.io
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        if: steps.imagen.outputs.publicar == 'si'
         with:
           subject-name: ${{ steps.imagen.outputs.imagen }}
           subject-digest: ${{ steps.imagen.outputs.huella }}
           push-to-registry: true
+      - name: Cerrar la sesión del registro
+        if: always()
+        run: docker logout ghcr.io

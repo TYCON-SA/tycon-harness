@@ -21,9 +21,10 @@ FROM node:24.11.0-alpine3.22
 RUN apk add --no-cache git
 
 WORKDIR /app
-# version.json, si está: el árbol de la noche (lo privado con lo público encima) no lo trae —lo genera la publicación—, y
-# con el comodín la imagen se arma igual (sin él, el sitio dice la versión como desconocida)
-COPY version.json* ./
+# la versión, si está: .tycon-release.json lo escribe el workflow de la imagen con la etiqueta del merge, y el sitio lo
+# lee antes que version.json (el piso). El árbol de la noche no trae ninguno de los dos; con el comodín la imagen se arma
+# igual, y el sitio dice la versión como desconocida
+COPY version.json* .tycon-release.json* ./
 COPY scripts/site/ scripts/site/
 COPY scripts/lib/ scripts/lib/
 COPY scripts/metrics/ scripts/metrics/
