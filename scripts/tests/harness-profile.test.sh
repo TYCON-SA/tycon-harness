@@ -141,8 +141,8 @@ applier() { # applier <home> <árbol> <salida> [args…] → corre el aplicador 
 FULL_TASKS='harness-parity.js|sdlc-stage-metrics.js|tokens-digest.js|collect-findings.js|periodic-exam.js'
 
 TREE="$T/tree"; lab_tree "$TREE" || { echo "❌ no pude armar el árbol de laboratorio"; exit 1; }
-# El perfil del equipo con que corren los casos de «máquina del equipo»: el del repo si lo trae; si no (desde la 8.41 el
-# perfil vive en el repo del perfil, y el árbol armado no lo tiene), el del commit de referencia, que ya da el lado viejo de
+# El perfil del equipo con que corren los casos de «máquina del equipo»: el del repo si lo trae; si no (el perfil vive
+# en el repo del perfil, y el árbol armado no lo tiene), el del commit de referencia, que ya da el lado viejo de
 # T40: estos casos miden el aplicador con un perfil del equipo, no un perfil en particular.
 TEAM_PROFILE="$RAIZ/perfil-equipo.json"
 if [ ! -f "$TEAM_PROFILE" ] && git -C "$RAIZ" show "${BASE_REF}:perfil-equipo.json" > "$T/perfil-equipo.json" 2>/dev/null; then
@@ -277,7 +277,7 @@ PY
     # Sin esto, el primer hook nuevo ponía roja la prueba para siempre.
     #   scripts/hooks/public-push-guard.js — el freno antes de publicar (story 8.26, tanda F1)
     #   scripts/hooks/owner-email-notice.js — tu correo de git, dicho una vez, con el buzón prendido (story 2.28, AC 30)
-    #   scripts/hooks/wait-notice.js — el aviso de que una corrida espera a una persona, en sus seis eventos (story 7.20)
+    #   scripts/hooks/wait-notice.js — el aviso de que una corrida espera a una persona, en sus seis eventos
     #   scripts/hooks/worktree-sweep.js — el barrido diario de las carpetas de trabajo ya mergeadas
     # «ruta=N»: registrado N veces (un hook en varios eventos); sin «=N», una.
     rm -f "$T/t40/added.out"
@@ -309,7 +309,7 @@ PY
     else ok "T40 los hooks sumados después de ${BASE_REF} están, una vez cada uno, y se apartan de la comparación"; fi
     node "$RAIZ/scripts/publishing/profile-equivalence.js" --settings "$T/t40/old-as-new.json" "$T/t40/new-norm.json" > "$T/t40/eq.out" 2>&1; EQ=$?
     [ "$EQ" = 0 ] && ok "T40 con el perfil del equipo: los mismos hooks que el aplicador de ${BASE_REF}" || mal "T40 hooks distintos (rc $EQ): $(head -c 500 "$T/t40/eq.out")"
-    # aparte, lo que el aplicador de entonces no conoce: el bloque del estilo de respuesta, que desde la 2.31 se elige por
+    # aparte, lo que el aplicador de entonces no conoce: el bloque del estilo de respuesta, que hoy se elige por
     # variante, y las filas de la tabla de nombres marcadas con su integración, que hoy se escriben sólo si está prendida
     for side in old new; do sed -E 's#(<!-- TYCON_BLOCK:[^ ]+ START) — generado por [^·]*·#\1 — generado por @SYNC@ ·#' "$T/t40/$side/.claude/CLAUDE.md" \
       | sed '/<!-- TYCON_BLOCK:response-style START/,/<!-- TYCON_BLOCK:response-style END/d' > "$T/t40/$side-claude.md"; done
