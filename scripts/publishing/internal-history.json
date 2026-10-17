@@ -17,5 +17,26 @@
     "story-bare": { "mode": "block", "why": "no distingue el número de una story del de una versión («la 5.1 que viene con el sistema»): medido, 1 falso de cada 20; el falso se declara como dato" },
     "team-path": { "mode": "block" }
   },
-  "nonPublicRoots": ["inbox", "artifacts", "onboarding", "new-product-templates"]
+  "nonPublicRoots": ["inbox", "artifacts", "onboarding", "new-product-templates"],
+  "zones": {
+    "comment": {
+      "__doc": "La zona de los comentarios del código (--zone comment): lo que un commit agrega a los comentarios del árbol que se publica. El modo de cada forma sale de una muestra de 30 hallazgos por forma sobre lo que agregaron 300 commits, juzgados a mano: sin falsos, `block`; con uno o dos, `warn`. Una forma de la zona sin entrada acá frena (falla cerrado).",
+      "mode": "block",
+      "forms": {
+        "story-number": { "mode": "block" },
+        "story-bare": { "mode": "block" },
+        "batch-code": { "mode": "block" },
+        "incident-log": { "mode": "block" },
+        "incident-log-path": { "mode": "warn", "why": "la ruta suelta del registro aparece también como dato (una lista de archivos que un control excluye): 1 falso de cada 30" },
+        "debt-id": { "mode": "block" },
+        "azure-run": { "mode": "block" },
+        "pr-number": { "mode": "block" },
+        "private-commit": { "mode": "block" },
+        "work-branch": { "mode": "warn", "why": "aparece como ejemplo del formato de una rama en la documentación de quien las lee: 2 falsos de 3" },
+        "owner-decision": { "mode": "block" },
+        "date": { "mode": "block" },
+        "history": { "mode": "block" }
+      }
+    }
+  }
 }

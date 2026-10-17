@@ -72,7 +72,7 @@ const PROFILES = ['team-profile.json', 'perfil-equipo.json'];
 const THIN_LIST_PATH = '.tycon/internal-forms.json';
 const OVERLAY_MARK = '[superposición local, no se empuja]';
 const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
-const ZONES = ['prose', 'code', 'message'];
+const ZONES = ['prose', 'code', 'message', 'comment'];
 const PROSE_ROOTS = new Set(['guides', 'getting-started', '.github', 'claude-md-blocks', 'skills', 'commands', 'agents', 'packs']);
 
 class CouldNot extends Error {}
@@ -117,6 +117,17 @@ const FORMS = {
   // necesita el árbol (qué existe y qué se publica): la busca `teamPaths`, no `scan`
   'team-path': { re: null, key: (v) => v },
 };
+// La zona de los comentarios del código: las formas de la prosa que aplican a un comentario, y tres que son sólo suyas. Van
+// después de las de la prosa, así la ruta suelta del registro y la fecha quedan tapadas cuando el registro con ancla o la
+// decisión del dueño ya las cuentan. Del relato quedan afuera «hasta que» (casi siempre una conjunción) y «se encontró»
+// («null si no se encontró»), y «caso real» cuenta sólo cuando abre el relato: seguido de dos puntos, de un paréntesis o
+// de «del».
+for (const f of ['pr-number', 'incident-log', 'work-branch', 'azure-run', 'private-commit', 'debt-id', 'owner-decision', 'batch-code', 'story-number', 'story-bare']) {
+  FORMS[f].zones = [...(FORMS[f].zones || ['prose']), 'comment'];
+}
+FORMS['incident-log-path'] = { re: /\bincident-log(?:\.md)?\b/g, key: () => 'ruta', zones: ['comment'] };
+FORMS.date = { re: new RegExp(`\\b${DATE}\\b`, 'g'), key: (v) => v, zones: ['comment'] };
+FORMS.history = { re: /(?<![\p{L}\p{N}_])(?:antes (?:era|eran|se|había|habían|corría|corrían|daba|daban|frenaba|frenaban|salía|salían)|hasta hoy|rojo previo|caso real(?=\s*[:(]|\s+del\b)|medido el)(?![\p{L}\p{N}_])/giu, key: (v) => v.toLowerCase(), zones: ['comment'] };
 const formsOf = (zone) => Object.entries(FORMS).filter(([, f]) => f.re && (f.zones || ['prose']).includes(zone));
 const keyOf = (f) => `${f.form}\0${FORMS[f.form].key(f.value)}`;
 
@@ -126,6 +137,245 @@ function zoneOf(rel) {
   if (!/\.md$/i.test(p)) return 'code';
   const slash = p.indexOf('/');
   return slash === -1 || PROSE_ROOTS.has(p.slice(0, slash)) ? 'prose' : 'code';
+}
+
+// ── los comentarios del código ───────────────────────────────────────────────────────────────────────────────────
+// Un lector por lenguaje que recorre el archivo entero: sigue las cadenas (también las de varias líneas), las
+// plantillas de JavaScript con sus `${…}`, las expresiones regulares, los heredocs y los here-strings, así una marca de
+// comentario dentro de ellas no cuenta y un comentario después de código, o un bloque a mitad de línea, sí.
+// Límites conocidos: en YAML el contenido de un bloque `|` o `>` se lee como YAML (sus líneas `#` cuentan): en los
+// pipelines ese contenido es un guion, y sus `#` son comentarios del guion. En JSX, un apóstrofo del texto de la
+// pantalla abre una cadena hasta el fin de esa línea. Los lenguajes que no están en la lista no se leen: una corrida
+// que sólo toca esos archivos sale con `looked=0`. Casos: scripts/tests/code-comments.test.js
+const STYLE_BY_NAME = [
+  [/\.(?:js|mjs|cjs|ts|mts|cts|tsx|jsx)$/i, 'js'],
+  [/\.psm?1$/i, 'ps'],
+  [/\.(?:sh|bash|zsh|command)(?:\.template)?$/i, 'sh'],
+  [/\.(?:py|toml)$/i, 'py'],
+  [/\.ya?ml$/i, 'yaml'],
+  [/^Dockerfile(?:\..+)?$/, 'docker'],
+];
+const HOOK_NAMES = new Set(['pre-commit', 'pre-commit-checks', 'pre-push', 'commit-msg', 'post-merge', 'post-checkout']);
+/** El lenguaje de un archivo, por su ruta: `js`, `ps`, `sh`, `py`, `yaml`, `docker` o `null` (no es código). */
+function commentStyle(rel) {
+  const p = String(rel).split('\\').join('/');
+  const base = p.slice(p.lastIndexOf('/') + 1);
+  for (const [re, style] of STYLE_BY_NAME) if (re.test(base)) return style;
+  if (!base.includes('.') && (HOOK_NAMES.has(base) || p.startsWith('.githooks/'))) return 'sh';
+  return null;
+}
+const isCodeFile = (rel) => commentStyle(rel) !== null;
+
+// después de estas palabras o signos, una `/` abre una expresión regular; después de un nombre o un `)`, divide
+const REGEX_AFTER_WORD = new Set(['return', 'typeof', 'instanceof', 'in', 'of', 'new', 'delete', 'void', 'throw', 'case', 'do', 'else', 'yield', 'await']);
+const regexAllowed = (prev) => prev === '' || /^[(,=:[!&|?{};+\-*%<>~^]$/.test(prev) || REGEX_AFTER_WORD.has(prev);
+
+/** JavaScript y TypeScript: `//`, `/* … *\/` en cualquier lugar; fuera de cadenas, plantillas y expresiones regulares. */
+function jsComments(src, out) {
+  let i = 0;
+  let line = 0;
+  let prev = '';
+  const stack = [];   // 'brace' por cada `{` abierto; 'tpl' por cada `${` de una plantilla
+  const n = src.length;
+  const skipLine = () => { while (i < n && src[i] !== '\n') i++; };
+  // una barra seguida de salto de línea sigue la cadena en la línea siguiente: la línea se cuenta igual
+  const escape = () => { if (src[i + 1] === '\n') line++; i += 2; };
+  const string = (q) => { i++; while (i < n && src[i] !== q && src[i] !== '\n') { if (src[i] === '\\') escape(); else i++; } if (src[i] === q) i++; };
+  const template = () => {   // desde adentro de una plantilla hasta su cierre, o hasta un `${`
+    while (i < n) {
+      const c = src[i];
+      if (c === '\\') { if (src[i + 1] === '\n') line++; i += 2; continue; }
+      if (c === '\n') { line++; i++; continue; }
+      if (c === '`') { i++; return; }
+      if (c === '$' && src[i + 1] === '{') { i += 2; stack.push('tpl'); prev = '{'; return; }
+      i++;
+    }
+  };
+  const regex = () => {
+    i++;
+    let cls = false;
+    while (i < n && src[i] !== '\n') {
+      const c = src[i];
+      if (c === '\\') { escape(); continue; }
+      if (cls) { if (c === ']') cls = false; } else if (c === '[') cls = true; else if (c === '/') { i++; break; }
+      i++;
+    }
+    while (i < n && /[a-z]/i.test(src[i])) i++;
+  };
+  if (src.startsWith('#!')) skipLine();
+  while (i < n) {
+    const c = src[i];
+    const d = src[i + 1];
+    if (c === '\n') { line++; i++; continue; }
+    if (c === ' ' || c === '\t' || c === '\r') { i++; continue; }
+    if (c === '/' && d === '/') {
+      i += 2;
+      const from = i;
+      skipLine();
+      out[line] += ` ${src.slice(from, i).replace(/^\/+/, '')}`;
+      continue;
+    }
+    if (c === '/' && d === '*') {
+      i += 2;
+      while (i < n && src[i] === '*' && src[i + 1] !== '/') i++;
+      while (i < n && !(src[i] === '*' && src[i + 1] === '/')) {
+        if (src[i] === '\n') {
+          line++; i++;
+          while (i < n && (src[i] === ' ' || src[i] === '\t')) i++;
+          while (i < n && src[i] === '*' && src[i + 1] !== '/') i++;
+          continue;
+        }
+        out[line] += src[i]; i++;
+      }
+      i += 2;
+      out[line] += ' ';
+      continue;
+    }
+    if (c === '"' || c === "'") { string(c); prev = 'x'; continue; }
+    // un acento grave sin otro que lo cierre no abre una plantilla (una `/` mal leída no se come el resto del archivo)
+    if (c === '`') { i++; if (src.indexOf('`', i) !== -1) template(); prev = 'x'; continue; }
+    // `i++` y `i--` terminan un valor: la `/` que sigue divide
+    if ((c === '+' || c === '-') && d === c) { i += 2; prev = 'x'; continue; }
+    // después de `<`, una `/` cierra una etiqueta de JSX (`</p>`), no abre una expresión
+    if (c === '/') { if (regexAllowed(prev) && prev !== '<') { regex(); prev = 'x'; } else { i++; prev = '/'; } continue; }
+    if (c === '{') { stack.push('brace'); prev = '{'; i++; continue; }
+    if (c === '}') {
+      const top = stack.pop();
+      i++;
+      if (top === 'tpl') { template(); prev = 'x'; } else prev = '}';
+      continue;
+    }
+    // después de un punto es el nombre de una propiedad (`x.delete / 2`), no una palabra clave
+    if (/[\w$]/.test(c)) { const from = i; while (i < n && /[\w$]/.test(src[i])) i++; prev = prev === '.' ? 'x' : src.slice(from, i); continue; }
+    prev = c; i++;
+  }
+}
+
+/**
+ * Shell: `#` al empezar una palabra, fuera de comillas; los cuerpos de los heredocs no son código. Una comilla o un
+ * heredoc que no cierran en el resto del archivo no abren nada: una comilla suelta o un `<<` aritmético no apagan la
+ * lectura de lo que sigue.
+ */
+function shComments(lines, out) {
+  let quote = null;   // "'" · '"' · '$' (la de `$'…'`, con escapes)
+  const heredocs = [];
+  let body = null;
+  const closesLater = (q, ln, from) => {
+    if (lines[ln].indexOf(q, from) !== -1) return true;
+    for (let k = ln + 1; k < lines.length; k++) if (lines[k].includes(q)) return true;
+    return false;
+  };
+  // dónde cierra cada palabra, indexado una vez: buscarlo en cada `<<` sería cuadrático en un guion grande
+  const closers = new Map();
+  lines.forEach((l, k) => {
+    for (const w of new Set([l, l.replace(/^\t+/, '')])) { if (!closers.has(w)) closers.set(w, []); closers.get(w).push({ k, tabs: w !== l }); }
+  });
+  const heredocCloses = (h, ln) => (closers.get(h.word) || []).some((c) => c.k > ln && (h.strip || !c.tabs));
+  lines.forEach((l, ln) => {
+    if (body) {
+      if ((body.strip ? l.replace(/^\t+/, '') : l) === body.word) body = heredocs.shift() || null;
+      return;
+    }
+    if (ln === 0 && l.startsWith('#!')) return;
+    let arith = 0;   // dentro de `$(( … ))` o `(( … ))`, `<<` es un desplazamiento
+    for (let i = 0; i < l.length; i++) {
+      const c = l[i];
+      if (quote === "'") { if (c === "'") quote = null; continue; }   // entre comillas simples la barra es literal
+      if (quote === '$') { if (c === '\\') i++; else if (c === "'") quote = null; continue; }
+      if (quote === '"') { if (c === '\\') i++; else if (c === '"') quote = null; continue; }
+      if (c === '\\') { i++; continue; }
+      if (c === '$' && l[i + 1] === "'" && closesLater("'", ln, i + 2)) { quote = '$'; i++; continue; }
+      if ((c === "'" || c === '"') && closesLater(c, ln, i + 1)) { quote = c; continue; }
+      if (c === '(' && l[i + 1] === '(') { arith++; i++; continue; }
+      if (c === ')' && l[i + 1] === ')' && arith) { arith--; i++; continue; }
+      if (c === '#' && (i === 0 || /[\s;|&()<>]/.test(l[i - 1]))) { out[ln] = l.slice(i + 1); break; }
+      if (c === '<' && l[i + 1] === '<' && l[i + 2] !== '<' && l[i - 1] !== '<' && !arith) {
+        const m = /^<<(-?)\s*\\?(['"]?)([A-Za-z_][\w-]*)\2/.exec(l.slice(i));
+        if (m) {
+          const h = { word: m[3], strip: m[1] === '-' };
+          if (heredocCloses(h, ln)) heredocs.push(h);
+          i += m[0].length - 1;
+        }
+      }
+    }
+    if (!body && heredocs.length) body = heredocs.shift();
+  });
+}
+
+/** PowerShell: `<# … #>` en cualquier lugar, `#` al empezar una palabra; fuera de cadenas y de here-strings. */
+function psComments(lines, out) {
+  let block = false;
+  let here = null;
+  let sq = false;
+  let dq = false;
+  lines.forEach((l, ln) => {
+    if (here) { if (l.startsWith(here)) here = null; return; }
+    if (ln === 0 && l.startsWith('#!')) return;
+    for (let i = 0; i < l.length; i++) {
+      const c = l[i];
+      if (block) {
+        if (c === '#' && l[i + 1] === '>') { block = false; i++; out[ln] += ' '; } else out[ln] += c;
+        continue;
+      }
+      if (sq) { if (c === "'") { if (l[i + 1] === "'") i++; else sq = false; } continue; }
+      if (dq) { if (c === '`') i++; else if (c === '"') { if (l[i + 1] === '"') i++; else dq = false; } continue; }
+      if (c === '`') { i++; continue; }
+      if (c === '@' && (l[i + 1] === '"' || l[i + 1] === "'") && l.slice(i + 2).trim() === '') { here = `${l[i + 1]}@`; break; }
+      if (c === "'") { sq = true; continue; }
+      if (c === '"') { dq = true; continue; }
+      if (c === '<' && l[i + 1] === '#') { block = true; i++; continue; }
+      if (c === '#' && (i === 0 || /[\s;(){}|=,]/.test(l[i - 1]))) { out[ln] += l.slice(i + 1); break; }
+    }
+  });
+}
+
+/** Python y TOML: `#` fuera de cadenas, también de las de triple comilla. */
+function pyComments(lines, out) {
+  let triple = null;
+  lines.forEach((l, ln) => {
+    if (ln === 0 && l.startsWith('#!')) return;
+    for (let i = 0; i < l.length; i++) {
+      if (triple) { if (l.startsWith(triple, i)) { triple = null; i += 2; } continue; }
+      const c = l[i];
+      if ((c === '"' || c === "'") && l.startsWith(c.repeat(3), i)) { triple = c.repeat(3); i += 2; continue; }
+      if (c === '"' || c === "'") { i++; while (i < l.length && l[i] !== c) i += l[i] === '\\' ? 2 : 1; continue; }
+      if (c === '#') { out[ln] = l.slice(i + 1); break; }
+    }
+  });
+}
+
+/** YAML: `#` al empezar la línea o después de un blanco, fuera de un escalar entre comillas. */
+function yamlComments(lines, out) {
+  lines.forEach((l, ln) => {
+    for (let i = 0; i < l.length; i++) {
+      const c = l[i];
+      if (c === "'" && (i === 0 || /[\s:[{,-]/.test(l[i - 1]))) { i++; while (i < l.length && !(l[i] === "'" && l[i + 1] !== "'")) i += l[i] === "'" ? 2 : 1; continue; }
+      if (c === '"' && (i === 0 || /[\s:[{,-]/.test(l[i - 1]))) { i++; while (i < l.length && l[i] !== '"') i += l[i] === '\\' ? 2 : 1; continue; }
+      if (c === '#' && (i === 0 || /\s/.test(l[i - 1]))) { out[ln] = l.slice(i + 1); break; }
+    }
+  });
+}
+
+// las marcas de la matriz por criterio en el título de una prueba son identificadores, no historia
+const TEST_TAGS = /@(?:story|ac)-[0-9][\w.-]*/g;
+/**
+ * Los comentarios de un archivo de código: un texto con las MISMAS líneas, donde cada una trae sólo el texto de sus
+ * comentarios (sin las marcas) y las demás quedan vacías. Así `scan(…, 'comment')` da la línea real, y un comentario
+ * partido en dos renglones se lee entero. El código y las cadenas nunca llegan; el shebang tampoco.
+ * @param {string} text  @param {string} rel la ruta, que dice el lenguaje
+ */
+function commentsOf(text, rel) {
+  const style = commentStyle(rel);
+  const src = String(text).replace(/\r\n?/g, '\n');
+  const lines = src.split('\n');
+  const out = lines.map(() => '');
+  if (style === 'js') jsComments(src, out);
+  else if (style === 'sh') shComments(lines, out);
+  else if (style === 'ps') psComments(lines, out);
+  else if (style === 'py') pyComments(lines, out);
+  else if (style === 'yaml') yamlComments(lines, out);
+  else if (style === 'docker') lines.forEach((l, ln) => { if (/^\s*#/.test(l)) out[ln] = l.replace(/^\s*#/, ''); });
+  return out.map((c) => c.replace(/^\s*#+\s?/, '').trim().replace(TEST_TAGS, (t) => ' '.repeat(t.length))).join('\n');
 }
 
 /**
@@ -344,7 +594,13 @@ function effectiveMode(config, env = process.env) {
   return { mode, lowered: RANK[mode] < RANK[written], odd: false };
 }
 /** El modo de una forma: `warn` sólo si lo dice con todas las letras; mal escrito o sin entrada, `block` (falla cerrado). */
-const formModeOf = (config, form) => (config.forms && config.forms[form] && config.forms[form].mode === 'warn' ? 'warn' : 'block');
+const formModeOf = (config, form, zone = 'prose') => {
+  const forms = zone === 'comment' ? zoneConfig(config, zone).forms : config && config.forms;
+  return forms && forms[form] && forms[form].mode === 'warn' ? 'warn' : 'block';
+};
+/** La parte de la configuración de una zona que no es la prosa (`zones.<zona>`): su `mode` y sus `forms`. Sin ella, vacía
+ *  (el modo escrito cuenta como `block`). */
+const zoneConfig = (config, zone) => (config && config.zones && config.zones[zone] && typeof config.zones[zone] === 'object' ? config.zones[zone] : {});
 
 // ── git: el del hook (con el índice del commit en curso) ─────────────────────────────────────────────────────────
 function git(cwd, args, { tolerate = false, buffer = false } = {}) {
@@ -525,13 +781,14 @@ const declares = (e, f, file) => (e.file === file.dest || e.file === file.real) 
 
 /** Las formas de un archivo de prosa que se publica: todas (`all`) y sin los datos declarados ni lo que ya es del repo
  *  público (`kept`). */
-function findingsOf(pub, dest, allowed, lookup = null) {
+function findingsOf(pub, dest, allowed, lookup = null, zone = 'prose') {
   const file = pub.files.get(dest);
   const text = file.text();
-  if (text === null || text === undefined) throw new CouldNot(`${shown(file.real)} se publica como prosa y no tiene texto que mirar`);
+  if (text === null || text === undefined) throw new CouldNot(`${shown(file.real)} se publica y no tiene texto que mirar`);
   const lines = text.split(/\r?\n/);
   // `ptext`: el renglón donde empieza cada una (para decir después cuál es la nueva: la de un renglón que no estaba)
-  const all = [...scanAll(text, 'prose'), ...teamPaths(text, dest, pub.pathsEnv)].map((f) => ({ ...f, ptext: lines[f.line - 1] }));
+  const found = zone === 'comment' ? scanAll(commentsOf(text, dest), 'comment') : [...scanAll(text, 'prose'), ...teamPaths(text, dest, pub.pathsEnv)];
+  const all = found.map((f) => ({ ...f, ptext: lines[f.line - 1] }));
   const kept = all.filter((f) => !allowed.some((e) => declares(e, f, { real: file.real, dest })) && !isPublicReference(f, lookup));
   return { kept, all, text };
 }
@@ -543,7 +800,7 @@ function countByKey(findings) {
 
 // ── la corrida ───────────────────────────────────────────────────────────────────────────────────────────────────
 function parseArgs(argv) {
-  const a = { mode: 'staged', repo: null, range: null, json: false, ref: 'HEAD', config: null, publicRemote: null };
+  const a = { mode: 'staged', zone: 'prose', repo: null, range: null, json: false, ref: 'HEAD', config: null, publicRemote: null };
   for (let i = 0; i < argv.length; i++) {
     const x = argv[i];
     const value = () => {
@@ -558,15 +815,18 @@ function parseArgs(argv) {
     else if (x === '--ref') a.ref = value();
     else if (x === '--config') a.config = value();
     else if (x === '--public-remote') a.publicRemote = value();
-    else if (x === '--help' || x === '-h') a.help = true;
-    else throw new CouldNot(`no entiendo «${shown(x)}» (uso: [--repo <dir>] [--config <archivo>] [--public-remote <remoto>] [--range <base>...<punta>] | --all [--json] [--ref <commit>])`);
+    else if (x === '--zone') {
+      a.zone = value();
+      if (!['prose', 'comment'].includes(a.zone)) throw new CouldNot(`--zone ${shown(a.zone)}: es prose (la prosa que se publica) o comment (los comentarios del código)`);
+    } else if (x === '--help' || x === '-h') a.help = true;
+    else throw new CouldNot(`no entiendo «${shown(x)}» (uso: [--repo <dir>] [--zone prose|comment] [--config <archivo>] [--public-remote <remoto>] [--range <base>...<punta>] | --all [--json] [--ref <commit>])`);
   }
   return a;
 }
 /**
- * La configuración que ENTRA en el commit, si el control corre desde el mismo repo que se commitea: la del índice, como
- * la lista de datos declarados. Una edición sin stagear de `mode` no baja el control callada (bajarlo se hace con la
- * variable, que lo dice). `null` = no aplica (otro árbol, o el repo no la versiona): vale la del disco.
+ * La configuración de la BASE del commit, si el control corre desde el mismo repo que se commitea. Ni una edición sin
+ * stagear ni una stageada bajan el control sobre el commit que las trae (bajarlo en el momento se hace con la variable,
+ * que lo dice). `null` = no aplica (otro árbol, o la base no la versiona): vale la del disco.
  */
 function stagedConfig(args) {
   const start = args.repo ? path.resolve(args.repo) : process.cwd();
@@ -578,10 +838,9 @@ function stagedConfig(args) {
     throw new CouldNot(`no pude ubicar la configuración que entra en el commit (${e.code || 'error'})`);
   }
   if (own !== repo) return null;
-  const staged = git(repo, ['show', `:${CONFIG_PATH}`], { tolerate: true });
-  if (staged.status === 0) return staged.stdout;
-  // No está en el índice. Si el repo la versiona (está en HEAD), este commit la saca: vale la que está commiteada, no
-  // la copia que quedó en el disco. Si el repo no la versiona, la del disco (`null`).
+  // Vale la que está en la BASE (HEAD), no la que trae el commit: un commit que baja los modos no se los baja a sí mismo
+  // (rige desde el siguiente), y en la revisión de un pedido, donde HEAD es la base, el pedido tampoco. Tampoco vale la
+  // copia del disco sin commitear. Si la base no la versiona, la del disco (`null`).
   const head = git(repo, ['show', `HEAD:${CONFIG_PATH}`], { tolerate: true });
   return head.status === 0 ? head.stdout : null;
 }
@@ -606,12 +865,15 @@ function thinOwnPaths(repo) {
 function isThin(repo) {
   try { return JSON.parse(fs.readFileSync(path.join(repo, THIN_LIST_PATH), 'utf8')).layout === 'thin'; } catch { return false; }
 }
-/** ¿Es el repo del equipo, el público, o el adelgazado? Las señales: la lista del adelgazado, el perfil y la tabla privada. */
-function teamOrPublic(repo) {
-  if (isThin(repo)) return 'thin';
-  const profile = PROFILES.find((n) => fs.existsSync(path.join(repo, n)));
-  if (!profile) return 'public';
-  if (!fs.existsSync(path.join(repo, TABLE_PATH))) throw new CouldNot(`este clon trae ${profile} (es del equipo) y le falta ${TABLE_PATH}: sin la tabla no sé qué sale, y un clon del equipo incompleto no es el repo público`);
+/**
+ * ¿Es el repo del equipo, el público, o el adelgazado? Las señales: la lista del adelgazado y el perfil, leídos en el
+ * árbol de la BASE (`ref`, como en la zona de comentarios: un pedido que los agrega no cambia cómo se lo mira), y la
+ * tabla privada, que el repo del equipo tiene que traer.
+ */
+function teamOrPublic(repo, ref = 'HEAD') {
+  const kind = commentKind(repo, ref);
+  if (kind !== 'team') return kind;
+  if (!fs.existsSync(path.join(repo, TABLE_PATH))) throw new CouldNot(`este clon trae el perfil del equipo y le falta ${TABLE_PATH}: sin la tabla no sé qué sale, y un clon del equipo incompleto no es el repo público`);
   return 'team';
 }
 /**
@@ -658,9 +920,68 @@ const RECLASSIFIES = [LIST_PATH, TABLE_PATH, CONFIG_PATH, 'scripts/publishing/ex
 const reclassifies = (p) => !!p && (RECLASSIFIES.includes(p) || /^packs\/[^/]+\/pack\.json$/.test(p));
 const mayMatter = (p) => !!p && (/\.md$/i.test(p) || reclassifies(p));
 
+/** ¿Mira esta zona el archivo que sale con esta ruta? La prosa, los `.md` del alcance; los comentarios, el código. */
+const inZone = (zone, dest) => (zone === 'comment' ? isCodeFile(dest) : zoneOf(dest) === 'prose');
+/**
+ * Qué repo es, para la zona de comentarios, según el árbol de la BASE (`ref`): `public`, `thin` o `team`. Se mira la base
+ * y no el disco: un pedido que agrega un perfil del equipo o la lista del adelgazado no puede apagar el control sobre sí
+ * mismo (en la revisión del pedido, HEAD es la base). Sin commits todavía, el disco.
+ */
+function commentKind(repo, ref) {
+  const base = git(repo, ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`], { tolerate: true });
+  if (base.status !== 0) {
+    // una base pedida que no existe es «no pude mirar»; sólo un repo sin commits decide por el disco
+    if (ref !== 'HEAD') throw new CouldNot(`la base ${shown(ref)} no es un commit de este repo`);
+    return isThin(repo) ? 'thin' : PROFILES.some((n) => fs.existsSync(path.join(repo, n))) ? 'team' : 'public';
+  }
+  const sha = base.stdout.trim();
+  const has = (rel) => git(repo, ['cat-file', '-e', `${sha}:${rel}`], { tolerate: true }).status === 0;
+  if (has(THIN_LIST_PATH)) {
+    const list = git(repo, ['show', `${sha}:${THIN_LIST_PATH}`], { tolerate: true });
+    try { if (JSON.parse(list.stdout).layout === 'thin') return 'thin'; } catch { /* una lista ilegible no es el adelgazado */ }
+  }
+  return PROFILES.some(has) ? 'team' : 'public';
+}
+/** La zona de comentarios mira el árbol que se publica. En el repo del equipo de antes del corte no aplica: el código que
+ *  sale de ahí se escribe y se mide en el público. */
+const commentNotApplicable = (repo, zone, ref) => zone === 'comment' && commentKind(repo, ref) === 'team';
+/**
+ * La configuración de la zona de comentarios: la de la BASE, no la que trae el commit o el pedido (uno que baja los modos
+ * no se los baja a sí mismo; rige desde el siguiente). Con `--config`, ésa. Si la base no la versiona, la del guion.
+ */
+function commentConfig(args) {
+  if (args.config) return loadConfig(args);
+  const start = args.repo ? path.resolve(args.repo) : process.cwd();
+  const top = git(start, ['rev-parse', '--show-toplevel'], { tolerate: true });
+  if (top.status === 0) {
+    const repo = top.stdout.trim();
+    const at = git(repo, ['show', `${baseRef(repo, args)}:${CONFIG_PATH}`], { tolerate: true });
+    if (at.status === 0) {
+      const config = parseJson(at.stdout, CONFIG_PATH);
+      if (!config || typeof config !== 'object' || !config.forms || typeof config.forms !== 'object') throw new CouldNot(`${CONFIG_PATH} de la base no trae «forms»`);
+      return config;
+    }
+  }
+  return loadConfig({ ...args, mode: 'range' });
+}
+/** La base contra la que se decide, según cómo se corre: la punta pedida en `--all`, la base del rango, o HEAD. */
+function baseRef(repo, args) {
+  if (args.mode === 'all') return args.ref;
+  if (args.mode === 'range') {
+    const m = /^(.+?)(\.{2,3})(.+)$/.exec(args.range || '');
+    if (!m) return 'HEAD';
+    if (m[2] !== '...') return m[1];
+    const mb = git(repo, ['merge-base', m[1], m[3]], { tolerate: true });
+    return mb.status === 0 ? mb.stdout.trim() : m[1];
+  }
+  return 'HEAD';
+}
+
 function runAll(repo, args) {
-  const config = loadConfig(args);
-  const kind = teamOrPublic(repo);
+  const zone = args.zone || 'prose';
+  if (commentNotApplicable(repo, zone, baseRef(repo, args))) return { outcome: 'not-applicable', zone };
+  const config = zone === 'comment' ? commentConfig(args) : loadConfig(args);
+  const kind = zone === 'comment' ? commentKind(repo, baseRef(repo, args)) : teamOrPublic(repo, baseRef(repo, args));
   const tree = treeOf(repo, commitOf(repo, args.ref));
   const pub = published(kind, repo, tree, shown(args.ref), config, true);
   const allowedEntry = tree.find((e) => e.ruta === ALLOWED_PATH && e.tipo === 'blob');
@@ -668,14 +989,15 @@ function runAll(repo, args) {
   const lookup = publicLookup(repo, args.publicRemote || null);
   const forms = {};
   const files = {};
+  const folders = {};
   const seen = new Set();
   const list = [];   // sólo para quien llama a `run` desde un guion (la muestra de falsos positivos): la línea de comandos nunca imprime el texto
   const paths = [];   // cada archivo de prosa mirado, también los que miden cero: quien cuenta otra cosa sobre lo mismo (la medición de la tanda G) parte de acá
   let total = 0;
   let looked = 0;
   for (const dest of [...pub.files.keys()].sort()) {
-    if (zoneOf(dest) !== 'prose') continue;
-    const r = findingsOf(pub, dest, allowed, lookup);
+    if (!inZone(zone, dest)) continue;
+    const r = findingsOf(pub, dest, allowed, lookup, zone);
     looked++;
     const real = pub.files.get(dest).real;
     paths.push(real);
@@ -684,6 +1006,8 @@ function runAll(repo, args) {
       if (f.covered) continue;   // el pedazo que otra forma ya cuenta
       forms[f.form] = (forms[f.form] || 0) + 1;
       (files[real] || (files[real] = {}))[f.form] = (files[real][f.form] || 0) + 1;
+      const folder = real.includes('/') ? real.slice(0, real.lastIndexOf('/')) : '.';
+      folders[folder] = (folders[folder] || 0) + 1;
       total++;
       if (args.detail) list.push({ file: real, line: f.line, form: f.form, value: f.value, text: r.text.split(/\r?\n/)[f.line - 1] });
     }
@@ -700,8 +1024,10 @@ function runAll(repo, args) {
   // En el adelgazado, un archivo que el privado tiene en su versión propia («own») no se mira acá: la versión que se
   // publica es la del público, y sus declaraciones las juzga la CI pública.
   const own = kind === 'thin' ? thinOwnPaths(repo) : new Set();
-  const stale = allowed.filter((e) => e.form && e.form !== 'pr-number' && !seen.has(e) && visibleHere(e) && !own.has(e.file)).map((e) => ({ file: e.file, form: e.form }));
-  return { outcome: 'counted', mode: kind, total, looked, paths, forms, files, stale, publicProblem: lookup.problem(), ...(args.detail ? { list } : {}) };
+  // cada zona juzga las declaraciones de los archivos que mira: las de un guion las juzga la de comentarios
+  const mine = (e) => (zone === 'comment') === isCodeFile(e.file);
+  const stale = allowed.filter((e) => e.form && e.form !== 'pr-number' && mine(e) && !seen.has(e) && visibleHere(e) && !own.has(e.file)).map((e) => ({ file: e.file, form: e.form }));
+  return { outcome: 'counted', zone, mode: kind, total, looked, paths, forms, files, folders, stale, publicProblem: lookup.problem(), ...(args.detail ? { list } : {}) };
 }
 
 function run(args) {
@@ -710,15 +1036,19 @@ function run(args) {
   const repo = fs.realpathSync(git(start, ['rev-parse', '--show-toplevel']).stdout.trim());
   if (args.mode === 'all') return runAll(repo, args);
 
+  const zone = args.zone || 'prose';
+  const base = baseRef(repo, args);
+  if (commentNotApplicable(repo, zone, base)) return { outcome: 'not-applicable', zone };
   const what = whatChanges(repo, args);
   if (!what) return { outcome: 'not-measured' };
   // un borrado sólo importa si es de lo que decide qué se publica (un `.md` que se va no agrega nada)
   const touched = what.parents.flatMap((p) => [...p.changes].flatMap(([p2, c]) => (c.status === 'D' ? (reclassifies(p2) ? [p2] : []) : [p2, c.oldPath])));
-  if (!touched.some(mayMatter)) return { outcome: 'quiet' };
-  const reclassified = touched.some(reclassifies);
+  // en los comentarios no hay nada que reclasificar: lo que se publica de un guion no depende de la lista blanca
+  if (!touched.some(zone === 'comment' ? (p) => !!p && isCodeFile(p) : mayMatter)) return { outcome: 'quiet' };
+  const reclassified = zone !== 'comment' && touched.some(reclassifies);
 
-  const config = loadConfig(args);
-  const kind = teamOrPublic(repo);
+  const config = zone === 'comment' ? commentConfig(args) : loadConfig(args);
+  const kind = zone === 'comment' ? commentKind(repo, base) : teamOrPublic(repo, base);
   const afterTree = what.after();
   const after = published(kind, repo, afterTree, 'el después', config, true);
   const snapshotOf = (sha) => {
@@ -740,12 +1070,12 @@ function run(args) {
   const findings = [];
   let looked = 0;
   for (const [dest, file] of after.files) {
-    if (zoneOf(dest) !== 'prose') continue;
+    if (!inZone(zone, dest)) continue;
     // el antes de este archivo en una foto: el origen de un renombre o de una copia; si no, el MISMO archivo (aunque
-    // saliera con otra ruta); si no, lo que salía con esta ruta. Sólo si era prosa.
+    // saliera con otra ruta); si no, lo que salía con esta ruta. Sólo si era de la zona.
     const beforeIn = (b, change) => {
       if (!b) return null;
-      const prose = (d) => (d && zoneOf(d) === 'prose' ? d : null);
+      const prose = (d) => (d && inZone(zone, d) ? d : null);
       if (change && change.oldPath) return prose(b.byReal.get(change.oldPath));
       if (change && change.status === 'A') return null;
       return prose(b.byReal.get(file.real)) || (b.pub.files.has(dest) ? prose(dest) : null);
@@ -754,10 +1084,10 @@ function run(args) {
     // igual a algún padre: el mismo archivo, con la misma ruta, sin tocar, y sin que el commit cambie qué se publica
     // (una ruta ya escrita pasa a ser del equipo si lo que nombra deja de salir): nada nuevo, y no se lee
     if (!reclassified && what.parents.some((p, i) => beforeDest[i] === dest && befores[i].pub.files.get(dest).real === file.real && !p.changes.has(file.real))) continue;
-    const now = findingsOf(after, dest, allowed, lookup);
+    const now = findingsOf(after, dest, allowed, lookup, zone);
     looked++;
     if (!now.kept.length) continue;
-    const beforeOf = (b, d) => (d ? findingsOf(b.pub, d, allowed, lookup).kept : []);
+    const beforeOf = (b, d) => (d ? findingsOf(b.pub, d, allowed, lookup, zone).kept : []);
     const before = beforeDest.map((d, i) => beforeOf(befores[i], d));
     const counts = before.map(countByKey);
     const base = common ? countByKey(beforeOf(common, beforeIn(common, null))) : null;
@@ -808,7 +1138,7 @@ function run(args) {
       return placed.get(n) === -1 ? { line: n, approximate: true } : { line: placed.get(n) + 1, approximate: false };
     };
     for (const f of said.sort((a, b) => a.line - b.line || a.col - b.col)) {
-      findings.push({ file: file.real, dest, ...realLine(f.line), form: f.form, formMode: formModeOf(config, f.form) });
+      findings.push({ file: file.real, dest, ...realLine(f.line), form: f.form, formMode: formModeOf(config, f.form, zone) });
     }
   }
   findings.sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : a.line - b.line));
@@ -816,6 +1146,31 @@ function run(args) {
 }
 
 // ── el mensaje, la constancia y la salida ────────────────────────────────────────────────────────────────────────
+// qué escribir en lugar de cada forma, en pocas palabras: va al lado de cada hallazgo
+const COMMENT_HINTS = {
+  'story-number': 'sacá el número; si hace falta, nombrá la prueba que lo cubre (Casos: scripts/tests/<archivo>)',
+  'story-bare': 'sacá el número; si hace falta, nombrá la prueba que lo cubre',
+  'batch-code': 'sacá el código del trabajo: decí qué hace esta parte',
+  'incident-log': 'sacá el caso: decí el error en presente («sin esto, X pasa en silencio»)',
+  'incident-log-path': 'sacá la ruta al registro: decí el porqué en presente',
+  'debt-id': 'sacá el código de la deuda: decí el límite que queda («Limitación: …»)',
+  'azure-run': 'sacá la corrida: decí lo que se midió, sin cuándo',
+  'pr-number': 'sacá el número del pedido: decí el porqué',
+  'private-commit': 'sacá el commit: decí qué cambia esta parte',
+  'work-branch': 'sacá la rama, o escribila como marcador (`feature/<nombre>`)',
+  'owner-decision': 'sacá quién y cuándo: decí la regla y su porqué',
+  date: 'sacá la fecha: decí el porqué en presente',
+  history: 'sacá el relato: decí qué hace y qué pasa sin esto, en presente',
+};
+/** El mensaje de la zona de comentarios: dónde, qué escribir en su lugar, y qué hacer en una línea. */
+function reportComments(findings, blocks) {
+  const l = [blocks
+    ? `🛑 historia interna en un comentario nuevo — el commit no se crea (${findings.length} hallazgo(s)):`
+    : `⚠️  historia interna en un comentario nuevo — avisa, no frena (${findings.length} hallazgo(s)):`];
+  for (const f of findings) l.push(`  ${shown(f.file)}:${f.line}  ${f.form}${f.formMode === 'warn' ? '  (esta forma sólo avisa)' : ''} — ${COMMENT_HINTS[f.form] || 'sacá la referencia'}`);
+  l.push(`Qué hacer: reescribí el comentario diciendo qué hace y por qué, en presente y sin la referencia (guides/maintaining/estilo-de-codigo.md); un dato que tiene que quedar tal cual se declara en ${ALLOWED_PATH}.`);
+  return l.join('\n');
+}
 function report(findings, blocks, publicProblem = null) {
   const l = [blocks
     ? `🛑 historia interna en la prosa que se publica — el commit no se crea (${findings.length} hallazgo(s)):`
@@ -856,7 +1211,9 @@ function decisionOf({ mode, findings = [], cannotLook = false, lowered = false, 
 function record(args, state) {
   const { mode, findings = [], cannotLook = false, lowered = false, blocked = false, looked = 0 } = state;
   if (args.mode !== 'staged') return;   // sólo el commit de una máquina: el pedido de cambio y la cuenta no lo son
-  // el registro de frenos: una línea por commit que tocó prosa que se publica, también cuando pasó (es el denominador)
+  // el registro de frenos: una línea por commit que tocó prosa que se publica, también cuando pasó (es el denominador).
+  // La zona de los comentarios anota con el mismo nombre del control: el registro cuenta el control entero, una vez por
+  // zona, y la zona de cada decisión queda en internal-history.jsonl (abajo).
   const decision = decisionOf(state);
   if (decision) {
     try {
@@ -870,7 +1227,7 @@ function record(args, state) {
   try {
     const dir = stateDir();
     fs.mkdirSync(dir, { recursive: true });
-    fs.appendFileSync(path.join(dir, 'internal-history.jsonl'), `${JSON.stringify({ ts: new Date().toISOString(), mode, files: looked, forms, cannot_look: cannotLook, lowered, blocked })}\n`);
+    fs.appendFileSync(path.join(dir, 'internal-history.jsonl'), `${JSON.stringify({ ts: new Date().toISOString(), zone: args.zone || 'prose', mode, files: looked, forms, cannot_look: cannotLook, lowered, blocked })}\n`);
   } catch { /* medir nunca rompe el commit */ }
 }
 const HELP = [
@@ -878,9 +1235,11 @@ const HELP = [
   '  node scripts/publishing/internal-history.js [--repo <dir>] [--config <archivo>]   lo stageado (el pre-commit)',
   '  node scripts/publishing/internal-history.js --range <base>...<punta>              el diff de un pedido de cambio',
   '  node scripts/publishing/internal-history.js --all [--json] [--ref <commit>]       la cuenta de todo lo que se publica',
+  '  --zone comment  los comentarios del código en vez de la prosa (guides/maintaining/estilo-de-codigo.md)',
   `  --public-remote <remoto|dirección>  el repo público (si no, \`origin\` cuando es de GitHub)`,
   `  ${SWITCH}=block|warn|0 pisa el modo escrito en ${CONFIG_PATH}`,
 ].join('\n');
+const NOT_APPLICABLE = 'historia interna en los comentarios: no aplica en el repo del equipo (mira el árbol que se publica, el repo público)';
 /** Un mensaje para imprimir: en UN renglón (un salto de línea adentro podría leerse como un comando del registro) y acotado. */
 const oneLine = (s) => String(s).replace(new RegExp(`[${UNPRINTABLE}]+`, 'g'), ' ').trim().slice(0, 600);
 /**
@@ -907,6 +1266,20 @@ function main() {
   if (args.mode === 'all') {
     try {
       const r = run(args);
+      if (r.outcome === 'not-applicable') {
+        if (args.json) process.stdout.write(`${JSON.stringify({ zone: r.zone, applies: false }, null, 2)}\n`);
+        else process.stdout.write(`${NOT_APPLICABLE}\n`);
+        return 0;
+      }
+      if (args.zone === 'comment') {
+        if (args.json) process.stdout.write(`${JSON.stringify({ zone: 'comment', mode: r.mode, total: r.total, looked: r.looked, forms: r.forms, folders: r.folders, files: r.files, stale: r.stale }, null, 2)}\n`);
+        else {
+          const l = [`historia interna en los comentarios del código (${r.mode === 'thin' ? 'lo que trae el público' : 'todo lo versionado'}): ${r.total} en ${Object.keys(r.files).length} de ${r.looked} archivos`, ''];
+          for (const [form, n] of Object.entries(r.forms).sort((a, b) => b[1] - a[1])) l.push(`  ${form.padEnd(18)} ${n}`);
+          process.stdout.write(`${l.join('\n')}\n`);
+        }
+        return 0;
+      }
       if (args.json) process.stdout.write(`${JSON.stringify({ mode: r.mode, total: r.total, looked: r.looked, forms: r.forms, files: r.files, stale: r.stale }, null, 2)}\n`);
       else {
         const l = [`historia interna en la prosa que se publica (${r.mode === 'team' ? 'repo del equipo: lo que sale' : r.mode === 'thin' ? 'repo de mantenimiento: lo que trae el público' : 'repo público: todo lo versionado'}): ${r.total} en ${Object.keys(r.files).length} de ${r.looked} archivos`, ''];
@@ -923,9 +1296,11 @@ function main() {
 
   // el modo: sin configuración legible manda la variable sola, y sin variable, `block` (lo que no se entiende frena)
   let config = null;
-  try { config = loadConfig(args); } catch { /* si hay algo que mirar, se dice abajo */ }
-  const m = effectiveMode(config, process.env);
-  const summary = (n, cannot, extra) => process.stdout.write(`internal-history: findings=${n} cannot_look=${cannot} mode=${m.mode}${extra ? ` ${extra}` : ''}\n`);
+  const comments = args.zone === 'comment';
+  try { config = comments ? commentConfig(args) : loadConfig(args); } catch { /* si hay algo que mirar, se dice abajo */ }
+  // la zona de comentarios tiene su propio modo escrito (zones.comment.mode); la variable baja las dos
+  const m = effectiveMode(comments ? (config ? { mode: zoneConfig(config, 'comment').mode } : null) : config, process.env);
+  const summary = (n, cannot, extra) => process.stdout.write(`internal-history: ${comments ? 'zone=comment ' : ''}findings=${n} cannot_look=${cannot} mode=${m.mode}${extra ? ` ${extra}` : ''}\n`);
   if (m.odd) say(`⚠️  historia interna: no entiendo ${SWITCH}=«${shown(String(process.env[SWITCH]).slice(0, 40))}» (es block, warn o 0): frena, falla cerrado`);
   if (m.mode === 'off') {
     say(`⚠️  historia interna: control APAGADO por ${SWITCH}=${shown(process.env[SWITCH])} — este cambio no se mira`);
@@ -945,19 +1320,20 @@ function main() {
     return m.mode === 'block' ? 2 : 0;
   }
   if (r.outcome === 'not-measured') { say('historia interna: no medido: el rango no trae commits — nada que comparar'); summary(0, 0, 'measured=0'); return 0; }
+  if (r.outcome === 'not-applicable') { say(NOT_APPLICABLE); summary(0, 0, 'looked=0'); return 0; }
   if (r.outcome === 'quiet') { summary(0, 0, 'looked=0'); record(args, { mode: m.mode, lowered: m.lowered }); return 0; }
 
   const blocking = r.findings.filter((f) => f.formMode === 'block');
   const warnings = r.findings.length - blocking.length;
   const blocks = m.mode === 'block' && blocking.length > 0;
-  if (r.findings.length) say(report(r.findings, blocks, r.publicProblem));
+  if (r.findings.length) say(comments ? reportComments(r.findings, blocks) : report(r.findings, blocks, r.publicProblem));
   // `looked=0` también acá: un `.md` tocado que no era prosa del alcance, o que no se publica, no es «miré y está limpio»
   summary(blocking.length, 0, warnings ? `warnings=${warnings}` : r.looked ? '' : 'looked=0');
   record(args, { mode: m.mode, findings: r.findings, lowered: m.lowered, blocked: blocks, looked: r.looked });
   return blocks ? 1 : 0;
 }
 
-module.exports = { scan, FORMS, ZONES, zoneOf, teamPaths, effectiveMode, formModeOf, logicalLines, parseChanges, parseArgs, run, decisionOf, publicLookup, isPublicReference, CouldNot };
+module.exports = { scan, commentsOf, isCodeFile, COMMENT_HINTS, FORMS, ZONES, zoneOf, teamPaths, effectiveMode, formModeOf, logicalLines, parseChanges, parseArgs, run, decisionOf, publicLookup, isPublicReference, CouldNot };
 
 // el código de salida se deja anotado y el proceso termina solo: `process.exit` corta la salida a medio escribir cuando
 // va por un tubo (la cuenta en JSON de `--all` son miles de renglones)
