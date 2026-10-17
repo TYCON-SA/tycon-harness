@@ -1,6 +1,6 @@
 <!-- requires-profile: full -->
 # ===================================================
-# Nombres por herramienta — lado CLAUDE CODE (2026-08-20)
+# Nombres por herramienta — lado CLAUDE CODE
 # ===================================================
 
 Las reglas de este archivo refieren a las tools por **lo que hacen**; los nombres exactos
@@ -10,15 +10,15 @@ y `~/.codex/AGENTS.md` (Codex) — el resto de las dos copias es idéntico y lo 
 
 | Función | Nombre exacto en Claude Code |
 |---|---|
-| Telegram — responder / avisar | `mcp__plugin_telegram_telegram__reply` |
-| Telegram — editar un aviso ya mandado | `mcp__plugin_telegram_telegram__edit_message` |
-| Clockify — abrir time entry | `mcp__clockify__create-clockify-time-entry` |
-| Clockify — actualizar/cerrar time entry | `mcp__clockify__update-clockify-time-entry` |
-| Clockify — listar projects / workspaces / entries | `mcp__clockify__list-clockify-projects` · `list-clockify-workspaces` · `list-clockify-time-entries` |
-| Memoria persistente (engram) — guardar / buscar / contexto | `mcp__plugin_engram_engram__mem_save` · `mem_search` · `mem_context` · `mem_session_summary` |
+| Telegram — responder / avisar | `mcp__plugin_telegram_telegram__reply` | <!-- integration: telegram -->
+| Telegram — editar un aviso ya mandado | `mcp__plugin_telegram_telegram__edit_message` | <!-- integration: telegram -->
+| Clockify — abrir time entry | `mcp__clockify__create-clockify-time-entry` | <!-- integration: clockify -->
+| Clockify — actualizar/cerrar time entry | `mcp__clockify__update-clockify-time-entry` | <!-- integration: clockify -->
+| Clockify — listar projects / workspaces / entries | `mcp__clockify__list-clockify-projects` · `list-clockify-workspaces` · `list-clockify-time-entries` | <!-- integration: clockify -->
+| Memoria persistente (engram) — guardar / buscar / contexto | `mcp__plugin_engram_engram__mem_save` · `mem_search` · `mem_context` · `mem_session_summary` | <!-- integration: engram -->
 | Pregunta con opciones cerradas (cuadro clickeable) | `AskUserQuestion` |
 | Pregunta abierta por voz (Spokenly) | `mcp__spokenly__ask_user_dictation` (cargarla con `ToolSearch` si está deferred) |
-| CodeGraph — búsqueda estructural de código | tools `mcp__codegraph__codegraph_*` (`_search`, `_context`, `_callers`, `_impact`, …) |
+| CodeGraph — búsqueda estructural de código | tools `mcp__codegraph__codegraph_*` (`_search`, `_context`, `_callers`, `_impact`, …) | <!-- integration: codegraph -->
 | Ejecución en segundo plano | parámetro `run_in_background` en `Bash`/`Agent`; la tool `Workflow` ya corre de fondo |
 | Ver progreso de tareas de fondo / fan-outs | comandos `/tasks` y `/workflows` |
 | Mensaje de seguimiento a un subagente | `SendMessage` |

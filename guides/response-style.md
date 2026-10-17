@@ -118,7 +118,8 @@ por `install-tycon-hooks.sh` en cada máquina; casos en `scripts/controls-bench/
 
 - **Qué cuenta**: caracteres de prosa FUERA de bloques de código; las tablas y el código no cuentan (un
   artefacto que el user pidió no es verbosidad). También líneas de prosa y títulos de sección.
-- **Umbrales**: `TYCON_RESPONSE_MAX_PROSE_CHARS` (**1300**, ≈13 renglones — el que gatea) ·
+- **Umbrales**: `TYCON_RESPONSE_MAX_PROSE_CHARS` (el que gatea; sin la variable, `response.max_chars` del perfil del
+  equipo o el tope del estilo elegido: **1300** ≈13 renglones en `executive`, el de TYCON) ·
   `TYCON_RESPONSE_MAX_LINES` (15) · `TYCON_RESPONSE_MAX_HEADERS` (1) ·
   `TYCON_RESPONSE_MAX_SENTENCE_WORDS` (35, la oración más larga del mensaje).
 - **Largo de oración (2026-10-02)**: de ASD-STE100 (el inglés técnico simplificado, que no existe en

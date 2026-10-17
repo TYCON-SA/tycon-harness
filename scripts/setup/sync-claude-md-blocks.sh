@@ -189,6 +189,93 @@ def integration_state(name):
         return "unknown", "el lector no conoce esa integración"
     return ("off" if data[name] is False else "on"), None
 
+_response = []  # cómo contesta el asistente, una sola vez: ({language, style, max_chars}, None) o (None, por qué no)
+
+def ask_response():
+    """Story 2.31: el idioma, el estilo y el tope del bloque de respuesta, ya resueltos por el lector."""
+    if _response:
+        return _response[0]
+    data, why = None, None
+    if not os.path.isfile(config_reader):
+        why = "no encontré el lector de configuración (scripts/lib/tycon-config.js)"
+    else:
+        try:
+            r = subprocess.run(["node", config_reader, "response", "--json"], stdout=subprocess.PIPE,
+                               stderr=subprocess.DEVNULL, timeout=10)
+            if r.returncode == 2:
+                why = "configuración rota: `node scripts/lib/tycon-config.js validate` dice qué"
+            elif r.returncode != 0:
+                why = "el lector de configuración falló (exit %d)" % r.returncode
+            else:
+                data = json.loads(r.stdout.decode("utf-8"))
+                if not isinstance(data, dict) or not isinstance(data.get("max_chars"), int):
+                    data, why = None, "el lector de configuración contestó algo que no se entiende"
+        except FileNotFoundError:
+            why = "falta node en el PATH"
+        except subprocess.TimeoutExpired:
+            why = "el lector de configuración no contestó a tiempo"
+        except (OSError, ValueError):
+            why = "el lector de configuración contestó algo que no se entiende"
+    _response.append((data, why))
+    return _response[0]
+
+VARIANTS_RE = re.compile(r"^<!--\s*variants:\s*(response)\s*-->\s*$")
+
+def variants_of(path):
+    """La configuración que elige el texto del bloque (`response`) si sus primeras líneas lo declaran
+    (`<!-- variants: response -->`, junto a los otros marcadores), o None: un bloque común."""
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            lines = fh.read().lstrip("﻿").split("\n")
+    except OSError:
+        return None
+    for line in lines:
+        v = VARIANTS_RE.match(line)
+        if v:
+            return v.group(1)
+        if not (REQUIRES_RE.match(line) or PROFILE_RE.match(line)):
+            return None
+    return None
+
+def variant_file(directory):
+    """(archivo de la variante elegida, None) o (None, por qué no se pudo elegir). Las variantes de un bloque viven en la
+    carpeta del mismo nombre, `claude-md-blocks/<bloque>/<estilo>.<idioma>.md` (story 2.31: hoy, response-style)."""
+    try:
+        os.listdir(directory)
+    except OSError:
+        return None, "no pude leer su carpeta de variantes"
+    data, why = ask_response()
+    if data is None:
+        return None, why
+    path = os.path.join(directory, "%s.%s.md" % (data.get("style"), data.get("language")))
+    if not os.path.isfile(path):
+        return None, "no hay texto para el estilo «%s» en «%s»" % (data.get("style"), data.get("language"))
+    return path, None
+
+def fill_variant(body):
+    """El tope de prosa en el texto del estilo: {{max_chars}} y {{max_lines}} (≈ cien caracteres por renglón)."""
+    data = ask_response()[0]
+    n = data["max_chars"]
+    return body.replace("{{max_chars}}", str(n)).replace("{{max_lines}}", str((n + 50) // 100))
+
+# Una fila de tabla que termina en `<!-- integration: <x> -->` se escribe sólo con esa integración prendida (story 2.31,
+# AC 7-8); el marcador nunca se copia. No se pudo saber: la fila queda como estaba en el destino (si estaba, sigue).
+ROW_RE = re.compile(r"^(.*\|)[ \t]*<!--\s*integration:\s*([a-z]+)\s*-->\s*$")
+
+def filter_rows(body, existing):
+    kept_lines = set(l.rstrip("\r") for l in existing.split("\n")) if existing else set()
+    out = []
+    for line in body.split("\n"):
+        m = ROW_RE.match(line)
+        if not m:
+            out.append(line)
+            continue
+        row = m.group(1).rstrip()
+        s, _ = integration_state(m.group(2))
+        if s == "on" or (s == "unknown" and row in kept_lines):
+            out.append(row)
+    return "\n".join(out)
+
 _profile = []  # el perfil de instalación, una sola vez: (perfil activo, None) o (None, por qué no se pudo saber)
 
 def active_profile():
@@ -306,7 +393,12 @@ def atomic_write(path, content, original, label):
 
 try:
     files = sorted(glob.glob(os.path.join(blocks_dir, "*.md")))
-    if not files:
+    # Cada bloque es un `.md` de la raíz (el contrato que leen el instalador, la desinstalación y sus pruebas). Uno que
+    # declara `<!-- variants: response -->` (story 2.31) toma su texto de la carpeta del mismo nombre; una carpeta sola,
+    # sin su archivo, no es un bloque. Orden por nombre, por código de carácter, en las tres implementaciones.
+    entries = sorted([(os.path.splitext(os.path.basename(p))[0], p, variants_of(p) is not None) for p in files],
+                     key=lambda e: e[0])
+    if not entries:
         sys.exit(0)
 
     try:
@@ -322,19 +414,38 @@ try:
     removed = {}   # bloque → por qué se quita (la integración apagada, o el perfil que no lo trae)
     unknown = []   # avisos: bloques cuya integración o perfil no se pudo saber
 
-    for path in files:
-        name = os.path.splitext(os.path.basename(path))[0]
-        body, requires, profiles, bad_marker = read_block(path)
-        state, why = block_state(requires, profiles, bad_marker)
-
+    final = {}     # bloque → su texto entero entre marcadores, como debería quedar (para el reporte del aplicador)
+    for name, path, is_variant in entries:
         start, end = marker_start(name), marker_end(name)
-        desired = "%s\n%s\n%s" % (start, body, end)
-
         # Localizar por PREFIJO del marcador, no por igualdad: así, si mañana cambia
         # el texto del comentario (ej. se agrega una aclaración), el bloque viejo se
         # encuentra igual y se reemplaza en vez de duplicarse.
         start_prefix = "<!-- TYCON_BLOCK:%s START" % name
         i = content.find(start_prefix)
+        j0 = content.find(end, i) if i != -1 else -1
+        existing_body = content[content.find("\n", i) + 1:j0] if j0 != -1 else ""
+
+        # un bloque con variantes mira primero sus propias condiciones (perfil, integración), como cualquier otro; recién
+        # prendido elige el texto. Apagado o sin saber, sigue por el camino común (y sin saber no se toca, abajo)
+        if is_variant and block_state(*read_block(path)[1:])[0] == "on":
+            vpath, vwhy = variant_file(os.path.join(blocks_dir, name))
+            if vpath is None:
+                # no se pudo elegir el texto (configuración rota, un estilo sin texto): no se inventa uno; lo que
+                # había queda tal cual, sin actualizar (story 2.31, AC 6)
+                unknown.append("⚠ tycon: bloque CLAUDE.md '%s': no pude saber cómo tiene que contestar el asistente (%s): %s"
+                               % (name, vwhy, "no se agrega" if i == -1 else "queda como estaba"))
+                if j0 != -1:
+                    final[name] = content[i:j0 + len(end)]
+                continue
+            path = vpath
+
+        body, requires, profiles, bad_marker = read_block(path)
+        if is_variant and path.endswith(".md") and os.path.dirname(path) != blocks_dir:
+            body = fill_variant(body)
+        body = filter_rows(body, existing_body)
+        state, why = block_state(requires, profiles, bad_marker)
+        desired = "%s\n%s\n%s" % (start, body, end)
+        final[name] = desired
         if state == "unknown":
             # No saber no es «apagada»: lo que falta no se agrega; lo que está queda y se actualiza abajo, como siempre.
             outcome = "no se agrega" if i == -1 else "queda donde está"
@@ -352,6 +463,11 @@ try:
             else:
                 unknown.append("⚠ tycon: bloque CLAUDE.md '%s' requiere la integración «%s» y no pude saber si está "
                                "prendida (%s): %s" % (name, requires, why[1], outcome))
+            if is_variant:
+                # sin saber sus condiciones no se elige texto: lo que había queda tal cual (su archivo sólo trae la marca)
+                if j0 != -1:
+                    final[name] = content[i:j0 + len(end)]
+                continue
         if i == -1:
             if state != "on":
                 continue
@@ -413,11 +529,9 @@ try:
 
     # Los bloques que quedaron en su lugar (escritos ahora o que ya estaban), para el reporte del aplicador. Uno con el
     # marcador de cierre perdido no cuenta: no está en su lugar. Uno quitado por su integración apagada, tampoco.
-    for path in files:
-        name = os.path.splitext(os.path.basename(path))[0]
-        body = read_block(path)[0]
-        whole = "%s\n%s\n%s" % (marker_start(name), body, marker_end(name))
-        if whole in content:
+    for name, _, _ in entries:
+        whole = final.get(name)
+        if whole is not None and whole in content:
             record("block", target, "TYCON_BLOCK:%s" % name)
             # por el PREFIJO de la marca, como se localiza el bloque (y como el .ps1): una marca de texto anterior es
             # el mismo bloque (story 8.19, tanda E: la marca cambió de texto)

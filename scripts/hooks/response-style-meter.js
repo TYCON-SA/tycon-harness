@@ -19,7 +19,8 @@
  *   node response-style-meter.js --report --all  # incluye el detalle por turno
  *
  * Opt-out: TYCON_RESPONSE_METER=0
- * Umbrales:  TYCON_RESPONSE_MAX_PROSE_CHARS (1300, el que importa) · TYCON_RESPONSE_MAX_LINES (15)
+ * Umbrales:  TYCON_RESPONSE_MAX_PROSE_CHARS (el que importa; sin la variable, `response.max_chars` de la configuración
+ *            o el tope del estilo elegido —story 2.31—, y 1300 si no se pudo leer) · TYCON_RESPONSE_MAX_LINES (15)
  *            · TYCON_RESPONSE_MAX_HEADERS (1) · TYCON_RESPONSE_MAX_SENTENCE_WORDS (35)
  */
 
@@ -37,7 +38,25 @@ const PROBE_PATH = path.join(STATE_DIR, 'input-shape.json');
 
 const MAX_LINES = Number(process.env.TYCON_RESPONSE_MAX_LINES || 15);
 const MAX_HEADERS = Number(process.env.TYCON_RESPONSE_MAX_HEADERS || 1);
-const MAX_PROSE_CHARS = Number(process.env.TYCON_RESPONSE_MAX_PROSE_CHARS || 1300);
+// El tope de prosa (story 2.31): la variable › `response.max_chars` de la configuración (el perfil del equipo, o el
+// tope del estilo elegido si no lo fija) › 1300, el de siempre, si la configuración no se pudo leer.
+function topeDeLaConfiguracion() {
+  try {
+    const C = require(path.join(__dirname, '..', 'lib', 'tycon-config.js'));
+    if (typeof C.respuesta !== 'function') return null;
+    const r = C.sinAnotar(() => C.leerParaHook());
+    if (r.ok) return C.respuesta(r.config).max_chars;
+    // rota: se mide con el de siempre, y se dice (no saber el tope no es «el tope es 1300»); el medidor sí hace su parte
+    process.stderr.write('⚠️ tycon: la configuración del arnés está rota (node scripts/lib/tycon-config.js validate dice qué): el medidor de estilo usa el tope de siempre, 1300, hasta que se arregle\n');
+    return null;
+  } catch (e) {
+    process.stderr.write(`⚠️ tycon: el medidor de estilo no pudo leer la configuración (${(e && e.message) || e}): usa el tope de siempre, 1300\n`);
+    return null;
+  }
+}
+// se resuelve al medir, después de mirar el apagado (TYCON_RESPONSE_METER=0 no lee la configuración ni avisa nada)
+let MAX_PROSE_CHARS = Number(process.env.TYCON_RESPONSE_MAX_PROSE_CHARS || 1300);
+function resolverTope() { if (!process.env.TYCON_RESPONSE_MAX_PROSE_CHARS) MAX_PROSE_CHARS = Number(topeDeLaConfiguracion() || 1300); }
 const MAX_SENTENCE_WORDS = Number(process.env.TYCON_RESPONSE_MAX_SENTENCE_WORDS || 35);
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -249,9 +268,10 @@ function report(showAll) {
 
 function main() {
   const args = process.argv.slice(2);
-  if (args.includes('--report')) return report(args.includes('--all'));
+  if (args.includes('--report')) { resolverTope(); return report(args.includes('--all')); }
 
   if (process.env.TYCON_RESPONSE_METER === '0') return;
+  resolverTope();
 
   let event = {};
   try {

@@ -52,6 +52,19 @@ const SENIALES = [
 
 const DIR = 'claude-md-blocks';
 const BUDGET = `${DIR}/budget.json`;
+// El tope de prosa más largo que acepta el lector (`response.max_chars`, scripts/lib/tycon-config.js): una variante de
+// estilo se mide con él puesto en `{{max_chars}}` (story 2.31, AC 20).
+const TOPE_MAXIMO = 4000;
+const VARIANTE_DE_ESTILO = /^[a-z]+\.[a-z]{2}\.md$/;
+
+// ── Los títulos sin fecha ni historia (story 2.31, AC 9) ────────────────────────────────────────
+// El título de un bloque es la línea que sigue a un `# ====` de su cabecera. Viaja a cada sesión de cada organización:
+// una fecha o «podada» ahí no le dice nada a nadie; la historia va a la guía del bloque o al incident-log.
+const HISTORIA_EN_TITULO = /\d{4}-\d{2}-\d{2}|\b(?:podad[ao]|promovid[ao]|cablead[ao]|actualizad[ao])\b/iu;
+function titulosConHistoria(texto) {
+  const lineas = String(texto).split('\n');
+  return lineas.filter((l, i) => i > 0 && /^# =+\s*$/.test(lineas[i - 1]) && /^# \S/.test(l) && !/^# =+\s*$/.test(l) && HISTORIA_EN_TITULO.test(l));
+}
 
 // ── El presupuesto, por sus dos nombres (story 8.9, tanda D1) ───────────────────────────────────
 // Este guion mide el disco o el ÍNDICE de otro repo (`--repo`), que puede ser otra versión del arnés:
@@ -208,19 +221,45 @@ function medir({ repo, staged }) {
   let rutas;
   if (staged) {
     try {
-      rutas = git(repo, ['ls-files', '--cached', '-z', '--', `:(glob)${DIR}/*.md`, `:(glob)${DIR}/names/*.md`]).split('\0').filter(Boolean);
+      rutas = [...new Set(git(repo, ['ls-files', '--cached', '-z', '--', `:(glob)${DIR}/*.md`, `:(glob)${DIR}/*/*.md`]).split('\0').filter(Boolean))];
     } catch { return { error: 'no pude leer el índice de git (¿estás en un repo? ¿git está en el PATH?)' }; }
   } else {
     rutas = [];
     try { rutas.push(...fs.readdirSync(path.join(repo, DIR)).filter((f) => f.endsWith('.md')).map((f) => `${DIR}/${f}`)); } catch { /* sin dir */ }
-    try { rutas.push(...fs.readdirSync(path.join(repo, DIR, 'names')).filter((f) => f.endsWith('.md')).map((f) => `${DIR}/names/${f}`)); } catch { /* sin variantes */ }
+    // las variantes de Codex (`names/`) y las carpetas de variantes de estilo (story 2.31: `response-style/<estilo>.<idioma>.md`)
+    let carpetas = [];
+    try { carpetas = fs.readdirSync(path.join(repo, DIR), { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name); } catch { /* sin dir */ }
+    for (const d of carpetas) {
+      // una carpeta que no se deja leer no se mide: no medido no es verde
+      try { rutas.push(...fs.readdirSync(path.join(repo, DIR, d)).filter((f) => f.endsWith('.md')).map((f) => `${DIR}/${d}/${f}`)); } catch (e) { return { error: `no pude leer ${DIR}/${d} (${(e && e.code) || 'error'})` }; }
+    }
   }
   const filas = []; let sumaClaude = 0; const codex = new Map();   // bloque → bytes del lado Codex
+  const estilos = new Map();   // bloque con variantes → la variante más pesada (es la que puede tocarle a una máquina)
+  const titulos = [];          // títulos con fecha o historia (story 2.31, AC 9)
   for (const rel of rutas.sort()) {
-    const c = leer(rel);
-    if (c === null) continue;
+    const c0 = leer(rel);
+    if (c0 === null) continue;
+    const enCarpeta = path.dirname(rel) !== DIR && !rel.startsWith(`${DIR}/names/`);
+    // en una carpeta, sólo `<estilo>.<idioma>.md` es una variante (lo mismo que mira el sincronizador); otro .md
+    // anidado no viaja a ninguna máquina y no se mide (ni se le mira el título)
+    if (enCarpeta && !VARIANTE_DE_ESTILO.test(path.basename(rel))) continue;
+    // y sólo si su bloque existe (`<carpeta>.md` en la raíz, que declara sus variantes): una carpeta suelta no viaja
+    if (enCarpeta && leer(`${DIR}/${path.basename(path.dirname(rel))}.md`) === null) continue;
+    if (rel.startsWith(`${DIR}/names/`) && !rel.endsWith('.codex.md')) continue;
+    for (const t of titulosConHistoria(c0)) titulos.push({ ruta: rel, titulo: t });
+    // una variante de estilo se mide con el tope más largo que acepta el lector: es lo que puede viajar
+    const c = enCarpeta ? c0.split('{{max_chars}}').join(String(TOPE_MAXIMO)).split('{{max_lines}}').join(String(Math.floor((TOPE_MAXIMO + 50) / 100))) : c0;
     const bytes = Buffer.byteLength(c, 'utf8');
     if (rel.startsWith(`${DIR}/names/`) && !rel.endsWith('.codex.md')) continue;   // sólo *.codex.md es una variante; otro .md ahí no reemplaza a nadie
+    if (enCarpeta) {
+      const base = path.basename(path.dirname(rel));
+      const declarado = Object.prototype.hasOwnProperty.call(techos, base);
+      const techo = declarado ? techos[base] : def;
+      filas.push({ bloque: `${base} (variante ${path.basename(rel, '.md')})`, ruta: rel, bytes, techo, declarado, ok: bytes <= techo });
+      estilos.set(base, Math.max(estilos.get(base) || 0, bytes));
+      continue;
+    }
     const esVariante = rel.startsWith(`${DIR}/names/`);
     const base = esVariante ? path.basename(rel).replace(/\.codex\.md$/, '').replace(/\.md$/, '') : path.basename(rel, '.md');
     // la variante puede declarar su propio techo («<bloque>.codex»); si no, hereda el del bloque
@@ -238,6 +277,12 @@ function medir({ repo, staged }) {
     const base = path.basename(rel).replace(/\.codex\.md$/, '').replace(/\.md$/, '');
     if (codex.has(base)) codex.set(base, Buffer.byteLength(leer(rel) || '', 'utf8'));
   }
+  // un bloque con variantes pesa lo que su variante más pesada (su archivo sólo declara la marca), en los dos lados,
+  // salvo que tenga su propia variante de Codex en names/
+  for (const [base, bytes] of estilos) {
+    sumaClaude += bytes;
+    if (!rutas.includes(`${DIR}/names/${base}.codex.md`)) codex.set(base, bytes);
+  }
   for (const v of codex.values()) sumaCodex += v;
   // ── los archivos importados enteros en cada sesión (7.4) ──
   const importados = [];
@@ -249,7 +294,8 @@ function medir({ repo, staged }) {
   const avisos = [];
   if (staged) {
     let diff = '';
-    const objetivos = [`:(glob)${DIR}/*.md`, `:(glob)${DIR}/names/*.md`, ...Object.keys(pres.imported || {})];
+    // también las variantes de estilo (`response-style/<estilo>.<idioma>.md`), donde vive el bloque de estilo
+    const objetivos = [`:(glob)${DIR}/*.md`, `:(glob)${DIR}/*/*.md`, ...Object.keys(pres.imported || {})];
     try { diff = git(repo, ['diff', '--cached', '-U0', '--', ...objetivos]); } catch { /* nada */ }
     let bloque = '';
     for (const l of diff.split('\n')) {
@@ -261,7 +307,7 @@ function medir({ repo, staged }) {
       }
     }
   }
-  return { filas, importados, suma: sumaClaude, sumaCodex, total, totalCodex, totalOk: !total || sumaClaude <= total, totalCodexOk: !totalCodex || sumaCodex <= totalCodex, avisos, def };
+  return { filas, importados, titulos, suma: sumaClaude, sumaCodex, total, totalCodex, totalOk: !total || sumaClaude <= total, totalCodexOk: !totalCodex || sumaCodex <= totalCodex, avisos, def };
 }
 
 function main(argv) {
@@ -271,7 +317,7 @@ function main(argv) {
   const r = medir({ repo, staged });
   const fmt = (n) => n.toLocaleString('es-AR');
   const malImportado = (r.importados || []).some((i) => !i.ok);
-  if (argv.includes('--json')) { console.log(JSON.stringify(r, null, 2)); return r.error ? 2 : (r.filas.some((f) => !f.ok) || !r.totalOk || !r.totalCodexOk || malImportado ? 1 : 0); }
+  if (argv.includes('--json')) { console.log(JSON.stringify(r, null, 2)); return r.error ? 2 : (r.filas.some((f) => !f.ok) || !r.totalOk || !r.totalCodexOk || malImportado || (r.titulos || []).length ? 1 : 0); }
   if (r.error) { console.error(`⚠ claude-md-blocks: ${r.error} — NO se midió nada, y no medido no es verde.`); return 2; }
   const rojos = r.filas.filter((f) => !f.ok);
   for (const f of r.filas) {
@@ -293,6 +339,8 @@ function main(argv) {
   }
   if (r.avisos.length) console.error('   La regla queda en el bloque; el caso, la fecha y la cita van a la guía o al incident-log (guides/response-style.md cuenta cómo se poda un bloque sin perder una regla).');
   const problemas = [];
+  for (const t of r.titulos || []) console.error(`❌ ${t.ruta}: el título trae una fecha o historia: «${t.titulo}»`);
+  if ((r.titulos || []).length) problemas.push(`${r.titulos.map((t) => t.ruta).join(', ')}: un título con fecha o historia (la historia va a la guía del bloque o al incident-log)`);
   if (rojos.length) problemas.push(`${rojos.map((f) => f.bloque).join(', ')} se pasa de su techo`);
   if (!r.totalOk) problemas.push(`la suma de los bloques (lado Claude, ${fmt(r.suma)}) se pasa del total de ${fmt(r.total)}`);
   if (!r.totalCodexOk) problemas.push(`la suma del lado Codex (${fmt(r.sumaCodex)}) se pasa del total de ${fmt(r.totalCodex)}`);

@@ -191,7 +191,15 @@ const VOCABULARIO = Object.freeze({
   // 🔴 El lector del freno de producción (/opt) no la conoce hasta reinstalarlo: escrita en el archivo de una máquina
   // antes, esa copia lee la configuración como ROTA (el caso de la 8.26, tanda F1). En el perfil no choca: no lo lee.
   adversarial: Object.freeze({ model_question: 'opcion:ask|never' }),
+  // Cómo contesta el asistente (story 2.31): el idioma y el estilo del bloque de respuesta del CLAUDE.md (y del AGENTS.md),
+  // y el tope de prosa que mide el medidor de estilo. Cerrados: cada estilo es un texto revisado en
+  // claude-md-blocks/response-style/<estilo>.<idioma>.md, y un valor fuera de la lista es configuración ROTA (el
+  // sincronizador deja el bloque que había). Sin valor: `neutral` en `es`, y el tope del estilo (TOPE_POR_ESTILO).
+  response: Object.freeze({ language: 'opcion:es|en', style: 'opcion:executive|detailed|neutral', max_chars: 'entero:300-4000' }),
 });
+// El tope de prosa de cada estilo cuando el perfil no fija `response.max_chars` (story 2.31): el de `executive` es el de
+// siempre. Lo usan el sincronizador (lo escribe en el bloque) y el medidor (lo mide).
+const TOPE_POR_ESTILO = Object.freeze({ executive: 1300, detailed: 3000, neutral: 2000 });
 // Las claves que SIEMPRE tienen un valor: sin nadie que diga nada, éste, con origen `default` (la política no se apaga:
 // una máquina de afuera, sin perfil, queda en «estable» y «preguntar»; el perfil del equipo trae `latest` + `auto`).
 // `update.skills_source` nace en `separate`: sin que nadie diga nada, ninguna máquina re-apunta nada (story 8.18).
@@ -201,6 +209,7 @@ const DEFAULTS = Object.freeze({
   'update.channel': 'stable', 'update.apply': 'ask', 'update.skills_source': 'separate', 'packs.default': 'none',
   'update.source': 'public', 'rutas.tree': '~/.claude/.tycon-pipeline/harness/tree',
   'adversarial.model_question': 'ask',
+  'response.language': 'es', 'response.style': 'neutral',
 });
 // Las claves en las que el PERFIL DEL EQUIPO le gana al archivo de la máquina (story 8.29, decisión del dueño del
 // 2026-10-11). Para todo lo demás el orden es el de siempre: variable › máquina › perfil. Para éstas: variable › perfil ›
@@ -234,6 +243,8 @@ function paquetesDeTexto(texto) {
   return m ? { motivo: `«${t}»: ${m.replace(/^tiene que ser /, 'tiene que ser ')}` } : { valor: lista };
 }
 
+/** El rango `[min, max]` de un tipo `entero:min-max`, o null si no es de ese tipo. */
+function rangoDe(tipo) { const m = typeof tipo === 'string' ? /^entero:(\d+)-(\d+)$/.exec(tipo) : null; return m ? [Number(m[1]), Number(m[2])] : null; }
 /** Las opciones de un tipo `opcion:a|b`, o null si no es de ese tipo. */
 function optionsOf(tipo) { return typeof tipo === 'string' && tipo.startsWith('opcion:') ? tipo.slice('opcion:'.length).split('|') : null; }
 // Las secciones se ESCRIBEN en inglés en los archivos (story 8.9, tanda P · 2026-09-30): `paths` e `integrations`. El
@@ -324,6 +335,9 @@ const VARIABLES = Object.freeze({
   'packs.default': ['TYCON_PACKS_DEFAULT'],
   'install.profile': ['TYCON_INSTALL_PROFILE'],
   'install.home': ['TYCON_INSTALL_HOME'],
+  'response.language': ['TYCON_RESPONSE_LANGUAGE'],
+  'response.style': ['TYCON_RESPONSE_STYLE'],
+  'response.max_chars': ['TYCON_RESPONSE_MAX_CHARS'],
 });
 
 // Los interruptores por hook que ya existían siguen valiendo POR ENCIMA de la llave de su
@@ -683,6 +697,8 @@ function validarTipo(tipo, valor) {
       if (!(typeof valor === 'string' && valor.trim())) return `tiene que ser un texto no vacío, no ${JSON.stringify(valor)}`;
       return esRutaAbsoluta(valor) ? null : `tiene que ser una ruta absoluta (o con ~), no ${JSON.stringify(valor)}: una relativa no se resuelve contra nada`;
     default: {
+      const rango = rangoDe(tipo);
+      if (rango) return (Number.isInteger(valor) && valor >= rango[0] && valor <= rango[1]) ? null : `tiene que ser un entero entre ${rango[0]} y ${rango[1]}, no ${JSON.stringify(valor)}`;
       const opciones = optionsOf(tipo);
       if (opciones) return (typeof valor === 'string' && opciones.includes(valor.trim())) ? null : `tiene que ser uno de: ${opciones.join(', ')} — no ${JSON.stringify(valor)}`;
       return `tipo desconocido en el vocabulario: ${tipo}`;
@@ -708,6 +724,12 @@ function valorDeEntorno(env, clave, tipo, home) {
     if (tipo === 'paquetes') {
       const p = paquetesDeTexto(v);
       return p.motivo ? { error: { archivo: 'entorno', clave: variable, motivo: `vale ${p.motivo}` } } : { valor: p.valor, variable };
+    }
+    const rango = rangoDe(tipo);
+    if (rango) {
+      const n = /^\d+$/.test(v) ? Number(v) : NaN;
+      if (n >= rango[0] && n <= rango[1]) return { valor: n, variable };
+      return { error: { archivo: 'entorno', clave: variable, motivo: `vale «${v}»; tiene que ser un entero entre ${rango[0]} y ${rango[1]}` } };
     }
     const opciones = optionsOf(tipo);
     if (opciones) {
@@ -887,6 +909,19 @@ function integraciones(config) {
   const out = {};
   for (const k of LAS_OCHO) { const e = estadoIntegracion(config, k).estado; out[k] = e === DETECT ? DETECT : e === 'prendida'; }
   return out;
+}
+/**
+ * Cómo contesta el asistente (story 2.31), según una configuración YA cargada: `{ language, style, max_chars, origen:
+ * { language, style, max_chars } }`. `max_chars` sin valor es el tope del estilo (origen `estilo`).
+ */
+function respuesta(config) {
+  const r = config.valores.response;
+  const o = config.origenes;
+  const tope = r.max_chars === null || r.max_chars === undefined ? TOPE_POR_ESTILO[r.style] : r.max_chars;
+  return {
+    language: r.language, style: r.style, max_chars: tope,
+    origen: { language: o['response.language'], style: o['response.style'], max_chars: r.max_chars === null || r.max_chars === undefined ? 'estilo' : o['response.max_chars'] },
+  };
 }
 /**
  * Las llaves de las dos herramientas (story 8.23, tanda C · AC 24), según una configuración YA cargada:
@@ -1204,7 +1239,7 @@ module.exports = {
   VOCABULARIO, DEFAULTS, PROFILE_WINS, INTEGRACIONES, LAS_OCHO, TOOLS, toolKeys, COMO_SE_PRENDE, VARIABLES, INTERRUPTORES_POR_HOOK, RAIZ_ARNES, NOMBRE_PERFIL, NOMBRE_PERFIL_VIEJO, perfilDelArbol, avisoNombrePerfil, NOMBRE_ENLACE, PLACE_NAME, LEGACY_PLACE_NAME, DONDE_CLAVES, ConfigError,
   rutaMaquina, nombreArchivoMaquina, comoSePrende, rutaPerfil, leerPerfil, rutaLlaveBuzon, cargar, leer, leerParaHook, avisoParaHook, valor, explicar, estadoEnlace, formaPersonal,
   normalizarOrg, nombreDeOrganizacion, resolverRutaDeArchivo, personalEnComentario,
-  esIntegracion, estadoIntegracion, integraciones, integracionParaComando, integracionParaHook, sinAnotar, setKey, cli,
+  esIntegracion, estadoIntegracion, integraciones, respuesta, TOPE_POR_ESTILO, integracionParaComando, integracionParaHook, sinAnotar, setKey, cli,
 };
 
 // ── CLI ──────────────────────────────────────────────────────────────────────────────────────────
@@ -1215,7 +1250,7 @@ module.exports = {
  */
 function cli(argv) {
   const cmd = argv[0];
-  const usage = 'uso: tycon-config.js explain [--json] | get <clave> | validate [--hook] | key <integracion> [--hook [--switch VAR]] | integrations [--shell|--json] | set <clave> <valor>';
+  const usage = 'uso: tycon-config.js explain [--json] | get <clave> | validate [--hook] | key <integracion> [--hook [--switch VAR]] | integrations [--shell|--json] | response [--json] | set <clave> <valor>';
   // `set <clave> <valor>` (story 8.16, tanda D · AC 34): lo que antes se editaba a mano en ~/.claude/tycon.json, con el
   // escritor único (`setKey`). Una llave acepta true, false, 1 o 0 (y `integrations.codex`, además, detect); una opción,
   // sus valores; un texto o una ruta, un texto no vacío. Nunca escribe sobre un archivo roto.
@@ -1239,6 +1274,7 @@ function cli(argv) {
       if (p.motivo) { process.stderr.write(`${clave}: vale ${p.motivo}\n`); process.exit(2); }
       valorNuevo = p.valor;
     }
+    if (rangoDe(tipo) && /^\d+$/.test(String(crudo).trim())) valorNuevo = Number(String(crudo).trim());
     const r = setKey(os.homedir(), clave, valorNuevo);
     if (!r.ok) { process.stderr.write(`tycon-config.js set: ${r.reason}\n`); process.exit(2); }
     const fmt = (x) => (x === null || x === undefined ? '(sin valor)' : Array.isArray(x) ? x.join(',') : String(x));
@@ -1269,6 +1305,15 @@ function cli(argv) {
     if (argv.includes('--json')) { process.stdout.write(JSON.stringify(ocho) + '\n'); process.exit(0); }
     // forma shell: una asignación por integración, sólo `0` · `1` · `detect` (el instalador las evalúa tal cual)
     for (const k of LAS_OCHO) process.stdout.write(`TYCON_INTEG_${k.toUpperCase()}=${ocho[k] === DETECT ? DETECT : (ocho[k] ? '1' : '0')}\n`);
+    process.exit(0);
+  }
+  // `response --json` (story 2.31): idioma, estilo y tope del bloque de respuesta, ya resueltos (lo leen los
+  // sincronizadores de bloques). Rota: nada por stdout y exit 2 —el sincronizador deja el bloque que había—.
+  if (cmd === 'response') {
+    let c;
+    try { c = leer(); } catch (e) { process.stderr.write(e.message + '\n'); process.exit(2); }
+    const r = respuesta(c);
+    process.stdout.write((argv.includes('--json') ? JSON.stringify(r) : `${r.style} ${r.language} ${r.max_chars}`) + '\n');
     process.exit(0);
   }
   if (cmd === 'explain') {
