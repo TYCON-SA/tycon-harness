@@ -9,6 +9,7 @@
 !scripts/metrics/
 !scripts/nightly/dashboard/
 !scripts/setup/harness/
+!scripts/setup/install-effects.json
 !scripts/ci/check-product-parity.js
 !scripts/ci/legacy-options.js
 !skills/tycon-pipeline/scripts/lib/

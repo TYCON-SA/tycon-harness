@@ -63,6 +63,35 @@ test('T2j Imagen_SinHerramientasDePaquetes_YArranca @story-2.30', { skip: SIN_DO
   }
 });
 
+test('T2k Imagen_LaPestanaConfiguracionLeeLoMismoQueElArbol @story-2.30', { skip: SIN_DOCKER }, () => {
+  // la pestaña Configuración lee archivos del árbol del arnés (qué trae cada perfil, los umbrales, los lectores): armada
+  // dentro de la imagen tiene que contestar lo mismo que en el árbol, sin ningún «no se pudo leer». La sonda corre en los
+  // dos lados con un repo de operaciones y uno del perfil de mentira (tests/lib/config-tab-probe.js)
+  const id = crypto.randomBytes(4).toString('hex');
+  const imagen = `site-prueba-config:${id}`;
+  const sonda = (r) => { assert.strictEqual(r.status, 0, (r.stdout + r.stderr).slice(-800)); return JSON.parse(r.stdout.trim().split('\n').pop()); };
+  try {
+    const b = docker(['buildx', 'build', '--load', '-f', 'scripts/site/Dockerfile', '-t', imagen, '.']);
+    assert.strictEqual(b.status, 0, `la imagen se arma: ${(b.stderr || '').slice(-800)}`);
+    const env = { ...process.env, PROBE_FULL: '1' };
+    const arbol = sonda(spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'tests', 'lib', 'config-tab-probe.js')], { cwd: ROOT, encoding: 'utf8', env, timeout: 120000 }));
+    const enImagen = sonda(docker(['run', '--rm', '-e', 'PROBE_FULL=1', '-v', `${path.join(ROOT, 'scripts', 'tests')}:/app/scripts/tests:ro`,
+      imagen, 'node', '/app/scripts/tests/lib/config-tab-probe.js'], { timeout: 120000 }));
+    assert.deepStrictEqual(enImagen.ilegibles, [], 'en la imagen, ninguna sección dice «no se pudo leer»');
+    assert.ok(enImagen.perfiles.minimal > 0 && enImagen.perfiles.full > enImagen.perfiles.minimal, `qué trae cada perfil: ${JSON.stringify(enImagen.perfiles)}`);
+    assert.ok(enImagen.secciones > 0 && enImagen.secciones === arbol.secciones, 'las mismas secciones');
+    for (const s of arbol.respuesta.secciones) {
+      const otra = enImagen.respuesta.secciones.find((x) => x.id === s.id);
+      assert.deepStrictEqual(otra, s, `la sección ${s.id}, igual en la imagen que en el árbol`);
+    }
+    const { secciones: _a, ...restoArbol } = arbol.respuesta;
+    const { secciones: _b, ...restoImagen } = enImagen.respuesta;
+    assert.deepStrictEqual(restoImagen, restoArbol, 'lo demás de la pestaña, igual');
+  } finally {
+    docker(['image', 'rm', '-f', imagen], { timeout: 60000 });
+  }
+});
+
 test('T2i Imagen_SinVersionJson_SeArmaIgual @story-2.30', { skip: SIN_DOCKER }, () => {
   // 🔴 el árbol de la noche (lo privado con lo público encima) no trae version.json en la raíz —lo genera la
   // publicación—: la imagen se arma igual, y el sitio dice la versión como desconocida.

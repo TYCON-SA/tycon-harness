@@ -16,7 +16,7 @@ const read = () => fs.readFileSync(ARCHIVO, 'utf8');
 /** Las líneas de código (sin vacías ni comentarios). */
 const codigo = (t) => t.split('\n').filter((l) => l.trim() && !/^\s*#/.test(l));
 // lo que copia scripts/site/Dockerfile: si cambia algo que la imagen trae, la imagen se vuelve a armar
-const RUTAS = ["'scripts/site/**'", "'scripts/lib/**'", "'scripts/metrics/**'", "'scripts/nightly/**'", "'scripts/setup/harness/**'",
+const RUTAS = ["'scripts/site/**'", "'scripts/lib/**'", "'scripts/metrics/**'", "'scripts/nightly/**'", "'scripts/setup/harness/**'", "'scripts/setup/install-effects.json'",
   "'scripts/ci/check-product-parity.js'", "'scripts/ci/legacy-options.js'", "'skills/tycon-pipeline/scripts/lib/**'", "'skills/tycon-pipeline/steps/**'",
   // y el propio workflow: un cambio a cómo se arma la imagen la vuelve a armar
   "'.github/workflows/site-image.yml'"];
