@@ -520,7 +520,9 @@ montar_castellano() {   # $1=T
 # Sin diccionario inglés (el nocturno es Linux) una palabra que no está en la lista pasa por inglés: lo que depende de
 # eso se declara NO verificado, y el aviso «sin diccionario» no cuenta como que el freno habló (corrida 11337).
 DICC="${TYCON_SPANISH_NAMES_DICTIONARY:-/usr/share/dict/words}"
-hablo_el_freno() { grep -v 'sin diccionario inglés' "$1" | grep 'castellano' >/dev/null; }
+# (el control corre también la parte de las skills, que en este repo de juguete —sin la forma del arnés— no encuentra
+# «el otro repo» y lo avisa, sin frenar: ese aviso no es el freno hablando de un nombre)
+hablo_el_freno() { grep -v 'sin diccionario inglés' "$1" | grep -v 'no encontré arnes' | grep 'castellano' >/dev/null; }
 C_OPT="--si""n-copia"; C_SUB="lim""piar"; C_ENV="TYCON_NO_BA""JAR"; C_KEY="moti""vo"; C_FILE="car""gar-da""tos"
 nuevo_bloqueado() {   # $1=T $2=etiqueta $3...=patrones que el mensaje tiene que traer
   local T="$1" etiqueta="$2"; shift 2
@@ -846,8 +848,10 @@ fi
 # mismo que la nueva (el revisor de retrospectiva de agent-skills sigue llamando la vieja hasta el retiro) y (d) el
 # pre-commit real lintea por la ruta nueva aunque la vieja no esté. Las rutas viejas salen del mapa, nunca escritas acá.
 # desde la R6 los yml del arnés viven en pipelines/ y la plantilla en pipelines/templates/
-R3_ARCHIVOS="pipelines/azure-pipelines.yml pipelines/azure-pipelines-pr.yml pipelines/azure-pipelines-vigilante.yml pipelines/templates/traer-repos.yml .githooks/pre-commit packs/bizuit/new-product-templates/stories/githooks-pre-commit build/check.js"
-R3_YML="pipelines/azure-pipelines.yml pipelines/azure-pipelines-pr.yml pipelines/azure-pipelines-vigilante.yml pipelines/templates/traer-repos.yml"
+# (story 8.41: la validación y su plantilla son del repo privado, con nombre nuevo; la plantilla del hook de stories vive
+# en el paquete bizuit, en la capa del equipo)
+R3_ARCHIVOS="pipelines/azure-pipelines.yml pipelines/azure-pipelines-maintainers-pr.yml pipelines/azure-pipelines-vigilante.yml pipelines/templates/fetch-repos.yml .githooks/pre-commit packs/bizuit/templates/stories/githooks-pre-commit.template build/check.js"
+R3_YML="pipelines/azure-pipelines.yml pipelines/azure-pipelines-maintainers-pr.yml pipelines/azure-pipelines-vigilante.yml pipelines/templates/fetch-repos.yml"
 # La copia pública (story 8.7) no trae los pipelines del equipo (el exportador deja afuera pipelines/**): un yml que ahí
 # no está no se puede parsear, y se dice. En el repo del equipo, que falte uno sigue siendo un rojo.
 if python3 -c 'import yaml' >/dev/null 2>&1; then
@@ -925,7 +929,7 @@ else
   RC=$(commitear "$T" "story rota sin la ruta vieja"); DESPUES=$(cuantos "$T")
   # el rechazo tiene que ser del lint (nombra la story y el motivo), no de un lint que no arranca: un `require` roto
   # también sale ≠0 y daría este verde por el motivo equivocado
-  if [ "$RC" != "0" ] && [ "$ANTES" = "$DESPUES" ] && ! grep -q "no encontré" "$T/out.txt" \
+  if [ "$RC" != "0" ] && [ "$ANTES" = "$DESPUES" ] && ! grep -q "no encontré.*lint-story-frontmatter" "$T/out.txt" \
      && grep -q "story-9.8-rota.md" "$T/out.txt" && grep -q "frontmatter NO cierra" "$T/out.txt" && ! grep -q "Cannot find module" "$T/out.txt"; then
     ok "C-28 T26 el pre-commit real lintea por la ruta nueva: sin la vieja en el laboratorio, la story rota no entra"
   else

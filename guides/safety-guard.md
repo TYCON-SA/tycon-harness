@@ -185,5 +185,5 @@ TYCON_SAFETY_GUARD=1 \
 - Script: [`scripts/hooks/safety-guard-pre.sh`](../scripts/hooks/safety-guard-pre.sh)
 - Installer: [`scripts/install-tycon-hooks.sh`](../scripts/install-tycon-hooks.sh) — sección `OPTIN_HOOKS`
 - Catálogo de reglas: [`advisor-rules-catalog.md`](advisor-rules-catalog.md) — entradas `FS-*`, `GIT-*`, `SUP-*`, `PUB-*`, `SQL-*`, `SEC-*`
-- Hooks complementarios .NET: `packs/bizuit/guides/dotnet-hooks.md` (paquete bizuit) — bloqueo de migraciones SQL ya commiteadas
+- Hooks complementarios .NET: la guía `dotnet-hooks.md` del paquete bizuit — bloqueo de migraciones SQL ya commiteadas
 - Inspiración: [ECC safety-guard](https://github.com/affaan-m/ECC/blob/main/skills/safety-guard/SKILL.md)

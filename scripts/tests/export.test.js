@@ -91,7 +91,8 @@ function splitPrivateBlock(texto) {
 }
 
 // ── contenido de la fixture ────────────────────────────────────────────────────────────────────────
-const REVISORES = ['revisor-nucleo', 'tycon-plugin-dotnet-conventions', 'revisor-cliente'];
+// (el del medio es un revisor de paquete de juguete: los revisores reales del stack viven en su paquete, en la capa)
+const REVISORES = ['revisor-nucleo', 'revisor-del-paquete', 'revisor-cliente'];
 const agente = (nombre, cuerpo) =>
   `---\nname: ${nombre}\ndescription: Revisor de mentira ${nombre}\nmodel: sonnet\ntools: Read, Grep, Glob\n---\n\n${cuerpo}\n`;
 
@@ -100,7 +101,7 @@ const LINEA_BASE = `${JSON.stringify({
   fixed_at: '2026-01-01T00:00:00Z', tool: 'claude', runs: 1,
   cases: {
     'revisor-nucleo::caso-1': true,
-    'tycon-plugin-dotnet-conventions::caso-1': true,
+    'revisor-del-paquete::caso-1': true,
     'revisor-nucleo::limpio': true,
     'revisor-cliente::caso-1': false,
   },
@@ -108,7 +109,7 @@ const LINEA_BASE = `${JSON.stringify({
 const CATALOGO = [
   '# Catálogo de reglas', '', 'Intro.', '',
   '## Núcleo — `revisor-nucleo`', '', 'Reglas NUC-C1.', '',
-  '## .NET — `tycon-plugin-dotnet-conventions`', '', 'Reglas DOTNET-C1.', '', '```text', '~~~', '## esto no es un encabezado', '```', '',
+  '## .NET — `revisor-del-paquete`', '', 'Reglas DOTNET-C1.', '', '```text', '~~~', '## esto no es un encabezado', '```', '',
   '## Cliente — `revisor-cliente`', '', 'Reglas XPAT-C1.', '',
   '## Agregar una regla nueva', '', 'Pasos.', '',
 ].join('\n');
@@ -156,7 +157,7 @@ const LISTA_BASE = {
     bizuit: {
       arnes: { in: ['guides/bizuit/bizuit-plugin.md'], out: [] },
       'agent-skills': {
-        in: ['packs/bizuit/pack.json', 'agents/tycon-plugin-dotnet-conventions.md', 'skills/bizuit-sdd/**'],
+        in: ['packs/bizuit/pack.json', 'agents/revisor-del-paquete.md', 'skills/bizuit-sdd/**'],
         out: [{ glob: 'skills/bizuit-sdd/tests/fixtures/bpmn/**', reason: 'procesos reales de clientes', until: '8.6' }],
       },
     },
@@ -222,9 +223,9 @@ function armarPlantilla() {
     'skills/tycon-pipeline/SKILL.md': '---\nname: tycon-pipeline\n---\n\nOrquesta el pipeline.\n',
     'skills/tycon-pipeline/scripts/paso.js': "'use strict';\nmodule.exports = 1;\n",
     'agents/revisor-nucleo.md': agente('revisor-nucleo', 'Revisa el núcleo.'),
-    'agents/tycon-plugin-dotnet-conventions.md': agente('tycon-plugin-dotnet-conventions', 'Revisa convenciones .NET.'),
+    'agents/revisor-del-paquete.md': agente('revisor-del-paquete', 'Revisa convenciones .NET.'),
     'agents/revisor-cliente.md': agente('revisor-cliente', 'Revisa lo del cliente.'),
-    'packs/bizuit/pack.json': `${JSON.stringify({ name: 'bizuit', reviewers: [{ agent: 'tycon-plugin-dotnet-conventions', group: 'base' }] }, null, 2)}\n`,
+    'packs/bizuit/pack.json': `${JSON.stringify({ name: 'bizuit', reviewers: [{ agent: 'revisor-del-paquete', group: 'base' }] }, null, 2)}\n`,
     'packs/clients/pack.json': `${JSON.stringify({ name: 'clients', reviewers: [{ agent: 'revisor-cliente', group: 'condicional' }, { agent: 'revisor-cliente', group: 'validacion' }] }, null, 2)}\n`,
     'skills/bizuit-sdd/SKILL.md': '---\nname: bizuit-sdd\n---\n\nProcesos BPM.\n',
     'skills/bizuit-sdd/tests/fixtures/bpmn/proceso.bpmn': '<definitions/>\n',

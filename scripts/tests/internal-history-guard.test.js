@@ -1648,8 +1648,16 @@ test('SkillsReviewersAndBlocks_CountBeforeAfter (T58) — la cuenta de antes y d
   // por archivo, al menos tantos marcadores como renglones de la lista: borrar uno de sus ejemplos se ve
   const rows = {};
   for (const rel of withMarker) rows[rel] = (rows[rel] || 0) + 1;
+  // un revisor o una skill que la story 8.41 mudó a su paquete se busca ahí (packs/<p>/agents/, packs/<p>/skills/)
+  const packsDir = path.join(RAIZ, 'packs');
+  const where = (rel) => {
+    if (fs.existsSync(path.join(RAIZ, rel))) return path.join(RAIZ, rel);
+    const packs = fs.existsSync(packsDir) ? fs.readdirSync(packsDir).filter((p) => fs.existsSync(path.join(packsDir, p, 'pack.json'))) : [];
+    const found = packs.map((p) => path.join(packsDir, p, rel)).find((f) => fs.existsSync(f));
+    return found || path.join(RAIZ, rel);
+  };
   for (const [rel, n] of Object.entries(rows)) {
-    const markers = (fs.readFileSync(path.join(RAIZ, rel), 'utf8').match(/<N\.M>|<otra N\.M>|<N-M>|<sha>|<id>|<rama>|<otra>/g) || []).length;
+    const markers = (fs.readFileSync(where(rel), 'utf8').match(/<N\.M>|<otra N\.M>|<N-M>|<sha>|<id>|<rama>|<otra>/g) || []).length;
     assert.ok(markers >= n, `${rel}: ${n} ejemplo(s) de salida en la lista y ${markers} marcador(es) en el archivo`);
   }
   // el skill del pipeline se midió con una corrida sobre una story de juguete: el papel dice qué hizo de cada lado

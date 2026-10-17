@@ -15,6 +15,8 @@ set -uo pipefail
 
 # El arnés de las dos partes es la raíz de este repo, salvo que quien llama diga otro (TYCON_GUIDES_DIR y
 # TYCON_SKILLS_DIR): los guiones que corren los controles son los de este árbol, no los de otra instalación.
+# (si quien llama nombró el arnés, la parte de las skills avisa que le falta un guion aunque ahí no haya arnés)
+_checks_named_harness="${TYCON_GUIDES_DIR:+1}"
 if _checks_root="$(git rev-parse --show-toplevel 2>/dev/null)"; then
   export TYCON_GUIDES_DIR="${TYCON_GUIDES_DIR:-$_checks_root}" TYCON_SKILLS_DIR="${TYCON_SKILLS_DIR:-$_checks_root}"
 fi
@@ -361,7 +363,7 @@ harness_publishing() {
 }
 # Un guion que falta se avisa cuando hay un arnés donde buscarlo (su carpeta de publicación): ahí falta una pieza. Sin
 # arnés (un repo de juguete de las suites del hook) no hay qué mirar, y la parte del arnés ya dijo lo suyo.
-harness_here() { [ -d "${TCG}/scripts/publishing" ] || [ -d "${TCG}/scripts/publicacion" ]; }
+harness_here() { [ -n "${_checks_named_harness:-}" ] || [ -d "${TCG}/scripts/publishing" ] || [ -d "${TCG}/scripts/publicacion" ]; }
 
 # ── El freno de nombres reales nuevos, con la fuente de las skills ──
 # Lo que sale de las skills y los revisores en la copia pública no son sólo los revisores (skills, pasos, comandos). Mira

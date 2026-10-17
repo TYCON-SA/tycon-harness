@@ -232,8 +232,8 @@ Forma canónica: `pipeline.js start --story <spec> --repo <dir>` corre C0/C1/C2/
 
 ## React Conventions (paquete bizuit) — `tycon-plugin-react-conventions`
 
-Archivo del advisor: `~/.claude/agent-skills/agents/tycon-plugin-react-conventions.md`
-Guía canónica: `packs/bizuit/guides/bizuit-plugin-react.md`
+Archivo del advisor: `tycon-plugin-react-conventions.md`, en la carpeta de agentes de su paquete (llega con la capa del equipo)
+Guía canónica: `bizuit-plugin-react.md`, en las guías del paquete bizuit
 
 **Skipea automático** si no hay `.tsx`/`.ts` en el diff o si `package.json` no tiene React como dep.
 
@@ -275,7 +275,7 @@ Guía canónica: `packs/bizuit/guides/bizuit-plugin-react.md`
 
 ## Next.js (paquete bizuit) — `tycon-plugin-nextjs-conventions`
 
-Guía canónica: `packs/bizuit/guides/bizuit-plugin-nextjs.md`
+Guía canónica: `bizuit-plugin-nextjs.md`, en las guías del paquete bizuit
 
 **Skipea automático** si no hay `"next"` en `package.json` o no hay `app/`/`pages/` en el repo.
 
@@ -345,9 +345,9 @@ Archivo del advisor: `~/.claude/agent-skills/agents/tycon-plugin-security-basics
 
 ## .NET Conventions (paquete bizuit) — `tycon-plugin-dotnet-conventions`
 
-Archivo del advisor: `~/.claude/agent-skills/agents/tycon-plugin-dotnet-conventions.md`
+Archivo del advisor: `tycon-plugin-dotnet-conventions.md`, en la carpeta de agentes de su paquete (llega con la capa del equipo)
 
-Las reglas de esta área están canónicamente documentadas en `packs/bizuit/guides/bizuit-plugin-dotnet.md`. El advisor lee esa guía en runtime — los IDs de abajo son el mapeo estable a las reglas.
+Las reglas de esta área están canónicamente documentadas en la guía `bizuit-plugin-dotnet.md` del paquete bizuit. El advisor lee esa guía en runtime — los IDs de abajo son el mapeo estable a las reglas.
 
 ### CRITICAL
 
@@ -411,7 +411,7 @@ Archivo del advisor: `~/.claude/agent-skills/agents/tycon-plugin-tests-coverage.
 
 ## SignalR Hub Reviewer (paquete bizuit) — `signalr-hub-reviewer`
 
-Archivo del advisor: `~/.claude/agent-skills/agents/signalr-hub-reviewer.md`
+Archivo del advisor: `signalr-hub-reviewer.md`, en la carpeta de agentes de su paquete (llega con la capa del equipo)
 
 **Naturaleza condicional**: a diferencia de los otros advisors Core, `signalr-hub-reviewer` NO se invoca por default en cada corrida del `tycon-pipeline`. Se agrega al set paralelo **solo si** el diff incluye `**/Hubs/*.cs`, declara `IHubContext<`, o usa `Clients.X.SendAsync(...)`. Ver `~/.claude/agent-skills/skills/tycon-pipeline/steps/step-05-advisors-parallel.md` (sección "Advisors condicionales").
 
@@ -443,7 +443,7 @@ Archivo del advisor: `~/.claude/agent-skills/agents/signalr-hub-reviewer.md`
 
 ## Migration Impact Analyzer (paquete bizuit) — `migration-impact-analyzer`
 
-Archivo del advisor: `~/.claude/agent-skills/agents/migration-impact-analyzer.md`
+Archivo del advisor: `migration-impact-analyzer.md`, en la carpeta de agentes de su paquete (llega con la capa del equipo)
 
 **Naturaleza condicional**: igual que `signalr-hub-reviewer`, NO se invoca en cada corrida del `tycon-pipeline`. Se agrega al set paralelo **solo si** el diff incluye archivos `database/*.sql`. Ver `~/.claude/agent-skills/skills/tycon-pipeline/steps/step-05-advisors-parallel.md` (sección "Advisors condicionales").
 
@@ -469,7 +469,7 @@ Archivo del advisor: `~/.claude/agent-skills/agents/migration-impact-analyzer.md
 
 ## HTTP Client Resilience .NET (paquete bizuit) — `http-resilience-reviewer`
 
-Archivo del advisor: `~/.claude/agent-skills/agents/http-resilience-reviewer.md`
+Archivo del advisor: `http-resilience-reviewer.md`, en la carpeta de agentes de su paquete (llega con la capa del equipo)
 
 **Naturaleza condicional**: igual que `signalr-hub-reviewer` y `migration-impact-analyzer`, NO se invoca en cada corrida del `tycon-pipeline`. Se agrega al set paralelo **solo si** el diff toca código HTTP cliente .NET (`HttpClient`, `IHttpClientFactory`, `AddHttpClient`, `AddResilienceHandler`/`AddStandardResilienceHandler`, `ResiliencePipeline`, `Polly`). Ver `~/.claude/agent-skills/skills/tycon-pipeline/steps/step-05-advisors-parallel.md` (sección "Advisors condicionales").
 
@@ -501,7 +501,7 @@ Archivo del advisor: `~/.claude/agent-skills/agents/http-resilience-reviewer.md`
 
 ## Worker Lifecycle .NET (paquete bizuit) — `worker-lifecycle-reviewer`
 
-Archivo del advisor: `~/.claude/agent-skills/agents/worker-lifecycle-reviewer.md`
+Archivo del advisor: `worker-lifecycle-reviewer.md`, en la carpeta de agentes de su paquete (llega con la capa del equipo)
 
 **Naturaleza condicional**: NO se invoca en cada corrida del `tycon-pipeline`. Se agrega al set paralelo **solo si** el diff toca código que herede de `BackgroundService` o implemente `IHostedService` (.NET). Ver `step-05-advisors-parallel.md` (sección "Advisors condicionales").
 
@@ -530,7 +530,7 @@ Archivo del advisor: `~/.claude/agent-skills/agents/worker-lifecycle-reviewer.md
 
 ## Feature Wiring Checker (paquete bizuit) — `tycon-feature-wiring-checker`
 
-Archivo del advisor: `~/.claude/agent-skills/agents/tycon-feature-wiring-checker.md`
+Archivo del advisor: `tycon-feature-wiring-checker.md`, en la carpeta de agentes de su paquete (llega con la capa del equipo)
 
 **Naturaleza condicional + stack-specific**: NO se invoca en cada corrida del `tycon-pipeline`. Se agrega al set paralelo **solo si** el diff toca `**/*.tsx` (mount detection), agrega componente / hook / store action exportado, **O** agrega endpoint `MapGet/MapPost/MapPut/MapDelete/MapPatch` en `.cs`. Ver `~/.claude/agent-skills/skills/tycon-pipeline/steps/step-05-advisors-parallel.md` (sección "Advisors condicionales").
 
@@ -568,7 +568,7 @@ Anti-patterns (lo que NO hace este advisor):
 
 ## SignalR Client Reviewer (paquete bizuit) — `signalr-client-reviewer`
 
-Archivo del advisor: `~/.claude/agent-skills/agents/signalr-client-reviewer.md`
+Archivo del advisor: `signalr-client-reviewer.md`, en la carpeta de agentes de su paquete (llega con la capa del equipo)
 
 **Naturaleza condicional**: NO se invoca en cada corrida del `tycon-pipeline`. Se agrega al set paralelo **solo si** el diff toca código que use `HubConnection` / `HubConnectionBuilder` (.NET) o importe `@microsoft/signalr` (JS/TS).
 
