@@ -63,8 +63,8 @@ fi
 # Casos: scripts/tests/pre-commit-stories.test.sh
 FM_LINT="$REPO_ROOT/scripts/lib/lint-story-frontmatter.js"
 # Una ruta por renglón (core.quotePath=false: las tildes salen como son), a un arreglo y pasada entera entre comillas: sin
-# eso una story con espacios en el nombre se partía en pedazos que no existen y el lint la aprobaba sin leerla (pase
-# adversarial de la 8.41; el mismo arreglo que la 8.40 hizo en el hook del repo de stories).
+# eso una story con espacios en el nombre se parte en pedazos que no existen y el lint la aprueba sin leerla (lo mismo
+# que hace el hook del repo de stories). Caso: scripts/tests/pre-commit-stories.test.sh C-01b.
 CHANGED_MD=()
 while IFS= read -r f; do
   case "$f" in *.md) CHANGED_MD+=("$f") ;; esac
