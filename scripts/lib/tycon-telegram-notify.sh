@@ -27,6 +27,17 @@
 #   tycon-telegram-notify.sh --edit <message_id> "texto nuevo" # reescribe un aviso ya mandado
 #   tycon-telegram-notify.sh --chat-id <id> "texto"            # a otro destinatario
 #   tycon-telegram-notify.sh --dry-run "texto"                 # no manda: imprime qué mandaría
+#   printf '%s' "texto" | tycon-telegram-notify.sh --stdin     # el texto por la entrada estándar
+#
+# EL TEXTO NUNCA VA EN LA LÍNEA DE COMANDOS DE CURL. En Windows, el curl de Git es un programa nativo
+# que lee sus argumentos en la página de códigos del sistema: un acento o un signo pasado como
+# argumento llega como un byte suelto que Telegram muestra «�», y un emoji como «?». Por eso el texto
+# le llega a curl por la entrada estándar (`--data-urlencode text@-`), byte a byte. Quien llama desde Node usa
+# `--stdin` por la misma razón: el texto no cruza ninguna línea de comandos.
+#
+# EL TOKEN TAMPOCO. La dirección lleva el token del bot (`…/bot<token>/<método>`), y un argumento se ve en la lista de
+# procesos de la máquina mientras dura el pedido. La dirección le llega a curl en un archivo de configuración propio
+# (`-K`), creado con permisos 600 y borrado al salir.
 #
 # El message_id que imprime es lo que habilita el patrón del arnés para tareas largas: UN aviso por
 # tanda, actualizado con --edit, en vez de una catarata de mensajes nuevos.
@@ -47,6 +58,7 @@ set -uo pipefail
 CHANNEL_DIR="${TYCON_TELEGRAM_DIR:-$HOME/.claude/channels/telegram}"
 API="${TYCON_TELEGRAM_API:-https://api.telegram.org}"
 DRY_RUN=0
+FROM_STDIN=0
 EDIT_ID=""
 CHAT_ID="${TYCON_TELEGRAM_CHAT_ID:-}"
 
@@ -57,14 +69,20 @@ while [ $# -gt 0 ]; do
     --edit)     EDIT_ID="${2:-}"; [ -n "$EDIT_ID" ] || die_usage; shift 2 ;;
     --chat-id)  CHAT_ID="${2:-}"; [ -n "$CHAT_ID" ] || die_usage; shift 2 ;;
     --dry-run)  DRY_RUN=1; shift ;;
-    -h|--help)  sed -n '2,45p' "$0"; exit 0 ;;
+    --stdin)    FROM_STDIN=1; shift ;;
+    -h|--help)  sed -n '2,55p' "$0"; exit 0 ;;
     --)         shift; break ;;
     -*)         echo "opción desconocida: $1" >&2; die_usage ;;
     *)          break ;;
   esac
 done
 
-TEXT="${1:-}"
+if [ "$FROM_STDIN" -eq 1 ]; then
+  [ $# -eq 0 ] || die_usage
+  TEXT="$(cat)"
+else
+  TEXT="${1:-}"
+fi
 [ -n "$TEXT" ] || die_usage
 
 # ── Token ────────────────────────────────────────────────────────────────────────────────────
@@ -79,15 +97,10 @@ if [ -z "$TOKEN" ]; then
 fi
 
 # ── Destinatario ─────────────────────────────────────────────────────────────────────────────
+# El primer id de `allowFrom`, leído por bash y no por un programa aparte: en Windows una ruta de bash (/c/Users/… o
+# /tmp/…) escrita adentro del código de otro programa no la entiende un programa nativo.
 if [ -z "$CHAT_ID" ] && [ -r "$CHANNEL_DIR/access.json" ]; then
-  CHAT_ID="$(python3 -c "
-import json,sys
-try:
-    d=json.load(open('$CHANNEL_DIR/access.json'))
-    a=d.get('allowFrom') or []
-    print(str(a[0]) if a else '')
-except Exception: print('')
-" 2>/dev/null)"
+  CHAT_ID="$(tr -d '\r\n' < "$CHANNEL_DIR/access.json" | grep -o '"allowFrom"[[:space:]]*:[[:space:]]*\[[^]]*\]' | grep -o -- '-\{0,1\}[0-9]\{1,\}' | head -1)"
 fi
 if [ -z "$CHAT_ID" ]; then
   echo "⚠ telegram-notify: no hay destinatario (ni \$TYCON_TELEGRAM_CHAT_ID ni allowFrom en access.json) — NO se mandó el aviso." >&2
@@ -103,9 +116,16 @@ if [ "$DRY_RUN" -eq 1 ]; then
   exit 0
 fi
 
-RESP="$(curl -sS -m 15 -X POST "$API/bot$TOKEN/$METHOD" \
+# la dirección con el token, en un archivo sólo para esta persona: nunca en la línea de comandos de curl
+CURL_CFG="$(umask 077 && mktemp "${TMPDIR:-/tmp}/tycon-telegram.XXXXXX")" || { echo "⚠ telegram-notify: no pude armar el archivo de la dirección — NO se mandó el aviso." >&2; exit 3; }
+trap 'rm -f "$CURL_CFG"' EXIT
+chmod 600 "$CURL_CFG" 2>/dev/null
+URL_CFG="$API/bot$TOKEN/$METHOD"; URL_CFG="${URL_CFG//\\/\\\\}"; URL_CFG="${URL_CFG//\"/\\\"}"
+printf 'url = "%s"\n' "$URL_CFG" > "$CURL_CFG"
+
+RESP="$(printf '%s' "$TEXT" | curl -sS -m 15 -X POST -K "$CURL_CFG" \
   --data-urlencode "chat_id=$CHAT_ID" \
-  --data-urlencode "text=$TEXT" \
+  --data-urlencode "text@-" \
   ${EDIT_ID:+--data-urlencode "message_id=$EDIT_ID"} 2>&1)"
 
 # La respuesta puede traer el token de vuelta en un mensaje de error de curl (URL completa) — se
@@ -113,11 +133,8 @@ RESP="$(curl -sS -m 15 -X POST "$API/bot$TOKEN/$METHOD" \
 SAFE_RESP="${RESP//$TOKEN/<token>}"
 
 if printf '%s' "$RESP" | grep '"ok":true' >/dev/null; then
-  MSG_ID="$(printf '%s' "$RESP" | python3 -c "
-import json,sys
-try: print(json.load(sys.stdin)['result']['message_id'])
-except Exception: print('')
-" 2>/dev/null)"
+  # el primer message_id de la respuesta es el del resultado (`{"ok":true,"result":{"message_id":N,…}}`)
+  MSG_ID="$(printf '%s' "$RESP" | grep -o '"message_id"[[:space:]]*:[[:space:]]*[0-9]\{1,\}' | head -1 | grep -o '[0-9]\{1,\}$')"
   echo "${MSG_ID:-ok}"
   exit 0
 fi

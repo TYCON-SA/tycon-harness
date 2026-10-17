@@ -344,8 +344,10 @@ function openWait(sid, tp, kind, waiting) {
   writeJsonAtomic(waitPath(sid), { ...wait, pid: child.pid });
 }
 
-function runTelegram(args) {
-  return spawnSync('bash', [TELEGRAM_SCRIPT, ...args], { encoding: 'utf8', timeout: 30000, env: process.env, windowsHide: true });
+// el texto va por la entrada estándar, nunca en la línea de comandos: en Windows, lo que cruza una línea de comandos
+// hacia un programa nativo pasa por la página de códigos del sistema y los acentos llegan rotos (tycon-telegram-notify.sh)
+function runTelegram(args, text) {
+  return spawnSync('bash', [TELEGRAM_SCRIPT, ...args, '--stdin'], { input: Buffer.from(text, 'utf8'), encoding: 'utf8', timeout: 30000, env: process.env, windowsHide: true });
 }
 
 /** El proceso del plazo: duerme, mira si la espera sigue igual y, si corresponde, avisa. */
@@ -377,12 +379,12 @@ function timer(sid, openedAt) {
     const entries = [...others, w].map((x) => ({ story: x.story, step: x.step, waiting: x.waiting }));
     const text = buildMessage(entries, { botToken });
 
-    const dry = runTelegram(['--dry-run', ...chatArgs, text]);
+    const dry = runTelegram(['--dry-run', ...chatArgs], text);
     if (dry.status === 3) { after = ['no-channel']; return; }
     if (dry.status !== 0) { after = ['failed', { reason: why(dry) }]; return; }
     const pre = readWait(sid);
     if (pre && pre.openedAt === openedAt) writeJsonAtomic(waitPath(sid), { ...pre, sending: true });   // que nadie lo corte mandando
-    const real = runTelegram([...chatArgs, text]);
+    const real = runTelegram([...chatArgs], text);
     if (real.status !== 0) {
       const cur0 = readWait(sid);
       if (cur0 && cur0.openedAt === openedAt) writeJsonAtomic(waitPath(sid), { ...cur0, sending: false });
@@ -400,7 +402,7 @@ function timer(sid, openedAt) {
     if (!/^\d+$/.test(messageId)) logLine({ session: sid, event: 'message-id-unknown' });
 
     if (shared.messageId && others.length) {
-      const ed = runTelegram(['--edit', String(shared.messageId), ...chatArgs, '⏳ Esperas actualizadas: ver el mensaje siguiente.']);
+      const ed = runTelegram(['--edit', String(shared.messageId), ...chatArgs], '⏳ Esperas actualizadas: ver el mensaje siguiente.');
       if (ed.status !== 0) logLine({ session: sid, event: 'edit-failed', reason: why(ed) });
     }
     writeJsonAtomic(dirs().shared, { messageId: /^\d+$/.test(messageId) ? Number(messageId) : null, sessions: [...others.map((x) => x.session), sid] });

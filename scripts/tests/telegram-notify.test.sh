@@ -102,6 +102,62 @@ process.stdout.write(L.isGeneratedShim(viejo, texto) && destino && path.resolve(
   contiene "T23 R3_Lib_MovedRequires — por la ruta de siempre, sigue usando editMessageText" "método=editMessageText" "$viejo_out"
 fi
 
+# ── T60 · el texto nunca va en la línea de comandos de curl ───────────────────────────────────────────────────────
+# En Windows el curl de Git lee sus argumentos en la página de códigos del sistema: un texto con «¿», «·» o un emoji
+# pasado como argumento llega a Telegram con «�» y «?». Un curl de mentira anota sus argumentos y su entrada: los
+# argumentos no traen el texto ni ningún byte fuera de ASCII, y la entrada trae el texto entero, venga como argumento o
+# por --stdin. Sin red.
+T60_BIN="$(mktemp -d)"
+T60_LOG="$(mktemp -d)"
+cat > "$T60_BIN/curl" <<'CURL'
+#!/usr/bin/env bash
+printf '%s\n' "$@" > "$T60_LOG_DIR/args"
+cat > "$T60_LOG_DIR/stdin"
+prev=""; for a in "$@"; do [ "$prev" = "-K" ] && { printf '%s' "$a" > "$T60_LOG_DIR/cfg-path"; cp "$a" "$T60_LOG_DIR/cfg"; ls -l "$a" | cut -c1-10 > "$T60_LOG_DIR/cfg-mode"; }; prev="$a"; done
+echo '{"ok":true,"result":{"message_id":7}}'
+CURL
+chmod +x "$T60_BIN/curl"
+T60_TEXT='⏳ Una corrida te espera · ¿Sigo con los revisores?'
+for modo in arg stdin; do
+  rm -f "$T60_LOG/args" "$T60_LOG/stdin"
+  if [ "$modo" = arg ]; then
+    out="$(PATH="$T60_BIN:$PATH" T60_LOG_DIR="$T60_LOG" TYCON_TELEGRAM_DIR="$FAKE" bash "$SCRIPT" "$T60_TEXT" 2>&1)"; rc=$?
+  else
+    out="$(printf '%s' "$T60_TEXT" | PATH="$T60_BIN:$PATH" T60_LOG_DIR="$T60_LOG" TYCON_TELEGRAM_DIR="$FAKE" bash "$SCRIPT" --stdin 2>&1)"; rc=$?
+  fi
+  check "T60 ($modo) manda y sale 0" 0 "$rc"
+  check "T60 ($modo) imprime el message_id" 7 "$out"
+  no_contiene "T60 ($modo) el texto no va en los argumentos de curl" "Sigo con los revisores" "$(cat "$T60_LOG/args" 2>/dev/null)"
+  if LC_ALL=C grep -q '[^ -~]' "$T60_LOG/args" 2>/dev/null; then echo "❌ T60 ($modo) los argumentos de curl traen bytes fuera de ASCII"; fallos=$((fallos+1)); else echo "✅ T60 ($modo) los argumentos de curl son ASCII"; fi
+  check "T60 ($modo) curl recibe el texto entero, byte a byte, por la entrada" "$T60_TEXT" "$(cat "$T60_LOG/stdin" 2>/dev/null)"
+  contiene "T60 ($modo) el campo text sale de la entrada (text@-)" "text@-" "$(cat "$T60_LOG/args" 2>/dev/null)"
+  # el token del bot tampoco: la dirección va en un archivo de configuración de curl (-K), con permisos 600, que se borra
+  no_contiene "T61 ($modo) el token no va en los argumentos de curl" "TOKEN-SECRETO-QUE-NO-DEBE-APARECER" "$(cat "$T60_LOG/args" 2>/dev/null)"
+  contiene "T61 ($modo) la dirección con el token va en el archivo de configuración" 'url = "https://api.telegram.org/bot123:TOKEN-SECRETO-QUE-NO-DEBE-APARECER/sendMessage"' "$(cat "$T60_LOG/cfg" 2>/dev/null)"
+  case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*)
+      # en Windows los permisos de Unix no existen en el disco: lo que lo protege es la carpeta temporal de la persona
+      contiene "T61 ($modo) el archivo está en la carpeta temporal de la persona (Windows)" "${TMPDIR:-/tmp}/tycon-telegram." "$(cat "$T60_LOG/cfg-path" 2>/dev/null)" ;;
+    *) check "T61 ($modo) el archivo es sólo de esta persona (600)" "-rw-------" "$(cat "$T60_LOG/cfg-mode" 2>/dev/null)" ;;
+  esac
+  if [ -n "$(cat "$T60_LOG/cfg-path" 2>/dev/null)" ] && [ ! -e "$(cat "$T60_LOG/cfg-path")" ]; then echo "✅ T61 ($modo) el archivo se borra al salir"; else echo "❌ T61 ($modo) el archivo de la dirección quedó en el disco (o curl no lo recibió)"; fallos=$((fallos+1)); fi
+done
+out="$(TYCON_TELEGRAM_DIR="$FAKE" bash "$SCRIPT" --stdin "y además argumento" < /dev/null 2>&1)"; rc=$?
+check "T60 --stdin con un texto de argumento es un uso inválido (2)" 2 "$rc"
+out="$(TYCON_TELEGRAM_DIR="$FAKE" bash "$SCRIPT" --stdin < /dev/null 2>&1)"; rc=$?
+check "T60 --stdin sin texto es un uso inválido (2)" 2 "$rc"
+# T62 · el destinatario y el message_id se leen con bash, sin python3 (en Windows, una ruta de bash escrita adentro del
+# código de python no la encuentra un programa nativo): un access.json en varias líneas, y una respuesta con más campos
+T62_DIR="$(mktemp -d)"
+printf '{\n  "dmPolicy": "allowlist",\n  "allowFrom": [\n    "8234000001",\n    "77"\n  ]\n}\n' > "$T62_DIR/access.json"
+out="$(TYCON_TELEGRAM_DIR="$T62_DIR" TELEGRAM_BOT_TOKEN=x bash "$SCRIPT" --dry-run "hola" 2>&1)"
+contiene "T62 el primer id de allowFrom, en un access.json de varias líneas" "chat_id=8234000001" "$out"
+printf '#!/usr/bin/env bash\ncat > /dev/null\necho '"'"'{"ok":true,"result":{"message_id":4321,"from":{"id":9},"chat":{"id":8234000001},"text":"x"}}'"'"'\n' > "$T60_BIN/curl"
+out="$(PATH="$T60_BIN:$PATH" TYCON_TELEGRAM_DIR="$T62_DIR" TELEGRAM_BOT_TOKEN=x bash "$SCRIPT" "hola" 2>&1)"
+check "T62 imprime el message_id del resultado" 4321 "$out"
+rm -rf "$T62_DIR"
+rm -rf "$T60_BIN" "$T60_LOG"
+
 rm -rf "$VACIO" "$FAKE"
 if [ "$fallos" -eq 0 ]; then echo "✅ telegram-notify: todo verde"; exit 0; fi
 echo "❌ telegram-notify: $fallos rojos"; exit 1
