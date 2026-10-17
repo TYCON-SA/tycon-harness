@@ -40,6 +40,29 @@ test('T1 Imagen_VolumenNuevoEscribiblePorElSitio', { skip: SIN_DOCKER }, () => {
   }
 });
 
+test('T2j Imagen_SinHerramientasDePaquetes_YArranca @story-2.30', { skip: SIN_DOCKER }, () => {
+  // la imagen armada no trae npm, npx, yarn ni corepack (sus módulos traen vulnerabilidades y el sitio no los usa), y el
+  // sitio sigue corriendo: node y git están, y el proceso arranca
+  const id = crypto.randomBytes(4).toString('hex');
+  const imagen = `site-prueba-sin-npm:${id}`;
+  try {
+    const b = docker(['buildx', 'build', '--load', '-f', 'scripts/site/Dockerfile', '-t', imagen, '.']);
+    assert.strictEqual(b.status, 0, `la imagen se arma: ${(b.stderr || '').slice(-800)}`);
+    const r = docker(['run', '--rm', imagen, 'sh', '-c',
+      'for b in npm npx yarn yarnpkg corepack; do command -v "$b" && echo "TRAE $b"; done; ls /usr/local/lib/node_modules 2>/dev/null | sed "s/^/MODULO /"; node -v; git --version']);
+    assert.strictEqual(r.status, 0, (r.stdout + r.stderr).slice(-600));
+    assert.doesNotMatch(r.stdout, /TRAE |MODULO /, `sin herramientas de paquetes: ${r.stdout}`);
+    assert.match(r.stdout, /^v\d+\.\d+\.\d+$/m, 'node sigue');
+    assert.match(r.stdout, /^git version /m, 'git sigue');
+    // el servidor carga y valida su configuración (sin variables, sale diciendo cuál falta: no por un módulo ausente)
+    const s = docker(['run', '--rm', imagen, 'node', 'scripts/site/server.js'], { timeout: 60000 });
+    assert.doesNotMatch(s.stdout + s.stderr, /Cannot find module|ERR_MODULE_NOT_FOUND/, (s.stdout + s.stderr).slice(-400));
+    assert.match(s.stdout + s.stderr, /SITE_/, 'dice qué variable falta');
+  } finally {
+    docker(['image', 'rm', '-f', imagen], { timeout: 60000 });
+  }
+});
+
 test('T2i Imagen_SinVersionJson_SeArmaIgual @story-2.30', { skip: SIN_DOCKER }, () => {
   // 🔴 el árbol de la noche (lo privado con lo público encima) no trae version.json en la raíz —lo genera la
   // publicación—: la imagen se arma igual, y el sitio dice la versión como desconocida.

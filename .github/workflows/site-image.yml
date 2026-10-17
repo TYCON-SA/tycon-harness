@@ -6,8 +6,9 @@
 # el merge le puso a este commit (la etiqueta v<número> de version-tag.yml) y sha-<commit>; nunca latest: cada instalación
 # fija la imagen por su huella (@sha256:…) y la actualiza una persona. La versión viaja adentro, en .tycon-release.json,
 # para que el sitio diga la misma. Un commit que el merge no numeró (lo numeró el siguiente) no publica imagen y lo dice.
-# Con constancia de origen (attest-build-provenance), guardada al lado de la imagen: se sube con la sesión del registro
-# todavía abierta, y la sesión se cierra al final, pase lo que pase.
+# Antes de publicar, Trivy escanea la imagen armada: una vulnerabilidad HIGH o CRITICAL con arreglo publicado frena la
+# publicación; las que todavía no tienen arreglo se avisan. Con constancia de origen (attest-build-provenance), guardada al
+# lado de la imagen: se sube con la sesión del registro todavía abierta, y la sesión se cierra al final, pase lo que pase.
 #
 # La visibilidad del paquete no la fija este workflow: tras la primera publicación, una persona confirma en
 # GitHub → Packages que es público (hacerlo público no tiene vuelta atrás).
@@ -66,8 +67,19 @@ jobs:
           fi
           printf '{ "version": "%s" }\n' "$VERSION" > .tycon-release.json
           echo "publicar=si" >> "$GITHUB_OUTPUT"
-          printf '%s' "$REGISTRO_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           docker build -f scripts/site/Dockerfile -t "${IMAGEN}:${VERSION}" -t "${IMAGEN}:sha-${GITHUB_SHA}" .
+          # el escaneo, ANTES de publicar: una vulnerabilidad HIGH o CRITICAL con arreglo publicado frena todo (exit 1, nada
+          # se sube); las que todavía no tienen arreglo se avisan. Trivy fijado por versión y por huella; la imagen le llega
+          # como archivo, sin el socket de Docker
+          TRIVY="aquasec/trivy:0.75.0@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa"
+          mkdir -p "$RUNNER_TEMP/escaneo/cache"
+          docker save "${IMAGEN}:${VERSION}" -o "$RUNNER_TEMP/escaneo/imagen.tar"
+          ESCANEAR=(docker run --rm -v "$RUNNER_TEMP/escaneo:/escaneo" -e TRIVY_CACHE_DIR=/escaneo/cache "$TRIVY" image --input /escaneo/imagen.tar --severity HIGH,CRITICAL --no-progress)
+          "${ESCANEAR[@]}" --ignore-unfixed --exit-code 1
+          SIN_ARREGLO=$("${ESCANEAR[@]}" --skip-db-update --format json --quiet \
+            | node -e 'let s="";process.stdin.on("data",(d)=>{s+=d}).on("end",()=>{const r=JSON.parse(s).Results||[];process.stdout.write(String(r.reduce((n,x)=>n+(x.Vulnerabilities||[]).length,0)))})')
+          [ "$SIN_ARREGLO" = 0 ] || echo "::warning::${SIN_ARREGLO} vulnerabilidad(es) HIGH o CRITICAL sin arreglo publicado todavía: se publica igual, mirarlas"
+          printf '%s' "$REGISTRO_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           docker push "${IMAGEN}:${VERSION}"
           docker push "${IMAGEN}:sha-${GITHUB_SHA}"
           HUELLA=$(docker inspect --format '{{index .RepoDigests 0}}' "${IMAGEN}:${VERSION}" | sed 's/^.*@//')
