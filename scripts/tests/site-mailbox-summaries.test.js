@@ -306,3 +306,72 @@ test('T53 Hilos_ResumenYTextosConTopeDeTiempo @story-2.30 @ac-25', async () => {
   assert.deepStrictEqual({ resumidas: r.resumidas, fallidas: r.fallidas }, { resumidas: 2, fallidas: 0 });
   assert.deepStrictEqual(conversacionesEn(espejo), []);
 });
+
+test('T54 Sitio_ResumiendoElBuzonGrande_LivezContestaYElHiloPrincipalNoTocaElEspejo @story-2.30 @ac-25', { skip: SIN_BACKEND }, async () => {
+  // el sitio de verdad con las conversaciones prendidas, sobre un buzón que no entra en una pasada: mientras baja,
+  // resume, lee el espejo y arma la vista de Corridas, /livez contesta siempre en menos de un segundo (el plazo de la
+  // sonda de la plataforma), y el hilo principal no hace ninguna operación de disco sobre el espejo (en el disco
+  // montado cada una tarda: todo lo que lo recorre va en un hilo aparte)
+  const N = 10;
+  const blobs = blobsDe(N, 60000);
+  const largo = Buffer.from(blobs['maq-a/r1.hilo.jsonl.gz']).length + Buffer.from(blobs['maq-a/r1.cambio.json.gz']).length;
+  const buzon = await H.arrancarBuzon({ blobs });
+  const raiz = tmp('mbx-livez-');
+  const ops = { version: 1, owners: { default: 'lead@acme.example' }, site: { maintainers: ['lead@acme.example'], mailbox: { provider: 'azure-blob', account: 'cuentax', container: 'runs', threads: true } } };
+  repoConArchivos(raiz, 'ops.git', H.archivosDeOperaciones({ config: ops }), path.join(raiz, 'trabajo'));
+  const git = await arrancarRepoHttp({ raiz, cabecera: CABECERA });
+  const datos = tmp('mbx-livez-datos-');
+  const espejo = path.join(datos, 'buzon');
+  const env = H.envBase({ SITE_OPERATIONS_REPO: git.url('ops.git'), SITE_OPERATIONS_TOKEN: TOKEN, SITE_MAILBOX_SAS: H.sas(), SITE_DATA_DIR: datos });
+  const v = validarConfiguracion(env);
+  assert.ok(v.ok, JSON.stringify(v.problemas));
+  const fuentes = crearFuentes({ cfg: v.cfg, dataDir: datos, log: () => {}, urlBuzon: buzon.base, topeConversacionesBytes: largo * 3 });
+  const vista = require(path.join(H.SITE, 'tabs', 'runs.js')).crearVista({ cfg: v.cfg, fuentes });
+  let h = null;
+  // el espía: cada operación sincrónica de disco del hilo principal sobre el espejo
+  const tocadas = [];
+  const originales = {};
+  const dentro = (p) => typeof p === 'string' && path.resolve(p).startsWith(path.resolve(espejo));
+  for (const nombre of ['statSync', 'lstatSync', 'readFileSync', 'readdirSync', 'existsSync', 'openSync', 'writeFileSync', 'renameSync', 'rmSync', 'mkdirSync', 'unlinkSync']) {
+    originales[nombre] = fs[nombre];
+    fs[nombre] = function espia(p, ...resto) { if (dentro(p)) tocadas.push(`${nombre} ${path.relative(espejo, path.resolve(p))}${process.env.T54_STACK ? ` @ ${new Error().stack.split("\n").slice(2, 5).map((l) => l.trim()).join(" < ")}` : ""}`); return originales[nombre].call(fs, p, ...resto); };
+  }
+  let maximo = 0;
+  let pings = 0;
+  let parar = false;
+  try {
+    h = await H.arrancarSitio({ env, fuentes });
+    const sondear = (async () => {
+      while (!parar) {
+        const t0 = process.hrtime.bigint();
+        const r = await h.pedir('/livez');
+        const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+        assert.strictEqual(r.status, 200);
+        maximo = Math.max(maximo, ms);
+        pings += 1;
+        await new Promise((res) => setTimeout(res, 20));
+      }
+    })();
+    for (let i = 0; i < 20; i++) {
+      await fuentes.refrescar();
+      vista.asegurar();
+      await vista.listo();
+      if (fuentes.buzonEstado().completo && vista.modelo()) break;
+    }
+    parar = true;
+    await sondear;
+    for (const [n, f] of Object.entries(originales)) fs[n] = f;
+    assert.ok(fuentes.buzonEstado().completo, 'la bajada terminó entera');
+    assert.strictEqual(vista.modelo() && vista.modelo().corridas.length, N, 'la vista de Corridas, armada con todas');
+    assert.deepStrictEqual(conversacionesEn(espejo), [], 'todo resumido');
+    assert.ok(pings >= 5, `se sondeó durante el trabajo (${pings} veces)`);
+    assert.ok(maximo < 1000, `/livez tardó a lo sumo ${Math.round(maximo)} ms`);
+    assert.deepStrictEqual(tocadas, [], 'el hilo principal no tocó el espejo');
+  } finally {
+    parar = true;
+    for (const [n, f] of Object.entries(originales)) fs[n] = f;
+    fuentes.detener();
+    if (h) await h.cerrar();
+    await git.cerrar(); await buzon.cerrar();
+  }
+});

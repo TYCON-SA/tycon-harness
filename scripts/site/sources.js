@@ -138,7 +138,12 @@ function nubes(log = () => {}) {
   try { archivos = fs.readdirSync(dir).filter((f) => /^[a-z][a-z0-9-]*\.js$/.test(f)).sort(); } catch (e) { log(`no se pudo leer cloud/ (${e.code || e.message})`); return []; }
   const out = [];
   for (const f of archivos) {
-    try { out.push(require(path.join(dir, f))); } catch (e) { log(`el módulo cloud/${f} no carga (${(e && e.name) || 'error'}): lo de esa nube no está disponible`); }
+    try {
+      const m = require(path.join(dir, f));
+      // de qué archivo salió: la bajada lo vuelve a cargar en un hilo aparte (summaries.js → bajarEnWorker)
+      if (m && typeof m === 'object' && !Object.prototype.hasOwnProperty.call(m, '__archivo')) Object.defineProperty(m, '__archivo', { value: path.join(dir, f), enumerable: false });
+      out.push(m);
+    } catch (e) { log(`el módulo cloud/${f} no carga (${(e && e.name) || 'error'}): lo de esa nube no está disponible`); }
   }
   return out;
 }
@@ -458,7 +463,8 @@ function estadoDeGit(stderr) {
 
 /** Saca los caracteres de control de una línea que va al registro (saltos, escape de la consola). */
 function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}, ahora = Date.now, spawn = correr, urlBuzon, git = 'git', nubes: nubesDadas, presupuestoBuzonMs = 120000,
-  topeConversacionesBytes = TOPE_CONVERSACIONES_BYTES, resumir = (o) => require('./summaries.js').resumirEnWorker({ ...o, skillsDir: process.env.TYCON_SKILLS_DIR || null }) }) {
+  topeConversacionesBytes = TOPE_CONVERSACIONES_BYTES, resumir = (o) => require('./summaries.js').resumirEnWorker({ ...o, skillsDir: process.env.TYCON_SKILLS_DIR || null }),
+  leerEspejo = (o) => require('./summaries.js').leerEspejoEnWorker(o) }) {
   // 🔴 todo lo que este módulo registra puede traer texto del repo de operaciones o del buzón (valores de operations.json,
   //    stderr de git, nombres de archivo): sale sin caracteres de control (revisión de seguridad de la 2.23, vuelta 2)
   const log = (l) => logCrudo(limpiarLinea(l));
@@ -618,8 +624,11 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
     try {
       // con conversaciones: por tandas de `topeConversacionesBytes`, cada una resumida y borrada antes de la siguiente (el
       // disco del sitio guarda los resúmenes, nunca las conversaciones); y el espejo poda lo que ya no está en el buzón
-      r = await nube.bajarBuzon({ cuenta: mb.account, contenedor: mb.container, credencial: cfg.mailboxCredencial, dir: dirBuzon, urlBase: urlBuzon, sinHilos: !conHilos, budgetMs: presupuestoBuzonMs,
-        resumenes: conHilos, topeBytesHilos: conHilos ? topeConversacionesBytes : null, podar: true, log: (l) => log(`buzón: ${l}`) });
+      // la bajada recorre el espejo en el disco montado: con el módulo de la nube cargado de cloud/, en un hilo aparte
+      // (el principal contesta las sondas); una nube dada a mano (las pruebas) corre acá
+      const opts = { cuenta: mb.account, contenedor: mb.container, credencial: cfg.mailboxCredencial, dir: dirBuzon, urlBase: urlBuzon, sinHilos: !conHilos, budgetMs: presupuestoBuzonMs,
+        resumenes: conHilos, topeBytesHilos: conHilos ? topeConversacionesBytes : null, podar: true, log: (l) => log(`buzón: ${l}`) };
+      r = nube.__archivo ? await require('./summaries.js').bajarEnWorker({ modulo: nube.__archivo, ...opts }) : await nube.bajarBuzon(opts);
     } catch (e) { r = { codigo: 1, res: { estado: 'sin_red', motivo: `error inesperado al bajar: ${e.message}` } }; }
     if (conHilos) {
       // pase lo que pase con la bajada: lo que llegó a bajar se resume y se borra (un disco lleno no se espera a la pasada entera)
@@ -642,9 +651,16 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
       st.buzon.generacion += 1;
       st.fallas.buzon = null;
       st.hilos = conHilos;
-      const c = leerCorridas(dirBuzon);
-      // lo informado se lee del mismo espejo, entero: con una bajada a medias queda el de la última entera
-      st.personas.informados = people.leerCorreosInformados(dirBuzon);
+      // lo informado se lee del mismo espejo, entero: con una bajada a medias queda el de la última entera. Las dos
+      // lecturas recorren el espejo en el disco montado: en un hilo aparte, para que el principal siga contestando
+      let leido;
+      try { leido = await leerEspejo({ buzon: dirBuzon }); }
+      catch (e) {
+        const motivo = `la lectura del espejo falló (${e.code || e.message})`;
+        leido = { corridas: { ...noMedida('ilegible'), _motivo: motivo }, informados: { maquinas: {}, uniones: { schema: 1, carpetas: {}, regeneradas: {}, no_medido: motivo }, no_medido: motivo } };
+      }
+      const c = leido.corridas;
+      st.personas.informados = leido.informados;
       if (st.personas.informados.no_medido) log(`lo informado por las máquinas no se pudo leer: ${st.personas.informados.no_medido}`);
       if (c.estado !== 'medido') log(`el espejo del buzón se bajó entero pero no se pudo leer${c._motivo ? `: ${c._motivo}` : ''}`);
       delete c._motivo;
@@ -657,8 +673,11 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
     return noMedida(codigo);
   }
 
-  function leerCarpetas() {
-    const r = leerJsonDe(path.join(dirBuzon, '.carpetas-de-maquina.json'));
+  /** La unión de carpetas del espejo, leída sin trabar el hilo principal (el espejo vive en el disco montado). */
+  async function leerCarpetas() {
+    let r;
+    try { const crudo = await fs.promises.readFile(path.join(dirBuzon, '.carpetas-de-maquina.json'), 'utf8'); try { r = { doc: JSON.parse(crudo) }; } catch { r = { codigo: 'ilegible' }; } }
+    catch (e) { r = { codigo: e.code === 'ENOENT' ? 'sin_foto' : 'ilegible' }; }
     if (r.codigo === 'ilegible') log('.carpetas-de-maquina.json del espejo del buzón no se pudo leer: sin la unión de carpetas');
     if (r.doc && !carpetasProyectadas(r.doc)) log('.carpetas-de-maquina.json no tiene la forma esperada: sin la unión de carpetas');
     return r.doc && isObject(r.doc) ? r.doc : null;
@@ -694,7 +713,7 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
     if (!st.modelo) st.modelo = construir({ corridas: noMedida('cargando'), carpetas: null, t });
     st.navegable = true;
     const corridas = await leerBuzon(st.ultimoBueno, st.modelo && st.modelo.corridas && st.modelo.corridas.codigo !== 'cargando' ? st.modelo.corridas : null, t);
-    st.modelo = construir({ corridas, carpetas: leerCarpetas(), t });
+    st.modelo = construir({ corridas, carpetas: await leerCarpetas(), t });
     await actualizarPerfil();
     st.cargado = true;
     for (const fn of oyentes) { try { fn(); } catch (e) { log(`un aviso de refresco falló: ${e && e.message ? e.message : e}`); } }

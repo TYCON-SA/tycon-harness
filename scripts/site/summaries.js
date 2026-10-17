@@ -1,11 +1,14 @@
 'use strict';
 /**
- * summaries.js — los resúmenes de las corridas del espejo del buzón, en un hilo aparte (`worker_threads`).
+ * summaries.js — el trabajo pesado sobre el espejo del buzón, en un hilo aparte (`worker_threads`).
  *
- * Con `site.mailbox.threads: true`, cada pasada de la bajada trae una tanda de conversaciones y cambios de git; esto los
- * resume (dashboard/runs.js → resumirEspejo: lo que la tabla y el detalle sacan de ellos) y los borra del disco. Leer
- * una conversación pesa (megas, descomprimidas): en un hilo aparte el principal sigue contestando, y con un techo de
- * memoria y uno de tiempo se cae el hilo, nunca el sitio.
+ * El hilo principal del sitio contesta las sondas de vida y de carga (`/livez`, `/readyz`) con un plazo de un segundo, y
+ * el espejo vive en el disco montado del sitio, donde cada `stat` o lectura tarda: con mil archivos, una vuelta por el
+ * espejo en el hilo principal lo deja sin contestar y la plataforma reinicia el contenedor. Todo lo que recorre el
+ * espejo va acá: la bajada (`bajarEnWorker`, con el módulo de la nube), el resumen de las conversaciones (`resumirEnWorker`: dashboard/runs.js →
+ * resumirEspejo, lo que la tabla y el detalle sacan de ellas, y las borra del disco), la lectura de las corridas y de lo
+ * informado por las máquinas (`leerEspejoEnWorker`), la huella del espejo (`huellaEnWorker`) y los textos de una
+ * corrida a demanda (`textosEnWorker`). Con un techo de memoria y uno de tiempo se cae el hilo, nunca el sitio.
  */
 const path = require('path');
 const { Worker, isMainThread, workerData, parentPort } = require('worker_threads');
@@ -27,25 +30,57 @@ function textosEnWorker({ volcado, skillsDir = null, memoriaMb = 512, tiempoMs =
   return enWorker({ __textos: true, volcado, skillsDir }, { memoriaMb, tiempoMs, frase: 'los textos de la corrida no se armaron a tiempo' });
 }
 
-function enWorker(datos, { memoriaMb, tiempoMs, frase }) {
+/**
+ * La bajada del buzón en un hilo aparte: `modulo` es el archivo de la nube (cloud/<nube>.js) y el hilo llama a su
+ * `bajarBuzon` con lo demás; `log` recibe sus líneas. Mismo resultado: { codigo, res }.
+ */
+function bajarEnWorker({ modulo, log = () => {}, memoriaMb = 768, tiempoMs = null, ...opts }) {
+  const plazo = tiempoMs || (Number(opts.budgetMs) || 120000) + 120000;
+  return enWorker({ __bajar: true, modulo, opts }, { memoriaMb, tiempoMs: plazo, frase: 'la bajada del buzón no terminó a tiempo', log });
+}
+
+/** Las corridas del espejo y lo informado por las máquinas, leídos en un hilo aparte: { corridas, informados }. */
+function leerEspejoEnWorker({ buzon, memoriaMb = 768, tiempoMs = 300000 }) {
+  return enWorker({ __leerEspejo: true, buzon }, { memoriaMb, tiempoMs, frase: 'la lectura del espejo del buzón no terminó a tiempo' });
+}
+
+/** La huella del espejo (tabs/runs.js → huellaDelEspejo) en un hilo aparte. */
+function huellaEnWorker({ dir, extra = [], memoriaMb = 256, tiempoMs = 300000 }) {
+  return enWorker({ __huella: true, dir, extra }, { memoriaMb, tiempoMs, frase: 'la huella del espejo no terminó a tiempo' });
+}
+
+function enWorker(datos, { memoriaMb, tiempoMs, frase, log = () => {} }) {
   return new Promise((resolve, reject) => {
     let listo = false;
     const w = new Worker(__filename, { workerData: datos, resourceLimits: { maxOldGenerationSizeMb: memoriaMb } });
     const fin = (fn, x) => { if (listo) return; listo = true; clearTimeout(corte); fn(x); };
     const corte = setTimeout(() => { fin(reject, Object.assign(new Error(frase), { code: 'TIEMPO_AGOTADO' })); w.terminate(); }, tiempoMs);
     if (corte.unref) corte.unref();
-    w.once('message', (m) => (m && m.error ? fin(reject, Object.assign(new Error(m.error), { code: 'FALLA_DEL_HILO' })) : fin(resolve, m)));
+    w.on('message', (m) => {
+      if (m && typeof m.__linea === 'string') { try { log(m.__linea); } catch { /* el registro no corta el trabajo */ } return; }
+      if (m && m.error) fin(reject, Object.assign(new Error(m.error), { code: 'FALLA_DEL_HILO' }));
+      else fin(resolve, m && m.__resultado !== undefined ? m.__resultado : m);
+    });
     w.once('error', (e) => fin(reject, e));
     w.once('exit', (codigo) => fin(reject, Object.assign(new Error(`el hilo salió (${codigo})`), { code: `SALIDA_${codigo}` })));
   });
 }
 
-if (!isMainThread && workerData && workerData.__resumir) {
-  try { parentPort.postMessage(resumirAca(workerData)); } catch (e) { parentPort.postMessage({ error: (e && (e.code ? `${e.code}: ${e.message}` : e.message)) || String(e) }); }
-}
-if (!isMainThread && workerData && workerData.__textos) {
-  try { parentPort.postMessage(require(RUNS).textosDeUnaCorrida(workerData.volcado, { skillsDir: workerData.skillsDir })); }
-  catch (e) { parentPort.postMessage({ error: (e && (e.code ? `${e.code}: ${e.message}` : e.message)) || String(e) }); }
+const mensajeDe = (e) => (e && (e.code ? `${e.code}: ${e.message}` : e.message)) || String(e);
+function trabajo(fn) {
+  Promise.resolve().then(fn).then((r) => parentPort.postMessage({ __resultado: r }), (e) => parentPort.postMessage({ error: mensajeDe(e) }));
 }
 
-module.exports = { resumirEnWorker, resumirAca, textosEnWorker };
+if (!isMainThread && workerData && workerData.__bajar) {
+  trabajo(() => require(workerData.modulo).bajarBuzon({ ...workerData.opts, log: (l) => parentPort.postMessage({ __linea: String(l) }) }));
+}
+if (!isMainThread && workerData && workerData.__leerEspejo) {
+  trabajo(() => ({ corridas: require('./sources.js').leerCorridas(workerData.buzon), informados: require('../lib/people.js').leerCorreosInformados(workerData.buzon) }));
+}
+if (!isMainThread && workerData && workerData.__huella) {
+  trabajo(() => require('./tabs/runs.js').huellaDelEspejo(workerData.dir, workerData.extra));
+}
+if (!isMainThread && workerData && workerData.__resumir) trabajo(() => resumirAca(workerData));
+if (!isMainThread && workerData && workerData.__textos) trabajo(() => require(RUNS).textosDeUnaCorrida(workerData.volcado, { skillsDir: workerData.skillsDir }));
+
+module.exports = { resumirEnWorker, resumirAca, textosEnWorker, bajarEnWorker, leerEspejoEnWorker, huellaEnWorker };
