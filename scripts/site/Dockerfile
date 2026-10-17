@@ -42,6 +42,11 @@ COPY scripts/setup/install-effects.json scripts/setup/
 COPY scripts/ci/check-product-parity.js scripts/ci/legacy-options.js scripts/ci/
 COPY skills/tycon-pipeline/scripts/lib/ skills/tycon-pipeline/scripts/lib/
 COPY skills/tycon-pipeline/steps/step-0*.md skills/tycon-pipeline/steps/
+# los revisores del núcleo y los paquetes de revisores del árbol: la pestaña Configuración dice cuáles conoce esta
+# versión y qué paquetes hay instalados. El público no trae paquetes (llegan con la capa del equipo); con el comodín la
+# imagen se arma igual sin la carpeta
+COPY agents* agents/
+COPY packs* packs/
 
 ENV NODE_ENV=production PORT=8080 TYCON_SKILLS_DIR=/app/skills
 
