@@ -67,6 +67,10 @@ const LIST_PATH = 'scripts/publishing/allowlist.json';
 const TABLE_PATH = 'scripts/publishing/replacements.json';
 // el perfil del equipo con su nombre de hoy o el de antes (los dos dicen «este árbol es del equipo»)
 const PROFILES = ['team-profile.json', 'perfil-equipo.json'];
+// el repo de mantenimiento adelgazado: su lista de lo que repite del público, y la marca del commit local que pone el
+// público encima (la escribe overlay-harness.js del repo de mantenimiento; los dos textos tienen que coincidir)
+const THIN_LIST_PATH = '.tycon/internal-forms.json';
+const OVERLAY_MARK = '[superposición local, no se empuja]';
 const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
 const ZONES = ['prose', 'code', 'message'];
 const PROSE_ROOTS = new Set(['guides', 'getting-started', '.github', 'claude-md-blocks', 'skills', 'commands', 'agents', 'packs']);
@@ -591,14 +595,43 @@ function loadConfig(args) {
   if (!config || typeof config !== 'object' || !config.forms || typeof config.forms !== 'object') throw new CouldNot(`${CONFIG_PATH} no trae «forms»`);
   return config;
 }
-/** ¿Es el repo del equipo o el público? Dos señales, como el freno de nombres: el perfil y la tabla privada. */
+/**
+ * ¿El repo de mantenimiento adelgazado? Lo dice su lista de lo que repite del público (`layout: "thin"`). Ese repo no
+ * publica nada: lo que sale es lo que trae el público, que en un árbol armado (el privado con el público encima, como
+ * lo arma `overlay-harness.js --after-cut`) está mezclado con lo privado.
+ */
+function thinOwnPaths(repo) {
+  try { return new Set(Object.keys(JSON.parse(fs.readFileSync(path.join(repo, THIN_LIST_PATH), 'utf8')).own || {})); } catch { return new Set(); }
+}
+function isThin(repo) {
+  try { return JSON.parse(fs.readFileSync(path.join(repo, THIN_LIST_PATH), 'utf8')).layout === 'thin'; } catch { return false; }
+}
+/** ¿Es el repo del equipo, el público, o el adelgazado? Las señales: la lista del adelgazado, el perfil y la tabla privada. */
 function teamOrPublic(repo) {
+  if (isThin(repo)) return 'thin';
   const profile = PROFILES.find((n) => fs.existsSync(path.join(repo, n)));
   if (!profile) return 'public';
   if (!fs.existsSync(path.join(repo, TABLE_PATH))) throw new CouldNot(`este clon trae ${profile} (es del equipo) y le falta ${TABLE_PATH}: sin la tabla no sé qué sale, y un clon del equipo incompleto no es el repo público`);
   return 'team';
 }
-const published = (kind, repo, tree, name, config, strict) => (kind === 'team' ? publishedTeam(repo, tree, name, { strict }) : publishedPublic(repo, tree, config));
+/**
+ * Lo que se publica de un árbol del repo adelgazado: lo que trae el público. En un árbol armado, HEAD es el commit de
+ * la superposición (su asunto lleva OVERLAY_MARK) y su primer padre es la punta del privado: se publica cada archivo que
+ * no está en esa punta o que la superposición cambió. Las versiones propias del privado («own») quedan iguales a la
+ * punta y no cuentan: la del público se mide en su CI. Sin superposición, el árbol es sólo lo privado y no se publica nada.
+ */
+function publishedThin(repo, tree, config) {
+  const head = commitOf(repo, 'HEAD');
+  const subject = git(repo, ['log', '-1', '--format=%s', head]).stdout;
+  const base = subject.includes(OVERLAY_MARK) ? treeOf(repo, commitOf(repo, `${head}^`)) : tree;
+  const privateBlobs = new Map(base.filter((e) => e.tipo === 'blob').map((e) => [e.ruta, e.obj]));
+  return publishedPublic(repo, tree.filter((e) => e.tipo === 'blob' && privateBlobs.get(e.ruta) !== e.obj), config);
+}
+const published = (kind, repo, tree, name, config, strict) => {
+  if (kind === 'team') return publishedTeam(repo, tree, name, { strict });
+  if (kind === 'thin') return publishedThin(repo, tree, config);
+  return publishedPublic(repo, tree, config);
+};
 
 /** Qué cambia: los padres (`{ sha, changes }`) y el árbol del después. `null` = un rango sin commits. */
 function whatChanges(repo, args) {
@@ -664,7 +697,10 @@ function runAll(repo, args) {
   const env = pub.pathsEnv;
   const underRoot = (value) => (config.nonPublicRoots || []).includes(String(value).split('/')[0]);
   const visibleHere = (e) => e.form !== 'team-path' || (env.team ? !!env.team(e.value) || !underRoot(e.value) : underRoot(e.value));
-  const stale = allowed.filter((e) => e.form && e.form !== 'pr-number' && !seen.has(e) && visibleHere(e)).map((e) => ({ file: e.file, form: e.form }));
+  // En el adelgazado, un archivo que el privado tiene en su versión propia («own») no se mira acá: la versión que se
+  // publica es la del público, y sus declaraciones las juzga la CI pública.
+  const own = kind === 'thin' ? thinOwnPaths(repo) : new Set();
+  const stale = allowed.filter((e) => e.form && e.form !== 'pr-number' && !seen.has(e) && visibleHere(e) && !own.has(e.file)).map((e) => ({ file: e.file, form: e.form }));
   return { outcome: 'counted', mode: kind, total, looked, paths, forms, files, stale, publicProblem: lookup.problem(), ...(args.detail ? { list } : {}) };
 }
 
@@ -873,7 +909,7 @@ function main() {
       const r = run(args);
       if (args.json) process.stdout.write(`${JSON.stringify({ mode: r.mode, total: r.total, looked: r.looked, forms: r.forms, files: r.files, stale: r.stale }, null, 2)}\n`);
       else {
-        const l = [`historia interna en la prosa que se publica (${r.mode === 'team' ? 'repo del equipo: lo que sale' : 'repo público: todo lo versionado'}): ${r.total} en ${Object.keys(r.files).length} de ${r.looked} archivos`, ''];
+        const l = [`historia interna en la prosa que se publica (${r.mode === 'team' ? 'repo del equipo: lo que sale' : r.mode === 'thin' ? 'repo de mantenimiento: lo que trae el público' : 'repo público: todo lo versionado'}): ${r.total} en ${Object.keys(r.files).length} de ${r.looked} archivos`, ''];
         for (const [form, n] of Object.entries(r.forms).sort((a, b) => b[1] - a[1])) l.push(`  ${form.padEnd(16)} ${n}`);
         if (r.stale.length) l.push('', `declaraciones que ya no aparecen donde dicen (${ALLOWED_PATH}): ${r.stale.map((s) => `${shown(s.file)} [${shown(s.form)}]`).join(', ')}`);
         process.stdout.write(`${l.join('\n')}\n`);

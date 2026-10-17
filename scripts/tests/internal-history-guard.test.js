@@ -1464,7 +1464,7 @@ test('InternalHistoryGuard_RealRepo_AllRuns_NoStaleDeclarations — sobre este r
   const r = spawnSync(process.execPath, [GUARD, '--repo', RAIZ, '--all', '--json'], { cwd: RAIZ, encoding: 'utf8', env: cleanEnv({ HOME: home, USERPROFILE: home }) });
   assert.strictEqual(r.status, 0, `${r.stdout}${r.stderr}`);
   const d = JSON.parse(r.stdout);
-  assert.ok(['team', 'public'].includes(d.mode));
+  assert.ok(['team', 'public', 'thin'].includes(d.mode), `modo inesperado: ${d.mode}`);
   assert.strictEqual(typeof d.total, 'number');
   assert.deepStrictEqual(d.stale, [], 'una declaración que ya no hace falta, sale');
 });
@@ -1488,8 +1488,11 @@ test('PublishedGuidesAndCovers_NoInternalHistory (T26) — ninguna guía ni port
   assert.deepStrictEqual(left, [], 'cada guía y cada portada dice la regla y su porqué, sin el caso: lo que es un dato o un ejemplo se declara, con su motivo');
   // y el cero no es un cero vacío: el control miró las portadas y las guías
   const looked = d.paths.filter(isGuideOrCover);
-  for (const f of ['README.md', 'INSTALL.md', 'story-format.md']) assert.ok(looked.includes(f), `${f} está entre lo mirado`);
-  assert.ok(looked.filter((f) => f.startsWith('guides/')).length >= 40, `las guías están entre lo mirado (${looked.length} archivos)`);
+  // en el repo de mantenimiento con el público encima, INSTALL.md es la versión propia del privado: la del público la
+  // mide su CI, y acá no se mira
+  const thin = d.mode === 'thin';
+  for (const f of ['README.md', 'INSTALL.md', 'story-format.md']) if (!(thin && f === 'INSTALL.md')) assert.ok(looked.includes(f), `${f} está entre lo mirado`);
+  assert.ok(looked.filter((f) => f.startsWith('guides/')).length >= 30, `las guías están entre lo mirado (al menos 30: el piso prueba que miró, no cuenta las guías) (${looked.length} archivos)`);
 });
 
 // Esta es un SELLO, no una medición: lee la cuenta que la tanda dejó escrita y mira que sea coherente. El cero de hoy
