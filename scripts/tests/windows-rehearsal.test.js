@@ -55,6 +55,7 @@ const rehearse = require(path.join(DIR, 'rehearse.js'));
 const sources = require(path.join(DIR, 'build-sources.js'));
 const update = require(path.join(DIR, 'update-probe.js'));
 const onboarding = require(path.join(DIR, 'onboarding-probe.js'));
+const npx = require(path.join(DIR, 'npx-probe.js'));
 
 const fixture = (name) => JSON.parse(fs.readFileSync(path.join(FIXTURES, name), 'utf8'));
 const clone = (x) => JSON.parse(JSON.stringify(x));
@@ -75,7 +76,7 @@ test('RehearsalPipeline_Yaml_ScenarioParameter_TwoJobs_NoSecrets_TagsFetched', {
   const scenario = /- name: scenario\n\s+displayName: .*\n\s+type: string\n\s+default: (\w+)\n\s+values:\n((?:\s+- [\w-]+\n)+)/.exec(params);
   assert.ok(scenario, 'el parámetro scenario, con su lista cerrada de valores');
   assert.strictEqual(scenario[1], 'measure', 'por defecto, measure');
-  assert.deepStrictEqual(scenario[2].trim().split('\n').map((l) => l.replace(/^\s*-\s*/, '').trim()).filter(Boolean), ['measure', 'onboarding', 'update', 'portable', 'no-clone', 'codex-only', 'console-windows', 'migrate', 'waiver', 'npx', 'all']);   // no-clone: story 8.23 B · codex-only: 8.23 C · npx: 8.40
+  assert.deepStrictEqual(scenario[2].trim().split('\n').map((l) => l.replace(/^\s*-\s*/, '').trim()).filter(Boolean), ['measure', 'onboarding', 'update', 'portable', 'no-clone', 'codex-only', 'console-windows', 'migrate', 'waiver', 'npx', 'npx-published', 'all']);   // no-clone: story 8.23 B · codex-only: 8.23 C · npx y npx-published: 8.40
   for (const p of ['harnessRef', 'skillsRef', 'fridayTag']) assert.match(params, new RegExp(`- name: ${p}\\n\\s+displayName: .*\\n\\s+type: string\\n`), `el parámetro ${p}`);
   // la marca del viernes: el parámetro va vacío y cada fuente lo resuelve (story 8.26, tanda D): con azure, la de
   // siempre —en el paso que arma los bundles de los dos repos—; con github no hay una por defecto
@@ -87,9 +88,10 @@ test('RehearsalPipeline_Yaml_ScenarioParameter_TwoJobs_NoSecrets_TagsFetched', {
   const job = (name) => code.slice(code.indexOf(`- job: ${name}`), jobs[jobs.indexOf(name) + 1] ? code.indexOf(`- job: ${jobs[jobs.indexOf(name) + 1]}`) : undefined);
   for (const name of ['Bundle', 'Windows']) assert.match(job(name), /condition: .*in\('\$\{\{ parameters\.scenario \}\}', 'measure', 'all'\)/, `${name} corre con measure y all`);
   // (y con portable, el escenario de la base portable: su contrato es windows-portable.test.js, P1)
-  for (const name of ['Sources', 'Rehearsal']) assert.match(job(name), /condition: .*in\('\$\{\{ parameters\.scenario \}\}', 'onboarding', 'update', 'portable', 'no-clone', 'codex-only', 'console-windows', 'migrate', 'waiver', 'npx', 'all'\)/, `${name} corre con onboarding, update, portable, no-clone, codex-only, console-windows, migrate, waiver, npx y all`);
-  // cada escenario aparte corre SU paso del ensayo, y sólo con su valor (story 8.23, tandas B y C; npx: story 8.40)
-  for (const own of ['no-clone', 'codex-only', 'console-windows', 'migrate', 'waiver', 'npx']) {
+  for (const name of ['Sources', 'Rehearsal']) assert.match(job(name), /condition: .*in\('\$\{\{ parameters\.scenario \}\}', 'onboarding', 'update', 'portable', 'no-clone', 'codex-only', 'console-windows', 'migrate', 'waiver', 'npx', 'npx-published', 'all'\)/, `${name} corre con onboarding, update, portable, no-clone, codex-only, console-windows, migrate, waiver, npx, npx-published y all`);
+  // cada escenario aparte corre SU paso del ensayo, y sólo con su valor (story 8.23, tandas B y C; npx y npx-published:
+  // story 8.40, AC 34 y 40)
+  for (const own of ['no-clone', 'codex-only', 'console-windows', 'migrate', 'waiver', 'npx', 'npx-published']) {
     assert.match(job('Rehearsal'), new RegExp(`- \\$\\{\\{ if eq\\(parameters\\.scenario, '${own}'\\) \\}\\}:\\n\\s+- script: node scripts/tests/windows/rehearse\\.js step ${own} --lab "\\$\\(lab\\)" --out "\\$\\(report\\)"`), `el escenario ${own} corre su paso`);
   }
   // los dos repos se traen en Linux, con historia y etiquetas (la marca del viernes es una etiqueta), y viajan como bundles
@@ -1506,5 +1508,178 @@ test('Rehearsal_Init_SameTree_ScriptsTreeMustBeTheRehearsedCommit', { skip: !has
     const cli = node([path.join(DIR, 'rehearse.js'), 'init', '--lab', path.join(base, 'lab5'), '--out', path.join(base, 'out5'), '--sources', src, '--scenario', 'no-clone', '--allow-temp', '--same-tree']);
     assert.strictEqual(cli.status, 2);
     assert.match(cli.stderr, /no pude ensayar: (el árbol de los guiones|no pude leer el commit del árbol de los guiones)/);
+  } finally { fs.rmSync(base, { recursive: true, force: true }); }
+});
+
+// ═══ story 8.40 (AC 40 · T47) · el escenario `npx-published`: el paquete PUBLICADO, del registro y el GitHub reales ════
+
+test('NpxPublished_Scenario_OwnStepFromRegistry_OutsideAll_WithItsCap', () => {
+  // el escenario existe en la lista cerrada (sin eso, la 182 dice «escenario desconocido»), va aparte (como `npx`) y
+  // corre su paso
+  assert.deepStrictEqual(rehearse.SCENARIOS['npx-published'], ['inventory', 'npx-published']);
+  assert.ok(rehearse.STEP_ORDER.includes('npx-published') && !rehearse.SCENARIOS.all.includes('npx-published'), 'va aparte: all no lo corre');
+  const own = rehearse.OWN_STEPS['npx-published'];
+  assert.ok(own, 'el paso tiene su sonda');
+  // la misma sonda que `npx`, en su modo del registro
+  assert.strictEqual(own.script, rehearse.OWN_STEPS.npx.script);
+  assert.deepStrictEqual(own.args, ['--from', 'registry']);
+  assert.ok(own.cap > 0 && own.cap <= 2400, `su tope (${own.cap} s) deja la corrida bajo 40 minutos`);
+  assert.deepStrictEqual(own.pass, ['allow-temp']);
+  // y `npx` sigue armando el paquete con npm pack, como antes
+  assert.ok(!rehearse.OWN_STEPS.npx.args || !rehearse.OWN_STEPS.npx.args.includes('registry'));
+});
+
+test('NpxPublished_Classify_UpToDateIsGreen_NewVersionOrNoNetworkIsNotMeasured_OtherIsAFinding', () => {
+  const AT = 'el arnés ya está en /x/.tycon/harness (versión 2026.10.17.3)';
+  // la segunda corrida: «al día» y el árbol igual → bien
+  assert.deepStrictEqual(npx.againVerdict({ exit: 0, out: `${AT}: está al día. No bajé nada (para dar de alta tu organización, --audience org).`, treeSame: true }), { ok: true });
+  // «al día» pero el árbol cambió: bajó algo igual → hallazgo
+  assert.match(npx.againVerdict({ exit: 0, out: `${AT}: está al día. No bajé nada.`, treeSame: false }).finding, /cambió/);
+  // main se movió entre las dos corridas: no se pudo medir el «al día», y no es verde
+  assert.match(npx.againVerdict({ exit: 0, out: `${AT}: hay una versión nueva (abc1234).\npara actualizarlo: node "x" update --yes. No bajé nada.`, treeSame: true }).notMeasured, /se movió/);
+  // no pudo mirar la punta (sin red): tampoco
+  assert.match(npx.againVerdict({ exit: 0, out: `${AT}; no pude mirar si hay una versión nueva (sin red o sin respuesta): para actualizarlo, x. No bajé nada.`, treeSame: true }).notMeasured, /no pudo mirar/);
+  // cualquier otra cosa (reinstaló, salió 1, no dijo nada) → hallazgo con lo que dijo
+  assert.match(npx.againVerdict({ exit: 1, out: 'tycon-harness: algo se rompió', treeSame: true }).finding, /salió 1.*algo se rompió/);
+  assert.match(npx.againVerdict({ exit: 0, out: 'bajo TYCON-SA/tycon-harness (main abc1234) a una carpeta temporal', treeSame: false }).finding, /no dijo «al día»/);
+
+  // la primera corrida que falla: por la red o por el límite de GitHub → no medido (con su motivo); lo demás, «rompe»
+  for (const out of [
+    'tycon-harness: sin red: no pude llegar a api.github.com (ENOTFOUND). No bajé nada.',
+    'tycon-harness: GitHub limita las consultas sin permiso de esta conexión hasta las 02:13: probá de nuevo después de esa hora. No bajé nada.',
+    'tycon-harness: GitHub contestó 503 al pedir la rama main de TYCON-SA/tycon-harness. No bajé nada.',
+    'tycon-harness: no pude bajar el comprimido (GitHub contestó 502): no quedó nada',
+    'npm error code ENOTFOUND\nnpm error network request to https://registry.npmjs.org/@tyconsa%2fharness failed',
+    'npm error code E503\nnpm error 503 Service Unavailable - GET https://registry.npmjs.org/@tyconsa%2fharness',
+    'npm ERR! code ETIMEDOUT',
+  ]) assert.strictEqual(npx.installFailureKind(out), 'not-measured', out);
+  for (const out of [
+    'tycon-harness: GitHub no muestra TYCON-SA/tycon-harness (404): sin permiso. No bajé nada.',
+    'tycon-harness: la instalación salió 1: la comprobación de salud no pasó',
+    '',
+  ]) assert.strictEqual(npx.installFailureKind(out), 'breaks', out);
+
+  // (pase adversarial del pedido 2, clases 1, 7, 8 y 12) la segunda etapa —el harness.js install del árbol bajado, que
+  // imprime por la misma salida— y los topes del propio instalador también son la red, no el paquete
+  for (const out of [
+    'harness.js install: sin red: no pude hablar con la ref main (ECONNREFUSED)',
+    'harness.js install: sin red: la API de GitHub no contestó dentro del tope (timeout)',
+    'harness.js install: proxy sin respuesta: proxy.example:8080 no contestó en 15000 ms',
+    'harness.js install: la ref main contestó 503',
+    'harness.js install: el commit abc1234 contestó 502',
+    'harness.js install: se acabó el tiempo: el tope de 60 s no alcanzó para la bajada (3 pedido(s) contestado(s); al último le quedaban 0 ms) — no es la red',
+    'harness.js install: no pude verificar el certificado de la API de GitHub (UNABLE_TO_GET_ISSUER_CERT_LOCALLY)',
+    'tycon-harness: sin respuesta: api.github.com no contestó en 30 s. No bajé nada.',
+    'tycon-harness: el proxy proxy.example:8080 no contestó en 30 s. No bajé nada.',
+    'tycon-harness: no pude hablar con el proxy proxy.example:8080 (ECONNREFUSED). No bajé nada.',
+    'npm error code ERR_SOCKET_TIMEOUT\nnpm error network Socket timeout',
+  ]) assert.strictEqual(npx.installFailureKind(out), 'not-measured', out);
+  // la que manda es la línea que explica la falla (la última del instalador), no una nota de red de antes
+  assert.strictEqual(npx.installFailureKind('skills de terceros: sin red: las repone harness.js update\ntycon-harness: la instalación salió 1: la comprobación de salud no pasó'), 'breaks');
+  assert.strictEqual(npx.installFailureKind('harness.js install: sin red: no pude hablar con la ref main (ECONNRESET)\ntycon-harness: harness.js install salió 2'), 'not-measured');
+  // la corrida que cortó el tope de la sonda: no se sabe si es la red o el paquete, y no es verde
+  assert.strictEqual(npx.installFailureKind('tycon-harness: bajo TYCON-SA/tycon-harness (main abc1234) a una carpeta temporal', { timedOut: true }), 'not-measured');
+
+  // la segunda corrida (clases 4 y 9): la red o el registro caído también ahí es «no medido»; «no pude mirar» por una causa
+  // que no es la red (404, la rama que no está, una respuesta que no es la de git) es un hallazgo
+  assert.ok(npx.againVerdict({ exit: 1, out: 'npm error code ENOTFOUND\nnpm error network request to https://registry.npmjs.org/@tyconsa%2fharness failed', treeSame: true }).notMeasured);
+  assert.ok(npx.againVerdict({ exit: 1, out: 'npm error code E503\nnpm error 503 Service Unavailable', treeSame: true }).notMeasured);
+  assert.ok(npx.againVerdict({ exit: null, out: '', treeSame: true, timedOut: true }).notMeasured);
+  for (const why of ['GitHub contestó 404', 'la rama main no aparece en TYCON-SA/tycon-harness', 'la respuesta no es la de git (¿un proxy o un portal?)']) {
+    assert.match(npx.againVerdict({ exit: 0, out: `${AT}; no pude mirar si hay una versión nueva (${why}): para actualizarlo, x. No bajé nada.`, treeSame: true }).finding || '', /no pudo mirar la punta/, why);
+  }
+  for (const why of ['GitHub contestó 503', 'sin red: no pude llegar a github.com (ENOTFOUND)']) {
+    assert.ok(npx.againVerdict({ exit: 0, out: `${AT}; no pude mirar si hay una versión nueva (${why}): para actualizarlo, x. No bajé nada.`, treeSame: true }).notMeasured, why);
+  }
+  // «hay una versión nueva» con una salida que no es 0: no es la punta que se movió
+  assert.ok(npx.againVerdict({ exit: 1, out: `${AT}: hay una versión nueva (abc1234).\nError: algo tiró`, treeSame: true }).finding);
+  // (segunda vuelta de revisores) «hay una versión nueva» con el MISMO commit que quedó instalado: la comparación del
+  // paquete está mal, no se movió nada; con otro commit, sí puede ser la punta que se movió
+  const installed = 'abc1234' + '0'.repeat(33);
+  assert.match(npx.againVerdict({ exit: 0, out: `${AT}: hay una versión nueva (abc1234).\npara actualizarlo: x. No bajé nada.`, treeSame: true, installedCommit: installed }).finding || '', /el mismo commit que quedó instalado/);
+  assert.ok(npx.againVerdict({ exit: 0, out: `${AT}: hay una versión nueva (def5678).\npara actualizarlo: x. No bajé nada.`, treeSame: true, installedCommit: installed }).notMeasured);
+  // un programa que ni arrancó (npm o npx que no está, sin tope vencido) no es ni la red ni el paquete: lo dice la sonda
+  assert.strictEqual(npx.didNotStart({ exit: null, error: 'ENOENT', timed_out: false }), 'ENOENT');
+  assert.strictEqual(npx.didNotStart({ exit: null, error: 'ETIMEDOUT', timed_out: true }), null);
+  assert.strictEqual(npx.didNotStart({ exit: 1, error: null, timed_out: false }), null);
+  // (tercera vuelta) el estado de una versión bajada sin su commit: el control de «la nueva es la instalada» no puede
+  // correr, y eso es un hallazgo (el AC 35 compara contra ese commit), no un salteo callado
+  assert.strictEqual(npx.installedCommitOf({ sources: [{ kind: 'release', commit: installed }] }), installed);
+  for (const st of [{ sources: [{ kind: 'release' }] }, { sources: [{ kind: 'release', commit: 'abc' }] }, { sources: [] }, null]) assert.strictEqual(npx.installedCommitOf(st), '', JSON.stringify(st));
+});
+
+test('NpxPublished_RegistryAnswers404_IsAFinding_NotNotMeasured', { skip: !npx.npmProgram('npm') && `NO MEDIDO — este Node (${process.execPath}) no trae npm a su lado` }, async () => {
+  // (pase adversarial del pedido 2, clase 13) el registro contesta, pero el paquete no está: eso no es la red
+  const base = tmp('npx-404');
+  // en otro proceso: la sonda llama a npm sin soltar este (spawnSync), y un servidor de acá nunca contestaría
+  const server = require('child_process').spawn(process.execPath, ['-e', "const s = require('http').createServer((q, r) => { r.writeHead(404, { 'content-type': 'application/json' }); r.end('{\"error\":\"Not found\"}'); }); s.listen(0, '127.0.0.1', () => console.log(s.address().port));"], { stdio: ['ignore', 'pipe', 'ignore'] });
+  try {
+    const port = await new Promise((resolve, reject) => { server.stdout.once('data', (b) => resolve(String(b).trim())); server.once('exit', () => reject(new Error('el registro de juguete no arrancó'))); });
+    const lab = path.join(base, 'lab');
+    fs.mkdirSync(lab); fs.writeFileSync(path.join(lab, L.LAB_MARK), '{}\n');
+    const rec = L.recorder('npx-published', path.join(base, 'out'));
+    const r = npx.measure({ lab, from: 'registry', allowTemp: true, rec, baseEnv: Object.assign({}, process.env, { npm_config_registry: `http://127.0.0.1:${port}/`, npm_config_fetch_retries: '0' }) });
+    assert.strictEqual(r.status, L.STATUS.measured, JSON.stringify(r));
+    assert.deepStrictEqual(rec.step.findings.map((f) => [f.id, f.severity]), [['npx-published:not-published', 'breaks']]);
+    assert.ok(!fs.existsSync(path.join(lab, 'npx-published', 'users', 'lab-npx-published', '.tycon', 'harness')), 'no instaló nada');
+  } finally { server.kill(); fs.rmSync(base, { recursive: true, force: true }); }
+});
+
+test('NpxPublished_ProfileKept_TheAskedProfileIsChosen_ElseAFinding', () => {
+  // la línea pide --profile minimal: el doctor tiene que decir minimal y elegido (antes del arreglo del pedido 2 quedaba
+  // full, «perfil sin elegir»)
+  assert.strictEqual(npx.profileProblem({ profile: { value: 'minimal', origin: 'maquina', chosen: true } }, 'minimal'), null);
+  assert.match(npx.profileProblem({ profile: { value: 'full', origin: 'sin-valor', chosen: false } }, 'minimal'), /pidió minimal y quedó full \(sin-valor, sin elegir\)/);
+  assert.match(npx.profileProblem({ profile: { value: 'full', origin: 'maquina', chosen: true } }, 'minimal'), /pidió minimal y quedó full/);
+  // minimal elegido por otro lado (una variable heredada, el perfil del equipo) no prueba que --profile se escribió
+  assert.match(npx.profileProblem({ profile: { value: 'minimal', origin: 'env', chosen: true } }, 'minimal'), /no lo eligió la máquina \(env\)/);
+  assert.match(npx.profileProblem({}, 'minimal'), /no dice el perfil/);
+  assert.match(npx.profileProblem(null, 'minimal'), /no dice el perfil/);
+});
+
+test('NpxPublished_Env_RealRegistryAndGitHub_NoToyServers_CacheInTheLab', () => {
+  const base = tmp('npx-env');
+  try {
+    const home = path.join(base, 'users', 'lab-npx-published');
+    const env = npx.registryEnv(home, { lab: base, base: { PATH: process.env.PATH, TYCON_RELEASE_API: 'http://127.0.0.1:1', TYCON_RELEASE_GIT: 'http://127.0.0.1:2', TYCON_RELEASE_ARCHIVE: 'http://127.0.0.1:3', TYCON_RELEASE_RAW: 'http://127.0.0.1:4', tycon_release_links: 'x', TYCON_HOME: '/otra/casa', TYCON_GUIDES_DIR: '/otro/arnes', TYCON_SKILLS_DIR: '/otras/skills', TYCON_INSTALL_PROFILE: 'minimal', TYCON_PROFILE: '/un/perfil.json', npm_config_cache: '/la/de/fabrica' } });
+    // contra el GitHub real: ninguna variable del GitHub de juguete pasa, aunque quien lo corre la tenga puesta (en
+    // Windows sin distinguir mayúsculas); tampoco las que mandan el arnés a otra casa o eligen el perfil por su cuenta
+    // (pase adversarial del pedido 2, clase 3)
+    for (const k of ['TYCON_RELEASE_API', 'TYCON_RELEASE_GIT', 'TYCON_RELEASE_ARCHIVE', 'TYCON_RELEASE_RAW', 'tycon_release_links', 'TYCON_HOME', 'TYCON_GUIDES_DIR', 'TYCON_SKILLS_DIR', 'TYCON_INSTALL_PROFILE', 'TYCON_PROFILE']) assert.ok(!(k in env), `${k} no llega a la medición`);
+    // la caché de npm en el laboratorio (la de fábrica, en Windows, vive fuera de la HOME de juguete)
+    assert.strictEqual(env.npm_config_cache, path.join(base, 'npx-published', 'npm-cache'));
+    assert.strictEqual(env.HOME, home);
+    assert.strictEqual(env.TYCON_UPDATE_APPLY, 'auto');
+    assert.strictEqual(env.TYCON_NO_NIGHTLY_EXAM, '1');
+  } finally { fs.rmSync(base, { recursive: true, force: true }); }
+});
+
+// el Node propio del arnés (~/.tycon/node) viene sin npm: con él delante en el PATH esta prueba no se puede medir
+test('NpxPublished_Offline_NotMeasured_NeverGreen_NothingInstalled', { skip: !npx.npmProgram('npm') && `NO MEDIDO — este Node (${process.execPath}) no trae npm a su lado` }, async () => {
+  const base = tmp('npx-offline');
+  try {
+    const lab = path.join(base, 'lab');
+    fs.mkdirSync(lab); fs.writeFileSync(path.join(lab, L.LAB_MARK), '{}\n');
+    // un registro que no contesta: un puerto que se abrió y se cerró
+    const port = await new Promise((resolve) => { const s = require('net').createServer(); s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => resolve(p)); }); });
+    const rec = L.recorder('npx-published', path.join(base, 'out'));
+    const r = npx.measure({ lab, from: 'registry', allowTemp: true, rec, baseEnv: Object.assign({}, process.env, { npm_config_registry: `http://127.0.0.1:${port}/`, npm_config_fetch_retries: '0', npm_config_fetch_timeout: '5000' }) });
+    assert.strictEqual(r.status, L.STATUS.notMeasured, JSON.stringify(r));
+    assert.match(r.reason, /no medido|registro/);
+    assert.deepStrictEqual(rec.step.findings, [], 'sin red no hay hallazgos: no se midió');
+    assert.ok(!fs.existsSync(path.join(lab, 'npx-published', 'users', 'lab-npx-published', '.tycon', 'harness')), 'no instaló nada');
+  } finally { fs.rmSync(base, { recursive: true, force: true }); }
+});
+
+test('NpxProbe_From_UnknownValue_Exit2_WritesNothing', () => {
+  const base = tmp('npx-from');
+  try {
+    const lab = path.join(base, 'lab');
+    fs.mkdirSync(lab); fs.writeFileSync(path.join(lab, L.LAB_MARK), '{}\n');
+    const out = path.join(base, 'out');
+    const r = node([path.join(DIR, 'npx-probe.js'), '--lab', lab, '--out', out, '--from', 'mirror', '--allow-temp']);
+    assert.strictEqual(r.status, 2, r.stderr);
+    assert.match(r.stderr, /--from es pack o registry/);
+    assert.ok(!fs.existsSync(out), 'no escribió el reporte');
   } finally { fs.rmSync(base, { recursive: true, force: true }); }
 });

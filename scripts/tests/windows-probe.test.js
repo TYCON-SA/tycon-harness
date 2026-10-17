@@ -1392,3 +1392,25 @@ test('Probe_NoClone_DeclaresRealGithubScenario_8_34_T16', () => {
   assert.match(String(r), /no medido fuera del agente de la 182/, 'sin TF_BUILD devuelve «no medido» sin medir nada');
   assert.deepEqual(facts, {}, 'y no anota hechos');
 });
+
+test('Probe_MailboxUpload_LeavesMeasuredSettingsAsTheyWere — medir la subida al buzón no deja hooks en la instalación medida', { skip: !has('pwsh') && 'NO MEDIDO — sin pwsh' }, () => {
+  // la 182 #13698 (2026-10-17): la medición vuelve a correr el aplicador con el buzón prendido sobre la misma HOME, y el
+  // aviso del correo (un hook «sólo con el buzón») quedaba registrado en una instalación que no lo tiene; el conteo de
+  // hooks lo daba por inesperado. La medición mide la subida: lo que el aplicador escriba en settings.json se devuelve.
+  const base = tmp('mailbox-settings');
+  try {
+    const home = path.join(base, 'home'); const clone = path.join(base, 'clone');
+    fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+    fs.mkdirSync(path.join(clone, 'scripts'), { recursive: true });
+    const settings = path.join(home, '.claude', 'settings.json');
+    const before = `${JSON.stringify({ hooks: { SessionStart: [{ hooks: [{ type: 'command', command: 'node a.js' }] }] } }, null, 2)}\n`;
+    fs.writeFileSync(settings, before);
+    // el aplicador de juguete registra un hook más, como el de verdad con el buzón prendido
+    fs.writeFileSync(path.join(clone, 'scripts', 'install-tycon-hooks.ps1'), "$p = Join-Path $env:HOME '.claude/settings.json'\nSet-Content -Path $p -Value '{\"hooks\":{\"SessionStart\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"node owner-email-notice.js\"}]}]}}'\nexit 0\n");
+    const probe = require(path.join(DIR, 'install-probe.js'));
+    const env = Object.assign({}, process.env, { HOME: home, USERPROFILE: home });
+    const facts = probe.measureMailboxUpload({ home, clone, env, pwsh: L.scanPath('pwsh')[0], scratch: path.join(base, 'scratch'), waitMs: 200 });
+    assert.ok(Array.isArray(facts.problems), JSON.stringify(facts));
+    assert.strictEqual(fs.readFileSync(settings, 'utf8'), before, 'settings.json quedó como antes de medir');
+  } finally { fs.rmSync(base, { recursive: true, force: true }); }
+});

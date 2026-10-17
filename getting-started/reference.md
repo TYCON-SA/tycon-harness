@@ -331,7 +331,8 @@ writes three blocks of rules into `~/.claude/CLAUDE.md`, between their own marke
 
 - `response-style`: the assistant answers in plain Spanish, conclusion first, with a cap of 1300 characters of prose.
   A hook measures every answer and reports the overrun to the assistant on the next turn (`TYCON_RESPONSE_METER=0`
-  turns the measuring off).
+  turns the measuring off). That is the executive style: the organization picks the language, style and cap in its
+  profile (`response`); unset, the assistant answers clear and to the point, with a cap of 2000.
 - `background-execution`: steps longer than two minutes run in the background and are announced first. Another hook
   measures what kept the conversation blocked (`TYCON_BLOCKING_METER=0`).
 - `tool-names`: the table with the exact name of every tool those rules mention.

@@ -1336,6 +1336,11 @@ function cmdInstall(ctx, H) {
   // (sobre una máquina ya instalada, lo que estaba enchufado se conserva: `install` nunca desenchufa)
   let tc = H.toolChoice(ctx, ctx.tree, { state: read.status === 'ok' ? read.state : null });
   if (!tc.ok) return { code: tc.code, lines: [`harness.js install: ${tc.line}`] };
+  // `--profile` se revisa como en el camino del clon, antes de la red (story 8.40, pedido 2: acá un valor que no existe
+  // se instalaba igual, como full)
+  const PR = require('./profile.js');
+  const profileError = PR.checkOption(ctx.opts.profile, ctx.env);
+  if (profileError) return { code: 2, lines: [`harness.js install: ${profileError}`] };
   const withClaude = tc.tools.includes('claude');
   // Una máquina que NO enchufa a Claude Code vive entera en la casa propia del arnés (tanda C, AC 22): su estado nace en
   // `~/.tycon/state` y nada se escribe en la carpeta de Claude Code. La regla la lee `tycon-home.js` del disco; acá se
@@ -1418,11 +1423,21 @@ function cmdInstall(ctx, H) {
   const P = require('./prompt.js');
   const what = `la versión ${target.version} (${target.ref} ${sha7(target.commit)}) de ${repoInfo.url} en ${tree}`;
   const teamLine = teamPlan ? [TEAM.planLine(teamPlan)] : [];
+  // el perfil que va a quedar, como lo nombra el plan del clon: el pedido (con --profile, o contestado), o el que fija la
+  // configuración leída del árbol que se instala (con la capa del equipo apilada). En el --dry-run todavía no se bajó nada:
+  // si nadie lo fija y es la primera instalación, install lo pregunta, y eso es lo que se dice (no un full que no queda)
+  const profileLine = ({ via, dir, dryRun = false } = {}) => {
+    if (ctx.opts.profile) return `perfil: ${ctx.opts.profile} (${via || '--profile'})`;
+    const r = H.profileOf(ctx, dir || ctx.tree);
+    if (!r.ok || r.chosen || read.status === 'ok') return PR.label(r);
+    if (dryRun && teamPlan) return 'perfil: el que fije el perfil del equipo; si no fija ninguno, install lo pregunta (o pasá --profile minimal|full)';
+    return 'perfil: sin elegir — install lo pregunta (sin terminal o con --yes: pasá --profile minimal|full)';
+  };
   if (ctx.opts['dry-run']) {
     // la conexión vieja de una skill de la lista que la capa trae (tanda A2c · AC 35): el plan dice qué se copiaría, sin escribir
     const st0 = read.status === 'ok' ? read.state : null;
     const dataPlan = teamPlan ? TEAM.moveSkillData({ home: ctx.home, env: ctx.env, dryRun: true, team: Object.assign({}, st0 && st0.team), layerPaths: teamPlan.files.map((f) => f.path), migrateHome: st0 && st0.migrate_home, previousDir: TH.ownPaths({ env: ctx.env }).previous }).lines : [];
-    return { code: 0, lines: [`se instalaría ${what}`, tc.line, ...teamLine, ...dataPlan, ...(target.note ? [target.note] : []), ...(tokenExpired(ctx.env) ? [EXPIRED_TOKEN_TEXT] : [])] };
+    return { code: 0, lines: [`se instalaría ${what}`, tc.line, profileLine({ dryRun: true }), ...teamLine, ...dataPlan, ...(target.note ? [target.note] : []), ...(tokenExpired(ctx.env) ? [EXPIRED_TOKEN_TEXT] : [])] };
   }
   if (!ctx.opts.yes && !P.isTerminal()) return { code: 2, lines: [`se instala ${what}`, tc.line, 'harness.js install: sin `--yes` y sin terminal no escribo nada: harness.js install --version ' + wanted + ' --yes'] };
 
@@ -1471,7 +1486,7 @@ function cmdInstall(ctx, H) {
     if (again.tools.includes('claude') === withClaude) tc = again;
   }
   if (!ctx.opts.yes) {
-    process.stdout.write(`${[`se instala ${what}`, tc.line, ...teamLine, ...(target.note ? [target.note] : []), ...asked.head].join('\n')}\n`);
+    process.stdout.write(`${[`se instala ${what}`, tc.line, profileLine({ via: asked.profileVia, dir: d.dir }), ...teamLine, ...(target.note ? [target.note] : []), ...asked.head].join('\n')}\n`);
     if (asked.eof || !P.ask('¿Instalo? [s/N] ')) { fs.rmSync(d.dir, { recursive: true, force: true }); undoOwnHome(); return { code: 0, lines: ['no se instaló nada'] }; }
   }
 
@@ -1526,7 +1541,16 @@ function cmdInstall(ctx, H) {
       if (m.changed) pieces.push('startup-line');
       if (H.ensureImport(ctx)) pieces.push('import');
     }
-    // 8. lo contestado, el perfil
+    // 8. el perfil pedido (con --profile o contestado) y lo contestado, con el escritor único de la configuración y antes
+    // del aplicador, como el camino del clon: sin esto el aplicador instalaba full aunque se pidiera minimal (story 8.40,
+    // pedido 2). Si no se puede escribir, no se sigue: el aplicador instalaría otro perfil que el pedido
+    if (ctx.opts.profile && H.machineProfile(ctx) !== ctx.opts.profile) {
+      let sk;
+      try { sk = require(path.join(tree, 'scripts', 'lib', 'tycon-config.js')).setKey(ctx.home, PR.KEY, ctx.opts.profile, { env: ctx.env }); } catch (e) { sk = { ok: false, reason: e.message }; }
+      if (!sk || !sk.ok) { S.write(ctx.home, state); return { code: 2, lines: [`harness.js install: no pude escribir el perfil en ~/.claude/tycon.json: ${sk ? sk.reason : 'sin escritor'}. No corrí el aplicador`] }; }
+      if (sk.warning) notes.push(sk.warning);
+      pieces.push('profile');
+    }
     if (asked.writes && asked.writes.length) {
       const wa = H.writeAnswers(ctx, tree, asked.writes);
       if (!wa.ok) { S.write(ctx.home, state); return { code: 2, lines: [`harness.js install: no pude escribir tus respuestas: ${wa.reason}. No corrí el aplicador`] }; }
@@ -1547,12 +1571,18 @@ function cmdInstall(ctx, H) {
     if (tc.tools.includes('codex')) pieces.push('codex');
     // lo que el enchufe de Codex le dice a la persona (un servidor MCP que falta, los hooks a aprobar) va al cierre
     if (tc.tools.includes('codex')) for (const w of a.warnings || []) if (!notes.includes(w)) notes.push(w);
+    // reinstalar con otro perfil (story 8.40, pedido 2; como el clon en install, story 8.16 AC 26): lo registrado que el
+    // perfil nuevo ya no trae se quita antes de fundir el registro. Si no se supo qué sobraba, el estado se queda con el
+    // perfil de antes y el arranque siguiente lo reintenta
+    const profNow = H.profileOf(ctx, tree);
+    const switching = Boolean(existing && profNow.ok && PR.installedValue(existing) !== profNow.value);
+    const dropped = switching ? H.dropForProfile(ctx, state, tree, a, log, profNow.value) : true;
+    if (switching) notes.push(...H.profileSwitchNotes(dropped));
     H.recordPieces(ctx, state, a.report, a.shared);
     // la carpeta global de hooks de git (2026-10-14): si git no tenía ninguna, la puso el aplicador de arriba; se dice, y
     // si git no la dejó escribir, el aviso con el comando a mano (los demás avisos del aplicador no llegan a este cierre)
     { const hp = H.noteHooksPath(state, a); if (hp) notes.push(hp); else if (a.gitHooksPath && a.gitHooksPath.status === 'failed') notes.push(...a.gitHooksPath.line.split('\n')); }
-    const prof = H.profileOf(ctx, tree);
-    if (prof.ok) state.profile = { value: prof.value, origin: prof.origin };
+    if (profNow.ok && dropped !== null) state.profile = { value: profNow.value, origin: profNow.origin };
     S.write(ctx.home, state);
     const h = H.runHealth(ctx, state, { report: a.report, applierOut: a.out, log });
     if (!h.ok) {

@@ -1,6 +1,6 @@
 <!-- requires-profile: full -->
 # ===================================================
-# REGLA EJECUCIÓN EN SEGUNDO PLANO — pasos largos no bloquean la conversación (2026-07-30)
+# REGLA EJECUCIÓN EN SEGUNDO PLANO — pasos largos no bloquean la conversación
 # ===================================================
 
 **Por qué**: mientras una herramienta corre, los mensajes del dev esperan pegados al próximo

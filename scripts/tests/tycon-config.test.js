@@ -1782,3 +1782,37 @@ test('7.19 · Config_ModelQuestion_ReaderValidatesAndExplains — default ask, n
   assert.match(lib().explicar({ env: {}, home: h2, arnes: conPerfil }), /adversarial\.model_question = ask \(perfil; [^\n]*no se usa/);
 });
 
+test('Response_ClosedVocabulary_IntegerRange_DefaultsByStyle @story-2.31 @ac-1 @ac-4 @ac-6 — cómo contesta el asistente: vocabulario cerrado, largo acotado y el tope del estilo', () => {
+  const C = lib();
+  const con = (perfil, env = {}) => cargar({ home: casa(), arnes: arnesCon(perfil), env });
+  // sin valor: neutral, es, y el tope del estilo
+  let c = con({});
+  assert.deepEqual(C.respuesta(c), { language: 'es', style: 'neutral', max_chars: C.TOPE_POR_ESTILO.neutral, origen: { language: 'default', style: 'default', max_chars: 'estilo' } });
+  assert.deepEqual(C.TOPE_POR_ESTILO, { executive: 1300, detailed: 3000, neutral: 2000 });
+  // el perfil de TYCON
+  c = con({ response: { language: 'es', style: 'executive', max_chars: 1300 } });
+  assert.deepEqual([C.respuesta(c).style, C.respuesta(c).max_chars, C.respuesta(c).origen.max_chars], ['executive', 1300, 'perfil']);
+  assert.equal(C.respuesta(con({ response: { style: 'detailed' } })).max_chars, 3000, 'sin max_chars, el del estilo elegido');
+  // los bordes del largo: 300 y 4000 entran; 299, 4001, un texto o un decimal son configuración rota
+  for (const n of [300, 4000]) assert.deepEqual(con({ response: { max_chars: n } }).errores, [], `max_chars ${n}`);
+  for (const n of [299, 4001, '800', 800.5, null]) {
+    assert.ok(con({ response: { max_chars: n } }).errores.some((e) => /response\.max_chars/.test(e.clave) && /entero entre 300 y 4000/.test(e.motivo)), `max_chars ${JSON.stringify(n)} rechazado`);
+  }
+  // un estilo o un idioma fuera de la lista, también
+  assert.ok(con({ response: { style: 'fancy' } }).errores.some((e) => /response\.style/.test(e.clave)));
+  assert.ok(con({ response: { language: 'pt' } }).errores.some((e) => /response\.language/.test(e.clave)));
+  // por variable: la cifra se lee como entero; fuera de rango o con letras, rota
+  assert.equal(C.respuesta(con({}, { TYCON_RESPONSE_MAX_CHARS: '900' })).max_chars, 900);
+  for (const v of ['100', 'mil', '9000']) assert.ok(con({}, { TYCON_RESPONSE_MAX_CHARS: v }).errores.some((e) => e.clave === 'TYCON_RESPONSE_MAX_CHARS'), `variable ${v}`);
+  // `response --json`: lo que leen los sincronizadores; con la configuración rota, nada por stdout y exit 2
+  const home = casa();
+  const p = path.join(home, 'perfil.json');
+  fs.writeFileSync(p, JSON.stringify({ response: { style: 'executive' } }));
+  const ok = cli(['response', '--json'], { home, env: { TYCON_PROFILE: p } });
+  assert.equal(ok.status, 0, ok.stderr);
+  assert.deepEqual(JSON.parse(ok.stdout), { language: 'es', style: 'executive', max_chars: 1300, origen: { language: 'default', style: 'perfil', max_chars: 'estilo' } });
+  fs.writeFileSync(p, JSON.stringify({ response: { style: 'fancy' } }));
+  const rota = cli(['response', '--json'], { home, env: { TYCON_PROFILE: p } });
+  assert.equal(rota.status, 2); assert.equal(rota.stdout, '');
+});
+

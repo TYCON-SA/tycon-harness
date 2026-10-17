@@ -363,7 +363,10 @@ subir_reg() {   # <caso> <origen timing> <origen registros> <hoy> <maquina> [arg
 T="${BASE}/t1-25"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"
 for i in $(seq 1 20); do corrida "${T}/h" "1.${i}-2026-09-01T1000" 4000; done
 echo 150 > "${T}/b/demora"
-subir_reg "${T}" "${T}/h" "${T}/reg" 2026-09-15 "maq-a" --budget-ms 400
+# El presupuesto deja entrar los tres pedidos de registro (3 × 150 = 450 ms) con holgura amplia y corta antes de las 20
+# corridas (otros ~3000 ms): con 400 el margen era de unos 100 ms y en un agente lento la cobertura quedaba afuera (el
+# rojo de a ratos de la fila, 2026-10-17). Lo que se mide es el orden y que algo quede para después, no el tope exacto.
+subir_reg "${T}" "${T}/h" "${T}/reg" 2026-09-15 "maq-a" --budget-ms 1500
 R="$(regdir "${T}")"
 gunzip -c "${R}/gates.log.gz" 2>/dev/null | cmp -s - "${T}/reg/gates.log" && gunzip -c "${R}/bypass.log.gz" 2>/dev/null | cmp -s - "${T}/reg/bypass.log" \
   && [ "$(num "${T}" sin_tiempo)" -gt 0 ] && ok "2.5-T1 con presupuesto chico y 20 corridas atrasadas, los dos registros subieron primero y descomprimen idénticos" || mal "2.5-T1 registros no llegaron primero o distintos (rc=${RC}, sin_tiempo=$(num "${T}" sin_tiempo)): $(ls "${R}" 2>&1)"
@@ -531,7 +534,9 @@ echo 150 > "${T}/b/demora"
 #    cobertura) a 150 ms cada uno, no tres. Con 400 quedaban afuera la cobertura y el orden — que es
 #    el comportamiento correcto (la cobertura se retiene si su registro no subió), pero no es lo que
 #    este caso mide. El presupuesto REAL por defecto es de 90 s: tres registros entran de sobra.
-subir_reg "${T}" "${T}/h" "${T}/reg" 2026-09-15 "maq-a" --budget-ms 700
+#    Y de 700 a 1500 (2026-10-17): con 700 el margen sobre los 600 ms de los registros era de 100 ms, el mismo rojo de a
+#    ratos que el caso 2.5-T1; las 20 corridas (~3000 ms) siguen sin entrar.
+subir_reg "${T}" "${T}/h" "${T}/reg" 2026-09-15 "maq-a" --budget-ms 1500
 R="$(regdir "${T}")"
 gunzip -c "${R}/hallazgos.jsonl.gz" 2>/dev/null | cmp -s - "${T}/reg/hallazgos.jsonl" \
   && ok "2.9 los hallazgos subieron en <maq>/registros/ y descomprimen idénticos" \
