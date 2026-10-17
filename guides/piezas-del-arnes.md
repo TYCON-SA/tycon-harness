@@ -340,9 +340,10 @@ dos versiones costaba el doble sin medir nada; lo único que de verdad ve otro N
 obligatorio como los demás. **Cuándo se saca**: cuando el piso del instalador suba a 24 (o cuando suba, se cambia la
 versión del trabajo), junto con su regla en el control. La corrida termina en **un job llamado `public-ci`**: es el chequeo con nombre estable que las reglas de la rama
 exigen, y renombrarlo deja los merges esperando un chequeo que no llega. `check-public-workflow.js` lee ese YAML **por
-texto** y verifica trece reglas: doce que dicen por qué algo está mal (los disparadores, ningún secreto, cada acción fijada
+texto** y verifica catorce reglas: trece que dicen por qué algo está mal (los disparadores, ningún secreto, cada acción fijada
 por el sha de su commit, permiso de sólo lectura, la historia completa, la matriz, `--range` en un pull request,
-`--clean-machine` siempre, el job agregador que falla si alguno falló, las partes, todas, y el salteo tras la cola) y una, `shape`, que es la red: el control lleva
+los controles de la base en un pedido y en la cola, `--clean-machine` siempre, el job agregador que falla si alguno falló,
+las partes, todas, y el salteo tras la cola) y una, `shape`, que es la red: el control lleva
 adentro **la forma exacta** del `ci.yml` —sus líneas de código, una por una y en orden— y cualquier línea de más, de
 menos o distinta es rojo. 🔴 Por qué la forma exacta: una regla por texto no ve
 otra forma de escribir lo prohibido (una opción dentro de un comentario, un
@@ -352,6 +353,61 @@ quien llama (`GIT_DIR` y compañía): el repo lo decide `--root`. Detalle y tabl
 [publicacion-espejo.md](maintaining/publicacion-espejo.md) §«La CI pública». Red: `scripts/tests/public-ci.test.sh` (portable: el
 guion sobre un repo de mentira, y el `ci.yml` real más copias alteradas, una por regla y una por cada una de esas formas;
 cada caso verificado con un mutante a mano).
+
+## scripts/ci/run-base-controls.sh
+
+*(scripts/ci/run-base-controls.sh + scripts/ci/controls-from-base.json + el paso `repo-lint` de public-ci.sh con `--base`)*
+
+**La revisión de un pedido juzga lo que trae con los controles de la base, no con los del pedido** (2026-10-17). Antes,
+la revisión corría el pre-commit y sus guiones tal como venían en el propio pedido: uno que vaciaba el pre-commit,
+borraba el guion de un control, sumaba su excepción a una lista o bajaba un modo de `block` a `warn` se salteaba el
+control que lo tenía que frenar. Ahora el control y su regla salen de la **base** (la punta de la rama destino; en la
+cola de merge, la base del grupo: así un control nuevo de `main` alcanza también a los pedidos viejos) y el contenido,
+del pedido.
+
+Cómo: un **commit armado**, el árbol del pedido con cada archivo de regla en su versión de la base, en el disco y en el
+índice (hay controles que leen su regla del índice), sobre el ancestro común armado igual. Los archivos de regla son los
+que nombra el inventario `controls-from-base.json`: el pre-commit, cada guion de control, sus listas, modos y umbrales,
+y los `require` relativos de cada guion, que se suman solos. Sobre ese commit corren los controles de la base: el
+pre-commit en modo índice, como al commitear, el control de forma de `ci.yml` y el de la versión. La pasada del pedido,
+con sus propios guiones, corre **además**: un control nuevo del pedido también frena. Si el pedido no cambia ninguna
+regla, es una sola pasada y no cuesta tiempo.
+
+**El cambio de control.** Endurecer un control entra solo: la base y el pedido pasan. **Aflojarlo** (la base frena, el
+pedido pasa con su regla nueva) es rojo salvo la **constancia del dueño** en `.tycon/control-changes.jsonl`, anclada al
+hash del cambio: la ruta y el blob de cada archivo de regla cambiado, así que otro cambio a la misma regla vuelve a
+rojo. La firma es `run-base-controls.sh approve`, que pide una terminal de verdad, como `marker.js runtime-waiver`. Cada
+cambio a una regla queda listado archivo por archivo, con lo que se suma, se saca o cambia, aunque no frene. Como
+`ci.yml` tiene control de forma exacta, cualquier cambio a `ci.yml` pide la constancia, también uno que lo endurece.
+
+**La alarma a posteriori.** Lo que entró a la base mientras el pedido estaba abierto: un workflow del inventario
+cambiado sin constancia del dueño **avisa** (no frena: ya está en `main`), con el commit y cómo firmarlo, y las sumas a
+los archivos de regla se cuentan.
+
+🔴 **«No pude correr» nunca cae a los controles del pedido.** Una base que no se lee, que no trae el inventario o el
+guion, es rojo «no pude correr». Un inventario que no cuadra también es rojo: un guion que la base no trae, un guion
+que el pre-commit llama sin su entrada (`check-inventory`), o un archivo de datos que nombra un control sin clasificar
+como regla o como contenido.
+
+**Lo que no cubre, y por qué.** (1) **El propio workflow** corre del pedido: GitHub corre el `ci.yml` del pedido (y el
+del grupo, en la cola) y Azure, el yml del pedido. Un pedido que cambia a propósito su workflow para no llamar a la base
+no corre nada de la base. GitHub cerraría eso con un workflow obligatorio desde otro repo, que el plan de la
+organización no tiene; `pull_request_target` no cubre la cola y no se usa. Lo frena el control de los workflows mientras
+el workflow todavía llame a la base, y la alarma lo dice en el pedido siguiente. (2) **Las pruebas** (suites, banco) son
+del código del pedido y corren del pedido: quitar un caso no lo frena esto. (3) **El contenido de un archivo de regla**
+que el pedido cambia lo juzga sólo la pasada del pedido: la de la base lo ve en su versión de la base.
+
+Dónde corre: en GitHub, `ci.yml` saca el `public-ci.sh` de la base con `git show` y lo corre con `--base` sobre el
+checkout del pedido, con el rango desde esa misma base (en la cola, desde `main` se colarían los cambios del grupo de
+adelante). Mientras la base no traiga este guion, `ci.yml` corre los controles del pedido con un aviso: es la **rama de
+arranque**, sólo para el pedido que lo agrega. Se retira con el primer pedido en verde después de ese merge (cambia
+`ci.yml`: pide la constancia del dueño); dejada, sería una puerta si un día `main` perdiera el guion. Las constancias
+viven en `.github/control-changes.jsonl` en el público y en `.tycon/control-changes.jsonl` en el repo de mantenimiento.
+En GitHub, lo que se suma a las reglas, la alarma y la constancia aprobada quedan a la vista en el registro del paso,
+también en verde. En la validación de pedidos del repo de mantenimiento, ese repo arma `main` aparte con lo público
+encima y corre este guion desde ahí. Sin `--base` (una máquina, el push a `main`) `public-ci.sh` corre los controles de
+su propio árbol, como siempre, y lo dice. Red: `scripts/tests/base-controls.test.sh` (portable: repos de juguete con
+git, sin red) y las reglas del workflow en `scripts/tests/public-ci.test.sh`.
 
 ## scripts/tests/clean-machine.test.sh
 
@@ -758,7 +814,7 @@ Auto-instalador idempotente del set canónico de hooks TYCON en `~/.claude/setti
 
 *(.githooks/pre-commit + .githooks/pre-commit-checks + scripts/hooks/git-pre-commit-global.sh)*
 
-**Un solo control de commit, con dos partes.** `.githooks/pre-commit` sólo llama a `.githooks/pre-commit-checks` con la raíz del repo como arnés. Ahí viven las dos partes, cada una en su proceso: una salida temprana de una (un «no me toca») no saltea a la otra, y el commit se crea sólo si pasan las dos. La parte del arnés mira el árbol entero: el frontmatter de las stories, el portón de cierre, los frenos de nombres y de historia interna, el mapa de renombres, el quoting de bash 3.2, lo que rompería la versión bajada, las reglas de la CI pública, el presupuesto de lo que se carga en cada sesión, la versión pública del mapa y la paridad. La parte de las skills corre los frenos de nombres con la fuente de las skills, las skills de terceros sin declarar y la paridad y el chequeo de vida de un revisor tocado. Los comentarios de los dos archivos siguen la regla de `guides/maintaining/estilo-de-codigo.md` y lo mide `scripts/tests/hook-comments.test.js`. La CI pública corre el mismo control sobre lo que trae un pedido (`public-ci.sh`, paso `repo-lint`). Red: las suites de cada control (`githook-livefire`, `githook-renames`, `pre-commit-stories` y las de cada freno).
+**Un solo control de commit, con dos partes.** `.githooks/pre-commit` sólo llama a `.githooks/pre-commit-checks` con la raíz del repo como arnés. Ahí viven las dos partes, cada una en su proceso: una salida temprana de una (un «no me toca») no saltea a la otra, y el commit se crea sólo si pasan las dos. La parte del arnés mira el árbol entero: el frontmatter de las stories, el portón de cierre, los frenos de nombres y de historia interna, el mapa de renombres, el quoting de bash 3.2, lo que rompería la versión bajada, las reglas de la CI pública, el presupuesto de lo que se carga en cada sesión, la versión pública del mapa y la paridad. La parte de las skills corre los frenos de nombres con la fuente de las skills, las skills de terceros sin declarar y la paridad y el chequeo de vida de un revisor tocado. Los comentarios de los dos archivos siguen la regla de `guides/maintaining/estilo-de-codigo.md` y lo mide `scripts/tests/hook-comments.test.js`. La CI pública corre el mismo control sobre lo que trae un pedido (`public-ci.sh`, paso `repo-lint`), en su versión de la base y además en la del pedido (`run-base-controls.sh`). Red: las suites de cada control (`githook-livefire`, `githook-renames`, `pre-commit-stories` y las de cada freno).
 
 El gate de **paridad Claude↔Codex** en el pre-commit. Corre `build/check.js`, que verifica tres cosas: los `.toml` de los advisors al día con su markdown canónico · todo hook del banco registrado del lado Codex o su divergencia declarada · **una pieza nueva entra CON sus casos en el banco o no entra** (`build/check-bank-coverage.js` — los dos primeros cuidan la migración, el tercero cuida el después: el advisor #29 que alguien cree cuando nadie recuerde la regla). Sólo corre si el commit toca `adapters/`, `build/`, `agents/` o los casos del banco: un gate que se siente impuesto en cada commit se termina salteando con `--no-verify`, y ahí se pierde también donde importaba. Probado rompiendo los tres a propósito + un commit de docs que no lo dispara. 🔴 **Un agujero silencioso del arnés entero**: con `core.hooksPath` global (que el sync de engram necesita), git **ignora los `.githooks/` de cada repo** — o sea que el lint de frontmatter de stories, el de la wiki y este gate estarían escritos, documentados, adoptados… y **nunca se ejecutarían**. El hook global versionado acá lo cierra **delegando** en el del repo antes de su propia tarea; lo instala `install-tycon-hooks.sh` con backup (opt-out `TYCON_NO_GIT_HOOKS=1`), y si git no tiene `core.hooksPath` global, `harness.js` la apunta a `~/.git-hooks`: `install` (el plan lo dice antes del «sí»), `apply`, la mudanza y, en una máquina ya instalada, el arranque con la política `auto` (lo dice una vez en el aviso) o `update --yes` con `ask` (el aviso lo pide); si la puso el arnés y la persona la sacó, el arranque no la vuelve a poner; una que ya apunte a otra carpeta no se toca, sólo se avisa. `uninstall` y el paso al perfil mínimo la sacan si sigue siendo la que puso el arnés (2026-10-14: una máquina mudada quedaba con los hooks en `~/.git-hooks` y git sin mirarlos, y `doctor` mandaba a un `apply` que sólo avisaba).
 

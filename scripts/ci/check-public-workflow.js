@@ -13,7 +13,7 @@
  * contracara: el control exige UNA forma de escribir cada cosa (la del `ci.yml` que hay); otra forma válida de YAML para
  * decir lo mismo sale roja, a propósito.
  *
- * LAS REGLAS (un id por regla; una línea por regla rota). Las doce primeras dicen POR QUÉ algo está mal:
+ * LAS REGLAS (un id por regla; una línea por regla rota). Las trece primeras dicen POR QUÉ algo está mal:
  *   triggers             corre en `pull_request`, en `merge_group` (la cola de merge) y en `push` a `main`, y en nada más
  *   pull-request-target  `pull_request_target` no aparece en ninguna parte (ni en un comentario)
  *   secrets              no lee ningún secreto: ni el contexto de secretos ni el token por otro camino (ni en un comentario)
@@ -23,6 +23,8 @@
  *   node-matrix          la matriz es Node 24 y es la que se instala; aparte, el job `installer-floor` instala Node 22 (el
  *                        piso del instalador, 2026-10-16) y es el único que no instala el de la matriz
  *   range                en un pull request y en la cola, `public-ci.sh` corre con `--range origin/<base>...HEAD`
+ *   base-controls        en un pull request y en la cola corre el `public-ci.sh` DE LA BASE (sacado con `git show`) con
+ *                        `--base`, y en la cola la base es la del grupo
  *   clean-machine        toda llamada a `public-ci.sh` lleva `--clean-machine`
  *   aggregate-job        el job `public-ci` corre siempre, depende de todos los demás y falla si alguno no terminó bien
  *   parts                la matriz parte la corrida en `checks` y `suites-1-of-<n>` … `suites-<n>-of-<n>`, todas, en orden y
@@ -33,7 +35,7 @@
  *                        ese commit (2026-10-15). La condición es exacta: una que saltea más (todo push, o un pedido) deja
  *                        sin correr un merge directo de un administrador —la salida de urgencia—; el job `public-ci` la
  *                        suma detrás de `always()`, que en los demás eventos sigue mandando
- * …y la decimotercera es la red:
+ * …y la decimocuarta es la red:
  *   shape                las líneas de código del archivo son EXACTAMENTE las de `SHAPE` (abajo), en ese orden
  *
  * 🔴 POR QUÉ `shape` (pase adversarial del 2026-10-03, 13 clases de hallazgos con la misma enfermedad). Una regla que
@@ -70,7 +72,8 @@
 
 const fs = require('fs');
 
-const INVOCATION = /\bbash\s+scripts\/ci\/public-ci\.sh\b/;
+// el guion del árbol, o el de la base que un pedido saca con `git show`
+const INVOCATION = /\bbash\s+(?:scripts\/ci\/public-ci\.sh\b|"\$\{RUNNER_TEMP\}\/public-ci-base\.sh")/;
 
 /**
  * La condición de cada job: verdadera en todo evento menos el push a main que hace la cola de merge al entrar un pedido
@@ -124,9 +127,18 @@ const SHAPE = [
   '          TYCON_PUBLIC_CI_OUT: ${{ runner.temp }}/public-ci',
   '          TYCON_PUBLIC_CI_PART: ${{ matrix.part }}',
   '          BASE_REF: ${{ github.base_ref || github.event.merge_group.base_ref }}',
+  '          BASE_SHA: ${{ github.event.merge_group.base_sha }}',
   '        run: |',
   '          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ] || [ "${GITHUB_EVENT_NAME}" = "merge_group" ]; then',
-  '            bash scripts/ci/public-ci.sh --clean-machine --range "origin/${BASE_REF#refs/heads/}...HEAD"',
+  '            BASE="${BASE_SHA:-$(git rev-parse --verify "origin/${BASE_REF#refs/heads/}^{commit}")}" || exit 1',
+  '            git cat-file -e "${BASE}^{commit}" || exit 1',
+  '            if git cat-file -e "${BASE}:scripts/ci/run-base-controls.sh"; then',
+  '              git show "${BASE}:scripts/ci/public-ci.sh" > "${RUNNER_TEMP}/public-ci-base.sh"',
+  '              bash "${RUNNER_TEMP}/public-ci-base.sh" --root . --clean-machine --range "${BASE}...HEAD" --base "${BASE}"',
+  '            else',
+  '              echo "::warning::la base no trae scripts/ci/run-base-controls.sh: corren los controles del pedido"',
+  '              bash scripts/ci/public-ci.sh --clean-machine --range "origin/${BASE_REF#refs/heads/}...HEAD"',
+  '            fi',
   '          else',
   '            bash scripts/ci/public-ci.sh --clean-machine',
   '          fi',
@@ -138,7 +150,7 @@ const SHAPE = [
   '          for f in "${TYCON_PUBLIC_CI_OUT}"/*.log "${TYCON_PUBLIC_CI_OUT}"/agent-skills-suites/*.log; do',
   '            [ -f "${f}" ] || continue',
   '            echo "::group::${f##*/}"',
-  '            cat "${f}"',
+  '            tr \'\\r\' \' \' < "${f}" | sed -e \':a\' -e \'s/::/: :/\' -e \'ta\' -e \':b\' -e \'s/##/# #/\' -e \'tb\'',
   '            echo "::endgroup::"',
   '          done',
   '  installer-floor:',
@@ -167,7 +179,7 @@ const SHAPE = [
   '          for f in "${TYCON_PUBLIC_CI_OUT}"/*.log; do',
   '            [ -f "${f}" ] || continue',
   '            echo "::group::${f##*/}"',
-  '            cat "${f}"',
+  '            tr \'\\r\' \' \' < "${f}" | sed -e \':a\' -e \'s/::/: :/\' -e \'ta\' -e \':b\' -e \'s/##/# #/\' -e \'tb\'',
   '            echo "::endgroup::"',
   '          done',
   '  public-ci:',
@@ -536,13 +548,30 @@ const RULES = [
     id: 'range',
     check(lines) {
       const calls = lines.filter((l) => l.code && INVOCATION.test(l.body));
-      const ranged = calls.filter((l) => /--range[ =]["']?origin\/\S+\.\.\.HEAD\b/.test(l.body));
+      // desde la rama destino, o desde la base que corre los controles (que en un pedido es la punta de esa rama)
+      const ranged = calls.filter((l) => /--range[ =]["']?(?:origin\/\S+|\$\{BASE\})\.\.\.HEAD\b/.test(l.body));
       const onPr = lines.some((l) => l.code && /(GITHUB_EVENT_NAME|github\.event_name)\b.*=.*\bpull_request\b/.test(l.body));
       if (!ranged.length) return 'ninguna llamada a public-ci.sh lleva `--range origin/<base>...HEAD`';
       if (!onPr) return 'no se ve que `--range` se pase cuando el evento es pull_request';
       // la cola de merge prueba lo mismo que un pedido: sin `--range` ahí, el freno de nombres no corre antes de main
       const onQueue = lines.some((l) => l.code && /(GITHUB_EVENT_NAME|github\.event_name)\b.*=.*\bmerge_group\b/.test(l.body));
       if (!onQueue) return 'no se ve que `--range` se pase cuando el evento es merge_group (la cola de merge)';
+      return null;
+    },
+  },
+  {
+    // En un pedido y en la cola los controles salen de la base: corre el public-ci.sh de la base (sacado con `git show`),
+    // con `--base`, y en la cola la base es la del grupo. El hueco que queda (un pedido que borra esto corre su propio
+    // ci.yml) lo dice guides/piezas-del-arnes.md §scripts/ci/run-base-controls.sh.
+    id: 'base-controls',
+    check(lines) {
+      const code = lines.filter((l) => l.code).map((l) => l.body);
+      if (!code.some((b) => b === 'git show "${BASE}:scripts/ci/public-ci.sh" > "${RUNNER_TEMP}/public-ci-base.sh"')) return 'el public-ci.sh que corre en un pedido no sale de la base (`git show "${BASE}:scripts/ci/public-ci.sh"`)';
+      if (!code.some((b) => /^bash "\$\{RUNNER_TEMP\}\/public-ci-base\.sh" .* --base "\$\{BASE\}"$/.test(b))) return 'el public-ci.sh de la base no corre con `--base "${BASE}"`';
+      // el rango sale de la misma base: en la cola, desde main se colarían los cambios del grupo de adelante
+      if (!code.some((b) => /^bash "\$\{RUNNER_TEMP\}\/public-ci-base\.sh" .* --range "\$\{BASE\}\.\.\.HEAD" /.test(b))) return 'el public-ci.sh de la base no corre con `--range "${BASE}...HEAD"` (el rango sale de la misma base)';
+      if (!code.some((b) => b === 'git cat-file -e "${BASE}^{commit}" || exit 1')) return 'una base que no se lee no frena antes de elegir qué guion corre (`git cat-file -e "${BASE}^{commit}" || exit 1`)';
+      if (!code.some((b) => b === 'BASE_SHA: ${{ github.event.merge_group.base_sha }}')) return 'en la cola la base no es la del grupo (`BASE_SHA: ${{ github.event.merge_group.base_sha }}`)';
       return null;
     },
   },

@@ -249,6 +249,23 @@ run_ci --range 'HEAD~1...HEAD'
 is "T21 (e) un pre-commit que frena sobre el rango sale 1" 1 "${RC}"
 has "T21 (e) …con repo-lint en rojo" "${R}.out" "❌ public-ci: repo-lint — rojo (exit 1)"
 has "T21 (e) …y su motivo" "${R}.out" "el pre-commit frena"
+# la cola de un paso rojo puede traer texto del pedido: ningún comando de la CI («::», «##») sale entero
+variant lintinject
+printf '%s\n' 'echo "::error::forjado"; echo "##vso[task.complete result=Succeeded]"; printf "x\r:::warning:::y ###vso[z]\n"; exit 1' > "${R}/.githooks/pre-commit-checks"
+( cd "${R}" && lab_git add -A -- . ':!scratch' && lab_git commit -qm "pre-commit que imprime comandos" ) > /dev/null 2>&1
+run_ci --range 'HEAD~1...HEAD'
+has "T21 (e) la cola del paso rojo se muestra" "${R}.out" ": :error: :forjado"
+lacks "T21 (e) …sin un «::» entero (GitHub)" "${R}.out" "::error::"
+lacks "T21 (e) …ni un «##» entero (Azure)" "${R}.out" "##vso"
+if grep -E '::|##' "${R}.out" >/dev/null; then no "T21 (e) un «:::», «###» o un retorno de carro dejó un par entero"; else ok "T21 (e) …tampoco de a tres ni detrás de un retorno de carro"; fi
+# el nombre del registro de una suite sale de suites.json del pedido: no arma una línea ni un comando de la CI
+variant weirdsuite; SKILLS_ENV=""
+node -e 'const f=process.argv[1];const j=JSON.parse(require("fs").readFileSync(f,"utf8"));j.diarias.push({raiz:"arnes",ruta:"tests/x\n::warning::y.test.sh",requiere:["agent-skills"]});require("fs").writeFileSync(f,JSON.stringify(j,null,2))' "${R}/scripts/tests/suites.json"
+( cd "${R}" && lab_git add -A -- . ':!scratch' && lab_git commit -qm "una suite con un nombre raro" ) > /dev/null 2>&1
+run_ci
+if ls "${R}.ci/agent-skills-suites" 2>/dev/null | grep -E '::|[[:cntrl:]]' >/dev/null; then no "T21 (e) el nombre de un registro de suite trae un comando de la CI o un salto de línea"
+elif [ -n "$(ls "${R}.ci/agent-skills-suites" 2>/dev/null)" ]; then ok "T21 (e) los nombres de los registros de las suites salen sólo con caracteres seguros"
+else no "T21 (e) no quedó ningún registro de suite que mirar"; fi
 variant samever; ( cd "${R}" && echo "// sin subir la versión" >> build/check.js && lab_git commit -qam "sin versión" ) > /dev/null 2>&1
 run_ci --range 'HEAD~1...HEAD'
 is "T21 (e) una versión que no sube sale 1" 1 "${RC}"
@@ -263,6 +280,52 @@ run_ci --range 'HEAD~1...HEAD'
 is "T21 (e) el paquete de npm sin npm-package-version.js sale 1" 1 "${RC}"
 has "T21 (e) …con version «no pude correr» nombrando la regla que falta" "${R}.out" "❌ public-ci: version — no pude correr: "
 has "T21 (e) …y el archivo" "${R}.out" "scripts/ci/npm-package-version.js"
+
+# ═════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# T14 · PublicCi_NoBase_SameAsToday — sin --base el guion corre los controles de su propio árbol
+# y lo dice; con --base, un pedido que no toca ningún control da el mismo veredicto y los mismos pasos
+# ═════════════════════════════════════════════════════════════════════════════════════════════════════════════
+variant nobase; run_ci --range 'HEAD~1...HEAD'
+is "T14 sin --base: el veredicto de siempre" 0 "${RC}"
+NOBASE_STEPS="$(steps_of "${R}.out")"
+has "T14 sin --base el repo-lint lo dice" "$(ls "${R}.ci"/*-repo-lint.log | head -n 1)" "sin --base: los controles salen de este mismo árbol"
+variant withbase
+mkdir -p "${R}/scripts/ci"; cp "${ROOT}/scripts/ci/run-base-controls.sh" "${R}/scripts/ci/run-base-controls.sh"
+cat > "${R}/scripts/ci/controls-from-base.json" <<'JSON'
+{ "hook": ".githooks/pre-commit-checks",
+  "passes": [ { "name": "pre-commit", "mode": "index", "cmd": ["bash", ".githooks/pre-commit-checks"] } ],
+  "controls": [ { "name": "base-controls", "script": "scripts/ci/run-base-controls.sh", "rules": [] } ],
+  "content": [], "workflows": [], "approvals": ".tycon/control-changes.jsonl" }
+JSON
+commit_all "la base con su inventario"; lab_git -C "${R}" tag base-ref
+( cd "${R}" && printf 'un documento\n' > leeme.txt && printf '{ "version": "2026.01.01.3" }\n' > version.json ) ; commit_all "el pedido"
+run_ci --range 'base-ref...HEAD' --base base-ref
+is "T14 con --base, un pedido que no toca controles: el mismo veredicto" 0 "${RC}"
+is "T14 con --base, los mismos pasos" "${NOBASE_STEPS}" "$(steps_of "${R}.out")"
+LINT_LOG="$(ls "${R}.ci"/*-repo-lint.log | head -n 1)"
+has "T14 con --base el repo-lint dice de dónde salen los controles" "${LINT_LOG}" "los controles y su regla salen de la base base-ref"
+has "T14 con --base corrió la revisión desde la base, en verde" "${LINT_LOG}" "✅ base-controls: verde"
+has "T14 el pre-commit corrió sobre lo que trae el pedido" "${R}/.calls" "staged=leeme.txt version.json"
+run_ci --base base-ref
+is "T14 --base sin --range es un error de uso (exit 2)" 2 "${RC}"
+run_ci --range 'base-ref...HEAD' --base=
+is "T14 --base= vacío es un error de uso (exit 2)" 2 "${RC}"
+run_ci --range 'base-ref...HEAD' --base=base-ref
+is "T14 --base=<rev> es lo mismo que --base <rev>" 0 "${RC}"
+# lo que se suma a una regla se ve en la salida aunque el paso salga verde
+( cd "${R}" && node -e 'const f="scripts/ci/controls-from-base.json";const j=JSON.parse(require("fs").readFileSync(f,"utf8"));j.content.push("una-suma.json");require("fs").writeFileSync(f,JSON.stringify(j,null,2))' ); commit_all "suma una entrada al inventario"
+run_ci --range 'base-ref...HEAD' --base base-ref
+is "T14 sumar una entrada al inventario no frena" 0 "${RC}"
+has "T14 …pero se ve en la salida, en verde" "${R}.out" '+ content: "una-suma.json"'
+# una base que resuelve pero no trae el guion de la revisión: no pude correr, nunca los controles del pedido solos
+lab_git -C "${R}" tag sin-guion base-ref~1
+run_ci --range 'sin-guion...HEAD' --base sin-guion
+is "T14 una base sin run-base-controls.sh: rojo" 1 "${RC}"
+has "T14 …«no pude correr», nombrando lo que falta" "${R}.out" "no trae scripts/ci/run-base-controls.sh"
+variant badbase; run_ci --range 'HEAD~1...HEAD' --base no-existe
+is "T14 una base que no resuelve: rojo, nunca los controles del pedido" 1 "${RC}"
+has "T14 …«no pude correr»" "${R}.out" "❌ public-ci: repo-lint — no pude correr: "
+if grep -qF 'secrets.' "${ROOT}/.github/workflows/ci.yml" 2>/dev/null; then no "T14 el workflow lee un secreto"; else ok "T14 el workflow sigue sin leer ningún secreto"; fi
 
 # el control del «sólo lo versionado»: el mismo .js roto, versionado, sí es rojo
 variant tracked; ( cd "${R}" && lab_git add scratch/broken.js && lab_git commit -qm roto ) > /dev/null 2>&1; run_ci
@@ -564,7 +627,7 @@ else
   altered "el chequeo final no espera al piso del instalador" "aggregate-job" 'return t.replace("needs: [checks, installer-floor]", "needs: [checks]");'
   altered "una parte fija fuera del piso del instalador" "parts" 'return t.replace(/TYCON_PUBLIC_CI_PART: \$\{\{ matrix\.part \}\}/, "TYCON_PUBLIC_CI_PART: installer-floor");'
   altered "con un Node fijo" "node-matrix" 'return t.replace(/node-version: .*$/m, "node-version: 22");'
-  altered "sin --range en el pull request" "range" 'return t.replace(/ --range "[^"]*"/, "");'
+  altered "sin --range en el pull request" "range base-controls" 'return t.replace(/ --range "[^"]*"/g, "");'
   altered "sin --range en la cola de merge" "range" 'return t.replace(/ \|\| \[ "\$\{GITHUB_EVENT_NAME\}" = "merge_group" \]/, "");'
   altered "con la cola comparando contra su propia rama" "" 'return t.replace("github.base_ref || github.event.merge_group.base_ref", "github.base_ref || github.ref");'
   altered "con la rama base de la cola sin sacarle el prefijo refs-heads" "" 'return t.replace("${BASE_REF#refs/heads/}", "${BASE_REF}");'
@@ -576,7 +639,7 @@ else
   altered "con el job public-ci que no mira los resultados" "aggregate-job" 'return t.replace(/needs\.\*\.result/, "needs.*.outputs");'
   altered "con un job que deja pasar su rojo" "aggregate-job" 'return t.replace(/^(    runs-on: .*)$/m, "$1\n    continue-on-error: true");'
   # lo que el control no encuentra es rojo, nunca limpio: una regla cuyo bloque no existe no se da por cumplida
-  altered "sin on ni jobs" "after-queue aggregate-job clean-machine fetch-depth node-matrix parts permissions range triggers" 'return "name: x\n";'
+  altered "sin on ni jobs" "after-queue aggregate-job base-controls clean-machine fetch-depth node-matrix parts permissions range triggers" 'return "name: x\n";'
   altered "sin el bloque de la matriz" "node-matrix parts" 'return t.replace(/^    strategy:\n(?:      .*\n)+/m, "");'
   altered "con la lista de Node fuera de matrix" "node-matrix" 'return t.replace(/^      matrix:$/m, "      versions:");'
   altered "con matrix fuera de strategy" "node-matrix" 'return t.replace(/^    strategy:$/m, "    defaults:");'
@@ -643,6 +706,29 @@ else
   altered "salteando el push de cualquiera que no sea el bot" "after-queue" 'return t.replace(/^(    if: github\.event_name .*)!= \x27github-merge-queue\[bot\]\x27$/m, "$1== \x27github-merge-queue[bot]\x27");'
   altered "con el job public-ci sólo con always" "after-queue" 'return t.replace(/^    if: always\(\) && .*$/m, "    if: always()");'
   altered "con el job public-ci con la condición y sin always" "aggregate-job after-queue" 'return t.replace(/^    if: always\(\) && \((.*)\)$/m, "    if: $1");'
+  # ── T12 · PublicCi_Workflow_PassesBaseInPullRequestAndMergeGroup — en un pedido y en la cola corre el
+  #    public-ci.sh de la BASE con `--base`; en un push, el del árbol y sin `--base` ──
+  BASE_CALL="$(grep -n 'public-ci-base\.sh" --root ' "${CI_YML}" | head -n 1)"
+  case "${BASE_CALL}" in *'--base "${BASE}"'*) ok "T12 en un pedido y en la cola corre el public-ci.sh de la base, con --base" ;;
+    *) no "T12 no hay una llamada al public-ci.sh de la base con --base: «${BASE_CALL}»" ;; esac
+  grep -qF 'git show "${BASE}:scripts/ci/public-ci.sh"' "${CI_YML}" && ok "T12 el guion que corre sale de la base (git show), no del checkout del pedido" \
+    || no "T12 el public-ci.sh que corre en un pedido no sale de la base"
+  grep -qF 'BASE_SHA: ${{ github.event.merge_group.base_sha }}' "${CI_YML}" && ok "T12 en la cola la base es la base del grupo" \
+    || no "T12 la cola no usa la base del grupo (merge_group.base_sha)"
+  PUSH_CALL="$(awk '/^          else$/ { e = 1; next } e && /public-ci\.sh/ { print; exit }' "${CI_YML}")"
+  case "${PUSH_CALL}" in *"--base"*) no "T12 en un push la llamada lleva --base: «${PUSH_CALL}»" ;;
+    *'bash scripts/ci/public-ci.sh --clean-machine'*) ok "T12 en un push corre el guion del árbol, sin --base" ;;
+    *) no "T12 no encuentro la llamada del push: «${PUSH_CALL}»" ;; esac
+  altered "sin --base en la llamada de la base" "base-controls" 'return t.replace(/ --base "\$\{BASE\}"/, "");'
+  altered "corriendo el guion del pedido con la base" "base-controls" 'return t.replace("git show \"${BASE}:scripts/ci/public-ci.sh\"", "cat scripts/ci/public-ci.sh");'
+  altered "sin la base de la cola" "base-controls" 'return t.replace(/^          BASE_SHA: .*\n/m, "");'
+  altered "con el rango de la base saliendo de main" "base-controls" 'return t.replace("--range \"${BASE}...HEAD\" --base", "--range \"origin/${BASE_REF#refs/heads/}...HEAD\" --base");'
+  altered "sin frenar una base que no se lee" "base-controls" 'return t.replace(/^            git cat-file -e "\$\{BASE\}\^\{commit\}" \|\| exit 1\n/m, "");'
+  [ "$(grep -cF "tr '\\r' ' ' < \"\${f}\" | sed -e ':a' -e 's/::/: :/' -e 'ta' -e ':b' -e 's/##/# #/' -e 'tb'" "${CI_YML}")" = 2 ] && ok "T12 el volcado del registro neutraliza los comandos de la CI (::, ##) en los dos trabajos" \
+    || no "T12 el volcado del registro en el paso de falla no neutraliza los comandos de la CI"
+  grep -qF -- '--range "${BASE}...HEAD" --base "${BASE}"' "${CI_YML}" && ok "T12 en la cola el rango sale de la misma base que los controles" \
+    || no "T12 el rango de la llamada de la base no sale de la base"
+
   # no pudo leer: 2, no un verde
   node "${CHECK}" "${T}/alt/no-such-file.yml" > "${T}/check.out" 2>&1; is "T22 un archivo que no existe sale 2 (no pude leer)" 2 "$?"
   node "${CHECK}" > "${T}/check.out" 2>&1; is "T22 sin archivo sale 2" 2 "$?"

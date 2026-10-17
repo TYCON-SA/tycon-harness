@@ -987,6 +987,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 1.20: la revisión de un pedido corre los controles de la BASE (scripts/ci/run-base-controls.sh) sobre repos de juguete armados con git, sin red: un pedido que vacía el pre-commit, borra el guion de un control, suma su excepción o baja un modo sale rojo; un control nuevo del pedido corre igual; endurecer entra solo y aflojar pide la constancia del dueño; la base que no se lee es «no pude correr»; el inventario real cuadra con el pre-commit; la alarma a posteriori y la lista de excepciones que se suman. ~40 s. Viaja.",
+      "raiz": "arnes",
+      "ruta": "tests/base-controls.test.sh",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.7 (tanda C): la máquina limpia — instala el arnés en un contenedor que trae sólo lo que la portada pública declara, con el bloque de instalación de la portada tal cual, y corre el esqueleto del pipeline sobre un repo de ejemplo y sobre el plugin de ejemplo. Mide en el nocturno, en la CI pública (public-ci.sh --clean-machine) o con TYCON_CLEAN_MACHINE=1; en la máquina de un dev y en el control de cada cambio corre sólo lo que no usa docker (T34 y la lectura de la portada, segundos) y sale NO MEDIDO con su motivo. Sola: construye imágenes y levanta contenedores.",
       "raiz": "arnes",
       "ruta": "tests/clean-machine.test.sh",
