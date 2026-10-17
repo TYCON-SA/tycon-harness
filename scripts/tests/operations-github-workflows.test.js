@@ -221,11 +221,13 @@ function runner(opsFiles) {
   git(base, ['clone', '--quiet', opsRemote, path.join(ws, 'ops')]);
   const envFile = path.join(base, 'github-env');
   fs.writeFileSync(envFile, '');
-  return { base, ws, h, opsRemote, envFile };
+  const runnerTemp = path.join(base, 'runner-temp');
+  fs.mkdirSync(runnerTemp);
+  return { base, ws, h, opsRemote, envFile, runnerTemp };
 }
 function prepare(w, extra = {}) {
   const r = spawnSync('bash', [path.join(w.h, 'pipelines', 'operations', 'github', 'prepare-tree.sh')], { encoding: 'utf8',
-    env: cleanEnv({ GITHUB_WORKSPACE: w.ws, GITHUB_REPOSITORY: 'acme/operations', GITHUB_ENV: w.envFile, OPS_TOKEN: 'token-de-prueba', OPS_REMOTE_URL: w.opsRemote, ...extra }) });
+    env: cleanEnv({ GITHUB_WORKSPACE: w.ws, GITHUB_REPOSITORY: 'acme/operations', GITHUB_ENV: w.envFile, OPS_TOKEN: 'token-de-prueba', OPS_REMOTE_URL: w.opsRemote, RUNNER_TEMP: w.runnerTemp, ...extra }) });
   return { code: r.status, out: `${r.stdout}${r.stderr}` };
 }
 
@@ -276,7 +278,7 @@ test('T6 PrepareTree_FreshOrg_NotRed: un repo de operaciones recién creado no s
   const w = runner({ 'team-repos.json': teamRepos(), 'operations.json': '{"version":1,"owners":{"default":"lider"}}\n' });
   const r = prepare(w);
   assert.strictEqual(r.code, 0, r.out);
-  assert.ok(!fs.existsSync(path.join(w.h, '.dashboard')), 'no inventa carpetas de datos');
+  assert.deepStrictEqual(fs.readdirSync(path.join(w.h, '.dashboard')), ['applied-config.json'], 'no inventa carpetas de datos: sólo la marca');
 });
 
 test('T7 PrepareTree_And_PickHarness_Red: otro repo de operaciones, un team-repos roto, public de Azure y una referencia de pull request salen rojos', () => {
@@ -599,7 +601,7 @@ test('T32 TeamDashboard_ProductoresDelSitio', () => {
   assert.ok(traer >= 0 && prod > traer && generar > prod, 'traer → productores → generar');
   assert.match(y, /open-prs\.js --today "\$\{DAY\}" --provider github --json "\.dashboard\/open-prs\/open-prs-\$\{DAY\}\.json"/);
   assert.match(y, /assigned-items\.js --today "\$\{DAY\}" --provider github --out \.dashboard\/assigned/);
-  assert.match(y, /-- artifacts\/tablero-del-arnes\.html \.dashboard\/open-prs \.dashboard\/assigned \.dashboard\/deployments 2>&1/, 'se guardan con la página');
+  assert.match(y, /-- artifacts\/tablero-del-arnes\.html \.dashboard\/open-prs \.dashboard\/assigned \.dashboard\/deployments \.dashboard\/applied-config\.json 2>&1/, 'se guardan con la página (la marca de la configuración aplicada, tanda C de la 2.29)');
 });
 
 // story 2.22 (AC 13 y 15): la foto de despliegues corre ANTES de la página, tolerante; un paso propio acuña el token de la
@@ -621,4 +623,25 @@ test('T21 TeamDashboard_PasoDeDesplieguesAntesDelTablero (2.22)', () => {
   assert.match(pasoToken, /permission-actions: read/);
   assert.deepStrictEqual(brokenRules(y), []);
   assert.doesNotMatch(y.split('\n').slice(0, 16).join('\n'), /No necesita la credencial de la organización/);
+});
+
+test('T38 PrepareTree_DejaLaMarcaDeLaConfiguracion @story-2.29 @ac-24 (tanda C): como ops-data.yml de Azure, qué archivo de configuración aplicó, con su identificador', () => {
+  const MARCA = '.dashboard/applied-config.json';
+  const w = runner({ 'team-repos.json': teamRepos(), 'operations.json': '{"version":1,"owners":{"default":"lider"}}\n', 'scripts/nightly/dashboard/sources.json': '{"thresholds":{}}\n', '.dashboard/viejo.json': '{}\n' });
+  const r = prepare(w);
+  assert.strictEqual(r.code, 0, r.out);
+  const ops = path.join(w.ws, 'ops');
+  const marca = JSON.parse(fs.readFileSync(path.join(w.h, MARCA), 'utf8'));
+  assert.deepStrictEqual(marca.files, Object.fromEntries(['operations.json', 'team-repos.json', 'scripts/nightly/dashboard/sources.json'].map((f) => [f, git(ops, ['rev-parse', `HEAD:${f}`])])));
+  assert.strictEqual(marca.ops_commit, git(ops, ['rev-parse', '--short', 'HEAD']));
+  assert.ok(!Number.isNaN(Date.parse(marca.generated_at)), 'con la hora');
+  assert.match(git(w.h, ['show', '--name-only', '--format=', 'HEAD']), /^\.dashboard\/applied-config\.json$/m, 'la marca está en el commit local');
+  assert.ok(fs.existsSync(path.join(w.h, '.dashboard', 'viejo.json')), 'lo de .dashboard de operaciones sigue encima');
+  // y una copia en la carpeta temporal del trabajo: el tablero la devuelve después de traer los datos de main (T40)
+  assert.strictEqual(fs.readFileSync(path.join(w.runnerTemp, 'applied-config.json'), 'utf8'), fs.readFileSync(path.join(w.h, MARCA), 'utf8'));
+  assert.strictEqual(prepare(runner({ 'team-repos.json': teamRepos() }), { RUNNER_TEMP: '' }).code, 1, 'sin RUNNER_TEMP no sigue: la marca no llegaría a operaciones');
+  // en GitHub team-repos.json siempre está (el armado lo exige para saber de dónde sale el arnés): la marca nunca sale vacía
+  const w2 = runner({ 'team-repos.json': teamRepos() });
+  assert.strictEqual(prepare(w2).code, 0);
+  assert.deepStrictEqual(Object.keys(JSON.parse(fs.readFileSync(path.join(w2.h, MARCA), 'utf8')).files), ['team-repos.json']);
 });

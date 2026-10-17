@@ -13,7 +13,8 @@
  *     validador propio: `thresholdsParse` sólo recorre `thresholds` y llama a `umbralValido` de common.js (AC 11).
  *   · REVISAR: aplicar el borrador de una sección sobre el archivo tal como está (el resto queda byte por byte,
  *     AC 23) y validar el archivo entero.
- *   · La regla de la capa del equipo (`TEAM_REPOS_SINCE`), la plataforma del remoto, el formato con que se escribe.
+ *   · La regla de la capa del equipo (`TEAM_REPOS_SINCE`, y `MERGE_SUITES_SINCE` y `MODELS_SINCE` para las claves que
+ *     llegaron después), la plataforma del remoto, el formato con que se escribe.
  *   · La tabla de versiones por máquina (AC 13) y la vista de paridad por producto (AC 25), que no editan nada.
  *   · EL CÓDIGO DE PANTALLA (`pantalla()`): el JS que la pestaña sirve como `/static/config.js`, sin nada en línea.
  *
@@ -48,6 +49,11 @@ const SECCIONES = Object.freeze([
   // qué paquetes activa la organización (`packs.default`: all, none o una lista). El perfil se llama team-profile.json; un
   // repo del perfil que todavía usa el nombre de antes se lee y se propone con ése (`archivoViejo`)
   Object.freeze({ id: 'paquetes', titulo: 'Paquetes', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['packs'], idCorto: 'packs', necesita: ['packs'] }),
+  // dos partes de team-repos.json con su propia sección (tanda C): dónde corren las suites al mergear (story 7.28) y el
+  // modelo de cada trabajo del pipeline (story 7.29). Un lector anterior no las conoce: la sección dice «no sabe leer».
+  // Comparten el identificador de rama con «repos»: un pedido abierto sobre el archivo frena los otros (un pedido por archivo)
+  Object.freeze({ id: 'suites', titulo: 'Dónde corren las suites completas al mergear', archivo: 'team-repos.json', repo: 'perfil', lector: 'team-repos.js', claves: ['merge_suites'], idCorto: 'repos', necesita: ['merge_suites'] }),
+  Object.freeze({ id: 'modelos', titulo: 'Modelos de cada trabajo del pipeline', archivo: 'team-repos.json', repo: 'perfil', lector: 'team-repos.js', claves: ['models'], idCorto: 'repos', necesita: ['models'] }),
 ]);
 const seccionPorId = (id) => SECCIONES.find((s) => s.id === id) || null;
 
@@ -97,6 +103,25 @@ function remoteOf(url) {
  * `team-repos.json` se propone SÓLO si el `team-layer.json` del perfil pide al menos esta versión (`requires.harness`).
  */
 const TEAM_REPOS_SINCE = '2026.10.13.10';
+/**
+ * 🔴 Las claves de `team-repos.json` que llegaron después del archivo, con la primera versión cuyo lector las conoce (la
+ * etiqueta del merge que las trajo): `merge_suites` (story 7.28) y `models` (story 7.29). Una máquina con un lector
+ * anterior ve una clave desconocida y rechaza la capa entera; por eso, con una de ellas en el archivo propuesto, el
+ * perfil tiene que pedir al menos su versión, y con varias, la mayor.
+ */
+const MERGE_SUITES_SINCE = '2026.10.16.3';
+const MODELS_SINCE = '2026.10.16.10';
+const CLAVES_CON_VERSION = Object.freeze([['merge_suites', MERGE_SUITES_SINCE], ['models', MODELS_SINCE]]);
+/** La versión que tiene que pedir el perfil para este `team-repos.json` (sin archivo, la de siempre), y las claves por las que la pide. */
+function versionQuePide(doc) {
+  let version = TEAM_REPOS_SINCE; const claves = [];
+  for (const [k, min] of CLAVES_CON_VERSION) {
+    if (!isObject(doc) || doc[k] === undefined) continue;
+    claves.push(k);
+    if (!versionAtLeast(version, min)) version = min;
+  }
+  return { version, claves };
+}
 const versionParts = (v) => { const m = /^(\d{4})\.(\d{1,2})\.(\d{1,2})\.(\d+)$/.exec(String(v || '').trim()); return m ? m.slice(1).map(Number) : null; };
 const versionAtLeast = (v, min) => {
   const a = versionParts(v); const b = versionParts(min);
@@ -109,14 +134,16 @@ const versionAtLeast = (v, min) => {
  * en llano. Es la parte COMÚN del texto: cada transporte suma su cola (la página local, «El archivo quedó guardado en
  * tu clon»; el sitio, nada: no hay clon de la persona).
  */
-function profileGateProblem(layerText) {
+function profileGateProblem(layerText, doc) {
   let decl;
   try { decl = JSON.parse(String(layerText)); } catch (e) {
     return `no pude leer team-layer.json del perfil (${(e && e.message) || e}), y sin él no sé qué versión del arnés piden las máquinas`;
   }
   const req = String(((decl || {}).requires || {}).harness || '');
   const m = /^>=\s*(\S+)$/.exec(req.trim());
-  if (m && versionAtLeast(m[1], TEAM_REPOS_SINCE)) return null;
+  const { version, claves } = versionQuePide(doc);
+  if (m && versionAtLeast(m[1], version)) return null;
+  if (claves.length) return `todavía no se puede proponer: el perfil pide «${req || 'nada'}» en team-layer.json, y una máquina con una versión anterior a la ${version} no sabe leer ${claves.join(' ni ')} de team-repos.json y rechazaría la capa entera. Primero se sube requires.harness a «>= ${version}» (o más)`;
   return `todavía no se puede proponer: el perfil pide «${req || 'nada'}» en team-layer.json, y una máquina con una versión anterior a la ${TEAM_REPOS_SINCE} rechazaría la capa entera si trae team-repos.json. Primero se sube requires.harness a «>= ${TEAM_REPOS_SINCE}» (o más)`;
 }
 
@@ -279,8 +306,57 @@ function revisar({ seccion, texto, borrador, lectores = {}, arnes = null, hoy = 
   for (const k of ajenas) doc[k] = clone(borrador[k]);
   const salida = formatJson(doc);
   const r = lector.parse(salida);
-  const problems = (r.problems || []).map((p) => ({ ...p, sinCampo: ajenas.some((k) => p.path === k || String(p.path).startsWith(`${k}.`)) || p.path === '' }));
+  const problems = [...(r.problems || []), ...problemasDeSeccion(s, r, actual, doc)].map((p) => ({ ...p, sinCampo: ajenas.some((k) => p.path === k || String(p.path).startsWith(`${k}.`)) || p.path === '' }));
   return { ok: Boolean(r.ok) && problems.length === 0, problems, texto: r.ok && problems.length === 0 ? salida : null };
+}
+
+/**
+ * Los problemas que el lector da aparte, sin anular el archivo (`sectionProblems`: hoy, los de `models`, decisión 13 de
+ * la 7.29), que tocan a esta sección: los de sus claves; en la sección del archivo entero, los de una clave que el
+ * archivo propuesto cambia contra el actual (`actual` null: todas). Sin esto, un modelo mal escrito se propondría,
+ * porque el lector dice «válido».
+ */
+function problemasDeSeccion(seccion, r, actual, doc) {
+  const sp = r && isObject(r.sectionProblems) ? r.sectionProblems : {};
+  const out = [];
+  for (const [k, ps] of Object.entries(sp)) {
+    const toca = seccion.claves ? seccion.claves.includes(k) : (!isObject(actual) || canonico(actual[k]) !== canonico(isObject(doc) ? doc[k] : undefined));
+    if (toca && Array.isArray(ps)) out.push(...ps);
+  }
+  return out;
+}
+
+/** El valor como texto con las claves ordenadas: el orden en que vienen no es un cambio. */
+function canonico(v) {
+  if (Array.isArray(v)) return `[${v.map(canonico).join(',')}]`;
+  if (isObject(v)) return `{${Object.keys(v).sort().map((k) => `${JSON.stringify(k)}:${canonico(v[k])}`).join(',')}}`;
+  return JSON.stringify(v === undefined ? null : v);
+}
+
+/**
+ * Los modelos de hoy, sin configuración: `DEFAULTS` de `scripts/lib/models.js` del skill del pipeline, en el árbol (el
+ * único skill que lo trae; se busca por el archivo para no nombrar el skill acá). `null` si el árbol no lo trae.
+ * `motivoDeHoy(tree)` dice por qué no están: «no pude leer» nunca se muestra igual que «no hay».
+ */
+function modelosDeHoy(tree) { return buscarModelosDeHoy(tree).hoy; }
+function motivoDeHoy(tree) { return buscarModelosDeHoy(tree).motivo; }
+function buscarModelosDeHoy(tree) {
+  if (!tree) return { hoy: null, motivo: 'no sé dónde está el arnés de este sitio' };
+  let skills = [];
+  try { skills = fs.readdirSync(path.join(String(tree), 'skills')).sort(); } catch (e) {
+    return { hoy: null, motivo: e && e.code === 'ENOENT' ? 'esta versión del sitio no trae los skills' : `no pude leer la carpeta de los skills (${(e && e.code) || 'error'})` };
+  }
+  let motivo = 'esta versión del sitio no trae los modelos de hoy';
+  for (const n of skills) {
+    const f = path.join(String(tree), 'skills', n, 'scripts', 'lib', 'models.js');
+    if (!fs.existsSync(f)) continue;
+    try {
+      const m = require(f);
+      if (isObject(m.DEFAULTS) && Array.isArray(m.MODELS)) return { hoy: clone(m.DEFAULTS), motivo: null };
+      motivo = `skills/${n}/scripts/lib/models.js no trae los valores de hoy`;
+    } catch (e) { motivo = `no pude cargar skills/${n}/scripts/lib/models.js (${String((e && e.message) || e).split('\n')[0]})`; }
+  }
+  return { hoy: null, motivo };
 }
 
 // ── las versiones de cada máquina (AC 13) ────────────────────────────────────────────────────────────────────────
@@ -419,7 +495,7 @@ function pantalla() {
       .catch(function (e) { return { ok: false, message: 'no pude hablar con el sitio (' + (e && e.message ? e.message : 'sin respuesta') + '): si estabas proponiendo, recargá y mirá si el pedido se abrió antes de repetirlo' }; });
   }
   var copia = function (v) { return JSON.parse(JSON.stringify(v)); };
-  var S = { secciones: [], borradores: {}, problemas: {}, avisos: {}, notas: {}, textos: {}, extras: null };
+  var S = { secciones: [], borradores: {}, originales: {}, problemas: {}, avisos: {}, notas: {}, textos: {}, extras: null };
 
   // ── lo que ve la persona de cada sección: el nombre llano, para qué sirve, y en qué bloque va ──
   var PLANO = {
@@ -430,9 +506,11 @@ function pantalla() {
     despliegues: { t: 'Despliegues de cada producto', d: 'Con esto el sitio sabe qué paso de cada pipeline es la prueba y cuál es producción, para decir qué versión está afuera.', corto: 'Despliegues' },
     canal: { t: 'Dónde llega el resumen de cada mañana', d: 'El canal donde la noche deja su resumen.', corto: 'Aviso diario' },
     umbrales: { t: 'Umbrales: cuándo algo se pinta verde o rojo', d: 'El tablero colorea cada número según estos límites. Entre los dos, se pinta amarillo.', corto: 'Umbrales' },
+    suites: { t: 'Dónde corren las pruebas completas al mergear', d: 'Llega a todas las máquinas. Al mergear, cada repo corre sus pruebas completas en la máquina o deja que las corra el servidor, según esta regla.', corto: 'Pruebas al mergear' },
+    modelos: { t: 'Qué modelo usa cada trabajo del pipeline', d: 'Llega a todas las máquinas. Lo que no se declara usa el modelo de hoy. Con techo obligatorio, ningún trabajo pasa de ese modelo.', corto: 'Modelos' },
     paridad: { t: 'Diferencias aceptadas entre productos', d: 'Cada noche se comparan los productos entre sí. Lo que uno hace distinto a propósito se anota acá, con una fecha para volver a mirarlo.', corto: 'Diferencias entre productos' },
   };
-  var BLOQUES = [['Personas y equipo', ['sitio', 'personas', 'responsables']], ['Dónde vive todo', ['repos', 'despliegues', 'canal']], ['Reglas de la noche', ['umbrales', 'paridad']]];
+  var BLOQUES = [['Personas y equipo', ['sitio', 'personas', 'responsables']], ['Dónde vive todo', ['repos', 'despliegues', 'canal']], ['Reglas de la noche', ['umbrales', 'paridad']], ['Cómo trabaja el pipeline', ['suites', 'modelos']]];
   var REPO_DE = { operaciones: 'el repo de operaciones', perfil: 'el repo del equipo' };
   function plano(s) { return PLANO[s.id] || { t: s.titulo, d: '', corto: s.titulo }; }
   function bloqueada(s) { return s.estado === 'no_reader' || s.estado === 'ilegible' || s.estado === 'no_configurado'; }
@@ -456,7 +534,19 @@ function pantalla() {
     return box;
   }
 
-  function problemasEn(lista, p) { return (lista || []).filter(function (x) { return x.path === p; }); }
+  // lo que ya se dibujó junto a un campo: los editores de suites y modelos listan al final lo que quedó sin lugar
+  var MOSTRADOS = [];
+  function problemasEn(lista, p) { var r = (lista || []).filter(function (x) { return x.path === p; }); MOSTRADOS = MOSTRADOS.concat(r); return r; }
+  function esObjeto(v) { return v !== null && typeof v === 'object' && !Array.isArray(v); }
+  // los problemas de la clave que ningún campo mostró (una clave desconocida, un techo sin techo obligatorio, un repo
+  // repetido) y el texto de la clave entera: sin eso, la sección diría «para corregir» sin decir qué ni dejar sacarlo
+  function restoYTexto(s, d, pr, clave, titulo) {
+    var box = el('div', { class: 'pila' });
+    box.appendChild(el('details', { class: 'mas-info' }, el('summary', { text: 'Editar como texto' }), editorGenerico(s, d, pr, clave, titulo)));
+    (pr || []).filter(function (x) { return !x.sinCampo && (x.path === clave || String(x.path).indexOf(clave + '.') === 0) && MOSTRADOS.indexOf(x) < 0; })
+      .forEach(function (x) { box.appendChild(el('div', { class: 'err', text: x.path + ': ' + x.message })); });
+    return box;
+  }
   function campo(label, valor, onInput, p, problemas, attrs) {
     var mios = problemasEn(problemas, p);
     var input = el('input', Object.assign({ value: valor == null ? '' : String(valor), oninput: function (e) { onInput(e.target.value); }, 'data-path': p, 'aria-label': label }, attrs || {}));
@@ -693,10 +783,111 @@ function pantalla() {
       }, 'packs.default', pr)));
     return box;
   }
-  var EDITORES = { paquetes: editorPaquetes, repos: editorRepos, responsables: editorResponsables, despliegues: editorDespliegues, canal: function (s, d, pr) { return editorGenerico(s, d, pr, 'notify', 'El canal, como texto'); }, personas: editorPersonas, sitio: editorSitio, umbrales: editorUmbrales, paridad: editorParidad };
+  // un selector con «sin declarar» primero: elegirlo saca la clave del archivo
+  function selector(label, valor, opciones, onChange, p, problemas) {
+    var sel = el('select', { 'aria-label': label, 'data-path': p, onchange: function (e) { onChange(e.target.value); } });
+    opciones.forEach(function (o) { sel.appendChild(el('option', { value: o[0], text: o[1] })); });
+    sel.value = valor == null ? '' : String(valor);
+    var mios = problemasEn(problemas, p);
+    if (mios.length) sel.setAttribute('class', 'bad');
+    var box = el('div', { class: 'campo' }, label ? el('label', { text: label }) : null, sel);
+    mios.forEach(function (x) { box.appendChild(el('div', { class: 'err', text: x.message })); });
+    return box;
+  }
+  var REGLAS = [['automatico', 'automático: el servidor, si la rama lo exige'], ['siempre-en-la-maquina', 'siempre en la máquina'], ['confiar-en-el-servidor', 'confiar en el servidor']];
+  function editorSuites(s, d, pr) {
+    MOSTRADOS = [];
+    var box = el('div', { class: 'pila' });
+    // con otra forma (no es un objeto, repos no es una lista, una entrada no es un objeto) se edita sólo como texto
+    if ('merge_suites' in d && (!esObjeto(d.merge_suites) || (d.merge_suites.repos !== undefined && (!Array.isArray(d.merge_suites.repos) || d.merge_suites.repos.some(function (e) { return !esObjeto(e); }))))) {
+      box.appendChild(el('p', { class: 'muted', text: 'Esta parte del archivo no tiene la forma que entiende la pantalla: se corrige como texto.' }));
+      box.appendChild(restoYTexto(s, d, pr, 'merge_suites', 'Las suites al mergear, como texto'));
+      return box;
+    }
+    d.merge_suites = d.merge_suites || {};
+    var ms = d.merge_suites;
+    box.appendChild(selector('La regla de la organización', ms.default, [['', 'sin declarar: automático']].concat(REGLAS), function (v) { if (v) ms.default = v; else delete ms.default; }, 'merge_suites.default', pr));
+    var sub = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: 'Por repo' }), el('p', { class: 'sub-d', text: 'Un repo que no sigue la regla de la organización, o que nombra su pipeline de pruebas completas.' }));
+    ms.repos = ms.repos || [];
+    if (!ms.repos.length) sub.appendChild(el('p', { class: 'muted', text: 'Ningún repo todavía.' }));
+    ms.repos.forEach(function (e, i) {
+      var at = 'merge_suites.repos.' + i;
+      sub.appendChild(repoFila('Repo ' + (i + 1), '', e.repo, function (v) { e.repo = v; }, at + '.repo', pr));
+      sub.appendChild(el('div', { class: 'fila quitar3' },
+        selector('Regla', e.rule, [['', 'la de la organización']].concat(REGLAS), function (v) { if (v) e.rule = v; else delete e.rule; }, at + '.rule', pr),
+        campo('Pipeline de pruebas completas', e.full_tests_pipeline, function (v) { var t = String(v).trim(); if (!t) delete e.full_tests_pipeline; else e.full_tests_pipeline = /^\d+$/.test(t) && e.repo && e.repo.platform === 'azure' ? Number(t) : t; }, at + '.full_tests_pipeline', pr, { placeholder: 'nombre (o id en Azure)' }),
+        quitar(function () { ms.repos.splice(i, 1); render(); })));
+      problemasEn(pr, at).forEach(function (x) { sub.appendChild(el('div', { class: 'err', text: x.message })); });
+    });
+    sub.appendChild(el('button', { class: 'mas', type: 'button', text: '+ Agregar repo', onclick: function () { ms.repos.push({ repo: { platform: 'azure', org: '', project: '', repo: '' }, rule: 'automatico' }); render(); } }));
+    box.appendChild(sub);
+    problemasEn(pr, 'merge_suites.repos').forEach(function (x) { box.appendChild(el('div', { class: 'err', text: x.message })); });
+    box.appendChild(restoYTexto(s, d, pr, 'merge_suites', 'Las suites al mergear, como texto'));
+    return box;
+  }
+  var MODELOS = ['haiku', 'sonnet', 'opus', 'fable'];
+  function editorModelos(s, d, pr) {
+    MOSTRADOS = [];
+    var hoy = (s.extras && s.extras.hoy) || null;
+    var box = el('div', { class: 'pila' });
+    if ('models' in d && !esObjeto(d.models)) {
+      box.appendChild(el('p', { class: 'muted', text: 'Esta parte del archivo no tiene la forma que entiende la pantalla: se corrige como texto.' }));
+      box.appendChild(restoYTexto(s, d, pr, 'models', 'Los modelos, como texto'));
+      return box;
+    }
+    d.models = d.models || {};
+    var m = d.models;
+    if (!hoy) box.appendChild(el('p', { class: 'muted', text: 'No sé los modelos de hoy (' + ((s.extras && s.extras.motivoHoy) || 'sin motivo') + '): «sin declarar» usa los de cada máquina.' }));
+    function opciones(h) { return [['', 'sin declarar' + (h ? ' (hoy: ' + h + ')' : '')]].concat(MODELOS.map(function (x) { return [x, x]; })); }
+    function de(obj, k) { return obj && typeof obj === 'object' ? obj[k] : undefined; }
+    function uno(label, k, sub) {
+      var actual = sub ? de(m[k], sub) : m[k];
+      var h = sub ? de(de(hoy, k), sub) : de(hoy, k);
+      var p = 'models.' + k + (sub ? '.' + sub : '');
+      return selector(label, actual, opciones(h), function (v) {
+        if (!sub) { if (v) m[k] = v; else delete m[k]; return; }
+        m[k] = m[k] && typeof m[k] === 'object' ? m[k] : {};
+        if (v) m[k][sub] = v; else { delete m[k][sub]; if (!Object.keys(m[k]).length) delete m[k]; }
+      }, p, pr);
+    }
+    box.appendChild(el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: 'Los revisores' }), uno('Primera vuelta', 'reviewers'), uno('Las vueltas siguientes', 'reviewers_reloop')));
+    box.appendChild(el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: 'El pase adversarial' }), uno('Una story normal', 'adversarial', 'model'), uno('Una story pesada', 'adversarial', 'heavy'),
+      selector('Preguntar antes de usar fable', de(m.adversarial, 'fable_question'), [['', 'sin declarar' + (de(de(hoy, 'adversarial'), 'fable_question') ? ' (hoy: ' + (de(de(hoy, 'adversarial'), 'fable_question') === 'ask' ? 'preguntar' : 'nunca') + ')' : '')], ['ask', 'preguntar'], ['never', 'nunca']], function (v) {
+        m.adversarial = m.adversarial && typeof m.adversarial === 'object' ? m.adversarial : {};
+        if (v) m.adversarial.fable_question = v; else { delete m.adversarial.fable_question; if (!Object.keys(m.adversarial).length) delete m.adversarial; }
+      }, 'models.adversarial.fable_question', pr)));
+    box.appendChild(el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: 'Los ayudantes y la sesión' }), uno('Los ayudantes', 'helpers'), uno('Sesión, story liviana', 'session', 'low'), uno('Sesión, story normal', 'session', 'normal'), uno('Sesión, story pesada', 'session', 'heavy')));
+    var techo = el('input', { type: 'checkbox', 'aria-label': 'Techo obligatorio', 'data-path': 'models.mandatory_ceiling', onchange: function (e) { if (e.target.checked) m.mandatory_ceiling = true; else { delete m.mandatory_ceiling; delete m.ceiling; } render(); } });
+    techo.checked = m.mandatory_ceiling === true;
+    var tbox = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: 'Techo obligatorio' }), el('p', { class: 'sub-d', text: 'Lo paga la organización: ningún trabajo pasa de este modelo, aunque se pida.' }), el('label', {}, techo, el('span', { text: ' ningún trabajo pasa de…' })));
+    if (m.mandatory_ceiling === true) tbox.appendChild(selector('El techo', m.ceiling, [['', 'elegí uno']].concat(MODELOS.map(function (x) { return [x, x]; })), function (v) { if (v) m.ceiling = v; else delete m.ceiling; }, 'models.ceiling', pr));
+    problemasEn(pr, 'models.mandatory_ceiling').forEach(function (x) { tbox.appendChild(el('div', { class: 'err', text: x.message })); });
+    box.appendChild(tbox);
+    // el modelo de un revisor en particular, como texto (un nombre de revisor no entra en un selector)
+    box.appendChild(el('details', { class: 'mas-info' }, el('summary', { text: 'Un revisor en particular, como texto' + (hoy && hoy.reviewer ? ' (hoy: ' + Object.keys(hoy.reviewer).map(function (k) { return k + ' → ' + hoy.reviewer[k]; }).join(', ') + ')' : '') }),
+      editorGenerico(s, m, pr, 'reviewer', 'Revisor y modelo, como texto')));
+    box.appendChild(restoYTexto(s, d, pr, 'models', 'Los modelos, como texto'));
+    return box;
+  }
+  var EDITORES = { suites: editorSuites, modelos: editorModelos, paquetes: editorPaquetes, repos: editorRepos, responsables: editorResponsables, despliegues: editorDespliegues, canal: function (s, d, pr) { return editorGenerico(s, d, pr, 'notify', 'El canal, como texto'); }, personas: editorPersonas, sitio: editorSitio, umbrales: editorUmbrales, paridad: editorParidad };
 
+  // los editores de suites y modelos arman objetos vacíos para tener dónde escribir: no se mandan. Una clave vacía en el
+  // archivo pediría al perfil una versión más nueva sin cambiar nada
+  function vacio(v) { return v && typeof v === 'object' && !Array.isArray(v) ? !Object.keys(v).length : Array.isArray(v) && !v.length; }
+  // Lo que ya estaba en el archivo se respeta aunque esté vacío: para el merge, «merge_suites: {}» no es lo mismo que no
+  // tenerla (con la clave, la regla es «automatico»; sin ella, cada repo sigue su merge.mode)
+  function sinVacios(s, b) {
+    var clave = s.id === 'suites' ? 'merge_suites' : s.id === 'modelos' ? 'models' : null;
+    if (!clave || !esObjeto(b) || !esObjeto(b[clave])) return b;
+    var orig = esObjeto(S.originales[s.id]) ? S.originales[s.id] : {};
+    var antes = esObjeto(orig[clave]) ? orig[clave] : null;
+    var o = copia(b); var v = o[clave];
+    Object.keys(v).forEach(function (k) { if (vacio(v[k]) && !(antes && k in antes)) delete v[k]; });
+    if (vacio(v) && !(clave in orig)) delete o[clave];
+    return o;
+  }
   function revisarSeccion(s, borrador) {
-    return api('/revisar', { seccion: s.id, borrador: borrador === undefined ? S.borradores[s.id] : borrador }).then(function (r) {
+    return api('/revisar', { seccion: s.id, borrador: sinVacios(s, borrador === undefined ? S.borradores[s.id] : borrador) }).then(function (r) {
       S.problemas[s.id] = r.problems || []; S.avisos[s.id] = r.avisos || [];
       if (r.borrador) S.borradores[s.id] = r.borrador;
       S.textos[s.id] = r.ok ? r.texto : null;
@@ -817,7 +1008,7 @@ function pantalla() {
     return api('').then(function (r) {
       if (!r.ok) { app.replaceChildren(el('div', { class: 'msg bad' }, el('b', { text: 'No se pudo leer la configuración.' }), el('span', { text: r.message || '' }))); return; }
       S.secciones = r.secciones; S.extras = r;
-      r.secciones.forEach(function (s) { S.borradores[s.id] = copia(s.borrador === undefined ? {} : s.borrador); S.problemas[s.id] = s.problems || []; S.textos[s.id] = null; S.avisos[s.id] = s.avisos || []; });
+      r.secciones.forEach(function (s) { S.borradores[s.id] = copia(s.borrador === undefined ? {} : s.borrador); S.originales[s.id] = copia(S.borradores[s.id]); S.problemas[s.id] = s.problems || []; S.textos[s.id] = null; S.avisos[s.id] = s.avisos || []; });
       render();
     });
   }
@@ -827,7 +1018,8 @@ function pantalla() {
 }
 
 module.exports = {
-  SECCIONES, seccionPorId, loadReader, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, versionAtLeast, profileGateProblem, packsListGateProblem,
+  SECCIONES, seccionPorId, loadReader, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem,
+  problemasDeSeccion, modelosDeHoy, motivoDeHoy,
   thresholdsParse, aplicarSeccion, revisar, versionesDeMaquinas, paridadPorProducto, ramaDePropuesta, tituloDePropuesta, cuerpoDePropuesta, pantalla,
   SIN_NOTICIAS_DIAS,
 };

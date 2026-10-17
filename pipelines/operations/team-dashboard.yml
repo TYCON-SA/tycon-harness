@@ -160,12 +160,15 @@ jobs:
           # A main llegan SÓLO la página y los dos archivos del sitio (story 2.23), sobre la punta recién traída y con reintento. El sello se verifica ANTES de cada
           # empuje sobre lo que se va a publicar (la página y el .dashboard de la punta, extraídos a $PUSH_DIR).
           DAY=$(date -u +%Y-%m-%d)
+          # la marca de la configuración aplicada (story 2.29): el paso que trajo los datos de main la pisó; ops-data.yml
+          # dejó la copia de esta corrida en la carpeta temporal. Viaja sólo con una noche verde, como lo demás
+          mkdir -p .dashboard && cp "$(Agent.TempDirectory)/applied-config.json" .dashboard/applied-config.json
           node scripts/ci/push-nightly-data.js save \
             --message "chore(tablero): página del arnés $DAY [nocturno]" \
             --require artifacts/tablero-del-arnes.html \
             --verify "node scripts/nightly/dashboard/seal.js --verify \"\$PUSH_DIR/artifacts/tablero-del-arnes.html\" --today \"$DAY\" --run \"$(Build.BuildId)\" --dashboard \"\$PUSH_DIR/.dashboard\"" \
             --verify-export .dashboard \
-            -- artifacts/tablero-del-arnes.html .dashboard/open-prs .dashboard/assigned .dashboard/deployments
+            -- artifacts/tablero-del-arnes.html .dashboard/open-prs .dashboard/assigned .dashboard/deployments .dashboard/applied-config.json
         displayName: 'Guardar la página del día y lo del sitio en el repo de operaciones'
         condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'), eq('${{ parameters.efectos }}', 'true'))
 

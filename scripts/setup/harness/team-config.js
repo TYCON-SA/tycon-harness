@@ -80,7 +80,10 @@ function readTarget(target, clone, reader) {
     return { ...out, state: 'unreadable', message: `no pude leer ${file} (${(e && e.code) || e})` };
   }
   const r = reader.parse(text);
-  return { ...out, state: 'loaded', data: r.ok ? r.data : safeJson(text), problems: r.problems || [] };
+  // un problema que el lector da aparte (un modelo mal escrito, decisión 13 de la 7.29) viene con `data` sin esa clave:
+  // el borrador sale del archivo, para que guardar no la borre en silencio, y el problema se muestra
+  const aparte = r.sectionProblems ? Object.values(r.sectionProblems).flat() : [];
+  return { ...out, state: 'loaded', data: r.ok && !aparte.length ? r.data : safeJson(text), problems: [...(r.problems || []), ...aparte] };
 }
 function safeJson(text) { try { const v = JSON.parse(text); return v && typeof v === 'object' && !Array.isArray(v) ? v : null; } catch { return null; } }
 

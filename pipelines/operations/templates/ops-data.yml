@@ -22,8 +22,9 @@
 #     `{ "files": { "<ruta tal como la lee el arnés>": "<oid>" }, "ops_commit": "<sha corto>", "generated_at": "<UTC>" }`—.
 #     Sin configuración copiada, `files` queda `{}`. Así el sitio de la organización sabe qué configuración lee de
 #     verdad el nocturno (la sección Umbrales se edita sólo cuando la marca nombra su archivo). La marca entra en el
-#     commit local; a operaciones la sube el paso de guardar, que empuja `.dashboard` entero sólo al final de una noche
-#     verde: una noche rota no cambia lo que el sitio cree aplicado.
+#     commit local y queda copiada en `$(Agent.TempDirectory)/applied-config.json`. A operaciones la sube el guardado
+#     del tablero (team-dashboard.yml), que la devuelve de esa copia —su paso que trae los datos de main la pisa— y la
+#     guarda sólo al final de una noche verde: una noche rota no cambia lo que el sitio cree aplicado.
 #
 # Después:
 #   1. Lo traído queda en un commit LOCAL encima del arnés, que no se empuja. Guardar (push-nightly-data.js) toma HEAD
@@ -71,6 +72,9 @@ steps:
         process.stdout.write(JSON.stringify({ files, ops_commit: commit, generated_at: new Date().toISOString() }, null, 2) + "\n");
       ' "$(git -C "$O" rev-parse --short HEAD)" ${APPLIED[@]+"${APPLIED[@]}"} > "$S/.dashboard/applied-config.json" || red "no pude dejar la marca de la configuración aplicada"
       ENTRIES+=(.dashboard/applied-config.json)
+      # y una copia en la carpeta temporal del trabajo: el tablero trae .dashboard de main antes de generar, lo que pisa la
+      # marca; la devuelve de acá justo antes de guardarla (tanda C de la 2.29)
+      cp "$S/.dashboard/applied-config.json" "$(Agent.TempDirectory)/applied-config.json" || red "no pude dejar la copia de la marca en la carpeta temporal"
       # lo demás no se trae: se nombra, para que nadie crea que se está leyendo
       IGNORED=$(cd "$O" && git ls-files | grep -Ev '^(\.dashboard/|inbox/|artifacts/|pipelines/|README\.md$|\.gitignore$)' | grep -vxF -f <(printf '%s\n' "${CONFIG_FILES[@]}") | head -n 20 || true)
       [ -z "$IGNORED" ] || echo "##vso[task.logissue type=warning]El repo de operaciones trae archivos que esta plantilla no lee (no se ponen encima del arnés): $(printf '%s' "$IGNORED" | tr '\n' ' ' | sed 's/##vso/## vso/g')"
