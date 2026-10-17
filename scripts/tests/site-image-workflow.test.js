@@ -17,7 +17,7 @@ const read = () => fs.readFileSync(ARCHIVO, 'utf8');
 const codigo = (t) => t.split('\n').filter((l) => l.trim() && !/^\s*#/.test(l));
 // lo que copia scripts/site/Dockerfile: si cambia algo que la imagen trae, la imagen se vuelve a armar
 const RUTAS = ["'scripts/site/**'", "'scripts/lib/**'", "'scripts/metrics/**'", "'scripts/nightly/**'", "'scripts/setup/harness/**'", "'scripts/setup/install-effects.json'",
-  "'scripts/ci/check-product-parity.js'", "'scripts/ci/legacy-options.js'", "'skills/tycon-pipeline/scripts/lib/**'", "'skills/tycon-pipeline/steps/**'", "'LICENSE*'", "'NOTICE*'",
+  "'scripts/ci/check-product-parity.js'", "'scripts/ci/legacy-options.js'", "'skills/tycon-pipeline/scripts/lib/**'", "'skills/tycon-pipeline/steps/**'", "'agents/**'", "'packs/**'", "'LICENSE*'", "'NOTICE*'",
   // y el propio workflow: un cambio a cómo se arma la imagen la vuelve a armar
   "'.github/workflows/site-image.yml'"];
 
@@ -54,7 +54,13 @@ test('T1 Imagen_SoloEnPushAMainConSusRutas @story-2.30 @ac-1 @ac-2', () => {
   for (const [, origen] of docker.matchAll(/^COPY (.+) \S+$/gm)) {
     // version.json no dispara (cambia en cada merge) y .tycon-release.json no está en el repo: lo escribe el workflow
     for (const o of origen.split(/\s+/).filter((x) => !/^(version|\.tycon-release)\.json\*?$/.test(x))) {
-      const cubierta = RUTAS.some((r) => { const x = r.slice(1, -1); return x.endsWith('/**') ? o.startsWith(x.slice(0, -2)) : o === x; });
+      // una carpeta que se copia con comodín (`agents*`, para armarse igual sin ella) la cubre su `agents/**`
+      const cubierta = RUTAS.some((r) => {
+        const x = r.slice(1, -1);
+        if (!x.endsWith('/**')) return o === x;
+        const base = x.slice(0, -2);
+        return o.startsWith(base) || (o.endsWith('*') && `${o.slice(0, -1)}/` === base);
+      });
       assert.ok(cubierta, `el disparador no cubre ${o}, que la imagen copia`);
     }
   }

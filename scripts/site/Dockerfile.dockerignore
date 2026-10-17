@@ -16,6 +16,8 @@
 !scripts/ci/legacy-options.js
 !skills/tycon-pipeline/scripts/lib/
 !skills/tycon-pipeline/steps/
+!packs/
+!agents/
 scripts/tests
 .git
 **/*.pem
