@@ -288,7 +288,12 @@ function describe(p) {
 // `readEffects` devuelve `ok: false` con el archivo y el motivo, y quien la usa lo dice.
 const EFFECTS_FILE = path.join('scripts', 'setup', 'install-effects.json');
 const EFFECT_KINDS = [...KINDS, 'task'];
-const EFFECT_KEYS = ['id', 'id_pattern', 'kind', 'does', 'blocks', 'when', 'switch', 'network', 'stores', 'windows', 'front_page', 'profiles', 'source'];
+const EFFECT_KEYS = ['id', 'id_pattern', 'kind', 'title', 'group', 'default', 'site_section', 'site_pending', 'does', 'blocks', 'when', 'switch', 'network', 'stores', 'windows', 'front_page', 'profiles', 'source'];
+// cómo la muestra el sitio: un título corto, el grupo donde va, si viene prendida o apagada, la sección de Configuración
+// donde la organización la cambia (`site_section`) o la pestaña donde debería poder cambiarla y todavía no (`site_pending`)
+const EFFECT_GROUPS = ['safety', 'assistant', 'notices', 'memory', 'time', 'install', 'pipeline', 'codex'];
+const EFFECT_DEFAULTS = ['on', 'off'];
+const TITLE_MAX = 70;
 // en qué perfil de instalación existe cada pieza (story 8.16, tanda C · AC 22): todo lo de `minimal` está en `full`
 const PROFILES = ['minimal', 'full'];
 // dónde frena: en ningún lado, en cualquier repo, sólo en un repo bajo el arnés, o sólo con el pipeline en modo autónomo
@@ -316,6 +321,11 @@ function effectProblems(doc) {
     if (hasPattern) { try { new RegExp(e.id_pattern); } catch (_) { out.push(`${name}: «id_pattern» no es una expresión regular`); } }
     if (!EFFECT_KINDS.includes(e.kind)) out.push(`${name}: kind vale ${JSON.stringify(e.kind)} y sólo puede ser ${EFFECT_KINDS.join(', ')}`);
     if (typeof e.does !== 'string' || !e.does.trim()) out.push(`${name}: falta «does» (una oración: qué cambia para la persona)`);
+    if (typeof e.title !== 'string' || !e.title.trim() || e.title.length > TITLE_MAX) out.push(`${name}: falta «title» (qué hace, en una línea de hasta ${TITLE_MAX} caracteres)`);
+    if (!EFFECT_GROUPS.includes(e.group)) out.push(`${name}: group vale ${JSON.stringify(e.group)} y sólo puede ser ${EFFECT_GROUPS.join(', ')}`);
+    if (!EFFECT_DEFAULTS.includes(e.default)) out.push(`${name}: default vale ${JSON.stringify(e.default)} y sólo puede ser on u off (si viene prendida o apagada)`);
+    for (const k of ['site_section', 'site_pending']) if (k in e && !(typeof e[k] === 'string' && /^[a-z]+$/.test(e[k]))) out.push(`${name}: «${k}», si está, es el identificador de una sección o una pestaña del sitio`);
+    if ('site_section' in e && 'site_pending' in e) out.push(`${name}: o se cambia en una sección del sitio (site_section) o todavía no (site_pending), no las dos`);
     if (!EFFECT_BLOCKS.includes(e.blocks)) out.push(`${name}: blocks vale ${JSON.stringify(e.blocks)} y sólo puede ser ${EFFECT_BLOCKS.join(', ')}`);
     if (typeof e.when !== 'string' || !EFFECT_WHEN.test(e.when)) out.push(`${name}: when vale ${JSON.stringify(e.when)} y no es del vocabulario (always, integration:<llave>, optin:<VARIABLE>…)`);
     for (const k of ['switch', 'network', 'stores']) if (!textOrNull(e[k])) out.push(`${name}: «${k}» es un texto o null`);

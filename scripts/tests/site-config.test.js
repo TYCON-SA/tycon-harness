@@ -1453,3 +1453,40 @@ test('Navegar_LoArmadoSeGuarda_HastaElRefrescoDeFondo', async () => {
     assert.strictEqual(consultas, primeras * 3, 'pasados 15 minutos, también');
   });
 });
+
+// ── el perfil de instalación, por tema ─────────────────────────────────────────────────────────────────────────────
+test('Perfil_LoQueApuntaElArchivo_ExisteEnElSitio — cada sección y pestaña que nombra install-effects.json es una de verdad', () => {
+  const efectos = JSON.parse(texto('scripts/setup/install-effects.json')).effects;
+  const secciones = ORG.SECCIONES.map((s) => s.id);
+  const pestanas = [...ORG.pantalla().matchAll(/\['([a-z]+)', '[^']+', \[[^\]]*\], \[[^\]]*\]\]/g)].map((m) => m[1]);
+  assert.deepStrictEqual(pestanas, ['personas', 'repos', 'avisos', 'claude', 'instalacion'], 'las pestañas, leídas de la pantalla');
+  for (const e of efectos) {
+    if (e.site_section) assert.ok(secciones.includes(e.site_section), `${e.title}: la sección ${e.site_section}`);
+    if (e.site_pending) assert.ok(pestanas.includes(e.site_pending), `${e.title}: la pestaña ${e.site_pending}`);
+    assert.doesNotMatch(e.does, /de fábrica: prendido/, `${e.title}: sin la frase que no dice si viene prendido`);
+  }
+});
+
+test('Perfil_PorTema_ElMinimoYLoQueSumaElCompleto — grupos con su cuenta, una línea por cosa y dónde se cambia', async () => {
+  const f = (title, group, extra = {}) => ({ title, group, does: `${title}, en detalle.`, default: 'on', when: 'always', switch: null, site_section: null, site_pending: null, ...extra });
+  const frenos = f('Frena comandos destructivos', 'safety', { switch: 'TYCON_SAFETY_GUARD=0', site_pending: 'claude' });
+  const reloj = f('Propone abrir el timer', 'time', { when: 'integration:clockify', site_section: 'integraciones' });
+  const sesion = f('Frena git si otra sesión usa la copia', 'safety', { default: 'off', switch: 'TYCON_SESSION_GUARD=1 lo prende' });
+  const arranque = f('Guarda una copia del arranque', 'install');
+  const sec = seccionPerfil('instalacion', {});
+  sec.extras = { perfiles: { minimal: [frenos, reloj], full: [frenos, reloj, sesion, arranque], motivo: null } };
+  const p = await pantallaFalsa([sec]);
+  assert.strictEqual(p.error, null);
+  const t = p.textoDe('instalacion');
+  assert.match(t, /El mínimo trae 2 cosas/);
+  assert.match(t, /El completo suma estas 2/, 'el completo no repite lo del mínimo');
+  const grupos = p.todo(p.sec('instalacion')).filter((n) => n.tag === 'details' && n.attrs.class === 'grupo').map((d) => d.hijos[0].textContent);
+  assert.deepStrictEqual(grupos, ['Frenos de seguridad (1)', 'Registro de tiempo (1)', 'Frenos de seguridad (1)', 'Instalación y actualización (1)'], 'por grupo, con su cuenta');
+  assert.ok(p.todo(p.sec('instalacion')).filter((n) => n.tag === 'details' && n.attrs.class === 'grupo').every((d) => !d.attrs.open), 'cerrados');
+  assert.match(t, /Viene con su integración\. Se cambia en Configuración → Cómo trabaja Claude → Integraciones\./, 'lo de la organización, en su sección');
+  assert.match(t, /Viene prendido\. Sólo en tu máquina, con TYCON_SAFETY_GUARD=0\. Pendiente: que se pueda cambiar desde Configuración → Cómo trabaja Claude\./);
+  assert.match(t, /Viene apagado\. Sólo en tu máquina, con TYCON_SESSION_GUARD=1 lo prende\./);
+  assert.match(t, /Viene prendido\. Es parte del arnés: no se apaga\./);
+  const titulos = p.todo(p.sec('instalacion')).filter((n) => n.tag === 'summary').map((n) => n.textContent);
+  assert.ok(titulos.includes('Frena comandos destructivos') && titulos.every((x) => !/TYCON_/.test(x)), 'la línea de cada cosa, sin variables');
+});

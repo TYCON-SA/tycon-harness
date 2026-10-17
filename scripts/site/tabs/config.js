@@ -91,7 +91,14 @@ function respuestaVigente(lector, doc) {
 function perfilesDeInstalacion() {
   try {
     const lista = JSON.parse(fs.readFileSync(path.join(TREE, 'scripts', 'setup', 'install-effects.json'), 'utf8')).effects || [];
-    const de = (p) => [...new Set(lista.filter((e) => isObject(e) && Array.isArray(e.profiles) && e.profiles.includes(p) && typeof e.does === 'string').map((e) => e.does))];
+    // cada pieza con lo que la pantalla muestra: el título y su grupo, el detalle, si viene prendida y dónde se cambia;
+    // las piezas con el mismo título y el mismo detalle (un hook en dos eventos) van una vez
+    const ficha = (e) => ({ title: e.title, group: e.group, does: e.does, default: e.default, when: e.when, switch: e.switch || null, site_section: e.site_section || null, site_pending: e.site_pending || null });
+    const de = (p) => {
+      const vistas = new Set();
+      return lista.filter((e) => isObject(e) && Array.isArray(e.profiles) && e.profiles.includes(p) && typeof e.does === 'string' && typeof e.title === 'string')
+        .map(ficha).filter((f) => { const k = `${f.title}\0${f.does}`; if (vistas.has(k)) return false; vistas.add(k); return true; });
+    };
     return { minimal: de('minimal'), full: de('full'), motivo: null };
   } catch (e) { return { minimal: [], full: [], motivo: `no se pudo leer install-effects.json del arnés (${(e && e.code) || 'error'})` }; }
 }
