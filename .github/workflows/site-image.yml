@@ -1,6 +1,6 @@
 # site-image.yml — arma y publica la imagen del sitio de la organización en el registro de paquetes de GitHub de este
 # repo. Corre sólo en un push a main que toca lo que la imagen trae: las carpetas que copia scripts/site/Dockerfile
-# (no version.json solo: cambia en cada merge).
+# (no version.json solo: cambia en cada merge) y este mismo archivo (cambiar cómo se arma es armarla de nuevo).
 #
 # El nombre de la imagen sale del contexto (ghcr.io/<este repo, en minúsculas>), nunca escrito. Etiquetas: la versión que
 # el merge le puso a este commit (la etiqueta v<número> de version-tag.yml) y sha-<commit>; nunca latest: cada instalación
@@ -27,6 +27,7 @@ on:
       - 'scripts/ci/legacy-options.js'
       - 'skills/tycon-pipeline/scripts/lib/**'
       - 'skills/tycon-pipeline/steps/**'
+      - '.github/workflows/site-image.yml'
 concurrency:
   group: site-image
   cancel-in-progress: false
