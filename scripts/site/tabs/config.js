@@ -70,6 +70,64 @@ function paquetesDe(valor) {
 }
 
 /**
+ * Cómo contesta el asistente según el perfil (story 2.31): `{ vigente: { language, style, max_chars }, origen }`. Lo que
+ * el perfil no dice sale de lo que hace el lector de la máquina sin valor (su `DEFAULTS` y el tope de cada estilo).
+ */
+function respuestaVigente(lector, doc) {
+  const r = doc && isObject(doc.response) ? doc.response : {};
+  const def = (lector && lector.DEFAULTS) || {};
+  const topes = (lector && lector.TOPE_POR_ESTILO) || {};
+  const language = r.language || def['response.language'] || null;
+  const style = r.style || def['response.style'] || null;
+  const max = Number.isInteger(r.max_chars) ? r.max_chars : (topes[style] || null);
+  return {
+    vigente: { language, style, max_chars: max },
+    origen: { language: r.language ? 'perfil' : 'por defecto', style: r.style ? 'perfil' : 'por defecto', max_chars: Number.isInteger(r.max_chars) ? 'perfil' : 'del estilo' },
+  };
+}
+/** Qué trae cada perfil de instalación, leído de install-effects.json del árbol (`profiles` de cada entrada). */
+function perfilesDeInstalacion() {
+  try {
+    const lista = JSON.parse(fs.readFileSync(path.join(TREE, 'scripts', 'setup', 'install-effects.json'), 'utf8')).effects || [];
+    const de = (p) => [...new Set(lista.filter((e) => isObject(e) && Array.isArray(e.profiles) && e.profiles.includes(p) && typeof e.does === 'string').map((e) => e.does))];
+    return { minimal: de('minimal'), full: de('full'), motivo: null };
+  } catch (e) { return { minimal: [], full: [], motivo: `no se pudo leer install-effects.json del arnés (${(e && e.code) || 'error'})` }; }
+}
+/** Lo que trae la organización en el repo del perfil (story 2.31, AC 17): skills, revisores, guías de alta y paquetes. */
+const CONTENIDO = [['agents', 'revisor', (d, f) => f.endsWith('.md')], ['onboarding', 'guía de alta', (d, f) => f.endsWith('.md')], ['packs', 'paquete', (d, f) => fs.existsSync(path.join(d, f, 'pack.json'))]];
+// las skills: una carpeta con SKILL.md, hasta tres niveles bajo skills/ (`skills/<s>`, `skills/<grupo>/<s>`,
+// `skills/projects/<cliente>/<s>`), como las acepta la capa del equipo
+const PROFUNDIDAD_SKILLS = 3;
+function skillsDe(raiz, rel, nivel, out, enlace) {
+  let nombres = [];
+  try { nombres = fs.readdirSync(path.join(raiz, rel), { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).sort(); } catch (e) {
+    if (e && e.code !== 'ENOENT') out.push({ tipo: `skill (no se pudo leer la carpeta: ${e.code || 'error'})`, ruta: rel, enlace: null });
+    return;
+  }
+  for (const n of nombres) {
+    const r = `${rel}/${n}`;
+    if (fs.existsSync(path.join(raiz, r, 'SKILL.md'))) out.push({ tipo: 'skill', ruta: r, enlace: enlace(r.split('/').map(encodeURIComponent).join('/')) });
+    else if (nivel < PROFUNDIDAD_SKILLS) skillsDe(raiz, r, nivel + 1, out, enlace);
+  }
+}
+function contenidoDelPerfil(dir, enlace) {
+  if (!dir) return null;
+  const out = [];
+  skillsDe(dir, 'skills', 1, out, enlace);
+  for (const [carpeta, tipo, es] of CONTENIDO) {
+    let nombres = [];
+    // una carpeta que no está es «no trae»; una que está y no se deja leer se dice (no es lo mismo que vacía)
+    try { nombres = fs.readdirSync(path.join(dir, carpeta)).sort(); } catch (e) {
+      if (e && e.code !== 'ENOENT') out.push({ tipo: `${tipo} (no se pudo leer la carpeta: ${e.code || 'error'})`, ruta: carpeta, enlace: null });
+      continue;
+    }
+    // el enlace lleva cada parte de la ruta escapada: un nombre con «?» o «#» no rompe la dirección
+    for (const f of nombres) if (es(path.join(dir, carpeta), f)) out.push({ tipo, ruta: `${carpeta}/${f}`, enlace: enlace(`${carpeta}/${encodeURIComponent(f)}`) });
+  }
+  return out;
+}
+
+/**
  * Las rutas de la pestaña, para `rutasExtra` de crearSitio. `cfg` es la del servidor; `fuentes`, las de la 2.23.
  * Inyectables (pruebas): `lectores`, `versionImagen`, `ahora`, `hoy`, `fetch`, `urlBase` (la dirección de la API de cada plataforma) y
  * `remotos` ({ operaciones, perfil }: la plataforma de cada repo cuando la dirección no la dice).
@@ -172,6 +230,25 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     if (s.id === 'sitio') v.campos = { url: Array.isArray(lec.SITE_KEYS) && lec.SITE_KEYS.includes('url') };
     if (s.id === 'modelos') { const hoy = ORG.modelosDeHoy(TREE); v.extras = { hoy, motivoHoy: hoy ? null : ORG.motivoDeHoy(TREE) }; }
     if (s.id === 'paquetes') v.extras = paquetesDe(doc && isObject(doc.packs) ? doc.packs.default : undefined);
+    // story 2.31: las secciones del perfil que cambian la experiencia de cada dev
+    if (s.id === 'respuesta') {
+      v.extras = respuestaVigente(lec, doc);
+      // con una capa que pide una versión que no lee `response`, se muestra y no se propone (decisión 7)
+      const capa = leer(dir, 'team-layer.json');
+      const gate = ORG.teamProfileGateProblem({ layerText: capa.estado === 'leido' ? capa.texto : '', versionImagen, doc: { response: {} } });
+      if (gate) { v.soloLectura = true; v.motivo = gate; }
+    }
+    if (s.id === 'ado') {
+      v.extras = {
+        proyecto: 'el de cada repo, en su ado-config.yaml (ado_project): se cambia en cada repo',
+        pedidos: 'los pedidos de trabajo de las dependencias (work-items) van al proyecto de cada repo de scripts/nightly/dependencies/repos.json, en el repo de operaciones; a quién se asignan, en «Responsables»',
+      };
+      if (remoteDe('perfil').platform === 'github') { v.soloLectura = true; v.motivo = 'no aplica: la organización trabaja en GitHub'; }
+    }
+    if (s.id === 'instalacion') v.extras = { perfiles: perfilesDeInstalacion() };
+    if (s.id === 'hilos' && !(doc && isObject(doc.site) && isObject(doc.site.mailbox))) {
+      v.soloLectura = true; v.motivo = 'primero se configura el buzón de corridas en «El sitio»: sin buzón no hay conversaciones que bajar';
+    }
     if (s.id === 'personas') {
       // operations.json que no valida: el último bueno (24 h, la regla de la 2.28); el sitio frenado ya contesta 503
       let base2 = parsed.ok ? doc : null;
@@ -239,6 +316,7 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
       proponer: { operaciones: await estadoProponer('operaciones'), perfil: cfg.profileRepo ? await estadoProponer('perfil') : { habilitado: false, motivo: 'el perfil del equipo no está configurado en el sitio' } },
       productos: prods.lista, productosMotivo: prods.motivo, versionesMotivo,
       productosEnlace: enlaceArchivo('scripts/nightly/dependencies/repos.json'),
+      contenido: contenidoDelPerfil(cl.perfil && cl.perfil.dir, (rel) => RP.enlaceArchivo(remoteDe('perfil'), rel)),
       versiones: ORG.versionesDeMaquinas({ espejo: fuentes.dirBuzon, versionImagen, ahora: ahora(), personas: quien }),
     };
   }
@@ -279,6 +357,9 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
       const actual = docDe(vista(s).texto || '') || {};
       const ajenas = [...new Set([...Object.keys(actual), ...Object.keys(doc)])].filter((k) => !s.claves.includes(k) && JSON.stringify(actual[k]) !== JSON.stringify(doc[k]));
       if (ajenas.length) return `el archivo propuesto cambia ${ajenas.join(', ')}, que no es de esta sección: revisá de nuevo desde su sección`;
+      // una sección con `rutas` cambia sólo esas hojas de su clave (story 2.31): las otras, como están en el clon
+      const hojas = ORG.hojasAjenas(s, actual, doc);
+      if (hojas.length) return `el archivo propuesto cambia ${hojas.join(', ')}, que no es de esta sección: revisá de nuevo desde su sección`;
     }
     if (s.id === 'umbrales') { const r = ORG.thresholdsParse(texto, { arnes: { thresholds: arnes().thresholds }, previas: Object.keys(((docDe(vista(s).texto || '') || {}).thresholds) || {}), tree: TREE }); return r.ok ? null : r.problems[0].message; }
     if (s.id === 'paridad') { const l = lector('check-product-parity.js'); const r = l && l.leerDeclaradas(doc, dia()); return !r ? 'esta versión del arnés no sabe leer las diferencias declaradas' : (r.problemas.length ? r.problemas[0].message : null); }
@@ -294,8 +375,9 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
       const capa = leer(clones().perfil.dir, 'team-layer.json');
       const layerText = capa.estado === 'leido' ? capa.texto : '';
       // la sección Paquetes vive en un archivo que cualquier versión lee; sólo una LISTA pide una versión que la conozca
-      const gate = s.id === 'paquetes'
-        ? ORG.packsListGateProblem({ layerText, versionImagen, valor: isObject(doc.packs) ? doc.packs.default : undefined })
+      // el perfil del equipo: una lista de paquetes y `response` piden su versión (story 2.31); team-repos.json, la suya
+      const gate = s.archivo === 'team-profile.json'
+        ? ORG.teamProfileGateProblem({ layerText, versionImagen, doc, actual: docDe(vista(s).texto || '') })
         : ORG.profileGateProblem(layerText, doc);
       if (gate) return gate;
     }
