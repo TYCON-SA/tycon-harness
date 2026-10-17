@@ -134,7 +134,12 @@ for modo in arg stdin; do
   # el token del bot tampoco: la dirección va en un archivo de configuración de curl (-K), con permisos 600, que se borra
   no_contiene "T61 ($modo) el token no va en los argumentos de curl" "TOKEN-SECRETO-QUE-NO-DEBE-APARECER" "$(cat "$T60_LOG/args" 2>/dev/null)"
   contiene "T61 ($modo) la dirección con el token va en el archivo de configuración" 'url = "https://api.telegram.org/bot123:TOKEN-SECRETO-QUE-NO-DEBE-APARECER/sendMessage"' "$(cat "$T60_LOG/cfg" 2>/dev/null)"
-  check "T61 ($modo) el archivo es sólo de esta persona (600)" "-rw-------" "$(cat "$T60_LOG/cfg-mode" 2>/dev/null)"
+  case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*)
+      # en Windows los permisos de Unix no existen en el disco: lo que lo protege es la carpeta temporal de la persona
+      contiene "T61 ($modo) el archivo está en la carpeta temporal de la persona (Windows)" "${TMPDIR:-/tmp}/tycon-telegram." "$(cat "$T60_LOG/cfg-path" 2>/dev/null)" ;;
+    *) check "T61 ($modo) el archivo es sólo de esta persona (600)" "-rw-------" "$(cat "$T60_LOG/cfg-mode" 2>/dev/null)" ;;
+  esac
   if [ -n "$(cat "$T60_LOG/cfg-path" 2>/dev/null)" ] && [ ! -e "$(cat "$T60_LOG/cfg-path")" ]; then echo "✅ T61 ($modo) el archivo se borra al salir"; else echo "❌ T61 ($modo) el archivo de la dirección quedó en el disco (o curl no lo recibió)"; fallos=$((fallos+1)); fi
 done
 out="$(TYCON_TELEGRAM_DIR="$FAKE" bash "$SCRIPT" --stdin "y además argumento" < /dev/null 2>&1)"; rc=$?
