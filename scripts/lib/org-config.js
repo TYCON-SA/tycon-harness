@@ -66,6 +66,8 @@ const SECCIONES = Object.freeze([
   Object.freeze({ id: 'modelos', titulo: 'Modelos de cada trabajo del pipeline', archivo: 'team-repos.json', repo: 'perfil', lector: 'team-repos.js', claves: ['models'], idCorto: 'repos', necesita: ['models'] }),
   // el plazo del aviso de espera (story 7.20): cuántos minutos espera una corrida a una persona antes de avisar
   Object.freeze({ id: 'espera', titulo: 'Aviso de espera', archivo: 'team-repos.json', repo: 'perfil', lector: 'team-repos.js', claves: ['wait_notice'], idCorto: 'repos', necesita: ['wait_notice'] }),
+  // el umbral de cobertura de las líneas nuevas: el control de pruebas avisa por debajo de este porcentaje
+  Object.freeze({ id: 'cobertura', titulo: 'Cobertura de las pruebas', archivo: 'team-repos.json', repo: 'perfil', lector: 'team-repos.js', claves: ['coverage'], idCorto: 'repos', necesita: ['coverage'] }),
 ]);
 const seccionPorId = (id) => SECCIONES.find((s) => s.id === id) || null;
 
@@ -125,7 +127,9 @@ const MERGE_SUITES_SINCE = '2026.10.16.3';
 const MODELS_SINCE = '2026.10.16.10';
 // `wait_notice` (story 7.20): la etiqueta del merge que lo trajo al lector
 const WAIT_NOTICE_SINCE = '2026.10.17.8';
-const CLAVES_CON_VERSION = Object.freeze([['merge_suites', MERGE_SUITES_SINCE], ['models', MODELS_SINCE], ['wait_notice', WAIT_NOTICE_SINCE]]);
+// `coverage`: la etiqueta del merge que lo trajo al lector
+const COVERAGE_SINCE = '2026.10.17.45';
+const CLAVES_CON_VERSION = Object.freeze([['merge_suites', MERGE_SUITES_SINCE], ['models', MODELS_SINCE], ['wait_notice', WAIT_NOTICE_SINCE], ['coverage', COVERAGE_SINCE]]);
 /** La versión que tiene que pedir el perfil para este `team-repos.json` (sin archivo, la de siempre), y las claves por las que la pide. */
 function versionQuePide(doc) {
   let version = TEAM_REPOS_SINCE; const claves = [];
@@ -595,6 +599,7 @@ function pantalla() {
     modelos: { t: 'Qué modelo usa cada trabajo del pipeline', d: 'Llega a todas las máquinas. Lo que no se declara usa el modelo de hoy. Con techo obligatorio, ningún trabajo pasa de ese modelo.', corto: 'Modelos' },
     paridad: { t: 'Diferencias aceptadas entre productos', d: 'Cada noche se comparan los productos entre sí. Lo que uno hace distinto a propósito se anota acá, con una fecha para volver a mirarlo.', corto: 'Diferencias entre productos' },
     espera: { t: 'Aviso de espera', d: 'Llega a todas las máquinas. Cuando una corrida espera a una persona, avisa pasado este plazo.', corto: 'Aviso de espera' },
+    cobertura: { t: 'Cobertura de las pruebas', d: 'Llega a todas las máquinas. El control de pruebas avisa cuando las líneas nuevas de una story quedan por debajo de este porcentaje. Avisa, no frena; una máquina puede pedir otro con su propia variable de entorno.', corto: 'Cobertura de las pruebas' },
     respuesta: { t: 'Cómo contesta Claude', d: 'El idioma, el estilo y el largo de las respuestas en todas las máquinas. Llega a cada una con su próxima actualización, sin que el dev haga nada.', corto: 'Cómo contesta Claude' },
     integraciones: { t: 'Integraciones', d: 'Qué servicios usa cada máquina del equipo. Llega a cada una con su próxima actualización; una máquina puede apagar una para ella sola.', corto: 'Integraciones' },
     ado: { t: 'Azure DevOps', d: 'La organización de Azure DevOps del equipo. Llega a cada máquina con su próxima actualización.', corto: 'Azure DevOps' },
@@ -603,7 +608,7 @@ function pantalla() {
     hilos: { t: 'Conversaciones de las corridas', d: 'Si el sitio baja también lo que se habló en cada corrida, además de sus números.', corto: 'Conversaciones' },
   };
   // las pestañas: [id, nombre, secciones, tablas para mirar]. Se ve una por vez; el resumen de arriba, en todas
-  var PESTANAS = [['personas', 'Personas', ['sitio', 'personas', 'responsables'], []], ['repos', 'Repos y productos', ['repos', 'despliegues', 'paridad', 'ado'], ['productos']], ['avisos', 'Avisos y la noche', ['canal', 'espera', 'umbrales'], []], ['claude', 'Cómo trabaja Claude', ['respuesta', 'modelos', 'suites', 'integraciones', 'hilos'], []], ['instalacion', 'Instalación y actualización', ['actualizacion', 'instalacion'], ['contenido', 'versiones']]];
+  var PESTANAS = [['personas', 'Personas', ['sitio', 'personas', 'responsables'], []], ['repos', 'Repos y productos', ['repos', 'despliegues', 'paridad', 'ado'], ['productos']], ['avisos', 'Avisos y la noche', ['canal', 'espera', 'umbrales'], []], ['claude', 'Cómo trabaja Claude', ['respuesta', 'modelos', 'suites', 'cobertura', 'integraciones', 'hilos'], []], ['instalacion', 'Instalación y actualización', ['actualizacion', 'instalacion'], ['contenido', 'versiones']]];
   /** La pestaña de un ancla (#pestana-x, #seccion-x o una tabla para mirar); null si no es de ninguna. */
   function pestanaDe(ancla) {
     var id = String(ancla || '').replace(/^#/, '');
@@ -637,7 +642,7 @@ function pantalla() {
     deployments: 'despliegues', products: 'productos', staging: 'prueba', production: 'producción', pipeline: 'pipeline', stages: 'pasos', environment: 'entorno', workflow: 'workflow',
     notify: 'aviso diario', channel: 'canal', thresholds: 'umbrales', direction: 'mejor si es', ok_min: 'verde desde', ok_max: 'verde hasta', bad_max: 'rojo hasta', bad_min: 'rojo desde',
     merge_suites: 'pruebas al mergear', rule: 'regla', full_tests_pipeline: 'pipeline de las pruebas completas', models: 'modelos', mandatory_ceiling: 'techo obligatorio', ceiling: 'techo', reviewer: 'revisor', reviewers_reloop: 'revisores de la segunda vuelta', adversarial: 'pase adversarial', helpers: 'ayudantes', session: 'sesión', model: 'modelo', heavy: 'pesado', fable_question: 'pregunta antes de usar Fable', low: 'liviano', normal: 'normal',
-    wait_notice: 'aviso de espera', minutes: 'minutos', public: 'repo público', profile: 'repo del equipo', operations: 'repo de operaciones', org: 'organización', project: 'proyecto', repo: 'repo', repos: 'repos', platform: 'plataforma',
+    wait_notice: 'aviso de espera', minutes: 'minutos', coverage: 'cobertura de las pruebas', min_touched_lines_pct: 'porcentaje mínimo de las líneas nuevas', public: 'repo público', profile: 'repo del equipo', operations: 'repo de operaciones', org: 'organización', project: 'proyecto', repo: 'repo', repos: 'repos', platform: 'plataforma',
     response: 'cómo contesta Claude', integrations: 'integraciones', ado: 'Azure DevOps', update: 'actualización', install: 'instalación', packs: 'paquetes', diferencias_declaradas: 'diferencias declaradas', version: 'versión',
   };
   /** La ruta de un problema con los nombres de la pantalla: «personas › máquinas › «mac-1»»; un número es la fila. */
@@ -687,6 +692,9 @@ function pantalla() {
       .forEach(function (x) { box.appendChild(el('div', { class: 'err', text: x.donde + ': ' + x.message })); });
     return box;
   }
+  // los campos numéricos: lo que es un número va como número; lo demás, tal cual, para que el lector diga «es "abc"»
+  // (con Number, un texto daba NaN, el archivo escribía null y el aviso decía «es null» en vez de qué corregir)
+  function numOTexto(v) { return /^\s*-?\d+(\.\d+)?\s*$/.test(v) ? Number(v) : v; }
   function campo(label, valor, onInput, p, problemas, attrs) {
     var mios = problemasEn(problemas, p);
     var input = el('input', Object.assign({ value: valor == null ? '' : String(valor), oninput: function (e) { onInput(e.target.value); }, 'data-path': p, 'aria-label': label }, attrs || {}));
@@ -743,7 +751,7 @@ function pantalla() {
     var mant = listaDeTextos('Las personas', null, site.maintainers = site.maintainers || [], function (l) { site.maintainers = l; }, 'site.maintainers', pr, 'correo', 'Agregar persona');
     mant.setAttribute('class', 'pila');
     lista.appendChild(mant);
-    var refresco = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: 'Cada cuánto se actualiza el sitio' }), campo('Minutos, entre 5 y 120', site.refresh_minutes, function (v) { site.refresh_minutes = v === '' ? undefined : Number(v); }, 'site.refresh_minutes', pr, { inputmode: 'numeric' }));
+    var refresco = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: 'Cada cuánto se actualiza el sitio' }), campo('Minutos, entre 5 y 120', site.refresh_minutes, function (v) { site.refresh_minutes = v === '' ? undefined : numOTexto(v); }, 'site.refresh_minutes', pr, { inputmode: 'numeric' }));
     lista.appendChild(refresco);
     if (s.campos && s.campos.url) lista.appendChild(el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: 'La dirección del sitio' }), campo('', site.url, function (v) { site.url = v || undefined; }, 'site.url', pr)));
     var mb = site.mailbox || {};
@@ -872,7 +880,7 @@ function pantalla() {
         render();
       } }, el('option', { value: 'mayor_es_mejor', text: 'más alto' }), el('option', { value: 'menor_es_mejor', text: 'más bajo' }));
       dir.value = mayor ? 'mayor_es_mejor' : 'menor_es_mejor';
-      var num = function (c, etiqueta) { var mios = problemasEn(pr, 'thresholds.' + k + '.' + c); var i = el('input', { value: u[c] == null ? '' : String(u[c]), inputmode: 'decimal', 'aria-label': etiqueta, 'data-path': 'thresholds.' + k + '.' + c, oninput: function (e) { var v = e.target.value; if (v === '') delete u[c]; else u[c] = Number(v); } }); if (mios.length) i.setAttribute('class', 'bad'); return i; };
+      var num = function (c, etiqueta) { var mios = problemasEn(pr, 'thresholds.' + k + '.' + c); var i = el('input', { value: u[c] == null ? '' : String(u[c]), inputmode: 'decimal', 'aria-label': etiqueta, 'data-path': 'thresholds.' + k + '.' + c, oninput: function (e) { var v = e.target.value; if (v === '') delete u[c]; else u[c] = numOTexto(v); } }); if (mios.length) i.setAttribute('class', 'bad'); return i; };
       var fila = el('div', { class: 'thr' }, el('span', { text: UMBRAL[k] || k.replace(/_/g, ' ') }, el('span', { class: 'hint', text: CANTIDADES[k] ? 'una cantidad' : 'una proporción: 0.5 es la mitad' })), dir,
         num(verde, mayor ? 'Verde desde' : 'Verde hasta'), num(rojo, mayor ? 'Rojo hasta' : 'Rojo desde'));
       pr.filter(function (x) { return x.path === 'thresholds.' + k || String(x.path).indexOf('thresholds.' + k + '.') === 0; }).forEach(function (x) { fila.appendChild(el('div', { class: 'err', text: x.message })); });
@@ -956,7 +964,7 @@ function pantalla() {
     box.appendChild(el('p', { class: 'muted', text: 'Hoy: ' + vg.style + ' · ' + vg.language + ' · ' + vg.max_chars + ' caracteres (' + (og.style === 'perfil' ? 'del perfil' : 'por defecto') + ')' }));
     box.appendChild(selector('Idioma', r.language, [['', 'sin declarar (castellano)'], ['es', 'castellano'], ['en', 'inglés']], function (v) { hoja(d, 'response', 'language', v); }, 'response.language', pr));
     box.appendChild(selector('Estilo', r.style, [['', 'sin declarar (neutro)']].concat(ESTILOS), function (v) { hoja(d, 'response', 'style', v); }, 'response.style', pr));
-    box.appendChild(campo('Largo máximo de prosa, en caracteres (300 a 4000; vacío: el del estilo)', r.max_chars, function (v) { hoja(d, 'response', 'max_chars', v === '' ? '' : Number(v)); }, 'response.max_chars', pr, { inputmode: 'numeric' }));
+    box.appendChild(campo('Largo máximo de prosa, en caracteres (300 a 4000; vacío: el del estilo)', r.max_chars, function (v) { hoja(d, 'response', 'max_chars', v === '' ? '' : numOTexto(v)); }, 'response.max_chars', pr, { inputmode: 'numeric' }));
     return box;
   }
   var INTEGRACIONES = [['clockify', 'Clockify: registra las horas de cada story'], ['engram', 'Memoria entre sesiones (engram)'], ['mailbox', 'Buzón de corridas: cada máquina sube sus corridas al sitio'], ['codex', 'Codex: el arnés también se enchufa a Codex'], ['nightly', 'Procesos de la noche del equipo']];
@@ -1096,10 +1104,19 @@ function pantalla() {
     return el('div', { class: 'pila' }, campo('Minutos que espera una corrida antes de avisar (1 a 120; vacío: 5)', w.minutes, function (v) {
       if (v === '') { if (esObjeto(d.wait_notice)) { delete d.wait_notice.minutes; if (!Object.keys(d.wait_notice).length) delete d.wait_notice; } return; }
       if (!esObjeto(d.wait_notice)) d.wait_notice = {};
-      d.wait_notice.minutes = Number(v);
+      d.wait_notice.minutes = numOTexto(v);
     }, 'wait_notice.minutes', pr, { inputmode: 'numeric' }));
   }
-  var EDITORES = { espera: editorEspera, respuesta: editorRespuesta, integraciones: editorIntegraciones, ado: editorAdo, actualizacion: editorActualizacion, instalacion: editorInstalacion, hilos: editorHilos, suites: editorSuites, modelos: editorModelos, paquetes: editorPaquetes, repos: editorRepos, responsables: editorResponsables, despliegues: editorDespliegues, canal: function (s, d, pr) { return editorGenerico(s, d, pr, 'notify', 'El canal, como texto'); }, personas: editorPersonas, sitio: editorSitio, umbrales: editorUmbrales, paridad: editorParidad };
+  // el umbral de cobertura: un porcentaje entero de 1 a 100; vacío, el de siempre (75)
+  function editorCobertura(s, d, pr) {
+    var c = esObjeto(d.coverage) ? d.coverage : {};
+    return el('div', { class: 'pila' }, campo('Porcentaje mínimo de las líneas nuevas cubiertas por pruebas (1 a 100; vacío: 75)', c.min_touched_lines_pct, function (v) {
+      if (v === '') { if (esObjeto(d.coverage)) { delete d.coverage.min_touched_lines_pct; if (!Object.keys(d.coverage).length) delete d.coverage; } return; }
+      if (!esObjeto(d.coverage)) d.coverage = {};
+      d.coverage.min_touched_lines_pct = numOTexto(v);
+    }, 'coverage.min_touched_lines_pct', pr, { inputmode: 'numeric' }));
+  }
+  var EDITORES = { espera: editorEspera, cobertura: editorCobertura, respuesta: editorRespuesta, integraciones: editorIntegraciones, ado: editorAdo, actualizacion: editorActualizacion, instalacion: editorInstalacion, hilos: editorHilos, suites: editorSuites, modelos: editorModelos, paquetes: editorPaquetes, repos: editorRepos, responsables: editorResponsables, despliegues: editorDespliegues, canal: function (s, d, pr) { return editorGenerico(s, d, pr, 'notify', 'El canal, como texto'); }, personas: editorPersonas, sitio: editorSitio, umbrales: editorUmbrales, paridad: editorParidad };
 
   // los editores de suites y modelos arman objetos vacíos para tener dónde escribir: no se mandan. Una clave vacía en el
   // archivo pediría al perfil una versión más nueva sin cambiar nada
@@ -1287,7 +1304,7 @@ function pantalla() {
 }
 
 module.exports = {
-  SECCIONES, seccionPorId, loadReader, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, WAIT_NOTICE_SINCE, RESPONSE_SINCE, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
+  SECCIONES, seccionPorId, loadReader, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, WAIT_NOTICE_SINCE, COVERAGE_SINCE, RESPONSE_SINCE, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
   problemasDeSeccion, hojasAjenas, modelosDeHoy, motivoDeHoy,
   thresholdsParse, aplicarSeccion, revisar, versionesDeMaquinas, paridadPorProducto, ramaDePropuesta, tituloDePropuesta, cuerpoDePropuesta, pantalla,
   SIN_NOTICIAS_DIAS,
