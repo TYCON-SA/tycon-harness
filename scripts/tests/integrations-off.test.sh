@@ -391,6 +391,18 @@ for p in sorted(glob.glob(os.path.join(sys.argv[1], "*.md"))):
     # los marcadores de las primeras líneas no se copian (requires-integration; desde la story 8.16, también requires-profile)
     while lines and (lines[0].startswith("<!-- requires-integration:") or lines[0].startswith("<!-- requires-profile:")):
         lines = lines[1:]
+    # un bloque que declara sus variantes (story 2.31) trae el texto de la que elige la configuración: sin perfil, la
+    # neutra en castellano, con el tope de su estilo (2000) y sus renglones (20)
+    if lines and lines[0].startswith("<!-- variants: response -->"):
+        lines = open(os.path.join(sys.argv[1], n, "neutral.es.md"), encoding="utf-8").read().split("\n")
+        while lines and lines[0].startswith("<!-- requires-"):
+            lines = lines[1:]
+        lines = "\n".join(lines).replace("{{max_chars}}", "2000").replace("{{max_lines}}", "20").split("\n")
+    # las filas con su integración (story 2.31): acá sólo Azure DevOps está prendido; las otras filas marcadas no van y
+    # la marca nunca se copia
+    import re
+    fila = re.compile(r"^(.*\|)[ \t]*<!--\s*integration:\s*([a-z]+)\s*-->\s*$")
+    lines = [(fila.match(l).group(1).rstrip() if fila.match(l) else l) for l in lines if not (fila.match(l) and fila.match(l).group(2) != "ado")]
     start = ("<!-- TYCON_BLOCK:%s START — generado por scripts/setup/sync-claude-md-blocks.sh del arnés · "
              "NO EDITAR A MANO (se pisa en el próximo SessionStart); editá claude-md-blocks/%s.md y commiteá -->" % (n, n))
     out = out.rstrip("\n") + "\n\n" + start + "\n" + "\n".join(lines).strip("\n") + "\n<!-- TYCON_BLOCK:%s END -->\n" % n

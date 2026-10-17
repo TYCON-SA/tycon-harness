@@ -61,7 +61,10 @@ const VERSION = 1;
 const PLATFORMS = ['azure', 'github'];
 const REPO_KEYS = { azure: ['org', 'project', 'repo'], github: ['org', 'repo'] };
 const REQUIRED = ['public', 'profile', 'operations'];
-const OPTIONAL = ['maintainers', 'harness_copies', 'merge_suites', 'models'];
+const OPTIONAL = ['maintainers', 'harness_copies', 'merge_suites', 'models', 'wait_notice'];
+// El plazo del aviso de espera (story 7.20, AC 14): minutos enteros de 1 a 120. Lo lee scripts/hooks/wait-notice.js.
+const WAIT_NOTICE_KEYS = ['minutes'];
+const WAIT_NOTICE_MAX = 120;
 // Copia de `MODELS` de skills/tycon-pipeline/scripts/lib/models.js, en su orden (story 7.29, decisión 12): este lector
 // no puede cargar el skill —lo valida el instalador con el lector del árbol que va a quedar— y T21 compara las dos.
 const MODEL_NAMES = ['haiku', 'sonnet', 'opus', 'fable'];
@@ -206,6 +209,18 @@ function modelsProblems(value) {
   return out;
 }
 
+/** Los problemas de `wait_notice` (story 7.20); `[]` si está bien. */
+function waitNoticeProblems(value) {
+  if (!isObject(value)) return [{ path: 'wait_notice', message: 'tiene que ser un objeto (el plazo del aviso de espera)' }];
+  const out = [];
+  for (const k of Object.keys(value)) if (!comment(k) && !WAIT_NOTICE_KEYS.includes(k)) out.push({ path: `wait_notice.${k}`, message: 'clave desconocida' });
+  const m = value.minutes;
+  if (m !== undefined && !(Number.isInteger(m) && m >= 1 && m <= WAIT_NOTICE_MAX)) {
+    out.push({ path: 'wait_notice.minutes', message: `tiene que ser un número entero de minutos, de 1 a ${WAIT_NOTICE_MAX} (es ${JSON.stringify(m)})` });
+  }
+  return out;
+}
+
 /** Valida un objeto ya leído. */
 function validate(doc) {
   if (!isObject(doc)) return [{ path: '', message: 'el archivo tiene que ser un objeto JSON' }];
@@ -237,9 +252,16 @@ function parse(text) {
   const problems = validate(doc);
   // un problema dentro de `models` no invalida el archivo (story 7.29, decisión 13): va aparte y `data` sale sin `models`
   const sectionModels = isObject(doc) && doc.models !== undefined ? modelsProblems(doc.models) : [];
+  // lo mismo con `wait_notice` (story 7.20): un plazo mal escrito no deja a todas las máquinas sin el archivo
+  const sectionWait = isObject(doc) && doc.wait_notice !== undefined ? waitNoticeProblems(doc.wait_notice) : [];
   let data = problems.length ? null : doc;
-  if (data && sectionModels.length) { data = { ...doc }; delete data.models; }
-  return { ok: problems.length === 0, data, problems, ...(sectionModels.length ? { sectionProblems: { models: sectionModels } } : {}) };
+  if (data && (sectionModels.length || sectionWait.length)) {
+    data = { ...doc };
+    if (sectionModels.length) delete data.models;
+    if (sectionWait.length) delete data.wait_notice;
+  }
+  const sections = { ...(sectionModels.length ? { models: sectionModels } : {}), ...(sectionWait.length ? { wait_notice: sectionWait } : {}) };
+  return { ok: problems.length === 0, data, problems, ...(Object.keys(sections).length ? { sectionProblems: sections } : {}) };
 }
 
 /** Lo mismo desde un archivo; si no se pudo leer, `couldNotRead: true` con el motivo. */

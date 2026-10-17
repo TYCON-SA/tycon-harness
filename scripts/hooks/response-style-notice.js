@@ -51,7 +51,7 @@ function main() {
 
   emitReminder(`estilo de respuesta — tu mensaje final del turno anterior se pasó de largo: ${p.reasons.join(' · ')}.
 
-La regla (el bloque «REGLA ESTILO DE RESPUESTA» de tus instrucciones) pide conclusión primero, castellano llano, ~10 líneas, y el detalle OFRECIDO en vez de volcado. El tope medido es ${p.maxProseChars || 1300} caracteres de prosa (≈ ${Math.ceil((p.maxProseChars || 1300) / 100)} renglones en pantalla) y ${p.maxHeaders} título(s) de sección — las tablas y los bloques de código NO cuentan (un artefacto que el user pidió no es verbosidad). 🔴 Ojo: se mide por CARACTERES, no por líneas — un párrafo largo sin cortes es 1 línea pero muchos renglones para el lector, así que "pocos párrafos" no equivale a "corto". Cada oración: ~20 palabras y una sola idea; el medidor cobra la que pasa de ${p.maxSentenceWords || 35}.
+La regla es el bloque «REGLA ESTILO DE RESPUESTA» de tus instrucciones, con el estilo que eligió tu organización. El tope medido es ${p.maxProseChars || 1300} caracteres de prosa (≈ ${Math.ceil((p.maxProseChars || 1300) / 100)} renglones en pantalla) y ${p.maxHeaders} título(s) de sección — las tablas y los bloques de código NO cuentan (un artefacto que el user pidió no es verbosidad). 🔴 Ojo: se mide por CARACTERES, no por líneas — un párrafo largo sin cortes es 1 línea pero muchos renglones para el lector, así que "pocos párrafos" no equivale a "corto". Cada oración: ~20 palabras y una sola idea; el medidor cobra la que pasa de ${p.maxSentenceWords || 35}.
 ${p.savedTo ? `\nEl texto completo quedó guardado en ${p.savedTo} — si algo de eso hace falta, citá la ruta en vez de volver a pegarlo.\n` : ''}
 En este turno aplicá ese bloque tal como está.
 

@@ -323,7 +323,8 @@ tres bloques de reglas en `~/.claude/CLAUDE.md`, entre sus propios marcadores, y
 
 - `response-style`: el asistente contesta en castellano llano, con la conclusión primero y un tope de 1300 caracteres
   de prosa. Un hook mide cada respuesta y le cobra el exceso en el turno siguiente (`TYCON_RESPONSE_METER=0` apaga la
-  medición).
+  medición). Eso es con el estilo ejecutivo: el idioma, el estilo y el tope los elige la organización en su perfil
+  (`response`); sin elegir, el asistente contesta claro y al punto, con un tope de 2000.
 - `background-execution`: los pasos de más de dos minutos corren en segundo plano y se anuncian antes. Otro hook mide
   lo que dejó bloqueada la conversación (`TYCON_BLOCKING_METER=0`).
 - `tool-names`: la tabla con el nombre exacto de cada herramienta que nombran esas reglas.
@@ -409,7 +410,9 @@ dan error.
 **La red**: el arnés no manda datos de uso. De fábrica habla con GitHub —el repo, para mirar si hay versión nueva, y
 los orígenes de las skills de terceros que lista `scripts/publishing/third-party-skills.json`— y, si alguno de tus
 repos vecinos es un clon parcial, con el remoto de ese repo, para leer su historial (el barrido diario). La consulta
-corta al modelo de tu asistente va por el asistente que ya usás. Cada integración que prendas suma su servicio. La
+corta al modelo de tu asistente va por el asistente que ya usás. Cada integración que prendas suma su servicio: con
+Telegram, una corrida del pipeline que queda esperándote más de cinco minutos te manda un mensaje con la story, el paso y
+qué espera (`TYCON_WAIT_NOTICE=0` lo apaga). La
 prueba en máquina limpia de este repo, si la corrés, baja además las imágenes base (Docker Hub y el registro de
 Microsoft); git, Python y los certificados (el repositorio de paquetes de Debian); el plugin de ejemplo y las skills de
 terceros (GitHub); y los paquetes del plugin (NuGet).

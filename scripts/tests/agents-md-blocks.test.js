@@ -205,14 +205,16 @@ test('con los bloques de verdad del arnés: todos entre marcas y la variante de 
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agents-md-real-'));
   const target = path.join(dir, 'AGENTS.md');
   const blocks = path.join(ROOT, 'claude-md-blocks');
-  const r = A().sync({ blocksDir: blocks, target, integrations: { ado: true, clockify: true, engram: true, codegraph: true, mailbox: true, codex: true, nightly: true, telegram: true }, profile: 'full', quiet: true });
+  const r = A().sync({ blocksDir: blocks, target, integrations: { ado: true, clockify: true, engram: true, codegraph: true, mailbox: true, codex: true, nightly: true, telegram: true }, profile: 'full', response: { language: 'es', style: 'executive', max_chars: 1300 }, quiet: true });
   assert.strictEqual(r.ok, true);
   const t = read(target);
-  const names = fs.readdirSync(blocks).filter((f) => f.endsWith('.md')).map((f) => f.slice(0, -3));
+  // los bloques de un archivo y los de una carpeta de variantes (story 2.31: response-style)
+  const names = [...fs.readdirSync(blocks).filter((f) => f.endsWith('.md')).map((f) => f.slice(0, -3)), 'response-style'];
   assert.ok(names.length >= 3);
   for (const n of names) assert.ok(t.includes(startOf(n)) && t.includes(endOf(n)), `falta ${n}`);
   for (const v of fs.readdirSync(path.join(blocks, 'names')).filter((f) => f.endsWith('.codex.md'))) {
-    const body = read(path.join(blocks, 'names', v)).replace(/^\n+|\n+$/g, '');
+    // con todas las integraciones prendidas, cada fila sin su marca de integración (story 2.31)
+    const body = read(path.join(blocks, 'names', v)).replace(/^\n+|\n+$/g, '').replace(/[ \t]*<!--\s*integration:\s*[a-z]+\s*-->/g, '');
     assert.strictEqual(between(t, v.replace(/\.codex\.md$/, '')).replace(/\n$/, ''), body, `la variante ${v} es el cuerpo del bloque`);
   }
   assert.ok(!t.split('\n').some((line) => line.startsWith('@')), 'ningún @import');
