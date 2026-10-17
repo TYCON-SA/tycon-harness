@@ -273,6 +273,44 @@ printf 'exit 0\n' > "${R}/scripts/ci/respaldo.sh"; printf 'PROHIBIDO\n' > "${R}/
 run "${R}" "${T}/t11d.out"
 is "T11 el pedido que crea el respaldo que nombra la base no saltea el control: rojo" "1" "${RC}"
 has "T11 …corre el control de la base" "${T}/t11d.out" "toy: PROHIBIDO en docs/malo.txt"
+# un atajo generado de un nombre viejo (segunda línea `tycon-legacy-shim: <destino>`) se sigue hasta su destino: si el
+# destino está inventariado, el atajo no pide entrada; si no, el destino es el control sin inventariar
+R="${T}/t11e"; make_base "${R}"
+printf '%s\n' '#!/usr/bin/env bash' '# tycon-legacy-shim: scripts/ci/toy-check.sh' 'exec bash "$(git rev-parse --show-toplevel)/scripts/ci/toy-check.sh" "$@"' > "${R}/scripts/ci/nombre-viejo.sh"
+printf '%s\n' 'VIEJO="$REPO_ROOT/scripts/ci/nombre-viejo.sh"' >> "${R}/.githooks/pre-commit-checks"
+commit "${R}" "un atajo sin declarar en el mapa de renombres"
+bash "${SCRIPT}" check-inventory --root "${R}" > "${T}/t11e0.out" 2>&1; RC=$?
+is "T11 un atajo que el mapa de renombres no declara: rojo (un control nuevo disfrazado de atajo)" "1" "${RC}"
+has "T11 …lo dice" "${T}/t11e0.out" "pero el mapa de renombres no lo declara"
+mkdir -p "${R}/scripts/lib"
+printf '%s\n' '{ "entries": [ { "kind": "file", "old": "scripts/ci/nombre-viejo.sh", "new": "scripts/ci/toy-check.sh" }, { "kind": "file", "old": "scripts/ci/otro-viejo.sh", "new": "scripts/ci/sin-entrada.sh" } ] }' > "${R}/scripts/lib/renames.json"
+node -e 'const f=process.argv[1];const j=JSON.parse(require("fs").readFileSync(f,"utf8"));j.controls[1].rules.push("scripts/lib/renames.json");require("fs").writeFileSync(f,JSON.stringify(j,null,2))' "${R}/scripts/ci/controls-from-base.json"
+commit "${R}" "el mapa de renombres declara los atajos"
+bash "${SCRIPT}" check-inventory --root "${R}" > "${T}/t11e.out" 2>&1; RC=$?
+is "T11 un atajo declarado de un control inventariado no pide entrada" "0" "${RC}"
+printf '%s\n' '#!/usr/bin/env bash' '# tycon-legacy-shim: scripts/ci/sin-entrada.sh' 'exit 0' > "${R}/scripts/ci/otro-viejo.sh"; printf 'exit 0\n' > "${R}/scripts/ci/sin-entrada.sh"
+printf '%s\n' 'OTRO="$REPO_ROOT/scripts/ci/otro-viejo.sh"' >> "${R}/.githooks/pre-commit-checks"
+commit "${R}" "un atajo de un guion sin entrada"
+bash "${SCRIPT}" check-inventory --root "${R}" > "${T}/t11f.out" 2>&1; RC=$?
+is "T11 un atajo de un guion sin entrada: rojo" "1" "${RC}"
+has "T11 …nombra el destino" "${T}/t11f.out" "control sin inventariar: scripts/ci/sin-entrada.sh"
+# un atajo cuyo destino queda fuera del árbol, o que el árbol no trae, frena: no se sigue
+for dest in "../afuera.sh" "/tmp/afuera.sh" "scripts/no-existe/x.sh"; do
+  R="${T}/t11g-$(printf '%s' "${dest}" | tr -c 'a-z' '_')"; make_base "${R}"
+  printf '%s\n' '#!/usr/bin/env bash' "# tycon-legacy-shim: ${dest}" 'exit 0' > "${R}/scripts/ci/viejo.sh"
+  printf '%s\n' 'VIEJO="$REPO_ROOT/scripts/ci/viejo.sh"' >> "${R}/.githooks/pre-commit-checks"
+  commit "${R}" "un atajo con destino ${dest}"
+  bash "${SCRIPT}" check-inventory --root "${R}" > "${R}.out" 2>&1; RC=$?
+  is "T11 un atajo con destino «${dest}»: rojo" "1" "${RC}"
+  has "T11 …lo dice" "${R}.out" "el atajo scripts/ci/viejo.sh apunta"
+done
+# borrar una regla opcional que la base tiene (el perfil del equipo, que decide cómo miran los frenos de nombres) es rojo
+R="${T}/t10d"; make_base "${R}"; printf '{}\n' > "${R}/team-profile.json"
+node -e 'const f=process.argv[1];const j=JSON.parse(require("fs").readFileSync(f,"utf8"));j.controls[0].rules.push({path:"team-profile.json",optional:true});require("fs").writeFileSync(f,JSON.stringify(j,null,2))' "${R}/scripts/ci/controls-from-base.json"
+commit "${R}" "la base con el perfil del equipo"; pr "${R}"; git -C "${R}" rm -q team-profile.json; commit "${R}"
+run "${R}" "${T}/t10d.out"
+is "T10 un pedido que borra el perfil del equipo (regla opcional que la base tiene): rojo" "1" "${RC}"
+has "T10 …lo nombra" "${T}/t10d.out" "el pedido borra team-profile.json, que la base tiene"
 # una entrada de «content» con «/» al final clasifica la carpeta entera
 R="${T}/t1h"; make_base "${R}"; mkdir -p "${R}/datos"; printf '{}\n' > "${R}/datos/x.json"
 printf '%s\n' '# lee "datos/x.json"' >> "${R}/scripts/ci/toy-check.sh"

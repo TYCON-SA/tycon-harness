@@ -17,7 +17,9 @@
       { "path": "scripts/publishing/replacements.json", "optional": true },
       { "path": "scripts/publishing/denylist.json", "optional": true },
       { "path": "scripts/publishing/public-name-exceptions.json", "optional": true },
-      { "path": "scripts/publishing/public-repos.json", "optional": true }
+      { "path": "scripts/publishing/public-repos.json", "optional": true },
+      { "path": "team-profile.json", "optional": true },
+      { "path": "perfil-equipo.json", "optional": true }
     ] },
     { "name": "spanish-names", "script": "scripts/publishing/spanish-names.js", "rules": [
       "scripts/lib/spanish-words.json",

@@ -138,6 +138,15 @@ function readInventory(root, rev) {
   } catch (e) { return { error: e.message }; }
 }
 
+// el destino de un atajo generado de un nombre viejo: su segunda línea es `tycon-legacy-shim: <destino>` (la forma que
+// escribe scripts/lib/legacy-names.js --write-shims); null si el texto no es un atajo
+const SHIM_LINE = /^\s*(?:\/\/|#|<!--)\s*tycon-legacy-shim:\s*(\S+?)\s*(?:-->)?\s*$/;
+function shimTarget(text) {
+  const lines = String(text || '').split('\n', 3);
+  const m = lines.length > 1 ? SHIM_LINE.exec(lines[1]) : null;
+  return m ? m[1] : null;
+}
+
 // los guiones que llama el pre-commit: `$REPO_ROOT/…`, `$TCG/…` y `harness_publishing <guion>` (sin comentarios ni echo)
 function scriptsCalledByHook(text) {
   const out = new Set();
@@ -247,12 +256,37 @@ function inventoryProblems(root, rev, inv) {
     if (!c.script) { problems.push(`un control del inventario no nombra su guion (${c.name || 'sin nombre'})`); continue; }
     if (!exists(c.script)) { if (c.optional !== true) problems.push(`el inventario nombra ${c.script} y el árbol no lo trae`); continue; }
     for (const r of c.rules || []) if (!isOptional(r) && !exists(asPath(r))) problems.push(`el inventario nombra ${asPath(r)} y el árbol no lo trae`);
-    if (c.script !== SELF && !called.has(c.script) && !passText.includes(c.script)) problems.push(`ningún paso corre ${c.script}: lo llama el pre-commit o una pasada del inventario, o no es un control`);
   }
   if (hookText === null) { problems.push(`el inventario nombra ${inv.hook} y el árbol no lo trae`); return problems; }
   const listed = new Set(inv.controls.map((c) => c.script));
-  // un guion que el pre-commit nombra y el árbol no trae (el respaldo de un nombre de antes) no corre: no es un control
-  for (const p of [...called].sort()) if (!listed.has(p) && exists(p)) problems.push(`control sin inventariar: ${p}`);
+  // un guion que el pre-commit nombra y el árbol no trae (el respaldo de un nombre de antes) no corre: no es un control.
+  // Un atajo generado de un nombre viejo (segunda línea `tycon-legacy-shim: <destino>`) se sigue hasta su destino, que
+  // es el control; un destino fuera del árbol, que el árbol no trae o sin entrada frena. El atajo es regla (lo nombra el
+  // pre-commit): en la pasada de la base corre su versión de la base.
+  // un atajo vale sólo si el mapa de renombres del árbol lo declara (el nombre viejo con su destino): la línea sola la
+  // puede escribir cualquiera, y un control nuevo disfrazado de atajo no se inventariaría
+  let renames = [];
+  try { renames = (JSON.parse(show(root, rev, 'scripts/lib/renames.json') || '{}').entries || []); } catch (_) { renames = []; }
+  const declaredShim = (oldPath, newPath) => renames.some((e) => e && e.kind === 'file' && e.old === oldPath && e.new === newPath);
+  const viaShim = new Set();
+  for (const p of [...called].sort()) {
+    if (listed.has(p) || !exists(p)) continue;
+    const text = show(root, rev, p);
+    if (text === null) { problems.push(`no pude leer ${p}, que el pre-commit nombra: no sé si es un control`); continue; }
+    const target = shimTarget(text);
+    if (target === null) { problems.push(`control sin inventariar: ${p}`); continue; }
+    const norm = path.posix.normalize(target);
+    if (path.posix.isAbsolute(target) || norm.startsWith('..') || norm !== target) problems.push(`el atajo ${p} apunta fuera del árbol (${safe(target)})`);
+    else if (!exists(norm)) problems.push(`el atajo ${p} apunta a ${norm}, que el árbol no trae`);
+    else if (!declaredShim(p, norm)) problems.push(`control sin inventariar: ${p} (dice ser un atajo de ${norm}, pero el mapa de renombres no lo declara)`);
+    else if (!listed.has(norm)) problems.push(`control sin inventariar: ${norm} (el destino del atajo ${p})`);
+    else viaShim.add(norm);
+  }
+  // un control del inventario que nada corre (ni el pre-commit, directo o por un atajo declarado, ni una pasada) sobra
+  for (const c of inv.controls) {
+    if (!c.script || !exists(c.script) || c.script === SELF) continue;
+    if (!called.has(c.script) && !viaShim.has(c.script) && !passText.includes(c.script)) problems.push(`ningún paso corre ${c.script}: lo llama el pre-commit o una pasada del inventario, o no es un control`);
+  }
   const { rules, closure } = resolveInventory(root, rev, inv);
   const classified = new Set([...rules, ...(inv.content || []).map(asPath), ...approvalFiles(inv)].filter(Boolean));
   // una entrada de «content» que termina en «/» clasifica la carpeta entera
