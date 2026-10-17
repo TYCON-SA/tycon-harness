@@ -1691,7 +1691,9 @@ function refreshTeam(ctx, state, { log = null, publicRepo = null } = {}) {
  * versión de antes, y su lista cerrada no conoce lo que la nueva acepta: una punta que sólo la nueva acepta se arrastraba
  * vieja hasta otro arranque. Corre `team-after-swap.js` del árbol nuevo en un proceso aparte (el código cargado en éste es
  * el viejo) con el estado por la entrada; devuelve lo que dijo `refreshTeam` de esa versión y, si refrescó, deja su
- * `state.team`. Nunca tira: `{ status: 'refreshed'|'same'|'failed', lines }`.
+ * `state.team`. Nunca tira: `{ status: 'refreshed'|'same'|'failed', answered, lines }` (`answered`: la versión nueva
+ * contestó). Sólo ayuda cuando la versión que instala ya trae esta función: el paso desde una versión anterior sigue
+ * curándose en la actualización siguiente.
  */
 function refreshTeamWithNewCode(ctx, state, harnessDir, { log = null } = {}) {
   const say = (l) => { if (log) log(`update: ${l}`); };
@@ -1710,7 +1712,8 @@ function refreshTeamWithNewCode(ctx, state, harnessDir, { log = null } = {}) {
   let out = null;
   try { out = JSON.parse(String(r.stdout || '').trim().split('\n').pop()); } catch (_) { out = null; }
   if (r.status !== 0 || !isObject(out) || !isObject(out.result)) {
-    return failed(`salió ${r.status}${r.stderr ? `: ${String(r.stderr).trim().split('\n').pop().slice(0, 300)}` : ''}`);
+    const how = r.status === null ? `lo cortó la señal ${r.signal || '—'}` : r.status === 0 ? 'salió 0 sin una respuesta que se lea' : `salió ${r.status}`;
+    return failed(`${how}${r.stderr ? `: ${String(r.stderr).trim().split('\n').pop().slice(0, 300)}` : ''}`);
   }
   for (const l of Array.isArray(out.log) ? out.log : []) if (log) log(String(l));
   const lines = Array.isArray(out.result.lines) ? out.result.lines.map(String) : [];
@@ -1718,13 +1721,16 @@ function refreshTeamWithNewCode(ctx, state, harnessDir, { log = null } = {}) {
   // siguiente no la vuelve a bajar para rechazarla igual)
   const sameRepo = isObject(out.team) && isObject(state.team) && out.team.repo === state.team.repo;
   if (sameRepo) state.team = out.team;
-  if (out.result.status === 'refreshed' && sameRepo) {
+  if (out.result.status === 'refreshed' && !sameRepo) {
+    return failed('dijo que apiló la capa pero no devolvió su entrada del estado para este repo del equipo; el próximo arranque la vuelve a mirar');
+  }
+  if (out.result.status === 'refreshed') {
     const text = `capa del equipo: apilada con el código de la versión nueva${lines.length ? ` (${lines.join(' · ')})` : ''}`;
     say(text);
-    return { status: 'refreshed', lines: [text] };
+    return { status: 'refreshed', answered: true, lines: [text] };
   }
-  if (out.result.status === 'same') return { status: 'same', lines };
-  return { status: 'failed', lines: lines.length ? lines : ['capa del equipo: la versión nueva tampoco la acepta — sigue la de antes'] };
+  if (out.result.status === 'same') return { status: 'same', answered: true, lines };
+  return { status: 'failed', answered: true, lines: lines.length ? lines : ['capa del equipo: la versión nueva tampoco la acepta — sigue la de antes'] };
 }
 
 function update(ctx, state, H, { mode = 'apply', log = null, snapshot = null, yes = false, policy = null, startedAt = null, teamRefresh = false, respectLimit = false } = {}) {
@@ -1879,7 +1885,9 @@ function update(ctx, state, H, { mode = 'apply', log = null, snapshot = null, ye
   // acepta, el aplicador ya enlaza lo que trae (una versión que mudó piezas a la capa no deja la máquina sin ellas)
   if (retryTeamWithNew) {
     const rt = refreshTeamWithNewCode(ctx, state, own.harness, { log });
-    if (rt.status === 'refreshed') teamLines.splice(0, teamLines.length);
+    // la línea de «sigue en …» del lector viejo la reemplaza lo que contestó el nuevo (que la aceptó, o por qué tampoco);
+    // si el nuevo no llegó a contestar, quedan las dos: el motivo del rechazo viejo y por qué no se pudo reintentar
+    if (rt.answered && rt.status !== 'same') teamLines.splice(0, teamLines.length);
     teamLines.push(...rt.lines);
   }
   const a = H.runApplier(ctx, own.harness, { log, snapshotDir: snap && snap.dir });
