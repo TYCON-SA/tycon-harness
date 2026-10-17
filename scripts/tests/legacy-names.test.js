@@ -909,12 +909,18 @@ function measurementItems(text) {
   return { items, problems };
 }
 
-/** Las entradas R contra los ítems con ruta de destino: en las dos direcciones, y el `new` igual al destino medido. */
-function mapVsMeasurement(entries, items) {
+/**
+ * Las entradas R contra los ítems con ruta de destino: en las dos direcciones, y el `new` igual al destino medido.
+ * Un ítem cuyo destino medido ya no está en el árbol (`exists` dice que no) se mudó después de la medición: cuenta como
+ * mudado si el mapa registra la mudanza desde ese destino con una entrada que no es R, y como retirado si ni el origen ni
+ * el destino siguen en el árbol y el mapa no lo nombra. Sin `exists`, todo destino se da por presente.
+ */
+function mapVsMeasurement(entries, items, exists = () => true) {
   const problems = [];
-  const counts = { withEntry: 0, coveredByFolder: 0 };
+  const counts = { withEntry: 0, coveredByFolder: 0, movedLater: 0, retiredLater: 0 };
   const rEntries = entries.filter(isREntry);
   const byOld = new Map(rEntries.map((e) => [noSlash(e.old), e]));
+  const byOldAny = new Map(entries.filter((e) => e && typeof e.old === 'string').map((e) => [noSlash(e.old), e]));
   const used = new Set();
   for (const it of items.filter((i) => i.kind === 'path')) {
     const key = noSlash(it.source);
@@ -934,6 +940,11 @@ function mapVsMeasurement(entries, items) {
       const want = `${noSlash(folder.new)}${key.slice(noSlash(folder.old).length)}`;
       if (want !== dest) problems.push(`${it.source}: la carpeta del mapa lo lleva a \`${want}\` y la medición mide \`${it.dest}\``);
       continue;
+    }
+    if (!exists(dest)) {
+      const later = byOldAny.get(dest);
+      if (later && !isREntry(later)) { counts.movedLater++; continue; }
+      if (!later && !exists(key)) { counts.retiredLater++; continue; }
     }
     problems.push(`${it.source} → ${it.dest}: el ítem de la medición no tiene su entrada R en el mapa`);
   }
@@ -967,7 +978,8 @@ test('T51 Close_MapEntriesCompleteVsMeasurement — toda ruta medida tiene su en
   const { items, problems: parse } = measurementItems(fs.readFileSync(MEASUREMENT, 'utf8'));
   assert.deepStrictEqual(parse, [], 'la medición se lee entera');
   const map = JSON.parse(fs.readFileSync(MAP_REAL, 'utf8'));
-  const { problems, counts } = mapVsMeasurement(map.entries, items);
+  const exists = (p) => fs.existsSync(path.join(RAIZ, p));
+  const { problems, counts } = mapVsMeasurement(map.entries, items, exists);
   assert.deepStrictEqual(problems, [], `el mapa contra la medición:\n  ${problems.join('\n  ')}`);
   const dates = ownDateProblems(map);
   assert.deepStrictEqual(dates, [], `entradas con fecha propia:\n  ${dates.join('\n  ')}`);
@@ -976,9 +988,10 @@ test('T51 Close_MapEntriesCompleteVsMeasurement — toda ruta medida tiene su en
   for (const it of items) byKind[it.kind] = (byKind[it.kind] || 0) + 1;
   assert.strictEqual(items.length, 68, 'la medición tiene 68 ítems');
   assert.deepStrictEqual(byKind, { path: 58, stays: 2, delete: 1, 'renamed-by-8.9': 2, 'open-question': 2, glob: 3 }, 'los ítems por la forma de su encabezado');
-  assert.strictEqual(map.entries.filter(isREntry).length, 57, '57 entradas R en el mapa');
-  assert.deepStrictEqual(counts, { withEntry: 57, coveredByFolder: 1 }, '57 con su entrada y uno cubierto por su carpeta');
-  assert.strictEqual(items.length - counts.withEntry, 11, '11 ítems sin entrada propia');
+  // de los 58 con ruta: 52 con su entrada R, uno cubierto por su carpeta, 4 mudados después y uno retirado después
+  assert.strictEqual(map.entries.filter(isREntry).length, 52, '52 entradas R en el mapa');
+  assert.deepStrictEqual(counts, { withEntry: 52, coveredByFolder: 1, movedLater: 4, retiredLater: 1 }, 'cada ítem con ruta, contado una vez');
+  assert.strictEqual(items.length - counts.withEntry - counts.movedLater - counts.retiredLater, 11, '11 ítems sin entrada propia');
 });
 
 test('T51 Close_MapEntriesCompleteVsMeasurement — laboratorio: un ítem sin entrada, un new distinto y una clave con fecha', () => {
@@ -1006,7 +1019,7 @@ test('T51 Close_MapEntriesCompleteVsMeasurement — laboratorio: un ítem sin en
   ];
   const ok = mapVsMeasurement(good(), items);
   assert.deepStrictEqual(ok.problems, []);
-  assert.deepStrictEqual(ok.counts, { withEntry: 3, coveredByFolder: 1 });
+  assert.deepStrictEqual(ok.counts, { withEntry: 3, coveredByFolder: 1, movedLater: 0, retiredLater: 0 });
   // un ítem sin entrada: lo nombra
   const missing = mapVsMeasurement(good().filter((e) => e.old !== 'scripts/lab-b.js'), items).problems;
   assert.deepStrictEqual(missing, ['scripts/lab-b.js → scripts/lib/lab-b.js: el ítem de la medición no tiene su entrada R en el mapa']);
@@ -1069,9 +1082,29 @@ test('T51 Close_MapEntriesCompleteVsMeasurement — laboratorio: con carpetas an
   ];
   const r = mapVsMeasurement(entries, items);
   assert.deepStrictEqual(r.problems, [], 'labouter/inner/c.js va con labouter/inner, no con labouter');
-  assert.deepStrictEqual(r.counts, { withEntry: 2, coveredByFolder: 2 });
+  assert.deepStrictEqual(r.counts, { withEntry: 2, coveredByFolder: 2, movedLater: 0, retiredLater: 0 });
   // y en el otro orden del mapa, lo mismo
   assert.deepStrictEqual(mapVsMeasurement([...entries].reverse(), items).problems, []);
+});
+
+test('T51 Close_MapEntriesCompleteVsMeasurement — laboratorio: un destino que ya no está cuenta como mudado o retirado sólo con su prueba', () => {
+  const items = [
+    { source: 'lab-moved.md', dest: 'labdir/lab-moved.md', kind: 'path' },
+    { source: 'lab-gone.yml', dest: 'labpipes/lab-gone.yml', kind: 'path' },
+    { source: 'lab-lost.md', dest: 'labdir/lab-lost.md', kind: 'path' },
+    { source: 'lab-here.md', dest: 'labdir/lab-here.md', kind: 'path' },
+  ];
+  const entries = [{ kind: 'file', old: 'labdir/lab-moved.md', new: 'labpack/lab-moved.md', batch: 'lab-later', callers: ['same-repo'] }];
+  const present = new Set(['labdir/lab-here.md', 'lab-lost.md']);
+  const r = mapVsMeasurement(entries, items, (p) => present.has(p));
+  assert.deepStrictEqual(r.counts, { withEntry: 0, coveredByFolder: 0, movedLater: 1, retiredLater: 1 });
+  assert.deepStrictEqual(r.problems, [
+    'lab-lost.md → labdir/lab-lost.md: el ítem de la medición no tiene su entrada R en el mapa',
+    'lab-here.md → labdir/lab-here.md: el ítem de la medición no tiene su entrada R en el mapa',
+  ], 'el origen todavía en el árbol no es un retiro, y un destino presente sigue pidiendo su entrada');
+  // una mudanza posterior registrada como entrada R no cuenta: la R es la de la medición
+  const asR = [{ ...entries[0], batch: 'R9' }];
+  assert.ok(mapVsMeasurement(asR, items.slice(0, 1), () => false).problems.length > 0);
 });
 
 // ── T2 ·los reemplazos que cambian de carpeta: el require y el .ps1 (AC 2; los dos huecos de T20 de la 8.9) ─────────
