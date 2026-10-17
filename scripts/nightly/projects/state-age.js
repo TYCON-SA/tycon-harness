@@ -29,6 +29,7 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
+const { readEnv } = require(path.join(__dirname, '..', '..', 'lib', 'legacy-names.js'));
 
 const MAX_EDAD_FOTO_DIAS = 2;
 const NO_CUENTAN = new Set(['cerrado', 'sin_entrega']);
@@ -165,7 +166,7 @@ if (require.main === module) {
   if (!opt('--photos')) { console.error('uso: state-age.js --photos <dir> [--products <repos.json>] [--sources <sources.json>] [--today AAAA-MM-DD]'); process.exit(1); }
   // los días salen de sources.json (el del arnés si no se pasa otro): nunca un umbral escrito acá
   const src = leer(opt('--sources') || path.join(__dirname, '..', 'dashboard', 'sources.json'));
-  const r = stateAge({ photosDir: opt('--photos'), products: leer(opt('--products')), today: opt('--today') || process.env.TYCON_TODAY || new Date().toISOString().slice(0, 10),
+  const r = stateAge({ photosDir: opt('--photos'), products: leer(opt('--products')), today: opt('--today') || readEnv('TYCON_TODAY', { where: 'scripts/nightly/projects/state-age.js' }) || new Date().toISOString().slice(0, 10),
     dias: src && src.params ? src.params.edad_en_estado_dias : undefined });
   console.log(JSON.stringify(r, null, 2));
 }
