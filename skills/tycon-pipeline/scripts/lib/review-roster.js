@@ -131,7 +131,7 @@ const FUENTES_SINTETICAS = [
   /^ensayo runtime(\s|\(|$)/,
 ];
 
-// 🔴 Ver el comentario gemelo en `scripts/ci/tycon-ci-gate.js` (2026-09-22, un pull request de un producto del equipo — guides/incident-log.md#case-reviewer-name-mismatch-2026-09-22):
+// 🔴 Ver el comentario gemelo en `scripts/ci/tycon-ci-gate.js` (2026-09-22, un pull request de un producto del equipo — guides/maintaining/incident-log.md#case-reviewer-name-mismatch-2026-09-22):
 // el roster nombra al revisor desde el ledger (`tycon-silent-failure-hunter`) y el `advisor` de
 // `findings.json` lo tipea el orquestador con la vuelta pegada (`... (iter 3)`). Comparar esos dos
 // textos letra por letra frena PRs sanos. El paréntesis final es una anotación, nunca parte del id
@@ -149,7 +149,7 @@ function esFuenteSintetica(nombre) {
  * Los TRAMOS de una corrida. Existen porque el roster y `findings.json` NO cubren el mismo pedazo:
  * el roster arranca en el último `step5-start` (la ronda de revisión) y los hallazgos son de toda
  * la corrida. Un hallazgo del paso 1 —la validación de la story, antes de implementar— quedaba
- * siempre como "revisor ausente" (un pull request de un producto del equipo, 2026-09-22 — guides/incident-log.md#case-reviewer-name-mismatch-2026-09-22).
+ * siempre como "revisor ausente" (un pull request de un producto del equipo, 2026-09-22 — guides/maintaining/incident-log.md#case-reviewer-name-mismatch-2026-09-22).
  *
  * 🔴 La salida NO es ensanchar la ventana del roster: ahí adentro está `general-purpose`, que tiene
  * Write y en los pasos 0-4 a veces IMPLEMENTA — certificarlo como revisor volvería falsa la

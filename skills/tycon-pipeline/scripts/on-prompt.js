@@ -40,7 +40,7 @@ const LEGACY_MARKER_PATH = path.join(STATE_DIR, 'active.json');
 // que arrancaba sobre la misma story disparaba CROSS-SESSION CONFLICT falso positivo.
 // 6h cubre el caso típico (dejaste la ventana abierta toda la jornada) sin romper
 // paralelismo intencional (sesiones reales tocan lastTouch con cada Edit via on-edit.js).
-// Caso disparador: Story 4.2 de un producto del equipo, 2026-05-20 — sesión previa orphaned marker — guides/incident-log.md#case-orphan-marker-false-conflict-2026-05-20.
+// Caso disparador: Story 4.2 de un producto del equipo, 2026-05-20 — sesión previa orphaned marker — guides/maintaining/incident-log.md#case-orphan-marker-false-conflict-2026-05-20.
 const STALE_HOURS = 6;
 
 function markerFilePath(sessionId) {

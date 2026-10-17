@@ -351,7 +351,7 @@ function classifyCmd(cmd) {
 // ---------------------------------------------------------------- DODRT-C8 (2026-08-05)
 //
 // "Verificado corriendo" mentía cuando el AC describe una ACCIÓN que el usuario ejecuta y la
-// prueba sólo MIRÓ que el botón estuviera. Caso disparador (story M-1 de un producto del equipo — guides/incident-log.md#case-action-ac-only-looked-2026-08-05): el AC decía
+// prueba sólo MIRÓ que el botón estuviera. Caso disparador (story M-1 de un producto del equipo — guides/maintaining/incident-log.md#case-action-ac-only-looked-2026-08-05): el AC decía
 // "el encargado puede ... asignar una ruta"; el E2E abría el modal y asertaba que el botón
 // "Iniciar ruta" era visible. La matriz lo dio 🟢 RUNTIME, el pipeline cerró verde, y la
 // acción fallaba en la app real (500 del BPM). El agujero no fue el test: fue que la matriz
@@ -396,7 +396,7 @@ const MUTATION_VERB_RE = new RegExp(
 // ── Contexto del verbo (2026-08-25) ─────────────────────────────────────────
 // La lista de arriba es LÉXICA y el castellano no lo es. Ya hubo que sacarle 'cierre' y
 // 'descarte' por dar falsos positivos sobre ACs de consulta; el 2026-08-25 aparecieron dos
-// más, medidos sobre la story 1.1 de un producto del equipo (guides/incident-log.md#case-verb-false-positive-read-only-2026-08-25) — una feature READ-ONLY,
+// más, medidos sobre la story 1.1 de un producto del equipo (guides/maintaining/incident-log.md#case-verb-false-positive-read-only-2026-08-25) — una feature READ-ONLY,
 // donde el falso positivo es especialmente caro porque NO existe ninguna acción que ejecutar
 // y las tres salidas previstas (E2E `@mutates`, smoke que escribe, `--mutates`) exigirían
 // declarar una mutación que no ocurre:

@@ -694,7 +694,6 @@ frase.
 | cuándo invocar qué agente BMAD, y qué revisor sigue a cada uno | [workflow-orchestration.md](workflow-orchestration.md) §6 |
 | el porqué detrás de cualquier regla | la guía que la enuncia — índice en [piezas-del-arnes.md](piezas-del-arnes.md) |
 | el catálogo de las 344 reglas | [advisor-rules-catalog.md](advisor-rules-catalog.md) |
-| cómo funciona el banco de pruebas | [controls-bench.md](controls-bench.md) |
-| los 11 caminos por los que un freno se apagaba sin rastro — auditados y cerrados | [controles-apagables-por-config-2026-08-25.md](decisions/controles-apagables-por-config-2026-08-25.md) |
+| cómo funciona el banco de pruebas | [controls-bench.md](maintaining/controls-bench.md) |
 | por qué el portón de servidor está construido y no adoptado | [ci-gate.md](ci-gate.md) |
 | el material para contarlo a otros | https://www.bizuit.com/sdd-harness/more/ |

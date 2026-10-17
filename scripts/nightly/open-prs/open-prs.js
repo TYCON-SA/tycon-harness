@@ -3,7 +3,7 @@
  * open-prs.js — los pull requests de la organización que llevan más de N días abiertos
  * (story 4.6, 2026-09-17).
  *
- * Nace de un pull request del backend de un producto (guides/incident-log.md#pr-trabado-con-auto-completar-2026-09-17): creado CON auto-completar, su build falló porque `main` estaba
+ * Nace de un pull request del backend de un producto (guides/maintaining/incident-log.md#pr-trabado-con-auto-completar-2026-09-17): creado CON auto-completar, su build falló porque `main` estaba
  * roto, el arreglo entró por otro lado y el PR quedó 13 días esperando un verde que nunca iba a
  * llegar. Lo encontró otro dev de casualidad. El freno de auto-completar no alcanza: el hueco es que
  * nadie se entera cuando un PR no puede entrar.

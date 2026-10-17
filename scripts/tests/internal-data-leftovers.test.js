@@ -279,7 +279,7 @@ const CLOSE = '--' + '>';
 const MARK = { start: `${OPEN} tycon:internal-start ${CLOSE}`, end: `${OPEN} tycon:internal-end ${CLOSE}` };
 
 test('T27 PublishingGuide_PublicText_NoAnonymizationRule — la guía no explica en público cómo se eligió cada inventado', () => {
-  const rel = 'guides/publicacion-espejo.md';
+  const rel = 'guides/maintaining/publicacion-espejo.md';
   const raw = fs.readFileSync(path.join(ROOT, rel), 'utf8');
   const text = publicText(rel);
   const start = text.indexOf('\n### La tabla real');
@@ -345,7 +345,7 @@ test('T28 InternalBlocks_NearMarker_Brakes — un marcador casi bien escrito fre
   assert.strictEqual(markerLines('El texto entre `tycon:internal-start` y `tycon:internal-end` no sale.\n').length, 0);
 
   // con las guías de verdad: si sus marcadores se rompen los dos igual, el exportador tiene que frenar
-  for (const rel of ['guides/publicacion-espejo.md', 'guides/reglas-para-revisores.md']) {
+  for (const rel of ['guides/maintaining/publicacion-espejo.md', 'guides/reglas-para-revisores.md']) {
     const raw = fs.readFileSync(path.join(ROOT, rel), 'utf8');
     if (!raw.includes(MARK.start)) continue;   // en la copia la guía ya salió sin sus bloques
     const broken = raw.split(MARK.start).join(`${OPEN} tycon:internal-start${CLOSE}`).split(MARK.end).join(`${OPEN} tycon:internal-end${CLOSE}`);

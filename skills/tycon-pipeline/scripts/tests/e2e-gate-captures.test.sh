@@ -2,7 +2,7 @@
 # =============================================================================
 # e2e-gate-captures.test.sh — el gate E2E guarda las capturas de los specs de la story (story 7.24, AC 4)
 # =============================================================================
-# Caso disparador (2026-10-14, guides/incident-log.md#case-screen-passed-all-controls-unreadable-2026-10-14): una ventana pasó todos los controles y
+# Caso disparador (2026-10-14, guides/maintaining/incident-log.md#case-screen-passed-all-controls-unreadable-2026-10-14): una ventana pasó todos los controles y
 # nadie la vio antes del merge; el dueño la encontró «inentendible» en staging. El gate ahora deja una captura por test
 # para que el cierre se la muestre al dev antes de pedir el commit.
 #

@@ -68,7 +68,7 @@ Inspirado en [ECC continuous-learning-v2](https://github.com/affaan-m/ECC/blob/m
 
 ## Decisiones de diseño
 
-Resueltas durante la implementación 2026-05-23 (cierre del [instinct-mining-v1-spec.md](decisions/instinct-mining-v1-spec.md)).
+Resueltas durante la implementación 2026-05-23 (cierre de la especificación original, que vive en el repo de mantenimiento).
 
 | Decisión | Resuelto |
 |---|---|
@@ -299,7 +299,6 @@ Lo que hay que saber de la casa de la persona:
 
 ## Referencias
 
-- Spec original (decisiones abiertas): [instinct-mining-v1-spec.md](decisions/instinct-mining-v1-spec.md) — preservar como histórico, ya cerrado.
 - ECC continuous-learning-v2: [github.com/affaan-m/ECC/blob/main/skills/continuous-learning-v2/SKILL.md](https://github.com/affaan-m/ECC/blob/main/skills/continuous-learning-v2/SKILL.md)
 - Scripts: `scripts/instincts/instinct-{observer,promote,draft}.js`, `scripts/instincts/instinct-dirs.js` (dónde se escribe y dónde se lee) + hooks `scripts/hooks/instinct-{observe,trigger}.sh`
 - Slash command: versionado en `commands/tycon-instincts.md`, enlazado a `~/.claude/commands/tycon-instincts.md` por el instalador. Verbos: `review` (alias de `list`, el que linkea el Telegram notify) · `show <hash>` · `approve <hash>` · `reject <hash> --reason "..."` · `status` · `run`.

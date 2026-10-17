@@ -5,7 +5,7 @@
 // POR QUÉ EXISTE: el núcleo público mezcla inglés y castellano en lo que alguien de afuera tiene que ESCRIBIR para usarlo
 // —archivos, opciones, subcomandos, variables, claves de configuración—. La story 8.9 los renombra por tandas; sin este
 // freno, lo que una tanda renombra lo vuelve a ensuciar el commit siguiente. La prosa, los mensajes, las guías, los
-// comentarios y los ids de los casos siguen en castellano: la convención está en guides/nombres-en-ingles.md.
+// comentarios y los ids de los casos siguen en castellano: la convención está en guides/maintaining/nombres-en-ingles.md.
 //
 // QUÉ MIRA: lo que sale en alguna copia pública (la clasificación del exportador, reusada de new-names.js) y, de eso, sólo
 // ejecutables, configuración y pruebas —nunca `.md` ni los casos del banco—. Frena un nombre en castellano que NO EXISTE en
@@ -31,7 +31,7 @@
 //   node scripts/publishing/spanish-names.js --count [--json] [--repo <dir>] [--words <lista>]   (el termómetro)
 //   node scripts/publishing/spanish-names.js --check-map [--repo <dir>] [--map <archivo>]       (el mapa de renombres)
 //   node scripts/publishing/spanish-names.js --stale-mentions [--repo <dir>] [--json]           (nombres viejos que quedan)
-// Guía: guides/nombres-en-ingles.md
+// Guía: guides/maintaining/nombres-en-ingles.md
 
 const fs = require('fs');
 const os = require('os');
@@ -784,11 +784,11 @@ function report(result) {
   }
   if (names) {
     l.push('', 'Cómo salir, en este orden:',
-      '  (a) El nombre en inglés (la propuesta al lado de cada hallazgo; el glosario está en guides/nombres-en-ingles.md).',
+      '  (a) El nombre en inglés (la propuesta al lado de cada hallazgo; el glosario está en guides/maintaining/nombres-en-ingles.md).',
       '  (b) Si la palabra es inglés técnico, un nombre propio o un slug ajeno: un «allowed» con su reason en',
       `      ${WORDS_PATH}, en un commit aparte y decidido por una persona.`);
   }
-  l.push('', 'Guía: guides/nombres-en-ingles.md.');
+  l.push('', 'Guía: guides/maintaining/nombres-en-ingles.md.');
   return l.join('\n');
 }
 
@@ -869,7 +869,7 @@ function homonymProblems(e, at) {
 const HOOKS_DIR = 'scripts/hooks/';
 const HOOK_ROLES = ['guard', 'notice', 'meter', 'none'];
 // 🔴 Las únicas entradas que pueden saltear el sufijo con `role_waiver`: las que la 8.9 cargó antes de que existiera la
-// regla, y que la tabla de constancia de guides/nombres-en-ingles.md deja con su nombre (decisión del dueño, 2026-10-01).
+// regla, y que la tabla de constancia de guides/maintaining/nombres-en-ingles.md deja con su nombre (decisión del dueño, 2026-10-01).
 // Una entrada nueva no entra acá: se nombra con su sufijo. Van por su nombre NUEVO: el viejo no se escribe fuera del mapa
 // (--stale-mentions lo marcaría), y el nuevo identifica la entrada igual.
 const ROLE_WAIVER_NEWS = new Set(['scripts/hooks/advisor-liveness-on-change.js']);
@@ -1113,7 +1113,7 @@ function ciPairsProblems(repo, entries) {
  * Un nombre viejo del mapa nombrado en los dos repos fuera de las zonas donde tiene que seguir (una variable, en
  * cualquier archivo; una opción `--viejo`, en su guion y en los archivos de su repo que nombran ese guion): el mapa, los reemplazos,
  * la biblioteca de compatibilidad (`legacy-names.*`, también el puente de agent-skills), `specs/`, `tasks/`,
- * `guides/incident-log.md`, la evidencia de corridas pasadas (`.advisors/`), la guía de la convención y las pruebas de
+ * `guides/maintaining/incident-log.md`, la evidencia de corridas pasadas (`.advisors/`), la guía de la convención y las pruebas de
  * compatibilidad (`scripts/tests/legacy-names*`). En una variable con `repo`
  * (el único repo que la lee), el nombre viejo en el OTRO repo es una referencia entre repos y no cuenta: ese repo puede
  * estar un pull atrás hasta el retiro (AC 1 d). Un kind que este modo todavía no sabe mirar es «no pude mirar»: cada
@@ -1131,6 +1131,9 @@ const LEGACY_READERS = new Set([
   'scripts/production/install-guard.sh', 'scripts/production/lint-production-json.js',
   'scripts/production/managed-settings.tycon-production.json.template', 'scripts/hooks/prod-access-guard.js',
   'scripts/hooks/produccion-notice.js', 'scripts/hooks/git-pre-commit-global.sh', 'scripts/lib/tycon-config.js',
+  // los controles del commit: la copia propia del repo privado busca los guiones de las skills también en la carpeta de
+  // antes del renombre, para un arnés atrasado (legacy-names-c4 T43c); sale con el retiro de los nombres viejos
+  '.githooks/pre-commit-checks',
   // la copia propia del freno (2026-10-14): ocupa en /opt el lugar de scripts/lib/tycon-config.js y lee lo mismo que ella
   'scripts/production/guard-libs/lib/tycon-config.js',
   // compara contra una base de antes del renombre y corre los archivos de esa base por el nombre que tenían (tanda C1)
@@ -1313,7 +1316,7 @@ const SCRIPT_NAME = /[A-Za-z0-9_.-]+\.(?:sh|js|mjs|cjs|ps1|py)\b/g;
 // (corrida 11477, [DEF-8.9-TABLERO-D1]).
 // Tanda B3b, la historia de agent-skills: el CHANGELOG de cada skill y la HISTORIA.md del pipeline (los párrafos que el
 // SKILL.md dejó al recortarse, con la fecha en que se escribieron).
-const STALE_ZONES = [/^specs\//, /^tasks\//, /^\.advisors\//, /^guides\/incident-log\.md$/, /^guides\/nombres-en-ingles\.md$/, /^scripts\/tests\/legacy-names[^/]*$/,
+const STALE_ZONES = [/^specs\//, /^tasks\//, /^\.advisors\//, /^guides\/maintaining\/incident-log\.md$/, /^guides\/maintaining\/nombres-en-ingles\.md$/, /^scripts\/tests\/legacy-names[^/]*$/,
   /^scripts\/tests\/fixtures\/product-pipeline\//, /^\.dashboard\//, /^guides\/guide-update-proposals\.md$/, /^guides\/(?:decisions\/)?revision-adversarial-[^/]*\.md$/,
   /^scripts\/publishing\/names-ceiling\.json$/,
   /^skills\/[^/]+\/CHANGELOG\.md$/, /^skills\/tycon-pipeline\/HISTORIA\.md$/,
@@ -1510,7 +1513,7 @@ function main() {
       if (!r.problems.length) return 0;
       say(`⛔ el mapa de renombres (${label}) no pasa — ${r.problems.length} problema(s):`);
       for (const p of r.problems) say(`  · ${p}`);
-      say('Formato y reglas: AC 13 de specs/story-8.9-nombres-en-ingles.md · guides/nombres-en-ingles.md.');
+      say('Formato y reglas: AC 13 de specs/story-8.9-nombres-en-ingles.md · guides/maintaining/nombres-en-ingles.md.');
       return 2;
     } catch (e) {
       const known = e instanceof CouldNotLook || e instanceof exporter.NoPudo || e instanceof require('../lib/legacy-names.js').LegacyNamesError;
@@ -1528,7 +1531,7 @@ function main() {
         process.stdout.write(`⛔ quedan ${r.findings.length} mención(es) de nombres viejos fuera de su lugar:\n`);
         for (const f of r.findings) process.stdout.write(`  ${f.source}:${f.rel}:${f.line} — ${f.old} (→ ${f.new})\n`);
         process.stdout.write('Van con el nombre nuevo. Se permiten sólo en el mapa, los reemplazos, legacy-names.*, specs/, tasks/, '
-          + 'guides/incident-log.md, .advisors/, .dashboard/ y la foto del último nocturno, guides/guide-update-proposals.md, la guía de la convención, las pruebas de compatibilidad y, en una variable que lee un solo repo, en el otro (AC 25). '
+          + 'guides/maintaining/incident-log.md, .advisors/, .dashboard/ y la foto del último nocturno, guides/guide-update-proposals.md, la guía de la convención, las pruebas de compatibilidad y, en una variable que lee un solo repo, en el otro (AC 25). '
           + 'Una opción cuenta en su guion y en lo que nombra ese guion, en su mismo repo (AC 27). Las rutas y claves viejas del freno de producción no se miran en los archivos que las leen y protegen a propósito (LEGACY_READERS, AC 45).\n');
       }
       return 1;

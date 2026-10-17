@@ -11,7 +11,7 @@
  * ── LAS TRES VERSIONES DE ESTE ARCHIVO (y por qué la tercera es distinta) ─────────────────────────
  *   v1  Tres rutas ABSOLUTAS clavadas (`Ceibo/…/specs/stories`, `Totora/…`, `FRESNO/…`). Caso
  *       disparador 2026-07-28 (un producto del equipo): dos stories implementadas a mano en carpetas que no
- *       estaban en la lista → el aviso nunca salió y el ATDD se saltó, en silencio — guides/incident-log.md#case-hand-made-stories-without-warning-2026-07-28.
+ *       estaban en la lista → el aviso nunca salió y el ATDD se saltó, en silencio — guides/maintaining/incident-log.md#case-hand-made-stories-without-warning-2026-07-28.
  *   v2  Dos NOMBRES de carpeta (`stories`, `epic-*`). El propio comentario de v2 decía "un freno que
  *       sólo conoce 3 carpetas se queda viejo el día que alguien crea la cuarta" — y v2 era ese
  *       mismo defecto un nivel más arriba. Caso disparador 2026-08-15 (un repo del equipo): las stories

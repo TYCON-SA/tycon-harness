@@ -182,6 +182,6 @@ function main(ctx) {
 // ASINCRÓNICAS y `process.exit()` mata el proceso con parte de lo escrito en el aire. Medido con
 // la forma de este guión (una escritura grande y salir): a 41 KB llega cortado en 8192 y el JSON
 // se rompe; el consumidor lo lee como «no pude», nunca como un error.
-// Caso: guides/incident-log.md#informe-cortado-por-la-tuberia-2026-09-28
+// Caso: guides/maintaining/incident-log.md#informe-cortado-por-la-tuberia-2026-09-28
 if (require.main === module) process.exitCode = main();
 module.exports = { auditar, main };

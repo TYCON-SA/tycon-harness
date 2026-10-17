@@ -92,7 +92,7 @@ const ESQUEMA = {
     hijas: ['mode', 'check'],  // `check`: el control que espera un pedido de GitHub (lo lee scripts/tools/merge-pr.js del arnés).
                           // `mode` faltaba desde que el modo PR entró (2026-08-30): el backend de un producto lo
     libres: [],           // declaró y el lint lo acusaba de desconocido — el test de los configs
-  },                      // reales del equipo estaba en rojo (mismo patrón que repo_group) — guides/incident-log.md#case-merge-mode-unknown-to-lint-2026-08-30.
+  },                      // reales del equipo estaba en rojo (mismo patrón que repo_group) — guides/maintaining/incident-log.md#case-merge-mode-unknown-to-lint-2026-08-30.
 
   audit: {                // el revisor de convenciones .NET del paquete bizuit → DOTNET-W11
     hijas: ['interface', 'exclude_attribute'],

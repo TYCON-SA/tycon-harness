@@ -15,9 +15,9 @@
 set -uo pipefail
 AQUI="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SCRIPT="$AQUI/scripts/ci/pr-verdict.js"
-YAML="$AQUI/pipelines/azure-pipelines-pr.yml"
+YAML="$AQUI/pipelines/azure-pipelines-maintainers-pr.yml"
 # Los pasos que corren las suites viven en una plantilla que usan el trabajo de suites y el del banco (story 8.22, tramo I).
-SUITES_TEMPLATE="$AQUI/pipelines/templates/correr-suites.yml"
+SUITES_TEMPLATE="$AQUI/pipelines/templates/run-suites.yml"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 fallos=0; pasaron=0
 ok(){ echo "✅ veredicto-pr: $1"; pasaron=$((pasaron+1)); }
@@ -175,7 +175,8 @@ node "$SCRIPT" --suites-actual "$TMP/ahora-s.json" --suites-snapshot "$TMP/foto-
 
 # ── V11. el pipeline de PR llama a este guion y no escribe en el repo ───────────────────────────
 if [ ! -f "$YAML" ]; then
-  no "V11: no encontré $YAML — el veredicto sin su pipeline no cubre nada"
+  # el pipeline es del privado (story 8.41, tanda F2): la copia pública no lo trae, y ahí no hay qué medir
+  echo "⏭ veredicto-pr: V11 NO MEDIDO — no está pipelines/azure-pipelines-maintainers-pr.yml (la copia pública no trae los pipelines del equipo). No es un verde."
 else
   { grep -q 'pr-verdict.js' "$YAML" && grep -q -- '--ado' "$YAML"; } \
     && ok "V11a: el pipeline de PR da el veredicto con este guion, en modo Azure" || no "V11a: el pipeline no llama a pr-verdict.js --ado"
@@ -204,7 +205,7 @@ if [ -f "$YAML" ]; then
     // el primer uso del template que SÍ trae AgentSkills (agentSkills: false lo apaga)
     let clon=-1, incond=null;
     for (let i=0;i<y.length;i++) {
-      if (!/template: \/pipelines\/templates\/traer-repos\.yml/.test(y[i])) continue;
+      if (!/template: \/pipelines\/templates\/fetch-repos\.yml/.test(y[i])) continue;
       const bloque = y.slice(i, i+8).join("\n");
       if (/agentSkills: false/.test(bloque)) continue;
       clon = i; incond = !/condicion:/.test(bloque); break;
@@ -367,7 +368,7 @@ if [ -f "$YAML" ]; then
       || no "V15a: el regex de «Qué trae este cambio» clasifica mal:$MALCLASIF"
   fi
 fi
-if [ -d "$AQUI/pipelines" ]; then
+if compgen -G "$AQUI/pipelines/*.yml" > /dev/null; then
   : > "$TMP/plantillas.txt"
   for y in "$AQUI"/pipelines/*.yml; do
     grep -nE '^[[:space:]]*-[[:space:]]*template:' "$y" | while IFS= read -r l; do
@@ -382,6 +383,9 @@ if [ -d "$AQUI/pipelines" ]; then
   { [ ! -s "$TMP/plantillas.txt" ] && [ "$N" -ge 4 ]; } \
     && ok "V15b: 🔴 los $N \`- template:\` usan /pipelines/templates/… con la barra, y el archivo existe" \
     || no "V15b: plantillas mal nombradas (${N} usos): $(tr '\n' ' ' < "$TMP/plantillas.txt")"
+elif [ -d "$AQUI/pipelines" ] && ! compgen -G "$AQUI/pipelines/*.yml" > /dev/null; then
+  # los pipelines que usan plantillas son del privado (story 8.41, tanda F2): la copia pública sólo trae pipelines/operations/
+  echo "⏭ veredicto-pr: V15b NO MEDIDO — pipelines/ no trae ningún pipeline con plantillas (la copia pública no trae los pipelines del equipo). No es un verde."
 else
   no "V15b: no existe pipelines/ — los yml del arnés viven ahí desde la R6"
 fi
@@ -894,7 +898,7 @@ if [ -f "$YAML" ]; then
   # `core.quotePath=false` (pase adversarial del tramo B): sin eso una ruta con «ñ» sale escapada y no coincide con nada.
   DIFF_RE17='git (-c [^ ]+ )*diff[^#]*--name-only'
   SIN17="$(grep -nE "$DIFF_RE17" "$AQUI"/pipelines/*.yml "$AQUI"/pipelines/templates/*.yml 2>/dev/null | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' | grep -v -- '--no-renames' | sed "s|^$AQUI/||")"
-  SINQ17="$(grep -nE "$DIFF_RE17" "$AQUI"/pipelines/azure-pipelines-pr.yml 2>/dev/null | grep -vE '^[0-9]+:[[:space:]]*#' | grep -v -- 'core.quotePath=false')"
+  SINQ17="$(grep -nE "$DIFF_RE17" "$AQUI"/pipelines/azure-pipelines-maintainers-pr.yml 2>/dev/null | grep -vE '^[0-9]+:[[:space:]]*#' | grep -v -- 'core.quotePath=false')"
   N17="$(grep -hE "$DIFF_RE17" "$AQUI"/pipelines/*.yml "$AQUI"/pipelines/templates/*.yml 2>/dev/null | grep -vcE '^[[:space:]]*#')"
   { [ -z "$SIN17" ] && [ -z "$SINQ17" ] && [ "${N17:-0}" -ge 1 ]; } \
     && ok "V17e: los $N17 «git diff --name-only» de los pipelines llevan --no-renames" \

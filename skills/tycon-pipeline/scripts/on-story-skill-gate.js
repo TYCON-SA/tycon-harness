@@ -9,7 +9,7 @@
  * siempre: el pipeline lo hace todo el tiempo. Lógica y porqué: `lib/story-skill-gate.js`; I/O
  * compartido con la puerta de Bash: `lib/story-skill-gate-io.js`.
  *
- * Caso disparador 2026-08-30 (un producto del equipo, stories AS-1 y PERF-1 — guides/incident-log.md#story-a-mano-sin-skill-2026-08-30): la story se escribió con un heredoc
+ * Caso disparador 2026-08-30 (un producto del equipo, stories AS-1 y PERF-1 — guides/maintaining/incident-log.md#story-a-mano-sin-skill-2026-08-30): la story se escribió con un heredoc
  * siguiendo story-format.md de memoria — las dos veces la cazó el dev leyendo el chat, no el arnés.
  *
  * Corre in-process vía dispatch.js ('pre-edit'). Contrato: handle(event) →

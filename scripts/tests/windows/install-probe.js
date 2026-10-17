@@ -384,6 +384,12 @@ function measureMailboxUpload({ home, clone, env, pwsh, scratch, waitMs = 90000 
   const srv = cp.spawn(process.execPath, [server, portFile, reqFile, bodies], { stdio: 'ignore', windowsHide: true });
   let spawnError = null;
   srv.on('error', (e) => { spawnError = e; });
+  // 🔴 Esta medición corre el aplicador otra vez, con el buzón prendido, sobre la instalación que después cuentan los
+  // pasos siguientes: los hooks que registre (los de «sólo con el buzón», como el aviso del correo) no son de esa
+  // instalación. Mide la subida; el settings.json queda como estaba (la 182 #13698, 2026-10-17).
+  const settingsFile = path.join(home, '.claude', 'settings.json');
+  let settingsBefore = null;
+  try { settingsBefore = fs.readFileSync(settingsFile); } catch (_) { settingsBefore = null; }
   try {
     let port = null;
     for (let i = 0; i < 50 && !port; i++) { try { port = fs.readFileSync(portFile, 'utf8').trim() || null; } catch (_) { sleep(100); } }
@@ -427,6 +433,9 @@ function measureMailboxUpload({ home, clone, env, pwsh, scratch, waitMs = 90000 
     return facts;
   } finally {
     try { srv.kill(); } catch (_) { /* ya terminó */ }
+    try {
+      if (settingsBefore === null) fs.rmSync(settingsFile, { force: true }); else fs.writeFileSync(settingsFile, settingsBefore);
+    } catch (e) { facts.problems.push(`no pude devolver el settings.json medido a como estaba: ${e.code || e.message}`); }
   }
 }
 

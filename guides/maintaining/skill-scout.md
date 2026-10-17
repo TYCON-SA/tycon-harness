@@ -87,5 +87,5 @@ Con skill-scout: detecta `tycon-ado-story-wi`, recomienda **(A) USAR** + revisar
 ## Referencias
 
 - Skill: `~/.claude/agent-skills/skills/tycon-skill-scout/SKILL.md`
-- Catálogo de reglas (cruzar antes de crear advisor): [`advisor-rules-catalog.md`](advisor-rules-catalog.md)
+- Catálogo de reglas (cruzar antes de crear advisor): [`advisor-rules-catalog.md`](../advisor-rules-catalog.md)
 - ECC inspiration: [github.com/affaan-m/ECC/blob/main/skills/skill-scout/SKILL.md](https://github.com/affaan-m/ECC/blob/main/skills/skill-scout/SKILL.md)

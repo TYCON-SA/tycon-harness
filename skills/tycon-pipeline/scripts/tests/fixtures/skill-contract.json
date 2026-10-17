@@ -555,7 +555,7 @@
   },
   {
    "h": "db4f7a2d26eee334",
-   "inicio": "Casos: `guides/incident-log.md#reloop-2.5` (commit prep sin re-correr "
+   "inicio": "Casos: `guides/maintaining/incident-log.md#reloop-2.5` (commit prep sin re-correr "
   },
   {
    "h": "93cfeda51c62289b",
@@ -563,11 +563,11 @@
   },
   {
    "h": "38d449e1ba27da8b",
-   "inicio": "Caso: `guides/incident-log.md#skip-inference-2.9` (Step 0b/0c skipeado"
+   "inicio": "Caso: `guides/maintaining/incident-log.md#skip-inference-2.9` (Step 0b/0c skipeado"
   },
   {
    "h": "a51b8d331ef5a5b0",
-   "inicio": "Caso: `guides/incident-log.md#dod-4.2` (Claude declaró `done` + commit"
+   "inicio": "Caso: `guides/maintaining/incident-log.md#dod-4.2` (Claude declaró `done` + commit"
   },
   {
    "h": "1679cc61b9cbfd99",
@@ -779,7 +779,7 @@
   },
   {
    "h": "b11a57499cb6fd21",
-   "inicio": "**INTRODUCIDO 2026-05-15** — caso: `guides/incident-log.md#marker-1.7.1`"
+   "inicio": "**INTRODUCIDO 2026-05-15** — caso: `guides/maintaining/incident-log.md#marker-1.7.1`"
   },
   {
    "h": "a48593013eff60b3",

@@ -103,7 +103,7 @@ login() {
     [ "$code" = "200" ] && break
     # 🔴 El host devuelve su límite de ingresos como 401 con {"error":"Too Many Requests"}, no
     # como 429 (medido: el frontend de un producto del equipo, main, 2026-09-01 —
-    # guides/incident-log.md#case-host-login-rate-limit-2026-09-01 —; el humo era el 6º login del mismo job y el
+    # guides/maintaining/incident-log.md#case-host-login-rate-limit-2026-09-01 —; el humo era el 6º login del mismo job y el
     # host lo cortó). Ese 401 es transitorio y se reintenta con espera larga; un 401 sin ese
     # texto es clave mal y no se reintenta.
     if [ "$code" = "401" ] && grep -qi "too many requests" "$respuesta" 2>/dev/null; then code="429"; fi
@@ -206,7 +206,7 @@ for intento in 1 2 3; do
       # sus rutas devuelven 404 —o el HTML del proxy— los frenos duros de arriba no lo ven, porque
       # miran /loaded y el health de administración. Por eso un código distinto de 200 es ROJO, con
       # reintentos: es el agujero que dejó mudar acá el paso propio que tenía el pipeline de un
-      # producto, que exigía 200 — guides/incident-log.md#case-smoke-lost-own-routes-check-2026-09-03.
+      # producto, que exigía 200 — guides/maintaining/incident-log.md#case-smoke-lost-own-routes-check-2026-09-03.
       #
       # Que el cuerpo no traiga el identificador es otra cosa: hay plugins que todavía no lo
       # reportan. Eso avisa y no frena, hasta que los cinco lo hagan.

@@ -23,8 +23,12 @@
  *                      quien siguiera igual; y que la máquina haya quedado como estaba.
  *   4. Deja anotada la instalación en `lab-state.json`, para `count-hooks` y `fire-registered`.
  *
- * Al laboratorio se le cambia UNA cosa de la página: el origen de la API. Todo lo que se puso o se cambió respecto de
- * la máquina de una persona queda dicho en `facts.lab_changes`. Lo que no se corre (lo que hace la persona, lo que sale
+ * Al laboratorio se le cambian DOS cosas de la página, las dos declaradas en la ficha: la línea npx
+ * corre el paquete armado con `npm pack` del commit que se ensaya en lugar del publicado (`lab.package`), y el paso de
+ * instalar lleva al final la respuesta de la persona (`lab.answer`: el «s» a «¿Instalo?», que el agente no puede dar sin
+ * terminal). Esos pasos van además con las rutas públicas del GitHub de juguete y la caché de npm del laboratorio. Todo
+ * lo que se puso o se cambió respecto de la máquina de una persona queda dicho en `facts.lab_changes`, y el informe dice
+ * en una línea dónde se puso la respuesta de la persona: no se lee como un verde total. Lo que no se corre (lo que hace la persona, lo que sale
  * a la red de verdad) va a `facts.not_rehearsed`, con su motivo.
  *
  * CÓMO FALLA. Un alta que sale mal es un HECHO del reporte, con su gravedad. Lo que el ensayo encuentra no se arregla
@@ -48,7 +52,51 @@ const VARIANTS = Object.freeze([
 // los pasos de la página que llevan el permiso de GitHub en su ambiente CUANDO EL LABORATORIO TIENE UNO (`lab.auth:
 // token`): en los demás no está nunca. Con `lab.auth: none` —la ficha de hoy— el laboratorio no arma ninguno y ningún
 // paso lo lleva: una persona que sigue la página tampoco lo tiene
-const TOKEN_STEPS = Object.freeze(['download', 'plan', 'install']);
+const TOKEN_STEPS = Object.freeze(['plan', 'install']);
+// los archivos del paquete de npm, como los arma el workflow que publica (scripts/setup/npm/ más el LICENSE de la raíz)
+const PACKAGE_FILES = Object.freeze(['package.json', 'index.js', 'home-paths.json', 'README.md']);
+
+/**
+ * El paquete de npm del commit que se ensaya, armado con `npm pack` como lo arma el workflow que publica: `{ tgz }` o
+ * `{ problem }`. Va en la carpeta del paso; la caché de npm, también (nunca la de quien lanza).
+ */
+function packageFor(ctx, state) {
+  const npm = require('./npx-probe.js').npmProgram('npm');
+  if (!npm) return { problem: `este Node (${process.execPath}) no trae npm a su lado: sin npm no se arma el paquete que corre la línea npx` };
+  const harness = state.remotes.harness;
+  const src = path.join(ctx.dir, 'package-src');
+  const dest = path.join(ctx.dir, 'package');
+  try {
+    fs.mkdirSync(src, { recursive: true }); fs.mkdirSync(dest, { recursive: true });
+    for (const [rel, to] of [...PACKAGE_FILES.map((f) => [`scripts/setup/npm/${f}`, f]), ['LICENSE', 'LICENSE']]) {
+      const text = T.showFile(harness.dir, harness.target, rel, ctx.genv);
+      if (text === null || text === undefined) return { problem: `el commit que se ensaya no trae ${rel}: sin él no se arma el paquete de npm` };
+      fs.writeFileSync(path.join(src, to), text);
+    }
+  } catch (e) { return { problem: `no pude armar los archivos del paquete de npm: ${e.code || e.message}` }; }
+  const env = Object.assign({}, ctx.genv, npmEnv(ctx));
+  const r = L.run(process.execPath, [npm, 'pack', '--silent', '--pack-destination', dest], { cwd: src, env, timeoutMs: 5 * 60 * 1000 });
+  const name = String(r.stdout || '').trim().split('\n').pop().trim();
+  const tgz = path.join(dest, name);
+  if (r.exit !== 0 || !name || !fs.existsSync(tgz)) return { problem: `npm pack salió ${r.error || r.exit}: ${L.firstLine(r.stderr) || 'sin decir nada'}` };
+  return { tgz };
+}
+/** Lo de npm en el laboratorio: su caché en la carpeta del paso, sin avisos ni auditorías que salgan a la red. */
+const npmEnv = (ctx) => ({ npm_config_cache: path.join(ctx.dir, 'npm-cache'), npm_config_update_notifier: 'false', npm_config_audit: 'false', npm_config_fund: 'false' });
+/**
+ * Sin el paquete armado no se sigue la página: la línea npx correría el publicado (y saldría al registro de verdad), y eso
+ * no es ensayar el commit. Tira, y quien corre las variantes lo anota como «no pude ensayar».
+ */
+function needPackage(ctx) {
+  const m = ctx.manifest;
+  const uses = G.machineSteps(m).some((s) => s.commands.some((c) => c.text.startsWith(`${m.lab.package.from} `)));
+  if (uses && !ctx.package) throw new Error('sin el paquete armado del commit que se ensaya no sigo la página: la línea npx correría el publicado');
+}
+/**
+ * El ambiente de un comando con la línea npx: las tres rutas públicas del GitHub de juguete (git, el comprimido y el
+ * crudo) y npm. Las tres: con git puesto, el cliente del arnés completa la que falte con la de verdad.
+ */
+const npxEnv = (env, ctx) => Object.assign({}, env, { TYCON_RELEASE_GIT: String(ctx.git), TYCON_RELEASE_ARCHIVE: String(ctx.archive), TYCON_RELEASE_RAW: String(ctx.raw) }, npmEnv(ctx));
 /**
  * El ambiente de un paso: con el permiso de GitHub de juguete sólo si el laboratorio tiene uno y el paso es de los que
  * lo usan. En todo otro caso el paso corre SIN la variable, traiga lo que traiga el ambiente que le pasan: «ningún paso
@@ -59,7 +107,7 @@ const stepEnv = (env, tokens, uses) => {
   return uses && tokens && tokens.github ? TL.withToken(bare, tokens.github) : bare;
 };
 /** Cómo sirve el GitHub de juguete el árbol que se ensaya, dicho para el reporte. */
-const githubServing = (ctx) => (ctx.tokens && ctx.tokens.github ? 'privado, con un permiso de juguete' : 'público, sin permiso (la página baja el guion sin credencial)');
+const githubServing = (ctx) => (ctx.tokens && ctx.tokens.github ? 'privado, con un permiso de juguete' : 'público, sin permiso (la línea npx baja el arnés sin credencial)');
 const round = (ms) => Math.round(ms / 100) / 10;
 
 /** «No pude ensayar»: el resultado del paso cuando falta algo sin lo cual no hay ensayo. Nunca «no medido». */
@@ -132,7 +180,7 @@ function openLab({ lab, name, state, baseEnv = process.env, platform = process.p
     const redact = redactOf([tokens.github, tokens.azure]);
     // `discard(problem)`: para quien, con el laboratorio ya abierto, no puede seguir armándolo (cierra y saca la
     // carpeta, igual que si hubiera fallado acá) — devuelve el motivo, ya tapado
-    return { manifest, guide, dir, genv, gitBin, tokens, api: github.url, raw: github.raw, azureApi: azure.url, team, noTools, redact, stop, discard: (problem) => failed(problem).problem };
+    return { manifest, guide, dir, genv, gitBin, tokens, api: github.url, raw: github.raw, git: github.git, archive: github.archive, azureApi: azure.url, team, noTools, redact, stop, discard: (problem) => failed(problem).problem };
   } catch (e) {
     return failed(`no pude armar el laboratorio del paso: ${e.message}`);
   }
@@ -152,7 +200,7 @@ function noteLab(rec, ctx, state, platform) {
     if (!rehearsed) rec.note('el version.json de la copia que se ensaya no trae un número de versión: las versiones de juguete se numeran desde 2030');
   } catch (e) { rec.note(`no pude leer el número de versión de la copia que se ensaya (version.json: ${e.message}): las versiones de juguete se numeran desde 2030`); }
   rec.fact('rehearsed_version', rehearsed);
-  rec.fact('page', { file: m.page.published, mark: m.page.mark, at: state.remotes.harness.target, page_name_from: ctx.guide.page_name_from, page_steps: ctx.guide.page_steps, entry_script: ctx.guide.entry_script });
+  rec.fact('page', { file: m.page.published, mark: m.page.mark, at: state.remotes.harness.target, page_name_from: ctx.guide.page_name_from, page_steps: ctx.guide.page_steps, entry_package: ctx.guide.entry_package });
   rec.fact('not_rehearsed', G.notRehearsed(m));
   rec.fact('toy_servers', { github: { api: ctx.api, raw: ctx.raw, repo: githubServing(ctx) }, azure: { api: ctx.azureApi, team: TL.TEAM_URL, team_commit: ctx.team.commit } });
 }
@@ -183,11 +231,14 @@ function openVariant({ ctx, lab, prefix, v, facts, platform = process.platform, 
 function labChanges({ ctx, changes, ps, env, scratch }) {
   const m = ctx.manifest;
   const where = [];
-  for (const s of G.machineSteps(m)) for (const [i, c] of s.commands.entries()) if (c.text.includes(m.lab.download_origin)) where.push(`${s.id}[${i}]`);
+  for (const s of G.machineSteps(m)) for (const [i, c] of s.commands.entries()) if (c.text.startsWith(`${m.lab.package.from} `)) where.push(`${s.id}[${i}]`);
   let effective = null;
   if (ps) { const r = TL.runPage({ ps, text: 'Get-ExecutionPolicy', cwd: path.join(scratch, 'window'), env, scratch, id: 'execution-policy', timeoutMs: 60000 }); effective = L.firstLine(r.stdout) || `no pude leerla (${r.error || r.exit})`; }
   return {
-    download_origin: { from: m.lab.download_origin, to: ctx.raw, where: where.join(', ') },
+    // los dos cambios de la ficha: el paquete armado, y la respuesta de la persona
+    package: { from: m.lab.package.from, to: m.lab.package.to.split(G.PACKAGE_MARK).join(ctx.package || '<sin armar>'), where: where.join(', '), why: m.lab.package.why },
+    answer: { step: m.lab.answer.step, append: m.lab.answer.append, why: m.lab.answer.why },
+    public_routes: { TYCON_RELEASE_GIT: ctx.git, TYCON_RELEASE_ARCHIVE: ctx.archive, TYCON_RELEASE_RAW: ctx.raw, where: where.join(', ') },
     token: ctx.tokens && ctx.tokens.github
       ? `TYCON_GITHUB_TOKEN: el permiso de juguete del GitHub de juguete, sólo en los pasos ${TOKEN_STEPS.join(', ')}`
       : 'TYCON_GITHUB_TOKEN: no se pone en ningún paso (el GitHub de juguete sirve el repo como público, sin permiso)',
@@ -226,6 +277,7 @@ function noteLabChanges(rec, { ctx, v, home, changes, ps, env, scratch, own = {}
 function followPage({ ctx, home, env, ps, scratch, cwd, id, only = null, platform = process.platform, say = () => {}, commands = [], each = () => {} }) {
   const m = ctx.manifest;
   const findings = [];
+  needPackage(ctx);
   for (const step of G.machineSteps(m).filter((s) => !only || only.includes(s.id))) {
     let previous = null;
     for (const [i, cmd] of step.commands.entries()) {
@@ -234,12 +286,14 @@ function followPage({ ctx, home, env, ps, scratch, cwd, id, only = null, platfor
       commands.push(row);
       const decided = G.shouldRun(cmd, previous, { platform });
       if (!decided.run) { Object.assign(row, decided.not_comparable ? { not_comparable: decided.not_comparable } : { skipped: decided.skipped }); each([]); continue; }
-      const lab = G.labText(real, m, ctx.raw);
+      const lab = G.labText(real, m, { pkg: ctx.package, step: step.id });
       if (lab.changed) row.lab_changed = { from: lab.from, to: lab.to };
+      if (lab.answer) row.lab_answer = lab.answer;
       // queda dicho que este comando arrancó, antes de esperarlo: si no vuelve, el parcial lo nombra
       row.started = L.nowIso();
       each([]);
-      const raw = TL.runPage({ ps, text: lab.text, cwd, env: stepEnv(env, ctx.tokens, TOKEN_STEPS.includes(step.id)), scratch, id: `${id}-${step.id}-${i + 1}` });
+      const own = stepEnv(env, ctx.tokens, TOKEN_STEPS.includes(step.id));
+      const raw = TL.runPage({ ps, text: lab.text, cwd, env: lab.changed ? npxEnv(own, ctx) : own, scratch, id: `${id}-${step.id}-${i + 1}` });
       // los permisos se buscan en la salida CRUDA, antes de taparla
       const safe = TL.checked(raw, ctx.tokens, `paso ${step.id}`);
       // se juzga sobre la salida ya TAPADA: lo «medido» de cada cosa esperada va al reporte, y sale de esa salida
@@ -423,8 +477,9 @@ function homeFacts(home) {
  */
 function judgePs51({ powershell_file: answer, before, after }) {
   const out = [];
-  if (!answer || answer.error || !/PowerShell 7/.test(String(answer.said || ''))) {
-    out.push({ id: 'guided-ps51:no-clear-message', severity: T.SEVERITY.loses, kind: 'page', detail: `el guion de entrada, lanzado con PowerShell 5.1, no dice que hace falta PowerShell 7: ${answer ? (answer.error ? `no arrancó (${answer.error})` : `salió ${answer.exit} — ${L.clip(answer.said, 300) || 'sin decir nada'}`) : 'no se lanzó'}` });
+  // el instalador del paquete dice lo que falta por su salida y frena por su canal de errores: se miran los dos
+  if (!answer || answer.error || !/PowerShell 7/.test(`${answer.said || ''}\n${answer.out || ''}`)) {
+    out.push({ id: 'guided-ps51:no-clear-message', severity: T.SEVERITY.loses, kind: 'page', detail: `la línea npx, en una máquina sin PowerShell 7, no dice que hace falta: ${answer ? (answer.error ? `no arrancó (${answer.error})` : `salió ${answer.exit} — ${L.clip(answer.said, 300) || 'sin decir nada'}`) : 'no se lanzó'}` });
   }
   const wrote = [];
   if (after.harness_dir && !before.harness_dir) wrote.push('quedó la carpeta ~/.tycon/harness');
@@ -446,14 +501,15 @@ function runPs51({ ctx, v, facts, save, lab, platform, allowTemp, baseEnv, rec, 
   if (!ps) { facts.not_run = `no hay ${v.ps} en esta máquina (el PowerShell 5.1 sólo viene con Windows)`; return false; }
   facts.ps = v.ps;
   // lo que el laboratorio cambió lo anota toda variante que corre (una corrida de ésta sola también lo dice)
-  const noted = noteLabChanges(rec, { ctx, v, home, changes: opened.changes, ps, env, scratch, own: { pwsh_removed_from: bare.removed } });
+  noteLabChanges(rec, { ctx, v, home, changes: opened.changes, ps, env, scratch, own: { pwsh_removed_from: bare.removed } });
   say(`onboarding: ${v.id} — ${v.what}, en ${home}`);
   const m = ctx.manifest;
   const before = homeFacts(home);
   const said = (r) => L.clip(T.tellingLine(r.stderr) || L.firstLine(r.stderr) || L.firstLine(r.stdout), 400);
   let shot = 0;
-  const shoot = (what, text, withToken) => {
-    const raw = TL.runPage({ ps, text, cwd: window, env: stepEnv(env, ctx.tokens, withToken), scratch, id: `${NAME}-${v.id}-${++shot}` });
+  const shoot = (what, text, withToken, npx = false) => {
+    const own = stepEnv(env, ctx.tokens, withToken);
+    const raw = TL.runPage({ ps, text, cwd: window, env: npx ? npxEnv(own, ctx) : own, scratch, id: `${NAME}-${v.id}-${++shot}` });
     const safe = TL.checked(raw, ctx.tokens, what);
     for (const f of safe.findings) add(f);
     return { what, text, exit: raw.exit, error: raw.error, timed_out: raw.timed_out, not_found: raw.not_found && raw.not_found.length ? raw.not_found : undefined, seconds: round(raw.ms), said: said(safe.clean), out: L.clip(safe.clean.stdout, 800) };
@@ -464,24 +520,13 @@ function runPs51({ ctx, v, facts, save, lab, platform, allowTemp, baseEnv, rec, 
   facts.tools.powershell_version = (/^\d+\.\d+[\d.]*/m.exec(facts.tools.out) || [null])[0];
   facts.followed_page = false;
   facts.why = 'la página manda parar en el paso 1 si no hay PowerShell 7: el ensayo no la sigue desde ahí';
-  // fuera de la página: lo que encontraría quien siguiera igual
-  const download = G.labText(G.withNames(step('download').commands[0].text, ctx.guide.names), m, ctx.raw).text;
-  const install = G.withNames(step('install').commands[0].text, ctx.guide.names);
+  // fuera de la página: lo que encontraría quien siguiera igual. La línea npx corre con node, sin importar el shell; lo
+  // que se mide es que el instalador, sin PowerShell 7 en el PATH, frene antes de bajar y lo diga
+  needPackage(ctx);
+  const line = G.labText(G.withNames(step('install').commands[0].text, ctx.guide.names), m, { pkg: ctx.package, step: 'install' });
   facts.off_page = [];
-  facts.off_page.push(shoot('bajar el guion con el comando de la página', download, true));
-  // si con este PowerShell la bajada no dejó el guion, lo pone el laboratorio (el del commit que se ensaya) y lo dice:
-  // lo que se mide después es qué contesta el GUION bajo 5.1, no si se pudo bajar
-  const script = path.join(window, 'get-harness.ps1');
-  if (!fs.existsSync(script)) {
-    fs.mkdirSync(window, { recursive: true });
-    fs.writeFileSync(script, ctx.guide.entry_script_text);
-    facts.script_placed_by_lab = 'con este PowerShell el comando de la página no dejó get-harness.ps1 en la carpeta: lo puso el laboratorio, del commit que se ensaya';
-    noted.by_variant[v.id].script_placed_by_lab = facts.script_placed_by_lab;
-    rec.fact('lab_changes', noted);
-  }
-  const answer = shoot('el guion de entrada, lanzado con powershell -File', install.replace(/^pwsh\b/, 'powershell'), true);
+  const answer = Object.assign(shoot('la línea npx de la página, sin PowerShell 7 en el PATH', line.text, true, line.changed), { lab_answer: line.answer || undefined });
   facts.off_page.push(answer);
-  facts.off_page.push(shoot('el comando de instalar de la página, tal cual (pide pwsh)', install, true));
   const after = homeFacts(home);
   facts.left = { before, after };
   for (const f of judgePs51({ powershell_file: answer, before, after })) add(f);
@@ -500,6 +545,10 @@ function measure({ lab, out, state, platform = process.platform, baseEnv = proce
   return TL.onRehearsedCommit(state, genv, () => {
     const ctx = openLab({ lab, name: NAME, state, baseEnv, platform, start });
     if (ctx.problem) return notReady(ctx.problem);
+    // el paquete de npm del commit que se ensaya: sin él la línea npx correría el publicado
+    const pk = packageFor(ctx, state);
+    if (pk.problem) return notReady(ctx.discard(pk.problem));
+    ctx.package = pk.tgz;
     const watch = TL.watching(ctx.redact, ctx.tokens);
     rec.setRedactor(watch.redact);
     try {
@@ -521,4 +570,4 @@ function measure({ lab, out, state, platform = process.platform, baseEnv = proce
   });
 }
 
-module.exports = { NAME, VARIANTS, TOKEN_STEPS, stepEnv, githubServing, notReady, teamArgs, openLab, noteLab, openVariant, labChanges, noteLabChanges, followPage, addTeam, homeFacts, judgePs51, measure };
+module.exports = { NAME, VARIANTS, TOKEN_STEPS, PACKAGE_FILES, stepEnv, npxEnv, githubServing, notReady, teamArgs, openLab, packageFor, noteLab, openVariant, labChanges, noteLabChanges, followPage, addTeam, homeFacts, judgePs51, measure };

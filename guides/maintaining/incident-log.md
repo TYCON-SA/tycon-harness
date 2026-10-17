@@ -9,7 +9,7 @@ clientes, proyectos, personas y máquinas de verdad, así que viven en el **repo
 privado, y no se publican.
 
 Las guías dicen la regla y su porqué, sin el caso: se tienen que entender solas. El código es otra cosa: la cabecera
-de un guion o de una prueba todavía puede nombrar su caso (`guides/incident-log.md#<caso>`). En el repo de
+de un guion o de una prueba todavía puede nombrar su caso (`guides/maintaining/incident-log.md#<caso>`). En el repo de
 mantenimiento ese nombre lleva al caso completo; en esta copia llega a esta página y **el ancla no resuelve**: no es
 un enlace roto, es el caso que no se publica.
 

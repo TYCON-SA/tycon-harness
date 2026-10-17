@@ -1770,7 +1770,7 @@ function main() {
 // informe de 9782 bytes llegaba cortado en 8192 y el consumidor lo leía como «no pude», nunca como
 // un error. `main` acá es sincrónica y no deja manejadores abiertos, así que con `exitCode` el
 // proceso termina solo, cuando terminó de escribir.
-// Caso: guides/incident-log.md#informe-cortado-por-la-tuberia-2026-09-28
+// Caso: guides/maintaining/incident-log.md#informe-cortado-por-la-tuberia-2026-09-28
 if (require.main === module) {
   // story 8.9: los nombres viejos (subcomandos y opciones en castellano) siguen andando hasta el retiro
   require('../../lib/legacy-names.js').aliasArgv('scripts/nightly/dependencies/nightly-dependencies.js', { exitCode: 2, prefix: 'error: ' });

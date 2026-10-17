@@ -158,7 +158,7 @@ El skill necesita saber `org` + `project` para invocar `az boards`. Resolver en 
    configuración rota, y se dice con archivo, clave y motivo). El proyecto: `TYCON_ADO_PROJECT`, o preguntar al dev.
 3. **Sin organización = Azure DevOps apagada en esta máquina** — el step lo dice en UNA línea («Azure DevOps apagado en
    esta máquina — el work item no se cierra; prender: ado.org en ~/.claude/tycon.json o TYCON_ADO_ORG»), no llama a `az`
-   y se saltea (exit 0). Ya no hay un nivel «tabla por proyecto»: la tabla de `guides/ado-projects.md` es referencia
+   y se saltea (exit 0). Ya no hay un nivel «tabla por proyecto»: la tabla de `guides/integrations/ado-projects.md` es referencia
    para personas, no algo que el pipeline lee.
 
 ## Creación retroactiva del WI (cuando `ado_work_item:` falta + hay config ADO)

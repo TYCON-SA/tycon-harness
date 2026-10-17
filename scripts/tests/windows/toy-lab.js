@@ -63,12 +63,12 @@ const ENV_NEVER = Object.freeze(['TYCON_UPDATE_APPLY', 'TYCON_STARTUP_DETACH', '
 // Lo que se borra del ambiente de quien lanza antes de armar el de la variante: lo del arnés y sus herramientas, y las
 // variables con que git ubica su configuración (con ellas, el paso de los hooks de git de la página —`git config
 // --global`— escribiría en la configuración REAL de quien lanza, y el git del laboratorio leería sus hooks). Y las del
-// proxy: el cliente del arnés no exceptúa 127.0.0.1, así que con un proxy configurado en quien lanza los pedidos al
+// proxy, también las de npm (el instalador del paquete las lee como proxy): el cliente del arnés no exceptúa 127.0.0.1, así que con un proxy configurado en quien lanza los pedidos al
 // GitHub de juguete (con su permiso de juguete y el nombre del repo) saldrían hacia el proxy real, y el ensayo le
 // echaría la culpa al producto. El laboratorio no le habla a la red de verdad: no necesita ninguno.
 const INHERITED = Object.freeze([/^TYCON_/i, /^CODEX_HOME$/i, /^CLAUDE_MD_PATH$/i, /^CLAUDE_CONFIG_DIR$/i,
   /^GIT_CONFIG_(GLOBAL|SYSTEM|NOSYSTEM|COUNT|PARAMETERS)$/i, /^GIT_CONFIG_(KEY|VALUE)_\d+$/i, /^XDG_CONFIG_HOME$/i,
-  /^(HTTPS?|ALL|NO)_PROXY$/i]);
+  /^(HTTPS?|ALL|NO)_PROXY$/i, /^npm_config_(https_)?proxy$/i, /^npm_config_noproxy$/i]);
 const LOCK = require('../../setup/harness/lock.js');
 
 const sleep = (ms) => { try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Math.max(0, ms)); } catch (_) { /* nada */ } };
@@ -224,7 +224,7 @@ function startServer({ script, args, portFile, key, env, waitMs = PORTS_WAIT_MS,
 
 /**
  * El GitHub de juguete sirviendo un repo desnudo como `org/name`; con `token`, como repo privado. `{ url, raw, stop }` o
- * `{ problem }`: `url` es su API y `raw` su «raw.githubusercontent.com», de donde la página baja el guion.
+ * `{ problem }`: `url` es su API y `raw` su «raw.githubusercontent.com», de donde la línea npx lee la versión.
  */
 function startGitHub({ dir, bare, org, name, gitBin = 'git', env, token = null, waitMs }) {
   fs.mkdirSync(dir, { recursive: true });
@@ -234,10 +234,12 @@ function startGitHub({ dir, bare, org, name, gitBin = 'git', env, token = null, 
   const serverEnv = Object.assign({}, env, { GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'core.autocrlf', GIT_CONFIG_VALUE_0: 'false' });
   const s = startServer({ script: GITHUB_SERVER, args: ['--repo', bare, '--org', org, '--name', name, '--git', gitBin, '--control', control, '--log', path.join(dir, 'github-requests.log')], portFile: path.join(dir, 'github-ports.env'), key: 'API', env: serverEnv, waitMs, what: 'el GitHub de juguete' });
   if (s.problem) return s;
-  // el servidor escribe todas sus escuchas juntas, de una vez: si está la de la API, está la de «raw»
-  const raw = /^RAW=(.+)$/m.exec(fs.readFileSync(path.join(dir, 'github-ports.env'), 'utf8'));
-  if (!raw) { s.stop(); return { problem: 'el GitHub de juguete no dijo dónde escucha su «raw» (RAW= en su archivo de puertos)' }; }
-  return Object.assign(s, { raw: raw[1].trim(), log: path.join(dir, 'github-requests.log') });
+  // el servidor escribe todas sus escuchas juntas, de una vez: si está la de la API, están las otras. La línea npx
+  // baja por las rutas públicas: la de git (info/refs) y la del comprimido (codeload)
+  const ports = fs.readFileSync(path.join(dir, 'github-ports.env'), 'utf8');
+  const port = (k) => { const m = new RegExp(`^${k}=(.+)$`, 'm').exec(ports); return m ? m[1].trim() : null; };
+  for (const k of ['RAW', 'GIT', 'CODELOAD']) if (!port(k)) { s.stop(); return { problem: `el GitHub de juguete no dijo dónde escucha (${k}= en su archivo de puertos)` }; }
+  return Object.assign(s, { raw: port('RAW'), git: port('GIT'), archive: port('CODELOAD'), log: path.join(dir, 'github-requests.log') });
 }
 
 /** El Azure DevOps de juguete sirviendo el repo del equipo, con su permiso. `{ url, stop }` o `{ problem }`. */

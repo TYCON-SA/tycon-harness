@@ -147,7 +147,7 @@ JSON
   printf '.calls\n.advisors/\n' > "${r}/.gitignore"
   mkdir -p "${r}/.githooks"
   printf '%s\n' 'echo "repo-lint head=$(git log -1 --format=%s HEAD) staged=$(git diff --cached --name-only | tr "\n" " ")" >> "$(cd "$(git rev-parse --git-common-dir)/.." && pwd)/.calls"' \
-    '[ ! -f lint-rojo ] || { echo "el pre-commit frena"; exit 1; }' > "${r}/.githooks/pre-commit-harness"
+    '[ ! -f lint-rojo ] || { echo "el pre-commit frena"; exit 1; }' > "${r}/.githooks/pre-commit-checks"
   printf '{ "version": "2026.01.01.1" }\n' > "${r}/version.json"
   # el paso `version` lee la regla del repo (scripts/ci/version-tag.js check-pr): va la de verdad, no una de mentira
   mkdir -p "${r}/scripts/ci" "${r}/scripts/setup/harness"

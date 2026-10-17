@@ -24,7 +24,7 @@
 //           Los pendientes de OTROS proyectos se resumen en una línea informativa SIN instrucción
 //           de lanzamiento: se reclaman al abrir sesión en su propio repo (feedback del dev
 //           2026-08-28: una sesión de un producto lanzó las retrospectivas de otros productos del equipo — el
-//           aviso global convertía cualquier sesión en la mula de carga de todos los proyectos — guides/incident-log.md#case-retro-launched-for-other-repos-2026-08-28).
+//           aviso global convertía cualquier sesión en la mula de carga de todos los proyectos — guides/maintaining/incident-log.md#case-retro-launched-for-other-repos-2026-08-28).
 //           Escape hatch: TYCON_RETRO_PENDING_SCOPE=all restaura el listado global con instrucción.
 //           El backstop de "nadie abre sesión en ese repo" sigue siendo retro-staleness-notice.js.
 // LÍMITES DECLARADOS de la atribución (pase adversarial 2026-09-15, hallazgos #4 a #6). No están
@@ -814,7 +814,7 @@ function anotar(event, cmd, punto, ctx) {
   // `main` tiene que ser un REFSPEC suelto (`origin main`, `HEAD:main`, `HEAD:refs/heads/main`), no un
   // pedazo del nombre de otra rama. Con `\bmain\b` el guion cuenta como borde de palabra, y el push de la
   // rama `chore/bajar-main-a-dev` quedó anotado como push a main con la punta vieja de origin/main (caso
-  // real 2026-09-18, en el repo de historias de un producto del equipo — guides/incident-log.md#case-push-branch-named-main-2026-09-18; bench `quiet-push-de-una-rama-con-main-en-el-nombre`).
+  // real 2026-09-18, en el repo de historias de un producto del equipo — guides/maintaining/incident-log.md#case-push-branch-named-main-2026-09-18; bench `quiet-push-de-una-rama-con-main-en-el-nombre`).
   const mentionsMain = /\bpush\b[^|;&\n]*(?:[\s:"']|refs\/heads\/)(main|master)(?=$|[\s;&|"'])/.test(st);
   const onMain = /^(main|master)$/.test(branch) && !/\bpush\b[^|;&\n]*\b(dev|develop|feat|feature|fix|hotfix|release)\b/.test(st);
   if (!ctx.isPrCreate && !mentionsMain && !onMain) return null;

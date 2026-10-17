@@ -86,8 +86,6 @@ cableado" desde 2026-05-27 costó ~7 spawns Opus + 7 spawns lean evitables en un
    LLM per-item/engram no es mecanizable). `feature-wiring` nunca se descuenta (mech solo
    cubre WIRING-C1). Story ilegible (ambiguo MECH) → cero descuentos.
 
-Ver `guides/decisions/pipeline-cost-audit-2026-06-11.md` para los números que motivaron el cableo.
-
 **`--cost-tier deep`**: escape hatch — todos los advisors se sugieren con Opus. Útil para auditorías paranoicas pre-demo cliente.
 
 **Reversible**: borrar el bloque `ADVISOR_COST_TIER` + `modelHintsForSet` de `pipeline.js`. Como el campo es aditivo y default sin flag no lo emite, no hay callers a romper.
@@ -225,7 +223,7 @@ perfil a la versión que trae este lector: una máquina con el lector anterior r
 ## Referencias
 
 - Slide disparadora: Anthropic *Advisor Strategy — Give agents a cost-effective intelligence boost* (2026-05-27).
-- Pattern related: [instinct-mining.md](instinct-mining.md) — mismo patrón "Haiku silencioso, Opus al pedir aprobación" para learnings del harness.
+- Pattern related: [instinct-mining.md](integrations/instinct-mining.md) — mismo patrón "Haiku silencioso, Opus al pedir aprobación" para learnings del harness.
 - Pipeline orchestrator: `~/.claude/agent-skills/skills/tycon-pipeline/SKILL.md`.
 - Catálogo de advisors: `~/.claude/agent-skills/agents/tycon-*.md`.
 - Script Movement 2: `~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js` (función `modelHintsForSet`, tabla `ADVISOR_COST_TIER`).

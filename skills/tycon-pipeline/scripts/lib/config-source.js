@@ -33,7 +33,7 @@
  *
  * 🔴 **La unión, no "manda lo commiteado" a secas**: el commit que *introduce* un patrón nuevo
  * —caso real en el backend de un producto del equipo, que hace visibles 18 stories `AP-*`/`CO-*`— dejaría esas stories
- * fuera del freno justo en ese commit si sólo mirara HEAD — guides/incident-log.md#config-de-frenos-en-la-carpeta-2026-08-25
+ * fuera del freno justo en ese commit si sólo mirara HEAD — guides/maintaining/incident-log.md#config-de-frenos-en-la-carpeta-2026-08-25
  *
  * ── EFECTO DE BORDE, A PROPÓSITO ────────────────────────────────────────────────────────────────
  * El primer commit que declare un **repo hermano nuevo** dará rojo hasta que ese commit esté hecho.

@@ -29,7 +29,7 @@
 #
 # Hasta hoy estaba COPIADO en 8 repos (backend y formularios de cuatro productos del
 # equipo). Nada las mantenía iguales: el 2026-08-31 hubo que editar las ocho a mano DOS veces
-# en el mismo día — guides/incident-log.md#case-release-notes-eight-copies-2026-08-31; y en el camino se descubrió que uno de ellos —el piloto del flujo con Pull Request,
+# en el mismo día — guides/maintaining/incident-log.md#case-release-notes-eight-copies-2026-08-31; y en el camino se descubrió que uno de ellos —el piloto del flujo con Pull Request,
 # con un día de uso— era el ÚNICO sin filtrar `^Merged PR`: su próxima versión iba a publicarle
 # "Merged PR <id>: …" al administrador que instala el plugin. Su filtro se había escrito ANTES de
 # que existiera el flujo y nadie volvió a mirarlo cuando el flujo cambió.
@@ -117,7 +117,7 @@ hash_publicado() {
   [ -z "$URL" ] || [ -z "$USUARIO" ] || [ -z "$CLAVE" ] && return 0
   local headers body code token
 
-  # 🔴 INGRESO REUTILIZADO (2026-09-01, medido en un producto del equipo — guides/incident-log.md#case-release-notes-against-published-2026-09-01). Este guion se invoca UNA VEZ POR
+  # 🔴 INGRESO REUTILIZADO (2026-09-01, medido en un producto del equipo — guides/maintaining/incident-log.md#case-release-notes-against-published-2026-09-01). Este guion se invoca UNA VEZ POR
   # FORMULARIO, y hasta hoy cada invocación abría su propio ingreso al host. Con 4 formularios
   # (Totora) no se nota; con 8 (URUTAU) ya hubo que meter una pausa entre uno y otro; con 34
   # (FRESNO) el host rechaza por límite de velocidad, los 4 reintentos se agotan y **las 34 notas
@@ -188,7 +188,7 @@ hash_publicado() {
 consultar_version() {
   local token="$1"
   if [ "$TIPO" = "form" ]; then
-    # 🔴 DIAGNÓSTICO (2026-09-01, un producto del equipo — guides/incident-log.md#case-release-notes-against-published-2026-09-01). Antes esto se comía la respuesta y el guion sólo podía
+    # 🔴 DIAGNÓSTICO (2026-09-01, un producto del equipo — guides/maintaining/incident-log.md#case-release-notes-against-published-2026-09-01). Antes esto se comía la respuesta y el guion sólo podía
     # decir "el servidor no dijo qué versión tiene publicada" — una frase que tapa TRES causas
     # distintas y manda a buscar el problema en cualquiera de las tres:
     #   (a) la dirección no existe en ese host (404) → el host es de otra versión;
@@ -275,7 +275,7 @@ fi
 
 # El commit tiene que existir en ESTE clon: con historia recortada, o si la versión publicada
 # salió de otra rama, no sirve como punto de partida.
-# 🔴 CUARTA CAUSA (2026-09-01, un producto del equipo — guides/incident-log.md#case-release-notes-against-published-2026-09-01). El diagnóstico de arriba cubre tres causas de "no hay nota
+# 🔴 CUARTA CAUSA (2026-09-01, un producto del equipo — guides/maintaining/incident-log.md#case-release-notes-against-published-2026-09-01). El diagnóstico de arriba cubre tres causas de "no hay nota
 # contra lo publicado", y le faltaba ÉSTA — la que de verdad pasó: el host contesta perfecto, el
 # commit llega, y NO ESTÁ EN EL CLON porque el job del despliegue clonó sin historia (o sin
 # clonar). El síntoma era "sin punto de partida confiable", que se lee como "el host no contestó"

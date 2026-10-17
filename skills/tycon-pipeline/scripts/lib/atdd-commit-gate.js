@@ -7,7 +7,7 @@
  * mano —sin `tycon-pipeline`— no hay marker, no hay eventos, y el gate no tiene nada que leer.
  * No falla: nunca se lo consulta.
  *
- * Caso disparador (2026-07-28, un producto del equipo — guides/incident-log.md#case-atdd-gate-bypassed-by-hand-2026-07-28): dos stories implementadas a mano en la misma sesión.
+ * Caso disparador (2026-07-28, un producto del equipo — guides/maintaining/incident-log.md#case-atdd-gate-bypassed-by-hand-2026-07-28): dos stories implementadas a mano en la misma sesión.
  * Se escribió implementación y después tests, exactamente el orden que el gate de ayer bloquea —
  * y no bloqueó nada, porque el gate no estaba en el camino. Lo detectó el dev preguntando "¿por
  * qué no hicimos los test ATDD primero?". Otra vez la capa de control fue una persona.

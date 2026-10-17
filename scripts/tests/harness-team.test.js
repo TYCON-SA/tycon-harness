@@ -93,7 +93,7 @@ test('T1 Cli_TeamOption_InstallAndMigrate_ClosedTable_EnglishNames_NoRealNames',
   // el nombre real del repo del equipo (si el interno ya lo declara) no está en nada que viaje en la copia pública
   const name = teamNameDeclared();
   if (name) {
-    for (const f of ['scripts/setup/harness.js', 'scripts/setup/harness/team.js', 'scripts/setup/harness/release.js', 'scripts/setup/harness/move-home.js', 'scripts/setup/harness/github-auth.js', 'scripts/tests/harness-team.test.js', 'scripts/tests/harness-team.test.sh', 'scripts/tests/lib/harness-lab.sh', 'scripts/tests/fixtures/toy-release-server.js', 'guides/mecanismo-de-instalacion.md']) {
+    for (const f of ['scripts/setup/harness.js', 'scripts/setup/harness/team.js', 'scripts/setup/harness/release.js', 'scripts/setup/harness/move-home.js', 'scripts/setup/harness/github-auth.js', 'scripts/tests/harness-team.test.js', 'scripts/tests/harness-team.test.sh', 'scripts/tests/lib/harness-lab.sh', 'scripts/tests/fixtures/toy-release-server.js', 'guides/maintaining/mecanismo-de-instalacion.md']) {
       const p = path.join(ROOT, f);
       if (!fs.existsSync(p)) continue;
       assert.equal(fs.readFileSync(p, 'utf8').includes(name), false, `${f} nombra el repo del equipo: ese nombre vive sólo en public-repos.json, onboarding/ y specs/`);

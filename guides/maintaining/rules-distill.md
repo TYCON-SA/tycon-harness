@@ -95,7 +95,7 @@ Zombies legítimas (3): `PIPE-C1..C3` con owner declarado `tycon-ac-coverage-che
 
 ## Referencias
 
-- Script: [`scripts/tools/rules-distill.js`](../scripts/tools/rules-distill.js)
-- Catalog: [`guides/advisor-rules-catalog.md`](advisor-rules-catalog.md)
+- Script: [`scripts/tools/rules-distill.js`](../../scripts/tools/rules-distill.js)
+- Catalog: [`guides/advisor-rules-catalog.md`](../advisor-rules-catalog.md)
 - Inspiración: [ECC rules-distill](https://github.com/affaan-m/ECC/blob/main/skills/rules-distill/SKILL.md)
 - Complementa: [`skill-scout`](skill-scout.md) (búsqueda PRE-creación) ↔ [`rules-distill`](rules-distill.md) (consolidación POST-creación)

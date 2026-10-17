@@ -66,7 +66,7 @@ function moveChanges(stage) {
 /** La línea con que el aplicador dice que sacó las piezas de un paquete que la organización no activa. */
 const PACK_LINE = /pieza\(s\) de paquete\(s\) que la organización no activa/;
 // con qué pasos de la página se instala la versión de antes (lo demás del alta lo mide el paso del alta)
-const INSTALL_STEPS = Object.freeze(['download', 'install', 'git-hooks']);
+const INSTALL_STEPS = Object.freeze(['install', 'git-hooks']);
 // en qué orden se abren las sesiones de la variante que aplica sola: [nombre, forma de lanzar]. La cuarta está para
 // comparar dos sesiones ya actualizadas (la tercera puede ser la primera en que corre el programa nuevo)
 const SESSIONS = Object.freeze([['después-1', 'bash-c'], ['después-2', 'default-shell'], ['después-3', 'default-shell'], ['después-4', 'default-shell']]);
@@ -438,6 +438,10 @@ function measure({ lab, out, state, platform = process.platform, baseEnv = proce
   return TL.onRehearsedCommit(state, genv, () => {
     const ctx = GI.openLab({ lab, name: NAME, state, baseEnv, platform });
     if (ctx.problem) return GI.notReady(ctx.problem);
+    // la página instala con la línea npx: el paquete del commit que se ensaya
+    const pk = GI.packageFor(ctx, state);
+    if (pk.problem) return GI.notReady(ctx.discard(pk.problem));
+    ctx.package = pk.tgz;
     const watch = TL.watching(ctx.redact, ctx.tokens);
     rec.setRedactor(watch.redact);
     try {

@@ -6,7 +6,7 @@
 // step 10b de /tycon-merge-to-main — un paso al FINAL del flujo, después del push, cuando
 // el trabajo "ya terminó". Se salteó en silencio 2 veces: 2026-05-03→06-09 (1 corrida en
 // 37 días) y 2026-07-17→08-04 (17 días, 6 merges a main sin retro en backend y frontend de un producto)
-// — guides/incident-log.md#case-retro-capturer-skipped-2026-08-04.
+// — guides/maintaining/incident-log.md#case-retro-capturer-skipped-2026-08-04.
 // El único mecanismo que detectaba la ausencia del capturer era el capturer mismo.
 // Este hook rompe esa circularidad: chequeo independiente en el arranque de sesión.
 // Regla de la casa que implementa: "un control que hay que acordarse de invocar es un

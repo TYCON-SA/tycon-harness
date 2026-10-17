@@ -2471,7 +2471,7 @@ test('la cadena del log del repo se verifica igual: una línea manoseada invalid
 });
 
 // ── Story 7.17 — las firmas sobreviven a unir ramas ──────────────────────────────────────────────
-// Caso: épico 11 de un producto del equipo (2026-10-07, guides/incident-log.md#case-firmas-ramas-paralelas-2026-10-07).
+// Caso: épico 11 de un producto del equipo (2026-10-07, guides/maintaining/incident-log.md#case-firmas-ramas-paralelas-2026-10-07).
 // Dos ramas firmaron enganchando con la MISMA línea; al unirlas la segunda dejó de enganchar con la anterior y desde
 // ahí toda firma se descartaba en silencio. Estas pruebas arman los registros a mano (en carpetas temporales, nunca el
 // real) con el hash y el canónico del verificador de ANTES, copiados acá: son la vara de lo que ya estaba firmado.
@@ -2704,7 +2704,7 @@ test('5b-6 Waiver_HomeLog_LineaDeOtroRepo — una línea rota de otro producto c
 const RAIZ_DOCS = path.join(SCRIPTS, '..', '..', '..');
 test('Docs_IncidentAndHeader — el caso, la cabecera y la ficha dicen lo mismo (T20)', { skip: !fs.existsSync(path.join(RAIZ_DOCS, 'perfil-equipo.json')) && 'NO MEDIDO — copia pública: el registro de incidentes y las fichas no viajan' }, () => {
   const raiz = RAIZ_DOCS;
-  const log = fs.readFileSync(path.join(raiz, 'guides', 'incident-log.md'), 'utf8');
+  const log = fs.readFileSync(path.join(raiz, 'guides', 'maintaining', 'incident-log.md'), 'utf8');
   assert.match(log, /^## case-firmas-ramas-paralelas-2026-10-07$/m, 'la entrada del incident-log existe');
   const cabecera = fs.readFileSync(path.join(SCRIPTS, 'lib', 'runtime-waiver.js'), 'utf8').split("'use strict'")[1].split('*/')[0];
   assert.match(cabecera, /QUÉ FRENA/, 'la cabecera dice qué frena');

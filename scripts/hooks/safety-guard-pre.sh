@@ -56,7 +56,7 @@
 # 🔴 FALTA CONFIRMARLO CON UNA SESIÓN REAL: que con exit 1 el comando corre y el aviso se ve sale
 # de la documentación de hooks de Claude Code; no se midió en vivo, ni en Claude Code ni en Codex.
 # Lo único medido en las dos es que `exit 2` frena y llega al modelo
-# (guides/codex-divergence-inventory.md). Hay que correr `scripts/controls-bench/live-fire.js`
+# (guides/maintaining/codex-divergence-inventory.md). Hay que correr `scripts/controls-bench/live-fire.js`
 # contra un `PreToolUse` real. Deuda anotada: `[FUP-frenos-sin-jq-live-fire]` en tasks/todo.md.
 # El costo, dicho: mientras dure, nada frena un comando destructivo, y el agente no se entera (sólo
 # `exit 2` le llega al modelo). Si el dueño prefiere frenar, es cambiar el `exit 1` de

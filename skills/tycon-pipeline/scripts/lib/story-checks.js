@@ -124,7 +124,7 @@ function parseAcsFromSpec(specContent) {
 // puede verificar corriendo, y el test que lo cubre — pero NUNCA qué dice el AC. O sea que el usuario
 // aprobaba saltear la verificación de algo que el propio prompt no le decía qué era: la excusa sin el
 // hecho. Es exactamente el rubber-stamp que la confirmación por-AC vino a evitar, un nivel más abajo.
-// Caso disparador: el dev, Story 3.24 de un producto del equipo (guides/incident-log.md#case-waiver-prompt-hides-ac-text-2026-07-27) — *"¿no sería necesario contarme qué dice el AC?"*.
+// Caso disparador: el dev, Story 3.24 de un producto del equipo (guides/maintaining/incident-log.md#case-waiver-prompt-hides-ac-text-2026-07-27) — *"¿no sería necesario contarme qué dice el AC?"*.
 //
 // Devuelve `{ [n]: texto }` — prosa aplanada y acotada, apta para un prompt de terminal. Best-effort
 // por diseño: si un AC no se puede aislar, se omite del mapa y el llamador cae a su texto de siempre

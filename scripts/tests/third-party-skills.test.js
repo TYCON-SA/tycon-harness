@@ -304,7 +304,7 @@ test('T5b Coverage_ContentByTree — con el retiro pendiente, un árbol distinto
 
 // ── T6 ────────────────────────────────────────────────────────────────────────────────────────────────────────
 test('T6 AgentSkillsPreCommit_StopsForeignCopy — frena la skill ajena copiada; un commit fuera de esas rutas no corre el control', () => {
-  // el guion de agent-skills según el layout: en la copia pública de un solo repo es `pre-commit-skills`, no el despachador
+  // el guion de los controles de las skills según el layout: `pre-commit-checks`, no el pre-commit que lo llama
   const hook = preCommitHook('skills', resolveSkillsDirs().repo);
   assert.ok(fs.existsSync(hook), `no encontré el pre-commit de agent-skills en ${hook}`);
   // un arnés de laboratorio: sólo el control y un manifiesto sintético (sin el freno de nombres: el hook avisa y sigue)
@@ -371,12 +371,12 @@ test('T6 AgentSkillsPreCommit_StopsForeignCopy — frena la skill ajena copiada;
 test('T22 Docs_PointToManifest — cada guía nombra el manifiesto; INSTALL ya no manda a copiar tal cual; BMAD sin versión propia', () => {
   const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
   // el índice de guías: INDEX.md desde 2026-10-14 (README.md quedó como la portada)
-  for (const rel of ['guides/bmad-contract.md', 'INSTALL.md', 'guides/publicacion-espejo.md', 'guides/piezas-del-arnes.md', 'INDEX.md']) {
+  for (const rel of ['guides/maintaining/bmad-contract.md', 'INSTALL.md', 'guides/maintaining/publicacion-espejo.md', 'guides/piezas-del-arnes.md', 'INDEX.md']) {
     assert.match(read(rel), /third-party-skills\.json/, `${rel} no nombra el manifiesto`);
   }
   assert.doesNotMatch(read('INSTALL.md'), /copiarla tal cual/);
-  const bmad = read('guides/bmad-contract.md');
+  const bmad = read('guides/maintaining/bmad-contract.md');
   const paragraphs = bmad.split(/\n\s*\n/).filter((p) => /third-party-skills\.json/.test(p));
   for (const p of paragraphs) assert.doesNotMatch(p, /\b\d+\.\d+\.\d+\b/, `bmad-contract.md afirma una versión junto al manifiesto: ${p.slice(0, 160)}`);
-  assert.match(read('guides/publicacion-espejo.md'), /^#+ .*Las skills de terceros/m);
+  assert.match(read('guides/maintaining/publicacion-espejo.md'), /^#+ .*Las skills de terceros/m);
 });

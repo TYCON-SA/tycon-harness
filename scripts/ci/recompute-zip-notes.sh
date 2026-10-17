@@ -25,7 +25,7 @@
 #         vea igual que "miré y está bien" (incident-log, 2026-08-31: la familia entera del verde
 #         que significa no miré nada). Hasta esa noche salía SIEMPRE 0, y por eso la v1.0.62 de
 #         un producto del equipo llegó a producción con una nota falsa y el paso en verde
-#         — guides/incident-log.md#nota-de-version-falsa-en-prod-2026-08-31.
+#         — guides/maintaining/incident-log.md#nota-de-version-falsa-en-prod-2026-08-31.
 #
 # 🔴 ÉSTE ES EL CANÓNICO (2026-08-31). Vive SOLO acá.
 # Estaba copiado en los 4 frontends y YA SE HABÍA PARTIDO EN DOS VARIANTES: Ceibo y URUTAU tenían
@@ -49,7 +49,7 @@ URL="${2:-}"; USUARIO="${3:-}"; CLAVE="${4:-}"
 # ningún lado — y el guion decía "no está … se dejan las notas del empaquetado", salía 0, y el
 # paso quedaba VERDE. Resultado medido en producción: la v1.0.62 de un formulario de un producto del equipo se
 # publicó con "Sin cambios desde el build anterior" cuando la versión instalada era la v1.0.56 y
-# en el medio había una story entera (M-11) — guides/incident-log.md#nota-de-version-falsa-en-prod-2026-08-31. Exactamente el caso que este guion existe para
+# en el medio había una story entera (M-11) — guides/maintaining/incident-log.md#nota-de-version-falsa-en-prod-2026-08-31. Exactamente el caso que este guion existe para
 # evitar. Los dos guiones se despliegan siempre juntos: la misma carpeta es la única ruta que no
 # depende de cómo se los copió.
 NOTAS_SH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/release-notes.sh"
@@ -70,7 +70,7 @@ fi
 DEGRADADAS=0
 
 # 🔴 UN SOLO INGRESO PARA TODOS LOS FORMULARIOS (2026-09-01, medido en un producto del equipo
-# — guides/incident-log.md#case-host-login-rate-limit-2026-09-01).
+# — guides/maintaining/incident-log.md#case-host-login-rate-limit-2026-09-01).
 #
 # Antes: cada formulario abría su propio ingreso al host (una invocación de release-notes.sh por
 # ZIP). Con 4 formularios (Totora) no se nota; con 8 (URUTAU) hubo que meter una pausa de 3s

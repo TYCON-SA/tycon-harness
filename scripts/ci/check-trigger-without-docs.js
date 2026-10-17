@@ -81,13 +81,13 @@ const { aliasLegacyOptions, LegacyOptionsError } = (() => {
 
 /**
  * El juego de archivos de un merge de SÓLO documentación. No es una lista inventada: son las rutas
- * de un pull request del backend de un producto del equipo (2026-09-24, 29 archivos y 0 de código — guides/incident-log.md#merge-de-solo-docs-que-pide-produccion-2026-09-24), más lo que
+ * de un pull request del backend de un producto del equipo (2026-09-24, 29 archivos y 0 de código — guides/maintaining/incident-log.md#merge-de-solo-docs-que-pide-produccion-2026-09-24), más lo que
  * toca un commit de documentación en un sitio o en un repo sin pipeline TYCON. Cada entrada es algo
  * que el arnés o una persona ESCRIBE sin cambiar una línea de lo que se construye.
  *
  * 🔴 Lo que NO está, y por qué: `pruebas-pendientes.json` y las declaraciones de vulnerabilidades no
  * cambian el paquete, pero SÍ el veredicto (borrar una deuda tiene que volver a juzgar —caso del pull
- * request 2984 de los formularios de un producto del equipo, 2026-09-05 — guides/incident-log.md#deuda-de-pruebas-borrada-sin-pagarla-2026-09-05), así que un merge que las toca DEBE construir. Y `azure-pipelines*.yml`
+ * request 2984 de los formularios de un producto del equipo, 2026-09-05 — guides/maintaining/incident-log.md#deuda-de-pruebas-borrada-sin-pagarla-2026-09-05), así que un merge que las toca DEBE construir. Y `azure-pipelines*.yml`
  * tampoco: un cambio al pipeline tiene que disparar una corrida.
  */
 const MERGE_SOLO_DOCS = [

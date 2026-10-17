@@ -83,7 +83,7 @@ skills/theme-factory/themes/claude-warm-paper.md
 skills/synced/
 # índice local de código (codegraph): por máquina, nunca viaja
 # Skills desactivadas: no se cargan en ninguna sesión y no se versionan (story 7.7 del arnés).
-# Cómo volver a activarlas: guides/inactive-skills.md.
+# Cómo volver a activarlas: guides/maintaining/inactive-skills.md.
 skills-inactivas/
 # Skills de terceros (story 8.5 del arnés): lo ajeno no se versiona acá — se referencia. Cada destino lo declara el
 # manifiesto del arnés (scripts/publishing/third-party-skills.json, con su origen, commit y hash de árbol) y lo pone en

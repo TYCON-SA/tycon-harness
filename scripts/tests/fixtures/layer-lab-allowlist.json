@@ -1,5 +1,5 @@
 {
-  "__doc": "La lista blanca de los laboratorios de la capa (story 8.13.1, AC 5, la mitad «ninguna ruta que el interno publica falta en el público»). Tiene la forma de la de verdad y publica todo lo que no está entre las exclusiones fijas del exportador (tasks/, inbox/, .dashboard/, guides/incident-log.md, skills/projects/, los packs/ de otro paquete, …). Cada laboratorio la copia a scripts/publishing/allowlist.json de su interno de juguete: con ella, la máquina sabe qué publica ese commit sin correr el exportador.",
+  "__doc": "La lista blanca de los laboratorios de la capa (story 8.13.1, AC 5, la mitad «ninguna ruta que el interno publica falta en el público»). Tiene la forma de la de verdad y publica todo lo que no está entre las exclusiones fijas del exportador (tasks/, inbox/, .dashboard/, guides/maintaining/incident-log.md, skills/projects/, los packs/ de otro paquete, …). Cada laboratorio la copia a scripts/publishing/allowlist.json de su interno de juguete: con ella, la máquina sabe qué publica ese commit sin correr el exportador.",
   "packages": {
     "core": {
       "arnes": { "in": ["**"], "out": [] },

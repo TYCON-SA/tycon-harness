@@ -27,7 +27,7 @@ const { spawnSync } = require('child_process');
 const RAIZ = path.resolve(__dirname, '..', '..');
 const SCRIPT = path.join(RAIZ, 'scripts', 'publishing', 'spanish-names.js');
 const WORDS = path.join(RAIZ, 'scripts', 'lib', 'spanish-words.json');
-const GUIDE = path.join(RAIZ, 'guides', 'nombres-en-ingles.md');
+const GUIDE = path.join(RAIZ, 'guides', 'maintaining', 'nombres-en-ingles.md');
 const sn = require(SCRIPT);
 
 // palabras de los ejemplos, armadas para que el propio freno no las vea como nombres de esta prueba
@@ -99,7 +99,7 @@ test('T1 SpanishNames_Guide_HasEveryRuleWithExample — la guía trae las cinco 
     assert.ok(glossaryBody.includes(`\`${es}\``) && glossaryBody.includes(`\`${en}\``), `el glosario de la guía no trae ${es} → ${en}`);
   }
   const readme = fs.readFileSync(path.join(RAIZ, 'INDEX.md'), 'utf8');
-  assert.match(readme, /^\|[^\n]*`guides\/nombres-en-ingles\.md`[^\n]*\|$/m, 'el índice (INDEX.md) no tiene la fila de la guía en «Cuándo leer cada guía»');
+  assert.match(readme, /^\|[^\n]*`guides\/maintaining\/nombres-en-ingles\.md`[^\n]*\|$/m, 'el índice (INDEX.md) no tiene la fila de la guía en «Cuándo leer cada guía»');
 });
 
 // ── T2 · la lista rota es «no pude mirar» ────────────────────────────────────────────────────────────────────────

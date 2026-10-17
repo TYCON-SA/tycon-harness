@@ -101,7 +101,7 @@ test('RehearsalPipeline_Yaml_ScenarioParameter_TwoJobs_NoSecrets_TagsFetched', {
   assert.match(src, /fetchTags: true\b/, 'y las etiquetas');
   // agent-skills es su repo de ANTES de la unión, clonado por el trabajo con el token de la corrida: la plantilla compartida,
   // en el repo unido (story 8.18), lo enlaza al propio checkout, y ahí no está la marca del viernes de agent-skills
-  assert.doesNotMatch(src, /template: \/pipelines\/templates\/traer-repos\.yml/, 'el ensayo no toma agent-skills de la plantilla (en el repo unido es un enlace al arnés)');
+  assert.doesNotMatch(src, /template: \/pipelines\/templates\/(?:fetch|traer)-repos\.yml/, 'el ensayo no toma agent-skills de la plantilla (en el repo unido es un enlace al arnés)');
   assert.match(src, /clone --quiet "\$\{ORG\}AgentSkills\/_git\/AgentSkills" "\$SK"/, 'clona el repo viejo de agent-skills');
   assert.match(src, /SK="\$\(Agent\.TempDirectory\)\/agent-skills"/, 'en una carpeta propia, nunca ~/.claude/agent-skills');
   assert.match(src, /AUTHORIZATION: bearer \$SYSTEM_ACCESSTOKEN/, 'con el token de la corrida');
@@ -1606,6 +1606,26 @@ test('NpxPublished_Classify_UpToDateIsGreen_NewVersionOrNoNetworkIsNotMeasured_O
   // correr, y eso es un hallazgo (el AC 35 compara contra ese commit), no un salteo callado
   assert.strictEqual(npx.installedCommitOf({ sources: [{ kind: 'release', commit: installed }] }), installed);
   for (const st of [{ sources: [{ kind: 'release' }] }, { sources: [{ kind: 'release', commit: 'abc' }] }, { sources: [] }, null]) assert.strictEqual(npx.installedCommitOf(st), '', JSON.stringify(st));
+});
+
+test('NpxProbe_NpmProgram_FindsTheNpmOfThisNode_AlsoHomebrewLayout', () => {
+  // el npm de ESTE Node, en las tres formas en que viene: al lado del ejecutable (Windows), en lib/node_modules (el
+  // comprimido de nodejs.org y nvm) y en libexec/lib/node_modules (Homebrew, que deja el ejecutable en Cellar/…/bin)
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'npm-program-'));
+  try {
+    const layouts = { windows: ['node_modules', 'npm', 'bin'], posix: ['..', 'lib', 'node_modules', 'npm', 'bin'], homebrew: ['..', 'libexec', 'lib', 'node_modules', 'npm', 'bin'] };
+    for (const [name, rel] of Object.entries(layouts)) {
+      const bin = path.join(base, name, 'bin');
+      const cli = path.join(bin, ...rel);
+      fs.mkdirSync(cli, { recursive: true });
+      for (const w of ['npm', 'npx']) fs.writeFileSync(path.join(cli, `${w}-cli.js`), '');
+      const execPath = path.join(bin, 'node');
+      for (const w of ['npm', 'npx']) assert.strictEqual(npx.npmProgram(w, { execPath }), path.join(cli, `${w}-cli.js`), `${name}: ${w}`);
+    }
+    // sin npm en ninguna de las tres, no hay: no se toma el de otro Node del PATH
+    fs.mkdirSync(path.join(base, 'bare', 'bin'), { recursive: true });
+    assert.strictEqual(npx.npmProgram('npm', { execPath: path.join(base, 'bare', 'bin', 'node') }), null);
+  } finally { fs.rmSync(base, { recursive: true, force: true }); }
 });
 
 test('NpxPublished_RegistryAnswers404_IsAFinding_NotNotMeasured', { skip: !npx.npmProgram('npm') && `NO MEDIDO — este Node (${process.execPath}) no trae npm a su lado` }, async () => {

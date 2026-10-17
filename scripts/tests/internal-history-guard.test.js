@@ -52,7 +52,7 @@ const GREEN = {
   'product-story': 'una story que cerró sin su prueba, en un producto del equipo',
   'pr-number': 'un pull request, el pedido de cambio (2026-09-05)',
   'work-branch': 'la rama `story/<id>` o `feature/mi-cambio`',
-  'incident-log': 'el registro de incidentes (`guides/incident-log.md`)',
+  'incident-log': 'el registro de incidentes (`guides/maintaining/incident-log.md`)',
   'azure-run': 'la corrida de la validación, con 12511 líneas (corrida 2026-05-23)',
   'private-commit': 'el commit que lo retiró',
   'story-number': 'una story, `story <N.M>`, la story que se implementa',
@@ -807,11 +807,11 @@ test('InternalHistoryGuard_All_Ref_AndAnInternalErrorIsTwo — la cuenta de otro
 });
 
 test('InternalHistoryGuard_TeamPaths_Unit — relativa a su carpeta, el ancla del registro, la carpeta sola, y con separadores de Windows', () => {
-  const env = { has: (p) => ['guides/a.md', 'guides/sub/b.md', 'guides'].includes(p), team: (p) => ['tasks/plan.md', 'guides/sub/privado.md', 'guides/incident-log.md'].includes(p), conventions: ['tasks/todo.md'] };
+  const env = { has: (p) => ['guides/a.md', 'guides/sub/b.md', 'guides'].includes(p), team: (p) => ['tasks/plan.md', 'guides/sub/privado.md', 'guides/maintaining/incident-log.md'].includes(p), conventions: ['tasks/todo.md'] };
   const hits = (text, file) => ih.teamPaths(text, file, env).map((f) => f.value);
   assert.deepStrictEqual(hits('Ver `privado.md` y `b.md`.', 'guides/sub/a.md'), ['guides/sub/privado.md'], 'relativa a la carpeta del archivo');
   assert.deepStrictEqual(hits('Ver `privado.md`.', 'guides\\sub\\a.md'), ['guides/sub/privado.md'], 'con separadores de Windows, lo mismo');
-  assert.deepStrictEqual(hits(j('El caso: `guides/incident-log.md', '#caso-x`.'), 'guides/a.md'), [], 'el ancla del registro es de otra forma');
+  assert.deepStrictEqual(hits(j('El caso: `guides/maintaining/incident-log.md', '#caso-x`.'), 'guides/a.md'), [], 'el ancla del registro es de otra forma');
   assert.deepStrictEqual(hits('Tu `tasks/todo.md` y el `tasks/plan.md:12`.', 'guides/a.md'), ['tasks/plan.md'], 'la convención del lector pasa; `:N` no cambia la ruta');
   const pub = { has: () => false, team: null, roots: ['inbox'], conventions: [] };
   assert.deepStrictEqual(ih.teamPaths('La carpeta `inbox/`, la palabra `inbox` y `inbox/x.md`.', 'guides/a.md', pub).map((f) => f.value), ['inbox', 'inbox/x.md'], 'en el público, la carpeta sola cuenta escrita con su barra');
@@ -865,7 +865,7 @@ test('InternalHistoryGuard_Keys_WhatIdentifiesEachForm — lo neto cuenta por lo
   const other = (form, a, b) => assert.notStrictEqual(key(form, a), key(form, b), `${form}: «${a}» y «${b}» son distintas`);
   same('owner-decision', j('(decisión del dueño, ', '2026-10-06)'), j('2026-10-06', ': decisión del dueño'));
   other('owner-decision', j('(decisión del dueño, ', '2026-10-06)'), j('(decisión del dev, ', '2026-10-06)'));
-  same('incident-log', j('[caso](incident-log.md', '#caso-x)'), j('`guides/incident-log.md', '#caso-x`'));
+  same('incident-log', j('[caso](incident-log.md', '#caso-x)'), j('`guides/maintaining/incident-log.md', '#caso-x`'));
   other('incident-log', j('incident-log.md', '#caso-x'), j('incident-log.md', '#caso-y'));
   same('private-commit', j('commit ', '`ad4f498`'), j('Merge ', 'ad4f498'));
   same('azure-run', j('corrida ', '11738'), j('builds #', '11738'));
@@ -1288,8 +1288,12 @@ test('InternalHistoryGuard_GuardRecord_DecisionTable_Unit — la decisión de un
   }
 });
 
-test('InternalHistoryGuard_ValidationStep_OneRun_NoticesWithFixedTextAndTheCount — en la validación corre una vez y avisando se ve', () => {
-  const yml = fs.readFileSync(path.join(RAIZ, 'pipelines/azure-pipelines-pr.yml'), 'utf8').split('\n');
+// La validación de los pedidos es del privado (story 8.41, tanda F2): la copia pública no la trae, y ahí no hay paso que medir.
+const PR_YAML = path.join(RAIZ, 'pipelines/azure-pipelines-maintainers-pr.yml');
+const NO_PR_YAML = !fs.existsSync(PR_YAML) && 'NO MEDIDO — no está pipelines/azure-pipelines-maintainers-pr.yml (la copia pública no trae los pipelines del equipo)';
+
+test('InternalHistoryGuard_ValidationStep_OneRun_NoticesWithFixedTextAndTheCount — en la validación corre una vez y avisando se ve', { skip: NO_PR_YAML }, () => {
+  const yml = fs.readFileSync(path.join(RAIZ, 'pipelines/azure-pipelines-maintainers-pr.yml'), 'utf8').split('\n');
   const runs = yml.filter((l) => /node scripts\/publishing\/internal-history\.js/.test(l));
   assert.strictEqual(runs.length, 1, 'una sola corrida para las dos fuentes');
   assert.match(runs[0], /--range "\$\(baseDelCambio\)\.\.\.HEAD"/, 'sobre el diff del pedido');
@@ -1310,9 +1314,9 @@ test('InternalHistoryGuard_ValidationStep_OneRun_NoticesWithFixedTextAndTheCount
   assert.match(step, /\[ -z "\$IH_LINE" \]/, 'sin línea de cuentas no es «limpio»');
 });
 
-test('InternalHistoryGuard_ValidationStep_ShellLogic_OnEachSummaryLine — lo que el paso hace con cada línea de cuentas', { skip: process.platform === 'win32' && 'el paso es bash' }, () => {
+test('InternalHistoryGuard_ValidationStep_ShellLogic_OnEachSummaryLine — lo que el paso hace con cada línea de cuentas', { skip: NO_PR_YAML || (process.platform === 'win32' && 'el paso es bash') }, () => {
   // el paso de verdad, sacado del YAML y corrido con un control de mentira que imprime la línea que se le pide
-  const yml = fs.readFileSync(path.join(RAIZ, 'pipelines/azure-pipelines-pr.yml'), 'utf8').split('\n');
+  const yml = fs.readFileSync(path.join(RAIZ, 'pipelines/azure-pipelines-maintainers-pr.yml'), 'utf8').split('\n');
   const from = yml.findIndex((l) => /IH_OUT="\$\(node scripts\/publishing\/internal-history\.js/.test(l));
   const to = yml.findIndex((l, i) => i > from && /^\s*fi\s*$/.test(l) && /^\s*$/.test(yml[i + 1] || ''));
   const body = yml.slice(from, to + 1).map((l) => l.replace(/^ {10}/, '')).join('\n')
@@ -1473,7 +1477,7 @@ const isGuideOrCover = (file) => /^guides\//.test(file) || /^(README|INSTALL|sto
   || /^(getting-started|\.github)\//.test(file) || /^scripts\/publishing\/public-files\//.test(file);
 const MEASUREMENT = path.join(RAIZ, 'tasks', 'measurement-8.26-tanda-g');
 // El registro de incidentes de verdad vive sólo en el repo del equipo; la copia trae una página en su lugar.
-const TEAM_LOG = fs.existsSync(path.join(RAIZ, 'scripts', 'publishing', 'public-repos.json')) ? path.join(RAIZ, 'guides', 'incident-log.md') : null;
+const TEAM_LOG = fs.existsSync(path.join(RAIZ, 'scripts', 'publishing', 'public-repos.json')) ? path.join(RAIZ, 'guides', 'maintaining', 'incident-log.md') : null;
 
 test('PublishedGuidesAndCovers_NoInternalHistory (T26) — ninguna guía ni portada que se publica trae una forma de historia interna', () => {
   // la misma cuenta que `--all` (la línea de comandos la cuida la prueba de arriba), sobre el commit de HEAD
@@ -1594,7 +1598,7 @@ test('PublishedGuidesAndCovers_MeasurementScripts (T26) — los dos guiones de l
 });
 
 test('PublishedGuidesAndCovers_PublicLogPage (T26) — la página pública del registro no dice que las guías enlazan a ella', () => {
-  const page = TEAM_LOG ? path.join(RAIZ, 'scripts', 'publishing', 'public-files', 'guides', 'incident-log.md') : path.join(RAIZ, 'guides', 'incident-log.md');
+  const page = TEAM_LOG ? path.join(RAIZ, 'scripts', 'publishing', 'public-files', 'guides', 'maintaining', 'incident-log.md') : path.join(RAIZ, 'guides', 'maintaining', 'incident-log.md');
   const text = fs.readFileSync(page, 'utf8');
   assert.ok(!/links here|enlazan acá|Every guide still cites|Las guías los siguen citando/i.test(text), 'las guías ya no citan el caso ni enlazan a esta página');
   assert.match(text, /repo(sitorio)? de mantenimiento|maintenance repository/i, 'dice dónde viven los casos');
@@ -1648,8 +1652,16 @@ test('SkillsReviewersAndBlocks_CountBeforeAfter (T58) — la cuenta de antes y d
   // por archivo, al menos tantos marcadores como renglones de la lista: borrar uno de sus ejemplos se ve
   const rows = {};
   for (const rel of withMarker) rows[rel] = (rows[rel] || 0) + 1;
+  // un revisor o una skill que la story 8.41 mudó a su paquete se busca ahí (packs/<p>/agents/, packs/<p>/skills/)
+  const packsDir = path.join(RAIZ, 'packs');
+  const where = (rel) => {
+    if (fs.existsSync(path.join(RAIZ, rel))) return path.join(RAIZ, rel);
+    const packs = fs.existsSync(packsDir) ? fs.readdirSync(packsDir).filter((p) => fs.existsSync(path.join(packsDir, p, 'pack.json'))) : [];
+    const found = packs.map((p) => path.join(packsDir, p, rel)).find((f) => fs.existsSync(f));
+    return found || path.join(RAIZ, rel);
+  };
   for (const [rel, n] of Object.entries(rows)) {
-    const markers = (fs.readFileSync(path.join(RAIZ, rel), 'utf8').match(/<N\.M>|<otra N\.M>|<N-M>|<sha>|<id>|<rama>|<otra>/g) || []).length;
+    const markers = (fs.readFileSync(where(rel), 'utf8').match(/<N\.M>|<otra N\.M>|<N-M>|<sha>|<id>|<rama>|<otra>/g) || []).length;
     assert.ok(markers >= n, `${rel}: ${n} ejemplo(s) de salida en la lista y ${markers} marcador(es) en el archivo`);
   }
   // el skill del pipeline se midió con una corrida sobre una story de juguete: el papel dice qué hizo de cada lado

@@ -7,7 +7,7 @@
  * `reconciles:`/`supersedes_in:` en frontmatter" vivía solo en la guía —
  * invisible en el momento del Write. Caso disparador: el UX spec V7 de un producto del equipo
  * se escribió ignorando el catálogo de 22 pantallas aprobado por el cliente;
- * el drift fue invisible hasta 3 stories después (Story 13.0 de reconciliación) — guides/incident-log.md#case-ux-spec-ignored-approved-catalog-2026-05-15.
+ * el drift fue invisible hasta 3 stories después (Story 13.0 de reconciliación) — guides/maintaining/incident-log.md#case-ux-spec-ignored-approved-catalog-2026-05-15.
  *
  * Handler ADVISORY del dispatcher pre-edit (nunca bloquea — el overlap de
  * dominio es juicio, no regex): si el Write apunta a specs/planning-artifacts/
