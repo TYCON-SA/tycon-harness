@@ -967,3 +967,47 @@ test('2.27-A7 VistaLocal_SelloSinMaquinas_IgualQueAntes @story-2.27 @ac-23', () 
   assert.match(runs.cabecera(M), /<b>Alcance:<\/b> <\/span>/);
   assert.match(runs.cabecera(M, { sitio: { rol: 'maintainer', version: '1' } }), /<b>Alcance:<\/b> ninguna máquina<\/span>/);
 });
+
+// Navegar no vuelve a armar nada: la página y la lista de cada persona se arman una vez
+// por modelo y por datos de fondo; un clic más sólo las vuelve a mandar. Cambia la persona, el modelo o los datos de
+// fondo, y se arma de nuevo.
+// Sin esto, cada visita a Corridas filtra y arma de nuevo 1,7 MB de página y 1,8 MB de lista.
+test('Navegar_LoArmadoPorPersonaSeGuarda_HastaQueCambianLosDatos', async () => {
+  const real = access.filtrarCorridas;
+  let n = 0;
+  access.filtrarCorridas = (...a) => { n += 1; return real(...a); };
+  try {
+    const fuentes = fuentesCon({ espejo: mundo() });
+    await conPestana({ fuentes }, async ({ h, entrar }) => {
+      const lead = await entrar(LEAD); const dev = await entrar(DEV_A);
+      const a = await h.pedir('/api/corridas', { cookie: lead });
+      const p = await h.pedir('/corridas', { cookie: lead });
+      assert.strictEqual(n, 1, 'la lista y la página de la misma persona salen del mismo filtrado');
+      const b = await h.pedir('/api/corridas', { cookie: lead });
+      const q = await h.pedir('/corridas', { cookie: lead });
+      assert.strictEqual(n, 1, 'un clic más no filtra de nuevo');
+      assert.strictEqual(b.texto, a.texto);
+      assert.strictEqual(q.texto, p.texto);
+      // lo guardado para el mantenedor nunca le llega a otra persona: el dev ve sólo lo suyo, en la lista y en la página
+      const ld = (await h.pedir('/api/corridas', { cookie: dev })).json;
+      assert.strictEqual(n, 2, 'otra persona, su propio filtrado');
+      assert.deepStrictEqual([...new Set(ld.corridas.map((c) => c.maquina))], ['maq-a'], 'el dev, sólo sus corridas');
+      assert.ok(a.json.corridas.some((c) => c.maquina !== 'maq-a'), 'el mantenedor ve más que eso');
+      const pd = (await h.pedir('/corridas', { cookie: dev })).texto;
+      assert.notStrictEqual(pd, p.texto, 'la página del dev no es la del mantenedor');
+      assert.match(sinTags(pd), /Alcance: maq-a \d/);
+      assert.strictEqual(n, 2);
+      // y lo del dev tampoco vuelve al mantenedor
+      assert.strictEqual((await h.pedir('/api/corridas', { cookie: lead })).texto, a.texto);
+      assert.strictEqual(n, 2);
+      // los datos de fondo se refrescan: la configuración llega como un objeto nuevo y lo guardado ya no vale
+      fuentes.st.config = { ...fuentes.st.config };
+      await h.pedir('/api/corridas', { cookie: lead });
+      assert.strictEqual(n, 3, 'datos de fondo nuevos, filtrado nuevo');
+      // lo informado por las máquinas cambia por partes: también cuenta
+      fuentes.st.personas.informados = { ...fuentes.st.personas.informados };
+      await h.pedir('/corridas', { cookie: lead });
+      assert.strictEqual(n, 4);
+    });
+  } finally { access.filtrarCorridas = real; }
+});

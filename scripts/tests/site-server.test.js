@@ -346,3 +346,39 @@ test('T29 2.28-Healthz_FrenadoSinUltimoBueno', { skip: !hayHttpBackend() && !pro
     } finally { if (h) await h.cerrar(); fuentes.detener(); await git.cerrar(); await emisor.cerrar(); fs.rmSync(raiz, { recursive: true, force: true }); }
   }
 });
+
+// Lo que viaja en cada clic: comprimido para quien lo acepta, y los estilos y el código
+// de pantalla guardados en el navegador, que sólo pregunta si cambiaron. Las páginas con datos siguen sin guardarse.
+// Sin esto, todo viaja sin comprimir y sin guardarse: Corridas baja unos 3,5 MB por visita.
+test('T44 Respuestas_ComprimidasYEstaticosConEtiqueta', async () => {
+  const zlib = require('zlib');
+  const http = require('http');
+  const crudo = (base, ruta, headers = {}) => new Promise((resolve, reject) => {
+    http.get(new URL(ruta, base), { headers }, (res) => { const partes = []; res.on('data', (c) => partes.push(c)); res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, cuerpo: Buffer.concat(partes) })); }).on('error', reject);
+  });
+  const h = await H.arrancarSitio({ env: H.envBase(), fuentes: H.fuentesFijas() });
+  try {
+    const plano = await crudo(h.base, '/static/site.css');
+    assert.strictEqual(plano.status, 200);
+    assert.strictEqual(plano.headers['content-encoding'], undefined, 'sin pedir compresión, va plano');
+    const comp = await crudo(h.base, '/static/site.css', { 'accept-encoding': 'gzip, deflate, br' });
+    assert.strictEqual(comp.headers['content-encoding'], 'gzip');
+    assert.match(comp.headers.vary || '', /Accept-Encoding/);
+    assert.ok(comp.cuerpo.length < plano.cuerpo.length / 2, `comprimido: ${comp.cuerpo.length} de ${plano.cuerpo.length} bytes`);
+    assert.strictEqual(zlib.gunzipSync(comp.cuerpo).toString('utf8'), plano.cuerpo.toString('utf8'), 'y es lo mismo');
+    // el navegador lo guarda y pregunta: sin cambios, 304 sin cuerpo
+    assert.strictEqual(plano.headers['cache-control'], 'no-cache');
+    const etiqueta = plano.headers.etag;
+    assert.match(etiqueta || '', /^"[A-Za-z0-9_-]{27}"$/);
+    const otra = await crudo(h.base, '/static/site.css', { 'if-none-match': etiqueta });
+    assert.deepStrictEqual([otra.status, otra.cuerpo.length], [304, 0]);
+    assert.strictEqual((await crudo(h.base, '/static/site.css', { 'if-none-match': '"otra"' })).status, 200, 'otra etiqueta: el archivo entero');
+    // lo chico no se comprime, y lo que no es estático sigue sin guardarse
+    const vida = await crudo(h.base, '/livez', { 'accept-encoding': 'gzip' });
+    assert.strictEqual(vida.headers['content-encoding'], undefined);
+    assert.strictEqual(vida.headers['cache-control'], 'no-store');
+    const pagina = await crudo(h.base, '/', { 'accept-encoding': 'gzip' });
+    assert.strictEqual(pagina.headers['cache-control'], 'no-store', 'una página con datos no se guarda en el navegador');
+    assert.strictEqual(pagina.headers.etag, undefined);
+  } finally { await h.cerrar(); }
+});

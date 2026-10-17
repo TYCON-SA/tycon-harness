@@ -112,10 +112,14 @@ descubrimiento), `microsoft`, `google` o `github`. Cada uno se limita a la organ
 
 ### Las sondas
 
-Si tu plataforma tiene sondas: la de **vida contra `/livez`**, nunca contra `/healthz`, y la de **lista contra
-`/readyz`**, con un margen que cubra la primera lectura de las fuentes. `/healthz` da 503 con el sitio frenado por una
-configuración rota: una sonda de vida contra él reiniciaría el contenedor en un lazo, y reiniciar no arregla la
-configuración.
+Si tu plataforma tiene sondas, **las dos van contra `/livez`**, con un plazo de respuesta de unos 5 segundos.
+
+- **La de vida, nunca contra `/healthz`.** `/healthz` da 503 con el sitio frenado por una configuración rota. Una sonda
+  de vida contra él reiniciaría el contenedor en un lazo, y reiniciar no arregla la configuración.
+- **La de lista, tampoco contra `/readyz`.** La plataforma no manda tráfico hasta que esa sonda pasa, y `/readyz`
+  espera todas las fuentes, el buzón entero incluido. El sitio ya sirve cada pestaña apenas la puede armar: la que
+  todavía espera dice «cargando» y se recarga sola, y la frenada explica por qué. `/readyz` queda para quien quiera saber
+  si terminó de cargar todo.
 
 ### Los secretos, con el menor permiso
 

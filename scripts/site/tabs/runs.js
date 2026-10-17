@@ -293,6 +293,8 @@ function crearRutas({ cfg, fuentes, version = null, skillsDir = null, armar, dem
   const runsEsc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 
   /** Lo que puede ver quien pide, o la respuesta que va en su lugar (`{ falla }`). */
+  // lo armado para cada persona, por modelo de la vista: se va solo cuando el armado deja un modelo nuevo
+  const guardados = new WeakMap();
   function loSuyo(ctx, esApi) {
     vista.asegurar();
     const e = vista.estado();
@@ -319,11 +321,25 @@ function crearRutas({ cfg, fuentes, version = null, skillsDir = null, armar, dem
       }
       return { falla: esApi ? texto(503, '', { 'Retry-After': '10' }) : { status: 503, tipo: 'text/html; charset=utf-8', cuerpo: views.paginaCargando(), extra: { 'Retry-After': '10' } } };
     }
-    const reglas = access.crearReglas({ config: fuentes.config(), modelo: fuentes.modelo(), personas: typeof fuentes.personas === 'function' ? fuentes.personas() : null });
-    const vis = access.filtrarCorridas(M, ctx.quien, reglas);
-    // la última bajada no terminó entera: se sirve el último armado entero, y la respuesta dice que puede faltar alguna (AC 19)
-    if (vis && !vista.bajada().completo) vis.buzon = { ...(vis.buzon || { estado: 'leido' }), parcial: true, ...(ctx.quien.rol === 'maintainer' ? { incompleto: true } : {}) };
-    return { vis, error: e.error };
+    // lo de cada persona se filtra una vez por armado y por datos de fondo, no en cada clic: la configuración y el modelo
+    // se reemplazan enteros al refrescar, y de las personas cambian sus dos partes
+    const config = fuentes.config(); const modeloFondo = fuentes.modelo();
+    const personas = typeof fuentes.personas === 'function' ? fuentes.personas() : null;
+    const completo = Boolean(vista.bajada().completo);
+    const deps = [config, modeloFondo, personas, personas && personas.informados, personas && personas.repos, completo];
+    let porPersona = guardados.get(M);
+    if (!porPersona) { porPersona = new Map(); guardados.set(M, porPersona); }
+    const clave = `${ctx.quien.rol}\0${ctx.quien.email || ''}`;
+    let g = porPersona.get(clave);
+    if (!g || g.deps.some((d, i) => d !== deps[i])) {
+      const reglas = access.crearReglas({ config, modelo: modeloFondo, personas });
+      const vis = access.filtrarCorridas(M, ctx.quien, reglas);
+      // la última bajada no terminó entera: se sirve el último armado entero, y la respuesta dice que puede faltar alguna (AC 19)
+      if (vis && !completo) vis.buzon = { ...(vis.buzon || { estado: 'leido' }), parcial: true, ...(ctx.quien.rol === 'maintainer' ? { incompleto: true } : {}) };
+      g = { deps, vis, salidas: {} };
+      porPersona.set(clave, g);
+    }
+    return { vis: g.vis, error: e.error, salidas: g.salidas };
   }
 
   // sin buzón no hay corridas de nadie: se dice «no medido» (no es el 404 de «no es tuya», que no puede contar nada)
@@ -337,10 +353,14 @@ function crearRutas({ cfg, fuentes, version = null, skillsDir = null, armar, dem
         if (r.sinBuzon) return pagina(ctx, gris(FRASE_SIN_BUZON));
         if (r.falla) return r.falla;
         const V = r.vis;
+        // el cuerpo de la página se arma una vez por persona y por modelo; el marco (pestañas, bandas) va en cada pedido
+        const llave = `pagina\0${r.error ? `${r.error.codigo}\0${r.error.desde}` : ''}`;
+        if (r.salidas[llave]) return pagina(ctx, r.salidas[llave]);
         const opts = { sitio: { rol: ctx.quien.rol, version } };
         const rearmado = r.error ? `<div class="banda gris"><b>No se pudo rearmar la vista de corridas desde ${runsEsc(hora(r.error.desde))} UTC (código ${runsEsc(r.error.codigo)}).</b> Se muestra la armada el ${runsEsc(hora(V.generado))} UTC, entera.</div>` : '';
         const cuerpo = `<link rel="stylesheet" href="/corridas/vista.css"><div class="corridas">${rearmado}${runs.cabecera(V, opts)}\n${runs.ejecutiva(V)}\n${runs.tabla(V)}\n${runs.pie(V, opts)}</div>`
           + `<div id="fuente-corridas" data-api="/api/corridas" data-generado="${runsEsc(V.generado)}" hidden></div><script src="/corridas/cliente.js"></script>`;
+        r.salidas[llave] = cuerpo;
         return pagina(ctx, cuerpo);
       },
     },
@@ -349,7 +369,8 @@ function crearRutas({ cfg, fuentes, version = null, skillsDir = null, armar, dem
         const r = loSuyo(ctx, true);
         if (r.sinBuzon) return json(200, { estado: 'no_medido', motivo: FRASE_SIN_BUZON, corridas: [] });
         if (r.falla) return r.falla;
-        return json(200, { ...r.vis, corridas: r.vis.corridas.map(runs.paraLista) });
+        if (!r.salidas.lista) r.salidas.lista = JSON.stringify({ ...r.vis, corridas: r.vis.corridas.map(runs.paraLista) });
+        return { status: 200, tipo: 'application/json; charset=utf-8', cuerpo: r.salidas.lista };
       },
     },
     {

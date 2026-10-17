@@ -44,6 +44,8 @@ const fs = require('fs');
 const http = require('http');
 const os = require('os');
 const path = require('path');
+const crypto = require('crypto');
+const zlib = require('zlib');
 const session = require('./session.js');
 const oidc = require('./oidc.js');
 const access = require('./access.js');
@@ -212,6 +214,17 @@ function validarRutas(rutas) {
 // enlaces y los envíos aunque no corra ningún script
 const CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
 
+// menos que esto no vale lo que cuesta comprimirlo
+const MIN_COMPRIMIR = 1024;
+// la etiqueta de un cuerpo que no cambia mientras el proceso vive: se calcula una vez por texto
+const etiquetas = new Map();
+function etiquetaDe(cuerpo) {
+  if (typeof cuerpo === 'string' && etiquetas.has(cuerpo)) return etiquetas.get(cuerpo);
+  const e = `"${crypto.createHash('sha256').update(cuerpo).digest('base64url').slice(0, 27)}"`;
+  if (typeof cuerpo === 'string' && etiquetas.size < 32) etiquetas.set(cuerpo, e);
+  return e;
+}
+
 function leerEstatico() {
   const { CSS_BASE, CSS_CHIPS } = require('../nightly/dashboard/common.js');
   const dir = path.join(__dirname, 'static');
@@ -253,8 +266,24 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
   function enviar(res, { status, tipo = 'text/html; charset=utf-8', cuerpo = '', extra = {} }) {
     cabeceras(res, tipo);
     for (const [k, val] of Object.entries(extra)) res.setHeader(k, val);
+    const pedido = res.req || {};
+    const pide = (k) => String((pedido.headers && pedido.headers[k]) || '');
+    // los estilos y el código de pantalla no traen nada de nadie: el navegador los guarda y pregunta si cambiaron (304)
+    if (status === 200 && /^text\/(css|javascript)/.test(tipo) && !extra['Cache-Control']) {
+      const etiqueta = etiquetaDe(cuerpo);
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('ETag', etiqueta);
+      if (pide('if-none-match').split(',').map((x) => x.trim()).includes(etiqueta)) { res.statusCode = 304; return res.end(); }
+    }
     res.statusCode = status;
-    res.end(cuerpo);
+    // comprimido, para quien lo acepta: la página de Corridas y su lista pasan de unos 3,5 MB a unos 0,3 MB por visita
+    let datos = cuerpo;
+    if (Buffer.byteLength(datos) >= MIN_COMPRIMIR && /\bgzip\b/.test(pide('accept-encoding')) && !res.getHeader('Content-Encoding')) {
+      datos = zlib.gzipSync(datos, { level: 5 });
+      res.setHeader('Content-Encoding', 'gzip');
+    }
+    res.setHeader('Vary', 'Accept-Encoding');
+    res.end(datos);
   }
   const json = (res, status, obj, extra) => enviar(res, { status, tipo: 'application/json; charset=utf-8', cuerpo: JSON.stringify(obj), extra });
 

@@ -2230,12 +2230,22 @@ const CLIENTE = String.raw`(function () {
   // story 2.27: el detalle llega de la FUENTE (enseguida si está embebido; del sitio, al pedirlo). El turno hace que,
   // con dos clics seguidos, sólo se abra el último: nunca dos detalles abiertos.
   var turno = 0;
+  var ESPERA_LARGA_MS = 3000;
   function cerrarAbierta() { var abierta = cuerpo.querySelector('.fila-det'); if (abierta) { abierta.previousElementSibling.classList.remove('abierta'); abierta.remove(); } }
   function abrir(tr, alAbrir) {
     var sig = tr.nextElementSibling;
     if (sig && sig.classList.contains('fila-det')) { sig.remove(); tr.classList.remove('abierta'); turno += 1; return; }
     var i = enC(tr); if (i === null) return;
     var mio = ++turno;
+    // del sitio, el detalle de una corrida que nunca se abrió se pide en ese momento: la fila lo dice enseguida, y si la
+    // espera pasa de unos segundos, lo dice también; cuando llega el detalle, ocupa su lugar
+    if (FUENTE.forma === 'red' && !FUENTE.cargado(i)) {
+      cerrarAbierta();
+      var espera = document.createElement('tr'); espera.className = 'fila-det';
+      espera.innerHTML = '<td colspan="' + tr.children.length + '"><span class="nd" role="status">bajando el detalle de esta corrida…</span></td>';
+      tr.after(espera); tr.classList.add('abierta');
+      setTimeout(function () { var n = espera.querySelector('.nd'); if (mio === turno && espera.parentNode && n) n.textContent = 'sigue bajando el detalle de esta corrida: el sitio lo está preparando y puede tardar unos segundos más…'; }, ESPERA_LARGA_MS);
+    }
     FUENTE.detalle(i, function (c) {
       if (mio !== turno) return;
       cerrarAbierta();
