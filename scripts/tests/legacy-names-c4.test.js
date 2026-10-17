@@ -173,7 +173,7 @@ function labRepo() {
 function runPreCommit(harness) {
   const log = path.join(tmp('log'), 'ran.txt');
   fs.writeFileSync(log, '');
-  // con los dos repos unidos (story 8.18) el guion de agent-skills es `pre-commit-skills`: lo elige el ayudante
+  // los controles de las skills viven en `pre-commit-checks`: lo elige el ayudante
   const r = spawnSync('bash', [preCommitHook('skills', SKILLS)], {
     cwd: labRepo(), encoding: 'utf8', env: cleanEnv({ TYCON_GUIDES_DIR: harness, C4_LOG: log }),
   });
@@ -184,7 +184,9 @@ test('T43c · BatchC4_FoldersPathsNotValues — el pre-commit de agent-skills co
   const p = publishing();
   const fresh = runPreCommit(labHarness([p.new]));
   assert.strictEqual(fresh.status, 0, `arnés al día: ${fresh.stderr}`);
-  assert.doesNotMatch(fresh.stderr, /no encontré/, 'arnés al día: el pre-commit no encontró un guion');
+  // (la parte de las skills dice «pre-commit AgentSkills: no encontré …»; la del arnés, que corre en el mismo archivo, avisa
+  // aparte por el lint de stories que el repo de laboratorio no trae)
+  assert.doesNotMatch(fresh.stderr, /AgentSkills: no encontré/, 'arnés al día: el pre-commit no encontró un guion');
   assert.deepStrictEqual(fresh.ran, PRE_COMMIT_SCRIPTS.map((s) => `${p.new}/${s}`), 'arnés al día: corre los tres por la carpeta nueva');
 
   // con las dos carpetas (la vieja es la de los reemplazos): la nueva primero, nunca las dos
@@ -193,7 +195,7 @@ test('T43c · BatchC4_FoldersPathsNotValues — el pre-commit de agent-skills co
 
   const stale = runPreCommit(labHarness([p.old]));
   assert.strictEqual(stale.status, 0, `arnés atrasado: ${stale.stderr}`);
-  assert.doesNotMatch(stale.stderr, /no encontré/, 'arnés atrasado: el pre-commit no encontró un guion');
+  assert.doesNotMatch(stale.stderr, /AgentSkills: no encontré/, 'arnés atrasado: el pre-commit no encontró un guion');
   assert.deepStrictEqual(stale.ran, PRE_COMMIT_SCRIPTS.map((s) => `${p.old}/${s}`), 'arnés atrasado: corre los tres por la carpeta vieja');
 });
 

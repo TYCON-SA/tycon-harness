@@ -19,8 +19,8 @@
 
 set -uo pipefail
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-# Con el arnés y agent-skills en un repo (story 8.18), `.githooks/pre-commit` es el despachador y el guion del arnés
-# es `pre-commit-harness`: cuál es lo elige scripts/tests/lib/pre-commit-hook.js, como en githook-livefire.test.sh.
+# `.githooks/pre-commit` sólo llama a `.githooks/pre-commit-checks`, que trae los controles: cuál copiar lo elige
+# scripts/tests/lib/pre-commit-hook.js, como en githook-livefire.test.sh.
 # Si el ayudante falla, lo que diga se ve (no se tapa su salida de error) y queda el nombre de siempre.
 HOOK="$(node "$RAIZ/scripts/tests/lib/pre-commit-hook.js" harness "$RAIZ")"
 [ -n "$HOOK" ] || HOOK="$RAIZ/.githooks/pre-commit"

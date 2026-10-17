@@ -18,8 +18,8 @@ set -uo pipefail
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 GLOBAL="$RAIZ/scripts/hooks/git-pre-commit-global.sh"
 POST="$RAIZ/scripts/hooks/git-post-commit-global.sh"
-# En la copia pública de un solo repo `.githooks/pre-commit` es un despachador generado y el guion del arnés es
-# `pre-commit-harness`: cuál es lo elige scripts/tests/lib/pre-commit-hook.js, la misma función para las tres suites
+# `.githooks/pre-commit` sólo llama a `.githooks/pre-commit-checks`, que trae los controles: cuál copiar lo elige
+# scripts/tests/lib/pre-commit-hook.js, la misma función para las tres suites
 # que copian el pre-commit a un repo de juguete. Si no contesta queda el nombre de siempre y el chequeo de más abajo
 # («no encontré …») decide.
 HOOK_REPO="$(node "$RAIZ/scripts/tests/lib/pre-commit-hook.js" harness "$RAIZ")"   # si el ayudante falla, su error se ve
@@ -179,7 +179,7 @@ AS_REPO="" AS_HOOK=""
 if ! AS_REPO="$(node -e 'try { console.log(require(process.argv[1]).resolveSkillsDirs(process.env.TYCON_SKILLS_DIR || "").repo); } catch (e) { console.error(String((e && e.message) || e).split("\n")[0]); process.exit(1); }' "$RAIZ/scripts/lib/skills-dir.js" 2> "$SK_ERR")"; then
   mal "C-06/C-07/C-08 no pude resolver la carpeta de skills: $(head -n 1 "$SK_ERR")"; AS_REPO=""
 else
-  # el guion de agent-skills según el layout (en la copia de un solo repo es `pre-commit-skills`, no el despachador)
+  # el guion de los controles de las skills según el layout (en el arnés, `pre-commit-checks`, no el que lo llama)
   AS_HOOK="$(node "$RAIZ/scripts/tests/lib/pre-commit-hook.js" skills "${AS_REPO}")"
   [ -n "$AS_HOOK" ] || AS_HOOK="${AS_REPO}/.githooks/pre-commit"
 fi
@@ -1023,24 +1023,21 @@ else
 fi
 rm -rf "$T"
 
-# ── C-31..C-33 · el despachador del repo unido, disparado por git de verdad (story 8.18, T5) ────────────────────────
-# El arnés y agent-skills son UN repo: `.githooks/pre-commit` es el despachador y corre SIEMPRE las dos partes
-# (`pre-commit-harness` y `pre-commit-skills`), cada una en su proceso. El laboratorio tiene esa forma: el despachador y
-# las dos partes de ESTE repo, el arnés de `montar` y —para que la parte de skills tenga con qué frenar— el control de
+# ── C-31..C-33 · el control único del arnés, disparado por git de verdad (story 8.18, T5; story 8.41, T25) ─────────
+# `.githooks/pre-commit` llama a `.githooks/pre-commit-checks`, que corre SIEMPRE sus dos partes (la del arnés y la de
+# las skills), cada una en su proceso. El laboratorio tiene esa forma: los dos archivos de ESTE repo, el arnés de `montar` y —para que la parte de skills tenga con qué frenar— el control de
 # skills de terceros con un manifiesto sintético (una sola familia propia). Se mide el efecto: un commit sano entra, y
 # un freno de CUALQUIERA de las dos partes hace que el commit no se cree, con el mensaje de esa parte. Que la otra
 # parte corrió igual se ve en su salida: la salida temprana de una no saltea a la otra.
 DISPATCHER="$RAIZ/.githooks/pre-commit"
-PART_HARNESS="$RAIZ/.githooks/pre-commit-harness"
-PART_SKILLS="$RAIZ/.githooks/pre-commit-skills"
-if [ -f "$PART_HARNESS" ] && [ -f "$PART_SKILLS" ] && grep -q 'pre-commit-skills' "$DISPATCHER" 2>/dev/null; then
-  mount_union() {   # $1=T — montar + la forma del repo unido
+CHECKS="$RAIZ/.githooks/pre-commit-checks"
+if [ -f "$CHECKS" ] && grep -q 'pre-commit-checks' "$DISPATCHER" 2>/dev/null; then
+  mount_union() {   # $1=T — montar + la forma del arnés: el pre-commit que llama y el control único
     local T="$1"
     montar "$T"
     cp "$DISPATCHER" "$T/repo/.githooks/pre-commit"
-    cp "$PART_HARNESS" "$T/repo/.githooks/pre-commit-harness"
-    cp "$PART_SKILLS" "$T/repo/.githooks/pre-commit-skills"
-    chmod +x "$T/repo/.githooks/pre-commit" "$T/repo/.githooks/pre-commit-harness" "$T/repo/.githooks/pre-commit-skills"
+    cp "$CHECKS" "$T/repo/.githooks/pre-commit-checks"
+    chmod +x "$T/repo/.githooks/pre-commit" "$T/repo/.githooks/pre-commit-checks"
     mkdir -p "$T/repo/scripts/publishing" "$T/repo/skills/tycon-x"
     copy_publishing "$T" third-party-coverage.js
     printf '%s\n' '{"retirement":"done","own":[{"glob":"skills/tycon-*","why":"prueba"}],"derived":[],"origins":{},"third_party":[]}' > "$T/repo/scripts/publishing/third-party-skills.json"
@@ -1110,7 +1107,7 @@ if [ -f "$PART_HARNESS" ] && [ -f "$PART_SKILLS" ] && grep -q 'pre-commit-skills
   fi
   rm -rf "$T"
 else
-  mal "C-31..C-34 T5 este repo no tiene la forma del repo unido: falta .githooks/pre-commit-harness o .githooks/pre-commit-skills, o .githooks/pre-commit no es el despachador"
+  mal "C-31..C-34 T5 este repo no tiene la forma del arnés: falta .githooks/pre-commit-checks, o .githooks/pre-commit no lo llama"
 fi
 
 fi   # ── fin de los bloques: lo que sigue corre en todas las partes ──

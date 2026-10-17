@@ -51,7 +51,6 @@ const { sinGitDelPadre } = require('../lib/clean-git-env.js');
 
 const OWN_REPO = path.resolve(__dirname, '..', '..');
 const EXPORTER_PATH = 'scripts/publishing/export.js';
-const EXPORTER = path.join(OWN_REPO, EXPORTER_PATH);
 const GITIGNORE = '.gitignore';
 const PRE_COMMIT = '.githooks/pre-commit';
 const README = 'README.md';
@@ -121,10 +120,33 @@ function unifiedGitignore(harnessText, skillsText) {
 }
 
 /**
- * El texto del despachador, tal como lo genera el exportador para la copia pública. Se lee de su fuente: copiarlo acá
- * serían dos textos que se separan solos. Si el exportador no está o ya no trae la constante, no se pudo mirar.
+ * El texto del despachador con que se armó la unión. Un commit de la unión no cambia nunca, y el exportador de hoy ya no
+ * trae el despachador (el arnés corre un solo control, .githooks/pre-commit-checks): el texto queda acá, fijo. Lo usa
+ * `tree` cuando el lado del arnés no trae exportador (un repo de juguete).
  */
-function dispatcherText(exporter = EXPORTER) {
+const DISPATCHER_AT_UNION = [
+  '#!/usr/bin/env bash',
+  '# .githooks/pre-commit de la copia pública: un despachador que generó el exportador (transformación merged-hooks).',
+  '# La copia junta en un repo los dos del equipo, y cada uno trae su pre-commit: los dos corren SIEMPRE, cada uno en su',
+  '# proceso (la salida temprana de uno no saltea al otro), con la raíz del repo como arnés y como agent-skills. El commit',
+  '# se crea sólo si pasan los dos.',
+  'set -u',
+  'raiz="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"',
+  'export TYCON_GUIDES_DIR="$raiz" TYCON_SKILLS_DIR="$raiz"',
+  'correr() { if [ -x "$1" ]; then "$1"; else bash "$1"; fi; }',
+  'fallo=0',
+  'correr "$raiz/.githooks/pre-commit-harness" || fallo=1',
+  'correr "$raiz/.githooks/pre-commit-skills" || fallo=1',
+  'exit "$fallo"',
+  '',
+].join('\n');
+
+/**
+ * El texto del despachador: sin argumento, el de la unión; con un exportador, el que declara su constante
+ * PRE_COMMIT_DISPATCHER. Un exportador que no está o que no trae la constante es «no pude mirar».
+ */
+function dispatcherText(exporter = null) {
+  if (exporter === null) return DISPATCHER_AT_UNION;
   let source;
   try { source = fs.readFileSync(exporter, 'utf8'); } catch (e) { throw new CannotLook(`no encontré el exportador (${exporter}): de ahí sale el texto del despachador`); }
   return dispatcherIn(source, exporter);

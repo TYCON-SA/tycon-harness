@@ -82,7 +82,8 @@ queda afuera dentro de ella:
 
 «Repo» es la fuente: las dos son partes de un mismo repo, partido por ruta (§«Un solo repo
 interno»). Por eso agent-skills ya no trae un `.gitignore` ni un `README.md` propios —el del repo es el de la fila del
-arnés—, y de `.githooks/` y `.tycon/` le toca un archivo de cada una: `pre-commit-skills` y `post-commit-ignore`.
+arnés—, y de `.tycon/` le toca un archivo: `post-commit-ignore`. Los controles del commit (`.githooks/pre-commit` y
+`.githooks/pre-commit-checks`) son del arnés.
 
 `skills/tycon-create-story` sale: es de BMAD (MIT), modificada por el equipo, y viaja con su `LICENSE`
 original y un `NOTICE.md` de lo que cambió (la licencia del espejo es Apache-2.0). La copia la publica
@@ -142,7 +143,8 @@ listado de la corrida:
 | `internal-blocks` | Sale el texto de los bloques internos de los `.md` y se ve el de los sólo-públicos. |
 | `not-in-copy` | En un `.md` que sale, una ruta entre comillas invertidas que existe en el repo del equipo y no en la copia queda tal cual y lleva al lado una marca corta: «_(del repo del equipo; no está en esta copia)_» (§«Las rutas que no viajan»). |
 | `public-name` | `{{public-org}}` y `{{public-repo}}` de un papel, con los valores de `public-repos.json`. |
-| `merged-gitignore` · `merged-hooks` | Con `--single-repo`: los dos `.gitignore` en uno, y los dos `pre-commit` detrás de un despachador que corre los dos. Con una sola fuente física no hacen nada: el repo ya los trae juntos. |
+| `merged-gitignore` | Con `--single-repo`: los dos `.gitignore` en uno. Con una sola fuente física no hace nada: el repo ya trae uno. |
+| `split-hooks` | Sin `--single-repo`, desde un commit del repo único que trae el pre-commit partido en dos: cada parte vuelve al repo de su fuente. Con el control único (`.githooks/pre-commit-checks`) no hay nada que partir. |
 | `generated` | Un archivo declarado en `generated` no sale de ninguna fuente: lo arma el exportador. Hoy es `version.json`, y sólo con `--stamp-version` (§«El repo único»). |
 
 Los JSON se editan en su lugar, sin re-serializarlos: los arreglos en una línea y las sangrías quedan como estaban.
@@ -359,12 +361,10 @@ de nombres miran los papeles como a cualquier archivo que sale: `whatShips` cuen
 ## El repo único
 
 `--single-repo` arma UN repo con UN commit: cada archivo del arnés y de agent-skills va a su misma ruta desde la raíz
-(agent-skills aporta `agents/`, `skills/` y `packs/`). Una ruta que llega de las dos fuentes sale 2, salvo las dos que
-existen hoy: `.gitignore` (`merged-gitignore`: las líneas del arnés y después las de agent-skills que falten) y
-`.githooks/pre-commit` (`merged-hooks`: quedan `pre-commit-harness` y `pre-commit-skills`, y el `pre-commit` es un
-despachador que corre los dos siempre, cada uno en su proceso). Ningún archivo cambia sin su ajuste: cada uno es el blob
+(agent-skills aporta `agents/`, `skills/` y `packs/`). Una ruta que llega de las dos fuentes sale 2, salvo
+`.gitignore` (`merged-gitignore`: las líneas del arnés y después las de agent-skills que falten). Ningún archivo cambia sin su ajuste: cada uno es el blob
 de su fuente, un papel o figura en `ajustes`. El `--json` suma `renamed`. Sin `--single-repo`, la copia sale como antes,
-un repo por fuente. Cuando lo interno ya es un solo repo, esas dos rutas llegan de una sola fuente y no hay nada que
+un repo por fuente. Cuando lo interno ya es un solo repo, esa ruta llega de una sola fuente y no hay nada que
 juntar (§«Un solo repo interno»).
 
 **La versión numerada**. El repo que se publica lleva en su raíz `version.json`, que lee el programa de
@@ -1007,10 +1007,9 @@ El arnés y agent-skills eran dos repos internos y pasaron a ser **uno**: el del
 es el mismo árbol, y sus commits dicen lo mismo que antes. Cambia de dónde sale.
 
 **Una fuente física, dos lógicas.** La lista blanca sigue partida por fuente (`arnes` y `agent-skills`), y las tablas
-de esta guía también. En el repo único, la fuente de un archivo la dice su ruta: `agents/**`, `skills/**`, `packs/**`,
-`.tycon/post-commit-ignore` y `.githooks/pre-commit-skills` son de `agent-skills`; todo lo demás, de `arnes`. El
-repo ya trae un solo `.gitignore` y el pre-commit ya partido detrás de su despachador, así que `merged-gitignore` y
-`merged-hooks` no tienen nada que juntar: lo que sale es lo que hay. Con dos repos físicos —las pruebas de juguete—
+de esta guía también. En el repo único, la fuente de un archivo la dice su ruta: `agents/**`, `skills/**`, `packs/**`
+y `.tycon/post-commit-ignore` son de `agent-skills`; todo lo demás, de `arnes`. El repo ya trae un solo `.gitignore` y un
+solo control del commit, así que `merged-gitignore` no tiene nada que juntar: lo que sale es lo que hay. Con dos repos físicos —las pruebas de juguete—
 el exportador y la sincronización siguen como antes.
 
 **Qué es el repo único** lo dice el árbol del commit del arnés que se publica, no el disco: si trae

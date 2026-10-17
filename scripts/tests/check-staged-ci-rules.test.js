@@ -183,7 +183,7 @@ test('StagedCiRules_OneLogic — las pruebas usan el módulo del freno y el hook
   assert.match(t3, /scripts\/lib\/rules-catalog-count\.js/);
   const { EXPECTED } = require('../lib/rules-catalog-count.js');
   assert.ok(!t3.includes(`"${EXPECTED.filas}"`) && !t3.includes(`"${EXPECTED.reglas}"`), 'los números del catálogo real viven en el módulo, no en la prueba');
-  const hook = fs.readFileSync(path.join(RAIZ, '.githooks', 'pre-commit-harness'), 'utf8');
+  const hook = fs.readFileSync(path.join(RAIZ, '.githooks', 'pre-commit-checks'), 'utf8');
   const call = hook.indexOf('node "$CI_RULES" --repo "$REPO_ROOT"');
   assert.ok(call > 0, 'el hook llama al freno');
   assert.ok(call < hook.indexOf('if ! grep -qE "$RELEVANTES"'), 'antes del filtro RELEVANTES, que saltea casi todos los commits');

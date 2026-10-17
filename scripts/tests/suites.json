@@ -1623,6 +1623,18 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.41, tanda E (T27): los comentarios de los controles del commit (.githooks/pre-commit y .githooks/pre-commit-checks) dicen qué hace cada parte y por qué, sin número de story, tanda, fecha, caso del registro ni historia; y cada forma prohibida atrapa su caso. Sin red, en milisegundos.",
+      "raiz": "arnes",
+      "ruta": "tests/hook-comments.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.41, tanda E (T35): guides/estilo-de-codigo.md trae la regla de los comentarios, dos ejemplos buenos y dos malos, y tiene su fila en INDEX.md.",
+      "raiz": "arnes",
+      "ruta": "tests/style-guide.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.19, tanda B: legacy-names.js --migrate-machine --reroot <de> <a> sobre una máquina de juguete en una HOME de laboratorio: cada forma escrita reescrita en la suya, sin resolver enlaces ni comparar por subcadena; los permisos ganan la forma nueva al lado; un hook que ya estaba por la ruta real del clon pierde su gemelo; anda sin renames.json; sus errores. En Node para que corra igual en el agente Windows.",
       "raiz": "arnes",
       "ruta": "tests/harness-reroot.test.js",

@@ -1131,6 +1131,9 @@ const LEGACY_READERS = new Set([
   'scripts/production/install-guard.sh', 'scripts/production/lint-production-json.js',
   'scripts/production/managed-settings.tycon-production.json.template', 'scripts/hooks/prod-access-guard.js',
   'scripts/hooks/produccion-notice.js', 'scripts/hooks/git-pre-commit-global.sh', 'scripts/lib/tycon-config.js',
+  // los controles del commit: la copia propia del repo privado busca los guiones de las skills también en la carpeta de
+  // antes del renombre, para un arnés atrasado (legacy-names-c4 T43c); sale con el retiro de los nombres viejos
+  '.githooks/pre-commit-checks',
   // la copia propia del freno (2026-10-14): ocupa en /opt el lugar de scripts/lib/tycon-config.js y lee lo mismo que ella
   'scripts/production/guard-libs/lib/tycon-config.js',
   // compara contra una base de antes del renombre y corre los archivos de esa base por el nombre que tenían (tanda C1)

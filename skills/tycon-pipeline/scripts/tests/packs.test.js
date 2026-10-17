@@ -662,7 +662,7 @@ test('T21 Pipeline_NamesNoneOfThirteen', () => {
   const sinDefinicion = nombrados.filter((n) => !fs.existsSync(path.join(RAIZ, 'agents', `${n}.md`)));
   assert.deepEqual(sinDefinicion, [], 'cada revisor que pipeline.js nombra es del núcleo (los de un stack viven en su paquete)');
   // el control de commit que corre la paridad Codex y la vida del revisor tocado mira también los de un paquete (pase adversarial)
-  const hook = path.join(RAIZ, '.githooks', 'pre-commit-skills');
+  const hook = path.join(RAIZ, '.githooks', 'pre-commit-checks');
   if (fs.existsSync(hook)) assert.match(fs.readFileSync(hook, 'utf8'), /git diff --cached --name-only -- 'agents\/\*\.md' 'packs\/\*\/agents\/\*\.md'/);
   // el escalamiento: un componente nuevo sin uso es un ambiguo WIRING-C1
   const d = repo();
