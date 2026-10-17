@@ -416,7 +416,9 @@ a `codex` session, run `/hooks` and approve them; without that the hooks do not 
 **Network**: the harness sends no usage data. Out of the box it talks to GitHub (the repo, to check for a new version,
 and the origins of the third-party skills listed in `scripts/publishing/third-party-skills.json`) and, if one of your
 neighbouring repos is a partial clone, to that repo's remote, to read its history (the daily walk). The short query to
-your assistant's model goes through the assistant you already use. Each integration you turn on adds its own service. The
+your assistant's model goes through the assistant you already use. Each integration you turn on adds its own service:
+with Telegram, a pipeline run that is left waiting for you for more than five minutes sends you a message with the story,
+the step and what it is waiting for (`TYCON_WAIT_NOTICE=0` turns it off). The
 clean-machine test of this repository, if you run it, also downloads its base images (Docker Hub and Microsoft's
 registry); git, Python and CA certificates (Debian's package repository); the sample plugin and the third-party skills
 (GitHub); and the plugin's packages (NuGet).

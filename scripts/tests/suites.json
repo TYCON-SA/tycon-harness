@@ -8,6 +8,11 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/wait-notice.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/nightly-dod-notice.test.sh",
       "requiere": []
     },

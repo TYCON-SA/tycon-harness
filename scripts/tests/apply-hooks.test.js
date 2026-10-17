@@ -98,7 +98,7 @@ test('T33 HooksList_Schema_EveryRecordOnce_NoListLeftInAppliers', () => {
   const keys = list.hooks.map((h) => `${h.event}|${mod.normMatcher(h.matcher)}|${h.spec}`);
   assert.strictEqual(new Set(keys).size, keys.length, 'ningún registro repetido');
   for (const h of list.hooks) {
-    assert.ok(['UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop', 'SessionStart'].includes(h.event), `${h.spec}: evento ${h.event}`);
+    assert.ok(['UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop', 'SessionStart', 'Notification', 'SessionEnd'].includes(h.event), `${h.spec}: evento ${h.event}`);
     assert.match(h.when, /^(always|integration:[a-z]+|optin:TYCON_[A-Z_]+)$/, `${h.spec}: when ${h.when}`);
     assert.strictEqual(typeof h.platforms.windows, 'boolean', `${h.spec}: platforms.windows`);
     assert.ok(h.label && typeof h.label === 'string', `${h.spec}: label`);
