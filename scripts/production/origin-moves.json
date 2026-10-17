@@ -1,0 +1,10 @@
+{
+  "__doc": "Las mudanzas OFICIALES del origen del freno de producción (2026-10-16, decisión del dueño). La lee sólo install-guard.sh, al lado suyo (nunca de la carpeta del arnés que instala: esa la elige quien corre, y una versión bajada de un repo ajeno podría traer su propia mudanza). Si el origen fijado en /opt es un `from` y el de ahora es su `to`, el instalador acepta el cambio solo y lo dice; cualquier otro cambio sigue pidiendo --change-origin y la confirmación por teclado. `from.azure_path`: el clon de Azure DevOps, por host y ruta (el usuario de la URL no cuenta) y con la organización que quedó fijada al lado, la que la persona confirmó por teclado. `to.github_repo`: el repo de GitHub de la versión bajada, exacto.",
+  "moves": [
+    {
+      "from": { "azure_path": "tycon-claude-guides/_git/tycon-claude-guides" },
+      "to": { "github_repo": "TYCON-SA/tycon-harness" },
+      "message": "el arnés se mudó a GitHub: actualizo el origen fijado"
+    }
+  ]
+}
