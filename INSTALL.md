@@ -12,10 +12,12 @@
 
 ### 1. Instalar sin clonar
 
-Tres líneas por sistema, las de la portada (`README.es.md`, «2. Bajar e instalar»): bajar el guion
-`get-harness.sh` / `.ps1` de `raw.githubusercontent.com`, sin credencial (el repo es público) y sin pasar por la API,
-leerlo, correrlo. El guion baja la versión publicada como archivos (sin git) a una carpeta temporal y sigue con
-`harness.js install --version latest`: el arnés queda en `~/.tycon/harness`, se actualiza solo, y `harness.js install` crea el enlace
+Una línea, la misma en los tres sistemas (la de la portada): `npx @tyconsa/harness@latest`. Muestra el plan y pregunta
+«¿Instalo? [s/N]». El paquete de npm no trae el arnés: baja la versión publicada de GitHub como archivos (sin git), sin
+credencial (el repo es público) y sin pasar por la API, a una carpeta temporal, y sigue con
+`harness.js install --version latest`. A mano, sin npx, las tres líneas por sistema de la portada (`README.es.md`,
+«2. Bajar e instalar»): bajar el guion `get-harness.sh` / `.ps1` de `raw.githubusercontent.com`, leerlo, correrlo;
+hace lo mismo. Las dos dejan el arnés en `~/.tycon/harness`, que se actualiza solo, y `harness.js install` crea el enlace
 estable `~/.claude/tycon-harness` (y los de las skills, los agentes y los paquetes) apuntando ahí; todo lo demás nombra
 al arnés por ese enlace. Usar el arnés no necesita un clon; el clon es el modo desarrollador (portada, «Otras formas de
 instalar»).

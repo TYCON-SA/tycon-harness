@@ -456,6 +456,34 @@ Para reintentar, con red: `node ~/.claude/tycon-harness/scripts/setup/harness.js
 instalador. Sirve también si, con red, quedaron skills pendientes porque el paso llegó a su tope de red
 (`TYCON_THIRD_PARTY_NETWORK_BUDGET_S`, 20 segundos por corrida).
 
+## Con un proxy o la CA de tu empresa
+
+El instalador (`npx @tyconsa/harness@latest`, `get-harness` y el propio `harness.js`) pasa por un proxy con las variables
+de siempre, en la terminal donde lo corrés:
+
+```bash
+export HTTPS_PROXY=http://proxy.example.com:8080
+export NO_PROXY=localhost,.example.com
+```
+
+`HTTPS_PROXY` (o `HTTP_PROXY`, también en minúsculas) es el proxy; `NO_PROXY` es una lista separada por comas de hosts o
+sufijos `.dominio` que van directo. npx pasa además las de npm (`npm_config_https_proxy`, `npm_config_proxy`), y npm
+mismo las necesita para bajar el paquete. Si tu empresa inspecciona HTTPS con un certificado propio, decíselo a Node
+antes de correr la línea: `export NODE_EXTRA_CA_CERTS=/ruta/a/la-ca-de-la-empresa.pem`. Sin eso el instalador frena con
+«no pude verificar el certificado» y nombra `NODE_EXTRA_CA_CERTS`; nunca apaga la verificación. En PowerShell, lo mismo con
+`$env:HTTPS_PROXY = '…'`, `$env:NO_PROXY = '…'` y `$env:NODE_EXTRA_CA_CERTS = '…'`.
+
+## Desinstalar
+
+```bash
+node ~/.claude/tycon-harness/scripts/setup/harness.js uninstall --dry-run
+node ~/.claude/tycon-harness/scripts/setup/harness.js uninstall --yes
+```
+
+La primera muestra qué quitaría, sin cambiar nada. La segunda quita sólo lo que registró el instalador (hooks, enlaces,
+bloques, tareas de fondo) y dice lo que deja: tu `~/.claude/tycon.json`, tus repos y todo lo tuyo quedan como estaban.
+`--tool claude` o `--tool codex` desenchufa sólo esa herramienta y deja el arnés.
+
 ## Cómo se actualiza
 
 - **Versiones**: cada versión lleva un número `AAAA.MM.DD.N`, donde `N` es su orden dentro del día. `stable` es `main` de

@@ -416,6 +416,11 @@ function renderGuided(report) {
   if (lab) {
     M.push('## Lo que el laboratorio cambió', '', 'Todo lo que se puso o se cambió respecto de la máquina de una persona. Ningún otro carácter de ningún comando de la página se toca.', '');
     if (lab.download_origin) M.push(`- el origen de la bajada del guion: \`${cell(lab.download_origin.from)}\` → \`${cell(lab.download_origin.to)}\` (en ${cell(lab.download_origin.where)})`);
+    // (story 8.40, AC 43) la línea npx: el paquete armado en lugar del publicado, y la respuesta de la persona, dicha en
+    // una línea para que el verde no se lea como «la persona no tuvo que hacer nada»
+    if (lab.package) M.push(`- el paquete de npm: \`${cell(lab.package.from)}\` → \`${cell(lab.package.to)}\` (en ${cell(lab.package.where)}): ${cell(lab.package.why)}`);
+    if (lab.answer) M.push(`- la respuesta de la persona: en el paso ${cell(lab.answer.step)} se sumó \`${cell(lab.answer.append)}\` — ${cell(lab.answer.why)}`);
+    if (lab.public_routes) M.push(`- las rutas públicas del GitHub de juguete en los pasos con la línea npx (${cell(lab.public_routes.where)}): TYCON_RELEASE_GIT=${cell(lab.public_routes.TYCON_RELEASE_GIT)} · TYCON_RELEASE_ARCHIVE=${cell(lab.public_routes.TYCON_RELEASE_ARCHIVE)} · TYCON_RELEASE_RAW=${cell(lab.public_routes.TYCON_RELEASE_RAW)}`);
     if (lab.token) M.push(`- ${cell(lab.token)}`);
     if (lab.env_set) M.push(`- variables que se ponen: ${cell(Object.entries(lab.env_set).map(([k, val]) => `${k}=${val}`).join(' · '))}`);
     if (lab.env_set_with_team) M.push(`- desde que se suma la capa del equipo: ${cell(Object.entries(lab.env_set_with_team).map(([k, val]) => `${k}=${val}`).join(' · '))}`);

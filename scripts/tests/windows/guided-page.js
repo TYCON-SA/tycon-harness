@@ -30,10 +30,12 @@ const RUNNERS = Object.freeze(['machine', 'person']);
 const SEVERITIES = Object.freeze(['breaks', 'loses-control', 'noise']);
 const RUN_WHEN = Object.freeze(['previous-output-empty']);
 // cómo sirve el GitHub de juguete el árbol que se ensaya (`lab.auth`): `none` = repo público, sin permiso (lo que la
-// página supone: baja el guion sin credencial); `token` = repo privado, con un permiso de juguete en el ambiente de los
+// página supone: la línea npx baja el arnés sin credencial); `token` = repo privado, con un permiso de juguete en el ambiente de los
 // pasos que bajan e instalan. Lo lee `guided-install.js`: es un dato de la ficha, no una decisión del guion
 const AUTH_MODES = Object.freeze(['none', 'token']);
 const NAME_MARKS = Object.freeze({ org: '{{public-org}}', repo: '{{public-repo}}' });
+// donde va el paquete armado (el .tgz de npm pack) en el cambio `lab.package` de la ficha
+const PACKAGE_MARK = '{{package}}';
 const TEAM_HOLES = Object.freeze(['<team-url>']);
 
 /** La ficha, leída del archivo de al lado (o del que se pase). Tira si no es JSON. */
@@ -46,8 +48,14 @@ function manifestProblems(m) {
   const out = [];
   if (!m || typeof m !== 'object') return ['la ficha no es un objeto'];
   if (!m.page || !m.page.published || !m.page.mark || !m.page.fence) out.push('falta `page` con `published`, `mark` y `fence`');
-  if (!m.needs || !m.needs.entry_script || !m.needs.names) out.push('falta `needs` con `entry_script` y `names`');
-  if (!m.lab || !m.lab.download_origin) out.push('falta `lab.download_origin`: el único origen que el laboratorio reemplaza (el de la bajada del guion)');
+  if (!m.needs || !m.needs.entry_package || !m.needs.names) out.push('falta `needs` con `entry_package` y `names`');
+  // los dos cambios del laboratorio, como datos con su motivo: el paquete armado en lugar del
+  // publicado, y la respuesta de la persona en el paso que la pide
+  const pk = m.lab && m.lab.package;
+  if (!pk || !pk.from || !String(pk.to || '').includes(PACKAGE_MARK) || !pk.why) out.push(`falta \`lab.package\` con \`from\`, \`to\` (con ${PACKAGE_MARK}) y \`why\`: el paquete armado en lugar del publicado`);
+  const an = m.lab && m.lab.answer;
+  if (!an || !an.step || !an.append || !an.why) out.push('falta `lab.answer` con `step`, `append` y `why`: la respuesta de la persona, dicha');
+  else if (!(Array.isArray(m.steps) ? m.steps : []).some((s) => s && s.id === an.step)) out.push(`\`lab.answer.step\` nombra un paso que no está: ${an.step}`);
   // sin este dato el laboratorio tendría que adivinar si sirve el repo con permiso o sin él: se dice, no se supone
   if (!m.lab || !AUTH_MODES.includes(m.lab.auth)) out.push(`\`lab.auth\` tiene que decir cómo sirve el repo el GitHub de juguete (${AUTH_MODES.join(' o ')}); dice ${JSON.stringify(m.lab && m.lab.auth)}`);
   const seen = new Set();
@@ -237,29 +245,29 @@ function looksLikeCommand(rawLine) {
   if (!text) return false;
   if (indent >= 7) return true;
   if (indent < 3) return false;
-  return /^(\$[A-Za-z]|@\(|\((?:[A-Z][a-z]+-[A-Z])|[A-Z][a-z]+-[A-Z][A-Za-z]+(\s|$)|(?:git|node|pwsh|powershell|tar|winget)\s+(?:\S+\s+)?(?:-{1,2}[A-Za-z]|"|\$))/.test(text);
+  return /^(\$[A-Za-z]|@\(|\((?:[A-Z][a-z]+-[A-Z])|[A-Z][a-z]+-[A-Z][A-Za-z]+(\s|$)|(?:git|node|npm|npx|pwsh|powershell|tar|winget)\s+(?:\S+\s+)?(?:-{1,2}[A-Za-z]|"|\$|@))/.test(text);
 }
 
 /**
  * Todo lo que el ensayo necesita de una COPIA PUBLICADA antes de correr nada: `{ block, names, page_name_from,
- * entry_script, page_steps }`, o `{ problem }` con lo que buscó y dónde. `read(rel)` devuelve el texto de un archivo del
+ * entry_package, page_steps }`, o `{ problem }` con lo que buscó y dónde. `read(rel)` devuelve el texto de un archivo del
  * commit que se ensaya, o `null` si no está; si tira (no pudo leer), el problema sube tal cual: no saber no es «no está».
  */
 function prepare({ read, manifest }) {
   const bad = manifestProblems(manifest);
   if (bad.length) return { problem: `la ficha del ensayo (guided-steps.json) está mal: ${bad.join(' · ')}` };
   const page = manifest.page.published;
-  let pageText; let script; let remotes;
+  let pageText; let pkg; let remotes;
   try {
     pageText = read(page);
-    script = read(manifest.needs.entry_script);
+    pkg = read(manifest.needs.entry_package);
     remotes = read(manifest.needs.names);
   } catch (e) { return { problem: `no pude leer la copia publicada que se ensaya: ${e.message}` }; }
   const where = 'en el commit que se ensaya, que es una copia publicada (trae version.json)';
   if (pageText === null || pageText === undefined) return { problem: `no encuentro la página (${page}) ${where}` };
   const read1 = readBlock(pageText, manifest);
   if (read1.problem) return { problem: `la página no trae la marca como hace falta — busqué <!-- ${manifest.page.mark} --> en ${page}, ${where}: ${read1.problem}` };
-  if (script === null || script === undefined) return { problem: `no encuentro el guion de entrada (${manifest.needs.entry_script}) ${where}` };
+  if (pkg === null || pkg === undefined) return { problem: `no encuentro el paquete de npm (${manifest.needs.entry_package}) ${where}: sin él no hay con qué correr la línea npx` };
   if (remotes === null || remotes === undefined) return { problem: `no encuentro el archivo del nombre público (${manifest.needs.names}) ${where}` };
   const names = namesOf(remotes);
   if (names.problem) return { problem: `${manifest.needs.names}, ${where}, ${names.problem}` };
@@ -267,17 +275,21 @@ function prepare({ read, manifest }) {
   // (el motivo cita comandos de la página, que traen el nombre del repo público: van los nombres, para que quien llama
   // pueda tapar el motivo antes de escribirlo)
   if (!checked.ok) return { names, problem: `la página (${page}) y la ficha del ensayo no coinciden, ${where} — ${checked.problems.map((p) => (p.step ? `paso ${p.step}: ${p.what}` : p.what)).join(' · ')}` };
-  return { block: read1.block, names, page_name_from: manifest.needs.names, entry_script: manifest.needs.entry_script, entry_script_text: script, page_steps: checked.page_steps };
+  return { block: read1.block, names, page_name_from: manifest.needs.names, entry_package: manifest.needs.entry_package, page_steps: checked.page_steps };
 }
 
 /**
- * El único cambio que el laboratorio le hace a un comando de la página: el origen de la bajada del guion
- * (raw.githubusercontent.com, por el «raw» del GitHub de juguete). `{ text, changed, from, to }`.
+ * Lo que el laboratorio le cambia a un comando de la página, y nada más: el paquete publicado por el
+ * armado del commit que se ensaya (`lab.package`, con `pkg` en su marcador), y en el paso de `lab.answer` la respuesta de
+ * la persona al final. `{ text, changed, from, to, answer }` (`answer`: `{ append, why }` si se sumó, si no `null`). Sin
+ * el paquete armado no cambia nada: correría el publicado, y eso no es ensayar el commit.
  */
-function labText(text, m, labOrigin) {
-  const from = m.lab.download_origin;
-  if (!labOrigin || !String(text).includes(from)) return { text, changed: false };
-  return { text: String(text).split(from).join(labOrigin), changed: true, from, to: labOrigin };
+function labText(text, m, { pkg = null, step = null } = {}) {
+  const from = m.lab.package.from;
+  if (!pkg || !String(text).startsWith(`${from} `)) return { text, changed: false, answer: null };
+  const to = m.lab.package.to.split(PACKAGE_MARK).join(pkg);
+  const answer = step && step === m.lab.answer.step ? { append: m.lab.answer.append, why: m.lab.answer.why } : null;
+  return { text: `${to}${String(text).slice(from.length)}${answer ? ` ${answer.append}` : ''}`, changed: true, from, to, answer };
 }
 
 /**
@@ -347,7 +359,7 @@ function judge(step, cmd, result, { home = '', cwd = '', exists = fs.existsSync 
 }
 
 module.exports = {
-  MANIFEST_FILE, KINDS, RUN_WHEN, AUTH_MODES, NAME_MARKS, PLACE_MARK,
+  MANIFEST_FILE, KINDS, RUN_WHEN, AUTH_MODES, NAME_MARKS, PLACE_MARK, PACKAGE_MARK,
   loadManifest, manifestProblems, teamCommands, machineSteps, personSteps, notRehearsed,
   readBlock, countSteps, namesOf, withNames, checkPage, looksLikeCommand, prepare, labText, shouldRun, judge,
 };

@@ -73,10 +73,13 @@ function git(dir, args, env) {
   return L.run('git', ['-C', dir, '-c', 'user.name=Lab', '-c', 'user.email=lab@example.com', '-c', `core.hooksPath=${LAB_NO_HOOKS}`, '-c', 'maintenance.auto=false', '-c', 'gc.auto=0', ...args], { env: e, timeoutMs: 5 * 60 * 1000 });
 }
 
-/** El programa de npm o de npx que trae ESTE Node (Windows: al lado del ejecutable; posix: en lib/node_modules). */
-function npmProgram(which) {
-  const dir = path.dirname(process.execPath);
-  for (const base of [path.join(dir, 'node_modules', 'npm', 'bin'), path.join(dir, '..', 'lib', 'node_modules', 'npm', 'bin')]) {
+/**
+ * El programa de npm o de npx que trae ESTE Node: al lado del ejecutable (Windows), en lib/node_modules (el comprimido
+ * de nodejs.org y nvm) o en libexec/lib/node_modules (Homebrew). Nunca el de otro Node del PATH.
+ */
+function npmProgram(which, { execPath = process.execPath } = {}) {
+  const dir = path.dirname(execPath);
+  for (const base of [path.join(dir, 'node_modules', 'npm', 'bin'), path.join(dir, '..', 'lib', 'node_modules', 'npm', 'bin'), path.join(dir, '..', 'libexec', 'lib', 'node_modules', 'npm', 'bin')]) {
     const f = path.join(base, `${which}-cli.js`);
     if (fs.existsSync(f)) return f;
   }

@@ -13,60 +13,54 @@ vive en un repo público de GitHub: se baja sin cuenta y sin permiso. Seguí est
 corriendo cada comando TAL CUAL (no lo reescribas ni lo "mejores"). Si una salida no es la esperada, o aparece un error
 que no está acá, PARÁ, no arregles nada a mano y mostrame la salida tal cual.
 
-Perfil: si arriba de este pedido te escribí «quiero el perfil mínimo», en los pasos 3 y 4 cambiá --profile full por
---profile minimal, y salteá el paso 5. Si no, va full.
+Perfil: si arriba de este pedido te escribí «quiero el perfil mínimo», en los pasos 2 y 3 cambiá --profile full por
+--profile minimal, y salteá el paso 4. Si no, va full.
 
 Si un paso contesta 403 o «límite de la API de GitHub»: GitHub limita los pedidos sin credencial a 60 por hora por
 dirección de red, y una oficina entera suele compartir la suya. PARÁ y avisame, sin reintentar: o espero a que se
 renueve (como mucho una hora) y repetimos ese paso; o, si tengo un permiso de GitHub propio, lo pongo YO en la variable
-TYCON_GITHUB_TOKEN con la línea de abajo, en la misma terminal donde corro el guion (no se ve al pegarlo; vos no lo
-leas ni lo muestres), y vuelvo a correr get-harness, que lo usa y lo guarda:
+TYCON_GITHUB_TOKEN con la línea de abajo, en la misma terminal donde corro la línea npx (no se ve al pegarlo; vos no
+lo leas ni lo muestres), y la vuelvo a correr: lo usa y lo guarda:
     $s = Read-Host -AsSecureString 'Permiso de GitHub'; $env:TYCON_GITHUB_TOKEN = [System.Net.NetworkCredential]::new('', $s).Password
-Bajar el propio guion va siempre sin credencial y no pasa por la API: no gasta de ese límite.
+Bajar el arnés va siempre sin credencial y casi no pasa por la API: gasta una sola consulta, la que verifica lo bajado.
 
 1. Herramientas:
-   $PSVersionTable.PSVersion.ToString(); node --version; tar --version
-   Esperado: PowerShell 7.algo, node v22 o más y tar (viene con Windows 10 y posteriores). Lo que falte, decime que lo
-   instale yo, de a uno:  winget install Microsoft.PowerShell · winget install OpenJS.NodeJS.LTS
+   $PSVersionTable.PSVersion.ToString(); node --version; npx --version; tar --version
+   Esperado: PowerShell 7.algo, node v22 o más, npx (viene con node) y tar (viene con Windows 10 y posteriores). Lo
+   que falte, decime que lo instale yo, de a uno:  winget install Microsoft.PowerShell · winget install OpenJS.NodeJS.LTS
    Después de instalar algo, tengo que cerrar y volver a abrir la terminal y Claude Code: avisame y esperá.
    (git NO hace falta: el arnés se baja como archivos, no se clona.)
 
-2. Bajar el guion de instalación (se baja, se lee y después se corre; no se clona nada): dame estas dos líneas para
-   pegar en mi ventana de PowerShell 7, una por una:
-       Invoke-WebRequest -OutFile get-harness.ps1 https://raw.githubusercontent.com/acme-lab/arnes-lab/main/scripts/setup/get-harness.ps1
-       Get-Content get-harness.ps1
-   Esperado: el archivo get-harness.ps1 en mi carpeta y un guion que empieza con «# get-harness.ps1 — baja la versión
-   publicada del arnés (sin git)».
+2. Ver el plan de instalación (no instala nada): dame esta línea para mi ventana:
+       npx @tyconsa/harness@latest --audience me --profile full --integrations none --packs all --dry-run
+   La primera vez npx pregunta si baja el paquete («Need to install the following packages … Ok to proceed?
+   (y)»): contesto y. Baja la versión a una carpeta temporal y muestra el plan. Te paso la salida: mostrame
+   el plan resumido (qué escribe, qué hooks pone, y si configura la carpeta global de hooks de git) y preguntame si sigo.
 
-3. Ver el plan de instalación (no instala nada): dame esta línea para mi ventana:
-       pwsh -File get-harness.ps1 -- --profile full --integrations none --packs all --dry-run
-   Baja la versión a una carpeta temporal y muestra el plan. Te paso la salida: mostrame el plan resumido (qué escribe,
-   qué hooks pone) y preguntame si sigo.
-
-4. Con mi sí, instalar, en mi ventana:
-       pwsh -File get-harness.ps1 -- --profile full --integrations none --packs bizuit --yes
-   Esperado: termina con «versión: …» y un resumen, sin rojo. El arnés queda en $env:USERPROFILE\.tycon\harness
+3. Con mi sí, instalar, en mi ventana (la misma línea, sin la opción del final):
+       npx @tyconsa/harness@latest --audience me --profile full --integrations none --packs bizuit
+   Vuelve a mostrar el plan y pregunta «¿Instalo? [s/N]»: te paso la salida antes de contestar y, si es el mismo plan,
+   contesto s. Esperado: termina con «versión: …» y un resumen, sin rojo. El arnés queda en $env:USERPROFILE\.tycon\harness
    (archivos, sin git).
 
-5. Los controles que corren al commitear (hooks globales de git). Antes de configurar nada, avisame esto y esperá mi
-   sí: con una carpeta global de hooks, git deja de correr los .git/hooks/ propios de cada uno de mis repos (el control
-   del arnés corre en su lugar el .githooks/pre-commit de cada repo). Si te digo que no, salteá este paso.
-   Con mi sí, primero mirá si ya tengo algo configurado:
+4. Los controles que corren al commitear (hooks globales de git). Si git no tenía una carpeta global de hooks, la
+   instalación la configuró (el plan lo decía): con ella git deja de correr los .git/hooks/ propios de cada uno de mis
+   repos, y el control del arnés corre en su lugar el .githooks/pre-commit de cada repo. Mirá cómo quedó:
    git config --global --get core.hooksPath
    Si no devuelve nada, corré:  git config --global core.hooksPath "$env:USERPROFILE\.git-hooks"
    Si devuelve otra carpeta, NO la pises: mostrámela y decidimos.
 
-6. Verificar (tres comandos):
-   node "$env:USERPROFILE\.claude\{{harness-place}}\scripts\setup\harness.js" doctor
+5. Verificar (tres comandos):
+   node "$env:USERPROFILE\.claude\tycon-harness\scripts\setup\harness.js" doctor
    @(Get-ChildItem "$env:USERPROFILE\.claude\skills" -Directory).Count
    (Select-String -Path "$env:USERPROFILE\.claude\CLAUDE.md" -Pattern "INDEX.md").Count
    Esperado: doctor dice «perfil: full» (o «perfil: minimal» si pedí el mínimo) y cierra con «todo en orden» (o «N aviso(s), nada en rojo»); más de 40 skills; 1.
 
-7. Armame UN solo bloque de texto, para guardarlo o para pedir ayuda, con la salida de los pasos 1, 2 y 4 (el final), y
-   la salida COMPLETA del paso 6, más una línea final «OK» o «NO OK». Después decime que cierre y vuelva a abrir Claude
+6. Armame UN solo bloque de texto, para guardarlo o para pedir ayuda, con la salida de los pasos 1 y 3 (el final), y
+   la salida COMPLETA del paso 5, más una línea final «OK» o «NO OK». Después decime que cierre y vuelva a abrir Claude
    Code.
 
 Para trabajar con BIZUIT Extensions: el paquete bizuit ya queda prendido para todos mis repos (--packs all). Las guías
-para empezar un plugin o un formulario están en ~/.claude/{{harness-place}}/guides/bizuit/ y te mandan a los templates públicos.
+para empezar un plugin o un formulario están en ~/.claude/tycon-harness/packs/bizuit/guides/ (vienen con el perfil de tu equipo) y te mandan a los templates públicos.
 ```
 <!-- /guided:base -->
