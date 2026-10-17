@@ -1316,7 +1316,7 @@ const SCRIPT_NAME = /[A-Za-z0-9_.-]+\.(?:sh|js|mjs|cjs|ps1|py)\b/g;
 // (corrida 11477, [DEF-8.9-TABLERO-D1]).
 // Tanda B3b, la historia de agent-skills: el CHANGELOG de cada skill y la HISTORIA.md del pipeline (los párrafos que el
 // SKILL.md dejó al recortarse, con la fecha en que se escribieron).
-const STALE_ZONES = [/^specs\//, /^tasks\//, /^\.advisors\//, /^guides\/maintaining\/incident-log\.md$/, /^guides\/maintaining\/nombres-en-ingles\.md$/, /^scripts\/tests\/legacy-names[^/]*$/,
+const STALE_ZONES = [/^specs\//, /^tasks\//, /^\.advisors\//, /^scripts\/publishing\/denylist\.json$/, /^guides\/maintaining\/incident-log\.md$/, /^guides\/maintaining\/nombres-en-ingles\.md$/, /^scripts\/tests\/legacy-names[^/]*$/,
   /^scripts\/tests\/fixtures\/product-pipeline\//, /^\.dashboard\//, /^guides\/guide-update-proposals\.md$/, /^guides\/(?:decisions\/)?revision-adversarial-[^/]*\.md$/,
   /^scripts\/publishing\/names-ceiling\.json$/,
   /^skills\/[^/]+\/CHANGELOG\.md$/, /^skills\/tycon-pipeline\/HISTORIA\.md$/,
@@ -1349,6 +1349,10 @@ const STALE_ZONES = [/^specs\//, /^tasks\//, /^\.advisors\//, /^guides\/maintain
 // R2). Sólo la línea que es la carpeta sola; un patrón de adentro (`<vieja>/drafts/`) sigue siendo una mención vieja.
 const ignoresOldFolder = (rel, line, e) => e.kind === 'folder' && path.posix.basename(rel) === '.gitignore'
   && line.trim().replace(/^\//, '').replace(/\/(?:\*\*)?$/, '') === e.old.replace(/\/+$/, '');
+/** ¿El repo de mantenimiento adelgazado? Lo dice su lista de lo que repite del público. */
+function thinLayout(repo) {
+  try { return JSON.parse(fs.readFileSync(path.join(repo, '.tycon', 'internal-forms.json'), 'utf8')).layout === 'thin'; } catch { return false; }
+}
 function staleMentions(args) {
   const legacy = require('../lib/legacy-names.js');
   const startDir = args.repo ? path.resolve(args.repo) : process.cwd();
@@ -1364,7 +1368,9 @@ function staleMentions(args) {
   // story 8.18: en el repo unido las dos fuentes viven en esta raíz y cada archivo es de la suya por su ruta. Sin esto
   // el recorrido tomaba `skills/` por archivos del arnés y contaba como menciones viejas las que agent-skills hace del
   // arnés, que son referencias entre fuentes (AC 1 d) — o, sin «el otro repo» a mano, no miraba.
-  const unified = nn.unifiedCheckout(repo);
+  // El repo de mantenimiento adelgazado con el público encima (su lista de lo que repite dice `layout: "thin"`) también
+  // tiene las dos fuentes en esta raíz, aunque ya no traiga el perfil del equipo: se recorre una sola vez.
+  const unified = nn.unifiedCheckout(repo) || (thinLayout(repo) && require('../lib/canonical-path.js').isSingleRepo(repo));
   const other = unified ? { dir: repo } : nn.otherRepo('arnes');
   if (other.missing) throw new CouldNotLook(`no encontré agent-skills (${other.dir}): sin el otro repo no sé si quedan nombres viejos allá — seteá TYCON_SKILLS_DIR`);
   const repos = { arnes: repo, 'agent-skills': other.dir };
@@ -1531,7 +1537,7 @@ function main() {
         process.stdout.write(`⛔ quedan ${r.findings.length} mención(es) de nombres viejos fuera de su lugar:\n`);
         for (const f of r.findings) process.stdout.write(`  ${f.source}:${f.rel}:${f.line} — ${f.old} (→ ${f.new})\n`);
         process.stdout.write('Van con el nombre nuevo. Se permiten sólo en el mapa, los reemplazos, legacy-names.*, specs/, tasks/, '
-          + 'guides/maintaining/incident-log.md, .advisors/, .dashboard/ y la foto del último nocturno, guides/guide-update-proposals.md, la guía de la convención, las pruebas de compatibilidad y, en una variable que lee un solo repo, en el otro (AC 25). '
+          + 'guides/maintaining/incident-log.md, la lista privada del freno de publicación (sus excepciones nombran las rutas que conserva la historia del público), .advisors/, .dashboard/ y la foto del último nocturno, guides/guide-update-proposals.md, la guía de la convención, las pruebas de compatibilidad y, en una variable que lee un solo repo, en el otro (AC 25). '
           + 'Una opción cuenta en su guion y en lo que nombra ese guion, en su mismo repo (AC 27). Las rutas y claves viejas del freno de producción no se miran en los archivos que las leen y protegen a propósito (LEGACY_READERS, AC 45).\n');
       }
       return 1;
