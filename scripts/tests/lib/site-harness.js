@@ -150,7 +150,9 @@ async function arrancarBuzon({ blobs = {}, contenedor = 'runs' } = {}) {
     const partes = decodeURIComponent(u.pathname).split('/').filter(Boolean);
     if (partes.shift() !== contenedor) { res.writeHead(404); res.end(); return; }
     if (u.searchParams.get('comp') === 'list') {
-      const items = Object.keys(st.blobs).sort().map((n) => { const b = Buffer.from(st.blobs[n]); return `<Blob><Name>${n}</Name><Properties><Content-Length>${b.length}</Content-Length><Content-MD5>${md5(b)}</Content-MD5><Etag>e-${md5(b)}</Etag></Properties></Blob>`; });
+      // `prefix`, como Azure: sólo los nombres que empiezan así
+      const prefijo = u.searchParams.get('prefix') || '';
+      const items = Object.keys(st.blobs).filter((n) => n.startsWith(prefijo)).sort().map((n) => { const b = Buffer.from(st.blobs[n]); return `<Blob><Name>${n}</Name><Properties><Content-Length>${b.length}</Content-Length><Content-MD5>${md5(b)}</Content-MD5><Etag>e-${md5(b)}</Etag></Properties></Blob>`; });
       res.writeHead(200, { 'content-type': 'application/xml' });
       res.end(`<?xml version="1.0"?><EnumerationResults><Blobs>${items.join('')}</Blobs><NextMarker/></EnumerationResults>`);
       return;

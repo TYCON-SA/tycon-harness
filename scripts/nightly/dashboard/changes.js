@@ -39,6 +39,8 @@ const MARGEN_CIERRE_MS = 60 * 60000;
 const ESPERA_MIN_MS = 2 * 60000;
 
 function rutaDeHilo(volcado) { return String(volcado).replace(/\.json$/, '') + '.hilo.jsonl.gz'; }
+// el resumen de la corrida que guarda el sitio cuando borra su conversación y su cambio (dashboard/runs.js → RESUMEN)
+function rutaDeResumen(volcado) { return String(volcado).replace(/\.json$/, '') + '.resumen.json.gz'; }
 
 // ─── El cambio según git (story 2.19) ────────────────────────────────────────────────────────────
 // Lo arma scripts/metrics/run-change.js al archivar: los commits de la corrida y lo que quedó sin
@@ -332,4 +334,4 @@ function cambiosDeCorrida(volcado, marker, deps = {}) {
   };
 }
 
-module.exports = { unirTramos, cambiosDeCorrida, relativa, destinosDeConsola, rutaDeHilo, rutaDeCambio, leerCambioDeGit, emparejar, TOPE_EDICION, TOPE_ESCRITURA, TOPE_EDICIONES_CON_CAMBIO };
+module.exports = { unirTramos, cambiosDeCorrida, relativa, destinosDeConsola, rutaDeHilo, rutaDeCambio, rutaDeResumen, leerCambioDeGit, emparejar, TOPE_EDICION, TOPE_ESCRITURA, TOPE_EDICIONES_CON_CAMBIO };

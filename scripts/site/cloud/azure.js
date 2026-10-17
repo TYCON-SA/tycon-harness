@@ -48,9 +48,14 @@ const PROVEEDORES_DE_BUZON = ['azure-blob'];
  * Baja el buzón con `bajar()` de download-runs.js: { codigo, res }. Sin `sinHilos: false` explícito, no baja las
  * conversaciones ni los cambios de git (lo seguro); la pestaña Corridas los pide con `site.mailbox.threads` (story 2.27).
  */
-function bajarBuzon({ cuenta, contenedor, credencial, dir, urlBase, log, sinHilos = true, budgetMs = 120000 }) {
+function bajarBuzon({ cuenta, contenedor, credencial, dir, urlBase, log, sinHilos = true, budgetMs = 120000, resumenes = false, topeBytesHilos = null, podar = false }) {
   const { bajar } = require('../../metrics/download-runs.js');
-  return bajar({ cuenta, contenedor, credencial, dir, sinHilos: sinHilos !== false, urlBase, budgetMs, log });
+  return bajar({ cuenta, contenedor, credencial, dir, sinHilos: sinHilos !== false, urlBase, budgetMs, log, resumenes, topeBytesHilos, podar });
+}
+
+/** La conversación y el cambio de UNA corrida, para el detalle a demanda (download-runs.js → bajarUnaCorrida). */
+function bajarUnaCorrida({ cuenta, contenedor, credencial, urlBase, maquina, base, dir }) {
+  return require('../../metrics/download-runs.js').bajarUnaCorrida({ cuenta, contenedor, credencial, urlBase, maquina, base, dir });
 }
 
 /** El token de la identidad administrada para leer el repo de operaciones en Azure DevOps. */
@@ -65,4 +70,4 @@ const HOSTS_QUE_NO_SE_NOMBRAN = /\.windows\.net|dev\.azure\.com/i;
 // la reconoce así y no le pide el no-store del sitio (el sitio ni la vio)
 const esDelCandado = (headers) => Boolean(headers && typeof headers.get === 'function' && headers.get('x-ms-middleware-request-id'));
 
-module.exports = { tokenDeIdentidad, tokenParaRepo, bajarBuzon, PROVEEDORES_DE_BUZON, RECURSO_ALMACENAMIENTO, RECURSO_AZURE_DEVOPS, HOSTS_QUE_NO_SE_NOMBRAN, esDelCandado };
+module.exports = { tokenDeIdentidad, tokenParaRepo, bajarBuzon, bajarUnaCorrida, PROVEEDORES_DE_BUZON, RECURSO_ALMACENAMIENTO, RECURSO_AZURE_DEVOPS, HOSTS_QUE_NO_SE_NOMBRAN, esDelCandado };

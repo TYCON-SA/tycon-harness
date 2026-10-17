@@ -178,7 +178,8 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     const cl = clones();
     let dir = null;
     if (s.repo === 'perfil') {
-      if (!cfg.profileRepo || !cl.perfil) return { ...base, estado: 'no_configurado', motivo: `no configurado: el sitio no tiene SITE_PROFILE_REPO y SITE_PROFILE_TOKEN; ${s.archivo} se edita con un pedido al perfil` };
+      // `falta`: lo que hay que poner, dicho corto para la lista de secciones («falta el repo del perfil»)
+      if (!cfg.profileRepo || !cl.perfil) return { ...base, estado: 'no_configurado', falta: 'el repo del perfil', motivo: `falta el repo del perfil: el sitio no tiene SITE_PROFILE_REPO y SITE_PROFILE_TOKEN (la instalación los pide, con un permiso de sólo lectura sobre el repo del perfil del equipo); ${s.archivo} se edita con un pedido al perfil` };
       if (!cl.perfil.dir) return { ...base, estado: 'no_configurado', motivo: cl.perfil.motivo || 'el perfil del equipo todavía no se bajó' };
       dir = cl.perfil.dir;
     } else {

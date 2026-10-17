@@ -74,6 +74,9 @@ const PLAZO_CONFIG_MS = people.PLAZO_MS;
 const REFRESCO_POR_DEFECTO = 15;
 const EDAD_MAXIMA_SIN_DECLARAR = 2;
 const ARCHIVO_ESTADO = 'configuracion-estado.json';
+// cuánto bajan de conversaciones (y cambios de git) una pasada del buzón, antes de resumirlas y borrarlas del disco: el
+// disco del sitio guarda a lo sumo esto más los resúmenes y los volcados
+const TOPE_CONVERSACIONES_BYTES = 300 * 1024 * 1024;
 const SOURCES_DEL_ARNES = path.join(__dirname, '..', 'nightly', 'dashboard', 'sources.json');
 
 /** La regla de operations.json: la de people.js, la única (AC 10 de la 2.28). */
@@ -454,7 +457,8 @@ function estadoDeGit(stderr) {
 }
 
 /** Saca los caracteres de control de una línea que va al registro (saltos, escape de la consola). */
-function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}, ahora = Date.now, spawn = correr, urlBuzon, git = 'git', nubes: nubesDadas, presupuestoBuzonMs = 120000 }) {
+function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}, ahora = Date.now, spawn = correr, urlBuzon, git = 'git', nubes: nubesDadas, presupuestoBuzonMs = 120000,
+  topeConversacionesBytes = TOPE_CONVERSACIONES_BYTES, resumir = (o) => require('./summaries.js').resumirEnWorker({ ...o, skillsDir: process.env.TYCON_SKILLS_DIR || null }) }) {
   // 🔴 todo lo que este módulo registra puede traer texto del repo de operaciones o del buzón (valores de operations.json,
   //    stderr de git, nombres de archivo): sale sin caracteres de control (revisión de seguridad de la 2.23, vuelta 2)
   const log = (l) => logCrudo(limpiarLinea(l));
@@ -612,8 +616,19 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
     if (mb.threads === true && !cfg.dataDir) log('site.mailbox.threads está en true pero SITE_DATA_DIR no está puesta: no se bajan las conversaciones (sin un disco del sitio se bajarían enteras en cada despertar)');
     let r;
     try {
-      r = await nube.bajarBuzon({ cuenta: mb.account, contenedor: mb.container, credencial: cfg.mailboxCredencial, dir: dirBuzon, urlBase: urlBuzon, sinHilos: !conHilos, budgetMs: presupuestoBuzonMs, log: (l) => log(`buzón: ${l}`) });
+      // con conversaciones: por tandas de `topeConversacionesBytes`, cada una resumida y borrada antes de la siguiente (el
+      // disco del sitio guarda los resúmenes, nunca las conversaciones); y el espejo poda lo que ya no está en el buzón
+      r = await nube.bajarBuzon({ cuenta: mb.account, contenedor: mb.container, credencial: cfg.mailboxCredencial, dir: dirBuzon, urlBase: urlBuzon, sinHilos: !conHilos, budgetMs: presupuestoBuzonMs,
+        resumenes: conHilos, topeBytesHilos: conHilos ? topeConversacionesBytes : null, podar: true, log: (l) => log(`buzón: ${l}`) });
     } catch (e) { r = { codigo: 1, res: { estado: 'sin_red', motivo: `error inesperado al bajar: ${e.message}` } }; }
+    if (conHilos) {
+      // pase lo que pase con la bajada: lo que llegó a bajar se resume y se borra (un disco lleno no se espera a la pasada entera)
+      try {
+        const s = await resumir({ buzon: dirBuzon });
+        if (s.resumidas) log(`buzón: ${s.resumidas} corrida(s) resumida(s); sus conversaciones ya no ocupan el disco`);
+        if (s.fallidas) log(`buzón: ${s.fallidas} corrida(s) no se pudieron resumir y siguen en el disco: ${(s.motivos || []).join(', ')}`);
+      } catch (e) { log(`buzón: no se pudieron resumir las conversaciones bajadas (${e.code || e.message}): siguen en el disco`); }
+    }
     const est = r.res.estado;
     // 🔴 «leído entero» lo dice `completo` (download-runs.js), no el estado: 'bajado' también sale con el presupuesto agotado
     // story 2.27 (pase adversarial): la pestaña Corridas arma SÓLO con una bajada entera, la misma que fija lo informado
@@ -622,7 +637,7 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
     // la pasada cortó por TIEMPO pero avanzó (hotfix 2026-10-16): la siguiente va enseguida y retoma donde quedó, en vez de
     // esperar el refresco de los minutos de siempre. Sin avance, no: sería un lazo.
     st.buzon.seguir = r.codigo === 0 && !st.buzon.completo && r.res.sin_tiempo > 0 && r.res.bajados > 0;
-    if (st.buzon.seguir) log(`buzón: la pasada cortó por tiempo con ${r.res.sin_tiempo} archivo(s) pendientes; la siguiente sigue enseguida`);
+    if (st.buzon.seguir) log(`buzón: la pasada cortó ${r.res.por_tope ? 'por el tope de conversaciones' : 'por tiempo'} con ${r.res.sin_tiempo} archivo(s) pendientes; la siguiente sigue enseguida`);
     if (r.codigo === 0 && r.res.completo === true) {
       st.buzon.generacion += 1;
       st.fallas.buzon = null;
@@ -739,6 +754,17 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
     dirBuzon,
     /** Story 2.27: ¿la última bajada entera del espejo trajo las conversaciones y los cambios de git? */
     hilos: () => st.hilos,
+    /**
+     * El detalle a demanda: la conversación y el cambio de git de UNA corrida (`maquina`, `base`: el volcado sin
+     * `.json`), bajados a `<dir>/<maquina>/` con la credencial del buzón. `{ codigo, res: { estado, motivo } }`.
+     */
+    async bajarCorrida({ maquina, base, dir }) {
+      const conf = st.ultimoBueno;
+      const mb = conf && isObject(conf.site) && isObject(conf.site.mailbox) ? conf.site.mailbox : null;
+      const nube = mb ? lasNubes().find((n) => Array.isArray(n.PROVEEDORES_DE_BUZON) && n.PROVEEDORES_DE_BUZON.includes(mb.provider)) : null;
+      if (!mb || !nube || typeof nube.bajarUnaCorrida !== 'function' || !cfg.mailboxCredencial) return { codigo: 1, res: { estado: 'sin_configurar', motivo: 'el buzón no está configurado en el sitio' } };
+      return nube.bajarUnaCorrida({ cuenta: mb.account, contenedor: mb.container, credencial: cfg.mailboxCredencial, urlBase: urlBuzon, maquina, base, dir });
+    },
     /** Story 2.27: ¿la ÚLTIMA bajada del buzón terminó entera?, y cuántas enteras hubo (la pestaña arma con una entera). */
     // `siguiendo`: la última pasada cortó por tiempo y la siguiente ya está en camino (la pestaña dice «cargando»)
     buzonEstado: () => ({ completo: st.buzon.completo, generacion: st.buzon.generacion, siguiendo: st.buzon.seguir }),

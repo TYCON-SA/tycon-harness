@@ -902,6 +902,52 @@ test('2.27-A5 Sitio_CambiosYParchesConSuFila @story-2.27 @ac-5 @ac-16', async ()
   });
 });
 
+test('2.30-T49 Detalle_ResumidaBajaSusTextosADemanda_ConCacheConTope @story-2.30 @ac-25', async () => {
+  // con el espejo resumido (sin conversaciones en el disco), abrir los cambios de una corrida baja su conversación y su
+  // cambio del buzón, arma los textos y los guarda en un caché fuera de SITE_DATA_DIR; la segunda vez salen del caché, y
+  // con el caché lleno se borran los abiertos hace más tiempo
+  const original = mundo({ marcadores: false });
+  const blobs = {};
+  for (const f of ['maq-a/a1.hilo.jsonl.gz', 'maq-a/a1.cambio.json.gz', 'maq-b/b1.hilo.jsonl.gz', 'maq-b/b1.cambio.json.gz']) blobs[f] = fs.readFileSync(path.join(original, f));
+  const buzon = await H.arrancarBuzon({ blobs });
+  const espejo = mundo({ marcadores: false });
+  const r = runs.resumirEspejo(espejo, { skillsDir: path.join(ROOT, 'skills') });
+  assert.strictEqual(r.resumidas, 2, JSON.stringify(r));
+  const fuentes = fuentesCon({ espejo });
+  const { bajarUnaCorrida } = require(path.join(ROOT, 'scripts', 'metrics', 'download-runs.js'));
+  fuentes.bajarCorrida = ({ maquina, base, dir }) => bajarUnaCorrida({ cuenta: 'cuentax', contenedor: 'runs', credencial: { sas: H.sas() }, urlBase: buzon.base, maquina, base, dir });
+  const descomprimir = (b64) => zlib.gunzipSync(Buffer.from(b64, 'base64')).toString('utf8');
+  try {
+    await conPestana({ fuentes, opciones: { topeCacheBytes: 1 } }, async ({ h, entrar, vista, cfg }) => {
+      const lead = await entrar(LEAD);
+      const lista = (await h.pedir('/api/corridas', { cookie: lead })).json.corridas;
+      const idA = lista.find((c) => c.story === '3.1').id;
+      const pedidosA = () => buzon.pedidos.filter((p) => /a1\.(hilo\.jsonl|cambio\.json)\.gz$/.test(p.ruta)).length;
+      const t = await h.pedir(`/api/corridas/${idA}/textos`, { cookie: lead });
+      assert.strictEqual(t.status, 200, t.texto);
+      assert.match(descomprimir(t.json.texto), /NUEVO_DE_A/, 'el cambio de la conversación, bajado a demanda');
+      assert.match(descomprimir(t.json.textoGit), /PARCHE_DE_A/, 'y el parche de git');
+      assert.strictEqual(pedidosA(), 2, 'se bajaron las dos partes de esa corrida');
+      // la segunda vez, del caché: el buzón no se vuelve a tocar
+      const t2 = await h.pedir(`/api/corridas/${idA}/textos`, { cookie: lead });
+      assert.deepStrictEqual(t2.json, t.json);
+      assert.strictEqual(pedidosA(), 2, 'del caché');
+      // el caché, fuera del disco del sitio, y con su tope: abrir otra corrida borra la de antes
+      assert.ok(!path.resolve(vista.dirCache()).startsWith(path.resolve(cfg.dataDir)), 'el caché no está en SITE_DATA_DIR');
+      const idB = lista.find((c) => c.maquina === 'maq-b').id;
+      assert.strictEqual((await h.pedir(`/api/corridas/${idB}/textos`, { cookie: lead })).status, 200);
+      assert.deepStrictEqual(fs.readdirSync(vista.dirCache()), [`${idB}.json`], 'con el tope lleno queda la última abierta');
+      // lo bajado para armar el detalle no queda en ningún lado: ni en el espejo ni en el disco del sitio
+      assert.deepStrictEqual(fs.readdirSync(espejo, { recursive: true }).filter((f) => /\.(hilo\.jsonl|cambio\.json)\.gz$/.test(f)), []);
+      // un buzón que no contesta: «no se pudieron leer» (500), nunca «no hay cambios»
+      buzon.st.modo = '503';
+      fs.rmSync(path.join(vista.dirCache(), `${idB}.json`));
+      const caido = await h.pedir(`/api/corridas/${idB}/textos`, { cookie: lead });
+      assert.strictEqual(caido.status, 500, caido.texto);
+    });
+  } finally { await buzon.cerrar(); }
+});
+
 test('2.27-A6 Arranque_BorraLosTextosDeArmadosAnteriores @story-2.27 @ac-20', () => {
   const datos = tmp('site-runs-arranque-');
   const viejo = path.join(datos, 'corridas-textos', '1700000000000-abcd1234');
@@ -909,8 +955,10 @@ test('2.27-A6 Arranque_BorraLosTextosDeArmadosAnteriores @story-2.27 @ac-20', ()
   fs.writeFileSync(path.join(viejo, '0123456789abcdef.json'), '{}');
   const f = fuentesCon({ espejo: mundo({ marcadores: false }) });
   f.st.cargado = false;   // sin armar: sólo el arranque
-  TAB().crearVista({ cfg: { dataDir: datos }, fuentes: f });
-  assert.deepStrictEqual(fs.readdirSync(path.join(datos, 'corridas-textos')), [], 'la carpeta de un arranque anterior no queda');
+  const vista = TAB().crearVista({ cfg: { dataDir: datos }, fuentes: f });
+  // los textos viven en el disco del contenedor, no en el del sitio: una carpeta de textos en SITE_DATA_DIR se borra entera
+  assert.ok(!fs.existsSync(path.join(datos, 'corridas-textos')), 'la carpeta de un arranque anterior no queda');
+  assert.ok(!path.resolve(vista.dirCache()).startsWith(path.resolve(datos)), 'el caché de textos, fuera de SITE_DATA_DIR');
 });
 
 test('2.27-A7 VistaLocal_SelloSinMaquinas_IgualQueAntes @story-2.27 @ac-23', () => {

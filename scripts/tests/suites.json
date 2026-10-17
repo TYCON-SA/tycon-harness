@@ -1233,6 +1233,12 @@
       "requiere": []
     },
     {
+      "__nota": "el sitio con las conversaciones prendidas sobre un disco chico: la bajada por tandas con tope de bytes, el resumen de cada corrida y el borrado de su conversación, la poda del espejo, y los textos a demanda en un hilo aparte con tope de tiempo. Buzón y repo por HTTP locales (sin git http-backend, T48 se saltea con constancia).",
+      "raiz": "arnes",
+      "ruta": "tests/site-mailbox-summaries.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 2.23: las pestañas Inicio (las dos), Proyectos (con la paridad de la 2.25) y Arnés: leen, no miden; «no medido» nunca es 0; las cabeceras y ningún script en línea.",
       "raiz": "arnes",
       "ruta": "tests/site-views.test.js",

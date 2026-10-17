@@ -387,8 +387,13 @@ test('T5 Lectura_DelClonDelSitio_PerfilSinConfigurar_ArchivoAusenteOIlegible @st
     const por = Object.fromEntries(r.secciones.map((s) => [s.id, s]));
     assert.strictEqual(por.responsables.estado, 'nuevo', 'operations.json ausente: se crea con el pedido');
     assert.strictEqual(por.repos.estado, 'no_configurado');
-    assert.match(por.repos.motivo, /no configurado/);
+    // dice qué falta, no sólo «sin configurar»: el repo del perfil, y con qué variables se pone
+    assert.strictEqual(por.repos.falta, 'el repo del perfil');
+    assert.match(por.repos.motivo, /^falta el repo del perfil: .*SITE_PROFILE_REPO y SITE_PROFILE_TOKEN/);
     assert.ok(!cfg.profileRepo);
+    // y la lista de secciones de la pantalla lo muestra así
+    const pantalla = await correrPantalla(() => Promise.resolve({ status: 200, json: () => Promise.resolve(r) }));
+    assert.match(pantalla, /falta el repo del perfil/);
   });
   // un archivo que está y no se puede leer (una carpeta con su nombre): el motivo, sin edición
   const ops2 = clon({ 'operations.json/x': 'y' });

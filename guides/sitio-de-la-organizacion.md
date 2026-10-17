@@ -88,9 +88,14 @@ El TLS lo pone quien instala: la plataforma, un proxy o un túnel. El contenedor
 
 ### El disco
 
-Un volumen persistente montado como carpeta en `SITE_DATA_DIR`. Ahí viven el espejo del buzón con sus conversaciones
-(unos 1 GB), el clon del repo de operaciones y la última configuración buena. **Sin volumen el sitio igual anda**: usa una
-carpeta temporal y lo dice. Pero lo que sale de las conversaciones en la pestaña Corridas queda «no medido», cada
+Un volumen persistente montado como carpeta en `SITE_DATA_DIR`. Ahí viven el espejo del buzón (los volcados de las
+corridas y, con `site.mailbox.threads: true`, un resumen chico de cada conversación) y la última configuración buena.
+Las conversaciones no se guardan: cada una se baja una vez, se resume y se borra, y la pasada no baja más de 300 MB de
+conversaciones por vez. Los clones de los repos y los textos de los cambios van al disco del contenedor, nunca al volumen
+(un disco de red montado por SMB no admite el `chmod` que git hace al clonar). Medido con un buzón de 6,9 GB: sin
+las conversaciones, ocupa 163 MB, a los que se suman los resúmenes (unos kilobytes por corrida) y, mientras dura una
+pasada, hasta 300 MB de conversaciones por resumir. **2 GB alcanzan**, con lugar para crecer. **Sin volumen el sitio igual anda**: usa
+una carpeta temporal y lo dice. Pero lo que sale de las conversaciones en la pestaña Corridas queda «no medido», cada
 reinicio vuelve a bajar todo, y un reinicio reinicia el plazo de 24 horas que tiene una configuración rota antes de que
 el sitio se frene (y levanta el freno hasta que vuelva a vencer).
 
@@ -125,7 +130,8 @@ Cada instalación dice dónde se guarda cada uno y por dónde entra su valor. **
 | `SITE_MAILBOX_SAS` (o `SITE_MAILBOX_IDENTITY=managed`) | leer las corridas del buzón | una SAS de sólo leer y listar (`rl`) atada a una política guardada del contenedor, 6 meses como máximo; o la identidad de la plataforma con un rol de lectura sobre el contenedor |
 | el canal del aviso | mandar el aviso de la mañana | no llega al sitio: lo usa el proceso de la noche. Telegram: el token sirve para todo el bot, usá uno dedicado. Slack o Teams: la dirección del webhook ES la credencial |
 | `SITE_OPERATIONS_WRITE_TOKEN` | proponer cambios de configuración desde el sitio | en GitHub, de grano fino sobre el repo de operaciones con `contents: write` y `pull_requests: write`; en Azure DevOps, una cuenta dedicada con *Contribute*, *Create branch* y *Contribute to pull requests* sólo en ese repo, *Force push* negado y sin permiso de saltar políticas |
-| `SITE_PROFILE_REPO`, `SITE_PROFILE_TOKEN`, `SITE_PROFILE_WRITE_TOKEN`, `SITE_PIPELINES_TOKEN` | lo opcional de la pestaña Configuración | apagadas por defecto: vacías o comentadas, nunca con un valor; una identidad dedicada y un repo por credencial |
+| `SITE_PROFILE_REPO` y `SITE_PROFILE_TOKEN` | leer el perfil del equipo (dónde vive cada repo, los paquetes) | parte de la instalación normal: sin ellos la pestaña Configuración dice «falta el repo del perfil». La dirección del repo del perfil y un token de sólo lectura de código sobre ese repo (puede ser el mismo permiso que el del repo de operaciones, si los dos viven en la misma organización) |
+| `SITE_PROFILE_WRITE_TOKEN`, `SITE_PIPELINES_TOKEN` | lo opcional de la pestaña Configuración | apagadas por defecto: vacías o comentadas, nunca con un valor; una identidad dedicada y un repo por credencial |
 
 `SITE_FIRST_MAINTAINER` no es un secreto: es el correo de quien entra primero como mantenedor, mientras la lista de
 mantenedores (`site.maintainers` de `operations.json`) no existe. Sacala después.
@@ -189,7 +195,9 @@ imprime la dirección que tendrá el sitio y las dos vueltas a agregar al regist
 aplicación con la entrada interna, el rol de lectura del buzón y el inicio integrado, y abre la entrada externa al
 final. Si un paso falla, la entrada sigue interna, y correrla de nuevo sigue desde donde quedó. Corre con tu sesión de
 `az` (no abre un login). El archivo de configuración lleva suscripción, grupo, región, nombres, inquilino, la imagen por
-su huella y el identificador del cliente, y ningún secreto; la cabecera del guion dice cada clave.
+su huella y el identificador del cliente, y ningún secreto; la cabecera del guion dice cada clave. El repo del perfil va
+en la instalación normal: su dirección en `profileRepo` del archivo, y su token en `SITE_PROFILE_TOKEN`, en el entorno de
+quien corre el alta, como los otros secretos. Sin los dos, la pestaña Configuración dice «falta el repo del perfil».
 
 - **Inicio de sesión:** dos candados. Delante, el inicio integrado de la plataforma con el mismo registro de Entra ID,
   de un solo inquilino y con «asignación requerida» (las personas se asignan una por una; asignar un grupo pide una
@@ -332,7 +340,11 @@ código para la vista local y la del sitio).
 - **El armado en un hilo aparte**, con techo de memoria: medido con 551 corridas, 34 segundos y unos 690 MB de pico.
   Mientras rearma, o si falla, sirve el anterior entero con su hora.
 - **Las conversaciones, sólo con disco** (`site.mailbox.threads: true` y `SITE_DATA_DIR`). Sin eso, lo que sale del hilo
-  dice «no medido».
+  dice «no medido». Con eso, cada conversación se baja una vez, por tandas de hasta 300 MB, y se resume: la
+  descripción de la corrida, el reparto del tiempo y la lista de cambios. Después se borra del disco. La tabla y el
+  detalle salen del resumen. Los textos de los cambios (los parches) se bajan cuando alguien abre los cambios de una
+  corrida, y quedan en un caché de 200 MB en el disco del contenedor; al llenarse, se borran los abiertos hace más
+  tiempo. El espejo borra lo que ya no está en el buzón.
 
 ### El aviso de la mañana y la prueba sin sesión
 

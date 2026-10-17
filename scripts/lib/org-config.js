@@ -607,7 +607,7 @@ function pantalla() {
   function estadoDe(s) {
     if (s.estado === 'ilegible') return ['bad', 'hay que arreglarla a mano'];
     if (s.estado === 'no_reader') return ['nm', 'todavía no disponible'];
-    if (s.estado === 'no_configurado') return ['nm', 'sin configurar'];
+    if (s.estado === 'no_configurado') return ['nm', s.falta ? 'falta ' + s.falta : 'sin configurar'];
     if (s.soloLectura) return ['nm', 'sólo para mirar'];
     var n = (S.problemas[s.id] || []).length;
     if (n) return ['warn', n + ' para corregir'];
