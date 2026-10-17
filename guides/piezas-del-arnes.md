@@ -597,7 +597,8 @@ sostiene:
   escrito) cuenta igual para la sección que lo cambia: si no, se propondría. La página local usa el mismo núcleo (hoy
   sigue guardando; pasa a sólo lectura cuando el sitio esté desplegado).
 - **Las claves de `team-repos.json` que llegaron después tienen su versión**: `TEAM_REPOS_SINCE` para el archivo,
-  `MERGE_SUITES_SINCE` para `merge_suites` y `MODELS_SINCE` para `models` (la etiqueta del merge que trajo cada
+  `MERGE_SUITES_SINCE` para `merge_suites`, `MODELS_SINCE` para `models` y `WAIT_NOTICE_SINCE` para `wait_notice`, el
+  plazo del aviso de espera que edita la sección «Aviso de espera» (la etiqueta del merge que trajo cada
   lector). Un cambio a ese archivo se propone sólo si el `team-layer.json` del perfil pide al menos la mayor de las
   claves que trae el archivo propuesto: una máquina con un lector anterior rechazaría la capa entera.
 - **El perfil del equipo, entero desde el sitio**: «Cómo contesta Claude» (`response`), «Integraciones»,
