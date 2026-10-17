@@ -3,6 +3,9 @@
 # como arnés: los guiones que esos controles llaman son los de este árbol, no los de otra instalación.
 set -u
 raiz="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# la raíz la elige este envoltorio, no quien llama: para los controles no es un arnés «nombrado»
+# (TYCON_CHECKS_HARNESS_NAMED vacía), y en un repo sin arnés no corren los frenos del arnés, que ahí no tienen sus listas
+export TYCON_CHECKS_HARNESS_NAMED=""
 export TYCON_GUIDES_DIR="$raiz" TYCON_SKILLS_DIR="$raiz"
 if [ -x "$raiz/.githooks/pre-commit-checks" ]; then exec "$raiz/.githooks/pre-commit-checks"; fi
 exec bash "$raiz/.githooks/pre-commit-checks"

@@ -16,7 +16,8 @@ set -uo pipefail
 # El arnés de las dos partes es la raíz de este repo, salvo que quien llama diga otro (TYCON_GUIDES_DIR y
 # TYCON_SKILLS_DIR): los guiones que corren los controles son los de este árbol, no los de otra instalación.
 # (si quien llama nombró el arnés, la parte de las skills avisa que le falta un guion aunque ahí no haya arnés)
-_checks_named_harness="${TYCON_GUIDES_DIR:+1}"
+# (el envoltorio .githooks/pre-commit exporta la raíz y deja dicho en TYCON_CHECKS_HARNESS_NAMED si ya venía nombrado)
+_checks_named_harness="${TYCON_CHECKS_HARNESS_NAMED-${TYCON_GUIDES_DIR:+1}}"
 if _checks_root="$(git rev-parse --show-toplevel 2>/dev/null)"; then
   export TYCON_GUIDES_DIR="${TYCON_GUIDES_DIR:-$_checks_root}" TYCON_SKILLS_DIR="${TYCON_SKILLS_DIR:-$_checks_root}"
 fi
@@ -363,6 +364,9 @@ exit 0
 
 checks_skills() (
 cd "$(git rev-parse --show-toplevel)" || exit 0
+# Sólo en un repo con lo de las skills (skills/, agents/ o packs/): en otro no hay nada de esta fuente que mirar, y sus
+# frenos no tendrían de dónde leer sus listas (un repo de juguete de las suites del hook, con un arnés nombrado)
+[ -d skills ] || [ -d agents ] || [ -d packs ] || exit 0
 TCG="$(harness_dir)"
 # los guiones de publicación del arnés que corre esta parte
 harness_publishing() {
