@@ -250,7 +250,10 @@ function thresholdsParse(text, opts = {}) {
       problems.push({ path: `thresholds.${k}`, message: 'el arnés no conoce esta clave: no juzga nada con ella' });
       continue;
     }
-    if (!valido(u)) problems.push({ path: `thresholds.${k}`, message: 'umbral mal formado: direction (mayor_es_mejor con ok_min y bad_max, o menor_es_mejor con ok_max y bad_min) y sus dos números' });
+    if (!valido(u)) { problems.push({ path: `thresholds.${k}`, message: 'falta elegir si es mejor más alto o más bajo, o alguno de los dos límites (el del verde y el del rojo)' }); continue; }
+    // con el verde del lado del rojo, el tablero pintaría un número de dos colores a la vez
+    if (u.direction === 'menor_es_mejor' && !(u.ok_max < u.bad_min)) problems.push({ path: `thresholds.${k}`, message: 'si es mejor más bajo, el límite del verde tiene que ser menor que el del rojo' });
+    if (u.direction === 'mayor_es_mejor' && !(u.ok_min > u.bad_max)) problems.push({ path: `thresholds.${k}`, message: 'si es mejor más alto, el límite del verde tiene que ser mayor que el del rojo' });
   }
   return { ok: problems.length === 0, data: problems.length ? null : th, problems, avisos, soloLectura: false };
 }
@@ -626,6 +629,44 @@ function pantalla() {
     if (s.id === 'personas' && s.extras && (s.extras.porConfirmar || []).length) return ['warn', s.extras.porConfirmar.length + ' por confirmar'];
     return ['ok', 'al día'];
   }
+  // ── los mensajes de los lectores, en castellano llano: la ruta con nombres de la pantalla y sin claves del archivo ──
+  var PALABRAS = {
+    site: 'el sitio', maintainers: 'quién mantiene el sitio', mailbox: 'dónde dejan sus corridas', provider: 'servicio', account: 'cuenta', container: 'carpeta', threads: 'conversaciones', refresh_minutes: 'cada cuánto se actualiza', url: 'dirección',
+    people: 'personas', machines: 'máquinas', projects: 'proyectos', person: 'persona', reported_sha256: 'correo informado', confirmed_by: 'confirmada por', confirmed_on: 'confirmada el', add: 'suma', remove: 'saca',
+    owners: 'responsables', reviewers: 'revisores', default: 'por defecto', by_project: 'por proyecto', dependencies: 'dependencias', watcher: 'vigilante',
+    deployments: 'despliegues', products: 'productos', staging: 'prueba', production: 'producción', pipeline: 'pipeline', stages: 'pasos', environment: 'entorno', workflow: 'workflow',
+    notify: 'aviso diario', channel: 'canal', thresholds: 'umbrales', direction: 'mejor si es', ok_min: 'verde desde', ok_max: 'verde hasta', bad_max: 'rojo hasta', bad_min: 'rojo desde',
+    merge_suites: 'pruebas al mergear', rule: 'regla', full_tests_pipeline: 'pipeline de las pruebas completas', models: 'modelos', mandatory_ceiling: 'techo obligatorio', ceiling: 'techo', reviewer: 'revisor', reviewers_reloop: 'revisores de la segunda vuelta', adversarial: 'pase adversarial', helpers: 'ayudantes', session: 'sesión', model: 'modelo', heavy: 'pesado', fable_question: 'pregunta antes de usar Fable', low: 'liviano', normal: 'normal',
+    wait_notice: 'aviso de espera', minutes: 'minutos', public: 'repo público', profile: 'repo del equipo', operations: 'repo de operaciones', org: 'organización', project: 'proyecto', repo: 'repo', repos: 'repos', platform: 'plataforma',
+    response: 'cómo contesta Claude', integrations: 'integraciones', ado: 'Azure DevOps', update: 'actualización', install: 'instalación', packs: 'paquetes', diferencias_declaradas: 'diferencias declaradas', version: 'versión',
+  };
+  /** La ruta de un problema con los nombres de la pantalla: «personas › máquinas › «mac-1»»; un número es la fila. */
+  function rutaLlana(ruta) {
+    if (!ruta) return '';
+    return String(ruta).split('.').map(function (p) { return /^\d+$/.test(p) ? 'fila ' + (Number(p) + 1) : PALABRAS[p] || '«' + p + '»'; }).join(' › ');
+  }
+  // [patrón, frase]: los mensajes que nombran claves del archivo, dichos con las palabras de la pantalla
+  var FRASES = [
+    [/^clave desconocida( \(secciones válidas:.*)?$/, 'el arnés no conoce este dato'],
+    [/^falta$/, 'falta completarlo'],
+    [/^tiene que ser (un objeto|una lista)\b.*$/, 'está escrito con una forma que el arnés no sabe leer: hay que corregirlo a mano en el archivo'],
+    [/^tiene que ser true o false.*$/, 'tiene que ser sí o no'],
+    [/^un techo sin «mandatory_ceiling: true» no limita nada$/, 'un techo que no es obligatorio no limita nada'],
+    [/^con techo obligatorio falta «ceiling»$/, 'con el techo obligatorio, falta elegir el modelo del techo'],
+    [/^este repo ya tiene una entrada en merge_suites\.repos$/, 'este repo ya está en la lista'],
+    [/^tiene que traer rule o full_tests_pipeline.*$/, 'tiene que decir la regla o el pipeline de las pruebas completas'],
+    [/^(«[^»]*») está en add y en remove: va en una sola$/, '$1 está para sumar y para sacar a la vez: va en uno solo'],
+    [/^tiene que declarar staging, production o los dos$/, 'tiene que tener el paso de prueba, el de producción o los dos'],
+    [/^sólo va en staging: (.*)$/, 'sólo va en el paso de prueba: $1'],
+    [/^tiene que ser «ask» o «never»(.*)$/, 'tiene que ser «preguntar» o «nunca»$1'],
+  ];
+  function mensajeLlano(m) {
+    var t = String(m == null ? '' : m);
+    for (var i = 0; i < FRASES.length; i++) if (FRASES[i][0].test(t)) return t.replace(FRASES[i][0], FRASES[i][1]);
+    return t;
+  }
+  /** Los problemas o avisos de un lector, con el mensaje llano y la ruta con nombres (la ruta original queda para ubicarlos). */
+  function llanos(lista) { return (lista || []).map(function (x) { var y = {}; Object.keys(x).forEach(function (k) { y[k] = x[k]; }); y.message = mensajeLlano(x.message); y.donde = rutaLlana(x.path); return y; }); }
   /** Un aviso con una frase llana arriba y el motivo exacto del arnés, plegado, abajo. */
   function aviso(clase, titulo, detalle) {
     var box = el('div', { class: 'msg ' + clase }, el('b', { text: titulo }));
@@ -643,7 +684,7 @@ function pantalla() {
     var box = el('div', { class: 'pila' });
     box.appendChild(el('details', { class: 'mas-info' }, el('summary', { text: 'Editar como texto' }), editorGenerico(s, d, pr, clave, titulo)));
     (pr || []).filter(function (x) { return !x.sinCampo && (x.path === clave || String(x.path).indexOf(clave + '.') === 0) && MOSTRADOS.indexOf(x) < 0; })
-      .forEach(function (x) { box.appendChild(el('div', { class: 'err', text: x.path + ': ' + x.message })); });
+      .forEach(function (x) { box.appendChild(el('div', { class: 'err', text: x.donde + ': ' + x.message })); });
     return box;
   }
   function campo(label, valor, onInput, p, problemas, attrs) {
@@ -1069,10 +1110,10 @@ function pantalla() {
   }
   function revisarSeccion(s, borrador) {
     return api('/revisar', { seccion: s.id, borrador: sinVacios(s, borrador === undefined ? S.borradores[s.id] : borrador) }).then(function (r) {
-      S.problemas[s.id] = r.problems || []; S.avisos[s.id] = r.avisos || [];
+      S.problemas[s.id] = llanos(r.problems); S.avisos[s.id] = llanos(r.avisos);
       if (r.borrador) S.borradores[s.id] = r.borrador;
       S.textos[s.id] = r.ok ? r.texto : null;
-      S.notas[s.id] = r.ok ? { ok: true, text: 'Revisado: está bien escrito.' + (r.aviso ? ' ' + r.aviso : '') + (r.advertencia ? ' ' + r.advertencia : '') } : { ok: false, text: r.message || 'Hay que corregir lo marcado.' };
+      S.notas[s.id] = r.ok ? { ok: true, text: 'Revisado: está bien escrito.' + (r.aviso ? ' ' + r.aviso : '') + (r.advertencia ? ' ' + r.advertencia : '') } : { ok: false, text: mensajeLlano(r.message) || 'Hay que corregir lo marcado.' };
       render();
       return r;
     });
@@ -1100,7 +1141,7 @@ function pantalla() {
     if (s.soloLectura) sec.appendChild(aviso('nm', 'Por ahora se puede mirar, pero no cambiar.', s.motivo));
     var pr = S.problemas[s.id] || [];
     var arriba = pr.filter(function (x) { return x.sinCampo; });
-    if (arriba.length) { var ul = el('ul', { class: 'renglones' }); arriba.forEach(function (x) { ul.appendChild(el('li', { class: 'err', text: (x.path ? x.path + ': ' : '') + x.message })); }); sec.appendChild(ul); }
+    if (arriba.length) { var ul = el('ul', { class: 'renglones' }); arriba.forEach(function (x) { ul.appendChild(el('li', { class: 'err', text: (x.donde ? x.donde + ': ' : '') + x.message })); }); sec.appendChild(ul); }
     var editor = EDITORES[s.id];
     if (editor) { SOLO_LECTURA = !!s.soloLectura; try { sec.appendChild(editor(s, S.borradores[s.id], pr)); } finally { SOLO_LECTURA = false; } }
     var n = S.notas[s.id];
@@ -1207,7 +1248,7 @@ function pantalla() {
     return api('').then(function (r) {
       if (!r.ok) { app.replaceChildren(el('div', { class: 'msg bad' }, el('b', { text: 'No se pudo leer la configuración.' }), el('span', { text: r.message || '' }))); return; }
       S.secciones = r.secciones; S.extras = r;
-      r.secciones.forEach(function (s) { S.borradores[s.id] = copia(s.borrador === undefined ? {} : s.borrador); S.originales[s.id] = copia(S.borradores[s.id]); S.problemas[s.id] = s.problems || []; S.textos[s.id] = null; S.avisos[s.id] = s.avisos || []; });
+      r.secciones.forEach(function (s) { S.borradores[s.id] = copia(s.borrador === undefined ? {} : s.borrador); S.originales[s.id] = copia(S.borradores[s.id]); S.problemas[s.id] = llanos(s.problems); S.textos[s.id] = null; S.avisos[s.id] = llanos(s.avisos); });
       if (!S.pestana) S.pestana = pestanaDe(ancla()) || PESTANAS[0][0];
       render();
     });

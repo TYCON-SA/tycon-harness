@@ -28,7 +28,7 @@ a,a:visited{color:inherit;text-decoration-color:var(--line-strong);text-underlin
 .salir span{overflow-wrap:anywhere}.salir b{color:var(--ink-2);font-weight:600}
 .salir button{justify-self:start;padding:5px 12px;border-radius:8px;border:1px solid var(--line-strong);background:var(--surface);cursor:pointer;font-size:13px}
 .salir button:hover{background:var(--wash)}
-main{min-width:0;padding:30px 40px 80px;max-width:1240px;width:100%}
+main{min-width:0;box-sizing:border-box;padding:30px 40px 80px;max-width:1240px;width:100%}
 .wrap{max-width:none;margin:0;padding:0}
 
 /* ── encabezado de cada pestaña ── */
@@ -118,7 +118,7 @@ a.kpi:hover{background:var(--wash)}
 .sub-d{font-size:12.5px;color:var(--muted);margin:-6px 0 0}
 .campo{display:grid;gap:4px;font-size:12px;color:var(--muted);min-width:0}
 .campo label{font-size:12px;color:var(--muted)}
-.campo input,.campo select,.fila input,.fila select,.form-block textarea,.thr input,.thr select{width:100%;min-width:0;padding:7px 10px;border-radius:8px;border:1px solid var(--line-strong);background:var(--surface-2);font-size:14px;color:var(--ink)}
+.campo input,.campo select,.fila input,.fila select,.form-block textarea,.thr input,.thr select{width:100%;min-width:0;box-sizing:border-box;padding:7px 10px;border-radius:8px;border:1px solid var(--line-strong);background:var(--surface-2);font-size:14px;color:var(--ink)}
 .campo input:disabled,.form-block input:disabled,.form-block select:disabled,.form-block textarea:disabled{opacity:.5;cursor:not-allowed;background:transparent}
 input.bad{border-color:var(--bad)}
 .form-block textarea{font:12.5px/1.5 var(--mono)}

@@ -909,6 +909,37 @@ test('Pestanas_EnlaceDirectoAbreSuPestana — #seccion-… y #pestana-… abren 
   assert.strictEqual(r.panelDe('seccion-nueva').attrs.id, 'pestana-instalacion');
 });
 
+test('Umbrales_VerdeDelLadoDelRojo_DichoLlano — el límite del verde no puede quedar del lado del rojo, y se dice sin nombres de claves', () => {
+  const texto = (th) => ORG.formatJson({ thresholds: th });
+  const menor = ORG.thresholdsParse(texto({ x: { direction: 'menor_es_mejor', ok_max: 3, bad_min: 1 } }));
+  assert.strictEqual(menor.ok, false);
+  assert.deepStrictEqual(menor.problems.map((p) => p.message), ['si es mejor más bajo, el límite del verde tiene que ser menor que el del rojo']);
+  const mayor = ORG.thresholdsParse(texto({ x: { direction: 'mayor_es_mejor', ok_min: 0.5, bad_max: 0.5 } }));
+  assert.deepStrictEqual(mayor.problems.map((p) => p.message), ['si es mejor más alto, el límite del verde tiene que ser mayor que el del rojo']);
+  const mal = ORG.thresholdsParse(texto({ x: { direction: 'menor_es_mejor', ok_max: 1 } }));
+  for (const p of mal.problems) assert.doesNotMatch(p.message, /ok_|bad_|direction|_es_mejor/, 'sin claves del archivo');
+  assert.strictEqual(ORG.thresholdsParse(texto({ x: { direction: 'menor_es_mejor', ok_max: 0, bad_min: 1 } })).ok, true, 'en orden, pasa');
+});
+
+test('Mensajes_EnLlano_SinRutasNiClaves — la pantalla muestra dónde con los nombres de la pantalla y los mensajes que nombran claves, en palabras', async () => {
+  const problems = [
+    { path: 'site.mailbox.account', message: 'tiene que tener la forma de una cuenta de almacenamiento (3 a 24 minúsculas o números)', sinCampo: true },
+    { path: 'people.machines.mac-1.person', message: 'clave desconocida', sinCampo: true },
+    { path: 'models.ceiling', message: 'con techo obligatorio falta «ceiling»', sinCampo: true },
+    { path: 'deployments.products.acme', message: 'tiene que declarar staging, production o los dos', sinCampo: true },
+    { path: 'merge_suites.repos.0', message: 'tiene que traer rule o full_tests_pipeline (sin ninguno, la entrada no dice nada)', sinCampo: true },
+  ];
+  const r = await pantallaConPestanas({ secciones: TODAS.map((id) => SEC(id, id === 'sitio' ? { problems } : {})) });
+  const textos = []; const walk = (n) => { if (n.textContent) textos.push(n.textContent); (n.hijos || []).forEach(walk); }; walk(r.panelDe('seccion-sitio'));
+  const err = textos.filter((t) => / › /.test(t)).join('\n');
+  assert.match(err, /el sitio › dónde dejan sus corridas › cuenta: tiene que tener la forma de una cuenta/);
+  assert.match(err, /personas › máquinas › «mac-1» › persona: el arnés no conoce este dato/);
+  assert.match(err, /modelos › techo: con el techo obligatorio, falta elegir el modelo del techo/);
+  assert.match(err, /despliegues › productos › «acme»: tiene que tener el paso de prueba, el de producción o los dos/);
+  assert.match(err, /pruebas al mergear › repos › fila 1: tiene que decir la regla o el pipeline de las pruebas completas/);
+  assert.doesNotMatch(err, /site\.|mailbox|merge_suites|full_tests_pipeline|staging|ceiling»/, 'ninguna clave del archivo a la vista');
+});
+
 // ── tanda C: dónde corren las suites al mergear (7.28) y los modelos de cada trabajo (7.29) ──────────────────────
 const GH = (repo) => ({ platform: 'github', org: 'acme', repo });
 const TR_BASE = { version: 1, public: GH('harness'), profile: GH('profile'), operations: GH('ops') };
