@@ -35,8 +35,20 @@ const WAKE_DEFAULT_S = 90;
 const PLAZO_MS = 15000;
 const PLAZO_HTTP_MS = 5000;
 const MAX_REDIRECCIONES = 3;
-// lo que /healthz no puede nombrar: una dirección, un host de almacenamiento o de un repo
-const NOMBRA = /:\/\/|\.windows\.net|dev\.azure\.com|github\.com/i;
+// lo que /healthz no puede nombrar: una dirección, un host de almacenamiento o de un repo. Los hosts de cada nube los
+// dice su módulo en cloud/, como para el resto del núcleo: se recorren todos sin nombrar a ninguno
+const NOMBRA = (() => {
+  const dir = require('path').join(__dirname, 'cloud');
+  // sin catch: una carpeta que no se lee achicaría la lista en silencio, y eso es aceptar un /healthz que cuenta de más
+  const archivos = fs.readdirSync(dir).filter((f) => /^[a-z][a-z0-9-]*\.js$/.test(f));
+  // cada módulo de nube dice sus hosts; uno que no los diga achicaría el control sin avisar: se frena acá
+  const hosts = archivos.map((f) => {
+    const r = require(require('path').join(dir, f)).HOSTS_QUE_NO_SE_NOMBRAN;
+    if (!(r instanceof RegExp)) throw new Error(`cloud/${f} no exporta HOSTS_QUE_NO_SE_NOMBRAN: sin esa lista la prueba sin sesión no puede mirar /healthz`);
+    return r;
+  });
+  return new RegExp([':\\/\\/', 'github\\.com', ...hosts.map((r) => r.source)].join('|'), 'i');
+})();
 
 class NoPudo extends Error {}
 

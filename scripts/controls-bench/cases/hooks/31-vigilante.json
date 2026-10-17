@@ -171,7 +171,7 @@
         },
         {
           "id": "el-aviso-respeta-el-presupuesto-pero-escribe-todo",
-          "__nota": "El tope es sobre el AVISO, jamás sobre el registro: lo que no entra en el mensaje se escribe igual en los borradores. Descartar en silencio es lo que esta casa no hace.",
+          "__nota": "El tope es sobre el AVISO, jamás sobre el registro: el aviso sale a un servicio de afuera y lleva sólo cantidades (los cuatro hallazgos contados, ninguno nombrado), y todos se escriben igual en los borradores. Descartar en silencio es lo que esta casa no hace.",
           "type": "must-emit",
           "files": {
             "correr.sh": "#!/usr/bin/env bash\ncd \"$FIXTURE\"\nnode \"$TCG/scripts/nightly/watcher/vigilante.js\" run --config cfg.json --fixture datos --out out --pending vig --today 2026-08-31\n",
@@ -190,8 +190,7 @@
           },
           "expect": {
             "stdout_re": [
-              "4 hallazgo",
-              "y 2 de menor severidad"
+              "4 hallazgo\\(s\\) nuevo\\(s\\), 0 sin medir"
             ],
             "dir_has_file": [
               {

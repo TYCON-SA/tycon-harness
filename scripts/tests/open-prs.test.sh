@@ -159,7 +159,7 @@ FIXAZ="$D/fixaz" TYCON_ADO_CMD="$DOBLE" TYCON_ADO_ORG="$ORG" node "$GUION" --tod
 #    la sección lo dice, el guion sale 0 y NO consulta nada. Nunca «ninguno» sin haber mirado.
 D="$TMP/t10"; mundo "$D"; mkdir -p "$D/casa"
 FIXAZ="$D/fixaz" TYCON_ADO_CMD="$DOBLE" HOME="$D/casa" TYCON_PROFILE=0 node "$GUION" --today "$HOY" --out "$D/seccion.txt" > "$D/out.txt" 2>&1; RC=$?
-if [ "$RC" = 0 ] && grep -qi 'Azure DevOps apagad' "$D/out.txt" && ! grep -qiE 'ninguno|: 0$' "$D/out.txt" "$D/seccion.txt" && [ "$(cat "$D/seccion.txt")" = "PR abiertos hace más de 2 días: ? (no se pudo consultar)" ] && [ ! -s "$D/fixaz/llamadas.log" ]; then
+if [ "$RC" = 0 ] && grep -qi 'Azure DevOps apagad' "$D/out.txt" && ! grep -qiE 'ninguno|: 0$' "$D/out.txt" "$D/seccion.txt" && [ "$(cat "$D/seccion.txt")" = "PR abiertos hace más de 2 días: ? (Azure DevOps apagado)" ] && [ ! -s "$D/fixaz/llamadas.log" ]; then
   ok "T10 sin organización configurada: «Azure DevOps apagado», exit 0, y no se consulta Azure"
 else no "T10 rc=$RC · sección: $(tr '\n' '|' < "$D/seccion.txt" 2>/dev/null) · llamadas: $(wc -l < "$D/fixaz/llamadas.log" 2>/dev/null)"; fi
 

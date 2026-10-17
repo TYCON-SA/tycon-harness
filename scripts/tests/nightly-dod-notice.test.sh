@@ -457,6 +457,8 @@ cp -R "${RAIZ}/scripts/lib" "${DS}/scripts/"
 printf '#!/usr/bin/env bash\necho "doble-de-scripts-lib ensayo texto=$*"\n' > "${DS}/scripts/lib/tycon-telegram-notify.sh"
 echo '{ "repos": [ { "producto": "A", "ruta": "A/A", "tipo": "npm", "activo": true, "ado": "ProyA/A" } ] }' > "${DS}/repos.json"
 echo '{ "rubros_sin_fuente": {} }' > "${DS}/resumen.json"
+# el canal del aviso lo declara la organización: sin `notify`, el resumen no se manda (ni en ensayo)
+echo '{ "version": 1, "owners": { "default": "lead@acme.example" }, "notify": { "channel": "telegram" } }' > "${DS}/operations.json"
 node -e '
 const [dir, fecha] = process.argv.slice(1);
 const s = { fecha, corrida_completa: true, linea_base: false, comparado_contra: null, repos_activos: 1, repos_apagados: 0,

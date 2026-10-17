@@ -729,7 +729,7 @@ function seccionExtra(archivo) {
   // sólo la cantidad, con el plazo que se haya pedido (`open-prs.js --days N`) y, si los hay, los PR que no se
   // pudieron medir. Una lista (repos, títulos, autores) no entra al mensaje aunque venga en el archivo.
   const primera = String(t).split('\n')[0].trim();
-  return /^PR abiertos hace más de \d+ días: (\d+( \(\+\d+ sin fecha legible\))?|\? \(no se pudo consultar\))$/.test(primera) ? primera : SIN;
+  return /^PR abiertos hace más de \d+ días: (\d+( \(\+\d+ sin fecha legible\))?|\? \((no se pudo consultar|Azure DevOps apagado|GitHub todavía no se lee)\))$/.test(primera) ? primera : SIN;
 }
 
 function entregar(a) {

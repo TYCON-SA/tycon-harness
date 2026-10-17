@@ -116,11 +116,14 @@ function seccion(prs, { hoy, dias }) {
 }
 
 /**
- * La línea del aviso (`--out`), sólo la cantidad. `n === null` = no se midió («?», sin el motivo). Los PR sin
+ * La línea del aviso (`--out`), sólo la cantidad. `n === null` = no se pudo consultar («?», sin el motivo). Cuando
+ * no se mide a propósito, el motivo es uno de un vocabulario cerrado (`NO_MEDIDO`), nunca un texto libre. Los PR sin
  * fecha legible se cuentan aparte, como en la sección: no medido no es cero, tampoco en el aviso.
  */
+const NO_MEDIDO = Object.freeze({ apagado: 'Azure DevOps apagado', github: 'GitHub todavía no se lee' });
 const cantidad = (dias, n) => (n === null ? `PR abiertos hace más de ${dias} días: ? (no se pudo consultar)`
-  : `PR abiertos hace más de ${dias} días: ${n.viejos}${n.sinFecha ? ` (+${n.sinFecha} sin fecha legible)` : ''}`);
+  : n.noMedido ? `PR abiertos hace más de ${dias} días: ? (${NO_MEDIDO[n.noMedido]})`
+    : `PR abiertos hace más de ${dias} días: ${n.viejos}${n.sinFecha ? ` (+${n.sinFecha} sin fecha legible)` : ''}`);
 function contar(prs, { hoy, dias }) {
   const edades = prs.filter((p) => p && !p.isDraft && !RAMAS_DEL_ARNES.test(String(p.sourceRefName || ''))).map((p) => diasAbierto(p, hoy));
   return { viejos: edades.filter((d) => d !== null && d > dias).length, sinFecha: edades.filter((d) => d === null).length };
@@ -202,10 +205,11 @@ function main(argv) {
       // story 2.23 (AC 16): en GitHub los pull requests todavía no se leen; se declara, nunca «ninguno»
       lineas = [`PR abiertos: no medido — ${GITHUB}`];
       sitio = { estado: 'no_medido', motivo: GITHUB, prs: [] };
+      n = { noMedido: 'github' };
     }
     if (!lineas && !org) {
       const ado = organizacionConfigurada();
-      if (!ado.prendida) { lineas = [`PR abiertos: ${ado.apagada}`]; sitio = { estado: 'no_medido', motivo: limpio(ado.apagada, 180), prs: [] }; }
+      if (!ado.prendida) { lineas = [`PR abiertos: ${ado.apagada}`]; sitio = { estado: 'no_medido', motivo: limpio(ado.apagada, 180), prs: [] }; n = { noMedido: 'apagado' }; }
       else org = ado.org;
     }
     if (!lineas) {
