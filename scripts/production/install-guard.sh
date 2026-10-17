@@ -38,11 +38,19 @@
 # teclado, y cada instalación siguiente exige las mismas. Un cambio se acepta sólo con `--change-origin` y otra
 # confirmación por teclado (/dev/tty), que un asistente no tiene.
 #
+# LA MUDANZA OFICIAL A GITHUB (2026-10-16, decisión del dueño): una máquina que instaló el freno desde el clon de Azure
+# tiene ese clon fijado, y la versión bajada de GitHub frenaba pidiendo --change-origin. Las mudanzas oficiales están
+# declaradas en `origin-moves.json`, AL LADO DE ESTE GUION (no en la carpeta que se instala: ésa la elige quien corre, y
+# una versión de un repo ajeno traería su propia mudanza). Si lo fijado es un `from` y lo de ahora su `to`, se acepta
+# solo y se dice; cualquier otro cambio sigue pidiendo --change-origin y el teclado.
+#
 # Uso:  sudo bash install-guard.sh [--from <clon del arnés>] [--change-origin]
 #       bash install-guard.sh --no-sudo         (sólo pruebas, sin root: raíz falsa y copia del disco;
 #                                                 TYCON_PROD_ACCEPT_ORIGIN=1 hace de persona que confirma)
 set -uo pipefail
 PATH=/usr/bin:/bin:/usr/sbin:/sbin
+# la carpeta de este guion, resuelta antes de cualquier cd: de acá sale la lista de mudanzas oficiales del origen
+AQUI_GUION="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)" || { echo "no pude ubicar la carpeta del instalador" >&2; exit 2; }
 
 # Las opciones de antes del renombre a inglés, «vieja:nueva» sin los guiones (las lista el mapa, scripts/lib/renames.json).
 # Se traducen acá, en bash y sin node: esto corre como root, y la biblioteca de nombres viejos es código que el usuario
@@ -456,11 +464,56 @@ except Exception as e:
 v = d.get(sys.argv[2], "") if isinstance(d, dict) else ""
 print(v if isinstance(v, str) else "")' "${2:-$FIJADO_LEIDO}" "$1"
 }
+# la lista de mudanzas oficiales: al lado de este guion (ver la cabecera); en pruebas, TYCON_PROD_ORIGIN_MOVES la cambia
+MUDANZAS="$AQUI_GUION/origin-moves.json"
+if [ "$SIN_SUDO" = 1 ] && [ -n "${TYCON_PROD_ORIGIN_MOVES:-}" ]; then MUDANZAS="$TYCON_PROD_ORIGIN_MOVES"; fi
+RC_MUDANZA=1; MUDANZA=""
+mudanza_oficial(){ # → imprime el mensaje y sale 0 si lo fijado → lo de ahora es una mudanza declarada; 1 si no; 2 (con el motivo) si la lista está rota
+  [ -f "$MUDANZAS" ] || return 1
+  /usr/bin/python3 - "$MUDANZAS" "$FIJADO_URL" "$FIJADO_ORG" "$FIJADO_REPO" "$URL" "$ORG" "$REPO_GITHUB" 2>&1 <<'PY'
+import json, re, sys
+ruta, f_url, f_org, f_repo, url, org, repo = sys.argv[1:8]
+def rota(m): print(m); sys.exit(2)
+try:
+    d = json.load(open(ruta, encoding="utf-8"))
+except Exception as e:
+    rota("no se lee (%s)" % e)
+moves = d.get("moves") if isinstance(d, dict) else None
+if not isinstance(moves, list): rota("le falta la lista «moves»")
+# lo fijado tiene que ser un clon de Azure (sin «repo»: lo fijado desde GitHub lo trae) con su organización al lado
+m = re.match(r"^https://dev\.azure\.com/([^/?#]+)$", f_org)
+if f_repo or not m: sys.exit(1)
+o = m.group(1)
+fu = re.match(r"^https://(?:[^@/]+@)?([^/]+)/(.+)$", f_url)
+if not fu: sys.exit(1)
+host, ruta_url = fu.group(1).lower(), fu.group(2)
+for mv in moves:
+    desde = mv.get("from") if isinstance(mv, dict) else None
+    hacia = mv.get("to") if isinstance(mv, dict) else None
+    msg = mv.get("message") if isinstance(mv, dict) else None
+    if not (isinstance(desde, dict) and isinstance(hacia, dict) and isinstance(desde.get("azure_path"), str)
+            and isinstance(hacia.get("github_repo"), str) and isinstance(msg, str) and msg.strip()):
+        rota("una mudanza no trae from.azure_path, to.github_repo y message: %r" % (mv,))
+    ap, gh = desde["azure_path"], hacia["github_repo"]
+    viejo = (host == "dev.azure.com" and ruta_url == o + "/" + ap) or (host == o.lower() + ".visualstudio.com" and ruta_url == ap)
+    nuevo = repo == gh and url == "https://github.com/" + gh and org == "github:" + gh
+    if viejo and nuevo:
+        print(msg.strip()); sys.exit(0)
+sys.exit(1)
+PY
+}
 FIJADO_ILEGIBLE="el origen de confianza fijado en $FIJADO_LEIDO está ilegible (lo escribe sólo root): borralo con sudo y volvé a instalar — te va a pedir confirmar el origen otra vez."
 if [ -f "$FIJADO_LEIDO" ]; then
   FIJADO_URL="$(leer_fijado url)" || muere "$FIJADO_ILEGIBLE"
   FIJADO_ORG="$(leer_fijado org)" || muere "$FIJADO_ILEGIBLE"
   if [ "$FIJADO_URL" != "$URL" ] || [ "$FIJADO_ORG" != "$ORG" ]; then
+    FIJADO_REPO="$(leer_fijado repo)" || muere "$FIJADO_ILEGIBLE"
+    RC_MUDANZA=0; MUDANZA="$(mudanza_oficial)" || RC_MUDANZA=$?
+    [ "$RC_MUDANZA" -eq 2 ] && muere "la lista de mudanzas oficiales del origen está ROTA ($MUDANZAS): $MUDANZA"
+  fi
+  if [ "$RC_MUDANZA" -eq 0 ] && [ -n "$MUDANZA" ]; then
+    ok "$MUDANZA (fijado: $FIJADO_URL · ahora: $URL)"
+  elif [ "$FIJADO_URL" != "$URL" ] || [ "$FIJADO_ORG" != "$ORG" ]; then
     [ "$CAMBIAR_ORIGEN" = 1 ] || muere "el origen del clon NO es el que se instaló la última vez (fijado: $FIJADO_URL · $FIJADO_ORG — ahora: $URL · $ORG). Si el cambio es tuyo, volvé a correr con --change-origin; si no lo es, alguien tocó el remoto del clon o la configuración."
     confirmar_por_teclado "El origen cambió. ¿Instalar el freno desde $URL (organización $ORG) en lugar de $FIJADO_URL?" \
       || muere "cambio de origen no confirmado por teclado (un asistente no puede confirmarlo por vos): no instalo."

@@ -1323,6 +1323,22 @@ withWaiverLog(() => {
       r.warnings.some((w) => /🔴/.test(w) && /3 ACs exentos/.test(w) && /#1/.test(w) && /#3/.test(w)),
       JSON.stringify(r.warnings.filter((w) => /exent/.test(w))));
   }
+  // --- (d2) la marca al FINAL de un AC largo (más de 600 caracteres) cuenta igual. Antes se leía del texto
+  //     cortado a 600 y se perdía en silencio: el AC quedaba rojo sin decir por qué (deuda
+  //     PIPELINE-ACMATRIX-600-CARACTERES, story 7.6). 🔴 Rojo si la marca vuelve a leerse del texto cortado.
+  {
+    const relleno = ' El rechazo se ve en la respuesta y en el registro de auditoría, con el rol que lo pidió.'.repeat(9);
+    const acLargo = '3. Los endpoints asignar / cerrar retornan 403 para roles no autorizados.' + relleno
+      + ' @runtime-exempt(DODRT-C8): son los nombres de los endpoints; el AC verifica el rechazo, no la asignación.';
+    check('(d2) el AC de prueba de verdad pasa de 600 caracteres', acLargo.length > 700, String(acLargo.length));
+    const rLargo = conAc(acLargo);
+    check('(d2) marca al final de un AC largo: cuenta, y el AC queda RUNTIME',
+      rLargo.perAc[3].verdict === 'RUNTIME' && rLargo.stats.exentosC8 === 1, `${rLargo.perAc[3].verdict} exentos=${rLargo.stats.exentosC8}`);
+    // control: el mismo AC largo SIN marca sigue bloqueando (el relleno no apagó la regla)
+    const rLargoSin = conAc(acLargo.replace(/ @runtime-exempt[\s\S]*$/, '').replace('retornan 403', 'permiten asignar una ruta'));
+    check('(d2) control: el AC largo de acción SIN marca sigue bloqueando',
+      rLargoSin.perAc[3].verdict === 'RUNTIME-PARCIAL', rLargoSin.perAc[3].verdict);
+  }
   // --- (e) 🔴 LO QUE LA MARCA NO HACE: un AC exento SIN evidencia de corrida sigue bloqueando.
   //     Es la línea entera del mecanismo — si esto se pone verde, la marca dejó de ser "el verbo
   //     no es una acción" y pasó a ser "no verifiqué", que es justo lo que no puede declarar.

@@ -134,6 +134,11 @@
    "why": "el lector de los dos nombres del lugar y la URL del repo en Azure DevOps contra la que verifica el clon antes de instalar el freno"
   },
   {
+   "path": "scripts/production/origin-moves.json",
+   "kind": "azure",
+   "why": "la ruta del repo en Azure DevOps de la que sale la mudanza oficial del origen del freno a GitHub (2026-10-16)"
+  },
+  {
    "path": "scripts/publishing/export.js",
    "kind": "functional",
    "why": "las raíces que reconoce la traducción de rutas viejas (el nombre interno y su marcador <…>), y su comentario"
