@@ -37,18 +37,24 @@ const PLAZO_HTTP_MS = 5000;
 const MAX_REDIRECCIONES = 3;
 // lo que /healthz no puede nombrar: una dirección, un host de almacenamiento o de un repo. Los hosts de cada nube los
 // dice su módulo en cloud/, como para el resto del núcleo: se recorren todos sin nombrar a ninguno
-const NOMBRA = (() => {
+const NUBES = (() => {
   const dir = require('path').join(__dirname, 'cloud');
   // sin catch: una carpeta que no se lee achicaría la lista en silencio, y eso es aceptar un /healthz que cuenta de más
   const archivos = fs.readdirSync(dir).filter((f) => /^[a-z][a-z0-9-]*\.js$/.test(f));
+  return archivos.map((f) => ({ archivo: f, modulo: require(require('path').join(dir, f)) }));
+})();
+const NOMBRA = (() => {
   // cada módulo de nube dice sus hosts; uno que no los diga achicaría el control sin avisar: se frena acá
-  const hosts = archivos.map((f) => {
-    const r = require(require('path').join(dir, f)).HOSTS_QUE_NO_SE_NOMBRAN;
-    if (!(r instanceof RegExp)) throw new Error(`cloud/${f} no exporta HOSTS_QUE_NO_SE_NOMBRAN: sin esa lista la prueba sin sesión no puede mirar /healthz`);
+  const hosts = NUBES.map(({ archivo, modulo }) => {
+    const r = modulo.HOSTS_QUE_NO_SE_NOMBRAN;
+    if (!(r instanceof RegExp)) throw new Error(`cloud/${archivo} no exporta HOSTS_QUE_NO_SE_NOMBRAN: sin esa lista la prueba sin sesión no puede mirar /healthz`);
     return r;
   });
   return new RegExp([':\\/\\/', 'github\\.com', ...hosts.map((r) => r.source)].join('|'), 'i');
 })();
+// ¿Esta respuesta la dio el candado de la plataforma, delante del sitio? Cada nube que pone uno dice cómo se reconoce
+// (`esDelCandado(headers)`); la que no pone ninguno no lo exporta
+const esDelCandado = (headers) => NUBES.some(({ modulo }) => typeof modulo.esDelCandado === 'function' && modulo.esDelCandado(headers));
 
 class NoPudo extends Error {}
 
@@ -103,8 +109,11 @@ async function sinSesion(base, ruta, { esApi, plazoMs }) {
       url = destino;
       continue;
     }
-    if (primeraDelSitio === null) primeraDelSitio = { plataforma: false, r };
-    pasos.push(String(r.status));
+    // un 401 o 403 sin redirección puede ser del candado de la plataforma (a un pedido que no parece de navegador no lo
+    // manda al inicio de sesión): entonces el sitio no contestó, y su no-store no se le pide
+    const delCandado = (r.status === 401 || r.status === 403) && esDelCandado(r.headers);
+    if (primeraDelSitio === null) primeraDelSitio = { plataforma: delCandado, r };
+    pasos.push(delCandado ? `${r.status} (el candado de la plataforma)` : String(r.status));
     if (r.status === 401 || r.status === 403) return { capa: pasos.join(' · '), falla: null, primera: primeraDelSitio };
     if (r.status >= 200 && r.status < 300) return { capa: pasos.join(' · '), falla: esApi ? API_CON_DATOS : SIN_SESION, primera: primeraDelSitio };
     // otro código (404, 5xx): no expone nada, pero tampoco es un sitio sano cerrado
