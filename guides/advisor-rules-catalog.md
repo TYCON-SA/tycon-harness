@@ -230,10 +230,10 @@ Forma canónica: `pipeline.js start --story <spec> --repo <dir>` corre C0/C1/C2/
 
 ---
 
-## React Conventions — `tycon-plugin-react-conventions`
+## React Conventions (paquete bizuit) — `tycon-plugin-react-conventions`
 
 Archivo del advisor: `~/.claude/agent-skills/agents/tycon-plugin-react-conventions.md`
-Guía canónica: `guides/bizuit/bizuit-plugin-react.md`
+Guía canónica: `packs/bizuit/guides/bizuit-plugin-react.md`
 
 **Skipea automático** si no hay `.tsx`/`.ts` en el diff o si `package.json` no tiene React como dep.
 
@@ -273,9 +273,9 @@ Guía canónica: `guides/bizuit/bizuit-plugin-react.md`
 
 ---
 
-## Next.js — `tycon-plugin-nextjs-conventions`
+## Next.js (paquete bizuit) — `tycon-plugin-nextjs-conventions`
 
-Guía canónica: `guides/bizuit/bizuit-plugin-nextjs.md`
+Guía canónica: `packs/bizuit/guides/bizuit-plugin-nextjs.md`
 
 **Skipea automático** si no hay `"next"` en `package.json` o no hay `app/`/`pages/` en el repo.
 
@@ -343,11 +343,11 @@ Archivo del advisor: `~/.claude/agent-skills/agents/tycon-plugin-security-basics
 
 ---
 
-## .NET Conventions — `tycon-plugin-dotnet-conventions`
+## .NET Conventions (paquete bizuit) — `tycon-plugin-dotnet-conventions`
 
 Archivo del advisor: `~/.claude/agent-skills/agents/tycon-plugin-dotnet-conventions.md`
 
-Las reglas de esta área están canónicamente documentadas en `guides/bizuit/bizuit-plugin-dotnet.md`. El advisor lee esa guía en runtime — los IDs de abajo son el mapeo estable a las reglas.
+Las reglas de esta área están canónicamente documentadas en `packs/bizuit/guides/bizuit-plugin-dotnet.md`. El advisor lee esa guía en runtime — los IDs de abajo son el mapeo estable a las reglas.
 
 ### CRITICAL
 
@@ -409,7 +409,7 @@ Archivo del advisor: `~/.claude/agent-skills/agents/tycon-plugin-tests-coverage.
 
 ---
 
-## SignalR Hub Reviewer — `signalr-hub-reviewer`
+## SignalR Hub Reviewer (paquete bizuit) — `signalr-hub-reviewer`
 
 Archivo del advisor: `~/.claude/agent-skills/agents/signalr-hub-reviewer.md`
 
@@ -441,7 +441,7 @@ Archivo del advisor: `~/.claude/agent-skills/agents/signalr-hub-reviewer.md`
 
 ---
 
-## Migration Impact Analyzer — `migration-impact-analyzer`
+## Migration Impact Analyzer (paquete bizuit) — `migration-impact-analyzer`
 
 Archivo del advisor: `~/.claude/agent-skills/agents/migration-impact-analyzer.md`
 
@@ -467,7 +467,7 @@ Archivo del advisor: `~/.claude/agent-skills/agents/migration-impact-analyzer.md
 
 ---
 
-## HTTP Client Resilience .NET — `http-resilience-reviewer`
+## HTTP Client Resilience .NET (paquete bizuit) — `http-resilience-reviewer`
 
 Archivo del advisor: `~/.claude/agent-skills/agents/http-resilience-reviewer.md`
 
@@ -499,7 +499,7 @@ Archivo del advisor: `~/.claude/agent-skills/agents/http-resilience-reviewer.md`
 
 ---
 
-## Worker Lifecycle .NET — `worker-lifecycle-reviewer`
+## Worker Lifecycle .NET (paquete bizuit) — `worker-lifecycle-reviewer`
 
 Archivo del advisor: `~/.claude/agent-skills/agents/worker-lifecycle-reviewer.md`
 
@@ -528,7 +528,7 @@ Archivo del advisor: `~/.claude/agent-skills/agents/worker-lifecycle-reviewer.md
 
 ---
 
-## Feature Wiring Checker — `tycon-feature-wiring-checker`
+## Feature Wiring Checker (paquete bizuit) — `tycon-feature-wiring-checker`
 
 Archivo del advisor: `~/.claude/agent-skills/agents/tycon-feature-wiring-checker.md`
 
@@ -566,7 +566,7 @@ Anti-patterns (lo que NO hace este advisor):
 
 ---
 
-## SignalR Client Reviewer — `signalr-client-reviewer`
+## SignalR Client Reviewer (paquete bizuit) — `signalr-client-reviewer`
 
 Archivo del advisor: `~/.claude/agent-skills/agents/signalr-client-reviewer.md`
 
@@ -725,7 +725,7 @@ Advisor condicional. Caza fallos silenciosos en código TYCON: catch vacíos, re
 
 ---
 
-## Auth Session Reviewer — `auth-session-reviewer`
+## Auth Session Reviewer (paquete nextjs-postgres) — `auth-session-reviewer`
 
 Advisor condicional para Auth.js / NextAuth v5 en Next.js multi-tenant. Trigger: diff toca `src/app/api/auth/**`, `src/lib/auth/**`, `src/auth*.ts`, `src/middleware.ts`, o usa `getServerSession`/`auth()`/`signIn`/`signOut`.
 
@@ -750,7 +750,7 @@ Advisor condicional para Auth.js / NextAuth v5 en Next.js multi-tenant. Trigger:
 
 ---
 
-## Drizzle Migration Reviewer — `drizzle-migration-reviewer`
+## Drizzle Migration Reviewer (paquete nextjs-postgres) — `drizzle-migration-reviewer`
 
 Advisor condicional para migraciones Drizzle ORM (Next.js + Postgres). Trigger: diff toca `drizzle/*.sql`, `drizzle/meta/_journal.json`, o `src/db/schema.ts`.
 
@@ -801,7 +801,7 @@ Advisor condicional para uso de SDKs de Anthropic/Voyage/OpenAI. Trigger: diff i
 
 ---
 
-## Multi-Tenant Isolation Reviewer — `multi-tenant-isolation-reviewer`
+## Multi-Tenant Isolation Reviewer (paquete nextjs-postgres) — `multi-tenant-isolation-reviewer`
 
 Advisor condicional para queries Drizzle, Server Actions y Route Handlers contra fugas cross-tenant (Next.js + Postgres + Auth.js). Trigger: diff toca `src/db/repos/**`, `src/app/api/**`, `**/actions.ts`, `src/lib/cache/**`, o queries sobre tablas con `user_id`.
 
@@ -827,7 +827,7 @@ Advisor condicional para queries Drizzle, Server Actions y Route Handlers contra
 
 ---
 
-## Next.js App Router Security — `nextjs-app-router-security`
+## Next.js App Router Security (paquete nextjs-postgres) — `nextjs-app-router-security`
 
 Advisor condicional para Server Actions, Route Handlers, middleware y componentes Next.js App Router. Trigger: diff toca `src/app/**`, `src/middleware.ts`, o componentes con directiva `'use server'`/`'use client'`.
 

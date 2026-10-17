@@ -26,6 +26,10 @@ const { spawnSync, execFileSync } = require('child_process');
 
 const SCRIPTS = path.join(__dirname, '..');
 const PIPELINE = path.join(SCRIPTS, 'pipeline.js');
+// Story 8.41: los revisores de React y de cableado viven en el paquete del stack, que viaja con el perfil del equipo. En
+// la copia pública (sin él) los casos que los esperan en el set no se pueden medir, y se dice.
+const { SKIP_PUBLIC } = require('./lib/public-copy.js');
+const CON_PAQUETE = SKIP_PUBLIC ? { skip: `${SKIP_PUBLIC}: este caso espera un revisor del paquete del stack — NO MEDIDO acá` } : {};
 const MARKER = path.join(SCRIPTS, 'marker.js');
 const TEST_GATE = path.join(SCRIPTS, 'test-gate.sh');
 
@@ -120,7 +124,7 @@ test('companionRoots: une los hermanos del repo y del repo de la story, sin el p
 
 // ── Revisores (AC 2, 3, 4) ────────────────────────────────────────────────────────────────────────────────────
 
-test('advisors: el package.json del hermano detecta React y no avisa detección ciega', () => {
+test('advisors: el package.json del hermano detecta React y no avisa detección ciega', CON_PAQUETE, () => {
   const lab = laboratorio();
   for (const [i, xtsx] of [['rel', '../Front/app/src/X.tsx'], ['abs', path.join(lab.front, 'app', 'src', 'X.tsx')]]) {
     const home = casa();
@@ -133,7 +137,7 @@ test('advisors: el package.json del hermano detecta React y no avisa detección 
 
 // El caso real del 2026-10-15: la story vive en el backend y el formulario en el repo hermano declara React SÓLO en
 // peerDependencies (lo provee el host de Bizuit). El package.json se encontraba bien; lo que no se leía era esa sección.
-test('advisors: un formulario hermano con React sólo en peerDependencies trae al revisor de React', () => {
+test('advisors: un formulario hermano con React sólo en peerDependencies trae al revisor de React', CON_PAQUETE, () => {
   const lab = laboratorio({ frontPaquete: { name: 'app', version: '1.0.0', peerDependencies: { react: '^18.3.1' }, dependencies: { dayjs: '1.11.0' } } });
   const out = advisors(lab, casa(), 't2-peer', ['src/A.cs', path.join(lab.front, 'app', 'src', 'X.tsx')]);
   assert.equal(out.detection.hasReact, true, JSON.stringify(out.detection));
@@ -141,7 +145,7 @@ test('advisors: un formulario hermano con React sólo en peerDependencies trae a
   assert.ok(out.all.includes('tycon-plugin-react-conventions'), `${out.all}`);
 });
 
-test('advisors: un .tsx sin React detectable trae al revisor de cableado; con Next no', () => {
+test('advisors: un .tsx sin React detectable trae al revisor de cableado; con Next no', CON_PAQUETE, () => {
   const raiz = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'hermano-wiring-')));
   const sinPkg = repoGit(path.join(raiz, 'SinPkg'), { 'src/P.tsx': 'export const P = () => null;\n', 'specs/s.md': STORY() });
   fs.appendFileSync(path.join(sinPkg, 'src', 'P.tsx'), 'export const Q = () => 2;\n');
@@ -302,7 +306,7 @@ test('test-gate: sin archivos en hermanos el artefacto queda como hoy', () => {
 
 // ── Vueltas de revisores (AC 11) ──────────────────────────────────────────────────────────────────────────────
 
-test('smart-reloop: un arreglo en el hermano después de la foto entra al delta', () => {
+test('smart-reloop: un arreglo en el hermano después de la foto entra al delta', CON_PAQUETE, () => {
   const lab = laboratorio();
   const home = casa(); const sid = 't12';
   const xtsx = path.join(lab.front, 'app', 'src', 'X.tsx');

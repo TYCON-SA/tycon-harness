@@ -28,12 +28,8 @@ const EXPECTED_SELECTABLE = [
   'tycon-plugin-tests-coverage', 'tycon-plugin-security-basics',
   // completitud
   'tycon-story-validator', 'tycon-spec-first-checker', 'tycon-ac-coverage-checker', 'tycon-deferral-tracker',
-  // condicionales .NET
-  'signalr-hub-reviewer', 'migration-impact-analyzer', 'http-resilience-reviewer',
-  'worker-lifecycle-reviewer', 'signalr-client-reviewer', 'tycon-feature-wiring-checker',
-  // condicionales Next.js / Postgres / Auth.js / LLM
-  'multi-tenant-isolation-reviewer', 'drizzle-migration-reviewer', 'nextjs-app-router-security',
-  'llm-cost-reviewer', 'auth-session-reviewer',
+  // condicional LLM (los de un stack —.NET, Next.js + Postgres— vienen de su paquete, story 8.41)
+  'llm-cost-reviewer',
   // stack-agnostic
   'tycon-e2e-realness-checker', 'tycon-silent-failure-hunter',
 ];
@@ -77,12 +73,15 @@ try {
   failed = true;
   console.error(`✗ no se pudo leer packs/ (${e.message}) — los paquetes del equipo tienen que estar en ${PACKS_DIR}`);
 }
-// El paquete bizuit tiene que estar SIEMPRE (una carpeta vacía no es verde: es exactamente «el equipo
-// perdió sus revisores sin enterarse», lo que la story 8.2 existe para impedir).
-if (!paquetes.includes('bizuit')) {
+// Story 8.41: el núcleo público no trae paquetes (llegan con el perfil de cada equipo). Con el repo del equipo encima
+// (la señal: el paquete de clientes) el paquete bizuit tiene que estar: una carpeta vacía ahí no es verde, es «el equipo
+// perdió sus revisores sin enterarse», lo que la story 8.2 existe para impedir.
+const DEL_EQUIPO = fs.existsSync(path.join(PACKS_DIR, 'clients', 'pack.json'));
+if (DEL_EQUIPO && !paquetes.includes('bizuit')) {
   failed = true;
   console.error(`✗ falta el paquete bizuit en ${PACKS_DIR} (instalados: ${paquetes.join(', ') || 'ninguno'})`);
 }
+if (!DEL_EQUIPO) console.log(`ℹ NO MEDIDO: los paquetes del equipo (copia pública: llegan con su perfil)`);
 for (const p of paquetes) {
   const archivo = path.join(PACKS_DIR, p, 'pack.json');
   let json;
@@ -93,7 +92,9 @@ for (const p of paquetes) {
   }
   for (const r of json.reviewers || []) {
     dePaquetes++;
-    if (!fs.existsSync(path.join(AGENTS_DIR, `${r.agent}.md`))) {
+    // el agente, en la carpeta de su paquete (clave `agents`) o en la de la raíz
+    const enPaquete = typeof json.agents === 'string' && fs.existsSync(path.join(PACKS_DIR, p, json.agents, `${r.agent}.md`));
+    if (!enPaquete && !fs.existsSync(path.join(AGENTS_DIR, `${r.agent}.md`))) {
       failed = true;
       console.error(`✗ ${archivo} declara "${r.agent}" y no hay agent .md`);
     }

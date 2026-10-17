@@ -47,12 +47,12 @@ scripts/tools/              a mano: auditorías y utilidades
 scripts/lib/                bibliotecas + lo que llaman dos etapas o más
 scripts/controls-bench/ · scripts/metrics/ · scripts/production/ · scripts/publishing/ · scripts/tests/
 guides/                     las guías
-  guides/bizuit/ · guides/decisions/   las de Bizuit · decisiones y diseños fechados
+  guides/decisions/          decisiones y diseños fechados
 claude-md-blocks/ · commands/ · adapters/ · build/
 mods/harness-mods/          los mods de Claude Code del arnés (el cartel de la corrida, /pipeline, /mods)
 pipelines/                  los seis azure-pipelines-*.yml
   pipelines/templates/      sus pedazos compartidos
-packs/bizuit/               el paquete bizuit: su manifiesto y las plantillas para dar de alta un producto
+packs/                      sólo su README: los paquetes de un equipo (revisores, skills, guías, plantillas) llegan con su perfil
 inbox/                      lo que espera que alguien decida
   inbox/instincts/          los instintos minados
   inbox/dependencies/ · inbox/watcher/   las fichas de los dos nocturnos
@@ -125,21 +125,21 @@ NO COMMIT sin consentimiento, formato HEREDOC, Co-Authored-By, `/tycon-merge-to-
 
 6 reglas de workflow, principios fundamentales, estructura `tasks/`, integración BMAD+advisors
 
-## guides/bizuit/bizuit-plugin-dotnet.md
+## packs/bizuit/guides/bizuit-plugin-dotnet.md
 
-Stack .NET para plugins Bizuit: IBackendPlugin, SafeQueryBuilder, transacciones, orquestador
+(Del paquete bizuit, que viaja con el perfil del equipo.) Stack .NET para plugins Bizuit: IBackendPlugin, SafeQueryBuilder, transacciones, orquestador
 
-## guides/bizuit/bizuit-plugin-react.md
+## packs/bizuit/guides/bizuit-plugin-react.md
 
-Stack React/TS para plugins Bizuit frontend: Tailwind prod limitations, inputs text-gray-900, modales patrón fijo, iconos, SDK auth Bearer, testing vitest
+(Del paquete bizuit, que viaja con el perfil del equipo.) Stack React/TS para plugins Bizuit frontend: Tailwind prod limitations, inputs text-gray-900, modales patrón fijo, iconos, SDK auth Bearer, testing vitest
 
-## guides/bizuit/bizuit-plugin-nextjs.md
+## packs/bizuit/guides/bizuit-plugin-nextjs.md
 
-Stack Next.js (App Router) para plugins Bizuit frontend: Server vs Client boundary, data fetching, metadata API, Server Actions con validación, env vars scope, Route Handlers, hydration safety
+(Del paquete bizuit, que viaja con el perfil del equipo.) Stack Next.js (App Router) para plugins Bizuit frontend: Server vs Client boundary, data fetching, metadata API, Server Actions con validación, env vars scope, Route Handlers, hydration safety
 
-## guides/bizuit/bizuit-bpmn-spec-contract.md
+## packs/bizuit/guides/bizuit-bpmn-spec-contract.md
 
-El contrato de las specs de proceso BPMN de BIZUIT: se escriben con la tool del producto (`write_spec`), no con el editor de archivos. El formato NO se copia acá a propósito (vive en `mcp/skill/templates/`), y no hace falta conocerlo: el control rechaza con el motivo y el agente corrige. Lo que la guía sí deja escrito es por qué escribir el archivo directo es **peor que escribirlo mal** — un documento sin tabla de reglas no da error, da silencio, y «0 hallazgos» se lee como «salió limpio». La regla: **un control que hay que acordarse de invocar es un control que no corre**.
+(Del paquete bizuit, que viaja con el perfil del equipo.) El contrato de las specs de proceso BPMN de BIZUIT: se escriben con la tool del producto (`write_spec`), no con el editor de archivos. El formato NO se copia acá a propósito (vive en `mcp/skill/templates/`), y no hace falta conocerlo: el control rechaza con el motivo y el agente corrige. Lo que la guía sí deja escrito es por qué escribir el archivo directo es **peor que escribirlo mal** — un documento sin tabla de reglas no da error, da silencio, y «0 hallazgos» se lee como «salió limpio». La regla: **un control que hay que acordarse de invocar es un control que no corre**.
 
 ## guides/agent-architecture.md
 
@@ -147,7 +147,7 @@ Arquitectura de advisors TYCON (wrappers sobre BMAD) con pipeline HITL, severity
 
 ## packs/ (agent-skills) — paquetes de revisores
 
-*`packs/bizuit/pack.json` · `skills/tycon-pipeline/scripts/lib/packs.js` · `pipeline.js validators` · `scripts/lib/installed-packs.js` (arnés) · `guides/agent-architecture.md` §«Paquetes de revisores»*
+*`packs/<paquete>/pack.json` (en el perfil del equipo) · `skills/tycon-pipeline/scripts/lib/packs.js` · `pipeline.js validators` · `scripts/lib/installed-packs.js` (arnés) · `guides/agent-architecture.md` §«Paquetes de revisores»*
 
 **Los revisores de un producto o de un cliente salen del código del pipeline a manifiestos**
 (2026-09-26). Hasta ese día `pipeline.js` tenía escritos a mano, en cuatro tablas y en la prosa del paso 1,
@@ -228,9 +228,9 @@ Protocolo de CIERRE de story (ACCOV-C7..C10: self-audit, meta-audit, convergenci
 
 Inbox de propuestas de cambio a guías/catálogo generadas por `tycon-retrospective-capturer`. Cada entrada requiere OK del dev antes de aplicarse; al aplicar se marca `✅ IMPLEMENTADO` (no se borra — es el rastro)
 
-## guides/dotnet-hooks.md
+## packs/bizuit/guides/dotnet-hooks.md
 
-Bloque copy-pasteable de hooks `.claude/settings.json` para proyectos .NET TYCON: bloqueo de migraciones SQL ya commiteadas + `dotnet format` automático sobre `.cs`
+(Del paquete bizuit, que viaja con el perfil del equipo.) Bloque copy-pasteable de hooks `.claude/settings.json` para proyectos .NET TYCON: bloqueo de migraciones SQL ya commiteadas + `dotnet format` automático sobre `.cs`
 
 ## guides/definition-of-done.md
 
@@ -270,9 +270,9 @@ El paso que **commitea y publica el bump de versión de los formularios**, en UN
 
 Una sola función: ¿el respaldo local del medidor de etapas del SDLC **debe correr ahora**? No antes de las 05:00, para que el nocturno de Azure (06:00 UTC) tenga su turno; si corre antes deja un archivo suelto en `.dashboard/` que rompe el `pull` del arranque de la mañana. El instalador la carga; se probó como función pura para no simular un SessionStart entero. Red: `scripts/tests/meter-backup.test.sh`.
 
-## guides/deuda-de-pruebas-formularios.md
+## packs/bizuit/guides/deuda-de-pruebas-formularios.md
 
-Cómo dejar un formulario **sin pruebas** sin que el pipeline falle: se declara en `pruebas-pendientes.json` con motivo y fecha de revisión, y se borra la entrada el día que se le ponen pruebas, en el mismo pull request. Escrita para cualquier dev, en tres pasos. Por qué en el mismo pull request: borrar la entrada sin agregar pruebas deja `main` rojo.
+(Del paquete bizuit, que viaja con el perfil del equipo.) Cómo dejar un formulario **sin pruebas** sin que el pipeline falle: se declara en `pruebas-pendientes.json` con motivo y fecha de revisión, y se borra la entrada el día que se le ponen pruebas, en el mismo pull request. Escrita para cualquier dev, en tres pasos. Por qué en el mismo pull request: borrar la entrada sin agregar pruebas deja `main` rojo.
 
 ## scripts/ci/affected-forms.js
 

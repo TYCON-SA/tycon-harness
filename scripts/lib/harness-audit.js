@@ -10,7 +10,7 @@
  *   3. Quality Gates — hooks bloqueantes (DoD, frontmatter, pre-commit)
  *   4. Memory Persistence — engram + recencia de observations
  *   5. Catalog Integrity — usa rules-distill internamente
- *   6. Security Guardrails — safety-guard + dotnet-hooks + signed-scope
+ *   6. Security Guardrails — safety-guard + signed-scope + las guías de los paquetes instalados
  *   7. Pipeline Wiring — coherencia entre SKILL.md + step-05 + pipeline.js
  *   8. Learning Loop — features de aprendizaje vivos (anti feature-dead:
  *      instinct-mining prendido, capturer con trigger, run-check en uso)
@@ -122,21 +122,11 @@ function checkAdvisorCoverage() {
     'tycon-spec-first-checker',
   ];
   const expectedConditional = [
-    'tycon-feature-wiring-checker',
     'tycon-e2e-realness-checker',
     'tycon-dod-runtime-checker',
     'tycon-retrospective-capturer',
     'tycon-silent-failure-hunter',
-    'signalr-hub-reviewer',
-    'signalr-client-reviewer',
-    'http-resilience-reviewer',
-    'worker-lifecycle-reviewer',
-    'migration-impact-analyzer',
-    'drizzle-migration-reviewer',
-    'multi-tenant-isolation-reviewer',
-    'nextjs-app-router-security',
     'llm-cost-reviewer',
-    'auth-session-reviewer',
   ];
 
   for (const a of expectedCoreAdvisors) {
@@ -152,9 +142,10 @@ function checkAdvisorCoverage() {
   for (const a of expectedConditional) {
     if (exists(path.join(AGENTS_DIR, `${a}.md`))) conditionalPresent++;
   }
+  // los condicionales de un stack viven en sus paquetes (story 8.41) y se exigen abajo, leyendo los manifiestos
   checks.push({
-    name: `Advisors condicionales ≥ 12 (${conditionalPresent}/${expectedConditional.length})`,
-    passed: conditionalPresent >= 12,
+    name: `Advisors condicionales del núcleo (${conditionalPresent}/${expectedConditional.length})`,
+    passed: conditionalPresent === expectedConditional.length,
     file: AGENTS_DIR,
     severity: 'warning',
   });
@@ -170,11 +161,31 @@ function checkAdvisorCoverage() {
       severity: 'critical',
     });
   }
+  // los que la organización activa (packs.default): un paquete apagado no enlaza sus revisores, y no se le exigen; uno
+  // activado que no está, o una configuración ilegible, es una falla (story 8.41)
+  let activos = null;
+  try {
+    const C = require('./tycon-config.js');
+    const v = C.valor(C.leer({}), 'packs.default');
+    const instalados = paquetes.map((p) => p.nombre);
+    if (v === 'all') activos = instalados;
+    else if (v === 'none' || v == null) activos = [];
+    else {
+      activos = v;
+      const faltan = v.filter((n) => !instalados.includes(n));
+      if (faltan.length) checks.push({ name: `Paquetes de la organización: activa ${faltan.join(', ')} y no está(n) instalado(s)`, passed: false, file: require('./installed-packs.js').leerPaquetes().dir, severity: 'critical' });
+    }
+  } catch (e) {
+    checks.push({ name: `Paquetes de la organización: no pude leer packs.default (${String(e.message).split('\n')[0]})`, passed: false, file: path.join(TCG_ROOT, 'packs'), severity: 'critical' });
+  }
   for (const paq of paquetes) {
+    if (activos && !activos.includes(paq.nombre)) continue;
     const vistos = new Set();
     for (const r of paq.revisores) {
       if (vistos.has(r.agente)) continue;
       vistos.add(r.agente);
+      // instalado = enlazado donde Claude lo carga (~/.claude/agents), venga de la raíz o de la carpeta de su paquete: que
+      // el fuente exista en el paquete no prueba que el aplicador lo haya enlazado
       const p = path.join(AGENTS_DIR, `${r.agente}.md`);
       checks.push({
         name: `Revisor "${r.agente}" del paquete ${paq.nombre} instalado`,
@@ -861,12 +872,17 @@ function checkSecurityGuardrails() {
     file: path.join(TCG_GUIDES, 'safety-guard.md'),
     severity: 'warning',
   });
-  checks.push({
-    name: 'dotnet-hooks guide existe (anti-mutación de migraciones)',
-    passed: exists(path.join(TCG_GUIDES, 'dotnet-hooks.md')),
-    file: path.join(TCG_GUIDES, 'dotnet-hooks.md'),
-    severity: 'warning',
-  });
+  // las guías de cada paquete instalado (la de hooks de .NET, anti-mutación de migraciones, vive en el paquete bizuit)
+  for (const paq of require('./installed-packs.js').leerPaquetes().paquetes) {
+    for (const g of paq.guias) {
+      checks.push({
+        name: `guía ${g} del paquete ${paq.nombre} existe`,
+        passed: exists(path.join(TCG_ROOT, g)),
+        file: path.join(TCG_ROOT, g),
+        severity: 'warning',
+      });
+    }
+  }
   checks.push({
     name: 'signed-scope-guardrails guide existe',
     passed: exists(path.join(TCG_GUIDES, 'signed-scope-guardrails.md')),
@@ -914,7 +930,8 @@ function checkPipelineWiring() {
   // archivos y daba falsos rojos). El guard anti-drop es test-pipeline-coverage.js:
   // un advisor cableado debe estar en pipeline.js Y en el expected-set del test.
   const coverageTest = path.join(SKILLS_DIR, 'tycon-pipeline/scripts/tests/test-pipeline-coverage.js');
-  const probe = ['tycon-e2e-realness-checker', 'tycon-silent-failure-hunter', 'http-resilience-reviewer'];
+  // (del núcleo: los de un stack viven en su paquete y no se nombran en pipeline.js, story 8.41)
+  const probe = ['tycon-e2e-realness-checker', 'tycon-silent-failure-hunter', 'llm-cost-reviewer'];
   for (const a of probe) {
     const inJs = exists(pipelineJs) && safeRead(pipelineJs).includes(a);
     const inCoverageTest = exists(coverageTest) && safeRead(coverageTest).includes(a);
@@ -1129,7 +1146,7 @@ function render(result) {
 // Los helpers de ENGRAM-PROJECT-NAME-DRIFT-1 se exportan para que su test los ejerza sin correr
 // el scorecard entero (que mide la máquina real y por eso no es determinístico). El guard
 // `require.main` mantiene intacto el uso como CLI.
-module.exports = { scanEngramRepos, pinDe, engramDirsWithMultipleProjects, engramUnexportedByRepo, engramChunksSinIndexar, CROSS_CUTTING_PROJECTS, checkAdvisorCoverage };
+module.exports = { scanEngramRepos, pinDe, engramDirsWithMultipleProjects, engramUnexportedByRepo, engramChunksSinIndexar, CROSS_CUTTING_PROJECTS, checkAdvisorCoverage, checkPipelineWiring };
 
 if (require.main === module) {
   const result = audit();

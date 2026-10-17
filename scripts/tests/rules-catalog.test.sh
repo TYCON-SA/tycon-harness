@@ -261,6 +261,42 @@ SP="$(jq_py "d['duenos_sin_padron']")"
 [ "${SP}" = "['build/banco.js']" ] && ok "C6 · los dueños que no están en el padrón se nombran" \
   || mal "C6 · duenos_sin_padron=${SP} — rojo previo: si falta el .toml de un revisor, sus reglas pasan a «sin revisor» sin que nadie lo vea"
 
+# ── T22 (story 8.41, AC 26) · el revisor de un paquete: su sección lo dice, y fuera del padrón no es un .toml que falta ──
+T22="${BASE}/t22"; mkdir -p "${T22}"
+cat > "${T22}/catalogo.md" <<'MD'
+# Catálogo
+
+## Del núcleo — `rev-nucleo`
+
+| Regla | Qué detecta | Fix |
+|---|---|---|
+| **NUC-C1** | algo del núcleo | arreglarlo |
+
+## Del stack (paquete stack-juguete) — `rev-del-paquete`
+
+| Regla | Qué detecta | Fix |
+|---|---|---|
+| **STK-C1** | algo del stack | arreglarlo |
+| **STK-W1** | otra cosa del stack | idem |
+MD
+roster "${T22}/revisores" rev-nucleo
+leer "${T22}/catalogo.md" "${T22}/revisores" --json; RC=$?
+SP="$(jq_py "d['duenos_sin_padron']")"; DP="$(jq_py "[(x['dueno'], x['paquete']) for x in d['duenos_de_paquetes_ausentes']]")"; N="$(jq_py "d['reglas']")"
+SR="$(jq_py "sorted(x['regla'] for x in d['lista'] if not x['esRevisor'])")"
+[ "${RC}" = "0" ] && [ "${SP}" = "[]" ] && [ "${DP}" = "[('rev-del-paquete', 'stack-juguete')]" ] && [ "${N}" = "3" ] && [ "${SR}" = "[]" ] \
+  && ok "T22 RulesCatalog_PackPerPrefix_SameCount · la sección dice su paquete; su revisor ausente se nombra con su paquete, no como faltante; la cuenta no cambia y sus reglas son de un revisor" \
+  || mal "T22 · rc=${RC} sin_padron=${SP} de_paquetes=${DP} reglas=${N} sin_revisor=${SR} (esperado 0 · [] · [('rev-del-paquete', 'stack-juguete')] · 3 · [])"
+# y el catálogo real: cada sección de un revisor de paquete dice su paquete
+SINP="$(python3 - "${RAIZ}/guides/advisor-rules-catalog.md" <<'PY'
+import re,sys
+t=open(sys.argv[1]).read()
+heads=[l for l in t.split('\n') if l.startswith('## ') and '`' in l]
+print(sum(1 for l in heads if '(paquete ' in l))
+PY
+)"
+[ "${SINP}" -ge 13 ] && ok "T22 · el catálogo real marca con su paquete las secciones de los revisores de paquete (${SINP})" \
+  || mal "T22 · el catálogo real marca ${SINP} secciones con su paquete (esperado al menos 13: los nueve de bizuit y los cuatro de nextjs-postgres)"
+
 # ── C6b · un bloque de código es un EJEMPLO, no una definición ni una retirada ────────────────────
 # 🔴 Existe por un defecto real que se arrastraba: la guía «Retirar una regla» del catálogo trae, dentro
 #    de un bloque de código, el ejemplo `| ~~SEC-W4~~ | … RETIRED …`. Leído como texto plano, eso retira

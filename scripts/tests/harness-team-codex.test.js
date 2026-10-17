@@ -92,7 +92,8 @@ test('T30u advisorsToDeploy(root) da { manifest, team } del árbol, sin mirar TY
   }
   // sin capa: team vacío y sin problema; con el manifiesto de la capa ilegible: team null y el motivo
   const sin = toyTree(casa('sin'), { team: [] }); fs.rmSync(path.join(sin, '.tycon-team.json'));
-  assert.deepEqual(GEN.advisorsToDeploy(sin), { manifest: ['rev-version'], team: [], teamProblem: null, halfDone: false });
+  const vacio = GEN.advisorsToDeploy(sin);
+  assert.deepEqual({ ...vacio, teamDirs: { ...vacio.teamDirs } }, { manifest: ['rev-version'], team: [], teamDirs: {}, teamProblem: null, halfDone: false, lines: [] });
   const roto = toyTree(casa('roto')); fs.writeFileSync(path.join(roto, '.tycon-team.json'), '{ esto no es json');
   const r = GEN.advisorsToDeploy(roto);
   assert.equal(r.team, null);
@@ -425,4 +426,202 @@ test('T25 Codex_SinEquivalente_SinLineaDeModelo @story-7.29 @ac-17', () => {
   const r = GEN.deployTeam({ root, codexHome: path.join(home, '.codex'), recordFile: TOOLS.codexTeamRecordPath({ home }) });
   assert.ok(r.lines.some((l) => /no tiene equivalente en Codex/.test(l)), r.lines.join('\n'));
   assert.equal(modelLine(fs.readFileSync(path.join(home, '.codex', 'agents', 'rev-capa-uno.toml'), 'utf8')), null);
+});
+
+// ── story 8.41 · AC 48 (T43): un revisor de un PAQUETE que llega por la capa (`packs/<p>/agents/<r>.md`) también va a Codex
+//    si el paquete está activo para la organización; con el paquete apagado, no, igual que del lado de Claude. Con los
+//    paquetes reales lo mide el privado ───────────────────────────────────────────────────────────────────────────────────
+function withPacksDefault(value, fn) {
+  const before = process.env.TYCON_PACKS_DEFAULT;
+  process.env.TYCON_PACKS_DEFAULT = value;
+  try { return fn(); } finally { if (before === undefined) delete process.env.TYCON_PACKS_DEFAULT; else process.env.TYCON_PACKS_DEFAULT = before; }
+}
+function toyTreeWithPack(dir) {
+  toyTree(dir, { team: ['rev-capa-uno'] });
+  write(path.join(dir, 'packs', 'paq-juguete', 'pack.json'), JSON.stringify({ name: 'paq-juguete', description: 'paquete de juguete', agents: 'agents', reviewers: [] }));
+  write(path.join(dir, 'packs', 'paq-juguete', 'agents', 'rev-paquete.md'), agentMd('rev-paquete'));
+  const m = JSON.parse(fs.readFileSync(path.join(dir, '.tycon-team.json'), 'utf8'));
+  m.files.push({ path: 'packs/paq-juguete/pack.json', mode: '100644', blob: 'e'.repeat(40) }, { path: 'packs/paq-juguete/agents/rev-paquete.md', mode: '100644', blob: 'f'.repeat(40) });
+  fs.writeFileSync(path.join(dir, '.tycon-team.json'), JSON.stringify(m, null, 1));
+  return dir;
+}
+
+test('T43 Codex_TeamLayerPackAgents_DeployedWhenPackActive_SameAsClaude', () => {
+  const root = toyTreeWithPack(casa('paq'));
+  withPacksDefault('all', () => {
+    const set = GEN.advisorsToDeploy(root);
+    assert.deepEqual(set.team, ['rev-capa-uno', 'rev-paquete']);
+    const g = GEN.generateOne(root, 'rev-paquete', { agentsDir: set.teamDirs['rev-paquete'] });
+    assert.match(g.toml, /# canónico: packs\/paq-juguete\/agents\/rev-paquete\.md/, 'el canónico dice dónde vive');
+    const codex = casa('codex-paq');
+    const record = path.join(casa('estado-paq'), TOOLS.CODEX_TEAM_RECORD);
+    const r = GEN.deployTeam({ root, codexHome: codex, recordFile: record });
+    assert.deepEqual(r.skipped, []);
+    for (const f of ['rev-paquete.config.toml', 'agents/rev-paquete.toml', 'rev-capa-uno.config.toml']) assert.ok(fs.existsSync(path.join(codex, ...f.split('/'))), `${f} en Codex`);
+  });
+  // el paquete apagado para la organización: su revisor no va
+  withPacksDefault('none', () => assert.deepEqual(GEN.advisorsToDeploy(root).team, ['rev-capa-uno']));
+  // la configuración de paquetes no se puede resolver: no se sabe qué está activo — no se despliega ni se borra nada, y se dice
+  withPacksDefault('no-existe-este-paquete', () => {
+    const set = GEN.advisorsToDeploy(root);
+    assert.equal(set.team, null);
+    assert.match(set.teamProblem, /paquete/);
+  });
+});
+
+// ── story 8.41 · T46 (AC 51) y el pase adversarial: un paquete roto de la capa no es «ausente»; la carpeta de agentes que
+//    declara el manifiesto; un nombre repetido se queda con el primero; lo que salió de la versión no queda en Codex ────
+test('T46 Codex_BrokenLayerPack_NothingDeployedNorRemoved · AgentsKey · FirstWins · RetiredRemoved', () => {
+  // (a) el manifiesto de un paquete de la capa, roto: team null y se dice; nada de la capa se borra de Codex
+  const root = toyTreeWithPack(casa('roto'));
+  const codex = casa('codex-roto');
+  const record = path.join(casa('estado-roto'), TOOLS.CODEX_TEAM_RECORD);
+  withPacksDefault('all', () => GEN.deployTeam({ root, codexHome: codex, recordFile: record }));
+  assert.ok(fs.existsSync(path.join(codex, 'rev-paquete.config.toml')));
+  fs.writeFileSync(path.join(root, 'packs', 'paq-juguete', 'pack.json'), '{ esto no es json');
+  withPacksDefault('all', () => {
+    const set = GEN.advisorsToDeploy(root);
+    assert.equal(set.team, null);
+    assert.match(set.teamProblem, /manifiesto roto/);
+    const r = GEN.deployTeam({ root, codexHome: codex, recordFile: record });
+    assert.deepEqual(r.removed, [], 'con un paquete roto no se borra nada de la capa');
+    assert.ok(fs.existsSync(path.join(codex, 'rev-paquete.config.toml')));
+  });
+  // (b) la carpeta de agentes que declara el manifiesto (no siempre `agents`), y (c) el mismo revisor en dos paquetes: gana el
+  //     primero por nombre de paquete, como del lado de Claude
+  const otro = toyTree(casa('carpeta'), { team: [] });
+  const m = JSON.parse(fs.readFileSync(path.join(otro, '.tycon-team.json'), 'utf8'));
+  for (const [p, dir] of [['a-paq', 'revisores'], ['b-paq', 'agents']]) {
+    write(path.join(otro, 'packs', p, 'pack.json'), JSON.stringify({ name: p, description: 'x', agents: dir, reviewers: [] }));
+    write(path.join(otro, 'packs', p, dir, 'rev-doble.md'), agentMd('rev-doble'));
+    m.files.push({ path: `packs/${p}/pack.json`, mode: '100644', blob: 'e'.repeat(40) }, { path: `packs/${p}/${dir}/rev-doble.md`, mode: '100644', blob: 'f'.repeat(40) });
+  }
+  fs.writeFileSync(path.join(otro, '.tycon-team.json'), JSON.stringify(m));
+  withPacksDefault('all', () => {
+    const set = GEN.advisorsToDeploy(otro);
+    assert.deepEqual(set.team, ['rev-doble']);
+    assert.equal(set.teamDirs['rev-doble'], path.join(otro, 'packs', 'a-paq', 'revisores'), 'el primer paquete, con su carpeta');
+    assert.match(GEN.generateOne(otro, 'rev-doble', { agentsDir: set.teamDirs['rev-doble'] }).toml, /# canónico: packs\/a-paq\/revisores\/rev-doble\.md/);
+  });
+  // (d) lo que el arnés desplegó para un revisor que ya no es de la versión ni de la capa se quita; lo de la persona, no
+  const viejo = casa('codex-viejo');
+  const gen = GEN.generateOne(toyTree(casa('fuente')), 'rev-version').toml.replace(/rev-version/g, 'rev-que-se-fue');
+  write(path.join(viejo, 'rev-que-se-fue.config.toml'), gen);
+  write(path.join(viejo, 'agents', 'rev-que-se-fue.toml'), gen);
+  write(path.join(viejo, 'mio.config.toml'), 'model = "el de la persona"\n');
+  const sinCapa = toyTree(casa('sin-capa'), { team: [] }); fs.rmSync(path.join(sinCapa, '.tycon-team.json'));
+  // otro revisor con la cabecera del generador que NO está en la lista de los que salieron: no se toca
+  write(path.join(viejo, 'rev-ajeno.config.toml'), gen.replace(/rev-que-se-fue/g, 'rev-ajeno'));
+  // uno de la lista que deployTeam acaba de dejar como de la persona: tampoco
+  write(path.join(viejo, 'rev-editado.config.toml'), gen.replace(/rev-que-se-fue/g, 'rev-editado'));
+  const sinRegistro = path.join(casa('rec'), 'no-esta.json');
+  const retired = ['rev-que-se-fue', 'rev-editado', 'rev-version'];
+  const r = GEN.removeRetired({ root: sinCapa, codexHome: viejo, manifest: ['rev-version'], recordFile: sinRegistro, retired, kept: ['rev-editado.config.toml'] });
+  assert.deepEqual(r.removed.sort(), ['agents/rev-que-se-fue.toml', 'rev-que-se-fue.config.toml']);
+  assert.ok(fs.existsSync(path.join(viejo, 'mio.config.toml')), 'lo que no escribió el arnés queda');
+  assert.ok(fs.existsSync(path.join(viejo, 'rev-ajeno.config.toml')), 'un revisor que no salió de la versión queda aunque tenga la cabecera');
+  assert.ok(fs.existsSync(path.join(viejo, 'rev-editado.config.toml')), 'lo que deployTeam dejó como de la persona queda');
+  assert.ok(r.lines.some((l) => /quité 2 archivo/.test(l)), r.lines.join('\n'));
+  // (d2) uno de la lista generado desde un paquete de la capa (lo que deployTeam dejó como de la persona en un arranque
+  //      anterior, ya fuera del registro): tampoco, en ningún arranque
+  write(path.join(viejo, 'rev-de-capa.config.toml'), gen.replace(/rev-que-se-fue/g, 'rev-de-capa').replace('# canónico: agents/rev-de-capa.md', '# canónico: packs/paq-x/agents/rev-de-capa.md'));
+  assert.match(fs.readFileSync(path.join(viejo, 'rev-de-capa.config.toml'), 'utf8'), /# canónico: packs\/paq-x\/agents\/rev-de-capa\.md/, 'control: el archivo de prueba dice que vino de un paquete');
+  const rDeCapa = GEN.removeRetired({ root: sinCapa, codexHome: viejo, manifest: [], recordFile: sinRegistro, retired: ['rev-de-capa'] });
+  assert.deepEqual(rDeCapa.removed, []);
+  assert.ok(fs.existsSync(path.join(viejo, 'rev-de-capa.config.toml')));
+  // (e) con el registro de la capa ilegible no se borra nada, y se dice
+  write(path.join(viejo, 'rev-que-se-fue.config.toml'), gen);
+  const roto = path.join(casa('rec-roto'), 'registro.json'); write(roto, '{ roto');
+  const r2 = GEN.removeRetired({ root: sinCapa, codexHome: viejo, manifest: [], recordFile: roto, retired });
+  assert.deepEqual(r2.removed, []);
+  assert.ok(r2.lines.some((l) => /registro de la capa no se lee/.test(l)), r2.lines.join('\n'));
+  // (f) con capa y el paquete que trae al revisor sin activar: también se quita (no es de la versión ni de la capa activa)
+  const conPaq = toyTreeWithPack(casa('paq-inactivo'));
+  write(path.join(viejo, 'rev-paquete.config.toml'), gen.replace(/rev-que-se-fue/g, 'rev-paquete'));
+  const r3 = withPacksDefault('none', () => GEN.removeRetired({ root: conPaq, codexHome: viejo, manifest: [], recordFile: sinRegistro, retired: ['rev-paquete'] }));
+  assert.deepEqual(r3.removed, ['rev-paquete.config.toml'], r3.lines.join('\n'));
+  write(path.join(viejo, 'rev-paquete.config.toml'), gen.replace(/rev-que-se-fue/g, 'rev-paquete'));
+  const r4 = withPacksDefault('all', () => GEN.removeRetired({ root: conPaq, codexHome: viejo, manifest: [], recordFile: sinRegistro, retired: ['rev-paquete'] }));
+  assert.deepEqual(r4.removed, [], 'con el paquete activo es de la capa: queda');
+  // (g) la lista real de la versión nombra a los 13 que salieron, y ninguno sigue en el MANIFEST
+  const real = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'build', 'retired-reviewers.json'), 'utf8')).reviewers;
+  const enVersion = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'adapters', 'codex', 'agents', 'MANIFEST.json'), 'utf8')).advisors;
+  assert.equal(real.length, 13);
+  assert.deepEqual(real.filter((n) => enVersion.includes(n)), []);
+});
+
+// ── story 8.41 · revisión 2: un nombre repetido entre paquetes se dice; un nombre como `constructor` no se pierde; el canónico
+//    de un paquete fuera del árbol (TYCON_PACKS_DIR) se nombra igual; una carpeta de un paquete sin su pack.json tira ────
+test('T46b Codex_PackNames_DuplicateSaid · PrototypeNames · CanonicalOutsideTree', () => {
+  const otro = toyTree(casa('dup'), { team: [] });
+  const m = JSON.parse(fs.readFileSync(path.join(otro, '.tycon-team.json'), 'utf8'));
+  for (const p of ['a-paq', 'b-paq']) {
+    write(path.join(otro, 'packs', p, 'pack.json'), JSON.stringify({ name: p, description: 'x', agents: 'agents', reviewers: [] }));
+    for (const n of ['rev-doble', 'constructor']) {
+      write(path.join(otro, 'packs', p, 'agents', `${n}.md`), agentMd(n));
+      m.files.push({ path: `packs/${p}/agents/${n}.md`, mode: '100644', blob: 'f'.repeat(40) });
+    }
+    m.files.push({ path: `packs/${p}/pack.json`, mode: '100644', blob: 'e'.repeat(40) });
+  }
+  fs.writeFileSync(path.join(otro, '.tycon-team.json'), JSON.stringify(m));
+  withPacksDefault('all', () => {
+    const set = GEN.advisorsToDeploy(otro);
+    assert.deepEqual(set.team, ['constructor', 'rev-doble']);
+    assert.equal(set.teamDirs.constructor, path.join(otro, 'packs', 'a-paq', 'agents'));
+    assert.ok(set.lines.some((l) => /rev-doble está en packs\/b-paq\/agents y en packs\/a-paq\/agents/.test(l)), set.lines.join('\n'));
+    const r = GEN.deployTeam({ root: otro, codexHome: casa('codex-dup'), recordFile: path.join(casa('estado-dup'), TOOLS.CODEX_TEAM_RECORD) });
+    assert.ok(r.lines.some((l) => /rev-doble está en/.test(l)), 'deployTeam lo dice');
+  });
+  // uno de un paquete con el nombre de uno de la versión: queda el de la versión, y se dice
+  const choque = toyTree(casa('choque-version'), { team: [] });
+  const mc = JSON.parse(fs.readFileSync(path.join(choque, '.tycon-team.json'), 'utf8'));
+  write(path.join(choque, 'packs', 'paq-c', 'pack.json'), JSON.stringify({ name: 'paq-c', description: 'x', agents: 'agents', reviewers: [] }));
+  write(path.join(choque, 'packs', 'paq-c', 'agents', 'rev-version.md'), agentMd('rev-version'));
+  mc.files.push({ path: 'packs/paq-c/pack.json', mode: '100644', blob: 'e'.repeat(40) }, { path: 'packs/paq-c/agents/rev-version.md', mode: '100644', blob: 'f'.repeat(40) });
+  fs.writeFileSync(path.join(choque, '.tycon-team.json'), JSON.stringify(mc));
+  withPacksDefault('all', () => {
+    const set = GEN.advisorsToDeploy(choque);
+    assert.deepEqual(set.team, []);
+    assert.ok(set.lines.some((l) => /rev-version de packs\/paq-c\/agents tiene el nombre de uno de la versión/.test(l)), set.lines.join('\n'));
+  });
+  // fuera del árbol: el pack.json de arriba da el nombre, no la ruta del disco
+  const fuera = casa('fuera');
+  write(path.join(fuera, 'mis-paquetes', 'paq-x', 'pack.json'), JSON.stringify({ name: 'paq-x', description: 'x', agents: 'revisores/de-a-uno', reviewers: [] }));
+  write(path.join(fuera, 'mis-paquetes', 'paq-x', 'revisores', 'de-a-uno', 'rev-fuera.md'), agentMd('rev-fuera'));
+  const raiz = toyTree(casa('raiz-fuera'), { team: [] });
+  assert.match(GEN.generateOne(raiz, 'rev-fuera', { agentsDir: path.join(fuera, 'mis-paquetes', 'paq-x', 'revisores', 'de-a-uno') }).toml, /# canónico: packs\/paq-x\/revisores\/de-a-uno\/rev-fuera\.md/);
+  // dentro de packs/<p>/ sin pack.json: tira en vez de nombrar un agents/<r>.md que no existe
+  write(path.join(fuera, 'packs', 'sin-manifiesto', 'agents', 'rev-huerfano.md'), agentMd('rev-huerfano'));
+  assert.throws(() => GEN.generateOne(raiz, 'rev-huerfano', { agentsDir: path.join(fuera, 'packs', 'sin-manifiesto', 'agents') }), /no encuentro el pack\.json/);
+});
+
+// ── story 8.41 · T18 del lado de la paridad: la superficie «skills» de la paridad Claude↔Codex cuenta las skills de los
+//    paquetes activos igual que las del núcleo (una que falta en Codex es rojo), y si no las puede leer lo dice ──────────
+test('T18 Codex_PackSkillsLinked · la paridad cuenta las skills de los paquetes', () => {
+  const PAR = require(path.join(ROOT, 'scripts', 'lib', 'harness-parity.js'));
+  const DS = require(path.join(ROOT, 'build', 'deploy-shared-skills.js'));
+  const base = casa('paridad');
+  const clone = path.join(base, 'agent-skills', 'skills');
+  write(path.join(clone, 'del-nucleo', 'SKILL.md'), '# núcleo\n');
+  const paqSkills = path.join(base, 'agent-skills', 'packs', 'paq-x', 'skills');
+  write(path.join(paqSkills, 'del-paquete', 'SKILL.md'), '# paquete\n');
+  const codex = casa('codex-paridad');
+  fs.mkdirSync(path.join(codex, 'skills'), { recursive: true });
+  fs.symlinkSync(path.join(clone, 'del-nucleo'), path.join(codex, 'skills', 'del-nucleo'));
+  const before = process.env.CODEX_HOME;
+  process.env.CODEX_HOME = codex;
+  try {
+    const pol = (packSkills) => ({ pol: { skillsDirs: { skills: clone }, skills: { linkState: DS.linkState, packSkills } } });
+    const conPaquete = () => ({ extra: [{ name: 'del-paquete', src: path.join(paqSkills, 'del-paquete') }] });
+    let r = PAR.sSkills(pol(conPaquete));
+    assert.equal(r.ok, false, r.detail);
+    assert.match(r.detail, /faltan 1.*del-paquete/);
+    fs.symlinkSync(path.join(paqSkills, 'del-paquete'), path.join(codex, 'skills', 'del-paquete'));
+    r = PAR.sSkills(pol(conPaquete));
+    assert.equal(r.ok, true, r.detail);
+    assert.match(r.detail, /^2 linkeadas/);
+    r = PAR.sSkills(pol(() => { throw new Error('pack.json roto'); }));
+    assert.equal(r.ok, false);
+    assert.match(r.detail, /no pude leer las skills de los paquetes \(pack\.json roto\)/);
+  } finally { if (before === undefined) delete process.env.CODEX_HOME; else process.env.CODEX_HOME = before; }
 });

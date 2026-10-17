@@ -1946,8 +1946,10 @@ test('T21 Skill_Texts_SuitesDecisionInSteps @story-7.28 @ac-13', () => {
   assert.match(modes, /El modo y dónde corren las suites salen del plan/);
   assert.match(modes, /Step 7 con `suites: "server"`/);
   for (const [name, text] of [['SKILL.md', skill], ['el paso 9', step('09')], ['el paso 9b', step('09b')]]) assert.match(text, /merge_suites/, `${name} nombra merge_suites`);
-  const product = fs.readFileSync(path.join(ROOT, 'skills', 'bizuit-new-product', 'SKILL.md'), 'utf8');
-  assert.match(product, /merge_suites/, 'el alta de un producto trae la tarea humana de inscribir el repo');
+  // la skill de alta de un producto vive en el paquete del stack del equipo (story 8.41): se mide donde está
+  const productFile = path.join(ROOT, 'packs', 'bizuit', 'skills', 'bizuit-new-product', 'SKILL.md');
+  if (!fs.existsSync(productFile)) { console.log('⏭ T21: NO MEDIDO — la skill de alta de un producto viaja con el perfil del equipo, no con esta copia'); return; }
+  assert.match(fs.readFileSync(productFile, 'utf8'), /merge_suites/, 'el alta de un producto trae la tarea humana de inscribir el repo');
 });
 
 // ── lo que confirmó el pase adversarial (story 7.28, vuelta 1) ───────────────────────────────────────────────────────

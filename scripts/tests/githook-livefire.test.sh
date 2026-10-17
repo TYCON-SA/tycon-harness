@@ -204,10 +204,25 @@ elif [ -f "$AS_HOOK" ]; then
 
   T=$(mktemp -d); montar_as "$T" 1; ANTES=$(cuantos "$T")
   RC=$(commitear_as "$T" "advisor sin regenerar"); DESPUES=$(cuantos "$T")
-  if [ "$RC" != "0" ] && [ "$ANTES" = "$DESPUES" ]; then
+  if [ "$RC" != "0" ] && [ "$ANTES" = "$DESPUES" ] && grep -q "chequeo de juguete" "$T/out.txt"; then
     ok "C-06 AgentSkills: tocar un advisor con la traducción vieja NO crea el commit (exit $RC)"
   else
     mal "C-06 el commit de AgentSkills entró (exit $RC, commits ${ANTES}→$DESPUES)"; sed -n '1,8p' "$T/out.txt"
+  fi
+  rm -rf "$T"
+
+  # C-06b · story 8.41: los revisores de un stack viven en la carpeta de agentes de su paquete; tocar uno corre el mismo
+  # chequeo (antes el hook miraba sólo `agents/*.md` y el commit entraba con la traducción vieja)
+  T=$(mktemp -d); montar_as "$T" 1
+  ( cd "$T/repo" && git rm -q --cached agents/tycon-de-juguete.md && mkdir -p packs/paq-juguete/agents \
+    && mv agents/tycon-de-juguete.md packs/paq-juguete/agents/ && git add packs/paq-juguete/agents/tycon-de-juguete.md )
+  ANTES=$(cuantos "$T")
+  RC=$(commitear_as "$T" "revisor de paquete sin regenerar"); DESPUES=$(cuantos "$T")
+  # (frena POR el chequeo: su mensaje llega; un freno por otra causa no cuenta)
+  if [ "$RC" != "0" ] && [ "$ANTES" = "$DESPUES" ] && grep -q "chequeo de juguete" "$T/out.txt"; then
+    ok "C-06b AgentSkills: tocar un revisor de un paquete con la traducción vieja NO crea el commit (exit $RC)"
+  else
+    mal "C-06b el commit que toca un revisor de paquete entró (exit $RC, commits ${ANTES}→$DESPUES)"; sed -n '1,8p' "$T/out.txt"
   fi
   rm -rf "$T"
 

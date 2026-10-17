@@ -95,8 +95,14 @@ function leerPaquetes({ packsDir, explicito } = {}) {
     // lo que devuelve conserva la forma de siempre (la usan harness-audit, instinct-draft y el banco)
     const revisores = [];
     let roto = null;
-    for (const r of json.reviewers) {
+    // lo que el manifiesto nombra no saca a nadie del árbol (la misma regla que el cargador del pipeline): un agente con
+    // la forma de un nombre, la carpeta de agentes adentro del paquete y las guías relativas al árbol
+    const fueraDelArbol = (r) => typeof r !== 'string' || !r.trim() || path.isAbsolute(r) || r.includes('\\') || r.split('/').some((t) => t === '..' || t === '');
+    if (json.agents != null && fueraDelArbol(json.agents)) roto = `«agents» (${json.agents}) tiene que ser una carpeta del paquete, sin «..»`;
+    for (const g of Array.isArray(json.guides) ? json.guides : []) if (!roto && fueraDelArbol(g)) roto = `«guides»: «${g}» tiene que ser relativa al árbol, sin «..»`;
+    for (const r of roto ? [] : json.reviewers) {
       if (!r || typeof r.agent !== 'string' || typeof r.group !== 'string') { roto = 'un revisor sin «agent» o sin «group»'; break; }
+      if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(r.agent)) { roto = `el revisor «${r.agent}» no tiene la forma de un nombre de agente`; break; }
       revisores.push({
         agente: r.agent,
         grupo: r.group,
@@ -112,6 +118,8 @@ function leerPaquetes({ packsDir, explicito } = {}) {
       archivo,
       descripcion: typeof json.description === 'string' ? json.description : '',
       guias: Array.isArray(json.guides) ? json.guides.filter((g) => typeof g === 'string') : [],
+      // la carpeta de agentes DEL paquete (clave `agents`, story 8.41), o null: sus revisores se buscan ahí antes que en la raíz
+      agentes: typeof json.agents === 'string' && json.agents ? path.join(carpeta, json.agents) : null,
       revisores,
       hermanos: hermanos.lista,
     });

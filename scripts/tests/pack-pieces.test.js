@@ -166,6 +166,37 @@ test('Manifest_SkillsAndAgentsKeys_Validated', () => {
   assert.equal(roto.errores.length, 1);
 });
 
+// ── story 8.41 · T46 (AC 51) y la búsqueda del agente de un revisor en su paquete (AC 27) ────────────────────────────
+test('T46 PackManifest_PathsStayInTree_BrokenPackNotAbsent · AgentDirInPacks', () => {
+  const PP = require(PIECES);
+  const IP = require(path.join(ROOT, 'scripts', 'lib', 'installed-packs.js'));
+  // las guías: relativas al árbol, sin «..» ni absolutas — en los tres lectores
+  for (const g of ['../../etc/passwd.md', '/etc/passwd', 'packs\\x\\g.md', 'packs//g.md']) {
+    const p = paqueteConCarpetas({ manifiesto: { guides: [g] } });
+    assert.ok(validar(p).some((e) => /guides/.test(e.motivo)), `cargador del pipeline: ${g}`);
+    assert.ok(PP.listPacks(p.packsDir).errores.some((e) => /guides/.test(e.motivo)), `pack-pieces: ${g}`);
+    assert.ok(IP.leerPaquetes({ packsDir: p.packsDir }).errores.some((e) => /guides/.test(e.motivo)), `installed-packs: ${g}`);
+  }
+  const bien = paqueteConCarpetas({ manifiesto: { guides: ['packs/prueba/guides/g.md'] } });
+  assert.deepEqual(PP.listPacks(bien.packsDir).errores, []);
+  assert.deepEqual(PP.listPacks(bien.packsDir).packs[0].guides, ['packs/prueba/guides/g.md']);
+  // la carpeta de agentes y el nombre de un revisor, también en el lector liviano
+  const fuera = paqueteConCarpetas({ manifiesto: { agents: '../afuera' } });
+  assert.ok(IP.leerPaquetes({ packsDir: fuera.packsDir }).errores.some((e) => /agents/.test(e.motivo)));
+  const raro = paqueteConCarpetas();
+  const m = JSON.parse(fs.readFileSync(path.join(raro.dir, 'pack.json'), 'utf8'));
+  m.reviewers[0].agent = '../../x';
+  fs.writeFileSync(path.join(raro.dir, 'pack.json'), JSON.stringify(m));
+  assert.ok(IP.leerPaquetes({ packsDir: raro.packsDir }).errores.some((e) => /forma de un nombre/.test(e.motivo)));
+  // agentDirInPacks: el de su paquete; uno que no está, null; con un paquete roto, lo dice nombrando el manifiesto
+  const ok = paqueteConCarpetas();
+  assert.equal(PP.agentDirInPacks(ok.packsDir, 'rev-propio'), path.join(ok.dir, 'agents'));
+  assert.equal(PP.agentDirInPacks(ok.packsDir, 'no-esta'), null);
+  W(path.join(ok.packsDir, 'roto', 'pack.json'), '{ esto no es json');
+  assert.equal(PP.agentDirInPacks(ok.packsDir, 'rev-propio'), path.join(ok.dir, 'agents'), 'el que está, se encuentra igual');
+  assert.throws(() => PP.agentDirInPacks(ok.packsDir, 'no-esta'), /roto\/pack\.json/, 'si no está y hay un paquete roto, se dice');
+});
+
 // ── T5 · AC 4 ────────────────────────────────────────────────────────────────────────────────────────────────────
 test('Agents_PackFirstThenRoot_DuplicateBreaks', () => {
   // en el paquete, sin copia en la raíz: se encuentra

@@ -310,7 +310,8 @@ const OPERATOR_EXCEPTIONS = [
 ];
 const LINK_OPERATORS = [/\bln\s+-s/, /\[\[?\s*!?\s*-L\b/, /\btest\s+-L\b/, /\breadlink\b/, /\bmklink\b/i, /New-Item\b[^\n]*-ItemType\s+(?:Junction|SymbolicLink)/i];
 test('T14 LinkOps_NodeOnly_WholeFileOperators_NoRecursiveRemoval_NoNewDollar', () => {
-  const files = [...LIST.literal_copies.map((e) => e.path), 'scripts/install-tycon-hooks.sh', 'scripts/install-tycon-hooks.ps1'];
+  // (las copias que no viajan en la copia pública —la plantilla del hook de un paquete del equipo— se miden donde están)
+  const files = [...shipped(LIST.literal_copies, 'T14').map((e) => e.path), 'scripts/install-tycon-hooks.sh', 'scripts/install-tycon-hooks.ps1'];
   for (const f of files) {
     if (/\.js$/.test(f)) continue;   // en JavaScript la operación ES Node (fs.symlinkSync/readlinkSync): lo que pide el AC
     read(f).split('\n').forEach((l, i) => {
@@ -446,7 +447,8 @@ test('T35 TeamPapers_PlacePath_OldStartupDeclared_TwoNamesParagraphInternal', ()
 // ── T36 ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
 test('T36 Reviewers_PlacePath_AdaptersRegenerated_NoHandEdits', () => {
   const files = sweepScope(ROOT).filter((f) => /^agents\/[^/]+\.md$/.test(f) || (/^skills\/.+\.md$/.test(f) && !/\/tests?\//.test(f)) || /^adapters\/codex\//.test(f));
-  assert.ok(files.filter((f) => f.startsWith('agents/')).length >= 14, 'pocas instrucciones de revisores');
+  // el piso es «alguna»: cuántas hay cambia con lo que la organización lleva a sus paquetes
+  assert.ok(files.filter((f) => f.startsWith('agents/')).length > 0, 'ninguna instrucción de revisores que mirar');
   const bad = [];
   for (const f of files) for (const l of legacyPathLines(read(f))) bad.push(`${f}: ${l.trim().slice(0, 140)}`);
   assert.deepStrictEqual(bad, [], 'instrucciones que lee el modelo con la ruta vieja del lugar');
