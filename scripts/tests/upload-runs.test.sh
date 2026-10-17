@@ -700,6 +700,45 @@ TF_BUILD=True TYCON_MAILBOX_JSON="${T}/cfg.json" TYCON_MAILBOX_URL_BASE="${URL_B
   && ok "2.12-T13 con TF_BUILD=True y un destino de prueba, sube (la guarda sólo protege el buzón real)" \
   || mal "2.12-T13 control: rc=${RC} puts=$(puts "${T}/b") estado=$(campo "${T}" estado)"
 
+# ── Lab_NoSubeAlBuzonReal · un laboratorio (HOME propia, sin TF_BUILD) no sube al buzón real ──
+# Sin la guarda, una prueba que saca TF_BUILD para probar el caso de una máquina, con la llave del árbol a mano, sube su
+# cobertura al buzón real con un código de máquina nuevo cada vez: una «máquina» sin corridas que el sitio ofrece
+# confirmar. Esta suite corre con una HOME propia, y la cuenta NO existe: aunque la guarda falte, nada sale de acá.
+T="${BASE}/tlab"; mkdir -p "${T}/estado"
+printf '{"cuenta":"tyconnoexiste0000","contenedor":"corridas","tenant":"00000000-0000-0000-0000-000000000000","politica":"subida-prueba","vence":"2099-01-01","sas":"sv=2022-11-02&si=subida-prueba&sr=c&spr=https&sig=%s"}\n' "${FAKE_SIGNATURE}" > "${T}/cfg.json"
+corrida "${T}/h" "2.1-2026-09-01T1000" 1000
+env -u TYCON_MAILBOX_URL_BASE -u TF_BUILD -u AGENT_ID -u BUILD_BUILDID -u SYSTEM_TEAMFOUNDATIONCOLLECTIONURI -u GITHUB_ACTIONS -u CI \
+  TYCON_MAILBOX_JSON="${T}/cfg.json" TYCON_TIMING_HISTORY="${T}/h" TYCON_UPLOADS_LOG="${T}/estado/mailbox-uploads.json" \
+  TYCON_LOGS_DIR="${T}/registros-buzon" HTTPS_PROXY=http://127.0.0.1:9 \
+  node "${SUBIR}" --json > "${T}/out.json" 2> "${T}/err.txt"; RC=$?
+if [ "${RC}" -eq 0 ] && [ "$(campo "${T}" estado)" = "laboratorio" ] && [ -n "$(campo "${T}" motivo)" ] \
+   && [ ! -e "${T}/registros-buzon" ] && [ ! -e "${T}/estado/mailbox-uploads.json" ] && [ "$(campo "${T}" subidos)" = "0" ] \
+   && [ -z "$(find "${HOME}" -name 'machine-code.json' 2>/dev/null)" ]; then
+  ok "Lab_NoSubeAlBuzonReal: con una HOME de laboratorio y el destino real: exit 0, estado laboratorio, sin código de máquina, nada preparado ni subido"
+else
+  mal "Lab_NoSubeAlBuzonReal rc=${RC} estado=$(campo "${T}" estado) subidos=$(campo "${T}" subidos) · $(head -c 200 "${T}/err.txt")"
+fi
+env -u TYCON_MAILBOX_URL_BASE -u TF_BUILD -u AGENT_ID -u BUILD_BUILDID -u SYSTEM_TEAMFOUNDATIONCOLLECTIONURI -u GITHUB_ACTIONS -u CI \
+  TYCON_MAILBOX_JSON="${T}/cfg.json" TYCON_UPLOADS_LOG="${T}/estado/mailbox-uploads.json" HTTPS_PROXY=http://127.0.0.1:9 \
+  node "${SUBIR}" --check-create-only --json > "${T}/out.json" 2> "${T}/err.txt"; RC=$?
+[ "${RC}" -eq 0 ] && [ "$(campo "${T}" estado)" = "laboratorio" ] \
+  && ok "Lab_NoSubeAlBuzonReal: --check-create-only tampoco escribe desde un laboratorio" \
+  || mal "Lab_NoSubeAlBuzonReal --check-create-only rc=${RC} estado=$(campo "${T}" estado)"
+# la regla, caso por caso (sin red): la HOME del usuario no frena; otra HOME, una temporal o una marca de CI, sí
+LAB="$(node -e '
+const U = require(process.argv[1]); const os = require("os"); const path = require("path");
+const casa = path.join(path.sep, "casa", "acme");
+const c = [
+  ["misma", U.motivoDeLaboratorio({ env: {}, home: casa, real: casa }) === null],
+  ["otra", /no es la del usuario/.test(U.motivoDeLaboratorio({ env: {}, home: path.join(casa, "lab"), real: casa }) || "")],
+  ["temporal", /carpeta temporal/.test(U.motivoDeLaboratorio({ env: {}, home: path.join(os.tmpdir(), "lab"), real: path.join(os.tmpdir(), "lab") }) || "")],
+  ["agente", U.MARCAS_DE_CI.every((k) => /agente de CI/.test(U.motivoDeLaboratorio({ env: { [k]: k === "GITHUB_ACTIONS" || k === "CI" ? "true" : "7" }, home: casa, real: casa }) || ""))],
+  ["ci-falso", U.motivoDeLaboratorio({ env: { CI: "false", GITHUB_ACTIONS: "0" }, home: casa, real: casa }) === null],
+];
+process.stdout.write(c.filter((x) => !x[1]).map((x) => x[0]).join(" "));' "${SUBIR}" 2>&1)"
+[ -z "${LAB}" ] && ok "Lab_NoSubeAlBuzonReal: la regla — la HOME del usuario sube; otra HOME, una temporal o una marca de CI, no" \
+  || mal "Lab_NoSubeAlBuzonReal: la regla falla en: ${LAB}"
+
 # ── 8.9-D2 · el registro de subidas y el sello de vencimiento con su nombre en inglés; el viejo sigue valiendo ──
 # 🔴 rojo previo: renombrar el registro sin leer el viejo vuelve a subir TODO el historial de la máquina el día del
 #    cambio, y renombrar el sello sin leer el viejo repite el aviso de vencimiento. El nombre viejo sale del mapa.

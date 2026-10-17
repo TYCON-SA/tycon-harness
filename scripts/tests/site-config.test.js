@@ -420,6 +420,19 @@ test('T7 Productos_DeDependenciasSoloLectura_DeDeploymentsEditables @story-2.29 
   });
 });
 
+test('Personas_SinActividad_AparteYSinConfirmar', async () => {
+  // una carpeta sin place.json, sin fecha y sin corridas va aparte: sin esto sale por confirmar, con el botón, y cuenta
+  // en «N por confirmar»
+  const ops = clon({ 'operations.json': opsBase() });
+  const inf = H.informados({ 'maq-c': 'dev.c@ejemplo.test' });
+  inf.maquinas['lab-1'] = { estado: 'no_informa', motivo: 'la máquina no subió place.json', corridas: 0 };
+  await conPestana({ fuentes: fuentesCon({ ops, informados: inf }), opciones: { hoy: () => HOY } }, async ({ h, entrar }) => {
+    const vista = (await h.pedir('/api/config', { cookie: await entrar(LEAD) })).json.secciones.find((s) => s.id === 'personas');
+    assert.deepStrictEqual(vista.extras.porConfirmar.map((m) => m.maquina), ['maq-c']);
+    assert.deepStrictEqual(vista.extras.sinActividad, [{ maquina: 'lab-1' }]);
+  });
+});
+
 test('T9 Personas_ConfirmarEscribeQuienYCuando_YQuitar @story-2.29 @ac-9', async () => {
   const ops = clon({ 'operations.json': opsBase() });
   const inf = H.informados({ 'maq-c': ' Dev.C@Ejemplo.test ', 'maq-d': null });

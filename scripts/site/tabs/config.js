@@ -263,6 +263,7 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
       }
       const { c, informados, pers } = contextoPersonas(base2);
       extras.porConfirmar = informados ? people.maquinasPorConfirmar(c) : [];
+      extras.sinActividad = informados ? people.maquinasSinActividad(c) : [];
       const reglas = access.crearReglas({ config: base2, modelo: fuentes.modelo(), personas: pers });
       const correos = [...new Set(Object.values(c.machines).filter(isObject).map((e) => norm(e.person)).filter(Boolean))].sort();
       extras.personas = correos.map((correo) => {

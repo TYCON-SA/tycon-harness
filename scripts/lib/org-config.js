@@ -768,6 +768,14 @@ function pantalla() {
         el('span', { class: 'acc' }, persona, el('button', { type: 'button', text: 'Confirmar', onclick: function () { revisarSeccion(s, { accion: 'confirm', maquina: m.maquina, person: persona.value, people: d.people }); } }))));
     });
     box.appendChild(el('div', {}, el('p', { class: 'sub-t', text: 'Por confirmar' }), (ex.porConfirmar || []).length ? pc : el('p', { class: 'muted', text: 'Ninguna.' })));
+    // las que nunca dieron señales (sin place.json, sin fecha, sin corridas): suelen ser laboratorios o pruebas que
+    // escribieron en el buzón; se nombran, sin ofrecer confirmarlas
+    if ((ex.sinActividad || []).length) {
+      var sa = el('ul', { class: 'renglones' });
+      ex.sinActividad.forEach(function (m) { sa.appendChild(el('li', {}, el('span', { class: 'quien', text: m.maquina }), el('span', { class: 'dato', text: 'sin corridas, sin fecha y sin decir de quién es' }))); });
+      box.appendChild(el('div', {}, el('p', { class: 'sub-t', text: 'Sin actividad (' + ex.sinActividad.length + ')' }),
+        el('p', { class: 'muted', text: 'Carpetas del buzón que nunca subieron una corrida ni dijeron de quién son: suelen ser de laboratorios o pruebas. No hay nada que confirmar; quien mantiene el buzón las puede borrar.' }), sa));
+    }
     var machines = d.people.machines || {};
     var conf = el('ul', { class: 'renglones' });
     Object.keys(machines).forEach(function (m) {
