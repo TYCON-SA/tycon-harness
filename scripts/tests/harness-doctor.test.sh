@@ -707,7 +707,7 @@ INT6="$LAB/author/internal"; INT6_REMOTE="$LAB/remotes/internal.git"
 harness_lab_git "$LAB/author" clone -q "$LAB_REMOTE_TREE" "$INT6" >/dev/null 2>&1
 harness_lab_git "$INT6" rm -q LICENSE version.json >/dev/null
 printf 'una línea que el exportador saca\n' >> "$INT6/guides/public.md"
-mkdir -p "$INT6/tasks" "$INT6/skills/projects/acme" "$INT6/inbox/instincts/pending"
+mkdir -p "$INT6/tasks" "$INT6/skills/projects/acme" "$INT6/inbox/instincts/pending" "$INT6/guides/maintaining"
 printf '# plan privado\n' > "$INT6/tasks/plan.md"
 printf '# casos con nombre\n' > "$INT6/guides/maintaining/incident-log.md"
 printf '# skill de un producto\n' > "$INT6/skills/projects/acme/SKILL.md"

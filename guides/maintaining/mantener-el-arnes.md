@@ -7,7 +7,6 @@ git, pruebas, frenos) siguen en el índice.
 | Trabajando en... | Leer (a demanda) |
 |---|---|
 | Escribir o editar guías, skills, steps o material del sitio — cómo nombrar Claude/Codex/el agente | `guides/maintaining/criterio-tres-claude.md` |
-| Escribir o revisar los comentarios del código (qué hace y por qué, en presente; sin historia ni referencias internas) | `guides/maintaining/estilo-de-codigo.md` |
 | Saber cuánto contexto carga cada sesión y cada revisor, y de qué está hecho | `node scripts/tools/context-budget.js [--measured]` — `--measured` da el piso REAL de los lanzamientos, no el estimado |
 | Upgrade de BMAD, debug de incompatibilidad con advisors | `guides/maintaining/bmad-contract.md` |
 | Antes de retirar/relajar una regla, hook o advisor — ver qué incidente lo motivó | `guides/maintaining/incident-log.md` |

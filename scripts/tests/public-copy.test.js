@@ -191,7 +191,7 @@ test('BrokenLinks_SchemesAnchorsMailto_Ignored', () => {
 test('BrokenLinks_ResolvesAgainstFileFolder', () => {
   const seen = [];
   const exists = (p) => { seen.push(p); return true; };
-  const files = [{ file: 'guides/bizuit/x.md', text: lines('[1](../incident-log.md#caso) [2](./y.md?plain=1) [3](../../scripts/tools/) [4](<con espacio.md>) [5](mi%20guia.md "título")', '![img](../img/a.png)') }];
+  const files = [{ file: 'guides/bizuit/x.md', text: lines('[1](../maintaining/incident-log.md#caso) [2](./y.md?plain=1) [3](../../scripts/tools/) [4](<con espacio.md>) [5](mi%20guia.md "título")', '![img](../img/a.png)') }];
   assert.deepStrictEqual(pc.brokenLinks(files, exists), []);
   assert.deepStrictEqual(seen, ['guides/maintaining/incident-log.md', 'guides/bizuit/y.md', 'scripts/tools', 'guides/bizuit/con espacio.md', 'guides/bizuit/mi guia.md', 'guides/img/a.png']);
 });

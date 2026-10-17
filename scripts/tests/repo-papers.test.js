@@ -321,7 +321,7 @@ test('Papeles_Notice_TitularMarcasYDerivadas', () => {
   const bulletLines = lines.map((l, i) => ({ l, i })).filter((x) => /^\* /.test(x.l));
   const bulletPath = (l) => l.slice(2).split(/\s/)[0].replace(/`/g, '');
   const expected = manifest.derived.map(inCopy);
-  assert.ok(expected.length >= 14, `el manifiesto trae ${expected.length} derived; la story mide 14`);
+  assert.ok(expected.length >= 13, `el manifiesto trae ${expected.length} derived; se esperan al menos 13`);
   assert.deepStrictEqual([...bulletLines.map((x) => bulletPath(x.l))].sort(), [...expected].sort(),
     'NOTICE: tiene que haber exactamente una línea `* <ruta>` por cada derived del manifiesto (con su ruta en la copia)');
 

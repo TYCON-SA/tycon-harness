@@ -79,6 +79,7 @@ INTERNO="$BASE/interno"; mkdir -p "$INTERNO"; g "$INTERNO" init -q
 put "$INTERNO" .gitignore $'node_modules/\n**/.advisors/*'
 put "$INTERNO" .githooks/pre-commit $'#!/usr/bin/env bash\necho despachador'
 put "$INTERNO" guides/guia.md 'una guía pública'
+put "$INTERNO" guides/maintaining/guia-de-quien-mantiene.md 'una guía pública de quien mantiene'
 put "$INTERNO" guides/maintaining/incident-log.md 'el registro de incidentes (privado, suelto en una carpeta pública)'
 put "$INTERNO" guides/despues-igual.md 'privado hoy; la versión siguiente lo publica igual'
 put "$INTERNO" guides/despues-distinto.md 'privado hoy; la versión siguiente lo publica con otro contenido'

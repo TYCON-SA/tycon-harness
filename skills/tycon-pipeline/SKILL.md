@@ -203,7 +203,7 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
   `TYCON_ATDD_COMMIT_GATE` · `TYCON_ATDD_PREEDIT_GATE` · `TYCON_SPAWN_GOVERNANCE` · `TYCON_ADHOC_SPAWN_WARN` ·
   `DOD_BYPASS` (bypass logueado de gates del commit; NO abre la matriz runtime ni la guía de QA).
 - **Guías**: `story-format.md` · `guides/workflow-orchestration.md` · `guides/git-commit-conventions.md` ·
-  `guides/agent-architecture.md` · `guides/definition-of-done.md` · `guides/maintaining/incident-log.md`.
+  `guides/agent-architecture.md` · `guides/definition-of-done.md`.
 
 ## Cuándo activarse
 
