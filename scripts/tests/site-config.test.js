@@ -408,6 +408,28 @@ test('T5 Lectura_DelClonDelSitio_PerfilSinConfigurar_ArchivoAusenteOIlegible @st
   assert.ok(rutas.length >= 6 && rutas.every((x) => x.needs.length === 1 && x.needs[0] === 'maintainer'));
 });
 
+test('T5b Paquetes_YRevisores_TambienDelPerfil — los paquetes y los revisores del clon del perfil se suman a los del árbol', async () => {
+  // la capa del equipo trae sus paquetes y sus revisores en el repo del perfil: la pestaña los lista junto a los del
+  // árbol, sin repetir, y un paquete activado en packs.default que trae el perfil sale activo
+  const ops = clon({ 'scripts/nightly/dashboard/sources.json': SOURCES_ORG });
+  const perfil = clon({
+    'team-profile.json': { version: 1, packs: { default: ['acme-pack'] } },
+    'packs/acme-pack/pack.json': { reviewers: [{ agent: 'acme-pack-reviewer' }] },
+    'agents/acme-team-reviewer.md': '# un revisor del equipo\n',
+  });
+  await conPestana({ fuentes: fuentesCon({ ops, perfil }), env: { SITE_PROFILE_REPO: 'https://git.acme.example/perfil.git', SITE_PROFILE_TOKEN: ['tok', 'perfil'].join('-') } }, async ({ h, entrar }) => {
+    const r = (await h.pedir('/api/config', { cookie: await entrar(LEAD) })).json;
+    const por = Object.fromEntries(r.secciones.map((s) => [s.id, s]));
+    assert.ok(por.paquetes.extras.instalados.includes('acme-pack'), `instalados: ${JSON.stringify(por.paquetes.extras)}`);
+    assert.deepStrictEqual(por.paquetes.extras.activos, ['acme-pack']);
+    assert.strictEqual(new Set(por.paquetes.extras.instalados).size, por.paquetes.extras.instalados.length, 'sin repetir');
+    const revisores = por.modelos.extras.revisores;
+    assert.ok(revisores.includes('acme-team-reviewer'), 'el revisor del perfil');
+    assert.ok(revisores.includes('acme-pack-reviewer'), 'el revisor del paquete del perfil');
+    assert.deepStrictEqual(revisores, [...revisores].sort(), 'ordenados');
+  });
+});
+
 test('T7 Productos_DeDependenciasSoloLectura_DeDeploymentsEditables @story-2.29 @ac-7', async () => {
   const ops = clon({ 'operations.json': opsBase({ deployments: { provider: 'azure', products: { 'Prod A': { staging: [{ pipeline: 'Proy/Front', stages: ['Deploy'] }] }, 'Prod B': { production: [{ pipeline: 'Proy/Back', stages: ['DeployProd'] }] } } } }), 'scripts/nightly/dependencies/repos.json': { repos: [{ producto: 'Prod A', ado: 'Proy/RepoA', activo: true }, { producto: 'Prod C', ado: 'Proy/RepoC', activo: false, motivo: 'archivado' }] } });
   await conPestana({ fuentes: fuentesCon({ ops }), opciones: { lectores: { 'operations-config.js': OPS_FUTURO } } }, async ({ h, entrar }) => {

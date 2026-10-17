@@ -63,10 +63,17 @@ function leer(dir, rel) {
 const docDe = (t) => { try { const v = JSON.parse(t); return isObject(v) ? v : null; } catch { return null; } };
 /** El archivo de una sección en un clon: el de hoy, o el de antes (`archivoViejo`) si el repo todavía sólo trae ése. */
 const archivoDe = (s, dir) => (s.archivoViejo && dir && !fs.existsSync(path.join(dir, s.archivo)) && fs.existsSync(path.join(dir, s.archivoViejo)) ? s.archivoViejo : s.archivo);
-/** Los paquetes que trae esta versión del sitio, y los que activa un valor de `packs.default`. */
-function paquetesDe(valor) {
-  let instalados = [];
-  try { instalados = require('../../lib/pack-pieces.js').listPacks(path.join(TREE, 'packs')).packs.map((p) => p.name); } catch { instalados = []; }
+/** Los paquetes legibles de las carpetas `packs/` del árbol y del clon del perfil (la capa del equipo trae los suyos). */
+function paquetesLegibles(perfilDir) {
+  const out = [];
+  for (const raiz of [TREE, perfilDir].filter(Boolean)) {
+    try { out.push(...require('../../lib/pack-pieces.js').listPacks(path.join(raiz, 'packs')).packs); } catch { /* sin paquetes legibles ahí */ }
+  }
+  return out;
+}
+/** Los paquetes que trae esta versión del sitio o el perfil del equipo, y los que activa un valor de `packs.default`. */
+function paquetesDe(valor, perfilDir) {
+  const instalados = [...new Set(paquetesLegibles(perfilDir).map((p) => p.name))].sort();
   const activos = valor === 'all' ? instalados : Array.isArray(valor) ? instalados.filter((n) => valor.includes(n)) : [];
   return { instalados, activos };
 }
@@ -88,18 +95,19 @@ function respuestaVigente(lector, doc) {
   };
 }
 /**
- * Los revisores que conoce esta versión: los del núcleo (agents/*.md) y los de los paquetes del árbol (`reviewers` de
- * cada pack.json), sin repetir y ordenados. Para elegir el modelo de un revisor por nombre y no escribirlo a mano.
+ * Los revisores que conoce esta versión y el perfil del equipo: los de `agents/*.md` del árbol y del clon del perfil, y
+ * los de sus paquetes (`reviewers` de cada pack.json), sin repetir y ordenados. Para elegir el modelo de un revisor por
+ * nombre y no escribirlo a mano.
  */
-function revisoresDelArbol() {
+function revisoresDelArbol(perfilDir) {
   const ids = new Set();
-  try { for (const f of fs.readdirSync(path.join(TREE, 'agents'))) if (/^[a-z0-9-]+\.md$/.test(f)) ids.add(f.slice(0, -3)); } catch { /* sin carpeta: ninguno del núcleo */ }
-  try {
-    for (const p of require('../../lib/pack-pieces.js').listPacks(path.join(TREE, 'packs')).packs) {
-      let doc = null; try { doc = JSON.parse(fs.readFileSync(p.file, 'utf8')); } catch { continue; }
-      for (const r of Array.isArray(doc && doc.reviewers) ? doc.reviewers : []) if (r && typeof r.agent === 'string' && /^[a-z0-9-]+$/.test(r.agent)) ids.add(r.agent);
-    }
-  } catch { /* sin paquetes legibles: los del núcleo */ }
+  for (const raiz of [TREE, perfilDir].filter(Boolean)) {
+    try { for (const f of fs.readdirSync(path.join(raiz, 'agents'))) if (/^[a-z0-9-]+\.md$/.test(f)) ids.add(f.slice(0, -3)); } catch { /* sin carpeta: ninguno de ahí */ }
+  }
+  for (const p of paquetesLegibles(perfilDir)) {
+    let doc = null; try { doc = JSON.parse(fs.readFileSync(p.file, 'utf8')); } catch { continue; }
+    for (const r of Array.isArray(doc && doc.reviewers) ? doc.reviewers : []) if (r && typeof r.agent === 'string' && /^[a-z0-9-]+$/.test(r.agent)) ids.add(r.agent);
+  }
   return [...ids].sort();
 }
 
@@ -256,11 +264,11 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     if (s.id === 'sitio') v.campos = { url: Array.isArray(lec.SITE_KEYS) && lec.SITE_KEYS.includes('url') };
     // la marca es una parte de site que un lector anterior no conoce: la sección dice «todavía no sabe leer»
     if (s.id === 'organizacion' && !(Array.isArray(lec.SITE_KEYS) && lec.SITE_KEYS.includes('brand'))) return { ...base, estado: 'no_reader', motivo: 'esta versión del arnés todavía no sabe leer la marca de la organización (site.brand)' };
-    if (s.id === 'modelos') { const hoy = ORG.modelosDeHoy(TREE); v.extras = { hoy, motivoHoy: hoy ? null : ORG.motivoDeHoy(TREE), revisores: revisoresDelArbol() }; }
+    if (s.id === 'modelos') { const hoy = ORG.modelosDeHoy(TREE); v.extras = { hoy, motivoHoy: hoy ? null : ORG.motivoDeHoy(TREE), revisores: revisoresDelArbol(cl.perfil && cl.perfil.dir) }; }
     if (s.id === 'sitio') v.extras = { servicios: Array.isArray(lec.MAILBOX_PROVIDERS) ? lec.MAILBOX_PROVIDERS : null };
     // la plataforma, la organización y el proyecto del repo de operaciones: ahí se elige por nombre el pipeline de un despliegue
     if (s.id === 'despliegues') { const r = remoteDe('operaciones') || {}; v.extras = { plataforma: r.platform || null, org: r.org || null, proyecto: r.project || null }; }
-    if (s.id === 'paquetes') v.extras = paquetesDe(doc && isObject(doc.packs) ? doc.packs.default : undefined);
+    if (s.id === 'paquetes') v.extras = paquetesDe(doc && isObject(doc.packs) ? doc.packs.default : undefined, cl.perfil && cl.perfil.dir);
     // story 2.31: las secciones del perfil que cambian la experiencia de cada dev
     if (s.id === 'respuesta') {
       v.extras = respuestaVigente(lec, doc);
