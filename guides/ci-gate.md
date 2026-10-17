@@ -241,7 +241,7 @@ stages:
           - checkout: tcg
           - task: NodeTool@0
             inputs:
-              versionSpec: '20.x'
+              versionSpec: '24.x'
           - script: |
               set -u
               GATE="$(Build.SourcesDirectory)/tycon-claude-guides/scripts/ci/tycon-ci-gate.js"

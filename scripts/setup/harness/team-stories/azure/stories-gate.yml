@@ -62,7 +62,7 @@ stages:
             displayName: 'Fetch harness (public GitHub, no credentials)'
           - task: NodeTool@0
             inputs:
-              versionSpec: '20.x'
+              versionSpec: '24.x'
           - script: |
               set -u
               GATE="$(Agent.BuildDirectory)/tcg/scripts/ci/tycon-ci-gate.js"
