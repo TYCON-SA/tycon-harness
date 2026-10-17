@@ -436,4 +436,32 @@ async function stagesPropuestos({ pipeline, remote, token, urlBase = {}, fetch =
   return { ok: false, message: 'no reconozco el pipeline: el número de la definición en Azure DevOps (o proyecto/número si es de otro proyecto), o dueño/repo en GitHub' };
 }
 
-module.exports = { remoteOf, stagesPropuestos, enlaceArchivo, politicaDeRevision, pedidoAbierto, proponer, correrGit, enlaceManual, stamp, NO_PERMISSION, TIPO_REVISORES_AZURE };
+/**
+ * Los pipelines de un proyecto de Azure DevOps, para elegirlos por nombre (sólo lee, con SITE_PIPELINES_TOKEN, que pide
+ * lectura de Build): `{ ok: true, pipelines: [{ id, nombre, carpeta }] }` ordenados por nombre, o `{ ok: false, codigo,
+ * message }` con lo que la persona tiene que saber. `codigo`: sin_permiso (falta la credencial o no alcanza),
+ * no_reconozco (organización o proyecto que no son un nombre) o sin_respuesta.
+ */
+async function pipelinesDelProyecto({ org, project, token, urlBase = {}, fetch = globalThis.fetch }) {
+  const nombre = (x) => typeof x === 'string' && x.trim() !== '' && !/^\.+$/.test(x.trim()) && !/[/\\?#]/.test(x);
+  if (!nombre(org) || !nombre(project)) return { ok: false, codigo: 'no_reconozco', message: 'falta la organización o el proyecto del repo: completalos y la lista aparece' };
+  if (!token) return { ok: false, codigo: 'sin_permiso', message: 'el sitio no puede leer los pipelines: falta su permiso de lectura de pipelines (SITE_PIPELINES_TOKEN). Mientras tanto, escribí el número del pipeline' };
+  const base = `${(urlBase.azure || 'https://dev.azure.com').replace(/\/$/, '')}/${encodeURIComponent(org.trim())}/${encodeURIComponent(project.trim())}/_apis`;
+  const headers = { Authorization: `Basic ${Buffer.from(`:${token}`).toString('base64')}`, Accept: 'application/json' };
+  let r;
+  try { r = await fetch(`${base}/pipelines?$top=1000&api-version=7.1`, { headers, signal: AbortSignal.timeout(20000) }); } catch {
+    return { ok: false, codigo: 'sin_respuesta', message: 'Azure DevOps no contestó: escribí el número del pipeline' };
+  }
+  if (r.status === 401 || r.status === 403) return { ok: false, codigo: 'sin_permiso', message: `el permiso del sitio no alcanza para leer los pipelines de ${project.trim()} (necesita lectura de Build): escribí el número del pipeline` };
+  if (r.status === 404) return { ok: false, codigo: 'no_reconozco', message: `Azure DevOps no conoce el proyecto ${project.trim()} en ${org.trim()}: revisá los dos nombres` };
+  if (!r.ok) return { ok: false, codigo: 'sin_respuesta', message: `Azure DevOps contestó ${r.status}: escribí el número del pipeline` };
+  let doc;
+  try { doc = await r.json(); } catch { return { ok: false, codigo: 'sin_respuesta', message: 'la respuesta de Azure DevOps no se pudo leer: escribí el número del pipeline' }; }
+  const lista = (doc && Array.isArray(doc.value) ? doc.value : [])
+    .filter((x) => x && Number.isInteger(x.id) && x.id >= 1 && typeof x.name === 'string')
+    .map((x) => ({ id: x.id, nombre: x.name, carpeta: typeof x.folder === 'string' && x.folder !== '\\' ? x.folder.replace(/^\\/, '') : null }))
+    .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+  return { ok: true, pipelines: lista };
+}
+
+module.exports = { remoteOf, stagesPropuestos, pipelinesDelProyecto, enlaceArchivo, politicaDeRevision, pedidoAbierto, proponer, correrGit, enlaceManual, stamp, NO_PERMISSION, TIPO_REVISORES_AZURE };

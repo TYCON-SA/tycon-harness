@@ -87,6 +87,22 @@ function respuestaVigente(lector, doc) {
     origen: { language: r.language ? 'perfil' : 'por defecto', style: r.style ? 'perfil' : 'por defecto', max_chars: Number.isInteger(r.max_chars) ? 'perfil' : 'del estilo' },
   };
 }
+/**
+ * Los revisores que conoce esta versión: los del núcleo (agents/*.md) y los de los paquetes del árbol (`reviewers` de
+ * cada pack.json), sin repetir y ordenados. Para elegir el modelo de un revisor por nombre y no escribirlo a mano.
+ */
+function revisoresDelArbol() {
+  const ids = new Set();
+  try { for (const f of fs.readdirSync(path.join(TREE, 'agents'))) if (/^[a-z0-9-]+\.md$/.test(f)) ids.add(f.slice(0, -3)); } catch { /* sin carpeta: ninguno del núcleo */ }
+  try {
+    for (const p of require('../../lib/pack-pieces.js').listPacks(path.join(TREE, 'packs')).packs) {
+      let doc = null; try { doc = JSON.parse(fs.readFileSync(p.file, 'utf8')); } catch { continue; }
+      for (const r of Array.isArray(doc && doc.reviewers) ? doc.reviewers : []) if (r && typeof r.agent === 'string' && /^[a-z0-9-]+$/.test(r.agent)) ids.add(r.agent);
+    }
+  } catch { /* sin paquetes legibles: los del núcleo */ }
+  return [...ids].sort();
+}
+
 /** Qué trae cada perfil de instalación, leído de install-effects.json del árbol (`profiles` de cada entrada). */
 function perfilesDeInstalacion() {
   try {
@@ -238,7 +254,10 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     if (s.claves) v.problems.push(...ORG.problemasDeSeccion(s, parsed, null, null));
     v.borrador = s.claves === null ? clone(doc || { version: 1 }) : Object.fromEntries(s.claves.filter((k) => doc && doc[k] !== undefined).map((k) => [k, clone(doc[k])]));
     if (s.id === 'sitio') v.campos = { url: Array.isArray(lec.SITE_KEYS) && lec.SITE_KEYS.includes('url') };
-    if (s.id === 'modelos') { const hoy = ORG.modelosDeHoy(TREE); v.extras = { hoy, motivoHoy: hoy ? null : ORG.motivoDeHoy(TREE) }; }
+    if (s.id === 'modelos') { const hoy = ORG.modelosDeHoy(TREE); v.extras = { hoy, motivoHoy: hoy ? null : ORG.motivoDeHoy(TREE), revisores: revisoresDelArbol() }; }
+    if (s.id === 'sitio') v.extras = { servicios: Array.isArray(lec.MAILBOX_PROVIDERS) ? lec.MAILBOX_PROVIDERS : null };
+    // la plataforma, la organización y el proyecto del repo de operaciones: ahí se elige por nombre el pipeline de un despliegue
+    if (s.id === 'despliegues') { const r = remoteDe('operaciones') || {}; v.extras = { plataforma: r.platform || null, org: r.org || null, proyecto: r.project || null }; }
     if (s.id === 'paquetes') v.extras = paquetesDe(doc && isObject(doc.packs) ? doc.packs.default : undefined);
     // story 2.31: las secciones del perfil que cambian la experiencia de cada dev
     if (s.id === 'respuesta') {
@@ -431,6 +450,31 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
   // ── la propuesta de stages (AC 8): sólo lee, con SITE_PIPELINES_TOKEN; lo de cada plataforma vive en repo-proposal.js ──
   const stages = (pipeline) => RP.stagesPropuestos({ pipeline, remote: remoteDe('operaciones'), token: cfg.pipelinesToken, urlBase, fetch });
 
+  // ── los nombres en lugar de los números: los pipelines de un proyecto y los nombres de los pasos guardados ──
+  // se guardan VIGENCIA_MS por proyecto (lo que no contestó, no: se vuelve a preguntar la próxima vez)
+  const pipelinesGuardados = new Map();
+  async function pipelines(org, project) {
+    const clave = `${org}\0${project}`;
+    const g = pipelinesGuardados.get(clave);
+    if (g && ahora() - g.t < VIGENCIA_MS) return g.r;
+    const r = await RP.pipelinesDelProyecto({ org, project, token: cfg.pipelinesToken, urlBase, fetch });
+    if (r.ok || r.codigo !== 'sin_respuesta') pipelinesGuardados.set(clave, { t: ahora(), r });
+    return r;
+  }
+  /** Los nombres de los pasos de un pipeline guardado como «proyecto/nombre»: `{ ok, nombres: { identificador: nombre } }`. */
+  async function nombresDePasos(pipeline) {
+    const m = /^([^/]+)\/(.+)$/.exec(String(pipeline || ''));
+    const org = (remoteDe('operaciones') || {}).org;
+    if (!m || !org) return { ok: false, message: 'no reconozco el pipeline guardado' };
+    const lista = await pipelines(org, m[1]);
+    if (!lista.ok) return { ok: false, message: lista.message };
+    const def = lista.pipelines.find((x) => x.nombre === m[2]);
+    if (!def) return { ok: false, message: `el proyecto ${m[1]} ya no tiene un pipeline que se llame ${m[2]}` };
+    const pasos = await stages(`${m[1]}/${def.id}`);
+    if (!pasos.ok) return { ok: false, message: pasos.message };
+    return { ok: true, nombres: Object.fromEntries(pasos.propuestos.filter((x) => x.nombre).map((x) => [x.identificador, x.nombre])) };
+  }
+
   // ── la página ──
   function pagina(ctx) {
     const tok = ctx.sesion && typeof ctx.sesion.tok === 'string' ? ctx.sesion.tok : '';
@@ -470,6 +514,19 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
       method: 'POST', path: '/api/config/stages', needs: solo, handler: async (ctx) => {
         const e = await escritura(ctx); if (e.error) return e.error;
         return json(200, await stages(e.body && e.body.pipeline));
+      },
+    },
+    {
+      method: 'POST', path: '/api/config/pipelines', needs: solo, handler: async (ctx) => {
+        const e = await escritura(ctx); if (e.error) return e.error;
+        const b = e.body || {};
+        return json(200, await pipelines(String(b.org || '').trim(), String(b.project || '').trim()));
+      },
+    },
+    {
+      method: 'POST', path: '/api/config/pasos', needs: solo, handler: async (ctx) => {
+        const e = await escritura(ctx); if (e.error) return e.error;
+        return json(200, await nombresDePasos(e.body && e.body.pipeline));
       },
     },
     {

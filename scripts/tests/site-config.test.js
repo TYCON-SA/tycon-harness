@@ -281,7 +281,7 @@ async function conPestana({ fuentes, env = {}, opciones = {} }, fn) {
     await fn({ h, entrar, token, escribir, cfg });
   } finally { await cerrarTodos(h, emisor); }
 }
-const RUTAS = [['GET', '/configuracion'], ['GET', '/static/config.js'], ['GET', '/api/config'], ['POST', '/api/config/revisar'], ['POST', '/api/config/stages'], ['POST', '/api/config/proponer']];
+const RUTAS = [['GET', '/configuracion'], ['GET', '/static/config.js'], ['GET', '/api/config'], ['POST', '/api/config/revisar'], ['POST', '/api/config/stages'], ['POST', '/api/config/pipelines'], ['POST', '/api/config/pasos'], ['POST', '/api/config/proponer']];
 
 test('T1 Dev_403EnTodasLasRutas_SinDatos @story-2.29 @ac-1', async () => {
   const ops = clon({ 'operations.json': opsBase({ owners: { default: 'marcador-owner@acme.example' } }) });
@@ -1106,14 +1106,14 @@ test('T37 Modelos_ProblemaDeSeccion_NoSePropone @story-2.29 @ac-4 — el lector 
 
 // ── tanda C, pase adversarial: lo que la pantalla de las dos secciones nuevas tiene que aguantar ─────────────────
 /** La pantalla real sobre un documento mínimo con eventos: `click(texto, seccion)` aprieta un botón; `pedidos` anota cada fetch. */
-async function pantallaFalsa(secciones) {
+async function pantallaFalsa(secciones, respuestas = {}) {
   const creados = [];
   const nodo = (tag) => { const n = { tag, hijos: [], textContent: '', attrs: {}, on: {}, setAttribute(k, v) { n.attrs[k] = v; }, appendChild(c) { n.hijos.push(c); return c; }, addEventListener(e, f) { n.on[e] = f; }, replaceChildren(...cs) { n.hijos = cs; } }; creados.push(n); return n; };
   const app = nodo('div');
   const document = { querySelector: () => null, getElementById: (id) => (id === 'config-app' ? app : null), createElement: (t) => nodo(t) };
   const pedidos = [];
   const respuesta = { ok: true, secciones, proponer: {}, versiones: [], productos: [] };
-  const fetch = (ruta, o) => { pedidos.push({ ruta, cuerpo: o && o.body ? JSON.parse(o.body) : null }); return Promise.resolve({ status: 200, json: () => Promise.resolve(ruta === '/api/config' ? respuesta : { ok: false, problems: [] }) }); };
+  const fetch = (ruta, o) => { pedidos.push({ ruta, cuerpo: o && o.body ? JSON.parse(o.body) : null }); return Promise.resolve({ status: 200, json: () => Promise.resolve(ruta === '/api/config' ? respuesta : respuestas[ruta] ? respuestas[ruta](o && o.body ? JSON.parse(o.body) : null) : { ok: false, problems: [] }) }); };
   let error = null;
   try { new Function('document', 'fetch', ORG.pantalla())(document, fetch); } catch (e) { error = e; }
   const esperar = async () => { for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r)); };
@@ -1556,4 +1556,81 @@ test('Perfil_PorTema_ElMinimoYLoQueSumaElCompleto — grupos con su cuenta, una 
   assert.match(t, /Viene prendido\. Es parte del arnés: no se apaga\./);
   const titulos = p.todo(p.sec('instalacion')).filter((n) => n.tag === 'summary').map((n) => n.textContent);
   assert.ok(titulos.includes('Frena comandos destructivos') && titulos.every((x) => !/TYCON_/.test(x)), 'la línea de cada cosa, sin variables');
+});
+// ── los nombres en lugar de los números ────────────────────────────────────────────────────────────────────────────
+const AZ = (org, project, repo) => ({ platform: 'azure', org, project, repo });
+
+test('Nombres_PipelinesDelProyecto_SinPermisoYConLista — la lista sale por nombre, ordenada; sin el permiso se dice cuál falta', async () => {
+  const RP = require(path.join(ROOT, 'scripts', 'lib', 'repo-proposal.js'));
+  const urls = [];
+  const resp = (status, doc) => async (url) => { urls.push(String(url)); return new Response(JSON.stringify(doc || {}), { status }); };
+  const sin = await RP.pipelinesDelProyecto({ org: 'acme', project: 'Ventas', token: null, fetch: resp(200) });
+  assert.deepStrictEqual([sin.ok, sin.codigo], [false, 'sin_permiso']);
+  assert.match(sin.message, /falta su permiso de lectura de pipelines \(SITE_PIPELINES_TOKEN\)/);
+  assert.deepStrictEqual(urls, [], 'sin credencial no se pregunta nada');
+  const ok = await RP.pipelinesDelProyecto({ org: 'acme', project: 'Ventas', token: 't', urlBase: { azure: 'http://az.example' }, fetch: resp(200, { value: [{ id: 9, name: 'Ventas-Frontend-CI', folder: '\\' }, { id: 123, name: 'Ventas-Backend-CI', folder: '\\CI' }, { id: 'x', name: 'roto' }] }) });
+  assert.deepStrictEqual(ok, { ok: true, pipelines: [{ id: 123, nombre: 'Ventas-Backend-CI', carpeta: 'CI' }, { id: 9, nombre: 'Ventas-Frontend-CI', carpeta: null }] });
+  assert.match(urls[0], /^http:\/\/az\.example\/acme\/Ventas\/_apis\/pipelines\?/);
+  assert.strictEqual((await RP.pipelinesDelProyecto({ org: 'acme', project: 'Ventas', token: 't', fetch: resp(403) })).codigo, 'sin_permiso', 'un permiso que no alcanza también lo dice');
+  assert.strictEqual((await RP.pipelinesDelProyecto({ org: 'acme', project: 'Nada', token: 't', fetch: resp(404) })).codigo, 'no_reconozco');
+  for (const project of ['', '..', 'a/b', 'a?b']) assert.strictEqual((await RP.pipelinesDelProyecto({ org: 'acme', project, token: 't', fetch: resp(200) })).codigo, 'no_reconozco', JSON.stringify(project));
+});
+
+test('Nombres_PruebasAlMergear_ElPipelineSeEligePorNombre_YSeGuardaElNumero — sin la lista, el número a mano con el motivo', async () => {
+  const pipes = { ok: true, pipelines: [{ id: 123, nombre: 'Ventas-Backend-CI', carpeta: null }, { id: 9, nombre: 'Ventas-Frontend-CI', carpeta: null }] };
+  const conLista = await pantallaFalsa([seccionPerfil('suites', { merge_suites: { repos: [{ repo: AZ('acme', 'Ventas', 'backend'), full_tests_pipeline: 123 }] } })], { '/api/config/pipelines': () => pipes });
+  assert.strictEqual(conLista.error, null);
+  assert.deepStrictEqual(conLista.pedidos.filter((x) => x.ruta === '/api/config/pipelines').map((x) => x.cuerpo), [{ org: 'acme', project: 'Ventas' }], 'una sola vez por proyecto');
+  const sel = conLista.todo(conLista.sec('suites')).find((n) => n.tag === 'select' && n.attrs['data-path'] === 'merge_suites.repos.0.full_tests_pipeline');
+  assert.ok(sel, 'el pipeline se elige de una lista');
+  assert.strictEqual(sel.value, '123');
+  assert.deepStrictEqual(sel.hijos.map((o) => o.textContent), ['ninguno', 'Ventas-Backend-CI', 'Ventas-Frontend-CI'], 'por nombre, no por número');
+  // sin permiso: el número a mano y por qué
+  const sinPermiso = { ok: false, codigo: 'sin_permiso', message: 'el sitio no puede leer los pipelines: falta su permiso de lectura de pipelines (SITE_PIPELINES_TOKEN). Mientras tanto, escribí el número del pipeline' };
+  const sinLista = await pantallaFalsa([seccionPerfil('suites', { merge_suites: { repos: [{ repo: AZ('acme', 'Ventas', 'backend'), full_tests_pipeline: 123 }] } })], { '/api/config/pipelines': () => sinPermiso });
+  const inp = sinLista.todo(sinLista.sec('suites')).find((n) => n.tag === 'input' && n.attrs['data-path'] === 'merge_suites.repos.0.full_tests_pipeline');
+  assert.ok(inp, 'a mano');
+  assert.strictEqual(inp.attrs.value, '123');
+  assert.match(sinLista.textoDe('suites'), /falta su permiso de lectura de pipelines/);
+});
+
+test('Nombres_Despliegues_LosPasosConSuNombre — lo guardado dice el nombre del paso, no su identificador', async () => {
+  const sec = { id: 'despliegues', titulo: 'despliegues', repo: 'operaciones', estado: 'cargado', soloLectura: false, problems: [], avisos: [], extras: { plataforma: 'azure', org: 'acme', proyecto: 'Ops' },
+    borrador: { deployments: { provider: 'azure', products: { ventas: { staging: [{ pipeline: 'Ventas/Ventas-CD', stages: ['deploy_stg'] }], production: [{ pipeline: 'Ventas/Ventas-CD', stages: ['deploy_prod'] }] } } } } };
+  const p = await pantallaFalsa([sec], { '/api/config/pasos': () => ({ ok: true, nombres: { deploy_stg: 'Desplegar a prueba', deploy_prod: 'Desplegar a producción' } }), '/api/config/pipelines': () => ({ ok: true, pipelines: [{ id: 41, nombre: 'Ventas-CD', carpeta: null }] }) });
+  const t = p.textoDe('despliegues');
+  assert.match(t, /Desplegar a prueba \(pipeline Ventas-CD\)/);
+  assert.match(t, /Desplegar a producción \(pipeline Ventas-CD\)/);
+  assert.doesNotMatch(t.replace(/Escribirlo a mano[\s\S]*/, ''), /deploy_stg/);
+  assert.ok(p.todo(p.sec('despliegues')).some((n) => n.tag === 'select' && n.hijos.some((o) => o.textContent === 'Ventas-CD')), 'el pipeline para agregar, de la lista');
+});
+
+test('Nombres_PaquetesModelosBuzonParidad_SinClavesDelArchivo — casillas, filas por revisor, servicio y qué se compara, en palabras', async () => {
+  const paquetes = { id: 'paquetes', titulo: 'Paquetes', repo: 'perfil', estado: 'cargado', soloLectura: false, problems: [], avisos: [], borrador: { packs: { default: ['ventas'] } }, extras: { instalados: ['ventas', 'compras'], activos: ['ventas'] } };
+  const modelos = seccionPerfil('modelos', { models: { reviewer: { 'acme-silent-failure-hunter': 'opus' } } });
+  modelos.extras = { hoy: null, motivoHoy: 'x', revisores: ['acme-silent-failure-hunter', 'acme-story-validator'] };
+  const sitio = { id: 'sitio', titulo: 'sitio', repo: 'operaciones', estado: 'cargado', soloLectura: false, problems: [], avisos: [], borrador: { site: { mailbox: { provider: 'azure-blob' } } }, extras: { servicios: ['azure-blob'] } };
+  const paridad = { id: 'paridad', titulo: 'paridad', repo: 'operaciones', estado: 'cargado', soloLectura: false, problems: [], avisos: [], borrador: {}, vista: { texto: 'ok', productos: [], declaradas: [], definicion: { rasgos: [{ id: 'lint-en-ci', que: 'corre el lint en la integración' }] } } };
+  const p = await pantallaFalsa([paquetes, modelos, sitio, paridad]);
+  assert.strictEqual(p.error, null);
+  const cajas = p.todo(p.sec('paquetes')).filter((n) => n.tag === 'input' && n.attrs.type === 'checkbox');
+  assert.deepStrictEqual(cajas.map((c) => [c.attrs['aria-label'], Boolean(c.checked)]), [['ventas', true], ['compras', false]]);
+  assert.doesNotMatch(p.textoDe('paquetes'), /packs\.default|all, none/);
+  const tm = p.textoDe('modelos');
+  assert.match(tm, /Fallas que pasan en silencio \(acme-silent-failure-hunter\)/, 'el revisor con su nombre llano');
+  assert.ok(p.todo(p.sec('modelos')).some((n) => n.tag === 'option' && n.textContent === 'Que la story esté completa antes de empezar (acme-story-validator)'), 'y los demás, para agregar');
+  assert.ok(!p.todo(p.sec('modelos')).some((n) => n.tag === 'textarea' && n.attrs['data-path'] === 'reviewer'), 'sin JSON para un revisor');
+  const serv = p.todo(p.sec('sitio')).find((n) => n.tag === 'select' && n.attrs['data-path'] === 'site.mailbox.provider');
+  assert.ok(serv && serv.hijos.some((o) => o.textContent === 'Azure Blob Storage'), 'el servicio del buzón, de una lista');
+  assert.match(p.textoDe('paridad'), /corre el lint en la integración/);
+  assert.doesNotMatch(p.textoDe('paridad'), /"rasgos"/, 'sin el JSON de la definición');
+});
+
+test('Nombres_Guia_DiceElPermisoDeLosPipelines — la instalación normal cuenta qué permiso pide SITE_PIPELINES_TOKEN y qué se ve sin él', () => {
+  for (const [f, sin] of [['sitio-de-la-organizacion.md', /Sin él, la pestaña pide el número del pipeline a mano/], ['sitio-de-la-organizacion.en.md', /Without it, the tab asks for the pipeline number by hand/]]) {
+    const fila = texto(`guides/${f}`).split('\n').find((l) => l.startsWith('| `SITE_PIPELINES_TOKEN` |'));
+    assert.ok(fila, `${f}: la fila propia de SITE_PIPELINES_TOKEN`);
+    assert.match(fila, /\*Build: Read\*/, `${f}: el permiso`);
+    assert.match(fila, sin, `${f}: qué se ve sin él`);
+  }
 });
