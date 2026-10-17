@@ -34,7 +34,9 @@
  * · `az containerapp auth update`: `--unauthenticated-client-action RedirectToLoginPage`, `--require-https`,
  *   `--excluded-paths`, `--enabled`; `--redirect-provider` sólo hace falta con varios proveedores (acá hay uno).
  * · `az containerapp auth microsoft update`: `--client-id`, `--client-secret-name` (el secreto de la aplicación que lo
- *   guarda), `--tenant-id`, `--issuer`, `--allowed-audiences`, `--yes`.
+ *   guarda), `--issuer` (lleva el inquilino; con `--tenant-id` también, az se niega), `--allowed-audiences`, `--yes`.
+ * · `az role assignment create` sobre una identidad recién creada: Entra ID tarda en verla («Cannot find user or service
+ *   principal in graph database»); se reintenta con espera, y sólo ese error.
  * · `az containerapp env storage set` toma la llave de la cuenta por línea de órdenes: el disco va por `az rest`
  *   (`managedEnvironments/<ambiente>/storages/<nombre>`, con la api-version de `API`).
  * 🔴 Nada de esto se corrió todavía contra Azure: lo prueba la primera instalación real.
@@ -184,8 +186,12 @@ function corredor({ ensayo, salida, dirTmp }) {
       if (r.status !== null && /ResourceNotFound|ResourceGroupNotFound|ShareNotFound|could not be found|was not found|does not exist/i.test(r.stderr)) return false;
       throw new Falla(`no pude saber si existe (az ${args.slice(0, 3).join(' ')}): ${primera(r.stderr)}`);
     },
-    /** Un paso que crea o cambia algo. `archivo`: el cuerpo, con secretos adentro. */
-    paso({ que, args, archivo = null, nombreArchivo = null }) {
+    /**
+     * Un paso que crea o cambia algo. `archivo`: el cuerpo, con secretos adentro. `reintentar`: `{ si, veces }`, sólo
+     * ante un error que se sabe pasajero (`si`, sobre el stderr), con la espera de TYCON_CONTAINER_APPS_POLL_MS entre
+     * intentos; cualquier otro error frena en el primero.
+     */
+    paso({ que, args, archivo = null, nombreArchivo = null, reintentar = null }) {
       let ruta = null;
       if (archivo) {
         n += 1;
@@ -196,7 +202,14 @@ function corredor({ ensayo, salida, dirTmp }) {
       if (archivo) salida(`  con el archivo ${path.basename(ruta)}:\n${tapar(archivo).replace(/^/gm, '    ')}`);
       if (ensayo) return;
       if (archivo) fs.writeFileSync(ruta, real(archivo), { mode: 0o600 });
-      const r = az(args.map((a) => (a === '@ARCHIVO' ? `@${ruta}` : a === 'ARCHIVO' ? ruta : a)));
+      const correrlo = () => az(args.map((a) => (a === '@ARCHIVO' ? `@${ruta}` : a === 'ARCHIVO' ? ruta : a)));
+      let r = correrlo();
+      const espera = Number(process.env.TYCON_CONTAINER_APPS_POLL_MS) || 15000;
+      for (let i = 1; reintentar && r.status !== 0 && reintentar.si.test(r.stderr || '') && i < reintentar.veces; i++) {
+        salida(`  (Azure todavía no lo ve: intento ${i + 1} de ${reintentar.veces} en ${Math.round(espera / 1000)} s)`);
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, espera);
+        r = correrlo();
+      }
       if (archivo) fs.rmSync(ruta, { force: true });
       if (r.status !== 0) throw new Falla(`${que}: ${primera(r.stderr)}`, { cause: { que, stderr: r.stderr } });
       creados.push(que);
@@ -317,12 +330,15 @@ function faseSitio(c, run, salida, env, sec) {
   const alcance = `/subscriptions/${c.subscription}/resourceGroups/${c.mailbox.resourceGroup}/providers/Microsoft.Storage/storageAccounts/${c.mailbox.account}/blobServices/default/containers/${c.mailbox.container}`;
   const yaHay = run.leer(['role', 'assignment', 'list', '--assignee', principal, '--role', 'Storage Blob Data Reader', '--scope', alcance, '--query', 'length(@)', '-o', 'tsv', ...SUB(c)], '0');
   if (yaHay === '0') {
+    // la identidad recién creada tarda en llegar a Entra ID: «Cannot find user or service principal in graph database»
+    // es esa demora, y se reintenta con espera; cualquier otro error frena
     run.paso({ que: 'dar a la identidad del sitio la lectura del contenedor del buzón', args: ['role', 'assignment', 'create', '--assignee-object-id', principal, '--assignee-principal-type', 'ServicePrincipal',
-      '--role', 'Storage Blob Data Reader', '--scope', alcance, '-o', 'none', ...SUB(c)] });
+      '--role', 'Storage Blob Data Reader', '--scope', alcance, '-o', 'none', ...SUB(c)], reintentar: { si: /Cannot find user or service principal in graph database/i, veces: 12 } });
   }
-  // el inicio integrado: un inquilino, el secreto por su nombre
+  // el inicio integrado: un inquilino, el secreto por su nombre. El inquilino va en el emisor: az no acepta --issuer y
+  // --tenant-id juntos («cannot be configured to non empty strings at the same time»)
   run.paso({ que: 'el inicio integrado de Microsoft (un inquilino)', args: ['containerapp', 'auth', 'microsoft', 'update', ...g, '-n', c.app, '--client-id', c.oidcClientId,
-    '--client-secret-name', 'site-oidc-client-secret', '--tenant-id', c.tenantId, '--issuer', `https://login.microsoftonline.com/${c.tenantId}/v2.0`,
+    '--client-secret-name', 'site-oidc-client-secret', '--issuer', `https://login.microsoftonline.com/${c.tenantId}/v2.0`,
     '--allowed-audiences', c.oidcClientId, '--yes', '-o', 'none', ...SUB(c)] });
   run.paso({ que: 'el candado delante del sitio (fuera: /healthz y /livez)', args: ['containerapp', 'auth', 'update', ...g, '-n', c.app, '--enabled', 'true',
     '--unauthenticated-client-action', 'RedirectToLoginPage', '--require-https', 'true', '--excluded-paths', '/healthz,/livez', '-o', 'none', ...SUB(c)] });

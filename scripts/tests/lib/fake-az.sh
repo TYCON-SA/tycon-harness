@@ -60,6 +60,9 @@
 #   Pasos: sesion proveedor grupo-recursos area ambiente almacen recurso-compartido llaves aplicacion rol inicio entrada rest
 #   TYCON_AZ_WITHOUT_SESSION=1   `account show` sale 1 con «Please run 'az login'» (como az sin sesión)
 #   TYCON_AZ_FAIL=rol       el rol sale 1 con un 403 de AuthorizationFailed (como sin Owner ni User Access Administrator)
+#   TYCON_AZ_GRAPH_DELAY=N  las N primeras veces el rol sale 1 con «Cannot find user or service principal in graph
+#                           database» (la identidad recién creada que Entra ID todavía no ve)
+#   Siempre: `containerapp auth microsoft update` con --issuer y --tenant-id juntos sale 1, como az 2.71
 exec node - "$@" <<'JS'
 'use strict';
 const fs = require('fs');
@@ -204,7 +207,14 @@ if (familia) {
     if (q) tsv(consulta(String(q)));
     process.exit(0);
   }
-  if (paso === 'rol' && verbo === 'create') { estado.rol = true; guardar(); process.exit(0); }
+  if (paso === 'rol' && verbo === 'create') {
+    const demora = Number(process.env.TYCON_AZ_GRAPH_DELAY) || 0;
+    estado.rolIntentos = (estado.rolIntentos || 0) + 1; guardar();
+    if (estado.rolIntentos <= demora) falla(`(PrincipalNotFound) Cannot find user or service principal in graph database for '${arg('--assignee-object-id')}'.`);
+    estado.rol = true; guardar(); process.exit(0);
+  }
+  // az 2.71 (extensión containerapp 1.2.0b4) no acepta el emisor y el inquilino juntos
+  if (paso === 'inicio' && args.includes('--issuer') && args.includes('--tenant-id')) falla('--issuer and --tenant-id cannot be configured to non empty strings at the same time.');
   // create / update / set: queda creado (la clave no lleva el verbo: `show` la encuentra)
   estado[clave] = true; guardar(); process.exit(0);
 }

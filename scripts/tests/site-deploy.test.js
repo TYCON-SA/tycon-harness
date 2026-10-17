@@ -168,7 +168,9 @@ test('T11 Aca_InicioIntegradoUnInquilino @story-2.30 @ac-8', () => {
   const au = s.split('\n').find((l) => /containerapp auth update/.test(l));
   const t = guid('2');
   assert.ok(ms && au, s);
-  assert.ok(ms.includes(`--tenant-id ${t}`) && ms.includes(`--issuer https://login.microsoftonline.com/${t}/v2.0`), ms);
+  // el inquilino va en el emisor: az no acepta --issuer y --tenant-id juntos
+  assert.ok(ms.includes(`--issuer https://login.microsoftonline.com/${t}/v2.0`), ms);
+  assert.doesNotMatch(ms, /--tenant-id/, 'sin --tenant-id junto al emisor');
   assert.ok(ms.includes('--client-secret-name site-oidc-client-secret') && ms.includes(`--allowed-audiences ${guid('3')}`) && ms.includes(`--client-id ${guid('3')}`), ms);
   assert.doesNotMatch(ms, /common|organizations/);
   for (const x of ['--unauthenticated-client-action RedirectToLoginPage', '--require-https true', '--excluded-paths /healthz,/livez', '--enabled true']) assert.ok(au.includes(x), `falta ${x}: ${au}`);
@@ -228,6 +230,25 @@ test('T29 Aca_FallaAMitad_SinEntradaExterna @story-2.30 @ac-8', () => {
   assert.ok(!nuevas.some((l) => l.paso === 'almacen' && l.args.includes('create')), 'la cuenta ya existía');
   assert.strictEqual(nuevas[nuevas.length - 1].paso, 'entrada', 'la entrada externa, en el último paso');
   for (const l of [...sit.llamadas, ...otra.llamadas]) sinMarcadores(l.args.join(' '), 'una orden de az');
+});
+
+test('T29c Aca_IdentidadRecienCreada_SeReintentaConEspera @story-2.30 @ac-8 @ac-25', () => {
+  // la identidad de la aplicación recién creada tarda en llegar a Entra ID: el rol falla «Cannot find user or service
+  // principal in graph database» hasta que la ve. Se reintenta con espera, y sólo ese error
+  const amb = alta(['--apply', '--phase', 'ambiente']);
+  assert.strictEqual(amb.status, 0, amb.out);
+  const sit = alta(['--apply', '--phase', 'sitio'], { fix: amb.fix, fixEnv: { TYCON_AZ_GRAPH_DELAY: '2' } });
+  assert.strictEqual(sit.status, 0, sit.out);
+  const roles = sit.llamadas.filter((l) => l.paso === 'rol' && l.args[1] === 'assignment' && l.args[2] === 'create');
+  assert.strictEqual(roles.length, 3, `dos intentos fallidos y el tercero entra: ${roles.length}`);
+  assert.match(sit.out, /Azure todavía no lo ve: intento 2 de 12/);
+  assert.strictEqual(sit.llamadas[sit.llamadas.length - 1].paso, 'entrada', 'sigue hasta abrir la entrada');
+  // un 403 (sin permiso) NO se reintenta: frena en el primer intento
+  const amb2 = alta(['--apply', '--phase', 'ambiente']);
+  const sin = alta(['--apply', '--phase', 'sitio'], { fix: amb2.fix, fixEnv: { TYCON_AZ_FAIL: 'rol:create' } });
+  assert.strictEqual(sin.status, 1, sin.out);
+  assert.strictEqual(sin.llamadas.filter((l) => l.paso === 'rol' && l.args[2] === 'create').length, 1, 'el 403 no se reintenta');
+  assert.doesNotMatch(sin.out, /todavía no lo ve/);
 });
 
 test('T29b Aca_NoPudePreguntar_NoEsNoExiste @story-2.30 @ac-8', () => {
