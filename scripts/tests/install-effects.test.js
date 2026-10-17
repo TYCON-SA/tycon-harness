@@ -50,9 +50,14 @@ const nameOf = (e) => String(e.id || e.id_pattern);
 
 // ── lo que el instalador hace, leído de su texto ────────────────────────────────────────────────────────────────
 
-/** Los bloques de `claude-md-blocks/`: el nombre de cada `.md`. */
+/** Los bloques de `claude-md-blocks/`: el nombre de cada `.md` y de cada carpeta de variantes (story 2.31). */
 function blockNames(root) {
-  return fs.readdirSync(path.join(root, 'claude-md-blocks')).filter((f) => f.endsWith('.md')).map((f) => f.slice(0, -3)).sort();
+  const dir = path.join(root, 'claude-md-blocks');
+  const sueltos = fs.readdirSync(dir).filter((f) => f.endsWith('.md')).map((f) => f.slice(0, -3));
+  const variantes = fs.readdirSync(dir, { withFileTypes: true })
+    .filter((d) => d.isDirectory() && d.name !== 'names' && fs.readdirSync(path.join(dir, d.name)).some((f) => /^[a-z]+\.[a-z]{2}\.md$/.test(f)))
+    .map((d) => d.name);
+  return [...sueltos, ...variantes].sort();
 }
 
 /**

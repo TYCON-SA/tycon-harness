@@ -390,6 +390,19 @@ function Get-BlockMarkers([string]$Text) {
     }
     return @{ Body = ($rest -join "`n").Trim("`n"); Requires = $req; Profiles = $prof; Bad = $bad }
 }
+# cómo contesta el asistente (story 2.31: idioma, estilo y tope), leído UNA vez del lector; $null si no se pudo saber
+$script:PlanResponse = $null
+function Get-PlanResponse([string]$Tree) {
+    if ($null -eq $script:PlanResponse) {
+        $script:PlanResponse = $false
+        try {
+            $out = & node (Join-Path (Join-Path (Join-Path $Tree 'scripts') 'lib') 'tycon-config.js') response --json 2>$null
+            if ($LASTEXITCODE -eq 0) { $d = ($out | Out-String) | ConvertFrom-Json; if ($d -and $d.style -and $d.language -and $d.max_chars) { $script:PlanResponse = $d } }
+        } catch { }   # sin saber, el plan dice «keep» (lo que va a hacer el sync); el motivo lo dice el sync al correr
+
+    }
+    if ($script:PlanResponse) { return $script:PlanResponse } else { return $null }
+}
 function Record-BlocksPlan {
     if (-not $script:PlanTmp -or $env:TYCON_NO_CLAUDEMD_SYNC -eq '1') { return }
     try {
@@ -400,10 +413,25 @@ function Record-BlocksPlan {
         if (-not (Test-Path $blocksDir)) { return }
         # con \r\n pasados a \n, como los lee el sync (story 8.17, AC 36): si no, un bloque con \r\n salía «update» siempre
         $content = if (Test-Path $target) { [IO.File]::ReadAllText($target).Replace("`r`n", "`n") } else { '' }
-        foreach ($f in @(Get-ChildItem -Path $blocksDir -Filter '*.md' -File | Sort-Object Name)) {
-            $name = [IO.Path]::GetFileNameWithoutExtension($f.Name)
-            $mk = Get-BlockMarkers ([IO.File]::ReadAllText($f.FullName).Replace("`r`n", "`n"))
+        # los bloques con variantes (story 2.31): una carpeta con `<estilo>.<idioma>.md`, como los lee el sync
+        # (un archivo y una carpeta con el mismo nombre: gana el archivo; orden por código de carácter, como el sync)
+        $list = New-Object System.Collections.Generic.List[object]; $fileNames = @{}
+        foreach ($f in @(Get-ChildItem -Path $blocksDir -Filter '*.md' -File)) { $n = [IO.Path]::GetFileNameWithoutExtension($f.Name); $fileNames[$n] = $true; $list.Add([pscustomobject]@{ Name = $n; Path = $f.FullName; Variant = $false }) }
+        foreach ($d in @(Get-ChildItem -Path $blocksDir -Directory | Where-Object { $_.Name -cne 'names' -and @(Get-ChildItem -Path $_.FullName -File | Where-Object { $_.Name -cmatch '^[a-z]+\.[a-z]{2}\.md$' }).Count })) { if (-not $fileNames.ContainsKey($d.Name)) { $list.Add([pscustomobject]@{ Name = $d.Name; Path = $d.FullName; Variant = $true }) } }
+        $list.Sort([Comparison[object]] { param($a, $b) [string]::CompareOrdinal($a.Name, $b.Name) })
+        $entries = $list.ToArray()   # (@($list) sobre una List genérica falla en pwsh)
+        foreach ($e in $entries) {
+            $name = $e.Name
             $present = $content.Contains("<!-- TYCON_BLOCK:$name START")
+            $blockFile = $e.Path; $fill = $null
+            if ($e.Variant) {
+                # el texto que elige la configuración; sin poder elegirlo, el sync deja el bloque como estaba
+                $resp = Get-PlanResponse $tree
+                $blockFile = if ($resp) { Join-Path $e.Path "$($resp.style).$($resp.language).md" } else { $null }
+                if (-not $blockFile -or -not (Test-Path $blockFile)) { if ($present) { Record-Plan 'block' $target "TYCON_BLOCK:$name" 'keep' }; continue }
+                $fill = [long]$resp.max_chars
+            }
+            $mk = Get-BlockMarkers ([IO.File]::ReadAllText($blockFile).Replace("`r`n", "`n"))
             # con la integración apagada, o el perfil activo fuera de la lista, el sync lo saca si ya estaba escrito: eso es
             # un «remove» (espejo del .sh); con el perfil sin saber (o un marcador casi bien escrito) no se agrega ni se saca
             $activeProfile = if ($ProfileState -eq 'ok') { if ($ProfileValue) { $ProfileValue } else { 'full' } } else { $null }
@@ -414,6 +442,19 @@ function Record-BlocksPlan {
             }
             if (($mk.Bad -or ($mk.Profiles -and -not $activeProfile)) -and -not $present) { continue }
             $body = $mk.Body
+            if ($null -ne $fill) { $body = $body.Replace('{{max_chars}}', "$fill").Replace('{{max_lines}}', "$([long][Math]::Floor(($fill + 50) / 100))") }
+            # las filas con su integración (story 2.31), como las escribe el sync: prendida queda, apagada no; sin saber,
+            # queda si ya estaba en el CLAUDE.md
+            $end0 = "<!-- TYCON_BLOCK:$name END -->"
+            $i0 = $content.IndexOf("<!-- TYCON_BLOCK:$name START"); $j0 = if ($i0 -ge 0) { $content.IndexOf($end0, $i0) } else { -1 }
+            $prev = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
+            if ($j0 -ge 0) { foreach ($l in $content.Substring($i0, $j0 - $i0).Split([char]10)) { [void]$prev.Add($l) } }
+            $body = (@(foreach ($line in $body.Split([char]10)) {
+                $m = [regex]::Match($line, '^(.*\|)[ \t]*<!--\s*integration:\s*([a-z]+)\s*-->\s*$')
+                if (-not $m.Success) { $line; continue }
+                $row = $m.Groups[1].Value.TrimEnd()
+                if ($IntegEstado -eq 'ok') { if (Integ-Prendida $m.Groups[2].Value) { $row } } elseif ($prev.Contains($row)) { $row }
+            }) -join "`n")
             $start = "<!-- TYCON_BLOCK:$name START — generado por scripts/setup/sync-claude-md-blocks.sh del arnés · NO EDITAR A MANO (se pisa en el próximo SessionStart); editá claude-md-blocks/$name.md y commiteá -->"
             $action = if ($content.Contains("$start`n$body`n<!-- TYCON_BLOCK:$name END -->")) { 'keep' } elseif ($present) { 'update' } else { 'add' }
             Record-Plan 'block' $target "TYCON_BLOCK:$name" $action

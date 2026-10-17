@@ -329,7 +329,7 @@ installer. Most items have a switch, named next to them. The ones that do not (t
 **It changes how your assistant answers**, in all your projects and not only where you use the harness. The install
 writes three blocks of rules into `~/.claude/CLAUDE.md`, between their own markers, and one import line:
 
-- `response-style`: the assistant answers in plain Spanish, conclusion first, with a cap of 1300 characters of prose.
+- `response-style`: the assistant answers in the language, style and length the organization picks in its profile (`response`; unset, clear and to the point, in Spanish), conclusion first, with a cap of characters of prose.
   A hook measures every answer and reports the overrun to the assistant on the next turn (`TYCON_RESPONSE_METER=0`
   turns the measuring off).
 - `background-execution`: steps longer than two minutes run in the background and are announced first. Another hook

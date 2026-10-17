@@ -168,6 +168,48 @@ function Get-SyncIntegrationState([string]$Name, [string]$Reader) {
     return @{ State = 'on'; Why = $null }
 }
 
+# Story 2.31, como el .sh: cómo contesta el asistente (idioma, estilo y tope, ya resueltos por el lector), una sola vez:
+# @{ Data; Why }. Un bloque con variantes es una carpeta `claude-md-blocks/<bloque>/` con `<estilo>.<idioma>.md`.
+$script:SyncResponse = $null
+function Get-SyncResponse([string]$Reader) {
+    if ($null -eq $script:SyncResponse) {
+        $data = $null; $why = $null
+        if (-not (Test-Path $Reader)) { $why = 'no encontré el lector de configuración (scripts/lib/tycon-config.js)' }
+        elseif (-not (Get-Command node -ErrorAction SilentlyContinue)) { $why = 'falta node en el PATH' }
+        else {
+            try {
+                $out = & node $Reader response --json 2>$null
+                $rc = $LASTEXITCODE
+                if ($rc -eq 2) { $why = 'configuración rota: `node scripts/lib/tycon-config.js validate` dice qué' }
+                elseif ($rc -ne 0) { $why = "el lector de configuración falló (exit $rc)" }
+                else {
+                    $data = ($out | Out-String) | ConvertFrom-Json
+                    if (-not ($data.max_chars -is [long] -or $data.max_chars -is [int])) { $data = $null }
+                }
+            } catch { $data = $null }
+            if ($null -eq $data -and -not $why) { $why = 'el lector de configuración contestó algo que no se entiende' }
+        }
+        $script:SyncResponse = @{ Data = $data; Why = $why }
+    }
+    return $script:SyncResponse
+}
+
+# Una fila de tabla que termina en `<!-- integration: <x> -->` se escribe sólo con esa integración prendida; el marcador
+# nunca se copia. No se pudo saber: la fila queda como estaba en el destino (espejo de filter_rows del .sh).
+function Select-SyncRows([string]$Body, [string]$Existing, [string]$Reader) {
+    # con mayúsculas y minúsculas distintas no es la misma fila (un @{} de PowerShell las confunde; el .sh y el .js no)
+    $kept = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
+    if ($Existing) { foreach ($l in $Existing.Split([char]10)) { [void]$kept.Add($l.TrimEnd([char]13)) } }
+    $out = foreach ($line in $Body.Split([char]10)) {
+        $m = [regex]::Match($line, '^(.*\|)[ \t]*<!--\s*integration:\s*([a-z]+)\s*-->\s*$')
+        if (-not $m.Success) { $line; continue }
+        $row = $m.Groups[1].Value.TrimEnd()
+        $st = Get-SyncIntegrationState $m.Groups[2].Value $Reader
+        if ($st.State -eq 'on' -or ($st.State -eq 'unknown' -and $kept.Contains($row))) { $row }
+    }
+    return (@($out) -join "`n")
+}
+
 try {
     $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
     $blocksDir = Join-Path (Split-Path -Parent (Split-Path -Parent $scriptDir)) 'claude-md-blocks'
@@ -177,8 +219,26 @@ try {
 
     if (-not (Test-Path $blocksDir)) { exit 0 }
 
-    $files = Get-ChildItem -Path $blocksDir -Filter '*.md' -File | Sort-Object Name
-    if ($files.Count -eq 0) { exit 0 }
+    $files = @(Get-ChildItem -Path $blocksDir -Filter '*.md' -File | Sort-Object Name)
+    # los bloques con variantes (story 2.31): una carpeta con `<estilo>.<idioma>.md`; `names` son las variantes de Codex
+    # (sólo cuenta una carpeta con algún `<estilo>.<idioma>.md`: otro .md anidado no es un bloque)
+    # (una carpeta que no se deja leer cuenta como bloque sin texto elegible: queda como estaba y se avisa)
+    $unreadable = @{}
+    $variantDirs = @(Get-ChildItem -Path $blocksDir -Directory | Where-Object {
+        $dir = $_
+        if ($dir.Name -ceq 'names') { return $false }
+        try { return [bool]@([IO.Directory]::GetFiles($dir.FullName) | Where-Object { [IO.Path]::GetFileName($_) -cmatch '^[a-z]+\.[a-z]{2}\.md$' }).Count }
+        catch { $unreadable[$dir.FullName] = $true; return $true }
+    })
+    # un archivo y una carpeta con el mismo nombre: gana el archivo (como el .sh y agents-md-blocks.js); el orden, por
+    # código de carácter, igual que ellos (Sort-Object compara con reglas de idioma y ordenaba distinto)
+    $fileNames = @{}; foreach ($f in $files) { $fileNames[[IO.Path]::GetFileNameWithoutExtension($f.Name)] = $true }
+    $list = New-Object System.Collections.Generic.List[object]
+    foreach ($f in $files) { $list.Add([pscustomobject]@{ Name = [IO.Path]::GetFileNameWithoutExtension($f.Name); Path = $f.FullName; Variant = $false }) }
+    foreach ($d in $variantDirs) { if (-not $fileNames.ContainsKey($d.Name)) { $list.Add([pscustomobject]@{ Name = $d.Name; Path = $d.FullName; Variant = $true }) } }
+    $list.Sort([Comparison[object]] { param($a, $b) [string]::CompareOrdinal($a.Name, $b.Name) })
+    $entries = $list.ToArray()   # (@($list) sobre una List genérica falla en pwsh: «Argument types do not match»)
+    if ($entries.Count -eq 0) { exit 0 }
 
     $original = ''
     $originalRaw = ''   # tal cual está en el disco: es lo que va a la copia de respaldo
@@ -192,10 +252,37 @@ try {
     $unknown = @()   # avisos: bloques cuya integración no se pudo saber
     $configReader = Join-Path (Join-Path (Split-Path -Parent $scriptDir) 'lib') 'tycon-config.js'
 
-    foreach ($f in $files) {
-        $name = [IO.Path]::GetFileNameWithoutExtension($f.Name)
-        $block = Read-SyncBlock $f.FullName
+    $final = @{}   # bloque → su texto entero entre marcadores, como debería quedar (para el reporte del aplicador)
+    foreach ($e in $entries) {
+        $name = $e.Name
+        $blockPath = $e.Path
+        $startPrefix = "<!-- TYCON_BLOCK:$name START"
+        $end = "<!-- TYCON_BLOCK:$name END -->"
+        $i0 = $content.IndexOf($startPrefix)
+        $j0 = if ($i0 -ge 0) { $content.IndexOf($end, $i0) } else { -1 }
+        $existingBody = ''
+        if ($j0 -ge 0) { $nl = $content.IndexOf("`n", $i0) + 1; if ($nl -gt 0 -and $nl -le $j0) { $existingBody = $content.Substring($nl, $j0 - $nl) } }
+        if ($e.Variant) {
+            $resp = if ($unreadable.ContainsKey($e.Path)) { @{ Data = $null; Why = 'no pude leer su carpeta de variantes' } } else { Get-SyncResponse $configReader }
+            $vwhy = $resp.Why
+            if ($resp.Data) {
+                $blockPath = Join-Path $e.Path "$($resp.Data.style).$($resp.Data.language).md"
+                if (-not (Test-Path $blockPath)) { $vwhy = "no hay texto para el estilo «$($resp.Data.style)» en «$($resp.Data.language)»" }
+            }
+            if ($vwhy) {
+                # no se pudo elegir el texto: no se inventa uno; lo que había queda tal cual, sin actualizar (AC 6)
+                $unknown += "⚠ tycon: bloque CLAUDE.md '$name': no pude saber cómo tiene que contestar el asistente (${vwhy}): $(if ($i0 -lt 0) { 'no se agrega' } else { 'queda como estaba' })"
+                if ($j0 -ge 0) { $final[$name] = $content.Substring($i0, $j0 + $end.Length - $i0) }
+                continue
+            }
+        }
+        $block = Read-SyncBlock $blockPath
         $body = $block.Body
+        if ($e.Variant) {
+            $n = [long]$resp.Data.max_chars
+            $body = $body.Replace('{{max_chars}}', "$n").Replace('{{max_lines}}', "$([long][Math]::Floor(($n + 50) / 100))")
+        }
+        $body = Select-SyncRows $body $existingBody $configReader
         $requires = $block.Requires
         $profiles = $block.Profiles
         $badMarker = $block.BadMarker
@@ -220,10 +307,10 @@ try {
         $start = "<!-- TYCON_BLOCK:$name START — generado por scripts/setup/sync-claude-md-blocks.sh del arnés · NO EDITAR A MANO (se pisa en el próximo SessionStart); editá claude-md-blocks/$name.md y commiteá -->"
         $end = "<!-- TYCON_BLOCK:$name END -->"
         $desired = "$start`n$body`n$end"
+        $final[$name] = $desired
 
         # Localizar por PREFIJO (ver comentario equivalente en la versión bash).
-        $startPrefix = "<!-- TYCON_BLOCK:$name START"
-        $i = $content.IndexOf($startPrefix)
+        $i = $i0
         if ($state -eq 'unknown') {
             # No saber no es «apagada»: lo que falta no se agrega; lo que está queda y se actualiza abajo, como siempre.
             $fate = if ($i -lt 0) { 'no se agrega' } else { 'queda donde está' }
@@ -332,11 +419,9 @@ try {
     # falla, el sync sale sin anotarlos. Uno con el marcador de cierre perdido no cuenta: no está en su lugar. Uno quitado
     # por su integración apagada, tampoco.
     $blocksInPlace = @()
-    foreach ($f in $files) {
-        $name = [IO.Path]::GetFileNameWithoutExtension($f.Name)
-        $body = (Read-SyncBlock $f.FullName).Body
-        $start = "<!-- TYCON_BLOCK:$name START — generado por scripts/setup/sync-claude-md-blocks.sh del arnés · NO EDITAR A MANO (se pisa en el próximo SessionStart); editá claude-md-blocks/$name.md y commiteá -->"
-        if ($content.Contains("$start`n$body`n<!-- TYCON_BLOCK:$name END -->")) { $blocksInPlace += $name }
+    foreach ($e in $entries) {
+        $whole = $final[$e.Name]
+        if ($whole -and $content.Contains($whole)) { $blocksInPlace += $e.Name }
     }
     $targetFull = [IO.Path]::GetFullPath($target)
 

@@ -99,7 +99,49 @@ function loadBlocks(blocksDir) {
     if (fs.existsSync(variant)) b.body = trimNewlines(fs.readFileSync(variant, 'utf8').replace(/^﻿/, ''));
     out.push(Object.assign({ name }, b));
   }
-  return out;
+  // los bloques con variantes (story 2.31): una carpeta `<bloque>/` con `<estilo>.<idioma>.md`; `names/` es otra cosa
+  for (const d of fs.readdirSync(blocksDir).sort()) {
+    const full = path.join(blocksDir, d);
+    // sólo cuenta una carpeta con algún `<estilo>.<idioma>.md`: otro .md anidado no es un bloque. Una carpeta que no se
+    // deja leer cuenta como bloque sin texto elegible: queda como estaba y se avisa (no desaparece callada)
+    let ilegible = false;
+    // un enlace roto (o lo que no es carpeta) no es un bloque, como en el .sh y el .ps1
+    let esCarpeta = false;
+    try { esCarpeta = fs.statSync(full).isDirectory(); } catch (_) { esCarpeta = false; }
+    if (d === 'names' || !esCarpeta) continue;
+    try {
+      if (!fs.readdirSync(full).some((f) => /^[a-z]+\.[a-z]{2}\.md$/.test(f))) continue;
+    } catch (_) { ilegible = true; }
+    // un archivo y una carpeta con el mismo nombre: gana el archivo (en las tres implementaciones)
+    if (out.some((b) => b.name === d)) continue;
+    out.push({ name: d, variantDir: full, unreadable: ilegible, body: null, requires: null, profiles: null, bad: null });
+  }
+  return out.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+}
+
+/** `{ file }` con la variante que eligió la configuración (`<estilo>.<idioma>.md`), o `{ why }` si no se pudo elegir. */
+function pickVariant(dir, { response, responseWhy }) {
+  if (!response) return { why: responseWhy || 'no pude leer la configuración' };
+  const file = path.join(dir, `${response.style}.${response.language}.md`);
+  return fs.existsSync(file) ? { file } : { why: `no hay texto para el estilo «${response.style}» en «${response.language}»` };
+}
+/** El tope de prosa en el texto del estilo: {{max_chars}} y {{max_lines}} (≈ cien caracteres por renglón). */
+const fillVariant = (body, n) => body.split('{{max_chars}}').join(String(n)).split('{{max_lines}}').join(String(Math.floor((n + 50) / 100)));
+
+// Una fila de tabla que termina en `<!-- integration: <x> -->` se escribe sólo con esa integración prendida (story 2.31,
+// AC 7-8); el marcador nunca se copia. No se pudo saber: la fila queda como estaba en el destino (si estaba, sigue).
+const ROW_RE = /^(.*\|)[ \t]*<!--\s*integration:\s*([a-z]+)\s*-->\s*$/;
+function filterRows(body, existing, { integrations }) {
+  // un AGENTS.md con fines de línea de Windows: la fila que estaba se reconoce igual
+  const kept = new Set(existing ? existing.split(/\r?\n/) : []);
+  return body.split('\n').flatMap((line) => {
+    const m = ROW_RE.exec(line);
+    if (!m) return [line];
+    const row = m[1].replace(/\s+$/, '');
+    const known = integrations && Object.prototype.hasOwnProperty.call(integrations, m[2]);
+    if (known) return integrations[m[2]] === false ? [] : [row];
+    return kept.has(row) ? [row] : [];
+  }).join('\n');
 }
 
 /** `{ state: 'on' | 'off' | 'unknown', why }` de un bloque: apagado por una de las dos razones alcanza. */
@@ -129,11 +171,29 @@ function blockState(b, { integrations, integrationsWhy, profile, profileWhy }) {
 function applyBlocks(original, blocks, facts) {
   let content = original;
   const changed = []; const notes = []; const removed = {}; const unclosed = [];
-  for (const b of blocks) {
+  const finals = {};   // bloque → su texto entero entre marcas, como debería quedar
+  for (const b0 of blocks) {
+    const start = markerStart(b0.name); const end = markerEnd(b0.name);
+    const i0 = content.indexOf(startPrefix(b0.name));
+    const j0 = i0 === -1 ? -1 : content.indexOf(end, i0);
+    const existingBody = j0 === -1 ? '' : content.slice(content.indexOf('\n', i0) + 1, j0);
+    let b = b0;
+    if (b0.variantDir) {
+      const v = b0.unreadable ? { why: 'no pude leer su carpeta de variantes' } : pickVariant(b0.variantDir, facts);
+      if (v.why) {
+        // no se pudo elegir el texto: no se inventa uno; lo que había queda tal cual, sin actualizar (story 2.31, AC 6)
+        notes.push(`⚠ tycon: bloque AGENTS.md '${b0.name}': no pude saber cómo tiene que contestar el asistente (${v.why}): ${i0 === -1 ? 'no se agrega' : 'queda como estaba'}`);
+        if (j0 !== -1) finals[b0.name] = content.slice(i0, j0 + end.length);
+        continue;
+      }
+      b = Object.assign({ name: b0.name }, readBlock(v.file));
+      b.body = fillVariant(b.body, facts.response.max_chars);
+    }
+    b = Object.assign({}, b, { body: filterRows(b.body, existingBody, facts) });
     const { state, why } = blockState(b, facts);
-    const start = markerStart(b.name); const end = markerEnd(b.name);
     const desired = `${start}\n${b.body}\n${end}`;
-    const i = content.indexOf(startPrefix(b.name));
+    finals[b.name] = desired;
+    const i = i0;
     if (state === 'unknown') {
       const outcome = i === -1 ? 'no se agrega' : 'queda donde está';
       if (b.bad) notes.push(`⚠ tycon: bloque AGENTS.md '${b.name}': su marcador ${b.bad[0] === 'integration' ? 'requires-integration' : 'requires-profile'} está mal escrito o repetido (${b.bad[1]}): ${outcome}`);
@@ -167,7 +227,7 @@ function applyBlocks(original, blocks, facts) {
     content = content.slice(0, i) + desired + content.slice(j + end.length);
     changed.push([b.name, 'actualizado']);
   }
-  const present = blocks.filter((b) => content.includes(`${markerStart(b.name)}\n${b.body}\n${markerEnd(b.name)}`)).map((b) => b.name);
+  const present = blocks.filter((b) => finals[b.name] !== undefined && content.includes(finals[b.name])).map((b) => b.name);
   return { text: content, changed, notes, present, removed, unclosed };
 }
 
@@ -184,13 +244,18 @@ function appendLine(file, line) { try { fs.appendFileSync(file, `${line}\n`); re
 
 /** Las integraciones y el perfil de la máquina, leídos con el lector del árbol. Nunca tira: sin dato, el motivo. */
 function machineFacts({ tree = TREE, home = os.homedir(), env = process.env } = {}) {
-  const facts = { integrations: null, integrationsWhy: null, profile: null, profileWhy: null };
+  const facts = { integrations: null, integrationsWhy: null, profile: null, profileWhy: null, response: null, responseWhy: null };
   try {
     const C = require(path.join(tree, 'scripts', 'lib', 'tycon-config.js'));
-    const read = () => C.integraciones(C.leer({ home, env }));
-    facts.integrations = typeof C.sinAnotar === 'function' ? C.sinAnotar(read) : read();
+    const read = () => C.leer({ home, env });
+    const config = typeof C.sinAnotar === 'function' ? C.sinAnotar(read) : read();
+    facts.integrations = C.integraciones(config);
+    // cómo contesta el asistente (story 2.31); un árbol de antes no lo sabe: el bloque con variantes queda como estaba
+    if (typeof C.respuesta === 'function') facts.response = C.respuesta(config);
+    else facts.responseWhy = 'este lector de configuración no conoce `response`';
   } catch (e) {
     facts.integrationsWhy = e && e.name === 'ConfigError' ? 'configuración rota: `node scripts/lib/tycon-config.js validate` dice qué' : `no pude leer la configuración (${(e && e.message ? e.message : String(e)).split('\n')[0]})`;
+    facts.responseWhy = facts.integrationsWhy;
   }
   try {
     const r = require(path.join(tree, 'scripts', 'setup', 'harness', 'profile.js')).resolve({ tree, home, env });
@@ -229,7 +294,7 @@ function sync(p = {}) {
     original = '';
   }
   const facts = (p.integrations !== undefined || p.profile !== undefined)
-    ? { integrations: p.integrations === undefined ? null : p.integrations, integrationsWhy: p.integrationsWhy || null, profile: p.profile === undefined ? null : p.profile, profileWhy: p.profileWhy || null }
+    ? { integrations: p.integrations === undefined ? null : p.integrations, integrationsWhy: p.integrationsWhy || null, profile: p.profile === undefined ? null : p.profile, profileWhy: p.profileWhy || null, response: p.response || null, responseWhy: p.responseWhy || (p.response ? null : 'no me pasaron cómo contesta el asistente') }
     : machineFacts({ tree, home, env });
   const r = applyBlocks(original, blocks, facts);
   for (const n of r.notes) say(n);

@@ -1598,6 +1598,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 2.31: cómo contesta el asistente y la tabla de nombres, según la configuración — sin `response`, el bloque neutro; el perfil de TYCON deja el bloque de antes salvo el título; el medidor toma `response.max_chars`; un estilo inventado deja el bloque que había; las filas con su integración apagada no se escriben y, sin saber, quedan como estaban; los títulos sin fecha; las seis variantes en su techo. Corre los tres sincronizadores (bash, PowerShell si hay pwsh —en la CI es obligatorio— y el de Codex) sobre una HOME de juguete; sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/response-style-variants.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "arnes",
       "ruta": "tests/harness-bootstrap.test.sh",
       "requiere": []

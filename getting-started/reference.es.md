@@ -321,7 +321,7 @@ Casi todo lleva su interruptor, y se nombra al lado. Lo que no lo tiene —la l�
 **Cambia cómo contesta tu asistente**, en todos tus proyectos y no sólo donde uses el arnés. La instalación escribe
 tres bloques de reglas en `~/.claude/CLAUDE.md`, entre sus propios marcadores, y una línea de import:
 
-- `response-style`: el asistente contesta en castellano llano, con la conclusión primero y un tope de 1300 caracteres
+- `response-style`: el asistente contesta con el idioma, el estilo y el largo que elige la organización en su perfil (`response`; sin elegir, claro y al punto, en castellano), con la conclusión primero y un tope de caracteres
   de prosa. Un hook mide cada respuesta y le cobra el exceso en el turno siguiente (`TYCON_RESPONSE_METER=0` apaga la
   medición).
 - `background-execution`: los pasos de más de dos minutos corren en segundo plano y se anuncian antes. Otro hook mide

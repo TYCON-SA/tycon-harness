@@ -552,8 +552,8 @@ function publishedLines(text) {
   return out;
 }
 test('T48 PublishedProse_InternalRepoName_SaysTheHarness_ReadmeUnderLimit', () => {
-  const prose = sweepScope(ROOT).filter((f) => ['README.md', 'INSTALL.md', 'story-format.md', 'claude-md-blocks/response-style.md', 'claude-md-blocks/ado-runs-list-lag.md'].includes(f)
-    || /^agents\/[^/]+\.md$/.test(f) || (/^skills\/.+\.md$/.test(f) && !/(^|\/)tests?\//.test(f)));
+  const prose = sweepScope(ROOT).filter((f) => ['README.md', 'INSTALL.md', 'story-format.md', 'claude-md-blocks/ado-runs-list-lag.md'].includes(f)
+    || /^claude-md-blocks\/response-style\/[^/]+\.md$/.test(f) || /^agents\/[^/]+\.md$/.test(f) || (/^skills\/.+\.md$/.test(f) && !/(^|\/)tests?\//.test(f)));
   assert.ok(prose.length > 30, `poca prosa encontrada: ${prose.length}`);
   // lo que el núcleo deja afuera (allowlist.json → packages.core.*.out: una skill interna, una historia) no se publica
   const allowFile = path.join(ROOT, 'scripts', 'publishing', 'allowlist.json');
@@ -581,8 +581,8 @@ test('T48 PublishedProse_InternalRepoName_SaysTheHarness_ReadmeUnderLimit', () =
 // T52 en export-real.test.sh. Sin allowlist.json (la copia pública no lo trae) estas tres no se pueden medir, y se dice.
 const INTERNAL_LIST = JSON.parse(read('scripts/tests/fixtures/public-copy-internal-name.json'));
 const DECLARED_INTERNAL = new Map(INTERNAL_LIST.entries.map((e) => [e.path, e]));
-const T48_PROSE = (f) => ['README.md', 'INSTALL.md', 'story-format.md', 'claude-md-blocks/response-style.md', 'claude-md-blocks/ado-runs-list-lag.md'].includes(f)
-  || /^agents\/[^/]+\.md$/.test(f) || (/^skills\/.+\.md$/.test(f) && !/(^|\/)tests?\//.test(f));
+const T48_PROSE = (f) => ['README.md', 'INSTALL.md', 'story-format.md', 'claude-md-blocks/ado-runs-list-lag.md'].includes(f)
+  || /^claude-md-blocks\/response-style\/[^/]+\.md$/.test(f) || /^agents\/[^/]+\.md$/.test(f) || (/^skills\/.+\.md$/.test(f) && !/(^|\/)tests?\//.test(f));
 const withoutPlacePath = (l) => l.replace(new RegExp(LEGACY_PATH_RX.source, 'g'), '');
 /** ¿Sale en la copia? `null` si no hay lista blanca con qué decidirlo. */
 function shippedPredicate() {
