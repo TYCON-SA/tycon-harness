@@ -10,7 +10,7 @@
  *   sitio (`https://<app>.<defaultDomain>`) y las dos vueltas que una persona agrega al registro de Entra ID.
  * · `sitio`: una cuenta de almacenamiento PROPIA del sitio con un recurso compartido de Azure Files (con cuota),
  *   agregado al ambiente; la aplicación con la imagen por su huella, mínimo 0 y máximo 1 réplica, 0,5 vCPU y 1 GiB,
- *   el disco en `SITE_DATA_DIR`, las sondas a `/livez` y `/readyz`, los secretos y la identidad del sistema, con la
+ *   el disco en `SITE_DATA_DIR`, las dos sondas a `/livez`, los secretos y la identidad del sistema, con la
  *   ENTRADA INTERNA; el rol «Storage Blob Data Reader» sobre el CONTENEDOR del buzón; el inicio integrado de Microsoft
  *   (un inquilino, el secreto por nombre); y por último la entrada externa. Si un paso falla, la entrada sigue interna.
  * Correr una fase de nuevo saltea lo que ya existe (pregunta antes de crear), salvo la aplicación: si ya existe, se
@@ -314,10 +314,14 @@ function faseSitio(c, run, salida, env, sec) {
             image: c.image,
             resources: { cpu: 0.5, memory: '1Gi' },
             env: [...comunes.map(([name, value]) => ({ name, value })), ...sec.vinieron.map(([v, nombre]) => ({ name: v, secretRef: nombre }))],
-            // la vida contra /livez, nunca /healthz: con el sitio frenado /healthz da 503, y reiniciar no arregla operations.json
+            // las dos contra /livez. La vida nunca contra /healthz: con el sitio frenado da 503, y reiniciar no arregla
+            // operations.json. La de «lista» tampoco contra /readyz ni /healthz: la plataforma no manda tráfico hasta que
+            // pase, y el sitio ya sirve cada pestaña apenas la puede armar (la que espera dice «cargando» y se recarga
+            // sola; la frenada explica por qué). El plazo de 5 s deja contestar a un proceso ocupado; la vida tolera
+            // 2,5 minutos sin respuesta antes de reiniciar
             probes: [
-              { type: 'Liveness', httpGet: { path: '/livez', port: 8080 }, initialDelaySeconds: 10, periodSeconds: 30, failureThreshold: 3 },
-              { type: 'Readiness', httpGet: { path: '/readyz', port: 8080 }, initialDelaySeconds: 5, periodSeconds: 10, failureThreshold: 30 },
+              { type: 'Liveness', httpGet: { path: '/livez', port: 8080 }, initialDelaySeconds: 10, periodSeconds: 30, timeoutSeconds: 5, failureThreshold: 5 },
+              { type: 'Readiness', httpGet: { path: '/livez', port: 8080 }, initialDelaySeconds: 2, periodSeconds: 5, timeoutSeconds: 5, failureThreshold: 3 },
             ],
             volumeMounts: [{ volumeName: 'datos', mountPath: DISCO }],
           }],

@@ -112,10 +112,14 @@ The site does its own sign-in (`SITE_AUTH_PROVIDER`): generic `oidc` (Okta, Keyc
 
 ### The probes
 
-If your platform has probes: **liveness against `/livez`**, never against `/healthz`, and **readiness against
-`/readyz`**, with an initial delay that covers the first read of the sources. `/healthz` gives 503 when the site is
-stopped by a broken configuration: a liveness probe against it would restart the container in a loop, and restarting does
-not fix the configuration.
+If your platform has probes, **both go against `/livez`**, with a response timeout of about 5 seconds.
+
+- **Liveness, never against `/healthz`.** `/healthz` gives 503 when the site is stopped by a broken configuration. A
+  liveness probe against it would restart the container in a loop, and restarting does not fix the configuration.
+- **Readiness, not against `/readyz` either.** The platform sends no traffic until that probe passes, and `/readyz`
+  waits for every source, the whole mailbox included. The site already serves each tab as soon as it can build it: one
+  that is still waiting says «loading» and reloads itself, and a stopped one explains why. `/readyz` is for whoever wants
+  to know whether everything finished loading.
 
 ### The secrets, with the least privilege
 

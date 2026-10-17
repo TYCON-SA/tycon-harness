@@ -108,7 +108,7 @@ test('T8 Aca_EscalaACeroYUnaReplica @story-2.30 @ac-8', () => {
   const s = alta(['--dry-run', '--phase', 'sitio']).out;
   for (const x of ['"minReplicas": 0', '"maxReplicas": 1', '"cpu": 0.5', '"memory": "1Gi"', '"targetPort": 8080', '"allowInsecure": false',
     '"workloadProfileName": "Consumption"', '"mountPath": "/data"', '"storageType": "AzureFile"', '"name": "SITE_DATA_DIR"',
-    '"value": "microsoft"', `"image": "ghcr.io/acme/arnes@sha256:${'a'.repeat(64)}"`, '"path": "/livez"', '"path": "/readyz"',
+    '"value": "microsoft"', `"image": "ghcr.io/acme/arnes@sha256:${'a'.repeat(64)}"`, '"path": "/livez"',
     'storage account create -n acmesitiodatos', 'storage share-rm create --storage-account acmesitiodatos', '--quota 1',
     'containerapp ingress update -g rg-sitio-acme -n sitio-acme --type external --allow-insecure false']) {
     assert.ok(s.includes(x), `falta ${x}`);
@@ -444,7 +444,10 @@ test('T9b Aca_SecretosDeYProblemas_Directos @story-2.30 @ac-5 @ac-8', () => {
 test('T38 Sondas_VidaContraLivez_VariablesPrevistas @story-2.30 @ac-4 @ac-5 @ac-8 @ac-12 @ac-13', () => {
   const s = alta(['--dry-run', '--phase', 'sitio']).out;
   assert.match(s, /"type": "Liveness",\s*"httpGet": \{\s*"path": "\/livez"/);
-  assert.match(s, /"type": "Readiness",\s*"httpGet": \{\s*"path": "\/readyz"/);
+  // la de «lista» también contra /livez: contra /readyz la plataforma no manda tráfico hasta tener el buzón entero
+  assert.match(s, /"type": "Readiness",\s*"httpGet": \{\s*"path": "\/livez"/);
+  assert.doesNotMatch(s, /"path": "\/(readyz|healthz)"/, 'ninguna sonda espera todo ni se cae con el sitio frenado');
+  for (const tipo of ['Liveness', 'Readiness']) assert.match(s, new RegExp(`"type": "${tipo}"[^}]*\\}[^}]*"timeoutSeconds": 5`), `${tipo}: plazo de 5 s`);
   assert.doesNotMatch(s, /"type": "Liveness",\s*"httpGet": \{\s*"path": "\/healthz"/, 'nunca la vida contra /healthz');
   const render = fs.readFileSync(path.join(DEPLOY, 'render.yaml'), 'utf8');
   assert.doesNotMatch(render, /healthCheckPath: \/healthz/);
