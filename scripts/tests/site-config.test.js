@@ -789,3 +789,222 @@ test('T28c Umbrales_SoloLectura_ControlesApagados — una sección «sólo para 
   assert.ok(editable.umb.filter((n) => n.tag !== 'button').every((n) => !n.attrs.disabled), 'sin sólo lectura, los campos se editan');
   assert.match(fs.readFileSync(path.join(ROOT, 'scripts', 'site', 'static', 'site.css'), 'utf8'), /\.form-block select:disabled[^{]*\{[^}]*opacity/, 'y se ven apagados');
 });
+
+// ── tanda C: dónde corren las suites al mergear (7.28) y los modelos de cada trabajo (7.29) ──────────────────────
+const GH = (repo) => ({ platform: 'github', org: 'acme', repo });
+const TR_BASE = { version: 1, public: GH('harness'), profile: GH('profile'), operations: GH('ops') };
+const PERFIL_ENV = { SITE_PROFILE_REPO: 'https://git.acme.example/perfil.git', SITE_PROFILE_TOKEN: 't' };
+const capa = (v) => ({ requires: { harness: `>= ${v}` } });
+/** La pestaña con el perfil: `team-repos.json` y `team-layer.json` dados; `fn` recibe lo mismo que conPestana más `seccion(id)`. */
+async function conPerfil({ repos = TR_BASE, layer = capa(ORG.MODELS_SINCE), lectores = {} } = {}, fn) {
+  const ops = clon({ 'operations.json': opsBase() });
+  const perfil = clon({ 'team-repos.json': repos, 'team-layer.json': layer });
+  await conPestana({ fuentes: fuentesCon({ ops, perfil }), env: PERFIL_ENV, opciones: { lectores } }, async (ctx) => {
+    const lead = await ctx.entrar(LEAD); const tok = await ctx.token(lead);
+    const estado = async () => (await ctx.h.pedir('/api/config', { cookie: lead })).json;
+    const seccion = async (id) => (await estado()).secciones.find((s) => s.id === id);
+    const revisar = async (id, borrador) => (await ctx.escribir('/api/config/revisar', lead, tok, { seccion: id, borrador })).json;
+    const proponer = async (id, texto) => { const s = await seccion(id); return (await ctx.escribir('/api/config/proponer', lead, tok, { seccion: id, texto, oid: s.oid })).json; };
+    await fn({ ...ctx, lead, tok, estado, seccion, revisar, proponer });
+  });
+}
+// sin la credencial de escritura del perfil, «Proponer» llega hasta ahí sólo si el archivo pasó el lector y el portón
+const PASO_EL_PORTON = /sin identidad de escritura/;
+const SUITES_OK = { merge_suites: { default: 'automatico', repos: [{ repo: GH('app'), rule: 'confiar-en-el-servidor', full_tests_pipeline: 'pruebas-completas' }] } };
+
+test('7.28-T19 MergeSuites_SectionSavedOnlyThroughReader @story-7.28 @ac-12 — la sección en la pestaña; se propone sólo lo que acepta el lector', async () => {
+  const s = ORG.seccionPorId('suites');
+  assert.ok(s, 'hay una sección de las suites al mergear');
+  assert.deepStrictEqual([s.archivo, s.repo, s.lector, s.claves], ['team-repos.json', 'perfil', 'team-repos.js', ['merge_suites']]);
+  await conPerfil({ repos: { ...TR_BASE, ...SUITES_OK } }, async ({ seccion, revisar, proponer }) => {
+    const v = await seccion('suites');
+    assert.strictEqual(v.estado, 'cargado', JSON.stringify(v));
+    assert.deepStrictEqual(v.borrador, SUITES_OK, 'la regla y las filas del archivo');
+    const nuevo = { merge_suites: { default: 'siempre-en-la-maquina', repos: SUITES_OK.merge_suites.repos } };
+    const ok = await revisar('suites', nuevo);
+    assert.strictEqual(ok.ok, true, JSON.stringify(ok.problems));
+    assert.deepStrictEqual(JSON.parse(ok.texto), { ...TR_BASE, ...nuevo }, 'el resto del archivo igual');
+    assert.match((await proponer('suites', ok.texto)).message, PASO_EL_PORTON);
+    const malo = await revisar('suites', { merge_suites: { repos: [{ repo: GH('app'), rule: 'inventada' }] } });
+    assert.strictEqual(malo.ok, false);
+    assert.deepStrictEqual(malo.problems.map((p) => p.path), ['merge_suites.repos.0.rule']);
+    assert.strictEqual(malo.texto, null);
+    // y por «Proponer» directo, sin pasar por «Revisar»: el lector lo rechaza igual
+    const directo = await proponer('suites', ORG.formatJson({ ...TR_BASE, merge_suites: { repos: [{ repo: GH('app'), rule: 'inventada' }] } }));
+    assert.strictEqual(directo.ok, false); assert.match(directo.message, /merge_suites\.repos\.0\.rule/);
+  });
+  // un lector de antes de la 7.28 no conoce la clave: la sección no edita y lo dice
+  const viejo = { ...TR, KEYS: TR.KEYS.filter((k) => k !== 'merge_suites' && k !== 'models') };
+  await conPerfil({ lectores: { 'team-repos.js': viejo } }, async ({ seccion }) => {
+    for (const id of ['suites', 'modelos']) {
+      const v = await seccion(id);
+      assert.strictEqual(v.estado, 'no_reader');
+      assert.match(v.motivo, /todavía no sabe leer team-repos\.json → (merge_suites|models)/);
+    }
+    assert.strictEqual((await seccion('repos')).estado, 'cargado', 'la de los repos sigue editable');
+  });
+});
+
+test('7.28-T20 MergeSuites_ProposalGatedBySince @story-7.28 @ac-12 — sin la versión que lee merge_suites, no se propone y se dice qué subir', async () => {
+  assert.ok(ORG.versionAtLeast(ORG.MERGE_SUITES_SINCE, ORG.TEAM_REPOS_SINCE) && ORG.MERGE_SUITES_SINCE !== ORG.TEAM_REPOS_SINCE);
+  const conSuites = { ...TR_BASE, ...SUITES_OK };
+  const bajo = ORG.profileGateProblem(JSON.stringify(capa(ORG.TEAM_REPOS_SINCE)), conSuites);
+  assert.match(bajo, /todavía no se puede proponer/);
+  assert.match(bajo, /merge_suites/);
+  assert.ok(bajo.includes(`>= ${ORG.MERGE_SUITES_SINCE}`), bajo);
+  assert.strictEqual(ORG.profileGateProblem(JSON.stringify(capa(ORG.MERGE_SUITES_SINCE)), conSuites), null);
+  assert.strictEqual(ORG.profileGateProblem(JSON.stringify(capa(ORG.TEAM_REPOS_SINCE)), TR_BASE), null, 'sin merge_suites, el portón de siempre');
+  assert.strictEqual(ORG.profileGateProblem(JSON.stringify(capa(ORG.TEAM_REPOS_SINCE))), null, 'sin archivo, como antes');
+  // por la pestaña: el mismo archivo, con cada versión del perfil
+  for (const [v, espera] of [[ORG.TEAM_REPOS_SINCE, /todavía no se puede proponer.*merge_suites/], [ORG.MERGE_SUITES_SINCE, PASO_EL_PORTON]]) {
+    await conPerfil({ layer: capa(v) }, async ({ revisar, proponer }) => {
+      const r = await revisar('suites', SUITES_OK);
+      assert.strictEqual(r.ok, true, JSON.stringify(r.problems));
+      assert.match((await proponer('suites', r.texto)).message, espera);
+    });
+  }
+  await conPerfil({ layer: capa(ORG.TEAM_REPOS_SINCE) }, async ({ revisar, proponer }) => {
+    const r = await revisar('repos', { ...TR_BASE, maintainers: GH('maint') });
+    assert.match((await proponer('repos', r.texto)).message, PASO_EL_PORTON, 'sin merge_suites, los repos se proponen con la versión de siempre');
+  });
+  // el portón mira el archivo entero que se propone: editar los repos con merge_suites ya en el archivo también lo pide
+  await conPerfil({ repos: { ...TR_BASE, ...SUITES_OK }, layer: capa(ORG.TEAM_REPOS_SINCE) }, async ({ revisar, proponer }) => {
+    const r = await revisar('repos', { ...TR_BASE, ...SUITES_OK, maintainers: GH('maint') });
+    assert.match((await proponer('repos', r.texto)).message, /todavía no se puede proponer.*merge_suites/);
+  });
+});
+
+test('7.29-T22 Config_Modelos_SeccionPorLosDosTransportes @story-7.29 @ac-5 — «hoy: …» de los valores del árbol; se propone sólo lo válido', async () => {
+  const s = ORG.seccionPorId('modelos');
+  assert.ok(s, 'hay una sección de modelos');
+  assert.deepStrictEqual([s.archivo, s.repo, s.lector, s.claves], ['team-repos.json', 'perfil', 'team-repos.js', ['models']]);
+  const MOD = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'models.js'));
+  assert.deepStrictEqual(ORG.modelosDeHoy(ROOT), MOD.DEFAULTS, 'los de hoy salen de models.js del árbol');
+  assert.strictEqual(ORG.modelosDeHoy(tmp('site-config-sin-skill-')), null, 'un árbol sin el skill: no se inventan');
+  assert.match(ORG.motivoDeHoy(tmp('site-config-sin-skill-')), /no trae los skills/);
+  // un models.js que no carga no se confunde con uno que falta: el motivo lo dice
+  const roto = tmp('site-config-models-roto-');
+  fs.mkdirSync(path.join(roto, 'skills', 'x', 'scripts', 'lib'), { recursive: true });
+  fs.writeFileSync(path.join(roto, 'skills', 'x', 'scripts', 'lib', 'models.js'), 'throw new Error("roto a propósito");\n');
+  assert.strictEqual(ORG.modelosDeHoy(roto), null);
+  assert.match(ORG.motivoDeHoy(roto), /no pude cargar skills\/x\/scripts\/lib\/models\.js \(roto a propósito\)/);
+  // la pantalla dibuja «sin declarar (hoy: …)» con los de hoy que le da la vista (pantallaFalsa está más abajo)
+  const p = await pantallaFalsa([{ id: 'modelos', titulo: 'm', repo: 'perfil', estado: 'cargado', borrador: {}, problems: [], avisos: [], extras: { hoy: MOD.DEFAULTS } }]);
+  const opciones = p.todo(p.sec('modelos')).filter((n) => n.tag === 'option').map((n) => n.textContent);
+  assert.ok(opciones.includes(`sin declarar (hoy: ${MOD.DEFAULTS.reviewers})`) && opciones.includes(`sin declarar (hoy: ${MOD.DEFAULTS.session.heavy})`), opciones.join(' · '));
+  await conPerfil({}, async ({ seccion, revisar, proponer }) => {
+    const v = await seccion('modelos');
+    assert.strictEqual(v.estado, 'cargado', JSON.stringify(v));
+    assert.deepStrictEqual(v.borrador, {}, 'sin models en el archivo');
+    assert.strictEqual(v.extras.hoy.reviewers, 'sonnet');
+    const ok = await revisar('modelos', { models: { reviewers: 'opus', helpers: 'haiku' } });
+    assert.strictEqual(ok.ok, true, JSON.stringify(ok.problems));
+    assert.match((await proponer('modelos', ok.texto)).message, PASO_EL_PORTON);
+    const malo = await revisar('modelos', { models: { reviewers: 'Opus' } });
+    assert.strictEqual(malo.ok, false);
+    assert.deepStrictEqual(malo.problems.map((p) => p.path), ['models.reviewers']);
+  });
+});
+
+test('7.29-T23 Config_Modelos_PortonDeVersion @story-7.29 @ac-5 — con varias claves nuevas, la versión mayor', async () => {
+  assert.ok(ORG.versionAtLeast(ORG.MODELS_SINCE, ORG.MERGE_SUITES_SINCE) && ORG.MODELS_SINCE !== ORG.MERGE_SUITES_SINCE);
+  const conModelos = { ...TR_BASE, models: { reviewers: 'opus' } };
+  const g = (v, doc) => ORG.profileGateProblem(JSON.stringify(capa(v)), doc);
+  const bajo = g(ORG.TEAM_REPOS_SINCE, conModelos);
+  assert.match(bajo, /todavía no se puede proponer/); assert.match(bajo, /models/); assert.ok(bajo.includes(`>= ${ORG.MODELS_SINCE}`), bajo);
+  assert.strictEqual(g(ORG.MODELS_SINCE, conModelos), null);
+  assert.strictEqual(g(ORG.TEAM_REPOS_SINCE, TR_BASE), null);
+  const ambas = g(ORG.MERGE_SUITES_SINCE, { ...conModelos, ...SUITES_OK });
+  assert.ok(ambas && ambas.includes(`>= ${ORG.MODELS_SINCE}`), `exige la mayor: ${ambas}`);
+  assert.strictEqual(g(ORG.MODELS_SINCE, { ...conModelos, ...SUITES_OK }), null);
+  await conPerfil({ layer: capa(ORG.MERGE_SUITES_SINCE) }, async ({ revisar, proponer }) => {
+    const r = await revisar('modelos', { models: { reviewers: 'opus' } });
+    assert.match((await proponer('modelos', r.texto)).message, new RegExp(`todavía no se puede proponer.*>= ${ORG.MODELS_SINCE.replace(/\./g, '\\.')}`));
+  });
+});
+
+test('T37 Modelos_ProblemaDeSeccion_NoSePropone @story-2.29 @ac-4 — el lector da ok con un modelo mal escrito; la pestaña no lo deja pasar', async () => {
+  const roto = { ...TR_BASE, models: { reviewers: 'gpt' } };
+  assert.strictEqual(TR.parse(ORG.formatJson(roto)).ok, true, 'el lector lo tolera (decisión 13 de la 7.29)');
+  const r = ORG.revisar({ seccion: 'modelos', texto: ORG.formatJson(TR_BASE), borrador: { models: { reviewers: 'gpt' } }, lectores: { 'team-repos.js': TR } });
+  assert.strictEqual(r.ok, false); assert.deepStrictEqual(r.problems.map((p) => p.path), ['models.reviewers']); assert.strictEqual(r.texto, null);
+  await conPerfil({ repos: roto }, async ({ seccion, revisar, proponer }) => {
+    const v = await seccion('modelos');
+    assert.deepStrictEqual(v.problems.map((p) => p.path), ['models.reviewers'], 'la vista muestra el problema del archivo');
+    const directo = await proponer('modelos', ORG.formatJson({ ...roto, models: { reviewers: 'gpt', helpers: 'haiku' } }));
+    assert.strictEqual(directo.ok, false); assert.match(directo.message, /models\.reviewers/);
+    // la sección de los repos no toca models: con models roto en el archivo, se propone igual
+    const rep = await revisar('repos', { ...roto, maintainers: GH('maint') });
+    assert.strictEqual(rep.ok, true, JSON.stringify(rep.problems));
+    assert.match((await proponer('repos', rep.texto)).message, PASO_EL_PORTON);
+  });
+});
+
+// ── tanda C, pase adversarial: lo que la pantalla de las dos secciones nuevas tiene que aguantar ─────────────────
+/** La pantalla real sobre un documento mínimo con eventos: `click(texto, seccion)` aprieta un botón; `pedidos` anota cada fetch. */
+async function pantallaFalsa(secciones) {
+  const creados = [];
+  const nodo = (tag) => { const n = { tag, hijos: [], textContent: '', attrs: {}, on: {}, setAttribute(k, v) { n.attrs[k] = v; }, appendChild(c) { n.hijos.push(c); return c; }, addEventListener(e, f) { n.on[e] = f; }, replaceChildren(...cs) { n.hijos = cs; } }; creados.push(n); return n; };
+  const app = nodo('div');
+  const document = { querySelector: () => null, getElementById: (id) => (id === 'config-app' ? app : null), createElement: (t) => nodo(t) };
+  const pedidos = [];
+  const respuesta = { ok: true, secciones, proponer: {}, versiones: [], productos: [] };
+  const fetch = (ruta, o) => { pedidos.push({ ruta, cuerpo: o && o.body ? JSON.parse(o.body) : null }); return Promise.resolve({ status: 200, json: () => Promise.resolve(ruta === '/api/config' ? respuesta : { ok: false, problems: [] }) }); };
+  let error = null;
+  try { new Function('document', 'fetch', ORG.pantalla())(document, fetch); } catch (e) { error = e; }
+  const esperar = async () => { for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r)); };
+  await esperar();
+  const todo = (n) => { const out = []; const walk = (x) => { out.push(x); (x.hijos || []).forEach(walk); }; walk(n); return out; };
+  const sec = (id) => creados.filter((n) => n.attrs.id === `seccion-${id}`).pop();
+  const textoDe = (id) => (sec(id) ? todo(sec(id)).map((n) => n.textContent).join(' | ') : '');
+  const click = async (texto, id) => { const b = todo(sec(id)).find((n) => n.tag === 'button' && n.textContent === texto); assert.ok(b, `hay «${texto}» en ${id}`); b.on.click({}); await esperar(); };
+  return { error, sec, textoDe, todo, click, pedidos, app };
+}
+const seccionPerfil = (id, borrador, problems = []) => ({ id, titulo: id, repo: 'perfil', estado: 'cargado', soloLectura: false, motivo: null, borrador, problems, avisos: [], extras: id === 'modelos' ? { hoy: { reviewers: 'sonnet' } } : undefined });
+
+test('T41 Pantalla_SuitesYModelos_TodoProblemaSeVe_YSeEditaComoTexto @story-2.29 @ac-4 (tanda C, pase adversarial) — ningún problema del lector queda sin dibujar', async () => {
+  const pm = [['models.ceiling', 'un techo sin techo'], ['models.foo', 'clave desconocida foo'], ['models.session.huge', 'subclave huge'], ['models.adversarial', 'adversarial no es objeto']];
+  const ps = [['merge_suites.foo', 'clave desconocida ms'], ['merge_suites.repos.0.extra', 'clave extra'], ['merge_suites.repos.1.repo', 'repo repetido']];
+  const p = await pantallaFalsa([
+    seccionPerfil('modelos', { models: { ceiling: 'opus', foo: 'x', session: { huge: 'opus' }, adversarial: 'opus' } }, pm.map(([path, message]) => ({ path, message }))),
+    seccionPerfil('suites', { merge_suites: { foo: 1, repos: [{ repo: GH('x'), rule: 'automatico', extra: 1 }, { repo: GH('x'), rule: 'automatico' }] } }, ps.map(([path, message]) => ({ path, message }))),
+  ]);
+  assert.strictEqual(p.error, null);
+  for (const [, m] of pm) assert.ok(p.textoDe('modelos').includes(m), `modelos muestra «${m}»`);
+  for (const [, m] of ps) assert.ok(p.textoDe('suites').includes(m), `suites muestra «${m}»`);
+  for (const id of ['modelos', 'suites']) assert.ok(p.todo(p.sec(id)).some((n) => n.tag === 'textarea'), `${id} se puede editar como texto (para sacar una clave que no tiene campo)`);
+});
+
+test('T42 Pantalla_SuitesMalFormado_NoCaeLaPestana @story-2.29 @ac-4 (tanda C, pase adversarial) — un merge_suites con otra forma se edita como texto', async () => {
+  for (const ms of ['x', { repos: 'no' }, { repos: [null] }, null]) {
+    const p = await pantallaFalsa([seccionPerfil('suites', { merge_suites: ms }, [{ path: 'merge_suites', message: 'forma rara' }]), seccionPerfil('modelos', { models: 'opus' }, [{ path: 'models', message: 'no es objeto' }])]);
+    assert.strictEqual(p.error, null, JSON.stringify(ms));
+    assert.ok(p.sec('suites') && p.sec('modelos'), `las dos secciones se dibujan con ${JSON.stringify(ms)}`);
+    assert.ok(p.todo(p.sec('suites')).some((n) => n.tag === 'textarea'), 'como texto');
+    assert.ok(p.textoDe('suites').includes('forma rara') && p.textoDe('modelos').includes('no es objeto'));
+  }
+});
+
+test('T43 Pantalla_SuitesVacioDelArchivo_NoSeBorra @story-2.29 @ac-4 (tanda C, pase adversarial) — {} ya escrito no es lo mismo que la clave ausente', async () => {
+  let p = await pantallaFalsa([seccionPerfil('suites', { merge_suites: {} })]);
+  await p.click('Revisar cambios', 'suites');
+  const ultimo = p.pedidos.filter((x) => x.ruta === '/api/config/revisar').pop();
+  assert.deepStrictEqual(ultimo.cuerpo.borrador, { merge_suites: {} }, 'el {} del archivo viaja tal cual');
+  p = await pantallaFalsa([seccionPerfil('suites', {}), seccionPerfil('modelos', {})]);
+  await p.click('Revisar cambios', 'suites');
+  await p.click('Revisar cambios', 'modelos');
+  const rev = p.pedidos.filter((x) => x.ruta === '/api/config/revisar');
+  assert.deepStrictEqual(rev.map((x) => x.cuerpo.borrador), [{}, {}], 'sin la clave en el archivo, abrir la sección no la crea');
+});
+
+test('T44 Pedido_UnoPorArchivo @story-2.29 @ac-16 (tanda C, pase adversarial) — las secciones de un mismo archivo comparten el identificador de la rama', () => {
+  const porArchivo = {};
+  for (const s of ORG.SECCIONES) (porArchivo[s.archivo] = porArchivo[s.archivo] || new Set()).add(s.idCorto);
+  for (const [archivo, ids] of Object.entries(porArchivo)) assert.strictEqual(ids.size, 1, `${archivo}: ${[...ids].join(', ')}`);
+});
+
+test('T45 Revisar_Repos_ReordenarModelsNoEsCambio @story-2.29 @ac-4 (tanda C, pase adversarial) — el orden de las claves no cuenta', () => {
+  const actual = { ...TR_BASE, models: { reviewers: 'opux', helpers: 'haiku' } };
+  const r = ORG.revisar({ seccion: 'repos', texto: ORG.formatJson(actual), borrador: { ...TR_BASE, maintainers: GH('m'), models: { helpers: 'haiku', reviewers: 'opux' } }, lectores: { 'team-repos.js': TR } });
+  assert.strictEqual(r.ok, true, JSON.stringify(r.problems));
+});

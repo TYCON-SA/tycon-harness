@@ -62,12 +62,30 @@ for D in "${DATA_DIRS[@]}"; do
   rsync -a --delete "${O}/${D}/" "${S}/${D}/"
   ENTRIES+=("${D}")
 done
+APPLIED=()
 for F in "${CONFIG_FILES[@]}"; do
   [ -f "${O}/${F}" ] || continue
   mkdir -p "$(dirname "${S}/${F}")"
   cp -p "${O}/${F}" "${S}/${F}"
   ENTRIES+=("${F}")
+  OID="$(git -C "${O}" rev-parse "HEAD:${F}")" || red "no pude leer el identificador de ${F} en el repo de operaciones"
+  APPLIED+=("${F}" "${OID}")
 done
+# la marca: qué configuración aplicó esta corrida, con el identificador de cada archivo en operaciones, como la deja
+# ops-data.yml en Azure (story 2.29, decisión 12; tanda C). Sin ella la pestaña Configuración del sitio muestra Umbrales
+# sólo para mirar. Viaja en el commit local de abajo.
+mkdir -p "${S}/.dashboard"
+node -e '
+  const [commit, ...pairs] = process.argv.slice(1);
+  const files = {};
+  for (let i = 0; i < pairs.length; i += 2) files[pairs[i]] = pairs[i + 1];
+  process.stdout.write(JSON.stringify({ files, ops_commit: commit, generated_at: new Date().toISOString() }, null, 2) + "\n");
+' "$(git -C "${O}" rev-parse --short HEAD)" ${APPLIED[@]+"${APPLIED[@]}"} > "${S}/.dashboard/applied-config.json" || red "no pude dejar la marca de la configuración aplicada"
+ENTRIES+=(.dashboard/applied-config.json)
+# y una copia en la carpeta temporal del trabajo: el tablero trae .dashboard de main antes de generar, lo que pisa la marca;
+# la devuelve de acá justo antes de guardarla (team-dashboard.yml)
+[ -n "${RUNNER_TEMP:-}" ] || red "falta RUNNER_TEMP: sin la copia de la marca, el tablero no la podría guardar en operaciones"
+cp "${S}/.dashboard/applied-config.json" "${RUNNER_TEMP}/applied-config.json" || red "no pude dejar la copia de la marca en la carpeta temporal"
 IGNORED="$(cd "${O}" && git ls-files | grep -Ev '^(\.dashboard/|inbox/|artifacts/|\.github/|pipelines/|README\.md$|\.gitignore$)' | grep -vxF -f <(printf '%s\n' "${CONFIG_FILES[@]}") | head -n 20 || true)"
 [ -z "${IGNORED}" ] || echo "::warning::El repo de operaciones trae archivos que este armado no lee (no se ponen encima del arnés): $(printf '%s' "${IGNORED}" | tr '\n' ' ')"
 echo "del repo de operaciones: ${ENTRIES[*]:-(nada todavía)}"

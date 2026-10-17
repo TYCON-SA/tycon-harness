@@ -109,9 +109,8 @@ repo (`SITE_OPERATIONS_WRITE_TOKEN`: `contents: write`, `pull_requests: write`).
 `main` no tiene una protección o una regla que pida revisión. Los umbrales del tablero
 (`scripts/nightly/dashboard/sources.json`) se editan en el sitio recién cuando la noche dejó la marca
 `.dashboard/applied-config.json` con ese archivo adentro (qué configuración aplicó de verdad, con su identificador de
-objeto; sólo al final de una noche verde). Hoy esa marca la deja la plantilla de Azure DevOps; `prepare-tree.sh` de
-estos workflows todavía no, así que en una organización en GitHub la sección Umbrales queda en sólo lectura («tu
-nocturno todavía no lee este archivo») hasta que la deje.
+objeto; sólo al final de una noche verde). En estos workflows la deja `prepare-tree.sh`, igual que la plantilla de
+Azure DevOps.
 
 ### Quién es quién: la clave `people` (opcional)
 

@@ -125,12 +125,13 @@ function opsDataScript(vars) {
 }
 
 /** El agente: el arnés en <build>/s y el repo de operaciones en <build>/ops, con su remoto. */
-function agent(opsFiles) {
+function agent(opsFiles, { remote = null } = {}) {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'ops-pipelines-'));
   dirs.push(base);
   const build = path.join(base, 'build');
   const s = path.join(build, 's');
-  const opsRemote = path.join(base, 'operations.git');
+  const opsRemote = remote || path.join(base, 'operations.git');
+  fs.mkdirSync(path.join(build, 'tmp'), { recursive: true });
   fs.mkdirSync(s, { recursive: true });
   git(s, ['init', '--quiet', '-b', 'main']);
   write(s, { 'scripts/a.js': 'module.exports = 1;\n', 'scripts/nightly/dashboard/sources.json': '{"del":"arnes"}\n' });
@@ -138,20 +139,22 @@ function agent(opsFiles) {
   fs.copyFileSync(path.join(ROOT, 'scripts', 'ci', 'harness-tree.js'), path.join(s, 'scripts', 'ci', 'harness-tree.js'));
   git(s, ['add', '-A']); git(s, ['commit', '--quiet', '-m', 'el arnés']);
   git(s, ['remote', 'add', 'origin', 'https://example.com/acme/harness.git']);
-  // el repo de operaciones: un remoto desnudo con main, y su checkout en <build>/ops
-  fs.mkdirSync(opsRemote);
-  git(opsRemote, ['init', '--quiet', '--bare']);
-  git(opsRemote, ['symbolic-ref', 'HEAD', 'refs/heads/main']);
-  const seed = path.join(base, 'seed');
-  git(base, ['clone', '--quiet', opsRemote, seed]);
-  write(seed, opsFiles);
-  git(seed, ['add', '-A', '-f']); git(seed, ['commit', '--quiet', '-m', 'operaciones']); git(seed, ['branch', '-M', 'main']);
-  git(seed, ['push', '--quiet', 'origin', 'main']);
+  // el repo de operaciones: un remoto desnudo con main, y su checkout en <build>/ops (con `remote`, el de otra corrida)
+  if (!remote) {
+    fs.mkdirSync(opsRemote);
+    git(opsRemote, ['init', '--quiet', '--bare']);
+    git(opsRemote, ['symbolic-ref', 'HEAD', 'refs/heads/main']);
+    const seed = path.join(base, 'seed');
+    git(base, ['clone', '--quiet', opsRemote, seed]);
+    write(seed, opsFiles);
+    git(seed, ['add', '-A', '-f']); git(seed, ['commit', '--quiet', '-m', 'operaciones']); git(seed, ['branch', '-M', 'main']);
+    git(seed, ['push', '--quiet', 'origin', 'main']);
+  }
   git(base, ['clone', '--quiet', opsRemote, path.join(build, 'ops')]);
   return { base, build, s, opsRemote };
 }
 function runOpsData(w) {
-  const body = opsDataScript({ 'Build.SourcesDirectory': w.s, 'Agent.BuildDirectory': w.build, 'Build.Repository.Uri': w.opsRemote });
+  const body = opsDataScript({ 'Build.SourcesDirectory': w.s, 'Agent.BuildDirectory': w.build, 'Build.Repository.Uri': w.opsRemote, 'Agent.TempDirectory': path.join(w.build, 'tmp') });
   const r = spawnSync('bash', ['-c', body], { env: cleanEnv({ SYSTEM_ACCESSTOKEN: 'token-de-prueba' }), encoding: 'utf8' });
   return { code: r.status, out: `${r.stdout}${r.stderr}` };
 }
@@ -491,7 +494,7 @@ test('T32 TeamDashboard_ProductoresDelSitio', () => {
   assert.ok(traer >= 0 && prod > traer && generar > prod, 'traer → productores → generar');
   assert.match(y, /open-prs\.js --today "\$DAY" --org "\$\(System\.CollectionUri\)" --json "\.dashboard\/open-prs\/open-prs-\$DAY\.json"/);
   assert.match(y, /assigned-items\.js --today "\$DAY" --org "\$\(System\.CollectionUri\)" --out \.dashboard\/assigned/);
-  assert.match(y, /-- artifacts\/tablero-del-arnes\.html \.dashboard\/open-prs \.dashboard\/assigned \.dashboard\/deployments\n/, 'se guardan con la página');
+  assert.match(y, /-- artifacts\/tablero-del-arnes\.html \.dashboard\/open-prs \.dashboard\/assigned \.dashboard\/deployments \.dashboard\/applied-config\.json\n/, 'se guardan con la página (la marca de la configuración aplicada, tanda C de la 2.29)');
   assert.match(y, /push-nightly-data\.js sync -- \.dashboard /, 'el sync trae .dashboard: guardar sus carpetas no sale 2');
 });
 
@@ -506,4 +509,49 @@ test('T21 TeamDashboard_PasoDeDesplieguesAntesDelTablero (2.22)', () => {
   assert.match(paso, /deployments\.js --today "\$\(date -u \+%Y-%m-%d\)" --org "\$\(System\.CollectionUri\)" --out \.dashboard\/deployments/);
   assert.match(paso, /continueOnError: true/);
   assert.match(paso, /AZURE_DEVOPS_EXT_PAT: \$\(System\.AccessToken\)/);
+});
+
+// tanda C de la 2.29 (AC 24): la marca tiene que llegar a main de operaciones, que es lo que lee el sitio. El paso del
+// tablero que trae los datos de main la pisa; por eso ops-data.yml deja una copia en la carpeta temporal del trabajo, y el
+// guardado del tablero la devuelve y la nombra. Se corre dos veces el mismo día: la segunda no puede chocar.
+test('T40 TableroGuarda_LaMarcaLlegaAOperaciones_DosVecesElMismoDia @story-2.29 @ac-24 (tanda C): ops-data, el sync, la devolución y el guardado reales', () => {
+  const PUSH = path.join(ROOT, 'scripts', 'ci', 'push-nightly-data.js');
+  // los dos pipelines del tablero devuelven la marca antes de guardar y la nombran en lo que guardan
+  const pasos = [];
+  for (const [f, temp] of [['team-dashboard.yml', '$(Agent.TempDirectory)'], ['github/team-dashboard.yml', '${RUNNER_TEMP}']]) {
+    const y = read(f);
+    const i = y.indexOf('push-nightly-data.js save');
+    assert.ok(i > 0, `${f}: guarda`);
+    const antes = y.slice(y.lastIndexOf('run: |', i) > y.lastIndexOf('- script: |', i) ? y.lastIndexOf('run: |', i) : y.lastIndexOf('- script: |', i), i);
+    const devolver = antes.split('\n').map((l) => l.trim()).find((l) => / cp |^cp /.test(` ${l}`) && l.includes('applied-config.json'));
+    assert.ok(devolver && devolver.includes(`${temp}/applied-config.json`), `${f}: devuelve la marca de la carpeta temporal en el mismo paso, antes de guardar`);
+    const lista = y.slice(i, y.indexOf('\n', y.indexOf(' -- ', i)));
+    assert.match(lista, / -- [^\n]*\.dashboard\/applied-config\.json/, `${f}: la marca está en lo que se guarda`);
+    pasos.push(devolver);
+  }
+  const corrida = (remote, n) => {
+    const w = agent({ 'operations.json': '{"version":1,"owners":{"default":"lider@acme.example"}}\n', 'scripts/nightly/dashboard/sources.json': '{"thresholds":{}}\n' }, { remote });
+    const r = runOpsData(w);
+    assert.strictEqual(r.code, 0, r.out);
+    const tmp = path.join(w.build, 'tmp');
+    assert.strictEqual(fs.readFileSync(path.join(tmp, 'applied-config.json'), 'utf8'), fs.readFileSync(path.join(w.s, APPLIED), 'utf8'), 'la copia de la carpeta temporal es la marca');
+    const tree = (r.out.match(/##vso\[task\.setvariable variable=HARNESS_TREE\](\S+)/) || [])[1];
+    const env = cleanEnv({ HARNESS_TREE: tree, BUILD_BUILDID: `corrida-${n}` });
+    const sync = spawnSync(process.execPath, [PUSH, 'sync', '--', '.dashboard', 'artifacts/tablero-del-arnes.html'], { cwd: w.s, env, encoding: 'utf8' });
+    assert.strictEqual(sync.status, 0, `${sync.stdout}${sync.stderr}`);
+    // el tablero escribe su página; después, el paso de guardar devuelve la marca: la línea real de Azure en la primera
+    // corrida y la de GitHub (con RUNNER_TEMP) en la segunda, así las dos se ejecutan de verdad
+    write(w.s, { 'artifacts/tablero-del-arnes.html': `<p>corrida ${n}</p>\n` });
+    const linea = n === 1 ? pasos[0].split('$(Agent.TempDirectory)').join(tmp) : pasos[1];
+    const dev = spawnSync('bash', ['-c', `set -eu; ${linea}`], { cwd: w.s, env: { ...env, RUNNER_TEMP: tmp }, encoding: 'utf8' });
+    assert.strictEqual(dev.status, 0, dev.stderr);
+    const save = spawnSync(process.execPath, [PUSH, 'save', '--wait-ms', '0', '--message', `tablero ${n}`, '--', 'artifacts/tablero-del-arnes.html', '.dashboard/applied-config.json'], { cwd: w.s, env, encoding: 'utf8' });
+    assert.strictEqual(save.status, 0, `corrida ${n}: ${save.stdout}${save.stderr}`);
+    const enMain = JSON.parse(git(w.opsRemote, ['show', `main:${APPLIED}`]));
+    assert.deepStrictEqual(enMain, JSON.parse(fs.readFileSync(path.join(tmp, 'applied-config.json'), 'utf8')), `corrida ${n}: main de operaciones tiene la marca de esta corrida`);
+    assert.ok(enMain.files['scripts/nightly/dashboard/sources.json'], 'nombra el sources.json, que es lo que habilita Umbrales');
+    return w;
+  };
+  const w1 = corrida(null, 1);
+  corrida(w1.opsRemote, 2);
 });
