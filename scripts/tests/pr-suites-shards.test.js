@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * pr-suites-shards.test.js — la validación de los pedidos de merge (pipelines/azure-pipelines-pr.yml) corre sus suites
+ * pr-suites-shards.test.js — la validación de los pedidos de merge (pipelines/azure-pipelines-maintainers-pr.yml) corre sus suites
  * en trabajos paralelos: lo que dice el YAML (2026-10-04).
  *
  * Hasta ese día era UN job en serie: lint, banco, ~217 suites (cada roja reintentada una vez) y el veredicto, con un tope
@@ -22,7 +22,7 @@
  * Correr: node --test scripts/tests/pr-suites-shards.test.js
  */
 
-const test = require('node:test');
+const nodeTest = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
 const os = require('os');
@@ -31,7 +31,7 @@ const { spawnSync } = require('child_process');
 const { findGitBash } = require('../lib/git-bash.js');
 
 const ROOT = path.resolve(__dirname, '..', '..');
-const YAML = path.join(ROOT, 'pipelines/azure-pipelines-pr.yml');
+const YAML = path.join(ROOT, 'pipelines/azure-pipelines-maintainers-pr.yml');
 const PLAN_STEP = 'Qué suites corren';
 const RUN_STEP = 'Correr las suites de este trabajo';
 const JOIN_STEP = 'Juntar lo que midió cada trabajo';
@@ -44,16 +44,24 @@ const HAS_CODE = "eq(dependencies.Validar.outputs['change.hayCodigo'], 'si')";
 
 // Los pasos que corren las suites viven en una plantilla que usan dos trabajos, el de suites y el del banco (story 8.22,
 // tramo I). Los jobs se leen del pipeline; un paso se busca en los dos archivos, y «el código» es el de los dos.
-const TEMPLATE = path.join(ROOT, 'pipelines/templates/correr-suites.yml');
-const TEMPLATE_USE = '      - template: /pipelines/templates/correr-suites.yml\n';
+const TEMPLATE = path.join(ROOT, 'pipelines/templates/run-suites.yml');
+const TEMPLATE_USE = '      - template: /pipelines/templates/run-suites.yml\n';
 // Story 8.26, tanda C (AC 11 y 43): la foto nocturna y lo privado de la validación los trae una plantilla, una vez.
 const SNAPSHOT_TEMPLATE = path.join(ROOT, 'pipelines/templates/fetch-snapshot.yml');
 const SNAPSHOT_STEP = 'La foto nocturna y lo privado de la validación';
 const SNAPSHOT_PICK_STEP = 'La foto nocturna que trajo Validar';
 const BENCH = 'bench';
-const text = fs.readFileSync(YAML, 'utf8');
+// La validación y sus plantillas son del privado (story 8.41, tanda F2): la copia pública no las trae. Ahí cada caso se
+// saltea con este motivo, en vez de abortar al cargar.
+const NO_PIPELINE = !(fs.existsSync(YAML) && fs.existsSync(TEMPLATE))
+  && 'NO MEDIDO — no están pipelines/azure-pipelines-maintainers-pr.yml y su plantilla run-suites.yml (la copia pública no trae los pipelines del equipo)';
+function test(name, opts, fn) {
+  if (typeof opts === 'function') { fn = opts; opts = {}; }
+  return nodeTest(name, { ...opts, skip: NO_PIPELINE || opts.skip }, fn);
+}
+const text = NO_PIPELINE ? '' : fs.readFileSync(YAML, 'utf8');
 const lines = text.split('\n');
-const template = fs.readFileSync(TEMPLATE, 'utf8');
+const template = NO_PIPELINE ? '' : fs.readFileSync(TEMPLATE, 'utf8');
 const snapshotTemplate = fs.existsSync(SNAPSHOT_TEMPLATE) ? fs.readFileSync(SNAPSHOT_TEMPLATE, 'utf8') : '';
 const stepLines = [...lines, ...template.split('\n'), ...snapshotTemplate.split('\n')];
 const code = stepLines.filter((l) => !l.trim().startsWith('#'));
@@ -128,7 +136,7 @@ function expand(body, values) {
 
 // ── un arnés de juguete ──────────────────────────────────────────────────────────────────────────────────────────
 const toys = [];
-test.after(() => { for (const d of toys) fs.rmSync(d, { recursive: true, force: true }); });
+nodeTest.after(() => { for (const d of toys) fs.rmSync(d, { recursive: true, force: true }); });
 
 // 🔴 LA FOTO NOCTURNA ES DE JUGUETE. «Qué suites corren» lee la red de `--deps` con
 // `git show origin/main:scripts/controls-bench/ultimo-suites.json`, parado en el arnés de verdad: la foto que haya dejado
@@ -810,7 +818,7 @@ test('T48 PrShards_BenchJobRunsTheExclusiveSuitesAndTheVerdictJoinsThem — el t
   for (const step of ['Bajar la lista de suites del cambio', RUN_STEP]) {
     assert.ok(template.includes(`    displayName: '${step}'\n    condition: \${{ parameters.condicion }}\n`), `«${step}» corre con la condición que le pasa el trabajo`);
   }
-  assert.match(bench, /- template: \/pipelines\/templates\/traer-repos\.yml\n {8}parameters:\n {10}agentSkills: true\n {10}productos: true\n/, 'y trae los mismos repos que un trabajo de suites');
+  assert.match(bench, /- template: \/pipelines\/templates\/fetch-repos\.yml\n {8}parameters:\n {10}agentSkills: true\n {10}productos: true\n/, 'y trae los mismos repos que un trabajo de suites');
   // Una suite no puede dar otro resultado según en qué trabajo le tocó: los dos arrancan con los mismos pasos (el clon
   // entero con su credencial, node, los repos), sin contar los comentarios.
   const before = (job, mark) => { const own = job.slice(job.indexOf('\n    steps:\n'), job.indexOf(mark)); return own.split('\n').map((l) => l.replace(/\s+#.*$/, '')).filter((l) => l.trim() && !l.trim().startsWith('#')).join('\n'); };
@@ -990,7 +998,7 @@ test('T48 PrShards_BenchThatHangs_IsCutByItsOwnCapAndTheJobGoesOn — un banco c
 // pegado a un carácter que no es ASCII parte la variable (el control de scripts/ci/check-bash32-quoting.sh, que el
 // pre-commit pasa sólo sobre los .sh). Caso 2026-10-15: un «($CAP)» con comillas angulares en el paso del banco dejó roja la
 // prueba del banco colgado en toda Mac (`CAP` más un byte: unbound variable), y en Azure, con bash 5, no se veía.
-// ROJO PREVIO: con el «$CAP» de antes en pipelines/azure-pipelines-pr.yml, este caso sale rojo nombrando la línea 671.
+// ROJO PREVIO: con el «$CAP» de antes en pipelines/azure-pipelines-maintainers-pr.yml, este caso sale rojo nombrando la línea 671.
 test('T48 PrShards_PipelineBashSteps_NoVariableGluedToNonAscii — ningún pipeline pega $VAR a un carácter no ASCII', { skip: NO_BASH }, () => {
   const yamls = fs.readdirSync(path.join(ROOT, 'pipelines'), { recursive: true }).map(String).filter((f) => /\.ya?ml$/.test(f)).map((f) => path.join('pipelines', f));
   assert.ok(yamls.length > 0, 'no encontré pipelines que mirar: el caso no mide nada');
@@ -1464,7 +1472,7 @@ test('T43 Validation_OneSnapshotFourReaders_EveryJobUsesWhatValidarBrought', () 
   }
   // los repos de los productos, con la lista que trajo Validar (en el árbol público no está)
   for (const name of ['Bench', 'Suites']) {
-    assert.match(all[name], /traer-repos\.yml\n\s+parameters:\n(?:\s+\w+: .*\n)*\s+productRegistry: '\$\(Agent\.TempDirectory\)\/snapshot\/product-repos\.json'\n/, `${name}: la lista de productos que trajo Validar`);
+    assert.match(all[name], /fetch-repos\.yml\n\s+parameters:\n(?:\s+\w+: .*\n)*\s+productRegistry: '\$\(Agent\.TempDirectory\)\/snapshot\/product-repos\.json'\n/, `${name}: la lista de productos que trajo Validar`);
   }
 });
 

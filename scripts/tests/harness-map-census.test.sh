@@ -102,7 +102,7 @@ mapa "$TMP/c8/m.html" '  "rev": {"nombre":"r","tipo":"revisor","archivos":[["as"
   "cmd": {"nombre":"k","tipo":"comando","archivos":[["tcg","commands/tycon-vigilante.md"]]},
   "yml": {"nombre":"y","tipo":"pipeline","archivos":[["tcg","azure-pipelines-lab.yml"]]},
   "plantilla": {"nombre":"t","tipo":"pipeline","archivos":[["tcg","pipelines/azure-pipelines-lab.yml"]]},
-  "mudado": {"nombre":"m","tipo":"pipeline","archivos":[["tcg","pipelines/templates/traer-repos.yml"]]},
+  "mudado": {"nombre":"m","tipo":"pipeline","archivos":[["tcg","pipelines/templates/fetch-repos.yml"]]},
   "script": {"nombre":"x","tipo":"script","archivos":[["tcg","build/generate.js"]]},
   "spec": {"nombre":"e","tipo":"especificación","archivos":[["specs","specs/story-*.md"]]},
   "pin": {"nombre":"v","tipo":"configuración","archivos":[["tcg","engram-version"]]},

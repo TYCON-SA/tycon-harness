@@ -320,12 +320,6 @@
       "reason": "un dato de la guía, no una referencia para seguir: la lista cerrada de lo que trae la capa del equipo, con las rutas exactas que lee el programa de instalación (quien arma el repo de su equipo las necesita tal cual)"
     },
     {
-      "file": "guides/agent-architecture.md",
-      "form": "team-path",
-      "value": "packs/clients",
-      "reason": "un dato de la guía, no una referencia para seguir: la primera columna de la tabla de paquetes de revisores nombra la carpeta de cada paquete, también la del que no se publica"
-    },
-    {
       "file": "story-format.md",
       "form": "story-number",
       "value": "Story 2.3",

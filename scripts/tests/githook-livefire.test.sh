@@ -18,8 +18,8 @@ set -uo pipefail
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 GLOBAL="$RAIZ/scripts/hooks/git-pre-commit-global.sh"
 POST="$RAIZ/scripts/hooks/git-post-commit-global.sh"
-# En la copia pública de un solo repo `.githooks/pre-commit` es un despachador generado y el guion del arnés es
-# `pre-commit-harness`: cuál es lo elige scripts/tests/lib/pre-commit-hook.js, la misma función para las tres suites
+# `.githooks/pre-commit` sólo llama a `.githooks/pre-commit-checks`, que trae los controles: cuál copiar lo elige
+# scripts/tests/lib/pre-commit-hook.js, la misma función para las tres suites
 # que copian el pre-commit a un repo de juguete. Si no contesta queda el nombre de siempre y el chequeo de más abajo
 # («no encontré …») decide.
 HOOK_REPO="$(node "$RAIZ/scripts/tests/lib/pre-commit-hook.js" harness "$RAIZ")"   # si el ayudante falla, su error se ve
@@ -179,7 +179,7 @@ AS_REPO="" AS_HOOK=""
 if ! AS_REPO="$(node -e 'try { console.log(require(process.argv[1]).resolveSkillsDirs(process.env.TYCON_SKILLS_DIR || "").repo); } catch (e) { console.error(String((e && e.message) || e).split("\n")[0]); process.exit(1); }' "$RAIZ/scripts/lib/skills-dir.js" 2> "$SK_ERR")"; then
   mal "C-06/C-07/C-08 no pude resolver la carpeta de skills: $(head -n 1 "$SK_ERR")"; AS_REPO=""
 else
-  # el guion de agent-skills según el layout (en la copia de un solo repo es `pre-commit-skills`, no el despachador)
+  # el guion de los controles de las skills según el layout (en el arnés, `pre-commit-checks`, no el que lo llama)
   AS_HOOK="$(node "$RAIZ/scripts/tests/lib/pre-commit-hook.js" skills "${AS_REPO}")"
   [ -n "$AS_HOOK" ] || AS_HOOK="${AS_REPO}/.githooks/pre-commit"
 fi
@@ -520,7 +520,9 @@ montar_castellano() {   # $1=T
 # Sin diccionario inglés (el nocturno es Linux) una palabra que no está en la lista pasa por inglés: lo que depende de
 # eso se declara NO verificado, y el aviso «sin diccionario» no cuenta como que el freno habló (corrida 11337).
 DICC="${TYCON_SPANISH_NAMES_DICTIONARY:-/usr/share/dict/words}"
-hablo_el_freno() { grep -v 'sin diccionario inglés' "$1" | grep 'castellano' >/dev/null; }
+# (el control corre también la parte de las skills, que en este repo de juguete —sin la forma del arnés— no encuentra
+# «el otro repo» y lo avisa, sin frenar: ese aviso no es el freno hablando de un nombre)
+hablo_el_freno() { grep -v 'sin diccionario inglés' "$1" | grep -v 'no encontré arnes' | grep 'castellano' >/dev/null; }
 C_OPT="--si""n-copia"; C_SUB="lim""piar"; C_ENV="TYCON_NO_BA""JAR"; C_KEY="moti""vo"; C_FILE="car""gar-da""tos"
 nuevo_bloqueado() {   # $1=T $2=etiqueta $3...=patrones que el mensaje tiene que traer
   local T="$1" etiqueta="$2"; shift 2
@@ -681,21 +683,21 @@ else
 fi
 rm -rf "$T"
 
-# C-22 · T12 SpanishNames_PrStep — el paso de lint del PR, con sus líneas de pipelines/azure-pipelines-pr.yml, suma a FALLAS.
+# C-22 · T12 SpanishNames_PrStep — el paso de lint del PR, con sus líneas de pipelines/azure-pipelines-maintainers-pr.yml, suma a FALLAS.
 # La copia pública no trae los pipelines del equipo (el exportador deja afuera pipelines/**): ahí se saltea con constancia.
-if [ ! -f "$RAIZ/pipelines/azure-pipelines-pr.yml" ]; then
-  echo "  ⏭   — C-22 (T12) NO verificado: no está pipelines/azure-pipelines-pr.yml (la copia pública no trae los pipelines del equipo). No es un verde."
+if [ ! -f "$RAIZ/pipelines/azure-pipelines-maintainers-pr.yml" ]; then
+  echo "  ⏭   — C-22 (T12) NO verificado: no está pipelines/azure-pipelines-maintainers-pr.yml (la copia pública no trae los pipelines del equipo). No es un verde."
 else
 T=$(mktemp -d); montar_castellano "$T"
 BASE_LAB=$(git -C "$T/repo" rev-parse HEAD)
 ( cd "$T/repo" && git checkout -q -b cambio && printf 'const y = process.argv.includes("%s");\n' "$C_OPT" > scripts/english-tool.js \
   && git add -A && git -c core.hooksPath=/dev/null -c user.email=b@b -c user.name=b commit -q -m "rama con un nombre nuevo" )
-PASO="$(awk '/spanish-names\.js --range/{p=1} p{print} p&&/falla /{exit}' "$RAIZ/pipelines/azure-pipelines-pr.yml" | sed 's/^ *//')"
+PASO="$(awk '/spanish-names\.js --range/{p=1} p{print} p&&/falla /{exit}' "$RAIZ/pipelines/azure-pipelines-maintainers-pr.yml" | sed 's/^ *//')"
 FALLAS_LAB=$( cd "$T/repo" && FALLAS=0; falla() { FALLAS=$((FALLAS+1)); echo "❌ $1" >&2; }
   HOME="$T/casa" TYCON_SKILLS_DIR="$T/skills"; export HOME TYCON_SKILLS_DIR
   eval "$(printf '%s\n' "$PASO" | sed "s/\$(baseDelCambio)/${BASE_LAB}/g")" > "$T/pr.txt" 2>&1; echo "$FALLAS" )
 if [ -n "$PASO" ] && [ "$FALLAS_LAB" = "1" ]; then ok "C-22 T12 SpanishNames_PrStep: el paso del PR suma el nombre nuevo a FALLAS"
-else mal "C-22 T12 el paso del PR: FALLAS=${FALLAS_LAB:-?} (paso: ${PASO:-no está en pipelines/azure-pipelines-pr.yml})"; sed -n '1,8p' "$T/pr.txt" 2>/dev/null; fi
+else mal "C-22 T12 el paso del PR: FALLAS=${FALLAS_LAB:-?} (paso: ${PASO:-no está en pipelines/azure-pipelines-maintainers-pr.yml})"; sed -n '1,8p' "$T/pr.txt" 2>/dev/null; fi
 rm -rf "$T"
 fi
 
@@ -846,8 +848,10 @@ fi
 # mismo que la nueva (el revisor de retrospectiva de agent-skills sigue llamando la vieja hasta el retiro) y (d) el
 # pre-commit real lintea por la ruta nueva aunque la vieja no esté. Las rutas viejas salen del mapa, nunca escritas acá.
 # desde la R6 los yml del arnés viven en pipelines/ y la plantilla en pipelines/templates/
-R3_ARCHIVOS="pipelines/azure-pipelines.yml pipelines/azure-pipelines-pr.yml pipelines/azure-pipelines-vigilante.yml pipelines/templates/traer-repos.yml .githooks/pre-commit packs/bizuit/new-product-templates/stories/githooks-pre-commit build/check.js"
-R3_YML="pipelines/azure-pipelines.yml pipelines/azure-pipelines-pr.yml pipelines/azure-pipelines-vigilante.yml pipelines/templates/traer-repos.yml"
+# (story 8.41: la validación y su plantilla son del repo privado, con nombre nuevo; la plantilla del hook de stories vive
+# en el paquete bizuit, en la capa del equipo)
+R3_ARCHIVOS="pipelines/azure-pipelines.yml pipelines/azure-pipelines-maintainers-pr.yml pipelines/azure-pipelines-vigilante.yml pipelines/templates/fetch-repos.yml .githooks/pre-commit packs/bizuit/templates/stories/githooks-pre-commit.template build/check.js"
+R3_YML="pipelines/azure-pipelines.yml pipelines/azure-pipelines-maintainers-pr.yml pipelines/azure-pipelines-vigilante.yml pipelines/templates/fetch-repos.yml"
 # La copia pública (story 8.7) no trae los pipelines del equipo (el exportador deja afuera pipelines/**): un yml que ahí
 # no está no se puede parsear, y se dice. En el repo del equipo, que falte uno sigue siendo un rojo.
 if python3 -c 'import yaml' >/dev/null 2>&1; then
@@ -925,7 +929,7 @@ else
   RC=$(commitear "$T" "story rota sin la ruta vieja"); DESPUES=$(cuantos "$T")
   # el rechazo tiene que ser del lint (nombra la story y el motivo), no de un lint que no arranca: un `require` roto
   # también sale ≠0 y daría este verde por el motivo equivocado
-  if [ "$RC" != "0" ] && [ "$ANTES" = "$DESPUES" ] && ! grep -q "no encontré" "$T/out.txt" \
+  if [ "$RC" != "0" ] && [ "$ANTES" = "$DESPUES" ] && ! grep -q "no encontré.*lint-story-frontmatter" "$T/out.txt" \
      && grep -q "story-9.8-rota.md" "$T/out.txt" && grep -q "frontmatter NO cierra" "$T/out.txt" && ! grep -q "Cannot find module" "$T/out.txt"; then
     ok "C-28 T26 el pre-commit real lintea por la ruta nueva: sin la vieja en el laboratorio, la story rota no entra"
   else
@@ -1023,24 +1027,21 @@ else
 fi
 rm -rf "$T"
 
-# ── C-31..C-33 · el despachador del repo unido, disparado por git de verdad (story 8.18, T5) ────────────────────────
-# El arnés y agent-skills son UN repo: `.githooks/pre-commit` es el despachador y corre SIEMPRE las dos partes
-# (`pre-commit-harness` y `pre-commit-skills`), cada una en su proceso. El laboratorio tiene esa forma: el despachador y
-# las dos partes de ESTE repo, el arnés de `montar` y —para que la parte de skills tenga con qué frenar— el control de
+# ── C-31..C-33 · el control único del arnés, disparado por git de verdad (story 8.18, T5; story 8.41, T25) ─────────
+# `.githooks/pre-commit` llama a `.githooks/pre-commit-checks`, que corre SIEMPRE sus dos partes (la del arnés y la de
+# las skills), cada una en su proceso. El laboratorio tiene esa forma: los dos archivos de ESTE repo, el arnés de `montar` y —para que la parte de skills tenga con qué frenar— el control de
 # skills de terceros con un manifiesto sintético (una sola familia propia). Se mide el efecto: un commit sano entra, y
 # un freno de CUALQUIERA de las dos partes hace que el commit no se cree, con el mensaje de esa parte. Que la otra
 # parte corrió igual se ve en su salida: la salida temprana de una no saltea a la otra.
 DISPATCHER="$RAIZ/.githooks/pre-commit"
-PART_HARNESS="$RAIZ/.githooks/pre-commit-harness"
-PART_SKILLS="$RAIZ/.githooks/pre-commit-skills"
-if [ -f "$PART_HARNESS" ] && [ -f "$PART_SKILLS" ] && grep -q 'pre-commit-skills' "$DISPATCHER" 2>/dev/null; then
-  mount_union() {   # $1=T — montar + la forma del repo unido
+CHECKS="$RAIZ/.githooks/pre-commit-checks"
+if [ -f "$CHECKS" ] && grep -q 'pre-commit-checks' "$DISPATCHER" 2>/dev/null; then
+  mount_union() {   # $1=T — montar + la forma del arnés: el pre-commit que llama y el control único
     local T="$1"
     montar "$T"
     cp "$DISPATCHER" "$T/repo/.githooks/pre-commit"
-    cp "$PART_HARNESS" "$T/repo/.githooks/pre-commit-harness"
-    cp "$PART_SKILLS" "$T/repo/.githooks/pre-commit-skills"
-    chmod +x "$T/repo/.githooks/pre-commit" "$T/repo/.githooks/pre-commit-harness" "$T/repo/.githooks/pre-commit-skills"
+    cp "$CHECKS" "$T/repo/.githooks/pre-commit-checks"
+    chmod +x "$T/repo/.githooks/pre-commit" "$T/repo/.githooks/pre-commit-checks"
     mkdir -p "$T/repo/scripts/publishing" "$T/repo/skills/tycon-x"
     copy_publishing "$T" third-party-coverage.js
     printf '%s\n' '{"retirement":"done","own":[{"glob":"skills/tycon-*","why":"prueba"}],"derived":[],"origins":{},"third_party":[]}' > "$T/repo/scripts/publishing/third-party-skills.json"
@@ -1110,7 +1111,7 @@ if [ -f "$PART_HARNESS" ] && [ -f "$PART_SKILLS" ] && grep -q 'pre-commit-skills
   fi
   rm -rf "$T"
 else
-  mal "C-31..C-34 T5 este repo no tiene la forma del repo unido: falta .githooks/pre-commit-harness o .githooks/pre-commit-skills, o .githooks/pre-commit no es el despachador"
+  mal "C-31..C-34 T5 este repo no tiene la forma del arnés: falta .githooks/pre-commit-checks, o .githooks/pre-commit no lo llama"
 fi
 
 fi   # ── fin de los bloques: lo que sigue corre en todas las partes ──

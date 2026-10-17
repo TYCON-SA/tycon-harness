@@ -47,9 +47,11 @@ function r5Entries() {
 /** Lo que sólo nombra su propio repo no deja reemplazo (como en la 8.9). */
 const leavesShim = (e) => Array.isArray(e.callers) && e.callers.some((c) => c !== 'same-repo');
 
-test('T34 R5_Guides_ShimsAndInternalLinks — las 15 guías están en su carpeta nueva', { skip: NOT_MEASURED }, () => {
+test('T34 R5_Guides_ShimsAndInternalLinks — las 11 guías están en su carpeta nueva', { skip: NOT_MEASURED }, () => {
   const entries = r5Entries();
-  assert.strictEqual(entries.length, 15, 'cuatro guías Bizuit y once documentos de decisiones');
+  // (las cuatro guías Bizuit salieron de la R5 con la story 8.41: se mudaron al paquete bizuit, en la capa del equipo, y un
+  // nombre nuevo no puede tener dos viejos)
+  assert.strictEqual(entries.length, 11, 'once documentos de decisiones');
   for (const e of entries) {
     assert.ok(fs.existsSync(path.join(ROOT, e.new)), `${e.new} existe`);
     const text = fs.readFileSync(path.join(ROOT, e.new), 'utf8');
@@ -57,10 +59,10 @@ test('T34 R5_Guides_ShimsAndInternalLinks — las 15 guías están en su carpeta
   }
 });
 
-test('T34 R5_Guides_ShimsAndInternalLinks — 14 reemplazos con la marca, y cada uno nombra una ruta nueva que existe', { skip: NOT_MEASURED }, () => {
+test('T34 R5_Guides_ShimsAndInternalLinks — 10 reemplazos con la marca, y cada uno nombra una ruta nueva que existe', { skip: NOT_MEASURED }, () => {
   const entries = r5Entries();
   const withShim = entries.filter(leavesShim);
-  assert.strictEqual(withShim.length, 14, '14 de 15 dejan reemplazo');
+  assert.strictEqual(withShim.length, 10, '10 de 11 dejan reemplazo');
   for (const e of withShim) {
     const oldAbs = path.join(ROOT, e.old);
     assert.ok(fs.existsSync(oldAbs), `${e.old}: falta el reemplazo`);
@@ -114,7 +116,7 @@ function staleMentions() {
 }
 const mentionLine = (f) => `${f.source}:${f.rel}:${f.line} — ${f.old}`;
 
-test('T34 R5_Guides_ShimsAndInternalLinks — --stale-mentions no marca ninguna de las 15 rutas viejas', { skip: NOT_MEASURED }, (t) => {
+test('T34 R5_Guides_ShimsAndInternalLinks — --stale-mentions no marca ninguna de las 11 rutas viejas', { skip: NOT_MEASURED }, (t) => {
   const olds = new Set(r5Entries().map((e) => e.old));
   const run = staleMentions();
   if (run.skip) { t.skip(run.skip); return; }
@@ -122,14 +124,18 @@ test('T34 R5_Guides_ShimsAndInternalLinks — --stale-mentions no marca ninguna 
   assert.deepStrictEqual(ours, [], `quedan menciones de las rutas viejas de la R5:\n${ours.join('\n')}`);
 });
 
+// (story 8.41: las guías de BIZUIT y las plantillas de producto se mudaron al paquete bizuit, en la capa del equipo; la
+// entrada del mapa de la guía React es ahora la de esa mudanza, y la plantilla viaja como `CLAUDE.md.template`)
 test('T38 R5_Templates_NewProductBornWithNewPath — la plantilla de formularios cita la guía React en su ruta nueva', { skip: NOT_MEASURED }, () => {
-  const entries = r5Entries();
-  const react = entries.find((e) => e.new === 'guides/bizuit/bizuit-plugin-react.md');
+  const entries = JSON.parse(fs.readFileSync(MAP, 'utf8')).entries.filter((e) => e && e.kind === 'file');
+  const react = entries.find((e) => e.new === 'packs/bizuit/guides/bizuit-plugin-react.md');
   assert.ok(react, 'el mapa tiene la entrada de la guía React');
-  const tpl = fs.readFileSync(path.join(ROOT, 'packs', 'bizuit', 'new-product-templates', 'forms', 'CLAUDE.md'), 'utf8');
+  const file = path.join(ROOT, 'packs', 'bizuit', 'templates', 'forms', 'CLAUDE.md.template');
+  if (!fs.existsSync(file)) { console.log('⏭ T38: NO MEDIDO — el árbol no trae el paquete bizuit (viaja en la capa del equipo)'); return; }
+  const tpl = fs.readFileSync(file, 'utf8');
   assert.ok(tpl.includes(react.new), `la plantilla nombra ${react.new}`);
-  const stale = entries.filter((e) => tpl.includes(e.old)).map((e) => e.old);
-  assert.deepStrictEqual(stale, [], 'la plantilla no nombra ninguna ruta vieja de la R5');
+  const stale = entries.filter((e) => e.new.startsWith('packs/bizuit/guides/') && tpl.includes(e.old)).map((e) => e.old);
+  assert.deepStrictEqual(stale, [], 'la plantilla no nombra ninguna ruta vieja de las guías');
 });
 
 // ── T49 · story 8.12, tanda R8 (AC 45) — las guías de entrada citan la ruta nueva y explican dónde vive cada cosa ──────

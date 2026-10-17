@@ -304,7 +304,7 @@ test('T5b Coverage_ContentByTree — con el retiro pendiente, un árbol distinto
 
 // ── T6 ────────────────────────────────────────────────────────────────────────────────────────────────────────
 test('T6 AgentSkillsPreCommit_StopsForeignCopy — frena la skill ajena copiada; un commit fuera de esas rutas no corre el control', () => {
-  // el guion de agent-skills según el layout: en la copia pública de un solo repo es `pre-commit-skills`, no el despachador
+  // el guion de los controles de las skills según el layout: `pre-commit-checks`, no el pre-commit que lo llama
   const hook = preCommitHook('skills', resolveSkillsDirs().repo);
   assert.ok(fs.existsSync(hook), `no encontré el pre-commit de agent-skills en ${hook}`);
   // un arnés de laboratorio: sólo el control y un manifiesto sintético (sin el freno de nombres: el hook avisa y sigue)

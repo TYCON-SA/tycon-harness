@@ -506,7 +506,7 @@ function ymlProblems(text, { root, queue = null, branch = null, oldFolders = [] 
 }
 /** El yml de cada nocturno se llama como su cola vieja (Azure lo nombra desde su definición: no se renombra). */
 const nightlyYml = (queue) => `pipelines/azure-pipelines-${folderOf(queue).old}.yml`;
-const FETCH_REPOS_YML = 'pipelines/templates/traer-repos.yml';
+const FETCH_REPOS_YML = 'pipelines/templates/fetch-repos.yml';
 function parses(abs) {
   const py = spawnSync('python3', ['-c', 'import yaml'], { encoding: 'utf8' });
   if (py.status !== 0) return { measured: false };

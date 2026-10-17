@@ -398,5 +398,5 @@ node scripts/controls-bench/advisor-runner.js --check-apps-off
 ---
 
 **Por qué**: "un control que hay que acordarse de invocar es un control que no corre"
-(`packs/bizuit/guides/bizuit-bpmn-spec-contract.md`), aplicado al arnés entero: los controles ahora tienen su propio
+(la guía `bizuit-bpmn-spec-contract.md` del paquete bizuit), aplicado al arnés entero: los controles ahora tienen su propio
 control.

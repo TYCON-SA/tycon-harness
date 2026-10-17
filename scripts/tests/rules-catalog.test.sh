@@ -297,6 +297,19 @@ PY
 [ "${SINP}" -ge 13 ] && ok "T22 · el catálogo real marca con su paquete las secciones de los revisores de paquete (${SINP})" \
   || mal "T22 · el catálogo real marca ${SINP} secciones con su paquete (esperado al menos 13: los nueve de bizuit y los cuatro de nextjs-postgres)"
 
+# ── T22b (story 8.41, revisión de la F2) · rules-distill: un paquete sin pack.json es un paquete ROTO, no uno ausente ─
+# Antes se salteaba callado y las reglas que sólo citan sus revisores contaban como no citadas sin que nada lo dijera.
+T22B="${BASE}/t22b"; mkdir -p "${T22B}/arbol/guides" "${T22B}/arbol/packs/roto/agents" "${T22B}/arbol/packs/sano/agents" "${T22B}/home/.claude/agents"
+printf '# Catálogo\n\n## Del stack — `rev-roto`\n\n| Regla | Qué detecta | Fix |\n|---|---|---|\n| **ROT-C1** | algo | idem |\n' > "${T22B}/arbol/guides/advisor-rules-catalog.md"
+printf -- '---\nname: rev-roto\n---\nROT-C1\n' > "${T22B}/arbol/packs/roto/agents/rev-roto.md"
+printf '{ "name": "sano" }\n' > "${T22B}/arbol/packs/sano/pack.json"
+HOME="${T22B}/home" TYCON_GUIDES_DIR="${T22B}/arbol" node "${RAIZ}/scripts/tools/rules-distill.js" --json > "${T22B}/out.json" 2> "${T22B}/err.txt"
+N_ROTO="$(grep -c 'packs/roto/ no trae pack.json' "${T22B}/err.txt")"
+N_SANO="$(grep -c 'packs/sano/' "${T22B}/err.txt")"
+[ "${N_ROTO}" = "1" ] && [ "${N_SANO}" = "0" ] \
+  && ok "T22b RulesDistill_PackWithoutManifest_SaidOnceAsBroken · el roto se nombra una vez; el que sólo no trae revisores, no" \
+  || mal "T22b · el paquete roto se nombró ${N_ROTO} vez/veces (esperado 1) y el sano ${N_SANO} (esperado 0): $(head -3 "${T22B}/err.txt")"
+
 # ── C6b · un bloque de código es un EJEMPLO, no una definición ni una retirada ────────────────────
 # 🔴 Existe por un defecto real que se arrastraba: la guía «Retirar una regla» del catálogo trae, dentro
 #    de un bloque de código, el ejemplo `| ~~SEC-W4~~ | … RETIRED …`. Leído como texto plano, eso retira

@@ -163,8 +163,8 @@ hereda=$(hereda_de "$TMP/priv.html" "$TMP/pub.html")
 lab_mapa() {   # $1=dir [$2=sin-mapa] — un repo con el pre-commit real y el código del mapa; todo commiteado con los hooks apagados
   local L="$1"
   mkdir -p "$L/repo/.githooks" "$L/repo/scripts" "$L/repo/$HMAP" "$L/casa"
-  # el guion del arnés: con los dos repos unidos (story 8.18) `.githooks/pre-commit` es el despachador y el del arnés es
-  # `pre-commit-harness`; cuál es lo elige scripts/tests/lib/pre-commit-hook.js (si falla, su error se ve)
+  # los controles del arnés: `.githooks/pre-commit` sólo llama a `pre-commit-checks`; cuál copiar lo elige
+  # scripts/tests/lib/pre-commit-hook.js (si falla, su error se ve)
   local hook; hook="$(node "$RAIZ/scripts/tests/lib/pre-commit-hook.js" harness "$RAIZ")"
   [ -n "$hook" ] || hook="$RAIZ/.githooks/pre-commit"
   cp "$hook" "$L/repo/.githooks/pre-commit" && chmod +x "$L/repo/.githooks/pre-commit"

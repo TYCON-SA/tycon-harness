@@ -52,7 +52,7 @@
  * Un registro ilegible, o una declaración vacía o que no es texto, no reclasifica nada: el reporte trae
  * `measuredElsewhereProblem` con el motivo — «no pude leer la declaración» nunca es «está declarada».
  *
- * Uso (desde pipelines/azure-pipelines-banco.yml y pipelines/azure-pipelines-pr.yml):
+ * Uso (desde pipelines/azure-pipelines-banco.yml y pipelines/azure-pipelines-maintainers-pr.yml):
  *   node scripts/ci/suites-report.js --rep <ultimo-suites.json> --build <id> --runs <N>
  *     --failures "<nombres separados por espacio>" --detail <dir con <nombre>.txt de cada roja> [--retries <json>]
  *     [--ran <archivo con un nombre de suite por línea>] [--previous <foto anterior>] [--not-run <nombre<TAB>motivo por línea>]

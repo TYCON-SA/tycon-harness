@@ -2,7 +2,7 @@
 # fetch-repos-template.test.sh — la plantilla que deja las skills a mano en un pipeline, corrida de verdad
 # (story 8.18, T13 y T15; contrato C2).
 #
-# EL CASO. Hasta la story 8.18 el arnés y agent-skills eran dos repos, y `pipelines/templates/traer-repos.yml`
+# EL CASO. Hasta la story 8.18 el arnés y agent-skills eran dos repos, y `pipelines/templates/fetch-repos.yml`
 # clonaba el segundo en `main`: un pull request del arnés se validaba contra `main` de agent-skills, no contra su
 # propia rama, y la identidad de build necesitaba permiso de lectura sobre otro proyecto. Con un solo repo, las
 # skills ya vienen en el checkout: la plantilla ENLAZA `~/.claude/agent-skills` al propio checkout. Lo que este
@@ -23,10 +23,10 @@
 # Sin red: los «remotos» son carpetas del laboratorio. Cero llamadas a Azure. No toca la HOME de quien la corre.
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-TEMPLATE="$ROOT/pipelines/templates/traer-repos.yml"
+TEMPLATE="$ROOT/pipelines/templates/fetch-repos.yml"
 METRICS_YAML="$ROOT/pipelines/azure-pipelines.yml"
 BENCH_YAML="$ROOT/pipelines/azure-pipelines-banco.yml"
-PR_YAML="$ROOT/pipelines/azure-pipelines-pr.yml"
+PR_YAML="$ROOT/pipelines/azure-pipelines-maintainers-pr.yml"
 STEP_NAME='Traer AgentSkills'
 FAILS=0; PASSED=0
 ok()  { echo "✅ fetch-repos-template: $1"; PASSED=$((PASSED + 1)); }
@@ -36,7 +36,7 @@ bad() { echo "❌ fetch-repos-template: $1"; FAILS=$((FAILS + 1)); }
 # medir, y se dice. En el repo del equipo, que falte la plantilla es un rojo.
 if [ ! -f "$TEMPLATE" ]; then
   if [ ! -f "$ROOT/perfil-equipo.json" ]; then
-    echo "⏭ fetch-repos-template: NO MEDIDO — no está pipelines/templates/traer-repos.yml (la copia pública no trae los pipelines del equipo). No es un verde."
+    echo "⏭ fetch-repos-template: NO MEDIDO — no está pipelines/templates/fetch-repos.yml (la copia pública no trae los pipelines del equipo). No es un verde."
     exit 0
   fi
   echo "❌ fetch-repos-template: no encontré $TEMPLATE"; exit 1
@@ -308,7 +308,7 @@ for y in ${NIGHTLY_YAMLS[@]+"${NIGHTLY_YAMLS[@]}"} "$PR_YAML"; do
 done
 # el banco sigue incluyendo la plantilla en sus dos trabajos, con la lista de productos de siempre
 if [ ${#NIGHTLY_YAMLS[@]} -gt 0 ]; then
-  N_TEMPLATE="$(code_of "$BENCH_YAML" | grep -c 'template: /pipelines/templates/traer-repos.yml')"
+  N_TEMPLATE="$(code_of "$BENCH_YAML" | grep -c 'template: /pipelines/templates/fetch-repos.yml')"
   if [ "$N_TEMPLATE" = 2 ] && ! code_of "$BENCH_YAML" | grep 'productRegistry' >/dev/null; then ok "T15 el banco incluye la plantilla en sus dos trabajos, con la lista de productos por defecto"
   else bad "T15 el banco incluye la plantilla $N_TEMPLATE vez/veces (esperaba 2) o le pasa otra lista"; fi
 fi

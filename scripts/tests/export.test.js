@@ -91,7 +91,8 @@ function splitPrivateBlock(texto) {
 }
 
 // ── contenido de la fixture ────────────────────────────────────────────────────────────────────────
-const REVISORES = ['revisor-nucleo', 'tycon-plugin-dotnet-conventions', 'revisor-cliente'];
+// (el del medio es un revisor de paquete de juguete: los revisores reales del stack viven en su paquete, en la capa)
+const REVISORES = ['revisor-nucleo', 'revisor-del-paquete', 'revisor-cliente'];
 const agente = (nombre, cuerpo) =>
   `---\nname: ${nombre}\ndescription: Revisor de mentira ${nombre}\nmodel: sonnet\ntools: Read, Grep, Glob\n---\n\n${cuerpo}\n`;
 
@@ -100,7 +101,7 @@ const LINEA_BASE = `${JSON.stringify({
   fixed_at: '2026-01-01T00:00:00Z', tool: 'claude', runs: 1,
   cases: {
     'revisor-nucleo::caso-1': true,
-    'tycon-plugin-dotnet-conventions::caso-1': true,
+    'revisor-del-paquete::caso-1': true,
     'revisor-nucleo::limpio': true,
     'revisor-cliente::caso-1': false,
   },
@@ -108,7 +109,7 @@ const LINEA_BASE = `${JSON.stringify({
 const CATALOGO = [
   '# Catálogo de reglas', '', 'Intro.', '',
   '## Núcleo — `revisor-nucleo`', '', 'Reglas NUC-C1.', '',
-  '## .NET — `tycon-plugin-dotnet-conventions`', '', 'Reglas DOTNET-C1.', '', '```text', '~~~', '## esto no es un encabezado', '```', '',
+  '## .NET — `revisor-del-paquete`', '', 'Reglas DOTNET-C1.', '', '```text', '~~~', '## esto no es un encabezado', '```', '',
   '## Cliente — `revisor-cliente`', '', 'Reglas XPAT-C1.', '',
   '## Agregar una regla nueva', '', 'Pasos.', '',
 ].join('\n');
@@ -156,7 +157,7 @@ const LISTA_BASE = {
     bizuit: {
       arnes: { in: ['guides/bizuit/bizuit-plugin.md'], out: [] },
       'agent-skills': {
-        in: ['packs/bizuit/pack.json', 'agents/tycon-plugin-dotnet-conventions.md', 'skills/bizuit-sdd/**'],
+        in: ['packs/bizuit/pack.json', 'agents/revisor-del-paquete.md', 'skills/bizuit-sdd/**'],
         out: [{ glob: 'skills/bizuit-sdd/tests/fixtures/bpmn/**', reason: 'procesos reales de clientes', until: '8.6' }],
       },
     },
@@ -222,9 +223,9 @@ function armarPlantilla() {
     'skills/tycon-pipeline/SKILL.md': '---\nname: tycon-pipeline\n---\n\nOrquesta el pipeline.\n',
     'skills/tycon-pipeline/scripts/paso.js': "'use strict';\nmodule.exports = 1;\n",
     'agents/revisor-nucleo.md': agente('revisor-nucleo', 'Revisa el núcleo.'),
-    'agents/tycon-plugin-dotnet-conventions.md': agente('tycon-plugin-dotnet-conventions', 'Revisa convenciones .NET.'),
+    'agents/revisor-del-paquete.md': agente('revisor-del-paquete', 'Revisa convenciones .NET.'),
     'agents/revisor-cliente.md': agente('revisor-cliente', 'Revisa lo del cliente.'),
-    'packs/bizuit/pack.json': `${JSON.stringify({ name: 'bizuit', reviewers: [{ agent: 'tycon-plugin-dotnet-conventions', group: 'base' }] }, null, 2)}\n`,
+    'packs/bizuit/pack.json': `${JSON.stringify({ name: 'bizuit', reviewers: [{ agent: 'revisor-del-paquete', group: 'base' }] }, null, 2)}\n`,
     'packs/clients/pack.json': `${JSON.stringify({ name: 'clients', reviewers: [{ agent: 'revisor-cliente', group: 'condicional' }, { agent: 'revisor-cliente', group: 'validacion' }] }, null, 2)}\n`,
     'skills/bizuit-sdd/SKILL.md': '---\nname: bizuit-sdd\n---\n\nProcesos BPM.\n',
     'skills/bizuit-sdd/tests/fixtures/bpmn/proceso.bpmn': '<definitions/>\n',
@@ -490,13 +491,15 @@ test('Export_PublicRemotes_ShipsWithThePublicName — la plantilla real y su dec
 // fuente agent-skills; el resto, arnes). Con dos repos físicos —estas mismas pruebas de juguete— sigue andando como hoy.
 const HARNESS_HOOK = '#!/usr/bin/env bash\n# pre-commit de mentira del arnés\nexit 0\n';
 const SKILLS_HOOK = '#!/usr/bin/env bash\n# pre-commit de mentira de agent-skills\nexit 0\n';
+// el despachador de un commit del repo unido anterior al control único (corría las dos partes)
+const OLD_DISPATCHER = '#!/usr/bin/env bash\n# despachador de mentira: corre pre-commit-harness y pre-commit-skills\nexit 0\n';
 
-test('Export_SplitHooks_Direct_PartAlreadyThere_DispatcherAlone_NothingToSplit', () => {
+test('Export_SplitHooks_Direct_PartAlreadyThere_OneControl_NothingToSplit', () => {
   const ex = require(EXPORTAR);
   assert.strictEqual(typeof ex.splitHooks, 'function', 'el exportador exporta splitHooks (su prueba fuerza el camino de error)');
   const b = (t) => ({ datos: Buffer.from(t, 'utf8') });
   const full = () => new Map([
-    ['arnes/.githooks/pre-commit', b(ex.PRE_COMMIT_DISPATCHER)],
+    ['arnes/.githooks/pre-commit', b(OLD_DISPATCHER)],
     ['arnes/.githooks/pre-commit-harness', b(HARNESS_HOOK)],
     ['agent-skills/.githooks/pre-commit-skills', b(SKILLS_HOOK)],
   ]);
@@ -510,9 +513,18 @@ test('Export_SplitHooks_Direct_PartAlreadyThere_DispatcherAlone_NothingToSplit',
     copia.delete(missing);
     assert.throws(() => ex.splitHooks(copia, []), (e) => e instanceof ex.NoPudo && e.message.includes(missing.replace(/^[^/]+\//, '')), `sin ${missing}`);
   }
-  // el despachador solo, sin ninguna de sus partes: también NoPudo (llamaría a dos archivos que no están)
-  const solo = new Map([['arnes/.githooks/pre-commit', b(ex.PRE_COMMIT_DISPATCHER)]]);
-  assert.throws(() => ex.splitHooks(solo, []), (e) => e instanceof ex.NoPudo && /pre-commit-harness/.test(e.message) && /pre-commit-skills/.test(e.message));
+  // el control único (.githooks/pre-commit y .githooks/pre-commit-checks, los dos del arnés): no hay nada que partir
+  const unico = new Map([['arnes/.githooks/pre-commit', b('#!/usr/bin/env bash\nexec .githooks/pre-commit-checks\n')], ['arnes/.githooks/pre-commit-checks', b(HARNESS_HOOK)]]);
+  const ajustesUnico = [];
+  ex.splitHooks(unico, ajustesUnico);
+  assert.deepStrictEqual([[...unico.keys()].sort(), ajustesUnico], [['arnes/.githooks/pre-commit', 'arnes/.githooks/pre-commit-checks'], []]);
+  // …salvo que el envoltorio salga sin la parte que ejecuta: NoPudo, no un pre-commit que llama a un archivo que no está
+  const cojo = new Map([['arnes/.githooks/pre-commit', b('#!/usr/bin/env bash\nexec .githooks/pre-commit-checks\n')]]);
+  assert.throws(() => ex.splitHooks(cojo, []), (e) => e instanceof ex.NoPudo && /no arnes\/\.githooks\/pre-commit-checks/.test(e.message));
+  // un pre-commit suelto que no llama a ninguna parte (el de un commit viejo) sale como está
+  const suelto = new Map([['arnes/.githooks/pre-commit', b(HARNESS_HOOK)]]);
+  ex.splitHooks(suelto, []);
+  assert.deepStrictEqual([...suelto.keys()], ['arnes/.githooks/pre-commit']);
   // los espejos: sin ningún pre-commit (una lista blanca que deja .githooks/ afuera) no hay nada que partir…
   const nada = new Map([['arnes/README.md', b('# x\n')]]);
   const ajustesNada = [];
@@ -525,6 +537,16 @@ test('Export_SplitHooks_Direct_PartAlreadyThere_DispatcherAlone_NothingToSplit',
   assert.deepStrictEqual([...sano.keys()].sort(), ['agent-skills/.githooks/pre-commit', 'arnes/.githooks/pre-commit']);
   assert.strictEqual(sano.get('arnes/.githooks/pre-commit').datos.toString('utf8'), HARNESS_HOOK);
   assert.deepStrictEqual(ajustes.map((a) => a.archivo), ['arnes/.githooks/pre-commit', 'agent-skills/.githooks/pre-commit']);
+});
+
+// story 8.41, AC 33 (T26): el exportador ya no trae la transformación que juntaba dos pre-commit con un despachador generado
+test('T26 Export_NoMergedHooksTransform', () => {
+  const ex = require(EXPORTAR);
+  assert.ok(!ex.TRANSFORMACIONES.some((c) => c.nombre === 'merged-hooks'), 'la lista de transformaciones no nombra merged-hooks');
+  assert.ok(ex.TRANSFORMACIONES.some((c) => c.nombre === 'split-hooks'), 'la de partir el pre-commit de un commit viejo sigue');
+  assert.strictEqual(ex.PRE_COMMIT_DISPATCHER, undefined, 'el exportador no trae el texto de un despachador');
+  const src = fs.readFileSync(EXPORTAR, 'utf8');
+  assert.doesNotMatch(src, /const PRE_COMMIT_DISPATCHER\b/, 'el exportador no arma el despachador');
 });
 
 test.after(() => {

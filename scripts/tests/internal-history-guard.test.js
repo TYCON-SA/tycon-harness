@@ -1288,8 +1288,12 @@ test('InternalHistoryGuard_GuardRecord_DecisionTable_Unit — la decisión de un
   }
 });
 
-test('InternalHistoryGuard_ValidationStep_OneRun_NoticesWithFixedTextAndTheCount — en la validación corre una vez y avisando se ve', () => {
-  const yml = fs.readFileSync(path.join(RAIZ, 'pipelines/azure-pipelines-pr.yml'), 'utf8').split('\n');
+// La validación de los pedidos es del privado (story 8.41, tanda F2): la copia pública no la trae, y ahí no hay paso que medir.
+const PR_YAML = path.join(RAIZ, 'pipelines/azure-pipelines-maintainers-pr.yml');
+const NO_PR_YAML = !fs.existsSync(PR_YAML) && 'NO MEDIDO — no está pipelines/azure-pipelines-maintainers-pr.yml (la copia pública no trae los pipelines del equipo)';
+
+test('InternalHistoryGuard_ValidationStep_OneRun_NoticesWithFixedTextAndTheCount — en la validación corre una vez y avisando se ve', { skip: NO_PR_YAML }, () => {
+  const yml = fs.readFileSync(path.join(RAIZ, 'pipelines/azure-pipelines-maintainers-pr.yml'), 'utf8').split('\n');
   const runs = yml.filter((l) => /node scripts\/publishing\/internal-history\.js/.test(l));
   assert.strictEqual(runs.length, 1, 'una sola corrida para las dos fuentes');
   assert.match(runs[0], /--range "\$\(baseDelCambio\)\.\.\.HEAD"/, 'sobre el diff del pedido');
@@ -1310,9 +1314,9 @@ test('InternalHistoryGuard_ValidationStep_OneRun_NoticesWithFixedTextAndTheCount
   assert.match(step, /\[ -z "\$IH_LINE" \]/, 'sin línea de cuentas no es «limpio»');
 });
 
-test('InternalHistoryGuard_ValidationStep_ShellLogic_OnEachSummaryLine — lo que el paso hace con cada línea de cuentas', { skip: process.platform === 'win32' && 'el paso es bash' }, () => {
+test('InternalHistoryGuard_ValidationStep_ShellLogic_OnEachSummaryLine — lo que el paso hace con cada línea de cuentas', { skip: NO_PR_YAML || (process.platform === 'win32' && 'el paso es bash') }, () => {
   // el paso de verdad, sacado del YAML y corrido con un control de mentira que imprime la línea que se le pide
-  const yml = fs.readFileSync(path.join(RAIZ, 'pipelines/azure-pipelines-pr.yml'), 'utf8').split('\n');
+  const yml = fs.readFileSync(path.join(RAIZ, 'pipelines/azure-pipelines-maintainers-pr.yml'), 'utf8').split('\n');
   const from = yml.findIndex((l) => /IH_OUT="\$\(node scripts\/publishing\/internal-history\.js/.test(l));
   const to = yml.findIndex((l, i) => i > from && /^\s*fi\s*$/.test(l) && /^\s*$/.test(yml[i + 1] || ''));
   const body = yml.slice(from, to + 1).map((l) => l.replace(/^ {10}/, '')).join('\n')
@@ -1648,8 +1652,16 @@ test('SkillsReviewersAndBlocks_CountBeforeAfter (T58) — la cuenta de antes y d
   // por archivo, al menos tantos marcadores como renglones de la lista: borrar uno de sus ejemplos se ve
   const rows = {};
   for (const rel of withMarker) rows[rel] = (rows[rel] || 0) + 1;
+  // un revisor o una skill que la story 8.41 mudó a su paquete se busca ahí (packs/<p>/agents/, packs/<p>/skills/)
+  const packsDir = path.join(RAIZ, 'packs');
+  const where = (rel) => {
+    if (fs.existsSync(path.join(RAIZ, rel))) return path.join(RAIZ, rel);
+    const packs = fs.existsSync(packsDir) ? fs.readdirSync(packsDir).filter((p) => fs.existsSync(path.join(packsDir, p, 'pack.json'))) : [];
+    const found = packs.map((p) => path.join(packsDir, p, rel)).find((f) => fs.existsSync(f));
+    return found || path.join(RAIZ, rel);
+  };
   for (const [rel, n] of Object.entries(rows)) {
-    const markers = (fs.readFileSync(path.join(RAIZ, rel), 'utf8').match(/<N\.M>|<otra N\.M>|<N-M>|<sha>|<id>|<rama>|<otra>/g) || []).length;
+    const markers = (fs.readFileSync(where(rel), 'utf8').match(/<N\.M>|<otra N\.M>|<N-M>|<sha>|<id>|<rama>|<otra>/g) || []).length;
     assert.ok(markers >= n, `${rel}: ${n} ejemplo(s) de salida en la lista y ${markers} marcador(es) en el archivo`);
   }
   // el skill del pipeline se midió con una corrida sobre una story de juguete: el papel dice qué hizo de cada lado

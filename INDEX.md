@@ -36,6 +36,7 @@ la fila aplica.
 | Memoria persistente con engram (si la integración está prendida) | `guides/engram-workflow.md` |
 | Commit, push, merge, cualquier cosa de git | `guides/git-commit-conventions.md` |
 | Nombrar algo que ejecuta la máquina · frenó el freno de castellano · renombrar sin romper a nadie (`renames.json`) | `guides/nombres-en-ingles.md` |
+| Escribir o revisar los comentarios del código (qué hace y por qué, en presente; sin historia ni referencias internas) | `guides/estilo-de-codigo.md` |
 | Sumar o actualizar una skill de terceros · de quién es cada cosa y con qué licencia | el manifiesto `scripts/publishing/third-party-skills.json` + `guides/publicacion-espejo.md` §«Las skills de terceros» |
 | Correr 2 pipelines/stories en paralelo en el mismo repo · mergear sin congelar el working tree del dev · aislar escrituras de agentes paralelos | `guides/git-worktrees.md` (helper: `scripts/tools/tycon-worktree.sh`) |
 | Planificación de cambios no triviales | `guides/workflow-orchestration.md` |

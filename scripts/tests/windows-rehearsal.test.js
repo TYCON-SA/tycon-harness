@@ -101,7 +101,7 @@ test('RehearsalPipeline_Yaml_ScenarioParameter_TwoJobs_NoSecrets_TagsFetched', {
   assert.match(src, /fetchTags: true\b/, 'y las etiquetas');
   // agent-skills es su repo de ANTES de la unión, clonado por el trabajo con el token de la corrida: la plantilla compartida,
   // en el repo unido (story 8.18), lo enlaza al propio checkout, y ahí no está la marca del viernes de agent-skills
-  assert.doesNotMatch(src, /template: \/pipelines\/templates\/traer-repos\.yml/, 'el ensayo no toma agent-skills de la plantilla (en el repo unido es un enlace al arnés)');
+  assert.doesNotMatch(src, /template: \/pipelines\/templates\/(?:fetch|traer)-repos\.yml/, 'el ensayo no toma agent-skills de la plantilla (en el repo unido es un enlace al arnés)');
   assert.match(src, /clone --quiet "\$\{ORG\}AgentSkills\/_git\/AgentSkills" "\$SK"/, 'clona el repo viejo de agent-skills');
   assert.match(src, /SK="\$\(Agent\.TempDirectory\)\/agent-skills"/, 'en una carpeta propia, nunca ~/.claude/agent-skills');
   assert.match(src, /AUTHORIZATION: bearer \$SYSTEM_ACCESSTOKEN/, 'con el token de la corrida');

@@ -26,8 +26,8 @@ const { spawnSync } = require('child_process');
 
 const RAIZ = path.resolve(__dirname, '..', '..');
 const NEW_NAMES = path.join(RAIZ, 'scripts', 'publishing', 'new-names.js');
-// el guion del pre-commit del arnés según el layout: en la copia pública de un solo repo `.githooks/pre-commit` es un
-// despachador generado y el guion de verdad es `pre-commit-harness` (lo elige scripts/tests/lib/pre-commit-hook.js)
+// el guion de los controles del pre-commit según el layout: `.githooks/pre-commit` sólo llama a
+// `.githooks/pre-commit-checks`, que es el de verdad (lo elige scripts/tests/lib/pre-commit-hook.js)
 const { preCommitHook } = require('./lib/pre-commit-hook.js');
 const HOOK = preCommitHook('harness', RAIZ);
 

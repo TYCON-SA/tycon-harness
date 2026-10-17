@@ -1791,7 +1791,7 @@ function layerPaths(tree) {
 
 module.exports = {
   PROFILE_PATH, LEGACY_PROFILE_PATH, PROFILE_PATHS, isProfilePath, profileFileOf, profileIn, profileNameNotice,
-  CLOSED_PATHS, MANIFEST_NAME, DECLARATION, TEAM_REF, MAX_TOTAL_BYTES, MAX_FILES, FORBIDDEN_PROFILE_KEYS, TMP_PREFIX, PENDING_NAME, isLayerTemp,
+  CLOSED_PATHS, MANIFEST_NAME, DECLARATION, TEAM_REF, MAX_TOTAL_BYTES, MAX_FILES, ROOT_NOT_STACKED, FORBIDDEN_PROFILE_KEYS, TMP_PREFIX, PENDING_NAME, isLayerTemp,
   EXTRAS_FILE, MAX_EXTRAS, validateExtras, loadExtras, extrasEntryFor, extrasPathProblem, extrasReviewDue, dataHomeOf,
   extrasInLayer, findLegacyData, moveSkillData, extrasForeign, skillDataDoctor, blobStore,
   layerPathProblem, contentProblems, frontmatterKeys, versionIndex, checkAgainstVersion, judgeContent, dropStaged, isContentChecked, pruneEmptyDirs,

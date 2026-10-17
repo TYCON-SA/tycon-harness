@@ -9,7 +9,7 @@
  ],
  "entries": [
   {
-   "path": ".githooks/pre-commit-skills",
+   "path": ".githooks/pre-commit-checks",
    "kind": "literal-copy",
    "why": "el lector del arnés en el hook de git: busca el lugar y después el nombre viejo, escritos (copia declarada de harness-place-names.json)"
   },

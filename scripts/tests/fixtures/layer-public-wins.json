@@ -13,15 +13,11 @@
     },
     {
       "path": ".githooks/pre-commit",
-      "why": "el despachador de la 8.7 (transformación merged-hooks): corre las dos partes, cada una en su proceso"
+      "why": "llama a los controles del commit (.githooks/pre-commit-checks) con la raíz del repo como arnés"
     },
     {
-      "path": ".githooks/pre-commit-harness",
-      "why": "la parte del arnés que llama el despachador"
-    },
-    {
-      "path": ".githooks/pre-commit-skills",
-      "why": "la parte de lo que era agent-skills que llama el despachador"
+      "path": ".githooks/pre-commit-checks",
+      "why": "los controles del commit: la parte del arnés y la de las skills, cada una en su proceso"
     }
   ]
 }

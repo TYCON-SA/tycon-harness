@@ -26,7 +26,7 @@
  * servirle de excusa a un rojo de verdad. Quien lee el reporte no mira la marca: suites-report.js separa esas entradas
  * en `unmeasured` y pone `complete` en false.
  *
- * SÓLO LAS QUE CORREN (`--only`, 2026-10-04): la validación de los pedidos de merge (pipelines/azure-pipelines-pr.yml)
+ * SÓLO LAS QUE CORREN (`--only`, 2026-10-04): la validación de los pedidos de merge (pipelines/azure-pipelines-maintainers-pr.yml)
  * no corre todas las suites —scripts/ci/suites-for-change.js deja para el nocturno las que el cambio no toca—, y el
  * reparto se hace sobre las que de verdad corren: sobre la lista entera, la copia pública (la más pesada, casi siempre
  * salteada) se quedaba un trabajo para ella sola y el otro cargaba con todo lo demás. `--only` es un archivo con una
