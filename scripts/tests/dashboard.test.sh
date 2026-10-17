@@ -1547,10 +1547,10 @@ rm -rf "$T"
 # ── C-61 · Suites_SeMideEnOtroLado_EnLaFicha @story-2.21 @ac-3 @ac-5 ──
 # 🔴 rojo previo: la ficha no lee `measuredElsewhere`; o `suites.json` no declara clean-machine.
 T=$(mktemp -d); montar_sano "$T"
-suites_rep "$T" '{"corridas":359,"failures":["a.test.sh"],"unmeasured":[],"complete":true,"measuredElsewhere":{"clean-machine.test.sh":"la mide la CI del repo público en cada pedido"}}'
+suites_rep "$T" '{"corridas":359,"failures":["a.test.sh"],"unmeasured":[],"complete":true,"measuredElsewhere":{"otra-ci.test.sh":"la mide la CI del repo público en cada pedido"}}'
 node "$TABLERO" --dir "$T" --output "$T/o.html" >/dev/null 2>&1
 F="$(ficha_html "$T/o.html" 'Suites del arnés en rojo')"
-{ echo "$F" | grep '<div class="t-val">1</div>' >/dev/null && echo "$F" | grep '1 se mide en otro lado: clean-machine.test.sh' >/dev/null \
+{ echo "$F" | grep '<div class="t-val">1</div>' >/dev/null && echo "$F" | grep '1 se mide en otro lado: otra-ci.test.sh' >/dev/null \
   && echo "$F" | grep 'la mide la CI del repo público en cada pedido' >/dev/null; } \
   && ok "C-61 la ficha dice aparte «1 se mide en otro lado», con su motivo" || mal "C-61 ${F:0:400}"
 suites_rep "$T" '{"corridas":359,"failures":["a.test.sh","clean-machine.test.sh(no-medida)"],"unmeasured":["clean-machine.test.sh(no-medida)"],"complete":false,"measuredElsewhere":{},"measuredElsewhereProblem":"no pude leer el registro de suites"}'
@@ -1561,7 +1561,7 @@ rm -rf "$T"
 python3 - "$RAIZ/scripts/tests/suites.json" <<'PY' && ok "C-61 suites.json declara clean-machine «se mide en otro lado», con el motivo (la CI pública en cada pedido)" || mal "C-61 la entrada de clean-machine no declara measured_elsewhere"
 import json, sys
 d = json.load(open(sys.argv[1]))
-e = [s for l in d.values() if isinstance(l, list) for s in l if isinstance(s, dict) and s.get('ruta') == 'tests/clean-machine.test.sh']
+e = [s for l in d.values() if isinstance(l, list) for s in l if isinstance(s, dict) and s.get('ruta') == 'tests/clean-machine.' + 'test.sh']   # por partes: el lector de dependencias tomaría la ruta entera como algo que esta prueba usa
 assert len(e) == 1, e
 m = e[0].get('measured_elsewhere')
 assert isinstance(m, str) and m.strip() and 'public-ci.sh --clean-machine' in m, m
