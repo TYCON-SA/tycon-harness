@@ -27,6 +27,13 @@
 #   tycon-telegram-notify.sh --edit <message_id> "texto nuevo" # reescribe un aviso ya mandado
 #   tycon-telegram-notify.sh --chat-id <id> "texto"            # a otro destinatario
 #   tycon-telegram-notify.sh --dry-run "texto"                 # no manda: imprime qué mandaría
+#   printf '%s' "texto" | tycon-telegram-notify.sh --stdin     # el texto por la entrada estándar
+#
+# EL TEXTO NUNCA VA EN LA LÍNEA DE COMANDOS DE CURL. En Windows, el curl de Git es un programa nativo
+# que lee sus argumentos en la página de códigos del sistema: los acentos y los signos llegaban como
+# un byte suelto que Telegram mostraba «�», y un emoji como «?». Por eso el texto le llega a curl
+# por la entrada estándar (`--data-urlencode text@-`), byte a byte. Quien llama desde Node usa
+# `--stdin` por la misma razón: el texto no cruza ninguna línea de comandos.
 #
 # El message_id que imprime es lo que habilita el patrón del arnés para tareas largas: UN aviso por
 # tanda, actualizado con --edit, en vez de una catarata de mensajes nuevos.
@@ -47,6 +54,7 @@ set -uo pipefail
 CHANNEL_DIR="${TYCON_TELEGRAM_DIR:-$HOME/.claude/channels/telegram}"
 API="${TYCON_TELEGRAM_API:-https://api.telegram.org}"
 DRY_RUN=0
+FROM_STDIN=0
 EDIT_ID=""
 CHAT_ID="${TYCON_TELEGRAM_CHAT_ID:-}"
 
@@ -57,14 +65,20 @@ while [ $# -gt 0 ]; do
     --edit)     EDIT_ID="${2:-}"; [ -n "$EDIT_ID" ] || die_usage; shift 2 ;;
     --chat-id)  CHAT_ID="${2:-}"; [ -n "$CHAT_ID" ] || die_usage; shift 2 ;;
     --dry-run)  DRY_RUN=1; shift ;;
-    -h|--help)  sed -n '2,45p' "$0"; exit 0 ;;
+    --stdin)    FROM_STDIN=1; shift ;;
+    -h|--help)  sed -n '2,51p' "$0"; exit 0 ;;
     --)         shift; break ;;
     -*)         echo "opción desconocida: $1" >&2; die_usage ;;
     *)          break ;;
   esac
 done
 
-TEXT="${1:-}"
+if [ "$FROM_STDIN" -eq 1 ]; then
+  [ $# -eq 0 ] || die_usage
+  TEXT="$(cat)"
+else
+  TEXT="${1:-}"
+fi
 [ -n "$TEXT" ] || die_usage
 
 # ── Token ────────────────────────────────────────────────────────────────────────────────────
@@ -103,9 +117,9 @@ if [ "$DRY_RUN" -eq 1 ]; then
   exit 0
 fi
 
-RESP="$(curl -sS -m 15 -X POST "$API/bot$TOKEN/$METHOD" \
+RESP="$(printf '%s' "$TEXT" | curl -sS -m 15 -X POST "$API/bot$TOKEN/$METHOD" \
   --data-urlencode "chat_id=$CHAT_ID" \
-  --data-urlencode "text=$TEXT" \
+  --data-urlencode "text@-" \
   ${EDIT_ID:+--data-urlencode "message_id=$EDIT_ID"} 2>&1)"
 
 # La respuesta puede traer el token de vuelta en un mensaje de error de curl (URL completa) — se

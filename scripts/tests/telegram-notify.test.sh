@@ -102,6 +102,41 @@ process.stdout.write(L.isGeneratedShim(viejo, texto) && destino && path.resolve(
   contiene "T23 R3_Lib_MovedRequires — por la ruta de siempre, sigue usando editMessageText" "método=editMessageText" "$viejo_out"
 fi
 
+# ── T60 · el texto nunca va en la línea de comandos de curl ───────────────────────────────────────────────────────
+# En Windows el curl de Git lee sus argumentos en la página de códigos del sistema: un texto con «¿», «·» o un emoji
+# llegaba a Telegram con «�» y «?» (aviso de espera, corrida 13729 de la 182). Un curl de mentira anota sus argumentos y
+# su entrada: los argumentos no traen el texto ni ningún byte fuera de ASCII, y la entrada trae el texto entero, igual
+# venga como argumento o por --stdin. Sin red.
+T60_BIN="$(mktemp -d)"
+T60_LOG="$(mktemp -d)"
+cat > "$T60_BIN/curl" <<'CURL'
+#!/usr/bin/env bash
+printf '%s\n' "$@" > "$T60_LOG_DIR/args"
+cat > "$T60_LOG_DIR/stdin"
+echo '{"ok":true,"result":{"message_id":7}}'
+CURL
+chmod +x "$T60_BIN/curl"
+T60_TEXT='⏳ Una corrida te espera · ¿Sigo con los revisores?'
+for modo in arg stdin; do
+  rm -f "$T60_LOG/args" "$T60_LOG/stdin"
+  if [ "$modo" = arg ]; then
+    out="$(PATH="$T60_BIN:$PATH" T60_LOG_DIR="$T60_LOG" TYCON_TELEGRAM_DIR="$FAKE" bash "$SCRIPT" "$T60_TEXT" 2>&1)"; rc=$?
+  else
+    out="$(printf '%s' "$T60_TEXT" | PATH="$T60_BIN:$PATH" T60_LOG_DIR="$T60_LOG" TYCON_TELEGRAM_DIR="$FAKE" bash "$SCRIPT" --stdin 2>&1)"; rc=$?
+  fi
+  check "T60 ($modo) manda y sale 0" 0 "$rc"
+  check "T60 ($modo) imprime el message_id" 7 "$out"
+  no_contiene "T60 ($modo) el texto no va en los argumentos de curl" "Sigo con los revisores" "$(cat "$T60_LOG/args" 2>/dev/null)"
+  if LC_ALL=C grep -q '[^ -~]' "$T60_LOG/args" 2>/dev/null; then echo "❌ T60 ($modo) los argumentos de curl traen bytes fuera de ASCII"; fallos=$((fallos+1)); else echo "✅ T60 ($modo) los argumentos de curl son ASCII"; fi
+  check "T60 ($modo) curl recibe el texto entero, byte a byte, por la entrada" "$T60_TEXT" "$(cat "$T60_LOG/stdin" 2>/dev/null)"
+  contiene "T60 ($modo) el campo text sale de la entrada (text@-)" "text@-" "$(cat "$T60_LOG/args" 2>/dev/null)"
+done
+out="$(TYCON_TELEGRAM_DIR="$FAKE" bash "$SCRIPT" --stdin "y además argumento" < /dev/null 2>&1)"; rc=$?
+check "T60 --stdin con un texto de argumento es un uso inválido (2)" 2 "$rc"
+out="$(TYCON_TELEGRAM_DIR="$FAKE" bash "$SCRIPT" --stdin < /dev/null 2>&1)"; rc=$?
+check "T60 --stdin sin texto es un uso inválido (2)" 2 "$rc"
+rm -rf "$T60_BIN" "$T60_LOG"
+
 rm -rf "$VACIO" "$FAKE"
 if [ "$fallos" -eq 0 ]; then echo "✅ telegram-notify: todo verde"; exit 0; fi
 echo "❌ telegram-notify: $fallos rojos"; exit 1
