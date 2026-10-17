@@ -1,0 +1,18 @@
+{
+  "__doc": "Revisores que fueron de la versión y salieron (story 8.41: los de un stack pasaron a su paquete). generate.js --deploy-only quita de Codex lo que el arnés desplegó para ellos cuando ya no son de la versión ni de la capa (removeRetired). Sólo estos nombres: un archivo de otro revisor, aunque tenga la cabecera del generador, no se toca.",
+  "reviewers": [
+    "auth-session-reviewer",
+    "drizzle-migration-reviewer",
+    "http-resilience-reviewer",
+    "migration-impact-analyzer",
+    "multi-tenant-isolation-reviewer",
+    "nextjs-app-router-security",
+    "signalr-client-reviewer",
+    "signalr-hub-reviewer",
+    "tycon-feature-wiring-checker",
+    "tycon-plugin-dotnet-conventions",
+    "tycon-plugin-nextjs-conventions",
+    "tycon-plugin-react-conventions",
+    "worker-lifecycle-reviewer"
+  ]
+}

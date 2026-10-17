@@ -69,7 +69,7 @@ Bajar el propio guion va siempre sin credencial y no pasa por la API: no gasta d
    Code.
 
 Para trabajar con BIZUIT Extensions: el paquete bizuit ya queda prendido para todos mis repos (--packs all). Las guías
-para empezar un plugin o un formulario están en ~/.claude/tycon-harness/guides/bizuit/ y te mandan a los templates públicos.
+para empezar un plugin o un formulario están en ~/.claude/tycon-harness/packs/bizuit/guides/ (vienen con el perfil de tu equipo) y te mandan a los templates públicos.
 ```
 <!-- /guided:base -->
 

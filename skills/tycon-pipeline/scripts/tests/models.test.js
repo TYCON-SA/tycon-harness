@@ -262,7 +262,8 @@ test('T1 Defaults_UnSoloLugar_CopiasVerificadas @story-7.29 @ac-1', () => {
   // el model: de cada agents/*.md del público es el que da defaultFor
   const agentes = path.join(RAIZ, 'agents');
   const mds = fs.readdirSync(agentes).filter((f) => f.endsWith('.md'));
-  assert.ok(mds.length >= 20, `${mds.length} revisores`);
+  // (desde la 8.41 los revisores de un stack viven en su paquete, no en agents/ del núcleo: quedan los del núcleo)
+  assert.ok(mds.length >= 10, `${mds.length} revisores`);
   for (const f of mds) {
     const fm = (fs.readFileSync(path.join(agentes, f), 'utf8').match(/^---\n([\s\S]*?)\n---/) || [])[1] || '';
     const m = (fm.match(/^model:\s*(\S+)/m) || [])[1];

@@ -32,9 +32,9 @@ your assistant are in Spanish only today.
   are not needed. Through WSL, the same as on Mac and Linux, inside WSL.
 - **On Mac and Linux**: Bash, Python 3, `tar`, `curl` and Node 22 or later (tested on 22 and 24). Git is not needed.
 - **Node 20**: 20 is tolerated only to update an existing installation; it is not tested.
-- **The TYCON stack pack** also needs the .NET SDK your plugin targets.
+- **Your team's packs** may need more (the .NET stack one, the .NET SDK your plugin targets): each one says so.
 
-The exact list for Mac and Linux (`dotnet`, only with the stack pack):
+The exact list for Mac and Linux:
 
 <!-- requirements -->
 ```text
@@ -43,7 +43,6 @@ python3
 tar
 curl
 node >= 22
-dotnet (bizuit)
 ```
 <!-- /requirements -->
 
@@ -275,41 +274,26 @@ You choose with `--profile minimal` or `--profile full`, with `install.profile` 
 `minimal`, the other brakes still turn on with their variable set to `1` (`TYCON_TEST_SCOPE_GUARD=1`), and the
 destructive-commands brake turns off only with `TYCON_SAFETY_GUARD=0`.
 
-## The TYCON stack pack
+## Your team's packs
 
-The optional pack is the TYCON stack pack: .NET + React/Next.js on Bizuit. Inside the repo it is called `bizuit`. It
-holds the conventions TYCON uses to build plugins on Bizuit; it is not a Bizuit product.
+The core carries no packs. A pack is what an organization adds for its stack: reviewers, skills, guides and templates,
+in `packs/<name>/` with its `pack.json`. They live in your team's profile repo and reach your machine with the team
+layer, with nothing to do.
 
-**What it adds**: three reviewers (`tycon-plugin-dotnet-conventions`, `tycon-plugin-react-conventions`,
-`tycon-plugin-nextjs-conventions`), their guides and their cases in the bench of controls, and the `bizuit-new-product`
-skill, which sets up a new product (backend, forms and stories repos, with pipelines that build, test and deploy to
-staging and, with approval, to production) from the templates in `packs/bizuit/new-product-templates/`. **What else it needs**: the
-.NET SDK your plugin targets.
+**Your organization turns them on**: `packs.default` in the team profile (or in the site's Configuration tab, Packs
+section). It takes `all`, `none` or a list of names. Your machine can set its own value (`TYCON_PACKS_DEFAULT`, or
+`packs.default` in `~/.claude/tycon.json`) when the profile does not set one. A product repo can narrow that list with
+`packs:` in its `.tycon/advisors.yaml`, not add to it.
 
-**It comes turned off.** The repo carries it, but your organization turns it on: `packs.default` in the team profile
-(or in the site's Configuration tab, Packs section), or your machine (`TYCON_PACKS_DEFAULT`, or `packs.default` in
-`~/.claude/tycon.json`). It takes `all`, `none` or a list (`bizuit`). A product repo can narrow that list with `packs:`
-in its `.tycon/advisors.yaml`, not add to it. If you don't use it, ignore it. To turn it on on your machine:
-
-<!-- install:bizuit -->
-```bash
-node ~/.claude/tycon-harness/scripts/lib/tycon-config.js set packs.default bizuit
-```
-
-```powershell
-node "$HOME/.claude/tycon-harness/scripts/lib/tycon-config.js" set packs.default bizuit
-```
-<!-- /install:bizuit -->
-
-A repo that asks for the pack when the clone does not have it stops the pipeline (exit 2) with this message (the
-message is in Spanish; the path at the end is your machine's):
+A repo that asks for a pack your machine does not have stops the pipeline (exit 2) with this message (the message is in
+Spanish; the path at the end is your machine's):
 
 ```text
-el repo declara el paquete «bizuit» en `packs:` y no está instalado en …
+el repo declara el paquete «<nombre>» en `packs:` y no está instalado en …
 ```
 
-The pack lives in `packs/bizuit/` of this repo: if you see that message, your clone is incomplete; update it with
-`node ~/.claude/tycon-harness/scripts/setup/harness.js update`.
+If you see it, the pack did not arrive with your team layer: update with
+`node ~/.claude/tycon-harness/scripts/setup/harness.js update`, and if it persists, ask whoever maintains the profile.
 
 ## What is optional
 

@@ -111,10 +111,6 @@
       "transform": "skill-rename"
     },
     {
-      "path": "packs/bizuit/pack.json",
-      "transform": "rutas-del-otro-repo"
-    },
-    {
       "path": "scripts/ci/pipeline-debt.json",
       "transform": "sinteticos"
     },

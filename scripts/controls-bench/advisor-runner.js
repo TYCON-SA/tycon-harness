@@ -508,8 +508,15 @@ const LIST = argv.includes('--list');
 const SAVE_OUTPUT = argv.includes('--save-output');
 
 // ---------- canónico ----------
+/** El canónico de un revisor: en la carpeta de agentes, o en la de su paquete (`packs/<p>/<agents>/`, story 8.41). */
+function advisorFile(name) {
+  const enRaiz = path.join(AGENTS_DIR, `${name}.md`);
+  if (fs.existsSync(enRaiz)) return enRaiz;
+  const dir = require(path.join(TCG, 'scripts', 'lib', 'pack-pieces.js')).agentDirInPacks(process.env.TYCON_PACKS_DIR || path.join(TCG, 'packs'), name);
+  return dir ? path.join(dir, `${name}.md`) : enRaiz;   // no está en ningún lado: el error de lectura lo nombra
+}
 function advisorParts(name) {
-  const raw = fs.readFileSync(path.join(AGENTS_DIR, `${name}.md`), 'utf8');
+  const raw = fs.readFileSync(advisorFile(name), 'utf8');
   const m = raw.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
   const fm = {};
   for (const line of m[1].split('\n')) {

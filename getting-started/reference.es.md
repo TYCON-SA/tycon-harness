@@ -32,9 +32,9 @@ castellano; esta página y los archivos de la comunidad tienen versión en ingl�
   no hacen falta. Por WSL, lo mismo que en Mac y Linux, dentro de WSL.
 - **En Mac y Linux**: Bash, Python 3, `tar`, `curl` y Node 22 o posterior (probado en 22 y 24). Git no hace falta.
 - **Node 20**: 20 se tolera sólo para actualizar una instalación existente; no se prueba.
-- **El paquete del stack de TYCON** pide además el SDK de .NET de tu plugin.
+- **Los paquetes de tu equipo** pueden pedir más (el del stack .NET, el SDK de .NET de tu plugin): lo dice cada uno.
 
-La lista exacta para Mac y Linux (`dotnet`, sólo con el paquete del stack):
+La lista exacta para Mac y Linux:
 
 <!-- requirements -->
 ```text
@@ -43,7 +43,6 @@ python3
 tar
 curl
 node >= 22
-dotnet (bizuit)
 ```
 <!-- /requirements -->
 
@@ -268,41 +267,26 @@ Se elige con `--profile minimal` o `--profile full`, con `install.profile` en `~
 `minimal`, los otros frenos se prenden con su variable en `1` (`TYCON_TEST_SCOPE_GUARD=1`), y el de comandos
 destructivos se apaga sólo con `TYCON_SAFETY_GUARD=0`.
 
-## El paquete del stack de TYCON
+## Los paquetes de tu equipo
 
-El paquete opcional es el paquete del stack de TYCON: .NET + React/Next.js sobre Bizuit. Adentro del repo se llama
-`bizuit`. Son las convenciones con que TYCON desarrolla plugins sobre Bizuit; no es un producto de Bizuit.
+El núcleo no trae paquetes. Un paquete es lo que una organización suma para su stack: revisores, skills, guías y
+plantillas, en `packs/<nombre>/` con su `pack.json`. Viven en el repo del perfil de tu equipo y llegan a tu máquina con
+la capa del equipo, sin hacer nada.
 
-**Qué agrega**: tres revisores (`tycon-plugin-dotnet-conventions`, `tycon-plugin-react-conventions`,
-`tycon-plugin-nextjs-conventions`), sus guías y sus casos en el banco de controles, y la skill `bizuit-new-product`, que
-da de alta un producto nuevo (los repos de backend, formularios e historias, con pipelines que compilan, prueban y
-despliegan a staging y, con aprobación, a producción) desde las plantillas de `packs/bizuit/new-product-templates/`.
-**Qué pide además**: el SDK de .NET de tu plugin.
+**Los activa tu organización**: `packs.default` en el perfil del equipo (o en la pestaña Configuración del sitio,
+sección Paquetes). Vale `all`, `none` o una lista de nombres. Tu máquina puede fijar otro valor (`TYCON_PACKS_DEFAULT`,
+o `packs.default` en `~/.claude/tycon.json`) si el perfil no lo fija. Un repo de producto puede achicar esa lista con
+`packs:` en su `.tycon/advisors.yaml`, no sumar.
 
-**Viene apagado.** El repo lo trae, pero lo activa tu organización: `packs.default` en el perfil del equipo (o en la
-pestaña Configuración del sitio, sección Paquetes), o tu máquina (`TYCON_PACKS_DEFAULT`, o `packs.default` en
-`~/.claude/tycon.json`). Vale `all`, `none` o una lista (`bizuit`). Un repo de producto puede achicar esa lista con
-`packs:` en su `.tycon/advisors.yaml`, no sumar. Si no lo usás, ignoralo. Para activarlo en tu máquina:
-
-<!-- install:bizuit -->
-```bash
-node ~/.claude/tycon-harness/scripts/lib/tycon-config.js set packs.default bizuit
-```
-
-```powershell
-node "$HOME/.claude/tycon-harness/scripts/lib/tycon-config.js" set packs.default bizuit
-```
-<!-- /install:bizuit -->
-
-Un repo que pide el paquete cuando el clon no lo tiene frena el pipeline (exit 2) con este mensaje (la ruta del final es
+Un repo que pide un paquete que tu máquina no tiene frena el pipeline (exit 2) con este mensaje (la ruta del final es
 la de tu máquina):
 
 ```text
-el repo declara el paquete «bizuit» en `packs:` y no está instalado en …
+el repo declara el paquete «<nombre>» en `packs:` y no está instalado en …
 ```
 
-El paquete vive en `packs/bizuit/` de este repo: si ves ese mensaje, tu clon está incompleto; actualizalo con
-`node ~/.claude/tycon-harness/scripts/setup/harness.js update`.
+Si lo ves, el paquete no llegó con la capa de tu equipo: actualizá con
+`node ~/.claude/tycon-harness/scripts/setup/harness.js update`, y si sigue, preguntale a quien mantiene el perfil.
 
 ## Qué es opcional
 

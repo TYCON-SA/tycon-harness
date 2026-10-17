@@ -180,12 +180,15 @@ jobs:
           set -euo pipefail
           . pipelines/operations/github/operations-auth.sh
           DAY=$(date -u +%Y-%m-%d)
+          # la marca de la configuración aplicada (story 2.29): el paso que trajo los datos de main la pisó; prepare-tree.sh
+          # dejó la copia de esta corrida en la carpeta temporal. Viaja sólo con una noche verde, como lo demás
+          mkdir -p .dashboard && cp "${RUNNER_TEMP}/applied-config.json" .dashboard/applied-config.json
           node scripts/ci/push-nightly-data.js save \
             --message "chore(tablero): página del arnés ${DAY} [nocturno]" \
             --require artifacts/tablero-del-arnes.html \
             --verify "node scripts/nightly/dashboard/seal.js --verify \"\$PUSH_DIR/artifacts/tablero-del-arnes.html\" --today \"${DAY}\" --run \"${BUILD_BUILDID}\" --dashboard \"\$PUSH_DIR/.dashboard\"" \
             --verify-export .dashboard \
-            -- artifacts/tablero-del-arnes.html .dashboard/open-prs .dashboard/assigned .dashboard/deployments 2>&1 | bash pipelines/operations/github/annotate.sh
+            -- artifacts/tablero-del-arnes.html .dashboard/open-prs .dashboard/assigned .dashboard/deployments .dashboard/applied-config.json 2>&1 | bash pipelines/operations/github/annotate.sh
 
       # Lo publicado, no el disco: la página que abre la organización es la de main del repo de operaciones.
       - name: Verificar la página publicada

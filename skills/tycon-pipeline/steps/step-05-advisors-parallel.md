@@ -115,7 +115,7 @@ inline y DESCUENTAN del set/expected automáticamente:
   DEFTR-* salió sin ambiguos (el delta lo cubre DEFTR-C2 mecánico).
 - `tycon-ac-coverage-checker`: ídem — descontado SOLO en iter≥2 (sus checks de
   juicio C2/C3/C6 corren en iter 1; en re-loops el delta lo cubren C1/C5 mecánicos).
-- `tycon-feature-wiring-checker`: **NUNCA descontado** — mech solo cubre WIRING-C1;
+- el revisor de cableado (prefijo WIRING, de su paquete): **NUNCA descontado** — mech solo cubre WIRING-C1;
   los callsites/testids/endpoints sin caller (C2..C5) son del advisor (una acción
   del store sin UI que la llame vive exactamente ahí).
 - Si mech-check NO pudo correr (story ilegible → ambiguo familia MECH) → CERO
@@ -223,8 +223,8 @@ Revisores:
                o un endpoint .cs (mech no cubre C2..C5; no depende de detectar React);
                ac-coverage y deferral-tracker [iter 1 sí (si aplican);
                iter≥2 solo si mech-check los escaló] — citar mech_discounted.
-  Condicionales: + signalr-hub-reviewer (matchea **/Hubs/*.cs)
-                 + migration-impact-analyzer (database/*.sql)
+  Condicionales: + <revisor de un paquete> (su condición: matchea **/Hubs/*.cs)
+                 + <otro revisor de un paquete> (su condición: database/*.sql)
                  [O "ninguno aplica para este diff" si no hay triggers].
   Skipped: <revisor de paquete> (su condición no se cumplió: no hay .cs) — solo si aplica.
   Total: N advisors a invocar en ventana deslizante de <cap> vivos (<4 | 2 — el pase adversarial está en vuelo>).
@@ -256,30 +256,27 @@ Si `M < N` (faltan advisors) → **STOP y NO avanzar a Step 6**. Reportar al use
 **Anti-patrones**:
 
 - Invocar advisors "a ojo" sin leer esta tabla saltea alguno (por ejemplo `react-conventions`). Lo cierra la regla B (anuncio explícito).
-- Correr sólo el set base y saltear en silencio los de completitud (`tycon-story-validator post-impl`, `tycon-spec-first-checker`, `tycon-deferral-tracker`, `tycon-feature-wiring-checker`). Lo cierran la regla C (count check post-flight) y la sección hard-listed al top de SKILL.md, para no depender de que el agente lea el step-05 completo.
+- Correr sólo el set base y saltear en silencio los de completitud (`tycon-story-validator post-impl`, `tycon-spec-first-checker`, `tycon-deferral-tracker` y, con su paquete activo, el revisor de cableado). Lo cierran la regla C (count check post-flight) y la sección hard-listed al top de SKILL.md, para no depender de que el agente lea el step-05 completo.
 
 Dejar estos pasos implícitos es causa de bugs silenciosos (bypass de reglas de convenciones + completitud). NO se pueden inferir desde "el set base suficiente" o "esto parece simple". Las 3 reglas A+B+C son no-negociables.
 
 **Anuncio de condicionales**: si un trigger condicional se cumple, agregar al anuncio una línea extra. Ejemplo:
 
 ```
-Detección: .cs modificados, sin frontend en el diff → set base: dotnet-conventions + tests-coverage + security-basics.
-Detección extra: diff incluye `Hubs/NoticesHub.cs` (matchea **/Hubs/*.cs) → + signalr-hub-reviewer.
-Detección extra: `Workers/OrderSyncWorker.cs` declara `IHttpClientFactory` → + http-resilience-reviewer.
-Set final paralelo: dotnet-conventions + tests-coverage + security-basics + signalr-hub-reviewer + http-resilience-reviewer.
+Detección: .cs modificados, sin frontend en el diff → set base: <convenciones .NET del paquete> + tests-coverage + security-basics.
+Detección extra: diff incluye `Hubs/NoticesHub.cs` (su paquete pide **/Hubs/*.cs) → + <revisor de hubs del paquete>.
+Detección extra: `Workers/OrderSyncWorker.cs` declara `IHttpClientFactory` → + <revisor de clientes HTTP del paquete>.
+Set final paralelo: los tres de base + los dos del paquete (con su nombre, tal como los devuelve `pipeline.js advisors`).
 ```
 
-Ejemplo Next.js / SaaS multi-tenant (Espinillo2):
+Ejemplo de un stack Next.js + Postgres (los revisores del stack vienen de su paquete; el de costo de LLM es del núcleo):
 
 ```
-Detección: package.json tiene "next" + .ts(x) modificados → set base: nextjs-conventions + tests-coverage + security-basics.
-Detección extra: diff toca `src/db/schema.ts` y `drizzle/0008_xxx.sql` → + drizzle-migration-reviewer.
-Detección extra: diff toca `src/db/repos/lists-repo.ts` (tabla con user_id) y `src/app/lists/actions.ts` → + multi-tenant-isolation-reviewer.
-Detección extra: diff toca `src/app/api/auth/[...nextauth]/route.ts` y agrega callbacks → + auth-session-reviewer.
-Detección extra: diff toca `src/app/api/compare/[listId]/route.ts` ('use server' / Route Handler) → + nextjs-app-router-security.
+Detección: package.json tiene "next" + .ts(x) modificados → set base: <convenciones Next.js del paquete> + tests-coverage + security-basics.
+Detección extra: diff toca `src/db/schema.ts` y `drizzle/0008_xxx.sql` → + <revisor de migraciones del paquete>.
+Detección extra: diff toca `src/app/api/auth/[...nextauth]/route.ts` → + <revisor de sesiones del paquete>.
 Detección extra: diff toca `src/matcher/llm-matcher.ts` (importa @anthropic-ai/sdk) → + llm-cost-reviewer.
-Detección extra: diff toca `src/adapters/tienda/tienda-adapter.ts` → + el revisor de ese adaptador, del paquete `clients`.
-Set final paralelo: nextjs-conventions (paquete bizuit) + tests-coverage + security-basics + drizzle-migration-reviewer + multi-tenant-isolation-reviewer + auth-session-reviewer + nextjs-app-router-security + llm-cost-reviewer + el revisor del adaptador de la tienda (paquete clients).
+Set final paralelo: el set de base + cada revisor de paquete que entró (con su paquete) + llm-cost-reviewer.
 ```
 
 ## Acción — invocación paralela

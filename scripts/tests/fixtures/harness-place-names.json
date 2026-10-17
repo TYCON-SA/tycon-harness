@@ -22,7 +22,7 @@
     { "path": "skills/tycon-pipeline/scripts/lib/harness-path.js", "why": "el lector de las skills BUSCA el arnés: en una máquina con dos clones en transición (8.18) el clon de las skills no tiene scripts/ al lado (en el repo unido toma las rutas del lugar de tycon-home.js, story 8.23)" },
     { "path": "scripts/hooks/git-pre-commit-global.sh", "why": "se instala COPIADO en ~/.git-hooks: no tiene el árbol al lado" },
     { "path": ".githooks/pre-commit-skills", "why": "el hook de git del repo de las skills: busca el arnés, igual que el lector de las skills" },
-    { "path": "packs/bizuit/new-product-templates/stories/githooks-pre-commit", "why": "la plantilla del hook de pre-commit del repo de historias de un producto: se copia a ese repo, que no tiene el árbol del arnés al lado, y busca el arnés por sus dos lugares" },
+    { "path": "packs/bizuit/templates/stories/githooks-pre-commit.template", "why": "(viaja con el perfil del equipo, en su paquete) la plantilla del hook de pre-commit del repo de historias de un producto: se copia a ese repo, que no tiene el árbol del arnés al lado, y busca el arnés por sus dos lugares" },
     { "path": "scripts/production/install-guard.sh", "why": "corre con sudo y busca el clon del arnés antes de tener el árbol" },
     { "path": "scripts/lib/tycon-config.js", "why": "viaja solo a la copia del freno de producción en /opt (install-guard.sh, ARCHIVOS)" },
     { "path": "scripts/lib/legacy-names.js", "why": "viaja solo a la copia del freno de producción en /opt; además genera los envoltorios" },

@@ -236,7 +236,10 @@ freno que molesta sin motivo es el que alguien termina apagando.
   root en `/opt/tycon/produccion/origen-de-confianza.json`; si después el remoto o la organización
   cambian, el instalador se niega y lo dice — si el cambio es tuyo, `--change-origin` (vuelve a
   preguntar por teclado). Un `tycon.json` o perfil ilegible lo frena nombrando el archivo, no como
-  «sin organización».
+  «sin organización». **La mudanza oficial a GitHub** no pide nada: si lo fijado es el clon de Azure del arnés y lo que
+  se instala es la versión bajada del repo de GitHub declarado en `scripts/production/origin-moves.json` (el archivo al
+  lado del instalador, no el de la carpeta que se instala), el instalador lo acepta solo y dice «el arnés se mudó a
+  GitHub: actualizo el origen fijado». Cualquier otro cambio sigue pidiendo `--change-origin` y el teclado.
 - Desde una **versión bajada** (`~/.tycon/harness`, sin git), el instalador recalcula desde el disco cada archivo y el
   árbol, y le pregunta a GitHub si ese árbol es el del commit que registra el estado. Ese commit tiene que ser **de
   main**: la punta, o uno anterior cuyo freno (los archivos que se copian a `/opt`) sea byte a byte el de la punta. En

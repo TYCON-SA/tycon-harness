@@ -299,6 +299,9 @@ fila_c9="$(grep -E '^\| (~~)?\*?\*?ACCOV-C9' "$CAT" | head -1)"
 rd_out="$(HOME="$HB" node "$AQUI/scripts/tools/rules-distill.js" 2>&1)"; rd=$?
 HOME="$HB" TYCON_AGENTS_DIR="$AS_RAIZ/agents" node "$AQUI/build/check.js" > "$TMP/check.out" 2>&1; bc=$?
 zomb="$(echo "$rd_out" | grep -Eo '^  [0-9]+ zombies' | grep -Eo '[0-9]+')"
+# TEST-W8 la cita sólo el revisor de convenciones .NET, que desde la 8.41 vive en el paquete bizuit (no viaja al público):
+# en un árbol sin ese paquete queda sin quien la cite y no cuenta como zombie; con el paquete, cuenta como cualquiera
+if [ -n "$zomb" ] && [ ! -d "$AQUI/packs/bizuit" ] && echo "$rd_out" | grep -E '^ +TEST-W8 +owner:' >/dev/null; then zomb=$((zomb - 1)); fi
 orph="$(echo "$rd_out" | grep -Eo '^  [0-9]+ orphans' | grep -Eo '[0-9]+')"
 c9_listado="$(echo "$rd_out" | grep -E '^ +ACCOV-C9 ' | head -1)"
 # Los huérfanos (un revisor cita una regla que el catálogo no tiene) se cuentan por regla. La familia XPAT es del

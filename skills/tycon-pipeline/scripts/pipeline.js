@@ -908,44 +908,10 @@ function computeCompletitud(storyPath, repo, files) {
 function computeConditional(repo, files, extras = []) {
   const out = [];
   const csFiles = files.filter((f) => /\.cs$/i.test(f));
-  const csproj = files.filter((f) => /\.csproj$/i.test(f));
   const csContents = readAddedContents(repo, csFiles, ['.cs']);
-  const csprojContents = readAddedContents(repo, csproj, ['.csproj']);
   const jsTsContents = readAddedContents(repo, files, ['.ts', '.tsx', '.js', '.jsx']);
 
-  // ── .NET / Bizuit ──
-  // signalr-hub: **/Hubs/*.cs OR IHubContext< OR Clients.X.Y(
-  if (anyFileMatches(csFiles, /\/Hubs\/[^/]+\.cs$/) ||
-      anyContentMatches(csContents, /IHubContext<|Clients\.\w+\.\w+\(/)) {
-    out.push('signalr-hub-reviewer');
-  }
-  // migration-impact: database/*.sql — también BD/ (layout de un producto del equipo, gap detectado en la corrida R-9 del 2026-07-10:
-  // las migraciones vivían en BD/<feature>/*.sql y el advisor nunca entró al set — guides/incident-log.md#case-sql-folder-missed-by-advisor-2026-07-10).
-  if (anyFileMatches(files, /(^|\/)(database|bd)\/.*\.sql$/i)) out.push('migration-impact-analyzer');
-  // http-resilience: HttpClient/IHttpClientFactory/AddHttpClient/Polly/ResiliencePipeline
-  if (anyContentMatches(csContents, /\b(HttpClient|IHttpClientFactory)\b|AddHttpClient\(|AddResilienceHandler\(|AddStandardResilienceHandler\(|ResiliencePipeline|using Polly/) ||
-      anyContentMatches(csprojContents, /Microsoft\.Extensions\.Http\.Resilience|Polly/)) {
-    out.push('http-resilience-reviewer');
-  }
-  // worker-lifecycle: BackgroundService/IHostedService/AddHostedService<
-  if (anyContentMatches(csContents, /:\s*BackgroundService\b|IHostedService\b|AddHostedService</)) {
-    out.push('worker-lifecycle-reviewer');
-  }
-  // signalr-client: HubConnection(Builder)/SignalR.Client OR @microsoft/signalr
-  if (anyContentMatches(csContents, /HubConnection\b|HubConnectionBuilder\b|using Microsoft\.AspNetCore\.SignalR\.Client/) ||
-      anyContentMatches(jsTsContents, /@microsoft\/signalr/)) {
-    out.push('signalr-client-reviewer');
-  }
-  // (el revisor de plugins hermanos vive en el paquete `clients` desde la story 8.2 — entra por `extras`)
-  // feature-wiring: una pantalla (.tsx/.jsx) que no es de Next, OR .cs con endpoints.Map* + IPluginEndpointBuilder.
-  // Story 7.26: ya NO depende de detectar React. Con la detección ciega (un package.json que no se encontró) el revisor
-  // quedaba afuera del set y del expected[], y check-count no podía reclamarlo. Next detectado lo sigue excluyendo: su
-  // superficie la cubre su propio revisor.
-  const det = detectStack(repo, files);
-  if ((!det.hasNext && anyFileMatches(files, /\.(tsx|jsx)$/)) ||
-      anyContentMatches(csContents, /endpoints\.Map(Get|Post|Put|Delete|Patch)\(/)) {
-    out.push('tycon-feature-wiring-checker');
-  }
+  // (los revisores de un stack —.NET y BIZUIT, Next.js + Postgres— y los de clientes viven en sus paquetes: entran por `extras`)
 
   // e2e-realness: cualquier spec Playwright en el diff (stack-agnostic).
   // 🔴 CF-1 (auditoría fresca 2026-05-21): este advisor se omitió al portar la matriz a
@@ -967,32 +933,11 @@ function computeConditional(repo, files, extras = []) {
     out.push('tycon-silent-failure-hunter');
   }
 
-  // ── Next.js / Postgres / Auth.js / LLM ──
-  if (anyFileMatches(files, /(^|\/)src\/db\/(repos|queries)\//) ||
-      anyFileMatches(files, /(^|\/)app\/api\/.*\/route\.ts$/) ||
-      anyFileMatches(files, /(^|\/)src\/lib\/cache\//)) {
-    out.push('multi-tenant-isolation-reviewer');
-  }
-  if (anyFileMatches(files, /(^|\/)drizzle\/.*\.sql$/) ||
-      anyFileMatches(files, /(^|\/)drizzle\/meta\/.*\.json$/) ||
-      anyFileMatches(files, /(^|\/)src\/db\/schema\.ts$/)) {
-    out.push('drizzle-migration-reviewer');
-  }
-  if (anyFileMatches(files, /(^|\/)src\/app\/.*\.tsx?$/) ||
-      anyFileMatches(files, /(^|\/)src\/middleware\.ts$/) ||
-      anyContentMatches(jsTsContents, /['"]use (server|client)['"]/)) {
-    out.push('nextjs-app-router-security');
-  }
+  // ── LLM ──
   if (anyContentMatches(jsTsContents, /@anthropic-ai\/sdk|voyageai|['"]openai['"]|cohere-ai|@openrouter\/sdk/) ||
       anyFileMatches(files, /(^|\/)src\/lib\/(llm|embeddings)\//) ||
       anyFileMatches(files, /(^|\/)src\/matcher\//)) {
     out.push('llm-cost-reviewer');
-  }
-  // (el revisor del adaptador de comercio electrónico de un cliente vive en el paquete `clients` desde la story 8.2 — entra por `extras`)
-  if (anyFileMatches(files, /(^|\/)src\/(app\/api\/auth|lib\/auth)\//) ||
-      anyFileMatches(files, /(^|\/)src\/auth(\.config)?\.ts$/) ||
-      anyContentMatches(jsTsContents, /getServerSession|\bauth\(\)|signIn\(|signOut\(/)) {
-    out.push('auth-session-reviewer');
   }
 
   // ── i18n (PROJECT-gated, stack-agnostic) ──
@@ -1078,32 +1023,14 @@ const ADVISOR_AUDITED_SURFACE = {
     paths: ['**/*.cs', '**/*.ts', '**/*.tsx', '**/*.js', '**/*.mjs', '**/*.cjs', '**/*.sh'],
     excludePaths: ['**/tests/**', '**/Tests/**', '**/*.test.ts', '**/*.test.tsx', '**/*.test.js', '**/*.test.sh', '**/*.spec.ts', '**/*.spec.tsx', '**/*.spec.js', '**/__tests__/**'],
   },
-  // feature-wiring: components/hooks/endpoints sin caller — vive en prod code.
-  'tycon-feature-wiring-checker': {
-    paths: ['**/*.cs', '**/*.ts', '**/*.tsx'],
-    excludePaths: ['**/tests/**', '**/Tests/**', '**/*.test.ts', '**/*.test.tsx', '**/*.spec.ts', '**/*.spec.tsx', '**/__tests__/**'],
-  },
   // e2e-realness: solo specs Playwright.
   'tycon-e2e-realness-checker': { paths: ['**/tests/e2e/**/*.spec.ts', '**/tests/e2e/**/*.spec.tsx'] },
 
-  // External conditional advisors ──
-  // signalr-hub: surface apretada (auditoría 2026-06-09) — antes incluía '**/*.cs'
-  // genérico, lo que lo re-corría en CUALQUIER delta .cs aunque el hub no se tocara.
-  // El trigger original (IHubContext</Clients.*.Send en contenido) lo sigue agregando
-  // al set cuando aplica; la surface gobierna solo el re-loop.
-  'signalr-hub-reviewer': { paths: ['**/Hubs/*.cs', '**/Hubs/**/*.cs'] },
-  'signalr-client-reviewer': { paths: ['**/*.cs', '**/*.ts', '**/*.tsx'], excludePaths: ['**/tests/**', '**/Tests/**', '**/*.test.ts'] },
-  'migration-impact-analyzer': { paths: ['database/**/*.sql', '**/database/**/*.sql', 'BD/**/*.sql', '**/BD/**/*.sql', '**/*.cs'] },
-  'drizzle-migration-reviewer': { paths: ['drizzle/**/*.sql', 'drizzle/meta/**/*.json', '**/schema.ts', '**/db/repos/**/*.ts'] },
-  'http-resilience-reviewer': { paths: ['**/*.cs', '**/*.csproj'], excludePaths: ['**/tests/**', '**/Tests/**'] },
-  'worker-lifecycle-reviewer': { paths: ['**/*.cs'], excludePaths: ['**/tests/**', '**/Tests/**'] },
-  'multi-tenant-isolation-reviewer': { paths: ['**/db/repos/**', '**/app/api/**', '**/actions.ts', '**/lib/cache/**'] },
-  'nextjs-app-router-security': { paths: ['**/app/**/*.tsx', '**/app/**/*.ts', '**/middleware.ts', '**/middleware.tsx'] },
+  // (los revisores de un stack declaran su `surface` en el manifiesto de su paquete: la lee superficieDe())
   // llm-cost: sin '**/*.ts' genérico (auditoría 2026-06-09) — cualquier .ts del repo
   // NO es superficie de costo LLM; los paths específicos + el trigger por contenido
   // (@anthropic-ai/sdk etc.) cubren el caso real.
   'llm-cost-reviewer': { paths: ['**/lib/llm/**', '**/lib/embeddings/**', '**/matcher/**'] },
-  'auth-session-reviewer': { paths: ['**/api/auth/**', '**/lib/auth/**', '**/auth*.ts', '**/auth.config.ts'] },
   // i18n: texto visible en código FE/BE. Excluye tests/stories (no son UI prod).
   'i18n-hardcoded-text-reviewer': {
     paths: ['**/*.tsx', '**/*.ts', '**/*.jsx', '**/*.js', '**/*.cs'],
@@ -1135,7 +1062,6 @@ const ADVISOR_AUDITED_SURFACE = {
 const ADVISOR_COST_TIER = {
   // Lean (grep + parse + checks binarios) → Haiku
   'tycon-ac-coverage-checker': 'lean',
-  'tycon-feature-wiring-checker': 'lean',
   'tycon-deferral-tracker': 'lean',
   // Standard (default Sonnet — donde están hoy la mayoría). Los de convenciones por stack, hermanos
   // y el adaptador de un cliente declaran su `depth` en su manifiesto (packs/, story 8.2) y la lee tierDe().
@@ -1147,16 +1073,7 @@ const ADVISOR_COST_TIER = {
   'tycon-signed-scope-audit': 'standard',
   'tycon-retrospective-capturer': 'standard',
   'tycon-silent-failure-hunter': 'standard',
-  'signalr-hub-reviewer': 'standard',
-  'signalr-client-reviewer': 'standard',
-  'migration-impact-analyzer': 'standard',
-  'drizzle-migration-reviewer': 'standard',
-  'http-resilience-reviewer': 'standard',
-  'worker-lifecycle-reviewer': 'standard',
-  'multi-tenant-isolation-reviewer': 'standard',
-  'nextjs-app-router-security': 'standard',
   'llm-cost-reviewer': 'standard',
-  'auth-session-reviewer': 'standard',
   'i18n-hardcoded-text-reviewer': 'standard', // judgment: label vs comentario/log/identificador → Sonnet
   // Deep (judgment sintético) → Opus
   'tycon-spec-first-checker': 'deep',
@@ -5640,14 +5557,25 @@ function main() {
     const { runStoryChecks } = require('./lib/story-checks.js');
     const result = runStoryChecks({ repo: args.repo, storyPath: args.story, files: args.files });
     const escalate = [...new Set(result.ambiguous.map((a) => a.rule.split('-')[0]))];
-    const ESCALATION_ADVISOR = { ACCOV: 'tycon-ac-coverage-checker', DEFTR: 'tycon-deferral-tracker', WIRING: 'tycon-feature-wiring-checker', MECH: 'tycon-ac-coverage-checker' };
-    result.llm_escalation = escalate.map((r) => ESCALATION_ADVISOR[r]).filter(Boolean);
+    const ESCALATION_ADVISOR = { ACCOV: 'tycon-ac-coverage-checker', DEFTR: 'tycon-deferral-tracker', MECH: 'tycon-ac-coverage-checker' };
+    // una familia que no es del núcleo (WIRING: el revisor de cableado) la escala el revisor de un paquete ACTIVO que declara
+    // ese prefijo; sin ese paquete, el hallazgo se reporta sin escalar y la salida lo dice
+    const sinEscalar = [];
+    const dePaquete = (familia) => {
+      let activos;
+      try { activos = paquetesActivos(args.repo); } catch (e) { sinEscalar.push(`${familia} (no pude leer los paquetes: ${e.message})`); return null; }
+      const r = activos.flatMap((p) => p.revisores).find((x) => (x.prefijos || []).includes(familia) && x.grupo !== 'validacion');
+      if (!r) sinEscalar.push(`${familia} (ningún paquete activo trae su revisor)`);
+      return r ? r.agente : null;
+    };
+    result.llm_escalation = [...new Set(escalate.map((r) => ESCALATION_ADVISOR[r] || dePaquete(r)).filter(Boolean))];
     result.note = result.findings.length
       ? `${result.findings.length} finding(s) CONFIRMADOS mecánicamente — van directo al reporte (no necesitan advisor LLM).`
       : 'Sin findings mecánicos.';
     result.note += result.ambiguous.length
-      ? ` ${result.ambiguous.length} ambiguo(s) → invocar SOLO: ${result.llm_escalation.join(', ')}.`
-      : ' Sin ambiguos → en re-loops (iter≥2) ac-coverage y deferral-tracker quedan descontados del set (MECH-2); en iter 1 SÍ corren (juicio LLM completo). feature-wiring SIEMPRE se invoca (mech solo cubre WIRING-C1).';
+      ? ` ${result.ambiguous.length} ambiguo(s) → invocar SOLO: ${result.llm_escalation.join(', ') || 'ninguno'}.`
+      : ' Sin ambiguos → en re-loops (iter≥2) ac-coverage y deferral-tracker quedan descontados del set (MECH-2); en iter 1 SÍ corren (juicio LLM completo). El revisor de cableado, si su paquete está activo, se invoca siempre (mech solo cubre WIRING-C1).';
+    if (sinEscalar.length) result.note += ` Sin escalar: ${sinEscalar.join('; ')} — el hallazgo queda en el reporte tal cual.`;
     process.stdout.write(JSON.stringify(result, null, 2) + '\n');
     process.exit(result.findings.some((f) => f.severity === 'CRITICAL') ? 2 : 0);
   }

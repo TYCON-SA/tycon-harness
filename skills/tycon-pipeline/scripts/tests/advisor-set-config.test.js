@@ -61,6 +61,10 @@ const HOME_AISLADO = fs.mkdtempSync(path.join(os.tmpdir(), 'advset-home-'));
 // 8.2: esta suite lo INSTALA explícitamente (`TYCON_PACKS_DIR` a los paquetes del repo) en vez de
 // depender de que estén escritos en el código. Si `packs/bizuit` desaparece, esto se pone rojo.
 const PACKS_REALES = path.resolve(__dirname, '..', '..', '..', '..', 'packs');
+// Story 8.41: el paquete viaja con el perfil del equipo. En la copia pública (sin él) los casos que miden sus revisores
+// no se pueden medir, y se dice; con el repo del equipo encima se miden todos.
+const { SKIP_PUBLIC } = require('./lib/public-copy.js');
+const CON_PAQUETE = SKIP_PUBLIC ? { skip: `${SKIP_PUBLIC}: este caso mide un revisor del paquete del stack — NO MEDIDO acá` } : {};
 // Story 8.7 (AC 8): un repo que no declara `packs:` activa los paquetes que diga la configuración (`packs.default`, default
 // «ninguno»), y para leerla el cargador ubica el arnés. Con la HOME aislada no lo encuentra solo: se resuelve antes y se
 // declara el default de esta suite («todos los instalados», lo que contaba desde la 8.2).
@@ -101,7 +105,7 @@ const REACT = 'tycon-plugin-react-conventions';
 const NEXT = 'tycon-plugin-nextjs-conventions';
 
 // ── FIX-4(b) — config de plugins y secretos ───────────────────────────────────────────────────
-test('la config de plugin selecciona el revisor .NET (DOTNET-C6: un setting faltante resuelve a nulo en producción)', () => {
+test('la config de plugin selecciona el revisor .NET (DOTNET-C6: un setting faltante resuelve a nulo en producción)', CON_PAQUETE, () => {
   assert.deepEqual(set(repo(), 'plugin.json.example'), [DOTNET]);
 });
 
@@ -125,7 +129,7 @@ test('un diff de puro docs sigue sin revisores', () => {
 });
 
 // ── FIX-4(a) — dependencias ───────────────────────────────────────────────────────────────────
-test('un cambio de VERSIÓN de dependencia dispara el revisor de convenciones (REACT-W14)', () => {
+test('un cambio de VERSIÓN de dependencia dispara el revisor de convenciones (REACT-W14)', CON_PAQUETE, () => {
   const d = repo({ deps: { react: '18.2.0' } });
   const p = path.join(d, 'package.json');
   const j = JSON.parse(fs.readFileSync(p, 'utf8'));
@@ -134,7 +138,7 @@ test('un cambio de VERSIÓN de dependencia dispara el revisor de convenciones (R
   assert.deepEqual(set(d, 'package.json'), [REACT]);
 });
 
-test('con next, el revisor que entra es el de Next', () => {
+test('con next, el revisor que entra es el de Next', CON_PAQUETE, () => {
   const d = repo({ deps: { react: '18.2.0', next: '14.0.0' } });
   const p = path.join(d, 'package.json');
   const j = JSON.parse(fs.readFileSync(p, 'utf8'));
@@ -191,13 +195,13 @@ function repoConPaquete(secciones) {
   return d;
 }
 
-test('React sólo en peerDependencies (un formulario de Bizuit) trae al revisor de React', () => {
+test('React sólo en peerDependencies (un formulario de Bizuit) trae al revisor de React', CON_PAQUETE, () => {
   const out = salida(repoConPaquete({ peerDependencies: { react: '^18.3.1' }, dependencies: { dayjs: '1.0.0' } }), 'src/X.tsx');
   assert.equal(out.detection.hasReact, true, JSON.stringify(out.detection));
   assert.ok(out.all.includes(REACT), `dio: ${out.all}`);
 });
 
-test('Next sólo en peerDependencies trae al revisor de Next, no al de React', () => {
+test('Next sólo en peerDependencies trae al revisor de Next, no al de React', CON_PAQUETE, () => {
   const out = salida(repoConPaquete({ peerDependencies: { react: '^18.3.1', next: '^14.2.0' } }), 'src/X.tsx');
   assert.equal(out.detection.hasNext, true, JSON.stringify(out.detection));
   assert.ok(out.all.includes(NEXT) && !out.all.includes(REACT), `dio: ${out.all}`);
@@ -217,7 +221,7 @@ test('un .tsx sin React ni Next en los package.json leídos lo dice, con las rut
     || String(out.detection.warning).includes(path.join(d, 'package.json')), out.detection.warning);
 });
 
-test('un next peer marcado como optativo no hace del repo un repo Next', () => {
+test('un next peer marcado como optativo no hace del repo un repo Next', CON_PAQUETE, () => {
   // Una librería de componentes que se lleva bien con Next si el host lo tiene: no es una app Next.
   const out = salida(repoConPaquete({
     peerDependencies: { react: '^18.3.1', next: '^14.2.0' }, peerDependenciesMeta: { next: { optional: true } },
@@ -238,7 +242,7 @@ test('un .ts sin React no avisa: un backend de Node no tiene por qué tenerlo', 
   assert.equal(salida(d, 'src/y.ts').detection.warning, undefined);
 });
 
-test('un cambio de rango en peerDependencies cuenta como dependencia cambiada (el React que pone el host)', () => {
+test('un cambio de rango en peerDependencies cuenta como dependencia cambiada (el React que pone el host)', CON_PAQUETE, () => {
   const d = repoConPaquete({ peerDependencies: { react: '^18.2.0' } });
   const p = path.join(d, 'package.json');
   const j = JSON.parse(fs.readFileSync(p, 'utf8'));
@@ -247,7 +251,7 @@ test('un cambio de rango en peerDependencies cuenta como dependencia cambiada (e
   assert.deepEqual(set(d, 'package.json'), [REACT]);
 });
 
-test('un cambio en optionalDependencies cuenta como dependencia cambiada', () => {
+test('un cambio en optionalDependencies cuenta como dependencia cambiada', CON_PAQUETE, () => {
   const d = repoConPaquete({ dependencies: { react: '18.3.1' }, optionalDependencies: { fsevents: '2.3.2' } });
   const p = path.join(d, 'package.json');
   const j = JSON.parse(fs.readFileSync(p, 'utf8'));
@@ -257,7 +261,7 @@ test('un cambio en optionalDependencies cuenta como dependencia cambiada', () =>
 });
 
 // ── no-regresión ──────────────────────────────────────────────────────────────────────────────
-test('el set base de un diff CON código no cambia', () => {
+test('el set base de un diff CON código no cambia', CON_PAQUETE, () => {
   const d = repo();
   const base = set(d, 'src/A.cs');
   assert.ok(base.includes(DOTNET) && base.includes(SB) && base.includes('tycon-plugin-tests-coverage'),
@@ -302,13 +306,13 @@ test('un diff de sólo `.md` sigue siendo sólo docs aunque el repo tenga guione
   assert.deepEqual(set(d, 'README.md'), []);
 });
 
-test('un `.sh` junto a un `.cs` no cambia el set base del `.cs` (sólo puede sumar el de fallos silenciosos)', () => {
+test('un `.sh` junto a un `.cs` no cambia el set base del `.cs` (sólo puede sumar el de fallos silenciosos)', CON_PAQUETE, () => {
   const d = conGuion('scripts/ci/humo.sh');
   const s = set(d, 'src/A.cs', 'scripts/ci/humo.sh');
   assert.ok(s.includes(DOTNET) && s.includes(SB) && s.includes(SFH), JSON.stringify(s));
 });
 
-test('un `.sh` junto a un archivo de config NO tapa al revisor de esa config (FIX-4 sigue valiendo)', () => {
+test('un `.sh` junto a un archivo de config NO tapa al revisor de esa config (FIX-4 sigue valiendo)', CON_PAQUETE, () => {
   // Lo cazó el revisor de fallos silenciosos sobre este mismo arreglo: la rama «sólo guiones»
   // devolvía [seguridad] y pisaba la de config — plugin.json perdía al revisor .NET, en silencio.
   const d = conGuion('scripts/ci/humo.sh');

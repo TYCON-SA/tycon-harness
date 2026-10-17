@@ -1495,6 +1495,10 @@
       "reason": "inglés que el diccionario del sistema no trae y que nombra el árbol destino de la story 8.9 (onboarding/ ya existe; mini-class es el destino de la carpeta de la charla, decisión del dueño 2026-09-30): lo marcó --check-map al cargar las entradas de la tanda C0"
     },
     {
+      "words": ["postgres"],
+      "reason": "nombre de producto (PostgreSQL) que el diccionario del sistema no trae: nombra el paquete nextjs-postgres (story 8.41); lo marcó --check-map al cargar sus renombres"
+    },
+    {
       "words": ["exe", "glibc", "linux"],
       "reason": "nombres ajenos: las claves con que nodejs.org nombra sus archivos (`linux-x64`, `win-x64/node.exe`), que scripts/production/node-official.json usa tal cual, y la biblioteca de C de Linux (la variable de pruebas TYCON_HARNESS_NODE_NO_GLIBC); decisión del dueño 2026-10-16 (story 8.39, el Node propio del arnés)"
     },

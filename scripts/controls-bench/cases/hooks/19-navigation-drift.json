@@ -1,5 +1,5 @@
 {
-  "__doc": "FIX-8 (2026-08-25, caso C7): WIRING-C5 compara el layout del código contra el documento de arquitectura de información en UN SOLO SENTIDO — código nuevo → documento. Si el documento cambia, las pantallas ya escritas NO se revisan nunca más. La mitigación que existía sólo se disparaba al CREAR el documento (nunca al editarlo) y pedía otra cosa. Ahora editarlo deja una marca en .advisors/ que el cierre de la próxima story de interfaz lee, y la marca se levanta sola cuando el revisor de wiring vuelve a correr EN ESE REPO. Cero revisores extra: la opción cara pondría un revisor caro a mirar código que el commit no tocó.",
+  "__doc": "FIX-8 (2026-08-25, caso C7): WIRING-C5 compara el layout del código contra el documento de arquitectura de información en UN SOLO SENTIDO — código nuevo → documento. Si el documento cambia, las pantallas ya escritas NO se revisan nunca más. La mitigación que existía sólo se disparaba al CREAR el documento (nunca al editarlo) y pedía otra cosa. Ahora editarlo deja una marca en .advisors/ que el cierre de la próxima story de interfaz lee, y la marca se levanta sola cuando el revisor de wiring vuelve a correr EN ESE REPO. Cero revisores extra: la opción cara pondría un revisor caro a mirar código que el commit no tocó. Desde la story 8.41 el revisor de cableado vive en un paquete: los casos del aviso traen uno de juguete (TYCON_PACKS_DIR) que declara el prefijo WIRING.",
   "hooks": [
     {
       "hook": "hook-pre-edit.js → on-planning-artifact (marca)",
@@ -24,7 +24,10 @@
           },
           "expect": {
             "file_contains": [
-              { "path": "${FIXTURE}/.advisors/navigation-drift.json", "re": "navigation-map\\.md" }
+              {
+                "path": "${FIXTURE}/.advisors/navigation-drift.json",
+                "re": "navigation-map\\.md"
+              }
             ]
           }
         },
@@ -46,7 +49,9 @@
           },
           "expect": {
             "exit": 0,
-            "file_absent": ["${FIXTURE}/.advisors/navigation-drift.json"]
+            "file_absent": [
+              "${FIXTURE}/.advisors/navigation-drift.json"
+            ]
           }
         }
       ]
@@ -63,6 +68,7 @@
           "__doc": "El bloqueo de esta corrida lo produce la evidencia de DoD; lo que este caso mide es que el aviso de deriva SALGA, que es lo nuevo.",
           "setup": [
             "git init -q -b main .",
+            "mkdir -p paquetes/juguete/agents && printf '%s' '{\"name\":\"juguete\",\"description\":\"paquete de juguete\",\"agents\":\"agents\",\"reviewers\":[{\"agent\":\"rev-cableado\",\"group\":\"condicional\",\"when\":{\"detection\":\"tsxModified\"},\"surface\":{\"paths\":[\"**/*.tsx\"]},\"depth\":\"lean\",\"prefixes\":[\"WIRING\"]}]}' > paquetes/juguete/pack.json && printf -- '---\\nname: rev-cableado\\n---\\n# rev\\n' > paquetes/juguete/agents/rev-cableado.md",
             "mkdir -p specs/stories specs/planning-artifacts .advisors/dod-runtime",
             "printf -- '---\\nstory: \"4.2\"\\nepic: \"4\"\\nstatus: in-progress\\n---\\n# Story 4.2\\n\\n## Acceptance Criteria\\n1. AC uno E2E\\n\\nfiles:\\n  - src/app/Panel.tsx\\n\\ntests_done_playwright_spec: tests/e2e/foo.spec.ts\\n' > specs/stories/4-2.md",
             "printf -- '---\\ntitle: mapa\\n---\\n# Mapa\\n' > specs/planning-artifacts/navigation-map.md",
@@ -71,10 +77,22 @@
             "node -e \"const fs=require('fs');const p='specs/stories/4-2.md';fs.writeFileSync(p,fs.readFileSync(p,'utf8').replace('status: in-progress','status: done'))\"",
             "git add specs/stories/4-2.md"
           ],
-          "stdin": { "tool_name": "Bash", "tool_input": { "command": "git commit -m \"story 4.2 done\"" } },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit -m \"story 4.2 done\""
+            }
+          },
           "expect": {
             "exit": 2,
-            "stderr_re": ["tycon-navigation-drift", "WIRING-C5"]
+            "stderr_re": [
+              "tycon-navigation-drift",
+              "WIRING-C5"
+            ]
+          },
+          "env": {
+            "TYCON_PACKS_DIR": "${FIXTURE}/paquetes",
+            "TYCON_PACKS_DEFAULT": "all"
           }
         },
         {
@@ -83,18 +101,30 @@
           "__doc": "La limpieza: un aviso que no se apaga nunca se aprende a ignorar. Se levanta con una corrida REAL del revisor (spawn del ledger), en ESTE repo y POSTERIOR al cambio.",
           "setup": [
             "git init -q -b main .",
+            "mkdir -p paquetes/juguete/agents && printf '%s' '{\"name\":\"juguete\",\"description\":\"paquete de juguete\",\"agents\":\"agents\",\"reviewers\":[{\"agent\":\"rev-cableado\",\"group\":\"condicional\",\"when\":{\"detection\":\"tsxModified\"},\"surface\":{\"paths\":[\"**/*.tsx\"]},\"depth\":\"lean\",\"prefixes\":[\"WIRING\"]}]}' > paquetes/juguete/pack.json && printf -- '---\\nname: rev-cableado\\n---\\n# rev\\n' > paquetes/juguete/agents/rev-cableado.md",
             "mkdir -p specs/stories specs/planning-artifacts .advisors/dod-runtime",
             "printf -- '---\\nstory: \"4.2\"\\nepic: \"4\"\\nstatus: in-progress\\n---\\n# Story 4.2\\n\\n## Acceptance Criteria\\n1. AC uno E2E\\n\\nfiles:\\n  - src/app/Panel.tsx\\n\\ntests_done_playwright_spec: tests/e2e/foo.spec.ts\\n' > specs/stories/4-2.md",
             "git add specs && git -c user.email=b@b -c user.name=b commit -q -m base",
             "node -e \"const fs=require('fs');fs.mkdirSync('.advisors',{recursive:true});fs.writeFileSync('.advisors/navigation-drift.json',JSON.stringify({ts:new Date(Date.now()-60000).toISOString(),artefacto:'specs/planning-artifacts/navigation-map.md',evento:'Edit'}))\"",
-            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline/advisor-runs';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/w.jsonl',JSON.stringify({ts:new Date().toISOString(),advisor:'tycon-feature-wiring-checker',model:null,repo:process.env.FIXTURE,story:'4.2'})+'\\n')\"",
+            "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline/advisor-runs';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/w.jsonl',JSON.stringify({ts:new Date().toISOString(),advisor:'rev-cableado',model:null,repo:process.env.FIXTURE,story:'4.2'})+'\\n')\"",
             "node -e \"const fs=require('fs');const p='specs/stories/4-2.md';fs.writeFileSync(p,fs.readFileSync(p,'utf8').replace('status: in-progress','status: done'))\"",
             "git add specs/stories/4-2.md"
           ],
-          "stdin": { "tool_name": "Bash", "tool_input": { "command": "git commit -m \"story 4.2 done\"" } },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "git commit -m \"story 4.2 done\""
+            }
+          },
           "expect": {
             "exit": 2,
-            "file_absent": ["${FIXTURE}/.advisors/navigation-drift.json"]
+            "file_absent": [
+              "${FIXTURE}/.advisors/navigation-drift.json"
+            ]
+          },
+          "env": {
+            "TYCON_PACKS_DIR": "${FIXTURE}/paquetes",
+            "TYCON_PACKS_DEFAULT": "all"
           }
         }
       ]

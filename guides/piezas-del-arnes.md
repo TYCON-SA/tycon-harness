@@ -47,12 +47,12 @@ scripts/tools/              a mano: auditorías y utilidades
 scripts/lib/                bibliotecas + lo que llaman dos etapas o más
 scripts/controls-bench/ · scripts/metrics/ · scripts/production/ · scripts/publishing/ · scripts/tests/
 guides/                     las guías
-  guides/bizuit/ · guides/decisions/   las de Bizuit · decisiones y diseños fechados
+  guides/decisions/          decisiones y diseños fechados
 claude-md-blocks/ · commands/ · adapters/ · build/
 mods/harness-mods/          los mods de Claude Code del arnés (el cartel de la corrida, /pipeline, /mods)
 pipelines/                  los seis azure-pipelines-*.yml
   pipelines/templates/      sus pedazos compartidos
-packs/bizuit/               el paquete bizuit: su manifiesto y las plantillas para dar de alta un producto
+packs/                      sólo su README: los paquetes de un equipo (revisores, skills, guías, plantillas) llegan con su perfil
 inbox/                      lo que espera que alguien decida
   inbox/instincts/          los instintos minados
   inbox/dependencies/ · inbox/watcher/   las fichas de los dos nocturnos
@@ -125,21 +125,21 @@ NO COMMIT sin consentimiento, formato HEREDOC, Co-Authored-By, `/tycon-merge-to-
 
 6 reglas de workflow, principios fundamentales, estructura `tasks/`, integración BMAD+advisors
 
-## guides/bizuit/bizuit-plugin-dotnet.md
+## packs/bizuit/guides/bizuit-plugin-dotnet.md
 
-Stack .NET para plugins Bizuit: IBackendPlugin, SafeQueryBuilder, transacciones, orquestador
+(Del paquete bizuit, que viaja con el perfil del equipo.) Stack .NET para plugins Bizuit: IBackendPlugin, SafeQueryBuilder, transacciones, orquestador
 
-## guides/bizuit/bizuit-plugin-react.md
+## packs/bizuit/guides/bizuit-plugin-react.md
 
-Stack React/TS para plugins Bizuit frontend: Tailwind prod limitations, inputs text-gray-900, modales patrón fijo, iconos, SDK auth Bearer, testing vitest
+(Del paquete bizuit, que viaja con el perfil del equipo.) Stack React/TS para plugins Bizuit frontend: Tailwind prod limitations, inputs text-gray-900, modales patrón fijo, iconos, SDK auth Bearer, testing vitest
 
-## guides/bizuit/bizuit-plugin-nextjs.md
+## packs/bizuit/guides/bizuit-plugin-nextjs.md
 
-Stack Next.js (App Router) para plugins Bizuit frontend: Server vs Client boundary, data fetching, metadata API, Server Actions con validación, env vars scope, Route Handlers, hydration safety
+(Del paquete bizuit, que viaja con el perfil del equipo.) Stack Next.js (App Router) para plugins Bizuit frontend: Server vs Client boundary, data fetching, metadata API, Server Actions con validación, env vars scope, Route Handlers, hydration safety
 
-## guides/bizuit/bizuit-bpmn-spec-contract.md
+## packs/bizuit/guides/bizuit-bpmn-spec-contract.md
 
-El contrato de las specs de proceso BPMN de BIZUIT: se escriben con la tool del producto (`write_spec`), no con el editor de archivos. El formato NO se copia acá a propósito (vive en `mcp/skill/templates/`), y no hace falta conocerlo: el control rechaza con el motivo y el agente corrige. Lo que la guía sí deja escrito es por qué escribir el archivo directo es **peor que escribirlo mal** — un documento sin tabla de reglas no da error, da silencio, y «0 hallazgos» se lee como «salió limpio». La regla: **un control que hay que acordarse de invocar es un control que no corre**.
+(Del paquete bizuit, que viaja con el perfil del equipo.) El contrato de las specs de proceso BPMN de BIZUIT: se escriben con la tool del producto (`write_spec`), no con el editor de archivos. El formato NO se copia acá a propósito (vive en `mcp/skill/templates/`), y no hace falta conocerlo: el control rechaza con el motivo y el agente corrige. Lo que la guía sí deja escrito es por qué escribir el archivo directo es **peor que escribirlo mal** — un documento sin tabla de reglas no da error, da silencio, y «0 hallazgos» se lee como «salió limpio». La regla: **un control que hay que acordarse de invocar es un control que no corre**.
 
 ## guides/agent-architecture.md
 
@@ -147,7 +147,7 @@ Arquitectura de advisors TYCON (wrappers sobre BMAD) con pipeline HITL, severity
 
 ## packs/ (agent-skills) — paquetes de revisores
 
-*`packs/bizuit/pack.json` · `skills/tycon-pipeline/scripts/lib/packs.js` · `pipeline.js validators` · `scripts/lib/installed-packs.js` (arnés) · `guides/agent-architecture.md` §«Paquetes de revisores»*
+*`packs/<paquete>/pack.json` (en el perfil del equipo) · `skills/tycon-pipeline/scripts/lib/packs.js` · `pipeline.js validators` · `scripts/lib/installed-packs.js` (arnés) · `guides/agent-architecture.md` §«Paquetes de revisores»*
 
 **Los revisores de un producto o de un cliente salen del código del pipeline a manifiestos**
 (2026-09-26). Hasta ese día `pipeline.js` tenía escritos a mano, en cuatro tablas y en la prosa del paso 1,
@@ -228,9 +228,9 @@ Protocolo de CIERRE de story (ACCOV-C7..C10: self-audit, meta-audit, convergenci
 
 Inbox de propuestas de cambio a guías/catálogo generadas por `tycon-retrospective-capturer`. Cada entrada requiere OK del dev antes de aplicarse; al aplicar se marca `✅ IMPLEMENTADO` (no se borra — es el rastro)
 
-## guides/dotnet-hooks.md
+## packs/bizuit/guides/dotnet-hooks.md
 
-Bloque copy-pasteable de hooks `.claude/settings.json` para proyectos .NET TYCON: bloqueo de migraciones SQL ya commiteadas + `dotnet format` automático sobre `.cs`
+(Del paquete bizuit, que viaja con el perfil del equipo.) Bloque copy-pasteable de hooks `.claude/settings.json` para proyectos .NET TYCON: bloqueo de migraciones SQL ya commiteadas + `dotnet format` automático sobre `.cs`
 
 ## guides/definition-of-done.md
 
@@ -270,9 +270,9 @@ El paso que **commitea y publica el bump de versión de los formularios**, en UN
 
 Una sola función: ¿el respaldo local del medidor de etapas del SDLC **debe correr ahora**? No antes de las 05:00, para que el nocturno de Azure (06:00 UTC) tenga su turno; si corre antes deja un archivo suelto en `.dashboard/` que rompe el `pull` del arranque de la mañana. El instalador la carga; se probó como función pura para no simular un SessionStart entero. Red: `scripts/tests/meter-backup.test.sh`.
 
-## guides/deuda-de-pruebas-formularios.md
+## packs/bizuit/guides/deuda-de-pruebas-formularios.md
 
-Cómo dejar un formulario **sin pruebas** sin que el pipeline falle: se declara en `pruebas-pendientes.json` con motivo y fecha de revisión, y se borra la entrada el día que se le ponen pruebas, en el mismo pull request. Escrita para cualquier dev, en tres pasos. Por qué en el mismo pull request: borrar la entrada sin agregar pruebas deja `main` rojo.
+(Del paquete bizuit, que viaja con el perfil del equipo.) Cómo dejar un formulario **sin pruebas** sin que el pipeline falle: se declara en `pruebas-pendientes.json` con motivo y fecha de revisión, y se borra la entrada el día que se le ponen pruebas, en el mismo pull request. Escrita para cualquier dev, en tres pasos. Por qué en el mismo pull request: borrar la entrada sin agregar pruebas deja `main` rojo.
 
 ## scripts/ci/affected-forms.js
 
@@ -454,7 +454,8 @@ el `ceiling`: se baja y se avisa una vez por corrida, nunca frena. 🔴 `readOrg
 `models` (pipeline, control de lanzamientos, despliegue de Codex y paridad): un archivo ilegible o un error dentro de
 `models` dan los valores de hoy **y lo dicen**; un error ahí no anula el resto de `team-repos.json` (`sectionProblems`).
 Las funciones que deciden reciben la configuración por argumento: las pruebas nunca leen la de la máquina. La sección
-de pantalla y su portón de versión llegan con la pestaña Configuración del sitio (`org-config.js`). Detalle y tabla de claves:
+«Modelos» de la pestaña Configuración del sitio (`org-config.js`) la edita, con «sin declarar (hoy: …)» desde `DEFAULTS`;
+su portón es `MODELS_SINCE`. Detalle y tabla de claves:
 `guides/harness-cost-tiering.md` §«De dónde sale cada modelo». Red: `skills/tycon-pipeline/scripts/tests/models.test.js`
 (la foto de las salidas sin configuración, T2), `team-repos.test.js` T20-T21, `harness-team-codex.test.js` T24-T25 y
 `harness-parity.test.sh` T26.
@@ -592,8 +593,13 @@ sostiene:
   **mismo lector que usa el arnés** (`team-repos.js`, `operations-config.js`, la lectura de las declaradas que exporta
   `check-product-parity.js`); el resto del archivo queda byte por byte. 🔴 **No hay un validador propio**: `thresholdsParse`
   sólo recorre `thresholds` y llama a `umbralValido` de `common.js`. Dos validadores se separan solos, y el nocturno
-  juzga con el suyo. La página local usa el mismo núcleo (hoy sigue guardando; pasa a sólo lectura cuando el sitio esté
-  desplegado).
+  juzga con el suyo. Un problema que el lector da aparte sin anular el archivo (`sectionProblems`: un modelo mal
+  escrito) cuenta igual para la sección que lo cambia: si no, se propondría. La página local usa el mismo núcleo (hoy
+  sigue guardando; pasa a sólo lectura cuando el sitio esté desplegado).
+- **Las claves de `team-repos.json` que llegaron después tienen su versión**: `TEAM_REPOS_SINCE` para el archivo,
+  `MERGE_SUITES_SINCE` para `merge_suites` y `MODELS_SINCE` para `models` (la etiqueta del merge que trajo cada
+  lector). Un cambio a ese archivo se propone sólo si el `team-layer.json` del perfil pide al menos la mayor de las
+  claves que trae el archivo propuesto: una máquina con un lector anterior rechazaría la capa entera.
 - **Se guarda con una rama y un pedido, nunca en la rama principal** (`scripts/lib/repo-proposal.js`): desde el clon
   temporal que el sitio ya tiene para leer, **sin tocar su árbol de trabajo ni su índice** (comandos de bajo nivel de
   git sobre un índice temporal: después de proponer, `git status` está limpio y `HEAD` sigue en `main`), bajo el mismo
@@ -614,8 +620,11 @@ sostiene:
   identidad de escritura, la pestaña valida y el navegador arma la descarga del archivo validado para abrir el pedido
   a mano.
 - **Umbrales sólo cuando el nocturno los lee de verdad**: la sección edita el `sources.json` del repo de operaciones
-  recién cuando la plantilla de los nocturnos dejó la marca `.dashboard/applied-config.json` con ese archivo adentro
-  (se guarda sólo al final de una noche verde). Antes, «tu nocturno todavía no lee este archivo». Nunca crea el
+  recién cuando el armado de los nocturnos (`ops-data.yml` en Azure, `prepare-tree.sh` en GitHub) dejó la marca
+  `.dashboard/applied-config.json` con ese archivo adentro. 🔴 La marca llega a operaciones por el guardado del
+  tablero (`team-dashboard.yml`), sólo al final de una noche verde: el armado la deja también en la carpeta temporal del
+  trabajo, porque el paso del tablero que trae `.dashboard` de `main` la pisa, y el guardado la devuelve y la nombra en
+  lo que guarda. Sin eso no viajaba nunca (ningún guardado la nombraba). Antes de que llegue, «tu nocturno todavía no lee este archivo». Nunca crea el
   archivo de la organización: la plantilla lo pone ENTERO encima del arnés, y copiarlo taparía las fuentes que el arnés
   sume después.
 - **Sin un valor de ninguna organización** en el código, ni una clave de la configuración de una máquina (una prueba
@@ -950,7 +959,7 @@ Un `ls` a la carpeta equivocada devuelve **vacío**, y ese vacío se lee como *�
 
 ## scripts/hooks/failed-query-notice.js
 
-«No lo veo» no es «no hay»: una consulta a un servicio que devolvió **vacío con el código de salida enmascarado** no se puede leer como «no hay nada» (2026-09-06). Por qué: un `az` que **falla** —el proyecto no se llama `Acme`, se llama `Acme Logistica`— con un `| sed` al final se come el error y deja la salida vacía, idéntica a «no hay ninguno»; sobre esa premisa se afirma «ese repo no tiene pull request abierto» y se actúa. Es el listado vacío de `missing-path-notice.js`, una capa más arriba. Dos miradas, después de cada Bash: **(1)** corta el comando en segmentos —por salto de línea, `;`, `&&`, `||`, `|`, `$(`, sin los cuerpos de heredoc— y, en cada consulta (`az … list/show`, `gh api/pr list`, `curl` sin escritura, `npm view`, `git ls-remote`) cuya salida va a la pantalla, avisa si lo que le es atribuible quedó vacío **y el código de salida no se podía ver**: un filtro sin `pipefail`, un `|| true`, un `$(…)`, o un comando más después. 🔴 `2>/dev/null` solo **no** cuenta: esconde el mensaje, no el fallo (el harness devuelve «Exit code N» igual), y avisar ahí era ruido sobre vacíos legítimos. **(2)** en `az repos|pipelines|boards|devops …` —y sólo ahí— compara el `--project` con la lista de la organización que `--refresh` cachea (el instalador la refresca cada 7 días en segundo plano; vencida a los 30 no juzga), sugiere hasta tres parecidos y **no vuelca la lista**. 🔴 **Lo que sus casos cuidan**: que la segunda mirada no lea cualquier `-p` de cualquier comando con «az» en el texto —imprimiría la contraseña de `az login -p`, marcaría `mkdir -p`, o se dispararía sobre una tabla markdown dentro de un heredoc volcando la lista de proyectos al contexto—, que la primera vea consultas fuera de la primera línea y calle en segundo plano, y que un `echo` de cabecera no la apague. Son `controls-bench/cases/hooks/39-consulta-fallida-notice.json` (41 casos). Windows: registrado en el `.ps1`. Off: `TYCON_FAILED_QUERY_NOTICE=0`.
+«No lo veo» no es «no hay»: una consulta a un servicio que devolvió **vacío con el código de salida enmascarado** no se puede leer como «no hay nada» (2026-09-06). Por qué: un `az` que **falla** —el proyecto no se llama `Acme`, se llama `Acme Logistica`— con un `| sed` al final se come el error y deja la salida vacía, idéntica a «no hay ninguno»; sobre esa premisa se afirma «ese repo no tiene pull request abierto» y se actúa. Es el listado vacío de `missing-path-notice.js`, una capa más arriba. Dos miradas, después de cada Bash: **(1)** corta el comando en segmentos —por salto de línea, `;`, `&&`, `||`, `|`, `$(`, sin los cuerpos de heredoc— y, en cada consulta (`az … list/show`, `gh api/pr list`, `curl` sin escritura, `npm view`, `git ls-remote`) cuya salida va a la pantalla, avisa si lo que le es atribuible quedó vacío **y el código de salida no se podía ver**: un filtro sin `pipefail`, un `|| true`, un `$(…)`, o un comando más después. 🔴 `2>/dev/null` solo **no** cuenta: esconde el mensaje, no el fallo (el harness devuelve «Exit code N» igual), y avisar ahí era ruido sobre vacíos legítimos. **(2)** en `az repos|pipelines|boards|devops …` —y sólo ahí— compara el `--project` con la lista de la organización que `--refresh` cachea (el instalador la refresca cada 7 días en segundo plano; vencida a los 30 no juzga), sugiere hasta tres parecidos y **no vuelca la lista**. 🔴 **Lo que sus casos cuidan**: que la segunda mirada no lea cualquier `-p` de cualquier comando con «az» en el texto —imprimiría la contraseña de `az login -p`, marcaría `mkdir -p`, o se dispararía sobre una tabla markdown dentro de un heredoc volcando la lista de proyectos al contexto—, que la primera vea consultas fuera de la primera línea y calle en segundo plano, y que un `echo` de cabecera no la apague. Son `controls-bench/cases/hooks/39-consulta-fallida-notice.json` (54 casos). **Windows** (2026-10-16): corre también tras la herramienta PowerShell, y ahí entiende lo de PowerShell: `Invoke-RestMethod`/`irm`/`Invoke-WebRequest`/`iwr` sin método de escritura son consultas; tapan el fallo `-ErrorAction SilentlyContinue` (o `-EA 0`), un `try { … } catch { }` y una tubería a un cmdlet (`Select-String`, `Where-Object`, `findstr`…); llega `az.cmd` en vez de `az`, y el consejo nombra `$LASTEXITCODE`. Trece de los casos son de PowerShell. Off: `TYCON_FAILED_QUERY_NOTICE=0`.
 
 ## scripts/hooks/prod-access-guard.js
 
@@ -1259,7 +1268,7 @@ El freno antes de publicar. Con el arnés mantenido directo en su repo público,
 
 Lo que el skill de merge necesita cuando el repo vive en GitHub. En Azure DevOps el servidor completa un pedido cuando sus controles dan verde; en GitHub eso depende del plan y de la configuración del repo, un pedido trae **varios** controles (el de la corrida de la validación, uno por cada trabajo y los de otras herramientas), y el número de versión —lo que una máquina instalada compara para saber si hay algo nuevo— lo pone el merge si `version.json` trae `"numbering": "merge-tag"` (ver `scripts/ci/version-tag.js`); sin esa marca, sube con cada pedido. Seis órdenes, cada una con su JSON y su código de salida: `plan` dice de qué servidor es `origin` y qué paso del skill sigue (el modo y el control los **declara** el repo en `.tycon/advisors.yaml`: `merge.mode` y `merge.check`; sin el control declarado, el pedido se crea y no se mergea); `update-branch` trae la rama destino (lo único que resuelve solo es un choque en `version.json`: toma el de la destino); `bump-version` calcula el número que sigue —la fecha sale del commit, nunca del reloj, y el número no baja— y con `--write` cambia sólo ese valor (con la marca, no hace nada); `wait-checks` espera el control declarado sobre la punta del pedido y sale con un código por desenlace (verde sólo con ese control en `SUCCESS`, sobre la punta esperada y con el número mayor que el de la destino; «no pude preguntar» nunca es verde); `message` arma el título «asunto (#N)» y el cuerpo del commit de merge sin marcas que salteen la CI; `check-version` dice si el número de un pedido es mayor que el de su base, o —con la marca— que el pedido no tocó `version.json` (sólo lee: sirve de control en una validación). **No crea el pedido ni lo mergea**: esos dos `gh` los escribe el agente en la terminal, a la vista del freno antes de publicar. La cuenta del número que sigue vive en `version-order.js`, compartida con la sincronización del repo público.
 
-**Dónde corren las suites completas**: `plan` dice además si las corre el servidor (`suites: "server"`) o esta máquina (`"machine"`), con qué regla y por qué, en una línea (`suitesReason`). La regla la fija el admin de la organización en `team-repos.json → merge_suites` (lector `scripts/lib/team-repos.js`), para toda la organización o por repo: `automatico` (por defecto), `siempre-en-la-maquina` o `confiar-en-el-servidor`, con «el pipeline de pruebas completas» de cada repo (`full_tests_pipeline`: en Azure por nombre o id, en GitHub el nombre del control obligatorio). Con `automatico` el plan le **pregunta a la plataforma**: las políticas de la rama en Azure DevOps (una de build que cuenta: activa, obligatoria, sin filtros de archivos, con un alcance que cubre el repo y la rama) o las reglas de la rama en GitHub (el control obligatorio; la cola de merge sola no alcanza). Sólo si la rama exige el pipeline declarado las corre el servidor, y el merge va por pedido. «No pude preguntar» (sin `az`/`gh`, sin sesión, algo que no es JSON, el tope de 30 s por llamada o 90 s por plan) nunca es `server` con `automatico`; un `team-repos.json` ilegible tampoco frena el merge: `machine` con el motivo. Un empuje directo es siempre `machine`. Sin `merge_suites`, `merge.mode: pr` del repo vale como `confiar-en-el-servidor` y el plan lo avisa como forma vieja (`legacyNote`). En Windows `az` se lanza por el bash de Git (`runCheckLaunch` de `portable-tools.js`), nunca por `cmd /c`. `--keep-mode` es para los planes posteriores al paso 0 del skill: el modo no cambia y `suites` sólo puede bajar a `machine`. La sección de pantalla de `merge_suites` en la configuración de la organización, y su portón de versión, todavía no existen: hasta entonces la clave se escribe a mano, después de subir la versión que pide el perfil.
+**Dónde corren las suites completas**: `plan` dice además si las corre el servidor (`suites: "server"`) o esta máquina (`"machine"`), con qué regla y por qué, en una línea (`suitesReason`). La regla la fija el admin de la organización en `team-repos.json → merge_suites` (lector `scripts/lib/team-repos.js`), para toda la organización o por repo: `automatico` (por defecto), `siempre-en-la-maquina` o `confiar-en-el-servidor`, con «el pipeline de pruebas completas» de cada repo (`full_tests_pipeline`: en Azure por nombre o id, en GitHub el nombre del control obligatorio). Con `automatico` el plan le **pregunta a la plataforma**: las políticas de la rama en Azure DevOps (una de build que cuenta: activa, obligatoria, sin filtros de archivos, con un alcance que cubre el repo y la rama) o las reglas de la rama en GitHub (el control obligatorio; la cola de merge sola no alcanza). Sólo si la rama exige el pipeline declarado las corre el servidor, y el merge va por pedido. «No pude preguntar» (sin `az`/`gh`, sin sesión, algo que no es JSON, el tope de 30 s por llamada o 90 s por plan) nunca es `server` con `automatico`; un `team-repos.json` ilegible tampoco frena el merge: `machine` con el motivo. Un empuje directo es siempre `machine`. Sin `merge_suites`, `merge.mode: pr` del repo vale como `confiar-en-el-servidor` y el plan lo avisa como forma vieja (`legacyNote`). En Windows `az` se lanza por el bash de Git (`runCheckLaunch` de `portable-tools.js`), nunca por `cmd /c`. `--keep-mode` es para los planes posteriores al paso 0 del skill: el modo no cambia y `suites` sólo puede bajar a `machine`. La clave se edita en la sección «Dónde corren las suites completas al mergear» de la pestaña Configuración del sitio (`org-config.js`), con su portón `MERGE_SUITES_SINCE`: no se propone si el perfil no pide esa versión.
 
 **El clon del público no trae la configuración del merge**: para ese repo —y sólo para ése— `merge.mode` y `merge.check` se leen del clon privado que la máquina declara (`paths.maintainers`), de lo commiteado en su rama principal remota y no de su árbol de trabajo. No encontrarla sale 2 con el motivo y el comando que la arregla; nunca termina en un empuje directo. `plan` dice de dónde leyó (`configFrom`). Un repo de producto sin el archivo sigue como siempre.
 

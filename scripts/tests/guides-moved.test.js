@@ -138,7 +138,7 @@ const README = path.join(ROOT, 'INDEX.md');   // el índice: hasta 2026-10-14 se
 const WHERE_TITLE = 'Dónde vive cada cosa';
 // las carpetas que el árbol tiene que nombrar, como mínimo
 const TREE_DIRS = ['scripts/setup/', 'scripts/hooks/', 'scripts/tools/', 'scripts/lib/', 'scripts/nightly/', 'scripts/instincts/',
-  'inbox/', 'pipelines/', 'guides/bizuit/', 'guides/decisions/'];
+  'inbox/', 'pipelines/', 'guides/decisions/'];   // (guides/bizuit/ se fue con su paquete en la story 8.41)
 // las cuatro reglas del árbol, por palabras clave (no por el texto exacto)
 const RULES = [
   { name: 'ubicación, con el desempate a scripts/lib/', all: [/ubicaci[óo]n/i, /desempate|dos etapas o m[áa]s/i, /scripts\/lib\//] },

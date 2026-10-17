@@ -526,3 +526,16 @@ test('2.22-A11 TeamConfig_LaPaginaMandaLaOrganizacion (pase adversarial)', async
     assert.match(page, /org: gh \? undefined : \(org\.value\.trim\(\) \|\| undefined\)/, 'y la manda en el pedido');
   });
 });
+
+test('T39 PaginaLocal_ModelsConProblema_NoSePierde @story-2.29 @ac-21 (tanda C) — un modelo mal escrito no desaparece del borrador al leer team-repos.json', () => {
+  const TR = require(path.join(__dirname, '..', 'lib', 'team-repos.js'));
+  const { dir } = cloneWithRemote();
+  const gh = (repo) => ({ platform: 'github', org: 'acme', repo });
+  const doc = { version: 1, public: gh('harness'), profile: gh('profile'), operations: gh('ops'), models: { reviewers: 'gpt', helpers: 'haiku' } };
+  fs.writeFileSync(path.join(dir, 'team-repos.json'), `${JSON.stringify(doc, null, 2)}\n`);
+  assert.strictEqual(TR.parse(fs.readFileSync(path.join(dir, 'team-repos.json'), 'utf8')).ok, true, 'el lector lo tolera (decisión 13 de la 7.29)');
+  const t = TC.readTarget(TC.TARGETS.find((x) => x.id === 'repos'), dir, TR);
+  assert.strictEqual(t.state, 'loaded');
+  assert.deepStrictEqual(t.data, doc, 'el borrador trae models tal como está, para corregirlo; guardar no lo borra en silencio');
+  assert.deepStrictEqual(t.problems.map((x) => x.path), ['models.reviewers'], 'y el problema a la vista');
+});

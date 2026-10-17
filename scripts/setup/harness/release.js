@@ -1686,6 +1686,53 @@ function refreshTeam(ctx, state, { log = null, publicRepo = null } = {}) {
   }
 }
 
+/**
+ * La capa del equipo evaluada con el código de la versión recién instalada. El proceso que instala corre el código de la
+ * versión de antes, y su lista cerrada no conoce lo que la nueva acepta: una punta que sólo la nueva acepta se arrastraba
+ * vieja hasta otro arranque. Corre `team-after-swap.js` del árbol nuevo en un proceso aparte (el código cargado en éste es
+ * el viejo) con el estado por la entrada; devuelve lo que dijo `refreshTeam` de esa versión y, si refrescó, deja su
+ * `state.team`. Nunca tira: `{ status: 'refreshed'|'same'|'failed', answered, lines }` (`answered`: la versión nueva
+ * contestó). Sólo ayuda cuando la versión que instala ya trae esta función: el paso desde una versión anterior sigue
+ * curándose en la actualización siguiente.
+ */
+function refreshTeamWithNewCode(ctx, state, harnessDir, { log = null } = {}) {
+  const say = (l) => { if (log) log(`update: ${l}`); };
+  const script = path.join(harnessDir, 'scripts', 'setup', 'harness', 'team-after-swap.js');
+  const failed = (why) => {
+    const text = `capa del equipo: no se pudo evaluar con el código de la versión nueva (${why}) — se vuelve a intentar en el próximo arranque`;
+    say(text);
+    return { status: 'failed', lines: [text] };
+  };
+  if (!exists(script)) return failed(`la versión instalada no trae ${path.relative(harnessDir, script)}`);
+  const timeoutMs = (Math.max(budgetS(ctx.env), 60) + TARBALL_BUDGET_S_DEFAULT) * 1000;
+  const r = require('child_process').spawnSync(process.execPath, [script], {
+    input: JSON.stringify({ home: ctx.home, state }), env: ctx.env, encoding: 'utf8', timeout: timeoutMs, windowsHide: true, maxBuffer: 16 * 1024 * 1024,
+  });
+  if (r.error) return failed(r.error.code === 'ETIMEDOUT' ? `se acabó el tiempo (${Math.round(timeoutMs / 1000)} s)` : r.error.message);
+  let out = null;
+  try { out = JSON.parse(String(r.stdout || '').trim().split('\n').pop()); } catch (_) { out = null; }
+  if (r.status !== 0 || !isObject(out) || !isObject(out.result)) {
+    const how = r.status === null ? `lo cortó la señal ${r.signal || '—'}` : r.status === 0 ? 'salió 0 sin una respuesta que se lea' : `salió ${r.status}`;
+    return failed(`${how}${r.stderr ? `: ${String(r.stderr).trim().split('\n').pop().slice(0, 300)}` : ''}`);
+  }
+  for (const l of Array.isArray(out.log) ? out.log : []) if (log) log(String(l));
+  const lines = Array.isArray(out.result.lines) ? out.result.lines.map(String) : [];
+  // la entrada del estado como la dejó esa versión: la capa nueva, o la de antes con el motivo del rechazo (así el arranque
+  // siguiente no la vuelve a bajar para rechazarla igual)
+  const sameRepo = isObject(out.team) && isObject(state.team) && out.team.repo === state.team.repo;
+  if (sameRepo) state.team = out.team;
+  if (out.result.status === 'refreshed' && !sameRepo) {
+    return failed('dijo que apiló la capa pero no devolvió su entrada del estado para este repo del equipo; el próximo arranque la vuelve a mirar');
+  }
+  if (out.result.status === 'refreshed') {
+    const text = `capa del equipo: apilada con el código de la versión nueva${lines.length ? ` (${lines.join(' · ')})` : ''}`;
+    say(text);
+    return { status: 'refreshed', answered: true, lines: [text] };
+  }
+  if (out.result.status === 'same') return { status: 'same', answered: true, lines };
+  return { status: 'failed', answered: true, lines: lines.length ? lines : ['capa del equipo: la versión nueva tampoco la acepta — sigue la de antes'] };
+}
+
 function update(ctx, state, H, { mode = 'apply', log = null, snapshot = null, yes = false, policy = null, startedAt = null, teamRefresh = false, respectLimit = false } = {}) {
   const src = S.releaseSource(state);
   const channel = (policy && policy.channel) || state.channel || 'stable';
@@ -1762,6 +1809,7 @@ function update(ctx, state, H, { mode = 'apply', log = null, snapshot = null, ye
   // arranque hasta que cambie la punta)
   const teamLines = [];
   let teamManifest = null;
+  let retryTeamWithNew = false;
   const previousTeam = state.team;
   if (isObject(state.team) && typeof state.team.repo === 'string' && state.team.repo) {
     const TEAM = require('./team.js');
@@ -1783,6 +1831,8 @@ function update(ctx, state, H, { mode = 'apply', log = null, snapshot = null, ye
         }
       }
     } else st = { ok: false, reason: r.reason, carry: true };
+    // la punta se vio pero el código que corre (el de la versión instalada) no la acepta: la versión nueva puede aceptarla
+    retryTeamWithNew = !st.ok && st.carry && ((r.ok && st.invalid) || (!r.ok && r.invalid));
     if (!st.ok && st.carry) {
       const carried = TEAM.carryTeam(own.harness, d.dir, { home: ctx.home, env: ctx.env, log });
       if (carried.ok) { teamLines.push(`capa del equipo: sin acceso al repo del equipo o su punta no vale (${st.reason}) — sigue en ${sha7(carried.manifest.commit)}`); st = carried; }
@@ -1831,6 +1881,15 @@ function update(ctx, state, H, { mode = 'apply', log = null, snapshot = null, ye
   state.version.number = t.version;
   if (teamManifest) state.team = require('./team.js').stateEntry(teamManifest, state.team);
   if (log) log(`update: ${what}`);
+  // la punta que rechazó el lector de la versión de antes se vuelve a evaluar con el de la nueva, antes de enchufar: si la
+  // acepta, el aplicador ya enlaza lo que trae (una versión que mudó piezas a la capa no deja la máquina sin ellas)
+  if (retryTeamWithNew) {
+    const rt = refreshTeamWithNewCode(ctx, state, own.harness, { log });
+    // la línea de «sigue en …» del lector viejo la reemplaza lo que contestó el nuevo (que la aceptó, o por qué tampoco);
+    // si el nuevo no llegó a contestar, quedan las dos: el motivo del rechazo viejo y por qué no se pudo reintentar
+    if (rt.answered && rt.status !== 'same') teamLines.splice(0, teamLines.length);
+    teamLines.push(...rt.lines);
+  }
   const a = H.runApplier(ctx, own.harness, { log, snapshotDir: snap && snap.dir });
   state.last_apply = nowIso();
   const fail = (failures, reason) => {
@@ -2354,5 +2413,5 @@ module.exports = {
   resolvePublic, numberAt, tagNumberOf, tagsByApi, tagsFor, tagCommit, pendingTag, PENDING_TAG_SAY_MS, trustedCache, fromCache, adoptTag, treeNumberOk,
   download, readManifest, restoreThirdParty, swap, swapBack, repair, cleanupDeferred, isNamed, makeSource,
   convertLayout, swapLinks, swapBackLinks, repairLinks,
-  cmdInstall, update, rollback, auditTree,
+  cmdInstall, update, rollback, auditTree, refreshTeam, refreshTeamWithNewCode,
 };

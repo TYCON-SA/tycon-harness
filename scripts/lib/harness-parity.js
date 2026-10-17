@@ -171,7 +171,7 @@ function sAdvisors(ctx) {
     if (rec && rec.problem && teamNames.length) { teamBroken = teamBroken || `el registro de los revisores de la capa no se lee (${rec.problem}): borralo y corré deploy-codex-all.js --force`; rec = null; }
     for (const n of teamNames) {
       let g;
-      try { g = ctx.pol.gen.generateOne(TCG, n); } catch (e) { missing += 2; teamDetail.push(`${n} no se puede generar (${String(e.message).slice(0, 120)}): lo arregla el repo del equipo o la versión`); continue; }
+      try { g = ctx.pol.gen.generateOne(TCG, n, { agentsDir: (set.teamDirs || {})[n] || null }); } catch (e) { missing += 2; teamDetail.push(`${n} no se puede generar (${String(e.message).slice(0, 120)}): lo arregla el repo del equipo o la versión`); continue; }
       for (const [rel, content] of [[`${n}.config.toml`, esperado(n, Buffer.from(g.toml))], [`agents/${n}.toml`, esperado(n, Buffer.from(g.nativeToml))]]) {
         const have = rd(path.join(CODEX(), ...rel.split('/')));
         if (!have) { missing++; teamDetail.push(`${rel} falta: lo arregla el repo del equipo o la versión (o deploy-codex-all.js --force)`); continue; }
@@ -234,10 +234,18 @@ function sSkills(ctx) {
   });
   if (reales.length === 0) return { name: 'skills', ok: false, detail: `el clon de skills está vacío o ilegible (${clone})` };
   const conteo = { ausente: [], roto: [], dev: 0, ok: 0 };
-  for (const s of reales) {
+  // las de los paquetes que la organización activa (story 8.41): el deployer las enlaza aparte (packSkills), cada una
+  // desde la carpeta de skills de su paquete — la paridad las mira igual
+  // (si no se pueden leer, no es «no hay»: se dice)
+  let dePaquetes = [];
+  try { const ps = ctx.pol.skills.packSkills ? ctx.pol.skills.packSkills(path.dirname(clone)) : null; dePaquetes = ps ? ps.extra : []; } catch (e) {
+    return { name: 'skills', ok: false, detail: `no pude leer las skills de los paquetes (${String(e.message).split('\n')[0]})` };
+  }
+  const todas = [...reales.map((s) => ({ name: s, src: clone })), ...dePaquetes.map((x) => ({ name: x.name, src: path.dirname(x.src) }))];
+  for (const { name: s, src } of todas) {
     // La MISMA clasificación que usa el deployer (linkState exportado): lo del dev jamás es
     // rojo; lo nuestro roto es remediable (el próximo deploy lo limpia y re-crea).
-    const estado = ctx.pol.skills.linkState(path.join(CODEX(), 'skills', s), clone, s);
+    const estado = ctx.pol.skills.linkState(path.join(CODEX(), 'skills', s), src, s);
     if (estado === 'ausente') conteo.ausente.push(s);
     else if (estado === 'roto') conteo.roto.push(s);
     else if (estado === 'dev') conteo.dev++;
@@ -503,7 +511,7 @@ function selftest() {
   return bad ? 1 : 0;
 }
 
-module.exports = { runParity, collect, buildCtx, codexDeployed, selftest, STALE_MS, reportPath, benchDir: BENCH_DIR };
+module.exports = { runParity, collect, buildCtx, codexDeployed, selftest, STALE_MS, reportPath, benchDir: BENCH_DIR, sSkills };
 
 if (require.main === module) {
   // `--report-path`: dónde escribiría el reporte esta máquina, sin medir nada (lo prueba harness-parity.test.sh)

@@ -166,8 +166,11 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     else if (!doc && s.id !== 'personas') return { ...v, estado: 'ilegible', motivo: `${s.archivo} no es un objeto JSON legible: se corrige a mano` };
     const parsed = a.estado === 'leido' ? lec.parse(a.texto) : { ok: true, problems: [] };
     v.problems = (parsed.problems || []).filter((p) => !s.claves || s.claves.some((k) => p.path === k || String(p.path).startsWith(`${k}.`)));
+    // lo que el lector da aparte sin anular el archivo (un modelo mal escrito) se ve en su sección
+    if (s.claves) v.problems.push(...ORG.problemasDeSeccion(s, parsed, null, null));
     v.borrador = s.claves === null ? clone(doc || { version: 1 }) : Object.fromEntries(s.claves.filter((k) => doc && doc[k] !== undefined).map((k) => [k, clone(doc[k])]));
     if (s.id === 'sitio') v.campos = { url: Array.isArray(lec.SITE_KEYS) && lec.SITE_KEYS.includes('url') };
+    if (s.id === 'modelos') { const hoy = ORG.modelosDeHoy(TREE); v.extras = { hoy, motivoHoy: hoy ? null : ORG.motivoDeHoy(TREE) }; }
     if (s.id === 'paquetes') v.extras = paquetesDe(doc && isObject(doc.packs) ? doc.packs.default : undefined);
     if (s.id === 'personas') {
       // operations.json que no valida: el último bueno (24 h, la regla de la 2.28); el sitio frenado ya contesta 503
@@ -283,6 +286,9 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     if (!ORG.lectorSabe(lec, s)) return `esta versión del arnés todavía no sabe leer ${s.archivo}`;
     const r = lec.parse(texto);
     if (!r.ok) return `el lector rechaza el archivo: ${(r.problems || []).map((p) => `${p.path || '(el archivo)'}: ${p.message}`).join(' · ')}`;
+    // el lector da por bueno un archivo con un modelo mal escrito (lo pone aparte): la sección que lo cambia no lo propone
+    const aparte = ORG.problemasDeSeccion(s, r, docDe(vista(s).texto || ''), doc);
+    if (aparte.length) return `el lector rechaza esta parte del archivo: ${aparte.map((p) => `${p.path}: ${p.message}`).join(' · ')}`;
     if (s.archivo === 'operations.json' && isObject(doc.site) && Array.isArray(doc.site.maintainers) && !doc.site.maintainers.length) return 'la lista de los que mantienen no puede quedar vacía: quedaría sin nadie que pueda entrar a esta pestaña';
     if (s.repo === 'perfil') {
       const capa = leer(clones().perfil.dir, 'team-layer.json');
@@ -290,7 +296,7 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
       // la sección Paquetes vive en un archivo que cualquier versión lee; sólo una LISTA pide una versión que la conozca
       const gate = s.id === 'paquetes'
         ? ORG.packsListGateProblem({ layerText, versionImagen, valor: isObject(doc.packs) ? doc.packs.default : undefined })
-        : ORG.profileGateProblem(layerText);
+        : ORG.profileGateProblem(layerText, doc);
       if (gate) return gate;
     }
     return null;

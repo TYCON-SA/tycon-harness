@@ -1,5 +1,5 @@
 {
-  "__doc": "La detección de React/Next del cálculo de revisores (pipeline.js advisors), 2026-10-15. Un formulario de Bizuit declara React SÓLO en peerDependencies (lo provee el host), y la detección leía sólo dependencies y devDependencies: hasReact salía false y el revisor de convenciones React quedaba afuera sin aviso (una story de dos repos de un producto del equipo; sumado a mano encontró dos avisos reales). Estos casos corren el cálculo REAL sobre un repo de juguete con un .tsx en el diff y exigen el revisor que corresponde; el tercero exige que un .tsx sin framework detectado lo diga, con el package.json que se leyó.",
+  "__doc": "La detección de React/Next del cálculo de revisores (pipeline.js advisors), 2026-10-15. Un formulario de Bizuit declara React SÓLO en peerDependencies (lo provee el host), y la detección leía sólo dependencies y devDependencies: hasReact salía false y el revisor de convenciones React quedaba afuera sin aviso (una story de dos repos de un producto del equipo; sumado a mano encontró dos avisos reales). Estos casos corren el cálculo REAL sobre un repo de juguete con un .tsx en el diff y exigen el revisor que corresponde; el tercero exige que un .tsx sin framework detectado lo diga, con el package.json que se leyó. Desde la 8.41 los revisores de un stack viven en el paquete del equipo, que el público no trae: el caso arma un paquete de juguete con las mismas condiciones que los de React y Next (el revisor de React, sin Next; el de Next, con Next).",
   "hooks": [
     {
       "hook": "pipeline.js advisors (detección de stack)",
@@ -8,7 +8,7 @@
       "matcher": "Bash",
       "env": {
         "PIPELINE_JS": "${SKILLS}/skills/tycon-pipeline/scripts/pipeline.js",
-        "TYCON_PACKS_DIR": "${TCG}/packs",
+        "TYCON_PACKS_DIR": "${FIXTURE}/paquetes",
         "TYCON_PACKS_DEFAULT": "all",
         "TYCON_SESSION_ID": "bench-stack"
       },
@@ -20,14 +20,26 @@
           "files": {
             "package.json": "{\n  \"name\": \"formulario\",\n  \"peerDependencies\": { \"react\": \"^18.3.1\" },\n  \"dependencies\": { \"dayjs\": \"1.11.0\" }\n}\n",
             "src/X.tsx": "export const X = () => null;\n",
-            "correr.sh": "node \"$PIPELINE_JS\" advisors --repo \"$FIXTURE\" --files src/X.tsx\n"
+            "correr.sh": "node \"$PIPELINE_JS\" advisors --repo \"$FIXTURE\" --files src/X.tsx\n",
+            "paquetes/stack-juguete/pack.json": "{\n \"name\": \"stack-juguete\",\n \"description\": \"paquete de juguete con las condiciones de los revisores de React y Next de un paquete de stack\",\n \"agents\": \"agents\",\n \"reviewers\": [\n  {\n   \"agent\": \"rev-next-juguete\",\n   \"group\": \"base\",\n   \"when\": {\n    \"all\": [\n     {\n      \"detection\": \"hasNext\"\n     },\n     {\n      \"any\": [\n       {\n        \"detection\": \"tsxModified\"\n       },\n       {\n        \"all\": [\n         {\n          \"detection\": \"depChanged\"\n         },\n         {\n          \"no\": {\n           \"detection\": \"csModified\"\n          }\n         }\n        ]\n       }\n      ]\n     }\n    ]\n   },\n   \"surface\": {\n    \"paths\": [\n     \"**/*.tsx\",\n     \"**/*.ts\"\n    ]\n   },\n   \"depth\": \"standard\",\n   \"prefixes\": [\n    \"NEXTJ\"\n   ]\n  },\n  {\n   \"agent\": \"rev-react-juguete\",\n   \"group\": \"base\",\n   \"when\": {\n    \"all\": [\n     {\n      \"detection\": \"hasReact\"\n     },\n     {\n      \"no\": {\n       \"detection\": \"hasNext\"\n      }\n     },\n     {\n      \"any\": [\n       {\n        \"detection\": \"tsxModified\"\n       },\n       {\n        \"all\": [\n         {\n          \"detection\": \"depChanged\"\n         },\n         {\n          \"no\": {\n           \"detection\": \"csModified\"\n          }\n         }\n        ]\n       }\n      ]\n     }\n    ]\n   },\n   \"surface\": {\n    \"paths\": [\n     \"**/*.tsx\",\n     \"**/*.ts\",\n     \"**/*.jsx\",\n     \"**/*.js\"\n    ]\n   },\n   \"depth\": \"standard\",\n   \"prefixes\": [\n    \"REACTJ\"\n   ]\n  }\n ]\n}\n",
+            "paquetes/stack-juguete/agents/rev-react-juguete.md": "---\nname: rev-react-juguete\ndescription: revisor de juguete\nmodel: sonnet\ntools: Read, Grep, Glob\n---\n\nRevisa.\n",
+            "paquetes/stack-juguete/agents/rev-next-juguete.md": "---\nname: rev-next-juguete\ndescription: revisor de juguete\nmodel: sonnet\ntools: Read, Grep, Glob\n---\n\nRevisa.\n"
           },
           "setup": [
             "git init -q -b main . && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
           ],
-          "stdin": { "tool_name": "Bash", "tool_input": { "command": "true" }, "session_id": "bench-stack" },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "true"
+            },
+            "session_id": "bench-stack"
+          },
           "expect": {
-            "stdout_re": ["\"hasReact\": true", "\"all\": \\[[^\\]]*\"tycon-plugin-react-conventions\""]
+            "stdout_re": [
+              "\"hasReact\": true",
+              "\"all\": \\[[^\\]]*\"rev-react-juguete\""
+            ]
           }
         },
         {
@@ -37,15 +49,29 @@
           "files": {
             "package.json": "{\n  \"name\": \"portal\",\n  \"peerDependencies\": { \"react\": \"^18.3.1\", \"next\": \"^14.2.0\" }\n}\n",
             "src/X.tsx": "export const X = () => null;\n",
-            "correr.sh": "node \"$PIPELINE_JS\" advisors --repo \"$FIXTURE\" --files src/X.tsx\n"
+            "correr.sh": "node \"$PIPELINE_JS\" advisors --repo \"$FIXTURE\" --files src/X.tsx\n",
+            "paquetes/stack-juguete/pack.json": "{\n \"name\": \"stack-juguete\",\n \"description\": \"paquete de juguete con las condiciones de los revisores de React y Next de un paquete de stack\",\n \"agents\": \"agents\",\n \"reviewers\": [\n  {\n   \"agent\": \"rev-next-juguete\",\n   \"group\": \"base\",\n   \"when\": {\n    \"all\": [\n     {\n      \"detection\": \"hasNext\"\n     },\n     {\n      \"any\": [\n       {\n        \"detection\": \"tsxModified\"\n       },\n       {\n        \"all\": [\n         {\n          \"detection\": \"depChanged\"\n         },\n         {\n          \"no\": {\n           \"detection\": \"csModified\"\n          }\n         }\n        ]\n       }\n      ]\n     }\n    ]\n   },\n   \"surface\": {\n    \"paths\": [\n     \"**/*.tsx\",\n     \"**/*.ts\"\n    ]\n   },\n   \"depth\": \"standard\",\n   \"prefixes\": [\n    \"NEXTJ\"\n   ]\n  },\n  {\n   \"agent\": \"rev-react-juguete\",\n   \"group\": \"base\",\n   \"when\": {\n    \"all\": [\n     {\n      \"detection\": \"hasReact\"\n     },\n     {\n      \"no\": {\n       \"detection\": \"hasNext\"\n      }\n     },\n     {\n      \"any\": [\n       {\n        \"detection\": \"tsxModified\"\n       },\n       {\n        \"all\": [\n         {\n          \"detection\": \"depChanged\"\n         },\n         {\n          \"no\": {\n           \"detection\": \"csModified\"\n          }\n         }\n        ]\n       }\n      ]\n     }\n    ]\n   },\n   \"surface\": {\n    \"paths\": [\n     \"**/*.tsx\",\n     \"**/*.ts\",\n     \"**/*.jsx\",\n     \"**/*.js\"\n    ]\n   },\n   \"depth\": \"standard\",\n   \"prefixes\": [\n    \"REACTJ\"\n   ]\n  }\n ]\n}\n",
+            "paquetes/stack-juguete/agents/rev-react-juguete.md": "---\nname: rev-react-juguete\ndescription: revisor de juguete\nmodel: sonnet\ntools: Read, Grep, Glob\n---\n\nRevisa.\n",
+            "paquetes/stack-juguete/agents/rev-next-juguete.md": "---\nname: rev-next-juguete\ndescription: revisor de juguete\nmodel: sonnet\ntools: Read, Grep, Glob\n---\n\nRevisa.\n"
           },
           "setup": [
             "git init -q -b main . && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
           ],
-          "stdin": { "tool_name": "Bash", "tool_input": { "command": "true" }, "session_id": "bench-stack" },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "true"
+            },
+            "session_id": "bench-stack"
+          },
           "expect": {
-            "stdout_re": ["\"hasNext\": true", "\"all\": \\[[^\\]]*\"tycon-plugin-nextjs-conventions\""],
-            "stdout_not_re": ["\"all\": \\[[^\\]]*\"tycon-plugin-react-conventions\""]
+            "stdout_re": [
+              "\"hasNext\": true",
+              "\"all\": \\[[^\\]]*\"rev-next-juguete\""
+            ],
+            "stdout_not_re": [
+              "\"all\": \\[[^\\]]*\"rev-react-juguete\""
+            ]
           }
         },
         {
@@ -55,14 +81,26 @@
           "files": {
             "package.json": "{\n  \"name\": \"herramienta\",\n  \"dependencies\": { \"lodash\": \"4.17.21\" }\n}\n",
             "src/X.tsx": "export const X = () => null;\n",
-            "correr.sh": "node \"$PIPELINE_JS\" advisors --repo \"$FIXTURE\" --files src/X.tsx\n"
+            "correr.sh": "node \"$PIPELINE_JS\" advisors --repo \"$FIXTURE\" --files src/X.tsx\n",
+            "paquetes/stack-juguete/pack.json": "{\n \"name\": \"stack-juguete\",\n \"description\": \"paquete de juguete con las condiciones de los revisores de React y Next de un paquete de stack\",\n \"agents\": \"agents\",\n \"reviewers\": [\n  {\n   \"agent\": \"rev-next-juguete\",\n   \"group\": \"base\",\n   \"when\": {\n    \"all\": [\n     {\n      \"detection\": \"hasNext\"\n     },\n     {\n      \"any\": [\n       {\n        \"detection\": \"tsxModified\"\n       },\n       {\n        \"all\": [\n         {\n          \"detection\": \"depChanged\"\n         },\n         {\n          \"no\": {\n           \"detection\": \"csModified\"\n          }\n         }\n        ]\n       }\n      ]\n     }\n    ]\n   },\n   \"surface\": {\n    \"paths\": [\n     \"**/*.tsx\",\n     \"**/*.ts\"\n    ]\n   },\n   \"depth\": \"standard\",\n   \"prefixes\": [\n    \"NEXTJ\"\n   ]\n  },\n  {\n   \"agent\": \"rev-react-juguete\",\n   \"group\": \"base\",\n   \"when\": {\n    \"all\": [\n     {\n      \"detection\": \"hasReact\"\n     },\n     {\n      \"no\": {\n       \"detection\": \"hasNext\"\n      }\n     },\n     {\n      \"any\": [\n       {\n        \"detection\": \"tsxModified\"\n       },\n       {\n        \"all\": [\n         {\n          \"detection\": \"depChanged\"\n         },\n         {\n          \"no\": {\n           \"detection\": \"csModified\"\n          }\n         }\n        ]\n       }\n      ]\n     }\n    ]\n   },\n   \"surface\": {\n    \"paths\": [\n     \"**/*.tsx\",\n     \"**/*.ts\",\n     \"**/*.jsx\",\n     \"**/*.js\"\n    ]\n   },\n   \"depth\": \"standard\",\n   \"prefixes\": [\n    \"REACTJ\"\n   ]\n  }\n ]\n}\n",
+            "paquetes/stack-juguete/agents/rev-react-juguete.md": "---\nname: rev-react-juguete\ndescription: revisor de juguete\nmodel: sonnet\ntools: Read, Grep, Glob\n---\n\nRevisa.\n",
+            "paquetes/stack-juguete/agents/rev-next-juguete.md": "---\nname: rev-next-juguete\ndescription: revisor de juguete\nmodel: sonnet\ntools: Read, Grep, Glob\n---\n\nRevisa.\n"
           },
           "setup": [
             "git init -q -b main . && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
           ],
-          "stdin": { "tool_name": "Bash", "tool_input": { "command": "true" }, "session_id": "bench-stack" },
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "true"
+            },
+            "session_id": "bench-stack"
+          },
           "expect": {
-            "stdout_re": ["\"hasReact\": false", "hay \\.tsx/\\.jsx y no detecté React ni Next en [^\"]*package\\.json"]
+            "stdout_re": [
+              "\"hasReact\": false",
+              "hay \\.tsx/\\.jsx y no detecté React ni Next en [^\"]*package\\.json"
+            ]
           }
         }
       ]

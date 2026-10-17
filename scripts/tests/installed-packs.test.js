@@ -129,7 +129,8 @@ test('HarnessAuditEInstinctDraft_LeenManifiestos', () => {
   const packsDir = paquetes({ prueba: PRUEBA });
   const conAgente = agentes('rev-nuevo');
   const sinAgente = agentes();
-  const audit = (env) => nodeJson(`process.stdout.write(JSON.stringify(require(${JSON.stringify(AUDIT)}).checkAdvisorCoverage().checks))`, env);
+  // (story 8.41: la auditoría exige los revisores de los paquetes que la organización ACTIVA: estas pruebas los activan todos)
+  const audit = (env) => nodeJson(`process.stdout.write(JSON.stringify(require(${JSON.stringify(AUDIT)}).checkAdvisorCoverage().checks))`, { TYCON_PACKS_DEFAULT: 'all', ...env });
 
   // la auditoría exige el agente del paquete
   const checks = audit({ TYCON_PACKS_DIR: packsDir, TYCON_AGENTS_DIR: conAgente });
@@ -149,6 +150,18 @@ test('HarnessAuditEInstinctDraft_LeenManifiestos', () => {
   // sin paquetes, la auditoría no lo exige
   const sinPaquete = audit({ TYCON_PACKS_DIR: tmp('paq-vacio-'), TYCON_AGENTS_DIR: conAgente });
   assert.equal(sinPaquete.filter((c) => c.name.includes('rev-nuevo')).length, 0);
+  // story 8.41 (pase adversarial): instalado = enlazado donde Claude lo carga. Con el fuente en la carpeta de agentes del
+  // paquete y sin enlace, sigue en rojo; un paquete que la organización no activa no se exige; uno activado que no está, sí
+  const conCarpeta = paquetes({ prueba: { ...PRUEBA, agents: 'agents' } });
+  fs.mkdirSync(path.join(conCarpeta, 'prueba', 'agents'));
+  fs.writeFileSync(path.join(conCarpeta, 'prueba', 'agents', 'rev-nuevo.md'), '---\nname: rev-nuevo\n---\n');
+  const sinEnlace = audit({ TYCON_PACKS_DIR: conCarpeta, TYCON_AGENTS_DIR: sinAgente }).filter((c) => c.name.includes('rev-nuevo'));
+  assert.equal(sinEnlace[0].passed, false, 'el fuente en el paquete no prueba que esté instalado');
+  assert.equal(sinEnlace[0].file, path.join(sinAgente, 'rev-nuevo.md'));
+  const apagado = audit({ TYCON_PACKS_DIR: packsDir, TYCON_AGENTS_DIR: sinAgente, TYCON_PACKS_DEFAULT: 'none' });
+  assert.equal(apagado.filter((c) => c.name.includes('rev-nuevo')).length, 0, 'un paquete apagado no se exige');
+  const pedidoQueFalta = audit({ TYCON_PACKS_DIR: packsDir, TYCON_AGENTS_DIR: conAgente, TYCON_PACKS_DEFAULT: 'prueba,otro' });
+  assert.ok(pedidoQueFalta.some((c) => /activa otro y no está/.test(c.name) && c.passed === false), JSON.stringify(pedidoQueFalta.map((c) => c.name)));
 
   // instinct-draft asigna el prefijo al revisor del paquete
   const owner = (env) => nodeJson(`process.stdout.write(JSON.stringify(require(${JSON.stringify(DRAFT)}).ownerDePrefijo('NUEVO')))`, env);
@@ -163,14 +176,15 @@ test('HarnessAuditEInstinctDraft_LeenManifiestos', () => {
   assert.equal(prefijoDeRegla('nada'), 'UNKNOWN');
 });
 
-test('ninguna de las dos listas escribe a mano a los cinco', () => {
-  // (story 8.10.3 D: «los cinco» son los revisores que declaran los manifiestos de `packs/` de este repo —en la copia
-  // pública, los del paquete que viaja—; esta prueba tampoco los escribe a mano)
+test('ninguna de las dos listas escribe a mano a los cinco', (t) => {
+  // (story 8.10.3 D: «los cinco» son los revisores que declaran los manifiestos de `packs/` de este repo; esta prueba
+  // tampoco los escribe a mano. Story 8.41: la copia pública no trae paquetes —llegan con el perfil del equipo—, y ahí
+  // no hay a quién buscar: se dice)
   const packs = path.resolve(SCRIPTS, '..', 'packs');
-  const LOS_CINCO = [...new Set(fs.readdirSync(packs)
+  const LOS_CINCO = [...new Set((fs.existsSync(packs) ? fs.readdirSync(packs) : [])
     .filter((p) => fs.existsSync(path.join(packs, p, 'pack.json')))
     .flatMap((p) => JSON.parse(fs.readFileSync(path.join(packs, p, 'pack.json'), 'utf8')).reviewers.map((r) => r.agent)))];
-  assert.ok(LOS_CINCO.length >= 3, `los manifiestos de ${packs} declaran revisores (hay ${LOS_CINCO.length})`);
+  if (!LOS_CINCO.length) { t.diagnostic(`NO MEDIDO: ${packs} no trae paquetes (copia pública); se mide en el repo del equipo`); return; }
   for (const f of [AUDIT, DRAFT, LIB]) {
     const src = fs.readFileSync(f, 'utf8');
     for (const n of LOS_CINCO) assert.ok(!src.includes(n), `${path.basename(f)} nombra a ${n}`);
@@ -259,4 +273,20 @@ test('T37 R5_CrossRepo_PackOldPathResolvesViaShim', (t) => {
       || (!c.passed && nombres.some((n) => `${c.name} ${c.file || ''}`.includes(n))))
     .map((c) => `${c.name} (${c.file})`);
   assert.deepEqual(faltantes, [], 'harness-audit no reporta ninguna guía faltante');
+});
+
+// story 8.41 (revisión 2): la sonda «cableado en pipeline.js + guardado por test-pipeline-coverage.js» de la auditoría mira
+// sólo revisores del núcleo — con el árbol de esta rama, todos en verde y ninguno de los trece que viven en un paquete
+test('T23 Bench_And_Audit_FindReviewers · la sonda de cableado de la auditoría es del núcleo', () => {
+  const casa = tmp('audit-cableado-');
+  fs.mkdirSync(path.join(casa, '.claude'), { recursive: true });
+  fs.symlinkSync(path.resolve(SCRIPTS, '..'), path.join(casa, '.claude', 'agent-skills'));
+  const checks = nodeJson(`process.stdout.write(JSON.stringify(require(${JSON.stringify(AUDIT)}).checkPipelineWiring().checks))`, { HOME: casa });
+  const sonda = checks.filter((c) => /^Advisor ".*" cableado en pipeline\.js/.test(c.name));
+  assert.equal(sonda.length, 3, JSON.stringify(checks.map((c) => c.name)));
+  assert.deepEqual(sonda.filter((c) => !c.passed).map((c) => `${c.name} ${JSON.stringify(c.detail)}`), [], 'la sonda sale verde en el árbol de la rama');
+  const DE_PAQUETE = ['migration-impact-analyzer', 'signalr-hub-reviewer', 'signalr-client-reviewer', 'worker-lifecycle-reviewer', 'http-resilience-reviewer',
+    'tycon-feature-wiring-checker', 'tycon-plugin-dotnet-conventions', 'tycon-plugin-react-conventions', 'tycon-plugin-nextjs-conventions',
+    'multi-tenant-isolation-reviewer', 'drizzle-migration-reviewer', 'nextjs-app-router-security', 'auth-session-reviewer'];
+  assert.deepEqual(sonda.filter((c) => DE_PAQUETE.some((a) => c.name.includes(`"${a}"`))), [], 'la sonda no pide a un revisor de paquete en pipeline.js');
 });

@@ -440,12 +440,15 @@ test('Pack_Descubrimiento_VariableYDefault', (t) => {
   assert.equal(conVariable.status, 0, conVariable.stderr);
   assert.deepEqual(conVariable.json.packs.map((p) => p.nombre), ['prueba']);
   assert.equal(conVariable.json.packs_dir, packsDir);
-  // sin la variable: packs/ de agent-skills, donde viven los dos del equipo (en la copia pública, sólo el del stack)
+  // sin la variable: packs/ del árbol, donde viven los del equipo (la copia pública no trae ninguno: llegan con el perfil)
   const sinVariable = advisors(d, ['src/A.cs']);
   assert.equal(sinVariable.status, 0, sinVariable.stderr);
   assert.equal(sinVariable.json.packs_dir, PACKS_REALES);
-  assert.deepEqual(ordenado(sinVariable.json.packs.map((p) => p.nombre)), SKIP_PUBLIC ? ['bizuit'] : ['bizuit', 'clients']);
-  if (SKIP_PUBLIC) t.diagnostic(`NO MEDIDO: que el paquete de clientes se descubre por defecto (${SKIP_PUBLIC}); se mide en el repo del equipo`);
+  const delArbol = fs.existsSync(PACKS_REALES) ? fs.readdirSync(PACKS_REALES).filter((p) => fs.existsSync(path.join(PACKS_REALES, p, 'pack.json'))).sort() : [];
+  assert.deepEqual(ordenado(sinVariable.json.packs.map((p) => p.nombre)), delArbol);
+  if (SKIP_PUBLIC) assert.deepEqual(delArbol, [], 'el núcleo no trae paquetes');
+  else assert.ok(['bizuit', 'clients', 'nextjs-postgres'].every((p) => delArbol.includes(p)), `los del equipo: ${delArbol.join(', ')}`);
+  if (SKIP_PUBLIC) t.diagnostic(`NO MEDIDO: que los paquetes del equipo se descubren por defecto (${SKIP_PUBLIC}); se mide en el repo del equipo`);
 });
 
 // ── T5 · AC 4 — `packs:` del repo restringe, y un nombre que no está instalado frena ────────────
@@ -602,12 +605,11 @@ test('Advisors_SalidaIncluyePaquetesCargados', () => {
   assert.deepEqual(s.json.packs.map((p) => p.nombre), ['prueba']);
 });
 
-// ── T8 · AC 7 — el núcleo no nombra a los revisores de paquete ──────────────────────────────────
+// ── T8 · AC 7 — el núcleo no nombra a los revisores de paquete (story 8.41: ni trae paquetes) ─────────────────
 // (story 8.10.3 D: los revisores de paquete no se escriben acá: son los que declaran los manifiestos instalados. La copia
-// pública trae sólo el paquete del stack y sus tres; el repo del equipo suma los de su paquete de clientes, que el
-// público no cuenta: los lee de ese manifiesto — sacar o sumar uno allá no toca esta suite)
+// pública no trae ningún paquete (story 8.41: llegan con el perfil del equipo); el repo del equipo los suma leyéndolos de
+// sus manifiestos — sacar o sumar uno allá no toca esta suite)
 const LOS_DE_PAQUETE = packReviewers(PACKS_REALES);
-const DEL_PAQUETE_DEL_STACK = 3;
 function archivosDelNucleo() {
   const skill = path.resolve(SCRIPTS, '..');
   const out = [PIPELINE, path.join(skill, 'SKILL.md')];
@@ -631,23 +633,83 @@ test('Nucleo_SinNombresDePaquetes', (t) => {
     });
   }
   assert.deepEqual(apariciones, [], `los revisores de paquete sólo viven en packs/:\n${apariciones.join('\n')}`);
-  // y sí viven en los manifiestos (sólo las carpetas con pack.json: un .DS_Store suelto no es un paquete)
-  const enPacks = fs.readdirSync(PACKS_REALES)
-    .filter((p) => fs.existsSync(path.join(PACKS_REALES, p, 'pack.json')))
-    .flatMap((p) => {
-      const m = JSON.parse(fs.readFileSync(path.join(PACKS_REALES, p, 'pack.json'), 'utf8'));
-      return m.reviewers.map((r) => r.agent);
-    });
   // (pase adversarial de la 8.10.3 D: comparar la lista contra los mismos manifiestos de los que sale no mide nada)
-  // lo que sí se mide: cada revisor que un manifiesto declara tiene su definición, y la lista no perdió ni duplicó ninguno
-  assert.deepEqual([...new Set(enPacks)].sort(), LOS_DE_PAQUETE, 'la lista de revisores de paquete es la de los manifiestos, sin repetir');
-  for (const n of LOS_DE_PAQUETE) assert.ok(fs.existsSync(path.join(RAIZ, 'agents', `${n}.md`)), `${n}: lo declara un manifiesto y no tiene su definición en agents/`);
-  // la lista sale de los manifiestos: que no se quede corta. Los tres del paquete del stack están siempre; en el repo del
-  // equipo se suman los que declare su paquete de clientes (los dice su manifiesto, no un número escrito acá); en la
-  // copia pública ese paquete no está y no se mide (se dice)
-  const deClientes = clientPackReviewers();
-  assert.equal(LOS_DE_PAQUETE.length, DEL_PAQUETE_DEL_STACK + deClientes.length, `revisores de paquete: ${LOS_DE_PAQUETE.join(', ')}`);
-  if (SKIP_PUBLIC) t.diagnostic(`NO MEDIDO: que el núcleo no nombre a los revisores del paquete de clientes ni que su manifiesto los declare (${SKIP_PUBLIC}); se mide en el repo del equipo`);
+  // lo que sí se mide: cada revisor que un manifiesto declara tiene su definición —en la carpeta de agentes de su paquete
+  // (clave `agents`) o en la de la raíz—, y ninguno vive a la vez en agents/ del núcleo
+  if (SKIP_PUBLIC) {
+    assert.deepEqual(LOS_DE_PAQUETE, [], 'el núcleo no trae paquetes');
+    t.diagnostic(`NO MEDIDO: que el núcleo no nombre a los revisores de los paquetes del equipo ni que sus manifiestos los declaren (${SKIP_PUBLIC}); se mide en el repo del equipo`);
+    return;
+  }
+  for (const p of fs.readdirSync(PACKS_REALES).filter((x) => fs.existsSync(path.join(PACKS_REALES, x, 'pack.json')))) {
+    const m = JSON.parse(fs.readFileSync(path.join(PACKS_REALES, p, 'pack.json'), 'utf8'));
+    for (const r of m.reviewers) {
+      const enPaquete = m.agents ? path.join(PACKS_REALES, p, m.agents, `${r.agent}.md`) : null;
+      assert.ok((enPaquete && fs.existsSync(enPaquete)) || fs.existsSync(path.join(RAIZ, 'agents', `${r.agent}.md`)), `${r.agent}: lo declara el paquete ${p} y no tiene su definición`);
+    }
+  }
+  // la lista sale de los manifiestos: que no se quede corta (los de clientes los dice su manifiesto, no un número escrito acá)
+  for (const n of clientPackReviewers()) assert.ok(LOS_DE_PAQUETE.includes(n), `${n} del paquete de clientes`);
+});
+
+// ── story 8.41 · T21 (AC 24): el núcleo no nombra a ningún revisor de un stack — cada revisor que pipeline.js escribe tiene su
+//    definición en agents/ del núcleo; y el escalamiento de mech-check de una familia que no es del núcleo (WIRING) va al
+//    revisor del paquete ACTIVO que declara ese prefijo, o queda sin escalar y se dice ───────────────────────────────────
+test('T21 Pipeline_NamesNoneOfThirteen', () => {
+  const texto = fs.readFileSync(PIPELINE, 'utf8');
+  const nombrados = [...new Set([...texto.matchAll(/'((?:tycon-)?[a-z0-9]+(?:-[a-z0-9]+)*-(?:reviewer|checker|analyzer|conventions|security|basics|coverage|validator|audit|capturer|hunter))'/g)].map((m) => m[1]))];
+  assert.ok(nombrados.length >= 10, `pipeline.js nombra revisores del núcleo: ${nombrados.join(', ')}`);
+  const sinDefinicion = nombrados.filter((n) => !fs.existsSync(path.join(RAIZ, 'agents', `${n}.md`)));
+  assert.deepEqual(sinDefinicion, [], 'cada revisor que pipeline.js nombra es del núcleo (los de un stack viven en su paquete)');
+  // el control de commit que corre la paridad Codex y la vida del revisor tocado mira también los de un paquete (pase adversarial)
+  const hook = path.join(RAIZ, '.githooks', 'pre-commit-skills');
+  if (fs.existsSync(hook)) assert.match(fs.readFileSync(hook, 'utf8'), /git diff --cached --name-only -- 'agents\/\*\.md' 'packs\/\*\/agents\/\*\.md'/);
+  // el escalamiento: un componente nuevo sin uso es un ambiguo WIRING-C1
+  const d = repo();
+  fs.writeFileSync(path.join(d, 'src', 'Nuevo.tsx'), 'export function Nuevo() { return null; }\n');
+  const story = path.join(tmp('packs-story-wiring-'), 'story-1-1.md');
+  fs.writeFileSync(story, ['---', 'epic: 1', 'story: "1.1"', 'title: "x"', 'status: in-progress', '---', '', '## Acceptance Criteria', '', '1. **Given** x **Then** y', ''].join('\n'));
+  const mech = (env) => pipeline('mech-check', ['--repo', d, '--story', story, '--files', 'src/Nuevo.tsx'], env);
+  const conPaquete = paquetes({ cableado: { name: 'cableado', description: 'paquete de juguete con el revisor de cableado', reviewers: [
+    { agent: 'rev-cableado', group: 'condicional', when: { files: '\\.tsx$' }, surface: { paths: ['**/*.tsx'] }, depth: 'lean', prefixes: ['WIRING'] },
+  ] } });
+  const con = mech({ TYCON_PACKS_DIR: conPaquete, TYCON_AGENTS_DIR: agentes('rev-cableado') });
+  assert.ok(con.json, con.stderr);
+  assert.ok(con.json.ambiguous.some((a) => a.rule === 'WIRING-C1'), JSON.stringify(con.json.ambiguous));
+  assert.deepEqual(con.json.llm_escalation, ['rev-cableado']);
+  const sin = mech({ TYCON_PACKS_DIR: tmp('packs-vacio-') });
+  assert.deepEqual(sin.json.llm_escalation, []);
+  assert.match(sin.json.note, /Sin escalar: WIRING \(ningún paquete activo trae su revisor\)/);
+});
+
+// ── story 8.41 · T17 (AC 16, 17) y T19 (AC 19): las skills de un stack no viven en el núcleo, y las del núcleo no nombran a la
+//    organización. Las nueve llegan en el paquete del perfil del equipo; que estén ahí lo mide el repo del equipo ──────
+test('T17 Skills_LeavePublic_TravelInTeamLayer (lado público)', (t) => {
+  const skillsDir = path.join(RAIZ, 'skills');
+  const delNucleo = fs.readdirSync(skillsDir).filter((n) => fs.existsSync(path.join(skillsDir, n, 'SKILL.md')));
+  // en el núcleo no queda una skill que hable del stack de una organización (BIZUIT, Dapper/SQL Server, el empaquetado de formularios)
+  const MUDADAS = ['bizuit-backend-plugin-system', 'bizuit-custom-forms-system', 'bizuit-sdk-integration', 'bizuit-new-product',
+    'dotnet-dapper-sqlserver', 'safe-query-builder', 'feature-based-crud-endpoints', 'tycon-new-migration', 'esbuild-bundling'];
+  const delStack = delNucleo.filter((n) => MUDADAS.includes(n));
+  assert.deepEqual(delStack, [], 'las skills de un stack viven en su paquete');
+  // las que trae un paquete instalado (con el perfil del equipo encima) se llaman distinto que las del núcleo
+  if (SKIP_PUBLIC) t.diagnostic(`NO MEDIDO: que el paquete del equipo traiga sus skills (${SKIP_PUBLIC}); se mide en el repo del equipo`);
+  else {
+    const enPaquetes = fs.readdirSync(PACKS_REALES).flatMap((p) => {
+      const d = path.join(PACKS_REALES, p, 'skills');
+      return fs.existsSync(d) ? fs.readdirSync(d).filter((n) => fs.existsSync(path.join(d, n, 'SKILL.md'))) : [];
+    });
+    assert.ok(enPaquetes.length > 0, 'el paquete del equipo trae sus skills');
+    assert.deepEqual(enPaquetes.filter((n) => delNucleo.includes(n)), [], 'ninguna está a la vez en un paquete y en el núcleo');
+  }
+});
+
+test('T19 Clocki_DescriptionNeutral', () => {
+  // la descripción de clocki dice qué hace para quien la use, sin el nombre de la organización
+  const clocki = fs.readFileSync(path.join(RAIZ, 'skills', 'clocki', 'SKILL.md'), 'utf8');
+  const descripcion = (/^description:\s*(.+)$/m.exec(clocki) || [])[1] || '';
+  assert.ok(descripcion.length > 40, 'clocki tiene descripción');
+  assert.doesNotMatch(descripcion, /\bTYCON\b/, 'el nombre de la organización (las skills del núcleo, como tycon-pipeline, conservan su nombre)');
 });
 
 // ── T9 · AC 8 — sin paquetes, un diff .cs conserva pruebas y seguridad, sin avisos ─────────────

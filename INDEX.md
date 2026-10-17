@@ -45,9 +45,9 @@ la fila aplica.
 | Entender qué hace el pase adversarial del pipeline (paso 5b), leer las pruebas con las que confirmó un hallazgo, o promoverlas a la suite (`marker.js promote-probe`) | `skills/tycon-pipeline/steps/step-05b-adversarial-verify.md` |
 | Entender por qué un advisor reportó X, agregar/retirar reglas | `guides/advisor-rules-catalog.md` |
 | Cerrar una story (transición a `review`/`done`) — protocolo ACCOV-C7..C10 | `guides/accov-governance-protocol.md` |
-| Configurar hooks `.claude/settings.json` en un proyecto .NET TYCON (migraciones inmutables, dotnet format) | `guides/dotnet-hooks.md` |
+| Configurar hooks `.claude/settings.json` en un proyecto .NET TYCON (migraciones inmutables, dotnet format) (paquete bizuit) | `packs/bizuit/guides/dotnet-hooks.md` |
 | Pasar una story de `review` → `done` (sign-off post-implementación) | `guides/definition-of-done.md` |
-| Un formulario queda sin pruebas y el pipeline lo frena · declarar o pagar una deuda de pruebas en `pruebas-pendientes.json` | `guides/deuda-de-pruebas-formularios.md` |
+| Un formulario queda sin pruebas y el pipeline lo frena · declarar o pagar una deuda de pruebas en `pruebas-pendientes.json` | `packs/bizuit/guides/deuda-de-pruebas-formularios.md` (paquete bizuit) |
 | Se versionaron y redesplegaron TODOS los formularios de un repo sin motivo · por qué el detector de cambios no cuenta los merges | cabecera y bucle de `scripts/ci/forms-to-version.sh` |
 | Por qué en `main` se construyen y empaquetan TODOS los formularios aunque sólo algunos suban de versión · antes de proponer «construir sólo lo que sube» | `guides/piezas-del-arnes.md` §`affected-forms.js` («construir en `main` también los que NO suben de versión… pone al día producción») |
 | Un merge de **sólo documentación** construyó, desplegó a staging, subió la versión y pidió aprobación de PROD · qué rutas pueden ir en el `trigger` de un pipeline y cuáles no (`.tycon/**` no) · un sitio sin filtro de rutas | `scripts/ci/check-trigger-without-docs.js` (cabecera; se corre a mano sin argumentos) |
@@ -71,10 +71,10 @@ la fila aplica.
 | La matriz da un criterio por corrido con evidencia de otra story · evidencia huérfana | `pipeline.js evidence-key --story <ruta>` |
 | Una auditoría del arnés dice «0 repos» · un revisor dice «no encontré hermanos» · querés saber dónde cree el arnés que están tus repos, o decírselo | `node scripts/lib/repos-root.js` (imprime la raíz y de dónde salió) · `TYCON_REPOS_ROOT` es la única variable, para auditorías y revisores |
 | Apareció "ARNÉS ATRASADO" al arrancar, o "tu copia del arnés estaba N commits atrás" al primer prompt · un dev choca contra un freno cuyo habilitador "no está registrado" · un control nuevo no llega a una máquina aunque el clon "se actualiza solo" | `skills/tycon-pipeline/scripts/lib/guides-heal.js` |
-| Backend .NET de plugins Bizuit (paquete bizuit) | guides/bizuit/bizuit-plugin-dotnet.md |
-| Frontend React/TS de plugins Bizuit (paquete bizuit) | guides/bizuit/bizuit-plugin-react.md |
-| Frontend Next.js (App Router) de plugins Bizuit (paquete bizuit) | guides/bizuit/bizuit-plugin-nextjs.md |
-| La spec de un proceso BPMN de BIZUIT, o por qué uno «pasó todos los controles» sin sus reglas (paquete bizuit) | guides/bizuit/bizuit-bpmn-spec-contract.md |
+| Backend .NET de plugins Bizuit (paquete bizuit) | packs/bizuit/guides/bizuit-plugin-dotnet.md |
+| Frontend React/TS de plugins Bizuit (paquete bizuit) | packs/bizuit/guides/bizuit-plugin-react.md |
+| Frontend Next.js (App Router) de plugins Bizuit (paquete bizuit) | packs/bizuit/guides/bizuit-plugin-nextjs.md |
+| La spec de un proceso BPMN de BIZUIT, o por qué uno «pasó todos los controles» sin sus reglas (paquete bizuit) | packs/bizuit/guides/bizuit-bpmn-spec-contract.md |
 | Mantener el arnés: publicar, el banco de controles, el catálogo de reglas, la auditoría, el costo del pipeline, el lado Codex, los procesos de la noche | `guides/mantener-el-arnes.md` |
 
 
@@ -107,8 +107,8 @@ script, E2E, debugging), determinar el entorno target. La ruta cambia de shape:
 Señal del error en staging/prod, con un path que funciona en DevHost: **404 con body vacío** =
 falta el prefijo `/plugins/{pluginName}`; **404 `{"error":"Endpoint not found"}`** = sobra algo
 en la ruta del plugin, casi siempre la versión. Ninguno es un bug del endpoint. En un formulario,
-**503** = `fetch` desde la raíz. Detalle: guides/bizuit/bizuit-plugin-dotnet.md §7 y
-guides/bizuit/bizuit-plugin-react.md §3. Regla promovida 2026-07-15; la versión salió el
+**503** = `fetch` desde la raíz. Detalle: packs/bizuit/guides/bizuit-plugin-dotnet.md §7 y
+packs/bizuit/guides/bizuit-plugin-react.md §3. Regla promovida 2026-07-15; la versión salió el
 2026-10-14 (el host nunca la aceptó: con versión, 404 en todos los entornos medidos).
 
 ---

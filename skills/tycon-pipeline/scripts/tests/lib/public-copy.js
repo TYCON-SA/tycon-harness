@@ -29,7 +29,7 @@ const PACKS_DIR = path.join(ROOT, 'packs');
 const CLIENT_PACK = path.join(PACKS_DIR, 'clients', 'pack.json');
 
 /** `false` en el repo del equipo; en la copia pública, el motivo (sirve tal cual de mensaje para `t.skip`). */
-const SKIP_PUBLIC = !fs.existsSync(CLIENT_PACK) && 'copia pública: sin el paquete de clientes';
+const SKIP_PUBLIC = !fs.existsSync(CLIENT_PACK) && 'copia pública: sin los paquetes del equipo (llegan con su perfil)';
 
 /**
  * Los revisores que declara el paquete de clientes, leídos de su manifiesto (sin repetir y ordenados); `[]` en la copia
@@ -48,6 +48,8 @@ function clientPackReviewers() {
  */
 function packReviewers(packsDir = PACKS_DIR) {
   const nombres = new Set();
+  // el núcleo no trae paquetes: sin la carpeta (o sólo con su README), cero revisores de paquete
+  if (!fs.existsSync(packsDir)) return [];
   for (const paquete of fs.readdirSync(packsDir).sort()) {
     const manifiesto = path.join(packsDir, paquete, 'pack.json');
     if (!fs.existsSync(manifiesto)) continue;   // un .DS_Store suelto no es un paquete

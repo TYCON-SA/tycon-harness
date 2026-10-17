@@ -200,7 +200,7 @@ read_cover() {
   # release-*); lo que estos escenarios corren tal cual es el bloque que CLONA —el modo desarrollador— `install:clone`
   # (y `install:clone-unattended`). Los archivos conservan su nombre de siempre para que los escenarios no cambien.
   cover_block "${readme}" install:clone bash > "${out}/install-core.sh" || { echo 'falta el bloque <!-- install:clone --> con su valla ```bash y su cierre'; return 1; }
-  cover_block "${readme}" install:bizuit bash > "${out}/install-bizuit.sh" || { echo 'falta el bloque <!-- install:bizuit --> con su valla ```bash y su cierre'; return 1; }
+  # (story 8.41: el bloque install:bizuit salió con el paquete: los paquetes llegan con el perfil del equipo)
   # story 8.16, tanda B: la misma línea más --yes, para una máquina sin terminal (la corre folders.sh)
   cover_block "${readme}" install:clone-unattended bash > "${out}/install-unattended.sh" || { echo 'falta el bloque <!-- install:clone-unattended --> con su valla ```bash y su cierre'; return 1; }
   why="$(req_check_file "${out}/requirements.txt" "${KNOWN_PACKS}")" || { echo "requisitos: $(echo "${why}" | tr '\n' ';')"; return 1; }
@@ -219,7 +219,7 @@ cover_selfcheck() {
   # el nombre del repo ya puesto, como lo deja el exportador (en la copia pública no cambia nada)
   sed -e 's/{{public-org}}/acme/g' -e 's/{{public-repo}}/harness/g' "${cover}" > "${d}/README.md"
   if why="$(read_cover "${d}/README.md" "${d}/ok")"; then
-    ok "T24 (referencia) los cuatro bloques de la referencia se leen (requirements, install:core, install:unattended, install:bizuit), cada requisito tiene la forma declarada ($(tr '\n' ',' < "${d}/ok/requirements.txt" | sed -e 's/,$//' -e 's/,/, /g')) y la URL del repo está resuelta"
+    ok "T24 (referencia) los tres bloques de la referencia se leen (requirements, install:core, install:unattended), cada requisito tiene la forma declarada ($(tr '\n' ',' < "${d}/ok/requirements.txt" | sed -e 's/,$//' -e 's/,/, /g')) y la URL del repo está resuelta"
   else no "T24 (referencia) la referencia no se puede leer: ${why}"; fi
   # el espejo · requisitos con otra forma, con un paquete que la prueba no conoce, o un bloque vacío: rojo
   for line in 'node>=22' 'Node 22' 'node >= v22' 'node >= 22 or later' 'dotnet (other-pack)' 'git ' ''; do

@@ -29,7 +29,6 @@
           "scripts/**"
         ],
         "out": [
-          { "glob": "guides/bizuit/*.md", "reason": "van al paquete bizuit" },
           { "glob": "guides/decisions/vuelta-atras-2026-08-31.md", "reason": "su §3 es el inventario de riesgo de la producción de un cliente" },
           { "glob": "guides/decisions/revision-adversarial-engram-2026-08-25-codex.md", "reason": "documento fechado que ningún archivo que sale nombra (story 8.10, pregunta 4, 2026-09-29)" },
           { "glob": "scripts/tools/harness-map/*.json", "reason": "las exclusiones del mapa y la configuración de su versión pública: son datos del mapa interno (artifacts/mapa-arnes.html, que queda afuera); el código de la carpeta sí sale" },
@@ -60,44 +59,27 @@
           "skills/tycon-*/**",
           "skills/check-story-drift/**",
           "skills/clocki/**",
-          "skills/tycon-create-story/**"
+          "skills/tycon-create-story/**",
+          "packs/README.md"
         ],
         "out": [
           { "glob": "README.md", "reason": "la documentación interna del repo; la de afuera es la portada pública (README.md del arnés)" },
           { "glob": ".gitattributes", "reason": "los finales de línea de la copia los fija el .gitattributes de la raíz, que sale del arnés (story 8.17): en un solo repo, el de agent-skills caería en la misma ruta, y los dos traen las mismas reglas (lo comprueba scripts/tests/eol.test.js)" },
           { "glob": ".tycon/**", "reason": "la configuración del equipo para este repo" },
-          { "glob": "packs/**", "reason": "cada manifiesto viaja con su paquete; el de clientes no sale nunca" },
+          { "glob": "packs/*/**", "reason": "los paquetes de un equipo viajan con su perfil, no con el núcleo; sale sólo el README de la carpeta (story 8.41)" },
           { "glob": "skills/core/signalr-realtime/**", "reason": "describe el hub de mensajería del producto de un cliente: los reemplazos borran los nombres, pero el contenido sigue siendo de ese producto; sólo serviría reescrita en genérico (2026-10-05)" },
           { "glob": "skills/tycon-pipeline/HISTORIA.md", "reason": "la historia de la skill (casos, fechas y mediciones con los nombres de los productos del equipo), mudada del SKILL.md para que no se cargue sola; la skill publicada no la lee, y test-skill-contract.js, que viaja, mide sus párrafos por la huella que declara el contrato (`en_historia`) y los verifica literales sólo donde HISTORIA.md está (story 8.10, pregunta 4, decidido el 2026-09-28)" }
         ]
       }
     },
     "bizuit": {
+      "__doc": "El paquete del stack de TYCON vive desde la story 8.41 en el perfil del equipo (packs/bizuit/ del repo privado, que lo publica en la capa del equipo): la copia pública no lo trae. El paquete de la lista queda vacío para que quien exporta `core,bizuit` siga andando.",
       "arnes": {
-        "in": [
-          "guides/bizuit/bizuit-plugin-dotnet.md",
-          "guides/bizuit/bizuit-plugin-react.md",
-          "guides/bizuit/bizuit-plugin-nextjs.md",
-          "guides/bizuit/bizuit-bpmn-spec-contract.md"
-        ],
+        "in": [],
         "out": []
       },
       "agent-skills": {
-        "in": [
-          "packs/bizuit/pack.json",
-          "packs/bizuit/new-product-templates/**",
-          "agents/tycon-plugin-dotnet-conventions.md",
-          "agents/tycon-plugin-react-conventions.md",
-          "agents/tycon-plugin-nextjs-conventions.md",
-          "skills/bizuit-backend-plugin-system/**",
-          "skills/bizuit-custom-forms-system/**",
-          "skills/bizuit-sdk-integration/**",
-          "skills/safe-query-builder/**",
-          "skills/esbuild-bundling/**",
-          "skills/feature-based-crud-endpoints/**",
-          "skills/dotnet-dapper-sqlserver/**",
-          "skills/bizuit-new-product/**"
-        ],
+        "in": [],
         "out": [
           { "glob": "skills/bizuit-sdd/**", "reason": "deprecada, no se publica (2026-09-30); sus dos suites se van de la copia con ella" }
         ]
@@ -163,6 +145,7 @@
     { "target": ".github/SECURITY.md", "from": "scripts/publishing/public-files/.github/SECURITY.md", "packages": ["core"], "reason": "cómo reportar una vulnerabilidad en privado (story 8.7, AC 3)" },
     { "target": ".github/workflows/ci.yml", "from": "scripts/publishing/public-files/.github/workflows/ci.yml", "packages": ["core"], "reason": "la CI del repo público: corre scripts/ci/public-ci.sh en Node 22 y 24 y termina en el chequeo `public-ci`; el repo interno no la lleva, su CI es otra (story 8.7, AC 16)" },
     { "target": ".github/workflows/version-tag.yml", "from": "scripts/publishing/public-files/.github/workflows/version-tag.yml", "packages": ["core"], "reason": "el que etiqueta cada merge a main del repo público con v<número>: el número de versión lo pone el merge, no cada pedido; el repo interno no lo lleva" },
+    { "target": ".github/workflows/npm-publish.yml", "from": "scripts/publishing/public-files/.github/workflows/npm-publish.yml", "packages": ["core"], "reason": "el que publica el paquete de npm del arnés (npx); el repo interno no lo lleva" },
     { "target": "guides/incident-log.md", "from": "scripts/publishing/public-files/guides/incident-log.md", "packages": ["core"], "reason": "el incident-log real nombra los casos; el público explica por qué el ancla no resuelve (story 8.7, AC 6)" },
     { "target": "scripts/setup/public-remotes.json", "from": "scripts/publishing/public-files/scripts/setup/public-remotes.json", "packages": ["core"], "reason": "la lista de remotos públicos, con el nombre ya puesto: con ella el programa de instalación reconoce un clon del público; en los repos internos no existe, así que un clon interno nunca cuenta como público (story 8.13, AC 25)" },
     { "target": "scripts/setup/get-harness.sh", "from": "scripts/publishing/public-files/scripts/setup/get-harness.sh", "packages": ["core"], "reason": "el guion de entrada de la portada (bash): revisa los requisitos, clona el repo público en ~/<repo> y corre harness.js install; se baja, se lee y se corre, nunca con tubería hacia un shell. Lleva la dirección por marcadores: en los repos internos no existe en scripts/setup/ (story 8.16, AC 41)" },

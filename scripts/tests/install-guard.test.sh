@@ -1095,6 +1095,42 @@ PY
   # /opt (root) la primera vez; otro repo en el estado —aunque exista y cierre— exige --change-origin y la confirmación por
   # teclado, como en el modo clon. (El estado vuelve a ~/.tycon/state para este caso.)
   mkdir -p "$CASA30/.tycon/state"; mv "$CASA30/.claude/.tycon-pipeline/harness-state.json" "$ESTADO30"
+  # (u) 🔴 LA MUDANZA OFICIAL A GITHUB (2026-10-16, decisión del dueño). Una máquina que instaló desde el clon de Azure
+  # tiene ese clon fijado; la versión bajada de GitHub frenaba pidiendo --change-origin. Declarada en origin-moves.json (al
+  # lado del instalador; en pruebas, TYCON_PROD_ORIGIN_MOVES), se acepta SOLA —sin teclado— y se dice; otro clon fijado,
+  # otro repo de destino o lo fijado desde GitHub siguen frenando; una lista rota frena diciéndolo.
+  MUD30="$TMP/origin-moves-30.json"
+  mudanzas30(){ printf '{ "moves": [ { "from": { "azure_path": "tycon-claude-guides/_git/tycon-claude-guides" }, "to": { "github_repo": "%s" }, "message": "el arnés se mudó a GitHub: actualizo el origen fijado" } ] }\n' "$1" > "$MUD30"; }
+  fijado30(){ printf '{ "url": "%s", "org": "%s", "fijado": "2026-09-01T00:00:00Z" }\n' "$1" "$2" > "$FIJ30"; }
+  instala30m(){ PATH="$TMP/bin:$PATH" TYCON_ADO_ORG="https://dev.azure.com/lab-org" TYCON_PROD_TEST_PATH="$TMP/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin" TYCON_PROD_NODE_LOCAL=1 TYCON_PROD_ROOT="$SYS30" TYCON_PROD_HARNESS="$ARNES30" TYCON_PROD_STATE="$ESTADO30" TYCON_RELEASE_API="$API30" TYCON_PROD_ACCEPT_ORIGIN=0 TYCON_PROD_ORIGIN_MOVES="$MUD30" HOME="$CASA30" bash "$INSTALADOR" --no-sudo >"$TMP/inst-30" 2>&1; }
+  mudanzas30 lab-org/arnes-lab; USR30='alguien@'   # el usuario de la URL, armado por partes (escrito junto parece un correo al freno de publicación)
+  fijado30 "https://${USR30}dev.azure.com/lab-org/tycon-claude-guides/_git/tycon-claude-guides" "https://dev.azure.com/lab-org"
+  if instala30m && grep -q 'el arnés se mudó a GitHub: actualizo el origen fijado' "$TMP/inst-30" && grep -q '"repo": "lab-org/arnes-lab"' "$FIJ30" && grep -q '"url": "https://github.com/lab-org/arnes-lab"' "$FIJ30"; then ok "T30u · la mudanza oficial (clon de Azure fijado → el repo de GitHub declarado): instala sin teclado, lo dice y re-fija el origen"
+  else no "T30u · la mudanza oficial no se aceptó sola: $(grep '⛔' "$TMP/inst-30" | head -1 | cut -c1-240) — fijado: $(tr '\n' ' ' < "$FIJ30")"; fi
+  fijado30 "https://dev.azure.com/lab-org/otro-proyecto/_git/otro-repo" "https://dev.azure.com/lab-org"
+  if ! instala30m && grep -q 'NO es el que se instaló la última vez' "$TMP/inst-30" && ! grep -q 'se mudó a GitHub' "$TMP/inst-30" && grep -q 'otro-repo' "$FIJ30"; then ok "T30u · otro clon de Azure fijado: la mudanza no aplica y frena como siempre (lo fijado queda)"
+  else no "T30u · otro clon fijado no frenó o tocó lo fijado: $(grep -E '⛔|mudó' "$TMP/inst-30" | head -1 | cut -c1-240)"; fi
+  fijado30 "https://dev.azure.com/lab-org/tycon-claude-guides/_git/tycon-claude-guides" "https://dev.azure.com/lab-org"; mudanzas30 otro-lab/arnes-ajeno
+  if ! instala30m && grep -q 'NO es el que se instaló la última vez' "$TMP/inst-30" && grep -q '"url": "https://dev.azure.com/lab-org/tycon' "$FIJ30"; then ok "T30u · la mudanza declarada va a OTRO repo de GitHub: instalar éste frena como siempre"
+  else no "T30u · un destino distinto del declarado pasó: $(grep -E '⛔|mudó' "$TMP/inst-30" | head -1 | cut -c1-240)"; fi
+  mudanzas30 lab-org/arnes-lab; fijado30 "https://dev.azure.com/lab-org/tycon-claude-guides/_git/tycon-claude-guides" "https://dev.azure.com/otra-org"
+  if ! instala30m && grep -q 'NO es el que se instaló la última vez' "$TMP/inst-30"; then ok "T30u · un fijado cuya organización no es la de su URL: la mudanza no aplica"
+  else no "T30u · fijado con organización cruzada pasó: $(grep -E '⛔|mudó' "$TMP/inst-30" | head -1 | cut -c1-240)"; fi
+  fijado30 "https://github.com/viejo-lab/otro" "github:viejo-lab/otro"
+  printf '{ "url": "https://github.com/viejo-lab/otro", "org": "github:viejo-lab/otro", "repo": "viejo-lab/otro" }\n' > "$FIJ30"
+  if ! instala30m && grep -q 'NO es el que se instaló la última vez' "$TMP/inst-30"; then ok "T30u · lo fijado desde GitHub (con «repo») no es un clon de Azure: la mudanza no aplica"
+  else no "T30u · un fijado de GitHub se tomó como mudanza: $(grep -E '⛔|mudó' "$TMP/inst-30" | head -1 | cut -c1-240)"; fi
+  fijado30 "https://dev.azure.com/lab-org/tycon-claude-guides/_git/tycon-claude-guides" "https://dev.azure.com/lab-org"; printf '{ roto' > "$MUD30"
+  if ! instala30m && grep -q 'mudanzas oficiales del origen está ROTA' "$TMP/inst-30"; then ok "T30u · la lista de mudanzas rota frena diciéndolo (no se lee como «sin mudanza»)"
+  else no "T30u · lista de mudanzas rota: $(grep '⛔' "$TMP/inst-30" | head -1 | cut -c1-240)"; fi
+  # la lista real, al lado del instalador: trae la mudanza oficial y nada más
+  if python3 -c 'import json,sys; m=json.load(open(sys.argv[1]))["moves"]; sys.exit(0 if [(x["from"]["azure_path"], x["to"]["github_repo"]) for x in m]==[("tycon-claude-guides/_git/tycon-claude-guides","TYCON-SA/tycon-harness")] else 1)' "$AQUI/scripts/production/origin-moves.json"; then ok "T30u · origin-moves.json declara la mudanza oficial (el clon de Azure → TYCON-SA/tycon-harness) y ninguna otra"
+  else no "T30u · origin-moves.json no declara exactamente la mudanza oficial"; fi
+  # con sudo la variable de pruebas no cuenta: la lista sale SIEMPRE de al lado del instalador
+  if grep -q 'if \[ "\$SIN_SUDO" = 1 \] && \[ -n "\${TYCON_PROD_ORIGIN_MOVES:-}" \]' "$INSTALADOR"; then ok "T30u · TYCON_PROD_ORIGIN_MOVES sólo vale en --no-sudo"
+  else no "T30u · TYCON_PROD_ORIGIN_MOVES no está atada a --no-sudo"; fi
+  # lo fijado vuelve a ser el repo de GitHub del laboratorio: el caso (j) que sigue lo compara contra un repo ajeno
+  printf '{ "url": "https://github.com/lab-org/arnes-lab", "org": "github:lab-org/arnes-lab", "repo": "lab-org/arnes-lab" }\n' > "$FIJ30"
   # el «GitHub» de juguete pasa a servir el MISMO contenido bajo otro repo (el ajeno existe y verifica), y el estado lo nombra
   kill "$SRV30_PID" 2>/dev/null; wait "$SRV30_PID" 2>/dev/null; rm -f "$SRV30/ports.env"; printf '{ "auth": "none" }\n' > "$SRV30/control.json"
   node "$AQUI/scripts/tests/fixtures/toy-release-server.js" --repo "$BARE30" --org otro-lab --name arnes-ajeno --git "$(command -v git)" --control "$SRV30/control.json" --log "$SRV30/requests.log" --port-file "$SRV30/ports.env" &

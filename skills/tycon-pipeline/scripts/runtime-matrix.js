@@ -729,6 +729,9 @@ function compute(opts) {
   // 🔴 NO entra al `hash`: el hash pinnea veredictos y evidencia, y una coma en la redacción del AC no
   // puede invalidar un waiver que el usuario ya dio sobre el mismo estado del código.
   const acTexts = sc.acTextsFromSpec(content);
+  // La marca `@runtime-exempt(DODRT-C8)` se lee del texto ENTERO del AC: el de arriba se corta a 600 caracteres
+  // y una marca al final de un AC largo se perdía en silencio (deuda PIPELINE-ACMATRIX-600-CARACTERES, story 7.6).
+  const acTextsEnteros = sc.acTextsFromSpec(content, { maxChars: Infinity });
   const table = sc.parseTestsTable(content);
 
   // Universo de ACs = sección AC ∪ columna AC de la tabla (defensa contra parsers que
@@ -938,9 +941,10 @@ function compute(opts) {
     let mutacion = null;
     // La marca se parsea SIEMPRE (incluso si el AC no llegó a RUNTIME): una marca sin motivo
     // tiene que avisarse igual, si no el autor se entera recién cuando le bloquea otra cosa.
-    const ex = parseExencionC8(acTexts[n]);
+    const ex = parseExencionC8(acTextsEnteros[n] != null ? acTextsEnteros[n] : acTexts[n]);
     if (ex.marcada) exenciones.push({ ac: n, valida: ex.valida, motivo: ex.motivo });
-    if (verdict === 'RUNTIME' && !ex.valida && acEsDeAccion(ex.texto) && !LEGACY_NO_MUTATION_CHECK) {
+    // La clasificación mira el mismo texto de siempre (los primeros 600), sin la marca.
+    if (verdict === 'RUNTIME' && !ex.valida && acEsDeAccion(parseExencionC8(acTexts[n]).texto) && !LEGACY_NO_MUTATION_CHECK) {
       const porTitulo = freshPassGates
         .flatMap((g) => (g.titulos || []).map((t) => ({ t, g })))
         .find(({ t }) => tituloEjerceAc(t, n));

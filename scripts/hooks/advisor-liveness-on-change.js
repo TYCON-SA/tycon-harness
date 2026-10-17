@@ -137,7 +137,7 @@ function selftest() {
       decidir({ rojos: [{ key: 'x', clase: 'criterio' }, { key: 'y', clase: 'fuga' }] }, { flags: [true, true, true], todasMal: true }).accion === 'block'],
     ['el nombre del revisor sale del archivo', advisorDeArchivo('agents/tycon-plugin-security-basics.md') === 'tycon-plugin-security-basics'],
     ['un archivo que no es .md no da revisor', advisorDeArchivo('agents/README.txt') === null],
-    ['un revisor real tiene canarios', Array.isArray(canariosDe('worker-lifecycle-reviewer'))],
+    ['un revisor real tiene canarios', Array.isArray(canariosDe('tycon-silent-failure-hunter'))],
     ['un revisor inventado no tiene canarios', canariosDe('no-existe-este-revisor') === null],
   ];
   let bad = 0;

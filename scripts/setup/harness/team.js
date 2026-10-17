@@ -90,6 +90,8 @@ const CLOSED_PATHS = Object.freeze([...A1_PATHS, RENAMES_PATH, TEAM_REPOS_PATH])
  * ni lo carga como agente o skill, así que no se juzga por su contenido; la versión no trae esa carpeta (`TEAM_ONLY_TOPS`).
  */
 const SEG = '[A-Za-z0-9._-]+';
+/** Un tramo que no empieza con punto (las plantillas de un paquete: nada que un asistente descubra solo). */
+const SEG_NO_DOT = '[A-Za-z0-9_-][A-Za-z0-9._-]*';
 // En onboarding/ no entran los nombres que un asistente carga SOLO como instrucciones cuando alguien abre una sesión
 // parada en esa carpeta (`CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md`, `AGENTS.override.md`, `GEMINI.md`…), se escriban
 // con la caja que se escriban: el texto del alta se lee, no se obedece (revisor de seguridad de la tanda H1c). Va en el
@@ -97,6 +99,9 @@ const SEG = '[A-Za-z0-9._-]+';
 // (`agents?`: `AGENTS.md` y el singular `AGENT.md`, que cargan otras herramientas; el `?` va tal cual al patrón)
 const LOADED_ALONE = Object.freeze(['claude', 'agents?', 'gemini', 'qwen', 'crush', 'warp']);
 const anyCase = (word) => [...word].map((c) => (/[a-z]/i.test(c) ? `[${c.toUpperCase()}${c.toLowerCase()}]` : c)).join('');
+/** Las extensiones que puede traer la carpeta `templates/` de un paquete (decisión 11 de la story 8.41): texto, nunca algo
+ *  que la máquina ejecute (el modo 100644 lo exige la regla de toda la capa). */
+const TEMPLATE_EXTENSIONS = Object.freeze(['md', 'yml', 'yaml', 'json', 'runsettings', 'template']);
 const LAYER_PATTERNS = Object.freeze([
   new RegExp(`^packs/${SEG}/pack\\.json$`),
   new RegExp(`^agents/${SEG}\\.md$`),
@@ -105,7 +110,13 @@ const LAYER_PATTERNS = Object.freeze([
   // un paquete ENTERO, en texto (story 8.41, AC 46): los agentes de su carpeta, los .md de sus skills y sus guías
   new RegExp(`^packs/${SEG}/agents/${SEG}\\.md$`),
   new RegExp(`^packs/${SEG}/skills/(?:${SEG}/){1,5}${SEG}\\.md$`),
-  new RegExp(`^packs/${SEG}/guides/(?:${SEG}/){0,5}${SEG}\\.md$`),
+  // (en las guías de un paquete tampoco entran los nombres que un asistente carga solo como instrucciones, ni un tramo que
+  // empiece con punto: `guides/.claude/skills/…` lo descubre un asistente solo)
+  new RegExp(`^packs/${SEG}/guides/(?:${SEG_NO_DOT}/){0,5}(?!(?:${LOADED_ALONE.map(anyCase).join('|')})(?:\\.[A-Za-z0-9_-]+)*\\.md$)${SEG_NO_DOT}\\.md$`),
+  // las plantillas de un paquete, como DATOS (decisión 11 de la story 8.41): las lee y las copia la skill que las usa, nada las
+  // ejecuta. Lista cerrada de extensiones; un nombre que un asistente carga solo como instrucciones viaja con `.template`, y
+  // ningún tramo empieza con punto (`.claude/skills/…`, `.mcp.json`: un asistente los descubre solo)
+  new RegExp(`^packs/${SEG}/templates/(?:${SEG_NO_DOT}/){0,5}(?!(?:${LOADED_ALONE.map(anyCase).join('|')})(?:\\.[A-Za-z0-9_-]+)*\\.md$)${SEG_NO_DOT}\\.(?:${TEMPLATE_EXTENSIONS.join('|')})$`),
 ]);
 /** Un agente de la capa: en agents/ de la raíz o en la carpeta de un paquete. */
 const AGENT_RE = /^(?:packs\/[^/]+\/)?agents\/[^/]+\.md$/;
@@ -117,7 +128,7 @@ const TEAM_ONLY_TOPS = Object.freeze(['onboarding']);
 const MANIFEST_NAME = '.tycon-team.json';
 const DECLARATION = 'team-layer.json';
 const TEAM_REF = 'main';
-const MAX_TOTAL_BYTES = 1024 * 1024;
+const MAX_TOTAL_BYTES = 2 * 1024 * 1024;
 const MAX_FILES = 300;
 /** Cuántas carpetas por debajo de skills/ puede estar la raíz de una skill de la capa (`skills/<s>`, `skills/<g>/<s>`, `skills/projects/<c>/<s>`). */
 const MAX_SKILL_DEPTH = 3;
@@ -160,7 +171,7 @@ function validateExtras(j) {
     rels('folders', true); rels('except', false); rels('allow', false); rels('data', true); rels('legacyData', true);
     if (Array.isArray(e.legacyData) && e.legacyData.some((x) => typeof x === 'string' && x.includes('/'))) out.push(`${at}: legacyData son nombres de la raíz de la skill`);
     if (e.userContent !== undefined && !(Array.isArray(e.userContent) && e.userContent.every((x) => typeof x === 'string' && x))) out.push(`${at}: userContent tiene que ser una lista`);
-    if (!Number.isInteger(e.maxBytes) || e.maxBytes < 1 || e.maxBytes > 4 * MAX_TOTAL_BYTES) out.push(`${at}: maxBytes tiene que ser un entero positivo (hasta 4 MB)`);
+    if (!Number.isInteger(e.maxBytes) || e.maxBytes < 1 || e.maxBytes > 4 * 1024 * 1024) out.push(`${at}: maxBytes tiene que ser un entero positivo (hasta 4 MB)`);
     const dh = e.dataHome;
     if (!isObject(dh) || typeof dh.env !== 'string' || !/^[A-Z][A-Z0-9_]{2,40}$/.test(dh.env) || typeof dh.dir !== 'string' || !/^\.[A-Za-z0-9._-]+$/.test(dh.dir) || typeof dh.file !== 'string' || !/^[A-Za-z0-9._-]+$/.test(dh.file)) out.push(`${at}: dataHome tiene que ser { env, dir: .<carpeta>, file }`);
   });
@@ -232,7 +243,7 @@ function layerPathProblem(p) {
   // dentro de una skill de la lista fija, manda SU lista blanca (tanda A2c · AC 31)
   const ex = s.startsWith('skills/') ? extrasEntryFor(s) : null;
   if (ex) { const why = extrasPathProblem(s, ex); if (why) return why; }
-  else if (!CLOSED_PATHS.includes(s) && !LAYER_PATTERNS.some((re) => re.test(s))) return `fuera de la lista cerrada de la capa (${CLOSED_PATHS.join(', ')}; packs/<paquete>/pack.json con los .md de sus agents/, skills/ y guides/, agents/<nombre>.md, onboarding/<nombre>.md y los .md de una skill bajo skills/)`;
+  else if (!CLOSED_PATHS.includes(s) && !LAYER_PATTERNS.some((re) => re.test(s))) return `fuera de la lista cerrada de la capa (${CLOSED_PATHS.join(', ')}; packs/<paquete>/pack.json con los .md de sus agents/, skills/ y guides/ y sus templates/ (${TEMPLATE_EXTENSIONS.map((x) => `.${x}`).join(', ')}), agents/<nombre>.md, onboarding/<nombre>.md y los .md de una skill bajo skills/)`;
   // en Windows `x.` es la carpeta `x` y `con.md` es un dispositivo: una ruta así pisaría otra sin que nada lo vea (revisor de seguridad, A2a)
   const bad = s.split('/').find((seg) => seg.endsWith('.') || WINDOWS_RESERVED.test(seg));
   if (bad) return `el tramo «${bad}» termina en punto o es un nombre reservado de Windows: en ese disco sería otro archivo`;
@@ -382,7 +393,7 @@ function planTeam(entries, { publicPaths = [], thirdPartyRoots = [], truncated =
     if (e.mode && e.mode !== '100644') { problems.push({ path: e.path, reason: `tiene modo ${e.mode}: la capa trae sólo archivos de texto comunes (100644), nada que la máquina ejecute` }); continue; }
     const size = Number(e.size) || 0;
     files.push({ path: e.path, mode: e.mode || '100644', sha: e.sha, size });
-    // una skill de la lista fija cuenta contra SU presupuesto, no contra el tope de 1 MB del resto (AC 31)
+    // una skill de la lista fija cuenta contra SU presupuesto, no contra el tope del resto (MAX_TOTAL_BYTES) (AC 31)
     const ex = e.path.startsWith('skills/') ? extrasEntryFor(e.path) : null;
     if (ex) byExtra.set(ex.skill, (byExtra.get(ex.skill) || 0) + size); else total += size;
   }
@@ -403,7 +414,7 @@ function planTeam(entries, { publicPaths = [], thirdPartyRoots = [], truncated =
   }
   problems.push(...setProblems(files.map((f) => f.path), { publicPaths, thirdPartyRoots }));
   if (!declaration) problems.push({ path: DECLARATION, reason: 'falta la declaración de la capa (team-layer.json en la raíz del repo del equipo)' });
-  if (total > MAX_TOTAL_BYTES) problems.push({ path: '(total)', reason: `la capa pesa ${total} bytes${byExtra.size ? ' (sin las skills de la lista fija, que tienen su presupuesto)' : ''}: más de 1 MB en total (tope ${MAX_TOTAL_BYTES})` });
+  if (total > MAX_TOTAL_BYTES) problems.push({ path: '(total)', reason: `la capa pesa ${total} bytes${byExtra.size ? ' (sin las skills de la lista fija, que tienen su presupuesto)' : ''}: más de ${MAX_TOTAL_BYTES / (1024 * 1024)} MB en total (tope ${MAX_TOTAL_BYTES})` });
   if (files.length > MAX_FILES) problems.push({ path: '(total)', reason: `la capa trae ${files.length} archivos: más de ${MAX_FILES} archivos (tope)` });
   return { ok: problems.length === 0, files: problems.length ? [] : files, problems, declaration, totalBytes: total, notes };
 }

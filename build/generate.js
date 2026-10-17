@@ -405,6 +405,19 @@ function loadManifest() {
  * que pasa sólo el clon: su carpeta de agentes de siempre) y las equivalencias de `<root>/build/equivalences.json`. Tira con
  * el motivo si el agente no se puede generar (no existe, frontmatter que no se lee, modelo o servidor MCP sin equivalencia).
  */
+/**
+ * La ruta con que se nombra el canónico: la del paquete si la carpeta de agentes es la de uno (su pack.json está arriba, hasta
+ * seis niveles), o `agents/<r>.md` para cualquier otra carpeta (la del árbol, la de un clon, TYCON_AGENTS_DIR). Una carpeta
+ * dentro de `packs/<p>/` sin pack.json a la vista tira: la procedencia del .toml nombraría un archivo que no existe.
+ */
+function canonicalOf(name, agentsDir) {
+  if (!agentsDir) return `agents/${name}.md`;
+  for (let d = agentsDir, rel = ''; d !== path.dirname(d) && rel.split('/').length <= 6; rel = path.basename(d) + (rel ? `/${rel}` : ''), d = path.dirname(d)) {
+    if (fs.existsSync(path.join(d, 'pack.json'))) return `packs/${path.basename(d)}/${rel ? `${rel}/` : ''}${name}.md`;
+  }
+  if (path.resolve(agentsDir).split(path.sep).slice(0, -1).includes('packs')) throw new Error(`${agentsDir} está dentro de packs/ y no encuentro el pack.json de su paquete: no sé cómo nombrar el canónico de ${name}`);
+  return `agents/${name}.md`;
+}
 function generateOne(root, name, { agentsDir = null } = {}) {
   const eq = loadEq(root);
   if (eq.__error) throw new Error(`equivalences.json de ${root} ilegible (${eq.__error})`);
@@ -414,10 +427,13 @@ function generateOne(root, name, { agentsDir = null } = {}) {
   if (adv.name !== name)
     throw new Error(`${mdPath}: frontmatter name="${adv.name}" no coincide con el archivo`);
   const hash = crypto.createHash('sha256').update(adv.raw).digest('hex');
+  // el canónico se nombra `agents/<r>.md`; el de un paquete, `packs/<paquete>/<su carpeta de agentes>/<r>.md`, el mismo
+  // esté el paquete en el árbol o en TYCON_PACKS_DIR (no depende de dónde vive en el disco)
+  const canonical = canonicalOf(name, agentsDir);
   return {
     name,
-    toml: renderToml(adv, `agents/${name}.md`, hash, eq),
-    nativeToml: renderNativeToml(adv, `agents/${name}.md`, hash, eq),
+    toml: renderToml(adv, canonical, hash, eq),
+    nativeToml: renderNativeToml(adv, canonical, hash, eq),
   };
 }
 
@@ -427,16 +443,20 @@ const teamLib = () => require(path.join(ROOT, 'scripts', 'setup', 'harness', 'te
 const toolsLib = () => require(path.join(ROOT, 'scripts', 'setup', 'harness', 'tools.js'));
 
 /**
- * Qué revisores se despliegan a Codex desde un árbol: `{ manifest, team, teamProblem, halfDone }`. `manifest`: los del
- * `MANIFEST.json` del árbol; `team`: los agentes (`agents/<r>.md`) que nombra el manifiesto de la capa del equipo
- * (`.tycon-team.json`), nunca de TYCON_PACKS_DIR ni TYCON_AGENTS_DIR. Sin capa, `team: []`; con su manifiesto ilegible,
- * `team: null` y el motivo; `halfDone`: un refresco de la capa a medias (su pendiente está en el árbol y es de OTRO commit que
- * el del manifiesto: uno que quedó de un refresco terminado no cuenta; uno ilegible, sí).
+ * Qué revisores se despliegan a Codex desde un árbol: `{ manifest, team, teamDirs, teamProblem, halfDone }`. `manifest`: los
+ * del `MANIFEST.json` del árbol; `team`: los agentes que nombra el manifiesto de la capa del equipo (`.tycon-team.json`):
+ * los de `agents/<r>.md` y los de `packs/<p>/agents/<r>.md` de un paquete que la organización activa (los mismos que se
+ * enlazan del lado de Claude); nunca de TYCON_PACKS_DIR ni TYCON_AGENTS_DIR. `teamDirs`: la carpeta de cada revisor de un
+ * paquete (para `generateOne`). Sin capa, `team: []`; con su manifiesto ilegible, o sin poder saber qué paquetes están
+ * activos, `team: null` y el motivo (no se despliega ni se borra nada); `halfDone`: un refresco de la capa a medias (su
+ * pendiente está en el árbol y es de OTRO commit que el del manifiesto: uno que quedó de un refresco terminado no cuenta;
+ * uno ilegible, sí).
  */
 function advisorsToDeploy(root) {
   const mf = path.join(root, 'adapters', 'codex', 'agents', 'MANIFEST.json');
   const manifest = fs.existsSync(mf) ? (JSON.parse(fs.readFileSync(mf, 'utf8')).advisors || []) : [];
-  const out = { manifest, team: [], teamProblem: null, halfDone: false };
+  // teamDirs sin prototipo: un agente que se llame `constructor` o `toString` es un nombre más
+  const out = { manifest, team: [], teamDirs: Object.create(null), teamProblem: null, halfDone: false, lines: [] };
   const pendingFile = path.join(root, TEAM_PENDING);
   if (!fs.existsSync(path.join(root, TEAM_MANIFEST))) { out.halfDone = fs.existsSync(pendingFile); return out; }
   const m = teamLib().readTeamManifest(root);
@@ -446,8 +466,39 @@ function advisorsToDeploy(root) {
     out.halfDone = !(m && pending && typeof pending.commit === 'string' && pending.commit === m.commit);
   }
   if (!m) return Object.assign(out, { team: null, teamProblem: `${path.join(root, TEAM_MANIFEST)} no se lee o no tiene la forma del manifiesto de la capa: lo arregla el próximo refresco de la capa (o harness.js update)` });
-  out.team = m.files.map((f) => f.path).filter((p) => /^agents\/[^/]+\.md$/.test(p)).map((p) => p.slice('agents/'.length, -'.md'.length))
-    .filter((n) => !manifest.includes(n)).sort();
+  const paths = m.files.map((f) => f.path);
+  const team = paths.filter((p) => /^agents\/[^/]+\.md$/.test(p)).map((p) => p.slice('agents/'.length, -'.md'.length));
+  if (paths.some((p) => /^packs\/[^/]+\//.test(p))) {
+    const PP = require(path.join(ROOT, 'scripts', 'lib', 'pack-pieces.js'));
+    // un paquete de la capa con el manifiesto roto no es «ausente»: no se sabe qué revisores trae, y sin saberlo no se
+    // despliega ni se borra nada de la capa en Codex (los que tenía quedan); se dice cuál
+    const listed = PP.listPacks(path.join(root, 'packs'));
+    const brokenInLayer = listed.errores.filter((e) => paths.includes(path.relative(root, e.archivo).split(path.sep).join('/')));
+    if (brokenInLayer.length) return Object.assign(out, { team: null, teamProblem: `paquete(s) de la capa con el manifiesto roto (${brokenInLayer.map((e) => `${e.archivo}: ${e.motivo}`).join('; ')}): los revisores de la capa no se despliegan ni se borran en Codex` });
+    const active = PP.orgActive({ tree: root });
+    if (!active.names) return Object.assign(out, { team: null, teamProblem: `no se sabe qué paquetes activa la organización (${active.error}): los revisores de la capa no se despliegan ni se borran en Codex` });
+    // los agentes de cada paquete activo que llegan por la capa, en la carpeta que declara su manifiesto (clave `agents`);
+    // un nombre repetido —con la raíz o entre paquetes— se queda con el primero y se dice (del lado de Claude pack-pieces.js
+    // lo frena; acá un defecto de la capa no hace volver atrás el despliegue, pero tampoco se calla)
+    for (const p of listed.packs.filter((x) => active.names.includes(x.name) && x.agentsDir)) {
+      const rel = path.relative(root, p.agentsDir).split(path.sep).join('/');
+      for (const f of paths) {
+        if (!f.startsWith(`${rel}/`) || !f.endsWith('.md') || f.slice(rel.length + 1).includes('/')) continue;
+        const name = f.slice(rel.length + 1, -'.md'.length);
+        if (team.includes(name) || name in out.teamDirs) {
+          const first = name in out.teamDirs ? path.relative(root, out.teamDirs[name]).split(path.sep).join('/') : 'agents';
+          out.lines.push(`⚠ tycon/codex: el revisor ${name} está en ${rel} y en ${first}: en Codex queda el de ${first}`);
+          continue;
+        }
+        // uno de un paquete con el nombre de uno de la versión: en Codex queda el de la versión, y se dice (del lado de Claude
+        // pack-pieces.js lo frena)
+        if (manifest.includes(name)) { out.lines.push(`⚠ tycon/codex: el revisor ${name} de ${rel} tiene el nombre de uno de la versión: en Codex queda el de la versión`); continue; }
+        team.push(name);
+        out.teamDirs[name] = p.agentsDir;
+      }
+    }
+  }
+  out.team = [...new Set(team)].filter((n) => !manifest.includes(n)).sort();
   return out;
 }
 
@@ -471,6 +522,7 @@ function deployTeam({ root = ROOT, codexHome = CODEX_HOME, recordFile = null } =
   const say = (l) => out.lines.push(l);
   try {
     const set = advisorsToDeploy(root);
+    for (const l of set.lines || []) say(l);
     const T = toolsLib();
     const file = recordFile || T.codexTeamRecordPath({ home: os.homedir() });
     const rec = T.readCodexTeamRecord(file);
@@ -496,12 +548,12 @@ function deployTeam({ root = ROOT, codexHome = CODEX_HOME, recordFile = null } =
       }
       keep.add(fold(`${name}.config.toml`)); keep.add(fold(`agents/${name}.toml`));
       let g;
-      try { g = generateOne(root, name); } catch (e) {
+      try { g = generateOne(root, name, { agentsDir: set.teamDirs[name] || null }); } catch (e) {
         out.skipped.push({ name, reason: e.message });
         say(`⚠ tycon/codex: revisor de la capa ${name} no desplegado: ${e.message}`);
         continue;
       }
-      const org = orgCodexModel(root, name);
+      const org = orgCodexModel(root, name, { agentsDir: set.teamDirs[name] || null });
       for (const l of org.lines) say(l);
       for (const [rel, content] of [[`${name}.config.toml`, deployedContent(g.toml, org)], [`agents/${name}.toml`, deployedContent(g.nativeToml, org)]]) {
         const dst = path.join(codexHome, ...rel.split('/'));
@@ -587,9 +639,12 @@ function main() {
   fs.mkdirSync(OUT_DIR, { recursive: true });
   fs.mkdirSync(NATIVE_DIR, { recursive: true });
   for (const name of manifest.advisors) {
-    const { toml, nativeToml } = generateOne(ROOT, name, { agentsDir: AGENTS_DIR });
+    // el canónico: en la carpeta de agentes, o en la de su paquete (story 8.41: los revisores de un stack viven ahí)
+    const agentsDir = fs.existsSync(path.join(AGENTS_DIR, `${name}.md`)) ? AGENTS_DIR
+      : (require(path.join(ROOT, 'scripts', 'lib', 'pack-pieces.js')).agentDirInPacks(process.env.TYCON_PACKS_DIR || path.join(ROOT, 'packs'), name) || AGENTS_DIR);
+    const { toml, nativeToml } = generateOne(ROOT, name, { agentsDir });
     // lo desplegado lleva el modelo de la organización (story 7.29); lo generado en adapters/, el de hoy
-    const org = DEPLOY ? orgCodexModel(ROOT, name, { agentsDir: AGENTS_DIR }) : null;
+    const org = DEPLOY ? orgCodexModel(ROOT, name, { agentsDir }) : null;
     if (org) for (const l of org.lines) console.log(l);
     // las DOS salidas del mismo canónico se tratan igual: check, write, deploy
     const outputs = [
@@ -660,12 +715,67 @@ function deployOnly(manifest) {
   // (también sin capa en el árbol si quedó un registro: una versión sin capa lo dice, y no borra nada)
   const toolsJs = path.join(ROOT, 'scripts', 'setup', 'harness', 'tools.js');
   const recorded = fs.existsSync(toolsJs) && fs.existsSync(toolsLib().codexTeamRecordPath({ home: os.homedir() }));
+  let kept = [];
   if (fs.existsSync(path.join(ROOT, TEAM_MANIFEST)) || recorded) {
     const t = deployTeam({ root: ROOT, codexHome: CODEX_HOME });
     for (const l of t.lines) console.log(l);
     if (t.written.length || t.removed.length) console.log(`🚀 desplegado: revisores de la capa del equipo (${t.written.length} escrito(s), ${t.removed.length} quitado(s))`);
+    kept = t.kept.concat(t.devFiles);
   }
+  for (const l of removeRetired({ root: ROOT, codexHome: CODEX_HOME, manifest: manifest.advisors, kept }).lines) console.log(l);
   return missing ? 1 : 0;
+}
+
+/**
+ * Lo que el arnés desplegó en Codex para un revisor que salió de la versión (`build/retired-reviewers.json`; story 8.41: los
+ * revisores de un stack pasaron del MANIFEST a su paquete) y hoy no es de la versión ni de la capa: en una máquina sin ese
+ * paquete activo, o sin capa, quedaba para siempre. Sólo esos nombres, sólo los archivos con la cabecera del generador —son
+ * del arnés, no de la persona— y nunca uno que `deployTeam` acaba de dejar como de la persona (`kept`). Con un manifiesto de
+ * la capa roto o a medio refrescar, o con el registro de la capa ilegible o de otra carpeta de Codex, no se borra nada, y se
+ * dice. `{ removed, lines }`; nunca tira.
+ */
+function removeRetired({ root = ROOT, codexHome = CODEX_HOME, manifest = [], recordFile = null, retired = null, kept = [] } = {}) {
+  const out = { removed: [], lines: [] };
+  const stop = (why) => { out.lines.push(`⚠ tycon/codex: no se quitan revisores viejos de Codex: ${why}`); return out; };
+  try {
+    let gone = retired;
+    if (!gone) {
+      const file = path.join(root, 'build', 'retired-reviewers.json');
+      if (!fs.existsSync(file)) return out;
+      try { gone = JSON.parse(fs.readFileSync(file, 'utf8')).reviewers; } catch (e) { return stop(`${file} no se lee (${e.message})`); }
+      if (!Array.isArray(gone)) return stop(`${file} no trae la lista «reviewers»`);
+    }
+    const candidates = new Set(gone.map((n) => String(n).toLowerCase()));
+    if (!candidates.size) return out;
+    const set = advisorsToDeploy(root);
+    if (set.team === null || set.halfDone) return stop(set.team === null ? set.teamProblem : 'la capa quedó a medio refrescar');
+    const keep = new Set([...manifest, ...set.team].map((n) => n.toLowerCase()));
+    const T = toolsLib();
+    const rec = T.readCodexTeamRecord(recordFile || T.codexTeamRecordPath({ home: os.homedir() }));
+    if (rec.problem) return stop(`el registro de la capa no se lee (${rec.problem})`);
+    if (rec.codex_home && path.resolve(rec.codex_home) !== path.resolve(codexHome)) return stop(`el registro de la capa es de otra carpeta de Codex (${rec.codex_home})`);
+    for (const f of Object.values(rec.files)) if (f && f.agent) keep.add(String(f.agent).toLowerCase());
+    const keptFold = new Set(kept.map((rel) => rel.toLowerCase()));
+    for (const [dir, ext, prefix] of [[codexHome, '.config.toml', ''], [path.join(codexHome, 'agents'), '.toml', 'agents/']]) {
+      let names = [];
+      try { names = fs.readdirSync(dir).filter((f) => f.endsWith(ext)); } catch (_) { continue; }
+      for (const f of names) {
+        const name = f.slice(0, -ext.length);
+        if (!name || !candidates.has(name.toLowerCase()) || keep.has(name.toLowerCase()) || keptFold.has(`${prefix}${f}`.toLowerCase())) continue;
+        const file = path.join(dir, f);
+        let text = '';
+        try { text = fs.readFileSync(file, 'utf8'); } catch (_) { continue; }
+        if (!text.startsWith(GENERATED_HEAD)) continue;   // no lo escribió el arnés: es de la persona
+        // sólo lo que la VERSIÓN desplegó (su canónico era `agents/<r>.md`): lo que vino de un paquete de la capa lo maneja
+        // deployTeam con su registro, y si lo dejó como de la persona («es tuyo desde ahora») queda en este arranque y en los
+        // siguientes
+        if (!text.split('\n', 12).includes(`# canónico: agents/${name}.md`)) continue;
+        try { fs.unlinkSync(file); out.removed.push(path.relative(codexHome, file)); } catch (e) { out.lines.push(`⚠ tycon/codex: no pude quitar ${file} (${e.code || e.message})`); }
+      }
+    }
+    if (out.removed.length) out.lines.push(`tycon/codex: quité ${out.removed.length} archivo(s) de revisores que ya no son de esta versión ni de la capa (${out.removed.slice(0, 4).join(', ')}${out.removed.length > 4 ? ', …' : ''})`);
+  } catch (e) { out.lines.push(`⚠ tycon/codex: no pude mirar los revisores viejos en Codex (${e.message})`); }
+  return out;
 }
 
 // El mapa src→dst del despliegue, EXPORTADO para que el audit de paridad itere el mismo layout
@@ -679,7 +789,7 @@ function deployPairs(name, codexHome) {
   ];
 }
 
-module.exports = { deployPairs, MANIFEST, generateOne, advisorsToDeploy, deployTeam, loadEq, parseAdvisor, withCodexModel, orgCodexModel, deployedContent };
+module.exports = { deployPairs, MANIFEST, generateOne, advisorsToDeploy, deployTeam, removeRetired, loadEq, parseAdvisor, withCodexModel, orgCodexModel, deployedContent };
 if (require.main === module) {
   try { process.exit(main()); } catch (e) { console.error(`generate.js: ${e.message}`); process.exit(1); }
 }
