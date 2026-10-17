@@ -36,8 +36,43 @@ const os = require('os');
 const path = require('path');
 const { stateDir: stateDirOf } = require('./state-dir.js');   // story 8.23 (A2): la carpeta del estado, de una sola pieza
 const { spawnSync } = require('child_process');
+const { readLcov } = require('./node-coverage.js');   // el lcov del corredor de suites.json
 
 const OBS_HASTA = '2026-10-06';
+const COVERAGE_DEFAULT = 75;
+
+/**
+ * El umbral de cobertura y de dónde salió: `TYCON_COVERAGE_MIN` de la máquina (test-gate.sh lo
+ * pasa como <cov_min>) > `coverage.min_touched_lines_pct` de la organización (team-repos.json del árbol del arnés,
+ * leído con scripts/lib/team-repos.js) > 75. Un valor que no sirve no se usa: se pasa al siguiente y el motivo queda en
+ * `problems`. `{ threshold, source: 'maquina' | 'organizacion' | 'por_defecto', problems }`.
+ */
+function resolverUmbral(covMinTxt, env = process.env, homeDir = os.homedir()) {
+  const problems = [];
+  const crudo = covMinTxt === undefined || covMinTxt === null ? '' : String(covMinTxt).trim();
+  if (crudo) {
+    const n = Number(crudo);
+    if (Number.isFinite(n) && n > 0 && n <= 100) return { threshold: n, source: 'maquina', problems };
+    problems.push(`TYCON_COVERAGE_MIN: tiene que ser un porcentaje de 1 a 100 (es ${JSON.stringify(crudo).slice(0, 40)}); no se usa`);
+  }
+  try {
+    const tree = require('./harness-path.js').rutaArnesHook({ env, home: homeDir }).dir;
+    const file = tree ? path.join(tree, 'team-repos.json') : null;
+    const reader = path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'team-repos.js');
+    if (file && fs.existsSync(file) && fs.existsSync(reader)) {
+      const r = require(reader).parse(fs.readFileSync(file, 'utf8').replace(/^﻿/, ''));
+      const sec = r.sectionProblems && r.sectionProblems.coverage;
+      if (!r.ok) problems.push(`${file}: no se pudo usar (${r.problems.map((p) => `${p.path || '(archivo)'}: ${p.message}`).join('; ').slice(0, 200)})`);
+      else if (sec && sec.length) problems.push(`${sec[0].path}: ${sec[0].message}; no se usa`);
+      else if (r.data && r.data.coverage && Number.isInteger(r.data.coverage.min_touched_lines_pct)) {
+        return { threshold: r.data.coverage.min_touched_lines_pct, source: 'organizacion', problems };
+      }
+    }
+  } catch (e) {
+    problems.push(`no pude leer el umbral de la organización (${e && e.message ? e.message : e})`);
+  }
+  return { threshold: COVERAGE_DEFAULT, source: 'por_defecto', problems };
+}
 
 // ── utilidades con la semántica de Python ────────────────────────────────────────────────────────────────────
 
@@ -321,7 +356,8 @@ function informe(argv) {
     codeState = { git: false };
   }
   const suiteExit = pyInt(suiteExitTxt);
-  const covMin = pyFloat(covMinTxt);
+  const umbral = resolverUmbral(covMinTxt);
+  const covMin = umbral.threshold;
 
   const result = {
     ts, story_id: storyId, runner, repo: repoRun,
@@ -331,7 +367,11 @@ function informe(argv) {
     scope: scope || null, scope_source: scope ? scopeSource : null,
     halted: false,
     totals: {},
-    coverage: { per_new_file: {}, new_files_pct: null, threshold: covMin, meets_threshold: null },
+    coverage: {
+      per_new_file: {}, new_files_pct: null, threshold: covMin, threshold_source: umbral.source,
+      ...(umbral.problems.length ? { threshold_problems: umbral.problems } : {}),
+      meets_threshold: null,
+    },
     provenance: 'test-gate.sh (run real, exit code capturado por marker.js run-check)',
     // Huella del código medido — la lee `suite-freshness.js check` (step-07b) para saber si este verde sigue
     // describiendo el working tree o quedó viejo tras iteraciones de fix.
@@ -449,13 +489,16 @@ function informe(argv) {
   } catch (_) { /* sin git: no hay archivos nuevos que mirar */ }
   const codeRe = /\.(cs|ts|tsx|js|jsx)$/;
   const testRe = /(\.test\.|\.spec\.|Tests?\.cs$|__tests__|test-utils)/;
-  let newFiles = ordenar([...nuevos].filter((f) => codeRe.test(f) && !testRe.test(f)));
+  // En el arnés, todo lo que vive en una carpeta de pruebas es prueba: los ayudantes (`scripts/tests/lib/`) y las suites
+  // que no llevan `.test.` en el nombre (`test-*.js`). Con el lcov del corredor, contarlos como código mueve el número.
+  const esPrueba = (f) => testRe.test(f) || (runner === 'suites-json' && /(^|\/)tests?\//.test(f));
+  let newFiles = ordenar([...nuevos].filter((f) => codeRe.test(f) && !esPrueba(f)));
   let newFilesSource = newFiles.length ? 'git' : null;
 
   // Respaldo post-commit (2026-08-25): apenas la story se commitea, `--diff-filter=A` no reporta nada; se cae a los
   // archivos que la story declara CREAR y se dice de dónde salió la lista.
   if (!newFiles.length && declaredNew.length) {
-    const cand = ordenar([...new Set(declaredNew.map((f) => f.split('\\').join('/')))].filter((f) => codeRe.test(f) && !testRe.test(f)));
+    const cand = ordenar([...new Set(declaredNew.map((f) => f.split('\\').join('/')))].filter((f) => codeRe.test(f) && !esPrueba(f)));
     const existentes = cand.filter((f) => esArchivo(path.join(repo, f)));
     if (existentes.length) {
       newFiles = existentes;
@@ -467,8 +510,37 @@ function informe(argv) {
 
   // ── Cobertura por archivo nuevo ──
   const perFile = new Map();
+  // El lcov que dejó el corredor de suites.json con la cobertura pedida: rutas relativas a la carpeta de
+  // la corrida; lo de fuera de ella (los hooks de git del arnés instalado, por ejemplo) no cuenta.
+  // En el motivo va el nombre dentro de la carpeta de la corrida, que es temporal y cambia en cada una.
+  const lcovFile = path.join(resultsDir, 'coverage', 'lcov.info');
+  const lcovLabel = 'coverage/lcov.info (el lcov del corredor de suites.json)';
+  const lcov = runner === 'suites-json'
+    ? (existe(lcovFile) ? readLcov(lcovFile, { base: repoRun, within: repoRun, label: lcovLabel, realpath: (p) => rutaReal(p).split('\\').join('/') })
+      : { ok: false, reason: 'la corrida de suites.json no dejó reporte de cobertura (falta coverage/lcov.info: el corredor lo deja con --coverage)' })
+    : null;
+  if (runner === 'suites-json') {
+    // lo que el número no cubre, dicho en el artefacto (rutas relativas: la copia que viaja no lleva las de la máquina)
+    const rel = (p) => (typeof p === 'string' && p ? path.relative(rutaReal(repoRun), rutaReal(p)).split('\\').join('/') : null);
+    const resumenSuites = (() => { try { return leerJson(path.join(resultsDir, 'suites.json')); } catch (_) { return null; } })();
+    const sc = resumenSuites && esObjeto(resumenSuites.coverage) ? resumenSuites.coverage : null;
+    if (sc) {
+      result.coverage.suites_without_coverage = {
+        without_data: (Array.isArray(sc.without_data) ? sc.without_data : []).map(rel),
+        unreadable: (Array.isArray(sc.unreadable) ? sc.unreadable : []).map((u) => ({ ruta: rel(get(u, 'ruta', '')), motivo: get(u, 'motivo', null) })),
+      };
+    }
+    if (lcov.ok && lcov.sourceUnreadable.length) result.coverage.lcov_sources_unreadable = lcov.sourceUnreadable.map(rel);
+  }
   try {
-    if (runner === 'dotnet') {
+    if (runner === 'suites-json') {
+      if (lcov.ok) {
+        for (const [ruta, lineas] of lcov.map) {
+          const vals = [...lineas.values()];
+          if (vals.length) perFile.set(ruta, (vals.filter(Boolean).length / vals.length) * 100);
+        }
+      }
+    } else if (runner === 'dotnet') {
       // Fix 2026-08-25 (guides/maintaining/incident-log.md#case-coverage-max-per-class-2026-08-25): SUMAR líneas por archivo
       // DENTRO de cada cobertura (en C# cada método async es una clase aparte con el mismo archivo), y recién ahí
       // max() ENTRE coberturas distintas (un ensamblado que no tocó el archivo lo reporta en 0).
@@ -522,7 +594,13 @@ function informe(argv) {
   for (const nf of newFiles) {
     const base = nf.split('\\').join('/');
     let hit = null;
-    for (const [f, pct] of perFile) { if (f.endsWith(base) || base.endsWith(f)) { hit = pct; break; } }
+    if (runner === 'suites-json') {
+      // las claves del lcov son rutas reales absolutas: sólo calza la del archivo, no un homónimo de otra carpeta
+      const objetivo = rutaReal(path.join(repoRun, base)).split('\\').join('/');
+      if (perFile.has(objetivo)) hit = perFile.get(objetivo);
+    } else {
+      for (const [f, pct] of perFile) { if (f.endsWith(base) || base.endsWith(f)) { hit = pct; break; } }
+    }
     matched[nf] = hit !== null ? redondear1(hit) : null;
   }
   const coveredVals = Object.values(matched).filter((v) => v !== null);
@@ -533,9 +611,9 @@ function informe(argv) {
     const avg = pySum(coveredVals) / coveredVals.length;
     result.coverage.new_files_pct = redondear1(avg);
     result.coverage.meets_threshold = avg >= covMin;
-  } else if (runner === 'suites-json') {
-    // Este corredor no produce cobertura: son suites sueltas de node/bash, sin instrumentación.
-    result.coverage.no_cross_check = 'sin cruce de cobertura: el runner suites.json corre suites sueltas (node/bash) y no produce reporte de cobertura';
+  } else if (runner === 'suites-json' && !lcov.ok) {
+    // sin el lcov del corredor (no se pidió la cobertura, o quedó vacío o ilegible): se dice cuál y por qué
+    result.coverage.no_cross_check = `sin cruce de cobertura: ${lcov.reason}`;
   } else if (!newFiles.length) {
     result.coverage.no_cross_check = 'sin cruce de cobertura: git no reporta archivos nuevos'
       + (declaredNew.length ? ' y la story no declara `files_to_create` existentes'
@@ -600,7 +678,8 @@ function informe(argv) {
     let actual = null;
     for (const ln of splitlines(r.stdout)) {
       if (ln.startsWith('+++ ')) {
-        const dest = ln.slice(4);
+        // con un espacio en la ruta, git cierra la línea con un TAB
+        const dest = ln.slice(4).replace(/\t$/, '');
         actual = dest === '/dev/null' ? null : (dest.startsWith('b/') ? dest.slice(2) : dest);
       } else if (ln.startsWith('@@') && actual) {
         const m = /^@@ -\S+ \+(\d+)(?:,(\d+))? @@/.exec(ln);
@@ -633,6 +712,10 @@ function informe(argv) {
 
   /** {ruta del reporte: Map(línea → cubierta)}. Lanza si el reporte existe y no se puede leer. */
   const mapaDeLineas = () => {
+    if (runner === 'suites-json') {
+      if (!lcov.ok) throw new Error(lcov.reason);
+      return lcov.map;
+    }
     const mapa = new Map();
     if (runner === 'dotnet') {
       const cobs = buscarArchivos(resultsDir, (nm) => nm === 'coverage.cobertura.xml');
@@ -703,7 +786,7 @@ function informe(argv) {
 
   if (baseRef === null) {
     touchedMotivo = 'sin cruce de líneas tocadas: test-gate no pasó una base al parser';
-  } else if (runner === 'node-test' || runner === 'suites-json') {
+  } else if (runner === 'node-test') {
     touchedMotivo = `sin cruce de líneas tocadas: el runner ${runner} no produce cobertura`;
   } else if (!baseRef) {
     const razones = cov.touched_base.descartadas.filter(esObjeto).map((x) => String(get(x, 'motivo', ''))).join('; ');
@@ -715,7 +798,7 @@ function informe(argv) {
       cov.touched_files_unreadable = ordenar(ilegibles);
       // El alcance es la carpeta que se TESTEÓ (repo_run), no el contenedor (pase adversarial 2026-09-16).
       const pref = path.relative(rutaReal(top), rutaReal(repoRun)).split('\\').join('/');
-      const tocadas = new Map([...todas].filter(([f]) => codeRe.test(f) && !testRe.test(f)
+      const tocadas = new Map([...todas].filter(([f]) => codeRe.test(f) && !esPrueba(f)
         && (pref === '.' || pref === '' || f.startsWith(pref + '/'))));
       if (!tocadas.size) {
         touchedMotivo = `sin cruce de líneas tocadas: no hay líneas de código tocadas desde ${cov.touched_base.source || 'la base'} (${baseRef.slice(0, 12)})`;

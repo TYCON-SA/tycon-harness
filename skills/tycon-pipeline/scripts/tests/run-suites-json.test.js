@@ -703,3 +703,86 @@ test('5b-4 — los espejos sanos: por el enlace, lo que NO se tocó se sigue dif
   assert.equal(two.status, 0, `${two.stdout}${two.stderr}`);
   assert.equal(two.resumen.deferred_suites.length, 1);
 });
+
+// ── La cobertura pedida ──────────────────────────────────────────────────────────────────────────────────────────────
+// Con `--coverage <carpeta>`, cada suite corre bajo el envoltorio de Node (lib/coverage-wrapper.js) con el medidor de
+// cobertura: la suite es su hijo, con su misma salida y su mismo código; deja su lcov en la carpeta y al final quedan
+// juntos en `lcov.info`. Sin pedirla, nada cambia: ni envoltorio ni carpeta.
+test('T5 7.31-ConCobertura_CadaSuiteConSuCarpeta_SinPedirlaIgualQueHoy @story-7.31 @ac-4 @ac-5 — con cobertura, un lcov por suite; sin pedirla, como hoy', () => {
+  // 🔴 rojo: el medidor (o la carpeta) también sin pedirla; o el código de la roja cambiado por el envoltorio.
+  const f = armar({ diarias: [
+    { raiz: 'arnes', ruta: 'tests/de-node.test.js' },
+    { raiz: 'arnes', ruta: 'tests/sin-node.test.sh' },
+    { raiz: 'arnes', ruta: 'tests/roja.test.sh' },
+  ] });
+  const modos = path.join(f.root, 'modos.txt');
+  f.escribir('arnes', 'lib/acme.js', 'module.exports = (n) => {\n  if (n > 0) return "sí";\n  return "no";\n};\n');
+  // la suite de Node lanza el código como hijo, como las del arnés, y anota si corrió con el medidor prendido
+  f.escribir('arnes', 'tests/de-node.test.js', [
+    "const fs = require('fs'); const path = require('path'); const { spawnSync } = require('child_process');",
+    `fs.appendFileSync(${JSON.stringify(modos)}, 'node:' + (process.env.NODE_V8_COVERAGE ? 'medida' : 'sin medir') + '\\n');`,
+    "const r = spawnSync(process.execPath, ['-e', 'require(process.argv[1])(1)', path.join(__dirname, '..', 'lib', 'acme.js')]);",
+    'process.exit(r.status);',
+  ].join('\n'));
+  f.escribir('arnes', 'tests/sin-node.test.sh', `echo "bash:\${NODE_V8_COVERAGE:+medida}" >> ${JSON.stringify(modos)}\nexit 0\n`);
+  f.escribir('arnes', 'tests/roja.test.sh', 'echo "se rompió" >&2\nexit 7\n');
+  const env = { ...process.env };
+  delete env.NODE_V8_COVERAGE;
+  delete env.NODE_TEST_CONTEXT;
+  const cov = path.join(f.root, 'cov');
+  const out = path.join(f.root, 'out.json');
+
+  const r = spawnSync(process.execPath, [RUNNER, f.repo, out, '--skills', f.skills, '--coverage', cov], { encoding: 'utf8', env });
+  const resumen = JSON.parse(fs.readFileSync(out, 'utf8'));
+  assert.equal(r.status, 1, `una roja: ${r.stdout}${r.stderr}`);
+  assert.equal(resumen.corridas, 3);
+  assert.equal(resumen.verdes, 2);
+  assert.equal(resumen.fallas.length, 1);
+  assert.equal(resumen.fallas[0].exit, 7, 'la roja sale con SU código, no con el del envoltorio');
+  assert.match(resumen.fallas[0].cola, /se rompió/, 'la salida de la suite llega igual');
+  assert.doesNotMatch(resumen.fallas[0].cola, /SF:|coverage report|all files/, 'el reporte del medidor no tapa la cola');
+  assert.deepEqual(fs.readFileSync(modos, 'utf8').trim().split('\n').sort(), ['bash:medida', 'node:medida'], 'las dos, con el medidor heredado');
+  const lcov = fs.readFileSync(path.join(cov, 'lcov.info'), 'utf8');
+  assert.match(lcov, /^SF:.*lib[\\/]acme\.js$/m, 'trae el código que la suite de Node corrió como hijo');
+  assert.doesNotMatch(lcov, /coverage-wrapper/, 'el envoltorio no se mide a sí mismo');
+  assert.doesNotMatch(lcov, /de-node\.test\.js/, 'la suite misma no cuenta como código');
+  const sinDatos = [path.join(f.repo, 'scripts', 'tests', 'roja.test.sh'), path.join(f.repo, 'scripts', 'tests', 'sin-node.test.sh')];
+  assert.deepEqual([...resumen.coverage.without_data].sort(), sinDatos.sort(), 'las de bash que no lanzan node quedan «sin datos», con su ruta');
+  assert.equal(resumen.coverage.with_data, 1);
+  assert.equal(resumen.coverage.lcov, path.join(cov, 'lcov.info'));
+
+  // sin pedirla: como hoy
+  fs.writeFileSync(modos, '');
+  const out2 = path.join(f.root, 'out2.json');
+  const r2 = spawnSync(process.execPath, [RUNNER, f.repo, out2, '--skills', f.skills], { encoding: 'utf8', env });
+  const resumen2 = JSON.parse(fs.readFileSync(out2, 'utf8'));
+  assert.equal(r2.status, 1);
+  assert.equal(resumen2.fallas[0].exit, 7);
+  assert.equal(resumen2.coverage, undefined, 'sin pedirla, el resumen no trae cobertura');
+  assert.deepEqual(fs.readFileSync(modos, 'utf8').trim().split('\n').sort(), ['bash:', 'node:sin medir'], 'ni medidor ni variable');
+  assert.deepEqual(fs.readdirSync(f.root).filter((n) => n.startsWith('cov')), ['cov'], 'ni otra carpeta');
+});
+
+// chmod 000 no quita la lectura en Windows ni a root: ahí este caso no prueba nada (joinLcov lo prueba con una carpeta)
+const SIN_CHMOD = (process.platform === 'win32' || (process.getuid && process.getuid() === 0))
+  && 'NO MEDIDO — chmod 000 no quita la lectura en Windows ni a root; el ilegible lo prueba node-coverage.test.js';
+test('T5 …--coverage sin carpeta es un error de uso, y un lcov ilegible se nombra con su motivo @story-7.31 @ac-5', { skip: SIN_CHMOD }, () => {
+  // 🔴 rojo: `--coverage` sin valor corre sin cobertura en silencio; un lcov ilegible queda como «sin datos».
+  const f = armar({ diarias: [{ raiz: 'arnes', ruta: 'tests/a.test.sh' }] });
+  // Node ya abrió el lcov de la suite cuando ella corre: le saca el permiso de lectura y el juntado no lo puede leer
+  f.escribir('arnes', 'tests/a.test.sh', `chmod 000 "${path.join(f.root, 'cov', '0000.lcov')}"\nexit 0\n`);
+  const out = path.join(f.root, 'out.json');
+  const uso = spawnSync(process.execPath, [RUNNER, f.repo, out, '--skills', f.skills, '--coverage'], { encoding: 'utf8' });
+  assert.equal(uso.status, 2, `${uso.stdout}${uso.stderr}`);
+  assert.match(uso.stderr, /--coverage <dir>/);
+  const env = { ...process.env };
+  delete env.NODE_V8_COVERAGE;
+  delete env.NODE_TEST_CONTEXT;
+  const r = spawnSync(process.execPath, [RUNNER, f.repo, out, '--skills', f.skills, '--coverage', path.join(f.root, 'cov')], { encoding: 'utf8', env });
+  const resumen = JSON.parse(fs.readFileSync(out, 'utf8'));
+  assert.equal(resumen.coverage.unreadable.length, 1, JSON.stringify(resumen.coverage));
+  assert.equal(resumen.coverage.unreadable[0].ruta, path.join(f.repo, 'scripts', 'tests', 'a.test.sh'));
+  assert.match(resumen.coverage.unreadable[0].motivo, /no se pudo leer/);
+  assert.deepEqual(resumen.coverage.without_data, [], 'ilegible no es «sin datos»');
+  assert.match(r.stdout, /1 ilegible/);
+});

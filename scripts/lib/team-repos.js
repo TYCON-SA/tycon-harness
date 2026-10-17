@@ -61,10 +61,13 @@ const VERSION = 1;
 const PLATFORMS = ['azure', 'github'];
 const REPO_KEYS = { azure: ['org', 'project', 'repo'], github: ['org', 'repo'] };
 const REQUIRED = ['public', 'profile', 'operations'];
-const OPTIONAL = ['maintainers', 'harness_copies', 'merge_suites', 'models', 'wait_notice'];
+const OPTIONAL = ['maintainers', 'harness_copies', 'merge_suites', 'models', 'wait_notice', 'coverage'];
 // El plazo del aviso de espera (story 7.20, AC 14): minutos enteros de 1 a 120. Lo lee scripts/hooks/wait-notice.js.
 const WAIT_NOTICE_KEYS = ['minutes'];
 const WAIT_NOTICE_MAX = 120;
+// El umbral de cobertura de las líneas tocadas: un entero de 1 a 100. Lo lee
+// skills/tycon-pipeline/scripts/lib/test-gate-report.js, después de TYCON_COVERAGE_MIN de la máquina y antes del 75.
+const COVERAGE_KEYS = ['min_touched_lines_pct'];
 // Copia de `MODELS` de skills/tycon-pipeline/scripts/lib/models.js, en su orden (story 7.29, decisión 12): este lector
 // no puede cargar el skill —lo valida el instalador con el lector del árbol que va a quedar— y T21 compara las dos.
 const MODEL_NAMES = ['haiku', 'sonnet', 'opus', 'fable'];
@@ -221,6 +224,18 @@ function waitNoticeProblems(value) {
   return out;
 }
 
+/** Los problemas de `coverage`; `[]` si está bien. */
+function coverageProblems(value) {
+  if (!isObject(value)) return [{ path: 'coverage', message: 'tiene que ser un objeto (el umbral de cobertura de las líneas tocadas)' }];
+  const out = [];
+  for (const k of Object.keys(value)) if (!comment(k) && !COVERAGE_KEYS.includes(k)) out.push({ path: `coverage.${k}`, message: 'clave desconocida' });
+  const p = value.min_touched_lines_pct;
+  if (p !== undefined && !(Number.isInteger(p) && p >= 1 && p <= 100)) {
+    out.push({ path: 'coverage.min_touched_lines_pct', message: `tiene que ser un porcentaje entero, de 1 a 100 (es ${JSON.stringify(p)})` });
+  }
+  return out;
+}
+
 /** Valida un objeto ya leído. */
 function validate(doc) {
   if (!isObject(doc)) return [{ path: '', message: 'el archivo tiene que ser un objeto JSON' }];
@@ -254,13 +269,20 @@ function parse(text) {
   const sectionModels = isObject(doc) && doc.models !== undefined ? modelsProblems(doc.models) : [];
   // lo mismo con `wait_notice` (story 7.20): un plazo mal escrito no deja a todas las máquinas sin el archivo
   const sectionWait = isObject(doc) && doc.wait_notice !== undefined ? waitNoticeProblems(doc.wait_notice) : [];
+  // y con `coverage`: un umbral mal escrito cae al valor por defecto, no deja sin el archivo
+  const sectionCoverage = isObject(doc) && doc.coverage !== undefined ? coverageProblems(doc.coverage) : [];
   let data = problems.length ? null : doc;
-  if (data && (sectionModels.length || sectionWait.length)) {
+  if (data && (sectionModels.length || sectionWait.length || sectionCoverage.length)) {
     data = { ...doc };
     if (sectionModels.length) delete data.models;
     if (sectionWait.length) delete data.wait_notice;
+    if (sectionCoverage.length) delete data.coverage;
   }
-  const sections = { ...(sectionModels.length ? { models: sectionModels } : {}), ...(sectionWait.length ? { wait_notice: sectionWait } : {}) };
+  const sections = {
+    ...(sectionModels.length ? { models: sectionModels } : {}),
+    ...(sectionWait.length ? { wait_notice: sectionWait } : {}),
+    ...(sectionCoverage.length ? { coverage: sectionCoverage } : {}),
+  };
   return { ok: problems.length === 0, data, problems, ...(Object.keys(sections).length ? { sectionProblems: sections } : {}) };
 }
 

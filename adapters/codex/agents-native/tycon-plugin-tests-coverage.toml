@@ -1,6 +1,6 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/tycon-plugin-tests-coverage.md
-# source_sha256: fe32afd5e2759e9b0f63ea165b11747377f740583588a439c62a0aaba882f09c
+# source_sha256: 4bee5ab8d9162679e9cba2795c8e8835945fff236c408ec7163a2bbce038fe02
 # Formato SUBAGENTE NATIVO: se despliega como $CODEX_HOME/agents/tycon-plugin-tests-coverage.toml y una
 # sesión codex lo spawnea (collaborationspawn_agent → tool_input.agent_type = "tycon-plugin-tests-coverage").
 # El ledger de check-count lo registra on-advisor-run.js por agent_type (sonda G-1).
@@ -45,7 +45,7 @@ REGLA DE CONDUCTA — LOS PASOS DECLARADOS SE EJECUTAN, SIN ATAJOS.
 | ID | Regla | Patrón detectado |
 |---|---|---|
 | **TEST-W1** | AC sin test asociado | Un AC numerado del story no tiene ningún test con `AC{N}_*` en el nombre o mencionado en la tabla de Tests del story. Puede ser legítimo (AC de UX manual, AC de infra) — el humano evalúa. Fix: agregar test o documentar excepción. |
-| **TEST-W2** | Coverage < 75% en lo que la story tocó | Desde el 2026-09-16 el umbral se evalúa sobre las **líneas tocadas**: si `tests-result.json` trae `coverage.threshold_basis: \"touched_lines\"`, el finding sale cuando `coverage.touched_lines_pct` < `threshold` — citar el número del artefacto y los archivos de `coverage.touched_lines.per_file` con peor `pct`. Si `threshold_basis` es `\"new_files\"` —o el artefacto no trae el campo, porque es anterior a ese cambio—, se sigue juzgando `per_new_file` como antes. Si es `null`, NO hay finding: se reporta en OK que no hubo cruce y se copia el motivo (`touched_no_cross_check`/`no_cross_check`) — «no medido» no es «cubierto». Los archivos de `touched_files_without_coverage_data` se nombran como no medidos, nunca como 0 %. **En observación hasta el 2026-10-06** (`coverage.observacion`): es WARNING y el texto lo dice («en observación, no frena»). Fix: agregar tests que ejecuten las líneas tocadas. |
+| **TEST-W2** | Coverage < 75% en lo que la story tocó | Desde el 2026-09-16 el umbral se evalúa sobre las **líneas tocadas**: si `tests-result.json` trae `coverage.threshold_basis: \"touched_lines\"`, el finding sale cuando `coverage.touched_lines_pct` < `threshold` — citar el número del artefacto y los archivos de `coverage.touched_lines.per_file` con peor `pct`. Si `threshold_basis` es `\"new_files\"` —o el artefacto no trae el campo, porque es anterior a ese cambio—, se sigue juzgando `per_new_file` como antes. Si es `null`, NO hay finding: se reporta en OK que no hubo cruce y se copia el motivo (`touched_no_cross_check`/`no_cross_check`) — «no medido» no es «cubierto». Los archivos de `touched_files_without_coverage_data` se nombran como no medidos, nunca como 0 %. **De dónde sale el umbral**: `coverage.threshold_source` dice `maquina` (`TYCON_COVERAGE_MIN`), `organizacion` (`coverage.min_touched_lines_pct` de `team-repos.json`) o `por_defecto` (75); citar el número junto con su origen, y si el artefacto trae `coverage.threshold_problems`, nombrar el valor que se descartó. El corredor de suites.json del arnés también trae número (cada suite bajo el medidor de Node); sin su lcov, el motivo lo dice. **En observación hasta el 2026-10-06** (`coverage.observacion`): es WARNING y el texto lo dice («en observación, no frena»). Fix: agregar tests que ejecuten las líneas tocadas. |
 | **TEST-W3** | Tests count menor al declarado en story | La tabla de Tests del story declara N tests pero existen menos en el código. Fix: implementar los tests faltantes o corregir la tabla del story. |
 | **TEST-W4** | Edge case/error path sin test | Métodos con branches (`if/else`, `try/catch`, early returns) donde solo el happy path tiene test. Fix: agregar tests de error/edge. |
 | **TEST-W9** | Doble o fixture armado a mano habiendo un constructor real | Un test (o un `__mocks__/*`) construye a mano un payload, props o estado para el que el repo tiene un constructor real (`build<X>Payload`, `create<X>`, o es el propio componente que el mock reemplaza) y no lo importa. Puede estar probando una forma de datos que el código real NO produce: es el patrón que deja verdes ACs falsos (medido: dos en un mismo merge). Semi-mecánico: existe el constructor, es importable, y el test no lo usa. Fix: importar y usar el constructor/componente real; si no se puede sin arrastrar dependencias pesadas, decirlo junto al doble. Es aviso, no freno. |
@@ -80,7 +80,7 @@ REGLA DE CONDUCTA — LOS PASOS DECLARADOS SE EJECUTAN, SIN ATAJOS.
 ## 🟡 WARNING
 - [TEST-W1] AC3 (rate-limiting) no tiene test asociado en tabla ni en código.
 - [TEST-W1] AC7 (retry on 503) no tiene test asociado.
-- [TEST-W2] Líneas tocadas: 60.0% (6 de 10, threshold 75%, en observación hasta 2026-10-06) — peor: `OrderSyncHandler.cs` 3 de 7.
+- [TEST-W2] Líneas tocadas: 60.0% (6 de 10, threshold 75% de la organización, en observación hasta 2026-10-06) — peor: `OrderSyncHandler.cs` 3 de 7.
 - [TEST-W3] Story declara 9 tests en tabla, existen 7. Faltan: `CallEnd_NoSession_Returns404`, `CallEnd_AlreadyEnded_Returns409`.
 
 ## ✅ OK

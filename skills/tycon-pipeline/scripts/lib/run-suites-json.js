@@ -31,7 +31,13 @@
  * instalado es el que corre sobre los clones de trabajo. La salida y el resumen (`skills_root`) dicen
  * qué raíz se usó y de qué regla salió.
  *
- * Uso:  node run-suites-json.js <repo> <resumen.json> [--skills <dir>] [--touched <archivo.json>]
+ * CON LA COBERTURA PEDIDA (`--coverage <carpeta>`): cada suite corre bajo `coverage-wrapper.js`, una
+ * prueba de Node que la lanza como hijo con el medidor de cobertura de Node prendido. La suite sale igual (su salida, su
+ * código); cada una deja su lcov en la carpeta y al final quedan juntos en `<carpeta>/lcov.info`, que lee
+ * test-gate-report.js. Una suite sin datos (una de bash que no lanza `node`, una que no arrancó) se nombra en
+ * `coverage.without_data` y no rompe nada. Sin `--coverage`, todo igual que antes: ni envoltorio ni carpeta.
+ *
+ * Uso:  node run-suites-json.js <repo> <resumen.json> [--skills <dir>] [--touched <archivo.json>] [--coverage <dir>]
  *   · `raiz: "arnes"`        → <repo>/scripts/<ruta>
  *   · `raiz: "agent-skills"` → <skills>/<ruta>   (`--skills`; si no, la función del repo; en un repo sin
  *                              esa función, lo de antes: TYCON_SKILLS_DIR, o ~/.claude/agent-skills/skills)
@@ -54,8 +60,26 @@ const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
 const { touches, isValidPattern } = require('./touched-files');
+const { joinLcov } = require('./node-coverage');
 
 const MAX_BUFFER = 64 * 1024 * 1024;
+const WRAPPER = path.join(__dirname, 'coverage-wrapper.js');
+
+/**
+ * Cómo se lanza una suite: `[ejecutable, args, env]`. Con cobertura, bajo el envoltorio: sin la variable que anida
+ * corridas de `node --test` (con ella el medidor no escribe su reporte) ni una carpeta de V8 de afuera (cada suite mide
+ * en la suya).
+ */
+function launch(p, covDir, env) {
+  const ej = p.ruta.endsWith('.js') ? process.execPath : 'bash';
+  if (!covDir) return [ej, [p.ruta], env];
+  const e = { ...env };
+  delete e.NODE_TEST_CONTEXT;
+  delete e.NODE_V8_COVERAGE;
+  // Sin `--test-coverage-exclude`: Node 20 no la tiene. El envoltorio y la propia suite se descartan al juntar.
+  return [process.execPath, ['--experimental-test-coverage', '--test-reporter=lcov',
+    `--test-reporter-destination=${path.join(covDir, `${String(p.idx).padStart(4, '0')}.lcov`)}`, WRAPPER, ej, p.ruta], e];
+}
 
 function defaultWorkers() {
   const cores = typeof os.availableParallelism === 'function' ? os.availableParallelism() : os.cpus().length;
@@ -142,10 +166,12 @@ function ownPaths(repo, ruta) {
 function main(argv, env = process.env) {
   const [repo, out] = argv;
   const iSk = argv.indexOf('--skills');
-  if (!repo || !out || (iSk >= 0 && !argv[iSk + 1])) {
-    console.error('uso: run-suites-json.js <repo> <resumen.json> [--skills <dir>] [--touched <archivo.json>]');
+  const iCov = argv.indexOf('--coverage');
+  if (!repo || !out || (iSk >= 0 && !argv[iSk + 1]) || (iCov >= 0 && !argv[iCov + 1])) {
+    console.error('uso: run-suites-json.js <repo> <resumen.json> [--skills <dir>] [--touched <archivo.json>] [--coverage <dir>]');
     return Promise.resolve(2);
   }
+  const covDir = iCov >= 0 ? path.resolve(argv[iCov + 1]) : null;
   let skillsRoot;
   try {
     skillsRoot = resolveSkillsRoot(repo, iSk >= 0 ? argv[iSk + 1] : null, env);
@@ -252,11 +278,18 @@ function main(argv, env = process.env) {
   process.on('SIGINT', onSignal);
   process.on('SIGTERM', onSignal);
 
+  if (covDir) {
+    // la carpeta es de esta corrida: un lcov de una corrida anterior no puede sumarse a éste
+    fs.rmSync(covDir, { recursive: true, force: true });
+    fs.mkdirSync(covDir, { recursive: true });
+    console.log(`[suites.json] con cobertura: cada suite bajo el medidor de Node, lcov en ${covDir}`);
+  }
+
   const runOne = (p) => new Promise((resolve) => {
-    const ej = p.ruta.endsWith('.js') ? process.execPath : 'bash';
+    const [ej, args, childEnv] = launch(p, covDir, env);
     const t0 = Date.now();
     // detached = grupo de proceso propio: al cortar se mata el grupo entero (la suite y sus hijos).
-    const c = spawn(ej, [p.ruta], { cwd: repo, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    const c = spawn(ej, args, { cwd: repo, detached: true, stdio: ['ignore', 'pipe', 'pipe'], env: childEnv });
     live.add(c);
     const chunks = [];
     let size = 0;
@@ -306,6 +339,21 @@ function main(argv, env = process.env) {
       if (r.exit === 0) resumen.verdes += 1;
       // La cola de la salida viaja en el resumen para que el rojo se pueda leer sin re-correr.
       else resumen.fallas.push({ ruta: r.ruta, exit: r.exit, cola: r.salida.split('\n').slice(-25).join('\n') });
+    }
+    if (covDir) {
+      const lcov = path.join(covDir, 'lcov.info');
+      // lo que no es código de la story: el envoltorio y cada suite (Node 20 no excluye los archivos de prueba)
+      const j = joinLcov(covDir, lcov, { base: repo, drop: [WRAPPER, ...plan.map((p) => p.ruta)] });
+      const porArchivo = new Map(plan.map((p) => [`${String(p.idx).padStart(4, '0')}.lcov`, p.ruta]));
+      // una suite que corrió y no dejó ni su archivo (murió antes de escribirlo) también es «sin datos»
+      const corrieron = results.filter(Boolean).map((r) => plan.find((p) => p.ruta === r.ruta));
+      const sinArchivo = corrieron.filter((p) => !fs.existsSync(path.join(covDir, `${String(p.idx).padStart(4, '0')}.lcov`))).map((p) => p.ruta);
+      resumen.coverage = {
+        lcov, with_data: j.withData, without_data: [...j.withoutData.map((n) => porArchivo.get(n) || n), ...sinArchivo],
+        unreadable: j.unreadable.map((u) => ({ ruta: porArchivo.get(u.name) || u.name, motivo: u.reason })),
+      };
+      console.log(`[suites.json] cobertura: ${j.withData} suite(s) con datos · ${resumen.coverage.without_data.length} sin datos`
+        + `${j.unreadable.length ? ` · ${j.unreadable.length} ilegible(s): ${resumen.coverage.unreadable.map((u) => `${path.basename(u.ruta)} (${u.motivo})`).join(', ')}` : ''} → ${lcov}`);
     }
 
     if (interrupted) {

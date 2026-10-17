@@ -657,6 +657,12 @@
       "requiere": []
     },
     {
+      "__nota": "el lector del lcov que deja el medidor de cobertura de Node — el mismo mapa archivo → línea → cubierta que coverage-final.json sobre las líneas que los dos cuentan, rutas reales con «/» (enlaces y barras de Windows), lo de fuera del árbol descartado, y un lcov vacío, cortado o roto da «sin cruce» con el archivo y el motivo.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/node-coverage.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.17, tanda W6 (T71): la ruta del archivo de configuración de E2E sale de lib/tmp-path.js — la misma para bash y Node en los tres sistemas, una por repo y por sesión — y ningún paso nombra /tmp/e2ecfg.json ni pide abrir un archivo con open.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/tmp-path.test.js",

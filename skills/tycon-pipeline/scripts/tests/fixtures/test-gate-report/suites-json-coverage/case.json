@@ -1,0 +1,24 @@
+{
+  "__doc": "el corredor de suites.json CON cobertura. El lcov (relativo a la carpeta de la corrida, como lo deja Node) trae acme.js —dos de sus líneas tocadas, una corrida y otra no— y un registro de fuera del árbol que se llama como el archivo nuevo: no cuenta. El archivo nuevo queda sin datos. Nació después del bloque de Python: no tiene esperada capturada, la fija T9.",
+  "sin_python": true,
+  "runner": "suites-json",
+  "suite_exit": "0",
+  "story_id": "7.31",
+  "cov_min": "75",
+  "ts": "2026-10-17T12:00:00Z",
+  "test_project_count": "0",
+  "scope": "",
+  "scope_source": "explicito",
+  "declared_new": [],
+  "code_state": { "git": true, "head": "0000acme", "dirty": "" },
+  "base_ref": "HEAD",
+  "base_json": { "ref": "HEAD", "source": "HEAD", "descartadas": [] },
+  "base": {
+    "scripts/tests/suites.json": { "text": "{\"diarias\":[],\"semanales\":[]}\n" },
+    "scripts/lib/acme.js": { "lines": 4 }
+  },
+  "now": {
+    "scripts/lib/acme.js": { "lines": 4, "changed": [2, 3] },
+    "scripts/lib/nuevo.js": { "lines": 3 }
+  }
+}

@@ -42,7 +42,7 @@
       "new_files_without_coverage_data": [
         "scripts/lib/acme.js"
       ],
-      "no_cross_check": "sin cruce de cobertura: el runner suites.json corre suites sueltas (node/bash) y no produce reporte de cobertura",
+      "no_cross_check": "sin cruce de cobertura: la corrida de suites.json no dejó reporte de cobertura (falta coverage/lcov.info: el corredor lo deja con --coverage)",
       "touched_lines_pct": null,
       "touched_lines": null,
       "touched_files_without_coverage_data": [],
@@ -58,7 +58,7 @@
         "hasta": "2026-10-06",
         "nota": "el 75 % sobre las líneas tocadas se observa sin frenar; cada corrida deja en gates.log si habría frenado"
       },
-      "touched_no_cross_check": "sin cruce de líneas tocadas: el runner suites-json no produce cobertura",
+      "touched_no_cross_check": "sin cruce de líneas tocadas: la corrida de suites.json no dejó reporte de cobertura (falta coverage/lcov.info: el corredor lo deja con --coverage)",
       "threshold_basis": null
     },
     "provenance": "test-gate.sh (run real, exit code capturado por marker.js run-check)",
@@ -109,7 +109,7 @@
       "new_files_without_coverage_data": [
         "scripts/lib/acme.js"
       ],
-      "no_cross_check": "sin cruce de cobertura: el runner suites.json corre suites sueltas (node/bash) y no produce reporte de cobertura",
+      "no_cross_check": "sin cruce de cobertura: la corrida de suites.json no dejó reporte de cobertura (falta coverage/lcov.info: el corredor lo deja con --coverage)",
       "touched_lines_pct": null,
       "touched_lines": null,
       "touched_files_without_coverage_data": [],
@@ -125,7 +125,7 @@
         "hasta": "2026-10-06",
         "nota": "el 75 % sobre las líneas tocadas se observa sin frenar; cada corrida deja en gates.log si habría frenado"
       },
-      "touched_no_cross_check": "sin cruce de líneas tocadas: el runner suites-json no produce cobertura",
+      "touched_no_cross_check": "sin cruce de líneas tocadas: la corrida de suites.json no dejó reporte de cobertura (falta coverage/lcov.info: el corredor lo deja con --coverage)",
       "threshold_basis": null
     },
     "provenance": "test-gate.sh (run real, exit code capturado por marker.js run-check)",
