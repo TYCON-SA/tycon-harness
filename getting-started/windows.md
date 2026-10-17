@@ -29,7 +29,7 @@ Bajar el arnés va siempre sin credencial y casi no pasa por la API: gasta una s
 
 1. Herramientas:
    $PSVersionTable.PSVersion.ToString(); node --version; npx --version; tar --version
-   Esperado: PowerShell 7.algo, node v22 o más, npx (viene con node) y tar (viene con Windows 10 y posteriores). Lo
+   Esperado: PowerShell 7.algo, node v24 (con v22 también anda), npx (viene con node) y tar (viene con Windows 10 y posteriores). Lo
    que falte, decime que lo instale yo, de a uno:  winget install Microsoft.PowerShell · winget install OpenJS.NodeJS.LTS
    Después de instalar algo, tengo que cerrar y volver a abrir la terminal y Claude Code: avisame y esperá.
    (git NO hace falta: el arnés se baja como archivos, no se clona.)

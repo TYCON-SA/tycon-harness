@@ -28,7 +28,7 @@ Bajar el arnés va siempre sin credencial y casi no pasa por la API: gasta una s
 
 1. Herramientas:
    node --version; npx --version; python3 --version; tar --version
-   Esperado: node v22 o más, npx (viene con node), python3 3.algo, y tar. Lo que falte, decime que lo instale yo con Homebrew
+   Esperado: node v24 (con v22 también anda), npx (viene con node), python3 3.algo, y tar. Lo que falte, decime que lo instale yo con Homebrew
    (https://brew.sh si no lo tengo), de a uno:  brew install node · brew install python
    (git NO hace falta: el arnés se baja como archivos, no se clona.)
 
