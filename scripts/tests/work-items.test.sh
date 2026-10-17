@@ -1145,13 +1145,15 @@ aviso(){ # <json de pedidos, o "" para que no esté la clave>
   # sin ella el aviso dice «NO consta» en vez del ✅ que el T22d exige. Y el aviso mira también los
   # snapshots del vigilante: `TYCON_WATCHER_OUT` a una carpeta vacía para no leer los del repo real.
   # 🔴 Story 4.5: y también el `cruce` — sin la clave el aviso dice, con razón, que la noche NO cruzó.
+  # `TYCON_DEPS_REPO` fija el árbol de la noche: sin él, en una máquina con la versión bajada y los nocturnos
+  # apagados, el aviso no lee ningún árbol y calla, y estos casos salen rojos por la máquina, no por el aviso.
   node -e '
 const [f, ped] = process.argv.slice(1);
 const s = { fecha: "2026-09-10", corrida_completa: true, linea_base: false, no_medidos: [], hallazgos: [], resumen: { message_id: 1, motivo: null },
   cruce: { consultado: true, motivo: null, cerrados_vivos: [], no_leidos: [], huerfanos: [] } };
 if (ped) s.pedidos = JSON.parse(ped);
 require("fs").writeFileSync(f, JSON.stringify(s));' "$TMP/dash/dependencias-2026-09-10.json" "$1"
-  TYCON_DEPS_OUT="$TMP/dash" TYCON_DEPS_PENDING="$TMP/deps" TYCON_WATCHER_OUT="$TMP/vig" TYCON_DEPS_NOW=2026-09-10T15:00:00Z node "$NOTICE"
+  TYCON_DEPS_REPO="$TMP" TYCON_DEPS_OUT="$TMP/dash" TYCON_DEPS_PENDING="$TMP/deps" TYCON_WATCHER_OUT="$TMP/vig" TYCON_DEPS_NOW=2026-09-10T15:00:00Z node "$NOTICE"
 }
 salida=$(aviso "")
 echo "$salida" | grep 'NO intentó crear pedidos' >/dev/null && ok "T22a: snapshot sin «pedidos» → el aviso dice que la noche NO intentó crear pedidos" || no "T22a: el aviso calla la ausencia — «${salida}»"

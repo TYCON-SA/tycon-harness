@@ -42,7 +42,9 @@ SETTINGS="${TYCON_SETTINGS_PATH:-$HOME/.claude/settings.json}"
 # una máquina cuyo estado dice que NO enchufa a Claude Code (story 8.23, tanda C: tools sin «claude») no recibe su línea
 # de arranque desde el hook de Codex: antes la primera sesión de Codex re-enchufaba a Claude Code (pase adversarial, clase 10)
 # (con el Node del arnés si está —story 8.39—; si no, el del PATH)
-. "$TCG_ROOT/scripts/lib/harness-node.sh" 2>/dev/null || harness_node_bin() { echo node; }
+# con el bash de la Mac (3.2) y `set -e`, un `.` que no encuentra el archivo corta el guion aunque lleve `||`: se mira antes
+_hn="$TCG_ROOT/scripts/lib/harness-node.sh"
+{ [ -f "$_hn" ] && . "$_hn" 2>/dev/null; } || harness_node_bin() { echo node; }
 HNODE="$(harness_node_bin)"
 if command -v "$HNODE" >/dev/null 2>&1; then
   _TOOLS="$("$HNODE" -e 'try{const th=require(process.argv[1]);const fs=require("fs"),path=require("path");const st=JSON.parse(fs.readFileSync(path.join(th.stateDir(require("os").homedir()),"harness-state.json"),"utf8"));process.stdout.write(Array.isArray(st.tools)?st.tools.join(","):"")}catch(e){}' "$TCG_ROOT/scripts/setup/harness/tycon-home.js" 2>/dev/null)"

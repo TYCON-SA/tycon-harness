@@ -73,7 +73,9 @@ echo "$NOW" > "$LAST_FILE"
 RESERVA_LOG="${LAST_FILE%.last}.fallback.log"
 LOG_FILE=""
 # el Node del arnés si está (story 8.39); si no, el del PATH. No cambia el PATH.
-. "$TYCON_GUIDES/scripts/lib/harness-node.sh" 2>/dev/null || harness_node_bin() { echo node; }
+# con el bash de la Mac (3.2) y `set -e`, un `.` que no encuentra el archivo corta el guion aunque lleve `||`: se mira antes
+_hn="$TYCON_GUIDES/scripts/lib/harness-node.sh"
+{ [ -f "$_hn" ] && . "$_hn" 2>/dev/null; } || harness_node_bin() { echo node; }
 HNODE="$(harness_node_bin)"
 if [[ -f "$DIRS_SCRIPT" ]]; then
   DIRS_OUT="$("$HNODE" "$DIRS_SCRIPT" --prepare-log 2>&1)" && LOG_FILE="${DIRS_OUT##*$'\n'}"

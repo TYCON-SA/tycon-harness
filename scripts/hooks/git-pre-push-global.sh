@@ -77,7 +77,9 @@ if [ ! -f "$GUARD" ]; then
   fi
 fi
 # el Node del arnés (story 8.39): el propio si está y es ejecutable; si no, el del PATH. No cambia el PATH.
-. "$(harness_dir)/scripts/lib/harness-node.sh" 2>/dev/null || harness_node_bin() { echo node; }
+# con el bash de la Mac (3.2) y `set -e`, un `.` que no encuentra el archivo corta el guion aunque lleve `||`: se mira antes
+_hn="$(harness_dir)/scripts/lib/harness-node.sh"
+{ [ -f "$_hn" ] && . "$_hn" 2>/dev/null; } || harness_node_bin() { echo node; }
 HNODE="$(harness_node_bin)"
 if [ -z "$WHY" ] && ! command -v "$HNODE" >/dev/null 2>&1; then WHY="falta node en el PATH con que corre git"; fi
 if [ -z "$WHY" ]; then

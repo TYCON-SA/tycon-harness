@@ -242,7 +242,9 @@ TCG_HOOKS_DIR="$SCRIPT_DIR/hooks"
 # ESTE guion van con él; si no, con el del PATH, como siempre. `node` es una función de este guion, no exportada: no
 # cambia el PATH ni llega a lo que el guion lance (install-codegraph.sh sigue con el `npm` del dev). `nohup` y un
 # `bash -c` nuevo no ven funciones: lo que se lanza así nombra "$HNODE" (o lo recibe como argumento).
-. "$SCRIPT_DIR/lib/harness-node.sh" 2>/dev/null || harness_node_bin() { echo node; }
+# con el bash de la Mac (3.2) y `set -e`, un `.` que no encuentra el archivo corta el guion aunque lleve `||`: se mira antes
+_hn="$SCRIPT_DIR/lib/harness-node.sh"
+{ [ -f "$_hn" ] && . "$_hn" 2>/dev/null; } || harness_node_bin() { echo node; }
 HNODE="$(harness_node_bin)"
 if [[ "$HNODE" != "node" ]]; then node() { "$HNODE" "$@"; }; fi
 

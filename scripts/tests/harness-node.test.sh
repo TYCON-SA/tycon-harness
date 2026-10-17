@@ -249,6 +249,18 @@ for h in safety-guard-pre.sh test-scope-guard-pre.sh harness-bootstrap-heal.sh i
   grep -q 'harness-node.sh' "$RAIZ/scripts/hooks/$h" && ok "T22 $h carga el ayudante" || bad "T22 $h no carga scripts/lib/harness-node.sh"
 done
 grep -q 'harness-node.sh' "$RAIZ/scripts/install-tycon-hooks.sh" && ok "T22 install-tycon-hooks.sh usa el ayudante" || bad "T22 install-tycon-hooks.sh no usa el ayudante"
+# con el bash de la Mac (3.2) y `set -e`, `. <archivo que no está> || respaldo` corta el guion entero sin decir nada: quien carga un
+# archivo con respaldo (`||` o el error tapado) mira antes que esté. En Linux ese corte no pasa: se mira el texto de todos
+# los guiones de shell del árbol, con y sin extensión, y no sólo la corrida.
+SIN_MIRAR="$(cd "$RAIZ" && { git ls-files '*.sh'; git ls-files -z | xargs -0 grep -lIE '^#!.*\b(ba)?sh\b' 2>/dev/null; } | sort -u \
+  | grep -v '^scripts/tests/' | tr '\n' '\0' | xargs -0 grep -nE '(^|[;&{(]|then|else|do)[[:space:]]*(\.|source)[[:space:]]+["$/~]' 2>/dev/null \
+  | grep -E '\|\||2>[[:space:]]*/dev/null' | grep -vE '\[\[? +-[fer] ')"
+[ -z "$SIN_MIRAR" ] && ok "T22 ningún guion carga un archivo con respaldo sin mirar antes que esté" \
+  || bad "T22 cargan un archivo con respaldo sin mirar antes que esté (el bash de la Mac corta el guion): $SIN_MIRAR"
+if [ -x /bin/bash ] && /bin/bash --version 2>/dev/null | head -1 | grep -q 'version 3\.'; then
+  got="$(/bin/bash -c 'set -e; _hn=/no/existe/harness-node.sh; { [ -f "$_hn" ] && . "$_hn" 2>/dev/null; } || harness_node_bin() { echo node; }; harness_node_bin')"
+  [ "$got" = node ] && ok "T22 con bash 3.2 y sin el ayudante, la forma que mira antes cae al respaldo" || bad "T22 con bash 3.2 la forma que mira antes no cayó al respaldo («${got}»)"
+fi
 grep -q 'Get-HarnessNode' "$RAIZ/scripts/install-tycon-hooks.ps1" && ok "T22 install-tycon-hooks.ps1 tiene su función del Node del arnés" || bad "T22 install-tycon-hooks.ps1 sin Get-HarnessNode"
 for f in bootstrap-fallback.sh bootstrap-fallback.ps1; do
   if git -C "$RAIZ" diff --quiet HEAD -- "scripts/setup/harness/$f" 2>/dev/null; then ok "T22 $f sin cambios (decisión 24)"; else bad "T22 $f cambió"; fi

@@ -1555,19 +1555,21 @@ test('T49 la resolución cae al nombre pelado cuando la herramienta no está al 
   const nodeBin = path.join(dir, 'node');
   fs.writeFileSync(nodeBin, '');
 
-  assert.strictEqual(R.rutaDeHerramienta('claude', { nodeBin }), 'claude',
+  // `anotadas: {}`: sin esto se lee la carpeta que anotó el disparador instalado en esta máquina, y la herramienta de
+  // esa carpeta gana sobre el nombre pelado
+  assert.strictEqual(R.rutaDeHerramienta('claude', { nodeBin, anotadas: {} }), 'claude',
     'sin la hermana al lado, se devuelve el nombre y lo resuelve el PATH como siempre');
 
   fs.writeFileSync(path.join(dir, 'claude'), '#!/bin/sh\nexit 0\n');
   fs.chmodSync(path.join(dir, 'claude'), 0o755);
-  assert.strictEqual(R.rutaDeHerramienta('claude', { nodeBin }), path.join(dir, 'claude'));
+  assert.strictEqual(R.rutaDeHerramienta('claude', { nodeBin, anotadas: {} }), path.join(dir, 'claude'));
 
   // Un DIRECTORIO llamado `codex` no es una herramienta.
   fs.mkdirSync(path.join(dir, 'codex'));
-  assert.strictEqual(R.rutaDeHerramienta('codex', { nodeBin }), 'codex');
+  assert.strictEqual(R.rutaDeHerramienta('codex', { nodeBin, anotadas: {} }), 'codex');
 
   // Una ruta ya absoluta no se toca.
-  assert.strictEqual(R.rutaDeHerramienta('/opt/bin/claude', { nodeBin }), '/opt/bin/claude');
+  assert.strictEqual(R.rutaDeHerramienta('/opt/bin/claude', { nodeBin, anotadas: {} }), '/opt/bin/claude');
 });
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────

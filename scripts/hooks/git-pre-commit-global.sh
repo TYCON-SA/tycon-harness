@@ -75,7 +75,9 @@ harness_dir() {
 _TCG_DIR="$(harness_dir)"
 # el Node del arnés (story 8.39): el propio si está y es ejecutable; si no, el del PATH. No cambia el PATH ni exporta
 # nada: el .githooks/pre-commit del repo del dev sigue corriendo con su Node
-. "$_TCG_DIR/scripts/lib/harness-node.sh" 2>/dev/null || harness_node_bin() { echo node; }
+# con el bash de la Mac (3.2) y `set -e`, un `.` que no encuentra el archivo corta el guion aunque lleve `||`: se mira antes
+_hn="$_TCG_DIR/scripts/lib/harness-node.sh"
+{ [ -f "$_hn" ] && . "$_hn" 2>/dev/null; } || harness_node_bin() { echo node; }
 HNODE="$(harness_node_bin)"
 _LEGACY_SH="$_TCG_DIR/scripts/lib/legacy-names.sh"
 if [ -f "$_LEGACY_SH" ] && . "$_LEGACY_SH" 2>/dev/null && command -v legacy_env >/dev/null 2>&1; then

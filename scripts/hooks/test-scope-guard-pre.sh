@@ -63,7 +63,9 @@ INPUT="$(cat 2>/dev/null)" || INPUT=""
 # Con qué se lee: `jq` si está (es más rápido y este hook corre en cada comando) y `node`, que es
 # requisito del arnés, si `jq` no está O no pudo. Ninguno de los dos → `cannot_read`.
 # El Node del arnés (story 8.39): el propio si está y es ejecutable; si no, el del PATH. No cambia el PATH.
-. "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/harness-node.sh" 2>/dev/null || harness_node_bin() { echo node; }
+# con el bash de la Mac (3.2) y `set -e`, un `.` que no encuentra el archivo corta el guion aunque lleve `||`: se mira antes
+_hn="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/harness-node.sh"
+{ [ -f "$_hn" ] && . "$_hn" 2>/dev/null; } || harness_node_bin() { echo node; }
 HNODE="$(harness_node_bin)"
 HAS_JQ=0; HAS_NODE=0
 if command -v jq >/dev/null 2>&1; then HAS_JQ=1; fi
