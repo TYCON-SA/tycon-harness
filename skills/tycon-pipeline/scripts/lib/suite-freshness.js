@@ -2,7 +2,7 @@
 /**
  * suite-freshness.js — ¿el verde de la suite completa sigue midiendo ESTE código?
  *
- * Caso disparador MEDIDO (story 1.8 de un producto del equipo, 2026-08-28, guides/incident-log.md#case-stale-green-suite-2026-08-28 — propuesta
+ * Caso disparador MEDIDO (story 1.8 de un producto del equipo, 2026-08-28, guides/maintaining/incident-log.md#case-stale-green-suite-2026-08-28 — propuesta
  * TESTGATE-DEDUCTOR-LAYOUT-GAP-1 parte 2 en guide-update-proposals.md): la suite
  * completa corrió verde al cierre del Step 4, después hubo 2 iteraciones más de
  * fixes (guard T12 endurecido, T14/T15/T16, reversión de CreatedAt), y ese verde

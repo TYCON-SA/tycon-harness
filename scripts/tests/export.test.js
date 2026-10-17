@@ -594,13 +594,13 @@ test('Export_GetHarness_ByPlaceholder_InternalNeverNamesPublicRepo — la declar
 test('Exporter_PathsNotInCopy_AgreesWithMarkOnCorpus', () => {
   const ex = require(EXPORTAR);
   const pc = require(path.join(RAIZ, 'scripts', 'publishing', 'public-copy.js'));
-  const equipo = new Set(['tasks', 'tasks/x.md', 'scripts', 'scripts/y.js', 'guides', 'guides/vecina.md', 'guides/a.md', 'guides/incident-log.md',
+  const equipo = new Set(['tasks', 'tasks/x.md', 'scripts', 'scripts/y.js', 'guides', 'guides/vecina.md', 'guides/a.md', 'guides/maintaining/incident-log.md',
     '.tycon', '.tycon/advisors.yaml', 'inbox', 'specs', 'specs/story-1.2-algo.md', 'guides/sub', 'guides/sub/specs', 'guides/sub/specs/x.md', 'skills', 'skills/s', 'skills/s/steps', 'skills/s/steps/p.md']);
   const copia = new Set(['guides', 'guides/a.md', 'skills', 'skills/s', 'skills/s/steps', 'skills/s/steps/p.md']);
   const opts = { inRepo: (p) => equipo.has(p), inCopy: (p) => copia.has(p), conventions: ['.tycon/', 'specs', 'tasks/todo.md'], installPrefixes: ['~/.claude/acme-lugar/', [/^~\/\.claude\/acme-sk\//, 'skills/']] };
   const corpus = [
     ['guides/a.md', 'Ver `tasks/x.md`, `vecina.md`, `a.md`, `inbox` y `scripts/zzz.js`.\nLa config: `.tycon/advisors.yaml`; `specs`; `specs/story-1.2-algo.md`.\n'],
-    ['guides/a.md', 'El caso: `guides/incident-log.md#x-2026-01-01` y `guides/incident-log.md`.\nCon línea `scripts/y.js:3-4`, `~/.claude/acme-lugar/tasks/x.md` y `~/.claude/acme-sk/s/steps/q.md`.\n'],
+    ['guides/a.md', 'El caso: `guides/maintaining/incident-log.md#x-2026-01-01` y `guides/maintaining/incident-log.md`.\nCon línea `scripts/y.js:3-4`, `~/.claude/acme-lugar/tasks/x.md` y `~/.claude/acme-sk/s/steps/q.md`.\n'],
     ['guides/a.md', 'el cerco abre con ``` y `scripts/y.js` lo lee\nver ``scripts/y.js:3-4` acá\n(`````scripts/y.js:3-4```\n````tasks/x.md```` y `` `scripts/y.js` ``\n'],
     ['guides/a.md', 'dice `algo\nsigue` y `scripts/y.js` fin\n\nuna `suelta\n\ny `tasks/x.md` acá\n'],
     ['skills/s/SKILL.md', 'Paso: `steps/p.md` y `steps/q.md`.\n```\n`scripts/y.js` en un cerco\n```\n'],

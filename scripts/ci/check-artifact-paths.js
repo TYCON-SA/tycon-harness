@@ -2,7 +2,7 @@
 /**
  * check-artifact-paths.js — un pipeline no puede LEER de una carpeta que él nunca LLENA.
  *
- * 🔴 POR QUÉ EXISTE (2026-09-03 — guides/incident-log.md#case-artifact-read-from-empty-folder-2026-09-03). Los pipelines de producción de los plugins de dos productos del equipo bajan
+ * 🔴 POR QUÉ EXISTE (2026-09-03 — guides/maintaining/incident-log.md#case-artifact-read-from-empty-folder-2026-09-03). Los pipelines de producción de los plugins de dos productos del equipo bajan
  * su artefacto con `- download: ci`, que lo deja en `$(Pipeline.Workspace)/ci`. Nueve pasos de cada
  * archivo lo leen de ahí. UNO —justo el que sube el paquete al host— lo buscaba en
  * `$(System.ArtifactsDirectory)`, que en esos pipelines nadie llena. Resultado: el despliegue a

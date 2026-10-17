@@ -418,16 +418,16 @@ test('T6 Papers_InactiveSkillsGuide_GitignoreCitesIt_PostCommitIgnoreAsIs — ju
   const papers = (base) => tool(l.dir, 'papers', '--base', base, '--harness', l.h0, '--skills', l.s0);
   const cite = () => {
     const p = path.join(l.dir, '.gitignore');
-    fs.writeFileSync(p, fs.readFileSync(p, 'utf8').replace('README.md §«Skills que no se cargan»', 'guides/inactive-skills.md'));
+    fs.writeFileSync(p, fs.readFileSync(p, 'utf8').replace('README.md §«Skills que no se cargan»', 'guides/maintaining/inactive-skills.md'));
   };
-  const guide = () => write(l.dir, 'guides/inactive-skills.md', '# Skills que no se cargan\n');
+  const guide = () => write(l.dir, 'guides/maintaining/inactive-skills.md', '# Skills que no se cargan\n');
 
   const base = variant(l.dir, l.u, 'p-ok', () => { guide(); cite(); }, 'la guía y la cita');
   const ok = papers(base);
   assert.equal(ok.status, 0, `la base correcta: ${ok.stdout}${ok.stderr}`);
 
   const cases = [
-    ['p-no-guide', 'guides/inactive-skills.md', () => cite()],
+    ['p-no-guide', 'guides/maintaining/inactive-skills.md', () => cite()],
     ['p-old-cite', '.gitignore', () => guide()],
     ['p-ignore', '.tycon/post-commit-ignore', () => { guide(); cite(); fs.appendFileSync(path.join(l.dir, '.tycon/post-commit-ignore'), 'otra\n'); }],
     ['p-tycon', '.tycon/advisors.yaml', () => { guide(); cite(); fs.appendFileSync(path.join(l.dir, '.tycon/advisors.yaml'), 'deep_review: off\n'); }],

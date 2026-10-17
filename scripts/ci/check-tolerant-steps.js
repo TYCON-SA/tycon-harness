@@ -17,7 +17,7 @@
  * respaldo, y si falta, el paso que la usa corta por su cuenta". Las dos mitades eran falsas: la
  * copia local se borró hace meses, y los pasos que usan los guiones —el que decide a quién
  * versionar, el que despliega, el del humo— fallaban DESPUÉS, con un error que no se parece a la
- * causa. Se sacaron las 15 marcas de los 10 pipelines (un pull request por pipeline — guides/incident-log.md#case-harness-download-tolerant-2026-09-03;
+ * causa. Se sacaron las 15 marcas de los 10 pipelines (un pull request por pipeline — guides/maintaining/incident-log.md#case-harness-download-tolerant-2026-09-03;
  * el backend de un producto ya era
  * estricto) y la clase sale de acá, para que la marca no vuelva sin que alguien la justifique.
  *

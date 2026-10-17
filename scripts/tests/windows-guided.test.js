@@ -1807,7 +1807,7 @@ test('Suites_Registration_RunWhenThePageChanges', { skip: !fs.existsSync(path.jo
   const TOUCHED = ['getting-started/windows.md', 'scripts/setup/get-harness.ps1', 'onboarding/new-dev-harness-setup.md', 'scripts/tests/windows/guided-install.js', 'scripts/tests/fixtures/windows/guided-page-ok.md', 'scripts/tests/fixtures/toy-release-server.js', 'scripts/tests/fixtures/toy-azure-server.js'];
   for (const s of [fast, lab]) for (const f of TOUCHED) assert.ok(covers(s.gate_only_when_touching, f), `${s.ruta} corre al tocar ${f}`);
   assert.ok(covers(today.gate_only_when_touching, 'getting-started/windows.md'), 'la suite del ensayo de hoy suma la página pública a lo que la dispara');
-  assert.ok(!covers(fast.gate_only_when_touching, 'guides/engram-workflow.md'), 'el control: una guía cualquiera no las dispara');
+  assert.ok(!covers(fast.gate_only_when_touching, 'guides/integrations/engram-workflow.md'), 'el control: una guía cualquiera no las dispara');
   // la de laboratorio es pesada (grupo installer), con su excepción firmada por pasar de 45 s. En la validación de una
   // rama manda heavy-suites.json: corre con el instalador (el grupo trae los dos servidores de juguete) y con lo suyo
   const heavy = read('scripts/ci/heavy-suites.json');

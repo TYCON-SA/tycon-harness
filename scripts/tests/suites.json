@@ -1647,7 +1647,7 @@
       "requiere": []
     },
     {
-      "__nota": "story 8.41, tanda E (T35): guides/estilo-de-codigo.md trae la regla de los comentarios, dos ejemplos buenos y dos malos, y tiene su fila en INDEX.md.",
+      "__nota": "story 8.41, tanda E (T35): guides/maintaining/estilo-de-codigo.md trae la regla de los comentarios, dos ejemplos buenos y dos malos, y tiene su fila en INDEX.md.",
       "raiz": "arnes",
       "ruta": "tests/style-guide.test.js",
       "requiere": []
@@ -1719,7 +1719,7 @@
       ]
     },
     {
-      "__nota": "story 8.12, tanda R8 (T50): las dos tablas de guides/publicacion-espejo.md («Qué entra» y «Exclusiones fijas») contra el --explain del exportador — cada entrada de primer nivel una vez con su decisión, los globs de adentro cubiertos en las dos direcciones, las exclusiones fijas una a una con su marca de «clase» y la fila que anuncia las de nombre viejo.",
+      "__nota": "story 8.12, tanda R8 (T50): las dos tablas de guides/maintaining/publicacion-espejo.md («Qué entra» y «Exclusiones fijas») contra el --explain del exportador — cada entrada de primer nivel una vez con su decisión, los globs de adentro cubiertos en las dos direcciones, las exclusiones fijas una a una con su marca de «clase» y la fila que anuncia las de nombre viejo.",
       "raiz": "arnes",
       "ruta": "tests/publishing-guide-tables.test.js",
       "requiere": [
@@ -1757,7 +1757,7 @@
       "requiere": []
     },
     {
-      "__nota": "Parte 1 de 11 de tests/mirror.test.js (story 8.22, tramo F: ninguna suite pasa de 45 s; el archivo entero no se registra, scripts/tests/lib/suite-parts.js). story 8.8, tanda A (T1-T25, T28, T35): el mecanismo de publicación sin red — mirror.js (plan, first, sync, verify) contra repos --bare locales y una API de mentira en 127.0.0.1, y el guion del token de la App con llaves generadas en la prueba. Tarda ~4 min: el gate de cada story la corre sólo si el cambio toca lo que ejercita (T28 lee guides/publicacion-espejo.md: por eso guides/** está en la lista; el campo sólo acepta carpetas).",
+      "__nota": "Parte 1 de 11 de tests/mirror.test.js (story 8.22, tramo F: ninguna suite pasa de 45 s; el archivo entero no se registra, scripts/tests/lib/suite-parts.js). story 8.8, tanda A (T1-T25, T28, T35): el mecanismo de publicación sin red — mirror.js (plan, first, sync, verify) contra repos --bare locales y una API de mentira en 127.0.0.1, y el guion del token de la App con llaves generadas en la prueba. Tarda ~4 min: el gate de cada story la corre sólo si el cambio toca lo que ejercita (T28 lee guides/maintaining/publicacion-espejo.md: por eso guides/** está en la lista; el campo sólo acepta carpetas).",
       "raiz": "arnes",
       "ruta": "tests/mirror.p1.test.js",
       "requiere": [],
@@ -1768,7 +1768,7 @@
       ]
     },
     {
-      "__nota": "Parte 2 de 11 de tests/mirror.test.js (story 8.22, tramo F: ninguna suite pasa de 45 s; el archivo entero no se registra, scripts/tests/lib/suite-parts.js). story 8.8, tanda A (T1-T25, T28, T35): el mecanismo de publicación sin red — mirror.js (plan, first, sync, verify) contra repos --bare locales y una API de mentira en 127.0.0.1, y el guion del token de la App con llaves generadas en la prueba. Tarda ~4 min: el gate de cada story la corre sólo si el cambio toca lo que ejercita (T28 lee guides/publicacion-espejo.md: por eso guides/** está en la lista; el campo sólo acepta carpetas).",
+      "__nota": "Parte 2 de 11 de tests/mirror.test.js (story 8.22, tramo F: ninguna suite pasa de 45 s; el archivo entero no se registra, scripts/tests/lib/suite-parts.js). story 8.8, tanda A (T1-T25, T28, T35): el mecanismo de publicación sin red — mirror.js (plan, first, sync, verify) contra repos --bare locales y una API de mentira en 127.0.0.1, y el guion del token de la App con llaves generadas en la prueba. Tarda ~4 min: el gate de cada story la corre sólo si el cambio toca lo que ejercita (T28 lee guides/maintaining/publicacion-espejo.md: por eso guides/** está en la lista; el campo sólo acepta carpetas).",
       "raiz": "arnes",
       "ruta": "tests/mirror.p2.test.js",
       "requiere": [],
@@ -1779,7 +1779,7 @@
       ]
     },
     {
-      "__nota": "Parte 3 de 11 de tests/mirror.test.js (story 8.22, tramo F: ninguna suite pasa de 45 s; el archivo entero no se registra, scripts/tests/lib/suite-parts.js). story 8.8, tanda A (T1-T25, T28, T35): el mecanismo de publicación sin red — mirror.js (plan, first, sync, verify) contra repos --bare locales y una API de mentira en 127.0.0.1, y el guion del token de la App con llaves generadas en la prueba. Tarda ~4 min: el gate de cada story la corre sólo si el cambio toca lo que ejercita (T28 lee guides/publicacion-espejo.md: por eso guides/** está en la lista; el campo sólo acepta carpetas).",
+      "__nota": "Parte 3 de 11 de tests/mirror.test.js (story 8.22, tramo F: ninguna suite pasa de 45 s; el archivo entero no se registra, scripts/tests/lib/suite-parts.js). story 8.8, tanda A (T1-T25, T28, T35): el mecanismo de publicación sin red — mirror.js (plan, first, sync, verify) contra repos --bare locales y una API de mentira en 127.0.0.1, y el guion del token de la App con llaves generadas en la prueba. Tarda ~4 min: el gate de cada story la corre sólo si el cambio toca lo que ejercita (T28 lee guides/maintaining/publicacion-espejo.md: por eso guides/** está en la lista; el campo sólo acepta carpetas).",
       "raiz": "arnes",
       "ruta": "tests/mirror.p3.test.js",
       "requiere": [],
@@ -1790,7 +1790,7 @@
       ]
     },
     {
-      "__nota": "Parte 4 de 11 de tests/mirror.test.js (story 8.22, tramo F: ninguna suite pasa de 45 s; el archivo entero no se registra, scripts/tests/lib/suite-parts.js). story 8.8, tanda A (T1-T25, T28, T35): el mecanismo de publicación sin red — mirror.js (plan, first, sync, verify) contra repos --bare locales y una API de mentira en 127.0.0.1, y el guion del token de la App con llaves generadas en la prueba. Tarda ~4 min: el gate de cada story la corre sólo si el cambio toca lo que ejercita (T28 lee guides/publicacion-espejo.md: por eso guides/** está en la lista; el campo sólo acepta carpetas).",
+      "__nota": "Parte 4 de 11 de tests/mirror.test.js (story 8.22, tramo F: ninguna suite pasa de 45 s; el archivo entero no se registra, scripts/tests/lib/suite-parts.js). story 8.8, tanda A (T1-T25, T28, T35): el mecanismo de publicación sin red — mirror.js (plan, first, sync, verify) contra repos --bare locales y una API de mentira en 127.0.0.1, y el guion del token de la App con llaves generadas en la prueba. Tarda ~4 min: el gate de cada story la corre sólo si el cambio toca lo que ejercita (T28 lee guides/maintaining/publicacion-espejo.md: por eso guides/** está en la lista; el campo sólo acepta carpetas).",
       "raiz": "arnes",
       "ruta": "tests/mirror.p4.test.js",
       "requiere": [],
@@ -1801,7 +1801,7 @@
       ]
     },
     {
-      "__nota": "Parte 5 de 11 de tests/mirror.test.js (story 8.22, tramo F: ninguna suite pasa de 45 s; el archivo entero no se registra, scripts/tests/lib/suite-parts.js). story 8.8, tanda A (T1-T25, T28, T35): el mecanismo de publicación sin red — mirror.js (plan, first, sync, verify) contra repos --bare locales y una API de mentira en 127.0.0.1, y el guion del token de la App con llaves generadas en la prueba. Tarda ~4 min: el gate de cada story la corre sólo si el cambio toca lo que ejercita (T28 lee guides/publicacion-espejo.md: por eso guides/** está en la lista; el campo sólo acepta carpetas).",
+      "__nota": "Parte 5 de 11 de tests/mirror.test.js (story 8.22, tramo F: ninguna suite pasa de 45 s; el archivo entero no se registra, scripts/tests/lib/suite-parts.js). story 8.8, tanda A (T1-T25, T28, T35): el mecanismo de publicación sin red — mirror.js (plan, first, sync, verify) contra repos --bare locales y una API de mentira en 127.0.0.1, y el guion del token de la App con llaves generadas en la prueba. Tarda ~4 min: el gate de cada story la corre sólo si el cambio toca lo que ejercita (T28 lee guides/maintaining/publicacion-espejo.md: por eso guides/** está en la lista; el campo sólo acepta carpetas).",
       "raiz": "arnes",
       "ruta": "tests/mirror.p5.test.js",
       "requiere": [],
@@ -1812,7 +1812,7 @@
       ]
     },
     {
-      "__nota": "Parte 6 de 11 de tests/mirror.test.js (story 8.22, tramo F: ninguna suite pasa de 45 s; el archivo entero no se registra, scripts/tests/lib/suite-parts.js). story 8.8, tanda A (T1-T25, T28, T35): el mecanismo de publicación sin red — mirror.js (plan, first, sync, verify) contra repos --bare locales y una API de mentira en 127.0.0.1, y el guion del token de la App con llaves generadas en la prueba. Tarda ~4 min: el gate de cada story la corre sólo si el cambio toca lo que ejercita (T28 lee guides/publicacion-espejo.md: por eso guides/** está en la lista; el campo sólo acepta carpetas).",
+      "__nota": "Parte 6 de 11 de tests/mirror.test.js (story 8.22, tramo F: ninguna suite pasa de 45 s; el archivo entero no se registra, scripts/tests/lib/suite-parts.js). story 8.8, tanda A (T1-T25, T28, T35): el mecanismo de publicación sin red — mirror.js (plan, first, sync, verify) contra repos --bare locales y una API de mentira en 127.0.0.1, y el guion del token de la App con llaves generadas en la prueba. Tarda ~4 min: el gate de cada story la corre sólo si el cambio toca lo que ejercita (T28 lee guides/maintaining/publicacion-espejo.md: por eso guides/** está en la lista; el campo sólo acepta carpetas).",
       "raiz": "arnes",
       "ruta": "tests/mirror.p6.test.js",
       "requiere": [],
@@ -1823,7 +1823,7 @@
       ]
     },
     {
-      "__nota": "Parte 7 de 11 de tests/mirror.test.js (story 8.22, tramo F: ninguna suite pasa de 45 s; el archivo entero no se registra, scripts/tests/lib/suite-parts.js). story 8.8, tanda A (T1-T25, T28, T35): el mecanismo de publicación sin red — mirror.js (plan, first, sync, verify) contra repos --bare locales y una API de mentira en 127.0.0.1, y el guion del token de la App con llaves generadas en la prueba. Tarda ~4 min: el gate de cada story la corre sólo si el cambio toca lo que ejercita (T28 lee guides/publicacion-espejo.md: por eso guides/** está en la lista; el campo sólo acepta carpetas).",
+      "__nota": "Parte 7 de 11 de tests/mirror.test.js (story 8.22, tramo F: ninguna suite pasa de 45 s; el archivo entero no se registra, scripts/tests/lib/suite-parts.js). story 8.8, tanda A (T1-T25, T28, T35): el mecanismo de publicación sin red — mirror.js (plan, first, sync, verify) contra repos --bare locales y una API de mentira en 127.0.0.1, y el guion del token de la App con llaves generadas en la prueba. Tarda ~4 min: el gate de cada story la corre sólo si el cambio toca lo que ejercita (T28 lee guides/maintaining/publicacion-espejo.md: por eso guides/** está en la lista; el campo sólo acepta carpetas).",
       "raiz": "arnes",
       "ruta": "tests/mirror.p7.test.js",
       "requiere": [],
@@ -1834,7 +1834,7 @@
       ]
     },
     {
-      "__nota": "Parte 8 de 11 de tests/mirror.test.js (story 8.22, tramo F: ninguna suite pasa de 45 s; el archivo entero no se registra, scripts/tests/lib/suite-parts.js). story 8.8, tanda A (T1-T25, T28, T35): el mecanismo de publicación sin red — mirror.js (plan, first, sync, verify) contra repos --bare locales y una API de mentira en 127.0.0.1, y el guion del token de la App con llaves generadas en la prueba. Tarda ~4 min: el gate de cada story la corre sólo si el cambio toca lo que ejercita (T28 lee guides/publicacion-espejo.md: por eso guides/** está en la lista; el campo sólo acepta carpetas).",
+      "__nota": "Parte 8 de 11 de tests/mirror.test.js (story 8.22, tramo F: ninguna suite pasa de 45 s; el archivo entero no se registra, scripts/tests/lib/suite-parts.js). story 8.8, tanda A (T1-T25, T28, T35): el mecanismo de publicación sin red — mirror.js (plan, first, sync, verify) contra repos --bare locales y una API de mentira en 127.0.0.1, y el guion del token de la App con llaves generadas en la prueba. Tarda ~4 min: el gate de cada story la corre sólo si el cambio toca lo que ejercita (T28 lee guides/maintaining/publicacion-espejo.md: por eso guides/** está en la lista; el campo sólo acepta carpetas).",
       "raiz": "arnes",
       "ruta": "tests/mirror.p8.test.js",
       "requiere": [],
@@ -1845,7 +1845,7 @@
       ]
     },
     {
-      "__nota": "Parte 9 de 11 de tests/mirror.test.js (story 8.22, tramo F: ninguna suite pasa de 45 s; el archivo entero no se registra, scripts/tests/lib/suite-parts.js). story 8.8, tanda A (T1-T25, T28, T35): el mecanismo de publicación sin red — mirror.js (plan, first, sync, verify) contra repos --bare locales y una API de mentira en 127.0.0.1, y el guion del token de la App con llaves generadas en la prueba. Tarda ~4 min: el gate de cada story la corre sólo si el cambio toca lo que ejercita (T28 lee guides/publicacion-espejo.md: por eso guides/** está en la lista; el campo sólo acepta carpetas).",
+      "__nota": "Parte 9 de 11 de tests/mirror.test.js (story 8.22, tramo F: ninguna suite pasa de 45 s; el archivo entero no se registra, scripts/tests/lib/suite-parts.js). story 8.8, tanda A (T1-T25, T28, T35): el mecanismo de publicación sin red — mirror.js (plan, first, sync, verify) contra repos --bare locales y una API de mentira en 127.0.0.1, y el guion del token de la App con llaves generadas en la prueba. Tarda ~4 min: el gate de cada story la corre sólo si el cambio toca lo que ejercita (T28 lee guides/maintaining/publicacion-espejo.md: por eso guides/** está en la lista; el campo sólo acepta carpetas).",
       "raiz": "arnes",
       "ruta": "tests/mirror.p9.test.js",
       "requiere": [],
@@ -1856,7 +1856,7 @@
       ]
     },
     {
-      "__nota": "Parte 10 de 11 de tests/mirror.test.js (story 8.22, tramo F: ninguna suite pasa de 45 s; el archivo entero no se registra, scripts/tests/lib/suite-parts.js). story 8.8, tanda A (T1-T25, T28, T35): el mecanismo de publicación sin red — mirror.js (plan, first, sync, verify) contra repos --bare locales y una API de mentira en 127.0.0.1, y el guion del token de la App con llaves generadas en la prueba. Tarda ~4 min: el gate de cada story la corre sólo si el cambio toca lo que ejercita (T28 lee guides/publicacion-espejo.md: por eso guides/** está en la lista; el campo sólo acepta carpetas).",
+      "__nota": "Parte 10 de 11 de tests/mirror.test.js (story 8.22, tramo F: ninguna suite pasa de 45 s; el archivo entero no se registra, scripts/tests/lib/suite-parts.js). story 8.8, tanda A (T1-T25, T28, T35): el mecanismo de publicación sin red — mirror.js (plan, first, sync, verify) contra repos --bare locales y una API de mentira en 127.0.0.1, y el guion del token de la App con llaves generadas en la prueba. Tarda ~4 min: el gate de cada story la corre sólo si el cambio toca lo que ejercita (T28 lee guides/maintaining/publicacion-espejo.md: por eso guides/** está en la lista; el campo sólo acepta carpetas).",
       "raiz": "arnes",
       "ruta": "tests/mirror.p10.test.js",
       "requiere": [],
@@ -1867,7 +1867,7 @@
       ]
     },
     {
-      "__nota": "Parte 11 de 11 de tests/mirror.test.js (story 8.22, tramo F: ninguna suite pasa de 45 s; el archivo entero no se registra, scripts/tests/lib/suite-parts.js). story 8.8, tanda A (T1-T25, T28, T35): el mecanismo de publicación sin red — mirror.js (plan, first, sync, verify) contra repos --bare locales y una API de mentira en 127.0.0.1, y el guion del token de la App con llaves generadas en la prueba. Tarda ~4 min: el gate de cada story la corre sólo si el cambio toca lo que ejercita (T28 lee guides/publicacion-espejo.md: por eso guides/** está en la lista; el campo sólo acepta carpetas).",
+      "__nota": "Parte 11 de 11 de tests/mirror.test.js (story 8.22, tramo F: ninguna suite pasa de 45 s; el archivo entero no se registra, scripts/tests/lib/suite-parts.js). story 8.8, tanda A (T1-T25, T28, T35): el mecanismo de publicación sin red — mirror.js (plan, first, sync, verify) contra repos --bare locales y una API de mentira en 127.0.0.1, y el guion del token de la App con llaves generadas en la prueba. Tarda ~4 min: el gate de cada story la corre sólo si el cambio toca lo que ejercita (T28 lee guides/maintaining/publicacion-espejo.md: por eso guides/** está en la lista; el campo sólo acepta carpetas).",
       "raiz": "arnes",
       "ruta": "tests/mirror.p11.test.js",
       "requiere": [],

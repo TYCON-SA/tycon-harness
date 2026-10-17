@@ -108,7 +108,7 @@ Viven en el código (`EXCLUIDOS_SIEMPRE`), por repo y con su motivo, y **nunca s
 | Repo | Nunca sale | Por qué |
 |---|---|---|
 | arnes | `.engram/` `.dashboard/` `.advisors/` `inbox/` _(del repo del equipo; no está en esta copia)_ `tasks/` `specs/` `qa/` `_bmad/` | memoria, series, evidencia, hallazgos y planes del equipo |
-| arnes | `guides/incident-log.md` `guides/guide-update-proposals.md` _(del repo del equipo; no está en esta copia)_ `guides/decisions/telemetria-produccion-inventario-*.md` | casos nominados, propuestas internas, inventario de producción |
+| arnes | `guides/maintaining/incident-log.md` `guides/guide-update-proposals.md` _(del repo del equipo; no está en esta copia)_ `guides/decisions/telemetria-produccion-inventario-*.md` | casos nominados, propuestas internas, inventario de producción |
 | arnes | `scripts/metrics/censo-*.json` `scripts/ci/product-parity.json` `scripts/ci/pipeline-debt.json` `scripts/metrics/corridas-buzon.json` _(del repo del equipo; no está en esta copia)_ | censos, productos y deuda por repo de cliente, la llave del buzón |
 | arnes | `team-profile.json` _(del repo del equipo; no está en esta copia)_ `perfil-equipo.json` _(del repo del equipo; no está en esta copia)_ (de «clase»: el clon tiene uno de los dos, o los dos en la transición) | el perfil del equipo, con su nombre de hoy y el de antes, que sigue valiendo |
 | arnes | `pipelines/**` | los pipelines del equipo (los nocturnos, el de pull request y sus pedazos compartidos) |
@@ -254,7 +254,7 @@ Se corren todos y recién después se decide; cualquier hallazgo es un 1 y la co
   con opciones en el medio, `node --test <ruta>.js` o `bash -x <ruta>.sh`— tiene que resolver a un archivo de la copia. Los marcadores con un solo sentido se resuelven (`<skill>` es la skill del `.md`,
   `<arnés>` el arnés, `<repo>` en un comando del arnés es el arnés); una variable u otro marcador no se juzgan.
 - **Nombres viejos**: ningún archivo que sale puede nombrar la ruta vieja **completa** de un archivo o una
-  carpeta del mapa de renombres (salvo `guides/nombres-en-ingles.md`, que explica la convención): afuera ese archivo no
+  carpeta del mapa de renombres (salvo `guides/maintaining/nombres-en-ingles.md`, que explica la convención): afuera ese archivo no
   existe. Se resuelve nombrando el nuevo.
 - **El detector**, una vez por repo con `--base` en su raíz (los `permitidos` valen igual que sobre el interno):
   todos en cero, ningún archivo excluido y la cuenta exacta; después, sobre las **rutas** de la copia (un nombre en una
@@ -324,7 +324,7 @@ reemplazos del listado:
 | 55 | `arnes/guides/advisor-rules-catalog.md` | se publica: el catálogo; cada regla conserva su porqué, sin el caso |
 | 44 | `arnes/guides/ci-gate.md` | se publica: el portón de CI, con la organización y el GUID de la colección anonimizados |
 | 43 | `agent-skills/skills/tycon-pipeline/scripts/pipeline.js` | se publica: los nombres estaban en comentarios de casos |
-| 40 | `arnes/guides/engram-workflow.md` | se publica: los nombres de proyecto de memoria por cliente quedan anonimizados |
+| 40 | `arnes/guides/integrations/engram-workflow.md` | se publica: los nombres de proyecto de memoria por cliente quedan anonimizados |
 | 40 | `arnes/scripts/controls-bench/cases/advisors/tycon-feature-wiring-checker.json` | se publica: un caso del revisor de cableado con el código de un cliente de ejemplo |
 | 39 | `arnes/story-format.md` | se publica: ejemplos del formato de story |
 | 38 | `arnes/guides/decisions/controles-apagables-por-config-2026-08-25.md` | se publica: el diseño de los controles apagables; no inventaría producción |
@@ -340,7 +340,7 @@ La copia lleva en su raíz lo que un repo público necesita, y los repos interno
   que carga cada sesión pasó a `INDEX.md`.
 - `.github/CONTRIBUTING.md`, `.github/CODE_OF_CONDUCT.md` y `.github/SECURITY.md`.
 - `.github/workflows/ci.yml`: la CI del repo público (ver «La CI pública»).
-- `guides/incident-log.md` público: una página que dice que los casos con nombre viven en el repo del equipo.
+- `guides/maintaining/incident-log.md` público: una página que dice que los casos con nombre viven en el repo del equipo.
 - `scripts/setup/public-remotes.json`: la lista de remotos públicos, `{ "remotes": ["https://github.com/<organización>/<repo>"] }`,
   con el nombre ya puesto. Con ella el programa de instalación reconoce un clon del público y sabe
   de qué repo baja la versión publicada (`install --version`, la mudanza, la portada sin git). En los repos internos ese
@@ -782,7 +782,7 @@ bash scripts/ci/public-ci.sh --clean-machine                     # modo público
 - En `suites.json` pide `["docker", "red"]` y corre sola (`exclusive`).
 
 Qué mide caso por caso, las variables y los topes: la cabecera de la prueba. Su ficha, con la duración
-medida: [piezas-del-arnes.md](piezas-del-arnes.md) §`scripts/tests/clean-machine.test.sh`.
+medida: [piezas-del-arnes.md](../piezas-del-arnes.md) §`scripts/tests/clean-machine.test.sh`.
 
 **Los bloques que requieren una integración.** Un bloque de `claude-md-blocks/` que declara en su primera línea
 `<!-- requires-integration: <integración> -->` se escribe en `~/.claude/CLAUDE.md` (y en su espejo de Codex) sólo con
@@ -839,7 +839,7 @@ la base con la configuración del cambio, y un nombre real que el cambio agregar
 **La regla**: lo que sale en la copia pública —código, pruebas, guías, catálogo de reglas,
 instrucciones de revisores, pasos y comandos— se escribe sin nombres reales. Pruebas y ejemplos usan **nombres
 neutros** (`acme` o «Cliente A» para un cliente, `acme-sql.database.windows.net` para un servidor, `example.com` para un
-dominio, «el dev» para una persona); un caso real vive con su nombre sólo en `guides/incident-log.md` (no se publica).
+dominio, «el dev» para una persona); un caso real vive con su nombre sólo en `guides/maintaining/incident-log.md` (no se publica).
 La tabla de reemplazos queda como red: tapa lo que se escape.
 
 **Un nombre neutro no delata al real**: no conserva su inicial, ni su sufijo, ni su largo
@@ -1852,7 +1852,7 @@ Con esa clave puesta:
   sin lista es «no pude mirar» y el commit no se crea; sin declarar, en una máquina del equipo lo dice en una línea y
   deja pasar.
 - **La memoria no se exporta al commitear en el público**: viaja con el próximo commit hecho en el clon privado
-  (`guides/engram-workflow.md`, «Fin de sesión»).
+  (`guides/integrations/engram-workflow.md`, «Fin de sesión»).
 
 `doctor` nombra el clon declarado, avisa si la carpeta no está o no es la raíz de un clon, y avisa cuando una máquina
 que mantiene (`paths.maintained`) todavía no declaró `paths.maintainers`.

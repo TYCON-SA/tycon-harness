@@ -19,7 +19,7 @@
  *   El agente corre con el MISMO UID y tiene Bash + el código fuente de este archivo. El hash-chain
  *   es SHA-256 SIN clave (keyless): no es un secreto, cualquiera que lea este archivo lo recalcula.
  *
- *   🔴 2026-10-07 (story 7.17, guides/incident-log.md#case-firmas-ramas-paralelas-2026-10-07) — la cadena
+ *   🔴 2026-10-07 (story 7.17, guides/maintaining/incident-log.md#case-firmas-ramas-paralelas-2026-10-07) — la cadena
  *   se lee como ÁRBOL, no como lista: cada entrada vale si engancha con ALGUNA entrada anterior válida del
  *   mismo archivo, o con el vacío (raíz). Y cada firma nueva se escribe como raíz. Con la lista, dos ramas
  *   que firmaban en paralelo enganchaban con la misma línea y al unirlas la segunda dejaba de enganchar con

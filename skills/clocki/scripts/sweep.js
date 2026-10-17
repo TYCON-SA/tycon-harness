@@ -8,10 +8,10 @@
 //
 // (2026-06-05, pedido del usuario) El sweep NUNCA debe tocar el timer de otra sesión
 // VIVA. Disparador: cerró un timer `_legacy` de una sesión de otro producto que estaba
-// trabajando en paralelo — guides/incident-log.md#case-sweep-closed-live-session-timer-2026-06-05. La regla que se escribió fue "nunca tocar otra sesión,
+// trabajando en paralelo — guides/maintaining/incident-log.md#case-sweep-closed-live-session-timer-2026-06-05. La regla que se escribió fue "nunca tocar otra sesión,
 // aunque luzca muerta", y delegaba los zombies a que "ESA misma sesión resuma".
 //
-// (2026-07-25, auditoría con el dev — guides/incident-log.md#case-orphan-timers-never-closed-2026-07-25) Esa delegación no ocurre NUNCA: un sessionId no
+// (2026-07-25, auditoría con el dev — guides/maintaining/incident-log.md#case-orphan-timers-never-closed-2026-07-25) Esa delegación no ocurre NUNCA: un sessionId no
 // se reusa — cerrás la ventana y ese id no vuelve. O sea que un timer huérfano no lo
 // cerraba nadie jamás. Encontrados 3 timers de julio en 0 segundos (~14h de trabajo
 // real sin facturar) y 87 archivos de estado acumulados.

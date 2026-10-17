@@ -13,7 +13,7 @@
 # Lo que el reintento NO distingue es «no se pudo crear» de «una persona lo cerró». Un pull request
 # rechazado tampoco está activo. Medido contra Azure el 2026-09-10, en el vigilante eso pasó CINCO
 # veces en cuatro días: la rama de un mismo hallazgo (`vigilante/<id>`) recibió un pull request (rechazado a
-# las 4 h), otro (rechazado) y un tercero. Tres pull requests para una decisión ya tomada — guides/incident-log.md#case-rejected-pr-retried-2026-09-10.
+# las 4 h), otro (rechazado) y un tercero. Tres pull requests para una decisión ya tomada — guides/maintaining/incident-log.md#case-rejected-pr-retried-2026-09-10.
 #
 # 🔴 Y va en UN guion que los dos YAML llaman, no copiado en los dos. Los dos bloques nacieron
 # iguales y en CINCO DÍAS ya se habían separado en tres lugares —entre ellos la guarda del literal

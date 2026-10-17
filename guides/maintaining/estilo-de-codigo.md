@@ -55,6 +55,6 @@ Mejor: sin comentario, o el porqué si no se ve («cuenta también los salteados
 
 ## Relacionado
 
-- Los nombres de lo que ejecuta la máquina: `guides/nombres-en-ingles.md`.
+- Los nombres de lo que ejecuta la máquina: `guides/maintaining/nombres-en-ingles.md`.
 - La prosa que se publica (guías, portadas, skills, revisores) tiene su propio freno de historia interna, al commitear:
   `scripts/publishing/internal-history.js`.

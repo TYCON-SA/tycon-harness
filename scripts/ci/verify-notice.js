@@ -39,7 +39,7 @@
 
 const fs = require('fs');
 
-const GUIDE = 'guides/publicacion-espejo.md, §«Si `verify` da 1»';
+const GUIDE = 'guides/maintaining/publicacion-espejo.md, §«Si `verify` da 1»';
 const MAX_MESSAGE = 3800;   // un mensaje de Telegram lleva hasta 4096 caracteres
 const MAX_PLACE = 300;
 const MAX_REASON = 300;

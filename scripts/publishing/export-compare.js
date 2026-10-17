@@ -50,7 +50,7 @@
 // sale 2 (la exportación de cada paquete no sale), y `trees` no tiene copias nuevas que comparar. Quedan `diff` (sobre
 // fotos ya sacadas) y `exclusions` (sobre dos salidas de `--explain --json`). Para comparar copias de antes del corte,
 // `snapshot --exporter` con el `export.js` de un clon en un commit de entonces.
-// Guía: guides/publicacion-espejo.md
+// Guía: guides/maintaining/publicacion-espejo.md
 
 const fs = require('fs');
 const os = require('os');

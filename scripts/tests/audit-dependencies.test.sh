@@ -294,7 +294,7 @@ rc=$(FIX="$TMP" TYCON_DEP_CMD="$TMP/doble.sh" TYCON_DEP_TODAY=2026-09-01 node "$
 # informes chicos y nunca lo dispararon; apareció con el primero grande (custom-forms/runtime-app
 # del repo del framework, 21 hallazgos). El caso se escribe con spawnSync a propósito: por el
 # redirigido a archivo que usa el resto de esta suite, el corte NO se ve.
-# Caso: guides/incident-log.md#informe-cortado-por-la-tuberia-2026-09-28
+# Caso: guides/maintaining/incident-log.md#informe-cortado-por-la-tuberia-2026-09-28
 rm -rf "$TMP/repo"; mkdir -p "$TMP/repo"; : > "$TMP/repo/package-lock.json"
 python3 - "$TMP/npm.json" <<'GRANDE'
 import json, sys

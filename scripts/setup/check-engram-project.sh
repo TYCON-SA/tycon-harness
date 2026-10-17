@@ -11,7 +11,7 @@
 # los 6 repos de un producto del equipo se consolidaron a `totora` el 2026-08-20 editando config.json y el
 # CLAUDE.md — y `.engram-project` quedó con los nombres viejos (TotoraBackend,
 # TotoraCustomForms…) durante días, sincronizando cada commit bajo el cajón equivocado
-# — guides/incident-log.md#case-engram-project-name-drift-2026-08-20.
+# — guides/maintaining/incident-log.md#case-engram-project-name-drift-2026-08-20.
 # Mismo día, otro cliente (el repo del framework): 74 observaciones repartidas en 6 nombres.
 #
 # Qué hace: para el repo dado (arg 1, default $PWD) AVISA —nunca bloquea— si

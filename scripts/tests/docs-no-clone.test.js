@@ -82,7 +82,7 @@ const GUIDES = [
     says: ['~/.tycon/harness', 'usar no es mantener'],
   },
   {
-    file: 'guides/mecanismo-de-instalacion.md',
+    file: 'guides/maintaining/mecanismo-de-instalacion.md',
     // la sección de los guiones de entrada (la que explica cómo se instala)
     use: (t) => { const s = t.indexOf('## Los guiones de entrada'); return t.slice(s, t.indexOf('\n## ', s + 3)); },
     says: ['usar el arnés no es mantenerlo', 'link --local', 'link --managed', 'no usa git ni lo pide'],
@@ -125,7 +125,7 @@ test('T35b Docs_NoCloneToUse_CloneOnlyForMaintainers', () => {
 
 test('T35c Docs_DeveloperMode_IsTheWayToTryBeforePublishing', () => {
   // el INSTALL.md del público no explica el modo desarrollador (lo hace la guía del mecanismo): sólo la versión del equipo
-  for (const file of ARMED ? ['INSTALL.md', 'guides/mecanismo-de-instalacion.md'] : ['guides/mecanismo-de-instalacion.md']) {
+  for (const file of ARMED ? ['INSTALL.md', 'guides/maintaining/mecanismo-de-instalacion.md'] : ['guides/maintaining/mecanismo-de-instalacion.md']) {
     const t = read(file);
     assert.match(t, /link --local/, `${file}: no nombra link --local`);
     assert.match(t, /link --managed/, `${file}: no nombra link --managed`);
@@ -146,8 +146,8 @@ test('T35d Mirror_ToyGuideWithCloneOrWithoutPhraseFails', () => {
  *  público: nueve de las once. En el repo privado adelgazado no están; llegan con el público encima. */
 const PUBLIC_ONLY_GUIDES = [
   'README.md', 'INDEX.md',   // el índice de guías: hasta 2026-10-14 era README.md, que pasó a ser la portada
-  'guides/agent-architecture.md', 'guides/ci-gate.md', 'guides/codex-migration.md', 'guides/instinct-mining.md',
-  'guides/mecanismo-de-instalacion.md', 'guides/reglas-para-revisores.md',
+  'guides/agent-architecture.md', 'guides/ci-gate.md', 'guides/codex-migration.md', 'guides/integrations/instinct-mining.md',
+  'guides/maintaining/mecanismo-de-instalacion.md', 'guides/reglas-para-revisores.md',
   'guides/decisions/codex-etapa-d-retro-red.md', 'guides/decisions/controles-apagables-por-config-2026-08-25.md',
 ];
 /** Las dos que esperan: el privado tiene la suya, con sus bloques internos, declarada en `own`. Tres casos de prueba
@@ -156,7 +156,7 @@ const PUBLIC_ONLY_GUIDES = [
  *  internal-data-leftovers.test.js (T27: la regla de los inventados, en un bloque de la guía de publicación). Mientras
  *  estén acá, un cambio de GitHub a cualquiera de las dos no llega solo: hay que traerlo a mano. La que deje de
  *  esperar sale de `own`, pasa a la lista de arriba, y sus bloques, a `onboarding/interno/`. */
-const STILL_WITH_AN_INTERNAL_FORM = ['INSTALL.md', 'guides/publicacion-espejo.md'];
+const STILL_WITH_AN_INTERNAL_FORM = ['INSTALL.md', 'guides/maintaining/publicacion-espejo.md'];
 /** Las carpetas que no viajan: ahí un marcador de bloque no publica nada (una story o una medición que lo cita como
  *  ejemplo). De onboarding/ quedan afuera sólo las SUBCARPETAS: los `.md` de su raíz son el texto del alta, que viaja a
  *  cada máquina del equipo, y nadie le saca un bloque por el camino. */

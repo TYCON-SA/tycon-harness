@@ -36,14 +36,13 @@ permission notice of that license follows each group.
 ECC (https://github.com/affaan-m/ECC):
 
 * guides/advisor-rules-catalog.md — based on ECC (https://github.com/affaan-m/ECC) · MIT · Copyright (c) 2026 Affaan Mustafa
-* guides/context-budget.md — based on ECC (https://github.com/affaan-m/ECC) · MIT · Copyright (c) 2026 Affaan Mustafa
-* guides/harness-audit.md — based on ECC (https://github.com/affaan-m/ECC) · MIT · Copyright (c) 2026 Affaan Mustafa
-* guides/decisions/instinct-mining-v1-spec.md — based on ECC (https://github.com/affaan-m/ECC) · MIT · Copyright (c) 2026 Affaan Mustafa
-* guides/instinct-mining.md — based on ECC (https://github.com/affaan-m/ECC) · MIT · Copyright (c) 2026 Affaan Mustafa
+* guides/maintaining/context-budget.md — based on ECC (https://github.com/affaan-m/ECC) · MIT · Copyright (c) 2026 Affaan Mustafa
+* guides/maintaining/harness-audit.md — based on ECC (https://github.com/affaan-m/ECC) · MIT · Copyright (c) 2026 Affaan Mustafa
+* guides/integrations/instinct-mining.md — based on ECC (https://github.com/affaan-m/ECC) · MIT · Copyright (c) 2026 Affaan Mustafa
 * guides/piezas-del-arnes.md — based on ECC (https://github.com/affaan-m/ECC) · MIT · Copyright (c) 2026 Affaan Mustafa
-* guides/rules-distill.md — based on ECC (https://github.com/affaan-m/ECC) · MIT · Copyright (c) 2026 Affaan Mustafa
+* guides/maintaining/rules-distill.md — based on ECC (https://github.com/affaan-m/ECC) · MIT · Copyright (c) 2026 Affaan Mustafa
 * guides/safety-guard.md — based on ECC (https://github.com/affaan-m/ECC) · MIT · Copyright (c) 2026 Affaan Mustafa
-* guides/skill-scout.md — based on ECC (https://github.com/affaan-m/ECC) · MIT · Copyright (c) 2026 Affaan Mustafa
+* guides/maintaining/skill-scout.md — based on ECC (https://github.com/affaan-m/ECC) · MIT · Copyright (c) 2026 Affaan Mustafa
 * scripts/lib/harness-audit.js — based on ECC (https://github.com/affaan-m/ECC) · MIT · Copyright (c) 2026 Affaan Mustafa
 * scripts/hooks/safety-guard-pre.sh — based on ECC (https://github.com/affaan-m/ECC) · MIT · Copyright (c) 2026 Affaan Mustafa
 * scripts/tools/context-budget.js — based on ECC (https://github.com/affaan-m/ECC) · MIT · Copyright (c) 2026 Affaan Mustafa

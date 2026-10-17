@@ -163,7 +163,7 @@ function discoverCandidates(repoDir) {
     if (![...slnDirs].some((s) => isUnder(d, s))) add(d, 'dotnet');
   }
 
-  // ── Territorio del candidato .sln (fix 2026-08-28, caso Story 1.8 de un producto del equipo — guides/incident-log.md#case-sln-subfolders-without-vote-2026-08-28) ──
+  // ── Territorio del candidato .sln (fix 2026-08-28, caso Story 1.8 de un producto del equipo — guides/maintaining/incident-log.md#case-sln-subfolders-without-vote-2026-08-28) ──
   // El candidato RAÍZ '.' vota SÓLO por archivos sin '/' (decisión 2026-08-13 anti "la raíz
   // gana por descarte") — correcto para docs, pero dejaba sin voto a los archivos que SÍ son
   // del proyecto raíz y viven en subcarpetas (`src/NimboBackend/*.cs`): 0 votos → freno

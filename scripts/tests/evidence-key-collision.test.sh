@@ -5,7 +5,7 @@
 # (`<id>-smoke-ledger.jsonl`, `<id>-runtime-matrix.md`…). En dos repos del equipo el número NO identifica:
 # numeran por tema y cada tema arranca en 1.1. La matriz de verificación por criterio contó un criterio como
 # corrido con el registro de OTRA story del mismo número (2026-10-05). Medido: 35 de 88 evidencias de un
-# repo y 20 de 79 de otro bajo un número que comparten varias stories (guides/incident-log.md#evidencia-pisada-entre-stories-2026-10-05).
+# repo y 20 de 79 de otro bajo un número que comparten varias stories (guides/maintaining/incident-log.md#evidencia-pisada-entre-stories-2026-10-05).
 #
 # La regla: la clave de la evidencia lleva el tema SÓLO cuando el número está repetido en el repo
 # (`<tema>__<número>`); si es único, la clave es el número solo, como siempre. Una regla «por carpeta
@@ -225,8 +225,8 @@ grep -q 'único dentro de su repo' "$AQUI/story-format.md" || f11="$f11 story-fo
 if [ ! -f "$AQUI/scripts/publishing/public-repos.json" ]; then
   echo "⏭ evidencia: T11 la entrada del incident-log: NO MEDIDO en la copia (trae un reemplazo del registro, sin casos)"
 else
-grep -q '^## evidencia-pisada-entre-stories-2026-10-05' "$AQUI/guides/incident-log.md" || f11="$f11 incident-log"
-grep -q 'un identificador que no identifica convierte a un control en un mentiroso con confianza' "$AQUI/guides/incident-log.md" || f11="$f11 regla"
+grep -q '^## evidencia-pisada-entre-stories-2026-10-05' "$AQUI/guides/maintaining/incident-log.md" || f11="$f11 incident-log"
+grep -q 'un identificador que no identifica convierte a un control en un mentiroso con confianza' "$AQUI/guides/maintaining/incident-log.md" || f11="$f11 regla"
 fi
 grep -q 'evidencia huérfana' "$AQUI/INDEX.md" || f11="$f11 INDEX"   # el índice: INDEX.md desde 2026-10-14
 if [ -z "$f11" ]; then ok "T11 story-format pide el id único, incident-log tiene su entrada y README su fila"

@@ -22,7 +22,7 @@
  *   · `migrations` — 2026-09-02: se cableó el flujo de migraciones administradas en tres productos
  *     copiando de un cuarto, con sus comentarios y su lógica… y quedó INERTE en los tres,
  *     porque la bandera se agregó al `plugin.json` y no al `example`, que es el que viaja. El
- *     host nunca miró la carpeta `migrations/` del ZIP. Todo verde — guides/incident-log.md#case-manifest-flag-inert-2026-09-02.
+ *     host nunca miró la carpeta `migrations/` del ZIP. Todo verde — guides/maintaining/incident-log.md#case-manifest-flag-inert-2026-09-02.
  *
  * Cada una de las tres se "arregló" agregando el campo de nuevo. La cuarta habría durado hasta la
  * quinta. Este control cierra la puerta en vez de la clave.

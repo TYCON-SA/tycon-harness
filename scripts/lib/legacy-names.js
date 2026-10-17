@@ -32,7 +32,7 @@
 //   node scripts/lib/legacy-names.js --shell <where>                (lo que carga legacy-names.sh)
 //   node scripts/lib/legacy-names.js --prepare-state <ruta>… [--where <script>]   (prepareStateWrite para bash: tanda D2)
 //   node scripts/lib/legacy-names.js --log-use <kind> <old> <new> <script> [--conflict]
-// Guía: guides/nombres-en-ingles.md
+// Guía: guides/maintaining/nombres-en-ingles.md
 
 const fs = require('fs');
 const os = require('os');
@@ -201,7 +201,7 @@ function recordUse({ kind, old, new: nu, script, conflict = false } = {}, opts =
   if (/^true$/i.test(String(env.TF_BUILD || '')) && !warnedCi.has(`${kind}\0${old}\0${where}`)) {
     warnedCi.add(`${kind}\0${old}\0${where}`);
     try {
-      process.stderr.write(`##vso[task.logissue type=warning]nombre viejo «${old}» (${kind}) en ${where}: sigue andando y no es la causa de ningún error de este paso — cuando puedas, cambialo por «${nu}» (el viejo se retira: guides/nombres-en-ingles.md)\n`);
+      process.stderr.write(`##vso[task.logissue type=warning]nombre viejo «${old}» (${kind}) en ${where}: sigue andando y no es la causa de ningún error de este paso — cuando puedas, cambialo por «${nu}» (el viejo se retira: guides/maintaining/nombres-en-ingles.md)\n`);
     } catch { /* anotar nunca rompe */ }
   }
   try {

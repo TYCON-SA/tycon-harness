@@ -24,5 +24,5 @@ Codex pide aprobar cada control la primera vez, y otra vez cada vez que su guion
 
 Claude Code usa los originales sin traducir: los revisores de `agents/` y los controles de `scripts/hooks/`.
 
-El diseño completo está en [`guides/codex-migration.md`](../guides/codex-migration.md); el de los subagentes nativos, en
-[`guides/decisions/codex-etapa-g-diseno.md`](../guides/decisions/codex-etapa-g-diseno.md).
+Qué cambia entre las dos herramientas, pieza por pieza, está en
+[`guides/maintaining/codex-divergence-inventory.md`](../guides/maintaining/codex-divergence-inventory.md).

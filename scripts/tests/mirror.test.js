@@ -2015,7 +2015,7 @@ function sectionsOf(markdown) {
 }
 
 test('Guide_IfVerifyFails_TwoCasesAndOwner', () => {
-  const rel = 'guides/publicacion-espejo.md';
+  const rel = 'guides/maintaining/publicacion-espejo.md';
   const whole = fs.readFileSync(path.join(RAIZ, rel), 'utf8');
   // lo que sale en la copia: sin los bloques internos. En la copia ya no están, y la prueba da lo mismo
   const shipped = require(path.join(PUBLISHING, 'public-copy.js')).internalBlocks(whole, rel);

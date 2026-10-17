@@ -203,7 +203,7 @@ function construir(opts = {}) {
         if (s.llavero) hosts[host].llavero = s.llavero;
         // `base`: a qué base se conecta la puerta. En Azure SQL no hay `USE` ni nombres de tres partes,
         // así que sin esto el cliente entra a `master` y toda tabla es «Invalid object name» (medido
-        // contra un servidor interno el 2026-09-15, con la clave ya bien — guides/incident-log.md#case-azure-sql-enters-master-2026-09-15).
+        // contra un servidor interno el 2026-09-15, con la clave ya bien — guides/maintaining/incident-log.md#case-azure-sql-enters-master-2026-09-15).
         if (typeof s.base === 'string' && s.base) hosts[host].base = s.base;
         // `puerto`: sólo cuando el servidor NO escucha en el 1433. La puerta lo pega al host al
         // conectarse; acá viaja aparte para que el host siga siendo una sola escritura.

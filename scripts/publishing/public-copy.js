@@ -473,7 +473,7 @@ function markPathsNotInCopy(text, file, opts) {
     const cp = codePath(s.content, installPrefixes);
     if (!cp || text.startsWith(NOT_IN_COPY_MARK, s.end)) continue;
     const p = cp.path;
-    if (cp.anchor && p === 'guides/incident-log.md') continue;
+    if (cp.anchor && p === 'guides/maintaining/incident-log.md') continue;
     const relativa = !cp.rootOnly && dir !== '.' ? path.posix.normalize(`${dir}/${p}`) : null;
     if (copyHas(p) || (relativa && copyHas(relativa))) continue;
     // la vecina del archivo es la lectura más específica: gana sobre una convención suelta que se llama igual (`tasks`)

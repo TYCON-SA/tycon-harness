@@ -335,7 +335,7 @@ test('T3 Config_ComentarioConDatoPersonal_Rechazado — un email, un token o un 
     });
   }
   // control: un comentario de verdad (texto del equipo) no molesta…
-  const sano = arnesCon({ __doc: 'perfil del equipo · ver guides/engram-workflow.md (story 8.3, 2026-09-26)', ado: { org: 'https://dev.azure.com/equipo' } });
+  const sano = arnesCon({ __doc: 'perfil del equipo · ver guides/integrations/engram-workflow.md (story 8.3, 2026-09-26)', ado: { org: 'https://dev.azure.com/equipo' } });
   assert.equal(lib().leer({ env: {}, home: casa(), arnes: sano }).valores.ado.org, 'https://dev.azure.com/equipo');
   // …y en el archivo de la máquina el mismo comentario personal se acepta (ahí sí vive lo de la persona)
   const home = casa();
@@ -1654,7 +1654,7 @@ test('8.29 · T17 Docs_PacksOrderSaidOnce @story-8.29 @ac-18 — donde se descri
   const RAIZ = path.join(SCRIPTS, '..');
   // el lector y el pipeline están en todo árbol; las guías, en el interno y en la copia que las trae
   const siempre = ['scripts/lib/tycon-config.js', 'skills/tycon-pipeline/scripts/lib/packs.js'];
-  const guias = ['guides/agent-architecture.md', 'guides/publicacion-espejo.md', 'guides/mecanismo-de-instalacion.md', 'INSTALL.md'];
+  const guias = ['guides/agent-architecture.md', 'guides/maintaining/publicacion-espejo.md', 'guides/maintaining/mecanismo-de-instalacion.md', 'INSTALL.md'];
   // el árbol interno se reconoce por el perfil del equipo, que la copia pública no trae: ahí tienen que estar los seis
   const interno = fs.existsSync(path.join(RAIZ, 'perfil-equipo.json'));
   // el orden de antes, escrito de corrido: la variable, y enseguida el archivo de la máquina

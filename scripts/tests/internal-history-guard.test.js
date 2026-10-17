@@ -52,7 +52,7 @@ const GREEN = {
   'product-story': 'una story que cerró sin su prueba, en un producto del equipo',
   'pr-number': 'un pull request, el pedido de cambio (2026-09-05)',
   'work-branch': 'la rama `story/<id>` o `feature/mi-cambio`',
-  'incident-log': 'el registro de incidentes (`guides/incident-log.md`)',
+  'incident-log': 'el registro de incidentes (`guides/maintaining/incident-log.md`)',
   'azure-run': 'la corrida de la validación, con 12511 líneas (corrida 2026-05-23)',
   'private-commit': 'el commit que lo retiró',
   'story-number': 'una story, `story <N.M>`, la story que se implementa',
@@ -807,11 +807,11 @@ test('InternalHistoryGuard_All_Ref_AndAnInternalErrorIsTwo — la cuenta de otro
 });
 
 test('InternalHistoryGuard_TeamPaths_Unit — relativa a su carpeta, el ancla del registro, la carpeta sola, y con separadores de Windows', () => {
-  const env = { has: (p) => ['guides/a.md', 'guides/sub/b.md', 'guides'].includes(p), team: (p) => ['tasks/plan.md', 'guides/sub/privado.md', 'guides/incident-log.md'].includes(p), conventions: ['tasks/todo.md'] };
+  const env = { has: (p) => ['guides/a.md', 'guides/sub/b.md', 'guides'].includes(p), team: (p) => ['tasks/plan.md', 'guides/sub/privado.md', 'guides/maintaining/incident-log.md'].includes(p), conventions: ['tasks/todo.md'] };
   const hits = (text, file) => ih.teamPaths(text, file, env).map((f) => f.value);
   assert.deepStrictEqual(hits('Ver `privado.md` y `b.md`.', 'guides/sub/a.md'), ['guides/sub/privado.md'], 'relativa a la carpeta del archivo');
   assert.deepStrictEqual(hits('Ver `privado.md`.', 'guides\\sub\\a.md'), ['guides/sub/privado.md'], 'con separadores de Windows, lo mismo');
-  assert.deepStrictEqual(hits(j('El caso: `guides/incident-log.md', '#caso-x`.'), 'guides/a.md'), [], 'el ancla del registro es de otra forma');
+  assert.deepStrictEqual(hits(j('El caso: `guides/maintaining/incident-log.md', '#caso-x`.'), 'guides/a.md'), [], 'el ancla del registro es de otra forma');
   assert.deepStrictEqual(hits('Tu `tasks/todo.md` y el `tasks/plan.md:12`.', 'guides/a.md'), ['tasks/plan.md'], 'la convención del lector pasa; `:N` no cambia la ruta');
   const pub = { has: () => false, team: null, roots: ['inbox'], conventions: [] };
   assert.deepStrictEqual(ih.teamPaths('La carpeta `inbox/`, la palabra `inbox` y `inbox/x.md`.', 'guides/a.md', pub).map((f) => f.value), ['inbox', 'inbox/x.md'], 'en el público, la carpeta sola cuenta escrita con su barra');
@@ -865,7 +865,7 @@ test('InternalHistoryGuard_Keys_WhatIdentifiesEachForm — lo neto cuenta por lo
   const other = (form, a, b) => assert.notStrictEqual(key(form, a), key(form, b), `${form}: «${a}» y «${b}» son distintas`);
   same('owner-decision', j('(decisión del dueño, ', '2026-10-06)'), j('2026-10-06', ': decisión del dueño'));
   other('owner-decision', j('(decisión del dueño, ', '2026-10-06)'), j('(decisión del dev, ', '2026-10-06)'));
-  same('incident-log', j('[caso](incident-log.md', '#caso-x)'), j('`guides/incident-log.md', '#caso-x`'));
+  same('incident-log', j('[caso](incident-log.md', '#caso-x)'), j('`guides/maintaining/incident-log.md', '#caso-x`'));
   other('incident-log', j('incident-log.md', '#caso-x'), j('incident-log.md', '#caso-y'));
   same('private-commit', j('commit ', '`ad4f498`'), j('Merge ', 'ad4f498'));
   same('azure-run', j('corrida ', '11738'), j('builds #', '11738'));
@@ -1477,7 +1477,7 @@ const isGuideOrCover = (file) => /^guides\//.test(file) || /^(README|INSTALL|sto
   || /^(getting-started|\.github)\//.test(file) || /^scripts\/publishing\/public-files\//.test(file);
 const MEASUREMENT = path.join(RAIZ, 'tasks', 'measurement-8.26-tanda-g');
 // El registro de incidentes de verdad vive sólo en el repo del equipo; la copia trae una página en su lugar.
-const TEAM_LOG = fs.existsSync(path.join(RAIZ, 'scripts', 'publishing', 'public-repos.json')) ? path.join(RAIZ, 'guides', 'incident-log.md') : null;
+const TEAM_LOG = fs.existsSync(path.join(RAIZ, 'scripts', 'publishing', 'public-repos.json')) ? path.join(RAIZ, 'guides', 'maintaining', 'incident-log.md') : null;
 
 test('PublishedGuidesAndCovers_NoInternalHistory (T26) — ninguna guía ni portada que se publica trae una forma de historia interna', () => {
   // la misma cuenta que `--all` (la línea de comandos la cuida la prueba de arriba), sobre el commit de HEAD
@@ -1598,7 +1598,7 @@ test('PublishedGuidesAndCovers_MeasurementScripts (T26) — los dos guiones de l
 });
 
 test('PublishedGuidesAndCovers_PublicLogPage (T26) — la página pública del registro no dice que las guías enlazan a ella', () => {
-  const page = TEAM_LOG ? path.join(RAIZ, 'scripts', 'publishing', 'public-files', 'guides', 'incident-log.md') : path.join(RAIZ, 'guides', 'incident-log.md');
+  const page = TEAM_LOG ? path.join(RAIZ, 'scripts', 'publishing', 'public-files', 'guides', 'maintaining', 'incident-log.md') : path.join(RAIZ, 'guides', 'maintaining', 'incident-log.md');
   const text = fs.readFileSync(page, 'utf8');
   assert.ok(!/links here|enlazan acá|Every guide still cites|Las guías los siguen citando/i.test(text), 'las guías ya no citan el caso ni enlazan a esta página');
   assert.match(text, /repo(sitorio)? de mantenimiento|maintenance repository/i, 'dice dónde viven los casos');
