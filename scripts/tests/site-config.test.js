@@ -1345,7 +1345,8 @@ test('Navegar_LoArmadoSeGuarda_HastaElRefrescoDeFondo', async () => {
   const fetch = async () => { consultas += 1; return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } }); };
   let reloj = AHORA;
   const remotos = { operaciones: { platform: 'github', org: 'acme', repo: 'ops', web: 'https://github.example/acme/ops' } };
-  const fuentes = fuentesCon({ ops: clon({ 'operations.json': opsBase() }) });
+  // el dev tiene una máquina a su nombre: entra al sitio como persona, no como alguien sin rol
+  const fuentes = fuentesCon({ ops: clon({ 'operations.json': opsBase() }), config: opsBase({ people: { machines: { 'maq-a': { person: DEV, reported_sha256: null, confirmed_by: LEAD, confirmed_on: '2026-10-01' } } } }) });
   await conPestana({ fuentes, env: { SITE_OPERATIONS_WRITE_TOKEN: ESCRITURA }, opciones: { fetch, remotos, urlBase: { github: 'http://127.0.0.1:9' }, ahora: () => reloj } }, async ({ h, entrar }) => {
     const lead = await entrar(LEAD);
     const a = await h.pedir('/api/config', { cookie: lead });
@@ -1355,6 +1356,13 @@ test('Navegar_LoArmadoSeGuarda_HastaElRefrescoDeFondo', async () => {
     const b = await h.pedir('/api/config', { cookie: lead });
     assert.strictEqual(consultas, primeras, 'abrirla otra vez no pregunta de nuevo');
     assert.strictEqual(b.texto, a.texto);
+    // lo guardado es sólo para quien mantiene: con la pestaña ya armada, un dev sigue recibiendo 403 y nada más
+    const dev = await entrar(DEV);
+    for (const ruta of ['/api/config', '/configuracion']) {
+      const r = await h.pedir(ruta, { cookie: dev });
+      assert.strictEqual(r.status, 403, ruta);
+      assert.ok(!r.texto.includes('operations.json') && !r.texto.includes('"secciones"'), `${ruta}: sin datos`);
+    }
     // los datos de fondo se refrescan: el modelo llega como un objeto nuevo
     fuentes.st.modelo = { ...fuentes.st.modelo };
     await h.pedir('/api/config', { cookie: lead });

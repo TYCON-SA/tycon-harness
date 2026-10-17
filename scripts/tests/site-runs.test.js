@@ -988,9 +988,17 @@ test('Navegar_LoArmadoPorPersonaSeGuarda_HastaQueCambianLosDatos', async () => {
       assert.strictEqual(n, 1, 'un clic más no filtra de nuevo');
       assert.strictEqual(b.texto, a.texto);
       assert.strictEqual(q.texto, p.texto);
-      await h.pedir('/api/corridas', { cookie: dev });
+      // lo guardado para el mantenedor nunca le llega a otra persona: el dev ve sólo lo suyo, en la lista y en la página
+      const ld = (await h.pedir('/api/corridas', { cookie: dev })).json;
       assert.strictEqual(n, 2, 'otra persona, su propio filtrado');
-      assert.notStrictEqual((await h.pedir('/api/corridas', { cookie: dev })).texto, a.texto, 'y no ve lo del mantenedor');
+      assert.deepStrictEqual([...new Set(ld.corridas.map((c) => c.maquina))], ['maq-a'], 'el dev, sólo sus corridas');
+      assert.ok(a.json.corridas.some((c) => c.maquina !== 'maq-a'), 'el mantenedor ve más que eso');
+      const pd = (await h.pedir('/corridas', { cookie: dev })).texto;
+      assert.notStrictEqual(pd, p.texto, 'la página del dev no es la del mantenedor');
+      assert.match(sinTags(pd), /Alcance: maq-a \d/);
+      assert.strictEqual(n, 2);
+      // y lo del dev tampoco vuelve al mantenedor
+      assert.strictEqual((await h.pedir('/api/corridas', { cookie: lead })).texto, a.texto);
       assert.strictEqual(n, 2);
       // los datos de fondo se refrescan: la configuración llega como un objeto nuevo y lo guardado ya no vale
       fuentes.st.config = { ...fuentes.st.config };
