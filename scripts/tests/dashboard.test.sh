@@ -1547,10 +1547,10 @@ rm -rf "$T"
 # ── C-61 · Suites_SeMideEnOtroLado_EnLaFicha @story-2.21 @ac-3 @ac-5 ──
 # 🔴 rojo previo: la ficha no lee `measuredElsewhere`; o `suites.json` no declara clean-machine.
 T=$(mktemp -d); montar_sano "$T"
-suites_rep "$T" '{"corridas":359,"failures":["a.test.sh"],"unmeasured":[],"complete":true,"measuredElsewhere":{"clean-machine.test.sh":"la mide la CI del repo público en cada pedido"}}'
+suites_rep "$T" '{"corridas":359,"failures":["a.test.sh"],"unmeasured":[],"complete":true,"measuredElsewhere":{"otra-ci.test.sh":"la mide la CI del repo público en cada pedido"}}'
 node "$TABLERO" --dir "$T" --output "$T/o.html" >/dev/null 2>&1
 F="$(ficha_html "$T/o.html" 'Suites del arnés en rojo')"
-{ echo "$F" | grep '<div class="t-val">1</div>' >/dev/null && echo "$F" | grep '1 se mide en otro lado: clean-machine.test.sh' >/dev/null \
+{ echo "$F" | grep '<div class="t-val">1</div>' >/dev/null && echo "$F" | grep '1 se mide en otro lado: otra-ci.test.sh' >/dev/null \
   && echo "$F" | grep 'la mide la CI del repo público en cada pedido' >/dev/null; } \
   && ok "C-61 la ficha dice aparte «1 se mide en otro lado», con su motivo" || mal "C-61 ${F:0:400}"
 suites_rep "$T" '{"corridas":359,"failures":["a.test.sh","clean-machine.test.sh(no-medida)"],"unmeasured":["clean-machine.test.sh(no-medida)"],"complete":false,"measuredElsewhere":{},"measuredElsewhereProblem":"no pude leer el registro de suites"}'
@@ -1561,7 +1561,7 @@ rm -rf "$T"
 python3 - "$RAIZ/scripts/tests/suites.json" <<'PY' && ok "C-61 suites.json declara clean-machine «se mide en otro lado», con el motivo (la CI pública en cada pedido)" || mal "C-61 la entrada de clean-machine no declara measured_elsewhere"
 import json, sys
 d = json.load(open(sys.argv[1]))
-e = [s for l in d.values() if isinstance(l, list) for s in l if isinstance(s, dict) and s.get('ruta') == 'tests/clean-machine.test.sh']
+e = [s for l in d.values() if isinstance(l, list) for s in l if isinstance(s, dict) and s.get('ruta') == 'tests/clean-machine.' + 'test.sh']   # por partes: el lector de dependencias tomaría la ruta entera como algo que esta prueba usa
 assert len(e) == 1, e
 m = e[0].get('measured_elsewhere')
 assert isinstance(m, str) and m.strip() and 'public-ci.sh --clean-machine' in m, m
@@ -1880,6 +1880,119 @@ PY
 node "$TABLERO" --dir "$T" --output "$T/o.html" >/dev/null 2>&1
 F="$(ficha_html "$T/o.html" 'Suites del arnés en rojo')"
 echo "$F" | grep '<div class="t-val">2</div>' >/dev/null && ok "C-60b una noche entera con dos rojas se mide como siempre" || mal "C-60b la noche entera no se midió: ${F:0:300}"
+rm -rf "$T"
+
+# ── story 2.26: la edad en el estado y la concentración por persona ───────────────────────────────────────────────
+# foto_proyecto <dir .dashboard> <proyecto> <stories JSON> — una foto por proyecto de hoy, con la forma de la 2.20
+foto_proyecto() {
+  mkdir -p "$1/proyectos"
+  printf '{"v":1,"generated_at":"%s","proyecto":"%s","repo":"Specs","stories":%s}\n' "$(hace 0)" "$2" "$3" > "$1/proyectos/$2__Specs.json"
+}
+STORIES_226='[{"id":"1.1","grupo":"en_curso","canonico":"in-progress","dias_en_estado":40},{"id":"1.2","grupo":"bloqueado","canonico":"blocked","dias_en_estado":70},{"id":"1.3","grupo":"en_curso","canonico":"in-progress","dias_en_estado":null},{"id":"1.4","grupo":"backlog","canonico":"backlog","dias_en_estado":200}]'
+EDAD_226='Stories empezadas que llevan más de'
+
+# ── C-2.26-FichaEdad_Pregunta1_NocturnoYLocal @story-2.26 @ac-7 ──
+# 🔴 rojo previo: la ficha no existe; o el nocturno y el local la arman distinto; o el backlog suma al titular.
+T=$(mktemp -d); montar_sano "$T"; foto_proyecto "$T" Otro "$STORIES_226"
+node "$TABLERO" --dir "$T" --output "$T/local.html" >/dev/null 2>&1
+node "$TABLERO" --nightly --dir "$T" --output "$T/noche.html" >/dev/null 2>&1
+FL="$(ficha_html "$T/local.html" "$EDAD_226")"; FN="$(ficha_html "$T/noche.html" "$EDAD_226")"
+Q1="$(python3 -c "import sys;h=open(sys.argv[1]).read();i=h.find('¿El trabajo fluye?');j=h.find('¿Lo que entregamos aguanta?');print(h[i:j])" "$T/local.html")"
+{ echo "$FL" | grep '<div class="t-val">2</div>' >/dev/null && echo "$FN" | grep '<div class="t-val">2</div>' >/dev/null && echo "$Q1" | grep -F "$EDAD_226" >/dev/null && echo "$Q1" | grep '1 sin dato' >/dev/null; } \
+  && ok "C-2.26 la ficha de edad en la pregunta 1, igual en el nocturno y en local (2 de lo empezado; el backlog no suma)" \
+  || mal "C-2.26 ficha de edad: local=${FL:0:300} · noche=${FN:0:200}"
+echo "$Q1" | grep '<details' >/dev/null && echo "$Q1" | grep 'Otro' >/dev/null && ok "C-2.26 el detalle desplegable producto × estado (el proyecto sin producto, con su nombre)" || mal "C-2.26 sin detalle por producto y estado"
+rm -rf "$T"
+T=$(mktemp -d); montar_sano "$T"
+node "$TABLERO" --dir "$T" --output "$T/o.html" >/dev/null 2>&1
+[ "$(ficha_estado "$T/o.html" "$EDAD_226")" = "blind" ] && ficha_html "$T/o.html" "$EDAD_226" | grep 'no hay fotos por proyecto' >/dev/null \
+  && ok "C-2.26 sin fotos: la ficha de edad sale gris con el motivo" || mal "C-2.26 sin fotos: $(ficha_html "$T/o.html" "$EDAD_226" | head -c 300)"
+rm -rf "$T"
+
+# ── C-2.26-Instrumentar_SinEdadEnEstado @story-2.26 @ac-8 ──
+# 🔴 rojo previo: «Edad en el estado actual» sigue en «lo que hay que instrumentar».
+python3 - "$RAIZ" <<'PY' && ok "C-2.26 «Edad en el estado» ya no está en instrument (las dos copias públicas)" || mal "C-2.26 instrument sigue nombrando la edad"
+import json,sys,os
+for f in ['scripts/nightly/dashboard/sources.json','pipelines/operations/examples/sources.json']:
+    d=json.load(open(os.path.join(sys.argv[1],f)))
+    assert not any('Edad en el estado' in i.get('what','') for i in d.get('instrument',[])), f
+PY
+
+# conc_226 <dir .dashboard> <días atrás> — el archivo de concentración, con 3 productos y 1 en riesgo
+conc_226() {
+  printf '{"v":1,"generated_at":"%s","ventana":{"desde":"x","hasta":"y"},"umbral":0.75,"min_commits":20,"productos":[{"producto":"Alfa","estado":"medido","motivo":null,"concentracion":0.91,"en_riesgo":true,"commits":120,"commits_de_maquina":30,"repos":[]},{"producto":"Beta","estado":"medido","motivo":null,"concentracion":0.5,"en_riesgo":false,"commits":80,"commits_de_maquina":0,"repos":[]},{"producto":"Gama","estado":"medido","motivo":null,"concentracion":0.6,"en_riesgo":false,"commits":40,"commits_de_maquina":2,"repos":[]},{"producto":"Delta","estado":"no_medido","motivo":"ningún repo medido","concentracion":null,"en_riesgo":null,"commits":null,"commits_de_maquina":null,"repos":[]}],"cobertura":{"productos_declarados":4,"productos_medidos":3,"repos_declarados":5,"repos_medidos":3}}\n' "$(hace "$2")" > "$1/author-concentration-$(fecha_hace "$2").json"
+}
+CONC_226='Productos donde una sola persona hizo el 75'
+
+# ── C-2.26-FichaConcentracion_NocturnoMedida @story-2.26 @ac-18 ──
+# 🔴 rojo previo: el `noAplica` del nocturno (la ficha decía «no aplica» todas las noches).
+T=$(mktemp -d); montar_sano "$T"; conc_226 "$T" 0
+node "$TABLERO" --nightly --dir "$T" --output "$T/o.html" >/dev/null 2>&1
+F="$(ficha_html "$T/o.html" "$CONC_226")"
+{ echo "$F" | grep '<div class="t-val">1</div>' >/dev/null && echo "$F" | grep 'Alfa 91' >/dev/null && ! echo "$F" | grep 'no aplica' >/dev/null; } \
+  && ok "C-2.26 la concentración se mide en el nocturno: 1 de 3 medidos, el detalle por producto" || mal "C-2.26 ficha nocturna: ${F:0:400}"
+grep -q 'el nocturno no los tiene' "$T/o.html" && mal "C-2.26 la nota de la pregunta 5 sigue diciendo que el nocturno no los tiene" || ok "C-2.26 la nota de la pregunta 5 ya no dice que el nocturno no los tiene"
+rm -rf "$T"
+
+# ── C-2.26-FichaConcentracion_ViejaOAusente_NoMedido @story-2.26 @ac-20 ──
+# 🔴 rojo previo: tomar el archivo viejo como de hoy, o pintar 0 sin archivo.
+for EDAD in 3 sin; do
+  T=$(mktemp -d); montar_sano "$T"; [ "$EDAD" = "sin" ] || conc_226 "$T" "$EDAD"
+  node "$TABLERO" --nightly --dir "$T" --output "$T/o.html" >/dev/null 2>&1
+  [ "$(ficha_estado "$T/o.html" "$CONC_226")" = "blind" ] && ! ficha_html "$T/o.html" "$CONC_226" | grep '<div class="t-val">0</div>' >/dev/null \
+    && ok "C-2.26 concentración $EDAD: gris con motivo, nunca 0" || mal "C-2.26 concentración $EDAD: $(ficha_html "$T/o.html" "$CONC_226" | head -c 300)"
+  rm -rf "$T"
+done
+
+# ── C-2.26-Local_MismaReglaQueElNocturno @story-2.26 @ac-10 @ac-19 ──
+# 🔴 rojo previo: dejar en dashboard.js el conteo propio, por nombre (dos alias de una persona la parten en dos).
+T=$(mktemp -d); mkdir -p "$T/scan" "$T/disco/A"
+git -c maintenance.auto=false -c gc.auto=0 -C "$T/disco/A" init -q -b main
+for i in $(seq 1 12); do GIT_AUTHOR_NAME="Ana" GIT_AUTHOR_EMAIL=ana@ej.test GIT_COMMITTER_NAME=x GIT_COMMITTER_EMAIL=x@ej.test git -C "$T/disco/A" commit -q --allow-empty -m "a $i"; done
+for i in $(seq 1 6); do GIT_AUTHOR_NAME="ana p" GIT_AUTHOR_EMAIL=ANA@ej.test GIT_COMMITTER_NAME=x GIT_COMMITTER_EMAIL=x@ej.test git -C "$T/disco/A" commit -q --allow-empty -m "b $i"; done
+for i in $(seq 1 6); do GIT_AUTHOR_NAME="Beto" GIT_AUTHOR_EMAIL=beto@ej.test GIT_COMMITTER_NAME=x GIT_COMMITTER_EMAIL=x@ej.test git -C "$T/disco/A" commit -q --allow-empty -m "c $i"; done
+git clone -q --no-checkout "file://$T/disco/A" "$T/scan/Acme__Back"
+R=$(node -e '
+const c = require(process.argv[1]); const e = [{ producto: "Acme", ado: "Acme/Back", ruta: "A" }];
+const maq = c.maquinasDe(require(process.argv[2]));
+const a = c.concentracion({ repos: c.resolverLocal(e, process.argv[3]), maquinas: maq }).productos;
+const b = c.concentracion({ repos: c.resolverNocturno(e, process.argv[4]), maquinas: maq }).productos;
+console.log(JSON.stringify(a) === JSON.stringify(b) ? `igual ${a[0].concentracion}` : `distinto ${JSON.stringify(a)} ${JSON.stringify(b)}`);
+' "$RAIZ/scripts/metrics/author-concentration.js" "$RAIZ/scripts/nightly/dashboard/sources.json" "$T/disco" "$T/scan")
+{ [ "$R" = "igual 0.75" ] && grep -q 'resolverLocal' "$TABLERO" && ! grep -q "format=%an'" "$TABLERO"; } \
+  && ok "C-2.26 la corrida local y el nocturno dan lo mismo con la misma función (alias unidos: 0.75)" || mal "C-2.26 local contra nocturno: $R"
+rm -rf "$T"
+
+# ── C-2.26-Organizacion_SinRepos_NoMedido_EdadPorProyecto @story-2.26 @ac-21 ──
+# 🔴 rojo previo: inventar productos, o pintar la concentración como cero sin la lista de la organización.
+if [ -f "$RAIZ/scripts/nightly/dependencies/repos.json" ]; then
+  echo "  (C-2.26 sin repos.json: este árbol trae la lista de la organización; NO MEDIDO acá)"
+else
+  T=$(mktemp -d); montar_sano "$T"; foto_proyecto "$T" Otro "$STORIES_226"
+  node "$TABLERO" --dir "$T" --output "$T/o.html" >/dev/null 2>&1
+  node "$TABLERO" --nightly --dir "$T" --output "$T/n.html" >/dev/null 2>&1
+  { ficha_html "$T/o.html" "$CONC_226" | grep 'la organización no declaró sus productos' >/dev/null && ficha_html "$T/n.html" "$CONC_226" | grep 'la organización no declaró sus productos' >/dev/null \
+    && grep -q 'Otro' "$T/o.html"; } && ok "C-2.26 sin la lista de la organización: la concentración no medida con su motivo; la edad por proyecto" \
+    || mal "C-2.26 sin repos.json: $(ficha_html "$T/o.html" "$CONC_226" | head -c 300)"
+  rm -rf "$T"
+fi
+
+# ── C-2.26-adv · lo que encontró el pase adversarial (2026-10-17) ──
+# 🔴 rojo previo: con ninguna story empezada con dato, la ficha publicaba un 0 medido («ninguna parada»).
+T=$(mktemp -d); montar_sano "$T"; foto_proyecto "$T" Otro '[{"id":"1.1","grupo":"en_curso","canonico":"in-progress","dias_en_estado":null}]'
+node "$TABLERO" --dir "$T" --output "$T/o.html" >/dev/null 2>&1
+[ "$(ficha_estado "$T/o.html" "$EDAD_226")" = "blind" ] && ok "C-2.26-adv sin ninguna story empezada con dato: la edad es «no medido», no un 0" || mal "C-2.26-adv edad sin dato: $(ficha_html "$T/o.html" "$EDAD_226" | head -c 300)"
+rm -rf "$T"
+# 🔴 rojo previo: la ficha tiraba el motivo que trae el archivo y decía siempre «ningún producto con 20 commits».
+T=$(mktemp -d); montar_sano "$T"
+printf '{"v":1,"generated_at":"%s","ventana":{},"umbral":0.75,"min_commits":20,"productos":[{"producto":"Alfa","estado":"no_medido","motivo":"sin la lista de identidades de máquina (sources.json → params.identidades_de_maquina)","concentracion":null,"en_riesgo":null,"commits":null,"commits_de_maquina":null,"repos":[]}],"cobertura":{"productos_declarados":1,"productos_medidos":0,"repos_declarados":1,"repos_medidos":0}}\n' "$(hace 0)" > "$T/author-concentration-$(fecha_hace 0).json"
+node "$TABLERO" --nightly --dir "$T" --output "$T/o.html" >/dev/null 2>&1
+ficha_html "$T/o.html" "$CONC_226" | grep 'sin la lista de identidades de máquina' >/dev/null && ok "C-2.26-adv sin productos medidos: la ficha dice el motivo que trae el archivo" || mal "C-2.26-adv motivo: $(ficha_html "$T/o.html" "$CONC_226" | head -c 300)"
+rm -rf "$T"
+# el detalle nombra los repos declarados medidos, no «con 20 commits» sobre todos los declarados
+T=$(mktemp -d); montar_sano "$T"; conc_226 "$T" 0
+node "$TABLERO" --nightly --dir "$T" --output "$T/o.html" >/dev/null 2>&1
+ficha_html "$T/o.html" "$CONC_226" | grep '3 de 5 repos declarados medidos' >/dev/null && ok "C-2.26-adv el detalle dice «X de Y repos declarados medidos»" || mal "C-2.26-adv detalle: $(ficha_html "$T/o.html" "$CONC_226" | head -c 300)"
 rm -rf "$T"
 
 echo

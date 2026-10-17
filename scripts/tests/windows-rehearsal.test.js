@@ -1541,20 +1541,20 @@ test('NpxPublished_Classify_UpToDateIsGreen_NewVersionOrNoNetworkIsNotMeasured_O
   assert.match(npx.againVerdict({ exit: 0, out: `${AT}; no pude mirar si hay una versión nueva (sin red o sin respuesta): para actualizarlo, x. No bajé nada.`, treeSame: true }).notMeasured, /no pudo mirar/);
   // cualquier otra cosa (reinstaló, salió 1, no dijo nada) → hallazgo con lo que dijo
   assert.match(npx.againVerdict({ exit: 1, out: 'tycon-harness: algo se rompió', treeSame: true }).finding, /salió 1.*algo se rompió/);
-  assert.match(npx.againVerdict({ exit: 0, out: 'bajo TYCON-SA/tycon-harness (main abc1234) a una carpeta temporal', treeSame: false }).finding, /no dijo «al día»/);
+  assert.match(npx.againVerdict({ exit: 0, out: 'bajo acme/arnes (main abc1234) a una carpeta temporal', treeSame: false }).finding, /no dijo «al día»/);
 
   // la primera corrida que falla: por la red o por el límite de GitHub → no medido (con su motivo); lo demás, «rompe»
   for (const out of [
     'tycon-harness: sin red: no pude llegar a api.github.com (ENOTFOUND). No bajé nada.',
     'tycon-harness: GitHub limita las consultas sin permiso de esta conexión hasta las 02:13: probá de nuevo después de esa hora. No bajé nada.',
-    'tycon-harness: GitHub contestó 503 al pedir la rama main de TYCON-SA/tycon-harness. No bajé nada.',
+    'tycon-harness: GitHub contestó 503 al pedir la rama main de acme/arnes. No bajé nada.',
     'tycon-harness: no pude bajar el comprimido (GitHub contestó 502): no quedó nada',
     'npm error code ENOTFOUND\nnpm error network request to https://registry.npmjs.org/@tyconsa%2fharness failed',
     'npm error code E503\nnpm error 503 Service Unavailable - GET https://registry.npmjs.org/@tyconsa%2fharness',
     'npm ERR! code ETIMEDOUT',
   ]) assert.strictEqual(npx.installFailureKind(out), 'not-measured', out);
   for (const out of [
-    'tycon-harness: GitHub no muestra TYCON-SA/tycon-harness (404): sin permiso. No bajé nada.',
+    'tycon-harness: GitHub no muestra acme/arnes (404): sin permiso. No bajé nada.',
     'tycon-harness: la instalación salió 1: la comprobación de salud no pasó',
     '',
   ]) assert.strictEqual(npx.installFailureKind(out), 'breaks', out);
@@ -1578,14 +1578,14 @@ test('NpxPublished_Classify_UpToDateIsGreen_NewVersionOrNoNetworkIsNotMeasured_O
   assert.strictEqual(npx.installFailureKind('skills de terceros: sin red: las repone harness.js update\ntycon-harness: la instalación salió 1: la comprobación de salud no pasó'), 'breaks');
   assert.strictEqual(npx.installFailureKind('harness.js install: sin red: no pude hablar con la ref main (ECONNRESET)\ntycon-harness: harness.js install salió 2'), 'not-measured');
   // la corrida que cortó el tope de la sonda: no se sabe si es la red o el paquete, y no es verde
-  assert.strictEqual(npx.installFailureKind('tycon-harness: bajo TYCON-SA/tycon-harness (main abc1234) a una carpeta temporal', { timedOut: true }), 'not-measured');
+  assert.strictEqual(npx.installFailureKind('tycon-harness: bajo acme/arnes (main abc1234) a una carpeta temporal', { timedOut: true }), 'not-measured');
 
   // la segunda corrida (clases 4 y 9): la red o el registro caído también ahí es «no medido»; «no pude mirar» por una causa
   // que no es la red (404, la rama que no está, una respuesta que no es la de git) es un hallazgo
   assert.ok(npx.againVerdict({ exit: 1, out: 'npm error code ENOTFOUND\nnpm error network request to https://registry.npmjs.org/@tyconsa%2fharness failed', treeSame: true }).notMeasured);
   assert.ok(npx.againVerdict({ exit: 1, out: 'npm error code E503\nnpm error 503 Service Unavailable', treeSame: true }).notMeasured);
   assert.ok(npx.againVerdict({ exit: null, out: '', treeSame: true, timedOut: true }).notMeasured);
-  for (const why of ['GitHub contestó 404', 'la rama main no aparece en TYCON-SA/tycon-harness', 'la respuesta no es la de git (¿un proxy o un portal?)']) {
+  for (const why of ['GitHub contestó 404', 'la rama main no aparece en acme/arnes', 'la respuesta no es la de git (¿un proxy o un portal?)']) {
     assert.match(npx.againVerdict({ exit: 0, out: `${AT}; no pude mirar si hay una versión nueva (${why}): para actualizarlo, x. No bajé nada.`, treeSame: true }).finding || '', /no pudo mirar la punta/, why);
   }
   for (const why of ['GitHub contestó 503', 'sin red: no pude llegar a github.com (ENOTFOUND)']) {

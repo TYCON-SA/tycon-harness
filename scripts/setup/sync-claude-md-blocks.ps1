@@ -17,6 +17,10 @@
 # se pudo saber (configuración rota, sin node, integración desconocida), no se agrega si falta, queda y se actualiza si
 # está, y una línea lo dice. Esa primera línea nunca se copia al CLAUDE.md.
 #
+# Los bloques de los paquetes que activa la organización (`packs/<p>/claude-md-blocks/<n>.md`, el bloque `packs/<p>/<n>`),
+# como el .sh: los lista `scripts/lib/pack-pieces.js blocks --json`; uno `packs/…` ya escrito cuyo paquete dejó de estar
+# activo, o que ya no lo trae, se quita; sin saber qué paquetes activa la organización, queda y una línea lo dice.
+#
 # Uso:
 #   .\sync-claude-md-blocks.ps1          # sincroniza
 #   .\sync-claude-md-blocks.ps1 -Check   # reporta qué está desactualizado, no modifica
@@ -239,6 +243,33 @@ function Select-SyncRows([string]$Body, [string]$Existing, [string]$Reader) {
     return (@($out) -join "`n")
 }
 
+# Los bloques de los paquetes activos, una sola vez: @{ Data = @{ active; blocks } ; Why } (Data $null si no se pudo saber).
+function Get-SyncPackBlocks([string]$Reader, [string]$Tree) {
+    $data = $null; $why = $null
+    if (-not (Test-Path $Reader)) { $why = 'no encontré el lector de paquetes (scripts/lib/pack-pieces.js)' }
+    elseif (-not (Get-Command node -ErrorAction SilentlyContinue)) { $why = 'falta node en el PATH' }
+    else {
+        try {
+            $out = & node $Reader blocks --json --tree $Tree 2>$null
+            $rc = $LASTEXITCODE
+            if ($rc -ne 0) { $why = "el lector de paquetes falló (exit $rc)" }
+            else {
+                $data = ($out | Out-String) | ConvertFrom-Json
+                if ($null -eq $data -or $null -eq $data.PSObject.Properties['blocks']) { $data = $null; $why = 'el lector de paquetes contestó algo que no se entiende' }
+                elseif ($null -eq $data.active) { $why = $(if ($data.error) { $data.error } else { 'no pude saber qué paquetes activa la organización' }); $data = $null }
+            }
+        } catch { $data = $null; $why = 'el lector de paquetes contestó algo que no se entiende' }
+    }
+    return @{ Data = $data; Why = $why }
+}
+# El archivo del que sale un bloque, como lo nombra su marca (el de su paquete, o claude-md-blocks/<n>.md).
+function Get-SyncBlockSource([string]$Name) {
+    $m = [regex]::Match($Name, '^packs/([^/]+)/([^/]+)$')
+    if ($m.Success) { return "packs/$($m.Groups[1].Value)/claude-md-blocks/$($m.Groups[2].Value).md" }
+    return "claude-md-blocks/$Name.md"
+}
+$SyncPackBlockRe = '<!--\s*TYCON_BLOCK:(packs/[^/\s>]+/[^/\s>]+)\s+START'
+
 try {
     $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
     $blocksDir = Join-Path (Split-Path -Parent (Split-Path -Parent $scriptDir)) 'claude-md-blocks'
@@ -254,6 +285,15 @@ try {
     # (Sort-Object compara con reglas de idioma y ordenaba distinto)
     $list = New-Object System.Collections.Generic.List[object]
     foreach ($f in $files) { $list.Add([pscustomobject]@{ Name = [IO.Path]::GetFileNameWithoutExtension($f.Name); Path = $f.FullName; Variant = (Test-SyncVariants $f.FullName) }) }
+    # y los de los paquetes activos, sólo si algún paquete trae bloques o el CLAUDE.md ya tiene uno (que hay que poder quitar)
+    $treeDir = Split-Path -Parent $blocksDir
+    $packs = $null
+    $peek = if (Test-Path $target) { ConvertTo-SyncLf ([IO.File]::ReadAllText($target)) } else { '' }
+    $packFiles = @(Get-ChildItem -Path (Join-Path $treeDir 'packs') -Directory -ErrorAction SilentlyContinue | ForEach-Object { Get-ChildItem -Path (Join-Path $_.FullName 'claude-md-blocks') -Filter '*.md' -File -ErrorAction SilentlyContinue })
+    if ([regex]::IsMatch($peek, $SyncPackBlockRe) -or $packFiles.Count) {
+        $packs = Get-SyncPackBlocks (Join-Path (Join-Path (Split-Path -Parent $scriptDir) 'lib') 'pack-pieces.js') $treeDir
+        if ($packs.Data) { foreach ($b in @($packs.Data.blocks)) { if ($b.name -and $b.file) { $list.Add([pscustomobject]@{ Name = [string]$b.name; Path = [string]$b.file; Variant = $false }) } } }
+    }
     $list.Sort([Comparison[object]] { param($a, $b) [string]::CompareOrdinal($a.Name, $b.Name) })
     $entries = $list.ToArray()   # (@($list) sobre una List genérica falla en pwsh: «Argument types do not match»)
     if ($entries.Count -eq 0) { exit 0 }
@@ -328,7 +368,7 @@ try {
             elseif ($unk.Count) { $state = 'unknown'; $why = $unk[0][1]; $whyKind = $unk[0][2] }
         }
 
-        $start = "<!-- TYCON_BLOCK:$name START — generado por scripts/setup/sync-claude-md-blocks.sh del arnés · NO EDITAR A MANO (se pisa en el próximo SessionStart); editá claude-md-blocks/$name.md y commiteá -->"
+        $start = "<!-- TYCON_BLOCK:$name START — generado por scripts/setup/sync-claude-md-blocks.sh del arnés · NO EDITAR A MANO (se pisa en el próximo SessionStart); editá $(Get-SyncBlockSource $name) y commiteá -->"
         $end = "<!-- TYCON_BLOCK:$name END -->"
         $desired = "$start`n$body`n$end"
         $final[$name] = $desired
@@ -383,6 +423,32 @@ try {
         if ($existing -ceq $desired) { continue }
         $content = $content.Substring(0, $i) + $desired + $content.Substring($j + $end.Length)
         $changed += , @($name, 'actualizado')
+    }
+
+    # Un bloque de paquete escrito que ya no corresponde (paquete inactivo, o que ya no lo trae) se va entre sus marcadores,
+    # como uno con su integración apagada (espejo del .sh). Sin saber qué paquetes activa la organización, queda.
+    $entryNames = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
+    foreach ($e in $entries) { [void]$entryNames.Add($e.Name) }
+    $orphans = New-Object System.Collections.Generic.List[string]
+    foreach ($m in [regex]::Matches($content, $SyncPackBlockRe)) { $n = $m.Groups[1].Value; if (-not $entryNames.Contains($n) -and -not $orphans.Contains($n)) { $orphans.Add($n) } }
+    $orphans.Sort([Comparison[string]] { param($a, $b) [string]::CompareOrdinal($a, $b) })
+    foreach ($name in $orphans) {
+        if (-not ($packs -and $packs.Data)) {
+            $unknown += "⚠ tycon: bloque CLAUDE.md '$name': no pude saber si su paquete está activo ($($packs.Why)): queda donde está"
+            continue
+        }
+        $end = "<!-- TYCON_BLOCK:$name END -->"
+        $i = $content.IndexOf("<!-- TYCON_BLOCK:$name START")
+        $j = $content.IndexOf($end, $i)
+        if ($j -lt 0) { $changed += , @($name, 'MARCADOR DE CIERRE FALTANTE — revisar a mano'); continue }
+        $pack = $name.Split('/')[1]
+        $offWhy = if (@($packs.Data.active) -contains $pack) { "el paquete «$pack» ya no lo trae" } else { "el paquete «$pack» no está activo" }
+        $before = $content.Substring(0, $i).TrimEnd("`n")
+        $after = $content.Substring($j + $end.Length)
+        if ($after.StartsWith("`n", [StringComparison]::Ordinal)) { $after = $after.Substring(1) }
+        if ($before -or $after) { $content = $before + "`n" + $after } else { $content = '' }
+        $changed += , @($name, "quitado ($offWhy)")
+        $removed[$name] = $offWhy
     }
 
     foreach ($c in $changed) {

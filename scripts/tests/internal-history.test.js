@@ -266,3 +266,52 @@ test('PublicHistory_StagedProse_PublicReferencesPass_InternalOnesBlock', (t) => 
   const bad = runOn(`Lo arregló el PR ${n('', 4504)}, en el commit \`${fx.internal.slice(0, 8)}\`.`, fx.publico);
   assert.deepStrictEqual(bad.findings.map((f) => f.form).sort(), ['pr-number', 'private-commit']);
 });
+
+// ── el repo de mantenimiento adelgazado: lo que se publica es lo que trae el público ─────────────────────────────────
+// En el árbol armado (el privado con el público encima, como lo arma su overlay-harness.js --after-cut) se mezclan los
+// archivos de los dos repos. Se publica lo que trae el público: lo que el commit de la superposición agrega o cambia
+// sobre la punta del privado. Lo sólo-privado (reemplazos de dos líneas, historia, el registro real) no cuenta, y una
+// versión propia del privado («own») tampoco: la del público la mide su CI.
+const DEUDA = n('DEF-', '9.9-de-juguete');   // una forma que el control reconoce, armada por partes
+const MARCA_SUPERPOSICION = '[superposición local, no se empuja]';
+function thinLab(t, { thinList = true, profile = false } = {}) {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ih-adelgazado-')));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const put = (rel, text) => { fs.mkdirSync(path.dirname(path.join(root, rel)), { recursive: true }); fs.writeFileSync(path.join(root, rel), text); };
+  gitIn(root, ['init', '--quiet', '--initial-branch=main']);
+  put('scripts/publishing/internal-history.json', fs.readFileSync(path.join(RAIZ, 'scripts', 'publishing', 'internal-history.json'), 'utf8'));
+  if (thinList) put('.tycon/internal-forms.json', `${JSON.stringify({ layout: 'thin', own: { 'guides/propia.md': 'la versión del privado' } })}\n`);
+  if (profile) { put('perfil-equipo.json', '{}\n'); put('scripts/publishing/replacements.json', '{}\n'); }
+  put('guides/privada.md', `# Sólo del privado\n\nLa deuda ${DEUDA} sigue abierta.\n`);
+  put('guides/propia.md', `# La versión propia\n\nLa deuda ${DEUDA} sigue abierta.\n`);
+  gitIn(root, ['add', '-A']);
+  gitIn(root, ['commit', '--quiet', '-m', 'la punta del privado']);
+  const tip = gitIn(root, ['rev-parse', 'HEAD']);
+  put('guides/publica.md', `# Del público\n\nLa deuda ${DEUDA} sigue abierta.\n`);
+  gitIn(root, ['add', '-A']);
+  gitIn(root, ['commit', '--quiet', '-m', `arnés de GitHub ${'a'.repeat(40)} sobre la punta ${tip} del privado, adelgazado ${MARCA_SUPERPOSICION}`]);
+  return { root, tip };
+}
+const allOf = (repo) => require('../publishing/internal-history.js').run({ mode: 'all', repo, ref: 'HEAD', config: null });
+
+test('ThinOverlay_PublishedIsWhatThePublicBrings_PrivateOnlyAndOwnNotCounted', (t) => {
+  const lab = thinLab(t);
+  const d = allOf(lab.root);
+  assert.strictEqual(d.mode, 'thin', 'el repo con la lista del adelgazado se mide como adelgazado');
+  assert.deepStrictEqual(Object.keys(d.files), ['guides/publica.md'], 'cuenta sólo lo que trajo el público');
+  assert.deepStrictEqual(d.paths.filter((p) => p.startsWith('guides/')), ['guides/publica.md'], 'lo sólo-privado y lo propio ni se miran');
+  // sin la superposición, el árbol es sólo lo privado: no se publica nada
+  gitIn(lab.root, ['checkout', '--quiet', lab.tip]);
+  assert.deepStrictEqual(allOf(lab.root).files, {}, 'la punta del privado sola no publica nada');
+});
+
+test('ThinOverlay_PublicAndTeamClassificationUnchanged', (t) => {
+  // sin la lista del adelgazado, el mismo árbol se mide como el público: todo lo versionado
+  const pub = allOf(thinLab(t, { thinList: false }).root);
+  assert.strictEqual(pub.mode, 'public');
+  assert.deepStrictEqual(Object.keys(pub.files).sort(), ['guides/privada.md', 'guides/propia.md', 'guides/publica.md']);
+  // con el perfil y la tabla (el repo del equipo de antes del corte) sigue el camino del equipo, no el del adelgazado
+  let mode = null;
+  try { mode = allOf(thinLab(t, { thinList: false, profile: true }).root).mode; } catch (e) { mode = `no pudo: ${e.message}`; }
+  assert.ok(mode === 'team' || /repo unido/.test(String(mode)), `el clon del equipo sigue clasificado como del equipo (salió ${mode})`);
+});

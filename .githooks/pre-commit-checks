@@ -157,6 +157,20 @@ elif [ -f "$REPO_ROOT/team-profile.json" ] || [ -f "$REPO_ROOT/perfil-equipo.jso
   exit 1
 fi
 
+# ── La historia interna en los comentarios del código ──
+# Un comentario dice qué hace el código y por qué, en presente (guides/maintaining/estilo-de-codigo.md). Mira lo que el
+# commit AGREGA a los comentarios, neto por archivo: una línea vieja con historia que el commit no suma no frena. Sólo en el
+# árbol que se publica: en el repo del equipo dice que no aplica, y en un repo sin el guion no corre. El modo de cada forma
+# está en scripts/publishing/internal-history.json → zones.comment; la misma variable TYCON_INTERNAL_HISTORY lo baja.
+# Casos: scripts/tests/code-comments.test.js
+INTERNAL_HISTORY="$REPO_ROOT/scripts/publishing/internal-history.js"
+if [ -f "$INTERNAL_HISTORY" ]; then
+  if ! node "$INTERNAL_HISTORY" --repo "$REPO_ROOT" --zone comment >/dev/null; then
+    echo "⛔ COMMIT RECHAZADO — historia interna en un comentario nuevo, o no se pudo mirar (arriba dice dónde y qué hacer)." >&2
+    exit 1
+  fi
+fi
+
 # ── El mapa de renombres ──
 # Si el commit lo toca, se valida el del índice (no el del disco): repetidos, un nombre nuevo en castellano, uno que
 # choca, un valor sin su script o un archivo que llaman de afuera sin su reemplazo frenan.

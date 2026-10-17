@@ -31,13 +31,13 @@ Bajar el arnés va siempre sin credencial y casi no pasa por la API: gasta una s
 
 1. Herramientas:
    node --version; npx --version; python3 --version; tar --version
-   Esperado: node v22 o más, npx, python3 3.algo, y tar. Lo que falte lo instalo YO (pide mi contraseña de sudo): decime
+   Esperado: node v24 (con v22 también anda), npx, python3 3.algo, y tar. Lo que falte lo instalo YO (pide mi contraseña de sudo): decime
    cuál falta y el comando, de a uno:
      python3:  sudo apt install -y python3
      tar:      sudo apt install -y tar
      npx:      sudo apt install -y npm (el node de la distribución puede venir sin npm; con nvm viene)
-     node 22+: los repos de la distribución suelen traer una versión vieja. Decime que lo instale con nvm
-               (https://github.com/nvm-sh/nvm, «Installing and Updating») y después «nvm install 22». Vos no corras
+     node 24:  los repos de la distribución suelen traer una versión vieja. Decime que lo instale con nvm
+               (https://github.com/nvm-sh/nvm, «Installing and Updating») y después «nvm install 24». Vos no corras
                ese instalador.
    Después volvé a correr los cuatro --version. (git NO hace falta: el arnés se baja como archivos, no se clona.)
 

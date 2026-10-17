@@ -422,8 +422,27 @@ function Record-BlocksPlan {
             $isVariant = [bool]([regex]::Match([IO.File]::ReadAllText($f.FullName).Replace("`r`n", "`n"), '^(?:<!--\s*requires-(?:integration|profile):[^\n]*-->\n)*<!--\s*variants:\s*response\s*-->\s*(?:\n|$)').Success)
             $list.Add([pscustomobject]@{ Name = [IO.Path]::GetFileNameWithoutExtension($f.Name); Path = $f.FullName; Variant = $isVariant })
         }
+        # los bloques de los paquetes activos (`packs/<p>/<n>`), como los lista el sync; uno de paquete escrito que ya no
+        # corresponde es un «remove»; sin saber qué paquetes activa la organización, «keep»
+        $packRe = '<!--\s*TYCON_BLOCK:(packs/[^/\s>]+/[^/\s>]+)\s+START'
+        $packFiles = @(Get-ChildItem -Path (Join-Path $tree 'packs') -Directory -ErrorAction SilentlyContinue | ForEach-Object { Get-ChildItem -Path (Join-Path $_.FullName 'claude-md-blocks') -Filter '*.md' -File -ErrorAction SilentlyContinue })
+        $packData = $null; $packAsked = $false
+        if ([regex]::IsMatch($content, $packRe) -or $packFiles.Count) {
+            $packAsked = $true
+            try {
+                $pout = & node (Join-Path (Join-Path (Join-Path $tree 'scripts') 'lib') 'pack-pieces.js') blocks --json --tree $tree 2>$null
+                if ($LASTEXITCODE -eq 0) { $pd = ($pout | Out-String) | ConvertFrom-Json; if ($pd -and $null -ne $pd.active) { $packData = $pd } }
+            } catch { }
+            if ($packData) { foreach ($b in @($packData.blocks)) { if ($b.name -and $b.file) { $list.Add([pscustomobject]@{ Name = [string]$b.name; Path = [string]$b.file; Variant = $false }) } } }
+        }
         $list.Sort([Comparison[object]] { param($a, $b) [string]::CompareOrdinal($a.Name, $b.Name) })
         $entries = $list.ToArray()   # (@($list) sobre una List genérica falla en pwsh)
+        $listed = @($entries | ForEach-Object { $_.Name })
+        foreach ($m in [regex]::Matches($content, $packRe)) {
+            $n = $m.Groups[1].Value
+            if ($listed -ccontains $n) { continue }
+            Record-Plan 'block' $target "TYCON_BLOCK:$n" $(if ($packAsked -and $packData) { 'remove' } else { 'keep' })
+        }
         foreach ($e in $entries) {
             $name = $e.Name
             $present = $content.Contains("<!-- TYCON_BLOCK:$name START")
@@ -466,7 +485,8 @@ function Record-BlocksPlan {
                 $row = $m.Groups[1].Value.TrimEnd()
                 if ($IntegEstado -eq 'ok') { if (Integ-Prendida $m.Groups[2].Value) { $row } } elseif ($prev.Contains($row)) { $row }
             }) -join "`n")
-            $start = "<!-- TYCON_BLOCK:$name START — generado por scripts/setup/sync-claude-md-blocks.sh del arnés · NO EDITAR A MANO (se pisa en el próximo SessionStart); editá claude-md-blocks/$name.md y commiteá -->"
+            $src = if ($name -match '^packs/([^/]+)/([^/]+)$') { "packs/$($Matches[1])/claude-md-blocks/$($Matches[2]).md" } else { "claude-md-blocks/$name.md" }
+            $start = "<!-- TYCON_BLOCK:$name START — generado por scripts/setup/sync-claude-md-blocks.sh del arnés · NO EDITAR A MANO (se pisa en el próximo SessionStart); editá $src y commiteá -->"
             $action = if ($content.Contains("$start`n$body`n<!-- TYCON_BLOCK:$name END -->")) { 'keep' } elseif ($present) { 'update' } else { 'add' }
             Record-Plan 'block' $target "TYCON_BLOCK:$name" $action
         }

@@ -32,6 +32,8 @@ const ALLOWED = 'scripts/tests/fixtures/internal-history-allowed.json';
 const ih = require(GUARD);
 const { INTERNAL_START, INTERNAL_END } = require(path.join(RAIZ, 'scripts', 'publishing', 'public-copy.js'));
 const j = (...parts) => parts.join('');
+// las formas que mira la prosa (las de los comentarios de código tienen su propia suite: code-comments.test.js)
+const PROSE_FORMS = Object.keys(ih.FORMS).filter((f) => (ih.FORMS[f].zones || ['prose']).includes('prose'));
 
 // ── los ejemplos, por partes ─────────────────────────────────────────────────────────────────────────────────────
 const RED = {
@@ -134,7 +136,7 @@ function publicLab() {
 // ══ T27 · las formas ══════════════════════════════════════════════════════════════════════════════════════════════
 
 test('InternalHistoryGuard_Scan_EachFormHasARedAndAGreen — cada forma ve su ejemplo rojo y deja pasar el verde', () => {
-  const textual = Object.keys(ih.FORMS).filter((f) => f !== 'team-path');
+  const textual = PROSE_FORMS.filter((f) => f !== 'team-path');
   assert.deepStrictEqual(Object.keys(RED).sort(), textual.sort(), 'un rojo por cada forma de texto (si entra una forma, entra con su ejemplo)');
   for (const form of textual) {
     const red = ih.scan(`Una línea.\n${RED[form]}\n`, 'prose').filter((f) => f.form === form);
@@ -162,7 +164,7 @@ test('InternalHistoryGuard_Scan_CodeAndMessageZones_OnlyPrNumber — fuera de la
     assert.deepStrictEqual([...new Set(ih.scan(all, zone).map((f) => f.form))], ['pr-number'], zone);
   }
   assert.deepStrictEqual(ih.scan(j('story/', '8.26-G: ', '(story ', '8.26)'), 'message'), [], 'el número de una story del arnés pasa en una rama y en un mensaje');
-  assert.deepStrictEqual(ih.ZONES, ['prose', 'code', 'message']);
+  assert.deepStrictEqual(ih.ZONES, ['prose', 'code', 'message', 'comment']);
 });
 
 test('InternalHistoryGuard_Scan_BadInputThrows — no poder mirar nunca es «sin hallazgos»', () => {
@@ -783,7 +785,9 @@ test('InternalHistoryGuard_Cli_HelpUnknownAndMissingValue — la línea de coman
   assert.match(guard(l, { args: ['--help'] }).stdout, /--range/);
   for (const bad of [['--does-not-exist'], ['--range'], ['--config']]) assert.strictEqual(guard(l, { args: bad }).code, 2, bad.join(' '));
   assert.throws(() => ih.parseArgs(['--ref']), ih.CouldNot);
-  assert.deepStrictEqual(ih.parseArgs(['--all', '--json', '--ref', 'abc']), { mode: 'all', repo: null, range: null, json: true, ref: 'abc', config: null, publicRemote: null });
+  assert.deepStrictEqual(ih.parseArgs(['--all', '--json', '--ref', 'abc']), { mode: 'all', zone: 'prose', repo: null, range: null, json: true, ref: 'abc', config: null, publicRemote: null });
+  assert.strictEqual(ih.parseArgs(['--zone', 'comment']).zone, 'comment', 'la zona de los comentarios');
+  assert.throws(() => ih.parseArgs(['--zone', 'code']), ih.CouldNot, 'una zona que no se pide por línea de comandos');
   assert.strictEqual(ih.parseArgs(['--public-remote', 'origin']).publicRemote, 'origin', 'el repo público se puede decir');
 });
 
@@ -1213,10 +1217,10 @@ test('InternalHistoryGuard_GuardRecord_EveryDecision_ByCode — cada decisión d
   }
 });
 
-// El modo que decide si el commit se crea es el que ENTRA en el commit (el del índice), como la lista de datos
-// declarados: editar `mode` sin stagear no baja el control callado. Hace falta el control adentro del repo que se
-// commitea, como en el arnés: el laboratorio se lleva el guion y lo que carga.
-test('InternalHistoryGuard_WrittenMode_IsTheStagedOne — una edición sin stagear de la configuración no baja el control', () => {
+// El modo que decide si el commit se crea es el de la BASE: ni editar `mode` sin stagear ni stagearlo bajan el control
+// sobre el commit que lo trae; rige desde el siguiente. Hace falta el control adentro del repo que se commitea, como en el
+// arnés: el laboratorio se lleva el guion y lo que carga.
+test('InternalHistoryGuard_WrittenMode_IsTheBaseOne — la configuración que trae un commit no baja el control sobre ese commit', () => {
   const l = publicLab();
   const copy = (rel) => { const to = path.join(l.repo, rel); fs.mkdirSync(path.dirname(to), { recursive: true }); fs.copyFileSync(path.join(RAIZ, rel), to); };
   for (const rel of ['scripts/publishing/internal-history.js', 'scripts/publishing/internal-history.json', 'scripts/publishing/public-copy.js',
@@ -1238,16 +1242,22 @@ test('InternalHistoryGuard_WrittenMode_IsTheStagedOne — una edición sin stage
   const unstaged = own();
   assert.strictEqual(unstaged.code, 1, `la edición sin stagear no baja el control\n${unstaged.out}`);
   assert.match(unstaged.stdout, /findings=1 cannot_look=0 mode=block/);
-  // stageada, entra en el commit y vale: avisa (y se ve en el diff del commit)
+  // stageada tampoco se la aplica a su propio commit: vale la de la base (un pedido no se baja el freno a sí mismo)
   git(l.repo, ['add', 'scripts/publishing/internal-history.json']);
   const staged = own();
-  assert.strictEqual(staged.code, 0, staged.out);
-  assert.match(staged.stdout, /mode=warn/);
+  assert.strictEqual(staged.code, 1, `la configuración que trae el commit no rige para ese commit\n${staged.out}`);
+  assert.match(staged.stdout, /mode=block/);
+  // commiteada, rige desde el commit siguiente: avisa
+  git(l.repo, ['commit', '-q', '-m', 'la configuración en aviso']);
+  stage(l.repo, { 'guides/a.md': `# Guía\n\n${RED['batch-code']} y otra\n` });
+  const next = own();
+  assert.strictEqual(next.code, 0, next.out);
+  assert.match(next.stdout, /mode=warn/);
   // corrido desde OTRO árbol (el control del arnés sobre este repo), su configuración es la suya: no lee la de acá
   assert.match(guard(l, { mode: null }).stdout, /mode=block/);
-  // sacarla del índice dejando en el disco una copia en aviso tampoco lo baja: el repo la versiona, así que vale la
+  // sacarla del índice dejando en el disco una copia en aviso tampoco lo baja: la base la versiona, así que vale la
   // que está commiteada (en `block`), no la copia que no entra en el commit
-  git(l.repo, ['reset', '-q', '--hard']);
+  git(l.repo, ['reset', '-q', '--hard', 'HEAD~1']);
   stage(l.repo, { 'guides/a.md': `# Guía\n\n${RED['batch-code']}\n` });
   git(l.repo, ['rm', '-q', '--cached', 'scripts/publishing/internal-history.json']);
   fs.writeFileSync(configFile, `${JSON.stringify({ ...written, mode: 'warn' }, null, 2)}\n`);
@@ -1440,7 +1450,10 @@ test('InternalHistoryGuard_PreCommitHook_MissingScript_Live — sin el guion, un
 test('InternalHistoryGuard_RealConfig_Sane — la configuración que viaja se entiende y cada forma tiene su modo', () => {
   const config = JSON.parse(fs.readFileSync(path.join(RAIZ, 'scripts', 'publishing', 'internal-history.json'), 'utf8'));
   assert.ok(['warn', 'block'].includes(config.mode), 'el modo escrito');
-  assert.deepStrictEqual(Object.keys(config.forms).sort(), Object.keys(ih.FORMS).sort(), 'una entrada por forma, ni una más');
+  assert.deepStrictEqual(Object.keys(config.forms).sort(), [...PROSE_FORMS].sort(), 'una entrada por forma de la prosa, ni una más');
+  const commentForms = Object.keys(ih.FORMS).filter((f) => (ih.FORMS[f].zones || []).includes('comment'));
+  assert.deepStrictEqual(Object.keys(config.zones.comment.forms).sort(), commentForms.sort(), 'una entrada por forma de los comentarios, ni una más');
+  for (const [form, f] of Object.entries(config.zones.comment.forms)) assert.ok(['warn', 'block'].includes(f.mode), `comentarios · ${form}: su modo`);
   for (const [form, f] of Object.entries(config.forms)) assert.ok(['warn', 'block'].includes(f.mode), `${form}: su modo`);
   assert.ok(Array.isArray(config.nonPublicRoots) && config.nonPublicRoots.length, 'las carpetas que no son públicas');
   // en el repo del equipo, esas carpetas son destinos no públicos del reparto (en la copia el reparto no viaja)
@@ -1464,7 +1477,7 @@ test('InternalHistoryGuard_RealRepo_AllRuns_NoStaleDeclarations — sobre este r
   const r = spawnSync(process.execPath, [GUARD, '--repo', RAIZ, '--all', '--json'], { cwd: RAIZ, encoding: 'utf8', env: cleanEnv({ HOME: home, USERPROFILE: home }) });
   assert.strictEqual(r.status, 0, `${r.stdout}${r.stderr}`);
   const d = JSON.parse(r.stdout);
-  assert.ok(['team', 'public'].includes(d.mode));
+  assert.ok(['team', 'public', 'thin'].includes(d.mode), `modo inesperado: ${d.mode}`);
   assert.strictEqual(typeof d.total, 'number');
   assert.deepStrictEqual(d.stale, [], 'una declaración que ya no hace falta, sale');
 });
@@ -1488,8 +1501,11 @@ test('PublishedGuidesAndCovers_NoInternalHistory (T26) — ninguna guía ni port
   assert.deepStrictEqual(left, [], 'cada guía y cada portada dice la regla y su porqué, sin el caso: lo que es un dato o un ejemplo se declara, con su motivo');
   // y el cero no es un cero vacío: el control miró las portadas y las guías
   const looked = d.paths.filter(isGuideOrCover);
-  for (const f of ['README.md', 'INSTALL.md', 'story-format.md']) assert.ok(looked.includes(f), `${f} está entre lo mirado`);
-  assert.ok(looked.filter((f) => f.startsWith('guides/')).length >= 40, `las guías están entre lo mirado (${looked.length} archivos)`);
+  // en el repo de mantenimiento con el público encima, INSTALL.md es la versión propia del privado: la del público la
+  // mide su CI, y acá no se mira
+  const thin = d.mode === 'thin';
+  for (const f of ['README.md', 'INSTALL.md', 'story-format.md']) if (!(thin && f === 'INSTALL.md')) assert.ok(looked.includes(f), `${f} está entre lo mirado`);
+  assert.ok(looked.filter((f) => f.startsWith('guides/')).length >= 30, `las guías están entre lo mirado (al menos 30: el piso prueba que miró, no cuenta las guías) (${looked.length} archivos)`);
 });
 
 // Esta es un SELLO, no una medición: lee la cuenta que la tanda dejó escrita y mira que sea coherente. El cero de hoy

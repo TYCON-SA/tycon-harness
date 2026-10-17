@@ -534,6 +534,29 @@ for f in "${A}/deps.out" "${A}/vig.out" "${A}/hallazgo.out" "${A}/deps/out/depen
 done
 [ "${FUGA_WH}" -eq 0 ] && ok "2.30-T25 la dirección del webhook no aparece en la salida ni en las constancias" || mal "2.30-T25 🔴 la dirección del webhook se filtró"
 
+# ── 2.26-ConcentracionSinNombres @story-2.26 @ac-15 ──
+# La concentración por persona se publica por producto, nunca con quién es. Se siembra un autor en los commits, se
+# pasa por el guion del nocturno y por el tablero nocturno, y ni el nombre ni el correo pueden llegar a la página.
+# 🔴 rojo previo: imprimir el autor principal en el detalle de la ficha, o guardarlo en el archivo de concentración.
+C26="$(mktemp -d)"; mkdir -p "${C26}/scan/Acme__Back" "${C26}/.dashboard"
+M_AUTOR="Zqx Persona Sembrada"; M_AUTOR_CORREO="zqx-sembrada@ej.test"
+git -c maintenance.auto=false -c gc.auto=0 -C "${C26}/scan/Acme__Back" init -q -b main
+for i in $(seq 1 22); do GIT_AUTHOR_NAME="${M_AUTOR}" GIT_AUTHOR_EMAIL="${M_AUTOR_CORREO}" GIT_COMMITTER_NAME=x GIT_COMMITTER_EMAIL=x@ej.test \
+  git -c maintenance.auto=false -C "${C26}/scan/Acme__Back" commit -q --allow-empty -m "c ${i}"; done
+printf '{ "repos": [{ "producto": "ProductoSembrado", "ado": "Acme/Back" }] }\n' > "${C26}/repos.json"
+HOY26="$(date -u +%Y-%m-%d)"
+node "${RAIZ}/scripts/metrics/author-concentration.js" --scan "${C26}/scan" --products "${C26}/repos.json" --out "${C26}/.dashboard/author-concentration-${HOY26}.json" > "${C26}/conc.out" 2>&1
+node "${TABLERO}" --nightly --dir "${C26}/.dashboard" --output "${C26}/pagina.html" > "${C26}/tablero.out" 2>&1
+FUGA26=0
+for M in "${M_AUTOR}" "${M_AUTOR_CORREO}" "Zqx" "zqx-sembrada"; do
+  for f in "${C26}/.dashboard/author-concentration-${HOY26}.json" "${C26}/conc.out" "${C26}/pagina.html" "${C26}/tablero.out"; do
+    if grep -qiF -- "${M}" "${f}" 2>/dev/null; then mal "2.26 fuga: «${M}» aparece en ${f#${C26}/}"; FUGA26=1; fi
+  done
+done
+[ "${FUGA26}" -eq 0 ] && ok "2.26 el autor sembrado no llega ni al archivo de concentración ni a la página"
+grep -qF 'ProductoSembrado' "${C26}/pagina.html" && ok "2.26 control positivo: el producto sí llega a la página" || mal "2.26 control positivo: el producto no está en la página"
+rm -rf "${C26}"
+
 echo
 [ "${FALLOS}" -eq 0 ] && { echo "todo verde"; exit 0; }
 echo "${FALLOS} fallo(s)"; exit 1

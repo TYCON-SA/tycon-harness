@@ -18,6 +18,13 @@ alguien de afuera no ve.
 Vale para el código y los guiones del arnés. Los controles del commit (`.githooks/pre-commit` y
 `.githooks/pre-commit-checks`) la cumplen y una prueba lo mide (`scripts/tests/hook-comments.test.js`).
 
+Un freno la cuida en lo nuevo: el control de historia interna mira lo que cada commit **agrega** a los comentarios del
+árbol que se publica (`node scripts/publishing/internal-history.js --zone comment`), al commitear y en la revisión de
+cada pedido. Un comentario viejo con historia que el commit no toca no frena. Un dato que tiene que quedar tal cual (una
+fecha de vencimiento, por ejemplo) se declara en `scripts/tests/fixtures/internal-history-allowed.json` con su archivo,
+su forma, el valor exacto y el motivo. La cuenta de todo: `--zone comment --all --json`. Casos:
+`scripts/tests/code-comments.test.js`.
+
 ## Ejemplos
 
 ✅ Bien — dice qué hace y por qué, en presente:

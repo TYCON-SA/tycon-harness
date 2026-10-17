@@ -61,6 +61,12 @@
 # con `--check` sólo avisa que sobra); si no se pudo saber, como «no se pudo saber». Apagado por una de las dos razones
 # alcanza. Con `full` o sin valor, el CLAUDE.md queda byte a byte como antes de que existiera el marcador.
 #
+# Un paquete también puede traer reglas siempre cargadas: los `.md` de `packs/<paquete>/claude-md-blocks/`, que se escriben
+# como el bloque `packs/<paquete>/<nombre>` mientras la organización activa ese paquete (`packs.default`, el mismo que enlaza
+# sus revisores y sus skills; lo dice `scripts/lib/pack-pieces.js blocks --json`). Llevan los mismos marcadores de
+# integración y de perfil. Un bloque `packs/…` ya escrito cuyo paquete dejó de estar activo, o que ya no lo trae, se quita
+# entre sus marcadores; si no se pudo saber qué paquetes activa la organización, queda donde está y una línea lo dice.
+#
 # Uso:
 #   ./sync-claude-md-blocks.sh          # sincroniza
 #   ./sync-claude-md-blocks.sh --check  # reporta qué está desactualizado, no modifica
@@ -97,11 +103,12 @@ fi
 [[ -d "$BLOCKS_DIR" ]] || exit 0
 command -v python3 >/dev/null 2>&1 || exit 0
 
-python3 - "$BLOCKS_DIR" "$TARGET" "$CHECK_ONLY" "$SCRIPT_DIR/../lib/tycon-config.js" <<'PYEOF'
+python3 - "$BLOCKS_DIR" "$TARGET" "$CHECK_ONLY" "$SCRIPT_DIR/../lib/tycon-config.js" "$SCRIPT_DIR/../lib/pack-pieces.js" <<'PYEOF'
 import os, sys, glob, datetime, tempfile, re, json, subprocess
 
 blocks_dir, target, check_only = sys.argv[1], sys.argv[2], sys.argv[3] == "1"
 config_reader = sys.argv[4]
+packs_reader = sys.argv[5]
 
 # Las primeras líneas de un bloque pueden declarar la integración que requiere y el perfil de instalación que requiere
 # (story 8.16, tanda C · AC 24): `<!-- requires-integration: <x> -->` y `<!-- requires-profile: full -->`, una de cada una
@@ -359,10 +366,41 @@ def plan(kind, where, ident, action):
         # incompleto como si estuviera entero
         print("⚠ tycon: no pude anotar el bloque %s en el plan (%s)" % (ident, e))
 
+# Los bloques de los paquetes que activa la organización: `packs/<p>/claude-md-blocks/<n>.md`, escritos como el bloque
+# `packs/<p>/<n>`. Los lista `scripts/lib/pack-pieces.js blocks --json` (el mismo lector que el .ps1 y agents-md-blocks.js).
+PACK_BLOCK_RE = re.compile(r"<!--\s*TYCON_BLOCK:(packs/[^/\s>]+/[^/\s>]+)\s+START")
+
+def ask_pack_blocks():
+    """({active, blocks}, None) o (None, por qué no se pudo saber qué paquetes activa la organización)."""
+    if not os.path.isfile(packs_reader):
+        return None, "no encontré el lector de paquetes (scripts/lib/pack-pieces.js)"
+    try:
+        r = subprocess.run(["node", packs_reader, "blocks", "--json", "--tree", os.path.dirname(os.path.abspath(blocks_dir))],
+                           stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=10)
+        if r.returncode != 0:
+            return None, "el lector de paquetes falló (exit %d)" % r.returncode
+        data = json.loads(r.stdout.decode("utf-8"))
+    except FileNotFoundError:
+        return None, "falta node en el PATH"
+    except subprocess.TimeoutExpired:
+        return None, "el lector de paquetes no contestó a tiempo"
+    except (OSError, ValueError):
+        return None, "el lector de paquetes contestó algo que no se entiende"
+    if not isinstance(data, dict) or not isinstance(data.get("blocks"), list):
+        return None, "el lector de paquetes contestó algo que no se entiende"
+    if data.get("active") is None:
+        return None, data.get("error") or "no pude saber qué paquetes activa la organización"
+    return data, None
+
+def block_source(name):
+    """El archivo del que sale el bloque, como lo nombra su marca."""
+    m = re.match(r"^packs/([^/]+)/([^/]+)$", name)
+    return "packs/%s/claude-md-blocks/%s.md" % (m.group(1), m.group(2)) if m else "claude-md-blocks/%s.md" % name
+
 def marker_start(name):
     return ("<!-- TYCON_BLOCK:%s START — generado por scripts/setup/"
             "sync-claude-md-blocks.sh del arnés · NO EDITAR A MANO (se pisa en el próximo "
-            "SessionStart); editá claude-md-blocks/%s.md y commiteá -->" % (name, name))
+            "SessionStart); editá %s y commiteá -->" % (name, block_source(name)))
 
 def marker_end(name):
     return "<!-- TYCON_BLOCK:%s END -->" % name
@@ -396,8 +434,21 @@ try:
     # Cada bloque es un `.md` de la raíz (el contrato que leen el instalador, la desinstalación y sus pruebas). Uno que
     # declara `<!-- variants: response -->` (story 2.31) toma su texto de la carpeta del mismo nombre; una carpeta sola,
     # sin su archivo, no es un bloque. Orden por nombre, por código de carácter, en las tres implementaciones.
-    entries = sorted([(os.path.splitext(os.path.basename(p))[0], p, variants_of(p) is not None) for p in files],
-                     key=lambda e: e[0])
+    entries = [(os.path.splitext(os.path.basename(p))[0], p, variants_of(p) is not None) for p in files]
+    # y los de los paquetes activos, sólo si hay alguno escrito o algún paquete trae (sin paquetes, ni se pregunta… salvo
+    # que el CLAUDE.md tenga un bloque de paquete, que hay que poder quitar)
+    packs_data, packs_why = None, None
+    try:
+        with open(target, "r", encoding="utf-8") as fh:
+            _peek = fh.read()
+    except OSError:
+        _peek = ""
+    if PACK_BLOCK_RE.search(_peek) or glob.glob(os.path.join(os.path.dirname(os.path.abspath(blocks_dir)), "packs", "*", "claude-md-blocks", "*.md")):
+        packs_data, packs_why = ask_pack_blocks()
+        if packs_data:
+            entries += [(b["name"], b["file"], False) for b in packs_data["blocks"]
+                        if isinstance(b, dict) and isinstance(b.get("name"), str) and isinstance(b.get("file"), str)]
+    entries = sorted(entries, key=lambda e: e[0])
     if not entries:
         sys.exit(0)
 
@@ -500,6 +551,29 @@ try:
         content = content[:i] + desired + content[j + len(end):]
         changed.append((name, "actualizado"))
 
+    # Un bloque de paquete escrito que ya no corresponde (el paquete dejó de estar activo, o ya no trae ese bloque) se va
+    # entre sus marcadores, como uno con su integración apagada. Sin saber qué paquetes activa la organización, queda.
+    names = set(e[0] for e in entries)
+    for name in sorted(set(PACK_BLOCK_RE.findall(content)) - names):
+        start_prefix, end = "<!-- TYCON_BLOCK:%s START" % name, marker_end(name)
+        if packs_data is None:
+            unknown.append("⚠ tycon: bloque CLAUDE.md '%s': no pude saber si su paquete está activo (%s): queda donde está"
+                           % (name, packs_why))
+            continue
+        i = content.find(start_prefix)
+        j = content.find(end, i)
+        if j == -1:
+            changed.append((name, "MARCADOR DE CIERRE FALTANTE — revisar a mano"))
+            continue
+        pack = name.split("/")[1]
+        why = ("el paquete «%s» no está activo" % pack) if pack not in packs_data["active"] else ("el paquete «%s» ya no lo trae" % pack)
+        before, after = content[:i].rstrip("\n"), content[j + len(end):]
+        if after.startswith("\n"):
+            after = after[1:]
+        content = before + "\n" + after if (before or after) else ""
+        changed.append((name, "quitado (%s)" % why))
+        removed[name] = why
+
     real_changes = [c for c in changed if "FALTANTE" not in c[1]]
 
     for name, what in changed:
@@ -539,6 +613,8 @@ try:
                  "keep" if whole in original else ("update" if ("<!-- TYCON_BLOCK:%s START" % name) in original else "add"))
         elif name in removed and ("<!-- TYCON_BLOCK:%s START" % name) in original:
             plan("block", target, "TYCON_BLOCK:%s" % name, "remove")
+    for name in sorted(n for n in removed if n not in set(e[0] for e in entries)):
+        plan("block", target, "TYCON_BLOCK:%s" % name, "remove")   # los de un paquete que ya no corresponde
 
 except Exception:
     # Fail-open: este script jamás debe romper el arranque de una sesión.

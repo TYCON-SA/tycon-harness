@@ -91,6 +91,10 @@ const NO_ARMA = 'ya no arma la copia: el repo público es la fuente (story 8.26,
 // story 8.7 (AC 14): el nombre público vive en UN archivo, que lee sólo el exportador (y la sincronización de la 8.8) y
 // que no viaja: la copia lleva el nombre ya puesto en sus papeles
 const PUBLIC_REPOS = 'scripts/publishing/public-repos.json';
+// Los archivos que pueden escribir la dirección del repo público («<org>/<repo>» o su URL de GitHub), cada uno con su
+// motivo. Vive al lado del nombre (en el repo de mantenimiento) y la lee readPublicNameExceptions: la prueba del nombre
+// y quien la necesite leen lo mismo.
+const PUBLIC_NAME_EXCEPTIONS = 'scripts/publishing/public-name-exceptions.json';
 const PUBLIC_NAME_OK = /^[A-Za-z0-9._-]+$/;
 const PUBLIC_MARKER = /\{\{public-[^}]*\}\}/g;
 // story 8.13 (AC 24): la versión numerada de la copia. Es un archivo GENERADO —no sale de ninguna fuente— y la lista
@@ -1292,6 +1296,27 @@ function validarNombrePublico(datos, file) {
   return out;
 }
 
+/**
+ * Los archivos que pueden escribir la dirección del repo público: `[{ path, why }]` de `public-name-exceptions.json` (o del
+ * archivo dado). Una ruta que termina en «/» vale para toda la carpeta. Tira (NoPudo) si el archivo falta o no se lee, si
+ * una entrada no trae ruta o motivo, o si una ruta se repite: exceptuar sin motivo es esconder.
+ */
+function readPublicNameExceptions(file = path.join(RAIZ_PROPIA, PUBLIC_NAME_EXCEPTIONS)) {
+  const datos = leerJson(file, 'las excepciones del nombre público');
+  const lista = datos && Array.isArray(datos.files) ? datos.files : null;
+  if (!lista) throw new NoPudo(`las excepciones del nombre público ${file} no traen "files" (una lista de { path, why })`);
+  const vistas = new Set();
+  return lista.map((e, i) => {
+    const p = e && typeof e.path === 'string' ? e.path.trim() : '';
+    const why = e && typeof e.why === 'string' ? e.why.trim() : '';
+    if (!p) throw new NoPudo(`las excepciones del nombre público ${file}: la entrada ${i} no trae "path"`);
+    if (!why) throw new NoPudo(`las excepciones del nombre público ${file}: ${p} no trae "why" (exceptuar sin motivo es esconder)`);
+    if (vistas.has(p)) throw new NoPudo(`las excepciones del nombre público ${file}: ${p} está dos veces`);
+    vistas.add(p);
+    return { path: p, why };
+  });
+}
+
 /** Los paquetes de una exportación: una lista, o el nombre de uno, o varios separados por coma. */
 const packageList = (P) => (Array.isArray(P) ? P : String(P).split(','));
 
@@ -2391,7 +2416,7 @@ module.exports = {
   // story 8.9 (AC 29): el paquete por su nombre nuevo en una lista blanca de antes del renombre (new-names.js)
   paquetesConNombresNuevos,
   // story 8.7: el lector del nombre público (lo reusa la sincronización de la 8.8) y la lista de controles
-  readPublicRepo, COPY_CONTROLS,
+  readPublicRepo, readPublicNameExceptions, COPY_CONTROLS,
   // story 8.10.3: los textos públicos (public-copy-messages.test.js los aplica a los archivos de verdad)
   applyPublicTexts,
   // story 8.8: la identidad fija del commit de la copia — la sincronización (mirror.js) firma sus commits con la misma

@@ -607,3 +607,35 @@ test('T37 Nocturnos_NoTocanLasRutasProtegidas (Azure) @story-2.30 @ac-22', () =>
   assert.match(readme, /archivo por archivo/);
 });
 
+// story 2.26 (AC 17, T21): la concentración por persona corre en el nocturno de métricas, en el MISMO paso que la foto
+// por proyecto y después de ella; una falla avisa y no apaga el snapshot; el guardado suma su archivo. Las líneas nuevas
+// no suman un paso, un `displayName` ni las palabras «clone»/«clones» (la red de la story 2.1 las cuenta).
+function pasoConConcentracion(y, nombre, donde) {
+  const i = y.indexOf('node scripts/nightly/projects/snapshot.js');
+  const j = y.indexOf(`displayName: '${nombre}'`, i);
+  assert.ok(i > 0 && j > i, `${donde}: no encontré la foto y el paso «${nombre}»`);
+  const paso = y.slice(i, j);
+  const k = paso.indexOf('node scripts/metrics/author-concentration.js');
+  assert.ok(k > 0, `${donde}: la concentración no está en el paso de la foto, después de ella`);
+  const nuevo = paso.slice(k);
+  assert.match(nuevo, /\|\| echo "##vso\[task\.logissue type=warning\]/, `${donde}: la falla de la concentración tiene que avisar, no apagar`);
+  assert.match(nuevo, /⏱ {2}concentración por persona/, `${donde}: imprime su duración`);
+  assert.doesNotMatch(nuevo, /- script:|displayName|\bclones?\b/, `${donde}: las líneas nuevas no suman pasos ni la palabra clone(s)`);
+  assert.match(y, /'\.dashboard\/author-concentration-\*\.json'/, `${donde}: el guardado suma el archivo de concentración`);
+}
+
+test('T21 2.26-StageMetrics_ConcentracionEnElPasoDeLaFoto — el modelo público, y con lo privado debajo, su copia y su plantilla', () => {
+  pasoConConcentracion(read('stage-metrics.yml'), 'Medir y escribir el punto del día', 'pipelines/operations/stage-metrics.yml');
+  // el modelo de GitHub no cambia: sin el archivo, la ficha sale «no medido»
+  assert.doesNotMatch(read('github/stage-metrics.yml'), /author-concentration/, 'el modelo de GitHub no corre la concentración');
+  const privado = path.join(ROOT, 'pipelines', 'azure-pipelines.yml');
+  if (!fs.existsSync(privado)) {
+    console.log('  (T21 lo privado —azure-pipelines.yml, ops-data.yml y .gitignore— no viene con la copia pública: NO MEDIDO acá)');
+    return;
+  }
+  pasoConConcentracion(fs.readFileSync(privado, 'utf8'), 'Medir las 4 métricas y escribir el snapshot del día', 'pipelines/azure-pipelines.yml');
+  const ops = fs.readFileSync(path.join(ROOT, 'pipelines', 'templates', 'ops-data.yml'), 'utf8');
+  assert.match(ops, /author-concentration-\*\.json/, 'ops-data.yml trae el archivo de concentración al árbol');
+  const ign = spawnSync('git', ['-C', ROOT, 'check-ignore', '-q', '.dashboard/author-concentration-2026-10-15.json']);
+  assert.strictEqual(ign.status, 1, '.gitignore del privado deja pasar el archivo de concentración');
+});

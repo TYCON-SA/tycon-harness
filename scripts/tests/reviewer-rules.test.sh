@@ -324,11 +324,14 @@ esperado='tycon-feature-wiring-checker.toml tycon-plugin-dotnet-conventions.toml
 # pública sus .toml no están y se esperan los otros dos, diciéndolo. En el repo del equipo siguen siendo los cinco, y que
 # falte uno es un rojo.
 PRIVATE_TOMLS='tycon-sibling-pattern-reviewer.toml tycon-feature-wiring-checker.toml tycon-plugin-dotnet-conventions.toml'
+# Desde la 8.41 los .toml de los revisores de un paquete se generan desde la capa al instalar y no se guardan en el
+# repo: en el árbol armado se esperan los que estén (hoy, el de plugins hermanos), nunca los que no.
+for t in ${PRIVATE_TOMLS}; do [ -f "adapters/codex/agents/${t}" ] || esperado="${esperado/${t} /}"; done
 if [ "${PUBLIC_COPY}" = 1 ] && [ ! -f "adapters/codex/agents/tycon-sibling-pattern-reviewer.toml" ]; then
   for t in ${PRIVATE_TOMLS}; do esperado="${esperado/${t} /}"; done
   [ "${con}" = "${esperado}" ] && ok "T9 los «Límites de ejecución» llegan a Codex sólo en los 2 con Bash que viajan (copia pública: los de los paquetes del equipo no se midieron)" || no "T9 límites en: ${con}"
 else
-  [ "${con}" = "${esperado}" ] && ok "T9 los «Límites de ejecución» llegan a Codex sólo en los 5 con Bash" || no "T9 límites en: ${con}"
+  [ "${con}" = "${esperado}" ] && ok "T9 los «Límites de ejecución» llegan a Codex en los que tienen Bash y están en el repo" || no "T9 límites en: ${con} (esperaba: ${esperado})"
 fi
 
 if [ "${not_measured}" -gt 0 ]; then echo "reglas-revisores: ${pasaron} ok, ${fallos} fallos, ${not_measured} no medido(s) (copia pública)"

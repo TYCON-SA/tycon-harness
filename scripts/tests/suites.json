@@ -318,6 +318,12 @@
       "requiere": []
     },
     {
+      "__nota": "las reglas siempre cargadas de un paquete (packs/<p>/claude-md-blocks/*.md): con el paquete activo quedan en el CLAUDE.md (Mac y Windows, los mismos bytes) y en el AGENTS.md de Codex, sin duplicarse; sin él se van y el archivo queda como antes; sin saber qué paquetes activa la organización, quedan; el reporte de piezas, el plan y la lista cerrada de la capa las nombran.",
+      "raiz": "arnes",
+      "ruta": "tests/pack-blocks.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.41 (T34): ningún repo pierde un revisor cuando los revisores cambian de lugar — package-equivalence.js per-repo sobre repos de juguete (la medición sobre los repos reales corre a pedido con PACKS_PER_REPO_REAL=1).",
       "raiz": "arnes",
       "ruta": "tests/packs-per-repo.test.js",
@@ -427,6 +433,18 @@
     {
       "raiz": "arnes",
       "ruta": "tests/projects-snapshot.test.sh",
+      "requiere": []
+    },
+    {
+      "__nota": "story 2.26: la edad en el estado, sumada de las fotos por proyecto (scripts/nightly/projects/state-age.js).",
+      "raiz": "arnes",
+      "ruta": "tests/state-age.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 2.26: la concentración por persona, por producto y sin nombres (scripts/metrics/author-concentration.js), sobre repos git de juguete.",
+      "raiz": "arnes",
+      "ruta": "tests/author-concentration.test.sh",
       "requiere": []
     },
     {
@@ -1674,6 +1692,12 @@
       "__nota": "story 8.41, tanda E (T27): los comentarios de los controles del commit (.githooks/pre-commit y .githooks/pre-commit-checks) dicen qué hace cada parte y por qué, sin número de story, tanda, fecha, caso del registro ni historia; y cada forma prohibida atrapa su caso. Sin red, en milisegundos.",
       "raiz": "arnes",
       "ruta": "tests/hook-comments.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "El freno de historia interna en los comentarios del código (internal-history.js --zone comment): el lector mira sólo comentarios, cada forma con su rojo y su verde, lo neto por archivo con commits de verdad en repos de juguete, los modos por forma, el mensaje, las excepciones, el pedido armado como la revisión del público, y que sólo mire el árbol que se publica.",
+      "raiz": "arnes",
+      "ruta": "tests/code-comments.test.js",
       "requiere": []
     },
     {

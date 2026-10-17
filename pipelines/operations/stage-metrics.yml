@@ -185,6 +185,16 @@ jobs:
             --sdlc "$SDLC" \
             --out "$(Build.SourcesDirectory)/.dashboard/proyectos" \
             || echo "##vso[task.logissue type=warning]La foto por repo falló (exit $?) — el snapshot sigue"
+          # La concentración por persona (story 2.26), sobre las MISMAS copias y en este mismo paso: por producto, sin
+          # nombres ni correos (lee git log en memoria). Los productos, del repos.json de la organización; sin él, la ficha
+          # sale «no medido». Una falla avisa y no apaga el snapshot.
+          INICIO=$(date +%s)
+          node scripts/metrics/author-concentration.js \
+            --scan "$(Agent.TempDirectory)/repos" \
+            --products "$(Build.SourcesDirectory)/scripts/nightly/dependencies/repos.json" \
+            --out "$(Build.SourcesDirectory)/.dashboard/author-concentration-$(date -u +%Y-%m-%d).json" \
+            || echo "##vso[task.logissue type=warning]La concentración por persona falló (exit $?) — el snapshot sigue; la ficha sale «no medido»"
+          echo "⏱  concentración por persona: $(expr "$(date +%s)" - "$INICIO") s"
         displayName: 'Medir y escribir el punto del día'
 
       - script: |
@@ -207,7 +217,7 @@ jobs:
           node scripts/ci/push-nightly-data.js save \
             --message "chore(metricas): snapshot SDLC $DAY [nocturno]" \
             --require-daily '.dashboard/sdlc-stage-{day}.json' \
-            -- '.dashboard/sdlc-stage-*.json' '.dashboard/proyectos/*.json'
+            -- '.dashboard/sdlc-stage-*.json' '.dashboard/proyectos/*.json' '.dashboard/author-concentration-*.json'
         displayName: 'Guardar el punto del día en el repo de operaciones'
         # Sólo desde main (encolado sobre otra rama, guardar la subiría entera) y sólo con efectos.
         condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'), eq('${{ parameters.efectos }}', 'true'))

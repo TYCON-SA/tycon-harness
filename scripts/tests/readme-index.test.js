@@ -132,7 +132,8 @@ test('Readme_Tamano_Secciones (T5): ≤ 25 KB y las tres secciones de uso diario
   assert.match(readme, /^## Cuándo leer cada guía/m, 'falta la tabla «Cuándo leer cada guía»');
   assert.match(seccion(readme, '## Cuándo leer cada guía', '\n## '), /^\| .+ \| .+ \|$/m, 'la sección «Cuándo leer cada guía» no tiene tabla');
   assert.match(readme, /^## Regla siempre activa — CodeGraph/m, 'falta la regla siempre activa de CodeGraph');
-  assert.match(readme, /^## Regla siempre activa — Routing Bizuit por entorno \(BZURL\)/m, 'falta la regla siempre activa BZURL');
+  // la de BZURL es del paquete bizuit: la escribe en el CLAUDE.md su bloque (packs/bizuit/claude-md-blocks/), sólo con el paquete activo
+  assert.doesNotMatch(readme, /BZURL/, 'la regla BZURL es del paquete bizuit, no del índice del núcleo');
   assert.match(readme, /^## Cheat sheet/m, 'faltan los comandos del día a día (Cheat sheet)');
   assert.match(readme, /\/tycon-merge-to-main/, 'el cheat sheet perdió el merge a main');
 });
