@@ -128,7 +128,7 @@ function colectar() {
     : !valor('--mailbox', null) ? { estado: 'no_leido', motivo: 'no se le pasó la carpeta del buzón (--mailbox)' }
       : estadoDelBuzon(valor('--mailbox-state', null));
   const eq = equipo(cfg, buzon);
-  const L = { ...local(buzon), ...localExtra(ctx), ...eq, pasos: pasosPorCorrida(cfg, buzon) };
+  const L = { ...local(buzon), ...localExtra(ctx, por, cfg), ...eq, pasos: pasosPorCorrida(cfg, buzon) };
   // story 2.21: en el nocturno la duración de la suite sale de los registros de todas las máquinas (el reductor); en una
   // máquina, de su propio gates.log, con la misma lectura de la línea
   if (NOCTURNO) L.gates_dur = eq.suite_duracion;
@@ -902,9 +902,49 @@ function fichaDespliegues(doc, hoy) {
   return medida(medidos.length - atrasados.length, medidos.length, medidos.length, { unidad: 'conteo', den_etiqueta: 'productos medidos', detalle });
 }
 
+/**
+ * story 2.26: la edad en el estado, de las fotos por proyecto (`.dashboard/proyectos/`) con `stateAge`, la misma
+ * definición que usa el sitio. El número es lo empezado (en curso y bloqueado) con más del primer umbral; el detalle,
+ * el segundo y los sin dato. Sin fotos o sin los días en `params`, «no medido» con el motivo. Sólo conteos.
+ */
+function fichaEdad(cfg, ctx) {
+  const { stateAge } = require(path.join(__dirname, '..', 'projects', 'state-age.js'));
+  const r = stateAge({ photosDir: path.join(DASHBOARD, 'proyectos'), products: ctx.repos.length ? ctx.repos : null, today: hoyUTC(),
+    dias: cfg && cfg.params ? cfg.params.edad_en_estado_dias : undefined });
+  if (r.estado !== 'medido') return noMedida(r.motivo);
+  const [d1, d2] = r.dias; const t = r.titular;
+  // ninguna story empezada con dato no es «ninguna parada» (pase adversarial): sin dato no hay número
+  if (!t.con_dato) return noMedida(`ninguna story empezada tiene medidos sus días en el estado (${t.sin_dato} sin dato)`);
+  return medida(t[`mas_de_${d1}`], t.con_dato, t.con_dato + t.sin_dato, {
+    unidad: 'conteo', den_etiqueta: 'stories empezadas con dato',
+    detalle: `${t[`mas_de_${d2}`]} más de ${d2} · de ${t.con_dato} con dato · ${t.sin_dato} sin dato`,
+    edad: { dias: r.dias, fotos_no_medidas: r.no_medidos.length, productos: r.productos.map((p) => ({
+      producto: p.producto, estado: p.estado, motivo: p.motivo, sin_producto_declarado: !!p.sin_producto_declarado,
+      compartido_con: p.compartido_con || null, por_estado: p.por_estado, desconocido: p.desconocido })) },
+  });
+}
+// El detalle desplegable producto × estado de la ficha de edad (sólo conteos).
+function detalleEdad(m) {
+  if (!m || m.estado !== 'medido' || !m.edad) return '';
+  const [d1, d2] = m.edad.dias;
+  const filas = [];
+  for (const p of m.edad.productos) {
+    const marca = p.sin_producto_declarado ? ' <span class="muted">(sin producto declarado)</span>' : p.compartido_con ? ` <span class="muted">(compartido con ${p.compartido_con})</span>` : '';
+    if (p.estado !== 'medido') { filas.push(`<tr><td>${esc(p.producto)}${marca}</td><td colspan="5" class="muted">no medido: ${esc(p.motivo || '')}</td></tr>`); continue; }
+    for (const [estado, c] of Object.entries(p.por_estado)) filas.push(`<tr><td>${esc(p.producto)}${marca}</td><td>${esc(estado)}</td><td>${c.total}</td><td>${c[`mas_de_${d1}`]}</td><td>${c[`mas_de_${d2}`]}</td><td>${c.sin_dato}</td></tr>`);
+    if (p.desconocido) filas.push(`<tr><td>${esc(p.producto)}${marca}</td><td class="muted">estado que el diccionario no reconoce</td><td>${p.desconocido}</td><td colspan="3" class="muted">aparte</td></tr>`);
+  }
+  return `<details style="margin-top:10px"><summary>La edad en el estado, por producto y estado</summary>
+    <table><tr><th>Producto</th><th>Estado</th><th>Stories</th><th>Más de ${d1} días</th><th>Más de ${d2}</th><th>Sin dato</th></tr>
+    ${filas.join('\n    ')}</table>
+    ${m.edad.fotos_no_medidas ? `<p class="chart-note">${m.edad.fotos_no_medidas} foto(s) por proyecto viejas o ilegibles no suman.</p>` : ''}
+  </details>`;
+}
+
 function extra(por, ctx, cfg) {
   const m = {};
   m.despliegues = desde(por.deployments, (d) => fichaDespliegues(d, new Date().toISOString()));
+  m.edad_estado = fichaEdad(cfg, ctx);
   const sdlc = por['sdlc-stage'];
 
   m.por_repo = desde(sdlc, (d) => ({
@@ -1164,40 +1204,49 @@ function extra(por, ctx, cfg) {
   return m;
 }
 
-// Más anillo local: calidad de las pruebas y dependencia de personas.
-function localExtra(ctx) {
-  if (NOCTURNO) {
-    return { bus_factor: noAplica('se mide sobre los repos clonados en una máquina') };
+/**
+ * story 2.26: la concentración por persona, del archivo del nocturno o de la misma función en local
+ * (`scripts/metrics/author-concentration.js#concentracion`). Por producto: «N de M medidos», el detalle «producto NN %»
+ * —nunca un repo ni una persona—. Sin ningún producto medido, «no medido» con el motivo; nunca 0. Pura: la usa la prueba.
+ */
+function fichaConcentracion(doc) {
+  const ps = doc && Array.isArray(doc.productos) ? doc.productos : [];
+  const med = ps.filter((p) => p && p.estado === 'medido' && Number.isFinite(p.concentracion)).sort((a, b) => b.concentracion - a.concentracion);
+  if (!med.length) {
+    // los motivos que trae el archivo (por producto), no uno fijo: «sin la lista de máquinas» no es «poca actividad»
+    const motivos = [...new Set(ps.map((p) => p && p.motivo).filter(Boolean))];
+    return noMedida(motivos.length ? `ningún producto medido: ${motivos.slice(0, 3).join('; ')}` : 'ningún producto declarado en el archivo de concentración');
   }
+  const cob = (doc && doc.cobertura) || {};
+  const riesgo = med.filter((p) => p.en_riesgo === true);
+  return medida(riesgo.length, med.length, Number.isFinite(cob.productos_declarados) ? cob.productos_declarados : ps.length, { unidad: 'conteo', den_etiqueta: 'productos medidos',
+    detalle: med.map((p) => `${p.producto} ${pct(p.concentracion)}`).join(' · ')
+      + (Number.isFinite(cob.repos_medidos) ? ` · ${cob.repos_medidos} de ${cob.repos_declarados} repos declarados medidos (20 commits o más en 12 meses)` : '') });
+}
+
+// Más anillo local: calidad de las pruebas y dependencia de personas.
+function localExtra(ctx, por, cfg) {
   const m = {};
+  // Bus factor (story 2.26): la concentración del autor principal por producto DECLARADO, nunca el nombre. En el
+  // nocturno la lee del archivo que deja el nocturno de métricas (la fuente `concentracion`); en una máquina, la calcula
+  // con la MISMA función sobre los repos del disco (por `ruta`), así el número es el mismo.
+  if (NOCTURNO) {
+    const f = por && por.concentracion;
+    if (f && f.vigente) m.bus_factor = fichaConcentracion(f.doc);
+    else if (!ctx.repos.length) m.bus_factor = noMedida('la organización no declaró sus productos (repos.json)');
+    else m.bus_factor = noMedida(f ? (f.motivo || 'el archivo de concentración no está al día') : 'la fuente «concentracion» no está declarada en sources.json');
+    return m;
+  }
 
   // Mutación y guía de QA ya no se leen acá: salen de `equipo()`, que cuenta los registros de todas las máquinas
   // (story 2.8). Este lector publicaba el estado crudo de cada línea de guía en el detalle —la prueba de fuga lo
   // cazó con un nombre de cliente sembrado— y la proporción de guías presentes era 0 por construcción.
 
-  // Bus factor: concentración del autor principal por producto DECLARADO. Nunca el nombre de la persona.
-  if (!ctx.repos.length) m.bus_factor = noMedida('la lista de repos del equipo no viene con la copia pública');
+  if (!ctx.repos.length) m.bus_factor = noMedida('la organización no declaró sus productos (repos.json)');
   else {
-    const porProducto = {}; let medidos = 0;
-    for (const r of ctx.repos) {
-      const dir = path.join(SRC, r.ruta || '');
-      if (!r.ruta || !fs.existsSync(path.join(dir, '.git'))) continue;
-      let out; try { out = execSync('git log --since="12 months ago" --format=%an', { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }); } catch (e) { continue; }
-      const autores = {}; let total = 0;
-      for (const a of out.split('\n')) { if (!a.trim()) continue; inc(autores, a.trim()); total++; }
-      if (total < 20) continue;
-      medidos++;
-      const top = Math.max(...Object.values(autores)) / total;
-      const p = r.producto || 'otro';
-      if (!(p in porProducto) || top > porProducto[p]) porProducto[p] = top;
-    }
-    const prods = Object.entries(porProducto).sort((a, b) => b[1] - a[1]);
-    if (!prods.length) m.bus_factor = noMedida('ningún repo declarado está en este disco con ≥20 commits en el año');
-    else {
-      const riesgo = prods.filter(([, v]) => v >= 0.75);
-      m.bus_factor = medida(riesgo.length, prods.length, ctx.productos.length, { unidad: 'conteo', den_etiqueta: 'productos medidos',
-        detalle: prods.map(([k, v]) => `${k} ${pct(v)}`).join(' · ') + ` · ${medidos} repos con ≥20 commits en 12 meses` });
-    }
+    const ac = require(path.join(__dirname, '..', '..', 'metrics', 'author-concentration.js'));
+    const r = ac.concentracion({ repos: ac.resolverLocal(ctx.repos, SRC), today: hoyUTC(), maquinas: ac.maquinasDe(cfg) });
+    m.bus_factor = fichaConcentracion(r);
   }
 
   // Los repos declarados contra el disco ya no son de esta página (story 2.21, decisión G7): son de cada máquina y los
@@ -1453,7 +1502,9 @@ footer{margin-top:40px;padding-top:16px;border-top:1px solid var(--line);font-si
     ${F('', 'En el backlog: escritas y todavía sin arrancar', E.backlog, entero, {}, null)}
     ${F('', 'Con un estado que el diccionario no reconoce', E.estados_sin_diccionario, entero, {}, 'Son la <b>lista de trabajo del próximo diccionario</b>: se muestran con su nombre porque esconderlas es cómo un vocabulario se queda viejo.')}
     ${F('', 'Tiempo por etapa: listo-para-desarrollar → en curso → revisión → cerrado', E.tiempo_por_etapa, num1, {}, etapaLenta)}
+    ${F('', `Stories empezadas que llevan más de ${E.edad_estado && E.edad_estado.edad ? E.edad_estado.edad.dias[0] : 'N'} días en su estado`, E.edad_estado, entero, {}, E.edad_estado && E.edad_estado.estado === 'medido' ? `${esc(E.edad_estado.detalle)}. Cuenta lo empezado (en curso y bloqueado); el backlog va en el detalle. Sale de las fotos por proyecto: no se mide nada de nuevo.` : null)}
   </div>
+  ${detalleEdad(E.edad_estado)}
 </section>
 
 <section class="q">
@@ -1509,7 +1560,7 @@ footer{margin-top:40px;padding-top:16px;border-top:1px solid var(--line);font-si
 
 <section class="q">
   ${cabecera('5', '¿De qué depende que esto siga funcionando?', q5, q5 === 'bad' ? 'riesgo dominante' : q5 === 'warn' ? 'atención' : 'bien')}
-  <p class="q-note">El riesgo de ingeniería no es el código: es <strong>quién es la única persona que sabe tocarlo</strong>. ${NOCTURNO ? 'Se mide sobre los repos clonados en una máquina: el nocturno no los tiene, y la ficha lo dice.' : 'Medido sobre los commits del último año de los repos declarados que están en este disco.'} <strong>Se publica la concentración, nunca el nombre.</strong></p>
+  <p class="q-note">El riesgo de ingeniería no es el código: es <strong>quién es la única persona que sabe tocarlo</strong>. ${NOCTURNO ? 'Medido cada noche sobre los commits del último año de los repos declarados de la organización, con las identidades de una persona unidas y sin los commits de las máquinas.' : 'Medido sobre los commits del último año de los repos declarados que están en este disco, con la misma regla que el nocturno.'} <strong>Se publica la concentración, nunca el nombre.</strong></p>
   <div class="grid g2">
     ${F('bus_factor_productos_en_riesgo', 'Productos donde una sola persona hizo el 75 % o más de los commits del último año', L.bus_factor, entero, { bad: 'una persona', warn: 'atención', ok: 'repartido' }, 'La diferencia entre los concentrados y los repartidos no es el tamaño ni la antigüedad: es quién los arrancó.')}
     ${F('vigilados', 'Productos con algo mirando su producción todas las noches', E.vigilados, pct, { bad: 'casi ninguno', warn: 'parcial', ok: 'todos' })}

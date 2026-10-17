@@ -100,6 +100,16 @@
       "max_age_days": 14,
       "written_by": "download-runs.js al abrir la sesión (en las máquinas con permiso de lectura) y el nocturno del tablero, que baja el buzón entero — los volcados los sube cada máquina al cerrar una corrida",
       "_note": "La lee `pasosPorCorrida()` de dashboard.js con `scripts/metrics/steps-per-run.js` (story 7.12), y la BUSCA POR ID en esta lista: sin la entrada, la ficha sale «no medido — la fuente no está declarada» en vez de leer el buzón igual. Fuera de .dashboard, por eso `local: true` (el colector de las fuentes nocturnas la saltea). NO obligatoria: una máquina sin permiso sobre el buzón no rompe el tablero. La antigüedad se mide sobre la corrida MEDIDA más nueva: pasados 14 días sin ninguna, el número se calla — una mediana vieja tranquiliza sobre lo que cambió después. 14 y no 2: el buzón no se llena cada noche, se llena cuando alguien corre el pipeline."
+    },
+    {
+      "id": "concentracion",
+      "title": "Concentración por persona, por producto (sin nombres)",
+      "pattern": "author-concentration-*.json",
+      "dir": ".",
+      "required": false,
+      "max_age_days": 2,
+      "written_by": "scripts/metrics/author-concentration.js en el nocturno de métricas, en el paso de la foto por proyecto (story 2.26)",
+      "_note": "La lee la ficha de la pregunta 5 del tablero en modo nocturno. Trae sólo proporciones y conteos POR PRODUCTO: ningún nombre ni correo, y ningún número por repo (decisión 18 de la 2.26). NO obligatoria: sin el archivo, o con uno de más de 2 días, la ficha sale «no medido» con el motivo, nunca 0."
     }
   ],
   "reducer": {
@@ -459,16 +469,30 @@
       "_note": "vista de corridas (2.14): corridas donde un control encontró un error — es el control funcionando, así que el rojo recién con 8 de 10"
     }
   },
+  "params": {
+    "_note": "Valores que cada organización puede cambiar y que no son juicios de color (esos van en thresholds). edad_en_estado_dias: los dos umbrales, crecientes, de la ficha de edad en el estado (story 2.26); sin ellos la ficha sale «no medido». identidades_de_maquina: los autores de commits que no son personas (los pipelines, los bots); no cuentan para la concentración y se suman aparte. nombres y correos se comparan exactos (el correo en minúsculas); contiene, como parte del nombre. Sin la clave, la concentración sale «no medido».",
+    "edad_en_estado_dias": [
+      30,
+      60
+    ],
+    "identidades_de_maquina": {
+      "nombres": [
+        "Azure Pipelines"
+      ],
+      "correos": [
+        "azure-pipelines@dev.azure.com"
+      ],
+      "contiene": [
+        "Build Service (",
+        "[bot]"
+      ]
+    }
+  },
   "instrument": [
     {
       "what": "Ingesta de compilaciones",
       "sub": "duración, éxito, cola, despliegues, corridas a medias",
       "cost": "Es la única que sale a un sistema externo. Desbloquea las cuatro métricas DORA de una vez."
-    },
-    {
-      "what": "Edad en el estado actual",
-      "sub": "cuántas stories llevan más de 30 o 60 días paradas donde están",
-      "cost": "Derivable de lo que el snapshot ya publica (la fecha de la última transición), sin git nuevo. Medido el 2026-09-05: de las 181 en revisión, 77 de 158 pasan los 60 días y la mediana es 51. El tiempo por etapa NO lo rescata: excluye por diseño la etapa en la que la story está ahora."
     }
   ],
   "prune": {
