@@ -851,4 +851,170 @@ if corre HP; then
   kill "${LAB_RELEASE_PROCESS}" 2>/dev/null
 fi
 
+# ───────────────────────────────────────────── PF ─────────────────────────────────────────────
+# story 8.40, pedido 2 (T56): `--profile` en la versión bajada —el camino de npx y de get-harness— se guardaba en ningún
+# lado: `npx … --profile minimal` instalaba full y el doctor decía «perfil sin elegir» (medido en la Mac de laboratorio).
+if corre PF; then
+  echo "PF · --profile en la versión bajada: queda escrito antes del aplicador, el plan lo nombra, un valor que no existe sale 2, y update no cambia el perfil solo"
+  harness_lab_create "$BASE/labpf"
+  harness_lab_release_server
+  harness_lab_publish_stable 2026.10.07.1
+  pf_fresh() { harness_lab_release_fresh_home; rm -f "$LAB_HOME/.claude/tycon.json"; }
+  pf_saved() { j "$LAB_HOME/.claude/tycon.json" "(d.get('install') or {}).get('profile')"; }
+  # «<valor> <elegido> <aviso sin elegir>», del doctor del árbol instalado
+  pf_doctor() { harness_release doctor --json > "$BASE/pf-doctor.json" 2>/dev/null; j "$BASE/pf-doctor.json" "'%s %s %s' % (d['profile']['value'], d['profile']['chosen'], any('perfil sin elegir' in w for w in d.get('warn', [])))"; }
+  # full
+  pf_fresh
+  out="$(harness install --version latest --profile full --yes 2>&1)"; rc=$?
+  [ "$rc" = 0 ] && [ "$(pf_saved)" = full ] && ok "--profile full: queda escrito en ~/.claude/tycon.json" || mal "full: rc=$rc perfil=«$(pf_saved)»: $out"
+  [ "$(pf_doctor)" = "full True False" ] && ok "el doctor dice full, elegido, sin «perfil sin elegir»" || mal "el doctor con full dice «$(pf_doctor)»"
+  # minimal: lo que se instala es minimal, no full
+  pf_fresh
+  out="$(harness install --version latest --profile minimal --yes 2>&1)"; rc=$?
+  [ "$rc" = 0 ] && [ "$(pf_saved)" = minimal ] && ok "--profile minimal: queda escrito" || mal "minimal: rc=$rc perfil=«$(pf_saved)»: $out"
+  # (el aplicador del laboratorio es de juguete: registra lo mismo con los dos perfiles. Lo que el aplicador recibe es el
+  # perfil del estado; la cuenta de hooks de verdad la mide la máquina de laboratorio con el árbol real, T50)
+  [ "$(estado "d['profile']['value']")" = minimal ] && [ "$(estado "d['profile']['origin']")" = maquina ] && ok "el estado dice minimal, elegido en la máquina" || mal "el estado dice «$(estado "d.get('profile')")»"
+  [ "$(pf_doctor)" = "minimal True False" ] && ok "el doctor dice minimal, elegido, sin el aviso" || mal "el doctor con minimal dice «$(pf_doctor)»"
+  # update a una versión nueva: el perfil elegido se queda como estaba
+  harness_lab_publish_stable 2026.10.07.2
+  out="$(harness_release update --yes 2>&1)"; rc=$?
+  [ "$rc" = 0 ] && [ "$(estado "d['version']['number']")" = 2026.10.07.2 ] && ok "update aplica la 2026.10.07.2" || mal "update salió $rc: $out"
+  [ "$(pf_saved)" = minimal ] && [ "$(estado "d['profile']['value']")" = minimal ] && [ "$(pf_doctor)" = "minimal True False" ] \
+    && ok "después del update sigue minimal" || mal "después del update: perfil=«$(pf_saved)» estado=«$(estado "d.get('profile')")» doctor=«$(pf_doctor)»"
+  # una máquina instalada sin elegir (como quedaron las de antes del arreglo): update no le elige uno por su cuenta
+  pf_fresh
+  out="$(harness install --version latest --yes 2>&1)"; rc=$?
+  [ "$rc" = 0 ] && [ -z "$(pf_saved)" ] && ok "sin --profile no escribe ninguno" || mal "sin --profile: rc=$rc perfil=«$(pf_saved)»: $out"
+  # (el árbol del laboratorio trae su propio perfil: lo que se mira es que el update no cambie lo que había)
+  pf_before="$(pf_doctor) $(estado "d['profile']['origin']")"
+  harness_lab_publish_stable 2026.10.07.3
+  out="$(harness_release update --yes 2>&1)"; rc=$?
+  [ "$rc" = 0 ] && [ -z "$(pf_saved)" ] && [ "$(pf_doctor) $(estado "d['profile']['origin']")" = "$pf_before" ] && ok "update tampoco: no escribe un perfil y queda como estaba ($pf_before)" || mal "update sobre la máquina sin elegir: rc=$rc perfil=«$(pf_saved)» antes «${pf_before}» después «$(pf_doctor) $(estado "d['profile']['origin']")»: $out"
+  # el plan lo nombra (--dry-run, en una HOME limpia), y un perfil que no existe sale 2 sin escribir ni bajar nada
+  pf_fresh
+  out="$(harness install --version latest --profile minimal --dry-run 2>&1)"; rc=$?
+  case "$out" in *"perfil: minimal (--profile)"*) ok "el plan dice «perfil: minimal (--profile)»" ;; *) mal "el plan no nombra el perfil (rc $rc): $out" ;; esac
+  # cualquier pedido al GitHub de juguete cuenta: el valor se revisa antes de la red
+  antes="$(harness_lab_home_hash)"; bajadas="$(pedidos '"host"')"
+  out="$(harness install --version latest --profile mini --yes 2>&1)"; rc=$?
+  [ "$rc" = 2 ] && case "$out" in *"perfil «mini»: tiene que ser minimal o full"*) true ;; *) false ;; esac && ok "--profile mini: sale 2 y lo dice" || mal "--profile mini salió $rc: $out"
+  [ "$(harness_lab_home_hash)" = "$antes" ] && [ ! -d "$(TYCON_DIR)/harness" ] && [ "$(pedidos '"host"')" = "$bajadas" ] && ok "y no escribió ni pidió nada a GitHub" || mal "--profile mini escribió o bajó algo"
+  # el perfil que no se puede escribir (el archivo de la máquina es una carpeta): sale 2 y el aplicador no corre (el estado
+  # no anota ninguna aplicación; la línea de arranque, que se escribe antes, es la única entrada de settings.json)
+  pf_fresh; mkdir -p "$LAB_HOME/.claude/tycon.json"
+  out="$(harness install --version latest --profile minimal --yes 2>&1)"; rc=$?
+  [ "$rc" = 2 ] && case "$out" in *"no pude escribir el perfil en ~/.claude/tycon.json"*"No corrí el aplicador"*) true ;; *) false ;; esac && [ -z "$(estado "d.get('last_apply') or ''")" ] \
+    && ok "el perfil que no se puede escribir: sale 2, lo dice y no corre el aplicador" || mal "sin poder escribir el perfil: rc=$rc last_apply=«$(estado "d.get('last_apply')")»: $out"
+  rm -rf "$LAB_HOME/.claude/tycon.json"
+  # --dry-run no escribe nada (ni el perfil); la variable del perfil que contradice a --profile sale 2 sin escribir
+  pf_fresh; antes="$(harness_lab_home_hash)"
+  harness install --version latest --profile minimal --dry-run >/dev/null 2>&1
+  [ "$(harness_lab_home_hash)" = "$antes" ] && [ ! -e "$LAB_HOME/.claude/tycon.json" ] && ok "--profile con --dry-run no escribe nada" || mal "--dry-run con --profile escribió en la HOME"
+  out="$(TYCON_INSTALL_PROFILE=full harness install --version latest --profile minimal --yes 2>&1)"; rc=$?
+  [ "$rc" = 2 ] && case "$out" in *"TYCON_INSTALL_PROFILE=full dicen cosas distintas"*) true ;; *) false ;; esac && [ "$(harness_lab_home_hash)" = "$antes" ] \
+    && ok "--profile minimal con TYCON_INSTALL_PROFILE=full: sale 2, lo dice y no escribe" || mal "la variable en contra: rc=$rc: $out"
+  # reinstalar con otro perfil sobre una máquina ya instalada: queda el nuevo, y el update de después lo conserva
+  pf_fresh
+  harness install --version latest --profile minimal --yes >/dev/null 2>&1
+  out="$(harness_release install --version latest --profile full --yes 2>&1)"; rc=$?
+  [ "$rc" = 0 ] && [ "$(pf_saved)" = full ] && [ "$(pf_doctor)" = "full True False" ] && ok "reinstalar con --profile full sobre minimal: queda full" || mal "reinstalar con full: rc=$rc perfil=«$(pf_saved)» doctor=«$(pf_doctor)»: $out"
+  harness_lab_publish_stable 2026.10.07.4
+  out="$(harness_release update --yes 2>&1)"; rc=$?
+  [ "$rc" = 0 ] && [ "$(estado "d['version']['number']")" = 2026.10.07.4 ] && [ "$(pf_saved)" = full ] && [ "$(pf_doctor)" = "full True False" ] \
+    && ok "el update después de full lo conserva" || mal "update tras full: rc=$rc versión=$(estado "d['version']['number']") perfil=«$(pf_saved)»: $out"
+  kill "$LAB_RELEASE_PROCESS" 2>/dev/null
+
+  # (pase adversarial del pedido 2, clases 10, 11 y 14 — sus pruebas, promovidas)
+  harness_lab_create "$BASE/labpf2"
+  harness_lab_release_server
+  # clase 14: reinstalar full → minimal saca lo que sólo trae full (un bloque de CLAUDE.md con profiles:[full]), como el clon
+  harness_lab_publish_stable 2026.10.07.1 lab-blocks.txt "response-style"
+  pf_fresh
+  harness install --version latest --profile full --yes >/dev/null 2>&1
+  pf_block() { grep -c 'TYCON_BLOCK:response-style START' "$LAB_HOME/.claude/CLAUDE.md" 2>/dev/null; }
+  pf_managed() { estado "[p['id'] for p in d.get('managed', []) if p.get('kind') == 'block']"; }
+  [ "$(pf_block)" = 1 ] && ok "con full, el bloque que sólo trae full está en CLAUDE.md" || mal "con full el bloque no está (bloque=$(pf_block) registro=$(pf_managed))"
+  harness_lab_publish_stable 2026.10.07.2 lab-blocks.txt ""
+  out="$(harness_release install --version latest --profile minimal --yes 2>&1)"; rc=$?
+  [ "$rc" = 0 ] && [ "$(pf_block)" = 0 ] && [ "$(pf_managed)" = "[]" ] && [ "$(estado "d['profile']['value']")" = minimal ] \
+    && ok "reinstalar con --profile minimal saca el bloque de full de CLAUDE.md y del registro" || mal "full → minimal: rc=$rc bloque=$(pf_block) registro=$(pf_managed) estado=«$(estado "d.get('profile')")»: $out"
+  # clase 11: una máquina nueva sin perfil fijado por nadie: el --dry-run dice que se va a preguntar (no promete full), y
+  # --yes sale 2 pidiéndolo (el aplicador del laboratorio fija el suyo con su perfil de juguete: TYCON_PROFILE vacío lo apaga)
+  pf_fresh
+  out="$(TYCON_PROFILE= harness install --version latest --dry-run 2>&1)"; rc=$?
+  [ "$rc" = 0 ] && case "$out" in *"perfil: sin elegir — install lo pregunta"*) true ;; *) false ;; esac && case "$out" in *"perfil: full (sin elegir)"*) false ;; *) true ;; esac \
+    && ok "máquina nueva sin perfil: el --dry-run dice que install lo pregunta" || mal "el --dry-run sin perfil (rc $rc): $out"
+  out="$(TYCON_PROFILE= harness install --version latest --yes 2>&1)"; rc=$?
+  [ "$rc" = 2 ] && case "$out" in *"elegí el perfil"*) true ;; *) false ;; esac && ok "…y con --yes sale 2 pidiéndolo, como dice el plan" || mal "--yes sin perfil (rc $rc): $out"
+  # (tercera vuelta de revisores) con terminal, el perfil contestado: el plan lo nombra como respuesta, queda escrito y el
+  # doctor lo da por elegido en la máquina
+  out="$(TYCON_PROFILE= python3 - "$LAB_TREE" <<'PY'
+import os, pty, sys, time, select
+tree = sys.argv[1]
+pid, fd = pty.fork()
+if pid == 0:
+    os.execvp('node', ['node', f'{tree}/scripts/setup/harness.js', 'install', '--version', 'latest'])
+# cada pregunta se contesta cuando aparece, en su orden (la de integraciones puede no venir: se salta si llega la siguiente)
+answers = [('Elegí 1, 2, minimal o full: '.encode(), b'minimal\n'), ('Nombres separados por coma, o Enter: '.encode(), b'\n'),
+           ('paquete del stack en todos tus repos'.encode(), b'n\n'), ('Instalo? [s/N]'.encode(), b's\n')]
+out = b''; pos = 0; t0 = time.time()
+while time.time() - t0 < 120:
+    r, _, _ = select.select([fd], [], [], 1)
+    if fd not in r: continue
+    try: chunk = os.read(fd, 4096)
+    except OSError: break
+    if not chunk: break
+    out += chunk
+    for i, (ask, say) in enumerate(answers):
+        j = out.find(ask, pos)
+        if j >= 0:
+            os.write(fd, say); pos = j + len(ask); del answers[:i + 1]; break
+os.waitpid(pid, 0)
+print(out.decode('utf-8', 'replace'))
+PY
+)"
+  case "$out" in *"perfil: minimal (respuesta)"*) ok "con terminal y el perfil contestado, el plan dice «perfil: minimal (respuesta)»" ;; *) mal "el plan con el perfil contestado: $out" ;; esac
+  [ "$(pf_saved)" = minimal ] && [ "$(pf_doctor)" = "minimal True False" ] && [ "$(estado "d['profile']['origin']")" = maquina ] \
+    && ok "…queda escrito y el doctor lo da por elegido en la máquina" || mal "el perfil contestado: perfil=«$(pf_saved)» doctor=«$(pf_doctor)» estado=«$(estado "d.get('profile')")»"
+  # clase 10: el perfil del equipo fija minimal: el plan (con terminal) nombra minimal, no el full del árbol que corre
+  harness_lab_team_repo
+  printf '{ "install": { "profile": "minimal" } }\n' > "$LAB_AUTHOR_TEAM/team-profile.json"
+  harness_lab_team_publish "perfil minimal"
+  harness_lab_team_server
+  pf_fresh
+  out="$(TYCON_PROFILE= harness install --version latest --team "$LAB_TEAM" --dry-run 2>&1)"; rc=$?
+  [ "$rc" = 0 ] && case "$out" in *"perfil: el que fije el perfil del equipo"*) true ;; *) false ;; esac && ok "--dry-run con --team: dice que el perfil lo fija el equipo (si no, se pregunta)" || mal "--dry-run con --team (rc $rc): $out"
+  out="$(TYCON_PROFILE= python3 - "$LAB_TREE" "$LAB_TEAM" <<'PY'
+import os, pty, sys, time, select
+tree, team = sys.argv[1], sys.argv[2]
+pid, fd = pty.fork()
+if pid == 0:
+    os.execvp('node', ['node', f'{tree}/scripts/setup/harness.js', 'install', '--version', 'latest', '--team', team])
+out = b''; t0 = time.time()
+while time.time() - t0 < 120:
+    r, _, _ = select.select([fd], [], [], 1)
+    if fd in r:
+        try: chunk = os.read(fd, 4096)
+        except OSError: break
+        if not chunk: break
+        out += chunk
+        if b'Instalo?' in out:
+            os.write(fd, b'n\n'); break
+try:
+    while True:
+        r, _, _ = select.select([fd], [], [], 5)
+        if fd not in r: break
+        chunk = os.read(fd, 4096)
+        if not chunk: break
+        out += chunk
+except OSError: pass
+os.waitpid(pid, 0)
+print(out.decode('utf-8', 'replace'))
+PY
+)"
+  case "$out" in *"perfil: minimal (perfil)"*) ok "el plan con el perfil del equipo dice «perfil: minimal (perfil)»" ;; *) mal "el plan con el perfil del equipo no dice minimal: $out" ;; esac
+  kill "$LAB_RELEASE_PROCESS" 2>/dev/null
+fi
+
 if [ "$FALLOS" = 0 ]; then echo "harness-release: todo verde"; else echo "❌ harness-release: $FALLOS fallo(s)"; exit 1; fi

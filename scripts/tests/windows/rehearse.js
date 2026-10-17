@@ -82,9 +82,12 @@ const SCENARIOS = Object.freeze({
   // story 8.40 (AC 34): el instalador del paquete de npm armado con `npm pack` y corrido con `npx --package` contra el GitHub
   // de juguete, y el aviso de pwsh 7 faltante. Va aparte, `all` no lo incluye
   npx: ['inventory', 'npx'],
+  // story 8.40 (AC 40): el paquete PUBLICADO, `npx @tyconsa/harness@latest` del registro y el GitHub reales; la segunda
+  // corrida dice «al día». Sin red, «no medido». Va aparte, `all` no lo incluye
+  'npx-published': ['inventory', 'npx-published'],
 });
 // todos los pasos que este guion sabe correr, en el orden en que salen en el reporte
-const STEP_ORDER = Object.freeze([...SCENARIOS.all, ...Object.keys(PORTABLE_STEPS), 'no-clone', 'codex-only', 'console-windows', 'migrate', 'waiver', 'npx']);
+const STEP_ORDER = Object.freeze([...SCENARIOS.all, ...Object.keys(PORTABLE_STEPS), 'no-clone', 'codex-only', 'console-windows', 'migrate', 'waiver', 'npx', 'npx-published']);
 // los pasos propios de los ensayos, con su tope en segundos (los demás son los de run.js, con el suyo)
 const OWN_STEPS = Object.freeze(Object.assign({
   // los dos ensayos del equipo: ninguna corrida suya pasa de 40 minutos (medido: unos 9 y unos 4). El tope de cada
@@ -97,6 +100,7 @@ const OWN_STEPS = Object.freeze(Object.assign({
   migrate: { script: path.join(HERE, 'migrate-probe.js'), cap: 2400, pass: ['allow-temp'] },
   waiver: { script: path.join(HERE, 'waiver-probe.js'), cap: 600, pass: ['allow-temp'] },
   npx: { script: path.join(HERE, 'npx-probe.js'), cap: 1800, pass: ['allow-temp'] },
+  'npx-published': { script: path.join(HERE, 'npx-probe.js'), cap: 1800, pass: ['allow-temp'], args: ['--from', 'registry'] },
 }, Object.fromEntries(Object.entries(PORTABLE_STEPS).map(([part, cap]) => [part, { script: path.join(HERE, 'portable-probe.js'), cap, pass: ['allow-temp'], args: ['--part', part] }]))));
 const OPTIONS = {
   '--lab': 'value', '--out': 'value', '--sources': 'value', '--scenario': 'value', '--cap': 'value', '--only': 'value',

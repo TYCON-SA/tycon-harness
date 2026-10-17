@@ -216,6 +216,11 @@ harness_lab_release_fresh_home
 run_gh -- --profile minimal --yes > "$BASE/t56a2.out" 2>&1; RC=$?
 if [ "$RC" -eq 0 ] && installed_ok && ! grep -q '¿Instalo?' "$BASE/t56a2.out"; then ok "T56 sin terminal con -- --profile minimal --yes: las opciones llegan a install y no hay pregunta"
 else no "T56 con -- --profile minimal --yes (rc $RC): $(brief "$BASE/t56a2.out" 400)"; fi
+# story 8.40, pedido 2: el perfil pedido queda escrito (antes se perdía y la máquina quedaba full, «perfil sin elegir»)
+PROFILE_SAVED="$(node -e 'try { const d = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); console.log((d.install || {}).profile || "") } catch (_) { console.log("") }' "$LAB_HOME/.claude/tycon.json")"
+if [ "$PROFILE_SAVED" = minimal ]; then ok "T56 el perfil pedido (minimal) queda escrito en ~/.claude/tycon.json"
+else no "T56 el perfil pedido no quedó escrito (install.profile «${PROFILE_SAVED}»): $(brief "$BASE/t56a2.out" 300)"; fi
+rm -f "$LAB_HOME/.claude/tycon.json"
 # (b) repo PRIVADO, sin permiso, sin terminal: sale 1 con UNA acción, nada escrito, nada bajado
 harness_lab_release_control "{ \"auth\": \"token:$LAB_PERMIT\" }"
 harness_lab_release_fresh_home; : > "$LAB_RELEASE_LOG"
