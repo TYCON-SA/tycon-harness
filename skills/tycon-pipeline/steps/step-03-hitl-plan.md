@@ -20,6 +20,9 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js risk-class
 - **risk=NORMAL** → checkpoint HITL exactamente como se describe abajo.
 - El user puede forzar HITL siempre con `warnings_pause: true` en `.tycon/advisors.yaml` del repo.
 - 🔴 `git push` y cambios de scope firmado NUNCA se auto-aprueban — siguen human-gate sin excepción.
+- 🖼️ **Excepción de pantalla**: si la story tiene pantalla (`risk-class` trae `mockup_required: true`),
+  con LOW se anuncia el plan auto-aprobado pero **se espera la respuesta sobre la maqueta** (§La maqueta, abajo):
+  una pantalla la ve una persona antes de construirla.
 
 ## Acción
 
@@ -29,6 +32,43 @@ Presentar al usuario:
 3. Pregunta explícita: "¿Apruebo el plan para proceder con la implementación?"
 
 Usar la tool `AskUserQuestion` si está disponible, o simplemente pedir respuesta en texto.
+
+## La maqueta (stories con pantalla)
+
+Hoy la pantalla se ve recién construida, y un error de diseño se descubre cuando ya está programado. En una story que
+agrega o cambia una pantalla, el pipeline arma una **maqueta**: un HTML local, de un archivo, sin red y sin código, con
+los textos reales de la pantalla. Se aprueba junto con el plan, y la revisión de la pantalla (paso 7c.7, capas 9 y 10)
+compara lo construido contra ella.
+
+1. **¿Corre?** `node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/mockup.js status --story <spec> --json`. Con
+   `screen: false` este apartado no corre. Usa la misma detección que la revisión de la pantalla; si no puede leer la
+   story, sale 2 (no es «sin pantalla»).
+2. **Armarla**: el modelo (JSON) sale de la story y del plan: cada pantalla con su nombre y su estado (los de falla
+   —vacío, error— van como otra pantalla), y cada elemento con su texto literal. La forma: `mockup.js schema`.
+   ```bash
+   node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/mockup.js render --data - --story <spec> --open <<'JSON'
+   { ...el modelo... }
+   JSON
+   ```
+   Sin `--out` la escribe donde la busca la revisión (`<carpeta qa>/<clave>-mockup.html`). Rechaza el texto de relleno
+   (lorem ipsum, TBD, TODO, «...»): los textos son los que va a leer el usuario.
+3. **Presentarla con el plan, en el chat**: la ruta del archivo y la lista de `mockup.js texts <ruta>` por pantalla. El
+   navegador puede no abrirse (sesión remota, Linux sin escritorio, la jaula de Codex) o estar en otra máquina: la lista
+   en el chat es lo que se aprueba seguro.
+4. **La pregunta**: va en el mismo momento que la del plan. Con `AskUserQuestion` si está; sin ella (Codex), en texto
+   con opciones numeradas: «1. Apruebo la maqueta · 2. Cambiá esto: … · 3. Cancelar». Con LOW el plan se anuncia
+   auto-aprobado, pero la respuesta sobre la maqueta se espera igual.
+5. **Quién la aprueba**: quien aprueba el plan. Es el dueño o, si el dueño dejó el modo autónomo, quien tenga su
+   **delegación** (la coordinadora). La cita dice quién aprobó y por qué vía, por ejemplo «aprobada por la
+   coordinadora, por delegación del dueño». El guion no valida quién es: la cita es la constancia.
+6. **Cierre**: `complete-step 3 --approved "<cita del plan>" --mockup-approved "<cita de la maqueta>"` (o
+   `--auto-approved "<criterios>" --mockup-approved "<cita>"` con LOW). Sin la maqueta, con una maqueta que no pasa
+   `mockup.js check`, o sin `--mockup-approved`, el paso 3 no cierra. Queda la huella en el marcador y en
+   `<clave>-mockup-approval.json` (sin la cita), que va en el commit con la maqueta.
+
+Si la maqueta cambia después (un arreglo de legibilidad cambió un texto), se le muestra de nuevo a quien la aprueba y
+`marker.js approve-mockup --approved "<cita>"`. Es el mismo comando si la story ganó una pantalla después de aprobar el
+plan: el paso 8 lo frena hasta que esté.
 
 ## Superficie visual del plan (opt-in — `visual_plan`)
 
@@ -112,9 +152,11 @@ Antes de presentar el plan, con cualquier stack:
 node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js complete-step 3 --approved "<cita textual de la aprobación>"
 # Nivel 2 — auto-aprobación: SOLO si risk-class = LOW (se verifica en proceso; si no es LOW, bloquea):
 node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js complete-step 3 --auto-approved "<criterios LOW cumplidos>"
+# Story con pantalla (con cualquiera de los dos): además la aprobación de la maqueta (§La maqueta):
+#   … --mockup-approved "<cita: quién aprobó la maqueta y por qué vía>"
 ```
 
-Sin `--approved`/`--auto-approved` el comando bloquea. Queda en `marker.planApproval` y en `gates.log`. No se codea "mientras tanto": el orden es plan aprobado → tests (4.0 ATDD) → código.
+Sin `--approved`/`--auto-approved` el comando bloquea; en una story con pantalla, también sin `--mockup-approved`. Queda en `marker.planApproval` y en `gates.log`. No se codea "mientras tanto": el orden es plan aprobado → tests (4.0 ATDD) → código.
 
 ## Output de este step
 

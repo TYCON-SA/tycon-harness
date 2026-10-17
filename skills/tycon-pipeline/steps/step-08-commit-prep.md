@@ -174,6 +174,8 @@ Co-Authored-By: <modelo exacto de la sesión> <noreply@anthropic.com>
    ```
 
    Archivos a commitear: {lista}
+   (story con maqueta aprobada: van también `<carpeta qa>/<clave>-mockup.html` y
+   `<clave>-mockup-approval.json`; tienen que viajar con la story para que la revisión de la pantalla los encuentre)
 
    Para commitear, correr:
    git add {archivos}

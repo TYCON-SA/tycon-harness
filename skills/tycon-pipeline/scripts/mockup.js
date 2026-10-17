@@ -1,0 +1,525 @@
+#!/usr/bin/env node
+/**
+ * mockup.js — la maqueta de la pantalla antes de construirla (story 7.30).
+ *
+ * Hoy la pantalla se ve recién construida: un error de diseño (qué se muestra, dónde, con qué palabras) se descubre
+ * cuando ya está programado y probado, y arreglarlo cuesta otra vuelta de revisores, del pase adversarial y de las
+ * pruebas de navegador. La maqueta es un HTML local, de un archivo, sin red y sin código, con los textos reales de la
+ * pantalla. En las stories con pantalla el dueño la aprueba junto con el plan (paso 3, `marker.js complete-step 3
+ * --mockup-approved`), su huella queda anotada, y la revisión de la pantalla (`qa-guide.js --check`, capas 9 y 10)
+ * compara lo construido contra ella.
+ *
+ * Comandos:
+ *   render --data <json|-> [--out <ruta>] [--story <spec>] [--open]   arma la maqueta (sin --out: la ruta de `status`)
+ *   check <html>                                                       0 = maqueta válida · 1 = hallazgos · 2 = ilegible
+ *   texts <html> [--json]                                              los textos que se comparan con la pantalla
+ *   status --story <spec> [--json]                                     ¿tiene pantalla? dónde va su maqueta, aprobada o no
+ *   schema                                                             la forma del modelo
+ *   demo [--out <ruta>]                                                la maqueta del modelo de ejemplo
+ *
+ * Es estática a propósito: sin <script>, sin imágenes, sin enlaces que naveguen, con una política de seguridad del
+ * contenido que niega todo salvo estilos en línea. Sin código ni direcciones no hay forma de cargar red, y la
+ * validación es determinística. Es la misma con Claude y con Codex: se abre con doble clic y se mira en el chat.
+ */
+'use strict';
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
+
+const GENERATOR = 'tycon-mockup/1';
+const CSP = "default-src 'none'; style-src 'unsafe-inline'";
+const KINDS = ['heading', 'text', 'button', 'link', 'field', 'checkbox', 'table', 'list', 'message', 'box'];
+const TONES = ['info', 'ok', 'warn', 'error'];
+const TEXT_KINDS = ['heading', 'text', 'button', 'link', 'message', 'box'];
+
+// El escape propio de la maqueta: además de `& < > " '` codifica `= ( ) @ :` como entidades numéricas. Así un texto
+// que trae `<img src=https://…>` o `url(…)` no deja ningún `src=` ni `url(` literal en el archivo, y `check` no da
+// falsos hallazgos. `esc` de visual-plan.js no alcanza: deja `src=` y `url(` tal cual.
+function mockupEsc(s) {
+  return String(s).replace(/[&<>"'=()@:]/g, (c) => `&#${c.charCodeAt(0)};`);
+}
+function decode(s) {
+  return String(s)
+    .replace(/&#x([0-9a-f]{1,6});/gi, (m, h) => { const n = parseInt(h, 16); return n <= 0x10ffff ? String.fromCodePoint(n) : m; })
+    .replace(/&#(\d{1,7});/g, (m, d) => { const n = Number(d); return n <= 0x10ffff ? String.fromCodePoint(n) : m; });
+}
+
+// La huella del contenido con los fines de línea llevados a LF: con `core.autocrlf` en Windows el mismo archivo sale
+// de git con CRLF y daría «la maqueta cambió» sin que nadie la toque.
+function mockupHash(content) {
+  return crypto.createHash('sha256').update(String(content).replace(/\r\n/g, '\n'), 'utf8').digest('hex');
+}
+
+const isStr = (v) => typeof v === 'string' && v.trim() !== '';
+
+// Los textos que se comparan con la pantalla, de un elemento del modelo. El rótulo de un `box` describe una imagen o un
+// gráfico para el dueño y no está en la pantalla: se compara sólo con `compare: true`. `value`, `rows` y `notes` son
+// datos de ejemplo y no se comparan.
+function comparedOf(el) {
+  if (['heading', 'text', 'button', 'link', 'message'].includes(el.kind)) return [el.text];
+  if (el.kind === 'box') return el.compare === true ? [el.text] : [];
+  if (el.kind === 'field' || el.kind === 'checkbox') return [el.label, ...(isStr(el.placeholder) ? [el.placeholder] : [])];
+  if (el.kind === 'table') return el.columns;
+  if (el.kind === 'list') return el.items;
+  return [];
+}
+
+// Relleno: la maqueta lleva los textos reales de la pantalla (decisión 6 del dueño). `lorem`/`ipsum` como palabra
+// entera; `TBD`/`TODO`/`XXX` en mayúsculas, solos o al principio («TODO: …»). «VER TODO», «Seleccionar todo» o «Pagar
+// TODO el saldo» son textos reales (pase adversarial: con la palabra suelta en cualquier lugar, se rechazaban).
+function isFiller(t) {
+  const s = String(t).replace(/\s+/g, ' ').trim();
+  if (/\b(lorem|ipsum)\b/i.test(s)) return true;
+  if (s === '...' || s === '…' || /^x{3}$/i.test(s) || /^texto de ejemplo$/i.test(s)) return true;
+  return /^(TBD|TODO|XXX)\b(?![ ][A-ZÁÉÍÓÚÑ]+\b)/.test(s);
+}
+
+/** Los problemas del modelo, cada uno con su pantalla y su número de elemento. Vacío = se puede armar. */
+function validateModel(model) {
+  const out = [];
+  if (!model || typeof model !== 'object' || Array.isArray(model)) return ['el modelo tiene que ser un objeto JSON'];
+  if (!isStr(model.title)) out.push('falta `title` (el nombre de la maqueta)');
+  if (!Array.isArray(model.screens) || !model.screens.length) {
+    out.push('falta `screens` (una lista con al menos una pantalla)');
+    return out;
+  }
+  model.screens.forEach((sc, i) => {
+    const p = `pantalla ${i + 1}`;
+    if (!sc || typeof sc !== 'object') { out.push(`${p}: no es un objeto`); return; }
+    if (!Array.isArray(sc.elements) || !sc.elements.length) { out.push(`${p}: falta \`elements\` (lo que muestra la pantalla)`); return; }
+    sc.elements.forEach((el, j) => {
+      const e = `${p}, elemento ${j + 1}`;
+      if (!el || typeof el !== 'object') { out.push(`${e}: no es un objeto`); return; }
+      if (!KINDS.includes(el.kind)) { out.push(`${e}: \`kind\` «${el.kind}» no está en la lista (${KINDS.join(' | ')})`); return; }
+      const k = `${e} (${el.kind})`;
+      if (TEXT_KINDS.includes(el.kind) && !isStr(el.text)) out.push(`${k}: falta \`text\` (una cadena)`);
+      if ((el.kind === 'field' || el.kind === 'checkbox') && !isStr(el.label)) out.push(`${k}: falta \`label\` (una cadena)`);
+      if (el.kind === 'field' && el.placeholder !== undefined && typeof el.placeholder !== 'string') out.push(`${k}: \`placeholder\` tiene que ser una cadena`);
+      if (el.kind === 'table' && (!Array.isArray(el.columns) || !el.columns.length || !el.columns.every(isStr))) out.push(`${k}: falta \`columns\` (una lista de cadenas, no vacía)`);
+      if (el.kind === 'list' && (!Array.isArray(el.items) || !el.items.length || !el.items.every(isStr))) out.push(`${k}: falta \`items\` (una lista de cadenas, no vacía)`);
+      if (el.kind === 'message' && el.tone !== undefined && !TONES.includes(el.tone)) out.push(`${k}: \`tone\` «${el.tone}» no está en la lista (${TONES.join(' | ')})`);
+    });
+  });
+  if (out.length) return out;
+  model.screens.forEach((sc, i) => sc.elements.forEach((el, j) => {
+    for (const t of comparedOf(el)) {
+      if (isFiller(t)) out.push(`pantalla ${i + 1}, elemento ${j + 1} (${el.kind}): «${t}» es texto de relleno — la maqueta lleva los textos reales de la pantalla`);
+    }
+  }));
+  return out;
+}
+
+const STYLE = `
+  body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; background: #f4f5f7; color: #1d2433; margin: 0; padding: 24px; }
+  header h1 { font-size: 20px; margin: 0 0 4px; }
+  header p { margin: 0 0 20px; color: #5a6475; font-size: 13px; }
+  .screen { background: #fff; border: 1px solid #d5d9e0; border-radius: 10px; margin: 0 0 24px; max-width: 760px; }
+  .screen-head { display: flex; gap: 10px; align-items: baseline; padding: 10px 16px; border-bottom: 1px solid #e6e9ee; background: #fafbfc; border-radius: 10px 10px 0 0; }
+  .screen-name { font-weight: 600; }
+  .screen-state { font-size: 12px; color: #fff; background: #5a6475; border-radius: 10px; padding: 1px 8px; }
+  .screen-file { font-size: 12px; color: #8a93a3; margin-left: auto; font-family: ui-monospace, Menlo, monospace; }
+  .screen-body { padding: 16px; display: flex; flex-direction: column; gap: 12px; align-items: flex-start; }
+  .heading { font-size: 18px; margin: 0; }
+  .text { margin: 0; }
+  .button { display: inline-block; border: 1px solid #9aa3b2; border-radius: 6px; padding: 6px 14px; background: #fff; }
+  .button.primary { background: #2f5bd3; border-color: #2f5bd3; color: #fff; }
+  .link { color: #2f5bd3; text-decoration: underline; }
+  .field { display: flex; flex-direction: column; gap: 4px; min-width: 280px; }
+  .field .label { font-size: 13px; font-weight: 600; }
+  .field .input { border: 1px solid #c3c9d3; border-radius: 6px; padding: 6px 10px; min-height: 18px; }
+  .field .ph { color: #8a93a3; }
+  .field .ph-note { font-size: 12px; color: #8a93a3; }
+  .checkbox { display: flex; gap: 8px; align-items: center; }
+  .checkbox .box { width: 14px; height: 14px; border: 1px solid #9aa3b2; border-radius: 3px; display: inline-block; }
+  table.table { border-collapse: collapse; min-width: 420px; }
+  table.table th, table.table td { border: 1px solid #d5d9e0; padding: 6px 10px; text-align: left; font-size: 14px; }
+  table.table th { background: #f0f2f5; }
+  ul.list { margin: 0; padding-left: 20px; }
+  .message { border-radius: 6px; padding: 8px 12px; border: 1px solid; }
+  .tone-info { background: #eef3ff; border-color: #b9cbf5; }
+  .tone-ok { background: #ecf8ef; border-color: #a9dcb5; }
+  .tone-warn { background: #fff7e6; border-color: #f0cf8a; }
+  .tone-error { background: #fdeeee; border-color: #eeb0b0; }
+  .box { border: 2px dashed #b4bccb; border-radius: 8px; padding: 24px; color: #5a6475; min-width: 280px; text-align: center; }
+  .notes { max-width: 760px; font-size: 13px; color: #5a6475; }
+`;
+
+/** El HTML de la maqueta: un archivo, sin código ni direcciones. */
+function renderMockup(model) {
+  const E = mockupEsc;
+  const T = (text, kind, i) => `<span class="t" data-mockup-text="${E(text)}" data-kind="${kind}" data-screen="${i}">${E(text)}</span>`;
+  const el = (x, i) => {
+    switch (x.kind) {
+      case 'heading': return `<h2 class="heading">${T(x.text, x.kind, i)}</h2>`;
+      case 'text': return `<p class="text">${T(x.text, x.kind, i)}</p>`;
+      case 'button': return `<span class="button${x.primary ? ' primary' : ''}">${T(x.text, x.kind, i)}</span>`;
+      case 'link': return `<span class="link">${T(x.text, x.kind, i)}</span>`;
+      case 'field': {
+        const ph = isStr(x.placeholder) ? T(x.placeholder, x.kind, i) : '';
+        const input = isStr(x.value) ? E(x.value) : (ph ? `<span class="ph">${ph}</span>` : '');
+        const note = isStr(x.value) && ph ? `<span class="ph-note">vacío dice ${ph}</span>` : '';
+        return `<div class="field"><span class="label">${T(x.label, x.kind, i)}</span><span class="input">${input}</span>${note}</div>`;
+      }
+      case 'checkbox': return `<div class="checkbox"><span class="box"></span>${T(x.label, x.kind, i)}</div>`;
+      case 'table': {
+        const rows = (Array.isArray(x.rows) ? x.rows : []).map((r) => `<tr>${(Array.isArray(r) ? r : []).map((c) => `<td>${E(c)}</td>`).join('')}</tr>`).join('');
+        return `<table class="table"><thead><tr>${x.columns.map((c) => `<th>${T(c, x.kind, i)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>`;
+      }
+      case 'list': return `<ul class="list">${x.items.map((it) => `<li>${T(it, x.kind, i)}</li>`).join('')}</ul>`;
+      case 'message': return `<div class="message tone-${TONES.includes(x.tone) ? x.tone : 'info'}">${T(x.text, x.kind, i)}</div>`;
+      case 'box': return `<div class="box">${x.compare === true ? T(x.text, x.kind, i) : E(x.text)}</div>`;
+      default: return '';
+    }
+  };
+  const screens = model.screens.map((sc, i) => {
+    const name = isStr(sc.name) ? sc.name : `Pantalla ${i + 1}`;
+    return [
+      `<section class="screen" data-screen-index="${i}" data-screen-name="${E(name)}">`,
+      `<div class="screen-head"><span class="screen-name">${E(name)}</span>${isStr(sc.state) ? `<span class="screen-state">${E(sc.state)}</span>` : ''}${isStr(sc.file) ? `<span class="screen-file">${E(sc.file)}</span>` : ''}</div>`,
+      `<div class="screen-body">`,
+      ...sc.elements.map((x) => el(x, i)),
+      '</div>',
+      '</section>',
+    ].join('\n');
+  }).join('\n');
+  const sub = `Maqueta de la pantalla${isStr(model.storyId) ? ` — story ${E(model.storyId)}` : ''}. Se mira y se aprueba con el plan; lo construido se compara contra estos textos.`;
+  return [
+    '<!doctype html>',
+    '<html lang="es"><head><meta charset="utf-8">',
+    `<meta http-equiv="Content-Security-Policy" content="${CSP}">`,
+    `<meta name="generator" content="${GENERATOR}">`,
+    '<meta name="viewport" content="width=device-width, initial-scale=1">',
+    `<title>Maqueta — ${E(model.title)}</title>`,
+    `<style>${STYLE}</style>`,
+    '</head><body>',
+    `<header><h1>${E(model.title)}</h1><p>${sub}</p></header>`,
+    screens,
+    isStr(model.notes) ? `<div class="notes">${E(model.notes)}</div>` : '',
+    '</body></html>',
+    '',
+  ].join('\n');
+}
+
+const LOADS = [
+  [/<script/i, '<script'], [/<link\b/i, '<link'], [/<iframe/i, '<iframe'], [/<object\b/i, '<object'], [/<embed\b/i, '<embed'],
+  [/<base\b/i, '<base'], [/<form\b/i, '<form'], [/<img\b/i, '<img'], [/<svg\b/i, '<svg'], [/<video\b/i, '<video'],
+  [/<audio\b/i, '<audio'], [/<source\b/i, '<source'], [/<meta[^>]*http-equiv\s*=\s*["']?refresh/i, '<meta http-equiv="refresh"'],
+  [/\bsrc\s*=/i, 'src='], [/\bhref\s*=/i, 'href='], [/\bsrcset\s*=/i, 'srcset='], [/\bposter\s*=/i, 'poster='],
+  [/\bbackground\s*=/i, 'background='], [/\bformaction\s*=/i, 'formaction='], [/\bon[a-z]+\s*=/i, 'on…= (un atributo de evento)'],
+  [/url\(/i, 'url('], [/image-set\(/i, 'image-set('], [/@import/i, '@import'],
+];
+/**
+ * ¿Es una maqueta de este guion, sin cargas? `{ ok, findings: [{ line, what }] }`. Se busca en el archivo ENTERO: una
+ * etiqueta o un atributo partido en varias líneas (`<a\nhref\n=…>`) también cuenta (pase adversarial: línea por línea
+ * se escapaba). Los textos no dan falsos hallazgos porque salen con `mockupEsc`.
+ */
+function validateMockupHtml(html) {
+  const findings = [];
+  const s = String(html);
+  if (!/<meta\s+name="generator"\s+content="tycon-mockup\/1"\s*\/?>/.test(s)) findings.push({ line: 0, what: `falta la meta generator ${GENERATOR}: no es una maqueta de mockup.js (armala con mockup.js render)` });
+  if (!s.includes(`<meta http-equiv="Content-Security-Policy" content="${CSP}">`)) findings.push({ line: 0, what: `falta la meta de la política de seguridad (${CSP})` });
+  if (!/data-mockup-text="/.test(s)) findings.push({ line: 0, what: 'no trae ningún texto que se compare con la pantalla' });
+  for (const [re, what] of LOADS) {
+    for (const m of s.matchAll(new RegExp(re.source, 'gi'))) {
+      findings.push({ line: s.slice(0, m.index).split('\n').length, what: `carga externa o código: «${what}»` });
+    }
+  }
+  return { ok: findings.length === 0, findings };
+}
+
+/** Los textos que se comparan: [{ text, kind, screen, screenName }], o null si no es una maqueta de este guion. */
+function mockupTexts(html) {
+  const s = String(html);
+  if (!/<meta\s+name="generator"\s+content="tycon-mockup\/1"\s*\/?>/.test(s)) return null;
+  const names = {};
+  for (const m of s.matchAll(/data-screen-index="(\d+)" data-screen-name="([^"]*)"/g)) names[m[1]] = decode(m[2]);
+  const out = [];
+  for (const m of s.matchAll(/data-mockup-text="([^"]*)" data-kind="([^"]*)" data-screen="(\d+)"/g)) {
+    out.push({ text: decode(m[1]), kind: m[2], screen: Number(m[3]), screenName: names[m[3]] || null });
+  }
+  return out;
+}
+
+/**
+ * ¿La story tiene pantalla? Con la MISMA detección que la revisión de la 7.24 (`qa-guide.js#isUiStory` con la raíz del
+ * repo de la STORY), no la de `markerStoryIsUi` (raíz del repo del código). Una story ilegible TIRA: «no pude mirar»
+ * nunca es «no hay pantalla».
+ */
+function screenStory(storyPath) {
+  if (!storyPath) throw new Error('sin ruta de la story');
+  const abs = path.resolve(storyPath);
+  const content = fs.readFileSync(abs, 'utf8');
+  const fm = (content.match(/^---\r?\n([\s\S]*?)\r?\n---/) || [])[1] || '';
+  const repoRoot = require(path.join(__dirname, 'lib', 'evidence-config.js')).discoverRepoRoot(abs);
+  const detail = require(path.join(__dirname, 'lib', 'ui-signal.js')).uiSignalDetail(content, repoRoot);
+  const screen = require(path.join(__dirname, 'qa-guide.js')).isUiStory(content, fm, repoRoot);
+  return { screen: screen === true, signal: detail.signal, detail, repoRoot, story: abs };
+}
+
+/** Dónde van la maqueta y su aprobación: la carpeta y la clave de la guía del tester (`qa-guide.js#qaLocation`). */
+function mockupPaths(storyPath) {
+  const { qaDir, qk } = require(path.join(__dirname, 'qa-guide.js')).qaLocation(storyPath);
+  return { qaDir, key: qk, mockup: path.join(qaDir, `${qk}-mockup.html`), approval: path.join(qaDir, `${qk}-mockup-approval.json`) };
+}
+
+/** El archivo de aprobación: `{ state: 'absent' }`, `{ state: 'ok', data }` o `{ state: 'bad', error }` (nunca «no hay»). */
+function readApproval(file) {
+  let raw;
+  try { raw = fs.readFileSync(file, 'utf8'); } catch (e) {
+    if (e.code === 'ENOENT') return { state: 'absent' };
+    return { state: 'bad', error: e.code || e.message };
+  }
+  let data;
+  try { data = JSON.parse(raw); } catch (e) { return { state: 'bad', error: `JSON inválido (${e.message})` }; }
+  if (!data || data.schema !== 1 || !/^[0-9a-f]{64}$/.test(String(data.sha256)) || !isStr(data.file) || !isStr(String(data.story ?? ''))) {
+    return { state: 'bad', error: 'no tiene la forma { schema: 1, story, file, sha256, approvedAt }' };
+  }
+  return { state: 'ok', data };
+}
+
+/** Escribe la aprobación (sin la cita: el archivo viaja con el repo). Lo llama sólo marker.js. */
+function writeApproval({ approvalPath, mockupPath, story, sha256, approvedAt }) {
+  const data = { schema: 1, story: String(story), file: path.relative(path.dirname(approvalPath), mockupPath).split(path.sep).join('/'), sha256, approvedAt };
+  fs.mkdirSync(path.dirname(approvalPath), { recursive: true });
+  fs.writeFileSync(approvalPath, JSON.stringify(data, null, 2) + '\n');
+  return data;
+}
+
+const wordCount = (s) => String(s).trim().split(/\s+/).filter(Boolean).length;
+const reEsc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const collapse = (s) => String(s).replace(/\s+/g, ' ').trim();
+// Un texto corto como palabra entera, respetando mayúsculas: «Pagar» no está en «sin pagar» ni en `onPagar` (R13).
+const wordIn = (needle, hay) => new RegExp(`(^|[^\\p{L}\\p{N}_])${reEsc(collapse(needle))}(?=$|[^\\p{L}\\p{N}_])`, 'u').test(collapse(hay));
+// Un texto corto que la pantalla trae como cadena literal ENTERA (`'Guardar'`, `"Número"`, `` `%` ``) o como texto de
+// JSX entero (`>Guardar<`): `visibleTexts` descarta las cadenas de una palabra fuera del JSX y los textos sin letras, y
+// así una columna definida en un arreglo, un `{cond ? 'A' : 'B'}` o un `t('Cancelar')` salían como faltantes (pase
+// adversarial). Entera: `onPagar` sigue sin contar como «Pagar».
+const literalIn = (needle, src) => {
+  const t = reEsc(collapse(needle)).replace(/ /g, '\\s+');
+  return new RegExp(`(['"\`])\\s*${t}\\s*\\1|>\\s*${t}\\s*<`, 'u').test(String(src));
+};
+
+/** Las diferencias declaradas en la revisión: `- «<texto>» — differs: <por qué>` (sin motivo no cuenta). */
+function declaredDiffs(md) {
+  const out = new Map();
+  for (const l of String(md || '').split('\n')) {
+    const m = l.match(/\bdiffers:\s*(.*)$/);
+    if (!m || !m[1].trim()) continue;
+    for (const q of l.slice(0, m.index).matchAll(/«([^»]+)»/g)) out.set(q[1].replace(/\s+/g, ' ').trim(), m[1].trim());
+  }
+  return out;
+}
+
+/**
+ * Lo construido contra la maqueta. `texts`: los de `mockupTexts`; `screens`: [{ rel, abs }]; `md`: la revisión de la
+ * pantalla (para `differs:`). Devuelve `{ missing, extras, declared, unreadable }`. Un texto de 3 palabras o más se
+ * busca como en la capa 8 (`whereInScreens`: literal o mensaje armado); uno más corto sólo entre los textos visibles,
+ * como palabra entera (R13): `whereInScreens` busca primero en el archivo entero, y «Pagar» aparece en `onPagar`.
+ */
+function compareWithScreens({ texts, screens, md }) {
+  const ui = require(path.join(__dirname, 'lib', 'ui-texts.js'));
+  const declaredMap = declaredDiffs(md);
+  const unreadable = []; const readable = [];
+  for (const s of screens || []) {
+    try { readable.push({ ...s, src: fs.readFileSync(s.abs, 'utf8') }); } catch (e) { unreadable.push({ rel: s.rel, error: e.code || e.message }); }
+  }
+  const visibles = readable.map((s) => ({ rel: s.rel, texts: ui.visibleTexts(s.src) }));
+  const seen = new Set(); const missing = []; const declared = [];
+  for (const t0 of texts || []) {
+    // espacios colapsados, como los textos de la pantalla (pase adversarial: «Ver  todo» nunca coincidía)
+    const t = { ...t0, text: collapse(t0.text) };
+    if (!t.text || seen.has(t.text)) continue;
+    seen.add(t.text);
+    const motivo = declaredMap.get(t.text);
+    if (motivo) { declared.push({ ...t, motivo }); continue; }
+    const present = wordCount(t.text) >= 3
+      ? ui.whereInScreens(t.text, readable).some((h) => !h.unreadable)
+      : visibles.some((v) => v.texts.some((x) => wordIn(t.text, x.text))) || readable.some((s) => literalIn(t.text, s.src));
+    if (!present) missing.push(t);
+  }
+  const extras = [];
+  for (const v of visibles) {
+    for (const x of v.texts) {
+      const matched = (texts || []).some((t) => wordIn(t.text, x.text) || wordIn(x.text, t.text)
+        || ui.quoteMatchesText(t.text, x.text) || ui.quoteMatchesText(x.text, t.text));
+      if (!matched) extras.push({ text: x.text, rel: v.rel, line: x.line });
+    }
+  }
+  return { missing, extras, declared, unreadable };
+}
+
+/** Los argumentos de `qa-guide.js --check` en el paso 8: con la maqueta aprobada en el marcador, su huella. */
+function qaGuideCheckArgs(storyPath, marker) {
+  const sha = marker && marker.mockupApproval && marker.mockupApproval.sha256;
+  return [path.join(__dirname, 'qa-guide.js'), '--check', '--story', storyPath, ...(sha ? ['--mockup-sha', sha] : [])];
+}
+
+/**
+ * Qué hace el paso 8 con la maqueta (R10, R12). `{ block, skip, compare, screenNow }`:
+ *   block   — la story ganó una pantalla después de aprobar el plan sin maqueta (el paso 3 anotó `screen: false`).
+ *   skip    — tenía maqueta aprobada y ya no se detecta pantalla: no se compara, se dice y se anota.
+ *   compare — hay maqueta aprobada y la story sigue con pantalla (o no se pudo leer: «no pude mirar» no saltea).
+ */
+function mockupStep8(marker, storyPath) {
+  const ap = marker && marker.mockupApproval;
+  const dec = marker && marker.mockupDecision;
+  const none = { block: null, skip: false, compare: false, screenNow: null };
+  if (!ap && !(dec && dec.screen === false)) return none;
+  let screenNow = null; let leerError = null;
+  try { screenNow = screenStory(storyPath).screen; } catch (e) { screenNow = null; leerError = e.code || e.message; }
+  let block = null;
+  if (!ap && dec && dec.screen === false && screenNow === true) {
+    block = `la story ganó una pantalla después de aprobar el plan: armá la maqueta (\`mockup.js render --story ${storyPath}\`), mostrásela al dueño (o a quien tenga su delegación) y \`marker.js approve-mockup --approved "<cita>"\``;
+  } else if (!ap && dec && dec.screen === false && screenNow === null) {
+    // «no pude mirar» nunca es «no hay»: sin leer la story no se sabe si ganó una pantalla (revisor de fallas silenciosas)
+    block = `no pude leer la story (${storyPath || '(sin ruta en el marcador)'}: ${leerError}): no sé si ganó una pantalla después de aprobar el plan. Arreglá la ruta (\`marker.js set\` con \`storyPath\`) y volvé a cerrar.`;
+  }
+  return { block, skip: !!ap && screenNow === false, compare: !!ap && screenNow !== false, screenNow };
+}
+
+const DEMO = {
+  storyId: '1.1',
+  title: 'La lista de facturas',
+  screens: [
+    {
+      name: 'Lista de facturas',
+      state: 'con facturas sin pagar',
+      file: 'src/components/Facturas.tsx',
+      elements: [
+        { kind: 'heading', text: 'Facturas de Acme SA' },
+        { kind: 'text', text: 'Tiene 3 facturas sin pagar.' },
+        { kind: 'field', label: 'Buscar factura', placeholder: 'Número o fecha', value: '0001-00012345' },
+        { kind: 'table', columns: ['Número', 'Vence', 'Importe'], rows: [['0001-00012345', '12/11', '$ 120.000']] },
+        { kind: 'message', tone: 'warn', text: 'Las facturas vencidas no se pueden pagar desde acá.' },
+        { kind: 'button', text: 'Pagar seleccionadas', primary: true },
+        { kind: 'link', text: 'Ver facturas pagadas' },
+        { kind: 'box', text: 'Gráfico de vencimientos por mes' },
+      ],
+    },
+    { name: 'Lista de facturas', state: 'sin facturas', elements: [{ kind: 'text', text: 'No tiene facturas sin pagar.' }] },
+  ],
+  notes: 'para el dueño; no se compara',
+};
+
+const SCHEMA = `La forma del modelo de la maqueta (JSON). Los ejemplos son inventados.
+
+${JSON.stringify(DEMO, null, 2)}
+
+- kind: ${KINDS.join(' | ')}
+- tone (de message): ${TONES.join(' | ')}
+- El texto que exige cada kind: text para heading, text, button, link, message y box; label para field y checkbox
+  (placeholder opcional); columns no vacío para table; items no vacío para list.
+- Se comparan con la pantalla: el texto de heading, text, button, link y message; label y placeholder; columns; items;
+  y el text de un box sólo con "compare": true (el rótulo de un box describe una imagen o un gráfico para el dueño).
+  No se comparan value, rows, notes, ni el nombre o el estado de la pantalla.
+- Los estados de falla (vacío, error) van como otra pantalla con su "state": así el dueño los aprueba y se comparan.
+- Los textos son los reales de la pantalla: lorem ipsum, TBD, TODO, XXX o "..." no se aceptan.`;
+
+function main() {
+  const argv = process.argv.slice(2);
+  const cmd = argv[0];
+  const opt = (n) => { const i = argv.indexOf(n); return i !== -1 ? argv[i + 1] : null; };
+  const fail = (msg, code = 2) => { console.error(`mockup.js: ${msg}`); process.exit(code); };
+
+  if (cmd === 'schema') { console.log(SCHEMA); return; }
+
+  if (cmd === 'render' || cmd === 'demo') {
+    let model;
+    if (cmd === 'demo') model = DEMO;
+    else {
+      const dataArg = opt('--data');
+      if (!dataArg) fail('uso: mockup.js render --data <modelo.json|-> [--out <maqueta.html>] [--story <spec.md>] [--open]');
+      let raw;
+      try { raw = dataArg === '-' ? fs.readFileSync(0, 'utf8') : fs.readFileSync(dataArg, 'utf8'); } catch (e) { fail(`no pude leer --data: ${e.message}`); }
+      try { model = JSON.parse(raw); } catch (e) { fail(`JSON inválido en --data: ${e.message}`); }
+      const problems = validateModel(model);
+      if (problems.length) fail(`la maqueta no se armó (no se escribió nada):\n${problems.map((p) => `  - ${p}`).join('\n')}`);
+    }
+    const story = cmd === 'render' ? opt('--story') : null;
+    let out = opt('--out') || (cmd === 'demo' ? 'mockup-demo.html' : null);
+    if (story && !isStr(model.storyId)) {
+      try { const m = fs.readFileSync(story, 'utf8').match(/^story:\s*["']?([^"'\n]+)/m); if (m) model.storyId = m[1].trim(); } catch { /* lo dice status */ }
+    }
+    if (!out) {
+      if (!story) fail('falta --out (o --story, para escribirla donde la busca la revisión)');
+      let sc;
+      try { sc = screenStory(story); } catch (e) { fail(`no pude leer la story (${e.code || e.message}): no sé si tiene pantalla`); }
+      if (!sc.screen) fail('la story no tiene pantalla: no hay maqueta que armar');
+      try { out = mockupPaths(story).mockup; } catch (e) { fail(`no pude calcular dónde va la maqueta: ${e.message}`); }
+    }
+    const html = renderMockup(model);
+    fs.mkdirSync(path.dirname(path.resolve(out)), { recursive: true });
+    fs.writeFileSync(out, html);
+    console.log(JSON.stringify({ ok: true, out, sha256: mockupHash(html) }));
+    // La ruta sale SIEMPRE: un `open`/`xdg-open` que arranca y falla (sesión por SSH, Linux sin escritorio, la jaula de
+    // Codex) no se ve, y el navegador puede estar en otra máquina.
+    console.error(`abrila: ${out}`);
+    if (argv.includes('--open')) require(path.join(__dirname, 'visual-plan.js')).openInBrowser(out, 'la maqueta');
+    return;
+  }
+
+  if (cmd === 'check') {
+    const f = argv[1];
+    let html;
+    try { html = fs.readFileSync(f, 'utf8'); } catch (e) { fail(`no pude leer la maqueta ${f || '(sin ruta)'}: ${e.code || e.message}`); }
+    const v = validateMockupHtml(html);
+    if (v.ok) { console.log(`✅ maqueta válida: ${f}`); return; }
+    console.error(`🔴 la maqueta no pasa (${f}):`);
+    for (const x of v.findings) console.error(`  - ${x.line ? `línea ${x.line}: ` : ''}${x.what}`);
+    process.exit(1);
+  }
+
+  if (cmd === 'texts') {
+    const f = argv[1];
+    let html;
+    try { html = fs.readFileSync(f, 'utf8'); } catch (e) { fail(`no pude leer ${f || '(sin ruta)'}: ${e.code || e.message}`); }
+    const t = mockupTexts(html);
+    if (!t) fail('no es una maqueta de mockup.js (le falta la meta generator)');
+    if (argv.includes('--json')) { console.log(JSON.stringify(t, null, 2)); return; }
+    let last = null;
+    for (const x of t) {
+      if (x.screen !== last) { console.log(`## ${x.screenName || `pantalla ${x.screen + 1}`}`); last = x.screen; }
+      console.log(`- ${x.kind}: ${x.text}`);
+    }
+    return;
+  }
+
+  if (cmd === 'status') {
+    const story = opt('--story');
+    if (!story) fail('uso: mockup.js status --story <spec.md> [--json]');
+    let sc;
+    try { sc = screenStory(story); } catch (e) { fail(`no pude leer la story (${e.code || e.message}): no sé si tiene pantalla`); }
+    let res = { screen: false, signal: sc.signal, key: null, path: null, exists: false, approval: null, changed: null };
+    if (sc.screen) {
+      let p;
+      try { p = mockupPaths(story); } catch (e) { fail(`no pude calcular la clave de la story: ${e.message}`); }
+      const ap = readApproval(p.approval);
+      const exists = fs.existsSync(p.mockup);
+      let changed = null;
+      if (exists && ap.state === 'ok') {
+        try { changed = mockupHash(fs.readFileSync(p.mockup, 'utf8')) !== ap.data.sha256; } catch (e) {
+          changed = null;
+          console.error(`mockup.js: no pude leer la maqueta (${e.code || e.message}): no sé si cambió después de aprobada`);
+        }
+      }
+      res = { screen: true, signal: sc.signal, key: p.key, path: p.mockup, exists, approval: ap.state === 'ok' ? ap.data : ap.state === 'bad' ? { error: ap.error } : null, changed };
+    }
+    if (argv.includes('--json')) { console.log(JSON.stringify(res, null, 2)); return; }
+    if (!res.screen) { console.log(`la story no tiene pantalla: no lleva maqueta${sc.detail && sc.detail.proseDropped ? ' (la palabra del frente sólo está en la prosa)' : ''}`); return; }
+    console.log(`la story tiene pantalla (señal: ${res.signal}): su maqueta va en ${res.path}`);
+    console.log(`  ${res.exists ? 'existe' : 'todavía no existe: armala con mockup.js render --data <modelo.json> --story <spec>'}`);
+    if (res.approval && res.approval.sha256) console.log(`  aprobada (${res.approval.sha256.slice(0, 12)})${res.changed ? ' — y CAMBIÓ después de aprobada' : ''}`);
+    else if (res.approval && res.approval.error) console.log(`  no pude leer su aprobación: ${res.approval.error}`);
+    else console.log('  sin aprobar todavía');
+    return;
+  }
+
+  fail('comandos: render | check | texts | status | schema | demo');
+}
+
+module.exports = {
+  renderMockup, mockupEsc, validateMockupHtml, mockupTexts, mockupHash, mockupPaths, screenStory, readApproval,
+  writeApproval, compareWithScreens, qaGuideCheckArgs, mockupStep8, validateModel, declaredDiffs, GENERATOR, CSP,
+};
+
+if (require.main === module) main();

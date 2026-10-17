@@ -311,6 +311,10 @@ function cmdSet(payloadJson) {
     console.error('marker.js set: payload.storyId requerido');
     process.exit(2);
   }
+  // story 7.30 (R9): la aprobación de la maqueta la escriben sólo `complete-step 3` y `approve-mockup`.
+  for (const k of ['mockupApproval', 'mockupDecision']) {
+    if (payload[k] !== undefined) console.error(`marker.js set: «${k}» no se acepta en el payload (lo escriben sólo complete-step 3 y approve-mockup): descartado.`);
+  }
   let existing = readMarker();
   const existingBefore = existing;
   // 🔴 Anti-leak cross-story (review Opus RIESGO-2, 2026-07-30): el spread de abajo preserva
@@ -335,6 +339,9 @@ function cmdSet(payloadJson) {
       // story 7.19: el veredicto del portón (y el temprano apagado) son de la corrida — heredado, `next` le pedía a
       // la story nueva lanzar el pase con los archivos de la vieja, o le dejaba apagado el temprano.
       adversarialGate,
+      // story 7.30: la maqueta aprobada y la decisión del paso 3 son de la story. Heredadas, la story B usaría la
+      // maqueta de A (o su «sin pantalla») en el paso 8.
+      mockupApproval, mockupDecision,
       ...carryOver
     } = existing;
     console.error(
@@ -729,6 +736,44 @@ function cmdCompleteStep(nRaw, flags) {
       console.error('  No se cierra el Step 3 sin decir QUIÉN aprobó. Ver steps/step-03-hitl-plan.md.');
       process.exit(1);
     }
+    // ── Story 7.30: en una story con pantalla, la maqueta y su aprobación (también con LOW: decisión 8 del dueño) ──
+    // La detección es la de la revisión de la pantalla (mockup.screenStory, raíz del repo de la STORY), no la de
+    // markerStoryIsUi. «No pude leer la story» frena: nunca es «sin pantalla» (R6). Nada se escribe hasta el final.
+    const mockupCita = optVal('--mockup-approved');
+    const mk = require('./mockup.js');
+    const bloquear3 = (motivo, extra = []) => {
+      appendLog('gates.log', { name: 'mockup-approval', status: 'blocked', story: marker.storyId, motivo });
+      console.error(`marker.js complete-step 3 BLOQUEADO — ${motivo}`);
+      for (const l of extra) console.error(`  ${l}`);
+      process.exit(1);
+    };
+    if (!marker.storyPath) bloquear3('el marcador no tiene la ruta de la story: `marker.js set` con `storyPath`');
+    let sc;
+    try { sc = mk.screenStory(resolveStoryPath(marker.storyPath, marker) || marker.storyPath); } catch (e) {
+      bloquear3(`no pude leer la story (${marker.storyPath}: ${e.code || e.message}): no pude saber si tiene pantalla, y con pantalla lleva maqueta.`);
+    }
+    let mockupPlan = null;
+    if (sc.screen) {
+      let p;
+      try { p = mk.mockupPaths(sc.story); } catch (e) { bloquear3(`no pude calcular la clave de la story (${e.message}): no pude saber dónde va su maqueta.`); }
+      let html = null;
+      try { html = fs.readFileSync(p.mockup, 'utf8'); } catch (_e) {
+        bloquear3(`story con pantalla: falta su maqueta (${p.mockup}).`, [
+          `Armala: node ${path.join(__dirname, 'mockup.js')} render --data <modelo.json> --story ${sc.story}   (la forma: mockup.js schema)`,
+          'Mostrásela al dueño con el plan (la ruta y la lista de mockup.js texts) y cerrá con --mockup-approved "<cita>". Ver steps/step-03-hitl-plan.md.',
+        ]);
+      }
+      const v = mk.validateMockupHtml(html);
+      if (!v.ok) bloquear3(`la maqueta no pasa mockup.js check (${p.mockup}):`, v.findings.map((x) => `- ${x.line ? `línea ${x.line}: ` : ''}${x.what}`));
+      if (!mockupCita) {
+        bloquear3(auto && !approved
+          ? 'el plan se aprueba solo; la maqueta no: una pantalla la ve una persona antes (decisión 8).'
+          : `story con pantalla: mostrale la maqueta (${p.mockup}) y pasá su aprobación con --mockup-approved`, [
+          `Mostrale la maqueta (${p.mockup}) al dueño —o a quien tenga su delegación— y cerrá con --mockup-approved "<cita: quién aprobó y por qué vía>".`,
+        ]);
+      }
+      mockupPlan = { p, sha: mk.mockupHash(html) };
+    }
     if (auto && !approved) {
       let rc = null;
       try {
@@ -743,8 +788,26 @@ function cmdCompleteStep(nRaw, flags) {
         process.exit(1);
       }
     }
-    marker.planApproval = { mode: approved ? 'user' : 'auto-low-risk', text: approved || auto, at: nowIso() };
+    const at3 = nowIso();
+    if (mockupPlan) {
+      // El archivo de aprobación viaja con la story (va en el commit); la cita queda sólo en el marcador.
+      try {
+        mk.writeApproval({ approvalPath: mockupPlan.p.approval, mockupPath: mockupPlan.p.mockup, story: marker.storyId, sha256: mockupPlan.sha, approvedAt: at3 });
+      } catch (e) { bloquear3(`no pude escribir la aprobación de la maqueta (${mockupPlan.p.approval}): ${e.code || e.message}`); }
+    }
+    marker.planApproval = { mode: approved ? 'user' : 'auto-low-risk', text: approved || auto, at: at3 };
     appendLog('gates.log', { name: 'plan-approval', status: 'ok', story: marker.storyId, mode: marker.planApproval.mode, text: marker.planApproval.text });
+    // R12: la decisión se anota SIEMPRE, para que el paso 8 vea una pantalla que apareció después del plan.
+    marker.mockupDecision = { screen: sc.screen, signal: sc.signal || null, at: at3 };
+    if (mockupPlan) {
+      marker.mockupApproval = { file: mockupPlan.p.mockup, sha256: mockupPlan.sha, mode: 'user', text: mockupCita, at: at3 };
+      appendLog('gates.log', { name: 'mockup-approval', status: 'ok', story: marker.storyId, sha256: mockupPlan.sha.slice(0, 12), reapproval: false });
+    } else {
+      if (mockupCita) console.error('ℹ️  la story no tiene pantalla: no hay maqueta que aprobar (--mockup-approved no se usa).');
+      // La baja de pantalla por prosa (7.18), con la raíz del repo de la story: la misma detección que decidió acá.
+      const linea = require(path.join(__dirname, 'lib', 'ui-signal.js')).proseDropNotice(sc.detail);
+      if (linea) console.error(linea);
+    }
   }
 
   // ── Step 5 (advisors) — el set esperado corrió DE VERDAD, y en ESTA iteración ──────────────────
@@ -888,6 +951,28 @@ function cmdCompleteStep(nRaw, flags) {
     const isUi = markerStoryIsUi(marker);
     avisarBajaDePantalla(marker);
     let blocked = null;
+    // Story 7.30 — la maqueta en el cierre. Lo decide mockup.screenStory (la detección de la revisión de la pantalla)
+    // ANTES de llamar a qa-guide.js, que sale 0 igual con «no toca UI» y con «todo bien»:
+    //   R12: el paso 3 anotó «sin pantalla» y hoy la story tiene una → frena (sin DOD_BYPASS): nadie vio la maqueta.
+    //   R10: tenía maqueta aprobada y ya no se detecta pantalla → no se compara, se dice y queda en gates.log.
+    const maqueta = require('./mockup.js').mockupStep8(marker, resolveStoryPath(marker.storyPath, marker) || marker.storyPath);
+    let bloqueoMaqueta = null;
+    if (maqueta.block) {
+      bloqueoMaqueta = maqueta.block;
+      appendLog('gates.log', { name: 'mockup-new-screen', status: 'blocked', story: marker.storyId || null, step: 8 });
+      console.error(`marker.js complete-step 8 BLOQUEADO — ${maqueta.block}`);
+    }
+    // Con la maqueta aprobada y la story que ya no se encuentra, la comparación no puede correr: frena y lo dice
+    // (revisor de fallas silenciosas, vuelta 2: callado, un DOD_BYPASS de otro bloqueo lo dejaba pasar).
+    if (!bloqueoMaqueta && marker.mockupApproval && maqueta.compare && !resolveStoryPath(marker.storyPath, marker)) {
+      bloqueoMaqueta = `la story tenía maqueta aprobada y no la encuentro (${marker.storyPath || '(sin ruta en el marcador)'}): no puedo compararla con la pantalla. Arreglá la ruta (\`marker.js set\` con \`storyPath\`) y volvé a cerrar.`;
+      appendLog('gates.log', { name: 'mockup-compare', status: 'blocked', motivo: 'story-ilegible', story: marker.storyId || null, step: 8 });
+      console.error(`marker.js complete-step 8 BLOQUEADO — ${bloqueoMaqueta}`);
+    }
+    if (maqueta.skip) {
+      console.error('ℹ️  la story tenía maqueta aprobada y ya no se detecta pantalla: no se compara');
+      appendLog('gates.log', { name: 'mockup-compare', status: 'skipped', motivo: 'sin-pantalla', story: marker.storyId || null, step: 8 });
+    }
 
     // 🔴 `findings.json` lo exige el FRENO, no una instrucción del step (2026-09-18,
     // HALLAZGOS-SIN-ARCHIVO-1). El artefacto ya se podía escribir vacío a propósito («un run sin
@@ -1023,11 +1108,13 @@ function cmdCompleteStep(nRaw, flags) {
     // software (determinístico), y con la review de legibilidad independiente "veredicto: OK".
     // qa-guide.js --check chequea los 4 y sale !=0 si falta algo.
     const qaStoryPath = resolveStoryPath(marker.storyPath, marker);
-    if (!blocked && markerStoryIsUi(marker) && qaStoryPath) {
+    // Story 7.30 (R8): con la maqueta aprobada también corre aunque markerStoryIsUi diga que no (la revisión sí ve
+    // pantalla), y le pasa la huella aprobada: borrar el archivo de aprobación no saltea la comparación.
+    if (!blocked && (markerStoryIsUi(marker) || (marker.mockupApproval && maqueta.compare)) && qaStoryPath) {
       try {
         require('child_process').execFileSync(
           'node',
-          [path.join(__dirname, 'qa-guide.js'), '--check', '--story', qaStoryPath],
+          require('./mockup.js').qaGuideCheckArgs(qaStoryPath, marker),
           { stdio: 'inherit' },
         );
       } catch (e) {
@@ -1038,6 +1125,11 @@ function cmdCompleteStep(nRaw, flags) {
         // Story 7.24: la pantalla también se revisa; sus marcas se arreglan en el código, no reescribiendo la guía.
         console.error('  Y la de la PANTALLA (specs/qa/<sid>-legibilidad-ui.md, paso 7c.7): sus marcas se resuelven EN LA PANTALLA, no en la guía.');
       }
+    }
+    if (bloqueoMaqueta) {
+      console.error('');
+      console.error('  🔒 El bloqueo de la maqueta no se abre con DOD_BYPASS: una pantalla la ve una persona antes de construirla.');
+      process.exit(2);
     }
     if (bloqueoAdversarial) {
       console.error('');
@@ -1290,6 +1382,53 @@ function verifyPlaywrightEvidence(marker, evidencePath) {
 // Señal de UI: la decide lib/ui-signal.js (extensiones de pantalla, rutas del frente y nombres
 // declarados en las listas de archivos, campos estructurados y tandas; la prosa sólo de respaldo;
 // escenarios de navegador en el spec). Acá no se copia ninguna regla ni ningún nombre de producto.
+// Story 7.30 (AC 14) — volver a aprobar la maqueta (cambió después de aprobada, o un arreglo de legibilidad cambió un
+// texto), o aprobarla por primera vez si la story ganó una pantalla después del paso 3 (R12). La aprueba quien aprueba
+// el plan: el dueño, o quien tenga su delegación en modo autónomo; la cita dice quién y por qué vía (R14).
+function cmdApproveMockup(flags) {
+  const marker = readMarker();
+  if (!marker) { console.error('marker.js approve-mockup: no hay marker activo para esta sesión'); process.exit(1); }
+  const opts = Array.isArray(flags) ? flags : [];
+  const i = opts.indexOf('--approved');
+  const cita = i >= 0 ? (opts[i + 1] || '') : '';
+  if (!(marker.stepsCompleted || []).map(Number).includes(3)) {
+    console.error('marker.js approve-mockup: la maqueta se aprueba con el plan: complete-step 3 --approved "<cita>" --mockup-approved "<cita>"');
+    process.exit(2);
+  }
+  const no = (msg, extra = []) => {
+    appendLog('gates.log', { name: 'mockup-approval', status: 'blocked', story: marker.storyId, motivo: msg });
+    console.error(`marker.js approve-mockup BLOQUEADO — ${msg}`);
+    for (const l of extra) console.error(`  ${l}`);
+    process.exit(1);
+  };
+  if (!cita.trim()) no('falta --approved "<cita: quién aprobó la maqueta y por qué vía>"');
+  const mk = require('./mockup.js');
+  let sc;
+  try { sc = mk.screenStory(resolveStoryPath(marker.storyPath, marker) || marker.storyPath); } catch (e) {
+    no(`no pude leer la story (${marker.storyPath || '(sin ruta en el marcador)'}: ${e.code || e.message}): no pude saber si tiene pantalla.`);
+  }
+  if (!sc.screen) no('la story no tiene pantalla: no hay maqueta que aprobar.');
+  let p;
+  try { p = mk.mockupPaths(sc.story); } catch (e) { no(`no pude calcular la clave de la story (${e.message}).`); }
+  let html = null;
+  try { html = fs.readFileSync(p.mockup, 'utf8'); } catch (_e) {
+    no(`falta la maqueta (${p.mockup}).`, [`Armala: node ${path.join(__dirname, 'mockup.js')} render --data <modelo.json> --story ${sc.story}`]);
+  }
+  const v = mk.validateMockupHtml(html);
+  if (!v.ok) no(`la maqueta no pasa mockup.js check (${p.mockup}):`, v.findings.map((x) => `- ${x.line ? `línea ${x.line}: ` : ''}${x.what}`));
+  const sha = mk.mockupHash(html);
+  const prev = marker.mockupApproval && marker.mockupApproval.sha256;
+  const at = nowIso();
+  try { mk.writeApproval({ approvalPath: p.approval, mockupPath: p.mockup, story: marker.storyId, sha256: sha, approvedAt: at }); } catch (e) {
+    no(`no pude escribir la aprobación de la maqueta (${p.approval}): ${e.code || e.message}`);
+  }
+  marker.mockupApproval = { file: p.mockup, sha256: sha, mode: 'user', text: cita, at };
+  if (!marker.mockupDecision || marker.mockupDecision.screen !== true) marker.mockupDecision = { screen: true, signal: sc.signal || null, at };
+  appendLog('gates.log', { name: 'mockup-approval', status: 'ok', story: marker.storyId, sha256: sha.slice(0, 12), reapproval: !!prev, ...(prev ? { previous: prev.slice(0, 12) } : {}) });
+  writeMarker(marker);
+  console.log(JSON.stringify({ ok: true, file: p.mockup, approval: p.approval, sha256: sha, reapproval: !!prev }, null, 2));
+}
+
 function markerStoryIsUi(marker) {
   try {
     const p = marker && marker.storyPath;
@@ -3037,13 +3176,17 @@ switch (cmd) {
   case 'story-skill-bypass':
     cmdStorySkillBypass(arg1);
     break;
+  case 'approve-mockup':
+    cmdApproveMockup(process.argv.slice(3));
+    break;
   default:
     console.error(`marker.js: comando desconocido '${cmd}'`);
     console.error(
       'Usage: marker.js <set|get|touch|complete-step|append-file|clear|is-active|' +
         'list-all|find-by-story|clear-session|adopt-session|update-story-status|' +
         'mark-dod-runtime-checked|set-autonomous|set-check|run-check|set-flag|snapshot-iter|' +
-        'mark-adversarial-launched|mark-adversarial-result|mark-adversarial-skipped|mark-adversarial-gate|promote-probe|adhoc|story-skill-bypass> [arg] [arg2]',
+        'mark-adversarial-launched|mark-adversarial-result|mark-adversarial-skipped|mark-adversarial-gate|promote-probe|adhoc|story-skill-bypass|' +
+        'approve-mockup> [arg] [arg2]',
     );
     process.exit(2);
 }
