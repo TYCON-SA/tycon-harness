@@ -1636,7 +1636,7 @@ test('Nombres_Guia_DiceElPermisoDeLosPipelines — la instalación normal cuenta
 });
 
 // ── la marca de la organización ────────────────────────────────────────────────────────────────────────────────────
-test('Marca_ElLectorValidaSiteBrand — nombre, logo dentro del repo del equipo (.png o .svg) y qué hacer en oscuro', () => {
+test('Marca_ElLectorValidaSiteBrand — nombre, logo dentro del repo de operaciones (.png o .svg) y qué hacer en oscuro', () => {
   const problemas = (brand) => OPS.parse(JSON.stringify({ version: 1, owners: { default: LEAD }, site: { brand } })).problems.map((p) => p.path);
   assert.deepStrictEqual(problemas({ name: 'Acme', logo: 'marca/logo.png', dark: 'keep' }), []);
   assert.deepStrictEqual(problemas({ logo: 'marca/logo.svg', dark: 'invert' }), []);
@@ -1654,7 +1654,7 @@ test('Marca_LaOrganizacionEnPersonas_ConVistaPrevia — se edita en Configuraci�
   assert.deepStrictEqual(campos, ['site.brand.name', 'site.brand.logo', 'site.brand.dark']);
   const img = p.todo(p.sec('organizacion')).find((n) => n.tag === 'img');
   assert.deepStrictEqual([img.attrs.src, img.attrs.class], ['/marca/logo', 'logo logo-previa invierte'], 'la vista previa, como se ve en la barra');
-  assert.match(p.textoDe('organizacion'), /El archivo del logo entra con un pedido al repo del equipo/);
+  assert.match(p.textoDe('organizacion'), /El archivo del logo entra con un pedido al repo de operaciones/);
   // el lector de una versión anterior no conoce site.brand: la sección no se edita y lo dice
   const viejo = { ...OPS, SITE_KEYS: OPS.SITE_KEYS.filter((k) => k !== 'brand') };
   const ops = clon({ 'operations.json': opsBase() });

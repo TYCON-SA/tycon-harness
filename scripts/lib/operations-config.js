@@ -24,7 +24,7 @@
 //               "url": "https://…",                           opcional — la dirección del sitio, sólo https y sin usuario
 //                                                            ni clave: va en el aviso de la mañana
 //               "brand": { "name": <texto>,                 opcional — la marca del sitio: el nombre de la organización,
-//                          "logo": <ruta en el repo del equipo, .png o .svg>, el logo (vive en el repo del equipo) y
+//                          "logo": <ruta en este repo, .png o .svg>, el logo (vive acá, en el repo de operaciones) y
 //                          "dark": "invert" | "keep" } },     qué hacer con él en el tema oscuro (por defecto, invertirlo)
 //     "notify": { "channel": "telegram" | "slack" | "teams" }, opcional — por dónde sale el aviso de los nocturnos
 //                                                            Sin `notify` no se manda nada. El destino
@@ -80,7 +80,7 @@ const REVIEWER_KEYS = ['dependencies', 'watcher'];
 const SITE_KEYS = ['maintainers', 'mailbox', 'refresh_minutes', 'url', 'brand'];
 const BRAND_KEYS = ['name', 'logo', 'dark'];
 const BRAND_THEME_OPTIONS = ['invert', 'keep'];
-// el logo: una ruta relativa dentro del repo del equipo, sin subir de carpeta, a un .png o un .svg
+// el logo: una ruta relativa dentro del repo de operaciones, sin subir de carpeta, a un .png o un .svg
 const BRAND_LOGO = /^(?!\/)(?!.*(?:^|\/)\.\.?(?:\/|$))[A-Za-z0-9._\/-]{1,200}\.(png|svg)$/;
 const BRAND_NAME_MAX = 80;
 // el canal del aviso. Sin canal por defecto: sin `notify`, no se manda (un canal por defecto sería un valor de
@@ -171,7 +171,7 @@ function siteProblems(site) {
     else {
       problems.push(...siteKeyProblems(b, BRAND_KEYS, 'site.brand'));
       if (b.name !== undefined && !(typeof b.name === 'string' && b.name.trim() && b.name.length <= BRAND_NAME_MAX)) problems.push({ path: 'site.brand.name', message: `tiene que ser el nombre de la organización (hasta ${BRAND_NAME_MAX} caracteres)` });
-      if (b.logo !== undefined && !(typeof b.logo === 'string' && BRAND_LOGO.test(b.logo))) problems.push({ path: 'site.brand.logo', message: 'tiene que ser la ruta de un .png o un .svg dentro del repo del equipo (sin «..» ni «/» al principio)' });
+      if (b.logo !== undefined && !(typeof b.logo === 'string' && BRAND_LOGO.test(b.logo))) problems.push({ path: 'site.brand.logo', message: 'tiene que ser la ruta de un .png o un .svg dentro del repo de operaciones (sin «..» ni «/» al principio)' });
       if (b.dark !== undefined && !BRAND_THEME_OPTIONS.includes(b.dark)) problems.push({ path: 'site.brand.dark', message: 'tiene que ser «invert» (invertir el logo en el tema oscuro) o «keep» (dejarlo como está)' });
     }
   }

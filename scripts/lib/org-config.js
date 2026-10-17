@@ -58,7 +58,7 @@ const SECCIONES = Object.freeze([
   Object.freeze({ id: 'actualizacion', titulo: 'Cómo se actualizan las máquinas', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['update'], rutas: Object.freeze(['update.channel', 'update.apply']), idCorto: 'profile', necesita: ['update'] }),
   Object.freeze({ id: 'instalacion', titulo: 'Perfil de instalación', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['install'], rutas: Object.freeze(['install.profile']), idCorto: 'profile', necesita: ['install'] }),
   // las conversaciones de las corridas: el interruptor del sitio, en operations.json (decisión 8 de la 2.31)
-  // la marca de la organización en el sitio (el nombre, el logo del repo del equipo y qué hacer con él en oscuro)
+  // la marca de la organización en el sitio (el nombre, el logo del repo de operaciones y qué hacer con él en oscuro)
   Object.freeze({ id: 'organizacion', titulo: 'La organización', archivo: 'operations.json', repo: 'operaciones', lector: 'operations-config.js', claves: ['site'], rutas: Object.freeze(['site.brand.name', 'site.brand.logo', 'site.brand.dark']), idCorto: 'operations', necesita: ['site'] }),
   Object.freeze({ id: 'hilos', titulo: 'Conversaciones de las corridas', archivo: 'operations.json', repo: 'operaciones', lector: 'operations-config.js', claves: ['site'], rutas: Object.freeze(['site.mailbox.threads']), idCorto: 'operations', necesita: ['site'] }),
   // dos partes de team-repos.json con su propia sección (tanda C): dónde corren las suites al mergear (story 7.28) y el
@@ -590,7 +590,7 @@ function pantalla() {
 
   // ── lo que ve la persona de cada sección: el nombre llano, para qué sirve, y en qué bloque va ──
   var PLANO = {
-    organizacion: { t: 'La organización', d: 'El nombre y el logo que muestra la barra de arriba de cada página, y el nombre del pie. El logo es un archivo del repo del equipo; acá se elige cuál.', corto: 'La organización' },
+    organizacion: { t: 'La organización', d: 'El nombre y el logo que muestra la barra de arriba de cada página, y el nombre del pie. El logo es un archivo del repo de operaciones; acá se elige cuál.', corto: 'La organización' },
     sitio: { t: 'Quién mantiene el sitio', d: 'Sólo estas personas ven esta pestaña y pueden proponer cambios. Si te sacás de la lista, perdés el acceso cuando se apruebe.', corto: 'Quién mantiene el sitio' },
     personas: { t: 'Personas y máquinas', d: 'Cada máquina que manda corridas tiene que estar a nombre de alguien. Así cada persona ve lo suyo en el sitio.', corto: 'Personas y máquinas' },
     responsables: { t: 'A quién le llegan los avisos y los pedidos', d: 'Cuando algo de la noche necesita a una persona (una dependencia vieja, un hallazgo del vigilante) se le asigna a quien figure acá.', corto: 'Responsables' },
@@ -1074,7 +1074,7 @@ function pantalla() {
     if (!lista.length) cont.appendChild(el('p', { class: 'muted', text: 'Nada.' }));
     return cont;
   }
-  // la marca: nombre, logo (una ruta del repo del equipo) y qué hacer con el logo en el tema oscuro
+  // la marca: nombre, logo (una ruta del repo de operaciones) y qué hacer con el logo en el tema oscuro
   function editorOrganizacion(s, d, pr) {
     var b = esObjeto(d.site) && esObjeto(d.site.brand) ? d.site.brand : {};
     var poner = function (k, v) {
@@ -1085,9 +1085,9 @@ function pantalla() {
     };
     var box = el('div', { class: 'pila' },
       campo('El nombre de la organización', b.name, function (v) { poner('name', String(v).trim()); }, 'site.brand.name', pr, { placeholder: 'como querés que se lea en la barra y en el pie' }),
-      campo('El logo: su ruta en el repo del equipo (.png o .svg)', b.logo, function (v) { poner('logo', String(v).trim()); }, 'site.brand.logo', pr, { placeholder: 'marca/logo.png' }),
+      campo('El logo: su ruta en el repo de operaciones (.png o .svg)', b.logo, function (v) { poner('logo', String(v).trim()); }, 'site.brand.logo', pr, { placeholder: 'marca/logo.png' }),
       selector('En el tema oscuro', b.dark, [['', 'sin declarar (invertirlo)'], ['invert', 'invertirlo: para un logo oscuro sobre fondo claro'], ['keep', 'dejarlo como está: para un logo de colores']], function (v) { poner('dark', v); }, 'site.brand.dark', pr));
-    box.appendChild(el('p', { class: 'muted', text: 'El archivo del logo entra con un pedido al repo del equipo; acá sólo se elige cuál se muestra. Sin logo, la barra muestra el nombre.' }));
+    box.appendChild(el('p', { class: 'muted', text: 'El archivo del logo entra con un pedido al repo de operaciones; acá sólo se elige cuál se muestra. Sin logo, la barra muestra el nombre.' }));
     if (b.logo) box.appendChild(el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: 'Así se ve hoy' }), el('img', { class: 'logo logo-previa' + (b.dark === 'keep' ? '' : ' invierte'), src: '/marca/logo', alt: b.name || 'el logo de la organización' })));
     return box;
   }

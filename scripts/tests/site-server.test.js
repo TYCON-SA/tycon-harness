@@ -388,7 +388,7 @@ test('T44 Respuestas_ComprimidasYEstaticosConEtiqueta', async () => {
 });
 
 // La marca del sitio: la barra de arriba con el logo (o el nombre) de la organización, el pie con la versión, la
-// licencia y los créditos, y el logo servido desde el repo del equipo sin poder correr nada.
+// licencia y los créditos, y el logo servido desde el repo de operaciones sin poder correr nada.
 test('T45 Marca_LogoSeguroBarraYPie', async () => {
   const emisor = await arrancarEmisor();
   const lead = 'lead@acme.example';
@@ -406,7 +406,7 @@ test('T45 Marca_LogoSeguroBarraYPie', async () => {
   fs.symlinkSync(path.join(afuera, 'secreto.png'), path.join(perfil, 'marca', 'enlace.png'));
   const config = (brand) => ({ version: 1, owners: { default: lead }, site: { maintainers: [lead], ...(brand ? { brand } : {}) } });
   const fuentes = H.fuentesFijas({ config: config({ name: 'Acme Ingeniería', logo: 'marca/logo.png' }) });
-  fuentes.clones = () => ({ operaciones: null, perfil: { dir: perfil } });
+  fuentes.clones = () => ({ operaciones: { dir: perfil }, perfil: null });
   const h = await H.arrancarSitio({ env: H.envBase({ SITE_OIDC_ISSUER: emisor.issuer }), fuentes });
   try {
     const s = (await H.ingresar(h, emisor, { sub: 's-lead', email: lead, email_verified: true })).sesion;
@@ -419,7 +419,7 @@ test('T45 Marca_LogoSeguroBarraYPie', async () => {
     const svg = await logo('marca/limpio.svg');
     assert.deepStrictEqual([svg.status, svg.headers['content-type']], [200, 'image/svg+xml']);
     for (const malo of ['marca/codigo.svg', 'marca/evento.svg', 'marca/afuera.svg']) assert.strictEqual((await logo(malo)).status, 404, `${malo}: un svg con código o que sale afuera no se sirve`);
-    assert.strictEqual((await logo('marca/enlace.png')).status, 404, 'un enlace que sale del repo del equipo');
+    assert.strictEqual((await logo('marca/enlace.png')).status, 404, 'un enlace que sale del repo de operaciones');
     assert.strictEqual((await logo('../afuera/secreto.png')).status, 404, 'una ruta que sube de carpeta');
     assert.ok(h.registro.some((l) => /el logo marca\/codigo\.svg trae código/.test(l)), 'y queda en el registro');
     // la barra: el logo (invertido en oscuro, salvo que se pida dejarlo), o el nombre; el pie, con la versión y los enlaces

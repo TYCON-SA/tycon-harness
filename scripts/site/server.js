@@ -314,7 +314,7 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
     return { nombre: typeof b.name === 'string' && b.name.trim() ? b.name.trim() : null, logo: typeof b.logo === 'string' && BRAND_LOGO.test(b.logo), oscuro: b.dark === 'keep' ? 'keep' : 'invert' };
   }
   /**
-   * El logo, del repo del equipo: un .png con su firma o un .svg sin código ni enlaces afuera, de hasta LOGO_MAX bytes,
+   * El logo, del repo de operaciones (el repo del equipo se copia a cada máquina y no lleva archivos fuera de su lista): un .png con su firma o un .svg sin código ni enlaces afuera, de hasta LOGO_MAX bytes,
    * leído adentro del clon. Se sirve con una política que no deja correr nada, aunque se abra solo.
    */
   function logo() {
@@ -322,7 +322,7 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
     const config = fuentes.config();
     const rel = config && isObjeto(config.site) && isObjeto(config.site.brand) ? config.site.brand.logo : null;
     const cl = typeof fuentes.clones === 'function' ? fuentes.clones() : null;
-    const dir = cl && cl.perfil && cl.perfil.dir;
+    const dir = cl && cl.operaciones && cl.operaciones.dir;
     if (typeof rel !== 'string' || !BRAND_LOGO.test(rel) || !dir) return no;
     const f = path.join(dir, rel);
     let datos;
