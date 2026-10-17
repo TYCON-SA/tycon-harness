@@ -570,6 +570,33 @@ test('T2 OperationsConfig_DeploymentsProblemasEnSuRuta (2.22, AC 1)', () => {
   assert.deepStrictEqual(paths(r4), ['deployments.products.Acme.production.0.pipeline']);
 });
 
+test('T11 7.31-Coverage_ValidaSuSeccion @story-7.31 @ac-10 — el umbral de cobertura de la organización, con su sección aparte', () => {
+  // 🔴 rojo: un umbral mal escrito invalida todo el archivo, o pasa como válido.
+  const ok = TEAM.parse(JSON.stringify(Object.assign(goodTeam(), { coverage: { min_touched_lines_pct: 80, __doc: 'x' } })));
+  assert.equal(ok.ok, true, JSON.stringify(ok.problems));
+  assert.deepStrictEqual(ok.data.coverage, { min_touched_lines_pct: 80, __doc: 'x' });
+  assert.equal(ok.sectionProblems, undefined);
+  const casos = [
+    [{ min_touched_lines_pct: 0 }, 'coverage.min_touched_lines_pct'],
+    [{ min_touched_lines_pct: 101 }, 'coverage.min_touched_lines_pct'],
+    [{ min_touched_lines_pct: '80' }, 'coverage.min_touched_lines_pct'],
+    [{ min_touched_lines_pct: 80.5 }, 'coverage.min_touched_lines_pct'],
+    [{ min_touched_lines_pct: 80, otra: 1 }, 'coverage.otra'],
+    [80, 'coverage'],
+  ];
+  for (const [coverage, ruta] of casos) {
+    const r = TEAM.parse(JSON.stringify(Object.assign(goodTeam(), { coverage })));
+    assert.equal(r.ok, true, `${ruta}: un problema de coverage no invalida el archivo`);
+    assert.deepStrictEqual(r.problems, []);
+    assert.ok(r.data && !('coverage' in r.data), `${ruta}: data sin coverage`);
+    assert.equal(r.data.operations.repo, 'team-operations', `${ruta}: el resto sigue valiendo`);
+    assert.ok(r.sectionProblems && r.sectionProblems.coverage.some((p) => p.path === ruta), `${ruta}: ${JSON.stringify(r.sectionProblems)}`);
+  }
+  // con otro problema de sección a la vez, cada uno en la suya
+  const dos = TEAM.parse(JSON.stringify(Object.assign(goodTeam(), { coverage: { min_touched_lines_pct: 0 }, wait_notice: { minutes: 0 } })));
+  assert.deepStrictEqual(Object.keys(dos.sectionProblems).sort(), ['coverage', 'wait_notice']);
+});
+
 test('T2b OperationsConfig_DeploymentsRepoConPuntosYProductoVacio (2.22, revisores)', () => {
   const r = OPS.parse(JSON.stringify(opsWithDeployments({ provider: 'github', products: {
     Acme: { production: [{ repo: '../..', environment: 'prd' }, { repo: 'acme/..', environment: 'prd' }, { repo: 'acme/.app', environment: 'prd' }] }, Vacio: {},

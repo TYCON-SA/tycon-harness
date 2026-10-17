@@ -229,10 +229,18 @@ test('T69 TestGate_NodeReport_EqualsThePythonReport_WorksWithoutPython3 — el i
   const sinPython = pathSin(SIN_PYTHON);
   assert.ok(!tiene(sinPython, 'python3'), 'el PATH de la prueba todavía trae python3');
   for (const n of CASOS) {
+    if (JSON.parse(fs.readFileSync(path.join(FIXTURES, n, 'case.json'), 'utf8')).sin_python) continue;   // nació después: lo fija su propia prueba
     const esperada = JSON.parse(fs.readFileSync(path.join(FIXTURES, n, 'expected.json'), 'utf8'));
     const caso = armarCaso(n);
     const { rc, stderr, got } = correrInforme(caso, [process.execPath, REPORT], { PATH: sinPython });
     assert.strictEqual(rc, 0, `${n}: el informe salió ${rc}\n${stderr}`);
+    // lo único que el bloque de Python no escribía es de dónde salió el umbral; el resto, igual
+    for (const art of [got.tests_result, got.sellada]) {
+      if (!art || !art.coverage) continue;
+      assert.ok(['maquina', 'organizacion', 'por_defecto'].includes(art.coverage.threshold_source), `${n}: threshold_source ${art.coverage.threshold_source}`);
+      delete art.coverage.threshold_source;
+      delete art.coverage.threshold_problems;
+    }
     assert.deepStrictEqual(got.tests_result, esperada.tests_result, `${n}: tests-result.json distinto`);
     // el mismo orden de las claves, no sólo los mismos valores: quien lo lea a ojo ve lo mismo que antes
     assert.strictEqual(JSON.stringify(got.tests_result), JSON.stringify(esperada.tests_result), `${n}: mismo contenido, otro orden`);
@@ -558,5 +566,171 @@ test('T73 …sin `timeout` ni `realpath` (un Git Bash pelado), test-gate.sh da e
     assert.strictEqual(a.status, 0, `${tipo} con todo: ${a.stderr}`);
     assert.strictEqual(b.status, a.status, `${tipo}: sin timeout ni realpath salió ${b.status}\n${b.stderr}`);
     assert.deepStrictEqual(comparable(b.art), comparable(a.art), `${tipo}: el artefacto cambia sin timeout ni realpath`);
+  }
+});
+
+// ── El corredor de suites.json con cobertura, y de dónde sale el umbral ──────────────────────────────────────────
+test('T9 7.31-SuitesJson_ConReporte_DaPorcentaje @story-7.31 @ac-8 @ac-14 — con el lcov del corredor, las líneas tocadas salen con número', () => {
+  // 🔴 rojo: el «sin cruce» fijo de antes para suites-json, o el registro de fuera del árbol contado como el archivo nuevo.
+  const caso = armarCaso('suites-json-coverage');
+  const { rc, stderr, got } = correrInforme(caso, [process.execPath, REPORT], { TYCON_GUIDES_DIR: tmpReal('tgr-sin-org-') });
+  assert.strictEqual(rc, 0, stderr);
+  const cov = got.tests_result.coverage;
+  assert.strictEqual(cov.touched_lines_pct, 50, JSON.stringify(cov, null, 1));
+  assert.deepStrictEqual(cov.touched_lines.per_file, { 'scripts/lib/acme.js': { covered: 1, measurable: 2, pct: 50 } });
+  assert.deepStrictEqual(cov.touched_files_without_coverage_data, ['scripts/lib/nuevo.js'], 'el archivo nuevo, sin datos (el de fuera del árbol no cuenta)');
+  assert.strictEqual(cov.touched_no_cross_check, undefined);
+  assert.strictEqual(cov.no_cross_check, 'sin cruce de cobertura: hay archivos nuevos pero ninguno aparece en el reporte de cobertura');
+  assert.deepStrictEqual(cov.per_new_file, { 'scripts/lib/nuevo.js': null });
+  assert.strictEqual(cov.threshold_basis, 'touched_lines');
+  assert.strictEqual(cov.meets_threshold, false);
+  assert.strictEqual(cov.threshold, 75);
+  assert.strictEqual(cov.threshold_source, 'maquina');
+  assert.deepStrictEqual(got.sellada.coverage.touched_lines_pct, 50, 'la copia que viaja lleva el número');
+  // las suites que no dejaron datos llegan al artefacto: un número parcial no se lee como cobertura real baja
+  // (relativas al repo: el artefacto viaja en la copia sellada, que no lleva rutas de la máquina)
+  assert.deepStrictEqual(cov.suites_without_coverage, { without_data: ['scripts/tests/acme-sin-node.test.sh'], unreadable: [] });
+  assert.strictEqual(cov.lcov_sources_unreadable, undefined, 'con las fuentes legibles, el campo no aparece');
+
+  // y de punta a punta: test-gate.sh le pide la cobertura al corredor y el artefacto trae el número
+  const repo = repoDeJuguete('suites-json');
+  fs.mkdirSync(path.join(repo, 'scripts', 'lib'), { recursive: true });
+  fs.writeFileSync(path.join(repo, 'scripts', 'lib', 'acme.js'), 'module.exports = (n) => {\n  if (n > 0) return 1;\n  return 0;\n};\n');
+  fs.writeFileSync(path.join(repo, 'scripts', 'tests', 'acme.test.js'),
+    "const { spawnSync } = require('child_process');\nconst r = spawnSync(process.execPath, ['-e', 'require(process.argv[1])(1)', require('path').join(__dirname, '..', 'lib', 'acme.js')]);\nprocess.exit(r.status);\n");
+  fs.writeFileSync(path.join(repo, 'scripts', 'tests', 'suites.json'),
+    JSON.stringify({ diarias: [{ raiz: 'arnes', ruta: 'tests/ok.test.sh' }, { raiz: 'arnes', ruta: 'tests/acme.test.js' }], semanales: [] }));
+  git(repo, ['add', '-A']); git(repo, ['commit', '-qm', 'acme']);
+  fs.writeFileSync(path.join(repo, 'scripts', 'lib', 'acme.js'), 'module.exports = (n) => {\n  if (n > 0) return 2;\n  return -1;\n};\n');
+  const home = tmpReal('tgr-home-');
+  const g = correrGate(repo, '7.31', process.env.PATH, home);
+  assert.strictEqual(g.status, 0, g.stderr + g.stdout);
+  assert.strictEqual(g.art.coverage.touched_lines_pct, 50, JSON.stringify(g.art.coverage, null, 1));
+  assert.deepStrictEqual(g.art.coverage.touched_lines.per_file, { 'scripts/lib/acme.js': { covered: 1, measurable: 2, pct: 50 } });
+});
+
+// Un repo con su historia, las salidas del corredor de suites.json (con su lcov) y el informe corrido encima.
+function informeSuitesJson({ base, now, lcov, resumen = '{"corridas":1,"verdes":1,"fallas":[],"ausentes":[],"deferred_suites":[]}' }) {
+  const tmp = tmpReal('tgr-sj-');
+  const repo = path.join(tmp, 'repo');
+  const results = path.join(tmp, 'results');
+  fs.mkdirSync(repo, { recursive: true });
+  execFileSync('git', ['init', '-q', repo], { stdio: 'ignore' });
+  escribir(repo, { 'scripts/tests/suites.json': { text: '{"diarias":[],"semanales":[]}\n' }, ...base });
+  git(repo, ['add', '-A']); git(repo, ['commit', '-qm', 'base']);
+  escribir(repo, now);
+  fs.mkdirSync(path.join(results, 'coverage'), { recursive: true });
+  fs.writeFileSync(path.join(results, 'suites.json'), typeof resumen === 'function' ? resumen(repo) : resumen);
+  fs.writeFileSync(path.join(results, 'coverage', 'lcov.info'), lcov(repo));
+  const out = path.join(tmp, 'out.json');
+  const r = spawnSync(process.execPath, [REPORT, 'suites-json', repo, repo, results, out, '0', '7.31', '75', '2026-10-17T12:00:00Z',
+    '0', '', 'explicito', '', '{"git":true}', 'HEAD', '{"ref":"HEAD","source":"HEAD","descartadas":[]}'],
+  { encoding: 'utf8', env: { ...process.env, HOME: tmp, USERPROFILE: tmp, TYCON_GUIDES_DIR: tmp, TYCON_EVIDENCE_DIR: path.join(tmp, 'ev') } });
+  assert.strictEqual(r.status, 0, r.stderr);
+  return JSON.parse(fs.readFileSync(out, 'utf8')).coverage;
+}
+const da = (sf, lineas) => ['TN:', `SF:${sf}`, ...Object.entries(lineas).map(([l, v]) => `DA:${l},${v}`), 'end_of_record', ''].join('\n');
+
+test('T9 …lo de las carpetas de pruebas no cuenta como código tocado @story-7.31 @ac-8', () => {
+  // 🔴 rojo: un ayudante de scripts/tests/lib/ cubierto, o una suite test-*.js, entran al porcentaje de las líneas tocadas.
+  const cov = informeSuitesJson({
+    base: { 'scripts/lib/a.js': { lines: 3 }, 'scripts/tests/lib/helper.js': { lines: 3 }, 'scripts/tests/test-plain.js': { lines: 2 } },
+    now: { 'scripts/lib/a.js': { lines: 3, changed: [1, 2, 3] }, 'scripts/tests/lib/helper.js': { lines: 3, changed: [1, 2, 3] }, 'scripts/tests/test-plain.js': { lines: 2, changed: [1] } },
+    lcov: () => da('scripts/lib/a.js', { 1: 1, 2: 0, 3: 0 }) + da('scripts/tests/lib/helper.js', { 1: 1, 2: 1, 3: 1 }),
+  });
+  assert.deepStrictEqual(Object.keys(cov.touched_lines.per_file), ['scripts/lib/a.js']);
+  assert.strictEqual(cov.touched_lines_pct, 33.3);
+  assert.deepStrictEqual(cov.touched_files_without_coverage_data, [], 'la suite test-plain.js no es código sin datos');
+});
+
+test('T9 …un archivo nuevo no toma el número de un homónimo de otra carpeta @story-7.31 @ac-8', () => {
+  // 🔴 rojo: el cruce de archivos nuevos por «termina en» le da a scripts/lib/h.js el 100 % de skills/p/scripts/lib/h.js.
+  const cov = informeSuitesJson({
+    base: { 'skills/p/scripts/lib/h.js': { lines: 2 } },
+    now: { 'scripts/lib/h.js': { lines: 2 } },
+    lcov: () => da('skills/p/scripts/lib/h.js', { 1: 1, 2: 1 }),
+  });
+  assert.deepStrictEqual(cov.per_new_file, { 'scripts/lib/h.js': null });
+  assert.strictEqual(cov.new_files_pct, null);
+  assert.deepStrictEqual(cov.touched_files_without_coverage_data, ['scripts/lib/h.js']);
+});
+
+test('T9 …lo que el número no cubre llega al artefacto, con rutas del repo @story-7.31 @ac-5 @ac-7', () => {
+  // 🔴 rojo: las suites ilegibles o una fuente que no se pudo leer quedan sólo en la salida del corredor, y el número
+  // parcial se lee como cobertura real baja.
+  const cov = informeSuitesJson({
+    base: { 'scripts/lib/a.js': { lines: 2 } },
+    now: { 'scripts/lib/a.js': { lines: 2, changed: [1] } },
+    lcov: () => da('scripts/lib/a.js', { 1: 1, 2: 0 }) + da('scripts/lib/borrado.js', { 1: 1 }),
+    resumen: (repo) => JSON.stringify({ corridas: 2, verdes: 2, fallas: [], ausentes: [], deferred_suites: [], coverage: {
+      without_data: [path.join(repo, 'scripts', 'tests', 'sin-node.test.sh')],
+      unreadable: [{ ruta: path.join(repo, 'scripts', 'tests', 'rota.test.js'), motivo: 'cortado: 1 registro(s) abierto(s) y 0 cerrado(s)' }, { ruta: '', motivo: 'x' }],
+    } }),
+  });
+  assert.deepStrictEqual(cov.suites_without_coverage, {
+    without_data: ['scripts/tests/sin-node.test.sh'],
+    unreadable: [{ ruta: 'scripts/tests/rota.test.js', motivo: 'cortado: 1 registro(s) abierto(s) y 0 cerrado(s)' }, { ruta: null, motivo: 'x' }],
+  });
+  assert.deepStrictEqual(cov.lcov_sources_unreadable, ['scripts/lib/borrado.js'], 'una fuente que no está: se nombra');
+  // un resumen sin `coverage` (un corredor sin la cobertura pedida) no inventa el campo
+  const sin = informeSuitesJson({ base: { 'scripts/lib/a.js': { lines: 1 } }, now: {}, lcov: () => da('scripts/lib/a.js', { 1: 1 }) });
+  assert.strictEqual(sin.suites_without_coverage, undefined);
+});
+
+test('T9 …un archivo con un espacio en el nombre también cuenta como tocado @story-7.31 @ac-8', () => {
+  // 🔴 rojo: git agrega un TAB al final de «+++ b/<ruta>» cuando la ruta tiene un espacio, y el archivo se pierde.
+  const cov = informeSuitesJson({
+    base: { 'scripts/lib/acme x.js': { lines: 2 } },
+    now: { 'scripts/lib/acme x.js': { lines: 2, changed: [1, 2] } },
+    lcov: () => da('scripts/lib/acme x.js', { 1: 1, 2: 0 }),
+  });
+  assert.deepStrictEqual(cov.touched_lines.per_file, { 'scripts/lib/acme x.js': { covered: 1, measurable: 2, pct: 50 } });
+});
+
+test('T10 7.31-Umbral_MaquinaOrganizacionDefecto @story-7.31 @ac-9 — el umbral sale de la máquina, de la organización o del valor por defecto, y lo dice', () => {
+  // 🔴 rojo: la variable inválida usada igual (NaN), o la organización ignorada.
+  // un árbol del arnés de juguete: el lugar se reconoce por su instalador (lib/harness-path.js, esClon)
+  const arbolDelArnes = () => {
+    const d = tmpReal('tgr-org-');
+    fs.mkdirSync(path.join(d, 'scripts'));
+    fs.writeFileSync(path.join(d, 'scripts', 'install-tycon-hooks.sh'), '#!/bin/bash\n');
+    return d;
+  };
+  const conOrg = (pct) => {
+    const d = arbolDelArnes();
+    const team = {
+      version: 1,
+      public: { platform: 'github', org: 'acme', repo: 'harness' },
+      profile: { platform: 'azure', org: 'acme', project: 'Main', repo: 'team-profile' },
+      operations: { platform: 'azure', org: 'acme', project: 'Main', repo: 'team-operations' },
+      ...(pct === undefined ? {} : { coverage: { min_touched_lines_pct: pct } }),
+    };
+    fs.writeFileSync(path.join(d, 'team-repos.json'), JSON.stringify(team));
+    return d;
+  };
+  const casos = [
+    ['60', conOrg(80), 60, 'maquina', null],
+    ['abc', conOrg(80), 80, 'organizacion', /TYCON_COVERAGE_MIN/],
+    ['0', conOrg(80), 80, 'organizacion', /TYCON_COVERAGE_MIN/],
+    ['', conOrg(80), 80, 'organizacion', null],
+    ['', conOrg(101), 75, 'por_defecto', /coverage\.min_touched_lines_pct/],
+    ['', conOrg(undefined), 75, 'por_defecto', null],
+    ['', arbolDelArnes(), 75, 'por_defecto', null],
+    // el archivo de la organización roto, o que no se puede leer: el valor por defecto, y el motivo dicho
+    ['', (() => { const d = arbolDelArnes(); fs.writeFileSync(path.join(d, 'team-repos.json'), '{roto'); return d; })(), 75, 'por_defecto', /team-repos\.json: no se pudo usar/],
+    ['', (() => { const d = arbolDelArnes(); fs.mkdirSync(path.join(d, 'team-repos.json')); return d; })(), 75, 'por_defecto', /no pude leer el umbral de la organización/],
+  ];
+  for (const [maquina, arbol, umbral, origen, problema] of casos) {
+    const caso = armarCaso('suites-json-coverage');
+    caso.args[7] = maquina;
+    const { rc, stderr, got } = correrInforme(caso, [process.execPath, REPORT], { TYCON_GUIDES_DIR: arbol });
+    assert.strictEqual(rc, 0, stderr);
+    const cov = got.tests_result.coverage;
+    const que = `máquina «${maquina}», ${path.basename(arbol)}`;
+    assert.strictEqual(cov.threshold, umbral, que);
+    assert.strictEqual(cov.threshold_source, origen, que);
+    assert.strictEqual(cov.meets_threshold, 50 >= umbral, que);
+    if (problema) assert.ok((cov.threshold_problems || []).some((p) => problema.test(p)), `${que}: ${JSON.stringify(cov.threshold_problems)}`);
+    else assert.strictEqual(cov.threshold_problems, undefined, que);
   }
 });

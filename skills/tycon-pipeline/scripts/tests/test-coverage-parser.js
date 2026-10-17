@@ -346,10 +346,11 @@ const T1_OPTS = {
 }
 
 // T5 · runners sin cobertura → «no produce cobertura», no el motivo de «sin diff». @ac-3
-for (const runner of ['node-test', 'suites-json']) {
+// El de suites.json sí la produce con --coverage: sin su lcov, el motivo dice que falta.
+for (const [runner, motivo] of [['node-test', /no produce cobertura/], ['suites-json', /no dejó reporte de cobertura \(falta coverage\/lcov\.info/]]) {
   const { cov } = correrTocadas({ runner, base: { 'lib/a.js': lineas(3) }, ahora: { 'lib/a.js': lineas(3) + 'x();\n' } });
-  check(`T5 ${runner}: touched null con motivo de runner sin cobertura`,
-    cov.touched_lines_pct === null && /no produce cobertura/.test(cov.touched_no_cross_check || ''),
+  check(`T5 ${runner}: touched null con el motivo de por qué no hay cobertura`,
+    cov.touched_lines_pct === null && motivo.test(cov.touched_no_cross_check || ''),
     JSON.stringify({ pct: cov.touched_lines_pct, m: cov.touched_no_cross_check }));
 }
 

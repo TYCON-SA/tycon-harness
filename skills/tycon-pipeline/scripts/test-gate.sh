@@ -80,7 +80,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MARKER_JS="$SCRIPT_DIR/marker.js"
 OUT_DIR="$REPO/.advisors"
 OUT_FILE="$OUT_DIR/tests-result.json"
-COV_MIN="${TYCON_COVERAGE_MIN:-75}"
+# El umbral lo resuelve el informe: la variable de la máquina, si sirve › la organización › 75. Acá va
+# tal cual, vacía si no está, para que el artefacto pueda decir de dónde salió.
+COV_MIN="${TYCON_COVERAGE_MIN:-}"
 TS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 mkdir -p "$OUT_DIR"
@@ -486,9 +488,11 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
   else
     echo "[test-gate] ⚠️  no pude averiguar qué archivos toca la story ($(head -1 "$RESULTS_DIR/touched.err")): corren todas las suites" >&2
   fi
-  echo "[test-gate] suites.json — corriendo scripts/tests/suites.json en paralelo (1 sola corrida, resumen → $RESULTS_DIR/suites.json)"
+  # Con la cobertura pedida, cada suite corre bajo el medidor de Node y deja su lcov; el informe lee el
+  # juntado ($RESULTS_DIR/coverage/lcov.info) para las líneas tocadas.
+  echo "[test-gate] suites.json — corriendo scripts/tests/suites.json en paralelo, con cobertura (1 sola corrida, resumen → $RESULTS_DIR/suites.json)"
   ( cd "$REPO_RUN" && node "$MARKER_JS" run-check tests -- \
-      node "$SCRIPT_DIR/lib/run-suites-json.js" "$REPO_RUN" "$RESULTS_DIR/suites.json" ${TOUCHED_ARGS[@]+"${TOUCHED_ARGS[@]}"} ) || SUITE_EXIT=$?
+      node "$SCRIPT_DIR/lib/run-suites-json.js" "$REPO_RUN" "$RESULTS_DIR/suites.json" ${TOUCHED_ARGS[@]+"${TOUCHED_ARGS[@]}"} --coverage "$RESULTS_DIR/coverage" ) || SUITE_EXIT=$?
 elif [[ "$RUNNER" == "jest" ]]; then
   # `--maxWorkers` capado por default: jest paraleliza en ~cores-1 y cada worker carga jsdom + el
   # grafo de módulos. En una 8-core/16GB eso es el swap thrash que `test-execution-discipline.md`

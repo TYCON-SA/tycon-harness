@@ -334,6 +334,26 @@ else
   [ "${con}" = "${esperado}" ] && ok "T9 los «Límites de ejecución» llegan a Codex en los que tienen Bash y están en el repo" || no "T9 límites en: ${con} (esperaba: ${esperado})"
 fi
 
+# ── T14 TestW2_DiceNumeroYOrigen ──────────────────────────────────────────────────────────────────────────────
+# TEST-W2 dice de dónde salió el umbral (`threshold_source`), sabe que el corredor de suites.json ya trae número, y
+# sigue siendo un aviso; las dos copias de Codex lo dicen igual porque salen del generador (el --check de T9).
+# 🔴 rojo: el texto del agente sin `threshold_source`, o una copia de Codex editada a mano que no lo tiene.
+t14=""
+for f in agents/tycon-plugin-tests-coverage.md adapters/codex/agents/tycon-plugin-tests-coverage.toml adapters/codex/agents-native/tycon-plugin-tests-coverage.toml; do
+  fila="$(grep -F '**TEST-W2**' "${f}" | head -1)"
+  case "${fila}" in *threshold_source*) ;; *) t14="${t14} ${f}(sin threshold_source)";; esac
+  case "${fila}" in *suites.json*) ;; *) t14="${t14} ${f}(sin el corredor de suites.json)";; esac
+  case "${fila}" in *"no frena"*) ;; *) t14="${t14} ${f}(no dice que no frena)";; esac
+  case "${fila}" in *"citar el número junto con su origen"*) ;; *) t14="${t14} ${f}(no pide citar el origen)";; esac
+done
+# las copias salen del generador sobre los revisores de ESTE árbol: en una máquina con el arnés instalado, fake-home.sh
+# apunta TYCON_SKILLS_DIR a los instalados, y el --check de T9 compara contra ésos
+env -u TYCON_SKILLS_DIR TYCON_AGENTS_DIR="${AQUI}/agents" node build/generate.js --check > "${TMP}/gen14.txt" 2>&1
+for f in adapters/codex/agents/tycon-plugin-tests-coverage.toml adapters/codex/agents-native/tycon-plugin-tests-coverage.toml; do
+  grep -qF "al día: ${f}" "${TMP}/gen14.txt" || t14="${t14} ${f}(no sale del generador: $(grep -F "${f}" "${TMP}/gen14.txt" | head -1))"
+done
+[ -z "${t14}" ] && ok "T14 7.31-TestW2_DiceNumeroYOrigen — TEST-W2 nombra threshold_source y el corredor de suites.json, en el agente y en las dos copias de Codex" || no "T14 TEST-W2:${t14}"
+
 if [ "${not_measured}" -gt 0 ]; then echo "reglas-revisores: ${pasaron} ok, ${fallos} fallos, ${not_measured} no medido(s) (copia pública)"
 else echo "reglas-revisores: ${pasaron} ok, ${fallos} fallos"; fi
 [ "${fallos}" = "0" ]

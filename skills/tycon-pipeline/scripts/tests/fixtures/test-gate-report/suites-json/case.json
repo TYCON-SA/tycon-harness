@@ -1,5 +1,5 @@
 {
-  "__doc": "el corredor de suites.json del arnés: suites rojas, ausentes y diferidas a propósito. Sin cobertura (no la produce): el motivo lo dice así, no «la story no declara archivos nuevos».",
+  "__doc": "el corredor de suites.json del arnés: suites rojas, ausentes y diferidas a propósito. Sin el lcov del corredor (la corrida no pidió la cobertura): el motivo lo dice así, no «la story no declara archivos nuevos». Con --coverage el corredor sí la produce (ver suites-json-coverage); los dos motivos de este caso se escribieron a mano, el resto es lo que escribía el bloque de Python.",
   "runner": "suites-json",
   "suite_exit": "1",
   "story_id": "unknown",

@@ -1,0 +1,10 @@
+{
+  "corridas": 2,
+  "verdes": 2,
+  "fallas": [],
+  "ausentes": [],
+  "deferred_suites": [],
+  "workers": 2,
+  "wall_ms": 4321,
+  "coverage": { "lcov": "<REPO_RUN>/../results/coverage/lcov.info", "with_data": 1, "without_data": ["<REPO_RUN>/scripts/tests/acme-sin-node.test.sh"] }
+}
