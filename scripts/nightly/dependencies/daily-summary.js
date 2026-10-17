@@ -710,9 +710,8 @@ function limpiar(s) {
 }
 const primeraLinea = (s) => String(s || '').split('\n').map((l) => l.trim()).find(Boolean) || '';
 
-// el texto va por la entrada estándar, nunca en la línea de comandos (en Windows la página de códigos rompe los acentos)
-function correrScript(args, texto) {
-  return spawnSync('bash', [SCRIPT_TELEGRAM, ...args, '--stdin'], { input: Buffer.from(texto, 'utf8'), encoding: 'utf8', timeout: TIMEOUT_SCRIPT_MS, env: process.env });
+function correrScript(args) {
+  return spawnSync('bash', [SCRIPT_TELEGRAM, ...args], { encoding: 'utf8', timeout: TIMEOUT_SCRIPT_MS, env: process.env });
 }
 
 /**
@@ -727,7 +726,7 @@ function mandar(textoFinal, editarId) {
   let reintentos = 0;
   const falla = (motivo) => ({ entregado: false, message_id: null, editado: false, motivo, nota });
   for (;;) {
-    const r = correrScript(editando ? ['--edit', String(editando)] : [], textoFinal);
+    const r = correrScript([...(editando ? ['--edit', String(editando)] : []), '--', textoFinal]);
     const out = String(r.stdout || '').trim();
     const err = limpiar(String(r.stderr || '').trim());
     if (r.error || r.status === null) {
@@ -849,7 +848,7 @@ function entregar(a) {
 
   if (a.dryRun) {
     console.log(final);
-    const r = correrScript(['--dry-run', ...(editarId ? ['--edit', editarId] : [])], final);
+    const r = correrScript(['--dry-run', ...(editarId ? ['--edit', editarId] : []), '--', final]);
     // El destinatario es dato personal: la salida del ensayo no lo muestra.
     const tapar = (s) => String(s || '').replace(/chat_id=\S+/g, 'chat_id=<oculto>');
     const primera = tapar(String(r.stdout || '')).split(' texto=')[0].trim();
