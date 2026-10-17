@@ -611,8 +611,10 @@ test('Probe_NamesInEnglish_RefusesRealUserFolder', async (t) => {
     const own = path.join(ROOT, 'scripts', 'publishing', 'public-repos.json');
     if (!fs.existsSync(own)) { t2.diagnostic('NO MEDIDO — sin public-repos.json (copia pública): el nombre no se puede comparar'); return; }
     const name = require(path.join(ROOT, 'scripts', 'publishing', 'export.js')).readPublicRepo(own);
-    const needle = String(name.repo).toLowerCase();
-    assert.ok(needle.length > 3, 'el lector del exportador no devolvió el nombre');
+    // el repo como repo: «<org>/<repo>». El nombre suelto coincide con el de la carpeta donde se instala el arnés
+    // (~/.claude/<repo>) y con el del comando que deja el paquete de npm, que estas pruebas nombran a propósito
+    const needle = `${name.org}/${name.repo}`.toLowerCase();
+    assert.ok(String(name.repo).length > 3 && String(name.org).length > 1, 'el lector del exportador no devolvió el nombre');
     // Una sola excepción, desde el corte (story 8.26, AC 61): el recurso «arnes» del pipeline nombra el repo público,
     // porque `resources` de Azure no acepta variables ni parámetros. Sólo esa línea, y sólo en el pipeline
     const resourceLine = new RegExp(`^\\s+name:\\s*${String(name.org).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/${String(name.repo).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'im');

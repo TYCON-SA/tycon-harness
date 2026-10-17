@@ -75,7 +75,7 @@ function piecesOf({ packsDir, agentsDir = null, coreSkillsDir = null, names }) {
   const { packs, errores } = listPacks(packsDir);
   const out = { skills: [], agents: [], guides: [], errores: errores.slice() };
   const coreSkills = coreSkillsDir || path.join(path.dirname(packsDir), 'skills');
-  // cada nombre se enlaza en un solo lugar de ~/.claude: el mismo nombre en el núcleo o en dos paquetes activos se dice, y
+  // cada nombre se enlaza en un solo lugar de ~/.claude/skills o ~/.claude/agents: el mismo nombre en el núcleo o en dos paquetes activos se dice, y
   // queda la primera (los paquetes van por orden de nombre); la que choca con el núcleo, ninguna
   const seen = { skills: new Map(), agents: new Map() };
   const take = (side, p, n, src, inCore, coreWhere) => {
