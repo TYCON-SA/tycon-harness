@@ -59,10 +59,8 @@ const SECRET_SHAPES = [
   /-----BEGIN [A-Z ]*PRIVATE KEY-----/g,
 ];
 
-const stateDirOf = (() => {
-  const lib = path.join(ROOT, 'scripts', 'setup', 'harness', 'tycon-home.js');
-  return fs.existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || os.homedir(), '.claude', '.tycon-pipeline');
-})();
+// la carpeta del estado la sabe tycon-home.js; si este archivo viaja suelto (al banco, a un laboratorio), la ruta de siempre
+const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
 const home = () => os.homedir();
 const dirs = () => {
   const sd = stateDirOf(home());
