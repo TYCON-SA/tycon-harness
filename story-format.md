@@ -17,7 +17,7 @@ El AI-Native SDLC Playbook pide un artefacto de "intent" previo al spec. En este
 `## Story` (como <rol> quiero <accion> para <beneficio>) es exactamente el intent, y el resto del
 archivo es su elaboración verificable. Un artefacto separado sería una segunda fuente de verdad
 que hay que mantener sincronizada a mano, y este arnés ya midió cómo terminan las copias dobles
-(caso `~/.codex/AGENTS.md` desincronizado en 48 líneas — `guides/codex-migration.md`).
+(caso `~/.codex/AGENTS.md` desincronizado en 48 líneas).
 
 La convención que completa la decisión: **las ideas pre-story viven en engram** (`mem_save` con
 `type: idea`, project del repo). Una idea que madura se convierte en story con este formato; una
@@ -83,7 +83,7 @@ ado_work_item: 12345  # auto-poblado al crear la story (ver nota abajo); ID del 
   la busca, y por eso el lint del frontmatter **avisa** cada número repetido con sus rutas (no
   frena: al escribir esto había 23 en un repo y 8 en otro).
 - `depends_on` lista stories que deben estar implementadas antes
-- `ado_work_item` — ID del work item en Azure DevOps. **Se auto-puebla al crear la story**: el hook `on-story-create.js` detecta la story nueva sin este campo e invoca el skill `tycon-ado-story-wi`, que crea el work item en ADO (con confirmación del dev) y escribe el id acá. Lo consumen después `tycon-pipeline` step-00c (transiciona el WI a `Active` al implementar) y step-09 (postea comment de trazabilidad con commit SHAs + CI run + PR link y lo transiciona a `Closed` al cerrar). Si el repo NO trackea en ADO (sin `.tycon/ado-config.yaml` ni env vars), el campo simplemente no aparece — el skill hace silent-skip. Detalle completo del flujo y del schema de config: `guides/ado-projects.md`.
+- `ado_work_item` — ID del work item en Azure DevOps. **Se auto-puebla al crear la story**: el hook `on-story-create.js` detecta la story nueva sin este campo e invoca el skill `tycon-ado-story-wi`, que crea el work item en ADO (con confirmación del dev) y escribe el id acá. Lo consumen después `tycon-pipeline` step-00c (transiciona el WI a `Active` al implementar) y step-09 (postea comment de trazabilidad con commit SHAs + CI run + PR link y lo transiciona a `Closed` al cerrar). Si el repo NO trackea en ADO (sin `.tycon/ado-config.yaml` ni env vars), el campo simplemente no aparece — el skill hace silent-skip. Detalle completo del flujo y del schema de config: `guides/integrations/ado-projects.md`.
 
 #### 1.0 🔴 El frontmatter tiene que ser LEGIBLE — una story mal formada es una story invisible
 

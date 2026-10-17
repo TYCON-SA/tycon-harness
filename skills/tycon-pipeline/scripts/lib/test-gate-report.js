@@ -469,7 +469,7 @@ function informe(argv) {
   const perFile = new Map();
   try {
     if (runner === 'dotnet') {
-      // Fix 2026-08-25 (guides/incident-log.md#case-coverage-max-per-class-2026-08-25): SUMAR líneas por archivo
+      // Fix 2026-08-25 (guides/maintaining/incident-log.md#case-coverage-max-per-class-2026-08-25): SUMAR líneas por archivo
       // DENTRO de cada cobertura (en C# cada método async es una clase aparte con el mismo archivo), y recién ahí
       // max() ENTRE coberturas distintas (un ensamblado que no tocó el archivo lo reporta en 0).
       for (const cobf of buscarArchivos(resultsDir, (nm) => nm === 'coverage.cobertura.xml')) {

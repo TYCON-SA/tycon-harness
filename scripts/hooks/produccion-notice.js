@@ -22,7 +22,7 @@
  * corre —su manifiesto, `.tycon-release.json`— y, para saber si lo instalado es lo que dejó el instalador, la constancia
  * que éste escribe como root (`/opt/tycon/production/installed-files.json`). Igual a la versión que corre: al día.
  * Distinto, pero igual a la constancia: quedó viejo. Distinto de las dos: alguien lo cambió. Caso:
- * `guides/incident-log.md#freno-alterado-en-version-bajada-2026-10-09`.
+ * `guides/maintaining/incident-log.md#freno-alterado-en-version-bajada-2026-10-09`.
  *
  * TAMBIÉN LEE `hook-errors.log`: el freno anota ahí cuando no pudo decidir. Un registro que nadie
  * mira no sirve de nada.

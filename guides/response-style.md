@@ -201,7 +201,7 @@ siguientes a la poda, lo primero que se devuelve al bloque son estas frases — 
 **Próximo candidato — PODADO el 2026-09-06**: tras esta poda el bloque más pesado del `CLAUDE.md`
 pasó a ser el de ADO (`claude-md-blocks/ado-runs-list-lag.md`), con el mismo patrón que motivó ésta:
 reglas que se acumulan por incidente, con su historia adentro. Se le aplicó la misma receta —
-la regla se queda, la historia se va a `guides/ado-cola-y-listados.md`— y bajó de **9.979 a 4.134
+la regla se queda, la historia se va a `guides/integrations/ado-cola-y-listados.md`— y bajó de **9.979 a 4.134
 bytes** sin perder una regla (verificado frase por frase contra la versión anterior). El `CLAUDE.md`
 completo quedó en **31.035 bytes**. Desde el mismo día cada bloque tiene techo declarado en
 `claude-md-blocks/budget.json` y el pre-commit frena al que se pasa, así que esta clase de

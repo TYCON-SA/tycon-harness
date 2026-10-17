@@ -896,7 +896,6 @@ Advisor condicional stack-agnostic. Audita specs Playwright contra E2E "verdes" 
 > lado** — ni en este catálogo ni en las guías: sólo en el `.md` del advisor. Una llave que
 > afloja dos reglas críticas y no está publicada es indistinguible de una puerta trasera:
 > quien la usa no deja rastro auditable, y quien audita no sabe que existe.
-> Auditoría: `guides/decisions/controles-apagables-por-config-2026-08-25.md` §C6.
 
 | Llave | Qué le hace a las reglas | Dirección |
 |---|---|---|

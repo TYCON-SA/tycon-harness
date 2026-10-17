@@ -16,7 +16,7 @@
 // Qué hace: pasa `--viejo` y `--viejo=x` a `--nuevo` hasta un `--`; con un par `opcion=viejo:nuevo` (tanda B3a), el
 // valor viejo de esa opción —el argumento siguiente o lo que va tras `=`— pasa al nuevo. Cada nombre viejo usado se anota con la biblioteca
 // general si está (scripts/lib/legacy-names.js: registro de usos y, en Azure DevOps, el warning de la corrida); en el
-// artefacto, sin la biblioteca, deja igual el warning de la corrida. Guía: guides/nombres-en-ingles.md.
+// artefacto, sin la biblioteca, deja igual el warning de la corrida. Guía: guides/maintaining/nombres-en-ingles.md.
 
 class LegacyOptionsError extends Error {
   constructor(message) {
@@ -55,7 +55,7 @@ function note(old, nu, where, kind = 'option') {
   if (!merged && /^true$/i.test(String(process.env.TF_BUILD || ''))) {
     const shown = kind === 'option' ? [`--${old}`, `--${nu}`] : [old, nu];
     try {
-      process.stderr.write(`##vso[task.logissue type=warning]nombre viejo «${shown[0]}» (${kind}) en ${where}: sigue andando y no es la causa de ningún error de este paso — cuando puedas, cambialo por «${shown[1]}» (el viejo se retira: guides/nombres-en-ingles.md)\n`);
+      process.stderr.write(`##vso[task.logissue type=warning]nombre viejo «${shown[0]}» (${kind}) en ${where}: sigue andando y no es la causa de ningún error de este paso — cuando puedas, cambialo por «${shown[1]}» (el viejo se retira: guides/maintaining/nombres-en-ingles.md)\n`);
     } catch { /* anotar nunca rompe */ }
   }
 }

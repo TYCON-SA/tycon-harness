@@ -169,7 +169,7 @@ no-producción por reescribir un archivo ni por borrar el índice. Lo único que
   aviso de arranque te lo dice.
 - **Codex** no lee la configuración administrada de Claude Code: de ese lado el freno también frena
   la puerta y te pide que la sentencia la corras vos. Lo que no cubre está declarado en
-  `guides/codex-divergence-inventory.md`, no prometido.
+  `guides/maintaining/codex-divergence-inventory.md`, no prometido.
 
 Y cinco más, propios de leer los nombres como el shell:
 

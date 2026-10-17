@@ -394,9 +394,9 @@ grep -qF 'Se versionaron y redesplegaron TODOS los formularios' "$AQUI/INDEX.md"
 if [ ! -f "$AQUI/scripts/publishing/public-repos.json" ]; then
   echo "⏭ versionar: T10 la entrada del incident-log: NO MEDIDO en el público (trae un reemplazo del registro, sin casos)"
 else
-grep -qF '## merges-que-reversionan-2026-09-21' "$AQUI/guides/incident-log.md" \
+grep -qF '## merges-que-reversionan-2026-09-21' "$AQUI/guides/maintaining/incident-log.md" \
   && ok "…y el incident-log tiene la entrada del caso" \
-  || no '🔴 T10 falta la entrada "## merges-que-reversionan-2026-09-21" en guides/incident-log.md'
+  || no '🔴 T10 falta la entrada "## merges-que-reversionan-2026-09-21" en guides/maintaining/incident-log.md'
 fi
 
 echo "─────────────"

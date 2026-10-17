@@ -30,7 +30,7 @@
  *              · `README.md`: el del arnés; el de agent-skills no entra.
  *   history  cada `--tips` es ancestro de `--union`. Sirve igual para una re-mezcla: la punta anterior de la base
  *            tiene que seguir siendo ancestro de la nueva (nunca se rebasa).
- *   papers   en `--base`: existe `guides/inactive-skills.md` y el `.gitignore` la cita (ya no al README que no
+ *   papers   en `--base`: existe `guides/maintaining/inactive-skills.md` y el `.gitignore` la cita (ya no al README que no
  *            entró). Con los dos lados, además: `.tycon/post-commit-ignore` es el de agent-skills tal cual, y los
  *            archivos de `.tycon/` del arnés no cambiaron.
  *   lanes    ningún archivo aparece tocado por dos carriles, salvo los compartidos a propósito (la story, `tasks/todo.md`,
@@ -55,7 +55,7 @@ const GITIGNORE = '.gitignore';
 const PRE_COMMIT = '.githooks/pre-commit';
 const README = 'README.md';
 const ADVISORS_LINE = '.advisors/';
-const GUIDE = 'guides/inactive-skills.md';
+const GUIDE = 'guides/maintaining/inactive-skills.md';
 const OLD_CITE = 'README.md §«Skills que no se cargan»';
 const POST_COMMIT_IGNORE = '.tycon/post-commit-ignore';
 // lo que los tres carriles tocan a propósito (story 8.18, AC 3)

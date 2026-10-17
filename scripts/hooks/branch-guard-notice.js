@@ -337,7 +337,7 @@ function legacyRetireLine() {
     const items = [...used.values()].sort((a, b) => (a.last < b.last ? 1 : a.last > b.last ? -1 : 0)).slice(0, LEGACY_MAX_ITEMS)
       .map((g) => `${show(g.u)} (${whereToChange(g.u, [...g.scripts].sort(byRecent).map(([s]) => s))})`);
     const more = used.size > LEGACY_MAX_ITEMS ? `; y ${used.size - LEGACY_MAX_ITEMS} más en ~/.claude/.tycon-pipeline/legacy-names.jsonl` : '';
-    return `🔔 TYCON — nombres viejos después de su fecha de retiro (${retire}): esta máquina usó ${used.size} en los últimos ${LEGACY_WINDOW_DAYS} días — ${items.join('; ')}${more}. Cambialos por el nuevo antes de la story de retiro, que los saca (guides/nombres-en-ingles.md). Decile a la persona en una línea.`;
+    return `🔔 TYCON — nombres viejos después de su fecha de retiro (${retire}): esta máquina usó ${used.size} en los últimos ${LEGACY_WINDOW_DAYS} días — ${items.join('; ')}${more}. Cambialos por el nuevo antes de la story de retiro, que los saca (guides/maintaining/nombres-en-ingles.md). Decile a la persona en una línea.`;
   } catch (e) {
     return legacyUnread('el aviso completo: falló al armarlo', e);
   }

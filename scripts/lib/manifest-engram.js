@@ -65,7 +65,7 @@ function gitOk(dir, args) {
 // pone las listas en `null`, que ningún consumidor puede confundir con «miré y no hay nada».
 function parsearIndice(texto) {
   if (MARCADORES.test(texto)) {
-    return { error: { codigo: 'marcadores', motivo: 'el índice tiene marcadores de conflicto de git adentro (ver guides/engram-workflow.md §manifest)' } };
+    return { error: { codigo: 'marcadores', motivo: 'el índice tiene marcadores de conflicto de git adentro (ver guides/integrations/engram-workflow.md §manifest)' } };
   }
   let m;
   try { m = JSON.parse(texto); }

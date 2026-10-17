@@ -34,7 +34,7 @@
    "why": "historia: una decisión escrita con las rutas de ese día; se publica entera y no se reescribe (AC 28)"
   },
   {
-   "path": "guides/publicacion-espejo.md",
+   "path": "guides/maintaining/publicacion-espejo.md",
    "kind": "azure",
    "why": "el proyecto de Azure DevOps en los comandos az del pipeline del espejo"
   },

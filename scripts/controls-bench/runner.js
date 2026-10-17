@@ -778,5 +778,5 @@ module.exports = { runCase, loadCaseFiles, main, interpreterFor, isolationEnv, s
 // informe de 9782 bytes llegaba cortado en 8192 y el consumidor lo leía como «no pude», nunca como
 // un error. `main` acá es sincrónica y no deja manejadores abiertos, así que con `exitCode` el
 // proceso termina solo, cuando terminó de escribir.
-// Caso: guides/incident-log.md#informe-cortado-por-la-tuberia-2026-09-28
+// Caso: guides/maintaining/incident-log.md#informe-cortado-por-la-tuberia-2026-09-28
 if (require.main === module) process.exitCode = main();

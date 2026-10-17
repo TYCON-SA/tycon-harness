@@ -143,7 +143,7 @@ de desaparecer. `harness-audit.js` ganó el chequeo «Cadena del CLAUDE.md con s
 
 ## Referencias
 
-- Script: [`scripts/tools/context-budget.js`](../scripts/tools/context-budget.js)
+- Script: [`scripts/tools/context-budget.js`](../../scripts/tools/context-budget.js)
 - Inspiración: [ECC skills/context-budget/SKILL.md](https://github.com/affaan-m/ECC/blob/main/skills/context-budget/SKILL.md)
 - Análisis ECC → TYCON (sesión 2026-05-23): qué porteamos y por qué (engram observation `Portado context-budget ECC → TYCON v1`)
 

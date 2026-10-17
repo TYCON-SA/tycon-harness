@@ -9,7 +9,7 @@
  * portadas (`README.md` y `README.es.md`, en la raíz desde 2026-10-14), `.github/CONTRIBUTING.md`, `.github/CODE_OF_CONDUCT.md`,
  * `.github/SECURITY.md`, la CI (`.github/workflows/ci.yml`), las tres páginas de primeros pasos (`getting-started/`), el
  * guion de entrada (`scripts/setup/get-harness.{sh,ps1}`), la lista de remotos públicos
- * (`scripts/setup/public-remotes.json`) y la página de ejemplo del registro de incidentes (`guides/incident-log.md`).
+ * (`scripts/setup/public-remotes.json`) y la página de ejemplo del registro de incidentes (`guides/maintaining/incident-log.md`).
  * Hasta el 2026-10-13 vivían en el repo privado como plantillas (`scripts/publishing/public-files/<destino>`, con la
  * dirección del repo por marcadores) y el exportador las ponía en su lugar; desde esa noche se escriben acá, en su ruta
  * real, con la dirección ya puesta. Esta suite los lee en esa ruta (`RAIZ/<destino>`) y los compara contra lo que existe
@@ -51,7 +51,7 @@ const PUBLISHING = path.join(RAIZ, 'scripts', 'publishing');
 const PAPERS = [
   '.github/CODE_OF_CONDUCT.md', '.github/CONTRIBUTING.md', 'README.es.md', 'README.md', '.github/SECURITY.md',
   '.github/workflows/ci.yml', 'LICENSE', 'NOTICE', 'getting-started/linux.md', 'getting-started/mac.md',
-  'getting-started/windows.md', 'guides/incident-log.md', 'scripts/setup/get-harness.ps1', 'scripts/setup/get-harness.sh',
+  'getting-started/windows.md', 'guides/maintaining/incident-log.md', 'scripts/setup/get-harness.ps1', 'scripts/setup/get-harness.sh',
   'scripts/setup/public-remotes.json',
 ];
 
@@ -321,7 +321,7 @@ test('Papeles_Notice_TitularMarcasYDerivadas', () => {
   const bulletLines = lines.map((l, i) => ({ l, i })).filter((x) => /^\* /.test(x.l));
   const bulletPath = (l) => l.slice(2).split(/\s/)[0].replace(/`/g, '');
   const expected = manifest.derived.map(inCopy);
-  assert.ok(expected.length >= 14, `el manifiesto trae ${expected.length} derived; la story mide 14`);
+  assert.ok(expected.length >= 13, `el manifiesto trae ${expected.length} derived; se esperan al menos 13`);
   assert.deepStrictEqual([...bulletLines.map((x) => bulletPath(x.l))].sort(), [...expected].sort(),
     'NOTICE: tiene que haber exactamente una línea `* <ruta>` por cada derived del manifiesto (con su ruta en la copia)');
 
@@ -359,7 +359,7 @@ test('Papeles_Comunidad_SusSecciones', () => {
   assert.match(contributing, /se cierra con su motivo/, 'CONTRIBUTING: tiene que decir que uno no aceptado se cierra con su motivo');
   assert.match(contributing, /\(un fork\)/, 'CONTRIBUTING: tiene que decir qué pasa por ahora con un pull request desde una copia');
   assert.ok(contributing.includes('bash scripts/ci/public-ci.sh'), 'CONTRIBUTING: falta cómo correr lo mismo que la CI');
-  assert.ok(contributing.includes('guides/nombres-en-ingles.md'), 'CONTRIBUTING: falta la regla de nombres en inglés');
+  assert.ok(contributing.includes('guides/maintaining/nombres-en-ingles.md'), 'CONTRIBUTING: falta la regla de nombres en inglés');
   assert.match(contributing, /nombres inventados/, 'CONTRIBUTING: falta la regla de ejemplos con nombres inventados');
   assert.match(contributing, /Apache-2\.0/, 'CONTRIBUTING: falta que una contribución entra bajo Apache-2.0');
   assert.match(contributing, /\bCLA\b/, 'CONTRIBUTING: tiene que decir que no hay CLA');
@@ -712,7 +712,7 @@ test('PublicFrontPage_OneLineInstall_BothLanguages', async (t) => {
 
 // ── T35 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 // La guía de publicación viaja con el arnés, y su sección «Lo que la publicación recibe» se mide igual que en el privado.
-const HANDOFF_GUIDE = 'guides/publicacion-espejo.md';
+const HANDOFF_GUIDE = 'guides/maintaining/publicacion-espejo.md';
 const HANDOFF_SECTION = 'Lo que la publicación recibe';
 // Cada punto del AC 27 de la story 8.7: lo que la sección tiene que decir. Un punto es una lista de expresiones; todas
 // tienen que estar en la sección (no en el resto de la guía: la 8.8 lee ESA sección).

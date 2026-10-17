@@ -15,6 +15,8 @@ cuando la tarea lo pide. Vale igual con Claude Code y con Codex. Si algo del arn
 Cada pieza (guía, script, hook, control) con su caso y su medición: **[guides/piezas-del-arnes.md](guides/piezas-del-arnes.md)**,
 a demanda; el árbol y sus reglas: [Dónde vive cada cosa](guides/piezas-del-arnes.md#dónde-vive-cada-cosa).
 Recorrido completo: **[guides/que-hace-el-arnes.md](guides/que-hace-el-arnes.md)**.
+Las guías: `guides/` para usar el arnés, `guides/integrations/` para las integraciones opcionales y
+`guides/maintaining/` para quien lo mantiene.
 
 ## Cuándo leer cada guía
 
@@ -32,12 +34,11 @@ la fila aplica.
 | Linkear una story nueva a la que viene a fixear/recalibrar (back-links `followup_of:` / `followed_up_by:`) | `story-format.md` §1.2 |
 | Back-fillear back-links de follow-ups en stories existentes (audit periódico de un repo) | `scripts/tools/tycon-backfill-followups.js` (dry-run / `--apply` / `--render-table`) |
 | Una story "no aparece" para el validator / el backfill / los scripts de status, o adoptar el lint de frontmatter en un repo | `story-format.md` §1.0 + `scripts/lib/lint-story-frontmatter.js` |
-| Escribir o editar guías, skills, steps o material del sitio — cómo nombrar Claude/Codex/el agente | `guides/criterio-tres-claude.md` |
-| Memoria persistente con engram (si la integración está prendida) | `guides/engram-workflow.md` |
+| Memoria persistente con engram (si la integración está prendida) | `guides/integrations/engram-workflow.md` |
 | Commit, push, merge, cualquier cosa de git | `guides/git-commit-conventions.md` |
-| Nombrar algo que ejecuta la máquina · frenó el freno de castellano · renombrar sin romper a nadie (`renames.json`) | `guides/nombres-en-ingles.md` |
-| Escribir o revisar los comentarios del código (qué hace y por qué, en presente; sin historia ni referencias internas) | `guides/estilo-de-codigo.md` |
-| Sumar o actualizar una skill de terceros · de quién es cada cosa y con qué licencia | el manifiesto `scripts/publishing/third-party-skills.json` + `guides/publicacion-espejo.md` §«Las skills de terceros» |
+| Nombrar algo que ejecuta la máquina · frenó el freno de castellano · renombrar sin romper a nadie (`renames.json`) | `guides/maintaining/nombres-en-ingles.md` |
+| Escribir o revisar los comentarios del código (qué hace y por qué, en presente; sin historia ni referencias internas) | `guides/maintaining/estilo-de-codigo.md` |
+| Sumar o actualizar una skill de terceros · de quién es cada cosa y con qué licencia | el manifiesto `scripts/publishing/third-party-skills.json` + `guides/maintaining/publicacion-espejo.md` §«Las skills de terceros» |
 | Correr 2 pipelines/stories en paralelo en el mismo repo · mergear sin congelar el working tree del dev · aislar escrituras de agentes paralelos | `guides/git-worktrees.md` (helper: `scripts/tools/tycon-worktree.sh`) |
 | Planificación de cambios no triviales | `guides/workflow-orchestration.md` |
 | Crear/reescribir un artefacto de planning (UX spec, navigation map, architecture, PRD) sobre dominio ya cubierto por un artefacto aprobado | `guides/workflow-orchestration.md` §12 — frontmatter `reconciles:`/`supersedes_in:` OBLIGATORIO; sin eso no pasa de `draft` (caso UX spec V7 que ignoró el catálogo firmado) |
@@ -53,13 +54,13 @@ la fila aplica.
 | Por qué en `main` se construyen y empaquetan TODOS los formularios aunque sólo algunos suban de versión · antes de proponer «construir sólo lo que sube» | `guides/piezas-del-arnes.md` §`affected-forms.js` («construir en `main` también los que NO suben de versión… pone al día producción») |
 | Un merge de **sólo documentación** construyó, desplegó a staging, subió la versión y pidió aprobación de PROD · qué rutas pueden ir en el `trigger` de un pipeline y cuáles no (`.tycon/**` no) · un sitio sin filtro de rutas | `scripts/ci/check-trigger-without-docs.js` (cabecera; se corre a mano sin argumentos) |
 | **Correr CUALQUIER test** (vitest/jest/dotnet) — SIEMPRE antes de `npm test`/`dotnet test` | `guides/test-execution-discipline.md` |
-| Instalar/configurar tracking de Clockify en Claude Code (opcional) | `guides/clockify-mcp.md` |
-| Setup de tracking automático de tiempo (timer auto-start con confirmación + auto-close por idle) | `guides/clocki-tracking.md` |
-| Instalar/configurar CodeGraph (índice de código MCP, opcional) | `guides/codegraph-mcp.md` |
-| Crear stories que generen work items en Azure DevOps; configurar `.tycon/ado-config.yaml` | `guides/ado-projects.md` |
+| Instalar/configurar tracking de Clockify en Claude Code (opcional) | `guides/integrations/clockify-mcp.md` |
+| Setup de tracking automático de tiempo (timer auto-start con confirmación + auto-close por idle) | `guides/integrations/clocki-tracking.md` |
+| Instalar/configurar CodeGraph (índice de código MCP, opcional) | `guides/integrations/codegraph-mcp.md` |
+| Crear stories que generen work items en Azure DevOps; configurar `.tycon/ado-config.yaml` | `guides/integrations/ado-projects.md` |
 | Consultar una base de PRODUCCIÓN · te frenó el freno de producción y querés saber por qué · declarar un servidor en `.tycon/production.json` · instalar o actualizar el freno (pide `sudo`) | `guides/produccion-con-permiso.md` |
 | Activar/desactivar el freno de mano del harness (bloqueo de `rm -rf /`, `--no-verify`, `curl\|bash`, `DROP DATABASE`, etc.) | `guides/safety-guard.md` |
-| Setup del grabador silencioso (instinct mining) + comando `/tycon-instincts` | `guides/instinct-mining.md` |
+| Setup del grabador silencioso (instinct mining) + comando `/tycon-instincts` | `guides/integrations/instinct-mining.md` |
 | Bajar costo del pipeline TYCON (Haiku como executor, Opus como advisor on-demand) + flag `--cost-tier lean` + qué effort/modelo de sesión usar para una story (effort hint PIPE-C8) | `guides/harness-cost-tiering.md` |
 | Adoptar la "wiki por temas" en un repo de specs, o entender/arreglar el lint story↔wiki (`scripts/tools/lint-wiki.sh`) | `guides/wiki-topics.md` |
 | Un commit llegó a `main` sin pasar por los controles (otra máquina, la web de ADO, hooks salteados) · adoptar el portón de CI en un repo · entender por qué el portón pide el **registro de autoría** (quién implementó, quiénes revisaron) | `guides/ci-gate.md` |
@@ -76,7 +77,7 @@ la fila aplica.
 | Frontend React/TS de plugins Bizuit (paquete bizuit) | packs/bizuit/guides/bizuit-plugin-react.md |
 | Frontend Next.js (App Router) de plugins Bizuit (paquete bizuit) | packs/bizuit/guides/bizuit-plugin-nextjs.md |
 | La spec de un proceso BPMN de BIZUIT, o por qué uno «pasó todos los controles» sin sus reglas (paquete bizuit) | packs/bizuit/guides/bizuit-bpmn-spec-contract.md |
-| Mantener el arnés: publicar, el banco de controles, el catálogo de reglas, la auditoría, el costo del pipeline, el lado Codex, los procesos de la noche | `guides/mantener-el-arnes.md` |
+| Mantener el arnés: publicar, el banco de controles, el catálogo de reglas, la auditoría, el costo del pipeline, el lado Codex, los procesos de la noche | `guides/maintaining/mantener-el-arnes.md` |
 
 
 ---
@@ -90,7 +91,7 @@ llama, qué rompe un cambio— se contestan primero con CodeGraph: devuelve el g
 búsqueda de texto no ve. La búsqueda de texto queda para lo que no es código (markdown, specs,
 logs, `.json`/`.yaml`/`.sql`), strings literales, nombres de archivo, lo que el índice no cubre, y
 como respaldo si CodeGraph falla. Sin índice ni tools de CodeGraph en la sesión, la regla no
-aplica. Setup (opcional, por dev): `guides/codegraph-mcp.md`.
+aplica. Setup (opcional, por dev): `guides/integrations/codegraph-mcp.md`.
 
 ---
 
@@ -121,7 +122,7 @@ packs/bizuit/guides/bizuit-plugin-react.md §3. Regla promovida 2026-07-15; la v
 - Stories: `tycon-create-story` (Mary+GOLD; crea el WI de ADO vía `tycon-ado-story-wi`), `tycon-story-validator`.
 - Review: `bmad-code-review`, `security-review`, advisors `tycon-plugin-*`.
 - Merge a main: `/tycon-merge-to-main`. Drift de stories: `/check-story-drift`.
-- Engram (si la integración está prendida): siempre con `project:` (nombres canónicos en `guides/engram-workflow.md`).
+- Engram (si la integración está prendida): siempre con `project:` (nombres canónicos en `guides/integrations/engram-workflow.md`).
 - **Commits: el agente NUNCA commitea ni pushea sin autorización explícita.**
 
 ---

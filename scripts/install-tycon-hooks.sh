@@ -559,7 +559,7 @@ TMP_REPORT=$(mktemp)   # lo limpia _tycon_cleanup (el handler único de salida �
 # escritas en settings.json (hooks y permisos), settings.local.json, ~/.codex/hooks.json, ~/.git-hooks/* y el
 # LaunchAgent del examen. Se reescriben ANTES del bloque de hooks, así éste encuentra el hook nuevo ya registrado y no
 # lo duplica. Compara la ruta COMPLETA (`runs.js` está dentro de `upload-runs.js`), recarga un LaunchAgent sólo si
-# estaba cargado, y con el mapa vacío no toca nada. El .ps1 llama al mismo guion. Guía: guides/nombres-en-ingles.md.
+# estaba cargado, y con el mapa vacío no toca nada. El .ps1 llama al mismo guion. Guía: guides/maintaining/nombres-en-ingles.md.
 RENAMED_N=0; RENAMED_OUT=""
 if command -v node >/dev/null 2>&1 && [[ -f "$SCRIPT_DIR/lib/legacy-names.js" ]]; then
   _LN_ARGS=(--migrate-machine --guides "$(dirname "$SCRIPT_DIR")" --skills "$AGENT_SKILLS_REPO")
@@ -691,10 +691,10 @@ fi
 # porque TYCON_INSTINCT_MINING nunca se exportó en esta máquina.
 # ============================================================
 if grep -q 'instinct-observe.sh' "$SETTINGS" 2>/dev/null && [[ "${TYCON_INSTINCT_MINING:-0}" != "1" ]]; then
-  echo "⚠ tycon: instinct-mining REGISTRADO pero APAGADO — el hook está en settings.json pero TYCON_INSTINCT_MINING≠1 (no graba nada). Agregá 'export TYCON_INSTINCT_MINING=1' a tu shell rc o removelo. Ver guides/instinct-mining.md"
+  echo "⚠ tycon: instinct-mining REGISTRADO pero APAGADO — el hook está en settings.json pero TYCON_INSTINCT_MINING≠1 (no graba nada). Agregá 'export TYCON_INSTINCT_MINING=1' a tu shell rc o removelo. Ver guides/integrations/instinct-mining.md"
 fi
 if grep -q 'instinct-observer' "$SETTINGS" 2>/dev/null && [[ "${TYCON_INSTINCT_OBSERVER:-0}" != "1" ]]; then
-  echo "⚠ tycon: instinct-observer REGISTRADO pero APAGADO — TYCON_INSTINCT_OBSERVER≠1 (nunca propone instincts). Agregá 'export TYCON_INSTINCT_OBSERVER=1' a tu shell rc o removelo. Ver guides/instinct-mining.md"
+  echo "⚠ tycon: instinct-observer REGISTRADO pero APAGADO — TYCON_INSTINCT_OBSERVER≠1 (nunca propone instincts). Agregá 'export TYCON_INSTINCT_OBSERVER=1' a tu shell rc o removelo. Ver guides/integrations/instinct-mining.md"
 fi
 
 # ============================================================
@@ -817,7 +817,7 @@ BF_PRESENT=()
 # acá, no en producción. El lado Codex (paridad + live-fire con sesiones reales)
 # corre solo con TYCON_CODEX=1, en background para no frenar el arranque.
 # Reporte → scripts/controls-bench/.bench/ · lo cobra bench-notice.js al arranque.
-# Ver guides/controls-bench.md. Opt-out: TYCON_BENCH_DAILY=0.
+# Ver guides/maintaining/controls-bench.md. Opt-out: TYCON_BENCH_DAILY=0.
 # ============================================================
 # ============================================================
 # Despliegue del lado Codex (2026-08-23; endurecido por la revisión del mismo día).

@@ -55,7 +55,7 @@
       "transform": "skill-rename"
     },
     {
-      "path": "guides/ado-projects.md",
+      "path": "guides/integrations/ado-projects.md",
       "transform": "skill-rename"
     },
     {
@@ -67,7 +67,7 @@
       "transform": "internal-blocks+not-in-copy+skill-rename"
     },
     {
-      "path": "guides/bmad-contract.md",
+      "path": "guides/maintaining/bmad-contract.md",
       "transform": "skill-rename"
     },
     {
@@ -87,19 +87,19 @@
       "transform": "internal-blocks"
     },
     {
-      "path": "guides/incident-log.md",
+      "path": "guides/maintaining/incident-log.md",
       "transform": "sinteticos"
     },
     {
-      "path": "guides/instinct-mining.md",
+      "path": "guides/integrations/instinct-mining.md",
       "transform": "not-in-copy"
     },
     {
-      "path": "guides/mecanismo-de-instalacion.md",
+      "path": "guides/maintaining/mecanismo-de-instalacion.md",
       "transform": "not-in-copy"
     },
     {
-      "path": "guides/publicacion-espejo.md",
+      "path": "guides/maintaining/publicacion-espejo.md",
       "transform": "internal-blocks+not-in-copy+skill-rename"
     },
     {

@@ -462,7 +462,7 @@ function main(argv0) {
       // compararon con nada —ni siquiera el freno de retroceso, que está marcado `exigido`— porque
       // sus clones estaban en `dev`. El control decía "1 divergencia sobre 55" habiendo dejado dos
       // repos afuera. Un control que se saltea lo que no encuentra en el disco mide menos de lo que
-      // dice, y "no medido" se lee como "coincide" — guides/incident-log.md#case-parity-skipped-repos-2026-09-04.
+      // dice, y "no medido" se lee como "coincide" — guides/maintaining/incident-log.md#case-parity-skipped-repos-2026-09-04.
       //
       // Ahora: primero lo publicado; el disco es el plan B; y sólo si FALLAN LOS DOS es ausente.
       //
@@ -471,7 +471,7 @@ function main(argv0) {
       // checkout parado en otra rama —lo normal: el dev trabaja en `dev`— se reportaba como
       // divergencia del PRODUCTO. Medido el 2026-09-03: el backend de un producto, 29 commits atrás,
       // producía CUATRO divergencias que en `origin/main` no existen. Un control que da falsas
-      // alarmas se apaga, y se lleva puestos los casos donde sí importaba — guides/incident-log.md#revision-final-de-los-14-pipelines-2026-09-03.
+      // alarmas se apaga, y se lleva puestos los casos donde sí importaba — guides/maintaining/incident-log.md#revision-final-de-los-14-pipelines-2026-09-03.
       //
       // El disco sigue siendo el plan B —para un repo sin remoto, o sin ese ref— pero AVISANDO:
       // "no pude leer lo publicado" y "leí lo publicado" no son lo mismo y no se pueden confundir.

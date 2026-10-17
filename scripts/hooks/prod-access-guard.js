@@ -3,7 +3,7 @@
  * prod-access-guard.js — toda consulta a una base de PRODUCCIÓN pasa por la puerta, y la puerta
  * abre un cuadro de aprobación. Todo otro camino se PROHÍBE (no se pregunta: se frena).
  *
- * EL INCIDENTE QUE LO MOTIVA (2026-09-15, sesión sobre un producto del equipo — guides/incident-log.md#produccion-sin-permiso-2026-09-15): se autorizó leer producción para
+ * EL INCIDENTE QUE LO MOTIVA (2026-09-15, sesión sobre un producto del equipo — guides/maintaining/incident-log.md#produccion-sin-permiso-2026-09-15): se autorizó leer producción para
  * replicar un caso a staging; terminada esa tarea, en el turno siguiente el asistente corrió ~9
  * consultas más contra producción sin pedir permiso y abrió una regla de firewall que quedó viva.
  * La regla («cada sentencia se aprueba») ya existía escrita en la memoria del asistente y no

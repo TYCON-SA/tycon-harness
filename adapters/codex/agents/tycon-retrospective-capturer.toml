@@ -1,6 +1,6 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/tycon-retrospective-capturer.md
-# source_sha256: 656de9a2bbddecb07b1ba5399265c771fc0e0432262b8caf2638b0de16551aee
+# source_sha256: ea29f4d95af92875e3dc489c6fae12f553135b3d8571cac9aab8b199b684934b
 # Se despliega como $CODEX_HOME/tycon-retrospective-capturer.config.toml y se invoca: codex exec -p tycon-retrospective-capturer
 # ⚠️ codex exec se cuelga para siempre si le queda stdin abierto: invocarlo SIEMPRE con < /dev/null
 
@@ -45,8 +45,7 @@ El que lo lanza (step 10b de `/tycon-merge-to-main`, o el banco de controles) pu
   caller lo pasa explícito, gana.
 
 Por qué existe: una ruta absoluta hardcodeada asume dónde está clonado el arnés,
-y el banco de controles necesita rutas dentro de su fixture
-(`guides/decisions/codex-etapa-d-retro-red.md`).
+y el banco de controles necesita rutas dentro de su fixture.
 
 ## Las métricas
 

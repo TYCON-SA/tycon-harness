@@ -3,7 +3,7 @@
  * missing-path-notice.js — PostToolUse (Bash|PowerShell): avisa cuando un comando de LECTURA nombró una ruta
  * que NO existe.
  *
- * Caso que lo motiva (un producto del equipo, 2026-08-27 — guides/incident-log.md#listado-vacio-2026-08-27): `ls -R TIMBOProyecto/specs TIMBOProyecto/docs 2>/dev/null |
+ * Caso que lo motiva (un producto del equipo, 2026-08-27 — guides/maintaining/incident-log.md#listado-vacio-2026-08-27): `ls -R TIMBOProyecto/specs TIMBOProyecto/docs 2>/dev/null |
  * head -60` devolvió VACÍO porque el shell estaba parado en otra carpeta. El agente leyó ese vacío
  * como "no hay documentación" y diseñó una funcionalidad entera sobre esa premisa falsa; lo
  * descubrió el dev, varios turnos después.

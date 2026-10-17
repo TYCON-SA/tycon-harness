@@ -1,7 +1,7 @@
 #!/bin/bash -p
 # tycon-prod-sql — LA puerta: la única forma de consultar una base de producción.
 #
-# POR QUÉ EXISTE (story 6.1 — guides/incident-log.md#produccion-sin-permiso-2026-09-15): el 2026-09-15, en una sesión sobre un producto del equipo, una autorización puntual se
+# POR QUÉ EXISTE (story 6.1 — guides/maintaining/incident-log.md#produccion-sin-permiso-2026-09-15): el 2026-09-15, en una sesión sobre un producto del equipo, una autorización puntual se
 # estiró sola a la tarea siguiente: ~9 consultas más contra producción sin pedir permiso. Acá cada
 # sentencia pasa por el cuadro de aprobación de Claude Code (la regla `ask` de la configuración
 # administrada cubre `Bash(/opt/tycon/bin/tycon-prod-sql *)`), y el freno `prod-access-guard.js`
@@ -282,7 +282,7 @@ esac
 [ -n "$LLAVERO" ] || muere "«${HOST}» está declarado como producción pero sin «keychain» en su .tycon/production.json"
 printf '%s' "$LLAVERO" | grep -qE "$LLAVERO_VALIDO" || muere "la entrada del Llavero de «${HOST}» («${LLAVERO}») no empieza con tycon-prod-: no la leo."
 # `base`: a qué base entra el cliente. En Azure SQL no hay `USE` ni nombres de tres partes: sin esto
-# entra a `master` y toda tabla es «Invalid object name» (medido contra un servidor interno el 2026-09-15 — guides/incident-log.md#case-azure-sql-enters-master-2026-09-15 —, con
+# entra a `master` y toda tabla es «Invalid object name» (medido contra un servidor interno el 2026-09-15 — guides/maintaining/incident-log.md#case-azure-sql-enters-master-2026-09-15 —, con
 # la clave ya bien). Es opcional (un servidor con una sola base de default no la necesita) y su charset
 # es estricto porque va como argumento del cliente.
 ARGS_BASE=()

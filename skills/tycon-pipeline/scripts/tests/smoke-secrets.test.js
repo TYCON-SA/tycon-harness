@@ -3,7 +3,7 @@
  * smoke-secrets.test.js — los registros de prueba de humo nunca guardan una contraseña (SMOKE-SECRETO-2, 2026-10-04).
  *
  * Caso disparador: contraseñas SQL escritas tal cual en `.advisors/dod-runtime/*-smoke-ledger.jsonl` de un producto,
- * una de ellas la de la base de producción (guides/incident-log.md#case-sql-passwords-in-smoke-ledgers-2026-10-04).
+ * una de ellas la de la base de producción (guides/maintaining/incident-log.md#case-sql-passwords-in-smoke-ledgers-2026-10-04).
  * El tapado de antes sólo reconocía valores de letras y números: `SQLCMDPASSWORD='…'` con un símbolo y el `-P` de
  * sqlcmd pasaban enteros.
  *

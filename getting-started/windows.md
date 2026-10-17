@@ -125,7 +125,7 @@ A. engram — memoria del agente entre sesiones. No pide cuenta. El equipo usa l
    A6. PRENDER engram. Puede intentar instalar sqlite3 con winget: si Windows pide administrador, lo cancelo. Sin
        sqlite3 engram anda igual; sólo no corren dos de los chequeos de salud de la memoria.
    Nota: la memoria viaja en los commits sólo en los repos que tienen un archivo .engram-project
-   (~/.claude/tycon-harness/guides/engram-workflow.md). Cuando el equipo cambie de versión, el arranque lo avisa; con el
+   (~/.claude/tycon-harness/guides/integrations/engram-workflow.md). Cuando el equipo cambie de versión, el arranque lo avisa; con el
    binario suelto se actualiza a mano, repitiendo A2 y A3 con el número nuevo.
 
 B. codegraph — índice del código, para que el agente encuentre las cosas sin leer archivo por archivo. No pide cuenta.

@@ -47,7 +47,7 @@
 // LO QUE NO SE IMPRIME: el texto hallado, nunca; una ruta que ES un hallazgo (se cuenta, y en su lugar va un aviso); y
 // de lo que viene del repo público —una ruta, una línea de git—, nada que no entre en una línea ni que el agente de la
 // corrida pueda leer como una orden.
-// Guía: guides/publicacion-espejo.md
+// Guía: guides/maintaining/publicacion-espejo.md
 
 const fs = require('fs');
 const os = require('os');
@@ -56,7 +56,7 @@ const { spawnSync } = require('child_process');
 
 const OWN_ROOT = path.resolve(__dirname, '..', '..');
 const CONFIG_DIR = 'scripts/publishing';
-const GUIDE = 'guides/publicacion-espejo.md';
+const GUIDE = 'guides/maintaining/publicacion-espejo.md';
 const PUBLIC_REPO = 'el repo de public-repos.json';
 
 // ── Constantes, nunca configurables ─────────────────────────────────────────────────────────────────────────────

@@ -28,7 +28,7 @@
 //   TYCON_MIRROR_API_URL cambia la base de la API (default https://api.github.com). Va con https://; sin cifrar
 //   (http://) sólo hacia la propia máquina —127.0.0.1, localhost, ::1—, que es donde las pruebas levantan una API de
 //   mentira. Con http:// hacia otro servidor sale 2 antes de leer la llave: no firma ni manda nada.
-// Guía: guides/publicacion-espejo.md
+// Guía: guides/maintaining/publicacion-espejo.md
 
 const fs = require('fs');
 const path = require('path');

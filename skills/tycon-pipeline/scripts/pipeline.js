@@ -339,7 +339,7 @@ function hasPlaywrightSpecs(repo) {
         // intermedia, así que un repo que pone los specs en `<app>/e2e/` quedaba INVISIBLE:
         // `e2eConfig` devolvía `{}` —"este repo no tiene E2E"— en vez del aviso "tenés specs
         // Playwright y NO declaraste el gate". Caso real (2026-08-25): el frontend de un producto del equipo,
-        // 9 specs + playwright.config en `calden-tablero/e2e/`, cero aviso — guides/incident-log.md#case-e2e-specs-folder-unseen-2026-08-25. Y no era un repo raro:
+        // 9 specs + playwright.config en `calden-tablero/e2e/`, cero aviso — guides/maintaining/incident-log.md#case-e2e-specs-folder-unseen-2026-08-25. Y no era un repo raro:
         // URUTAU/FrontEnd usa el mismo layout (`UTAU_*/e2e/`). El aviso es el único mecanismo de
         // descubrimiento que tiene un repo para enterarse de que le falta declarar el gate, así
         // que un layout no contemplado no da error: da silencio.
@@ -362,7 +362,7 @@ function hasPlaywrightSpecs(repo) {
 // el lector aceptaba llaves a CUALQUIER profundidad, así que un bloque anidado por error —el
 // caso real de los formularios de un producto del equipo— hacía que la lista de pruebas críticas de un formulario se
 // aplicara al OTRO, donde ese archivo no existe. Y una llave con el nombre mal escrito no
-// producía ningún error: se ignoraba, y el repo quedaba sin la config que creía tener — guides/incident-log.md#config-anidada-se-lee-igual-2026-08-25.
+// producía ningún error: se ignoraba, y el repo quedaba sin la config que creía tener — guides/maintaining/incident-log.md#config-anidada-se-lee-igual-2026-08-25.
 const CLAVES_E2E = new Set([
   'gate', 'frontend_dir', 'frontend_dirs', 'critical_manifest', 'shared_paths', 'preconditions',
   // `bundle` la lee y la USA `e2e-gate.sh` (ver su cabecera y `leer_bundle`): compara la fecha del
@@ -377,7 +377,7 @@ const CLAVES_E2E = new Set([
 ]);
 
 // Las llaves que SÍ admiten hijas anidadas, y cuáles. El chequeo de anidamiento nació porque una
-// lista de specs críticos colgada de un formulario terminó aplicándose al otro (un producto del equipo, 2026-08-25 — guides/incident-log.md#config-anidada-se-lee-igual-2026-08-25)
+// lista de specs críticos colgada de un formulario terminó aplicándose al otro (un producto del equipo, 2026-08-25 — guides/maintaining/incident-log.md#config-anidada-se-lee-igual-2026-08-25)
 // — sigue vigente para todo lo demás. Esto no lo afloja: dice cuáles son las excepciones legítimas,
 // y sus hijas al primer nivel siguen siendo un error, porque de ahí el gate no las lee.
 const HIJAS_E2E = { bundle: new Set(['artifact', 'sources', 'rebuild']) };
@@ -427,7 +427,7 @@ function e2eConfig(repo) {
     if (nivelHijo === null) nivelHijo = indent;
     if (indent > nivelHijo) {
       // Llave ANIDADA dentro de otra. Antes se aceptaba igual: así fue como la lista de specs
-      // críticos de un formulario terminó aplicándose al otro (los formularios de un producto, 2026-08-25 — guides/incident-log.md#config-anidada-se-lee-igual-2026-08-25).
+      // críticos de un formulario terminó aplicándose al otro (los formularios de un producto, 2026-08-25 — guides/maintaining/incident-log.md#config-anidada-se-lee-igual-2026-08-25).
       // Excepción declarada en `HIJAS_E2E`: hay llaves cuyas hijas el gate SÍ lee anidadas
       // (`bundle`). Avisar ahí mandaba al dev a romper una config correcta.
       const permitidas = HIJAS_E2E[padre];
@@ -615,7 +615,7 @@ function selectE2eApps(cfg, changedFiles) {
   // pedidos dejaba catálogo y stock sin ejercer.
   const compartidos = (cfg && Array.isArray(cfg.shared_paths) ? cfg.shared_paths : []).map(norm).filter(Boolean);
 
-  // 🔴 La config del PROPIO control es compartida SIEMPRE (2026-08-24 — guides/incident-log.md#case-e2e-gate-own-config-2026-08-24). El
+  // 🔴 La config del PROPIO control es compartida SIEMPRE (2026-08-24 — guides/maintaining/incident-log.md#case-e2e-gate-own-config-2026-08-24). El
   // commit que dio de alta el tier crítico en el frontend de un producto se mergeó a main SIN
   // que el tier corriera: sólo tocaba `.tycon/advisors.yaml` + el manifest, que no caían bajo
   // ninguna app ni bajo `shared_paths`, así que esto devolvía `[]` ("0 apps tocadas") — y NO es
@@ -945,7 +945,7 @@ function computeConditional(repo, files, extras = []) {
   // i18n.required: true), no por el diff. Requiere además que el diff toque código
   // con texto visible posible. El advisor scopea al diff y devuelve OK si no hay
   // texto nuevo hardcodeado. Caso disparador: un producto del equipo, 2026-06-01 (512 textos
-  // acumulados sin gate — guides/incident-log.md#case-hardcoded-ui-text-backlog-2026-06-01). Es ratchet de "no deuda nueva", no sweep del backlog.
+  // acumulados sin gate — guides/maintaining/incident-log.md#case-hardcoded-ui-text-backlog-2026-06-01). Es ratchet de "no deuda nueva", no sweep del backlog.
   if (i18nRequired(repo) &&
       (anyFileMatches(files, /\.(tsx|ts|jsx|js)$/) || anyFileMatches(files, /\.cs$/i))) {
     out.push('i18n-hardcoded-text-reviewer');
@@ -2023,7 +2023,7 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
 // Caso disparador: Story 13.29 de un producto del equipo, 2026-05-27 — 2 ciclos de hook-block durante
 // Step 7c→8 (pipelines.A.status: done sin evidence file → crear evidence; evidence
 // sin `## Playwright Run verdict=PASS failed=0` → buscar regex en hook source +
-// ajustar formato). Total overhead ~1.5 min — guides/incident-log.md#case-dod-gate-hook-block-cycles-2026-05-27.
+// ajustar formato). Total overhead ~1.5 min — guides/maintaining/incident-log.md#case-dod-gate-hook-block-cycles-2026-05-27.
 
 function parseFrontmatterPipeline(content) {
   const m = (content || '').match(/^---\r?\n([\s\S]*?)\r?\n---/);
@@ -2873,7 +2873,7 @@ function computeStart(args) {
   }
 
   // PIPE-C2: .gitignore fix (mutación segura e idempotente — se hace siempre).
-  // 🔴 Y también sobre el repo de la STORY cuando es otro (2026-09-05, un producto del equipo — guides/incident-log.md#evidencia-en-otro-repo-2026-09-05): la evidencia de
+  // 🔴 Y también sobre el repo de la STORY cuando es otro (2026-09-05, un producto del equipo — guides/maintaining/incident-log.md#evidencia-en-otro-repo-2026-09-05): la evidencia de
   // cierre nace ahí (ver `evidenceDirForStory`), así que ese `.gitignore` es el que decide si
   // viaja. Un repo de specs con `.advisors/` a secas se tragaba la evidencia y el portón daba rojo.
   const evid = evidenceDirForStory(storyPath, repo);
@@ -3244,7 +3244,7 @@ function computeToolingExpected(repo, opts = {}) {
   const knownFor = (name) => KNOWN_CLI[name] || (String(name).startsWith('codegraph') ? KNOWN_CLI.codegraph : null);
   const raisePlaybook = (binFound, k) => binFound
     ? `INTENTAR LEVANTARLO — el binario ESTÁ (${binFound}): (1) para ESTE run usá el CLI vía Bash: ${(k && k.cli) || 'el CLI de la tool'}; (2) para dejar el MCP cargado: ${(k && k.raise_install) || 'revisar la config MCP del repo/proyecto'} — y AVISAR al user en 1 línea qué pasó y qué acción le queda a él (/mcp reconnect o reiniciar sesión).`
-    : 'NO se puede levantar acá — el binario NO está en esta máquina: AVISAR al user con la acción concreta de instalación (codegraph: guides/codegraph-mcp.md; codebase_memory: conseguir el binario e instalar con `codebase-memory-mcp install`). Mientras tanto, fallback.';
+    : 'NO se puede levantar acá — el binario NO está en esta máquina: AVISAR al user con la acción concreta de instalación (codegraph: guides/integrations/codegraph-mcp.md; codebase_memory: conseguir el binario e instalar con `codebase-memory-mcp install`). Mientras tanto, fallback.';
 
   const expected = [];
   if (fs.existsSync(path.join(repo, '.codegraph'))) {
@@ -3267,7 +3267,7 @@ function computeToolingExpected(repo, opts = {}) {
     expected.push({
       name: 'engram',
       mcp_prefix: 'mcp__plugin_engram_engram__',
-      why: 'protocolo de memoria persistente SIEMPRE activo (guides/engram-workflow.md) — el Step 2 inyecta gotchas previos del repo y el cierre guarda session_summary',
+      why: 'protocolo de memoria persistente SIEMPRE activo (guides/integrations/engram-workflow.md) — el Step 2 inyecta gotchas previos del repo y el cierre guarda session_summary',
       binary_found: bin,
       cli_fallback: KNOWN_CLI.engram.cli,
       fallback: 'run sin memoria persistente (Step 2 pierde las lecciones previas; el cierre no guarda summary)',
@@ -3285,7 +3285,7 @@ function computeToolingExpected(repo, opts = {}) {
     raise_it: 'sin CLI alternativo (es una tool del harness) — si no está, PREGUNTAR al user si sigue sin el pase adversarial.',
     if_unavailable: 'AVISAR al user — esto NO es un skip silencioso legítimo: "la tool Workflow no está disponible → el pase adversarial 5b no puede correr; el run queda solo con los advisors single-pass. ¿Sigo igual?" El user decide.',
   });
-  // Genérico (2026-07-06, caso codebase_memory en un producto del equipo — guides/incident-log.md#case-declared-mcp-not-expected-2026-07-06): TODO MCP server que el
+  // Genérico (2026-07-06, caso codebase_memory en un producto del equipo — guides/maintaining/incident-log.md#case-declared-mcp-not-expected-2026-07-06): TODO MCP server que el
   // repo declare en su .mcp.json o en la config del proyecto (~/.claude.json →
   // projects[repo].mcpServers) es tooling esperado — cubre codebase_memory,
   // azure-devops, context7 y cualquier futuro sin tocar este script.
@@ -4568,7 +4568,7 @@ function resolveRunDir(repo, storyId, create, storyPath) {
 // desde el ledger de spawns (id pelado, kebab-case) y el `advisor` de acá lo tipeaba el orquestador
 // con la vuelta o el modelo pegados (`tycon-silent-failure-hunter (iter 3)`). El cruce comparaba
 // esos dos textos letra por letra: que coincidan era suerte, y la suerte se agotó cinco veces en el
-// Un pull request de un producto del equipo — cuatro de los cinco hallazgos del portón eran del propio control — guides/incident-log.md#case-reviewer-name-mismatch-2026-09-22.
+// Un pull request de un producto del equipo — cuatro de los cinco hallazgos del portón eran del propio control — guides/maintaining/incident-log.md#case-reviewer-name-mismatch-2026-09-22.
 //
 // El arreglo va del lado de QUIEN ESCRIBE, no de quien compara: acá el id se valida contra los
 // revisores que ESA corrida tuvo, la anotación se muda a campos propios, y el hallazgo queda con su
@@ -4646,7 +4646,7 @@ function normalizeFindingRecord(raw, warnings, ctx) {
 
 // write-findings: escribe (validado) el findings.json del Step 6 en el run dir. Input via --findings
 // (archivo JSON o '-' = stdin). Tolera el shape {ruleId|rule} y normaliza severity/disposition.
-// ── La constancia de los revisores viaja al repo de la STORY (2026-09-05, un producto del equipo — guides/incident-log.md#evidencia-en-otro-repo-2026-09-05) ────────────────
+// ── La constancia de los revisores viaja al repo de la STORY (2026-09-05, un producto del equipo — guides/maintaining/incident-log.md#evidencia-en-otro-repo-2026-09-05) ────────────────
 // El run dir (`.advisors/pipeline-runs/<story>-<sello>/`) nace en el repo donde CORRE el pipeline
 // —el del código—, y es pesado (reportes de cada advisor). Pero el portón de CI exige, para pasar
 // una story a `done`, que en el repo de la STORY exista ese run dir con `review-roster.json`
@@ -5729,7 +5729,7 @@ module.exports = {
   resolveRunDir,
   deriveStoryId,
   normalizeFindingRecord,
-  // gate E2E multi-app (Story QA-1 de un producto del equipo, 2026-08-15 — guides/incident-log.md#case-shared-code-between-apps-2026-08-15) — exportados para unit tests.
+  // gate E2E multi-app (Story QA-1 de un producto del equipo, 2026-08-15 — guides/maintaining/incident-log.md#case-shared-code-between-apps-2026-08-15) — exportados para unit tests.
   e2eConfig,
   selectE2eApps,
   // la 4ta fuente del delta (2026-08-26) — exportada para que `lib/late-snapshot.js` pregunte lo

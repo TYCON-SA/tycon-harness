@@ -18,7 +18,7 @@ Guía única para commits, merges y push en todos los repos TYCON (FRESNO, Ebano
 
 ## Formato de commits — HEREDOC + trailer separado
 
-Usar siempre **HEREDOC** con mensaje multi-línea. El trailer `Co-Authored-By` va **separado por una línea en blanco** del cuerpo — así el pipeline de Bizuit no lo captura como release note.
+Usar siempre **HEREDOC** con mensaje multi-línea. El trailer `Co-Authored-By` va **separado por una línea en blanco** del cuerpo — así un pipeline que publica notas de versión no lo captura como parte de la nota.
 
 ### Ejemplo literal (copy-paste):
 
@@ -49,7 +49,7 @@ EOF
 
 ## Mensaje descriptivo — los commits son documentación Y release notes
 
-Los mensajes de commit en repos Bizuit (Ebano, FRESNO, el repo de formularios) son **visibles en el repo del framework como release notes para los clientes**. No son solo historial interno.
+En los repos cuyo pipeline publica los mensajes de commit como notas de versión, los mensajes son **visibles para los clientes**. No son solo historial interno.
 
 ### Reglas
 
@@ -104,7 +104,7 @@ npm run build:dev                   # verificar que el bundle se genera
 
 ## Merges a main — usar la skill `/tycon-merge-to-main`
 
-Los merges a `main` se hacen con la skill `/tycon-merge-to-main`, no con `git merge dev` a mano: la skill genera el changelog detallado que el pipeline de Bizuit publica como release note.
+Los merges a `main` se hacen con la skill `/tycon-merge-to-main`, no con `git merge dev` a mano: la skill genera el changelog detallado que el pipeline del producto puede publicar como nota de versión.
 
 ### Correcto
 
@@ -124,7 +124,7 @@ Agente:  git merge dev -m "merge dev to main"    ← igual de inútil
 ### Por qué
 
 - La skill corre `git log origin/main..dev --oneline` primero y agrupa los cambios por story/scope.
-- El pipeline de Bizuit extrae el **mensaje del merge commit** como release note. Un `--no-edit` o un mensaje genérico deja a los clientes sin visibilidad de qué cambió.
+- Un pipeline que publica notas de versión extrae el **mensaje del merge commit**. Un `--no-edit` o un mensaje genérico deja a los clientes sin visibilidad de qué cambió.
 - Siempre `--no-ff` (merge commit explícito) — no fast-forward.
 
 ---

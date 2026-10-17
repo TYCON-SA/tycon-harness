@@ -123,7 +123,7 @@ fi
 # ── El freno de nombres nuevos en castellano en lo que ejecuta la máquina ──
 # Archivos, opciones, subcomandos, variables y claves de lo que se publica van en inglés: un nombre castellano que no
 # existía no entra; uno que ya existe pasa mientras no se renombre. Apagado, con aviso en cada commit:
-# TYCON_SPANISH_NAMES=0. Guía: guides/nombres-en-ingles.md.
+# TYCON_SPANISH_NAMES=0. Guía: guides/maintaining/nombres-en-ingles.md.
 # Casos: scripts/tests/spanish-names.test.js y C-16..C-24 de githook-livefire.test.sh
 SPANISH_NAMES="$REPO_ROOT/scripts/publishing/spanish-names.js"
 if [ -f "$SPANISH_NAMES" ]; then
@@ -470,7 +470,7 @@ echo "" >&2
 echo "⛔ El commit toca advisors y el check de paridad Codex dio rojo. Para destrabar:" >&2
 echo "   · toml desactualizado → node $TCG/build/generate.js --deploy y commitear adapters en el arnés" >&2
 echo "   · bank-coverage → el advisor nuevo entra CON sus casos en el banco (regla B2)" >&2
-echo "   · registro de hooks → es drift en el arnés, no de tu advisor: arreglalo allá (guides/controls-bench.md)" >&2
+echo "   · registro de hooks → es drift en el arnés, no de tu advisor: arreglalo allá (guides/maintaining/controls-bench.md)" >&2
 echo "   (log completo: $LOG)" >&2
 exit 1
 )

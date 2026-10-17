@@ -127,7 +127,7 @@ read_json_node() {
 # 🔴 FALTA CONFIRMARLO CON UNA SESIÓN REAL: que con exit 1 el comando corre y el aviso se ve sale
 # de la documentación de hooks de Claude Code; no se midió en vivo, ni en Claude Code ni en Codex.
 # Lo único medido en las dos es que `exit 2` frena y llega al modelo
-# (guides/codex-divergence-inventory.md). Hay que correr `scripts/controls-bench/live-fire.js`
+# (guides/maintaining/codex-divergence-inventory.md). Hay que correr `scripts/controls-bench/live-fire.js`
 # contra un `PreToolUse` real. Deuda anotada: `[FUP-frenos-sin-jq-live-fire]` en tasks/todo.md.
 cannot_read() {
   # 🔴 Una entrada VACÍA (o que no se pudo leer) es «no pude leer», explícito: no se le pregunta si
@@ -206,7 +206,7 @@ fi
 # publicado y al reaplicarlo CHOCA (cada máquina agrega su entrada al final de la misma lista); la
 # limpieza del conflicto se queda con la versión publicada y descarta las entradas nuevas.
 # Resultado: chunks en disco que ningún índice lista —esa mañana, 3 ya publicados en main y 2
-# locales— y un chunk sin entrada NO existe para las demás máquinas (guides/engram-workflow.md
+# locales— y un chunk sin entrada NO existe para las demás máquinas (guides/integrations/engram-workflow.md
 # §manifest). Cuatro arranques trabados en un día. Sin sync en el push no hay nada que quede
 # suelto: lo pendiente se exporta, se stagea y se commitea junto, en el `git commit` siguiente.
 # Se pierde latencia, no memoria. Caso: incident-log#memoria-huerfana-por-sync-en-push-2026-09-16.
@@ -551,7 +551,7 @@ cruzar_indice() {
   echo "    Reparación (rescata las entradas exactas de git, nunca inventa, y las deja stageadas):" >&2
   echo "      $ARREGLO" >&2
   echo "    Después volvé a commitear. Escape (queda registrado): TYCON_ENGRAM_MANIFEST_OK=1 git commit …" >&2
-  echo "    Caso: guides/incident-log.md#indice-de-memoria-truncado-en-el-commit-2026-09-17 · guides/engram-workflow.md §manifest" >&2
+  echo "    Caso: guides/maintaining/incident-log.md#indice-de-memoria-truncado-en-el-commit-2026-09-17 · guides/integrations/engram-workflow.md §manifest" >&2
 
   # Los dos escapes. Ninguno apaga el sync ni las validaciones de siempre: sólo el bloqueo.
   if [ "${TYCON_ENGRAM_MANIFEST_GUARD:-1}" = "0" ]; then constancia "$REGLA" aviso; return 0; fi
@@ -571,15 +571,15 @@ if [ "$ES_COMMIT" = "1" ]; then
       # solo saca el path de la lista de unmerged, y el commit pasó con JSON roto. Antes de
       # stagear: el manifest no debe traer marcadores Y debe parsear como JSON. Si está roto, NO
       # se agrega (el conflicto queda visible y git bloquea el commit como corresponde) y se avisa
-      # a los gritos con la maniobra de recuperación (guides/engram-workflow.md §manifest).
+      # a los gritos con la maniobra de recuperación (guides/integrations/engram-workflow.md §manifest).
       MANIFEST="$REPO/.engram/manifest.json"
       if [ -f "$MANIFEST" ] && grep -qE '^(<{7} |={7}$|>{7} )' "$MANIFEST"; then
         log "manifest con marcadores de conflicto — NO se stagea"
-        echo "🛑 tycon: .engram/manifest.json tiene MARCADORES DE CONFLICTO — no lo stageo (el commit va a fallar hasta resolver). Recuperación: guides/engram-workflow.md §manifest. 🔴 NO borres el manifest esperando que se regenere: \`engram sync\` EXPORTA lo pendiente, no reconstruye el índice (medido 2026-08-22 — dejó 1 entrada con 19 chunks en disco, sin dar error)." >&2
+        echo "🛑 tycon: .engram/manifest.json tiene MARCADORES DE CONFLICTO — no lo stageo (el commit va a fallar hasta resolver). Recuperación: guides/integrations/engram-workflow.md §manifest. 🔴 NO borres el manifest esperando que se regenere: \`engram sync\` EXPORTA lo pendiente, no reconstruye el índice (medido 2026-08-22 — dejó 1 entrada con 19 chunks en disco, sin dar error)." >&2
         no_pude_medir "el índice tiene marcadores de conflicto (ya avisado arriba)"
       elif [ -f "$MANIFEST" ] && ! json_valido "$MANIFEST"; then
         log "manifest JSON inválido — NO se stagea"
-        echo "🛑 tycon: .engram/manifest.json NO parsea como JSON — no lo stageo. Recuperación: guides/engram-workflow.md §manifest. 🔴 NO borres el manifest: \`engram sync\` no lo reconstruye." >&2
+        echo "🛑 tycon: .engram/manifest.json NO parsea como JSON — no lo stageo. Recuperación: guides/integrations/engram-workflow.md §manifest. 🔴 NO borres el manifest: \`engram sync\` no lo reconstruye." >&2
         no_pude_medir "el índice no parsea como JSON (ya avisado arriba)"
       else
         # 🔴 El ORDEN importa (AC 9 ↔ AC 5): se MIDE acá —después del sync, que es quien escribe la

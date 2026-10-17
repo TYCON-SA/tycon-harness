@@ -23,7 +23,7 @@
 //   node scripts/publishing/export.js --explain [--json]
 //        [--harness <ref>] [--agent-skills <ref>]  (default origin/main · repos: TYCON_GUIDES_DIR y TYCON_SKILLS_DIR)
 //        [--allowlist <f>] [--replacements <f>] [--denied <f>] [--public-repos <f>]   (default: los de scripts/publishing/)
-// Guía: guides/publicacion-espejo.md
+// Guía: guides/maintaining/publicacion-espejo.md
 
 const fs = require('fs');
 const os = require('os');
@@ -204,7 +204,7 @@ const EXCLUIDOS_SIEMPRE = Object.freeze([
   { fuente: 'arnes', glob: 'specs/**', motivo: 'las stories del arnés: casos nominados con fecha' },
   { fuente: 'arnes', glob: 'qa/**', motivo: 'las guías de prueba de las stories del arnés' },
   { fuente: 'arnes', glob: '_bmad/**', motivo: 'la configuración de BMAD del equipo' },
-  { fuente: 'arnes', glob: 'guides/incident-log.md', motivo: 'los incidentes del equipo, con casos nominados' },
+  { fuente: 'arnes', glob: 'guides/maintaining/incident-log.md', motivo: 'los incidentes del equipo, con casos nominados' },
   { fuente: 'arnes', glob: 'guides/guide-update-proposals.md', motivo: 'propuestas internas sobre las guías' },
   // story 8.12, tanda R5: el inventario vive con los documentos fechados de decisiones; la exclusión sigue al archivo (el
   // reemplazo que queda en la ruta vieja no la cubre: si la guía se vuelve a mover sin su glob, la exportación sale 2)
@@ -255,7 +255,7 @@ const TRANSFORMACIONES = Object.freeze([
   { nombre: 'public-texts', que: 'allowlist.json → publicTexts: en el archivo declarado, el texto EXACTO del repo (puede ocupar varios renglones) pasa a su versión pública, las veces declaradas; si no aparece esas veces, sale 2. Para los textos de código que mandan a una integración del equipo que no viaja: los bloques internos sólo existen en los .md' },
   { nombre: 'sinteticos', que: 'allowlist.json → synthetic: el archivo de la copia es el sintético declarado; con «packages», en las exportaciones que incluyen alguno de ellos; sin él, cuando un «in» del paquete cubre el destino. Nunca pisa algo que ya sale (sale 2)' },
   { nombre: 'gitignore-publico', que: '.gitignore de cada repo: se quitan las líneas «!…» que vuelven a incluir algo de una exclusión fija; con --single-repo, además se ignora cada carpeta de primer nivel del repo fuente en la que la copia no trae ningún archivo (story 8.26); una que sólo difiere en mayúsculas de una que la copia trae, o con un salto de línea en el nombre, frena la copia' },
-  { nombre: 'nombres-viejos', que: 'scripts/lib/renames.json (story 8.9): el reemplazo de cada ruta vieja de archivo o carpeta no sale; y un archivo que sale no puede nombrar una ruta vieja (fuera de guides/nombres-en-ingles.md)' },
+  { nombre: 'nombres-viejos', que: 'scripts/lib/renames.json (story 8.9): el reemplazo de cada ruta vieja de archivo o carpeta no sale; y un archivo que sale no puede nombrar una ruta vieja (fuera de guides/maintaining/nombres-en-ingles.md)' },
   { nombre: 'rutas-del-otro-repo', que: 'scripts/lib/renames.json (story 8.9, AC 19): la ruta vieja ya mudada que un repo nombra del OTRO se traduce al nombre nuevo (la copia sale de los dos repos juntos); la que un repo nombra de sí mismo frena la copia. Un reemplazo generado sin entrada en el mapa que algo que sale nombra sale 2 (story 8.7, AC 30)' },
   { nombre: 'traducciones-codex', que: 'adapters/codex/agents*/*.toml: se REGENERAN con build/generate.js desde los .md ya reemplazados (no se reemplazan); la que queda distinta de su blob va al listado' },
   // story 8.7, tanda A
@@ -1709,7 +1709,7 @@ function mencionesViejas(textos, viejos) {
   // copia del núcleo no salía desde el merge de la P.
   const lectores = require('./spanish-names.js').LEGACY_READERS;
   for (const [clave, texto] of textos) {
-    if (clave === 'arnes/guides/nombres-en-ingles.md') continue;
+    if (clave === 'arnes/guides/maintaining/nombres-en-ingles.md') continue;
     if (clave.startsWith('arnes/') && lectores.has(clave.slice('arnes/'.length))) continue;
     // la foto de un pipeline de producto real nombra los guiones viejos a propósito: los productos no se tocan hasta el
     // retiro y T32 corre esas líneas así (`--stale-mentions` la exceptúa igual, en STALE_ZONES). Sin esto la copia del
@@ -2049,7 +2049,7 @@ function pathsNotInCopy(textos, { inRepo, inCopy, conventions = [], installPrefi
       if (!dicha || /[<{*?`]/.test(dicha) || /^[a-z][a-z0-9+.-]*:\/\//i.test(dicha)) continue;
       const ruta = dicha.split('#')[0].replace(/:\d+(-\d+)?$/, '').replace(/^\.\//, '').replace(/\/+$/, '');
       if (!ruta || ruta.startsWith('/') || ruta.startsWith('~') || ruta.split('/').includes('..')) continue;
-      if (dicha.includes('#') && ruta === 'guides/incident-log.md') continue;
+      if (dicha.includes('#') && ruta === 'guides/maintaining/incident-log.md') continue;
       const vecina = !desdeLaRaiz && carpeta !== '.' ? path.posix.normalize(`${carpeta}/${ruta}`) : null;
       if (inCopy(ruta) || (vecina && inCopy(vecina))) continue;
       // primero la vecina del archivo (gana sobre una convención suelta del mismo nombre); después, desde la raíz

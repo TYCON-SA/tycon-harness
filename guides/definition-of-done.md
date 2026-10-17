@@ -109,17 +109,10 @@ done
 ```
 
 Luego:
-- **Plugin Bizuit / .NET backend**: ejecutar `curl` explícito contra cada endpoint con auth realista. Verificar HTTP 200/201 esperado (NO 400/500). Si la story declara handling de 4xx, verificar que el `error.code` sea el esperado.
-- **React/Next frontend**: abrir el dev panel (`dev.html` o equivalente) y verificar que los botones de health-check de cada endpoint respondan OK.
+- **Backend**: ejecutar `curl` explícito contra cada endpoint con auth realista. Verificar HTTP 200/201 esperado (NO 400/500). Si la story declara handling de 4xx, verificar que el `error.code` sea el esperado.
+- **Frontend**: abrir el dev panel (`dev.html` o equivalente) y verificar que los botones de health-check de cada endpoint respondan OK.
 
-**⚠️ URL por entorno (BZURL / DODRT-W3)** — ANTES de armar el curl, determinar el target:
-
-| Target del smoke | URL |
-|---|---|
-| DevHost local | `http://localhost:5001/api/{ruta}` — SIN nombre de plugin |
-| Staging / prod (host Bizuit) | `https://<host>/api/plugins/{pluginName}/{ruta}` — CON nombre de plugin, SIN versión (el host sirve la versión activa) |
-
-Un smoke contra staging con el shape de DevHost devuelve **404 body-vacío** — falso negativo que se diagnostica como "endpoint roto" cuando es la URL. Con la versión metida en la ruta devuelve **404 `{"error":"Endpoint not found"}`**: tampoco es el endpoint. Incidente recurrente multi-proyecto (2026-07-15; la versión salió de la regla el 2026-10-14). Detalle: `bizuit/bizuit-plugin-dotnet.md` §7.
+**⚠️ URL por entorno** — ANTES de armar el curl, determinar el target: la misma ruta puede cambiar de forma entre el entorno local y staging/prod. Un 404 contra staging con una ruta que anda en local es casi siempre la URL mal armada, no el endpoint. La forma de cada stack la dice la guía de su paquete (para el stack de plugins de Bizuit, la guía `bizuit-plugin-dotnet.md` del paquete bizuit, §7).
 
 Ejemplo:
 

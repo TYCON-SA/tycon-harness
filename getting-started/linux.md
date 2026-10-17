@@ -126,7 +126,7 @@ A. engram — memoria del agente entre sesiones. No pide cuenta. El equipo usa l
    A3. sqlite3 --version. Si no está, que lo instale yo: sudo apt install -y sqlite3 (lo usan dos chequeos de salud de la
        memoria). Después PRENDER engram.
    Nota: la memoria viaja en los commits sólo en los repos que tienen un archivo .engram-project
-   (~/.claude/tycon-harness/guides/engram-workflow.md). Cuando el equipo cambie de versión, el arranque lo avisa (y se
+   (~/.claude/tycon-harness/guides/integrations/engram-workflow.md). Cuando el equipo cambie de versión, el arranque lo avisa (y se
    repite este paso con el número nuevo).
 
 B. codegraph — índice del código, para que el agente encuentre las cosas sin leer archivo por archivo. No pide cuenta.

@@ -707,9 +707,9 @@ INT6="$LAB/author/internal"; INT6_REMOTE="$LAB/remotes/internal.git"
 harness_lab_git "$LAB/author" clone -q "$LAB_REMOTE_TREE" "$INT6" >/dev/null 2>&1
 harness_lab_git "$INT6" rm -q LICENSE version.json >/dev/null
 printf 'una línea que el exportador saca\n' >> "$INT6/guides/public.md"
-mkdir -p "$INT6/tasks" "$INT6/skills/projects/acme" "$INT6/inbox/instincts/pending"
+mkdir -p "$INT6/tasks" "$INT6/skills/projects/acme" "$INT6/inbox/instincts/pending" "$INT6/guides/maintaining"
 printf '# plan privado\n' > "$INT6/tasks/plan.md"
-printf '# casos con nombre\n' > "$INT6/guides/incident-log.md"
+printf '# casos con nombre\n' > "$INT6/guides/maintaining/incident-log.md"
 printf '# skill de un producto\n' > "$INT6/skills/projects/acme/SKILL.md"
 printf '# instinto pendiente\n' > "$INT6/inbox/instincts/pending/lab.md"
 harness_lab_git "$INT6" add -A >/dev/null
@@ -789,14 +789,14 @@ harness layer --check >/dev/null 2>&1; RC=$?
 [ "$RC" = 1 ] && ok "T6 layer --check con un archivo que falta: 1" || mal "T6 layer --check con faltante: rc $RC"
 mv "$LAB/plan.md" "$LAB_TREE/tasks/plan.md"
 # uno editado a mano: «a mano», contado, nombrado
-cp "$LAB_TREE/guides/incident-log.md" "$LAB/incident-log.md"
-printf 'una nota mía\n' >> "$LAB_TREE/guides/incident-log.md"
+cp "$LAB_TREE/guides/maintaining/incident-log.md" "$LAB/incident-log.md"
+printf 'una nota mía\n' >> "$LAB_TREE/guides/maintaining/incident-log.md"
 doctor6
-[ "$(printf '%s' "$JSON" | jtxt "any('a mano' in t and 'guides/incident-log.md' in t for t in d['warn'])")" = True ] && ok "T6 uno editado: «a mano» con la ruta" || mal "T6 editado: warn=$(printf '%s' "$JSON" | jtxt "d['warn']")"
+[ "$(printf '%s' "$JSON" | jtxt "any('a mano' in t and 'guides/maintaining/incident-log.md' in t for t in d['warn'])")" = True ] && ok "T6 uno editado: «a mano» con la ruta" || mal "T6 editado: warn=$(printf '%s' "$JSON" | jtxt "d['warn']")"
 [ "$(printf '%s' "$JSON" | jtxt "any(t.startswith('capa: 3 agregados, 1 pisados (transformados), 1 a mano') and 'todo en su lugar' not in t for t in d['ok']+d['warn'])")" = True ] && ok "T6 …el resumen cuenta 1 a mano y no dice «todo en su lugar»" || mal "T6 resumen con uno a mano: $(printf '%s' "$JSON" | jtxt "[t for t in d['ok']+d['warn'] if t.startswith('capa')]")"
 harness layer --check >/dev/null 2>&1; RC=$?
 [ "$RC" = 1 ] && ok "T6 layer --check con uno a mano: 1" || mal "T6 layer --check a mano: rc $RC"
-cp "$LAB/incident-log.md" "$LAB_TREE/guides/incident-log.md"
+cp "$LAB/incident-log.md" "$LAB_TREE/guides/maintaining/incident-log.md"
 # un archivo ajeno en guides/: «no viene de ninguna fuente»
 printf 'suelto\n' > "$LAB_TREE/guides/stray.md"
 doctor6
@@ -891,7 +891,7 @@ doctor6
 # `layer --public <copia> --harness-clone <clon>` (AC 10): calcula contra lo que le dan, sin tocar el estado ni el HOME
 H6="$(harness_lab_home_hash)"
 JSON="$(harness layer --check --json --public "$LAB_TREE" --harness-clone "$INT6" 2>/dev/null)"; RC=$?
-[ "$RC" = 0 ] && [ "$(printf '%s' "$JSON" | jtxt "(sorted(d['add']), d['overwrite'], d['otherVersion'], d['onlyPublic']['undeclared'])")" = "(['guides/incident-log.md', 'inbox/instincts/pending/lab.md', 'skills/projects/acme/SKILL.md', 'tasks/plan.md'], ['guides/public.md'], [], [])" ] \
+[ "$RC" = 0 ] && [ "$(printf '%s' "$JSON" | jtxt "(sorted(d['add']), d['overwrite'], d['otherVersion'], d['onlyPublic']['undeclared'])")" = "(['guides/maintaining/incident-log.md', 'inbox/instincts/pending/lab.md', 'skills/projects/acme/SKILL.md', 'tasks/plan.md'], ['guides/public.md'], [], [])" ] \
   && ok "T6 layer --check --json --public … --harness-clone …: el complemento, 0" || mal "T6 layer con rutas: rc $RC $JSON"
 [ "$(harness_lab_home_hash)" = "$H6" ] && ok "T6 …sin tocar el estado ni el HOME" || mal "T6 layer con rutas escribió en el HOME"
 # un commit de la capa con un archivo público distinto que no está entre los transformados: «capa de otra versión»

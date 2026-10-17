@@ -34,8 +34,7 @@ El que lo lanza (step 10b de `/tycon-merge-to-main`, o el banco de controles) pu
   caller lo pasa explícito, gana.
 
 Por qué existe: una ruta absoluta hardcodeada asume dónde está clonado el arnés,
-y el banco de controles necesita rutas dentro de su fixture
-(`guides/decisions/codex-etapa-d-retro-red.md`).
+y el banco de controles necesita rutas dentro de su fixture.
 
 ## Las métricas
 

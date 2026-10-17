@@ -92,5 +92,5 @@ la lista —la copia pública no la trae— no se manda nada a TypeSafe y el avi
 ## Diferencia con Codex
 
 `omitClaudeMd` no existe en Codex: el revisor de Codex sigue cargando su `AGENTS.md`. La sección en el
-contexto **sí** llega a los dos (la arma `pipeline.js`). Detalle: `guides/codex-divergence-inventory.md`
+contexto **sí** llega a los dos (la arma `pipeline.js`). Detalle: `guides/maintaining/codex-divergence-inventory.md`
 §«Revisores sin el CLAUDE.md».

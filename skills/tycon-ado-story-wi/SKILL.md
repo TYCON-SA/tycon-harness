@@ -71,7 +71,7 @@ Mismo orden de prioridad que `tycon-pipeline/steps/step-00c-ado-mark-active.md` 
    apagado en esta máquina — el work item no se crea; prender: ado.org en ~/.claude/tycon.json o
    TYCON_ADO_ORG»), no llamar a `az` y terminar bien. Ya no hay un nivel «tabla por proyecto».
 
-Schema completo de `.tycon/ado-config.yaml` (ver también `~/.claude/tycon-harness/guides/ado-projects.md`):
+Schema completo de `.tycon/ado-config.yaml` (ver también `~/.claude/tycon-harness/guides/integrations/ado-projects.md`):
 
 ```yaml
 ado_org: https://dev.azure.com/<organizacion>
@@ -304,7 +304,7 @@ Si hubo skip:
   empezar a implementar. Consume el `ado_work_item:` que este skill escribe.
 - `tycon-pipeline/steps/step-09-ado-story-closure.md` — cierra el WI con trazabilidad
   post-merge. Otro consumidor de `ado_work_item:`.
-- `~/.claude/tycon-harness/guides/ado-projects.md` — schema de `.tycon/ado-config.yaml`,
+- `~/.claude/tycon-harness/guides/integrations/ado-projects.md` — schema de `.tycon/ado-config.yaml`,
   tabla de mapeo proyecto→ADO, y bloque de registro del hook.
 - `~/.claude/tycon-harness/story-format.md` §1 — el campo `ado_work_item` del frontmatter.
 

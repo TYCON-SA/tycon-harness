@@ -109,7 +109,7 @@ como a un dev del equipo:
 
 **1. Los paquetes vienen con el perfil de tu equipo.** El núcleo no trae paquetes: los revisores, skills, guías y
 plantillas de un stack (por ejemplo, el de .NET + React/Next.js sobre BIZUIT) viven en el repo del perfil de cada
-equipo y llegan con su capa (`guides/mecanismo-de-instalacion.md`, «La capa del equipo sobre la versión bajada»). Los
+equipo y llegan con su capa (`guides/maintaining/mecanismo-de-instalacion.md`, «La capa del equipo sobre la versión bajada»). Los
 activa la organización con `packs.default` en ese perfil (o en la pestaña Configuración del sitio, sección Paquetes);
 sin perfil, tu máquina puede fijarlo en `~/.claude/tycon.json` (`"packs": { "default": "all" }`) o con
 `TYCON_PACKS_DEFAULT=all` (si el perfil los declara, el perfil del equipo gana sobre ese archivo). Un repo sólo puede
@@ -136,7 +136,7 @@ pero sin los controles que corren al commitear. `harness.js doctor` te dice si q
 
 **3. engram y Clockify son opcionales.** engram (memoria entre sesiones) se prende con `TYCON_ENGRAM=1` o
 `"integrations": { "engram": true }` en `~/.claude/tycon.json`; Clockify (horas), con `TYCON_CLOCKIFY=1` y
-`guides/clockify-mcp.md`. Apagados, las guías que los nombran siguen de largo y el pipeline saltea solo su paso de
+`guides/integrations/clockify-mcp.md`. Apagados, las guías que los nombran siguen de largo y el pipeline saltea solo su paso de
 Clockify. Sin Azure DevOps, el pipeline también saltea su parte (el paso 0c y el cierre en Azure DevOps) y una story
 nueva no te pide crear un work item.
 
@@ -316,7 +316,7 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\.claude\tycon-ha
 
 El script te pide tu API key personal (input enmascarado), corre `claude mcp add` con scope `user`, y verifica conexión. La key vive solo en tu `~/.claude.json` local — **no se commitea a ningún repo**.
 
-Detalles, troubleshooting y casos de uso: `guides/clockify-mcp.md`.
+Detalles, troubleshooting y casos de uso: `guides/integrations/clockify-mcp.md`.
 
 ### CodeGraph MCP — índice de código para los agentes
 
@@ -340,7 +340,7 @@ El script instala el CLI `codegraph`, autodetecta si el target es un repo suelto
 
 Que los agentes usen CodeGraph *por defecto* ya está cubierto: la sección "Regla siempre activa — CodeGraph" del índice (`INDEX.md`) se carga en toda sesión (self-gating — solo aplica a repos con `.codegraph/`).
 
-Detalles, modo automático y troubleshooting: `guides/codegraph-mcp.md`.
+Detalles, modo automático y troubleshooting: `guides/integrations/codegraph-mcp.md`.
 
 ---
 
@@ -420,8 +420,7 @@ arranque siguiente.
 
 Dos gotchas: (a) si el instalador imprime "TRUST", re-aprobar con `/hooks`; (b) `--parity` con
 rojos te dice exactamente qué y cómo — un rojo que no entiendas se consulta, no se silencia.
-Detalle de diseño y asimetrías declaradas: `guides/codex-migration.md` y
-`guides/codex-divergence-inventory.md`.
+Asimetrías declaradas: `guides/maintaining/codex-divergence-inventory.md`.
 
 
 ## Mantenimiento (para el que mantiene el repo)
@@ -478,7 +477,7 @@ va una entrada en el manifiesto de terceros del arnés, `scripts/publishing/thir
 `path` dentro del origen, el `tree` (el hash de árbol que tiene que quedar: `git rev-parse <commit>:<path>` en un clon
 del origen), `omit` si sobra algo, su licencia con de dónde se leyó, `install: download` y el porqué. El paso del
 instalador la pone en cada máquina en el próximo arranque —verificada por árbol, sin pisar nada— y el pre-commit del
-repo frena si alguien la copia al árbol sin declararla. El detalle: `guides/publicacion-espejo.md` §«Las skills
+repo frena si alguien la copia al árbol sin declararla. El detalle: `guides/maintaining/publicacion-espejo.md` §«Las skills
 de terceros». Lo que sigue es para una skill **del equipo**.
 
 **Flujo para agregar una skill nueva del equipo:**
@@ -523,7 +522,7 @@ git push
 - **Los tres "Claude"** (multi-modelo): la herramienta canónica se nombra (Claude Code), el
   actor de runtime y el modelo son genéricos ("el agente"/"el modelo" — también en cópulas:
   "Claude es un…"), las primitivas son de quien son. Criterio completo y disparador:
-  [guides/criterio-tres-claude.md](guides/criterio-tres-claude.md).
+  [guides/maintaining/criterio-tres-claude.md](guides/maintaining/criterio-tres-claude.md).
 - **Español** (idioma default del equipo).
 - **Copy-pasteable**: comandos y snippets ejecutables, no pseudocódigo.
 - **Sin detalles proyecto-específicos**: los nombres de proyectos concretos solo aparecen en tablas ilustrativas. Las reglas deben ser universales para todos los proyectos TYCON.

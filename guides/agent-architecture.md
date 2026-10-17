@@ -552,7 +552,7 @@ Todo dev nuevo al equipo debe:
 ## Referencias cruzadas
 
 - [story-format.md](../story-format.md) — Mary+GOLD, leído en runtime por story-validator
-- [guides/engram-workflow.md](engram-workflow.md) — usado por retrospective-capturer
+- [guides/integrations/engram-workflow.md](integrations/engram-workflow.md) — usado por retrospective-capturer
 - [guides/git-commit-conventions.md](git-commit-conventions.md) — CRITICAL de commits sin autorización
 - [guides/workflow-orchestration.md](workflow-orchestration.md) — pipeline, principios, tasks/
 - la guía `bizuit-plugin-dotnet.md` del paquete bizuit (viaja con el paquete del stack) — leído en runtime por plugin-dotnet-conventions

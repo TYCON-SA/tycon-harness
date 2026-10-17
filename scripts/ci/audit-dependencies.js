@@ -17,7 +17,7 @@
  * pregunta AFUERA (la base pública de avisos de GitHub); los otros dos —secretos y código— miran
  * sólo el repo, así que el mismo código da siempre el mismo resultado. Caso medido: el pipeline de
  * los formularios de un producto del equipo pasó en verde a las 15:56 del 2026-09-01 y a las 16:42 se publicó CVE-2026-73089
- * sobre `browserslist`. Mismo código, veredicto opuesto, y nadie se enteraba hasta el próximo PR — guides/incident-log.md#veredicto-que-cambia-sin-que-cambie-el-codigo-2026-09-01.
+ * sobre `browserslist`. Mismo código, veredicto opuesto, y nadie se enteraba hasta el próximo PR — guides/maintaining/incident-log.md#veredicto-que-cambia-sin-que-cambie-el-codigo-2026-09-01.
  *
  * ── QUÉ HACE, Y QUÉ NO ──────────────────────────────────────────────────────────────────────────
  * Mide y REPORTA. **No decide si eso frena**: eso lo decide quien lo llama, que es lo que separa
@@ -138,7 +138,7 @@ function correr(cmd, args, cwd, timeoutMs) {
   // 🔴 Un registro que NO CONTESTA se corta por tiempo (2026-09-03). Esa noche el registro de
   // avisos se degradó y UNA llamada tardó 267 segundos —medido desde la máquina del dev, otra red,
   // así que no era Azure—. Sin tiempo de espera, el paso por formulario de un producto del equipo (33 llamadas) se
-  // comió 40 minutos contra un techo de 60 por trabajo, y el trabajo murió sin veredicto — guides/incident-log.md#case-advisory-registry-timeout-2026-09-03.
+  // comió 40 minutos contra un techo de 60 por trabajo, y el trabajo murió sin veredicto — guides/maintaining/incident-log.md#case-advisory-registry-timeout-2026-09-03.
   // Lo normal es ~1 segundo por formulario; el corte va treinta veces más arriba. Y lo que sale de
   // acá es "no pude medir" con su motivo — nunca un verde.
   if (r.error && (r.error.code === 'ETIMEDOUT' || r.signal)) {
@@ -236,7 +236,7 @@ function proyectoNuget(repo, explicito) {
  *
  * 🔴 El restore no es opcional ni un detalle de rendimiento: sin el assets file, `dotnet list
  * --vulnerable` sale 1 con "No assets file was found" y NO MIRA NADA. Ése es literalmente el
- * agujero del backend de un producto del equipo, donde además el 1 se perdía en un `| tee` y el paso salía verde — guides/incident-log.md#veredicto-que-cambia-sin-que-cambie-el-codigo-2026-09-01.
+ * agujero del backend de un producto del equipo, donde además el 1 se perdía en un `| tee` y el paso salía verde — guides/maintaining/incident-log.md#veredicto-que-cambia-sin-que-cambie-el-codigo-2026-09-01.
  * Acá el restore es un paso propio y su fallo es "no pude medir", nunca "limpio".
  */
 function auditarNuget(repo, proyectoRel) {
@@ -407,6 +407,6 @@ function main() {
 // un motivo que no nombra la causa real. Sólo se notaba con informes de más de 8 KB, así que
 // los 8 repos que ya estaban (pocos hallazgos cada uno) nunca lo dispararon: apareció con el
 // primero grande. Con `exitCode` el proceso termina solo cuando terminó de escribir.
-// Caso: guides/incident-log.md#informe-cortado-por-la-tuberia-2026-09-28
+// Caso: guides/maintaining/incident-log.md#informe-cortado-por-la-tuberia-2026-09-28
 if (require.main === module) process.exitCode = main();
 module.exports = { auditar, leerDeclaracion, parseArgs, SEVERIDADES_GRAVES };

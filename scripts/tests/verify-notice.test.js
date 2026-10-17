@@ -70,7 +70,7 @@ test('T66_Findings_AreSent_WithThePlaceAndWhatToDo_GroupedByAction_SecretFirst',
   for (const f of ['· (l) [cliente] el pedido nº 7 (título)', '· (c) [cliente] el commit 0123456789ab (mensaje, línea 2)', '· (d) [cliente] la descripción del repo', '· (f) [foreign-change] el commit abc de main']) {
     assert.ok(lines.includes(f), `falta «${f}»\n${r.out}`);
   }
-  assert.match(r.out, /guides\/publicacion-espejo\.md/);
+  assert.match(r.out, /guides\/maintaining\/publicacion-espejo\.md/);
   assert.ok(!/[\u{1F300}-\u{1FAFF}]/u.test(r.out), 'sin emojis: es un aviso al dueño');
 });
 
@@ -170,7 +170,7 @@ test('T66_BadArguments_AreTwo', () => {
 });
 
 // ── T68 (story 8.26, tanda F3 · AC 57) ───────────────────────────────────────────────────────────────────────
-// Con el repo PRIVADO, lo que quedó en la historia de `main` está aceptado hasta el corte (guides/publicacion-espejo.md,
+// Con el repo PRIVADO, lo que quedó en la historia de `main` está aceptado hasta el corte (guides/maintaining/publicacion-espejo.md,
 // §«Si `verify` da 1»): el aviso lo cuenta aparte y sale sólo si hay algo más. Es código que calla, así que lo que no
 // puede pasar es que calle de más: cualquier duda —el repo no dice ser privado, un hallazgo que no se deja leer, un
 // código que no cierra— avisa todo, como antes.

@@ -2,7 +2,7 @@
 /**
  * ledger-visible.js — que el pipeline no se quede ciego POR CONSTRUCCIÓN.
  *
- * EL PROBLEMA (caso Story OC-1 del backend de un producto del equipo, 2026-09-21 — guides/incident-log.md#case-bash-edits-blind-ledger-2026-09-21). El registro de ediciones
+ * EL PROBLEMA (caso Story OC-1 del backend de un producto del equipo, 2026-09-21 — guides/maintaining/incident-log.md#case-bash-edits-blind-ledger-2026-09-21). El registro de ediciones
  * (`marker.fileEvents`) lo alimenta `on-edit.js` desde el hook PostToolUse matcher `Edit|Write`.
  * Una edición hecha por Bash —`sed -i`, un heredoc, `python3 -c "open(...,'w')"`— es invisible
  * para ese hook **por construcción**: no es que falle, es que no hay evento.

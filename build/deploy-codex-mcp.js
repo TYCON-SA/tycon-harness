@@ -131,11 +131,11 @@ function missingServers({ integrations, servers, claudeJson, has, target, regist
       : 'su definición es de cada máquina y ~/.claude.json no lo trae (mcpServers.clockify)',
     `registralo a mano en ${target} ([mcp_servers.clockify], con su command y sus args), o apagá la integración`);
   }
-  if (integrations.codegraph && !servers.codegraph) cant('codegraph', 'codegraph', 'el ejecutable `codegraph` no está en el PATH', 'instalalo (guides/codegraph-mcp.md) o apagá la integración');
+  if (integrations.codegraph && !servers.codegraph) cant('codegraph', 'codegraph', 'el ejecutable `codegraph` no está en el PATH', 'instalalo (guides/integrations/codegraph-mcp.md) o apagá la integración');
   const eng = servers.plugin_engram_engram;
   if (integrations.engram && !eng) cant('plugin_engram_engram', 'engram', 'build/equivalences.json no lo define', 'revisá esa tabla');
   else if (integrations.engram && eng && eng.command && !path.isAbsolute(eng.command) && !has(eng.command)) {
-    out.push(`⚠ tycon/codex: el servidor MCP «plugin_engram_engram» quedó registrado, pero su ejecutable \`${eng.command}\` no está en el PATH: bajo Codex va a fallar hasta instalarlo (guides/engram-workflow.md)`);
+    out.push(`⚠ tycon/codex: el servidor MCP «plugin_engram_engram» quedó registrado, pero su ejecutable \`${eng.command}\` no está en el PATH: bajo Codex va a fallar hasta instalarlo (guides/integrations/engram-workflow.md)`);
   }
   return out;
 }
