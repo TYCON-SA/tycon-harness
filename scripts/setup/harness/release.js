@@ -1547,7 +1547,7 @@ function cmdInstall(ctx, H) {
     if (ctx.opts.profile && H.machineProfile(ctx) !== ctx.opts.profile) {
       let sk;
       try { sk = require(path.join(tree, 'scripts', 'lib', 'tycon-config.js')).setKey(ctx.home, PR.KEY, ctx.opts.profile, { env: ctx.env }); } catch (e) { sk = { ok: false, reason: e.message }; }
-      if (!sk || !sk.ok) { S.write(ctx.home, state); return { code: 2, lines: [`harness.js install: no pude escribir el perfil en ~/.claude/tycon.json: ${sk ? sk.reason : 'sin escritor'}. No corrí el aplicador`] }; }
+      if (!sk || !sk.ok) { S.write(ctx.home, state); return { code: 2, lines: [`harness.js install: no pude escribir el perfil en ${TH.configFile(ctx.home)}: ${sk ? sk.reason : 'sin escritor'}. No corrí el aplicador`] }; }
       if (sk.warning) notes.push(sk.warning);
       pieces.push('profile');
     }

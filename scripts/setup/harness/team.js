@@ -623,7 +623,7 @@ function checkAgainstVersion(layerDir, files, versionDir, { env = process.env } 
     if (why) problems.push({ path: p, reason: why });
   }
   // dentro de la capa: un agente o una skill con el mismo nombre en la raíz y en un paquete, o en dos paquetes, se
-  // enlazarían en el mismo lugar de ~/.claude (sin caja ni acentos, como contra la versión)
+  // enlazarían en el mismo lugar de ~/.claude/skills o ~/.claude/agents (sin caja ni acentos, como contra la versión)
   for (const [kind, isIt, nameOf] of [['el agente', (p) => AGENT_RE.test(p), (p) => path.posix.basename(p, '.md')], ['la skill', isSkillMd, (p) => path.posix.basename(path.posix.dirname(p))]]) {
     const by = new Map();
     for (const p of paths.filter(isIt)) { const k = foldName(nameOf(p)); by.set(k, [...(by.get(k) || []), p]); }
