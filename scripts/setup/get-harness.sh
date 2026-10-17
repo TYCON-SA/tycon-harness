@@ -49,7 +49,7 @@ suggest() { # suggest <herramienta> → cómo instalarla en este sistema (se imp
 }
 # en una Mac sin las herramientas de línea de comandos, /usr/bin/python3 existe pero sólo pide instalarlas
 MISSING=0; NO_CLT=0; if [ "$OS" = Darwin ] && ! xcode-select -p >/dev/null 2>&1; then NO_CLT=1; fi
-TOOLS="node bash curl tar python3"; case " $* " in *" --tool codex "*) TOOLS="node bash curl tar" ;; esac   # python3 lo pide el aplicador de Claude Code
+W=","; P=""; for a in "$@"; do [ "$P" = --tool ] && W="$W$a,"; case "$a" in --tool=*) W="$W${a#--tool=},";; esac; P="$a"; done; W="$(printf '%s' "$W" | tr '[:upper:]' '[:lower:]' | tr -d ' \t')"; TOOLS="node bash curl tar python3"; case "$W" in *,codex,*) case "$W" in *,claude,*) ;; *) TOOLS="node bash curl tar" ;; esac ;; esac   # python3 lo pide el aplicador de Claude Code; --tool como install (repetida, comas, mayúsculas: 8.40 AC 46)
 for tool in $TOOLS; do
   if ! command -v "$tool" >/dev/null 2>&1; then say "falta $tool — sugerido (no lo corro): $(suggest "$tool")"; MISSING=1
   elif [ "$NO_CLT" = 1 ] && [ "$tool" = python3 ] && [ "$(command -v python3)" = /usr/bin/python3 ]; then

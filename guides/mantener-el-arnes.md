@@ -14,6 +14,7 @@ git, pruebas, frenos) siguen en el índice.
 | Tocar la regla de estilo de respuesta, el medidor `response-style-meter.js`, o el formato de reporte de un agente · entender por qué el bloque dice lo que dice antes de podarlo | `guides/response-style.md` |
 | Te apareció un aviso de versión de engram, o validaste una versión nueva y querés que el equipo la adopte | `engram-version` (el pin, con el procedimiento de bump en su cabecera) |
 | Armar o publicar la copia pública · el exportador o `mirror.js` frenó · un `git push` o un `gh` frenado · `verify` da 1 · qué entra y qué no · los reemplazos · sumar una skill ajena · máquina limpia | `guides/publicacion-espejo.md` (§«La publicación»; terceros: `third-party-skills.json`) + cabeceras de `scripts/publishing/{export,mirror}.js` — a mano: `export.js --explain` |
+| Sacar una versión nueva del paquete de npm (`@tyconsa/harness`) · aprobarla · la publicación falló · retirar una versión · rotar el publicador de confianza | `guides/paquete-npm.md` |
 | Un commit no se crea por un nombre real en un archivo que se publica · cómo salir · el termómetro de nombres en rojo · subir o bajar el techo | `guides/publicacion-espejo.md` §«El núcleo sin nombres» + `scripts/publishing/new-names.js` (cabecera) |
 | Antes de crear una skill/agent/guide/hook nuevo (chequear si ya existe equivalente — evita tejido cicatrizal) | `guides/skill-scout.md` |
 | Medir cuánto del context window consume el harness en cada sesión + qué recortar | `guides/context-budget.md` |

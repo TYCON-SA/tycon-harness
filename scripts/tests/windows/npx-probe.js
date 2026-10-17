@@ -97,7 +97,7 @@ function measure({ lab, platform = process.platform, baseEnv = process.env, allo
     } });
 
     // el paquete, armado como lo arma el workflow
-    for (const f of ['package.json', 'index.js', 'README.md']) fs.copyFileSync(path.join(ROOT, 'scripts', 'setup', 'npm', f), path.join(pkg, f));
+    for (const f of ['package.json', 'index.js', 'home-paths.json', 'README.md']) fs.copyFileSync(path.join(ROOT, 'scripts', 'setup', 'npm', f), path.join(pkg, f));
     fs.copyFileSync(path.join(ROOT, 'LICENSE'), path.join(pkg, 'LICENSE'));
     const packed = L.run(process.execPath, [npm, 'pack', '--silent', '--pack-destination', base], { cwd: pkg, env, timeoutMs: CMD_TIMEOUT_MS });
     const tgz = path.join(base, lastLines(packed.stdout, 1));

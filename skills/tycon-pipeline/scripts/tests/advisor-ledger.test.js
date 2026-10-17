@@ -175,8 +175,14 @@ function repoGit(dir, origin) {
   execFileSync('git', ['-C', dir, 'remote', 'add', 'origin', origin]);
   return dir;
 }
+// Esta suite la corre el aplicador en cada instalación (la «capa determinista»). Una máquina sin git —la que instala sin
+// clon, por npx— no puede armar los repos de juguete: esas dos pruebas dicen «no medido» en vez de tumbar la instalación
+// con `spawnSync git ENOENT` (story 8.40, AC 47). Un git que existe y no corre (el /usr/bin/git de una Mac sin las
+// herramientas de línea de comandos: arranca y sale 1) tampoco es git, como en health.js
+const GIT_PROBE = require('child_process').spawnSync('git', ['--version'], { stdio: 'ignore' });
+const NO_GIT = GIT_PROBE.error || GIT_PROBE.status !== 0 ? 'NO MEDIDO: sin git en esta máquina (arma repos de juguete con git)' : false;
 
-test('query por repo — un clon descartable del MISMO origin cuenta como el mismo repo', () => {
+test('query por repo — un clon descartable del MISMO origin cuenta como el mismo repo', { skip: NO_GIT }, () => {
   const base = tmp();
   const real = repoGit(path.join(base, 'tycon-claude-guides'), 'https://dev.azure.com/org-del-equipo/tcg/_git/tcg');
   const clon = repoGit(path.join(base, 'scratchpad', 'tcg-2.3'), 'https://dev.azure.com/org-del-equipo/tcg/_git/tcg');
@@ -188,7 +194,7 @@ test('query por repo — un clon descartable del MISMO origin cuenta como el mis
   assert.equal(r.spawns, 1, 'el revisor corrido en el clon descartable tiene que contar para el repo real');
 });
 
-test('query por repo — dos repos DISTINTOS con el mismo nombre de carpeta no se confunden', () => {
+test('query por repo — dos repos DISTINTOS con el mismo nombre de carpeta no se confunden', { skip: NO_GIT }, () => {
   const base = tmp();
   const mio = repoGit(path.join(base, 'a', 'backend'), 'https://dev.azure.com/org-del-equipo/Totora/_git/Backend');
   const ajeno = repoGit(path.join(base, 'b', 'backend'), 'https://dev.azure.com/org-del-equipo/FRESNO/_git/Backend');

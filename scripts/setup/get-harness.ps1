@@ -82,7 +82,15 @@ while ($i -lt $args.Count) {
 $Tools = @('node', 'tar')
 # bash y python3 los pide el aplicador de Claude Code: con `--tool codex` (sólo Codex) no hacen falta
 $codexOnly = $false
-for ($k = 0; $k -lt $Rest.Count - 1; $k++) { if ([string]$Rest[$k] -eq '--tool' -and [string]$Rest[$k + 1] -eq 'codex') { $codexOnly = $true } }
+# `--tool` se lee como lo lee install (repetida, con comas, sin mayúsculas ni espacios: tools.parseOption; story 8.40, AC 46)
+$asked = @()
+for ($k = 0; $k -lt $Rest.Count; $k++) {
+  $a = [string]$Rest[$k]
+  if ($a -eq '--tool' -and $k + 1 -lt $Rest.Count) { $asked += ([string]$Rest[$k + 1]).Split(',') }
+  elseif ($a.StartsWith('--tool=')) { $asked += $a.Substring(7).Split(',') }
+}
+$asked = @($asked | ForEach-Object { $_.Trim().ToLowerInvariant() })
+if (($asked -contains 'codex') -and -not ($asked -contains 'claude')) { $codexOnly = $true }
 if (-not $OnWindows -and -not $codexOnly) { $Tools += @('bash', 'python3') }
 $Missing = $false
 foreach ($t in $Tools) {

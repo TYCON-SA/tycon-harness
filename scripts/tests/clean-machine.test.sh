@@ -39,7 +39,7 @@
 #         («T39 (papeles)»): el bloque de INSTALL.md se lee y es un `git clone` y `harness.js install`.
 #
 # CÓMO ESTÁ ARMADA: acá (en el anfitrión) se arman las copias, las imágenes y los contenedores; las verificaciones
-#   corren ADENTRO, en `clean-machine/scenarios/*.sh` (core, folders, no-network, missing-tool, union, unified), que
+#   corren ADENTRO, en `clean-machine/scenarios/*.sh` (core, folders, no-network, npx, missing-tool, union, unified), que
 #   imprimen las líneas con `clean-machine/lib.sh`; esta prueba las pasa a su salida y las cuenta. Los dos `Dockerfile`
 #   son la lista de requisitos de la portada hecha ejecutable. Pasos (cada uno bajo tope, con su nombre en el rojo):
 #   docker-probe, index-core, index-bizuit, export-core, export-union, build-core, build-src-core, build-nopython,
@@ -685,6 +685,8 @@ main() {
   run_scenario run-core 600 "${IMG_CORE}" yes core core "${MODE}"
   run_scenario run-folders 600 "${IMG_CORE}" yes folders folders
   run_scenario run-no-network 600 "${IMG_CORE}" no no-network no-network
+  # el instalador del paquete de npm (story 8.40, el cierre: T46), sin red: el GitHub de juguete corre adentro
+  run_scenario run-npx 600 "${IMG_CORE}" no npx npx
 
   # las dos derivadas de la AC 24: la del núcleo con la copia, menos una herramienta (un Dockerfile en línea, no un archivo)
   printf 'ARG BASE\nFROM ${BASE}\nUSER root\nRUN rm -f /usr/bin/python3*\nUSER node\n' > "${T}/nopython.Dockerfile"

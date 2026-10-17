@@ -37,8 +37,8 @@
       "retired_by": "8.24"
     },
     {
-      "path": "scripts/setup/npm/index.js",
-      "why": "el instalador de npx (story 8.40) corre ANTES de que haya arnés y no puede importar tycon-home.js. Arma él mismo dónde está el estado, el de hoy y el viejo bajo ~/.claude, sólo para leerlo y decir «ya está instalado». Nunca lo escribe",
+      "path": "scripts/setup/npm/home-paths.json",
+      "why": "las rutas del instalador de npx (story 8.40, AC 36): corre ANTES de que haya arnés y no puede importar tycon-home.js, así que lleva su copia de dónde está el estado, el de hoy y el viejo bajo ~/.claude, sólo para leerlo. Nunca lo escribe. Su paridad con tycon-home.js la mide npm-package.test.js (T43)",
       "retire_with": "8.24 (deja de mirar el estado viejo bajo ~/.claude)",
       "retire_after": "2026-11-07",
       "retired_by": "8.24"
