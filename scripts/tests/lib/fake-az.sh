@@ -94,7 +94,7 @@ args.forEach((x, i) => {
   const eq = x.indexOf('=');
   if (x.startsWith('@')) ruta = x.slice(1);
   else if (eq >= 0 && x[eq + 1] === '@') ruta = x.slice(eq + 2);
-  else if (args[i - 1] === '--in-file') ruta = x;
+  else if (args[i - 1] === '--in-file' || args[i - 1] === '--yaml') ruta = x;
   if (ruta) {
     try { archivos[ruta] = fs.readFileSync(ruta, 'utf8'); }
     catch (e) { archivos[ruta] = `<<no se pudo leer: ${e.message}>>`; }
@@ -189,6 +189,12 @@ if (familia) {
     estado[`rest|${u.replace(/\?.*$/, '')}`] = true; guardar(); out({ properties: { provisioningState: 'Succeeded' } });
   }
   const consulta = (q) => {
+    // lo que tiene la aplicación: sale del último --yaml que la creó o la actualizó (nombres, nunca valores)
+    const apl = estado.apl || {};
+    if (q === 'properties.template.containers[0].image') return apl.imagen || '';
+    if (q === 'properties.configuration.secrets[].name') return (apl.secretos || []).join('\n');
+    if (q === 'properties.template.containers[0].env[].name') return (apl.variables || []).join('\n');
+    if (q === 'properties.configuration.ingress.external') return apl.externa ? 'true' : 'false';
     if (/customerId/.test(q)) return 'cliente-del-area';
     if (/defaultDomain/.test(q)) return 'cielo-verde-1a2b3c4d.eastus2.azurecontainerapps.io';
     if (/provisioningState/.test(q)) return 'Succeeded';
@@ -213,6 +219,14 @@ if (familia) {
     if (estado.rolIntentos <= demora) falla(`(PrincipalNotFound) Cannot find user or service principal in graph database for '${arg('--assignee-object-id')}'.`);
     estado.rol = true; guardar(); process.exit(0);
   }
+  // la aplicación creada o actualizada con --yaml: se recuerda lo que lleva (sin los valores de los secretos)
+  if (paso === 'aplicacion' && (verbo === 'create' || verbo === 'update') && args.includes('--yaml')) {
+    const y = JSON.parse(Object.values(archivos)[0] || '{}');
+    const cfg = (y.properties || {}).configuration || {};
+    const cont = (((y.properties || {}).template || {}).containers || [])[0] || {};
+    estado.apl = { imagen: cont.image, secretos: (cfg.secrets || []).map((s) => s.name), variables: (cont.env || []).map((e) => e.name), externa: Boolean((cfg.ingress || {}).external) };
+  }
+  if (paso === 'entrada' && args.includes('external')) estado.apl = { ...(estado.apl || {}), externa: true };
   // az 2.71 (extensión containerapp 1.2.0b4) no acepta el emisor y el inquilino juntos
   if (paso === 'inicio' && args.includes('--issuer') && args.includes('--tenant-id')) falla('--issuer and --tenant-id cannot be configured to non empty strings at the same time.');
   // create / update / set: queda creado (la clave no lleva el verbo: `show` la encuentra)

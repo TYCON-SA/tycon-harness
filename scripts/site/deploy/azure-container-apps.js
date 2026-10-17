@@ -13,7 +13,9 @@
  *   el disco en `SITE_DATA_DIR`, las sondas a `/livez` y `/readyz`, los secretos y la identidad del sistema, con la
  *   ENTRADA INTERNA; el rol «Storage Blob Data Reader» sobre el CONTENEDOR del buzón; el inicio integrado de Microsoft
  *   (un inquilino, el secreto por nombre); y por último la entrada externa. Si un paso falla, la entrada sigue interna.
- * Correr una fase de nuevo saltea lo que ya existe (pregunta antes de crear).
+ * Correr una fase de nuevo saltea lo que ya existe (pregunta antes de crear), salvo la aplicación: si ya existe, se
+ * actualiza con la configuración de hoy (la imagen, los secretos y las variables), dice qué cambió y deja la entrada como
+ * estaba. Así se actualiza el sitio.
  *
  * ── LOS SECRETOS ────────────────────────────────────────────────────────────────────────────────
  * Nunca en el archivo de configuración, en la línea de órdenes ni en el plan impreso. Los valores llegan por variables
@@ -287,8 +289,10 @@ function faseSitio(c, run, salida, env, sec) {
     archivo: { properties: { azureFile: { accountName: c.storageAccount, accountKey: llaveCuenta, shareName: c.fileShare, accessMode: 'ReadWrite' } } },
     nombreArchivo: 'disco.json',
   });
-  // la aplicación, con la entrada interna
-  if (!run.existe(['containerapp', 'show', ...g, '-n', c.app, ...SUB(c)])) {
+  // la aplicación: se crea con la entrada interna; si ya existe, se actualiza con la misma configuración (imagen, secretos
+  // y variables), así volver a correr la fase aplica los cambios en vez de saltearlos
+  const yaExiste = run.existe(['containerapp', 'show', ...g, '-n', c.app, ...SUB(c)]);
+  {
     const comunes = [['SITE_PUBLIC_URL', publica], ['SITE_AUTH_PROVIDER', 'microsoft'], ['SITE_OIDC_ISSUER', `https://login.microsoftonline.com/${c.tenantId}/v2.0`],
       ['SITE_OIDC_CLIENT_ID', c.oidcClientId], ['SITE_OPERATIONS_REPO', c.operationsRepo], ['SITE_MAILBOX_IDENTITY', 'managed'], ['SITE_DATA_DIR', DISCO],
       ...(c.operationsIdentity === 'managed' ? [['SITE_OPERATIONS_IDENTITY', 'managed']] : []),
@@ -323,7 +327,32 @@ function faseSitio(c, run, salida, env, sec) {
       },
     };
     if (sec.apagadas.length) salida(`  (quedan apagadas, porque no vinieron en el entorno: ${sec.apagadas.join(', ')})`);
-    run.paso({ que: 'crear la aplicación, con la entrada INTERNA (todavía no se ve desde afuera)', args: ['containerapp', 'create', ...g, '-n', c.app, '--yaml', 'ARCHIVO', '-o', 'none', ...SUB(c)], archivo: yaml, nombreArchivo: 'aplicacion.yaml' });
+    if (!yaExiste) {
+      run.paso({ que: 'crear la aplicación, con la entrada INTERNA (todavía no se ve desde afuera)', args: ['containerapp', 'create', ...g, '-n', c.app, '--yaml', 'ARCHIVO', '-o', 'none', ...SUB(c)], archivo: yaml, nombreArchivo: 'aplicacion.yaml' });
+    } else {
+      // lo que tiene hoy, para decir qué cambia; la entrada se deja como está (un sitio ya abierto no se cierra al actualizar)
+      const q = (consulta, siNo) => run.leer(['containerapp', 'show', ...g, '-n', c.app, '--query', consulta, '-o', 'tsv', ...SUB(c)], siNo);
+      const lista = (s) => String(s || '').split(/\s+/).filter(Boolean).sort();
+      const antes = {
+        imagen: q('properties.template.containers[0].image', '<la imagen de hoy>'),
+        secretos: lista(q('properties.configuration.secrets[].name', '')),
+        variables: lista(q('properties.template.containers[0].env[].name', '')),
+        externa: q('properties.configuration.ingress.external', 'false') === 'true',
+      };
+      yaml.properties.configuration.ingress.external = antes.externa;
+      const ahora = { secretos: yaml.properties.configuration.secrets.map((s) => s.name).sort(), variables: yaml.properties.template.containers[0].env.map((e) => e.name).sort() };
+      const dif = (a, b) => ({ mas: b.filter((x) => !a.includes(x)), menos: a.filter((x) => !b.includes(x)) });
+      const ds = dif(antes.secretos, ahora.secretos);
+      const dv = dif(antes.variables, ahora.variables);
+      const cambios = [
+        antes.imagen !== c.image ? `imagen: ${antes.imagen} → ${c.image}` : 'imagen: la misma',
+        ds.mas.length || ds.menos.length ? `secretos: ${[...ds.mas.map((x) => `+${x}`), ...ds.menos.map((x) => `-${x}`)].join(' ')}` : 'secretos: los mismos nombres (los valores se vuelven a poner con los del entorno)',
+        dv.mas.length || dv.menos.length ? `variables: ${[...dv.mas.map((x) => `+${x}`), ...dv.menos.map((x) => `-${x}`)].join(' ')}` : 'variables: los mismos nombres',
+        `entrada: ${antes.externa ? 'externa (queda así)' : 'interna (se abre al final)'}`,
+      ];
+      salida(`La aplicación ya existe: se actualiza.\n${cambios.map((x) => `  · ${x}`).join('\n')}`);
+      run.paso({ que: 'actualizar la aplicación (imagen, secretos y variables), con los secretos en el archivo', args: ['containerapp', 'update', ...g, '-n', c.app, '--yaml', 'ARCHIVO', '-o', 'none', ...SUB(c)], archivo: yaml, nombreArchivo: 'aplicacion.yaml' });
+    }
   }
   // el rol de lectura del buzón, sobre el contenedor (no sobre la cuenta)
   const principal = run.leer(['containerapp', 'show', ...g, '-n', c.app, '--query', 'identity.principalId', '-o', 'tsv', ...SUB(c)], '<la identidad del sitio>');

@@ -199,12 +199,19 @@ key.
 - **Disk:** an Azure Files share in a storage account of the site's own (cents per month), never in the mailbox
   account.
 - **Secrets:** application secrets. Their values come from environment variables of whoever runs the installation, with
-  the names in the table. The repo and the mailbox are read with the managed identity, no secret.
+  the names in the table. The mailbox is read with the managed identity, no secret. The operations repo, in one of two
+  ways (`operationsIdentity` in the configuration file): `managed`, the site's identity, no secret; or `token`, a
+  read-only token (*Code: Read*) in `SITE_OPERATIONS_TOKEN`, which expires and has to be rotated.
 - **Sleeps:** scales to zero, no cost while asleep. With 1 GiB the free quota covers about 100 hours awake per month,
   and going over is charged. The first request after a while takes time to answer. If it gets no request in 90 days,
   Azure may delete the environment and the installation has to run again.
-- **Cost:** zero within the quotas. Reading the operations repo on Azure DevOps needs a Basic license for the site's
-  identity (the first 5 in the organization are free; after that, about 6 dollars per month).
+- **Cost:** zero within the quotas. With `operationsIdentity: managed`, reading the operations repo on Azure DevOps
+  needs a Basic license for the site's identity (the first 5 in the organization are free; after that, about 6 dollars
+  per month). **No license cost:** `operationsIdentity: token`, with a read-only token from an account that already has
+  its own; in exchange, the token expires and has to be rotated.
+- **Updating:** run the `sitio` phase again with the changed configuration file (the new image, another identity, a
+  rotated secret). With the application already created, it updates it: it says what changed (the image, the secrets and
+  the variables that are added or removed) and leaves the ingress as it was.
 - **Who runs it:** needs Contributor on the resource group and Owner or User Access Administrator on the mailbox account
   (only to grant the role). The region is that of the mailbox account.
 

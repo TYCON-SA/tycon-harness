@@ -197,12 +197,19 @@ su huella y el identificador del cliente, y ningún secreto; la cabecera del gui
 - **Disco:** un recurso compartido de Azure Files en una cuenta de almacenamiento propia del sitio (centavos por mes),
   nunca en la cuenta del buzón.
 - **Secretos:** secretos de la aplicación. Sus valores llegan por variables de entorno de quien corre el alta, con los
-  nombres de la tabla. El repo y el buzón se leen con la identidad administrada, sin secreto.
+  nombres de la tabla. El buzón se lee con la identidad administrada, sin secreto. El repo de operaciones, de una de dos
+  formas (`operationsIdentity` en el archivo de configuración): `managed`, la identidad del sitio, sin secreto; o
+  `token`, un token de sólo lectura (*Code: Read*) en `SITE_OPERATIONS_TOKEN`, que vence y hay que rotar.
 - **Se duerme:** escala a cero, sin costo mientras duerme. Con 1 GiB la cuota gratis cubre unas 100 horas despierto por
   mes, y pasarse cobra. El primer pedido después de un rato tarda en contestar. Si no recibe ningún pedido en 90 días,
   Azure puede borrar el ambiente y hay que correr el alta de nuevo.
-- **Costo:** cero dentro de las cuotas. Leer el repo de operaciones de Azure DevOps pide una licencia Basic para la
-  identidad del sitio (gratis las 5 primeras de la organización; después, unos 6 dólares por mes).
+- **Costo:** cero dentro de las cuotas. Con `operationsIdentity: managed`, leer el repo de operaciones de Azure DevOps
+  pide una licencia Basic para la identidad del sitio (gratis las 5 primeras de la organización; después, unos 6
+  dólares por mes). **Sin costo de licencia:** `operationsIdentity: token`, con un token de sólo lectura de una cuenta
+  que ya tiene la suya; a cambio, el token vence y hay que rotarlo.
+- **Actualizar:** se vuelve a correr la fase `sitio` con el archivo de configuración cambiado (la imagen nueva, otra
+  identidad, un secreto que se rota). Con la aplicación ya creada, la actualiza: dice qué cambió (la imagen, los secretos
+  y las variables que se suman o se van) y deja la entrada como estaba.
 - **Quién la corre:** necesita Contributor sobre el grupo de recursos y Owner o User Access Administrator sobre la
   cuenta del buzón (sólo para dar el rol). La región es la de la cuenta del buzón.
 

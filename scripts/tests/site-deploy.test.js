@@ -251,6 +251,39 @@ test('T29c Aca_IdentidadRecienCreada_SeReintentaConEspera @story-2.30 @ac-8 @ac-
   assert.doesNotMatch(sin.out, /todavía no lo ve/);
 });
 
+test('T29d Aca_VolverACorrer_ActualizaImagenSecretosYVariables @story-2.30 @ac-8 @ac-25', () => {
+  // volver a correr la fase sitio con la aplicación ya creada aplica los cambios (antes la salteaba por «ya existe»):
+  // la imagen nueva, y pasar a leer operaciones con un token (sin la licencia de la identidad administrada)
+  const amb = alta(['--apply', '--phase', 'ambiente']);
+  assert.strictEqual(amb.status, 0, amb.out);
+  const prim = alta(['--apply', '--phase', 'sitio'], { fix: amb.fix });
+  assert.strictEqual(prim.status, 0, prim.out);
+  const TOKEN_LECTURA = marca('TOKEN', 'DE-LECTURA-QUE-NO-DEBE-APARECER-AL-ACTUALIZAR');
+  const nueva = `ghcr.io/acme/arnes@sha256:${'b'.repeat(64)}`;
+  const otra = alta(['--apply', '--phase', 'sitio'], { fix: amb.fix, config: { ...CONFIG(), image: nueva, operationsIdentity: 'token' }, env: { ...SECRETOS, SITE_OPERATIONS_TOKEN: TOKEN_LECTURA } });
+  assert.strictEqual(otra.status, 0, otra.out);
+  const nuevas = otra.llamadas.slice(prim.llamadas.length);
+  assert.ok(!nuevas.some((l) => l.paso === 'aplicacion' && l.args[1] === 'create'), 'no se crea de nuevo');
+  const upd = nuevas.find((l) => l.paso === 'aplicacion' && l.args[1] === 'update');
+  assert.ok(upd && upd.args.includes('--yaml'), 'se actualiza con el archivo');
+  const y = JSON.parse(Object.values(upd.archivos)[0]);
+  const cont = y.properties.template.containers[0];
+  assert.strictEqual(cont.image, nueva, 'la imagen nueva');
+  assert.ok(y.properties.configuration.secrets.some((s) => s.name === 'site-operations-token' && s.value === TOKEN_LECTURA), 'el secreto del token, en el archivo');
+  assert.ok(cont.env.some((e) => e.name === 'SITE_OPERATIONS_TOKEN' && e.secretRef === 'site-operations-token'), 'su variable, por referencia');
+  assert.ok(!cont.env.some((e) => e.name === 'SITE_OPERATIONS_IDENTITY'), 'sin la identidad administrada');
+  assert.strictEqual(y.properties.configuration.ingress.external, true, 'un sitio ya abierto no se cierra al actualizar');
+  // dice qué cambió, y el token no aparece en ninguna orden ni en la salida
+  assert.match(otra.out, /La aplicación ya existe: se actualiza\./);
+  assert.match(otra.out, /imagen: ghcr\.io\/acme\/arnes@sha256:a{64} → ghcr\.io\/acme\/arnes@sha256:b{64}/);
+  assert.match(otra.out, /secretos: \+site-operations-token/);
+  assert.match(otra.out, /variables: .*\+SITE_OPERATIONS_TOKEN.*-SITE_OPERATIONS_IDENTITY|variables: .*-SITE_OPERATIONS_IDENTITY.*\+SITE_OPERATIONS_TOKEN/);
+  assert.match(otra.out, /entrada: externa \(queda así\)/);
+  assert.ok(!otra.out.includes(TOKEN_LECTURA), 'el token no sale');
+  for (const l of nuevas) assert.ok(!l.args.join(' ').includes(TOKEN_LECTURA), `ninguna orden lleva el token: ${l.args.join(' ')}`);
+  assert.ok(!nuevas.some((l) => l.args[1] === 'secret' && l.args[2] === 'set'), 'nada de `secret set` con el valor por argumento');
+});
+
 test('T29b Aca_NoPudePreguntar_NoEsNoExiste @story-2.30 @ac-8', () => {
   // la regla de la casa: una salida vacía puede ser un comando que falló. Un `show` que falla por otra cosa que «no existe»
   // frena el alta con el motivo: no se crea de nuevo encima de lo que capaz ya está.
