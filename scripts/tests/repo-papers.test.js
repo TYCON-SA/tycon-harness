@@ -1260,7 +1260,8 @@ const BEFORE_KEYWORDS = {
   en: ['in all your projects', 'in Spanish', 'for a year'],
   es: ['en todos tus proyectos', 'en castellano', 'un año'],
 };
-const GUIDE_KEYWORDS = ['node v22 o más', 'quiero el perfil mínimo', '--profile minimal', '.git/hooks/', 'si configura la carpeta global de hooks de git) y preguntame si sigo'];
+// las páginas guiadas piden Node 24, la versión estable, y nombran el piso de 22, que alcanza para la línea de instalación
+const GUIDE_KEYWORDS = ['node v24 (con v22 también anda)', 'quiero el perfil mínimo', '--profile minimal', '.git/hooks/', 'si configura la carpeta global de hooks de git) y preguntame si sigo'];
 function clearTopProblems(text, lang) {
   const out = [];
   const where = IN_BEFORE(text, lang);
@@ -1268,7 +1269,7 @@ function clearTopProblems(text, lang) {
   const guided = sectionOf(at('Install with Claude Code'))(text, lang);
   // desde la story 8.23 (tanda E) el arnés vive en ~/.tycon/harness como archivos bajados, no en un clon
   for (const k of ['`minimal`', '`core.hooksPath`', '`~/.tycon/harness`']) if (!says(guided, k)) out.push(`instalar con Claude Code — falta «${k}»`);
-  // story 8.40 (AC 31): el piso para instalar es Node 22, en la portada y en las páginas guiadas («node v22 o más»)
+  // story 8.40 (AC 31): el piso para instalar es Node 22, en la portada y en las páginas guiadas («con v22 también anda»)
   if (says(sectionOf(at('What you need'))(text, lang), 'Node 22') === false) out.push('qué necesitás — falta «Node 22»');
   if (/\bv2[02]\b/.test(text)) out.push('dice «v20»/«v22»: la portada dice «Node 22» en «Requisitos» (la forma «v22» es la de las páginas guiadas)');
   if (/Node 20 (o posterior|or later)/.test(text)) out.push('dice «Node 20 o posterior»: el piso para instalar es Node 22');
@@ -1574,7 +1575,7 @@ test('T80 TeamOnboardingText_InTeamLayer_GettingStartedWithoutRepoPermission —
       ['P1', 'mac.md', (t) => must(must(t, '2. Ver el plan de instalación', `${OLD_STEP}\n2. Ver el plan de instalación`), NEW_BASH_DOWNLOAD, OLD_BASH_DOWNLOAD)],
       ['P2', 'linux.md', (t) => must(t, NEW_BASH_DOWNLOAD, OLD_BASH_DOWNLOAD)],
       ['P3', 'windows.md', (t) => must(t, 'No hace falta cuenta de GitHub ni permiso: el arnés se baja de un repo público.', 'Antes, aceptá la invitación al repo que te llegó por mail de GitHub.')],
-      ['P4', 'README.md', (t) => must(must(t, '- Claude Code, installed and signed in.', `${OLD_COVER_BULLET}- Claude Code, installed and signed in.`), NEW_BASH_DOWNLOAD, OLD_BASH_DOWNLOAD)],
+      ['P4', 'README.md', (t) => must(must(t, '- Claude Code (or Codex), installed and signed in', `${OLD_COVER_BULLET}- Claude Code (or Codex), installed and signed in`), NEW_BASH_DOWNLOAD, OLD_BASH_DOWNLOAD)],
       ['P5', 'README.es.md', (t) => must(t, '### 2. Bajar e instalar', '**En todos los sistemas**, creá antes un token de GitHub de sólo lectura con tu cuenta y dejalo a mano: el instalador lo va a pedir.\n\n### 2. Bajar e instalar')],
       ['P6', 'README.es.md', (t) => { const i = t.indexOf('<!-- install:unattended -->'); const j = t.indexOf(NEW_BASH_DOWNLOAD, i); assert.ok(i >= 0 && j > i, 'la mutación no encuentra el bloque sin terminal'); return `${t.slice(0, j)}${OLD_BASH_DOWNLOAD}${t.slice(j + NEW_BASH_DOWNLOAD.length)}`; }],
       ['P7', 'mac.md', (t) => must(t, 'Baja la versión a una carpeta temporal y muestra el plan.', 'Baja la versión a una carpeta temporal, guarda mi token en ~/.tycon/config.json y muestra el plan.')],

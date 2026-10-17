@@ -41,38 +41,42 @@ Para sacar el arnés, `harness.js uninstall --dry-run` muestra qué quitaría, y
 
 ## Qué necesitás
 
-- Claude Code, instalado y con tu sesión iniciada.
-- Windows 11 con PowerShell 7, o Mac. En Linux o en WSL, se instala a mano (está en la «Referencia»).
-- Node 22 o posterior y `tar`. En Mac, además, Python 3 y Homebrew. Git **no** hace falta para usar el arnés: se baja
-  como archivos, no se clona. Tampoco hace falta una cuenta de GitHub: este repo es público.
+- Node 24 y `tar` (para correr la línea de instalación alcanza con Node 22 o posterior). En Mac, además, Python 3.
+- Windows 11 con PowerShell 7, Mac o Linux. En WSL no se probó.
+- Claude Code (o Codex), instalado y con tu sesión iniciada: es donde se usa el arnés.
+- Git **no** hace falta para usar el arnés: se baja como archivos, no se clona.
+  Tampoco hace falta una cuenta de GitHub: este repo es público.
 - Tu Node hace falta para instalar. Después el arnés baja su propio Node 24 (unos 50 MB, de nodejs.org) y sus hooks
   corren con él; tus proyectos siguen con tu Node, que no se toca. Se apaga con `TYCON_HARNESS_NODE=0`.
 - Para programar extensiones de BIZUIT, el SDK de .NET de tu plugin. Sin él, la implementación frena al compilar.
 
-Si te falta algo, Claude te dice qué instalar y cómo.
+Si te falta algo, el instalador te dice qué y no instala nada.
 
 ## Instalar en una línea
 
 Esta línea revisa los requisitos, baja la versión publicada del arnés y lo instala; es la misma en Windows, en Mac y en
-Linux. Antes de escribir nada te muestra el plan de lo que va a cambiar en tu máquina y te pregunta si sigue: con un
-«no», no queda nada.
+Linux, y es el camino estándar: no hace falta Claude. Abrí la terminal (en Windows, PowerShell 7) y escribí:
 
 ```bash
 npx @tyconsa/harness@latest
 ```
+
+Contestá sus preguntas: para quién es la instalación (`1`, para vos), el perfil (`full` o `minimal`), las
+integraciones (Enter, ninguna) y si usás el paquete del stack (`s`). Antes de escribir nada te muestra el plan de lo que
+va a cambiar en tu máquina y pregunta «¿Instalo? [s/N]»: con un «no», no queda nada.
 
 A mano, sin npm: las tres líneas que bajan el guion de instalación, lo muestran y lo corren están en la
 [Referencia](getting-started/reference.es.md), en «Bajar e instalar».
 
 ## Instalar con Claude Code
 
-Es el camino recomendado y lleva unos 10 minutos. Claude corre casi todos los comandos; la bajada y la instalación
-corren en tu propia terminal.
+Es la alternativa más fácil, si preferís que te guíen, y lleva unos 10 minutos. Claude corre casi todos los comandos; la
+instalación corre en tu propia terminal.
 
 1. Abrí las instrucciones de tu sistema: [Windows](getting-started/windows.md), [Mac](getting-started/mac.md) o [Linux](getting-started/linux.md).
 2. Copiá el bloque entero de la «Parte 1». Abrí Claude Code en cualquier carpeta y pegalo en una conversación nueva.
-3. Claude te da las líneas que bajan el guion de instalación, lo muestran y lo corren: pegalas en tu propia terminal,
-   así leés el guion antes de correrlo. Nada te pide iniciar sesión: el arnés nunca abre un navegador.
+3. Claude te da la línea npx para tu propia terminal: la corrés vos, así ves el plan antes de contestar. Nada te pide
+   iniciar sesión: el arnés nunca abre un navegador.
 4. Claude te muestra el plan de instalación y espera tu «sí». El plan dice si va a configurar `core.hooksPath`.
 5. Al final te arma un resumen que termina en «OK» o «NO OK». Cerrá Claude Code y abrilo de nuevo.
 
@@ -111,17 +115,23 @@ todos:
 
 Un ejemplo: en ACME, Pedro administra y Juan programa.
 
-1. Pedro crea los dos repos de ACME, en su Azure DevOps o en su GitHub, con acceso sólo para el equipo. Para el perfil
-   puede partir de [un perfil de ejemplo](https://github.com/TYCON-SA/harness-team-profile-example), listo para copiar.
-2. Pedro corre `node ~/.claude/tycon-harness/scripts/setup/harness.js team-config`. Se abre una página en su máquina,
-   sin nada en internet, donde declara dónde vive cada repo y a quién se le asignan los avisos. La página revisa lo que
-   escribe, lo guarda en el repo que corresponde y le ofrece el pull request. Cuando ACME tiene su sitio de la
-   organización desplegado, lo mismo se hace desde su pestaña **Configuración** (sólo para los que mantienen): valida
-   con los mismos lectores y propone cada cambio con un pull request, nunca escribe `main`. Mientras tanto, la página
-   local sigue sirviendo.
-3. Juan instala con `--team` y el perfil: `harness.js install --version latest --team acme/harness-team-profile` si está
-   en GitHub, o con la dirección del repo si está en Azure DevOps. Desde ahí, cada actualización le trae también lo del
-   equipo.
+1. Pedro da de alta ACME con `npx @tyconsa/harness@latest --audience org` (o contesta `3` a «¿para quién es esta
+   instalación?»). La línea instala su máquina y sigue con `harness.js team-init`: pregunta el nombre, la plataforma y
+   la dirección del repo del perfil, arma sus tres archivos (`team-layer.json`, `team-profile.json` y `team-repos.json`)
+   a partir de [un perfil de ejemplo](https://github.com/TYCON-SA/harness-team-profile-example) y los valida antes de
+   escribir. No crea repos ni pide credenciales: le dice dónde crear el repo vacío, con acceso sólo para el equipo, y
+   si dice que sí lo sube con su git. Con el arnés ya instalado, lo mismo es
+   `node ~/.tycon/harness/scripts/setup/harness.js team-init`. El repo de operaciones se crea aparte (abajo, «Los
+   procesos de la noche»).
+2. Todo lo que se personaliza —dónde vive cada repo, a quién se le asignan los avisos, los umbrales— se configura desde
+   la pestaña **Configuración** del [sitio de la organización](guides/piezas-del-arnes.md#scriptssite--el-sitio-de-la-organización) (sólo para los que mantienen): valida con los
+   mismos lectores del arnés y propone cada cambio con un pull request, nunca escribe `main`. Mientras ACME no tiene su
+   sitio desplegado, la alternativa es la página local: `node ~/.tycon/harness/scripts/setup/harness.js team-config`,
+   que se abre en su máquina, sin nada en internet, y también le ofrece el pull request.
+3. Juan instala con npx y el perfil: `npx @tyconsa/harness@latest --team acme/harness-team-profile` si está en GitHub,
+   o `npx @tyconsa/harness@latest --team https://dev.azure.com/acme/<proyecto>/_git/harness-team-profile` si está en
+   Azure DevOps. Como ese repo lo ve sólo el equipo, antes de bajar nada la línea mira si lo puede leer y, si no, le
+   pide el permiso de lectura. Desde ahí, cada actualización le trae también lo del equipo.
 
 Cómo se extiende el arnés para tu organización —las capas, la página de configuración y un recorrido de ejemplo— en un
 [mapa interactivo](https://www.bizuit.com/sdd-harness/more/mapa-del-arnes.html).
