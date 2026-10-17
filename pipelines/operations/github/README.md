@@ -151,7 +151,24 @@ En el repo de operaciones, *Settings → Secrets and variables → Actions*:
 | Variable | `HARNESS_REF` | La rama, el tag o el commit del arnés que corre cada noche. Vacía: `main`, igual que las máquinas de los devs. Quien quiera fijar una versión pone acá un tag o un commit, y lo sube a conciencia: cada noche el arnés corre con la credencial de tu organización |
 | Variable | `METRICS_OWNERS` | Los dueños cuyos repos miden las métricas, separados por `;`. Vacía: el dueño de este repo |
 | Variable | `METRICS_REPO_PREFIX` | Si la organización mezcla repos de otros equipos: sólo los que empiezan así |
-| Variable y secreto | `TYCON_TELEGRAM_CHAT_ID` y `TELEGRAM_BOT_TOKEN` | El resumen diario de dependencias por Telegram. Sin el chat, no se manda |
+| Variable y secreto | `TYCON_TELEGRAM_CHAT_ID` y `TELEGRAM_BOT_TOKEN` | El resumen diario de dependencias, si el canal es `telegram`. Usá un bot dedicado al aviso |
+| Secreto | `TYCON_NOTIFY_WEBHOOK_URL` | El resumen diario, si el canal es `slack` o `teams`: la dirección del webhook entrante. La dirección ES la credencial |
+
+**El canal del aviso.** Lo elige `operations.json → notify`: `{ "channel": "telegram" }`, `"slack"` o `"teams"`. **Sin
+`notify`, no se manda**, y la constancia de la noche lo dice («canal sin configurar en operations.json → notify»). El
+aviso lleva sólo cantidades y, si `operations.json → site.url` está y el sitio pasó esa mañana la prueba sin sesión, el
+enlace al sitio.
+
+**La protección de `operations.json` y de los workflows.** Ponela **antes** de publicar el sitio de la organización: sin
+ella, cualquiera que pueda empujar a `main` se hace mantenedor del sitio o cambia un workflow y se lleva sus secretos. En
+*Settings → Rules → Rulesets → New push ruleset* (repos privados o internos), la regla **Restrict file paths** sobre
+`operations.json` y `.github/workflows/**`, con el equipo de quienes mantienen como única excepción (*Bypass list*). Los
+nocturnos no necesitan excepción: guardan con el token del workflow y ninguno toca esas rutas. Esa regla frena todo
+empuje que toque esas rutas en **cualquier** rama, también la de una propuesta: **el sitio no propone** cambios a
+`operations.json` en GitHub. La pestaña Configuración valida y descarga el archivo, y quien mantiene abre el pull request
+a mano. (Una regla de rama que pida pull request sobre todo `main` dejaría proponer al sitio, pero frena los guardados de
+los nocturnos; ponerle de excepción a GitHub Actions dejaría a cualquiera con escritura empujar un workflow que escriba
+`main`.)
 
 Y en *Settings → Actions → General*: *Workflow permissions* puede quedar en «Read repository contents»; cada workflow
 pide para sí `contents: write` (para guardar en este repo) y nada más. Si `main` del repo de operaciones tiene reglas de

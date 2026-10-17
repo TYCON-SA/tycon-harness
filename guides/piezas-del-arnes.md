@@ -538,151 +538,21 @@ compilaciones. Red: `scripts/tests/nightly-deployments.test.js` (con `fake-az.sh
 
 ## scripts/site/ — el sitio de la organización
 
-**Un solo sitio para toda la organización, donde cada uno ve lo suyo y quienes mantienen ven todo.**
-Un servidor de Node **sin dependencias**, en Docker (`scripts/site/Dockerfile`) o con
-Node solo, que no depende de Claude ni de Codex. Lo que lo sostiene:
+**Qué es:** una página web para toda la organización, donde cada persona entra con la cuenta de la organización y ve lo
+suyo (sus pedidos, sus pull requests, sus corridas), y quienes mantienen el arnés ven todo.
 
-- **El inicio de sesión lo hace el propio sitio** (`oidc.js` y un archivo por proveedor en `auth-providers/`: el `oidc`
-  genérico, Entra ID, Google y GitHub), con código de autorización, PKCE, `state` y `nonce`. La firma del `id_token` la
-  verifica `crypto` (sólo RS256 y ES256), y cada chequeo tiene su prueba con un token armado mal. Cada proveedor se
-  limita a la organización a su manera: un inquilino, el dominio de Google Workspace o la organización de GitHub. 🔴
-  **La identidad nunca sale de una cabecera** de un proxy o de la plataforma.
-- **La sesión vive en una cookie firmada**, de 8 horas fijas, igual que el intento de inicio: el sitio puede reiniciarse
-  o tener varias réplicas. **El rol se recalcula en cada pedido** (`access.js`). Mantenedor es quien está en
-  `site.maintainers` de `operations.json` (o el primer mantenedor de la instalación mientras esa lista no existe). Persona
-  es quien tiene una máquina en `people` de `operations.json`. El resto queda sin rol y ve una página sin datos.
-- **Un solo camino para los datos**: la tabla de rutas de `server.js`. Una ruta que no declara quién puede verla hace que
-  el sitio no arranque, y cada ruta recibe el modelo **ya filtrado** para quien pide.
-- **Lee directo de las fuentes** (`sources.js`): el repo de operaciones, clonado con la credencial en una cabecera
-  (nunca en el disco), y el buzón de corridas con una SAS de **sólo lectura** o la identidad administrada. Lo de cada
-  nube vive sólo en `cloud/`. Las fotos se copian con **lista blanca**: ningún título, diagnóstico ni mensaje llega al
-  modelo. En pantalla se ve un estado de lista cerrada, y el motivo crudo va sólo al registro.
-- **El refresco** es cada 15 minutos y conserva el último bueno. Si `operations.json` deja de validar, vale el último
-  bueno 24 horas, con una banda para quienes mantienen; después **el sitio se frena para todos**. El plazo se guarda en
-  `SITE_DATA_DIR`, así un reinicio no lo vuelve a empezar. **Ponelo en un volumen** (`docker run -v sitio-datos:/data -e
-  SITE_DATA_DIR=/data …`): ahí vive también el espejo del buzón, y sin volumen cada reinicio lo vuelve a bajar entero. La
-  imagen deja `/data` del usuario del sitio y la declara volumen, así un volumen nuevo nace escribible. La
-  bajada va de a varios archivos a la vez dentro de su tope de 2 minutos; si igual corta, la pasada siguiente sale a los
-  10 segundos y retoma donde quedó, en vez de esperar el refresco. Hay tres sondas: `/livez` dice si el proceso vive, `/healthz`
-  si el sitio está sano (con el freno da 503) y `/readyz` si ya cargó las fuentes. La navegación no espera todo: con el
-  repo de operaciones leído, las pestañas se ven, y sólo Corridas espera el buzón («cargando las corridas»). Toda página
-  de carga se recarga sola cada 5 segundos.
-- **Las pestañas** (`views.js`) son Inicio (qué decidir hoy, o lo del dev), Proyectos y Arnés. Las arma el servidor, sin
-  JavaScript de afuera y sin `<script>` en línea. «No medido» nunca es 0.
+**Para qué sirve:** es el punto de entrada de cada día. El aviso de la mañana trae el enlace, y quien mantiene ve ahí qué
+decidir; en la pestaña **Configuración** se personaliza la organización sin clonar nada.
 
-Lo que NO hace: no escribe en ningún repo, no acciona nada y no baja conversaciones salvo para la pestaña Corridas, con
-`site.mailbox.threads` y un disco del sitio (abajo). Red: las suites `site-server`,
-`site-oidc`, `site-access`, `site-sources`, `site-views` y `site-leak` (la **prueba de fuga**, que recorre la tabla de
-rutas con marcadores de otra persona y texto libre sembrado). Todo corre sin red: el emisor OIDC
-(`tests/lib/fake-oidc.js`), GitHub (`fake-github-oauth.js`), el repo (`git-http-server.js`) y el buzón son locales. La
-pestaña Corridas, el quién es quién y el despliegue llegan aparte.
+**Quién lo usa:** cada persona de la organización, para ver lo suyo; quienes mantienen el arnés, para verlo todo, editar
+la configuración e instalarlo.
 
-**La pestaña Configuración: lo de la organización se edita en el sitio** (2026-10-16). Sólo para quienes
-mantienen (`scripts/site/tabs/config.js`, con todas sus rutas registradas como `maintainer`: un dev recibe 403 sin un
-dato). Es la configuración DE LA ORGANIZACIÓN, no la de ninguna máquina: dónde vive cada repo (`team-repos.json` del
-perfil del equipo), a quién se asignan avisos y pedidos, los despliegues por producto, el canal del aviso, personas y
-máquinas (la confirmación de quién es cada máquina, con la huella del correo y nunca el correo), el sitio mismo
-(mantenedores, buzón, refresco, dirección), los umbrales del tablero y las diferencias declaradas de la paridad; más
-dos secciones de sólo lectura: los productos y la versión del arnés de cada máquina, comparada contra la de la imagen
-del sitio, sin red. Por qué: hasta ese día la única forma era la página local `harness.js team-config`, que pedía
-clonar dos repos en la propia máquina y abría el pedido con `gh` o `az`; y lo que las otras stories fueron sumando
-(despliegues, personas, el sitio, los umbrales, la paridad) no tenía dónde editarse más que a mano en el JSON. Lo que lo
-sostiene:
-
-- **Un núcleo común** (`scripts/lib/org-config.js`): las secciones (qué parte de qué archivo, de qué repo, con qué
-  lector), «Revisar», que aplica el borrador sobre el archivo tal como está y lo valida entero con el `parse` del
-  **mismo lector que usa el arnés** (`team-repos.js`, `operations-config.js`, la lectura de las declaradas que exporta
-  `check-product-parity.js`); el resto del archivo queda byte por byte. 🔴 **No hay un validador propio**: `thresholdsParse`
-  sólo recorre `thresholds` y llama a `umbralValido` de `common.js`. Dos validadores se separan solos, y el nocturno
-  juzga con el suyo. Un problema que el lector da aparte sin anular el archivo (`sectionProblems`: un modelo mal
-  escrito) cuenta igual para la sección que lo cambia: si no, se propondría. La página local usa el mismo núcleo (hoy
-  sigue guardando; pasa a sólo lectura cuando el sitio esté desplegado).
-- **Las claves de `team-repos.json` que llegaron después tienen su versión**: `TEAM_REPOS_SINCE` para el archivo,
-  `MERGE_SUITES_SINCE` para `merge_suites`, `MODELS_SINCE` para `models` y `WAIT_NOTICE_SINCE` para `wait_notice`, el
-  plazo del aviso de espera que edita la sección «Aviso de espera» (la etiqueta del merge que trajo cada
-  lector). Un cambio a ese archivo se propone sólo si el `team-layer.json` del perfil pide al menos la mayor de las
-  claves que trae el archivo propuesto: una máquina con un lector anterior rechazaría la capa entera.
-- **El perfil del equipo, entero desde el sitio**: «Cómo contesta Claude» (`response`), «Integraciones»,
-  «Azure DevOps» (`ado.org`), «Cómo se actualizan las máquinas» (`update.channel`/`apply`) y «Perfil de instalación»
-  editan `team-profile.json` con el lector de la máquina (`tycon-config.js`); «Conversaciones de las corridas» es el
-  interruptor `site.mailbox.threads` de `operations.json`. Cada una cambia sólo sus hojas (`rutas` de la sección):
-  Telegram y CodeGraph, de cada máquina, no se tocan. `response` tiene su portón, `RESPONSE_SINCE`
-  (`teamProfileGateProblem`, junto con el de una lista de paquetes). Todas las secciones de un mismo archivo comparten
-  la rama del pedido (`profile`). «Lo que trae la organización» lista skills, revisores, guías de alta y paquetes del
-  repo del perfil, con su enlace, sin editar.
-- **Se guarda con una rama y un pedido, nunca en la rama principal** (`scripts/lib/repo-proposal.js`): desde el clon
-  temporal que el sitio ya tiene para leer, **sin tocar su árbol de trabajo ni su índice** (comandos de bajo nivel de
-  git sobre un índice temporal: después de proponer, `git status` está limpio y `HEAD` sigue en `main`), bajo el mismo
-  candado que el refresco. El pedido se abre por la API REST de Azure DevOps o de GitHub (la imagen no trae `gh` ni
-  `az`) y dice «pedido por <correo> desde el sitio». Un pedido por archivo. 🔴 **Sin una política que pida revisión en
-  `main`, «Proponer» queda apagado**: en Azure DevOps el token no se acota a «crear ramas y abrir pedidos», así que la
-  seguridad la pone la política de la rama; y en un repo sin políticas un pedido se mergea en segundos (ya pasó). Si el
-  archivo cambió desde que se abrió la sección, o ya hay un pedido abierto sobre él, no se crea nada: «recargá» o el
-  enlace al abierto.
-- **Cada escritura se defiende dos veces**: el `Origin` del sitio (o `Sec-Fetch-Site: same-origin`) y un token de
-  doble envío (`X-Site-Token`, nace con la sesión en la cookie firmada y la página lo recibe al armarse); después JSON y
-  un cuerpo de hasta 256 KB. Ninguna falta crea nada en ningún repo.
-- **Las credenciales son del almacén de secretos de la plataforma, y al nacer hay una sola de escritura**:
-  `SITE_OPERATIONS_WRITE_TOKEN`. Las demás son opcionales y **apagadas por defecto**: `SITE_PROFILE_REPO` y
-  `SITE_PROFILE_TOKEN` (leer el perfil), `SITE_PROFILE_WRITE_TOKEN` (proponer al perfil) y `SITE_PIPELINES_TOKEN` (sólo
-  lectura de definiciones y corridas, para proponer los stages de un pipeline; nunca propone un nombre que no leyó).
-  Sin una de ellas, su sección queda en sólo lectura o «no configurado», con el motivo, y el sitio arranca igual. Sin
-  identidad de escritura, la pestaña valida y el navegador arma la descarga del archivo validado para abrir el pedido
-  a mano.
-- **Umbrales sólo cuando el nocturno los lee de verdad**: la sección edita el `sources.json` del repo de operaciones
-  recién cuando el armado de los nocturnos (`ops-data.yml` en Azure, `prepare-tree.sh` en GitHub) dejó la marca
-  `.dashboard/applied-config.json` con ese archivo adentro. 🔴 La marca llega a operaciones por el guardado del
-  tablero (`team-dashboard.yml`), sólo al final de una noche verde: el armado la deja también en la carpeta temporal del
-  trabajo, porque el paso del tablero que trae `.dashboard` de `main` la pisa, y el guardado la devuelve y la nombra en
-  lo que guarda. Sin eso no viajaba nunca (ningún guardado la nombraba). Antes de que llegue, «tu nocturno todavía no lee este archivo». Nunca crea el
-  archivo de la organización: la plantilla lo pone ENTERO encima del arnés, y copiarlo taparía las fuentes que el arnés
-  sume después.
-- **Sin un valor de ninguna organización** en el código, ni una clave de la configuración de una máquina (una prueba
-  lo busca en el texto). Funciona igual con los repos en Azure DevOps o en GitHub; lo que no reconoce queda en sólo
-  lectura.
-
-Quién la usa: quien mantiene el arnés en una organización, desde el sitio, cuando cambia un repo, un responsable, un
-umbral, o para confirmar de quién es una máquina. Hasta que el sitio esté desplegado, la página local sigue sirviendo
-para lo mismo. Red: `scripts/tests/site-config.test.js` (el servidor del sitio con una sesión inyectada, repos git por
-HTTP y una API falsa de Azure DevOps y de GitHub en el proceso: `tests/lib/git-http-repo.js`, `fake-ado-api.js`,
-`fake-github-api.js`), `scripts/tests/repo-proposal.test.js` (cada empuje y cada llamada a las APIs falsas se revisan:
-ninguno a `main`, ninguno que mergee o complete), T35 de `product-parity.test.sh` (la lectura exportada juzga igual que
-el control) y, en el repo del equipo, `ops-data-template.test.js` (las dos plantillas corridas de verdad dejan la marca).
-
-**La pestaña Corridas: la vista de corridas en el sitio, cada uno lo suyo** (2026-10-16). Trae todo lo de la
-vista de corridas de cada máquina (`dashboard.js --view runs`): la cabecera con su sello y sus bandas, las diez fichas,
-los cuatro gráficos, la tabla y el detalle de cada corrida con sus cambios, sus parches de git y el mensaje rescatado
-de cada error. Quien mantiene ve todas; un dev, sólo las de sus máquinas confirmadas (la regla de quién es quién de
-`scripts/lib/people.js`); una corrida sin máquina o de una máquina sin confirmar, sólo quien mantiene. Por qué: la vista se armaba en la
-máquina de quien la pedía, pesaba casi 80 MB con el trabajo de todo el equipo y era un archivo fácil de compartir por
-error; y un dev no tenía cómo ver sus corridas sin ver las de los demás. Lo que la sostiene:
-
-- **Un solo código** (`scripts/site/tabs/runs.js` sobre `scripts/nightly/dashboard/runs.js`): el modelo es `modelo()` de
-  la vista, la página son sus `cabecera`, `ejecutiva`, `tabla` y `pie`, y el cliente es el mismo, servido como archivo.
-  El cliente lee sus datos de una **fuente**: embebida en la página local (como siempre, sin red) o por la red en el
-  sitio. La vista local sale idéntica (comparada byte a byte salvo el id nuevo).
-- **El filtro lo hace el servidor, antes de cada respuesta** (`filtrarCorridas` de `scripts/site/access.js`): la lista,
-  el detalle y los textos salen ya filtrados; los conteos globales (archivos, duplicados, carpetas ilegibles, corridas
-  sin máquina) sólo los ve quien mantiene; los productos se unifican sobre lo de cada persona. Una corrida ajena, una
-  sin máquina y un id que no existe contestan igual: 404 sin cuerpo. (Sin buzón configurado, el 404 dice «sin buzón
-  configurado: no medido»: no hay corridas de nadie que esconder.)
-- **Lo que viaja, por partes**: la lista (lista blanca: lo que usan las fichas, los gráficos y el filtro), el detalle al
-  abrir una corrida y los textos al abrir un cambio. Cada corrida tiene un **id estable** (16 hexadecimales del sha256
-  de máquina y sesión): los enlaces `?abrir=`, `?solo=` usan ese id, nunca el índice, que cambia con el filtro de cada
-  persona.
-- **El armado en un hilo aparte** (`worker_threads`, con techo de memoria): medido con el buzón real (551 corridas), 34
-  segundos y unos 690 MB de pico; el contenedor tiene 1 GB. Se rearma cuando el refresco deja el espejo distinto;
-  mientras rearma, o si el rearmado falla (también por memoria), sirve el anterior entero con su hora, y lo dice. Los
-  textos quedan en el disco del sitio, uno por corrida.
-- **Las conversaciones, sólo con disco**: el espejo baja también hilos y cambios de git con `site.mailbox.threads: true`
-  y `SITE_DATA_DIR` (incremental: lo bajado no se vuelve a bajar). Sin eso, lo que sale del hilo dice «no medido: este
-  sitio no baja las conversaciones», nunca cero.
-- **Los umbrales de la organización** (el `sources.json` de su repo de operaciones) si los trae; si no, los del arnés.
-
-Red: `scripts/tests/site-runs.test.js` (el servidor del sitio con sesiones reales del emisor local y un espejo
-fabricado con tres máquinas y una corrida suelta; incluye la prueba de fuga con marcadores sembrados en lo ajeno y la
-equivalencia de texto entre la vista local y la pestaña), T26 de `site-sources.test.js` (la bajada con y sin
-conversaciones) y 2.27-T23 de `dashboard-runs.test.sh` (la página local sigue sin pedir nada por la red).
+**Dónde leer más:** cómo se instala, qué secretos lleva y cómo está hecho por dentro, en
+[guides/sitio-de-la-organizacion.md](sitio-de-la-organizacion.md) (en inglés,
+[guides/sitio-de-la-organizacion.en.md](sitio-de-la-organizacion.en.md)). Las piezas que lo acompañan: la imagen
+(`.github/workflows/site-image.yml`), las instalaciones (`scripts/site/deploy/`: Azure Container Apps en dos fases,
+Render y una máquina propia), la prueba sin sesión (`scripts/site/check-deploy.js`) y el canal del aviso
+(`scripts/lib/notify.js`). Red: las suites `site-*` y `notify` de `scripts/tests/`.
 
 ## guides/integrations/ado-cola-y-listados.md
 

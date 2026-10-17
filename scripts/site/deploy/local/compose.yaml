@@ -1,0 +1,28 @@
+# compose.yaml — el sitio de la organización en una máquina propia (un Docker local o un servidor de la oficina).
+#
+#   node scripts/site/deploy/local/start.js --secrets-file <carpeta fuera de todo repo>/sitio.env
+#
+# · El puerto se publica SÓLO en 127.0.0.1: delante va un proxy con TLS (el sitio exige https). Nunca en todas las
+#   interfaces.
+# · El disco es el volumen `sitio-datos`, montado en /data (SITE_DATA_DIR).
+# · Los secretos, en un sitio.env FUERA de todo repo, sólo legible por quien corre el contenedor (chmod 600): copiá
+#   sitio.env.example y completalo. Este archivo no nombra ninguno: lo recibe por SITE_ENV_FILE, que pone start.js
+#   después de comprobar que el archivo no está dentro de un repo git y que no lo leen otros. Ningún valor va acá.
+# · Cómo se llega, en este orden (lo más seguro primero): sólo la red interna; la VPN de la organización; un túnel
+#   público con el candado del proveedor del túnel delante. La guía: guides/sitio-de-la-organizacion.md.
+#
+# Cambiá la imagen por la huella (@sha256:…) de la versión que vas a instalar: nunca una etiqueta.
+services:
+  sitio:
+    image: ghcr.io/acme/arnes@sha256:cafecafecafecafecafecafecafecafecafecafecafecafecafecafecafecafe
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    env_file:
+      - ${SITE_ENV_FILE:?arrancalo con start.js --secrets-file, que comprueba que los secretos estén fuera de todo repo}
+    environment:
+      SITE_DATA_DIR: /data
+    volumes:
+      - sitio-datos:/data
+volumes:
+  sitio-datos:

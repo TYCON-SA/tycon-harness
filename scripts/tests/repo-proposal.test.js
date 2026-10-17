@@ -325,6 +325,129 @@ test('T28b RemoteOf_VisualstudioConUsuario_SinElUsuario @story-2.29 @ac-15', () 
   }
 });
 
+// ── la política con filtro de ruta de Azure DevOps, archivo por archivo (T39-T41) ───────────
+/** Una «Required reviewers» bloqueante, con su filtro de ruta. */
+const requeridos = (api, { patrones = ['/operations.json', '/pipelines/*'], n = 1, votoDelAutor = false } = {}) => ({
+  isEnabled: true, isBlocking: true, type: { displayName: 'Required reviewers' },
+  settings: { minimumApproverCount: n, creatorVoteCounts: votoDelAutor, addedFilesOnly: false, requiredReviewerIds: ['grupo-de-quienes-mantienen'], filenamePatterns: patrones,
+    scope: [{ refName: 'refs/heads/main', matchKind: 'Exact', repositoryId: api.st.repoId }] },
+});
+
+test('T39 Politica_RequiredReviewersCubreElArchivo @story-2.30 @ac-22b', { skip: SIN_BACKEND }, async () => {
+  const m = await montar({ plataforma: 'azure', politica: false });
+  try {
+    const b = m.base();
+    const args = { remote: b.remote, credencial: b.credencial, urlBase: b.urlBase };
+    m.api.st.politicas = [requeridos(m.api)];
+    // los dos archivos protegidos por el filtro de la receta alternativa
+    for (const archivo of ['operations.json', 'pipelines/dependency-audit.yml']) {
+      const p = await politicaDeRevision({ ...args, archivo });
+      assert.strictEqual(p.ok, true, `${archivo}: ${textoDe(p)}`);
+      assert.ok(p.detalle.includes('revisor'), p.detalle);
+    }
+    // y proponer, con esa política, sí crea la rama y el pedido
+    const res = await proponer(b);
+    assert.strictEqual(res.ok, true, textoDe(res));
+  } finally { await m.cerrar(); }
+});
+
+test('T40 Politica_FiltroQueNoCubre_NoHabilita @story-2.30 @ac-22b', { skip: SIN_BACKEND }, async () => {
+  const m = await montar({ plataforma: 'azure', politica: false });
+  try {
+    const b = m.base();
+    const args = { remote: b.remote, credencial: b.credencial, urlBase: b.urlBase };
+    m.api.st.politicas = [requeridos(m.api)];
+    const archivo = 'scripts/nightly/dependencies/repos.json';
+    let p = await politicaDeRevision({ ...args, archivo });
+    assert.strictEqual(p.ok, false, textoDe(p));
+    assert.strictEqual(p.codigo, 'no_cubre');
+    assert.ok(p.message.includes(`la política de main no cubre ${archivo}`), p.message);
+    // una exclusión del filtro tampoco cubre
+    m.api.st.politicas = [requeridos(m.api, { patrones: ['/*', '!/operations.json'] })];
+    p = await politicaDeRevision({ ...args, archivo: 'operations.json' });
+    assert.strictEqual(p.ok, false, textoDe(p));
+    // sin archivo, una política con filtro no habilita (no se sabe qué se propone)
+    m.api.st.politicas = [requeridos(m.api)];
+    assert.strictEqual((await politicaDeRevision(args)).ok, false);
+    // proponer un archivo que el filtro no cubre no crea nada
+    const res = await proponer({ ...b, archivo: 'README.md', oidEsperado: oidDe(m.r, 'README.md') });
+    assert.strictEqual(res.ok, false, textoDe(res));
+    assert.strictEqual(res.codigo, 'no_cubre');
+    assert.deepStrictEqual(m.r.empujes, []);
+    clonLimpio(m.clon);
+  } finally { await m.cerrar(); }
+});
+
+test('T41 Politica_VotoDeQuienCrea_NoCuenta @story-2.30 @ac-22b', { skip: SIN_BACKEND }, async () => {
+  const m = await montar({ plataforma: 'azure', politica: false });
+  try {
+    const b = m.base();
+    const args = { remote: b.remote, credencial: b.credencial, urlBase: b.urlBase, archivo: 'operations.json' };
+    m.api.st.politicas = [{ ...m.api.politicaDeRevisores(1), settings: { ...m.api.politicaDeRevisores(1).settings, creatorVoteCounts: true } }];
+    assert.strictEqual((await politicaDeRevision(args)).ok, false, 'el mínimo de revisores que deja votar al autor no cuenta');
+    m.api.st.politicas = [requeridos(m.api, { votoDelAutor: true })];
+    assert.strictEqual((await politicaDeRevision(args)).ok, false, 'los revisores requeridos que dejan votar al autor no cuentan');
+    // con `false`, la de toda la rama sigue valiendo como hoy, con y sin archivo
+    m.api.st.politicas = [m.api.politicaDeRevisores(1)];
+    assert.strictEqual((await politicaDeRevision(args)).ok, true);
+    assert.strictEqual((await politicaDeRevision({ remote: b.remote, credencial: b.credencial, urlBase: b.urlBase })).ok, true);
+  } finally { await m.cerrar(); }
+});
+
+test('T43 Politica_LoQueNoSePuedeProbar_Apagado @story-2.30 @ac-22b', { skip: SIN_BACKEND }, async () => {
+  // La regla: «Proponer» se habilita sólo si se puede PROBAR que la política exige un revisor en ese archivo. Cualquier
+  // forma que no se entiende queda apagada (no una lista de casos malos).
+  const m = await montar({ plataforma: 'azure', politica: false });
+  try {
+    const b = m.base();
+    const args = { remote: b.remote, credencial: b.credencial, urlBase: b.urlBase, archivo: 'operations.json' };
+    const conAjuste = (ajuste) => { const p = requeridos(m.api); p.settings = { ...p.settings, ...ajuste }; return p; };
+    const apagadas = {
+      'sólo exclusiones (en Azure no incluye nada)': conAjuste({ filenamePatterns: ['!/docs/*'] }),
+      'una exclusión con ? que saca el archivo': conAjuste({ filenamePatterns: ['/*', '!/operations.jso?'] }),
+      'sólo archivos nuevos': conAjuste({ addedFilesOnly: true }),
+      'sin revisores requeridos': conAjuste({ requiredReviewerIds: [] }),
+      'sin la lista de revisores': (() => { const p = requeridos(m.api); delete p.settings.requiredReviewerIds; return p; })(),
+      'sin decir si cuenta el voto del autor': (() => { const p = requeridos(m.api); delete p.settings.creatorVoteCounts; return p; })(),
+      'un patrón que no empieza con /': conAjuste({ filenamePatterns: ['operations.json'] }),
+      'un patrón con caracteres desconocidos': conAjuste({ filenamePatterns: ['/operations.{json,yml}'] }),
+      'sin patrones': conAjuste({ filenamePatterns: [] }),
+      'el mínimo de revisores sin decir si cuenta el voto del autor': (() => { const p = m.api.politicaDeRevisores(1); delete p.settings.creatorVoteCounts; return p; })(),
+    };
+    for (const [caso, pol] of Object.entries(apagadas)) {
+      m.api.st.politicas = [pol];
+      const p = await politicaDeRevision(args);
+      assert.strictEqual(p.ok, false, `${caso}: ${textoDe(p)}`);
+    }
+    // y lo que sí se puede probar, encendido: un ? que incluye el archivo, una exclusión que no lo toca, un * en el medio
+    for (const patrones of [['/operations.jso?'], ['/*', '!/docs/*'], ['/OPERATIONS.json'], ['/oper*.json']]) {
+      m.api.st.politicas = [conAjuste({ filenamePatterns: patrones, addedFilesOnly: false })];
+      const p = await politicaDeRevision(args);
+      assert.strictEqual(p.ok, true, `${patrones.join(';')}: ${textoDe(p)}`);
+    }
+    // el * no cruza carpetas: sin poder probar que en Azure es recursivo, el lado seguro
+    m.api.st.politicas = [conAjuste({ filenamePatterns: ['/scripts/*'] })];
+    assert.strictEqual((await politicaDeRevision({ ...args, archivo: 'scripts/nightly/dependencies/repos.json' })).ok, false, '/scripts/* no cubre una subcarpeta');
+    assert.strictEqual((await politicaDeRevision({ ...args, archivo: 'scripts/x.json' })).ok, true, '/scripts/* cubre lo de esa carpeta');
+    // el punto es literal, y sin la clave del filtro no hay nada que pruebe
+    m.api.st.politicas = [conAjuste({ filenamePatterns: ['/operations.json'] })];
+    assert.strictEqual((await politicaDeRevision({ ...args, archivo: 'operationsXjson' })).ok, false, 'el punto no es un comodín');
+    m.api.st.politicas = [(() => { const p = requeridos(m.api); delete p.settings.filenamePatterns; return p; })()];
+    assert.strictEqual((await politicaDeRevision(args)).ok, false, '«Required reviewers» sin filenamePatterns');
+    // el mínimo de revisores con un filtro: cuenta sólo si el filtro cubre el archivo
+    const minimoConFiltro = (patrones) => { const p = m.api.politicaDeRevisores(1); p.settings = { ...p.settings, filenamePatterns: patrones }; return p; };
+    m.api.st.politicas = [minimoConFiltro(['/docs/*'])];
+    assert.strictEqual((await politicaDeRevision(args)).ok, false, 'mínimo de revisores con un filtro que no cubre');
+    m.api.st.politicas = [minimoConFiltro(['/operations.json'])];
+    assert.strictEqual((await politicaDeRevision(args)).ok, true, 'mínimo de revisores con un filtro que cubre');
+    // proponer con una política que no se puede probar no crea nada
+    m.api.st.politicas = [apagadas['sólo exclusiones (en Azure no incluye nada)']];
+    const res = await proponer(b);
+    assert.strictEqual(res.ok, false, textoDe(res));
+    assert.deepStrictEqual(m.r.empujes, []);
+  } finally { await m.cerrar(); }
+});
+
 test('T16c Proponer_SinVersion_NoPropone @story-2.29 @ac-16 — la librería también exige la versión del archivo que se abrió', async () => {
   const res = await proponer({ clon: '/no/existe', archivo: 'operations.json', contenido: '{}\n', idCorto: 'operations', credencial: 'x', remote: REMOTO_GITHUB });
   assert.strictEqual(res.ok, false);

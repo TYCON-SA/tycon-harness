@@ -863,24 +863,18 @@ async function cmdRun(a) {
   return 0;
 }
 
+/**
+ * El aviso por hallazgo: SÓLO CANTIDADES. Sale a un servicio de afuera (Telegram, Slack o Teams, por
+ * scripts/lib/notify.js): ni producto, ni plugin, ni endpoint, ni diagnóstico, ni id. El detalle está en los borradores
+ * (`/tycon-vigilante review`). `cfg` queda por la firma de siempre (el tope de hallazgos ya no aplica: no se listan).
+ */
 function construirAviso(fecha, hallazgos, noMedido, cfg, recordatorio) {
   // Una noche sin hallazgos PERO con borradores pudriéndose sí tiene algo que decir: el silencio
   // no miente sobre producción, pero tampoco puede tapar una casilla que nadie mira.
-  if (!hallazgos.length && !noMedido.length && !(recordatorio && recordatorio.length)) return null;
-  const orden = { alta: 0, media: 1, baja: 2 };
-  const top = [...hallazgos].sort((a, b) => (orden[a.severidad] ?? 9) - (orden[b.severidad] ?? 9)).slice(0, cfg.max_hallazgos_por_aviso);
-  // Una noche que sólo trae el recordatorio no encabeza con "0 hallazgos": decir un cero para
-  // después pedir atención es la clase de encabezado que entrena a no leer el resto.
-  const l = [hallazgos.length
-    ? `🌙 Vigilante ${fecha} · ${hallazgos.length} hallazgo(s) nuevo(s)`
-    : `🌙 Vigilante ${fecha} · noche tranquila en producción`];
-  for (const h of top) l.push(`• ${h.producto} ${h.plugin || ''} ${h.endpoint || ''} — ${h.diagnostico.slice(0, 110)}`);
-  if (hallazgos.length > top.length) l.push(`  …y ${hallazgos.length - top.length} de menor severidad, en los borradores.`);
-  for (const nm of noMedido) l.push(`⚠ ${nm}`);
-  if (recordatorio && recordatorio.length) {
-    const v = recordatorio[0];
-    l.push(`⏳ ${recordatorio.length} borrador(es) esperando decisión — el más viejo hace ${v.edad} día(s): ${v.campos.id}`);
-  }
+  const esperando = recordatorio ? recordatorio.length : 0;
+  if (!hallazgos.length && !noMedido.length && !esperando) return null;
+  const l = [`vigilante ${fecha}: ${hallazgos.length} hallazgo(s) nuevo(s), ${noMedido.length} sin medir, ${esperando} borrador(es) esperando`];
+  if (esperando) l.push(`el más viejo espera hace ${recordatorio[0].edad} día(s)`);
   l.push('Revisar: /tycon-vigilante review');
   return l.join('\n');
 }

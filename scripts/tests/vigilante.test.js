@@ -160,16 +160,15 @@ test('los mismos 6 errores repartidos en el día NO son una ráfaga (ahí vive e
 
 // ── presupuesto de ruido ───────────────────────────────────────────────────────────────────────
 
-test('el aviso lista como mucho 2 hallazgos, pero DICE cuántos quedaron afuera', () => {
+test('el aviso cuenta todos los hallazgos, sin listarlos (story 2.30: sólo cantidades)', () => {
   const hs = [
     { producto: 'acme', plugin: 'A', endpoint: '/1', severidad: 'media', diagnostico: 'uno' },
     { producto: 'acme', plugin: 'B', endpoint: '/2', severidad: 'alta', diagnostico: 'dos' },
     { producto: 'acme', plugin: 'C', endpoint: '/3', severidad: 'media', diagnostico: 'tres' },
   ];
   const a = V.construirAviso('2026-08-31', hs, [], CFG);
-  assert.equal((a.match(/^• /gm) || []).length, 2);
-  assert.match(a, /y 1 de menor severidad/);
-  assert.match(a.split('\n')[1], /dos/, 'la de severidad alta va primero');
+  assert.match(a.split('\n')[0], /^vigilante 2026-08-31: 3 hallazgo\(s\) nuevo\(s\), 0 sin medir, 0 borrador\(es\) esperando$/);
+  assert.doesNotMatch(a, /^• /m, 'ningún hallazgo listado');
 });
 
 test('una noche sin nada NO manda mensaje: el silencio no miente', () => {
@@ -177,8 +176,9 @@ test('una noche sin nada NO manda mensaje: el silencio no miente', () => {
 });
 
 test('pero un producto que no se pudo consultar SÍ avisa, aunque no haya hallazgos', () => {
-  const a = V.construirAviso('2026-08-31', [], ['dar: login 401'], CFG);
-  assert.match(a, /login 401/, 'una noche sin datos no puede parecerse a una noche tranquila');
+  const a = V.construirAviso('2026-08-31', [], ['acme: login 401'], CFG);
+  assert.match(a, /1 sin medir/, 'una noche sin datos no puede parecerse a una noche tranquila');
+  assert.doesNotMatch(a, /acme|login 401/, 'sin el producto ni el motivo (story 2.30)');
 });
 
 // ── Hallazgos del pase adversarial (2026-08-31) ────────────────────────────────────────────────
@@ -316,12 +316,25 @@ test('una noche SIN hallazgos pero con la casilla pudriéndose SÍ manda mensaje
   // supiera que había algo que decidir.
   const a = V.construirAviso('2026-08-31', [], [], CFG, [{ edad: 4, campos: { id: '2026-08-27-acme-ee00' } }]);
   assert.ok(a, 'el silencio no puede tapar una casilla que nadie mira');
-  assert.match(a, /4 día\(s\)/);
-  assert.match(a, /2026-08-27-acme-ee00/, 'con el id, para poder ir directo al borrador');
+  assert.match(a, /1 borrador\(es\) esperando/);
+  assert.doesNotMatch(a, /2026-08-27-acme-ee00|acme/, 'sin el id (story 2.30): el borrador se busca con /tycon-vigilante review');
 });
 
 test('sin hallazgos, sin fallas de lectura y sin cola vieja, sigue sin mandar nada', () => {
   assert.equal(V.construirAviso('2026-08-31', [], [], CFG, []), null);
+});
+
+test('T31 Vigilante_AvisoSoloCantidades @story-2.30 @ac-21', () => {
+  const hs = [
+    { producto: 'ProductoMarcador', plugin: 'PluginMarcador', endpoint: '/api/EndpointMarcador', severidad: 'alta', diagnostico: 'DiagnosticoMarcador con datos de cliente' },
+    { producto: 'OtroMarcador', plugin: 'x', endpoint: '/y', severidad: 'media', diagnostico: 'otro' },
+  ];
+  const a = V.construirAviso('2026-08-31', hs, ['host-marcador.example: sin respuesta'], CFG, [{ edad: 5, campos: { id: '2026-08-26-IdMarcador-0000' } }]);
+  assert.strictEqual(a.split('\n')[0], 'vigilante 2026-08-31: 2 hallazgo(s) nuevo(s), 1 sin medir, 1 borrador(es) esperando');
+  for (const m of ['Marcador', 'host-marcador', 'EndpointMarcador', 'Diagnostico', 'IdMarcador', '/api/']) assert.ok(!a.includes(m), `«${m}» no puede salir en el aviso: ${a}`);
+  // y sale por notify.js, nunca por el script de Telegram directo
+  const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'nightly', 'watcher', 'vigilante.js'), 'utf8');
+  assert.doesNotMatch(src, /tycon-telegram-notify\.sh/);
 });
 
 // ── El PR con el que se decide (2026-08-31) ────────────────────────────────────────────────────

@@ -56,4 +56,8 @@ function bajarBuzon({ cuenta, contenedor, credencial, dir, urlBase, log, sinHilo
 /** El token de la identidad administrada para leer el repo de operaciones en Azure DevOps. */
 const tokenParaRepo = () => tokenDeIdentidad(RECURSO_AZURE_DEVOPS);
 
-module.exports = { tokenDeIdentidad, tokenParaRepo, bajarBuzon, PROVEEDORES_DE_BUZON, RECURSO_ALMACENAMIENTO, RECURSO_AZURE_DEVOPS };
+// los hosts de esta nube que una respuesta sin sesión del sitio nunca puede nombrar (el almacenamiento y el repo):
+// la prueba sin sesión (check-deploy.js) los busca en /healthz
+const HOSTS_QUE_NO_SE_NOMBRAN = /\.windows\.net|dev\.azure\.com/i;
+
+module.exports = { tokenDeIdentidad, tokenParaRepo, bajarBuzon, PROVEEDORES_DE_BUZON, RECURSO_ALMACENAMIENTO, RECURSO_AZURE_DEVOPS, HOSTS_QUE_NO_SE_NOMBRAN };

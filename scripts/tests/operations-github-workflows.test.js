@@ -56,7 +56,8 @@ function brokenRules(text) {
   const perms = [...text.matchAll(/^( *)permissions:/gm)];
   if (perms.length !== 1 || perms[0][1] !== '' || !/^permissions:\n {2}contents: write\n(?! {2}\S)/m.test(text)) broken.push('permissions');
   const secrets = [...text.matchAll(/secrets\.([A-Za-z_]+)/g)].map((x) => x[1]);
-  if (secrets.some((s) => !['HARNESS_ORG_TOKEN', 'HARNESS_APP_PRIVATE_KEY', 'TELEGRAM_BOT_TOKEN'].includes(s))) broken.push('secrets');
+  // la dirección del webhook del aviso (Slack o Teams) es el único secreto nuevo
+  if (secrets.some((s) => !['HARNESS_ORG_TOKEN', 'HARNESS_APP_PRIVATE_KEY', 'TELEGRAM_BOT_TOKEN', 'TYCON_NOTIFY_WEBHOOK_URL'].includes(s))) broken.push('secrets');
   // cada secreto (y el token del workflow, y el de la App) sólo como valor de una variable de env de un paso; la llave de
   // la App, sólo como `private-key` del paso que pide el token; el token de la App, sólo solo o con HARNESS_ORG_TOKEN de
   // respaldo, o comparado en un `if:`
@@ -64,7 +65,7 @@ function brokenRules(text) {
   const KEY_LINE = '          private-key: ${{ secrets.HARNESS_APP_PRIVATE_KEY }}';
   for (const l of text.split('\n')) {
     if (!/secrets\.|github\.token|outputs\.token/.test(l)) continue;
-    const env = /^ {10}[A-Z_]+: \$\{\{ (secrets\.(HARNESS_ORG_TOKEN|TELEGRAM_BOT_TOKEN)|github\.token|steps\.[a-z-]+\.outputs\.token( \|\| secrets\.HARNESS_ORG_TOKEN)?) \}\}$/.test(l);
+    const env = /^ {10}[A-Z_]+: \$\{\{ (secrets\.(HARNESS_ORG_TOKEN|TELEGRAM_BOT_TOKEN|TYCON_NOTIFY_WEBHOOK_URL)|github\.token|steps\.[a-z-]+\.outputs\.token( \|\| secrets\.HARNESS_ORG_TOKEN)?) \}\}$/.test(l);
     const key = l === KEY_LINE && appSteps.some((x) => x.split('\n').includes(l));
     const cond = /^ {8}if: always\(\) && steps\.[a-z-]+\.outputs\.token != ''$/.test(l);
     if (!env && !key && !cond) { broken.push('secret-scope'); break; }
@@ -645,3 +646,62 @@ test('T38 PrepareTree_DejaLaMarcaDeLaConfiguracion @story-2.29 @ac-24 (tanda C):
   assert.strictEqual(prepare(w2).code, 0);
   assert.deepStrictEqual(Object.keys(JSON.parse(fs.readFileSync(path.join(w2.h, MARCA), 'utf8')).files), ['team-repos.json']);
 });
+
+// ── la prueba sin sesión antes del aviso, el canal por notify.js, y las rutas protegidas ─────────────────────────────
+const stepNamed = (text, name) => steps(text).find((x) => x.split('\n')[0] === `      - name: ${name}`) || null;
+
+test('T26 DependencyAudit_PruebaSinSesionAntesDelAviso (GitHub) @story-2.30 @ac-15 @ac-18 @ac-23', () => {
+  const t = read('dependency-audit.yml');
+  const nombres = steps(t).map((x) => x.split('\n')[0].replace(/^ {6}- name: /, ''));
+  const prueba = nombres.indexOf('Probar el sitio sin sesión');
+  const aviso = nombres.indexOf('Entregar el resumen');
+  assert.ok(prueba >= 0 && aviso > prueba, `la prueba antes del aviso: ${nombres.join(' | ')}`);
+  const p = stepNamed(t, 'Probar el sitio sin sesión');
+  assert.match(p, /scripts\/site\/check-deploy\.js --url "\$\{URL\}" --out "\$\{RUNNER_TEMP\}\/site-check\.json"/);
+  assert.match(p, /c\.data\.site && c\.data\.site\.url/, 'sólo con site.url');
+  assert.match(p, /\n {10}exit 0$/m, 'la prueba nunca frena la noche');
+  // un operations.json que no se pudo leer no es «sin site.url»: lo dice, y no prueba nada
+  assert.match(p, /::warning::.*operations\.json no se pudo leer/);
+  // y corrido de verdad, como el de Azure: con un operations.json roto avisa y no dice «sin site.url»
+  const cuerpo = runLines(p).map((l) => l.replace(/^ {10}/, '')).join('\n');
+  const lab = fs.mkdtempSync(path.join(os.tmpdir(), 'gh-sitio-'));
+  try {
+    fs.symlinkSync(path.join(ROOT, 'scripts'), path.join(lab, 'scripts'));
+    fs.writeFileSync(path.join(lab, 'operations.json'), '{ roto');
+    const r = spawnSync('bash', ['-c', cuerpo], { cwd: lab, encoding: 'utf8', timeout: 30000, env: { PATH: process.env.PATH, RUNNER_TEMP: lab } });
+    assert.strictEqual(r.status, 0, r.stdout + r.stderr);
+    assert.match(r.stdout, /::warning::operations\.json no se pudo leer/);
+    assert.doesNotMatch(r.stdout, /sin site\.url/);
+  } finally { fs.rmSync(lab, { recursive: true, force: true }); }
+  const e = stepNamed(t, 'Entregar el resumen');
+  assert.match(e, /^ {8}if: env\.EFFECTS == 'true'$/m, 'el paso corre siempre que haya efectos');
+  assert.doesNotMatch(e, /^ {8}if:.*TELEGRAM/m, 'sin condición sobre el chat de Telegram');
+  assert.match(e, /--operations operations\.json --site-check "\$\{RUNNER_TEMP\}\/site-check\.json"/);
+  assert.match(e, /^ {10}TYCON_NOTIFY_WEBHOOK_URL: \$\{\{ secrets\.TYCON_NOTIFY_WEBHOOK_URL \}\}$/m);
+  // el webhook, sólo en el paso del aviso
+  const conWebhook = steps(t).filter((x) => /TYCON_NOTIFY_WEBHOOK_URL/.test(x));
+  assert.deepStrictEqual(conWebhook.map((x) => x.split('\n')[0]), ['      - name: Entregar el resumen']);
+  for (const f of WORKFLOWS.filter((f) => f !== 'dependency-audit.yml')) assert.doesNotMatch(read(f), /TYCON_NOTIFY_WEBHOOK_URL/, `${f} no lleva el webhook`);
+  // y una copia que vuelve a atar el aviso al chat sale roja en esta prueba
+  assert.match(t.replace("      - name: Entregar el resumen\n        if: env.EFFECTS == 'true'\n", "      - name: Entregar el resumen\n        if: env.EFFECTS == 'true' && vars.TYCON_TELEGRAM_CHAT_ID != ''\n"), /vars\.TYCON_TELEGRAM_CHAT_ID != ''/);
+});
+
+test('T37 Nocturnos_NoTocanLasRutasProtegidas (GitHub) @story-2.30 @ac-22', () => {
+  let vistos = 0;
+  for (const f of WORKFLOWS) {
+    const txt = runLines(read(f)).join('\n');
+    for (const m of txt.matchAll(/push-nightly-data\.js (?:save|sync)[\s\S]*?\s--\s+([^\n|]+)/g)) {
+      vistos += 1;
+      const rutas = m[1].trim().split(/\s+/).filter((x) => !x.startsWith('2>'));
+      for (const r of rutas) {
+        assert.ok(r !== 'operations.json' && !r.startsWith('pipelines/') && !r.startsWith('.github/workflows'), `${f} guarda ${r}, una ruta protegida`);
+      }
+    }
+  }
+  assert.ok(vistos >= 3, `se leyeron los guardados de los tres workflows (vistos: ${vistos})`);
+  const readme = fs.readFileSync(path.join(DIR, 'README.md'), 'utf8');
+  assert.match(readme, /Restrict file paths/);
+  assert.match(readme, /`operations\.json` y `\.github\/workflows\/\*\*`/);
+  assert.match(readme, /el sitio no propone/i);
+});
+

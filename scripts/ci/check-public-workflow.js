@@ -57,7 +57,9 @@
  * EL TERCERO (`--publisher`, story 8.40): `npm-publish.yml`, el que publica el instalador de npm con trusted publishing.
  * Es el único que pide la identidad de la corrida (`id-token: write`): su forma exacta (`PUBLISHER_SHAPE`), las reglas de
  * cualquier workflow público y cinco propias (`publisher-trigger`, `publisher-enabled`, `publisher-permissions`,
- * `publisher-npm`, `publisher-stage`). `WORKFLOWS` son los únicos tres archivos que puede haber en `.github/workflows/`.
+ * `publisher-npm`, `publisher-stage`). EL CUARTO, `site-image.yml`, publica la imagen del sitio de la
+ * organización; su control vive en scripts/tests/site-image-workflow.test.js. `WORKFLOWS` son los únicos cuatro archivos
+ * que puede haber en `.github/workflows/`.
  *
  * USO:  node scripts/ci/check-public-workflow.js [--tagger|--publisher] <archivo>
  *   0 = cumple todo · 1 = alguna regla rota (una línea `❌ check-public-workflow: <regla> — <qué>` por regla) ·
@@ -342,7 +344,9 @@ const PUBLISHER_SHAPE = [
 
 /** Los únicos workflows del repo público: la CI, el que etiqueta y el que publica el instalador de npm. Otro archivo en
  *  `.github/workflows/` es rojo (lo mira scripts/tests/version-by-merge.test.js). */
-const WORKFLOWS = ['ci.yml', 'version-tag.yml', 'npm-publish.yml'];
+// `site-image.yml` publica la imagen del sitio; su control (sus reglas propias y dos de las de acá) vive en
+// scripts/tests/site-image-workflow.test.js
+const WORKFLOWS = ['ci.yml', 'version-tag.yml', 'npm-publish.yml', 'site-image.yml'];
 
 /**
  * Un `\r` que no va seguido de `\n`, un tabulador o un carácter de control: los de C0 menos `\n` y `\r`, DEL, y los tres

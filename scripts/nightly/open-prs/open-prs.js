@@ -8,8 +8,10 @@
  * llegar. Lo encontró otro dev de casualidad. El freno de auto-completar no alcanza: el hueco es que
  * nadie se entera cuando un PR no puede entrar.
  *
- * Arma una SECCIÓN de texto que el vigilante pega al final del resumen diario de Telegram
- * (`daily-summary.js deliver --extra <archivo>`). Nada más:
+ * Arma la línea que el vigilante pega al final del resumen diario (`daily-summary.js deliver --extra <archivo>`).
+ * 🔴 Lo que va al aviso es SÓLO LA CANTIDAD: `--out` escribe «PR abiertos hace más de N días: K», o
+ * «…: ? (no se pudo consultar)» sin el motivo. El aviso sale a un servicio de afuera; los repos, los títulos, los autores
+ * y el motivo de `az` (que nombra la organización) quedan en stdout, el registro del pipeline. Nada más:
  *
  * 1. **No diagnostica el motivo.** Un PR con auto-completar entra en minutos; si sigue abierto a los
  *    N días, está trabado — por build rojo, conflictos, aprobación u olvido, da igual. El criterio es
@@ -17,7 +19,7 @@
  * 2. **Sólo avisa.** No comenta, no cierra, no reintenta. Sólo lecturas.
  * 3. **Fuera:** borradores y ramas `vigilante/*` y `dependencias/*` (las colas del arnés ya tienen
  *    su rubro en el resumen).
- * 4. **Tope de 10 líneas**, del más nuevo al más viejo; los más viejos se cortan con «(+N más)».
+ * 4. **El registro (stdout): tope de 10 líneas**, del más nuevo al más viejo; los más viejos se cortan con «(+N más)».
  * 5. 🔴 **No medido no es cero.** Si `az` sale ≠ 0 o contesta algo ilegible, la sección dice
  *    «PR abiertos: no se pudo consultar (<motivo>)», se escribe igual y el guion sale 1. Nunca
  *    «ninguno» ni silencio (incident-log#comando-fallado-leido-como-vacio-2026-09-04).
@@ -114,6 +116,20 @@ function seccion(prs, { hoy, dias }) {
 }
 
 /**
+ * La línea del aviso (`--out`), sólo la cantidad. `n === null` = no se pudo consultar («?», sin el motivo). Cuando
+ * no se mide a propósito, el motivo es uno de un vocabulario cerrado (`NO_MEDIDO`), nunca un texto libre. Los PR sin
+ * fecha legible se cuentan aparte, como en la sección: no medido no es cero, tampoco en el aviso.
+ */
+const NO_MEDIDO = Object.freeze({ apagado: 'Azure DevOps apagado', github: 'GitHub todavía no se lee' });
+const cantidad = (dias, n) => (n === null ? `PR abiertos hace más de ${dias} días: ? (no se pudo consultar)`
+  : n.noMedido ? `PR abiertos hace más de ${dias} días: ? (${NO_MEDIDO[n.noMedido]})`
+    : `PR abiertos hace más de ${dias} días: ${n.viejos}${n.sinFecha ? ` (+${n.sinFecha} sin fecha legible)` : ''}`);
+function contar(prs, { hoy, dias }) {
+  const edades = prs.filter((p) => p && !p.isDraft && !RAMAS_DEL_ARNES.test(String(p.sourceRefName || ''))).map((p) => diasAbierto(p, hoy));
+  return { viejos: edades.filter((d) => d !== null && d > dias).length, sinFecha: edades.filter((d) => d === null).length };
+}
+
+/**
  * story 2.23: lo que deja la noche para el sitio de la organización (`--json <archivo>`). Lista blanca: por PR, número,
  * proyecto, repo, días abierto, la identidad única del autor (`createdBy.uniqueName`, en minúsculas) y el enlace —NUNCA el
  * título ni el nombre para mostrar—. Las mismas exclusiones que la sección (borradores y colas del arnés), sin el corte de
@@ -179,6 +195,7 @@ function main(argv) {
   }
 
   let lineas;
+  let n = null;       // la cantidad que va al aviso; null = no se midió
   let codigo = 0;
   let sitio = null;   // story 2.23: el archivo para el sitio
   if (a.provider && !['azure', 'github'].includes(a.provider)) { console.error(`--provider tiene que ser azure o github, no «${a.provider}»`); uso(); return 2; }
@@ -188,15 +205,17 @@ function main(argv) {
       // story 2.23 (AC 16): en GitHub los pull requests todavía no se leen; se declara, nunca «ninguno»
       lineas = [`PR abiertos: no medido — ${GITHUB}`];
       sitio = { estado: 'no_medido', motivo: GITHUB, prs: [] };
+      n = { noMedido: 'github' };
     }
     if (!lineas && !org) {
       const ado = organizacionConfigurada();
-      if (!ado.prendida) { lineas = [`PR abiertos: ${ado.apagada}`]; sitio = { estado: 'no_medido', motivo: limpio(ado.apagada, 180), prs: [] }; }
+      if (!ado.prendida) { lineas = [`PR abiertos: ${ado.apagada}`]; sitio = { estado: 'no_medido', motivo: limpio(ado.apagada, 180), prs: [] }; n = { noMedido: 'apagado' }; }
       else org = ado.org;
     }
     if (!lineas) {
       const activos = listarActivos({ cmd: process.env.TYCON_ADO_CMD || 'az', org });
       lineas = seccion(activos, { hoy: a.hoy, dias });
+      n = contar(activos, { hoy: a.hoy, dias });
       sitio = { estado: 'medido', motivo: null, prs: paraElSitio(activos, { hoy: a.hoy, org }) };
     }
   } catch (e) {
@@ -220,7 +239,7 @@ function main(argv) {
   const texto = lineas.join('\n');
   console.log(texto);
   if (a.out) {
-    try { fs.writeFileSync(a.out, `${texto}\n`); } catch (e) {
+    try { fs.writeFileSync(a.out, `${cantidad(dias, n)}\n`); } catch (e) {
       console.error(`🔴 prs-abiertos: no se pudo escribir ${a.out}: ${e.message}`);
       return 1;
     }
@@ -234,4 +253,4 @@ if (require.main === module) {
   require('../../lib/legacy-names.js').aliasArgv('scripts/nightly/open-prs/open-prs.js', { exitCode: 2 });
   process.exit(main(process.argv.slice(2)));
 }
-module.exports = { seccion, diasAbierto, parseArgs, paraElSitio };
+module.exports = { seccion, contar, cantidad, diasAbierto, parseArgs, paraElSitio };

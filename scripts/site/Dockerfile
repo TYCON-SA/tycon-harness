@@ -21,7 +21,9 @@ FROM node:24.11.0-alpine3.22
 RUN apk add --no-cache git
 
 WORKDIR /app
-COPY version.json ./
+# version.json, si está: el árbol de la noche (lo privado con lo público encima) no lo trae —lo genera la publicación—, y
+# con el comodín la imagen se arma igual (sin él, el sitio dice la versión como desconocida)
+COPY version.json* ./
 COPY scripts/site/ scripts/site/
 COPY scripts/lib/ scripts/lib/
 COPY scripts/metrics/ scripts/metrics/

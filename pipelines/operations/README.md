@@ -110,6 +110,35 @@ Y en *Project settings → Pipelines → Settings* del proyecto donde corren los
   for non-release pipelines***. Prendido, los repos de otros proyectos no se pueden leer: el pipeline lo dice como
   «NO MEDIDO» o «Repos NO medidos».
 
+### La política de rama de `main` del repo de operaciones
+
+Ponela **antes** de publicar el sitio de la organización. Sin ella, cualquiera que pueda empujar a `main` se hace
+mantenedor del sitio (cambia la lista `site.maintainers`) o cambia el YAML de un nocturno y se lleva sus secretos.
+
+**La receta recomendada.** En *Project settings → Repositories → el repo de operaciones → Policies → Branch Policies →
+main*:
+
+1. **Require a minimum number of reviewers** (en la API, «Minimum number of reviewers»): en 1, con *Allow requestors to
+   approve their own changes* apagado y *Reset code reviewer votes when there are new changes* prendido. Sobre toda la
+   rama.
+2. En *Security* del repo de operaciones, **Bypass policies when pushing** en «Allow» **sólo** para la identidad de
+   compilación de los nocturnos (la de esta sección; mirá cuál es en una corrida). Los nocturnos guardan empujando a
+   `main`; sin la excepción, su guardado rebota. Nadie más la tiene.
+3. Encolar y editar los tres pipelines, sólo quienes mantienen (*Pipelines → el pipeline → Manage security*).
+
+Con eso, un empuje directo de una persona a `main` rebota (`TF402455`) y todo cambio va por un pedido con un revisor que
+no es el autor.
+
+**La alternativa: el filtro por ruta.** «Required reviewers» (*Automatically included reviewers*, obligatorio) en 1, con
+el filtro de ruta `/operations.json;/pipelines/*`, el grupo de quienes mantienen como revisor y *Allow requestors to
+approve their own changes* apagado. La documentación de Azure DevOps dice que una rama con una política obligatoria no
+acepta empujes directos, sin distinguir rutas: la identidad de los nocturnos sigue necesitando la excepción del punto 2.
+Con el filtro, la pestaña Configuración del sitio habilita «Proponer» **archivo por archivo**: sólo en las secciones
+cuyo archivo cubre el filtro; las demás dicen «la política de main no cubre <archivo>».
+
+La pestaña Configuración lee estas políticas: sin ninguna de las dos, «Proponer» queda apagado con el motivo, y desde el
+sitio sólo se valida y se descarga. Ningún nocturno guarda `operations.json` ni nada bajo `pipelines/`.
+
 **La foto de despliegues** (el tablero, story 2.22) lee las corridas y el timeline de los pipelines de producto que
 declarás en `operations.json → deployments` (abajo). Qué identidad lee depende de la opción anterior: con *Limit job
 authorization scope* apagada es la de la **colección**, `Project Collection Build Service (<organización>)`; prendida, la
@@ -138,7 +167,13 @@ Variables opcionales de cada definición (*Edit → Variables*):
 | Pipeline | Variable | Para qué |
 |---|---|---|
 | `stage-metrics` | `METRICS_PROJECTS` | Los proyectos a medir, separados por `;`. Vacía: todos los que la identidad puede ver |
-| `dependency-audit` | `TYCON_TELEGRAM_CHAT_ID` y `TELEGRAM_BOT_TOKEN` (secreta) | El resumen diario por Telegram. Sin el chat, no se manda |
+| `dependency-audit` | `TYCON_TELEGRAM_CHAT_ID` y `TELEGRAM_BOT_TOKEN` (secreta) | El resumen diario, si el canal es `telegram`. Usá un bot dedicado al aviso: el token de un bot sirve para mandar a cualquier chat y para leer lo que le escriben |
+| `dependency-audit` | `TYCON_NOTIFY_WEBHOOK_URL` (secreta) | El resumen diario, si el canal es `slack` o `teams`: la dirección del webhook entrante (en Teams, la de un flujo de trabajo «When a Teams webhook request is received»). La dirección ES la credencial: nunca va en un archivo |
+
+**El canal del aviso.** Lo elige `operations.json → notify`: `{ "channel": "telegram" }`, `"slack"` o `"teams"`. **Sin
+`notify`, no se manda**, y la constancia de la noche lo dice («canal sin configurar en operations.json → notify»). El
+destino (el chat, el token, el webhook) va sólo en las variables secretas de arriba. El aviso lleva sólo cantidades y,
+si `operations.json → site.url` está y el sitio pasó esa mañana la prueba sin sesión, el enlace al sitio.
 
 Las copias del repo del arnés ya no van en variables de la definición: van en `team-repos.json` (punto 2). Si tu
 definición de `stage-metrics` todavía tiene `HARNESS_COPIES` o `HARNESS_MEASURED_COPY`, borralas: la corrida lo avisa, y

@@ -236,9 +236,10 @@ test('T33 PrimerMantenedor_SoloSinLista', async () => {
 });
 
 test('T39 Nucleo_SinNube', { skip: !hayHttpBackend() && !process.env.CI && 'git http-backend no está en esta máquina (en CI no se saltea)' }, async () => {
-  // el texto: lo de una nube vive sólo en cloud/ y lo de un proveedor sólo en auth-providers/
+  // el texto: lo de una nube vive sólo en cloud/, lo de un proveedor sólo en auth-providers/, y las recetas de
+  // instalación, una por plataforma, en deploy/ (cada una nombra la suya; el servidor no carga ninguna)
   const malos = [];
-  const recorrer = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, e.name); if (e.isDirectory()) { if (!['cloud', 'auth-providers'].includes(e.name)) recorrer(p); } else if (!/^Dockerfile/.test(e.name)) { const t = fs.readFileSync(p, 'utf8'); for (const w of ['azure', 'microsoft', 'windows.net', 'IDENTITY_ENDPOINT', 'X-MS-']) if (t.toLowerCase().includes(w.toLowerCase())) malos.push(`${path.relative(SITE, p)}: ${w}`); } } };
+  const recorrer = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, e.name); if (e.isDirectory()) { if (!['cloud', 'auth-providers', 'deploy'].includes(e.name)) recorrer(p); } else if (!/^Dockerfile/.test(e.name)) { const t = fs.readFileSync(p, 'utf8'); for (const w of ['azure', 'microsoft', 'windows.net', 'IDENTITY_ENDPOINT', 'X-MS-']) if (t.toLowerCase().includes(w.toLowerCase())) malos.push(`${path.relative(SITE, p)}: ${w}`); } } };
   recorrer(SITE);
   assert.deepStrictEqual(malos, []);
   // y el arranque real sin ninguna variable de una nube: oidc, el repo con token y el buzón con SAS

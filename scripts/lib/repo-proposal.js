@@ -42,6 +42,9 @@ const AUTOR = { GIT_AUTHOR_NAME: 'Sitio de la organización', GIT_AUTHOR_EMAIL: 
  * identificador interno, y el nombre alcanza.
  */
 const TIPO_REVISORES_AZURE = 'Minimum number of reviewers';
+// la otra forma que vale, con filtro de ruta (`filenamePatterns`): cuenta sólo para el archivo que
+// cubre. Se reconoce igual, por el nombre de su tipo.
+const TIPO_REQUERIDOS_AZURE = 'Required reviewers';
 const URL_BASE = { azure: 'https://dev.azure.com', github: 'https://api.github.com' };
 const API_AZURE = 'api-version=7.1';
 
@@ -127,12 +130,55 @@ async function llamar({ method = 'GET', url, remote, cred, cuerpo, fetch: f, sec
 
 const motivoCorto = (r) => (r.status === 401 ? 'la credencial fue rechazada' : r.status === 403 ? 'la identidad no tiene permiso para leerla' : r.status === 404 ? 'no existe o no se ve' : r.motivo || `HTTP ${r.status}`);
 
+// Un patrón del filtro de ruta que se sabe leer: empieza con `/` (o `!/`, una exclusión) y sólo trae letras, números,
+// `.`, `_`, `-`, `/` y los dos comodines de Azure DevOps (`*` una secuencia, `?` un carácter; acá ninguno cruza `/`).
+// Otro, no se entiende.
+const PATRON_CONOCIDO = /^!?\/[A-Za-z0-9._\-/*?]*$/;
+
 /**
- * ¿La rama principal pide revisión? Azure DevOps: una configuración de política habilitada y bloqueante del tipo «Minimum
- * number of reviewers» (por el nombre del tipo) con al menos 1 sobre refs/heads/main del repo. GitHub: la protección de la rama
+ * ¿Se puede PROBAR que el filtro de ruta de una política de Azure DevOps cubre el archivo? Lo que no se
+ * puede probar queda apagado: «Proponer» no se ofrece sin revisión segura. Hace falta al menos una inclusión que lo cubra y ninguna exclusión que lo
+ * saque: en Azure un filtro hecho sólo de exclusiones no incluye ningún archivo («nothing is included first»). Un patrón
+ * que no se sabe leer, o una lista vacía, no prueban nada. Las rutas se comparan sin mayúsculas.
+ */
+function filtroCubre(patrones, archivo) {
+  if (!Array.isArray(patrones) || !patrones.length || !archivo) return false;
+  const lista = patrones.map((p) => (typeof p === 'string' ? p.trim() : null));
+  if (lista.some((p) => !p || !PATRON_CONOCIDO.test(p))) return false;
+  const ruta = `/${String(archivo).replace(/^\/+/, '')}`;
+  // `*` y `?` no cruzan carpetas: si en Azure `*` fuera recursivo, el costo es un «no cubre» de más (lado seguro); al revés,
+  // `/scripts/*` daría por cubierto un archivo de una subcarpeta que la política capaz no cubre (revisión de seguridad)
+  const re = (p) => new RegExp(`^${p.replace(/[.^${}()|[\]\\+]/g, '\\$&').replace(/\*/g, '[^/]*').replace(/\?/g, '[^/]')}$`, 'i');
+  const incluye = lista.filter((p) => !p.startsWith('!'));
+  const excluye = lista.filter((p) => p.startsWith('!')).map((p) => p.slice(1));
+  if (excluye.some((p) => re(p).test(ruta))) return false;
+  return incluye.some((p) => re(p).test(ruta));
+}
+
+/**
+ * ¿Se puede probar que esta política exige un revisor que no es el autor para `archivo`? Sólo con valores que se
+ * entienden: el voto del autor dicho y apagado (`creatorVoteCounts: false`); en «Required reviewers», además, revisores
+ * nombrados, `addedFilesOnly: false` dicho (con `true` sólo pide revisión al AGREGAR el archivo, no al editarlo) y un
+ * filtro que lo cubre. «Minimum number of reviewers» vale para toda la rama, salvo que traiga un filtro de ruta: entonces
+ * también tiene que cubrirlo.
+ */
+function exigeRevisor(p, archivo) {
+  const s = p.settings;
+  if (s.creatorVoteCounts !== false) return false;
+  if (p.type.displayName === TIPO_REVISORES_AZURE) return s.filenamePatterns === undefined || filtroCubre(s.filenamePatterns, archivo);
+  const revisores = Array.isArray(s.requiredReviewerIds) && s.requiredReviewerIds.length > 0 && s.requiredReviewerIds.every((x) => typeof x === 'string' && x.trim());
+  return revisores && s.addedFilesOnly === false && filtroCubre(s.filenamePatterns, archivo);
+}
+
+/**
+ * ¿La rama principal pide revisión para este archivo? Azure DevOps: una configuración de política habilitada y bloqueante
+ * sobre refs/heads/main del repo, con al menos 1 revisor y sin que cuente el voto de quien crea el pedido, de una de estas
+ * dos formas (por el nombre del tipo): «Minimum number of reviewers», sobre toda la rama; o «Required reviewers» cuyo
+ * filtro de ruta (`filenamePatterns`) cubre `archivo` (con el filtro, «Proponer» va archivo por archivo; sin
+ * `archivo`, una política con filtro no alcanza). GitHub: la protección de la rama
  * (`required_pull_request_reviews.required_approving_review_count >= 1`) o una regla `pull_request` que la pida.
  */
-async function politicaDeRevision({ remote, credencial, urlBase, fetch: f }) {
+async function politicaDeRevision({ remote, credencial, urlBase, fetch: f, archivo = null }) {
   if (!remote || (remote.platform !== 'azure' && remote.platform !== 'github')) return { ok: false, codigo: 'plataforma_desconocida', message: 'no reconozco la plataforma del remoto: abrí el pedido a mano' };
   const cred = credenciales(credencial);
   const secretos = secretosDe(cred);
@@ -144,12 +190,19 @@ async function politicaDeRevision({ remote, credencial, urlBase, fetch: f }) {
     if (repo.status !== 200 || !repo.doc || !repo.doc.id) return noLeida(repo);
     const pol = await llamar({ url: `${base}/policy/configurations?repositoryId=${encodeURIComponent(repo.doc.id)}&refName=${encodeURIComponent(`refs/heads/${RAMA_PRINCIPAL}`)}&${API_AZURE}`, remote, cred, fetch: f, secretos });
     if (pol.status !== 200 || !pol.doc || !Array.isArray(pol.doc.value)) return noLeida(pol);
-    const minimos = pol.doc.value
-      .filter((p) => p && p.isEnabled && p.isBlocking && p.type && p.type.displayName === TIPO_REVISORES_AZURE && p.settings && Number(p.settings.minimumApproverCount) >= 1)
-      .filter((p) => Array.isArray(p.settings.scope) && p.settings.scope.some((s) => s && s.refName === `refs/heads/${RAMA_PRINCIPAL}` && (!s.repositoryId || s.repositoryId === repo.doc.id)))
-      .map((p) => Number(p.settings.minimumApproverCount));
-    if (!minimos.length) return sinPolitica;
-    const n = Math.max(...minimos);
+    const validas = pol.doc.value
+      .filter((p) => p && p.isEnabled === true && p.isBlocking === true && p.type && [TIPO_REVISORES_AZURE, TIPO_REQUERIDOS_AZURE].includes(p.type.displayName) && p.settings && Number(p.settings.minimumApproverCount) >= 1)
+      .filter((p) => Array.isArray(p.settings.scope) && p.settings.scope.some((s) => s && s.refName === `refs/heads/${RAMA_PRINCIPAL}` && (!s.repositoryId || s.repositoryId === repo.doc.id)));
+    // el voto de quien crea el pedido no puede contar (si no, la identidad que propone se aprobaría sola), y lo que no se
+    // puede probar que exige revisor en este archivo no cuenta
+    const cubren = validas.filter((p) => exigeRevisor(p, archivo));
+    if (!cubren.length) {
+      if (archivo && validas.some((p) => p.type.displayName === TIPO_REQUERIDOS_AZURE)) {
+        return { ok: false, codigo: 'no_cubre', message: `la política de ${RAMA_PRINCIPAL} no cubre ${archivo}: su filtro de ruta no lo incluye, y sin revisión la identidad del sitio podría completar el pedido` };
+      }
+      return sinPolitica;
+    }
+    const n = Math.max(...cubren.map((p) => Number(p.settings.minimumApproverCount)));
     return { ok: true, detalle: `al menos ${n} revisor${n === 1 ? '' : 'es'}` };
   }
   const prot = await llamar({ url: `${base}/branches/${RAMA_PRINCIPAL}/protection`, remote, cred, fetch: f, secretos });
@@ -259,8 +312,8 @@ async function proponer({ clon, archivo, contenido, oidEsperado, idCorto, seccio
     if (abierto && abierto.error) return { ok: false, codigo: 'no_se_pudo_leer', message: `no pude verificar si ya hay un pedido abierto sobre este archivo (${abierto.error}): no propongo nada; probá de nuevo` };
     if (abierto) return { ok: false, codigo: 'pedido_abierto', enlace: abierto.enlace, rama: abierto.rama, message: `ya hay un pedido abierto sobre este archivo: ${abierto.enlace}; esperá a que se mergee o cerralo` };
 
-    // 4. la política de la rama principal (decisión 1)
-    const politica = await politicaDeRevision({ remote, credencial: cred, urlBase, fetch: f });
+    // 4. la política de la rama principal, para ESTE archivo (un filtro de ruta puede no cubrirlo)
+    const politica = await politicaDeRevision({ remote, credencial: cred, urlBase, fetch: f, archivo });
     if (!politica.ok) return { ok: false, codigo: politica.codigo, message: politica.message };
 
     // 5. el commit, sin tocar el árbol ni el índice del clon

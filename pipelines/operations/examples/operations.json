@@ -9,7 +9,8 @@
   "site": {
     "maintainers": ["lider@acme.example"],
     "mailbox": { "provider": "azure-blob", "account": "acmeruns", "container": "runs" },
-    "refresh_minutes": 15
+    "refresh_minutes": 15,
+    "url": "https://sitio.acme.example"
   },
   "people": {
     "machines": {
@@ -30,6 +31,7 @@
       "dev.dos@acme.example": { "add": ["Acme Web"], "remove": ["Acme Mobile"] }
     }
   },
+  "notify": { "channel": "slack" },
   "deployments": {
     "provider": "azure",
     "products": {

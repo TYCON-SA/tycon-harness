@@ -1551,6 +1551,10 @@
       "reason": "GCM_INTERACTIVE es la variable del Git Credential Manager, una herramienta ajena: no se puede renombrar. La pone la red del arranque para que nunca abra un login (story 8.23, tanda L). Decisión del dueño, 2026-10-06."
     },
     {
+      "words": ["webhook", "sku", "tls"],
+      "reason": "inglés técnico y opciones de una herramienta ajena, no nombres del arnés: «webhook» es el nombre que Slack y Teams le dan a la dirección por donde entra el aviso (TYCON_NOTIFY_WEBHOOK_URL, el único secreto del canal); --sku y --min-tls-version son opciones de `az storage account create`, que el alta del sitio en Azure Container Apps pasa tal cual. Sumada con el plan de la story aprobado, a confirmar por el dueño, como los precedentes de esta lista."
+    },
+    {
       "words": ["submodules"],
       "reason": "de git, no un nombre del arnés: la opción `--ignore-submodules=none` de `git diff-tree`. Sin ella git obedece el `ignore` del `.gitmodules` del árbol y saltea el submódulo, y el freno antes de publicar (scripts/hooks/public-push-guard.js) lo daba por limpio (story 8.26, tanda F2, pase adversarial). Sumada el 2026-10-10 con el plan de la tanda aprobado, a confirmar por el dueño; precedentes iguales del 2026-10-03 y de la tanda F1."
     }

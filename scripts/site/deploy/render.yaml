@@ -1,0 +1,58 @@
+# render.yaml — el sitio de la organización en Render, plan gratis (un ejemplo con nombres inventados: un Blueprint).
+#
+# Lo que cambia respecto de cualquier otra instalación (la guía: guides/sitio-de-la-organizacion.md, receta de Render):
+# · Inicio de sesión: sólo el del sitio (SITE_AUTH_PROVIDER y su registro); Render no pone un candado delante.
+# · Disco: el plan gratis no tiene. Sin SITE_DATA_DIR el sitio usa una carpeta temporal y lo dice: lo que sale de las
+#   conversaciones en la pestaña Corridas queda «no medido», y un reinicio reinicia el plazo de 24 horas de una
+#   configuración rota (y levanta el freno). Con un disco de Render (pago) montado en /data, poné SITE_DATA_DIR=/data.
+# · Memoria: 512 MB en el plan gratis (el sitio pide 1 GB para armar la vista de corridas con sus conversaciones).
+# · Secretos: cada variable `sync: false` la pregunta Render al crear el servicio desde este archivo, y después la
+#   ignora: rotar un secreto se hace en el panel del servicio (Environment). Ningún valor va acá.
+# · Se duerme a los 15 minutos sin tráfico y despierta en ~1 minuto (la prueba sin sesión de la noche lo espera).
+#
+# Cambiá la imagen por la huella (@sha256:…) de la versión que vas a instalar: nunca una etiqueta. La actualiza una
+# persona, a conciencia.
+services:
+  - type: web
+    name: sitio-de-acme
+    runtime: image
+    plan: free
+    image:
+      url: ghcr.io/acme/arnes@sha256:cafecafecafecafecafecafecafecafecafecafecafecafecafecafecafecafe
+    healthCheckPath: /livez
+    envVars:
+      - key: PORT
+        value: "8080"
+      - key: SITE_AUTH_PROVIDER
+        value: oidc
+      - key: SITE_PUBLIC_URL
+        sync: false
+      - key: SITE_OIDC_ISSUER
+        sync: false
+      - key: SITE_OIDC_CLIENT_ID
+        sync: false
+      - key: SITE_AUTH_ALLOWED_DOMAINS
+        sync: false
+      - key: SITE_OPERATIONS_REPO
+        sync: false
+      - key: SITE_FIRST_MAINTAINER
+        sync: false
+      - key: SITE_SESSION_KEY
+        sync: false
+      - key: SITE_OIDC_CLIENT_SECRET
+        sync: false
+      - key: SITE_OPERATIONS_TOKEN
+        sync: false
+      - key: SITE_MAILBOX_SAS
+        sync: false
+      # Las de la pestaña Configuración, apagadas por defecto: dejalas vacías salvo que decidas prenderlas.
+      - key: SITE_OPERATIONS_WRITE_TOKEN
+        sync: false
+      - key: SITE_PROFILE_REPO
+        sync: false
+      - key: SITE_PROFILE_TOKEN
+        sync: false
+      - key: SITE_PROFILE_WRITE_TOKEN
+        sync: false
+      - key: SITE_PIPELINES_TOKEN
+        sync: false

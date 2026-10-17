@@ -1,0 +1,64 @@
+# site-image.yml — arma y publica la imagen del sitio de la organización en el registro de paquetes de GitHub de este
+# repo. Corre sólo en un push a main que toca lo que la imagen trae: las carpetas que copia scripts/site/Dockerfile
+# (no version.json solo: cambia en cada merge).
+#
+# El nombre de la imagen sale del contexto (ghcr.io/<este repo, en minúsculas>), nunca escrito. Etiquetas: la versión del
+# arnés (version.json) y sha-<commit>; nunca latest: cada instalación fija la imagen por su huella (@sha256:…) y la
+# actualiza una persona. Con constancia de origen (attest-build-provenance), guardada al lado de la imagen.
+#
+# La visibilidad del paquete no la fija este workflow: tras la primera publicación, una persona confirma en
+# GitHub → Packages que es público (hacerlo público no tiene vuelta atrás).
+#
+# Su control: scripts/tests/site-image-workflow.test.js (disparador, permisos, acciones fijadas por el sha, secretos).
+name: site-image
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/site/**'
+      - 'scripts/lib/**'
+      - 'scripts/metrics/**'
+      - 'scripts/nightly/**'
+      - 'scripts/setup/harness/**'
+      - 'scripts/ci/check-product-parity.js'
+      - 'scripts/ci/legacy-options.js'
+      - 'skills/tycon-pipeline/scripts/lib/**'
+      - 'skills/tycon-pipeline/steps/**'
+concurrency:
+  group: site-image
+  cancel-in-progress: false
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+  attestations: write
+jobs:
+  imagen:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Armar y publicar la imagen
+        id: imagen
+        env:
+          REGISTRO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          IMAGEN="ghcr.io/${GITHUB_REPOSITORY,,}"
+          VERSION=$(node -p "require('./version.json').version")
+          printf '%s' "$REGISTRO_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker build -f scripts/site/Dockerfile -t "${IMAGEN}:${VERSION}" -t "${IMAGEN}:sha-${GITHUB_SHA}" .
+          docker push "${IMAGEN}:${VERSION}"
+          docker push "${IMAGEN}:sha-${GITHUB_SHA}"
+          HUELLA=$(docker inspect --format '{{index .RepoDigests 0}}' "${IMAGEN}:${VERSION}" | sed 's/^.*@//')
+          echo "imagen=${IMAGEN}" >> "$GITHUB_OUTPUT"
+          echo "huella=${HUELLA}" >> "$GITHUB_OUTPUT"
+          echo "Publicada: ${IMAGEN}@${HUELLA} (etiquetas ${VERSION} y sha-${GITHUB_SHA})"
+          docker logout ghcr.io
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ steps.imagen.outputs.imagen }}
+          subject-digest: ${{ steps.imagen.outputs.huella }}
+          push-to-registry: true
