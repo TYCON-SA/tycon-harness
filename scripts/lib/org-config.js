@@ -604,11 +604,12 @@ function pantalla() {
     integraciones: { t: 'Integraciones', d: 'Qué servicios usa cada máquina del equipo. Llega a cada una con su próxima actualización; una máquina puede apagar una para ella sola.', corto: 'Integraciones' },
     ado: { t: 'Azure DevOps', d: 'La organización de Azure DevOps del equipo. Llega a cada máquina con su próxima actualización.', corto: 'Azure DevOps' },
     actualizacion: { t: 'Cómo se actualizan las máquinas', d: 'Qué versión toma cada máquina y si se actualiza sola. Llega a cada una con su próxima actualización.', corto: 'Actualización' },
+    paquetes: { t: 'Paquetes de la organización', d: 'Qué paquetes del arnés (revisores y guías de un producto o de un cliente) se activan en todas las máquinas. Llega a cada una con su próxima actualización.', corto: 'Paquetes' },
     instalacion: { t: 'Perfil de instalación', d: 'Cuánto instala el arnés en cada máquina. Llega a cada una con su próxima actualización.', corto: 'Instalación' },
     hilos: { t: 'Conversaciones de las corridas', d: 'Si el sitio baja también lo que se habló en cada corrida, además de sus números.', corto: 'Conversaciones' },
   };
   // las pestañas: [id, nombre, secciones, tablas para mirar]. Se ve una por vez; el resumen de arriba, en todas
-  var PESTANAS = [['personas', 'Personas', ['sitio', 'personas', 'responsables'], []], ['repos', 'Repos y productos', ['repos', 'despliegues', 'paridad', 'ado'], ['productos']], ['avisos', 'Avisos y la noche', ['canal', 'espera', 'umbrales'], []], ['claude', 'Cómo trabaja Claude', ['respuesta', 'modelos', 'suites', 'cobertura', 'integraciones', 'hilos'], []], ['instalacion', 'Instalación y actualización', ['actualizacion', 'instalacion'], ['contenido', 'versiones']]];
+  var PESTANAS = [['personas', 'Personas', ['sitio', 'personas', 'responsables'], []], ['repos', 'Repos y productos', ['repos', 'despliegues', 'paridad', 'ado'], ['productos']], ['avisos', 'Avisos y la noche', ['canal', 'espera', 'umbrales'], []], ['claude', 'Cómo trabaja Claude', ['respuesta', 'modelos', 'suites', 'cobertura', 'integraciones', 'hilos'], []], ['instalacion', 'Instalación y actualización', ['actualizacion', 'instalacion', 'paquetes'], ['contenido', 'versiones']]];
   /** La pestaña de un ancla (#pestana-x, #seccion-x o una tabla para mirar); null si no es de ninguna. */
   function pestanaDe(ancla) {
     var id = String(ancla || '').replace(/^#/, '');
@@ -757,7 +758,13 @@ function pantalla() {
     var mb = site.mailbox || {};
     var buzon = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: 'Dónde dejan sus corridas las máquinas' }), el('p', { class: 'sub-d', text: 'Las contraseñas no van acá: se cargan en la nube.' }));
     var f = el('div', { class: 'fila' });
-    [['provider', 'Servicio'], ['account', 'Cuenta'], ['container', 'Carpeta']].forEach(function (par) { var k = par[0]; f.appendChild(campo(par[1], mb[k], function (v) { site.mailbox = site.mailbox || {}; site.mailbox[k] = v; }, 'site.mailbox.' + k, pr)); });
+    var servicios = (s.extras && s.extras.servicios) || null;
+    var SERVICIO = { 'azure-blob': 'Azure Blob Storage' };
+    [['provider', 'Servicio'], ['account', 'Cuenta'], ['container', 'Carpeta']].forEach(function (par) {
+      var k = par[0]; var poner = function (v) { site.mailbox = site.mailbox || {}; if (v === '') delete site.mailbox[k]; else site.mailbox[k] = v; };
+      if (k === 'provider' && servicios) f.appendChild(selector(par[1], mb[k], [['', 'elegí el servicio']].concat(servicios.map(function (x) { return [x, SERVICIO[x] || x]; })), poner, 'site.mailbox.' + k, pr));
+      else f.appendChild(campo(par[1], mb[k], function (v) { site.mailbox = site.mailbox || {}; site.mailbox[k] = v; }, 'site.mailbox.' + k, pr));
+    });
     buzon.appendChild(f);
     lista.appendChild(buzon);
     if (s.avisoLista) lista.appendChild(el('div', { class: 'aviso', text: s.avisoLista }));
@@ -771,8 +778,15 @@ function pantalla() {
     problemasEn(pr, clave).forEach(function (x) { box.appendChild(el('div', { class: 'err', text: x.message })); });
     return box;
   }
+  // cada entrada con el nombre de sus pasos tal como los muestra el pipeline; el identificador, si no se sabe el nombre
   function textoDeEntradas(lista) {
-    return (lista || []).map(function (e) { if (!e || typeof e !== 'object') return String(e); if (e.environment) return e.environment + (e.repo ? ' (' + e.repo + ')' : ''); return (e.stages || []).join(', ') + (e.pipeline ? ' (' + e.pipeline + ')' : ''); }).join(' · ') || '—';
+    return (lista || []).map(function (e) {
+      if (!e || typeof e !== 'object') return String(e);
+      if (e.environment) return e.environment + (e.repo ? ' (' + e.repo + ')' : '');
+      var nombres = pasosDe(e.pipeline);
+      var pipe = e.pipeline ? String(e.pipeline).replace(/^[^/]+\//, '') : '';
+      return (e.stages || []).map(function (id) { return nombres[id] || id; }).join(', ') + (pipe ? ' (pipeline ' + pipe + ')' : '');
+    }).join(' · ') || '—';
   }
   function editorDespliegues(s, d, pr) {
     var box = el('div', { class: 'pila' });
@@ -789,8 +803,16 @@ function pantalla() {
     var sel = el('input', { placeholder: 'número del pipeline, o dueño/repo en GitHub', 'aria-label': 'Pipeline' });
     var nombrePipeline = el('input', { placeholder: 'proyecto/nombre del pipeline (Azure)', 'aria-label': 'Nombre del pipeline' });
     var nota = el('div', {});
+    // con la lista del proyecto de operaciones, el pipeline se elige por su nombre y completa los dos campos de abajo
+    var ex = s.extras || {};
+    var lista = ex.plataforma === 'azure' ? listaDePipelines(pipelinesDe(ex.org, ex.proyecto)) : null;
+    var eleccion = lista ? selector('Pipeline', '', [['', 'elegí el pipeline']].concat(lista.map(function (x) { return [String(x.id), x.nombre]; })), function (v) {
+      var x = lista.filter(function (y) { return String(y.id) === v; })[0];
+      sel.value = x ? ex.proyecto + '/' + x.id : ''; nombrePipeline.value = x ? ex.proyecto + '/' + x.nombre : '';
+    }, 'deployments.pipeline', pr) : null;
     var agregar = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: 'Agregar un producto' }), el('p', { class: 'sub-d', text: 'Elegís el pipeline y el sitio te muestra sus pasos para que marques cuál es la prueba y cuál producción.' }),
-      el('div', { class: 'fila' }, producto, sel, nombrePipeline, el('button', { class: 'sec', type: 'button', text: 'Ver sus pasos', onclick: function () {
+      eleccion,
+      el('div', { class: 'fila' }, producto, lista ? el('details', { class: 'mas-info' }, el('summary', { text: 'Escribirlo a mano' }), sel, nombrePipeline) : sel, lista ? null : nombrePipeline, el('button', { class: 'sec', type: 'button', text: 'Ver sus pasos', onclick: function () {
         api('/stages', { pipeline: sel.value }).then(function (r) {
           nota.replaceChildren();
           if (!r.ok) { nota.appendChild(el('div', { class: 'err', text: r.message })); return; }
@@ -922,21 +944,41 @@ function pantalla() {
         el('button', { class: 'sec', type: 'button', text: 'Cerrar', onclick: function () { revisarSeccion(s, { accion: 'close', grupos: grupos, grupo: grupos[0], rasgo: rasgo }); } }))));
     });
     box.appendChild(el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: 'Las diferencias aceptadas' }), orden.length ? dcl : el('p', { class: 'muted', text: 'Ninguna.' })));
-    if (v.definicion) box.appendChild(el('details', { class: 'mas-info' }, el('summary', { text: 'Qué se compara (se cambia en el repo, no acá)' }), el('pre', { text: JSON.stringify(v.definicion, null, 2) })));
+    if (v.definicion) {
+      var t = el('table', { class: 'tabla' }, el('thead', {}, el('tr', {}, el('th', { text: 'Qué se compara' }))));
+      var tb = el('tbody', {});
+      ((v.definicion.rasgos) || []).forEach(function (r) { if (r && r.id) tb.appendChild(el('tr', {}, el('td', { text: queDe(r.id) }))); });
+      t.appendChild(tb);
+      box.appendChild(el('details', { class: 'mas-info' }, el('summary', { text: 'Qué se compara (se cambia en el repo, no acá)' }), el('div', { class: 'tbl-wrap' }, t)));
+    }
     return box;
   }
   function editorPaquetes(s, d, pr) {
     var box = el('div', {});
     var ex = s.extras || {};   // los paquetes de la versión del sitio y los que activa el valor de hoy
-    box.appendChild(el('p', { class: 'muted', text: 'Instalados en esta versión: ' + ((ex.instalados || []).join(', ') || 'ninguno') + ' · activos para la organización: ' + ((ex.activos || []).join(', ') || 'ninguno') }));
+    box.appendChild(el('p', { class: 'muted', text: 'Los paquetes suman revisores y guías de un producto o de un cliente. Activos hoy: ' + ((ex.activos || []).join(', ') || 'ninguno') + '.' }));
     d.packs = d.packs || {};
     var actual = Array.isArray(d.packs.default) ? d.packs.default.join(', ') : (d.packs.default || '');
-    box.appendChild(el('div', { class: 'fila' }, el('span', { class: 'k', text: 'packs.default' }),
-      campo('valor (all, none o la lista separada por comas)', actual, function (v) {
-        var t = String(v).trim();
-        if (t === '') delete d.packs.default;
-        else d.packs.default = (t === 'all' || t === 'none') ? t : t.split(',').map(function (x) { return x.trim(); });
-      }, 'packs.default', pr)));
+    var val = d.packs.default;
+    var modo = val === undefined ? '' : val === 'all' || val === 'none' ? val : 'some';
+    box.appendChild(selector('Qué paquetes se activan', modo, [['', 'sin declarar (ninguno)'], ['all', 'todos los instalados'], ['none', 'ninguno'], ['some', 'sólo los que marco']], function (v) {
+      if (!v) delete d.packs.default; else if (v === 'some') d.packs.default = Array.isArray(val) ? val : []; else d.packs.default = v;
+      render();
+    }, 'packs.default', pr));
+    if (modo === 'some') {
+      var marcados = Array.isArray(val) ? val : [];
+      var lista = el('div', { class: 'pila' });
+      // un paquete marcado que esta versión no trae se muestra igual, para poder sacarlo
+      (ex.instalados || []).concat(marcados.filter(function (n) { return (ex.instalados || []).indexOf(n) < 0; })).forEach(function (n) {
+        var c = el('input', { type: 'checkbox', 'aria-label': n, 'data-path': 'packs.default', onchange: function (e) {
+          var l = Array.isArray(d.packs.default) ? d.packs.default : [];
+          d.packs.default = e.target.checked ? l.concat([n]) : l.filter(function (x) { return x !== n; });
+        } });
+        c.checked = marcados.indexOf(n) >= 0;
+        lista.appendChild(el('label', {}, c, el('span', { text: ' ' + n + ((ex.instalados || []).indexOf(n) < 0 ? ' (esta versión no lo trae)' : '') })));
+      });
+      box.appendChild(lista);
+    }
     return box;
   }
   // un selector con «sin declarar» primero: elegirlo saca la clave del archivo
@@ -1049,6 +1091,44 @@ function pantalla() {
     tabla.appendChild(tbody); sec.appendChild(el('div', { class: 'tbl-wrap' }, tabla));
     return sec;
   }
+  // ── los nombres en lugar de los números: los pipelines de un proyecto y los nombres de los pasos, pedidos una vez ──
+  var PIPES = {}; var PASOS = {};
+  /** Los pipelines de un proyecto de Azure DevOps: null sin organización o proyecto; { estado: 'cargando' | 'listo', r }. */
+  function pipelinesDe(org, proyecto) {
+    if (!org || !proyecto) return null;
+    var k = org + '\u0000' + proyecto;
+    if (!PIPES[k]) { PIPES[k] = { estado: 'cargando' }; api('/pipelines', { org: org, project: proyecto }).then(function (r) { PIPES[k] = { estado: 'listo', r: r }; render(); }); }
+    return PIPES[k];
+  }
+  function listaDePipelines(L) { return L && L.estado === 'listo' && L.r && L.r.ok && Array.isArray(L.r.pipelines) ? L.r.pipelines : null; }
+  /** Los nombres de los pasos de un pipeline guardado («proyecto/nombre»): {} mientras no se sepan. */
+  function pasosDe(pipeline) {
+    if (!pipeline) return {};
+    if (!PASOS[pipeline]) { PASOS[pipeline] = { nombres: {} }; api('/pasos', { pipeline: pipeline }).then(function (r) { if (r && r.ok && r.nombres && typeof r.nombres === 'object') { PASOS[pipeline] = { nombres: r.nombres }; render(); } }); }
+    return PASOS[pipeline].nombres;
+  }
+  // el pipeline de pruebas completas de un repo: en Azure se elige de la lista del proyecto por su nombre y se guarda su
+  // número; sin la lista, se escribe el número y la pantalla dice por qué. En GitHub es el nombre del control obligatorio
+  function campoPipeline(e, p, pr) {
+    var r = e.repo || {};
+    var escribir = function (v) { var t = String(v).trim(); if (!t) delete e.full_tests_pipeline; else e.full_tests_pipeline = /^\d+$/.test(t) && r.platform === 'azure' ? Number(t) : t; };
+    if (r.platform !== 'azure') return campo('Control obligatorio de las pruebas completas', e.full_tests_pipeline, escribir, p, pr, { placeholder: 'el nombre del control en GitHub' });
+    var L = pipelinesDe(r.org, r.project);
+    var lista = listaDePipelines(L);
+    var actual = e.full_tests_pipeline;
+    if (lista) {
+      var porNombre = lista.filter(function (x) { return x.nombre === actual; })[0];
+      var valor = actual == null ? '' : porNombre ? String(porNombre.id) : String(actual);
+      var opciones = [['', 'ninguno']].concat(lista.map(function (x) { return [String(x.id), x.nombre + (x.carpeta ? ' · ' + x.carpeta : '')]; }));
+      if (valor && !lista.some(function (x) { return String(x.id) === valor; })) opciones.push([valor, (typeof actual === 'number' ? 'el pipeline ' + actual : actual) + ' (no está en el proyecto)']);
+      return selector('Pipeline de pruebas completas', valor, opciones, function (v) { if (!v) delete e.full_tests_pipeline; else e.full_tests_pipeline = /^\d+$/.test(v) ? Number(v) : v; }, p, pr);
+    }
+    var box = campo('Pipeline de pruebas completas (su número)', actual, escribir, p, pr, { placeholder: 'número del pipeline', inputmode: 'numeric' });
+    if (!L) box.appendChild(el('p', { class: 'muted', text: 'Completá la organización y el proyecto del repo y revisá: la lista de pipelines aparece sola.' }));
+    else if (L.estado === 'cargando') box.appendChild(el('p', { class: 'muted', text: 'buscando los pipelines del proyecto…' }));
+    else box.appendChild(el('div', { class: 'aviso', text: (L.r && L.r.message) || 'no se pudo traer la lista de pipelines: escribí el número' }));
+    return box;
+  }
   var REGLAS = [['automatico', 'automático: el servidor, si la rama lo exige'], ['siempre-en-la-maquina', 'siempre en la máquina'], ['confiar-en-el-servidor', 'confiar en el servidor']];
   function editorSuites(s, d, pr) {
     MOSTRADOS = [];
@@ -1070,7 +1150,7 @@ function pantalla() {
       sub.appendChild(repoFila('Repo ' + (i + 1), '', e.repo, function (v) { e.repo = v; }, at + '.repo', pr));
       sub.appendChild(el('div', { class: 'fila quitar3' },
         selector('Regla', e.rule, [['', 'la de la organización']].concat(REGLAS), function (v) { if (v) e.rule = v; else delete e.rule; }, at + '.rule', pr),
-        campo('Pipeline de pruebas completas', e.full_tests_pipeline, function (v) { var t = String(v).trim(); if (!t) delete e.full_tests_pipeline; else e.full_tests_pipeline = /^\d+$/.test(t) && e.repo && e.repo.platform === 'azure' ? Number(t) : t; }, at + '.full_tests_pipeline', pr, { placeholder: 'nombre (o id en Azure)' }),
+        campoPipeline(e, at + '.full_tests_pipeline', pr),
         quitar(function () { ms.repos.splice(i, 1); render(); })));
       problemasEn(pr, at).forEach(function (x) { sub.appendChild(el('div', { class: 'err', text: x.message })); });
     });
@@ -1081,6 +1161,40 @@ function pantalla() {
     return box;
   }
   var MODELOS = ['haiku', 'sonnet', 'opus', 'fable'];
+  // el nombre llano de cada revisor, por su identificador sin el prefijo de quien lo publica; uno que no está acá se
+  // muestra con su identificador
+  var REVISOR = {
+    'ac-coverage-checker': 'Que cada criterio de la story esté hecho', 'deferral-tracker': 'Lo que la story dejó para después',
+    'dod-runtime-checker': 'Que se probó andando, no sólo en el código', 'e2e-realness-checker': 'Que las pruebas de punta a punta prueben de verdad',
+    'plugin-security-basics': 'Seguridad básica del cambio', 'plugin-tests-coverage': 'Que las pruebas cubran lo pedido',
+    'retrospective-capturer': 'Lo aprendido después de cada merge', 'signed-scope-audit': 'El plan contra lo firmado con el cliente',
+    'silent-failure-hunter': 'Fallas que pasan en silencio', 'spec-first-checker': 'Que no se haga más que lo pedido',
+    'story-validator': 'Que la story esté completa antes de empezar', 'llm-cost-reviewer': 'Costo del uso de modelos de lenguaje',
+    'i18n-hardcoded-text-reviewer': 'Textos escritos fijos donde va la traducción',
+    'plugin-dotnet-conventions': 'Convenciones de los backends .NET', 'plugin-react-conventions': 'Convenciones de los formularios React',
+    'plugin-nextjs-conventions': 'Convenciones de Next.js', 'sibling-pattern-reviewer': 'Que siga lo que ya resolvieron los plugins hermanos',
+    'feature-wiring-checker': 'Que lo hecho esté conectado y se use',
+  };
+  function nombreRevisor(id) { var n = REVISOR[id] || REVISOR[String(id).slice(String(id).indexOf('-') + 1)]; return n ? n + ' (' + id + ')' : id; }
+  // el modelo de un revisor en particular: una fila por revisor, elegido de los que conoce esta versión
+  function editorPorRevisor(s, m, pr, hoy) {
+    var sub = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: 'Un revisor en particular' }), el('p', { class: 'sub-d', text: 'Opcional: un revisor que usa otro modelo que el resto.' + (hoy && hoy.reviewer && Object.keys(hoy.reviewer).length ? ' Hoy: ' + Object.keys(hoy.reviewer).map(function (k) { return nombreRevisor(k) + ' → ' + hoy.reviewer[k]; }).join(', ') + '.' : '') }));
+    var rv = m.reviewer && typeof m.reviewer === 'object' && !Array.isArray(m.reviewer) ? m.reviewer : null;
+    if (m.reviewer !== undefined && !rv) { sub.appendChild(editorGenerico(s, m, pr, 'reviewer', 'Revisor y modelo, como texto')); return sub; }
+    Object.keys(rv || {}).forEach(function (id) {
+      sub.appendChild(el('div', { class: 'fila quitar3' }, el('span', { class: 'k', text: nombreRevisor(id) }),
+        selector('', rv[id], MODELOS.map(function (x) { return [x, x]; }), function (v) { rv[id] = v; }, 'models.reviewer.' + id, pr),
+        quitar(function () { delete rv[id]; if (!Object.keys(rv).length) delete m.reviewer; render(); })));
+    });
+    var conocidos = ((s.extras && s.extras.revisores) || []).filter(function (id) { return !rv || !(id in rv); });
+    if (conocidos.length) {
+      var elegir = el('select', { 'aria-label': 'Revisor' }, el('option', { value: '', text: 'elegí un revisor' }));
+      conocidos.forEach(function (id) { elegir.appendChild(el('option', { value: id, text: nombreRevisor(id) })); });
+      sub.appendChild(el('div', { class: 'fila quitar' }, elegir, el('button', { class: 'sec', type: 'button', text: '+ Agregar', onclick: function () { if (!elegir.value) return; m.reviewer = rv || {}; m.reviewer[elegir.value] = 'sonnet'; render(); } })));
+    }
+    problemasEn(pr, 'models.reviewer').forEach(function (x) { sub.appendChild(el('div', { class: 'err', text: x.message })); });
+    return sub;
+  }
   function editorModelos(s, d, pr) {
     MOSTRADOS = [];
     var hoy = (s.extras && s.extras.hoy) || null;
@@ -1118,9 +1232,7 @@ function pantalla() {
     if (m.mandatory_ceiling === true) tbox.appendChild(selector('El techo', m.ceiling, [['', 'elegí uno']].concat(MODELOS.map(function (x) { return [x, x]; })), function (v) { if (v) m.ceiling = v; else delete m.ceiling; }, 'models.ceiling', pr));
     problemasEn(pr, 'models.mandatory_ceiling').forEach(function (x) { tbox.appendChild(el('div', { class: 'err', text: x.message })); });
     box.appendChild(tbox);
-    // el modelo de un revisor en particular, como texto (un nombre de revisor no entra en un selector)
-    box.appendChild(el('details', { class: 'mas-info' }, el('summary', { text: 'Un revisor en particular, como texto' + (hoy && hoy.reviewer ? ' (hoy: ' + Object.keys(hoy.reviewer).map(function (k) { return k + ' → ' + hoy.reviewer[k]; }).join(', ') + ')' : '') }),
-      editorGenerico(s, m, pr, 'reviewer', 'Revisor y modelo, como texto')));
+    box.appendChild(editorPorRevisor(s, m, pr, hoy));
     box.appendChild(restoYTexto(s, d, pr, 'models', 'Los modelos, como texto'));
     return box;
   }
