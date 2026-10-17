@@ -35,4 +35,6 @@ function main() {
   return 0;
 }
 
-process.exitCode = main();
+module.exports = { main };
+
+if (require.main === module) process.exitCode = main();
