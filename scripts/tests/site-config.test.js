@@ -875,17 +875,18 @@ test('T28c Umbrales_SoloLectura_ControlesApagados — una sección «sólo para 
 /** La pestaña con pestañas: corre la pantalla con `secciones` y `extras`, el ancla dada, y devuelve los nodos creados. */
 async function pantallaConPestanas({ secciones, extras = {}, hash = '' }) {
   const creados = [];
-  const nodo = (tag) => { const n = { tag, hijos: [], textContent: '', attrs: {}, setAttribute(k, v) { n.attrs[k] = v; }, appendChild(c) { n.hijos.push(c); return c; }, addEventListener() {}, replaceChildren(...cs) { n.hijos = cs; } }; creados.push(n); return n; };
+  const nodo = (tag) => { const n = { tag, hijos: [], textContent: '', attrs: {}, on: {}, setAttribute(k, v) { n.attrs[k] = v; }, appendChild(c) { n.hijos.push(c); return c; }, addEventListener(e, f) { n.on[e] = f; }, replaceChildren(...cs) { n.hijos = cs; } }; creados.push(n); return n; };
   const app = nodo('div');
   const document = { querySelector: () => null, getElementById: (id) => (id === 'config-app' ? app : creados.find((n) => n.attrs.id === id) || null), createElement: (t) => nodo(t) };
   const respuesta = Object.assign({ ok: true, secciones, proponer: {}, versiones: [], productos: [] }, extras);
-  new Function('document', 'fetch', 'location', ORG.pantalla())(document, () => Promise.resolve({ status: 200, json: () => Promise.resolve(respuesta) }), { hash });
+  const llamadas = [];
+  new Function('document', 'fetch', 'location', ORG.pantalla())(document, (ruta, opts) => { llamadas.push({ ruta, cuerpo: opts && opts.body ? JSON.parse(opts.body) : null }); return Promise.resolve({ status: 200, json: () => Promise.resolve(respuesta) }); }, { hash });
   for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
   const dentro = (n) => { const out = []; const walk = (x) => { out.push(x); (x.hijos || []).forEach(walk); }; walk(n); return out; };
   const visibles = dentro(app).filter((n) => n.attrs.role === 'tabpanel' && !n.attrs.hidden).map((n) => n.attrs.id);
   const tabs = dentro(app).filter((n) => n.attrs.role === 'tab').map((n) => ({ id: n.attrs.id, sel: n.attrs['aria-selected'], cuenta: (n.hijos.find((h) => /cuenta/.test(h.attrs.class || '')) || {}).textContent || '' }));
   const panelDe = (id) => dentro(app).filter((n) => n.attrs.role === 'tabpanel').find((p) => dentro(p).some((x) => x.attrs.id === id));
-  return { app, tabs, visibles, panelDe, resumen: app.hijos[0] };
+  return { app, tabs, visibles, panelDe, resumen: app.hijos[0], llamadas, creados };
 }
 const SEC = (id, extra = {}) => Object.assign({ id, titulo: id, repo: 'operaciones', estado: 'cargado', soloLectura: false, borrador: {}, problems: [], avisos: [] }, extra);
 const TODAS = ['sitio', 'personas', 'responsables', 'repos', 'despliegues', 'paridad', 'ado', 'canal', 'espera', 'umbrales', 'respuesta', 'modelos', 'suites', 'integraciones', 'hilos', 'actualizacion', 'instalacion'];
@@ -1398,6 +1399,72 @@ test('2.31-T21 Espera_SeccionConSuPorton @story-2.31 @story-7.20 — el plazo de
       assert.match((await proponer('espera', r.texto)).message, espera);
     });
   }
+});
+
+test('T12 7.31-Cobertura_SeccionConSuPorton @story-7.31 @ac-11 @ac-12 — el umbral de cobertura se edita en team-repos.json, con el lector y la versión que lo leen', async () => {
+  // 🔴 rojo: la sección no existe, se propone con una capa que no la sabe leer, o cambia otra cosa del archivo.
+  const s = ORG.seccionPorId('cobertura');
+  assert.ok(s, 'hay una sección de la cobertura de las pruebas');
+  assert.deepStrictEqual([s.titulo, s.archivo, s.repo, s.lector, s.claves, s.idCorto], ['Cobertura de las pruebas', 'team-repos.json', 'perfil', 'team-repos.js', ['coverage'], 'repos']);
+  assert.ok(ORG.versionAtLeast(ORG.COVERAGE_SINCE, ORG.WAIT_NOTICE_SINCE) && ORG.COVERAGE_SINCE !== ORG.WAIT_NOTICE_SINCE);
+  const malo = ORG.revisar({ seccion: 'cobertura', texto: ORG.formatJson(TR_BASE), borrador: { coverage: { min_touched_lines_pct: 0 } }, lectores: { 'team-repos.js': TR } });
+  assert.strictEqual(malo.ok, false);
+  assert.deepStrictEqual(malo.problems.map((p) => p.path), ['coverage.min_touched_lines_pct'], 'el lector da el problema y la sección no lo propone');
+  for (const [v, espera] of [[ORG.WAIT_NOTICE_SINCE, /todavía no se puede proponer.*coverage/], [ORG.COVERAGE_SINCE, PASO_EL_PORTON]]) {
+    await conPerfil({ layer: capa(v) }, async ({ seccion, revisar, proponer }) => {
+      assert.strictEqual((await seccion('cobertura')).estado, 'cargado');
+      const r = await revisar('cobertura', { coverage: { min_touched_lines_pct: 80 } });
+      assert.strictEqual(r.ok, true, JSON.stringify(r.problems));
+      assert.deepStrictEqual(JSON.parse(r.texto), { ...TR_BASE, coverage: { min_touched_lines_pct: 80 } }, 'el resto del archivo igual');
+      assert.match((await proponer('cobertura', r.texto)).message, espera);
+    });
+  }
+});
+
+test('T13 7.31-Cobertura_EnSuBloque @story-7.31 @ac-11 — la sección va en «Cómo trabaja Claude», después de «Pruebas al mergear»', async () => {
+  // 🔴 rojo: la sección en otra pestaña, o fuera de su lugar.
+  const r = await pantallaConPestanas({ secciones: [...TODAS, 'cobertura'].map((id) => SEC(id)) });
+  const panel = r.panelDe('seccion-cobertura');
+  assert.strictEqual((panel || { attrs: {} }).attrs.id, 'pestana-claude');
+  const orden = []; const walk = (x) => { if (/^seccion-/.test(x.attrs.id || '')) orden.push(x.attrs.id); (x.hijos || []).forEach(walk); }; walk(panel);
+  assert.deepStrictEqual(orden.slice(orden.indexOf('seccion-suites'), orden.indexOf('seccion-suites') + 2), ['seccion-suites', 'seccion-cobertura']);
+});
+
+test('T12 …el campo de la sección: un número entero va como número, vacío saca la clave, un texto llega tal cual al lector @story-7.31 @ac-11', async () => {
+  // 🔴 rojo: «abc» se convierte en NaN (el archivo escribe null y el aviso dice «es null» en vez de qué corregir), o un
+  // campo vaciado deja `coverage: {}` en el archivo.
+  const sec = SEC('cobertura', { repo: 'perfil', borrador: {} });
+  const r = await pantallaConPestanas({ secciones: [...TODAS.map((id) => SEC(id)), sec] });
+  // los nodos de ahora (la pantalla vuelve a dibujar después de cada revisión)
+  const enLaSeccion = (pred) => {
+    const caja = r.creados.filter((n) => n.attrs.id === 'seccion-cobertura').pop();
+    const out = []; const walk = (x) => { if (pred(x)) out.push(x); (x.hijos || []).forEach(walk); }; walk(caja);
+    return out.pop();
+  };
+  const escribir = (v) => enLaSeccion((n) => n.tag === 'input' && n.attrs['data-path'] === 'coverage.min_touched_lines_pct').on.input({ target: { value: v } });
+  const revisarCon = async (v) => {
+    escribir(v);
+    enLaSeccion((n) => n.tag === 'button' && n.textContent === 'Revisar cambios').on.click();
+    for (let i = 0; i < 10; i++) await new Promise((x) => setImmediate(x));
+    return r.llamadas.filter((l) => /revisar/.test(l.ruta)).pop().cuerpo.borrador;
+  };
+  assert.deepStrictEqual((await revisarCon('80')).coverage, { min_touched_lines_pct: 80 });
+  const conTexto = await revisarCon('abc');
+  assert.deepStrictEqual(conTexto.coverage, { min_touched_lines_pct: 'abc' }, 'el texto llega al lector, que dice «es "abc"»');
+  const malo = ORG.revisar({ seccion: 'cobertura', texto: ORG.formatJson(TR_BASE), borrador: conTexto, lectores: { 'team-repos.js': TR } });
+  assert.match(malo.problems[0].message, /porcentaje entero, de 1 a 100 \(es "abc"\)/);
+  assert.strictEqual((await revisarCon('')).coverage, undefined, 'vacío: sin la clave, el de siempre (75)');
+});
+
+test('T12 …la clase: ningún campo numérico de la pantalla convierte un texto en null @story-7.31 @ac-11', () => {
+  // 🔴 rojo: un campo que hace `Number(v)` manda NaN, el archivo escribe null y el aviso dice «es null» en vez de qué corregir.
+  const fuente = ORG.pantalla();
+  // toda conversión a número de la pantalla, salvo la de numOTexto, la de una ruta («fila N») y el id de un pipeline
+  const conversiones = fuente.split('\n').filter((l) => /\bNumber\(|parseInt\(|parseFloat\(|[=:(,]\s*\+\s*(v|e\.target)\b/.test(l))
+    .filter((l) => !/function numOTexto|Number\(p\) \+ 1|full_tests_pipeline/.test(l));
+  assert.deepStrictEqual(conversiones, [], 'los campos numéricos pasan por numOTexto');
+  const numOTexto = new Function(`${fuente.match(/function numOTexto\([^)]*\)\s*\{[^}]*\}/)[0]}; return numOTexto;`)();
+  assert.deepStrictEqual([numOTexto('80'), numOTexto(' 7 '), numOTexto('0.5'), numOTexto('abc'), numOTexto('8 0')], [80, 7, 0.5, 'abc', '8 0']);
 });
 
 test('2.31-T13b ContentList_Screen_NoButtons — la tabla de lo que trae la organización no tiene botones', async () => {
