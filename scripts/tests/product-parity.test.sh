@@ -462,12 +462,15 @@ rc=$(cd "$TMP" && node "$CHK" --config "$TMP/c810c.json" >"$TMP/out.txt" 2>&1; e
 
 # ---------------------------------------------------------------- las plantillas del alta de un producto (paquete bizuit)
 # NewProductTemplates_RenderedProduct_PassesThePipelineControls — un producto de juguete armado con las plantillas de
-# packs/bizuit/new-product-templates/ (marcadores reemplazados con nombres inventados) no deja ningún marcador vivo, y
+# packs/bizuit/templates/ (marcadores reemplazados con nombres inventados) no deja ningún marcador vivo, y
 # sus pipelines pasan los controles de pipeline del arnés. Si una plantilla se queda atrás de los productos —un
 # disparador que construye con un merge de sólo documentación, un paso que publica con lo anterior en rojo—, esto lo dice
-# antes del próximo alta, no después.
-TPL="$AQUI/packs/bizuit/new-product-templates"
-if [ ! -d "$TPL/pipelines" ]; then
+# antes del próximo alta, no después. Las plantillas viajan con el perfil del equipo (story 8.41): sin el paquete
+# (la copia pública) no se mide, y se dice.
+TPL="$AQUI/packs/bizuit/templates"
+if [ ! -d "$AQUI/packs/bizuit" ]; then
+  ok "NO MEDIDO: sin el paquete bizuit (viaja con el perfil del equipo) — las plantillas del alta se miden en el repo del equipo"
+elif [ ! -d "$TPL/pipelines" ]; then
   no "🔴 plantillas del alta: no está $TPL/pipelines"
 else
   J="$TMP/juguete"; mkdir -p "$J/back" "$J/forms" "$J/stories"
@@ -483,8 +486,9 @@ else
   rend "$TPL/pipelines/forms-prod.yml" "$J/forms/azure-pipelines-prod.yml"
   rend "$TPL/pipelines/stories-gate.yml" "$J/stories/azure-pipelines.yml"
   for d in backend forms stories common; do for f in "$TPL/$d"/*; do
-    case "$f" in *.template) continue ;; esac   # el catálogo de producción se escribe con el editor, nunca con el shell
-    rend "$f" "$J/$( [ "$d" = backend ] && echo back || { [ "$d" = common ] && echo stories || echo "$d"; })/$(basename "$f")"
+    case "$f" in *.json.template) continue ;; esac   # el catálogo de producción se escribe con el editor, nunca con el shell
+    # CLAUDE.md, AGENTS.md y el hook viajan con `.template` (un asistente no los carga solos): se copian sin esa extensión
+    rend "$f" "$J/$( [ "$d" = backend ] && echo back || { [ "$d" = common ] && echo stories || echo "$d"; })/$(basename "$f" .template)"
   done; done
   rc=$(node "$AQUI/scripts/ci/check-unreplaced-placeholders.js" "$J/back" "$J/forms" "$J/stories" >"$TMP/out.txt" 2>&1; echo $?)
   [ "$rc" -eq 0 ] && ok "plantillas del alta: el producto de juguete no deja ningún marcador vivo" \
@@ -964,6 +968,18 @@ node "$CHK" --config "$TMP/t35.json" --root "$TMP/t35" >"$TMP/o35" 2>&1; rc35=$?
 { [ -z "$t35" ] && [ "$rc35" -eq 1 ] && grep -q 'no dice "fecha"' "$TMP/o35"; } \
   && ok "T35 Declaradas_LecturaExportada_MismaReglaQueElControl @story-2.29 @ac-26: la lectura exportada rechaza lo mismo que main, y main sigue igual" \
   || no "🔴 T35 [$t35] rc=$rc35 $(head -1 "$TMP/o35")"
+
+# story 8.41 (pase adversarial): las plantillas de un paquete viven en packs/<paquete>/templates/; ahí los marcadores son el
+# contenido y el control de marcadores las saltea igual que a new-product-templates/ — pero no saltea otra carpeta templates/
+T41D="$TMP/t41"; mkdir -p "$T41D/copia/packs/stack/templates" "$T41D/copia/templates"
+printf 'nombre: {{PRODUCT}}\n' > "$T41D/copia/packs/stack/templates/a.yml"
+printf '# el paquete\n' > "$T41D/copia/packs/stack/README.md"
+node "$AQUI/scripts/ci/check-unreplaced-placeholders.js" "$T41D/copia/packs" >"$TMP/o41a" 2>&1; rc41a=$?
+printf 'nombre: {{PRODUCT}}\n' > "$T41D/copia/templates/b.yml"
+node "$AQUI/scripts/ci/check-unreplaced-placeholders.js" "$T41D/copia" >"$TMP/o41b" 2>&1; rc41b=$?
+{ [ "$rc41a" -eq 0 ] && [ "$rc41b" -eq 1 ] && grep -q 'templates/b.yml' "$TMP/o41b" && ! grep -q 'stack/templates/a.yml' "$TMP/o41b"; } \
+  && ok "plantillas de un paquete: el control de marcadores saltea packs/<paquete>/templates/ y no otra carpeta templates/" \
+  || no "🔴 plantillas de un paquete: rc=$rc41a/$rc41b $(head -2 "$TMP/o41b" | tr '\n' ' ')"
 
 echo "─────────────"
 if [ "$fallos" -eq 0 ]; then echo "✅ paridad-entre-productos: todo verde"; exit 0; else echo "❌ paridad-entre-productos: $fallos falla(s)"; exit 1; fi

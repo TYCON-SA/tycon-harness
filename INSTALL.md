@@ -105,22 +105,14 @@ corren con él.
 El arnés anda sin Azure DevOps, sin Clockify y sin engram: todo eso nace apagado y nada lo pide. Tres pasos te dejan
 como a un dev del equipo:
 
-**1. Prendé el paquete bizuit** (los revisores de .NET, React y Next.js, y las guías de guides/bizuit/). Viene
-apagado: sin esto el pipeline no lanza esos revisores, y no avisa. En cada repo de un plugin o de formularios (si el
-archivo ya tiene una línea `packs:`, editá esa):
-
-```bash
-mkdir -p .tycon && printf 'packs: [bizuit]\n' >> .tycon/advisors.yaml
-```
-
-```powershell
-New-Item -ItemType Directory -Force .tycon | Out-Null; Add-Content .tycon/advisors.yaml 'packs: [bizuit]'
-```
-
-O para todos tus repos de una vez: `"packs": { "default": "all" }` en `~/.claude/tycon.json` (o `TYCON_PACKS_DEFAULT=all`).
-Con la capa del equipo instalada (`guides/mecanismo-de-instalacion.md`, «La capa del equipo sobre la versión bajada»),
-si su perfil declara los paquetes, el perfil del equipo gana sobre ese archivo: ahí vale la variable, o `packs:` en el repo.
-Para arrancar un plugin o un formulario nuevo, las guías de guides/bizuit/ te mandan a los templates públicos.
+**1. Los paquetes vienen con el perfil de tu equipo.** El núcleo no trae paquetes: los revisores, skills, guías y
+plantillas de un stack (por ejemplo, el de .NET + React/Next.js sobre BIZUIT) viven en el repo del perfil de cada
+equipo y llegan con su capa (`guides/mecanismo-de-instalacion.md`, «La capa del equipo sobre la versión bajada»). Los
+activa la organización con `packs.default` en ese perfil (o en la pestaña Configuración del sitio, sección Paquetes);
+sin perfil, tu máquina puede fijarlo en `~/.claude/tycon.json` (`"packs": { "default": "all" }`) o con
+`TYCON_PACKS_DEFAULT=all` (si el perfil los declara, el perfil del equipo gana sobre ese archivo). Un repo sólo puede
+achicar la lista con `packs:` en su `.tycon/advisors.yaml`. Sin un paquete
+activo el pipeline no lanza sus revisores, y lo dice en la primera corrida.
 
 **2. Confirmá los hooks globales de git.** El instalador los copia a `~/.git-hooks/`, y git los usa sólo con una
 carpeta global de hooks. Si git no tenía ninguna, `install` (o `apply`) la apuntó a esa carpeta; si ya tenías otra, no

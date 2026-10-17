@@ -105,25 +105,24 @@ const SECTIONS = [
   // story 8.40, tanda B: el alta guiada de la organización (harness.js team-init), después de las formas de instalar
   ['Set up your organization', 'Dar de alta tu organización'],
   ['Profiles', 'Perfiles'],
-  ['The TYCON stack pack', 'El paquete del stack de TYCON'],
+  // story 8.41: el núcleo no trae paquetes; la sección dice que llegan con el perfil del equipo
+  ['Your team\'s packs', 'Los paquetes de tu equipo'],
   ['What is optional', 'Qué es opcional'],
   ['What it writes on your machine and what it does on its own', 'Qué escribe en tu máquina y qué hace solo'],
   ['Your product repo', 'El repo del producto'],
   ['Offline', 'Sin red'],
   ['How it updates', 'Cómo se actualiza'],
 ];
-const BLOCKS = ['requirements', 'install:core', 'install:unattended', 'install:bizuit', 'install:clone', 'install:clone-unattended'];
-const STACK_PHRASE = {
-  en: 'the TYCON stack pack: .NET + React/Next.js on Bizuit',
-  es: 'el paquete del stack de TYCON: .NET + React/Next.js sobre Bizuit',
-};
+const BLOCKS = ['requirements', 'install:core', 'install:unattended', 'install:clone', 'install:clone-unattended'];
+// la frase con que el paquete del stack del equipo se describe (su manifiesto vive en el perfil del equipo desde la 8.41)
+const STACK_PHRASE = { es: 'el paquete del stack de TYCON: .NET + React/Next.js sobre Bizuit' };
 // La marca BMad fuera de los identificadores sólo puede aparecer en la frase de compatibilidad (política de marca).
 const BMAD_COMPAT = {
   en: 'uses BMad Method (MIT); it is not affiliated with or endorsed by BMad Code, LLC',
   es: 'usa BMad Method, MIT; no está afiliado ni respaldado por BMad Code, LLC',
 };
 // La parte fija del mensaje de `paquetesActivos()` (packs.js de agent-skills) para un paquete pedido y no instalado.
-const PACK_MISSING_MESSAGE = 'el repo declara el paquete «bizuit» en `packs:` y no está instalado en';
+const PACK_MISSING_MESSAGE = 'el repo declara el paquete «<nombre>» en `packs:` y no está instalado en';
 // La instalación de la portada (story 8.23, tanda E · AC 33): tres líneas por sistema —bajar el guion, leerlo,
 // correrlo—, sin git. La bajada va por raw.githubusercontent.com, no por la API: sin credencial, la API tiene un tope de 60
 // consultas por hora por conexión y una máquina nueva no llegaba ni a correr el guion (deuda DEF-8.34-portada-por-la-api). La URL es la del repo público declarado. Desde que el repo de la versión publicada es público (story
@@ -436,7 +435,6 @@ test('Papeles_Portadas_MismoContratoEnDosIdiomas', async (t) => {
     const prose = text[lang].replace(/^(```|~~~)[^\n]*\n[\s\S]*?^\1[ \t]*$/gm, '').replace(/`[^`\n]*`/g, '').split(BMAD_COMPAT[lang]).join('');
     assert.ok(text[lang].includes(BMAD_COMPAT[lang]), `${file}: falta la frase de compatibilidad con BMad Method`);
     assert.doesNotMatch(prose, /bmad/i, `${file}: la marca BMad sólo puede aparecer en la frase de compatibilidad`);
-    assert.ok(text[lang].includes(STACK_PHRASE[lang]), `${file}: falta la frase del paquete del stack («${STACK_PHRASE[lang]}»)`);
     assert.doesNotMatch(text[lang], /paquete de Bizuit|Bizuit pack/i, `${file}: el paquete del stack no es «de Bizuit»`);
     assert.ok(text[lang].includes(PACK_MISSING_MESSAGE), `${file}: falta la parte fija del mensaje de un paquete pedido y no instalado (AC 22)`);
     assert.match(text[lang], /\]\(\.\.\/INSTALL\.md[#)]/, `${file}: tiene que enlazar a INSTALL.md (la tabla de hooks)`);
@@ -458,9 +456,15 @@ test('Papeles_Portadas_MismoContratoEnDosIdiomas', async (t) => {
     assert.doesNotMatch(readPaper(guided), /git clone/, `${guided}: el pedido guiado ya no clona (story 8.23 E)`);
   }
 
-  // el paquete del stack vive en packs/ de este mismo repo (el repo unido: ya no hay un clon de agent-skills aparte)
-  await t.test('la description del paquete del stack', () => {
-    const pack = readJson(path.join(RAIZ, 'packs', 'bizuit', 'pack.json'));
+  // el paquete del stack vive en el perfil del equipo (story 8.41): se mide donde está (el repo del equipo encima)
+  await t.test('la description del paquete del stack', (tt) => {
+    const file = path.join(RAIZ, 'packs', 'bizuit', 'pack.json');
+    // en la copia pública (sin los paquetes del equipo: la señal es el de clientes) no se mide y se dice; con el repo del
+    // equipo encima, que falte es un rojo
+    const publica = !exists(path.join(RAIZ, 'packs', 'clients', 'pack.json'));
+    if (publica) { tt.skip('NO MEDIDO: el paquete del stack viaja con el perfil del equipo, no con esta copia'); return; }
+    assert.ok(exists(file), `${file}: el paquete del stack del equipo no está`);
+    const pack = readJson(file);
     assert.strictEqual(pack.name, 'bizuit', 'pack.json: el nombre no cambia');
     assert.ok(pack.description.toLowerCase().includes(STACK_PHRASE.es.toLowerCase()), `pack.json: la description tiene que decir «${STACK_PHRASE.es}»`);
     assert.doesNotMatch(pack.description, /paquete de Bizuit|SDK de Bizuit Extensions es público/, 'pack.json: la description vieja');

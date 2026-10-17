@@ -300,10 +300,18 @@ function frontmatter(md) {
 }
 
 test('T8 Agentes_OmitClaudeMd_Decidido — 24 del núcleo con el campo (más los del paquete de clientes), exactamente dos exceptuados por nombre, límites en los que tienen Bash', (t) => {
-  const defs = fs.readdirSync(AGENTS).filter((f) => f.endsWith('.md')).map((f) => {
-    const md = fs.readFileSync(path.join(AGENTS, f), 'utf8');
+  // las definiciones de la raíz y las de la carpeta de agentes de cada paquete instalado (story 8.41: los revisores de un
+  // stack viven en su paquete, que viaja con el perfil del equipo)
+  const PACKS = path.join(AGENTS, '..', 'packs');
+  const carpetas = [AGENTS, ...(fs.existsSync(PACKS) ? fs.readdirSync(PACKS) : []).map((p) => {
+    try { const m = JSON.parse(fs.readFileSync(path.join(PACKS, p, 'pack.json'), 'utf8')); return m.agents ? path.join(PACKS, p, m.agents) : null; } catch (_) { return null; }
+  }).filter(Boolean)];
+  const defs = carpetas.flatMap((dir) => fs.readdirSync(dir).filter((f) => f.endsWith('.md')).map((f) => {
+    const md = fs.readFileSync(path.join(dir, f), 'utf8');
     return { file: f, md, fm: frontmatter(md) };
-  });
+  }));
+  // sin los paquetes del equipo (la copia pública) quedan las 13 del núcleo, 11 con el campo
+  const DEL_NUCLEO = SKIP_PUBLIC ? 13 : 26;
   // Story 8.7 (tanda B): la copia pública sale sin las definiciones de los revisores del paquete de clientes. Los números
   // de este caso son los del núcleo (26 definiciones, 24 con el campo), que valen en los dos lados; en el repo del equipo
   // se les suman los revisores que declara el manifiesto de ese paquete, leídos de él y no escritos acá (antes era un 2
@@ -319,12 +327,12 @@ test('T8 Agentes_OmitClaudeMd_Decidido — 24 del núcleo con el campo (más los
   if (SKIP_PUBLIC) {
     t.diagnostic(`NO MEDIDO: los revisores del paquete de clientes (${SKIP_PUBLIC}) — no están entre las definiciones ni entre los que tienen Bash${noViajan.length ? ` (${noViajan.join(' y ')})` : ''}; se miden en el repo del equipo`);
   }
-  assert.equal(defs.length, 26 + deClientes.length, `hay ${26 + deClientes.length} definiciones (26 del núcleo + ${deClientes.length} del paquete de clientes)`);
+  assert.equal(defs.length, DEL_NUCLEO + deClientes.length, `hay ${DEL_NUCLEO + deClientes.length} definiciones (${DEL_NUCLEO} del núcleo y del paquete del stack + ${deClientes.length} del paquete de clientes)`);
   const con = defs.filter((d) => d.fm.omitClaudeMd === 'true').map((d) => d.fm.name);
   const sin = defs.filter((d) => d.fm.omitClaudeMd !== 'true').map((d) => d.fm.name).sort();
   assert.deepEqual(sin, EXCEPTUADOS,
     `sólo los exceptuados van sin omitClaudeMd; sin decidir: ${sin.filter((n) => !EXCEPTUADOS.includes(n)).join(', ')}`);
-  assert.equal(con.length, 24 + deClientes.length);
+  assert.equal(con.length, DEL_NUCLEO - EXCEPTUADOS.length + deClientes.length);
   const conBash = defs.filter((d) => d.fm.omitClaudeMd === 'true' && /\bBash\b/.test(d.fm.tools || ''));
   assert.deepEqual(conBash.map((d) => d.fm.name).sort(), CON_BASH.filter((n) => !noViajan.includes(n)));
   for (const d of conBash) {

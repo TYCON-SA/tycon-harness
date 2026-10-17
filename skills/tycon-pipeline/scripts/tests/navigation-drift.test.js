@@ -25,6 +25,44 @@ const nd = require('../lib/navigation-drift.js');
 
 function lab() { return fs.mkdtempSync(path.join(os.tmpdir(), 'navdrift-')); }
 
+// el revisor de cableado vive en un paquete (story 8.41): un paquete de juguete que declara el prefijo WIRING
+const WIRING = 'rev-cableado-juguete';
+function paqueteDeJuguete(dir, nombre, revisor, json = null) {
+  fs.mkdirSync(path.join(dir, nombre, 'agents'), { recursive: true });
+  fs.writeFileSync(path.join(dir, nombre, 'agents', `${revisor}.md`), `---\nname: ${revisor}\n---\n# ${revisor}\n`);
+  fs.writeFileSync(path.join(dir, nombre, 'pack.json'), json || JSON.stringify({ name: nombre, description: 'paquete de juguete', agents: 'agents',
+    reviewers: [{ agent: revisor, group: 'condicional', when: { detection: 'tsxModified' }, surface: { paths: ['**/*.tsx'] }, depth: 'lean', prefixes: ['WIRING'] }] }));
+}
+const PAQUETES = lab();
+paqueteDeJuguete(PAQUETES, 'juguete', WIRING);
+process.env.TYCON_PACKS_DIR = PAQUETES;
+process.env.TYCON_PACKS_DEFAULT = 'all';
+
+// story 8.41 · T45 (AC 50): el revisor sale de los paquetes ACTIVOS por su prefijo; sin él, el aviso lo dice; un manifiesto
+// ilegible no se lee como «no hay paquete»
+test('T45 NavigationDrift_WiringFromActivePack_SaysWhenNone', () => {
+  const d = lab();
+  assert.deepEqual(nd.revisorDeCableado(d), { agente: WIRING, motivo: null });
+  nd.marcar(d, 'specs/planning-artifacts/navigation-map.md', 'Edit');
+  const sinPaquete = lab();
+  process.env.TYCON_PACKS_DIR = sinPaquete;
+  try {
+    assert.equal(nd.revisorDeCableado(d).agente, null);
+    const a = nd.avisoPendiente(d, ledger(lab(), []));
+    assert.match(a, /no tiene quién la re-audite: ningún paquete activo trae al revisor de cableado/, 'sin el revisor, se dice');
+    assert.ok(fs.existsSync(nd.rutaMarca(d)), 'y la marca queda: cuando llegue el paquete, el aviso de re-auditar sale');
+    // apagado para la organización: tampoco
+    process.env.TYCON_PACKS_DIR = PAQUETES; process.env.TYCON_PACKS_DEFAULT = 'none';
+    assert.equal(nd.revisorDeCableado(d).agente, null, 'un paquete apagado no aporta su revisor');
+    process.env.TYCON_PACKS_DEFAULT = 'all';
+    // un manifiesto roto: se dice, no es «no hay paquete»
+    const roto = lab();
+    paqueteDeJuguete(roto, 'roto', WIRING, '{ esto no es json');
+    process.env.TYCON_PACKS_DIR = roto;
+    assert.match(nd.revisorDeCableado(d).motivo, /no pude leer los paquetes/);
+  } finally { process.env.TYCON_PACKS_DIR = PAQUETES; process.env.TYCON_PACKS_DEFAULT = 'all'; }
+});
+
 function ledger(dir, filas) {
   const runs = path.join(dir, 'runs');
   fs.mkdirSync(runs, { recursive: true });
@@ -69,7 +107,7 @@ test('con marca y sin re-auditoría, avisa y nombra el documento', () => {
 test('una corrida REAL del revisor de wiring, posterior y en este repo, levanta la marca', () => {
   const d = lab();
   nd.marcar(d, 'x.md', 'Edit');
-  const opts = ledger(lab(), [{ ts: new Date(Date.now() + 1000).toISOString(), advisor: nd.WIRING, repo: d }]);
+  const opts = ledger(lab(), [{ ts: new Date(Date.now() + 1000).toISOString(), advisor: WIRING, repo: d }]);
   assert.equal(nd.avisoPendiente(d, opts), null);
   assert.equal(fs.existsSync(nd.rutaMarca(d)), false, 'la marca se borra: si quedara, el aviso volvería a salir');
 });
@@ -77,14 +115,14 @@ test('una corrida REAL del revisor de wiring, posterior y en este repo, levanta 
 test('una corrida ANTERIOR al cambio no levanta la marca', () => {
   const d = lab();
   nd.marcar(d, 'x.md', 'Edit');
-  const opts = ledger(lab(), [{ ts: new Date(Date.now() - 60000).toISOString(), advisor: nd.WIRING, repo: d }]);
+  const opts = ledger(lab(), [{ ts: new Date(Date.now() - 60000).toISOString(), advisor: WIRING, repo: d }]);
   assert.ok(nd.avisoPendiente(d, opts), 'auditar ANTES del cambio no prueba nada sobre el cambio');
 });
 
 test('una corrida en OTRO repo no levanta la marca', () => {
   const d = lab();
   nd.marcar(d, 'x.md', 'Edit');
-  const opts = ledger(lab(), [{ ts: new Date(Date.now() + 1000).toISOString(), advisor: nd.WIRING, repo: '/otro/repo' }]);
+  const opts = ledger(lab(), [{ ts: new Date(Date.now() + 1000).toISOString(), advisor: WIRING, repo: '/otro/repo' }]);
   assert.ok(nd.avisoPendiente(d, opts));
 });
 
@@ -104,7 +142,7 @@ test('el resumen durable también cuenta (el detalle vivo dura 7 días)', () => 
   const sum = path.join(dir, 'sum.jsonl');
   fs.writeFileSync(sum, JSON.stringify({
     sessionId: 'vieja', from: '2026-08-01T00:00:00.000Z', to: new Date(Date.now() + 1000).toISOString(),
-    repos: [d], stories: [], advisors: { [nd.WIRING]: 1 }, spawns: 1,
+    repos: [d], stories: [], advisors: { [WIRING]: 1 }, spawns: 1,
   }) + '\n');
   assert.equal(nd.avisoPendiente(d, { runsDir: path.join(dir, 'vacio'), summaryPath: sum }), null);
 });

@@ -90,7 +90,10 @@ if [ -n "$TERCEROS_TOCA" ] || [ -n "$TERCEROS_ENLACE" ]; then
   fi
 fi
 
-cambiados="$(git diff --cached --name-only -- 'agents/*.md')" || {
+# los revisores de la raíz y los de la carpeta de agentes de un paquete (story 8.41: los de un stack viven ahí). Sólo
+# `packs/<p>/agents/`: es la única carpeta de agentes que la capa del equipo acepta (team.js); un paquete que declare otra
+# en su manifiesto no pasa por este control
+cambiados="$(git diff --cached --name-only -- 'agents/*.md' 'packs/*/agents/*.md')" || {
   echo "⚠ pre-commit AgentSkills: git diff falló — no pude determinar si el commit toca advisors" >&2
   exit 0
 }

@@ -133,10 +133,10 @@ test('T4 Team_ClosedPaths_OutsideRefusedAllNamed_SymlinkSubmoduleUnsafePath_Publ
   assert.match(reason('../x'), /segura|fuera del árbol/);
   assert.match(reason('scripts/lib/tycon-config.js'), /versión pública/);
   assert.match(reason('version.json'), /lista cerrada|versión pública/);
-  // más de 1 MB en total: una causa más, dicha una vez
-  const big = TEAM.planTeam([dir('scripts'), dir('scripts/metrics'), blob('perfil-equipo.json', 600 * 1024), blob('scripts/metrics/corridas-buzon.json', 500 * 1024), blob('team-layer.json', 80)]);
+  // más que el tope en total (2 MB): una causa más, dicha una vez
+  const big = TEAM.planTeam([dir('scripts'), dir('scripts/metrics'), blob('perfil-equipo.json', 1100 * 1024), blob('scripts/metrics/corridas-buzon.json', 1000 * 1024), blob('team-layer.json', 80)]);
   assert.equal(big.ok, false);
-  assert.equal(big.problems.filter((p) => /1 MB|tamaño/.test(p.reason)).length, 1);
+  assert.equal(big.problems.filter((p) => /MB en total|tamaño/.test(p.reason)).length, 1);
   // sin la declaración, la capa no vale
   const noDecl = TEAM.planTeam(SANE.filter((e) => e.path !== 'team-layer.json'));
   assert.equal(noDecl.ok, false);
@@ -495,7 +495,7 @@ test('T17 Team_ClosedPatterns_A2a_PacksAgentsNestedSkillsMdOnly_NoSkillInsidePub
   // una skill de la capa dentro de otra skill de la capa: un SKILL.md con otro arriba
   r = one([blob('skills/sola/sub/SKILL.md', 10)]);
   assert.ok(r.problems.some((x) => x.path === 'skills/sola/sub/SKILL.md' && /SKILL\.md/.test(x.reason)), JSON.stringify(r.problems));
-  // el tope de 300 archivos (además del de 1 MB)
+  // el tope de 300 archivos (además del de bytes)
   const many = Array.from({ length: 300 }, (_, i) => blob(`skills/sola/references/r${i}.md`, 1));
   r = one(many);
   assert.ok(r.problems.some((x) => /300 archivos/.test(x.reason)), JSON.stringify(r.problems.slice(-2)));
@@ -573,9 +573,9 @@ test('T31 Team_FixedSkillList_FolderWhitelistAndDataFiles_ProcessesCustomPilotsT
   assert.equal(r.ok, true, JSON.stringify(r.problems));
   r = TEAM.planTeam([...base, blob(`${S}/docs/grande.md`, E.maxBytes + 1)]);
   assert.ok(r.problems.some((x) => /bizuit-sdd/.test(x.path + x.reason) && /maxBytes|presupuesto/.test(x.reason)), JSON.stringify(r.problems));
-  // y el resto de la capa sigue con su tope de 1 MB sin contar la skill de la lista
-  r = TEAM.planTeam([...base, blob('skills/sola/SKILL.md', 10), blob('skills/sola/grande.md', big(1.1))]);
-  assert.ok(r.problems.some((x) => /1 MB/.test(x.reason)), JSON.stringify(r.problems));
+  // y el resto de la capa sigue con su tope (2 MB) sin contar la skill de la lista
+  r = TEAM.planTeam([...base, blob('skills/sola/SKILL.md', 10), blob('skills/sola/grande.md', big(2.1))]);
+  assert.ok(r.problems.some((x) => /MB en total/.test(x.reason)), JSON.stringify(r.problems));
   // la revisión es informativa: vencida no rechaza nada, sólo se dice
   assert.equal(TEAM.extrasReviewDue(E, new Date('2099-01-01')), true);
   assert.equal(TEAM.extrasReviewDue(E, new Date('2000-01-01')), false);
@@ -899,7 +899,7 @@ test('T41 TeamLayer_WholePack_StackedAndLinked', () => {
   const ok = TEAM.planTeam([...SANE, ...whole], { publicPaths: ['skills/tycon-pipeline/SKILL.md'] });
   assert.equal(ok.ok, true, JSON.stringify(ok.problems));
   for (const [p, why] of [
-    ['packs/eq/skills/s-eq/run.sh', /lista cerrada/], ['packs/eq/templates/pipeline.yml', /lista cerrada/],
+    ['packs/eq/skills/s-eq/run.sh', /lista cerrada/], ['packs/eq/templates/run.sh', /lista cerrada/],
     ['packs/eq/agents/rev.json', /lista cerrada/], ['packs/eq/guides/x.js', /lista cerrada/],
     ['packs/eq/skills/huerfana/notas.md', /SKILL\.md/], ['packs/eq/agents/sub/rev.md', /lista cerrada/],
   ]) {
@@ -1109,6 +1109,60 @@ test('A2a Review_HooksAnyForm_McpServers_TrailingDotAndReservedNames_ThirdPartyU
 const T80 = 'T80 TeamOnboardingText_InTeamLayer_GettingStartedWithoutRepoPermission';
 const TEAM_TEXT = '# El alta del equipo de juguete\n\nPegale este texto al asistente.\n';
 /** Una capa ya bajada de juguete (la forma que devuelve `fetchTeam`): los archivos en una caché y lo resuelto, con el commit `n`. */
+// ── story 8.41 · AC 49 (T44): las plantillas de un paquete viajan en la capa como datos — una lista cerrada de extensiones,
+//    sin permiso de ejecución; lo que no es de la lista rechaza la capa entera nombrando la ruta ─────────────────────────
+test('T44 TeamLayer_PackTemplates_ClosedExtensionsNoExec', () => {
+  const pack = [blob('packs/eq/pack.json', 300), blob('packs/eq/agents/rev-eq.md', 100)];
+  const templates = ['packs/eq/templates/README.md', 'packs/eq/templates/pipelines/ci.yml', 'packs/eq/templates/forms/advisors.yaml',
+    'packs/eq/templates/forms/declared.json', 'packs/eq/templates/backend/coverlet.runsettings',
+    'packs/eq/templates/backend/catalog.json.template', 'packs/eq/templates/stories/githooks-pre-commit.template',
+    'packs/eq/templates/forms/CLAUDE.md.template', 'packs/eq/templates/common/AGENTS.md.template'];
+  const ok = TEAM.planTeam([...SANE, ...pack, ...templates.map((p) => blob(p, 100))], {});
+  assert.equal(ok.ok, true, JSON.stringify(ok.problems));
+  for (const p of templates) assert.ok(ok.files.some((f) => f.path === p), `${p} tendría que apilarse`);
+  for (const [p, why] of [
+    ['packs/eq/templates/stories/githooks-pre-commit', /lista cerrada/],   // sin extensión: el hook viaja como .template
+    ['packs/eq/templates/run.sh', /lista cerrada/], ['packs/eq/templates/x.js', /lista cerrada/],
+    ['packs/eq/templates/x.ps1', /lista cerrada/], ['packs/eq/templates/x.YML', /lista cerrada/],
+    ['packs/eq/templates/a/b/c/d/e/f/g.yml', /lista cerrada/],             // la misma profundidad que las guías de un paquete
+    ['packs/eq/plantillas/x.yml', /lista cerrada/],                        // sólo la carpeta templates/
+    ['packs/eq/templates/forms/CLAUDE.md', /lista cerrada/],               // un asistente lo carga solo: viaja como CLAUDE.md.template
+    ['packs/eq/templates/common/AGENTS.md', /lista cerrada/],
+    ['packs/eq/templates/.claude/skills/s/SKILL.md', /lista cerrada/],   // un tramo con punto: un asistente lo descubre solo
+    ['packs/eq/templates/.mcp.json', /lista cerrada/],
+    ['packs/eq/templates/forms/.hidden.yml', /lista cerrada/],
+    ['packs/eq/guides/CLAUDE.md', /lista cerrada/],                      // tampoco en las guías de un paquete
+    ['packs/eq/guides/sub/agents.md', /lista cerrada/],
+  ]) {
+    const r = TEAM.planTeam([...SANE, ...pack, blob(p, 10)], {});
+    assert.equal(r.ok, false, `tendría que rechazar ${p}`);
+    assert.deepEqual(r.files, [], `${p}: con un rechazo no queda nada para apilar`);
+    const hit = r.problems.find((x) => x.path === p);
+    assert.ok(hit && why.test(hit.reason), `${p}: ${JSON.stringify(r.problems)}`);
+  }
+  // sin permiso de ejecución: el modo lo juzga la regla de toda la capa
+  const exec = TEAM.planTeam([...SANE, ...pack, blob('packs/eq/templates/pipelines/ci.yml', 10, '100755')], {});
+  assert.equal(exec.ok, false);
+  assert.ok(exec.problems.some((x) => x.path === 'packs/eq/templates/pipelines/ci.yml' && /100644/.test(x.reason)), JSON.stringify(exec.problems));
+  // el motivo dice qué sí entra en templates/
+  assert.match(TEAM.layerPathProblem('packs/eq/templates/run.sh'), /templates/);
+  // el tope de la capa entera es 2 MB (decisión 12): con los paquetes de un equipo, 1,5 MB entra; más de 2 MB no
+  assert.equal(TEAM.MAX_TOTAL_BYTES, 2 * 1024 * 1024);
+  const big = TEAM.planTeam([...SANE, ...pack, blob('packs/eq/templates/grande.yml', 1.5 * 1024 * 1024)], {});
+  assert.equal(big.ok, true, JSON.stringify(big.problems));
+  const over = TEAM.planTeam([...SANE, ...pack, blob('packs/eq/templates/grande.yml', 2 * 1024 * 1024)], {});
+  assert.ok(over.problems.some((x) => x.path === '(total)' && /2 MB/.test(x.reason)), JSON.stringify(over.problems));
+  // las plantillas no se juzgan como agente ni como skill (un .md de plantillas puede no tener frontmatter), y contra la versión pasan
+  const lab = casa('t44');
+  const v = toyVersion(lab, { agents: ['tycon-core'] });
+  const packText = JSON.stringify({ name: 'eq', description: 'paquete con plantillas de juguete', agents: 'agents', reviewers: [reviewerOf('rev-eq', 'base')] });
+  const layer = toyLayer(lab, [['packs/eq/pack.json', packText], ['packs/eq/agents/rev-eq.md', agentMd('rev-eq')],
+    ['packs/eq/templates/README.md', '# plantillas\n'], ['packs/eq/templates/pipelines/ci.yml', 'trigger: none\n']]);
+  assert.deepEqual(TEAM.contentProblems(layer.dir, layer.files), []);
+  const r = TEAM.checkAgainstVersion(layer.dir, layer.files, v, { env: {} });
+  assert.equal(r.ok, true, JSON.stringify(r.problems));
+});
+
 function toyFetched(lab, entries, n) {
   const cacheDir = fs.mkdtempSync(path.join(lab, 'cache-'));
   const files = entries.map(([p, txt]) => {
@@ -1125,7 +1179,7 @@ test(`${T80} — onboarding/<nombre>.md entra a la lista cerrada; la charla, un 
   const ok = TEAM.planTeam([...A2_SANE, dir('onboarding'), blob('onboarding/alta.md', 2000), blob('onboarding/step-0-mac.md', 2000)]);
   assert.equal(ok.ok, true, JSON.stringify(ok.problems));
   for (const p of ['onboarding/alta.md', 'onboarding/step-0-mac.md']) assert.ok(ok.files.some((f) => f.path === p), `${p} tendría que apilarse`);
-  assert.equal(ok.totalBytes, base.totalBytes + 4000, 'el alta cuenta contra el tope de 1 MB, como el resto de la capa');
+  assert.equal(ok.totalBytes, base.totalBytes + 4000, 'el alta cuenta contra el tope de la capa, como el resto');
   // una ruta por causa, sobre una capa sana que YA trae un texto del alta: rechazo entero, la ruta nombrada con su motivo
   const refused = [
     ['onboarding/mini-class/x.md', /lista cerrada/],            // la charla: queda en mantenimiento
@@ -1156,7 +1210,7 @@ test(`${T80} — onboarding/<nombre>.md entra a la lista cerrada; la charla, un 
   assert.ok(one([{ path: 'onboarding/alta.md', mode: '120000', type: 'blob', sha: SHA(7), size: 5 }]).some((x) => x.path === 'onboarding/alta.md' && /enlace/.test(x.reason)), 'un enlace no entra');
   assert.ok(one([blob('onboarding/alta.md', 10), blob('onboarding/Alta.md', 10)]).some((x) => /caja/.test(x.reason)), 'dos altas que difieren sólo en la caja');
   assert.ok(one([blob('onboarding/alta.md', 10)], { publicPaths: ['Onboarding/ALTA.md'] }).some((x) => x.path === 'onboarding/alta.md' && /versión pública/.test(x.reason)), 'la capa no pisa un archivo de la versión');
-  assert.ok(one([blob('onboarding/alta.md', TEAM.MAX_TOTAL_BYTES)]).some((x) => /1 MB/.test(x.reason)), 'el alta no tiene presupuesto propio');
+  assert.ok(one([blob('onboarding/alta.md', TEAM.MAX_TOTAL_BYTES)]).some((x) => /MB en total/.test(x.reason)), 'el alta no tiene presupuesto propio');
 });
 
 test(`${T80} — el texto del alta no se juzga como agente ni skill, sus temporales y sus ediciones se tratan como los del resto de la capa, y no va a Codex`, () => {

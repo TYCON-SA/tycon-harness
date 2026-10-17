@@ -135,6 +135,12 @@ function motivoCarpetaPropia(rel, dirPaquete) {
   try { esDir = fs.statSync(path.join(dirPaquete, rel)).isDirectory(); } catch (_e) { esDir = false; }
   return esDir ? null : `la carpeta ${path.join(dirPaquete, rel)} no existe`;
 }
+/** null si `rel` es una ruta relativa al árbol del arnés que no sale de él (sin «..», absoluta ni «\»); si no, el motivo. */
+function motivoRutaDelArbol(rel) {
+  if (typeof rel !== 'string' || !rel.trim()) return 'tiene que ser una ruta (texto)';
+  if (path.isAbsolute(rel) || rel.includes('\\') || rel.split('/').some((t) => t === '..' || t === '')) return `«${rel}» tiene que ser relativa al árbol del arnés, sin «..» ni tramos vacíos`;
+  return null;
+}
 function esObjeto(x) { return x !== null && typeof x === 'object' && !Array.isArray(x); }
 function clavesFuera(obj, permitidas) { return Object.keys(obj).filter((k) => !permitidas.includes(k)); }
 function regexValida(s) { try { new RegExp(s); return true; } catch (_e) { return false; } }
@@ -214,6 +220,9 @@ function validarManifiesto(json, { archivo, agentsDir, nucleo = [], banderas = [
   if (typeof json.description !== 'string') err(null, 'falta «description»');
   if (json.guides != null && (!Array.isArray(json.guides) || !json.guides.every((g) => typeof g === 'string'))) {
     err(null, '«guides» tiene que ser una lista de rutas');
+  } else if (json.guides != null) {
+    // relativas al árbol del arnés y adentro de él: el pipeline las pasa como guía a leer, y la auditoría las busca
+    for (const g of json.guides) if (motivoRutaDelArbol(g)) err(null, `«guides»: ${motivoRutaDelArbol(g)}`);
   }
   const carpetaPropia = {};
   for (const clave of ['skills', 'agents']) {

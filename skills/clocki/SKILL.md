@@ -1,11 +1,11 @@
 ---
 name: clocki
-description: Clockify time tracking automático para devs TYCON. Abre y cierra entries de tiempo en Clockify cuando se trabaja en una story, un fix, un refactor o una sesión de planning. Usa auto-match por nombre de carpeta para resolver project, pide confirmación antes de arrancar, y cierra timers idle (>15min sin actividad) retroactivando el end-time al último activity timestamp. Usar cuando el usuario invoca /clocki start|stop|status|config, cuando un hook inyecta system-reminder de intent de trabajo detectado, o cuando tycon-pipeline llama clocki:start con el título de la story.
+description: Registro automático de horas en Clockify para quien desarrolla con el arnés. Abre y cierra entries de tiempo en Clockify cuando se trabaja en una story, un fix, un refactor o una sesión de planning. Usa auto-match por nombre de carpeta para resolver project, pide confirmación antes de arrancar, y cierra timers idle (>15min sin actividad) retroactivando el end-time al último activity timestamp. Usar cuando el usuario invoca /clocki start|stop|status|config, cuando un hook inyecta system-reminder de intent de trabajo detectado, o cuando tycon-pipeline llama clocki:start con el título de la story.
 ---
 
 # clocki — Clockify Time Tracking
 
-Skill que controla un timer activo de Clockify por cwd (working directory). Diseñado para que el equipo TYCON tenga tracking automático sin fricción.
+Skill que controla un timer activo de Clockify por cwd (working directory). Diseñado para que un equipo tenga registro de horas automático sin fricción.
 
 ## Subcomandos
 

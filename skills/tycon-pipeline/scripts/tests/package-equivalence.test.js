@@ -131,7 +131,9 @@ test('la foto dorada existe, viene de main y cubre todos los casos', () => {
 // Story 8.7 (pase adversarial del arreglo tras la CI 11603): una TYCON_PACKS_DEFAULT de sólo espacios es «sin poner»
 // para el cargador; medir() la tiene que tratar igual y declarar el default de la foto, no pasarla tal cual (sin arnés
 // el cargador salía 2).
-test('Equivalencia_PacksDefaultBlank_TreatedAsUnset', () => {
+test('Equivalencia_PacksDefaultBlank_TreatedAsUnset', (t) => {
+  // la foto del primer caso nombra revisores de los paquetes del equipo: sin ellos (la copia pública) no se mide
+  if (SKIP_PUBLIC) { t.skip(`${SKIP_PUBLIC}: la foto nombra revisores de los paquetes del equipo — NO MEDIDO acá, se mide en el repo del equipo`); return; }
   const antes = process.env.TYCON_PACKS_DEFAULT;
   process.env.TYCON_PACKS_DEFAULT = '   ';
   try {

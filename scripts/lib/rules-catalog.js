@@ -122,6 +122,9 @@ function leer({ catalogo, revisores } = {}) {
   }
 
   let dueno = null;
+  // el paquete de la sección («## Nombre (paquete <p>) — `dueño`»): su revisor llega con el paquete, no con el núcleo
+  let paqueteDeSeccion = null;
+  const paqueteDe = new Map();      // dueño → paquete que declara su sección
   let seccion = -1;
   let filas = 0;
   const retiradas = [];
@@ -145,6 +148,9 @@ function leer({ catalogo, revisores } = {}) {
       // Una sección sin dueño (p. ej. «Cómo leer un finding») RESETEA: lo que venga después no
       // hereda el dueño de la sección anterior.
       dueno = m ? m[1] : null;
+      const p = /\(paquete ([A-Za-z0-9._-]+)\)/.exec(linea);
+      paqueteDeSeccion = m && p ? p[1] : null;
+      if (dueno && paqueteDeSeccion) paqueteDe.set(dueno, paqueteDeSeccion);
       seccion += 1;
       continue;
     }
@@ -173,7 +179,7 @@ function leer({ catalogo, revisores } = {}) {
 
     const clave = `${dueno || ''}\u0000${regla}`;
     if (!pares.has(clave)) {
-      pares.set(clave, { regla, dueno, seccion: dueno, indice: seccion, filas: 1, esRevisor: !!dueno && padron.has(dueno) });
+      pares.set(clave, { regla, dueno, seccion: dueno, indice: seccion, filas: 1 });
     } else {
       pares.get(clave).filas += 1;
     }
@@ -200,11 +206,21 @@ function leer({ catalogo, revisores } = {}) {
     }
   }
 
+  // El revisor de un paquete no tiene .toml en la versión (Codex lo genera desde el paquete, story 8.41): es revisor si su
+  // paquete no está en este árbol (llega con él) o si está y trae su agente. Sin esto sus reglas salían «sin revisor».
+  const instalado = (p) => fs.existsSync(path.join(RAIZ, 'packs', p, 'pack.json'));
+  const agenteEnPaquete = (p, d) => {
+    let dir = 'agents';
+    try { const m = JSON.parse(fs.readFileSync(path.join(RAIZ, 'packs', p, 'pack.json'), 'utf8')); if (typeof m.agents === 'string') dir = m.agents; } catch (_) { return false; }
+    return fs.existsSync(path.join(RAIZ, 'packs', p, dir, `${d}.md`));
+  };
+  const esRevisorDe = (d) => !!d && (padron.has(d) || (paqueteDe.has(d) && (!instalado(paqueteDe.get(d)) || agenteEnPaquete(paqueteDe.get(d), d))));
+
   const lista = [...pares.values()].map((p) => ({
     regla: p.regla,
     dueno: p.dueno,
     seccion: p.seccion,
-    esRevisor: p.esRevisor,
+    esRevisor: esRevisorDe(p.dueno),
     sin_verificacion: !!(marcas.get(p.indice) && marcas.get(p.indice).has(p.regla)),
     filas: p.filas,
   }));
@@ -216,7 +232,13 @@ function leer({ catalogo, revisores } = {}) {
 
   // Los dueños que no están en el padrón se nombran: así se ve un .toml de revisor que falta, en vez de
   // que sus reglas pasen a «sin revisor» en silencio.
-  const duenosSinPadron = [...new Set([...pares.values()].map((p) => p.dueno).filter((d) => d && !padron.has(d)))].sort();
+  // El revisor de un paquete que esta copia no trae no es un .toml que falta: llega con el paquete (story 8.41) y se
+  // nombra aparte, con su paquete.
+  // Con el paquete instalado en el árbol (`packs/<p>/pack.json`), su revisor sin su agente en el paquete SÍ es un faltante.
+  const fueraDelPadron = [...new Set([...pares.values()].map((p) => p.dueno).filter((d) => d && !padron.has(d)))].sort();
+  const ausente = (d) => paqueteDe.has(d) && !instalado(paqueteDe.get(d));
+  const duenosSinPadron = fueraDelPadron.filter((d) => !esRevisorDe(d));
+  const deUnPaquete = fueraDelPadron.filter(ausente).map((d) => ({ dueno: d, paquete: paqueteDe.get(d) }));
 
   // Una COLISIÓN es un identificador DEFINIDO por más de un dueño: dejó de ser clave única.
   // Repetir la misma regla en el mismo dueño (dos casos de una regla) NO es una colisión.
@@ -237,6 +259,7 @@ function leer({ catalogo, revisores } = {}) {
     retiradas: retiradas.sort((a, b) => (a.regla < b.regla ? -1 : a.regla > b.regla ? 1 : 0)),
     reutilizadas,
     duenos_sin_padron: duenosSinPadron,
+    duenos_de_paquetes_ausentes: deUnPaquete,
     marcas_sin_regla: marcasSinRegla.sort(),
   };
 }
@@ -279,6 +302,8 @@ function main() {
     console.log(`filas ${res.filas} · reglas ${res.reglas} (pares dueño+regla) · identificadores ${res.identificadores}`);
     console.log(`sin revisor: ${sinRev} · colisiones: ${res.colisiones.length} · retiradas: ${res.retiradas.length}`);
     if (res.sin_dueno) console.log(`⚠️  ${res.sin_dueno} fila(s) fuera de toda sección con dueño`);
+    if (res.duenos_sin_padron.length) console.log(`⚠️  dueños sin su .toml de revisor: ${res.duenos_sin_padron.join(', ')}`);
+    if (res.duenos_de_paquetes_ausentes.length) console.log(`ℹ revisores de paquetes que este árbol no trae (llegan con su paquete): ${res.duenos_de_paquetes_ausentes.map((x) => `${x.dueno} (${x.paquete})`).join(', ')}`);
   }
   process.exitCode = 0;
 }

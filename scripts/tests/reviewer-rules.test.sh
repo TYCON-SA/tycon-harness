@@ -320,12 +320,13 @@ node build/generate.js --check > "${TMP}/gen.txt" 2>&1 && ok "T9 los .toml de Co
 node build/check.js > "${TMP}/chk.txt" 2>&1 && ok "T9 build/check.js verde" || no "T9 check.js: $(tail -3 "${TMP}/chk.txt")"
 con=$(grep -l 'Límites de ejecución (no vienen del CLAUDE.md)' adapters/codex/agents/*.toml | xargs -n1 basename | sort | tr '\n' ' ')
 esperado='tycon-feature-wiring-checker.toml tycon-plugin-dotnet-conventions.toml tycon-sibling-pattern-reviewer.toml tycon-signed-scope-audit.toml tycon-silent-failure-hunter.toml '
-# Uno de los cinco es del paquete de clientes, que no viaja a la copia pública: ahí su .toml no está y se esperan los
-# otros cuatro, diciéndolo. En el repo del equipo siguen siendo los cinco, y que falte uno es un rojo.
-PRIVATE_TOML='tycon-sibling-pattern-reviewer.toml'
-if [ "${PUBLIC_COPY}" = 1 ] && [ ! -f "adapters/codex/agents/${PRIVATE_TOML}" ]; then
-  esperado="${esperado/${PRIVATE_TOML} /}"
-  [ "${con}" = "${esperado}" ] && ok "T9 los «Límites de ejecución» llegan a Codex sólo en los 4 con Bash que viajan (copia pública: ${PRIVATE_TOML} es del paquete de clientes y no se midió)" || no "T9 límites en: ${con}"
+# Tres de los cinco son de paquetes del equipo (clientes y bizuit, que viajan con su perfil, story 8.41): en la copia
+# pública sus .toml no están y se esperan los otros dos, diciéndolo. En el repo del equipo siguen siendo los cinco, y que
+# falte uno es un rojo.
+PRIVATE_TOMLS='tycon-sibling-pattern-reviewer.toml tycon-feature-wiring-checker.toml tycon-plugin-dotnet-conventions.toml'
+if [ "${PUBLIC_COPY}" = 1 ] && [ ! -f "adapters/codex/agents/tycon-sibling-pattern-reviewer.toml" ]; then
+  for t in ${PRIVATE_TOMLS}; do esperado="${esperado/${t} /}"; done
+  [ "${con}" = "${esperado}" ] && ok "T9 los «Límites de ejecución» llegan a Codex sólo en los 2 con Bash que viajan (copia pública: los de los paquetes del equipo no se midieron)" || no "T9 límites en: ${con}"
 else
   [ "${con}" = "${esperado}" ] && ok "T9 los «Límites de ejecución» llegan a Codex sólo en los 5 con Bash" || no "T9 límites en: ${con}"
 fi

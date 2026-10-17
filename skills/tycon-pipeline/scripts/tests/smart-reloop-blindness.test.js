@@ -303,11 +303,12 @@ test('un arreglo hecho entre dos lanzamientos re-corre al revisor que se lanzó 
   const repo = mkRepoGit();
   const real = path.join(repo, 'src', 'PluginManager.cs');
   const A = 'tycon-plugin-security-basics';
-  const B = 'tycon-plugin-dotnet-conventions';      // también audita .cs
+  const B = 'tycon-silent-failure-hunter';          // también audita .cs (uno del núcleo: el de .NET viaja con su paquete)
   const base = Date.now() - 120000;
   const t = (s) => new Date(base + s * 1000).toISOString();
   // t0 arranca la vuelta 1 · t10 se lanza A · t20 se arregla el archivo · t30 se lanza B (el último) y sale la foto.
-  fs.writeFileSync(real, '// arreglo hecho mientras A ya estaba corriendo\n');
+  // (con un `try`: así el set trae también al de fallos silenciosos, el segundo revisor que audita .cs)
+  fs.writeFileSync(real, '// arreglo hecho mientras A ya estaba corriendo\ntry { Run(); } catch (Exception e) { Log(e); }\n');
   const seg = (base + 20000) / 1000;
   fs.utimesSync(real, seg, seg);
   const home = mkHome({

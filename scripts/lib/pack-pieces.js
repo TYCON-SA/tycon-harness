@@ -23,6 +23,13 @@ const entries = (d) => { try { return fs.readdirSync(d).filter((n) => !n.startsW
 /** La carpeta de paquetes de un árbol. */
 const packsDirOf = (tree) => path.join(tree, 'packs');
 
+/** null si `rel` es una ruta relativa al árbol que no sale de él; si no, el motivo (la regla de `guides` del manifiesto). */
+function guideProblem(rel) {
+  if (typeof rel !== 'string' || !rel.trim()) return 'tiene que ser una ruta (texto)';
+  if (path.isAbsolute(rel) || rel.includes('\\') || rel.split('/').some((t) => t === '..' || t === '')) return `«${rel}» tiene que ser relativa al árbol del arnés, sin «..» ni tramos vacíos`;
+  return null;
+}
+
 /** null si `rel` es una carpeta que existe adentro de `dir`; si no, el motivo. */
 function folderProblem(rel, dir) {
   if (typeof rel !== 'string' || !rel.trim()) return 'tiene que ser la ruta de una carpeta del paquete (texto)';
@@ -42,8 +49,13 @@ function listPacks(packsDir) {
     if (!isDir(dir) || !fs.existsSync(file)) continue;
     let json;
     try { json = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) { out.errores.push({ archivo: file, motivo: `JSON inválido o ilegible: ${e.message}` }); continue; }
-    const p = { name, dir, file, skillsDir: null, agentsDir: null, guides: Array.isArray(json && json.guides) ? json.guides.filter((g) => typeof g === 'string') : [] };
+    const p = { name, dir, file, skillsDir: null, agentsDir: null, guides: [] };
     let roto = false;
+    // las guías: rutas relativas al árbol, sin salir de él (quien las lee las une con la raíz)
+    for (const g of Array.isArray(json && json.guides) ? json.guides : []) {
+      const m = guideProblem(g);
+      if (m) { out.errores.push({ archivo: file, motivo: `«guides»: ${m}` }); roto = true; } else p.guides.push(g);
+    }
     for (const [clave, campo] of [['skills', 'skillsDir'], ['agents', 'agentsDir']]) {
       if (!json || json[clave] == null) continue;
       const m = folderProblem(json[clave], dir);
@@ -79,6 +91,16 @@ function piecesOf({ packsDir, agentsDir = null, coreSkillsDir = null, names }) {
     for (const g of p.guides) out.guides.push({ pack: p.name, path: g });
   }
   return out;
+}
+
+/** La carpeta de agentes del paquete instalado que trae el revisor `name` (`packs/<p>/<agents>/`), o null. La usan quienes
+ *  leen el canónico de un revisor por su nombre: el generador de Codex y el banco. */
+function agentDirInPacks(packsDir, name) {
+  const { packs, errores } = listPacks(packsDir);
+  for (const p of packs) if (p.agentsDir && fs.existsSync(path.join(p.agentsDir, `${name}.md`))) return p.agentsDir;
+  // no está en ningún paquete legible: si hay uno roto, ése puede ser el suyo — se dice en vez de caer a «no existe»
+  if (errores.length) throw new Error(`no encuentro el agente ${name} en los paquetes, y hay paquete(s) roto(s): ${errores.map((e) => `${e.archivo}: ${e.motivo}`).join('; ')}`);
+  return null;
 }
 
 /** ¿`where` es la pieza `src`? Un enlace simbólico que resuelve ahí, o un enlace duro al mismo archivo (Windows sin el
@@ -135,4 +157,4 @@ function retiredLine({ check = false, count, packs, pieces, value, origin }) {
 /** El lector de la configuración del arnés de este árbol (lo pide la sección «Paquetes» de org-config.js), o null. */
 function configReader() { try { return require('./tycon-config.js'); } catch (_) { return null; } }
 
-module.exports = { packsDirOf, listPacks, piecesOf, linkedTo, orgActive, valueText, folderProblem, configReader, retiredLine, WHERE_TO_ACTIVATE, RETIRED_PHRASE, RETIRED_RX };
+module.exports = { packsDirOf, listPacks, piecesOf, agentDirInPacks, linkedTo, orgActive, valueText, folderProblem, configReader, retiredLine, WHERE_TO_ACTIVATE, RETIRED_PHRASE, RETIRED_RX };

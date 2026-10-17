@@ -3,7 +3,7 @@
 // check-unreplaced-placeholders.js — que un alta no commitee un marcador de plantilla vivo
 //
 // POR QUÉ EXISTE (2026-09-28). Un alta de producto copia las plantillas de
-// `new-product-templates/` (hoy, `packs/bizuit/new-product-templates/` del arnés) y les reemplaza los
+// un paquete (`packs/<paquete>/templates/`, que llega con el perfil del equipo) y les reemplaza los
 // marcadores: `{{PRODUCT}}`, `{{BACKEND_REPO}}`, `{{PLUGIN}}`, `{{DATE}}`… En una corrida simulada del alta contamos **~120 marcadores de 11
 // tipos repartidos en más de 20 archivos**, y ningún control miraba si quedaba alguno vivo.
 //
@@ -49,6 +49,11 @@ const CARPETAS_SALTEADAS = new Set([
   'new-product-templates',   // acá los marcadores SON el contenido
 ]);
 
+/** ¿Es la carpeta de plantillas de un paquete (`packs/<paquete>/templates`)? Ahí los marcadores también son el contenido. */
+function esPlantillaDePaquete(dir) {
+  return path.basename(dir) === 'templates' && path.basename(path.dirname(path.dirname(dir))) === 'packs';
+}
+
 const EXTENSIONES = new Set([
   '.md', '.yaml', '.yml', '.json', '.cs', '.ts', '.tsx', '.js', '.jsx', '.cjs', '.mjs',
   '.sql', '.sh', '.txt', '.template', '.props', '.csproj', '.sln', '.env', '.example',
@@ -78,7 +83,7 @@ function recorrer(raiz, excluidas, acc) {
     const completa = path.join(raiz, e.name);
     if (excluidas.some((x) => completa === x || completa.startsWith(x + path.sep))) continue;
     if (e.isDirectory()) {
-      if (CARPETAS_SALTEADAS.has(e.name)) continue;
+      if (CARPETAS_SALTEADAS.has(e.name) || esPlantillaDePaquete(completa)) continue;
       recorrer(completa, excluidas, acc);
     } else if (e.isFile() && esTexto(completa)) {
       acc.push(completa);
@@ -128,7 +133,7 @@ function main(argv0) {
       morir(`${o} está dentro del repo del arnés, que no es un producto: acá los marcadores son `
         + `texto sobre marcadores. Apuntalo a los repos del producto nuevo.`);
     }
-    if (CARPETAS_SALTEADAS.has(path.basename(abs))) {
+    if (CARPETAS_SALTEADAS.has(path.basename(abs)) || esPlantillaDePaquete(abs)) {
       morir(`${o} es una carpeta que este control saltea a propósito (ahí los marcadores son el `
         + `contenido). Apuntalo a los repos del producto, no a las plantillas.`);
     }
@@ -177,7 +182,7 @@ function main(argv0) {
   if (hallazgos.length > 40) console.error(`  … y ${hallazgos.length - 40} más`);
   console.error('');
   console.error('Un marcador vivo NO da error en ningún lado: se lee como un valor más. Reemplazalos');
-  console.error('antes de commitear — la tabla de marcadores está en packs/bizuit/new-product-templates/README.md del arnés.');
+  console.error('antes de commitear — la tabla de marcadores está en el README.md de las plantillas del paquete (packs/<paquete>/templates/ del arnés).');
   return 1;
 }
 

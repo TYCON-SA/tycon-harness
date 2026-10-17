@@ -1616,7 +1616,8 @@ test('SkillsReviewersAndBlocks_NoInternalHistory (T58) — ninguna skill, reviso
   assert.deepStrictEqual(left, [], 'cada revisor, cada skill y cada bloque dice la regla y su porqué, sin el caso: el ejemplo de una salida va con marcador, y un dato se declara con su motivo');
   // y el cero no es un cero vacío: el control miró los revisores, los pasos del pipeline y los bloques
   const looked = d.paths.filter(isSkillReviewerOrBlock);
-  assert.ok(looked.filter((f) => f.startsWith('agents/')).length >= 20, `los revisores están entre lo mirado (${looked.length} archivos)`);
+  // (desde la 8.41 los revisores de un stack viven en su paquete, fuera del núcleo: en agents/ quedan los del núcleo)
+  assert.ok(looked.filter((f) => f.startsWith('agents/')).length >= 10, `los revisores están entre lo mirado (${looked.length} archivos)`);
   assert.ok(looked.filter((f) => f.startsWith('skills/tycon-pipeline/steps/')).length >= 12, 'los pasos del pipeline están entre lo mirado');
   assert.ok(looked.filter((f) => f.startsWith('claude-md-blocks/')).length >= 2, 'los bloques siempre cargados están entre lo mirado');
 });
