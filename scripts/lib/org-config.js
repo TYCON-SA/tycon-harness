@@ -552,7 +552,7 @@ function pantalla() {
   return String.raw`'use strict';
 // config.js — la pestaña Configuración del sitio de la organización (story 2.29). Lo sirve scripts/lib/org-config.js.
 // Sólo usa setAttribute, appendChild, addEventListener, textContent y replaceChildren: las pruebas lo corren sobre un
-// documento mínimo con eso nada más.
+// documento mínimo con eso nada más (lo del navegador —location, history, closest, scrollIntoView— se mira antes de usar).
 (function () {
   var meta = document.querySelector('meta[name="site-token"]');
   var TOKEN = meta ? meta.getAttribute('content') : '';
@@ -577,7 +577,7 @@ function pantalla() {
       .catch(function (e) { return { ok: false, message: 'no pude hablar con el sitio (' + (e && e.message ? e.message : 'sin respuesta') + '): si estabas proponiendo, recargá y mirá si el pedido se abrió antes de repetirlo' }; });
   }
   var copia = function (v) { return JSON.parse(JSON.stringify(v)); };
-  var S = { secciones: [], borradores: {}, originales: {}, problemas: {}, avisos: {}, notas: {}, textos: {}, extras: null };
+  var S = { pestana: null, secciones: [], borradores: {}, originales: {}, problemas: {}, avisos: {}, notas: {}, textos: {}, extras: null };
 
   // ── lo que ve la persona de cada sección: el nombre llano, para qué sirve, y en qué bloque va ──
   var PLANO = {
@@ -599,7 +599,17 @@ function pantalla() {
     instalacion: { t: 'Perfil de instalación', d: 'Cuánto instala el arnés en cada máquina. Llega a cada una con su próxima actualización.', corto: 'Instalación' },
     hilos: { t: 'Conversaciones de las corridas', d: 'Si el sitio baja también lo que se habló en cada corrida, además de sus números.', corto: 'Conversaciones' },
   };
-  var BLOQUES = [['Personas y equipo', ['sitio', 'personas', 'responsables']], ['Dónde vive todo', ['repos', 'despliegues', 'canal']], ['Reglas de la noche', ['umbrales', 'paridad']], ['Cómo trabaja el pipeline', ['suites', 'modelos', 'espera']], ['Cómo trabaja cada máquina', ['respuesta', 'integraciones', 'actualizacion', 'instalacion', 'ado']], ['El sitio', ['hilos']]];
+  // las pestañas: [id, nombre, secciones, tablas para mirar]. Se ve una por vez; el resumen de arriba, en todas
+  var PESTANAS = [['personas', 'Personas', ['sitio', 'personas', 'responsables'], []], ['repos', 'Repos y productos', ['repos', 'despliegues', 'paridad', 'ado'], ['productos']], ['avisos', 'Avisos y la noche', ['canal', 'espera', 'umbrales'], []], ['claude', 'Cómo trabaja Claude', ['respuesta', 'modelos', 'suites', 'integraciones', 'hilos'], []], ['instalacion', 'Instalación y actualización', ['actualizacion', 'instalacion'], ['contenido', 'versiones']]];
+  /** La pestaña de un ancla (#pestana-x, #seccion-x o una tabla para mirar); null si no es de ninguna. */
+  function pestanaDe(ancla) {
+    var id = String(ancla || '').replace(/^#/, '');
+    var hit = null;
+    PESTANAS.forEach(function (p) { if (hit) return; if (id === 'pestana-' + p[0] || p[2].some(function (x) { return id === 'seccion-' + x; }) || p[3].indexOf(id) >= 0) hit = p[0]; });
+    // una sección que esta pantalla no conoce va a la última pestaña, donde se muestra
+    if (!hit && id.indexOf('seccion-') === 0 && S.secciones.some(function (s) { return 'seccion-' + s.id === id; })) hit = PESTANAS[PESTANAS.length - 1][0];
+    return hit;
+  }
   var REPO_DE = { operaciones: 'el repo de operaciones', perfil: 'el repo del equipo' };
   function plano(s) { return PLANO[s.id] || { t: s.titulo, d: '', corto: s.titulo }; }
   function bloqueada(s) { return s.estado === 'no_reader' || s.estado === 'ilegible' || s.estado === 'no_configurado'; }
@@ -1152,30 +1162,45 @@ function pantalla() {
       kpi(aCorregir.length ? 'st-warn' : 'st-good', aCorregir.length ? '#seccion-' + aCorregir[0].id : null, 'Secciones con algo para arreglar', aCorregir.length, aCorregir.length ? aCorregir.map(function (s) { return plano(s).corto; }).join(', ') : 'ninguna'),
       kpi('st-good', null, 'Secciones al día', alDia + ' de ' + S.secciones.length, 'sin nada pendiente'),
       kpi(viejas ? 'st-warn' : '', '#versiones', 'Máquinas con una versión vieja o sin noticias', viejas, 'de ' + (ex.versiones || []).length + ' que informan')));
-    var toc = el('nav', { class: 'toc', 'aria-label': 'Secciones' });
-    BLOQUES.forEach(function (b) { b[1].forEach(function (id) { var s = porId[id]; if (!s) return; var e = estadoDe(s)[0]; toc.appendChild(el('a', { href: '#seccion-' + id }, el('span', { class: 'dot ' + (e === 'ok' ? '' : e) }), el('span', { text: plano(s).corto }))); }); });
-    partes.push(toc);
-    var vistas = {};
-    BLOQUES.forEach(function (b) {
-      var pila = el('div', { class: 'pila' });
-      b[1].forEach(function (id) { if (porId[id]) { pila.appendChild(seccion(porId[id])); vistas[id] = true; } });
-      partes.push(el('h3', { class: 'block', text: b[0] }));
-      partes.push(pila);
-    });
-    // una sección que el arnés sume y esta pantalla no conozca todavía, igual se muestra
-    var otras = S.secciones.filter(function (s) { return !vistas[s.id]; });
-    if (otras.length) { var po = el('div', { class: 'pila' }); otras.forEach(function (s) { po.appendChild(seccion(s)); }); partes.push(el('h3', { class: 'block', text: 'Otras' })); partes.push(po); }
-    partes.push(el('h3', { class: 'block' }, el('span', { text: 'Para mirar' }), el('span', { class: 'aside', text: 'no se cambia desde acá' })));
-    var mirar = el('div', { class: 'pila' });
     var prod = tablaDeMirar('Productos', 'Los que revisa la noche. Se agregan en la lista de la revisión de dependencias.', (ex.productos || []).map(function (p) { return { producto: p.producto, origen: p.origen === 'deployments' ? 'Despliegues' : 'revisión de dependencias', repo: p.repo || p.ruta, estado: p.activo === false ? 'apagado' + (p.motivo ? ' (' + p.motivo + ')' : '') : 'activo', edita: p.origen === 'deployments' ? 'sí, en Despliegues' : 'no' }; }), [['producto', 'Producto'], ['origen', 'De dónde sale'], ['repo', 'Repo'], ['estado', 'Estado'], ['edita', 'Se cambia acá']], 'productos');
     if (ex.productosMotivo) prod.appendChild(aviso('bad', 'La lista de productos no se pudo leer: los de la revisión de dependencias no se muestran.', ex.productosMotivo));
     if (ex.productosEnlace) prod.appendChild(el('p', {}, el('a', { class: 'enlace-fuerte', href: ex.productosEnlace, text: 'Abrir la lista de la revisión de dependencias →' })));
-    mirar.appendChild(prod);
     var ver = tablaDeMirar('Qué versión del arnés tiene cada máquina', 'La que informó cada una con su última corrida. Se actualizan solas al arrancar.', (ex.versiones || []).map(function (v) { return { maquina: v.maquina, persona: v.persona || 'sin confirmar', version: v.version, dia: v.diaTexto, texto: v.texto }; }), [['maquina', 'Máquina'], ['persona', 'Persona'], ['version', 'Versión'], ['dia', 'Última noticia'], ['texto', 'Estado']], 'versiones');
     if (ex.versionesMotivo) ver.appendChild(aviso('bad', 'No se pudo leer lo que informan las máquinas: la versión de cada una no se sabe.', ex.versionesMotivo));
-    mirar.appendChild(ver);
-    if (ex.contenido !== undefined) mirar.appendChild(tablaDeContenido(ex.contenido));
-    partes.push(mirar);
+    var tablas = { productos: prod, versiones: ver };
+    if (ex.contenido !== undefined) tablas.contenido = tablaDeContenido(ex.contenido);
+    // lo pendiente de las tablas para mirar: una lista que no se pudo leer, o máquinas atrasadas
+    var pendTabla = { productos: ex.productosMotivo ? 1 : 0, versiones: (ex.versionesMotivo ? 1 : 0) + viejas, contenido: 0 };
+    var activa = S.pestana || PESTANAS[0][0];
+    var barra = el('nav', { class: 'pestanas', role: 'tablist', 'aria-label': 'Partes de la configuración' });
+    var paneles = [];
+    var vistas = {};
+    PESTANAS.forEach(function (p, i) {
+      var ids = p[2].filter(function (id) { return porId[id]; });
+      ids.forEach(function (id) { vistas[id] = true; });
+      // la última pestaña muestra también una sección que el arnés sume y esta pantalla no conozca todavía
+      var otras = i === PESTANAS.length - 1 ? S.secciones.filter(function (s) { return !vistas[s.id] && PESTANAS.every(function (q) { return q[2].indexOf(s.id) < 0; }); }) : [];
+      var secs = ids.map(function (id) { return porId[id]; }).concat(otras);
+      var malas = secs.filter(function (s) { return estadoDe(s)[0] === 'bad'; }).length;
+      var pend = secs.filter(function (s) { var e = estadoDe(s)[0]; return e === 'warn' || e === 'bad'; }).length + p[3].reduce(function (n, t) { return n + (tablas[t] ? pendTabla[t] : 0); }, 0);
+      var sel = p[0] === activa;
+      var marca = pend ? el('span', { class: 'cuenta ' + (malas ? 'bad' : 'warn'), title: pend + ' para mirar', text: String(pend) }) : null;
+      barra.appendChild(el('a', { href: '#pestana-' + p[0], id: 'tab-' + p[0], role: 'tab', 'aria-selected': sel ? 'true' : 'false', 'aria-controls': 'pestana-' + p[0], class: sel ? 'activa' : undefined }, el('span', { text: p[1] }), marca));
+      var panel = el('div', { class: 'pestana-panel', id: 'pestana-' + p[0], role: 'tabpanel', 'aria-labelledby': 'tab-' + p[0], hidden: sel ? undefined : 'hidden' });
+      var pila = el('div', { class: 'pila' });
+      secs.forEach(function (s) { pila.appendChild(seccion(s)); });
+      panel.appendChild(pila);
+      var mirar = p[3].filter(function (t) { return tablas[t]; });
+      if (mirar.length) {
+        panel.appendChild(el('h3', { class: 'block' }, el('span', { text: 'Para mirar' }), el('span', { class: 'aside', text: 'no se cambia desde acá' })));
+        var pm = el('div', { class: 'pila' });
+        mirar.forEach(function (t) { pm.appendChild(tablas[t]); });
+        panel.appendChild(pm);
+      }
+      paneles.push(panel);
+    });
+    partes.push(barra);
+    paneles.forEach(function (x) { partes.push(x); });
     app.replaceChildren.apply(app, partes);
   }
   function cargar() {
@@ -1183,10 +1208,31 @@ function pantalla() {
       if (!r.ok) { app.replaceChildren(el('div', { class: 'msg bad' }, el('b', { text: 'No se pudo leer la configuración.' }), el('span', { text: r.message || '' }))); return; }
       S.secciones = r.secciones; S.extras = r;
       r.secciones.forEach(function (s) { S.borradores[s.id] = copia(s.borrador === undefined ? {} : s.borrador); S.originales[s.id] = copia(S.borradores[s.id]); S.problemas[s.id] = s.problems || []; S.textos[s.id] = null; S.avisos[s.id] = s.avisos || []; });
+      if (!S.pestana) S.pestana = pestanaDe(ancla()) || PESTANAS[0][0];
       render();
     });
   }
-  cargar().catch(function (e) { app.replaceChildren(el('div', { class: 'msg bad' }, el('b', { text: 'No pude cargar la pestaña.' }), el('span', { text: e.message }))); });
+  function ancla() { return typeof location !== 'undefined' && location ? location.hash : ''; }
+  /** Un enlace a una pestaña, a una sección o a una tabla abre su pestaña; a una sección o tabla, además baja hasta ella. */
+  function irA(hash) {
+    var p = pestanaDe(hash);
+    if (!p) return;
+    if (p !== S.pestana) { S.pestana = p; render(); }
+    var destino = String(hash).replace(/^#/, '');
+    if (destino.indexOf('pestana-') === 0) return;
+    var n = document.getElementById(destino);
+    if (n && n.scrollIntoView) n.scrollIntoView();
+  }
+  if (typeof window !== 'undefined' && window && window.addEventListener) window.addEventListener('hashchange', function () { irA(ancla()); });
+  // un enlace de pestaña no salta la página hasta el panel; un enlace al ancla que ya está puesta igual abre su pestaña
+  app.addEventListener('click', function (e) {
+    var a = e.target && e.target.closest ? e.target.closest('a[href^="#"]') : null;
+    if (!a) return;
+    var h = a.getAttribute('href');
+    if (h.indexOf('#pestana-') === 0 && typeof history !== 'undefined' && history.replaceState) { e.preventDefault(); history.replaceState(null, '', h); irA(h); return; }
+    if (h === ancla()) irA(h);
+  });
+  cargar().then(function () { var h = ancla(); if (h && h.indexOf('#pestana-') !== 0) irA(h); }).catch(function (e) { app.replaceChildren(el('div', { class: 'msg bad' }, el('b', { text: 'No pude cargar la pestaña.' }), el('span', { text: e.message }))); });
 })();
 `;
 }
