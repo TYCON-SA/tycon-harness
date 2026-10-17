@@ -371,6 +371,7 @@ fi
 # entrada vale igual para todas.
 installer_home() { rm -rf "$1"; mkdir -p "$1/.claude/agent-skills/skills/tycon-pipeline" "$1/.claude/.tycon-pipeline"; echo '{}' > "$1/.claude/.tycon-pipeline/harness-state.json"; }
 run_installer() { # run_installer <home> <salida.txt> [VAR=valor…] [-- args del instalador]
+  # TYCON_PARITY_BENCH_DIR: el chequeo de paridad que el instalador lanza de fondo dejaría su reporte en .bench/ del árbol
   local h="$1" out="$2"; shift 2
   local extra=(); while [ $# -gt 0 ] && [ "$1" != "--" ]; do extra+=("$1"); shift; done; [ "${1:-}" = "--" ] && shift
   env "${ENV_UNSET[@]}" HOME="$h" TYCON_PROFILE=0 TYCON_CODEX=0 CODEX_HOME="$h/.codex" TYCON_GIT_HOOKS_DIR="$h/.git-hooks" \
@@ -379,7 +380,8 @@ run_installer() { # run_installer <home> <salida.txt> [VAR=valor…] [-- args de
     TYCON_NO_COLLECT_FINDINGS=1 TYCON_MAILBOX_URL_BASE=http://127.0.0.1:9 TYCON_NO_AZ_PROJECTS_REFRESH=1 \
     TYCON_NO_ENGRAM_VERSION_CHECK=1 TYCON_NO_SQLITE_CHECK=1 TYCON_NO_ENGRAM_PROJECT_CHECK=1 TYCON_NO_AGENTSMD_POINTER=1 \
     TYCON_NO_CANONICAL_PATH=1 TYCON_NO_CLAUDEMD_SYNC=1 TYCON_NO_BOOTSTRAP_HEAL=1 TYCON_SAFETY_GUARD=0 TYCON_TEST_SCOPE_GUARD=0 \
-    TYCON_SESSION_GUARD=0 TYCON_NO_MODS=1 GIT_CONFIG_NOSYSTEM=1 ${extra[@]+"${extra[@]}"} bash "$INST" "$@" > "$out" 2>&1
+    TYCON_SESSION_GUARD=0 TYCON_NO_MODS=1 GIT_CONFIG_NOSYSTEM=1 TYCON_PARITY_BENCH_DIR="$T/parity-bench" \
+    ${extra[@]+"${extra[@]}"} bash "$INST" "$@" > "$out" 2>&1
 }
 
 if corre S10 && suite_part 1; then

@@ -103,7 +103,9 @@ ENV_UNSET=(-u TYCON_SETTINGS_PATH -u CLAUDE_MD_PATH -u CODEX_AGENTS_MD_PATH -u T
 #    `inherited`). Heredada, la instalación de prueba anotaba la carpeta de mods DE VERDAD de quien corre la suite; la
 #    desinstalación saca sólo la propia y T26/T27 salían con 4 MAL en cualquier máquina con el arnés instalado.
 base() { # base <home> → el ambiente aislado común (en el arreglo RUN_ENV)
-  RUN_ENV=(env "${ENV_UNSET[@]}" HOME="$1" TYCON_PROFILE=0 TYCON_INSTALL_PROFILE=full TYCON_CODEX=0 CODEX_HOME="$1/.codex" TYCON_GIT_HOOKS_DIR="$1/.git-hooks"
+  # TYCON_PARITY_BENCH_DIR: con el perfil completo el instalador lanza de fondo el chequeo de paridad, que en un clon deja
+  # su reporte en scripts/controls-bench/.bench/ del árbol (lo que corre a la vez lo ve); acá va a la carpeta de la suite
+  RUN_ENV=(env "${ENV_UNSET[@]}" HOME="$1" TYCON_PROFILE=0 TYCON_INSTALL_PROFILE=full TYCON_PARITY_BENCH_DIR="$T/parity-bench" TYCON_CODEX=0 CODEX_HOME="$1/.codex" TYCON_GIT_HOOKS_DIR="$1/.git-hooks"
        TYCON_NO_NIGHTLY_EXAM=1 TYCON_NO_GUI_ENV=1 LAUNCHCTL_BIN=/usr/bin/true TYCON_BENCH_DAILY=0 TYCON_STAGE_METRICS=0
        TYCON_NO_THREAD_RESCUE=1 TYCON_NO_UPLOAD_RUNS=1 TYCON_NO_DOWNLOAD_RUNS=1 TYCON_NO_COLLECT_FINDINGS=1
        TYCON_MAILBOX_URL_BASE=http://127.0.0.1:9 TYCON_NO_AZ_PROJECTS_REFRESH=1 TYCON_NO_ENGRAM_VERSION_CHECK=1

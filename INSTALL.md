@@ -225,6 +225,7 @@ apaga sólo con su variable en `0`—, y de los dos que nacen prendidos y son de
 | `unpushed-work-notice.js` | SessionStart | Avisa las ramas del repo y de su grupo con commits que no están en el remoto | No | full | `TYCON_UNPUSHED_NOTICE=0` |
 | `unpushed-work-notice.js` | PostToolUse (Bash) | Anota los repos donde se commiteó y, al subir a `main`, avisa si un repo hermano tiene trabajo sólo local | No | full | `TYCON_UNPUSHED_NOTICE=0` |
 | `unpushed-work-notice.js` | Stop | Si la sesión commiteó y quedó algo sin subir, frena el cierre una vez por repo y rama | Sí, una vez | full | `TYCON_UNPUSHED_NOTICE=0` |
+| `worktree-sweep.js` | SessionStart | Una vez por día borra las carpetas de trabajo (worktrees) limpias y ya mergeadas, con su rama; las que tienen trabajo sólo las nombra | No | full | `TYCON_WORKTREE_SWEEP=0` |
 | `missing-path-notice.js` | PostToolUse (Bash) | Avisa cuando un comando de lectura nombró una ruta que no existe | No | full | `TYCON_MISSING_PATH_NOTICE=0` |
 | `failed-query-notice.js` | PostToolUse (Bash) | Avisa cuando una consulta a un servicio volvió vacía con el código de salida tapado | No | full | `TYCON_FAILED_QUERY_NOTICE=0` |
 | `rebuild-before-verify.js` | PostToolUse (Edit\|Write, Bash) | Marca el frontend como «sucio» al editar un componente y lo limpia al correr el build de desarrollo que declara el repo | No | full | `TYCON_REBUILD_VERIFY=0` |

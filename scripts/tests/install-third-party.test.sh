@@ -490,8 +490,9 @@ H="$BASE/h7"; mkdir -p "$H/.claude" "$BASE/fake"
 without_history "$H/.claude/agent-skills"; mkdir -p "$H/.claude/agent-skills/skills/tycon-pipeline"
 printf '#!/bin/sh\nexit 0\n' > "$BASE/fake/launchctl"; chmod +x "$BASE/fake/launchctl"
 instalar() { # stderr descartado, como la línea de arranque
+  # TYCON_PARITY_BENCH_DIR: el chequeo de paridad que el instalador lanza de fondo dejaría su reporte en .bench/ del árbol
   env -i HOME="$H" PATH="$PATH" TMPDIR="$BASE/tmp" LANG="${LANG:-en_US.UTF-8}" GIT_ALLOW_PROTOCOL=file GIT_TERMINAL_PROMPT=0 \
-    TYCON_PROFILE=0 TYCON_CODEX=0 TYCON_NO_CLAUDEMD_SYNC=1 TYCON_NO_COMMANDS_SYNC=1 TYCON_NO_GIT_HOOKS=1 TYCON_NO_GUI_ENV=1 \
+    TYCON_PROFILE=0 TYCON_PARITY_BENCH_DIR="$BASE/parity-bench" TYCON_CODEX=0 TYCON_NO_CLAUDEMD_SYNC=1 TYCON_NO_COMMANDS_SYNC=1 TYCON_NO_GIT_HOOKS=1 TYCON_NO_GUI_ENV=1 \
     TYCON_NO_SQLITE_CHECK=1 TYCON_NO_NIGHTLY_EXAM=1 TYCON_NO_THREAD_RESCUE=1 TYCON_NO_COLLECT_FINDINGS=1 TYCON_STAGE_METRICS=0 \
     TYCON_BENCH_DAILY=0 TYCON_NO_CANONICAL_PATH=1 TYCON_NO_BOOTSTRAP_HEAL=1 TYCON_MAILBOX_URL_BASE=http://127.0.0.1:9 \
     LAUNCHCTL_BIN="$BASE/fake/launchctl" "$@" bash "$TCG/scripts/install-tycon-hooks.sh" 2>/dev/null

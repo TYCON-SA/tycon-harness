@@ -94,13 +94,16 @@ for b in az engram codegraph codex claude; do
 done
 PATH="$BIN" command -v node >/dev/null 2>&1 || { echo "❌ suites-portables: no quedó node en el PATH armado"; exit 1; }
 
-# ── las skills de terceros, ANTES de lanzar nada en paralelo ──────────────────────────────────────
-#    Algunas suites (harness-install, install-third-party) las ponen en skills/ del árbol mientras otras corren. Una
-#    suite que compara dos instalaciones (installer-shared-pieces S11) las ve aparecer entre la primera y la segunda, y
-#    da rojo según con quién le toque correr (story 8.40, DEF-8.40-carrera-skills-de-terceros). Con el árbol ya completo,
-#    nadie cambia skills/ a mitad de camino. Con una HOME temporal, el estado del paso no cae en la de quien corre.
-mkdir -p "$T/third-party-home"
-HOME="$T/third-party-home" node "$RAIZ/scripts/publishing/install-third-party.js" --repo "$RAIZ" 2>&1 | sed 's/^/suites-portables: /'
+# ── ninguna suite escribe en el árbol: skills/ ni el .bench/ del banco ──────────────────────────────────────────
+#    La foto se toma antes de lanzar nada y se compara al final: una suite que deja (o borra) algo ahí le cambia el
+#    árbol a las que corren a la vez. Pasó con integrations-off y no-hardcoded-paths, que corrían el instalador con
+#    el paso de terceros prendido sobre el agent-skills de su HOME, que es este clon (DEF-8.40-carrera-skills-de-terceros);
+#    y con harness-uninstall, harness-snapshot, installer-shared-pieces, install-third-party, no-hardcoded-paths,
+#    integrations-off y engram-autoheal, que dejaban el reporte de paridad en .bench/, y bench-git-deterministic, el
+#    registro del corredor del banco. Por eso las skills de terceros NO se instalan antes de lanzar (el #144 lo hacía):
+#    con el árbol ya completo, una suite que las vuelva a bajar no deja nada nuevo y la foto no la ve.
+skills_foto() { local d; for d in "$RAIZ/skills" ${SK_REPO:+"$SK_REPO/skills"} "$RAIZ/scripts/controls-bench/.bench"; do [ -d "$d" ] && (cd "$d" && find . \( -type f -o -type l \) | sed "s|^\.|$d|"); done | LC_ALL=C sort -u; }
+skills_foto > "$T/skills-antes.txt"
 
 # ── correr las portables, de a 4, con tope ────────────────────────────────────────────────────────
 node - "$RAIZ" "${SK_REPO:-}" "$HAY_SKILLS" "$CASA" "$BIN" "$T" "$SUITES" "${SK_WHY:-}" <<'JS'
@@ -165,6 +168,9 @@ function casaVacia() {
     // la máquina vacía tampoco tiene navegador: Chrome sin sesión se queda colgado para siempre en una HOME sin perfil
     // (medido con dashboard-runs.test.sh); el caso que lo necesita sale NO MEDIDO, no se cuelga
     TYCON_CHROME: '0',
+    // el instalador lanza de FONDO el chequeo de paridad, que en un clon deja su reporte en scripts/controls-bench/.bench/
+    // del árbol, a veces cuando la suite ya terminó: cada suite lo manda a su carpeta temporal (la foto del final lo controla)
+    TYCON_PARITY_BENCH_DIR: path.join(tmp, 'parity-bench'),
   } };
 }
 const POOL = Math.max(1, Number(process.env.TYCON_PORTABLE_PARALLEL || 4));
@@ -234,3 +240,11 @@ function fin() {
 }
 siguiente();
 JS
+RC=$?
+skills_foto > "$T/skills-despues.txt"
+if ! cmp -s "$T/skills-antes.txt" "$T/skills-despues.txt"; then
+  echo "❌ suites-portables: una suite cambió skills/ o scripts/controls-bench/.bench/ del árbol (lo que corre a la vez lo ve cambiar a mitad de camino). Tiene que trabajar en su propia carpeta, o correr el instalador con TYCON_THIRD_PARTY=0 y TYCON_PARITY_BENCH_DIR=<su carpeta>. Para saber cuál: TYCON_PORTABLE_ONLY=<ruta>, de a una."
+  diff "$T/skills-antes.txt" "$T/skills-despues.txt" | grep '^[<>]' | sed -e 's/^</   · se borró:/' -e 's/^>/   · apareció:/' | head -10
+  exit 1
+fi
+exit "$RC"

@@ -433,6 +433,8 @@ function runApplier(name, extraEnv) {
     TYCON_SETTINGS_PATH: settings, CLAUDE_MD_PATH: path.join(home, '.claude', 'CLAUDE.md'),
     TYCON_GIT_HOOKS_DIR: gitHooks, CODEX_HOME: path.join(home, 'codex-home'),
     TYCON_CODEX: '0', TYCON_NO_NIGHTLY_EXAM: '1', TYCON_NO_GUI_ENV: '1', TYCON_BENCH_DAILY: '0', TYCON_STAGE_METRICS: '0',
+    // el chequeo de paridad que el instalador lanza de fondo deja su reporte en scripts/controls-bench/.bench/ del clon
+    TYCON_PARITY_BENCH_DIR: path.join(home, 'parity-bench'),
     TYCON_NO_CANONICAL_PATH: '1', TYCON_NO_AZ_PROJECTS_REFRESH: '1', TYCON_NO_BOOTSTRAP_HEAL: '1', TYCON_NO_CLAUDEMD_SYNC: '1',
     TYCON_NO_COMMANDS_SYNC: '1', TYCON_NO_ENGRAM_PROJECT_CHECK: '1', TYCON_NO_ENGRAM_VERSION_CHECK: '1', TYCON_NO_SQLITE_CHECK: '1',
     TYCON_NO_AGENTSMD_POINTER: '1', TYCON_NO_THREAD_RESCUE: '1', TYCON_NO_UPLOAD_RUNS: '1', TYCON_NO_DOWNLOAD_RUNS: '1',
