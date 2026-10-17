@@ -904,7 +904,7 @@ if corre PF; then
   # no anota ninguna aplicación; la línea de arranque, que se escribe antes, es la única entrada de settings.json)
   pf_fresh; mkdir -p "$LAB_HOME/.claude/tycon.json"
   out="$(harness install --version latest --profile minimal --yes 2>&1)"; rc=$?
-  [ "$rc" = 2 ] && case "$out" in *"no pude escribir el perfil en ~/.claude/tycon.json"*"No corrí el aplicador"*) true ;; *) false ;; esac && [ -z "$(estado "d.get('last_apply') or ''")" ] \
+  [ "$rc" = 2 ] && case "$out" in *"no pude escribir el perfil en "*"tycon.json"*"No corrí el aplicador"*) true ;; *) false ;; esac && [ -z "$(estado "d.get('last_apply') or ''")" ] \
     && ok "el perfil que no se puede escribir: sale 2, lo dice y no corre el aplicador" || mal "sin poder escribir el perfil: rc=$rc last_apply=«$(estado "d.get('last_apply')")»: $out"
   rm -rf "$LAB_HOME/.claude/tycon.json"
   # --dry-run no escribe nada (ni el perfil); la variable del perfil que contradice a --profile sale 2 sin escribir
