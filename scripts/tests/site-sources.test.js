@@ -60,6 +60,25 @@ async function montar({ archivos = {}, config, blobs = {}, mailbox = true, sasEx
   };
 }
 
+test('T21b Clones_FueraDelDiscoDeDatos @story-2.30 @ac-25', { skip: SIN_BACKEND }, async () => {
+  // SITE_DATA_DIR es el disco montado (Azure Files, por SMB): no admite el chmod que git hace al clonar. Los clones van
+  // al disco del contenedor; en SITE_DATA_DIR no queda ningún repo de git, y lo que sí se guarda ahí (el estado) sigue
+  const m = await montar();
+  try {
+    await m.fuentes.refrescar();
+    assert.strictEqual(m.fuentes.estado().cargado, true);
+    const clon = m.fuentes.clones().operaciones.dir;
+    const real = (p) => fs.realpathSync(p);
+    assert.ok(!(real(clon) + path.sep).startsWith(real(m.dataDir) + path.sep), `el clon no está dentro de SITE_DATA_DIR: ${clon}`);
+    assert.ok(fs.existsSync(path.join(clon, '.git')), 'el clon existe');
+    const conGit = [];
+    const recorrer = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, e.name); if (e.name === '.git') conGit.push(p); else if (e.isDirectory()) recorrer(p); } };
+    recorrer(m.dataDir);
+    assert.deepStrictEqual(conGit, [], 'ningún repo de git en el disco de datos');
+    assert.ok(fs.readdirSync(m.dataDir).some((f) => /\.json$/.test(f)), 'el estado de la configuración sí se guarda en el disco de datos');
+  } finally { await m.cerrar(); }
+});
+
 test('T21 RepoDeOperaciones_CredencialNuncaEnElDisco', { skip: SIN_BACKEND }, async () => {
   const m = await montar();
   try {
@@ -67,7 +86,7 @@ test('T21 RepoDeOperaciones_CredencialNuncaEnElDisco', { skip: SIN_BACKEND }, as
     assert.ok(m.git.pedidos.length > 0 && m.git.pedidos.every((p) => p.conCabecera), 'cada pedido al repo lleva la cabecera');
     assert.strictEqual(m.fuentes.estado().cargado, true);
     assert.strictEqual(m.fuentes.config().site.maintainers[0], 'lead@acme.example', 'leyó operations.json del clon');
-    const clon = path.join(m.dataDir, 'operaciones');
+    const clon = m.fuentes.clones().operaciones.dir;
     const gitConfig = fs.readFileSync(path.join(clon, '.git', 'config'), 'utf8');
     const b64 = CABECERA.split(' ')[1];
     assert.ok(!gitConfig.includes(TOKEN) && !gitConfig.includes(b64), 'ni el token ni la cabecera en .git/config');

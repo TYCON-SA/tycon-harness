@@ -3,8 +3,9 @@
  * sources.js — LAS FUENTES DEL SITIO DE LA ORGANIZACIÓN Y SU REFRESCO (story 2.23, AC 13 a 16; decisiones 16, 17, 20, 21).
  *
  * El sitio lee directo de DOS fuentes (S7), con credenciales de sólo lectura:
- *   · el REPO DE OPERACIONES, de `main`: un clon superficial en `<SITE_DATA_DIR>/operaciones` y `git fetch` en cada
- *     refresco. La credencial va en una cabecera pasada por variables de git (`GIT_CONFIG_*`, el patrón de `gitAuth` del
+ *   · el REPO DE OPERACIONES, de `main`: un clon superficial en una carpeta del disco del contenedor (no en
+ *     `SITE_DATA_DIR`: un disco de red montado por SMB no admite el `chmod` que git hace al clonar; el clon
+ *     se vuelve a armar en cada arranque) y `git fetch` en cada refresco. La credencial va en una cabecera pasada por variables de git (`GIT_CONFIG_*`, el patrón de `gitAuth` del
  *     exportador): nunca en la dirección, en un argumento ni en el disco.
  *   · el BUZÓN de corridas, con `bajar()` de scripts/metrics/download-runs.js y la credencial que da la plataforma —una SAS
  *     de sólo lectura, o la identidad administrada (cloud/)—. Se bajan los volcados y los registros; las conversaciones
@@ -35,8 +36,8 @@
  * repos.json. Los usa la regla de quién es quién (access.js → people.js), pero el modelo va entero a quien mantiene: con
  * los correos adentro, una pantalla podría mostrarlos. Viajan aparte, en `personas()`.
  *
- * EL PERFIL DEL EQUIPO (story 2.29, decisión 11): con `SITE_PROFILE_REPO` y `SITE_PROFILE_TOKEN`, un clon igual en
- * `<SITE_DATA_DIR>/perfil`, por el mismo camino, para que la pestaña Configuración lea `team-repos.json` y `team-layer.json`.
+ * EL PERFIL DEL EQUIPO (story 2.29, decisión 11): con `SITE_PROFILE_REPO` y `SITE_PROFILE_TOKEN`, un clon igual, al
+ * lado del de operaciones y por el mismo camino, para que la pestaña Configuración lea `team-repos.json` y `team-layer.json`.
  * Sin esas variables, no hay clon y la sección dice «no configurado». Un perfil que no se baja no frena nada: lo dice el
  * registro y su estado.
  *
@@ -453,14 +454,17 @@ function estadoDeGit(stderr) {
 }
 
 /** Saca los caracteres de control de una línea que va al registro (saltos, escape de la consola). */
-function crearFuentes({ cfg, dataDir, log: logCrudo = () => {}, ahora = Date.now, spawn = correr, urlBuzon, git = 'git', nubes: nubesDadas, presupuestoBuzonMs = 120000 }) {
+function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}, ahora = Date.now, spawn = correr, urlBuzon, git = 'git', nubes: nubesDadas, presupuestoBuzonMs = 120000 }) {
   // 🔴 todo lo que este módulo registra puede traer texto del repo de operaciones o del buzón (valores de operations.json,
   //    stderr de git, nombres de archivo): sale sin caracteres de control (revisión de seguridad de la 2.23, vuelta 2)
   const log = (l) => logCrudo(limpiarLinea(l));
   if (!dataDir) throw new Error('crearFuentes necesita SITE_DATA_DIR o una carpeta temporal');
-  const clon = path.join(dataDir, 'operaciones');
+  // los clones, en el disco del contenedor y nunca en SITE_DATA_DIR: git hace chmod al clonar, y un disco montado por
+  // SMB lo rechaza y deja el sitio frenado. Son copias que se vuelven a armar: no necesitan persistir
+  const raizClones = dirClones || fs.mkdtempSync(path.join(os.tmpdir(), 'site-clones-'));
+  const clon = path.join(raizClones, 'operaciones');
   const dirBuzon = path.join(dataDir, 'buzon');
-  const dirPerfil = path.join(dataDir, 'perfil');
+  const dirPerfil = path.join(raizClones, 'perfil');
   // el candado de los clones (AC 14 de la 2.29): una cola de promesas; un trabajo que falla no traba a los siguientes
   let cola = Promise.resolve();
   const exclusivo = (fn) => { const p = cola.then(() => fn()); cola = p.catch(() => {}); return p; };

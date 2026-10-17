@@ -13,7 +13,9 @@
  *   el disco en `SITE_DATA_DIR`, las sondas a `/livez` y `/readyz`, los secretos y la identidad del sistema, con la
  *   ENTRADA INTERNA; el rol «Storage Blob Data Reader» sobre el CONTENEDOR del buzón; el inicio integrado de Microsoft
  *   (un inquilino, el secreto por nombre); y por último la entrada externa. Si un paso falla, la entrada sigue interna.
- * Correr una fase de nuevo saltea lo que ya existe (pregunta antes de crear).
+ * Correr una fase de nuevo saltea lo que ya existe (pregunta antes de crear), salvo la aplicación: si ya existe, se
+ * actualiza con la configuración de hoy (la imagen, los secretos y las variables), dice qué cambió y deja la entrada como
+ * estaba. Así se actualiza el sitio.
  *
  * ── LOS SECRETOS ────────────────────────────────────────────────────────────────────────────────
  * Nunca en el archivo de configuración, en la línea de órdenes ni en el plan impreso. Los valores llegan por variables
@@ -34,7 +36,9 @@
  * · `az containerapp auth update`: `--unauthenticated-client-action RedirectToLoginPage`, `--require-https`,
  *   `--excluded-paths`, `--enabled`; `--redirect-provider` sólo hace falta con varios proveedores (acá hay uno).
  * · `az containerapp auth microsoft update`: `--client-id`, `--client-secret-name` (el secreto de la aplicación que lo
- *   guarda), `--tenant-id`, `--issuer`, `--allowed-audiences`, `--yes`.
+ *   guarda), `--issuer` (lleva el inquilino; con `--tenant-id` también, az se niega), `--allowed-audiences`, `--yes`.
+ * · `az role assignment create` sobre una identidad recién creada: Entra ID tarda en verla («Cannot find user or service
+ *   principal in graph database»); se reintenta con espera, y sólo ese error.
  * · `az containerapp env storage set` toma la llave de la cuenta por línea de órdenes: el disco va por `az rest`
  *   (`managedEnvironments/<ambiente>/storages/<nombre>`, con la api-version de `API`).
  * 🔴 Nada de esto se corrió todavía contra Azure: lo prueba la primera instalación real.
@@ -184,8 +188,12 @@ function corredor({ ensayo, salida, dirTmp }) {
       if (r.status !== null && /ResourceNotFound|ResourceGroupNotFound|ShareNotFound|could not be found|was not found|does not exist/i.test(r.stderr)) return false;
       throw new Falla(`no pude saber si existe (az ${args.slice(0, 3).join(' ')}): ${primera(r.stderr)}`);
     },
-    /** Un paso que crea o cambia algo. `archivo`: el cuerpo, con secretos adentro. */
-    paso({ que, args, archivo = null, nombreArchivo = null }) {
+    /**
+     * Un paso que crea o cambia algo. `archivo`: el cuerpo, con secretos adentro. `reintentar`: `{ si, veces }`, sólo
+     * ante un error que se sabe pasajero (`si`, sobre el stderr), con la espera de TYCON_CONTAINER_APPS_POLL_MS entre
+     * intentos; cualquier otro error frena en el primero.
+     */
+    paso({ que, args, archivo = null, nombreArchivo = null, reintentar = null }) {
       let ruta = null;
       if (archivo) {
         n += 1;
@@ -196,7 +204,14 @@ function corredor({ ensayo, salida, dirTmp }) {
       if (archivo) salida(`  con el archivo ${path.basename(ruta)}:\n${tapar(archivo).replace(/^/gm, '    ')}`);
       if (ensayo) return;
       if (archivo) fs.writeFileSync(ruta, real(archivo), { mode: 0o600 });
-      const r = az(args.map((a) => (a === '@ARCHIVO' ? `@${ruta}` : a === 'ARCHIVO' ? ruta : a)));
+      const correrlo = () => az(args.map((a) => (a === '@ARCHIVO' ? `@${ruta}` : a === 'ARCHIVO' ? ruta : a)));
+      let r = correrlo();
+      const espera = Number(process.env.TYCON_CONTAINER_APPS_POLL_MS) || 15000;
+      for (let i = 1; reintentar && r.status !== 0 && reintentar.si.test(r.stderr || '') && i < reintentar.veces; i++) {
+        salida(`  (Azure todavía no lo ve: intento ${i + 1} de ${reintentar.veces} en ${Math.round(espera / 1000)} s)`);
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, espera);
+        r = correrlo();
+      }
       if (archivo) fs.rmSync(ruta, { force: true });
       if (r.status !== 0) throw new Falla(`${que}: ${primera(r.stderr)}`, { cause: { que, stderr: r.stderr } });
       creados.push(que);
@@ -274,8 +289,10 @@ function faseSitio(c, run, salida, env, sec) {
     archivo: { properties: { azureFile: { accountName: c.storageAccount, accountKey: llaveCuenta, shareName: c.fileShare, accessMode: 'ReadWrite' } } },
     nombreArchivo: 'disco.json',
   });
-  // la aplicación, con la entrada interna
-  if (!run.existe(['containerapp', 'show', ...g, '-n', c.app, ...SUB(c)])) {
+  // la aplicación: se crea con la entrada interna; si ya existe, se actualiza con la misma configuración (imagen, secretos
+  // y variables), así volver a correr la fase aplica los cambios en vez de saltearlos
+  const yaExiste = run.existe(['containerapp', 'show', ...g, '-n', c.app, ...SUB(c)]);
+  {
     const comunes = [['SITE_PUBLIC_URL', publica], ['SITE_AUTH_PROVIDER', 'microsoft'], ['SITE_OIDC_ISSUER', `https://login.microsoftonline.com/${c.tenantId}/v2.0`],
       ['SITE_OIDC_CLIENT_ID', c.oidcClientId], ['SITE_OPERATIONS_REPO', c.operationsRepo], ['SITE_MAILBOX_IDENTITY', 'managed'], ['SITE_DATA_DIR', DISCO],
       ...(c.operationsIdentity === 'managed' ? [['SITE_OPERATIONS_IDENTITY', 'managed']] : []),
@@ -310,19 +327,47 @@ function faseSitio(c, run, salida, env, sec) {
       },
     };
     if (sec.apagadas.length) salida(`  (quedan apagadas, porque no vinieron en el entorno: ${sec.apagadas.join(', ')})`);
-    run.paso({ que: 'crear la aplicación, con la entrada INTERNA (todavía no se ve desde afuera)', args: ['containerapp', 'create', ...g, '-n', c.app, '--yaml', 'ARCHIVO', '-o', 'none', ...SUB(c)], archivo: yaml, nombreArchivo: 'aplicacion.yaml' });
+    if (!yaExiste) {
+      run.paso({ que: 'crear la aplicación, con la entrada INTERNA (todavía no se ve desde afuera)', args: ['containerapp', 'create', ...g, '-n', c.app, '--yaml', 'ARCHIVO', '-o', 'none', ...SUB(c)], archivo: yaml, nombreArchivo: 'aplicacion.yaml' });
+    } else {
+      // lo que tiene hoy, para decir qué cambia; la entrada se deja como está (un sitio ya abierto no se cierra al actualizar)
+      const q = (consulta, siNo) => run.leer(['containerapp', 'show', ...g, '-n', c.app, '--query', consulta, '-o', 'tsv', ...SUB(c)], siNo);
+      const lista = (s) => String(s || '').split(/\s+/).filter(Boolean).sort();
+      const antes = {
+        imagen: q('properties.template.containers[0].image', '<la imagen de hoy>'),
+        secretos: lista(q('properties.configuration.secrets[].name', '')),
+        variables: lista(q('properties.template.containers[0].env[].name', '')),
+        externa: q('properties.configuration.ingress.external', 'false') === 'true',
+      };
+      yaml.properties.configuration.ingress.external = antes.externa;
+      const ahora = { secretos: yaml.properties.configuration.secrets.map((s) => s.name).sort(), variables: yaml.properties.template.containers[0].env.map((e) => e.name).sort() };
+      const dif = (a, b) => ({ mas: b.filter((x) => !a.includes(x)), menos: a.filter((x) => !b.includes(x)) });
+      const ds = dif(antes.secretos, ahora.secretos);
+      const dv = dif(antes.variables, ahora.variables);
+      const cambios = [
+        antes.imagen !== c.image ? `imagen: ${antes.imagen} → ${c.image}` : 'imagen: la misma',
+        ds.mas.length || ds.menos.length ? `secretos: ${[...ds.mas.map((x) => `+${x}`), ...ds.menos.map((x) => `-${x}`)].join(' ')}` : 'secretos: los mismos nombres (los valores se vuelven a poner con los del entorno)',
+        dv.mas.length || dv.menos.length ? `variables: ${[...dv.mas.map((x) => `+${x}`), ...dv.menos.map((x) => `-${x}`)].join(' ')}` : 'variables: los mismos nombres',
+        `entrada: ${antes.externa ? 'externa (queda así)' : 'interna (se abre al final)'}`,
+      ];
+      salida(`La aplicación ya existe: se actualiza.\n${cambios.map((x) => `  · ${x}`).join('\n')}`);
+      run.paso({ que: 'actualizar la aplicación (imagen, secretos y variables), con los secretos en el archivo', args: ['containerapp', 'update', ...g, '-n', c.app, '--yaml', 'ARCHIVO', '-o', 'none', ...SUB(c)], archivo: yaml, nombreArchivo: 'aplicacion.yaml' });
+    }
   }
   // el rol de lectura del buzón, sobre el contenedor (no sobre la cuenta)
   const principal = run.leer(['containerapp', 'show', ...g, '-n', c.app, '--query', 'identity.principalId', '-o', 'tsv', ...SUB(c)], '<la identidad del sitio>');
   const alcance = `/subscriptions/${c.subscription}/resourceGroups/${c.mailbox.resourceGroup}/providers/Microsoft.Storage/storageAccounts/${c.mailbox.account}/blobServices/default/containers/${c.mailbox.container}`;
   const yaHay = run.leer(['role', 'assignment', 'list', '--assignee', principal, '--role', 'Storage Blob Data Reader', '--scope', alcance, '--query', 'length(@)', '-o', 'tsv', ...SUB(c)], '0');
   if (yaHay === '0') {
+    // la identidad recién creada tarda en llegar a Entra ID: «Cannot find user or service principal in graph database»
+    // es esa demora, y se reintenta con espera; cualquier otro error frena
     run.paso({ que: 'dar a la identidad del sitio la lectura del contenedor del buzón', args: ['role', 'assignment', 'create', '--assignee-object-id', principal, '--assignee-principal-type', 'ServicePrincipal',
-      '--role', 'Storage Blob Data Reader', '--scope', alcance, '-o', 'none', ...SUB(c)] });
+      '--role', 'Storage Blob Data Reader', '--scope', alcance, '-o', 'none', ...SUB(c)], reintentar: { si: /Cannot find user or service principal in graph database/i, veces: 12 } });
   }
-  // el inicio integrado: un inquilino, el secreto por su nombre
+  // el inicio integrado: un inquilino, el secreto por su nombre. El inquilino va en el emisor: az no acepta --issuer y
+  // --tenant-id juntos («cannot be configured to non empty strings at the same time»)
   run.paso({ que: 'el inicio integrado de Microsoft (un inquilino)', args: ['containerapp', 'auth', 'microsoft', 'update', ...g, '-n', c.app, '--client-id', c.oidcClientId,
-    '--client-secret-name', 'site-oidc-client-secret', '--tenant-id', c.tenantId, '--issuer', `https://login.microsoftonline.com/${c.tenantId}/v2.0`,
+    '--client-secret-name', 'site-oidc-client-secret', '--issuer', `https://login.microsoftonline.com/${c.tenantId}/v2.0`,
     '--allowed-audiences', c.oidcClientId, '--yes', '-o', 'none', ...SUB(c)] });
   run.paso({ que: 'el candado delante del sitio (fuera: /healthz y /livez)', args: ['containerapp', 'auth', 'update', ...g, '-n', c.app, '--enabled', 'true',
     '--unauthenticated-client-action', 'RedirectToLoginPage', '--require-https', 'true', '--excluded-paths', '/healthz,/livez', '-o', 'none', ...SUB(c)] });
