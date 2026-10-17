@@ -403,7 +403,9 @@ test('2.23-R4 Repo_ConIdentidadAdministradaYErroresDeLaPlataforma', { skip: SIN_
   }
 });
 
-test('2.23-R5 Fotos_IlegiblesYAusentesNoSonCero', () => {
+test('2.23-R5 Fotos_IlegiblesYAusentesNoSonCero', (t) => {
+  // en Windows un nombre de archivo no puede llevar un salto de línea: ese caso no se arma ahí, y se dice
+  const conSalto = process.platform !== 'win32';
   const raiz = tmp('site-r5-');
   const clon = path.join(raiz, 'operaciones');
   const escribir = (rel, c) => { fs.mkdirSync(path.dirname(path.join(clon, rel)), { recursive: true }); fs.writeFileSync(path.join(clon, rel), typeof c === 'string' ? c : JSON.stringify(c)); };
@@ -411,7 +413,8 @@ test('2.23-R5 Fotos_IlegiblesYAusentesNoSonCero', () => {
     for (const [rel, c] of Object.entries(H.archivosDeOperaciones())) escribir(rel, c);
     escribir('scripts/nightly/dashboard/declared.json', '{ roto');
     escribir('.dashboard/proyectos/Roto__Roto.json', '{ roto');
-    escribir('.dashboard/proyectos/Raro\nnombre__X.json', '{ roto');   // git admite saltos de línea en un nombre de archivo
+    if (conSalto) escribir('.dashboard/proyectos/Raro\nnombre__X.json', '{ roto');   // git admite saltos de línea en un nombre de archivo
+    else t.diagnostic('NO MEDIDO: en Windows un nombre de archivo no puede llevar un salto de línea');
     // fotos con forma inesperada: sin `results`, sin `failures` — nunca «0 rojas»
     escribir(`.dashboard/controls-bench/banco-${HOY}.json`, { ts: `${HOY}T05:00:00Z`, ran: 10 });
     escribir(`.dashboard/controls-bench/suites-${HOY}.json`, { ts: `${HOY}T05:00:00Z`, corridas: 10 });
@@ -433,7 +436,7 @@ test('2.23-R5 Fotos_IlegiblesYAusentesNoSonCero', () => {
     assert.ok(registro.some((l) => /PR del .* dice medido y no trae la lista/.test(l)) && registro.some((l) => /pedidos asignados del .* dice medido/.test(l)), 'y se registra');
     // el registro sale sin saltos de línea aunque el nombre de un archivo los traiga (revisión de seguridad, vuelta 2)
     assert.ok(registro.length > 0 && registro.every((l) => !/[\n\r]/.test(l)), 'ninguna línea del registro con saltos');
-    assert.ok(registro.some((l) => /Raro nombre__X/.test(l)), 'el nombre con salto se registra en una sola línea');
+    if (conSalto) assert.ok(registro.some((l) => /Raro nombre__X/.test(l)), 'el nombre con salto se registra en una sola línea');
     // una foto que no se puede leer se nombra en el registro, también la de las fuentes sin registro propio (vuelta 3)
     escribir(`.dashboard/vigilante/vigilante-${HOY}.json`, '{ roto');
     const r2 = [];
