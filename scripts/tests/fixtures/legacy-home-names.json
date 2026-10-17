@@ -42,7 +42,8 @@
       "retire_with": "8.24 (deja de mirar el estado viejo bajo ~/.claude)",
       "retire_after": "2026-11-07",
       "retired_by": "8.24"
-    }
+    },
+    { "path": "scripts/setup/harness/team-stories/githooks-pre-commit", "why": "la plantilla del gancho de commit que el alta deja en el repo de stories de un producto: corre en la máquina de cada dev sin el arnés a mano y busca el arnés instalado en el lugar de siempre bajo ~/.claude (y en el de antes del cambio de lugar)", "retire_with": "8.24 (los productos buscan el arnés en ~/.tycon/harness)", "retire_after": "2026-11-07", "retired_by": "8.24" }
   ],
   "until_d": [
     {

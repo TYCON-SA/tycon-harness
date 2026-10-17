@@ -1393,9 +1393,10 @@ PY
 # proceso de fondo de PowerShell no puede AGREGAR a un archivo, y sobrescribirlo borraría el aviso de vencimiento de la
 # llave, que sale una vez por día (la razón del `>>` del .sh). Con --log la subida agrega ella misma y rota pasado ~512 KB.
 # 🔴 rojo previo: sin la opción, la salida va a la terminal y el registro no existe.
+# Sin la marca de una corrida de Azure (TF_BUILD): ahí la subida no sube nada a propósito, y el nocturno corre con ella.
 T="${BASE}/tlog"; mkdir -p "${T}"
 LOG="${T}/sub carpeta/upload-runs.log"
-for i in 1 2; do TYCON_MAILBOX_JSON="${T}/no-esta.json" node "${SUBIR}" --budget-ms 1000 --log "${LOG}" > "${T}/salida-${i}.txt" 2>&1 < /dev/null; done
+for i in 1 2; do env -u TF_BUILD TYCON_MAILBOX_JSON="${T}/no-esta.json" node "${SUBIR}" --budget-ms 1000 --log "${LOG}" > "${T}/salida-${i}.txt" 2>&1 < /dev/null; done
 RC=$?
 N=$(grep -c 'sin_config' "${LOG}" 2>/dev/null || echo 0)
 if [ "${RC}" -eq 1 ] && [ "${N}" = "2" ] && [ ! -s "${T}/salida-1.txt" ] && [ ! -s "${T}/salida-2.txt" ]; then
@@ -1404,7 +1405,7 @@ else
   mal "Windows · --log: rc=${RC}, líneas sin_config en el registro=${N}, en la terminal: $(head -c 160 "${T}/salida-1.txt")"
 fi
 head -c 600000 /dev/zero | tr '\0' 'x' > "${LOG}"
-TYCON_MAILBOX_JSON="${T}/no-esta.json" node "${SUBIR}" --budget-ms 1000 --log "${LOG}" > /dev/null 2>&1 < /dev/null
+env -u TF_BUILD TYCON_MAILBOX_JSON="${T}/no-esta.json" node "${SUBIR}" --budget-ms 1000 --log "${LOG}" > /dev/null 2>&1 < /dev/null
 if [ -f "${LOG}.1" ] && [ "$(wc -c < "${LOG}.1" | tr -d ' ')" -ge 600000 ] && [ "$(wc -c < "${LOG}" | tr -d ' ')" -lt 4096 ] && grep -q 'sin_config' "${LOG}"; then
   ok "Windows · --log: pasado ~512 KB el registro viejo va a .1 y el nuevo arranca de cero"
 else

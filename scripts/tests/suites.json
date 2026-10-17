@@ -1677,6 +1677,12 @@
       "requiere": []
     },
     {
+      "__nota": "El freno de historia interna en los comentarios del código (internal-history.js --zone comment): el lector mira sólo comentarios, cada forma con su rojo y su verde, lo neto por archivo con commits de verdad en repos de juguete, los modos por forma, el mensaje, las excepciones, el pedido armado como la revisión del público, y que sólo mire el árbol que se publica.",
+      "raiz": "arnes",
+      "ruta": "tests/code-comments.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.41, tanda E (T35): guides/maintaining/estilo-de-codigo.md trae la regla de los comentarios, dos ejemplos buenos y dos malos, y tiene su fila en INDEX.md.",
       "raiz": "arnes",
       "ruta": "tests/style-guide.test.js",

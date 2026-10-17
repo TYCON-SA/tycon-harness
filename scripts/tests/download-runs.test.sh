@@ -1004,6 +1004,7 @@ done
 # No lee corridas-buzon.json (no hay), no mira las integraciones (apagadas), no llama a az (no hay), y baja sólo los
 # volcados y los registros, nunca hilos ni cambios. La firma va en la consulta, sin cabecera Authorization.
 # 🔴 rojo previo: bajar() leía corridas-buzon.json y la sesión de az; sin ellos no bajaba nada (y con ellos bajaba hilos).
+rm -rf "${HOME}/.claude"   # 8.9-D2 siembra la casa de juguete a propósito; T23 mira sólo lo que escribe él
 T="${BASE}/t23"; buzon "${T}/b"; SIG="firma-$$"; echo "${SIG}" > "${T}/b/sas-sig"
 blob "${T}/b" "maq-a-11111111/2.1-2026-10-15T1000.json" 700
 blob "${T}/b" "maq-a-11111111/2.1-2026-10-15T1000.hilo.jsonl.gz" 3000

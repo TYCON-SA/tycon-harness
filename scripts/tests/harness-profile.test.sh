@@ -141,6 +141,15 @@ applier() { # applier <home> <árbol> <salida> [args…] → corre el aplicador 
 FULL_TASKS='harness-parity.js|sdlc-stage-metrics.js|tokens-digest.js|collect-findings.js|periodic-exam.js'
 
 TREE="$T/tree"; lab_tree "$TREE" || { echo "❌ no pude armar el árbol de laboratorio"; exit 1; }
+# El perfil del equipo con que corren los casos de «máquina del equipo»: el del repo si lo trae; si no (el perfil vive
+# en el repo del perfil, y el árbol armado no lo tiene), el del commit de referencia, que ya da el lado viejo de
+# T40: estos casos miden el aplicador con un perfil del equipo, no un perfil en particular.
+TEAM_PROFILE="$RAIZ/perfil-equipo.json"
+if [ ! -f "$TEAM_PROFILE" ] && git -C "$RAIZ" show "${BASE_REF}:perfil-equipo.json" > "$T/perfil-equipo.json" 2>/dev/null; then
+  # con el perfil que instala el equipo (full), como dice el perfil de hoy; el de entonces todavía no lo decía
+  python3 -c 'import json,sys; p=sys.argv[1]; d=json.load(open(p)); d.setdefault("install", {}).setdefault("profile", "full"); json.dump(d, open(p, "w"), indent=2)' "$T/perfil-equipo.json" \
+    && TEAM_PROFILE="$T/perfil-equipo.json"
+fi
 
 # ══ T32 · minimal: sólo los hooks de minimal; nada de full ═════════════════════════════════════════════════════════════
 if corre T32; then
@@ -251,7 +260,7 @@ if corre T40; then
     git -C "$RAIZ" show "$BASE_REF:perfil-equipo.json" > "$T/perfil-old.json"
     for side in old new; do
       H="$T/t40/$side"; new_home "$H"
-      if [ "$side" = old ]; then tr="$OLD"; base "$H" "$T/perfil-old.json"; else tr="$TREE"; base "$H" "$RAIZ/perfil-equipo.json"; fi
+      if [ "$side" = old ]; then tr="$OLD"; base "$H" "$T/perfil-old.json"; else tr="$TREE"; base "$H" "$TEAM_PROFILE"; fi
       applier "$H" "$tr" "$T/t40/$side.out"
       [ "$RC" = 0 ] || mal "T40 el aplicador ($side) salió ${RC}: $(tail -n 3 "$T/t40/$side.out" | tr '\n' ' ')"
     done
@@ -268,10 +277,15 @@ PY
     # Sin esto, el primer hook nuevo ponía roja la prueba para siempre.
     #   scripts/hooks/public-push-guard.js — el freno antes de publicar (story 8.26, tanda F1)
     #   scripts/hooks/owner-email-notice.js — tu correo de git, dicho una vez, con el buzón prendido (story 2.28, AC 30)
+    #   scripts/hooks/wait-notice.js — el aviso de que una corrida espera a una persona, en sus seis eventos
+    #   scripts/hooks/worktree-sweep.js — el barrido diario de las carpetas de trabajo ya mergeadas
+    # «ruta=N»: registrado N veces (un hook en varios eventos); sin «=N», una.
     rm -f "$T/t40/added.out"
-    python3 - "$T/t40/new-norm.json" "$T/t40/added.out" scripts/hooks/public-push-guard.js scripts/hooks/owner-email-notice.js <<'PY'
+    python3 - "$T/t40/new-norm.json" "$T/t40/added.out" scripts/hooks/public-push-guard.js scripts/hooks/owner-email-notice.js scripts/hooks/wait-notice.js=6 scripts/hooks/worktree-sweep.js <<'PY'
 import json, sys
-path, out, added = sys.argv[1], sys.argv[2], sys.argv[3:]
+path, out = sys.argv[1], sys.argv[2]
+want = {a.split("=")[0]: int(a.split("=")[1]) if "=" in a else 1 for a in sys.argv[3:]}
+added = list(want)
 data = json.load(open(path, encoding="utf-8"))
 times = {a: 0 for a in added}
 for event, groups in data["hooks"].items():
@@ -286,7 +300,7 @@ for event, groups in data["hooks"].items():
         group["hooks"] = keep
     data["hooks"][event] = [g for g in groups if g.get("hooks")]
 json.dump(data, open(path, "w", encoding="utf-8"), indent=2)
-open(out, "w", encoding="utf-8").write("\n".join("%s (%d veces)" % (a, n) for a, n in times.items() if n != 1))
+open(out, "w", encoding="utf-8").write("\n".join("%s (%d veces, se esperaban %d)" % (a, n, want[a]) for a, n in times.items() if n != want[a]))
 PY
     PYRC=$?
     # «no pude apartar» no es «aparté»: si el guion falla no deja su archivo, y un archivo que falta no es uno vacío
@@ -295,7 +309,20 @@ PY
     else ok "T40 los hooks sumados después de ${BASE_REF} están, una vez cada uno, y se apartan de la comparación"; fi
     node "$RAIZ/scripts/publishing/profile-equivalence.js" --settings "$T/t40/old-as-new.json" "$T/t40/new-norm.json" > "$T/t40/eq.out" 2>&1; EQ=$?
     [ "$EQ" = 0 ] && ok "T40 con el perfil del equipo: los mismos hooks que el aplicador de ${BASE_REF}" || mal "T40 hooks distintos (rc $EQ): $(head -c 500 "$T/t40/eq.out")"
-    for side in old new; do sed -E 's#(<!-- TYCON_BLOCK:[^ ]+ START) — generado por [^·]*·#\1 — generado por @SYNC@ ·#' "$T/t40/$side/.claude/CLAUDE.md" > "$T/t40/$side-claude.md"; done
+    # aparte, lo que el aplicador de entonces no conoce: el bloque del estilo de respuesta, que hoy se elige por
+    # variante, y las filas de la tabla de nombres marcadas con su integración, que hoy se escriben sólo si está prendida
+    for side in old new; do sed -E 's#(<!-- TYCON_BLOCK:[^ ]+ START) — generado por [^·]*·#\1 — generado por @SYNC@ ·#' "$T/t40/$side/.claude/CLAUDE.md" \
+      | sed '/<!-- TYCON_BLOCK:response-style START/,/<!-- TYCON_BLOCK:response-style END/d' > "$T/t40/$side-claude.md"; done
+    python3 - "$T/t40/old-claude.md" "$T/t40/new-claude.md" <<'PY'
+import re, sys
+old_p, new_p = sys.argv[1], sys.argv[2]
+old = open(old_p, encoding="utf-8").read().split("\n")
+mark = re.compile(r"\s*<!-- integration: [a-z]+ -->\s*$")
+rows = {mark.sub("", l).rstrip() for l in old if mark.search(l)}
+open(old_p, "w", encoding="utf-8").write("\n".join(l for l in old if not mark.search(l)))
+new = open(new_p, encoding="utf-8").read().split("\n")
+open(new_p, "w", encoding="utf-8").write("\n".join(l for l in new if mark.sub("", l).rstrip() not in rows))
+PY
     cmp -s "$T/t40/old-claude.md" "$T/t40/new-claude.md" && ok "T40 CLAUDE.md byte a byte igual (la descripción de la marca de arranque aparte)" || mal "T40 CLAUDE.md distinto: $(diff "$T/t40/old-claude.md" "$T/t40/new-claude.md" | head -5 | tr '\n' ' ')"
     [ ! -e "$T/t40/new/.claude/tycon.json" ] && ok "T40 tycon.json sin tocar" || mal "T40 el aplicador escribió tycon.json"
     [ "$(setting "$T/t40/new" cleanupPeriodDays)" = "$(setting "$T/t40/old" cleanupPeriodDays)" ] && ok "T40 los ajustes iguales" || mal "T40 los ajustes cambiaron"
@@ -366,10 +393,10 @@ if corre T35; then
     || mal "T35 sin --profile: rc ${RC} · $(head -n 2 "$T/t35/unset.out" | tr '\n' ' ') · tycon.json $(machine_profile "$H")"
   # con el perfil del equipo: full (perfil), sin tocar tycon.json, y una segunda corrida no pregunta (nada que escribir).
   # La copia pública no trae el perfil del equipo: ahí NO MEDIDO (en el repo interno, que falte sigue siendo rojo).
-  if [ ! -f "$RAIZ/perfil-equipo.json" ] && [ ! -f "$RAIZ/scripts/publishing/public-repos.json" ]; then
+  if [ ! -f "$TEAM_PROFILE" ] && [ ! -f "$RAIZ/scripts/publishing/public-repos.json" ]; then
     echo "  ⏭   — T35/T40 perfil del equipo: NO MEDIDO en la copia — no trae perfil-equipo.json"
   else
-  H="$T/t35/team"; new_home "$H"; base "$H" "$RAIZ/perfil-equipo.json"
+  H="$T/t35/team"; new_home "$H"; base "$H" "$TEAM_PROFILE"
   harness "$T/t35/team.out" install --yes
   { [ "$RC" = 0 ] && grep -q 'perfil: full (perfil)' "$T/t35/team.out" && [ ! -e "$H/.claude/tycon.json" ]; } && ok "T35 el perfil del equipo: full (perfil), sin tocar tycon.json" \
     || mal "T35 perfil del equipo: rc ${RC} · $(grep -m1 'perfil' "$T/t35/team.out")"

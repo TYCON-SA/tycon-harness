@@ -376,6 +376,23 @@ const THIN_PRIVATE = (() => {
 // AC 14 · la clasificación de cada commit (whatShips, la que usan los frenos) lee el nombre público del MISMO commit: un
 // archivo roto es «no pude mirar» (tira), nunca «sin nombre público»; ausente (la copia pública no lo trae), sigue sin él.
 // Revisión de fallos silenciosos de la tanda A: antes se tragaba cualquier error del lector.
+test('PublicNameExceptions_Reader_EveryEntryWithPathAndWhy_NoDuplicates', () => {
+  // las excepciones de la dirección del repo público: cada archivo con su motivo, una sola vez
+  const ex = require(EXPORTAR);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'excepciones-nombre-'));
+  try {
+    const leer = (datos) => { const f = path.join(dir, 'x.json'); fs.writeFileSync(f, typeof datos === 'string' ? datos : JSON.stringify(datos)); return ex.readPublicNameExceptions(f); };
+    assert.deepStrictEqual(leer({ files: [{ path: 'a.js', why: ' una etiqueta ' }, { path: 'carpeta/', why: 'datos' }] }), [{ path: 'a.js', why: 'una etiqueta' }, { path: 'carpeta/', why: 'datos' }]);
+    for (const [que, datos, re] of [
+      ['sin lista', {}, /no traen "files"/],
+      ['sin motivo', { files: [{ path: 'a.js', why: '  ' }] }, /a\.js no trae "why"/],
+      ['sin ruta', { files: [{ why: 'x' }] }, /no trae "path"/],
+      ['repetida', { files: [{ path: 'a.js', why: 'x' }, { path: 'a.js', why: 'y' }] }, /a\.js está dos veces/],
+      ['JSON roto', '{ "files": ', /./],
+    ]) assert.throws(() => leer(datos), re, que);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 test('WhatShips_PublicRepos_BrokenIsCouldNotLook', () => {
   const ex = require(EXPORTAR);
   const clasificar = (fx) => {
