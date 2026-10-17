@@ -6,10 +6,14 @@
 # (`.github/workflows/ci.yml`) sólo llama a esto; la prueba que lo compara con el repo del equipo (la T23 de
 # export-real.test.sh) corre este mismo guion en los dos lados.
 #
-# USO:  bash scripts/ci/public-ci.sh [--root <dir>] [--range <base>...<punta>] [--clean-machine]
+# USO:  bash scripts/ci/public-ci.sh [--root <dir>] [--range <base>...<punta> [--base <rev>]] [--clean-machine]
 #   --root <dir>      el repo a revisar; por defecto, el repo donde vive este guion. Corre los archivos DE ESE repo.
 #   --range <a>...<b> además, el freno de nombres en castellano sobre ese rango (lo pasa la CI en un pull request)
 #   --clean-machine   además, la prueba de la máquina limpia en su modo público (baja imágenes y paquetes: usa la red)
+#   --base <rev>      con --range: el paso 9 corre los controles y su regla DE ESA BASE sobre lo que trae el rango
+#                     (scripts/ci/run-base-controls.sh de la base; los del pedido corren además). La CI lo
+#                     pasa en un pedido y en la cola, y corre el public-ci.sh de la base. Sin --base, el paso 9 corre los
+#                     controles de este mismo árbol, como siempre, y lo dice (una máquina, el push a main)
 #
 # LOS PASOS, en este orden, UNA línea por paso:
 #   1 node-check           `node --check` de cada .js que lista `git ls-files` (lo versionado, no lo que haya en disco: en
@@ -28,7 +32,10 @@
 #                          rango, como si se commiteara: en una copia de trabajo aparte de la punta, con el índice en la
 #                          punta y HEAD en la base (`git reset --soft`). Cada control decide si le toca, igual que al
 #                          commitear; los que necesitan lo privado (la lista de nombres del equipo) no lo tienen acá y
-#                          callan: eso lo mira el freno de quien empuja y la verificación diaria de lo publicado
+#                          callan: eso lo mira el freno de quien empuja y la verificación diaria de lo publicado.
+#                          Con --base: bash scripts/ci/run-base-controls.sh run de la BASE (el guion sale de la base con
+#                          `git show`): los controles y su regla de la base sobre lo que trae el rango, y además los del
+#                          pedido. Si la base no se lee o no trae ese guion, «no pude correr», nunca los del pedido solos
 #  10 version              sólo con --range: node scripts/ci/version-tag.js check-pr. Con `numbering: "merge-tag"` en el
 #                          version.json de la base, el pedido no toca el número (lo pone la etiqueta del merge); sin la
 #                          marca, el de la punta tiene que ser MAYOR que el de la base (lo que una máquina compara).
@@ -98,11 +105,14 @@ set -uo pipefail
 unset GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE GIT_COMMON_DIR GIT_PREFIX GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES
 
 usage() {
-  echo "uso: bash scripts/ci/public-ci.sh [--root <dir>] [--range <base>...<punta>] [--clean-machine]" >&2
+  echo "uso: bash scripts/ci/public-ci.sh [--root <dir>] [--range <base>...<punta> [--base <rev>]] [--clean-machine]" >&2
   exit "$1"
 }
+# lo que se muestra de la salida de un paso puede traer texto del pedido: ningún «::» (GitHub) ni «##» (Azure) queda
+# entero, ni de a tres, y un retorno de carro no arma una línea aparte
+ci_neutral() { tr '\r' ' ' | sed -e ':a' -e 's/::/: :/' -e 'ta' -e ':b' -e 's/##/# #/' -e 'tb'; }
 
-ROOT_ARG=""; ROOT_GIVEN=0; RANGE=""; WITH_RANGE=0; CLEAN_MACHINE=0
+ROOT_ARG=""; ROOT_GIVEN=0; RANGE=""; WITH_RANGE=0; CLEAN_MACHINE=0; BASE_ARG=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --root) [ $# -ge 2 ] || { echo "public-ci: --root pide una carpeta" >&2; usage 2; }; ROOT_ARG="$2"; ROOT_GIVEN=1; shift 2 ;;
@@ -110,10 +120,15 @@ while [ $# -gt 0 ]; do
     --range) [ $# -ge 2 ] || { echo "public-ci: --range pide <base>...<punta>" >&2; usage 2; }; RANGE="$2"; WITH_RANGE=1; shift 2 ;;
     --range=*) RANGE="${1#--range=}"; WITH_RANGE=1; shift ;;
     --clean-machine) CLEAN_MACHINE=1; shift ;;
+    --base) [ $# -ge 2 ] && [ -n "$2" ] || { echo "public-ci: --base pide un commit" >&2; usage 2; }; BASE_ARG="$2"; shift 2 ;;
+    --base=*) BASE_ARG="${1#--base=}"; [ -n "${BASE_ARG}" ] || { echo "public-ci: --base pide un commit" >&2; usage 2; }; shift ;;
     -h|--help) usage 0 ;;
     *) echo "public-ci: argumento desconocido: $1" >&2; usage 2 ;;
   esac
 done
+
+# los controles de la base miran lo que trae un rango: sin --range no hay qué mirar
+[ -z "${BASE_ARG}" ] || [ "${WITH_RANGE}" -eq 1 ] || { echo "public-ci: --base va con --range" >&2; usage 2; }
 
 # un --root VACÍO (la variable sin definir de quien llama) no es «sin --root»: caer al repo del guion daría el veredicto
 # de otro repo que el pedido
@@ -186,7 +201,7 @@ elif [ -f "${ROOT}/scripts/lib/skills-dir.js" ] && command -v node >/dev/null 2>
   else
     SKILLS_REPO=""; SKILLS_ERROR="$(head -n 1 "${WORK}/skills-dir.err")"
     [ -n "${SKILLS_ERROR}" ] || SKILLS_ERROR="scripts/lib/skills-dir.js salió con error y no dijo por qué"
-    echo "public-ci: no pude resolver la carpeta de skills: ${SKILLS_ERROR}"
+    echo "public-ci: no pude resolver la carpeta de skills: $(printf '%s\n' "${SKILLS_ERROR}" | ci_neutral)"
   fi
 fi
 export TYCON_GUIDES_DIR="${ROOT}"
@@ -196,7 +211,7 @@ export TYCON_GUIDES_DIR="${ROOT}"
 STEP=0; RED_COUNT=0; RED_NAMES=""
 BLOCKED_EXIT=9   # con este exit un paso propio dice «no pude correr»; el motivo es la última línea de su salida
 mark_red() { RED_COUNT=$((RED_COUNT + 1)); if [ -z "${RED_NAMES}" ]; then RED_NAMES="$1"; else RED_NAMES="${RED_NAMES}, $1"; fi; }
-blocked() { mark_red "$1"; echo "❌ public-ci: $1 — no pude correr: $2"; }
+blocked() { mark_red "$1"; echo "❌ public-ci: $1 — no pude correr: $(printf '%s\n' "$2" | ci_neutral)"; }
 
 # run_step <paso> <own|file> <archivo que tiene que existir, relativo a la raíz> <herramientas, separadas por espacio> <comando…>
 #   own  = un paso de este guion (una función): puede salir con BLOCKED_EXIT para decir «no pude correr»
@@ -213,12 +228,14 @@ run_step() {
   ( cd "${ROOT}" && "$@" ) > "${log}" 2>&1; rc=$?
   if [ "${rc}" -eq 0 ]; then
     echo "✅ public-ci: ${name} ($((SECONDS - t0))s)"
+    # lo que avisa la revisión desde la base se ve también en verde: lo que se suma a las reglas, la alarma, la constancia
+    [ "${name}" != repo-lint ] || grep -E '^(⚠️ base-controls|✅ base-controls: cambio de control aprobado|base-controls: reglas que cambia|   [^ ]|      [-+~] )' "${log}" | ci_neutral | sed 's/^/     /'
   elif [ "${kind}" = "own" ] && [ "${rc}" -eq "${BLOCKED_EXIT}" ]; then
     blocked "${name}" "$(tail -n 1 "${log}" | sed 's/^no pude correr: //')"
   else
     mark_red "${name}"
     echo "❌ public-ci: ${name} — rojo (exit ${rc})"
-    tail -n 30 "${log}" | sed 's/^/     /'
+    tail -n 30 "${log}" | ci_neutral | sed 's/^/     /'
   fi
 }
 
@@ -360,10 +377,14 @@ const queue = suites.slice().sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key
 let alive = 0;
 function settle(e, good, why, t0, output) {
   verdicts.set(key(e), good ? '✅' : '❌');
-  try { fs.writeFileSync(path.join(OUT, 'agent-skills-suites', `${key(e).split('/').join('__')}.log`), output); } catch (_) { /* el veredicto no depende de esto */ }
+  // el nombre sale de suites.json del pedido y lo imprime el volcado del workflow: sólo caracteres que no arman una línea
+  // ni un comando de la CI
+  const logName = key(e).split('/').join('__').replace(/[^\w.@-]/g, '_');
+  try { fs.writeFileSync(path.join(OUT, 'agent-skills-suites', `${logName}.log`), output); } catch (_) { /* el veredicto no depende de esto */ }
   if (good) { console.log(`✅ ${key(e)} (${sec(Date.now() - t0)})`); return; }
   red.push(`${key(e)} (${why})`);
-  const tail = output.trim().split('\n').slice(-8).map((l) => `     ${l}`).join('\n');
+  // la salida de una suite puede traer texto del pedido: ningún «::» ni «##» llega entero como comando de la CI
+  const tail = output.trim().split('\n').slice(-8).map((l) => `     ${l.replace(/\r/g, ' ').replace(/:(?=:)/g, ': ').replace(/#(?=#)/g, '# ')}`).join('\n');
   console.log(`❌ ${key(e)} — ${why} (${sec(Date.now() - t0)})${tail.trim() ? `\n${tail}` : ''}`);
 }
 function launch() {
@@ -463,9 +484,25 @@ repo_lint() {
     echo "no pude correr: no pude poner HEAD en la base ${mb}"; return "${BLOCKED_EXIT}"
   fi
   echo "repo-lint: lo que trae ${RANGE} ($(git -C "${wt}" diff --cached --name-only | wc -l | tr -d ' ') archivo(s)), con el pre-commit de la punta"
+  echo "repo-lint: sin --base: los controles salen de este mismo árbol (la punta del rango), como en una máquina"
   ( cd "${wt}" && TYCON_GUIDES_DIR="${wt}" TYCON_SKILLS_DIR="${wt}" TYCON_NO_LIVENESS_PRECOMMIT=1 bash .githooks/pre-commit-checks < /dev/null ); rc=$?
   git -C "${ROOT}" worktree remove --force "${wt}" >/dev/null 2>&1
   return "${rc}"
+}
+
+# ── paso 9 con --base · los controles de la BASE sobre lo que trae el rango ───────────────────────────────────────
+# Casos: scripts/tests/public-ci.test.sh (T14) y scripts/tests/base-controls.test.sh
+# El guion que lo hace sale de la base (`git show`), no del árbol que se revisa: un pedido que lo vacía no lo saltea.
+repo_lint_from_base() {
+  local rbc
+  range_ends || return $?
+  git -C "${ROOT}" rev-parse --verify --quiet "${BASE_ARG}^{commit}" >/dev/null 2>&1 \
+    || { echo "no pude correr: la base ${BASE_ARG} no resuelve a un commit en ${ROOT}: sin la base no hay de dónde correr los controles"; return "${BLOCKED_EXIT}"; }
+  rbc="${WORK}/run-base-controls.sh"
+  git -C "${ROOT}" cat-file -e "${BASE_ARG}:scripts/ci/run-base-controls.sh" 2>/dev/null && git -C "${ROOT}" show "${BASE_ARG}:scripts/ci/run-base-controls.sh" > "${rbc}" \
+    || { echo "no pude correr: la base ${BASE_ARG} no trae scripts/ci/run-base-controls.sh: no sé correr sus controles"; return "${BLOCKED_EXIT}"; }
+  echo "repo-lint: los controles y su regla salen de la base ${BASE_ARG} (scripts/ci/run-base-controls.sh de la base); los del pedido corren además"
+  bash "${rbc}" run --root "${ROOT}" --base "${BASE_ARG}" --range "${RANGE}" --out "${OUT}/base-controls" < /dev/null
 }
 
 # ── paso 10 · la versión ──────────────────────────────────────────────────────────────────────────
@@ -508,7 +545,12 @@ wants portable-suites && run_step portable-suites file scripts/tests/portable-su
 wants agent-skills-suites && run_step agent-skills-suites own scripts/tests/suites.json "bash node" agent_skills_suites
 wants controls-bench && run_step controls-bench file scripts/controls-bench/runner.js "node" node scripts/controls-bench/runner.js --tool both --baseline check --json "${OUT}/bench.json"
 [ "${WITH_RANGE}" -eq 0 ] || ! wants spanish-names || run_step spanish-names own scripts/publishing/spanish-names.js "git node" spanish_names
-[ "${WITH_RANGE}" -eq 0 ] || ! wants repo-lint || run_step repo-lint own .githooks/pre-commit-checks "git bash node" repo_lint
+if [ -n "${BASE_ARG}" ]; then
+  # con --base el pre-commit del árbol puede faltar (el pedido lo borró): lo que tiene que existir es la base
+  ! wants repo-lint || run_step repo-lint own "" "git bash node" repo_lint_from_base
+else
+  [ "${WITH_RANGE}" -eq 0 ] || ! wants repo-lint || run_step repo-lint own .githooks/pre-commit-checks "git bash node" repo_lint
+fi
 [ "${WITH_RANGE}" -eq 0 ] || ! wants version || run_step version own version.json "git node" version_bumped
 # la máquina limpia, en su modo PÚBLICO: pedida de forma explícita (sin eso, fuera del nocturno sale NO MEDIDA) y sobre
 # ESTE repo (sin eso cae en el modo interno, que exporta la copia desde el repo del equipo)
