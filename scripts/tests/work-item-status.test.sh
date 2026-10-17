@@ -365,7 +365,9 @@ const s = { fecha: hoy, corrida_completa: true, linea_base: false, no_medidos: [
   resumen: { canal: "telegram", message_id: 1, entregado_el: hoy + "T04:00:00Z", motivo: null } };
 if (cruce !== "AUSENTE") s.cruce = JSON.parse(cruce);
 require("fs").writeFileSync(f, JSON.stringify(s));' "$1" "$TMP/dash/out/dependencias-$HOY.json" "$HOY"
-  TYCON_DEPS_OUT="$TMP/dash/out" TYCON_DEPS_PENDING="$TMP/dash/pend" TYCON_WATCHER_OUT="$TMP/dash/novig" \
+  # `TYCON_DEPS_REPO` fija el árbol de la noche: sin él, en una máquina con la versión bajada y los nocturnos apagados,
+  # el aviso no lee ningún árbol y calla
+  TYCON_DEPS_REPO="$TMP/dash" TYCON_DEPS_OUT="$TMP/dash/out" TYCON_DEPS_PENDING="$TMP/dash/pend" TYCON_WATCHER_OUT="$TMP/dash/novig" \
     TYCON_DEPS_NOW="${HOY}T12:00:00Z" node "$NOTICE" 2>&1
 }
 cruce(){ # <campo> <lista JSON> [consultado=true] [motivo] → un `cruce` completo con esa lista y las demás vacías

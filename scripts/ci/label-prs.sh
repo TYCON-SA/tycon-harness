@@ -68,7 +68,8 @@ done
 
 [ -f "$AQUI/run-base.sh" ] || avisar "no está run-base.sh al lado del guion (¿el artefacto arnes-ci llegó incompleto?)"
 # shellcheck source=run-base.sh
-. "$AQUI/run-base.sh" || avisar "no pude cargar run-base.sh"
+# con el bash de la Mac (3.2) y `set -e`, un `.` que no encuentra el archivo corta el guion aunque lleve `||`: se mira antes
+{ [ -f "$AQUI/run-base.sh" ] && . "$AQUI/run-base.sh"; } || avisar "no pude cargar run-base.sh"
 
 [ -n "$REPO" ] && cd "$REPO" 2>/dev/null || avisar "no existe el repo indicado"
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || avisar "el directorio no es un repo git"

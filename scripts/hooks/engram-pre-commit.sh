@@ -62,7 +62,9 @@ log "invoked | stdin-len=${#INPUT}"
 # Si `jq` está pero no pudo, se prueba con `node` antes de rendirse: hay JSON válido que `jq`
 # rechaza (un `\ud800` suelto). Con `-s`, `jq` no imprime nada si falla: no se duplica la salida.
 # El Node del arnés (story 8.39): el propio si está y es ejecutable; si no, el del PATH. No cambia el PATH.
-. "$SCRIPT_DIR/../lib/harness-node.sh" 2>/dev/null || harness_node_bin() { echo node; }
+# con el bash de la Mac (3.2) y `set -e`, un `.` que no encuentra el archivo corta el guion aunque lleve `||`: se mira antes
+_hn="$SCRIPT_DIR/../lib/harness-node.sh"
+{ [ -f "$_hn" ] && . "$_hn" 2>/dev/null; } || harness_node_bin() { echo node; }
 HNODE="$(harness_node_bin)"
 HAS_JQ=0; HAS_NODE=0
 if command -v jq >/dev/null 2>&1; then HAS_JQ=1; fi

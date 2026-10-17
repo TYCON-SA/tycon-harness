@@ -349,10 +349,13 @@ console.log((m.derived || []).filter((d) => d.repo === "tycon-claude-guides" && 
 ' "$RAIZ" 2>&1)
 [ -z "$MUERTOS" ] && ok "T17 R2_Tools_MovedRequiresAndManifests — los target de third-party-skills.json existen" \
   || mal "T17 R2_Tools_MovedRequiresAndManifests — target muertos en third-party-skills.json: $MUERTOS"
-if [ -d "$T17SK" ]; then
+# third-party-coverage mira la historia de git de agent-skills: una versión bajada (sin .git) no se puede medir
+if [ -d "$T17SK" ] && git -C "$T17SK" rev-parse --git-dir >/dev/null 2>&1; then
   TYCON_SKILLS_DIR="$T17SK" node "$RAIZ/scripts/publishing/third-party-coverage.js" >/dev/null 2>&1; RC=$?
   [ "$RC" = 0 ] && ok "T17 R2_Tools_MovedRequiresAndManifests — third-party-coverage.js sale 0" \
     || mal "T17 R2_Tools_MovedRequiresAndManifests — third-party-coverage.js sale $RC"
+elif [ -d "$T17SK" ]; then
+  echo "  NO MEDIDO — T17 third-party-coverage: $T17SK no es un clon de git (una versión bajada no trae historia)"
 else
   echo "  NO MEDIDO — T17 third-party-coverage: no hay agent-skills en $T17SK"
 fi
