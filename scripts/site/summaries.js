@@ -5,7 +5,7 @@
  * El hilo principal del sitio contesta las sondas de vida y de carga (`/livez`, `/readyz`) con un plazo de un segundo, y
  * el espejo vive en el disco montado del sitio, donde cada `stat` o lectura tarda: con mil archivos, una vuelta por el
  * espejo en el hilo principal lo deja sin contestar y la plataforma reinicia el contenedor. Todo lo que recorre el
- * espejo va acá: la bajada (`bajarEnWorker`), el resumen de las conversaciones (`resumirEnWorker`: dashboard/runs.js →
+ * espejo va acá: la bajada (`bajarEnWorker`, con el módulo de la nube), el resumen de las conversaciones (`resumirEnWorker`: dashboard/runs.js →
  * resumirEspejo, lo que la tabla y el detalle sacan de ellas, y las borra del disco), la lectura de las corridas y de lo
  * informado por las máquinas (`leerEspejoEnWorker`), la huella del espejo (`huellaEnWorker`) y los textos de una
  * corrida a demanda (`textosEnWorker`). Con un techo de memoria y uno de tiempo se cae el hilo, nunca el sitio.
@@ -30,10 +30,13 @@ function textosEnWorker({ volcado, skillsDir = null, memoriaMb = 512, tiempoMs =
   return enWorker({ __textos: true, volcado, skillsDir }, { memoriaMb, tiempoMs, frase: 'los textos de la corrida no se armaron a tiempo' });
 }
 
-/** La bajada del buzón (download-runs.js → bajar) en un hilo aparte; `log` recibe sus líneas. Mismo resultado: { codigo, res }. */
-function bajarEnWorker({ log = () => {}, memoriaMb = 768, tiempoMs = null, ...opts }) {
+/**
+ * La bajada del buzón en un hilo aparte: `modulo` es el archivo de la nube (cloud/<nube>.js) y el hilo llama a su
+ * `bajarBuzon` con lo demás; `log` recibe sus líneas. Mismo resultado: { codigo, res }.
+ */
+function bajarEnWorker({ modulo, log = () => {}, memoriaMb = 768, tiempoMs = null, ...opts }) {
   const plazo = tiempoMs || (Number(opts.budgetMs) || 120000) + 120000;
-  return enWorker({ __bajar: true, opts }, { memoriaMb, tiempoMs: plazo, frase: 'la bajada del buzón no terminó a tiempo', log });
+  return enWorker({ __bajar: true, modulo, opts }, { memoriaMb, tiempoMs: plazo, frase: 'la bajada del buzón no terminó a tiempo', log });
 }
 
 /** Las corridas del espejo y lo informado por las máquinas, leídos en un hilo aparte: { corridas, informados }. */
@@ -69,7 +72,7 @@ function trabajo(fn) {
 }
 
 if (!isMainThread && workerData && workerData.__bajar) {
-  trabajo(() => require('../metrics/download-runs.js').bajar({ ...workerData.opts, log: (l) => parentPort.postMessage({ __linea: String(l) }) }));
+  trabajo(() => require(workerData.modulo).bajarBuzon({ ...workerData.opts, log: (l) => parentPort.postMessage({ __linea: String(l) }) }));
 }
 if (!isMainThread && workerData && workerData.__leerEspejo) {
   trabajo(() => ({ corridas: require('./sources.js').leerCorridas(workerData.buzon), informados: require('../lib/people.js').leerCorreosInformados(workerData.buzon) }));

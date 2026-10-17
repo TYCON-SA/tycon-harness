@@ -138,7 +138,12 @@ function nubes(log = () => {}) {
   try { archivos = fs.readdirSync(dir).filter((f) => /^[a-z][a-z0-9-]*\.js$/.test(f)).sort(); } catch (e) { log(`no se pudo leer cloud/ (${e.code || e.message})`); return []; }
   const out = [];
   for (const f of archivos) {
-    try { out.push(require(path.join(dir, f))); } catch (e) { log(`el módulo cloud/${f} no carga (${(e && e.name) || 'error'}): lo de esa nube no está disponible`); }
+    try {
+      const m = require(path.join(dir, f));
+      // de qué archivo salió: la bajada lo vuelve a cargar en un hilo aparte (summaries.js → bajarEnWorker)
+      if (m && typeof m === 'object' && !Object.prototype.hasOwnProperty.call(m, '__archivo')) Object.defineProperty(m, '__archivo', { value: path.join(dir, f), enumerable: false });
+      out.push(m);
+    } catch (e) { log(`el módulo cloud/${f} no carga (${(e && e.name) || 'error'}): lo de esa nube no está disponible`); }
   }
   return out;
 }
@@ -619,8 +624,11 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
     try {
       // con conversaciones: por tandas de `topeConversacionesBytes`, cada una resumida y borrada antes de la siguiente (el
       // disco del sitio guarda los resúmenes, nunca las conversaciones); y el espejo poda lo que ya no está en el buzón
-      r = await nube.bajarBuzon({ cuenta: mb.account, contenedor: mb.container, credencial: cfg.mailboxCredencial, dir: dirBuzon, urlBase: urlBuzon, sinHilos: !conHilos, budgetMs: presupuestoBuzonMs,
-        resumenes: conHilos, topeBytesHilos: conHilos ? topeConversacionesBytes : null, podar: true, log: (l) => log(`buzón: ${l}`) });
+      // la bajada recorre el espejo en el disco montado: con el módulo de la nube cargado de cloud/, en un hilo aparte
+      // (el principal contesta las sondas); una nube dada a mano (las pruebas) corre acá
+      const opts = { cuenta: mb.account, contenedor: mb.container, credencial: cfg.mailboxCredencial, dir: dirBuzon, urlBase: urlBuzon, sinHilos: !conHilos, budgetMs: presupuestoBuzonMs,
+        resumenes: conHilos, topeBytesHilos: conHilos ? topeConversacionesBytes : null, podar: true, log: (l) => log(`buzón: ${l}`) };
+      r = nube.__archivo ? await require('./summaries.js').bajarEnWorker({ modulo: nube.__archivo, ...opts }) : await nube.bajarBuzon(opts);
     } catch (e) { r = { codigo: 1, res: { estado: 'sin_red', motivo: `error inesperado al bajar: ${e.message}` } }; }
     if (conHilos) {
       // pase lo que pase con la bajada: lo que llegó a bajar se resume y se borra (un disco lleno no se espera a la pasada entera)
