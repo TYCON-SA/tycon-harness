@@ -1,0 +1,156 @@
+{
+  "__doc": "Aviso de espera (story 7.20, 2026-10-17): con una corrida del pipeline activa, el cierre de turno abre una espera y un proceso desprendido avisa por Telegram si en el plazo nadie se movió. Lo que el banco fija: el hook nunca frena ni imprime (los controles del cierre deciden igual con él instalado, AC 11), abre la espera también con stop_hook_active, y sin Telegram no escribe nada. Telegram apunta a un puerto cerrado y sin bot: el proceso del plazo termina en no-channel sin mandar nada. La suite completa (envíos, ediciones, plazos) es scripts/tests/wait-notice.test.js.",
+  "hooks": [
+    {
+      "hook": "wait-notice.js (la corrida avisa cuando espera a una persona)",
+      "script": "${TCG}/scripts/hooks/wait-notice.js",
+      "event": "Stop",
+      "matcher": "*",
+      "cases": [
+        {
+          "id": "corrida-activa-abre-la-espera-sin-frenar",
+          "type": "must-stay-quiet",
+          "__doc": "Con una corrida activa y Telegram prendido, el cierre de turno abre la espera y sale 0 sin salida: no cambia la decisión de ningún otro control del cierre (AC 11). ROJO PREVIO: imprimir algo o salir distinto de 0.",
+          "files": {
+            "transcript.jsonl": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"implementemos\"},\"timestamp\":\"2026-10-17T10:00:00.000Z\"}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"¿Sigo con los revisores?\"}]},\"timestamp\":\"2026-10-17T10:00:05.000Z\"}\n"
+          },
+          "stdin": {
+            "hook_event_name": "Stop",
+            "session_id": "bench-w1",
+            "transcript_path": "${FIXTURE}/transcript.jsonl",
+            "stop_hook_active": false
+          },
+          "env": {
+            "TYCON_TELEGRAM_CHAT_ID": "1",
+            "TELEGRAM_BOT_TOKEN": "",
+            "TYCON_TELEGRAM_API": "http://127.0.0.1:9",
+            "TYCON_WAIT_NOTICE_MS": "3000"
+          },
+          "expect": {
+            "exit": 0,
+            "file_exists": [
+              "${SANDBOX_HOME}/.claude/.tycon-pipeline/wait-notice/waits/bench-w1.json"
+            ]
+          },
+          "setup": [
+            "mkdir -p \"$SANDBOX_HOME/.claude/.tycon-pipeline/active\" && printf '%s' '{\"storyId\":\"9.9\",\"stepsPending\":[5,6,8]}' > \"$SANDBOX_HOME/.claude/.tycon-pipeline/active/bench-w1.json\""
+          ]
+        },
+        {
+          "id": "stop-hook-active-tambien-abre",
+          "type": "must-stay-quiet",
+          "__doc": "El cierre que llega después de que otro control frenó uno es el cierre real (AC 3). ROJO PREVIO: saltear stop_hook_active como hace el medidor de bloqueo.",
+          "files": {
+            "transcript.jsonl": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"implementemos\"},\"timestamp\":\"2026-10-17T10:00:00.000Z\"}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"¿Sigo con los revisores?\"}]},\"timestamp\":\"2026-10-17T10:00:05.000Z\"}\n"
+          },
+          "stdin": {
+            "hook_event_name": "Stop",
+            "session_id": "bench-w2",
+            "transcript_path": "${FIXTURE}/transcript.jsonl",
+            "stop_hook_active": true
+          },
+          "env": {
+            "TYCON_TELEGRAM_CHAT_ID": "1",
+            "TELEGRAM_BOT_TOKEN": "",
+            "TYCON_TELEGRAM_API": "http://127.0.0.1:9",
+            "TYCON_WAIT_NOTICE_MS": "3000"
+          },
+          "expect": {
+            "exit": 0,
+            "file_exists": [
+              "${SANDBOX_HOME}/.claude/.tycon-pipeline/wait-notice/waits/bench-w2.json"
+            ]
+          },
+          "setup": [
+            "mkdir -p \"$SANDBOX_HOME/.claude/.tycon-pipeline/active\" && printf '%s' '{\"storyId\":\"9.9\",\"stepsPending\":[5,6,8]}' > \"$SANDBOX_HOME/.claude/.tycon-pipeline/active/bench-w2.json\""
+          ]
+        },
+        {
+          "id": "sin-telegram-no-escribe-nada",
+          "type": "must-stay-quiet",
+          "__doc": "Sin chat configurado (integración de Telegram apagada) el hook no hace nada: ni archivos ni procesos (AC 6, nota de la aprobación). ROJO PREVIO: abrir la espera y callar recién al cumplirse el plazo.",
+          "files": {
+            "transcript.jsonl": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"implementemos\"},\"timestamp\":\"2026-10-17T10:00:00.000Z\"}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"¿Sigo con los revisores?\"}]},\"timestamp\":\"2026-10-17T10:00:05.000Z\"}\n"
+          },
+          "stdin": {
+            "hook_event_name": "Stop",
+            "session_id": "bench-w3",
+            "transcript_path": "${FIXTURE}/transcript.jsonl",
+            "stop_hook_active": false
+          },
+          "env": {
+            "TYCON_TELEGRAM_CHAT_ID": "",
+            "TELEGRAM_BOT_TOKEN": "",
+            "TYCON_TELEGRAM_API": "http://127.0.0.1:9",
+            "TYCON_WAIT_NOTICE_MS": "3000"
+          },
+          "expect": {
+            "exit": 0,
+            "file_absent": [
+              "${SANDBOX_HOME}/.claude/.tycon-pipeline/wait-notice"
+            ]
+          },
+          "setup": [
+            "mkdir -p \"$SANDBOX_HOME/.claude/.tycon-pipeline/active\" && printf '%s' '{\"storyId\":\"9.9\",\"stepsPending\":[5,6,8]}' > \"$SANDBOX_HOME/.claude/.tycon-pipeline/active/bench-w3.json\""
+          ]
+        },
+        {
+          "id": "sin-corrida-no-abre",
+          "type": "must-stay-quiet",
+          "__doc": "Sin marcador del pipeline no hay corrida: no se abre ninguna espera (AC 8).",
+          "files": {
+            "transcript.jsonl": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"implementemos\"},\"timestamp\":\"2026-10-17T10:00:00.000Z\"}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"¿Sigo con los revisores?\"}]},\"timestamp\":\"2026-10-17T10:00:05.000Z\"}\n"
+          },
+          "stdin": {
+            "hook_event_name": "Stop",
+            "session_id": "bench-w4",
+            "transcript_path": "${FIXTURE}/transcript.jsonl",
+            "stop_hook_active": false
+          },
+          "env": {
+            "TYCON_TELEGRAM_CHAT_ID": "1",
+            "TELEGRAM_BOT_TOKEN": "",
+            "TYCON_TELEGRAM_API": "http://127.0.0.1:9",
+            "TYCON_WAIT_NOTICE_MS": "3000"
+          },
+          "expect": {
+            "exit": 0,
+            "file_absent": [
+              "${SANDBOX_HOME}/.claude/.tycon-pipeline/wait-notice/waits/bench-w4.json"
+            ]
+          }
+        },
+        {
+          "id": "interruptor-apagado",
+          "type": "must-stay-quiet",
+          "__doc": "TYCON_WAIT_NOTICE=0: nada (AC 9).",
+          "files": {
+            "transcript.jsonl": "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"implementemos\"},\"timestamp\":\"2026-10-17T10:00:00.000Z\"}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"¿Sigo con los revisores?\"}]},\"timestamp\":\"2026-10-17T10:00:05.000Z\"}\n"
+          },
+          "stdin": {
+            "hook_event_name": "Stop",
+            "session_id": "bench-w5",
+            "transcript_path": "${FIXTURE}/transcript.jsonl",
+            "stop_hook_active": false
+          },
+          "env": {
+            "TYCON_TELEGRAM_CHAT_ID": "1",
+            "TELEGRAM_BOT_TOKEN": "",
+            "TYCON_TELEGRAM_API": "http://127.0.0.1:9",
+            "TYCON_WAIT_NOTICE_MS": "3000",
+            "TYCON_WAIT_NOTICE": "0"
+          },
+          "expect": {
+            "exit": 0,
+            "file_absent": [
+              "${SANDBOX_HOME}/.claude/.tycon-pipeline/wait-notice"
+            ]
+          },
+          "setup": [
+            "mkdir -p \"$SANDBOX_HOME/.claude/.tycon-pipeline/active\" && printf '%s' '{\"storyId\":\"9.9\",\"stepsPending\":[5,6,8]}' > \"$SANDBOX_HOME/.claude/.tycon-pipeline/active/bench-w5.json\""
+          ]
+        }
+      ]
+    }
+  ]
+}

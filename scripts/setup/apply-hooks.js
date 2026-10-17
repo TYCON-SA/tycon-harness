@@ -59,7 +59,8 @@ const PDmod = () => pluginDirs || (pluginDirs = require('./harness/plugin-dirs.j
 const SETUP_DIR = __dirname;
 const SCRIPTS_DIR = path.dirname(SETUP_DIR);
 
-const EVENTS = ['UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop', 'SessionStart'];
+// `Notification` y `SessionEnd` los suma la story 7.20 (el aviso de espera: el pedido de permiso y la sesión que se cierra)
+const EVENTS = ['UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop', 'SessionStart', 'Notification', 'SessionEnd'];
 const WHEN_RE = /^(always|integration:[a-z]+|optin:TYCON_[A-Z_]+)$/;
 const NEEDS = new Set(['telegram-plugin']);
 const ASYNC_ALLOWED = true;
