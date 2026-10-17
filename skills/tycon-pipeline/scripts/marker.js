@@ -63,6 +63,10 @@
  *                                                  `status:` de una story Mary+GOLD.
  *                                                  Valores: ready-for-dev | in-progress
  *                                                  | review | done | blocked | abandoned.
+ *   marker.js update-pipeline-status <path> <tanda|--all> <estado>
+ *                                               → muta el `status:` de una tanda (o de todas)
+ *                                                  del bloque `pipelines:` de la story.
+ *                                                  Valores: done | in-progress | blocked | pending.
  *
  * Ground-truth de checks (auditoría 2026-06-09 — cierra el gate fakeable del modo autónomo):
  *   marker.js run-check <name> -- <cmd> [args...] → EJECUTA el comando (execFileSync, sin
@@ -2730,6 +2734,68 @@ function cmdUpdateStoryStatus(storyPath, newStatus) {
   process.stdout.write(`status: ${newStatus}\n`);
 }
 
+// El estado de una tanda del bloque `pipelines:` de la story (lista de `- name: X` con su `status:`). Lo usa el cierre
+// (paso 9) para pasar a `done` las tandas que ya están en main: `deferrals-open` frena con cualquiera que no lo esté.
+const VALID_PIPELINE_STATUSES = ['done', 'in-progress', 'blocked', 'pending'];
+
+function cmdUpdatePipelineStatus(storyPath, which, newStatus) {
+  const usage = `  Uso: marker.js update-pipeline-status <storyPath> <tanda|--all> <${VALID_PIPELINE_STATUSES.join(' | ')}>`;
+  if (!storyPath || !which || !newStatus) {
+    console.error('marker.js update-pipeline-status: faltan argumentos');
+    console.error(usage);
+    process.exit(2);
+  }
+  if (!VALID_PIPELINE_STATUSES.includes(newStatus)) {
+    console.error(`marker.js update-pipeline-status: estado inválido '${newStatus}' — valores: ${VALID_PIPELINE_STATUSES.join(' | ')}`);
+    process.exit(2);
+  }
+  if (!fs.existsSync(storyPath)) {
+    console.error(`marker.js update-pipeline-status: story file no existe: ${storyPath}`);
+    process.exit(1);
+  }
+  const content = fs.readFileSync(storyPath, 'utf8');
+  const fmRegex = /^(---\r?\n)([\s\S]*?)(\r?\n---\r?\n)/;
+  const m = content.match(fmRegex);
+  if (!m) {
+    console.error('marker.js update-pipeline-status: la story no tiene frontmatter YAML válido');
+    process.exit(1);
+  }
+  const lines = m[2].split('\n');
+  const start = lines.findIndex((l) => /^pipelines\s*:\s*(#.*)?$/.test(l));
+  if (start < 0) {
+    console.error('marker.js update-pipeline-status: el frontmatter no tiene bloque `pipelines:`');
+    process.exit(1);
+  }
+  // Las batches: cada `- name:` del bloque, hasta la próxima clave de nivel raíz.
+  const batches = [];
+  for (let i = start + 1; i < lines.length && !/^\S/.test(lines[i]); i++) {
+    const nm = lines[i].match(/^(\s*)-\s+name\s*:\s*["']?([^"'#\s]+)["']?/);
+    if (nm) { batches.push({ name: nm[2], at: i, indent: nm[1].length, statusAt: -1 }); continue; }
+    const cur = batches[batches.length - 1];
+    if (cur && cur.statusAt < 0 && /^\s+status\s*:/.test(lines[i])) cur.statusAt = i;
+  }
+  const chosen = which === '--all' ? batches : batches.filter((t) => t.name === which);
+  if (!chosen.length) {
+    console.error(`marker.js update-pipeline-status: no hay una tanda '${which}' — las tandas son: ${batches.map((t) => t.name).join(', ') || '(ninguna)'}`);
+    process.exit(2);
+  }
+  const missingStatus = chosen.filter((t) => t.statusAt < 0);
+  if (missingStatus.length) {
+    console.error(`marker.js update-pipeline-status: la tanda ${missingStatus.map((t) => t.name).join(', ')} no tiene línea \`status:\``);
+    process.exit(1);
+  }
+  const statusRegex = /^(\s*status\s*:\s*)["']?[\w-]+["']?([ \t]*(?:#.*)?)$/;
+  for (const t of chosen) {
+    lines[t.statusAt] = lines[t.statusAt].replace(statusRegex, (_, head, tail) => `${head}${newStatus}${tail}`);
+  }
+  const newFmBody = lines.join('\n');
+  const newContent = content.replace(fmRegex, (_, open, _body, close) => `${open}${newFmBody}${close}`);
+  const tmp = `${storyPath}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, newContent, 'utf8');
+  fs.renameSync(tmp, storyPath);
+  for (const t of chosen) process.stdout.write(`${t.name}: ${newStatus}\n`);
+}
+
 // ============================================================
 // DODRT-C6 — waiver runtime USER-ONLY (llave TTY, 2026-07-10)
 // ============================================================
@@ -3127,6 +3193,9 @@ switch (cmd) {
     break;
   case 'update-story-status':
     cmdUpdateStoryStatus(arg1, arg2);
+    break;
+  case 'update-pipeline-status':
+    cmdUpdatePipelineStatus(arg1, arg2, process.argv[5]);
     break;
   case 'mark-dod-runtime-checked':
     cmdMarkDodRuntimeChecked(arg1);

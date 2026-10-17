@@ -1409,6 +1409,69 @@ test('update-story-status: un `$` en el frontmatter o en el cuerpo queda tal cua
   fs.rmSync(fakeHome, { recursive: true, force: true });
 });
 
+// ── update-pipeline-status: el estado de una tanda del bloque `pipelines:` lo escribe el orquestador, no una mano ──
+const PIPES_FM = [
+  '---',
+  'story: "9.98"',
+  'status: review',
+  'pipelines:',
+  '  - name: A-medir',
+  '    status: pending',
+  '    acs: [1, 2]',
+  '  - name: B-conectar',
+  '    status: in-progress  # nota que se conserva',
+  '    # comentario entre claves',
+  '    acs: [3]',
+  '---',
+].join('\n');
+const PIPES_BODY = '\n# Story de laboratorio\n\n  - name: A-medir\n    status: pending\n';
+function pipesStory(tag) {
+  const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), `mk-pipes-${tag}-`));
+  const story = path.join(fakeHome, 'story-lab.md');
+  fs.writeFileSync(story, `${PIPES_FM}${PIPES_BODY}`);
+  return { fakeHome, story };
+}
+
+test('update-pipeline-status: cambia sólo la tanda nombrada y conserva el comentario y el cuerpo', () => {
+  const { fakeHome, story } = pipesStory('one');
+  execFileSync(process.execPath, [MARKER, 'update-pipeline-status', story, 'B-conectar', 'done'], markerEnv('pipes-one', fakeHome));
+  const after = fs.readFileSync(story, 'utf8');
+  assert.strictEqual(after, `${PIPES_FM.replace('status: in-progress  #', 'status: done  #')}${PIPES_BODY}`,
+    'sólo cambia el status de B-conectar: ni A-medir, ni la story, ni el cuerpo');
+  fs.rmSync(fakeHome, { recursive: true, force: true });
+});
+
+test('update-pipeline-status --all: pasa todas las tandas y deja el status de la story', () => {
+  const { fakeHome, story } = pipesStory('all');
+  const out = execFileSync(process.execPath, [MARKER, 'update-pipeline-status', story, '--all', 'done'], markerEnv('pipes-all', fakeHome));
+  const after = fs.readFileSync(story, 'utf8');
+  const fm = after.split('\n---\n')[0];
+  assert.strictEqual((fm.match(/^ {4}status: done/gm) || []).length, 2, 'las dos tandas quedan en done');
+  assert.match(fm, /^status: review$/m, 'el status de la story no se toca');
+  assert.ok(after.endsWith(PIPES_BODY), 'el cuerpo no se toca');
+  assert.match(String(out), /A-medir/);
+  fs.rmSync(fakeHome, { recursive: true, force: true });
+});
+
+test('update-pipeline-status: una tanda que no existe sale 2, nombra las que hay y no escribe', () => {
+  const { fakeHome, story } = pipesStory('missing');
+  const r = require('child_process').spawnSync(process.execPath, [MARKER, 'update-pipeline-status', story, 'Z-no-existe', 'done'], { ...markerEnv('pipes-missing', fakeHome), encoding: 'utf8' });
+  assert.equal(r.status, 2);
+  assert.match(r.stderr, /A-medir/);
+  assert.match(r.stderr, /B-conectar/);
+  assert.strictEqual(fs.readFileSync(story, 'utf8'), `${PIPES_FM}${PIPES_BODY}`);
+  fs.rmSync(fakeHome, { recursive: true, force: true });
+});
+
+test('update-pipeline-status: un estado inválido sale 2 y no escribe', () => {
+  const { fakeHome, story } = pipesStory('invalid');
+  const r = require('child_process').spawnSync(process.execPath, [MARKER, 'update-pipeline-status', story, 'A-medir', 'terminada'], { ...markerEnv('pipes-invalid', fakeHome), encoding: 'utf8' });
+  assert.equal(r.status, 2);
+  assert.match(r.stderr, /done \| in-progress \| blocked \| pending/);
+  assert.strictEqual(fs.readFileSync(story, 'utf8'), `${PIPES_FM}${PIPES_BODY}`);
+  fs.rmSync(fakeHome, { recursive: true, force: true });
+});
+
 test('mark-adversarial-launched: guard same-session exit 2, --relaunch lo abre y queda en bypass.log', () => {
   const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'mk-adv-guard-'));
   const SID = 'adv-guard';
