@@ -113,6 +113,7 @@ cat > "$T60_BIN/curl" <<'CURL'
 #!/usr/bin/env bash
 printf '%s\n' "$@" > "$T60_LOG_DIR/args"
 cat > "$T60_LOG_DIR/stdin"
+prev=""; for a in "$@"; do [ "$prev" = "-K" ] && { printf '%s' "$a" > "$T60_LOG_DIR/cfg-path"; cp "$a" "$T60_LOG_DIR/cfg"; ls -l "$a" | cut -c1-10 > "$T60_LOG_DIR/cfg-mode"; }; prev="$a"; done
 echo '{"ok":true,"result":{"message_id":7}}'
 CURL
 chmod +x "$T60_BIN/curl"
@@ -130,6 +131,11 @@ for modo in arg stdin; do
   if LC_ALL=C grep -q '[^ -~]' "$T60_LOG/args" 2>/dev/null; then echo "❌ T60 ($modo) los argumentos de curl traen bytes fuera de ASCII"; fallos=$((fallos+1)); else echo "✅ T60 ($modo) los argumentos de curl son ASCII"; fi
   check "T60 ($modo) curl recibe el texto entero, byte a byte, por la entrada" "$T60_TEXT" "$(cat "$T60_LOG/stdin" 2>/dev/null)"
   contiene "T60 ($modo) el campo text sale de la entrada (text@-)" "text@-" "$(cat "$T60_LOG/args" 2>/dev/null)"
+  # el token del bot tampoco: la dirección va en un archivo de configuración de curl (-K), con permisos 600, que se borra
+  no_contiene "T61 ($modo) el token no va en los argumentos de curl" "TOKEN-SECRETO-QUE-NO-DEBE-APARECER" "$(cat "$T60_LOG/args" 2>/dev/null)"
+  contiene "T61 ($modo) la dirección con el token va en el archivo de configuración" 'url = "https://api.telegram.org/bot123:TOKEN-SECRETO-QUE-NO-DEBE-APARECER/sendMessage"' "$(cat "$T60_LOG/cfg" 2>/dev/null)"
+  check "T61 ($modo) el archivo es sólo de esta persona (600)" "-rw-------" "$(cat "$T60_LOG/cfg-mode" 2>/dev/null)"
+  if [ -n "$(cat "$T60_LOG/cfg-path" 2>/dev/null)" ] && [ ! -e "$(cat "$T60_LOG/cfg-path")" ]; then echo "✅ T61 ($modo) el archivo se borra al salir"; else echo "❌ T61 ($modo) el archivo de la dirección quedó en el disco (o curl no lo recibió)"; fallos=$((fallos+1)); fi
 done
 out="$(TYCON_TELEGRAM_DIR="$FAKE" bash "$SCRIPT" --stdin "y además argumento" < /dev/null 2>&1)"; rc=$?
 check "T60 --stdin con un texto de argumento es un uso inválido (2)" 2 "$rc"

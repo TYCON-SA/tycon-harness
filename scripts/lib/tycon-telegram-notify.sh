@@ -35,6 +35,10 @@
 # por la entrada estándar (`--data-urlencode text@-`), byte a byte. Quien llama desde Node usa
 # `--stdin` por la misma razón: el texto no cruza ninguna línea de comandos.
 #
+# EL TOKEN TAMPOCO. La dirección lleva el token del bot (`…/bot<token>/<método>`), y un argumento se ve en la lista de
+# procesos de la máquina mientras dura el pedido. La dirección le llega a curl en un archivo de configuración propio
+# (`-K`), creado con permisos 600 y borrado al salir.
+#
 # El message_id que imprime es lo que habilita el patrón del arnés para tareas largas: UN aviso por
 # tanda, actualizado con --edit, en vez de una catarata de mensajes nuevos.
 #
@@ -66,7 +70,7 @@ while [ $# -gt 0 ]; do
     --chat-id)  CHAT_ID="${2:-}"; [ -n "$CHAT_ID" ] || die_usage; shift 2 ;;
     --dry-run)  DRY_RUN=1; shift ;;
     --stdin)    FROM_STDIN=1; shift ;;
-    -h|--help)  sed -n '2,51p' "$0"; exit 0 ;;
+    -h|--help)  sed -n '2,55p' "$0"; exit 0 ;;
     --)         shift; break ;;
     -*)         echo "opción desconocida: $1" >&2; die_usage ;;
     *)          break ;;
@@ -117,7 +121,14 @@ if [ "$DRY_RUN" -eq 1 ]; then
   exit 0
 fi
 
-RESP="$(printf '%s' "$TEXT" | curl -sS -m 15 -X POST "$API/bot$TOKEN/$METHOD" \
+# la dirección con el token, en un archivo sólo para esta persona: nunca en la línea de comandos de curl
+CURL_CFG="$(umask 077 && mktemp "${TMPDIR:-/tmp}/tycon-telegram.XXXXXX")" || { echo "⚠ telegram-notify: no pude armar el archivo de la dirección — NO se mandó el aviso." >&2; exit 3; }
+trap 'rm -f "$CURL_CFG"' EXIT
+chmod 600 "$CURL_CFG" 2>/dev/null
+URL_CFG="$API/bot$TOKEN/$METHOD"; URL_CFG="${URL_CFG//\\/\\\\}"; URL_CFG="${URL_CFG//\"/\\\"}"
+printf 'url = "%s"\n' "$URL_CFG" > "$CURL_CFG"
+
+RESP="$(printf '%s' "$TEXT" | curl -sS -m 15 -X POST -K "$CURL_CFG" \
   --data-urlencode "chat_id=$CHAT_ID" \
   --data-urlencode "text@-" \
   ${EDIT_ID:+--data-urlencode "message_id=$EDIT_ID"} 2>&1)"
