@@ -60,4 +60,9 @@ const tokenParaRepo = () => tokenDeIdentidad(RECURSO_AZURE_DEVOPS);
 // la prueba sin sesión (check-deploy.js) los busca en /healthz
 const HOSTS_QUE_NO_SE_NOMBRAN = /\.windows\.net|dev\.azure\.com/i;
 
-module.exports = { tokenDeIdentidad, tokenParaRepo, bajarBuzon, PROVEEDORES_DE_BUZON, RECURSO_ALMACENAMIENTO, RECURSO_AZURE_DEVOPS, HOSTS_QUE_NO_SE_NOMBRAN };
+// la respuesta del inicio integrado de Container Apps (Easy Auth), delante del sitio: a un pedido que no parece de
+// navegador le contesta 401, sin Location ni Cache-Control, con la cabecera de su intermediario. La prueba sin sesión
+// la reconoce así y no le pide el no-store del sitio (el sitio ni la vio)
+const esDelCandado = (headers) => Boolean(headers && typeof headers.get === 'function' && headers.get('x-ms-middleware-request-id'));
+
+module.exports = { tokenDeIdentidad, tokenParaRepo, bajarBuzon, PROVEEDORES_DE_BUZON, RECURSO_ALMACENAMIENTO, RECURSO_AZURE_DEVOPS, HOSTS_QUE_NO_SE_NOMBRAN, esDelCandado };

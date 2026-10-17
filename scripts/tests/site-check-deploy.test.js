@@ -46,6 +46,38 @@ function correr(args, env = {}) {
   });
 }
 
+test('T4b Prueba_CandadoDeLaPlataforma_401SinRedireccion @story-2.30 @ac-6', async () => {
+  // el candado de la plataforma (el inicio integrado de Container Apps) contesta 401 a un pedido que no parece de
+  // navegador: sin Location, sin Cache-Control, con la cabecera de su intermediario. El sitio ni lo vio: no se le pide
+  // no-store, y la prueba pasa. Las cabeceras, las medidas en la instalación real
+  const candado = (res) => { res.writeHead(401, { 'Content-Length': '0', 'x-ms-middleware-request-id': '00000000-0000-0000-0000-000000000000' }); res.end(); };
+  // los dos servidores se cierran pase lo que pase: un rojo antes del cierre dejaría el proceso colgado
+  const s = await servidor((req, res) => {
+    const ruta = req.url.split('?')[0];
+    if (ruta === '/healthz') return json(res, 200, { ok: true });
+    return candado(res);
+  });
+  const s2 = await servidor((req, res) => {
+    const ruta = req.url.split('?')[0];
+    if (ruta === '/healthz') return json(res, 200, { ok: true });
+    res.writeHead(401, { 'Content-Length': '0' }); return res.end();
+  });
+  try {
+    const out = path.join(tmp, 't4b.json');
+    const r = await correr(['--url', s.url, '--out', out]);
+    const doc = JSON.parse(fs.readFileSync(out, 'utf8'));
+    assert.strictEqual(r.status, 0, r.stdout + r.stderr);
+    assert.strictEqual(doc.resultado, 'paso', JSON.stringify(doc));
+    assert.match(doc.capas.inicio, /401 \(el candado de la plataforma\)/);
+    // el mismo 401 sin la cabecera del candado es una respuesta del sitio, y al sitio sí se le pide no-store
+    const out2 = path.join(tmp, 't4b-sitio.json');
+    const r2 = await correr(['--url', s2.url, '--out', out2]);
+    const doc2 = JSON.parse(fs.readFileSync(out2, 'utf8'));
+    assert.notStrictEqual(r2.status, 0);
+    assert.strictEqual(doc2.motivo, 'falta no-store', JSON.stringify(doc2));
+  } finally { await s.cerrar(); await s2.cerrar(); }
+});
+
 test('T4 Prueba_SitioBienCerrado @story-2.30 @ac-6', async () => {
   const s = await servidor((req, res) => sitioCerrado(req, res));
   const out = path.join(tmp, 't4.json');
