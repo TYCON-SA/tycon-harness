@@ -26,33 +26,42 @@ async function arrancarRepoHttp({ raiz, cabecera }) {
     pedidos.push({ ruta: u.pathname, conCabecera, auth: req.headers.authorization || null, query: u.search });
     if (estado.caido) { res.writeHead(503); res.end('caído'); return; }
     if (!conCabecera) { res.writeHead(401, { 'WWW-Authenticate': 'Basic realm="ops"' }); res.end('sin credencial'); return; }
-    const cgi = spawn('git', ['http-backend'], {
-      env: { ...process.env, GIT_PROJECT_ROOT: raiz, GIT_HTTP_EXPORT_ALL: '1', PATH_INFO: u.pathname, QUERY_STRING: u.search.slice(1), REQUEST_METHOD: req.method, CONTENT_TYPE: req.headers['content-type'] || '', REMOTE_USER: 'prueba', REMOTE_ADDR: '127.0.0.1', HTTP_CONTENT_ENCODING: req.headers['content-encoding'] || '', HTTP_GIT_PROTOCOL: req.headers['git-protocol'] || '' },
+    // el cuerpo entero primero, para decirle a http-backend cuánto mide (CONTENT_LENGTH, como manda la CGI): sin ese
+    // dato, git en Mac y Linux lee hasta el final, pero el de Windows lo toma como vacío, no contesta ninguna rama y el
+    // clon falla con «Remote branch main not found» (corrida 13730 de la 182)
+    const partes = [];
+    req.on('data', (c) => partes.push(c));
+    req.on('end', () => {
+      const cuerpo = Buffer.concat(partes);
+      const cgi = spawn('git', ['http-backend'], {
+        env: { ...process.env, GIT_PROJECT_ROOT: raiz, GIT_HTTP_EXPORT_ALL: '1', PATH_INFO: u.pathname, QUERY_STRING: u.search.slice(1), REQUEST_METHOD: req.method, CONTENT_TYPE: req.headers['content-type'] || '', CONTENT_LENGTH: String(cuerpo.length), REMOTE_USER: 'prueba', REMOTE_ADDR: '127.0.0.1', HTTP_CONTENT_ENCODING: req.headers['content-encoding'] || '', HTTP_GIT_PROTOCOL: req.headers['git-protocol'] || '' },
+      });
+      cgi.stdin.on('error', () => { /* http-backend cerró su entrada antes: lo que falte lo dice su respuesta */ });
+      cgi.stdin.end(cuerpo);
+      let cab = Buffer.alloc(0); let cabLista = false;
+      cgi.stdout.on('data', (c) => {
+        if (cabLista) { res.write(c); return; }
+        cab = Buffer.concat([cab, c]);
+        const i = cab.indexOf('\r\n\r\n');
+        const j = i < 0 ? cab.indexOf('\n\n') : -1;
+        const corte = i >= 0 ? i : j;
+        if (corte < 0) return;
+        const sep = i >= 0 ? 4 : 2;
+        const lineas = cab.slice(0, corte).toString('utf8').split(/\r?\n/);
+        let status = 200; const headers = {};
+        for (const l of lineas) {
+          const k = l.indexOf(':');
+          if (k < 0) continue;
+          const n = l.slice(0, k).trim(); const v = l.slice(k + 1).trim();
+          if (n.toLowerCase() === 'status') status = Number(v.split(' ')[0]) || 200; else headers[n] = v;
+        }
+        res.writeHead(status, headers);
+        cabLista = true;
+        res.write(cab.slice(corte + sep));
+      });
+      cgi.on('close', () => res.end());
+      cgi.on('error', () => { if (!res.headersSent) res.writeHead(500); res.end(); });
     });
-    req.pipe(cgi.stdin);
-    let cab = Buffer.alloc(0); let cabLista = false;
-    cgi.stdout.on('data', (c) => {
-      if (cabLista) { res.write(c); return; }
-      cab = Buffer.concat([cab, c]);
-      const i = cab.indexOf('\r\n\r\n');
-      const j = i < 0 ? cab.indexOf('\n\n') : -1;
-      const corte = i >= 0 ? i : j;
-      if (corte < 0) return;
-      const sep = i >= 0 ? 4 : 2;
-      const lineas = cab.slice(0, corte).toString('utf8').split(/\r?\n/);
-      let status = 200; const headers = {};
-      for (const l of lineas) {
-        const k = l.indexOf(':');
-        if (k < 0) continue;
-        const n = l.slice(0, k).trim(); const v = l.slice(k + 1).trim();
-        if (n.toLowerCase() === 'status') status = Number(v.split(' ')[0]) || 200; else headers[n] = v;
-      }
-      res.writeHead(status, headers);
-      cabLista = true;
-      res.write(cab.slice(corte + sep));
-    });
-    cgi.on('close', () => res.end());
-    cgi.on('error', () => { if (!res.headersSent) res.writeHead(500); res.end(); });
   });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${server.address().port}`;

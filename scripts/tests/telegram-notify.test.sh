@@ -141,6 +141,16 @@ out="$(TYCON_TELEGRAM_DIR="$FAKE" bash "$SCRIPT" --stdin "y además argumento" <
 check "T60 --stdin con un texto de argumento es un uso inválido (2)" 2 "$rc"
 out="$(TYCON_TELEGRAM_DIR="$FAKE" bash "$SCRIPT" --stdin < /dev/null 2>&1)"; rc=$?
 check "T60 --stdin sin texto es un uso inválido (2)" 2 "$rc"
+# T62 · el destinatario y el message_id se leen con bash, sin python3 (en Windows, la ruta de bash adentro del código de
+# python no la encontraba y el aviso no salía): un access.json en varias líneas, y una respuesta con más campos
+T62_DIR="$(mktemp -d)"
+printf '{\n  "dmPolicy": "allowlist",\n  "allowFrom": [\n    "8234000001",\n    "77"\n  ]\n}\n' > "$T62_DIR/access.json"
+out="$(TYCON_TELEGRAM_DIR="$T62_DIR" TELEGRAM_BOT_TOKEN=x bash "$SCRIPT" --dry-run "hola" 2>&1)"
+contiene "T62 el primer id de allowFrom, en un access.json de varias líneas" "chat_id=8234000001" "$out"
+printf '#!/usr/bin/env bash\ncat > /dev/null\necho '"'"'{"ok":true,"result":{"message_id":4321,"from":{"id":9},"chat":{"id":8234000001},"text":"x"}}'"'"'\n' > "$T60_BIN/curl"
+out="$(PATH="$T60_BIN:$PATH" TYCON_TELEGRAM_DIR="$T62_DIR" TELEGRAM_BOT_TOKEN=x bash "$SCRIPT" "hola" 2>&1)"
+check "T62 imprime el message_id del resultado" 4321 "$out"
+rm -rf "$T62_DIR"
 rm -rf "$T60_BIN" "$T60_LOG"
 
 rm -rf "$VACIO" "$FAKE"

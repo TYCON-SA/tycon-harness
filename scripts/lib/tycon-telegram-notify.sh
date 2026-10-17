@@ -97,15 +97,10 @@ if [ -z "$TOKEN" ]; then
 fi
 
 # ── Destinatario ─────────────────────────────────────────────────────────────────────────────
+# El primer id de `allowFrom`, leído por bash: un python3 con la ruta adentro del código no la encontraba en Windows (la
+# ruta de bash, /c/Users/… o /tmp/…, no la entiende un programa nativo) y el aviso no salía.
 if [ -z "$CHAT_ID" ] && [ -r "$CHANNEL_DIR/access.json" ]; then
-  CHAT_ID="$(python3 -c "
-import json,sys
-try:
-    d=json.load(open('$CHANNEL_DIR/access.json'))
-    a=d.get('allowFrom') or []
-    print(str(a[0]) if a else '')
-except Exception: print('')
-" 2>/dev/null)"
+  CHAT_ID="$(tr -d '\r\n' < "$CHANNEL_DIR/access.json" | grep -o '"allowFrom"[[:space:]]*:[[:space:]]*\[[^]]*\]' | grep -o -- '-\{0,1\}[0-9]\{1,\}' | head -1)"
 fi
 if [ -z "$CHAT_ID" ]; then
   echo "⚠ telegram-notify: no hay destinatario (ni \$TYCON_TELEGRAM_CHAT_ID ni allowFrom en access.json) — NO se mandó el aviso." >&2
@@ -138,11 +133,8 @@ RESP="$(printf '%s' "$TEXT" | curl -sS -m 15 -X POST -K "$CURL_CFG" \
 SAFE_RESP="${RESP//$TOKEN/<token>}"
 
 if printf '%s' "$RESP" | grep '"ok":true' >/dev/null; then
-  MSG_ID="$(printf '%s' "$RESP" | python3 -c "
-import json,sys
-try: print(json.load(sys.stdin)['result']['message_id'])
-except Exception: print('')
-" 2>/dev/null)"
+  # el primer message_id de la respuesta es el del resultado (`{"ok":true,"result":{"message_id":N,…}}`)
+  MSG_ID="$(printf '%s' "$RESP" | grep -o '"message_id"[[:space:]]*:[[:space:]]*[0-9]\{1,\}' | head -1 | grep -o '[0-9]\{1,\}$')"
   echo "${MSG_ID:-ok}"
   exit 0
 fi
