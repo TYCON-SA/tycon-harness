@@ -623,6 +623,9 @@ test('T20 Rearmado_SirveElAnteriorEntero @story-2.27 @ac-20', async () => {
     const antes = (await h.pedir('/api/corridas', { cookie: lead })).json;
     escribir(path.join(espejo, 'maq-a'), 'a3.json', volcado('aaaaaaaa-0000-4000-8000-000000000003', '2026-08-20T09:00:00.000Z', { marker: { storyId: '3.3' } }));
     fuentes.avisar();
+    // el armado arranca cuando termina la huella del espejo (en un hilo aparte)
+    for (let i = 0; i < 200 && !soltar; i++) await new Promise((r) => setTimeout(r, 25));
+    assert.ok(soltar, 'el rearmado arrancó');
     const mientras = (await h.pedir('/api/corridas', { cookie: lead })).json;
     assert.deepStrictEqual(mientras, antes, 'mientras rearma: el anterior, entero');
     soltar(); await vista.listo();

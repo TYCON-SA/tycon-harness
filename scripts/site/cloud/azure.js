@@ -49,8 +49,8 @@ const PROVEEDORES_DE_BUZON = ['azure-blob'];
  * conversaciones ni los cambios de git (lo seguro); la pestaña Corridas los pide con `site.mailbox.threads` (story 2.27).
  */
 function bajarBuzon({ cuenta, contenedor, credencial, dir, urlBase, log, sinHilos = true, budgetMs = 120000, resumenes = false, topeBytesHilos = null, podar = false }) {
-  const { bajar } = require('../../metrics/download-runs.js');
-  return bajar({ cuenta, contenedor, credencial, dir, sinHilos: sinHilos !== false, urlBase, budgetMs, log, resumenes, topeBytesHilos, podar });
+  // en un hilo aparte: la bajada recorre el espejo en el disco montado, y el hilo principal contesta las sondas
+  return require('../summaries.js').bajarEnWorker({ cuenta, contenedor, credencial, dir, sinHilos: sinHilos !== false, urlBase, budgetMs, log, resumenes, topeBytesHilos, podar });
 }
 
 /** La conversación y el cambio de UNA corrida, para el detalle a demanda (download-runs.js → bajarUnaCorrida). */

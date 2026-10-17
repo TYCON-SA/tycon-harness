@@ -121,7 +121,8 @@ if (!isMainThread && workerData && workerData.__armarCorridas) {
  * armado para probar que el sitio contesta mientras tanto.
  */
 function crearVista({ cfg, fuentes, armar = armarEnWorker, skillsDir = null, demora = 0, log = () => {}, ahora = Date.now,
-  topeCacheBytes = TOPE_CACHE_BYTES, textosDeUna = (o) => require('../summaries.js').textosEnWorker({ ...o, skillsDir }) }) {
+  topeCacheBytes = TOPE_CACHE_BYTES, textosDeUna = (o) => require('../summaries.js').textosEnWorker({ ...o, skillsDir }),
+  huellaDe = (dir, extra) => require('../summaries.js').huellaEnWorker({ dir, extra }) }) {
   // los textos (los parches de cada corrida) van al disco del contenedor, nunca a SITE_DATA_DIR: son una copia que se
   // rearma, y el disco montado es chico. Los de antes (en el disco montado) se borran al arrancar
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'site-corridas-textos-'));
@@ -218,7 +219,17 @@ function crearVista({ cfg, fuentes, armar = armarEnWorker, skillsDir = null, dem
     const umbralesArchivo = umbralesDeLaOrganizacion();
     // las conversaciones sólo cuentan con un disco del sitio (decisión 11): sin SITE_DATA_DIR, lo del hilo es «no medido»
     const sinHilos = !(typeof fuentes.hilos === 'function' && fuentes.hilos() && cfg.dataDir);
-    const huella = huellaDelEspejo(fuentes.dirBuzon, umbralesArchivo ? [umbralesArchivo] : []) + (sinHilos ? ':sin-hilos' : '');
+    // la huella recorre el espejo en el disco montado: en un hilo aparte (el principal contesta las sondas), una a la vez
+    if (st.huellaEnCurso) return;
+    st.huellaEnCurso = Promise.resolve()
+      .then(() => huellaDe(fuentes.dirBuzon, umbralesArchivo ? [umbralesArchivo] : []))
+      .then((h) => { st.huellaEnCurso = null; armarSiCambio(h + (sinHilos ? ':sin-hilos' : ''), { sinHilos, umbralesArchivo }); },
+        (e) => { st.huellaEnCurso = null; log(`corridas: no se pudo calcular la huella del espejo (${codigoDe(e)})`); });
+  }
+
+  function armarSiCambio(huella, { sinHilos, umbralesArchivo }) {
+    // la huella tardó: si mientras tanto la bajada quedó a medias, no se arma (la misma regla de asegurar)
+    if (st.armando || !bajada().completo) return;
     // el espejo volvió a ser el del modelo que se sirve: lo que falló después ya no vale para la banda
     if (huella === st.huella) { st.error = null; st.huellaFallida = null; return; }
     // el mismo espejo ya fallado: no se repite (un armado que falla por memoria no se reintenta en cada pedido)
@@ -254,8 +265,8 @@ function crearVista({ cfg, fuentes, armar = armarEnWorker, skillsDir = null, dem
   return {
     asegurar,
     /** Espera el armado en curso (nunca rechaza). */
-    listo: () => (st.armando || Promise.resolve()).catch(() => {}),
-    armando: () => Boolean(st.armando),
+    listo: async () => { await (st.huellaEnCurso || Promise.resolve()).catch(() => {}); await (st.armando || Promise.resolve()).catch(() => {}); },
+    armando: () => Boolean(st.armando || st.huellaEnCurso),
     estado: () => ({ generado: st.M ? st.M.generado : null, pico_mb: st.pico_mb, error: st.error, sinBuzon: st.sinBuzon }),
     modelo: () => st.M,
     bajada,
