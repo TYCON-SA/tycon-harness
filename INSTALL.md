@@ -110,7 +110,8 @@ plantillas de un stack (por ejemplo, el de .NET + React/Next.js sobre BIZUIT) vi
 equipo y llegan con su capa (`guides/mecanismo-de-instalacion.md`, «La capa del equipo sobre la versión bajada»). Los
 activa la organización con `packs.default` en ese perfil (o en la pestaña Configuración del sitio, sección Paquetes);
 sin perfil, tu máquina puede fijarlo en `~/.claude/tycon.json` (`"packs": { "default": "all" }`) o con
-`TYCON_PACKS_DEFAULT=all`. Un repo sólo puede achicar la lista con `packs:` en su `.tycon/advisors.yaml`. Sin un paquete
+`TYCON_PACKS_DEFAULT=all` (si el perfil los declara, el perfil del equipo gana sobre ese archivo). Un repo sólo puede
+achicar la lista con `packs:` en su `.tycon/advisors.yaml`. Sin un paquete
 activo el pipeline no lanza sus revisores, y lo dice en la primera corrida.
 
 **2. Confirmá los hooks globales de git.** El instalador los copia a `~/.git-hooks/`, y git los usa sólo con una

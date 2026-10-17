@@ -397,7 +397,10 @@ print([o.get('id') for o in rd['orphans'] if o.get('id','').split('-')[0] in fam
     SW4="$(python3 -c "import json;d=json.load(open('${BASE}/rd.json'));print('SEC-W4' in [z['id'] for z in d['zombies']] or 'SEC-W4' in [o['id'] for o in d['orphans']])")"
     [ "${SW4}" = "False" ] && ok "C7 · SEC-W4 está en el catálogo de rules-distill (ya no la esconde el ejemplo de la guía)" \
       || mal "C7 · SEC-W4 sigue fuera del catálogo de rules-distill"
-    ZOMB="$(python3 -c "import json;print([z.get('id') for z in json.load(open('${BASE}/rd.json'))['zombies']])")"
+    # TEST-W8 la cita sólo el revisor de convenciones .NET, que desde la 8.41 vive en el paquete bizuit: en un árbol sin ese
+    # paquete queda sin quien la cite y no cuenta; con el paquete, cuenta como cualquiera
+    SIN_BIZUIT=0; [ -d "${RAIZ}/packs/bizuit" ] || SIN_BIZUIT=1
+    ZOMB="$(python3 -c "import json;print([z.get('id') for z in json.load(open('${BASE}/rd.json'))['zombies'] if not (${SIN_BIZUIT} and z.get('id') == 'TEST-W8')])")"
     [ "${ZOMB}" = "['ACCOV-C1-EXT']" ] && ok "C7 · ACCOV-C1-EXT sale como zombi REAL (el revisor la fusionó en ACCOV-C1 y nunca la nombra)" \
       || mal "C7 · zombies=${ZOMB}, esperaba ['ACCOV-C1-EXT'] — antes estaba escondida por la gramática sin sufijo"
   fi
