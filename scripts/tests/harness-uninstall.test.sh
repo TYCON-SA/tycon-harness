@@ -439,7 +439,10 @@ PY
         TYCON_NO_AZ_PROJECTS_REFRESH=1 TYCON_NO_ENGRAM_VERSION_CHECK=1 TYCON_NO_SQLITE_CHECK=1 TYCON_NO_GIT_HOOKS=1 TYCON_HARNESS_LOCK_HELD=1 \
         CODEX_HOME="$H10/codex" pwsh -NoProfile -File "$PS1" -ReportJson "$1" > "$1.out" 2>&1
     }
-    n_want=$(ls "$RAIZ"/claude-md-blocks/*.md | wc -l | tr -d ' ')
+    # los bloques del núcleo y los de los paquetes que el árbol activa (con la capa del equipo encima, el de cada paquete)
+    n_packs=$(env "${ENV_UNSET[@]}" HOME="$H10" USERPROFILE="$H10" node "$RAIZ/scripts/lib/pack-pieces.js" blocks --json --tree "$RAIZ" 2>/dev/null \
+      | node -e 'let s="";process.stdin.on("data",(c)=>s+=c).on("end",()=>{try{console.log(JSON.parse(s).blocks.length)}catch(_){console.log(0)}})')
+    n_want=$(( $(ls "$RAIZ"/claude-md-blocks/*.md | wc -l | tr -d ' ') + ${n_packs:-0} ))
     f10_blocks() { node -e 'const r = require(process.argv[1]); console.log(r.filter((p) => p.kind === "block" && /TYCON_BLOCK:/.test(p.id)).length)' "$1" 2>/dev/null || echo 0; }
     f10_run "$P10/r1.json"
     python3 - "$H10/.claude/CLAUDE.md" <<'PY'
