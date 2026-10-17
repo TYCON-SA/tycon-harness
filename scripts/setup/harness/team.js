@@ -117,6 +117,10 @@ const LAYER_PATTERNS = Object.freeze([
   // ejecuta. Lista cerrada de extensiones; un nombre que un asistente carga solo como instrucciones viaja con `.template`, y
   // ningún tramo empieza con punto (`.claude/skills/…`, `.mcp.json`: un asistente los descubre solo)
   new RegExp(`^packs/${SEG}/templates/(?:${SEG_NO_DOT}/){0,5}(?!(?:${LOADED_ALONE.map(anyCase).join('|')})(?:\\.[A-Za-z0-9_-]+)*\\.md$)${SEG_NO_DOT}\\.(?:${TEMPLATE_EXTENSIONS.join('|')})$`),
+  // las reglas siempre cargadas de un paquete: los .md de `packs/<p>/claude-md-blocks/`, un solo nivel; los sincronizadores
+  // los escriben en el CLAUDE.md y el AGENTS.md mientras la organización activa el paquete (scripts/lib/pack-pieces.js
+  // blocksOf). Ni un nombre que un asistente carga solo ni uno que empiece con punto
+  new RegExp(`^packs/${SEG}/claude-md-blocks/(?!(?:${LOADED_ALONE.map(anyCase).join('|')})(?:\\.[A-Za-z0-9_-]+)*\\.md$)${SEG_NO_DOT}\\.md$`),
 ]);
 /** Un agente de la capa: en agents/ de la raíz o en la carpeta de un paquete. */
 const AGENT_RE = /^(?:packs\/[^/]+\/)?agents\/[^/]+\.md$/;
@@ -243,7 +247,7 @@ function layerPathProblem(p) {
   // dentro de una skill de la lista fija, manda SU lista blanca (tanda A2c · AC 31)
   const ex = s.startsWith('skills/') ? extrasEntryFor(s) : null;
   if (ex) { const why = extrasPathProblem(s, ex); if (why) return why; }
-  else if (!CLOSED_PATHS.includes(s) && !LAYER_PATTERNS.some((re) => re.test(s))) return `fuera de la lista cerrada de la capa (${CLOSED_PATHS.join(', ')}; packs/<paquete>/pack.json con los .md de sus agents/, skills/ y guides/ y sus templates/ (${TEMPLATE_EXTENSIONS.map((x) => `.${x}`).join(', ')}), agents/<nombre>.md, onboarding/<nombre>.md y los .md de una skill bajo skills/)`;
+  else if (!CLOSED_PATHS.includes(s) && !LAYER_PATTERNS.some((re) => re.test(s))) return `fuera de la lista cerrada de la capa (${CLOSED_PATHS.join(', ')}; packs/<paquete>/pack.json con los .md de sus agents/, skills/, guides/ y claude-md-blocks/ y sus templates/ (${TEMPLATE_EXTENSIONS.map((x) => `.${x}`).join(', ')}), agents/<nombre>.md, onboarding/<nombre>.md y los .md de una skill bajo skills/)`;
   // en Windows `x.` es la carpeta `x` y `con.md` es un dispositivo: una ruta así pisaría otra sin que nada lo vea (revisor de seguridad, A2a)
   const bad = s.split('/').find((seg) => seg.endsWith('.') || WINDOWS_RESERVED.test(seg));
   if (bad) return `el tramo «${bad}» termina en punto o es un nombre reservado de Windows: en ese disco sería otro archivo`;

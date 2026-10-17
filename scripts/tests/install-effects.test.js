@@ -167,7 +167,8 @@ function crossProblems(root, effects) {
   const sh = read(root, INSTALLER);
   const ps1 = read(root, INSTALLER_PS1);
   const byKind = (k) => effects.filter((e) => e.kind === k);
-  const ids = (k) => new Set(byKind(k).map((e) => e.id));
+  // (las que describen por patrón —los bloques de un paquete, que trae la capa del equipo— no se cruzan con el árbol)
+  const ids = (k) => new Set(byKind(k).filter((e) => e.id).map((e) => e.id));
 
   // hooks: las dos listas del .sh, y los que sólo registra el .ps1
   const shHooks = new Set((managed.applierHooks(root) || []).map((h) => `${h.event}:${h.relpath}`));
@@ -458,7 +459,9 @@ test('Effects_EveryEntryHasProfiles_InstallTableColumnMatches', () => {
     if (e.kind === 'hook' && e.blocks !== 'no' && !integ && e.when !== 'optin:TYCON_SESSION_GUARD' && !bothByDecision) assert.deepStrictEqual(e.profiles, ['full'], `${nameOf(e)} frena: sólo full`);
     if (bothByDecision) assert.deepStrictEqual(e.profiles, ['minimal', 'full'], `${nameOf(e)}: el freno de comandos va en los dos perfiles`);
     if (['setting', 'git-hook'].includes(e.kind)) assert.deepStrictEqual(e.profiles, ['full'], `${nameOf(e)}: sólo full`);
-    if (e.kind === 'block' && !integ) assert.deepStrictEqual(e.profiles, ['full'], `${nameOf(e)} cambia cómo contesta: sólo full`);
+    // los bloques de un paquete: el perfil lo dice el marcador de cada uno (requires-profile), como el de un bloque del núcleo
+    if (e.kind === 'block' && !integ && e.id_pattern) assert.deepStrictEqual(e.profiles, ['minimal', 'full'], `${nameOf(e)}: el perfil lo decide cada bloque`);
+    if (e.kind === 'block' && !integ && !e.id_pattern) assert.deepStrictEqual(e.profiles, ['full'], `${nameOf(e)} cambia cómo contesta: sólo full`);
   }
   // la validación lo exige
   const sample = eff.effects.find((e) => e.kind === 'hook');

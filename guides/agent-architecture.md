@@ -225,6 +225,16 @@ hallazgos. El paquete hace explícito quién decide que corran, y el pipeline lo
   agentes de un paquete se enlazan en la máquina (`~/.claude/skills`, `~/.claude/agents`, `~/.codex/skills`) sólo si la
   organización lo activa, uno por entrada, con las reglas de siempre (lo propio gana y se nombra); si deja de activarlo,
   el aplicador saca sus enlaces y lo dice en una línea. Lector: `scripts/lib/pack-pieces.js`.
+- **`claude-md-blocks/`** (opcional, sin declararla en el manifiesto): las reglas del paquete que tienen que estar
+  **siempre cargadas**, no leídas a demanda, como la de cómo se arma una URL contra el backend en cada entorno. Cada
+  `.md` de esa carpeta (un solo nivel) se escribe en el `CLAUDE.md` de la persona —y en el `AGENTS.md` de Codex— como el
+  bloque `packs/<paquete>/<nombre>`, con los mismos marcadores de integración y de perfil que un bloque del núcleo
+  (`<!-- requires-integration: … -->`, `<!-- requires-profile: … -->`), mientras la organización activa el paquete.
+  Cuando deja de activarlo, o el paquete ya no trae ese archivo, la próxima sincronización saca el bloque; si no se
+  puede saber qué paquetes activa la organización, el bloque escrito queda y una línea lo dice. Los escriben los mismos
+  sincronizadores de los bloques del núcleo (`scripts/setup/sync-claude-md-blocks.sh` y `.ps1`,
+  `scripts/setup/agents-md-blocks.js`), que preguntan qué paquetes están activos a `scripts/lib/pack-pieces.js blocks
+  --json`. Un bloque de paquete no tiene variantes por herramienta ni por estilo.
 - El `name` tiene que coincidir con la carpeta. Un mismo agente puede estar en dos grupos del mismo
   paquete (hermanos: `condicional` y `validacion`), nunca en dos paquetes ni repetido con el núcleo.
 - **Las claves estaban antes en castellano.** Un paquete de afuera
