@@ -49,6 +49,7 @@ const fs = require('fs');
 const path = require('path');
 
 const RAIZ = path.resolve(__dirname, '..', '..', '..');
+const { readEnv } = require(path.join(RAIZ, 'scripts', 'lib', 'legacy-names.js'));
 const VENTANA = 30;
 const PRESUPUESTO_MS = 600000;
 const MOTIVOS = [
@@ -82,7 +83,7 @@ function argumentos(argv) {
     if (!k || argv[i + 1] === undefined) return { error: `argumento desconocido o sin valor: ${argv[i]}` };
     o[k] = argv[++i];
   }
-  o.today = o.today || process.env.TYCON_TODAY || new Date().toISOString().slice(0, 10);
+  o.today = o.today || readEnv('TYCON_TODAY', { where: 'scripts/nightly/deployments/deployments.js' }) || new Date().toISOString().slice(0, 10);
   if (!esFecha(o.today)) return { error: `--today ilegible: ${o.today}` };
   o.budgetMs = Number(o.budgetMs);
   if (!Number.isFinite(o.budgetMs) || o.budgetMs < 0) return { error: '--budget-ms tiene que ser un número de milisegundos' };
