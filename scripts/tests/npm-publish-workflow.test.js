@@ -161,7 +161,7 @@ function runWorkflow(env) {
   const box = fs.mkdtempSync(path.join(os.tmpdir(), 'npm-publish-'));
   const repo = path.join(box, 'repo');
   fs.mkdirSync(path.join(repo, 'scripts', 'setup', 'npm'), { recursive: true });
-  for (const f of ['package.json', 'index.js', 'README.md']) fs.copyFileSync(path.join(ROOT, 'scripts', 'setup', 'npm', f), path.join(repo, 'scripts', 'setup', 'npm', f));
+  for (const f of ['package.json', 'index.js', 'home-paths.json', 'README.md']) fs.copyFileSync(path.join(ROOT, 'scripts', 'setup', 'npm', f), path.join(repo, 'scripts', 'setup', 'npm', f));
   fs.copyFileSync(path.join(ROOT, 'LICENSE'), path.join(repo, 'LICENSE'));
   const bin = fakeNpm(box);
   const output = path.join(box, 'github-output');

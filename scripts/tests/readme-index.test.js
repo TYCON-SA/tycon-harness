@@ -115,6 +115,16 @@ test('Index_HasTeamInitRow (T33): la fila del alta apunta a la referencia, y la 
   }
 });
 
+// story 8.40, el cierre (T52): la guía para mantener el paquete de npm dice lo que hace falta saber el día que sale una
+// versión, falla o hay que retirarla, y la nombran la guía de mantener el arnés y la ficha de la pieza
+test('Guides_NpmPackageMaintainerGuide (T52): cómo sale, se aprueba, falla y se retira una versión del paquete', () => {
+  const g = leer('guides/paquete-npm.md');
+  for (const s of ['npm stage approve', 'npm deprecate', '72 horas', '2 días', 'NPM_PUBLISH_ENABLED', 'Run workflow', 'Trusted publishing']) assert.ok(g.includes(s), `guides/paquete-npm.md no nombra «${s}»`);
+  const row = leer('guides/mantener-el-arnes.md').split('\n').find((l) => l.startsWith('|') && l.includes('guides/paquete-npm.md'));
+  assert.ok(row, 'guides/mantener-el-arnes.md no tiene la fila de la guía del paquete de npm');
+  assert.ok(leer('guides/piezas-del-arnes.md').includes('guides/paquete-npm.md'), 'la ficha de npm-publish.yml no nombra la guía');
+});
+
 test('Readme_Tamano_Secciones (T5): ≤ 25 KB y las tres secciones de uso diario', () => {
   const readme = leer('INDEX.md');
   const bytes = Buffer.byteLength(readme, 'utf8');

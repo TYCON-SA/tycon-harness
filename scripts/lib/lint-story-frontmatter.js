@@ -63,16 +63,17 @@
  *     # Se le pasan TODOS los .md del commit: el filtro "esto es una story" lo hace el lint
  *     # (2026-08-15). Antes el grep era `^specs/stories/.*\.md$` y en un repo con otro layout
  *     # el hook no le pasaba NADA — el lint decía OK sin haber mirado una sola story.
- *     CHANGED_STORIES="$(git diff --cached --name-only --diff-filter=ACM \
- *       | grep -E "\.md$" || true)"
- *     if [ -n "$CHANGED_STORIES" ]; then
+ *     # Con los renombres (R), y separados por NUL: un nombre con tildes o espacios no se escapa (story 8.40).
+ *     CHANGED_STORIES=()
+ *     while IFS= read -r -d '' f; do case "$f" in *.md) CHANGED_STORIES+=("$f") ;; esac
+ *     done < <(git -c core.quotePath=false diff --cached --name-only -z --diff-filter=ACMR)
+ *     if [ "${#CHANGED_STORIES[@]}" -gt 0 ]; then
  *       if [ ! -f "$FM_LINT" ]; then
  *         echo "⚠️  No encontre $FM_LINT — se saltea el lint de frontmatter."
  *         echo "   Cloná el arnés (onboarding) o exportá TYCON_GUIDES_DIR."
  *       else
  *         echo "→ Lint de frontmatter de stories..."
- *         # shellcheck disable=SC2086
- *         if ! node "$FM_LINT" $CHANGED_STORIES; then
+ *         if ! node "$FM_LINT" "${CHANGED_STORIES[@]}"; then
  *           echo "❌ Hay stories que el harness no puede leer."
  *           exit 1
  *         fi

@@ -2043,6 +2043,18 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.40, el cierre (T48 y T49): lo que el paquete tiene PUBLICADO en npm. La versión del package.json está publicada con su constancia de procedencia y es la latest; con una sesión de npm, la cuenta pide el segundo factor también para escribir y la latest no es el marcador 0.0.0-stage. Sin red, con la versión sin aprobar o sin sesión: NO MEDIDO, nunca verde. Pide red: corre de noche, no en cada pedido.",
+      "raiz": "arnes",
+      "ruta": "tests/npm-published.test.js",
+      "requiere": ["red"]
+    },
+    {
+      "__nota": "story 8.40, el cierre (T44): las plantillas genéricas del repo de historias de un equipo nuevo (scripts/setup/harness/team-stories/, las usa harness.js team-init): están todas, no nombran ningún producto, cada marcador lo llena team-init y el portón de GitHub pasa las reglas de cualquier workflow público. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/team-stories-templates.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.40, tanda B (T25 a T31): el alta guiada de la organización (harness.js team-init, scripts/setup/harness/team-init.js) por EJECUCIÓN, en una HOME de juguete instalada desde el GitHub de juguete con tres repos (el arnés, el ejemplo de juguete de fixtures/team-init-example/ y el perfil acme). Escribe sólo los tres archivos obligatorios con lo contestado, GitHub y Azure DevOps, valida con los lectores instalados (una clave desconocida, un nombre con espacios, una dirección o carpeta que no sirve: nada escrito), --dry-run, sin arnés sale 2, git sí/no/push que falla, push a un bare de juguete e install --team; con red compara el ejemplo de juguete con el publicado. ~20 s.",
       "raiz": "arnes",
       "ruta": "tests/harness-team-init.test.sh",

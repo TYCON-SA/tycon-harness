@@ -1,0 +1,25 @@
+# Config de Azure DevOps del repo {{STORIES_REPO}} — la consumen la creación de work items, el paso
+# que los pone Activos y el cierre con trazabilidad.
+# Schema: guides/ado-projects.md del arnés
+# Creado {{DATE}} en el alta de {{TEAM}}.
+#
+# El tipo de work item depende de la plantilla de proceso del proyecto: Agile → "User Story" (lo que deja el alta);
+# Scrum → "Product Backlog Item", con los estados "Committed" y "Done". Revisalo antes de crear la primera historia.
+# Si el proyecto no tiene iteraciones creadas, `ado_iteration_path` queda vacío y las historias caen
+# al backlog.
+
+ado_org: {{ADO_ORG_URL}}
+ado_project: "{{ADO_PROJECT}}"
+ado_wi_type: "{{ADO_WORK_ITEM_TYPE}}"   # según la plantilla de proceso — fijado para no re-detectar
+ado_area_path: "{{ADO_PROJECT}}"
+ado_iteration_path: ""           # vacío si el proyecto no tiene iteraciones creadas → backlog
+ado_iteration_auto_from_frontmatter: false
+ado_state_active: "Active"         # los de la plantilla Agile; en Scrum son "Committed" y "Done"
+ado_state_closed: "Closed"
+ado_auto_assign: false
+ado_default_tags: ""
+
+# Mapeo epic (frontmatter `epic:`) → id del Epic en ADO. Vacío: todavía no hay épicos.
+# 🔴 Una story cuyo epic no esté acá se crea SIN vincular al épico, y hay que linkearla a mano
+# después. Cuando nazca el primer épico, anotarlo acá en el mismo movimiento.
+epic_links: {}

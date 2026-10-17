@@ -1,27 +1,23 @@
 #!/usr/bin/env node
 'use strict';
-// tycon-harness (paquete @tyconsa/harness) — el instalador que corre `npx @tyconsa/harness@latest` (story 8.40). El
-// paquete NO trae el arnés: trae este archivo, que hace lo mismo que scripts/setup/get-harness.sh, en Node y en los tres
-// sistemas, sin dependencias. En orden:
-//   1. Revisa los requisitos (`requisites`): Node NODE_FLOOR o más; fuera de Windows bash, tar y python3 (salvo sólo Codex;
-//      en una Mac sin las herramientas de línea de comandos el de /usr/bin no cuenta); en Windows pwsh 7 y tar. Lo que
-//      falta se dice con el comando sugerido, que se imprime y NUNCA se corre.
-//   2. Con terminal, y sin --team ni --audience, pregunta para quién es la instalación (sin valor por defecto). Con
-//      `--team <repo>` (o la respuesta 2; la forma, la de `--team`: `teamShape`) mira ANTES de bajar si el repo del equipo
-//      se lee, y si no pide su permiso; en Azure vale la credencial que install --team usaría (TYCON_AZURE_TOKEN, que se
-//      guarda; la guardada; la del gestor de credenciales de git: lo único que este programa le pide a git). Con la
-//      respuesta 3 (o `--audience org`) instala sin capa y, si install sale 0, corre `harness.js team-init` del árbol YA
-//      instalado, en esta misma terminal (el alta valida con los lectores de la versión instalada).
-//   3. Baja a una carpeta temporal el comprimido de la punta de main por las rutas públicas (info/refs y codeload); con
-//      permiso, por la API (la credencial sólo al mismo origen). Honra HTTPS_PROXY/HTTP_PROXY/NO_PROXY y los
-//      npm_config_*proxy de npx (túnel CONNECT; un proxy https://, por TLS); una CA propia va en NODE_EXTRA_CA_CERTS. Un
-//      enlace o una ruta que sale en el listado del comprimido lo rechazan entero.
-//   4. Desde ese árbol, con el MISMO Node (process.execPath) y en esta terminal: guarda el permiso pedido (`harness.js
-//      config set`) y corre `harness.js install --version latest --repo <repo>` con las demás opciones tal cual (la bajada
-//      VERIFICADA y el «¿Instalo?» son los de install). La carpeta temporal se borra al terminar, también si algo falla.
-// Una máquina que ya tiene el arnés no baja nada: lo dice y sale 0 (con --team sin capa, delega en su propio install; con
-// --audience org, corre su team-init). Un estado del arnés que no se lee sale 1: nunca se instala encima.
-// TYCON_RELEASE_API, TYCON_RELEASE_GIT y TYCON_RELEASE_ARCHIVE: sólo pruebas (el GitHub de juguete), como en release.js.
+// tycon-harness (paquete @tyconsa/harness) — lo que corre `npx @tyconsa/harness@latest` (story 8.40). NO trae el arnés:
+// hace lo de scripts/setup/get-harness.sh, en Node, en los tres sistemas y sin dependencias. En orden:
+//   1. Los requisitos (`requisites`): Node NODE_FLOOR o más; fuera de Windows bash, tar y python3 (salvo sólo Codex; en una
+//      Mac sin las herramientas de línea de comandos el de /usr/bin no cuenta); en Windows pwsh 7 y tar. Lo que falta se
+//      dice con el comando sugerido, que se imprime y NUNCA se corre.
+//   2. Con terminal y sin --team ni --audience, «¿para quién es?» (sin valor por defecto). Con `--team` (o la respuesta 2,
+//      con el criterio de `--team`: `teamShape`) mira ANTES de bajar si el repo del equipo se lee y si no pide su permiso (en
+//      Azure: TYCON_AZURE_TOKEN, que se guarda; la guardada; la del gestor de git). Con la 3 (o `--audience org`), después
+//      de un install que sale 0, corre `harness.js team-init` del árbol YA instalado, en esta terminal.
+//   3. Baja la punta de main a una carpeta temporal por las rutas públicas (info/refs y codeload; con permiso, la API, la
+//      credencial sólo al mismo origen), con HTTPS_PROXY/NO_PROXY y los npm_config_*proxy (CONNECT; un proxy https://,
+//      por TLS) y NODE_EXTRA_CA_CERTS. Un enlace o una ruta que sale del comprimido lo rechazan entero.
+//   4. Con el MISMO Node (process.execPath) y en esta terminal, guarda el permiso pedido y corre `harness.js install
+//      --version latest --repo <repo>` con las demás opciones (la bajada VERIFICADA y el «¿Instalo?» son los de install).
+//      La carpeta temporal se borra siempre.
+// Una máquina que ya tiene el arnés nunca se reinstala (AC 35): compara su commit con la punta y dice «al día», o pregunta
+// «¿Actualizo?» y corre su `update`; si no pudo mirar, lo dice. Con --team sin capa delega en su install; con --audience
+// org, en su team-init. Un estado que no se lee sale 1. TYCON_RELEASE_API/_GIT/_ARCHIVE: sólo pruebas, como en release.js.
 
 const fs = require('fs'); const os = require('os'); const path = require('path'); const net = require('net'); const tls = require('tls');
 const http = require('http'); const https = require('https'); const { spawnSync } = require('child_process');
@@ -31,13 +27,10 @@ const NODE_FLOOR = 22;   // el piso para INSTALAR (el de la documentación); har
 const PACKAGE = '@tyconsa/harness', TOKEN_URL = 'https://github.com/settings/personal-access-tokens/new', AUDIENCES = { 1: 'me', 2: 'team', 3: 'org' };
 const GH_REPO = /^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/;
 
-const say = (s) => process.stderr.write(`tycon-harness: ${s}\n`);
-class Stop extends Error { constructor(code, message) { super(message); this.code = code; } }
+const say = (s) => process.stderr.write(`tycon-harness: ${s}\n`); class Stop extends Error { constructor(code, message) { super(message); this.code = code; } }
 const pause = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-// «.» y «..» pasan la forma pero no son nombres: en la URL cambiarían de endpoint (como parseTeam)
-const dots = (s) => /^\.+$/.test(s);
-const dec = (s) => { try { return decodeURIComponent(s); } catch (_) { return s; } };
-const enc = (r) => String(r).split('/').map((s) => encodeURIComponent(dec(s))).join('/');   // cada segmento, codificado, en toda URL armada
+const dots = (s) => /^\.+$/.test(s);   // «.» y «..» pasan la forma pero no son nombres: cambiarían de endpoint (parseTeam)
+const dec = (s) => { try { return decodeURIComponent(s); } catch (_) { return s; } }; const enc =(r) => String(r).split('/').map((s) => encodeURIComponent(dec(s))).join('/');   // cada segmento, codificado, en toda URL armada
 // el repo del perfil con el MISMO criterio que `--team` (parseTeam de team.js y parseAzureUrl de team-azure.js, que este
 // paquete no trae: la paridad, caso por caso, la mide npm-package.test.js T36): `{ host, repo, … }` o null
 
@@ -206,23 +199,28 @@ const askAudience = () => askUntil('¿Para quién es esta instalación? 1 para m
   (a) => AUDIENCES[a], 'eso no es una de las tres: contestá 1, 2 o 3', 'sin elegir para quién es la instalación: no bajé nada. Volvé a correrlo, o pasá --audience me|team|org');
 
 // ── la máquina ya instalada ─────────────────────────────────────────────────────────────────────────────────────────
+// las rutas del estado, de home-paths.json: las mismas de tycon-home.js, que acá no se puede cargar (T43 las compara)
+const HP = require('./home-paths.json');
+const at = (base, rel) => path.join(base, ...rel.split('/'));
+const ownRoot = (env) => env[HP.own_env] || path.join(os.homedir(), HP.own_dir);
 function installed(env) {
-  const home = os.homedir(); const own = env.TYCON_HOME || path.join(home, '.tycon');
-  for (const f of [path.join(own, 'state', 'harness-state.json'), path.join(home, '.claude', '.tycon-pipeline', 'harness-state.json')]) {
+  const own = ownRoot(env);
+  for (const f of [at(own, HP.own_state), at(os.homedir(), HP.legacy_state)]) {
     let s;   // un estado que está pero no se lee no es «sin arnés»: instalar encima pisaría una instalación
     try { s = JSON.parse(fs.readFileSync(f, 'utf8')); if (!s || typeof s !== 'object') throw new Error('no es un objeto'); } catch (e) {
       if (e.code === 'ENOENT' || e.code === 'ENOTDIR') continue;
       throw new Stop(1, `el estado del arnés ${f} está pero no se lee (${e.code || e.message}): no instalo encima. Revisalo (o, si no hay arnés, borralo) y volvé a correrlo. No bajé nada.`);
     }
     const tree = s.tree || path.join(own, 'harness'); const harness = path.join(tree, 'scripts', 'setup', 'harness.js');
-    if (fs.existsSync(harness)) return { tree, harness, version: (s.version && (s.version.number || s.version)) || '?', team: s.team || null };
+    const rel = (Array.isArray(s.sources) ? s.sources : []).find((x) => x && x.name === 'harness'); const source = rel && rel.kind === 'release' ? (GH_REPO.test(String(rel.repo || '')) && !String(rel.repo).split('/').some(dots) && /^[0-9a-f]{40}$/.test(String(rel.commit || '')) ? rel : { broken: true }) : null;   // sin fuente release: un clon
+    if (fs.existsSync(harness)) return { tree, harness, version: (s.version && typeof s.version === 'object' ? s.version.number : s.version) || '?', team: s.team || null, source };
   }
   return null;
 }
 
 // ── el permiso de lectura ───────────────────────────────────────────────────────────────────────────────────────────
 function savedToken(env, key) {
-  const f = path.join(env.TYCON_HOME || path.join(os.homedir(), '.tycon'), 'config.json'); let j;   // como installed(): que está y no se lee no es «sin permiso»
+  const f = at(ownRoot(env), HP.own_config); let j;   // como installed(): que está y no se lee no es «sin permiso»
   try { j = JSON.parse(fs.readFileSync(f, 'utf8')); if (!j || typeof j !== 'object') throw new Error('no es un objeto'); } catch (e) { if (e.code === 'ENOENT' || e.code === 'ENOTDIR') return ''; throw new Stop(1, `la configuración del arnés ${f} está pero no se lee (${e.code || e.message}): no la piso. Revisala (o, si no la usás, borrala) y volvé a correrlo. No bajé nada.`); }
   return String((j[key] && j[key].token) || '');
 }
@@ -257,8 +255,8 @@ async function main(argv, env = process.env) {
       `corre desde: ${__filename}`,
       'qué hace: 1) revisa los requisitos (Node, tar; bash y python3, o pwsh 7 en Windows) y dice lo que falta sin instalar nada;',
       '  2) baja de GitHub, a una carpeta temporal, la versión publicada del arnés (el arnés NO viene en este paquete);',
-      '  3) corre harness.js install --version latest desde ahí: verifica lo bajado contra el commit, muestra el plan y pregunta «¿Instalo? [s/N]»;',
-      '  4) borra la carpeta temporal.',
+      '  3) corre harness.js install --version latest desde ahí: verifica lo bajado contra el commit, muestra el plan y pregunta «¿Instalo? [s/N]»; 4) borra la carpeta temporal.',
+      'con el arnés ya instalado no lo reinstala: dice si está al día, o pregunta «¿Actualizo? [s/N]» y corre su update.',
       `sin nadie delante: npx ${PACKAGE}@latest --profile minimal --yes (ese --yes, después del nombre, acepta el plan)`,
       `la procedencia del paquete: la pestaña «Provenance» de https://www.npmjs.com/package/${PACKAGE}, o npm view ${PACKAGE} dist.attestations`,
       'a mano, sin npm: scripts/setup/get-harness.sh (o get-harness.ps1) del repo público', ''].join('\n'));
@@ -275,21 +273,28 @@ async function main(argv, env = process.env) {
   const SHAPES = 'org/repo, https://github.com/<org>/<repo> o https://dev.azure.com/<org>/<proyecto>/_git/<repo>, sin segmentos «.» ni «..»';
   let src = team ? teamShape(team) : null;
   if (team && !src) throw new Stop(2, `el repo del perfil tiene que ser ${SHAPES}: «${team.replace(/^(https?:\/\/)[^@/]+@/, '$1')}». No bajé nada.`);
+  const refsOf = async (r, t, branch = 'main') => {   // github.com sin contestar no es «sin red»: se cae a la API, como get-harness.sh
+    let res; try { res = await get(`${GIT}/${enc(r)}.git/info/refs?service=git-upload-pack`, { token: t, env, accept: '*/*' }); } catch (e) { if (/certificado/.test(e.message)) throw e; return { status: 0, sha: '', why: e.message.replace(/\.? No bajé nada\.$/, '') }; }
+    const m = res.status === 200 && res.body.toString('latin1').startsWith('001e# service=git-upload-pack\n0000') && new RegExp(`([0-9a-f]{40}) refs/heads/${branch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[\\0\\n]`).exec(res.body.toString('latin1'));
+    return { status: res.status, sha: m ? m[1] : '', why: res.status === 200 && !res.body.toString('latin1').startsWith('001e# service=git-upload-pack') ? 'la respuesta no es la de git (¿un proxy o un portal?)' : '' };
+  };
   const here = installed(env);
   if (here) {
-    if (audience === 'org') {   // dar de alta la organización en una máquina que ya tiene el arnés: el alta, del árbol instalado
-      say(`el arnés ya está en ${here.tree} (versión ${here.version}): sigo con el alta de tu organización (harness.js team-init)`);
-      return launch('harness.js team-init', process.execPath, [here.harness, 'team-init'], { stdio: 'inherit', env }).status;
-    }
-    if (src && !here.team) {
-      say(`el arnés ya está en ${here.tree}: sumo el perfil del equipo con su propio install --team`);
-      return launch('harness.js install --team', process.execPath, [here.harness, 'install', '--team', src.repo, ...rest], { stdio: 'inherit', env }).status;
-    }
-    say(`el arnés ya está instalado en ${here.tree} (versión ${here.version}): para actualizarlo, node "${here.harness}" update; para dar de alta tu organización, --audience org. No bajé nada.`);
-    return 0;
+    const place = `el arnés ya está en ${here.tree} (versión ${here.version})`, upd = `node "${here.harness}" update --yes`;   // con la política de fábrica («ask») `update` solo, sólo mira
+    const own = (what, args) => launch(`harness.js ${what}`, process.execPath, [here.harness, ...args], { stdio: 'inherit', env }).status;   // el árbol INSTALADO
+    if (audience === 'org') { say(`${place}: sigo con el alta de tu organización (harness.js team-init)`); return own('team-init', ['team-init']); }
+    if (src && !here.team) { say(`${place}: sumo el perfil del equipo con su propio install --team`); return own('install --team', ['install', '--team', src.repo, ...rest]); }
+    // nunca se reinstala: se compara el commit instalado con la punta de su rama (AC 35) y, si hay una nueva, se pregunta
+    if (!here.source || here.source.broken) { say(`${place}, ${here.source ? 'pero el estado no dice qué commit tiene' : 'instalado desde un clon'}: para actualizarlo, ${upd}. No bajé nada.`); return 0; }
+    const tip = await refsOf(here.source.repo, '', here.source.ref || 'main').catch((e) => ({ status: 0, sha: '', why: e.message.replace(/\.? No bajé nada\.$/, '') }));
+    if (!tip.sha) { say(`${place}; no pude mirar si hay una versión nueva (${tip.status === 200 && !tip.why ? `la rama ${here.source.ref || 'main'} no aparece en ${here.source.repo}` : tip.status ? `GitHub contestó ${tip.status}` : tip.why || 'sin red o sin respuesta'}): para actualizarlo, ${upd}. No bajé nada.`); return 0; }
+    if (tip.sha === here.source.commit) { say(`${place}: está al día. No bajé nada (para dar de alta tu organización, --audience org).`); return 0; }
+    say(`${place}: hay una versión nueva (${tip.sha.slice(0, 7)}).`);
+    if (!isTerminal()) { say(`para actualizarlo: ${upd}. No bajé nada.`); return 0; }
+    process.stderr.write('tycon-harness: ¿Actualizo? [s/N] '); if (!/^(s|si|sí|y|yes)$/i.test(String(readLine() || '').trim())) { say(`no actualicé: para hacerlo, ${upd}`); return 0; }
+    return own('update', ['update', '--yes']);   // la persona ya dijo que sí
   }
-  if (src) audience = 'team';
-  if (!audience) audience = isTerminal() ? askAudience() : 'me';
+  if (src) audience = 'team'; else if (!audience) audience = isTerminal() ? askAudience() : 'me';
   if (audience === 'team' && !src) {   // la respuesta 2: vacía o que no es un repo vuelve a preguntar, como la de para quién
     if (!isTerminal()) throw new Stop(2, '--audience team pide --team <org/repo de GitHub, o la URL de Azure DevOps del repo del perfil>');
     src = askUntil('la dirección del repo del perfil del equipo (org/repo de GitHub, o https://dev.azure.com/<org>/<proyecto>/_git/<repo>)', teamShape,
@@ -303,11 +308,6 @@ async function main(argv, env = process.env) {
   let token = String(env.TYCON_GITHUB_TOKEN || '').replace(/[\r\n]/g, ''); let save = Boolean(token);
   if (!token) token = savedToken(env, 'github');
   let teamToken = token, saveTeam = false, azureToken = '';
-  const refsOf = async (r, t) => {   // github.com sin contestar no es «sin red»: se cae a la API, como get-harness.sh
-    let res; try { res = await get(`${GIT}/${enc(r)}.git/info/refs?service=git-upload-pack`, { token: t, env, accept: '*/*' }); } catch (e) { if (/certificado/.test(e.message)) throw e; return { status: 0, sha: '' }; }
-    const m = res.status === 200 && res.body.toString('latin1').startsWith('001e# service=git-upload-pack\n0000') && /([0-9a-f]{40}) refs\/heads\/main[\0\n]/.exec(res.body.toString('latin1'));
-    return { status: res.status, sha: m ? m[1] : '' };
-  };
   if (src && src.host === 'github') {
     // ¿se lee? 401/404 es «pedí permiso»; el tope dice hasta qué hora; un 5xx o la red caída salen 1 con la causa
     const r = PUB ? await refsOf(team, '') : { status: 0 };
@@ -396,4 +396,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { requisites, main, proxyFor, get, teamShape, tarCmd, NODE_FLOOR, REPO, PACKAGE };
+module.exports = { requisites, main, proxyFor, get, teamShape, tarCmd, ownRoot, HP, NODE_FLOOR, REPO, PACKAGE };
