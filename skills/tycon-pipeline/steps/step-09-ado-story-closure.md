@@ -30,7 +30,10 @@ Antes de postear nada en ADO, validar que se cumple TODO esto:
    - Si la story es de UI, además la guía de prueba manual del tester (DODRT-C7) tiene que estar
      lista: `node <skill>/scripts/qa-guide.js --check --story <abs spec.md>`.
    - Contexto y criterio: `~/.claude/tycon-harness/guides/definition-of-done.md`.
-2. **Sin deudas abiertas** — pre-condición MECÁNICA:
+2. **Sin deudas abiertas** — pre-condición MECÁNICA. Antes, cada tanda del bloque `pipelines:` que ya está en
+   main pasa a `done` con el orquestador, nunca editando el archivo:
+   `node <skill>/scripts/marker.js update-pipeline-status <abs spec.md> <tanda> done` (todas a la vez: `--all`,
+   sólo si TODAS están en main). Una tanda que no está en main no se pasa: es la deuda que este punto frena.
    ```bash
    node <skill>/scripts/pipeline.js deferrals-open --story <abs spec.md> --repo <repo>
    ```
