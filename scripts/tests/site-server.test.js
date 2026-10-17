@@ -175,9 +175,13 @@ test('T7 Codigo_SinValoresDeUnaOrganizacion', () => {
     try { const d = JSON.parse(fs.readFileSync(deny, 'utf8')); return (Array.isArray(d.terms) ? d.terms : []).map((t) => (typeof t === 'string' ? t : t && t.term)).filter((t) => typeof t === 'string' && t.length >= 4); } catch { return []; }
   })();
   const malos = [];
+  // la licencia de una fuente de terceros viaja tal cual la escribió su autor (la OFL lo exige), con su correo: no es un
+  // valor de una organización. Sólo esos textos, en la carpeta de las fuentes; las fuentes en sí se miran igual
+  const licenciaDeTerceros = (rel) => /^scripts\/site\/static\/fonts\/[A-Za-z0-9_-]+\.txt$/.test(rel.split(path.sep).join('/'));
   for (const f of archivos) {
     const t = fs.readFileSync(f, 'utf8');
     const rel = path.relative(ROOT, f);
+    if (licenciaDeTerceros(rel)) continue;
     for (const m of t.matchAll(/[A-Za-z0-9._%+-]+@([A-Za-z0-9-]+\.)+[A-Za-z]{2,}/g)) if (!/\.example$/i.test(m[0]) && !/@sha256/.test(m[0])) malos.push(`${rel}: correo ${m[0]}`);
     for (const m of t.matchAll(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi)) if (!GUID_PUBLICO.has(m[0].toLowerCase())) malos.push(`${rel}: GUID ${m[0]}`);
     for (const m of t.matchAll(/\b([a-z0-9]{3,24})\.blob\.core\.windows\.net/gi)) malos.push(`${rel}: cuenta de almacenamiento ${m[1]}`);
@@ -381,4 +385,67 @@ test('T44 Respuestas_ComprimidasYEstaticosConEtiqueta', async () => {
     assert.strictEqual(pagina.headers['cache-control'], 'no-store', 'una página con datos no se guarda en el navegador');
     assert.strictEqual(pagina.headers.etag, undefined);
   } finally { await h.cerrar(); }
+});
+
+// La marca del sitio: la barra de arriba con el logo (o el nombre) de la organización, el pie con la versión, la
+// licencia y los créditos, y el logo servido desde el repo de operaciones sin poder correr nada.
+test('T45 Marca_LogoSeguroBarraYPie', async () => {
+  const emisor = await arrancarEmisor();
+  const lead = 'lead@acme.example';
+  const perfil = fs.mkdtempSync(path.join(os.tmpdir(), 'site-t45-perfil-'));
+  const afuera = fs.mkdtempSync(path.join(os.tmpdir(), 'site-t45-afuera-'));
+  fs.mkdirSync(path.join(perfil, 'marca'));
+  const PNG = Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), Buffer.alloc(32, 1)]);
+  fs.writeFileSync(path.join(perfil, 'marca', 'logo.png'), PNG);
+  fs.writeFileSync(path.join(perfil, 'marca', 'falso.png'), 'no soy un png');
+  fs.writeFileSync(path.join(perfil, 'marca', 'limpio.svg'), '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><defs><path id="a" d="M0 0h10v10z"/></defs><use href="#a"/></svg>');
+  fs.writeFileSync(path.join(perfil, 'marca', 'codigo.svg'), '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>');
+  fs.writeFileSync(path.join(perfil, 'marca', 'evento.svg'), '<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"></svg>');
+  fs.writeFileSync(path.join(perfil, 'marca', 'afuera.svg'), '<svg xmlns="http://www.w3.org/2000/svg"><image href="https://otro.example/x.png"/></svg>');
+  fs.writeFileSync(path.join(afuera, 'secreto.png'), PNG);
+  fs.symlinkSync(path.join(afuera, 'secreto.png'), path.join(perfil, 'marca', 'enlace.png'));
+  const config = (brand) => ({ version: 1, owners: { default: lead }, site: { maintainers: [lead], ...(brand ? { brand } : {}) } });
+  const fuentes = H.fuentesFijas({ config: config({ name: 'Acme Ingeniería', logo: 'marca/logo.png' }) });
+  fuentes.clones = () => ({ operaciones: { dir: perfil }, perfil: null });
+  const h = await H.arrancarSitio({ env: H.envBase({ SITE_OIDC_ISSUER: emisor.issuer }), fuentes });
+  try {
+    const s = (await H.ingresar(h, emisor, { sub: 's-lead', email: lead, email_verified: true })).sesion;
+    const logo = (rel, extra = {}) => { fuentes.st.config = config({ name: 'Acme Ingeniería', logo: rel, ...extra }); return h.pedir('/marca/logo', { cookie: s }); };
+    assert.strictEqual((await h.pedir('/marca/logo')).status, 302, 'sin sesión, nada');
+    const png = await logo('marca/logo.png');
+    assert.deepStrictEqual([png.status, png.headers['content-type']], [200, 'image/png']);
+    assert.match(png.headers['content-security-policy'], /default-src 'none'.*sandbox/, 'una política que no deja correr nada');
+    assert.strictEqual((await logo('marca/falso.png')).status, 404, 'un .png que no es png');
+    const svg = await logo('marca/limpio.svg');
+    assert.deepStrictEqual([svg.status, svg.headers['content-type']], [200, 'image/svg+xml']);
+    for (const malo of ['marca/codigo.svg', 'marca/evento.svg', 'marca/afuera.svg']) assert.strictEqual((await logo(malo)).status, 404, `${malo}: un svg con código o que sale afuera no se sirve`);
+    assert.strictEqual((await logo('marca/enlace.png')).status, 404, 'un enlace que sale del repo de operaciones');
+    assert.strictEqual((await logo('../afuera/secreto.png')).status, 404, 'una ruta que sube de carpeta');
+    assert.ok(h.registro.some((l) => /el logo marca\/codigo\.svg trae código/.test(l)), 'y queda en el registro');
+    // la barra: el logo (invertido en oscuro, salvo que se pida dejarlo), o el nombre; el pie, con la versión y los enlaces
+    fuentes.st.config = config({ name: 'Acme Ingeniería', logo: 'marca/logo.png' });
+    let p = (await h.pedir('/', { cookie: s })).texto;
+    assert.match(p, /<header class="barra"><img class="logo invierte" src="\/marca\/logo" alt="Acme Ingeniería"><span class="sep" aria-hidden="true"><\/span><span class="producto">Arnés<\/span><span class="lema">Sitio de la organización<\/span>/);
+    assert.match(p, /<form class="salir"[^>]*><span>lead@acme\.example<\/span> <button type="submit">Salir<\/button><\/form><\/header>/, 'quién entró y Salir, a la derecha de la barra');
+    assert.match(p, /<footer class="pie"><span>Arnés( v[^<]+)?<\/span><a href="\/licencia">Licencia Apache 2\.0<\/a><a href="\/creditos">Créditos y componentes de terceros<\/a><span class="esp"><\/span><span>© Acme Ingeniería<\/span><\/footer>/);
+    assert.doesNotMatch(p, /class="brand"/, 'el menú, sin la marca');
+    fuentes.st.config = config({ name: 'Acme Ingeniería', logo: 'marca/logo.png', dark: 'keep' });
+    assert.match((await h.pedir('/', { cookie: s })).texto, /<img class="logo" src="\/marca\/logo"/, 'un logo de colores no se invierte');
+    fuentes.st.config = config({ name: 'Acme Ingeniería' });
+    p = (await h.pedir('/', { cookie: s })).texto;
+    assert.match(p, /<header class="barra"><span class="org">Acme Ingeniería<\/span><span class="sep"/, 'sin logo, el nombre');
+    fuentes.st.config = config(null);
+    p = (await h.pedir('/', { cookie: s })).texto;
+    assert.match(p, /<header class="barra"><span class="producto">Arnés<\/span>/, 'sin marca, sólo el producto');
+    assert.doesNotMatch(p, /©/);
+    // la licencia, los créditos (con Lato) y la letra, servidos por el propio sitio
+    const lic = await h.pedir('/licencia');
+    assert.deepStrictEqual([lic.status, /Apache License/.test(lic.texto)], [200, true]);
+    const cred = await h.pedir('/creditos');
+    assert.match(cred.texto, /Lato \(la letra del sitio\)/);
+    assert.match(cred.texto, /SIL Open Font License/);
+    const letra = await h.pedir('/static/fonts/lato-400.woff2');
+    assert.deepStrictEqual([letra.status, letra.headers['content-type'], letra.headers['content-encoding']], [200, 'font/woff2', undefined]);
+    assert.ok(letra.headers.etag, 'con etiqueta: el navegador la guarda');
+  } finally { await h.cerrar(); await emisor.cerrar(); fs.rmSync(perfil, { recursive: true, force: true }); fs.rmSync(afuera, { recursive: true, force: true }); }
 });

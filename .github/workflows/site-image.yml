@@ -29,6 +29,8 @@ on:
       - 'scripts/ci/legacy-options.js'
       - 'skills/tycon-pipeline/scripts/lib/**'
       - 'skills/tycon-pipeline/steps/**'
+      - 'LICENSE*'
+      - 'NOTICE*'
       - '.github/workflows/site-image.yml'
 concurrency:
   group: site-image

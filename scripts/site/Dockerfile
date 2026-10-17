@@ -30,6 +30,8 @@ WORKDIR /app
 # lee antes que version.json (el piso). El árbol de la noche no trae ninguno de los dos; con el comodín la imagen se arma
 # igual, y el sitio dice la versión como desconocida
 COPY version.json* .tycon-release.json* ./
+# la licencia y los créditos: el pie de cada página los abre (/licencia, /creditos)
+COPY LICENSE* NOTICE* ./
 COPY scripts/site/ scripts/site/
 COPY scripts/lib/ scripts/lib/
 COPY scripts/metrics/ scripts/metrics/

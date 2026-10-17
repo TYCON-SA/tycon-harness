@@ -50,7 +50,8 @@ const session = require('./session.js');
 const oidc = require('./oidc.js');
 const access = require('./access.js');
 const views = require('./views.js');
-const { limpiarLinea } = require('./sources.js');
+const { limpiarLinea, dentroDe } = require('./sources.js');
+const { BRAND_LOGO } = require('../lib/operations-config.js');
 
 // Los proveedores: el `oidc` genérico y uno por archivo de auth-providers/ (el nombre del archivo es el valor de
 // SITE_AUTH_PROVIDER). El núcleo no nombra a ninguno: lo propio de cada uno vive en su archivo.
@@ -214,14 +215,19 @@ function validarRutas(rutas) {
 // enlaces y los envíos aunque no corra ningún script
 const CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
 
+// el logo de la organización: hasta este tamaño, y un svg sin nada que corra ni que salga a buscar afuera
+const LOGO_MAX = 512 * 1024;
+const SVG_CON_CODIGO = /<script|<foreignObject|<iframe|<!ENTITY|\bon[a-z]+\s*=|javascript:|(?:xlink:)?href\s*=\s*["']?\s*(?!#)[a-z]/i;
+const isObjeto = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
 // menos que esto no vale lo que cuesta comprimirlo
 const MIN_COMPRIMIR = 1024;
 // la etiqueta de un cuerpo que no cambia mientras el proceso vive: se calcula una vez por texto
 const etiquetas = new Map();
 function etiquetaDe(cuerpo) {
-  if (typeof cuerpo === 'string' && etiquetas.has(cuerpo)) return etiquetas.get(cuerpo);
+  const guardable = typeof cuerpo === 'string' || Buffer.isBuffer(cuerpo);
+  if (guardable && etiquetas.has(cuerpo)) return etiquetas.get(cuerpo);
   const e = `"${crypto.createHash('sha256').update(cuerpo).digest('base64url').slice(0, 27)}"`;
-  if (typeof cuerpo === 'string' && etiquetas.size < 32) etiquetas.set(cuerpo, e);
+  if (guardable && etiquetas.size < 32) etiquetas.set(cuerpo, e);
   return e;
 }
 
@@ -231,7 +237,22 @@ function leerEstatico() {
   return {
     '/static/site.css': { tipo: 'text/css; charset=utf-8', cuerpo: `${CSS_BASE}\n${CSS_CHIPS}\n${fs.readFileSync(path.join(dir, 'site.css'), 'utf8')}` },
     '/static/site.js': { tipo: 'text/javascript; charset=utf-8', cuerpo: fs.readFileSync(path.join(dir, 'site.js'), 'utf8') },
+    // la letra del sitio viaja con él: la política no deja cargar nada de afuera
+    '/static/fonts/lato-400.woff2': { tipo: 'font/woff2', cuerpo: fs.readFileSync(path.join(dir, 'fonts', 'lato-400.woff2')) },
+    '/static/fonts/lato-700.woff2': { tipo: 'font/woff2', cuerpo: fs.readFileSync(path.join(dir, 'fonts', 'lato-700.woff2')) },
+    // la licencia y los créditos de la versión que corre, para el pie de cada página
+    '/licencia': textoDeLaRaiz('LICENSE'),
+    '/creditos': textoDeLaRaiz('NOTICE', [['Lato (la letra del sitio)', path.join(dir, 'fonts', 'OFL.txt')]]),
   };
+}
+
+/** Un archivo de texto de la raíz del arnés, con anexos; sin él, la página dice que esta instalación no lo trae. */
+function textoDeLaRaiz(nombre, anexos = []) {
+  const leer = (f) => { try { return fs.readFileSync(f, 'utf8'); } catch { return null; } };
+  const base = leer(path.join(__dirname, '..', '..', nombre));
+  const partes = [base === null ? `${nombre}: esta instalación del sitio no lo trae.` : base];
+  for (const [titulo, f] of anexos) { const t = leer(f); if (t !== null) partes.push(`\n\n── ${titulo} ──\n\n${t}`); }
+  return { tipo: 'text/plain; charset=utf-8', cuerpo: partes.join('') };
 }
 
 /**
@@ -269,7 +290,7 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
     const pedido = res.req || {};
     const pide = (k) => String((pedido.headers && pedido.headers[k]) || '');
     // los estilos y el código de pantalla no traen nada de nadie: el navegador los guarda y pregunta si cambiaron (304)
-    if (status === 200 && /^text\/(css|javascript)/.test(tipo) && !extra['Cache-Control']) {
+    if (status === 200 && /^(text\/(css|javascript)|font\/)/.test(tipo) && !extra['Cache-Control']) {
       const etiqueta = etiquetaDe(cuerpo);
       res.setHeader('Cache-Control', 'no-cache');
       res.setHeader('ETag', etiqueta);
@@ -278,7 +299,7 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
     res.statusCode = status;
     // comprimido, para quien lo acepta: la página de Corridas y su lista pasan de unos 3,5 MB a unos 0,3 MB por visita
     let datos = cuerpo;
-    if (Buffer.byteLength(datos) >= MIN_COMPRIMIR && /\bgzip\b/.test(pide('accept-encoding')) && !res.getHeader('Content-Encoding')) {
+    if (Buffer.byteLength(datos) >= MIN_COMPRIMIR && !/^(font|image)\//.test(tipo) && /\bgzip\b/.test(pide('accept-encoding')) && !res.getHeader('Content-Encoding')) {
       datos = zlib.gzipSync(datos, { level: 5 });
       res.setHeader('Content-Encoding', 'gzip');
     }
@@ -286,6 +307,36 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
     res.end(datos);
   }
   const json = (res, status, obj, extra) => enviar(res, { status, tipo: 'application/json; charset=utf-8', cuerpo: JSON.stringify(obj), extra });
+
+  /** La marca de la organización (site.brand de operations.json): el nombre, si hay logo, y qué hacer con él en oscuro. */
+  function marcaDe(config) {
+    const b = config && isObjeto(config.site) && isObjeto(config.site.brand) ? config.site.brand : {};
+    return { nombre: typeof b.name === 'string' && b.name.trim() ? b.name.trim() : null, logo: typeof b.logo === 'string' && BRAND_LOGO.test(b.logo), oscuro: b.dark === 'keep' ? 'keep' : 'invert' };
+  }
+  /**
+   * El logo, del repo de operaciones (el repo del equipo se copia a cada máquina y no lleva archivos fuera de su lista): un .png con su firma o un .svg sin código ni enlaces afuera, de hasta LOGO_MAX bytes,
+   * leído adentro del clon. Se sirve con una política que no deja correr nada, aunque se abra solo.
+   */
+  function logo() {
+    const no = { status: 404, tipo: 'text/plain; charset=utf-8', cuerpo: '' };
+    const config = fuentes.config();
+    const rel = config && isObjeto(config.site) && isObjeto(config.site.brand) ? config.site.brand.logo : null;
+    const cl = typeof fuentes.clones === 'function' ? fuentes.clones() : null;
+    const dir = cl && cl.operaciones && cl.operaciones.dir;
+    if (typeof rel !== 'string' || !BRAND_LOGO.test(rel) || !dir) return no;
+    const f = path.join(dir, rel);
+    let datos;
+    try { if (!dentroDe(dir, f)) return no; const st = fs.statSync(f); if (!st.isFile() || st.size > LOGO_MAX) return no; datos = fs.readFileSync(f); } catch { return no; }
+    let tipo;
+    if (rel.endsWith('.png')) {
+      if (datos.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a') { registrar(`el logo ${rel} no es un png: no se sirve`); return no; }
+      tipo = 'image/png';
+    } else {
+      if (SVG_CON_CODIGO.test(datos.toString('utf8'))) { registrar(`el logo ${rel} trae código o enlaces afuera: no se sirve`); return no; }
+      tipo = 'image/svg+xml';
+    }
+    return { status: 200, tipo, cuerpo: datos, extra: { 'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; sandbox", 'Cache-Control': 'private, max-age=300' } };
+  }
 
   function pestanasPara(rol) {
     return rutas.filter((r) => r.pestana && r.needs.includes(rol)).map((r) => ({ ...r.pestana, path: r.path })).sort((a, b) => a.orden - b.orden);
@@ -351,6 +402,7 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
     const ses = session.leerSesion(cookies, cfg.sessionKey, ahora(), { prov: proveedor.nombre, iss: proveedor.emisor });
     const esApi = ruta.startsWith('/api/');
     if (!ses) return esApi ? enviar(res, { status: 401, tipo: 'text/plain; charset=utf-8', cuerpo: '' }) : irAlEmisor(res);
+    if (ruta === '/marca/logo' && req.method === 'GET') return enviar(res, logo());
 
     if (st.frenado) return esApi ? enviar(res, { status: 503, tipo: 'text/plain; charset=utf-8', cuerpo: '' }) : enviar(res, { status: 503, cuerpo: views.paginaFrenado({ desde: st.frenado.desde }), extra: { 'Retry-After': '60' } });
     // la espera es POR FUENTE: con el repo de operaciones leído (`navegable`) el sitio se navega aunque el buzón siga
@@ -374,7 +426,7 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
     const modelo = access.filtrar(fuentes.modelo(), quien, access.crearReglas({ config, modelo: fuentes.modelo(), personas }));
     const ctx = {
       req, sesion: ses, params: params || {}, url: u,
-      modelo, quien, pestanas: pestanasPara(quien.rol), activa: r.pestana ? r.pestana.id : null,
+      modelo, quien, pestanas: pestanasPara(quien.rol), activa: r.pestana ? r.pestana.id : null, marca: marcaDe(config),
       bandaRefresco: st.bandaRefresco || null,
       bandaConfig: quien.rol === 'maintainer' ? (st.bandaConfig || null) : null,
       avisoVariable: quien.rol === 'maintainer' && quien.variableSobrante,
