@@ -74,10 +74,24 @@ jobs:
           TYCON_PUBLIC_CI_OUT: ${{ runner.temp }}/public-ci
           TYCON_PUBLIC_CI_PART: ${{ matrix.part }}
           BASE_REF: ${{ github.base_ref || github.event.merge_group.base_ref }}
+          BASE_SHA: ${{ github.event.merge_group.base_sha }}
         run: |
           # en un pedido BASE_REF es «main»; en la cola es «refs/heads/main»: se le saca el prefijo
           if [ "${GITHUB_EVENT_NAME}" = "pull_request" ] || [ "${GITHUB_EVENT_NAME}" = "merge_group" ]; then
-            bash scripts/ci/public-ci.sh --clean-machine --range "origin/${BASE_REF#refs/heads/}...HEAD"
+            # los controles y su regla salen de la base: en la cola, la base del grupo; en un pedido, la punta de la rama
+            # destino. Corre el public-ci.sh DE LA BASE, sobre el checkout del pedido (guides/piezas-del-arnes.md)
+            # (el rango sale de la misma base: en la cola, desde main se colarían los cambios del grupo de adelante)
+            BASE="${BASE_SHA:-$(git rev-parse --verify "origin/${BASE_REF#refs/heads/}^{commit}")}" || exit 1
+            git cat-file -e "${BASE}^{commit}" || exit 1
+            if git cat-file -e "${BASE}:scripts/ci/run-base-controls.sh"; then
+              git show "${BASE}:scripts/ci/public-ci.sh" > "${RUNNER_TEMP}/public-ci-base.sh"
+              bash "${RUNNER_TEMP}/public-ci-base.sh" --root . --clean-machine --range "${BASE}...HEAD" --base "${BASE}"
+            else
+              # esta rama se retira: la condición está en guides/piezas-del-arnes.md §scripts/ci/run-base-controls.sh
+              # sólo mientras la base no traiga run-base-controls.sh (el pedido que lo agrega): lo dice la base, no el pedido
+              echo "::warning::la base no trae scripts/ci/run-base-controls.sh: corren los controles del pedido"
+              bash scripts/ci/public-ci.sh --clean-machine --range "origin/${BASE_REF#refs/heads/}...HEAD"
+            fi
           else
             bash scripts/ci/public-ci.sh --clean-machine
           fi
@@ -89,7 +103,7 @@ jobs:
           for f in "${TYCON_PUBLIC_CI_OUT}"/*.log "${TYCON_PUBLIC_CI_OUT}"/agent-skills-suites/*.log; do
             [ -f "${f}" ] || continue
             echo "::group::${f##*/}"
-            cat "${f}"
+            tr '\r' ' ' < "${f}" | sed -e ':a' -e 's/::/: :/' -e 'ta' -e ':b' -e 's/##/# #/' -e 'tb'
             echo "::endgroup::"
           done
 
@@ -121,7 +135,7 @@ jobs:
           for f in "${TYCON_PUBLIC_CI_OUT}"/*.log; do
             [ -f "${f}" ] || continue
             echo "::group::${f##*/}"
-            cat "${f}"
+            tr '\r' ' ' < "${f}" | sed -e ':a' -e 's/::/: :/' -e 'ta' -e ':b' -e 's/##/# #/' -e 'tb'
             echo "::endgroup::"
           done
 

@@ -872,6 +872,87 @@ test('T28c Umbrales_SoloLectura_ControlesApagados — una sección «sólo para 
   assert.match(fs.readFileSync(path.join(ROOT, 'scripts', 'site', 'static', 'site.css'), 'utf8'), /\.form-block select:disabled[^{]*\{[^}]*opacity/, 'y se ven apagados');
 });
 
+/** La pestaña con pestañas: corre la pantalla con `secciones` y `extras`, el ancla dada, y devuelve los nodos creados. */
+async function pantallaConPestanas({ secciones, extras = {}, hash = '' }) {
+  const creados = [];
+  const nodo = (tag) => { const n = { tag, hijos: [], textContent: '', attrs: {}, setAttribute(k, v) { n.attrs[k] = v; }, appendChild(c) { n.hijos.push(c); return c; }, addEventListener() {}, replaceChildren(...cs) { n.hijos = cs; } }; creados.push(n); return n; };
+  const app = nodo('div');
+  const document = { querySelector: () => null, getElementById: (id) => (id === 'config-app' ? app : creados.find((n) => n.attrs.id === id) || null), createElement: (t) => nodo(t) };
+  const respuesta = Object.assign({ ok: true, secciones, proponer: {}, versiones: [], productos: [] }, extras);
+  new Function('document', 'fetch', 'location', ORG.pantalla())(document, () => Promise.resolve({ status: 200, json: () => Promise.resolve(respuesta) }), { hash });
+  for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
+  const dentro = (n) => { const out = []; const walk = (x) => { out.push(x); (x.hijos || []).forEach(walk); }; walk(n); return out; };
+  const visibles = dentro(app).filter((n) => n.attrs.role === 'tabpanel' && !n.attrs.hidden).map((n) => n.attrs.id);
+  const tabs = dentro(app).filter((n) => n.attrs.role === 'tab').map((n) => ({ id: n.attrs.id, sel: n.attrs['aria-selected'], cuenta: (n.hijos.find((h) => /cuenta/.test(h.attrs.class || '')) || {}).textContent || '' }));
+  const panelDe = (id) => dentro(app).filter((n) => n.attrs.role === 'tabpanel').find((p) => dentro(p).some((x) => x.attrs.id === id));
+  return { app, tabs, visibles, panelDe, resumen: app.hijos[0] };
+}
+const SEC = (id, extra = {}) => Object.assign({ id, titulo: id, repo: 'operaciones', estado: 'cargado', soloLectura: false, borrador: {}, problems: [], avisos: [] }, extra);
+const TODAS = ['sitio', 'personas', 'responsables', 'repos', 'despliegues', 'paridad', 'ado', 'canal', 'espera', 'umbrales', 'respuesta', 'modelos', 'suites', 'integraciones', 'hilos', 'actualizacion', 'instalacion'];
+
+test('Pestanas_CincoPorTema_UnaVisible — las secciones se reparten en cinco pestañas y el resumen queda arriba de todas', async () => {
+  const r = await pantallaConPestanas({ secciones: TODAS.map((id) => SEC(id)) });
+  assert.deepStrictEqual(r.tabs.map((t) => t.id), ['tab-personas', 'tab-repos', 'tab-avisos', 'tab-claude', 'tab-instalacion']);
+  assert.deepStrictEqual(r.visibles, ['pestana-personas'], 'sin ancla, se abre la primera y las otras quedan ocultas');
+  const esperado = { personas: ['sitio', 'personas', 'responsables'], repos: ['repos', 'despliegues', 'paridad', 'ado', 'productos'], avisos: ['canal', 'espera', 'umbrales'], claude: ['respuesta', 'modelos', 'suites', 'integraciones', 'hilos'], instalacion: ['actualizacion', 'instalacion', 'versiones'] };
+  for (const [tab, ids] of Object.entries(esperado)) for (const id of ids) {
+    const dom = ['productos', 'versiones'].includes(id) ? id : `seccion-${id}`;
+    assert.strictEqual((r.panelDe(dom) || { attrs: {} }).attrs.id, `pestana-${tab}`, `${id} va en ${tab}`);
+  }
+  assert.strictEqual(r.resumen.attrs.class, 'grid', 'el resumen va primero, fuera de las pestañas');
+  assert.ok(r.tabs.every((t) => t.cuenta === ''), 'todo al día: ninguna pestaña marca pendientes');
+});
+
+test('Pestanas_MarcanLoPendiente — cada pestaña cuenta las secciones con algo para arreglar y las máquinas atrasadas', async () => {
+  const secs = TODAS.map((id) => SEC(id, id === 'umbrales' ? { problems: [{ path: 'thresholds.x', message: 'mal' }] } : id === 'modelos' ? { estado: 'ilegible', motivo: 'roto' } : {}));
+  const r = await pantallaConPestanas({ secciones: secs, extras: { versiones: [{ maquina: 'm1', estado: 'atrasada' }, { maquina: 'm2', estado: 'al_dia' }] } });
+  const cuenta = Object.fromEntries(r.tabs.map((t) => [t.id, t.cuenta]));
+  assert.deepStrictEqual(cuenta, { 'tab-personas': '', 'tab-repos': '', 'tab-avisos': '1', 'tab-claude': '1', 'tab-instalacion': '1' });
+});
+
+test('Pestanas_EnlaceDirectoAbreSuPestana — #seccion-… y #pestana-… abren la pestaña que corresponde', async () => {
+  const secs = TODAS.map((id) => SEC(id));
+  assert.deepStrictEqual((await pantallaConPestanas({ secciones: secs, hash: '#seccion-umbrales' })).visibles, ['pestana-avisos']);
+  assert.deepStrictEqual((await pantallaConPestanas({ secciones: secs, hash: '#pestana-claude' })).visibles, ['pestana-claude']);
+  assert.deepStrictEqual((await pantallaConPestanas({ secciones: secs, hash: '#versiones' })).visibles, ['pestana-instalacion']);
+  assert.deepStrictEqual((await pantallaConPestanas({ secciones: secs, hash: '#nada' })).visibles, ['pestana-personas'], 'un ancla desconocida abre la primera');
+  // una sección que el arnés sume y la pantalla no conozca se muestra igual, en la última pestaña
+  const r = await pantallaConPestanas({ secciones: secs.concat(SEC('nueva')), hash: '#seccion-nueva' });
+  assert.deepStrictEqual(r.visibles, ['pestana-instalacion']);
+  assert.strictEqual(r.panelDe('seccion-nueva').attrs.id, 'pestana-instalacion');
+});
+
+test('Umbrales_VerdeDelLadoDelRojo_DichoLlano — el límite del verde no puede quedar del lado del rojo, y se dice sin nombres de claves', () => {
+  const texto = (th) => ORG.formatJson({ thresholds: th });
+  const menor = ORG.thresholdsParse(texto({ x: { direction: 'menor_es_mejor', ok_max: 3, bad_min: 1 } }));
+  assert.strictEqual(menor.ok, false);
+  assert.deepStrictEqual(menor.problems.map((p) => p.message), ['si es mejor más bajo, el límite del verde tiene que ser menor que el del rojo']);
+  const mayor = ORG.thresholdsParse(texto({ x: { direction: 'mayor_es_mejor', ok_min: 0.5, bad_max: 0.5 } }));
+  assert.deepStrictEqual(mayor.problems.map((p) => p.message), ['si es mejor más alto, el límite del verde tiene que ser mayor que el del rojo']);
+  const mal = ORG.thresholdsParse(texto({ x: { direction: 'menor_es_mejor', ok_max: 1 } }));
+  for (const p of mal.problems) assert.doesNotMatch(p.message, /ok_|bad_|direction|_es_mejor/, 'sin claves del archivo');
+  assert.strictEqual(ORG.thresholdsParse(texto({ x: { direction: 'menor_es_mejor', ok_max: 0, bad_min: 1 } })).ok, true, 'en orden, pasa');
+});
+
+test('Mensajes_EnLlano_SinRutasNiClaves — la pantalla muestra dónde con los nombres de la pantalla y los mensajes que nombran claves, en palabras', async () => {
+  const problems = [
+    { path: 'site.mailbox.account', message: 'tiene que tener la forma de una cuenta de almacenamiento (3 a 24 minúsculas o números)', sinCampo: true },
+    { path: 'people.machines.mac-1.person', message: 'clave desconocida', sinCampo: true },
+    { path: 'models.ceiling', message: 'con techo obligatorio falta «ceiling»', sinCampo: true },
+    { path: 'deployments.products.acme', message: 'tiene que declarar staging, production o los dos', sinCampo: true },
+    { path: 'merge_suites.repos.0', message: 'tiene que traer rule o full_tests_pipeline (sin ninguno, la entrada no dice nada)', sinCampo: true },
+  ];
+  const r = await pantallaConPestanas({ secciones: TODAS.map((id) => SEC(id, id === 'sitio' ? { problems } : {})) });
+  const textos = []; const walk = (n) => { if (n.textContent) textos.push(n.textContent); (n.hijos || []).forEach(walk); }; walk(r.panelDe('seccion-sitio'));
+  const err = textos.filter((t) => / › /.test(t)).join('\n');
+  assert.match(err, /el sitio › dónde dejan sus corridas › cuenta: tiene que tener la forma de una cuenta/);
+  assert.match(err, /personas › máquinas › «mac-1» › persona: el arnés no conoce este dato/);
+  assert.match(err, /modelos › techo: con el techo obligatorio, falta elegir el modelo del techo/);
+  assert.match(err, /despliegues › productos › «acme»: tiene que tener el paso de prueba, el de producción o los dos/);
+  assert.match(err, /pruebas al mergear › repos › fila 1: tiene que decir la regla o el pipeline de las pruebas completas/);
+  assert.doesNotMatch(err, /site\.|mailbox|merge_suites|full_tests_pipeline|staging|ceiling»/, 'ninguna clave del archivo a la vista');
+});
+
 // ── tanda C: dónde corren las suites al mergear (7.28) y los modelos de cada trabajo (7.29) ──────────────────────
 const GH = (repo) => ({ platform: 'github', org: 'acme', repo });
 const TR_BASE = { version: 1, public: GH('harness'), profile: GH('profile'), operations: GH('ops') };
