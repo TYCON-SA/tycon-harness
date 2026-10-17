@@ -86,7 +86,8 @@
         "scripts/tests/fixtures/relocate-machine/**",
         "scripts/tests/fixtures/layer-lab-allowlist.json",
         "scripts/tests/fixtures/layer-lab-table.json",
-        "scripts/tests/fixtures/release-api-baseline-token.txt"
+        "scripts/tests/fixtures/release-api-baseline-token.txt",
+        "scripts/tests/fixtures/team-init-example/**"
       ]
     }
   },
@@ -369,7 +370,10 @@
       ]
     },
     "installer-shared-pieces.p1.test.sh": {
-      "why": "~31 s en la validación 170 #11961 (2026-10-05). Corre el instalador de verdad (o el programa harness.js con su aplicador): hereda `shared` —el instalador y todo lo que instala— y suma su propia prueba, el laboratorio (scripts/tests/lib/), los datos de prueba y las carpetas que la prueba nombra, más las que nombra el instalador fuera de `shared` (scripts/metrics/, scripts/production/ y la lista de suites). Ante la duda, la carpeta entra. Un cambio que no toca nada de eso (guías, nocturnos, métricas sueltas, CI) no la corre en la rama; el banco nocturno la corre siempre.",
+      "why": "~31 s en la validación 170 #11961 (2026-10-05). Corre el instalador de verdad (o el programa harness.js con su aplicador): hereda `shared` —el instalador y todo lo que instala— y suma su propia prueba, el laboratorio (scripts/tests/lib/), los datos de prueba y las carpetas que la prueba nombra, más las que nombra el instalador fuera de `shared` (scripts/metrics/, scripts/production/ y la lista de suites). Ante la duda, la carpeta entra. Un cambio que no toca nada de eso (guías, nocturnos, métricas sueltas, CI) no la corre en la rama; el banco nocturno la corre siempre. `deps`: graph — su único `git ls-files` lista el árbol real para copiarlo a una carpeta propia y trabajar aislada (no escribe en el clon); lo que mide son sus patrones, no todo el repo.",
+      "deps": "graph",
+      "graph_whole_lines": 1,
+      "graph_whole_sha": "8d567d759d86",
       "patterns": [
         "scripts/tests/installer-shared-pieces.p1.test.sh",
         "scripts/tests/installer-shared-pieces.test.sh",
@@ -382,7 +386,10 @@
       ]
     },
     "installer-shared-pieces.p2.test.sh": {
-      "why": "~31 s en la validación 170 #11961 (2026-10-05). Corre el instalador de verdad (o el programa harness.js con su aplicador): hereda `shared` —el instalador y todo lo que instala— y suma su propia prueba, el laboratorio (scripts/tests/lib/), los datos de prueba y las carpetas que la prueba nombra, más las que nombra el instalador fuera de `shared` (scripts/metrics/, scripts/production/ y la lista de suites). Ante la duda, la carpeta entra. Un cambio que no toca nada de eso (guías, nocturnos, métricas sueltas, CI) no la corre en la rama; el banco nocturno la corre siempre.",
+      "why": "~31 s en la validación 170 #11961 (2026-10-05). Corre el instalador de verdad (o el programa harness.js con su aplicador): hereda `shared` —el instalador y todo lo que instala— y suma su propia prueba, el laboratorio (scripts/tests/lib/), los datos de prueba y las carpetas que la prueba nombra, más las que nombra el instalador fuera de `shared` (scripts/metrics/, scripts/production/ y la lista de suites). Ante la duda, la carpeta entra. Un cambio que no toca nada de eso (guías, nocturnos, métricas sueltas, CI) no la corre en la rama; el banco nocturno la corre siempre. `deps`: graph — su único `git ls-files` lista el árbol real para copiarlo a una carpeta propia y trabajar aislada (no escribe en el clon); lo que mide son sus patrones, no todo el repo.",
+      "deps": "graph",
+      "graph_whole_lines": 1,
+      "graph_whole_sha": "8d567d759d86",
       "patterns": [
         "scripts/tests/installer-shared-pieces.p2.test.sh",
         "scripts/tests/installer-shared-pieces.test.sh",
