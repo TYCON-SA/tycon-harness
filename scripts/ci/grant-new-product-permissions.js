@@ -5,7 +5,7 @@
  * necesitan para funcionar. Son cuatro, y cada uno se descubrió chocándose contra él.
  *
  * 🔴 POR QUÉ EXISTE (alta de un producto nuevo, 2026-09-28, y su repetición el mismo día
- *    — guides/incident-log.md#case-new-product-permissions-2026-09-28).
+ *    — guides/maintaining/incident-log.md#case-new-product-permissions-2026-09-28).
  *
  * Un producto nuevo no arranca hasta tener las cuatro cosas de abajo. Ninguna da un error que se
  * entienda, y las cuatro se ven igual: "el pipeline falla y no sé por qué".

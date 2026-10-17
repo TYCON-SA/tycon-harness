@@ -10,7 +10,7 @@
 #   v3 · subir sin marcar → ejecutar → marcar como actual.   Marcar NO CARGA el plugin: producción
 #        sigue sirviendo la versión anterior con la nueva marcada. Es el incidente de un producto del equipo del
 #        2026-08-15, y el staging de otro producto ya lo tenía comentado con esa fecha
-#        — guides/incident-log.md#case-mark-without-load-2026-08-15.
+#        — guides/maintaining/incident-log.md#case-mark-without-load-2026-08-15.
 #   v4 · subir sin marcar → ejecutar → activar.              Activar carga pero NO marca. Funciona
 #        hasta el próximo reinicio del App Service: al arrancar, el host carga sólo lo que está
 #        marcado como actual Y estaba corriendo, así que después del reinicio no carga NINGUNA.
@@ -332,7 +332,7 @@ echo "   migraciones pendientes: $PENDIENTES · retrocesos: $RETROCESOS"
 #
 # Medido en un producto del equipo el 2026-09-03: la 006 está excluida desde el 29 de agosto con su motivo (una
 # columna de compatibilidad que otro sistema arregló y que, si viaja, se reinstala sola), y el host la
-# devolvía como el único retroceso — guides/incident-log.md#case-excluded-migration-as-rollback-2026-09-03. Ahora se compara POR NOMBRE contra esa misma lista: no hay un
+# devolvía como el único retroceso — guides/maintaining/incident-log.md#case-excluded-migration-as-rollback-2026-09-03. Ahora se compara POR NOMBRE contra esa misma lista: no hay un
 # segundo lugar donde declarar lo mismo, y no se puede tolerar un retroceso que no se haya excluido
 # deliberadamente. Cualquier retroceso que NO esté en la lista frena igual que antes.
 #

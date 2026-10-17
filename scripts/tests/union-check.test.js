@@ -226,23 +226,22 @@ test('Gitignore_UnifiedRule — primero el arnés, sin repetir, y de agent-skill
   assert.equal(lib().unifiedGitignore('a\n', '# se queda\n\n# se va\n.advisors/\nc\n'), 'a\n# se queda\n\nc\n');
 });
 
-test('Dispatcher_TextFromExporter — el despachador sale del exportador, con sus dos partes', () => {
+test('Dispatcher_TextOfTheUnion — el despachador de la unión, con sus dos partes, fijo en union-check', () => {
   const text = lib().dispatcherText();
   assert.match(text, /^#!\/usr\/bin\/env bash\n/);
   assert.match(text, /pre-commit-harness/);
   assert.match(text, /pre-commit-skills/);
   assert.ok(text.endsWith('\n'), 'termina en salto de línea');
-  // y es el mismo texto que escribe el exportador: se compara contra su fuente, sin copiarlo acá
+  // el exportador de hoy ya no lo trae (el arnés corre un solo control): el texto de la unión vive en union-check
   const source = fs.readFileSync(path.join(ROOT, 'scripts', 'publishing', 'export.js'), 'utf8');
-  for (const line of text.split('\n').filter(Boolean)) {
-    assert.ok(source.includes(`'${line}'`), `el exportador no trae esta línea del despachador: ${line}`);
-  }
+  assert.doesNotMatch(source, /PRE_COMMIT_DISPATCHER/, 'el exportador no trae el despachador');
 });
 
 // 🔴 pase adversarial: con export.js en disco con saltos CRLF (un checkout de Windows con autocrlf) la expresión que lee
 // la constante no la encontraba, `tree` salía 2 culpando al exportador y todo el laboratorio de esta suite caía.
 test('Dispatcher_CrlfCheckout_SameText — el fin de línea del checkout no cambia el texto del despachador', () => {
-  const source = fs.readFileSync(path.join(ROOT, 'scripts', 'publishing', 'export.js'), 'utf8');
+  // un exportador de la unión, con la constante del despachador (el de hoy ya no la trae)
+  const source = `'use strict';\nconst PRE_COMMIT_DISPATCHER = [\n${lib().dispatcherText().split('\n').map((l) => `  ${JSON.stringify(l)},`).join('\n')}\n].join('\\n');\nmodule.exports = {};\n`;
   const dir = tmp('uc-crlf-');
   const crlf = path.join(dir, 'export.js');
   fs.writeFileSync(crlf, source.replace(/\r?\n/g, '\r\n'));
@@ -419,16 +418,16 @@ test('T6 Papers_InactiveSkillsGuide_GitignoreCitesIt_PostCommitIgnoreAsIs — ju
   const papers = (base) => tool(l.dir, 'papers', '--base', base, '--harness', l.h0, '--skills', l.s0);
   const cite = () => {
     const p = path.join(l.dir, '.gitignore');
-    fs.writeFileSync(p, fs.readFileSync(p, 'utf8').replace('README.md §«Skills que no se cargan»', 'guides/inactive-skills.md'));
+    fs.writeFileSync(p, fs.readFileSync(p, 'utf8').replace('README.md §«Skills que no se cargan»', 'guides/maintaining/inactive-skills.md'));
   };
-  const guide = () => write(l.dir, 'guides/inactive-skills.md', '# Skills que no se cargan\n');
+  const guide = () => write(l.dir, 'guides/maintaining/inactive-skills.md', '# Skills que no se cargan\n');
 
   const base = variant(l.dir, l.u, 'p-ok', () => { guide(); cite(); }, 'la guía y la cita');
   const ok = papers(base);
   assert.equal(ok.status, 0, `la base correcta: ${ok.stdout}${ok.stderr}`);
 
   const cases = [
-    ['p-no-guide', 'guides/inactive-skills.md', () => cite()],
+    ['p-no-guide', 'guides/maintaining/inactive-skills.md', () => cite()],
     ['p-old-cite', '.gitignore', () => guide()],
     ['p-ignore', '.tycon/post-commit-ignore', () => { guide(); cite(); fs.appendFileSync(path.join(l.dir, '.tycon/post-commit-ignore'), 'otra\n'); }],
     ['p-tycon', '.tycon/advisors.yaml', () => { guide(); cite(); fs.appendFileSync(path.join(l.dir, '.tycon/advisors.yaml'), 'deep_review: off\n'); }],

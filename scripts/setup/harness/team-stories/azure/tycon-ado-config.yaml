@@ -1,6 +1,6 @@
 # Config de Azure DevOps del repo {{STORIES_REPO}} — la consumen la creación de work items, el paso
 # que los pone Activos y el cierre con trazabilidad.
-# Schema: guides/ado-projects.md del arnés
+# Schema: guides/integrations/ado-projects.md del arnés
 # Creado {{DATE}} en el alta de {{TEAM}}.
 #
 # El tipo de work item depende de la plantilla de proceso del proyecto: Agile → "User Story" (lo que deja el alta);

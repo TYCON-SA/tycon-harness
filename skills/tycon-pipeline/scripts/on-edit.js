@@ -53,7 +53,7 @@ const LEGACY_MARKER_PATH = path.join(STATE_DIR, 'active.json');
 // (`stories`, `epic-*`): el mismo defecto un nivel más arriba, que se cayó en otro producto
 // (`specs/bizuit-bpmn-mcp/` → cero stories, aviso mudo otra vez). Ahora una story es un `.md` que
 // declara `story:` y `status:` en su frontmatter, viva donde viva.
-// Casos disparadores: 2026-07-28 (un producto del equipo) y 2026-08-15 (otro producto) — guides/incident-log.md#story-discovery-nombres
+// Casos disparadores: 2026-07-28 (un producto del equipo) y 2026-08-15 (otro producto) — guides/maintaining/incident-log.md#story-discovery-nombres
 const { findStoryReferencing } = require('./lib/story-discovery.js');
 const atddGate = require('./lib/atdd-commit-gate.js');
 

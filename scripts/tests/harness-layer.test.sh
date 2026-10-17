@@ -79,7 +79,8 @@ INTERNO="$BASE/interno"; mkdir -p "$INTERNO"; g "$INTERNO" init -q
 put "$INTERNO" .gitignore $'node_modules/\n**/.advisors/*'
 put "$INTERNO" .githooks/pre-commit $'#!/usr/bin/env bash\necho despachador'
 put "$INTERNO" guides/guia.md 'una guía pública'
-put "$INTERNO" guides/incident-log.md 'el registro de incidentes (privado, suelto en una carpeta pública)'
+put "$INTERNO" guides/maintaining/guia-de-quien-mantiene.md 'una guía pública de quien mantiene'
+put "$INTERNO" guides/maintaining/incident-log.md 'el registro de incidentes (privado, suelto en una carpeta pública)'
 put "$INTERNO" guides/despues-igual.md 'privado hoy; la versión siguiente lo publica igual'
 put "$INTERNO" guides/despues-distinto.md 'privado hoy; la versión siguiente lo publica con otro contenido'
 put "$INTERNO" scripts/tests/suites.json $'{\n  "diarias": [],\n  "interna": true\n}'
@@ -90,7 +91,7 @@ put "$INTERNO" tasks/vieja.md 'la versión siguiente la borra'
 put "$INTERNO" tasks/vieja-editada.md 'la versión siguiente la borra, pero alguien la editó'
 put "$INTERNO" .dashboard/sdlc-stage-2026-10-01.json '{"punto":"del día"}'
 # qué publica el interno (AC 5): su lista blanca de juguete deja afuera lo privado suelto en guides/ y scripts/; el resto
-# de lo privado (tasks/, .dashboard/, guides/incident-log.md) ya lo dejan afuera las exclusiones fijas del exportador
+# de lo privado (tasks/, .dashboard/, guides/maintaining/incident-log.md) ya lo dejan afuera las exclusiones fijas del exportador
 put "$INTERNO" scripts/publishing/allowlist.json '{ "packages": { "core": {
   "arnes": { "in": ["**"], "out": [
     { "glob": "guides/despues-*.md", "reason": "privados hoy: la versión siguiente los publica" },
@@ -99,7 +100,7 @@ put "$INTERNO" scripts/publishing/allowlist.json '{ "packages": { "core": {
 cp "$RAIZ/scripts/tests/fixtures/layer-lab-table.json" "$INTERNO/scripts/publishing/replacements.json"
 g "$INTERNO" add -A; g "$INTERNO" commit -q -m 'interno v1'
 C1="$(g "$INTERNO" rev-parse HEAD)"
-PRIVADOS="tasks/,.dashboard/,guides/incident-log.md,guides/despues-igual.md,guides/despues-distinto.md,scripts/herramienta-privada.sh"
+PRIVADOS="tasks/,.dashboard/,guides/maintaining/incident-log.md,guides/despues-igual.md,guides/despues-distinto.md,scripts/herramienta-privada.sh"
 node "$TOY" --internal "$INTERNO" --out "$BASE/publico" --leave-out "$PRIVADOS" --transform scripts/tests/suites.json:suites-json >/dev/null \
   || mal "T5 el exportador de juguete falló"
 
@@ -120,7 +121,7 @@ PY
 )"
 [ "$BIEN" = "8 bien" ] && ok "T5 cada archivo de la capa con el sha256 del manifiesto (8)" || mal "T5 manifiesto contra el disco: $BIEN"
 IGUALES=1
-for p in guides/incident-log.md tasks/tarea.md scripts/tests/suites.json scripts/herramienta-privada.sh; do
+for p in guides/maintaining/incident-log.md tasks/tarea.md scripts/tests/suites.json scripts/herramienta-privada.sh; do
   g "$INTERNO" show "$C1:$p" > "$BASE/blob"; cmp -s "$BASE/blob" "$ARBOL/$p" || { IGUALES=0; mal "T5 $p no es el blob interno"; }
 done
 [ "$IGUALES" = 1 ] && ok "T5 el contenido es el del blob interno (agregados y pisado)"
@@ -133,7 +134,7 @@ case "$EXCL" in *"# tycon-layer"*) ok "T5 el bloque # tycon-layer está" ;; *) m
 [ "$(printf '%s\n' "$EXCL" | grep -c '^# fuente: internal')" = 1 ] && ok "T5 el bloque nombra la fuente" || mal "T5 el bloque no nombra la fuente: $EXCL"
 [ "$(printf '%s\n' "$EXCL" | head -2)" = $'# lo mío\nmis-notas/' ] && ok "T5 lo de la persona, fuera del bloque, intacto" || mal "T5 lo de la persona cambió: $EXCL"
 FALTAN=""
-for l in /tasks/ /.dashboard/ /guides/incident-log.md /guides/despues-igual.md /scripts/herramienta-privada.sh; do
+for l in /tasks/ /.dashboard/ /guides/maintaining/incident-log.md /guides/despues-igual.md /scripts/herramienta-privada.sh; do
   printf '%s\n' "$EXCL" | grep -xF "$l" >/dev/null || FALTAN="$FALTAN $l"
 done
 [ -z "$FALTAN" ] && ok "T5 carpetas privadas enteras y archivos sueltos uno por uno" || mal "T5 faltan en el bloque:$FALTAN"
@@ -173,7 +174,7 @@ SALIDA_V="$(node "$LAYER" verify --tree "$ARBOL" --manifest "$MANIFIESTO" 2>&1)"
 # ── la versión siguiente: dos agregados pasan a ser públicos, el interno borra dos ────────────────────────────────────
 g "$INTERNO" rm -q tasks/vieja.md tasks/vieja-editada.md; g "$INTERNO" commit -q -m 'interno v2'
 C2="$(g "$INTERNO" rev-parse HEAD)"
-node "$TOY" --internal "$INTERNO" --out "$BASE/publico2" --version 2026.10.06.2 --leave-out "tasks/,.dashboard/,guides/incident-log.md,scripts/herramienta-privada.sh" \
+node "$TOY" --internal "$INTERNO" --out "$BASE/publico2" --version 2026.10.06.2 --leave-out "tasks/,.dashboard/,guides/maintaining/incident-log.md,scripts/herramienta-privada.sh" \
   --transform scripts/tests/suites.json:suites-json >/dev/null || mal "T5 el exportador de juguete (v2) falló"
 node "$LAYER" compute --internal "$INTERNO" --internal-commit "$C2" --public "$BASE/publico2" --out "$BASE/capa-2.json" >/dev/null 2>&1 || mal "T5 compute v2 no salió 0"
 put "$BASE/publico2" guides/despues-distinto.md 'publicado con otro contenido'

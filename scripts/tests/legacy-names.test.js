@@ -674,7 +674,7 @@ test('T24 Export_BrokenMapBlocksCopyNotTheBeforeSnapshot', () => {
   const found = exporter.mencionesViejas([
     ['arnes/scripts/a.sh', `node scripts/metrics/${'corri' + 'das'}.js`],
     ['arnes/scripts/b.sh', `node scripts/metrics/subir-${'corri' + 'das'}.js`],
-    ['arnes/guides/nombres-en-ingles.md', `scripts/metrics/${'corri' + 'das'}.js`],
+    ['arnes/guides/maintaining/nombres-en-ingles.md', `scripts/metrics/${'corri' + 'das'}.js`],
   ], viejos);
   assert.deepStrictEqual(found.map((h) => h.archivo), ['arnes/scripts/a.sh'], 'la ruta completa: subir-…js no cuenta, y la guía de la convención puede nombrarla');
   // otra ruta que TERMINA igual (un archivo de agent-skills) no es la vieja; la vieja con su raíz delante, sí

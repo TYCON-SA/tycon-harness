@@ -146,7 +146,7 @@ function conDependientes(g, inicial) {
  * listas escritas por una persona y las dos pueden olvidarse de algo, pero fallan para lados
  * opuestos: si al `trigger:` le falta una carpeta, el código NO SE CONSTRUYE y nadie se entera
  * (es lo que pasó con `BD/**` en un producto del equipo el 2026-09-04
- * — guides/incident-log.md#case-trigger-missing-folder-2026-09-04). Si a ésta le falta un archivo inerte, se
+ * — guides/maintaining/incident-log.md#case-trigger-missing-folder-2026-09-04). Si a ésta le falta un archivo inerte, se
  * construye DE MÁS: cuesta minutos y se nota enseguida, porque alguien ve que se redesplegaron
  * todos los formularios sin motivo. Por eso el olvido acá es barato — y por eso cada entrada que
  * se AGREGA sí es cara: es un permiso, y un permiso mal dado falla hacia el lado peligroso.
@@ -169,7 +169,7 @@ const NO_AFECTAN = [
   // tocar uno de ellos SUBE LA VERSIÓN de todos los formularios y los REDESPLIEGA. Pasó el
   // 2026-09-04 con otro producto — el cambio que lo trajo a la forma canónica agregó tres de estos archivos
   // y redesplegó los ocho formularios sin una línea de código nueva
-  // — guides/incident-log.md#case-harness-files-redeploy-all-forms-2026-09-04.
+  // — guides/maintaining/incident-log.md#case-harness-files-redeploy-all-forms-2026-09-04.
   //
   // Las tres declaraciones de deuda: las lee el paso de pruebas y el de dependencias para decidir
   // qué está amparado. No entran en ningún paquete.
@@ -223,7 +223,7 @@ function esCompartido(rel, forms) {
  * este archivo — sin agregar una sola prueba ni el jest.config.js. En el pull request no se probó
  * ni se juzgó a nadie ("el cambio toca sólo archivos que no afectan a ningún formulario") y salió
  * VERDE. El rojo llegó recién en `main`, donde se prueban todos, y con el merge ya hecho
- * — guides/incident-log.md#deuda-de-pruebas-borrada-sin-pagarla-2026-09-05.
+ * — guides/maintaining/incident-log.md#deuda-de-pruebas-borrada-sin-pagarla-2026-09-05.
  *
  * Entonces: cuando el cambio toca la declaración de deuda, los formularios cuya declaración ENTRA
  * o SALE se suman a lo que hay que probar. Los dos sentidos importan, porque el veredicto falla en

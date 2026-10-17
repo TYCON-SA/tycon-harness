@@ -1,5 +1,5 @@
 # ===================================================
-# Nombres por herramienta — lado CODEX (actualizado 2026-08-23)
+# Nombres por herramienta — lado CODEX
 # ===================================================
 
 Las reglas de este archivo refieren a las tools por **lo que hacen**; los nombres exactos
@@ -26,13 +26,13 @@ existe — y en un canario, ORDENÁ llamarla en vez de preguntar si está.
 
 | Función | En Codex hoy |
 |---|---|
-| Telegram — avisar / editar aviso | ✅ `~/.claude/tycon-harness/scripts/lib/tycon-telegram-notify.sh "texto"` (imprime el `message_id`; `--edit <id> "texto"` reescribe ese aviso). Sólo SALIDA: recibir sigue siendo exclusivo de Claude Code con `--channels` — dos consumidores del mismo bot se pisan con un 409 |
-| Clockify — abrir time entry | `mcp__clockify__create_clockify_time_entry` |
-| Clockify — actualizar/cerrar time entry | `mcp__clockify__update_clockify_time_entry` |
-| Clockify — listar projects / workspaces / entries | `mcp__clockify__list_clockify_projects` · `list_clockify_workspaces` · `list_clockify_time_entries` |
-| Memoria persistente (engram) — guardar / buscar / contexto | `mcp__plugin_engram_engram__mem_save` · `mem_search` · `mem_context` · `mem_session_summary` |
+| Telegram — avisar / editar aviso | ✅ `~/.claude/tycon-harness/scripts/lib/tycon-telegram-notify.sh "texto"` (imprime el `message_id`; `--edit <id> "texto"` reescribe ese aviso). Sólo SALIDA: recibir sigue siendo exclusivo de Claude Code con `--channels` — dos consumidores del mismo bot se pisan con un 409 | <!-- integration: telegram -->
+| Clockify — abrir time entry | `mcp__clockify__create_clockify_time_entry` | <!-- integration: clockify -->
+| Clockify — actualizar/cerrar time entry | `mcp__clockify__update_clockify_time_entry` | <!-- integration: clockify -->
+| Clockify — listar projects / workspaces / entries | `mcp__clockify__list_clockify_projects` · `list_clockify_workspaces` · `list_clockify_time_entries` | <!-- integration: clockify -->
+| Memoria persistente (engram) — guardar / buscar / contexto | `mcp__plugin_engram_engram__mem_save` · `mem_search` · `mem_context` · `mem_session_summary` | <!-- integration: engram -->
 | Grafo de código (codebase-memory) — búsqueda / trazas | `mcp__codebase_memory__search_graph` · `mcp__codebase_memory__trace_path` (los usan los advisors de wiring y sibling-pattern) |
-| CodeGraph — búsqueda estructural de código | tools `mcp__codegraph__codegraph_*` (`_search`, `_context`, `_callers`, `_impact`, …) — el deployer lo registra **sólo si el binario `codegraph` está en el PATH** de la máquina; si no está, declarar la ausencia y usar `grep` |
+| CodeGraph — búsqueda estructural de código | tools `mcp__codegraph__codegraph_*` (`_search`, `_context`, `_callers`, `_impact`, …) — el deployer lo registra **sólo si el binario `codegraph` está en el PATH** de la máquina; si no está, declarar la ausencia y usar `grep` | <!-- integration: codegraph -->
 | Pregunta abierta por voz (Spokenly) | `mcp__spokenly__ask_user_dictation` — **sólo si** el server HTTP de Spokenly figura en el `~/.claude.json` de la máquina; si no, la pregunta va por el canal normal |
 | Pregunta con opciones cerradas | ❌ sin equivalente — usar pregunta numerada en texto plano con opción default explícita (definición §2.3 de codex-migration.md) |
 | Ejecución en segundo plano | shell con `&` + archivo de log; no hay notificación automática de término |

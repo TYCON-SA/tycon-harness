@@ -507,7 +507,7 @@ function readListField(md, key) {
 }
 
 // ── Capa 4 de la PANTALLA (story 7.24) ─────────────────────────────────────────────────────────────────────────────
-// Caso disparador (2026-10-14, guides/incident-log.md#case-screen-passed-all-controls-unreadable-2026-10-14): una ventana pasó todos los controles y el
+// Caso disparador (2026-10-14, guides/maintaining/incident-log.md#case-screen-passed-all-controls-unreadable-2026-10-14): una ventana pasó todos los controles y el
 // dueño la vio «inentendible» en staging. La capa 4 leía sólo la guía; las marcas sobre textos de la pantalla se
 // «resolvieron» reescribiendo la guía, y el texto malo siguió en el código. Ahora: (a) la pasada del tester también
 // lee la pantalla y deja `<clave>-legibilidad-ui.md`; (b) una marca citada con «» que sigue en la pantalla frena.

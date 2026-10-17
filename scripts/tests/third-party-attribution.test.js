@@ -85,9 +85,10 @@ test('Attribution_Coverage_ForeignSkillReAdded_FailsNamingIt — control negativ
 test('Attribution_EccCredits_MatchTheManifest — las piezas que acreditan a ECC son las derivadas declaradas', () => {
   // Fuera de la cuenta, lo que nombra a ECC sin acreditarlo: el manifiesto (lo declara), las pruebas (lo buscan) y las
   // plantillas de los papeles que el repo del equipo conserva por un tiempo (su NOTICE LISTA las derivadas para dar el
-  // crédito; no es una de ellas). Sin la última, la suite sale roja en el árbol armado del repo del equipo.
+  // crédito; no es una de ellas). Sin esa exclusión, la suite sale roja en el árbol armado del repo del equipo. También quedan
+  // fuera las decisiones fechadas (guides/decisions/): son historia que vive sólo en el repo de mantenimiento y no se publican.
   const r = git(ROOT, ['grep', '-l', ...ECC_MARKS.flatMap((m) => ['-e', m]), '--', 'guides', 'scripts',
-    ':!scripts/publishing/third-party-skills.json', ':!scripts/tests', ':!scripts/publishing/public-files']);
+    ':!scripts/publishing/third-party-skills.json', ':!scripts/tests', ':!scripts/publishing/public-files', ':!guides/decisions']);
   // git grep sale 1 cuando no encuentra nada: eso también es un resultado (y uno malo: ver abajo), no un error
   assert.ok(r.status === 0 || r.status === 1, `no pude buscar los créditos a ECC: ${r.stderr}`);
   const credited = r.stdout.split('\n').filter(Boolean).sort();

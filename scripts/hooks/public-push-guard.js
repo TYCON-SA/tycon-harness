@@ -72,7 +72,7 @@
 //   node public-push-guard.js range --base <commit> --head <commit> [--branch <nombre>] [--title-file <archivo>]
 //        [--body-file <archivo>] [--json]       (tanda F2 · AC 23: un PEDIDO, en su validación — cada commit que suma a
 //        su rama destino, el nombre de la rama, el título y el cuerpo. No le pregunta nada al remoto y la lista es
-//        siempre obligatoria; lo llama el paso «El freno de publicación sobre el pedido» de pipelines/azure-pipelines-pr.yml)
+//        siempre obligatoria; lo llama el paso «El freno de publicación sobre el pedido» de pipelines/azure-pipelines-maintainers-pr.yml)
 //   node public-push-guard.js status [--fetch]                         (¿está puesto?, ¿de dónde sale la lista?, ¿está al
 //        día?; con `--fetch` se le pregunta además al remoto del clon de la lista. Su código no cambia por la frescura)
 //   node public-push-guard.js                                          (sin argumentos: el freno previo a la herramienta
@@ -82,7 +82,7 @@
 // base que git no conoce, el tope de tiempo sin hallazgos).
 // Como freno previo a la herramienta: 2 = el comando no corre · 0 = pasa.
 // TYCON_PUBLIC_PUSH_TREAT_AS_PUBLIC (carpetas, separadas como el PATH) AGREGA remotos locales a mirar: es de las pruebas.
-// TYCON_PUBLIC_PUSH_LIMIT_MS cambia el tope de tiempo (120 s). Guía: guides/publicacion-espejo.md §«El freno antes de publicar».
+// TYCON_PUBLIC_PUSH_LIMIT_MS cambia el tope de tiempo (120 s). Guía: guides/maintaining/publicacion-espejo.md §«El freno antes de publicar».
 
 const fs = require('fs');
 const os = require('os');

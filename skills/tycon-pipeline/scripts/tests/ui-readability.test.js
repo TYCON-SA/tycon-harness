@@ -2,7 +2,7 @@
 /**
  * ui-readability.test.js — la pantalla se revisa con ojos de usuario (story 7.24).
  *
- * Caso disparador (2026-10-14, guides/incident-log.md#case-screen-passed-all-controls-unreadable-2026-10-14): una ventana pasó todos los controles y
+ * Caso disparador (2026-10-14, guides/maintaining/incident-log.md#case-screen-passed-all-controls-unreadable-2026-10-14): una ventana pasó todos los controles y
  * el dueño la vio «inentendible» en staging. La revisión de legibilidad sólo leía la guía del tester, y sus marcas se
  * resolvieron reescribiendo la guía: el texto malo siguió en la pantalla.
  *

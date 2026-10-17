@@ -2,7 +2,7 @@
 
 **Qué es**: la red que verifica que los controles del arnés (hoy: los ~20 hooks; en Etapa D: los
 28 advisors) hacen lo que dicen — en Claude Code Y en Codex — antes de que una regresión llegue a
-producción. Nace en la Etapa B del plan de migración (`codex-migration.md` §Etapa B); su primera
+producción. Nace con el plan de llevar el arnés a Codex; su primera
 función es proteger **a los dos lados**: toda pieza que la migración reescribe debe seguir verde en
 Claude antes de mirar Codex.
 
@@ -398,5 +398,5 @@ node scripts/controls-bench/advisor-runner.js --check-apps-off
 ---
 
 **Por qué**: "un control que hay que acordarse de invocar es un control que no corre"
-(`packs/bizuit/guides/bizuit-bpmn-spec-contract.md`), aplicado al arnés entero: los controles ahora tienen su propio
+(la guía `bizuit-bpmn-spec-contract.md` del paquete bizuit), aplicado al arnés entero: los controles ahora tienen su propio
 control.

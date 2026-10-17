@@ -53,7 +53,7 @@
 //   --public-remote <remoto|dirección> dice cuál es el repo público (si no, `origin` cuando es un repo de GitHub).
 //   Para otra herramienta: require(...).scan(text, zone[, lookup]) → [{ form, value, line, col }] (pura: sin disco ni
 //   git; `lookup`, de `publicLookup(repo, remoto)`, es lo único que sale a preguntar, y sólo si hay algo que distinguir).
-// Guía: guides/publicacion-espejo.md §«La historia interna»
+// Guía: guides/maintaining/publicacion-espejo.md §«La historia interna»
 
 const fs = require('fs');
 const os = require('os');
@@ -795,7 +795,7 @@ function report(findings, blocks, publicProblem = null) {
     '      con su archivo (la ruta con que sale), su forma, el valor exacto y el motivo (nunca un archivo entero).',
     '  (d) Si nombra un pedido o un commit del repo público: el pedido con numeral (`#N`); el control le pregunta al',
     '      repo público si existen. Un número de Azure («PR N», «PR !N», una corrida) sigue siendo interno.',
-    '', 'Guía: guides/publicacion-espejo.md §«La historia interna».');
+    '', 'Guía: guides/maintaining/publicacion-espejo.md §«La historia interna».');
   const distinguishable = new Set(['pr-number', 'azure-run', 'private-commit']);
   if (publicProblem && findings.some((f) => distinguishable.has(f.form))) {
     l.push('', `No pude preguntarle al repo público (${publicProblem}): un pedido o un commit de ese repo no se distingue y`,

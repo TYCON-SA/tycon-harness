@@ -26,8 +26,8 @@ const { spawnSync } = require('child_process');
 
 const RAIZ = path.resolve(__dirname, '..', '..');
 const NEW_NAMES = path.join(RAIZ, 'scripts', 'publishing', 'new-names.js');
-// el guion del pre-commit del arnés según el layout: en la copia pública de un solo repo `.githooks/pre-commit` es un
-// despachador generado y el guion de verdad es `pre-commit-harness` (lo elige scripts/tests/lib/pre-commit-hook.js)
+// el guion de los controles del pre-commit según el layout: `.githooks/pre-commit` sólo llama a
+// `.githooks/pre-commit-checks`, que es el de verdad (lo elige scripts/tests/lib/pre-commit-hook.js)
 const { preCommitHook } = require('./lib/pre-commit-hook.js');
 const HOOK = preCommitHook('harness', RAIZ);
 
@@ -146,7 +146,7 @@ function buildTemplate() {
     'guides/permitido.md': '# Permitido\n',
     'guides/limpio.md': '# Limpio\n',
     'guides/advisor-rules-catalog.md': CATALOG,
-    'guides/incident-log.md': '# Incidentes\n',
+    'guides/maintaining/incident-log.md': '# Incidentes\n',
     'adapters/codex/agents/MANIFEST.json': { advisors: ['revisor-nucleo', 'revisor-publico', 'revisor-cliente'] },
     'adapters/codex/agents/revisor-nucleo.toml': 'name = "revisor-nucleo"\n',
     'specs/x.md': '# Story\n',
@@ -236,7 +236,7 @@ test('NewNames_MessageSaysWhereWhatAndHowOut', () => {
 test('T33 NewNames_Message_SendsToNeutralNames — la salida (a) manda a un nombre neutro, no al inventado de la tabla', () => {
   // la otra mitad del criterio: la sección de la guía dice lo mismo y nombra la story que cambió la regla
   {
-    const guide = fs.readFileSync(path.join(__dirname, '..', '..', 'guides', 'publicacion-espejo.md'), 'utf8');
+    const guide = fs.readFileSync(path.join(__dirname, '..', '..', 'guides', 'maintaining', 'publicacion-espejo.md'), 'utf8');
     const from = guide.indexOf('El núcleo sin nombres');
     assert.ok(from >= 0, 'la guía trae la sección «El núcleo sin nombres»');
     const section = guide.slice(from);
@@ -327,7 +327,7 @@ test('NewNames_PathWithName_Blocks', () => {
 test('NewNames_FileThatDoesNotShip_Silent', () => {
   const l = lab();
   const add = (rel) => stage(l.arnes, { [rel]: `${fs.readFileSync(path.join(l.arnes, rel), 'utf8')}Lo usa AcmeCorp.\n` });
-  for (const rel of ['specs/x.md', 'guides/incident-log.md', 'onboarding/x.md', 'scripts/controls-bench/cases/advisors/revisor-cliente.json']) {
+  for (const rel of ['specs/x.md', 'guides/maintaining/incident-log.md', 'onboarding/x.md', 'scripts/controls-bench/cases/advisors/revisor-cliente.json']) {
     if (rel.endsWith('.json')) stage(l.arnes, { [rel]: '{ "casos": ["lo de AcmeCorp", "y más de AcmeCorp"] }\n' });
     else add(rel);
     const r = brake(l);
@@ -436,15 +436,15 @@ test('NewNames_Reclassify_WhitelistPrivateOutAndPack', () => {
   resetLab(l.skills);
   // (4) el commit trae su propio export.js, que deja de excluir el incident-log: el freno clasifica el después con ESE
   // código (compilado desde el índice, no el del disco) y el incident-log, que ya tenía un nombre, se mira entero
-  stage(l.arnes, { 'guides/incident-log.md': '# Incidentes\n\nEl de AcmeCorp.\n' });
+  stage(l.arnes, { 'guides/maintaining/incident-log.md': '# Incidentes\n\nEl de AcmeCorp.\n' });
   commit(l.arnes, 'el incident-log con un nombre (no sale: exclusión fija)');
   const own = fs.readFileSync(path.join(RAIZ, 'scripts', 'publishing', 'export.js'), 'utf8');
-  const other = own.replace(/^ {2}\{ fuente: 'arnes', glob: 'guides\/incident-log\.md'.*\n/m, '');
+  const other = own.replace(/^ {2}\{ fuente: 'arnes', glob: 'guides\/maintaining\/incident-log\.md'.*\n/m, '');
   assert.notStrictEqual(other, own, 'la prueba necesita sacar la exclusión fija del incident-log');
   stage(l.arnes, { 'scripts/publishing/export.js': other });
   r = brake(l);
   assert.strictEqual(r.code, 1, r.out);
-  assert.match(r.out, /guides\/incident-log\.md:3/);
+  assert.match(r.out, /guides\/maintaining\/incident-log\.md:3/);
 });
 
 // ── T12 · AC 9 ───────────────────────────────────────────────────────────────────────────────────────────────

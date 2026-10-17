@@ -8,7 +8,7 @@ equivocada enseña algo falso para la mitad de las herramientas. Tres clases:
    quién son las primitivas: se escribe **"Claude Code"**. Es correcto INCLUSO para activar
    Codex, porque el lado Codex se configura desde ahí (el deployer traduce). Generalizar esta
    clase **mete** errores: donde el canónico ES Claude Code, cambiar el nombre deja una
-   instrucción falsa. Es la decisión de la Etapa H de [codex-migration.md](codex-migration.md).
+   instrucción falsa.
 2. **El actor de runtime Y el modelo en general** — quién detecta el pipeline, implementa la
    story, corre advisors; y también el sujeto de la tesis ("el genio con amnesia" es CUALQUIER
    modelo, no una marca): se escribe **"el agente"** o **"el modelo"**. Ojo: esta clase no se
@@ -27,14 +27,14 @@ con canónico en el repo de su producto (`bizuit-sdd` → el repo de documentaci
 MCP): esas se corrigen al tocarlas, en su canónico, con este criterio. La cosmética de clase 1 sigue descartada: generalizar donde el canónico ES Claude
 Code mete errores, no los quita.
 
-**Registros históricos** (el incident-log, los Registros de `codex-migration.md`, casos
+**Registros históricos** (el registro de incidentes, los registros de la migración a Codex, casos
 fechados en cualquier guía) conservan el nombre del actor real de ese día: «2026-05-20: Claude
 declaró `done` sin correr los E2E» es un hecho, no una generalización — reescribirlo a «el
 agente» falsearía la memoria institucional. No son clase 2.
 
 **Parientes que responden la misma pregunta** ("¿cómo nombro lo tool-específico para que el
 texto sobreviva bajo Codex?") — conocerlos evita que driften por separado:
-- [claude-md-blocks/names/](../claude-md-blocks/names/) — los nombres EXACTOS de tools viven
+- [claude-md-blocks/names/](../../claude-md-blocks/names) — los nombres EXACTOS de tools viven
   SOLO en el bloque de nombres, con variante por herramienta.
 - `build/equivalences.json → text_substitutions` — la sustitución mecánica Claude→descripción
   funcional que el generador aplica a la prosa de los advisors.

@@ -48,7 +48,7 @@ Decisión post-query:
      configuración rota, y se dice con archivo, clave y motivo); el proyecto, de `TYCON_ADO_PROJECT` o preguntando al dev
    - **sin organización = Azure DevOps apagada en esta máquina**: el step lo dice en UNA línea («Azure DevOps apagado en
      esta máquina — el work item no se toca; prender: ado.org en ~/.claude/tycon.json o TYCON_ADO_ORG»), no llama a `az`
-     y se saltea (exit 0). Ya no hay un nivel «tabla por proyecto»: la tabla de `guides/ado-projects.md` es
+     y se saltea (exit 0). Ya no hay un nivel «tabla por proyecto»: la tabla de `guides/integrations/ado-projects.md` es
      referencia para personas, no algo que el pipeline lee.
 
 Si config ADO no resuelve (Azure DevOps apagada) → skip con esa línea (no bloquea pipeline). Log el motivo en `.advisors/pipeline-runs/<clave>-<sello>/step-00c-ado.md`.

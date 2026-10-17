@@ -468,7 +468,7 @@ function scanEngramRepos(rootOverride) {
 // autodetección por basename — o sea que el chequeo acusaba justo a los repos bien configurados.
 //
 // El caso que motivó la idea (`Ceibo/Ceibo` declarando `Yatay`
-// — guides/incident-log.md#case-engram-pin-differs-from-basename-2026-08-25) es estructuralmente
+// — guides/maintaining/incident-log.md#case-engram-pin-differs-from-basename-2026-08-25) es estructuralmente
 // idéntico a esos falsos positivos —pin ≠ basename— y además NO está claro que esté mal: es el
 // repo archivo del producto bajo su nombre anterior, 1 commit en 90 días, con memorias de esa era.
 // Sin una señal que separe "archivo legítimo" de "pin equivocado", el chequeo sería ruido. Un
@@ -680,8 +680,8 @@ function checkMemoryPersistence() {
   });
   checks.push({
     name: 'Engram workflow guide existe',
-    passed: exists(path.join(TCG_GUIDES, 'engram-workflow.md')),
-    file: path.join(TCG_GUIDES, 'engram-workflow.md'),
+    passed: exists(path.join(TCG_GUIDES, 'integrations', 'engram-workflow.md')),
+    file: path.join(TCG_GUIDES, 'integrations', 'engram-workflow.md'),
     severity: 'warning',
   });
 

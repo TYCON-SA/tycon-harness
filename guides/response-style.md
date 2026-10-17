@@ -118,7 +118,8 @@ por `install-tycon-hooks.sh` en cada máquina; casos en `scripts/controls-bench/
 
 - **Qué cuenta**: caracteres de prosa FUERA de bloques de código; las tablas y el código no cuentan (un
   artefacto que el user pidió no es verbosidad). También líneas de prosa y títulos de sección.
-- **Umbrales**: `TYCON_RESPONSE_MAX_PROSE_CHARS` (**1300**, ≈13 renglones — el que gatea) ·
+- **Umbrales**: `TYCON_RESPONSE_MAX_PROSE_CHARS` (el que gatea; sin la variable, `response.max_chars` del perfil del
+  equipo o el tope del estilo elegido: **1300** ≈13 renglones en `executive`, el de TYCON) ·
   `TYCON_RESPONSE_MAX_LINES` (15) · `TYCON_RESPONSE_MAX_HEADERS` (1) ·
   `TYCON_RESPONSE_MAX_SENTENCE_WORDS` (35, la oración más larga del mensaje).
 - **Largo de oración (2026-10-02)**: de ASD-STE100 (el inglés técnico simplificado, que no existe en
@@ -200,7 +201,7 @@ siguientes a la poda, lo primero que se devuelve al bloque son estas frases — 
 **Próximo candidato — PODADO el 2026-09-06**: tras esta poda el bloque más pesado del `CLAUDE.md`
 pasó a ser el de ADO (`claude-md-blocks/ado-runs-list-lag.md`), con el mismo patrón que motivó ésta:
 reglas que se acumulan por incidente, con su historia adentro. Se le aplicó la misma receta —
-la regla se queda, la historia se va a `guides/ado-cola-y-listados.md`— y bajó de **9.979 a 4.134
+la regla se queda, la historia se va a `guides/integrations/ado-cola-y-listados.md`— y bajó de **9.979 a 4.134
 bytes** sin perder una regla (verificado frase por frase contra la versión anterior). El `CLAUDE.md`
 completo quedó en **31.035 bytes**. Desde el mismo día cada bloque tiene techo declarado en
 `claude-md-blocks/budget.json` y el pre-commit frena al que se pasa, así que esta clase de

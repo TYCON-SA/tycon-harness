@@ -9,7 +9,7 @@ por lo que un listado no muestra. Se dispara por evidencia positiva del estado r
 vacío, viejo, de otro alcance, o de un comando que falló, es *"no sé"*, nunca *"no existe"*.
 
 Los seis casos reales que motivaron cada regla —con fechas, capturas y el diagnóstico completo—
-viven en `~/.claude/tycon-harness/guides/ado-cola-y-listados.md`. Acá queda sólo la regla.
+viven en `~/.claude/tycon-harness/guides/integrations/ado-cola-y-listados.md`. Acá queda sólo la regla.
 
 ## 1. `runs list` está atrasado: la ausencia no prueba que el trigger no disparó
 

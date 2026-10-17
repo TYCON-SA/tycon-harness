@@ -331,7 +331,8 @@ writes three blocks of rules into `~/.claude/CLAUDE.md`, between their own marke
 
 - `response-style`: the assistant answers in plain Spanish, conclusion first, with a cap of 1300 characters of prose.
   A hook measures every answer and reports the overrun to the assistant on the next turn (`TYCON_RESPONSE_METER=0`
-  turns the measuring off).
+  turns the measuring off). That is the executive style: the organization picks the language, style and cap in its
+  profile (`response`); unset, the assistant answers clear and to the point, with a cap of 2000.
 - `background-execution`: steps longer than two minutes run in the background and are announced first. Another hook
   measures what kept the conversation blocked (`TYCON_BLOCKING_METER=0`).
 - `tool-names`: the table with the exact name of every tool those rules mention.
@@ -460,6 +461,34 @@ the origins, and the presence check names the third-party skills that are missin
 To retry, with network: `node ~/.claude/tycon-harness/scripts/setup/harness.js apply` runs the installer again.
 The same applies if, with network, some skills were left pending because the step hit its network limit
 (`TYCON_THIRD_PARTY_NETWORK_BUDGET_S`, 20 seconds per run).
+
+## With a proxy or your company's CA
+
+The installer (`npx @tyconsa/harness@latest`, `get-harness` and `harness.js` itself) goes through a proxy with the usual
+variables, in the terminal where you run it:
+
+```bash
+export HTTPS_PROXY=http://proxy.example.com:8080
+export NO_PROXY=localhost,.example.com
+```
+
+`HTTPS_PROXY` (or `HTTP_PROXY`, also in lowercase) is the proxy; `NO_PROXY` is a comma-separated list of hosts or `.domain`
+suffixes that go direct. npx also passes along npm's own (`npm_config_https_proxy`, `npm_config_proxy`), and npm itself
+needs them to fetch the package. If your company inspects HTTPS with its own certificate, point Node to it before
+running the line: `export NODE_EXTRA_CA_CERTS=/path/to/company-ca.pem`. Without it the installer stops with «no pude
+verificar el certificado» (could not verify the certificate) and names `NODE_EXTRA_CA_CERTS`; it never turns verification off. In PowerShell, the same with
+`$env:HTTPS_PROXY = '…'`, `$env:NO_PROXY = '…'` and `$env:NODE_EXTRA_CA_CERTS = '…'`.
+
+## Uninstall
+
+```bash
+node ~/.claude/tycon-harness/scripts/setup/harness.js uninstall --dry-run
+node ~/.claude/tycon-harness/scripts/setup/harness.js uninstall --yes
+```
+
+The first one shows what it would remove, and changes nothing. The second one removes only what the installer recorded
+(hooks, links, blocks, background tasks) and says what it leaves: your `~/.claude/tycon.json`, your repos and anything
+of yours stay untouched. `--tool claude` or `--tool codex` unplugs only that tool and keeps the harness.
 
 ## How it updates
 

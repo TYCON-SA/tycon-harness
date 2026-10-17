@@ -4,7 +4,7 @@
  * ¿La condición de cada etapa (y de cada job) dice la verdad sobre de qué depende?
  *
  * 🔴 POR QUÉ EXISTE (2026-09-01, encontrado alineando un producto del equipo al flujo
- * canónico — guides/incident-log.md#case-stage-condition-names-other-stage-2026-09-01).
+ * canónico — guides/maintaining/incident-log.md#case-stage-condition-names-other-stage-2026-09-01).
  *
  * En Azure DevOps hay DOS maneras de que una etapa quede mal enganchada, y NINGUNA da error:
  * el pipeline corre, se ve verde, y falla el día que alguien reordena las etapas.
@@ -14,7 +14,7 @@
  *       Anda de casualidad: ADO resuelve dependencias TRANSITIVAS (si Build depende de
  *       TraerArnes, Deploy la alcanza). El día que Build deje de depender de TraerArnes, la
  *       condición pasa a evaluar contra la nada. Caso real: el Deploy del backend de un producto del equipo
- *       — guides/incident-log.md#case-stage-condition-names-other-stage-2026-09-01.
+ *       — guides/maintaining/incident-log.md#case-stage-condition-names-other-stage-2026-09-01.
  *
  *   (b) 🔴 LA PEOR: DEPENDE DE UNA ETAPA QUE SU CONDICIÓN NO NOMBRA.
  *       Un `condition:` explícito REEMPLAZA al `succeeded()` implícito — `dependsOn` a secas

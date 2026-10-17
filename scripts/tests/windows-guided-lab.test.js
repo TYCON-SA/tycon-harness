@@ -49,6 +49,7 @@ const NO_HOOKS = path.join(os.tmpdir(), 'windows-guided-no-git-hooks');
 const SKIP = (process.platform === 'win32' && 'el recorrido de juguete es del modo de laboratorio: en Windows corre el ensayo de verdad')
   || (!has('git') && 'NO MEDIDO — sin git')
   || (!has('pwsh') && 'NO MEDIDO — sin pwsh: la página pide PowerShell 7')
+  || (!require(path.join(DIR, 'npx-probe.js')).npmProgram('npm') && `NO MEDIDO — este Node (${process.execPath}) no trae npm a su lado: sin npm no se arma el paquete que corre la línea npx`)
   || (!fs.existsSync(path.join(ROOT, 'getting-started', 'windows.md')) && !fs.existsSync(path.join(ROOT, 'scripts', 'publishing', 'public-files', 'getting-started', 'windows.md')) && 'NO MEDIDO — este árbol no trae la página pública de instalación');
 const git = (args, cwd) => spawnSync('git', ['-c', 'user.name=lab', '-c', 'user.email=lab@example.com', '-c', 'commit.gpgsign=false', '-c', 'core.autocrlf=false', '-c', `core.hooksPath=${NO_HOOKS}`, ...args], { cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
 const node = (args, opts = {}) => spawnSync(process.execPath, args, Object.assign({ encoding: 'utf8', timeout: 20 * 60 * 1000, maxBuffer: 64 * 1024 * 1024 }, opts));
@@ -101,6 +102,8 @@ function toyPublishedTree(base) {
   put('version.json', `{ "version": "${TOY.version}" }\n`);
   put('getting-started/windows.md', named(fs.readFileSync(path.join(source, 'getting-started', 'windows.md'), 'utf8')));
   put('scripts/setup/get-harness.ps1', named(fs.readFileSync(path.join(source, 'scripts', 'setup', 'get-harness.ps1'), 'utf8')));
+  // (story 8.40, AC 43) el instalador del paquete trae el repo público de fábrica: en el árbol de juguete, el de juguete
+  if (placed) put('scripts/setup/npm/index.js', named(fs.readFileSync(path.join(ROOT, 'scripts', 'setup', 'npm', 'index.js'), 'utf8')));
   put('scripts/setup/public-remotes.json', `{ "remotes": ["https://github.com/${TOY.org}/${TOY.repo}"] }\n`);
   assert.strictEqual(git(['init', '-q', '-b', 'main'], tree).status, 0);
   assert.strictEqual(git(['add', '-A'], tree).status, 0);
@@ -147,17 +150,17 @@ test('GuidedInstall_LabRun_ToyPublishedTree_FollowsThePage', { skip: SKIP }, () 
   const s = step(onboarding, 'onboarding');
   assert.strictEqual(s.status, 'measured', s.reason);
   assert.strictEqual(s.facts.guided, true, 'eligió el ensayo que sigue la página: el árbol trae version.json');
-  assert.deepStrictEqual([s.facts.page.file, s.facts.page.mark, s.facts.page.page_steps, s.facts.rehearsed_version], ['getting-started/windows.md', 'guided:base', 7, TOY.version]);
+  assert.deepStrictEqual([s.facts.page.file, s.facts.page.mark, s.facts.page.page_steps, s.facts.rehearsed_version], ['getting-started/windows.md', 'guided:base', 6, TOY.version]);
+  assert.strictEqual(s.facts.page.entry_package, 'scripts/setup/npm/package.json', 'el informe dice qué paquete se ensaya');
   const v = s.facts.variants.guided;
   assert.ok(v && !v.not_run && !v.threw, `la variante guided corrió (${v && (v.not_run || v.threw)})`);
   // los comandos de la página, en su orden, cada uno con su código de salida
   const steps = v.commands.map((c) => c.step);
-  assert.deepStrictEqual([...new Set(steps)], ['tools', 'download', 'plan', 'install', 'git-hooks', 'verify']);
+  assert.deepStrictEqual([...new Set(steps)], ['tools', 'plan', 'install', 'git-hooks', 'verify']);
   const ran = v.commands.filter((c) => !c.not_comparable && !c.skipped);
   for (const c of ran) assert.ok(Number.isInteger(c.exit) && typeof c.seconds === 'number', `${c.step}: «${c.text}» con su código y sus segundos`);
   const by = (id) => v.commands.filter((c) => c.step === id);
-  assert.deepStrictEqual(by('download').map((c) => c.exit), [0, 0]);
-  assert.deepStrictEqual([by('plan')[0].exit, by('install')[0].exit], [0, 0], `el plan y la instalación salieron 0: ${by('install')[0].err}`);
+  assert.deepStrictEqual([by('plan')[0].exit, by('install')[0].exit], [0, 0], `el plan y la instalación salieron 0: ${by('plan')[0].err} · ${by('install')[0].err}`);
   // en una máquina limpia la instalación ya puso la carpeta global de hooks de git (2026-10-14: antes no la ponía nadie, y
   // una máquina instalada o mudada sin este paso quedaba sin el freno antes de publicar): el primero sale 0 con la carpeta
   // del arnés, y el segundo —el de la página para cuando no devuelve nada— no hace falta
@@ -169,11 +172,19 @@ test('GuidedInstall_LabRun_ToyPublishedTree_FollowsThePage', { skip: SKIP }, () 
   // lo que no se puede comparar fuera de Windows se dice, no se saltea callado
   assert.ok(by('verify').some((c) => /sólo resuelve en Windows/.test(c.not_comparable || '')), 'el diagnóstico por la ruta con barras invertidas: no comparable, con su motivo');
   assert.ok(by('verify').some((c) => (c.expected || []).some((e) => e.comparable === false && /skills de terceros/.test(e.why))), 'la cuenta de skills: no comparable, con su motivo');
-  // el único cambio del laboratorio, y el ambiente: nada de lo que una persona no tiene
-  assert.deepStrictEqual(by('download')[0].lab_changed.from, 'https://raw.githubusercontent.com');
-  assert.ok(v.commands.filter((c) => c.lab_changed).length === 1, 'ningún otro comando se toca');
+  // los dos cambios del laboratorio (story 8.40, AC 43): el paquete armado del commit que se ensaya en lugar del
+  // publicado, en el plan y en la instalación; y la respuesta de la persona («s» a ¿Instalo?), sólo en la instalación
+  for (const id of ['plan', 'install']) {
+    assert.strictEqual(by(id)[0].lab_changed.from, 'npx @tyconsa/harness@latest', `${id}: el paquete publicado`);
+    assert.match(by(id)[0].lab_changed.to, /^npx --yes "file:.+\.tgz"$/, `${id}: por el armado`);
+  }
+  assert.strictEqual(by('plan')[0].lab_answer, undefined, 'el plan no necesita respuesta');
+  assert.deepStrictEqual(by('install')[0].lab_answer, { append: '--yes', why: by('install')[0].lab_answer.why });
+  assert.match(by('install')[0].text, /--packs all$/, 'lo anotado es el comando de la página, tal cual');
+  assert.ok(v.commands.filter((c) => c.lab_changed).length === 2, 'ningún otro comando se toca');
   const changes = s.facts.lab_changes;
-  assert.deepStrictEqual([changes.download_origin.where, changes.execution_policy.launched_with, typeof changes.execution_policy.effective], ['download[0]', 'Bypass', 'string']);
+  assert.deepStrictEqual([changes.package.where, changes.answer.step, changes.answer.append, changes.execution_policy.launched_with, typeof changes.execution_policy.effective], ['plan[0], install[0]', 'install', '--yes', 'Bypass', 'string']);
+  assert.match(changes.answer.why, /respuesta .*persona/);
   for (const k of TL.ENV_NEVER) assert.ok(!(k in changes.env_set) && !(k in changes.env_set_with_team), `${k} no se pone`);
   assert.deepStrictEqual(changes.never_set, TL.ENV_NEVER);
   // la máquina quedó con la versión publicada, en la carpeta de usuario del laboratorio
@@ -200,10 +211,13 @@ test('GuidedInstall_LabRun_ToyPublishedTree_FollowsThePage', { skip: SKIP }, () 
   assert.match(s.facts.toy_servers.github.repo, /^público, sin permiso/);
   assert.match(changes.token, /^TYCON_GITHUB_TOKEN: no se pone en ningún paso/);
   const requests = fs.readFileSync(path.join(onboarding.lab, 'guided', 'onboarding', 'servers', 'github-requests.log'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
-  // el guion se baja de «raw» (raw.githubusercontent.com) por la rama, no de la API: sin credencial la API tiene un tope de
-  // 60 consultas por hora por conexión, y una máquina nueva no llegaba ni a correr el guion (deuda DEF-8.34-portada-por-la-api)
-  assert.ok(requests.length >= 5 && requests.some((r) => r.host === 'raw' && /\/main\/scripts\/setup\/get-harness\.ps1$/.test(r.path)) && requests.some((r) => /\/tarball\//.test(r.path)), `el GitHub de juguete atendió la bajada del guion y la del comprimido (${requests.length} pedidos)`);
-  assert.deepStrictEqual(requests.filter((r) => /\/contents\/scripts\/setup\/get-harness\./.test(r.path)).map((r) => r.path), [], 'la bajada del guion no pasó por la API');
+  // el instalador del paquete baja por las rutas públicas (info/refs y codeload), no por la API: sin credencial la API
+  // tiene un tope de 60 consultas por hora por conexión; nada se pidió al GitHub de verdad (todo pasó por el de juguete)
+  assert.ok(requests.length >= 3 && requests.some((r) => r.host === 'git' && /info\/refs/.test(r.path)) && requests.some((r) => r.host === 'codeload'), `el GitHub de juguete atendió la punta y el comprimido (${requests.length} pedidos)`);
+  assert.deepStrictEqual(requests.filter((r) => /\/contents\/scripts\/setup\/get-harness\./.test(r.path)).map((r) => r.path), [], 'nadie bajó el guion de entrada');
+  // la línea npx lee la versión del crudo de juguete: sin él, el cliente completaba el crudo con el de verdad y salía a
+  // la red (las sesiones de después preguntan por la API, sin las rutas públicas: ésas no cuentan acá)
+  assert.ok(requests.some((r) => r.host === 'raw' && /\/version\.json$/.test(r.path)), 'el crudo de juguete atendió el version.json');
   assert.deepStrictEqual(requests.filter((r) => r.auth).map((r) => r.path), [], 'ningún pedido llevó credencial');
   const config = readJson(path.join(home, '.tycon', 'config.json'));
   assert.strictEqual(config.github, undefined, 'sin permiso de GitHub guardado: nadie lo pidió');
@@ -233,7 +247,9 @@ test('GuidedInstall_LabRun_ToyPublishedTree_FollowsThePage', { skip: SKIP }, () 
   const finished = node([path.join(DIR, 'rehearse.js'), 'finish', '--out', onboarding.out]);
   assert.strictEqual(finished.status, 0, finished.stderr || finished.stdout);
   const md = fs.readFileSync(path.join(onboarding.out, 'windows-report.md'), 'utf8');
-  for (const said of [/## El alta, siguiendo la página pública/, /\| Paso \| Quién \| Comando \| Salió \| Esperado contra medido \|/, /\| install \| la máquina \| .*get-harness\.ps1.* \| 0 \|/, /\*\*La capa del equipo\*\*/, /Cómo quedó la máquina con la capa puesta: \d+ hook\(s\)/, /## Lo que el laboratorio cambió/, /- onboarding · guided: carpeta de usuario /, /## No ensayado/, new RegExp(`\\| una copia publicada del arnés \\| .* \\| ${TOY.version.replace(/\./g, '\\.')} \\|`)]) assert.match(md, said);
+  // la respuesta de la persona, dicha en una línea: no se lee como un verde total (pedido de la coordinadora, pedido 3)
+  assert.match(md, /- la respuesta de la persona: en el paso install se sumó `--yes`/);
+  for (const said of [/## El alta, siguiendo la página pública/, /\| Paso \| Quién \| Comando \| Salió \| Esperado contra medido \|/, /\| install \| la máquina \| .*npx @tyconsa\/harness@latest.* \| 0 \|/, /\*\*La capa del equipo\*\*/, /Cómo quedó la máquina con la capa puesta: \d+ hook\(s\)/, /## Lo que el laboratorio cambió/, /- onboarding · guided: carpeta de usuario /, /## No ensayado/, new RegExp(`\\| una copia publicada del arnés \\| .* \\| ${TOY.version.replace(/\./g, '\\.')} \\|`)]) assert.match(md, said);
   assert.ok(!md.includes(config.azure.token));
   assert.match(md, /- TYCON_GITHUB_TOKEN: no se pone en ningún paso/, 'el reporte dice que ningún paso llevó un permiso de GitHub');
 });

@@ -23,7 +23,8 @@
 #                          TMPDIR, y sin las herramientas del vocabulario en el PATH, como las portables
 #   7 controls-bench       node scripts/controls-bench/runner.js --tool both --baseline check --json <salida>/bench.json
 #   8 spanish-names        sólo con --range: node scripts/publishing/spanish-names.js --range <rango>
-#   9 repo-lint            sólo con --range: el pre-commit del repo (.githooks/pre-commit-harness) sobre lo que trae el
+#   9 repo-lint            sólo con --range: los controles del pre-commit (.githooks/pre-commit-checks, con la punta
+#                          como arnés y sin el chequeo de vida de un revisor tocado, que pide una sesión) sobre lo que trae el
 #                          rango, como si se commiteara: en una copia de trabajo aparte de la punta, con el índice en la
 #                          punta y HEAD en la base (`git reset --soft`). Cada control decide si le toca, igual que al
 #                          commitear; los que necesitan lo privado (la lista de nombres del equipo) no lo tienen acá y
@@ -462,7 +463,7 @@ repo_lint() {
     echo "no pude correr: no pude poner HEAD en la base ${mb}"; return "${BLOCKED_EXIT}"
   fi
   echo "repo-lint: lo que trae ${RANGE} ($(git -C "${wt}" diff --cached --name-only | wc -l | tr -d ' ') archivo(s)), con el pre-commit de la punta"
-  ( cd "${wt}" && bash .githooks/pre-commit-harness < /dev/null ); rc=$?
+  ( cd "${wt}" && TYCON_GUIDES_DIR="${wt}" TYCON_SKILLS_DIR="${wt}" TYCON_NO_LIVENESS_PRECOMMIT=1 bash .githooks/pre-commit-checks < /dev/null ); rc=$?
   git -C "${ROOT}" worktree remove --force "${wt}" >/dev/null 2>&1
   return "${rc}"
 }
@@ -507,7 +508,7 @@ wants portable-suites && run_step portable-suites file scripts/tests/portable-su
 wants agent-skills-suites && run_step agent-skills-suites own scripts/tests/suites.json "bash node" agent_skills_suites
 wants controls-bench && run_step controls-bench file scripts/controls-bench/runner.js "node" node scripts/controls-bench/runner.js --tool both --baseline check --json "${OUT}/bench.json"
 [ "${WITH_RANGE}" -eq 0 ] || ! wants spanish-names || run_step spanish-names own scripts/publishing/spanish-names.js "git node" spanish_names
-[ "${WITH_RANGE}" -eq 0 ] || ! wants repo-lint || run_step repo-lint own .githooks/pre-commit-harness "git bash node" repo_lint
+[ "${WITH_RANGE}" -eq 0 ] || ! wants repo-lint || run_step repo-lint own .githooks/pre-commit-checks "git bash node" repo_lint
 [ "${WITH_RANGE}" -eq 0 ] || ! wants version || run_step version own version.json "git node" version_bumped
 # la máquina limpia, en su modo PÚBLICO: pedida de forma explícita (sin eso, fuera del nocturno sale NO MEDIDA) y sobre
 # ESTE repo (sin eso cae en el modo interno, que exporta la copia desde el repo del equipo)

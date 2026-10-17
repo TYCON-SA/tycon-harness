@@ -179,7 +179,7 @@ function productEvidenceRoots(repoRoot, opts) {
 // VidrieraWeb), el pipeline corre parado en el repo del CÓDIGO y ahí dejaba la evidencia. Pero quien
 // la exige al cerrar es el portón de CI del repo de la STORY —que sólo mira su propio checkout, a
 // propósito—, así que toda story de ese producto que pasaba a `review` por pull request salía roja
-// (tres pull requests del repo de stories de ese producto, el 2026-09-04 y el 2026-09-05 — guides/incident-log.md#evidencia-en-otro-repo-2026-09-05) y el dev la copiaba a mano. Dos copias
+// (tres pull requests del repo de stories de ese producto, el 2026-09-04 y el 2026-09-05 — guides/maintaining/incident-log.md#evidencia-en-otro-repo-2026-09-05) y el dev la copiaba a mano. Dos copias
 // divergen (el ledger de smokes crece con cada corrida), así que no se copia: la evidencia NACE en
 // el repo git que CONTIENE la story, y todos los runners reciben ese directorio. Para el freno local
 // da lo mismo (la evidencia del repo de la story es "propia" por definición); para el portón es la

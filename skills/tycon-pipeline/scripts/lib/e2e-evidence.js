@@ -54,7 +54,7 @@ function totals(reportJson) {
 }
 
 /**
- * Veredicto del gate — TRES estados, no dos (story FIX-Q1 de un producto del equipo, 2026-09-27 — guides/incident-log.md#case-e2e-gate-green-with-zero-flows-2026-09-27).
+ * Veredicto del gate — TRES estados, no dos (story FIX-Q1 de un producto del equipo, 2026-09-27 — guides/maintaining/incident-log.md#case-e2e-gate-green-with-zero-flows-2026-09-27).
  *
  * 🔴 Por qué no alcanza el exit code de Playwright: Playwright devuelve **0 cuando todos los tests
  * se saltean**. El 2026-09-27, con el set crítico de un producto del equipo y una base sin datos, el gate reportó
@@ -95,7 +95,7 @@ function veredicto({ exitCode = 0, total = 0, passed = 0, failed = 0, skipped = 
 /**
  * Los filtros declarados que la app NO tiene (story FIX-Q1).
  *
- * 🔴 Caso real del 2026-09-27 — guides/incident-log.md#case-e2e-gate-green-with-zero-flows-2026-09-27: el set crítico de un producto del equipo declara 5 recorridos, el gate corrió sobre
+ * 🔴 Caso real del 2026-09-27 — guides/maintaining/incident-log.md#case-e2e-gate-green-with-zero-flows-2026-09-27: el set crítico de un producto del equipo declara 5 recorridos, el gate corrió sobre
  * `totora-catalogo` —que tiene UNO— y su línea final fue idéntica a la de una corrida completa. Un
  * control que no dice qué parte de su alcance no encontró no se puede auditar: "0/4" se lee como
  * "casi todo" cuando en realidad fue un quinto.

@@ -4,7 +4,7 @@
  *
  * **Por qué existe**: Story 4.2 — Claude declaró `done` + commiteó sin haber
  * ejecutado nunca los E2E que escribió (caso completo en
- * `~/.claude/tycon-harness/guides/incident-log.md#dod-4.2`).
+ * `~/.claude/tycon-harness/guides/maintaining/incident-log.md#dod-4.2`).
  *
  * Capa 1 de defense-in-depth — bloqueo HARD en `git commit`:
  *
@@ -327,7 +327,7 @@ function storyIsExempt(specContent) {
   return /^dod_runtime_exempt:\s*true\b/m.test(specContent);
 }
 
-// ADVISORS-GATE (2026-08-24, caso Story S1 del frontend de un producto del equipo — guides/incident-log.md#done-sin-advisors-S1-2026-08-24):
+// ADVISORS-GATE (2026-08-24, caso Story S1 del frontend de un producto del equipo — guides/maintaining/incident-log.md#done-sin-advisors-S1-2026-08-24):
 // una story implementada a mano (antes del portón de carril) llegó a `done` con evidencia de DoD
 // real pero sin que NINGÚN advisor la auditara — los controles del cierre pedían DoD y self-audit,
 // no "advisors corridos". Constancia aceptada: (1) una corrida del pipeline EN EL REPO
@@ -402,7 +402,7 @@ function revisarRosterLocal(cwd, storyId, storyPath) {
     // que falla ABIERTO, o sea que el commit se saltaba TODOS los frenos del pre-commit, no sólo
     // éste, y justo en el camino feliz (roster presente y válido). Lo cazó el pase adversarial;
     // ninguna lectura del código lo había visto.
-    // 🔴 Roster PROYECTADO desde el repo del código (2026-09-05, un producto del equipo — guides/incident-log.md#evidencia-en-otro-repo-2026-09-05): los spawns del ledger
+    // 🔴 Roster PROYECTADO desde el repo del código (2026-09-05, un producto del equipo — guides/maintaining/incident-log.md#evidencia-en-otro-repo-2026-09-05): los spawns del ledger
     // están estampados con ESE repo, no con el de la story. Filtrar por `cwd` (el repo de specs)
     // daba `sin-testigo` con el testigo en la misma máquina, bajo el otro repo — y la salida que
     // proponía (`sin_testigo` en el roster) se pisaba en la próxima proyección.
@@ -1786,7 +1786,7 @@ function main() {
   }
   lines.push('');
   lines.push('Por qué: Story 4.2 — done declarado + commiteado sin correr los E2E.');
-  lines.push('  Caso: ~/.claude/tycon-harness/guides/incident-log.md#dod-4.2.');
+  lines.push('  Caso: ~/.claude/tycon-harness/guides/maintaining/incident-log.md#dod-4.2.');
   lines.push('  Este hook es la infra que lo enforce.');
   lines.push('');
   lines.push('Acciones permitidas:');

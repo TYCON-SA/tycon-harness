@@ -9,7 +9,7 @@
  * producto, una de ellas la de la base de PRODUCCIÓN; en otro producto pasó lo mismo con tokens Bearer (se limpió
  * a mano el 2026-09-18). El tapado de la SMOKE-SECRETO-1 (2026-09-22) ya existía, pero sólo reconocía valores
  * hechos de letras y números: `SQLCMDPASSWORD='…'` (comillas y un símbolo) o `sqlcmd -P <valor>` pasaban
- * enteros. Caso: guides/incident-log.md#case-sql-passwords-in-smoke-ledgers-2026-10-04.
+ * enteros. Caso: guides/maintaining/incident-log.md#case-sql-passwords-in-smoke-ledgers-2026-10-04.
  *
  * ── Qué hace ─────────────────────────────────────────────────────────────────────────────────
  * Un conjunto CERRADO de formas inequívocas, cada una con el nombre a la vista y el valor a tapar:
@@ -155,7 +155,7 @@ function eachFormMatch(text, form, fn, opts = {}) {
 // formas que no son de la lista (claves de API, OAuth, `curl -u`), sólo cuando el valor es de letras y números.
 // Corre DESPUÉS de las formas de la lista: al revés, sobre `PASSWORD=` con el valor `'Ab1234!x'` tapaba `Ab1234` y dejaba
 // `!x` a la vista detrás de un `$VAL` que el freno lee como variable. Los marcadores son cortos y empiezan con `$`
-// a propósito (gitleaks marca la FORMA, no el contenido — guides/incident-log.md#case-long-redaction-marker-flagged-2026-09-22).
+// a propósito (gitleaks marca la FORMA, no el contenido — guides/maintaining/incident-log.md#case-long-redaction-marker-flagged-2026-09-22).
 const LEGACY_PATTERNS = [
   [/\b(bearer)\s+[A-Za-z0-9._~+/=-]{20,}/gi, '$1 $$TOKEN'],
   [/\b(basic)\s+[A-Za-z0-9+/=]{12,}/gi, '$1 $$CRED'],

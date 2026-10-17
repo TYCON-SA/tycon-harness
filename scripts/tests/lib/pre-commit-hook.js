@@ -2,21 +2,19 @@
 'use strict';
 
 /**
- * pre-commit-hook.js — cuál es el archivo del pre-commit de un repo, según cómo esté armado (story 8.7, tanda B).
+ * pre-commit-hook.js — cuál es el archivo de los controles del pre-commit de un repo, según cómo esté armado.
  *
- * Por qué existe: en el repo del equipo el arnés y agent-skills son dos repos y cada uno trae su `.githooks/pre-commit`.
- * En la copia pública de UN solo repo ese archivo es un despachador generado por el exportador, que corre
- * `pre-commit-harness` y `pre-commit-skills`; los guiones de verdad son esos dos. Una suite que copia
- * `.githooks/pre-commit` a un repo de juguete se lleva, en la copia, el despachador sin sus dos guiones: el commit de
- * juguete sale 1 y la suite queda en rojo sin haber medido nada. Tres suites hacían esa elección cada una por su lado
- * (`githook-livefire.test.sh`, `new-names.test.js`, `third-party-skills.test.js`); vive acá para que no se separen.
+ * En el arnés `.githooks/pre-commit` sólo llama a `.githooks/pre-commit-checks`, que trae los controles: una suite que
+ * copia `.githooks/pre-commit` a un repo de juguete se lleva un archivo que llama a otro que no está, y el commit de
+ * juguete sale 1 sin haber medido nada. Las suites eligen el archivo con esta función, para que no se separen.
  *
- * La regla: si el repo trae el guion partido (`pre-commit-harness` o `pre-commit-skills`), ése es el pre-commit; si no,
- * `pre-commit`. Nunca inventa: devuelve la ruta aunque el archivo no exista, y quien llama decide qué hacer con eso.
+ * La regla: si el repo trae `pre-commit-checks`, ése es el pre-commit (para los dos tipos: las partes del arnés y de las
+ * skills viven ahí juntas); si no, el guion partido de un repo de antes (`pre-commit-harness` o `pre-commit-skills`);
+ * si no, `pre-commit`. Nunca inventa: devuelve la ruta aunque el archivo no exista, y quien llama decide qué hacer.
  *
  *   const { preCommitHook } = require('./lib/pre-commit-hook.js');
- *   const HOOK = preCommitHook('harness', RAIZ);          // el del arnés
- *   const hook = preCommitHook('skills', repoDeSkills);   // el de agent-skills
+ *   const HOOK = preCommitHook('harness', RAIZ);          // los controles del arnés
+ *   const hook = preCommitHook('skills', repoDeSkills);   // los de las skills
  *
  * Desde shell:  HOOK="$(node "$RAIZ/scripts/tests/lib/pre-commit-hook.js" harness "$RAIZ")"
  *   exit 0 = imprimió la ruta · exit 2 = argumentos inválidos (no imprime nada por stdout).
@@ -25,7 +23,9 @@
 const fs = require('fs');
 const path = require('path');
 
-// el nombre que el exportador le da a cada guion cuando junta los dos repos en uno (export.js, «merged-hooks»)
+// el archivo con los controles de los dos tipos (el arnés y las skills)
+const CHECKS_NAME = 'pre-commit-checks';
+// el guion partido de un repo de antes del control único
 const SPLIT_NAMES = { harness: 'pre-commit-harness', skills: 'pre-commit-skills' };
 
 /**
@@ -38,11 +38,14 @@ function preCommitHook(kind, repoRoot) {
   if (!split) throw new Error(`pre-commit-hook: tipo desconocido «${kind}» — los que hay: ${Object.keys(SPLIT_NAMES).join(', ')}`);
   if (!repoRoot || typeof repoRoot !== 'string') throw new Error('pre-commit-hook: falta la raíz del repo');
   const dir = path.join(repoRoot, '.githooks');
-  const candidate = path.join(dir, split);
-  return fs.existsSync(candidate) ? candidate : path.join(dir, 'pre-commit');
+  for (const name of [CHECKS_NAME, split]) {
+    const candidate = path.join(dir, name);
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return path.join(dir, 'pre-commit');
 }
 
-module.exports = { preCommitHook, SPLIT_NAMES };
+module.exports = { preCommitHook, SPLIT_NAMES, CHECKS_NAME };
 
 if (require.main === module) {
   const [kind, repoRoot] = process.argv.slice(2);

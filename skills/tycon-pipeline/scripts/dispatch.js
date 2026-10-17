@@ -139,7 +139,7 @@ const CHAINS = {
     { name: 'on-story-gate', path: path.join(PIPELINE_SCRIPTS, 'on-story-gate.js') },
     // Freno de STORY A MANO (2026-08-30): deniega CREAR un .md con identidad de story sin constancia
     // de tycon-create-story en la sesión (la deja on-skill-invoke.js, PostToolUse Skill). Editar una
-    // story existente pasa siempre. Ver lib/story-skill-gate.js. Caso: stories AS-1 / PERF-1 de un producto del equipo — guides/incident-log.md#story-a-mano-sin-skill-2026-08-30.
+    // story existente pasa siempre. Ver lib/story-skill-gate.js. Caso: stories AS-1 / PERF-1 de un producto del equipo — guides/maintaining/incident-log.md#story-a-mano-sin-skill-2026-08-30.
     { name: 'on-story-skill-gate', path: path.join(PIPELINE_SCRIPTS, 'on-story-skill-gate.js') },
     { name: 'on-dod-evidence-guard', path: path.join(PIPELINE_SCRIPTS, 'on-dod-evidence-guard.js') },
     { name: 'on-frontmatter-write', path: path.join(PIPELINE_SCRIPTS, 'on-frontmatter-write.js') },

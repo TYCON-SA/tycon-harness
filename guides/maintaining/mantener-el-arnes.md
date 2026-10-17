@@ -6,26 +6,23 @@ git, pruebas, frenos) siguen en el índice.
 
 | Trabajando en... | Leer (a demanda) |
 |---|---|
+| Escribir o editar guías, skills, steps o material del sitio — cómo nombrar Claude/Codex/el agente | `guides/maintaining/criterio-tres-claude.md` |
 | Saber cuánto contexto carga cada sesión y cada revisor, y de qué está hecho | `node scripts/tools/context-budget.js [--measured]` — `--measured` da el piso REAL de los lanzamientos, no el estimado |
-| Upgrade de BMAD, debug de incompatibilidad con advisors | `guides/bmad-contract.md` |
-| Antes de retirar/relajar una regla, hook o advisor — ver qué incidente lo motivó | `guides/incident-log.md` |
+| Upgrade de BMAD, debug de incompatibilidad con advisors | `guides/maintaining/bmad-contract.md` |
+| Antes de retirar/relajar una regla, hook o advisor — ver qué incidente lo motivó | `guides/maintaining/incident-log.md` |
 | Cambiar una regla que tiene que estar SIEMPRE cargada en el `CLAUDE.md` de todos (estilo de respuesta, comunicación), o agregar un bloque nuevo | `claude-md-blocks/` — editar el `.md` y commitear; se propaga solo en el próximo `SessionStart` |
-| Entender por qué el bloque de Azure DevOps dice lo que dice —antes de podarlo, relajarlo o discutirlo— · el detalle de los seis casos con sus comandos | `guides/ado-cola-y-listados.md` |
+| Entender por qué el bloque de Azure DevOps dice lo que dice —antes de podarlo, relajarlo o discutirlo— · el detalle de los seis casos con sus comandos | `guides/integrations/ado-cola-y-listados.md` |
 | Tocar la regla de estilo de respuesta, el medidor `response-style-meter.js`, o el formato de reporte de un agente · entender por qué el bloque dice lo que dice antes de podarlo | `guides/response-style.md` |
 | Te apareció un aviso de versión de engram, o validaste una versión nueva y querés que el equipo la adopte | `engram-version` (el pin, con el procedimiento de bump en su cabecera) |
-| Armar o publicar la copia pública · el exportador o `mirror.js` frenó · un `git push` o un `gh` frenado · `verify` da 1 · qué entra y qué no · los reemplazos · sumar una skill ajena · máquina limpia | `guides/publicacion-espejo.md` (§«La publicación»; terceros: `third-party-skills.json`) + cabeceras de `scripts/publishing/{export,mirror}.js` — a mano: `export.js --explain` |
-| Sacar una versión nueva del paquete de npm (`@tyconsa/harness`) · aprobarla · la publicación falló · retirar una versión · rotar el publicador de confianza | `guides/paquete-npm.md` |
-| Un commit no se crea por un nombre real en un archivo que se publica · cómo salir · el termómetro de nombres en rojo · subir o bajar el techo | `guides/publicacion-espejo.md` §«El núcleo sin nombres» + `scripts/publishing/new-names.js` (cabecera) |
-| Antes de crear una skill/agent/guide/hook nuevo (chequear si ya existe equivalente — evita tejido cicatrizal) | `guides/skill-scout.md` |
-| Medir cuánto del context window consume el harness en cada sesión + qué recortar | `guides/context-budget.md` |
-| Auditar drift entre catálogo de reglas y advisors (mensual, o tras cambios estructurales) | `guides/rules-distill.md` |
-| Health-check completo del harness (score 0-10 sobre 7 categorías, monthly o pre-demo) | `guides/harness-audit.md` |
-| Justificar por qué NO usamos un modelo local (o revisar si conviene ahora) — medición propia + estado de la industria | `guides/decisions/local-model-decision-2026-08.md` |
-| Entender por qué un run del pipeline salió caro/lento, o verificar que las optimizaciones de costo siguen cableadas | `guides/decisions/pipeline-cost-audit-2026-06-11.md` |
-| Llevar el harness a Codex (u otra herramienta): arquitectura de fuente única, etapas, riesgos | `guides/codex-migration.md` |
-| Antes de portar/tocar una pieza concreta (un hook, un advisor, un paso del pipeline, un MCP): qué cambia entre Claude Code y Codex y qué caso de prueba la cubre | `guides/codex-divergence-inventory.md` |
-| Sospecha de que un hook del arnés está apagado sin rastro (rc del shell, sellos diarios) · agregar un kill-switch nuevo | `guides/decisions/interruptores-fuera-de-tycon-2026-08-25.md` |
-| Tocar un hook del arnés (verificar que sigue verde antes del commit) · agregar un hook/advisor nuevo (entra CON sus casos) · el aviso "controls-bench EN ROJO" apareció al arranque | `guides/controls-bench.md` |
+| Armar o publicar la copia pública · el exportador o `mirror.js` frenó · un `git push` o un `gh` frenado · `verify` da 1 · qué entra y qué no · los reemplazos · sumar una skill ajena · máquina limpia | `guides/maintaining/publicacion-espejo.md` (§«La publicación»; terceros: `third-party-skills.json`) + cabeceras de `scripts/publishing/{export,mirror}.js` — a mano: `export.js --explain` |
+| Sacar una versión nueva del paquete de npm (`@tyconsa/harness`) · aprobarla · la publicación falló · retirar una versión · rotar el publicador de confianza | `guides/maintaining/paquete-npm.md` |
+| Un commit no se crea por un nombre real en un archivo que se publica · cómo salir · el termómetro de nombres en rojo · subir o bajar el techo | `guides/maintaining/publicacion-espejo.md` §«El núcleo sin nombres» + `scripts/publishing/new-names.js` (cabecera) |
+| Antes de crear una skill/agent/guide/hook nuevo (chequear si ya existe equivalente — evita tejido cicatrizal) | `guides/maintaining/skill-scout.md` |
+| Medir cuánto del context window consume el harness en cada sesión + qué recortar | `guides/maintaining/context-budget.md` |
+| Auditar drift entre catálogo de reglas y advisors (mensual, o tras cambios estructurales) | `guides/maintaining/rules-distill.md` |
+| Health-check completo del harness (score 0-10 sobre 7 categorías, monthly o pre-demo) | `guides/maintaining/harness-audit.md` |
+| Antes de portar/tocar una pieza concreta (un hook, un advisor, un paso del pipeline, un MCP): qué cambia entre Claude Code y Codex y qué caso de prueba la cubre | `guides/maintaining/codex-divergence-inventory.md` |
+| Tocar un hook del arnés (verificar que sigue verde antes del commit) · agregar un hook/advisor nuevo (entra CON sus casos) · el aviso "controls-bench EN ROJO" apareció al arranque | `guides/maintaining/controls-bench.md` |
 | Saber cuánto consumió una corrida del pipeline, o leer el hilo de una que ya pasó · una corrida dice «no medido» o «borrada» · por qué el hilo no viaja por git | `scripts/metrics/tokens-digest.js` (cabecera) — a mano: `--run <volcado>` \| `--pending` \| `--all` |
 | Saber cuánto **costó la revisión** de una corrida (cuántos revisores, cuánto tardaron, cuánto consumieron) · por qué una corrida dice «estimado» y otra un número · renovar el supuesto del estimado | `scripts/metrics/reviewers-cost.js` (cabecera) + `scripts/metrics/reviewers-cost-assumption.json` — a mano: `--run <volcado>` \| `--all` |
 | Decidir si una regla del catálogo se retira · una regla aparece como «candidata a retiro», «rota» o «sin probar» y querés saber por qué · cambiar el criterio de poda | `scripts/nightly/dashboard/prune.js` (cabecera) + `scripts/nightly/dashboard/sources.json` → `prune` — a mano: `node scripts/nightly/dashboard/prune.js` · el catálogo contado: `node scripts/lib/rules-catalog.js` · colisiones: `--collisions` |

@@ -402,7 +402,7 @@ function tabla(r) {
 
 // El criterio de agrupación vive en agent-skills, que se actualiza con otro pull: su archivo se busca por el nombre de
 // hoy y, si esa copia es anterior al renombre de la story 8.9, por el de antes —que sale del mapa de renombres, nunca
-// escrito acá (guides/nombres-en-ingles.md, «Entre repos»)—. Sin mapa (la copia pública) sólo vale el de hoy.
+// escrito acá (guides/maintaining/nombres-en-ingles.md, «Entre repos»)—. Sin mapa (la copia pública) sólo vale el de hoy.
 const CRITERIO = 'group-findings.js';
 const CARPETA_DEL_CRITERIO = ['skills', 'tycon-pipeline', 'scripts', 'lib'];
 /** La ruta del criterio en `dir` (default: el agent-skills de la máquina), o null si no está. */

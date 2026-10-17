@@ -1,5 +1,5 @@
 {
-  "__doc": "Qué sale en la copia pública de cada paquete (épica 8, story 8.4). La lee scripts/publishing/export.js. NO es privada: sólo rutas, globs y nombres de claves — nunca el nombre de un cliente o de una persona (eso vive en replacements.json → afuera, que es privada). Por paquete y por fuente (`arnes` = este repo, `agent-skills` = el de skills), los globs que ENTRAN (`in`) y los que quedan AFUERA (`out`), cada afuera con su motivo (`reason`); `until` = la story que lo trae. Encima de esto, el exportador aplica sus exclusiones fijas (EXCLUIDOS_SIEMPRE, en su código, con el motivo de cada una) y sale 2 si una entrada del primer nivel no queda clasificada, si un glob de `in` no coincide con nada o si una exclusión fija bajo un glob en uso ya no coincide con ningún archivo. `node scripts/publishing/export.js --explain` imprime la tabla del primer nivel. Los paquetes se llaman en inglés (story 8.9): `core` es el núcleo. Guía: guides/publicacion-espejo.md.",
+  "__doc": "Qué sale en la copia pública de cada paquete (épica 8, story 8.4). La lee scripts/publishing/export.js. NO es privada: sólo rutas, globs y nombres de claves — nunca el nombre de un cliente o de una persona (eso vive en replacements.json → afuera, que es privada). Por paquete y por fuente (`arnes` = este repo, `agent-skills` = el de skills), los globs que ENTRAN (`in`) y los que quedan AFUERA (`out`), cada afuera con su motivo (`reason`); `until` = la story que lo trae. Encima de esto, el exportador aplica sus exclusiones fijas (EXCLUIDOS_SIEMPRE, en su código, con el motivo de cada una) y sale 2 si una entrada del primer nivel no queda clasificada, si un glob de `in` no coincide con nada o si una exclusión fija bajo un glob en uso ya no coincide con ningún archivo. `node scripts/publishing/export.js --explain` imprime la tabla del primer nivel. Los paquetes se llaman en inglés (story 8.9): `core` es el núcleo. Guía: guides/maintaining/publicacion-espejo.md.",
   "packages": {
     "core": {
       "arnes": {
@@ -20,10 +20,6 @@
           "claude-md-blocks/**",
           "commands/**",
           "mods/**",
-          "pipelines/azure-pipelines-pr.yml",
-          "pipelines/templates/correr-suites.yml",
-          "pipelines/templates/fetch-snapshot.yml",
-          "pipelines/templates/traer-repos.yml",
           "pipelines/operations/**",
           "guides/**",
           "scripts/**"
@@ -146,7 +142,7 @@
     { "target": ".github/workflows/ci.yml", "from": "scripts/publishing/public-files/.github/workflows/ci.yml", "packages": ["core"], "reason": "la CI del repo público: corre scripts/ci/public-ci.sh en Node 22 y 24 y termina en el chequeo `public-ci`; el repo interno no la lleva, su CI es otra (story 8.7, AC 16)" },
     { "target": ".github/workflows/version-tag.yml", "from": "scripts/publishing/public-files/.github/workflows/version-tag.yml", "packages": ["core"], "reason": "el que etiqueta cada merge a main del repo público con v<número>: el número de versión lo pone el merge, no cada pedido; el repo interno no lo lleva" },
     { "target": ".github/workflows/npm-publish.yml", "from": "scripts/publishing/public-files/.github/workflows/npm-publish.yml", "packages": ["core"], "reason": "el que publica el paquete de npm del arnés (npx); el repo interno no lo lleva" },
-    { "target": "guides/incident-log.md", "from": "scripts/publishing/public-files/guides/incident-log.md", "packages": ["core"], "reason": "el incident-log real nombra los casos; el público explica por qué el ancla no resuelve (story 8.7, AC 6)" },
+    { "target": "guides/maintaining/incident-log.md", "from": "scripts/publishing/public-files/guides/maintaining/incident-log.md", "packages": ["core"], "reason": "el incident-log real nombra los casos; el público explica por qué el ancla no resuelve (story 8.7, AC 6)" },
     { "target": "scripts/setup/public-remotes.json", "from": "scripts/publishing/public-files/scripts/setup/public-remotes.json", "packages": ["core"], "reason": "la lista de remotos públicos, con el nombre ya puesto: con ella el programa de instalación reconoce un clon del público; en los repos internos no existe, así que un clon interno nunca cuenta como público (story 8.13, AC 25)" },
     { "target": "scripts/setup/get-harness.sh", "from": "scripts/publishing/public-files/scripts/setup/get-harness.sh", "packages": ["core"], "reason": "el guion de entrada de la portada (bash): revisa los requisitos, clona el repo público en ~/<repo> y corre harness.js install; se baja, se lee y se corre, nunca con tubería hacia un shell. Lleva la dirección por marcadores: en los repos internos no existe en scripts/setup/ (story 8.16, AC 41)" },
     { "target": "scripts/setup/get-harness.ps1", "from": "scripts/publishing/public-files/scripts/setup/get-harness.ps1", "packages": ["core"], "reason": "el gemelo de PowerShell 7 del guion de entrada (story 8.16, AC 42), con la dirección por marcadores y su BOM UTF-8" },

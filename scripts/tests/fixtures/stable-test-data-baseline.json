@@ -220,7 +220,6 @@
     "scripts/tests/suite-parts.test.js",
     "scripts/tests/suites-for-change.test.js",
     "scripts/tests/third-party-skills.test.js",
-    "scripts/tests/validation-public-notices.test.js",
     "scripts/tests/windows-guided.test.js",
     "scripts/tests/windows-portable.test.js",
     "scripts/tests/windows-rehearsal.test.js",

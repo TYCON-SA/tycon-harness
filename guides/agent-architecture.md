@@ -95,7 +95,7 @@ Qué autoridad tiene su output:
 > Desde el 2026-09-26 este revisor —y los de React y Next.js— **vive en el paquete
 > `bizuit`**, no en el código del pipeline: entra al set por su manifiesto. Ver «Paquetes de revisores».
 
-**Qué hace:** audita código .NET de plugins Bizuit contra `packs/bizuit/guides/bizuit-plugin-dotnet.md`.
+**Qué hace:** audita código .NET de plugins Bizuit contra la guía `bizuit-plugin-dotnet.md` del paquete bizuit.
 
 - SafeQueryBuilder usado (no raw SQL concat)
 - Feature-based folder structure
@@ -109,7 +109,7 @@ Qué autoridad tiene su output:
 
 **Core advisor** (solo para proyectos .NET — el YAML lo skipea automáticamente en repos frontend).
 
-**Lee en runtime:** `~/.claude/tycon-harness/packs/bizuit/guides/bizuit-plugin-dotnet.md`.
+**Lee en runtime:** la guía `bizuit-plugin-dotnet.md` de su paquete, en `~/.claude/tycon-harness/packs/<paquete>/guides/` (el paquete llega con la capa del equipo).
 
 ### 3. `tycon-plugin-tests-coverage` (during/post, WARNING)
 
@@ -170,9 +170,9 @@ organización viven en el repo de su perfil y llegan con la capa del equipo. Los
 
 | Paquete | Qué trae |
 |---|---|
-| `packs/bizuit` | el paquete del stack de TYCON: .NET + React/Next.js sobre Bizuit — las convenciones con que TYCON desarrolla plugins sobre Bizuit (`tycon-plugin-dotnet-conventions`, `-react-`, `-nextjs-`) y los revisores condicionales del stack .NET (hubs y clientes SignalR, migraciones, clientes HTTP, workers, cableado), con sus skills, sus guías y las plantillas para dar de alta un producto |
-| `packs/nextjs-postgres` | los revisores del stack Next.js + Postgres: aislamiento entre clientes, migraciones Drizzle, seguridad del App Router y sesiones |
-| `packs/clients` | el revisor de plugins hermanos y el del adaptador de la plataforma de comercio electrónico de un cliente |
+| `bizuit` | el paquete del stack de TYCON: .NET + React/Next.js sobre Bizuit — las convenciones con que TYCON desarrolla plugins sobre Bizuit (`tycon-plugin-dotnet-conventions`, `-react-`, `-nextjs-`) y los revisores condicionales del stack .NET (hubs y clientes SignalR, migraciones, clientes HTTP, workers, cableado), con sus skills, sus guías y las plantillas para dar de alta un producto |
+| `nextjs-postgres` | los revisores del stack Next.js + Postgres: aislamiento entre clientes, migraciones Drizzle, seguridad del App Router y sesiones |
+| `clients` | el revisor de plugins hermanos y el del adaptador de la plataforma de comercio electrónico de un cliente |
 
 Una máquina que se actualiza en los minutos entre que una versión saca un paquete del núcleo y la capa del equipo lo
 trae queda sin sus piezas hasta su próximo arranque, que refresca la capa: la capa no puede traer un paquete con el
@@ -189,7 +189,7 @@ hallazgos. El paquete hace explícito quién decide que corran, y el pipeline lo
 {
   "name": "bizuit",
   "description": "El paquete del stack de TYCON: .NET + React/Next.js sobre Bizuit. …",
-  "guides": ["packs/bizuit/guides/bizuit-plugin-dotnet.md"],
+  "guides": ["packs/<paquete>/guides/<guía>.md"],
   "reviewers": [
     {
       "agent": "tycon-plugin-dotnet-conventions",
@@ -552,10 +552,10 @@ Todo dev nuevo al equipo debe:
 ## Referencias cruzadas
 
 - [story-format.md](../story-format.md) — Mary+GOLD, leído en runtime por story-validator
-- [guides/engram-workflow.md](engram-workflow.md) — usado por retrospective-capturer
+- [guides/integrations/engram-workflow.md](integrations/engram-workflow.md) — usado por retrospective-capturer
 - [guides/git-commit-conventions.md](git-commit-conventions.md) — CRITICAL de commits sin autorización
 - [guides/workflow-orchestration.md](workflow-orchestration.md) — pipeline, principios, tasks/
-- `packs/bizuit/guides/bizuit-plugin-dotnet.md` (viaja con el paquete del stack) — leído en runtime por plugin-dotnet-conventions
+- la guía `bizuit-plugin-dotnet.md` del paquete bizuit (viaja con el paquete del stack) — leído en runtime por plugin-dotnet-conventions
 
 ---
 

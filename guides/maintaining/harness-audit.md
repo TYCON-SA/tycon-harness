@@ -133,10 +133,10 @@ Acciones priorizadas (failed checks por severity):
 
 ## Referencias
 
-- Script: [`scripts/lib/harness-audit.js`](../scripts/lib/harness-audit.js)
-- Categoría Catalog Integrity: usa internamente [`scripts/tools/rules-distill.js`](../scripts/tools/rules-distill.js)
-- Categoría Context Efficiency: lógica equivalente a [`scripts/tools/context-budget.js`](../scripts/tools/context-budget.js)
-- Categoría Security Guardrails: chequea [`guides/safety-guard.md`](safety-guard.md) + `packs/bizuit/guides/dotnet-hooks.md` (paquete bizuit, si está activo) + [`guides/signed-scope-guardrails.md`](signed-scope-guardrails.md)
+- Script: [`scripts/lib/harness-audit.js`](../../scripts/lib/harness-audit.js)
+- Categoría Catalog Integrity: usa internamente [`scripts/tools/rules-distill.js`](../../scripts/tools/rules-distill.js)
+- Categoría Context Efficiency: lógica equivalente a [`scripts/tools/context-budget.js`](../../scripts/tools/context-budget.js)
+- Categoría Security Guardrails: chequea [`guides/safety-guard.md`](../safety-guard.md) + la guía `dotnet-hooks.md` del paquete bizuit (si está activo) + [`guides/signed-scope-guardrails.md`](../signed-scope-guardrails.md)
 - Inspiración: [ECC harness-audit command](https://github.com/affaan-m/ECC/blob/main/commands/harness-audit.md)
 
 

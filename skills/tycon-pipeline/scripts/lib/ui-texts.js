@@ -2,7 +2,7 @@
 /**
  * ui-texts.js — lo que un usuario lee en una pantalla, sin el código alrededor (story 7.24).
  *
- * Caso disparador (2026-10-14, guides/incident-log.md#case-screen-passed-all-controls-unreadable-2026-10-14): una ventana pasó todos los controles y
+ * Caso disparador (2026-10-14, guides/maintaining/incident-log.md#case-screen-passed-all-controls-unreadable-2026-10-14): una ventana pasó todos los controles y
  * el dueño la vio «inentendible» en staging. La revisión de legibilidad leía sólo la guía del tester; las marcas que
  * hizo sobre textos de la pantalla se «resolvieron» reescribiendo la guía, y el texto malo siguió en el código.
  *

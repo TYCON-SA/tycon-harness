@@ -23,7 +23,7 @@
 # (TF_BUILD), un warning en la corrida — es donde se ve el uso desde los productos —, y donde está el arnés completo
 # lo anota en el registro de usos (scripts/lib/legacy-names.js --log-use, de fondo). Sin nombres viejos no cuesta nada:
 # es un bucle de bash sobre los argumentos. Bash 3.2: nada de arreglos asociativos ni `${v,,}`.
-# Guía: guides/nombres-en-ingles.md §«El traductor de scripts/ci».
+# Guía: guides/maintaining/nombres-en-ingles.md §«El traductor de scripts/ci».
 
 LEGACY_OPTIONS=()
 
@@ -36,7 +36,7 @@ _legacy_options_ci_warning() { # <viejo> <nuevo> <guion> [option|value]
   case "${TF_BUILD:-}" in [Tt][Rr][Uu][Ee]) ;; *) return 0 ;; esac
   [ /dev/stdout -ef /dev/stderr ] && return 0   # sin 2>/dev/null: redirigir stderr acá cambiaría lo que se compara
   [ "${4:-option}" = value ] && dash=""
-  printf '##vso[task.logissue type=warning]nombre viejo «%s%s» (%s) en %s: sigue andando y no es la causa de ningún error de este paso — cuando puedas, cambialo por «%s%s» (el viejo se retira: guides/nombres-en-ingles.md)\n' "$dash" "$1" "${4:-option}" "$3" "$dash" "$2" >&2
+  printf '##vso[task.logissue type=warning]nombre viejo «%s%s» (%s) en %s: sigue andando y no es la causa de ningún error de este paso — cuando puedas, cambialo por «%s%s» (el viejo se retira: guides/maintaining/nombres-en-ingles.md)\n' "$dash" "$1" "${4:-option}" "$3" "$dash" "$2" >&2
 }
 
 _legacy_options_note() { # <viejo> <nuevo> <guion> [option|value]

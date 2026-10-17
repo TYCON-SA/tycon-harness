@@ -446,7 +446,7 @@ test('T9 Readers_PlaceFirstThenLegacy_SilentFallback_LegacyNamedOnlyIfPresent_Us
   assert.match(boot, /\[LINK, LEGACY_LINK\]\.map\(realDir\)/);
   // los lectores en shell: la misma función en los tres archivos, y anda
   if (!HAS_BASH) { console.log('⏭ T9: NO MEDIDO — los lectores en shell (no hay bash)'); return; }
-  const fns = ['scripts/hooks/git-pre-commit-global.sh', '.githooks/pre-commit-skills'].map(shellFn);
+  const fns = ['scripts/hooks/git-pre-commit-global.sh', '.githooks/pre-commit-checks'].map(shellFn);
   assert.strictEqual(fns[0], fns[1], 'los dos lectores en shell llevan la misma función');
   const sh = fns[0];
   if (!bashPath(LAB)) { console.log('⏭ T9: NO MEDIDO — los lectores en shell (el bash no tiene cygpath para traducir la ruta de Windows)'); return; }

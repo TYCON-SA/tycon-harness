@@ -82,9 +82,12 @@ const SCENARIOS = Object.freeze({
   // story 8.40 (AC 34): el instalador del paquete de npm armado con `npm pack` y corrido con `npx --package` contra el GitHub
   // de juguete, y el aviso de pwsh 7 faltante. Va aparte, `all` no lo incluye
   npx: ['inventory', 'npx'],
+  // story 8.40 (AC 40): el paquete PUBLICADO, `npx @tyconsa/harness@latest` del registro y el GitHub reales; la segunda
+  // corrida dice «al día». Sin red, «no medido». Va aparte, `all` no lo incluye
+  'npx-published': ['inventory', 'npx-published'],
 });
 // todos los pasos que este guion sabe correr, en el orden en que salen en el reporte
-const STEP_ORDER = Object.freeze([...SCENARIOS.all, ...Object.keys(PORTABLE_STEPS), 'no-clone', 'codex-only', 'console-windows', 'migrate', 'waiver', 'npx']);
+const STEP_ORDER = Object.freeze([...SCENARIOS.all, ...Object.keys(PORTABLE_STEPS), 'no-clone', 'codex-only', 'console-windows', 'migrate', 'waiver', 'npx', 'npx-published']);
 // los pasos propios de los ensayos, con su tope en segundos (los demás son los de run.js, con el suyo)
 const OWN_STEPS = Object.freeze(Object.assign({
   // los dos ensayos del equipo: ninguna corrida suya pasa de 40 minutos (medido: unos 9 y unos 4). El tope de cada
@@ -97,6 +100,7 @@ const OWN_STEPS = Object.freeze(Object.assign({
   migrate: { script: path.join(HERE, 'migrate-probe.js'), cap: 2400, pass: ['allow-temp'] },
   waiver: { script: path.join(HERE, 'waiver-probe.js'), cap: 600, pass: ['allow-temp'] },
   npx: { script: path.join(HERE, 'npx-probe.js'), cap: 1800, pass: ['allow-temp'] },
+  'npx-published': { script: path.join(HERE, 'npx-probe.js'), cap: 1800, pass: ['allow-temp'], args: ['--from', 'registry'] },
 }, Object.fromEntries(Object.entries(PORTABLE_STEPS).map(([part, cap]) => [part, { script: path.join(HERE, 'portable-probe.js'), cap, pass: ['allow-temp'], args: ['--part', part] }]))));
 const OPTIONS = {
   '--lab': 'value', '--out': 'value', '--sources': 'value', '--scenario': 'value', '--cap': 'value', '--only': 'value',
@@ -412,6 +416,11 @@ function renderGuided(report) {
   if (lab) {
     M.push('## Lo que el laboratorio cambió', '', 'Todo lo que se puso o se cambió respecto de la máquina de una persona. Ningún otro carácter de ningún comando de la página se toca.', '');
     if (lab.download_origin) M.push(`- el origen de la bajada del guion: \`${cell(lab.download_origin.from)}\` → \`${cell(lab.download_origin.to)}\` (en ${cell(lab.download_origin.where)})`);
+    // (story 8.40, AC 43) la línea npx: el paquete armado en lugar del publicado, y la respuesta de la persona, dicha en
+    // una línea para que el verde no se lea como «la persona no tuvo que hacer nada»
+    if (lab.package) M.push(`- el paquete de npm: \`${cell(lab.package.from)}\` → \`${cell(lab.package.to)}\` (en ${cell(lab.package.where)}): ${cell(lab.package.why)}`);
+    if (lab.answer) M.push(`- la respuesta de la persona: en el paso ${cell(lab.answer.step)} se sumó \`${cell(lab.answer.append)}\` — ${cell(lab.answer.why)}`);
+    if (lab.public_routes) M.push(`- las rutas públicas del GitHub de juguete en los pasos con la línea npx (${cell(lab.public_routes.where)}): TYCON_RELEASE_GIT=${cell(lab.public_routes.TYCON_RELEASE_GIT)} · TYCON_RELEASE_ARCHIVE=${cell(lab.public_routes.TYCON_RELEASE_ARCHIVE)} · TYCON_RELEASE_RAW=${cell(lab.public_routes.TYCON_RELEASE_RAW)}`);
     if (lab.token) M.push(`- ${cell(lab.token)}`);
     if (lab.env_set) M.push(`- variables que se ponen: ${cell(Object.entries(lab.env_set).map(([k, val]) => `${k}=${val}`).join(' · '))}`);
     if (lab.env_set_with_team) M.push(`- desde que se suma la capa del equipo: ${cell(Object.entries(lab.env_set_with_team).map(([k, val]) => `${k}=${val}`).join(' · '))}`);

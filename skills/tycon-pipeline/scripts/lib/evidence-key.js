@@ -8,7 +8,7 @@
  * (`<id>-smoke-ledger.jsonl`, `<id>-runtime-matrix.md`, `<id>-e2e-gate-<ts>.md`…). Eso supone que el
  * número identifica UNA story en el repo, y en dos repos del equipo no es así: numeran por tema y cada
  * tema arranca en 1.1. La matriz de verificación por criterio contó un criterio como CORRIDO con el
- * registro de OTRA story del mismo número (2026-10-05, guides/incident-log.md#evidencia-pisada-entre-stories-2026-10-05).
+ * registro de OTRA story del mismo número (2026-10-05, guides/maintaining/incident-log.md#evidencia-pisada-entre-stories-2026-10-05).
  * Medido ese día: 35 de 88 evidencias de un repo y 20 de 79 de otro bajo un número compartido.
  *
  * ── LA REGLA ─────────────────────────────────────────────────────────────────────────────────────

@@ -520,7 +520,7 @@ function cmdSnapshotIter(nRaw, flags) {
   };
   // Constancia AUTOMÁTICA de la iteración en gates.log (fix 2026-08-28, 10ma recurrencia del
   // undercount — ZERO-ADVISOR-TRACE-ESCALATED, peor caso medido: la story 1.14 de un producto del equipo con 1
-  // entry para 6 iteraciones reales — guides/incident-log.md#case-iteration-log-undercount-2026-08-28). Antes el registro por iteración dependía de que el
+  // entry para 6 iteraciones reales — guides/maintaining/incident-log.md#case-iteration-log-undercount-2026-08-28). Antes el registro por iteración dependía de que el
   // orquestador invocara `check-count` en cada vuelta — un control que hay que acordarse de
   // invocar es un control que no corre. snapshot-iter es el ancla correcta: el orquestador YA
   // lo llama en cada iteración por interés propio (sin snapshot, smart-reloop degrada a
@@ -2482,7 +2482,7 @@ function guardarCambioDeCorrida(archivo, dump) {
 }
 
 function cmdClear() {
-  // Timing dump automático (auditoría 2026-06-11, pedido del dev — guides/incident-log.md#pipeline-cost-9.4): el cierre del
+  // Timing dump automático (auditoría 2026-06-11, pedido del dev — guides/maintaining/incident-log.md#pipeline-cost-9.4): el cierre del
   // pipeline archiva el marker completo + los gates de la sesión ANTES de borrar —
   // es la única fuente de la curva de costo por run (stepTimings, iteraciones,
   // checks, gates con duración). Mecánico: no depende de que el orquestador se
@@ -2849,7 +2849,7 @@ function cmdRuntimeWaiver(storyArg) {
     // 🔴 El TEXTO del AC va PRIMERO (2026-07-27). Antes el prompt mostraba la razón y el test, pero
     // nunca QUÉ decía el AC: el usuario aprobaba saltear la verificación de algo sin nombre — la
     // excusa sin el hecho. Es el mismo rubber-stamp que la confirmación por-AC vino a evitar, un
-    // nivel más abajo. Caso disparador: story 3.24 de un producto del equipo — guides/incident-log.md#case-waiver-prompt-without-ac-text-2026-07-27
+    // nivel más abajo. Caso disparador: story 3.24 de un producto del equipo — guides/maintaining/incident-log.md#case-waiver-prompt-without-ac-text-2026-07-27
     const texto = matrix.perAc[n].text;
     let ans;
     try {

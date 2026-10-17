@@ -964,7 +964,7 @@ capa_lab() { # capa_lab <dir>  — la máquina del equipo con la copia pública 
   rm -f "$INTERNAL/LICENSE" "$INTERNAL/scripts/setup/public-remotes.json"
   printf 'una línea que el exportador saca\n' >> "$INTERNAL/guides/public.md"
   mkdir -p "$INTERNAL/tasks" "$INTERNAL/skills/projects/acme"
-  printf '# plan privado\n' > "$INTERNAL/tasks/plan.md"; printf '# casos con nombre\n' > "$INTERNAL/guides/incident-log.md"
+  printf '# plan privado\n' > "$INTERNAL/tasks/plan.md"; printf '# casos con nombre\n' > "$INTERNAL/guides/maintaining/incident-log.md"
   printf '# skill de un producto\n' > "$INTERNAL/skills/projects/acme/SKILL.md"
   harness_lab_git "$INTERNAL" init -q -b main >/dev/null
   harness_lab_git "$INTERNAL" add -A >/dev/null

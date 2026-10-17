@@ -67,7 +67,7 @@
 // A mano:
 //   node scripts/publishing/new-names.js [--repo <dir>] [--source arnes|agent-skills]            (lo stageado)
 //   node scripts/publishing/new-names.js --range <base>...<punta> [--config-from tip|disk] [--json]
-// Guía: guides/publicacion-espejo.md §«El núcleo sin nombres»
+// Guía: guides/maintaining/publicacion-espejo.md §«El núcleo sin nombres»
 
 const fs = require('fs');
 const os = require('os');
@@ -961,7 +961,7 @@ function publishedReport(result) {
     '  (b) Si es un freno falso —el texto no es un nombre real, o tiene que quedar—: una excepción con motivo en «permitidos»',
     '      de la lista privada, en su clon (nunca en este árbol), y ese clon al día en esta máquina.',
     '  (c) TYCON_NEW_NAMES=0 apaga el freno para ese commit, y lo dice. El freno al empujar lo mira igual.',
-    '', 'Guía: guides/publicacion-espejo.md §«El núcleo sin nombres».');
+    '', 'Guía: guides/maintaining/publicacion-espejo.md §«El núcleo sin nombres».');
   return l.join('\n');
 }
 
@@ -1476,13 +1476,13 @@ function report(result, ownSource) {
       `      servidor interno»). Los inventados de ${CONFIG.table} NO se usan para un texto nuevo: cada uno corresponde`,
       '      a un real, y la tabla sólo tapa lo que quedó escrito. Sin par en la tabla: el sujeto genérico, o un par nuevo.',
       '  (b) Si es un caso (un incidente, una story, un PR): la regla y su porqué, sin el nombre. El caso —con el nombre—',
-      '      va al registro de incidentes (guides/incident-log.md, que no se publica). En un guion se lo cita por su',
+      '      va al registro de incidentes (guides/maintaining/incident-log.md, que no se publica). En un guion se lo cita por su',
       '      entrada; en una guía, una portada, una skill o un revisor no se enlaza ni se cuenta (eso lo mira',
       '      scripts/publishing/internal-history.js).',
       `  (c) Sólo si lo decide una persona, en un commit aparte: un «out» con motivo en ${CONFIG.list}`,
       `      (el archivo no debería salir) o una excepción de valor exacto en «permitidos» de ${CONFIG.denied}.`);
   }
-  l.push('', 'Guía: guides/publicacion-espejo.md §«El núcleo sin nombres».');
+  l.push('', 'Guía: guides/maintaining/publicacion-espejo.md §«El núcleo sin nombres».');
   return l.join('\n');
 }
 

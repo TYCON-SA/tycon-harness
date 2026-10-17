@@ -1008,3 +1008,248 @@ test('T45 Revisar_Repos_ReordenarModelsNoEsCambio @story-2.29 @ac-4 (tanda C, pa
   const r = ORG.revisar({ seccion: 'repos', texto: ORG.formatJson(actual), borrador: { ...TR_BASE, maintainers: GH('m'), models: { helpers: 'haiku', reviewers: 'opux' } }, lectores: { 'team-repos.js': TR } });
   assert.strictEqual(r.ok, true, JSON.stringify(r.problems));
 });
+
+// ── story 2.31: la configuración del equipo, entera desde el sitio ───────────────────────────────────────────────
+const TC = require(path.join(ROOT, 'scripts', 'lib', 'tycon-config.js'));
+const PERFIL_TYCON = { __doc: 'perfil de juguete', ado: { org: 'https://dev.azure.com/acme' }, integrations: { clockify: true, engram: true, mailbox: true, codex: 'detect', nightly: true }, update: { channel: 'latest', apply: 'auto', skills_source: 'separate' }, packs: { default: 'all' }, install: { profile: 'full' } };
+const CON_RESPUESTA = { ...PERFIL_TYCON, response: { language: 'es', style: 'executive', max_chars: 1300 } };
+/** La pestaña con el perfil del equipo (`team-profile.json`) y, si se pide, más archivos en el clon del perfil. */
+async function conEquipo({ profile = PERFIL_TYCON, layer = capa(ORG.RESPONSE_SINCE), ops = opsBase(), extra = {}, env = PERFIL_ENV, remotos = {} } = {}, fn) {
+  const dirOps = clon({ 'operations.json': ops });
+  const perfil = clon({ 'team-profile.json': profile, 'team-layer.json': layer, 'team-repos.json': TR_BASE, ...extra });
+  await conPestana({ fuentes: fuentesCon({ ops: dirOps, perfil }), env, opciones: { remotos } }, async (ctx) => {
+    const lead = await ctx.entrar(LEAD); const tok = await ctx.token(lead);
+    const estado = async () => (await ctx.h.pedir('/api/config', { cookie: lead })).json;
+    const seccion = async (id) => (await estado()).secciones.find((s) => s.id === id);
+    const revisar = async (id, borrador) => (await ctx.escribir('/api/config/revisar', lead, tok, { seccion: id, borrador })).json;
+    const proponer = async (id, texto) => { const s = await seccion(id); return (await ctx.escribir('/api/config/proponer', lead, tok, { seccion: id, texto, oid: s.oid })).json; };
+    await fn({ ...ctx, lead, tok, estado, seccion, revisar, proponer });
+  });
+}
+
+test('2.31-T1 ResponseSection_ShowsCurrentValueAndSource @story-2.31 @ac-1 — idioma, estilo y largo, con el valor vigente y de dónde sale', async () => {
+  const s = ORG.seccionPorId('respuesta');
+  assert.ok(s, 'hay una sección «Cómo contesta Claude»');
+  assert.deepStrictEqual([s.archivo, s.repo, s.lector, s.claves], ['team-profile.json', 'perfil', 'harness-config', ['response']]);
+  await conEquipo({ profile: CON_RESPUESTA }, async ({ seccion }) => {
+    const v = await seccion('respuesta');
+    assert.strictEqual(v.estado, 'cargado', JSON.stringify(v));
+    assert.deepStrictEqual(v.borrador, { response: CON_RESPUESTA.response });
+    assert.deepStrictEqual(v.extras.vigente, { language: 'es', style: 'executive', max_chars: 1300 });
+    assert.deepStrictEqual(v.extras.origen, { language: 'perfil', style: 'perfil', max_chars: 'perfil' });
+  });
+  await conEquipo({}, async ({ seccion }) => {
+    const v = await seccion('respuesta');
+    assert.deepStrictEqual(v.extras.vigente, { language: 'es', style: 'neutral', max_chars: TC.TOPE_POR_ESTILO.neutral });
+    assert.deepStrictEqual(v.extras.origen, { language: 'por defecto', style: 'por defecto', max_chars: 'del estilo' });
+  });
+  // la pantalla: los tres estilos con su línea, el idioma y el largo, y lo vigente dicho en llano
+  const p = await pantallaFalsa([{ ...seccionPerfil('respuesta', { response: CON_RESPUESTA.response }), extras: { vigente: { language: 'es', style: 'executive', max_chars: 1300 }, origen: { language: 'perfil', style: 'perfil', max_chars: 'perfil' } } }]);
+  assert.strictEqual(p.error, null);
+  const opciones = p.todo(p.sec('respuesta')).filter((n) => n.tag === 'option').map((n) => n.attrs.value);
+  for (const o of ['executive', 'detailed', 'neutral', 'es', 'en']) assert.ok(opciones.includes(o), `opción ${o}: ${opciones}`);
+  assert.match(p.textoDe('respuesta'), /Hoy: executive · es · 1300 caracteres \(del perfil\)/);
+});
+
+test('2.31-T2 ResponseSection_ProposesOnlyResponseKey_RestByteIdentical @story-2.31 @ac-2 — sólo cambia response; el archivo entero pasa el lector del perfil', async () => {
+  const r = ORG.revisar({ seccion: 'respuesta', texto: ORG.formatJson(PERFIL_TYCON), borrador: { response: { language: 'en', style: 'detailed' } }, lectores: { 'harness-config': TC } });
+  assert.strictEqual(r.ok, true, JSON.stringify(r.problems));
+  assert.strictEqual(r.texto, ORG.formatJson({ ...PERFIL_TYCON, response: { language: 'en', style: 'detailed' } }), 'el resto del archivo, byte a byte');
+  assert.strictEqual(TC.parse(r.texto).ok, true, 'pasa el lector en modo perfil');
+  const malo = ORG.revisar({ seccion: 'respuesta', texto: ORG.formatJson(PERFIL_TYCON), borrador: { response: { style: 'fancy', max_chars: 50 } }, lectores: { 'harness-config': TC } });
+  assert.strictEqual(malo.ok, false);
+  assert.deepStrictEqual(malo.problems.map((p) => p.path).sort(), ['response.max_chars', 'response.style']);
+  await conEquipo({}, async ({ revisar, proponer }) => {
+    const ok = await revisar('respuesta', { response: { style: 'executive', max_chars: 1300 } });
+    assert.strictEqual(ok.ok, true, JSON.stringify(ok.problems));
+    assert.match((await proponer('respuesta', ok.texto)).message, PASO_EL_PORTON);
+  });
+});
+
+test('2.31-T6 ResponseSection_OldLayerVersion_DoesNotPropose @story-2.31 @ac-5 — una capa que pide una versión anterior: se ve, no se propone, y se dice por qué', async () => {
+  assert.ok(ORG.versionAtLeast(ORG.RESPONSE_SINCE, ORG.MODELS_SINCE) && ORG.RESPONSE_SINCE !== ORG.MODELS_SINCE);
+  const viejo = JSON.stringify(capa(ORG.MODELS_SINCE));
+  const bajo = ORG.teamProfileGateProblem({ layerText: viejo, versionImagen: '2026.10.15.48', doc: CON_RESPUESTA });
+  assert.match(bajo, /todavía no se puede proponer/); assert.match(bajo, /response/); assert.ok(bajo.includes(`>= ${ORG.RESPONSE_SINCE}`), bajo);
+  assert.strictEqual(ORG.teamProfileGateProblem({ layerText: JSON.stringify(capa(ORG.RESPONSE_SINCE)), versionImagen: '2026.10.15.48', doc: CON_RESPUESTA }), null);
+  assert.strictEqual(ORG.teamProfileGateProblem({ layerText: viejo, versionImagen: '2026.10.15.48', doc: PERFIL_TYCON }), null, 'sin response, cualquier versión lee el perfil');
+  await conEquipo({ profile: CON_RESPUESTA, layer: capa(ORG.MODELS_SINCE) }, async ({ seccion, proponer }) => {
+    const v = await seccion('respuesta');
+    assert.strictEqual(v.soloLectura, true);
+    assert.match(v.motivo, /todavía no se puede proponer.*response/);
+    assert.deepStrictEqual(v.borrador, { response: CON_RESPUESTA.response }, 'los valores se muestran igual');
+    assert.match((await proponer('respuesta', ORG.formatJson({ ...CON_RESPUESTA, response: { style: 'neutral' } }))).message, /todavía no se puede proponer/);
+    // las otras secciones del perfil no dependen de response
+    assert.notStrictEqual((await seccion('actualizacion')).soloLectura, true);
+  });
+});
+
+test('2.31-T11 NewSections_ValidateWithMachineReader_RejectPersonalValues @story-2.31 @ac-10 @ac-11 @ac-12 @ac-13 @ac-16 — cada sección cambia sólo sus hojas y valida con el lector de la máquina', () => {
+  const rev = (seccion, borrador) => ORG.revisar({ seccion, texto: ORG.formatJson(PERFIL_TYCON), borrador, lectores: { 'harness-config': TC } });
+  const cambio = (r, esperado) => { assert.strictEqual(r.ok, true, JSON.stringify(r.problems)); assert.strictEqual(r.texto, ORG.formatJson(esperado)); };
+  // integraciones: las cinco del equipo; Telegram y CodeGraph no se editan acá (son de cada máquina)
+  const integ = ORG.seccionPorId('integraciones');
+  assert.deepStrictEqual(integ.rutas, ['integrations.clockify', 'integrations.engram', 'integrations.mailbox', 'integrations.codex', 'integrations.nightly']);
+  cambio(rev('integraciones', { integrations: { clockify: false, engram: true, mailbox: true, codex: true, nightly: true, codegraph: true } }), { ...PERFIL_TYCON, integrations: { ...PERFIL_TYCON.integrations, clockify: false, codex: true } });
+  assert.deepStrictEqual(rev('integraciones', { integrations: { clockify: 'sí' } }).problems.map((p) => p.path), ['integrations.clockify']);
+  // Azure DevOps: la organización; un correo ahí es un valor personal y lo rechaza el lector
+  cambio(rev('ado', { ado: { org: 'https://dev.azure.com/otra' } }), { ...PERFIL_TYCON, ado: { org: 'https://dev.azure.com/otra' } });
+  const personal = rev('ado', { ado: { org: 'alguien@acme.example' } });
+  assert.strictEqual(personal.ok, false); assert.strictEqual(personal.texto, null);
+  assert.match(personal.problems.map((p) => p.message).join(' '), /personal/);
+  // actualización: canal y aplicación; lo demás de `update` queda
+  cambio(rev('actualizacion', { update: { channel: 'stable', apply: 'ask' } }), { ...PERFIL_TYCON, update: { ...PERFIL_TYCON.update, channel: 'stable', apply: 'ask' } });
+  assert.deepStrictEqual(rev('actualizacion', { update: { channel: 'nightly', apply: 'auto' } }).problems.map((p) => p.path), ['update.channel']);
+  // instalación
+  cambio(rev('instalacion', { install: { profile: 'minimal' } }), { ...PERFIL_TYCON, install: { profile: 'minimal' } });
+  assert.deepStrictEqual(rev('instalacion', { install: { profile: 'medio' } }).problems.map((p) => p.path), ['install.profile']);
+  for (const id of ['respuesta', 'integraciones', 'ado', 'actualizacion', 'instalacion']) {
+    const s = ORG.seccionPorId(id);
+    assert.deepStrictEqual([s.archivo, s.repo, s.lector], ['team-profile.json', 'perfil', 'harness-config'], id);
+  }
+});
+
+test('2.31-T11b NewSections_InTheTab — vigente, ADO en GitHub, qué trae cada perfil de instalación', async () => {
+  await conEquipo({}, async ({ seccion, revisar }) => {
+    const ado = await seccion('ado');
+    assert.strictEqual(ado.estado, 'cargado', JSON.stringify(ado));
+    assert.match(ado.extras.proyecto, /ado-config\.yaml/);
+    assert.match(ado.extras.pedidos, /work-items/);
+    const inst = await seccion('instalacion');
+    assert.ok(inst.extras.perfiles.minimal.length > 0 && inst.extras.perfiles.full.length > inst.extras.perfiles.minimal.length, 'lo que trae cada perfil, de install-effects.json');
+    const r = await revisar('integraciones', { integrations: { ...PERFIL_TYCON.integrations, nightly: false } });
+    assert.strictEqual(r.ok, true, JSON.stringify(r.problems));
+  });
+  await conEquipo({ remotos: { perfil: { platform: 'github', org: 'acme', repo: 'profile' } } }, async ({ seccion }) => {
+    const ado = await seccion('ado');
+    assert.strictEqual(ado.soloLectura, true);
+    assert.match(ado.motivo, /no aplica/);
+  });
+});
+
+test('2.31-T12 ThreadsToggle_ProposesOnlySiteMailboxThreads @story-2.31 @ac-14 @ac-15 — el interruptor cambia sólo site.mailbox.threads, por el camino de la 2.29', async () => {
+  const s = ORG.seccionPorId('hilos');
+  assert.deepStrictEqual([s.archivo, s.repo, s.lector, s.rutas], ['operations.json', 'operaciones', 'operations-config.js', ['site.mailbox.threads']]);
+  assert.ok(ORG.ramaDePropuesta(s.idCorto).startsWith(`team-config/${s.idCorto}-`), 'la rama del pedido, como las de la 2.29');
+  const conBuzon = opsBase({ site: { maintainers: [LEAD], mailbox: { provider: 'azure-blob', account: 'acmeruns', container: 'corridas' }, refresh_minutes: 15 } });
+  const r = ORG.revisar({ seccion: 'hilos', texto: ORG.formatJson(conBuzon), borrador: { site: { maintainers: ['otro@acme.example'], mailbox: { threads: true } } }, lectores: { 'operations-config.js': OPS } });
+  assert.strictEqual(r.ok, true, JSON.stringify(r.problems));
+  assert.strictEqual(r.texto, ORG.formatJson({ ...conBuzon, site: { ...conBuzon.site, mailbox: { ...conBuzon.site.mailbox, threads: true } } }), 'sólo la hoja del interruptor');
+  await conEquipo({ ops: conBuzon }, async ({ seccion, revisar, proponer }) => {
+    const v = await seccion('hilos');
+    assert.strictEqual(v.estado, 'cargado', JSON.stringify(v));
+    const ok = await revisar('hilos', { site: { mailbox: { threads: true } } });
+    assert.strictEqual(ok.ok, true, JSON.stringify(ok.problems));
+    assert.match((await proponer('hilos', ok.texto)).message, PASO_EL_PORTON);
+  });
+  // sin buzón configurado, el interruptor no tiene a qué aplicarse: se dice
+  await conEquipo({}, async ({ seccion }) => {
+    const v = await seccion('hilos');
+    assert.strictEqual(v.soloLectura, true);
+    assert.match(v.motivo, /buzón/);
+  });
+});
+
+test('2.31-T13 ContentList_ReadOnly_NoEditAction @story-2.31 @ac-17 — lo que trae la organización, con ruta y enlace, sin editar', async () => {
+  const extra = { 'skills/acme-skill/SKILL.md': '# skill\n', 'agents/acme-revisor.md': '# revisor\n', 'onboarding/step-0-mac.md': '# alta\n', 'packs/acme/pack.json': { name: 'acme' } };
+  await conEquipo({ extra, env: { ...PERFIL_ENV, SITE_PROFILE_REPO: 'https://github.com/acme/profile.git' } }, async ({ estado }) => {
+    const r = await estado();
+    const c = r.contenido;
+    assert.ok(Array.isArray(c), JSON.stringify(r).slice(0, 200));
+    const rutas = c.map((x) => x.ruta);
+    for (const rel of ['skills/acme-skill', 'agents/acme-revisor.md', 'onboarding/step-0-mac.md', 'packs/acme']) assert.ok(rutas.includes(rel), `${rel} en ${rutas}`);
+    for (const x of c) assert.match(x.enlace, /^https:\/\/github\.com\/acme\/profile\//, x.ruta);
+    assert.ok(c.every((x) => typeof x.tipo === 'string' && x.tipo));
+  });
+  const p = await pantallaFalsa([]);
+  assert.strictEqual(p.error, null);
+});
+
+// ── story 2.31, pase adversarial: lo que el sitio tiene que aguantar ─────────────────────────────────────────────
+test('2.31-T16 Proponer_SoloLasHojasDeLaSeccion @story-2.31 @ac-15 (pase adversarial) — al proponer, una sección con rutas no cambia otras hojas de su clave', async () => {
+  const conBuzon = opsBase({ site: { maintainers: [LEAD, 'otro@acme.example'], mailbox: { provider: 'azure-blob', account: 'acmeruns', container: 'corridas' }, refresh_minutes: 15 } });
+  await conEquipo({ ops: conBuzon }, async ({ revisar, proponer }) => {
+    const ok = await revisar('hilos', { site: { mailbox: { threads: true } } });
+    assert.strictEqual(ok.ok, true, JSON.stringify(ok.problems));
+    assert.match((await proponer('hilos', ok.texto)).message, PASO_EL_PORTON, 'lo legítimo sigue pasando');
+    const doc = JSON.parse(ok.texto); doc.site.maintainers = ['otro@acme.example']; doc.site.refresh_minutes = 30;
+    const r = await proponer('hilos', ORG.formatJson(doc));
+    assert.strictEqual(r.ok, false);
+    assert.match(r.message, /site\.maintainers.*no es de esta sección/);
+  });
+  await conEquipo({}, async ({ revisar, proponer }) => {
+    const ok = await revisar('actualizacion', { update: { channel: 'stable', apply: 'ask' } });
+    assert.strictEqual(ok.ok, true, JSON.stringify(ok.problems));
+    const doc = JSON.parse(ok.texto); doc.update.skills_source = 'unified';
+    assert.match((await proponer('actualizacion', ORG.formatJson(doc))).message, /update\.skills_source.*no es de esta sección/);
+    const ok2 = await revisar('integraciones', { integrations: { ...PERFIL_TYCON.integrations, nightly: false } });
+    const doc2 = JSON.parse(ok2.texto); doc2.integrations.codegraph = true;
+    assert.match((await proponer('integraciones', ORG.formatJson(doc2))).message, /integrations\.codegraph.*no es de esta sección/);
+  });
+});
+
+test('2.31-T16b Rutas_SacarLaUnicaHoja_NoDejaObjetoVacio @story-2.31 @ac-2 (vuelta 2) — sacar la única hoja de una clave no deja «{}» en el archivo', () => {
+  const r = ORG.revisar({ seccion: 'instalacion', texto: ORG.formatJson(PERFIL_TYCON), borrador: {}, lectores: { 'harness-config': TC } });
+  assert.strictEqual(r.ok, true, JSON.stringify(r.problems));
+  const { install, ...sinInstall } = PERFIL_TYCON;
+  assert.ok(install, 'el perfil de juguete trae install');
+  assert.strictEqual(r.texto, ORG.formatJson(sinInstall), 'install, que sólo tenía profile, se va entero');
+  // y la hoja de un objeto que tiene otras hojas sale sola
+  const a = ORG.revisar({ seccion: 'actualizacion', texto: ORG.formatJson(PERFIL_TYCON), borrador: {}, lectores: { 'harness-config': TC } });
+  assert.deepStrictEqual(JSON.parse(a.texto).update, { skills_source: 'separate' });
+});
+
+test('2.31-T17 ContentList_GroupedSkills @story-2.31 @ac-17 (pase adversarial) — las skills agrupadas de la capa también se listan', async () => {
+  const extra = { 'skills/top/SKILL.md': '# a\n', 'skills/infra/s2/SKILL.md': '# b\n', 'skills/projects/acme/s1/SKILL.md': '# c\n', 'skills/notas.md': 'no es skill\n' };
+  await conEquipo({ extra }, async ({ estado }) => {
+    const rutas = (await estado()).contenido.filter((x) => x.tipo === 'skill').map((x) => x.ruta).sort();
+    assert.deepStrictEqual(rutas, ['skills/infra/s2', 'skills/projects/acme/s1', 'skills/top']);
+  });
+});
+
+test('2.31-T18 Gate_SoloLoQueCambia @story-2.31 @ac-5 (pase adversarial) — una lista de paquetes o un response ya escritos no frenan otra sección', () => {
+  const viejo = JSON.stringify(capa(ORG.MODELS_SINCE));
+  const sitio = '2026.10.20.1';   // la versión de este sitio, posterior a la que pide la capa: una lista la frena
+  const conLista = { ...CON_RESPUESTA, packs: { default: ['acme'] } };
+  const otro = { ...conLista, update: { ...conLista.update, channel: 'stable' } };
+  assert.strictEqual(ORG.teamProfileGateProblem({ layerText: viejo, versionImagen: sitio, doc: otro, actual: conLista }), null, 'sin cambiar packs ni response, no se frena');
+  assert.match(ORG.teamProfileGateProblem({ layerText: viejo, versionImagen: sitio, doc: { ...otro, response: { style: 'neutral' } }, actual: conLista }), /response/);
+  assert.match(ORG.teamProfileGateProblem({ layerText: viejo, versionImagen: sitio, doc: { ...otro, packs: { default: ['acme', 'otro'] } }, actual: conLista }), /lista de paquetes/);
+  assert.match(ORG.teamProfileGateProblem({ layerText: viejo, versionImagen: sitio, doc: otro }), /lista de paquetes/, 'sin el archivo actual, todo lo que trae');
+});
+
+test('2.31-T21 Espera_SeccionConSuPorton @story-2.31 @story-7.20 — el plazo del aviso de espera se edita en team-repos.json, con el lector y la versión que lo leen', async () => {
+  const s = ORG.seccionPorId('espera');
+  assert.ok(s, 'hay una sección del aviso de espera');
+  assert.deepStrictEqual([s.archivo, s.repo, s.lector, s.claves, s.idCorto], ['team-repos.json', 'perfil', 'team-repos.js', ['wait_notice'], 'repos']);
+  assert.ok(ORG.versionAtLeast(ORG.WAIT_NOTICE_SINCE, ORG.MODELS_SINCE) && ORG.WAIT_NOTICE_SINCE !== ORG.MODELS_SINCE);
+  const malo = ORG.revisar({ seccion: 'espera', texto: ORG.formatJson(TR_BASE), borrador: { wait_notice: { minutes: 0 } }, lectores: { 'team-repos.js': TR } });
+  assert.strictEqual(malo.ok, false);
+  assert.deepStrictEqual(malo.problems.map((p) => p.path), ['wait_notice.minutes'], 'el lector da el problema aparte y la sección no lo propone');
+  for (const [v, espera] of [[ORG.MODELS_SINCE, /todavía no se puede proponer.*wait_notice/], [ORG.WAIT_NOTICE_SINCE, PASO_EL_PORTON]]) {
+    await conPerfil({ layer: capa(v) }, async ({ seccion, revisar, proponer }) => {
+      assert.strictEqual((await seccion('espera')).estado, 'cargado');
+      const r = await revisar('espera', { wait_notice: { minutes: 10 } });
+      assert.strictEqual(r.ok, true, JSON.stringify(r.problems));
+      assert.deepStrictEqual(JSON.parse(r.texto), { ...TR_BASE, wait_notice: { minutes: 10 } }, 'el resto del archivo igual');
+      assert.match((await proponer('espera', r.texto)).message, espera);
+    });
+  }
+});
+
+test('2.31-T13b ContentList_Screen_NoButtons — la tabla de lo que trae la organización no tiene botones', async () => {
+  const creados = [];
+  const nodo = (tag) => { const n = { tag, hijos: [], textContent: '', attrs: {}, on: {}, setAttribute(k, v) { n.attrs[k] = v; }, appendChild(ch) { n.hijos.push(ch); return ch; }, addEventListener(e, f) { n.on[e] = f; }, replaceChildren(...cs) { n.hijos = cs; } }; creados.push(n); return n; };
+  const app = nodo('div');
+  const document = { querySelector: () => null, getElementById: (id) => (id === 'config-app' ? app : null), createElement: (t) => nodo(t) };
+  const respuesta = { ok: true, secciones: [], proponer: {}, versiones: [], productos: [], contenido: [{ tipo: 'skill', ruta: 'skills/acme-skill', enlace: 'https://github.com/acme/profile/tree/main/skills/acme-skill' }] };
+  const fetch = (ruta) => Promise.resolve({ status: 200, json: () => Promise.resolve(ruta === '/api/config' ? respuesta : { ok: false }) });
+  new Function('document', 'fetch', ORG.pantalla())(document, fetch);
+  for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
+  const tabla = creados.filter((n) => n.attrs.id === 'contenido').pop();
+  assert.ok(tabla, 'la tabla «Lo que trae la organización»');
+  const todo = []; const walk = (x) => { todo.push(x); x.hijos.forEach(walk); }; walk(tabla);
+  assert.ok(todo.some((n) => n.textContent === 'skills/acme-skill'), 'la ruta');
+  assert.ok(todo.some((n) => n.tag === 'a' && n.attrs.href === respuesta.contenido[0].enlace), 'el enlace al archivo');
+  assert.ok(!todo.some((n) => n.tag === 'button' || n.tag === 'input' || n.tag === 'select' || n.tag === 'textarea'), 'sin nada para editar');
+});

@@ -37,7 +37,7 @@ const lib = (name) => require(path.join(__dirname, '..', '..', 'lib', name));
 const rel = () => require(path.join(__dirname, 'release.js'));
 
 /**
- * El perfil del equipo se llama `team-profile.json` (lo que lee la máquina se nombra en inglés: guides/nombres-en-ingles.md).
+ * El perfil del equipo se llama `team-profile.json` (lo que lee la máquina se nombra en inglés: guides/maintaining/nombres-en-ingles.md).
  * El nombre de antes, `perfil-equipo.json`, sigue valiendo sin fecha de retiro: vive en repos del equipo que el arnés no
  * controla, y una máquina con una versión anterior sólo conoce ése. Se busca primero el nuevo; si no está, el de antes, con
  * un aviso de una línea que dice cómo renombrarlo. Con los dos, gana el nuevo, el de antes no se apila y se avisa.
@@ -1791,7 +1791,7 @@ function layerPaths(tree) {
 
 module.exports = {
   PROFILE_PATH, LEGACY_PROFILE_PATH, PROFILE_PATHS, isProfilePath, profileFileOf, profileIn, profileNameNotice,
-  CLOSED_PATHS, MANIFEST_NAME, DECLARATION, TEAM_REF, MAX_TOTAL_BYTES, MAX_FILES, FORBIDDEN_PROFILE_KEYS, TMP_PREFIX, PENDING_NAME, isLayerTemp,
+  CLOSED_PATHS, MANIFEST_NAME, DECLARATION, TEAM_REF, MAX_TOTAL_BYTES, MAX_FILES, ROOT_NOT_STACKED, FORBIDDEN_PROFILE_KEYS, TMP_PREFIX, PENDING_NAME, isLayerTemp,
   EXTRAS_FILE, MAX_EXTRAS, validateExtras, loadExtras, extrasEntryFor, extrasPathProblem, extrasReviewDue, dataHomeOf,
   extrasInLayer, findLegacyData, moveSkillData, extrasForeign, skillDataDoctor, blobStore,
   layerPathProblem, contentProblems, frontmatterKeys, versionIndex, checkAgainstVersion, judgeContent, dropStaged, isContentChecked, pruneEmptyDirs,

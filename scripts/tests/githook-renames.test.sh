@@ -11,13 +11,13 @@
 #
 # QUÉ SE MIDE, con los hooks REALES del repo corridos sobre repos de juguete (un doble mínimo por control, que anota
 # su llamada):
-#   pre-commit-harness — los tres disparos por ruta sin filtro de carpeta. Llevan `--no-renames`:
+#   la parte del arnés — los tres disparos por ruta sin filtro de carpeta. Llevan `--no-renames`:
 #     · H1  el presupuesto de los bloques del CLAUDE.md: un bloque movido fuera de `claude-md-blocks/`, y la guía del
 #           detalle movida de nombre;
 #     · H2  la versión pública del mapa del arnés: la privada movida de nombre (el control corre y frena: no la puede
 #           leer del índice);
 #     · H3  la paridad (`build/check.js`): un hook movido fuera de `scripts/hooks/`.
-#   pre-commit-skills — sus dos disparos piden la lista CON la carpeta (`-- skills agents …`, `-- 'agents/*.md'`): git
+#   la parte de las skills — sus dos disparos piden la lista CON la carpeta (`-- skills agents …`, `-- 'agents/*.md'`): git
 #     compara sólo adentro de ella, no encuentra con quién emparejar y lista la ruta vieja como borrada. Ya corrían; no
 #     se tocaron, y S1 y S2 lo dejan fijado.
 #   Los espejos: mover un archivo que ningún control vigila sigue sin correr nada; tocar uno vigilado sin moverlo sigue
@@ -35,10 +35,11 @@
 
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-HARNESS_HOOK="${ROOT}/.githooks/pre-commit-harness"
-SKILLS_HOOK="${ROOT}/.githooks/pre-commit-skills"
-if [ ! -f "${HARNESS_HOOK}" ] || [ ! -f "${SKILLS_HOOK}" ]; then
-  echo "githook-renames: NO MEDIDO — no encontré las dos partes del pre-commit (${HARNESS_HOOK}, ${SKILLS_HOOK}); esto no es verde"
+# las dos partes viven en el control único (.githooks/pre-commit-checks); cada caso lo corre entero, como un commit
+HARNESS_HOOK="${ROOT}/.githooks/pre-commit-checks"
+SKILLS_HOOK="${HARNESS_HOOK}"
+if [ ! -f "${HARNESS_HOOK}" ]; then
+  echo "githook-renames: NO MEDIDO — no encontré los controles del pre-commit (${HARNESS_HOOK}); esto no es verde"
   exit 1
 fi
 T="$(mktemp -d "${TMPDIR:-/tmp}/githook-renames.XXXXXX")" || { echo "githook-renames: NO MEDIDO — no pude crear una carpeta temporal"; exit 1; }
@@ -116,7 +117,7 @@ if [ "${WITH_OLD}" = "claude-md-blocks/style.md guides/style.md " ]; then ok "co
 else no "con --no-renames esperaba las dos rutas y salió «${WITH_OLD}»"; fi
 
 # ═════════════════════════════════════════════════════════════════════════════════════════════════════════════
-# pre-commit-harness
+# la parte del arnés
 # ═════════════════════════════════════════════════════════════════════════════════════════════════════════════
 # H1 · el presupuesto de los bloques del CLAUDE.md
 variant "${HARNESS}" h1-block; move claude-md-blocks/style.md guides/style.md; run_hook "${HARNESS_HOOK}"
@@ -184,7 +185,7 @@ else
 fi
 
 # ═════════════════════════════════════════════════════════════════════════════════════════════════════════════
-# pre-commit-skills (sin cambios: la lista se pide con la carpeta, y ahí la ruta vieja sale como borrada)
+# la parte de las skills (sin cambios: la lista se pide con la carpeta, y ahí la ruta vieja sale como borrada)
 # ═════════════════════════════════════════════════════════════════════════════════════════════════════════════
 variant "${SKILLS}" s1-agent; move agents/reviewer.md retired/reviewer.md; run_hook "${SKILLS_HOOK}"
 ran "S1 un revisor movido fuera de agents/ corre igual la paridad de los revisores" parity

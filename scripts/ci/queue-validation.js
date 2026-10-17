@@ -32,7 +32,7 @@
  * Uso:  node scripts/ci/queue-validation.js [--branch <rama>] [--pipeline <id>] [--org <org>] [--project <proyecto>]
  *                                           [--all] [--dry-run]
  *   --branch     por defecto, la rama actual del clon (`git rev-parse --abbrev-ref HEAD`).
- *   --all        la validación completa: corren todas las suites (parámetro `runAll` de pipelines/azure-pipelines-pr.yml, story 8.22).
+ *   --all        la validación completa: corren todas las suites (parámetro `runAll` de pipelines/azure-pipelines-maintainers-pr.yml, story 8.22).
  *                Sin él, la validación corre lo que la rama toca.
  *   --pipeline   o `TYCON_VALIDATION_PIPELINE`; con un origin de Azure, por defecto 170 (la validación del interno).
  *   --org/--project  o `TYCON_VALIDATION_ORG`/`TYCON_VALIDATION_PROJECT`; con un origin de Azure, por defecto los suyos

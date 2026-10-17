@@ -19,8 +19,8 @@
 
 set -uo pipefail
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-# Con el arnés y agent-skills en un repo (story 8.18), `.githooks/pre-commit` es el despachador y el guion del arnés
-# es `pre-commit-harness`: cuál es lo elige scripts/tests/lib/pre-commit-hook.js, como en githook-livefire.test.sh.
+# `.githooks/pre-commit` sólo llama a `.githooks/pre-commit-checks`, que trae los controles: cuál copiar lo elige
+# scripts/tests/lib/pre-commit-hook.js, como en githook-livefire.test.sh.
 # Si el ayudante falla, lo que diga se ve (no se tapa su salida de error) y queda el nombre de siempre.
 HOOK="$(node "$RAIZ/scripts/tests/lib/pre-commit-hook.js" harness "$RAIZ")"
 [ -n "$HOOK" ] || HOOK="$RAIZ/.githooks/pre-commit"
@@ -82,6 +82,20 @@ if [ "$RC" != "0" ] && grep -q "9.8" "$T/out.txt"; then
   ok "C-01 una story ilegible frena el commit (exit $RC) y el hook la nombra"
 else
   mal "C-01 una story ilegible NO frenó (exit $RC) — el lint no está cableado"; sed -n '1,10p' "$T/out.txt"
+fi
+rm -rf "$T"
+
+# ── caso 1b · la misma story ROTA con espacios y una tilde en el nombre → también FRENA ─────────
+# 🔴 rojo previo (pase adversarial de la 8.41): la lista iba sin comillas, el nombre se partía en pedazos que no existen y el
+# lint salía «0 revisadas · OK». Verificado contra el hook de antes: exit 0.
+T=$(mktemp -d); montar "$T"
+printf '%s' "$STORY_ROTA" > "$T/repo/specs/story 9.8 ñandú rota.md"
+( cd "$T/repo" && git add "specs/story 9.8 ñandú rota.md" )
+RC=$(correr_hook "$T")
+if [ "$RC" != "0" ] && grep -q "ñandú rota" "$T/out.txt"; then
+  ok "C-01b una story ilegible con espacios y tilde en el nombre frena el commit (exit $RC) y el hook la nombra"
+else
+  mal "C-01b una story ilegible con espacios en el nombre NO frenó (exit $RC) — la lista se parte"; sed -n '1,10p' "$T/out.txt"
 fi
 rm -rf "$T"
 

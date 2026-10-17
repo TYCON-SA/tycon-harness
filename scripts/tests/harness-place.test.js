@@ -350,7 +350,7 @@ test('T14 LinkOps_NodeOnly_WholeFileOperators_NoRecursiveRemoval_NoNewDollar', (
 const LEGACY_PATH_RX = new RegExp(`\\.claude[/\\\\]+${PLACE.LEGACY_PLACE_NAME}(?![A-Za-z0-9_-])|['"]\\.claude['"],\\s*['"]${PLACE.LEGACY_PLACE_NAME}['"]`);
 const PLACE_PATH_RX = new RegExp(`\\.claude[/\\\\]+${PLACE.PLACE_NAME}(?![A-Za-z0-9_-])`);
 // El alcance del barrido, por expresión (AC 28): lo versionado menos la historia.
-const HISTORY_RX = /^(specs|tasks|inbox|instincts|\.advisors|\.engram|\.dashboard)\/|^guides\/(incident-log\.md|decisions\/)|^scripts\/tests\/fixtures\/startup-lines\.json$/;
+const HISTORY_RX = /^(specs|tasks|inbox|instincts|\.advisors|\.engram|\.dashboard)\/|^guides\/((maintaining\/)?incident-log\.md|decisions\/|codex-migration\.md)|^scripts\/tests\/fixtures\/startup-lines\.json$/;
 function sweepScope(root) {
   const r = spawnSync('git', ['-C', root, 'ls-files'], { encoding: 'utf8' });
   assert.strictEqual(r.status, 0, `git ls-files: ${r.stderr}`);
@@ -484,7 +484,7 @@ test('T37 CodeMessagesAndUsageComments_PlacePath', () => {
 // ── T38 ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
 test('T38 Sweep_ScopeByExpression_LegacyPlacePathOnlyDeclared', () => {
   // la expresión del alcance: excluye la historia y nada más
-  for (const f of ['specs/x.md', 'tasks/todo.md', 'inbox/a/b.md', `${'instincts'}/x`, '.advisors/x', '.engram/x', '.dashboard/x', 'guides/incident-log.md', 'guides/decisions/x.md', 'scripts/tests/fixtures/startup-lines.json']) assert.ok(HISTORY_RX.test(f), `${f} es historia`);
+  for (const f of ['specs/x.md', 'tasks/todo.md', 'inbox/a/b.md', `${'instincts'}/x`, '.advisors/x', '.engram/x', '.dashboard/x', 'guides/maintaining/incident-log.md', 'guides/decisions/x.md', 'scripts/tests/fixtures/startup-lines.json']) assert.ok(HISTORY_RX.test(f), `${f} es historia`);
   for (const f of ['guides/piezas-del-arnes.md', 'INSTALL.md', 'agents/a.md', 'scripts/tests/fixtures/other.json', 'skills/x/SKILL.md']) assert.ok(!HISTORY_RX.test(f), `${f} no es historia`);
   // la expresión de la ruta vieja: la ruta en sus formas; el repo o el clon no
   for (const s of ['~/.claude/' + PLACE.LEGACY_PLACE_NAME + '/x', '$HOME/.claude/' + PLACE.LEGACY_PLACE_NAME, '%USERPROFILE%\\.claude\\' + PLACE.LEGACY_PLACE_NAME + '\\x',

@@ -29,7 +29,7 @@ Dos reglas, las mismas que sigue el equipo:
 
 1. **Lo que ejecuta la máquina, en inglés**: nombres de archivos, opciones, variables, claves de configuración,
    funciones. Los mensajes y los comentarios pueden ir en castellano. La guía es
-   [`guides/nombres-en-ingles.md`](../guides/nombres-en-ingles.md).
+   [`guides/maintaining/nombres-en-ingles.md`](../guides/maintaining/nombres-en-ingles.md).
 2. **Los ejemplos, con nombres inventados** (`acme`, «Cliente A»): ningún cliente, persona, servidor o máquina de
    verdad, ni en el código ni en las pruebas ni en la documentación.
 

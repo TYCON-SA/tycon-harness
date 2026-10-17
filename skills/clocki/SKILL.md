@@ -375,7 +375,7 @@ Toda la lógica que el agente ejecuta es agnóstica (lectura/escritura de archiv
 
 ## Pre-requisito
 
-El Clockify MCP server debe estar instalado (`bash scripts/setup/install-clockify-mcp.sh` desde el arnés). Si no está, el skill falla con "Clockify MCP no instalado — ver guides/clockify-mcp.md".
+El Clockify MCP server debe estar instalado (`bash scripts/setup/install-clockify-mcp.sh` desde el arnés). Si no está, el skill falla con "Clockify MCP no instalado — ver guides/integrations/clockify-mcp.md".
 
 ## Anti-patterns (lo que NO hace)
 

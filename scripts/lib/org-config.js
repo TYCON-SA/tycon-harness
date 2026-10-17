@@ -48,12 +48,24 @@ const SECCIONES = Object.freeze([
   Object.freeze({ id: 'paridad', titulo: 'Paridad: las diferencias declaradas', archivo: 'scripts/ci/product-parity.json', repo: 'operaciones', lector: 'check-product-parity.js', claves: ['diferencias_declaradas'], idCorto: 'parity', necesita: [] }),
   // qué paquetes activa la organización (`packs.default`: all, none o una lista). El perfil se llama team-profile.json; un
   // repo del perfil que todavía usa el nombre de antes se lee y se propone con ése (`archivoViejo`)
-  Object.freeze({ id: 'paquetes', titulo: 'Paquetes', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['packs'], idCorto: 'packs', necesita: ['packs'] }),
+  Object.freeze({ id: 'paquetes', titulo: 'Paquetes', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['packs'], idCorto: 'profile', necesita: ['packs'] }),
+  // story 2.31: lo que cambia la experiencia de cada dev, en el perfil del equipo, validado por el mismo lector de la
+  // máquina. `rutas` (opcional): las hojas que la sección cambia dentro de sus `claves`; lo demás de esas claves queda
+  // como estaba (Telegram y CodeGraph, de cada máquina, no se editan desde la sección de integraciones).
+  Object.freeze({ id: 'respuesta', titulo: 'Cómo contesta Claude', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['response'], idCorto: 'profile', necesita: ['response'] }),
+  Object.freeze({ id: 'integraciones', titulo: 'Integraciones', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['integrations'], rutas: Object.freeze(['integrations.clockify', 'integrations.engram', 'integrations.mailbox', 'integrations.codex', 'integrations.nightly']), idCorto: 'profile', necesita: ['integrations'] }),
+  Object.freeze({ id: 'ado', titulo: 'Azure DevOps', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['ado'], rutas: Object.freeze(['ado.org']), idCorto: 'profile', necesita: ['ado'] }),
+  Object.freeze({ id: 'actualizacion', titulo: 'Cómo se actualizan las máquinas', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['update'], rutas: Object.freeze(['update.channel', 'update.apply']), idCorto: 'profile', necesita: ['update'] }),
+  Object.freeze({ id: 'instalacion', titulo: 'Perfil de instalación', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['install'], rutas: Object.freeze(['install.profile']), idCorto: 'profile', necesita: ['install'] }),
+  // las conversaciones de las corridas: el interruptor del sitio, en operations.json (decisión 8 de la 2.31)
+  Object.freeze({ id: 'hilos', titulo: 'Conversaciones de las corridas', archivo: 'operations.json', repo: 'operaciones', lector: 'operations-config.js', claves: ['site'], rutas: Object.freeze(['site.mailbox.threads']), idCorto: 'operations', necesita: ['site'] }),
   // dos partes de team-repos.json con su propia sección (tanda C): dónde corren las suites al mergear (story 7.28) y el
   // modelo de cada trabajo del pipeline (story 7.29). Un lector anterior no las conoce: la sección dice «no sabe leer».
   // Comparten el identificador de rama con «repos»: un pedido abierto sobre el archivo frena los otros (un pedido por archivo)
   Object.freeze({ id: 'suites', titulo: 'Dónde corren las suites completas al mergear', archivo: 'team-repos.json', repo: 'perfil', lector: 'team-repos.js', claves: ['merge_suites'], idCorto: 'repos', necesita: ['merge_suites'] }),
   Object.freeze({ id: 'modelos', titulo: 'Modelos de cada trabajo del pipeline', archivo: 'team-repos.json', repo: 'perfil', lector: 'team-repos.js', claves: ['models'], idCorto: 'repos', necesita: ['models'] }),
+  // el plazo del aviso de espera (story 7.20): cuántos minutos espera una corrida a una persona antes de avisar
+  Object.freeze({ id: 'espera', titulo: 'Aviso de espera', archivo: 'team-repos.json', repo: 'perfil', lector: 'team-repos.js', claves: ['wait_notice'], idCorto: 'repos', necesita: ['wait_notice'] }),
 ]);
 const seccionPorId = (id) => SECCIONES.find((s) => s.id === id) || null;
 
@@ -111,7 +123,9 @@ const TEAM_REPOS_SINCE = '2026.10.13.10';
  */
 const MERGE_SUITES_SINCE = '2026.10.16.3';
 const MODELS_SINCE = '2026.10.16.10';
-const CLAVES_CON_VERSION = Object.freeze([['merge_suites', MERGE_SUITES_SINCE], ['models', MODELS_SINCE]]);
+// `wait_notice` (story 7.20): la etiqueta del merge que lo trajo al lector
+const WAIT_NOTICE_SINCE = '2026.10.17.8';
+const CLAVES_CON_VERSION = Object.freeze([['merge_suites', MERGE_SUITES_SINCE], ['models', MODELS_SINCE], ['wait_notice', WAIT_NOTICE_SINCE]]);
 /** La versión que tiene que pedir el perfil para este `team-repos.json` (sin archivo, la de siempre), y las claves por las que la pide. */
 function versionQuePide(doc) {
   let version = TEAM_REPOS_SINCE; const claves = [];
@@ -145,6 +159,34 @@ function profileGateProblem(layerText, doc) {
   if (m && versionAtLeast(m[1], version)) return null;
   if (claves.length) return `todavía no se puede proponer: el perfil pide «${req || 'nada'}» en team-layer.json, y una máquina con una versión anterior a la ${version} no sabe leer ${claves.join(' ni ')} de team-repos.json y rechazaría la capa entera. Primero se sube requires.harness a «>= ${version}» (o más)`;
   return `todavía no se puede proponer: el perfil pide «${req || 'nada'}» en team-layer.json, y una máquina con una versión anterior a la ${TEAM_REPOS_SINCE} rechazaría la capa entera si trae team-repos.json. Primero se sube requires.harness a «>= ${TEAM_REPOS_SINCE}» (o más)`;
+}
+
+/**
+ * 🔴 La primera versión del arnés cuyo lector conoce `response` en el perfil del equipo (story 2.31: la etiqueta del merge
+ * que la trajo). Una máquina con un lector anterior ve una clave desconocida y rechaza el perfil ENTERO; por eso, con
+ * `response` en el perfil propuesto, el perfil tiene que pedir al menos esta versión.
+ */
+const RESPONSE_SINCE = '2026.10.17.9';
+/**
+ * `null` si un `team-profile.json` así lo leen todas las máquinas que pide el perfil; si no, el motivo en llano. Junta
+ * las dos reglas del perfil: una LISTA de paquetes pide la versión del sitio (`packsListGateProblem`) y `response` pide
+ * `RESPONSE_SINCE`. Las otras claves las lee cualquier versión que admite la capa.
+ */
+function teamProfileGateProblem({ layerText, versionImagen, doc, actual }) {
+  // con el archivo actual, sólo frena lo que el pedido CAMBIA: una lista de paquetes o un `response` que ya están en el
+  // perfil no traban la edición de otra sección (pase adversarial de la 2.31); sin él, todo lo que trae el archivo
+  const cambia = (k) => !isObject(actual) || canonico(actual[k]) !== canonico(isObject(doc) ? doc[k] : undefined);
+  const paquetes = cambia('packs') ? packsListGateProblem({ layerText, versionImagen, valor: isObject(doc) && isObject(doc.packs) ? doc.packs.default : undefined }) : null;
+  if (paquetes) return paquetes;
+  if (!isObject(doc) || doc.response === undefined || !cambia('response')) return null;
+  let decl;
+  try { decl = JSON.parse(String(layerText)); } catch (e) {
+    return `no pude leer team-layer.json del perfil (${(e && e.message) || e}), y sin él no sé qué versión del arnés piden las máquinas`;
+  }
+  const req = String(((decl || {}).requires || {}).harness || '');
+  const m = /^>=\s*(\S+)$/.exec(req.trim());
+  if (m && versionAtLeast(m[1], RESPONSE_SINCE)) return null;
+  return `todavía no se puede proponer: el perfil pide «${req || 'nada'}» en team-layer.json, y una máquina con una versión anterior a la ${RESPONSE_SINCE} no sabe leer response de team-profile.json y rechazaría el perfil entero. Primero se sube requires.harness a «>= ${RESPONSE_SINCE}» (o más)`;
 }
 
 /**
@@ -228,8 +270,48 @@ function aplicarSeccion(doc, seccion, borrador) {
     return out;
   }
   const b = isObject(borrador) ? borrador : {};
+  if (seccion.rutas) {
+    // sólo esas hojas: lo demás de la clave queda como estaba; una hoja que el borrador no trae se saca, y el objeto que
+    // queda vacío por eso, también (no se escribe un `{}` que antes no estaba)
+    for (const ruta of seccion.rutas) {
+      const partes = ruta.split('.');
+      const valor = partes.reduce((o, k) => (isObject(o) ? o[k] : undefined), b);
+      const cadena = [base];
+      for (const k of partes.slice(0, -1)) {
+        const padre = cadena[cadena.length - 1];
+        if (!isObject(padre[k])) { if (valor === undefined) break; padre[k] = {}; }
+        cadena.push(padre[k]);
+      }
+      if (cadena.length !== partes.length) continue;
+      const hoja = partes[partes.length - 1];
+      if (valor === undefined) delete cadena[cadena.length - 1][hoja]; else cadena[cadena.length - 1][hoja] = clone(valor);
+      for (let i = cadena.length - 1; i > 0; i -= 1) { if (Object.keys(cadena[i]).length) break; delete cadena[i - 1][partes[i - 1]]; }
+    }
+    return base;
+  }
   for (const k of seccion.claves) { if (b[k] === undefined) delete base[k]; else base[k] = clone(b[k]); }
   return base;
+}
+
+/**
+ * Las hojas que un archivo propuesto cambia contra el actual DENTRO de las claves de la sección pero fuera de sus `rutas`
+ * (story 2.31): lo que «Proponer» rechaza. Sin `rutas`, ninguna: la sección es dueña de sus claves enteras.
+ */
+function hojasAjenas(seccion, actual, doc) {
+  if (!seccion || !seccion.rutas) return [];
+  const out = [];
+  const mirar = (a, b, p) => {
+    if (seccion.rutas.includes(p)) return;   // una hoja de la sección: puede cambiar
+    // un objeto contra otro (o contra nada: la sección lo puede crear o sacar por sus hojas) se mira hoja por hoja
+    if ((isObject(a) || a === undefined) && (isObject(b) || b === undefined) && (isObject(a) || isObject(b))) {
+      const oa = isObject(a) ? a : {}; const ob = isObject(b) ? b : {};
+      for (const k of new Set([...Object.keys(oa), ...Object.keys(ob)])) mirar(oa[k], ob[k], `${p}.${k}`);
+      return;
+    }
+    if (canonico(a) !== canonico(b)) out.push(p);
+  };
+  for (const k of seccion.claves) mirar(isObject(actual) ? actual[k] : undefined, isObject(doc) ? doc[k] : undefined, k);
+  return out;
 }
 
 /** Las claves del borrador que la sección no edita (una clave que no tiene campo en la pantalla va arriba). */
@@ -300,7 +382,7 @@ function revisar({ seccion, texto, borrador, lectores = {}, arnes = null, hoy = 
   if (!lectorSabe(lector, s)) return { ok: false, problems: [{ path: '', message: `esta versión del arnés todavía no sabe leer ${s.archivo}${s.claves ? ` → ${s.claves.join(', ')}` : ''}`, sinCampo: true }], texto: null };
   const ajenas = clavesAjenas(s, borrador);
   // un archivo que todavía no existe nace con lo mínimo que su lector pide (el perfil del equipo, vacío)
-  const base = actual || (s.archivo === 'operations.json' ? { version: 1, owners: { default: '' } } : s.id === 'paquetes' ? {} : { version: 1 });
+  const base = actual || (s.archivo === 'operations.json' ? { version: 1, owners: { default: '' } } : s.archivo === 'team-profile.json' ? {} : { version: 1 });
   let doc = aplicarSeccion(base, s, borrador);
   // lo que el borrador trae fuera de la sección se pone igual: el lector lo rechaza con su ruta, y eso va arriba
   for (const k of ajenas) doc[k] = clone(borrador[k]);
@@ -509,8 +591,15 @@ function pantalla() {
     suites: { t: 'Dónde corren las pruebas completas al mergear', d: 'Llega a todas las máquinas. Al mergear, cada repo corre sus pruebas completas en la máquina o deja que las corra el servidor, según esta regla.', corto: 'Pruebas al mergear' },
     modelos: { t: 'Qué modelo usa cada trabajo del pipeline', d: 'Llega a todas las máquinas. Lo que no se declara usa el modelo de hoy. Con techo obligatorio, ningún trabajo pasa de ese modelo.', corto: 'Modelos' },
     paridad: { t: 'Diferencias aceptadas entre productos', d: 'Cada noche se comparan los productos entre sí. Lo que uno hace distinto a propósito se anota acá, con una fecha para volver a mirarlo.', corto: 'Diferencias entre productos' },
+    espera: { t: 'Aviso de espera', d: 'Llega a todas las máquinas. Cuando una corrida espera a una persona, avisa pasado este plazo.', corto: 'Aviso de espera' },
+    respuesta: { t: 'Cómo contesta Claude', d: 'El idioma, el estilo y el largo de las respuestas en todas las máquinas. Llega a cada una con su próxima actualización, sin que el dev haga nada.', corto: 'Cómo contesta Claude' },
+    integraciones: { t: 'Integraciones', d: 'Qué servicios usa cada máquina del equipo. Llega a cada una con su próxima actualización; una máquina puede apagar una para ella sola.', corto: 'Integraciones' },
+    ado: { t: 'Azure DevOps', d: 'La organización de Azure DevOps del equipo. Llega a cada máquina con su próxima actualización.', corto: 'Azure DevOps' },
+    actualizacion: { t: 'Cómo se actualizan las máquinas', d: 'Qué versión toma cada máquina y si se actualiza sola. Llega a cada una con su próxima actualización.', corto: 'Actualización' },
+    instalacion: { t: 'Perfil de instalación', d: 'Cuánto instala el arnés en cada máquina. Llega a cada una con su próxima actualización.', corto: 'Instalación' },
+    hilos: { t: 'Conversaciones de las corridas', d: 'Si el sitio baja también lo que se habló en cada corrida, además de sus números.', corto: 'Conversaciones' },
   };
-  var BLOQUES = [['Personas y equipo', ['sitio', 'personas', 'responsables']], ['Dónde vive todo', ['repos', 'despliegues', 'canal']], ['Reglas de la noche', ['umbrales', 'paridad']], ['Cómo trabaja el pipeline', ['suites', 'modelos']]];
+  var BLOQUES = [['Personas y equipo', ['sitio', 'personas', 'responsables']], ['Dónde vive todo', ['repos', 'despliegues', 'canal']], ['Reglas de la noche', ['umbrales', 'paridad']], ['Cómo trabaja el pipeline', ['suites', 'modelos', 'espera']], ['Cómo trabaja cada máquina', ['respuesta', 'integraciones', 'actualizacion', 'instalacion', 'ado']], ['El sitio', ['hilos']]];
   var REPO_DE = { operaciones: 'el repo de operaciones', perfil: 'el repo del equipo' };
   function plano(s) { return PLANO[s.id] || { t: s.titulo, d: '', corto: s.titulo }; }
   function bloqueada(s) { return s.estado === 'no_reader' || s.estado === 'ilegible' || s.estado === 'no_configurado'; }
@@ -794,6 +883,79 @@ function pantalla() {
     mios.forEach(function (x) { box.appendChild(el('div', { class: 'err', text: x.message })); });
     return box;
   }
+  // ── story 2.31: las secciones del perfil que cambian la experiencia de cada dev ──
+  // pone o saca (valor vacío) una hoja; el objeto que queda vacío también se saca: no se propone un «{}» que no estaba
+  function hoja(d, clave, k, v) {
+    if (v === '' || v === undefined || v === null) { if (esObjeto(d[clave])) { delete d[clave][k]; if (!Object.keys(d[clave]).length) delete d[clave]; } return; }
+    if (!esObjeto(d[clave])) d[clave] = {};
+    d[clave][k] = v;
+  }
+  var ESTILOS = [['executive', 'ejecutivo: la conclusión primero y sin el cómo, con un tope corto'], ['detailed', 'detallado: la conclusión primero y después el porqué y el cómo'], ['neutral', 'neutro: claro y al punto, sin reglas propias de la organización']];
+  function editorRespuesta(s, d, pr) {
+    var r = d.response || {}; var ex = s.extras || {}; var vg = ex.vigente || {}; var og = ex.origen || {};
+    var box = el('div', { class: 'pila' });
+    box.appendChild(el('p', { class: 'muted', text: 'Hoy: ' + vg.style + ' · ' + vg.language + ' · ' + vg.max_chars + ' caracteres (' + (og.style === 'perfil' ? 'del perfil' : 'por defecto') + ')' }));
+    box.appendChild(selector('Idioma', r.language, [['', 'sin declarar (castellano)'], ['es', 'castellano'], ['en', 'inglés']], function (v) { hoja(d, 'response', 'language', v); }, 'response.language', pr));
+    box.appendChild(selector('Estilo', r.style, [['', 'sin declarar (neutro)']].concat(ESTILOS), function (v) { hoja(d, 'response', 'style', v); }, 'response.style', pr));
+    box.appendChild(campo('Largo máximo de prosa, en caracteres (300 a 4000; vacío: el del estilo)', r.max_chars, function (v) { hoja(d, 'response', 'max_chars', v === '' ? '' : Number(v)); }, 'response.max_chars', pr, { inputmode: 'numeric' }));
+    return box;
+  }
+  var INTEGRACIONES = [['clockify', 'Clockify: registra las horas de cada story'], ['engram', 'Memoria entre sesiones (engram)'], ['mailbox', 'Buzón de corridas: cada máquina sube sus corridas al sitio'], ['codex', 'Codex: el arnés también se enchufa a Codex'], ['nightly', 'Procesos de la noche del equipo']];
+  function editorIntegraciones(s, d, pr) {
+    var i = d.integrations || {};
+    var box = el('div', { class: 'pila' });
+    INTEGRACIONES.forEach(function (par) {
+      var k = par[0];
+      var opciones = [['', 'sin declarar (apagada)'], ['true', 'prendida'], ['false', 'apagada']].concat(k === 'codex' ? [['detect', 'prendida si Codex está instalado']] : []);
+      box.appendChild(selector(par[1], i[k] === undefined ? '' : String(i[k]), opciones, function (v) { hoja(d, 'integrations', k, v === 'true' ? true : v === 'false' ? false : v); }, 'integrations.' + k, pr));
+    });
+    box.appendChild(el('p', { class: 'muted', text: 'Telegram y CodeGraph se configuran en cada máquina: son de cada persona, no del equipo.' }));
+    return box;
+  }
+  function editorAdo(s, d, pr) {
+    var ex = s.extras || {};
+    var box = el('div', { class: 'pila' }, campo('La organización (su dirección en Azure DevOps)', (d.ado || {}).org, function (v) { hoja(d, 'ado', 'org', v); }, 'ado.org', pr));
+    if (ex.proyecto) box.appendChild(el('p', { class: 'muted', text: 'El proyecto: ' + ex.proyecto + '.' }));
+    if (ex.pedidos) box.appendChild(el('p', { class: 'muted', text: 'Los pedidos de trabajo: ' + ex.pedidos + '.' }));
+    return box;
+  }
+  function editorActualizacion(s, d, pr) {
+    var u = d.update || {};
+    return el('div', { class: 'pila' },
+      selector('Qué versión toma cada máquina', u.channel, [['', 'sin declarar (estable)'], ['latest', 'la última: cada máquina toma lo que entra a la rama principal'], ['stable', 'estable: sólo las versiones marcadas como estables']], function (v) { hoja(d, 'update', 'channel', v); }, 'update.channel', pr),
+      selector('Cómo se aplica', u.apply, [['', 'sin declarar (preguntando)'], ['auto', 'sola: la máquina se actualiza al arrancar, sin preguntar'], ['ask', 'preguntando: la máquina avisa y el dev decide cuándo']], function (v) { hoja(d, 'update', 'apply', v); }, 'update.apply', pr));
+  }
+  function editorInstalacion(s, d, pr) {
+    var ex = (s.extras || {}).perfiles || {};
+    var box = el('div', { class: 'pila' }, selector('Cuánto instala el arnés', (d.install || {}).profile, [['', 'sin declarar (completo)'], ['full', 'completo'], ['minimal', 'mínimo']], function (v) { hoja(d, 'install', 'profile', v); }, 'install.profile', pr));
+    if (ex.motivo) box.appendChild(aviso('bad', 'No se pudo leer qué trae cada perfil.', ex.motivo));
+    [['minimal', 'El mínimo trae'], ['full', 'El completo trae']].forEach(function (par) {
+      var lista = ex[par[0]] || []; var ul = el('ul', {});
+      lista.forEach(function (t) { ul.appendChild(el('li', { text: t })); });
+      box.appendChild(el('details', { class: 'mas-info' }, el('summary', { text: par[1] + ' ' + lista.length + ' cosas' }), ul));
+    });
+    return box;
+  }
+  function editorHilos(s, d, pr) {
+    var mb = (d.site || {}).mailbox || {};
+    return el('div', { class: 'pila' }, selector('Bajar las conversaciones', mb.threads === undefined ? '' : String(mb.threads), [['', 'sin declarar (no)'], ['true', 'sí: baja también lo que se habló en cada corrida; ocupa más y muestra más'], ['false', 'no: sólo los números de cada corrida']], function (v) {
+      if (!esObjeto(d.site)) d.site = {};
+      if (v === '') { if (esObjeto(d.site.mailbox)) delete d.site.mailbox.threads; return; }
+      if (!esObjeto(d.site.mailbox)) d.site.mailbox = {};
+      d.site.mailbox.threads = v === 'true';
+    }, 'site.mailbox.threads', pr));
+  }
+  // lo que trae la organización en el repo del equipo (AC 17): se mira y se abre en el repo, no se edita acá
+  function tablaDeContenido(filas) {
+    var sec = el('section', { class: 'card form-block', id: 'contenido' }, el('div', { class: 'fb-head' }, el('div', {}, el('h4', { text: 'Lo que trae la organización' }), el('p', { class: 'reach', text: 'Skills, revisores, guías de alta y paquetes del repo del equipo. Se cambian con un pedido en ese repo, no desde acá.' }))));
+    if (!filas || !filas.length) { sec.appendChild(el('p', { class: 'muted', text: filas ? 'Nada que mostrar.' : 'El repo del equipo todavía no se bajó.' })); return sec; }
+    var tabla = el('table', { class: 'tabla' }); var thead = el('thead', {}); var tr = el('tr', {});
+    ['Qué es', 'Dónde está'].forEach(function (t) { tr.appendChild(el('th', { text: t })); }); thead.appendChild(tr); tabla.appendChild(thead);
+    var tbody = el('tbody', {});
+    filas.forEach(function (f) { var ruta = f.enlace ? el('a', { href: f.enlace, text: f.ruta }) : el('span', { text: f.ruta }); tbody.appendChild(el('tr', {}, el('td', { text: f.tipo }), el('td', {}, ruta))); });
+    tabla.appendChild(tbody); sec.appendChild(el('div', { class: 'tbl-wrap' }, tabla));
+    return sec;
+  }
   var REGLAS = [['automatico', 'automático: el servidor, si la rama lo exige'], ['siempre-en-la-maquina', 'siempre en la máquina'], ['confiar-en-el-servidor', 'confiar en el servidor']];
   function editorSuites(s, d, pr) {
     MOSTRADOS = [];
@@ -869,7 +1031,16 @@ function pantalla() {
     box.appendChild(restoYTexto(s, d, pr, 'models', 'Los modelos, como texto'));
     return box;
   }
-  var EDITORES = { suites: editorSuites, modelos: editorModelos, paquetes: editorPaquetes, repos: editorRepos, responsables: editorResponsables, despliegues: editorDespliegues, canal: function (s, d, pr) { return editorGenerico(s, d, pr, 'notify', 'El canal, como texto'); }, personas: editorPersonas, sitio: editorSitio, umbrales: editorUmbrales, paridad: editorParidad };
+  // el plazo del aviso de espera (story 7.20): minutos enteros de 1 a 120; vacío, el de siempre (5)
+  function editorEspera(s, d, pr) {
+    var w = esObjeto(d.wait_notice) ? d.wait_notice : {};
+    return el('div', { class: 'pila' }, campo('Minutos que espera una corrida antes de avisar (1 a 120; vacío: 5)', w.minutes, function (v) {
+      if (v === '') { if (esObjeto(d.wait_notice)) { delete d.wait_notice.minutes; if (!Object.keys(d.wait_notice).length) delete d.wait_notice; } return; }
+      if (!esObjeto(d.wait_notice)) d.wait_notice = {};
+      d.wait_notice.minutes = Number(v);
+    }, 'wait_notice.minutes', pr, { inputmode: 'numeric' }));
+  }
+  var EDITORES = { espera: editorEspera, respuesta: editorRespuesta, integraciones: editorIntegraciones, ado: editorAdo, actualizacion: editorActualizacion, instalacion: editorInstalacion, hilos: editorHilos, suites: editorSuites, modelos: editorModelos, paquetes: editorPaquetes, repos: editorRepos, responsables: editorResponsables, despliegues: editorDespliegues, canal: function (s, d, pr) { return editorGenerico(s, d, pr, 'notify', 'El canal, como texto'); }, personas: editorPersonas, sitio: editorSitio, umbrales: editorUmbrales, paridad: editorParidad };
 
   // los editores de suites y modelos arman objetos vacíos para tener dónde escribir: no se mandan. Una clave vacía en el
   // archivo pediría al perfil una versión más nueva sin cambiar nada
@@ -1001,6 +1172,7 @@ function pantalla() {
     var ver = tablaDeMirar('Qué versión del arnés tiene cada máquina', 'La que informó cada una con su última corrida. Se actualizan solas al arrancar.', (ex.versiones || []).map(function (v) { return { maquina: v.maquina, persona: v.persona || 'sin confirmar', version: v.version, dia: v.diaTexto, texto: v.texto }; }), [['maquina', 'Máquina'], ['persona', 'Persona'], ['version', 'Versión'], ['dia', 'Última noticia'], ['texto', 'Estado']], 'versiones');
     if (ex.versionesMotivo) ver.appendChild(aviso('bad', 'No se pudo leer lo que informan las máquinas: la versión de cada una no se sabe.', ex.versionesMotivo));
     mirar.appendChild(ver);
+    if (ex.contenido !== undefined) mirar.appendChild(tablaDeContenido(ex.contenido));
     partes.push(mirar);
     app.replaceChildren.apply(app, partes);
   }
@@ -1018,8 +1190,8 @@ function pantalla() {
 }
 
 module.exports = {
-  SECCIONES, seccionPorId, loadReader, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem,
-  problemasDeSeccion, modelosDeHoy, motivoDeHoy,
+  SECCIONES, seccionPorId, loadReader, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, WAIT_NOTICE_SINCE, RESPONSE_SINCE, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
+  problemasDeSeccion, hojasAjenas, modelosDeHoy, motivoDeHoy,
   thresholdsParse, aplicarSeccion, revisar, versionesDeMaquinas, paridadPorProducto, ramaDePropuesta, tituloDePropuesta, cuerpoDePropuesta, pantalla,
   SIN_NOTICIAS_DIAS,
 };

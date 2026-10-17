@@ -1,6 +1,6 @@
 # Inventario de divergencias Claude Code ↔ Codex
 
-**Fecha:** 2026-08-15 · Entregable de la Etapa 0 de [codex-migration.md](codex-migration.md).
+**Fecha:** 2026-08-15 · Entregable de la primera etapa de la migración a Codex.
 Una fila por pieza del arnés, con su categoría de divergencia y qué caso de prueba la cubre.
 
 **Las tres categorías:**
@@ -76,7 +76,7 @@ compactación, pedido de permiso, arranque/fin de subagente) — oportunidad, no
 
 > Si un matcher no matchea, el hook **no se dispara nunca** y no hay error. Caso negativo obligatorio
 > por cada uno de los 9 hooks con matcher.
-> **Estado 2026-08-21 (Etapa B1)**: el banco (`guides/controls-bench.md`) cubre esto en las dos
+> **Estado 2026-08-21 (Etapa B1)**: el banco (`guides/maintaining/controls-bench.md`) cubre esto en las dos
 > capas — el canary del live-fire vigila el matcher-que-no-matchea dentro de cada herramienta
 > (verificado en ambas: 5/5 eventos disparan, canary calla), y `--prove-detection` demuestra que
 > un hook que no se dispara sale en rojo.

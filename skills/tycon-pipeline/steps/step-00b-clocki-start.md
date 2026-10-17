@@ -1,6 +1,6 @@
 # Arranque: reloj de Clockify
 
-**Objetivo**: abrir una entry en Clockify con el título de la story al arrancar la implementación. Pre-requisito: Clockify MCP instalado (ver `~/.claude/tycon-harness/guides/clockify-mcp.md`). Si no está instalado, este step se saltea silenciosamente — no bloquea el pipeline.
+**Objetivo**: abrir una entry en Clockify con el título de la story al arrancar la implementación. Pre-requisito: Clockify MCP instalado (ver `~/.claude/tycon-harness/guides/integrations/clockify-mcp.md`). Si no está instalado, este step se saltea silenciosamente — no bloquea el pipeline.
 
 Este step corre **después** del Step 0 (preflight pasó). Razón: si preflight aborta (ej: estamos en main), no queremos abrir timer.
 

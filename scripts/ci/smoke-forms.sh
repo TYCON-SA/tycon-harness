@@ -165,7 +165,7 @@ login() {
       "${URL}/api/auth/login" -H 'Content-Type: application/json' --data-raw "$body" 2>/dev/null) || code="000"
     [ "$code" = "200" ] && break
     # 🔴 El host devuelve su límite de ingresos como 401 con {"error":"Too Many Requests"}, no
-    # como 429 (medido: formularios de un producto en main, 2026-09-01 — guides/incident-log.md#case-smoke-login-rate-limited-2026-09-01; el humo era el 6º login del mismo job y el
+    # como 429 (medido: formularios de un producto en main, 2026-09-01 — guides/maintaining/incident-log.md#case-smoke-login-rate-limited-2026-09-01; el humo era el 6º login del mismo job y el
     # host lo cortó). Ese 401 es transitorio y se reintenta con espera larga; un 401 sin ese
     # texto es clave mal y no se reintenta.
     if [ "$code" = "401" ] && grep -qi "too many requests" "$respuesta" 2>/dev/null; then code="429"; fi

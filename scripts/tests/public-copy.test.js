@@ -191,9 +191,9 @@ test('BrokenLinks_SchemesAnchorsMailto_Ignored', () => {
 test('BrokenLinks_ResolvesAgainstFileFolder', () => {
   const seen = [];
   const exists = (p) => { seen.push(p); return true; };
-  const files = [{ file: 'guides/bizuit/x.md', text: lines('[1](../incident-log.md#caso) [2](./y.md?plain=1) [3](../../scripts/tools/) [4](<con espacio.md>) [5](mi%20guia.md "título")', '![img](../img/a.png)') }];
+  const files = [{ file: 'guides/bizuit/x.md', text: lines('[1](../maintaining/incident-log.md#caso) [2](./y.md?plain=1) [3](../../scripts/tools/) [4](<con espacio.md>) [5](mi%20guia.md "título")', '![img](../img/a.png)') }];
   assert.deepStrictEqual(pc.brokenLinks(files, exists), []);
-  assert.deepStrictEqual(seen, ['guides/incident-log.md', 'guides/bizuit/y.md', 'scripts/tools', 'guides/bizuit/con espacio.md', 'guides/bizuit/mi guia.md', 'guides/img/a.png']);
+  assert.deepStrictEqual(seen, ['guides/maintaining/incident-log.md', 'guides/bizuit/y.md', 'scripts/tools', 'guides/bizuit/con espacio.md', 'guides/bizuit/mi guia.md', 'guides/img/a.png']);
 });
 
 test('BrokenLinks_SiblingRepoInTwoRepoLayout_Resolves', () => {
@@ -277,7 +277,7 @@ test('ReadmePaths_TwoRepoLayout_HarnessReadme', () => {
 // registro de incidentes, el README y el INSTALL, ni las convenciones del repo del lector.
 test('PublicCopy_PathThatDoesNotTravel_IsMarked', () => {
   const repo = existsIn('tasks/plan-x.md', 'tasks/todo.md', '.tycon/x', 'specs/story-1.2-algo.md', 'scripts/a.js', 'scripts/b.js',
-    'guides/incident-log.md', 'guides/a.md', 'inbox', 'skills/s/steps/paso.md');
+    'guides/maintaining/incident-log.md', 'guides/a.md', 'inbox', 'skills/s/steps/paso.md');
   const copia = existsIn('scripts/b.js', 'guides/a.md', 'skills/s/steps/paso.md');
   const opts = { inRepo: repo, inCopy: copia, conventions: ['tasks/todo.md', '.tycon/', 'specs'] };
   const M = pc.NOT_IN_COPY_MARK;
@@ -287,7 +287,7 @@ test('PublicCopy_PathThatDoesNotTravel_IsMarked', () => {
     'Está en la copia: `scripts/b.js`; no existe: `scripts/zzz.js`.',      // 2: nada
     'Convenciones: `tasks/todo.md`, `.tycon/x`, `specs`.',                 // 3: nada
     'Una story del equipo: `specs/story-1.2-algo.md`; un ejemplo: `specs/story-9.9-ejemplo.md`.', // 4: sólo la primera
-    'El caso: `guides/incident-log.md#un-caso-2026-01-01`.',              // 5: nada
+    'El caso: `guides/maintaining/incident-log.md#un-caso-2026-01-01`.',              // 5: nada
     'Con línea: `scripts/a.js:12`.',                                        // 6: marcada
     FENCE,
     'node scripts/a.js',

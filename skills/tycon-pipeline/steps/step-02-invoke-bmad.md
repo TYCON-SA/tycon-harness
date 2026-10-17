@@ -25,7 +25,7 @@ Si el `approach` no matchea ninguno de los anteriores, default a `/bmad-dev-stor
 ANTES de invocar el skill BMAD, correr:
 
 ```
-mem_search(project: "<nombre canónico del repo — ver guides/engram-workflow.md>",
+mem_search(project: "<nombre canónico del repo — ver guides/integrations/engram-workflow.md>",
            query: "<keywords del título de la story + dominio + archivos del scope>")
 ```
 

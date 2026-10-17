@@ -23,7 +23,7 @@
 //   node scripts/publishing/export.js --explain [--json]
 //        [--harness <ref>] [--agent-skills <ref>]  (default origin/main · repos: TYCON_GUIDES_DIR y TYCON_SKILLS_DIR)
 //        [--allowlist <f>] [--replacements <f>] [--denied <f>] [--public-repos <f>]   (default: los de scripts/publishing/)
-// Guía: guides/publicacion-espejo.md
+// Guía: guides/maintaining/publicacion-espejo.md
 
 const fs = require('fs');
 const os = require('os');
@@ -160,14 +160,10 @@ function fijasConNombreViejo(fijas) {
 // Las otras tres carpetas de la tanda vivían en la raíz, fuera de todo «in»: una foto vieja las trae como entradas del
 // primer nivel sin clasificar y la exportación sale 2 sin escribir nada (no hace falta una clase para ellas).
 const NOCTURNO_DEPENDENCIAS = { fuente: 'arnes', glob: 'scripts/nightly/dependencies/**', motivo: 'la revisión nocturna de dependencias del equipo' };
-// La validación de cada pedido y sus plantillas (story 8.26, tanda C, AC 48): las únicas rutas de `pipelines/` que viajan.
-// Rutas exactas, nunca un glob: lo que no está nombrado acá sigue bajo la exclusión fija.
-const VALIDACION_PUBLICA = Object.freeze([
-  'pipelines/azure-pipelines-pr.yml',
-  'pipelines/templates/correr-suites.yml',
-  'pipelines/templates/fetch-snapshot.yml',
-  'pipelines/templates/traer-repos.yml',
-]);
+// La validación de cada pedido y sus plantillas viajaban en la copia (story 8.26, tanda C, AC 48); desde la story 8.41
+// (tanda F2) son del repo privado y ninguna ruta de `pipelines/` fuera de los modelos de operaciones viaja. Rutas exactas,
+// nunca un glob: lo que no está nombrado acá sigue bajo la exclusión fija.
+const VALIDACION_PUBLICA = Object.freeze([]);
 // Los modelos de los pipelines de operaciones que el arnés le da a cada organización: la carpeta existe SÓLO en el repo
 // público (el privado no tiene pipelines/operations/; los pipelines vivos del equipo están en su repo de operaciones),
 // así que todo lo que hay ahí ya es público por construcción. Es la única carpeta del `salvo`: sin ella, una guía pública
@@ -208,7 +204,7 @@ const EXCLUIDOS_SIEMPRE = Object.freeze([
   { fuente: 'arnes', glob: 'specs/**', motivo: 'las stories del arnés: casos nominados con fecha' },
   { fuente: 'arnes', glob: 'qa/**', motivo: 'las guías de prueba de las stories del arnés' },
   { fuente: 'arnes', glob: '_bmad/**', motivo: 'la configuración de BMAD del equipo' },
-  { fuente: 'arnes', glob: 'guides/incident-log.md', motivo: 'los incidentes del equipo, con casos nominados' },
+  { fuente: 'arnes', glob: 'guides/maintaining/incident-log.md', motivo: 'los incidentes del equipo, con casos nominados' },
   { fuente: 'arnes', glob: 'guides/guide-update-proposals.md', motivo: 'propuestas internas sobre las guías' },
   // story 8.12, tanda R5: el inventario vive con los documentos fechados de decisiones; la exclusión sigue al archivo (el
   // reemplazo que queda en la ruta vieja no la cubre: si la guía se vuelve a mover sin su glob, la exportación sale 2)
@@ -225,7 +221,7 @@ const EXCLUIDOS_SIEMPRE = Object.freeze([
   // story 8.26 (tanda C, AC 48): `salvo` la validación y sus plantillas, que después del corte viven en el repo público
   // (Azure sólo valida un pedido de GitHub si el YAML está en ese repo) y desde ya viajan, así el detector y el freno de
   // nombres de cada publicación las miran. La lista es cerrada y con nombre: un pipeline nuevo queda afuera solo.
-  { fuente: 'arnes', glob: 'pipelines/**', motivo: 'los pipelines del equipo en Azure DevOps y la plantilla que trae sus repos', salvo: [...VALIDACION_PUBLICA, MODELOS_DE_OPERACIONES], motivoSalvo: 'la validación de cada pedido y sus plantillas, que después del corte viven en el repo público (story 8.26, tanda C), y los modelos de los pipelines de operaciones, que sólo existen ahí' },
+  { fuente: 'arnes', glob: 'pipelines/**', motivo: 'los pipelines del equipo en Azure DevOps y la plantilla que trae sus repos', salvo: [...VALIDACION_PUBLICA, MODELOS_DE_OPERACIONES], motivoSalvo: 'los modelos de los pipelines de operaciones, que sólo existen en el repo público (la validación de cada pedido y sus plantillas son del repo privado desde la story 8.41)' },
   // story 8.9: la tanda C1 mudó acá el ejecutable y la F, sus dos .json; la exclusión sigue al archivo. La carpeta vieja
   // (hoy, sólo reemplazos) queda excluida como clase, al final de esta lista: `carpetasFijasConNombreViejo`
   // 2026-10-14 (decisión 1 del dueño, story 8.30): el código de los dos nocturnos —dependencias y vigilante— es público.
@@ -259,7 +255,7 @@ const TRANSFORMACIONES = Object.freeze([
   { nombre: 'public-texts', que: 'allowlist.json → publicTexts: en el archivo declarado, el texto EXACTO del repo (puede ocupar varios renglones) pasa a su versión pública, las veces declaradas; si no aparece esas veces, sale 2. Para los textos de código que mandan a una integración del equipo que no viaja: los bloques internos sólo existen en los .md' },
   { nombre: 'sinteticos', que: 'allowlist.json → synthetic: el archivo de la copia es el sintético declarado; con «packages», en las exportaciones que incluyen alguno de ellos; sin él, cuando un «in» del paquete cubre el destino. Nunca pisa algo que ya sale (sale 2)' },
   { nombre: 'gitignore-publico', que: '.gitignore de cada repo: se quitan las líneas «!…» que vuelven a incluir algo de una exclusión fija; con --single-repo, además se ignora cada carpeta de primer nivel del repo fuente en la que la copia no trae ningún archivo (story 8.26); una que sólo difiere en mayúsculas de una que la copia trae, o con un salto de línea en el nombre, frena la copia' },
-  { nombre: 'nombres-viejos', que: 'scripts/lib/renames.json (story 8.9): el reemplazo de cada ruta vieja de archivo o carpeta no sale; y un archivo que sale no puede nombrar una ruta vieja (fuera de guides/nombres-en-ingles.md)' },
+  { nombre: 'nombres-viejos', que: 'scripts/lib/renames.json (story 8.9): el reemplazo de cada ruta vieja de archivo o carpeta no sale; y un archivo que sale no puede nombrar una ruta vieja (fuera de guides/maintaining/nombres-en-ingles.md)' },
   { nombre: 'rutas-del-otro-repo', que: 'scripts/lib/renames.json (story 8.9, AC 19): la ruta vieja ya mudada que un repo nombra del OTRO se traduce al nombre nuevo (la copia sale de los dos repos juntos); la que un repo nombra de sí mismo frena la copia. Un reemplazo generado sin entrada en el mapa que algo que sale nombra sale 2 (story 8.7, AC 30)' },
   { nombre: 'traducciones-codex', que: 'adapters/codex/agents*/*.toml: se REGENERAN con build/generate.js desde los .md ya reemplazados (no se reemplazan); la que queda distinta de su blob va al listado' },
   // story 8.7, tanda A
@@ -270,9 +266,8 @@ const TRANSFORMACIONES = Object.freeze([
   { nombre: 'internal-blocks', que: 'todo .md: sale el bloque interno con sus marcadores y queda visible el sólo-público sin los suyos; un marcador sin par, anidado, en un cerco, entre dos filas de una tabla o fuera de un .md sale 2' },
   { nombre: 'public-name', que: `los sintéticos: {{public-org}} y {{public-repo}} pasan al nombre público de ${PUBLIC_REPOS} (o --public-repos); otro {{public-…}} sale 2` },
   { nombre: 'merged-gitignore', que: '--single-repo: el .gitignore de la copia son las líneas de los dos, primero las del arnés, sin repetir. Desde el repo unido (story 8.18) no hace nada: el .gitignore ya es uno y sale como está' },
-  { nombre: 'merged-hooks', que: '--single-repo: el .githooks/pre-commit de cada fuente pasa a pre-commit-harness y pre-commit-skills, y un despachador generado corre los dos, siempre, cada uno en su proceso. Desde el repo unido (story 8.18) no hace nada: el repo ya trae las dos partes y el despachador' },
   // story 8.18: el repo unido en la copia de dos repos
-  { nombre: 'split-hooks', que: 'sin --single-repo, desde el repo unido: cada parte del pre-commit (pre-commit-harness, pre-commit-skills) vuelve a ser el .githooks/pre-commit del repo de su fuente, y el despachador no sale (en dos repos llamaría a una parte que quedó en el otro)' },
+  { nombre: 'split-hooks', que: 'sin --single-repo, desde un commit del repo unido que trae el pre-commit partido en dos (pre-commit-harness, pre-commit-skills): cada parte vuelve a ser el .githooks/pre-commit del repo de su fuente, y el despachador no sale (en dos repos llamaría a una parte que quedó en el otro). Con el control único (.githooks/pre-commit-checks) no hay nada que partir: sale como está' },
   // story 8.13, tanda D
   { nombre: 'generated', que: `allowlist.json → generated: un archivo que no sale de ninguna fuente. Hoy ${VERSION_FILE}: con --stamp-version <YYYY.MM.DD.N> (sólo con --single-repo) la copia lo trae en su raíz, con ese número y el commit de cada fuente; sin la opción la copia no cambia, y en la sincronización lo agrega mirror.js con la misma función. Una fuente o un sintético que ya trae ese destino sale 2` },
 ]);
@@ -1508,40 +1503,31 @@ function explicar(args, cfg) {
   return 0;
 }
 
-// ── --single-repo (story 8.7, AC 11): las dos fuentes juntas desde la raíz de UN repo ──────────────────────────────────
-// Una ruta que llega de las dos fuentes sale 2, salvo las dos que tienen transformación con nombre: el .gitignore (unido)
-// y el pre-commit (los dos, con un despachador que corre los dos siempre).
+// ── --single-repo: las dos fuentes juntas desde la raíz de UN repo ──────────────────────────────────────────────────
+// Una ruta que llega de las dos fuentes sale 2, salvo el .gitignore, que tiene transformación con nombre (unido).
 const PRE_COMMIT = '.githooks/pre-commit';
-const PRE_COMMIT_DISPATCHER = [
-  '#!/usr/bin/env bash',
-  '# .githooks/pre-commit de la copia pública: un despachador que generó el exportador (transformación merged-hooks).',
-  '# La copia junta en un repo los dos del equipo, y cada uno trae su pre-commit: los dos corren SIEMPRE, cada uno en su',
-  '# proceso (la salida temprana de uno no saltea al otro), con la raíz del repo como arnés y como agent-skills. El commit',
-  '# se crea sólo si pasan los dos.',
-  'set -u',
-  'raiz="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"',
-  'export TYCON_GUIDES_DIR="$raiz" TYCON_SKILLS_DIR="$raiz"',
-  'correr() { if [ -x "$1" ]; then "$1"; else bash "$1"; fi; }',
-  'fallo=0',
-  'correr "$raiz/.githooks/pre-commit-harness" || fallo=1',
-  'correr "$raiz/.githooks/pre-commit-skills" || fallo=1',
-  'exit "$fallo"',
-  '',
-].join('\n');
 
 // El repo unido, en la copia de DOS repos (story 8.18). Sin --single-repo cada fuente sale como un repo propio. El repo
 // unido trae el pre-commit ya partido —las dos partes y el despachador que las corre en UN repo—: en dos repos el
 // despachador llamaría a una parte que quedó en el otro, y en el repo «arnes» de la copia ningún commit se podría crear
 // (lo encontró export-real.test.sh, T21: «pre-commit-skills: No such file or directory»). Cada parte vuelve a ser el
-// `.githooks/pre-commit` del repo de su fuente y el despachador no sale: lo contrario de `merged-hooks`, y la forma
+// `.githooks/pre-commit` del repo de su fuente y el despachador no sale: la forma
 // que la copia de dos repos tuvo siempre. Va sobre las claves de la copia, antes de escribirla en disco.
-// 🔴 Con UNA sola parte (o con el despachador y ninguna) sale 2 nombrando lo que falta (revisión del tramo 2, vuelta 1):
-// antes volvía callado y la copia salía con un despachador que llama a un archivo que no está. Sólo sin ningún pre-commit
-// (una lista blanca que deja `.githooks/` afuera) no hay nada que partir. Casos: export.test.js, *SplitHooks*.
+// Con UNA sola parte sale 2 nombrando la que falta: la copia saldría con un pre-commit que llama a un archivo que no
+// está. Sin ninguna de las dos (el control único `.githooks/pre-commit-checks`, que es del arnés, o una lista blanca que
+// deja `.githooks/` afuera) no hay nada que partir. Casos: export.test.js, *SplitHooks*.
 const HOOK_PARTS = Object.freeze({ arnes: `${PRE_COMMIT}-harness`, 'agent-skills': `${PRE_COMMIT}-skills` });
 function splitHooks(copia, ajustes) {
   const missing = FUENTES.filter((f) => !copia.has(`${f}/${HOOK_PARTS[f]}`)).map((f) => HOOK_PARTS[f]);
-  if (missing.length === FUENTES.length && !copia.has(`arnes/${PRE_COMMIT}`)) return;   // ningún pre-commit: nada partido
+  if (missing.length === FUENTES.length) {   // sin las dos partes (el control único, o ningún pre-commit): nada que partir
+    // …pero el control único es un envoltorio que ejecuta .githooks/pre-commit-checks: sin él, la copia saldría con un
+    // pre-commit que llama a un archivo que no está (revisión de la F2: antes esto salía callado)
+    const hook = copia.get(`arnes/${PRE_COMMIT}`);
+    if (hook && hook.datos && hook.datos.toString('utf8').includes('pre-commit-checks') && !copia.has(`arnes/${PRE_COMMIT}-checks`)) {
+      throw new NoPudo(`split-hooks: sale arnes/${PRE_COMMIT} pero no arnes/${PRE_COMMIT}-checks, que es lo que ejecuta — la copia tendría un pre-commit que llama a un archivo que no está`);
+    }
+    return;
+  }
   if (missing.length) {
     throw new NoPudo(`split-hooks: falta ${missing.join(' y ')} en la copia — el repo unido trae el pre-commit partido en dos y la copia de dos repos necesita las dos partes (sin ella, el repo de esa fuente saldría con un pre-commit que llama a un archivo que no está)`);
   }
@@ -1723,7 +1709,7 @@ function mencionesViejas(textos, viejos) {
   // copia del núcleo no salía desde el merge de la P.
   const lectores = require('./spanish-names.js').LEGACY_READERS;
   for (const [clave, texto] of textos) {
-    if (clave === 'arnes/guides/nombres-en-ingles.md') continue;
+    if (clave === 'arnes/guides/maintaining/nombres-en-ingles.md') continue;
     if (clave.startsWith('arnes/') && lectores.has(clave.slice('arnes/'.length))) continue;
     // la foto de un pipeline de producto real nombra los guiones viejos a propósito: los productos no se tocan hasta el
     // retiro y T32 corre esas líneas así (`--stale-mentions` la exceptúa igual, en STALE_ZONES). Sin esto la copia del
@@ -2063,7 +2049,7 @@ function pathsNotInCopy(textos, { inRepo, inCopy, conventions = [], installPrefi
       if (!dicha || /[<{*?`]/.test(dicha) || /^[a-z][a-z0-9+.-]*:\/\//i.test(dicha)) continue;
       const ruta = dicha.split('#')[0].replace(/:\d+(-\d+)?$/, '').replace(/^\.\//, '').replace(/\/+$/, '');
       if (!ruta || ruta.startsWith('/') || ruta.startsWith('~') || ruta.split('/').includes('..')) continue;
-      if (dicha.includes('#') && ruta === 'guides/incident-log.md') continue;
+      if (dicha.includes('#') && ruta === 'guides/maintaining/incident-log.md') continue;
       const vecina = !desdeLaRaiz && carpeta !== '.' ? path.posix.normalize(`${carpeta}/${ruta}`) : null;
       if (inCopy(ruta) || (vecina && inCopy(vecina))) continue;
       // primero la vecina del archivo (gana sobre una convención suelta del mismo nombre); después, desde la raíz
@@ -2410,9 +2396,8 @@ module.exports = {
   applyPublicTexts,
   // story 8.8: la identidad fija del commit de la copia — la sincronización (mirror.js) firma sus commits con la misma
   COMMIT_IDENTITY: AUTOR,
-  // story 8.18: el texto del despachador (el .githooks/pre-commit del repo unido ES este texto, byte a byte: lo compara
-  // scripts/tools/union-check.js) y la pregunta «¿este commit es del repo unido?» (una fuente física, o dos)
-  PRE_COMMIT_DISPATCHER, isUnifiedCommit, PRIVATE_FOLDERS_NOTE, ignorePrivateFolders,
+  // story 8.18: la pregunta «¿este commit es del repo unido?» (una fuente física, o dos)
+  isUnifiedCommit, PRIVATE_FOLDERS_NOTE, ignorePrivateFolders,
   // story 8.18 (pase adversarial del tramo 2, clase 11): el nombre de cada parte del pre-commit del repo unido, para
   // que la foto de export-compare.js no anote como excluida una parte que split-hooks publica
   HOOK_PARTS,

@@ -72,7 +72,7 @@ test('GuidedPage_RealPage_BlockIsReadByItsMark', { skip: !fs.existsSync(PAGE) &&
   const block = L.coverBlock(text, m.page.mark, m.page.fence);
   assert.ok(block && block.length > 2000, 'coverBlock devuelve el bloque de la parte 1');
   assert.match(block, /^Necesito instalar en esta máquina el arnés TYCON/, 'empieza donde empieza lo que la persona copia');
-  assert.match(block, /^7\. /m, 'entero: llega al último paso');
+  assert.match(block, /^6\. /m, 'entero: llega al último paso');
   assert.doesNotMatch(block, /^8\. /m, 'y son siete: el del permiso de GitHub ya no está');
   const lines = text.replace(/\r\n/g, '\n').split('\n');
   const open = lines.indexOf('<!-- guided:base -->');
@@ -98,7 +98,7 @@ test('GuidedPage_RealPage_BlockIsReadByItsMark', { skip: !fs.existsSync(PAGE) &&
 test('GuidedSteps_Manifest_HasItsShape', () => {
   const m = G.loadManifest();
   assert.deepStrictEqual(G.manifestProblems(m), []);
-  assert.deepStrictEqual(m.steps.map((s) => s.id), ['tools', 'download', 'plan', 'install', 'git-hooks', 'verify', 'report']);
+  assert.deepStrictEqual(m.steps.map((s) => s.id), ['tools', 'plan', 'install', 'git-hooks', 'verify', 'report']);
   assert.strictEqual(new Set(m.steps.map((s) => s.id)).size, m.steps.length, 'identificadores únicos');
   for (const s of m.steps) {
     assert.match(s.id, /^[a-z][a-z-]*$/, `${s.id}: en inglés, sin espacios`);
@@ -114,12 +114,18 @@ test('GuidedSteps_Manifest_HasItsShape', () => {
     }
   }
   assert.deepStrictEqual(m.steps.filter((s) => s.runs === 'person').map((s) => s.id), ['report']);
-  // el comando de bajada va con los marcadores, como en la página interna: la ficha viaja sin que nadie le resuelva nada
-  const download = m.steps.find((s) => s.id === 'download').commands[0].text;
-  assert.match(download, /^Invoke-WebRequest -OutFile get-harness\.ps1 https:\/\/raw\.githubusercontent\.com\/\{\{public-org\}\}\/\{\{public-repo\}\}\/main\/scripts\/setup\/get-harness\.ps1$/);
-  assert.ok(download.includes(m.lab.download_origin), 'trae el origen que el laboratorio reemplaza');
-  // y no va por la API: sin credencial tiene un tope de 60 consultas por hora por conexión (deuda DEF-8.34-portada-por-la-api)
-  assert.doesNotMatch(download, /api\.github\.com/);
+  // (story 8.40, AC 43) la instalación es la línea npx de la página, la misma en el plan y en instalar; el laboratorio
+  // declara sus dos cambios: el paquete armado en lugar del publicado, y la respuesta de la persona en el paso install
+  const npxOf = (id) => m.steps.find((s) => s.id === id).commands[0].text;
+  assert.strictEqual(npxOf('plan'), 'npx @tyconsa/harness@latest --audience me --profile full --integrations none --packs all --dry-run');
+  assert.strictEqual(npxOf('install'), 'npx @tyconsa/harness@latest --audience me --profile full --integrations none --packs all');
+  assert.ok(npxOf('plan').startsWith(m.lab.package.from) && npxOf('install').startsWith(m.lab.package.from), 'el cambio del paquete calza con los dos');
+  assert.match(m.lab.package.to, /\{\{package\}\}/, 'el paquete armado va como marcador');
+  assert.deepStrictEqual([m.lab.answer.step, m.lab.answer.append], ['install', '--yes']);
+  assert.ok(m.lab.package.why.length > 15 && m.lab.answer.why.length > 15, 'cada cambio dice por qué');
+  assert.strictEqual(m.needs.entry_package, 'scripts/setup/npm/package.json');
+  // nadie baja ya el guion de entrada en la parte 1: queda a mano, fuera de lo que se ensaya
+  for (const s of G.machineSteps(m)) for (const c of s.commands) assert.doesNotMatch(c.text, /get-harness\.ps1|raw\.githubusercontent\.com|api\.github\.com/, `${s.id}: «${c.text}»`);
   // la página baja el guion SIN credencial (el repo de la versión publicada es público): ningún comando de la ficha
   // manda un permiso de GitHub, y la ficha declara que el GitHub de juguete sirve el repo sin permiso
   for (const s of G.machineSteps(m)) for (const c of s.commands) assert.doesNotMatch(c.text, /Authorization|TYCON_GITHUB_TOKEN|Bearer/, `${s.id}: «${c.text}» no lleva credencial`);
@@ -201,7 +207,7 @@ test('GuidedSteps_EveryCommand_IsInTheMarkedBlock', { skip: !fs.existsSync(PAGE)
   const checked = G.checkPage(m, block, { names });
   assert.deepStrictEqual(checked.problems, []);
   assert.strictEqual(checked.ok, true);
-  assert.deepStrictEqual([checked.page_steps, checked.manifest_steps], [7, 7], 'la cuenta de pasos numerados del bloque es la de la ficha');
+  assert.deepStrictEqual([checked.page_steps, checked.manifest_steps], [6, 6], 'la cuenta de pasos numerados del bloque es la de la ficha');
   const lines = block.split('\n');
   for (const s of G.machineSteps(m)) for (const c of s.commands) {
     const said = G.withNames(c.text, names);
@@ -210,39 +216,59 @@ test('GuidedSteps_EveryCommand_IsInTheMarkedBlock', { skip: !fs.existsSync(PAGE)
   }
 });
 
+test('GuidedPage_NpxOrNpmLineTheManifestDoesNotKnow_IsACommand', () => {
+  // npx es ahora el comando principal de la página: uno que la ficha no conoce, sangrado como los que corre el asistente,
+  // es un comando (no prosa) y el ensayo lo nombra
+  for (const line of ['   npx --yes @otro/paquete --dry-run', '   npm install -g @openai/codex', '      npx @tyconsa/harness@latest --audience me']) assert.strictEqual(G.looksLikeCommand(line), true, `«${line.trim()}» es un comando`);
+  for (const line of ['   npx no anda en esta red: pará y avisame', '   npm es un paquete aparte en algunas distribuciones']) assert.strictEqual(G.looksLikeCommand(line), false, `«${line.trim()}» es prosa`);
+  if (!fs.existsSync(PAGE)) return;
+  const m = G.loadManifest();
+  const names = PAGE_REL.startsWith('scripts/publishing/') ? null : G.namesOf(fs.readFileSync(path.join(ROOT, m.needs.names), 'utf8'));
+  const lines = G.readBlock(fs.readFileSync(PAGE, 'utf8'), m).block.split('\n');
+  const at = lines.findIndex((l) => l.trim() === 'git config --global --get core.hooksPath');
+  assert.ok(at > 0, 'el paso de los hooks de git trae su comando');
+  lines.splice(at + 1, 0, '   npx --yes @otro/paquete --dry-run');
+  const checked = G.checkPage(m, lines.join('\n'), { names });
+  assert.strictEqual(checked.ok, false);
+  assert.ok(checked.problems.some((p) => /un comando que la ficha no conoce: «npx --yes @otro\/paquete/.test(p.what)), JSON.stringify(checked.problems));
+});
+
 // ═══ T4 · la página cambió: se nombra el paso y no se ensaya nada ══════════════════════════════════════════════
 
 test('GuidedSteps_PageChanged_NamesTheStepAndRehearsesNothing', () => {
   const m = G.loadManifest();
   const ok = toyPage('guided-page-ok.md');
-  const read = (page) => (rel) => ({ 'getting-started/windows.md': page, 'scripts/setup/get-harness.ps1': '# get-harness.ps1 — de juguete\n', 'scripts/setup/public-remotes.json': TOY_REMOTES }[rel] || null);
+  const read = (page) => (rel) => ({ 'getting-started/windows.md': page, 'scripts/setup/npm/package.json': '{ "name": "@tyconsa/harness", "version": "1.0.2" }\n', 'scripts/setup/public-remotes.json': TOY_REMOTES }[rel] || null);
   const fine = G.prepare({ read: read(ok), manifest: m });
   assert.strictEqual(fine.problem, undefined, fine.problem);
   assert.deepStrictEqual([fine.names, fine.page_name_from], [TOY_NAMES, 'scripts/setup/public-remotes.json']);
   // un comando cambiado
   const changed = G.prepare({ read: read(toyPage('guided-page-changed.md')), manifest: m });
   assert.match(changed.problem, /install/, 'dice el identificador del paso');
-  assert.match(changed.problem, /--packs all --yes/, 'y lo que faltó');
+  assert.match(changed.problem, /--packs all/, 'y lo que faltó');
   assert.strictEqual(changed.block, undefined, 'no devuelve con qué ensayar: nunca a medias');
   // un paso de más: las dos cuentas
-  const extra = G.prepare({ read: read(ok.replace('\nPara trabajar con BIZUIT Extensions', '\n8. Un paso nuevo que la ficha no conoce.\n\nPara trabajar con BIZUIT Extensions')), manifest: m });
-  assert.match(extra.problem, /8 .*7|7 .*8/);
-  // la página de ANTES (con el paso del permiso de GitHub y la bajada con credencial) contra la ficha de hoy: no calza,
-  // y no se ensaya nada. Es lo que pasa si la página y la ficha no cambian juntas
+  const extra = G.prepare({ read: read(ok.replace('\nPara trabajar con BIZUIT Extensions', '\n7. Un paso nuevo que la ficha no conoce.\n\nPara trabajar con BIZUIT Extensions')), manifest: m });
+  assert.match(extra.problem, /7 .*6|6 .*7/);
+  // la página de ANTES (con la bajada del guion de entrada como paso propio, story 8.40) contra la ficha de hoy: no
+  // calza, y no se ensaya nada. Es lo que pasa si la página y la ficha no cambian juntas
   const pageBefore = ok
-    .replace('2. Bajar el guion', '2. El permiso de lectura de GitHub. Esto lo hago YO: PARÁ y decime que lo cree y lo pegue en una ventana.\n\n3. Bajar el guion')
-    .replace('Invoke-WebRequest -OutFile', "Invoke-WebRequest -Headers @{ Authorization = \"Bearer $env:TYCON_GITHUB_TOKEN\"; Accept = 'application/vnd.github.raw' } -OutFile");
+    .replace('2. Ver el plan', '2. Bajar el guion de instalación: dame estas dos líneas.\n       Invoke-WebRequest -OutFile get-harness.ps1 https://raw.githubusercontent.com/acme-lab/arnes-lab/main/scripts/setup/get-harness.ps1\n\n3. Ver el plan');
   const before = G.prepare({ read: read(pageBefore), manifest: m });
-  assert.match(before.problem, /8 pasos numerados y la ficha 7/, 'un paso de más');
-  assert.match(before.problem, /download/, 'y la bajada, que ya no es la de la ficha');
+  assert.match(before.problem, /7 pasos numerados y la ficha 6/, 'un paso de más');
   assert.strictEqual(before.block, undefined);
   // el comienzo del renglón que precede al comando condicional ya no está
   const prefix = G.prepare({ read: read(ok.replace('Si no devuelve nada, corré:  git config', 'Si está vacío:  git config')), manifest: m });
   assert.match(prefix.problem, /git-hooks/);
   assert.match(prefix.problem, /Si no devuelve nada, corré:/);
-  // y de una página sana con otra organización en sus nombres, tampoco calza: lo que se corre es lo que la página dice
+  // con otra organización en sus nombres, calza igual (story 8.40): la línea npx no nombra el repo; el nombre sólo dice
+  // qué sirve el GitHub de juguete
   const other = G.prepare({ read: (rel) => (rel === 'scripts/setup/public-remotes.json' ? '{ "remotes": ["https://github.com/otra-org/otro-repo"] }' : read(ok)(rel)), manifest: m });
-  assert.match(other.problem, /download/);
+  assert.strictEqual(other.problem, undefined, other.problem);
+  assert.deepStrictEqual(other.names, { org: 'otra-org', repo: 'otro-repo' });
+  // sin el paquete de npm en el árbol que se ensaya no hay con qué armar la línea: se dice, no se ensaya a medias
+  const noPackage = G.prepare({ read: (rel) => (rel === 'scripts/setup/npm/package.json' ? null : read(ok)(rel)), manifest: m });
+  assert.match(noPackage.problem, /scripts\/setup\/npm\/package\.json/);
 
   // ── la comprobación va en los dos sentidos: lo que la PÁGINA trae y la ficha no conoce también frena ──
   const lines = ok.split('\n');
@@ -252,14 +278,17 @@ test('GuidedSteps_PageChanged_NamesTheStepAndRehearsesNothing', () => {
   const added = G.prepare({ read: read(withLine('@(Get-ChildItem', '   node "$env:USERPROFILE\\.claude\\otro.js" --parity')), manifest: m });
   assert.match(added.problem, /verify/, 'nombra el paso');
   assert.match(added.problem, /otro\.js/, 'y el comando que la ficha no conoce');
-  const repair = G.prepare({ read: read(withLine('--packs all --yes', '       pwsh -File get-harness.ps1 -- repair --yes', 'after')), manifest: m });
+  // (la línea de instalar es la npx que termina en «--packs all»; la del plan sigue con --dry-run)
+  const installAt = () => { const i = lines.findIndex((l) => l.trimEnd().endsWith('--integrations none --packs all')); assert.ok(i >= 0, 'la página de juguete trae la línea npx de instalar'); return i; };
+  const afterInstall = lines.slice(); afterInstall.splice(installAt() + 1, 0, '       pwsh -File get-harness.ps1 -- repair --yes');
+  const repair = G.prepare({ read: read(afterInstall.join('\n')), manifest: m });
   assert.match(repair.problem, /install/);
   assert.match(repair.problem, /repair --yes/);
   // el comando real cambió y el viejo quedó citado en otro paso: está «en la página», pero no donde se corre
   const moved = lines.slice();
-  const real = at('--packs all --yes');
+  const real = installAt();
   const old = moved[real];
-  moved[real] = old.replace('--packs all --yes', '--packs all --integrations-all --yes');
+  moved[real] = `${old.trimEnd()} --integrations-all`;
   moved.splice(at('@(Get-ChildItem'), 0, old);
   const cited = G.prepare({ read: read(moved.join('\n')), manifest: m });
   assert.match(cited.problem, /install/);
@@ -315,19 +344,24 @@ test('GuidedPage_NamesAndLabChanges_AreTheOnlyDifferences', () => {
   assert.match(G.namesOf('{ "remotes": [] }').problem, /remotes/);
   assert.match(G.namesOf('no es json').problem, /JSON/);
   const block = G.readBlock(toyPage('guided-page-ok.md'), m).block;
-  assert.strictEqual(G.checkPage(m, block, { names }).ok, true, 'con los dos marcadores reemplazados, calza');
-  assert.strictEqual(G.checkPage(m, block).ok, false, 'sin reemplazarlos no: la página publicada trae el nombre');
-  // en el laboratorio cambia sólo el origen de la bajada del guion, y sólo en el renglón que lo trae
-  const rawOrigin = 'http://127.0.0.1:4457';
+  assert.strictEqual(G.checkPage(m, block, { names }).ok, true, 'con los nombres, calza');
+  // en el laboratorio cambian dos cosas, y sólo en los renglones que las traen (story 8.40, AC 43): el paquete publicado
+  // por el armado, en el plan y en instalar; y la respuesta de la persona («s»), sumada al final de instalar
   const api = 'http://127.0.0.1:4455';
+  const pkg = '/lab/guided/onboarding/package/tyconsa-harness-1.0.2.tgz';
   const changed = [];
   for (const s of G.machineSteps(m)) for (const [i, c] of s.commands.entries()) {
     const real = G.withNames(c.text, names);
-    const lab = G.labText(real, m, rawOrigin);
-    if (lab.changed) { changed.push(`${s.id}[${i}]`); assert.strictEqual(lab.text, real.split('https://raw.githubusercontent.com').join(rawOrigin)); }
-    else assert.strictEqual(lab.text, real, `${s.id}: ningún otro carácter se toca`);
+    const lab = G.labText(real, m, { pkg, step: s.id });
+    if (lab.changed) {
+      changed.push(`${s.id}[${i}]${lab.answer ? '+answer' : ''}`);
+      assert.strictEqual(lab.text, `${real.replace('npx @tyconsa/harness@latest', `npx --yes "file:${pkg}"`)}${s.id === 'install' ? ' --yes' : ''}`);
+      assert.deepStrictEqual([lab.from, lab.to], ['npx @tyconsa/harness@latest', `npx --yes "file:${pkg}"`]);
+    } else assert.strictEqual(lab.text, real, `${s.id}: ningún otro carácter se toca`);
   }
-  assert.deepStrictEqual(changed, ['download[0]']);
+  assert.deepStrictEqual(changed, ['plan[0]', 'install[0]+answer']);
+  // sin el paquete armado, el laboratorio no sustituye nada: correría el publicado, y eso no es ensayar el commit
+  assert.strictEqual(G.labText(G.withNames(m.steps.find((s) => s.id === 'plan').commands[0].text, names), m, { pkg: null, step: 'plan' }).changed, false);
   // el ambiente de la variante se arma desde limpio: de quien lanza no llega ninguna variable del arnés ni de sus herramientas
   // (la carpeta de quien lanza, armada por partes: escrita entera tiene forma de carpeta de usuario, y eso no se escribe)
   const launcher = path.join(os.tmpdir(), 'windows-guided-who-launches');
@@ -353,6 +387,15 @@ test('GuidedPage_NamesAndLabChanges_AreTheOnlyDifferences', () => {
   const withProxy = TL.variantEnv(home, { base: Object.assign({}, base, proxyVars), api, detectPath: '/nowhere', platform: 'linux' });
   for (const k of Object.keys(proxyVars)) assert.ok(!(k in withProxy.env) && withProxy.lab_changes.env_removed.includes(k), `${k} de quien lanza no llega a la variante, y queda dicho`);
   assert.ok(!JSON.stringify(TL.cleanBase(Object.assign({}, base, proxyVars)).env).includes('proxy.example'), 'ni al git del laboratorio');
+  // las de npm tampoco: el instalador del paquete las lee como proxy, y la línea npx corre con ellas
+  const npmProxyVars = { npm_config_proxy: 'http://proxy.example:3128', npm_config_https_proxy: 'http://proxy.example:3128', NPM_CONFIG_HTTPS_PROXY: 'http://proxy.example:3128', npm_config_noproxy: 'internal.example' };
+  const withNpmProxy = TL.variantEnv(home, { base: Object.assign({}, base, npmProxyVars), api, detectPath: '/nowhere', platform: 'linux' });
+  for (const k of Object.keys(npmProxyVars)) assert.ok(!(k in withNpmProxy.env) && withNpmProxy.lab_changes.env_removed.includes(k), `${k} de quien lanza no llega a la variante, y queda dicho`);
+  assert.ok(!JSON.stringify(TL.cleanBase(Object.assign({}, base, npmProxyVars)).env).includes('proxy.example'), 'ni al git del laboratorio');
+  // la línea npx corre con TODAS las rutas públicas en el GitHub de juguete: con git puesto y el crudo sin poner, el
+  // cliente del arnés completa el crudo con el de verdad y el ensayo sale a la red
+  const routes = GI.npxEnv({ KEEP_ME: '1' }, { git: 'http://127.0.0.1:4456', archive: 'http://127.0.0.1:4457', raw: 'http://127.0.0.1:4458', dir: path.join(os.tmpdir(), 'windows-guided-npx') });
+  assert.deepStrictEqual([routes.TYCON_RELEASE_GIT, routes.TYCON_RELEASE_ARCHIVE, routes.TYCON_RELEASE_RAW, routes.KEEP_ME], ['http://127.0.0.1:4456', 'http://127.0.0.1:4457', 'http://127.0.0.1:4458', '1']);
   // lo que el laboratorio pone SIEMPRE y con qué lanza cada comando también va al reporte
   assert.deepStrictEqual(v.lab_changes.always, L.SAFE_ENV);
   assert.strictEqual(v.lab_changes.launched_with, TL.LAUNCHED_WITH);
@@ -502,8 +545,11 @@ test('GuidedInstall_Judge_ExitsExpectAndRunWhen', () => {
       const facts = { commands: [] };
       const seen = [];
       const partial = () => JSON.parse(fs.readFileSync(L.partialFile(out, 'onboarding'), 'utf8')).facts.variants.guided.commands;
+      // sin el paquete armado no se sigue la página: correría el publicado, y eso no es ensayar el commit
+      assert.throws(() => GI.followPage({ ctx: { manifest: m, guide: { names: TOY_NAMES }, api: 'http://127.0.0.1:4455', tokens: {} }, home: path.join(base, 'home-sin'), env: process.env, ps, scratch: path.join(base, 'scratch-sin'), cwd: path.join(base, 'window'), id: 'x' }), /sin el paquete armado/);
+      const pkgCtx = { package: path.join(base, 'tyconsa-harness-1.0.2.tgz'), git: 'http://127.0.0.1:4458', archive: 'http://127.0.0.1:4459', dir: path.join(base, 'lab-dir') };
       const followed = GI.followPage({
-        ctx: { manifest: m, guide: { names: TOY_NAMES }, api: 'http://127.0.0.1:4455', raw: 'http://127.0.0.1:4457', tokens: { github: 'permiso-de-juguete-0123456789abcdef' } },
+        ctx: { manifest: m, guide: { names: TOY_NAMES }, api: 'http://127.0.0.1:4455', raw: 'http://127.0.0.1:4457', tokens: { github: 'permiso-de-juguete-0123456789abcdef' }, ...pkgCtx },
         // (sin el permiso de GitHub que pueda tener en su consola quien corre la suite: el juguete imprime el que haya)
         home: path.join(base, 'home'), env: Object.assign({}, process.env, { TYCON_GITHUB_TOKEN: '' }), ps, scratch: path.join(base, 'scratch'), cwd: path.join(base, 'window'), id: 'onboarding-guided', platform: 'linux',
         commands: facts.commands,
@@ -535,7 +581,7 @@ test('GuidedInstall_Judge_ExitsExpectAndRunWhen', () => {
       // (el permiso de juguete se arma por partes: escrito entero junto al nombre de la variable, el detector de
       // publicación lo toma por una credencial)
       const plain = GI.followPage({
-        ctx: { manifest: m, guide: { names: TOY_NAMES }, api: 'http://127.0.0.1:4455', raw: 'http://127.0.0.1:4457', tokens: { azure: 'permiso-de-azure-0123456789abcdef' } },
+        ctx: { manifest: m, guide: { names: TOY_NAMES }, api: 'http://127.0.0.1:4455', raw: 'http://127.0.0.1:4457', tokens: { azure: 'permiso-de-azure-0123456789abcdef' }, ...pkgCtx },
         home: path.join(base, 'home-plain'), env: Object.assign({}, process.env, { TYCON_GITHUB_TOKEN: ['permiso-que-se-colo', '0123456789abcdef'].join('-') }), ps, scratch: path.join(base, 'scratch-plain'), cwd: path.join(base, 'window-plain'), id: 'onboarding-guided', platform: 'linux',
       });
       const plainRan = plain.commands.filter((c) => c.exit !== undefined);
@@ -568,7 +614,7 @@ test('GuidedInstall_NotRehearsed_ListsPersonStepsAndTheRest', () => {
   const all = list.map((n) => `${n.what} ${n.why}`).join('\n');
   for (const said of [/permiso/i, /winget/i, /parte 2/i, /gestor/i, /sí/]) assert.match(all, said);
   // ninguno se corre: lo que corre el ensayo son los pasos de la máquina, en el orden de la página
-  assert.deepStrictEqual(G.machineSteps(m).map((s) => s.id), ['tools', 'download', 'plan', 'install', 'git-hooks', 'verify']);
+  assert.deepStrictEqual(G.machineSteps(m).map((s) => s.id), ['tools', 'plan', 'install', 'git-hooks', 'verify']);
   assert.ok(G.machineSteps(m).every((s) => s.commands.every((c) => !/Read-Host/.test(c.text))), 'ningún comando que pida una terminal');
 });
 
@@ -1109,17 +1155,17 @@ test('Probes_ChooseByWhatTheTreeIs', { skip: !has('git') && 'NO MEDIDO — sin g
     }
     assert.ok(!fs.existsSync(path.join(copy.lab, 'users')) || !fs.readdirSync(path.join(copy.lab, 'users')).length, 'sin instalar nada');
     assert.deepStrictEqual([copy.report.verdict.color, copy.r.status], ['red', 1], 'en una copia publicada esos archivos tienen que estar: rojo, no «con avisos»');
-    // ── una copia publicada con la página y sin el guion de entrada: lo mismo, por el camino entero (el paso del
+    // ── una copia publicada con la página y sin el paquete de npm: lo mismo, por el camino entero (el paso del
     // pipeline, no la función suelta), diciendo qué buscó
     const noScript = run(toyTree(base, 'no-script', { friday: { 'version.json': '{ "version": "2026.01.01.1" }\n', 'getting-started/windows.md': toyPage('guided-page-ok.md'), 'scripts/setup/public-remotes.json': TOY_REMOTES } }), 'no-script', 'onboarding');
     assert.strictEqual(noScript.step('onboarding').status, 'error', noScript.step('onboarding').reason);
-    assert.match(noScript.step('onboarding').reason, /no pude ensayar: .*el guion de entrada.*scripts\/setup\/get-harness\.ps1/);
+    assert.match(noScript.step('onboarding').reason, /no pude ensayar: .*el paquete de npm.*scripts\/setup\/npm\/package\.json/);
     assert.match(noScript.step('onboarding').reason, /copia publicada/);
     assert.ok(!fs.existsSync(path.join(noScript.lab, 'users')) && !fs.existsSync(path.join(noScript.lab, 'guided')), 'sin instalar nada y sin levantar ningún servidor');
     assert.deepStrictEqual([noScript.report.verdict.color, noScript.r.status], ['red', 1]);
     // y con la página SIN su marca
     const page = toyPage('guided-page-ok.md').replace('<!-- guided:base -->\n', '').replace('<!-- /guided:base -->\n', '');
-    const noMark = run(toyTree(base, 'no-mark', { friday: { 'version.json': '{ "version": "2026.01.01.1" }\n', 'getting-started/windows.md': page, 'scripts/setup/get-harness.ps1': '# get-harness.ps1 — de juguete\n', 'scripts/setup/public-remotes.json': TOY_REMOTES } }), 'no-mark', 'onboarding');
+    const noMark = run(toyTree(base, 'no-mark', { friday: { 'version.json': '{ "version": "2026.01.01.1" }\n', 'getting-started/windows.md': page, 'scripts/setup/npm/package.json': '{ "name": "@tyconsa/harness", "version": "1.0.2" }\n', 'scripts/setup/public-remotes.json': TOY_REMOTES } }), 'no-mark', 'onboarding');
     assert.deepStrictEqual([noMark.step('onboarding').status, /la marca.*guided:base/.test(noMark.step('onboarding').reason)], ['error', true], noMark.step('onboarding').reason);
     // ── el árbol interno con el texto de dos clones: el ensayo de hoy, sin cambios (acá, su error de siempre)
     const two = run(toyTree(base, 'two', { friday: { 'onboarding/new-dev-harness-setup.md': TWO_CLONES_DOC, 'onboarding/step-0-windows.md': 'sin clon en el paso cero\n' } }), 'two', 'all');
@@ -1140,14 +1186,14 @@ test('Probes_ChooseByWhatTheTreeIs', { skip: !has('git') && 'NO MEDIDO — sin g
 
 test('PublishedCopy_WithoutWhatItMustBring_IsAnError', () => {
   const m = G.loadManifest();
-  const full = { 'getting-started/windows.md': toyPage('guided-page-ok.md'), 'scripts/setup/get-harness.ps1': '# get-harness.ps1 — de juguete\n', 'scripts/setup/public-remotes.json': TOY_REMOTES };
+  const full = { 'getting-started/windows.md': toyPage('guided-page-ok.md'), 'scripts/setup/npm/package.json': '{ "name": "@tyconsa/harness", "version": "1.0.2" }\n', 'scripts/setup/public-remotes.json': TOY_REMOTES };
   const reader = (files) => (rel) => (rel in files ? files[rel] : null);
   assert.strictEqual(G.prepare({ read: reader(full), manifest: m }).problem, undefined);
   const without = (rel) => { const f = Object.assign({}, full); delete f[rel]; return G.prepare({ read: reader(f), manifest: m }); };
   const cases = [
     [without('getting-started/windows.md'), /la página.*getting-started\/windows\.md/],
     [G.prepare({ read: reader(Object.assign({}, full, { 'getting-started/windows.md': full['getting-started/windows.md'].replace('<!-- guided:base -->\n', '').replace('<!-- /guided:base -->\n', '') })), manifest: m }), /la marca.*guided:base.*getting-started\/windows\.md/],
-    [without('scripts/setup/get-harness.ps1'), /el guion de entrada.*scripts\/setup\/get-harness\.ps1/],
+    [without('scripts/setup/npm/package.json'), /el paquete de npm.*scripts\/setup\/npm\/package\.json/],
     [without('scripts/setup/public-remotes.json'), /scripts\/setup\/public-remotes\.json/],
   ];
   for (const [got, rx] of cases) {
@@ -1169,12 +1215,14 @@ test('PublishedCopy_WithoutWhatItMustBring_IsAnError', () => {
       const lab = path.join(base, 'lab');
       fs.mkdirSync(lab, { recursive: true });
       const stateOf = (toy) => ({ remotes: { harness: { dir: toy.origin, target: toy.head } } });
-      const published = { 'version.json': '{ "version": "2026.01.01.1" }\n', 'scripts/setup/get-harness.ps1': '# get-harness.ps1 — de juguete\n', 'scripts/setup/public-remotes.json': TOY_REMOTES };
-      // la página cambió el comando de bajada: el motivo nombraría el repo
-      const moved = toyPage('guided-page-ok.md').replace('main/scripts/setup/get-harness.ps1', 'main/scripts/otro-lugar/get-harness.ps1');
+      const published = { 'version.json': '{ "version": "2026.01.01.1" }\n', 'scripts/setup/npm/package.json': '{ "name": "@tyconsa/harness", "version": "1.0.2" }\n', 'scripts/setup/public-remotes.json': TOY_REMOTES };
+      // la página cambió el comando de instalar: no se levanta nada, y el motivo no nombra el repo
+      const moved = toyPage('guided-page-changed.md');
+      assert.notStrictEqual(moved, toyPage('guided-page-ok.md'), 'la página de juguete cambiada es otra');
       const changed = GI.openLab({ lab, name: 'onboarding', state: stateOf(toyTree(base, 'changed', { today: Object.assign({ 'getting-started/windows.md': moved }, published) })) });
+      if (!changed.problem && changed.stop) changed.stop();   // (si calzara, no quedan servidores vivos colgando la prueba)
       assert.match(changed.problem, /la página .* y la ficha del ensayo no coinciden/);
-      assert.match(changed.problem, /download/);
+      assert.match(changed.problem, /install/);
       assert.ok(!changed.problem.includes(TOY_NAMES.org) && !changed.problem.includes(TOY_NAMES.repo), `el motivo no trae la organización ni el nombre del repo público: ${changed.problem}`);
       assert.ok(!fs.existsSync(path.join(lab, 'guided')), 'y no se levantó nada');
       // ── con el laboratorio abierto, quien no puede seguir armándolo lo descarta: cierra lo levantado y saca la
@@ -1223,7 +1271,7 @@ test('PublishedCopy_WithoutWhatItMustBring_IsAnError', () => {
       assert.strictEqual(priv.problem, undefined, priv.problem);
       assert.match(String(served[2].token), /^toy-github-[0-9a-f]{16}$/, 'con `token`, privado y con su permiso de juguete');
       assert.deepStrictEqual([Object.keys(priv.tokens).sort(), priv.tokens.github === served[2].token], [['azure', 'github'], true]);
-      assert.match(GI.labChanges({ ctx: priv, changes: noChanges, ps: null, env: {}, scratch: path.join(base, 'scratch-auth') }).token, /permiso de juguete.*sólo en los pasos download, plan, install/);
+      assert.match(GI.labChanges({ ctx: priv, changes: noChanges, ps: null, env: {}, scratch: path.join(base, 'scratch-auth') }).token, /permiso de juguete.*sólo en los pasos plan, install/);
       assert.match(GI.githubServing(priv), /privado, con un permiso de juguete/);
       priv.stop();
     } finally { fs.rmSync(base, { recursive: true, force: true }); }
@@ -1399,11 +1447,11 @@ test('Probe_OneVariantThrows_TheOthersStillRun', () => {
     // lo que el laboratorio cambió lo anota TODA variante que corre, sin pisar a la otra: lo común una vez, lo propio
     // de cada una bajo su nombre
     const rec2 = L.recorder('onboarding', path.join(base, 'out2'));
-    const labCtx = { manifest: G.loadManifest(), api: 'http://127.0.0.1:4455', raw: 'http://127.0.0.1:4457', azureApi: 'http://127.0.0.1:4466' };
+    const labCtx = { manifest: G.loadManifest(), api: 'http://127.0.0.1:4455', raw: 'http://127.0.0.1:4457', git: 'http://127.0.0.1:4458', archive: 'http://127.0.0.1:4459', azureApi: 'http://127.0.0.1:4466', package: '/lab/guided/onboarding/package/tyconsa-harness-1.0.2.tgz' };
     const changesOf = (home) => TL.variantEnv(home, { base: { PATH: process.env.PATH || '' }, api: labCtx.api, detectPath: '/nowhere', platform: 'linux' }).lab_changes;
     const one = GI.noteLabChanges(rec2, { ctx: labCtx, v: { id: 'guided', ps: 'pwsh' }, home: '/lab/users/guided', changes: changesOf('/lab/users/guided'), ps: null, env: {}, scratch: path.join(base, 's') });
     assert.deepStrictEqual(one.by_variant, { guided: { user_folder: '/lab/users/guided', shell: 'pwsh' } });
-    assert.deepStrictEqual([one.download_origin.to, one.download_origin.where, one.launched_with, one.env_set_with_team.TYCON_AZURE_API, one.execution_policy.effective], [labCtx.raw, 'download[0]', TL.LAUNCHED_WITH, labCtx.azureApi, null]);
+    assert.deepStrictEqual([one.package.to, one.package.where, one.answer.step, one.launched_with, one.env_set_with_team.TYCON_AZURE_API, one.execution_policy.effective], [`npx --yes "file:${labCtx.package}"`, 'plan[0], install[0]', 'install', TL.LAUNCHED_WITH, labCtx.azureApi, null]);
     const two = GI.noteLabChanges(rec2, { ctx: labCtx, v: { id: 'guided-ps51', ps: 'powershell' }, home: '/lab/users/guided-ps51', changes: changesOf('/lab/users/guided-ps51'), ps: null, env: {}, scratch: path.join(base, 's'), own: { pwsh_removed_from: ['/usr/local/bin'] } });
     assert.strictEqual(two, one, 'el mismo dato del paso: la segunda no lo arma de nuevo');
     assert.deepStrictEqual(rec2.step.facts.lab_changes.by_variant, { guided: { user_folder: '/lab/users/guided', shell: 'pwsh' }, 'guided-ps51': { user_folder: '/lab/users/guided-ps51', shell: 'powershell', pwsh_removed_from: ['/usr/local/bin'] } });
@@ -1759,7 +1807,7 @@ test('Suites_Registration_RunWhenThePageChanges', { skip: !fs.existsSync(path.jo
   const TOUCHED = ['getting-started/windows.md', 'scripts/setup/get-harness.ps1', 'onboarding/new-dev-harness-setup.md', 'scripts/tests/windows/guided-install.js', 'scripts/tests/fixtures/windows/guided-page-ok.md', 'scripts/tests/fixtures/toy-release-server.js', 'scripts/tests/fixtures/toy-azure-server.js'];
   for (const s of [fast, lab]) for (const f of TOUCHED) assert.ok(covers(s.gate_only_when_touching, f), `${s.ruta} corre al tocar ${f}`);
   assert.ok(covers(today.gate_only_when_touching, 'getting-started/windows.md'), 'la suite del ensayo de hoy suma la página pública a lo que la dispara');
-  assert.ok(!covers(fast.gate_only_when_touching, 'guides/engram-workflow.md'), 'el control: una guía cualquiera no las dispara');
+  assert.ok(!covers(fast.gate_only_when_touching, 'guides/integrations/engram-workflow.md'), 'el control: una guía cualquiera no las dispara');
   // la de laboratorio es pesada (grupo installer), con su excepción firmada por pasar de 45 s. En la validación de una
   // rama manda heavy-suites.json: corre con el instalador (el grupo trae los dos servidores de juguete) y con lo suyo
   const heavy = read('scripts/ci/heavy-suites.json');
@@ -1797,7 +1845,7 @@ test('Suites_Registration_RunWhenThePageChanges', { skip: !fs.existsSync(path.jo
       for (const [k, val] of Object.entries(x)) { keys.add(k.replace(/^__/, '')); if (k === 'id' && typeof val === 'string') keys.add(val); walk(val); }
     };
     walk(m);
-    for (const k of ['entry_script', 'names', 'kind', 'pattern', 'flags', 'path', 'value', 'lab_gap', 'stdin', 'commands', 'not_rehearsed', 'node', 'git-hooks']) assert.ok(keys.has(k), `el recorrido de la ficha llega a «${k}»`);
+    for (const k of ['entry_package', 'names', 'kind', 'pattern', 'flags', 'path', 'value', 'lab_gap', 'stdin', 'commands', 'not_rehearsed', 'node', 'git-hooks']) assert.ok(keys.has(k), `el recorrido de la ficha llega a «${k}»`);
     for (const k of keys) names.add(k);
     const spanish = [...names].filter((n) => det.isSpanish(n).spanish);
     assert.deepStrictEqual(spanish, [], `nombres en castellano en lo que lee la máquina: ${spanish.join(', ')}`);
