@@ -708,7 +708,7 @@ test('5b-4 — los espejos sanos: por el enlace, lo que NO se tocó se sigue dif
 // Con `--coverage <carpeta>`, cada suite corre bajo el envoltorio de Node (lib/coverage-wrapper.js) con el medidor de
 // cobertura: la suite es su hijo, con su misma salida y su mismo código; deja su lcov en la carpeta y al final quedan
 // juntos en `lcov.info`. Sin pedirla, nada cambia: ni envoltorio ni carpeta.
-test('T5 7.31-ConCobertura_CadaSuiteConSuCarpeta_SinPedirlaIgualQueHoy @story-7.31 @ac-4 @ac-5 — con cobertura, un lcov por suite; sin pedirla, como hoy', () => {
+test('T5 7.31-ConCobertura_CadaSuiteConSuCarpeta_SinPedirlaIgualQueHoy @story-7.31 @ac-4 @ac-5 — con cobertura, un lcov por suite; sin pedirla, como hoy', (t) => {
   // 🔴 rojo: el medidor (o la carpeta) también sin pedirla; o el código de la roja cambiado por el envoltorio.
   const f = armar({ diarias: [
     { raiz: 'arnes', ruta: 'tests/de-node.test.js' },
@@ -759,7 +759,11 @@ test('T5 7.31-ConCobertura_CadaSuiteConSuCarpeta_SinPedirlaIgualQueHoy @story-7.
   assert.equal(r2.status, 1);
   assert.equal(resumen2.fallas[0].exit, 7);
   assert.equal(resumen2.coverage, undefined, 'sin pedirla, el resumen no trae cobertura');
-  assert.deepEqual(fs.readFileSync(modos, 'utf8').trim().split('\n').sort(), ['bash:', 'node:sin medir'], 'ni medidor ni variable');
+  const modosSin = fs.readFileSync(modos, 'utf8').trim().split('\n').sort();
+  // Si esta prueba corre medida, Node le vuelve a poner su carpeta de V8 a cada hijo aunque se la borre del entorno:
+  // ahí «sin medidor» no se puede comprobar y se dice, en vez de dar rojo.
+  if (process.env.NODE_V8_COVERAGE) t.diagnostic('NO MEDIDO «ni medidor ni variable»: esta prueba corre medida y Node le pasa NODE_V8_COVERAGE a los hijos');
+  else assert.deepEqual(modosSin, ['bash:', 'node:sin medir'], `ni medidor ni variable: ${JSON.stringify(modosSin)}`);
   assert.deepEqual(fs.readdirSync(f.root).filter((n) => n.startsWith('cov')), ['cov'], 'ni otra carpeta');
 });
 
