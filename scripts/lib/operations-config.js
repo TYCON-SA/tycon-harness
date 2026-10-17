@@ -21,8 +21,11 @@
 //                                                            las conversaciones y los cambios de git para el detalle de
 //                                                            la pestaña Corridas, si el sitio tiene disco (story 2.27)
 //               "refresh_minutes": <5 a 120>,              opcional — cada cuánto se releen las fuentes
-//               "url": "https://…" } },                       opcional — la dirección del sitio, sólo https y sin usuario
+//               "url": "https://…",                           opcional — la dirección del sitio, sólo https y sin usuario
 //                                                            ni clave: va en el aviso de la mañana
+//               "brand": { "name": <texto>,                 opcional — la marca del sitio: el nombre de la organización,
+//                          "logo": <ruta en el repo del equipo, .png o .svg>, el logo (vive en el repo del equipo) y
+//                          "dark": "invert" | "keep" } },     qué hacer con él en el tema oscuro (por defecto, invertirlo)
 //     "notify": { "channel": "telegram" | "slack" | "teams" }, opcional — por dónde sale el aviso de los nocturnos
 //                                                            Sin `notify` no se manda nada. El destino
 //                                                            (el chat, el token, la dirección del webhook) va en los
@@ -74,7 +77,12 @@ const GITHUB_REPO = /^(?!\.+\/)[A-Za-z0-9_.-]+\/(?!\.+$)[A-Za-z0-9_.-]+$/;
 const OWNER_KEYS = ['default', 'by_project'];
 const REVIEWER_KEYS = ['dependencies', 'watcher'];
 // el sitio de la organización. Todas opcionales; la pestaña Configuración del sitio la edita.
-const SITE_KEYS = ['maintainers', 'mailbox', 'refresh_minutes', 'url'];
+const SITE_KEYS = ['maintainers', 'mailbox', 'refresh_minutes', 'url', 'brand'];
+const BRAND_KEYS = ['name', 'logo', 'dark'];
+const BRAND_THEME_OPTIONS = ['invert', 'keep'];
+// el logo: una ruta relativa dentro del repo del equipo, sin subir de carpeta, a un .png o un .svg
+const BRAND_LOGO = /^(?!\/)(?!.*(?:^|\/)\.\.?(?:\/|$))[A-Za-z0-9._\/-]{1,200}\.(png|svg)$/;
+const BRAND_NAME_MAX = 80;
 // el canal del aviso. Sin canal por defecto: sin `notify`, no se manda (un canal por defecto sería un valor de
 // una organización en el código). Lo lee scripts/lib/notify.js (`canalDe`).
 const NOTIFY_KEYS = ['channel'];
@@ -156,6 +164,16 @@ function siteProblems(site) {
   }
   if (site.url !== undefined && !siteUrlOk(site.url)) {
     problems.push({ path: 'site.url', message: 'tiene que ser una dirección https://, sin usuario ni clave' });
+  }
+  const b = site.brand;
+  if (b !== undefined) {
+    if (!isObject(b)) problems.push({ path: 'site.brand', message: 'tiene que ser un objeto { name, logo, dark }' });
+    else {
+      problems.push(...siteKeyProblems(b, BRAND_KEYS, 'site.brand'));
+      if (b.name !== undefined && !(typeof b.name === 'string' && b.name.trim() && b.name.length <= BRAND_NAME_MAX)) problems.push({ path: 'site.brand.name', message: `tiene que ser el nombre de la organización (hasta ${BRAND_NAME_MAX} caracteres)` });
+      if (b.logo !== undefined && !(typeof b.logo === 'string' && BRAND_LOGO.test(b.logo))) problems.push({ path: 'site.brand.logo', message: 'tiene que ser la ruta de un .png o un .svg dentro del repo del equipo (sin «..» ni «/» al principio)' });
+      if (b.dark !== undefined && !BRAND_THEME_OPTIONS.includes(b.dark)) problems.push({ path: 'site.brand.dark', message: 'tiene que ser «invert» (invertir el logo en el tema oscuro) o «keep» (dejarlo como está)' });
+    }
   }
   return problems;
 }
@@ -361,7 +379,7 @@ function ownerFor(data, project) {
   return Object.prototype.hasOwnProperty.call(bp, project) ? bp[project] : data.owners.default;
 }
 
-module.exports = { VERSION, KEYS, OWNER_KEYS, REVIEWER_KEYS, SITE_KEYS, NOTIFY_CHANNELS, MAILBOX_PROVIDERS, REFRESH_MIN, REFRESH_MAX, EMAIL, ACCOUNT, CONTAINER, PEOPLE_KEYS, MACHINE_KEYS, PROJECT_KEYS, FORMA_MAQUINA, DEPLOYMENT_PROVIDERS, DEPLOYMENT_SIDES, GITHUB_REPO, parse, load, ownerFor };
+module.exports = { VERSION, KEYS, OWNER_KEYS, REVIEWER_KEYS, SITE_KEYS, BRAND_KEYS, BRAND_LOGO, NOTIFY_CHANNELS, MAILBOX_PROVIDERS, REFRESH_MIN, REFRESH_MAX, EMAIL, ACCOUNT, CONTAINER, PEOPLE_KEYS, MACHINE_KEYS, PROJECT_KEYS, FORMA_MAQUINA, DEPLOYMENT_PROVIDERS, DEPLOYMENT_SIDES, GITHUB_REPO, parse, load, ownerFor };
 
 if (require.main === module) {
   const args = process.argv.slice(2);

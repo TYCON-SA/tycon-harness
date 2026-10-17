@@ -3,6 +3,8 @@
 # las pruebas, la historia de git y todo lo que tenga forma de secreto (las líneas de abajo ganan sobre las de arriba).
 *
 !version.json
+!LICENSE
+!NOTICE
 !.tycon-release.json
 !scripts/site/
 !scripts/lib/

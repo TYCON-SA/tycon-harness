@@ -100,6 +100,15 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
+Lato (the typeface of the organization site)
+---------------------------------------------
+
+scripts/site/static/fonts/lato-400.woff2 and lato-700.woff2 are the Latin
+subset of Lato, by Łukasz Dziedzic, as packaged by Fontsource
+(@fontsource/lato 5.1.1). Copyright (c) 2010-2011 by tyPoland Lukasz Dziedzic,
+with Reserved Font Name "Lato". Licensed under the SIL Open Font License,
+Version 1.1; the full text is in scripts/site/static/fonts/OFL.txt.
+
 Third-party skills downloaded at install time
 ---------------------------------------------
 

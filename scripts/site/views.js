@@ -237,13 +237,19 @@ function layout(ctx, titulo, cuerpo, lede = null) {
   const recargar = ctx && Number.isInteger(ctx.recargar) && ctx.recargar > 0 ? `<meta http-equiv="refresh" content="${ctx.recargar}">` : '';
   const pest = (ctx && ctx.pestanas) || [];
   const nav = pest.length ? `<nav class="tabs" aria-label="Pestañas">${pest.map((p, i) => `<a href="${esc(p.path)}"${ctx.activa === p.id ? ' class="activa" aria-current="page"' : ''}><span class="ix">${String(i + 1).padStart(2, '0')}</span>${esc(p.titulo)}</a>`).join('')}</nav>` : '';
-  const sesion = quien && quien.email ? `<form class="salir" method="post" action="/auth/logout"><span>Entraste como <b>${esc(quien.email)}</b></span> <button type="submit">Salir</button></form>` : '';
+  const sesion = quien && quien.email ? `<form class="salir" method="post" action="/auth/logout"><span>${esc(quien.email)}</span> <button type="submit">Salir</button></form>` : '';
   const bandas = [
     ctx && ctx.bandaConfig ? banda(`la configuración de la organización no se pudo releer desde ${hora(ctx.bandaConfig.desde)}: ${ctx.bandaConfig.motivo}`) : '',
     ctx && ctx.bandaRefresco ? banda(`no se pudo actualizar desde ${hora(ctx.bandaRefresco.desde)}: ${FRASES[ctx.bandaRefresco.estado] || ctx.bandaRefresco.estado}`) : '',
     ctx && ctx.avisoVariable ? banda('la variable de arranque sigue puesta: sacala de la configuración de la instalación (SITE_FIRST_MAINTAINER)') : '',
   ].join('');
-  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${recargar}<title>${esc(titulo)} · Sitio de la organización</title><link rel="stylesheet" href="/static/site.css"><script src="/static/site.js"></script></head><body><div class="shell"><aside class="side"><div class="brand"><div class="kicker">Arnés</div><div class="name">Sitio de la organización</div></div>${nav}<div class="side-foot"><span class="lab-tema">Tema</span>${TEMA}${sesion}</div></aside><main><header class="s-head"><div><h1>${esc(titulo)}</h1>${lede ? `<p>${esc(lede)}</p>` : ''}</div></header>${bandas}${cuerpo}</main></div></body></html>`;
+  // la barra de arriba: la marca de la organización (su logo, o su nombre), el producto y quién entró
+  const m = (ctx && ctx.marca) || {};
+  const org = m.logo ? `<img class="logo${m.oscuro === 'keep' ? '' : ' invierte'}" src="/marca/logo" alt="${esc(m.nombre || 'La organización')}">` : m.nombre ? `<span class="org">${esc(m.nombre)}</span>` : '';
+  const barra = `<header class="barra">${org}${org ? '<span class="sep" aria-hidden="true"></span>' : ''}<span class="producto">Arnés</span><span class="lema">Sitio de la organización</span><span class="esp"></span>${sesion}</header>`;
+  // el pie: la versión que corre, su licencia, sus créditos y de quién es el sitio
+  const pie = `<footer class="pie"><span>Arnés${ctx && ctx.version ? ` v${esc(ctx.version)}` : ''}</span><a href="/licencia">Licencia Apache 2.0</a><a href="/creditos">Créditos y componentes de terceros</a><span class="esp"></span>${m.nombre ? `<span>© ${esc(m.nombre)}</span>` : ''}</footer>`;
+  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${recargar}<title>${esc(titulo)} · Sitio de la organización</title><link rel="stylesheet" href="/static/site.css"><script src="/static/site.js"></script></head><body>${barra}<div class="shell"><aside class="side">${nav}<div class="side-foot"><span class="lab-tema">Tema</span>${TEMA}</div></aside><main><header class="s-head"><div><h1>${esc(titulo)}</h1>${lede ? `<p>${esc(lede)}</p>` : ''}</div></header>${bandas}${cuerpo}${pie}</main></div></body></html>`;
 }
 
 function seccion(titulo, html, aparte = null, id = null) { return `<section class="q"${id ? ` id="${esc(id)}"` : ''}><div class="q-head"><h2>${esc(titulo)}</h2>${aparte ? `<span class="aside">${esc(aparte)}</span>` : ''}</div>${html}</section>`; }

@@ -1634,3 +1634,33 @@ test('Nombres_Guia_DiceElPermisoDeLosPipelines — la instalación normal cuenta
     assert.match(fila, sin, `${f}: qué se ve sin él`);
   }
 });
+
+// ── la marca de la organización ────────────────────────────────────────────────────────────────────────────────────
+test('Marca_ElLectorValidaSiteBrand — nombre, logo dentro del repo del equipo (.png o .svg) y qué hacer en oscuro', () => {
+  const problemas = (brand) => OPS.parse(JSON.stringify({ version: 1, owners: { default: LEAD }, site: { brand } })).problems.map((p) => p.path);
+  assert.deepStrictEqual(problemas({ name: 'Acme', logo: 'marca/logo.png', dark: 'keep' }), []);
+  assert.deepStrictEqual(problemas({ logo: 'marca/logo.svg', dark: 'invert' }), []);
+  for (const logo of ['../logo.png', '/etc/logo.png', 'marca/../../x.png', 'marca/logo.gif', 'marca/logo.png?x', '']) assert.deepStrictEqual(problemas({ logo }), ['site.brand.logo'], JSON.stringify(logo));
+  assert.deepStrictEqual(problemas({ name: 'x'.repeat(81) }), ['site.brand.name']);
+  assert.deepStrictEqual(problemas({ dark: 'grises' }), ['site.brand.dark']);
+  assert.deepStrictEqual(problemas({ color: 'rojo' }), ['site.brand.color'], 'una clave que no conoce');
+});
+
+test('Marca_LaOrganizacionEnPersonas_ConVistaPrevia — se edita en Configuración; un lector viejo dice que no sabe leerla', async () => {
+  const sec = { id: 'organizacion', titulo: 'La organización', repo: 'operaciones', estado: 'cargado', soloLectura: false, problems: [], avisos: [], borrador: { site: { brand: { name: 'Acme', logo: 'marca/logo.png' } } } };
+  const p = await pantallaFalsa([sec]);
+  assert.strictEqual(p.error, null);
+  const campos = p.todo(p.sec('organizacion')).filter((n) => ['input', 'select'].includes(n.tag)).map((n) => n.attrs['data-path']);
+  assert.deepStrictEqual(campos, ['site.brand.name', 'site.brand.logo', 'site.brand.dark']);
+  const img = p.todo(p.sec('organizacion')).find((n) => n.tag === 'img');
+  assert.deepStrictEqual([img.attrs.src, img.attrs.class], ['/marca/logo', 'logo logo-previa invierte'], 'la vista previa, como se ve en la barra');
+  assert.match(p.textoDe('organizacion'), /El archivo del logo entra con un pedido al repo del equipo/);
+  // el lector de una versión anterior no conoce site.brand: la sección no se edita y lo dice
+  const viejo = { ...OPS, SITE_KEYS: OPS.SITE_KEYS.filter((k) => k !== 'brand') };
+  const ops = clon({ 'operations.json': opsBase() });
+  await conPestana({ fuentes: fuentesCon({ ops }), opciones: { lectores: { 'operations-config.js': viejo } } }, async ({ h, entrar }) => {
+    const r = (await h.pedir('/api/config', { cookie: await entrar(LEAD) })).json;
+    const o = r.secciones.find((s) => s.id === 'organizacion');
+    assert.deepStrictEqual([o.estado, o.motivo], ['no_reader', 'esta versión del arnés todavía no sabe leer la marca de la organización (site.brand)']);
+  });
+});
