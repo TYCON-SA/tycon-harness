@@ -139,6 +139,40 @@ function orgActive({ tree, env = process.env, home } = {}) {
   return { value, origin, names: installed.filter((n) => value.includes(n)), installed, error: null };
 }
 
+/**
+ * Las reglas siempre cargadas que traen los paquetes: los `.md` de `packs/<p>/claude-md-blocks/`. Cada una se escribe en el
+ * CLAUDE.md (y en el AGENTS.md de Codex) como el bloque `packs/<p>/<nombre>`, sólo mientras la organización activa ese
+ * paquete; los sincronizadores quitan el bloque de un paquete que dejó de estar activo o que ya no lo trae. Sólo los `.md`
+ * de esa carpeta, sin subcarpetas: un bloque de paquete no tiene variantes por herramienta ni por estilo.
+ */
+const PACK_BLOCKS_DIR = 'claude-md-blocks';
+const PACK_BLOCK_PREFIX = 'packs/';
+/** El paquete de un nombre de bloque (`packs/<p>/<n>` → `p`), o null si es un bloque del núcleo. */
+const packOfBlock = (name) => { const m = /^packs\/([^/]+)\/[^/]+$/.exec(String(name)); return m ? m[1] : null; };
+/** El archivo del que sale un bloque, relativo al árbol (lo nombra la marca de cada bloque escrito). */
+const blockSource = (name) => { const p = packOfBlock(name); return p ? `packs/${p}/${PACK_BLOCKS_DIR}/${String(name).split('/')[2]}.md` : `claude-md-blocks/${name}.md`; };
+
+/**
+ * Los bloques de los paquetes activos de este árbol: `{ active, error, blocks: [{ name, pack, file }] }`. `active` son los
+ * paquetes activos (null si no se pudo saber, con el motivo en `error`): un bloque `packs/<p>/…` escrito cuyo paquete no
+ * está en `active` sobra. Sin saber, `blocks` va vacío y nada se quita.
+ */
+function blocksOf({ tree, env = process.env, home } = {}) {
+  const act = orgActive({ tree, env, home });
+  if (act.error) return { active: null, error: act.error, blocks: [] };
+  const { packs } = listPacks(packsDirOf(tree));
+  const blocks = [];
+  for (const p of packs.filter((x) => act.names.includes(x.name))) {
+    const dir = path.join(p.dir, PACK_BLOCKS_DIR);
+    for (const f of entries(dir).filter((n) => n.endsWith('.md'))) {
+      const file = path.join(dir, f);
+      try { if (!fs.statSync(file).isFile()) continue; } catch (_) { continue; }
+      blocks.push({ name: `${PACK_BLOCK_PREFIX}${p.name}/${f.slice(0, -3)}`, pack: p.name, file });
+    }
+  }
+  return { active: act.names, error: null, blocks };
+}
+
 /** Cómo se dice el valor en una línea. */
 const valueText = (v) => (Array.isArray(v) ? `[${v.join(', ')}]` : String(v));
 /** Dónde se activa un paquete, en una línea (la misma frase del freno del pipeline). */
@@ -157,4 +191,19 @@ function retiredLine({ check = false, count, packs, pieces, value, origin }) {
 /** El lector de la configuración del arnés de este árbol (lo pide la sección «Paquetes» de org-config.js), o null. */
 function configReader() { try { return require('./tycon-config.js'); } catch (_) { return null; } }
 
-module.exports = { packsDirOf, listPacks, piecesOf, agentDirInPacks, linkedTo, orgActive, valueText, folderProblem, configReader, retiredLine, WHERE_TO_ACTIVATE, RETIRED_PHRASE, RETIRED_RX };
+module.exports = { packsDirOf, listPacks, piecesOf, agentDirInPacks, linkedTo, orgActive, blocksOf, packOfBlock, blockSource, PACK_BLOCKS_DIR, PACK_BLOCK_PREFIX, valueText, folderProblem, configReader, retiredLine, WHERE_TO_ACTIVATE, RETIRED_PHRASE, RETIRED_RX };
+
+// `node pack-pieces.js blocks --json [--tree <árbol>]`: los bloques de los paquetes activos, para los sincronizadores que no
+// son de Node (sync-claude-md-blocks.sh y .ps1, el plan de install-tycon-hooks.ps1). Sale 0 siempre que contestó; 2 por uso.
+if (require.main === module) {
+  const argv = process.argv.slice(2);
+  const ti = argv.indexOf('--tree');
+  const tree = ti !== -1 && argv[ti + 1] ? path.resolve(argv[ti + 1]) : path.resolve(__dirname, '..', '..');
+  if (argv[0] !== 'blocks' || !argv.includes('--json')) {
+    process.stderr.write('uso: node pack-pieces.js blocks --json [--tree <árbol>]\n');
+    process.exit(2);
+  }
+  let r;
+  try { r = blocksOf({ tree }); } catch (e) { r = { active: null, error: `no pude leer los bloques de los paquetes (${String((e && e.message) || e).split('\n')[0]})`, blocks: [] }; }
+  process.stdout.write(`${JSON.stringify(r)}\n`);
+}

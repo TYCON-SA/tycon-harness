@@ -318,6 +318,12 @@
       "requiere": []
     },
     {
+      "__nota": "las reglas siempre cargadas de un paquete (packs/<p>/claude-md-blocks/*.md): con el paquete activo quedan en el CLAUDE.md (Mac y Windows, los mismos bytes) y en el AGENTS.md de Codex, sin duplicarse; sin él se van y el archivo queda como antes; sin saber qué paquetes activa la organización, quedan; el reporte de piezas, el plan y la lista cerrada de la capa las nombran.",
+      "raiz": "arnes",
+      "ruta": "tests/pack-blocks.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.41 (T34): ningún repo pierde un revisor cuando los revisores cambian de lugar — package-equivalence.js per-repo sobre repos de juguete (la medición sobre los repos reales corre a pedido con PACKS_PER_REPO_REAL=1).",
       "raiz": "arnes",
       "ruta": "tests/packs-per-repo.test.js",

@@ -20,7 +20,10 @@
 //     full -->`) se escribe sólo si corresponde; si no, no se agrega y, si estaba, se quita entre sus marcas. «No se pudo
 //     saber» (configuración rota) no es «apagada»: lo que falta no se agrega, lo que está queda y se actualiza, y se dice;
 //   · una marca de cierre perdida no se adivina: ese bloque no se toca y se avisa;
-//   · nunca escribe un `@import`.
+//   · nunca escribe un `@import`;
+//   · los bloques de los paquetes que activa la organización (`packs/<p>/claude-md-blocks/<n>.md`, el bloque `packs/<p>/<n>`)
+//     se escriben igual; uno `packs/…` ya escrito cuyo paquete dejó de estar activo, o que ya no lo trae, se quita entre sus
+//     marcas. Sin saber qué paquetes activa la organización, queda donde está y se dice.
 // Idempotente (si ya coincide no escribe), escritura atómica, y `--check` sólo mira. Corre igual en Mac, Linux y Windows.
 //
 // Quién lo llama: el enchufe de Codex del mecanismo (`scripts/setup/harness/tools.js`) y, suelto, el aplicador
@@ -46,7 +49,10 @@ const LOOKS_LIKE_PROFILE_RE = /^\s*<!--\s*requires-profile\b/i;
 
 const trimNewlines = (s) => s.replace(/^\n+|\n+$/g, '');
 const startPrefix = (name) => `<!-- TYCON_BLOCK:${name} START`;
-const markerStart = (name) => `<!-- TYCON_BLOCK:${name} START — generado por scripts/setup/agents-md-blocks.js del arnés · NO EDITAR A MANO (se pisa en la próxima actualización); editá claude-md-blocks/${name}.md y commiteá -->`;
+const PACK_BLOCK_RE = /<!--\s*TYCON_BLOCK:(packs\/[^/\s>]+\/[^/\s>]+)\s+START/g;
+/** El archivo del que sale un bloque, como lo nombra su marca (`claude-md-blocks/<n>.md`, o el de su paquete). */
+const blockSource = (name) => { const m = /^packs\/([^/]+)\/([^/]+)$/.exec(name); return m ? `packs/${m[1]}/claude-md-blocks/${m[2]}.md` : `claude-md-blocks/${name}.md`; };
+const markerStart = (name) => `<!-- TYCON_BLOCK:${name} START — generado por scripts/setup/agents-md-blocks.js del arnés · NO EDITAR A MANO (se pisa en la próxima actualización); editá ${blockSource(name)} y commiteá -->`;
 const markerEnd = (name) => `<!-- TYCON_BLOCK:${name} END -->`;
 
 /** La carpeta de Codex y su archivo de reglas (`CODEX_AGENTS_MD_PATH` lo fija; si no, `CODEX_HOME` o `~/.codex`). */
@@ -110,6 +116,24 @@ function loadBlocks(blocksDir) {
     out.push(Object.assign({ name }, b));
   }
   return out.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+}
+
+/**
+ * Los bloques de los paquetes activos del árbol (`{ blocks, active }`), o `{ blocks: [], active: null, why }` si no se pudo
+ * saber qué paquetes activa la organización. Un árbol sin el lector (de antes de los bloques de paquete): ninguno, sin quitar.
+ */
+function loadPackBlocks({ tree, env, home }) {
+  let PP;
+  try { PP = require(path.join(tree, 'scripts', 'lib', 'pack-pieces.js')); } catch (_) { return { blocks: [], active: null, why: 'no encontré el lector de paquetes (scripts/lib/pack-pieces.js)' }; }
+  if (typeof PP.blocksOf !== 'function') return { blocks: [], active: null, why: 'este lector de paquetes no conoce los bloques de paquete' };
+  let r;
+  try { r = PP.blocksOf({ tree, env, home }); } catch (e) { return { blocks: [], active: null, why: `no pude leer los bloques de los paquetes (${String((e && e.message) || e).split('\n')[0]})` }; }
+  if (!r || !Array.isArray(r.active)) return { blocks: [], active: null, why: (r && r.error) || 'no pude saber qué paquetes activa la organización' };
+  const blocks = [];
+  for (const b of r.blocks) {
+    try { blocks.push(Object.assign({ name: b.name }, readBlock(b.file), { variants: null })); } catch (_) { /* ilegible: no se escribe */ }
+  }
+  return { blocks, active: r.active, why: null };
 }
 
 /** `{ file }` con la variante que eligió la configuración (`<estilo>.<idioma>.md`), o `{ why }` si no se pudo elegir. */
@@ -228,6 +252,26 @@ function applyBlocks(original, blocks, facts) {
     content = content.slice(0, i) + desired + content.slice(j + end.length);
     changed.push([b.name, 'actualizado']);
   }
+  // un bloque de paquete escrito que ya no corresponde (paquete inactivo, o que ya no lo trae) se va entre sus marcas;
+  // sin saber qué paquetes activa la organización, queda (`facts.packs` ausente: quien llama no los miró, nada se quita)
+  const names = new Set(blocks.map((b) => b.name));
+  const written = [...new Set([...content.matchAll(PACK_BLOCK_RE)].map((m) => m[1]))].filter((n) => !names.has(n)).sort();
+  for (const name of written) {
+    if (!facts.packs) continue;
+    if (!Array.isArray(facts.packs.active)) { notes.push(`⚠ tycon: bloque AGENTS.md '${name}': no pude saber si su paquete está activo (${facts.packs.why}): queda donde está`); continue; }
+    const end = markerEnd(name);
+    const i = content.indexOf(startPrefix(name));
+    const j = content.indexOf(end, i);
+    if (j === -1) { notes.push(`⚠ tycon: bloque '${name}' de AGENTS.md: falta su marca de cierre — no lo toco; revisalo a mano`); unclosed.push(name); continue; }
+    const pack = name.split('/')[1];
+    const why = facts.packs.active.includes(pack) ? `el paquete «${pack}» ya no lo trae` : `el paquete «${pack}» no está activo`;
+    const before = content.slice(0, i).replace(/\n+$/, '');
+    let after = content.slice(j + end.length);
+    if (after.startsWith('\n')) after = after.slice(1);
+    content = before || after ? `${before}\n${after}` : '';
+    changed.push([name, `quitado (${why})`]);
+    removed[name] = why;
+  }
   const present = blocks.filter((b) => finals[b.name] !== undefined && content.includes(finals[b.name])).map((b) => b.name);
   return { text: content, changed, notes, present, removed, unclosed };
 }
@@ -271,7 +315,8 @@ function machineFacts({ tree = TREE, home = os.homedir(), env = process.env } = 
 /**
  * Deja (o mira, con `check`) los bloques en `target`.
  * @param {object} p  blocksDir · target · check · integrations/integrationsWhy · profile/profileWhy (si no vienen, se leen
- *   de la máquina) · reportFile · planFile · backup (false = sin copia propia) · quiet (no imprime) · env · home · tree
+ *   de la máquina) · packs (`{ blocks, active, why }` de loadPackBlocks; si no viene, se lee del árbol) · reportFile ·
+ *   planFile · backup (false = sin copia propia) · quiet (no imprime) · env · home · tree
  * @returns {{ok:boolean, changed:boolean, pending:boolean, lines:string[], present:string[], target:string, reason?:string}}
  */
 function sync(p = {}) {
@@ -287,8 +332,10 @@ function sync(p = {}) {
   const say = (l) => { lines.push(l); if (!p.quiet) console.log(l); };
   const out = (extra) => Object.assign({ ok: true, changed: false, pending: false, lines, present: [], target }, extra);
 
-  const blocks = loadBlocks(blocksDir);
-  if (!blocks.length) return out({ ok: false, reason: `sin bloques en ${blocksDir}` });
+  const core = loadBlocks(blocksDir);
+  if (!core.length) return out({ ok: false, reason: `sin bloques en ${blocksDir}` });
+  const packs = p.packs !== undefined ? p.packs : loadPackBlocks({ tree, env, home });
+  const blocks = core.concat(packs ? packs.blocks : []).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   let original;
   try { original = fs.readFileSync(target, 'utf8'); } catch (e) {
     if (e.code !== 'ENOENT') return out({ ok: false, reason: `no pude leer ${target} (${e.code || e.message})` });
@@ -297,7 +344,7 @@ function sync(p = {}) {
   const facts = (p.integrations !== undefined || p.profile !== undefined)
     ? { integrations: p.integrations === undefined ? null : p.integrations, integrationsWhy: p.integrationsWhy || null, profile: p.profile === undefined ? null : p.profile, profileWhy: p.profileWhy || null, response: p.response || null, responseWhy: p.responseWhy || (p.response ? null : 'no me pasaron cómo contesta el asistente') }
     : machineFacts({ tree, home, env });
-  const r = applyBlocks(original, blocks, facts);
+  const r = applyBlocks(original, blocks, Object.assign({}, facts, { packs }));
   for (const n of r.notes) say(n);
   const differs = r.text !== original;
   const action = !differs ? 'keep' : (original === '' ? 'add' : 'update');
@@ -355,5 +402,5 @@ function main(argv) {
   return 0;
 }
 
-module.exports = { sync, applyBlocks, loadBlocks, readBlock, blockState, machineFacts, defaultTarget, markerStart, markerEnd };
+module.exports = { sync, applyBlocks, loadBlocks, loadPackBlocks, readBlock, blockState, machineFacts, defaultTarget, markerStart, markerEnd };
 if (require.main === module) process.exit(main(process.argv.slice(2)));
