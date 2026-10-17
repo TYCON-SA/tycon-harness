@@ -259,6 +259,27 @@ commit "${R}" "control suelto"
 bash "${SCRIPT}" check-inventory --root "${R}" > "${T}/t11.out" 2>&1; RC=$?
 is "T11 un control del pre-commit sin inventariar: rojo" "1" "${RC}"
 has "T11 lo nombra" "${T}/t11.out" "control sin inventariar: scripts/ci/suelto.sh"
+# un guion que el pre-commit nombra como respaldo y el árbol no trae no es un control: no pide entrada
+R="${T}/t11c"; make_base "${R}"
+printf '%s\n' '[ -f "$REPO_ROOT/scripts/ci/viejo-nombre.sh" ] && bash "$REPO_ROOT/scripts/ci/viejo-nombre.sh"' >> "${R}/.githooks/pre-commit-checks"
+commit "${R}" "respaldo de un nombre de antes"
+bash "${SCRIPT}" check-inventory --root "${R}" > "${T}/t11c.out" 2>&1; RC=$?
+is "T11 un guion nombrado que el árbol no trae no pide entrada en el inventario" "0" "${RC}"
+# …y el pedido no puede crearlo para que corra en la pasada de la base: el commit armado lo saca
+R="${T}/t11d"; make_base "${R}"
+node -e 'const f=process.argv[1];const t=require("fs").readFileSync(f,"utf8").replace(/^bash "\$REPO_ROOT\/scripts\/ci\/toy-check.sh"/m, "[ -f \"$REPO_ROOT/scripts/ci/respaldo.sh\" ] && { bash \"$REPO_ROOT/scripts/ci/respaldo.sh\"; exit $?; }\n$&");require("fs").writeFileSync(f,t)' "${R}/.githooks/pre-commit-checks"
+commit "${R}" "la base nombra un respaldo que no trae"; pr "${R}"
+printf 'exit 0\n' > "${R}/scripts/ci/respaldo.sh"; printf 'PROHIBIDO\n' > "${R}/docs/malo.txt"; commit "${R}"
+run "${R}" "${T}/t11d.out"
+is "T11 el pedido que crea el respaldo que nombra la base no saltea el control: rojo" "1" "${RC}"
+has "T11 …corre el control de la base" "${T}/t11d.out" "toy: PROHIBIDO en docs/malo.txt"
+# una entrada de «content» con «/» al final clasifica la carpeta entera
+R="${T}/t1h"; make_base "${R}"; mkdir -p "${R}/datos"; printf '{}\n' > "${R}/datos/x.json"
+printf '%s\n' '# lee "datos/x.json"' >> "${R}/scripts/ci/toy-check.sh"
+node -e 'const f=process.argv[1];const j=JSON.parse(require("fs").readFileSync(f,"utf8"));j.content.push("datos/");require("fs").writeFileSync(f,JSON.stringify(j,null,2))' "${R}/scripts/ci/controls-from-base.json"
+commit "${R}" "carpeta de datos"
+bash "${SCRIPT}" check-inventory --root "${R}" > "${T}/t1h.out" 2>&1; RC=$?
+is "T1 una carpeta en «content» clasifica lo que tiene adentro" "0" "${RC}"
 # y en una revisión: el pedido que suma un control sin su entrada
 R="${T}/t11b"; make_base "${R}"; pr "${R}"
 printf 'exit 0\n' > "${R}/scripts/ci/suelto.sh"

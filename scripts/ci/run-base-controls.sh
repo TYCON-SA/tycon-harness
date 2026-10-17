@@ -226,6 +226,10 @@ function resolveInventory(root, rev, inv) {
   }
   const closure = codeClosure(root, rev, [inv.hook, ...scripts]);
   for (const f of closure) add(f, 'código que corre un control');
+  // todo guion que el pre-commit nombra es regla, también el que este árbol no trae (el respaldo de un nombre de antes):
+  // si la base no lo tiene, el commit armado lo saca, y un pedido no puede crearlo para que corra en la pasada de la base
+  const hookText = show(root, rev, inv.hook);
+  if (hookText !== null) for (const p of scriptsCalledByHook(hookText)) add(p, 'el pre-commit');
   const workflows = (inv.workflows || []).filter((w) => w && w.path);
   for (const w of workflows) if (!owner.has(w.path)) owner.set(w.path, 'workflow');
   return { rules, owner, closure, workflows };
@@ -247,14 +251,18 @@ function inventoryProblems(root, rev, inv) {
   }
   if (hookText === null) { problems.push(`el inventario nombra ${inv.hook} y el árbol no lo trae`); return problems; }
   const listed = new Set(inv.controls.map((c) => c.script));
-  for (const p of [...called].sort()) if (!listed.has(p)) problems.push(`control sin inventariar: ${p}`);
+  // un guion que el pre-commit nombra y el árbol no trae (el respaldo de un nombre de antes) no corre: no es un control
+  for (const p of [...called].sort()) if (!listed.has(p) && exists(p)) problems.push(`control sin inventariar: ${p}`);
   const { rules, closure } = resolveInventory(root, rev, inv);
   const classified = new Set([...rules, ...(inv.content || []).map(asPath), ...approvalFiles(inv)].filter(Boolean));
+  // una entrada de «content» que termina en «/» clasifica la carpeta entera
+  const contentDirs = (inv.content || []).map(asPath).filter((p) => p && p.endsWith('/'));
+  const isClassified = (d) => classified.has(d) || contentDirs.some((dir) => d.startsWith(dir));
   const unclassified = new Set();
   for (const f of closure) {
     const text = show(root, rev, f);
     if (text === null) continue;
-    for (const d of dataNamedBy(root, rev, f, text)) if (!classified.has(d)) unclassified.add(d);
+    for (const d of dataNamedBy(root, rev, f, text)) if (!isClassified(d)) unclassified.add(d);
   }
   for (const d of [...unclassified].sort()) problems.push(`sin clasificar: ${d} (nombrado por un control: va en las reglas de su control o en «content»)`);
   return problems;
