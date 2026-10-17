@@ -28,9 +28,9 @@ your assistant are in Spanish only today.
 
 - **No GitHub account**: this repository is public, and the harness is downloaded from it without a credential.
 - **Claude Code** installed and signed in (or Codex, for the Codex side).
-- **On Windows, native**: Node 24 (Node 22 is enough), PowerShell 7 and `tar` (Windows 10 and later bring it). Git and Python
+- **On Windows, native**: Node 24 (Node 22 or later is enough), PowerShell 7 and `tar` (Windows 10 and later bring it). Git and Python
   are not needed. Through WSL, the same as on Mac and Linux, inside WSL.
-- **On Mac and Linux**: Bash, Python 3, `tar`, `curl` and Node 24 (Node 22 is enough; tested on 22 and 24). Git is not needed.
+- **On Mac and Linux**: Bash, Python 3, `tar`, `curl` and Node 24 (Node 22 or later is enough; tested on 22 and 24). Git is not needed.
 - **Node 20**: 20 is tolerated only to update an existing installation; it is not tested.
 - **Your team's packs** may need more (the .NET stack one, the .NET SDK your plugin targets): each one says so.
 

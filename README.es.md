@@ -41,7 +41,7 @@ Para sacar el arnés, `harness.js uninstall --dry-run` muestra qué quitaría, y
 
 ## Qué necesitás
 
-- Node 24 y `tar` (para correr la línea de instalación alcanza con Node 22). En Mac, además, Python 3.
+- Node 24 y `tar` (para correr la línea de instalación alcanza con Node 22 o posterior). En Mac, además, Python 3.
 - Windows 11 con PowerShell 7, Mac o Linux. En WSL no se probó.
 - Claude Code (o Codex), instalado y con tu sesión iniciada: es donde se usa el arnés.
 - Git **no** hace falta para usar el arnés: se baja como archivos, no se clona.

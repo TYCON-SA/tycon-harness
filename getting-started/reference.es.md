@@ -28,9 +28,9 @@ castellano; esta página y los archivos de la comunidad tienen versión en ingl�
 
 - **Sin cuenta de GitHub**: este repo es público, y el arnés se baja de acá sin credencial.
 - **Claude Code** instalado y con tu sesión iniciada (o Codex, para el lado Codex).
-- **En Windows, nativo**: Node 24 (alcanza con Node 22), PowerShell 7 y `tar` (viene con Windows 10 y posteriores). Git y Python
+- **En Windows, nativo**: Node 24 (alcanza con Node 22 o posterior), PowerShell 7 y `tar` (viene con Windows 10 y posteriores). Git y Python
   no hacen falta. Por WSL, lo mismo que en Mac y Linux, dentro de WSL.
-- **En Mac y Linux**: Bash, Python 3, `tar`, `curl` y Node 24 (alcanza con Node 22; probado en 22 y 24). Git no hace falta.
+- **En Mac y Linux**: Bash, Python 3, `tar`, `curl` y Node 24 (alcanza con Node 22 o posterior; probado en 22 y 24). Git no hace falta.
 - **Node 20**: 20 se tolera sólo para actualizar una instalación existente; no se prueba.
 - **Los paquetes de tu equipo** pueden pedir más (el del stack .NET, el SDK de .NET de tu plugin): lo dice cada uno.
 

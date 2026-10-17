@@ -43,7 +43,7 @@ To remove the harness, `harness.js uninstall --dry-run` shows what it would remo
 
 ## What you need
 
-- Node 24 and `tar` (Node 22 is enough to run the install line). On Mac, also Python 3.
+- Node 24 and `tar` (Node 22 or later is enough to run the install line). On Mac, also Python 3.
 - Windows 11 with PowerShell 7, Mac or Linux. WSL was not tested.
 - Claude Code (or Codex), installed and signed in: it is where you use the harness.
 - Git is **not** needed to use the harness: it is downloaded as files, not cloned.
