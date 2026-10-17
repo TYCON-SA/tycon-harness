@@ -854,6 +854,13 @@
     },
     {
       "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/check-count-docs-only.test.js",
+      "requiere": [
+        "agent-skills"
+      ]
+    },
+    {
+      "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/reviewer-rules.test.js",
       "requiere": [
         "agent-skills"
