@@ -159,6 +159,12 @@ input.bad{border-color:var(--bad)}
 .despliegue .prod{font-weight:600;font-size:15px}
 details.mas-info{font-size:13.5px}details.mas-info summary{cursor:pointer;color:var(--ink-2);font-weight:600}
 details.mas-info[open] summary{margin-bottom:10px}
+details.grupo{border:1px solid var(--line);border-radius:10px;padding:8px 12px;background:var(--surface)}
+details.grupo>summary{cursor:pointer;font-weight:600;font-size:14px}
+details.grupo[open]>summary{margin-bottom:6px}
+ul.efectos{list-style:none;margin:0;padding:0;display:grid;gap:2px}
+ul.efectos summary{cursor:pointer;font-size:14px;padding:3px 0}
+ul.efectos p{margin:2px 0 8px 18px;font-size:13.5px;max-width:72ch}
 .antes-despues{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
 .antes-despues .lab{font-size:12px;color:var(--muted);margin-bottom:4px}
 pre{margin:0;padding:12px 14px;border-radius:10px;background:var(--surface-2);border:1px solid var(--line);font:12.5px/1.5 var(--mono);overflow:auto;max-height:360px;white-space:pre}

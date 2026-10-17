@@ -996,12 +996,38 @@ function pantalla() {
     var ex = (s.extras || {}).perfiles || {};
     var box = el('div', { class: 'pila' }, selector('Cuánto instala el arnés', (d.install || {}).profile, [['', 'sin declarar (completo)'], ['full', 'completo'], ['minimal', 'mínimo']], function (v) { hoja(d, 'install', 'profile', v); }, 'install.profile', pr));
     if (ex.motivo) box.appendChild(aviso('bad', 'No se pudo leer qué trae cada perfil.', ex.motivo));
-    [['minimal', 'El mínimo trae'], ['full', 'El completo trae']].forEach(function (par) {
-      var lista = ex[par[0]] || []; var ul = el('ul', {});
-      lista.forEach(function (t) { ul.appendChild(el('li', { text: t })); });
-      box.appendChild(el('details', { class: 'mas-info' }, el('summary', { text: par[1] + ' ' + lista.length + ' cosas' }), ul));
-    });
+    var min = ex.minimal || []; var full = ex.full || [];
+    var clave = function (f) { return f.title + '\u0000' + f.does; };
+    var enMin = {}; min.forEach(function (f) { enMin[clave(f)] = true; });
+    var suma = full.filter(function (f) { return !enMin[clave(f)]; });
+    box.appendChild(el('div', {}, el('p', { class: 'sub-t', text: 'El mínimo trae ' + min.length + ' cosas' }), porGrupo(min)));
+    box.appendChild(el('div', {}, el('p', { class: 'sub-t', text: 'El completo suma estas ' + suma.length }), porGrupo(suma)));
     return box;
+  }
+  // los grupos de lo que instala el arnés, en el orden en que se muestran; uno que la pantalla no conoce va al final
+  var GRUPOS = [['safety', 'Frenos de seguridad'], ['assistant', 'Cómo contesta y trabaja el asistente'], ['notices', 'Avisos al arrancar y al trabajar'], ['pipeline', 'Revisores y pipeline'],
+    ['memory', 'Memoria entre sesiones'], ['time', 'Registro de tiempo'], ['install', 'Instalación y actualización'], ['codex', 'Codex']];
+  /** Si viene prendida o apagada y dónde se cambia: lo de la organización, en Configuración; lo de una máquina, se dice. */
+  function dondeSeCambia(f) {
+    var pestana = function (idSeccion) { var t = PESTANAS.filter(function (p) { return p[2].indexOf(idSeccion) >= 0; })[0]; return t ? t[1] + ' → ' : ''; };
+    var base = f.default === 'off' ? 'Viene apagado. ' : String(f.when || '').indexOf('integration:') === 0 ? 'Viene con su integración. ' : 'Viene prendido. ';
+    if (f.site_section) return base + 'Se cambia en Configuración → ' + pestana(f.site_section) + (PLANO[f.site_section] ? PLANO[f.site_section].corto : f.site_section) + '.';
+    var resto = f.switch ? 'Sólo en tu máquina, con ' + f.switch + '.' : 'Es parte del arnés: no se apaga.';
+    var pend = f.site_pending ? ' Pendiente: que se pueda cambiar desde Configuración → ' + ((PESTANAS.filter(function (p) { return p[0] === f.site_pending; })[0] || [])[1] || f.site_pending) + '.' : '';
+    return base + resto + pend;
+  }
+  function porGrupo(lista) {
+    var cont = el('div', { class: 'pila' });
+    var conocidos = GRUPOS.map(function (g) { return g[0]; });
+    GRUPOS.concat([[null, 'Otras']]).forEach(function (g) {
+      var xs = lista.filter(function (f) { return g[0] ? f.group === g[0] : conocidos.indexOf(f.group) < 0; });
+      if (!xs.length) return;
+      var ul = el('ul', { class: 'efectos' });
+      xs.forEach(function (f) { ul.appendChild(el('li', {}, el('details', {}, el('summary', { text: f.title }), el('p', { text: f.does }), el('p', { class: 'muted', text: dondeSeCambia(f) })))); });
+      cont.appendChild(el('details', { class: 'grupo' }, el('summary', { text: g[1] + ' (' + xs.length + ')' }), ul));
+    });
+    if (!lista.length) cont.appendChild(el('p', { class: 'muted', text: 'Nada.' }));
+    return cont;
   }
   function editorHilos(s, d, pr) {
     var mb = (d.site || {}).mailbox || {};

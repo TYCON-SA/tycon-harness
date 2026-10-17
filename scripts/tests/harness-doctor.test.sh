@@ -640,7 +640,8 @@ harness install --yes >/dev/null 2>&1 || mal "T49 install previo falló"
 python3 - "$LAB_TREE/scripts/setup/install-effects.json" <<'PY2'
 import json, sys
 p = sys.argv[1]; d = json.load(open(p, encoding="utf-8"))
-d["effects"].append({"id": "SessionStart:@tcg:lab-hook.js", "kind": "hook", "does": "Un freno de juguete del laboratorio.", "blocks": "any-repo", "when": "always",
+d["effects"].append({"id": "SessionStart:@tcg:lab-hook.js", "kind": "hook", "title": "Un freno de juguete", "group": "safety", "default": "on",
+  "does": "Un freno de juguete del laboratorio.", "blocks": "any-repo", "when": "always",
   "switch": None, "network": None, "stores": None, "windows": False, "front_page": False, "profiles": ["minimal", "full"]})
 json.dump(d, open(p, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
 PY2

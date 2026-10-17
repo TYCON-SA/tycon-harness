@@ -392,6 +392,13 @@ test('Effects_Check_CatchesMissingStaleAndUndeclaredLaunch', () => {
   assert.ok(bad({ when: 'integration:nocturnos' }).some((m) => m.includes('nocturnos') && m.includes('no existe')), 'una llave de integración que no existe (el nombre viejo)');
   assert.ok(bad({ does: undefined }).some((m) => m.includes('does')), 'una entrada sin «does»');
   assert.ok(bad({ windows: 'yes' }).some((m) => m.includes('windows')), 'un «windows» que no es sí o no');
+  // lo que muestra el sitio: un título corto, un grupo y si viene prendida, siempre; dónde se cambia, una cosa o la otra
+  assert.ok(bad({ title: undefined }).some((m) => m.includes('title')), 'una entrada sin título');
+  assert.ok(bad({ title: 'x'.repeat(71) }).some((m) => m.includes('title')), 'un título de más de una línea');
+  assert.ok(bad({ group: 'varios' }).some((m) => m.includes('group')), 'un grupo fuera de la lista');
+  assert.ok(bad({ default: 'quizas' }).some((m) => m.includes('default')), 'un valor de fábrica que no es on u off');
+  assert.ok(bad({ site_section: 'Integraciones' }).some((m) => m.includes('site_section')), 'una sección que no es un identificador');
+  assert.ok(bad({ site_section: 'integraciones', site_pending: 'claude' }).some((m) => m.includes('no las dos')), 'cambiable y pendiente a la vez');
   assert.ok(bad({ id: undefined, id_pattern: '^PreToolUse:.+$' }).some((m) => m.includes('un hook lleva «id»')), 'un hook declarado por patrón (el conteo de frenos no lo vería)');
   assert.ok(managed.effectProblems({ effects: [sample, sample] }).some((m) => m.includes('dos veces')), 'una entrada repetida');
   assert.ok(managed.effectProblems({ effects: [{ id: 'task:x', kind: 'task', does: 'una tarea de prueba que no dice de dónde sale', blocks: 'no', when: 'always', switch: null, network: null, stores: null, windows: false, front_page: false }] })

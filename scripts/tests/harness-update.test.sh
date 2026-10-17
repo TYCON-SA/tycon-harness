@@ -855,7 +855,8 @@ publish_brake() {
   python3 - "$a/scripts/setup/install-effects.json" <<'PY'
 import json, sys
 p = sys.argv[1]; d = json.load(open(p, encoding="utf-8"))
-d["effects"].append({"id": "PreToolUse:@tcg:lab-new-guard.sh", "kind": "hook", "does": "Frena un push a main sin revisión (freno de laboratorio).",
+d["effects"].append({"id": "PreToolUse:@tcg:lab-new-guard.sh", "kind": "hook", "title": "Frena un push a main sin revisión", "group": "safety", "default": "on",
+                     "does": "Frena un push a main sin revisión (freno de laboratorio).",
                      "blocks": "any-repo", "when": "always", "switch": "TYCON_LAB_GUARD=0", "network": None, "stores": None,
                      "windows": False, "front_page": False, "profiles": ["full"]})   # profiles: story 8.16, tanda C
 json.dump(d, open(p, "w", encoding="utf-8"), indent=2, ensure_ascii=False)
