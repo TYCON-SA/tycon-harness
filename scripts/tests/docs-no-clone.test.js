@@ -348,3 +348,63 @@ test('T20 NpxInstaller_PortadaLinesPassGuard', (t) => {
     assert.match(piped.stderr, /SUP-C1/);
   } finally { fs.rmSync(home, { recursive: true, force: true }); }
 });
+
+// ── story 8.40 (T51, AC 43: las páginas para usar) ───────────────────────────────────────────────────────────────────
+// Las tres páginas guiadas instalan con la línea npx en su parte 1 (el plan con --dry-run y la misma línea sin él, sin
+// -y ni --yes: la persona contesta), con el guion de entrada a mano debajo; la referencia en los dos idiomas dice cómo
+// pasar por un proxy o por la CA de la empresa y cómo desinstalar.
+const GUIDED_PAGES = ['getting-started/mac.md', 'getting-started/windows.md', 'getting-started/linux.md'];
+const NPX_GUIDED = 'npx @tyconsa/harness@latest --audience me --profile full --integrations none --packs all';
+const REFERENCE_SECTIONS = {
+  'getting-started/reference.md': { proxy: '## With a proxy or your company\'s CA', uninstall: '## Uninstall' },
+  'getting-started/reference.es.md': { proxy: '## Con un proxy o la CA de tu empresa', uninstall: '## Desinstalar' },
+};
+/** El texto de una sección `## …` (hasta la siguiente del mismo nivel), o '' si no está. */
+function sectionOf(text, title) {
+  const at = text.split('\n').findIndex((l) => l.trim() === title);
+  if (at < 0) return '';
+  const lines = text.split('\n').slice(at + 1);
+  const end = lines.findIndex((l) => /^## /.test(l));
+  return lines.slice(0, end < 0 ? lines.length : end).join('\n');
+}
+test('T51 Docs_GuidedPagesUseNpx_ReferenceSaysProxyAndUninstall @story-8.40 @ac-43', () => {
+  for (const f of GUIDED_PAGES) {
+    const text = read(f);
+    const partOne = text.split(/^## Parte 2\b/m)[0];
+    const firstText = (/```text\n([\s\S]*?)```/.exec(partOne) || [])[1] || '';
+    const lines = firstText.split('\n').map((l) => l.trim());
+    assert.ok(lines.includes(`${NPX_GUIDED} --dry-run`), `${f}: la parte 1 muestra el plan con la línea npx y --dry-run`);
+    assert.ok(lines.includes(NPX_GUIDED), `${f}: la parte 1 instala con la línea npx, sin --dry-run`);
+    assert.doesNotMatch(firstText, /get-harness\.(sh|ps1)\s+--/, `${f}: la parte 1 ya no corre el guion de entrada`);
+    assert.match(firstText, /Ok to proceed\?\s+\(y\)/, `${f}: la parte 1 avisa la pregunta propia de npx`);
+    assert.match(firstText, /¿Instalo\? \[s\/N\]/, `${f}: la persona contesta la pregunta del instalador`);
+    // las herramientas del paso 1 incluyen npx: el paso 2 lo necesita, y en Linux el node de la distribución puede venir sin npm
+    const tools = (/^1\. Herramientas:\n([\s\S]*?)^2\. /m.exec(firstText) || [])[1] || '';
+    assert.match(tools, /npx --version/, `${f}: el paso 1 mira npx`);
+    if (f.endsWith('linux.md')) assert.match(tools, /sudo apt install -y npm/, `${f}: el paso 1 dice cómo se instala npm`);
+    // el camino a mano, debajo: el guion de entrada con su plan y su instalación
+    const byHand = sectionOf(text, '## Si npx no anda — el guion de entrada, a mano');
+    assert.ok(byHand, `${f}: el camino a mano queda abajo`);
+    assert.match(byHand, /get-harness\.(sh|ps1)/, `${f}: el camino a mano es el guion de entrada`);
+    assert.ok(text.indexOf('## Si npx no anda') > text.indexOf(firstText), `${f}: el camino a mano va después de la parte 1`);
+  }
+  for (const [f, s] of Object.entries(REFERENCE_SECTIONS)) {
+    const text = read(f);
+    const proxy = sectionOf(text, s.proxy);
+    assert.ok(proxy, `${f}: la sección «${s.proxy}»`);
+    for (const k of ['HTTPS_PROXY', 'NO_PROXY', 'NODE_EXTRA_CA_CERTS']) assert.ok(proxy.includes(k), `${f}: «${s.proxy}» nombra ${k}`);
+    const uninstall = sectionOf(text, s.uninstall);
+    assert.ok(uninstall, `${f}: la sección «${s.uninstall}»`);
+    assert.match(uninstall, /harness\.js"? uninstall/, `${f}: «${s.uninstall}» da el comando`);
+  }
+  // INSTALL.md nombra npx primero: la línea aparece antes que el guion de entrada en «Instalar sin clonar»
+  const install = sectionOf(read('INSTALL.md').replace(/^### /gm, '## '), '## 1. Instalar sin clonar');
+  assert.ok(install.includes('npx @tyconsa/harness@latest'), 'INSTALL.md: «Instalar sin clonar» nombra la línea npx');
+  assert.ok(install.indexOf('npx @tyconsa/harness@latest') < install.indexOf('get-harness'), 'INSTALL.md: npx primero, el guion de entrada después');
+  // el camino a mano no instala sin el «sí»: el plan y la instalación van en dos bloques, con la respuesta en el medio
+  for (const f of GUIDED_PAGES) {
+    const byHand = sectionOf(read(f), '## Si npx no anda — el guion de entrada, a mano');
+    const blocks = [...byHand.matchAll(/```[a-z]*\n([\s\S]*?)```/g)].map((m) => m[1]);
+    assert.ok(blocks.length >= 2 && blocks.some((b) => /--dry-run/.test(b) && !/--yes/.test(b)) && blocks.some((b) => /--yes/.test(b) && !/--dry-run/.test(b)), `${f}: el plan y la instalación a mano, en bloques separados`);
+  }
+});

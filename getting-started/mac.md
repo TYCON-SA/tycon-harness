@@ -15,58 +15,73 @@ vive en un repo público de GitHub: se baja sin cuenta y sin permiso. Seguí est
 corriendo cada comando TAL CUAL (no lo reescribas ni lo "mejores"). Si una salida no es la esperada, o aparece un error
 que no está acá, PARÁ, no arregles nada a mano y mostrame la salida tal cual.
 
-Perfil: si arriba de este pedido te escribí «quiero el perfil mínimo», en los pasos 3 y 4 cambiá --profile full por
---profile minimal, y salteá el paso 5. Si no, va full.
+Perfil: si arriba de este pedido te escribí «quiero el perfil mínimo», en los pasos 2 y 3 cambiá --profile full por
+--profile minimal, y salteá el paso 4. Si no, va full.
 
 Si un paso contesta 403 o «límite de la API de GitHub»: GitHub limita los pedidos sin credencial a 60 por hora por
 dirección de red, y una oficina entera suele compartir la suya. PARÁ y avisame, sin reintentar: o espero a que se
 renueve (como mucho una hora) y repetimos ese paso; o, si tengo un permiso de GitHub propio, lo pongo YO en la variable
-TYCON_GITHUB_TOKEN con la línea de abajo, en la misma terminal donde corro el guion (no se ve al pegarlo; vos no lo
-leas ni lo muestres), y vuelvo a correr get-harness, que lo usa y lo guarda:
+TYCON_GITHUB_TOKEN con la línea de abajo, en la misma terminal donde corro la línea npx (no se ve al pegarlo; vos no
+lo leas ni lo muestres), y la vuelvo a correr: lo usa y lo guarda:
     printf 'Permiso de GitHub: ' && read -rs TYCON_GITHUB_TOKEN && echo && export TYCON_GITHUB_TOKEN
-Bajar el propio guion va siempre sin credencial y no pasa por la API: no gasta de ese límite.
+Bajar el arnés va siempre sin credencial y casi no pasa por la API: gasta una sola consulta, la que verifica lo bajado.
 
 1. Herramientas:
-   node --version; python3 --version; tar --version
-   Esperado: node v22 o más, python3 3.algo, y tar. Lo que falte, decime que lo instale yo con Homebrew
+   node --version; npx --version; python3 --version; tar --version
+   Esperado: node v22 o más, npx (viene con node), python3 3.algo, y tar. Lo que falte, decime que lo instale yo con Homebrew
    (https://brew.sh si no lo tengo), de a uno:  brew install node · brew install python
    (git NO hace falta: el arnés se baja como archivos, no se clona.)
 
-2. Bajar el guion de instalación (se baja, se lee y después se corre; no se clona nada): dame estas dos líneas para
-   pegar en mi terminal, una por una:
-       curl -fsSL -o get-harness.sh https://raw.githubusercontent.com/TYCON-SA/tycon-harness/main/scripts/setup/get-harness.sh
-       less get-harness.sh
-   Esperado: el archivo get-harness.sh en mi carpeta y un guion de unas 120 líneas que empieza con «# get-harness.sh —
-   baja la versión publicada del arnés (sin git)».
+2. Ver el plan de instalación (no instala nada): dame esta línea para mi terminal:
+       npx @tyconsa/harness@latest --audience me --profile full --integrations none --packs all --dry-run
+   La primera vez npx pregunta si baja el paquete («Need to install the following packages … Ok to proceed?
+   (y)»): contesto y. Baja la versión a una carpeta temporal y muestra el plan. Te paso la salida: mostrame
+   el plan resumido (qué escribe, qué hooks pone, y si configura la carpeta global de hooks de git) y preguntame si sigo.
 
-3. Ver el plan de instalación (no instala nada): dame esta línea para mi terminal:
-       bash get-harness.sh -- --profile full --integrations none --packs all --dry-run
-   Baja la versión a una carpeta temporal y muestra el plan. Te paso la salida: mostrame el plan resumido (qué escribe,
-   qué hooks pone, y si configura la carpeta global de hooks de git) y preguntame si sigo.
+3. Con mi sí, instalar, en mi terminal (la misma línea, sin la opción del final):
+       npx @tyconsa/harness@latest --audience me --profile full --integrations none --packs all
+   Vuelve a mostrar el plan y pregunta «¿Instalo? [s/N]»: te paso la salida antes de contestar y, si es el mismo plan,
+   contesto s. Esperado: termina con «versión: …» y un resumen, sin rojo. El arnés queda en ~/.tycon/harness
+   (archivos, sin git).
 
-4. Con mi sí, instalar, en mi terminal:
-       bash get-harness.sh -- --profile full --integrations none --packs all --yes
-   Esperado: termina con «versión: …» y un resumen, sin rojo. El arnés queda en ~/.tycon/harness (archivos, sin git).
-
-5. Los controles que corren al commitear (hooks globales de git). Si git no tenía una carpeta global de hooks, la
+4. Los controles que corren al commitear (hooks globales de git). Si git no tenía una carpeta global de hooks, la
    instalación la configuró (el plan lo decía): con ella git deja de correr los .git/hooks/ propios de cada uno de mis
    repos, y el control del arnés corre en su lugar el .githooks/pre-commit de cada repo. Mirá cómo quedó:
    git config --global --get core.hooksPath
    Si no devuelve nada, corré:  git config --global core.hooksPath ~/.git-hooks
    Si devuelve otra carpeta, NO la pises: mostrámela y decidimos.
 
-6. Verificar (tres comandos):
+5. Verificar (tres comandos):
    node ~/.claude/tycon-harness/scripts/setup/harness.js doctor
    ls -d ~/.claude/skills/*/ | wc -l
    grep -c "INDEX.md" ~/.claude/CLAUDE.md
    Esperado: doctor dice «perfil: full» (o «perfil: minimal» si pedí el mínimo) y cierra con «todo en orden» (o «N aviso(s), nada en rojo»); más de 40; 1.
 
-7. Armame UN solo bloque de texto, para guardarlo o para pedir ayuda, con la salida de los pasos 1, 2 y 4 (el final), y
-   la salida COMPLETA del paso 6, más una línea final «OK» o «NO OK». Después decime que cierre y vuelva a abrir Claude
+6. Armame UN solo bloque de texto, para guardarlo o para pedir ayuda, con la salida de los pasos 1 y 3 (el final), y
+   la salida COMPLETA del paso 5, más una línea final «OK» o «NO OK». Después decime que cierre y vuelva a abrir Claude
    Code.
 
 Para trabajar con BIZUIT Extensions: el paquete bizuit ya queda prendido para todos mis repos (--packs all). Las guías
 para empezar un plugin o un formulario están en ~/.claude/tycon-harness/packs/bizuit/guides/ (vienen con el perfil de tu equipo) y te mandan a los templates públicos.
+```
+
+
+## Si npx no anda — el guion de entrada, a mano
+
+Si en esta máquina npx no puede bajar el paquete (una red que no deja pasar el registro de npm, por ejemplo), el mismo
+instalador se baja como guion: se baja, se lee y después se corre. Reemplaza los pasos 2 y 3 de arriba; el resto
+sigue igual. Primero el plan, sin instalar nada:
+
+```bash
+curl -fsSL -o get-harness.sh https://raw.githubusercontent.com/TYCON-SA/tycon-harness/main/scripts/setup/get-harness.sh
+less get-harness.sh
+bash get-harness.sh -- --profile full --integrations none --packs all --dry-run
+```
+
+Con el plan leído y tu sí, la instalación:
+
+```bash
+bash get-harness.sh -- --profile full --integrations none --packs all --yes
 ```
 
 ## Parte 2 — opcionales: engram, codegraph, codex y telegram

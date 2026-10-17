@@ -1,5 +1,5 @@
 {
-  "__doc": "La ficha de la página pública de Windows (getting-started/windows.md), para el ensayo que la sigue paso por paso. La página lleva UNA marca, afuera del bloque que la persona copia; la identidad de cada paso vive acá. Cada comando (`text`) tiene que estar escrito, letra por letra, en el bloque marcado: entero en un renglón o, si declara `line_prefix`, al final de un renglón que empieza con ese comienzo. Si la página cambia un comando, el ensayo no corre a medias: dice qué paso dejó de calzar. Campos de un comando: `expect` (lo esperado de ESE comando, como dato: `match` = una expresión sobre la salida, sin letras con acento; `min` = un número mínimo; `equals` = un valor exacto; `file` = un archivo que tiene que existir, en la carpeta de trabajo o en la de usuario), `ok_exits` (los códigos de salida buenos; si falta, sólo 0), `run_when` (cuándo se corre), `windows_only` (sólo tiene sentido en Windows, con su motivo), `notes` (lo que se anota y no se compara) y, en lo esperado, `lab_gap` (lo que el laboratorio no puede dar: no comparable, con su motivo). Una expresión (`match`) se busca en la salida del comando, no en su canal de errores (ahí PowerShell repite el renglón del comando); con `in: any`, en los dos. Que un programa del comando no esté en la máquina no hace falta declararlo: el ensayo lo ve solo. El comando de bajada lleva los dos marcadores del nombre público, como la página de origen: los resuelve el ensayo con scripts/setup/public-remotes.json del árbol que se ensaya. Y donde un comando nombra la carpeta del arnés dentro de la de Claude Code, la ficha lleva el marcador {{harness-place}}: el ensayo pone ahí el nombre que da scripts/setup/harness/place.js (ese nombre no se escribe en estos guiones).",
+  "__doc": "La ficha de la página pública de Windows (getting-started/windows.md), para el ensayo que la sigue paso por paso. La página lleva UNA marca, afuera del bloque que la persona copia; la identidad de cada paso vive acá. Cada comando (`text`) tiene que estar escrito, letra por letra, en el bloque marcado: entero en un renglón o, si declara `line_prefix`, al final de un renglón que empieza con ese comienzo. Si la página cambia un comando, el ensayo no corre a medias: dice qué paso dejó de calzar. Campos de un comando: `expect` (lo esperado de ESE comando, como dato: `match` = una expresión sobre la salida, sin letras con acento; `min` = un número mínimo; `equals` = un valor exacto; `file` = un archivo que tiene que existir, en la carpeta de trabajo o en la de usuario), `ok_exits` (los códigos de salida buenos; si falta, sólo 0), `run_when` (cuándo se corre), `windows_only` (sólo tiene sentido en Windows, con su motivo), `notes` (lo que se anota y no se compara) y, en lo esperado, `lab_gap` (lo que el laboratorio no puede dar: no comparable, con su motivo). Una expresión (`match`) se busca en la salida del comando, no en su canal de errores (ahí PowerShell repite el renglón del comando); con `in: any`, en los dos. Que un programa del comando no esté en la máquina no hace falta declararlo: el ensayo lo ve solo. La instalación es la línea npx de la página: el laboratorio la corre con el paquete armado del commit que se ensaya (`lab.package`) y, en el paso de instalar, suma la respuesta de la persona (`lab.answer`); los dos cambios quedan dichos en el informe. El nombre público (scripts/setup/public-remotes.json del árbol que se ensaya) dice qué repo sirve el GitHub de juguete. Y donde un comando nombra la carpeta del arnés dentro de la de Claude Code, la ficha lleva el marcador {{harness-place}}: el ensayo pone ahí el nombre que da scripts/setup/harness/place.js (ese nombre no se escribe en estos guiones).",
   "schema": 1,
   "page": {
     "published": "getting-started/windows.md",
@@ -8,13 +8,22 @@
     "fence": "text"
   },
   "needs": {
-    "entry_script": "scripts/setup/get-harness.ps1",
+    "entry_package": "scripts/setup/npm/package.json",
     "names": "scripts/setup/public-remotes.json"
   },
   "lab": {
-    "__auth": "Cómo sirve el GitHub de juguete el árbol que se ensaya. `none`: como repo público, sin permiso, y ningún paso lleva una credencial de GitHub en su ambiente — lo que la página supone desde que baja el guion sin credencial. `token`: como repo privado, con un permiso de juguete en el ambiente de los pasos que bajan e instalan; sirve sólo para una página cuyo comando de bajada mande ese permiso.",
+    "__auth": "Cómo sirve el GitHub de juguete el árbol que se ensaya. `none`: como repo público, sin permiso, y ningún paso lleva una credencial de GitHub en su ambiente — lo que la página supone: la línea npx baja sin credencial. `token`: como repo privado, con un permiso de juguete en el ambiente de los pasos que instalan.",
     "auth": "none",
-    "download_origin": "https://raw.githubusercontent.com"
+    "package": {
+      "from": "npx @tyconsa/harness@latest",
+      "to": "npx --yes \"file:{{package}}\"",
+      "why": "el paquete armado con npm pack del commit que se ensaya, en lugar del publicado: se ensaya lo que va a salir, no lo que ya está en npm (el --yes de npx es la «y» de la persona a «Ok to proceed?»)"
+    },
+    "answer": {
+      "step": "install",
+      "append": "--yes",
+      "why": "la respuesta de la persona: «s» a «¿Instalo? [s/N]», que la página deja contestar a ella; el agente no tiene terminal"
+    }
   },
   "steps": [
     {
@@ -23,7 +32,7 @@
       "severity": "noise",
       "commands": [
         {
-          "text": "$PSVersionTable.PSVersion.ToString(); node --version; tar --version",
+          "text": "$PSVersionTable.PSVersion.ToString(); node --version; npx --version; tar --version",
           "expect": [
             { "kind": "match", "pattern": "^7\\.", "what": "PowerShell 7" },
             { "kind": "match", "pattern": "^(bsdtar|tar)\\b", "flags": "im", "what": "tar" }
@@ -35,31 +44,12 @@
       ]
     },
     {
-      "id": "download",
-      "runs": "machine",
-      "severity": "breaks",
-      "commands": [
-        {
-          "text": "Invoke-WebRequest -OutFile get-harness.ps1 https://raw.githubusercontent.com/{{public-org}}/{{public-repo}}/main/scripts/setup/get-harness.ps1",
-          "expect": [
-            { "kind": "file", "in": "cwd", "path": "get-harness.ps1", "what": "el guion en la carpeta" }
-          ]
-        },
-        {
-          "text": "Get-Content get-harness.ps1",
-          "expect": [
-            { "kind": "match", "pattern": "# get-harness\\.ps1 . baja la versi.n publicada del arn.s \\(sin git\\)", "what": "el guion empieza diciendo qué es" }
-          ]
-        }
-      ]
-    },
-    {
       "id": "plan",
       "runs": "machine",
       "severity": "noise",
       "commands": [
         {
-          "text": "pwsh -File get-harness.ps1 -- --profile full --integrations none --packs all --dry-run",
+          "text": "npx @tyconsa/harness@latest --audience me --profile full --integrations none --packs all --dry-run",
           "expect": [
             { "kind": "match", "pattern": "se instalar.a la versi.n ", "what": "muestra el plan" }
           ]
@@ -72,7 +62,7 @@
       "severity": "breaks",
       "commands": [
         {
-          "text": "pwsh -File get-harness.ps1 -- --profile full --integrations none --packs all --yes",
+          "text": "npx @tyconsa/harness@latest --audience me --profile full --integrations none --packs all",
           "expect": [
             { "kind": "match", "pattern": "versi.n: \\S+", "what": "termina diciendo la versión" },
             { "kind": "file", "in": "home", "path": ".tycon/harness/version.json", "what": "el arnés en la carpeta de usuario" }
