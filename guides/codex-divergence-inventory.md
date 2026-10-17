@@ -323,3 +323,18 @@ Codex (están en el cuerpo, no en el frontmatter).
 
 **Lo que Codex NO tiene, dicho y no prometido**: el ahorro de tokens del revisor (−27 % a −51 %
 medido en Claude Code). La detección de las reglas del repo sí, porque viene del contexto.
+
+## Aviso de espera — ③ asimetría DECLARADA (2026-10-17)
+
+**Claude Code**: `wait-notice.js` se registra en seis momentos. El cierre de turno (`Stop`) y la pregunta a la persona
+(`PreToolUse` de `AskUserQuestion`, `ExitPlanMode` y la pregunta por voz) abren la espera, y también el pedido de
+permiso (`Notification` con `permission_prompt`). La respuesta (`PostToolUse` de esas tres y `UserPromptSubmit`) la
+cierra, y `SessionEnd` la cierra sin avisar.
+
+**Codex**: se registra **sólo en `Stop`** (`adapters/codex/hooks.json`). Codex no tiene el cuadro de opciones ni la
+aprobación del plan como herramientas, ni el evento `Notification`. El cierre de turno sí abre la espera, y el proceso
+del plazo decide igual que del lado Claude, contando los registros de verdad del hilo.
+
+**Lo que Codex NO cubre, dicho y no prometido**: el aviso por un pedido de permiso, y el cierre inmediato de la espera
+cuando la persona contesta. Sin `UserPromptSubmit` registrado, la vuelta la detecta el proceso del plazo por el hilo:
+cierra con `answered` o `kept-working` y no avisa. Caso: T19 de `scripts/tests/wait-notice.test.js`.

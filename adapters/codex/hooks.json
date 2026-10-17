@@ -253,6 +253,10 @@
           {
             "type": "command",
             "command": "node ${TCG}/scripts/hooks/large-read-meter.js"
+          },
+          {
+            "type": "command",
+            "command": "node ${TCG}/scripts/hooks/wait-notice.js"
           }
         ]
       }

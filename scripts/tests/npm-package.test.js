@@ -5,14 +5,14 @@
  *
  * El paquete (`scripts/setup/npm/`) es un INSTALADOR chico, no el arnés: un solo programa sin dependencias que baja la
  * versión publicada de GitHub y corre `harness.js install`. Lo que no se puede perder:
- *   · T3  — `npm pack --dry-run` lista exactamente package.json, index.js, README.md y LICENSE (la copia el workflow);
+ *   · T3  — `npm pack --dry-run` lista exactamente package.json, index.js, home-paths.json, README.md y LICENSE (la copia el workflow);
  *           sin `dependencies`; el shebang en la línea 1; 400 líneas como mucho; el repo de fábrica escrito UNA vez; el
  *           piso de Node para instalar en 22 (harness.js sigue en 20, sólo para actualizar); ningún hijo lanzado como `node` por nombre (siempre process.execPath);
  *           `--help` sale 0 sin red ni HOME y nombra el archivo que corre y dónde se ve la procedencia.
  *   · T5  — `requisites()` exportada: Windows pide pwsh 7 (con `winget install Microsoft.PowerShell`) y tar; fuera de
  *           Windows, bash, tar y python3 (éste salvo que se pida SÓLO Codex); ninguna variable de entorno cambia la
  *           plataforma; un Node por debajo del piso se nombra.
- *   · T10 — package.json: versión semver, bin `tycon-harness` → index.js, `files` con los cuatro, Apache-2.0, el repo
+ *   · T10 — package.json: versión semver, bin `tycon-harness` → index.js, `files` con los cinco, Apache-2.0, el repo
  *           público, `publishConfig.access: public`, `engines.node` con el piso.
  *   · T11 — scripts/ci/npm-package-version.js: un cambio bajo scripts/setup/npm/ sin subir `version` es rojo con la línea
  *           «subí version»; con la subida, verde; un cambio que no toca la carpeta no la mira.
@@ -69,7 +69,7 @@ test('T3 NpmPackage_OneFile_NoDeps_Help', (t) => {
   assert.strictEqual(floorHarness, '20', 'harness.js sigue en 20 (actualizar una instalación existente)');
   assert.ok(!/spawnSync\(\s*['"]node['"]/.test(src) && !/spawn\(\s*['"]node['"]/.test(src) && !/execFileSync\(\s*['"]node['"]/.test(src), 'ningún hijo se lanza como `node` por nombre');
   assert.ok(/process\.execPath/.test(src), 'el hijo corre con process.execPath');
-  assert.ok(!/require\(\s*['"](?!(fs|os|path|http|https|net|tls|tty|child_process|crypto|url)['"])/.test(src), 'sólo módulos del núcleo de Node');
+  assert.ok(!/require\(\s*['"](?!(fs|os|path|http|https|net|tls|tty|child_process|crypto|url|\.\/home-paths\.json)['"])/.test(src), 'sólo módulos del núcleo de Node y las rutas del paquete');
   // --help: sale 0 sin red ni HOME (una HOME que no existe y la red apuntada a un puerto cerrado)
   const h = spawnSync(process.execPath, [INDEX, '--help'], { encoding: 'utf8', env: Object.assign({}, process.env, { HOME: path.join(os.tmpdir(), 'no-existe-npm-help'), USERPROFILE: path.join(os.tmpdir(), 'no-existe-npm-help'), TYCON_RELEASE_API: 'http://127.0.0.1:9', TYCON_RELEASE_GIT: 'http://127.0.0.1:9', TYCON_RELEASE_ARCHIVE: 'http://127.0.0.1:9' }) });
   assert.strictEqual(h.status, 0, h.stderr);
@@ -78,18 +78,18 @@ test('T3 NpmPackage_OneFile_NoDeps_Help', (t) => {
   assert.match(out, /Provenance/);
   assert.match(out, /npm view @tyconsa\/harness dist\.attestations/);
   assert.ok(!fs.existsSync(path.join(os.tmpdir(), 'no-existe-npm-help')), '--help no creó la HOME');
-  // npm pack --dry-run: exactamente los cuatro (LICENSE lo copia el workflow antes de empaquetar)
+  // npm pack --dry-run: exactamente los cinco (LICENSE lo copia el workflow antes de empaquetar)
   const npm = spawnSync(npmBin, ['--version'], { encoding: 'utf8', shell: process.platform === 'win32' });
   if (npm.status !== 0) { t.diagnostic('NO MEDIDO: no hay npm en esta máquina (la lista del paquete)'); return; }
   const box = tmp('npm-pack-');
   try {
-    for (const f of ['package.json', 'index.js', 'README.md']) fs.copyFileSync(path.join(PKG_DIR, f), path.join(box, f));
+    for (const f of ['package.json', 'index.js', 'home-paths.json', 'README.md']) fs.copyFileSync(path.join(PKG_DIR, f), path.join(box, f));
     fs.copyFileSync(path.join(ROOT, 'LICENSE'), path.join(box, 'LICENSE'));
     fs.writeFileSync(path.join(box, 'sobra.txt'), 'no tiene que entrar al paquete\n');
     const r = spawnSync(npmBin, ['pack', '--dry-run', '--json'], { cwd: box, encoding: 'utf8', shell: process.platform === 'win32', env: Object.assign({}, process.env, { npm_config_offline: 'true', npm_config_cache: path.join(box, '.npm-cache'), npm_config_update_notifier: 'false' }) });
     assert.strictEqual(r.status, 0, r.stderr);
     const files = JSON.parse(r.stdout)[0].files.map((f) => f.path).sort();
-    assert.deepStrictEqual(files, ['LICENSE', 'README.md', 'index.js', 'package.json']);
+    assert.deepStrictEqual(files, ['LICENSE', 'README.md', 'home-paths.json', 'index.js', 'package.json']);
   } finally { fs.rmSync(box, { recursive: true, force: true }); }
 });
 
@@ -147,7 +147,7 @@ test('T10 NpmPackage_VersionIsSemverAndStartsAt1', () => {
   assert.ok(VT.parseSemver(pkg.version), `version semver: ${pkg.version}`);
   assert.ok(VT.compareSemver(pkg.version, '1.0.0') >= 0, 'desde 1.0.0');
   assert.deepStrictEqual(pkg.bin, { 'tycon-harness': 'index.js' });
-  assert.deepStrictEqual([...pkg.files].sort(), ['LICENSE', 'README.md', 'index.js', 'package.json']);
+  assert.deepStrictEqual([...pkg.files].sort(), ['LICENSE', 'README.md', 'home-paths.json', 'index.js', 'package.json']);
   assert.strictEqual(pkg.license, 'Apache-2.0');
   const remote = JSON.parse(read(path.join(ROOT, 'scripts', 'setup', 'public-remotes.json'))).remotes[0];
   const repoUrl = typeof pkg.repository === 'string' ? pkg.repository : pkg.repository.url;
@@ -455,4 +455,48 @@ test('T40 NpxInstaller_SavedConfigUnreadable_Exits1_KeepsFile', async () => {
     assert.strictEqual(r.code, 0, r.out);
     assert.ok(r.calls.some((c) => c.argv[0] === 'install'), JSON.stringify(r.calls));
   } finally { fs.rmSync(box, { recursive: true, force: true }); }
+});
+
+// T43 (el cierre, AC 36): el instalador corre antes de que exista el arnés y no puede cargar tycon-home.js; sus rutas viven
+// en home-paths.json y tienen que ser las MISMAS que resuelve tycon-home.js, con la casa propia y sin ella, y con TYCON_HOME
+test('T43 NpmPackage_HomePaths_ParityWithTyconHome', () => {
+  const HP = JSON.parse(read(path.join(PKG_DIR, 'home-paths.json')));
+  const TH = require(path.join(ROOT, 'scripts', 'setup', 'harness', 'tycon-home.js'));
+  const STATE_FILE = 'harness-state.json';
+  const I = require(INDEX);
+  assert.deepStrictEqual(I.HP, HP, 'index.js lee el mismo home-paths.json');
+  assert.strictEqual(I.ownRoot({ TYCON_HOME: '/x/y' }), '/x/y', 'ownRoot de index.js honra TYCON_HOME');
+  assert.strictEqual(I.ownRoot({}), path.join(os.homedir(), HP.own_dir), 'ownRoot de index.js sin TYCON_HOME');
+  const ours = (home, env = {}) => {   // lo que arma index.js con home-paths.json, con su HOME de juguete
+    const own = env[HP.own_env] || path.join(home, HP.own_dir);
+    return { ownState: path.join(own, ...HP.own_state.split('/')), ownConfig: path.join(own, ...HP.own_config.split('/')), legacyState: path.join(home, ...HP.legacy_state.split('/')) };
+  };
+  const saved = process.env.TYCON_HOME;
+  const box = tmp('home-paths-');
+  try {
+    delete process.env.TYCON_HOME;
+    const fresh = path.join(box, 'sin-casa'); fs.mkdirSync(fresh);
+    assert.strictEqual(ours(fresh).legacyState, path.join(TH.stateDir(fresh), STATE_FILE), 'sin la casa propia, el estado es el de siempre');
+    const own = path.join(box, 'con-casa'); fs.mkdirSync(path.join(own, '.tycon', 'state'), { recursive: true });
+    assert.strictEqual(ours(own).ownState, path.join(TH.stateDir(own), STATE_FILE), 'con la casa propia, el estado es el de ~/.tycon');
+    assert.strictEqual(ours(own).ownConfig, TH.configFile(own), 'la configuración de la casa propia');
+    const elsewhere = path.join(box, 'otra-casa'); fs.mkdirSync(path.join(elsewhere, 'state'), { recursive: true });
+    process.env.TYCON_HOME = elsewhere;
+    assert.strictEqual(ours(own, { TYCON_HOME: elsewhere }).ownState, path.join(TH.stateDir(own), STATE_FILE), 'con TYCON_HOME, el estado es el de esa carpeta');
+    assert.strictEqual(HP.own_env, 'TYCON_HOME');
+    assert.strictEqual(HP.own_dir, TH.OWN_DIR_NAME);
+    // la ruta vieja está declarada en legacy-home-names.json (se retira con la 8.24)
+    const legacy = JSON.parse(read(path.join(ROOT, 'scripts', 'tests', 'fixtures', 'legacy-home-names.json')));
+    assert.ok([...(legacy.entries || []), ...(legacy.until_d || [])].some((e) => e.path === 'scripts/setup/npm/home-paths.json'), 'home-paths.json declarado en legacy-home-names.json');
+    // el espejo: una ruta cambiada sale distinta
+    const bad = Object.assign({}, HP, { own_state: 'estado/harness-state.json' });
+    assert.notStrictEqual(path.join(own, '.tycon', ...bad.own_state.split('/')), path.join(TH.stateDir(own), STATE_FILE));
+  } finally {
+    if (saved === undefined) delete process.env.TYCON_HOME; else process.env.TYCON_HOME = saved;
+    fs.rmSync(box, { recursive: true, force: true });
+  }
+  // index.js no arma las rutas a mano: las lee de home-paths.json
+  const src = read(INDEX);
+  assert.match(src, /require\('\.\/home-paths\.json'\)/);
+  assert.ok(!/'\.tycon-pipeline'|'harness-state\.json'|'config\.json'/.test(src), 'ninguna ruta del estado escrita a mano en index.js');
 });

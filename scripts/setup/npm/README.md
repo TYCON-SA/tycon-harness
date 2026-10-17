@@ -11,8 +11,11 @@ npx @tyconsa/harness@latest
 - **Pregunta antes de escribir**: muestra el plan de lo que va a cambiar en tu máquina y espera tu `¿Instalo? [s/N]`.
   Con un «no», no queda nada.
 - **La procedencia**: este paquete lo publica la CI pública del repo, con constancia de procedencia. Se ve en la pestaña
-  «Provenance» de su página en npmjs.com, o con `npm view @tyconsa/harness dist.attestations`.
-  Ojo: **npx no comprueba la firma al instalar**; se mira en la página o con `npm view`.
+  «Provenance» de su página en npmjs.com, o con `npm view @tyconsa/harness dist.attestations`, **desde la 1.0.2** (la
+  1.0.1 se publicó a mano y no la tiene). Ojo: **npx no comprueba la firma al instalar**; se mira en la página o con
+  `npm view`.
+- **Con el arnés ya instalado**: no lo reinstala. Dice si está al día o, si hay una versión nueva, pregunta
+  `¿Actualizo? [s/N]` y corre su `update`.
 - **Sin npm, a mano**: `scripts/setup/get-harness.sh` (o `get-harness.ps1` en Windows) del repo público: bajarlo,
   leerlo y correrlo.
 - **Node**: hace falta Node 22 o posterior sólo para instalar; después el arnés usa su propio Node 24.

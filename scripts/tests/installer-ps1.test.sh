@@ -1854,6 +1854,18 @@ PS
   if ! grep -q 'falta python3\|falta bash' "$gl/codex.out" && grep -q '/tarball/' "$gl/requests.log" && [ "$(tail -1 "$calls" 2>/dev/null)" = "${INSTALL_CALL},\"--tool\",\"codex\",\"--yes\"]" ]; then
     ok "get-harness.ps1 · con -- --tool codex y sin python3 ni bash: no son requisitos (los pide el aplicador de Claude Code), baja e instala"
   else no "get-harness.ps1 · con -- --tool codex sin python3 (rc $rc; llamada: $(tail -1 "$calls" 2>/dev/null)): $(brief "$gl/codex.out")"; fi
+  # T54 (el cierre de la 8.40, AC 46): `--tool` como lo lee install (mayúsculas, comas, repetida). La red a un puerto
+  # cerrado: sólo importa si pide python3 y bash o no
+  for c in 'no:--tool Codex' 'no:--tool=codex' 'si:--tool claude,codex' 'si:--tool codex --tool claude'; do
+    want="${c%%:*}"; read -r -a t54args <<< "${c#*:}"; h="$(new_home "gh-t54-${want}")"
+    ps_gh "$h" "$gl/bin-codex" TYCON_RELEASE_API=http://127.0.0.1:9 TYCON_RELEASE_GIT=http://127.0.0.1:9 -- -- "${t54args[@]}" > "$gl/t54.out" 2>&1
+    if { [ "$want" = si ] && grep -q 'falta python3' "$gl/t54.out"; } || { [ "$want" = no ] && ! grep -q 'falta python3\|falta bash' "$gl/t54.out"; }; then ok "get-harness.ps1 · T54 --tool como install (${c#*:}): python3 $([ "$want" = si ] && echo 'se pide' || echo 'no se pide')"
+    else no "get-harness.ps1 · T54 --tool ${c#*:} (esperaba python3 $want): $(brief "$gl/t54.out")"; fi
+  done
+  h="$(new_home gh-t54-espacio)"   # el valor con espacios alrededor, en un solo argumento (no entra en la lista de arriba)
+  ps_gh "$h" "$gl/bin-codex" TYCON_RELEASE_API=http://127.0.0.1:9 TYCON_RELEASE_GIT=http://127.0.0.1:9 -- -- --tool ' codex ' > "$gl/t54.out" 2>&1
+  if ! grep -q 'falta python3\|falta bash' "$gl/t54.out"; then ok "get-harness.ps1 · T54 --tool ' codex ' (con espacios): python3 no se pide"
+  else no "get-harness.ps1 · T54 --tool ' codex ': $(brief "$gl/t54.out")"; fi
   # T14 (story 8.34) · sin permiso y con las rutas públicas del juguete (TYCON_RELEASE_GIT / _ARCHIVE): main de info/refs y el
   # comprimido de codeload, sin ninguna consulta a la API; con la API agotada (por la API: con permiso), la hora del tope
   local gitb cdl reset hora

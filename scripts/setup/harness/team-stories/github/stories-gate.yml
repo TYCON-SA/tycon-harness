@@ -1,0 +1,65 @@
+# stories-gate — el portón de controles del arnés en el repo de HISTORIAS de {{TEAM}} ({{STORIES_REPO}}), en GitHub.
+#
+# Es el mismo que `azure/stories-gate.yml` hace en Azure DevOps (por qué vive en el repo de historias y no en los de
+# código: el comentario de arriba de ese archivo). Va en `.github/workflows/stories-gate.yml` del repo de historias.
+#
+# Corre en cada pull request contra main y en nada más: el portón compara lo que trae el pedido contra la rama destino.
+# Para que frene un merge, en la regla de `main` del repo se marca como control requerido el job `gate` (tarea de una
+# persona: el alta guiada la imprime). No lee ningún secreto y no escribe en el repo: `contents: read` y nada más.
+# El arnés se clona de su repo público, sin credencial.
+name: stories-gate
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      - name: El portón del arnés contra la rama destino del pedido
+        env:
+          BASE: ${{ github.base_ref }}
+        run: |
+          set -u
+          TCG="${RUNNER_TEMP}/tcg"
+          if ! git clone --quiet --depth 1 --single-branch --branch main --no-tags https://github.com/TYCON-SA/tycon-harness.git "${TCG}"; then
+            echo "::error::no pude bajar el arnés público: un control que no corrió no está aprobado"
+            exit 1
+          fi
+          GATE="${TCG}/scripts/ci/tycon-ci-gate.js"
+          if [ ! -f "${GATE}" ]; then
+            echo "::error::no encontré el portón en ${GATE}: un control ausente no es un control aprobado"
+            exit 1
+          fi
+          if ! git rev-parse --verify -q "origin/${BASE}" >/dev/null; then
+            echo "::error::no existe origin/${BASE} en el clon: el portón no puede comparar contra la rama destino"
+            exit 1
+          fi
+          node "${GATE}" --repo "${GITHUB_WORKSPACE}" --base "origin/${BASE}"
+      # El buscador de secretos (gitleaks), sobre los commits que trae el pedido y no sobre el árbol entero: lo viejo
+      # se limpia aparte. Si el pedido trae commits y no escaneó ninguno, es rojo: un escaneo que no corrió no es limpio.
+      - name: Secretos en lo que trae el pedido (gitleaks)
+        env:
+          BASE: ${{ github.base_ref }}
+        run: |
+          set -u
+          IMAGE=zricethezav/gitleaks:v8.30.1
+          for intento in 1 2 3; do docker pull -q "${IMAGE}" >/dev/null && break; [ "${intento}" = 3 ] && { echo "::error::no pude bajar ${IMAGE}: el escaneo no corrió"; exit 1; }; sleep $((intento * 10)); done
+          ESPERADOS=$(git rev-list --count --no-merges "origin/${BASE}..HEAD")
+          SALIDA=$(docker run --rm -v "${GITHUB_WORKSPACE}":/repo -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0='*' \
+            "${IMAGE}" detect --source /repo --log-opts="--no-merges origin/${BASE}..HEAD" --redact --verbose --no-banner --no-color 2>&1) && RC=0 || RC=$?   # Actions corre con bash -e: sin esto, un hallazgo (sale 1) corta el paso antes de mostrarlo
+          printf '%s\n' "${SALIDA}"
+          ESCANEADOS=$(printf '%s\n' "${SALIDA}" | sed -n 's/.* \([0-9][0-9]*\) commits scanned.*/\1/p' | tail -1)
+          if [ "${RC}" -ne 0 ] && [ "${RC}" -ne 1 ]; then echo "::error::gitleaks terminó con código ${RC}: el escaneo no corrió bien"; exit 1; fi
+          if [ "${ESPERADOS}" -gt 0 ] && [ "${ESCANEADOS:-0}" -eq 0 ]; then echo "::error::el pedido trae ${ESPERADOS} commit(s) y gitleaks no escaneó ninguno"; exit 1; fi
+          if [ "${RC}" -eq 1 ]; then echo "::error::el pedido trae secretos (arriba, tapados): sacalos del commit y rotalos si son reales"; exit 1; fi
+          echo "sin secretos en los ${ESCANEADOS} commit(s) que trae el pedido"

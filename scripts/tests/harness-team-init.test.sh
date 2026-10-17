@@ -112,7 +112,8 @@ else no "T30 --dry-run (rc $RC, carpeta $([ -e "$D" ] && echo existe || echo no)
 
 # ══ T25 · con terminal: pregunta y escribe sólo los tres archivos ═══════════════════════════════════════════════════
 D="$BASE/perfiles/gh"
-LAB_PTY_DELAY=3 harness_lab_pty $'acme\ngithub\nacme/harness-team-profile\n'"$D"$'\nn' "$REAL_NODE" "$LAB_HOME/.tycon/harness/scripts/setup/harness.js" team-init > "$BASE/t25.out" 2>&1; RC=$?
+# la última respuesta («no») es la del repo de historias, que se pregunta al final (el cierre, AC 38)
+LAB_PTY_DELAY=3 harness_lab_pty $'acme\ngithub\nacme/harness-team-profile\n'"$D"$'\nn\nno' "$REAL_NODE" "$LAB_HOME/.tycon/harness/scripts/setup/harness.js" team-init > "$BASE/t25.out" 2>&1; RC=$?
 if [ "$RC" -eq 0 ] && [ "$(files_in "$D")" = "team-layer.json team-profile.json team-repos.json " ]; then ok "T25 con terminal escribe SÓLO los tres archivos obligatorios (sin el revisor, el paquete ni la skill del ejemplo)"
 else no "T25 los archivos (rc $RC): $(files_in "$D") — $(brief "$BASE/t25.out")"; fi
 if [ "$(jget "$D/team-layer.json" name)" = acme ] && [ "$(jget "$D/team-layer.json" requires.harness)" = ">= $VERSION" ] && [ "$(jget "$D/team-layer.json" schema)" = 1 ]; then ok "T25 team-layer.json: schema 1, name acme, requires.harness = la versión instalada"
@@ -168,7 +169,7 @@ env PATH="$LAB/no-git-bin" "$REAL_NODE" "$LAB_HOME/.tycon/harness/scripts/setup/
 if [ "$RC" -eq 0 ] && grep -q 'git init' "$BASE/t29a.out" && grep -q 'git push' "$BASE/t29a.out" && [ ! -d "$D/.git" ] && [ "$(files_in "$D")" = "team-layer.json team-profile.json team-repos.json " ]; then ok "T29 sin git en el PATH: escribe los tres archivos e imprime los dos comandos para pegar"
 else no "T29 sin git (rc $RC): $(brief "$BASE/t29a.out" 500)"; fi
 D="$BASE/perfiles/push-falla"
-LAB_PTY_DELAY=2 harness_lab_pty $'s\ns' "$REAL_NODE" "$LAB_HOME/.tycon/harness/scripts/setup/harness.js" team-init --name acme --platform github --profile-repo acme/no-existe --dir "$D" > "$BASE/t29b.out" 2>&1; RC=$?
+LAB_PTY_DELAY=2 harness_lab_pty $'s\ns\nno' "$REAL_NODE" "$LAB_HOME/.tycon/harness/scripts/setup/harness.js" team-init --name acme --platform github --profile-repo acme/no-existe --dir "$D" > "$BASE/t29b.out" 2>&1; RC=$?
 if [ "$RC" -eq 1 ] && [ "$("$REAL_GIT" -C "$D" rev-list --count HEAD 2>/dev/null)" = 1 ] && grep -q 'git push' "$BASE/t29b.out" && ! grep -q 'Instalo esta máquina' "$BASE/t29b.out"; then
   ok "T29 un push que falla: sale 1, deja la carpeta con su commit local, repite los comandos y no ofrece instalar con el perfil"
 else no "T29 push que falla (rc $RC, commits $("$REAL_GIT" -C "$D" rev-list --count HEAD 2>/dev/null)): $(brief "$BASE/t29b.out" 600)"; fi
@@ -190,7 +191,7 @@ if grep -qE 'node "[^"]+/scripts/setup/harness\.js" install --version' "$BASE/t3
 else no "T38 la ruta sin comillas: $(grep -o '3\. .*' "$BASE/t32a.out" | cut -c1-300)"; fi
 # clase 13: un git que no puede commitear (sin identidad) tras «s» no sale 0: el perfil no quedó subido
 D="$BASE/perfiles/sin-identidad"
-LAB_PTY_DELAY=2 harness_lab_pty s env -u EMAIL -u GIT_AUTHOR_NAME -u GIT_AUTHOR_EMAIL -u GIT_COMMITTER_NAME -u GIT_COMMITTER_EMAIL GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_1=user.useConfigOnly GIT_CONFIG_VALUE_1=true GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 \
+LAB_PTY_DELAY=2 harness_lab_pty $'s\nno' env -u EMAIL -u GIT_AUTHOR_NAME -u GIT_AUTHOR_EMAIL -u GIT_COMMITTER_NAME -u GIT_COMMITTER_EMAIL GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_1=user.useConfigOnly GIT_CONFIG_VALUE_1=true GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 \
   "$REAL_NODE" "$LAB_HOME/.tycon/harness/scripts/setup/harness.js" team-init --name acme --platform github --profile-repo acme/otro-perfil --dir "$D" > "$BASE/t32c.out" 2>&1; RC=$?
 if [ "$RC" -eq 1 ] && grep -q 'no pudo commitear' "$BASE/t32c.out" && ! grep -q 'Instalo esta máquina' "$BASE/t32c.out"; then ok "T38 (clase 13) git sin identidad tras «s»: sale 1 diciéndolo, como el push que falla"
 else no "T38 commit fallido (rc $RC): $(grep -m2 -E 'falló|no pudo|Instalo' "$BASE/t32c.out" | tr '\n' ' ' | cut -c1-500)"; fi
@@ -217,20 +218,106 @@ else no "T38 ado.org codificada: $ADO_OUT"; fi
 
 # ══ T28 · con git: commit, push al repo del perfil e install --team ══════════════════════════════════════════════
 D="$BASE/perfiles/push"
-LAB_PTY_DELAY=3 harness_lab_pty $'s\ns\ns' "$REAL_NODE" "$LAB_HOME/.tycon/harness/scripts/setup/harness.js" team-init --name acme --platform github --profile-repo acme/harness-team-profile --dir "$D" > "$BASE/t28.out" 2>&1; RC=$?
+LAB_PTY_DELAY=3 harness_lab_pty $'s\ns\ns\nno' "$REAL_NODE" "$LAB_HOME/.tycon/harness/scripts/setup/harness.js" team-init --name acme --platform github --profile-repo acme/harness-team-profile --dir "$D" > "$BASE/t28.out" 2>&1; RC=$?
 PUSHED="$("$REAL_GIT" -C "$PROFILE_BARE" ls-tree --name-only main 2>/dev/null | tr '\n' ' ')"
 if [ "$PUSHED" = "team-layer.json team-profile.json team-repos.json " ]; then ok "T28 con «s» a git: commit local y push al repo del perfil con los tres archivos"
 else no "T28 el push (rc $RC; en el bare: «${PUSHED}»): $(brief "$BASE/t28.out" 600)"; fi
 TEAM_IN_STATE="$("$REAL_NODE" -e 'try{const s=require(process.argv[1]);console.log(s.team?s.team.repo:"")}catch{console.log("")}' "$LAB_HOME/.claude/.tycon-pipeline/harness-state.json")"
 if [ "$RC" -eq 0 ] && [ "$TEAM_IN_STATE" = acme/harness-team-profile ]; then ok "T28 con «s» a instalar: install --team apila la capa del perfil recién subido (estado team)"
 else no "T28 install --team (rc $RC, estado team «${TEAM_IN_STATE}»): $(brief "$BASE/t28.out" 600)"; fi
-# la línea para el resto del equipo es la de get-harness con --team: la de npx no se imprime mientras el paquete no esté
-# publicado (cambio 2 de la coordinadora: la entrada npx llega en su propio pedido cuando se publique)
-if grep -qF 'bash get-harness.sh -- --team acme/harness-team-profile' "$BASE/t28.out" && grep -qF 'pwsh -File get-harness.ps1 -- --team acme/harness-team-profile' "$BASE/t28.out" && ! grep -q 'npx ' "$BASE/t28.out" && grep -q 'pipelines/operations' "$BASE/t28.out"; then
-  ok "T28 el resumen trae la línea para el resto del equipo (get-harness con --team, sin npx) y el enlace de los procesos de la noche"
+# la línea para el resto del equipo es la de npx con --team (el paquete está publicado: AC 23 y el cierre, AC 38), con
+# los guiones de entrada como el camino «a mano»
+if grep -qF 'npx @tyconsa/harness@latest --team acme/harness-team-profile' "$BASE/t28.out" && grep -qF 'bash get-harness.sh -- --team acme/harness-team-profile' "$BASE/t28.out" && grep -qF 'pwsh -File get-harness.ps1 -- --team acme/harness-team-profile' "$BASE/t28.out" && ! grep -qE 'npx (-y|--yes)' "$BASE/t28.out" && grep -q 'pipelines/operations' "$BASE/t28.out"; then
+  ok "T28 el resumen trae la línea para el resto del equipo (npx con --team, y los guiones a mano) y el enlace de los procesos de la noche"
 else no "T28 el resumen: $(brief "$BASE/t28.out" 600)"; fi
 if grep -q 'TYCON_GITHUB_TOKEN' "$BASE/t28.out" && ! grep -q 'el instalador se lo pide' "$BASE/t28.out"; then ok "T38 (clase 12, GitHub) la línea para el equipo dice que el permiso va en TYCON_GITHUB_TOKEN y no promete que el guion lo pida"
 else no "T38 el permiso del equipo en GitHub: $(grep -o '4\. .*' "$BASE/t28.out" | cut -c1-400)"; fi
+
+# ══ T45 · el repo de historias (el cierre, AC 37 y 38) ════════════════════════════════════════════════════════════════
+# las plantillas genéricas del núcleo (scripts/setup/harness/team-stories/), llenas y en su lugar del repo, al lado de la carpeta del
+# perfil; nunca crea el repo ni sube nada: imprime los comandos y la política de rama
+no_markers() { ! grep -rqE '\{\{[A-Z0-9_]+\}\}' "$1" 2>/dev/null; }   # los de team-init (`${{ github.… }}` es de GitHub, no un marcador)
+GH_FILES=".githooks/pre-commit .github/workflows/stories-gate.yml .specs/README.md .tycon/advisors.yaml AGENTS.md CLAUDE.md README.md "
+AZ_FILES=".githooks/pre-commit .specs/README.md .tycon/ado-config.yaml .tycon/advisors.yaml AGENTS.md CLAUDE.md README.md pipelines/stories-gate.yml "
+D="$BASE/historias/gh/perfil"; S="$BASE/historias/gh/acme-stories"
+H team-init --name acme --platform github --profile-repo acme/harness-team-profile --dir "$D" --stories acme-stories < /dev/null > "$BASE/t45a.out" 2>&1; RC=$?
+if [ "$RC" -eq 0 ] && [ "$(files_in "$S")" = "$GH_FILES" ] && no_markers "$S" && [ -x "$S/.githooks/pre-commit" ] && grep -q 'Las historias de \*\*acme\*\*' "$S/README.md"; then
+  ok "T45 GitHub con --stories: el repo de historias al lado del perfil, en su lugar, sin marcadores y con el hook ejecutable"
+else no "T45 GitHub (rc $RC): $(files_in "$S") — $(brief "$BASE/t45a.out" 500)"; fi
+if grep -q 'acme-stories' "$BASE/t45a.out" && grep -q 'control requerido' "$BASE/t45a.out" && grep -qF "cd \"$S\" && git init" "$BASE/t45a.out" && [ ! -d "$S/.git" ]; then
+  ok "T45 el resumen dice cómo crearlo, los dos comandos y la política de rama de GitHub, sin hacer git"
+else no "T45 el resumen de GitHub: $(grep -A3 -i 'historias' "$BASE/t45a.out" | tr '\n' ' ' | cut -c1-600)"; fi
+D="$BASE/historias/az/perfil"; S="$BASE/historias/az/acme-stories"
+H team-init --name acme --platform azure --profile-repo https://dev.azure.com/acme/Platform/_git/harness-team-profile --dir "$D" --stories acme-stories < /dev/null > "$BASE/t45b.out" 2>&1; RC=$?
+if [ "$RC" -eq 0 ] && [ "$(files_in "$S")" = "$AZ_FILES" ] && no_markers "$S" && grep -q '^ado_org: https://dev.azure.com/acme$' "$S/.tycon/ado-config.yaml" && grep -q '^ado_project: "Platform"$' "$S/.tycon/ado-config.yaml" && grep -q 'Build validation' "$BASE/t45b.out"; then
+  ok "T45 Azure con --stories: ado-config con la organización y el proyecto, el portón en pipelines/ y la política de rama"
+else no "T45 Azure (rc $RC): $(files_in "$S") — $(brief "$BASE/t45b.out" 500)"; fi
+D="$BASE/historias/no/perfil"
+H team-init --name acme --platform github --profile-repo acme/harness-team-profile --dir "$D" --no-stories < /dev/null > "$BASE/t45c.out" 2>&1; RC=$?
+H team-init --name acme --platform github --profile-repo acme/harness-team-profile --dir "$BASE/historias/sin/perfil" < /dev/null > "$BASE/t45d.out" 2>&1; RC2=$?
+if [ "$RC" -eq 0 ] && [ "$RC2" -eq 0 ] && [ "$(ls "$BASE/historias/no")" = perfil ] && [ "$(ls "$BASE/historias/sin")" = perfil ] && grep -q -- '--stories-only' "$BASE/t45d.out" && ! grep -q -- '--stories-only' "$BASE/t45c.out"; then
+  ok "T45 --no-stories no lo arma; sin terminal ni opción no lo arma y dice la línea para armarlo después (--stories-only)"
+else no "T45 sin historias (rc $RC/$RC2): no=$(ls "$BASE/historias/no" | tr '\n' ' ') sin=$(ls "$BASE/historias/sin" | tr '\n' ' ') — $(brief "$BASE/t45d.out" 400)"; fi
+S="$BASE/historias/solo/acme-stories"
+H team-init --stories-only --name acme --platform github --profile-repo acme/harness-team-profile --stories acme-stories --dir "$S" < /dev/null > "$BASE/t45e.out" 2>&1; RC=$?
+if [ "$RC" -eq 0 ] && [ "$(files_in "$S")" = "$GH_FILES" ] && [ "$(ls "$BASE/historias/solo")" = acme-stories ]; then ok "T45 --stories-only escribe sólo el repo de historias, en --dir"
+else no "T45 --stories-only (rc $RC): $(files_in "$S") — $(brief "$BASE/t45e.out" 400)"; fi
+H team-init --stories-only --name acme --platform github --profile-repo acme/harness-team-profile --stories acme-stories --dir "$BASE/historias/seco/x" --dry-run < /dev/null > "$BASE/t45f.out" 2>&1; RC=$?
+if [ "$RC" -eq 0 ] && [ ! -e "$BASE/historias/seco" ] && grep -q '.github/workflows/stories-gate.yml' "$BASE/t45f.out"; then ok "T45 --dry-run lista el repo de historias sin escribir nada"
+else no "T45 --dry-run (rc $RC): $(brief "$BASE/t45f.out" 400)"; fi
+mkdir -p "$BASE/historias/ocupada" && printf 'algo\n' > "$BASE/historias/ocupada/README.md"
+H team-init --stories-only --name acme --platform github --profile-repo acme/harness-team-profile --dir "$BASE/historias/ocupada" < /dev/null > "$BASE/t45g.out" 2>&1; RC=$?
+if [ "$RC" -eq 1 ] && grep -qF "$BASE/historias/ocupada" "$BASE/t45g.out" && [ "$(files_in "$BASE/historias/ocupada")" = "README.md " ]; then ok "T45 una carpeta que existe y no está vacía: sale 1 nombrándola, sin tocarla"
+else no "T45 carpeta ocupada (rc $RC): $(brief "$BASE/t45g.out")"; fi
+TPL="$LAB_HOME/.tycon/harness/scripts/setup/harness/team-stories/README.md"; cp "$TPL" "$BASE/tpl.bak" && printf '\n{{NADIE_LO_LLENA}}\n' >> "$TPL"
+H team-init --stories-only --name acme --platform github --profile-repo acme/harness-team-profile --dir "$BASE/historias/marca" < /dev/null > "$BASE/t45h.out" 2>&1; RC=$?
+cp "$BASE/tpl.bak" "$TPL"
+if [ "$RC" -eq 1 ] && grep -q 'NADIE_LO_LLENA' "$BASE/t45h.out" && [ ! -e "$BASE/historias/marca" ]; then ok "T45 un marcador que team-init no sabe llenar: sale 1 nombrándolo, sin escribir nada"
+else no "T45 marcador desconocido (rc $RC): $(brief "$BASE/t45h.out")"; fi
+D="$BASE/historias/tty/perfil"
+LAB_PTY_DELAY=3 harness_lab_pty $'acme\ngithub\nacme/harness-team-profile\n'"$D"$'\nn\n' "$REAL_NODE" "$LAB_HOME/.tycon/harness/scripts/setup/harness.js" team-init > "$BASE/t45i.out" 2>&1; RC=$?
+if [ "$RC" -eq 0 ] && [ "$(files_in "$BASE/historias/tty/harness-team-stories")" = "$GH_FILES" ]; then ok "T45 con terminal, Enter acepta el nombre por defecto (<repo del perfil sin -profile>-stories)"
+else no "T45 con terminal (rc $RC): $(ls "$BASE/historias/tty" 2>/dev/null | tr '\n' ' ') — $(brief "$BASE/t45i.out" 500)"; fi
+
+# T45 · lo que señalaron los revisores y el pase adversarial del cierre
+S="$BASE/historias/gh/acme-stories"
+if grep -q 'CLAUDE.md' "$S/AGENTS.md" 2>/dev/null; then ok "T45 AGENTS.md es un puntero a CLAUDE.md"; else no "T45 AGENTS.md: $(cat "$S/AGENTS.md" 2>/dev/null)"; fi
+if [ ! -e "$BASE/perfiles/harness-team-stories" ] && grep -q '6\. ¿Armo también el repo de historias' "$BASE/t25.out"; then ok "T45 con terminal, «no» al paso 6 no arma el repo de historias"
+else no "T45 «no» en la terminal: $(ls "$BASE/perfiles" | tr '\n' ' ')"; fi
+H team-init --stories-only --no-stories --name acme --platform github --profile-repo acme/harness-team-profile < /dev/null > "$BASE/t45j.out" 2>&1; RC=$?
+H team-init --stories-only --stories no --name acme --platform github --profile-repo acme/harness-team-profile --dir "$BASE/historias/no-es-nombre" < /dev/null > "$BASE/t45k.out" 2>&1; RC2=$?
+if [ "$RC" -eq 2 ] && [ "$RC2" -eq 2 ] && grep -q -- '--no-stories' "$BASE/t45k.out" && [ ! -e "$BASE/historias/no-es-nombre" ]; then ok "T45 --stories-only con --no-stories sale 2; «--stories no» no arma un repo llamado «no» (sale 2 y dice --no-stories)"
+else no "T45 --no-stories/«no» (rc $RC/$RC2): $(brief "$BASE/t45j.out" 200) · $(brief "$BASE/t45k.out" 200)"; fi
+H team-init --name acme --platform github --profile-repo acme/harness-team-profile --dir "$BASE/historias/seco2/perfil" --stories acme-stories --dry-run < /dev/null > "$BASE/t45l.out" 2>&1; RC=$?
+if [ "$RC" -eq 0 ] && [ ! -e "$BASE/historias/seco2" ] && grep -q 'el repo de historias acme-stories' "$BASE/t45l.out"; then ok "T45 --dry-run del alta completa con --stories lista también el repo de historias, sin escribir"
+else no "T45 --dry-run con --stories (rc $RC): $(brief "$BASE/t45l.out" 300)"; fi
+S="$BASE/historias/azure-raro/repo"
+H team-init --stories-only --name acme --platform azure --profile-repo 'https://dev.azure.com/acme/Mi%20Proyecto%20(x)/_git/Perfil%20Equipo' --dir "$S" < /dev/null > "$BASE/t45m.out" 2>&1; RC=$?
+LINE="$(grep 'git remote add origin' "$BASE/t45m.out" | sed 's/^ *//')"
+if [ "$RC" -eq 0 ] && [ "$(files_in "$S")" = "$AZ_FILES" ] && grep -q 'Perfil-Equipo-stories' "$BASE/t45m.out" && bash -n -c "$LINE" 2>/dev/null; then ok "T45 Azure con espacios y paréntesis: el nombre por defecto sirve y la línea para subirlo se puede pegar"
+else no "T45 Azure raro (rc $RC): $(brief "$BASE/t45m.out" 400)"; fi
+TPLD="$LAB_HOME/.tycon/harness/scripts/setup/harness/team-stories"; mv "$TPLD" "$TPLD.fuera"
+H team-init --stories-only --name acme --platform github --profile-repo acme/harness-team-profile --dir "$BASE/historias/sin-plantillas" < /dev/null > "$BASE/t45n.out" 2>&1; RC=$?
+H team-init --name acme --platform github --profile-repo acme/harness-team-profile --dir "$BASE/historias/sin-plantillas-2/perfil" < /dev/null > "$BASE/t45o.out" 2>&1; RC2=$?
+mv "$TPLD.fuera" "$TPLD"
+if [ "$RC" -eq 1 ] && grep -q 'no trae las plantillas' "$BASE/t45n.out" && [ ! -e "$BASE/historias/sin-plantillas" ] && [ "$RC2" -eq 0 ]; then ok "T45 una versión sin las plantillas: pedido a propósito (--stories-only) sale 1 diciéndolo; el alta sin pedirlo sigue y sale 0"
+else no "T45 sin plantillas (rc $RC/$RC2): $(brief "$BASE/t45n.out" 300)"; fi
+
+# T45 · vuelta 2 de revisores: un nombre inválido, una plantilla suelta que falta, --stories con --no-stories, y el código
+# de salida del paso 6 en el alta completa
+H team-init --stories-only --stories 'a b' --name acme --platform github --profile-repo acme/harness-team-profile --dir "$BASE/historias/a-b" < /dev/null > "$BASE/t45p.out" 2>&1; RC=$?
+H team-init --name acme --platform github --profile-repo acme/harness-team-profile --dir "$BASE/historias/mezcla/perfil" --stories x --no-stories < /dev/null > "$BASE/t45q.out" 2>&1; RC2=$?
+if [ "$RC" -eq 2 ] && grep -q 'no sirve' "$BASE/t45p.out" && [ ! -e "$BASE/historias/a-b" ] && [ "$RC2" -eq 2 ] && [ ! -e "$BASE/historias/mezcla" ]; then ok "T45 un nombre con espacios sale 2 sin escribir; --stories con --no-stories sale 2 antes de escribir nada"
+else no "T45 nombre inválido / --stories con --no-stories (rc $RC/$RC2): $(brief "$BASE/t45p.out" 200) · $(brief "$BASE/t45q.out" 200)"; fi
+TPLF="$LAB_HOME/.tycon/harness/scripts/setup/harness/team-stories/specs-README.md"; mv "$TPLF" "$TPLF.fuera"
+H team-init --stories-only --name acme --platform github --profile-repo acme/harness-team-profile --dir "$BASE/historias/suelta" < /dev/null > "$BASE/t45r.out" 2>&1; RC=$?
+mv "$TPLF.fuera" "$TPLF"
+if [ "$RC" -eq 1 ] && grep -q 'falta la plantilla' "$BASE/t45r.out" && [ ! -e "$BASE/historias/suelta" ] && ! ls -d "$BASE/historias/suelta.tmp-"* >/dev/null 2>&1; then ok "T45 una plantilla suelta que falta: sale 1 nombrándola, sin dejar nada (ni la carpeta temporal)"
+else no "T45 plantilla suelta (rc $RC): $(brief "$BASE/t45r.out" 300)"; fi
+mkdir -p "$BASE/historias/ocupada2/acme-stories" && printf 'algo\n' > "$BASE/historias/ocupada2/acme-stories/x.md"
+H team-init --name acme --platform github --profile-repo acme/harness-team-profile --dir "$BASE/historias/ocupada2/perfil" --stories acme-stories < /dev/null > "$BASE/t45s.out" 2>&1; RC=$?
+if [ "$RC" -eq 1 ] && [ "$(files_in "$BASE/historias/ocupada2/perfil")" = "team-layer.json team-profile.json team-repos.json " ] && grep -q 'ya existe y no está vacía' "$BASE/t45s.out"; then ok "T45 en el alta completa, un repo de historias que no se puede escribir deja el perfil y sale 1 diciéndolo"
+else no "T45 alta completa con la carpeta de historias ocupada (rc $RC): $(brief "$BASE/t45s.out" 300)"; fi
 
 # ══ T31 · el ejemplo de juguete es el publicado (con red) ═════════════════════════════════════════════════════════
 RAW="https://raw.githubusercontent.com/TYCON-SA/harness-team-profile-example/main"

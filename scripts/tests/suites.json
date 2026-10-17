@@ -8,6 +8,11 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/wait-notice.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/nightly-dod-notice.test.sh",
       "requiere": []
     },
@@ -2053,6 +2058,18 @@
       "__nota": "story 8.40, tanda A (T13 a T16): .github/workflows/npm-publish.yml leído por texto con check-public-workflow.js --publisher (disparador, permisos, acciones por sha, npm exacto ≥ 11.15.0, npm stage publish desde la carpeta del paquete, la integridad antes de publicar) y sus pasos de shell corridos con un npm de mentira: ya publicada con el mismo contenido sale 0, con otro rojo, npm viejo rojo, el paquete inexistente o sin publicador de confianza salteado en verde con aviso. Sin red.",
       "raiz": "arnes",
       "ruta": "tests/npm-publish-workflow.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.40, el cierre (T48 y T49): lo que el paquete tiene PUBLICADO en npm. La versión del package.json está publicada con su constancia de procedencia y es la latest; con una sesión de npm, la cuenta pide el segundo factor también para escribir y la latest no es el marcador 0.0.0-stage. Sin red, con la versión sin aprobar o sin sesión: NO MEDIDO, nunca verde. Pide red: corre de noche, no en cada pedido.",
+      "raiz": "arnes",
+      "ruta": "tests/npm-published.test.js",
+      "requiere": ["red"]
+    },
+    {
+      "__nota": "story 8.40, el cierre (T44): las plantillas genéricas del repo de historias de un equipo nuevo (scripts/setup/harness/team-stories/, las usa harness.js team-init): están todas, no nombran ningún producto, cada marcador lo llena team-init y el portón de GitHub pasa las reglas de cualquier workflow público. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/team-stories-templates.test.js",
       "requiere": []
     },
     {

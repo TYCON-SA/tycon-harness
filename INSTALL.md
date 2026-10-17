@@ -208,6 +208,12 @@ apaga sólo con su variable en `0`—, y de los dos que nacen prendidos y son de
 | `tycon-pipeline/scripts/on-stop-dod-gate.js` | Stop | Con el pipeline en modo autónomo, no deja cerrar el turno con un control de la definición de hecho en rojo | Sí, sólo en modo autónomo | full | ninguno propio (fuera del modo autónomo no hace nada) |
 | `response-style-meter.js` | Stop | Mide la prosa del mensaje final del turno y deja el veredicto para el turno siguiente | No | full | `TYCON_RESPONSE_METER=0` |
 | `response-style-notice.js` | UserPromptSubmit | Cobra el veredicto del medidor de estilo del turno anterior | No | full | `TYCON_RESPONSE_METER=0` |
+| `wait-notice.js` | Stop | Con una corrida activa, si nadie se movió en cinco minutos, avisa por Telegram que la corrida espera | No | full | `TYCON_WAIT_NOTICE=0` |
+| `wait-notice.js` | PreToolUse (AskUserQuestion\|ExitPlanMode\|mcp__spokenly__ask_user_dictation) | Una pregunta a la persona abre la espera del aviso | No | full | `TYCON_WAIT_NOTICE=0` |
+| `wait-notice.js` | PostToolUse (AskUserQuestion\|ExitPlanMode\|mcp__spokenly__ask_user_dictation) | La respuesta cierra la espera del aviso | No | full | `TYCON_WAIT_NOTICE=0` |
+| `wait-notice.js` | UserPromptSubmit | La persona escribió: la espera del aviso se cierra | No | full | `TYCON_WAIT_NOTICE=0` |
+| `wait-notice.js` | Notification (permission_prompt) | Un pedido de permiso abre la espera del aviso | No | full | `TYCON_WAIT_NOTICE=0` |
+| `wait-notice.js` | SessionEnd | La sesión se cerró: su espera se cierra sin avisar | No | full | `TYCON_WAIT_NOTICE=0` |
 | `blocking-meter.js` | Stop | Mide la herramienta bloqueante más larga del turno y los mensajes que quedaron esperando | No | full | `TYCON_BLOCKING_METER=0` |
 | `blocking-notice.js` | UserPromptSubmit | Cobra el veredicto del medidor de bloqueo del turno anterior | No | full | `TYCON_BLOCKING_METER=0` |
 | `large-read-meter.js` | Stop | Mide cuánto se leyó de un solo archivo en el turno; anota y no avisa | No | full | `TYCON_READ_METER=0` |

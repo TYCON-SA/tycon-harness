@@ -160,6 +160,19 @@ make_path "$LAB/path-nocurl" node tar python3 bash uname rm mktemp tr env ls gre
 env -u TYCON_GITHUB_TOKEN PATH="$LAB/path-nopy" TYCON_RELEASE_API="$LAB_RELEASE_API" TYCON_THIRD_PARTY=0 "$REAL_BASH" "$GH" -- --tool codex --yes < /dev/null > "$BASE/t55-codex.out" 2>&1; RC=$?
 if ! grep -q 'falta python3' "$BASE/t55-codex.out" && [ "$(requests '/tar.gz/')" -ge 1 ]; then ok "T55 con -- --tool codex y sin python3: python3 no es requisito (lo pide el aplicador de Claude Code) y el guion llega a bajar"
 else no "T55 con -- --tool codex sin python3 (rc $RC, tar.gz $(requests '/tar.gz/')): $(brief "$BASE/t55-codex.out" 300)"; fi
+# 8.40·T54 (el cierre de la 8.40, AC 46; no es la T54 de arriba, la del tope): `--tool` se lee como lo lee install (tools.parseOption: repetida, con comas, sin
+# distinguir mayúsculas ni espacios). La red apunta a un puerto cerrado: sólo importa si pide python3 o no
+t54() { # t54 <nombre> <pide python3: si|no> <opciones…>
+  local name="$1" want="$2"; shift 2
+  env -u TYCON_GITHUB_TOKEN PATH="$LAB/path-nopy" TYCON_RELEASE_API=http://127.0.0.1:9 TYCON_RELEASE_GIT=http://127.0.0.1:9 TYCON_THIRD_PARTY=0 "$REAL_BASH" "$GH" -- "$@" < /dev/null > "$BASE/t54-$name.out" 2>&1
+  if { [ "$want" = si ] && grep -q 'falta python3' "$BASE/t54-$name.out"; } || { [ "$want" = no ] && ! grep -q 'falta python3' "$BASE/t54-$name.out"; }; then ok "8.40·T54 --tool como install ($*): python3 $([ "$want" = si ] && echo 'se pide' || echo 'no se pide')"
+  else no "8.40·T54 --tool $* (esperaba python3 $want): $(brief "$BASE/t54-$name.out" 300)"; fi
+}
+t54 mayus no --tool Codex
+t54 igual no --tool=codex
+t54 espacio no --tool ' codex '
+t54 comas si --tool claude,codex
+t54 dos si --tool codex --tool claude
 make_path "$LAB/path-nonode-nopy" tar "${BASICS[@]}"
 env -u TYCON_GITHUB_TOKEN PATH="$LAB/path-nonode-nopy" TYCON_RELEASE_API="$LAB_RELEASE_API" "$REAL_BASH" "$GH" -- --yes < /dev/null > "$BASE/t55-two.out" 2>&1; RC=$?
 if [ "$RC" -eq 1 ] && [ "$(grep -c 'falta node' "$BASE/t55-two.out")" = 1 ] && [ "$(grep -c 'falta python3' "$BASE/t55-two.out")" = 1 ]; then ok "T55 sin node ni python3: una línea por cada uno"

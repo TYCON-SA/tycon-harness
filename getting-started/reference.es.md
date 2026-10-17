@@ -409,7 +409,9 @@ dan error.
 **La red**: el arnés no manda datos de uso. De fábrica habla con GitHub —el repo, para mirar si hay versión nueva, y
 los orígenes de las skills de terceros que lista `scripts/publishing/third-party-skills.json`— y, si alguno de tus
 repos vecinos es un clon parcial, con el remoto de ese repo, para leer su historial (el barrido diario). La consulta
-corta al modelo de tu asistente va por el asistente que ya usás. Cada integración que prendas suma su servicio. La
+corta al modelo de tu asistente va por el asistente que ya usás. Cada integración que prendas suma su servicio: con
+Telegram, una corrida del pipeline que queda esperándote más de cinco minutos te manda un mensaje con la story, el paso y
+qué espera (`TYCON_WAIT_NOTICE=0` lo apaga). La
 prueba en máquina limpia de este repo, si la corrés, baja además las imágenes base (Docker Hub y el registro de
 Microsoft); git, Python y los certificados (el repositorio de paquetes de Debian); el plugin de ejemplo y las skills de
 terceros (GitHub); y los paquetes del plugin (NuGet).

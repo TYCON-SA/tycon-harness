@@ -23,6 +23,7 @@
     { "path": "scripts/hooks/git-pre-commit-global.sh", "why": "se instala COPIADO en ~/.git-hooks: no tiene el árbol al lado" },
     { "path": ".githooks/pre-commit-checks", "why": "los controles del commit del arnés: su parte de las skills busca el arnés, igual que el lector de las skills" },
     { "path": "packs/bizuit/templates/stories/githooks-pre-commit.template", "why": "(viaja con el perfil del equipo, en su paquete) la plantilla del hook de pre-commit del repo de historias de un producto: se copia a ese repo, que no tiene el árbol del arnés al lado, y busca el arnés por sus dos lugares" },
+    { "path": "scripts/setup/harness/team-stories/githooks-pre-commit", "why": "(story 8.40, el cierre) la plantilla genérica del hook de pre-commit del repo de historias de un equipo nuevo, que copia harness.js team-init: corre en ese repo, que no tiene el árbol del arnés al lado ni puede cargar su biblioteca, y busca el arnés por sus dos lugares" },
     { "path": "scripts/production/install-guard.sh", "why": "corre con sudo y busca el clon del arnés antes de tener el árbol" },
     { "path": "scripts/lib/tycon-config.js", "why": "viaja solo a la copia del freno de producción en /opt (install-guard.sh, ARCHIVOS)" },
     { "path": "scripts/lib/legacy-names.js", "why": "viaja solo a la copia del freno de producción en /opt; además genera los envoltorios" },
