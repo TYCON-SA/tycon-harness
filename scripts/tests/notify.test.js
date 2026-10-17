@@ -110,6 +110,9 @@ test('T18 Notify_TelegramPorElScript @story-2.30 @ac-15 @ac-26', () => {
   const src = fs.readFileSync(NOTIFY, 'utf8');
   assert.ok(src.includes('tycon-telegram-notify.sh'));
   assert.doesNotMatch(src, /api\.telegram\.org|sendMessage/);
+  // el texto le llega al script por la entrada estándar: ningún llamado lo pone en sus argumentos
+  assert.match(src, /'--stdin'\], \{ input: Buffer\.from\(texto, 'utf8'\)/);
+  assert.doesNotMatch(src, /correrScript\(\[[^\]]*'--', texto/, 'el texto no va después de «--»');
 });
 
 test('T19 Notify_SlackYTeamsPorWebhook_SinDireccionALaVista @story-2.30 @ac-15', () => {

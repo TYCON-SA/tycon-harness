@@ -102,8 +102,10 @@ function cuerpoDe(canal, texto) {
 const resultado = (canal, extra) => ({ canal, entregado: false, message_id: null, editado: false, motivo: null, nota: null, ...extra });
 
 // ── Telegram: por el script ────────────────────────────────────────────────────────────────────
-function correrScript(args, env) {
-  return spawnSync('bash', [SCRIPT_TELEGRAM, ...args], { encoding: 'utf8', timeout: TIMEOUT_SCRIPT_MS, env });
+// el texto va por la entrada estándar (`--stdin`), nunca como argumento: en Windows un argumento cruza la página de
+// códigos del sistema y los acentos llegan rotos, y en la lista de procesos se vería entero
+function correrScript(args, texto, env) {
+  return spawnSync('bash', [SCRIPT_TELEGRAM, ...args, '--stdin'], { input: Buffer.from(texto, 'utf8'), encoding: 'utf8', timeout: TIMEOUT_SCRIPT_MS, env });
 }
 
 /**
@@ -118,7 +120,7 @@ function telegram(texto, editarId, env) {
   let reintentos = 0;
   const falla = (motivo) => resultado('telegram', { motivo, nota });
   for (;;) {
-    const r = correrScript([...(editando ? ['--edit', editando] : []), '--', texto], env);
+    const r = correrScript(editando ? ['--edit', editando] : [], texto, env);
     const out = String(r.stdout || '').trim();
     const err = limpiar(String(r.stderr || '').trim(), env);
     if (r.error || r.status === null) {
@@ -200,7 +202,7 @@ function entregar({ canal, texto, editarId = null, env = process.env }) {
 function ensayo({ canal, texto, editarId = null, env = process.env }) {
   if (!CANALES.includes(canal)) return { codigo: NO_ENTREGADO, salida: '', error: SIN_CANAL };
   if (canal === 'telegram') {
-    const r = correrScript(['--dry-run', ...(editarId ? ['--edit', String(editarId)] : []), '--', texto], env);
+    const r = correrScript(['--dry-run', ...(editarId ? ['--edit', String(editarId)] : [])], texto, env);
     const tapar = (s) => limpiar(String(s || ''), env).replace(/chat_id=\S+/g, 'chat_id=<oculto>');
     const primera = tapar(r.stdout).split(' texto=')[0].trim();
     return { codigo: r.status === 0 ? 0 : NO_ENTREGADO, salida: primera, error: r.status === 0 ? '' : tapar(r.stderr) };
